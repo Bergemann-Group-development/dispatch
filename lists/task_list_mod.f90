@@ -462,7 +462,7 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
   !-----------------------------------------------------------------------------
   if (task%is_set (bits%init_nbors)) then
     call self%init_nbors (head)                                         ! RULE D
-    call self%recv_from_vnbors (head)                                   ! RULE F
+    !call self%recv_from_vnbors (head)                                   ! RULE F
     if (self%verbose > 1) then
       call head%info
     else if (self%verbose > 0) then

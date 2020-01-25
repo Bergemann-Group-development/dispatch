@@ -200,7 +200,11 @@ SUBROUTINE update (self, task_list, test)
   end if
   !-----------------------------------------------------------------------------
   ! Check atomically if the ready queue is empty and return w/o locking if so,
-  ! to avoid hammering the task list lock, delaying other threads
+  ! to avoid hammering the task list lock, delaying other threads.  Most of the
+  ! time, the call to stall_handler() will come from here, but occasionally nq
+  ! may be non-zero at the time of the test, but another thread picks up the
+  ! last task before the test on head below, possibly resulting in a call to 
+  ! stall_handler, if n_stalled is already larger than 10,000.
   !-----------------------------------------------------------------------------
   !$omp atomic read
   nq = task_list%nq
@@ -261,26 +265,6 @@ SUBROUTINE update (self, task_list, test)
     end if
     call task%log ('dispatcher')
     !...........................................................................
-    if (debug) then
-      !$omp critical (wrt_cr)
-      write (io_unit%queue,'("a",f12.6,i4,2i7,3i5,f12.6,i6,2i9,7i7)') &
-        wallclock(), mpi%rank, task%id, task%istep, task%it, task%new, omp%thread, &
-        task%time, task_list%nq, n_spin, timer%n_master
-      timer%n_master(:) = 0
-      n_spin = 0
-      !$omp end critical (wrt_cr)
-      !$omp atomic read
-      stalled_l = stalled
-      if (stalled_l > 0) then
-        write (io_unit%log,*) wallclock(), '  stall ended', stalled_l
-      end if
-    end if
-    !...........................................................................
-    !$omp atomic write
-    stalled = 0
-    !$omp atomic write
-    stall_start = 0d0
-    !---------------------------------------------------------------------------
     task%atime = task%time
     if (verbose > 1) then
       write (io_unit%log,'(f12.6,2x,a,i4,2x,a,i6,2x,a,1p,g16.6,2x,a,i5)') &
@@ -332,7 +316,6 @@ SUBROUTINE update (self, task_list, test)
         !call task_list%queue%qlock%unset ('dipatcher0')
       end if
       call task%clear (bits%ready)                           ! not in queue
-write(io_unit%log,*) task%id, 'clear ready bit'
       if (track_active) &
         call task_list%queue_active (head)
       !$omp atomic
@@ -418,7 +401,25 @@ write(io_unit%log,*) task%id, 'clear ready bit'
     end if
     !$omp atomic update
     timer%busy_time = timer%busy_time + (wallclock()-start)
-    if (n_stalled > 0) then
+    !---------------------------------------------------------------------------
+    ! The first update after a stall period finds stalled non-zero, and sets it
+    ! to zero, to prevent the if-block from being executed repeatedly
+    !---------------------------------------------------------------------------
+    !$omp atomic read
+    stalled_l = stalled
+    !...........................................................................
+    if (debug) then
+      wc = wallclock()
+      write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,1x,2i6,f12.6)') &
+        wc, omp%thread, 'updated', task%id, task%time, stalled_l, &
+        n_spin, wc-stall_start
+      !$omp atomic write
+      n_spin = 0
+    end if
+    !...........................................................................
+    if (stalled_l > 0) then
+      !$omp atomic write
+      stalled = 0
       !-------------------------------------------------------------------------
       ! We come here the first time the queue is non-empty, after being empty
       !-------------------------------------------------------------------------
@@ -430,6 +431,13 @@ write(io_unit%log,*) task%id, 'clear ready bit'
       !$omp atomic write
       spin_start = 0d0
     end if
+    !---------------------------------------------------------------------------
+    ! As the last thing in a successful update, reset the stall_start time, for
+    ! use in diagnostic printout.  The actual start of a stall period is set
+    ! the first time stall_handler() is called.
+    !---------------------------------------------------------------------------
+    !$omp atomic write
+    stall_start = wallclock()
   else if (n_stalled == 0) then
     !---------------------------------------------------------------------------
     ! We come here the first time the queue is empty, after being non-empty,
@@ -472,30 +480,42 @@ subroutine stall_handler
     ! As long as there are tasks, the stalled value remains zero.  The test
     ! below is triggered the first time a thread enters here, and the start
     ! time of stalling is registered, before incrementing the counter, which
-    ! prevents the stall_start time from being set again.
+    ! prevents the stall_start time from being set again.  The value of the
+    ! 'stalled' counter is at least 1 when this procedure ends, and it should
+    ! only be possible to find a zero value after one or more updates have been
+    ! done, which means that logically, any 'stalled = 0' statement must come
+    ! after the task_list%update, not before.
     !---------------------------------------------------------------------------
-    !$omp atomic read
+    !$omp atomic capture
     stalled_l = stalled
-    !if (n_unpk > 0 .and. stalled_l > 0) then              ! unpack reset
-    !  write (io_unit%log,'(a,i7,i4,f12.6)') &
-    !    'dispatcher0_t%update: unpack reset, n, time =', &
-    !    stalled_l, n_unpk, wallclock()-stall_start
-    !  !$omp atomic write
-    !  stalled = 0                                         ! reset stalled
-    !  stalled_l = 0                                       ! new stall interval
-    !end if
+    stalled = stalled+1
+    !$omp end atomic
     if (stalled_l == 0) then
       !$omp atomic write
       stall_start = wallclock()
-      if (debug) &
-        write (io_unit%log,*) wallclock(), 'queue stalled', stalled_l
+      if (debug) then
+        write (io_unit%queue,'(f12.6,i4,1x,a12)') &
+          stall_start, omp%thread,'stalled'
+      end if
+    !---------------------------------------------------------------------------
+    ! An unpacked MPI message counts as an update, and hence resets the stall
+    !---------------------------------------------------------------------------
+    else if (n_unpk > 0 .and. stalled_l > 0) then              ! unpack reset
+      wc = wallclock()
+      if (debug) then
+        write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,i4)') &
+          wallclock(), omp%thread, 'unpack reset', &
+          stalled_l, wc-stall_start, n_unpk
+      end if
+      !$omp atomic write
+      stall_start = wc
+      !$omp atomic write
+      stalled = 0                                         ! reset stalled
     end if
-    !$omp atomic update
-    stalled = stalled+1
     now = wallclock()
     !---------------------------------------------------------------------------
     ! To avoid that the task log is overwritten during a stall, stop task
-    ! loggin towards the of a log_interval
+    ! logging towards the of a log_interval
     !---------------------------------------------------------------------------
     !!$omp critical (tasklog_cr)
     !write (io_unit%task,'(f12.6,i4,4x,a)') now, omp%thread, 'schedule stall'
@@ -524,7 +544,8 @@ subroutine stall_handler
       write (io_unit%task,'(f12.6,i4,4x,a)') now, omp%thread, 'retry_stalled reached'
       !$omp critical (stall_cr)
       if (wallclock()-stall_start > retry_stalled) then
-        print *, mpi%rank, 'STALLED:'
+        print '(f12.6,i6,2x,a,2i6,f12.6)', now, mpi%rank, &
+          'STALLED:', stalled, n_stalled, now-stall_start
         call task_list%check_all
         if (associated(task_list%queue)) then
           write(stderr,1) mpi%rank, omp%thread, 'check_all', wallclock()
