@@ -390,10 +390,24 @@ END SUBROUTINE unset
 SUBROUTINE destroy (this)
   type(lock_t), pointer:: this
   !-----------------------------------------------------------------------------
-  if (.not.omp_lock%on) return
-  call remove (this)
-  call omp_destroy_nest_lock (this%lock)
-  deallocate (this)
+  write (io_unit%log,*) 'destroy (this)'; flush(io_unit%log)
+  if (omp_lock%on .and. associated(this)) then
+    if (this%initialized) then
+      write (io_unit%log,*) 'omp_destroy_nest_lock'; flush(io_unit%log)
+      call omp_destroy_nest_lock (this%lock)
+      write (io_unit%log,*) 'remove'; flush(io_unit%log)
+      call remove (this)
+      write (io_unit%log,*) 'deallocate'; flush(io_unit%log)
+      deallocate (this%start_time)
+      deallocate (this%wait_time)
+      deallocate (this%hold_time)
+      deallocate (this%n_hold)
+    end if
+    write (io_unit%log,*) 'deallocate (this)'; flush(io_unit%log)
+    deallocate (this)
+    nullify (this)
+  end if
+  write (io_unit%log,*) 'end destroy'; flush(io_unit%log)
 END SUBROUTINE destroy
 
 !===============================================================================
@@ -401,6 +415,7 @@ SUBROUTINE remove (this)
   type(lock_t), pointer:: this, lock, prev
   !-----------------------------------------------------------------------------
   if (.not.omp_lock%on) return
+  !$omp critical (lock_cr)
   nullify (prev)
   lock => omp_lock%next
   do while (associated(lock))
@@ -414,6 +429,8 @@ SUBROUTINE remove (this)
     prev => lock
     lock => lock%next
   end do
+  n_lock = n_lock-1
+  !$omp end critical (lock_cr)
 END SUBROUTINE remove
 
 !===============================================================================
@@ -468,7 +485,7 @@ SUBROUTINE info (self, unit, p_verbose)
       call write_table (stdout)
     end if
     write (stdout,'(a,1p,g11.2,a,10f8.1)') ' total lock waiting time =', &
-      time, ' s', wait_time
+      time, ' s'
     wait_time = 0d0
     hold_time = 0d0
     n_hold = 0

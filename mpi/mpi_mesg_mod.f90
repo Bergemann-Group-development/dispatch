@@ -40,7 +40,7 @@ MODULE mpi_mesg_mod
     real(8):: test_next=0d0
     real:: test_time=0.0
     logical:: anonymous=.true.
-    type(lock_t), pointer:: lock
+    type(lock_t), pointer:: lock => null()
   contains
     procedure:: init => init_mesg
     procedure:: dealloc => dealloc_mesg
@@ -139,12 +139,17 @@ SUBROUTINE dealloc_mesg (self)
   class(mesg_t):: self
   !-----------------------------------------------------------------------------
   call trace%begin ('mesg_t%dealloc_mesg')
-  call omp_lock%destroy (self%lock)
+  write (io_unit%log,*) 'self%lock'; flush(io_unit%log)
+  if (associated(self%lock)) then
+    call omp_lock%destroy (self%lock)
+  end if
+  write (io_unit%log,*) 'self%buffer'; flush(io_unit%log)
   if (associated(self%buffer)) then
     call io%bits_mem (-storage_size(self%buffer), &
                       product(shape(self%buffer)), '-buffer')
     deallocate (self%buffer)
   end if
+  write (io_unit%log,*) 'self%reqs'; flush(io_unit%log)
   if (associated(self%reqs)) then
     call io%bits_mem (-storage_size(self%reqs), &
                       product(shape(self%reqs)), '-reqs')
@@ -269,9 +274,11 @@ SUBROUTINE test_all (self, flag)
 #ifdef MPI
   if (mpi%mode == MPI_THREAD_MULTIPLE) then
     call MPI_TESTALL (self%nreq, self%reqs, flag, MPI_STATUSES_IGNORE, ierr)
+    call mpi%assert ('MPI_TESTALL', ierr)
   else
     !$omp critical (mpi_cr)
     call MPI_TESTALL (self%nreq, self%reqs, flag, MPI_STATUSES_IGNORE, ierr)
+    call mpi%assert ('MPI_TESTALL', ierr)
     !$omp end critical (mpi_cr)
   end if
 #else
@@ -358,9 +365,11 @@ FUNCTION is_complete (self, parentname)
   if (mpi%mode == MPI_THREAD_MULTIPLE) then
     !---------------------------------------------------------------------------
     call MPI_TEST (self%req, is_complete, stat, ierr)
+    call mpi%assert ('is_complete', ierr)
   else
     !$omp critical (mpi_cr)
     call MPI_TEST (self%req, is_complete, stat, ierr)
+    call mpi%assert ('is_complete', ierr)
     !$omp end critical (mpi_cr)
   end if
   !$omp atomic
