@@ -460,7 +460,6 @@ SUBROUTINE update (self, task_list, test)
     !---------------------------------------------------------------------------
     !$omp atomic update
     n_stalled = n_stalled+1
-!write (io_unit%log,*) 'n_stalled(2) =', n_stalled
   end if
   call trace%end (itimer(i))
 contains
@@ -517,9 +516,6 @@ subroutine stall_handler
     ! To avoid that the task log is overwritten during a stall, stop task
     ! logging towards the of a log_interval
     !---------------------------------------------------------------------------
-    !!$omp critical (tasklog_cr)
-    !write (io_unit%task,'(f12.6,i4,4x,a)') now, omp%thread, 'schedule stall'
-    !!$omp end critical (tasklog_cr)
     if (io%task_logging > 0) then
       if (stall_start > 0d0 .and. now-stall_start > io%log_interval*0.9) then
         !$omp critical (tasklog_cr)

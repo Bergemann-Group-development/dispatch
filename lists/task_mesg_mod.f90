@@ -203,9 +203,7 @@ SUBROUTINE send_to_vnbors (self, link)
   call trace%begin ('task_mesg_t%send_to_vnbors')
   task => link%task
   task%seq = task%seq + 1
-!write (io_unit%log,*) link%task%seq, 'calling list_t%send_to_vnbors'  
   call self%list_t%send_to_vnbors (link)
-!write (io_unit%log,*) '      sent', task%id, task%mesg%id, task%mesg%tag 
   if (associated(task%sent_list)) then
     sent_list => task%sent_list
   else
@@ -244,15 +242,8 @@ SUBROUTINE check_sent (self, task)
     do while (associated(mesg))
       next => mesg%next
       if (mesg%test_sent()) then
-!write (io_unit%log,*) '   deleted', task%id, mesg%id, mesg%tag, task%sent_list%n
-!flush (io_unit%log)
-!write (io_unit%log,*) mesg%id, mesg%nreq, mesg%req, task%sent_list%n, mpi_mesg%nq_send, 'delete'
         call task%sent_list%remove (mesg)
         call task%sent_list%delete (mesg, send=.true.)
-      else
-!write (io_unit%log,*) '      kept', task%id, mesg%id, mesg%tag
-!flush (io_unit%log)
-!write (io_unit%log,*) mesg%id, mesg%nreq, mesg%req, task%sent_list%n, mpi_mesg%nq_send, 'keep'
       end if
       mesg => next
     end do
@@ -319,9 +310,6 @@ call trace%begin ('task_mesg_t%check_recv')
   ! If a message is complete, unpack and issue a new request
   !-----------------------------------------------------------------------------
   if (task%mesg%is_complete()) then
-!if (mpi%rank==1) &
-!write (io_unit%log,*) '  received', task%id, task%mesg%id, task%mesg%tag
-!flush (io_unit%log)
     select type (task)
     class is (patch_t)
       call unpack (self, task%mesg, task%link)
@@ -332,9 +320,6 @@ call trace%begin ('task_mesg_t%check_recv')
       end if
     end select
     call new_request (task)
-  else
-!write (io_unit%log,*) '  nothing', task%id, task%mesg%id, task%mesg%tag
-!flush (io_unit%log)
   end if
   if (lock_recv) then
     call task%mesg%lock%unset ('check_recv')
@@ -353,8 +338,6 @@ SUBROUTINE new_request (task)
     task%seq = task%seq + 1
     task%mesg%tag = task%id*100 + mod(task%seq,100)
     task%mesg%sender = task%rank
-!if (mpi%rank==1) &
-!write (io_unit%log,*) ' requested', task%id, task%mesg%id, task%mesg%tag 
     call task%mesg%request
   end select
 END SUBROUTINE new_request
@@ -427,7 +410,6 @@ contains
       allocate (task%mesg%lock)
       call task%mesg%lock%init ('mesg')
     end if
-!write (io_unit%log,*) mpi%rank,' created new task', task%id
     task%rank = -1
     task%seq = 0
     call task%set (bits%virtual)

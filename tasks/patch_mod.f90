@@ -1460,9 +1460,6 @@ SUBROUTINE unpack (self, mesg)
   call lock%set ('unpack')
   do iv=1,self%nv
     call anonymous_copy (n_buf, buffer(ibuf), self%mem(:,:,:,iv,self%it,1))
-!write(io_unit%log,'(a,i6,2i4,1p,e14.5)') &
-!'patch_t%unpack: id, iv, it, it, minval =', &
-!self%id, iv, self%it, minval(self%mem(:,:,:,iv,it,1))
     ibuf = ibuf + n_buf
   end do
   call lock%unset ('unpack2')
@@ -1750,16 +1747,13 @@ FUNCTION distance_curvilinear (self, task) RESULT (out)
   real(8):: out(3)
   !.............................................................................
   call trace%begin ('patch_t%distance_curvilinear',2)
-  !write (io_unit%log,*) 'distance'; flush(io_unit%log)
   select type (task)
   class is (patch_t)
     out = self%centre_nat-task%centre_nat
-    !write (io_unit%log,*) out; flush(io_unit%log)
   class default
     out = self%position-task%position
   end select
   ! account for periodic wrapping
-  !write (io_unit%log,*) self%box; flush(io_unit%log)
   where (self%periodic .and. self%box > 0d0)
     out = modulo (out+0.5_8*self%box, self%box) - 0.5_8*self%box
   end where

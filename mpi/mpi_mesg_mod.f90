@@ -139,17 +139,14 @@ SUBROUTINE dealloc_mesg (self)
   class(mesg_t):: self
   !-----------------------------------------------------------------------------
   call trace%begin ('mesg_t%dealloc_mesg')
-  write (io_unit%log,*) 'self%lock'; flush(io_unit%log)
   if (associated(self%lock)) then
     call omp_lock%destroy (self%lock)
   end if
-  write (io_unit%log,*) 'self%buffer'; flush(io_unit%log)
   if (associated(self%buffer)) then
     call io%bits_mem (-storage_size(self%buffer), &
                       product(shape(self%buffer)), '-buffer')
     deallocate (self%buffer)
   end if
-  write (io_unit%log,*) 'self%reqs'; flush(io_unit%log)
   if (associated(self%reqs)) then
     call io%bits_mem (-storage_size(self%reqs), &
                       product(shape(self%reqs)), '-reqs')

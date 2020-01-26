@@ -572,7 +572,6 @@ SUBROUTINE set (self, bits)
 !  call trace_begin ('task_t%set')
   !$omp atomic
   self%status = ior(self%status, bits)
-!write (io_unit%log,'(f12.6,3x,a,i6,z8)') wallclock(), 'set bit', self%id, bits
 !  call trace_end
 END SUBROUTINE
 
@@ -586,7 +585,6 @@ SUBROUTINE clear (self, bits)
 !  call trace_begin ('task_t%clear')
   !$omp atomic
   self%status = iand(self%status, not(bits))
-!write (io_unit%log,'(f12.6,3x,a,i6,z8)') wallclock(), 'clr bit', self%id, bits
 !  call trace_end
 END SUBROUTINE
 

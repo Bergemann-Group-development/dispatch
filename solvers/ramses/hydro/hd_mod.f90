@@ -211,14 +211,11 @@ SUBROUTINE update (self)
   d => self%mem(:,:,:,self%idx%d,self%new,1)
   e => self%mem(:,:,:,self%idx%e,self%new,1)
   p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
-!print *, self%fminval(d), self%fmaxval(d), 'd'
-!print *, self%fminval(e), self%fmaxval(e), 'e'
   allocate (eth(self%gn(1),self%gn(2),self%gn(3)))
   px => self%mem(:,:,:,self%idx%px,self%new,1)
   py => self%mem(:,:,:,self%idx%py,self%new,1)
   pz => self%mem(:,:,:,self%idx%pz,self%new,1)
   eth = e - 0.5*(px**2+py**2+pz**2)/d
-!print *, self%fminval(eth), self%fmaxval(eth), 'eth'
   deallocate (eth)
   if (allocated(self%force_per_unit_mass)) then
     do i=1,3
@@ -234,17 +231,7 @@ SUBROUTINE update (self)
   ! Deallocate
   !-----------------------------------------------------------------------------
   call self%counter_update
-!write (io_unit%log,*) &
-!associated(self%q), &
-!associated(self%qp), &
-!associated(self%qm), &
-!associated(self%dq), &
-!associated(self%fl), &
-!associated(self%s)
-!flush(io_unit%log)
   deallocate (self%q,self%qp,self%qm,self%dq,self%fl,self%s)
-!write (io_unit%log,*) 'deallocated'
-!flush(io_unit%log)
   call trace%end (itimer)
 END SUBROUTINE update
 
@@ -1114,10 +1101,6 @@ subroutine cmpflxm(self)
         qleft (i,4) = qm(i,3,1,j,k); qright(i,4) = qp(i,3,1,j,k)
         qleft (i,5) = qm(i,4,1,j,k); qright(i,5) = qp(i,4,1,j,k)
       end do
-!if (j==4 .and. k==4) then
-!print '(a,i4,1p,20g10.2)', 'd', self%id, qleft(lb(1):ub(1),1)
-!print '(a,i4,1p,20g10.2)', 'p', self%id, qleft(lb(1):ub(1),3)
-!end if
       call solver (self,self%mesh(1)%gn,qleft,qright,fgdnv,error,detailed_timer)
       if (error) call error_handler('x', j, k, lb(1), ub(1))
       do i = lb(1),ub(1)

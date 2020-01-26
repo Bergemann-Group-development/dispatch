@@ -138,9 +138,6 @@ SUBROUTINE update_counters (self, patch, incr)
   !-----------------------------------------------------------------------------
   io%ntask = io%ntask+incr
   io%nwrite = io%ntask
-!write(io_unit%log,'(a,f12.6,9i7)') &
-!'update_counters: clk, thread, id, incr, io%nwrite, counts, iouts =', &
-!wallclock(), omp%thread, patch%id, incr, io%nwrite, count1, count2, patch%iout, iout
   call self%lock%unset ('update_counters')
   call trace%end ()
 END SUBROUTINE update_counters
@@ -249,9 +246,6 @@ SUBROUTINE output (self, patch, experiment_name)
           write (io_unit%log,*) 'count, nwrite =', count, io%nwrite
         append = (count < io%nwrite-1)
         !-----------------------------------------------------------------------
-!write (io_unit%log,'(a,f12.6,2i6,f10.6,2i6,l4)') &
-!'io_data_t%output: clk, thread, id, time, count, nwrite, append =', &
-!wallclock(), omp%thread, patch%id, patch%time, count, io%nwrite, append
         if      (io%method=='direct') then
           call direct_io%output (patch)
         else if (io%method=='amr') then

@@ -390,24 +390,18 @@ END SUBROUTINE unset
 SUBROUTINE destroy (this)
   type(lock_t), pointer:: this
   !-----------------------------------------------------------------------------
-  write (io_unit%log,*) 'destroy (this)'; flush(io_unit%log)
   if (omp_lock%on .and. associated(this)) then
     if (this%initialized) then
-      write (io_unit%log,*) 'omp_destroy_nest_lock'; flush(io_unit%log)
       call omp_destroy_nest_lock (this%lock)
-      write (io_unit%log,*) 'remove'; flush(io_unit%log)
       call remove (this)
-      write (io_unit%log,*) 'deallocate'; flush(io_unit%log)
       deallocate (this%start_time)
       deallocate (this%wait_time)
       deallocate (this%hold_time)
       deallocate (this%n_hold)
     end if
-    write (io_unit%log,*) 'deallocate (this)'; flush(io_unit%log)
     deallocate (this)
     nullify (this)
   end if
-  write (io_unit%log,*) 'end destroy'; flush(io_unit%log)
 END SUBROUTINE destroy
 
 !===============================================================================

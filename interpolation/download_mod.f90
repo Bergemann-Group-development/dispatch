@@ -285,7 +285,6 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
        self%same => same_linear
      if (trim(target%kind) /= 'rt_solver') then
        if (source%is_clear(bits%no_download)) then
-!write (stdout,'(i4,l1,$)') source%id, source%is_set(bits%virtual)
          !----------------------------------------------------------------------
          ! Default same interpolation when target and source levels agree
          !----------------------------------------------------------------------

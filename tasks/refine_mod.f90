@@ -481,14 +481,6 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
     patch%check_refine_next = patch%istep + check_interval
     deallocate (patch%irefine)
     write (io_unit%log,*) 'deallocated irefine in refine', mpi%rank, patch%id
-  else
-!write(stdout,*) 'SKIP', patch%id, &
-!      patch%is_clear(bits%virtual)  , &
-!      dxmin >  min_dx               , &
-!      dxmax <= max_dx               , &
-!      patch%time >= refine_from_t   , &
-!      patch%time <  refine_until_t  , &
-!      patch%istep >= patch%check_refine_next
   end if
   call trace%end (itimer)
 END SUBROUTINE check_current

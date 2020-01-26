@@ -1100,7 +1100,6 @@ SUBROUTINE consistency (self, link, i)
   if (associated(nbor)) id1 = nbor%task%id
   do while (associated (nbor))                        ! keep going until end
     id2 = nbor%task%id
-    !write (io_unit%log,*)id2
     nbor => nbor%next                                 ! next nbor
     n = n+1
   end do
@@ -1313,7 +1312,6 @@ SUBROUTINE add_new_link (self, link)
   ! send it to rank nbors.
   !-----------------------------------------------------------------------------
   call self%append (link)
-!write (io_unit%log,*) link%task%seq, 'calling send_to_vnbors'  
   if (link%task%is_set (bits%boundary)) &
     call self%send_to_vnbors (link)
   call self%set_init_nbors (link)                                       ! RULE C
@@ -1699,7 +1697,6 @@ SUBROUTINE init_all_nbors (self)
   do while (associated(link))
     if (i >= i0 .and. i<i1) then                        ! thread interval
       call self%init_nbors (link)
-      !write (io_unit%log,*) 'init_all_nbors:', wallclock(), i0, i, i1
     end if
     i = i+1                                             ! increment counter
     link => link%next                                   ! continue list
@@ -1953,7 +1950,6 @@ end if
   !-----------------------------------------------------------------------------
   if (task%is_clear (bits%ready+bits%busy)) then
     call task%set(bits%ready)
-write(io_unit%log,*) task%id, '  set ready bit'
     if (self%verbose > 1) &
       write (io_unit%log,'(f12.6,i5,1x,a,i9,a,f12.6,2x,a,i5)') wallclock(), omp%thread, &
         'list_t%queue_by_time: adding task', task%id, ' at time', task%time, &
@@ -2786,7 +2782,6 @@ SUBROUTINE send_to_vnbors (self, link)
   !-----------------------------------------------------------------------------
   ! The first time a task is sent it has tag = task%id*100 + 1
   !-----------------------------------------------------------------------------
-!write (io_unit%log,*) link%task%seq, 'in send_to_vnbors'  
   if (mpi_mesg%uniq_mesg .and. mpi_mesg%tag_type == 1) then
     !---------------------------------------------------------------------------
     ! A new child task has task%seq=-1, which becomes 0 in task_mesg_t%send_to..
@@ -2831,7 +2826,6 @@ SUBROUTINE send_to_vnbors (self, link)
         call task%log (label)
       end if
       call mesg%send (rank, tag=tag)                            ! send it
-      !write (stdout,*) 'send: ', task%id, mesg%id, tag, mesg%tag, rank
       if (self%verbose > 0 .or. task%id == io%id_debug) then
         write (io_unit%mpi,'(f12.6,1x,a,i9,1p,e18.6,i9,2x,a,i5,2x,5l1)') &
           wallclock(), 'send_to_vnbors: sent', &
