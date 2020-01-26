@@ -2,7 +2,7 @@
 !> Simplified task mesg handling, relying on that threads working on task
 !> updates should also handle sending and receiving task messages.  Each task
 !> has a mesg instance, and a sent_list message list.  When a boundary task
-!> updates it sends a message with a unique tag to the rank nbors.  The tag
+!> updates, it sends a message with a unique tag to the rank nbors.  The tag
 !> is made unique by the construction tag = task%id*100 + modulo(task%seq,100),
 !> where task%seq starts with 1, and increases by 1 every time the task is sent.
 !>
@@ -17,8 +17,8 @@
 !>
 !> Each virtual task starts updating from the owner rank by issuing a request
 !> for a message with the predicted tag, which thus goes directly to the correct 
-!> task.  Subsequent calls check if the message has been received, unpack it
-!> if it has, and then issue a request for the next package.
+!> task.  Subsequent calls check if the message has been received, unpacks it
+!> if it has, and then issues a request for the next package.
 !>
 !> Call hierarchy:          accesses                locks
 !> --------------------------------------------------------------
@@ -53,20 +53,20 @@
 !> by a single thread, which is the only one that can access the message.
 !> 
 !> The receive process needs locking, unless one decides to use thread-specific
-!> sets of messages (e.g. using modulo(mpi%size)).  One thread may be trying to
-!> checking a message for completeness, while another one is actually already
+!> sets of messages, using modulo(mpi%size).  One thread may be trying to
+!> check a message for completeness, while another one is actually already
 !> unpacking the message buffer.  Therefore, a message lock must be used while
 !> checking and unpacking.
 !>
 !> While unpacking, the header_to_patch procedure modifies the task metadata,
-!> which should be done under a task%lock, which could also be used by e.g.
-!> check_ready() by other threads at the same time.   This could possibly be
-!> protected instead by atomic constructs.
+!> which should be done under a task%lock, since the task metadat could also be 
+!> used by e.g. check_ready() by other threads at the same time.   This could
+!> possibly be done by instead using atomic constructs.
 !>
 !> Subsequently, the patch%unpack() procedure writes to a memory slot, which
 !> must be protected by a task%mem_lock() for that slot, thus locking out access
 !> by download_link, using the patch as a source, or by the solver (in case of
-!> real tasks -- real or virtual tasks could collide with download).
+!> real tasks -- both real and virtual tasks could collide with download).
 !===============================================================================
 MODULE task_mesg_mod
   USE io_mod
@@ -126,7 +126,8 @@ SUBROUTINE init (self, name)
   mpi_mesg%uniq_mesg = .true.
   mpi_mesg%tag_type = 1
   !-----------------------------------------------------------------------------
-  ! Initialize task%mesg in all boundary and virtual tasks
+  ! Initialize a task%mesg in all boundary and virtual tasks, and a
+  ! task%sent_list in all boundary tasks
   !-----------------------------------------------------------------------------
   link => self%head
   do while (associated(link))
@@ -149,8 +150,8 @@ SUBROUTINE init (self, name)
 END SUBROUTINE init
 
 !===============================================================================
-!> Check all virtual tasks.  Note that the accesses are grouped by thread, so
-!> no mesg%lock is needed
+!> Check all virtual tasks.  Note that the accesses are grouped by thread in
+!> check_recv(), so no mesg%lock is needed
 !===============================================================================
 SUBROUTINE check_mpi (self, n)
   class(task_mesg_t):: self
@@ -163,7 +164,7 @@ SUBROUTINE check_mpi (self, n)
   n_unpk = 0
   if (mpi%size > 1) then
     call trace%begin ('task_mesg_t%check_mpi', itimer=itimer)
-    call self%lock%set ('check_mpi')
+    call self%lock%set ('check_mpi', itimer)
     link => self%head
     do while (associated(link))
       if (link%task%is_set(bits%virtual)) then
@@ -181,46 +182,31 @@ SUBROUTINE check_mpi (self, n)
 END SUBROUTINE check_mpi
 
 !===============================================================================
-!> Send copies of boundary tasks to all rank nbors that should have a copy,
-!> appending the message to a message list with sent messages.   After sending,
-!> check the list for completed messages, and remove and delete them.  Since
-!> only one thread at a time is accessing the task here, this is thread-safe,
-!> and no locks are required to handle the sending of messages.
+!> Send copies of boundary tasks to all rank nbors, appending the message to
+!> a message list with sent messages.   After sending, check the list for
+!> completed messages, and remove and delete them.  Since only one thread at
+!> a time is accessing the task here, this is thread-safe, and no locks are
+!> required to handle the sending of messages.
 !===============================================================================
 SUBROUTINE send_to_vnbors (self, link)
   class(task_mesg_t):: self
   class(link_t), pointer:: link
   !.............................................................................
-  class(task_t), pointer:: task
-  class(mesg_t), pointer:: mesg, next
-  class(mesg_list_t), pointer:: sent_list
-  integer:: req
-  !-----------------------------------------------------------------------------
-  ! Sending the task creates a task%mesg instance, which is appended to
-  ! the task%sent_list -- created on the fly if not existing
-  !-----------------------------------------------------------------------------
   if (mpi%size == 1) return
   call trace%begin ('task_mesg_t%send_to_vnbors')
-  task => link%task
-  task%seq = task%seq + 1
+  !-----------------------------------------------------------------------------
+  ! Sending with list_t%send_to_vnbors() creates a task%mesg instance
+  !-----------------------------------------------------------------------------
+  link%task%seq = link%task%seq + 1
   call self%list_t%send_to_vnbors (link)
-  if (associated(task%sent_list)) then
-    sent_list => task%sent_list
-  else
-    if (verbose > 0) then
-      write (io_unit%log,'(f12.6,1x,a,2i6)') wallclock(), &
-        'task_mesg_t%send_to_vnbors: sent_list added to task', link%task%id
-    end if
-    allocate (sent_list)
-    call sent_list%init
-    task%sent_list => sent_list
+  if (.not.associated(link%task%sent_list)) then
+    allocate (link%task%sent_list)
+    call link%task%sent_list%init
   end if
-  !call sent_list%lock%set ('send_to_vnbors')
-  call sent_list%add (link%task%mesg)
+  call link%task%sent_list%add (link%task%mesg)
   !$omp atomic update
   mpi_mesg%nq_send = mpi_mesg%nq_send+1
-  call check_sent (self, task)
-  !call sent_list%lock%unset ('send_to_vnbors')
+  call check_sent (self, link%task)
   call trace%end ()
 END SUBROUTINE send_to_vnbors
 
@@ -261,10 +247,11 @@ SUBROUTINE recv_from_vnbors (self, link, n_unpk)
   integer:: n_unpk
   !.............................................................................
   class(link_t), pointer:: nbor
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (mpi%size == 1) return
-  call trace%begin ('task_mesg_t%recv_from_vnbors')
-  call link%lock%set ('recv_from_vnbors')
+  call trace%begin ('task_mesg_t%recv_from_vnbors', itimer=itimer)
+  call link%lock%set ('recv_from_vnbors', itimer)
   nbor => link%nbor
   do while (associated(nbor))
     if (nbor%task%is_set (bits%virtual)) then
@@ -274,7 +261,7 @@ SUBROUTINE recv_from_vnbors (self, link, n_unpk)
   end do
   call check_new (self)
   call link%lock%unset ('recv_from_vnbors')
-  call trace%end ()
+  call trace%end (itimer)
 END SUBROUTINE recv_from_vnbors
 
 !===============================================================================
@@ -297,7 +284,9 @@ SUBROUTINE check_recv (self, task, n_unpk)
       return
     end if
   end if
-call trace%begin ('task_mesg_t%check_recv')
+  call trace%begin ('task_mesg_t%check_recv')
+  select type (task)
+  class is (experiment_t)
   !-----------------------------------------------------------------------------
   ! If the task has no pending request, issue one
   !-----------------------------------------------------------------------------
@@ -310,17 +299,15 @@ call trace%begin ('task_mesg_t%check_recv')
   ! If a message is complete, unpack and issue a new request
   !-----------------------------------------------------------------------------
   if (task%mesg%is_complete()) then
-    select type (task)
-    class is (patch_t)
-      call unpack (self, task%mesg, task%link)
-      n_unpk = n_unpk+1
-      if (verbose > 1) then
-        write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,i4)') &
-          wallclock(), omp%thread, 'unpacked', task%id, task%time, n_unpk
-      end if
-    end select
+    call unpack (self, task%mesg, task%link)
+    n_unpk = n_unpk+1
+    if (verbose > 1) then
+      write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,i4)') &
+        wallclock(), omp%thread, 'unpacked', task%id, task%time, n_unpk
+    end if
     call new_request (task)
   end if
+  end select
   if (lock_recv) then
     call task%mesg%lock%unset ('check_recv')
   end if
@@ -331,15 +318,12 @@ END SUBROUTINE check_recv
 !> Increment sequence value and issue a new request
 !===============================================================================
 SUBROUTINE new_request (task)
-  class(task_t), pointer:: task
+  class(experiment_t), pointer:: task
   !-----------------------------------------------------------------------------
-  select type (task)
-  class is (patch_t)
-    task%seq = task%seq + 1
-    task%mesg%tag = task%id*100 + mod(task%seq,100)
-    task%mesg%sender = task%rank
-    call task%mesg%request
-  end select
+  task%seq = task%seq + 1
+  task%mesg%tag = task%id*100 + mod(task%seq,100)
+  task%mesg%sender = task%rank
+  call task%mesg%request
 END SUBROUTINE new_request
 
 !===============================================================================
@@ -359,29 +343,26 @@ SUBROUTINE check_new (self)
   call trace%begin ('task_mesg_t%check_new', itimer=itimer)
   if (.not.associated(task)) then
     call create_new (task)
-    task%mesg%tag = 0
-    task%id = 0
-    call task%mesg%request (any=.true.)
     if (verbose > 0) then
       write (io_unit%log,'(f12.6,1x,a,3i6)') wallclock(), &
         'task_mesg_t%check_new: requested id, sender, tag =', &
         task%id, task%rank, task%mesg%tag
     end if
   end if
+  !-----------------------------------------------------------------------------
+  ! When a new task%mesg is complete, unpack it, issue a new request for the new
+  ! task, and then create a new template task (also issues a new request)
+  !-----------------------------------------------------------------------------
   if (task%mesg%is_complete()) then
-    task%id = task%unpack_id (task%mesg)
-    task%rank = task%mesg%sender
     if (verbose > 1) then
       write (io_unit%log,'(f12.6,1x,a,2i6)') wallclock(), &
         'task_mesg_t%check_new: message id, rank =', &
         task%id, task%rank
     end if
     call unpack (self, task%mesg, task%link)
-    call self%add_new_link (task%link)
+    call new_request (task)
     nullify(task)
     call create_new (task)
-    task%mesg%tag = 0
-    call task%mesg%request (any=.true.)
   else
     if (verbose > 2) then
       write (io_unit%log,'(f12.6,1x,a)') wallclock(), &
@@ -410,9 +391,12 @@ contains
       allocate (task%mesg%lock)
       call task%mesg%lock%init ('mesg')
     end if
+    call task%set (bits%virtual)
+    task%id = 0
     task%rank = -1
     task%seq = 0
-    call task%set (bits%virtual)
+    task%mesg%tag = 0
+    call task%mesg%request (any=.true.)
     call trace%end ()
   end subroutine create_new
 END SUBROUTINE check_new
@@ -433,6 +417,9 @@ END SUBROUTINE check_new
 !> modiefies.  However, it generally handles only virtual tasks, or task that
 !> come in as virtual tasks and are transformed into boundary tasks, so it is
 !> OK to modify task memory and generate new nbor lists, etc.
+!>
+!> This entire operation should be threadsafe, since no other thread should be
+!> working on the same message and the same patch.
 !===============================================================================
 SUBROUTINE unpack (self, mesg, link)
   class(task_mesg_t):: self
@@ -441,7 +428,7 @@ SUBROUTINE unpack (self, mesg, link)
   !.............................................................................
   class(task_t), pointer:: task
   logical:: found, bonafide, new
-  integer:: id, save_bits
+  integer:: save_bits
   integer, save:: itimer=0
   character(len=24):: label
   type(patch_t):: patch
@@ -452,13 +439,16 @@ SUBROUTINE unpack (self, mesg, link)
   select type (task)
   class is (experiment_t)
   !-----------------------------------------------------------------------------
-  ! This entire operation should be threadsafe, since no other thread should be
-  ! working on the same message and the same patch. And find_task uses only the
-  ! static links in the task list -- not the dynamic next_time links.
+  ! If the task about to receive the message doesn't yet have a task id, get it
+  ! from the message itself, and flag the task as new
   !-----------------------------------------------------------------------------
-  !!omp critical (unpack_cr)
-  new = .false.
-  id = patch%unpack_id (mesg)
+  if (task%id <= 0) then
+    task%id = patch%unpack_id (mesg)
+    task%rank = mesg%sender
+    new = .true.
+  else
+    new = .false.
+  end if
   !-----------------------------------------------------------------------------
   if (io%task_logging > 1) then
     write (label,'(a,i4,i8)') 'unpack ', mesg%sender, mesg%seq
@@ -508,9 +498,9 @@ SUBROUTINE unpack (self, mesg, link)
   ! lock) while it is being updated here
   !-----------------------------------------------------------------------------
   if (self%verbose > 0) then
-    write (io_unit%log,'(f12.6,3x,a,2i6,f12.6,2x,7l1)') &
-      wallclock(), 'task_mesg_t%unpack: id, task%id, time, IBVrRSN =', &
-      id, task%id, task%time, &
+    write (io_unit%log,'(f12.6,3x,a,i6,f12.6,2x,7l1)') &
+      wallclock(), 'task_mesg_t%unpack: task%id, time, IBVrRSN =', &
+      task%id, task%time, &
       task%is_set (bits%internal), &
       task%is_set (bits%boundary), &
       task%is_set (bits%virtual), &
@@ -531,10 +521,10 @@ SUBROUTINE unpack (self, mesg, link)
     flush (io_unit%sent)
     !$omp end critical (log_sent_cr)
   end if
-  if (mpi_mesg%debug .or. id==io%id_debug) then
+  if (mpi_mesg%debug .or. task%id==io%id_debug) then
     !$omp critical (debug_cr)
     write (io_unit%log,'(f12.6,2x,a,2i9,z12,2x,5l1)') wallclock(), &
-      'DBG unpk: id, sender, req =', id, task%rank, mesg%req, &
+      'DBG unpk: id, sender, req =', task%id, task%rank, mesg%req, &
       task%is_set (bits%internal), &
       task%is_set (bits%boundary), &
       task%is_set (bits%virtual), &
