@@ -943,7 +943,6 @@ SUBROUTINE check_ready (self, link, lock, status)
     nbor => link%nbor                                   ! use original nbor list
     t_oldest = huge(1d0)
     do while (associated (nbor))                        ! keep going until end
-      write (io_unit%log,*) nbor%task%id, nbor%task%time
       !-------------------------------------------------------------------------
       ! Check for any non-supported nbors and nix on them, setting also a bit
       ! that marks them to be ignored when checking nbors for readiness.  The

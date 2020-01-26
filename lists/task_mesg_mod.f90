@@ -400,7 +400,7 @@ SUBROUTINE check_new (self)
     task%mesg%tag = 0
     call task%mesg%request (any=.true.)
   else
-    if (verbose > 1) then
+    if (verbose > 2) then
       write (io_unit%log,'(f12.6,1x,a)') wallclock(), &
         'task_mesg_t%check_new: no message'
     end if
@@ -484,8 +484,7 @@ SUBROUTINE unpack (self, mesg, link)
   end if
   !-----------------------------------------------------------------------------
   bonafide = .true.
-  if (associated(task)) then
-   if (verbose > 1) &
+  if (verbose > 1) &
     write (io_unit%log,'(a,i6,2x,6l1)') 'unpack: id, bits IBVRES =', mesg%id, &
       task%is_set (bits%internal), &
       task%is_set (bits%boundary), &
@@ -493,7 +492,6 @@ SUBROUTINE unpack (self, mesg, link)
       task%is_set (bits%ready), &
       task%is_set (bits%remove), &
       task%is_set (bits%swap_request)
-  end if
   !-----------------------------------------------------------------------------
   ! Guard against lingering extra messages to a swapped patch
   !-----------------------------------------------------------------------------
