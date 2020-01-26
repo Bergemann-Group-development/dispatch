@@ -318,7 +318,7 @@ END SUBROUTINE check_recv
 !> Increment sequence value and issue a new request
 !===============================================================================
 SUBROUTINE new_request (task)
-  class(experiment_t), pointer:: task
+  class(experiment_t):: task
   !-----------------------------------------------------------------------------
   task%seq = task%seq + 1
   task%mesg%tag = task%id*100 + mod(task%seq,100)
