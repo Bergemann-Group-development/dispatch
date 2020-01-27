@@ -1332,13 +1332,18 @@ SUBROUTINE pack (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%pack', itimer=itimer)
   !-----------------------------------------------------------------------------
-  ! Allocate a task%mesg instance and mesg%reqs() array
+  ! Allocate a task%mesg instance, mesg%reqs() and similar array
   !-----------------------------------------------------------------------------
   call self%allocate_mesg
   allocate (self%mesg%lock)
   call self%mesg%lock%init ('smsg')
   mesg => self%mesg 
   allocate (mesg%reqs(mpi%size))
+  allocate (mesg%fail(mpi%size))
+  allocate (mesg%ranks(mpi%size))
+  mesg%fail = 0
+  mesg%reqs = 0
+  mesg%ranks = 0
   call io%bits_mem (storage_size(mesg%reqs), &
                     product(shape(mesg%reqs)))
   !-----------------------------------------------------------------------------

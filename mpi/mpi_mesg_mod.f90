@@ -32,6 +32,8 @@ MODULE mpi_mesg_mod
     class(mesg_t), pointer:: prev => null()
     integer, dimension(:), pointer:: buffer => null()
     integer, pointer:: reqs(:) => null()
+    integer, pointer:: fail(:) => null()
+    integer, pointer:: ranks(:) => null()
     integer:: nbuf, nreq=0, req=0, sender, id, ntry=0
     integer:: n_failed=0
     integer:: i=0
@@ -90,9 +92,6 @@ MODULE mpi_mesg_mod
     integer:: n_unpk=0
     integer:: nq_send=0
     integer:: nq_recv=0
-    integer:: max_recv
-    integer:: max_probe
-    integer:: min_nq
     integer:: tag_type=0
     integer:: nbuf=0
     logical:: recv_wait=.false.
@@ -110,14 +109,9 @@ MODULE mpi_mesg_mod
   end type
   type(mpi_mesg_t), public:: mpi_mesg
   real, save:: delay_ms=0.0                     ! allow automatic setting
-  integer, save:: min_nq=10                     ! min ready q size for MPI_Test
-  integer, save:: max_sent=10                   ! max outstanding patch sends
-  integer, save:: max_recv=100                  ! max outstanding patch recvs
-  integer, save:: max_probe=10                  ! max loop count in MPI_Probe
+  integer, save:: max_fail=3                    ! max MPI_TEST before resend
   integer, save:: every_send=2                  ! how often to check send_list
-  integer, save:: every_recv=1                  ! how often to check recv_list
-  logical, save:: recv_wait=.false.             ! if true, always use MPI_Wait
-  logical, save:: send_wait=.false.             ! if true, wait in OMP task
+  logical, save:: resend=.false.                ! if true, resend late mesgs
   integer, save:: id=0
   integer, save:: verbose=0
   logical, save:: detailed_timer=.false.
@@ -194,6 +188,7 @@ SUBROUTINE send (self, rank, tag)
   !$omp critical (mpi_cr)
   self%nreq = self%nreq+1                                 ! count reqs
   self%reqs(self%nreq) = req                              ! collect reqs
+  self%ranks(self%nseq) = rank                            ! collect ranks
   !$omp end critical (mpi_cr)
 #endif
   !$omp atomic
@@ -207,6 +202,7 @@ END SUBROUTINE send
 SUBROUTINE request (self, any)
   class(mesg_t):: self
   logical, optional:: any
+  integer:: ierr
   !-----------------------------------------------------------------------------
   ! Make a request, optionally allowing any source
   !-----------------------------------------------------------------------------
@@ -218,12 +214,15 @@ SUBROUTINE request (self, any)
   ! Make the call in a critical region, or not
   !-----------------------------------------------------------------------------
   if (mpi%mode == MPI_THREAD_MULTIPLE) then
-    call irecv
+    call MPI_IRECV (self%buffer, self%nbuf, MPI_INT, self%sender, self%tag, &
+                    mpi%comm, self%req, ierr)
   else
     !$omp critical (mpi_cr)
-    call irecv
+    call MPI_IRECV (self%buffer, self%nbuf, MPI_INT, self%sender, self%tag, &
+                    mpi%comm, self%req, ierr)
     !$omp end critical (mpi_cr)
   end if
+  call mpi%assert ('mesg_t%request: MPI_IRECV', ierr)
   if (verbose > 0) then
     write (io_unit%log,'(f12.6,1x,a,3i6)') wallclock(), &
       'mpi_mesg_t%request: id, sender, tag =', &
@@ -240,19 +239,17 @@ SUBROUTINE request (self, any)
   !$omp atomic
   timer%n_recv = timer%n_recv + 1_8
   call trace%end ()
-contains
-  subroutine irecv
-    integer:: ierr
-    call MPI_IRECV (self%buffer, self%nbuf, MPI_INT, self%sender, self%tag, &
-                    mpi%comm, self%req, ierr)
-    call mpi%assert ('mesg_t%request: MPI_IRECV', ierr)
-  end subroutine irecv
 END SUBROUTINE request
 
+!===============================================================================
+!> Stub
+!===============================================================================
 SUBROUTINE irecv (self, rank, id)
   class(mesg_t):: self
   integer:: rank, id
+  stop 'irecv'
 END SUBROUTINE irecv
+
 !===============================================================================
 !> Test if all requests (sending to several ranks) are complete for this mesg
 !===============================================================================
@@ -289,13 +286,94 @@ SUBROUTINE test_all (self, flag)
 END SUBROUTINE test_all
 
 !===============================================================================
+!> Test if all requests (sending to several ranks) are complete for this mesg,
+!> cancel and resend any messages that fails more than max_fail times.
+!===============================================================================
+SUBROUTINE test_and_resend (self, flag)
+  class(mesg_t):: self
+  logical:: flag
+#ifdef MPI
+  logical::  completed
+  integer:: rank, req, ierr, i
+  integer, save:: itimer=0
+  integer:: stat(MPI_STATUS_SIZE)
+  !.............................................................................
+  call trace%begin('mpi_mesg_t%test_and_resend')
+  if (associated(self%reqs) .and. self%nreq > 0) then  
+    flag = .true.
+    do i=1,self%nreq
+    !-----------------------------------------------------------------------------
+      if (mpi%mode == MPI_THREAD_MULTIPLE) then
+        call MPI_TEST (self%reqs(i), completed, stat, ierr)
+      else
+        !$omp critical (mpi_cr)
+        call MPI_TEST (self%reqs(i), completed, stat, ierr)
+        !$omp end critical (mpi_cr)
+      end if
+      call mpi%assert ('is_complete', ierr)
+      if (completed) then
+        self%fail(i) = 0
+      else
+        flag = .false.
+        self%fail(i) = self%fail(i)+1
+        if (self%fail(i) > max_fail) then
+          write (stderr,*) mpi%rank, omp%thread, 'RESEND event', self%tag
+          if (verbose > 0) then
+            write (io_unit%log,'(f12.6,1x,a,i6,i5,i8)') wallclock(), &
+              'test_and_resend: id, rank, max_fail, tag (resend) =', &
+              self%id, self%ranks(i), self%fail(i), self%tag
+          end if
+          if (mpi%mode == MPI_THREAD_MULTIPLE) then
+            call MPI_CANCEL (self%reqs(i), ierr)
+            call mpi%assert ('mesg_t%test_and_send: MPI_CANCEL', ierr)
+            call MPI_ISEND (self%buffer, self%nbuf, MPI_INTEGER, &
+              self%ranks(i), self%tag, mpi%comm, self%reqs(i), ierr)
+            call mpi%assert ('mesg_t%test_and_send: MPI_ISEND', ierr)
+          else
+            !$omp critical (mpi_cr)
+            call MPI_CANCEL (self%reqs(i), ierr)
+            call mpi%assert ('mesg_t%test_and_send: MPI_CANCEL', ierr)
+            call MPI_ISEND (self%buffer, self%nbuf, MPI_INTEGER, &
+              self%ranks(i), self%tag, mpi%comm, self%reqs(i), ierr)
+            call mpi%assert ('mesg_t%test_and_send: MPI_ISEND', ierr)
+            !$omp end critical (mpi_cr)
+          end if
+          self%fail(i) = 0
+        else if (verbose > 1) then
+          write (io_unit%log,'(f12.6,1x,a,i6,2i5,i8)') wallclock(), &
+            'test_and_resend: id, rank, fail, tag =', &
+            self%id, self%ranks(i), self%fail(i), self%tag
+        end if
+      end if
+    end do
+    if (verbose > 1) then
+      write (io_unit%log,'(f12.6,1x,a,2i6,l4)') wallclock(), &
+        'mpi_mesg_t%test_and_resend: id, nreq, flag =', &
+        self%id, self%nreq, flag
+      flush (io_unit%log)
+    end if
+  else if (verbose > 2) then
+    write (stdout,*) 'mesg_t%test_and_resend: WARNING', &
+      self%nreq, associated(self%reqs)
+  end if
+  call trace%end ()
+#else
+  flag = .true.
+#endif
+END SUBROUTINE test_and_resend
+
+!===============================================================================
 !> Logical function interface to mesg_t%test_all()
 !===============================================================================
 FUNCTION test_sent (self) RESULT (flag)
   class(mesg_t):: self
   logical:: flag
   !.............................................................................
-  call self%test_all (flag)
+  if (resend) then
+    call test_and_resend (self, flag)
+  else
+    call test_all (self, flag)
+  end if
 END FUNCTION test_sent
 
 !===============================================================================
@@ -324,8 +402,7 @@ SUBROUTINE get_id (self, stat)
 END SUBROUTINE get_id
 
 !===============================================================================
-!> Return true or false, depending on if the mesg is complete or not.  This
-!> procedure respects the mpi_mesg attributes TEST_TIME, MAX_RECV, and RECV_WAIT
+!> Return true or false, depending on if the mesg is complete or not.
 !===============================================================================
 FUNCTION is_complete (self, parentname)
   class(mesg_t):: self
@@ -578,9 +655,8 @@ SUBROUTINE init (self)
   logical, save:: queue_unpack
   logical, save:: uniq_mesg
   real, save:: test_time=20e-3
-  namelist /mpi_mesg_params/ min_nq, max_sent, max_probe, max_recv, every_recv, &
-                             every_send, delay_ms, recv_wait, send_wait, send_priv, &
-                             test_time, uniq_mesg, debug, verbose, detailed_timer
+  namelist /mpi_mesg_params/ every_send, delay_ms, resend, &
+    max_fail, test_time, uniq_mesg, debug, verbose, detailed_timer
   integer:: iostat
   character(len=120):: id = &
   '$Id$ mpi_mesg_mod.f90'
@@ -599,23 +675,14 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Namelist input
   !-----------------------------------------------------------------------------
-#ifdef MPI
-  if (mpi%mode /= MPI_THREAD_MULTIPLE) then
-    min_nq = 0
-    max_sent = 1000
-    max_recv = 1000
-    recv_wait = .false.
-    send_wait = .false.
-  end if
-#endif
   rewind (io%input)
   read (io%input, mpi_mesg_params,iostat=iostat)
   write (io%output, mpi_mesg_params)
   self%debug = debug
-  self%min_nq = min_nq
-  self%max_recv = max_recv
-  self%max_probe = max_probe
-  self%recv_wait = recv_wait
+!  self%min_nq = min_nq
+!  self%max_recv = max_recv
+!  self%max_probe = max_probe
+!  self%recv_wait = recv_wait
   self%uniq_mesg = uniq_mesg
   self%delay_ms = delay_ms
   mpi_mesg%test_time = test_time
