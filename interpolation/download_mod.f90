@@ -905,17 +905,19 @@ SUBROUTINE same_linear (self, target, source, jt, pt, all_cells, only, all_times
             do iy=l(2),u(2)
               do ix=l(1),u(1)
                 ii = [ix,iy,iz]
-!                if (source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1) <= 0.0) then
-!                  write (io_unit%log,9) wallclock(), &
-!                    l,u,ix,iy,iz,o,iv,source%it,source%new,1,jt, &
-!                    source%id,source%time,target%id,target%time,source%iit
-!                9 format(f12.6,6(3i4,2x),2(i6,f12.6),7i3)
-!                end if
-!                if (source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1) <= 0.0) then
-!                  write (io_unit%log,9) wallclock(), &
-!                    l,u,ix,iy,iz,o,iv,source%it,source%new,2,jt, &
-!                    source%id,source%time,target%id,target%time,source%iit
-!                end if
+                if (source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1) <= 0.0) then
+                  write (io_unit%log,9) wallclock(), &
+                    l,u,ix,iy,iz,o,iv,source%it,source%new,1,jt, &
+                    source%id,source%time,target%id,target%time,source%iit
+                9 format(f12.6,6(3i4,2x),2(i6,f12.6),7i3)
+                  flush (io_unit%log)
+                end if
+                if (source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1) <= 0.0) then
+                  write (io_unit%log,9) wallclock(), &
+                    l,u,ix,iy,iz,o,iv,source%it,source%new,2,jt, &
+                    source%id,source%time,target%id,target%time,source%iit
+                  flush (io_unit%log)
+                end if
                 target%mem(ix,iy,iz,iv,target%it,1) = &
                   merge(target%mem(ix,iy,iz,iv,target%it,1), &
                     exp(pt(1)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1)) + &

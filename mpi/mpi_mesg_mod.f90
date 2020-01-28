@@ -165,7 +165,7 @@ SUBROUTINE send (self, rank, tag)
   end if
   self%tag = ltag
   if (verbose > 0 .or. self%id==io%id_debug) then
-    write (io_unit%log,'(f12.6,1x,a,4i6)') wallclock(), &
+    write (io_unit%log,'(f12.6,1x,a,3i6,i8)') wallclock(), &
       'mpi_mesg_t%send id, nbuf, to, tag =', self%id, self%nbuf, rank, ltag
   end if
 #ifdef MPI
@@ -224,7 +224,7 @@ SUBROUTINE request (self, any)
   end if
   call mpi%assert ('mesg_t%request: MPI_IRECV', ierr)
   if (verbose > 0) then
-    write (io_unit%log,'(f12.6,1x,a,3i6)') wallclock(), &
+    write (io_unit%log,'(f12.6,1x,a,i6,i5,i8)') wallclock(), &
       'mpi_mesg_t%request: id, sender, tag =', &
       self%id, self%sender, self%tag
   end if
@@ -319,7 +319,7 @@ SUBROUTINE test_and_resend (self, flag)
         if (self%fail(i) > max_fail) then
           write (stderr,*) mpi%rank, omp%thread, 'RESEND event', self%tag
           if (verbose > 0) then
-            write (io_unit%log,'(f12.6,1x,a,i6,i5,i8)') wallclock(), &
+            write (io_unit%log,'(f12.6,1x,a,i6,2i5,i8)') wallclock(), &
               'test_and_resend: id, rank, max_fail, tag (resend) =', &
               self%id, self%ranks(i), self%fail(i), self%tag
           end if
@@ -451,7 +451,7 @@ FUNCTION is_complete (self, parentname)
   if (is_complete) then
     call self%get_id (stat)
     if (verbose > 0) then
-      write (io_unit%log,'(f12.6,1x,a,3i6)') wallclock(), &
+      write (io_unit%log,'(f12.6,1x,a,i6,i5,i8)') wallclock(), &
         'mpi_mesg_t%is_complete: id, sender, tag =', &
         self%id, self%sender, self%tag
     end if
@@ -459,8 +459,8 @@ FUNCTION is_complete (self, parentname)
     !$omp atomic
     timer%mpi_hit = timer%mpi_hit + 1
   else
-    if (verbose > 0) then
-      write (io_unit%log,'(f12.6,1x,a,3i6)') wallclock(), &
+    if (verbose > 1) then
+      write (io_unit%log,'(f12.6,1x,a,i6,i5,i8)') wallclock(), &
         'mpi_mesg_t%is_not_complete: id, sender, tag =', &
         self%id, self%sender, self%tag
     end if
@@ -573,7 +573,7 @@ SUBROUTINE delete (self, mesg, send)
   if (.not. associated(mesg)) &
     return
   if (verbose > 0) then
-    write (io_unit%log,'(f12.6,1x,a,3i6)') wallclock(), &
+    write (io_unit%log,'(f12.6,1x,a,i6,i5,i8)') wallclock(), &
       'mesg_list_t%delete: id, sender, tag =', &
       mesg%id, mesg%sender, mesg%tag
   end if

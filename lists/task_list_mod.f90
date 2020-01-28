@@ -426,6 +426,11 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
   if (.not.task%rotated) then
     call task%rotate
   end if
+  if (self%verbose > 0) then
+    write (io_unit%log,'(f12.6,1x,a,i6,f12.6,l4)') &
+      wallclock(), 'task_list_t%update: id, time, B =', &
+      task%id, task%time, task%is_set(bits%boundary)
+  end if
   select type (task)
   class is (experiment_t)
   call validate%check (head, task%mem(:,:,:,task%idx%d,task%it,1), ' after update')

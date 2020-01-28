@@ -344,7 +344,7 @@ SUBROUTINE check_new (self)
   if (.not.associated(task)) then
     call create_new (task)
     if (verbose > 0) then
-      write (io_unit%log,'(f12.6,1x,a,3i6)') wallclock(), &
+      write (io_unit%log,'(f12.6,1x,a,i6,i5,i8)') wallclock(), &
         'task_mesg_t%check_new: requested id, sender, tag =', &
         task%id, task%rank, task%mesg%tag
     end if

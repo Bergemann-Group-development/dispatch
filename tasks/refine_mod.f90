@@ -268,8 +268,13 @@ SUBROUTINE init (self)
       max_compress_level = levelmax
     write (io%output, refine_params)
     write (io%namelist, refine_params)
+    !---------------------------------------------------------------------------
+    ! If AMR is active, we must use check_filled, since nbor levels are in
+    ! decreasing order, to save computing time.
+    !---------------------------------------------------------------------------
     if (on) then
       omp_lock%links = .true.
+      download%check_filled = .true.
     else
       omp_lock%links = .false.
     end if
@@ -279,10 +284,6 @@ SUBROUTINE init (self)
     if (max_vorticity > 0.0) n_criteria = n_criteria+1
     write (io%output,*) 'n_criteria =', n_criteria
   end if
-  !-----------------------------------------------------------------------------
-  ! If AMR is active, we must use check_filled, since nbor levels are in
-  ! decreasing order, to save computing time
-  !-----------------------------------------------------------------------------
   !$omp end critical (input_cr)
   self%levelmin = levelmin
   self%levelmax = levelmax
@@ -444,7 +445,8 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
     !---------------------------------------------------------------------------
     if (.not.allocated(patch%irefine)) then
       allocate (patch%irefine(patch%gn(1),patch%gn(2),patch%gn(3)))
-      write (io_unit%log,*) 'allocated irefine in refine', mpi%rank, patch%id
+      if (verbose > 1) &
+        write (io_unit%log,*) 'allocated irefine in refine', mpi%rank, patch%id
     end if
     patch%irefine = -derefine_limit
     l = patch%mesh%li
@@ -480,7 +482,8 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
     !---------------------------------------------------------------------------
     patch%check_refine_next = patch%istep + check_interval
     deallocate (patch%irefine)
-    write (io_unit%log,*) 'deallocated irefine in refine', mpi%rank, patch%id
+    if (verbose > 1) &
+      write (io_unit%log,*) 'deallocated irefine in refine', mpi%rank, patch%id
   end if
   call trace%end (itimer)
 END SUBROUTINE check_current

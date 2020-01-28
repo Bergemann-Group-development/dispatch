@@ -2768,8 +2768,8 @@ SUBROUTINE send_to_vnbors (self, link)
   !-----------------------------------------------------------------------------
   call trace%begin('list_t%send_to_vnbors', itimer=itimer)
   if (self%verbose > 0) then
-    write (io_unit%log,'(f12.6,1x,a,i6,l4)') wallclock(), &
-     'list_t%send_to_vnbors: task', link%task%id
+    write (io_unit%log,'(f12.6,1x,a,i6,f12.6)') wallclock(), &
+     'list_t%send_to_vnbors: task', link%task%id, link%task%time
   end if
   !-----------------------------------------------------------------------------
   ! Pack task into mesg, this also allocates task%mesg
@@ -2827,8 +2827,8 @@ SUBROUTINE send_to_vnbors (self, link)
       end if
       call mesg%send (rank, tag=tag)                            ! send it
       if (self%verbose > 0 .or. task%id == io%id_debug) then
-        write (io_unit%mpi,'(f12.6,1x,a,i9,1p,e18.6,i9,2x,a,i5,2x,5l1)') &
-          wallclock(), 'send_to_vnbors: sent', &
+        write (io_unit%log,'(f12.6,1x,a,i9,1p,e18.6,i9,2x,a,i5,2x,5l1)') &
+          wallclock(), 'send_to_vnbors: id, time, tag =', &
           mesg%id, task%time, tag, 'to', rank, &
           task%is_set (bits%internal), &
           task%is_set (bits%boundary), &

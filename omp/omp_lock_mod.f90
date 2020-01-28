@@ -442,7 +442,6 @@ SUBROUTINE info (self, unit, p_verbose)
   !!omp critical (lock_info_cr)
   time = 0d0
   if (omp_lock%verbose > -1) then
-    write (io_unit%log,*) 'lock_t%info'
     !---------------------------------------------------------------------------
     ! Find the kind of locks that exist
     !---------------------------------------------------------------------------
