@@ -168,7 +168,7 @@ SUBROUTINE check_mpi (self, n)
     link => self%head
     do while (associated(link))
       if (link%task%is_set(bits%virtual)) then
-        call check_recv (self, link%task, n_unpk)
+        call check_recv (self, link, n_unpk)
       end if
       link => link%next
     end do
@@ -255,7 +255,7 @@ SUBROUTINE recv_from_vnbors (self, link, n_unpk)
   nbor => link%nbor
   do while (associated(nbor))
     if (nbor%task%is_set (bits%virtual)) then
-      call check_recv (self, nbor%task, n_unpk)
+      call check_recv (self, nbor%link, n_unpk)
     end if
     nbor => nbor%next
   end do
@@ -268,8 +268,9 @@ END SUBROUTINE recv_from_vnbors
 !> Check a virtual task for completed messages.  Note that the procedure that
 !> creates the task must make sure to also create a task message instance.
 !===============================================================================
-SUBROUTINE check_recv (self, task, n_unpk)
+SUBROUTINE check_recv (self, link, n_unpk)
   class(task_mesg_t):: self
+  class(link_t), pointer:: link
   class(task_t), pointer:: task
   integer:: n_unpk
   !.............................................................................
@@ -277,6 +278,7 @@ SUBROUTINE check_recv (self, task, n_unpk)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (mpi%size == 1) return
+  task => link%task
   if (lock_recv) then
     call task%mesg%lock%set ('check_recv')
   else
@@ -285,8 +287,6 @@ SUBROUTINE check_recv (self, task, n_unpk)
     end if
   end if
   call trace%begin ('task_mesg_t%check_recv')
-  select type (task)
-  class is (experiment_t)
   !-----------------------------------------------------------------------------
   ! If the task has no pending request, issue one
   !-----------------------------------------------------------------------------
@@ -299,7 +299,7 @@ SUBROUTINE check_recv (self, task, n_unpk)
   ! If a message is complete, unpack and issue a new request
   !-----------------------------------------------------------------------------
   if (task%mesg%is_complete()) then
-    call unpack (self, task%mesg, task%link)
+    call unpack (self, task%mesg, link)
     n_unpk = n_unpk+1
     if (verbose > 1) then
       write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,i4)') &
@@ -307,7 +307,6 @@ SUBROUTINE check_recv (self, task, n_unpk)
     end if
     call new_request (task)
   end if
-  end select
   if (lock_recv) then
     call task%mesg%lock%unset ('check_recv')
   end if
@@ -318,7 +317,7 @@ END SUBROUTINE check_recv
 !> Increment sequence value and issue a new request
 !===============================================================================
 SUBROUTINE new_request (task)
-  class(experiment_t):: task
+  class(task_t):: task
   !-----------------------------------------------------------------------------
   task%seq = task%seq + 1
   task%mesg%tag = task%id*100 + mod(task%seq,100)
@@ -333,7 +332,7 @@ SUBROUTINE check_new (self)
   class(task_mesg_t):: self
   !.............................................................................
   class(mesg_t), pointer:: mesg
-  class(experiment_t), pointer:: task => null()
+  class(experiment_t), save, pointer:: task => null()
   !$omp threadprivate(task)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -436,8 +435,6 @@ SUBROUTINE unpack (self, mesg, link)
   !-----------------------------------------------------------------------------
   call trace%begin ('task_mesg_t%unpack', itimer=itimer)
   task => link%task
-  select type (task)
-  class is (experiment_t)
   !-----------------------------------------------------------------------------
   ! If the task about to receive the message doesn't yet have a task id, get it
   ! from the message itself, and flag the task as new
@@ -556,7 +553,7 @@ SUBROUTINE unpack (self, mesg, link)
       ! If the task has the update_status bit set, re-evaluate status bits
       !-------------------------------------------------------------------------
       if (self%verbose > 1) write(io_unit%log,*) task%id, 'update_nbors'
-      call self%update_status (task%link)
+      call self%update_status (link)
     end if
     if (task%is_set(bits%remove)) then
       if (self%verbose > 0) write(io_unit%log,*) task%id, 'remove'
@@ -587,7 +584,10 @@ SUBROUTINE unpack (self, mesg, link)
       !    the task is updated, coming back not as new task but as a virtual
       !    task update.  But first, issue a request for the next message.
       !-------------------------------------------------------------------------
-      call task%setup
+      select type (task)
+      class is (experiment_t)
+        call task%setup
+      end select
       call self%add_new_link (link)
     else
       if (self%verbose > 1) write(io_unit%log,*) task%id, 'update'
@@ -603,7 +603,6 @@ SUBROUTINE unpack (self, mesg, link)
     ! 5) not bonafide, so ignore
     !---------------------------------------------------------------------------
   end if
-  end select
   call trace%end (itimer)
 END SUBROUTINE unpack
 
