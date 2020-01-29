@@ -908,14 +908,18 @@ SUBROUTINE same_linear (self, target, source, jt, pt, all_cells, only, all_times
                 if (source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1) <= 0.0) then
                   write (io_unit%log,9) wallclock(), &
                     l,u,ix,iy,iz,o,iv,source%it,source%new,1,jt, &
-                    source%id,source%time,target%id,target%time,source%iit
-                9 format(f12.6,6(3i4,2x),2(i6,f12.6),7i3)
+                    source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1), &
+                    target%id,target%time,source%id,source%time, &
+                    source%is_set(bits%virtual), source%iit
+                9 format(f12.6,6(3i3,2x),1p,e11.2,0p,2(i6,f12.6),l2,7i3)
                   flush (io_unit%log)
                 end if
                 if (source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1) <= 0.0) then
                   write (io_unit%log,9) wallclock(), &
                     l,u,ix,iy,iz,o,iv,source%it,source%new,2,jt, &
-                    source%id,source%time,target%id,target%time,source%iit
+                    source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1), &
+                    target%id,target%time,source%id,source%time, &
+                    source%is_set(bits%virtual), source%iit
                   flush (io_unit%log)
                 end if
                 target%mem(ix,iy,iz,iv,target%it,1) = &
