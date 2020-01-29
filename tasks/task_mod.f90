@@ -96,6 +96,7 @@ MODULE task_mod
     procedure:: dealloc
     procedure:: dnload
     procedure:: update => void
+    procedure:: header_to_task
     procedure:: rotate
     procedure:: derotate
     procedure:: info
@@ -127,6 +128,42 @@ MODULE task_mod
     generic:: contains => contains1, contains2
     procedure:: task_info
     procedure:: log
+  end type
+  !-----------------------------------------------------------------------------
+  ! Sequential header, for MPI and I/O
+  !-----------------------------------------------------------------------------
+  integer, save:: n_header = (14*4 + 4*8 + 5*8*3 + 1*8 + 2*8*8 + 1*4*8 + 2*4*3)/4
+  type:: header_t
+    sequence
+    integer:: version=1
+    integer:: n_header
+    integer:: n_data
+    integer:: id
+    integer:: status
+    integer:: rank
+    integer:: istep
+    integer:: iout
+    integer:: level
+    integer:: nt
+    integer:: nv                        ! number of variables
+    integer:: it
+    integer:: nq=0
+    integer:: rank_steps=0
+    real(8):: time
+    real(8):: out_next
+    real(8):: print_next
+    real(8):: dtime
+    real(8):: position(3)
+    real(8):: velocity(3)
+    real(8):: size(3)
+    real(8):: box(3)                    ! the periodic wrapping size
+    real(8):: ds(3)
+    real(8):: send_time
+    real(8), dimension(8):: t
+    real(8), dimension(8):: dt
+    integer, dimension(8):: iit
+    integer:: n(3)=16                   ! convenience
+    integer:: ng(3)=2                   ! convenience
   end type
   logical:: first_time=.true.
   integer:: track_id=0
@@ -323,6 +360,130 @@ SUBROUTINE save_id (self)
   call deleted_list%append (node)
   call trace_end
 END SUBROUTINE save_id
+
+!===============================================================================
+!> Copy he most important fields to a sequenced header, for communication and I/O
+!===============================================================================
+SUBROUTINE header_to_task (self, head)
+  class(task_t):: self
+  type(header_t):: head
+  integer:: nt, new, i, save_bits
+  !-----------------------------------------------------------------------------
+  ! Swap the roles of boundary and virtual on incoming tasks.  Also clear the
+  ! ready bit, which is an indicator of a task being in the ready queue, which
+  ! an incoming task is not.  By doing this here, we avoid having to do it in
+  ! a critical region, otherwise needed to protect an operation on the task
+  !-----------------------------------------------------------------------------
+  call trace%begin ('task%header_to_task')
+  if (iand(head%status, bits%boundary) /= 0) then
+    head%status = ior(head%status, bits%virtual)
+    head%status = iand(head%status, not(bits%boundary))
+    if (io%verbose>2) &
+      write (io_unit%mpi, *) head%id, 'swapping to virtual'
+  else if (iand(head%status, bits%virtual) /= 0) then
+    head%status = ior(head%status, bits%boundary)
+    head%status = iand(head%status, not(bits%virtual))
+    if (io%verbose>2) &
+      write (io_unit%mpi, *) head%id, 'swapping to boundary'
+  end if
+  head%status = iand(head%status, not(bits%ready+bits%busy))
+  !-----------------------------------------------------------------------------
+  ! Lock task while modifying metadata
+  !-----------------------------------------------------------------------------
+  if (omp_lock%tasks) &
+    call self%lock%set ('header_to_task')
+  !-----------------------------------------------------------------------------
+  ! Except for the first and last appearance, istep should increase be one
+  !-----------------------------------------------------------------------------
+  if (head%id /= self%id) then
+    call io%abort('wrong message ID unpacked')
+  end if
+  if ((self%istep > 0) .and. (iand(head%status, bits%remove) == 0)) then
+    if (head%istep > self%istep+1) then
+      write(io_unit%log,1) &
+        'WARNING: early arrival in time reversal id, rank =', &
+        self%id, mpi%rank, head%istep, self%istep, head%time, self%time
+    1 format(a,4i6,2f12.6)
+      flush (io_unit%log)
+    else if (head%istep < self%istep+1) then
+      write(io_unit%log,1) &
+        'WARNING: late arrival in time reversal id, rank =', &
+        self%id, mpi%rank, head%istep, self%istep, head%time, self%time
+      flush (io_unit%log)
+    end if
+  end if
+  !-----------------------------------------------------------------------------
+  ! If the task is virtual, preserve bits%init_nbors and bits%update_status
+  ! across the task update
+  !-----------------------------------------------------------------------------
+  if (self%is_set(bits%virtual)) then
+    save_bits = iand(self%status,bits%init_nbors+bits%update_status)
+    self%status = ior(self%status,save_bits)
+  else
+    self%status     = head%status
+  end if
+  self%id         = head%id
+  self%rank       = head%rank
+  self%istep      = head%istep
+  self%iout       = head%iout
+  self%level      = head%level
+  self%time       = head%time
+  self%out_next   = head%out_next
+  self%print_next = head%print_next
+  self%dtime      = head%dtime
+  self%position   = head%position
+  self%velocity   = head%velocity
+  self%size       = head%size
+  self%rank_steps = head%rank_steps
+  !$omp atomic write
+  self%it         = head%it
+  new             = mod(head%it,head%nt) + 1
+  !$omp atomic write
+  self%new        = new
+  self%nt         = head%nt
+  nt              = head%nt
+  if (nt > 0) then
+    do i=1,nt
+      !$omp atomic write
+      self%t(i)   = head%t(i)
+      !$omp atomic write
+      self%dt(i)  = head%dt(i)
+      !$omp atomic write
+      self%iit(i) = head%iit(i)
+    end do
+    !self%new      = head%iit(nt)
+  else
+    write (io_unit%log,*) omp%thread,'header_to_task WARNING: nt non-positive', nt
+    flush (io_unit%log)
+  end if
+  if (head%istep == 0) then
+    write (io_unit%log,'(1x,a,i6,f12.6,2x,9f12.6)') &
+      'task%header_to_task: id, time, t =', &
+      self%id, self%time, self%t
+    write (io_unit%log,'(1x,a,i6,2x,3i4,2x,9i4)') &
+      'task%header_to_task: id, istep, it, new, iit =', &
+      self%id, self%istep, self%it, self%new, self%iit
+  end if
+  if (self%it > self%nt .or. self%it < 1) then
+    write (io_unit%log,*) 'header_to_task ERROR: it =', self%it, self%iit(nt-1)
+    self%it = self%iit(nt-1)
+  end if
+  self%nq         = head%nq
+  self%latency    = wallclock() - head%send_time
+  if (omp_lock%tasks) &
+    call self%lock%unset ('header_to_task')
+  !-----------------------------------------------------------------------------
+  ! Latency stats
+  !-----------------------------------------------------------------------------
+  !$omp atomic
+  timer%latency%max  = max(timer%latency%max,self%latency)
+  !$omp atomic
+  timer%latency%aver = timer%latency%aver+self%latency
+  !$omp atomic
+  timer%latency%n    = timer%latency%n+1
+  !.............................................................................
+  call trace%end ()
+END SUBROUTINE header_to_task
 
 !===============================================================================
 !> Rotate time slots.  The initial conditions are in slot 1, and the first time
