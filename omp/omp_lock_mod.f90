@@ -455,7 +455,7 @@ SUBROUTINE info (self, unit, p_verbose)
     do while (associated(lock))
       nkinds = 1
       kinds(1) = 'void'
-      do i=1,mkinds
+      do i=1,mkinds-1
         if (lock%kind(1:4) == kinds(i)) then
           exit
         else if (kinds(i) == '    ') then
