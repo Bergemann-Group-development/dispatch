@@ -538,8 +538,13 @@ subroutine stall_handler
       call mpi%abort ('exceeded max_stalled')
     else if (stall_start > 0d0 .and. wallclock()-stall_start > retry_stalled) then
       write (io_unit%task,'(f12.6,i4,4x,a)') now, omp%thread, 'retry_stalled reached'
-      !$omp critical (stall_cr)
+      call task_list%lock%set ('stall_handler')
       if (wallclock()-stall_start > retry_stalled) then
+        !-----------------------------------------------------------------------
+        ! Try reviving the queue by using fiŕst check_all, which checks the whole
+        ! task list for ready tasks -- finding such tasks shows that check_nbors()
+        ! is not working correctly.
+        !-----------------------------------------------------------------------
         print '(f12.6,i6,2x,a,2i6,f12.6)', now, mpi%rank, &
           'STALLED:', stalled, n_stalled, now-stall_start
         call task_list%check_all
@@ -549,6 +554,12 @@ subroutine stall_handler
           if (verbose > 1) &
             call io%abort ('STALLED revided by check_all -- check thread log')
           stall_start = 0d0
+        !-----------------------------------------------------------------------
+        ! If that did not result in queued tasks, find the oldest tasks and the
+        ! oldest virtual task.  Discovering that the queue is held up by such
+        ! tasks shows that MPI communications are not synced correctly between
+        ! ranks.
+        !-----------------------------------------------------------------------
         else
           call task_list%check_oldest
           if (associated(task_list%queue)) then
@@ -562,7 +573,7 @@ subroutine stall_handler
           end if
         end if
       end if
-      !$omp end critical (stall_cr)
+      call task_list%lock%unset ('stall_handler')
     else if (do_delay) then
       call mpi_mesg%delay (stalled)
       return
