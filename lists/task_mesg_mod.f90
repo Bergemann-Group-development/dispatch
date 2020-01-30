@@ -108,6 +108,7 @@ SUBROUTINE init (self, name)
   character(len=*), optional:: name
   integer:: iostat
   class(link_t), pointer:: link
+  class(task_t), pointer:: task
   namelist /task_mesg_params/ verbose, method, lock_recv
   character(len=120):: id = &
     '$Id$ lists/task_mesg_mod.f90'
@@ -131,17 +132,21 @@ SUBROUTINE init (self, name)
   !-----------------------------------------------------------------------------
   link => self%head
   do while (associated(link))
-    if (link%task%is_set (bits%boundary+bits%virtual)) then
-      associate (task => link%task)
-      select type (task)
-      class is (patch_t)
-        if (.not.associated(task%mesg)) then
+    task => link%task
+    if (task%is_set (bits%boundary+bits%virtual)) then
+      if (.not.associated(task%mesg)) then
+        select type (task)
+        class is (patch_t)
           call task%allocate_mesg
-          task%mesg%sender = task%rank
-          task%seq = 0
-        end if
-      end select
-      end associate
+        end select
+      end if
+      !-------------------------------------------------------------------------
+      ! Make sure there's an outstanding initial recv request; this isn't
+      ! strictly necessary, but helps avoid initial corner case stalls
+      !-------------------------------------------------------------------------
+      if (task%is_set (bits%virtual)) then
+        call new_request (task)
+      end if
     end if
     call link%init_verbose (verbose)
     link => link%next
@@ -151,29 +156,33 @@ END SUBROUTINE init
 
 !===============================================================================
 !> Check all virtual tasks.  Note that the accesses are grouped by thread in
-!> check_recv(), so no mesg%lock is needed
+!> check_recv(), so no mesg%lock is needed, and while only reading the task
+!> list it does not need locking either -- a missed new task is included the
+!> next time.
 !===============================================================================
 SUBROUTINE check_mpi (self, n)
   class(task_mesg_t):: self
   integer, optional:: n
   !.............................................................................
   class(link_t), pointer:: link
+  class(task_t), pointer:: task
   integer:: n_unpk
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   n_unpk = 0
   if (mpi%size > 1) then
     call trace%begin ('task_mesg_t%check_mpi', itimer=itimer)
-    call self%lock%set ('check_mpi', itimer)
     link => self%head
     do while (associated(link))
-      if (link%task%is_set(bits%virtual)) then
-        call check_recv (self, link, n_unpk)
+      task => link%task
+      if (associated(task)) then
+        if (task%is_set(bits%virtual)) then
+          call check_recv (self, link, n_unpk)
+        end if
       end if
       link => link%next
     end do
     call check_new(self)
-    call self%lock%unset ('check_mpi')
     call trace%end (itimer)
   end if
   if (present(n)) then
@@ -495,8 +504,8 @@ SUBROUTINE unpack (self, mesg, link)
   ! lock) while it is being updated here
   !-----------------------------------------------------------------------------
   if (self%verbose > 0) then
-    write (io_unit%log,'(f12.6,3x,a,i6,f12.6,2x,7l1)') &
-      wallclock(), 'task_mesg_t%unpack: task%id, time, IBVrRSN =', &
+    write (io_unit%log,'(f12.6,3x,a,i6,f12.6,2x,7l1,i8)') &
+      wallclock(), 'task_mesg_t%unpack: task%id, time, IBVrRSN, tag =', &
       task%id, task%time, &
       task%is_set (bits%internal), &
       task%is_set (bits%boundary), &
@@ -504,7 +513,7 @@ SUBROUTINE unpack (self, mesg, link)
       task%is_set (bits%ready), &
       task%is_set (bits%remove), &
       task%is_set (bits%swap_request), &
-      new
+      new, task%mesg%tag
     flush (io_unit%mpi)
   end if
   !-----------------------------------------------------------------------------

@@ -449,6 +449,8 @@ SUBROUTINE info (self, unit, p_verbose)
           exit
         end if
       end do
+      if (omp_lock%verbose > 2) &
+        write (stdout,*) lock%id, lock%kind, lock%initialized, associated(lock%wait_time)
       if (.not.associated(lock%wait_time)) then
         print *,'omp_lock_t%init: ERROR',omp%thread,lock%kind
         stop

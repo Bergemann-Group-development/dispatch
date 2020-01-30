@@ -250,6 +250,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   if (.not.associated(self%lock)) then
     allocate (self%lock)
+    call self%lock%init (self%kind(1:4), id=self%id+2)
   end if
   if (.not.self%lock%initialized) then
     call self%lock%init (self%kind(1:4), id=self%id+2)
