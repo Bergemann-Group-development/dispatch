@@ -7,7 +7,7 @@ OPTS = optimized
 # Default target and methods
 UPD             = adams_bashforth
 #SOLVER          = zeus3d
-SOLVER          = stagger2/bifrost
+SOLVER          = stagger2/e
 #SOLVER          = ramses/mhd
 STAGGER         = stagger_6th.o
 EXEC            = dispatch.x
