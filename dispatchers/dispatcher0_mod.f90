@@ -41,7 +41,7 @@ MODULE dispatcher0_mod
   integer, save:: n_update=0
   integer, save:: min_nq=2**30
   logical, save:: debug=.false.
-  logical, save:: do_delay=.false.
+  logical, save:: do_delay=.true.
   logical, save:: track_active=.false.
   logical, save:: omp_pick=.false.
   logical, save:: detailed_timer=.false.
