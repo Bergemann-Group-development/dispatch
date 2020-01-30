@@ -178,7 +178,7 @@ SUBROUTINE init (self, name)
     call self%lock%init (name(1:4))
   else
     write (io_unit%log,*)'init_list: list_t'
-    call self%lock%init ('list_t')
+    call self%lock%init ('list')
   end if
   !$omp critical (sequence_alloc_cr)
   if (.not.allocated(sequence)) then

@@ -222,10 +222,10 @@ SUBROUTINE init (self)
     call hash_table%init (hash_size)
     call particle_solver%init
     allocate (sink_particles%task_list)
-    call sink_particles%task_list%init ('snkp')
-    call sink_task_list%init ('sink')
   endif
   !$omp end critical (input_cr)
+  call sink_particles%task_list%init ('snkp')
+  call sink_task_list%init ('sink')
   self%on = on
   self%out_next = out_time
   self%particle_solver => particle_solver

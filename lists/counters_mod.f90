@@ -80,10 +80,10 @@ SUBROUTINE init(self)
       rewind (io_unit%input)
       read (io_unit%input, counters_params, iostat=iostat)
       write (io_unit%output, counters_params)
-      call self%lock%init ('coun')
       first_time = .false.
     end if
     !$omp end critical (input_cr)
+    call self%lock%init ('coun')
     call trace%end()
   end if
 END SUBROUTINE init
