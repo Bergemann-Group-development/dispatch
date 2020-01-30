@@ -31,9 +31,6 @@ MODULE mpi_mesg_mod
     class(mesg_t), pointer:: next => null()
     class(mesg_t), pointer:: prev => null()
     integer, dimension(:), pointer:: buffer => null()
-    integer, pointer:: reqs(:) => null()
-    integer, pointer:: fail(:) => null()
-    integer, pointer:: ranks(:) => null()
     integer:: nbuf, nreq=0, req=0, sender, id, ntry=0
     integer:: n_failed=0
     integer:: i=0
@@ -43,6 +40,9 @@ MODULE mpi_mesg_mod
     real:: test_time=0.0
     logical:: anonymous=.true.
     type(lock_t), pointer:: lock => null()
+    integer, pointer:: reqs(:) => null()
+    integer, pointer:: fail(:) => null()
+    integer, pointer:: ranks(:) => null()
   contains
     procedure:: init => init_mesg
     procedure:: dealloc => dealloc_mesg
@@ -108,7 +108,7 @@ MODULE mpi_mesg_mod
     procedure:: log_files
   end type
   type(mpi_mesg_t), public:: mpi_mesg
-  real, save:: delay_ms=0.0                     ! allow automatic setting
+  real, save:: delay_ms=30.0                    ! default setting
   integer, save:: max_fail=3                    ! max MPI_TEST before resend
   integer, save:: every_send=2                  ! how often to check send_list
   logical, save:: resend=.false.                ! if true, resend late mesgs
@@ -145,6 +145,16 @@ SUBROUTINE dealloc_mesg (self)
     call io%bits_mem (-storage_size(self%reqs), &
                       product(shape(self%reqs)), '-reqs')
     deallocate (self%reqs)
+  end if
+  if (associated(self%fail)) then
+    call io%bits_mem (-storage_size(self%fail), &
+                      product(shape(self%fail)), '-fail')
+    deallocate (self%fail)
+  end if
+  if (associated(self%ranks)) then
+    call io%bits_mem (-storage_size(self%ranks), &
+                      product(shape(self%ranks)), '-ranks')
+    deallocate (self%ranks)
   end if
   call trace%end ()
 END SUBROUTINE dealloc_mesg
@@ -761,11 +771,15 @@ SUBROUTINE delay (self, n, ms)
     ms_l = mpi_mesg%delay_ms
   end if
   if (ms_l==0.0) return
-  call trace%begin ('mpi_mesg_t%no_queue') !, itimer=itimer)
+  call trace%begin ('mpi_mesg_t%no_queue', itimer=itimer)
+  if (verbose > 0) then
+    write (io_unit%log,'(f12.6,1x,a,f6.0)') wallclock(), &
+    'mpi_mesg_t%delay: ms =', ms_l
+  end if
   call mpi%delay (ms_l)
   !$omp atomic
   self%n_delay = self%n_delay + 1
-  call trace%end () !itimer)
+  call trace%end (itimer)
 END SUBROUTINE delay
 
 !===============================================================================
