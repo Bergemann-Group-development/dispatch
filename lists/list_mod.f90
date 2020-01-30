@@ -260,6 +260,23 @@ SUBROUTINE append_link (self, link)
   call self%lock%set ('list_t%append_link')
   if (self%verbose > 3) &
     write (io%output,*) wallclock(),' thread',omp%thread,' locked tasklist(2)'
+  !-----------------------------------------------------------------------------
+  ! Check that task%link is set on patch_t class tasks
+  !-----------------------------------------------------------------------------
+  if (associated(link%task)) then
+    task => link%task
+    select type (task)
+    class is (patch_t)
+    if (.not.associated(task%link)) then
+      task%link => link
+    end if
+    end select
+  else
+    call io%abort('append_link: no task associated')
+  end if
+  !-----------------------------------------------------------------------------
+  ! Append in such a way that the task list does not need to be locked
+  !-----------------------------------------------------------------------------
   nullify(link%next)
   if (associated(self%tail)) then
     link%prev => self%tail
@@ -268,15 +285,6 @@ SUBROUTINE append_link (self, link)
   else
     self%head => link
     self%tail => link
-  end if
-  if (associated(link%task)) then
-    task => link%task
-    select type (task)
-    class is (patch_t)
-    task%link => link
-    end select
-  else
-    call io%abort('append_link: no task associated')
   end if
   !-----------------------------------------------------------------------------
   ! IMPORTANT: Some procedures depend on knowing the size of the list!
