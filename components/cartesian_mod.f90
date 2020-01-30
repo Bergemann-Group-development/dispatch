@@ -24,7 +24,6 @@ MODULE cartesian_mod
     procedure init
     procedure, nopass:: diagnostics
   end type
-  logical:: omp_init=.false.
   type(rank_t):: rank
   integer, save:: np=0                  ! patches per process
   public task_list_t                    ! export, to avoid excessive USE
@@ -54,7 +53,7 @@ SUBROUTINE init (self, task_list, label)
   logical:: periodic(3)=.true.
   integer, save:: itimer=0
   namelist /cartesian_params/ size, dims, mpi_dims, per_rank, origin, face_nbors, &
-    omp_init, periodic
+    periodic
   character(len=120):: ids = &
     '$Id$ components/cartesian_mod.f90'
   !-----------------------------------------------------------------------------
@@ -161,6 +160,7 @@ SUBROUTINE init (self, task_list, label)
     if (all(self%dims==1)) call task%set(bits%root_grid)
     ! -- initially append all tasks to the task list, to build nbor lists ------
     call self%task_list%append_link (link)
+    write (io_unit%mpi,'(3i4,3f8.3,i4,a)') i,j,k,patch%position,patch%rank,'i,j,k,pos,rank'
   end do
   end do
   end do
@@ -202,13 +202,9 @@ SUBROUTINE init (self, task_list, label)
   !-----------------------------------------------------------------------------
   ! Initialize tasks
   !-----------------------------------------------------------------------------
-  if (omp_init) then
-    !$omp parallel default(shared)
-    call init_exp (self, origin)
-    !$omp end parallel
-  else
-    call init_exp (self, origin)
-  end if
+  !$omp parallel default(shared)
+  call init_exp (self, origin)
+  !$omp end parallel
   !-----------------------------------------------------------------------------
   ! This call is not valid until the patch mem and meshes have been allocated
   !-----------------------------------------------------------------------------
@@ -246,13 +242,13 @@ SUBROUTINE init_exp (self, origin)
   link => self%task_list%head
   do while (associated(link))
     id = id+1
-    if (.not.omp_init .or. mod(id,omp%nthreads)==omp%thread) then
+    if (mod(id,omp%nthreads)==omp%thread) then
       task => link%task
       select type (task)
       class is (experiment_t)
         patch => task
         call patch%init
-        if (omp_init .and. omp%nthreads>1) then
+        if (omp%nthreads>1) then
           task%mem_thread = omp%thread
         else
           task%mem_thread = -1
