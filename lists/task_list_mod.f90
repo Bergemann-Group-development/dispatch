@@ -393,7 +393,7 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
     call task%update                                  ! update the task
     if (mulligan_level > 0) &
       call self%check_mulligan (head)                 ! check for nbor do-over
-    if (self%verbose > 0) then
+    if (self%verbose > 1) then
       associate (unit => merge (io_unit%log, io_unit%mpi, self%verbose > 1))
       write (unit,'(f12.6,2x,a,i6,1p,g14.6,l4)') &
         wallclock(), 'update:', task%id, task%time+task%dtime, &

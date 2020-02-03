@@ -86,23 +86,26 @@ SUBROUTINE init (self, kind, id)
         rewind (io_unit%input)
         read (io_unit%input, lock_params, iostat=iostat)
         write (io_unit%output, lock_params)
-        if (trim(log)=='queue') then
-          unit = io_unit%queue
-        else if (trim(log)=='log') then
-          unit = io_unit%log
-        else
-          unit = io_unit%lock
-        end if
+        unit = io_unit%lock1
         if (alternate_time > 0d0) then
-          unit = io_unit%queue
-          close (unit)
-          ext = '.lock1'
-          ext1 = '.lock1'
-          ext2 = '.lock2'
-          filename = trim(io_unit%rankbase)//ext
-          open (unit, file=trim(filename), form='formatted', &
+          filename = trim(io_unit%rankbase)//'.lock1'
+          open (io_unit%lock1, file=trim(filename), form='formatted', &
+                status='unknown')
+          filename = trim(io_unit%rankbase)//'.lock2'
+          open (io_unit%lock2, file=trim(filename), form='formatted', &
                 status='unknown')
           alternate_next = wallclock() + alternate_time
+        else
+          if (trim(log)=='queue') then
+            unit = io_unit%queue
+          else if (trim(log)=='log') then
+            unit = io_unit%log
+          else
+            unit = io_unit%lock1
+          end if
+          filename = trim(io_unit%rankbase)//'.lock'
+          open (io_unit%lock1, file=trim(filename), form='formatted', &
+                status='unknown')
         end if
         omp_lock%verbose = verbose
         omp_lock%tasks = tasks
@@ -222,7 +225,7 @@ SUBROUTINE set (self, label, itimer)
         ' lock kind, id, level, thread = ', self%kind, self%id, &
         self%level, omp%thread, '   get'
     end if
-    flush (unit)
+    !flush (unit)
   end if
   start = wallclock()
   !$omp flush
@@ -243,9 +246,16 @@ SUBROUTINE set (self, label, itimer)
   self%level = self%level+1
   !$omp flush
   if (log) then
-    write (unit,'(f10.6,a,a4,i6,i3,i4,6p,f10.1,2x,a)') end, &
-      ' lock kind, id, level, thread = ', self%kind, self%id, &
-      self%level, omp%thread, used, '   set'
+    if (present(label)) then
+      write (unit,'(f10.6,a,a4,i6,i3,i4,6p,f10.1,2x,a)') end, &
+        ' lock kind, id, level, thread = ', self%kind, self%id, &
+        self%level, omp%thread, used, '   set at '//label
+    else
+      write (unit,'(f10.6,a,a4,i6,i3,i4,6p,f10.1,2x,a)') end, &
+        ' lock kind, id, level, thread = ', self%kind, self%id, &
+        self%level, omp%thread, used, '   set'
+    end if
+    !flush (unit)
   end if
 #ifdef TRACE 
   call trace%end()
@@ -268,13 +278,13 @@ SUBROUTINE alternate_log (self)
       !$omp critical (lock_cr)
       write (io_unit%log,*) omp%thread,'in lock_cr'
       if (wc > alternate_next) then
-        flush (io_unit%log)
-        ext = ext2
-        ext2 = ext1
-        ext1 = ext
-        close (unit)
-        open (unit, file=trim(io_unit%rankbase)//ext, form='formatted', &
-              status='unknown')
+        if (unit == io_unit%lock1) then
+          rewind (io_unit%lock2)
+          unit = io_unit%lock2
+        else
+          rewind (io_unit%lock1)
+          unit = io_unit%lock1
+        end if
         alternate_next = wc + alternate_time
       end if
       write (io_unit%log,*) omp%thread,'exit lock_cr'
@@ -383,6 +393,11 @@ SUBROUTINE destroy (this)
       deallocate (this%wait_time)
       deallocate (this%hold_time)
       deallocate (this%n_hold)
+    end if
+    if (omp_lock%verbose > 0) then
+      write (unit,'(f10.6,a,a4,i6,i3,i4,6p,f10.1,2x,a)') wallclock(), &
+        ' lock kind, id, level, thread = ', this%kind, this%id, this%level, &
+        omp_get_thread_num(), 0.0, ' destroy'
     end if
     deallocate (this)
     nullify (this)

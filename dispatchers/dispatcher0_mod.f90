@@ -494,7 +494,7 @@ subroutine stall_handler
       stall_start = wallclock()
       if (debug) then
         write (io_unit%queue,'(f12.6,i4,1x,a12)') &
-          stall_start, omp%thread,'stalled'
+          stall_start, omp%thread, 'noqueue'
       end if
     !---------------------------------------------------------------------------
     ! An unpacked MPI message counts as an update, and hence resets the stall
@@ -502,8 +502,8 @@ subroutine stall_handler
     else if (n_unpk > 0 .and. stalled_l > 0) then              ! unpack reset
       wc = wallclock()
       if (debug) then
-        write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,i4)') &
-          wallclock(), omp%thread, 'unpack reset', &
+        write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,i6)') &
+          wallclock(), omp%thread, 'unpack', &
           stalled_l, wc-stall_start, n_unpk
       end if
       !$omp atomic write

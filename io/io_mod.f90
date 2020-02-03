@@ -208,7 +208,7 @@ SUBROUTINE init (self, name)
     ! -- io_unit%dispatcher : data/run/rank_rrrrr.disp
     ! -- io_unit%log        : data/run/thread_rrrrr_ttt.log
     !---------------------------------------------------------------------------
-    call self%open_rank_file (io_unit%lock      , ".lock" , 'formatted')
+    call self%open_rank_file (io_unit%lock1     , ".lock" , 'formatted')
     call self%open_rank_file (io_unit%queue     , ".que"  , 'formatted')
     call self%open_rank_file (io_unit%mpi       , ".log"  , 'formatted')
     call self%open_rank_file (io_unit%dbg       , ".dbg"  , 'unformatted')
