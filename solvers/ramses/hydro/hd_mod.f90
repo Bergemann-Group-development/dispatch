@@ -1,7 +1,7 @@
 !===============================================================================
 !> RAMSES Godunov solvers
 !>
-!> godunov_fine
+!> godunov
 !>   unsplit              1   2   3      ui  uo  ub
 !>     ctoprim            +---+---+......+---+---+
 !>     uslope:dq              +---+......+---+
@@ -13,6 +13,22 @@
 !> Note that it is NECESSARY to have a call to courant_condition here, after
 !> ctoprim (which calculates an up-to-date self%u_max), and before trace3d,
 !> which needs the new self%dtime
+!>
+!> Memory access and locks:  The sequence of access is
+!>
+!> update                            uin    unew    q
+!>   unew = uin                      |      |
+!>   godunov
+!>     unsplit
+!>       ctoprim                            |
+!>       uslope                                     |
+!>       trace3d                                    |
+!>       cmpflxm                                    |
+!>     unew .. flux update                  |
+!>   unew ... forcing and heating           |
+!>
+!> By copying uin to unew early, that slot can be released, and only unew neeeds
+!> to remain locked until the end of the update step
 !===============================================================================
 MODULE hd_mod
   !.............................................................................
@@ -160,8 +176,6 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Memory mapping and allocations
   !-----------------------------------------------------------------------------
-  self%uin => self%mem(:,:,:,:,self%it,1)
-  self%unew => self%mem(:,:,:,:,self%new,1)
   n = self%mesh%gn
   m = n(1)
   allocate (self%q (n(1),n(2),n(3),self%nv))
@@ -184,19 +198,19 @@ SUBROUTINE update (self)
       print *,self%id, 'mk1: e', self%mem( m-7:m-3 ,19,19,self%idx%e ,self%it,1), self%idx%e
     end if
   end if
+  !-----------------------------------------------------------------------------
+  ! Lock it & new slots, copy, unlock it slot
+  !-----------------------------------------------------------------------------
+  call self%mem_lock(self%new)%set ('update')
+  call self%mem_lock(self%it )%set ('update')
+  self%uin  => self%mem(:,:,:,:,self%it ,1)
+  self%unew => self%mem(:,:,:,:,self%new,1)
+  self%unew = self%uin
+  call self%mem_lock(self%it )%unset ('update')
+  !-----------------------------------------------------------------------------  
   d => self%mem(:,:,:,          self%idx%d ,self%it,1)
   e => self%mem(:,:,:,          self%idx%e ,self%it,1)
   p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
-  call self%mem_lock(self%new)%set ('update')
-  !-----------------------------------------------------------------------------
-  ! Add the external heating per unit mass as a source term
-  !-----------------------------------------------------------------------------
-  if (allocated(self%heating_per_unit_mass)) then
-    e = e + self%dtime*self%heating_per_unit_mass*d
-  end if
-  if (allocated(self%heating_per_unit_volume)) then
-    e = e + self%dtime*self%heating_per_unit_volume
-  end if
   !-----------------------------------------------------------------------------
   ! Godunov solver
   !-----------------------------------------------------------------------------
@@ -226,6 +240,18 @@ SUBROUTINE update (self)
     p = p + self%dtime*self%force_per_unit_volume
   end if
   call validate%check (self%link, p, 'after force')
+  !-----------------------------------------------------------------------------
+  ! Add the external heating per unit mass as a source term
+  !-----------------------------------------------------------------------------
+  if (allocated(self%heating_per_unit_mass)) then
+    e = e + self%dtime*self%heating_per_unit_mass*d
+  end if
+  if (allocated(self%heating_per_unit_volume)) then
+    e = e + self%dtime*self%heating_per_unit_volume
+  end if
+  !-----------------------------------------------------------------------------
+  ! Unlock new slot
+  !-----------------------------------------------------------------------------
   call self%mem_lock(self%new)%unset ('update')
   !-----------------------------------------------------------------------------
   ! Deallocate
@@ -394,24 +420,22 @@ subroutine godunov (self)
   !-----------------------------------------------------------------------------
   integer::i0,j0,k0,i,j,k,idim,ivar,li(3),ui(3)
   integer,save:: itimer=0
-  real, contiguous, dimension(:,:,:,:)  , pointer:: uin, unew
+  real, contiguous, dimension(:,:,:,:)  , pointer:: unew
   real, contiguous, dimension(:,:,:,:,:), pointer:: fl
   !-----------------------------------------------------------------------------
   ! Compute flux using second-order Godunov method
   !-----------------------------------------------------------------------------
   unew => self%unew
-  uin  => self%uin
   fl   => self%fl
   if (.not.detailed_timer) call trace%begin ('hd_t%godunov')
   li = self%mesh%li
   ui = self%mesh%ui
-  call check_small (self, uin)
+  call check_small (self, unew)
   call unsplit (self)
   !-----------------------------------------------------------------------------
   ! Conservative update, looping over internal cells only
   !-----------------------------------------------------------------------------
   if (detailed_timer) call trace%begin ('hd_t%godunov', itimer=itimer)
-  unew = uin
   do ivar=1,self%nv
     do idim=1,self%ndim
       i0 = merge(1,0,idim==1)
@@ -540,9 +564,9 @@ subroutine ctoprim (self)
   integer,save:: itimer=0
   integer:: l(3), u(3)
   real, contiguous, dimension(:,:,:)  , pointer:: d, e, pg, c, s
-  real, contiguous, dimension(:,:,:,:), pointer:: uin, q
+  real, contiguous, dimension(:,:,:,:), pointer:: unew, q
   !-----------------------------------------------------------------------------
-  uin => self%uin
+  unew => self%unew
   q   => self%q
   c   => self%u_phase
   s   => self%s
@@ -552,16 +576,16 @@ subroutine ctoprim (self)
     call trace%begin ('hd_mod::ctoprim')
   end if
   smallp = smallr*smallc**2/gamma
-  q(:,:,:,1) = max(uin(:,:,:,self%idx%d),smallr)
+  q(:,:,:,1) = max(unew(:,:,:,self%idx%d),smallr)
   s = 1.d0/q(:,:,:,1)
-  q(:,:,:,2) = uin(:,:,:,self%idx%px)*s
-  q(:,:,:,3) = uin(:,:,:,self%idx%py)*s
-  q(:,:,:,4) = uin(:,:,:,self%idx%pz)*s
+  q(:,:,:,2) = unew(:,:,:,self%idx%px)*s
+  q(:,:,:,3) = unew(:,:,:,self%idx%py)*s
+  q(:,:,:,4) = unew(:,:,:,self%idx%pz)*s
   s = q(:,:,:,2)**2+q(:,:,:,3)**2+q(:,:,:,4)**2
   !-----------------------------------------------------------------------------
   ! Equation-of-state: s is the internal energy, and pg is the gas pressure
   !-----------------------------------------------------------------------------
-  s = max((uin(:,:,:,self%idx%e)-half*q(:,:,:,1)*s(:,:,:)),smallp)
+  s = max((unew(:,:,:,self%idx%e)-half*q(:,:,:,1)*s(:,:,:)),smallp)
   d => q(:,:,:,1)
   e => s
   pg => q(:,:,:,5)
@@ -572,10 +596,6 @@ subroutine ctoprim (self)
   end if
   !call eos%lookup (shape(e), ee=e, d=d, pg=pg, gamma=gamma)
   !
-  if (self%do_pebbles) then
-    self%vgas(:,:,:,1:3,self%it) = q(:,:,:,2:4)
-    self%pressure(:,:,:,  self%it) = pg
-  end if
   c(:,:,:)=sqrt(gamma*q(:,:,:,5)/q(:,:,:,1))
   if (courant_type==1) then
     c = c + max(abs(q(:,:,:,2)), abs(q(:,:,:,3)), abs(q(:,:,:,4)))
@@ -912,7 +932,7 @@ subroutine trace3d(self)
   ub = self%mesh%uo
   do k = lb(3),ub(3)
     do j = lb(2),ub(2)
-      d => self%mem(:,:,:,self%idx%d,self%it,1)
+      d => self%mem(:,:,:,self%idx%d,self%new,1)
       dt2 = half*self%dtime
       if (allocated(self%force_per_unit_mass)) then
         do i=lb(1),ub(1)
