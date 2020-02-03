@@ -1328,6 +1328,7 @@ SUBROUTINE pack (self)
   type(header_t):: header
   integer:: n_buf, ibuf, iv, it
   real:: pt
+  type(lock_t), pointer:: lock
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%pack', itimer=itimer)
@@ -1335,8 +1336,10 @@ SUBROUTINE pack (self)
   ! Allocate a task%mesg instance, mesg%reqs() and similar array
   !-----------------------------------------------------------------------------
   call self%allocate_mesg
-  allocate (self%mesg%lock)
-  call self%mesg%lock%init ('smsg')
+  if (omp%nthreads > 1) then
+    allocate (self%mesg%lock)
+    call self%mesg%lock%init ('smsg')
+  end if
   mesg => self%mesg 
   allocate (mesg%reqs(mpi%size))
   allocate (mesg%fail(mpi%size))
@@ -1361,8 +1364,12 @@ SUBROUTINE pack (self)
     1 format(f12.6,2x,a,2i9,f12.6,2x,5l1)
     flush (io_unit%log)
   end if
+  if (omp_lock%tasks) &
+    call self%lock%set ('pack')
   call patch_to_header (self, header)
   ibuf = 1
+  lock => self%mem_lock(self%it)
+  call lock%set ('pack')
   call anonymous_copy (n_header, header, mesg%buffer(ibuf))
   ibuf = ibuf + n_header
   !-----------------------------------------------------------------------------
@@ -1386,6 +1393,10 @@ SUBROUTINE pack (self)
       ibuf = ibuf + n_buf
     end do
   end if
+  !-----------------------------------------------------------------------------
+  call lock%unset ('pack')
+  if (omp_lock%tasks) &
+    call self%lock%unset ('pack')
   if (io%verbose > 2) &
     write (io_unit%log,*) self%id, 'after pack', minval(self%mem(:,:,:,1,self%it,1))
   call trace%end (itimer)
@@ -1430,6 +1441,8 @@ SUBROUTINE unpack (self, mesg)
   !-----------------------------------------------------------------------------
   ! Copy relevant patch info from sequenced header
   !-----------------------------------------------------------------------------
+  if (omp_lock%tasks) &
+    call self%lock%set ('unpack')
   ibuf = 1
   call anonymous_copy (n_header, buffer(ibuf), header)
   ibuf = ibuf + n_header
@@ -1467,7 +1480,9 @@ SUBROUTINE unpack (self, mesg)
     call anonymous_copy (n_buf, buffer(ibuf), self%mem(:,:,:,iv,self%it,1))
     ibuf = ibuf + n_buf
   end do
+  !-----------------------------------------------------------------------------
   call lock%unset ('unpack2')
+  !-----------------------------------------------------------------------------
   if (self%is_set(bits%swap_request) .and. self%is_set(bits%virtual)) then
     it = mod(self%it-1+self%nt-1,self%nt)+1
     lock => self%mem_lock(it)
@@ -1482,6 +1497,9 @@ SUBROUTINE unpack (self, mesg)
     end do
     call lock%unset ('unpack2')
   end if
+  !-----------------------------------------------------------------------------
+  if (omp_lock%tasks) &
+    call self%lock%set ('unpack')
   if (io%verbose > 2) &
     write (io_unit%log,*) self%id, 'after unpack', minval(self%mem(:,:,:,1,self%it,1))
   call self%clear (bits%busy)
