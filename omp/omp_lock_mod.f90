@@ -131,10 +131,6 @@ SUBROUTINE init (self, kind, id)
       else
         self%kind = 'void'
       end if
-      call self%prepend
-      if (wallclock() < verbose_time .or. omp_lock%verbose > 1) &
-        write(unit,*) omp_get_thread_num(), 'initialized lock kind, id ', &
-          self%kind, self%id, set_id
       self%on  = on
       allocate (self%start_time(0:omp%nthreads-1))
       allocate (self%wait_time (0:omp%nthreads-1))
@@ -145,6 +141,10 @@ SUBROUTINE init (self, kind, id)
       self%hold_time = 0d0
       self%n_hold = 0
       n_lock = n_lock+1
+      call self%prepend
+      if (wallclock() < verbose_time .or. omp_lock%verbose > 1) &
+        write(unit,*) omp_get_thread_num(), 'initialized lock kind, id ', &
+          self%kind, self%id, set_id
       self%initialized = .true.
     end if
     !$omp end critical (input_cr)
