@@ -1571,7 +1571,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
     self%d_min = self%fminval(self%idx%d)
     self%d_max = self%fmaxval(self%idx%d)
     !call self%mem_lock(self%it)%unset ('info')
-     !$omp atomic
+    !$omp atomic
     io%dmin = min(io%dmin, self%d_min)
     !$omp atomic
     io%dmax = max(io%dmax, self%d_max)
@@ -1706,6 +1706,11 @@ contains
   !=============================================================================
   subroutine write_info (unit)
     integer:: unit
+    real:: dmin, dmax
+    !$omp atomic read
+    dmin = io%dmin
+    !$omp atomic read
+    dmax = io%dmax
     if (self%time < 1d4) then
       fmt = '(a,i8,2i4,i3,f12.6,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,i6,3i5,i6,4i5,i4,l3,l1,o12)'
     else
@@ -1714,7 +1719,7 @@ contains
     write(unit,fmt) &
       'upd',self%id, self%level, iv, omp_mythread, time, &
       self%dtime, log10(max(self%u_max,1e-30)), &
-      io%dmin, io%dmax, &
+      dmin, dmax, &
       self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
       self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
       real(timer%n_update), ntask, nq, counts, &

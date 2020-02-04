@@ -90,7 +90,7 @@ SUBROUTINE execute (self, task_list, test)
   logical:: test
   !.............................................................................
   real(8):: sec
-  integer:: dims(4)
+  integer:: dims(4), nq
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('dispatcher0_t%execute', itimer=itimer)
@@ -105,8 +105,10 @@ SUBROUTINE execute (self, task_list, test)
   do while (.not.timer%done .and. wallclock() < io%job_seconds)
     call self%update (task_list, test)
     if (task_list%na == task_list%n_tasks) then
-      !$omp atomic
-      min_nq = min(min_nq,task_list%nq)
+      !$omp atomic read
+      nq = task_list%nq
+      !$omp atomic update
+      min_nq = min(min_nq,nq)
     end if
   end do
   write (io_unit%log,*) 'thread',omp%thread,' arrived'
