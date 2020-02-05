@@ -7,7 +7,8 @@ OPTS = optimized
 # Default target and methods
 UPD             = adams_bashforth
 RT_SOLVER       = short_characteristics
-SOLVER          = stagger2/e
+#SOLVER          = stagger2/e
+SOLVER          = ramses/mhd_eos
 STAGGER         = stagger_2nd.o
 EXEC            = dispatch.x
 TOP             = ../..

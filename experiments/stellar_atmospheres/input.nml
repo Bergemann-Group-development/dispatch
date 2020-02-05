@@ -2,7 +2,7 @@
 ! -- Parameters defining the run -----------------------------------------------
 &experiment_params  verbose=0 d_bot=231.8 e_bot=2902.0 bottom_bc_rate=0.10 /
 &cartesian_params   size=6,6,3 dims=6,6,3 mpi_dims=2,1,1 origin=0,0,-0.5
-                    omp_init=f periodic=t,t,f /
+                    periodic=t,t,f /
 &patch_params       nt=5 grace=0.05 n=3*20 no_mans_land=t use_data_hub=f
                     do_check_nan=f dt_fixed=-1 /
 &snapshot_params    order=1 verbose=0 meshfile='input_data/mhd63.msh'
@@ -11,7 +11,8 @@
 &gravity_params     on=t constant=27500 axis=3 position=0.0 mass=-1 minrad=-1 /
 &newton_params      on=t axis=3 position=-0.5 scale=0.1 ee0=5.2 ee1=0.3 time=0.2 /
 &eos_params         /
-&download_params    verbose=0 check_filled=t use_different=0 /
+&download_params    verbose=0 check_filled=t /
+&ramses_params      /
 
 ! -- RT parameters -------------------------------------------------------------
 &rt_setup_params    on=t verbose=0 /
