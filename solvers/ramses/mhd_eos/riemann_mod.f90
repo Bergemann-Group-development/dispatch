@@ -12,7 +12,6 @@ module riemann_mod
     real:: max_dlogd=10.
   contains
     procedure:: hlld
-    procedure, nopass:: hlld_vec
     procedure, nopass:: hlld_2d
     procedure, nopass:: llf
     procedure, nopass:: llf_2d
@@ -29,7 +28,7 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
   real(dp),dimension(:,:)::qleft,qright,fgdnv
   LOGICAL:: detailed_timer
   REAL(dp)::SL,SR
-  REAL(dp)::entho,lim
+  REAL(dp)::re,le,lim
   REAL(dp)::rl,pl,ul,ecinl,etotl,ptotl,Bl,Cl,wstarl,vtotBl,emagl,SAL,sqrrstarl,vl,wl
   REAL(dp)::rr,pr,ur,ecinr,etotr,ptotr,Br,Cr,wstarr,vtotBr,emagr,SAR,sqrrstarr,vr,wr
   REAL(dp)::cfastl,rcl,rstarl,el,vdotBstarl,vstarl,etotstarstarl,etotstarl,vdotBl
@@ -50,19 +49,12 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
   if (detailed_timer) &
     call timer%begin('riemann_t%hlld',  itimer=itimer)
   !
-  ! constants
-  if (isothermal) then
-    entho = one
-  else
-    entho = one/max(gamma-one,1e-6)
-  end if
-  !
   ndiff = 0
 !define PRIVATE
 #ifdef PRIVATE
   !$omp simd private(sgnm,d,P,u,v,w,A,B,C,B2,c2,d2,cf,Ptotstar,estar, &
-  !$omp &  rl,vl,ecinl,emagl,etotl,Ptotl,vdotBl,Bl,Cl,cfastl,SL, &
-  !$omp &  rr,vr,ecinr,emagr,etotr,Ptotr,vdotBr,Br,Cr,cfastr,SR, &
+  !$omp &  el,rl,vl,ecinl,emagl,etotl,Ptotl,vdotBl,Bl,Cl,cfastl,SL, &
+  !$omp &  er,rr,vr,ecinr,emagr,etotr,Ptotr,vdotBr,Br,Cr,cfastr,SR, &
   !$omp &  rcl,rstarl,el,Bstarl,Cstarl,vstarl,wstarl, &
   !$omp &  rcr,rstarr,er,Bstarr,Cstarr,vstarr,wstarr, &
   !$omp &  vdotBstarl,etotstarl,sqrrstarl,calfvenl,SAR, &
@@ -79,20 +71,20 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
     qleft(i,4)=A; qright(i,4)=A
     !
     ! Left variables
-    rl=qleft(i,1); Pl=qleft(i,2); ul=qleft(i,3)
+    rl=qleft(i,1); Pl=qleft(i,2); ul=qleft(i,3); El=qleft(i,9)
     vl=qleft(i,5); Bl=qleft(i,6); wl=qleft(i,7); Cl=qleft(i,8)
     ecinl = half*(ul*ul+vl*vl+wl*wl)*rl
     emagl = half*(A*A+Bl*Bl+Cl*Cl)
-    etotl = Pl*entho+ecinl+emagl
+    etotl = El*rl+ecinl+emagl
     Ptotl = Pl + emagl
     vdotBl= ul*A+vl*Bl+wl*cl
     !
     ! Right variables
-    rr=qright(i,1); Pr=qright(i,2); ur=qright(i,3)
+    rr=qright(i,1); Pr=qright(i,2); ur=qright(i,3); Er=qright(i,9)
     vr=qright(i,5); Br=qright(i,6); wr=qright(i,7); Cr=qright(i,8)
     ecinr = half*(ur*ur+vr*vr+wr*wr)*rr
     emagr = half*(A*A+Br*Br+Cr*Cr)
-    etotr = Pr*entho+ecinr+emagr
+    etotr = Er*rr+ecinr+emagr
     Ptotr = Pr + emagr
     vdotBr= ur*A+vr*Br+wr*Cr
     !
@@ -169,8 +161,6 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
        Cstarr=Cr*er/estar
     endif
     !
-
-
     vdotBstarr=ustar*A+vstarr*Bstarr+wstarr*Cstarr
     etotstarr=((SR-ur)*etotr-Ptotr*ur+Ptotstar*ustar+A*(vdotBr-vdotBstarr))/(SR-ustar)
     sqrrstarr=sqrt(rstarr)
@@ -266,7 +256,7 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
     ustar = alog(rl/rr)*max(0.0, alog10((10.*smallr)/min(rl,rr)))
     ustar = 0.25*max(cfastr,cfastl)*min(1.0, max(-1.0, ustar))
     uo = uo + ustar
-
+    !
     ndiff = ndiff + merge(1,0,abs(ustar)>0.0)
     !
     ! Compute the Godunov flux
@@ -289,243 +279,6 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
   if (detailed_timer) &
     call timer%end (itimer)
 end subroutine hlld
-
-!===============================================================================
-!> HLLD 2-D fluxes
-!===============================================================================
-SUBROUTINE hlld_vec (qleft, qright, fgdnv, n, nvar, detailed_timer)
-  IMPLICIT none
-  ! HLLD Riemann solver (Miyoshi & Kusano, 2005, JCP, 208, 315)
-  REAL(dp),DIMENSION(:,:), contiguous, target ::qleft,qright
-  REAL(dp),DIMENSION(:,:), contiguous         ::fgdnv
-  INTEGER:: n, nvar
-  LOGICAL:: detailed_timer
-  REAL(dp)::entho
-  REAL(dp),DIMENSION(:), contiguous, pointer ::rl,pl,ul,vl,wl,cl,bl
-  REAL(dp),DIMENSION(:), contiguous, pointer ::rr,pr,ur,vr,wr,cr,br
-  REAL(dp),DIMENSION(n)::SL,SR,SAL,SAR,A,sgnm
-  REAL(dp),DIMENSION(n)::ecinl,emagl,etotl,ptotl,vdotbl,el
-  REAL(dp),DIMENSION(n)::ecinr,emagr,etotr,ptotr,vdotbr,er
-  REAL(dp),DIMENSION(n)::cfastl,calfvenl,rcl,rstarl,vstarl,wstarl,bstarl,cstarl,vdotbstarl
-  REAL(dp),DIMENSION(n)::cfastr,calfvenr,rcr,rstarr,vstarr,wstarr,bstarr,cstarr,vdotbstarr
-  REAL(dp),DIMENSION(n)::sqrrstarl,etotstarl,etotstarstarl
-  REAL(dp),DIMENSION(n)::sqrrstarr,etotstarr,etotstarstarr
-  REAL(dp),DIMENSION(n)::ustar,ptotstar,estar,vstarstar,wstarstar,bstarstar,cstarstar,vdotbstarstar
-  REAL(dp),DIMENSION(n)::ro,uo,vo,wo,bo,co,ptoto,etoto,vdotbo
-  REAL(dp),DIMENSION(n)::lim,emago
-  INTEGER:: ivar, i
-  INTEGER, SAVE:: itimer=0
-#ifdef KROME
-  REAL(dp),DIMENSION(n), pointer ::gammal, gammar
-#endif
-  !-----------------------------------------------------------------------------
-  if (detailed_timer) &
-    call timer%begin('riemann_t%hlld_vec',  itimer=itimer)
-  if (gamma==1d0) then
-    entho=1d0
-  else
-    entho = one/(gamma-one)
-  end if
-  !
-  ! Enforce continuity of normal component
-  rl=>qleft(:,1); Pl=>qleft(:,2); ul=>qleft(:,3)
-  vl=>qleft(:,5); Bl=>qleft(:,6); wl=>qleft(:,7); Cl=>qleft(:,8)
-  rr=>qright(:,1); Pr=>qright(:,2); ur=>qright(:,3)
-  vr=>qright(:,5); Br=>qright(:,6); wr=>qright(:,7); Cr=>qright(:,8)
-  do i=1,n
-    A(i)=half*(qleft(i,4)+qright(i,4))
-    sgnm(i)=sign(one,A(i))
-    qleft(i,4)=A(i); qright(i,4)=A(i)
-    !
-#ifdef KROME
-    ! Left and right adiabatic indexes
-    gammal(i)=>qleft(i,ichem); gammar(i)=>qright(i,ichem)
-#endif
-    !
-    ! Left variables
-    ecinl(i) = half*(ul(i)*ul(i)+vl(i)*vl(i)+wl(i)*wl(i))*rl(i)
-    emagl(i) = half*(A(i)*A(i)+Bl(i)*Bl(i)+Cl(i)*Cl(i))
-#ifdef KROME
-    etotl(i) = Pl(i)/(merge(gammal(i),gamma(i),chemistry)-one)+ecinl(i)+emagl(i)
-#else
-    etotl(i) = Pl(i)*entho+ecinl(i)+emagl(i)
-#endif
-    Ptotl(i) = Pl(i) + emagl(i)
-    vdotBl(i)= ul(i)*A(i)+vl(i)*Bl(i)+wl(i)*cl(i)
-    !
-    ! Right variables
-    ecinr(i) = half*(ur(i)*ur(i)+vr(i)*vr(i)+wr(i)*wr(i))*rr(i)
-    emagr(i) = half*(A(i)*A(i)+Br(i)*Br(i)+Cr(i)*Cr(i))
-#ifdef KROME
-    etotr(i) = Pr(i)/(merge(gammar(i),gamma(i),chemistry)-one)+ecinr(i)+emagr(i)
-#else
-    etotr(i) = Pr(i)*entho+ecinr(i)+emagr(i)
-#endif
-    Ptotr(i) = Pr(i) + emagr(i)
-    vdotBr(i)= ur(i)*A(i)+vr(i)*Br(i)+wr(i)*Cr(i)
-  end do
-  !
-  ! Find the largest eigenvalues in the normal direction to the interface
-  CALL find_speed_fast_vec (qleft , cfastl, n)
-  CALL find_speed_fast_vec (qright, cfastr, n)
-  !
-  ! Compute HLL wave speed
-  SL=min(ul,ur)-max(cfastl,cfastr)
-  SR=max(ul,ur)+max(cfastl,cfastr)
-  !
-  lim = 1.0_dp
-  !
-!  SL=ul-cfastl
-!  SR=ur+cfastr
-  !
-  ! Compute lagrangian sound speed
-  rcl=rl*(ul-SL)
-  rcr=rr*(SR-ur)
-  !
-  ! Compute acoustic star state
-  ustar   =(rcr*ur   +rcl*ul   +  (Ptotl-Ptotr))/(rcr+rcl)
-  Ptotstar=(rcr*Ptotl+rcl*Ptotr+rcl*rcr*(ul-ur))/(rcr+rcl)
-  !
-  ! Left star region variables
-  rstarl=rl*(SL-ul)/(SL-ustar)
-  estar =rl*(SL-ul)*(SL-ustar)-A**2
-  el    =rl*(SL-ul)*(SL-ul   )-A**2
-  where(abs(estar) < 1d-4*A**2)
-     vstarl=vl
-     Bstarl=Bl
-     wstarl=wl
-     Cstarl=Cl
-  elsewhere
-     vstarl=vl-A*Bl*(ustar-ul)/estar
-     Bstarl=Bl*el/estar
-     wstarl=wl-A*Cl*(ustar-ul)/estar
-     Cstarl=Cl*el/estar
-  endwhere
-  vdotBstarl=ustar*A+vstarl*Bstarl+wstarl*Cstarl
-  etotstarl=((SL-ul)*etotl-Ptotl*ul+Ptotstar*ustar+A*(vdotBl-vdotBstarl))/(SL-ustar)
-  sqrrstarl=sqrt(rstarl)
-  calfvenl=abs(A)/sqrrstarl
-  SAL=ustar-calfvenl
-  !
-  ! Right star region variables
-  rstarr=rr*(SR-ur)/(SR-ustar)
-  estar =rr*(SR-ur)*(SR-ustar)-A**2
-  er    =rr*(SR-ur)*(SR-ur   )-A**2
-  where(abs(estar) < 1d-4*A**2)
-     vstarr=vr
-     Bstarr=Br
-     wstarr=wr
-     Cstarr=Cr
-  elsewhere
-     vstarr=vr-A*Br*(ustar-ur)/estar
-     Bstarr=Br*er/estar
-     wstarr=wr-A*Cr*(ustar-ur)/estar
-     Cstarr=Cr*er/estar
-  endwhere
-  vdotBstarr=ustar*A+vstarr*Bstarr+wstarr*Cstarr
-  etotstarr=((SR-ur)*etotr-Ptotr*ur+Ptotstar*ustar+A*(vdotBr-vdotBstarr))/(SR-ustar)
-  sqrrstarr=sqrt(rstarr)
-  calfvenr=abs(A)/sqrrstarr
-  SAR=ustar+calfvenr
-  !
-  ! Double star region variables
-  vstarstar=(sqrrstarl*vstarl+sqrrstarr*vstarr+sgnm*(Bstarr-Bstarl))/(sqrrstarl+sqrrstarr)
-  wstarstar=(sqrrstarl*wstarl+sqrrstarr*wstarr+sgnm*(Cstarr-Cstarl))/(sqrrstarl+sqrrstarr)
-  Bstarstar=(sqrrstarl*Bstarr+sqrrstarr*Bstarl+sgnm*sqrrstarl*sqrrstarr*(vstarr-vstarl))/(sqrrstarl+sqrrstarr)
-  Cstarstar=(sqrrstarl*Cstarr+sqrrstarr*Cstarl+sgnm*sqrrstarl*sqrrstarr*(wstarr-wstarl))/(sqrrstarl+sqrrstarr)
-  vdotBstarstar=ustar*A+vstarstar*Bstarstar+wstarstar*Cstarstar
-  etotstarstarl=etotstarl-sgnm*sqrrstarl*(vdotBstarl-vdotBstarstar)
-  etotstarstarr=etotstarr+sgnm*sqrrstarr*(vdotBstarr-vdotBstarstar)
-  !
-  ! Sample the solution at x/t=0
-  do i=1,n
-    if(SL(i)>zero)then
-       ro(i)=rl(i)
-       uo(i)=ul(i)
-       vo(i)=vl(i)
-       wo(i)=wl(i)
-       Bo(i)=Bl(i)
-       Co(i)=Cl(i)
-       Ptoto(i)=Ptotl(i)
-       etoto(i)=etotl(i)
-       vdotBo(i)=vdotBl(i)
-    else if(SAL(i)>zero)then
-       ro(i)=rstarl(i)
-       uo(i)=ustar(i)
-       vo(i)=vstarl(i)
-       wo(i)=wstarl(i)
-       Bo(i)=Bstarl(i)
-       Co(i)=Cstarl(i)
-       Ptoto(i)=Ptotstar(i)
-       etoto(i)=etotstarl(i)
-       vdotBo(i)=vdotBstarl(i)
-    else if(ustar(i)>zero)then
-       ro(i)=rstarl(i)
-       uo(i)=ustar(i)
-       vo(i)=vstarstar(i)
-       wo(i)=wstarstar(i)
-       Bo(i)=Bstarstar(i)
-       Co(i)=Cstarstar(i)
-       Ptoto(i)=Ptotstar(i)
-       etoto(i)=etotstarstarl(i)
-       vdotBo(i)=vdotBstarstar(i)
-    else if(SAR(i)>zero)then
-       ro(i)=rstarr(i)
-       uo(i)=ustar(i)
-       vo(i)=vstarstar(i)
-       wo(i)=wstarstar(i)
-       Bo(i)=Bstarstar(i)
-       Co(i)=Cstarstar(i)
-       Ptoto(i)=Ptotstar(i)
-       etoto(i)=etotstarstarr(i)
-       vdotBo(i)=vdotBstarstar(i)
-    else if (SR(i)>zero)then
-       ro(i)=rstarr(i)
-       uo(i)=ustar(i)
-       vo(i)=vstarr(i)
-       wo(i)=wstarr(i)
-       Bo(i)=Bstarr(i)
-       Co(i)=Cstarr(i)
-       Ptoto(i)=Ptotstar(i)
-       etoto(i)=etotstarr(i)
-       vdotBo(i)=vdotBstarr(i)
-    else
-       ro(i)=rr(i)
-       uo(i)=ur(i)
-       vo(i)=vr(i)
-       wo(i)=wr(i)
-       Bo(i)=Br(i)
-       Co(i)=Cr(i)
-       Ptoto(i)=Ptotr(i)
-       etoto(i)=etotr(i)
-       vdotBo(i)=vdotBr(i)
-    end if
-  end do
-  !
-  emago=half*(A*A+Bo*Bo+Co*Co)
-  !
-  ! Compute the Godunov flux
-  fgdnv(:,1) = ro*uo
-  fgdnv(:,2) = (etoto+Ptoto)*uo-A*vdotBo
-  fgdnv(:,3) = ro*uo*uo+Ptoto+emago*(lim-1.0_dp)-A*A*lim
-  fgdnv(:,4) = zero
-  fgdnv(:,5) = ro*uo*vo-A*Bo*lim
-  fgdnv(:,6) = Bo*uo-A*vo
-  fgdnv(:,7) = ro*uo*wo-A*Co*lim
-  fgdnv(:,8) = Co*uo-A*wo
-  do ivar = 9,nvar
-     where(fgdnv(:,1)>0)
-        fgdnv(:,ivar) = fgdnv(:,1)*qleft (:,ivar)
-     elsewhere
-        fgdnv(:,ivar) = fgdnv(:,1)*qright(:,ivar)
-     endwhere
-  end do
-#ifdef KROME
-  fgdnv(:,ichem) = 0.0_dp
-#endif
-  if (detailed_timer) &
-    call timer%end (itimer)
-END SUBROUTINE hlld_vec
 
 !===============================================================================
 !> HLLD 2D fluxes
@@ -1071,20 +824,14 @@ SUBROUTINE find_mhd_flux (qvar, cvar, ff)
   IMPLICIT NONE
   INTEGER :: i , ivar, ib
   REAL(dp), DIMENSION(:):: qvar, cvar, ff
-  REAL(dp):: ecin,emag,etot,d,u,v,w,A,B,C,P,Ptot,entho
+  REAL(dp):: ecin,emag,etot,d,u,v,w,A,B,C,P,Ptot,e
   !-----------------------------------------------------------------------------
   ! Local variables
-  entho = one/(gamma-one)
-  if (isothermal) then
-    entho = one
-  else
-    entho = one/max(gamma-one,1e-6)
-  end if
-  d=qvar(1); P=qvar(2); u=qvar(3); A=qvar(4)
+  d=qvar(1); P=qvar(2); u=qvar(3); A=qvar(4); e=qvar(9)
   v=qvar(5); B=qvar(6); w=qvar(7); C=qvar(8)
   ecin = half*(u*u+v*v+w*w)*d
   emag = half*(A*A+B*B+C*C)
-  etot = P*entho+ecin+emag
+  etot = e+ecin+emag
   Ptot = P + emag
   !
   ! Compute conservative variables

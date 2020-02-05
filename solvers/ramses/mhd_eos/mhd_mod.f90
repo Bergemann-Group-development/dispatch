@@ -31,6 +31,7 @@ MODULE mhd_mod
   USE flux_mod
   USE omp_timer_mod
   USE timer_mod
+  USE eos_mod
   implicit none
   PRIVATE
   type, public, extends(extras_t):: mhd_t
@@ -85,9 +86,10 @@ SUBROUTINE init (self)
   call trace%print_id (id)
   self%nw = 2
   self%ng = 3
-  self%nv = 8
+  self%nv = 9
   self%kind = 'ramses_mhd_patch'
   call self%idx%init (5, self%mhd)
+  self%idx%tt = 9
   call self%patch_t%init
   !-----------------------------------------------------------------------------
   ! Read solver-relevant parameters and store in the task instance
@@ -162,17 +164,17 @@ SUBROUTINE update (self)
   allocate (self%Ex (n(1),n(2),n(3)))                           ! self%Ex  = 0_dp
   allocate (self%Ey (n(1),n(2),n(3)))                           ! self%Ey  = 0_dp
   allocate (self%Ez (n(1),n(2),n(3)))                           ! self%Ez  = 0_dp
-  allocate (self%q  (n(1),n(2),n(3),self%nv))                   ! self%q   = 0_dp
-  allocate (self%qp (n(1),self%nv,ndim,n(2),n(3)))              ! self%qp  = 0_dp
-  allocate (self%qm (n(1),self%nv,ndim,n(2),n(3)))              ! self%qm  = 0_dp
-  allocate (self%dq (n(1),self%nv,ndim,n(2),n(3)))              ! self%dq  = 0_dp
-  allocate (self%dq2(n(1),self%nv,ndim,n(2),n(3)))              ! self%dq2 = 0_dp
+  allocate (self%q  (n(1),n(2),n(3),self%nv+1))                 ! self%q   = 0_dp
+  allocate (self%qp (n(1),self%nv+1,ndim,n(2),n(3)))            ! self%qp  = 0_dp
+  allocate (self%qm (n(1),self%nv+1,ndim,n(2),n(3)))            ! self%qm  = 0_dp
+  allocate (self%dq (n(1),self%nv+1,ndim,n(2),n(3)))            ! self%dq  = 0_dp
+  allocate (self%dq2(n(1),self%nv+1,ndim,n(2),n(3)))            ! self%dq2 = 0_dp
   allocate (self%bf (n(1),n(2),n(3),3))                         ! self%bf  = 0_dp
   allocate (self%dbf(n(1),3,2,n(2),n(3)))                       ! self%dbf = 0_dp
-  allocate (self%qLB(n(1),self%nv,ndim,n(2),n(3)))              ! self%qLB = 0_dp
-  allocate (self%qLT(n(1),self%nv,ndim,n(2),n(3)))              ! self%qLT = 0_dp
-  allocate (self%qRB(n(1),self%nv,ndim,n(2),n(3)))              ! self%qRB = 0_dp
-  allocate (self%qRT(n(1),self%nv,ndim,n(2),n(3)))              ! self%qRT = 0_dp
+  allocate (self%qLB(n(1),self%nv+1,ndim,n(2),n(3)))            ! self%qLB = 0_dp
+  allocate (self%qLT(n(1),self%nv+1,ndim,n(2),n(3)))            ! self%qLT = 0_dp
+  allocate (self%qRB(n(1),self%nv+1,ndim,n(2),n(3)))            ! self%qRB = 0_dp
+  allocate (self%qRT(n(1),self%nv+1,ndim,n(2),n(3)))            ! self%qRT = 0_dp
   d => self%mem(:,:,:,          self%idx%d ,self%it,1)
   e => self%mem(:,:,:,          self%idx%e ,self%it,1)
   p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
@@ -215,9 +217,9 @@ SUBROUTINE update (self)
   call cmpflxm(self,self%gn(2),3,2,4,7,6,8,fl(:,:,:,:,2))
   call cmpflxm(self,self%gn(3),4,2,3,8,6,7,fl(:,:,:,:,3))
 
-  call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,2,3,4,6,7,8,em(:,:,:,3),self%gn(3)-1,self%nv)
-  call cmp_mag_flx(self, self%qRT, self%qLT, self%qRB, self%qLB,4,2,3,8,6,7,em(:,:,:,2),self%gn(2)-1,self%nv)
-  call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,3,4,2,7,8,6,em(:,:,:,1),self%gn(1)-1,self%nv)
+  call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,2,3,4,6,7,8,em(:,:,:,3), self%gn(3)-1, self%nv)
+  call cmp_mag_flx(self, self%qRT, self%qLT, self%qRB, self%qLB,4,2,3,8,6,7,em(:,:,:,2), self%gn(2)-1, self%nv)
+  call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,3,4,2,7,8,6,em(:,:,:,1), self%gn(1)-1, self%nv)
 
   dtdx = self%dtime/self%ds(1) 
   dtdy = self%dtime/self%ds(2) 
@@ -330,11 +332,27 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Add external force as source term
   !-----------------------------------------------------------------------------
+  p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
   if (allocated(self%force_per_unit_mass)) then
-    p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
     do i=1,3
       p(:,:,:,i) = p(:,:,:,i) + self%dtime*self%force_per_unit_mass(:,:,:,i)*d
     end do
+  end if
+  if (allocated(self%force_per_unit_volume)) then
+    p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
+    do i=1,3
+      p(:,:,:,i) = p(:,:,:,i) + self%dtime*self%force_per_unit_volume(:,:,:,i)
+    end do
+  end if
+  !-----------------------------------------------------------------------------
+  ! Add external heating as source term
+  !-----------------------------------------------------------------------------
+  e => self%mem(:,:,:,self%idx%e,self%new,1)
+  if (allocated(self%heating_per_unit_mass)) then
+    e = e + self%dtime*self%heating_per_unit_mass*d
+  end if
+  if (allocated(self%heating_per_unit_volume)) then
+    e = e + self%dtime*self%heating_per_unit_volume
   end if
   !-----------------------------------------------------------------------------
   ! Deallocate
@@ -678,6 +696,7 @@ subroutine ctoprim(self)
   real(dp):: eken, emag, etot, eint, B1, B2, B3
   integer, save:: itimer=0
   integer:: i, j, k, loc(3), l(3), u(3)
+  real, pointer, dimension(:,:,:):: lnd, ee, pg, tt
   associate(uin=>self%uin,q=>self%q,bf=>self%bf,dt=>self%dtime,c=>self%c)
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%ctoprim', itimer=itimer, detailed_timer=detailed_timer)
@@ -704,21 +723,62 @@ subroutine ctoprim(self)
   bf(:,:,:,3) = uin(:,:,:,8)
   if (verbose>0) print *,  'ctoprim:rh', self%id, minval(q(:,:,:,1)), maxval(q(:,:,:,1))
   if (verbose>0) print *,  'ctoprim:bf', self%id, minval(bf), maxval(bf)
-
-  do k=1,self%gn(3)-1
-  do j=1,self%gn(2)-1
-  do i=1,self%gn(1)-1
+  !-----------------------------------------------------------------------------
+  ! Arrays for EOS
+  !-----------------------------------------------------------------------------
+  allocate (ee (n(1),n(2),n(3)))
+  allocate (pg (n(1),n(2),n(3)))
+  allocate (tt (n(1),n(2),n(3)))
+  allocate (lnd(n(1),n(2),n(3)))
+  !-----------------------------------------------------------------------------
+  ! Internal energy
+  !-----------------------------------------------------------------------------
+  do k=1,n(3)
+  do j=1,n(2)
+  do i=1,n(1)
     eken = half*(q(i,j,k,2)**2 + q(i,j,k,3)**2 + q(i,j,k,4)**2)*q(i,j,k,1)
     B1 = half*(q(i,j,k,6)+q(i+1,j,k,6))
     B2 = half*(q(i,j,k,7)+q(i,j+1,k,7))
     B3 = half*(q(i,j,k,8)+q(i,j,k+1,8))
     emag = half*(B1**2 + B2**2 + B3**2)
-    q(i,j,k,5) = (uin(i,j,k,5) - emag - eken)*(gamma-1d0)
-    q(i,j,k,5) = merge(q(i,j,k,1)*self%csound**2, max(q(i,j,k,5),smallp), isothermal)
+    lnd(i,j,k) = log(q(i,j,k,1))
+    q(i,j,k,9) = (uin(i,j,k,5) - emag - eken)/q(i,j,k,1)
+    ee(i,j,k) = q(i,j,k,9)
+  end do
+  end do
+  end do
+  q(self%gn(1),:,:,9) = q(self%gn(1)-1,:,:,9)
+  q(:,self%gn(2),:,9) = q(:,self%gn(2)-1,:,9)
+  q(:,:,self%gn(3),9) = q(:,:,self%gn(3)-1,9)
+  !-----------------------------------------------------------------------------
+  ! Pressure
+  !-----------------------------------------------------------------------------
+  call eos%lookup_table (shape(ee), lnd=lnd, ee=ee, pg=pg, tt=tt)
+  do k=1,n(3)
+  do j=1,n(2)
+  do i=1,n(1)
+    q(i,j,k,5) = pg(i,j,k)
+    self%mem(i,j,k,self%idx%tt,self%new,1) = tt(i,j,k)
+  end do
+  end do
+  end do
+  !-----------------------------------------------------------------------------
+  ! Fast mode speed
+  !-----------------------------------------------------------------------------
+  do k=1,n(3)
+  do j=1,n(2)
+  do i=1,n(1)
+    B1 = half*(q(i,j,k,6)+q(i+1,j,k,6))
+    B2 = half*(q(i,j,k,7)+q(i,j+1,k,7))
+    B3 = half*(q(i,j,k,8)+q(i,j,k+1,8))
+    emag = half*(B1**2 + B2**2 + B3**2)
     c(i,j,k) = sqrt((q(i,j,k,5)*gamma + 2.0*emag)/q(i,j,k,1))
   end do
   end do
   end do
+!print '(i6,1x,a,i4,1p,2(2x,2e11.2))', self%id, 'idx%tt, min, max =', self%idx%tt, &
+!minval(tt), maxval(tt), minval(c(1:n(1),1:n(2),1:n(3))), maxval(c(1:n(1),1:n(2),1:n(3)))
+  deallocate (lnd, ee, pg, tt)
   if (self%id == io%id_debug) then
     do i=1,8
       write (io%output,'("X1",f10.6,i4,1p,10e12.3)') self%time, i, uin(4:13,8,8,i)
@@ -1065,24 +1125,25 @@ SUBROUTINE trace3d(self)
   class(mhd_t):: self
   real(dp):: dx, dy, dz, dt
   integer :: i, j, k, n
-  integer, parameter ::ir=1, iu=2, iv=3, iw=4, ip=5, ia=6, ib=7, ic=8
+  integer, parameter ::ir=1, iu=2, iv=3, iw=4, ip=5, ia=6, ib=7, ic=8, ie=9
   real(dp)::dtdx, dtdy, dtdz, smallp
   real(dp) :: invr
-  real(dp) :: r, u, v, w, p, A, B, C
+  real(dp) :: r, u, v, w, p, A, B, C, h
+  real(dp) :: hLL, hLR, hRL, hRR
   real(dp) :: ELL, ELR, ERL, ERR
   real(dp) :: FLL, FLR, FRL, FRR
   real(dp) :: GLL, GLR, GRL, GRR
-  real(dp) :: drx, dux, dvx, dwx, dpx, dAx, dBx, dCx
-  real(dp) :: dry, duy, dvy, dwy, dpy, dAy, dbY, dCy
-  real(dp) :: drz, duz, dvz, dwz, dpz, dAz, dBz, dCz
+  real(dp) :: drx, dux, dvx, dwx, dpx, dex, dAx, dBx, dCx
+  real(dp) :: dry, duy, dvy, dwy, dpy, dey, dAy, dbY, dCy
+  real(dp) :: drz, duz, dvz, dwz, dpz, dez, dAz, dBz, dCz
   real(dp) :: drx2,dpx2,dry2,dpy2,drz2,dpz2
-  real(dp) :: sr0, su0, sv0, sw0, sp0, sA0, sB0, sC0
+  real(dp) :: sr0, su0, sv0, sw0, sp0, se0, sA0, sB0, sC0
   real(dp) :: AL, AR, BL, BR, CL, CR
   real(dp) :: dALy, dARy, dALz, dARz
   real(dp) :: dBLx, dBRx, dBLz, dBRz
   real(dp) :: dCLx, dCRx, dCLy, dCRy
   real(dp) :: sAL0, sAR0, sBL0, sBR0, sCL0, sCR0
-  real(dp), dimension(:,:,:), allocatable:: rho_t, p_t
+  real(dp), dimension(:,:,:), allocatable:: rho_t, p_t, h_t
   real(dp) :: eff_gamma, off
   real(dp) :: ff(self%gn(1),3), qq(self%gn(1))
   integer:: lo(3), uo(3)
@@ -1142,6 +1203,7 @@ SUBROUTINE trace3d(self)
   !
   allocate (rho_t(1:self%gn(1),1:self%gn(2),1:self%gn(3)))
   allocate (  p_t(1:self%gn(1),1:self%gn(2),1:self%gn(3)))
+  allocate (  h_t(1:self%gn(1),1:self%gn(2),1:self%gn(3)))
   !
   ! Fill rho-t & p_t with non-zero values at guard zone edges,
   ! to ! avoid arithmetic errors (internal values are set in loop)
@@ -1151,15 +1213,21 @@ SUBROUTINE trace3d(self)
   p_t  (1,:,:)   = q(1,:,:,ip)
   p_t  (:,1,:)   = q(:,1,:,ip)
   p_t  (:,:,1)   = q(:,:,1,ip)
+  h_t  (1,:,:)   = q(1,:,:,ie)
+  h_t  (:,1,:)   = q(:,1,:,ie)
+  h_t  (:,:,1)   = q(:,:,1,ie)
   n = self%gn(1)
-  rho_t(n,:,:) = q(n,:,:,ir)
+  rho_t(n,:,:)   = q(n,:,:,ir)
   p_t  (n,:,:)   = q(n,:,:,ip)
+  h_t  (n,:,:)   = q(n,:,:,ie)
   n = self%gn(2)
-  rho_t(:,n,:) = q(:,n,:,ir)
+  rho_t(:,n,:)   = q(:,n,:,ir)
   p_t  (:,n,:)   = q(:,n,:,ip)
+  h_t  (:,n,:)   = q(:,n,:,ie)
   n = self%gn(3)
-  rho_t(:,:,n) = q(:,:,n,ir)
+  rho_t(:,:,n)   = q(:,:,n,ir)
   p_t  (:,:,n)   = q(:,:,n,ip)
+  h_t  (:,:,n)   = q(:,:,n,ie)
   !-----------------------------------------------------------------------------
   ! This loop needs to produce data in the interval (lo-1,uo+1), since the loop
   ! below accesses {i,j,k}+-1, and needs to be good in (lo,uo).  With ng=3, the
@@ -1203,13 +1271,15 @@ SUBROUTINE trace3d(self)
   !$omp & dALy,dALz,dARy,dARz,dAy,dAz,dBLx,dBLz,dBRx,dBRz,dBx,dBz,dCLx,dCLy,dCRx, &
   !$omp & dCRy,dCx,dCy,dpx,dpx2,dpy,dpy2,dpz,dpz2,drx,drx2,dry,dry2,drz,drz2,dux, &
   !$omp & duy,duz,dvx,dvy,dvz,dwx,dwy,dwz,invr,p,r,sAL0,sAR0,sBL0,sBR0,sCL0,sCR0, &
-  !$omp & sp0,sr0,su0,sv0,sw0,u,v,w)
+  !$omp & sp0,sr0,su0,sv0,sw0,u,v,w, &
+  !$omp & dex,dey,dez,se0)
   do i=lo(1),uo(1)
     r=q(i,j,k,ir)
     u=q(i,j,k,iu)
     v=q(i,j,k,iv)
     w=q(i,j,k,iw)
     p=q(i,j,k,ip)
+    h=q(i,j,k,ie)
     A=q(i,j,k,iA)
     B=q(i,j,k,iB)
     C=q(i,j,k,iC)
@@ -1241,6 +1311,7 @@ SUBROUTINE trace3d(self)
     dvx = half * dq(i,iv,1,j,k)
     dwx = half * dq(i,iw,1,j,k)
     dpx = half * dq(i,ip,1,j,k)
+    dex = half * dq(i,ie,1,j,k)
     dpx2= half *dq2(i,ip,1,j,k)
     dBx = half * dq(i,iB,1,j,k)
     dCx = half * dq(i,iC,1,j,k)
@@ -1251,6 +1322,7 @@ SUBROUTINE trace3d(self)
     dvy = half * dq(i,iv,2,j,k)
     dwy = half * dq(i,iw,2,j,k)
     dpy = half * dq(i,ip,2,j,k)
+    dey = half * dq(i,ie,2,j,k)
     dpy2= half *dq2(i,ip,2,j,k)
     duy = half * dq(i,iu,2,j,k)
     dAy = half * dq(i,iA,2,j,k)
@@ -1262,6 +1334,7 @@ SUBROUTINE trace3d(self)
     dvz = half * dq(i,iv,3,j,k)
     dwz = half * dq(i,iw,3,j,k)
     dpz = half * dq(i,ip,3,j,k)
+    dez = half * dq(i,ie,3,j,k)
     dpz2= half *dq2(i,ip,3,j,k)
     dAz = half * dq(i,iA,3,j,k)
     dBz = half * dq(i,iB,3,j,k)
@@ -1306,6 +1379,11 @@ SUBROUTINE trace3d(self)
     sp0 = (-u*dpx-dux*eff_gamma*p)*dtdx &
         + (-v*dpy-dvy*eff_gamma*p)*dtdy &
         + (-w*dpz-dwz*eff_gamma*p)*dtdz
+    se0 = (-u*dex-p*invr*dux)*dtdx &
+        + (-v*dey-p*invr*dvy)*dtdy &
+        + (-w*dez-p*invr*dwz)*dtdz
+!write(io_unit%log,'("pred: i,j,k,h,dex,dey,dez,se0 =",3i4,2x,1p,5e11.2)') &
+!i,j,k,h,dex,dey,dez,se0
     !
     ! Add external force
     su0 = su0 + ff(i,1)*half*self%dtime
@@ -1313,7 +1391,8 @@ SUBROUTINE trace3d(self)
     sw0 = sw0 + ff(i,3)*half*self%dtime
     !
     ! Add external heating
-    sp0 = sp0  + (eff_gamma-1d0)*qq(i)*self%dtime
+    sp0 = sp0  + (eff_gamma-1d0)*qq(i)*half*self%dtime
+    se0 = se0  +            invr*qq(i)*half*self%dtime
     !
     ! Evolve entropy instead of pressure
     !sS0 = (-u*dSx)*dtdx + (-v*dSy)*dtdy + (-w*dSz)*dtdz
@@ -1352,8 +1431,10 @@ SUBROUTINE trace3d(self)
     v = v + sv0
     w = w + sw0
     p = p + sp0
+    h = h + se0
     p = max(p,smallp)
     p_t(i,j,k) = p
+    h_t(i,j,k) = h
     A = half*(AL+AR)
     B = half*(BL+BR)
     C = half*(CL+CR)
@@ -1364,6 +1445,7 @@ SUBROUTINE trace3d(self)
     qp(i,iv,1,j,k) = v - dvx
     qp(i,iw,1,j,k) = w - dwx
     qp(i,ip,1,j,k) = p - dpx
+    qp(i,ie,1,j,k) = h - dex
     qp(i,iA,1,j,k) = AL
     qp(i,iB,1,j,k) = B - dBx
     qp(i,iC,1,j,k) = C - dCx
@@ -1374,6 +1456,7 @@ SUBROUTINE trace3d(self)
     qm(i,iv,1,j,k) = v + dvx
     qm(i,iw,1,j,k) = w + dwx
     qm(i,ip,1,j,k) = p + dpx
+    qm(i,ie,1,j,k) = h + dex
     qm(i,iA,1,j,k) = AR
     qm(i,iB,1,j,k) = B + dBx
     qm(i,iC,1,j,k) = C + dCx
@@ -1384,6 +1467,7 @@ SUBROUTINE trace3d(self)
     qp(i,iv,2,j,k) = v - dvy
     qp(i,iw,2,j,k) = w - dwy
     qp(i,ip,2,j,k) = p - dpy
+    qp(i,ie,2,j,k) = h - dey
     qp(i,iA,2,j,k) = A - dAy
     qp(i,iB,2,j,k) = BL
     qp(i,iC,2,j,k) = C - dCy
@@ -1394,6 +1478,7 @@ SUBROUTINE trace3d(self)
     qm(i,iv,2,j,k) = v + dvy
     qm(i,iw,2,j,k) = w + dwy
     qm(i,ip,2,j,k) = p + dpy
+    qm(i,ie,2,j,k) = h + dey
     qm(i,iA,2,j,k) = A + dAy
     qm(i,iB,2,j,k) = BR
     qm(i,iC,2,j,k) = C + dCy
@@ -1404,6 +1489,7 @@ SUBROUTINE trace3d(self)
     qp(i,iv,3,j,k) = v - dvz
     qp(i,iw,3,j,k) = w - dwz
     qp(i,ip,3,j,k) = p - dpz
+    qp(i,ie,3,j,k) = h - dez
     qp(i,iA,3,j,k) = A - dAz
     qp(i,iB,3,j,k) = B - dBz
     qp(i,iC,3,j,k) = CL
@@ -1414,6 +1500,7 @@ SUBROUTINE trace3d(self)
     qm(i,iv,3,j,k) = v + dvz
     qm(i,iw,3,j,k) = w + dwz
     qm(i,ip,3,j,k) = p + dpz
+    qm(i,ie,3,j,k) = h + dez
     qm(i,iA,3,j,k) = A + dAz
     qm(i,iB,3,j,k) = B + dBz
     qm(i,iC,3,j,k) = CR
@@ -1424,6 +1511,7 @@ SUBROUTINE trace3d(self)
     qRT(i,iv,1,j,k) = v + (+dvy+dvz)
     qRT(i,iw,1,j,k) = w + (+dwy+dwz)
     qRT(i,ip,1,j,k) = p + (+dpy2+dpz2)
+    qRT(i,ie,1,j,k) = h + (+dey+dez)
     qRT(i,iA,1,j,k) = A + (+dAy+dAz)
     qRT(i,iB,1,j,k) = BR+ (   +dBRz)
     qRT(i,iC,1,j,k) = CR+ (+dCRy   )
@@ -1434,6 +1522,7 @@ SUBROUTINE trace3d(self)
     qRB(i,iv,1,j,k) = v + (+dvy-dvz)
     qRB(i,iw,1,j,k) = w + (+dwy-dwz)
     qRB(i,ip,1,j,k) = p + (+dpy2-dpz2)
+    qRB(i,ie,1,j,k) = h + (+dey-dez)
     qRB(i,iA,1,j,k) = A + (+dAy-dAz)
     qRB(i,iB,1,j,k) = BR+ (   -dBRz)
     qRB(i,iC,1,j,k) = CL+ (+dCLy   )
@@ -1444,6 +1533,7 @@ SUBROUTINE trace3d(self)
     qLT(i,iv,1,j,k) = v + (-dvy+dvz)
     qLT(i,iw,1,j,k) = w + (-dwy+dwz)
     qLT(i,ip,1,j,k) = p + (-dpy2+dpz2)
+    qLT(i,ie,1,j,k) = h + (-dey+dez)
     qLT(i,iA,1,j,k) = A + (-dAy+dAz)
     qLT(i,iB,1,j,k) = BL+ (   +dBLz)
     qLT(i,iC,1,j,k) = CR+ (-dCRy   )
@@ -1454,6 +1544,7 @@ SUBROUTINE trace3d(self)
     qLB(i,iv,1,j,k) = v + (-dvy-dvz)
     qLB(i,iw,1,j,k) = w + (-dwy-dwz)
     qLB(i,ip,1,j,k) = p + (-dpy2-dpz2)
+    qLB(i,ie,1,j,k) = h + (-dey-dez)
     qLB(i,iA,1,j,k) = A + (-dAy-dAz)
     qLB(i,iB,1,j,k) = BL+ (   -dBLz)
     qLB(i,iC,1,j,k) = CL+ (-dCLy   )
@@ -1464,6 +1555,7 @@ SUBROUTINE trace3d(self)
     qRT(i,iv,2,j,k) = v + (+dvx+dvz)
     qRT(i,iw,2,j,k) = w + (+dwx+dwz)
     qRT(i,ip,2,j,k) = p + (+dpx2+dpz2)
+    qRT(i,ie,2,j,k) = h + (+dex+dez)
     qRT(i,iA,2,j,k) = AR+ (   +dARz)
     qRT(i,iB,2,j,k) = B + (+dBx+dBz)
     qRT(i,iC,2,j,k) = CR+ (+dCRx   )
@@ -1474,6 +1566,7 @@ SUBROUTINE trace3d(self)
     qRB(i,iv,2,j,k) = v + (+dvx-dvz)
     qRB(i,iw,2,j,k) = w + (+dwx-dwz)
     qRB(i,ip,2,j,k) = p + (+dpx2-dpz2)
+    qRB(i,ie,2,j,k) = h + (+dex-dez)
     qRB(i,iA,2,j,k) = AR+ (   -dARz)
     qRB(i,iB,2,j,k) = B + (+dBx-dBz)
     qRB(i,iC,2,j,k) = CL+ (+dCLx   )
@@ -1484,6 +1577,7 @@ SUBROUTINE trace3d(self)
     qLT(i,iv,2,j,k) = v + (-dvx+dvz)
     qLT(i,iw,2,j,k) = w + (-dwx+dwz)
     qLT(i,ip,2,j,k) = p + (-dpx2+dpz2)
+    qLT(i,ie,2,j,k) = h + (-dex+dez)
     qLT(i,iA,2,j,k) = AL+ (   +dALz)
     qLT(i,iB,2,j,k) = B + (-dBx+dBz)
     qLT(i,iC,2,j,k) = CR+ (-dCRx   )
@@ -1494,6 +1588,7 @@ SUBROUTINE trace3d(self)
     qLB(i,iv,2,j,k) = v + (-dvx-dvz)
     qLB(i,iw,2,j,k) = w + (-dwx-dwz)
     qLB(i,ip,2,j,k) = p + (-dpx2-dpz2)
+    qLB(i,ie,2,j,k) = h + (-dex-dez)
     qLB(i,iA,2,j,k) = AL+ (   -dALz)
     qLB(i,iB,2,j,k) = B + (-dBx-dBz)
     qLB(i,iC,2,j,k) = CL+ (-dCLx   )
@@ -1504,6 +1599,7 @@ SUBROUTINE trace3d(self)
     qRT(i,iv,3,j,k) = v + (+dvx+dvy)
     qRT(i,iw,3,j,k) = w + (+dwx+dwy)
     qRT(i,ip,3,j,k) = p + (+dpx2+dpy2)
+    qRT(i,ie,3,j,k) = h + (+dex+dey)
     qRT(i,iA,3,j,k) = AR+ (   +dARy)
     qRT(i,iB,3,j,k) = BR+ (+dBRx   )
     qRT(i,iC,3,j,k) = C + (+dCx+dCy)
@@ -1514,6 +1610,7 @@ SUBROUTINE trace3d(self)
     qRB(i,iv,3,j,k) = v + (+dvx-dvy)
     qRB(i,iw,3,j,k) = w + (+dwx-dwy)
     qRB(i,ip,3,j,k) = p + (+dpx2-dpy2)
+    qRB(i,ie,3,j,k) = h + (+dex-dey)
     qRB(i,iA,3,j,k) = AR+ (   -dARy)
     qRB(i,iB,3,j,k) = BL+ (+dBLx   )
     qRB(i,iC,3,j,k) = C + (+dCx-dCy)
@@ -1524,6 +1621,7 @@ SUBROUTINE trace3d(self)
     qLT(i,iv,3,j,k) = v + (-dvx+dvy)
     qLT(i,iw,3,j,k) = w + (-dwx+dwy)
     qLT(i,ip,3,j,k) = p + (-dpx2+dpy2)
+    qLT(i,ie,3,j,k) = h + (-dex+dey)
     qLT(i,iA,3,j,k) = AL+ (   +dALy)
     qLT(i,iB,3,j,k) = BR+ (-dBRx   )
     qLT(i,iC,3,j,k) = C + (-dCx+dCy)
@@ -1534,6 +1632,7 @@ SUBROUTINE trace3d(self)
     qLB(i,iv,3,j,k) = v + (-dvx-dvy)
     qLB(i,iw,3,j,k) = w + (-dwx-dwy)
     qLB(i,ip,3,j,k) = p + (-dpx2-dpy2)
+    qLB(i,ie,3,j,k) = h + (-dex-dey)
     qLB(i,iA,3,j,k) = AL+ (   -dALy)
     qLB(i,iB,3,j,k) = BL+ (-dBLx   )
     qLB(i,iC,3,j,k) = C + (-dCx-dCy)
@@ -1561,103 +1660,139 @@ SUBROUTINE trace3d(self)
     !qRT(i,ir,1,j,k) = r + (+dry+drz)
     drx = sqrt(sqrt(r*rho_t(i,j+1,k)*rho_t(i,j,k+1)*rho_t(i,j+1,k+1))) - r
     dpx = sqrt(sqrt(p*  p_t(i,j+1,k)*  p_t(i,j,k+1)*  p_t(i,j+1,k+1))) - p
+    dex = sqrt(sqrt(h*  h_t(i,j+1,k)*  h_t(i,j,k+1)*  h_t(i,j+1,k+1))) - h
     dry = qRT(i,ir,1,j,k) - r
     dpy = qRT(i,ip,1,j,k) - p
+    dey = qRT(i,ie,1,j,k) - h
     qRT(i,ir,1,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
     qRT(i,ip,1,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
+    qRT(i,ie,1,j,k) = merge(dex, dey, abs(dex) <= abs(dey) .or. dey+h<=0.) + h
     ! X-edge averaged right-bottom corner state (RB->LR)
     !qRB(i,ir,1,j,k) = r + (+dry-drz)
     drx = sqrt(sqrt(r*rho_t(i,j+1,k)*rho_t(i,j,k-1)*rho_t(i,j+1,k-1))) - r
     dpx = sqrt(sqrt(p*  p_t(i,j+1,k)*  p_t(i,j,k-1)*  p_t(i,j+1,k-1))) - p
+    dex = sqrt(sqrt(h*  h_t(i,j+1,k)*  h_t(i,j,k-1)*  h_t(i,j+1,k-1))) - h
     dry = qRB(i,ir,1,j,k) - r
     dpy = qRB(i,ip,1,j,k) - p
+    dey = qRB(i,ie,1,j,k) - h
     qRB(i,ir,1,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
     qRB(i,ip,1,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
+    qRB(i,ie,1,j,k) = merge(dex, dey, abs(dex) <= abs(dey) .or. dey+h<=0.) + h
     ! X-edge averaged left-top corner state (LT->RL)
     !qLT(i,ir,1,j,k) = r + (-dry+drz)
     drx = sqrt(sqrt(r*rho_t(i,j-1,k)*rho_t(i,j,k+1)*rho_t(i,j-1,k+1))) - r
     dpx = sqrt(sqrt(p*  p_t(i,j-1,k)*  p_t(i,j,k+1)*  p_t(i,j-1,k+1))) - p
+    dex = sqrt(sqrt(h*  h_t(i,j-1,k)*  h_t(i,j,k+1)*  h_t(i,j-1,k+1))) - h
     dry = qLT(i,ir,1,j,k) - r
     dpy = qLT(i,ip,1,j,k) - p
+    dey = qLT(i,ie,1,j,k) - h
     qLT(i,ir,1,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
     qLT(i,ip,1,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
+    qLT(i,ie,1,j,k) = merge(dex, dey, abs(dex) <= abs(dey) .or. dey+h<=0.) + h
     ! X-edge averaged left-bottom corner state (LB->RR)
     !qLB(i,ir,1,j,k) = r + (-dry-drz)
     drx = sqrt(sqrt(r*rho_t(i,j-1,k)*rho_t(i,j,k-1)*rho_t(i,j-1,k-1))) - r
     dpx = sqrt(sqrt(p*  p_t(i,j-1,k)*  p_t(i,j,k-1)*  p_t(i,j-1,k-1))) - p
+    dex = sqrt(sqrt(h*  h_t(i,j-1,k)*  h_t(i,j,k-1)*  h_t(i,j-1,k-1))) - h
     dry = qLB(i,ir,1,j,k) - r
     dpy = qLB(i,ip,1,j,k) - p
+    dey = qLB(i,ie,1,j,k) - h
     qLB(i,ir,1,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
     qLB(i,ip,1,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
+    qLB(i,ie,1,j,k) = merge(dex, dey, abs(dex) <= abs(dey) .or. dey+h<=0.) + h
     ! Y-edge averaged right-top corner state (RT->LL)
     !qRT(i,ir,2,j,k) = r + (+drx+drz)
     drx = sqrt(sqrt(r*rho_t(i+1,j,k)*rho_t(i,j,k+1)*rho_t(i+1,j,k+1))) - r
     dpx = sqrt(sqrt(p*  p_t(i+1,j,k)*  p_t(i,j,k+1)*  p_t(i+1,j,k+1))) - p
+    dex = sqrt(sqrt(h*  h_t(i+1,j,k)*  h_t(i,j,k+1)*  h_t(i+1,j,k+1))) - h
     dry = qRT(i,ir,2,j,k) - r
     dpy = qRT(i,ip,2,j,k) - p
+    dey = qRT(i,ie,2,j,k) - h
     qRT(i,ir,2,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
     qRT(i,ip,2,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
+    qRT(i,ie,2,j,k) = merge(dex, dey, abs(dex) <= abs(dey) .or. dey+h<=0.) + h
     ! Y-edge averaged right-bottom corner state (RB->LR)
     !qRB(i,ir,2,j,k) = r + (+drx-drz)
     drx = sqrt(sqrt(r*rho_t(i+1,j,k)*rho_t(i,j,k-1)*rho_t(i+1,j,k-1))) - r
     dpx = sqrt(sqrt(p*  p_t(i+1,j,k)*  p_t(i,j,k-1)*  p_t(i+1,j,k-1))) - p
+    dex = sqrt(sqrt(h*  h_t(i+1,j,k)*  h_t(i,j,k-1)*  h_t(i+1,j,k-1))) - h
     dry = qRB(i,ir,2,j,k) - r
     dpy = qRB(i,ip,2,j,k) - p
+    dey = qRB(i,ie,2,j,k) - h
     qRB(i,ir,2,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
     qRB(i,ip,2,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
+    qRB(i,ie,2,j,k) = merge(dex, dey, abs(dex) <= abs(dey) .or. dey+h<=0.) + h
     ! Y-edge averaged left-top corner state (LT->RL)
     !qLT(i,ir,2,j,k) = r + (-drx+drz)
     drx = sqrt(sqrt(r*rho_t(i-1,j,k)*rho_t(i,j,k+1)*rho_t(i-1,j,k+1))) - r
     dpx = sqrt(sqrt(p*  p_t(i-1,j,k)*  p_t(i,j,k+1)*  p_t(i-1,j,k+1))) - p
+    dex = sqrt(sqrt(h*  h_t(i-1,j,k)*  h_t(i,j,k+1)*  h_t(i-1,j,k+1))) - h
     dry = qLT(i,ir,2,j,k) - r
     dpy = qLT(i,ip,2,j,k) - p
+    dey = qLT(i,ie,2,j,k) - h
     qLT(i,ir,2,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
     qLT(i,ip,2,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
+    qLT(i,ie,2,j,k) = merge(dex, dey, abs(dex) <= abs(dey) .or. dey+h<=0.) + h
     ! Y-edge averaged left-bottom corner state (LB->RR)
     !qLB(i,ir,2,j,k) = r + (-drx-drz)
     drx = sqrt(sqrt(r*rho_t(i-1,j,k)*rho_t(i,j,k-1)*rho_t(i-1,j,k-1))) - r
     dpx = sqrt(sqrt(p*  p_t(i-1,j,k)*  p_t(i,j,k-1)*  p_t(i-1,j,k-1))) - p
+    dex = sqrt(sqrt(h*  h_t(i-1,j,k)*  h_t(i,j,k-1)*  h_t(i-1,j,k-1))) - h
     dry = qLB(i,ir,2,j,k) - r
     dpy = qLB(i,ip,2,j,k) - p
+    dey = qLB(i,ie,2,j,k) - h
     qLB(i,ir,2,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
     qLB(i,ip,2,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
+    qLB(i,ie,2,j,k) = merge(dex, dey, abs(dex) <= abs(dey) .or. dey+h<=0.) + h
     ! Z-edge averaged right-top corner state (RT->LL)
     !qRT(i,ir,3,j,k) = r + (+drx+dry)
     drx = sqrt(sqrt(r*rho_t(i+1,j,k)*rho_t(i,j+1,k)*rho_t(i+1,j+1,k))) - r
     dpx = sqrt(sqrt(p*  p_t(i+1,j,k)*  p_t(i,j+1,k)*  p_t(i+1,j+1,k))) - p
+    dex = sqrt(sqrt(h*  h_t(i+1,j,k)*  h_t(i,j+1,k)*  h_t(i+1,j+1,k))) - h
     dry = qRT(i,ir,3,j,k) - r
     dpy = qRT(i,ip,3,j,k) - p
+    dey = qRT(i,ie,3,j,k) - h
     qRT(i,ir,3,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
     qRT(i,ip,3,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
+    qRT(i,ie,3,j,k) = merge(dex, dey, abs(dex) <= abs(dey) .or. dey+h<=0.) + h
     ! Z-edge averaged right-bottom corner state (RB->LR)
     !qRB(i,ir,3,j,k) = r + (+drx-dry)
     drx = sqrt(sqrt(r*rho_t(i+1,j,k)*rho_t(i,j-1,k)*rho_t(i+1,j-1,k))) - r
     dpx = sqrt(sqrt(p*  p_t(i+1,j,k)*  p_t(i,j-1,k)*  p_t(i+1,j-1,k))) - p
+    dex = sqrt(sqrt(h*  h_t(i+1,j,k)*  h_t(i,j-1,k)*  h_t(i+1,j-1,k))) - h
     dry = qRB(i,ir,3,j,k) - r
     dpy = qRB(i,ip,3,j,k) - p
+    dey = qRB(i,ie,3,j,k) - h
     qRB(i,ir,3,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
     qRB(i,ip,3,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
+    qRB(i,ie,3,j,k) = merge(dex, dey, abs(dex) <= abs(dey) .or. dey+h<=0.) + h
     ! Z-edge averaged left-top corner state (LT->RL)
     !qLT(i,ir,3,j,k) = r + (-drx+dry)
     drx = sqrt(sqrt(r*rho_t(i-1,j,k)*rho_t(i,j+1,k)*rho_t(i-1,j+1,k))) - r
     dpx = sqrt(sqrt(p*  p_t(i-1,j,k)*  p_t(i,j+1,k)*  p_t(i-1,j+1,k))) - p
+    dex = sqrt(sqrt(h*  h_t(i-1,j,k)*  h_t(i,j+1,k)*  h_t(i-1,j+1,k))) - h
     dry = qLT(i,ir,3,j,k) - r
     dpy = qLT(i,ip,3,j,k) - p
+    dey = qLT(i,ie,3,j,k) - h
     qLT(i,ir,3,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
     qLT(i,ip,3,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
+    qLT(i,ie,3,j,k) = merge(dex, dey, abs(dex) <= abs(dey) .or. dey+h<=0.) + h
     ! Z-edge averaged left-bottom corner state (LB->RR)
     !qLB(i,ir,3,j,k) = r + (-drx-dry)
     drx = sqrt(sqrt(r*rho_t(i-1,j,k)*rho_t(i,j-1,k)*rho_t(i-1,j-1,k))) - r
     dpx = sqrt(sqrt(p*  p_t(i-1,j,k)*  p_t(i,j-1,k)*  p_t(i-1,j-1,k))) - p
+    dex = sqrt(sqrt(h*  h_t(i-1,j,k)*  h_t(i,j-1,k)*  h_t(i-1,j-1,k))) - h
     dry = qLB(i,ir,3,j,k) - r
     dpy = qLB(i,ip,3,j,k) - p
+    dey = qLB(i,ie,3,j,k) - h
     qLB(i,ir,3,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
     qLB(i,ip,3,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
+    qLB(i,ie,3,j,k) = merge(dex, dey, abs(dex) <= abs(dey) .or. dey+h<=0.) + h
   end do
   end do
   end do
   !call trace%end (itimer(3))
-  deallocate (rho_t, p_t)
+  deallocate (rho_t, p_t, h_t)
   call trace%end (itimer(1), detailed_timer=detailed_timer)
 contains
   FUNCTION xdn(a) RESULT (b)
@@ -1724,8 +1859,8 @@ SUBROUTINE cmpflxm (self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
   !
   if (xdim == 1) then
     n = ub(1)-lb(1)+1
-    allocate (qleft (n,nvar))
-    allocate (qright(n,nvar))
+    allocate (qleft (n,nvar+1))
+    allocate (qright(n,nvar+1))
     allocate (fgdnv (n,nvar))
     do k = lb(3),ub(3)
       do j = lb(2),ub(2)
@@ -1744,6 +1879,7 @@ SUBROUTINE cmpflxm (self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
           qleft (i,6) = qm(i0+i,bt1,xdim,j,k) ! Tangential magnetic field 1
           qleft (i,7) = qm(i0+i,lt2,xdim,j,k) ! Tangential velocity 2
           qleft (i,8) = qm(i0+i,bt2,xdim,j,k) ! Tangential magnetic field 2
+          qleft (i,9) = qm(i0+i,9  ,xdim,j,k) ! Enthalpy
           ! Right state
           qright(i,1) = qp(i1+i,1  ,xdim,j,k) ! Mass density
           qright(i,2) = qp(i1+i,5  ,xdim,j,k) ! Pressure
@@ -1753,6 +1889,7 @@ SUBROUTINE cmpflxm (self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
           qright(i,6) = qp(i1+i,bt1,xdim,j,k) ! Tangential magnetic field 1
           qright(i,7) = qp(i1+i,lt2,xdim,j,k) ! Tangential velocity 2
           qright(i,8) = qp(i1+i,bt2,xdim,j,k) ! Tangential magnetic field 2
+          qright(i,9) = qp(i1+i,9  ,xdim,j,k) ! Enthalpy
         end do
 if (self%id==io%id_debug .and. j==8 .and. k==8) then
   do i=1,8
@@ -1798,6 +1935,7 @@ end if
           qleft (i,6) = qm(i+i1,bt1,xdim,j-1,k) ! Tangential magnetic field 1
           qleft (i,7) = qm(i+i1,lt2,xdim,j-1,k) ! Tangential velocity 2
           qleft (i,8) = qm(i+i1,bt2,xdim,j-1,k) ! Tangential magnetic field 2
+          qleft (i,9) = qm(i+i1,9  ,xdim,j-1,k) ! Enthalpy
           ! Right state
           qright(i,1) = qp(i+i1,1  ,xdim,j  ,k) ! Mass density
           qright(i,2) = qp(i+i1,5  ,xdim,j  ,k) ! Pressure
@@ -1807,6 +1945,7 @@ end if
           qright(i,6) = qp(i+i1,bt1,xdim,j  ,k) ! Tangential magnetic field 1
           qright(i,7) = qp(i+i1,lt2,xdim,j  ,k) ! Tangential velocity 2
           qright(i,8) = qp(i+i1,bt2,xdim,j  ,k) ! Tangential magnetic field 2
+          qright(i,9) = qp(i+i1,9  ,xdim,j  ,k) ! Enthalpy
         end do
 if (self%id==io%id_debug .and. j==8 .and. k==8) then
   do i=1,8
@@ -1852,6 +1991,7 @@ end if
           qleft (i,6) = qm(i+i1,bt1,xdim,j,k-1) ! Tangential magnetic field 1
           qleft (i,7) = qm(i+i1,lt2,xdim,j,k-1) ! Tangential velocity 2
           qleft (i,8) = qm(i+i1,bt2,xdim,j,k-1) ! Tangential magnetic field 2
+          qleft (i,9) = qm(i+i1,9  ,xdim,j,k-1) ! Enthalpy
           ! Right state
           qright(i,1) = qp(i+i1,1  ,xdim,j,k  ) ! Mass density
           qright(i,2) = qp(i+i1,5  ,xdim,j,k  ) ! Pressure
@@ -1861,6 +2001,7 @@ end if
           qright(i,6) = qp(i+i1,bt1,xdim,j,k  ) ! Tangential magnetic field 1
           qright(i,7) = qp(i+i1,lt2,xdim,j,k  ) ! Tangential velocity 2
           qright(i,8) = qp(i+i1,bt2,xdim,j,k  ) ! Tangential magnetic field 2
+          qright(i,9) = qp(i+i1,9  ,xdim,j,k  ) ! Enthalpy
         end do
 if (self%id==io%id_debug .and. j==8 .and. k==8) then
   do i=1,8
@@ -2013,8 +2154,6 @@ SUBROUTINE solver (self, qleft, qright, fgdnv, n, nvar)
   n1 = size(qleft,1)
   if (self%riemann == 'hlld') then
     call rieman%hlld (qleft, qright, fgdnv, n1, detailed_timer)
-  else if (self%riemann == 'hlld_vec') then
-    call rieman%hlld_vec (qleft, qright, fgdnv, n1, nvar, detailed_timer)
   else if (self%riemann == 'llf')then
     call rieman%llf (qleft, qright, fgdnv, n1, detailed_timer)
   else
