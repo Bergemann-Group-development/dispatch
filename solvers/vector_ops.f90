@@ -14,6 +14,7 @@ MODULE vector_ops
   end interface
   interface edge
     module procedure scalar_edge_vector
+    module procedure vector_edge_vector
   end interface
   interface edge_up
     module procedure scalar_edge_vector_up
@@ -28,17 +29,41 @@ MODULE vector_ops
     module procedure scalar_down_vector
     module procedure vector_down_vector
   end interface
+  interface down1
+    module procedure scalar_down_vector1
+    module procedure vector_down_vector1
+  end interface
+  interface super_down1
+    module procedure scalar_super_down_scalar1
+    module procedure vector_super_down_vector1
+  end interface
   interface up
     module procedure scalar_up_vector
     module procedure vector_up_vector
+  end interface
+  interface up1
+    module procedure scalar_up_vector1
+    module procedure vector_up_vector1
+  end interface
+  interface super_up1
+    module procedure scalar_super_up_scalar1
+    module procedure vector_super_up_vector1
   end interface
   interface ddown
     module procedure scalar_ddown_vector
     module procedure vector_ddown_vector
   end interface
+    interface ddown1
+    module procedure scalar_ddown_vector1
+    module procedure vector_ddown_vector1
+  end interface
   interface dup
     module procedure scalar_dup_vector
     module procedure vector_dup_vector
+  end interface
+    interface dup1
+    module procedure scalar_dup_vector1
+    module procedure vector_dup_vector1
   end interface
   interface grad
     module procedure vector_grad_scalar
@@ -55,8 +80,14 @@ MODULE vector_ops
   interface curl_dn
     module procedure vector_curl_dn_vector
   end interface
+  interface curl_dn1
+    module procedure vector_curl_dn_vector1
+  end interface
   interface curl_up
     module procedure vector_curl_up_vector
+  end interface
+  interface curl_up1
+    module procedure vector_curl_up_vector1
   end interface
 CONTAINS
 
@@ -84,6 +115,16 @@ FUNCTION scalar_edge_vector (in) RESULT (out)
   out(:,:,:,2) = zdn(xdn(in))
   out(:,:,:,3) = xdn(ydn(in))
 END FUNCTION scalar_edge_vector
+
+!===============================================================================
+FUNCTION vector_edge_vector (in) RESULT (out)
+  real, dimension(:,:,:,:), intent(in):: in
+  real, dimension(size(in,1),size(in,2),size(in,3),3):: out
+  !-----------------------------------------------------------------------------
+  out(:,:,:,1) = ydn(zdn(in(:,:,:,1)))
+  out(:,:,:,2) = zdn(xdn(in(:,:,:,2)))
+  out(:,:,:,3) = xdn(ydn(in(:,:,:,3)))
+END FUNCTION vector_edge_vector
 !===============================================================================
 FUNCTION scalar_edge_vector_up (in) RESULT (out)
   real, dimension(:,:,:), intent(in):: in
@@ -132,6 +173,40 @@ FUNCTION vector_down_vector (in) RESULT (out)
   out(:,:,:,3) = zdn (in(:,:,:,3))
 END FUNCTION vector_down_vector
 !===============================================================================
+FUNCTION scalar_super_down_scalar1 (in) RESULT (out)
+  real, dimension(:,:,:), intent(in):: in
+  real, dimension(size(in,1),size(in,2),size(in,3)):: out
+  !-----------------------------------------------------------------------------
+  out(:,:,:) = xdn1(ydn1(zdn1((in))))
+END FUNCTION scalar_super_down_scalar1
+!===============================================================================
+FUNCTION vector_super_down_vector1 (in) RESULT (out)
+  real, dimension(:,:,:,:), intent(in):: in
+  real, dimension(size(in,1),size(in,2),size(in,3),3):: out
+  !-----------------------------------------------------------------------------
+  out(:,:,:,1) = xdn1(ydn1(zdn1((in(:,:,:,1)))))
+  out(:,:,:,2) = ydn1(zdn1(xdn1((in(:,:,:,2)))))
+  out(:,:,:,3) = zdn1(xdn1(ydn1((in(:,:,:,3)))))
+END FUNCTION vector_super_down_vector1
+!===============================================================================
+FUNCTION scalar_down_vector1 (in) RESULT (out)
+  real, dimension(:,:,:), intent(in):: in
+  real, dimension(size(in,1),size(in,2),size(in,3),3):: out
+  !-----------------------------------------------------------------------------
+  out(:,:,:,1) = xdn1 (in)
+  out(:,:,:,2) = ydn1 (in)
+  out(:,:,:,3) = zdn1 (in)
+END FUNCTION scalar_down_vector1
+!===============================================================================
+FUNCTION vector_down_vector1 (in) RESULT (out)
+  real, dimension(:,:,:,:), intent(in):: in
+  real, dimension(size(in,1),size(in,2),size(in,3),3):: out
+  !-----------------------------------------------------------------------------
+  out(:,:,:,1) = xdn1 (in(:,:,:,1))
+  out(:,:,:,2) = ydn1 (in(:,:,:,2))
+  out(:,:,:,3) = zdn1 (in(:,:,:,3))
+END FUNCTION vector_down_vector1
+!===============================================================================
 FUNCTION scalar_up_vector (in) RESULT (out)
   real, dimension(:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3),3):: out
@@ -149,6 +224,41 @@ FUNCTION vector_up_vector (in) RESULT (out)
   out(:,:,:,2) = yup (in(:,:,:,2))
   out(:,:,:,3) = zup (in(:,:,:,3))
 END FUNCTION vector_up_vector
+
+!===============================================================================
+FUNCTION scalar_up_vector1 (in) RESULT (out)
+  real, dimension(:,:,:), intent(in):: in
+  real, dimension(size(in,1),size(in,2),size(in,3),3):: out
+  !-----------------------------------------------------------------------------
+  out(:,:,:,1) = xup1 (in)
+  out(:,:,:,2) = yup1 (in)
+  out(:,:,:,3) = zup1 (in)
+END FUNCTION scalar_up_vector1
+!===============================================================================
+FUNCTION vector_up_vector1 (in) RESULT (out)
+  real, dimension(:,:,:,:), intent(in):: in
+  real, dimension(size(in,1),size(in,2),size(in,3),3):: out
+  !-----------------------------------------------------------------------------
+  out(:,:,:,1) = xup1 (in(:,:,:,1))
+  out(:,:,:,2) = yup1 (in(:,:,:,2))
+  out(:,:,:,3) = zup1 (in(:,:,:,3))
+END FUNCTION vector_up_vector1
+!===============================================================================
+FUNCTION scalar_super_up_scalar1 (in) RESULT (out)
+  real, dimension(:,:,:), intent(in):: in
+  real, dimension(size(in,1),size(in,2),size(in,3)):: out
+  !-----------------------------------------------------------------------------
+  out(:,:,:) = xup1(yup1(zup1((in))))
+END FUNCTION scalar_super_up_scalar1
+!===============================================================================
+FUNCTION vector_super_up_vector1 (in) RESULT (out)
+  real, dimension(:,:,:,:), intent(in):: in
+  real, dimension(size(in,1),size(in,2),size(in,3),3):: out
+  !-----------------------------------------------------------------------------
+  out(:,:,:,1) = xup1(yup1(zup1((in(:,:,:,1)))))
+  out(:,:,:,2) = yup1(zup1(xup1((in(:,:,:,2)))))
+  out(:,:,:,3) = zup1(xup1(yup1((in(:,:,:,3)))))
+END FUNCTION vector_super_up_vector1
 
 !===============================================================================
 FUNCTION scalar_ddown_vector (ds, in) RESULT (out)
@@ -173,6 +283,28 @@ FUNCTION vector_ddown_vector (ds, in) RESULT (out)
 END FUNCTION vector_ddown_vector
 
 !===============================================================================
+FUNCTION scalar_ddown_vector1 (ds, in) RESULT (out)
+  real, dimension(:,:,:), intent(in):: in
+  real, dimension(size(in,1),size(in,2),size(in,3),3):: out
+  real(8):: ds(3)
+  !-----------------------------------------------------------------------------
+  out(:,:,:,1) = ddxdn1 (ds, in)
+  out(:,:,:,2) = ddydn1 (ds, in)
+  out(:,:,:,3) = ddzdn1 (ds, in)
+END FUNCTION scalar_ddown_vector1
+
+!> =============================================================================
+FUNCTION vector_ddown_vector1 (ds, in) RESULT (out)
+  real, dimension(:,:,:,:), intent(in):: in
+  real, dimension(size(in,1),size(in,2),size(in,3),3):: out
+  real(8):: ds(3)
+  !-----------------------------------------------------------------------------
+  out(:,:,:,1) = ddxdn1 (ds, in(:,:,:,1))
+  out(:,:,:,2) = ddydn1 (ds, in(:,:,:,2))
+  out(:,:,:,3) = ddzdn1 (ds, in(:,:,:,3))
+END FUNCTION vector_ddown_vector1
+
+!===============================================================================
 FUNCTION scalar_dup_vector (ds, in) RESULT (out)
   real, dimension(:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3),3):: out
@@ -193,6 +325,28 @@ FUNCTION vector_dup_vector (ds, in) RESULT (out)
   out(:,:,:,2) = ddyup (ds, in(:,:,:,2))
   out(:,:,:,3) = ddzup (ds, in(:,:,:,3))
 END FUNCTION vector_dup_vector
+
+!===============================================================================
+FUNCTION scalar_dup_vector1 (ds, in) RESULT (out)
+  real, dimension(:,:,:), intent(in):: in
+  real, dimension(size(in,1),size(in,2),size(in,3),3):: out
+  real(8):: ds(3)
+  !-----------------------------------------------------------------------------
+  out(:,:,:,1) = ddxup1 (ds, in)
+  out(:,:,:,2) = ddyup1 (ds, in)
+  out(:,:,:,3) = ddzup1 (ds, in)
+END FUNCTION scalar_dup_vector1
+
+!===============================================================================
+FUNCTION vector_dup_vector1 (ds, in) RESULT (out)
+  real, dimension(:,:,:,:), intent(in):: in
+  real, dimension(size(in,1),size(in,2),size(in,3),3):: out
+  real(8):: ds(3)
+  !-----------------------------------------------------------------------------
+  out(:,:,:,1) = ddxup1 (ds, in(:,:,:,1))
+  out(:,:,:,2) = ddyup1 (ds, in(:,:,:,2))
+  out(:,:,:,3) = ddzup1 (ds, in(:,:,:,3))
+END FUNCTION vector_dup_vector1
 
 !===============================================================================
 FUNCTION vector_grad_scalar (mesh, in) RESULT(out)
@@ -241,6 +395,16 @@ FUNCTION vector_curl_dn_vector (ds, in) RESULT (out)
   out(:,:,:,3) = ddxdn(ds, in(:,:,:,2)) - ddydn(ds, in(:,:,:,1))
 END FUNCTION
 !===============================================================================
+FUNCTION vector_curl_dn_vector1 (ds, in) RESULT (out)
+  real, dimension(:,:,:,:), intent(in):: in
+  real, dimension(size(in,1),size(in,2),size(in,3),3):: out
+  real(8):: ds(3)
+  !-----------------------------------------------------------------------------
+  out(:,:,:,1) = ddydn1(ds, in(:,:,:,3)) - ddzdn1(ds, in(:,:,:,2))
+  out(:,:,:,2) = ddzdn1(ds, in(:,:,:,1)) - ddxdn1(ds, in(:,:,:,3))
+  out(:,:,:,3) = ddxdn1(ds, in(:,:,:,2)) - ddydn1(ds, in(:,:,:,1))
+END FUNCTION
+!===============================================================================
 FUNCTION vector_curl_up_vector (ds, in) RESULT (out)
   real, dimension(:,:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3),3):: out
@@ -249,6 +413,16 @@ FUNCTION vector_curl_up_vector (ds, in) RESULT (out)
   out(:,:,:,1) = ddyup(ds, in(:,:,:,3)) - ddzup(ds, in(:,:,:,2))
   out(:,:,:,2) = ddzup(ds, in(:,:,:,1)) - ddxup(ds, in(:,:,:,3))
   out(:,:,:,3) = ddxup(ds, in(:,:,:,2)) - ddyup(ds, in(:,:,:,1))
+END FUNCTION
+!===============================================================================
+FUNCTION vector_curl_up_vector1 (ds, in) RESULT (out)
+  real, dimension(:,:,:,:), intent(in):: in
+  real, dimension(size(in,1),size(in,2),size(in,3),3):: out
+  real(8):: ds(3)
+  !-----------------------------------------------------------------------------
+  out(:,:,:,1) = ddyup1(ds, in(:,:,:,3)) - ddzup1(ds, in(:,:,:,2))
+  out(:,:,:,2) = ddzup1(ds, in(:,:,:,1)) - ddxup1(ds, in(:,:,:,3))
+  out(:,:,:,3) = ddxup1(ds, in(:,:,:,2)) - ddyup1(ds, in(:,:,:,1))
 END FUNCTION
 !*******************************************************************************
 END MODULE
