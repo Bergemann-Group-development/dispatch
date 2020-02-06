@@ -31,16 +31,18 @@ MODULE mhd_mod
   USE eos_mod
   USE non_ideal_mod
   USE initial_mod
+  USE divb_clean_mod
   !USE hyperdiffusion_mod
   implicit none
   private
   type, extends(extras_t), public:: mhd_t
     real, dimension(:,:,:),   pointer    :: d, dddt, e, dedt
-    real, dimension(:,:,:,:), pointer    :: p, dpdt, B, dBdt
+    real, dimension(:,:,:,:), pointer    :: p, dpdt, B, dBdt, emf =>null()
     real, dimension(:,:,:),   pointer    :: lnd, ee, pg, tt=>null()
     real, dimension(:,:,:),   allocatable:: qrad
-    procedure(divB_clean1),   pointer    :: divB_clean => null()
     real:: nu(6)
+    real, pointer:: nu_e(:) => null()                                           ! Enhanced energy diffusion at some Z
+    real, pointer:: nu_d (:) => null()                                          ! Enhanced density diffusion at some Z
     real:: cdtd
     real :: ca_max = 3e2
     real :: qmax = 8.0
@@ -54,6 +56,7 @@ MODULE mhd_mod
     procedure:: pre_update
     procedure:: update
     procedure:: output
+    procedure:: set_nu
     procedure:: gas_pressure
     procedure:: gas_pressure_sub
     procedure :: smooth_loc
@@ -61,13 +64,6 @@ MODULE mhd_mod
     procedure, nopass:: cowboy_hat_1d
     procedure, nopass:: cowboy_hat_2d
     procedure, nopass:: cowboy_hat_3d
-    procedure :: symmetric_x
-    procedure :: symmetric_y
-    procedure :: symmetric_z
-    procedure :: symmetric_xyz
-    procedure :: periodic_x
-    procedure :: periodic_y
-    procedure :: periodic_z
     procedure :: max_loc
     procedure :: difxyz_b3d
     procedure :: difxyz_u3d
@@ -83,9 +79,14 @@ MODULE mhd_mod
   logical, save:: do_smooth=.false.
   logical, save:: do_temperature = .false.
   integer, save:: verbose=0
-  integer, save:: divb_cleaner=2
   integer, save :: max_r = 3
   integer, save :: smooth_r = 3
+  real, save:: nu_d_w_transition = 0.3
+  real, save:: nu_e_w_transition = 0.3
+  real, save:: nu_d_high = 0.0
+  real, save:: nu_e_high = 0.0
+  real, save:: nu_d_tr_loc = 0.0
+  real, save:: nu_e_tr_loc = 0.0
 CONTAINS
 
 !> =============================================================================
@@ -102,8 +103,10 @@ SUBROUTINE pre_init (self)
   logical, save:: mhd=.true.
   character(len=16), save:: eos
   namelist /bifrost_params/ mhd, nu, courant, gamma, csound, cdtd, hardwire, eos, &
-    ca_max, unsigned, verbose, divb_cleaner, loginterpolation, symmetric_e, symmetric_b, &
-    max_r, smooth_r, do_temperature
+    ca_max, unsigned, verbose,  loginterpolation, symmetric_e, symmetric_b, &
+    max_r, smooth_r, do_temperature, &
+    nu_d_w_transition, nu_d_high, nu_d_tr_loc, &
+    nu_e_w_transition, nu_e_high, nu_e_tr_loc
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%pre_init')
   !$omp critical (input_cr)
@@ -115,6 +118,7 @@ SUBROUTINE pre_init (self)
     read (io%input, bifrost_params)
     if (io%master) write (*, bifrost_params)
     call non_ideal%init
+    call divb%init
     call timestep%init
     ! fool-proofing
     if (timestep%time_order <= 0) call mpi%abort("The Stagger solvers require `time_order` > 0. Abort!")
@@ -186,14 +190,6 @@ SUBROUTINE init (self)
   ! Now the setup is complete enough to call gpatch_t%init, for possible ICs
   !-----------------------------------------------------------------------------
   call self%gpatch_t%init
-  select case(divb_cleaner)
-  case(1)
-    self%divb_clean => divb_clean1
-  case(2)
-    self%divb_clean => divb_clean2
-  case default
-    call io%abort('mhd_mod:: divb cleaner method not understood')
-  end select
   self%unsigned(self%idx%d)  = unsigned
   self%pervolume(self%idx%e) = unsigned
   if (first_time.and.io%master) then
@@ -204,11 +200,16 @@ SUBROUTINE init (self)
   ! init extras
   ! ----------------------------------------------------------------------------
   call self%extras_t%init
+  ! ----------------------------------------------------------------------------
+  ! set variable diffusion, if applicable
+  ! ----------------------------------------------------------------------------
+  call self%set_nu
+  !
  call trace%end()
 END SUBROUTINE init
 
 !> =============================================================================
-!> Post init, whatever that means
+!> Post init, whatever is required
 !> =============================================================================
 SUBROUTINE post_init (self)
   class(mhd_t):: self
@@ -217,6 +218,12 @@ SUBROUTINE post_init (self)
   ! Call extras post-init
   ! ----------------------------------------------------------------------------
   call self%extras_t%post_init
+  !----------------------------------------------------------------------------
+  ! Boundary setup
+  !----------------------------------------------------------------------------
+  call self%init_bdries
+  self%boundaries%id  = self%id
+  self%boundaries%mhd = self%mhd
  call trace%end()
 END SUBROUTINE post_init
 
@@ -232,32 +239,37 @@ SUBROUTINE pde (self)
   real, dimension(:,:,:),   pointer:: Ex, Ey, Ez, Jx, Jy, Jz
   real, dimension(:,:,:),   allocatable, target:: sij, Ca, fudge, lnd, cs, ee, Q, Tij
   real, dimension(:,:,:),   allocatable:: scr1, scr2, scr3, scr4, scr5, scr6, scr7
-  real, dimension(:,:,:,:), allocatable, target:: ld, dd, U, U_center, Uv, Um, fm, J, emf, fd
+  real, dimension(:,:,:,:), allocatable, target:: ld, dd, U, U_center, Uv, Uv_dn, Um, fm, J, emf, fd
   logical, save:: first_time=.true.
   !.............................................................................
   real(8):: ds(3), dsmax, dsmin, cu
   real:: u_max, safety, sawtooth_factor
   integer:: itimer=0
-  integer:: lb(3), ub(3), k
+  integer:: lb(3), ub(3), k, li(3), ui(3), iz, iy, ix
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%pde',itimer=itimer)
   associate (i => self%idx)
-  self%d => self%mem(:,:,:,i%d      ,self%it,1); self%dddt => self%mem(:,:,:,i%d      ,self%it,2)
-  self%e => self%mem(:,:,:,i%e      ,self%it,1); self%dedt => self%mem(:,:,:,i%e      ,self%it,2)
-  self%p => self%mem(:,:,:,i%px:i%pz,self%it,1); self%dpdt => self%mem(:,:,:,i%px:i%pz,self%it,2)
-  !> -------------------------------------------------------------------
-  d=>self%d; dddt=>self%dddt; e=>self%e; dedt=>self%dedt;
+  self%d    => self%mem(:,:,:,i%d      ,self%it,1)
+  self%dddt => self%mem(:,:,:,i%d      ,self%it,2)
+  self%e    => self%mem(:,:,:,i%e      ,self%it,1)
+  self%dedt => self%mem(:,:,:,i%e      ,self%it,2)
+  self%p    => self%mem(:,:,:,i%px:i%pz,self%it,1)
+  self%dpdt => self%mem(:,:,:,i%px:i%pz,self%it,2)
+  !> ---------------------------------------------------------------------------
+  d=>self%d; dddt=>self%dddt
+  e=>self%e; dedt=>self%dedt
   p=>self%p; dpdt=>self%dpdt
   px=>p(:,:,:,1); py=>p(:,:,:,2); pz=>p(:,:,:,3);
   dpdtx=>dpdt(:,:,:,1); dpdty=>dpdt(:,:,:,2); dpdtz=>dpdt(:,:,:,3);
   dddt = 0.0
   dedt = 0.0
   dpdt = 0.0
-  !> -------------------------------------------------------------------
+  !> ---------------------------------------------------------------------------
   if (self%mhd) then
-    self%B => self%mem(:,:,:,i%bx:i%bz,self%it,1); self%dBdt => self%mem(:,:,:,i%bx:i%bz,self%it,2)
+    self%B    => self%mem(:,:,:,i%bx:i%bz,self%it,1)
+    self%dBdt => self%mem(:,:,:,i%bx:i%bz,self%it,2)
     B=>self%B; dBdt=>self%dBdt
-    Bx=>B(:,:,:,1); By=>B(:,:,:,2); Bz=>B(:,:,:,3);
+    Bx   =>   B(:,:,:,1);    By=>   B(:,:,:,2);    Bz=>   B(:,:,:,3)
     dBdtx=>dBdt(:,:,:,1); dBdty=>dBdt(:,:,:,2); dBdtz=>dBdt(:,:,:,3)
     dbdt = 0.0
   end if
@@ -268,8 +280,10 @@ SUBROUTINE pde (self)
   self%u_max = 0.0
   lb = self%mesh%lb
   ub = self%mesh%ub
+  li = self%li
+  ui = self%ui
   call allocate_scalars (self%gn, pg)
-  call allocate_vectors_a (self%gn, ld, dd, U, U_center, Uv, Um, fm, fd)
+  call allocate_vectors_a (self%gn, ld, dd, U, U_center, Uv, Uv_dn, Um, fm, fd)
   call allocate_scalars_a (self%gn, cs, ca, lnd, Sij, fudge, ee, Q, Tij)
   call allocate_scalars_a (self%gn, scr1, scr2, scr3, scr4, scr5, scr6, scr7)
   Ux=>U  (:,:,:,1); Uy=>U  (:,:,:,2); Uz=>U  (:,:,:,3)
@@ -296,6 +310,7 @@ SUBROUTINE pde (self)
   self%ee  => ee
   call self%gas_pressure_sub (d, self%lnd, self%ee, pg)
   self%pg => pg
+  call self%aux%register ('pg', self%pg)
   cs  = sqrt(self%gamma*pg/d)
   Sij = cs**2
   !
@@ -323,16 +338,20 @@ SUBROUTINE pde (self)
   scr1 = abs((Ca+U_center(:,:,:,1)))!/self%courant)
   scr2 = abs((Ca+U_center(:,:,:,2)))!/self%courant)
   scr3 = abs((Ca+U_center(:,:,:,3)))!/self%courant)
-  scr4 = merge(scr1,scr2,mask=scr1>scr2)
-  scr5 = merge(scr4,scr3,mask=scr4>scr2)
-  cu = self%fmaxval(scr5,outer=.false.)
+  do iz=li(3),ui(3)
+    do iy=li(2),ui(2)
+      do ix=li(1),ui(1)
+        scr4(ix,iy,iz) = max(scr1(ix,iy,iz),scr2(ix,iy,iz),scr3(ix,iy,iz))
+      end do
+    end do
+  end do
+  cu = self%fmaxval(scr4)
   !print *, 'u_max(cu)', cu, self%u_max
   self%u_max = max(self%u_max,cu)
 
   call self%difxyz_b3d(ds, Ex, Ey, Ez, Uxc, Uyc, Uzc, Um, self%nu(6))           ! valid 4:n-4
   
   Um = Um + Uv
-  
   
   !call self%max_loc(Um(:,:,:,1),scr4)                                           ! valid 6:n-6
   !call self%max_loc(Um(:,:,:,2),scr5)
@@ -343,13 +362,10 @@ SUBROUTINE pde (self)
   !call self%smooth_loc(scr6,Um(:,:,:,3))
   
   call self%cowboy_hat(Um(:,:,:,1),scr4)
-  !call self%symmetric_xyz(scr4)
   Um(:,:,:,1)=scr4
   call self%cowboy_hat(Um(:,:,:,2),scr5)
-  !call self%symmetric_xyz(scr5)
   Um(:,:,:,2)=scr5
   call self%cowboy_hat(Um(:,:,:,3),scr6)
-  !call self%symmetric_xyz(scr6)
   Um(:,:,:,3)=scr6
   !
   call self%difxyz_u3d(ds, Ux, Uy, Uz, Uv, self%nu(3))                          ! valid 4:n-2
@@ -363,14 +379,11 @@ SUBROUTINE pde (self)
   !call self%smooth_loc(scr6,Uv(:,:,:,3))
   
   call self%cowboy_hat(Uv(:,:,:,1),scr4)
-  !call self%symmetric_xyz(scr4)
-  Um(:,:,:,1)=scr4
+  Uv(:,:,:,1)=scr4
   call self%cowboy_hat(Uv(:,:,:,2),scr5)
-  !call self%symmetric_xyz(scr5)
-  Um(:,:,:,2)=scr5
+  Uv(:,:,:,2)=scr5
   call self%cowboy_hat(Uv(:,:,:,3),scr6)
-  !call self%symmetric_xyz(scr6)
-  Um(:,:,:,3)=scr6
+  Uv(:,:,:,3)=scr6
   
   
   if (symmetric_e) then
@@ -383,11 +396,16 @@ SUBROUTINE pde (self)
     Um(:,:,:,3)=Um(:,:,:,1)
   end if
   
+  Uv_dn = down1(Uv)
 
   ! ----------------------------------------------------------------------------
   ! Mass conservation
   ! ----------------------------------------------------------------------------
   ! -- Density diffusion
+  ! ----------------------------------------------------------------------------
+  ! Here a variable nu_d is applied. If Z dimension is collapsed, it is a 
+  ! constant value.
+  ! ----------------------------------------------------------------------------
   if ((self%nu(4) /= 0.0)) then
     if (loginterpolation) then
       fm = ddown1(ds,lnd)                                                       ! valid 4:n-2
@@ -395,9 +413,11 @@ SUBROUTINE pde (self)
       fm = ddown1(ds,d)                                                          ! valid 4:n-2
     end if
     call self%quenchxyz(fm, fd)                                                 ! valid 6:n-4
-    fd(:,:,:,1) = self%nu(4) * xdn1(Uv(:,:,:,1)) * fm(:,:,:,1) * fd(:,:,:,1) * ds(1)
-    fd(:,:,:,2) = self%nu(4) * ydn1(Uv(:,:,:,2)) * fm(:,:,:,2) * fd(:,:,:,2) * ds(2)
-    fd(:,:,:,3) = self%nu(4) * zdn1(Uv(:,:,:,3)) * fm(:,:,:,3) * fd(:,:,:,3) * ds(3)
+    do iz = lb(3), ub(3)
+      fd(:,:,iz,1) = self%nu_d(iz) * Uv_dn(:,:,iz,1) * fm(:,:,iz,1) * fd(:,:,iz,1) * ds(1)
+      fd(:,:,iz,2) = self%nu_d(iz) * Uv_dn(:,:,iz,2) * fm(:,:,iz,2) * fd(:,:,iz,2) * ds(2)
+      fd(:,:,iz,3) = self%nu_d(iz) * Uv_dn(:,:,iz,3) * fm(:,:,iz,3) * fd(:,:,iz,3) * ds(3)
+    end do
     if (loginterpolation) then
       fd = fd*dd
     end if
@@ -411,6 +431,7 @@ SUBROUTINE pde (self)
     dpdtx = dpdtx + ddxdn(ds, fm(:,:,:,1)) + ddxdn(ds, fm(:,:,:,2)) + ddxdn(ds, fm(:,:,:,3))  ! valid 11:n-9
     dpdty = dpdty + ddydn(ds, fm(:,:,:,1)) + ddydn(ds, fm(:,:,:,2)) + ddydn(ds, fm(:,:,:,3))  ! valid 11:n-9
     dpdtz = dpdtz + ddzdn(ds, fm(:,:,:,1)) + ddzdn(ds, fm(:,:,:,2)) + ddzdn(ds, fm(:,:,:,3))  ! valid 11:n-9
+    !if (self%id==2) print *, 'minval 4', minval(dpdtz), maxval(dpdtz)
   end if
   ! -- Advection of density --
   dddt = dddt - div(ds,p)                                                       ! valid 8:-7 if diff, 4:-2 if not
@@ -421,13 +442,18 @@ SUBROUTINE pde (self)
   ! ----------------------------------------------------------------------------  
   fm = dup1(ds,U)                                                               ! valid 3:-3
   call self%quenchxyz(fm,fd)                                                    ! valid 6:-4
-
+  !if (self%id==2) print *, 'minval 5', minval(dpdtz), maxval(dpdtz)
   fd(:,:,:,1) = fd(:,:,:,1) * fm(:,:,:,1) * Uv(:,:,:,1) * ds(1) * d             !Txx  ! valid 7:-5
   fd(:,:,:,2) = fd(:,:,:,2) * fm(:,:,:,2) * Uv(:,:,:,2) * ds(2) * d             !Tyy  ! valid 7:-5
   fd(:,:,:,3) = fd(:,:,:,3) * fm(:,:,:,3) * Uv(:,:,:,3) * ds(3) * d             !Tzz  ! valid 7:-5
-  dpdtx = dpdtx + ddxdn(ds, fd(:,:,:,1) - Uxc**2*d - pg)                      ! valid 11:-9
-  dpdty = dpdty + ddydn(ds, fd(:,:,:,2) - Uyc**2*d - pg)                      ! valid 11:-9
-  dpdtz = dpdtz + ddzdn(ds, fd(:,:,:,3) - Uzc**2*d - pg)                      ! valid 11:-9
+  Tij   = fd(:,:,:,1) - Uxc*Uxc*d - pg
+  dpdtx = dpdtx + ddxdn(ds, Tij)                                                ! valid 11:-9
+  Tij   = fd(:,:,:,2) - Uyc*Uyc*d - pg
+  dpdty = dpdty + ddydn(ds, Tij)                                                ! valid 11:-9
+  Tij   = fd(:,:,:,3) - Uzc*Uzc*d - pg
+  dpdtz = dpdtz + ddzdn(ds, Tij)                                                ! valid 11:-9
+  !if (self%id==2) print *, 'minval 3', minval(dpdtz), maxval(dpdtz)
+
   ! Contribution to internal energy gradient
   dedt  = dedt + (fd(:,:,:,1) - pg) * fm(:,:,:,1) &
                + (fd(:,:,:,2) - pg) * fm(:,:,:,2) &
@@ -435,13 +461,14 @@ SUBROUTINE pde (self)
   ! -- Cross terms --
   ! --    XY    --
   scr1 = ydn(dd(:,:,:,1))
-  scr2 = ydn1(xdn1(Uv(:,:,:,2)))                                                ! valid 10:-7
+  !
+  scr2 = xdn1(Uv_dn(:,:,:,2))                                                   ! valid 10:-7
   scr3 = ddydn1(ds,Ux)
   Sij  = scr3
   call self%quenchy(scr3,scr4)
   Tij(:,:,:) = scr2*scr3*scr4*ds(2)
   !
-  scr2 = ydn1(xdn1(Uv(:,:,:,1)))
+  scr2 = ydn1(Uv_dn(:,:,:,1))
   scr3 = ddxdn1(ds,Uy)
   call self%quenchx(scr3,scr4)
   Sij(:,:,:) =  0.5*(scr3+Sij)         ! Sij         = 0.5*(ddx(Uy)+ddy(Ux))
@@ -458,13 +485,13 @@ SUBROUTINE pde (self)
   dedt = dedt+xup(yup(scr3))                                                    ! valid 12:-9
   ! --    XZ    --
   scr1 = zdn(dd(:,:,:,1))
-  scr2 = zdn1(xdn1(Uv(:,:,:,3)))
+  scr2 = xdn1(Uv_dn(:,:,:,3))
   scr3 = ddzdn1(ds,Ux)
   Sij  = scr3
   call self%quenchz(scr3,scr4)
   Tij(:,:,:) = scr2*scr3*scr4*ds(3)
   !
-  scr2 = zdn1(xdn1(Uv(:,:,:,1)))
+  scr2 = zdn1(Uv_dn(:,:,:,1))
   scr3 = ddxdn1(ds,Uz)
   call self%quenchx(scr3,scr4)
   Sij(:,:,:) =  0.5*(scr3+Sij)         ! Sij         = 0.5*(ddx(Uy)+ddy(Ux))
@@ -476,18 +503,19 @@ SUBROUTINE pde (self)
   !
   dpdtx = dpdtx + ddzup(ds,scr4)
   dpdtz = dpdtz + ddxup(ds,scr4)
+  !if (self%id==2) print *, 'minval 2', minval(dpdtz), maxval(dpdtz)
   !
   scr3 = 2*Tij*Sij
   dedt = dedt+xup(zup(scr3))
   ! --    YZ    --
   scr1 = zdn(dd(:,:,:,2))
-  scr2 = zdn1(ydn1(Uv(:,:,:,3)))
-  scr3 = ddzdn1(ds,Ux)
+  scr2 = ydn1(Uv_dn(:,:,:,3))
+  scr3 = ddzdn1(ds,Uy)
   Sij  = scr3
   call self%quenchz(scr3,scr4)
   Tij(:,:,:) = scr2*scr3*scr4*ds(3)
   !
-  scr2 = zdn1(ydn1(Uv(:,:,:,2)))
+  scr2 = zdn1(Uv_dn(:,:,:,2))
   scr3 = ddydn1(ds,Uz)
   call self%quenchy(scr3,scr4)
   Sij(:,:,:) =  0.5*(scr3+Sij)         ! Sij         = 0.5*(ddx(Uy)+ddy(Ux))
@@ -499,6 +527,7 @@ SUBROUTINE pde (self)
   !
   dpdty = dpdty + ddzup(ds,scr4)
   dpdtz = dpdtz + ddyup(ds,scr4)
+  !if (self%id==2) print *, 'minval 1 ', minval(dpdtz), maxval(dpdtz)
   !
   scr3 = 2*Tij*Sij
   dedt = dedt+yup(zup(scr3))
@@ -507,7 +536,10 @@ SUBROUTINE pde (self)
   ! applied here, and should not be included in the function definition
   !-----------------------------------------------------------------------------
   if (allocated(self%force_per_unit_mass)) then
+    !if (self%id==2) print *, 'minval pre-fpum', minval(dpdtz), maxval(dpdtz)
     dpdt = dpdt + dd*self%force_per_unit_mass                                  ! ops: 2 2 0
+    !if (self%id==2) print *, 'minval fpum', minval(self%force_per_unit_mass(:,:,:,3)*dd(:,:,:,3)), maxval(self%force_per_unit_mass(:,:,:,3)*dd(:,:,:,3))
+    !if (self%id==2) print *, 'minval post-fpum', minval(dpdt(:,:,:,3)), maxval(dpdt(:,:,:,3))
   end if
   if (allocated(self%force_per_unit_volume)) then
     dpdt = dpdt + self%force_per_unit_volume
@@ -523,10 +555,18 @@ SUBROUTINE pde (self)
       fm = ddown1(ds,ee)                                                        ! valid 2:n
     end if
     call self%quenchxyz(fm,fd)                                                  ! valid 4:n-2
-
-    fd(:,:,:,1) = dd(:,:,:,1)*self%nu(5)*fm(:,:,:,1)*fd(:,:,:,1)*xdn1(Uv(:,:,:,1))*ds(1)
-    fd(:,:,:,2) = dd(:,:,:,2)*self%nu(5)*fm(:,:,:,2)*fd(:,:,:,2)*ydn1(Uv(:,:,:,2))*ds(2)
-    fd(:,:,:,3) = dd(:,:,:,3)*self%nu(5)*fm(:,:,:,3)*fd(:,:,:,3)*zdn1(Uv(:,:,:,3))*ds(3)
+  ! ----------------------------------------------------------------------------
+  ! Here a variable nu_e is applied. If Z dimension is collapsed, it is a 
+  ! constant value.
+  ! ----------------------------------------------------------------------------
+    do iz=lb(3), ub(3)
+      fd(:,:,iz,1) = dd(:,:,iz,1)*self%nu_e(iz)*fm(:,:,iz,1)* &
+                     fd(:,:,iz,1)*Uv_dn(:,:,iz,1)*ds(1)
+      fd(:,:,iz,2) = dd(:,:,iz,2)*self%nu_e(iz)*fm(:,:,iz,2)* &
+                     fd(:,:,iz,2)*Uv_dn(:,:,iz,2)*ds(2)
+      fd(:,:,iz,3) = dd(:,:,iz,3)*self%nu_e(iz)*fm(:,:,iz,3)* &
+                     fd(:,:,iz,3)*Uv_dn(:,:,iz,3)*ds(3)
+    end do
     if (loginterpolation) then
       fm = exp(down(log(ee)))
       dedt = dedt + div(ds,fd*fm)
@@ -574,9 +614,11 @@ SUBROUTINE pde (self)
     scr5 = zdn1(ydn1(Um(:,:,:,3)))                   !edge(Um_z)
     scr1 = ds(3)*scr5*scr4
     if (.not.symmetric_b) then
-      Ex   = self%nu(6)*    (Ex - scr1*scr2)
+      scr1 = scr1 * scr2
+      Ex   = self%nu(6)*    (Ex - scr1)
     else
-      Ex   = self%nu(6)*0.5*(Ex + scr1) * Jx
+      scr2 = self%nu(6)*0.5*(Ex + scr1)
+      Ex   = scr2 * Jx
     end if
     ! -- Ey --
     scr1 = ddzdn1(ds,Bx)
@@ -587,28 +629,32 @@ SUBROUTINE pde (self)
     Ey   = ds(3)*scr5*scr3
     if (.not.symmetric_b) Ey = Ey*scr1
     !
-    scr5 = zdn1(xdn1(Um(:,:,:,1)))                   !edge(Um_x)
+    scr5 = xdn1(zdn1(Um(:,:,:,1)))                   !edge(Um_x)
     scr1 = ds(1)*scr5*scr4
     if (.not.symmetric_b) then
-      Ey   = self%nu(6)*    (Ey - scr1*scr2)
+      scr1 = scr1 * scr2
+      Ey   = self%nu(6)*    (Ey - scr1)
     else
-      Ey   = self%nu(6)*0.5*(Ey + scr1) * Jy
+      scr2 = self%nu(6)*0.5*(Ey + scr1)
+      Ey   = scr2 * Jy
     end if
     ! -- Ez --
     scr1 = ddxdn1(ds,By)
     scr2 = ddydn1(ds,Bx)
     call self%quenchx(scr1, scr3)  !(Iz)
     call self%quenchy(scr2, scr4)  !(Iz)
-    scr5 = xdn(ydn(Um(:,:,:,1)))                   !edge(Um_x)
+    scr5 = xdn1(ydn1(Um(:,:,:,1)))                   !edge(Um_x)
     Ez   = ds(1)*scr5*scr3
     if (.not.symmetric_b) Ez = Ez*scr1
     !
-    scr5 = xdn1(ydn1(Um(:,:,:,2)))                   !edge(Um_y)
+    scr5 = ydn1(xdn1(Um(:,:,:,2)))                   !edge(Um_y)
     scr1 = ds(2)*scr5*scr4
     if (.not.symmetric_b) then
-      Ez   = self%nu(6)*    (Ez - scr1*scr2)
+      scr1 = scr1 * scr2
+      Ez   = self%nu(6)*    (Ez - scr1)
     else
-      Ez   = self%nu(6)*0.5*(Ez + scr1) * Jz
+      scr2 = self%nu(6)*0.5*(Ez + scr1)
+      Ez   = scr2 * Jz
     end if
     ! -- Qjoule --- yup(zup(Jx*Ex)) + zup(xup(Jy*Ey)) + xup(yup(Jz*Ez))
     scr1 = Jx*Ex
@@ -686,7 +732,7 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   ! Clean up
   !-----------------------------------------------------------------------------
-  call deallocate_vectors_a (ld, dd, Uv, Um, U_center, fm, fd)
+  call deallocate_vectors_a (ld, dd, Uv, Uv_dn, Um, U_center, fm, fd)
   call deallocate_scalars_a (cs, ca, lnd, Sij, fudge, ee, Q, Tij)
   call deallocate_scalars_a (scr1, scr2, scr3, scr4, scr5, scr6, scr7)
   if (self%mhd) call deallocate_vectors_a (J, emf)
@@ -705,16 +751,56 @@ SUBROUTINE pde (self)
 END SUBROUTINE pde
 
 !===============================================================================
+!> Set a variable nu_z, if needed
+!===============================================================================
+SUBROUTINE set_nu (self)
+  class(mhd_t) :: self
+  ! ----------------------------------------------------------------------------
+  class(mesh_t), pointer:: m
+  integer:: iz
+  ! ............................................................................
+  if (.not.associated(self%nu_d)) allocate(self%nu_d(self%gn(3)))
+  if (.not.associated(self%nu_e)) allocate(self%nu_e(self%gn(3)))
+  !
+  m => self%mesh(3)
+  !
+  if (nu_d_high<=0.0) then
+    self%nu_d = self%nu(4)
+  else
+    do iz = m%lb, m%ub
+      self%nu_d(iz) = 0.5 * ((self%nu(4)+nu_d_high)+(nu_d_high - self%nu(4)) * &
+                              tanh((m%p+m%r(iz)-nu_d_tr_loc)/nu_d_w_transition))
+    end do
+  end if
+  !
+  if (nu_e_high<=0.0) then
+    self%nu_e = self%nu(5)
+  else
+    do iz = m%lb, m%ub
+      self%nu_e(iz) = 0.5 * ((self%nu(5)+nu_e_high)+(nu_e_high - self%nu(5)) * &
+                              tanh((m%p+m%r(iz)-nu_e_tr_loc)/nu_e_w_transition))
+    end do
+  end if
+END SUBROUTINE set_nu
+
+!===============================================================================
 !> This procedure is called by solver_t%update, before it calls mhd_t%update
 !===============================================================================
 SUBROUTINE pre_update (self)
   class(mhd_t), target:: self
   real, dimension(:,:,:), pointer:: d, e, lnd, ee
   integer:: iz
+  real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: mem
   !-----------------------------------------------------------------------------
   ! Compute initial temperature
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%pre_update')
+  !-----------------------------------------------------------------------------
+  ! Set boundary conditions on primary variables
+  !-----------------------------------------------------------------------------
+  !mem => self%mem(:,:,:,:,self%it,1)
+  !call self%boundaries%primary(mem)
+  !
   if (do_temperature .and. .not. associated(self%tt)) then
     allocate (real:: self%tt(self%gn(1),self%gn(2),self%gn(3)))
     allocate (           lnd(self%gn(1),self%gn(2),self%gn(3)))
@@ -744,6 +830,8 @@ END SUBROUTINE pre_update
 SUBROUTINE update (self)
   class(mhd_t):: self
   integer, save:: itimer=0
+  real(kind=KindScalarVar), dimension(:,:,:,:,:), pointer:: mem
+  real(kind=KindScalarVar), pointer:: B(:,:,:,:)
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%update',itimer=itimer)
   !-----------------------------------------------------------------------------
@@ -756,8 +844,16 @@ SUBROUTINE update (self)
     self%mem(:,:,:,self%idx%e,self%it,1) = &
     self%mem(:,:,:,self%idx%d,self%it,1)*self%csound**2
   end if
-  !if (self%mhd) call self%divB_clean
+  if (self%mhd) then
+    B => self%mem(:,:,:,self%idx%bx:self%idx%bz,self%it,1)
+    call divB%clean(self%mesh,B)
+  end if
   call self%pde
+  !-----------------------------------------------------------------------------
+  ! Set boundary conditions on time derivatives
+  !-----------------------------------------------------------------------------
+  !mem => self%mem(:,:,:,:,self%it,:)
+  !call self%boundaries%derivative(mem)
   !-----------------------------------------------------------------------------
   ! The call to courant_condition may optionally be interscepted in extras_t
   !-----------------------------------------------------------------------------
@@ -770,121 +866,6 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   call trace%end (itimer)
 END SUBROUTINE update
-
-!===============================================================================
-!> Perform a single iteration of a div(B) clean.  The limit of stability is
-!> eps=1./6.  This is intended to prevent build-up of layers of large div(B)
-!> between patches. An exact solution would be to solve an internal Laplace
-!> equation, with boundary conditiosn = the boundary value of div(B), and then
-!> subtract the gradient of the resulting potential.
-!>
-!> The problem can also be greatly reduced by using a higher order time
-!> interpoation scheme, thus making the electric field computed from the
-!> guard zone values of B and U a better match to the neighbors E-fields.
-!===============================================================================
-SUBROUTINE divb_clean1(self)
-  class(mhd_t):: self
-  !.............................................................................
-  real, dimension(:,:,:,:), pointer:: b
-  real, dimension(:,:,:)  , pointer:: bx, by, bz, divb
-  real, dimension(:,:,:,:)  , allocatable:: dndivb
-  real, parameter:: eps=0.11
-  !-----------------------------------------------------------------------------
-  b  => self%mem(:,:,:,self%idx%bx:self%idx%bz,self%it,1)
-  bx => b(:,:,:,1)
-  by => b(:,:,:,2)
-  bz => b(:,:,:,3)
-  call allocate_scalars (self%gn, divb)
-  call allocate_vectors_a (self%gn, dndivb)
-  divb = ddup(bx,1) + ddup(by,2) + ddup(bz,3)
-  bx = bx + eps*dddn(divb,1)
-  by = by + eps*dddn(divb,2)
-  bz = bz + eps*dddn(divb,3)
-  print *, 'div_b clean min/max', minval(divb), maxval(divb)
-  
-  call deallocate_vectors_a (dndivb)
-  call deallocate_scalars(divb)
-    return
-contains
-  !-----------------------------------------------------------------------------
-  function ddup(f,i) result (g)
-  real:: f(:,:,:), g(size(f,1),size(f,2),size(f,3))
-  integer:: i
-  !.............................................................................
-  g = cshift(f,1,i) - f
-  end function
-  !-----------------------------------------------------------------------------
-  function dddn(f,i) result (g)
-  real:: f(:,:,:), g(size(f,1),size(f,2),size(f,3))
-  integer:: i
-  !.............................................................................
-  g = f - cshift(f,-1,i)
-  end function
-END SUBROUTINE divb_clean1
-
-!===============================================================================
-!> Enforce div(B)=0 in the guard zones, by succesively imposing the condition,
-!> layer-by-layer, on the component perpendicular to each of the patch faces.
-!===============================================================================
-SUBROUTINE divb_clean2 (self)
-  class(mhd_t):: self
-  !.............................................................................
-  real, dimension(:,:,:), pointer:: bx, by, bz
-  real, dimension(:,:,:), allocatable:: divb
-  real, parameter:: eps=0.11
-  integer:: l(3), u(3), ix, iy, iz, i1, j1, k1
-  integer:: itimer=0
-  !-----------------------------------------------------------------------------
-  call trace%begin('mhd_t%divb_clean2', itimer=itimer)
-  bx => self%mem(:,:,:,self%idx%bx,self%it,1)
-  by => self%mem(:,:,:,self%idx%by,self%it,1)
-  bz => self%mem(:,:,:,self%idx%bz,self%it,1)
-  l = self%mesh%lb
-  u = self%mesh%ub-1
-  i1 = merge(1, 0, self%n(1) > 1)
-  j1 = merge(1, 0, self%n(2) > 1)
-  k1 = merge(1, 0, self%n(3) > 1)
-  !--- x-direction -------------------------------------------------------------
-  do ix=self%mesh(1)%lo,self%mesh(1)%lb,-1
-    bx(ix   ,l(2):u(2),l(3):u(3)) = &
-    bx(ix+i1,l(2):u(2),l(3):u(3)) + ( &
-      by(ix,l(2)+j1:u(2)+j1,l(3)   :u(3)   ) - by(ix,l(2):u(2),l(3):u(3)) + &
-      bz(ix,l(2)   :u(2)   ,l(3)+k1:u(3)+k1) - bz(ix,l(2):u(2),l(3):u(3)))
-  end do
-  do ix=self%mesh(1)%ui,self%mesh(1)%ub-1
-    bx(ix+i1,l(2):u(2),l(3):u(3)) = &
-    bx(ix   ,l(2):u(2),l(3):u(3)) - ( &
-      by(ix,l(2)+j1:u(2)+j1,l(3)   :u(3)   ) - by(ix,l(2):u(2),l(3):u(3)) + &
-      bz(ix,l(2)   :u(2)   ,l(3)+k1:u(3)+k1) - bz(ix,l(2):u(2),l(3):u(3)))
-  end do
-  !--- y-direction -------------------------------------------------------------
-  do iy=self%mesh(2)%lo,self%mesh(2)%lb,-1
-    by(l(1):u(1),iy   ,l(3):u(3)) = &
-    by(l(1):u(1),iy+j1,l(3):u(3)) + ( &
-      bx(l(1)+i1:u(1)+i1,iy,l(3)   :u(3)   ) - bx(l(1):u(1),iy,l(3):u(3)) + &
-      bz(l(1)   :u(1)   ,iy,l(3)+k1:u(3)+k1) - bz(l(1):u(1),iy,l(3):u(3)))
-  end do
-  do iy=self%mesh(2)%ui,self%mesh(2)%ub-1
-    by(l(1):u(1),iy+j1,l(3):u(3)) = &
-    by(l(1):u(1),iy   ,l(3):u(3)) - ( &
-      bx(l(1)+i1:u(1)+i1,iy,l(3)   :u(3)   ) - bx(l(1):u(1),iy,l(3):u(3)) + &
-      bz(l(1)   :u(1)   ,iy,l(3)+k1:u(3)+k1) - bz(l(1):u(1),iy,l(3):u(3)))
-  end do
-  !--- z-direction -------------------------------------------------------------
-  do iz=self%mesh(3)%lo,self%mesh(3)%lb,-1
-    bz(l(1):u(1),l(2):u(2),iz  ) = &
-    bz(l(1):u(1),l(2):u(2),iz+k1) + ( &
-      bx(l(1)+i1:u(1)+i1,l(2)   :u(2)   ,iz) - bx(l(1):u(1),l(2):u(2),iz) + &
-      by(l(1)   :u(1)   ,l(2)+j1:u(2)+j1,iz) - by(l(1):u(1),l(2):u(2),iz))
-  end do
-  do iz=self%mesh(3)%ui,self%mesh(3)%ub-1
-    bz(l(1):u(1),l(2):u(2),iz+k1) = &
-    bz(l(1):u(1),l(2):u(2),iz   ) - ( &
-      bx(l(1)+i1:u(1)+i1,l(2)   :u(2)   ,iz) - bx(l(1):u(1),l(2):u(2),iz) + &
-      by(l(1)   :u(1)   ,l(2)+j1:u(2)+j1,iz) - by(l(1):u(1),l(2):u(2),iz))
-  end do
-  call trace%end (itimer)
-END SUBROUTINE divb_clean2
 
 !===============================================================================
 !> Add extra, MHD-related information to the patch .txt output file
@@ -911,7 +892,7 @@ SUBROUTINE output (self)
     end if
   !$omp end critical (out_cr)
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE output
 
 !===============================================================================
@@ -994,19 +975,13 @@ SUBROUTINE max_loc(self, f, g)
   if (max_r==3) then
     !g=stagger%max3(f)
     g=stagger%zup(f)
-    !call self%symmetric_z(g)
     f=stagger%ymax3(g)
-    !call self%symmetric_y(g)
     g=stagger%xmax3(f)
-    !call self%symmetric_x(g)
   else if (max_r == 5) then
     !g=stagger%max5(f)
     g=stagger%zmax5(f)
-    !call self%symmetric_z(g)
     f=stagger%ymax5(g)
-    !call self%symmetric_y(g)
     g=stagger%xmax5(f)
-    !call self%symmetric_x(g)
   else
     g = f
   end if
@@ -1021,19 +996,13 @@ SUBROUTINE smooth_loc(self, f, g)
   if (smooth_r==3) then
     !g=stagger%xyzsm(f)
     g=stagger%zsm(f)
-    !call self%symmetric_z(g)
     f=stagger%ysm(g)
-    !call self%symmetric_y(g)
     g=stagger%xsm(f)
-    !call self%symmetric_x(g)
   else if (smooth_r == 5) then
     !g=stagger%xyzsm(f)
     g=stagger%zsm(f)
-    !call self%symmetric_z(g)
     f=stagger%ysm(g)
-    !call self%symmetric_y(g)
     g=stagger%xsm(f)
-    !call self%symmetric_x(g)
   else
     g=f
   end if
@@ -1053,27 +1022,36 @@ SUBROUTINE difxyz_b3d(self, ds, bx, by, bz, ux, uy, uz, g, cc)
   real :: cc
   integer:: n(4), ix, iy, iz
   ! ----------------------------------------------------------------------------
-  real, dimension(:,:,:), allocatable :: udotb, bdotb
+  real :: udotb, bdotb, c
   ! ............................................................................
   !
   n=shape(g)
+  c = cc*0.5
   associate (gn => self%mesh%gn)
-  call allocate_scalars_a (gn, udotb, bdotb)
-  udotb = ux*bx+uy*by+uz*bz                                                     ! valid 3:n-3
-  bdotb = bx**2+by**2+bz**2+tiny(1.0)
-  udotb = udotb/bdotb
-  bx = ux - bx*udotb
-  by = uy - by*udotb
-  bz = uz - bz*udotb
-  call deallocate_scalars_a (udotb, bdotb)
+  do iz=1,n(3)
+    do iy=1,n(2)
+      do ix=1,n(1)
+        udotb = ux(ix,iy,iz)*bx(ix,iy,iz) + &
+                uy(ix,iy,iz)*by(ix,iy,iz) + &
+                uz(ix,iy,iz)*bz(ix,iy,iz)
+        bdotb = bx(ix,iy,iz)**2 + &
+                by(ix,iy,iz)**2 + &
+                bz(ix,iy,iz)**2 + 1e-30
+        udotb = udotb/bdotb
+        bx(ix,iy,iz) = ux(ix,iy,iz) - bx(ix,iy,iz) * udotb 
+        by(ix,iy,iz) = uy(ix,iy,iz) - by(ix,iy,iz) * udotb 
+        bz(ix,iy,iz) = uz(ix,iy,iz) - bz(ix,iy,iz) * udotb
+      end do
+    end do
+  end do
   !
-  if (n(1) > 3) then
+  if (n(1) > 2) then
     g(   1,:,:,1) = 0.0
     g(n(1),:,:,1) = 0.0
     do iz=1,n(3)
       do iy=1,n(2)
         do ix=2,n(1)-1
-          g(ix,iy,iz,1) = cc*0.5*max(0.,bx(ix-1,iy,iz) - bx(ix+1,iy,iz))
+          g(ix,iy,iz,1) = c*amax1(0.,bx(ix-1,iy,iz) - bx(ix+1,iy,iz))
         end do
       end do
     end do
@@ -1081,13 +1059,13 @@ SUBROUTINE difxyz_b3d(self, ds, bx, by, bz, ux, uy, uz, g, cc)
     g(:,:,:,1) = 0.0
   endif
   !
-  if (n(2) > 3) then
+  if (n(2) > 2) then
     g(:,   1,:,2) = 0.0
     g(:,n(2),:,2) = 0.0
     do iz=1,n(3)
       do iy=2,n(2)-1
         do ix=1,n(1)
-          g(ix,iy,iz,2) = cc*0.5*max(0.,by(ix,iy-1,iz) - by(ix,iy+1,iz))
+          g(ix,iy,iz,2) = c*amax1(0.,by(ix,iy-1,iz) - by(ix,iy+1,iz))
         end do
       end do
     end do
@@ -1095,13 +1073,13 @@ SUBROUTINE difxyz_b3d(self, ds, bx, by, bz, ux, uy, uz, g, cc)
     g(:,:,:,2) = 0.0
   endif
   !
-  if (n(3) > 3) then
+  if (n(3) > 2) then
     g(:,:,   1,3) = 0.0
     g(:,:,n(3),3) = 0.0
     do iz=2,n(3)-1
       do iy=1,n(2)
         do ix=1,n(1)
-          g(ix,iy,iz,3) = cc*0.5*max(0.,bz(ix,iy,iz-1) - bz(ix,iy,iz+1))
+          g(ix,iy,iz,3) = c*amax1(0.,bz(ix,iy,iz-1) - bz(ix,iy,iz+1))
         end do
       end do
     end do
@@ -1130,7 +1108,7 @@ SUBROUTINE difxyz_u3d(self, ds, ux, uy, uz, g, cc)
     do iz=1,n(3)
       do iy=1,n(2)
         do ix=1,n(1)-1
-           g(ix,iy,iz,1) = g(ix,iy,iz,1) + cc*max(0.,(ux(ix,iy,iz) - ux(ix+1,iy,iz)))
+           g(ix,iy,iz,1) = g(ix,iy,iz,1) + cc*amax1(0.,(ux(ix,iy,iz) - ux(ix+1,iy,iz)))
         end do
       end do
     end do
@@ -1140,7 +1118,7 @@ SUBROUTINE difxyz_u3d(self, ds, ux, uy, uz, g, cc)
     do iz=1,n(3)
       do iy=1,n(2)-1
         do ix=1,n(1)
-           g(ix,iy,iz,2) = g(ix,iy,iz,2) + cc*max(0.,(uy(ix,iy,iz) - uy(ix,iy+1,iz)))
+           g(ix,iy,iz,2) = g(ix,iy,iz,2) + cc*amax1(0.,(uy(ix,iy,iz) - uy(ix,iy+1,iz)))
         end do
       end do
     end do
@@ -1150,7 +1128,7 @@ SUBROUTINE difxyz_u3d(self, ds, ux, uy, uz, g, cc)
     do iz=1,n(3)-1
       do iy=1,n(2)
         do ix=1,n(1)
-          g(ix,iy,iz,3) = g(ix,iy,iz,3) + cc*max(0.,(uz(ix,iy,iz) - uz(ix,iy,iz+1)))
+          g(ix,iy,iz,3) = g(ix,iy,iz,3) + cc*amax1(0.,(uz(ix,iy,iz) - uz(ix,iy,iz+1)))
         end do
       end do
     end do
@@ -1385,236 +1363,6 @@ subroutine quenchz (self, f, qz)
   !call self%symmetric_z(f)
   deallocate(d2,fa,qq)
  end subroutine quenchz
- 
-subroutine symmetric_xyz(self,f)
-  class (mhd_t) :: self
-  real, dimension(:,:,:) :: f
-  ! ----------------------------------------------------------------------------
-  call self%symmetric_x(f)
-  call self%symmetric_y(f)
-  call self%symmetric_z(f)
-end subroutine symmetric_xyz
- 
-!===============================================================================
-!===============================================================================
-subroutine symmetric_x (self, f)
-  class (mhd_t) :: self
-  real, dimension(:,:,:) :: f
-  ! ----------------------------------------------------------------------------
-  class (mesh_t), dimension(:), pointer :: m
-  integer :: i,j,k
-  integer:: lb(3), li(3), ui(3), ub(3), lo(3), uo(3)
-  ! ............................................................................
-  m => self%mesh
- 
-  do i=1,3
-    lb(i) = m(i)%lb; ub(i) = m(i)%ub
-    lo(i) = m(i)%lo; uo(i) = m(i)%uo
-    li(i) = m(i)%li; ui(i) = m(i)%ui
-  end do
-  
-  if (m(1)%n>1) then 
-    !
-    do k=lb(3), ub(3)
-      do j=lb(2), ub(2)
-        ! lower symmetric guard zone extrapolation
-        !do i=1,self%ng(1)
-        !  f(li(1)-i,j,k) =f(li(1)+i-1,j,k)
-        !  f(ui(1)+i,j,k) =f(ui(1)-i+1,j,k)
-        !end do
-        do i=lb(1),lo(1)
-          f(i,j,k) =f(li(1)+(lo(1)-i),j,k)
-        end do
-        ! upper symmetric guard zone extrapolation
-        do i=uo(1),ub(1)
-          f(i,j,k) = f(ui(1)-(i-uo(1)),j,k)
-        end do        
-      enddo
-    enddo
-  endif
- end subroutine symmetric_x
- 
-  !===============================================================================
-!===============================================================================
-subroutine symmetric_y (self, f)
-  class (mhd_t) :: self
-  real, dimension(:,:,:) :: f
-  ! ----------------------------------------------------------------------------
-  class (mesh_t), dimension(:), pointer :: m
-  integer :: i,j,k
-  integer:: lb(3), li(3), ui(3), ub(3), lo(3), uo(3)
-  ! ............................................................................
-  m => self%mesh
-  do i=1,3
-    lb(i) = m(i)%lb; ub(i) = m(i)%ub
-    lo(i) = m(i)%lo; uo(i) = m(i)%uo
-    li(i) = m(i)%li; ui(i) = m(i)%ui
-  end do
-
-  if (m(2)%n>1) then 
-    do k = lb(3), ub(3)
-      ! lower symmetric guard zone extrapolation
-      do j=lb(2),lo(2)
-        do i=lb(1), ub(1)
-          f(i,j,k) = f(i,li(2)+(lo(2)-j),k)
-        end do
-      end do
-      ! upper symmetric guard zone extrapolation
-      do j=uo(2),ub(2)
-        do i=lb(1), ub(1)
-          f(i,j,k) = f(i,ui(2)-(j-uo(2)),k)
-        end do
-      end do
-     !do j=1,self%ng(2)
-     !do i=lb(1), ub(1)
-     !     f(i,li(2)-j,k) =f(i,li(2)+j-1,k)
-     !     f(i,ui(2)+j,k) =f(i,ui(2)-j+1,k)
-     ! end do    
-    !end do
-    end do
-  endif
-end subroutine symmetric_y
- 
-!===============================================================================
-!===============================================================================
-subroutine symmetric_z (self, f)
-  class (mhd_t) :: self
-  real, dimension(:,:,:) :: f
-  ! ----------------------------------------------------------------------------
-  class (mesh_t), dimension(:), pointer :: m
-  integer :: i,j,k
-  integer:: lb(3), li(3), ui(3), ub(3), lo(3), uo(3)
-  ! ............................................................................
-  m => self%mesh
-
-  do i=1,3
-    lb(i) = m(i)%lb; ub(i) = m(i)%ub
-    lo(i) = m(i)%lo; uo(i) = m(i)%uo
-    li(i) = m(i)%li; ui(i) = m(i)%ui
-  end do
-
-  if (m(3)%n>1) then   
-    ! lower symmetric guard zone extrapolation
-    do k = lb(3), lo(3)
-      do j=lb(2),ub(2)
-        do i=lb(1), ub(1)
-          f(i,j,k) = f(i,j,li(3)+(lo(3)-k))
-        end do
-      end do
-    end do
-    ! upper symmetric guard zone extrapolation
-    do k = uo(3), ub(3)
-      do j=lb(2),ub(2)
-        do i=lb(1), ub(1)
-          f(i,j,k) = f(i,j,ui(3)-(k-uo(3)))
-        end do
-      end do    
-    end do
-    !do k=1,self%ng(3)
-    !do j=lb(2), ub(2)
-    !do i=lb(1), ub(1)
-    !      f(i,j,li(3)-k) =f(i,j,li(3)+k-1)
-    !      f(i,j,ui(3)+k) =f(i,j,ui(3)-k+1)
-    !end do
-    !end do
-    !end do
-  endif
- end subroutine symmetric_z
-
-!===============================================================================
-!===============================================================================
-subroutine periodic_x (self, f)
-  class (mhd_t) :: self
-  real, dimension(:,:,:) :: f
-  ! ----------------------------------------------------------------------------
-  class (mesh_t), dimension(:), pointer :: m
-  integer :: i,j,k
-  integer:: lb(3), li(3), ui(3), ub(3), lo(3), uo(3), ng
-  ! ............................................................................
-  m => self%mesh
- 
-  do i=1,3
-    lb(i) = m(i)%lb; ub(i) = m(i)%ub
-    lo(i) = m(i)%lo; uo(i) = m(i)%uo
-    li(i) = m(i)%li; ui(i) = m(i)%ui
-  end do
-  ng=self%ng(1)
-  if (m(1)%n>1) then 
-    !
-    do k=lb(3), ub(3)
-      do j=lb(2), ub(2)
-        do i=1,self%ng(1)
-          f(lb(1)+i-1,j,k) =f(ui(1)-ng+i,j,k)
-          f(ui(1)+i,  j,k) =f(lo(1)   +i,j,k)
-        end do
-      enddo
-    enddo
-  endif
- end subroutine periodic_x
- 
-!===============================================================================
-!===============================================================================
-subroutine periodic_y (self, f)
-  class (mhd_t) :: self
-  real, dimension(:,:,:) :: f
-  ! ----------------------------------------------------------------------------
-  class (mesh_t), dimension(:), pointer :: m
-  integer :: i,j,k
-  integer:: lb(3), li(3), ui(3), ub(3), lo(3), uo(3), ng
-  ! ............................................................................
-  m => self%mesh
- 
-  do i=1,3
-    lb(i) = m(i)%lb; ub(i) = m(i)%ub
-    lo(i) = m(i)%lo; uo(i) = m(i)%uo
-    li(i) = m(i)%li; ui(i) = m(i)%ui
-  end do
-  ng=self%ng(2)
-  if (m(2)%n>1) then 
-    !
-    do k=lb(3), ub(3)
-      do j=1, self%ng(2)
-        do i=lb(1), ub(1)
-          f(i,lb(2)+j-1,k) =f(i,ui(2)-ng+j,k)
-          f(i,ui(2)+j,  k) =f(i,lo(2)   +j,k)
-        end do
-      enddo
-    enddo
-  endif
- end subroutine periodic_y
-
-!===============================================================================
-!===============================================================================
-subroutine periodic_z (self, f)
-  class (mhd_t) :: self
-  real, dimension(:,:,:) :: f
-  ! ----------------------------------------------------------------------------
-  class (mesh_t), dimension(:), pointer :: m
-  integer :: i,j,k
-  integer:: lb(3), li(3), ui(3), ub(3), lo(3), uo(3), ng
-  ! ............................................................................
-  m => self%mesh
- 
-  do i=1,3
-    lb(i) = m(i)%lb; ub(i) = m(i)%ub
-    lo(i) = m(i)%lo; uo(i) = m(i)%uo
-    li(i) = m(i)%li; ui(i) = m(i)%ui
-  end do
-  ng=self%ng(3)
-  if (m(3)%n>1) then 
-    !
-    do k=1, self%ng(3)
-      do j=lb(2), ub(2)
-        do i=lb(1), ub(1)
-          f(i,j,lb(3)+k-1) =f(i,j,ui(3)-ng+k)
-          f(i,j,ui(3)+k  ) =f(i,j,lo(3)   +k)
-        end do
-      enddo
-    enddo
-  endif
- end subroutine periodic_z
- 
-!*******************************************************************************
 
 SUBROUTINE cowboy_hat(self,f,g)
   class(mhd_t):: self
@@ -1654,16 +1402,16 @@ SUBROUTINE cowboy_hat(self,f,g)
     deallocate(f1,f2)
   else if (self%n(2)>2) then
     allocate (f1(size(g,2)))
-    allocate (f2(size(g,1),size(g,3)))
+    allocate (f2(size(g,2),size(g,3)))
     f1 = cowboy_hat_1d(f(m(1)%li,:,m(3)%li))
-    f2 = spread(f1,1,size(g,1))
-    g  = spread(f2,3,size(g,3))
+    f2 = spread(f1,2,size(g,3))
+    g  = spread(f2,1,size(g,1))
     deallocate(f1,f2)
   else if (self%n(3)>2) then
     allocate (f1(size(g,3)))
     allocate (f2(size(g,2),size(g,3)))
     f1 = cowboy_hat_1d(f(m(1)%li,m(2)%li,:))
-    f2 = spread(f1,2,size(g,2))
+    f2 = spread(f1,1,size(g,2))
     g  = spread(f2,1,size(g,1))
     deallocate(f1,f2)
   else
@@ -1678,33 +1426,32 @@ FUNCTION cowboy_hat_1d(a) RESULT (b)
   real, dimension(size(a)):: b
   integer:: i, n
   real:: c1, c2
-  integer:: itimer=0
-  call trace%begin ('stagger_mod::cowboy_hat_1d', itimer=itimer)
+  ! ----------------------------------------------------------------------------
   n = size(a)
   c1=0.2
   c2=0.4
-
   do i=2,n-1
     b(i) = a(i-1)*c2 + a(i)*c1 + a(i+1)*c2
   end do
   b(1)=b(2)
   b(n)=b(n)-1
-  call trace%end (itimer)
 END FUNCTION cowboy_hat_1d
  
 FUNCTION cowboy_hat_2d(a,ds) RESULT (b)
   real, dimension(:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2)):: b
-  real(8):: ds(2), nds(2)
+  real(8):: ds(2), nds(2), vert, hor, corner
   integer:: ix, iy, mx, my, i, n(2)
   real(8), dimension(3,3):: m
-  integer:: itimer=0
-  call trace%begin ('stagger_mod::cowboy_hat_2d', itimer=itimer)
+  ! ----------------------------------------------------------------------------
   n = shape(a)
   nds=ds/minval(ds)
-  m(:,1)=[0.4/sqrt(nds(1)**2+nds(2)**2),0.4/nds(2),0.4/sqrt(nds(1)**2+nds(2)**2)]
-  m(:,2)=[0.4/nds(1),0.2_8,0.4/nds(1)]
-  m(:,1)=[0.4/sqrt(nds(1)**2+nds(2)**2),0.4/nds(2),0.4/sqrt(nds(1)**2+nds(2)**2)]
+  hor  = 0.4/nds(1)
+  vert = 0.4/nds(2)
+  corner = 0.4/sqrt(nds(1)**2+nds(2)**2)
+  m(:,1)=[corner, vert , corner]
+  m(:,2)=[hor   , 0.2_8, hor   ]
+  m(:,3)=[corner, vert , corner]
   m=m/sum(m)
   !
   b=0.0
@@ -1721,8 +1468,6 @@ FUNCTION cowboy_hat_2d(a,ds) RESULT (b)
   b(:,n(2))=a(:,n(2)-1)
   b(1,   :)=a(2,   :)
   b(n(1),:)=a(n(1)-1,:)
-  
-  call trace%end (itimer)
 END FUNCTION cowboy_hat_2d
  
 FUNCTION cowboy_hat_3d(a,ds) RESULT (b)
