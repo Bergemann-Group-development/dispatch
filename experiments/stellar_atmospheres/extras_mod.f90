@@ -97,6 +97,7 @@ MODULE extras_mod
     procedure, nopass:: cast2extras
     procedure:: pre_init
     procedure:: init
+    procedure:: post_init
     procedure:: dealloc
     procedure:: pre_update
     procedure:: post_update
@@ -159,6 +160,15 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !===============================================================================
+!> Post-initialize the modules that are to be included and used. Empty for now.
+!===============================================================================
+SUBROUTINE post_init (self)
+  class(extras_t):: self
+  !.............................................................................
+  !
+END SUBROUTINE post_init
+
+!===============================================================================
 !> Deallocate allocated arrays
 !===============================================================================
 SUBROUTINE dealloc (self)
@@ -210,6 +220,7 @@ SUBROUTINE post_update (self)
   class(extras_t):: self
   !.............................................................................
   call self%rt%post_update                                             ! RT
+  !call self%spitzer%post_update
   !call self%forces%post_update                                         ! forces
   !call self%trace_particles%post_update (self)                         ! tracep
   !call self%pic%post_update()                                          ! pic
@@ -263,6 +274,7 @@ SUBROUTINE courant_condition (self, detailed_timer)
   !-----------------------------------------------------------------------------
   call trace%begin ('extras_t%courant_condition')
   call self%rt%courant_condition (detailed_timer)                      ! RT
+  !call self%spitzer%courant_condition (detailed_timer)                 ! spitzer
   call self%gpatch_t%courant_condition (detailed_timer)                ! keep
   call trace%end()
 END SUBROUTINE courant_condition
