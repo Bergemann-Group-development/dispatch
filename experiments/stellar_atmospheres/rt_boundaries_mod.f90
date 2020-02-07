@@ -52,18 +52,20 @@ SUBROUTINE condition (self, mem, src, rk, tt, mu)
   logical:: lower
   !.............................................................................
   class(mesh_t), pointer:: m1, m2, m3
-  integer:: ib, i3, i3b, i2, i1, n(4)
+  integer:: ib, i3, i3b, i2, i1, n(4), ui
   real:: h_scale, tau
   !-----------------------------------------------------------------------------
   n=shape(mem)
   if (self%mesh(3)%lower_boundary .and. mu(3) > 0.0) then
     i3 = self%mesh(3)%lo
+    ui = self%mesh(3)%ui
     do ib=1,n(4)
       do i2=self%mesh(2)%lb,self%mesh(2)%ub
       do i1=self%mesh(1)%lb,self%mesh(1)%ub
         ! -- Estimate the boundary Q from an estimate of the total optical depth
         h_scale = tt(i1,i2,i3+1)/(scaling%temp*self%grav)
-        tau = h_scale*rk(i1,i2,i3+1,ib)/abs(mu(3))
+        !tau = h_scale*rk(i1,i2,i3+1,ib)/abs(mu(3))
+        tau = self%mesh(3)%d*0.5*(rk(i1,i2,ui,ib)+rk(i1,i2,i3,ib))/abs(mu(3))
         mem(i1,i2,i3,ib) = -src(i1,i2,i3,ib)*exp(-tau)
       end do
       end do
