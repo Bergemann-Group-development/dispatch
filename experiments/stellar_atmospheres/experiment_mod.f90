@@ -45,7 +45,7 @@ MODULE experiment_mod
   !.............................................................................
   integer, save:: verbose=1
   logical, save:: smudge_boundary = .false.
-  real, save:: d_bot=0.0, e_bot=0.0
+  real, save:: d_bot=0.0, e_bot=0.0, ee_top=5.0
   real, save:: bottom_bc_rate=0.01
   type(experiment_t), public:: experiment
 CONTAINS
@@ -57,7 +57,7 @@ SUBROUTINE init (self)
   class(experiment_t):: self
   integer:: iostat
   logical, save:: first_time=.true.
-  namelist /experiment_params/ d_bot, e_bot, bottom_bc_rate, verbose
+  namelist /experiment_params/ d_bot, e_bot, ee_top, bottom_bc_rate, verbose
   !-----------------------------------------------------------------------------
   call trace%begin('experiment_t%init')
   !-----------------------------------------------------------------------------
@@ -118,6 +118,7 @@ END SUBROUTINE init_task_list
 SUBROUTINE update (self)
   class(experiment_t):: self
   class(link_t), pointer:: link
+  real, pointer, contiguous, dimension(:,:,:):: d, e
   logical, save:: first_time=.true.
   !----------------------------------------------------------------------------
   call trace%begin('experiment_t%update')
@@ -126,6 +127,9 @@ SUBROUTINE update (self)
       self%mesh(3)%upper_boundary) then
       call self%boundary_condition
   end if
+  d => self%mem(:,:,:,self%idx%d,self%it,1)
+  e => self%mem(:,:,:,self%idx%e,self%it,1)
+  e = max(e,4.5*d)
   call self%solver_t%update
   call self%to_thermal_end
   call trace%end()
