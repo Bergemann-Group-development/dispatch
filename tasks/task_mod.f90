@@ -190,61 +190,27 @@ END SUBROUTINE dnload
 !===============================================================================
 SUBROUTINE init (self)
   class (task_t):: self
-  character(len=120):: ids= &
-    '$Id$ tasks/task_mod.f90'
-  integer:: iostat, id, id_master
-  logical, save:: do_dumps
-  integer, save:: id_max=0
-  namelist /task_params/ track_id, do_dumps, verbose
-  namelist /dump_params/ id, iostat
+  integer:: id, id_master
   !-----------------------------------------------------------------------------
   call trace_begin ('task_t%init')
-  call trace%print_id (ids)
-  !$omp critical (input_cr)
+  call init_params (self)
   if (self%id == 0) then
     call init_unique (self)
+    if (verbose > 0) &
+      write (io_unit%log,*) 'task_t%init: id =', id
   else
     !---------------------------------------------------------------------------
     ! If a task already has an id, update the MPI counter if its value is less.
     ! The id of a virtual copy of a new AMR task should NOT trigger this.
     !---------------------------------------------------------------------------
     id_master = mpi%id%update(0)
+    if (verbose > 0) &
+      write (io_unit%log,*) 'task_t%init: id, id_master =', self%id, id_master
     if (id_master < self%id) then
-      write (stderr,*) 'task_t%init: updating master id', id_master, self%id
+      write (io_unit%log,*) 'task_t%init: updating master id', self%id, id_master
       id_master = mpi%id%update (self%id-id_master)
     end if
   end if
-  !-----------------------------------------------------------------------------
-  ! First thread to enter reads task_params
-  !-----------------------------------------------------------------------------
-  if (first_time) then
-    rewind (io%input)
-    read (io%input, task_params, iostat=iostat)
-    call io%namelist_warning ('task_params', iostat)
-    write (io%output, task_params)
-    first_time = .false.
-  end if
-  !-----------------------------------------------------------------------------
-  ! If dumps are requested, read a list of task ids for which dumps should be on
-  !-----------------------------------------------------------------------------
-  if (do_dumps) then
-    rewind (io%input)
-    do
-      iostat = 0
-      verbose = 0
-      read (io%input, dump_params, iostat=iostat)
-      if (iostat /= 0) then
-        exit
-      else if (id == self%id) then
-        self%verbose = verbose
-        self%dump_it = .true.
-        write (io_unit%log,*) 'task_t%init: dump_id =', id
-        write (io%output, dump_params)
-        exit
-      end if
-    end do
-  end if
-  !$omp end critical (input_cr)
   !-----------------------------------------------------------------------------
   ! Locks, random numbers, etc
   !-----------------------------------------------------------------------------
@@ -277,6 +243,56 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !===============================================================================
+!> Define unique task id, unless already set before entry.
+!===============================================================================
+SUBROUTINE init_params (self)
+  class (task_t):: self
+  character(len=120):: ids= &
+    '$Id$ tasks/task_mod.f90'
+  integer:: iostat, id, id_master
+  logical, save:: do_dumps
+  integer, save:: id_max=0
+  namelist /task_params/ track_id, do_dumps, verbose
+  namelist /dump_params/ id, iostat
+  !-----------------------------------------------------------------------------
+  call trace_begin ('task_t%init_params')
+  call trace%print_id (ids)
+  !$omp critical (input_cr)
+  !-----------------------------------------------------------------------------
+  ! First thread to enter reads task_params
+  !-----------------------------------------------------------------------------
+  if (first_time) then
+    rewind (io%input)
+    read (io%input, task_params, iostat=iostat)
+    call io%namelist_warning ('task_params', iostat)
+    write (io%output, task_params)
+    first_time = .false.
+  end if
+  !-----------------------------------------------------------------------------
+  ! If dumps are requested, read a list of task ids for which dumps should be on
+  !-----------------------------------------------------------------------------
+  if (do_dumps) then
+    rewind (io%input)
+    do
+      iostat = 0
+      verbose = 0
+      read (io%input, dump_params, iostat=iostat)
+      if (iostat /= 0) then
+        exit
+      else if (id == self%id) then
+        self%verbose = verbose
+        self%dump_it = .true.
+        write (io_unit%log,*) 'task_t%init: dump_id =', id
+        write (io%output, dump_params)
+        exit
+      end if
+    end do
+  end if
+  !$omp end critical (input_cr)
+  call trace_end ()
+END SUBROUTINE init_params
+
+!===============================================================================
 !> Define unique patch ids.  A critical region is OK; this is only done once.
 !===============================================================================
 SUBROUTINE init_unique (self, same)
@@ -289,6 +305,7 @@ SUBROUTINE init_unique (self, same)
   ! of IDs to prune from, while the master rank updates the global counter
   !-----------------------------------------------------------------------------
   call trace_begin ('task_t%init_unique')
+  call init_params (self)
   if (present(same) .and. same) then
     if (mpi%master) &
       id_master = mpi%id%update (1)
