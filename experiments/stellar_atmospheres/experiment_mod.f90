@@ -145,7 +145,7 @@ SUBROUTINE boundary_condition (self)
   real, dimension(:,:,:), allocatable:: ux, uy, uz, ex, ey, ez, pg
   real(8), dimension(:), pointer:: z
   class(mesh_t), pointer:: m3
-  integer:: ix, iy, iz, iz1
+  integer:: ix, iy, iz, iz1, m(3)
   real:: d_ratio, e_ratio, h_scale, p, ee, dlnddz, dlnedz
   logical, save:: first_lower=.true., first_upper=.true.
   !-----------------------------------------------------------------------------
@@ -171,9 +171,10 @@ SUBROUTINE boundary_condition (self)
     !---------------------------------------------------------------------------
     ! Boundary conditions need the gas pressure in one layer
     !---------------------------------------------------------------------------
-    allocate (pg(size(d,1),size(d,2),1))
+    m = self%gn
+    allocate (pg(m(1),m(2),li(3):li(3)))
     d1 => d(:,:,li(3):li(3))
-    e1 => e(:,:,li(3):li(3))
+    e1 => self%eth(:,:,li(3):li(3))
     call eos%lookup_table (shape(pg), pg=pg, d=d1, e=e1)
     !---------------------------------------------------------------------------
     ! Note that the loop for simplicity includes iz=li(3), but d_ratio=1.0 for
@@ -188,8 +189,12 @@ SUBROUTINE boundary_condition (self)
         ! lowest order proportional to temperature.
         !-----------------------------------------------------------------------
         iz1 = li(3)
-        h_scale = pg(ix,iy,1)/(d(ix,iy,iz1)*self%gravity%const_grav)
-        ee = e(ix,iy,iz1)/d(ix,iy,iz1)
+        h_scale = pg(ix,iy,iz1)/(d(ix,iy,iz1)*self%gravity%const_grav)
+        !if (pz(ix,iy,iz1) > 0.0) then
+          ee = ee_top
+        !else
+        !  ee = e1(ix,iy,iz1)/d(ix,iy,iz1)
+        !end if
         d_ratio = exp((z(iz)-z(iz1))/h_scale)
         d(ix,iy,iz) = d(ix,iy,iz1)*d_ratio
         e(ix,iy,iz) = d(ix,iy,iz)*ee
@@ -205,7 +210,9 @@ SUBROUTINE boundary_condition (self)
         ! momentum at the point li+1, which is the 1st point inside the physical
         ! domain.  The vertical velocity is tapered of with the d_ratio factor.
         !-----------------------------------------------------------------------
-        iz1 = li(3)+1
+        if (self%kind(1:5)=='stagg') then
+          iz1 = li(3)+1
+        end if
         d_ratio = exp((z(iz)-z(iz1))/h_scale)
         pz(ix,iy,iz) = pz(ix,iy,iz1)*d_ratio**2
       end do
