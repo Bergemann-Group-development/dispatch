@@ -777,13 +777,16 @@ subroutine omp_eos
   m = shape(self%rk)
   allocate (pgas(m(1),m(2),m(3)),fmax(m(1),m(2),m(3)))
   !-----------------------------------------------------------------------------
-  d => self%mem(:,:,:,patch%idx%d,patch%it,1)
-  e => self%mem(:,:,:,patch%idx%e,patch%it,1)
+  d => patch%mem(:,:,:,patch%idx%d,patch%it,1)
+  e => patch%mem(:,:,:,patch%idx%e,patch%it,1)
   if (verbose > 2) then
     call self%stats (d, 'd')
     call self%stats (e, 'e')
   end if
-  call eos%lookup_table (m, d=d, e=e, rk=self%rk, src=self%src, tt=self%tt, pg=pgas)
+  call patch%to_thermal_begin (patch%it, kind=patch%kind)
+  call eos%lookup_table (m, d=d, e=patch%eth, rk=self%rk, src=self%src, &
+                         tt=self%tt, pg=pgas)
+  call patch%to_thermal_end (kind=patch%kind)
   ! ----------------------------------------------------------------------------
   ! Compute radiative diffusion speed, and set default omega%u_max
   ! ----------------------------------------------------------------------------
@@ -853,7 +856,7 @@ END SUBROUTINE task_info
 !===============================================================================
 SUBROUTINE nbor_info (self, nbor)
   class(rt_t):: self
-  class(link_t):: nbor
+  class(nbor_t):: nbor
   !-----------------------------------------------------------------------------
   write(io_unit%mpi,'(3x,a,i6,2i4,2x,3l1,2x,2l1,2x,3f9.3,i4,2f7.3)') &
     'rt_t%nbor_info: id, rank, level, needed, needs_me, download, BV, pos =', &

@@ -44,6 +44,8 @@ MODULE solver_mod
     procedure:: compression_magnitude
     procedure:: vorticity_magnitude
     generic:: gas_velocity => gas_velocity_vector, gas_velocity_scalar
+    procedure:: to_thermal_begin
+    procedure:: to_thermal_end
   end type
   type(solver_t), public:: solver
 CONTAINS
@@ -54,10 +56,12 @@ CONTAINS
 SUBROUTINE init (self)
   class(solver_t) :: self
   !.....................................................................
+  call trace%begin ('solver_t%init')
   call self%mhd_t%pre_init
   call self%mhd_t%init
   call self%extras_t%init
   call validate%init
+  call trace%end ()
 END SUBROUTINE init
 
 !=======================================================================
@@ -67,11 +71,11 @@ SUBROUTINE update (self)
   class(solver_t) :: self
   associate (d=>self%mem(:,:,:,self%idx%d,self%it,1))
   !.....................................................................
-  call self%extras_t%pre_update
+  call self%mhd_t%pre_update
   call validate%check (self, d, 'before update')
   call self%mhd_t%update
   call validate%check (self, d, ' after update')
-  call self%extras_t%post_update
+  call self%mhd_t%post_update
   end associate
 END SUBROUTINE update
 
@@ -450,5 +454,55 @@ SUBROUTINE vorticity_magnitude (self, w)
   deallocate (vx, vy, vz)
   call trace%end (itimer)
 END SUBROUTINE vorticity_magnitude
+
+!===============================================================================
+!> Compute or assign thermal energy
+!===============================================================================
+SUBROUTINE to_thermal_begin (self, it, kind)
+  class(solver_t):: self
+  integer:: it
+  character(len=*), optional:: kind
+  !.............................................................................
+  integer:: i1, i2, i3
+  real, pointer, contiguous, dimension(:,:,:):: d, e, px, py, pz, bx, by, bz
+  !-----------------------------------------------------------------------------
+  call trace%begin ('solver_t%to_thermal_begin')
+  if (.not.associated(self%eth)) then
+    allocate (self%eth(self%gn(1),self%gn(2),self%gn(3)))
+  end if
+  d  => self%mem(:,:,:,self%idx%d ,it,1)
+  e  => self%mem(:,:,:,self%idx%e ,it,1)
+  px => self%mem(:,:,:,self%idx%px,it,1)
+  py => self%mem(:,:,:,self%idx%py,it,1)
+  pz => self%mem(:,:,:,self%idx%pz,it,1)
+  self%eth = e - 0.5*(px**2+py**2+pz**2)/d
+  bx => self%mem(:,:,:,self%idx%bx,it,1)
+  by => self%mem(:,:,:,self%idx%by,it,1)
+  bz => self%mem(:,:,:,self%idx%bz,it,1)
+  do i3=1,self%gn(3)-1
+  do i2=1,self%gn(2)-1
+  do i1=1,self%gn(1)-1
+    self%eth(i1,i2,i3) = &
+    self%eth(i1,i2,i3) - 0.125*((bx(i1,i2,i3)+bx(i1+1,i2,i3))**2 + &
+                                (by(i1,i2,i3)+by(i1,i2+1,i3))**2 + &
+                                (bz(i1,i2,i3)+bz(i1,i2,i3+1))**2)
+  end do
+  end do
+  end do
+  call trace%end ()
+END SUBROUTINE to_thermal_begin
+
+!===============================================================================
+!> Clean up after computing thermal energy
+!===============================================================================
+SUBROUTINE to_thermal_end (self, kind)
+  class(solver_t):: self
+  character(len=*), optional:: kind
+  !.............................................................................
+  call trace%begin ('solver_t%to_thermal_end')
+  deallocate (self%eth)
+  nullify (self%eth)
+  call trace%end ()
+END SUBROUTINE to_thermal_end
 
 END MODULE solver_mod

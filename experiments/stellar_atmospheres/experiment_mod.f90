@@ -121,11 +121,13 @@ SUBROUTINE update (self)
   logical, save:: first_time=.true.
   !----------------------------------------------------------------------------
   call trace%begin('experiment_t%update')
+  call self%to_thermal_begin (self%it)
   if (self%mesh(3)%lower_boundary .or. &
       self%mesh(3)%upper_boundary) then
       call self%boundary_condition
   end if
   call self%solver_t%update
+  call self%to_thermal_end
   call trace%end()
 END SUBROUTINE update
 
