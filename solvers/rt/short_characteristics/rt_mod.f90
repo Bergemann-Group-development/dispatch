@@ -596,7 +596,6 @@ SUBROUTINE setup_boundaries(self)
       self%on = .false.
     else if (llc(i) <= self%rt_llc(i)) then
       call self%boundaries%set (lbit(i))
-      self%mesh(i)%lower_boundary = .true.
     end if
     !
     if ((llc(i) > self%rt_urc(i))) then
@@ -604,7 +603,6 @@ SUBROUTINE setup_boundaries(self)
       self%on = .false.
     else if (urc(i) >= self%rt_urc(i)) then
       call self%boundaries%set (ubit(i))
-      self%mesh(i)%upper_boundary = .true.
     end if
   end do
 END SUBROUTINE setup_boundaries
