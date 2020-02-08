@@ -102,6 +102,11 @@ SUBROUTINE execute (self, task_list, test)
   call trace%begin ('dispatcher0_t%execute', itimer=itimer)
   call io%header('begin dispatcher0_t%execute:')
   call task_list%startup
+print *, 'queue:', task_list%queue%task%id, associated(task_list%queue%nbor)
+call check ('A')
+  call task_list%list_t%info
+print *, 'queue:', task_list%queue%task%id, associated(task_list%queue%nbor)
+call check ('B')
   call tic (time=sec)
   call timer%print()
   !-----------------------------------------------------------------------------
@@ -109,6 +114,9 @@ SUBROUTINE execute (self, task_list, test)
   !-----------------------------------------------------------------------------
   !$omp parallel
   do while (.not.timer%done .and. wallclock() < io%job_seconds)
+print *, 'queue:', task_list%queue%task%id, associated(task_list%queue%nbor)
+write(io_unit%log,*) 'queue:', task_list%queue%task%id, associated(task_list%queue%nbor)
+call check ('C')
     call self%update (task_list, test)
     if (task_list%na == task_list%n_tasks) then
       !$omp atomic read
@@ -141,6 +149,21 @@ SUBROUTINE execute (self, task_list, test)
   call trace%end (itimer)
   write (io_unit%mpi,*) 'end dispatcher0_t%execute'
   flush (io_unit%mpi)
+contains
+subroutine check (label)
+  character(len=*):: label
+  class(link_t), pointer:: link
+  link => task_list%head
+  do while (associated(link))
+    if (link%task%id == 62) print *, 'task(l):', label, link%task%id, associated(link%nbor)
+    link => link%next
+  end do
+  link => task_list%queue
+  do while (associated(link))
+    if (link%task%id == 62) print *, 'task(q):', label, link%task%id, associated(link%nbor)
+    link => link%next_time
+  end do
+end subroutine check
 END SUBROUTINE execute
 
 !===============================================================================

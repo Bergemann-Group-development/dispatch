@@ -47,6 +47,7 @@ SUBROUTINE init (mhd)
   ! 1) The omega0 needs the MHD task for the MHD variables, but no download
   !-----------------------------------------------------------------------------
   needs=.true.; needs_me=.false.; download=.false.
+  print *, '1:', associated(omega0%link%nbor)
   call init_nbor_pair (omega0%link, needs, mhd%link, needs_me, download)
   !-----------------------------------------------------------------------------
   ! Loop over all ray directions, and add nbors and nbor relations. The only
@@ -74,6 +75,7 @@ SUBROUTINE init (mhd)
         ! 2) The omega0 task needs the MHD nbors, and needs download
         !-----------------------------------------------------------------------
         needs=.true.; needs_me=.false.; download=.true.
+        print *, '2:', associated(omega0%link%nbor), omega0%id
         call init_nbor_pair (omega0%link, needs, nbor%link, needs_me, download)
       else
         !-----------------------------------------------------------------------
@@ -86,6 +88,7 @@ SUBROUTINE init (mhd)
           ! them, but the upstream tasks do not need the downstream omega tasks
           !---------------------------------------------------------------------
           needs=.true.; needs_me=.false.; download=.true.
+          print *, '3:', associated(omega%link%nbor), omega%id, omega%i_omega
           call init_nbor_pair (omega%link, needs, upstream%link, needs_me, download)
         end if
       end if
@@ -97,11 +100,13 @@ SUBROUTINE init (mhd)
     ! 4) The omega task needs the RT task, which does not need the omega tasks
     !-----------------------------------------------------------------------
     needs=.true.; needs_me=.false.; download=.false.
+    print *, '4:', associated(omega%link%nbor), omega%id
     call init_nbor_pair (omega%link, needs, omega0%link, needs_me, download)
     !---------------------------------------------------------------------------
     ! 5) The MHD task needs the omega tasks, which do not need the MHD task
     !---------------------------------------------------------------------------
     needs=.true.; needs_me=.false.; download=.false.
+    print *, '5:', associated(mhd%link%nbor), mhd%id
     call init_nbor_pair (mhd%link, needs, omega%link, needs_me, download)
   end do
   call trace%end()

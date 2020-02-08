@@ -227,6 +227,7 @@ SUBROUTINE boundary_condition (self)
       end do
     end if
   else if (m3%upper_boundary) then
+print *, self%id, 'bottom BC', self%position(3)
     !---------------------------------------------------------------------------
     ! Compute the pressure pg at the bottom BC, and what we would like it to be
     !---------------------------------------------------------------------------
@@ -307,6 +308,8 @@ SUBROUTINE boundary_condition (self)
       end do
     end if
     deallocate (d1, e1, p1, pg)
+  else
+print *, self%id, 'no BC', self%position(3)
   end if
   call trace_end
 END SUBROUTINE boundary_condition

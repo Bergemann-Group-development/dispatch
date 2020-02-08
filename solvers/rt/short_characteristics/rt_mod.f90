@@ -499,13 +499,14 @@ FUNCTION needs (self, omega, task)
     needs = .false.
   end if
   upstream = task%is_upstream_of(omega)
-if (needs .neqv. upstream) then
-  print '(a,2i4,2f8.3,l4,2(3f8.3,2x),2i4)', &
-    'needs and is_upstream of disagree on', omega%id, task%id, omega%mu, &
-    omega%rt_phi, needs, real(omega%task_t%distance(task),kind=4), &
-    omega%mesh%s, omega%i_omega, task%i_omega
-  !needs = upstream
-end if
+  if (needs .neqv. upstream) then
+    print '(a,2i4,2f8.3,l4,2(3f8.3,2x),2i4)', &
+      'needs and is_upstream of disagree on', omega%id, task%id, omega%mu, &
+      omega%rt_phi, needs, real(omega%task_t%distance(task),kind=4), &
+      omega%mesh%s, omega%i_omega, task%i_omega
+    !needs = upstream
+  end if
+  call trace%end ()
 END FUNCTION needs
 
 !===============================================================================
@@ -786,6 +787,10 @@ subroutine omp_eos
     call self%stats (e, 'e')
   end if
   call patch%to_thermal_begin (patch%it, kind=patch%kind)
+write (io_unit%log,'(3i6," e:",1p,10e11.2)') self%id, self%it, patch%it, &
+sum(sum(e(:,:,4:13),1),1)
+write (io_unit%log,'(3i6," eth:",1p,10e11.2)') self%id, self%it, patch%it, &
+sum(sum(patch%eth(:,:,4:13),1),1)
   call eos%lookup_table (m, d=d, e=patch%eth, rk=self%rk, src=self%src, &
                          tt=self%tt, pg=pgas)
   call patch%to_thermal_end (kind=patch%kind)
