@@ -157,7 +157,8 @@ SUBROUTINE pre_init (self, link)
   self%patch => gpatch%cast2gpatch(link%task)
   self%on = on
   self%nt = nt
-  self%ng = ng
+  !self%ng = ng
+  self%ng = self%patch%ng
   self%n_warmup = n_warmup
   self%n_bin = n_bin
   self%rt_grace = rt_grace
@@ -323,12 +324,13 @@ SUBROUTINE init_task (self)
       end do
     end if
     !---------------------------------------------------------------------------
-    ! Point mem to a patch mem section -- download_mod should be able handle a
-    ! target with fewer guard cells than the source
+    ! Point mem to a full patch mem section -- avoids that download_mod must be
+    ! able handle a target with fewer guard cells than the source
     !---------------------------------------------------------------------------
     l = p%mesh%li - self%mesh%ng
     u = p%mesh%ui + self%mesh%ng
-    self%mem  => p%mem(l(1):u(1),l(2):u(2),l(3):u(3),:,:,:)
+    self%mem => p%mem
+    self%eth => p%eth
   else
     !---------------------------------------------------------------------------
     ! Deallocate the self%mem for this task, but keep the task, for simplicity
@@ -438,6 +440,7 @@ FUNCTION needs (self, omega, task)
   ! If self is at a boundary and omega points inward, or the task has no RT,
   ! then the task is outside and is not needed
   !-----------------------------------------------------------------------------
+  call trace%begin ('rt_t%needs')
   ds1 = self%position-task%position
   where (self%periodic)
     ds1 = modulo(ds1 + 0.5_8*self%mesh%b, self%mesh%b) - 0.5_8*self%mesh%b
@@ -459,6 +462,7 @@ FUNCTION needs (self, omega, task)
   !-----------------------------------------------------------------------------
   if (task%is_set(bits%no_rt)) then
     needs = .false.
+    call trace%end ()
     return
   end if
   !-----------------------------------------------------------------------------
