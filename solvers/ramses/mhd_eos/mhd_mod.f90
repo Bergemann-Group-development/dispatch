@@ -49,6 +49,7 @@ MODULE mhd_mod
     real, pointer, dimension(:,:,:):: c
     !dir$ attributes align:64 :: q,bf,em,qp,qm,dq,dq2,dbf,qLB,qRB,qLT,qRT,Ex,Ey,Ez,c
   contains
+    procedure:: pre_init
     procedure:: init
     procedure:: update
     procedure:: gas_pressure
@@ -68,8 +69,10 @@ MODULE mhd_mod
 CONTAINS
 
 !===============================================================================
-SUBROUTINE init (self)
-  class(mhd_t):: self
+!> Pre-init; read parameters, etc
+!===============================================================================
+SUBROUTINE pre_init (self)
+  class(mhd_t), target:: self
   character(len=10):: riemann='hlld'
   real, save:: max_dlogd=20.
   integer, save:: n_dump=0
@@ -82,7 +85,7 @@ SUBROUTINE init (self)
   character(len=120):: id = &
    '$Id$ solvers/ramses/mhd/mhd_mod.f90'
 !...............................................................................
-  call trace%begin('mhd_mod%init')
+  call trace%begin('mhd_mod%pre_init')
   call trace%print_id (id)
   self%nw = 2
   self%ng = 3
@@ -94,7 +97,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Read solver-relevant parameters and store in the task instance
   !-----------------------------------------------------------------------------
-  !$omp critical (pde)
+  !$omp critical (input_cr)
   if (first_time) then
     first_time = .false.
     rewind (io_unit%input)
@@ -106,7 +109,7 @@ SUBROUTINE init (self)
     if (isothermal) gamma=1.0d0
     if (mpi%master) write (*, ramses_params)
   end if
-  !$omp end critical (pde)
+  !$omp end critical (input_cr)
   rieman%max_dlogd = max_dlogd
   self%n_dump = n_dump
   self%riemann = riemann
@@ -118,13 +121,24 @@ SUBROUTINE init (self)
     self%mesh(i)%h = 0d0
     self%mesh(i)%h(self%idx%bx+i-1) = -0.5
   end do
-  call non_ideal%init  
-  call self%gpatch_t%init
   self%unsigned(self%idx%d) = unsigned
   self%unsigned(self%idx%e) = unsigned
   self%pervolume(self%idx%px) = unsigned
   self%pervolume(self%idx%py) = unsigned
   self%pervolume(self%idx%pz) = unsigned
+  !-----------------------------------------------------------------------------
+  call non_ideal%init  
+  call self%extras_t%pre_init
+  call trace%end()
+END SUBROUTINE pre_init
+
+!===============================================================================
+SUBROUTINE init (self)
+  class(mhd_t):: self
+!...............................................................................
+  call trace%begin('mhd_mod%init')
+  call self%gpatch_t%init
+  call self%extras_t%init
   call trace%end()
 END SUBROUTINE init
 
@@ -132,13 +146,14 @@ END SUBROUTINE init
 !===============================================================================
 SUBROUTINE update (self)
   class(mhd_t):: self
+  real, allocatable, dimension(:):: d2ekin
   real, pointer, dimension(:,:,:,:):: p
   real, allocatable, dimension(:,:,:,:):: em
   real, allocatable, dimension(:,:,:,:,:):: fl
   real, allocatable, dimension(:,:,:,:)::fluxambdiff,emfambdiff
   real, pointer, dimension(:,:,:):: d, e, Ux=>null(), Uy=>null(), Uz=>null()
   real(dp):: dtdx, dtdy, dtdz
-  integer:: n(3), nv3, i
+  integer:: n(3), nv3, i, j, k, l(3), u(3), dir
   integer, parameter:: ndim=3
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -332,26 +347,69 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Add external force as source term
   !-----------------------------------------------------------------------------
+  l = self%mesh%li
+  u = self%mesh%ui
+  allocate (d2ekin(l(1):u(1)))
+  e => self%mem(:,:,:,self%idx%e,self%new,1)
   p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
   if (allocated(self%force_per_unit_mass)) then
-    do i=1,3
-      p(:,:,:,i) = p(:,:,:,i) + self%dtime*self%force_per_unit_mass(:,:,:,i)*d
+    do k=l(3),u(3)
+    do j=l(2),u(2)
+      !-------------------------------------------------------------------------
+      ! Compute the increment in kinetic energy from the forcing
+      !-------------------------------------------------------------------------
+      d2ekin(:) = 0
+      do dir=1,3
+      do i=l(1),u(1)
+        d2ekin(i) = d2ekin(i) - p(i,j,k,dir)**2/d(i,j,k)
+        p(i,j,k,dir) = p(i,j,k,dir) &
+                   +  self%dtime*self%force_per_unit_mass(i,j,k,dir)*d(i,j,k)
+        d2ekin(i) = d2ekin(i) + p(i,j,k,dir)**2/d(i,j,k)
+      end do
+      end do
+      !-------------------------------------------------------------------------
+      ! Add increment in kinetic energy from the forcing
+      !-------------------------------------------------------------------------
+      do i=l(1),u(1)
+        e(i,j,k) = e(i,j,k) + 0.5*d2ekin(i) 
+      end do
+    end do
     end do
   end if
   if (allocated(self%force_per_unit_volume)) then
-    p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
-    do i=1,3
-      p(:,:,:,i) = p(:,:,:,i) + self%dtime*self%force_per_unit_volume(:,:,:,i)
+    do k=l(3),u(3)
+    do j=l(2),u(2)
+      !-------------------------------------------------------------------------
+      ! Compute the increment in kinetic energy from the forcing
+      !-------------------------------------------------------------------------
+      d2ekin(:) = 0
+      do dir=1,3
+      do i=l(1),u(1)
+        d2ekin(i) = d2ekin(i) - p(i,j,k,dir)**2/d(i,j,k)
+        p(i,j,k,dir) = p(i,j,k,dir) &
+                   +  self%dtime*self%force_per_unit_volume(i,j,k,dir)
+        d2ekin(i) = d2ekin(i) + p(i,j,k,dir)**2/d(i,j,k)
+      end do
+      end do
+      !-------------------------------------------------------------------------
+      ! Add increment in kinetic energy from the forcing
+      !-------------------------------------------------------------------------
+      do i=l(1),u(1)
+        e(i,j,k) = e(i,j,k) + 0.5*d2ekin(i)
+      end do
+    end do
     end do
   end if
+  deallocate (d2ekin)
   !-----------------------------------------------------------------------------
   ! Add external heating as source term
   !-----------------------------------------------------------------------------
-  e => self%mem(:,:,:,self%idx%e,self%new,1)
   if (allocated(self%heating_per_unit_mass)) then
     e = e + self%dtime*self%heating_per_unit_mass*d
   end if
   if (allocated(self%heating_per_unit_volume)) then
+write (io_unit%log,'(i6," heating:",1p,10e11.2)') self%id, &
+sum(sum(self%heating_per_unit_volume(:,:,4:13),1),1)
     e = e + self%dtime*self%heating_per_unit_volume
   end if
   !-----------------------------------------------------------------------------
@@ -695,8 +753,10 @@ subroutine ctoprim(self)
   real(dp):: smallp, c, entho
   real(dp):: eken, emag, etot, eint, B1, B2, B3
   integer, save:: itimer=0
+  logical:: e_below
   integer:: i, j, k, loc(3), l(3), u(3)
   real, pointer, dimension(:,:,:):: lnd, ee, pg, tt
+  real, allocatable, dimension(:,:,:):: ee0
   associate(uin=>self%uin,q=>self%q,bf=>self%bf,dt=>self%dtime,c=>self%c)
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%ctoprim', itimer=itimer, detailed_timer=detailed_timer)
@@ -753,7 +813,20 @@ subroutine ctoprim(self)
   !-----------------------------------------------------------------------------
   ! Pressure
   !-----------------------------------------------------------------------------
-  call eos%lookup_table (shape(ee), lnd=lnd, ee=ee, pg=pg, tt=tt)
+  allocate (ee0(n(1),n(2),n(3)))
+  ee0 = ee
+  call eos%lookup_table (shape(ee), lnd=lnd, ee=ee, pg=pg, tt=tt, e_below=e_below)
+  if (e_below) then
+    do k=1,n(3)
+    do j=1,n(2)
+    do i=1,n(1)
+      q(i,j,k,9) = ee(i,j,k)
+      uin(i,j,k,5) = uin(i,j,k,5) + (ee(i,j,k)-ee0(i,j,k))*uin(i,j,k,1)
+    end do
+    end do
+    end do
+  end if
+  deallocate (ee0)
   do k=1,n(3)
   do j=1,n(2)
   do i=1,n(1)
@@ -1859,8 +1932,8 @@ SUBROUTINE cmpflxm (self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
   !
   if (xdim == 1) then
     n = ub(1)-lb(1)+1
-    allocate (qleft (n,nvar+1))
-    allocate (qright(n,nvar+1))
+    allocate (qleft (n,nvar))
+    allocate (qright(n,nvar))
     allocate (fgdnv (n,nvar))
     do k = lb(3),ub(3)
       do j = lb(2),ub(2)
@@ -1975,6 +2048,8 @@ end if
     allocate (qleft (n,nvar))
     allocate (qright(n,nvar))
     allocate (fgdnv (n,nvar))
+write(io_unit%log,'(a,i6,3x,a,f8.3)') &
+'z-flux for patch', self%id, ' at z =', self%position(3)
     do k = lb(3),ub(3)
       do j = lb(2),ub(2)
         ! Enforce continuity for normal magnetic field

@@ -48,6 +48,7 @@ MODULE mhd_mod
     real, pointer, dimension(:,:,:):: c
     !dir$ attributes align:64 :: q,bf,em,qp,qm,dq,dq2,dbf,qLB,qRB,qLT,qRT,Ex,Ey,Ez,c
   contains
+    procedure:: pre_init
     procedure:: init
     procedure:: update
     procedure:: gas_pressure
@@ -67,8 +68,10 @@ MODULE mhd_mod
 CONTAINS
 
 !===============================================================================
-SUBROUTINE init (self)
-  class(mhd_t):: self
+!> Pre-init; read parameters, etc
+!===============================================================================
+SUBROUTINE pre_init (self)
+  class(mhd_t), target:: self
   character(len=10):: riemann='hlld'
   real, save:: max_dlogd=20.
   integer, save:: n_dump=0
@@ -81,18 +84,19 @@ SUBROUTINE init (self)
   character(len=120):: id = &
    '$Id$ solvers/ramses/mhd/mhd_mod.f90'
 !...............................................................................
-  call trace%begin('mhd_mod%init')
+  call trace%begin('mhd_mod%pre_init')
   call trace%print_id (id)
   self%nw = 2
   self%ng = 3
-  self%nv = 8
+  self%nv = 9
   self%kind = 'ramses_mhd_patch'
   call self%idx%init (5, self%mhd)
+  self%idx%tt = 9
   call self%patch_t%init
   !-----------------------------------------------------------------------------
   ! Read solver-relevant parameters and store in the task instance
   !-----------------------------------------------------------------------------
-  !$omp critical (pde)
+  !$omp critical (input_cr)
   if (first_time) then
     first_time = .false.
     rewind (io_unit%input)
@@ -104,7 +108,7 @@ SUBROUTINE init (self)
     if (isothermal) gamma=1.0d0
     if (mpi%master) write (*, ramses_params)
   end if
-  !$omp end critical (pde)
+  !$omp end critical (input_cr)
   rieman%max_dlogd = max_dlogd
   self%n_dump = n_dump
   self%riemann = riemann
@@ -116,13 +120,24 @@ SUBROUTINE init (self)
     self%mesh(i)%h = 0d0
     self%mesh(i)%h(self%idx%bx+i-1) = -0.5
   end do
-  call non_ideal%init  
-  call self%gpatch_t%init
   self%unsigned(self%idx%d) = unsigned
   self%unsigned(self%idx%e) = unsigned
   self%pervolume(self%idx%px) = unsigned
   self%pervolume(self%idx%py) = unsigned
   self%pervolume(self%idx%pz) = unsigned
+  !-----------------------------------------------------------------------------
+  call non_ideal%init  
+  call self%extras_t%pre_init
+  call trace%end()
+END SUBROUTINE pre_init
+
+!===============================================================================
+SUBROUTINE init (self)
+  class(mhd_t):: self
+!...............................................................................
+  call trace%begin('mhd_mod%init')
+  call self%gpatch_t%init
+  call self%extras_t%init
   call trace%end()
 END SUBROUTINE init
 

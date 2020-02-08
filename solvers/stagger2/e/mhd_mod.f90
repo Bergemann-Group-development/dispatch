@@ -131,9 +131,34 @@ SUBROUTINE pre_init (self)
   case default
   end select
   call self%idx%init (5, self%mhd)
-  ! ----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
+  ! Patch initialization
+  !-----------------------------------------------------------------------------
+  self%type = 'mhd_t'
+  call self%patch_t%init
+  do i=1,3
+    self%mesh(i)%h(self%idx%px+i-1) = -0.5
+    if (self%mhd) self%mesh(i)%h(self%idx%bx+i-1) = -0.5
+  end do
+  if (verbose>1 .and. self%track) then
+    do i=1,3
+      print '("h:",8f5.2)', self%mesh(i)%h
+    end do
+  end if
+  !call self%patch_t%init
+  select case(divb_cleaner)
+  case(1)
+    self%divb_clean => divb_clean1
+  case(2)
+    self%divb_clean => divb_clean2
+  case default
+    call io%abort('mhd_mod:: divb cleaner method not understood')
+  end select
+  self%unsigned(self%idx%d)  = unsigned
+  self%pervolume(self%idx%e) = unsigned
+  !-----------------------------------------------------------------------------
   ! Call extras pre-init
-  ! ----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   call self%extras_t%pre_init
   call trace%end()
 END SUBROUTINE pre_init
@@ -147,37 +172,9 @@ SUBROUTINE init (self)
   integer :: i
   ! ----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
-  !-----------------------------------------------------------------------------
-  ! Allocate memory and mesh, etc
-  !-----------------------------------------------------------------------------
-  self%type = 'mhd_t'
-  call self%patch_t%init
-  do i=1,3
-    self%mesh(i)%h(self%idx%px+i-1) = -0.5
-    if (self%mhd) self%mesh(i)%h(self%idx%bx+i-1) = -0.5
-  end do
-  if (verbose>1 .and. self%track) then
-    do i=1,3
-      print '("h:",8f5.2)', self%mesh(i)%h
-    end do
-  end if
-  call self%patch_t%init
-  select case(divb_cleaner)
-  case(1)
-    self%divb_clean => divb_clean1
-  case(2)
-    self%divb_clean => divb_clean2
-  case default
-    call io%abort('mhd_mod:: divb cleaner method not understood')
-  end select
   call self%gpatch_t%init
-  self%unsigned(self%idx%d)  = unsigned
-  self%pervolume(self%idx%e) = unsigned
-  ! ----------------------------------------------------------------------------
-  ! init extras
-  ! ----------------------------------------------------------------------------
   call self%extras_t%init
- call trace%end()
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -485,6 +482,8 @@ SUBROUTINE pde (self)
     dedt = dedt + d*self%heating_per_unit_mass                                  ! ops: 2 2 0
   end if
   if (allocated(self%heating_per_unit_volume)) then
+write (io_unit%log,'(i6," heating:",1p,10e11.2)') self%id, &
+sum(sum(self%heating_per_unit_volume(:,:,4:13),1),1)
     dedt = dedt + self%heating_per_unit_volume
   end if
   !-----------------------------------------------------------------------------
