@@ -201,13 +201,14 @@ END SUBROUTINE lookup
 !> General EOS lookup routine, returning values in optional arguments
 !===============================================================================
 SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne, pg, tt, ne, rk, src, &
-                         ss, gamma)
+                         ss, gamma, e_below)
   class (eos_t):: self
   integer:: dim(3)
   real, dimension(:,:,:)  , pointer, optional :: lnd,d,lne,e,ee,tt,ne,ss
   real, dimension(:,:,:,:)         , optional :: src,rk
   real, dimension(:,:,:)           , optional :: pg
   real, optional:: gamma
+  logical, optional:: e_below
   !.............................................................................
   real, dimension(:,:,:), pointer    :: lnd_loc, ee_loc
   integer,         dimension(dim(1)) :: np,np1,ik,ntab,ik1,ntab1
@@ -285,6 +286,7 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne, pg, tt, ne, rk, src, &
       ntab(ix)  = mtab(np(ix))
       eek       = 1.+(ee_loc(ix,iy,iz)-eemin(np(ix)))/deetab(np(ix))
       nbelow_e  = nbelow_e + merge(1,0,eek<1.0)
+      ee_loc(ix,iy,iz) = max (ee_loc(ix,iy,iz), eemin(np(ix)))
       eek       = max(eek,1.0)
       kee       = min(ntab(ix)-1,max(1,int(eek)))
       py(ix)    = eek-kee
@@ -440,6 +442,13 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne, pg, tt, ne, rk, src, &
   if (nbelow_d+nbelow_e > 0) then
     write(io%output,*) &
       'WARNING: number of points below table d & e:', nbelow_d, nbelow_e
+  end if
+  if (present(e_below)) then
+    if (nbelow_e > 0) then
+      e_below = .true.
+    else
+      e_below = .false.
+    end if
   end if
   if (present(d)) then
     deallocate (lnd_loc)
