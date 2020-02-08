@@ -79,7 +79,7 @@ SUBROUTINE select_dnloader (self, link, all_cells)
   class(link_t), pointer :: link
   logical, optional      :: all_cells
   ! ....................................................................
-  class(link_t),     pointer :: nbor
+  class(nbor_t),     pointer :: nbor
   class(patch_t),    pointer :: source, patch
   class(data_hub_t), pointer :: hub
   ! --------------------------------------------------------------------
@@ -880,7 +880,7 @@ SUBROUTINE check_in_nbors (self, pos, iv, time, jt, pt, id, found, scr, rt_scr)
   real    :: p(3)
   real(8) :: eps = 0.001_8
   class(mesh_t), pointer :: m
-  class(link_t), pointer :: nbor
+  class(nbor_t), pointer :: nbor
   class(patch_t), pointer:: source, target, nbpatch
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: cube
   logical :: inside

@@ -51,7 +51,7 @@ SUBROUTINE corrections (self, patch)
   class(flux_t):: self
   class(patch_t):: patch
   !.............................................................................
-  class(link_t), pointer:: nbor
+  class(nbor_t), pointer:: nbor
   real(8):: rr(3), eps=1e-2
   integer:: ii(3), dir, face
   !-----------------------------------------------------------------------------

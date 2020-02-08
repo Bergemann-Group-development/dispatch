@@ -303,7 +303,7 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
   logical, optional:: was_refined, was_derefined
   !.............................................................................
   class(task_t), pointer:: task
-  class(link_t), pointer:: nbor
+  class(nbor_t), pointer:: nbor
   real(8):: wc, levelstart, time
   logical:: refined, derefined
   integer:: end_count, io_count, na
@@ -660,7 +660,8 @@ END SUBROUTINE append_task_list
 SUBROUTINE print1 (self, label)
   class (task_list_t):: self
   character(len=*), optional:: label
-  class(link_t) , pointer:: link, nbor
+  class(link_t) , pointer:: link
+  class(nbor_t) , pointer:: nbor
   !.............................................................................
   call trace%begin ('task_list_t%print_tasklist')
   if (io%master.and.present(label)) write (io_unit%output,*) label
@@ -752,7 +753,8 @@ END SUBROUTINE init_task_list_pointers
 !===============================================================================
 SUBROUTINE check_mulligan (self, link)
   class(task_list_t):: self
-  class(link_t), pointer:: link, nbor
+  class(link_t), pointer:: link
+  class(nbor_t), pointer:: nbor
   class(task_t), pointer:: task, nbtask
   real:: ds, dt
   logical:: triggered

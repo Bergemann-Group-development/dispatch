@@ -123,7 +123,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   integer, optional:: only
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: d
   !.............................................................................
-  class(link_t), pointer:: nbor, sorted_head, nbors
+  class(nbor_t), pointer:: nbor, sorted_head, nbors
   class(patch_t), pointer:: target, source
   integer:: edges, l(3), u(3), ix, iy, iz, jt(2)
   integer, save:: itimer=0, n_print=30

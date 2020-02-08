@@ -120,7 +120,8 @@ SUBROUTINE update (self, test)
   class(dispatcher2_t)    :: self
   logical                 :: test
   !.............................................................................
-  class(link_t), pointer  :: link, nbor
+  class(link_t), pointer  :: link
+  class(nbor_t), pointer  :: nbor
   integer                 :: state
   logical                 :: ok
   integer, save           :: itimer=0
@@ -175,7 +176,8 @@ contains
   ! a change to state 4 indicates a finished task.
   !-----------------------------------------------------------------------------
   subroutine check_task (link, ok)
-    class(link_t), pointer:: link, nbor
+    class(link_t), pointer:: link
+    class(nbor_t), pointer:: nbor
     class(task_t), pointer:: task
     logical:: ok
     integer:: state

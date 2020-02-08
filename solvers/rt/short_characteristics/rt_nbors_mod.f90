@@ -36,7 +36,7 @@ SUBROUTINE init (mhd)
   !.............................................................................
   integer:: i_omega
   class(rt_t), pointer:: omega0, omega, upstream
-  class(link_t), pointer:: nbor
+  class(nbor_t), pointer:: nbor
   class(task_t), pointer:: nb_task
   logical:: needs, needs_me, download
   !-----------------------------------------------------------------------------
@@ -47,7 +47,7 @@ SUBROUTINE init (mhd)
   ! 1) The omega0 needs the MHD task for the MHD variables, but no download
   !-----------------------------------------------------------------------------
   needs=.true.; needs_me=.false.; download=.false.
-  call init_nbor_pair (omega0, needs, mhd, needs_me, download)
+  call init_nbor_pair (omega0%link, needs, mhd%link, needs_me, download)
   !-----------------------------------------------------------------------------
   ! Loop over all ray directions, and add nbors and nbor relations. The only
   ! downloads that are needed are from upstream omega tasks
@@ -74,7 +74,7 @@ SUBROUTINE init (mhd)
         ! 2) The omega0 task needs the MHD nbors, and needs download
         !-----------------------------------------------------------------------
         needs=.true.; needs_me=.false.; download=.true.
-        call init_nbor_pair (omega0, needs, nb_task, needs_me, download)
+        call init_nbor_pair (omega0%link, needs, nbor%link, needs_me, download)
       else
         !-----------------------------------------------------------------------
         ! The omega0%needs() function tests for upstream nbor omega
@@ -86,7 +86,7 @@ SUBROUTINE init (mhd)
           ! them, but the upstream tasks do not need the downstream omega tasks
           !---------------------------------------------------------------------
           needs=.true.; needs_me=.false.; download=.true.
-          call init_nbor_pair (omega, needs, upstream, needs_me, download)
+          call init_nbor_pair (omega%link, needs, upstream%link, needs_me, download)
         end if
       end if
       end if
@@ -97,12 +97,12 @@ SUBROUTINE init (mhd)
     ! 4) The omega task needs the RT task, which does not need the omega tasks
     !-----------------------------------------------------------------------
     needs=.true.; needs_me=.false.; download=.false.
-    call init_nbor_pair (omega, needs, omega0, needs_me, download)
+    call init_nbor_pair (omega%link, needs, omega0%link, needs_me, download)
     !---------------------------------------------------------------------------
     ! 5) The MHD task needs the omega tasks, which do not need the MHD task
     !---------------------------------------------------------------------------
     needs=.true.; needs_me=.false.; download=.false.
-    call init_nbor_pair (mhd, needs, omega, needs_me, download)
+    call init_nbor_pair (mhd%link, needs, omega%link, needs_me, download)
   end do
   call trace%end()
 END SUBROUTINE init
@@ -111,20 +111,17 @@ END SUBROUTINE init
 !> Add mutual nbor relations to two nbor lists, making sure that the needed and
 !> needs_me flags are mutually consistent.
 !===============================================================================
-SUBROUTINE init_nbor_pair (task1, needed, task2, needs_me, download)
-  class(task_t):: task1, task2
+SUBROUTINE init_nbor_pair (link1, needed, link2, needs_me, download)
+  class(link_t), pointer:: link1, link2
   logical:: needed, needs_me, download
-  class(link_t), pointer:: link1, link2, nbor1, nbor2
+  !.............................................................................
+  class(nbor_t), pointer:: nbor1, nbor2
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_t%init_nbor_pairs')
-  select type (task1)
-  class is (patch_t)
-  link1 => task1%link
-  end select
-  select type (task2)
-  class is (patch_t)
-  link2 => task2%link
-  end select
+  if (.not.associated(link1%nbor)) &
+    write(stderr,*) 'rt_nbors_mod WARNING: link1 has no nbor', link1%task%id
+  if (.not.associated(link2%nbor)) &
+    write(stderr,*) 'rt_nbors_mod WARNING: link2 has no nbor', link2%task%id
   !-----------------------------------------------------------------------------
   ! Add the 2nd linked task as an nbor to the 1st linked task
   !-----------------------------------------------------------------------------

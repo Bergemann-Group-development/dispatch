@@ -387,7 +387,8 @@ END FUNCTION refine_needed
 SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
   class(refine_t):: self
   class(list_t):: tasklist
-  class(link_t), pointer:: link, nbor
+  class(link_t), pointer:: link
+  class(nbor_t), pointer:: nbor
   class(solver_t), pointer:: patch
   logical, intent(out):: was_refined, was_derefined
   real:: dxmin, dxmax
@@ -500,7 +501,8 @@ SUBROUTINE selective_refine (self, tasklist, patch, refine, was_refined, was_der
   logical:: was_refined, was_derefined
   !.............................................................................
   class(solver_t), pointer:: child
-  class(link_t), pointer:: nbor, link, nbors, tail
+  class(link_t), pointer:: link, tail
+  class(nbor_t), pointer:: nbor, nbors
   class(patch_t), pointer:: nbpatch
   integer:: i, j, k
   integer, dimension(3):: l, u, n, ii
@@ -657,7 +659,8 @@ FUNCTION need_to_support (self, tlist, link) RESULT (refine)
   class(link_t), pointer:: link
   integer:: refine
   !-----------------------------------------------------------------------------
-  class(link_t), pointer:: nbor1, nbor2, nbor3
+  class(link_t), pointer:: link1
+  class(nbor_t), pointer:: nbor1
   class(patch_t), pointer:: task, nbtask
   type(patch_t):: patch
   logical:: guards
@@ -670,16 +673,16 @@ FUNCTION need_to_support (self, tlist, link) RESULT (refine)
   ! these are cells that would be delivering support to L+2 patches
   !-----------------------------------------------------------------------------
   call tlist%lock%set ('need_to_support')
-  nbor1 => tlist%head
-  do while (associated(nbor1))
-    if (nbor1%task%level >= link%task%level+2) then
-      nbtask => patch%cast2patch (nbor1%task)
+  link1 => tlist%head
+  do while (associated(link1))
+    if (link1%task%level >= link%task%level+2) then
+      nbtask => patch%cast2patch (link1%task)
       guards = .true.
       if (task%get_overlap (nbtask, guards, l, u)) then
         task%irefine(l(1):u(1),l(2):u(2),l(3):u(3)) = 1.0
       end if
     end if
-    nbor1 => nbor1%next
+    link1 => link1%next
   end do
   !-----------------------------------------------------------------------------
   ! Find L+1 nbors, check for overlap of their interiors, and clear the
@@ -721,7 +724,7 @@ FUNCTION check_derefine_support (self, tlist, link, check_only) RESULT (refine)
   logical, optional:: check_only
   integer:: refine
   !.............................................................................
-  class(link_t), pointer:: nbor, nbors
+  class(nbor_t), pointer:: nbor, nbors
   integer:: n_nbor1, n_nbor2, n_added
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -760,7 +763,8 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   class(solver_t), pointer :: parent, child
   real(8), dimension(3), intent(in) :: pos, child_size
   !.............................................................................
-  class(link_t), pointer :: child_link, child_nbor
+  class(link_t), pointer :: child_link
+  class(nbor_t), pointer :: child_nbor
   integer:: j, count, l(3), u(3), n_added
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: ff
   integer, save:: itimer=0

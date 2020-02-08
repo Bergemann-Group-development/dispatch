@@ -341,7 +341,7 @@ END SUBROUTINE update_task
 SUBROUTINE check_nbors (task_list, link)
   class(list_t):: task_list
   class(link_t), pointer:: link
-  class(link_t), pointer:: nbor
+  class(nbor_t), pointer:: nbor
   class(task_t), pointer:: task
   integer, save:: itimer=0
   !.............................................................................
@@ -365,7 +365,7 @@ SUBROUTINE check_ready (task_list, link)
   class(list_t):: task_list
   class(link_t), pointer:: link
   class(task_t), pointer:: task
-  class(link_t), pointer:: nbor
+  class(nbor_t), pointer:: nbor
   logical:: ok
   integer:: state
   integer, save:: itimer=0

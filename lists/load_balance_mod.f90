@@ -180,7 +180,7 @@ SUBROUTINE check_queue (self, link)
   class(load_balance_t):: self
   class(link_t), pointer:: link
   !.............................................................................
-  class(link_t), pointer:: nbor
+  class(nbor_t), pointer:: nbor
   class(task_t), pointer:: task, nbtask
   real:: my_queue, nb_queue
   logical:: printed, virtual

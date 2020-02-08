@@ -467,7 +467,7 @@ CONTAINS
 SUBROUTINE get_ids (nbor_ids, parent_id)
   integer, allocatable:: nbor_ids(:)
   integer:: parent_id, n
-  class(link_t), pointer:: nbor
+  class(nbor_t), pointer:: nbor
   !.............................................................................
   n = 0
   nbor => patch%link%nbor

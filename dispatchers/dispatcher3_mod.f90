@@ -83,7 +83,8 @@ SUBROUTINE execute (self, task_list, test)
   type(task_list_t), pointer:: task_list
   logical:: test, fell_through
   !.............................................................................
-  class(link_t), pointer:: link, nbor
+  class(link_t), pointer:: link
+  class(nbor_t), pointer:: nbor
   class(task_t), pointer:: task
   logical:: mytask
   integer:: n1, n2
@@ -255,7 +256,8 @@ END SUBROUTINE set_state
 !> of" the task in question
 !===============================================================================
 LOGICAL FUNCTION is_ready (link)
-  class(link_t), pointer:: link, nbor
+  class(link_t), pointer:: link
+  class(nbor_t), pointer:: nbor
   integer:: state
   !...........................................................................
   !$omp atomic

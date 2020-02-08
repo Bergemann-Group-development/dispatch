@@ -1949,7 +1949,7 @@ END SUBROUTINE courant_condition
 SUBROUTINE nbor_courant_conditions (self)
   class(patch_t):: self
   !.............................................................................
-  class(link_t), pointer:: nbor
+  class(nbor_t), pointer:: nbor
   class(task_t), pointer:: nbtask
   integer:: i1, i2, i3, l(3), u(3)
   integer, save:: itimer=0

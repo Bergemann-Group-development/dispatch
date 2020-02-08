@@ -45,7 +45,8 @@ SUBROUTINE execute (self, task_list, test)
   type(task_list_t), pointer:: task_list
   logical:: test
   !.............................................................................
-  class(link_t), pointer:: link, nbor
+  class(link_t), pointer:: link
+  class(nbor_t), pointer:: nbor
   logical:: ready, mytask
   real(8):: start, v, t
   integer, save:: itimer=0

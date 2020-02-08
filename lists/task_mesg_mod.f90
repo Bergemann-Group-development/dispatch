@@ -255,7 +255,7 @@ SUBROUTINE recv_from_vnbors (self, link, n_unpk)
   class(link_t), pointer:: link
   integer:: n_unpk
   !.............................................................................
-  class(link_t), pointer:: nbor
+  class(nbor_t), pointer:: nbor
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (mpi%size == 1) return

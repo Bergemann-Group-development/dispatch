@@ -23,8 +23,8 @@ MODULE nbor_list_mod
   !-----------------------------------------------------------------------------
   ! process nbor
   !-----------------------------------------------------------------------------
-  type, public:: nbor_t
-    type(nbor_t), pointer:: next => null()
+  type, public:: rnbor_t
+    type(rnbor_t), pointer:: next => null()
     type(mpi_comm_t):: out, in
     integer:: rank
     logical:: present
@@ -33,8 +33,8 @@ MODULE nbor_list_mod
   ! process nbor list
   !-----------------------------------------------------------------------------
   type, public:: nbor_list_t
-    type(nbor_t), pointer:: head => null()
-    type(nbor_t), pointer:: tail => null()
+    type(rnbor_t), pointer:: head => null()
+    type(rnbor_t), pointer:: tail => null()
   contains
     procedure:: update
     procedure:: add_by_rank
@@ -49,7 +49,7 @@ SUBROUTINE update (self, task_list)
   type(task_list_t):: task_list
   !.............................................................................
   type(link_t), pointer:: link
-  type(nbor_t), pointer:: nbor, next, prev
+  type(rnbor_t), pointer:: nbor, next, prev
   logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
   ! Clear the present flag
@@ -101,7 +101,7 @@ SUBROUTINE add_by_rank (self, rank)
   class(nbor_list_t):: self
   integer:: rank
   !.............................................................................
-  type(nbor_t), pointer:: this, nbor
+  type(rnbor_t), pointer:: this, nbor
   !-----------------------------------------------------------------------------
   call trace%begin ('nbor_list_t%add_by_rank')
   this => self%head
@@ -160,7 +160,7 @@ contains
   !-----------------------------------------------------------------------------
   function new_nbor (rank)
     integer:: rank
-    type(nbor_t), pointer:: new_nbor
+    type(rnbor_t), pointer:: new_nbor
     !---------------------------------------------------------------------------
     allocate (new_nbor)
     new_nbor%rank = rank
@@ -213,7 +213,7 @@ END SUBROUTINE update
 SUBROUTINE send (self, buffer)
   class(process_t):: self
   integer, pointer:: buffer(:)
-  type(nbor_t), pointer:: nbor
+  type(rnbor_t), pointer:: nbor
   !.............................................................................
   nbor => self%nbor_list%head
   do while (associated(nbor))
@@ -238,7 +238,7 @@ SUBROUTINE recv (self, buffer, process)
   integer, pointer:: buffer(:)
   procedure(template):: process
   !.............................................................................
-  type(nbor_t), pointer:: nbor
+  type(rnbor_t), pointer:: nbor
   !-----------------------------------------------------------------------------
   ! Loop over process nbors, asking for input packages, and process when recv'd
   !-----------------------------------------------------------------------------

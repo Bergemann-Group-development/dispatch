@@ -455,7 +455,7 @@ SUBROUTINE check_ready (self, link)
   class(list_t):: self
   class(link_t), pointer:: link
   class(task_t), pointer:: task
-  class(link_t), pointer:: nbor
+  class(nbor_t), pointer:: nbor
   logical:: ok, debug, debug1
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -521,7 +521,7 @@ END SUBROUTINE check_ready
 SUBROUTINE check_nbors (self, link)
   class(list_t):: self
   class(link_t), pointer:: link
-  class(link_t), pointer:: nbor
+  class(nbor_t), pointer:: nbor
   class(task_t), pointer:: task
   integer, save:: itimer=0
   !.............................................................................

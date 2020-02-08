@@ -222,7 +222,7 @@ END SUBROUTINE output
 !===============================================================================
 SUBROUTINE make_irefine (patch)
   class(patch_t):: patch
-  class(link_t), pointer:: nbor
+  class(nbor_t), pointer:: nbor
   class(task_t), pointer:: nbpatch
   integer:: l(3), u(3)
   real(8):: dist(3)

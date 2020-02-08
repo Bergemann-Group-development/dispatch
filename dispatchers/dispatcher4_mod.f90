@@ -117,7 +117,8 @@ SUBROUTINE execute (self, task_list, test)
   type(task_list_t), pointer:: task_list
   logical:: test, fell_through
   !.............................................................................
-  class(link_t), pointer:: link, nbor
+  class(link_t), pointer:: link
+  class(nbor_t), pointer:: nbor
   class(task_t), pointer:: task
   logical:: mytask
   integer:: n1, n2
@@ -248,7 +249,8 @@ END SUBROUTINE write_state
 SUBROUTINE update (self, task_list, link, test)
   class(dispatcher4_t):: self
   type(task_list_t), pointer:: task_list
-  class(link_t), pointer:: link, nbor
+  class(link_t), pointer:: link
+  class(nbor_t), pointer:: nbor
   class(task_t), pointer:: task
   logical:: test
   integer:: n_ready
@@ -316,7 +318,8 @@ END SUBROUTINE
 !===============================================================================
 LOGICAL FUNCTION is_ready (self, link)
   class(dispatcher4_t):: self
-  class(link_t), pointer:: link, nbor
+  class(link_t), pointer:: link
+  class(nbor_t), pointer:: nbor
   integer:: state
   !...........................................................................
   !$omp atomic
@@ -371,7 +374,8 @@ END SUBROUTINE finalize
 SUBROUTINE diagnostics (self, task_list)
   class(dispatcher4_t):: self
   type(task_list_t), pointer:: task_list
-  class(link_t), pointer:: link, nbor, culprit
+  class(link_t), pointer:: link, culprit
+  class(nbor_t), pointer:: nbor
   !-----------------------------------------------------------------------------
   !write (io_unit%queue,*) 'begin starved analysis: nstate =', nstate
   link => task_list%head
