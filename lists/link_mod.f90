@@ -245,7 +245,7 @@ END SUBROUTINE check_level_sort
 
 !===============================================================================
 !> Add a link node into the nbors list of self, in increasing rank order.
-!> self must be a link whose 'nbors' points to a chain of nbors, and 'this'
+!> self must be a link whose 'nbors' points to a chain of nbors, and 'nbor'
 !> must be an nbor with both a link and task pointer set.
 !===============================================================================
 SUBROUTINE add_nbor_by_rank (self, nbors, nbor)
@@ -254,20 +254,15 @@ SUBROUTINE add_nbor_by_rank (self, nbors, nbor)
   class(nbor_t), pointer:: next, prev
   !.............................................................................
   call trace_begin ('list_t%add_nbor_by_rank', 1)
-  allocate (nbor)
-  nbor%link => this
-  nbor%task => this%task
-  !call self%task%nbor_relations (nbor%task, nbor%needed, nbor%needs_me, &
-    !nbor%download)
   !$omp atomic update
-  this%task%n_needed = this%task%n_needed + 1   ! because linked task derefined
+  nbor%task%n_needed = nbor%task%n_needed + 1   ! because linked task derefined
   if (verbose > 1) &
     write (io_unit%mpi,'(f12.6,i4,i6,2x,a,i4,2x,a)') wallclock(), omp%thread, &
-    this%task%id, 'needed by', this%task%n_needed, 'add_by_rank'
+    nbor%task%id, 'needed by', nbor%task%n_needed, 'add_by_rank'
   flush (io_unit%mpi)
   if (io%verbose>2) &
-  write (io_unit%log,*) '  adding task', this%task%id, &
-    this%task%is_set(bits%boundary), this%task%is_set(bits%virtual), &
+  write (io_unit%log,*) '  adding task', nbor%task%id, &
+    nbor%task%is_set(bits%boundary), nbor%task%is_set(bits%virtual), &
     ' to nbor list of', self%task%id
   nullify (prev)
   next => nbors

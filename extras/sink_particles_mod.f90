@@ -290,7 +290,8 @@ SUBROUTINE init_patch (self, patch, sink_position)
   class(gpatch_t), target:: patch
   real(kind=8), dimension(3), optional :: sink_position
   !.............................................................................
-  class(link_t), pointer:: nbor, prev, link
+  class(link_t), pointer:: link
+  class(nbor_t), pointer:: nbor, prev
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: d
   real(8), dimension(:), pointer:: r
   real(kind=8) :: pos(3)
@@ -545,7 +546,8 @@ SUBROUTINE ad_hoc_add (self, link)
   class(sink_particles_t), pointer:: task
   class(list_t), pointer:: task_list
   class(particle_t), pointer:: particle
-  class(link_t), pointer:: link1, link2, nbor
+  class(link_t), pointer:: link1, link2
+  class(nbor_t), pointer:: nbor
   integer:: iostat, i_sink, m(3)
   real(kind=8):: pos(3)
   type sinks_t
@@ -964,7 +966,7 @@ END FUNCTION check
 !-------------------------------------------------------------------------------
 SUBROUTINE refresh_nbor_lists (self)
   class(sink_particles_t):: self
-  class(link_t), pointer :: nbor
+  class(nbor_t), pointer :: nbor
   !-----------------------------------------------------------------------------
   ! FIXME: This is a rather expensive way of updating the nbor lists
   !-----------------------------------------------------------------------------

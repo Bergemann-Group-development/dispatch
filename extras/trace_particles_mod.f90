@@ -433,7 +433,7 @@ END SUBROUTINE trade
 SUBROUTINE post_update (self)
   class(trace_particles_t):: self
   integer:: i
-  class(link_t), pointer:: nbor
+  class(nbor_t), pointer:: nbor
   class(task_t), pointer:: nbtask
   class(*), pointer:: nbpart
   !----------------------------------------------------------------------------

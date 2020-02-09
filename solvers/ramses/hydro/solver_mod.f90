@@ -453,9 +453,10 @@ END SUBROUTINE vorticity_magnitude
 !===============================================================================
 !> Compute or assign thermal energy
 !===============================================================================
-SUBROUTINE to_thermal_begin (self, it)
+SUBROUTINE to_thermal_begin (self, it, kind)
   class(solver_t):: self
   integer:: it
+  character(len=*), optional:: kind
   !.............................................................................
   integer:: i1, i2, i3
   real, pointer, contiguous, dimension(:,:,:):: d, e, px, py, pz
@@ -476,8 +477,9 @@ END SUBROUTINE to_thermal_begin
 !===============================================================================
 !> Clean up after computing thermal energy
 !===============================================================================
-SUBROUTINE to_thermal_end (self)
+SUBROUTINE to_thermal_end (self, kind)
   class(solver_t):: self
+  character(len=*), optional:: kind
   !.............................................................................
   call trace%begin ('solver_t%to_thermal_end')
   deallocate (self%eth)

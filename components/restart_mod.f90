@@ -356,7 +356,8 @@ END FUNCTION read_amr_metadata
 !===============================================================================
 SUBROUTINE select_tasks (self)
   class(restart_t):: self
-  class(link_t), pointer:: link, nbor
+  class(link_t), pointer:: link
+  class(nbor_t), pointer:: nbor
   class(task_t), pointer:: task
   logical:: keep
   !-----------------------------------------------------------------------------
@@ -405,7 +406,8 @@ END SUBROUTINE select_tasks
 !===============================================================================
 SUBROUTINE read_task_data (self)
   class(restart_t):: self
-  class(link_t), pointer:: link, nbor
+  class(link_t), pointer:: link
+  class(nbor_t), pointer:: nbor
   class(task_t), pointer:: task
   logical:: ok
   integer:: i

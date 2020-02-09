@@ -1176,7 +1176,7 @@ contains
   class(*), pointer:: link
   character(len=*):: label
   integer:: i1, i2, lb, ub
-  class(link_t), pointer:: nbor
+  class(nbor_t), pointer:: nbor
   !.............................................................................
   write (io_unit%log,*) 'solver error: id, i[12] =', self%id, i1, i2
   !-----------------------------------------------------------------------------
