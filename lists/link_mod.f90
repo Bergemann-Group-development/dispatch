@@ -248,11 +248,10 @@ END SUBROUTINE check_level_sort
 !> self must be a link whose 'nbors' points to a chain of nbors, and 'this'
 !> must be an nbor with both a link and task pointer set.
 !===============================================================================
-SUBROUTINE add_nbor_by_rank (self, nbors, this)
+SUBROUTINE add_nbor_by_rank (self, nbors, nbor)
   class(link_t):: self
-  class(nbor_t), pointer:: this
-  class(nbor_t), pointer:: next, prev
   class(nbor_t), pointer:: nbors, nbor
+  class(nbor_t), pointer:: next, prev
   !.............................................................................
   call trace_begin ('list_t%add_nbor_by_rank', 1)
   allocate (nbor)
@@ -275,9 +274,9 @@ SUBROUTINE add_nbor_by_rank (self, nbors, this)
   !-------------------------------------------------------------------------
   ! Check that the task is not self
   !-------------------------------------------------------------------------
-  if (this%task%id == self%task%id) then
+  if (nbor%task%id == self%task%id) then
     write (stderr,*) self%task%id, 'ERROR: trying to add self to nbor list of', &
-      this%task%id
+      nbor%task%id
     goto 9
   end if
   !-------------------------------------------------------------------------
@@ -285,9 +284,9 @@ SUBROUTINE add_nbor_by_rank (self, nbors, this)
   !-------------------------------------------------------------------------
   next => nbors
   do while (associated(next))
-    if (next%task%id == this%task%id) then
-      write (stderr,*) self%task%id, 'ERROR: trying to add existing nbor', &
-        this%task%id
+    if (next%task%id == nbor%task%id) then
+      write (io_unit%log,*) self%task%id, &
+        'WARNING: trying to add existing nbor', nbor%task%id
       goto 9
     end if
     next => next%next
@@ -298,7 +297,7 @@ SUBROUTINE add_nbor_by_rank (self, nbors, this)
   nullify (prev)
   next => nbors
   do while (associated(next))
-    if (next%task%rank >= this%task%rank) then
+    if (next%task%rank >= nbor%task%rank) then
       !-------------------------------------------------------------------------
       ! Found a task we should be ahead of, so insert here
       !-------------------------------------------------------------------------
@@ -325,7 +324,7 @@ SUBROUTINE add_nbor_by_rank (self, nbors, this)
   end if
   self%task%n_nbors = self%task%n_nbors+1
 9 continue
-  call trace_end
+  call trace%end ()
 END SUBROUTINE add_nbor_by_rank
 
 !===============================================================================
