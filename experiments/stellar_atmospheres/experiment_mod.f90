@@ -178,7 +178,7 @@ SUBROUTINE boundary_condition (self)
     ! Note that the loop for simplicity includes iz=li(3), but d_ratio=1.0 for
     ! that index, except for the vertical momentum
     !---------------------------------------------------------------------------
-    do iz=lb(3),li(3)
+    do iz=lb(3),li(3)-1
       do iy=lb(2),ub(2)
       do ix=lb(1),ub(1)
         !-----------------------------------------------------------------------
