@@ -65,7 +65,7 @@ SUBROUTINE pre_update (self)
   integer:: ix, iy, iz
   ! ----------------------------------------------------------------------------
   d => self%patch%mem(:,:,:,self%patch%idx%d,self%patch%it,1)
-  e => self%eth
+  e => self%patch%eth
   if (on) then
     m1 => self%patch%mesh(1)
     m2 => self%patch%mesh(2)
@@ -80,7 +80,7 @@ SUBROUTINE pre_update (self)
             ee = ee0 + ee1*s
             self%patch%heating_per_unit_volume(ix,iy,iz) = &
             self%patch%heating_per_unit_volume(ix,iy,iz) + &
-              (ee-e(ix,iy,iz)/d(ix,iy,iz))*d(ix,iy,iz)*r
+              (ee*d(ix,iy,iz)-e(ix,iy,iz))*r
           end do
         end do
       end do
@@ -102,7 +102,7 @@ SUBROUTINE pre_update (self)
           do ix = m1%li, m1%ui
             self%patch%heating_per_unit_volume(ix,iy,iz) = &
             self%patch%heating_per_unit_volume(ix,iy,iz) + &
-              (ee-e(ix,iy,iz)/d(ix,iy,iz))*d(ix,iy,iz)*r
+              (ee*d(ix,iy,iz)-e(ix,iy,iz))*r
           end do
         end do
       end do
