@@ -140,7 +140,7 @@ SUBROUTINE pre_init (self)
     self%mesh(i)%h(self%idx%px+i-1) = -0.5
     if (self%mhd) self%mesh(i)%h(self%idx%bx+i-1) = -0.5
   end do
-  if (verbose>1 .and. self%track) then
+  if (verbose > 1 .and. self%track) then
     do i=1,3
       print '("h:",8f5.2)', self%mesh(i)%h
     end do
@@ -296,7 +296,7 @@ SUBROUTINE pde (self)
     ! Magnetic pressure
     pb = 0.5*(Ex+Ey+Ez)                                                         ! mhd: 2 1 0
     cs = sqrt((self%gamma*pg+2.0*pb + pa)/d)                                    ! mhd: 1 1 0
-    if (verbose>3) then
+    if (verbose > 3) then
       u_max = self%fmaxval(cs,outer=.true.)
       self%u_max = max(self%u_max,u_max)
       print 1, 'u_max(ca)  ', u_max, self%u_max
@@ -319,7 +319,7 @@ SUBROUTINE pde (self)
   else
     ! Sound speed + velocity
     cs = sqrt((self%gamma*pg+pa)/d)                                             ! ops: 1 1 1 1 0
-    if (verbose>3) then
+    if (verbose > 3) then
       u_max = self%fmaxval(cs,outer=.true.)
       self%u_max = max(self%u_max,u_max)
       print 1, 'u_max(cs)  ', u_max, self%u_max
@@ -336,7 +336,7 @@ SUBROUTINE pde (self)
   end if
   u_max = self%fmaxval(cs+uu,outer=.true.)
   self%u_max = max(self%u_max,u_max)
-  if (verbose>2) print 1, 'u_max(cs+u)', u_max, self%u_max
+  if (verbose > 2) print 1, 'u_max(cs+u)', u_max, self%u_max
   !-----------------------------------------------------------------------------
   ! du has units area per unit time, which gives velocity squared times mass
   ! density per unit time = energy per unit volume and time
@@ -352,7 +352,7 @@ SUBROUTINE pde (self)
   dddt = -div(ds,fm)                                    ! density derivative
   u_max = self%cdtd*dsmax*self%fmaxval(abs(dddt/d),outer=.true.)                ! ops: 0 0 1
   self%u_max = max(self%u_max,u_max)
-  if (verbose>2) print 1, 'u_max(dddt)', u_max, self%u_max
+  if (verbose > 2) print 1, 'u_max(dddt)', u_max, self%u_max
   !-----------------------------------------------------------------------------
   ! Off-diagonal part of Reynolds stress, for now without the density factor.
   ! Note that, because of the symmmetry, we define only three components
@@ -433,7 +433,7 @@ SUBROUTINE pde (self)
     afm = self%faver(fm(:,:,:,1))
     fm = fm*down(ee) - (self%nu(5)*dd*down(du))*ddown(ds,ee)                    ! ops: 1 4 0
     dedt = -div(ds,fm) - pg*divU + Q
-    if (verbose==1) print '(a,10f12.6)', 'average(Q):', &
+    if (verbose == 1) print '(a,10f12.6)', 'average(Q):', &
       self%time, self%time*self%faver(Q), &
       self%faver(e-d**self%gamma/(self%gamma-1.0)), &
       self%faver(- pg*divU), &
@@ -482,8 +482,12 @@ SUBROUTINE pde (self)
     dedt = dedt + d*self%heating_per_unit_mass                                  ! ops: 2 2 0
   end if
   if (allocated(self%heating_per_unit_volume)) then
-write (io_unit%log,'(i6," heating:",1p,10e11.2)') self%id, &
-sum(sum(self%heating_per_unit_volume(:,:,4:13),1),1)
+    if (verbose > 1) then
+      associate (l3=>self%mesh(3)%li)
+      write (io_unit%log,'(i6," heating:",1p,10e11.2)') self%id, &
+      sum(sum(self%heating_per_unit_volume(:,:,l3:l3+9),1),1)
+      end associate
+    end if
     dedt = dedt + self%heating_per_unit_volume
   end if
   !-----------------------------------------------------------------------------
@@ -492,7 +496,7 @@ sum(sum(self%heating_per_unit_volume(:,:,4:13),1),1)
   if (self%gamma /= 1d0) then
      u_max = self%cdtd*dsmax*self%fmaxval(abs((dedt-ee*dddt)/d),outer=.true.)   ! ops: 1 1 1
     self%u_max = max(self%u_max,u_max)
-    if (verbose>2) print 1, 'u_max(dedt)', u_max, self%u_max
+    if (verbose > 2) print 1, 'u_max(dedt)', u_max, self%u_max
   end if
   !-----------------------------------------------------------------------------
   call deallocate_vectors_a (ld, dd, emf, J, fd, fx, fy, fz, fm)
@@ -569,7 +573,7 @@ SUBROUTINE update (self)
   ! The call to courant_condition may optionally be interscepted in extras_t
   !-----------------------------------------------------------------------------
   call self%courant_condition
-  if (verbose>2) &
+  if (verbose > 2) &
     call self%check_density('before timestep')
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh, self%lock)
   call self%check_density(' after timestep')

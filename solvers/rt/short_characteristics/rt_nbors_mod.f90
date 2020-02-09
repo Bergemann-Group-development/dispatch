@@ -47,7 +47,6 @@ SUBROUTINE init (mhd)
   ! 1) The omega0 needs the MHD task for the MHD variables, but no download
   !-----------------------------------------------------------------------------
   needs=.true.; needs_me=.false.; download=.false.
-  print *, '1:', associated(omega0%link%nbor)
   call init_nbor_pair (omega0%link, needs, mhd%link, needs_me, download)
   !-----------------------------------------------------------------------------
   ! Loop over all ray directions, and add nbors and nbor relations. The only
@@ -75,7 +74,6 @@ SUBROUTINE init (mhd)
         ! 2) The omega0 task needs the MHD nbors, and needs download
         !-----------------------------------------------------------------------
         needs=.true.; needs_me=.false.; download=.true.
-        print *, '2:', associated(omega0%link%nbor), omega0%id
         call init_nbor_pair (omega0%link, needs, nbor%link, needs_me, download)
       else
         !-----------------------------------------------------------------------
@@ -88,7 +86,6 @@ SUBROUTINE init (mhd)
           ! them, but the upstream tasks do not need the downstream omega tasks
           !---------------------------------------------------------------------
           needs=.true.; needs_me=.false.; download=.true.
-          print *, '3:', associated(omega%link%nbor), omega%id, omega%i_omega
           call init_nbor_pair (omega%link, needs, upstream%link, needs_me, download)
         end if
       end if
@@ -100,13 +97,11 @@ SUBROUTINE init (mhd)
     ! 4) The omega task needs the RT task, which does not need the omega tasks
     !-----------------------------------------------------------------------
     needs=.true.; needs_me=.false.; download=.false.
-    print *, '4:', associated(omega%link%nbor), omega%id
     call init_nbor_pair (omega%link, needs, omega0%link, needs_me, download)
     !---------------------------------------------------------------------------
     ! 5) The MHD task needs the omega tasks, which do not need the MHD task
     !---------------------------------------------------------------------------
     needs=.true.; needs_me=.false.; download=.false.
-    print *, '5:', associated(mhd%link%nbor), mhd%id
     call init_nbor_pair (mhd%link, needs, omega%link, needs_me, download)
   end do
   call trace%end()
@@ -123,10 +118,6 @@ SUBROUTINE init_nbor_pair (link1, needed, link2, needs_me, download)
   class(nbor_t), pointer:: nbor1, nbor2
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_t%init_nbor_pairs')
-  if (.not.associated(link1%nbor)) &
-    write(stderr,*) 'rt_nbors_mod WARNING: link1 has no nbor', link1%task%id
-  if (.not.associated(link2%nbor)) &
-    write(stderr,*) 'rt_nbors_mod WARNING: link2 has no nbor', link2%task%id
   !-----------------------------------------------------------------------------
   ! Add the 2nd linked task as an nbor to the 1st linked task
   !-----------------------------------------------------------------------------
@@ -180,6 +171,10 @@ SUBROUTINE init_nbor_pair (link1, needed, link2, needs_me, download)
   !-----------------------------------------------------------------------------
   call link1%add_nbor_by_rank (link1%nbor, nbor1)
   call link2%add_nbor_by_rank (link2%nbor, nbor2)
+  if (.not.associated(link1%nbor)) &
+    write(stderr,*) 'rt_nbors_mod WARNING: link1 has no nbor', link1%task%id
+  if (.not.associated(link2%nbor)) &
+    write(stderr,*) 'rt_nbors_mod WARNING: link2 has no nbor', link2%task%id
   call trace%end()
 END SUBROUTINE init_nbor_pair
 

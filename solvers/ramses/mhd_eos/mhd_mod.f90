@@ -408,8 +408,10 @@ SUBROUTINE update (self)
     e = e + self%dtime*self%heating_per_unit_mass*d
   end if
   if (allocated(self%heating_per_unit_volume)) then
-write (io_unit%log,'(i6," heating:",1p,10e11.2)') self%id, &
-sum(sum(self%heating_per_unit_volume(:,:,4:13),1),1)
+    if (verbose > 1) then
+      write (io_unit%log,'(i6," heating:",1p,10e11.2)') self%id, &
+      sum(sum(self%heating_per_unit_volume(:,:,l(3):l(3)+9),1),1)
+    end if
     e = e + self%dtime*self%heating_per_unit_volume
   end if
   !-----------------------------------------------------------------------------

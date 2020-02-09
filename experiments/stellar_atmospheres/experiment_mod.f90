@@ -86,8 +86,8 @@ SUBROUTINE init (self)
   call self%boundaries%init(self%mesh)
   self%boundaries%id = self%id
   if (verbose > 0) then
-    if (self%mesh(3)%lower_boundary) write(io%output,*) self%id, 'at lower B'
-    if (self%mesh(3)%upper_boundary) write(io%output,*) self%id, 'at upper B'
+    if (self%mesh(3)%lower_boundary) write(io_unit%log,*) self%id, 'at lower B'
+    if (self%mesh(3)%upper_boundary) write(io_unit%log,*) self%id, 'at upper B'
   end if
   call trace%end()
 END SUBROUTINE init
@@ -164,6 +164,8 @@ SUBROUTINE boundary_condition (self)
   bz => self%mem(:,:,:,self%idx%bz,self%it,1)
   if (self%is_set(bits%zl+bits%zu)) print *, 'doing BC according to bits'
   if (m3%lower_boundary) then
+    if (verbose > 1) &
+      print *, self%id, 'top BC', self%position(3)
     !---------------------------------------------------------------------------
     ! Clamp the energy per unit mass at the table limit
     !---------------------------------------------------------------------------
@@ -227,7 +229,8 @@ SUBROUTINE boundary_condition (self)
       end do
     end if
   else if (m3%upper_boundary) then
-print *, self%id, 'bottom BC', self%position(3)
+    if (verbose > 1) &
+      print *, self%id, 'bottom BC', self%position(3)
     !---------------------------------------------------------------------------
     ! Compute the pressure pg at the bottom BC, and what we would like it to be
     !---------------------------------------------------------------------------

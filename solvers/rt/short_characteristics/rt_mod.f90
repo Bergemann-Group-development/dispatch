@@ -787,10 +787,10 @@ subroutine omp_eos
     call self%stats (e, 'e')
   end if
   call patch%to_thermal_begin (patch%it, kind=patch%kind)
-write (io_unit%log,'(3i6," e:",1p,10e11.2)') self%id, self%it, patch%it, &
-sum(sum(e(:,:,4:13),1),1)
-write (io_unit%log,'(3i6," eth:",1p,10e11.2)') self%id, self%it, patch%it, &
-sum(sum(patch%eth(:,:,4:13),1),1)
+!write (io_unit%log,'(3i6," e:",1p,10e11.2)') self%id, self%it, patch%it, &
+!sum(sum(e(:,:,4:13),1),1)
+!write (io_unit%log,'(3i6," eth:",1p,10e11.2)') self%id, self%it, patch%it, &
+!sum(sum(patch%eth(:,:,4:13),1),1)
   call eos%lookup_table (m, d=d, e=patch%eth, rk=self%rk, src=self%src, &
                          tt=self%tt, pg=pgas)
   call patch%to_thermal_end (kind=patch%kind)

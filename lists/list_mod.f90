@@ -651,12 +651,7 @@ SUBROUTINE check_nbors (self, link)
   ! Lock the other task link while accessing its nbor list, to prevent changes
   !-----------------------------------------------------------------------------
   nbor => link%nbor                                     ! first nbor
-if (task%id==62) &
-print *, task%id, 'nbor id, assoc =', associated (nbor)
   do while (associated (nbor))                          ! keep going until end
-if (task%id==62) &
-print *, task%id, 'nbor id, needs_me, needed =', &
-nbor%task%id, nbor%needs_me, nbor%needed
     !---------------------------------------------------------------------------
     ! If the nbor needs this task, and isn't busy updating, check it.  For
     ! thread safety, the busy bit must NOT be cleared before a task has done
@@ -932,8 +927,6 @@ SUBROUTINE check_ready (self, link, lock, status)
   status_l = -1
   task => link%task
   ignore = bits%ready + bits%remove + bits%virtual + bits%frozen
-if (task%id==62) &
-print *, 'check_ready:', task%id, associated(link%nbor)
   if (task%is_clear (ignore)) then
     !...........................................................................
     if (self%verbose > 2) then
@@ -1420,8 +1413,8 @@ SUBROUTINE init_nbors (self, link)
           !.....................................................................
           n_add = n_add+1
           if (self%verbose > 1 .or. link%task%id == io%id_debug) &
-            write (io_unit%log, '(2x,a,i6,i4,3x,4l1)') &
-            'init_nbors: nbor, level, NMDV =', &
+            write (io_unit%log, '(2x,a,2i6,i4,3x,4l1)') &
+            'init_nbors: id, nbor, level, NMDV =', link%task%id, &
             nbor%task%id, nbor%task%level, nbor%needed, nbor%needs_me, &
             nbor%download, nbor%task%is_set(bits%virtual)
           !.....................................................................
@@ -1916,8 +1909,6 @@ SUBROUTINE queue_by_time (self, this)
   integer:: verbose
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-if (this%task%id==62) &
-print *, 'queue_by_time', this%task%id, associated(this%nbor)
   if (self%detailed_timer) then
     call trace%begin ('list_t%queue_by_time ', itimer=itimer)
     if (self%verbose > 3) &
