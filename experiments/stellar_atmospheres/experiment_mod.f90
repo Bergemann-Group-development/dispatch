@@ -118,7 +118,6 @@ END SUBROUTINE init_task_list
 SUBROUTINE update (self)
   class(experiment_t):: self
   class(link_t), pointer:: link
-  real, pointer, contiguous, dimension(:,:,:):: d, e
   logical, save:: first_time=.true.
   !----------------------------------------------------------------------------
   call trace%begin('experiment_t%update')
@@ -127,9 +126,6 @@ SUBROUTINE update (self)
       self%mesh(3)%upper_boundary) then
       call self%boundary_condition
   end if
-  d => self%mem(:,:,:,self%idx%d,self%it,1)
-  e => self%mem(:,:,:,self%idx%e,self%it,1)
-  e = max(e,4.5*d)
   call self%solver_t%update
   call self%to_thermal_end
   call trace%end()
