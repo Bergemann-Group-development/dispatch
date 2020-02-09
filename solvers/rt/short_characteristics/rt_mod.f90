@@ -230,6 +230,7 @@ SUBROUTINE init_task (self)
   self%position   = p%position
   self%centre_nat = p%position
   self%restart    = p%restart
+  self%status     = p%status
   self%warmup_end_time = p%time
   self%iit      = 1
   self%mu       = 1.0
