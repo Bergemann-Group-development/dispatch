@@ -96,13 +96,13 @@ def unigrid_plane(snap,iv=0,x=None,y=None,z=0.5,point=0.5,dir=2,
     dim=list(snap.cartesian.dims*p.n)
     dim.pop(dir)
     ff=np.zeros(dim)
-    if x:
+    if x is not None:
         dir=0
         point=x
-    elif y:
+    elif y is not None:
         dir=1
         point=y
-    elif z:
+    elif z is not None:
         dir=2
         point=z
     # List of patches that contain the plane
@@ -117,7 +117,7 @@ def unigrid_plane(snap,iv=0,x=None,y=None,z=0.5,point=0.5,dir=2,
     for p in pp:
         n+=1
         if verbose>1:
-            print(n)
+            print("{}/{} id: {}".format(n,len(pp),p.id))
         elif verbose>0:
             if n%100==0:
                 print(n)
