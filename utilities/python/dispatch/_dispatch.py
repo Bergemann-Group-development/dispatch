@@ -730,7 +730,8 @@ def _parse_namelist (items):
 
     return np.array(pos)
 
-def parse_patches(snap,file='../data/00000/rank_00000_patches.nml'):
+def parse_patches(snap,file='../data/00000/rank_00000_patches.nml',
+                  verbose=0):
     """ Optimized parsing of patch namelist entries.
     """
     prop_dict={}
@@ -758,8 +759,9 @@ def parse_patches(snap,file='../data/00000/rank_00000_patches.nml'):
                 parent_id=nb['parent_id']
                 nbor_ids=nb['nbor_ids']
                 nbor_info[id]={'parent_id':parent_id,'nbor_ids':nbor_ids}
-            print('snapshot nbor_nml info ({:.3f}s):'.format(time()-start))
-            print(nbor_nml[0].keys())
+            if verbose:
+                print('snapshot nbor_nml info ({:.3f}s):'.format(time()-start))
+                print(nbor_nml[0].keys())
 
     with open(file,'r') as fo:
         watch_block = False
@@ -767,7 +769,9 @@ def parse_patches(snap,file='../data/00000/rank_00000_patches.nml'):
             # strip commas and equal sign from line and split
             line=line.replace('=',' ').replace(',','').replace('"',' ')
             items=line.split()
-            if items[0] == "&PATCH_NML":
+            if len(items)==0:
+                pass
+            elif items[0] == "&PATCH_NML":
                 d={}
                 watch_block = True
             elif items[0]=='ID':
@@ -915,7 +919,7 @@ class snapshot():
             file=_file(datadir,f)
             if verbose>1:
                 print ('parsing',file)
-            patch_dict=parse_patches(self,file)
+            patch_dict=parse_patches(self,file,verbose=verbose)
             save.append(patch_dict)
         timer.add('parse_patches')   # 0.7s
         for patch_dict in save:
