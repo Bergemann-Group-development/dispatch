@@ -1,0 +1,31 @@
+! $Id$
+!
+! This default input file defines a run that should take only a few seconds on a laptop
+!
+! Do not modify this default input.nml file to make experiments -- instead,
+! copy input.nml to somename.nml, and run ./dispatch.x somename.nml, which produces
+! data files named data/somename/ttttt/, where ttttt is the snapshot number.
+
+&io_params                  verbose=0 do_trace=f omp_trace=f
+                            do_output=t guard_zones=f time_derivs=0
+/
+&out_params                 end_time=0.01 out_time=0.01 print_every=1 /
+&timer_params               sec_per_report=10 /
+
+&cartesian_params           size=3*1.0 dims=3*3 mpi_dims=2,1,1 /
+&experiment_params          /
+&patch_params               nt=5 n=3*16 grace=0.3 /
+&download_params            order_time=1 /
+
+&initial_params             type='single_solenoidal' /
+&initial_solenoidal_params  k=1,1,2 a0=0.0,0.0,0.0                           /
+&force_params               type='single_solenoidal' /
+&force_solenoidal_params    k=1,1,2 a0=10.0,10.2,10.1 t_turn=0.1000 /
+
+                            !    cs   pa  ofd  mas  kap  eta
+&stagger_params             nu=0.10, 1.0, 1.0, 0.1, 1.0, 1.0
+                            courant=0.2 eos='ideal' gamma=1.6666667
+/
+&ramses_params              detailed_timer=f courant_factor=0.25 slope_type=2
+                            isothermal=f gamma=1.4 smallr=1e-6 smallc=1e-2
+/
