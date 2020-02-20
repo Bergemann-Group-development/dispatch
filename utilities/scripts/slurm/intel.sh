@@ -45,6 +45,7 @@ killall srun
 sleep 5
 killall srun
 sleep 5
+export I_MPI_EAGER_THRESHOLD=1024
 srun --label --distribution=block:block $dir/dispatch_$time $in
 
 # ad hoc
