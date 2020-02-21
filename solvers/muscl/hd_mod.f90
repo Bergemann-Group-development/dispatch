@@ -185,9 +185,9 @@ SUBROUTINE ctoprim (self)
   ! Copy everything to new time slot, lock protected
   !-----------------------------------------------------------------------------
   lock => self%mem_lock(self%it)
-  call lock%set ('ctoprim')
+  !call lock%set ('ctoprim')
   self%mem(:,:,:,:,self%new,1) = self%mem(:,:,:,:,self%it,1)
-  call lock%unset ('ctoprim')
+  !call lock%unset ('ctoprim')
   !-----------------------------------------------------------------------------
   l = self%mesh%lb
   u = self%mesh%ub
@@ -214,6 +214,7 @@ SUBROUTINE ctoprim (self)
       prim(i1,i2,i3,5) = prim(i1,i2,i3,5) - 0.5*u2
       c2 = prim(i1,i2,i3,5)*g1
       u2_max = max (u2_max, u2+c2)
+      prim(i1,i2,i3,5) = log(prim(i1,i2,i3,5))
     end do
   end do
   end do
@@ -422,7 +423,7 @@ SUBROUTINE predict (self)
       ee(i1,i2,i3) = ee(i1,i2,i3) - ( &
         u1(i1,i2,i3)*ee_1(i1,i2,i3)*dtd1 + &
         u2(i1,i2,i3)*ee_2(i1,i2,i3)*dtd2 + &
-        u3(i1,i2,i3)*ee_3(i1,i2,i3)*dtd3) - divu*ee(i1,i2,i3)*g1
+        u3(i1,i2,i3)*ee_3(i1,i2,i3)*dtd3) - divu*g1
     end do
   end do
   end do

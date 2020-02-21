@@ -49,13 +49,15 @@ SUBROUTINE hll (self, dir, l, u, left, rght, flux)
   do i1=l(1),u(1)
     Dl = exp(&
          left(i1-j1,i2-j2,i3-j3,1))
-    El = left(i1-j1,i2-j2,i3-j3,5)
+    El = exp(&
+         left(i1-j1,i2-j2,i3-j3,5))
     Ul = left(i1-j1,i2-j2,i3-j3,v1)
     Vl = left(i1-j1,i2-j2,i3-j3,v2)
     Wl = left(i1-j1,i2-j2,i3-j3,v3)
     Dr = exp(&
          rght(i1,i2,i3,1))
-    Er = rght(i1,i2,i3,5)
+    Er = exp(&
+         rght(i1,i2,i3,5))
     Ur = rght(i1,i2,i3,v1)
     Vr = rght(i1,i2,i3,v2)
     Wr = rght(i1,i2,i3,v3)
