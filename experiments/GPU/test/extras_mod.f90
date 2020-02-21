@@ -193,7 +193,7 @@ SUBROUTINE pre_update (self)
     self%heating_per_unit_volume = 0.0                                 ! keep
   !call self%rt%pre_update()                                            ! RT
   !call self%newton%pre_update()                                        ! Newton
-  call self%forces%pre_update                                           ! forces
+  call self%forces%pre_update                                          ! forces
   !call self%trace_particles%update                                     ! tracep
   !call self%spitzer%pre_update()                                       ! spitzer
   !call self%gravity%pre_update()                                       ! gravity
@@ -263,7 +263,7 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   class(task_t), pointer:: another
   logical:: needed, needs_me, download
   !-----------------------------------------------------------------------------
-  call trace%begin ('rt_t%nbor_relations')
+  call trace%begin ('extras_t%nbor_relations')
   !
   !-----------------------------------------------------------------------------
   ! First check the main relations, then specific ones
