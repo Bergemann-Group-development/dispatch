@@ -19,6 +19,7 @@ MODULE initial_mod
   type, public:: initial_t
     integer:: seed
     real:: d0
+    real:: gamma=1.4
     logical:: mhd
     real(8):: time=0d0
     character(len=64):: solver
@@ -41,16 +42,21 @@ SUBROUTINE init (self, solver, gamma1)
   integer:: iostat
   real, optional:: gamma1
   logical, save:: first_time=.true.
-  namelist /initial_params/ type
+  namelist /IC_params/ type, gamma
   !----------------------------------------------------------------------------
   call trace_begin('initial_t%init')
   !$omp critical (input_cr)
   if (first_time) then
-    first_time = .false.
+    if (present(gamma1)) then
+      gamma = gamma1
+    else
+      gamma = self%gamma
+    end if
     rewind (io%input)
-    read (io%input, initial_params, iostat=iostat)
+    read (io%input, IC_params, iostat=iostat)
     if (iostat/=0) call io%namelist_warning ('ramses/hydro/initial_mod.f90: initial_params')
-    if (io%master) write (*, initial_params)
+    write (io%output, IC_params)
+    first_time = .false.
   end if
   !$omp end critical (input_cr)
   self%solver = trim(solver)
@@ -59,6 +65,8 @@ SUBROUTINE init (self, solver, gamma1)
     self%condition => single_solenoidal
   case ('single_compressive')
     self%condition => single_compressive
+  case ('simple_advection')
+    self%condition => simple_advection
   case ('single_advection')
     self%condition => single_advection
   case ('exa256')
@@ -70,6 +78,7 @@ SUBROUTINE init (self, solver, gamma1)
   case default
     call io%abort ('UNKNOWN INITIAL CONDITION TYPE :'//trim(type)//':')
   end select
+  self%gamma = gamma
   call trace_end
 END SUBROUTINE init
 
@@ -103,7 +112,7 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
   real(8), save  :: t_turn=0.1
   logical, save  :: first_time=.true.
-  namelist /initial_solenoidal_params/ k, a0, u0, b0, d0, s0, mhd, gamma, t_turn
+  namelist /IC_solenoidal_params/ k, a0, u0, b0, d0, s0, mhd, t_turn
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t%single_solenoidal', itimer=itimer)
@@ -111,9 +120,9 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
-    read (io%input, initial_solenoidal_params)
+    read (io%input, IC_solenoidal_params)
     mhd = mhd .and. any(b0 /= 0.0)
-    if (io%master) write (*, initial_solenoidal_params)
+    if (io%master) write (*, IC_solenoidal_params)
   end if
   !$omp end critical (input_cr)
   self%mhd = mhd
@@ -156,7 +165,7 @@ SUBROUTINE single_compressive (self, m, ff, idx)
   real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
   real(8), save  :: t_turn=0.1
   logical, save  :: first_time=.true.
-  namelist /initial_compressive_params/ k, a0, u0, b0, d0, s0, mhd, gamma, t_turn
+  namelist /IC_compressive_params/ k, a0, u0, b0, d0, s0, mhd, t_turn
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t%single_compressive', itimer=itimer)
@@ -164,9 +173,9 @@ SUBROUTINE single_compressive (self, m, ff, idx)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
-    read (io%input, initial_compressive_params)
+    read (io%input, IC_compressive_params)
     mhd = mhd .and. any(b0 /= 0.0)
-    if (io%master) write (*, initial_compressive_params)
+    if (io%master) write (*, IC_compressive_params)
   end if
   !$omp end critical (input_cr)
   self%mhd = mhd
@@ -197,6 +206,62 @@ END SUBROUTINE single_compressive
 !===============================================================================
 !> Initialize a single 3-D wavenumber, with non-random amplitude and phase
 !===============================================================================
+SUBROUTINE simple_advection (self, m, ff, idx)
+  class(initial_t) :: self
+  type(index_t):: idx
+  class(mesh_t)    :: m(3)
+  real, dimension(:,:,:,:) :: ff
+  !.............................................................................
+  integer        :: ix, iy, iz
+  real(8)        :: kx, ky, kz
+  real           :: d
+  logical, save  :: mhd=.false.
+  logical, save  :: first_time=.true.
+  real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, p0=1.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
+  namelist /IC_advection_params/ k, a0, u0, b0, d0, p0, mhd
+  integer, save  :: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace_begin('initial_t%single_advection', itimer=itimer)
+  !$omp critical (input_cr)
+  if (first_time) then
+    first_time = .false.
+    rewind (io%input)
+    read (io%input, IC_advection_params)
+    mhd = mhd .and. any(b0 /= 0.0)
+    if (io%master) write (*, IC_advection_params)
+    print *, [idx%d,idx%px,idx%py,idx%pz,idx%e]
+  end if
+  !$omp end critical (input_cr)
+  self%mhd = mhd
+  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
+  do iz=m(3)%lb,m(3)%ub
+    kz   =  pi2*k(3)*(r3(iz)+m(3)%p-0.5d0*m(3)%s)/m(3)%b + phi(3)
+    do iy=m(2)%lb,m(2)%ub
+      ky   =  pi2*k(2)*(r2(iy)+m(2)%p-0.5d0*m(2)%s)/m(2)%b + phi(2)
+      do ix=m(1)%lb,m(1)%ub
+        kx   =  pi2*k(1)*(r1(ix)+m(1)%p-0.5d0*m(1)%s)/m(1)%b + phi(1)
+        d = d0*(1.+a0(1)*sin(kx)+a0(2)*sin(ky)+a0(3)*sin(kz))
+        ff(ix,iy,iz,idx%d ) = d
+        ff(ix,iy,iz,idx%px) = u0(1)*d
+        ff(ix,iy,iz,idx%py) = u0(2)*d
+        ff(ix,iy,iz,idx%pz) = u0(3)*d
+        if (self%mhd) then
+          ff(ix,iy,iz,idx%bx) = b0(3)*sin(kz)
+          ff(ix,iy,iz,idx%by) = b0(1)*sin(kx)
+          ff(ix,iy,iz,idx%bz) = b0(2)*sin(ky)
+        end if
+        !--- total enegy at constant pressure p0
+        ff(ix,iy,iz,idx%e) = p0/(self%gamma-1d0) + 0.5*d*(u0(1)**2+u0(2)**2+u0(3)**2)
+      end do
+    end do
+  end do
+  end associate
+  call trace_end (itimer)
+END SUBROUTINE simple_advection
+
+!===============================================================================
+!> Initialize a single 3-D wavenumber, with non-random amplitude and phase
+!===============================================================================
 SUBROUTINE single_advection (self, m, ff, idx)
   class(initial_t) :: self
   type(index_t):: idx
@@ -208,7 +273,7 @@ SUBROUTINE single_advection (self, m, ff, idx)
   logical, save  :: mhd=.false.
   logical, save  :: first_time=.true.
   real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
-  namelist /initial_advection_params/ k, a0, u0, b0, d0, s0, mhd, gamma
+  namelist /IC_advection_params/ k, a0, u0, b0, d0, s0, mhd
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t%single_advection', itimer=itimer)
@@ -216,9 +281,9 @@ SUBROUTINE single_advection (self, m, ff, idx)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
-    read (io%input, initial_advection_params)
+    read (io%input, IC_advection_params)
     mhd = mhd .and. any(b0 /= 0.0)
-    if (io%master) write (*, initial_advection_params)
+    if (io%master) write (*, IC_advection_params)
   end if
   !$omp end critical (input_cr)
   self%mhd = mhd
@@ -304,7 +369,7 @@ SUBROUTINE exa256 (self, m, ff, idx)
     ff(:,:,:,iv) = ff(:,:,:,idx%d)*ff(:,:,:,iv)
   end do
   call energy (self, m, idx, ff)
-  if (io%verbose > 2) write (io_unit%log,*) 'initial dt:',dt,gamma,umax
+  if (io%verbose > 2) write (io_unit%log,*) 'initial dt:',dt,self%gamma,umax
   if (io%verbose > 2) &
     write (io_unit%log,'(a,3i4,1p,2g12.3)') 'ix,iy,iz,dmin,dmax =', ix, iy, iz, &
       minval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1)), &
@@ -374,7 +439,7 @@ SUBROUTINE raw (self, m, ff, idx)
 END SUBROUTINE raw
 
 !===============================================================================
-!> Calculate total energy
+!> Calculate total energy, assuming constant temperature (given by csound=1.0)
 !===============================================================================
 SUBROUTINE energy (self, m, idx, ff)
   class(initial_t) :: self
@@ -385,10 +450,10 @@ SUBROUTINE energy (self, m, idx, ff)
   real(dp):: fgamma
   !-----------------------------------------------------------------------------
   call trace%begin ('initial_t%energy')
-  if (isothermal .or. gamma==1.0_dp) then
+  if (isothermal .or. self%gamma==1.0_dp) then
     fgamma = 1.0_dp
   else
-    fgamma = gamma*(gamma-1.0_dp)
+    fgamma = self%gamma*(self%gamma-1.0_dp)
   end if
   ff(:,:,:,idx%e) = 0.5*(ff(:,:,:,idx%px)**2+ &
                          ff(:,:,:,idx%py)**2+ &

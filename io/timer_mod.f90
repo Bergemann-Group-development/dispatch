@@ -50,6 +50,8 @@ MODULE timer_mod
     real:: dead_mans_hand=0.0
     logical:: detailed=.false.
     logical:: done=.false.
+    real(8):: next_report_sec=0d0
+    integer(8):: n_cheap=0, n_expensive=0
   contains
     procedure:: init
     procedure:: begin
@@ -69,7 +71,6 @@ MODULE timer_mod
   type(timer_t), public:: timer
   integer, save:: nprint=20
   integer, save:: verbose=0
-  real(8), save:: next_report_sec=0d0
   real(8), save:: prev2=0d0
   real, save:: min_fraction=0.0005
   interface toc
@@ -96,7 +97,8 @@ SUBROUTINE init (self)
     read (io_unit%input, timer_params, iostat=ignore)
     write (io_unit%output, timer_params)
     self%sec_per_report = sec_per_report
-    next_report_sec = wallclock() + sec_per_report
+    !$omp atomic write
+    timer%next_report_sec = wallclock() + sec_per_report
     omp%nthreads = max(1,omp%nthreads)
     timer%detailed = detailed
     allocate (timers(0:omp%nthreads-1))
@@ -178,7 +180,7 @@ SUBROUTINE end (self, itimer)
   class(timer_t):: self
   integer, optional:: itimer
   integer::thread, istack, otimer
-  real(8):: wc
+  real(8):: wc, next_report
   !.............................................................................
   if (io_unit%do_validate) return
   !-----------------------------------------------------------------------------
@@ -224,11 +226,15 @@ SUBROUTINE end (self, itimer)
   !-----------------------------------------------------------------------------
   ! Check if it is time to do a printout
   !-----------------------------------------------------------------------------
-  if (wc > next_report_sec) then
+  !$omp atomic read
+  next_report = timer%next_report_sec
+  if (wc > next_report) then
     !$omp critical (timer_print_cr)
-    if (wc > next_report_sec) then
+    if (wc > next_report) then
       call real_print (self)
-      next_report_sec = (nint(wc/self%sec_per_report)+1)*self%sec_per_report
+      next_report = (nint(wc/self%sec_per_report)+1)*self%sec_per_report
+      !$omp atomic write
+      timer%next_report_sec = next_report
     end if
     !$omp end critical (timer_print_cr)
   end if
@@ -300,6 +306,7 @@ SUBROUTINE real_print (self)
   ! `musppt` is defined to be the number of microseconds per update per thread.
   !-----------------------------------------------------------------------------
   updates = max(1.0,real(timer%n_update-n_previous))
+  n_previous = timer%n_update
   musppt = sec*1d6*min(omp%nthreads,omp%ncores)/updates
   n_recv = max(timer%n_recv,1)
   if (shared%mpi_master) then
@@ -313,7 +320,6 @@ SUBROUTINE real_print (self)
   timer%n_recv = 0_8
   timer%nq_send_max = 0
   timer%nq_recv_max = 0
-  n_previous = timer%n_update
   prev2 = wc
   timer%latency%max  = 0.0
   timer%latency%aver = 0d0
@@ -328,6 +334,10 @@ SUBROUTINE real_print (self)
   timer%mpi_test = 0
   timer%busy_time = 0d0
   timer%spin_time = 0d0
+  !$omp atomic write
+  timer%n_cheap = 0
+  !$omp atomic write
+  timer%n_expensive = 0
   self%n_mhd = 0; self%n_solve=0
   omp_lock%time = 0d0
   return
@@ -382,16 +392,16 @@ contains
       self%time-self%prev, ' time advance', &
       musppt, ' core-mus/cell-upd', wc, ' wall sec'
     self%prev = self%time
-    if (shared%mpi_size>1) then
-      timer%latency%aver = timer%latency%aver/max(1,timer%latency%n)
-      write (unit,'(1x,"MPI recv:",f10.1," MB/s",f11.3," MB/mesg",i8," nq_send_max",i8, &
-        " nq_recv_max",2f8.3," max, aver latency",f7.2, " f_unpk",f7.2," f_mem",f8.3," f_q")') &
-        timer%bytes_recv/1024.**2/sec, timer%bytes_recv/1024.**2/n_recv, &
-        timer%nq_send_max, timer%nq_recv_max, timer%latency%max, timer%latency%aver, &
-        timer%mpi_hit/real(max(1,timer%mpi_test)), &
-        timer%mem_hit/real(max(1,timer%mem_test)), &
-        timer%busy_time/max(timer%spin_time + timer%busy_time,1d-30)
-    end if
+    timer%latency%aver = timer%latency%aver/max(1,timer%latency%n)
+    write (unit,'(1x,"MPI recv:",f10.1," MB/s",f11.3," MB/mesg",i8, &
+      " nq_send_max",i8, " nq_recv_max",2f8.3," max, aver latency",f7.2, &
+      " f_unpk",f7.2," f_mem",f7.2," f_que",f7.2," f_cheap")') &
+      timer%bytes_recv/1024.**2/sec, timer%bytes_recv/1024.**2/n_recv, &
+      timer%nq_send_max, timer%nq_recv_max, timer%latency%max, timer%latency%aver, &
+      timer%mpi_hit/real(max(1,timer%mpi_test)), &
+      timer%mem_hit/real(max(1,timer%mem_test)), &
+      timer%busy_time/max(timer%spin_time + timer%busy_time,1d-30), &
+      timer%n_cheap/real(timer%n_cheap+timer%n_expensive+1)
     flush (unit)
   end subroutine write_to
 END SUBROUTINE real_print

@@ -23,7 +23,7 @@
 &force_solenoidal_params    k=1,1,2 a0=10.0,10.2,10.1 t_turn=0.1000 /
 
 &muscl_params               verbose=0 slope_type=2 courant=0.2
-                            gamma=1.4 detailed_timer=t
+                            method='hllc' gamma=1.4 detailed_timer=t
 /
 !--- params for other solvers (not used in the default Makefile) -----------
                             !    cs   pa  ofd  mas  kap  eta

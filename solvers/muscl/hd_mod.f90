@@ -18,6 +18,7 @@ MODULE hd_mod
   private
   type, public, extends(extras_t):: hd_t
     real:: slope_type
+    real(8):: g1, g2
     type(riemann_t):: riemann
   contains
     procedure:: init
@@ -39,7 +40,8 @@ MODULE hd_mod
   !-----------------------------------------------------------------------------
   real:: gamma=1.4, csound=1.0, courant=0.2
   integer:: slope_type=2
-  logical:: isothermal=.false., unsigned=.true., detailed_timer=.true.
+  logical:: unsigned=.true., detailed_timer=.true.
+  character(len=4):: method='hll'
   integer:: verbose=0
 CONTAINS
 
@@ -49,8 +51,8 @@ CONTAINS
 SUBROUTINE init (self)
   class(hd_t):: self
   !.............................................................................
-  namelist /muscl_params/ verbose, courant, gamma, isothermal, slope_type, &
-    detailed_timer
+  namelist /muscl_params/ verbose, courant, gamma, csound, slope_type, &
+    method, detailed_timer
   integer:: iostat, i
   logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
@@ -77,14 +79,25 @@ SUBROUTINE init (self)
     write (io%output, muscl_params)
     write (io%namelist, muscl_params)
   end if
-  if (gamma == 1d0) &
-    isothermal = .true.
-  if (isothermal) &
-    gamma = 1d0
   !$omp end critical (input_cr)
+  self%riemann%method = method
   self%courant = courant
-  self%gamma = gamma
   self%csound = csound
+  !-----------------------------------------------------------------------------
+  ! Make sure to save and use consistent gamma factors throughout
+  !-----------------------------------------------------------------------------
+  self%gamma = gamma
+  if (gamma == 1d0) then
+    self%g1 = 1d0
+  else
+    self%g1 = gamma-1d0
+  end if
+  self%g2 = self%g1*gamma
+  self%riemann%g1 = self%g1
+  self%riemann%g2 = self%g2
+  !-----------------------------------------------------------------------------
+  ! Generic settings
+  !-----------------------------------------------------------------------------
   self%staggered = .false.
   do i=1,3
     self%mesh(i)%h = 0d0
@@ -118,7 +131,7 @@ SUBROUTINE update (self)
   call ctoprim (self)
   call slopes  (self)
   call predict (self)
-  call riemann (self)
+  call riemn3d (self)
   call divflux (self)
   call sources (self)
   call lock%unset ('update')
@@ -177,7 +190,7 @@ SUBROUTINE ctoprim (self)
   !.............................................................................
   integer:: i1, i2, i3, iv, l(3), u(3)
   type(lock_t), pointer:: lock
-  real:: u2, u2_max, c2, g1
+  real:: u2, u2_max, c2, g2
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call tracebegin ('hd_t%ctoprim', itimer=itimer)
@@ -203,7 +216,11 @@ SUBROUTINE ctoprim (self)
   !-----------------------------------------------------------------------------
   ! Subtract kinetic energy per unit mass and compute self%u_max
   !-----------------------------------------------------------------------------
-  g1 = (self%gamma-1d0)*self%gamma
+  if (self%gamma == 1d0) then
+    g2 = 1.0
+  else
+    g2 = (self%gamma-1d0)*self%gamma
+  end if
   u2_max = 0.0
   do i3=l(3),u(3)
   do i2=l(2),u(2)
@@ -212,7 +229,7 @@ SUBROUTINE ctoprim (self)
            prim(i1,i2,i3,3)**2 + &
            prim(i1,i2,i3,4)**2
       prim(i1,i2,i3,5) = prim(i1,i2,i3,5) - 0.5*u2
-      c2 = prim(i1,i2,i3,5)*g1
+      c2 = prim(i1,i2,i3,5)*g2
       u2_max = max (u2_max, u2+c2)
       prim(i1,i2,i3,5) = log(prim(i1,i2,i3,5))
     end do
@@ -383,7 +400,7 @@ SUBROUTINE predict (self)
   dtd1 = dt2/self%ds(1)
   dtd2 = dt2/self%ds(2)
   dtd3 = dt2/self%ds(3)
-  g1 = self%gamma-1d0
+  g1 = self%g1
   l = self%mesh%lo
   u = self%mesh%uo
   do i3=l(3),u(3)
@@ -442,7 +459,7 @@ END SUBROUTINE predict
 !> want the fluxes, while referring to the left state one index to the left
 !> inside the Riemann solver
 !===============================================================================
-SUBROUTINE riemann (self)
+SUBROUTINE riemn3d (self)
   class(hd_t):: self
   !.............................................................................
   integer:: l(3), u(3)
@@ -451,34 +468,33 @@ SUBROUTINE riemann (self)
   call tracebegin ('hd_t%riemann', itimer=itimer)
   l = self%mesh%li
   u = self%mesh%uo
-  self%riemann%gamma = self%gamma
   !-----------------------------------------------------------------------------
   ! X-direction
   !-----------------------------------------------------------------------------
   left = prim + grad(:,:,:,:,1)*0.5
   rght = prim - grad(:,:,:,:,1)*0.5
-                               call tracebegin ('riemann_t%hll', itimer=itimer1)
-  call self%riemann%hll (1, l, u, left, rght, flux(:,:,:,:,1))
-                               call traceend (itimer1)
+                    call tracebegin ('riemann_t%'//trim(method), itimer=itimer1)
+  call self%riemann%solve (1, l, u, left, rght, flux(:,:,:,:,1))
+                    call traceend (itimer1)
   !-----------------------------------------------------------------------------
   ! Y-direction
   !-----------------------------------------------------------------------------
   left = prim + grad(:,:,:,:,2)*0.5
   rght = prim - grad(:,:,:,:,2)*0.5
-                               call tracebegin ('riemann_t%hll', itimer=itimer1)
-  call self%riemann%hll (2, l, u, left, rght, flux(:,:,:,:,2))
-                               call traceend (itimer1)
+                    call tracebegin ('riemann_t%'//trim(method), itimer=itimer1)
+  call self%riemann%solve (2, l, u, left, rght, flux(:,:,:,:,2))
+                    call traceend (itimer1)
   !-----------------------------------------------------------------------------
   ! Z-direction
   !-----------------------------------------------------------------------------
   left = prim + grad(:,:,:,:,3)*0.5
   rght = prim - grad(:,:,:,:,3)*0.5
-                               call tracebegin ('riemann_t%hll', itimer=itimer1)
-  call self%riemann%hll (3, l, u, left, rght, flux(:,:,:,:,3))
-                               call traceend (itimer1)
+                    call tracebegin ('riemann_t%'//trim(method), itimer=itimer1)
+  call self%riemann%solve (3, l, u, left, rght, flux(:,:,:,:,3))
+                    call traceend (itimer1)
   !-----------------------------------------------------------------------------
   call traceend (itimer)
-END SUBROUTINE riemann
+END SUBROUTINE riemn3d
 
 !===============================================================================
 !> Update conservative variables with flux divergences, where flux(i1,:,:,:,1)
@@ -522,19 +538,21 @@ SUBROUTINE sources (self)
   integer:: i1, i2, i3, iv, dir
   real:: dtd1, dtd2, dtd3
   real, dimension(:,:,:), pointer, contiguous:: p1, p2, p3, d, e
+  logical:: forcing
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call tracebegin ('hd_t%sources', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! If adjusting total energy, save kinetic part in prim(:,:,:,5)
   !-----------------------------------------------------------------------------
-  if (allocated(self%force_per_unit_mass) .or. &
-      allocated(self%force_per_unit_volume)) then
-    d  => self%mem(:,:,:,1,self%new,1)
-    p1 => self%mem(:,:,:,2,self%new,1)
-    p2 => self%mem(:,:,:,3,self%new,1)
-    p3 => self%mem(:,:,:,4,self%new,1)
-    e  => self%mem(:,:,:,5,self%new,1)
+  d  => self%mem(:,:,:,1,self%new,1)
+  p1 => self%mem(:,:,:,2,self%new,1)
+  p2 => self%mem(:,:,:,3,self%new,1)
+  p3 => self%mem(:,:,:,4,self%new,1)
+  e  => self%mem(:,:,:,5,self%new,1)
+  forcing = allocated(self%force_per_unit_mass) .or. &
+            allocated(self%force_per_unit_volume)
+  if (self%gamma /= 1d0 .and. forcing) then
     prim(:,:,:,5) = p1**2 + p2**2 + p3**2
   end if
   !-----------------------------------------------------------------------------
@@ -553,8 +571,9 @@ SUBROUTINE sources (self)
   !-----------------------------------------------------------------------------
   ! If adjusting total energy, use saved kinetic part
   !-----------------------------------------------------------------------------
-  if (allocated(self%force_per_unit_mass) .or. &
-      allocated(self%force_per_unit_volume)) then
+  if (self%gamma == 1d0) then
+    e = d*csound**2 + 0.5*(p1**2 + p2**2 + p3**2)/d
+  else if (forcing) then
     e = e + 0.5*(p1**2 + p2**2 + p3**2 - prim(:,:,:,5))/d
   end if
   call traceend (itimer)
