@@ -2966,7 +2966,7 @@ FUNCTION check_support (self, link, sign, test) RESULT (refine)
   class(link_t), pointer:: nbor
   class(task_t), pointer:: task, nbtask
   logical:: guards, check
-  integer:: l(3), u(3)
+  integer:: l(3), u(3), n(3)
   real, pointer:: irefine(:,:,:)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -2977,13 +2977,22 @@ FUNCTION check_support (self, link, sign, test) RESULT (refine)
   select type (task)
   class is (patch_t)
     !---------------------------------------------------------------------------
+    ! If patch memory has not been allocated yet, return with refine=0
+    !---------------------------------------------------------------------------
+    if (.not. task%mem_allocated) then
+      call trace%end (itimer)
+      return
+    end if
+    !---------------------------------------------------------------------------
     ! Use an external test array when called from refine_t, and a local one
     ! when called stand-alone
     !---------------------------------------------------------------------------
     if (present(test)) then
       irefine => test
     else
-      allocate (irefine(task%gn(1),task%gn(2),task%gn(3)))
+      !print *, task%id, task%gn
+      n = task%gn
+      allocate (irefine(n(1),n(2),n(3)))
     end if
     irefine = 0.0
     !---------------------------------------------------------------------------
