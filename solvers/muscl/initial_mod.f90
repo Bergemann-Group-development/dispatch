@@ -134,9 +134,9 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
       do ix=m(1)%lb,m(1)%ub
         kx   =  pi2*k(1)*(r1(ix)+m(1)%p-0.5d0*m(1)%s)/m(1)%b + phi(1)
         ff(ix,iy,iz,idx%d ) = d0
-        ff(ix,iy,iz,idx%px) = d0*a0(1)*(sin(ky)+sin(kz))
-        ff(ix,iy,iz,idx%py) = d0*a0(2)*(sin(kz)+sin(kx))
-        ff(ix,iy,iz,idx%pz) = d0*a0(3)*(sin(kx)+sin(ky))
+        ff(ix,iy,iz,idx%px) = d0*(a0(1)*(sin(ky)+sin(kz)) + u0(1))
+        ff(ix,iy,iz,idx%py) = d0*(a0(2)*(sin(kz)+sin(kx)) + u0(2))
+        ff(ix,iy,iz,idx%pz) = d0*(a0(3)*(sin(kx)+sin(ky)) + u0(3))
         if (self%mhd) then
           ff(ix,iy,iz,idx%bx) = b0(1)
           ff(ix,iy,iz,idx%by) = b0(2)
