@@ -39,7 +39,7 @@ MODULE cooling_mod
   real(dp):: courant = 0.5                         ! Cooling Courant number 
   integer:: niter_max = 1000                   ! Iteration limit
   integer:: verbose=0
-  logical:: on=.true., do_heat=.true., do_subcycle=.true.
+  logical:: on=.false., do_heat=.true., do_subcycle=.true.
   character(len=16):: type='Gnedin'
 CONTAINS
 
