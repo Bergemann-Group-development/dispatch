@@ -65,10 +65,10 @@ END SUBROUTINE dealloc
 !> Use the pre-existing force%selected () function to set or add the force
 !===============================================================================
 SUBROUTINE pre_update (self)
-  class(forces_t):: self
+  class(forces_t)                               :: self
   !.............................................................................
-  real, dimension(:,:,:), pointer:: d
-  real, dimension(:,:,:,:), pointer:: p
+  real, dimension(:,:,:)  , pointer, contiguous :: d
+  real, dimension(:,:,:,:), pointer, contiguous :: p
   !-----------------------------------------------------------------------------
   ! Use existing function call
   !-----------------------------------------------------------------------------

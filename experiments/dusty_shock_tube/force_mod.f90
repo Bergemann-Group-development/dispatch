@@ -80,12 +80,13 @@ END SUBROUTINE init
 !> Coupling force between dust and gas fluids
 !===============================================================================
 FUNCTION dust_gas_interaction (self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
-  USE scalar_mod
-  class(force_t):: self
-  real(8):: time
-  class(mesh_t), pointer, dimension(:):: m
-  real, dimension(:,:,:,:):: mem
-  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,3):: ff
+  class(force_t)                                :: self
+  real(8)                                       :: time
+  real, dimension(:,:,:)  , pointer             :: Ux, Uy, Uz
+  real, dimension(:,:,:)  , pointer, contiguous :: d
+  real, dimension(:,:,:,:), pointer, contiguous :: p
+  class(mesh_t), dimension(:), pointer          :: m
+  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,3)    :: ff
   real, dimension(:,:,:,:), pointer:: p, U_gas, U_dust, dd, ld, KK
   real, dimension(:,:,:), pointer:: d_gas, d_dust, lnd, s, pg, t_stop, cs, &
                                     v_therm, K, dU2, mu, nu, R, cd

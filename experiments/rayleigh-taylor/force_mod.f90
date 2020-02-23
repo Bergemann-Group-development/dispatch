@@ -44,12 +44,13 @@ END SUBROUTINE init
 
 !===============================================================================
 FUNCTION vertical_acceleration (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
-  class(force_t):: self
-  real(8):: time
-  class(mesh_t), pointer, dimension(:):: m
-  real(kind=KindScalarVar), dimension(m(1)%gn,m(2)%gn,m(3)%gn,3):: ff
-  real(kind=KindScalarVar), dimension(:,:,:), pointer:: Ux, Uy, Uz, d
-  real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: p
+  class(force_t)                                :: self
+  real(8)                                       :: time
+  real, dimension(:,:,:)  , pointer             :: Ux, Uy, Uz
+  real, dimension(:,:,:)  , pointer, contiguous :: d
+  real, dimension(:,:,:,:), pointer, contiguous :: p
+  class(mesh_t), dimension(:), pointer          :: m
+  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,3)    :: ff
   !.............................................................................
   call trace%begin('force_t:vertical_acceleration')
 

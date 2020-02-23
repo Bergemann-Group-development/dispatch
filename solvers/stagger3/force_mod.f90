@@ -61,12 +61,13 @@ END SUBROUTINE init
 !> Forcing on a single 3-D wavenumber, changing amplitude and phase periodically
 !===============================================================================
 FUNCTION single_solenoidal (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
-  class(force_t)        :: self
-  real(8)               :: time
-  class(mesh_t), pointer, dimension(:) :: m
-  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,3) :: ff
-  real, dimension(:,:,:):: Ux, Uy, Uz, d
-  real, dimension(:,:,:,:):: p
+  class(force_t)                                :: self
+  real(8)                                       :: time
+  real, dimension(:,:,:)  , pointer             :: Ux, Uy, Uz
+  real, dimension(:,:,:)  , pointer, contiguous :: d
+  real, dimension(:,:,:,:), pointer, contiguous :: p
+  class(mesh_t), dimension(:), pointer          :: m
+  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,3)    :: ff
   !.............................................................................
   type(random_t)        :: random
   integer               :: ix, iy, iz
