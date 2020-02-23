@@ -462,35 +462,41 @@ END SUBROUTINE predict
 SUBROUTINE riemn3d (self)
   class(hd_t):: self
   !.............................................................................
-  integer:: l(3), u(3)
+  integer:: l(3), u(3), i1, i2, i3, iv
   integer, save:: itimer=0, itimer1=0
   !-----------------------------------------------------------------------------
-  call tracebegin ('hd_t%riemann', itimer=itimer)
-  l = self%mesh%li
+  call tracebegin ('hd_t%riemn3d', itimer=itimer)
+  l = self%mesh%lo
   u = self%mesh%uo
   !-----------------------------------------------------------------------------
   ! X-direction
   !-----------------------------------------------------------------------------
-  left = prim + grad(:,:,:,:,1)*0.5
-  rght = prim - grad(:,:,:,:,1)*0.5
+  do iv=1,self%nv; do i3=l(3),u(3); do i2=l(2),u(2); do i1=l(1),u(1)
+    left(i1,i2,i3,iv) = prim(i1,i2,i3,iv) + grad(i1,i2,i3,iv,1)*0.5
+    rght(i1,i2,i3,iv) = prim(i1,i2,i3,iv) - grad(i1,i2,i3,iv,1)*0.5
+  end do; end do; end do; end do
                     call tracebegin ('riemann_t%'//trim(method), itimer=itimer1)
-  call self%riemann%solve (1, l, u, left, rght, flux(:,:,:,:,1))
+  call self%riemann%solve (1, l+1, u, left, rght, flux(:,:,:,:,1))
                     call traceend (itimer1)
   !-----------------------------------------------------------------------------
   ! Y-direction
   !-----------------------------------------------------------------------------
-  left = prim + grad(:,:,:,:,2)*0.5
-  rght = prim - grad(:,:,:,:,2)*0.5
+  do iv=1,self%nv; do i3=l(3),u(3); do i2=l(2),u(2); do i1=l(1),u(1)
+    left(i1,i2,i3,iv) = prim(i1,i2,i3,iv) + grad(i1,i2,i3,iv,2)*0.5
+    rght(i1,i2,i3,iv) = prim(i1,i2,i3,iv) - grad(i1,i2,i3,iv,2)*0.5
+  end do; end do; end do; end do
                     call tracebegin ('riemann_t%'//trim(method), itimer=itimer1)
-  call self%riemann%solve (2, l, u, left, rght, flux(:,:,:,:,2))
+  call self%riemann%solve (2, l+1, u, left, rght, flux(:,:,:,:,2))
                     call traceend (itimer1)
   !-----------------------------------------------------------------------------
   ! Z-direction
   !-----------------------------------------------------------------------------
-  left = prim + grad(:,:,:,:,3)*0.5
-  rght = prim - grad(:,:,:,:,3)*0.5
+  do iv=1,self%nv; do i3=l(3),u(3); do i2=l(2),u(2); do i1=l(1),u(1)
+    left(i1,i2,i3,iv) = prim(i1,i2,i3,iv) + grad(i1,i2,i3,iv,3)*0.5
+    rght(i1,i2,i3,iv) = prim(i1,i2,i3,iv) - grad(i1,i2,i3,iv,3)*0.5
+  end do; end do; end do; end do
                     call tracebegin ('riemann_t%'//trim(method), itimer=itimer1)
-  call self%riemann%solve (3, l, u, left, rght, flux(:,:,:,:,3))
+  call self%riemann%solve (3, l+1, u, left, rght, flux(:,:,:,:,3))
                     call traceend (itimer1)
   !-----------------------------------------------------------------------------
   call traceend (itimer)
