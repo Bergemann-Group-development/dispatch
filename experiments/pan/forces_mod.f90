@@ -66,8 +66,8 @@ END SUBROUTINE dealloc
 SUBROUTINE pre_update (self)
   class(forces_t):: self
   !.............................................................................
-  real, dimension(:,:,:), pointer:: d
-  real, dimension(:,:,:,:), pointer:: p
+  real, dimension(:,:,:), pointer, contiguous:: d
+  real, dimension(:,:,:,:), pointer, contiguous:: p
   !-----------------------------------------------------------------------------
   ! Use existing function call
   !-----------------------------------------------------------------------------
