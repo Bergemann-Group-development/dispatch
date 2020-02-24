@@ -1,3 +1,3 @@
 #!/bin/bash
 
-./mesa2.x &
+./mesa_code.x &
