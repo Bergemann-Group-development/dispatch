@@ -140,8 +140,10 @@ SUBROUTINE init (self, kind, id)
       self%wait_time = 0d0
       self%hold_time = 0d0
       self%n_hold = 0
+      if (n_lock > 1) then
+        call self%prepend
+      end if
       n_lock = n_lock+1
-      call self%prepend
       if (wallclock() < verbose_time .or. omp_lock%verbose > 1) &
         write(unit,*) omp_get_thread_num(), 'initialized lock kind, id ', &
           self%kind, self%id, set_id
@@ -164,7 +166,6 @@ SUBROUTINE prepend (self)
   if (.not.omp_lock%on) return
   self%next => omp_lock%next
   omp_lock%next => self
-  n_lock = n_lock+1
 END SUBROUTINE prepend
 
 !===============================================================================
