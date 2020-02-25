@@ -36,7 +36,7 @@ SUBROUTINE init (self)
   real(8), save:: r_min=1.0
   namelist /cylinder_params/ n_r, n_phi, n_z, r_min
   !.............................................................................
-  integer:: i_r, i_z, i_phi
+  integer:: i_r, i_z, i_phi, iostat
   class(experiment_t), pointer:: cpatch
   class(task_t), pointer:: task
   !-----------------------------------------------------------------------------
@@ -44,8 +44,10 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('cylinder_t%init')
   !$omp critical (input_cr)
-  rewind (io_unit%input)
-  read (io_unit%input, cylinder_params)
+  rewind (io%input)
+  read (io%input, cylinder_params, iostat=iostat)
+  call io%namelist_warning ('cylinder_params', iostat)
+  write (io%output, cylinder_params)
   !$omp end  critical (input_cr)
   self%n_r   = n_r
   self%n_z   = n_z

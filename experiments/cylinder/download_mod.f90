@@ -27,7 +27,7 @@ MODULE download_mod
   USE task_mod
   USE patch_mod
   USE link_mod
-  USE scene_mod
+  USE shared_mod
   USE interpolate_mod
   USE lagrange_mod
   USE validate_mod
@@ -121,7 +121,7 @@ SUBROUTINE test (self)
   !-----------------------------------------------------------------------------
   allocate (source(3))
   do i=1,3
-    call source(i)%setup (size=0.1_8*[1,1,1]*(scene%f_zoom)**(i-2), n=[16,16,16], nv=2, nt=2, nw=1)
+    call source(i)%setup (size=0.1_8*[1,1,1]*(shared%f_zoom)**(i-2), n=[16,16,16], nv=2, nt=2, nw=1)
   end do
   !---------------------------------------------------------------------------
   ! Loop over source size
