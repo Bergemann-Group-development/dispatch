@@ -81,6 +81,9 @@ SUBROUTINE init (self, task_list, label)
     where (per_rank/=0) dims=per_rank*mpi_dims
   end if
   per_rank = dims/mpi_dims
+  if (any(dims == 2)) then
+    call io%abort ('two patches per dimension is not allowed')
+  end if
   self%dims = dims
   self%size = size
   io%dims     = dims
@@ -236,6 +239,7 @@ SUBROUTINE init_exp (self, origin)
   type(link_t), pointer:: link
   class(task_t), pointer:: task
   class(experiment_t), pointer:: patch
+  logical:: periodic(3)
   integer:: id
   !-----------------------------------------------------------------------------
   id = 0
@@ -247,7 +251,11 @@ SUBROUTINE init_exp (self, origin)
       select type (task)
       class is (experiment_t)
         patch => task
+        periodic = patch%periodic
         call patch%init
+        if (any(patch%periodic /= periodic)) then
+          call io%abort ('experiment initialization tried to change %periodic')
+        end if
         if (omp%nthreads>1) then
           task%mem_thread = omp%thread
         else

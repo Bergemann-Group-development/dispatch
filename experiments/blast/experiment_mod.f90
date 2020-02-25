@@ -30,14 +30,10 @@ SUBROUTINE init_experiment (self)
   !----------------------------------------------------------------------------
   if (self%mem_allocated) return
   call trace_begin('experiment_t%init')
-
-  self%periodic = .false.
   call self%solver_t%init()
   call initial_conditions(self)
   call pboundaries%conditions(self, self%it)
-
   call self%output
-
   call trace_end
 END SUBROUTINE init_experiment
 
