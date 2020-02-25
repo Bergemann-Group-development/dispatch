@@ -24,6 +24,8 @@ MODULE cartesian_mod
     procedure init
     procedure, nopass:: diagnostics
   end type
+  integer:: verbose=0
+  logical:: omp_init=.true.
   type(rank_t):: rank
   integer, save:: np=0                  ! patches per process
   public task_list_t                    ! export, to avoid excessive USE
@@ -53,7 +55,7 @@ SUBROUTINE init (self, task_list, label)
   logical:: periodic(3)=.true.
   integer, save:: itimer=0
   namelist /cartesian_params/ size, dims, mpi_dims, per_rank, origin, face_nbors, &
-    periodic
+    omp_init, periodic, verbose
   character(len=120):: ids = &
     '$Id$ components/cartesian_mod.f90'
   !-----------------------------------------------------------------------------
@@ -170,9 +172,9 @@ SUBROUTINE init (self, task_list, label)
   !-----------------------------------------------------------------------------
   ! Generate nbor lists and set status bits for all tasks
   !-----------------------------------------------------------------------------
-  if (io%verbose > 0) write(stdout,*) 'cartesian_t%init: init_all_nbors'
+  if (verbose > 0) write(stdout,*) 'cartesian_t%init: init_all_nbors'
   call self%task_list%init_all_nbors
-  if (io%verbose > 0) write(stdout,*) 'cartesian_t%init: reset_status'
+  if (verbose > 0) write(stdout,*) 'cartesian_t%init: reset_status'
   call self%task_list%reset_status
   !-----------------------------------------------------------------------------
   ! Remove tasks that are external, and make sure to also remove them from the
@@ -192,7 +194,7 @@ SUBROUTINE init (self, task_list, label)
   !-----------------------------------------------------------------------------
   ! This call is not valid until the patch meshes have been allocated
   !-----------------------------------------------------------------------------
-  if (io%verbose > 0) write(stdout,*) 'cartesian_t%init: count status'
+  if (verbose > 0) write(stdout,*) 'cartesian_t%init: count status'
   call self%task_list%count_status
   !-----------------------------------------------------------------------------
   ! These must be set before reading input snapshots
@@ -211,7 +213,7 @@ SUBROUTINE init (self, task_list, label)
   !-----------------------------------------------------------------------------
   ! This call is not valid until the patch mem and meshes have been allocated
   !-----------------------------------------------------------------------------
-  if (io%verbose > 0) &
+  if (verbose > 0) &
     write(stdout,*) 'cartesian_t%init: init boundaries'
   call self%task_list%init_bdries
   !-----------------------------------------------------------------------------
@@ -219,13 +221,13 @@ SUBROUTINE init (self, task_list, label)
     write (io%namelist, cartesian_params)
     flush (io%namelist)
   end if
-  if (io%verbose > 0) &
+  if (verbose > 0) &
     write(stdout,*) 'cartesian_t%init: diagnostics'
   call self%diagnostics()
-  if (io%verbose > 0) &
+  if (verbose > 0) &
     write(stdout,*) 'cartesian_t%init: print tasks'
   call self%task_list%print_tasks
-  if (io%verbose > 0) &
+  if (verbose > 0) &
     write(stdout,*) 'cartesian_t%init: done'
   flush (stdout)
   !-----------------------------------------------------------------------------
@@ -271,7 +273,7 @@ SUBROUTINE init_exp (self, origin)
         if (.not.patch%periodic(1).and.patch%ipos(1)==self%dims(1)-1) call patch%boundaries%set(bits%xu)
         if (.not.patch%periodic(2).and.patch%ipos(2)==self%dims(2)-1) call patch%boundaries%set(bits%yu)
         if (.not.patch%periodic(3).and.patch%ipos(3)==self%dims(3)-1) call patch%boundaries%set(bits%zu)
-        if (io%verbose>0) then
+        if (verbose>0) then
           write (io_unit%log,1) &
             'cartesian_t%init: id, rank, size, pos =', &
             patch%id, patch%rank, patch%size, patch%position, &
