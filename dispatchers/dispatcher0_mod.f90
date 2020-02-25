@@ -27,7 +27,7 @@ MODULE dispatcher0_mod
   type, public:: dispatcher0_t
     integer:: verbose=0
     integer:: n_spawn=0
-    type(lock_t):: lock
+    type(lock_t), pointer:: lock
   contains
     procedure:: init
     procedure:: execute
@@ -76,8 +76,14 @@ SUBROUTINE init (self, name)
   write (io%output, dispatcher0_params)
   write (io%namelist, dispatcher0_params)
   call mpi_mesg%init
-  call self%lock%init ('disp')
-  call trace_end
+  !-----------------------------------------------------------------------------
+  ! Bootstrap locks; first initializing the one static lock, then allocating
+  ! and initializing this first pointer lock
+  !-----------------------------------------------------------------------------
+  call omp_lock%init ('dispather0_t%init')
+  allocate (self%lock)
+  call self%lock%init ('dispather0_t%init')
+  call trace_end ()
 END SUBROUTINE init
 
 !===============================================================================
