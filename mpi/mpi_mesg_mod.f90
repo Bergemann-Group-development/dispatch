@@ -123,8 +123,12 @@ SUBROUTINE init_mesg (self)
   class(mesg_t):: self
   !-----------------------------------------------------------------------------
   call trace%begin ('mesg_t%init')
-  !allocate (self%lock)
-  !call self%lock%init ('mesg')
+  if (.not. associated(self%lock)) then
+    allocate (self%lock)
+    call self%lock%init ('mesg')
+  else
+    write (io_unit%log,*) 'mesg_t%init WARNING: lock already associated', self%id
+  end if
   call trace%end ()
 END SUBROUTINE init_mesg
 
@@ -499,7 +503,7 @@ END SUBROUTINE init_list
 SUBROUTINE dealloc_list (self)
   class(mesg_list_t):: self
   !-----------------------------------------------------------------------------
-  call trace%begin ('msg_list_t%init_list')
+  call trace%begin ('msg_list_t%dealloc_list')
   call omp_lock%destroy (self%lock)
   call trace%end ()
 END SUBROUTINE dealloc_list
