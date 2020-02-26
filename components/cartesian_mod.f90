@@ -116,7 +116,7 @@ SUBROUTINE init (self, task_list, label)
   rank%box = self%size
   rank%size = rank%box/mpi_dims
   rank%ds = rank%size/patches_per_mpi
-  rank%position = (mpi_coords%rank_to_coords(mpi%rank) + 0.5_8)*rank%size
+  rank%position = (mpi_coords%rank_to_coords(mpi%rank) + 0.5_8)*rank%size + origin
   !-----------------------------------------------------------------------------
   ! Begin on task list
   !-----------------------------------------------------------------------------
@@ -202,7 +202,7 @@ SUBROUTINE init (self, task_list, label)
   !-----------------------------------------------------------------------------
   io%ntask = self%task_list%na
   io%nwrite = self%task_list%na
-  io%ntotal = product(self%dims)
+  io%ntotal = self%task_list%n_tasks
   write (stdout,*) 'Number of tasks in task list:', self%task_list%n
   write(stdout,*) 'ntask, nwrite, ntotal =', io%ntask, io%nwrite, io%ntotal
   !-----------------------------------------------------------------------------
