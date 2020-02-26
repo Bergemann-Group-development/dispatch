@@ -255,7 +255,7 @@ SUBROUTINE init_exp (self, origin)
         patch => task
         periodic = patch%periodic
         call patch%init
-        if (any(patch%periodic /= periodic)) then
+        if (any(patch%periodic .neqv. periodic)) then
           call io%abort ('experiment initialization tried to change %periodic')
         end if
         if (omp%nthreads>1) then
