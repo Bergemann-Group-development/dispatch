@@ -27,7 +27,6 @@ MODULE timer_mod
   type:: timer_t
     integer(8):: calls(maxproc)=0
     real(8), dimension(maxproc):: start=0d0, total=0d0
-    real(8), dimension(maxproc):: start_lock=0d0, total_lock=0d0
     integer, dimension(maxdepth):: stack
     integer:: istack=0
     real(8):: bytes_recv=0.0_8
@@ -56,8 +55,6 @@ MODULE timer_mod
     procedure:: init
     procedure:: begin
     procedure:: end
-    procedure:: begin_lock
-    procedure:: end_lock
     procedure:: print
     procedure, nopass:: tic
     procedure, nopass:: toc_1
@@ -239,28 +236,6 @@ SUBROUTINE end (self, itimer)
     !$omp end critical (timer_print_cr)
   end if
 END SUBROUTINE end
-
-!===============================================================================
-!> At begin, set a lock_start for the thread and timer
-!===============================================================================
-SUBROUTINE begin_lock (self, itimer)
-  class(timer_t):: self
-  integer:: itimer
-  !-----------------------------------------------------------------------------
-  timers(omp_get_thread_num())%start_lock(itimer) = wallclock()
-END SUBROUTINE begin_lock
-
-!===============================================================================
-!> At end call, increment total time for the active timer
-!===============================================================================
-SUBROUTINE end_lock (self, itimer)
-  class(timer_t):: self
-  integer:: itimer
-  !-----------------------------------------------------------------------------
-  timers(omp%thread)%total_lock(itimer) = &
-  timers(omp%thread)%total_lock(itimer) + &
-    (wallclock() - timers(omp%thread)%start_lock(itimer))
-END SUBROUTINE end_lock
 
 !===============================================================================
 !> Printout times used in routines using more than 0.05% of the time, and reset
