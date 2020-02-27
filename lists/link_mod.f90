@@ -21,9 +21,9 @@ MODULE link_mod
   private
 
   type, public:: nbor_t
-    class(nbor_t), pointer :: next => null()          ! next link in task list
-    class(link_t), pointer :: link => null()          ! pointer from nbor link to task list link (can be useful)
-    class(task_t), pointer :: task => null()          ! task
+    class(nbor_t), pointer :: next => null()          ! next link in nbor list
+    class(link_t), pointer :: link => null()          ! pointer to task link
+    class(task_t), pointer :: task => null()          ! pointer to task
     !---------------------------------------------------------------------------
     ! Flags making it possible to distinguish between nbors needed for link%task,
     ! and nbors that need link%task.  These flags are only used in nbor lists,
@@ -49,6 +49,7 @@ MODULE link_mod
     class(link_t), pointer :: next_active => null()   ! next link to an active process, in time order
     class(nbor_t), pointer :: nbors_by_level => null()! decreasing level sorted list
     type(lock_t):: lock, qlock
+    logical:: needs_nbors = .true.  ! flag indicating if a link is in need of adding nbors
     logical:: initialized = .false.
     logical:: check = .true.
   contains
@@ -72,6 +73,9 @@ MODULE link_mod
     procedure:: delete
     procedure:: sort_nbors_by_level
     procedure:: reset_status
+    procedure:: needs_to_add
+    procedure:: add_nbor
+    procedure:: nbor_inconsistency
     procedure:: info
   end type
   type(link_t), target, public:: garbage
@@ -887,6 +891,74 @@ SUBROUTINE reset_status (self, nbor_list, check)
   end if
   call trace%end ()
 END SUBROUTINE reset_status
+
+!===============================================================================
+!> First, check if there is relation between self and and nbor link.  If so,
+!> check if the nbor task is already in the nbor list, and return false if so.
+!===============================================================================
+LOGICAL FUNCTION needs_to_add (self, nblink)
+  class(link_t):: self
+  class(link_t), pointer:: nblink
+  !.............................................................................
+  class(nbor_t), pointer:: nbor
+  logical:: needed, needs_me, download, done
+  !-----------------------------------------------------------------------------
+  call trace%begin ('link_t%needs_to_add')
+  call self%task%nbor_relations (nblink%task, needed, needs_me, download)
+  if (needed .or. needs_me) then
+    needs_to_add = .true.
+    nbor => self%nbor
+    do while (associated(nbor))
+      if (associated (nbor%task, nblink%task)) then
+        needs_to_add = .false.
+        exit
+      end if
+      nbor => nbor%next
+    end do
+  end if
+  call trace%end ()
+END FUNCTION needs_to_add
+
+!===============================================================================
+!> One-sided nbor relations, where the decisions about details are taken inside
+!> the overloaded task%nbor_relations() procedure, which recognizes the proper
+!> attributes of the relation.
+!===============================================================================
+SUBROUTINE add_nbor (self, nblink)
+  class(link_t):: self
+  class(link_t), pointer:: nblink
+  class(nbor_t), pointer:: nbor
+  !-----------------------------------------------------------------------------
+  call trace%begin ('link_t%add_nbor')
+  allocate (nbor)
+  nbor%link => nblink
+  nbor%task => nblink%task
+  call self%task%nbor_relations (nbor%task, nbor%needed, nbor%needs_me, &
+                                 nbor%download)
+  call trace%end ()
+END SUBROUTINE add_nbor
+
+!===============================================================================
+!> Check that nbor relations are cross-symmetric
+!===============================================================================
+LOGICAL FUNCTION nbor_inconsistency (self)
+  class(link_t):: self
+  !.............................................................................
+  class(nbor_t), pointer:: nbor
+  !-----------------------------------------------------------------------------
+  call trace%begin ('link_t%nbor_inconsistency')
+  nbor_inconsistency = .false.
+  nbor => self%nbor
+  do while (associated(nbor))
+    if ((self%nbor%needed   .neqv. nbor%needs_me) .or. &
+        (self%nbor%needs_me .neqv. nbor%needed)) then
+      nbor_inconsistency = .true.
+      exit
+    end if
+    nbor => nbor%next
+  end do
+  call trace%end ()
+END FUNCTION nbor_inconsistency
 
 !===============================================================================
 !> Info for one nbor

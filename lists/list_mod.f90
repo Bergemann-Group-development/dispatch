@@ -157,6 +157,8 @@ MODULE list_mod
     procedure:: test_nbor_status
     procedure:: info
     procedure:: check_support
+    procedure:: find_nbors
+    procedure:: check_nbor_consistency
   end type
   integer, dimension(:), allocatable:: sequence
   integer, parameter:: mnbor=100
@@ -3129,5 +3131,48 @@ FUNCTION check_support (self, link, sign, test) RESULT (refine)
   !.............................................................................
   call trace%end (itimer)
 END FUNCTION check_support
+
+!===============================================================================
+!> Find nbors to task with the given link, and add this task and the nbor task
+!> to each others nbor lists, if they have a dependence.
+!===============================================================================
+SUBROUTINE find_nbors (self, link)
+  class(list_t):: self
+  class(link_t), pointer:: link
+  !.............................................................................
+  class(link_t), pointer:: scan
+  logical:: needed, needs_me, download, done
+  !-----------------------------------------------------------------------------
+  call trace%begin ('list_t%find_nbors')
+  scan => self%head
+  do while (associated(scan))
+    if (link%needs_to_add (scan)) then
+      call link%add_nbor (scan)
+      call scan%add_nbor (link)
+    end if
+    scan => scan%next
+  end do
+  call trace%end ()
+END SUBROUTINE find_nbors
+
+!===============================================================================
+!> Check consistency of the nbor lists of all tasks in the list
+!===============================================================================
+SUBROUTINE check_nbor_consistency (self, ok)
+  class(list_t):: self
+  logical:: ok
+  !.............................................................................
+  class(link_t), pointer:: link
+  !-----------------------------------------------------------------------------
+  call trace%begin ('list_t%check_nbor_consistency')
+  link => self%head
+  do while (associated(link))
+    if (link%nbor_inconsistency()) then
+      write (stderr,*) 'ERROR: nbor list is inconsistent for task', link%task%id
+    end if
+    link => link%next
+  end do
+  call trace%end ()
+END SUBROUTINE check_nbor_consistency
 
 END MODULE list_mod
