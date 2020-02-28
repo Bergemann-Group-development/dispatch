@@ -6,12 +6,11 @@
 !===============================================================================
 MODULE index_mod
   USE io_mod
-  USE trace_mod
   implicit none
   private
   type, public:: index_t
     integer:: d=0, e=0, px=0, py=0, pz=0, bx=0, by=0, bz=0, phi=0, tt=0, s=0, &
-              et=0, dphi=0, qr=0, ex=0, ey=0, ez=0
+              et=0, dphi=0, qr=0, ex=0, ey=0, ez=0, jx=0, jy=0, jz=0
     integer:: dtr=0
   contains
     procedure:: init
@@ -30,7 +29,6 @@ SUBROUTINE init (self, ie, mhd)
   integer:: ie
   logical:: mhd
   !-----------------------------------------------------------------------------
-  call trace%begin ('index_t%init')
   if (ie==2) then
     self%d  = 1
     self%e  = 2
@@ -56,7 +54,6 @@ SUBROUTINE init (self, ie, mhd)
     self%bz = -1
   end if
   call self%copy
-  call trace%end ()
 END SUBROUTINE init
 
 !===============================================================================
@@ -107,9 +104,11 @@ SUBROUTINE output (self, unit)
   integer:: unit
   !.............................................................................
   integer:: &
-    d, e, et, s, px, py, pz, bx, by, bz, qr, tt, phi, p1, p2, p3, b1, b2, b3
+    d, e, et, s, px, py, pz, bx, by, bz, qr, tt, phi, p1, p2, p3, b1, b2, b3, &
+    ex, ey, ez, jx, jy, jz
   namelist /idx_nml/ &
-    d, e, et, s, px, py, pz, bx, by, bz, qr, tt, phi, p1, p2, p3, b1, b2, b3
+    d, e, et, s, px, py, pz, bx, by, bz, qr, tt, phi, p1, p2, p3, b1, b2, b3, &
+    ex, ey, ez, jx, jy, jz
   !-----------------------------------------------------------------------------
   if (io%time_derivs>0) then
     call output_time_derivs (self, unit)
@@ -134,6 +133,12 @@ SUBROUTINE output (self, unit)
     qr   = self%qr  - 1
     tt   = self%tt  - 1
     phi  = self%phi - 1
+    ex   = self%ex  - 1
+    ey   = self%ey  - 1
+    ez   = self%ez  - 1
+    jx   = self%jx  - 1
+    jy   = self%jy  - 1
+    jz   = self%jz  - 1
     write (unit, idx_nml)
   end if
 END SUBROUTINE output
@@ -148,11 +153,13 @@ SUBROUTINE output_time_derivs (self, unit)
   integer:: &
     d, e, et, s, px, py, pz, bx, by, bz, qr, tt, phi, p1, p2, p3, b1, b2, b3, &
     dpxdt, dpydt, dpzdt, dbxdt, dbydt, dbzdt, dphidt, dddt, dedt, dsdt, &
-    dp1dt, dp2dt, dp3dt, db1dt, db2dt, db3dt
+    dp1dt, dp2dt, dp3dt, db1dt, db2dt, db3dt, ex, ey, ez, jx, jy, jz, &
+    dexdt, deydt, dezdt, djxdt, djydt, djzdt
   namelist /idx_nml/ &
     d, e, et, s, px, py, pz, bx, by, bz, qr, tt, phi, p1, p2, p3, b1, b2, b3, &
     dpxdt, dpydt, dpzdt, dbxdt, dbydt, dbzdt, dphidt, dddt, dedt, dsdt, &
-    dp1dt, dp2dt, dp3dt, db1dt, db2dt, db3dt
+    dp1dt, dp2dt, dp3dt, db1dt, db2dt, db3dt, ex, ey, ez, jx, jy, jz, &
+    dexdt, deydt, dezdt, djxdt, djydt, djzdt
   d   = self%d   - 1
   e   = self%e   - 1
   s   = self%s   - 1
@@ -172,6 +179,12 @@ SUBROUTINE output_time_derivs (self, unit)
   b2  = self%by  - 1
   b3  = self%bz  - 1
   phi = self%phi - 1
+  ex   = self%ex  - 1
+  ey   = self%ey  - 1
+  ez   = self%ez  - 1
+  jx   = self%jx  - 1
+  jy   = self%jy  - 1
+  jz   = self%jz  - 1
   !-----------------------------------------------------------------------------
   ! These values are preliminary, and are reassigned in python/dispatch/, based
   ! on knowledge of the mhd and selfgravity swwitches (not available here)
@@ -195,9 +208,24 @@ SUBROUTINE output_time_derivs (self, unit)
     dbydt  = -1
     dbzdt  = -1
   end if
-  db1dt  = dbxdt
-  db2dt  = dbydt
-  db3dt  = dbzdt
+  if (ex > 0) then
+    dexdt  = ex + io%nv
+    deydt  = ey + io%nv
+    dezdt  = ez + io%nv
+  else
+    dexdt  = -1
+    deydt  = -1
+    dezdt  = -1
+  end if
+  if (jx > 0) then
+    djxdt  = jx + io%nv
+    djydt  = jy + io%nv
+    djzdt  = jz + io%nv
+  else
+    djxdt  = -1
+    djydt  = -1
+    djzdt  = -1
+  end if
   write (unit, idx_nml)
 END SUBROUTINE output_time_derivs
 

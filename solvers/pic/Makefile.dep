@@ -26,7 +26,7 @@ move_particles.o        : params.o species.o debug.o units.o grid.o
 $(PPMPI).o                : grid.o textio.o species.o debug.o params.o stat.o
 omp.o                   : params.o
 particleoperations.o    : grid.o distributions.o species.o debug.o units.o params.o
-periodic.o              : grid.o
+$(BOUNDARY).o           : grid.o
 picmhd.o                : params.o
 random.o                : params.o grid.o
 pic_stagger_$(STAGGER_ORDER).o : params.o grid.o units.o

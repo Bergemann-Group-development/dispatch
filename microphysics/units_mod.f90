@@ -1,3 +1,4 @@
+
 !===============================================================================
 !> Fundamental constants in CGS and SI units
 !===============================================================================
@@ -13,25 +14,28 @@ MODULE units_mod
   !-----------------------------------------------------------------------------
   type, public:: const_t
     character(len=16):: name='not set'
-    real(kind=8):: m_u, m_h, m_he
-    real(kind=8):: amu
-    real(kind=8):: k_b
-    real(kind=8):: h_p
-    real(kind=8):: c
-    real(kind=8):: e
-    real(kind=8):: stefan
-    real(kind=8):: grav
-    real(kind=8):: AU
-    real(kind=8):: pc
-    real(kind=8):: yr
-    real(kind=8):: kms
-    real(kind=8):: mum
-    real(kind=8):: Myr
-    real(kind=8):: m_sun
-    real(kind=8):: r_sun
-    real(kind=8):: m_earth
-    real(kind=8):: r_earth
+    real(kind=8):: m_u, m_h, m_he, m_e                                          ! proton, hydrogen, helium, electron mass
+    real(kind=8):: amu                                                          ! Atomic mass unit
+    real(kind=8):: k_b                                                          ! Boltzmann's constant
+    real(kind=8):: h_p                                                          ! Planck's constant
+    real(kind=8):: c                                                            ! speed of light
+    real(kind=8):: e                                                            ! electron charge
+    real(kind=8):: q                                                            ! electron charge
+    real(kind=8):: stefan                                                       ! Stefan-Boltzmann constant
+    real(kind=8):: grav                                                         ! constant of gravity
+    real(kind=8):: AU                                                           ! astronomical unit
+    real(kind=8):: pc                                                           ! parsec
+    real(kind=8):: yr                                                           ! year
+    real(kind=8):: kms                                                          ! kilometres per second
+    real(kind=8):: mum                                                          ! micrometer
+    real(kind=8):: Myr                                                          ! Megayear
+    real(kind=8):: m_sun                                                        ! Solar mass
+    real(kind=8):: r_sun                                                        ! Solar radius
+    real(kind=8):: m_earth                                                      ! Earth mass
+    real(kind=8):: r_earth                                                      ! Earth radius
     real(kind=8):: pi
+    real(kind=8):: mu_0                                                         ! vacuum permeability
+    real(kind=8):: eps_0                                                        ! vacuum permittivity
   contains
     procedure:: init
   end type
@@ -47,7 +51,7 @@ MODULE units_mod
   contains
     procedure:: output
   end type
-  type(units_t), public:: units
+  !type(units_t), public:: units
 CONTAINS
 
 SUBROUTINE init (self)
@@ -57,13 +61,15 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   cgs%name    = 'cgs'
   cgs%m_u     = 1.6726219d-24
+  cgs%m_e     = 9.10938356d-28
   cgs%m_h     = cgs%m_u
   cgs%m_he    = 6.65e-24
   cgs%amu     = 1.66054d-24
   cgs%k_b     = 1.380658d-16                                            ! [erg/K]
   cgs%h_p     = 6.6260755d-27
   cgs%c       = 2.999792d10
-  cgs%e       = 1.602177e-12
+  cgs%e       = 4.80320451d-10!1.602177e-12
+  cgs%q       =  4.80320451d-10 !1.602177e-12
   cgs%stefan  = 5.67d-5
   cgs%grav    = 6.6743d-8
   cgs%AU      = 1.496d13
@@ -76,17 +82,22 @@ SUBROUTINE init (self)
   cgs%r_sun   = 6.9598d10
   cgs%m_earth = 5.972d27
   cgs%r_earth = 6.371d8
+  cgs%mu_0    = 1.0
+  cgs%eps_0   = 1.0
   cgs%pi      = math%pi
   !-----------------------------------------------------------------------------
   ! SI units
   !-----------------------------------------------------------------------------
   si%name    = 'SI'
   si%m_u     = 1.6726d-27
+  si%m_e     = 9.10938356d-31
+  si%mu_0    = 1.2566370614359173e-6  ! vacuum permeability
   si%amu     = 1.66054d-27
   si%k_b     = 1.3807d-23
   si%h_p     = 6.6260755d-34
   si%c       = 2.999792d8
-  si%e       = 1.602177e-19
+  si%e       = 1.602177e-19                                                     ! C
+  si%q       = 1.602177e-19                                                     ! C
   si%stefan  = 5.67d-8
   si%grav    = 6.6743d-11
   si%AU      = 1.496d11
@@ -99,6 +110,8 @@ SUBROUTINE init (self)
   si%r_sun   = 6.9598d8
   si%m_earth = 5.972d25
   si%r_earth = 6.371d6
+  si%mu_0    = math%pi4*1d-7
+  si%eps_0   = 8.8542d-12
   si%pi      = math%pi
 END SUBROUTINE init
 
@@ -121,7 +134,7 @@ SUBROUTINE output (self)
     write (io_unit%nml, units_nml)
     !$omp end critical (write_nml_cr)
   end if
-  call trace%end()
+  call trace%end
 END SUBROUTINE output
 
 END MODULE units_mod
