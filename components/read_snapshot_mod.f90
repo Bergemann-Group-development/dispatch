@@ -382,13 +382,15 @@ SUBROUTINE read_stagger_snap (task_list)
   !-----------------------------------------------------------------------------
   ! Reset the vertical magnetic field
   !-----------------------------------------------------------------------------
-  link => task_list%head
-  do while (associated(link))
-    patch => task2patch(link%task)
-    if (b0 >= 0.0) &
-      patch%mem(:,:,:,patch%idx%bz,1,1) = b0
-    link => link%next
-  end do
+  if (patch%nv >= 8) then
+    link => task_list%head
+    do while (associated(link))
+      patch => task2patch(link%task)
+      if (b0 >= 0.0) &
+        patch%mem(:,:,:,patch%idx%bz,1,1) = b0
+      link => link%next
+    end do
+  end if
   if (io%master) &
     print *,'read_stagger_snap finished'
   call trace%end(itimer)
