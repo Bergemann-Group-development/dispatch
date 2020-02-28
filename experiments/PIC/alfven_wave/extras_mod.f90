@@ -94,6 +94,7 @@ MODULE extras_mod
     procedure, nopass:: cast2extras
     procedure:: pre_init
     procedure:: init
+    procedure:: post_init
     procedure:: dealloc
     procedure:: init_task_list
     procedure:: pre_update
@@ -111,7 +112,7 @@ CONTAINS
 !> periodicity, etc.
 !===============================================================================
 SUBROUTINE pre_init (self)
-  class(extras_t):: self
+  class(extras_t), target:: self
   type(pic_particles_t), pointer:: pic_particles
   !.............................................................................
   !call self%forces%init (self)                                  ! forces
@@ -133,6 +134,10 @@ SUBROUTINE pre_init (self)
   deallocate (pic_particles)
 END SUBROUTINE pre_init
 
+SUBROUTINE post_init (self)
+  class(extras_t):: self
+END SUBROUTINE post_init
+
 !===============================================================================
 !> Initialize the modules that are to be included and used
 !===============================================================================
@@ -149,7 +154,7 @@ SUBROUTINE init (self)
   !self%connect%trace_particles => self%trace_particles          ! tracep
   !call self%trace_particles%add (self%link%task)                ! tracep
   call self%pic%init                                            ! pic
-  if (self%pic%on) self%do_mhd = self%pic%do_mhd                ! pic
+  !if (self%pic%on) self%do_mhd = self%pic%do_mhd                ! pic
   !call self%spitzer%init(self%link)                             ! spitzer
   !call self%gravity%init(self%link)                             ! gravity
   !call sink_patch%init                                          ! sinkp
@@ -187,7 +192,7 @@ END SUBROUTINE dealloc
 !> force can be added separately, and to prevent these contributions to pile up.
 !===============================================================================
 SUBROUTINE pre_update (self)
-  class(extras_t):: self
+  class(extras_t), target:: self
   !.............................................................................
   if (allocated (self%force_per_unit_mass)) &                   ! keep
     self%force_per_unit_mass = 0.0                              ! keep

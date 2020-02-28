@@ -23,16 +23,17 @@ MODULE scaling_mod
   ! Scaling for PIC
   ! ----------------------------------------------------------------------------
   type, public, extends(const_t):: pic_scaling_t
-    real(kind=8):: l_scale = 1.0                                                ! length scaling
-    real(kind=8):: q_scale = 1.0                                                ! electron charge scaling
-    real(kind=8):: e_mass_scale = 1.0                                           ! electron mass  scaling
-    real(kind=8):: eps_scale = 1.0                                              ! vacuum permittivity scaling
-    real(kind=8):: mu0_scale = 1.0                                              ! vacuum permeability scaling
+    real(kind=8):: l_scale = 1.0                  ! length scaling
+    real(kind=8):: q_scale = 1.0                  ! electron charge scaling
+    real(kind=8):: e_mass_scale = 1.0             ! electron mass  scaling
+    real(kind=8):: eps_scale = 1.0                ! vacuum permittivity scaling
+    real(kind=8):: mu0_scale = 1.0                ! vacuum permeability scaling
     real(kind=8):: l, d, l_debye,  mu, temp, v_e, n_p, t, u
     real(kind=8):: m,  B, wce, wci, wpe, wpi, delta, ek, v_a, p
     real(kind=8):: v_p, l_int, b0, cl, J, ve_drift, r_e, h, emf, ee, q_e
     real(kind=8):: ke, kb, kf
-    type(convert_t):: convert                                                  ! conversion factors between MHD and PIC
+    real(kind=8):: q
+    type(convert_t):: convert                     ! conversion factors MHD to PIC
   contains
     procedure:: init_pic => init_pic_cgs
   end type
@@ -61,25 +62,25 @@ SUBROUTINE init (self)
   first_time = .false.
   call cgs%init
   !--------------------------- defining quantities ---------------------
-  self%system = 'cgs'                                                   ! pass on to Python
-  self%l  = 1.0!1e5!1.7e7                                                         ! length = 1Mm = 1e8 cm
-  self%d  = 1.0!d-9                                                        ! photospheric density
-  self%t  = 1.0!0.1!24.89!1d0                                                         ! time = 100 sec
+  self%system = 'cgs'                             ! pass on to Python
+  self%l  = 1.0!1e5!1.7e7                         ! length = 1Mm = 1e8 cm
+  self%d  = 1.0!d-9                               ! photospheric density
+  self%t  = 1.0!0.1!24.89!1d0                     ! time = 100 sec
   !--------------------------- derived quantities ----------------------
-  self%u  = self%l/self%t                                                       ! speed
-  self%m  = self%d*self%l**3                                                    ! mass
-  self%p  = self%d*self%u**2                                                    ! pressure = energy density [dyne / cm2]
-  self%kr = 1.0/(self%d*self%l)                                                 ! rosseland opacity [cm2/g]
-  self%ee = self%u**2                                                           ! specific energy
-  self%e  = self%m*self%u**2                                                    ! energy density
+  self%u  = self%l/self%t                         ! speed
+  self%m  = self%d*self%l**3                      ! mass
+  self%p  = self%d*self%u**2                      ! pressure [dyne / cm2]
+  self%kr = 1.0/(self%d*self%l)                   ! rosseland opacity [cm2/g]
+  self%ee = self%u**2                             ! specific energy
+  self%e  = self%m*self%u**2                      ! energy density
   self%b = self%u*sqrt(self%d)
-  !self%b  = self%l**(-0.5)*self%m**0.5*self%t**(-1)                   ! magnetic flux density
-  self%emf  = self%m**0.5/self%l**0.5/self%t                                    ! electric field
-  self%q  = self%m**(1/2)*self%l**(3/2)/self%t                                  ! charge
-  self%j  = self%m**0.5*self%l**0.5/self%t**2                                   ! current density
+  !self%b  = self%l**(-0.5)*self%m**0.5*self%t**(-1)! magnetic flux density
+  self%emf  = self%m**0.5/self%l**0.5/self%t      ! electric field
+  self%q  = self%m**(1/2)*self%l**(3/2)/self%t    ! charge
+  self%j  = self%m**0.5*self%l**0.5/self%t**2     ! current density
   self%mu = 0.5
-  self%temp = self%mu*(cgs%m_u/self%m)/(cgs%k_b/self%e)                         ! temperature for given mu
-  self%grav = cgs%grav*(self%m/self%l**3)*self%t**2                             ! constant of gravity
+  self%temp = self%mu*(cgs%m_u/self%m)/(cgs%k_b/self%e)  ! temperature for given mu
+  self%grav = cgs%grav*(self%m/self%l**3)*self%t**2      ! constant of gravity
   if (io%master) then
     print 1,' CODE UNITS:   (cgs):'
     print 1,'               length: ',self%l
@@ -114,53 +115,53 @@ SUBROUTINE init_pic_SI (self, ds)
   if (io%master) print *, &
  '--------------------------------pic scaling_mod -------------------------'
   first_time = .false.
-  self%name = 'SI'                                                              ! PIC scaled units | SI system
+  self%name = 'SI'                                ! PIC scaled units | SI system
   ! --------------------------------------------------
   ! Defining quantities
   ! --------------------------------------------------
-  self%m_e   = si%m_e    * self%e_mass_scale                                    ! electron mass
-  self%m_u   = si%m_u                                                           ! proton mass
-  self%q     = si%q      * self%q_scale                                         ! electron charge
-  self%eps_0 = si%eps_0  * self%eps_scale                                       ! vacuum permittivity
-  self%mu_0  = si%mu_0   * self%mu0_scale                                       ! vacuum permeability
-  self%k_b     = si%k_b                                                         ! Boltzmann's constant
-  self%mu      = 0.5                                                            ! mean molecular weight
-  self%l       = scaling%l*1d-2                                                 ! length
-  self%d       = scaling%d/1d3                                                  ! mass density
-  self%t       = scaling%t                                                      ! time
-  self%m       = self%l**3*self%d                                               ! mass
-  self%u       = self%l/self%t                                                  ! speed
+  self%m_e   = si%m_e    * self%e_mass_scale      ! electron mass
+  self%m_u   = si%m_u                             ! proton mass
+  self%q     = si%e      * self%q_scale           ! electron charge
+  self%eps_0 = si%eps_0  * self%eps_scale         ! vacuum permittivity
+  self%mu_0  = si%mu_0   * self%mu0_scale         ! vacuum permeability
+  self%k_b     = si%k_b                           ! Boltzmann's constant
+  self%mu      = 0.5                              ! mean molecular weight
+  self%l       = scaling%l*1d-2                   ! length
+  self%d       = scaling%d/1d3                    ! mass density
+  self%t       = scaling%t                        ! time
+  self%m       = self%l**3*self%d                 ! mass
+  self%u       = self%l/self%t                    ! speed
   self%B       = self%l/self%t*sqrt(self%d)
   !self%B       = self%m/self%t/self%q
-  self%e       = self%m*self%u**2                                               ! energy
-  self%ee      = self%u**2                                                      ! energy density
-  self%p       = self%d*self%u**2                                               ! pressure = energy density [dyne / cm2]
+  self%e       = self%m*self%u**2                 ! energy
+  self%ee      = self%u**2                        ! energy density
+  self%p       = self%d*self%u**2                 ! pressure = energy density [dyne / cm2]
   self%q_e     = self%e/(self%B*self%l**2/self%t)
   self%temp    = 1.0!self%mu*(self%m_u/self%m)/(self%k_b/self%e)
-  self%grav    = si%grav*(self%m/self%l**3)*self%t**2                           ! constant of gravity
+  self%grav    = si%grav*(self%m/self%l**3)*self%t**2 ! constant of gravity
   ! ----------------------------------------------------------------------------
   ! We first have to scale down the physical constants for pic, then convert
   ! them to code units. We also need to rescale the MHD defining quantities
   ! ----------------------------------------------------------------------------
-  self%c       = 1/sqrt(si%mu_0*si%eps_0)                                       ! speed of light in SI
-  self%c       = self%c*1/sqrt(self%mu0_scale*self%eps_scale)                   ! speed of light, with modified constants
-  self%v_e     = sqrt(self%k_b*self%temp/self%m_e)                              ! electron thermal velocity
-  self%v_p     = sqrt(self%k_b*self%temp/self%m_u)                              ! proton thermal velocity
-  !self%l_debye = 0.5_8*ds*scaling%l/1d2                                        ! Debye length, conversion CGS to SI
-  self%n_p     = self%d / self%mu / si%m_u                                      ! number density
+  self%c       = 1/sqrt(si%mu_0*si%eps_0)                     ! speed of light in SI
+  self%c       = self%c*1/sqrt(self%mu0_scale*self%eps_scale) ! speed of light, with modified constants
+  self%v_e     = sqrt(self%k_b*self%temp/self%m_e)            ! electron thermal velocity
+  self%v_p     = sqrt(self%k_b*self%temp/self%m_u)            ! proton thermal velocity
+  !self%l_debye = 0.5_8*ds*scaling%l/1d2                      ! Debye length, conversion CGS to SI
+  self%n_p     = self%d / self%mu / si%m_u                    ! number density
   !
-  !self%l_debye = 0.5_8*ds*scaling%l/1d2                                        ! Debye length, conversion CGS to SI
+  !self%l_debye = 0.5_8*ds*scaling%l/1d2                      ! Debye length, conversion CGS to SI
   !self%q_e       = self%k_b*self%temp/(self%m_e*sqrt(self%n_p/self%m_e/self%eps_0))
-  self%l_int   = 1./(self%n_p**(1./3.))                                         ! interparticle distance
-  !self%p       = 2.*self%n_p*self%k_b*self%temp                                ! pressure
-  self%v_a     = self%b/sqrt(self%mu_0*self%d)                                  ! alfven speed
-  self%wce     = self%q*self%B/self%m_e                                         ! electron gyro frequency
-  self%wci     = self%q*self%B/self%m_u                                         ! proton gyro frequency
-  self%wpe     = self%q*sqrt(self%n_p/self%m_e/self%eps_0)                      ! electron plasma frequency
-  self%wpi     = self%q*sqrt(self%n_p/self%m_u/self%eps_0)                      ! ion plasma frequency
-  self%l_debye = self%v_e/self%wpe                                              ! Debye length
-  self%delta   = self%c/self%wpe                                                ! electron skin depth
-  self%h       = si%h_p  / self%m/self%u**2*self%t                              ! Planck's constant
+  self%l_int   = 1./(self%n_p**(1./3.))                       ! interparticle distance
+  !self%p       = 2.*self%n_p*self%k_b*self%temp              ! pressure
+  self%v_a     = self%b/sqrt(self%mu_0*self%d)                ! alfven speed
+  self%wce     = self%q*self%B/self%m_e                       ! electron gyro frequency
+  self%wci     = self%q*self%B/self%m_u                       ! proton gyro frequency
+  self%wpe     = self%q*sqrt(self%n_p/self%m_e/self%eps_0)    ! electron plasma frequency
+  self%wpi     = self%q*sqrt(self%n_p/self%m_u/self%eps_0)    ! ion plasma frequency
+  self%l_debye = self%v_e/self%wpe                            ! Debye length
+  self%delta   = self%c/self%wpe                              ! electron skin depth
+  self%h       = si%h_p  / self%m/self%u**2*self%t            ! Planck's constant
     if (io%master) then
     print 1,' scaled SI UNITS:   (PIC):'
     print 1,'       number density: ',self%n_p
@@ -204,7 +205,7 @@ SUBROUTINE init_pic_SI (self, ds)
   ! And now we scale the constants to code units
   ! ----------------------------------------------------------------------------
   self%m_e     = self%m_e     / self%m
-  self%m_u     = self%m_u     / self%m                                          ! proton mass
+  self%m_u     = self%m_u     / self%m                        ! proton mass
   self%n_p     = self%n_p     / self%l**3
   self%v_a     = self%l       / self%t
   self%u       = self%l       / self%t
@@ -219,12 +220,12 @@ SUBROUTINE init_pic_SI (self, ds)
   self%l_debye = self%l_debye / self%l
   self%l_int   = self%l_int   / self%l
   self%k_b     = self%k_b     / self%e
-  self%q       = self%q       / self%q_e                                        ! q scaling
+  self%q       = self%q       / self%q_e                      ! q scaling
   self%emf     = self%m*self%l/self%t**2/self%q
   self%J       = self%q/self%l**2/self%t
-  self%eps_0 = self%eps_0 / (self%q_e*self%t/(self%l**3*self%B))                  ! check!!
-  !self%mu_0  = self%mu_0   / (self%m*self%l/self%q**2)                           ! check!!
-  self%mu_0  = self%mu_0  / (self%B*self%l*self%t/self%q_e)                           ! check!!
+  self%eps_0 = self%eps_0 / (self%q_e*self%t/(self%l**3*self%B)) ! check!!
+  !self%mu_0  = self%mu_0   / (self%m*self%l/self%q**2)          ! check!!
+  self%mu_0  = self%mu_0  / (self%B*self%l*self%t/self%q_e)      ! check!!
 
   self%ke      = 1./(math%pi4*self%eps_0)
   self%kb      = self%mu_0/(math%pi4)
@@ -289,53 +290,53 @@ SUBROUTINE init_pic_SI2 (self, ds)
   if (io%master) print *, &
  '--------------------------------pic scaling_mod -------------------------'
   first_time = .false.
-  self%name = 'SI'                                                              ! PIC scaled units | SI system
+  self%name = 'SI'                               ! PIC scaled units | SI system
   ! --------------------------------------------------
   ! Defining quantities
   ! --------------------------------------------------
-  self%m_e     = si%m_e    * self%e_mass_scale                                  ! electron mass
-  self%m_u     = si%m_u                                                         ! proton mass
-  self%q       = si%q      * self%q_scale                                       ! electron charge
-  self%eps_0   = si%eps_0  * self%eps_scale                                     ! vacuum permittivity
-  self%mu_0    = si%mu_0   * self%mu0_scale                                     ! vacuum permeability
-  self%m       = scaling%m/1d3                                                  ! mass
-  self%l       = scaling%l*1d-2                                                 ! length
-  self%t       = scaling%t                                                      ! time
+  self%m_e     = si%m_e    * self%e_mass_scale   ! electron mass
+  self%m_u     = si%m_u                          ! proton mass
+  self%q       = si%e      * self%q_scale        ! electron charge
+  self%eps_0   = si%eps_0  * self%eps_scale      ! vacuum permittivity
+  self%mu_0    = si%mu_0   * self%mu0_scale      ! vacuum permeability
+  self%m       = scaling%m/1d3                   ! mass
+  self%l       = scaling%l*1d-2                  ! length
+  self%t       = scaling%t                       ! time
   !!!!!!!!!!
-  self%d       = self%m/self%l**2                                               ! density
-  self%u       = self%l/self%t                                                  ! speed
-  self%B       = self%m/self%t/self%q                                           ! magnetic induction
-  self%e       = self%m*self%l**2/self%t**2                                     ! energy
-  self%ee      = self%m/self%l/self%t**2                                        ! energy density
-  self%p       = self%m/self%l/self%t**2                                        ! pressure = energy density
+  self%d       = self%m/self%l**2                ! density
+  self%u       = self%l/self%t                   ! speed
+  self%B       = self%m/self%t/self%q            ! magnetic induction
+  self%e       = self%m*self%l**2/self%t**2      ! energy
+  self%ee      = self%m/self%l/self%t**2         ! energy density
+  self%p       = self%m/self%l/self%t**2         ! pressure = energy density
   
-  self%k_b     = si%k_b                                                         ! Boltzmann's constant
-  self%mu      = 0.5                                                            ! mean molecular weight
+  self%k_b     = si%k_b                          ! Boltzmann's constant
+  self%mu      = 0.5                             ! mean molecular weight
   self%temp    = self%mu*(self%m_u/self%m)/(self%k_b/self%e)  
-  self%grav    = si%grav*(self%m/self%l**3)*self%t**2                           ! constant of gravity
+  self%grav    = si%grav*(self%m/self%l**3)*self%t**2  ! constant of gravity
   ! ----------------------------------------------------------------------------
   ! We first have to scale down the physical constants for pic, then convert
   ! them to code units. We also need to rescale the MHD defining quantities
   ! ----------------------------------------------------------------------------
-  self%c       = 1/sqrt(si%mu_0*si%eps_0)                                       ! speed of light in SI
-  self%c       = self%c*1/sqrt(self%mu0_scale*self%eps_scale)                   ! speed of light, with modified constants
-  self%v_e     = sqrt(self%k_b*self%temp/self%m_e)                              ! electron thermal velocity
-  self%v_p     = sqrt(self%k_b*self%temp/self%m_u)                              ! proton thermal velocity
-  !self%l_debye = 0.5_8*ds*scaling%l/1d2                                        ! Debye length, conversion CGS to SI
-  self%n_p     = self%d / self%mu / self%m_u                                    ! number density
+  self%c       = 1/sqrt(si%mu_0*si%eps_0)          ! speed of light in SI
+  self%c       = self%c*1/sqrt(self%mu0_scale*self%eps_scale) ! modified constants
+  self%v_e     = sqrt(self%k_b*self%temp/self%m_e) ! electron thermal velocity
+  self%v_p     = sqrt(self%k_b*self%temp/self%m_u) ! proton thermal velocity
+  !self%l_debye = 0.5_8*ds*scaling%l/1d2           ! Debye length, conversion CGS to SI
+  self%n_p     = self%d / self%mu / self%m_u       ! number density
   !
-  !self%l_debye = 0.5_8*ds*scaling%l/1d2                                        ! Debye length, conversion CGS to SI
+  !self%l_debye = 0.5_8*ds*scaling%l/1d2           ! Debye length, conversion CGS to SI
   !self%q_e       = self%k_b*self%temp/(self%m_e*sqrt(self%n_p/self%m_e/self%eps_0))
-  self%l_int   = 1./(self%n_p**(1./3.))                                         ! interparticle distance
-  !self%p       = 2.*self%n_p*self%k_b*self%temp                                ! pressure
-  self%v_a     = self%b/sqrt(self%mu_0*self%d)                                  ! alfven speed
-  self%wce     = self%q*self%B/self%m_e                                         ! electron gyro frequency
-  self%wci     = self%q*self%B/self%m_u                                         ! proton gyro frequency
-  self%wpe     = self%q*sqrt(self%n_p/self%m_e/self%eps_0)                      ! electron plasma frequency
-  self%wpi     = self%q*sqrt(self%n_p/self%m_u/self%eps_0)                      ! ion plasma frequency
-  self%l_debye = self%v_e/self%wpe                                              ! Debye length
-  self%delta   = self%c/self%wpe                                                ! electron skin depth
-  self%h       = si%h_p  / self%m/self%u**2*self%t                              ! Planck's constant
+  self%l_int   = 1./(self%n_p**(1./3.))            ! interparticle distance
+  !self%p       = 2.*self%n_p*self%k_b*self%temp   ! pressure
+  self%v_a     = self%b/sqrt(self%mu_0*self%d)     ! alfven speed
+  self%wce     = self%q*self%B/self%m_e            ! electron gyro frequency
+  self%wci     = self%q*self%B/self%m_u            ! proton gyro frequency
+  self%wpe     = self%q*sqrt(self%n_p/self%m_e/self%eps_0) ! electron plasma frequency
+  self%wpi     = self%q*sqrt(self%n_p/self%m_u/self%eps_0) ! ion plasma frequency
+  self%l_debye = self%v_e/self%wpe                 ! Debye length
+  self%delta   = self%c/self%wpe                   ! electron skin depth
+  self%h       = si%h_p  / self%m/self%u**2*self%t ! Planck's constant
     if (io%master) then
     print 1,' scaled SI UNITS:   (PIC):'
     print 1,'       number density: ',self%n_p
@@ -461,48 +462,48 @@ SUBROUTINE init_pic_cgs (self, ds)
   if (io%master) print *, &
  '--------------------------------pic scaling_mod -------------------------'
   first_time = .false.
-  self%name = 'cgs'                                                             ! PIC scaled units | Gaussian
+  self%name = 'cgs'                              ! PIC scaled units | Gaussian
   ! --------------------------------------------------
   ! Defining quantities
   ! --------------------------------------------------
-  self%m_e   = cgs%m_e    * self%e_mass_scale                                   ! electron mass
-  self%m_u   = cgs%m_u                                                          ! proton mass
-  self%q_e   = cgs%q      * self%q_scale                                         ! electron charge
-  self%eps_0 = 1.                                                               ! vacuum permittivity
-  self%mu_0  = 1.                                                               ! vacuum permeability
-  self%mu      = 0.5                                                            ! mean molecular weight
-  self%l       = scaling%l                                                      ! length
-  self%d       = scaling%d                                                      ! mass density
-  self%m       = self%l**3*self%d                                               ! mass
+  self%m_e   = cgs%m_e    * self%e_mass_scale    ! electron mass
+  self%m_u   = cgs%m_u                           ! proton mass
+  self%q_e   = cgs%e      * self%q_scale         ! electron charge
+  self%eps_0 = 1.                                ! vacuum permittivity
+  self%mu_0  = 1.                                ! vacuum permeability
+  self%mu      = 0.5                             ! mean molecular weight
+  self%l       = scaling%l                       ! length
+  self%d       = scaling%d                       ! mass density
+  self%m       = self%l**3*self%d                ! mass
   self%temp    = scaling%temp
   self%B       = scaling%B
-  self%t       = scaling%t                                                      ! time
-  self%u        = self%l/self%t                                                 ! speed
-  self%p        = self%d*self%u**2                                                    ! pressure = energy density [dyne / cm2]
-  self%e        = self%m*self%u**2                                              ! energy
-  self%ee       = self%u**2                                                     ! energy density
-  self%grav = cgs%grav*(self%m/self%l**3)*self%t**2                             ! constant of gravity
+  self%t       = scaling%t                       ! time
+  self%u        = self%l/self%t                  ! speed
+  self%p        = self%d*self%u**2               ! pressure = energy density [dyne / cm2]
+  self%e        = self%m*self%u**2               ! energy
+  self%ee       = self%u**2                      ! energy density
+  self%grav = cgs%grav*(self%m/self%l**3)*self%t**2  ! constant of gravity
   self%q       = self%m**0.5*self%l**(3./2.)/self%t
-  self%j  = self%m**0.5*self%l**0.5/self%t**2                                   ! current density
+  self%j  = self%m**0.5*self%l**0.5/self%t**2        ! current density
   ! ----------------------------------------------------------------------------
   ! We first have to scale down the physical constants for pic, then convert
   ! them to code units. We also need to rescale the MHD defining quantities
   ! ----------------------------------------------------------------------------
-  self%c       = 100*self%u                                                     ! speed of light
-  self%k_b     = cgs%k_b                                                        ! Boltzmann's constant
-  self%v_e     = sqrt(self%k_b*self%temp/self%m_e)                              ! electron thermal velocity
-  self%v_p     = sqrt(self%k_b*self%temp/self%m_u)                              ! proton thermal velocity
-  self%n_p     = self%d / self%mu / cgs%m_u                                     ! number density
-  self%l_int    = 1/(self%n_p**(1/3))                                           ! interparticle distance
+  self%c       = 100*self%u                          ! speed of light
+  self%k_b     = cgs%k_b                             ! Boltzmann's constant
+  self%v_e     = sqrt(self%k_b*self%temp/self%m_e)   ! electron thermal velocity
+  self%v_p     = sqrt(self%k_b*self%temp/self%m_u)   ! proton thermal velocity
+  self%n_p     = self%d / self%mu / cgs%m_u          ! number density
+  self%l_int    = 1/(self%n_p**(1/3))                ! interparticle distance
   self%p       = 2.*self%n_p*self%k_b*self%temp
-  self%v_a     = self%b/sqrt(math%pi4*self%d)                                   ! alfven speed
-  self%wce     = self%q*self%B/self%m_e                                         ! electron gyro frequency
-  self%wci     = self%q*self%B/self%m_u                                         ! proton gyro frequency
-  self%wpe     = self%q*sqrt(self%n_p/self%m_e/self%eps_0)                      ! electron plasma frequency
-  self%wpi     = self%q*sqrt(self%n_p/self%m_u/self%eps_0)                      ! ion plasma frequency
-  self%l_debye = self%v_e/self%wpe                                              ! Debye length
-  self%delta   = self%c/self%wpe                                                ! electron skin depth
-  self%h       = si%h_p  / self%m/self%u**2*self%wce                            ! Planck's constant
+  self%v_a     = self%b/sqrt(math%pi4*self%d)        ! alfven speed
+  self%wce     = self%q*self%B/self%m_e              ! electron gyro frequency
+  self%wci     = self%q*self%B/self%m_u              ! proton gyro frequency
+  self%wpe     = self%q*sqrt(self%n_p/self%m_e/self%eps_0)  ! electron plasma frequency
+  self%wpi     = self%q*sqrt(self%n_p/self%m_u/self%eps_0)  ! ion plasma frequency
+  self%l_debye = self%v_e/self%wpe                          ! Debye length
+  self%delta   = self%c/self%wpe                            ! electron skin depth
+  self%h       = si%h_p  / self%m/self%u**2*self%wce        ! Planck's constant
     if (io%master) then
     print 1,' scaled SI UNITS:   (PIC):'
     print 1,'       number density: ',self%n_p
@@ -548,7 +549,7 @@ SUBROUTINE init_pic_cgs (self, ds)
   ! ----------------------------------------------------------------------------
   self%temp=scaling%temp
   self%m_e     = self%m_e     / self%m
-  self%m_u     = self%m_u     / self%m                                          ! proton mass
+  self%m_u     = self%m_u     / self%m                  ! proton mass
   self%n_p     = self%n_p     / self%l**3
   self%B       = self%u*sqrt(cgs%pi*4.0*self%d)
   !self%B       = self%m/self%t/self%q
@@ -567,10 +568,10 @@ SUBROUTINE init_pic_cgs (self, ds)
   self%l_debye = self%l_debye / self%l
   self%l_int   = self%l_int   / self%l
   self%k_b     = self%k_b     / self%e
-  self%emf     = self%m**0.5/self%l**0.5/self%t                                    ! electric field
-  self%q_e     = self%q_e     / self%q                                          ! q scaling
-  self%q     = self%q_e                                             ! q scaling
-  !self%emf     = self%m*self%l**3*self%B/self%t**3/self%e                       ! electric field
+  self%emf     = self%m**0.5/self%l**0.5/self%t         ! electric field
+  self%q_e     = self%q_e     / self%q                  ! q scaling
+  self%q     = self%q_e                                 ! q scaling
+  !self%emf     = self%m*self%l**3*self%B/self%t**3/self%e ! electric field
   self%eps_0 = 1.0
   self%mu_0  = 1.0
 
@@ -641,33 +642,33 @@ SUBROUTINE init_convert (self, pic)
   ! ----------------------------------------------------------------------------
   select case(trim(pic%name))
   case('SI')
-    self%l   = scaling%l   / pic%l   * 1d-2                                     ! length  CGS to SI - based code units
-    self%d   = scaling%d   / pic%d   * 1d3                                      ! density CGS to SI - based code units
-    self%t   = scaling%t   / pic%t                                              ! time unit, if it is different
-    self%u   = scaling%u   / pic%u   * 1d-2                                     ! velocity
-    self%m   = scaling%m   / pic%m   * 1d-3                                     ! mass
-    self%p   = scaling%p   / pic%p   * 1d-1                                     ! pressure
-    self%ee  = scaling%ee  / pic%ee  * 1d-1                                     ! energy density
-    self%e   = scaling%e   / pic%e   * 1d-7                                     ! energy
-    self%b   = scaling%b   / pic%b   * 1d-4                                     ! magnetic induction
-    self%emf = scaling%emf / pic%emf / (1./3.*1d-4)                           ! electric field
-    self%j   = scaling%j   / pic%j   / 3d5                                      ! current density
-    self%temp= scaling%temp/ pic%temp                                           ! temperature for given mu and scaled Boltzmann constant
+    self%l   = scaling%l   / pic%l   * 1d-2         ! length  CGS to SI - based code units
+    self%d   = scaling%d   / pic%d   * 1d3          ! density CGS to SI - based code units
+    self%t   = scaling%t   / pic%t                  ! time unit, if it is different
+    self%u   = scaling%u   / pic%u   * 1d-2         ! velocity
+    self%m   = scaling%m   / pic%m   * 1d-3         ! mass
+    self%p   = scaling%p   / pic%p   * 1d-1         ! pressure
+    self%ee  = scaling%ee  / pic%ee  * 1d-1         ! energy density
+    self%e   = scaling%e   / pic%e   * 1d-7         ! energy
+    self%b   = scaling%b   / pic%b   * 1d-4         ! magnetic induction
+    self%emf = scaling%emf / pic%emf / (1./3.*1d-4) ! electric field
+    self%j   = scaling%j   / pic%j   / 3d5          ! current density
+    self%temp= scaling%temp/ pic%temp               ! temperature for given mu and scaled Boltzmann constant
     self%momentum = scaling%m*scaling%u / pic%m / pic%u * 1d-5
-    self%grav= scaling%grav/ pic%grav                                           ! constant of gravity
+    self%grav= scaling%grav/ pic%grav               ! constant of gravity
   case('cgs')
-    self%l   = 1.0!scaling%l   / pic%l                                        ! length  CGS to SI - based code units
-    self%d   = 1.0!scaling%d   / pic%d                                        ! density CGS to SI - based code units
-    self%t   = 1.0!scaling%t   / pic%t                                              ! time unit, if it is different
-    self%u   = 1.0!scaling%u   / pic%u                                        ! velocity
-    self%m   = 1.0!scaling%m   / pic%m                                        ! mass
-    self%p   = 1.0!scaling%p   / pic%p                                        ! pressure
-    self%ee  = 1.0!scaling%ee  / pic%ee                                       ! energy density
-    self%e   = 1.0!scaling%e   / pic%e                                        ! energy
-    self%b   = 1.0!scaling%b   / pic%b                                        ! magnetic induction
-    self%emf = 1.0!scaling%emf / pic%emf                                      ! electric field
-    self%j   = 1.0!scaling%j   / pic%j                                        ! current density
-    self%temp= 1.0!scaling%temp/ pic%temp                                           ! temperature for given mu and scaled Boltzmann constant
+    self%l   = 1.0!scaling%l   / pic%l              ! length  CGS to SI - based code units
+    self%d   = 1.0!scaling%d   / pic%d              ! density CGS to SI - based code units
+    self%t   = 1.0!scaling%t   / pic%t              ! time unit, if it is different
+    self%u   = 1.0!scaling%u   / pic%u              ! velocity
+    self%m   = 1.0!scaling%m   / pic%m              ! mass
+    self%p   = 1.0!scaling%p   / pic%p              ! pressure
+    self%ee  = 1.0!scaling%ee  / pic%ee             ! energy density
+    self%e   = 1.0!scaling%e   / pic%e              ! energy
+    self%b   = 1.0!scaling%b   / pic%b              ! magnetic induction
+    self%emf = 1.0!scaling%emf / pic%emf            ! electric field
+    self%j   = 1.0!scaling%j   / pic%j              ! current density
+    self%temp= 1.0!scaling%temp/ pic%temp           ! temperature for given mu and scaled Boltzmann constant
     self%momentum = scaling%m*scaling%u / pic%m / pic%u 
     self%grav= scaling%grav/ pic%grav      
   case default

@@ -1020,14 +1020,14 @@ SUBROUTINE difxyz_b3d(self, ds, bx, by, bz, ux, uy, uz, g, cc)
   real, dimension(:,:,:)   :: ux, uy, uz
   real, dimension(:,:,:,:) :: g
   real :: cc
-  integer:: n(4), ix, iy, iz
+  integer:: n(4), ix, iy, iz, gn(3)
   ! ----------------------------------------------------------------------------
   real :: udotb, bdotb, c
   ! ............................................................................
   !
   n=shape(g)
   c = cc*0.5
-  associate (gn => self%mesh%gn)
+  gn = self%mesh%gn
   do iz=1,n(3)
     do iy=1,n(2)
       do ix=1,n(1)
@@ -1086,7 +1086,6 @@ SUBROUTINE difxyz_b3d(self, ds, bx, by, bz, ux, uy, uz, g, cc)
   else
     g(:,:,:,3) = 0.0
   endif
-  end associate
 END SUBROUTINE difxyz_b3d
 
 !> =============================================================================

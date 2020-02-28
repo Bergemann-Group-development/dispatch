@@ -24,7 +24,7 @@
 &hybrid_rt_params   /
 
 ! -- I/O parameters ------------------------------------------------------------
-&io_params          verbose=0 do_trace=f omp_trace=f do_output=t id_debug=0
+&io_params          verbose=0 do_trace=t omp_trace=t do_output=t id_debug=0
                     restart=-1  guard_zones=t nml_version=1 /
 &out_params         end_time=0.101 out_time=0.05 print_time=0 /
 &aux_params         verbose=0 select='tt','qr','rkap','src','pg' /

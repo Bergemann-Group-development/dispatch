@@ -25,6 +25,7 @@ MODULE bifrost_mod
     integer :: rereadpars
     integer :: l(3),u(3)
     logical, dimension(:), allocatable:: scratches
+    logical :: do_mhd=.true.
   contains
     procedure:: alloc_scratches
     procedure:: check_scratches

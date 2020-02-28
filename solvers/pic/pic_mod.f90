@@ -204,7 +204,7 @@ SUBROUTINE init (self)
   ! ----------------------------------------------------------------------------
   if (self%on) then
     self%do_mhd = do_mhd                                                        ! MHD should be done in the background?
-    patch%do_mhd = self%do_mhd
+    !patch%do_mhd = self%do_mhd
     !---------------------------------------------------------------------------
     ! Allocate the PIC grid and match it to the MHD grid.
     !---------------------------------------------------------------------------
@@ -324,7 +324,7 @@ END SUBROUTINE init
 !> Currently no pre-update procedures are necessary for pic.
 !===============================================================================
 SUBROUTINE pre_update (self)
-  class(pic_t):: self
+  class(pic_t), target:: self
   ! ----------------------------------------------------------------------------
   
 END SUBROUTINE pre_update
@@ -1206,7 +1206,7 @@ END SUBROUTINE export_particles
 SUBROUTINE import_particles(self)
   class(pic_t) :: self
   ! ----------------------------------------------------------------------------
-  class(link_t), pointer:: nb_link
+  class(nbor_t), pointer:: nb_link
   class(gpatch_t), pointer:: nbor
   class(*), pointer:: nbp
   class(pic_t), pointer:: nb_pic

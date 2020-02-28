@@ -387,7 +387,7 @@ END SUBROUTINE move_particles_v
 SUBROUTINE import_particles (self)
   class(pic_particles_t)     :: self
   !.............................................................................
-  class(link_t)    , pointer :: nbor
+  class(nbor_t)    , pointer :: nbor
   class(task_t)    , pointer :: task, nbtask
   class(patch_t)   , pointer :: nbpatch
   class(pic_particle_t), pointer :: pa, next

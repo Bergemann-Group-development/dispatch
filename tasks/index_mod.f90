@@ -226,6 +226,9 @@ SUBROUTINE output_time_derivs (self, unit)
     djydt  = -1
     djzdt  = -1
   end if
+  db1dt  = dbxdt
+  db2dt  = dbydt
+  db3dt  = dbzdt
   write (unit, idx_nml)
 END SUBROUTINE output_time_derivs
 
