@@ -4,6 +4,7 @@
 MODULE gpatch_mod
   USE io_mod
   USE os_mod
+  USE omp_mod
   USE trace_mod
   USE patch_mod
   USE initial_mod
@@ -23,7 +24,6 @@ MODULE gpatch_mod
   implicit none
   private
   type, public, extends(patch_t):: gpatch_t
-    real, dimension(:,:,:), contiguous, pointer:: eth => null()
     type(initial_t):: initial
     type(data_hub_t):: data_hub
     class(list_t), pointer:: task_list => null()
@@ -38,8 +38,7 @@ MODULE gpatch_mod
     procedure:: counter_update
     procedure:: dnload
     procedure:: courant_condition
-    procedure:: to_thermal_begin
-    procedure:: to_thermal_end
+    procedure:: to_thermal
   end type
   real(8), save :: restart_time = 0d0
   logical, save :: detailed_timer=.false.
@@ -223,26 +222,24 @@ END SUBROUTINE courant_condition
 !===============================================================================
 !> Compute or assign thermal energy
 !===============================================================================
-SUBROUTINE to_thermal_begin (self, it, kind)
+SUBROUTINE to_thermal (self, it, eth, kind)
   class(gpatch_t):: self
   integer:: it
+  real, contiguous:: eth(:,:,:)
   character(len=*), optional:: kind
   !.............................................................................
   integer:: i1, i2, i3
   real, pointer, contiguous, dimension(:,:,:):: d, e, px, py, pz, bx, by, bz
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('gpatch_t%to_thermal_begin', itimer=itimer)
+  call trace%begin ('gpatch_t%to_thermal', itimer=itimer)
+  e  => self%mem(:,:,:,self%idx%e ,it,1)
   if (present(kind) .and. kind(1:6)=='ramses') then
-    if (.not.associated(self%eth)) then
-      allocate (self%eth(self%gn(1),self%gn(2),self%gn(3)))
-    end if
     d  => self%mem(:,:,:,self%idx%d ,it,1)
-    e  => self%mem(:,:,:,self%idx%e ,it,1)
     px => self%mem(:,:,:,self%idx%px,it,1)
     py => self%mem(:,:,:,self%idx%py,it,1)
     pz => self%mem(:,:,:,self%idx%pz,it,1)
-    self%eth = e - 0.5*(px**2+py**2+pz**2)/d
+    eth = e - 0.5*(px**2+py**2+pz**2)/d
     if (self%nv > 5) then
       bx => self%mem(:,:,:,self%idx%bx,it,1)
       by => self%mem(:,:,:,self%idx%by,it,1)
@@ -250,33 +247,18 @@ SUBROUTINE to_thermal_begin (self, it, kind)
       do i3=1,self%gn(3)-1
       do i2=1,self%gn(2)-1
       do i1=1,self%gn(1)-1
-        self%eth(i1,i2,i3) = &
-        self%eth(i1,i2,i3) - 0.125*((bx(i1,i2,i3)+bx(i1+1,i2,i3))**2 + &
-                                    (by(i1,i2,i3)+by(i1,i2+1,i3))**2 + &
-                                    (bz(i1,i2,i3)+bz(i1,i2,i3+1))**2)
+        eth(i1,i2,i3) = &
+        eth(i1,i2,i3) - 0.125*((bx(i1,i2,i3)+bx(i1+1,i2,i3))**2 + &
+                               (by(i1,i2,i3)+by(i1,i2+1,i3))**2 + &
+                               (bz(i1,i2,i3)+bz(i1,i2,i3+1))**2)
       end do
       end do
       end do
     end if
   else
-    self%eth  => self%mem(:,:,:,self%idx%e ,it,1)
+    eth = e
   end if
   call trace%end (itimer)
-END SUBROUTINE to_thermal_begin
-
-!===============================================================================
-!> Clean up after computing thermal energy
-!===============================================================================
-SUBROUTINE to_thermal_end (self, kind)
-  class(gpatch_t):: self
-  character(len=*), optional:: kind
-  !.............................................................................
-  call trace%begin ('gpatch_t%to_thermal_end')
-  if (present(kind) .and. kind(1:6)=='ramses') then
-    deallocate (self%eth)
-  end if
-  nullify (self%eth)
-  call trace%end ()
-END SUBROUTINE to_thermal_end
+END SUBROUTINE to_thermal
 
 END MODULE gpatch_mod

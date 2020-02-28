@@ -117,6 +117,7 @@ CONTAINS
 SUBROUTINE pre_init (self)
   class(extras_t), target:: self
   !.............................................................................
+  call trace%begin ('extras_t%pre_init')
   !call self%forces%init (self)                                         ! forces
   !-----------------------------------------------------------------------------
   ! Allocate a trace_particles data type, connect a pointer, and initialize
@@ -128,6 +129,7 @@ SUBROUTINE pre_init (self)
   !allocate(self%pic)                                                   ! pic
   !self%connect%pic_patch => self%pic                                   ! pic
   !call self%pic%pre_init(self%link)                                    ! pic
+  call trace%end ()
 END SUBROUTINE pre_init
 
 !===============================================================================

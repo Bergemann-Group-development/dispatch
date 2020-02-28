@@ -42,8 +42,7 @@ MODULE solver_mod
     procedure:: compression_magnitude
     procedure:: vorticity_magnitude
     generic:: gas_velocity => gas_velocity_vector, gas_velocity_scalar
-    procedure:: to_thermal_begin
-    procedure:: to_thermal_end
+    procedure:: to_thermal
   end type
   type(solver_t), public:: solver
 CONTAINS
@@ -453,38 +452,23 @@ END SUBROUTINE vorticity_magnitude
 !===============================================================================
 !> Compute or assign thermal energy
 !===============================================================================
-SUBROUTINE to_thermal_begin (self, it, kind)
+SUBROUTINE to_thermal (self, it, eth, kind)
   class(solver_t):: self
   integer:: it
+  real, contiguous:: eth(:,:,:)
   character(len=*), optional:: kind
   !.............................................................................
   integer:: i1, i2, i3
   real, pointer, contiguous, dimension(:,:,:):: d, e, px, py, pz
   !-----------------------------------------------------------------------------
-  call trace%begin ('solver_t%to_thermal_begin')
-  if (.not.associated(self%eth)) then
-    allocate (self%eth(self%gn(1),self%gn(2),self%gn(3)))
-  end if
+  call trace%begin ('solver_t%to_thermal')
   d  => self%mem(:,:,:,self%idx%d ,it,1)
   e  => self%mem(:,:,:,self%idx%e ,it,1)
   px => self%mem(:,:,:,self%idx%px,it,1)
   py => self%mem(:,:,:,self%idx%py,it,1)
   pz => self%mem(:,:,:,self%idx%pz,it,1)
-  self%eth = e - 0.5*(px**2+py**2+pz**2)/d
+  eth = e - 0.5*(px**2+py**2+pz**2)/d
   call trace%end ()
-END SUBROUTINE to_thermal_begin
-
-!===============================================================================
-!> Clean up after computing thermal energy
-!===============================================================================
-SUBROUTINE to_thermal_end (self, kind)
-  class(solver_t):: self
-  character(len=*), optional:: kind
-  !.............................................................................
-  call trace%begin ('solver_t%to_thermal_end')
-  deallocate (self%eth)
-  nullify (self%eth)
-  call trace%end ()
-END SUBROUTINE to_thermal_end
+END SUBROUTINE to_thermal
 
 END MODULE solver_mod

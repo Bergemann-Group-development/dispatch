@@ -331,7 +331,6 @@ SUBROUTINE init_task (self)
     l = p%mesh%li - self%mesh%ng
     u = p%mesh%ui + self%mesh%ng
     self%mem => p%mem
-    self%eth => p%eth
   else
     !---------------------------------------------------------------------------
     ! Deallocate the self%mem for this task, but keep the task, for simplicity
@@ -775,11 +774,12 @@ contains
 subroutine omp_eos
   integer:: m(4), ib
   real:: u_max, stefan
+  real, pointer:: eth(:,:,:)
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_t%rt_eos', itimer=itimer)
   patch => self%patch
   m = shape(self%rk)
-  allocate (pgas(m(1),m(2),m(3)),fmax(m(1),m(2),m(3)))
+  allocate (pgas(m(1),m(2),m(3)),fmax(m(1),m(2),m(3)),eth(m(1),m(2),m(3)))
   !-----------------------------------------------------------------------------
   d => patch%mem(:,:,:,patch%idx%d,patch%it,1)
   e => patch%mem(:,:,:,patch%idx%e,patch%it,1)
@@ -787,14 +787,10 @@ subroutine omp_eos
     call self%stats (d, 'd')
     call self%stats (e, 'e')
   end if
-  call patch%to_thermal_begin (patch%it, kind=patch%kind)
-!write (io_unit%log,'(3i6," e:",1p,10e11.2)') self%id, self%it, patch%it, &
-!sum(sum(e(:,:,4:13),1),1)
-!write (io_unit%log,'(3i6," eth:",1p,10e11.2)') self%id, self%it, patch%it, &
-!sum(sum(patch%eth(:,:,4:13),1),1)
-  call eos%lookup_table (m, d=d, e=patch%eth, rk=self%rk, src=self%src, &
+  call patch%to_thermal (patch%it, kind=patch%kind, eth=eth)
+  call eos%lookup_table (m, d=d, e=eth, rk=self%rk, src=self%src, &
                          tt=self%tt, pg=pgas)
-  call patch%to_thermal_end (kind=patch%kind)
+  deallocate (eth)
   ! ----------------------------------------------------------------------------
   ! Compute radiative diffusion speed, and set default omega%u_max
   ! ----------------------------------------------------------------------------

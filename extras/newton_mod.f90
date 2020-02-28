@@ -65,7 +65,7 @@ SUBROUTINE pre_update (self)
   integer:: ix, iy, iz
   ! ----------------------------------------------------------------------------
   d => self%patch%mem(:,:,:,self%patch%idx%d,self%patch%it,1)
-  e => self%patch%eth
+  e => self%patch%mem(:,:,:,self%patch%idx%e,self%patch%it,1)
   if (on) then
     m1 => self%patch%mesh(1)
     m2 => self%patch%mesh(2)

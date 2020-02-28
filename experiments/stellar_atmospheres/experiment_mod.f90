@@ -121,13 +121,11 @@ SUBROUTINE update (self)
   logical, save:: first_time=.true.
   !----------------------------------------------------------------------------
   call trace%begin('experiment_t%update')
-  call self%to_thermal_begin (self%it)
   if (self%mesh(3)%lower_boundary .or. &
       self%mesh(3)%upper_boundary) then
       call self%boundary_condition
   end if
   call self%solver_t%update
-  call self%to_thermal_end
   call trace%end()
 END SUBROUTINE update
 
@@ -172,7 +170,7 @@ SUBROUTINE boundary_condition (self)
     m = self%gn
     allocate (pg(m(1),m(2),li(3):li(3)))
     d1 => d(:,:,li(3):li(3))
-    e1 => self%eth(:,:,li(3):li(3))
+    e1 => e(:,:,li(3):li(3))
     call eos%lookup_table (shape(pg), pg=pg, d=d1, e=e1)
     !---------------------------------------------------------------------------
     ! Note that the loop for simplicity includes iz=li(3), but d_ratio=1.0 for
