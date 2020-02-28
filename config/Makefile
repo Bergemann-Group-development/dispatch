@@ -28,9 +28,9 @@ ifeq ($(SEPARATE_BUILDS),)
   BUILD    ?= build
 else
   ifeq ($(OPTS),)
-    BUILD    ?= build
+    BUILD    ?= build_$(SOLVER)
   else
-    BUILD    ?= build_$(OPTS)
+    BUILD    ?= build_$(SOLVER)_$(OPTS)
   endif
 endif
 $(shell mkdir -p $(BUILD) >/dev/null)
