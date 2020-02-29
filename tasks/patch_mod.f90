@@ -397,7 +397,7 @@ SUBROUTINE header_to_patch (self, head)
 END SUBROUTINE header_to_patch
 
 !===============================================================================
-!> Cast a generic task_t to patch_t
+!> Cast a generic task_t to patch_t -- the calling code should test for null
 !===============================================================================
 FUNCTION cast2patch (task) RESULT(patch)
   class(task_t), pointer:: task
@@ -408,7 +408,6 @@ FUNCTION cast2patch (task) RESULT(patch)
   patch => task
   class default
   nullify(patch)
-  call io%abort ('patch_t%cast: failed to cast a task to patch_t')
   end select
 END FUNCTION cast2patch
 
