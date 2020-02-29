@@ -46,6 +46,7 @@ MODULE experiment_mod
   integer, save:: verbose=1
   logical, save:: smudge_boundary = .false.
   real, save:: d_bot=0.0, e_bot=0.0, ee_top=5.0
+  real, save:: bx0=0.0, by0=0.0
   real, save:: bottom_bc_rate=0.01
   type(experiment_t), public:: experiment
 CONTAINS
@@ -57,7 +58,8 @@ SUBROUTINE init (self)
   class(experiment_t):: self
   integer:: iostat
   logical, save:: first_time=.true.
-  namelist /experiment_params/ d_bot, e_bot, ee_top, bottom_bc_rate, verbose
+  namelist /experiment_params/ d_bot, e_bot, ee_top, bottom_bc_rate, bx0, by0, &
+    verbose
   !-----------------------------------------------------------------------------
   call trace%begin('experiment_t%init')
   !-----------------------------------------------------------------------------
@@ -211,6 +213,12 @@ SUBROUTINE boundary_condition (self)
         end if
         d_ratio = exp((z(iz)-z(iz1))/h_scale)
         pz(ix,iy,iz) = pz(ix,iy,iz1)*d_ratio**2
+        if (self%nv >= 8) then
+          if (bx0 /= 0.0) then
+            bx(:,:,self%mesh(3)%lb:self%mesh(3)%lo) = bx0
+            by(:,:,self%mesh(3)%lb:self%mesh(3)%lo) = by0
+          end if
+        end if
       end do
       end do
     end do
