@@ -92,7 +92,8 @@ SUBROUTINE input (self, ok)
   class(gpatch_t):: self
   logical:: ok
   !-----------------------------------------------------------------------------
-  call data_io%input (self, ok)
+  ok = .false.
+  !call data_io%input (self, ok)
 END SUBROUTINE input
 
 !===============================================================================
