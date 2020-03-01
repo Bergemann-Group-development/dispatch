@@ -73,8 +73,8 @@ SUBROUTINE pre_update (self)
   ! Use existing function call
   !-----------------------------------------------------------------------------
   associate (patch => self%patch, m => self%patch%gn)
-  d => patch%mem(:,:,:,patch%idx%d,patch%it,1)
-  p => patch%mem(:,:,:,patch%idx%px:patch%idx%pz,patch%it,1)
+  d => patch%mem(:,:,:,patch%idx%d,patch%new,1)
+  p => patch%mem(:,:,:,patch%idx%px:patch%idx%pz,patch%new,1)
   if (.not.allocated(patch%force_per_unit_mass)) then
     allocate (patch%force_per_unit_mass(m(1),m(2),m(3),3))
     call io%bits_mem (storage_size(patch%force_per_unit_mass), &

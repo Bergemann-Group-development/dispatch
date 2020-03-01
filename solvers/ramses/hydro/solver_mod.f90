@@ -93,10 +93,24 @@ END FUNCTION cast2solver
 !===============================================================================
 SUBROUTINE update (self)
   class(solver_t) :: self
-  !.............................................................................
-!  call self%extras_t%pre_update
+  !-----------------------------------------------------------------------------
+  ! Lock %it & %new slots, copy, and unlock %it slot
+  !-----------------------------------------------------------------------------
+  call trace%begin ('solver_t%update')
+  call self%mem_lock(self%new)%set ('update')
+  call self%mem_lock(self%it )%set ('update')
+  self%uin  => self%mem(:,:,:,:,self%it ,1)
+  self%unew => self%mem(:,:,:,:,self%new,1)
+  self%unew = self%uin
+  call self%mem_lock(self%it )%unset ('update')
+  !-----------------------------------------------------------------------------
+  ! Proceed, referring everywhere to the %new time slot
+  !-----------------------------------------------------------------------------
+  call self%extras_t%pre_update
   call self%hd_t%update
   call self%extras_t%post_update
+  !-----------------------------------------------------------------------------
+  call trace%end ()
 END SUBROUTINE update
 
 !===============================================================================

@@ -115,7 +115,7 @@ SUBROUTINE init (self, patch)
     ! FIXME: This needs to be modified for MPI
     !-------------------------------------------------------------------------
     if (patch%time == 0.0 .and. patch%id==1) then
-      d => patch%mem(:,:,:,patch%idx%d,patch%it,1)
+      d => patch%mem(:,:,:,patch%idx%d,patch%new,1)
       !$omp atomic
       total_mass = total_mass + patch%fsum(d)*product(patch%ds)
       !$omp atomic
@@ -143,8 +143,8 @@ SUBROUTINE pre_update (self, patch)
   !-----------------------------------------------------------------------------
   if (.not. selfgravity) return
   call trace%begin ('selfgravity_t%pre_update', itimer=itimer)
-  d   => patch%mem(:,:,:,patch%idx%d  ,patch%it,1)
-  phi => patch%mem(:,:,:,patch%idx%phi,patch%it,1)
+  d   => patch%mem(:,:,:,patch%idx%d  ,patch%new,1)
+  phi => patch%mem(:,:,:,patch%idx%phi,patch%new,1)
   if (self%d0==-1.0) then
     self%d0 = total_mass/total_volume
     print *, patch%id, 'setting self%d0 =', self%d0, patch%faver(d)
@@ -152,7 +152,7 @@ SUBROUTINE pre_update (self, patch)
   dmin = patch%fminval (d)
   dmax = patch%fmaxval (d)
   if (dmin==0.0) &
-    print *, patch%id, 'WARNING: selfgravity_t%gravity, dmin, dmax, it =', dmin, dmax, patch%it
+    print *, patch%id, 'WARNING: selfgravity_t%gravity, dmin, dmax, it =', dmin, dmax, patch%new
   call self%poisson%update (patch, phi, d, self%d0, detailed_timer)
   !-----------------------------------------------------------------------------
   ! Compute the force per unit volume (except for ZEUS solvers, which take the
@@ -212,9 +212,9 @@ SUBROUTINE time_derivs (self)
   !-----------------------------------------------------------------------------
   if (detailed_timer) call trace%begin ('selfgravity_t%time_derivs', itimer=itimer)
   if (self%nw == 2) then
-    dphidt => self%mem(:,:,:,self%idx%phi,self%it,2)
+    dphidt => self%mem(:,:,:,self%idx%phi,self%new,2)
   else
-    dphidt => self%mem(:,:,:,self%idx%dphi,self%it,1)
+    dphidt => self%mem(:,:,:,self%idx%dphi,self%new,1)
   end if
 
   if (prediction) then

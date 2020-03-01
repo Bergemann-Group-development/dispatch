@@ -199,19 +199,6 @@ SUBROUTINE update (self)
     end if
   end if
   !-----------------------------------------------------------------------------
-  ! Lock it & new slots, copy, unlock it slot
-  !-----------------------------------------------------------------------------
-  call self%mem_lock(self%new)%set ('update')
-  call self%mem_lock(self%it )%set ('update')
-  self%uin  => self%mem(:,:,:,:,self%it ,1)
-  self%unew => self%mem(:,:,:,:,self%new,1)
-  self%unew = self%uin
-  call self%mem_lock(self%it )%unset ('update')
-  !-----------------------------------------------------------------------------  
-  d => self%mem(:,:,:,          self%idx%d ,self%it,1)
-  e => self%mem(:,:,:,          self%idx%e ,self%it,1)
-  p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
-  !-----------------------------------------------------------------------------
   ! Godunov solver
   !-----------------------------------------------------------------------------
   call godunov (self)
@@ -544,9 +531,8 @@ subroutine unsplit(self)
   real(dp):: dtds(3)
   !-----------------------------------------------------------------------------
   call trace%begin ('hd_t%unsplit')
-  call self%extras_t%pre_update       ! Cooling and other extras
   call ctoprim(self)                  ! Primitive variables, sound speeds
-  call self%patch_t%courant_condition (detailed_timer)
+  call self%extras_t%courant_condition (detailed_timer)
   call self%dump (1)                  ! dump, now that dtime is known
   call uslope(self)                   ! TVD slopes
   call trace3d(self)                  ! predictor step
