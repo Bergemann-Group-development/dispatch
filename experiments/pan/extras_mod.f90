@@ -40,7 +40,6 @@ MODULE extras_mod
   USE io_mod
   USE trace_mod
   USE gpatch_mod
-  USE connect_mod
   USE patch_mod
   USE list_mod
   !-----------------------------------------------------------------------------
@@ -48,10 +47,11 @@ MODULE extras_mod
   !-----------------------------------------------------------------------------
   USE forces_mod                                                ! forces
   USE trace_particles_mod                                       ! tracep
-  USE sink_particles_mod                                        ! sinkp
   USE selfgravity_mod                                           ! selfg
   USE cooling_mod                                               ! cool
   USE lagrangian_mod                                            ! move
+  USE sinks_mod                                                 ! sinks
+  USE SN_mod                                                    ! SN
   !-----------------------------------------------------------------------------
   implicit none
   private
@@ -67,6 +67,7 @@ MODULE extras_mod
     type(cooling_t):: cooling                                   ! cool
     type(lagrangian_t):: lagrangian                             ! move
     class(gpatch_t), pointer:: gpatch => null()                 ! keep
+    type(SN_t):: SN                                             ! SN
   contains
     procedure:: pre_init
     procedure:: init
@@ -78,6 +79,7 @@ MODULE extras_mod
     procedure:: check_refine
     procedure:: courant_condition
   end type
+  class(sinks_t), pointer:: sink => null()                      ! sinks
   type(extras_t), public:: extras
 CONTAINS
 
@@ -103,10 +105,13 @@ SUBROUTINE init (self)
   call trace%begin ('extras_t%init')
   call self%forces%init (self%link)                             ! forces
   !allocate (self%trace_particles)                               ! tracep
-  !self%connect%trace_particles => self%trace_particles          ! tracep
   !call self%trace_particles%add (self%link)                     ! tracep
-  call sink_particles%init                                      ! sinkp
+  if (.not.associated(sink)) then                               ! sinks
+    allocate (sink)                                             ! sinks
+    call sink%init                                              ! sinks
+  end if                                                        ! sinks
   call self%cooling%init                                        ! cool
+  call self%SN%init (self%gpatch)                               ! SN
   call trace%end()
 END SUBROUTINE init
 
@@ -122,7 +127,6 @@ SUBROUTINE init_task_list (self, task_list)
   !.............................................................................
   call trace%begin ('extras_t%init_task_list')
   call self%gpatch_t%init_task_list (task_list)                 ! keep
-  call sink_particles%ad_hoc_add (self%link)                    ! sinkp
   call trace%end ()
 END SUBROUTINE init_task_list
 
@@ -136,7 +140,6 @@ SUBROUTINE dealloc (self)
   call self%forces%dealloc                                      ! forces
   !call self%trace_particles%dealloc                             ! tracep
   !deallocate (self%trace_particles)                             ! tracep
-  call sink_particles%dealloc                                   ! sinkp
   call self%gpatch_t%dealloc
   call trace%end()
 END SUBROUTINE dealloc
@@ -146,14 +149,17 @@ END SUBROUTINE dealloc
 !===============================================================================
 SUBROUTINE pre_update (self)
   class(extras_t), target:: self
+  class(patch_t), pointer:: patch
   !.............................................................................
   call trace%begin ('extras_t%pre_update')
   self%gpatch => self                                           ! keep
+  patch => self                                                 ! keep
   call self%forces%pre_update                                   ! forces
-  call sink_particles%pre_update                                ! sinkp
+  call sink%pre_update (patch)                                  ! sinks
   !call self%trace_particles%update                              ! tracep
   call self%selfgravity%pre_update (self)                       ! selfg
   call self%cooling%pre_update (self%gpatch)                    ! cool
+  call self%SN%pre_update (patch, sink)                         ! SN
   call trace%end()
 END SUBROUTINE pre_update
 
@@ -176,12 +182,10 @@ SUBROUTINE output (self)
   class(extras_t):: self
   !.............................................................................
   call self%gpatch_t%output                                     ! keep
-  call sink_particles%output                                    ! sinkp
 END SUBROUTINE output
 
 !===============================================================================
-!> Interface to refinement. This uses the static instance of sink_particles, where
-!> the check_refine may cause creation of dynamic sink_particles_t instances.
+!> Interface to refinement.
 !===============================================================================
 INTEGER function check_refine (self, patch)
   class(extras_t):: self
@@ -190,20 +194,25 @@ INTEGER function check_refine (self, patch)
   !.............................................................................
   gpatch => patch
   check_refine = -1
-  check_refine = max (check_refine, &                            ! sinkp
-    sink_particles%check_refine (gpatch))                        ! sinkp
+  !check_refine = max (check_refine, &                            ! sinkp
+  !  sink_particles%check_refine (gpatch))                        ! sinkp
 END FUNCTION check_refine
 
 !===============================================================================
-!> Intercept courant_condition() call
+!> Intercept courant_condition() calls; make sure the gpatch_t call is the last
 !===============================================================================
 SUBROUTINE courant_condition (self, detailed_timer)
   class(extras_t):: self
   logical, optional:: detailed_timer
   !-----------------------------------------------------------------------------
   call trace%begin ('extras_t%courant_condition')
+!print *, self%u_max, self%dtime, 1
   call self%gpatch_t%courant_condition (detailed_timer)          ! keep
+!print *, self%u_max, self%dtime, 2
   call self%cooling%courant_condition (self%gpatch)              ! cool
+!print *, self%u_max, self%dtime, 3
+  call self%SN%courant_condition                                 ! SN
+!print *, self%u_max, self%dtime, 4
   call trace%end()
 END SUBROUTINE courant_condition
 
