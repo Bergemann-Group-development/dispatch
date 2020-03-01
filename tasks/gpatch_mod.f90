@@ -161,7 +161,7 @@ SUBROUTINE init (self)
     call self%lock%set ('gpatch_t')
     self%time = restart_time
     self%t(self%it) = self%time
-    self%out_next = (int(self%time/io%out_time+1.0e-4)+1)*io%out_time ! add an `eps` to avoid round-off errors
+    self%out_next = io%out_time*(1+nint(self%time/io%out_time))
     self%iout = self%restart+1
     !$omp master
     write (filename,'(a,i5.5,"/")') trim(io%outputname), self%iout

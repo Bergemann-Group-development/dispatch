@@ -246,7 +246,7 @@ SUBROUTINE input (self, ok)
     !---------------------------------------------------------------------------
     ! Update the iout and out_next for continued experiment
     !---------------------------------------------------------------------------
-    self%out_next = (int(self%time/io%out_time)+1)*io%out_time
+    self%out_next = (nint(self%time/io%out_time)+1)*io%out_time
   end if
   !$omp end critical (output_cr)
   call trace%end ()

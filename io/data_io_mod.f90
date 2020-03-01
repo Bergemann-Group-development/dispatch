@@ -284,6 +284,7 @@ SUBROUTINE output (self, patch, experiment_name)
         patch%iout = patch%iout+1
         if (io%out_time==0.0) exit
         patch%out_next = patch%out_next + io%out_time
+!print *, 'data_io_t%output: id, out_next =', patch%id, patch%out_next
         !-----------------------------------------------------------------------
         if (io%verbose > 1) & 
           write (io%output,'(a,i6,3f12.6,3i4)') &
@@ -970,7 +971,7 @@ SUBROUTINE input_nml_v1 (patch)
   patch%dt    = 0d0
   patch%time  = time
   patch%istep = 0
-  patch%out_next = (floor(patch%time/io%out_time+1.0+1e-6))*io%out_time
+  patch%out_next = (nint(patch%time/io%out_time)+1.0)*io%out_time
   patch%guard_zones = guard_zones
   patch%time_derivs = time_derivs
   !$omp end critical (output_cr)
@@ -1052,7 +1053,7 @@ SUBROUTINE input_nml_v2 (patch)
   patch%dt    = dtime
   patch%dtime = dtime
   patch%istep = istep
-  patch%out_next = (floor(patch%time/io%out_time+1.0+1e-6))*io%out_time
+  patch%out_next = (nint(patch%time/io%out_time)+1.0)*io%out_time
   patch%velocity = velocity
   !$omp end critical (output_cr)
   call trace%end()
@@ -1133,7 +1134,7 @@ SUBROUTINE input_nml_v3 (patch)
   patch%dt    = dtime
   patch%dtime = dtime
   patch%istep = istep
-  patch%out_next = (floor(patch%time/io%out_time+1.0+1e-6))*io%out_time
+  patch%out_next = (nint(patch%time/io%out_time)+1.0)*io%out_time
   patch%velocity = velocity
   !$omp end critical (output_cr)
   call trace%end()

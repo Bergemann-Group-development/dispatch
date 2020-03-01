@@ -273,7 +273,9 @@ FUNCTION read_patch_metadata (self, patch) RESULT (ok)
     patch%it       = 1
     patch%new      = 2
     patch%iit(patch%nt) = 2
-    patch%out_next = (ceiling(patch%time/io%out_time+1e-6))*io%out_time
+    patch%out_next = (nint(patch%time/io%out_time+1.0))*io%out_time
+!print *, 'restart_t%read_patch_metadata: id, out_next =', &
+!patch%id, patch%out_next
     !---------------------------------------------------------------------------
     ! Derived
     !---------------------------------------------------------------------------

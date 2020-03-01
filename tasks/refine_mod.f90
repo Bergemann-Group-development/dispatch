@@ -856,10 +856,11 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   child%new   = 2                                    ! slot for new values
   child%iit(child%nt) = child%new                    ! slot for new values
   child%parentid = parent%id                         ! for debugging
-  child%check_refine_next = 0                        ! allow recursive refine
-  child%iout = child%time/io%out_time+1              ! previous output index
-  child%out_next = child%iout*io%out_time            ! next output time
+  child%iout     = parent%iout                       ! parent's output index
+  child%out_next = parent%out_next                   ! next output time
+!print *, 'refine_t%make_child: id, out_next =', child%id, child%out_next
   child%dnload_time = -1.0                           ! for duplicate call test
+  child%check_refine_next = 0                        ! allow recursive refine
   !-----------------------------------------------------------------------------
   ! Check consistency
   !-----------------------------------------------------------------------------

@@ -13,7 +13,7 @@ MODULE sinks_mod
   type, public, extends(task_t):: sinks_t
     real(8):: mass=0.0, radius=8.0
     real(8), allocatable:: pos(:,:)
-    real(8):: SN_time=0.0, previous_time=0d0, dt_min=1e-6
+    real(8):: SN_time=0.0, previous_time=0d0, dt_min=1e-7
   contains
     procedure:: init
     procedure:: pre_update

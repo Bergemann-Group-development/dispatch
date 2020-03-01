@@ -42,7 +42,7 @@ SUBROUTINE input (self, ok)
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%input')
   call data_io%input (self, ok)
-print *, 'experiment%input:', self%id, self%idx%d, self%it, self%fminval(self%idx%d), minval(self%mem(:,:,:,self%idx%d,self%it,1))
+!print *, 'experiment%input:', self%id, self%idx%d, self%it, self%fminval(self%idx%d), minval(self%mem(:,:,:,self%idx%d,self%it,1))
   call trace_end
 END SUBROUTINE input
 
