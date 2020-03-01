@@ -1066,7 +1066,7 @@ END FUNCTION solver_is
 LOGICAL FUNCTION contains1 (self, point)
   class(task_t):: self
   real(8):: point(3)
-  contains1 = all(abs(point-self%position) < 0.5_8*self%size)
+  contains1 = all(abs(point-self%position) <= (0.5_8+tiny(1d0))*self%size)
 END FUNCTION contains1
 
 !===============================================================================
