@@ -106,9 +106,13 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Proceed, referring everywhere to the %new time slot
   !-----------------------------------------------------------------------------
-  call self%extras_t%pre_update
+  call self%hd_t%pre_update
   call self%hd_t%update
-  call self%extras_t%post_update
+  call self%hd_t%post_update
+  !-----------------------------------------------------------------------------
+  ! Unlock %new slot
+  !-----------------------------------------------------------------------------
+  call self%mem_lock(self%new)%unset ('update')
   !-----------------------------------------------------------------------------
   call trace%end ()
 END SUBROUTINE update

@@ -25,7 +25,6 @@ MODULE mhd_mod
   USE trace_mod
   USE mpi_mod
   USE omp_mod
-  USE omp_lock_mod
   USE index_mod
   USE non_ideal_mod
   USE flux_mod
@@ -155,7 +154,7 @@ SUBROUTINE update (self)
   integer, parameter:: ndim=3
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('mhd_t%updateX', itimer=itimer)
+  call trace%begin ('mhd_t%update', itimer=itimer)
   n = self%mesh%ui-self%mesh%li+1
   if (io%smallr > 0) smallr = io%smallr
   if (io%courant > 0) self%courant = io%courant
@@ -169,7 +168,7 @@ SUBROUTINE update (self)
   ! being called.  Set all values to zero initially, in case some loop extends
   ! beyond defined values.
   !-----------------------------------------------------------------------------
-  self%uin  => self%mem(:,:,:,:,self%it ,1)
+  self%uin  => self%mem(:,:,:,:,self%new,1)
   self%unew => self%mem(:,:,:,:,self%new,1)
 
   n = self%mesh%gn
@@ -188,9 +187,9 @@ SUBROUTINE update (self)
   allocate (self%qLT(n(1),self%nv,ndim,n(2),n(3)))              ! self%qLT = 0_dp
   allocate (self%qRB(n(1),self%nv,ndim,n(2),n(3)))              ! self%qRB = 0_dp
   allocate (self%qRT(n(1),self%nv,ndim,n(2),n(3)))              ! self%qRT = 0_dp
-  d => self%mem(:,:,:,          self%idx%d ,self%it,1)
-  e => self%mem(:,:,:,          self%idx%e ,self%it,1)
-  p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
+  d => self%mem(:,:,:,          self%idx%d ,self%new,1)
+  e => self%mem(:,:,:,          self%idx%e ,self%new,1)
+  p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
   !-----------------------------------------------------------------------------
   ! Compute update using second-order Godunov method
   !-----------------------------------------------------------------------------
@@ -273,8 +272,6 @@ SUBROUTINE update (self)
              i1=>self%mesh(1)%ui, j1=>self%mesh(2)%ui, k1=>self%mesh(3)%ui, &
              uin=>self%uin,unew=>self%unew)
 
-  call self%lock%set ('update')
-  unew = uin
   nv3 = 5
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3  ) = &
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3  ) + &
@@ -301,38 +298,38 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Update Bx 
   !-----------------------------------------------------------------------------
-  self%mem(i0:i1, j0:j1, k0:k1, self%idx%bx, self%it, 2) = &
+  self%mem(i0:i1, j0:j1, k0:k1, self%idx%bx, self%new, 2) = &
     ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,2)   - &
       em(i0  :i1  ,j0  :j1  ,k0+1:k1+1,2) ) - &
     ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,3)   - &
       em(i0  :i1  ,j0+1:j1+1,k0  :k1  ,3) )
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) =  &
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) + &
-    self%mem(i0:i1, j0:j1, k0:k1, self%idx%bx, self%it, 2)
+    self%mem(i0:i1, j0:j1, k0:k1, self%idx%bx, self%new, 2)
 
   !-----------------------------------------------------------------------------
   ! Update By 
   !-----------------------------------------------------------------------------
-  self%mem(i0:i1, j0:j1, k0:k1, self%idx%by, self%it, 2) = &
+  self%mem(i0:i1, j0:j1, k0:k1, self%idx%by, self%new, 2) = &
     ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,3)   - &
       em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,3) ) - &
     ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,1)   - &
       em(i0  :i1  ,j0  :j1  ,k0+1:k1+1,1) )
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) = &
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) + &
-    self%mem(i0:i1, j0:j1, k0:k1, self%idx%by, self%it, 2)
+    self%mem(i0:i1, j0:j1, k0:k1, self%idx%by, self%new, 2)
 
   !-----------------------------------------------------------------------------
   ! Update Bz 
   !-----------------------------------------------------------------------------
-  self%mem(i0:i1, j0:j1, k0:k1, self%idx%bz, self%it, 2) = &
+  self%mem(i0:i1, j0:j1, k0:k1, self%idx%bz, self%new, 2) = &
     ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,1)   - &
       em(i0  :i1  ,j0+1:j1+1,k0  :k1  ,1) ) - &
     ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,2)   - &
       em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,2) )
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) = &
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) + &
-    self%mem(i0:i1, j0:j1, k0:k1, self%idx%bz, self%it, 2)
+    self%mem(i0:i1, j0:j1, k0:k1, self%idx%bz, self%new, 2)
 
   if (verbose>0) print *, 'unew', self%id, minval(unew), maxval(unew)
   end associate
@@ -376,7 +373,6 @@ SUBROUTINE update (self)
   call divb_clean2 (self)
   end select
   !.............................................................................
-  call self%lock%unset ('update')
   call trace%end (itimer)
   if (rieman%ndiff > 0) then
     write(io_unit%mpi,*) 'id,ndiff', self%id, rieman%ndiff, rieman%nsolu
@@ -406,9 +402,9 @@ SUBROUTINE divb_clean0 (self)
   ui = self%mesh%ui
   lb = self%mesh%lb
   ub = self%mesh%ub
-  b1 => self%mem(:,:,:,self%idx%bx,self%it,1)
-  b2 => self%mem(:,:,:,self%idx%by,self%it,1)
-  b3 => self%mem(:,:,:,self%idx%bz,self%it,1)
+  b1 => self%mem(:,:,:,self%idx%bx,self%new,1)
+  b2 => self%mem(:,:,:,self%idx%by,self%new,1)
+  b3 => self%mem(:,:,:,self%idx%bz,self%new,1)
   do iter=1,divb_iter
     call iter_x
     call iter_y
@@ -517,9 +513,9 @@ SUBROUTINE divb_clean1 (self)
   integer:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%divb_clean1', itimer=itimer)
-  bx => self%mem(:,:,:,self%idx%bx,self%it,1)
-  by => self%mem(:,:,:,self%idx%by,self%it,1)
-  bz => self%mem(:,:,:,self%idx%bz,self%it,1)
+  bx => self%mem(:,:,:,self%idx%bx,self%new,1)
+  by => self%mem(:,:,:,self%idx%by,self%new,1)
+  bz => self%mem(:,:,:,self%idx%bz,self%new,1)
   allocate (divb(self%mesh(1)%gn,self%mesh(2)%gn,self%mesh(3)%gn))
   divb = ddup(bx,1) + ddup(by,2) + ddup(bz,3)
   bx = bx + eps*dddn(divb,1)
@@ -559,9 +555,9 @@ SUBROUTINE divb_clean2 (self)
   integer:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%divb_clean2', itimer=itimer)
-  bx => self%mem(:,:,:,self%idx%bx,self%it,1)
-  by => self%mem(:,:,:,self%idx%by,self%it,1)
-  bz => self%mem(:,:,:,self%idx%bz,self%it,1)
+  bx => self%mem(:,:,:,self%idx%bx,self%new,1)
+  by => self%mem(:,:,:,self%idx%by,self%new,1)
+  bz => self%mem(:,:,:,self%idx%bz,self%new,1)
   l = self%mesh%lb
   u = self%mesh%ub-1
   !--- x-direction -------------------------------------------------------------
@@ -1182,7 +1178,7 @@ SUBROUTINE trace3d(self)
   !-----------------------------------------------------------------------------
   lo = self%mesh%lo-1
   uo = self%mesh%uo+1
-  d => self%mem(:,:,:,self%idx%d,self%it,1)
+  d => self%mem(:,:,:,self%idx%d,self%new,1)
   do k=lo(3),uo(3)
   do j=lo(2),uo(2)
   if (allocated(self%force_per_unit_mass)) then
@@ -2075,14 +2071,14 @@ FUNCTION gas_pressure (self) RESULT (pg)
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
   integer :: l(3), u(3)
   !-----------------------------------------------------------------------------
-  associate (d  => self%mem(:,:,:,self%idx%d ,self%it,1), &
-             px => self%mem(:,:,:,self%idx%px,self%it,1), &
-             py => self%mem(:,:,:,self%idx%py,self%it,1), &
-             pz => self%mem(:,:,:,self%idx%pz,self%it,1), &
-             bx => self%mem(:,:,:,self%idx%bx,self%it,1), &
-             by => self%mem(:,:,:,self%idx%by,self%it,1), &
-             bz => self%mem(:,:,:,self%idx%bz,self%it,1), &
-             e  => self%mem(:,:,:,self%idx%e ,self%it,1))
+  associate (d  => self%mem(:,:,:,self%idx%d ,self%new,1), &
+             px => self%mem(:,:,:,self%idx%px,self%new,1), &
+             py => self%mem(:,:,:,self%idx%py,self%new,1), &
+             pz => self%mem(:,:,:,self%idx%pz,self%new,1), &
+             bx => self%mem(:,:,:,self%idx%bx,self%new,1), &
+             by => self%mem(:,:,:,self%idx%by,self%new,1), &
+             bz => self%mem(:,:,:,self%idx%bz,self%new,1), &
+             e  => self%mem(:,:,:,self%idx%e ,self%new,1))
   if (isothermal) then
     pg = d*self%csound**2
   else
@@ -2106,8 +2102,8 @@ SUBROUTINE gravitational_force (self)
   associate (l => self%li, u => self%ui)
   wtp1 = 0.50 * 4.0 / 3.0 / self%ds
   wtm1 = 0.25 * 1.0 / 3.0 / self%ds
-  phi => self%mem(:,:,:,self%idx%phi,self%it,1)
-  d   => self%mem(:,:,:,self%idx%d,self%it,1)
+  phi => self%mem(:,:,:,self%idx%phi,self%new,1)
+  d   => self%mem(:,:,:,self%idx%d,self%new,1)
   et  => self%mem(:,:,:,self%idx%e,self%new,1)
   p   => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
   allocate (gradphi1(self%gn(1),self%gn(2),self%gn(3)), &
