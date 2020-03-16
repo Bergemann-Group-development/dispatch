@@ -10,9 +10,24 @@ MPI  = mpi
 MOD  = mod
 DEFS = -D$(PREC) -DDISPATCH
 SOLVER     ?= VOID
-RT_SOLVER  ?= VOID
 PREC       ?= SINGLE
-RT_PREC    ?= RT_SINGLE
+
+#############################################################################
+# Default target
+default: dispatch.x
+
+#############################################################################
+# 1st part of Makefile macro info
+info::
+	@echo "Selected Makeflags and options:"
+	@echo "$B  HOST        $N= $(HOST)"
+	@echo "$B  COMPILER    $N= $(COMPILER)"
+	@echo "$B  MPI         $N= $(MPI)"
+	@echo "$B  PATCH       $N= $(PATCH)"
+	@echo "$B  VPATH       $N= $(VPATH)"
+	@echo "$B  SOLVER      $N= $(SOLVER)"
+	@echo "$B  OPACITY     $N= $(OPACITY)"
+	@echo "$B  EOS         $N= $(EOS)"
 
 #############################################################################
 # sinclude files that are likely to change $(COMPILER)
@@ -197,19 +212,8 @@ doxygen: ../doc/doxyfile
 	@doxygen ../doc/doxyfile >& /dev/null
 
 #############################################################################
-# Output info about compiler options
-info:
-	@echo "Selected Makeflags and options:"
-	@echo "$B  HOST        $N= $(HOST)"
-	@echo "$B  COMPILER    $N= $(COMPILER)"
-	@echo "$B  MPI         $N= $(MPI)"
-	@echo "$B  PATCH       $N= $(PATCH)"
-	@echo "$B  VPATH       $N= $(VPATH)"
-	@echo "$B  SOLVER      $N= $(SOLVER)"
-	@echo "$B  RT_SOLVER   $N= $(RT_SOLVER)"
-	@echo "$B  OPACITY     $N= $(OPACITY)"
-	@echo "$B  EOS         $N= $(EOS)"
-	@echo "$B  PROG        $N= $(PROG).o"
+# 2nd part of Makefile macro info
+info::
 	@echo "$B  OPTS        $N= $(OPTS)"
 	@echo "$B  OPT         $N= $(OPT)"
 	@echo "$B  HW          $N= $(HW)"
@@ -223,6 +227,7 @@ info:
 	@echo "$B  LIBS        $N= $(LIBS)"
 	@echo "$B  BUILD       $N= $(BUILD)"
 	@echo "$B  EXEC        $N= $(EXEC)"
+
 compiler:
 	@echo "$(COMPILER)"
 

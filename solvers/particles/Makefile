@@ -1,6 +1,11 @@
 # Append to VPATH
 VPATH := $(VPATH):$(TOP)/solvers/particles:$(TOP)/solvers/particles/$(PARTICLE_SOLVER)
 
+info::
+	@echo "$B  PARTICLE_SOLVER $N= $(PARTICLE_SOLVER)"
+
+sinclude $(TOP)/solvers/particles/$(PARTICLE_SOLVER)/Makefile
+
 # Dependencies
 particle_history_mod.o  : io_mod.o trace_mod.o
 particle_patch_mod.o    : io_mod.o trace_mod.o particle_solver_mod.o dll_mod.o particle_history_mod.o

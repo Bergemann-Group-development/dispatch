@@ -1,9 +1,13 @@
 
 sinclude $(TOP)/solvers/$(SOLVER)/Makefile
-sinclude $(TOP)/solvers/particles/Makefile
-sinclude $(TOP)/solvers/rt/Makefile
 sinclude $(TOP)/solvers/poisson/Makefile
-sinclude $(TOP)/solvers/particles/Makefile
+
+ifneq ($(RT_SOLVER),)
+  sinclude $(TOP)/solvers/rt/Makefile
+endif
+ifneq ($(PARTICLE_SOLVER),)
+  sinclude $(TOP)/solvers/particles/Makefile
+endif
 
 VPATH := $(VPATH):$(TOP)/solvers
 STAGGER ?= stagger_2nd.o

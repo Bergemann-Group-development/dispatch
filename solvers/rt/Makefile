@@ -1,7 +1,17 @@
+# Append the rt VPATH, in case there are shared modules
 VPATH := $(VPATH):$(TOP)/solvers/rt
 
+# Prepend RT_SOLVER path, allowing sharing of modules
+VPATH := $(TOP)/solvers/rt/$(RT_SOLVER):$(VPATH)
+
+# Add to rules for "make info"
+RT_PREC ?= RT_SINGLE
+info::
+	@echo "$B  RT_SOLVER   $N= $(RT_SOLVER)"
+	@echo "$B  RT_PREC     $N= $(RT_PREC)"
+
+# Source the RT_SOLVER Makefile
 sinclude $(TOP)/solvers/rt/$(RT_SOLVER)/Makefile
 
-rt_setup_mod.o      : rt_mod.o task_list_mod.o data_io_mod.o io_unit_mod.o omp_mod.o \
-                      link_mod.o task_mod.o patch_mod.o solver_mod.o trace_mod.o     \
-                      bits_mod.o nbors_mod.o
+# Dependencies on shared RT modules
+radau_mod.o         :
