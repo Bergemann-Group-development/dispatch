@@ -202,7 +202,7 @@ SUBROUTINE send (self, rank, tag)
   !$omp critical (mpi_cr)
   self%nreq = self%nreq+1                                 ! count reqs
   self%reqs(self%nreq) = req                              ! collect reqs
-  self%ranks(self%nseq) = rank                            ! collect ranks
+  self%ranks(self%nreq) = rank                            ! collect ranks
   !$omp end critical (mpi_cr)
 #endif
   !$omp atomic
@@ -220,6 +220,7 @@ SUBROUTINE request (self, any)
   !-----------------------------------------------------------------------------
   ! Make a request, optionally allowing any source
   !-----------------------------------------------------------------------------
+#ifdef MPI
   call trace%begin ('mesg_t%request')
   if (present(any)) then
     self%sender = MPI_ANY_SOURCE
@@ -253,6 +254,7 @@ SUBROUTINE request (self, any)
   !$omp atomic
   timer%n_recv = timer%n_recv + 1_8
   call trace%end ()
+#endif
 END SUBROUTINE request
 
 !===============================================================================
@@ -517,6 +519,7 @@ SUBROUTINE add (self, mesg)
   class(mesg_list_t):: self
   class(mesg_t), pointer:: mesg
   !.............................................................................
+#ifdef MPI
   nullify (mesg%next)                           ! since mesg will be tail
   if (associated(self%head)) then               ! if the list is non-empty
     self%tail%next => mesg                      ! add to the tail
@@ -542,6 +545,7 @@ SUBROUTINE add (self, mesg)
     write (io_unit%log,*) trim(self%name)//' added mesg', mesg%id, self%n
     flush (io_unit%log)
   end if
+#endif
 END SUBROUTINE add
 
 !===============================================================================
