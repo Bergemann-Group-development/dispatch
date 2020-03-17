@@ -210,7 +210,7 @@ def unigrid_plane(sn,**kw):
 
 
 def amr_plane(sn,iv='d',z=0.5,log=False,mesh=False,ident=False,cmap=None,
-              title=None,verbose=0):
+              title=None,zero=False,vmin=None,vmax=None,verbose=0):
     def contains(p,z):
         return p.level >= 6 and abs(z-p.position[2]) <= p.size[2]/2
     def outline(e):
@@ -235,14 +235,19 @@ def amr_plane(sn,iv='d',z=0.5,log=False,mesh=False,ident=False,cmap=None,
             f=np.exp(f)
         return f
     pp=[p for p in sn.patches if contains(p,z)]
-    vmin=1e20
-    vmax=0.0
+    vmin1=1e20
+    vmax1=0.0
     for p in pp:
         d=interpolate(p,iv,z)
-        vmin=min(vmin,d.min())
-        vmax=max(vmax,d.max())
+        vmin1=min(vmin1,d.min())
+        vmax1=max(vmax1,d.max())
         if verbose>0:
             print(p.id,d.min(),d.max())
+    if vmin is None: vmin=vmin1
+    if vmax is None: vmax=vmax1
+    if zero:
+        vmax = max(abs(vmax),abs(vmin))
+        vmin = -vmax
     pl.xlim(0,1); pl.ylim(0,1)
     if log:
         vmin=np.log10(vmin)
