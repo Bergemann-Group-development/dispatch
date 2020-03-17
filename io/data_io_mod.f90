@@ -716,7 +716,7 @@ SUBROUTINE output_nml_v2 (patch, append)
     write (io_unit%nml1, io_nml)
     write (io_unit%nml1, snapshot_nml)
     call patch%idx%output (io_unit%nml1)
-    call file_append (io_unit%nml, io_unit%nml1)
+    !call file_append (io_unit%nml, io_unit%nml1)
     flush (io_unit%nml1)
     if (io%debug(2)) write(io%output,'(a,3x,"time:",2f13.6)') &
       ' data_io_t%output_nml: '//trim(filename), patch%out_next, patch%time
@@ -862,7 +862,7 @@ SUBROUTINE output_nml_v3 (patch, append)
     write (io_unit%nml1, io_nml)
     write (io_unit%nml1, snapshot_nml)
     call patch%idx%output (io_unit%nml1)
-    call file_append (io_unit%nml, io_unit%nml1)
+    !call file_append (io_unit%nml, io_unit%nml1)
     flush (io_unit%nml1)
     if (io%debug(2)) write(io%output,'(a,3x,"time:",2f13.6)') &
       ' data_io_t%output_nml: '//trim(filename), patch%out_next, patch%time
