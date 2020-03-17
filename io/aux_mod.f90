@@ -45,9 +45,8 @@ MODULE aux_mod
     procedure:: output => output_item
   end type
   integer:: version=1, verbose=0, uniq=200, iout_prv=-1
-  logical:: first_time=.true., second_time=.true., on=.false., do_aux=.true.
+  logical:: first_time=.true.
   character(len=32), allocatable:: select(:)
-  !type(aux_t), public:: aux
 CONTAINS
 
 !===============================================================================
@@ -187,9 +186,9 @@ SUBROUTINE output_aux (self, iout, id, singlefile)
   integer:: i
   !-----------------------------------------------------------------------------
   ! Make sure only one output runs at a time, so there is no interference of
-  ! reading stdin and deciding of to write messages only once
+  ! reading stdin and deciding if to write messages only once
   !-----------------------------------------------------------------------------
-  if (.not. do_aux) &
+  if (self%n == 0) &
     return
   call trace%begin ('aux_t%output')
   !$omp critical (aux_cr)
@@ -218,9 +217,9 @@ SUBROUTINE output_aux (self, iout, id, singlefile)
       end if
     end do
     if (ok) then
-      if (verbose > 0 .or. iout > iout_prv) &
-        write (stdout,'(a,i5,2x,a)') 'aux_t%output: snapshot =', &
-          iout, trim(item%name)
+      if (verbose > 1 .or. iout > iout_prv) &
+        write (stdout,'(a,a,2x,a)') &
+          'aux_t%output: ', trim(filename), trim(item%name)
       call item%output (self%unit) 
     end if
     end select
@@ -228,7 +227,6 @@ SUBROUTINE output_aux (self, iout, id, singlefile)
   end do
   iout_prv = iout
   close (self%unit)
-  do_aux=on
   !$omp end critical (aux_cr)
   call trace%end()
 END SUBROUTINE output_aux
@@ -238,10 +236,10 @@ SUBROUTINE prepare (self, iout)
   class(aux_t):: self
   integer:: iout
   !.............................................................................
-  namelist /aux_params/ on, select, verbose
+  namelist /aux_params/ verbose, select
   integer:: iostat, i
   !-----------------------------------------------------------------------------
-  call trace%begin ('aux_t%open')
+  call trace%begin ('aux_t%prepare')
   if (self%unit < 0) then
     !---------------------------------------------------------------------------
     ! The first time we acquire a unique unit number, and allocate select
@@ -253,13 +251,11 @@ SUBROUTINE prepare (self, iout)
       select(:) = ''
       rewind (stdin)
       read (stdin, aux_params, iostat=iostat)
-      write (stdout,'(a,/,1x,a)') '&AUX_PARAMS', 'SELECT='
-      do i=1,max_select
-        if (trim(select(i)) /= '') then
-          write (stdout,*) "'"//trim(select(i))//"',"
-        end if
-      end do
-      write (stdout,*) '/'
+      call io%namelist_warning ('aux_params', iostat)
+      !write (stdout, aux_params)       ! for tests
+      call write_namelist (stdout)
+      if (io_unit%master) &
+        call write_namelist (io%namelist)
     end if
   else
     !---------------------------------------------------------------------------
@@ -271,6 +267,24 @@ SUBROUTINE prepare (self, iout)
     end if
   end if
   call trace%end()
+contains
+  !=============================================================================
+  ! Emulate namelist output; ifort prints out text items without quotation
+  ! marks, which causes problems in the Python reader
+  !=============================================================================
+  subroutine write_namelist (unit)
+    integer:: unit
+    write (unit,'(a)') '&AUX_PARAMS'
+    write (unit,'(a,i10,",")') ' VERBOSE=', verbose
+    write (unit,'(a,$)') ' SELECT='
+    do i=1,max_select
+      if (trim(select(i)) /= '') then
+        write (unit,'(a,$)') "'"//trim(select(i))//"', "
+      end if
+    end do
+    write (unit,'(/a)') '/'
+    flush (unit)
+  end subroutine write_namelist
 END SUBROUTINE prepare
 
 !===============================================================================
