@@ -80,7 +80,7 @@ sinclude $(CONFIG)/compiler/$(COMPILER)/$(HOST)/$(OPTS).mkf
 ifeq ($(OPTS),phi)
   EXEC := $(EXEC).mic
 endif
-default: build $(EXEC)
+default: $(BUILD) $(EXEC)
 
 #############################################################################
 # Sources directories are searched in this exact order (VPATH inside Makefile)
