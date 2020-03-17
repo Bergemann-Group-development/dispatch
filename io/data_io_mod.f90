@@ -17,7 +17,6 @@
 MODULE data_io_mod
   USE io_mod
   USE os_mod
-  !USE aux_mod
   USE mpi_mod
   USE timer_mod
   USE omp_mod
@@ -499,21 +498,23 @@ SUBROUTINE output_nml_v1 (patch, append)
   character(len=128)   :: filename
   character(len=128), save:: filename1='', filename2=''
   integer              :: ioformat, id, iout, istep, mesh_type, level,nv, nt, &
-                          nw, ntotal, format
+                          nw, ntotal, format, nml_version
   integer, dimension(3):: ncell, li, ui, n, ng, gn, l, u
   real                 :: gamma, quality
   real(8)              :: time, dtime, out_next, out_time, ms
   real(8), dimension(3):: size, position, ds, box, velocity, &
                           llc_nat, llc_cart, centre_nat
   integer              :: time_derivs
+  integer              :: omp_nthreads, mpi_size
   logical              :: guard_zones, no_mans_land, periodic(3)
   integer, save        :: last_snapshot=-1
   character(len=16)    :: kind, eos, opacity, method
-  namelist /io_nml/ format, ntotal, out_time, guard_zones, time_derivs, method
+  namelist /io_nml/ format, ntotal, out_time, guard_zones, time_derivs, method, &
+    nml_version
   namelist /snapshot_nml/ ioformat, iout, time, ntotal, istep, mesh_type, &
     position, size, ds, box, velocity, level, quality, gamma, ncell, li, ui, n, &
     ng, gn, nv, nt, nw, kind, eos, opacity, periodic, guard_zones, time_derivs, &
-    no_mans_land
+    omp_nthreads, mpi_size, no_mans_land
   namelist /patch_nml/ id, time, position, size, level, dtime
   !-----------------------------------------------------------------------------
   ! Write a small text file with info
@@ -524,6 +525,7 @@ SUBROUTINE output_nml_v1 (patch, append)
   !-----------------------------------------------------------------------------
   format      = io%format
   ioformat    = io%format
+  nml_version = io%nml_version
   ntotal      = io%ntotal
   out_time    = io%out_time
   guard_zones = io%guard_zones
@@ -571,6 +573,8 @@ SUBROUTINE output_nml_v1 (patch, append)
   periodic     = patch%periodic
   if (mpi%master .and. patch%iout > last_snapshot) then
     last_snapshot = patch%iout
+    mpi_size = mpi%size
+    omp_nthreads = omp%nthreads
     write (filename,'(a,i5.5,"/snapshot.nml")') trim(io%outputname), patch%iout
     if (filename /= filename1) then
       write(io_unit%log,'(a,i5,2x,2a)') &
@@ -632,13 +636,15 @@ SUBROUTINE output_nml_v2 (patch, append)
   real(8), dimension(3):: size, position, ds, box, velocity, &
                           llc_nat, llc_cart, centre_nat
   integer              :: time_derivs
+  integer              :: omp_nthreads, mpi_size
   logical              :: guard_zones, no_mans_land, periodic(3)
   integer, save        :: last_snapshot=-1
   character(len=32)    :: kind, eos, opacity, method
-  namelist /io_nml/ format, ntotal, out_time, guard_zones, time_derivs, method, nml_version
-  namelist /snapshot_nml/ ioformat, iout, time, ntotal, box, li, ui, ng, gn, &
+  namelist /io_nml/ format, ntotal, out_time, guard_zones, time_derivs, method, &
+    nml_version
+  namelist /snapshot_nml/ ioformat, iout, time, ntotal, box, li, ui, ng, gn, n, &
     nv, nt, gamma, eos, opacity, periodic, guard_zones, time_derivs, no_mans_land, &
-    mesh_type
+    omp_nthreads, mpi_size, mesh_type
   namelist /patch_nml/ id, position, size, level, dtime, istep, ds, ncell, n, nw, &
     velocity, quality, mesh_type, kind
   integer, allocatable :: nbor_ids(:)
@@ -701,6 +707,8 @@ SUBROUTINE output_nml_v2 (patch, append)
   no_mans_land = patch%no_mans_land
   periodic     = patch%periodic
   if (mpi%master .and. patch%iout > last_snapshot) then
+    mpi_size = mpi%size
+    omp_nthreads = omp%nthreads
     last_snapshot = patch%iout
     write (filename,'(a,i5.5,"/snapshot.nml")') trim(io%outputname), patch%iout
     if (filename /= filename1) then
@@ -759,7 +767,7 @@ SUBROUTINE output_nml_v3 (patch, append)
   character(len=128)   :: filename
   character(len=128), save:: filename1='', filename2=''
   integer              :: ioformat, id, iout, istep, mesh_type, level,nv, nt, &
-                          nw, ntotal, format
+                          nw, ntotal, format, nml_version
   integer, dimension(3):: ncell, li, ui, n, ng, gn, l, u
   real                 :: gamma, quality
   real(8)              :: time, dtime, out_next, out_time, ms
@@ -767,15 +775,17 @@ SUBROUTINE output_nml_v3 (patch, append)
   real(8), dimension(3):: size, position, ds, box, velocity, &
                           llc_nat, llc_cart, centre_nat
   integer              :: time_derivs, now, prv
+  integer              :: omp_nthreads, mpi_size
   integer(8)           :: task_offset
   logical              :: guard_zones, no_mans_land, periodic(3)
   integer, save        :: last_snapshot=-1
   character(len=16)    :: kind, eos, opacity, method
-  namelist /io_nml/ format, ntotal, out_time, guard_zones, time_derivs, method
+  namelist /io_nml/ format, ntotal, out_time, guard_zones, time_derivs, method, &
+    nml_version
   namelist /snapshot_nml/ ioformat, iout, time, ntotal, istep, mesh_type, &
     position, size, ds, box, velocity, level, quality, gamma, ncell, li, ui, n, &
     ng, gn, nv, nt, nw, kind, eos, opacity, periodic, guard_zones, time_derivs, &
-    no_mans_land
+    omp_nthreads, mpi_size, no_mans_land
   namelist /patch_nml/ id, time, position, size, level, dtime, times, dtimes, &
     task_offset
   integer, allocatable :: nbor_ids(:)
@@ -790,6 +800,7 @@ SUBROUTINE output_nml_v3 (patch, append)
   !-----------------------------------------------------------------------------
   format      = io%format
   ioformat    = io%format
+  nml_version = io%nml_version
   ntotal      = io%ntotal
   out_time    = io%out_time
   guard_zones = io%guard_zones
@@ -847,6 +858,8 @@ SUBROUTINE output_nml_v3 (patch, append)
   no_mans_land = patch%no_mans_land
   periodic     = patch%periodic
   if (mpi%master .and. patch%iout > last_snapshot) then
+    mpi_size = mpi%size
+    omp_nthreads = omp%nthreads
     last_snapshot = patch%iout
     write (filename,'(a,i5.5,"/snapshot.nml")') trim(io%outputname), patch%iout
     if (filename /= filename1) then
@@ -941,10 +954,11 @@ SUBROUTINE input_nml_v1 (patch)
   logical, save        :: guard_zones, no_mans_land, periodic(3)
   character(len=16)    :: kind, eos, opacity, method
   integer              :: iostat
+  integer              :: omp_threads, mpi_size
   namelist /snapshot_nml/ ioformat, iout, time, ntotal, istep, mesh_type, &
     position, size, ds, box, velocity, level, quality, gamma, ncell, li, ui, n, &
     ng, gn, nv, nt, nw, kind, eos, opacity, periodic, guard_zones, time_derivs, &
-    no_mans_land
+    omp_threads, mpi_size, no_mans_land
   !-----------------------------------------------------------------------------
   real(8), save        :: origin(3)
   integer, save        :: dims(3), mpi_dims(3), per_rank(3)
@@ -997,8 +1011,9 @@ SUBROUTINE input_nml_v2 (patch)
   logical, save        :: guard_zones, no_mans_land, periodic(3)
   character(len=32)    :: kind, eos, opacity, method
   integer              :: iostat
-  namelist /snapshot_nml/ ioformat, iout, time, ntotal, box, li, ui, ng, gn, &
-    nv, nt, gamma, eos, opacity, periodic, guard_zones, time_derivs, no_mans_land
+  namelist /snapshot_nml/ ioformat, iout, time, ntotal, box, li, ui, ng, &
+    gn, n, nv, nt, gamma, eos, opacity, periodic, guard_zones, time_derivs, &
+    no_mans_land
   !-----------------------------------------------------------------------------
   real(8), save        :: origin(3)
   integer, save        :: dims(3), mpi_dims(3), per_rank(3)
@@ -1078,8 +1093,9 @@ SUBROUTINE input_nml_v3 (patch)
   logical, save        :: guard_zones, no_mans_land, periodic(3)
   character(len=32)    :: kind, eos, opacity, method
   integer              :: iostat
-  namelist /snapshot_nml/ ioformat, iout, time, ntotal, box, li, ui, ng, gn, &
-    nv, nt, gamma, eos, opacity, periodic, guard_zones, time_derivs, no_mans_land
+  namelist /snapshot_nml/ ioformat, iout, time, ntotal, box, li, ui, ng, &
+    gn, n, nv, nt, gamma, eos, opacity, periodic, guard_zones, time_derivs, &
+    no_mans_land
   !-----------------------------------------------------------------------------
   real(8), save        :: origin(3)
   integer, save        :: dims(3), mpi_dims(3), per_rank(3)

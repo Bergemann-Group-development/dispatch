@@ -929,8 +929,11 @@ class snapshot():
             print('add patches as a list of dicts')
         self.patches=[]
         files=[f for f in os.listdir(datadir) if f.endswith('_patches.nml')]
+        
+        # make sure to ignore left-over *_patches.nml from other runs
         save=[]
-        for f in files:
+        for i in range(self.mpi_size):
+            f = files[i]
             # split name to get rank number
             rank=np.int(f.split('_')[1])
             # add parameter groups from data/run/NNNNN/*patches.nml
