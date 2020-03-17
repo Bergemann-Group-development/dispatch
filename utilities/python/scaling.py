@@ -11,11 +11,17 @@ class cgs:
     kms=1e+5
     mu=2.
     m_u=1.6726e-24
+    m_e=9.109e-28
     k_b=1.3807e-16
+    k_B=k_b
     h_p=6.6260e-27
+    h_P=h_p
     e=4.8032e-10
     c=2.9979e10
     stefan=5.6704e-8
+    m_e=9.109e-31
+    pc=3e18
+    AU=1.5e13
 
 class SI:
     name='SI'
@@ -28,11 +34,15 @@ class SI:
     kms=1e+3
     mu=2.
     m_u=1.6726e-27
+    m_e=9.109e-31
     k_b=1.3807e-23
+    k_B=k_b
     h_p=6.62606e-34
     e=1.6022e-19
     c=2.9979e8
     stefan=5.6704e-5
+    pc=3e16
+    AU=1.5e11
 
 def scaling(type='ISM',units=cgs,verbose=0,mu=2):
     '''
