@@ -123,7 +123,7 @@ def _add_nml_list_to(obj,nml_list,verbose=0):
             _add_nml_to(obj,nml_dict)
         else:
             name=key.replace('_nml','').replace('_params','')
-            if (verbose==1):
+            if (verbose>1):
                 print('    adding property',name)
             setattr(obj,name,_param())
             subobj=getattr(obj,name)
@@ -825,7 +825,10 @@ class snapshot():
         except:
             pass
         self.copy=copy
+
         # Start time measurement
+        if verbose>1:
+            print('finding datadir and rundir')
         timer.start()
         rundir=_dir(data,run)
         if not os.path.isdir(rundir):
@@ -840,8 +843,10 @@ class snapshot():
             return None
 
         # add properties from params.nml
+        if verbose>1:
+            print('adding properties from params.nml')
         file=_file(rundir,'params.nml')
-        if verbose>0:
+        if verbose>2:
             print('reading file',file)
         self.params_list=f90nml.read(file)
         _add_nml_list_to(self,self.params_list,verbose=verbose)
@@ -859,17 +864,24 @@ class snapshot():
                 print('fixed by re-reading a filtered copy of the file')
                 os.remove(tmp)
 
+        # Finding snapshot files
+        if verbose>1:
+            print('finding snapshot.nml files')
         files=[f for f in os.listdir(datadir) if f.endswith('snapshot.nml')]
-        if verbose > 1:
+        if verbose>1:
             print('number of snapshot.nml files in {}: {}'.format(
                     datadir,len(files)))
         if len(files)==0:
             print('directory {} has no snapshot.nml file'.format(datadir))
             return None
+
+        #
+        if verbose>1:
+            print('reading snapshot.nml files')
         for f in files:
             # add parameter groups from data/run/NNNNN/*snapshot.nml
             file=_file(datadir,f)
-            if verbose>0:
+            if verbose>2:
                 print('reading file',file)
             nml_list=f90nml.read(file)
             self.nml_list=nml_list
@@ -894,6 +906,8 @@ class snapshot():
         timer.add('snapshot metadata')
 
         # Ignore a missing snapshots.dat, for methods that don't have it
+        if verbose>1:
+            print('checking if there is a snapshots.dat')
         try:
             self.datafile=_file(rundir,'snapshots.dat')
             self.datafiled=open(self.datafile,'rb')
@@ -903,12 +917,16 @@ class snapshot():
 
         # "dress" the snapshot with attributes from snapshot_nml, where
         # lists are turned into arrays
+        if verbose>1:
+            print('dress the snapshot with attributes from snapshot_nml')
         for k,v in self.dict.items():
             if isinstance(v,list):
                 self.dict[k]=np.array(v)
         timer.add('lists-to-arrays')
 
         # add patches as a list of dicts
+        if verbose>1:
+            print('add patches as a list of dicts')
         self.patches=[]
         files=[f for f in os.listdir(datadir) if f.endswith('_patches.nml')]
         save=[]
