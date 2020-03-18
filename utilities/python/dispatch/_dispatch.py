@@ -422,16 +422,17 @@ def _var(patch,filed,snap,verbose=0,copy=None):
             v=v[:,:,:,i4]
         return internal(v,all=all)
 
-    def var(iv,all=False,copy=None,i4=0,verbose=0):
+    def var(iv,all=False,copy=None,i4=0,verbose=2):
         """
-        Special logic to calculate velocities from momenta on the fly.
+        Evaluate arguments of varuious forms, including expressions.
+
         If the data is in spherical or cylindrical coords., then it is the angular
         momentum in the snapshot, and thus the division by metric factors.
 
         The `np.newaxis` bits are for broadcasting the metric factors to the right shape
         before multiplying by the data.
-
         """
+        print('iv:',iv)
         if type(iv)==int:
             assert(iv in patch.keys['numbers']),'variable index unknown'
 
@@ -446,24 +447,24 @@ def _var(patch,filed,snap,verbose=0,copy=None):
         is_st = patch.kind[0:4] == 'zeus' or patch.kind[0:7] == 'stagger'
         v = None
 
-        """ Check if the index is numeric and corresponds to a cached array """
-        if hasattr(patch,'data'):
-            if iv in patch.data.keys():
+        # Check if the index corresponds to a cached array
+        if iv in patch.data.keys():
                 v=patch.data[iv]
 
-        """ Check if the key corresponds to aux data """
-        if hasattr(patch,'aux'):
-            if iv in patch.aux.vars.keys():
-                v=patch.aux.var(iv)
+        # or an aux item
+        elif iv in patch.aux.vars.keys():
+                print(iv,'in keys')
+                v=patch.aux.vars[iv]['v']
+                print(v.shape)
 
-        # Numbers
-        if iv in patch.keys['numbers']:
+        # or a numeric index
+        elif iv in patch.keys['numbers']:
             if verbose:
                 print('iv is a number:',iv)
             if iv >= 0:
                 v=mem(iv,verbose=verbose)
 
-        # Known variables
+        # or a known variables
         elif iv in patch.keys['known']:
             if verbose:
                 print('iv is a known name:',iv)
@@ -541,14 +542,14 @@ def _var(patch,filed,snap,verbose=0,copy=None):
                 if hasattr(snap,'scaling'):
                     v=v*snap.scaling.temp
 
-       # Letters
+        # or a letter index
         elif iv in patch.keys['letters']:
             if verbose:
                 print('iv is a letter:',iv)
             iv=patch.idx.dict[iv]
             v=mem(iv)
 
-        # Unknown expression
+        # if not, treat it as an expression
         else:
             if verbose:
                 print('unknown expression',iv)
@@ -618,6 +619,8 @@ class _patch():
         timer.add('_var')   # 1.8s
             
         """ add a comprehensive set of variable keys """
+        self.aux={}
+        self.data={}
         self.keys={}
         self.keys['letters']=list(snap.idx.dict.keys())
         timer.add('letters')
@@ -626,19 +629,19 @@ class _patch():
         self.keys['known']=['d','lnd','logd','ux','uy','uz','u1','u2','u3',
                  'ee','E','T','eth','ekin']
         timer.add('known')
-        # attach an aux filaname, if it exists
+
+        # attach an aux filaname, if one exists for this task
         auxfile='{:05d}.aux'.format(id)
         #timer.add('_patch(9c))')
         auxfile=_pathjoin(snap.datadir,auxfile)
         timer.add('auxfile')
-        if 1:
-            if os.path.isfile(auxfile):
-                self.auxfile=auxfile
-                self.aux=aux(id=id,io=snap.iout,file=auxfile)
-                self.keys['aux']=self.aux.vars.keys()
-            elif verbose>1:
-                print(auxfile,'does not exist')
-            timer.add('read-aux')
+        if os.path.isfile(auxfile):
+            self.auxfile=auxfile
+            self.aux=aux(id=id,io=snap.iout,file=auxfile)
+            self.keys['aux']=self.aux.vars.keys()
+        elif verbose>1:
+            print(auxfile,'does not exist')
+        timer.add('read-aux')
         
         """ Now collect all keys in a single list """
         all=[]
@@ -661,7 +664,6 @@ class _patch():
 
     def cache(self,all=False,verbose=0):
         setattr(self,'o',_param())
-        self.data={}
         for k,v in self.idx.vars.items():
             self.data[k]=self.var(v,all=all)
             self.data[v]=self.data[k]
