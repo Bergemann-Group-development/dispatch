@@ -4,13 +4,14 @@ SHELL = /bin/bash
 
 #############################################################################
 # Defalt compiler and directives
-COMPILER = gfortran
-OMP  = yes
-MPI  = mpi
-MOD  = mod
+COMPILER ?= gfortran
+OMP      ?= yes
+MPI      ?= mpi
+MOD      ?= mod
+SOLVER   ?= VOID
+PREC     ?= SINGLE
+EXEC     ?= dispatch.x
 DEFS = -D$(PREC) -DDISPATCH
-SOLVER     ?= VOID
-PREC       ?= SINGLE
 
 #############################################################################
 # Default target
@@ -85,6 +86,7 @@ default: $(BUILD) $(EXEC)
 #############################################################################
 # Sources directories are searched in this exact order (VPATH inside Makefile)
 VPATH = $(TOP)
+sinclude $(TOP)/Makefile
 sinclude $(TOP)/omp/Makefile
 sinclude $(TOP)/mpi/Makefile
 ifeq ($(MPI),mpi)

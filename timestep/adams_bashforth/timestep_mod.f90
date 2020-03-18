@@ -37,6 +37,7 @@ CONTAINS
 !===============================================================================
 SUBROUTINE init (self)
   class(timestep_t):: self
+  integer:: iostat
   integer, save:: verbose=0, time_order=-1
   namelist /timestep_params/ verbose, time_order
   !.............................................................................
@@ -45,8 +46,9 @@ SUBROUTINE init (self)
   if (time_order==-1) then
     time_order = 2
     rewind (io%input)
-    read (io%input,timestep_params)
-    if (io%master) write (*,timestep_params)
+    read (io%input, timestep_params, iostat=iostat)
+    call io%namelist_warning ('timestep_params', iostat)
+    write (io%output, timestep_params)
   end if
   !$omp end critical (timestep_cr)
   self%verbose = verbose
