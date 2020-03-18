@@ -208,15 +208,15 @@ SUBROUTINE pre_update (self)
   class(extras_t), target:: self
   !.............................................................................
   call trace%begin ('extras_t%pre_update')                             ! keep
-  self%gpatch => self                                                  ! keep
-  if (allocated (self%force_per_unit_mass)) &                          ! keep
-    self%force_per_unit_mass = 0.0                                     ! keep
-  if (allocated (self%force_per_unit_volume)) &                        ! keep
-    self%force_per_unit_volume = 0.0                                   ! keep
-  if (allocated (self%heating_per_unit_mass)) &                        ! keep
-    self%heating_per_unit_mass = 0.0                                   ! keep
-  if (allocated (self%heating_per_unit_volume)) &                      ! keep
-    self%heating_per_unit_volume = 0.0                                 ! keep
+  !self%gpatch => self                                                  ! forces
+  !if (allocated (self%force_per_unit_mass)) &                          ! forces
+    !self%force_per_unit_mass = 0.0                                     ! forces
+  !if (allocated (self%force_per_unit_volume)) &                        ! forces
+    !self%force_per_unit_volume = 0.0                                   ! forces
+  !if (allocated (self%heating_per_unit_mass)) &                        ! forces
+    !self%heating_per_unit_mass = 0.0                                   ! forces
+  !if (allocated (self%heating_per_unit_volume)) &                      ! forces
+    !self%heating_per_unit_volume = 0.0                                 ! forces
   !
   !call self%rt%pre_update()                                            ! RT
   !call self%newton%pre_update()                                        ! Newton
