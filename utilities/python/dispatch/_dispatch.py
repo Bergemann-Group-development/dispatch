@@ -422,7 +422,7 @@ def _var(patch,filed,snap,verbose=0,copy=None):
             v=v[:,:,:,i4]
         return internal(v,all=all)
 
-    def var(iv,all=False,copy=None,i4=0,verbose=2):
+    def var(iv,all=False,copy=None,i4=0,verbose=0):
         """
         Evaluate arguments of varuious forms, including expressions.
 
@@ -432,7 +432,6 @@ def _var(patch,filed,snap,verbose=0,copy=None):
         The `np.newaxis` bits are for broadcasting the metric factors to the right shape
         before multiplying by the data.
         """
-        print('iv:',iv)
         if type(iv)==int:
             assert(iv in patch.keys['numbers']),'variable index unknown'
 
@@ -635,12 +634,9 @@ class _patch():
         #timer.add('_patch(9c))')
         auxfile=_pathjoin(snap.datadir,auxfile)
         timer.add('auxfile')
-        if os.path.isfile(auxfile):
-            self.auxfile=auxfile
-            self.aux=aux(id=id,io=snap.iout,file=auxfile)
-            self.keys['aux']=self.aux.vars.keys()
-        elif verbose>1:
-            print(auxfile,'does not exist')
+        self.auxfile=auxfile
+        self.aux=aux(id=id,io=snap.iout,file=auxfile)
+        self.keys['aux']=self.aux.vars.keys()
         timer.add('read-aux')
         
         """ Now collect all keys in a single list """

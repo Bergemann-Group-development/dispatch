@@ -19,12 +19,14 @@ def to_str(ii):
 class aux():
   """ aux format file object """
   def __init__(self,id=1,io=0,run='',data='../data',file=None,verbose=0):
+    self.verbose=verbose
+    self.vars={}
     if os.path.isfile(file):
         self.filename=file
     else:
         self.filename=data+'/'+run+'/{:05d}/{:05d}.aux'.format(io,id)
-    self.verbose=verbose
-    self._read()
+    if os.path.isfile(file):
+        self._read()
 
   def _read(self):
     """ read an aux format file """
