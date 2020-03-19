@@ -42,7 +42,8 @@ MODULE dust_mod
     type(particle_solver_t):: particle_solver
   contains
     procedure:: init
-    procedure:: update
+    procedure:: pre_update
+    procedure:: post_update
     procedure, private:: gather
     procedure, private:: evolve
     procedure, private:: scatter
@@ -80,15 +81,26 @@ END SUBROUTINE init
 !===============================================================================
 !> Update the dust state
 !===============================================================================
-SUBROUTINE update (self)
+SUBROUTINE pre_update (self)
   class(dust_t):: self
   !.............................................................................
-  call trace%begin ('dust_t%update')
+  call trace%begin ('dust_t%pre_update')
   call self%gather
   call self%evolve
   call self%scatter
   call trace%end ()
-END SUBROUTINE update
+END SUBROUTINE pre_update
+
+!===============================================================================
+!> Do whatever should be done after the HD/MHD update
+!===============================================================================
+SUBROUTINE post_update (self)
+  class(dust_t):: self
+  !.............................................................................
+  call trace%begin ('dust_t%post_update')
+  !...
+  call trace%end ()
+END SUBROUTINE post_update
 
 !===============================================================================
 !> Gather information about the current state of the dust and gas
