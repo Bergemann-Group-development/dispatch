@@ -19,10 +19,12 @@ MODULE particles_mod
     real(8)         :: time = 0d0               ! current time
     real(8)         :: dt                       ! time step
     real(8)         :: t(nt)                    ! time slices
+    real            :: w                        ! weight factor
     real            :: v(3)                     ! velocity (cell units / time)
     real            :: r(3,nt)                  ! real positions (cell units)
-    integer(kind=2) :: q(3,nt)                  ! integerer position (cell units)
+    integer(kind=2) :: q(3,nt)                  ! integer position (cell units)
     integer(kind=2) :: it=1                     ! time slice index
+    integer(kind=2) :: bin=1                    ! size bin
   end type
   !-----------------------------------------------------------------------------
   ! List of particles

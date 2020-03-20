@@ -11,7 +11,7 @@ MODULE particle_solver_mod
   !USE timer_mod
   USE omp_timer_mod
   USE task_mod
-  USE patch_mod
+  USE gpatch_mod
   USE particles_mod
   USE link_mod
   implicit none
@@ -20,9 +20,9 @@ MODULE particle_solver_mod
   ! Everything needed by a particle solver
   !-----------------------------------------------------------------------------
   type, public, extends(task_t):: particle_solver_t
-    type(particles_t)       :: particles
-    type(particles_t)       :: exports
-    class(patch_t), pointer :: patch => null()
+    type(particles_t)        :: particles            ! internal particles
+    type(particles_t)        :: exports              ! particles to export
+    class(gpatch_t), pointer :: patch => null()      ! pointer to patch
   contains
     procedure:: init
     procedure:: update
@@ -124,7 +124,7 @@ SUBROUTINE import_particles (self)
   !.............................................................................
   class(nbor_t)    , pointer :: nbor
   class(task_t)    , pointer :: task, nbtask
-  class(patch_t)   , pointer :: nbpatch
+  class(gpatch_t)  , pointer :: nbpatch
   class(particle_t), pointer :: pa, next
   real(8)                    :: p(3)
   !-----------------------------------------------------------------------------

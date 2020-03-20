@@ -87,7 +87,6 @@ SUBROUTINE initial_conditions (self)
   class(mesh_t), pointer:: mesh
   integer:: iz, m(3)
   real:: z, d
-  namelist /forces_params/ verbose, scale_height
   !-----------------------------------------------------------------------------
   call trace%begin('experiment_t%initial_conditions')
   !-----------------------------------------------------------------------------

@@ -8,10 +8,6 @@ MODULE extras_mod
   USE io_mod
   USE trace_mod
   USE gpatch_mod
-  !USE list_mod
-  !USE patch_mod
-  !USE task_mod
-  !USE selfgravity_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.
   !-----------------------------------------------------------------------------
@@ -43,7 +39,7 @@ SUBROUTINE pre_init (self)
   class(extras_t), target:: self
   !.............................................................................
   call trace%begin ('extras_t%pre_init')
-  self%gpatch => self
+  self%dust%patch => self
   call trace%end()
 END SUBROUTINE pre_init
 
