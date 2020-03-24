@@ -4,6 +4,22 @@
 !> linked and run with any SOLVER, and the intent is to keep the dust module
 !> separate from the HD/MHD solver, either as an "extras" module, or a separate
 !> task.
+!>
+!> Calling sequence (shows only data type and procedure):
+!>   experiment_t%update
+!>     extras_t%pre_update
+!>       particle_solver_t%update
+!>         partice_solver_t%gather
+!>         partice_solver_t%evolve
+!>         partice_solver_t%scatter
+!>       while (pa):
+!>         particle_solver%kdk
+!>           dust_t%drag
+!>           particle_solver_t%force
+!>             experiment_t%pforce
+!>         if (particle_solver_t%is_outside):
+!>           particle_solver_t%exports%append
+!>           particle_solver_t%particles%remove
 !===============================================================================
 MODULE experiment_mod
   USE io_mod
@@ -11,9 +27,15 @@ MODULE experiment_mod
   USE solver_mod
   USE mesh_mod
   USE bits_mod
+  USE task_mod
+  USE link_mod
+  USE list_mod
+  USE particles_mod
+  USE scaling_mod
   implicit none
   private
   type, public, extends(solver_t):: experiment_t
+    real:: dz
   contains
     procedure:: init
     procedure:: initial_conditions
@@ -22,6 +44,7 @@ MODULE experiment_mod
   end type
   integer:: verbose = 1
   real:: scale_height = 1.0
+  real:: d_midplane_cgs = 1e-9
   logical:: first_time = .true.
 CONTAINS
 
@@ -32,9 +55,9 @@ SUBROUTINE init (self)
   class(experiment_t):: self
   !.............................................................................
   class(mesh_t), pointer:: mesh
-  integer:: iostat
+  integer:: iostat, l(3), u(3)
   real:: z_lower, z_upper
-  namelist /experiment_params/ verbose, scale_height
+  namelist /experiment_params/ verbose, scale_height, d_midplane_cgs
   !-----------------------------------------------------------------------------
   call trace%begin('experiment_t%init')
   !-----------------------------------------------------------------------------
@@ -56,24 +79,27 @@ SUBROUTINE init (self)
   ! initial_conditions to set initial values of the variables
   !-----------------------------------------------------------------------------
   call self%solver_t%init
+  call scaling%init
+  !-----------------------------------------------------------------------------
+  ! At lower and upper boundaries, add particles also in guard zones
+  !-----------------------------------------------------------------------------
+  l = self%mesh%li
+  u = self%mesh%ui
+  where (self%particle_solver%lower) l = self%mesh%lb
+  where (self%particle_solver%upper) u = self%mesh%ub
   call self%initial_conditions
-  !-----------------------------------------------------------------------------
-  ! Set bits indicating upper and lower boundaries.  The box size is self%box,
-  ! and the patch position, size, and cell size are self%position, self%size,
-  ! and self%ds, respectively.
-  !-----------------------------------------------------------------------------
-  if (self%position(3) - self%size(3)/2.0 - self%ds(3) < -self%box(3)/2.0) then
-    call self%boundaries%set (bits%zl)
-  end if
-  if (self%position(3) + self%size(3)/2.0 + self%ds(3) > +self%box(3)/2.0) then
-    call self%boundaries%set (bits%zu)
-  end if
+  call self%particle_solver%dust%initial_condition (l, u)
+  self%particle_solver%pforce => pforce
   !-----------------------------------------------------------------------------
   if (verbose > 0) then
     write (io%output,'(a,i4,3(1x,3f7.3),1x,2l2)') &
       'init: id, box, pos, size, lower, upper =', &
       self%id, self%box, self%position, self%size, &
-      self%boundaries%is_set (bits%zl), self%boundaries%is_set (bits%zu)
+      self%particle_solver%lower(3), self%particle_solver%upper(3)
+    write (io_unit%log,'(a,i4,3(1x,3f7.3),1x,2l2)') &
+      'init: id, box, pos, size, lower, upper =', &
+      self%id, self%box, self%position, self%size, &
+      self%particle_solver%lower(3), self%particle_solver%upper(3)
   end if
   call trace%end()
 END SUBROUTINE init
@@ -87,8 +113,9 @@ SUBROUTINE initial_conditions (self)
   class(mesh_t), pointer:: mesh
   integer:: iz, m(3)
   real:: z, d
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('experiment_t%initial_conditions')
+  call trace%begin('experiment_t%initial_conditions', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! A patch has one mesh for each direction -- choose the last index as vertical
   !-----------------------------------------------------------------------------
@@ -117,7 +144,7 @@ SUBROUTINE initial_conditions (self)
     ! the linear force of gravity is balanced by a pressure gradient has an
     ! analytical solution where the density is a Gaussian.
     !---------------------------------------------------------------------------
-    d = exp(-z**2/scale_height)
+    d = exp(-z**2/scale_height)*d_midplane_cgs/scaling%d
     !---------------------------------------------------------------------------
     ! self%mem(ix,iy,iz,iv,it,iw) is a 6-dimensional array, where the indices are
     !   ix = x-index
@@ -134,7 +161,10 @@ SUBROUTINE initial_conditions (self)
     self%mem(:,:,iz,self%idx%e ,self%it,1) = d
   end do
   !-----------------------------------------------------------------------------
-  call trace%end()
+  m = self%mesh%gn
+  allocate (self%force_per_unit_mass(m(1),m(2),m(3),3))
+  self%force_per_unit_mass = 0.0
+  call trace%end (itimer)
 END SUBROUTINE initial_conditions
 
 !===============================================================================
@@ -145,15 +175,16 @@ SUBROUTINE update (self)
   class(experiment_t):: self
   !.............................................................................
   class(mesh_t), pointer:: mesh
-  integer:: iz, m(3)
+  integer:: iz
   real:: z
+  integer, save:: itimer=0
   !----------------------------------------------------------------------------
-  call trace%begin('experiment_t%update')
+  call trace%begin('experiment_t%update', itimer=itimer)
+  if (self%id == 1 .and. self%particle_solver%verbose > 0) &
+    call total_dust_mass (self)
   !----------------------------------------------------------------------------
   ! Allocate an (nx,ny,nz,3) array and increment the memory count
   !----------------------------------------------------------------------------
-  m = self%mesh%gn
-  allocate (self%force_per_unit_mass(m(1),m(2),m(3),3))
   call io%bits_mem (storage_size(self%force_per_unit_mass), &
                     product(shape(self%force_per_unit_mass)), 'fpm')
   !----------------------------------------------------------------------------
@@ -179,8 +210,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   call io%bits_mem (-storage_size(self%force_per_unit_mass), &
                     product(shape(self%force_per_unit_mass)), '-fpm')
-  deallocate (self%force_per_unit_mass)
-  call trace%end()
+  call trace%end(itimer)
 END SUBROUTINE update
 
 !===============================================================================
@@ -191,23 +221,23 @@ SUBROUTINE boundary_conditions (self)
   class(experiment_t):: self
   !.............................................................................
   class(mesh_t), pointer:: mesh
-  integer:: iz, m(3)
+  integer:: iz, m(3), l(3), u(3)
   real:: z, d
   !----------------------------------------------------------------------------
   call trace%begin('experiment_t%boundary_conditions')
   if (verbose > 1) then
     write (io%output,*) &
       'experiment_t%boundary_conditions: id, lower, upper =', self%id, &
-      self%boundaries%is_set (bits%zl), self%boundaries%is_set (bits%zu)
+      self%particle_solver%lower(3), self%particle_solver%upper(3)
   end if
   !-----------------------------------------------------------------------------
   ! Lower boundary
   !-----------------------------------------------------------------------------
   mesh => self%mesh(3)
-  if (self%boundaries%is_set (bits%zl)) then
+  if (self%particle_solver%lower(3)) then
     do iz=mesh%lb,mesh%lo
       z = mesh%p + mesh%r(iz)
-      d = exp(-z**2/scale_height)
+      d = exp(-z**2/scale_height)*d_midplane_cgs/scaling%d
       self%mem(:,:,iz,self%idx%d ,self%it,1) = d
       self%mem(:,:,iz,self%idx%px,self%it,1) = 0.0
       self%mem(:,:,iz,self%idx%py,self%it,1) = 0.0
@@ -218,10 +248,10 @@ SUBROUTINE boundary_conditions (self)
   !-----------------------------------------------------------------------------
   ! Upper boundary
   !-----------------------------------------------------------------------------
-  if (self%boundaries%is_set (bits%zu)) then
+  if (self%particle_solver%upper(3)) then
     do iz=mesh%uo,mesh%ub
       z = mesh%p + mesh%r(iz)
-      d = exp(-z**2/scale_height)
+      d = exp(-z**2/scale_height)*d_midplane_cgs/scaling%d
       self%mem(:,:,iz,self%idx%d ,self%it,1) = d
       self%mem(:,:,iz,self%idx%px,self%it,1) = 0.0
       self%mem(:,:,iz,self%idx%py,self%it,1) = 0.0
@@ -231,5 +261,75 @@ SUBROUTINE boundary_conditions (self)
   end if
   call trace%end ()
 END SUBROUTINE boundary_conditions
+
+!===============================================================================
+!> Point force
+!===============================================================================
+FUNCTION pforce (r) RESULT (f)
+  real(8):: r(3), f(3), z
+  !-----------------------------------------------------------------------------
+  f(1) = 0.0
+  f(2) = 0.0
+  f(3) = -2.0*r(3)/scale_height
+END FUNCTION pforce
+
+!===============================================================================
+!> For validation purposes, compute the total dust mass per bin
+!===============================================================================
+SUBROUTINE total_dust_mass (self)
+  class(experiment_t):: self
+  !.............................................................................
+  class(task_t), pointer:: task
+  class(link_t), pointer:: link
+  class(particle_t), pointer:: p
+  real(8):: mass(self%particle_solver%dust%n_bin)
+  integer(8):: n
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin ('experiment_t%total_dust_mass', itimer=itimer)
+  n = 0
+  mass = 0d0
+  link => self%task_list%head
+  do while (associated(link))
+    task => link%task
+    select type (task)
+    class is (experiment_t)
+      p => task%particle_solver%particles%head
+      do while (associated(p))
+        mass(p%bin) = mass(p%bin) + p%w
+        n = n+1
+        p => p%next
+      end do
+    end select
+    link => link%next
+  end do
+  !.............................................................................
+  if (self%particle_solver%dust%verbose > 0) then
+    write(io_unit%log,'(a,f10.3,i12,2x,1p,30e11.2)') &
+    'total_dust_mass:', self%time, n, mass
+    write(*,'(a,f10.3,i10,2x,1p,30e11.2)') &
+    'total_dust_mass:', self%time, n, mass
+  end if
+  !.............................................................................
+  if (any(abs(mass) > 1e20)) then
+    link => self%task_list%head
+    do while (associated(link))
+      task => link%task
+      select type (task)
+      class is (experiment_t)
+        p => task%particle_solver%particles%head
+        do while (associated(p))
+          if (abs(p%w) > 1e20) then
+            write(io_unit%log,'("WARNING:",i6,f10.3,4i4,1p,e11.2)') &
+              task%id, task%time, p%q, p%bin, p%w
+          end if
+          p => p%next
+        end do
+      end select
+      link => link%next
+    end do
+  end if
+  call trace%end (itimer)
+END SUBROUTINE total_dust_mass
 
 END MODULE experiment_mod

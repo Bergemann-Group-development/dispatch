@@ -1,29 +1,31 @@
 !===============================================================================
 !> Particle data types for dust-gas interaction:
 !>
-!>   particle_t         : attributes for particles
-!>   particles_t        : attributes for particle lists
+!>   particle_t         : data type for particles
+!>   particles_t        : data type for particle lists
 !===============================================================================
 MODULE particles_mod
   USE io_mod
   USE trace_mod
   implicit none
   private
-  integer, parameter:: nt=5
   !-----------------------------------------------------------------------------
   ! Particle data type
   !-----------------------------------------------------------------------------
   type, public:: particle_t
     type(particle_t), pointer:: next => null()  ! next particle
     type(particle_t), pointer:: prev => null()  ! previous particle
-    real(8)         :: time = 0d0               ! current time
+    integer(8)      :: id = 0                   ! particle id
+    real(8)         :: t = 0.0_8                ! time
     real(8)         :: dt                       ! time step
-    real(8)         :: t(nt)                    ! time slices
     real            :: w                        ! weight factor
+    real            :: c                        ! drag coefficient
     real            :: v(3)                     ! velocity (cell units / time)
-    real            :: r(3,nt)                  ! real positions (cell units)
-    integer(kind=2) :: q(3,nt)                  ! integer position (cell units)
-    integer(kind=2) :: it=1                     ! time slice index
+    real            :: dv(3)                    ! vgas - velocity
+    real            :: a(3) = 0.0               ! acceleration
+    real            :: d(3)                     ! drag
+    real            :: r(3)                     ! real positions (cell units)
+    integer(kind=2) :: q(3)                     ! integer position (cell units)
     integer(kind=2) :: bin=1                    ! size bin
   end type
   !-----------------------------------------------------------------------------
@@ -33,8 +35,10 @@ MODULE particles_mod
     class(particle_t), pointer:: head => null() ! pointer to start of list
     class(particle_t), pointer:: tail => null() ! pointer to end of list
     integer:: n=0                               ! number of particles in list
+    real(8):: dtime                             ! collective dtime
   contains
     procedure:: init
+    procedure:: prepend
     procedure:: append
     procedure:: remove
     procedure:: delete
@@ -43,7 +47,7 @@ MODULE particles_mod
 CONTAINS
 
 !===============================================================================
-!> Initialize a list
+!> Initialize a particle list
 !===============================================================================
 SUBROUTINE init (self)
   class(particles_t):: self
@@ -54,14 +58,30 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !===============================================================================
-!> Add an item at the tail
+!> Add an particle at the tail
+!===============================================================================
+SUBROUTINE prepend (self, new)
+  class(particles_t)              :: self
+  class(particle_t), pointer :: new
+  !.............................................................................
+  nullify (new%prev)
+  new%next => self%head
+  if (.not.associated(self%tail)) self%tail => new
+  if (associated(self%head)) self%head%next => new
+  self%head => new
+  !$omp atomic
+  self%n = self%n+1
+END SUBROUTINE prepend
+
+!===============================================================================
+!> Add an particle at the tail
 !===============================================================================
 SUBROUTINE append (self, new)
   class(particles_t)              :: self
   class(particle_t), pointer :: new
   !.............................................................................
+  nullify (new%next)
   new%prev => self%tail
-  nullify(new%next)
   if (.not.associated(self%head)) self%head => new
   if (associated(self%tail)) self%tail%next => new
   self%tail => new
@@ -70,7 +90,7 @@ SUBROUTINE append (self, new)
 END SUBROUTINE append
 
 !===============================================================================
-!> Remove an item from the list; note that the item is not deallocated!
+!> Remove a particle from the list (the particle is not deallocated)
 !===============================================================================
 SUBROUTINE remove (self, old)
   class(particles_t):: self
@@ -89,7 +109,7 @@ SUBROUTINE remove (self, old)
 END SUBROUTINE remove
 
 !===============================================================================
-!> Delete a double-linked list, including carried content
+!> Delete a particle list, including particles
 !===============================================================================
 SUBROUTINE delete (self)
   class(particles_t):: self

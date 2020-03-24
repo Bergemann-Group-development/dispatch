@@ -8,10 +8,11 @@ MODULE extras_mod
   USE io_mod
   USE trace_mod
   USE gpatch_mod
+  USE list_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.
   !-----------------------------------------------------------------------------
-  USE dust_mod
+  USE particle_solver_mod
   !-----------------------------------------------------------------------------
   implicit none
   private
@@ -21,10 +22,11 @@ MODULE extras_mod
   !-----------------------------------------------------------------------------
   type, public, extends(gpatch_t):: extras_t
     class(gpatch_t), pointer:: gpatch => null()                         ! keep
-    type(dust_t):: dust                                                 ! dust
+    type(particle_solver_t):: particle_solver                           ! part
   contains
     procedure:: pre_init
     procedure:: init
+    procedure:: init_task_list
     procedure:: pre_update
     procedure:: post_update
     procedure:: check_refine
@@ -39,7 +41,8 @@ SUBROUTINE pre_init (self)
   class(extras_t), target:: self
   !.............................................................................
   call trace%begin ('extras_t%pre_init')
-  self%dust%patch => self
+  self%particle_solver%patch => self
+  call self%particle_solver%pre_init
   call trace%end()
 END SUBROUTINE pre_init
 
@@ -50,9 +53,22 @@ SUBROUTINE init (self)
   class(extras_t):: self
   !.............................................................................
   call trace%begin ('extras_t%init')
-  call self%dust%init
+  call self%particle_solver%init
   call trace%end()
 END SUBROUTINE init
+
+!===============================================================================
+!> Initialize particle solver, after task list is created
+!===============================================================================
+SUBROUTINE init_task_list (self, task_list)
+  class(extras_t):: self
+  class(list_t), pointer:: task_list
+  !-----------------------------------------------------------------------------
+  call trace%begin ('extras_t%init_task_list')
+  call self%particle_solver%init_task_list (task_list)
+  call self%gpatch_t%init_task_list (task_list)
+  call trace%end ()
+END SUBROUTINE init_task_list
 
 !===============================================================================
 !> Do whatever needs to be done before the HD/MHD udpate
@@ -61,7 +77,6 @@ SUBROUTINE pre_update (self)
   class(extras_t), target:: self
   !.............................................................................
   call trace%begin ('extras_t%pre_update')                             ! keep
-  call self%dust%pre_update
   call trace%end()
 END SUBROUTINE pre_update
 
@@ -72,7 +87,7 @@ SUBROUTINE post_update (self)
   class(extras_t):: self
   !.............................................................................
   call trace%begin ('extras_t%post_update')                            ! keep
-  call self%dust%post_update
+  call self%particle_solver%update
   call trace%end()
 END SUBROUTINE post_update
 
