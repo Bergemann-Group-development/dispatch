@@ -529,9 +529,11 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
   if (count >= self%na) then
     end_count = mpi%end_counter%update(0)
     io_count = mod(io%counter%update(0),mpi%size)
-    write (io_unit%mpi,'(f12.6,4x,a,i6,f12.6,3i5)') wallclock(), &
-      'id, time, end_count, io_count =', task%id, task%time, count, &
-      end_count, io_count
+    if (self%verbose > 0) then
+      write (io_unit%mpi,'(f12.6,4x,a,i6,f12.6,3i5)') wallclock(), &
+        'id, time, end_count, io_count =', task%id, task%time, count, &
+        end_count, io_count
+    end if
     timer%done = (end_count >= mpi%size .and. io_count == 0)
   end if
   !-----------------------------------------------------------------------------

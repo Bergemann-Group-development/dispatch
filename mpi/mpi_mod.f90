@@ -509,7 +509,7 @@ FUNCTION update8 (self, i) RESULT (j)
   integer:: master=0, mpi_err
   integer(kind=MPI_ADDRESS_KIND):: offset=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('mpi_counter_t%update')
+  call trace%begin ('mpi_counter_t%update', 2)
   !$omp critical (mpi_win_cr)
   call MPI_Win_lock (MPI_LOCK_EXCLUSIVE, master, 0, self%window, mpi_err)
   call mpi%assert ('MPI_Win_lock', mpi_err)
