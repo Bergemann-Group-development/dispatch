@@ -19,6 +19,7 @@ MODULE random_mod
     procedure:: ran3
     procedure:: uniform_1
     procedure:: uniform_n
+    generic:: uniform => uniform_1, uniform_n
   end type
   integer, save:: id=0
 CONTAINS
