@@ -1,8 +1,16 @@
-TOP = ../../..
+#OPTS = full_debug
+OPTS = debug
+#OPTS =
+#OPTS = optimized
+
+TOP            = ../../..
+EXEC           = run
+SOLVER         = ramses/hydro
 
 sinclude $(TOP)/config/Makefile
 
-default:
-	$(FC) mesa_task.f90 -o mesa_task.x
-	$(FC) mesa_code.f90 -o mesa_code.x
+run: mesa_task.x mesa_code.x
 	./mesa_task.x
+
+mesa_code.x: io_unit_mod.o
+mesa_task.x: io_unit_mod.o

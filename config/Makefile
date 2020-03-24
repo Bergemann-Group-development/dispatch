@@ -15,7 +15,7 @@ DEFS = -D$(PREC) -DDISPATCH
 
 #############################################################################
 # Default target
-default: dispatch.x
+default: $(EXEC)
 
 #############################################################################
 # 1st part of Makefile macro info
