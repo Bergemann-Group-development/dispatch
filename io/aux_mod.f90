@@ -21,24 +21,37 @@ MODULE aux_mod
   !
   integer, save:: max_select=30
   type, public, extends(dll_t):: aux_t
-    integer:: unit=-1
+    integer:: unit = -1
+    integer:: iout = 0
+    real(8):: aux_next = 0.0
   contains
     procedure:: prepare
     procedure:: new_item
+    procedure, private:: register0r
     procedure, private:: register1r
     procedure, private:: register2r
     procedure, private:: register3r
     procedure, private:: register4r
-    generic:: register => register1r, register2r, register3r, register4r
+    generic:: register => &
+      register0r, register1r, register2r, register3r, register4r
     procedure:: output => output_aux
+    procedure:: output_sequence
     procedure:: test
   end type
   !
   type, extends(dll_node_t):: item_t
-    class(*), pointer:: c1(:)=>null(), c2(:,:)=>null(), c3(:,:,:)=>null(), &
-      c4(:,:,:,:)=>null()
-    real, pointer:: r1(:)=>null(), r2(:,:)=>null(), r3(:,:,:)=>null(), &
-      r4(:,:,:,:)=>null()
+    class(*), pointer:: &
+      c0          => null(), &
+      c1(:)       => null(), &
+      c2(:,:)     => null(), &
+      c3(:,:,:)   => null(), &
+      c4(:,:,:,:) => null()
+    real, pointer:: &
+      r0          => null(), &
+      r1(:)       => null(), &
+      r2(:,:)     => null(), &
+      r3(:,:,:)   => null(), &
+      r4(:,:,:,:) => null()
     character(len=32):: name
     integer:: rank
   contains
@@ -73,23 +86,109 @@ FUNCTION new_item (self, name)
 END FUNCTION
 
 !===============================================================================
+SUBROUTINE register0r (self, name, r)
+  class(aux_t)       :: self
+  character(len=*)   :: name
+  real    , pointer  :: r
+  class(*), pointer  :: c
+  class(dll_node_t), pointer:: item
+  !-----------------------------------------------------------------------------
+  call trace%begin ('aux_t%register0r')
+  if (self%new_item (name)) then
+    allocate (item_t:: item)
+    select type (item)
+    class is (item_t)
+      item%rank = 0
+      item%name = name
+      item%r0 => r
+    end select
+    call self%append (item)
+    if (verbose > 2) &
+      write (stdout,*) self%n, ' items registered'
+  else
+    item => self%head
+    do while (associated(item))
+      select type (item)
+      class is (item_t)
+        if (trim(item%name) == trim(name)) then
+          item%r0 => r
+          exit
+        end if
+      end select
+    end do
+  end if
+  call trace%end()
+END SUBROUTINE
+
+!===============================================================================
 SUBROUTINE register1r (self, name, r)
   class(aux_t)       :: self
   character(len=*)   :: name
   real    , pointer  :: r(:)
   class(*), pointer  :: c(:)
-  c => r
-  call register1 (self, name, c)
+  class(dll_node_t), pointer:: item
+  !-----------------------------------------------------------------------------
+  call trace%begin ('aux_t%register1r')
+  if (self%new_item (name)) then
+    allocate (item_t:: item)
+    select type (item)
+    class is (item_t)
+      item%rank = 1
+      item%name = name
+      item%r1 => r
+    end select
+    call self%append (item)
+    if (verbose > 2) &
+      write (stdout,*) self%n, ' items registered'
+  else
+    item => self%head
+    do while (associated(item))
+      select type (item)
+      class is (item_t)
+        if (trim(item%name) == trim(name)) then
+          item%r1 => r
+          exit
+        end if
+      end select
+    end do
+  end if
+  call trace%end()
 END SUBROUTINE
+
 !===============================================================================
 SUBROUTINE register2r (self, name, r)
   class(aux_t)       :: self
   character(len=*)   :: name
   real    , pointer  :: r(:,:)
-  class(*), pointer  :: c(:,:)
-  c => r
-  call register2 (self, name, c)
-END SUBROUTINE
+  class(dll_node_t), pointer:: item
+  !-----------------------------------------------------------------------------
+  call trace%begin ('aux_t%register2r')
+  if (self%new_item (name)) then
+    allocate (item_t:: item)
+    select type (item)
+    class is (item_t)
+      item%rank = 2
+      item%name = name
+      item%r2 => r
+    end select
+    call self%append (item)
+    if (verbose > 2) &
+      write (stdout,*) self%n, ' items registered'
+  else
+    item => self%head
+    do while (associated(item))
+      select type (item)
+      class is (item_t)
+        if (trim(item%name) == trim(name)) then
+          item%r2 => r
+          exit
+        end if
+      end select
+    end do
+  end if
+  call trace%end()
+END SUBROUTINE register2r
+
 !===============================================================================
 SUBROUTINE register3r (self, name, r)
   class(aux_t)       :: self
@@ -97,7 +196,7 @@ SUBROUTINE register3r (self, name, r)
   real    , pointer  :: r(:,:,:)
   class(dll_node_t), pointer:: item
   !-----------------------------------------------------------------------------
-  call trace%begin ('aux_t%register3')
+  call trace%begin ('aux_t%register3r')
   if (self%new_item (name)) then
     allocate (item_t:: item)
     select type (item)
@@ -109,6 +208,17 @@ SUBROUTINE register3r (self, name, r)
     call self%append (item)
     if (verbose > 2) &
       write (stdout,*) self%n, ' items registered'
+  else
+    item => self%head
+    do while (associated(item))
+      select type (item)
+      class is (item_t)
+        if (trim(item%name) == trim(name)) then
+          item%r3 => r
+          exit
+        end if
+      end select
+    end do
   end if
   call trace%end()
 END SUBROUTINE register3r
@@ -120,7 +230,7 @@ SUBROUTINE register4r (self, name, r)
   real    , pointer  :: r(:,:,:,:)
   class(dll_node_t), pointer:: item
   !-----------------------------------------------------------------------------
-  call trace%begin ('aux_t%register4')
+  call trace%begin ('aux_t%register4r')
   if (self%new_item (name)) then
     allocate (item_t:: item)
     select type (item)
@@ -132,6 +242,17 @@ SUBROUTINE register4r (self, name, r)
     call self%append (item)
     if (verbose > 2) &
       write (stdout,*) self%n, ' items registered'
+  else
+    item => self%head
+    do while (associated(item))
+      select type (item)
+      class is (item_t)
+        if (trim(item%name) == trim(name)) then
+          item%r4 => r
+          exit
+        end if
+      end select
+    end do
   end if
   call trace%end()
 END SUBROUTINE
@@ -173,6 +294,22 @@ SUBROUTINE register2 (self, name, c)
   call self%append (item)
   end if
 END SUBROUTINE register2
+
+!===============================================================================
+SUBROUTINE output_sequence (self, id, time, singlefile)
+  class(aux_t):: self
+  integer:: id
+  character(len=*), optional:: singlefile
+  real(8), optional:: time
+  !-----------------------------------------------------------------------------
+  call trace%begin ('aux_t%output_sequence')
+  do while (time >= self%aux_next)
+    call output_aux (self, self%iout, id, singlefile)
+    self%aux_next = self%aux_next + io%out_time
+    self%iout = self%iout + 1
+  end do
+  call trace%end ()
+END SUBROUTINE output_sequence
 
 !===============================================================================
 SUBROUTINE output_aux (self, iout, id, singlefile)
@@ -235,6 +372,7 @@ END SUBROUTINE output_aux
 SUBROUTINE prepare (self, iout)
   class(aux_t):: self
   integer:: iout
+  real(8):: aux_time = 1.0
   !.............................................................................
   namelist /aux_params/ verbose, select
   integer:: iostat, i
