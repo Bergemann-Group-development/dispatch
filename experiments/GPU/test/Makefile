@@ -27,3 +27,6 @@ experiment_mod.o        : io_mod.o io_unit_mod.o trace_mod.o omp_mod.o bits_mod.
                           timer_mod.o link_mod.o
 scaling_mod.o           : io_mod.o units_mod.o
 extras_mod.o            : forces_mod.o
+
+mockup.x: mockup.o
+	$(FC) $(LDFLAGS) $(BUILD)/mockup.o -o mockup.x
