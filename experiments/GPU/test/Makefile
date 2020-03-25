@@ -6,7 +6,7 @@
 OPTS = optimized
 
 # Default target and methods
-EXEC            = dispatch.x
+EXEC            = mockup.x
 UPD             = adams_bashforth
 SOLVER          = muscl
 #SOLVER          = ramses/hydro
