@@ -30,11 +30,9 @@ MODULE mpi_mod
   USE io_unit_mod
   USE trace_mod
   USE shared_mod
+  USE mpi_lib
   implicit none
   private
-#ifdef MPI
-  include 'mpif.h'              ! some systems require this instead of 'use mpi'
-#endif
   integer:: mpi_err             ! MPI error status
   logical:: mpi_master          ! true on MPI master (rank 0)
   logical:: mpi_trace=.false.   ! debug trace option

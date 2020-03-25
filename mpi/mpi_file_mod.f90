@@ -7,9 +7,7 @@ MODULE mpi_file_mod
   USE omp_timer_mod
   USE io_mod
   USE trace_mod
-#ifdef MPI
-  USE mpi
-#endif
+  USE mpi_lib
   implicit none
   private
   type, public:: mpi_file_t

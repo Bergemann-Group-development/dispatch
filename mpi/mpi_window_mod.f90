@@ -1,8 +1,6 @@
 MODULE mpi_window_mod
   USE trace_mod
-#ifdef MPI
-  USE mpi
-#endif
+  USE mpi_lib
   USE mpi_mod, mp => mpi
   implicit none
   private

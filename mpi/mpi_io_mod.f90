@@ -37,9 +37,7 @@ MODULE mpi_io_mod
   USE mpi_mod, only: mp=>mpi
   USE mpi_file_mod
   USE dll_mod
-#ifdef MPI
-  USE mpi, only: MPI_OFFSET_KIND, MPI_REAL, MPI_STATUS_SIZE, MPI_THREAD_MULTIPLE
-#endif MPI
+  USE mpi_lib, mpi_hide => mpi_io
   implicit none
   private
   !-----------------------------------------------------------------------------

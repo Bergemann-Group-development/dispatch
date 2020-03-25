@@ -21,11 +21,9 @@ MODULE mpi_mesg_mod
   USE omp_timer_mod
   USE omp_lock_mod
   USE timer_mod
+  USE mpi_lib
   implicit none
   private
-#ifdef MPI
-  include "mpif.h"
-#endif
   !
   type, public:: mesg_t
     class(mesg_t), pointer:: next => null()

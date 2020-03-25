@@ -3,9 +3,9 @@
 !> MPI remote-memory-access (RMA) calls, also referred to as one-sided MPI
 !===============================================================================
 MODULE mpi_rma_mod
+  USE mpi_lib
   USE mpi_mod
   implicit none
-  include "mpif.h"
   type, extends(mpi_t):: mpi_rma_t
     integer:: window
     integer:: nr, ni
