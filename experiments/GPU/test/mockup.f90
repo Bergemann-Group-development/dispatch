@@ -28,6 +28,7 @@ SUBROUTINE update (self)
   end do
   self%uout = self%scr(:,:,:,nscr-nv+1:nscr)
   self%time = self%time + self%dtime
+  deallocate (self%scr)
 END SUBROUTINE update
 END MODULE solver_mod
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
