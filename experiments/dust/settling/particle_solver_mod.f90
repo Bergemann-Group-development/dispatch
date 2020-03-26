@@ -1,12 +1,10 @@
 !===============================================================================
 !> Particle data types for dust-gas interaction:
 !>
-!>   particle_t         : attributes for a single particle
-!>   particle_list_t    : attributes for lists of particles
-!>   particles_t        : attributes for particle solvers
+!>   particle_t         : data type for a single particle
+!>   particles_t        : data type for lists of particles
+!>   particle_solver_t  : data type for particle solvers
 !>
-!> TODO:
-!>   * Remove trace%begin/end in the most visited procedures
 !===============================================================================
 !define DBG
 MODULE particle_solver_mod
@@ -171,17 +169,21 @@ SUBROUTINE update (self)
   self%dust%d => patch%mem(:,:,:,patch%idx%d              ,patch%it,1)
   self%dust%p => patch%mem(:,:,:,patch%idx%px:patch%idx%pz,patch%it,1)
   !-----------------------------------------------------------------------------
-  !> Non-vectorized pusher
+  ! Allocate array for number of particles per cell-bin
   !-----------------------------------------------------------------------------
   associate (dust=>self%dust)
+  m = self%patch%gn
+  allocate (dust%np(m(1),m(2),m(3),dust%n_bin))  ! work array for pp-cell-bin
+  dust%np = 0.0                                  ! prepare to accumulate
+  !-----------------------------------------------------------------------------
+  !> Non-vectorized pusher
+  !-----------------------------------------------------------------------------
   ip = 0
   no = 0
   nk = 0
   dt = huge(1.0)
   v_min_cell = v_min/minval(patch%ds)
-  m = self%patch%gn
-  allocate (dust%np(m(1),m(2),m(3),dust%n_bin))  ! work array for pp-cell-bin
-  dust%np = 0.0                                  ! prepare to accumulate
+call self%dust%check_particles ('before kdk')
   pa => self%particles%head
   do while (associated(pa))
     !---------------------------------------------------------------------------
@@ -189,32 +191,42 @@ SUBROUTINE update (self)
     !---------------------------------------------------------------------------
     next => pa%next
     !---------------------------------------------------------------------------
+    ! Monitor number of cells per cell-bin
+    !---------------------------------------------------------------------------
+#ifdef DBG
+write(io_unit%log,*) 'update', pa%id, pa%q, pa%t <= patch%time
+flush(io_unit%log)
+#endif
+    i = pa%q                                     ! particle space index
+    bin = pa%bin                                 ! particle bin
+    dust%np(i(1),i(2),i(3),bin) = &              ! accumulate
+    dust%np(i(1),i(2),i(3),bin) + 1              ! into self%np
+    !---------------------------------------------------------------------------
     ! Move the particle until it is ahead of the patch time
     !---------------------------------------------------------------------------
     do while (pa%t <= patch%time)
-      !-------------------------------------------------------------------------
-      ! Monitor number of cells per cell-bin
-      !-------------------------------------------------------------------------
-      i = pa%q                                     ! particle space index
-      bin = pa%bin                                 ! particle bin
-      dust%np(i(1),i(2),i(3),bin) = &              ! accumulate
-      dust%np(i(1),i(2),i(3),bin) + 1              ! into self%np
       !-------------------------------------------------------------------------
       ! Courant conditions
       !-------------------------------------------------------------------------
       pa%dt = courant/max(pa%v(1),pa%v(2),pa%v(3),v_min_cell)
       dt = min(dt,pa%dt)
       call kdk (self, pa, ods)
-      q = floor(pa%r)
-      pa%r = pa%r - q
-      pa%q = pa%q + q
       nk = nk+1
     end do
+    !---------------------------------------------------------------------------
+    ! The integer+real representation does not need to be updated until here
+    !---------------------------------------------------------------------------
+    q = floor(pa%r)
+    pa%r = pa%r - q
+    pa%q = pa%q + q
     !---------------------------------------------------------------------------
     ! Move the particle to the export list if it falls outside
     !---------------------------------------------------------------------------
     outside = self%is_outside (pa)
     if (outside) then
+#ifdef DBG
+write (io_unit%log,*) 'remove', pa%id, pa%q
+#endif
       call self%particles%remove (pa)
       call self%exports%append (pa)
       no = no+1
@@ -227,6 +239,7 @@ SUBROUTINE update (self)
     end if
     pa => next
   end do
+call self%dust%check_particles ('after kdk')
   if (nk > 0) then
     self%dtime = dt
     self%particles%dtime = dt
@@ -269,14 +282,6 @@ SUBROUTINE kdk (self, p, ods)
   call self%dust%drag (p)
   p%r = p%r - p%dt*p%v
   p%v = p%v + p%dt*ods*(p%a+p%d)/(1.+p%c*p%dt*ods)
-#ifdef DBG
-  if (verbose > 5) then
-    write (io_unit%log,1) &
-    'kdk: id, dt, c, q, v, d, a =', &
-    p%id, p%dt, p%c, p%q, p%v, p%d, p%a
-    1 format(a,i8,1p,2e9.2,0p,3i4,1x,3f7.2,2(1x,1p,3e10.2))
-  end if
-#endif
   !-----------------------------------------------------------------------------
   ! Drift, r -> r+2*dt*v(t+dt*a), with v -> vg(t+dt) if drag dominates
   !-----------------------------------------------------------------------------
@@ -288,13 +293,6 @@ SUBROUTINE kdk (self, p, ods)
   call self%dust%drag (p)
   call self%force (p)
   p%v = p%v + p%dt*ods*(p%a+p%d)/(1.+p%c*p%dt*ods)
-#ifdef DBG
-  if (verbose > 4) then
-    write (io_unit%log,1) &
-    'kdk: id, dt, c, q, v, d, a =', &
-    p%id, p%dt, p%c, p%q, p%v, p%d, p%a
-  end if
-#endif
   if (detailed_timer) call trace%end (itimer)
 END SUBROUTINE kdk
 

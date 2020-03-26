@@ -91,12 +91,14 @@ PROGRAM DISPATCH_mockup
     call task%init
     call task_list%append (link)
   end do
-  !$omp parallel private(link)
+  !$omp target
+  !$omp parallel
   do while (task_list%n > 0)
     link => task_list%pop ()
     call link%task%update
     if (link%task%time < end_time) call task_list%append (link)
   end do
   !$omp end parallel
+  !$omp end target
   print *, 'FINISHED: the answer is ...', link%task%uout(1,1,1,1)
 END PROGRAM DISPATCH_mockup
