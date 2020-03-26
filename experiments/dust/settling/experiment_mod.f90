@@ -289,7 +289,6 @@ SUBROUTINE total_dust_mass (self)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('experiment_t%total_dust_mass', itimer=itimer)
-print *,'TOTAL'
   n = 0
   mass = 0d0
   link => self%task_list%head
@@ -310,8 +309,10 @@ print *,'TOTAL'
   if (self%particle_solver%dust%verbose > 0) then
     write(io_unit%log,'(a,f10.3,i12,2x,1p,30e11.2)') &
     'total_dust_mass:', self%time, n, mass
-    write(*,'(a,f10.3,i10,2x,1p,30e11.2)') &
-    'total_dust_mass:', self%time, n, mass
+    if (self%particle_solver%dust%verbose > 1) then
+      write(*,'(a,f10.3,i10,2x,1p,30e11.2)') &
+      'total_dust_mass:', self%time, n, mass
+    end if
   end if
   !.............................................................................
   if (any(abs(mass) > 1e20)) then

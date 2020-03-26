@@ -151,7 +151,7 @@ SUBROUTINE update (self)
   real, dimension(3)         :: r, dr, v
   integer, dimension(3)      :: q, ir
   real   , dimension(3)      :: ods, t, p1
-  class(particle_t), pointer :: pa, next
+  class(particle_t), pointer :: p, next
   real(8)                    :: tmin, tmax, time(2)
   real                       :: dt, v_min_cell
   logical                    :: outside
@@ -184,60 +184,60 @@ SUBROUTINE update (self)
   dt = huge(1.0)
   v_min_cell = v_min/minval(patch%ds)
 call self%dust%check_particles ('before kdk')
-  pa => self%particles%head
-  do while (associated(pa))
+  p => self%particles%head
+  do while (associated(p))
     !---------------------------------------------------------------------------
     ! Get pointer to next, in case the particle is removed
     !---------------------------------------------------------------------------
-    next => pa%next
+    next => p%next
     !---------------------------------------------------------------------------
     ! Monitor number of cells per cell-bin
     !---------------------------------------------------------------------------
 #ifdef DBG
-write(io_unit%log,*) 'update', pa%id, pa%q, pa%t <= patch%time
+write(io_unit%log,*) 'update', p%id, p%q, p%t <= patch%time
 flush(io_unit%log)
 #endif
-    i = pa%q                                     ! particle space index
-    bin = pa%bin                                 ! particle bin
-    dust%np(i(1),i(2),i(3),bin) = &              ! accumulate
-    dust%np(i(1),i(2),i(3),bin) + 1              ! into self%np
+    i = p%q                                     ! particle space index
+    bin = p%bin                                 ! particle bin
+    dust%np(i(1),i(2),i(3),bin) = &             ! accumulate
+    dust%np(i(1),i(2),i(3),bin) + 1             ! into self%np
     !---------------------------------------------------------------------------
     ! Move the particle until it is ahead of the patch time
     !---------------------------------------------------------------------------
-    do while (pa%t <= patch%time)
+    do while (p%t <= patch%time)
       !-------------------------------------------------------------------------
       ! Courant conditions
       !-------------------------------------------------------------------------
-      pa%dt = courant/max(pa%v(1),pa%v(2),pa%v(3),v_min_cell)
-      dt = min(dt,pa%dt)
-      call kdk (self, pa, ods)
+      p%dt = courant/max(p%v(1),p%v(2),p%v(3),v_min_cell)
+      dt = min(dt,p%dt)
+      call kdk (self, p, ods)
       nk = nk+1
     end do
     !---------------------------------------------------------------------------
     ! The integer+real representation does not need to be updated until here
     !---------------------------------------------------------------------------
-    q = floor(pa%r)
-    pa%r = pa%r - q
-    pa%q = pa%q + q
+    q = floor(p%r)
+    p%r = p%r - q
+    p%q = p%q + q
     !---------------------------------------------------------------------------
     ! Move the particle to the export list if it falls outside
     !---------------------------------------------------------------------------
-    outside = self%is_outside (pa)
+    outside = self%is_outside (p)
     if (outside) then
 #ifdef DBG
-write (io_unit%log,*) 'remove', pa%id, pa%q
+write (io_unit%log,*) 'remove', p%id, p%q
 #endif
-      call self%particles%remove (pa)
-      call self%exports%append (pa)
+      call self%particles%remove (p)
+      call self%exports%append (p)
       no = no+1
     end if
     ip = ip+1
     if (verbose > 2) then
       write (io_unit%log,'(a,i8,l3,1p,2e9.2,0p,3i4,1x,3f7.2,2(1x,1p,3e10.2))') &
       'update: id, outside, dt, c, q, r, v, a =', &
-      pa%id, outside, pa%dt, pa%c, pa%q, pa%r, pa%v, pa%a
+      p%id, outside, p%dt, p%c, p%q, p%r, p%v, p%a
     end if
-    pa => next
+    p => next
   end do
 call self%dust%check_particles ('after kdk')
   if (nk > 0) then
@@ -336,7 +336,7 @@ SUBROUTINE import_particles (self)
   class(nbor_t)    , pointer :: nbor
   class(task_t)    , pointer :: task, nbtask
   class(gpatch_t)  , pointer :: nbpatch
-  class(particle_t), pointer :: pa, next
+  class(particle_t), pointer :: p, next
   real(8)                    :: r(3)
   integer                    :: q(3)
   integer, save              :: itimer=0
@@ -357,18 +357,18 @@ SUBROUTINE import_particles (self)
         !-----------------------------------------------------------------------
         ! Loop over particles in export list and grab those that belong here
         !-----------------------------------------------------------------------
-        pa => nbtask%exports%head
-        do while (associated(pa))
-          next => pa%next
-          r = (nbpatch%position - self%position)/nbpatch%ds + (pa%r + pa%q)
+        p => nbtask%exports%head
+        do while (associated(p))
+          next => p%next
+          r = (nbpatch%position - self%position)/nbpatch%ds + (p%r + p%q)
           q = floor(r)
-          pa%r = r - q
-          pa%q = pa%q + q
-          if (is_inside (self, pa)) then
-            call task%exports%remove (pa)
-            call self%particles%append (pa)
+          p%r = r - q
+          p%q = p%q + q
+          if (is_inside (self, p)) then
+            call task%exports%remove (p)
+            call self%particles%append (p)
           end if
-          pa => next
+          p => next
         end do
       end select
     end select
