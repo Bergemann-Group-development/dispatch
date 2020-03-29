@@ -279,15 +279,23 @@ SUBROUTINE append_link (self, link)
   !-----------------------------------------------------------------------------
   ! Append in such a way that the task list does not need to be locked
   !-----------------------------------------------------------------------------
+  call link%qlock%set ('append_link')
   nullify(link%next)
   if (associated(self%tail)) then
     link%prev => self%tail
     link%prev%next => link
+    call self%tail%qlock%set ('append_link')
     self%tail => link
+    call self%tail%qlock%unset ('append_link')
   else
+    call self%head%qlock%set ('append_link')
+    call self%tail%qlock%set ('append_link')
     self%head => link
     self%tail => link
+    call self%tail%qlock%unset ('append_link')
+    call self%head%qlock%unset ('append_link')
   end if
+  call link%qlock%unset ('append_link')
   !-----------------------------------------------------------------------------
   ! IMPORTANT: Some procedures depend on knowing the size of the list!
   !-----------------------------------------------------------------------------
@@ -1979,8 +1987,11 @@ end if
       write (io_unit%log,'(f12.6,i5,1x,a,i9,a,f12.6,2x,a,i5)') wallclock(), omp%thread, &
         'list_t%queue_by_time: adding task', task%id, ' at time', task%time, &
         'nq', self%nq
+    call this%qlock%set ('queue_by_time')
     nullify (prev)
+    call self%queue%qlock%set ('queue_by_time')
     next => self%queue
+    call self%queue%qlock%unset ('queue_by_time')
     nit = 0
     do while (associated(next))
       nit = nit+1
@@ -1994,7 +2005,9 @@ end if
           ' is already in ready queue'
         go to 9
       else if (next%task%time > task%time) then
+        call this%qlock%set ('queue_by_time')
         this%next_time => next
+        call this%qlock%unset ('queue_by_time')
         if (associated(prev)) then
           if (self%verbose > 1) then
             write (io_unit%log,'(i4,2x,a,i6,a,i6,i5,1p,3g16.6)') &
@@ -2002,13 +2015,13 @@ end if
               prev%task%id,next%task%id, prev%task%time, this%task%time, &
               next%task%time
           end if
-          !call prev%qlock%set ('queue_by_time')
+          call prev%qlock%set ('queue_by_time')
           prev%next_time => this
-          !call prev%qlock%unset ('queue_by_time')
+          call prev%qlock%unset ('queue_by_time')
         else
-          !call self%queue%qlock%set ('queue_by_time')
+          call self%queue%qlock%set ('queue_by_time')
           self%queue => this
-          !call self%queue%qlock%unset ('queue_by_time')
+          call self%queue%qlock%unset ('queue_by_time')
           if (self%verbose > 1) then
             write (io_unit%log,*) 'task',task%id,' at ready queue head',self%nq
           end if
@@ -2017,8 +2030,10 @@ end if
         self%nq = self%nq+1
         go to 9
       end if
+      call next%qlock%set ('queue_by_time')
       prev => next
       next => next%next_time
+      call next%qlock%unset ('queue_by_time')
     end do
     self%nq = self%nq+1
     if (associated(prev)) then

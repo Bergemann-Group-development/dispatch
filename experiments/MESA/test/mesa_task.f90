@@ -1,4 +1,5 @@
 PROGRAM mesa_task
+  USE io_unit_mod
   implicit none
   integer:: iostat, i
   character(len=32):: line
@@ -16,8 +17,8 @@ PROGRAM mesa_task
     print *, 'MESA task starting MESA code'
     call system("bash mesa.sh")
     !-----------------------------------------------------------------------------
-    open (10, file='mesa.pipe1', form='formatted', status='unknown', action='read')
-    open (11, file='mesa.pipe2', form='formatted', status='unknown', action='write')
+    open (io_unit%mesa1, file='mesa.pipe1', form='formatted', status='unknown', action='read')
+    open (io_unit%mesa2, file='mesa.pipe2', form='formatted', status='unknown', action='write')
     !-----------------------------------------------------------------------------
     i = 0
     do

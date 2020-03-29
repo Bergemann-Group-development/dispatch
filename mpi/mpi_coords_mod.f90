@@ -29,13 +29,11 @@
 !>
 !===============================================================================
 MODULE mpi_coords_mod
+  USE mpi_lib
   USE mpi_mod
   USE timer_mod
   implicit none
   private
-#ifdef MPI
-  include 'mpif.h'
-#endif MPI
   logical:: cart_created=.false.! Set to true if cartesian mpi coordinates are set up
   logical:: mpi_reorder         ! Reordering of ranks allowed, or not
   logical:: mpi_periodic(3)     ! Periodic MPI dimensions, or not

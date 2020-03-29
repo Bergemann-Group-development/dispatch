@@ -2,13 +2,11 @@
 !> Simple MPI global array data type
 !===============================================================================
 MODULE mpi_global_mod
+  USE mpi_lib
   USE mpi_mod
   USE trace_mod
   implicit none
   private
-#ifdef MPI
-  include "mpif.h"
-#endif
   type, public:: mpi_global_t
     integer:: window=0
     real(8), pointer:: a(:)

@@ -2,9 +2,7 @@
 !> Simple module for sending / receiving packages to / from other ranks
 !===============================================================================
 MODULE mpi_comm_mod
-#ifdef MPI
-  USE mpi
-#endif MPI
+  USE mpi_lib
   USE mpi_mod, mp => mpi
   implicit none
   private

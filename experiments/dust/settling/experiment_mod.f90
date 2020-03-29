@@ -7,19 +7,21 @@
 !>
 !> Calling sequence (shows only data type and procedure):
 !>   experiment_t%update
-!>     extras_t%pre_update
+!>     mhd_t%update
+!>     extras_t%post_update
 !>       particle_solver_t%update
-!>         partice_solver_t%gather
-!>         partice_solver_t%evolve
-!>         partice_solver_t%scatter
-!>       while (pa):
-!>         particle_solver%kdk
-!>           dust_t%drag
-!>           particle_solver_t%force
-!>             experiment_t%pforce
+!>       while (particle):
+!>         particle_solver%kdk (particle)
+!>           dust_t%drag (particle)
+!>           particle_solver_t%force (particle)
+!>             experiment_t%pforce (position)
 !>         if (particle_solver_t%is_outside):
-!>           particle_solver_t%exports%append
 !>           particle_solver_t%particles%remove
+!>           particle_solver_t%exports%append
+!>       dust_t%gather
+!>       dust_t%renormalize
+!>       dust_t%evolve
+!        dust_t%scatter
 !===============================================================================
 MODULE experiment_mod
   USE io_mod
@@ -307,8 +309,10 @@ SUBROUTINE total_dust_mass (self)
   if (self%particle_solver%dust%verbose > 0) then
     write(io_unit%log,'(a,f10.3,i12,2x,1p,30e11.2)') &
     'total_dust_mass:', self%time, n, mass
-    write(*,'(a,f10.3,i10,2x,1p,30e11.2)') &
-    'total_dust_mass:', self%time, n, mass
+    if (self%particle_solver%dust%verbose > 1) then
+      write(*,'(a,f10.3,i10,2x,1p,30e11.2)') &
+      'total_dust_mass:', self%time, n, mass
+    end if
   end if
   !.............................................................................
   if (any(abs(mass) > 1e20)) then
