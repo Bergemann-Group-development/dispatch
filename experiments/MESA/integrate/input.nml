@@ -22,11 +22,10 @@
 !---------------------------------------------
 &patch_params           nt=5 grace=0.5 n=3*32 no_mans_land=t /
 !patch_params           nt=5 grace=0.1 n=3*21 no_mans_land=f /
-&out_params             end_time=0.200 out_time=0.025 print_time=0.0 /
-&io_params              verbose=0 do_trace=f omp_trace=f do_output=f restart=-2
+&out_params             end_time=0.100 out_time=0.025 print_time=0.0 /
+&io_params              verbose=1 do_trace=t omp_trace=t do_output=f restart=-2
                         method='parallel' format=11 guard_zones=f time_derivs=0 /
 &download_params        verbose=0 check_filled=t /
-&guard_zone_params      method='simple' verbose=0 /
 &timer_params           sec_per_report=5 /
 &time_slices_params     order=1 /
 &lock_params            verbose=0 /
@@ -43,6 +42,11 @@
 &trace_particle_params  on=f verbose=0 per_cell=1.0 /
 
 !---------------------------------
+! Sink particle parameters
+!---------------------------------
+&sinks_params          verbose=2 velocity=3*0.0, position=3*0.5 /
+
+!---------------------------------
 ! Solver specific parameters
 !---------------------------------
 &scaling_params         l_pc=40. d_cgs=50e-24, v_kms=1.0 mu=2.4 /
@@ -55,14 +59,6 @@
 &timestep_params        /
 &refine_params          on=f check_interval=2 /
 
-!---------------------------------
-! Sink particle parameters
-!---------------------------------
-&sink_patch_params      on=f n_ad_hoc=2 /
-&sink_params            x=0.52 y=0.52 z=0.52 vx=0.1 mass=1 /
-&sink_params            x=0.48 y=0.48 z=0.48 vx=0.2 mass=1 /
-&particle_params        verbose=2 /
-
 !----------------------------------------------------------------------------------
 ! MPI and loadbalancing parameters
 !----------------------------------------------------------------------------------
@@ -74,9 +70,7 @@
 ! Method=2 uses a more complex master thread dispatcher
 !----------------------------------------------------------------------------------
 &dispatcher_params      method=0 test=f /
-&task_mesg_params       verbose=1 method='private' /    ! optimal for unigrid
-!&task_mesg_params       verbose=1 method='virtual' /    ! works for unigrid
-!&task_mesg_params       verbose=0 method='master' /     ! works for both AMR & unig
+&dispatcher0_params     verbose=1 /
 &task_list_params       verbose=0 /
 &mpi_mesg_params        verbose=0 send_priv=t /
 

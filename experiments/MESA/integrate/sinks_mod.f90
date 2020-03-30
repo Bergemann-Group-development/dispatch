@@ -20,21 +20,6 @@
 !>    *  update(): update the sinkparticle position, after computing forces
 !>    *    wind(): computes the wind output from the sink particle
 !>    * explode(): computes the momentum input from the SN explosion of the star
-!>
-!> Each patch that makes use of the force() procedure to compute the force on
-!> its gas cells also removes the corresponding amount of momentum from the sink.
-!> The %force() prodedure must therefor have an argument that gives the mass of
-!> the object making the call.
-!>
-!> There is no problem computing the direct interaction between the sink and
-!> all other sink particles, as long as it doesn't have to be done very often.
-!> However, for gas to particle interaction, the influence of distant, low
-!> mass sinks should be combined into a single mass point for each patch they
-!> belong to.
-!>
-!> Stars should be grouped into cluster tasks, which have a total mass and 
-!> a center of mass.  These should again be collected into a population task,
-!> which has a list of all cluster tasks.
 !===============================================================================
 MODULE sinks_mod
   USE io_mod
@@ -54,6 +39,7 @@ MODULE sinks_mod
     procedure:: pre_update
   end type
   integer:: verbose=0
+  real:: v_min=1.0
   real:: radius=8.0
   real:: mass_msun=30
   real:: SN_time=0.1
@@ -65,10 +51,10 @@ CONTAINS
 SUBROUTINE init (self)
   class(sinks_t):: self
   integer:: iostat
-  real:: velocity(3)=0.0, position(3)=0.5
+  real:: velocity(3)=0.0, position(3)=0.45
   logical, save:: first_time=.true.
-  namelist /sinks_params/ verbose, mass_msun, radius, velocity, SN_time, &
-    position
+  namelist /sinks_params/ verbose, mass_msun, radius, velocity, v_min, &
+    SN_time, position
   !-----------------------------------------------------------------------------
   call trace%begin ('sinks_t%init')
   if (first_time) then
@@ -112,11 +98,12 @@ SUBROUTINE pre_update (self, patch)
   call trace%begin ('sinks_t%pre_update')
   contains_sink = patch%contains (self%position)
   if (verbose > 1) then
-    print '(a,i6,2(2x,3f9.6),l5)', 'sinks_t%pre_update: patch%id, pos, patch%pos =', &
-      patch%id, self%position, (patch%position-self%position)/patch%size, contains_sink
+    write(io_unit%log,'(a,i6,2(2x,3f9.6),l5)') &
+      'sinks_t%pre_update: patch%id, pos, patch%pos =', patch%id, &
+      self%position, (patch%position-self%position)/patch%size, contains_sink
   end if
   if (contains_sink) then
-    self%dtime = minval(patch%ds)/sqrt(sum(self%velocity**2))
+    self%dtime = minval(patch%ds)/max(v_min,sqrt(sum(self%velocity**2)))
     if (self%time < patch%time) then
       self%previous_time = self%time
       do while (self%time < patch%time)
@@ -126,13 +113,19 @@ SUBROUTINE pre_update (self, patch)
         self%dtime = min(self%dtime, patch%time-self%time+self%dt_min)
         self%position = self%position + self%dtime*self%velocity
         self%pos(:,self%new) = self%position
-        if (verbose > 0) then
-          write (stdout,*) &
-            self%id, patch%id, self%time, self%it, 'sinks_t%update: moved to', real(self%position,kind=4)
+        if (verbose > 1) then
+          write (stdout,*) self%id, patch%id, self%time, self%it, &
+            'sinks_t%update: moved to', real(self%position,kind=4)
+          write (io_unit%log,*) self%id, patch%id, self%time, self%it, &
+            'sinks_t%update: moved to', real(self%position,kind=4)
         end if
         self%rotated = .false.
         call self%rotate
       end do
+    else
+      if (verbose > 1) &
+        write (io_unit%log,*) self%id, patch%id, self%time, self%it, &
+          'sinks_t%update: not time yet'
     end if
   end if
   call trace%end ()
