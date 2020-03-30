@@ -79,6 +79,7 @@ MODULE io_mod
     procedure:: gb_mem
     procedure:: gb_print
     procedure:: namelist_warning
+    procedure, nopass:: warning
     procedure, nopass:: abort
     procedure, nopass:: assert
     procedure, nopass:: header
@@ -546,6 +547,21 @@ SUBROUTINE namelist_warning (self, namelist, iostat, error)
     end if
   end if
 END SUBROUTINE namelist_warning
+
+!===============================================================================
+!> Issue warnings, unless io%verbose==0
+!===============================================================================
+SUBROUTINE warning (text)
+  character(len=*), optional:: text
+  !.............................................................................
+  if (io%verbose > 0) then
+    if (present(text)) then
+      write (stdout,*) 'io_t%warning: '//trim(text)
+    else
+      write (stdout,*) 'io_t%warning: called without specific text'
+    end if
+  end if
+END SUBROUTINE warning
 
 !===============================================================================
 !> Interface to mpi%abort, for modules that do not otherwise USE mpi_mod
