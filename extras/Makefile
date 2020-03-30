@@ -3,7 +3,7 @@
 # and if a local solver dependent version is needed, it should be
 # placed in /$(SOLVER)/extra, below the experiment directory
 #
-VPATH := $(VPATH):$(SOLVER)/extras:$(TOP)/solvers/$(SOLVER)/extras:$(TOP)/extras
+VPATH := $(TOP)/extras:$(SOLVER)/extras:$(TOP)/solvers/$(SOLVER)/extras:$(VPATH)
 include $(TOP)/extras/spitzer_conductivity/Makefile
 include $(TOP)/extras/cooling/Makefile
 
@@ -20,3 +20,7 @@ lagrangian_mod.o        : io_mod.o trace_mod.o patch_mod.o link_mod.o
 connect_mod.o           :
 SN_mod.o                : sinks_mod.o
 sinks_mod.o             : io_mod.o trace_mod.o patch_mod.o scaling_mod.o
+particles_mod.o         : io_mod.o trace_mod.o
+particle_solver_mod.o   : omp_timer_mod.o timer_mod.o task_mod.o link_mod.o \
+                          gpatch_mod.o particles_mod.o dust_mod.o list_mod.o
+dust_mod.o              : gpatch_mod.o particles_mod.o random_mod.o scaling_mod.o
