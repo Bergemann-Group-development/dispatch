@@ -288,12 +288,8 @@ SUBROUTINE append_link (self, link)
     self%tail => link
     call self%tail%qlock%unset ('append_link')
   else
-    call self%head%qlock%set ('append_link')
-    call self%tail%qlock%set ('append_link')
     self%head => link
     self%tail => link
-    call self%tail%qlock%unset ('append_link')
-    call self%head%qlock%unset ('append_link')
   end if
   call link%qlock%unset ('append_link')
   !-----------------------------------------------------------------------------
