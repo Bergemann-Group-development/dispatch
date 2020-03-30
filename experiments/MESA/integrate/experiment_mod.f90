@@ -38,7 +38,11 @@ SUBROUTINE init (self)
   end if
   !$omp end critical (input_cr)
   d = density_cgs/scaling%d
-  e = (cs_kms*1e5/scaling%u)**2*d/(self%gamma*(self%gamma-1.0))
+  if (self%gamma == 1d0) then
+    e = (cs_kms*1e5/scaling%u)**2*d
+  else
+    e = (cs_kms*1e5/scaling%u)**2*d/(self%gamma*(self%gamma-1.0))
+  end if
   self%mem(:,:,:,self%idx%d,1,1) = d
   self%mem(:,:,:,self%idx%e,1,1) = e
   call trace%end ()
