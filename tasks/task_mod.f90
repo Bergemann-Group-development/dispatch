@@ -182,7 +182,7 @@ END SUBROUTINE void
 SUBROUTINE dnload (self, only)
   class (task_t):: self
   integer, optional:: only
-  call mpi%abort('ERROR: task_t%dnload called')
+  call io%warning('task_t%dnload called')
 END SUBROUTINE dnload
 
 !===============================================================================
@@ -298,6 +298,7 @@ END SUBROUTINE init_params
 SUBROUTINE init_unique (self, same)
   class (task_t):: self
   logical, optional:: same
+  logical:: same_l
   integer:: id, id_master
   integer, save:: id_same=0
   !-----------------------------------------------------------------------------
@@ -306,7 +307,12 @@ SUBROUTINE init_unique (self, same)
   !-----------------------------------------------------------------------------
   call trace_begin ('task_t%init_unique')
   call init_params (self)
-  if (present(same) .and. same) then
+  if (present(same)) then
+    same_l = same
+  else
+    same_l = .false.
+  end if
+  if (same_l) then
     if (mpi%master) &
       id_master = mpi%id%update (1)
     !$omp atomic capture

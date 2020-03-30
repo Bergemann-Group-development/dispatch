@@ -63,6 +63,8 @@ SUBROUTINE init (self, solver, gamma1)
     self%condition => exa256
   case ('raw')
     self%condition => raw
+  case ('turbulence')
+    self%condition => turbulence
   case ('void')
     self%condition => void
   case default
@@ -370,6 +372,45 @@ SUBROUTINE raw (self, m, ff, idx)
   !$omp end critical (raw_cr)
   call trace_end (itimer)
 END SUBROUTINE raw
+
+!===============================================================================
+!> Initialize to zero, and let the forces drive from there
+!===============================================================================
+SUBROUTINE turbulence (self, m, ff, idx)
+  class(initial_t):: self
+  type(index_t):: idx
+  class(mesh_t):: m(3)
+  real, dimension(:,:,:,:):: ff
+  !.............................................................................
+  real, save            :: b0(3)=[0.0,0.0,0.1]
+  logical, save         :: first_time=.true.
+  namelist /IC_turbulence_params/ b0
+  integer, save         :: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace_begin('initial_t%turbulence', itimer=itimer)
+  !$omp critical (input_cr)
+  if (first_time) then
+    first_time = .false.
+    rewind (io%input)
+    read (io%input, IC_turbulence_params)
+    if (io%master) write (io%output, IC_turbulence_params)
+  end if
+  !$omp end critical (input_cr)
+  ff(:,:,:,idx%d        ) = 1.0
+  ff(:,:,:,idx%e        ) = 1.0
+  if (gamma==1.0) then
+    ff(:,:,:,idx%e        ) = 1.0 + 0.5*(b0(1)**2+b0(2)**2+b0(3)**2)
+  else
+    ff(:,:,:,idx%e        ) = 1.0/(gamma-1.) + 0.5*(b0(1)**2+b0(2)**2+b0(3)**2)
+  end if
+  ff(:,:,:,idx%px:idx%pz) = 0.0
+  if (idx%bx > 0) then
+    ff(:,:,:,idx%bx       ) = b0(1)
+    ff(:,:,:,idx%by       ) = b0(2)
+    ff(:,:,:,idx%bz       ) = b0(3)
+  end if
+  call trace_end (itimer)
+END SUBROUTINE turbulence
 
 !===============================================================================
 !> Calculate total energy
