@@ -45,6 +45,7 @@
 !> This is arranged by using an OMP lock in data_io_mod -- cf. comments there.
 !===============================================================================
 MODULE amr_io_mod
+  USE io_unit_mod
   USE io_mod
   USE trace_mod
   USE kinds_mod
