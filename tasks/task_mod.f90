@@ -175,14 +175,18 @@ CONTAINS
 !===============================================================================
 SUBROUTINE void (self)
   class (task_t):: self
+  call trace%begin ('task_t%void')
   print*, 'ERROR: task_t%void called'
+  call trace%end ()
 END SUBROUTINE void
 
 !===============================================================================
 SUBROUTINE dnload (self, only)
   class (task_t):: self
   integer, optional:: only
+  call trace%begin ('task_t%dnload')
   call io%warning('task_t%dnload called')
+  call trace%end ()
 END SUBROUTINE dnload
 
 !===============================================================================
@@ -192,7 +196,7 @@ SUBROUTINE init (self)
   class (task_t):: self
   integer:: id, id_master
   !-----------------------------------------------------------------------------
-  call trace_begin ('task_t%init')
+  call trace%begin ('task_t%init')
   call init_params (self)
   if (self%id == 0) then
     call init_unique (self)
@@ -239,7 +243,7 @@ SUBROUTINE init (self)
     self%track = .true.
   end if
   call self%log ('init', 2)
-  call trace_end ()
+  call trace%end ()
 END SUBROUTINE init
 
 !===============================================================================
@@ -255,7 +259,7 @@ SUBROUTINE init_params (self)
   namelist /task_params/ track_id, do_dumps, verbose
   namelist /dump_params/ id, iostat
   !-----------------------------------------------------------------------------
-  call trace_begin ('task_t%init_params')
+  call trace%begin ('task_t%init_params')
   call trace%print_id (ids)
   !$omp critical (input_cr)
   !-----------------------------------------------------------------------------
@@ -289,7 +293,7 @@ SUBROUTINE init_params (self)
     end do
   end if
   !$omp end critical (input_cr)
-  call trace_end ()
+  call trace%end ()
 END SUBROUTINE init_params
 
 !===============================================================================
@@ -305,7 +309,7 @@ SUBROUTINE init_unique (self, same)
   ! Ranks that call this routine in sync  with same=.true. get a matching set
   ! of IDs to prune from, while the master rank updates the global counter
   !-----------------------------------------------------------------------------
-  call trace_begin ('task_t%init_unique')
+  call trace%begin ('task_t%init_unique')
   call init_params (self)
   if (present(same)) then
     same_l = same
@@ -350,7 +354,7 @@ END SUBROUTINE init_unique
 SUBROUTINE dealloc (self)
   class (task_t):: self
   !.............................................................................
-  call trace_begin ('task_t%dealloc')
+  call trace%begin ('task_t%dealloc')
   if (associated(self%t  )) deallocate (self%t  )
   if (associated(self%dt )) deallocate (self%dt )
   if (associated(self%iit)) deallocate (self%iit)
@@ -362,7 +366,7 @@ SUBROUTINE dealloc (self)
     call self%sent_list%dealloc
     deallocate (self%sent_list)
   end if
-  call trace_end
+  call trace%end
 END SUBROUTINE dealloc
 
 !===============================================================================
@@ -374,7 +378,7 @@ SUBROUTINE save_id (self)
   class(dll_node_t), pointer:: node
   integer, pointer:: id
   !-----------------------------------------------------------------------------
-  call trace_begin ('task_t%save_id')
+  call trace%begin ('task_t%save_id')
   if (.not.associated(deleted_list%head)) then
     call deleted_list%init
   end if
@@ -382,7 +386,7 @@ SUBROUTINE save_id (self)
   id = self%id
   node%car => id
   call deleted_list%append (node)
-  call trace_end
+  call trace%end
 END SUBROUTINE save_id
 
 !===============================================================================
@@ -530,7 +534,7 @@ SUBROUTINE rotate (self)
     if (io%grace    > 0.0) self%grace    = io%grace
   end if
   if (self%rotated) return
-  call trace_begin ('task_t%rotate',itimer=itimer)
+  call trace%begin ('task_t%rotate',itimer=itimer)
   call self%log ('rotate', 3)
   !-----------------------------------------------------------------------------
   ! Call timestep update procedure to fill the next time slot with values
@@ -601,7 +605,7 @@ SUBROUTINE rotate (self)
   if (omp_lock%tasks) then
     call self%lock%unset ('rotate')
   end if
-  call trace_end (itimer)
+  call trace%end (itimer)
 END SUBROUTINE rotate
 
 !===============================================================================
@@ -754,10 +758,10 @@ SUBROUTINE set (self, bits)
   class (task_t):: self
   integer:: bits
   !.............................................................................
-!  call trace_begin ('task_t%set')
+!  call trace%begin ('task_t%set')
   !$omp atomic
   self%status = ior(self%status, bits)
-!  call trace_end
+!  call trace%end
 END SUBROUTINE
 
 !===============================================================================
@@ -767,10 +771,10 @@ SUBROUTINE clear (self, bits)
   class (task_t):: self
   integer:: bits
   !.............................................................................
-!  call trace_begin ('task_t%clear')
+!  call trace%begin ('task_t%clear')
   !$omp atomic
   self%status = iand(self%status, not(bits))
-!  call trace_end
+!  call trace%end
 END SUBROUTINE
 
 !===============================================================================
@@ -780,11 +784,11 @@ LOGICAL FUNCTION is_set (self, bits)
   class (task_t):: self
   integer:: bits, status
   !.............................................................................
-!  call trace_begin ('task_t%is_set')
+!  call trace%begin ('task_t%is_set')
   !$omp atomic read
   status = self%status
   is_set = (iand(status, bits) /= 0)
-!  call trace_end
+!  call trace%end
 END FUNCTION
 
 !===============================================================================
@@ -794,11 +798,11 @@ LOGICAL FUNCTION is_clear (self, bits)
   class (task_t):: self
   integer:: bits, status
   !.............................................................................
-!  call trace_begin ('task_t%is_clear')
+!  call trace%begin ('task_t%is_clear')
   !$omp atomic read
   status = self%status
   is_clear = (iand(status, bits) == 0)
-!  call trace_end
+!  call trace%end
 END FUNCTION
 
 !===============================================================================
