@@ -191,17 +191,6 @@ call self%dust%check_particles ('before kdk')
     !---------------------------------------------------------------------------
     next => p%next
     !---------------------------------------------------------------------------
-    ! Monitor number of cells per cell-bin
-    !---------------------------------------------------------------------------
-#ifdef DBG
-write(io_unit%log,*) 'update', p%id, p%q, p%t <= patch%time
-flush(io_unit%log)
-#endif
-    i = p%q                                     ! particle space index
-    bin = p%bin                                 ! particle bin
-    dust%np(i(1),i(2),i(3),bin) = &             ! accumulate
-    dust%np(i(1),i(2),i(3),bin) + 1             ! into self%np
-    !---------------------------------------------------------------------------
     ! Move the particle until it is ahead of the patch time
     !---------------------------------------------------------------------------
     do while (p%t <= patch%time)
@@ -220,13 +209,24 @@ flush(io_unit%log)
     p%r = p%r - q
     p%q = p%q + q
     !---------------------------------------------------------------------------
+    ! Monitor number of cells per cell-bin
+    !---------------------------------------------------------------------------
+    if(verbose > 1) then
+      write(io_unit%log,*) 'update', p%id, p%q, p%t <= patch%time
+      flush(io_unit%log)
+    endif
+    i = p%q                                     ! particle space index
+    bin = p%bin                                 ! particle bin
+    dust%np(i(1),i(2),i(3),bin) = &             ! accumulate
+    dust%np(i(1),i(2),i(3),bin) + 1             ! into self%np
+    !---------------------------------------------------------------------------
     ! Move the particle to the export list if it falls outside
     !---------------------------------------------------------------------------
     outside = self%is_outside (p)
     if (outside) then
-#ifdef DBG
-write (io_unit%log,*) 'remove', p%id, p%q
-#endif
+      if(verbose > 1) then
+        write (io_unit%log,*) 'remove', p%id, p%q
+      endif
       call self%particles%remove (p)
       call self%exports%append (p)
       no = no+1
@@ -239,7 +239,7 @@ write (io_unit%log,*) 'remove', p%id, p%q
     end if
     p => next
   end do
-call self%dust%check_particles ('after kdk')
+!call self%dust%check_particles ('after kdk')
   if (nk > 0) then
     self%dtime = dt
     self%particles%dtime = dt

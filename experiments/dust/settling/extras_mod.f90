@@ -41,8 +41,8 @@ SUBROUTINE pre_init (self)
   class(extras_t), target:: self
   !.............................................................................
   call trace%begin ('extras_t%pre_init')
-  self%particle_solver%patch => self
-  call self%particle_solver%pre_init
+  self%particle_solver%patch => self                                    ! part
+  call self%particle_solver%pre_init                                    ! part
   call trace%end()
 END SUBROUTINE pre_init
 
@@ -53,7 +53,7 @@ SUBROUTINE init (self)
   class(extras_t):: self
   !.............................................................................
   call trace%begin ('extras_t%init')
-  call self%particle_solver%init
+  call self%particle_solver%init                                        ! part
   call trace%end()
 END SUBROUTINE init
 
@@ -65,8 +65,8 @@ SUBROUTINE init_task_list (self, task_list)
   class(list_t), pointer:: task_list
   !-----------------------------------------------------------------------------
   call trace%begin ('extras_t%init_task_list')
-  call self%particle_solver%init_task_list (task_list)
-  call self%gpatch_t%init_task_list (task_list)
+  call self%particle_solver%init_task_list (task_list)                  ! part
+  call self%gpatch_t%init_task_list (task_list)                         ! keep
   call trace%end ()
 END SUBROUTINE init_task_list
 
@@ -87,7 +87,7 @@ SUBROUTINE post_update (self)
   class(extras_t):: self
   !.............................................................................
   call trace%begin ('extras_t%post_update')                            ! keep
-  call self%particle_solver%update
+  call self%particle_solver%update                                     ! part
   call trace%end()
 END SUBROUTINE post_update
 
