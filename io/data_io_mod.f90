@@ -36,6 +36,7 @@ MODULE data_io_mod
   USE index_mod
   USE dll_mod
   USE time_slices_mod
+  USE aux_mod
   implicit none
   private
   type, public:: io_kind_t
@@ -95,6 +96,7 @@ SUBROUTINE init (self, task)
           end if
         end select
       end if
+      call aux%init
       call self%lock%init ('data_io')
       call self%kind_list%init
       self%initialized = .true.
