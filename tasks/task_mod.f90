@@ -128,6 +128,7 @@ MODULE task_mod
     generic:: contains => contains1, contains2
     procedure:: task_info
     procedure:: log
+    procedure:: run => void
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O

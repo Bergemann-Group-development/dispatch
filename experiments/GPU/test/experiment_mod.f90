@@ -26,6 +26,7 @@ MODULE experiment_mod
   contains
     procedure:: init
     procedure:: update
+    procedure:: run
   end type
 CONTAINS
 
@@ -35,7 +36,7 @@ CONTAINS
 SUBROUTINE init (self)
   class(experiment_t):: self
   !-----------------------------------------------------------------------------
-  call trace%begin('experiment_t%init')
+  call trace%begin ('experiment_t%init')
   call self%solver_t%init
   self%d0 = self%initial%d0
   call self%set (bits%static)
@@ -43,7 +44,7 @@ SUBROUTINE init (self)
     self%time = self%initial%time
     self%t(self%it) = self%initial%time
   end if
-  call trace%end()
+  call trace%end ()
 END SUBROUTINE init
 
 !===============================================================================
@@ -58,7 +59,7 @@ SUBROUTINE update (self)
   class(link_t), pointer:: link
   logical, save:: first_time=.true.
   !----------------------------------------------------------------------------
-  call trace%begin('experiment_t%update')
+  call trace%begin ('experiment_t%update')
   if (first_time) then
     !$omp critical (cleanup_cr)
     if (first_time) then
@@ -68,7 +69,20 @@ SUBROUTINE update (self)
     !$omp end critical (cleanup_cr)
   end if
   call self%solver_t%update
-  call trace%end()
+  call trace%end ()
 END SUBROUTINE update
+
+!===============================================================================
+!> Complete update of a task
+!===============================================================================
+SUBROUTINE run (self)
+  class(experiment_t):: self
+  !----------------------------------------------------------------------------
+  call trace%begin ('experiment_t%run')
+  call self%dnload
+  call self%update
+  call self%rotate
+  call trace%end ()
+END SUBROUTINE run (self)
 
 END MODULE
