@@ -6,7 +6,7 @@
 
 !--- Dust and particle solver parameters ---------------------------------------
 &particle_solver_params verbose=0 v_min=1 courant=0.1 detailed_timer=f /
-&dust_params            verbose=0 n_bin=3 cadence=10 up_rate=1e-9
+&dust_params            verbose=0 n_bin=3 cadence=10 growth_rate=1e-9
                         particles_per_bin=20 min_fraction=0.7 max_fraction=1.4 /
 
 !--- Input/Output parameters ---------------------------------------------------

@@ -23,7 +23,7 @@
                         cadence=30                ! dust evolution cadence
                         min_size_cm               ! minimum dust size
                         max_size_cm               ! maximum dust size
-                        up_rate=0.01              ! rate of increasing size
+                        growth_rate=0.01          ! rate of increasing size
                         particles_per_bin_min=8   ! renormalize to 10 if below
                         particles_per_bin    =10  ! particles per cell-bin
                         particles_per_bin_max=14  ! renormalize to 10 if above
