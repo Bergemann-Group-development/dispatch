@@ -48,9 +48,8 @@ MODULE extras_mod
   USE forces_mod                                                ! forces
   USE selfgravity_mod                                           ! selfg
   USE cooling_mod                                               ! cool
-  USE lagrangian_mod                                            ! move
   USE sinks_mod                                                 ! sinks
-  USE SN_mod                                                    ! SN
+  USE mesa_mod                                                  ! mesa
   !-----------------------------------------------------------------------------
   implicit none
   private
@@ -62,9 +61,7 @@ MODULE extras_mod
     type(forces_t):: forces                                     ! forces
     type(selfgravity_t):: selfgravity                           ! selfg
     type(cooling_t):: cooling                                   ! cool
-    type(lagrangian_t):: lagrangian                             ! move
     class(gpatch_t), pointer:: gpatch => null()                 ! keep
-    type(SN_t):: SN                                             ! SN
   contains
     procedure:: pre_init
     procedure:: init
@@ -76,7 +73,7 @@ MODULE extras_mod
     procedure:: check_refine
     procedure:: courant_condition
   end type
-  class(sinks_t), pointer:: sink => null()                      ! sinks
+  class(mesa_t), pointer:: sink => null()                      ! sinks
   type(extras_t), public:: extras
 CONTAINS
 
@@ -85,11 +82,12 @@ CONTAINS
 !===============================================================================
 SUBROUTINE pre_init (self)
   class(extras_t), target:: self
+  class(gpatch_t), pointer:: gpatch
   !.............................................................................
   call trace%begin ('extras_t%pre_init')
   self%gpatch => self
   call self%selfgravity%pre_init(self)                          ! selfg
-  !call self%lagrangian%pre_init                                ! move
+  call sinks%pre_init (gpatch)                                  ! sinks
   call trace%end()
 END SUBROUTINE pre_init
 
@@ -101,12 +99,8 @@ SUBROUTINE init (self)
   !.............................................................................
   call trace%begin ('extras_t%init')
   call self%forces%init (self%link)                             ! forces
-  if (.not.associated(sink)) then                               ! sinks
-    allocate (sink)                                             ! sinks
-    call sink%init                                              ! sinks
-  end if                                                        ! sinks
   call self%cooling%init                                        ! cool
-  call self%SN%init (self%gpatch)                               ! SN
+  call sinks%init                                               ! sinks
   call trace%end()
 END SUBROUTINE init
 
@@ -151,7 +145,6 @@ SUBROUTINE pre_update (self)
   call sink%pre_update (patch)                                  ! sinks
   call self%selfgravity%pre_update (self)                       ! selfg
   call self%cooling%pre_update (self%gpatch)                    ! cool
-  call self%SN%pre_update (patch, sink)                         ! SN
   call trace%end()
 END SUBROUTINE pre_update
 
@@ -163,7 +156,6 @@ SUBROUTINE post_update (self)
   !.............................................................................
   call self%forces%post_update                                  ! forces
   call self%selfgravity%post_update (self)                      ! selfg
-  !call self%lagrangian%post_update                              ! move
 END SUBROUTINE post_update
 
 !===============================================================================
@@ -178,15 +170,14 @@ END SUBROUTINE output
 !===============================================================================
 !> Interface to refinement.
 !===============================================================================
-INTEGER function check_refine (self, patch)
+INTEGER FUNCTION check_refine (self, patch)
   class(extras_t):: self
   class(extras_t), pointer:: patch
   class(gpatch_t), pointer:: gpatch
   !.............................................................................
   gpatch => patch
-  check_refine = -1
-  !check_refine = max (check_refine, &                            ! sinkp
-  !  sink_particles%check_refine (gpatch))                        ! sinkp
+  call sinks%check_refine (gpatch)                              ! sinks
+  check_refine = -1                                             ! keep
 END FUNCTION check_refine
 
 !===============================================================================
@@ -197,13 +188,8 @@ SUBROUTINE courant_condition (self, detailed_timer)
   logical, optional:: detailed_timer
   !-----------------------------------------------------------------------------
   call trace%begin ('extras_t%courant_condition')
-!print *, self%u_max, self%dtime, 1
   call self%gpatch_t%courant_condition (detailed_timer)          ! keep
-!print *, self%u_max, self%dtime, 2
   call self%cooling%courant_condition (self%gpatch)              ! cool
-!print *, self%u_max, self%dtime, 3
-  call self%SN%courant_condition                                 ! SN
-!print *, self%u_max, self%dtime, 4
   call trace%end()
 END SUBROUTINE courant_condition
 

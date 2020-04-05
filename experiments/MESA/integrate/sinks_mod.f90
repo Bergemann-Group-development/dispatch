@@ -26,66 +26,212 @@ MODULE sinks_mod
   USE trace_mod
   USE task_mod
   USE patch_mod
+  USE gpatch_mod
+  USE mesh_mod
   USE scaling_mod
   USE units_mod
+  USE math_mod
   implicit none
   private
   type, public, extends(task_t):: sinks_t
     real(8):: mass=0.0, radius=8.0
+    real(8):: gamma=1.0
     real(8), allocatable:: pos(:,:)
     real(8):: SN_time=0.0, previous_time=0d0, dt_min=1e-7
+    class(gpatch_t), pointer:: patch
   contains
+    procedure:: pre_init
     procedure:: init
+    procedure:: check_refine
+    procedure:: create
+    procedure:: accrete
     procedure:: pre_update
+    procedure:: post_update
   end type
-  integer:: verbose=0
-  real:: v_min=1.0
-  real:: radius=8.0
-  real:: mass_msun=30
-  real:: SN_time=0.1
+  real::           v_min = 1.0
+  real::     jeans_limit = 4.0
+  real::       per_omega = 0.001
+  real:: create_fraction = 0.10
+  integer:: accretion_cells = 8
+  integer::         verbose = 0
+  type(sinks_t), public:: sinks
 CONTAINS
 
 !===============================================================================
-!> Initialize sink task
+!> Initialize sink task patch connection
+!===============================================================================
+SUBROUTINE pre_init (self, patch)
+  class(sinks_t):: self
+  class(gpatch_t), pointer:: patch
+  !-----------------------------------------------------------------------------
+  call trace%begin ('sinks_t%pre_init')
+  self%patch => patch
+  self%size = 2d0*accretion_cells*patch%ds
+  call trace%end ()
+END SUBROUTINE pre_init
+
+!===============================================================================
+!> Initialize sink task patch connection
 !===============================================================================
 SUBROUTINE init (self)
   class(sinks_t):: self
-  integer:: iostat
-  real:: velocity(3)=0.0, position(3)=0.45
-  logical, save:: first_time=.true.
-  namelist /sinks_params/ verbose, mass_msun, radius, velocity, v_min, &
-    SN_time, position
   !-----------------------------------------------------------------------------
   call trace%begin ('sinks_t%init')
-  if (first_time) then
-    !$omp critical (sinks_cr)
-    if (first_time) then
-      !$omp critical (input_cr)
-      rewind (io%input)
-      read (io%input, sinks_params, iostat=iostat)
-      write (io%output, sinks_params)
-      !$omp end critical (input_cr)
-      self%radius = radius
-      self%velocity = velocity
-      self%SN_time = SN_time
-      if (verbose > 0) then
-        write (stdout,*) 'sinks_t%init: radius (code units)', self%radius
-      end if
-      self%nt = 5
-      allocate (self%pos(3,self%nt))
-      self%position = position
-      self%it = 1
-      self%size = 0d0
-      self%mass = mass_msun*cgs%m_sun/scaling%m
-      call self%task_t%init
-      self%iit = 1
-      self%pos(:,1) = position
-      first_time = .false.
-    end if
-    !$omp end critical (sinks_cr)
-  end if
   call trace%end ()
 END SUBROUTINE init
+
+!===============================================================================
+!> Check sink creation criterion
+!===============================================================================
+SUBROUTINE check_refine (self, patch)
+  class(sinks_t):: self
+  class(gpatch_t), pointer:: patch
+  real, pointer, dimension(:,:,:):: d, e
+  real, allocatable:: jeans_resolution(:,:,:)
+  real:: ds, g2, min_jeans
+  integer:: m(3), ipos(3)
+  !-----------------------------------------------------------------------------
+  call trace%begin ('sinks_t%check_refine')
+  d = patch%mem(:,:,:,patch%idx%d,patch%it,1)
+  e = patch%mem(:,:,:,patch%idx%e,patch%it,1)
+  if (self%gamma==1d0) then
+    g2 = 1d0
+  else
+    g2 = self%gamma*(self%gamma-1d0)
+  end if
+  !-----------------------------------------------------------------------------
+  ! Compute the ratio of Jeans' length to cell size, where cell size is the
+  ! largest of the mesh sizes in directions that are not collapsed
+  !-----------------------------------------------------------------------------
+  m = patch%mesh%gn
+  allocate (jeans_resolution(m(1),m(2),m(3)))
+  ds = maxval(patch%mesh%d, mask=patch%mesh%n > 1)
+  jeans_resolution = sqrt(math%pi*g2*e/scaling%grav)/(d*ds)
+  min_jeans = minval(jeans_resolution)
+  if (min_jeans < jeans_limit) then
+    if (verbose > 0) &
+      write(io_unit%log,*) 'sinks_t%check_refine: creating sink in patch', &
+        patch%id, ipos
+    ipos = minloc(jeans_resolution)
+    call self%create (patch, ipos)
+  else if (verbose > 1) then
+    write(io_unit%log,*) 'sinks_t%check_refine: id, min_jeans =', &
+      patch%id, min_jeans
+  end if
+  deallocate (jeans_resolution)
+  call trace%end ()
+END SUBROUTINE check_refine
+
+!===============================================================================
+!> Check sink creation criterion
+!===============================================================================
+SUBROUTINE create (self, patch, ipos)
+  class(sinks_t):: self
+  class(gpatch_t), pointer:: patch
+  integer:: ipos(3)
+  !.............................................................................
+  real:: r1, r2, r3
+  integer:: i1, i2, i3, m(3)
+  class(mesh_t), pointer:: m1, m2, m3
+  real, allocatable, dimension(:,:,:):: delta_d
+  !-----------------------------------------------------------------------------
+  call trace%begin ('sinks_t%create')
+  m1 => patch%mesh(1)
+  m2 => patch%mesh(2)
+  m3 => patch%mesh(3)
+  r3 = m3%p + m3%r(ipos(3))
+  r2 = m2%p + m2%r(ipos(2))
+  r1 = m1%p + m1%r(ipos(1))
+  self%position = [r1,r2,r3]
+  call self%accrete (patch)
+  call trace%end ()
+END SUBROUTINE create
+
+!===============================================================================
+!> Check sink creation criterion
+!===============================================================================
+SUBROUTINE accrete (self, patch)
+  class(sinks_t):: self
+  class(gpatch_t), pointer:: patch
+  integer:: pos(3)
+  !.............................................................................
+  real:: r1, r2, r3, ds, dm, rate, omega, fraction, accretion_radius, delta_t
+  integer:: i1, i2, i3, m(3)
+  real, pointer, dimension(:,:,:):: d, e, px, py, pz
+  real, allocatable, dimension(:,:,:):: radius, delta_d
+  class(mesh_t), pointer:: m1, m2, m3
+  !-----------------------------------------------------------------------------
+  call trace%begin ('sinks_t%accrete')
+  if (patch%time > self%time .and. self%overlaps(patch)) then
+    m = patch%mesh%gn
+    allocate (radius(m(1),m(2),m(3)), delta_d(m(1),m(2),m(3)))
+    m1 => patch%mesh(1)
+    m2 => patch%mesh(2)
+    m3 => patch%mesh(3)
+    do i3=1,m(3)
+      r3 = m3%p + m3%r(i3)
+      do i2=1,m(2)
+        r2 = m2%p + m2%r(i2)
+        do i1=1,m(1)
+          r1 = m1%p + m1%r(i1)
+          radius = (self%position(1)-r1)**2  &
+                 + (self%position(2)-r2)**2  &
+                 + (self%position(3)-r3)**2
+        end do
+      end do
+    end do
+    !---------------------------------------------------------------------------
+    ! Density, energy per unit volume, intertia
+    !---------------------------------------------------------------------------
+    d  => patch%mem(:,:,:,patch%idx%d ,patch%it,1)
+    e  => patch%mem(:,:,:,patch%idx%e ,patch%it,1)
+    px => patch%mem(:,:,:,patch%idx%px,patch%it,1)
+    py => patch%mem(:,:,:,patch%idx%py,patch%it,1)
+    pz => patch%mem(:,:,:,patch%idx%pz,patch%it,1)
+    !---------------------------------------------------------------------------
+    ! Accretion radius in code units, and accretion rate, scaled by rotation
+    ! rate.  The accretion rate is expressed as a fraction times the rotation
+    ! rate at the accretion radius, except a create_fraction is used when the
+    ! mass is zero.
+    !---------------------------------------------------------------------------
+    ds = maxval(patch%mesh%d, mask=patch%mesh%n > 1)
+    accretion_radius = accretion_cells*ds
+    if (self%mass == 0d0) then
+      fraction = create_fraction
+    else
+      omega = sqrt(scaling%grav*self%mass/accretion_radius**3)
+      delta_t = patch%time - self%time
+      fraction =  omega*per_omega*delta_t
+    end if
+    delta_d = 0.0
+    !---------------------------------------------------------------------------
+    ! Subtract a fraction (tapered towards the outer edge) of all per-volume
+    ! variables
+    !---------------------------------------------------------------------------
+    where (radius < accretion_radius)
+      delta_d = d*fraction*(1-radius/accretion_radius)**2
+      d = d - delta_d
+      e = e - delta_d*e/d
+      px = px - delta_d*px/d
+      py = py - delta_d*py/d
+      pz = pz - delta_d*pz/d
+    end where
+    !---------------------------------------------------------------------------
+    ! Add up the mass contributions and add to the sink mass
+    !---------------------------------------------------------------------------
+    dm = product(patch%ds)*sum(delta_d)
+    !$omp atomic update
+    self%mass = self%mass + dm
+    !---------------------------------------------------------------------------
+    ! The patch that actually contains the sink is responsible for updating the
+    ! time
+    !---------------------------------------------------------------------------
+    if (patch%contains(self%position)) then
+      self%time = patch%time
+    end if
+  end if
+  call trace%end ()
+END SUBROUTINE accrete
 
 !===============================================================================
 !> Update sink task
@@ -96,39 +242,18 @@ SUBROUTINE pre_update (self, patch)
   logical:: contains_sink
   !-----------------------------------------------------------------------------
   call trace%begin ('sinks_t%pre_update')
-  contains_sink = patch%contains (self%position)
-  if (verbose > 1) then
-    write(io_unit%log,'(a,i6,2(2x,3f9.6),l5)') &
-      'sinks_t%pre_update: patch%id, pos, patch%pos =', patch%id, &
-      self%position, (patch%position-self%position)/patch%size, contains_sink
-  end if
-  if (contains_sink) then
-    self%dtime = minval(patch%ds)/max(v_min,sqrt(sum(self%velocity**2)))
-    if (self%time < patch%time) then
-      self%previous_time = self%time
-      do while (self%time < patch%time)
-        !-----------------------------------------------------------------------
-        ! Make sure to hit the exact patch_time + a well defined extra dt_min
-        !-----------------------------------------------------------------------
-        self%dtime = min(self%dtime, patch%time-self%time+self%dt_min)
-        self%position = self%position + self%dtime*self%velocity
-        self%pos(:,self%new) = self%position
-        if (verbose > 1) then
-          write (stdout,*) self%id, patch%id, self%time, self%it, &
-            'sinks_t%update: moved to', real(self%position,kind=4)
-          write (io_unit%log,*) self%id, patch%id, self%time, self%it, &
-            'sinks_t%update: moved to', real(self%position,kind=4)
-        end if
-        self%rotated = .false.
-        call self%rotate
-      end do
-    else
-      if (verbose > 1) &
-        write (io_unit%log,*) self%id, patch%id, self%time, self%it, &
-          'sinks_t%update: not time yet'
-    end if
-  end if
   call trace%end ()
 END SUBROUTINE pre_update
+
+!===============================================================================
+!> Post-update sink task -- placing accertion here for now
+!===============================================================================
+SUBROUTINE post_update (self)
+  class(sinks_t):: self
+  !-----------------------------------------------------------------------------
+  call trace%begin ('sinks_t%post_update')
+  call self%accrete (self%patch)
+  call trace%end ()
+END SUBROUTINE post_update
 
 END MODULE sinks_mod
