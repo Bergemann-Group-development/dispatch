@@ -1,76 +1,41 @@
-! $Id$
+s $Id$
 
-&restart_params run='xxx' iout=1 /
+!--- Sink particle parameters --------------------------------------------------
+&sinks_params           verbose=1 jeans_limit=4 per_omega=0.5 /
 
-&cartesian_params
- omp_init=f
- !size=1,1,1 dims=3*3  mpi_dims=1,1,1                !  1 process    1 node      27 patches    2 cores       96x96x96  13 patches/core
- size=1,1,1 dims=3*4  mpi_dims=1,1,1                !  1 process    1 node      27 patches    2 cores       96x96x96  13 patches/core
- !size=1,1,1 dims=3*8  mpi_dims=2,2,1                !  1 process    1 node      64 patches    2 cores    128x128x128  32 patches/core
- !size=2,1,1 dims=3*8  mpi_dims=2,1,1                !  1 process    1 node      64 patches    2 cores    128x128x128  32 patches/core
- !size=1,1,1 dims=3*8  mpi_dims=1,1,1                !  1 process    1 node     512 patches   10 cores    256x256x256  51 patches/core
- !size=1,1,1 dims=3*10 mpi_dims=1,1,1                !  1 process    1 node    1000 patches   20 cores    320x320x320  50 patches/core
- !size=1,1,1 dims=3*16 mpi_dims=1,1,1                !  2 process    1 node    4096 patches   10 cores    512x512x512 200 patches/core
- !size=1,1,1 dims=3*20 mpi_dims=2,2,2                !  8 processes  4 nodes   8000 patches   80 cores    640x640x640 100 patches/core
- !size=1,1,1 dims=3*40 mpi_dims=4,4,4                ! 64 processes 64 nodes  64000 patches 1280 cores 1280x1280x1280  50 patches/core
- !size=1,1,1 dims=3*80 mpi_dims=4,4,4                ! 64 processes 64 nodes 512000 patches 1280 cores 2560x2560x2560 400 patches/core
- origin=0,0,0
-/
-
-!---------------------------------------------
-! For unigrid run, use the no_mans_land=t line
-!---------------------------------------------
-&patch_params           nt=5 grace=0.5 n=3*32 no_mans_land=t /
-!patch_params           nt=5 grace=0.1 n=3*21 no_mans_land=f /
-&out_params             end_time=0.100 out_time=0.025 print_time=0.0 /
-&io_params              verbose=1 do_trace=t omp_trace=t do_output=f restart=-2
-                        method='parallel' format=11 guard_zones=f time_derivs=0 /
+!--- Experiment setup ----------------------------------------------------------
+&cartesian_params       size=1,1,1 dims=3*4 mpi_dims=1,1,1 origin=0,0,0 /
+&patch_params           nt=5 grace=0.5 n=3*16 no_mans_land=t /
+&out_params             end_time=0.250 out_time=0.010 print_every=20 /
+&io_params              verbose=0 do_trace=f omp_trace=t do_output=t
+                        method='parallel' format=10 guard_zones=f time_derivs=0 /
 &download_params        verbose=0 check_filled=t /
-&timer_params           sec_per_report=5 /
-&time_slices_params     order=1 /
-&lock_params            verbose=0 /
 
-!---------------------------------
-! Initial condition and forces
-!---------------------------------
+!--- Initial condition and forces ----------------------------------------------
+&experiment_params      l_pc=5 n_H2=240 c_kms=0.18 /
+&scaling_params         l_pc=5 n_H2=240 v_kms=0.18 mu=2.4 /
 &initial_params         type='turbulence' /
 &force_params           type='turbulence' /
 &turbulence_params      ampl_turb=2 t_turn=0.05 k1=1 k2=2 pk=0.0 seed=5 
                         verbose=0 t_damp=3e-4 /
-&IC_turbulence_params   b0=0.1 /
+&IC_turbulence_params   b0=0.0 /
 &selfgravity_params     selfgravity=f /
-&trace_particle_params  on=f verbose=0 per_cell=1.0 /
+&restart_params         run='previous_run' iout=1 /
 
-!---------------------------------
-! Sink particle parameters
-!---------------------------------
-&sinks_params          verbose=2 velocity=3*0.0, position=3*0.5 /
-
-!---------------------------------
-! Solver specific parameters
-!---------------------------------
-&scaling_params         l_pc=40. d_cgs=50e-24, v_kms=1.0 mu=2.4 /
+!--- Solver specific parameters ------------------------------------------------
 &cooling_params         on=f verbose=1 type=0 /
 &flux_params            on=f verbose=0 /
-&ramses_params          courant_factor=0.250 isothermal=t gamma=1.0 slope_type=3.5
-                        !riemann='hlld_vec'
-                        smallr=1e-3 smallc=1 detailed_timer=f /
-&stagger_params         gamma=1.0 nu=0.30,0.0,1.0,0.1,1.0,1.0 /
-&timestep_params        /
+&ramses_params          courant_factor=0.250 gamma=1.0 slope_type=3.5
+                        smallr=1e-3 smallc=0.1 detailed_timer=f /
 &refine_params          on=f check_interval=2 /
 
-!----------------------------------------------------------------------------------
-! MPI and loadbalancing parameters
-!----------------------------------------------------------------------------------
-&load_balance_params    /
-
-!----------------------------------------------------------------------------------
-! Method=0 uses a ready queue, which may or may not work for more than 1e12 updates
-! Method=1 uses a simple master thread dispatcher
-! Method=2 uses a more complex master thread dispatcher
-!----------------------------------------------------------------------------------
+!--- Dispatcher and task list params -------------------------------------------
 &dispatcher_params      method=0 test=f /
-&dispatcher0_params     verbose=1 /
+&dispatcher0_params     verbose=0 /
 &task_list_params       verbose=0 /
-&mpi_mesg_params        verbose=0 send_priv=t /
+&timer_params           sec_per_report=15 detailed=f /
 
+!--- MPI and loadbalancing parameters ------------------------------------------
+&load_balance_params    /
+&task_mesg_params       verbose=0 /
+&mpi_mesg_params        verbose=0 /

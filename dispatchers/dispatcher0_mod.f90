@@ -241,7 +241,7 @@ SUBROUTINE update (self, task_list, test)
   nullify (prev)
   if (associated(head) .and. .not.task_list%syncing) then
     if (verbose > 0) &
-      write(io_unit%log,'(f12.6,2x,a,i6,i7)') wallclock(), &
+      write(io_unit%log,'(f12.6,2x,a,i6,i7,1p,e12.4)') wallclock(), &
         'dispather0_t%update: na, id, time =', &
         task_list%na, head%task%id, head%task%time
     !---------------------------------------------------------------------------

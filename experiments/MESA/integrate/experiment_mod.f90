@@ -2,9 +2,11 @@
 !===============================================================================
 MODULE experiment_mod
   USE io_mod
+  USE io_unit_mod
   USE trace_mod
   USE solver_mod
   USE scaling_mod
+  USE units_mod
   USE link_mod
   implicit none
   private
@@ -14,7 +16,7 @@ MODULE experiment_mod
     procedure:: update
     procedure:: dnload
   end type
-  real, save:: density_cgs=1e-20, cs_kms=0.18
+  real, save:: l_pc=4.0, n_H2=1e-20, cs_kms=0.18
 CONTAINS
 
 !===============================================================================
@@ -25,7 +27,7 @@ SUBROUTINE init (self)
   real:: d, e
   integer:: iostat
   logical, save:: first_time=.true.
-  namelist /experiment_params/ density_cgs, cs_kms
+  namelist /experiment_params/ l_pc, n_H2, cs_kms
   !-----------------------------------------------------------------------------
   call trace%begin ('experiment_t%init')
   call self%solver_t%init
@@ -37,7 +39,8 @@ SUBROUTINE init (self)
     first_time = .false.
   end if
   !$omp end critical (input_cr)
-  d = density_cgs/scaling%d
+  solver%csound = cs_kms*cgs%kms/scaling%u
+  d = n_H2*scaling%mu*cgs%m_u/scaling%d
   if (self%gamma == 1d0) then
     e = (cs_kms*1e5/scaling%u)**2*d
   else
