@@ -1032,7 +1032,7 @@ FUNCTION point_distance (self, point1, point2) RESULT (out)
   real(8):: out(3)
   integer, save:: itimer=0
   !.............................................................................
-  if (timer%detailed) &
+  if (timer%detailed) then
     call trace%begin ('task_t%point_distance', itimer=itimer)
     out = point1-point2
     where (self%periodic .and. self%box /= 0d0)
