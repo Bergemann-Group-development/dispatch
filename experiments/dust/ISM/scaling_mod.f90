@@ -36,6 +36,7 @@ SUBROUTINE init (self)
   if (first_time) then
     rewind (io%input)
     read (io%input, scaling_params, iostat=iostat)
+    call io%namelist_warning ('scaling_params', iostat)
     write (io%output, scaling_params)
     call cgs%init
     d_cgs = n_H2*mu*cgs%m_u                          ! mass density in cgs
