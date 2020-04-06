@@ -31,6 +31,42 @@
 !> This module should generally NOT use the h5_mod (HDF5) module itself. It
 !> should instead be USEd from the actual extra modules, to assist in saving
 !> ad hoc results in a standardized format.
+!>
+!> The call hierarchy that initializes things runs in this order (using as an
+!> example patch creation by the cartesian_mod module)
+!>
+!> cartesian%init
+!>   allocate ...
+!>   experiment_t%init
+!>     solver_t%init
+!>       mhd_t%pre_init
+!>         extras_t%pre_init
+!>       mhd_t%init
+!>         extras_t%init
+!>
+!> The corresponding update call hierarchy is
+!>
+!> task_list%update
+!>   experiment_t%update
+!>     solver_t%update
+!>       mhd_t%pre_update
+!>         extras_t%pre_update
+!>       mhd_t%update
+!>       mhd_t%post_update
+!>         extras_t%post_update
+!>
+!> The general convention is that the solver_t layer (which is there basically
+!> to allow the actual solver layer to have any module name) calls the actual
+!> solver layers' procedures, but that layer may choose to not have for example
+!> a pre_ and post_update, so those calls "fall through" to the extras_t layer.
+!>
+!> If the solver layer implements pre_ and post_ calls, it has the responsibility
+!> to call the the extras_ layer.
+!>
+!> Step 1: We refer to the static mesa instance (not the sinks instance), and
+!>         check that only one sink is created
+!> Step 2: We refer to the mesa instance for creation, but to the mesa nbor task
+!>         for anything that requires access to the individual sink particle
 !===============================================================================
 
 MODULE extras_mod
@@ -38,6 +74,7 @@ MODULE extras_mod
   ! Generic modules, which are always included in the code in any case
   !-----------------------------------------------------------------------------
   USE io_mod
+  USE io_unit_mod
   USE trace_mod
   USE gpatch_mod
   USE patch_mod
@@ -73,7 +110,6 @@ MODULE extras_mod
     procedure:: check_refine
     procedure:: courant_condition
   end type
-  class(mesa_t), pointer:: sink => null()                      ! sinks
   type(extras_t), public:: extras
 CONTAINS
 
@@ -87,7 +123,7 @@ SUBROUTINE pre_init (self)
   call trace%begin ('extras_t%pre_init')
   self%gpatch => self
   call self%selfgravity%pre_init(self)                          ! selfg
-  call sinks%pre_init (gpatch)                                  ! sinks
+  call mesa%pre_init (self%gpatch)                              ! sinks
   call trace%end()
 END SUBROUTINE pre_init
 
@@ -100,7 +136,7 @@ SUBROUTINE init (self)
   call trace%begin ('extras_t%init')
   call self%forces%init (self%link)                             ! forces
   call self%cooling%init                                        ! cool
-  call sinks%init                                               ! sinks
+  call mesa%init                                                ! sinks
   call trace%end()
 END SUBROUTINE init
 
@@ -139,12 +175,10 @@ SUBROUTINE pre_update (self)
   class(patch_t), pointer:: patch
   !.............................................................................
   call trace%begin ('extras_t%pre_update')
-  self%gpatch => self                                           ! keep
-  patch => self                                                 ! keep
   call self%forces%pre_update                                   ! forces
-  call sink%pre_update (patch)                                  ! sinks
   call self%selfgravity%pre_update (self)                       ! selfg
   call self%cooling%pre_update (self%gpatch)                    ! cool
+  call mesa%pre_update (self%gpatch)                            ! sinks
   call trace%end()
 END SUBROUTINE pre_update
 
@@ -154,8 +188,11 @@ END SUBROUTINE pre_update
 SUBROUTINE post_update (self)
   class(extras_t):: self
   !.............................................................................
+  call trace%begin ('extras_t%post_update')
   call self%forces%post_update                                  ! forces
-  call self%selfgravity%post_update (self)                      ! selfg
+  call self%selfgravity%post_update (self)                      ! elfg
+  call mesa%post_update (self%gpatch)                           ! sinks
+  call trace%end ()
 END SUBROUTINE post_update
 
 !===============================================================================
