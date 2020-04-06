@@ -59,7 +59,7 @@ MODULE task_mod
     real(8):: velocity(3) = 0d0         ! velocity of task in Cartesian coords.
     real(8):: size(3) = 0.9999d0
     real(8):: gsize(3)                  ! convenience
-    real(8):: ds(3)                     ! convenience
+    real(8):: ds(3)=0d0                 ! convenience
     real(8):: box(3)=1d0                ! the periodic wrapping size
     real(8):: wallclock
     real(8):: unpack_time=0d0
@@ -873,13 +873,18 @@ FUNCTION overlaps (self, task)
   class(task_t):: self
   class(task_t):: task
   logical:: overlaps
+  real(8):: dr(3)
   integer:: itimer=0
   !.............................................................................
-  if (timer%detailed) &
-    call trace%begin ('task_t%overlaps', 2, itimer=itimer)
-  overlaps = all(abs(distance(self,task)) <= 0.5_8*(self%size+task%size+self%ds+task%ds))
-  if (timer%detailed) &
+  if (timer%detailed) then
+    call trace%begin ('task_t%overlaps', itimer=itimer)
+    dr = distance (self, task)
+    overlaps = all(abs(dr) <= 0.5_8*(self%size+task%size+self%ds+task%ds))
     call trace%end (itimer)
+  else
+    overlaps = all(abs(distance (self, task)) <= &
+                   0.5_8*(self%size+task%size+self%ds+task%ds))
+  end if
 END FUNCTION overlaps
 
 !===============================================================================
@@ -889,11 +894,14 @@ FUNCTION overlaps_point (self, p)
   class(task_t):: self
   real(8):: p(3), d(3)
   logical:: overlaps_point
+  integer, save:: itimer=0
   !.............................................................................
-  call trace%begin ('task_t%overlaps', 2)
+  if (timer%detailed) &
+    call trace%begin ('task_t%overlaps_point', itimer=itimer)
   d = self%point_distance (self%position, p)
   overlaps_point = all(abs(d) < self%size*0.5d0)
-  call trace%end ()
+  if (timer%detailed) &
+    call trace%end (itimer)
 END FUNCTION overlaps_point
 
 !===============================================================================
@@ -1004,15 +1012,15 @@ FUNCTION distance (self, task) RESULT (out)
   class(task_t):: self
   class(task_t):: task
   real(8):: out(3)
+  integer, save:: itimer=0
   !.............................................................................
-  call trace%begin ('task_t%distance',2)
-  out = self%point_distance (self%position, task%position)
-  if (io%verbose>1 .and. (task%id==io%id_debug .or. self%id==io%id_debug)) then
-    print *,'distance: self', self%position, self%id
-    print *,'distance: task', task%position, task%id
-    print *,'distance:  box', self%box
+  if (timer%detailed) then
+    call trace%begin ('task_t%distance', itimer=itimer)
+    out = self%point_distance (self%position, task%position)
+    call trace%end (itimer)
+  else
+    out = self%point_distance (self%position, task%position)
   end if
-  call trace%end()
 END FUNCTION distance
 
 !===============================================================================
@@ -1022,13 +1030,21 @@ FUNCTION point_distance (self, point1, point2) RESULT (out)
   class(task_t):: self
   real(8), intent(in):: point1(3), point2(3)
   real(8):: out(3)
+  integer, save:: itimer=0
   !.............................................................................
-  call trace%begin ('task_t%point_distance',2)
-  out = point1-point2
-  where (self%periodic .and. self%box /= 0d0)
-    out = modulo (out+0.5_8*self%box, self%box) - 0.5_8*self%box
-  end where
-  call trace%end()
+  if (timer%detailed) &
+    call trace%begin ('task_t%point_distance', itimer=itimer)
+    out = point1-point2
+    where (self%periodic .and. self%box /= 0d0)
+      out = modulo (out+0.5_8*self%box, self%box) - 0.5_8*self%box
+    end where
+    call trace%end (itimer)
+  else
+    out = point1-point2
+    where (self%periodic .and. self%box /= 0d0)
+      out = modulo (out+0.5_8*self%box, self%box) - 0.5_8*self%box
+    end where
+  end if
 END FUNCTION point_distance
 
 SUBROUTINE pack (self)
@@ -1076,8 +1092,18 @@ END FUNCTION solver_is
 !===============================================================================
 LOGICAL FUNCTION contains1 (self, point)
   class(task_t):: self
-  real(8):: point(3)
-  contains1 = all(abs(point-self%position) <= (0.5_8+tiny(1d0))*self%size)
+  real(8):: point(3), delta(3)
+  integer:: itimer=0
+  !-----------------------------------------------------------------------------
+  if (timer%detailed) then
+    call trace%begin ('task_t%contains1', itimer=itimer)
+    delta = self%point_distance (self%position, point)
+    contains1 = all(abs(delta) <= (0.5_8+tiny(1d0))*self%size)
+    call trace%end (itimer)
+  else
+    contains1 = all(abs(self%point_distance (self%position, point)) &
+                    <= (0.5_8+tiny(1d0))*self%size)
+  end if
 END FUNCTION contains1
 
 !===============================================================================
@@ -1085,7 +1111,15 @@ END FUNCTION contains1
 !===============================================================================
 LOGICAL FUNCTION contains2 (self, patch)
   class(task_t):: self, patch
-  contains2 = contains1 (self, patch%position)
+  integer:: itimer=0
+  !-----------------------------------------------------------------------------
+  if (timer%detailed) then
+    call trace%begin ('task_t%contains2', itimer=itimer)
+    contains2 = contains1 (self, patch%position)
+    call trace%end (itimer)
+  else
+    contains2 = contains1 (self, patch%position)
+  end if
 END FUNCTION contains2
 
 !===============================================================================

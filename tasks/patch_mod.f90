@@ -1739,8 +1739,10 @@ FUNCTION overlaps (self, task)
   logical:: overlaps
   real(8):: distance, box, limit
   integer:: i
+  integer, save:: itimer=0
   !.............................................................................
-  !call trace%begin ('patch_t%overlaps', 2)
+  if (timer%detailed) &
+    call trace%begin ('patch_t%overlaps', itimer)
   select type (task)
   class is (patch_t)
     overlaps = .true.
@@ -1759,7 +1761,8 @@ FUNCTION overlaps (self, task)
   class default
     overlaps = self%task_t%overlaps(task)
   end select
-  !call trace%end ()
+  if (timer%detailed) &
+    call trace%end (itimer)
 END FUNCTION overlaps
 
 !===============================================================================
@@ -1772,8 +1775,10 @@ FUNCTION distance_curvilinear (self, task) RESULT (out)
   class(patch_t):: self
   class(task_t):: task
   real(8):: out(3)
+  integer, save:: itimer=0
   !.............................................................................
-  call trace%begin ('patch_t%distance_curvilinear',2)
+  if (timer%detailed) &
+    call trace%begin ('patch_t%distance_curvilinear')
   select type (task)
   class is (patch_t)
     out = self%centre_nat-task%centre_nat
@@ -1791,7 +1796,8 @@ FUNCTION distance_curvilinear (self, task) RESULT (out)
       'distance: task', task%id, task%position, task%size, task%box, out
     1 format(a,i5,4(3x,3f10.2))
   end if
-  call trace%end()
+  if (timer%detailed) &
+    call trace%end (itimer)
 END FUNCTION distance_curvilinear
 
 !===============================================================================
