@@ -38,6 +38,7 @@ MODULE dust_mod
   USE trace_mod
   USE mpi_mod
   USE scaling_mod
+  USE units_mod
   USE random_mod
   USE mesh_mod
   USE task_mod
@@ -174,6 +175,7 @@ SUBROUTINE initial_condition (self, l, u)
   real, pointer, contiguous:: d(:,:,:)
   integer:: i1, i2, i3, bin, j
   real:: c
+  integer(8), save:: id=0
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('dust_t%initial_condition', itimer=itimer)
@@ -187,7 +189,9 @@ SUBROUTINE initial_condition (self, l, u)
       do j=1,particles_per_bin
         allocate (p)
         p%bin = bin
-        p%id = counter%update (1_8)
+        p%id = 1 + mpi%rank + mpi%size*id
+        !$omp atomic update
+        id = id+1
         p%q = [i1,i2,i3]
         p%r = self%random%uniform (3)
         p%v = 0.0
