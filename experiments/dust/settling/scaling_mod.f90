@@ -32,6 +32,7 @@ SUBROUTINE init (self, l_o, d_o, u_o, mu_o)
   real:: t, m, e, ee, p
   real:: l_au, v_kms, temp, grav, n_H2
   real:: orbit_cgs, orbit_speed_cgs, sound_speed_cgs, scale_height_cgs
+  integer:: iostat
   namelist /scaling_params/ orbit_au, d_midplane_cgs, temperature_K, &
     mu, gamma
   namelist /scaling_nml/ l_au, v_kms, &
@@ -45,6 +46,10 @@ SUBROUTINE init (self, l_o, d_o, u_o, mu_o)
     !-----------------------------------------------------------------------------
     ! Compute CGS values of orbit speed, sound speed, and disk scale height
     !-----------------------------------------------------------------------------
+    rewind (io%input)
+    read (io%input, scaling_params, iostat=iostat)
+    call io%namelist_warning ('scaling_params', iostat)
+    write (io%output, scaling_params)
     call cgs%init
     orbit_cgs = orbit_au*cgs%au
     orbit_speed_cgs = sqrt(cgs%grav*cgs%m_sun/orbit_cgs)
