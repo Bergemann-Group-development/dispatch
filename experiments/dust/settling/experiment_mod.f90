@@ -156,7 +156,7 @@ SUBROUTINE initial_conditions (self)
     ! the linear force of gravity is balanced by a pressure gradient has an
     ! analytical solution where the density is a Gaussian.
     !---------------------------------------------------------------------------
-    d = exp(-0.5*z*2)
+    d = exp(-0.5*z**2)
     !---------------------------------------------------------------------------
     ! self%mem(ix,iy,iz,iv,it,iw) is a 6-dimensional array, where the indices are
     !   ix = x-index
