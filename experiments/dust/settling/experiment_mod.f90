@@ -34,6 +34,7 @@ MODULE experiment_mod
   USE list_mod
   USE particles_mod
   USE scaling_mod
+  USE units_mod
   implicit none
   private
   type, public, extends(solver_t):: experiment_t
@@ -45,9 +46,6 @@ MODULE experiment_mod
     procedure:: boundary_conditions
   end type
   integer:: verbose = 1
-  real:: scale_height = 1.0
-  real:: d_midplane_cgs = 1e-9
-  logical:: first_time = .true.
 CONTAINS
 
 !===============================================================================
@@ -59,7 +57,8 @@ SUBROUTINE init (self)
   class(mesh_t), pointer:: mesh
   integer:: iostat, l(3), u(3)
   real:: z_lower, z_upper
-  namelist /experiment_params/ verbose, scale_height, d_midplane_cgs
+  namelist /experiment_params/ verbose
+  logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
   call trace%begin('experiment_t%init')
   !-----------------------------------------------------------------------------
@@ -76,12 +75,13 @@ SUBROUTINE init (self)
     first_time = .false.
   end if
   !$omp end critical (input_cr)
+  call scaling%init
+  self%gamma = scaling%gamma
+  self%csound = 1.0
   !-----------------------------------------------------------------------------
-  ! Initialize the patch, allocating %mem and %mesh etc, and then call
-  ! initial_conditions to set initial values of the variables
+  ! Initialize the patch, allocating %mem and %mesh etc
   !-----------------------------------------------------------------------------
   call self%solver_t%init
-  call scaling%init
   !-----------------------------------------------------------------------------
   ! At lower and upper boundaries, add particles also in guard zones
   !-----------------------------------------------------------------------------
@@ -94,14 +94,17 @@ SUBROUTINE init (self)
   self%particle_solver%pforce => pforce
   !-----------------------------------------------------------------------------
   if (verbose > 0) then
-    write (io%output,'(a,i4,3(1x,3f7.3),1x,2l2)') &
-      'init: id, box, pos, size, lower, upper =', &
+    if (verbose > 1) &
+    write (io%output,'(a,i4,3(1x,3f7.3),1x,2l2,1p,e11.2)') &
+      'init: id, box, pos, size, lower, upper, n =', &
       self%id, self%box, self%position, self%size, &
-      self%particle_solver%lower(3), self%particle_solver%upper(3)
+      self%particle_solver%lower(3), self%particle_solver%upper(3), &
+      real(self%particle_solver%particles%n)
     write (io_unit%log,'(a,i4,3(1x,3f7.3),1x,2l2)') &
-      'init: id, box, pos, size, lower, upper =', &
+      'init: id, box, pos, size, lower, upper, n =', &
       self%id, self%box, self%position, self%size, &
-      self%particle_solver%lower(3), self%particle_solver%upper(3)
+      self%particle_solver%lower(3), self%particle_solver%upper(3), &
+      real(self%particle_solver%particles%n)
   end if
   call trace%end()
 END SUBROUTINE init
@@ -114,7 +117,7 @@ SUBROUTINE initial_conditions (self)
   !.............................................................................
   class(mesh_t), pointer:: mesh
   integer:: iz, m(3)
-  real:: z, d
+  real:: z, d, g2
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('experiment_t%initial_conditions', itimer=itimer)
@@ -122,7 +125,14 @@ SUBROUTINE initial_conditions (self)
   ! A patch has one mesh for each direction -- choose the last index as vertical
   !-----------------------------------------------------------------------------
   mesh => self%mesh(3)
-  self%gamma = 1d0
+  !-----------------------------------------------------------------------------
+  ! Gamma factors for relating thermal energy to temperature and pressure
+  !-----------------------------------------------------------------------------
+  if (self%gamma == 1d0) then
+    g2 = 1.0
+  else
+    g2 = self%gamma*(self%gamma-1.0)
+  end if
   !-----------------------------------------------------------------------------
   ! Loop over the internal part -- the external parts are handled by the frame-
   ! framework
@@ -146,7 +156,7 @@ SUBROUTINE initial_conditions (self)
     ! the linear force of gravity is balanced by a pressure gradient has an
     ! analytical solution where the density is a Gaussian.
     !---------------------------------------------------------------------------
-    d = exp(-z**2/scale_height)*d_midplane_cgs/scaling%d
+    d = exp(-0.5*z*2)
     !---------------------------------------------------------------------------
     ! self%mem(ix,iy,iz,iv,it,iw) is a 6-dimensional array, where the indices are
     !   ix = x-index
@@ -160,7 +170,7 @@ SUBROUTINE initial_conditions (self)
     self%mem(:,:,iz,self%idx%px,self%it,1) = 0.0
     self%mem(:,:,iz,self%idx%py,self%it,1) = 0.0
     self%mem(:,:,iz,self%idx%pz,self%it,1) = 0.0
-    self%mem(:,:,iz,self%idx%e ,self%it,1) = d
+    self%mem(:,:,iz,self%idx%e ,self%it,1) = d*g2*scaling%u**2
   end do
   !-----------------------------------------------------------------------------
   m = self%mesh%gn
@@ -198,7 +208,7 @@ SUBROUTINE update (self)
     z = mesh%p + mesh%r(iz) + mesh%h(self%idx%pz)*mesh%d
     self%force_per_unit_mass(:,:,iz,1) = 0.0
     self%force_per_unit_mass(:,:,iz,2) = 0.0
-    self%force_per_unit_mass(:,:,iz,3) = -2.0*z/scale_height
+    self%force_per_unit_mass(:,:,iz,3) = -z
   end do
   !-----------------------------------------------------------------------------
   ! Enforce boundary conditions, conditionally write output,  before calling
@@ -227,7 +237,7 @@ SUBROUTINE boundary_conditions (self)
   real:: z, d
   !----------------------------------------------------------------------------
   call trace%begin('experiment_t%boundary_conditions')
-  if (verbose > 1) then
+  if (verbose > 2) then
     write (io%output,*) &
       'experiment_t%boundary_conditions: id, lower, upper =', self%id, &
       self%particle_solver%lower(3), self%particle_solver%upper(3)
@@ -239,7 +249,7 @@ SUBROUTINE boundary_conditions (self)
   if (self%particle_solver%lower(3)) then
     do iz=mesh%lb,mesh%lo
       z = mesh%p + mesh%r(iz)
-      d = exp(-z**2/scale_height)*d_midplane_cgs/scaling%d
+      d = exp(-0.5*z**2)
       self%mem(:,:,iz,self%idx%d ,self%it,1) = d
       self%mem(:,:,iz,self%idx%px,self%it,1) = 0.0
       self%mem(:,:,iz,self%idx%py,self%it,1) = 0.0
@@ -253,7 +263,7 @@ SUBROUTINE boundary_conditions (self)
   if (self%particle_solver%upper(3)) then
     do iz=mesh%uo,mesh%ub
       z = mesh%p + mesh%r(iz)
-      d = exp(-z**2/scale_height)*d_midplane_cgs/scaling%d
+      d = exp(-0.5*z**2)
       self%mem(:,:,iz,self%idx%d ,self%it,1) = d
       self%mem(:,:,iz,self%idx%px,self%it,1) = 0.0
       self%mem(:,:,iz,self%idx%py,self%it,1) = 0.0
@@ -272,7 +282,7 @@ FUNCTION pforce (r) RESULT (f)
   !-----------------------------------------------------------------------------
   f(1) = 0.0
   f(2) = 0.0
-  f(3) = -2.0*r(3)/scale_height
+  f(3) = -r(3)
 END FUNCTION pforce
 
 !===============================================================================
@@ -308,10 +318,10 @@ SUBROUTINE total_dust_mass (self)
   !.............................................................................
   if (self%particle_solver%dust%verbose > 0) then
     write(io_unit%log,'(a,f10.3,i12,2x,1p,30e11.2)') &
-    'total_dust_mass:', self%time, n, mass
-    if (self%particle_solver%dust%verbose > 1) then
-      write(*,'(a,f10.3,i10,2x,1p,30e11.2)') &
       'total_dust_mass:', self%time, n, mass
+    if (self%particle_solver%dust%verbose > 1) then
+      write(io%output,'(a,f10.3,i10,2x,1p,30e11.2)') &
+        'total_dust_mass:', self%time, n, mass
     end if
   end if
   !.............................................................................

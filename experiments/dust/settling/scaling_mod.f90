@@ -5,65 +5,118 @@ MODULE scaling_mod
   USE units_mod
   USE io_mod
   USE trace_mod
-  USE math_mod
   implicit none
   private
-  !-----------------------------------------------------------------------------
-  ! Extend the units_t data type, which contains only the three fundamental
-  ! units: length, mass, and time (cf. CGS and MKS)
-  !-----------------------------------------------------------------------------
-  type, public, extends(units_t):: scaling_t
-    real(kind=8):: d, e, ee, p, u, temp, grav, mu, kr, b
+  type, public:: scaling_t
+    real(kind=8):: l, t, m, d, e, ee, p, u, temp, grav, mu, gamma
   contains
     procedure:: init
+    procedure:: m_sun
+    procedure:: myr
   end type
-  type(scaling_t), public:: scaling
-  public:: cgs
+  real:: orbit_au = 1.0
+  real:: d_midplane_cgs = 1e-9
+  real:: temperature_K = 300.
+  real:: gamma = 1.0
+  real:: mu = 2.4
+  type(scaling_t), public :: scaling
 CONTAINS
+
 !===============================================================================
 !> Initialize code units:
 !===============================================================================
-SUBROUTINE init (self)
+SUBROUTINE init (self, l_o, d_o, u_o, mu_o)
   class(scaling_t):: self
-  logical, save:: first_time=.true.
-  !-----------------------------------------------------------------------------
+  real, optional:: l_o, d_o, u_o, mu_o
+  real, save:: l=1, d=1, u=1, mu=1
+  real:: t, m, e, ee, p
+  real:: l_au, v_kms, temp, grav, n_H2
+  real:: orbit_cgs, orbit_speed_cgs, sound_speed_cgs, scale_height_cgs
+  namelist /scaling_params/ orbit_au, d_midplane_cgs, temperature_K, &
+    mu, gamma
+  namelist /scaling_nml/ l_au, v_kms, &
+    l, t, m, d, e, ee, p, u, temp, grav, mu
+  logical:: first_time = .true.
+  !----------------------------------------------------------------------------
   if (.not.first_time) return
-  call trace%begin ('scaling_t%init')
-  if (io%master) print '(a)', &
- '-------------------------------- scaling_mod --------------------------------'
-  first_time = .false.
-  call cgs%init
-  !--------------------------- defining quantities -----------------------------
-  self%system = 'cgs'                               ! pass on to Python
-  self%l  = cgs%au                                  !  length unit: 1 AU
-  self%d  = 1e-9                                    ! density unit: 1e-9 g/cm**3
-  self%t  = cgs%yr                                  !    time unit: 1 yr
-  !--------------------------- derived quantities -----------------------------
-  self%u  = self%l/self%t                           ! speed
-  self%m  = self%d*self%l**3                        ! mass
-  self%p  = self%d*self%u**2                        ! pressure [dyne / cm2]
-  self%kr = 1.0/(self%d*self%l)                     ! opacity [cm2/g]
-  self%ee = self%u**2                               ! specific energy
-  self%e  = self%m*self%u**2                        ! energy
-  self%b  = self%l**(-0.5)*self%m**0.5*self%t**(-1) ! magnetic flux density
-  self%mu = 2.4                                     ! mean molecular mas
-  self%temp = self%mu*(cgs%m_u/self%m)/(cgs%k_b/self%e) ! temperature, given mu
-  self%grav = cgs%grav*(self%m/self%l**3)*self%t**2 ! constant of gravity
+  call trace_begin('scaling_t%init')
+  !$omp critical (input_cr)
+  if (first_time) then
+    !-----------------------------------------------------------------------------
+    ! Compute CGS values of orbit speed, sound speed, and disk scale height
+    !-----------------------------------------------------------------------------
+    call cgs%init
+    orbit_cgs = orbit_au*cgs%au
+    orbit_speed_cgs = sqrt(cgs%grav*cgs%m_sun/orbit_cgs)
+    sound_speed_cgs = sqrt(gamma*cgs%k_B*temperature_K/(mu*cgs%m_u))
+    scale_height_cgs = orbit_cgs*sound_speed_cgs/orbit_speed_cgs
+    !-----------------------------------------------------------------------------
+    ! Choose code units = scale height, midplane density, and sound speed
+    !-----------------------------------------------------------------------------
+    l = scale_height_cgs
+    d = d_midplane_cgs
+    u = sound_speed_cgs
+    !-----------------------------------------------------------------------------
+    ! Derived values
+    !-----------------------------------------------------------------------------
+    n_H2 = d/(mu*cgs%m_u)                            ! H2 number density
+    m = d*l**3                                       ! mass unit
+    t = l/u                                          ! time unit
+    p = d*u**2                                       ! pressure = energy density
+    e = m*u**2                                       ! energy
+    ee = u**2                                        ! energy per unit mass
+    temp = (cgs%m_u*u**2)/cgs%k_b                    ! temperature for mu=1
+    grav = cgs%grav*(m/l**3)*t**2                    ! constant of gravity
+    l_au = l/cgs%au                                  ! length unit in AU
+    n_H2 = d/(mu*cgs%m_u)                            ! H2 density
+    write (io_unit%nml, scaling_nml)                 ! pass on to Python
+    first_time = .false.
+  end if
+  !$omp end critical (input_cr)
+  self%l = l
+  self%d = d
+  self%u = u
+  self%m = m
+  self%t = t
+  self%p = p
+  self%e = e
+  self%ee = ee
+  self%mu = mu                               ! assumed mean molecular weight
+  self%gamma = gamma                         ! assumed ideal gas gamma
+  self%temp = temp                           ! temerature unit in K
+  self%grav = grav                           ! constant of gravity in code units
   if (io%master) then
     print 1,' CODE UNITS:   (cgs):'
-    print 1,'               length: ',self%l
-    print 1,'                 mass: ',self%m
-    print 1,'                 time: ',self%t
-    print 1,'             velocity: ',self%u
-    print 1,'              density: ',self%d
-    print 1,'             pressure: ',self%p
-    print 1,'magnetic flux density: ',self%b
-    print 1,'               energy: ',self%e
-    print 1,'              gravity: ',self%grav
-    print 1,'          temperature: ',self%temp
-  1 format(1x,a,1p,e11.3)
+    print 1,'     length: ',self%l, ' R_Earth:', self%l/cgs%r_earth
+    print 1,'   velocity: ',self%u, '    km/s:', self%u/cgs%kms
+    print 1,'       mass: ',self%m, ' M_Earth:', self%m/cgs%m_earth
+    print 1,'       time: ',self%t, '      yr:', self%t/cgs%yr
+    print 1,'   pressure: ',self%p, '     bar:', self%p/1e6
+    print 1,'    density: ',self%d
+    print 1,'     energy: ',self%e
+    print 1,'    gravity: ',self%grav
+    print 1,'temperature: ',self%temp
+  1 format(1x,2(a,1p,e11.3,4x))
   end if
-  call self%output
-  call trace%end()
+  call trace_end
 END SUBROUTINE init
+
+!===============================================================================
+!> Function returning mass in solar masses
+!===============================================================================
+REAL FUNCTION m_sun (self, mass)
+  class(scaling_t):: self
+  real(8):: mass
+  m_sun = mass*self%m/cgs%m_sun
+END FUNCTION m_sun
+
+!===============================================================================
+!> Function returning time in Myr
+!===============================================================================
+REAL FUNCTION myr (self, time)
+  class(scaling_t):: self
+  real(8):: time
+  myr = time*self%t/cgs%myr
+END FUNCTION myr
+
 END MODULE scaling_mod
