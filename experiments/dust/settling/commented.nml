@@ -9,7 +9,6 @@
 /
 &patch_params           n=3*16                    ! cells per patch (16x16x16)
                         grace=0.1                 ! allowed time extraplation
-                        gamma=1.0                 ! gas gamma
 /
 
 !--- Dust and particle solver parameters ---------------------------------------
@@ -19,14 +18,18 @@
                         detailed_timer=f          ! fine grained cost 
 /
 &dust_params            verbose=0                 ! information level
+                        seed=11                   ! random seed
                         n_bin=6                   ! number of bins
                         cadence=30                ! dust evolution cadence
-                        min_size_cm               ! minimum dust size
-                        max_size_cm               ! maximum dust size
                         growth_rate=0.01          ! rate of increasing size
-                        particles_per_bin_min=8   ! renormalize to 10 if below
-                        particles_per_bin    =10  ! particles per cell-bin
-                        particles_per_bin_max=14  ! renormalize to 10 if above
+                        particles_per_bin=10      ! particles per cell-bin
+                        min_fraction=0.7          ! of particles_per_bin
+                        max_fraction=0.7          ! of particles_per_bin
+                        d_min_cgs=1e-15           ! don't reduce weights further
+                        solid_density_cgs=2       ! 2 g/cm**3
+                        density_yr_cgs=1e-12      ! gas density for 1 yr stopping time @ 1 cm
+                        dust_time=0.001           ! how often to do dust evolution
+                        growth_rate=1e-9          ! naiive parameter for test_kernel
 /
 
 !--- Input/Output parameters ---------------------------------------------------
