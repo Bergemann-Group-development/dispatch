@@ -6,10 +6,7 @@
 
 !--- Dust and particle solver parameters ---------------------------------------
 &particle_solver_params verbose=0 v_min=1 courant=1 detailed_timer=f /
-&dust_params            verbose=0 n_bin=1 cadence=30 growth_rate=0.01
-                        particles_per_bin_min=8
-                        particles_per_bin    =10
-                        particles_per_bin_max=14 /
+&dust_params            verbose=0 n_bin=1 cadence=0 particles_per_bin=30 /
 
 !--- Input/Output parameters ---------------------------------------------------
 &io_params              verbose=0 do_trace=f omp_trace=t do_output=t
