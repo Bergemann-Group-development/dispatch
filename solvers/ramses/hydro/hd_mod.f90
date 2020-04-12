@@ -60,6 +60,7 @@ MODULE hd_mod
     real, pointer, contiguous, dimension(:,:,:,:,:):: fl      ! 3D fluxes
     real, pointer, contiguous, dimension(:,:,:):: s           ! scratch
   contains
+    procedure:: pre_init
     procedure:: init
     procedure:: dealloc
     procedure:: update
@@ -75,6 +76,19 @@ MODULE hd_mod
   logical, save:: unsigned=.true.
   character(len=16):: eqn='mhd'
 CONTAINS
+
+!===============================================================================
+!> Pre-initialize the hydro solver, by indicating how many slots to use.
+!> Other extensions, such as selfgravity, are then free to add to that
+!===============================================================================
+SUBROUTINE pre_init (self)
+  class(hd_t), target:: self
+  !-----------------------------------------------------------------------------
+  call trace%begin('hd_mod%pre_init')
+  self%nv = 5
+  call self%extras_t%pre_init
+  call trace%end ()
+END SUBROUTINE pre_init
 
 !===============================================================================
 !> Initialize the HD solver
@@ -137,6 +151,7 @@ SUBROUTINE init (self)
   ! of patches (mesh, idx, patch_t%h staggering) are in place.
   !-----------------------------------------------------------------------------
   call self%gpatch_t%init
+  call self%extras_t%init
   call trace%end()
 END SUBROUTINE init
 
