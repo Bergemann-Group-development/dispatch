@@ -5,6 +5,7 @@
 MODULE poisson_mod
   USE mpi_mod
   USE io_mod
+  USE io_unit_mod
   USE trace_mod
   USE kinds_mod
   USE patch_mod
@@ -47,15 +48,16 @@ SUBROUTINE init (self)
   namelist /poisson_params/ tolerance, floor, max_iter, fourPiG, precondition, &
                             verbose, solver, chebyshev
   !-----------------------------------------------------------------------------
-  !$omp critical (poisson_cr)
+  !$omp critical (input_cr)
   if (first_time) then
     first_time = .false.
     fourpiG = scaling%grav
     rewind (io%input)
     read (io%input, poisson_params, iostat=iostat)
+    call io%namelist_warning ('poisson_params', iostat)
     if (io%master) write (io%output, poisson_params)
   end if
-  !$omp end critical (poisson_cr)
+  !$omp end critical (input_cr)
   select case(trim(solver))
   case ('cg')
     self%update => cg
@@ -136,8 +138,12 @@ SUBROUTINE cg (self, patch, phi1, d, d0, detailed_timer)
   call laplace (ds, phi, r)
   r = source - r
   error0 = patch%fmaxval(abs(r/(d+floor)))
-  if (verbose > 1) print "(i6,2x,'cg: iter = ',i4.1,3x,'error =',1p,g12.4)", &
-    patch%id, 0, error0
+  !.............................................................................
+  if (verbose > 1) then
+    write(io_unit%log,"(i6,2x,'cg: iter = ',i4.1,3x,'error =',1p,g12.4)") &
+      patch%id, 0, error0
+  end if
+  !.............................................................................
   call precond (r, u)
   ru = patch%fsum(r*u)
   !-----------------------------------------------------------------------------
@@ -156,21 +162,28 @@ SUBROUTINE cg (self, patch, phi1, d, d0, detailed_timer)
     beta = ru2/ru
     p = u + beta*p
     ru = ru2
-    if (verbose > 1) print "(i6,2x,'cg: iter = ',i4.1,3x,'error =',1p,g12.4)", &
+    !...........................................................................
+    if (verbose > 1) then
+      write (io_unit%log,"(i6,2x,'cg: iter = ',i4.1,3x,'error =',1p,g12.4)") &
       patch%id, iter, error
+    end if
+    !...........................................................................
     !!!write (11) phi
   end do
   if (iter==max_iter+1) then
-    print *, 'poisson_t%cg: NO CONVERGENCE! id, niter, error0, error =', &
-             patch%id, max_iter, error0, error
-  else if (verbose>0 .and. io%master) then
+    !...........................................................................
+    write (io_unit%log,*) &
+      'poisson_t%cg: NO CONVERGENCE! id, niter, error0, error =', &
+       patch%id, max_iter, error0, error
+    !...........................................................................
+  else if (verbose > 0) then
     usppt = 1e6*(wallclock()-wc)/product(shape(phi))
-    print '(a,i7,i5,3x,2e12.3,f8.2)', &
+    !...........................................................................
+    write (io_unit%log,'(a,i7,i5,3x,2e12.3,f8.2)') &
      'poisson_t%cg: id, niter, initial/final error, us/pt =', &
       patch%id, iter, error0, error, usppt
   end if
   phi1 = phi
-
   deallocate (phi, source, r, p, s, u)
   if (detailed_timer) call trace%end (itimer)
 contains
@@ -471,24 +484,30 @@ SUBROUTINE sor (self, patch, phi1, d, d0, detailed_timer)
         end if
       end if
     end do
-    !-----------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     ! We are supposed to return the residual as (Laplace(phi)-source)/d, so we
     ! need to divide with the factor that source (FourPiGrho) was multiplied by
-    !-----------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     error = error / a
     if (iter==1) error0 = error
-    if (verbose > 1) print *, 'poisson_t%sor: iter, error =', iter, error
+    !...........................................................................
+    if (verbose > 1) then
+      write (io_unit%log,*) 'poisson_t%sor: iter, error =', iter, error
+    end if
+    !...........................................................................
     if (error < tolerance) exit
     !if (patch%is_periodic()) call patch%make_periodic (phi)
   end do
 
   if (iter==max_iter+1) then
     print *, 'poisson_t%sor: no convergence, niter, error =', max_iter, error
-  else if (verbose > 0 .and. io%master) then
+  else if (verbose > 0) then
     usppt = 1e6 * (wallclock() - wc) / product(shape(phi))
-    print '(a,i7,i5,3x,2e12.3,f8.2)', &
+    !...........................................................................
+    write (io_unit%log,'(a,i7,i5,3x,2e12.3,f8.2)') &
      'poisson_t%sor: id, niter, initial/final error, us/pt =', &
       patch%id, iter, error0, error, usppt
+    !...........................................................................
   end if
   niter = iter
   phi1 = phi

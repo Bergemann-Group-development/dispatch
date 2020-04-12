@@ -3,6 +3,7 @@
 !===============================================================================
 MODULE selfgravity_mod
   USE io_mod
+  USE io_unit_mod
   USE os_mod
   USE trace_mod
   USE patch_mod
@@ -75,6 +76,13 @@ SUBROUTINE pre_init (self, patch)
       patch%nv = patch%nv + 1
       patch%idx%dphi = patch%nv
     end if
+    !...........................................................................
+    if (verbose > 0) then
+      write (io_unit%log,'(a,i6,4i4)') &
+       'selfgravity_t%pre_init: id, nv, nw, phi, dphi =', &
+        patch%id, patch%nv, patch%nw, patch%idx%phi, patch%idx%dphi
+    end if
+    !...........................................................................
     call self%poisson%init
   else
     patch%idx%phi = -1
@@ -120,6 +128,12 @@ SUBROUTINE init (self, patch)
       total_mass = total_mass + patch%fsum(d)*product(patch%ds)
       !$omp atomic
       total_volume = total_volume + product(patch%size)
+      !.........................................................................
+      if (verbose > 0) then
+        write (io_unit%log,'(a,i6,1p,3e12.2)') &
+         'selfgravity_t%init: id, dm =', patch%id, dm, total_mass, total_volume
+      end if
+      !.........................................................................
     end if
   end if
   call trace%end()
@@ -147,12 +161,20 @@ SUBROUTINE pre_update (self, patch)
   phi => patch%mem(:,:,:,patch%idx%phi,patch%new,1)
   if (self%d0==-1.0) then
     self%d0 = total_mass/total_volume
-    print *, patch%id, 'setting self%d0 =', self%d0, patch%faver(d)
+    if (verbose > 0) then
+      write(io_unit%log,'(a,i6,1p,2e11.2)') &
+       'selfgravity_t%pre_update: id, self%d0, faver(d) = ', &
+        patch%id, self%d0, patch%faver(d)
+    end if
   end if
   dmin = patch%fminval (d)
   dmax = patch%fmaxval (d)
-  if (dmin==0.0) &
-    print *, patch%id, 'WARNING: selfgravity_t%gravity, dmin, dmax, it =', dmin, dmax, patch%new
+  !.............................................................................
+  if (dmin==0.0) then
+    print *, patch%id, 'WARNING: selfgravity_t%gravity, dmin, dmax, it =', &
+      dmin, dmax, patch%new
+  end if
+  !.............................................................................
   call self%poisson%update (patch, phi, d, self%d0, detailed_timer)
   !-----------------------------------------------------------------------------
   ! Compute the force per unit volume (except for ZEUS solvers, which take the
@@ -183,15 +205,19 @@ SUBROUTINE post_update (self, patch)
   call trace%begin ('selfgravity_t%post_update', itimer=itimer)
   if (selfgravity) then
     if (self%poisson_time == patch%time) then
-      if (verbose>0) &
-        print *, patch%id, 'selfgravity_t%update updated patch%time to', patch%time
+      if (verbose > 0) then
+        write (io_unit%log,'(a,i6,1p,e12.4)') &
+         'selfgravity_t%post_update: id, patch%time =', patch%id, patch%time
+      end if
     else
       call patch%dnload (only=patch%idx%d)
       call patch%dnload (only=patch%idx%phi)
       call self%pre_update (patch)
       self%poisson_time = patch%time
-      if (verbose>0) &
-        print *, patch%id, 'selfgravity_t%update updated self%poisson_time to', self%poisson_time
+      if (verbose > 0) then
+        write (io_unit%log,'(a,i6,1p,e12.4)') &
+         'selfgravity_t%post_update: id, poisson_time =', patch%id, self%poisson_time
+      end if
     end if
   end if
   call trace%end(itimer)
@@ -240,8 +266,13 @@ SUBROUTINE time_derivs (self)
                  (self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%phi,it1,1) - &
                   self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%phi,it2,1))/(t1-t2)
       end if
-      if (verbose>2) print *,self%id,'d(phi)/dt min,max,nv =', &
-          self%fminval(dphidt), self%fmaxval(dphidt), size(self%mem,4)
+      !.........................................................................
+      if (verbose > 2) then
+        write(io_unit%log,'(a,i6,1p,2e12.3,i4)') &
+         'selfgravity_t%time_derivs: id, dphidt min,max, nv =', &
+          self%id, self%fminval(dphidt), self%fmaxval(dphidt), size(self%mem,4)
+      end if
+      !.........................................................................
     end if
   else
     dphidt = 0.0
@@ -275,20 +306,25 @@ LOGICAL FUNCTION ahead_of (self, target, source)
       !ahead_of = target%time > source%poisson_time + source%grace*source%dtime
       ahead_of = target%time > source%time + source%grace*source%dtime
     end if
-    if (ahead_of .and. verbose>1) &
+    !...........................................................................
+    if (ahead_of .and. verbose > 1) then
       print 1, target%id, target%level, 'at', target%time, &
-        'cannot update because', source%id, source%level, 'has too old Poisson time', &
-        self%poisson_time + source%grace*source%dtime
-      1 format(i6,i3,2x,a,g15.6,2x,a,i6,i3,2x,a,g15.6)
+       'cannot update because', source%id, source%level, &
+       'has too old Poisson time', self%poisson_time + source%grace*source%dtime
+      1 format("selfgravity_t%ahead_of:",i6,i3,2x,a,g15.6,2x,a,i6,i3,2x,a,g15.6)
+    end if
   !-----------------------------------------------------------------------------
   ! If we are going to update the dynamic time, we need the nbor to be in front.
   !-----------------------------------------------------------------------------
   else
     ahead_of = target%time > source%time + source%grace*source%dtime
-    if (ahead_of .and. verbose>1) &
+    !...........................................................................
+    if (ahead_of .and. verbose > 1) then
       print 1, target%id, target%level, 'at', target%time, &
-        'cannot update because', source%id, source%level, 'has too old dynamic time', &
-        source%time + source%grace*source%dtime
+       'cannot update because', source%id, source%level, &
+       'has too old dynamic time', source%time + source%grace*source%dtime
+    end if
+    !...........................................................................
   end if
 END FUNCTION ahead_of
 
