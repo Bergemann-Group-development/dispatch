@@ -40,6 +40,7 @@ MODULE selfgravity_mod
   logical, save :: selfgravity=.false., prediction=.true., detailed_timer=.false.
   integer, save :: verbose=0
   integer, save :: order=1
+  integer, save :: nw=1
 CONTAINS
 
 !===============================================================================
@@ -70,14 +71,19 @@ SUBROUTINE pre_init (self, patch)
   end if
   !$omp end critical (input_cr)
   !
+  patch%nw = nw
   self%d0 = d0
   if (selfgravity) then
     self%selfgravity = selfgravity
-    if (patch%kind(1:4) /= 'zeus') patch%nv = patch%nv + 1
-    patch%idx%phi = patch%nv
-    if (patch%nw == 1) then
-      patch%nv = patch%nv + 1
-      patch%idx%dphi = patch%nv
+    if (patch%kind(1:4) /= 'zeus') then
+      call patch%idx%request_index (patch%idx%phi, patch%nv)
+    else
+      patch%idx%phi = patch%nv
+    end if
+    if (patch%nw == 2) then
+      patch%idx%dphi = patch%idx%phi
+    else
+      call patch%idx%request_index (patch%idx%dphi, patch%nv)
     end if
     !...........................................................................
     if (verbose > 0) then
@@ -126,10 +132,11 @@ SUBROUTINE init (self)
     ! Sum up the total mass and total volume, to get the average density d0.
     ! FIXME: This needs to be modified for MPI
     !-------------------------------------------------------------------------
-    if (patch%time == 0.0 .and. patch%id==1) then
-      d => patch%mem(:,:,:,patch%idx%d,patch%new,1)
+    if (patch%time == 0.0) then
+      d => patch%mem(:,:,:,patch%idx%d,patch%it,1)
+      dm = patch%fsum(d)*product(patch%ds)
       !$omp atomic
-      total_mass = total_mass + patch%fsum(d)*product(patch%ds)
+      total_mass = total_mass + dm
       !$omp atomic
       total_volume = total_volume + product(patch%size)
       !.........................................................................
