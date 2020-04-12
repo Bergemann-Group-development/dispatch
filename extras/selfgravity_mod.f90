@@ -7,6 +7,7 @@ MODULE selfgravity_mod
   USE os_mod
   USE trace_mod
   USE patch_mod
+  USE gpatch_mod
   USE download_mod
   USE initial_mod
   USE kinds_mod
@@ -26,6 +27,7 @@ MODULE selfgravity_mod
     logical:: selfgravity=.false.
     real(8):: d0
     real(8):: poisson_time=-1.0
+    class(gpatch_t), pointer:: patch=>null()
   contains
     procedure:: pre_init
     procedure:: init
@@ -45,7 +47,7 @@ CONTAINS
 !===============================================================================
 SUBROUTINE pre_init (self, patch)
   class(selfgravity_t):: self
-  class(patch_t):: patch
+  class(gpatch_t), pointer:: patch
   real(kind=KindScalarVar), pointer :: ff(:,:,:,:)
   character(len=64)                 :: filename
   logical                           :: ok
@@ -56,6 +58,7 @@ SUBROUTINE pre_init (self, patch)
   namelist /selfgravity_params/ selfgravity, prediction, order, d0, verbose
   !-----------------------------------------------------------------------------
   call trace%begin ('selfgravity_t%pre_init')
+  self%patch => patch
   !
   !$omp critical (input_cr)
   if (first_time) then
@@ -94,23 +97,24 @@ END SUBROUTINE pre_init
 !===============================================================================
 !> Further initialisation of the self-gravity module
 !===============================================================================
-SUBROUTINE init (self, patch)
+SUBROUTINE init (self)
   class(selfgravity_t):: self
-  class(patch_t):: patch
+  !.............................................................................
+  class(patch_t), pointer:: patch
   real(kind=KindScalarVar), pointer :: ff(:,:,:,:)
   character(len=64)                 :: filename
   logical                           :: ok
   integer                           :: iostat
   logical, save                     :: first_poisson=.true.
   real(kind=KindScalarVar), pointer :: d(:,:,:)
+  real                              :: dm
   !-----------------------------------------------------------------------------
   call trace%begin ('selfgravity_t%init')
-
+  patch => self%patch
   if (.not. allocated(patch%force_per_unit_mass)) then
     if (patch%kind(1:4) /= 'zeus') &
       allocate (patch%force_per_unit_mass(patch%gn(1),patch%gn(2),patch%gn(3),3))
   end if
-
   !$omp critical (poisson_cr)
   if (first_poisson) then
     first_poisson = .false.
@@ -146,16 +150,17 @@ END SUBROUTINE init
 !> be providing only their preliminary potentials in their (nt-1) time slots,
 !> while their older time slots should by now contain the converged potential.
 !===============================================================================
-SUBROUTINE pre_update (self, patch)
+SUBROUTINE pre_update (self)
   class(selfgravity_t):: self
-  class(patch_t):: patch
   !.............................................................................
+  class(gpatch_t), pointer:: patch
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, phi
   real:: dmin, dmax
   integer:: iter, ix ,iy, iz
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not. selfgravity) return
+  patch => self%patch
   call trace%begin ('selfgravity_t%pre_update', itimer=itimer)
   d   => patch%mem(:,:,:,patch%idx%d  ,patch%new,1)
   phi => patch%mem(:,:,:,patch%idx%phi,patch%new,1)
@@ -196,12 +201,14 @@ END SUBROUTINE pre_update
 !> better offer.  The poisson_time controls if an update affects the self%time
 !> or the poisson_time; the two are updated alternatingly
 !===============================================================================
-SUBROUTINE post_update (self, patch)
+SUBROUTINE post_update (self)
   class(selfgravity_t):: self
-  class(patch_t):: patch
+  !.............................................................................
+  class(gpatch_t), pointer:: patch
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not. selfgravity) return
+  patch => self%patch
   call trace%begin ('selfgravity_t%post_update', itimer=itimer)
   if (selfgravity) then
     if (self%poisson_time == patch%time) then
@@ -212,7 +219,7 @@ SUBROUTINE post_update (self, patch)
     else
       call patch%dnload (only=patch%idx%d)
       call patch%dnload (only=patch%idx%phi)
-      call self%pre_update (patch)
+      call self%pre_update
       self%poisson_time = patch%time
       if (verbose > 0) then
         write (io_unit%log,'(a,i6,1p,e12.4)') &
