@@ -12,11 +12,11 @@
 !>                      /    \
 !>                     /      \
 !>                extras_1_t extras_2_t
-!>                       \    /   |
-!>                      gpatch_t  |
-!>                       patch_t  |
-!>                       /    \   |
-!>                    task_t  connect_t
+!>                       \    /
+!>                      gpatch_t
+!>                       patch_t
+!>                       /
+!>                    task_t
 !>
 !> The extra modules needed in an experiment should be chosen and coordinated
 !> in this module, and the ones that are "below" (USEd by) this module should
@@ -43,7 +43,7 @@ MODULE extras_mod
   USE patch_mod
   USE list_mod
   !-----------------------------------------------------------------------------
-  ! Optional modules start here.  
+  ! Optional modules start here.
   !-----------------------------------------------------------------------------
   USE forces_mod                                                ! forces
   USE selfgravity_mod                                           ! selfg
@@ -84,7 +84,8 @@ SUBROUTINE pre_init (self)
   !.............................................................................
   call trace%begin ('extras_t%pre_init')
   self%gpatch => self
-  call self%selfgravity%pre_init(self)                          ! selfg
+  call self%forces%pre_init (self%gpatch)                       ! forces
+  call self%selfgravity%pre_init (self%gpatch)                  ! selfg
   self%particle_solver%patch => self                            ! dust
   call self%particle_solver%pre_init                            ! dust
   call trace%end()
@@ -97,8 +98,9 @@ SUBROUTINE init (self)
   class(extras_t):: self
   !.............................................................................
   call trace%begin ('extras_t%init')
-  call self%forces%init (self%link)                             ! forces
+  call self%forces%init                                         ! forces
   call self%cooling%init                                        ! cool
+  call self%selfgravity%init                                    ! selfg
   call self%particle_solver%init                                ! dust
   call trace%end()
 END SUBROUTINE init
@@ -142,7 +144,7 @@ SUBROUTINE pre_update (self)
   self%gpatch => self                                           ! keep
   patch => self                                                 ! keep
   call self%forces%pre_update                                   ! forces
-  call self%selfgravity%pre_update (self)                       ! selfg
+  call self%selfgravity%pre_update                              ! selfg
   call self%cooling%pre_update (self%gpatch)                    ! cool
   call trace%end()
 END SUBROUTINE pre_update
@@ -154,7 +156,7 @@ SUBROUTINE post_update (self)
   class(extras_t):: self
   !.............................................................................
   call self%forces%post_update                                  ! forces
-  call self%selfgravity%post_update (self)                      ! selfg
+  call self%selfgravity%post_update                             ! selfg
   call self%particle_solver%update                              ! dust
 END SUBROUTINE post_update
 
