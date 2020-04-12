@@ -235,6 +235,8 @@ SUBROUTINE output (patch, count)
   ! patch%mem to the mem(:,:,:,:) temporary, resorting into increasing time
   ! order and optionally also converting to a different representation.
   !-----------------------------------------------------------------------------
+  write (io_unit%log,*) 'parallel_io_t%output: id, nv, io%nv =', &
+    patch%id, patch%nv, io%nv
   allocate (mem(n(1),n(2),n(3),patch%nt-1,io%nv))
   allocate (buffer(n(1),n(2),n(3),io%nv))
   call prepare_time_slices
@@ -283,7 +285,7 @@ contains
   !-----------------------------------------------------------------------------
   subroutine prepare_time_slices
     integer:: l1(3), u1(3), l2(3), u2(3), n(3), it, iit
-    real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, e, p1, p2, p3
+    real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, e, p1, p2, p3, phi
     real(kind=KindScalarVar), dimension(:,:,:), pointer:: b1d, b2d, b3d, b1u, b2u, b3u
     !...........................................................................
     call trace%begin ('parallel_io-t%output::prepare_time_slices')
@@ -298,6 +300,9 @@ contains
     l2 = l1+1
     u2 = u1+1
     associate (idx=>patch%idx)
+    write (io_unit%log,'(a,i6,4i4)') &
+     'parallel_io_t%prepare_time_slices: nv, nw, bx, phi =', &
+      patch%id, patch%nv, patch%nw, patch%idx%bx, patch%idx%bx
     do it=1,patch%nt-1
       iit = patch%iit(it)
       d  => patch%mem(l1(1):u1(1),l1(2):u1(2),l1(3):u1(3),idx%d ,iit,1)
@@ -309,7 +314,7 @@ contains
       mem(:,:,:,it,idx%px) = p1/d
       mem(:,:,:,it,idx%py) = p2/d
       mem(:,:,:,it,idx%pz) = p3/d
-      if (patch%nv > 5) then
+      if (patch%idx%bx > 0) then
         mem(:,:,:,it,idx%e) = patch%ee_min
         b1d => patch%mem(l1(1):u1(1),l1(2):u1(2),l1(3):u1(3),idx%bx,iit,1)
         b2d => patch%mem(l1(1):u1(1),l1(2):u1(2),l1(3):u1(3),idx%by,iit,1)
@@ -324,6 +329,10 @@ contains
         mem(:,:,:,it,idx%e) = (e - 0.5*(p1**2+p2**2+p3**2)/d)/d
       end if
       mem(:,:,:,it,idx%e) = max(mem(:,:,:,it,idx%e),patch%ee_min)
+      if (patch%idx%phi > 0) then
+        phi => patch%mem(l1(1):u1(1),l1(2):u1(2),l1(3):u1(3),idx%phi,iit,1)
+        mem(:,:,:,it,idx%phi) = phi
+      end if
     end do
     end associate
     call trace%end()
