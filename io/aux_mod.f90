@@ -348,6 +348,7 @@ SUBROUTINE register3r (self, name, r)
           exit
         end if
       end select
+    item => item%next
     end do
   end if
   call trace%end()

@@ -38,6 +38,7 @@ MODULE dust_mod
   USE trace_mod
   USE mpi_mod
   USE scaling_mod
+  USE units_mod
   USE random_mod
   USE mesh_mod
   USE task_mod
@@ -93,7 +94,7 @@ MODULE dust_mod
   integer:: seed = 11                         ! random seed
   integer:: particles_per_bin = 10            ! particles per cell-bin
   real(8):: dust_time = 0.01                  ! dust evolution timestep
-  real:: min_fraction = 0.0                   ! particles per bin (max decrease)
+  real:: min_fraction = 0.7                   ! particles per bin (max decrease)
   real:: max_fraction = 1.4                   ! particles per bin (max increase)
   real:: d_min_cgs = 1e-15                    ! lowest density for renormalizing
   real:: dust_to_gas = 0.01                   ! dust-to-gas ratio  
@@ -174,6 +175,7 @@ SUBROUTINE initial_condition (self, l, u)
   real, pointer, contiguous:: d(:,:,:)
   integer:: i1, i2, i3, bin, j
   real:: c
+  integer(8), save:: id=0
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('dust_t%initial_condition', itimer=itimer)
@@ -187,7 +189,9 @@ SUBROUTINE initial_condition (self, l, u)
       do j=1,particles_per_bin
         allocate (p)
         p%bin = bin
-        p%id = counter%update (1_8)
+        p%id = 1 + mpi%rank + mpi%size*id
+        !$omp atomic update
+        id = id+1
         p%q = [i1,i2,i3]
         p%r = self%random%uniform (3)
         p%v = 0.0
@@ -242,17 +246,17 @@ SUBROUTINE update (self, particles)
   u = self%patch%mesh%ui                        ! upper index limit
   allocate (self%n (n(1),n(2),n(3),n_bin))      ! work array for histograms
   allocate (self%na(n(1),n(2),n(3),n_bin))      ! number of added particles
+  allocate (self%dv(n_bin))                     ! average speed difference
   call self%gather
   call self%renormalize
   call self%output
   if (do_dust) then
     allocate (self%k(n_bin,n_bin))              ! kernel expressing exchange
-    allocate (self%dv(n_bin))                   ! average speed difference
     call self%evolve
     call self%scatter
-    deallocate (self%k, self%dv)
+    deallocate (self%k)
   end if
-  deallocate (self%n, self%na)
+  deallocate (self%n, self%na, self%dv)
   call trace%end (itimer)
 END SUBROUTINE update
 

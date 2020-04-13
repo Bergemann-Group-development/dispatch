@@ -284,8 +284,6 @@ SUBROUTINE output (self, patch, experiment_name)
         !-----------------------------------------------------------------------
         patch%iout = patch%iout+1
         if (io%out_time==0.0) exit
-        patch%out_next = patch%out_next + io%out_time
-!print *, 'data_io_t%output: id, out_next =', patch%id, patch%out_next
         !-----------------------------------------------------------------------
         if (io%verbose > 1) & 
           write (io%output,'(a,i6,3f12.6,3i4)') &
@@ -293,6 +291,7 @@ SUBROUTINE output (self, patch, experiment_name)
             patch%id, patch%time, patch%time-patch%dtime, patch%out_next, &
             patch%iout, io%nwrite, count
         !-----------------------------------------------------------------------
+        patch%out_next = patch%out_next + io%out_time
         call os%mkdir_no (patch%iout)
       end do
       if (io%verbose > 1) &
@@ -313,12 +312,12 @@ SUBROUTINE output (self, patch, experiment_name)
           ! Write a line in the log with snapshot time info
           !-----------------------------------------------------------------------
           if (io%out_time > 0d0) then
-            prv = modulo(patch%it-2,patch%nt) + 1
+            prv = modulo(it-2,patch%nt) + 1
             write(io%output,'(1x,a,2x,a,i5.5,6x,a,f9.3,6x,a,1p,3g14.5)') &
               trim(io%method)//'_io:output', &
               'snapshot '//trim(io%outputname), patch%iout-1, &
               'size(GB):', io%gb_out, &
-              'time:', patch%t(prv), patch%out_next, patch%time
+              'time:', patch%t(prv), patch%out_next-io%out_time, patch%t(it)
           else
             write(io%output,'(1x,a,2x,a,i5.5,6x,a,f9.3,6x,a,1p,g14.5)') &
               trim(io%method)//'_io:output', &

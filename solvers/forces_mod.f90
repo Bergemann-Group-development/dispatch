@@ -20,16 +20,18 @@
 MODULE forces_mod
   USE io_mod
   USE trace_mod
-  USE patch_mod
+  USE gpatch_mod
   USE force_mod
   USE link_mod
+  USE index_mod
   implicit none
   private
   type, public:: forces_t
     type(force_t):: force
-    class(patch_t), pointer:: patch
+    class(gpatch_t), pointer:: patch
     real, dimension(:,:,:), pointer:: Ux=>null(), Uy=>null(), Uz=>null()
   contains
+    procedure:: pre_init
     procedure:: init
     procedure:: dealloc
     procedure:: pre_update
@@ -38,14 +40,24 @@ MODULE forces_mod
 CONTAINS
 
 !===============================================================================
+!> Initialize patch link
+!===============================================================================
+SUBROUTINE pre_init (self, patch)
+  class(forces_t):: self
+  class(gpatch_t), pointer:: patch
+  !.............................................................................
+  call trace%begin ('forces_t%pre_init')
+  self%patch => patch
+  call trace%end()
+END SUBROUTINE pre_init
+
+!===============================================================================
 !> Initialize forces_t interface to force_t
 !===============================================================================
-SUBROUTINE init (self, link)
+SUBROUTINE init (self)
   class(forces_t):: self
-  class(link_t):: link
   !.............................................................................
   call trace%begin ('forces_t%init')
-  self%patch => task2patch (link%task)
   call self%force%init (self%patch%kind, self%patch%id, self%patch%mesh)
   call trace%end()
 END SUBROUTINE init
@@ -69,20 +81,25 @@ SUBROUTINE pre_update (self)
   !.............................................................................
   real, dimension(:,:,:)  , pointer, contiguous :: d
   real, dimension(:,:,:,:), pointer, contiguous :: p
+  class(gpatch_t), pointer:: patch
+  type(index_t), pointer:: idx
+  integer:: m(3), new
   !-----------------------------------------------------------------------------
   ! Use existing function call
   !-----------------------------------------------------------------------------
-  associate (patch => self%patch, m => self%patch%gn)
-  d => patch%mem(:,:,:,patch%idx%d,patch%new,1)
-  p => patch%mem(:,:,:,patch%idx%px:patch%idx%pz,patch%new,1)
+  patch => self%patch
+  idx => patch%idx
+  new = patch%new
+  d => patch%mem(:,:,:,idx%d,new,1)
+  p => patch%mem(:,:,:,idx%px:idx%pz,new,1)
   if (.not.allocated(patch%force_per_unit_mass)) then
+    m = patch%mesh%gn
     allocate (patch%force_per_unit_mass(m(1),m(2),m(3),3))
     call io%bits_mem (storage_size(patch%force_per_unit_mass), &
                      product(shape(patch%force_per_unit_mass)), 'fpm')
   end if
   patch%force_per_unit_mass = &
   self%force%selected(patch%time, d, p, self%Ux, self%Uy, self%Uz, patch%mesh)
-  end associate
 END SUBROUTINE pre_update
 
 !===============================================================================
