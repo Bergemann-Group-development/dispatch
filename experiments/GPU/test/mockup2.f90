@@ -1,38 +1,4 @@
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-MODULE solver_mod
-  USE muscl_mod
-  implicit none
-  private
-  type, public:: solver_t
-    real(8):: time=0d0, dtime=1d0
-    real, pointer, dimension(:,:,:,:):: uin, uout, scr
-  contains
-    procedure:: init
-    procedure:: update
-  end type
-  integer:: n=20, nv=8, nscr=50
-CONTAINS
-!===============================================================================
-SUBROUTINE init (self)
-  class(solver_t):: self
-  allocate (self%uin(n,n,n,nv), self%uout(n,n,n,nv))
-  self%uin = 0d0
-END SUBROUTINE init
-!===============================================================================
-SUBROUTINE update (self)
-  class(solver_t):: self
-  integer:: i
-  allocate (self%scr(n,n,n,nscr))
-  self%scr(:,:,:,1:nv) = self%uin
-  do i=2,nscr
-    self%scr(:,:,:,i) = self%scr(:,:,:,i-1) + 1.0
-  end do
-  self%uout = self%scr(:,:,:,nscr-nv+1:nscr)
-  self%time = self%time + self%dtime
-  deallocate (self%scr)
-END SUBROUTINE update
-END MODULE solver_mod
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 MODULE task_list_mod
   USE solver_mod
   implicit none
@@ -84,11 +50,18 @@ PROGRAM DISPATCH_mockup
   class(solver_t), pointer:: task
   class(link_t), pointer:: link
   type(task_list_t):: task_list
-  integer:: i, ntask=30
-  real(8):: end_time=100d0
+  integer:: i
+  !-----------------------------------------------------------------------------
+  ! Main parameters
+  !-----------------------------------------------------------------------------
+  integer:: n=16
+  integer:: ntask=30
+  real(8):: end_time=10d0
+  !-----------------------------------------------------------------------------
   do i=1,ntask
     allocate (task, link)
     link%task => task
+    task%n = n
     call task%init
     call task_list%append (link)
   end do
@@ -101,5 +74,5 @@ PROGRAM DISPATCH_mockup
   end do
   !$omp end parallel
   !$omp end target
-  print *, 'FINISHED: the answer is ...', link%task%uout(1,1,1,1)
+  print *, 'FINISHED: the answer is ...', link%task%mem(1,1,1,1,1,1)
 END PROGRAM DISPATCH_mockup

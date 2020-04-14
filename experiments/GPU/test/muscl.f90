@@ -8,30 +8,33 @@
 !> and velocities. This ensures that the densities are positive, and that the
 !> slopes are derived from well-conditioned per-unit-mass variables.
 !===============================================================================
-MODULE muscl_mod
+MODULE solver_mod
   USE riemann_mod
+  USE omp_lib
   implicit none
   private
   integer, parameter:: nt=5
-  type, public:: hd_t
-    integer:: nw, nv, ng
-    integer:: it, new
+  type, public:: solver_t
+    integer:: id
+    integer:: nw=1, nv=5, nt=nt, ng=2, n=16
+    integer:: it=1, new=2
     integer, dimension(3):: gn, lb, lo, li, ui, uo, ub
-    integer:: iit(nt)
-    real(8):: t(nt), dt(nt), time, dtime, ds(3)
+    real(8):: time=0d0, dtime=1d0
+    real(8):: t(nt), dt(nt), ds(3)=1d0
     real:: slope_type
     real:: courant
     real:: csound
     real(8):: g1, g2, gamma
-    character(len=16):: kind
+    character(len=16):: kind = 'ramses_hd_patch'
     type(riemann_t):: riemann
     real, pointer:: mem(:,:,:,:,:,:)
   contains
     procedure:: init
     procedure:: update
   end type
+  real(8):: start
   !-----------------------------------------------------------------------------
-  ! Allocating & deallocating scratch arrays as part if hd_t carries a cost,
+  ! Allocating & deallocating scratch arrays as part if solver_t carries a cost,
   ! (with gfortran the deallocate is more costly than the allocate), so a
   ! better alternative is to have permanent, thread-private scratch arrays:
   !-----------------------------------------------------------------------------
@@ -44,32 +47,66 @@ MODULE muscl_mod
   !-----------------------------------------------------------------------------
   ! Input parameters:
   !-----------------------------------------------------------------------------
-  real:: gamma=1.4, csound=1.0, courant=0.2
-  integer:: slope_type=2
-  logical:: unsigned=.true., detailed_timer=.true.
-  character(len=4):: method='hll'
-  integer:: verbose=0
+  integer:: n=16                        ! internal cells
+  integer:: ng=2                        ! guard cells
+  integer:: slope_type=2                ! slope limiter
+  integer:: verbose=0                   ! info level
+  logical:: detailed_timer=.true.       ! optional timer
+  real(8):: gamma=1.4                   ! gas gamma
+  real:: csound=1.0                     ! sound speed
+  real:: courant=0.2                    ! courant number
+  character(len=4):: method='hll'       ! riemann method
 CONTAINS
 
 !===============================================================================
 !> Initialize parameters
 !===============================================================================
 SUBROUTINE init (self)
-  class(hd_t):: self
+  class(solver_t):: self
   !.............................................................................
-  namelist /muscl_params/ verbose, courant, gamma, csound, slope_type, &
+  namelist /solver_params/ verbose, courant, gamma, csound, slope_type, &
     method, detailed_timer
   integer:: iostat, i
+  integer:: m
+  integer, save:: id=0
   logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
-  self%nw = 1
-  self%ng = 2
-  self%kind = 'ramses_hd_patch'
-  if (self%nv == 0) self%nv = 5
+  !$omp atomic update
+  id = id + 1
+  self%id = id
   !-----------------------------------------------------------------------------
-  ! Here we call patch_t%init directly, to initialize %mem and %mesh
+  ! Here we replace the call patch_t%init directly, to initialize %mem
   !-----------------------------------------------------------------------------
-  !call self%idx%init (mhd=.false., ie=5)
+  self%gn = self%n + 2*ng    ! all cells
+  self%lb = 1                ! lower buondary
+  self%li = 1 + ng           ! lower internal index
+  self%lo = self%li - 1      ! lower outside index
+  self%ui = self%lo + n      ! upper internal index
+  self%uo = self%ui + 1      ! upper outside index
+  self%ub = self%ui + ng     ! uppper boundary
+  m = self%gn(1)
+  allocate (self%mem(m,m,m,self%nv,self%nt,self%nw))
+  self%mem(:,:,:,1,:,:) = 1.0
+  self%mem(:,:,:,2,:,:) = 0.0
+  self%mem(:,:,:,3,:,:) = 0.0
+  self%mem(:,:,:,4,:,:) = 0.0
+  self%mem(:,:,:,5,:,:) = 1.0
+  !$omp critical (init_cr)
+  if (first_time) then
+    print *, 'solver_t%init:'
+    print *, 'id', self%id
+    print *, 'gn', self%gn
+    print *, 'lb', self%lb
+    print *, 'lo', self%lo
+    print *, 'li', self%li
+    print *, 'ub', self%ub
+    print *, 'uo', self%uo
+    print *, 'ui', self%ui
+    print *, 'mem', shape(self%mem)
+    start = omp_get_wtime()
+    first_time = .false.
+  end if
+  !$omp end critical (init_cr)
   !call self%patch_t%init
   !-----------------------------------------------------------------------------
   ! Ramses-like specific things
@@ -112,7 +149,7 @@ END SUBROUTINE init
 !> Allocate work arrays
 !===============================================================================
 SUBROUTINE update (self)
-  class(hd_t):: self
+  class(solver_t):: self
   integer, save:: itimer=0
   !.............................................................................
   !call self%output
@@ -123,6 +160,10 @@ SUBROUTINE update (self)
   call riemn3d (self)
   call divflux (self)
   call sources (self)
+  call dealloc (self)
+  self%time = self%time + self%dtime
+  print '(f12.6,2x,a,i4,f8.2)', &
+    omp_get_wtime()-start, 'solver_t%update: id, time =', self%id, self%time
   !call self%counter_update
 END SUBROUTINE update
 
@@ -130,10 +171,10 @@ END SUBROUTINE update
 !> Allocate work arrays
 !===============================================================================
 SUBROUTINE alloc (self)
-  class(hd_t):: self
+  class(solver_t):: self
   integer, save:: itimer=0
   !.............................................................................
-  call tracebegin ('hd_t%alloc', itimer=itimer)
+  call tracebegin ('solver_t%alloc', itimer=itimer)
   if (.not.allocated(prim)) then
     allocate (prim (self%gn(1), self%gn(2), self%gn(3), self%nv   ))
     allocate (left (self%gn(1), self%gn(2) ,self%gn(3), self%nv   ))
@@ -156,7 +197,7 @@ END SUBROUTINE alloc
 !> Deallocate work arrays
 !===============================================================================
 SUBROUTINE dealloc (self)
-  class(hd_t):: self
+  class(solver_t):: self
   integer, save:: itimer=0
   !.............................................................................
   deallocate (prim)
@@ -171,14 +212,14 @@ END SUBROUTINE dealloc
 !> Valid in full interval: [lb,ub] = [li-2,ui+2]
 !===============================================================================
 SUBROUTINE ctoprim (self)
-  class(hd_t):: self
+  class(solver_t):: self
   !.............................................................................
   integer:: i1, i2, i3, iv, l(3), u(3)
   !type(lock_t), pointer:: lock
   real:: u2, u2_max, c2, g2
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call tracebegin ('hd_t%ctoprim', itimer=itimer)
+  call tracebegin ('solver_t%ctoprim', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Copy everything to new time slot, lock protected
   !-----------------------------------------------------------------------------
@@ -236,12 +277,12 @@ END SUBROUTINE ctoprim
 !> moncen     0.37
 !===============================================================================
 SUBROUTINE slopes (self)
-  class(hd_t):: self
+  class(solver_t):: self
   !.............................................................................
   integer:: i1, i2, i3, iv, dir, l(3), u(3)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call tracebegin ('hd_t%slopes', itimer=itimer)
+  call tracebegin ('solver_t%slopes', itimer=itimer)
   l = self%lb+1
   u = self%ub-1
   if (slope_type == 1) then
@@ -338,7 +379,7 @@ END SUBROUTINE slopes
 !> of right one index, the right state is valid in the interval [lo,ui]
 !===============================================================================
 SUBROUTINE predict (self)
-  class(hd_t):: self
+  class(solver_t):: self
   real, pointer, contiguous, dimension(:,:,:):: &
     ln_1, ln_2, ln_3, &
     ee_1, ee_2, ee_3, &
@@ -351,7 +392,7 @@ SUBROUTINE predict (self)
   integer:: i1, i2, i3, l(3), u(3)
   integer, save:: itimer=0
   !.............................................................................
-  call tracebegin ('hd_t%predict', itimer=itimer)
+  call tracebegin ('solver_t%predict', itimer=itimer)
   ln_1 => grad(:,:,:,1,1)
   ln_2 => grad(:,:,:,1,2)
   ln_3 => grad(:,:,:,1,3)
@@ -445,12 +486,12 @@ END SUBROUTINE predict
 !> inside the Riemann solver
 !===============================================================================
 SUBROUTINE riemn3d (self)
-  class(hd_t):: self
+  class(solver_t):: self
   !.............................................................................
   integer:: l(3), u(3), i1, i2, i3, iv
   integer, save:: itimer=0, itimer1=0
   !-----------------------------------------------------------------------------
-  call tracebegin ('hd_t%riemn3d', itimer=itimer)
+  call tracebegin ('solver_t%riemn3d', itimer=itimer)
   l = self%lo
   u = self%uo
   !-----------------------------------------------------------------------------
@@ -492,13 +533,13 @@ END SUBROUTINE riemn3d
 !> is centered at i1-0.5, so needs to be defined in the interval [li,uo]
 !===============================================================================
 SUBROUTINE divflux (self)
-  class(hd_t):: self
+  class(solver_t):: self
   !.............................................................................
   integer:: i1, i2, i3, iv, dir, l(3), u(3)
   real:: dtd1, dtd2, dtd3
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call tracebegin ('hd_t%divflux', itimer=itimer)
+  call tracebegin ('solver_t%divflux', itimer=itimer)
   dtd1 = self%dtime/self%ds(1)
   dtd2 = self%dtime/self%ds(2)
   dtd3 = self%dtime/self%ds(3)
@@ -524,7 +565,7 @@ END SUBROUTINE divflux
 !> Add source terms
 !===============================================================================
 SUBROUTINE sources (self)
-  class(hd_t):: self
+  class(solver_t):: self
   !.............................................................................
   integer:: i1, i2, i3, iv, dir
   real:: dtd1, dtd2, dtd3
@@ -532,7 +573,7 @@ SUBROUTINE sources (self)
   logical:: forcing
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call tracebegin ('hd_t%sources', itimer=itimer)
+  call tracebegin ('solver_t%sources', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! If adjusting total energy, save kinetic part in prim(:,:,:,5)
   !-----------------------------------------------------------------------------
@@ -572,7 +613,7 @@ SUBROUTINE sources (self)
 END SUBROUTINE sources
 
 !===============================================================================
-!> Control timer verbosity; set detailed_timer=f to see only hd_t%update
+!> Control timer verbosity; set detailed_timer=f to see only solver_t%update
 !===============================================================================
 SUBROUTINE tracebegin (label, itimer)
  character(len=*):: label
@@ -589,4 +630,4 @@ SUBROUTINE traceend (itimer)
  end if
 END SUBROUTINE traceend
 
-END MODULE muscl_mod
+END MODULE solver_mod

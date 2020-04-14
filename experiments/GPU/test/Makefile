@@ -2,8 +2,8 @@
 # Option groups
 #OPTS = full_debug
 #OPTS = debug
-#OPTS =
-OPTS = optimized
+OPTS =
+#OPTS = optimized
 
 # Default target and methods
 UPD             = adams_bashforth
@@ -28,6 +28,7 @@ experiment_mod.o        : io_mod.o io_unit_mod.o trace_mod.o omp_mod.o bits_mod.
 scaling_mod.o           : io_mod.o units_mod.o
 extras_mod.o            : forces_mod.o
 
+# .o files the mockup2 program depends on:
 mockup2.o               : muscl.o
 muscl.o                 : riemann.o
 riemann.o               :
