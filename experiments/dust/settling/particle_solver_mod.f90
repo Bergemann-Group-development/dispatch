@@ -150,10 +150,10 @@ SUBROUTINE update (self)
   !.............................................................................
   real, dimension(3)         :: r, dr, v
   integer, dimension(3)      :: q, ir
-  real   , dimension(3)      :: ods, t, p1
+  real   , dimension(3)      :: ods, p1
   class(particle_t), pointer :: p, next
-  real(8)                    :: tmin, tmax, time(2)
-  real                       :: dt, v_min_cell
+  real(8)                    :: tmin, tmax, t, time(2)
+  real                       :: ds, dt, v_min_cell
   logical                    :: outside
   integer                    :: ip, np, no, nk, it, m(3), i(3), bin
   class(gpatch_t), pointer   :: patch
@@ -181,9 +181,10 @@ SUBROUTINE update (self)
   ip = 0
   no = 0
   nk = 0
-  dt = huge(1.0)
-  v_min_cell = v_min/minval(patch%ds)
+  ds = minval(patch%ds, mask=patch%mesh%n > 1)
+  v_min_cell = v_min/ds
 call self%dust%check_particles ('before kdk')
+  t = huge(1d0)
   p => self%particles%head
   do while (associated(p))
     !---------------------------------------------------------------------------
@@ -195,10 +196,10 @@ call self%dust%check_particles ('before kdk')
     !---------------------------------------------------------------------------
     do while (p%t <= patch%time)
       !-------------------------------------------------------------------------
-      ! Courant conditions
+      ! Courant conditions; allow at most courant/patch%courant larger step
       !-------------------------------------------------------------------------
       p%dt = courant/max(p%v(1),p%v(2),p%v(3),v_min_cell)
-      dt = min(dt,p%dt)
+      p%dt = min(p%dt, patch%dtime*courant/patch%courant)
       call kdk (self, p, ods)
       nk = nk+1
     end do
@@ -237,19 +238,23 @@ call self%dust%check_particles ('before kdk')
       'update: id, outside, dt, c, q, r, v, a =', &
       p%id, outside, p%dt, p%c, p%q, p%r, p%v, p%a
     end if
+    t = min(t,p%t)
     p => next
   end do
 !call self%dust%check_particles ('after kdk')
   if (nk > 0) then
-    self%dtime = dt
-    self%particles%dtime = dt
+    self%dtime = t - self%time
+    self%time = self%time + self%dtime
+    self%dust%time = self%time
+    self%dust%dtime = self%dtime
+    self%particles%dtime = self%dtime
   end if
   !-----------------------------------------------------------------------------
   if (verbose > 0) then
     time(2) = wallclock()-time(1)
     write (io_unit%log,'(a,i6,2x,a,1p,2e11.2,2x,a,3i8,2x,a,6p,f8.3)') &
       'particle_solver%update: id =', patch%id, &
-      'dtime =', patch%dtime, self%particles%dtime, &
+      'dtimes =', patch%dtime, self%dtime, &
       'updates:', ip, no, nk, &
       'mus/particle =', time(2)/max(nk,1)
   end if

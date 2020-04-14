@@ -711,13 +711,18 @@ SUBROUTINE output (self)
   integer:: i
   !-----------------------------------------------------------------------------
   call trace%begin ('dust_t%output')
+  if (verbose > 1) then
+    write (io_unit%log, '(a,i6,2f8.4)') &
+      'dust_t%output: id, time, aux_next =', &
+      self%patch%id, self%time, self%aux%aux_next
+  end if
   if (self%time >= self%aux%aux_next) then
     call self%aux%register ('dust_d', self%n)
     !...........................................................................
     if (verbose > 1) then
       do i=1,n_bin
-        write (io_unit%log, '(a,i3,2x,1p,10e11.2)') &
-          'bins aux IO:', i, self%n(3,3,1:10,i)
+        write (io_unit%log, '(a,i6, i3,2x,1p,10e11.2)') &
+          'dust_t%output: id, bin, n =', self%patch%id, i, self%n(3,3,1:10,i)
       end do
     end if
     !...........................................................................
@@ -733,9 +738,19 @@ SUBROUTINE output (self)
       end do
       call self%aux%register ('dust_p', tmp)
       call self%aux%output_sequence (self%patch%id, self%time)
+      if (verbose > 1) then
+        write (io_unit%log, '(a,f8.4,2i8)') &
+         'dust_t%output: id, particle array =', &
+          self%patch%id, self%time, shape(tmp)
+      end if
       deallocate (tmp)
     else
       call self%aux%output_sequence (self%patch%id, self%time)
+    end if
+    if (verbose > 1) then
+      write (io_unit%log, '(a,i6,1p,10e11.2)') &
+       'dust_t%output: self%aux%aux_next =', &
+        self%patch%id, self%aux%aux_next
     end if
   end if
   call trace%end ()
