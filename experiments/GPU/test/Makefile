@@ -28,5 +28,12 @@ experiment_mod.o        : io_mod.o io_unit_mod.o trace_mod.o omp_mod.o bits_mod.
 scaling_mod.o           : io_mod.o units_mod.o
 extras_mod.o            : forces_mod.o
 
+mockup2.o               : muscl.o
+muscl.o                 : riemann.o
+riemann.o               :
+
 mockup.x: mockup.o
 	$(FC) $(LDFLAGS) $(BUILD)/mockup.o -o mockup.x
+
+mockup2.x: mockup2.o
+	$(FC) $(LDFLAGS) $(BUILD)/{mockup2,muscl,riemann}.o -o mockup2.x
