@@ -84,22 +84,33 @@ SUBROUTINE pre_update (self)
   class(gpatch_t), pointer:: patch
   type(index_t), pointer:: idx
   integer:: m(3), new
+  logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
-  ! Use existing function call
+  call trace%begin ('forces_t%pre_update')
   !-----------------------------------------------------------------------------
-  patch => self%patch
-  idx => patch%idx
-  new = patch%new
-  d => patch%mem(:,:,:,idx%d,new,1)
-  p => patch%mem(:,:,:,idx%px:idx%pz,new,1)
-  if (.not.allocated(patch%force_per_unit_mass)) then
-    m = patch%mesh%gn
-    allocate (patch%force_per_unit_mass(m(1),m(2),m(3),3))
-    call io%bits_mem (storage_size(patch%force_per_unit_mass), &
-                     product(shape(patch%force_per_unit_mass)), 'fpm')
+  ! Use existing function call, if associated
+  !-----------------------------------------------------------------------------
+  if (associated(self%force%selected)) then
+    patch => self%patch
+    if (.not.allocated(patch%force_per_unit_mass)) then
+      m = patch%mesh%gn
+      allocate (patch%force_per_unit_mass(m(1),m(2),m(3),3))
+      call io%bits_mem (storage_size(patch%force_per_unit_mass), &
+                       product(shape(patch%force_per_unit_mass)), 'fpm')
+    end if
+    idx => patch%idx
+    new = patch%new
+    d => patch%mem(:,:,:,idx%d,new,1)
+    p => patch%mem(:,:,:,idx%px:idx%pz,new,1)
+    patch%force_per_unit_mass = &
+      self%force%selected(patch%time, d, p, self%Ux, self%Uy, self%Uz, patch%mesh)
+  else if (first_time) then
+    !$omp critical (forces_cr)
+    write (io%output,*) 'WARNING: no force selected'
+    first_time = .false.
+    !$omp end critical (forces_cr)
   end if
-  patch%force_per_unit_mass = &
-  self%force%selected(patch%time, d, p, self%Ux, self%Uy, self%Uz, patch%mesh)
+  call trace%end()
 END SUBROUTINE pre_update
 
 !===============================================================================

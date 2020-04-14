@@ -54,9 +54,8 @@ SUBROUTINE init (self)
   class(solver_t) :: self
   !.............................................................................
   call trace%begin ('solver_t%init')
-  call self%extras_t%pre_init
+  call self%hd_t%pre_init
   call self%hd_t%init
-  call self%extras_t%init
   call trace%end ()
 END SUBROUTINE init
 
@@ -94,9 +93,9 @@ END FUNCTION cast2solver
 SUBROUTINE update (self)
   class(solver_t) :: self
   !.............................................................................
-  call self%extras_t%pre_update
+  call self%hd_t%pre_update
   call self%hd_t%update
-  call self%extras_t%post_update
+  call self%hd_t%post_update
 END SUBROUTINE update
 
 !===============================================================================

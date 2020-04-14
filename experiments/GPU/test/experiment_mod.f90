@@ -83,6 +83,6 @@ SUBROUTINE run (self)
   call self%update
   call self%rotate
   call trace%end ()
-END SUBROUTINE run (self)
+END SUBROUTINE run
 
 END MODULE

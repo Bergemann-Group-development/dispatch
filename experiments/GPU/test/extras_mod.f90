@@ -92,6 +92,7 @@ MODULE extras_mod
     !class(patch_force_t), pointer:: patch_force                        ! sinkp
     !class(trace_particles_t), pointer:: trace_particles                ! tracep
     !real, dimension(:,:,:,:), pointer:: v                              ! tracep
+    class(gpatch_t), pointer:: gpatch => null()                         ! keep
     logical :: do_mhd = .true.
   contains
     procedure, nopass:: cast2extras
@@ -115,12 +116,10 @@ CONTAINS
 !> periodicity, etc.
 !===============================================================================
 SUBROUTINE pre_init (self)
-  class(extras_t):: self
+  class(extras_t), target:: self
   !.............................................................................
-  !call self%forces%init (self)                                         ! forces
-  !-----------------------------------------------------------------------------
-  ! Allocate a trace_particles data type, connect a pointer, and initialize
-  !-----------------------------------------------------------------------------
+  self%gpatch => self                                                  ! keep
+  call self%forces%pre_init (self%gpatch)                              ! forces
   !allocate(self%rt)                                                    ! RT
   !call self%rt%pre_init(self%link)                                     ! RT
   !allocate (self%trace_particles)                                      ! tracep
@@ -137,7 +136,7 @@ SUBROUTINE init (self)
   class(extras_t):: self
   !.............................................................................
   call trace%begin ('extras_t%init')
-  call self%forces%init (self%link)                                     ! forces
+  call self%forces%init                                                 ! forces
   !-----------------------------------------------------------------------------
   ! Allocate a trace_particles data type, connect a pointer, and initialize
   !-----------------------------------------------------------------------------
