@@ -7,7 +7,9 @@ MODULE extras_mod
   !-----------------------------------------------------------------------------
   USE io_mod
   USE trace_mod
+  USE task_mod
   USE gpatch_mod
+  USE link_mod
   USE list_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.
@@ -58,15 +60,33 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !===============================================================================
-!> Initialize particle solver, after task list is created
+!> Initialize particle solver nbor list, after task list is created
 !===============================================================================
 SUBROUTINE init_task_list (self, task_list)
   class(extras_t):: self
   class(list_t), pointer:: task_list
+  class(nbor_t), pointer:: nbor, nbor2
+  class(task_t), pointer:: task
   !-----------------------------------------------------------------------------
   call trace%begin ('extras_t%init_task_list')
   call self%particle_solver%init_task_list (task_list)                  ! part
   call self%gpatch_t%init_task_list (task_list)                         ! keep
+  nbor => self%link%nbor
+  do while (associated(nbor))
+    task => nbor%task
+    select type (task)
+    class is (extras_t)
+      !-------------------------------------------------------------------------
+      ! Allocate an nbor, point to the particle_solver_t part of it, and prepend
+      !-------------------------------------------------------------------------
+      allocate (nbor2)
+      nbor2%task => task%particle_solver
+      nbor2%next => self%particle_solver%nbor
+      self%particle_solver%nbor => nbor2
+      print *, 'extras_t: id, nbor', self%id, task%particle_solver%patch%id
+    end select
+    nbor => nbor%next
+  end do
   call trace%end ()
 END SUBROUTINE init_task_list
 

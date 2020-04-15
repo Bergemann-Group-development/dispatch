@@ -28,6 +28,7 @@ MODULE particle_solver_mod
     type(particles_t), pointer :: particles            ! internal particles
     type(particles_t), pointer :: exports              ! particles to export
     class(gpatch_t),   pointer :: patch => null()      ! pointer to patch
+    class(nbor_t),     pointer :: nbor => null()       ! nbor list
     type(link_t)   ,   pointer :: link => null()       ! task link
     type(dust_t)               :: dust                 ! dust solver
     real, pointer, contiguous  :: d(:,:,:)             ! density
@@ -132,17 +133,10 @@ END SUBROUTINE init
 SUBROUTINE init_task_list (self, task_list)
   class(particle_solver_t):: self
   class(list_t), pointer:: task_list
-  class(nbor_t), pointer:: nbor
   !-----------------------------------------------------------------------------
   call trace%begin ('particle_solver_t%init_task_list')
   self%task_list => task_list
   self%dust%task_list => task_list
-  call self%patch%link%copy_nbor_list (self%patch%link%nbor, self%link%nbor)
-  nbor => self%link%nbor
-  do while (associated(nbor))
-    nbor%task => self%link%task
-    nbor => nbor%next
-  end do
   call trace%end ()
 END SUBROUTINE init_task_list
 
@@ -196,6 +190,11 @@ SUBROUTINE update (self)
     t = huge(1d0)
     p => self%particles%head
     do while (associated(p))
+      if (verbose > 3) then
+        write (io_unit%log,1) &
+        'update: id, outside, dt, c, q, r, v    =', &
+        patch%id, p%id, .false., p%dt, p%c, p%q, p%r, p%v
+      end if
       !-------------------------------------------------------------------------
       ! Get pointer to next, in case the particle is removed
       !-------------------------------------------------------------------------
@@ -204,11 +203,15 @@ SUBROUTINE update (self)
       ! Move the particle until it is ahead of the patch time
       !-------------------------------------------------------------------------
       i = p%q
+      if (any(i < 1 .or. i > patch%gn)) then
+        print *, 'ERROR', p%id, p%q, p%r
+      end if
       do while (p%t <= patch_time)
         !-----------------------------------------------------------------------
         ! Courant conditions; allow at most courant/patch%courant larger step
         !-----------------------------------------------------------------------
-        p%dt = courant*ds/patch%u_phase(i(1),i(2),i(3))
+        p%dt = courant/max(patch%u_phase(i(1),i(2),i(3))/ds, &
+                           abs(p%v(1)),abs(p%v(2)),abs(p%v(3)))
         call kdk (self, p, ods)
         nk = nk+1
       end do
@@ -232,7 +235,7 @@ SUBROUTINE update (self)
       !-------------------------------------------------------------------------
       ! Move the particle to the export list if it falls outside
       !-------------------------------------------------------------------------
-      outside = self%is_outside (p)
+      outside = self%is_outside (i)
       if (outside) then
         if(verbose > 1) then
           write (io_unit%log,*) 'remove', p%id, p%q
@@ -243,10 +246,11 @@ SUBROUTINE update (self)
       end if
       ip = ip+1
       if (verbose > 2) then
-        write (io_unit%log,'(a,i8,l3,1p,2e9.2,0p,3i4,1x,3f7.2,3(1x,1p,3e10.2))') &
+        write (io_unit%log,1) &
         'update: id, outside, dt, c, q, r, v, a =', &
-        p%id, outside, p%dt, p%c, p%q, p%r, p%v, p%a, &
+        patch%id, p%id, outside, p%dt, p%c, p%q, p%r, p%v, p%a, &
         patch%u_phase(i(1),i(2),i(3))
+        1 format(a,i5,i8,l3,1p,2e9.2,0p,3i4,1x,3f7.2,3(1x,1p,3e10.2))
       end if
       !-------------------------------------------------------------------------
       ! t is the smallest particle time of the set
@@ -362,11 +366,11 @@ SUBROUTINE import_particles (self)
   class(particle_solver_t)     :: self
   !.............................................................................
   class(nbor_t)    , pointer :: nbor
-  class(task_t)    , pointer :: task, nbtask
-  class(gpatch_t)  , pointer :: nbpatch
+  class(task_t)    , pointer :: nbtask
   class(particle_t), pointer :: p, next
   real(8)                    :: r(3)
   integer                    :: q(3)
+  logical                    :: is_inside
   integer, save              :: itimer=0
   !-----------------------------------------------------------------------------
   ! Loop over patch nbors
@@ -374,34 +378,39 @@ SUBROUTINE import_particles (self)
   if (detailed_timer) &
     call trace%begin ('particle_solver_t%import_particles',itimer=itimer)
   self%ni = 0
-  nbor => self%patch%link%nbor
+  nbor => self%nbor
   do while (associated(nbor))
-    task => nbor%task
-    select type (task)
+    nbtask => nbor%task
+    select type (nbtask)
     class is (particle_solver_t)
-      nbtask => nbor%task
-      select type (nbtask)
-      class is (particle_solver_t)
-        nbpatch => nbtask%patch
-        !-----------------------------------------------------------------------
-        ! Loop over particles in export list and grab those that belong here
-        !-----------------------------------------------------------------------
-        p => nbtask%exports%head
-        do while (associated(p))
-          next => p%next
-          r = (nbpatch%position - self%position)/nbpatch%ds + (p%r + p%q)
-          q = floor(r)
-          p%r = r - q
-          p%q = p%q + q
-          if (is_inside (self, p)) then
-            call task%exports%remove (p)
-            call self%particles%append (p)
-            self%time = min(self%time, p%t)
-            self%ni = self%ni + 1
+      !-------------------------------------------------------------------------
+      ! Loop over particles in export list and grab those that belong here
+      !-------------------------------------------------------------------------
+      p => nbtask%exports%head
+      do while (associated(p))
+        next => p%next
+        r = (nbtask%patch%position-self%position)/nbtask%patch%ds + (p%r+p%q)
+        q = floor(r)
+        if (is_inside (self, q)) then
+          p%r = r-q
+          p%q = q
+          call nbtask%exports%remove (p)
+          call self%particles%append (p)
+          self%time = min(self%time, p%t)
+          self%ni = self%ni + 1
+          if (verbose > 2) then
+            write (io_unit%log,*) 'import: id, nbor =', &
+              self%patch%id, nbtask%patch%id, p%id, &
+              nbtask%patch%position/nbtask%patch%ds + (p%r+p%q)
           end if
-          p => next
-        end do
-      end select
+        end if
+        p => next
+      end do
+      if (verbose > 0) then
+        write (io_unit%log,*) 'import: id, nbor =', &
+          self%patch%id, nbtask%patch%id, self%ni
+        flush (io_unit%log)
+      end if
     end select
     nbor => nbor%next
   end do
@@ -411,20 +420,20 @@ END SUBROUTINE import_particles
 !===============================================================================
 !> Check if the particle is outside the field patch
 !===============================================================================
-LOGICAL FUNCTION is_inside (self, particle)
+LOGICAL FUNCTION is_inside (self, q)
   class(particle_solver_t):: self
-  class(particle_t):: particle
+  integer:: q(3)
   !.............................................................................
-  is_inside = .not. self%is_outside (particle)
+  is_inside = .not. is_outside(self, q)
 END FUNCTION is_inside
 
 !===============================================================================
 !> Check if the particle is outside the field patch
 !===============================================================================
-LOGICAL FUNCTION is_outside (self, particle)
+LOGICAL FUNCTION is_outside (self, q)
   class(particle_solver_t):: self
+  integer:: q(3)
   !.............................................................................
-  class(particle_t):: particle
   class(mesh_t), pointer:: mesh(:)
   integer:: i
   !-----------------------------------------------------------------------------
@@ -436,7 +445,7 @@ LOGICAL FUNCTION is_outside (self, particle)
     ! If the particle is below index li then it is outside, unless this is a
     ! lower boundary
     !---------------------------------------------------------------------------
-    if (particle%q(i) < mesh(i)%li) then
+    if (q(i) < mesh(i)%li) then
       if (.not. self%lower(i)) then
         is_outside = .true.
         exit
@@ -446,7 +455,7 @@ LOGICAL FUNCTION is_outside (self, particle)
     ! If the particle is aboive index ui then it is outside, unless this is an
     ! upper boundary
     !---------------------------------------------------------------------------
-    if (particle%q(i) > mesh(i)%ui) then
+    if (q(i) > mesh(i)%ui) then
       if (.not. self%upper(i)) then
         is_outside = .true.
         exit
