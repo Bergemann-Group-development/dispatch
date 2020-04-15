@@ -53,13 +53,16 @@ CONTAINS
 !===============================================================================
 !> Initialize particle solver, reading parameters and adding task link
 !===============================================================================
-SUBROUTINE pre_init (self)
+SUBROUTINE pre_init (self, patch)
   class(particle_solver_t), target:: self
+  class(gpatch_t), pointer:: patch
   integer:: iostat
   namelist /particle_solver_params/ verbose, courant, v_min, detailed_timer
   logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
   call trace%begin ('particle_solver_t%pre_init')
+  self%patch => patch                           ! make the patch known
+  self%dust%patch => self%patch                 ! make the patch known
   !$omp critical (input_cr)
   if (first_time) then
     rewind (io%input)
@@ -114,7 +117,6 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Initialize dust
   !-----------------------------------------------------------------------------
-  self%dust%patch => self%patch                 ! make the patch known to it
   call self%dust%init (self%particles)          ! initialize dust solver
   m = self%patch%mesh%gn
   allocate (self%patch%force_per_unit_volume(m(1),m(2),m(3),3))
@@ -194,12 +196,12 @@ call self%dust%check_particles ('before kdk')
     !---------------------------------------------------------------------------
     ! Move the particle until it is ahead of the patch time
     !---------------------------------------------------------------------------
+    i = p%q
     do while (p%t <= patch%time)
       !-------------------------------------------------------------------------
       ! Courant conditions; allow at most courant/patch%courant larger step
       !-------------------------------------------------------------------------
-      p%dt = courant/max(p%v(1),p%v(2),p%v(3),v_min_cell)
-      p%dt = min(p%dt, patch%dtime*courant/patch%courant)
+      p%dt = courant*ds/self%patch%u_phase(i(1),i(2),i(3))
       call kdk (self, p, ods)
       nk = nk+1
     end do

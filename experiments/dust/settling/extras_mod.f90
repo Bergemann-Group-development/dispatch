@@ -41,8 +41,8 @@ SUBROUTINE pre_init (self)
   class(extras_t), target:: self
   !.............................................................................
   call trace%begin ('extras_t%pre_init')
-  self%particle_solver%patch => self                                    ! part
-  call self%particle_solver%pre_init                                    ! part
+  self%gpatch => self                                                   ! keep
+  call self%particle_solver%pre_init (self%gpatch)                      ! part
   call trace%end()
 END SUBROUTINE pre_init
 
