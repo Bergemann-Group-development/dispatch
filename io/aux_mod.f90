@@ -12,6 +12,7 @@
 !> call aux%output ('test.aux')
 !===============================================================================
 MODULE aux_mod
+  USE os_mod
   USE io_mod
   USE io_unit_mod
   USE trace_mod
@@ -448,6 +449,7 @@ SUBROUTINE output_sequence (self, id, time, singlefile)
   !-----------------------------------------------------------------------------
   call trace%begin ('aux_t%output_sequence')
   do while (time >= self%aux_next)
+    call os%mkdir_no (self%iout+1)
     call output_aux (self, self%iout, id, singlefile)
     self%aux_next = self%aux_next + io%out_time
     self%iout = self%iout + 1
