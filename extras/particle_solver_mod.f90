@@ -77,6 +77,7 @@ SUBROUTINE pre_init (self, patch)
   end if
   !$omp end critical (input_cr)
   self%dust%detailed_timer = detailed_timer
+  self%dust%id_dbg = id_dbg
   !-----------------------------------------------------------------------------
   ! Add a task link, in preparation for init_task_list
   !-----------------------------------------------------------------------------
@@ -91,7 +92,7 @@ END SUBROUTINE pre_init
 SUBROUTINE init (self)
   class(particle_solver_t):: self
   class(gpatch_t), pointer:: p
-  integer:: m(3)
+  integer:: m(3), l(3), u(3)
   !-----------------------------------------------------------------------------
   ! Initialize particle lists
   !-----------------------------------------------------------------------------
@@ -99,6 +100,7 @@ SUBROUTINE init (self)
   allocate (self%particles, self%exports)       ! allocate particle lists
   call self%particles%init                      ! add particles
   call self%exports%init
+  call self%dust%init (self%particles)          ! initialize dust solver
   !-----------------------------------------------------------------------------
   ! Set flags indicating upper and lower boundaries.  The box size is self%box,
   ! and the patch position, size, and cell size are self%position, self%size,
@@ -115,13 +117,35 @@ SUBROUTINE init (self)
   end if
   self%dust%lower = self%lower
   self%dust%upper = self%upper
-  write(io_unit%log,'(a,i6,2f8.3,4(2x,2l3))') &
-    'particle_solver_t%init: id, pos, box, lower, upper =', &
-    p%id, p%position(3), p%box(3), self%lower, self%upper
+  !-----------------------------------------------------------------------------
+  ! At lower and upper boundaries, add particles also in guard zones
+  !-----------------------------------------------------------------------------
+  l = p%mesh%li
+  u = p%mesh%ui
+  where (self%lower) l = p%mesh%lb
+  where (self%upper) u = p%mesh%ub
+  call self%dust%initial_condition (l, u)
+  !-----------------------------------------------------------------------------
+  if (verbose > 0) then
+    if (verbose > 1) &
+    write (io%output,'(a,i4,3(1x,3f7.3),1x,2l2,1p,e11.2)') &
+      'init: id, box, pos, size, lower, upper, n =', &
+      p%id, p%box, p%position, p%size, &
+      self%lower(3), self%upper(3), &
+      real(self%particles%n)
+    write (io_unit%log,'(a,i4,3(1x,3f7.3),1x,2l2)') &
+      'init: id, box, pos, size, lower, upper, n =', &
+      p%id, p%box, p%position, p%size, &
+      self%lower(3), self%upper(3), &
+      real(self%particles%n)
+  else
+    write(io_unit%log,'(a,i6,2f8.3,4(2x,2l3),i10)') &
+     'particle_solver_t%init: id, pos, box, lower, upper =', &
+      p%id, p%position(3), p%box(3), self%lower, self%upper, self%particles%n
+  end if
   !-----------------------------------------------------------------------------
   ! Initialize dust
   !-----------------------------------------------------------------------------
-  call self%dust%init (self%particles)          ! initialize dust solver
   m = self%patch%mesh%gn
   allocate (self%patch%force_per_unit_volume(m(1),m(2),m(3),3))
   call trace%end ()
@@ -252,10 +276,10 @@ SUBROUTINE update (self)
       ip = ip+1
       if (verbose > 2 .or. p%id == id_dbg) then
         write (io_unit%log,1) &
-        'update: id, outside, dt, c, q, r, v, a =', &
+        'update: id,out,dt,c,q,r,v,a=', &
         patch%id, p%id, outside, p%dt, p%c, p%q, p%r, p%v, p%a, &
         patch%u_phase(i(1),i(2),i(3))
-        1 format(a,i5,i8,l3,1p,2e9.2,0p,3i4,1x,3f7.2,3(1x,1p,3e10.2))
+        1 format(a,i5,i8,l3,1p,2e9.2,0p,3i4,1x,3f7.2,3(1x,1p,3e9.1))
       end if
       !-------------------------------------------------------------------------
       ! t is the smallest particle time of the set
@@ -280,14 +304,15 @@ SUBROUTINE update (self)
       self%dust%time = self%time
       self%dust%dtime = self%dtime
       self%particles%dtime = self%dtime
-      if (verbose > 0) then
-        time(2) = wallclock()-time(1)
-        write (io_unit%log,'(a,i6,2x,a,1p,2e11.2,2x,a,2i8,2i5,2x,a,6p,f8.3)') &
-          'particle_solver%update: id =', patch%id, &
-          'dtimes =', patch%dtime, self%dtime, &
-          'updates:', ip, nk, self%ni, self%no, &
-          'mus/particle =', time(2)/max(nk,1)
-      end if
+    end if
+    !...........................................................................
+    if (verbose > 0) then
+      time(2) = wallclock()-time(1)
+      write (io_unit%log,'(a,i6,2x,a,1p,2e12.4,2x,a,2i8,2i5,2x,a,6p,f8.3,i10)') &
+        'particle_solver%update: id =', patch%id, &
+        'times =', patch%time, self%time, &
+        'updates:', ip, nk, self%ni, self%no, &
+        'mus/particle =', time(2)/max(nk,1), self%particles%n
     end if
     !---------------------------------------------------------------------------
     ! Do dust evolution after move, since we need the particle timestep values
@@ -295,6 +320,10 @@ SUBROUTINE update (self)
     call self%dust%update (self%particles)
     deallocate (dust%np)
     end associate
+  else if (verbose > 0) then
+    write (io_unit%log,'(a,2f12.6,i10)') &
+      'particle_solver_t%update: self%time, patch_time, n =', &
+      self%time, patch_time, self%particles%n
   end if
   call trace%end (itimer)
 END SUBROUTINE update
@@ -340,7 +369,7 @@ SUBROUTINE kdk (self, p, dtds)
   p%v = p%v + dtds*(p%a+p%d)/(1.+p%c*dtds)
   if (p%id == id_dbg) then
     write (io_unit%log,1) &
-    '  kdk2: id, outside, dt, c, q, r, v, a =', &
+    '  kdk2: id,out,dt,c,q,r,v,a=', &
     self%patch%id, p%id, .false., p%dt, p%c, p%q, p%r, p%v, p%a, p%d
    end if
 !-----------------------------------------------------------------------------
@@ -360,9 +389,13 @@ SUBROUTINE force (self, p)
 #ifdef DBG
   if (detailed_timer) call trace%begin ('particle_solver_t%force',itimer=itimer)
 #endif
-  mesh => self%patch%mesh
-  r = mesh%p + (p%q + p%r - mesh%o)*mesh%d
-  p%a = self%pforce (r)
+  if (associated(self%pforce)) then
+    mesh => self%patch%mesh
+    r = mesh%p + (p%q + p%r - mesh%o)*mesh%d
+    p%a = self%pforce (r)
+  else
+    p%a = 0.0
+  end if
 #ifdef DBG
   if (verbose > 4) then
     write (io_unit%log,'(a,i6,1p,4e11.2)') 'force: id, z, a =', p%id, r(3), p%a

@@ -82,30 +82,9 @@ SUBROUTINE init (self)
   ! Initialize the patch, allocating %mem and %mesh etc
   !-----------------------------------------------------------------------------
   call self%solver_t%init
-  !-----------------------------------------------------------------------------
-  ! At lower and upper boundaries, add particles also in guard zones
-  !-----------------------------------------------------------------------------
-  l = self%mesh%li
-  u = self%mesh%ui
-  where (self%particle_solver%lower) l = self%mesh%lb
-  where (self%particle_solver%upper) u = self%mesh%ub
   call self%initial_conditions
-  call self%particle_solver%dust%initial_condition (l, u)
   self%particle_solver%pforce => pforce
-  !-----------------------------------------------------------------------------
-  if (verbose > 0) then
-    if (verbose > 1) &
-    write (io%output,'(a,i4,3(1x,3f7.3),1x,2l2,1p,e11.2)') &
-      'init: id, box, pos, size, lower, upper, n =', &
-      self%id, self%box, self%position, self%size, &
-      self%particle_solver%lower(3), self%particle_solver%upper(3), &
-      real(self%particle_solver%particles%n)
-    write (io_unit%log,'(a,i4,3(1x,3f7.3),1x,2l2)') &
-      'init: id, box, pos, size, lower, upper, n =', &
-      self%id, self%box, self%position, self%size, &
-      self%particle_solver%lower(3), self%particle_solver%upper(3), &
-      real(self%particle_solver%particles%n)
-  end if
+  self%periodic = [.true., .true., .false.]
   call trace%end()
 END SUBROUTINE init
 

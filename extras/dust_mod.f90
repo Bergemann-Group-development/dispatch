@@ -75,6 +75,7 @@ MODULE dust_mod
     class(list_t), pointer:: task_list        ! task list
     integer:: verbose
     integer:: n_bin
+    integer:: id_dbg = -1
     logical:: detailed_timer = .false.
   contains
     procedure:: init
@@ -96,10 +97,10 @@ MODULE dust_mod
   real(8):: dust_time = 0.01                  ! dust evolution timestep
   real:: min_fraction = 0.7                   ! particles per bin (max decrease)
   real:: max_fraction = 1.4                   ! particles per bin (max increase)
-  real:: d_min_cgs = 1e-15                    ! lowest density for renormalizing
   real:: dust_to_gas = 0.01                   ! dust-to-gas ratio  
   real:: min_size_cgs = 3e-4                  ! 3 micron
   real:: max_size_cgs = 3000e-4               ! 3000 micron = 3 mm
+  real:: d_min_cgs = 1e-24                    ! lowest density for renormalizing
   real:: solid_density_cgs = 2.0              ! g/cm**3
   real:: density_yr_cgs = 1e-12               ! volume density giving 1 yr stop
   real:: drag_coeff = 0.0                     ! constant in front of drag force
@@ -302,7 +303,10 @@ SUBROUTINE gather (self)
     dv(bin) = dv(bin) + sqrt(sum(p%dv**2))      ! sum up speed differences
     p => p%next                                 ! next particle
   end do
-  self%dv = dv/np                               ! average speed difference
+  if (np > 0) then
+    dv = dv/np                                  ! average speed difference
+  end if
+  self%dv = dv
   !.............................................................................
   if (verbose > 1) then
     write (io_unit%log,'(a,i6,1p,10e11.2)') &
@@ -450,10 +454,10 @@ SUBROUTINE drag (self, p)
 !  self%patch%force_per_unit_volume(i(1),i(2),i(3),:) = &
 !  self%patch%force_per_unit_volume(i(1),i(2),i(3),:) - p%d*p%w
   !.............................................................................
-  if (verbose > 4) then
+  if (verbose > 4 .or. p%id == self%id_dbg) then
     write (io_unit%log,'(a,i8,1p,3e9.2,0p,3i3,1x,3f6.2,4(1x,1p,3e9.2))') &
-      'drag: id, s, d, c, q, r, v, dv, d =', &
-      p%id, s, d, p%c, p%q, p%r, p%v, p%dv, p%d
+      'drag: id,s,d,c,q,r,v,vg,d=', &
+      p%id, s, d, p%c, p%q, p%r, p%v, v, p%d
   end if
   !.............................................................................
   if (self%detailed_timer) call trace%end (itimer)
@@ -665,8 +669,10 @@ contains
   end subroutine get_densities
   !=============================================================================
   subroutine print_before
+    integer:: n
+    n = min(size(self%np,3),20)
     do bin=1,n_bin
-      write(unit,'(a,i3,2x,20i4)') 'particles before:', bin, self%np(3,3,:,bin)
+      write(unit,'(a,i3,2x,20i4)') 'particles before:', bin, self%np(3,3,1:n,bin)
     end do
     do bin=1,n_bin
       write(unit,'(a,i3,2x,1p,10e11.2)') 'bins before:', bin, self%n(3,3,1:10,bin)
@@ -681,8 +687,10 @@ contains
   end subroutine
   !=============================================================================
   subroutine print_after
+    integer:: n
+    n = min(size(self%np,3),20)
     do bin=1,n_bin
-      write(unit,'(a,i3,2x,20i4)') 'added particles:', bin, self%na(3,3,:,bin)
+      write(unit,'(a,i3,2x,20i4)') 'added particles:', bin, self%na(3,3,1:n,bin)
     end do
     if (verbose > 1) then
       call get_densities
