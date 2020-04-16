@@ -275,7 +275,7 @@ SUBROUTINE boundary_conditions (self)
 END SUBROUTINE boundary_conditions
 
 !===============================================================================
-!> Point force
+!> Point force, assuming lengh is measured in vertical scale heights
 !===============================================================================
 FUNCTION pforce (r) RESULT (f)
   real(8):: r(3), f(3), z

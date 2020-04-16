@@ -83,7 +83,7 @@ SUBROUTINE init_task_list (self, task_list)
       nbor2%task => task%particle_solver
       nbor2%next => self%particle_solver%nbor
       self%particle_solver%nbor => nbor2
-      print *, 'extras_t: id, nbor', self%id, task%particle_solver%patch%id
+      !print *, 'extras_t: id, nbor', self%id, task%particle_solver%patch%id
     end select
     nbor => nbor%next
   end do
