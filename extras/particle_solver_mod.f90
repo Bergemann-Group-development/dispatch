@@ -92,8 +92,8 @@ END SUBROUTINE pre_init
 !===============================================================================
 SUBROUTINE init (self)
   class(particle_solver_t):: self
-  class(gpatch_t), pointer:: p
-  integer:: m(3), l(3), u(3)
+  class(gpatch_t), pointer:: pa
+  integer:: m(3), l(3), u(3), i
   !-----------------------------------------------------------------------------
   ! Initialize particle lists
   !-----------------------------------------------------------------------------
@@ -101,7 +101,6 @@ SUBROUTINE init (self)
   allocate (self%particles, self%exports)       ! allocate particle lists
   call self%particles%init                      ! add particles
   call self%exports%init
-  call self%dust%init (self%particles)          ! initialize dust solver
   !-----------------------------------------------------------------------------
   ! Set flags indicating upper and lower boundaries.  The box size is self%box,
   ! and the patch position, size, and cell size are self%position, self%size,
@@ -109,46 +108,58 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   self%upper = .false.
   self%lower = .false.
-  p => self%patch
-  if (p%position(3) - p%size(3)/2.0 - p%ds(3) < -p%box(3)/2.0) then
-    self%lower(3) = .true.
-  end if
-  if (p%position(3) + p%size(3)/2.0 + p%ds(3) > +p%box(3)/2.0) then
-    self%upper(3) = .true.
-  end if
+  pa => self%patch
+  do i=1,3
+    if (.not.pa%periodic(i)) then
+      if (pa%position(i) - pa%size(i)/2.0 - pa%ds(i) < -pa%box(i)/2.0) then
+        self%lower(i) = .true.
+      end if
+      if (pa%position(i) + pa%size(i)/2.0 + pa%ds(i) > +pa%box(i)/2.0) then
+        self%upper(i) = .true.
+      end if
+    end if
+  end do
   self%dust%lower = self%lower
   self%dust%upper = self%upper
   !-----------------------------------------------------------------------------
   ! At lower and upper boundaries, add particles also in guard zones
   !-----------------------------------------------------------------------------
-  l = p%mesh%li
-  u = p%mesh%ui
-  where (self%lower) l = p%mesh%lb
-  where (self%upper) u = p%mesh%ub
-  call self%dust%initial_condition (l, u)
-  !-----------------------------------------------------------------------------
-  if (verbose > 0) then
-    if (verbose > 1) &
-    write (io%output,'(a,i4,3(1x,3f7.3),1x,2l2,1p,e11.2)') &
-      'init: id, box, pos, size, lower, upper, n =', &
-      p%id, p%box, p%position, p%size, &
-      self%lower(3), self%upper(3), &
-      real(self%particles%n)
-    write (io_unit%log,'(a,i4,3(1x,3f7.3),1x,2l2)') &
-      'init: id, box, pos, size, lower, upper, n =', &
-      p%id, p%box, p%position, p%size, &
-      self%lower(3), self%upper(3), &
-      real(self%particles%n)
-  else
-    write(io_unit%log,'(a,i6,2f8.3,4(2x,2l3),i10)') &
-     'particle_solver_t%init: id, pos, box, lower, upper =', &
-      p%id, p%position(3), p%box(3), self%lower, self%upper, self%particles%n
-  end if
+  l = pa%mesh%li
+  u = pa%mesh%ui
+  where (self%lower) l = pa%mesh%lb
+  where (self%upper) u = pa%mesh%ub
   !-----------------------------------------------------------------------------
   ! Initialize dust
   !-----------------------------------------------------------------------------
-  m = self%patch%mesh%gn
-  allocate (self%patch%force_per_unit_volume(m(1),m(2),m(3),3))
+  call self%dust%init (self%particles)          ! initialize dust solver
+  call self%dust%initial_condition (l, u)
+  !.............................................................................
+  if (verbose > 0) then
+    if (verbose > 1) then
+      write (io%output,1) &
+        'init: id, box, pos, size, lower, upper, n =', &
+        pa%id, pa%box, pa%position, pa%size, &
+        self%lower, self%upper, &
+        real(self%particles%n)
+      1 format(a,i4,3(1x,3f7.3),1x,2(1x,3l1),1p,e11.2)
+    end if
+    write (io_unit%log,1) &
+      'init: id, box, pos, size, lower, upper, n =', &
+      pa%id, pa%box, pa%position, pa%size, &
+      self%lower, self%upper, &
+      real(self%particles%n)
+  else
+    write(io_unit%log,'(a,i6,2(3f8.3,2x),1x,2(1x,3l1),1p,e11.2)') &
+     'particle_solver_t%init: id, pos, box, lower, upper, n =', &
+      pa%id, pa%position, pa%box, self%lower, self%upper, real(self%particles%n)
+  end if
+  !-----------------------------------------------------------------------------
+  ! Allocate force array
+  !-----------------------------------------------------------------------------
+  if (.not.allocated(self%patch%force_per_unit_volume)) then
+    m = self%patch%mesh%gn
+    allocate (self%patch%force_per_unit_volume(m(1),m(2),m(3),3))
+  end if
   call trace%end ()
 END SUBROUTINE init
 
@@ -196,8 +207,8 @@ SUBROUTINE update (self)
     ods = 1.0/patch%ds(1)
     np = self%particles%n
     time(1) = wallclock()
-    self%dust%d => patch%mem(:,:,:,patch%idx%d              ,patch%it,1)
-    self%dust%p => patch%mem(:,:,:,patch%idx%px:patch%idx%pz,patch%it,1)
+    self%dust%d => patch%mem(:,:,:,patch%idx%d              ,patch%new,1)
+    self%dust%p => patch%mem(:,:,:,patch%idx%px:patch%idx%pz,patch%new,1)
     !---------------------------------------------------------------------------
     ! Allocate array for number of particles per cell-bin
     !---------------------------------------------------------------------------
@@ -250,17 +261,6 @@ SUBROUTINE update (self)
       p%r = p%r - q
       p%q = p%q + q
       !-------------------------------------------------------------------------
-      ! Monitor number of cells per cell-bin
-      !-------------------------------------------------------------------------
-      !if(verbose > 1) then
-      !  write(io_unit%log,*) 'update', p%id, p%q, p%t <= patch_time
-      !  flush(io_unit%log)
-      !endif
-      i = p%q                                     ! particle space index
-      bin = p%bin                                 ! particle bin
-      dust%np(i(1),i(2),i(3),bin) = &             ! accumulate
-      dust%np(i(1),i(2),i(3),bin) + 1             ! into self%np
-      !-------------------------------------------------------------------------
       ! Move the particle to the export list if it falls outside
       !-------------------------------------------------------------------------
       outside = self%is_outside (i)
@@ -273,14 +273,22 @@ SUBROUTINE update (self)
             'export: id, no, pid, q =', &
             patch%id, self%exports%n, no, p%id, p%q
         endif
-      end if
-      ip = ip+1
-      if (verbose > 2 .or. p%id == id_dbg) then
-        write (io_unit%log,1) &
-        'update: id,out,dt,c,q,r,v,a=', &
-        patch%id, p%id, outside, p%dt, p%c, p%q, p%r, p%v, p%a, &
-        patch%u_phase(i(1),i(2),i(3))
-        1 format(a,i5,i8,l3,1p,2e9.2,0p,3i4,1x,3f7.2,3(1x,1p,3e9.1))
+      !-------------------------------------------------------------------------
+      ! Otherwise, monitor number of cells per cell-bin inside
+      !-------------------------------------------------------------------------
+      else
+        i = p%q                                     ! particle space index
+        bin = p%bin                                 ! particle bin
+        dust%np(i(1),i(2),i(3),bin) = &             ! accumulate
+        dust%np(i(1),i(2),i(3),bin) + 1             ! into self%np
+        ip = ip+1
+        if (verbose > 2 .or. p%id == id_dbg) then
+          write (io_unit%log,1) &
+          'update: id,out,dt,c,q,r,v,a=', &
+          patch%id, p%id, outside, p%dt, p%c, p%q, p%r, p%v, p%a, &
+          patch%u_phase(i(1),i(2),i(3))
+          1 format(a,i5,i8,l3,1p,2e9.2,0p,3i4,1x,3f7.2,3(1x,1p,3e9.1))
+        end if
       end if
       !-------------------------------------------------------------------------
       ! t is the smallest particle time of the set

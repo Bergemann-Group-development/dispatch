@@ -235,8 +235,10 @@ SUBROUTINE output (patch, count)
   ! patch%mem to the mem(:,:,:,:) temporary, resorting into increasing time
   ! order and optionally also converting to a different representation.
   !-----------------------------------------------------------------------------
-  write (io_unit%log,*) 'parallel_io_t%output: id, nv, io%nv =', &
-    patch%id, patch%nv, io%nv
+  if (verbose > 0) then
+    write (io_unit%log,'(a,i6,2i4)') 'parallel_io_t%output: id, nv, io%nv =', &
+      patch%id, patch%nv, io%nv
+  end if
   allocate (mem(n(1),n(2),n(3),patch%nt-1,io%nv))
   allocate (buffer(n(1),n(2),n(3),io%nv))
   call prepare_time_slices
@@ -300,9 +302,11 @@ contains
     l2 = l1+1
     u2 = u1+1
     associate (idx=>patch%idx)
-    write (io_unit%log,'(a,i6,4i4)') &
-     'parallel_io_t%prepare_time_slices: nv, nw, bx, phi =', &
-      patch%id, patch%nv, patch%nw, patch%idx%bx, patch%idx%bx
+    if (verbose > 0) then
+      write (io_unit%log,'(a,i6,4i4)') &
+       'parallel_io_t%prepare_time_slices: nv, nw, bx, phi =', &
+        patch%id, patch%nv, patch%nw, patch%idx%bx, patch%idx%bx
+    end if
     do it=1,patch%nt-1
       iit = patch%iit(it)
       d  => patch%mem(l1(1):u1(1),l1(2):u1(2),l1(3):u1(3),idx%d ,iit,1)
