@@ -66,6 +66,7 @@ SUBROUTINE pre_init (self, patch)
   !-----------------------------------------------------------------------------
   call trace%begin ('particle_solver_t%pre_init')
   self%patch => patch                           ! make the patch known
+  self%id = patch%id                            ! for now, inherit
   self%dust%patch => self%patch                 ! make the patch known
   !$omp critical (input_cr)
   if (first_time) then

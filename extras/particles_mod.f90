@@ -7,6 +7,7 @@
 MODULE particles_mod
   USE io_mod
   USE trace_mod
+  USE mpi_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -27,6 +28,8 @@ MODULE particles_mod
     real            :: r(3)                     ! real positions (cell units)
     integer(kind=2) :: q(3)                     ! integer position (cell units)
     integer(kind=2) :: bin=1                    ! size bin
+  contains
+    procedure:: init
   end type
   !-----------------------------------------------------------------------------
   ! List of particles
@@ -37,7 +40,7 @@ MODULE particles_mod
     integer:: n=0                               ! number of particles in list
     real(8):: dtime                             ! collective dtime
   contains
-    procedure:: init
+    procedure:: init => init_particles
     procedure:: prepend
     procedure:: append
     procedure:: remove
@@ -47,15 +50,27 @@ MODULE particles_mod
 CONTAINS
 
 !===============================================================================
-!> Initialize a particle list
+!> Initialize a particle
 !===============================================================================
 SUBROUTINE init (self)
+  class(particle_t):: self
+  integer(8), save:: id=0
+  !.............................................................................
+  self%id = 1 + mpi%rank + mpi%size*id
+  !$omp atomic update
+  id = id+1
+END SUBROUTINE init
+
+!===============================================================================
+!> Initialize a particle list
+!===============================================================================
+SUBROUTINE init_particles (self)
   class(particles_t):: self
   !.............................................................................
   nullify (self%head, self%tail)
   !$omp atomic write
   self%n = 0
-END SUBROUTINE init
+END SUBROUTINE init_particles
 
 !===============================================================================
 !> Add an particle at the tail

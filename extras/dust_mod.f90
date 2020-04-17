@@ -176,7 +176,6 @@ SUBROUTINE initial_condition (self, l, u)
   real, pointer, contiguous:: d(:,:,:)
   integer:: i1, i2, i3, bin, j
   real:: c
-  integer(8), save:: id=0
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('dust_t%initial_condition', itimer=itimer)
@@ -189,17 +188,16 @@ SUBROUTINE initial_condition (self, l, u)
     do bin=1,n_bin
       do j=1,particles_per_bin
         allocate (p)
+        call p%init
         p%bin = bin
-        p%id = 1 + mpi%rank + mpi%size*id
-        !$omp atomic update
-        id = id+1
         p%q = [i1,i2,i3]
         p%r = self%random%uniform (3)
         p%v = 0.0
         p%c = drag_coeff/self%s_cgs(bin)
         call self%particles%append (p)
         p%w = d(i1,i2,i3)*dust_to_gas
-        if (verbose > 2) &
+        !.......................................................................
+        if (verbose > 2 .or. p%id == self%id_dbg) &
           write (io_unit%log,'(a,i6,2x,3i3,1x,3f5.2,1x,1p,2e11.2)') &
           'particle_t%IC: id, q, r, w, c =', p%id, p%q, p%r, p%w, p%c
       end do
@@ -537,7 +535,7 @@ contains
             c = drag_coeff/self%s_cgs(bin)
             do while (np < particles_per_bin)
               allocate (p)
-              p%id = counter%update (1_8)
+              call p%init
               p%q = i
               p%bin = bin
               p%r = self%random%uniform (3)
@@ -550,7 +548,7 @@ contains
               na = na + 1
             end do
             !...................................................................
-            if (verbose > 1) then
+            if (verbose > 2) then
               write (io_unit%log,*) 'ADDED', n, np, particles_per_bin, &
                 self%na(i(1),i(2),i(3),bin), self%np(i(1),i(2),i(3),bin)
             end if
@@ -561,8 +559,8 @@ contains
       p => next
     end do
     !...........................................................................
-    if (verbose > 0) then
-      write (io_unit%log,*) 'add_particles: added', na
+    if (verbose > 1) then
+      write (io_unit%log,*) 'add_particles: id, na', self%patch%id, na
     end if
     !...........................................................................
     call normalize_weights
@@ -581,7 +579,7 @@ contains
     !---------------------------------------------------------------------------
     call trace%begin ('dust_t%remove_particles', itimer=itimer2)
     !...........................................................................
-    if (verbose > 0) then
+    if (verbose > 1) then
       write (io_unit%log,*) 'REMOVE'
     endif
     !...........................................................................
@@ -595,7 +593,7 @@ contains
         np = self%np(i(1),i(2),i(3),bin) + self%na(i(1),i(2),i(3),bin) 
         if (np > particles_per_bin) then
           !.....................................................................
-          if (verbose > 0) then
+          if (verbose > 2) then
             write (io_unit%log,*) 'remove', p%id, p%q, p%bin
           endif
           !.....................................................................
@@ -607,8 +605,8 @@ contains
       end if
       p => next
     end do
-    if (verbose > 0) then
-      write (io_unit%log,*) 'remove_particles: removed', nr
+    if (verbose > 1) then
+      write (io_unit%log,*) 'remove_particles: id, nr', self%patch%id, nr
     end if
     call trace%end (itimer2)
     call normalize_weights
@@ -700,7 +698,7 @@ contains
     end if
     do bin=1,n_bin
       write(unit,'(a,i3,2x,20i4)') 'particles  after:', bin, &
-        self%np(3,3,:,bin) + self%na(3,3,:,bin)
+        self%np(3,3,1:n,bin) + self%na(3,3,1:n,bin)
     end do
   end subroutine
 END SUBROUTINE renormalize
