@@ -24,10 +24,10 @@ SUBROUTINE init (self)
   class(scaling_t):: self
   integer:: iostat
   logical, save:: first_time=.true.
-  real, save:: l_pc=1.0, n_H2=1e3, v_kms=1.0, mu=2.4
-  real(kind=8), save:: l, t, m, d, e, ee, p, u, temp, grav, d_cgs
+  real, save:: l_pc=4.0, v_kms=0.18, mu=2.4, n_H2=1
+  real(kind=8), save:: l, t, m, d, e, ee, p, u, temp, grav
   namelist /scaling_params/ l_pc, n_H2, v_kms, mu
-  namelist /scaling_nml/ l_pc, d_cgs, v_kms, &
+  namelist /scaling_nml/ l_pc, v_kms, n_H2, &
     l, t, m, d, e, ee, p, u, temp, grav, mu
   !----------------------------------------------------------------------------
   if (.not.first_time) return
@@ -36,16 +36,14 @@ SUBROUTINE init (self)
   if (first_time) then
     rewind (io%input)
     read (io%input, scaling_params, iostat=iostat)
-    call io%namelist_warning ('scaling_params', iostat)
     write (io%output, scaling_params)
     call cgs%init
-    d_cgs = n_H2*mu*cgs%m_u                          ! mass density in cgs
-    u = v_kms*cgs%kms                                ! velocity scaling unit
-    l = l_pc*cgs%pc                                  ! length unit in cgs
-    d = d_cgs                                        ! mass density in cgs
-    u = v_kms*cgs%kms                                ! speed in cgs
-    m = d*l**3                                       ! mass unit
-    t = l/u                                          ! time unit
+    u = v_kms*cgs%kms
+    l = l_pc*cgs%pc                                  ! length in pc
+    d = n_H2*mu*cgs%m_u                              ! density unit
+    u = v_kms*cgs%kms                                ! speed in km/s
+    m = d*l**3                                       ! mass
+    t = l/u                                          ! time
     p = d*u**2                                       ! pressure = energy density
     e = m*u**2                                       ! energy
     ee = u**2                                        ! energy per unit mass
@@ -64,21 +62,21 @@ SUBROUTINE init (self)
   self%p = p
   self%e = e
   self%ee = ee
-  self%mu = mu                               ! assumed mean molecular weight
-  self%temp = temp                           ! temerature unit in K
-  self%grav = grav                           ! constant of gravity in code units
+  self%mu = mu
+  self%temp = temp
+  self%grav = grav
   if (io%master) then
     print 1,' CODE UNITS:   (cgs):'
-    print 1,'     length: ',self%l
-    print 1,'   velocity: ',self%u
-    print 1,'       mass: ',self%m
-    print 1,'       time: ',self%t
-    print 1,'    density: ',self%d
+    print 1,'     length: ',self%l, '   pc:', self%l/cgs%pc
+    print 1,'   velocity: ',self%u, ' km/s:', self%u/cgs%kms
+    print 1,'    density: ',self%d, ' n_H2:', n_H2
+    print 1,'       mass: ',self%m, ' Msun:', self%m/cgs%m_sun
+    print 1,'       time: ',self%t, '  Myr:', self%t/cgs%myr
     print 1,'   pressure: ',self%p
     print 1,'     energy: ',self%e
     print 1,'    gravity: ',self%grav
     print 1,'temperature: ',self%temp
-  1 format(1x,a,1p,e11.3)
+  1 format(3(1x,a,1p,e11.3,5x))
   end if
   call trace_end
 END SUBROUTINE init
