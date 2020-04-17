@@ -41,7 +41,9 @@ MODULE extras_mod
   USE trace_mod
   USE gpatch_mod
   USE patch_mod
+  USE task_mod
   USE list_mod
+  USE link_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.
   !-----------------------------------------------------------------------------
@@ -86,8 +88,7 @@ SUBROUTINE pre_init (self)
   self%gpatch => self
   call self%forces%pre_init (self%gpatch)                       ! forces
   call self%selfgravity%pre_init (self%gpatch)                  ! selfg
-  self%particle_solver%patch => self                            ! dust
-  call self%particle_solver%pre_init                            ! dust
+  call self%particle_solver%pre_init (self%gpatch)              ! dust
   call trace%end()
 END SUBROUTINE pre_init
 
@@ -115,9 +116,27 @@ SUBROUTINE init_task_list (self, task_list)
   class(extras_t):: self
   class(list_t), pointer:: task_list
   !.............................................................................
+  class(nbor_t), pointer:: nbor, nbor2
+  class(task_t), pointer:: task
+  !-----------------------------------------------------------------------------
   call trace%begin ('extras_t%init_task_list')
-  call self%particle_solver%init_task_list (task_list)          ! dust
-  call self%gpatch_t%init_task_list (task_list)                 ! keep
+  call self%particle_solver%init_task_list (task_list)                  ! part
+  call self%gpatch_t%init_task_list (task_list)                         ! keep
+  nbor => self%link%nbor
+  do while (associated(nbor))
+    task => nbor%task
+    select type (task)
+    class is (extras_t)
+      !-------------------------------------------------------------------------
+      ! Allocate an nbor, point to the particle_solver_t part of it, and prepend
+      !-------------------------------------------------------------------------
+      allocate (nbor2)
+      nbor2%task => task%particle_solver
+      nbor2%next => self%particle_solver%nbor
+      self%particle_solver%nbor => nbor2
+    end select
+    nbor => nbor%next
+  end do
   call trace%end ()
 END SUBROUTINE init_task_list
 
