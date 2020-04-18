@@ -4,15 +4,18 @@
 MODULE experiment_mod
   USE io_mod
   USE trace_mod
+  USE task_mod
   USE solver_mod
   USE scaling_mod
   USE units_mod
   USE link_mod
+  USE list_mod
   implicit none
   private
   type, public, extends(solver_t):: experiment_t
   contains
     procedure:: init
+    procedure:: init_task_list
     procedure:: update
   end type
   real    :: T_K=10
@@ -69,9 +72,47 @@ SUBROUTINE init (self)
   self%csound = csound
   self%mem(:,:,:,self%idx%d,1,1) = d
   self%mem(:,:,:,self%idx%e,1,1) = e
+  !-----------------------------------------------------------------------------
+  ! Initialize particles
+  !-----------------------------------------------------------------------------
   self%periodic(:) = .true.
+  call self%particle_solver%initial_condition
   call trace%end ()
 END SUBROUTINE init
+
+!===============================================================================
+!> This procedure is the place to add calls to extras 'minions' that need
+!> information about the corresponding MHD patch (self), AND the nbor or task
+!> list.  The procedure is called for every task on the task list, just before
+!> task list updates start.
+!===============================================================================
+SUBROUTINE init_task_list (self, task_list)
+  class(experiment_t):: self
+  class(list_t), pointer:: task_list
+  !.............................................................................
+  class(nbor_t), pointer:: nbor, nbor2
+  class(task_t), pointer:: task
+  !-----------------------------------------------------------------------------
+  call trace%begin ('experiment_t%init_task_list')
+  call self%particle_solver%init_task_list (task_list)                  ! part
+  call self%gpatch_t%init_task_list (task_list)                         ! keep
+  nbor => self%link%nbor
+  do while (associated(nbor))
+    task => nbor%task
+    select type (task)
+    class is (experiment_t)
+      !-------------------------------------------------------------------------
+      ! Allocate an nbor, point to the particle_solver_t part of it, and prepend
+      !-------------------------------------------------------------------------
+      allocate (nbor2)
+      nbor2%task => task%particle_solver
+      nbor2%next => self%particle_solver%nbor
+      self%particle_solver%nbor => nbor2
+    end select
+    nbor => nbor%next
+  end do
+  call trace%end ()
+END SUBROUTINE init_task_list
 
 !===============================================================================
 !> Update the task state, by calling the solver (this is redundant -- leaving

@@ -42,6 +42,7 @@ MODULE experiment_mod
   contains
     procedure:: init
     procedure:: initial_conditions
+    procedure:: init_task_list
     procedure:: update
     procedure:: boundary_conditions
   end type
@@ -83,6 +84,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call self%solver_t%init
   call self%initial_conditions
+  call self%particle_solver%initial_condition
   self%particle_solver%pforce => pforce
   self%periodic = [.true., .true., .false.]
   call trace%end()
@@ -152,11 +154,45 @@ SUBROUTINE initial_conditions (self)
     self%mem(:,:,iz,self%idx%e ,self%it,1) = d*g2*scaling%u**2
   end do
   !-----------------------------------------------------------------------------
-  m = self%mesh%gn
-  allocate (self%force_per_unit_mass(m(1),m(2),m(3),3))
-  self%force_per_unit_mass = 0.0
+  ! Make sure force_per_unit_mass is allocated
+  !-----------------------------------------------------------------------------
+  if (.not.allocated(self%force_per_unit_mass)) then
+    m = self%mesh%gn
+    allocate (self%force_per_unit_mass(m(1),m(2),m(3),3))
+    self%force_per_unit_mass = 0.0
+  end if
   call trace%end (itimer)
 END SUBROUTINE initial_conditions
+
+!===============================================================================
+!> Initialize particle solver nbor list, after task list is created
+!===============================================================================
+SUBROUTINE init_task_list (self, task_list)
+  class(experiment_t):: self
+  class(list_t), pointer:: task_list
+  class(nbor_t), pointer:: nbor, nbor2
+  class(task_t), pointer:: task
+  !-----------------------------------------------------------------------------
+  call trace%begin ('experiment_t%init_task_list')
+  call self%particle_solver%init_task_list (task_list)                  ! part
+  call self%gpatch_t%init_task_list (task_list)                         ! keep
+  nbor => self%link%nbor
+  do while (associated(nbor))
+    task => nbor%task
+    select type (task)
+    class is (experiment_t)
+      !-------------------------------------------------------------------------
+      ! Allocate an nbor, point to the particle_solver_t part of it, and prepend
+      !-------------------------------------------------------------------------
+      allocate (nbor2)
+      nbor2%task => task%particle_solver
+      nbor2%next => self%particle_solver%nbor
+      self%particle_solver%nbor => nbor2
+    end select
+    nbor => nbor%next
+  end do
+  call trace%end ()
+END SUBROUTINE init_task_list
 
 !===============================================================================
 !> Update the stat, by computing the self%force_per_unit_mass() that the solver

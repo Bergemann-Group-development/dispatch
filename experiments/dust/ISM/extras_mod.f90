@@ -67,7 +67,6 @@ MODULE extras_mod
   contains
     procedure:: pre_init
     procedure:: init
-    procedure:: init_task_list
     procedure:: dealloc
     procedure:: pre_update
     procedure:: post_update
@@ -105,40 +104,6 @@ SUBROUTINE init (self)
   call self%particle_solver%init                                ! dust
   call trace%end()
 END SUBROUTINE init
-
-!===============================================================================
-!> This intercept is the correct place to add calls to extras 'underlings' that
-!> need information both about the corresponding MHD patch (self), AND the task
-!> list.  The procedure is called for every task on the task list, just before
-!> task list updates start.
-!===============================================================================
-SUBROUTINE init_task_list (self, task_list)
-  class(extras_t):: self
-  class(list_t), pointer:: task_list
-  !.............................................................................
-  class(nbor_t), pointer:: nbor, nbor2
-  class(task_t), pointer:: task
-  !-----------------------------------------------------------------------------
-  call trace%begin ('extras_t%init_task_list')
-  call self%particle_solver%init_task_list (task_list)                  ! part
-  call self%gpatch_t%init_task_list (task_list)                         ! keep
-  nbor => self%link%nbor
-  do while (associated(nbor))
-    task => nbor%task
-    select type (task)
-    class is (extras_t)
-      !-------------------------------------------------------------------------
-      ! Allocate an nbor, point to the particle_solver_t part of it, and prepend
-      !-------------------------------------------------------------------------
-      allocate (nbor2)
-      nbor2%task => task%particle_solver
-      nbor2%next => self%particle_solver%nbor
-      self%particle_solver%nbor => nbor2
-    end select
-    nbor => nbor%next
-  end do
-  call trace%end ()
-END SUBROUTINE init_task_list
 
 !===============================================================================
 !> Deallocate allocated arrays
