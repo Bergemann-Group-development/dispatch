@@ -246,6 +246,7 @@ SUBROUTINE update (self, particles)
   allocate (self%n (n(1),n(2),n(3),n_bin))      ! work array for histograms
   allocate (self%na(n(1),n(2),n(3),n_bin))      ! number of added particles
   allocate (self%dv(n_bin))                     ! average speed difference
+  allocate (self%np(n(1),n(2),n(3),n_bin))      ! work array for pp-cell-bin
   call self%gather
   call self%renormalize
   call self%output
@@ -255,7 +256,7 @@ SUBROUTINE update (self, particles)
     call self%scatter
     deallocate (self%k)
   end if
-  deallocate (self%n, self%na, self%dv)
+  deallocate (self%n, self%na, self%dv, self%np)
   call trace%end (itimer)
 END SUBROUTINE update
 
@@ -276,6 +277,7 @@ SUBROUTINE gather (self)
   !-----------------------------------------------------------------------------
   self%n = 0.0                                  ! prepare to accumulate
   self%na = 0                                   ! initialize
+  self%np = 0
   np = 0                                        ! number of updates
   dv = 0d0                                      ! average speed difference
   if (self%lower(3)) l(3)=self%patch%mesh(3)%lb ! adjust at boundaries
@@ -290,6 +292,8 @@ SUBROUTINE gather (self)
     i = p%q                                     ! particle space index
     self%n(i(1),i(2),i(3),bin) = &              ! accumulate
     self%n(i(1),i(2),i(3),bin) + p%w            ! into self%n
+    self%np(i(1),i(2),i(3),bin) = &             ! accumulate
+    self%np(i(1),i(2),i(3),bin) + 1             ! into self%np
     np = np+1
     !...........................................................................
     if (verbose > 2) then
@@ -435,17 +439,20 @@ SUBROUTINE drag (self, p)
   class(dust_t):: self
   type(particle_t):: p
   integer:: i(3), bin
-  real:: d, s, v(3)
+  real:: d, s, v(3), ods(3)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
+#ifdef DBG
   if (self%detailed_timer) &
     call trace%begin ('particle_solver_t%drag',itimer=itimer)
+#endif
+  ods = 1d0/self%patch%ds
   i = p%q
   bin = p%bin
   s = self%s_cgs(bin)
-  i = min(max(i,1),self%patch%gn)
+!  i = min(max(i,1),self%patch%gn)
   d = self%d(i(1),i(2),i(3))
-  v = self%p(i(1),i(2),i(3),:)/d 
+  v = self%p(i(1),i(2),i(3),:)*ods/d
   p%dv = v - p%v
   p%c = drag_coeff*d/s            !*sqrt((speed2+sound2)/sound2)
   p%d = p%c*p%dv
@@ -458,7 +465,9 @@ SUBROUTINE drag (self, p)
       p%id, s, d, p%c, p%q, p%r, p%v, v, p%d
   end if
   !.............................................................................
+#ifdef DBG
   if (self%detailed_timer) call trace%end (itimer)
+#endif
 END SUBROUTINE drag
 
 !===============================================================================
