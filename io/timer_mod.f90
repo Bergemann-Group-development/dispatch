@@ -321,7 +321,7 @@ contains
     integer:: unit, level, popu
     real:: cost, per_call
     logical:: warn, mesg
-    write (unit,'(23x,a,7x,a,10x,a,7x,a,6x,a,2x,a)') 'procedure', 'calls', &
+    write (unit,'(31x,a,7x,a,10x,a,7x,a,6x,a,2x,a)') 'procedure', 'calls', &
     'time', 'time(%)', 's/call', 'locks(%)'
     if (unit==io_unit%output) then
       !$omp atomic write
@@ -334,7 +334,7 @@ contains
           per_call = proc(i)/max(ncalls(i),1d0)
           warn = per_call < 0.5e-6
           mesg = mesg .or. warn
-          write (unit,'(a32,1p,2g15.3,0p,f10.1,f12.6,f10.1,1x,a1)') &
+          write (unit,'(a40,1p,2g15.3,0p,f10.1,f12.6,f10.1,1x,a1)') &
             trim(names(i)), ncalls(i), proc(i), proc(i)/total*100., &
             per_call, lock(i)/total_locks*100, merge('W',' ',warn)
         end if
@@ -362,7 +362,7 @@ contains
     !---------------------------------------------------------------------------
     ! MPI and OMP statistics
     !---------------------------------------------------------------------------
-    write (unit,'(a30,1p,6x,3g13.3,g16.2,a,0p,f11.2,a,f9.0,a)') &
+    write (unit,'(a38,1p,6x,3g13.3,g16.2,a,0p,f11.2,a,f9.0,a)') &
       "TOTAL updates, thread time", updates, total, 100., &
       self%time-self%prev, ' time advance', &
       musppt, ' core-mus/cell-upd', wc, ' wall sec'
