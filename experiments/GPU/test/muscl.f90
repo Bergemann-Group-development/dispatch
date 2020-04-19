@@ -28,6 +28,11 @@ MODULE solver_mod
     character(len=16):: kind = 'ramses_hd_patch'
     type(riemann_t):: riemann
     real, pointer:: mem(:,:,:,:,:,:)
+    real, dimension(:,:,:,:)  , pointer, contiguous:: prim
+    real, dimension(:,:,:,:)  , pointer, contiguous:: left
+    real, dimension(:,:,:,:)  , pointer, contiguous:: rght
+    real, dimension(:,:,:,:,:), pointer, contiguous:: grad
+    real, dimension(:,:,:,:,:), pointer, contiguous:: flux
   contains
     procedure:: init
     procedure:: update
@@ -38,12 +43,7 @@ MODULE solver_mod
   ! (with gfortran the deallocate is more costly than the allocate), so a
   ! better alternative is to have permanent, thread-private scratch arrays:
   !-----------------------------------------------------------------------------
-  real, dimension(:,:,:,:)  , allocatable, target:: prim
-  real, dimension(:,:,:,:)  , allocatable        :: left
-  real, dimension(:,:,:,:)  , allocatable        :: rght
-  real, dimension(:,:,:,:,:), allocatable, target:: grad
-  real, dimension(:,:,:,:,:), allocatable        :: flux
-  !$omp threadprivate (prim,left,rght,grad,flux)
+  !!omp threadprivate (prim,left,rght,grad,flux)
   !-----------------------------------------------------------------------------
   ! Input parameters:
   !-----------------------------------------------------------------------------
@@ -175,21 +175,21 @@ SUBROUTINE alloc (self)
   integer, save:: itimer=0
   !.............................................................................
   call tracebegin ('solver_t%alloc', itimer=itimer)
-  if (.not.allocated(prim)) then
-    allocate (prim (self%gn(1), self%gn(2), self%gn(3), self%nv   ))
-    allocate (left (self%gn(1), self%gn(2) ,self%gn(3), self%nv   ))
-    allocate (rght (self%gn(1), self%gn(2) ,self%gn(3), self%nv   ))
-    allocate (grad (self%gn(1), self%gn(2) ,self%gn(3), self%nv, 3))
-    allocate (flux (self%gn(1), self%gn(2) ,self%gn(3), self%nv, 3))
+  !if (.not.associated(self%prim)) then
+    allocate (self%prim (self%gn(1), self%gn(2), self%gn(3), self%nv   ))
+    allocate (self%left (self%gn(1), self%gn(2) ,self%gn(3), self%nv   ))
+    allocate (self%rght (self%gn(1), self%gn(2) ,self%gn(3), self%nv   ))
+    allocate (self%grad (self%gn(1), self%gn(2) ,self%gn(3), self%nv, 3))
+    allocate (self%flux (self%gn(1), self%gn(2) ,self%gn(3), self%nv, 3))
     !---------------------------------------------------------------------------
     ! Set to zero once, to allow undefined guard zone values to be used
     !---------------------------------------------------------------------------
-    prim = 0.0
-    left = 0.0
-    rght = 0.0
-    grad = 0.0
-    flux = 0.0
-  end if
+    self%prim = 0.0
+    self%left = 0.0
+    self%rght = 0.0
+    self%grad = 0.0
+    self%flux = 0.0
+  !end if
   call traceend (itimer)
 END SUBROUTINE alloc
 
@@ -200,11 +200,11 @@ SUBROUTINE dealloc (self)
   class(solver_t):: self
   integer, save:: itimer=0
   !.............................................................................
-  deallocate (prim)
-  deallocate (left)
-  deallocate (rght)
-  deallocate (grad)
-  deallocate (flux)
+  deallocate (self%prim)
+  deallocate (self%left)
+  deallocate (self%rght)
+  deallocate (self%grad)
+  deallocate (self%flux)
 END SUBROUTINE dealloc
 
 !===============================================================================
@@ -232,9 +232,9 @@ SUBROUTINE ctoprim (self)
   u = self%ub
   do i3=l(3),u(3)
   do i2=l(2),u(2)
-    prim(:,i2,i3,1) = log(self%mem(:,i2,i3, 1,self%new,1))
+    self%prim(:,i2,i3,1) = log(self%mem(:,i2,i3, 1,self%new,1))
     do iv=2,5
-      prim(:,i2,i3,iv)  = self%mem(:,i2,i3,iv,self%new,1) &
+      self%prim(:,i2,i3,iv)  = self%mem(:,i2,i3,iv,self%new,1) &
                         / self%mem(:,i2,i3, 1,self%new,1)
     end do
   end do
@@ -251,13 +251,13 @@ SUBROUTINE ctoprim (self)
   do i3=l(3),u(3)
   do i2=l(2),u(2)
     do i1=l(1),u(1)
-      u2 = prim(i1,i2,i3,2)**2 + &
-           prim(i1,i2,i3,3)**2 + &
-           prim(i1,i2,i3,4)**2
-      prim(i1,i2,i3,5) = prim(i1,i2,i3,5) - 0.5*u2
-      c2 = prim(i1,i2,i3,5)*g2
+      u2 = self%prim(i1,i2,i3,2)**2 + &
+           self%prim(i1,i2,i3,3)**2 + &
+           self%prim(i1,i2,i3,4)**2
+      self%prim(i1,i2,i3,5) = self%prim(i1,i2,i3,5) - 0.5*u2
+      c2 = self%prim(i1,i2,i3,5)*g2
       u2_max = max (u2_max, u2+c2)
-      prim(i1,i2,i3,5) = log(prim(i1,i2,i3,5))
+      self%prim(i1,i2,i3,5) = log(self%prim(i1,i2,i3,5))
     end do
   end do
   end do
@@ -300,9 +300,9 @@ subroutine central
   do i3=l(3),u(3)
   do i2=l(2),u(2)
     do i1=l(1),u(1)
-      grad (i1,i2,i3,iv,1) = 0.5*(prim(i1+1,i2,i3,iv) - prim(i1-1,i2,i3,iv))
-      grad (i1,i2,i3,iv,2) = 0.5*(prim(i1,i2+1,i3,iv) - prim(i1,i2-1,i3,iv))
-      grad (i1,i2,i3,iv,3) = 0.5*(prim(i1,i2,i3+1,iv) - prim(i1,i2,i3-1,iv))
+      self%grad (i1,i2,i3,iv,1) = 0.5*(self%prim(i1+1,i2,i3,iv) - self%prim(i1-1,i2,i3,iv))
+      self%grad (i1,i2,i3,iv,2) = 0.5*(self%prim(i1,i2+1,i3,iv) - self%prim(i1,i2-1,i3,iv))
+      self%grad (i1,i2,i3,iv,3) = 0.5*(self%prim(i1,i2,i3+1,iv) - self%prim(i1,i2,i3-1,iv))
     end do
   end do
   end do
@@ -317,17 +317,17 @@ subroutine minmod
     !$omp simd
     do i1=l(1),u(1)
       ! slopes in first coordinate direction
-      dlft = prim(i1  ,i2,i3,iv) - prim(i1-1,i2,i3,iv)
-      drgt = prim(i1+1,i2,i3,iv) - prim(i1  ,i2,i3,iv)
-      grad(i1,i2,i3,iv,1) = merge(0.0,merge(min(dlft,drgt),max(dlft,drgt),dlft>0),(dlft*drgt)<=0.0)
+      dlft = self%prim(i1  ,i2,i3,iv) - self%prim(i1-1,i2,i3,iv)
+      drgt = self%prim(i1+1,i2,i3,iv) - self%prim(i1  ,i2,i3,iv)
+      self%grad(i1,i2,i3,iv,1) = merge(0.0,merge(min(dlft,drgt),max(dlft,drgt),dlft>0),(dlft*drgt)<=0.0)
       ! slopes in second coordinate direction
-      dlft = prim(i1,i2  ,i3,iv) - prim(i1,i2-1,i3,iv)
-      drgt = prim(i1,i2+1,i3,iv) - prim(i1,i2  ,i3,iv)
-      grad(i1,i2,i3,iv,2) = merge(0.0,merge(min(dlft,drgt),max(dlft,drgt),dlft>0),(dlft*drgt)<=0.0)
+      dlft = self%prim(i1,i2  ,i3,iv) - self%prim(i1,i2-1,i3,iv)
+      drgt = self%prim(i1,i2+1,i3,iv) - self%prim(i1,i2  ,i3,iv)
+      self%grad(i1,i2,i3,iv,2) = merge(0.0,merge(min(dlft,drgt),max(dlft,drgt),dlft>0),(dlft*drgt)<=0.0)
       ! slopes in third coordinate direction
-      dlft = prim(i1,i2,i3  ,iv) - prim(i1,i2,i3-1,iv)
-      drgt = prim(i1,i2,i3+1,iv) - prim(i1,i2,i3  ,iv)
-      grad(i1,i2,i3,iv,3) = merge(0.0,merge(min(dlft,drgt),max(dlft,drgt),dlft>0),(dlft*drgt)<=0.0)
+      dlft = self%prim(i1,i2,i3  ,iv) - self%prim(i1,i2,i3-1,iv)
+      drgt = self%prim(i1,i2,i3+1,iv) - self%prim(i1,i2,i3  ,iv)
+      self%grad(i1,i2,i3,iv,3) = merge(0.0,merge(min(dlft,drgt),max(dlft,drgt),dlft>0),(dlft*drgt)<=0.0)
     end do
   end do
   end do
@@ -343,29 +343,29 @@ subroutine moncen
     !$omp simd private(dlft,drgt,dcen,dsgn,slop,dlim)
     do i1 = l(1),u(1)
       ! slopes in first coordinate direction
-      dlft = prim(i1  ,i2,i3,iv) - prim(i1-1,i2,i3,iv)
-      drgt = prim(i1+1,i2,i3,iv) - prim(i1  ,i2,i3,iv)
+      dlft = self%prim(i1  ,i2,i3,iv) - self%prim(i1-1,i2,i3,iv)
+      drgt = self%prim(i1+1,i2,i3,iv) - self%prim(i1  ,i2,i3,iv)
       dcen = c2*(dlft+drgt)
       dsgn = sign(1.0, dcen)
       slop = min(abs(dlft),abs(drgt))
       dlim = merge(0.0,slop,(dlft*drgt)<=0.0)
-      grad(i1,i2,i3,iv,1) = dsgn*min(dlim,abs(dcen))
+      self%grad(i1,i2,i3,iv,1) = dsgn*min(dlim,abs(dcen))
       ! slopes in second coordinate direction
-      dlft = prim(i1,i2  ,i3,iv) - prim(i1,i2-1,i3,iv)
-      drgt = prim(i1,i2+1,i3,iv) - prim(i1,i2  ,i3,iv)
+      dlft = self%prim(i1,i2  ,i3,iv) - self%prim(i1,i2-1,i3,iv)
+      drgt = self%prim(i1,i2+1,i3,iv) - self%prim(i1,i2  ,i3,iv)
       dcen = c2*(dlft+drgt)
       dsgn = sign(1.0,dcen)
       slop = min(abs(dlft),abs(drgt))
       dlim = merge(0.0,slop,(dlft*drgt)<=0.0)
-      grad(i1,i2,i3,iv,2) = dsgn*min(dlim,abs(dcen))
+      self%grad(i1,i2,i3,iv,2) = dsgn*min(dlim,abs(dcen))
       ! slopes in third coordinate direction
-      dlft = prim(i1,i2,i3  ,iv) - prim(i1,i2,i3-1,iv)
-      drgt = prim(i1,i2,i3+1,iv) - prim(i1,i2,i3  ,iv)
+      dlft = self%prim(i1,i2,i3  ,iv) - self%prim(i1,i2,i3-1,iv)
+      drgt = self%prim(i1,i2,i3+1,iv) - self%prim(i1,i2,i3  ,iv)
       dcen = c2*(dlft+drgt)
       dsgn = sign(1.0,dcen)
       slop = min(abs(dlft),abs(drgt))
       dlim = merge(0.0,slop,(dlft*drgt)<=0.0)
-      grad(i1,i2,i3,iv,3) = dsgn*min(dlim,abs(dcen))
+      self%grad(i1,i2,i3,iv,3) = dsgn*min(dlim,abs(dcen))
     end do
   end do
   end do
@@ -388,31 +388,31 @@ SUBROUTINE predict (self)
     u3_1, u3_2, u3_3, &
     ln, ee, u1, u2, u3, d
   real:: divu, dtd1, dtd2, dtd3, g1, dt2
-  real:: ff(size(prim,1),3)
+  real:: ff(size(self%prim,1),3)
   integer:: i1, i2, i3, l(3), u(3)
   integer, save:: itimer=0
   !.............................................................................
   call tracebegin ('solver_t%predict', itimer=itimer)
-  ln_1 => grad(:,:,:,1,1)
-  ln_2 => grad(:,:,:,1,2)
-  ln_3 => grad(:,:,:,1,3)
-  u1_1 => grad(:,:,:,2,1)
-  u1_2 => grad(:,:,:,2,2)
-  u1_3 => grad(:,:,:,2,3)
-  u2_1 => grad(:,:,:,3,1)
-  u2_2 => grad(:,:,:,3,2)
-  u2_3 => grad(:,:,:,3,3)
-  u3_1 => grad(:,:,:,4,1)
-  u3_2 => grad(:,:,:,4,2)
-  u3_3 => grad(:,:,:,4,3)
-  ee_1 => grad(:,:,:,5,1)
-  ee_2 => grad(:,:,:,5,2)
-  ee_3 => grad(:,:,:,5,3)
-  ln   => prim(:,:,:,1)
-  u1   => prim(:,:,:,2)
-  u2   => prim(:,:,:,3)
-  u3   => prim(:,:,:,4)
-  ee   => prim(:,:,:,5)
+  ln_1 => self%grad(:,:,:,1,1)
+  ln_2 => self%grad(:,:,:,1,2)
+  ln_3 => self%grad(:,:,:,1,3)
+  u1_1 => self%grad(:,:,:,2,1)
+  u1_2 => self%grad(:,:,:,2,2)
+  u1_3 => self%grad(:,:,:,2,3)
+  u2_1 => self%grad(:,:,:,3,1)
+  u2_2 => self%grad(:,:,:,3,2)
+  u2_3 => self%grad(:,:,:,3,3)
+  u3_1 => self%grad(:,:,:,4,1)
+  u3_2 => self%grad(:,:,:,4,2)
+  u3_3 => self%grad(:,:,:,4,3)
+  ee_1 => self%grad(:,:,:,5,1)
+  ee_2 => self%grad(:,:,:,5,2)
+  ee_3 => self%grad(:,:,:,5,3)
+  ln   => self%prim(:,:,:,1)
+  u1   => self%prim(:,:,:,2)
+  u2   => self%prim(:,:,:,3)
+  u3   => self%prim(:,:,:,4)
+  ee   => self%prim(:,:,:,5)
   d    => self%mem(:,:,:,1,self%new,1)
   !-----------------------------------------------------------------------------
   ! Evolution of primitive variables over half a time step, with
@@ -498,31 +498,31 @@ SUBROUTINE riemn3d (self)
   ! X-direction
   !-----------------------------------------------------------------------------
   do iv=1,self%nv; do i3=l(3),u(3); do i2=l(2),u(2); do i1=l(1),u(1)
-    left(i1,i2,i3,iv) = prim(i1,i2,i3,iv) + grad(i1,i2,i3,iv,1)*0.5
-    rght(i1,i2,i3,iv) = prim(i1,i2,i3,iv) - grad(i1,i2,i3,iv,1)*0.5
+    self%left(i1,i2,i3,iv) = self%prim(i1,i2,i3,iv) + self%grad(i1,i2,i3,iv,1)*0.5
+    self%rght(i1,i2,i3,iv) = self%prim(i1,i2,i3,iv) - self%grad(i1,i2,i3,iv,1)*0.5
   end do; end do; end do; end do
                     call tracebegin ('riemann_t%'//trim(method), itimer=itimer1)
-  call self%riemann%solve (1, l+1, u, left, rght, flux(:,:,:,:,1))
+  call self%riemann%solve (1, l+1, u, self%left, self%rght, self%flux(:,:,:,:,1))
                     call traceend (itimer1)
   !-----------------------------------------------------------------------------
   ! Y-direction
   !-----------------------------------------------------------------------------
   do iv=1,self%nv; do i3=l(3),u(3); do i2=l(2),u(2); do i1=l(1),u(1)
-    left(i1,i2,i3,iv) = prim(i1,i2,i3,iv) + grad(i1,i2,i3,iv,2)*0.5
-    rght(i1,i2,i3,iv) = prim(i1,i2,i3,iv) - grad(i1,i2,i3,iv,2)*0.5
+    self%left(i1,i2,i3,iv) = self%prim(i1,i2,i3,iv) + self%grad(i1,i2,i3,iv,2)*0.5
+    self%rght(i1,i2,i3,iv) = self%prim(i1,i2,i3,iv) - self%grad(i1,i2,i3,iv,2)*0.5
   end do; end do; end do; end do
                     call tracebegin ('riemann_t%'//trim(method), itimer=itimer1)
-  call self%riemann%solve (2, l+1, u, left, rght, flux(:,:,:,:,2))
+  call self%riemann%solve (2, l+1, u, self%left, self%rght, self%flux(:,:,:,:,2))
                     call traceend (itimer1)
   !-----------------------------------------------------------------------------
   ! Z-direction
   !-----------------------------------------------------------------------------
   do iv=1,self%nv; do i3=l(3),u(3); do i2=l(2),u(2); do i1=l(1),u(1)
-    left(i1,i2,i3,iv) = prim(i1,i2,i3,iv) + grad(i1,i2,i3,iv,3)*0.5
-    rght(i1,i2,i3,iv) = prim(i1,i2,i3,iv) - grad(i1,i2,i3,iv,3)*0.5
+    self%left(i1,i2,i3,iv) = self%prim(i1,i2,i3,iv) + self%grad(i1,i2,i3,iv,3)*0.5
+    self%rght(i1,i2,i3,iv) = self%prim(i1,i2,i3,iv) - self%grad(i1,i2,i3,iv,3)*0.5
   end do; end do; end do; end do
                     call tracebegin ('riemann_t%'//trim(method), itimer=itimer1)
-  call self%riemann%solve (3, l+1, u, left, rght, flux(:,:,:,:,3))
+  call self%riemann%solve (3, l+1, u, self%left, self%rght, self%flux(:,:,:,:,3))
                     call traceend (itimer1)
   !-----------------------------------------------------------------------------
   call traceend (itimer)
@@ -551,9 +551,9 @@ SUBROUTINE divflux (self)
   do i1=l(1),u(1)
     self%mem(i1,i2,i3,iv,self%new,1) = &
     self%mem(i1,i2,i3,iv,self%new,1)   &
-    - dtd1*(flux(i1+1,i2  ,i3  ,iv,1) - flux(i1,i2,i3,iv,1)) &
-    - dtd2*(flux(i1  ,i2+1,i3  ,iv,2) - flux(i1,i2,i3,iv,2)) &
-    - dtd3*(flux(i1  ,i2  ,i3+1,iv,3) - flux(i1,i2,i3,iv,3))
+    - dtd1*(self%flux(i1+1,i2  ,i3  ,iv,1) - self%flux(i1,i2,i3,iv,1)) &
+    - dtd2*(self%flux(i1  ,i2+1,i3  ,iv,2) - self%flux(i1,i2,i3,iv,2)) &
+    - dtd3*(self%flux(i1  ,i2  ,i3+1,iv,3) - self%flux(i1,i2,i3,iv,3))
   end do
   end do
   end do
@@ -575,7 +575,7 @@ SUBROUTINE sources (self)
   !-----------------------------------------------------------------------------
   call tracebegin ('solver_t%sources', itimer=itimer)
   !-----------------------------------------------------------------------------
-  ! If adjusting total energy, save kinetic part in prim(:,:,:,5)
+  ! If adjusting total energy, save kinetic part in self%prim(:,:,:,5)
   !-----------------------------------------------------------------------------
   d  => self%mem(:,:,:,1,self%new,1)
   p1 => self%mem(:,:,:,2,self%new,1)
@@ -586,7 +586,7 @@ SUBROUTINE sources (self)
   !forcing = allocated(self%force_per_unit_mass) .or. &
   !!          allocated(self%force_per_unit_volume)
   if (self%gamma /= 1d0 .and. forcing) then
-    prim(:,:,:,5) = p1**2 + p2**2 + p3**2
+    self%prim(:,:,:,5) = p1**2 + p2**2 + p3**2
   end if
   !-----------------------------------------------------------------------------
   ! Add forcing to momentum
@@ -607,7 +607,7 @@ SUBROUTINE sources (self)
   if (self%gamma == 1d0) then
     e = d*csound**2 + 0.5*(p1**2 + p2**2 + p3**2)/d
   else if (forcing) then
-    e = e + 0.5*(p1**2 + p2**2 + p3**2 - prim(:,:,:,5))/d
+    e = e + 0.5*(p1**2 + p2**2 + p3**2 - self%prim(:,:,:,5))/d
   end if
   call traceend (itimer)
 END SUBROUTINE sources
