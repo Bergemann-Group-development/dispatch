@@ -11,11 +11,11 @@ MODULE experiment_mod
   USE boundary_mod
 !  USE timestep_mod
   USE index_mod
-  USE mhd_mod
+  USE solver_mod
   implicit none
   private
 
-  type, public, extends(mhd_t):: experiment_t
+  type, public, extends(solver_t):: experiment_t
   contains
     procedure:: init
     procedure:: update
@@ -43,9 +43,10 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   print*, 'start init'
   call trace_begin ('experiment_t%init')
+
   self%nv = 8
   self%mhd = .true.
-  call self%mhd_t%init
+  call self%solver_t%init
  
   if (first_time) then
     rewind (io%input)
@@ -221,7 +222,7 @@ SUBROUTINE update (self)
 !  endif
 
   call self%mhd_t%update
-  
+
   !call self%courant_condition
   call self%check_density('before timestep')
 
