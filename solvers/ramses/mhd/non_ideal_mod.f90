@@ -174,7 +174,7 @@ subroutine non_ideal_comp(self,mesh,idx,bf,uin,qin,fluxambdiff,emfambdiff,u_max,
        uin(l(1):u(1),l(2):u(2),l(3):u(3),idx%bx)**2 + &
        uin(l(1):u(1),l(2):u(2),l(3):u(3),idx%by)**2 + &
        uin(l(1):u(1),l(2):u(2),l(3):u(3),idx%bz)**2 / &
-       (self%gamma_AD * self%rho_ions * uin(:,:,:,1) * minval(ds)) )  )
+       (self%gamma_AD * self%rho_ions * uin(l(1):u(1),l(2):u(2),l(3):u(3),1) * minval(ds)) )  )
   endif
   
   
