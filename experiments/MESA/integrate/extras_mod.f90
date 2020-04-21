@@ -118,11 +118,11 @@ CONTAINS
 !===============================================================================
 SUBROUTINE pre_init (self)
   class(extras_t), target:: self
-  class(gpatch_t), pointer:: gpatch
   !.............................................................................
   call trace%begin ('extras_t%pre_init')
   self%gpatch => self
-  call self%selfgravity%pre_init(self)                          ! selfg
+  call self%selfgravity%pre_init(self%gpatch)                          ! selfg
+  call self%forces%pre_init(self%gpatch)
   call mesa%pre_init (self%gpatch)                              ! sinks
   call trace%end()
 END SUBROUTINE pre_init
@@ -134,7 +134,7 @@ SUBROUTINE init (self)
   class(extras_t):: self
   !.............................................................................
   call trace%begin ('extras_t%init')
-  call self%forces%init (self%link)                             ! forces
+  call self%forces%init                                         ! forces
   call self%cooling%init                                        ! cool
   call mesa%init                                                ! sinks
   call trace%end()
@@ -176,7 +176,7 @@ SUBROUTINE pre_update (self)
   !.............................................................................
   call trace%begin ('extras_t%pre_update')
   call self%forces%pre_update                                   ! forces
-  call self%selfgravity%pre_update (self)                       ! selfg
+  call self%selfgravity%pre_update                              ! selfg
   call self%cooling%pre_update (self%gpatch)                    ! cool
   call mesa%pre_update (self%gpatch)                            ! sinks
   call trace%end()
@@ -190,7 +190,7 @@ SUBROUTINE post_update (self)
   !.............................................................................
   call trace%begin ('extras_t%post_update')
   call self%forces%post_update                                  ! forces
-  call self%selfgravity%post_update (self)                      ! elfg
+  call self%selfgravity%post_update                             ! elfg
   call mesa%post_update (self%gpatch)                           ! sinks
   call trace%end ()
 END SUBROUTINE post_update
@@ -201,6 +201,7 @@ END SUBROUTINE post_update
 SUBROUTINE output (self)
   class(extras_t):: self
   !.............................................................................
+  
   call self%gpatch_t%output                                     ! keep
 END SUBROUTINE output
 

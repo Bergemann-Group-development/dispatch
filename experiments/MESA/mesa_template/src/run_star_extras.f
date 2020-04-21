@@ -1,197 +1,177 @@
-! ***********************************************************************
-!
-!   Copyright (C) 2010  Bill Paxton
-!
-!   this file is part of mesa.
-!
-!   mesa is free software; you can redistribute it and/or modify
-!   it under the terms of the gnu general library public license as published
-!   by the free software foundation; either version 2 of the license, or
-!   (at your option) any later version.
-!
-!   mesa is distributed in the hope that it will be useful, 
-!   but without any warranty; without even the implied warranty of
-!   merchantability or fitness for a particular purpose.  see the
-!   gnu library general public license for more details.
-!
-!   you should have received a copy of the gnu library general public license
-!   along with this software; if not, write to the free software
-!   foundation, inc., 59 temple place, suite 330, boston, ma 02111-1307 usa
-!
-! ***********************************************************************
-
-! For now, just useing file handles 96 and 97. TODO: fix.
-      module DISPATCH_COMMUNICATION
-         use const_def
-         implicit none ! TODO: import these form the same compilation unit as mesa_mod.f90 to ensure compiler-enforced compatibility
-         type struct_from_dispatch
-            sequence
-            real :: time = 0 ! time since formation of 2.nd larson core (s)
-            real :: acc_mass = 0 ! accretedMass (g/s)
-         end type struct_from_dispatch
-         type struct_from_mesa
-            sequence
-            real :: time = 0 ! time since formation of 2.nd larson core (s)
-            real :: wind_mass = 0 ! accretedMass (g/s)
-            logical :: supernova = .false. !! booooommmm !!
-         end type struct_from_mesa
-
-         
-         TYPE(struct_from_dispatch), DIMENSION(:), allocatable :: acc_hist
-         TYPE(integer) :: acc_len = 0
-         integer :: unit1, unit2 !pipes to and from mesa, respectively
-
-         
-         contains
-         
-         subroutine init()
-            use utils_lib, only: alloc_iounit
-            integer :: ierr
-            unit1 = alloc_iounit(ierr)
-            open (unit1, file="pipe1", form='formatted', &
-               status='unknown', action='read')
-            unit2 = alloc_iounit(ierr)
-            open (unit2, file="pipe2", form='formatted', &
-               status='unknown', action='write')
-            allocate(acc_hist(1))
-            acc_len = 1
-         end subroutine init
-
-
-         function acc_rate(tstart, tend)
-            real(dp) :: tstart, tend, acc_rate, lb, mp, ub
-            integer:: i, istart, iend
-
-            ! Make sure our accretion history covers thre requested timespan [tstart:tend]
-            do while (acc_hist(acc_len)%time < tend)
-               acc_len = acc_len + 1
-               ! If no more capacity in accretion_hist, resize using doubling strategy
-               if (acc_len > size(acc_hist)) then
-                  call resize_acc_hist(size(acc_hist)*2)
-               endif
-               acc_hist(acc_len) = request_rate()
-            end do
-
-            ! Find the start and end of the interval in the history array
-            ! Due to retries, we have no guarantee that this is the end
-            i = acc_len
-            do while (acc_hist(i)%time > tstart)  
-               if (acc_hist(i)%time > tend) iend = i
-               i = i - 1
-               if (i == 1) exit
-            end do
-            istart = i
-            ! now istart is last element which happended before tstart, 
-            ! and iend the first element after tend, 
-            ! ie acc_hist(istart)%time < tstart < tend < acc_hist(iend)%time
-
-
-            ! Estimate rate as linear sum (Thanks old code)
-            acc_rate = 0.0
-            do i=istart, iend-1
-               lb = max(acc_hist(i)%time,tstart)
-               mp = max(min(0.5*(acc_hist(i)%time+acc_hist(i+1)%time),tend),tstart)
-               ub = min(acc_hist(i+1)%time,tend)
-               acc_rate = acc_rate + (mp-lb)*acc_hist(i)%acc_mass+(ub-mp)*acc_hist(i+1)%acc_mass
-            enddo
-
-            acc_rate = acc_rate / (tend - tstart)
-         end function acc_rate
-
-         type(struct_from_dispatch) function request_rate()
-            ! namelist /query/ request_rate
-            read (unit1,*) request_rate
-         end function request_rate
-
-
-         ! simple resize function using a temp array. This copies to a temp array and then back
-         ! which is not neccecary. I think SAVE or pointers could be used.
-         subroutine resize_acc_hist(newSize)
-            INTEGER, INTENT(IN) :: newSize
-            type(struct_from_dispatch), DIMENSION(:), ALLOCATABLE :: temp
-            
-            allocate(temp(size(acc_hist)))
-            
-            temp = acc_hist
-            
-            deallocate(acc_hist)
-            allocate(acc_hist(newSize))
-            
-            acc_hist(1:size(temp)) = temp
-            !call allocate(tmp(size_old+n_enlarge))
-            !tmp(1:size_old) = array(1:size_old)
-            !call move_alloc(tmp, array)
-
-         end subroutine resize_acc_hist
-            
-            
-         
-
-
-      end module DISPATCH_COMMUNICATION
- 
-
-
       module run_star_extras
 
          use star_lib
          use star_def
          use const_def
          
-         implicit none
+         implicit none       
          
-         integer :: time0, time1, clock_rate
+         !TODO: put this in ../com_structs so that it can be compiled from both MESA and Dispatch, and compatibility is maintained by the compiler
+         ! communication between MESA and Dispatch is done in cgs
+         type acc_struct 
+         sequence
+            real(8) :: time, mdot
+         end type acc_struct
 
+         type feedback_struct
+         sequence
+            real :: time, dm_wind, loum
+            logical :: supernova = .false. !! booooommmm !!
+         end type feedback_struct  
          
-         contains
-         
+         TYPE(acc_struct), DIMENSION(:), allocatable :: acc_hist
+         TYPE(integer) :: acc_len = 0
+         character(256) :: photo_path
+         logical :: save_point = .false.
+         integer :: read_unit, write_unit
+
+         contains        
          
          subroutine extras_controls(id, ierr)
-            integer, intent(in) :: id
-            integer, intent(out) :: ierr
+            integer :: id, ierr
             type (star_info), pointer :: s
-            ierr = 0
+
             call star_ptr(id, s, ierr)
-            if (ierr /= 0) return
-            !s% use_extras_startup = .false.
+
+            call init(s)
+
             s% use_other_energy = .true.
             s% use_other_adjust_mdot = .true.
-            s% extras_startup => extras_startup
-            s% other_energy => accretion_other_energy
-            s% other_adjust_mdot => other_dispatch_adjust_mdot
+            
+            s% extras_start_step => other_start_step           ! Get accretion up to a given syncronization point
+            s% other_adjust_mdot => other_dispatch_adjust_mdot ! Calculate mdot from loaded data
+            s% other_energy => accretion_other_energy          ! put energy onto the star
+            ! todo: other_photo_write and other_photo_read to conserve acc_hist
          end subroutine extras_controls
-
-         integer function extras_startup(id, restart, ierr)
-            use DISPATCH_COMMUNICATION
          
-            implicit none
+         ! opens the pipes and initialize the acc_hist array
+         subroutine init(s)
+            use utils_lib, only : alloc_iounit
+            integer :: ierr
+            type(star_info) :: s
+            character(64):: start_year
+            integer :: num_threads
+            real(8) :: age, initial_mass
+            namelist /startup/ num_threads,age,initial_mass
+            
+            ! setup pipes
+            read_unit = alloc_iounit(ierr)
+            write_unit = alloc_iounit(ierr)
+            open (read_unit, file="pipe1", form='formatted', &
+               status='unknown', action='read')
+            open(write_unit, file="pipe2", form='formatted', &
+            status='unknown', action='write')
 
-            integer, intent(in) :: id
-            logical, intent(in) :: restart
-            integer, intent(out) :: ierr
+            ! read initial data
+            read(read_unit,startup)
+            call    OMP_SET_NUM_THREADS(num_threads)
+            s%job%set_initial_age = .true.
+            s%job%initial_age = age
+            s%initial_mass = initial_mass
 
-            call init
-         end function extras_startup
+            ! initialize acc_hist 
+            allocate(acc_hist(1))
+            acc_hist%mdot=0
+            acc_hist%time=s%job%initial_age
+            acc_len = 1
+            call read_next()
+         end subroutine init
+
+         integer function other_start_step(id, id_extra)
+            integer, intent(in) :: id, id_extra
+            integer :: ierr
+            type (star_info), pointer :: s
+
+            call star_ptr(id, s, ierr)
+            ! if no more time till next sync point
+            if (s% time + s% dt_next >= acc_hist(acc_len)%time-1e-8) then
+               call write_feedback(0d0, s% L(1), s% time + s% dt_next, .false.)
+               if (save_point) then
+                  call star_save_for_restart(id, photo_path, ierr)
+               end if 
+               ! read next batch of inputs
+               
+               !write(*,"(A,E12.5,E12.5,E12.5)") "!!!!!!!! MESA STATE: !!!!!!!! ", &
+               !   s% time/secyer/10e6, s% star_mass, s% star_mdot
+               call read_next
+            end if
+            s% max_age_in_seconds = acc_hist(acc_len)% time
+            other_start_step = keep_going
+         end function other_start_step
 
          subroutine other_dispatch_adjust_mdot(id, ierr)
-            use DISPATCH_COMMUNICATION
-            use star_def
-
-            implicit none
-
-            integer, intent(in) :: id
-            integer, intent(out) :: ierr
+            integer, intent(in):: id
+            integer,intent(out) :: ierr
             type(star_info), pointer :: s
-            ierr = 0
             call star_ptr(id, s, ierr)
-            if (ierr /= 0) then 
-                return
-            end if
 
-            s% mstar_dot = acc_rate(s% time_old, s% time_old + s% dt)
-            write(*,*) s% time_old, s% time_old + s% dt, s% mstar_dot
-
+            s% mstar_dot = acc_rate(s% time, s% time + s% dt)
          end subroutine other_dispatch_adjust_mdot
+         
+
+         ! calulate acc_rate assuming lineara accretion rate between subsequent timestamps
+         function acc_rate(tstart, tend)
+            real(dp) :: tstart, tend, dm, acc_rate, lower_t, upper_t
+            integer:: i
+
+            ! accretet mass in the given period is the sum of dm's - partial periods.
+            ! TODO: this is 0'th order in rate. Possibly upgrade to 1'st order
+            dm = 0
+            do i = acc_len,  2, -1
+               lower_t = max(acc_hist(i-1)%time, tstart)
+               upper_t = min(acc_hist(i)%time, tend)
+               if (lower_t >= upper_t) exit
+               dm = dm + acc_hist(i)%mdot*(upper_t-lower_t)
+            end do
+
+            acc_rate = dm / (tend - tstart)
+         end function acc_rate
+
+
+         ! blocking read of inputs untill syncronization point
+         ! returns time of syncronization point
+         subroutine read_next()
+            type(acc_struct) :: accretion
+            logical :: sync_point
+            namelist /query/ accretion, sync_point, save_point, photo_path
+            
+      100   read (read_unit,query)
+            ! if add accretion to list
+            acc_len = acc_len + 1
+            ! If no more capacity in accretion_hist, resize using doubling strategy
+            if (acc_len > size(acc_hist)) then
+               call resize_acc_hist(size(acc_hist)*2)
+            endif
+            acc_hist(acc_len) = accretion
+            ! continue untill all queries are read
+            if (.not.sync_point) goto 100
+         end subroutine read_next
+
+         subroutine write_feedback(dm_wind, loum, time, supernova)
+            type(feedback_struct) :: feedback
+            real(dp) :: dm_wind, loum, time
+            logical :: supernova
+            namelist /query/ feedback
+
+            feedback%dm_wind = dm_wind
+            feedback%loum = loum
+            feedback%time = time
+            feedback%supernova = supernova
+
+            write(write_unit, query)
+         end subroutine write_feedback
+
+
+         subroutine resize_acc_hist(newSize)
+            INTEGER, INTENT(IN) :: newSize
+            type(acc_struct), DIMENSION(:), ALLOCATABLE :: temp
+            
+            allocate(temp(size(acc_hist)))
+            temp = acc_hist
+            deallocate(acc_hist)
+            allocate(acc_hist(newSize))
+            acc_hist(1:size(temp)) = temp
+         end subroutine resize_acc_hist
 
 
          
@@ -264,9 +244,11 @@
             !write(*,*) "Omega: ", omega
             !write(*,*) "k = ", k
             !write(*,*) "Radius(k): " , s% r(k)
-            write(*,*) "Ratio, r(k) / r(1), Heat mass / mass : " , s% r(k) / radius, mcumul / mass
-            write(*,*) "Extra heat: " , extra_heat_var
+            !write(*,*) "Ratio, r(k) / r(1), Heat mass / mass : " , s% r(k) / radius, mcumul / mass
+            !write(*,*) "Extra heat: " , extra_heat_var
 
       end subroutine accretion_other_energy
+
+      
       end module run_star_extras
       
