@@ -122,7 +122,7 @@ class GeometricFactors(dict):
         self['dvol1f'] = np.ones(n1) * p.ds[0]
         self['dvol2c'] = np.empty_like(pos_c)
         self['dvol2f'] = np.empty_like(pos_f)
-        for j in xrange(len(pos_c)-1):
+        for j in range(len(pos_c)-1):
             self['dvol2c'][j] = 0.5 * abs( self['h32f'][j+1] * pos_f[j+1]
                                          - self['h32f'][j  ] * pos_f[j  ] )
             self['dvol2f'][j] = 0.5 * abs( self['h32c'][j  ] * pos_c[j  ]
@@ -170,14 +170,14 @@ class GeometricFactors(dict):
         # volume elements
         self['dvol1c'] = np.empty_like(rpos_c)
         self['dvol1f'] = np.empty_like(rpos_f)
-        for i in xrange(len(rpos_c)-1):
+        for i in range(len(rpos_c)-1):
             self['dvol1c'] = (self['h2f'][i+1] * self['h31f'][i+1] * rpos_f[i+1] / 3.0
                             - self['h2f'][i  ] * self['h31f'][i  ] * rpos_f[i  ] / 3.0)
             self['dvol1f'] = (self['h2c'][i  ] * self['h31c'][i  ] * rpos_c[i  ] / 3.0
                            -  self['h2c'][i-1] * self['h31c'][i-1] * rpos_c[i-1] / 3.0)
         self['dvol2c'] = np.empty_like(tpos_c)
         self['dvol2f'] = np.empty_like(tpos_f)
-        for j in xrange(len(tpos_c)-1):
+        for j in range(len(tpos_c)-1):
             self['dvol2c'] = -np.cos(tpos_c[j+1]) + np.cos(tpos_c[j  ])
             self['dvol2f'] = -np.cos(tpos_f[j  ]) + np.cos(tpos_f[j-1])
         self['dvol3c'] = np.ones(n3) * p.ds[2]
