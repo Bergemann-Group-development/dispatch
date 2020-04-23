@@ -1,0 +1,8 @@
+COMPILER = gfortran
+
+DEBUG = -fbacktrace
+OPT = -O3
+HW = -foffload="-O3" -foffload=-lgfortran -fno-stack-protector -foffload=-lm
+LDFLAGS = $(OPT) $(PAR) $(HW)
+
+FC = $(COMPILER) -I${BUILD} -J${BUILD}
