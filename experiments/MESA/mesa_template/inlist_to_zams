@@ -14,7 +14,7 @@
     photo_interval = 0
     history_interval = 0
     profile_interval = 0
-    terminal_interval = 10
+    terminal_interval = 0
     newton_iterations_limit = 30
     max_tries = 50
 

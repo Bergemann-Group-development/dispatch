@@ -38,7 +38,7 @@
             s% use_other_energy = .true.
             s% use_other_adjust_mdot = .true.
             
-            s% extras_start_step => other_start_step           ! Get accretion up to a given syncronization point
+            s% extras_finish_step => other_after_step           ! Get accretion up to a given syncronization point
             s% other_adjust_mdot => other_dispatch_adjust_mdot ! Calculate mdot from loaded data
             s% other_energy => accretion_other_energy          ! put energy onto the star
             ! todo: other_photo_write and other_photo_read to conserve acc_hist
@@ -66,38 +66,37 @@
             read(read_unit,startup)
             call    OMP_SET_NUM_THREADS(num_threads)
             s%job%set_initial_age = .true.
-            s%job%initial_age = age
-            s%initial_mass = initial_mass
-
+            s%job%initial_age = age/secyer
+            s%initial_mass = initial_mass/msun
             ! initialize acc_hist 
             allocate(acc_hist(1))
-            acc_hist%mdot=0
-            acc_hist%time=s%job%initial_age
+            acc_hist%time=age
             acc_len = 1
-            call read_next()
+            call read_next ! read first
          end subroutine init
 
-         integer function other_start_step(id, id_extra)
+         integer function other_after_step(id, id_extra)
             integer, intent(in) :: id, id_extra
             integer :: ierr
             type (star_info), pointer :: s
 
             call star_ptr(id, s, ierr)
-            ! if no more time till next sync point
-            if (s% time + s% dt_next >= acc_hist(acc_len)%time-1e-8) then
+            if (s% time >= acc_hist(acc_len)%time) then
+               ! When we get here, the timestep was usually decreased in order to hit. This is not neccecary
+               s% dt_next = max(s% dt_next,s%dt_old*1.1)
+
                call write_feedback(0d0, s% L(1), s% time + s% dt_next, .false.)
-               if (save_point) then
-                  call star_save_for_restart(id, photo_path, ierr)
-               end if 
-               ! read next batch of inputs
+
+               if (save_point)  call star_save_for_restart(id, photo_path, ierr)
                
-               !write(*,"(A,E12.5,E12.5,E12.5)") "!!!!!!!! MESA STATE: !!!!!!!! ", &
-               !   s% time/secyer/10e6, s% star_mass, s% star_mdot
-               call read_next
+               call read_next ! read next batch of inputs
+            else 
+
             end if
-            s% max_age_in_seconds = acc_hist(acc_len)% time
-            other_start_step = keep_going
-         end function other_start_step
+            s% dt_next = min(acc_hist(acc_len)% time-s%time, s% dt_next)
+            
+            other_after_step = keep_going
+         end function other_after_step
 
          subroutine other_dispatch_adjust_mdot(id, ierr)
             integer, intent(in):: id
@@ -108,7 +107,6 @@
             s% mstar_dot = acc_rate(s% time, s% time + s% dt)
          end subroutine other_dispatch_adjust_mdot
          
-
          ! calulate acc_rate assuming lineara accretion rate between subsequent timestamps
          function acc_rate(tstart, tend)
             real(dp) :: tstart, tend, dm, acc_rate, lower_t, upper_t
@@ -120,8 +118,8 @@
             do i = acc_len,  2, -1
                lower_t = max(acc_hist(i-1)%time, tstart)
                upper_t = min(acc_hist(i)%time, tend)
-               if (lower_t >= upper_t) exit
-               dm = dm + acc_hist(i)%mdot*(upper_t-lower_t)
+               if (lower_t >= upper_t) cycle
+                  dm = dm + acc_hist(i)%mdot*(upper_t-lower_t)
             end do
 
             acc_rate = dm / (tend - tstart)

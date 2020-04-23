@@ -13,7 +13,6 @@ MODULE mesa_mod
   
   type, public, extends(sinks_t):: mesa_t
     integer :: read_unit, write_unit   ! Units kept open to allow communication with mesa
-    real(8) :: create_t               ! Creation time of sink, used for calculating average accretion at mesa handover
     logical :: mesa_simulated=.false. ! The evolution is handled by mesa
     real(8) :: last_mass, last_time      ! The state at previous submittion
     character(64)::folder=""          ! folder of pipe, used for reopening the write pipe
@@ -67,20 +66,12 @@ MODULE mesa_mod
     !-----------------------------------------------------------------------------
     call trace%begin ('mesa_t%post_update')
     call self%sinks_t%post_update (patch)
-    if (self%mass > 0 .and. self%create_t == 0) then !find a better way of responding to call create()
-      self%create_t = self%time
-    end if
     if (self%mass > mesa_threshhold .and. patch%contains(self%position)) then
       if (.not.self%mesa_simulated) then
         call self%start_mesa
-      end if
-
-      !open(199, file="timings.csv")
-      !start = wallclock()
-      if (self%time > self%last_time) then
+      else
         call self%send_accrection(.true., .false., "")
         call self%recive_feedback()
-        !write(199, *) self%time, wallclock()-start, self%mass
       end if
     end if 
     call trace%end ()
@@ -99,9 +90,6 @@ MODULE mesa_mod
 
     write (self%folder, "(A, I4.4, A)") "mesa_processes/star_", self%id, "/"
 
-    ! interpolate the starting year as after mesa_min_mass accretion at the average rate
-    !write (start_year, '(E12.5)') (self%create_t+mesa_min_mass/self%mass*(self%time-self%create_t))*scaling%t/cgs%yr
-
   ! system calls and newunit() is not threadsafe
   !$omp critical
     ! todo: Handle case where masa_processes is not created, or where any files are locked
@@ -116,15 +104,13 @@ MODULE mesa_mod
     
     ! Send startup data to MESA
     num_threads = 8
-    age = self%time*scaling%t/cgs%yr
-    initial_mass = self%mass*scaling%m/cgs%m_sun
-    write(*,startup)
+    age = self%time*scaling%t
+    initial_mass = self%mass*scaling%m
     write(self%write_unit,startup)
 
     self%mesa_simulated=.true.
     self%last_mass = self%mass
-    self%last_time = self%create_t
-
+    self%last_time = self%time
   end subroutine start_mesa
 
   subroutine send_accrection(self, sync_point, save_point, path)
@@ -144,11 +130,8 @@ MODULE mesa_mod
 
     accretion%time = self%time*scaling%t
     accretion%mdot =  (self%mass-self%last_mass)*scaling%m/((self%time-self%last_time)*scaling%t)
-    
-    !write(*,"(A,E12.5,E12.5,E12.5)") "!!!!!!!! SUBMITTED:  !!!!!!!! ",self%time*scaling%t/cgs%Myr, &
-    !  self%mass*scaling%m/cgs%m_sun, accretion%mdot*cgs%yr/cgs%m_sun
-
     write(self%write_unit, query)
+
     self%last_mass = self%mass
     self%last_time = self%time
   end subroutine send_accrection
