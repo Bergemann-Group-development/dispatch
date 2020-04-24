@@ -35,6 +35,7 @@ MODULE experiment_mod
   USE particles_mod
   USE scaling_mod
   USE units_mod
+  USE omp_lock_mod
   implicit none
   private
   type, public, extends(solver_t):: experiment_t
@@ -321,12 +322,14 @@ SUBROUTINE total_dust_mass (self)
     task => link%task
     select type (task)
     class is (experiment_t)
+      call task%particle_solver%particles%lock%set ('total_dust_mass')
       p => task%particle_solver%particles%head
       do while (associated(p))
         mass(p%bin) = mass(p%bin) + p%w
         n = n+1
         p => p%next
       end do
+      call task%particle_solver%particles%lock%unset ('total_dust_mass')
     end select
     link => link%next
   end do

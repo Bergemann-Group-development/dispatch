@@ -11,6 +11,7 @@ MODULE particle_solver_mod
   USE io_mod
   USE trace_mod
   USE omp_timer_mod
+  USE omp_lock_mod
   USE task_mod
   USE bits_mod
   USE mesh_mod
@@ -112,6 +113,10 @@ SUBROUTINE init (self)
     m = self%patch%mesh%gn
     allocate (self%patch%force_per_unit_volume(m(1),m(2),m(3),3))
   end if
+  if (.not.associated(self%lock)) then
+    allocate (self%lock)
+    call self%lock%init ('part')
+  end if
   call trace%end ()
 END SUBROUTINE init
 
@@ -203,11 +208,16 @@ SUBROUTINE update (self)
   logical                    :: outside
   integer                    :: ip, np, no, nk, it, m(3), i(3), bin
   class(gpatch_t), pointer   :: patch
+  class(particles_t), pointer:: exports
   integer, save              :: itimer=0, itimer1=0
   !-----------------------------------------------------------------------------
   call trace%begin ('particle_solver_t%update', itimer=itimer)
   call self%import_particles
   self%forced = associated(self%pforce)
+  !allocate (exports)
+  !call exports%init
+  call self%particles%lock%set ('update')
+  call self%exports%lock%set ('update')
   !-----------------------------------------------------------------------------
   ! Only evolve particles if the last particle is behind the patch%time (which
   ! has not been updated yet, so we add the patch timestep)
@@ -365,6 +375,11 @@ SUBROUTINE update (self)
       'particle_solver_t%update: self%time, patch_time, n =', &
       self%time, patch_time, self%particles%n
   end if
+  !call self%lock%set ('update')
+  !deallocate (self%exports)
+  !self%exports => exports
+  call self%exports%lock%unset ('update')
+  call self%particles%lock%unset ('update')
   call trace%end (itimer)
 END SUBROUTINE update
 
@@ -476,12 +491,14 @@ SUBROUTINE import_particles (self)
   ! Loop over patch nbors
   !-----------------------------------------------------------------------------
   call trace%begin ('particle_solver_t%import_particles',itimer=itimer)
+  call self%particles%lock%set ('import')
   self%ni = 0
   nbor => self%nbor
   do while (associated(nbor))
     nbtask => nbor%task
     select type (nbtask)
     class is (particle_solver_t)
+      call nbtask%exports%lock%set ('import')
       dist = nbtask%patch%distance(self%patch)/nbtask%patch%ds
       !-------------------------------------------------------------------------
       ! Loop over particles in export list and grab those that belong here
@@ -519,6 +536,7 @@ SUBROUTINE import_particles (self)
           self%patch%id, nbtask%patch%id, nbtask%exports%n, ni, &
           nint(dist)
       end if
+      call nbtask%exports%lock%unset ('import')
     end select
     nbor => nbor%next
   end do
@@ -527,6 +545,7 @@ SUBROUTINE import_particles (self)
       self%patch%id, self%ni
     flush (io_unit%log)
   end if
+  call self%particles%lock%unset ('import')
   call trace%end (itimer)
 END SUBROUTINE import_particles
 
