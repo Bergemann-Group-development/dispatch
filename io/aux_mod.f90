@@ -64,7 +64,6 @@ MODULE aux_mod
     procedure:: output => output_item
   end type
   integer:: version=1, verbose=0, uniq=200, iout_prv=-1
-  logical:: first_time=.true.
   character(len=32), allocatable:: select(:)
   type(aux_t), public:: aux
 CONTAINS
@@ -80,7 +79,7 @@ SUBROUTINE init (self, name)
   real(8):: aux_time = 1.0
   integer:: iostat, i
   namelist /aux_params/ verbose, select
-  logical, save:: fist_time=.true.
+  logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
   call trace%begin ('aux_t%init')
   if (first_time) then
@@ -94,7 +93,7 @@ SUBROUTINE init (self, name)
     call write_namelist (stdout)
     if (io_unit%master) &
       call write_namelist (io%namelist)
-    fist_time = .false.
+    first_time = .false.
   end if
   call trace%end()
 END SUBROUTINE init

@@ -261,7 +261,7 @@ SUBROUTINE update (self)
       !-------------------------------------------------------------------------
       outside = .false.
       i = p%q
-      if (any(i < l .or. i > u)) then
+      if (self%is_outside(i)) then
         outside = .true.
         print '(a,i12,2x,3i4,2x,3f6.3,1p,e10.2)', &
           'particle_solver_t%update ERROR: id, q, r, u_ph =', &
