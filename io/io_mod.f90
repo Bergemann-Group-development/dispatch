@@ -159,10 +159,6 @@ SUBROUTINE init (self, name)
       self%inputname = 'input.nml'
       self%rundir = trim(datadir)//self%sep                     ! data/
     end if
-    call os%mkdir (trim(self%rundir))
-    self%outputname = self%rundir                               ! compatibility
-    write (filename,'(a,i5.5,"/")') trim(self%rundir), 0
-    call os%mkdir (trim(filename))
     !---------------------------------------------------------------------------
     open (io_unit%nml, file=trim(self%rundir)//'params.nml', form='formatted', status='unknown')
     open (io_unit%hash, file=trim(self%rundir)//'hash.log', form='formatted', status='unknown')
@@ -184,6 +180,10 @@ SUBROUTINE init (self, name)
     self%format = format
     self%nml_version = nml_version
     self%inputdir = inputdir
+    self%outputname = self%rundir                               ! compatibility
+    write (filename,'(a,i5.5,"/")') trim(self%rundir), 0
+    if (io%do_output) call os%mkdir (trim(self%rundir))
+    if (io%do_output) call os%mkdir (trim(filename))
     call ensure_dirname (self%inputdir)
     call ensure_dirname (self%rundir)
     !---------------------------------------------------------------------------
