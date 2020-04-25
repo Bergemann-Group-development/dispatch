@@ -76,7 +76,7 @@ MODULE dust_mod
     integer, dimension(3):: lb=0, ub=0        ! lower and upper index bounds
     integer:: verbose
     integer:: n_bin
-    integer:: id_dbg = -1
+    integer:: id_dbg=0, ip_dbg=0
     logical:: detailed_timer = .false.
   contains
     procedure:: init
@@ -200,7 +200,7 @@ SUBROUTINE initial_condition (self)
         call self%particles%append (p)
         p%w = d(i1,i2,i3)*dust_to_gas
         !.......................................................................
-        if (verbose > 2 .or. p%id == self%id_dbg) &
+        if (verbose > 2 .or. p%id == self%ip_dbg) &
           write (io_unit%log,'(a,i6,2x,3i3,1x,3f5.2,1x,1p,2e11.2)') &
           'particle_t%IC: id, q, r, w, c =', p%id, p%q, p%r, p%w, p%c
       end do
@@ -460,7 +460,7 @@ SUBROUTINE drag (self, p)
 !  self%patch%force_per_unit_volume(i(1),i(2),i(3),:) = &
 !  self%patch%force_per_unit_volume(i(1),i(2),i(3),:) - p%d*p%w
   !.............................................................................
-  if (verbose > 4 .or. p%id == self%id_dbg) then
+  if (verbose > 4 .or. p%id == self%ip_dbg) then
     write (io_unit%log,'(a,i8,1p,3e9.2,0p,3i3,1x,3f6.2,4(1x,1p,3e9.2))') &
       'drag: id,s,d,c,q,r,v,vg,d=', &
       p%id, s, d, p%c, p%q, p%r, p%v, v, p%d
