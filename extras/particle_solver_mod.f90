@@ -40,6 +40,7 @@ MODULE particle_solver_mod
     integer                    :: no = 0               ! particles outside
     real                       :: v_min, v_max         ! min/max u_phase
     class(list_t), pointer     :: task_list            ! task list
+    !type(lock_t), pointer      :: lock                 ! export lock
     procedure(pforce), pointer, nopass :: pforce => null() ! point force
   contains
     procedure:: pre_init
@@ -214,10 +215,9 @@ SUBROUTINE update (self)
   call trace%begin ('particle_solver_t%update', itimer=itimer)
   call self%import_particles
   self%forced = associated(self%pforce)
-  !allocate (exports)
-  !call exports%init
+  allocate (exports)
+  call exports%init
   call self%particles%lock%set ('update')
-  call self%exports%lock%set ('update')
   !-----------------------------------------------------------------------------
   ! Only evolve particles if the last particle is behind the patch%time (which
   ! has not been updated yet, so we add the patch timestep)
@@ -312,7 +312,7 @@ SUBROUTINE update (self)
       !-------------------------------------------------------------------------
       if (outside) then
         call self%particles%remove (p)
-        call self%exports%append (p)
+        call exports%append (p)
         no = no+1
         if(verbose > 1 .or. p%id == id_dbg) then
           write (io_unit%log,'(a,3i6,i10,2x,3i4)') &
@@ -375,10 +375,11 @@ SUBROUTINE update (self)
       'particle_solver_t%update: self%time, patch_time, n =', &
       self%time, patch_time, self%particles%n
   end if
-  !call self%lock%set ('update')
-  !deallocate (self%exports)
-  !self%exports => exports
-  call self%exports%lock%unset ('update')
+  call self%lock%set ('update')
+  call omp_lock%destroy (self%exports%lock)
+  deallocate (self%exports)
+  self%exports => exports
+  call self%lock%unset ('update')
   call self%particles%lock%unset ('update')
   call trace%end (itimer)
 END SUBROUTINE update
@@ -498,7 +499,7 @@ SUBROUTINE import_particles (self)
     nbtask => nbor%task
     select type (nbtask)
     class is (particle_solver_t)
-      call nbtask%exports%lock%set ('import')
+      call nbtask%lock%set ('import')
       dist = nbtask%patch%distance(self%patch)/nbtask%patch%ds
       !-------------------------------------------------------------------------
       ! Loop over particles in export list and grab those that belong here
@@ -536,7 +537,7 @@ SUBROUTINE import_particles (self)
           self%patch%id, nbtask%patch%id, nbtask%exports%n, ni, &
           nint(dist)
       end if
-      call nbtask%exports%lock%unset ('import')
+      call nbtask%lock%unset ('import')
     end select
     nbor => nbor%next
   end do
