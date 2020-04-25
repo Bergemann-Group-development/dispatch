@@ -36,6 +36,7 @@ MODULE particle_solver_mod
     logical                    :: forced = .false.     ! external force
     logical, dimension(3)      :: lower                ! has lower boundary
     logical, dimension(3)      :: upper                ! has upper boundary
+    integer, dimension(3)      :: lb=0, ub=0           ! lower and upper index bounds
     integer                    :: ni = 0               ! particles imported
     integer                    :: no = 0               ! particles outside
     real                       :: v_min, v_max         ! min/max u_phase
@@ -50,7 +51,6 @@ MODULE particle_solver_mod
     procedure:: update
     procedure:: force
     procedure:: import_particles
-    procedure:: is_outside
   end type
   integer:: verbose = 0
   integer:: id_dbg = -1
@@ -98,7 +98,7 @@ END SUBROUTINE pre_init
 SUBROUTINE init (self)
   class(particle_solver_t):: self
   class(gpatch_t), pointer:: pa
-  integer:: m(3), l(3), u(3), i
+  integer:: m(3)
   !-----------------------------------------------------------------------------
   ! Initialize particle lists
   !-----------------------------------------------------------------------------
@@ -127,7 +127,7 @@ END SUBROUTINE init
 SUBROUTINE initial_condition (self)
   class(particle_solver_t):: self
   class(gpatch_t), pointer:: pa
-  integer:: m(3), l(3), u(3), i
+  integer:: m(3), i
   !-----------------------------------------------------------------------------
   ! Set flags indicating upper and lower boundaries.  The box size is self%box,
   ! and the patch position, size, and cell size are self%position, self%size,
@@ -138,25 +138,27 @@ SUBROUTINE initial_condition (self)
   self%lower = .false.
   pa => self%patch
   do i=1,3
+    self%lb = pa%mesh%li
+    self%ub = pa%mesh%ui
     if (.not.pa%periodic(i)) then
       if (pa%position(i) - pa%size(i)/2.0 - pa%ds(i) < -pa%box(i)/2.0) then
         self%lower(i) = .true.
+        self%lb(i) = pa%mesh(i)%lb
       end if
       if (pa%position(i) + pa%size(i)/2.0 + pa%ds(i) > +pa%box(i)/2.0) then
         self%upper(i) = .true.
+        self%ub(i) = pa%mesh(i)%ub
       end if
     end if
   end do
   self%dust%lower = self%lower
   self%dust%upper = self%upper
+  self%dust%lb = self%lb
+  self%dust%ub = self%ub
   !-----------------------------------------------------------------------------
   ! Initialize dust.  At boundaries, add particles also in guard zones
   !-----------------------------------------------------------------------------
-  l = pa%mesh%li
-  u = pa%mesh%ui
-  where (self%lower) l = pa%mesh%lb
-  where (self%upper) u = pa%mesh%ub
-  call self%dust%initial_condition (l, u)
+  call self%dust%initial_condition
   !.............................................................................
   if (verbose > 0) then
     if (verbose > 1) then
@@ -201,7 +203,7 @@ SUBROUTINE update (self)
   class(particle_solver_t):: self
   !.............................................................................
   real, dimension(3)         :: r, dr, v
-  integer, dimension(3)      :: q, ir, l, u
+  integer, dimension(3)      :: q, ir
   real                       :: ods, dtds
   class(particle_t), pointer :: p, next
   real(8)                    :: tmin, tmax, t, time(2), patch_time
@@ -215,17 +217,12 @@ SUBROUTINE update (self)
   call trace%begin ('particle_solver_t%update', itimer=itimer)
   call self%import_particles
   self%forced = associated(self%pforce)
-  allocate (exports)
-  call exports%init
-  call self%particles%lock%set ('update')
   !-----------------------------------------------------------------------------
   ! Only evolve particles if the last particle is behind the patch%time (which
   ! has not been updated yet, so we add the patch timestep)
   !-----------------------------------------------------------------------------
   patch => self%patch
   patch_time = patch%time
-  l = patch%mesh%li
-  u = patch%mesh%ui
   self%v_min = patch%fminval(patch%u_phase)/self%patch%ds(1)
   self%v_max = patch%fmaxval(patch%u_phase)/self%patch%ds(1)
   if (verbose > 1) then
@@ -234,6 +231,9 @@ SUBROUTINE update (self)
       patch%fmaxval(patch%u_phase), patch%fminval(patch%u_phase)
   end if
   if (self%time <= patch_time) then
+    allocate (exports)
+    call exports%init
+    call self%particles%lock%set ('update')
     time(1) = wallclock()
     !---------------------------------------------------------------------------
     ods = 1.0/patch%ds(1)
@@ -269,10 +269,9 @@ SUBROUTINE update (self)
       !-------------------------------------------------------------------------
       ! Move the particle until it is ahead of the patch time
       !-------------------------------------------------------------------------
-      outside = .false.
       i = p%q
-      if (self%is_outside(i)) then
-        outside = .true.
+      outside = any(i < self%lb .or. i > self%ub)
+      if (outside) then
         print '(a,i12,2x,3i4,2x,3f6.3,1p,e10.2)', &
           'particle_solver_t%update ERROR: id, q, r, u_ph =', &
           p%id, p%q, p%r, patch%u_phase(i(1),i(2),i(3))/ds
@@ -301,7 +300,7 @@ SUBROUTINE update (self)
           ! Check if it has gone outside limits
           !---------------------------------------------------------------------
           i = p%q
-          outside = self%is_outside (i)
+          outside = any(i < self%lb .or. i > self%ub)
           if (outside) then
             exit
           end if
@@ -369,18 +368,21 @@ SUBROUTINE update (self)
     ! Do dust evolution after move, since we need the particle timestep values
     !---------------------------------------------------------------------------
     call self%dust%update (self%particles)
+    !---------------------------------------------------------------------------
+    ! Delete the previous exports list and swap in the new one
+    !---------------------------------------------------------------------------
+    call self%lock%set ('update')
+    call omp_lock%destroy (self%exports%lock)
+    deallocate (self%exports)
+    self%exports => exports
+    call self%lock%unset ('update')
+    call self%particles%lock%unset ('update')
     end associate
   else if (verbose > 0) then
     write (io_unit%log,'(a,2f12.6,i10)') &
       'particle_solver_t%update: self%time, patch_time, n =', &
       self%time, patch_time, self%particles%n
   end if
-  call self%lock%set ('update')
-  call omp_lock%destroy (self%exports%lock)
-  deallocate (self%exports)
-  self%exports => exports
-  call self%lock%unset ('update')
-  call self%particles%lock%unset ('update')
   call trace%end (itimer)
 END SUBROUTINE update
 
@@ -510,7 +512,7 @@ SUBROUTINE import_particles (self)
         next => p%next
         r = dist + (p%r+p%q)
         q = floor(r)
-        inside = is_inside (self, q)
+        inside = all(q >= self%lb .and. q <= self%ub)
         if (inside) then
           p%r = r-q
           p%q = q
@@ -549,53 +551,5 @@ SUBROUTINE import_particles (self)
   call self%particles%lock%unset ('import')
   call trace%end (itimer)
 END SUBROUTINE import_particles
-
-!===============================================================================
-!> Check if the particle is outside the field patch
-!===============================================================================
-LOGICAL FUNCTION is_inside (self, q)
-  class(particle_solver_t):: self
-  integer:: q(3)
-  !.............................................................................
-  is_inside = .not. is_outside(self, q)
-END FUNCTION is_inside
-
-!===============================================================================
-!> Check if the particle is outside the field patch
-!===============================================================================
-LOGICAL FUNCTION is_outside (self, q)
-  class(particle_solver_t):: self
-  integer:: q(3)
-  !.............................................................................
-  class(mesh_t), pointer:: mesh(:)
-  integer:: i
-  !-----------------------------------------------------------------------------
-  if (detailed_timer) call trace%begin ('particle_solver_t%is_outside')
-  mesh => self%patch%mesh
-  is_outside = .false.
-  do i=1,3
-    !---------------------------------------------------------------------------
-    ! If the particle is below index li then it is outside, unless this is a
-    ! lower boundary
-    !---------------------------------------------------------------------------
-    if (q(i) < mesh(i)%li) then
-      if (.not. self%lower(i)) then
-        is_outside = .true.
-        exit
-      end if
-    end if
-    !---------------------------------------------------------------------------
-    ! If the particle is aboive index ui then it is outside, unless this is an
-    ! upper boundary
-    !---------------------------------------------------------------------------
-    if (q(i) > mesh(i)%ui) then
-      if (.not. self%upper(i)) then
-        is_outside = .true.
-        exit
-      end if
-    end if
-  end do
-  if (detailed_timer) call trace%end ()
-END FUNCTION is_outside
 
 END MODULE particle_solver_mod

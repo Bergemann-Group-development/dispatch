@@ -73,6 +73,7 @@ MODULE dust_mod
     real(8):: next_time                       ! next evolve time
     procedure(test_kernel), pointer:: kernel  ! kernel procedure
     class(list_t), pointer:: task_list        ! task list
+    integer, dimension(3):: lb=0, ub=0        ! lower and upper index bounds
     integer:: verbose
     integer:: n_bin
     integer:: id_dbg = -1
@@ -167,14 +168,14 @@ END SUBROUTINE init
 !> Initialize an initial particle distribution, with weights equal to the local
 !> mass density in code units (this must be taken into account in the kernel)
 !===============================================================================
-SUBROUTINE initial_condition (self, l, u)
+SUBROUTINE initial_condition (self)
   class(dust_t):: self
-  integer:: l(3), u(3)
   !.............................................................................
   class(gpatch_t), pointer:: patch
   class(particle_t), pointer:: p
   real, pointer, contiguous:: d(:,:,:)
   integer:: i1, i2, i3, bin, j
+  integer:: l(3), u(3)
   real:: c
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -182,6 +183,8 @@ SUBROUTINE initial_condition (self, l, u)
   call self%random%init
   patch => self%patch
   d => patch%mem(:,:,:,patch%idx%d,patch%it,1)
+  l = self%lb
+  u = self%ub
   do i3=l(3),u(3)
   do i2=l(2),u(2)
   do i1=l(1),u(1)
@@ -221,7 +224,7 @@ SUBROUTINE update (self, particles)
   class(dust_t):: self
   type(particles_t), pointer:: particles
   logical:: do_dust
-  integer:: n(3), l(3), u(3)
+  integer:: n(3)
   integer, save:: itimer=0
   !.............................................................................
   call trace%begin ('dust_t%update', itimer=itimer)
@@ -241,8 +244,6 @@ SUBROUTINE update (self, particles)
   end if
   !...........................................................................
   n = self%patch%mesh%gn                        ! cells in patch
-  l = self%patch%mesh%li                        ! lower index limit
-  u = self%patch%mesh%ui                        ! upper index limit
   allocate (self%n (n(1),n(2),n(3),n_bin))      ! work array for histograms
   allocate (self%na(n(1),n(2),n(3),n_bin))      ! number of added particles
   allocate (self%dv(n_bin))                     ! average speed difference
@@ -266,7 +267,7 @@ END SUBROUTINE update
 SUBROUTINE gather (self)
   class(dust_t):: self
   !.............................................................................
-  integer:: bin, it, i(3), n(3), np, l(3), u(3)
+  integer:: bin, it, i(3), n(3), np
   type(particle_t), pointer:: p
   real(8):: dv(n_bin)
   integer, save:: itimer=0
@@ -280,8 +281,6 @@ SUBROUTINE gather (self)
   self%np = 0
   np = 0                                        ! number of updates
   dv = 0d0                                      ! average speed difference
-  if (self%lower(3)) l(3)=self%patch%mesh(3)%lb ! adjust at boundaries
-  if (self%upper(3)) u(3)=self%patch%mesh(3)%ub ! adjust at boundaries
   p => self%particles%head                      ! first particle
   !.............................................................................
   if (verbose > 0) &
@@ -327,16 +326,18 @@ SUBROUTINE evolve (self)
   class(dust_t):: self
   !.............................................................................
   real:: n(n_bin), delta_n
-  integer:: i1, i2, i3, i, j
+  integer:: i1, i2, i3, i, j, l(3), u(3)
   class(mesh_t), pointer:: mesh(:)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('dust_t%evolve', itimer=itimer)
   if (self%particles%n > 0) then
+    l = self%lb
+    u = self%ub
     mesh  => self%patch%mesh
-    do i3=mesh(3)%li,mesh(3)%ui
-    do i2=mesh(2)%li,mesh(2)%ui
-    do i1=mesh(1)%li,mesh(1)%ui
+    do i3=l(3),u(3)
+    do i2=l(2),u(2)
+    do i1=l(1),u(1)
       call self%kernel
       n(:) = self%n(i1,i2,i3,:)
       !-------------------------------------------------------------------------
@@ -476,21 +477,63 @@ END SUBROUTINE drag
 SUBROUTINE renormalize (self)
   class(dust_t):: self
   !.............................................................................
-  integer:: i(3), l(3), u(3), bin, i1, i2, i3, count, unit
+  integer:: i(3), l(3), u(3), bin, i1, i2, i3, i4, np, nmin, nmax, count, unit
   class(particle_t), pointer:: p, next
   !integer(kind=2), allocatable:: n(:,:,:,:)
-  logical:: add, rem, alloc
+  logical:: add, rem, warn, alloc
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('dust_t%renormalize', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Check if they are within limits, and adjust if not
   !-----------------------------------------------------------------------------
-  rem = any(self%np > particles_per_bin*max_fraction)
-  add = any(self%np < particles_per_bin*min_fraction)
+  rem = .false.
+  add = .false.
+  warn = .false.
+  nmin = particles_per_bin*min_fraction
+  nmax = particles_per_bin*max_fraction
+  l = self%lb
+  u = self%ub
+  do i4=1,n_bin
+  do i3=l(3),u(3)
+  do i2=l(2),u(2)
+  do i1=l(1),u(1)
+    np = self%np(i1,i2,i3,i4)
+    rem = rem .or. np > nmax
+    add = add .or. np < nmin
+    warn = warn .or. np == 0
+  end do
+  end do
+  end do
+  end do
+  !-----------------------------------------------------------------------------
+  ! Warn about cells with no particles
+  !-----------------------------------------------------------------------------
+  if (warn) then
+    if (verbose > 0) then
+      write (stderr,1) self%patch%id
+    1 format("dust_t%renormalize WARNING: zero particles somewhere in patch",i6)
+      do i4=1,n_bin
+      do i3=l(3),u(3)
+      do i2=l(2),u(2)
+      do i1=l(1),u(1)
+        if (self%np(i1,i2,i3,i4) == 0) then
+          write (io_unit%log,'(a,i6,4i4)') &
+            'dust_t%renormalize WARNING: zero particles in id, ii =', &
+            self%patch%id, i1, i2, i3, i4
+        end if
+      end do
+      end do
+      end do
+      end do
+    else
+      write (io_unit%log,1) self%patch%id
+    end if
+  end if
+  !-----------------------------------------------------------------------------
+  ! Add or remove id outside limits
+  !-----------------------------------------------------------------------------
   if (add .or. rem) then
-    l = self%patch%mesh%li                        ! lower index limit
-    u = self%patch%mesh%ui                        ! upper index limit
     !---------------------------------------------------------------------------
     if (verbose > 0) then
       unit = io_unit%log
