@@ -22,9 +22,9 @@ CONTAINS
 SUBROUTINE solve (dir, l, u, left, rght, flux, g1, g2)
   !class(riemann_t):: self
   integer:: dir, l(3), u(3)
-  real, dimension(:,:,:,:), contiguous, intent(in) :: left
-  real, dimension(:,:,:,:),             intent(in) :: rght
-  real, dimension(:,:,:,:), contiguous, intent(out):: flux
+  real, dimension(:,:,:,:), pointer :: left
+  real, dimension(:,:,:,:), pointer :: rght
+  real, dimension(:,:,:,:,:), pointer:: flux
   real(8)          :: g1, g2
   !.............................................................................
   !select case (trim(self%method))
@@ -42,9 +42,9 @@ END SUBROUTINE solve
 SUBROUTINE hll (dir, l, u, left, rght, flux,g1,g2)
   !class(riemann_t):: self
   integer:: dir, l(3), u(3)
-  real, dimension(:,:,:,:), contiguous, intent(in) :: left
-  real, dimension(:,:,:,:),             intent(in) :: rght
-  real, dimension(:,:,:,:), contiguous, intent(out):: flux
+  real, dimension(:,:,:,:), pointer :: left
+  real, dimension(:,:,:,:), pointer :: rght
+  real, dimension(:,:,:,:,:), pointer:: flux
   !.............................................................................
   real:: &
     Dl, Ul, Pl, El, Vl, Wl, Tl, cl, fDl, fTl, fUl, fVl, fWl, Sl, &
@@ -72,8 +72,7 @@ SUBROUTINE hll (dir, l, u, left, rght, flux,g1,g2)
     j1=0; j2=0; j3=1
   end if
   !-----------------------------------------------------------------------------
-  !TODO: Fix compiler error
-  !$omp teams distribute parallel do collapse(3)
+  !$omp distribute parallel do collapse(3)
   do i3=l(3),u(3)
   do i2=l(2),u(2)
   do i1=l(1),u(1)
@@ -127,11 +126,11 @@ SUBROUTINE hll (dir, l, u, left, rght, flux,g1,g2)
     !    (SR*F_l - SL*F_r + SL*SR *(u_r - u_l))/(SR-SL)
     ! where u = (rho, rho*v, E_tot) are the conserved variables
     !---------------------------------------------------------------------------
-    flux(i1,i2,i3, 1) = (SR * fDl - SL*fDr + SL*SR*(Dr    - Dl   )) / (SR - SL)
-    flux(i1,i2,i3,v1) = (SR * fUl - SL*fUr + SL*SR*(Dr*Ur - Dl*Ul)) / (SR - SL)
-    flux(i1,i2,i3,v2) = (SR * fVl - SL*fVr + SL*SR*(Dr*Vr - Dl*Vl)) / (SR - SL)
-    flux(i1,i2,i3,v3) = (SR * fWl - SL*fWr + SL*SR*(Dr*Wr - Dl*Wl)) / (SR - SL)
-    flux(i1,i2,i3, 5) = (SR * fTl - SL*fTr + SL*SR*(Tr    - Tl   )) / (SR - SL)
+    flux(i1,i2,i3, 1, dir) = (SR * fDl - SL*fDr + SL*SR*(Dr    - Dl   )) / (SR - SL)
+    !flux(i1,i2,i3,v1, dir) = (SR * fUl - SL*fUr + SL*SR*(Dr*Ur - Dl*Ul)) / (SR - SL)
+    !flux(i1,i2,i3,v2, dir) = (SR * fVl - SL*fVr + SL*SR*(Dr*Vr - Dl*Vl)) / (SR - SL)
+    !flux(i1,i2,i3,v3, dir) = (SR * fWl - SL*fWr + SL*SR*(Dr*Wr - Dl*Wl)) / (SR - SL)
+    !flux(i1,i2,i3, 5, dir) = (SR * fTl - SL*fTr + SL*SR*(Tr    - Tl   )) / (SR - SL)
 !#ifdef DBG
 !    if (dir==1 .and. i2==l(2) .and. i3==l(3)) then
 !      print '(i3,3(2x,5f10.4))', &
@@ -141,7 +140,7 @@ SUBROUTINE hll (dir, l, u, left, rght, flux,g1,g2)
   end do
   end do
   end do
-  !$omp end teams distribute parallel do
+  !$omp end distribute parallel do
 END SUBROUTINE hll
 
 !===============================================================================
