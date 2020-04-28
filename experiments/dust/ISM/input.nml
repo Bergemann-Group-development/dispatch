@@ -5,8 +5,9 @@
 &patch_params           n=3*16 grace=0.1 /
 
 !--- Dust and particle solver parameters ---------------------------------------
-&particle_solver_params verbose=1 courant=1.0 detailed_timer=f /
-&dust_params            verbose=1 n_bin=1 particles_per_bin=10 /
+&particle_solver_params verbose=0 courant=0.5 detailed_timer=f /
+                        ! ip_dbg=3055451 / ! i_dbg=19,11,18,18,1 /
+&dust_params            verbose=0 n_bin=1 particles_per_bin=10 /
 
 !--- Initial condition and forces ----------------------------------------------
 &initial_params         type='turbulence' /

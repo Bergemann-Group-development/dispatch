@@ -43,11 +43,7 @@ SEPARATE_BUILDS ?= $(SEPARATE_BUILD)
 ifeq ($(SEPARATE_BUILDS),)
   BUILD    ?= build
 else
-  ifeq ($(OPTS),)
-    BUILD    ?= build_$(SOLVER)
-  else
-    BUILD    ?= build_$(SOLVER)_$(OPTS)
-  endif
+  BUILD    ?= build_$(SOLVER)_$(OPTS)
 endif
 $(shell mkdir -p $(BUILD) >/dev/null)
 

@@ -2,6 +2,8 @@
 !> Doubly linked list (DLL), carrying anything, as simply as possible
 !===============================================================================
 MODULE dll_mod
+  USE trace_mod
+  USE omp_lock_mod
   implicit none
   private
   type, public:: dll_node_t
@@ -15,6 +17,7 @@ MODULE dll_mod
     class(dll_node_t), pointer:: tail => null()
     integer:: n=0
     character(len=32):: name
+    class(lock_t), pointer:: lock => null()
   contains
     procedure:: init
     procedure:: append
@@ -36,6 +39,7 @@ SUBROUTINE init (self, name)
   class(dll_t):: self
   character(len=*), optional:: name
   !.............................................................................
+  call trace%begin ('dll_t%init')
   nullify (self%head, self%tail)
   !$omp atomic write
   self%n = 0
@@ -44,6 +48,11 @@ SUBROUTINE init (self, name)
   else
     self%name = 'dll'
   end if
+  if (.not.associated(self%lock)) then
+    allocate (self%lock)
+    call self%lock%init ('dll')
+  end if
+  call trace%end ()
 END SUBROUTINE init
 
 !===============================================================================

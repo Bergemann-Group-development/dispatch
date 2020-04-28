@@ -227,6 +227,7 @@ SUBROUTINE init (self)
     call self%lock%init (self%kind(1:4), id=self%id+2)
   end if
   call self%random%init
+  call self%aux%init
   !-----------------------------------------------------------------------------
   ! Only initialize time slot values when first allocated
   !-----------------------------------------------------------------------------

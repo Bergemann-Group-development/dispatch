@@ -814,8 +814,6 @@ SUBROUTINE output (self)
       self%patch%id, self%time, self%aux%aux_next
   end if
   if (self%time >= self%aux%aux_next) then
-  !!omp critical (dust_out_cr)
-  if (self%time >= self%aux%aux_next) then
     call self%aux%register ('dust_d', self%n)
     !...........................................................................
     if (verbose > 1) then
@@ -851,8 +849,6 @@ SUBROUTINE output (self)
        'dust_t%output: self%aux%aux_next =', &
         self%patch%id, self%aux%aux_next
     end if
-  end if
-  !!omp end critical (dust_out_cr)
   end if
   call trace%end ()
 END SUBROUTINE output

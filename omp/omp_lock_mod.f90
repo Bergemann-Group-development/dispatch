@@ -133,6 +133,8 @@ SUBROUTINE init (self, kind, id)
         self%kind, self%id, set_id
     self%initialized = .true.
   end if
+  write (io_unit%log,'(a,i8,l4)') &
+    'omp_lock_t%init: id, initialized =', self%id, self%initialized
   !$omp end critical (input_cr)
 #ifdef TRACE 
   call trace%end()

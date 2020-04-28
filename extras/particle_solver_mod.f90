@@ -444,12 +444,12 @@ SUBROUTINE update (self)
     !---------------------------------------------------------------------------
     ! Delete the previous exports list and swap in the new one
     !---------------------------------------------------------------------------
+    call self%particles%lock%unset ('update')
     call self%lock%set ('update')
     call omp_lock%destroy (self%exports%lock)
     deallocate (self%exports)
     self%exports => exports
     call self%lock%unset ('update')
-    call self%particles%lock%unset ('update')
     deallocate (dust%vg)
     end associate
   else if (verbose > 0) then
@@ -759,7 +759,6 @@ SUBROUTINE import (self)
       self%patch%id, self%ni
     flush (io_unit%log)
   end if
-  call self%particles%lock%unset ('import')
   call trace%end (itimer)
 END SUBROUTINE import
 

@@ -69,11 +69,13 @@ END SUBROUTINE init
 SUBROUTINE init_particles (self)
   class(particles_t):: self
   !.............................................................................
+  call trace%begin ('particles_t%init')
   nullify (self%head, self%tail)
   !$omp atomic write
   self%n = 0
   allocate (self%lock)
   call self%lock%init ('particles')
+  call trace%end ()
 END SUBROUTINE init_particles
 
 !===============================================================================
