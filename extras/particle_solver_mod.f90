@@ -5,6 +5,21 @@
 !>   particles_t        : data type for lists of particles
 !>   particle_solver_t  : data type for particle solvers
 !>
+!> The particle solver advances the particles past the time of the patch they
+!> belong to, with timesteps that move them at most one cell forward. The time
+!> step is thus generally longer than even the local Courant time for the cell,
+!> and thus normally longer than the Courant time for the whole patch.  But if
+!> the particle Courant factor is chosen small, it is possible that one needs
+!> to advance the particle several time steps before its time exceeds the
+!> partch time.
+!>
+!> The particle solver operates in integer cell coordinates, and thus with
+!> speeds measured in cells per code time unit, instead of code lengths per
+!> time unit.
+!>
+!> The particle solver is either called as a post_update() of a patch solver,
+!> or else as an independent task, which depends on the patch task it is
+!> associated with.
 !===============================================================================
 !define DBG
 MODULE particle_solver_mod
@@ -88,6 +103,7 @@ SUBROUTINE pre_init (self, patch)
   !$omp end critical (input_cr)
   self%dust%detailed_timer = detailed_timer
   self%dust%ip_dbg = ip_dbg
+  self%dust%i_dbg = i_dbg
   !-----------------------------------------------------------------------------
   ! Add a task link, in preparation for init_task_list
   !-----------------------------------------------------------------------------
@@ -213,12 +229,21 @@ SUBROUTINE update (self)
   real(8)                    :: tmin, tmax, t, time(2), patch_time
   real                       :: ds, dt
   logical                    :: outside
-  integer                    :: ip, np, no, nk, it, m(3), i(3), bin, ii(5)
+  integer                    :: ip, np, no, nk, it, m(3), i(3), bin, ii(5), dir
   class(gpatch_t), pointer   :: patch
   class(particles_t), pointer:: exports
   integer, save              :: itimer=0, itimer1=0
   !-----------------------------------------------------------------------------
   call trace%begin ('particle_solver_t%update', itimer=itimer)
+  patch => self%patch
+  if (self%patch%id == i_dbg(1)) then
+    patch%dtime = max(patch%dtime,1d-10)
+    self%dtime = max(self%dtime,1d-10)
+    write (io_unit%log,'(a,2(1p,4e10.3,2x))') &
+      'particle_solver_t%update begin: t, dt, t+dt =', &
+      patch%time, patch%dtime, 1.0/patch%dtime, patch%time+patch%dtime, &
+      self%time, self%dtime, 1.0/self%dtime, self%time+self%dtime
+  end if
   call self%import
   if (do_sort) call self%sort
   self%forced = associated(self%pforce)
@@ -226,8 +251,7 @@ SUBROUTINE update (self)
   ! Only evolve particles if the last particle is behind the patch%time (which
   ! has not been updated yet, so we add the patch timestep)
   !-----------------------------------------------------------------------------
-  patch => self%patch
-  patch_time = patch%time
+  patch_time = patch%time + patch%dtime
   self%v_min = patch%fminval(patch%u_phase)/self%patch%ds(1)
   self%v_max = patch%fmaxval(patch%u_phase)/self%patch%ds(1)
   if (verbose > 1) then
@@ -249,6 +273,16 @@ SUBROUTINE update (self)
     ! Allocate array for number of particles per cell-bin
     !---------------------------------------------------------------------------
     associate (dust=>self%dust)
+    m = patch%gn
+    allocate (dust%vg(3,m(1),m(2),m(3)))
+    !---------------------------------------------------------------------------
+    ! Cache the gas velocity
+    !---------------------------------------------------------------------------
+    m = patch%gn
+    do dir=1,3
+      dust%vg(dir,:,:,:) = patch%mem(:,:,:,patch%idx%px+dir-1,patch%it,1) &
+                         / patch%mem(:,:,:,patch%idx%d       ,patch%it,1)
+    end do
     !---------------------------------------------------------------------------
     !> Non-vectorized pusher
     !---------------------------------------------------------------------------
@@ -286,16 +320,29 @@ SUBROUTINE update (self)
       else if (p%t <= patch_time) then
         !call self%force (p)
         !-------------------------------------------------------------------------
-        ! Courant conditions; allow at most courant/patch%courant larger step
+        ! Courant conditions; allow at most courant/patch%courant larger step,
+        ! which means a particle should never be able to move more than one cell,
+        ! as long as courant is less than or equal to one.
         !-------------------------------------------------------------------------
-        p%dt = courant*0.5/max(patch%u_phase(i(1),i(2),i(3))/ds, &
-                               abs(p%v(1)),abs(p%v(2)),abs(p%v(3)))
-        dtds = p%dt*ods
+        if (verbose > 0) then
+          p%dt = courant*0.5/max(patch%u_phase(i(1),i(2),i(3))/ds, &
+                                 abs(p%v(1)),abs(p%v(2)),abs(p%v(3)))
+          if (p%t+2.*p%dt < patch_time) then
+            write (io_unit%log,'(a,i6,i8,1p,7e11.3)') &
+              'particle_solver_t WARNING: id,pid,t,dt,pa_t,pa_dt,dt/Dt,uph,vmax=', &
+              patch%id, p%id, p%t, p%dt, patch_time, patch%dtime, &
+              p%dt/(patch_time-p%t), patch%u_phase(i(1),i(2),i(3))/ds, &
+              max(abs(p%v(1)),abs(p%v(2)),abs(p%v(3)))
+          end if
+        end if
         do while (p%t <= patch_time)
+          p%dt = courant*0.5/max(patch%u_phase(i(1),i(2),i(3))/ds, &
+                                 abs(p%v(1)),abs(p%v(2)),abs(p%v(3)))
+          dtds = p%dt*ods
           call kdk (self, p, dtds)
           nk = nk+1
           !---------------------------------------------------------------------
-          ! The integer+real representation may need to be updated here, since
+          ! The integer+real representation needs to be updated here, since
           ! the particle might move over a cell boundary
           !---------------------------------------------------------------------
           q = floor(p%r)
@@ -305,15 +352,20 @@ SUBROUTINE update (self)
           ! Check if it has gone outside limits
           !---------------------------------------------------------------------
           i = p%q
-          outside = any(i < self%lb .or. i > self%ub)
+          outside = any(i < 1 .or. i > m)
           if (outside) then
-            exit
+            write (io_unit%log,'(a,i6,i8,1p,4e11.3)') &
+              'particle_solver_t%update   ERROR: id, p%id,p%t,p%dt,patch_time=', &
+              patch%id, p%id, p%t, p%dt, patch_time, p%dt/(patch_time-p%t)
+            call io%abort ('particle outside')
           end if
-        end do
+       end do
       end if
       !-------------------------------------------------------------------------
       ! Move the particle to the export list if it falls outside
       !-------------------------------------------------------------------------
+      i = p%q
+      outside = any(i < self%lb .or. i > self%ub)
       if (outside) then
         call self%particles%remove (p)
         call exports%append (p)
@@ -334,10 +386,10 @@ SUBROUTINE update (self)
         ii(1) = self%patch%id; ii(2:4) = p%q; ii(5) = p%bin
         if (verbose > 2 .or. p%id == ip_dbg .or. all(ii==i_dbg)) then
           write (io_unit%log,1) &
-          'update: id,out,dt,c,q,r,v,a=', &
-          patch%id, p%id, outside, p%dt, p%c, p%q, p%bin, p%r, p%v, p%a, &
-          patch%u_phase(i(1),i(2),i(3))
-          1 format(a,i5,i8,l3,1p,2e9.2,0p,4i4,1x,3f7.2,3(1x,1p,3e9.1))
+            'update: id,out,dt,c,q,r,v,a=', &
+            patch%id, p%id, outside, p%t, p%dt, p%c, p%q, p%r, p%v, p%a, &
+            patch%u_phase(i(1),i(2),i(3))/ds
+          1 format(a,i5,i8,l3,1p,3e10.3,0p,3i3,5(3f6.2,2x))
         end if
       end if
       p => next
@@ -356,6 +408,13 @@ SUBROUTINE update (self)
         'particl_solver%update: ERROR', patch%id, nk, self%time, self%dtime, &
         patch_time, patch%dtime
       end if
+      if (self%patch%id == i_dbg(1)) then
+        write (io_unit%log,'(a,2(1p,4e10.3,2x))') &
+          'particle_solver_t%update dtime: t, dt, t+dt =', &
+          patch%time, patch%dtime, 1./patch%dtime, patch%time+patch%dtime, &
+          self%time, self%dtime, 1./self%dtime, self%time+self%dtime
+      end if
+      !---------------------------------------------------------------------------
       self%time = self%time + self%dtime
       self%dust%time = self%time
       self%dust%dtime = self%dtime
@@ -376,6 +435,12 @@ SUBROUTINE update (self)
     ! Do dust evolution after move, since we need the particle timestep values
     !---------------------------------------------------------------------------
     call self%dust%update (self%particles)
+    if (self%patch%id == i_dbg(1)) then
+      write (io_unit%log,'(a,2(1p,4e10.3,2x))') &
+        'particle_solver_t%update  dust: t, dt, t+dt =', &
+        patch%time, patch%dtime, 1./patch%dtime, patch%time+patch%dtime, &
+        self%time-self%dtime, self%dtime, 1./self%dtime, self%time
+    end if
     !---------------------------------------------------------------------------
     ! Delete the previous exports list and swap in the new one
     !---------------------------------------------------------------------------
@@ -385,12 +450,19 @@ SUBROUTINE update (self)
     self%exports => exports
     call self%lock%unset ('update')
     call self%particles%lock%unset ('update')
+    deallocate (dust%vg)
     end associate
   else if (verbose > 0) then
     write (io_unit%log,'(a,2f12.6,i10)') &
       'particle_solver_t%update: self%time, patch_time, n =', &
       self%time, patch_time, self%particles%n
   end if
+  if (self%patch%id == i_dbg(1)) then
+    write (io_unit%log,'(a,2(1p,4e10.3,2x))') &
+      'particle_solver_t%update   end: t, dt, t+dt =', &
+      patch%time, patch%dtime, 1./patch%dtime, patch%time+patch%dtime, &
+      self%time-self%dtime, self%dtime, 1./self%dtime, self%time
+end if
   call trace%end (itimer)
 END SUBROUTINE update
 
@@ -554,11 +626,11 @@ SUBROUTINE kdk (self, p, dtds)
   p%v = p%v + dtds*(p%a+p%d)/(1.+p%c*dtds)
   if (verbose > 3 .or. p%id == ip_dbg) then
     write (io_unit%log,1) &
-      '  kdk1: id,out,dt,c,q,r,v,a=', &
-      self%patch%id, p%id, .false., p%dt, p%c, p%q, p%r, p%v, p%a, p%d, &
+      '  kdk1: id,out,t,dt,c,q,r,v=', &
+      self%patch%id, p%id, .false., p%t, p%dt, p%c, p%q, p%r, p%v, p%a, p%d, &
       self%patch%u_phase(p%q(1),p%q(2),p%q(3))/self%patch%ds(1), &
       self%v_min, self%v_max
-    1 format(a,i5,i8,l3,1p,2e9.2,0p,3i3,3f6.2,4(1x,3f7.3))
+    1 format(a,i5,i8,l3,1p,3e10.3,0p,3i3,5(3f6.2,2x))
   end if
 !-----------------------------------------------------------------------------
   ! Drift, r -> r+2*dt*v(t+dt*a), with v -> vg(t+dt) if drag dominates
@@ -576,7 +648,7 @@ SUBROUTINE kdk (self, p, dtds)
   if (verbose > 3 .or. p%id == ip_dbg) then
     write (io_unit%log,1) &
       '  kdk2: id,out,dt,c,q,r,v,a=', &
-      self%patch%id, p%id, .false., p%dt, p%c, p%q, p%r, p%v, p%a, p%d, &
+      self%patch%id, p%id, .false., p%t, p%dt, p%c, p%q, p%r, p%v, p%a, p%d, &
       self%patch%u_phase(p%q(1),p%q(2),p%q(3))/self%patch%ds(1), &
       self%v_min, self%v_max
     flush (io_unit%log)
@@ -644,6 +716,7 @@ SUBROUTINE import (self)
     nbtask => nbor%task
     select type (nbtask)
     class is (particle_solver_t)
+      call nbtask%lock%set ('import')
       dist = nbtask%patch%task_t%distance(self%patch)/nbtask%patch%ds
       !-------------------------------------------------------------------------
       ! Loop over particles in export list and grab those that belong here
@@ -662,18 +735,12 @@ SUBROUTINE import (self)
           call self%particles%append (p)
           self%time = min(self%time, p%t)
           ni = ni + 1
-          if (verbose > 1) then
-            write (io_unit%log,'(a,3i6,i10,2x3i4)') &
+          ii(1) = self%patch%id; ii(2:4) = p%q; ii(5) = p%bin
+          if (verbose > 1 .or. p%id == ip_dbg .or. all(ii == i_dbg)) then
+            write (io_unit%log,'(a,3i6,i10,2x3i4,l4)') &
              'import: id, nbor, ni, pid, q =', &
               self%patch%id, nbtask%patch%id, ni, p%id, q
           end if
-        end if
-        ii(1) = self%patch%id; ii(2:4) = p%q; ii(5) = p%bin
-        if (p%id == ip_dbg .or. self%patch%id == id_dbg .or. &
-            all(ii == i_dbg)) then
-          write (io_unit%log,'(a,3i6,i10,2x3i4,l4)') &
-           'import: id, nbor, ni, pid, q =', &
-            self%patch%id, nbtask%patch%id, ni, p%id, q, inside
         end if
         p => next
       end do
