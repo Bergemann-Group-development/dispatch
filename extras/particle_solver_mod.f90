@@ -328,9 +328,9 @@ SUBROUTINE update (self)
           p%dt = courant*0.5/max(patch%u_phase(i(1),i(2),i(3))/ds, &
                                  abs(p%v(1)),abs(p%v(2)),abs(p%v(3)))
           if (p%t+2.*p%dt < patch_time) then
-            write (io_unit%log,'(a,i6,i8,1p,7e11.3)') &
-              'particle_solver_t WARNING: id,pid,t,dt,pa_t,pa_dt,dt/Dt,uph,vmax=', &
-              patch%id, p%id, p%t, p%dt, patch_time, patch%dtime, &
+            write (io_unit%log,'(a,i8,i6,4i4,1p,7e11.3)') &
+              'particle_solver_t WARNING: pid,id,q,bin,t,dt,pa_t,pa_dt,dt/Dt,uph,vmax=', &
+              p%id, patch%id, p%q, p%bin, p%t, p%dt, patch%time, patch%dtime, &
               p%dt/(patch_time-p%t), patch%u_phase(i(1),i(2),i(3))/ds, &
               max(abs(p%v(1)),abs(p%v(2)),abs(p%v(3)))
           end if
@@ -386,7 +386,7 @@ SUBROUTINE update (self)
         ii(1) = self%patch%id; ii(2:4) = p%q; ii(5) = p%bin
         if (verbose > 2 .or. p%id == ip_dbg .or. all(ii==i_dbg)) then
           write (io_unit%log,1) &
-            'update: id,out,dt,c,q,r,v,a=', &
+            'update: id,out,t,dt,c,q,r,v=', &
             patch%id, p%id, outside, p%t, p%dt, p%c, p%q, p%r, p%v, p%a, &
             patch%u_phase(i(1),i(2),i(3))/ds
           1 format(a,i5,i8,l3,1p,3e10.3,0p,3i3,5(3f6.2,2x))

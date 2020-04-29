@@ -285,10 +285,6 @@ SUBROUTINE gather (self)
   np = 0                                        ! number of updates
   dv = 0d0                                      ! average speed difference
   p => self%particles%head                      ! first particle
-  !.............................................................................
-  if (verbose > 0) &
-    write (io_unit%log,*) 'GATHER'
-  !.............................................................................
   do while (associated(p))                      ! loop over particle
     bin = p%bin                                 ! particle bin
     i = p%q                                     ! particle space index
@@ -464,8 +460,8 @@ SUBROUTINE drag (self, p)
   !.............................................................................
   if (verbose > 4 .or. p%id == self%ip_dbg) then
     write (io_unit%log,1) &
-      '  drag: id,s,d,c,q,r,v,vg,d=', &
-      self%patch%id, p%id, s, d, p%c, p%q, p%r, p%v, v
+      '  drag: id,t,d,c,q,r,v,vg,d=', &
+      self%patch%id, p%id, p%t, d, p%c, p%q, p%r, p%v, v
     1 format(a,i5,i8,3x,1p,3e10.3,0p,3i3,5(3f6.2,2x))
 end if
   !.............................................................................
@@ -567,6 +563,7 @@ SUBROUTINE renormalize (self)
       if (add) call add_particles
       if (rem) call remove_particles
     end if
+    call normalize_weights
   end if
   !.............................................................................
   call trace%end (itimer)
@@ -590,13 +587,13 @@ contains
     !---------------------------------------------------------------------------
     ! Add new macro-particles at the current time (after MHD update)
     !---------------------------------------------------------------------------
-    time = self%patch%time + self%patch%dtime
     na = 0
     p => self%particles%head
     do while (associated(p))
       next => p%next
       bin = p%bin                                 ! particle bin
       i = p%q                                     ! particle space index
+      time = p%t
       if (all(i >= l .and. i <= u)) then
         !-----------------------------------------------------------------------
         ii = [self%patch%id,i,bin]
@@ -651,7 +648,6 @@ contains
       write (io_unit%log,*) 'add_particles: id, na', self%patch%id, na
     end if
     !...........................................................................
-    call normalize_weights
     call trace%end (itimer1)
   end subroutine add_particles
   !=============================================================================
@@ -671,7 +667,7 @@ contains
       write (io_unit%log,*) 'REMOVE'
     endif
     !...........................................................................
-    nr = 0
+     nr = 0
     p => self%particles%head
     do while (associated(p))
       next => p%next
@@ -697,7 +693,6 @@ contains
       write (io_unit%log,*) 'remove_particles: id, nr', self%patch%id, nr
     end if
     call trace%end (itimer2)
-    call normalize_weights
   end subroutine remove_particles
   !=============================================================================
   !> Renormalize weights, so the new set of particles in a cell carry the same
@@ -774,14 +769,13 @@ contains
         write(unit,'(a,i3,2x,1p,10e11.2)') 'bins redone:', bin, self%n(3,3,1:10,bin)
       end do
     end if
-    call normalize_weights
   end subroutine
   !=============================================================================
   subroutine print_after
     integer:: n
     n = min(size(self%np,3),20)
     do bin=1,n_bin
-      write(unit,'(a,i3,2x,20i4)') 'added particles:', bin, self%na(3,3,1:n,bin)
+      write(unit,'(a,i3,2x,20i4)') ' added particles:', bin, self%na(3,3,1:n,bin)
     end do
     if (verbose > 1) then
       call get_densities
