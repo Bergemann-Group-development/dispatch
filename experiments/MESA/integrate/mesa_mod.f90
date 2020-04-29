@@ -124,10 +124,10 @@ MODULE mesa_mod
     type(acc_struct) :: accretion
     character(*) :: path
     character(256) :: photo_path
-    photo_path = path
 
     namelist /query/ accretion, sync_point, save_point, photo_path
 
+    photo_path = path
     accretion%time = self%time*scaling%t
     accretion%mdot =  (self%mass-self%last_mass)*scaling%m/((self%time-self%last_time)*scaling%t)
     write(self%write_unit, query)
