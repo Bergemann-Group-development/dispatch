@@ -6,11 +6,11 @@ Created on Tue Nov 12 16:14:06 2019
 """
 
 import os
-import sys
 
 #%%
 def critical(file,log1,log2,commit=False,verbose=0):
     """ Find and change omp critical (input_cr) """
+    region='(init_cr)'
     with open(file) as fo:
         lines=[]
         n0=0        # line number
@@ -29,26 +29,23 @@ def critical(file,log1,log2,commit=False,verbose=0):
                 use_io=True
 
             # detect critical-block start
-            if line.startswith('!$omp critical (input_cr)'):
+            if line.startswith('!$omp critical '+region):
                 #print('')
                 if not filename:
                     str='EDITED: '+file
                     print(str)
                     log1.write(str+'\n')
                     filename=True
-                full_line=full_line.replace('!$omp critical (input_cr)',
+                full_line=full_line.replace('!$omp critical '+region,
                                             'call io%lock%set')
-                #print(n0,full_line.rstrip())
                 watch=True
                 critical=True
 
             # detect 'end critical'
             elif watch:
-                # detect critical-block end
-                if line.startswith('!$omp end critical (input_cr'):
-                    full_line=full_line.replace('!$omp end critical (input_cr)',
+                if line.startswith('!$omp end critical '+region):
+                    full_line=full_line.replace('!$omp end critical '+region,
                                                 'call io%lock%unset')
-                    #print(n0,full_line.rstrip())
                     watch=False
             lines.append(full_line)
 

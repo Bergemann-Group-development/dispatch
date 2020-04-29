@@ -9,6 +9,7 @@
 !> slopes are derived from well-conditioned per-unit-mass variables.
 !===============================================================================
 MODULE solver_mod
+  USE io_mod
   USE riemann_mod
   USE omp_lib
   implicit none
@@ -91,7 +92,7 @@ SUBROUTINE init (self)
   self%mem(:,:,:,3,:,:) = 0.0
   self%mem(:,:,:,4,:,:) = 0.0
   self%mem(:,:,:,5,:,:) = 1.0
-  !$omp critical (init_cr)
+  call io%lock%set
   if (first_time) then
     print *, 'solver_t%init:'
     print *, 'id', self%id
@@ -106,7 +107,7 @@ SUBROUTINE init (self)
     start = omp_get_wtime()
     first_time = .false.
   end if
-  !$omp end critical (init_cr)
+  call io%lock%unset
   !call self%patch_t%init
   !-----------------------------------------------------------------------------
   ! Ramses-like specific things

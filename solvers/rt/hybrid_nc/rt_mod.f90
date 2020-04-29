@@ -114,7 +114,7 @@ SUBROUTINE init_rt (self)
   ! --------------------------------------------------------------------
 
   call trace_begin ('rt_t%init', itimer=itimer)
-  !$omp critical (init_cr)
+  call io%lock%set
   if (first_time) then
     grace    = self%mhd_link%task%grace
     periodic = self%mhd_link%task%periodic
@@ -123,7 +123,7 @@ SUBROUTINE init_rt (self)
     call rt_solver%init (detailed_timer)
     first_time=.false.
   end if
-  !$omp end critical (init_cr)
+  call io%lock%unset
   self%do_output = do_output
   if (do_output) error stop "rt_mod::init:: do_output=true, but IO for RT is not rewritten for the master branch"
   if (ray_geometry%head%ray_list%directionality(1) == 1) then

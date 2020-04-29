@@ -41,7 +41,7 @@ MODULE mesa_mod
     namelist /mesa_params/ mesa_threshhold_msun, mesa_min_mass_msun
     call trace%begin ('mesa_t%pre_init')
     call self%sinks_t%pre_init(patch)
-    !$omp critical (init_cr)
+    call io%lock%set
     if (first_time) then
       rewind (io%input)
       read (io%input, mesa_params, iostat=iostat)
@@ -52,7 +52,7 @@ MODULE mesa_mod
       write (io%namelist, mesa_params)
       first_time = .false.
     end if
-    !$omp end critical (init_cr)
+    call io%lock%unset
     !-----------------------------------------------------------------------------
     call trace%end ()
   END SUBROUTINE pre_init

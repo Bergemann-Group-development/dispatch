@@ -68,7 +68,7 @@ SUBROUTINE init(self)
   !-----------------------------------------------------------------------------
   ! Read and print the namelist only once
   !-----------------------------------------------------------------------------
-  !$omp critical (init_cr)
+  call io%lock%set
   if (first_time) then
     first_time=.false.
     rewind (io%input)
@@ -78,7 +78,7 @@ SUBROUTINE init(self)
     ! fool-proofing
     if (timestep%time_order <= 0) call mpi%abort("The Stagger solvers require `time_order` > 0. Abort!")
   end if
-  !$omp end critical (init_cr)
+  call io%lock%unset
   !-----------------------------------------------------------------------------
   ! Copy parameter values to private values for all patches (note ", save" above)
   !-----------------------------------------------------------------------------

@@ -52,14 +52,14 @@ SUBROUTINE init (self, solver, id, mesh)
                                ampl_turb, t_turn, t_turb, seed, t_damp, verbose
   logical, save:: first_time = .true.
   !---------------------------------------------------------------------------
-  !$omp critical (init_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
     read (io%input,turbulence_params)
     if (io%master) write (*,turbulence_params)
   end if
-  !$omp end critical (init_cr)
+  call io%lock%unset
   if (t_turb == 0.) t_turb = -1.5*t_turn
   self%id     = id
   self%seed   = seed

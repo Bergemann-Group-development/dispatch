@@ -51,14 +51,14 @@ SUBROUTINE init (self, solver, gamma)
    !----------------------------------------------------------------------------
    call trace%begin('initial_t%init')
    call scaling%init
-   !$omp critical (init_cr)
+   call io%lock%set
    if (first_time) then
      first_time = .false.
      initial_condition = self%initial_condition
      rewind (io%input); read (io%input, initial_params, iostat=iostat)
      if (io%master) write (*, initial_params)
    end if
-   !$omp end critical (init_cr)
+   call io%lock%unset
    self%initial_condition = initial_condition
    self%solver = trim(solver)
    select case(trim(self%initial_condition))

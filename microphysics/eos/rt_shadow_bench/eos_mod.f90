@@ -49,7 +49,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('eos_t%init')
   call scaling%init
-  !$omp critical (init_cr)
+  call io%lock%set
   if (first_time) then
   if (io%master) print *, &
      '------------------------ ideal equation-of-state -----------------------------'
@@ -63,7 +63,7 @@ SUBROUTINE init (self)
     first_time = .false.
     self%do_rt = do_rt
   end if
-  !$omp end critical (init_cr)
+  call io%lock%unset
   call trace%end()
 END SUBROUTINE init
 

@@ -83,12 +83,12 @@ SUBROUTINE init (self)
   namelist /rt_params/ dtime, grace, solver
   ! --------------------------------------------------------------------
   call trace_begin ('rt_t%init')
-  !$omp critical (init_cr)
+  call io%lock%set
   if (first_time) then
     rewind (io%input); read (io%input, rt_params, iostat=ignore)
     if (io%master) write (*, rt_params)
   end if
-  !$omp end critical (init_cr)
+  call io%lock%unset
   self%nv = 1                                                           ! time slots for dedt
   self%nw = 1                                                           ! no time deriv
   call self%patch_t%init                                                ! initialize patch
