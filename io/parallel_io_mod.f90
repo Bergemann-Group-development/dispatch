@@ -88,7 +88,7 @@ SUBROUTINE init (patch)
   !-----------------------------------------------------------------------------
   call trace%print_id (id)
   call trace%begin ('parallel_io_t%init')
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
@@ -106,7 +106,7 @@ SUBROUTINE init (patch)
       call file_out%openw (filename)
     end if
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   call time_slices%init (patch%nt)
   call trace%end()
 END SUBROUTINE init

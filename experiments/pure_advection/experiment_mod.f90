@@ -79,14 +79,14 @@ SUBROUTINE initial_conditions (self)
   !----------------------------------------------------------------------------
   call trace_begin('experiment_mod::initial_conditions')
 
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     rewind (io%input)
     read (io%input, experiment_params)
     if (io%master) write (*,experiment_params)
     first_time = .false.
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
 
   self%ptype = ptype
   self%pcentre = pcentre

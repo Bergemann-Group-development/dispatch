@@ -42,7 +42,7 @@ SUBROUTINE init (self)
   namelist /timestep_params/ verbose, time_order
   !.............................................................................
   call trace_begin ('timestep_t%init', 1)
-  !$omp critical (timestep_cr)
+  call io%lock%set
   if (time_order==-1) then
     time_order = 2
     rewind (io%input)
@@ -50,7 +50,7 @@ SUBROUTINE init (self)
     call io%namelist_warning ('timestep_params', iostat)
     write (io%output, timestep_params)
   end if
-  !$omp end critical (timestep_cr)
+  call io%lock%unset
   self%verbose = verbose
   self%time_order = time_order
   !---------------------------------------------------------------------------

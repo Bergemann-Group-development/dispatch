@@ -32,14 +32,14 @@ SUBROUTINE pre_init (self, patch)
   !-----------------------------------------------------------------------------
   call trace%begin ('lagrangian_t%init')
   self%patch => patch
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     rewind (io%input)
     read (io%input, lagrangian_params, iostat=iostat)
     write (io%output, lagrangian_params)
     first_time = .false.
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   call trace%end ()
 END SUBROUTINE pre_init
 

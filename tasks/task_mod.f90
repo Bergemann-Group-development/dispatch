@@ -263,7 +263,7 @@ SUBROUTINE init_params (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('task_t%init_params')
   call trace%print_id (ids)
-  !$omp critical (input_cr)
+  call io%lock%set
   !-----------------------------------------------------------------------------
   ! First thread to enter reads task_params
   !-----------------------------------------------------------------------------
@@ -294,7 +294,7 @@ SUBROUTINE init_params (self)
       end if
     end do
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   call trace%end ()
 END SUBROUTINE init_params
 

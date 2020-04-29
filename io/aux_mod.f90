@@ -86,7 +86,7 @@ SUBROUTINE init (self, name)
   logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
   call trace%begin ('aux_t%init')
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     if (.not.allocated(select)) then
       allocate (select(max_select))
@@ -100,7 +100,7 @@ SUBROUTINE init (self, name)
       call write_namelist (io%namelist)
     first_time = .false.
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   !-----------------------------------------------------------------------------
   ! Initialize the underlying data type, with its lock
   !-----------------------------------------------------------------------------

@@ -80,7 +80,7 @@ SUBROUTINE init (self)
     rho_ions, niMHD_courant, hardwire, eos
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     eos = self%eos
@@ -89,7 +89,7 @@ SUBROUTINE init (self)
     if (io%master) write (*, mhd_params)
     call timestep%init
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   self%eos = eos
   self%nu = nu
   self%gamma = gamma

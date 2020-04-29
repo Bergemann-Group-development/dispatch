@@ -92,7 +92,7 @@ SUBROUTINE pre_init (self, patch)
   self%patch => patch                           ! make the patch known
   self%id = patch%id                            ! for now, inherit
   self%dust%patch => self%patch                 ! make the patch known
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     rewind (io%input)
     read (io%input, particle_solver_params, iostat=iostat)
@@ -100,7 +100,7 @@ SUBROUTINE pre_init (self, patch)
     write (io%output, particle_solver_params)
     first_time = .false.
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   self%dust%detailed_timer = detailed_timer
   self%dust%ip_dbg = ip_dbg
   self%dust%i_dbg = i_dbg

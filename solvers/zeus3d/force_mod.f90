@@ -36,14 +36,14 @@ SUBROUTINE init (self, solver)
    namelist /force_params/ k, a0, t_turn, type
    !----------------------------------------------------------------------------
    call trace_begin('force_t%init')
-   !$omp critical (input_cr)
+   call io%lock%set
    if (first_time) then
      first_time = .false.
      rewind (io%input)
      read (io%input, force_params)
      if (io%master) write (*, force_params)
    end if
-   !$omp end critical (input_cr)
+   call io%lock%unset
    self%seed   = seed
    self%t_turn = t_turn
    self%a0     = a0

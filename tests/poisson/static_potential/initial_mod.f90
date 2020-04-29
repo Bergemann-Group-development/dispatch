@@ -32,14 +32,14 @@ SUBROUTINE init (self, solver, gamma)
   !----------------------------------------------------------------------------
   call trace%begin('initial_t%init')
 
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
     read (io%input, initial_params)
     if (io%master) write (*, initial_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   self%r0 = r0
   ! save global copy for use by `func_d0`.
   global_r0 = r0

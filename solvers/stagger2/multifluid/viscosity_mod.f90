@@ -35,14 +35,14 @@ SUBROUTINE init (self, solver)
    namelist /viscosity_params/ type, nu, i_gas, i_dust, nc
    !----------------------------------------------------------------------------
    call trace_begin('viscosity_t%init')
-   !$omp critical (input_cr)
+   call io%lock%set
    if (first_time) then
      first_time = .false.
      rewind (io%input)
      read (io%input, viscosity_params)
      if (io%master) write (*, viscosity_params)
    end if
-   !$omp end critical (input_cr)
+   call io%lock%unset
    self%solver = trim(solver)
    self%nu     = nu
    self%nc     = nc

@@ -52,7 +52,7 @@ SUBROUTINE init (self, solver, gamma)
   namelist /initial_params/ alpha, beta, epsilon, seed, read_random
   !----------------------------------------------------------------------------
   call trace_begin('initial_t%init')
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
@@ -60,7 +60,7 @@ SUBROUTINE init (self, solver, gamma)
     if (io%master) write (*, initial_params)
   end if
   self%solver = trim(solver)
-  !$omp end critical (input_cr)
+  call io%lock%unset
   self%mhd = .true.
   call trace_end
 END SUBROUTINE init

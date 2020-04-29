@@ -53,14 +53,14 @@ SUBROUTINE init (self, solver, gamma)
   namelist /disk_params/ disk_type, rho0, z_scale, r_scale, rho_floor
   !----------------------------------------------------------------------------
   call trace_begin('initial_t%init')
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
     read (io%input, disk_params)
     if (io%master) write (*, disk_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
 
   self%rho0 = rho0
   self%z_scale = z_scale

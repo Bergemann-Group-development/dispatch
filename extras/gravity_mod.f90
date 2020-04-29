@@ -46,7 +46,7 @@ SUBROUTINE init (self, link)
   namelist /gravity_params/ on, constant, axis, position, mass, minrad
   !-----------------------------------------------------------------------------
   call trace%begin ('selfgravity_t%init')
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
@@ -54,7 +54,7 @@ SUBROUTINE init (self, link)
     if (io%master) write (io%output, gravity_params)
     if (constant/=0.0) constant = constant * scaling%t**2 / scaling%l
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   if (on) then
     self%patch => task2patch(link%task)
     self%on = on

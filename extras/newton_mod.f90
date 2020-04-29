@@ -2,6 +2,7 @@
 !> Add Newton cooling to any solver
 !===============================================================================
 MODULE newton_mod
+  USE io_mod
   USE link_mod
   USE gpatch_mod
   USE mesh_mod
@@ -33,14 +34,14 @@ SUBROUTINE init (self, link)
   namelist /newton_params/ on, axis, position, scale, ee0, ee1, time
   !-----------------------------------------------------------------------------
   call trace%begin ('newton_t%init')
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io_unit%input)
     read (io_unit%input, newton_params, iostat=iostat)
     write (io_unit%output, newton_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   !-----------------------------------------------------------------------------
   associate (task => link%task)
   select type (task)

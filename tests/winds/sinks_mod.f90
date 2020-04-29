@@ -32,7 +32,7 @@ SUBROUTINE init (self)
   namelist /sinks_params/ verbose, mass_msun, radius_au  
   !-----------------------------------------------------------------------------
   call trace%begin ('sinks_t%init')
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     rewind (io%input)
     read (io%input, sinks_params, iostat=iostat)
@@ -41,7 +41,7 @@ SUBROUTINE init (self)
     write (io%namelist, sinks_params)
     first_time = .false.
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   self%mass = mass_msun*cgs%m_sun/scaling%m
   self%radius = radius_au*cgs%au/scaling%l
   if (verbose > 0) &

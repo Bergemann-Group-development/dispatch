@@ -41,7 +41,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Read experiment parameters and compute initial condition values
   !-----------------------------------------------------------------------------
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     rewind (io%input)
     read (io%input, experiment_params, iostat=iostat)
@@ -64,7 +64,7 @@ SUBROUTINE init (self)
     end if
     first_time = .false.
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   !-----------------------------------------------------------------------------
   ! Store the saved values in each of the many task instances
   !-----------------------------------------------------------------------------

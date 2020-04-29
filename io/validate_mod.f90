@@ -79,14 +79,14 @@ SUBROUTINE init (self)
   !.............................................................................
   call trace%begin ('validate_t%init')
   call trace%print_id (id)
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
     read (io%input, validate_params, iostat=iostat)
     write (io%output, validate_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   self%mode = mode
   self%verbose = verbose
   call trace%end()

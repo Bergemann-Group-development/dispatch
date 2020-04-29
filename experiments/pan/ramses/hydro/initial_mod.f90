@@ -43,14 +43,14 @@ SUBROUTINE init (self, solver, gamma)
   namelist /initial_params/ type
   !----------------------------------------------------------------------------
   call trace_begin('initial_t%init')
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
     read (io%input, initial_params)
     if (io%master) write (*, initial_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   if (present(gamma)) &
     self%gamma = gamma
   self%solver = trim(solver)
@@ -102,7 +102,7 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_solenoidal', itimer=itimer)
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     gamma = self%gamma
     rewind (io%input)
@@ -111,7 +111,7 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
     if (io%master) write (*, IC_solenoidal_params)
     first_time = .false.
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   self%gamma = gamma
   if (self%gamma == 1d0) then
     gamma_factor = csound**2
@@ -164,7 +164,7 @@ SUBROUTINE single_compressive (self, m, ff, idx)
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_compressive', itimer=itimer)
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     gamma = self%gamma
     rewind (io%input)
@@ -173,7 +173,7 @@ SUBROUTINE single_compressive (self, m, ff, idx)
     if (io%master) write (*, IC_compressive_params)
     first_time = .false.
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   self%gamma = gamma
   if (self%gamma == 1d0) then
     gamma_factor = csound**2
@@ -230,7 +230,7 @@ SUBROUTINE compressive_shear (self, m, ff, idx)
   integer, save  :: n=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_compressive', itimer=itimer)
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     gamma = self%gamma
     rewind (io%input)
@@ -239,7 +239,7 @@ SUBROUTINE compressive_shear (self, m, ff, idx)
     if (io%master) write (*, IC_compressive_params)
     first_time = .false.
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   self%gamma = gamma
   if (self%gamma == 1d0) then
     gamma_factor = csound**2
@@ -286,7 +286,7 @@ SUBROUTINE single_advection (self, m, ff, idx)
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_advection', itimer=itimer)
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     gamma = self%gamma
     rewind (io%input)
@@ -295,7 +295,7 @@ SUBROUTINE single_advection (self, m, ff, idx)
     if (io%master) write (*, IC_advection_params)
     first_time = .false.
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   self%gamma = gamma
   if (self%gamma == 1d0) then
     gamma_factor = csound**2
@@ -348,13 +348,13 @@ SUBROUTINE exa256 (self, m, ff, idx)
   ff(:,:,:,:) = 0.0
   allocate (u(m(1)%n))
   allocate (d(m(1)%n))
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     open (io_unit%data, file='data/exa256/t0.02.raw', form='unformatted', &
       access='direct', recl=m(1)%n*4)
     first_time = .false.
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   self%time = 0.02
   ix=m(1)%p/m(1)%d+0.5-m(1)%n/2
   iy=m(2)%p/m(2)%d+0.5-m(2)%n/2
@@ -420,7 +420,7 @@ SUBROUTINE raw (self, m, ff, idx)
   ! we only use one thread per rank to initialize, computing also how many calls
   ! will be made, so the buffer can be deallocated when all patches are done
   !-----------------------------------------------------------------------------
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     n = nint(m%b/m%d)
@@ -432,7 +432,7 @@ SUBROUTINE raw (self, m, ff, idx)
     end do
     close (io_unit%data)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   i = 1 + nint(m%p/m%d) - m%n/2                         ! index offsets
   jv(1) = idx%d                                           ! variable index translation
   jv(2) = idx%px

@@ -79,7 +79,7 @@ SUBROUTINE init (self, llc, urc)
   real, dimension(:,:,:,:), pointer :: src, rk
   integer :: idir
   !---------------------------------------------------------------------
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     allocate(d(1,1,1))
@@ -102,7 +102,7 @@ SUBROUTINE init (self, llc, urc)
     print *, 'Rt boundaries: self% rk, src', self%rk, self%src
     deallocate(src,d,e,rk)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
 END SUBROUTINE init
 
 SUBROUTINE update(self)

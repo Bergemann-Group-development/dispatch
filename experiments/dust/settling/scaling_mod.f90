@@ -43,7 +43,7 @@ SUBROUTINE init (self, l_o, d_o, u_o, mu_o)
   !----------------------------------------------------------------------------
   if (.not.first_time) return
   call trace_begin('scaling_t%init')
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     !-----------------------------------------------------------------------------
     ! Compute CGS values of orbit speed, sound speed, and disk scale height
@@ -81,7 +81,7 @@ SUBROUTINE init (self, l_o, d_o, u_o, mu_o)
     write (io_unit%nml, scaling_nml)                 ! pass on to Python
     first_time = .false.
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   self%l = l
   self%d = d
   self%u = u

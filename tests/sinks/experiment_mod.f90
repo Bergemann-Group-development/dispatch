@@ -29,14 +29,14 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('experiment_t%init')
   call self%solver_t%init
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     rewind (io%input)
     read (io%input, experiment_params, iostat=iostat)
     write (io%output, experiment_params)
     first_time = .false.
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   d = density_cgs/scaling%d
   e = (cs_kms*1e5/scaling%u)**2*d/(self%gamma*(self%gamma-1.0))
   self%mem(:,:,:,self%idx%d,1,1) = d

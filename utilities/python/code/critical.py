@@ -61,7 +61,7 @@ def critical(file,log1,log2,commit=False,verbose=0):
                         log2.write(str+'\n')
                         filename=True
                     str='{:4d} {}'.format(n0,full_line)
-                    print(str.rstrip())
+                    #print(str.rstrip())
                     log2.write(str)
 
         if critical and commit:
@@ -85,7 +85,7 @@ def find(log1,log2):
                  if file.endswith('.f90'):
                     f=file if root=='.' else root.lstrip('.').lstrip(os.sep)+os.sep+file
                     f=f.strip()
-                    critical(f,log1,log2,verbose=1)
+                    critical(f,log1,log2,verbose=1,commit=True)
 
 if __name__ == '__main__':
     log1=open('critical_input.log','w')

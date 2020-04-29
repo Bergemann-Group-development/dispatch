@@ -497,7 +497,7 @@ SUBROUTINE init_default (self)
   ! Read and set patch parameters; the preferred defalts may have been set by
   ! the calling code -- typically in experiment_mod.f90
   !-----------------------------------------------------------------------------
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     ! -- if values have been imposed from above, FI show them as default
     if (any(self%n  /= 0)) n  = self%n          ! patch dimensions
@@ -532,7 +532,7 @@ SUBROUTINE init_default (self)
   io%print_time    = print_time
   if (io%nv==0) &
     io%nv = self%nv
-  !$omp end critical (input_cr)
+  call io%lock%unset
   call self%task_t%init                         ! sets unique id
   self%restart     = io%restart                 ! restart snapshot
   self%grace       = grace                      ! grace fraction of dtime

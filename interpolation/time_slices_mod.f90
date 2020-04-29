@@ -39,7 +39,7 @@ SUBROUTINE init (self, nt)
   !-----------------------------------------------------------------------------
   call trace%begin ('time_slices_t%init')
   call lagrange%init
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     rewind (io%input)
     read (io%input, time_slices_params, iostat=iostat)
@@ -50,7 +50,7 @@ SUBROUTINE init (self, nt)
     call lagrange%test
     first_time = .false.
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   self%order = order
   call trace%end()
 END SUBROUTINE init

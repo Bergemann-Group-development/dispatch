@@ -56,14 +56,14 @@ SUBROUTINE init (self)
   namelist /experiment_params/ closed_upper
   !----------------------------------------------------------------------------
   call trace_begin('experiment_mod::init', itimer=itimer)
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
     read (io%input, experiment_params)
     if (io%master) write (*,experiment_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   !----------------------------------------------------------------------------
   ! Initialize the patch
   !----------------------------------------------------------------------------  

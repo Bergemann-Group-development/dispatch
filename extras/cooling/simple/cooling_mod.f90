@@ -55,7 +55,7 @@ SUBROUTINE init (self)
     niter_max, max_fraction, end_fraction, mu
   !-----------------------------------------------------------------------------
   call trace%begin ('simple/cooling_t%init')
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     rewind (io%input)
     read (io%input, cooling_params, iostat=iostat)
@@ -68,7 +68,7 @@ SUBROUTINE init (self)
     end if
     first_time = .false.
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   select case (trim(type))
   case ('Casiana')
     self%function => cooling_Casiana

@@ -38,7 +38,7 @@ SUBROUTINE init (self)
   namelist /custom_bc_params/ hot_temp, cool_temp
   !----------------------------------------------------------------------------
   call trace_begin('initial_t%init')
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
@@ -74,7 +74,7 @@ SUBROUTINE init (self)
         ibc = 3
     end SELECT
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   self%ibc = ibc
   self%obc = obc
   if (obc==0) then

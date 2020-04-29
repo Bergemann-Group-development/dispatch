@@ -210,7 +210,7 @@ SUBROUTINE init (self)
     only_high_levels, force_refine, file, n_ad_hoc
   !-----------------------------------------------------------------------------
   call trace%begin ('sink_particles_t%init')
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io_unit%input)
@@ -223,7 +223,7 @@ SUBROUTINE init (self)
     call particle_solver%init
     allocate (sink_particles%task_list)
   endif
-  !$omp end critical (input_cr)
+  call io%lock%unset
   call sink_particles%task_list%init ('snkp')
   call sink_task_list%init ('sink')
   self%on = on
@@ -562,7 +562,7 @@ SUBROUTINE ad_hoc_add (self, link)
   if (.not.self%on) return
   call trace%begin ('sink_particles_t%ad_hoc_add')
   patch => link%task
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     !---------------------------------------------------------------------------
@@ -580,7 +580,7 @@ SUBROUTINE ad_hoc_add (self, link)
       enddo
     endif
   endif
-  !$omp end critical (input_cr)
+  call io%lock%unset
   !-----------------------------------------------------------------------------
   ! Go through list of hand made sinks, and create them, if in patch
   !-----------------------------------------------------------------------------

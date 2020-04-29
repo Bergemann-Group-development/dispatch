@@ -132,7 +132,7 @@ SUBROUTINE add (self, link)
   call trace%begin ('trace_particles_t%add')
   self%patch => task2patch (link%task)
   associate (patch => self%patch)
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
@@ -141,7 +141,7 @@ SUBROUTINE add (self, link)
       write (io%output, trace_particle_params)
     call random%init
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   select type (patch)
   class is (patch_t)
   self%on = on

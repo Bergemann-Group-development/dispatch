@@ -55,14 +55,14 @@ SUBROUTINE init (self)
   call self%solver_t%init
   self%periodic = [.false., .true., .true.]
 
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     rewind (io%input)
     read (io%input, experiment_params)
     if (io%master) write (*,experiment_params)
     first_time = .false.
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
 
   ! fool-proofing
   if (Bx_l .ne. Bx_r) then
