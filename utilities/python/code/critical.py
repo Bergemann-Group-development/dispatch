@@ -10,7 +10,7 @@ import os
 #%%
 def critical(file,log1,log2,commit=False,verbose=0):
     """ Find and change omp critical (input_cr) """
-    region='(init_cr)'
+    region='(cleanup_cr)'
     with open(file) as fo:
         lines=[]
         n0=0        # line number
@@ -49,6 +49,7 @@ def critical(file,log1,log2,commit=False,verbose=0):
                     watch=False
             lines.append(full_line)
 
+            # detect other crtical regions
             if line.startswith('!$omp critical') or \
                line.startswith('!$omp end critical'):
                 if line.find('input_cr') < 0:
@@ -58,7 +59,7 @@ def critical(file,log1,log2,commit=False,verbose=0):
                         log2.write(str+'\n')
                         filename=True
                     str='{:4d} {}'.format(n0,full_line)
-                    #print(str.rstrip())
+                    print(str.rstrip())
                     log2.write(str)
 
         if critical and commit:
