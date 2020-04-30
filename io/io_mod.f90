@@ -3,6 +3,7 @@
 !===============================================================================
 MODULE io_mod
   USE omp_mod
+  USE omp_lock_mod
   USE omp_timer_mod
   USE mpi_mod
   USE io_unit_mod
@@ -70,6 +71,7 @@ MODULE io_mod
     real:: dmax=1.0
     real:: gb_out=0.0
     type(mpi_counter_t):: counter
+    type(lock_t):: lock
   contains
     procedure:: init
     procedure:: open_rank_file
@@ -135,8 +137,6 @@ SUBROUTINE init (self, name)
   end if
   self%master = mpi%master
   io%master   = mpi%master
-  !$omp parallel
-  !$omp end parallel
   !-----------------------------------------------------------------------------
   ! I/O unit numbers, for convenience and backwards compatibility.  All other
   ! unit numbers should be taken directly from io_unit_mod
@@ -234,6 +234,7 @@ SUBROUTINE init (self, name)
     if (mpi%rank > 0) then
       io_unit%output = io_unit%mpi
     end if
+    call io%lock%init ('io')
     !$omp end critical (open_cr)
     io_unit%master = io%master .and. omp%master
     write (io_unit%log,'(a,2i4,3l4)') &

@@ -61,7 +61,7 @@ SUBROUTINE pre_init (self, patch)
   call trace%begin ('selfgravity_t%pre_init')
   self%patch => patch
   !
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
@@ -69,7 +69,7 @@ SUBROUTINE pre_init (self, patch)
     call io%namelist_warning('selfgravity_params', iostat)
     if (io%master) write (io%output, selfgravity_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   !
   patch%nw = nw
   self%d0 = d0

@@ -48,7 +48,7 @@ SUBROUTINE init (self)
   namelist /poisson_params/ tolerance, floor, max_iter, fourPiG, precondition, &
                             verbose, solver, chebyshev
   !-----------------------------------------------------------------------------
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     fourpiG = scaling%grav
@@ -57,7 +57,7 @@ SUBROUTINE init (self)
     call io%namelist_warning ('poisson_params', iostat)
     if (io%master) write (io%output, poisson_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   select case(trim(solver))
   case ('cg')
     self%update => cg

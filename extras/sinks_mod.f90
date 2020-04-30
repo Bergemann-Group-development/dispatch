@@ -39,11 +39,11 @@ SUBROUTINE init (self)
   if (first_time) then
     !$omp critical (sinks_cr)
     if (first_time) then
-      !$omp critical (input_cr)
+      call io%lock%set
       rewind (io%input)
       read (io%input, sinks_params, iostat=iostat)
       write (io%output, sinks_params)
-      !$omp end critical (input_cr)
+      call io%lock%unset
       self%radius = radius
       self%velocity = velocity
       self%SN_time = SN_time

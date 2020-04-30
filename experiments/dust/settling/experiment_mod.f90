@@ -68,7 +68,7 @@ SUBROUTINE init (self)
   ! The OpenMP "critical region" only allows one thread at a time, and the first
   ! one sets first_time = .false., which prevents the nexts ones from reading.
   !-----------------------------------------------------------------------------
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     rewind (io%input)
     read (io%input, experiment_params, iostat=iostat)
@@ -76,7 +76,7 @@ SUBROUTINE init (self)
     write (io%output, experiment_params)
     first_time = .false.
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   call scaling%init
   self%gamma = scaling%gamma
   self%csound = 1.0

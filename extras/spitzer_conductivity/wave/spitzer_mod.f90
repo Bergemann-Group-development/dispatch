@@ -58,14 +58,14 @@ SUBROUTINE init (self, link)
   integer:: iostat, gn(3)
   namelist /spitzer_conductivity_params/ do_spitzer, amp, theta_mg, dtgerr, bmin, texp, sigma_e
   !.....................................................................
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     rewind (io_unit%input)
     read (io_unit%input, spitzer_conductivity_params,iostat=iostat)
     if (io%master) write (*, spitzer_conductivity_params)
     first_time = .false.
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   if (do_spitzer) then
     self%patch => task2patch(link%task)
     gn = self%patch%mesh%gn

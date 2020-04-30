@@ -146,14 +146,14 @@ SUBROUTINE pre_init (self, link)
   ! Read parameters
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_t%pre_init')
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
     read (io%input, sc_rt_params)
     if (io%master) write (io%output, sc_rt_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   self%patch => gpatch%cast2gpatch(link%task)
   self%on = on
   self%nt = nt

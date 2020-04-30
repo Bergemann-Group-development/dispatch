@@ -44,7 +44,7 @@ SUBROUTINE init (self, solver, id, mesh)
                            drag, csound, b, sigma
    !----------------------------------------------------------------------------
    call trace%begin('force_t%init')
-   !$omp critical (input_cr)
+   call io%lock%set
    if (first_time) then
      first_time = .false.
      rewind (io%input)
@@ -54,7 +54,7 @@ SUBROUTINE init (self, solver, id, mesh)
        write (io_unit%nml, force_params)
      end if
    end if
-   !$omp end critical (input_cr)
+   call io%lock%unset
    self%solver = trim(solver)
    self%drag   = trim(drag)
    self%i_gas  = i_gas

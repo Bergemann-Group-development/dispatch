@@ -72,7 +72,7 @@ SUBROUTINE init_bifrost_vars (self)
   call trace%begin ('bifrost_mesh_t%init_bifrost_vars')
   !first_time=.false.
   if (first_time) then
-    !$omp critical (init_cr)
+    call io%lock%set
     first_time = .false.
     m => self%mesh(1)   ! X direction
     allocate(xm     (m%b_sb:m%b_eb))
@@ -100,7 +100,7 @@ SUBROUTINE init_bifrost_vars (self)
     b = -25./256.
     a = .5-b-c
     a1st = 0.5
-    !$omp end critical (init_cr)
+    call io%lock%unset
   end if
   call trace%end()
 
@@ -306,7 +306,7 @@ SUBROUTINE read_bifrost_mesh (self)
   namelist /bifrost_mesh_params/ meshfile, dims, dx, dy, dz
   ! ....................................................................
   call trace%begin ('bifrost_t%read_mesh')
-  !$omp critical (init_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input); read (io%input, bifrost_mesh_params, iostat=iostat)
@@ -368,7 +368,7 @@ SUBROUTINE read_bifrost_mesh (self)
     call mpi%abort
   end if
   close (io_unit%data)
-  !$omp end critical (init_cr)
+  call io%lock%unset
   ! --------------------------------------------------------------------
   ! Set up index space
   ! --------------------------------------------------------------------

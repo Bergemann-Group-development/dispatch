@@ -61,7 +61,7 @@ SUBROUTINE init (self, patch)
                           cs_kms, incremental
   !-----------------------------------------------------------------------------
   call trace%begin ('winds_t%init')
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     rewind (io%input)
     read (io%input, winds_params, iostat=iostat)
@@ -70,7 +70,7 @@ SUBROUTINE init (self, patch)
     write (io%namelist, winds_params)
     first_time = .false.
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   self%velocity = velocity_kms*1e5/scaling%u
   self%mdot = msun_per_yr*cgs%m_sun/scaling%m/(cgs%yr/scaling%t)
   self%ramp_time = ramp_time_myr*cgs%yr*1e6/scaling%t

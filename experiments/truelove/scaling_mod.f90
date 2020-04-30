@@ -34,13 +34,13 @@ SUBROUTINE init (self)
   namelist / scaling_params / l0
   !----------------------------------------------------------------------------
   if (.not.first_time) return
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     rewind (io%input)
     read (io%input, scaling_params)
     if (io%master) write (*, scaling_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   first_time = .false.
 
   call cgs%init

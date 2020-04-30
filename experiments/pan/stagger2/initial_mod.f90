@@ -43,14 +43,14 @@ SUBROUTINE init (self, solver, gamma)
   namelist /initial_params/ type
   !----------------------------------------------------------------------------
   call trace_begin('initial_t%init')
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
     read (io%input, initial_params)
     if (io%master) write (*, initial_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   self%solver = trim(solver)
   if (present(gamma)) then
     self%gamma = gamma
@@ -146,7 +146,7 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   call trace_begin('initial_t:single_solenoidal', itimer=itimer)
   gamma = self%gamma
   if (first_time) then
-    !$omp critical (input_cr)
+    call io%lock%set
     if (first_time) then
       rewind (io%input)
       read (io%input, IC_solenoidal_params)
@@ -154,7 +154,7 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
       if (io%master) write (*, IC_solenoidal_params)
       first_time = .false.
     end if
-    !$omp end critical (input_cr)
+    call io%lock%unset
   end if
   self%gamma = gamma
   if (gamma==1.00) then
@@ -209,7 +209,7 @@ SUBROUTINE single_compressive (self, m, ff, idx)
   call trace_begin('initial_t:single_compressive', itimer=itimer)
   gamma = self%gamma
   if (first_time) then
-    !$omp critical (input_cr)
+    call io%lock%set
     if (first_time) then
       rewind (io%input)
       read (io%input, IC_compressive_params)
@@ -217,7 +217,7 @@ SUBROUTINE single_compressive (self, m, ff, idx)
       if (io%master) write (*, IC_compressive_params)
       first_time = .false.
     end if
-    !$omp end critical (input_cr)
+    call io%lock%unset
   end if
   self%gamma = gamma
   if (gamma==1.00) then
@@ -273,7 +273,7 @@ SUBROUTINE compressive_shear (self, m, ff, idx)
   call trace_begin('initial_t:compressive_shear', itimer=itimer)
   gamma = self%gamma
   if (first_time) then
-    !$omp critical (input_cr)
+    call io%lock%set
     if (first_time) then
       rewind (io%input)
       read (io%input, IC_compressive_params)
@@ -283,7 +283,7 @@ SUBROUTINE compressive_shear (self, m, ff, idx)
         pi2, m(1)%b, m(1)%h
       first_time = .false.
     end if
-    !$omp end critical (input_cr)
+    call io%lock%unset
   end if
   self%gamma = gamma
   if (gamma==1.00) then
@@ -336,7 +336,7 @@ SUBROUTINE single_advection (self, m, ff, idx)
   call trace_begin('initial_t:single_advection', itimer=itimer)
   gamma = self%gamma
   if (first_time) then
-    !$omp critical (input_cr)
+    call io%lock%set
     if (first_time) then
       rewind (io%input)
       read (io%input, IC_advection_params)
@@ -344,7 +344,7 @@ SUBROUTINE single_advection (self, m, ff, idx)
       if (io%master) write (*, IC_advection_params)
       first_time = .false.
     end if
-    !$omp end critical (input_cr)
+    call io%lock%unset
   end if
   self%gamma = gamma
   if (gamma==1.00) then

@@ -53,7 +53,7 @@ SUBROUTINE init (self, solver, id, mesh)
   logical, save:: first_time = .true.
   !-----------------------------------------------------------------------------
   call trace%begin ('force_t%init')
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
@@ -77,7 +77,7 @@ SUBROUTINE init (self, solver, id, mesh)
   self%fran = 0.0
   self%selected => turbulence
   call self%random%init (seed)
-  !$omp end critical (input_cr)
+  call io%lock%unset
   call trace%end()
 END SUBROUTINE init
 

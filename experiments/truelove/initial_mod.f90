@@ -117,13 +117,13 @@ SUBROUTINE condition (self, m, f, idx)
   !----------------------------------------------------------------------------
   call trace%begin('initial_t%condition')
 
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     rewind (io%input)
     read (io%input, experiment_params)
     if (io%master) write (*, experiment_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
 
 !-----------------------------------------------------------------------
 !      Calculate uniform cloud parameters.

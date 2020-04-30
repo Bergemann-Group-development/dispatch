@@ -27,14 +27,14 @@ SUBROUTINE init (self, solver)
   namelist /force_params/ y_grav_acc
   !----------------------------------------------------------------------------
   call trace%begin('force_t%init')
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
     read (io%input, force_params, iostat=iostat)
     if (io%master) write (*, force_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
 
   self%y_grav_acc = y_grav_acc
   self%selected => vertical_acceleration

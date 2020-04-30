@@ -59,8 +59,9 @@ CONTAINS
 !===============================================================================
 SUBROUTINE init (self, kind, id)
   class(lock_t), target:: self
-  integer, optional:: id
   character(len=*), optional:: kind
+  integer, optional:: id
+  !.............................................................................
   character(len=64):: filename
   logical omp_in_parallel
   logical, save:: tasks=.true., links=.false.
@@ -77,6 +78,9 @@ SUBROUTINE init (self, kind, id)
 #endif
   !$omp critical (input_cr)
   if (.not.self%initialized) then
+    !---------------------------------------------------------------------------
+    ! This part is executed only once, reading parameters and opening log files
+    !---------------------------------------------------------------------------
     if (first_time) then
       rewind (io_unit%input)
       read (io_unit%input, lock_params, iostat=iostat)
@@ -111,6 +115,9 @@ SUBROUTINE init (self, kind, id)
       omp_lock%on = on
       first_time = .false.
     end if
+    !---------------------------------------------------------------------------
+    ! The part below is executed once for all locks
+    !---------------------------------------------------------------------------
     call omp_init_nest_lock (self%lock)
     if (present(id)) then
       self%id = id
@@ -179,6 +186,11 @@ SUBROUTINE set (self, label, itimer)
 #ifdef TRACE 
   call trace%begin('lock_t%set')
 #endif
+  if (.not. self%initialized) then
+    write (stderr,'(a,i4)') &
+    'omp_lock_t%set WARNING: lock not initialized, thread =', omp%thread
+  call self%init
+  end if
   !-----------------------------------------------------------------------------
   ! Must print log info before the lock, to reveal dead-locks
   !-----------------------------------------------------------------------------
@@ -315,6 +327,14 @@ SUBROUTINE unset (self, label)
 #ifdef TRACE 
   call trace%begin('lock_t%unset')
 #endif
+  !-----------------------------------------------------------------------------
+  ! It should be impossible to come here with an uninitialized lock
+  !-----------------------------------------------------------------------------
+  if (.not. self%initialized) then
+    write (stderr,'(a,i4)') &
+      'omp_lock_t%unset ERROR: lock not initialized, thread =', omp%thread
+    stop 'omp_lock_t%unset'
+  end if
   self%level = self%level-1
   level = self%level
   !$omp flush

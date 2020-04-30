@@ -93,7 +93,7 @@ SUBROUTINE init (self, n, ng)
   namelist /prolong_params/ verbose, array_notation, fix_nml
   !-----------------------------------------------------------------------------
   if (first_time) then
-    !$omp critical (input_cr)
+    call io%lock%set
     if (first_time) then
       call trace%begin ('prolong_t%init')
       rewind (io%input)
@@ -125,7 +125,7 @@ SUBROUTINE init (self, n, ng)
       call trace%end ()
       first_time = .false.
     end if
-    !$omp end critical (input_cr)
+    call io%lock%unset
   end if
 END SUBROUTINE init
 

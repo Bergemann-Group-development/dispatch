@@ -10,6 +10,7 @@
 !> compiled.  It should only be used to trace problems with locks.
 !===============================================================================
 MODULE omp_lock_mod
+  USE io_mod
   USE io_unit_mod
   USE omp_mod
   USE omp_timer_mod
@@ -80,7 +81,7 @@ SUBROUTINE init (self, kind, id)
   call trace%begin('lock_t%init')
 #endif
   if (.not.self%initialized) then
-    !$omp critical (input_cr)
+    call io%lock%set
     if (.not.self%initialized) then
       if (first_time) then
         rewind (io_unit%input)
@@ -149,7 +150,7 @@ SUBROUTINE init (self, kind, id)
           self%kind, self%id, set_id
       self%initialized = .true.
     end if
-    !$omp end critical (input_cr)
+    call io%lock%unset
   end if
 #ifdef TRACE 
   call trace%end()

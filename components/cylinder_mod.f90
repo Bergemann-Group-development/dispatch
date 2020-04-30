@@ -43,7 +43,7 @@ SUBROUTINE init (self)
   ! Parameters
   !-----------------------------------------------------------------------------
   call trace%begin ('cylinder_t%init')
-  !$omp critical (input_cr)
+  call io%lock%set
   rewind (io%input)
   read (io%input, cylinder_params, iostat=iostat)
   call io%namelist_warning ('cylinder_params', iostat)

@@ -63,14 +63,14 @@ SUBROUTINE condition (self, m, ff, idx)
                   a_d=0.2, f_d=5.0, x_disc = -4.0
   namelist /initial_params/ P_l, P_r, rho_l, &
                            vx_l, vx_r, a_d, f_d, x_disc
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     rewind (io%input)
     read (io%input, initial_params)
     if (io%master) write (*,initial_params)
     first_time = .false.
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   !---------------------------------------------------------------------
   ! Point amd allocate memory
   !---------------------------------------------------------------------

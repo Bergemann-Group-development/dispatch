@@ -37,14 +37,14 @@ SUBROUTINE init (self, solver)
   namelist /initial_params/ type
   !----------------------------------------------------------------------------
   call trace_begin('initial_t%init')
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
     read (io%input, initial_params)
     if (io%master) write (*, initial_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   self%solver = trim(solver)
   select case (type)
   case ('single_solenoidal')
@@ -91,7 +91,7 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_solenoidal', itimer=itimer)
   if (first_time) then
-    !$omp critical (input_cr)
+    call io%lock%set
     if (first_time) then
       rewind (io%input)
       read (io%input, initial_solenoidal_params)
@@ -99,7 +99,7 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
       if (io%master) write (*, initial_solenoidal_params)
       first_time = .false.
     end if
-    !$omp end critical (input_cr)
+    call io%lock%unset
   end if
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
@@ -147,7 +147,7 @@ SUBROUTINE single_compressive (self, m, ff, idx)
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_compressive', itimer=itimer)
   if (first_time) then
-    !$omp critical (input_cr)
+    call io%lock%set
     if (first_time) then
       rewind (io%input)
       read (io%input, initial_compressive_params)
@@ -155,7 +155,7 @@ SUBROUTINE single_compressive (self, m, ff, idx)
       if (io%master) write (*, initial_compressive_params)
       first_time = .false.
     end if
-    !$omp end critical (input_cr)
+    call io%lock%unset
   end if
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
@@ -202,7 +202,7 @@ SUBROUTINE single_advection (self, m, ff, idx)
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_advection', itimer=itimer)
   if (first_time) then
-    !$omp critical (input_cr)
+    call io%lock%set
     if (first_time) then
       rewind (io%input)
       read (io%input, initial_advection_params)
@@ -210,7 +210,7 @@ SUBROUTINE single_advection (self, m, ff, idx)
       if (io%master) write (*, initial_advection_params)
       first_time = .false.
     end if
-    !$omp end critical (input_cr)
+    call io%lock%unset
   end if
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub

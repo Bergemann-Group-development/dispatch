@@ -37,7 +37,7 @@ SUBROUTINE init (self, solver, gam)
   integer:: iostat
   !----------------------------------------------------------------------------
   call trace_begin('initial_t%init')
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
@@ -45,7 +45,7 @@ SUBROUTINE init (self, solver, gam)
     if (io%master) write (*, initial_params)
     call scaling%init()
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   self%solver = trim(solver)
   self%clump_pos = clump_pos/scaling%l
   self%clump_a = clump_a/scaling%l

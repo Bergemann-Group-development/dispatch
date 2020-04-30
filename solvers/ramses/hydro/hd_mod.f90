@@ -119,7 +119,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Ramses specific things
   !-----------------------------------------------------------------------------
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
@@ -132,7 +132,7 @@ SUBROUTINE init (self)
     isothermal = .true.
   if (isothermal) &
     gamma = 1d0
-  !$omp end critical (input_cr)
+  call io%lock%unset
   self%riemann = riemann
   self%courant = courant_factor
   self%gamma = gamma

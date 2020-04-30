@@ -42,7 +42,7 @@ MODULE mesa_mod
     namelist /mesa_params/ mesa_threshhold_msun, mesa_min_mass_msun
     call trace%begin ('mesa_t%pre_init')
     call self%sinks_t%pre_init(patch)
-    !$omp critical (init_cr)
+    call io%lock%set
     if (first_time) then
       rewind (io%input)
       read (io%input, mesa_params, iostat=iostat)
@@ -53,7 +53,7 @@ MODULE mesa_mod
       write (io%namelist, mesa_params)
       first_time = .false.
     end if
-    !$omp end critical (init_cr)
+    call io%lock%unset
     !-----------------------------------------------------------------------------
     call trace%end ()
   END SUBROUTINE pre_init
@@ -127,9 +127,18 @@ MODULE mesa_mod
     real(8) :: next_save
     character(64) :: model_path
     type(acc_struct) :: accretion
+<<<<<<< HEAD
 
     namelist /query/ accretion, sync_point, next_save, model_path
     next_save = next_save*scaling%t
+=======
+    character(*) :: path
+    character(256) :: photo_path
+
+    namelist /query/ accretion, sync_point, save_point, photo_path
+
+    photo_path = path
+>>>>>>> cab3af90fcd1a6bc03651e71901d38121866fad1
     accretion%time = self%time*scaling%t
     accretion%mdot =  (self%mass-self%last_mass)*scaling%m/((self%time-self%last_time)*scaling%t)
     write(self%write_unit, query,DELIM="APOSTROPHE")

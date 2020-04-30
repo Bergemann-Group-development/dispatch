@@ -52,14 +52,14 @@ SUBROUTINE condition (self, m, f, idx)
   !----------------------------------------------------------------------------
   call trace%begin('initial_t%init')
 
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
     read (io%input, experiment_params)
     if (io%master) write (*, experiment_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
 
   m1 => m(1)
   m2 => m(2)

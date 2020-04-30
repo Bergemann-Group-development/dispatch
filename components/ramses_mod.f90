@@ -214,7 +214,7 @@ SUBROUTINE init (self, name)
   !-----------------------------------------------------------------------------
   ! The first thread reads the namelist parameters and saves them
   !-----------------------------------------------------------------------------
-  !$omp critical (init_cr)
+  call io%lock%set
   if (first_time) then
     first_time=.false.
     ! default values
@@ -241,7 +241,7 @@ SUBROUTINE init (self, name)
     shared%levelmin = levelmin
     shared%levelmax = levelmax
   end if
-  !$omp end critical (init_cr)
+  call io%lock%unset
   !-----------------------------------------------------------------------------
   ! All threads save the parameters in their private parts, including the
   ! scaling information.  The selection of RAMSES data we read is based on

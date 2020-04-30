@@ -129,7 +129,7 @@ SUBROUTINE init (self, particles)
   !-----------------------------------------------------------------------------
   call trace%begin ('dust_t%init')
   self%particles => particles
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     rewind (io%input)
     read (io%input, dust_params, iostat=iostat)
@@ -140,7 +140,7 @@ SUBROUTINE init (self, particles)
     n_bin = max(1,n_bin)
     first_time = .false.
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   self%kernel => test_kernel
   self%n_bin = n_bin
   self%verbose = verbose
