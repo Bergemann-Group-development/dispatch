@@ -160,6 +160,7 @@ SUBROUTINE init (self, name)
       self%rundir = trim(datadir)//self%sep                     ! data/
     end if
     !---------------------------------------------------------------------------
+    if (io%do_output) call os%mkdir (trim(datadir))
     open (io_unit%nml, file=trim(self%rundir)//'params.nml', form='formatted', status='unknown')
     open (io_unit%hash, file=trim(self%rundir)//'hash.log', form='formatted', status='unknown')
     open (self%input, file=self%inputname, form='formatted', status='old')

@@ -8,6 +8,7 @@ OPTS = debug
 SOLVER   = ramses/hydro
 #SOLVER  = muscl
 #SOLVER  = stagger2/e
+PARTICLE_SOLVER = dust
 
 # Source main configuration Makefile
 TOP      = ../../..

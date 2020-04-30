@@ -34,3 +34,4 @@ scaling_mod.o           : io_mod.o units_mod.o
 extras_mod.o            : io_mod.o trace_mod.o patch_mod.o gpatch_mod.o list_mod.o connect_mod.o forces_mod.o \
                           trace_particles_mod.o particle_solver_mod.o SN_mod.o sinks_mod.o selfgravity_mod.o \
                           cooling_mod.o lagrangian_mod.o SN_mod.o
+particles_mod.o         : particle_mod.o

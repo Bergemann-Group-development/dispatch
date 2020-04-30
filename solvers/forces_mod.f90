@@ -28,7 +28,7 @@ MODULE forces_mod
   private
   type, public:: forces_t
     type(force_t):: force
-    class(gpatch_t), pointer:: patch
+    class(gpatch_t), pointer:: patch => null()
     real, dimension(:,:,:), pointer:: Ux=>null(), Uy=>null(), Uz=>null()
   contains
     procedure:: pre_init

@@ -8,6 +8,7 @@ OPTS = optimized
 UPD             = adams_bashforth
 SOLVER          = stagger2/e
 EXEC            = dispatch.x
+PARTICLE_SOLVER = KDK
 TOP             = ../../..
 
 # Tomida & Hori, with opacity

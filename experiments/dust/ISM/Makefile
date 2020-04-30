@@ -11,7 +11,7 @@ OPTS =
 SOLVER          = ramses/hydro
 #SOLVER          = ramses/mhd
 #SOLVER          = stagger2/e
-PARTICLE_SOLVER = KDK
+PARTICLE_SOLVER = dust
 EXEC            = dispatch.x
 TOP             = ../../..
 
