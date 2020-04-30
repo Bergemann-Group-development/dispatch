@@ -73,10 +73,10 @@
 
       retry_limit = 100
 
-      initial_mass = 0.1
+      initial_mass = 1.0
 
-      max_star_mass_for_gain = 10.0
-      mass_change = 1e-5
+      !max_star_mass_for_gain = 10.0
+      !mass_change = 1e-5
 
       !----- Make sure we use a network with deuterium for proper PMS evolution -------
       default_net_name = 'pp_extras.net'
@@ -91,7 +91,7 @@
 
       !---------------------------
       ! limit for change in mdot
-      delta_mdot_atol = 1d-3 ! Msun/yr --- tolerance for absolute changes
+      delta_mdot_atol = 1d-5 ! Msun/yr --- tolerance for absolute changes
       delta_mdot_rtol = 3.0 ! tolerance for relative changes
 
       !Pextra_factor = -1 ! keep the old form for now
@@ -112,9 +112,7 @@
 
       velocity_logT_lower_bound = 8 
       max_dt_yrs_for_velocity_logT_lower_bound = 0.1
-
-      !varcontrol_target = 1d-3
-      
+ 
       dX_nuc_drop_limit = 5d-2
       dX_nuc_drop_limit_at_high_T = 5d-3 ! for center logT > 9.45
 
@@ -159,11 +157,12 @@
       when_to_stop_rtol = 1d-3
       when_to_stop_atol = 1d-3
 
-      hot_wind_full_on_T = 1d0
-      cool_wind_full_on_T = 0d0
+      !hot_wind_full_on_T = 1d0
+      !cool_wind_full_on_T = 0d0
       hot_wind_scheme = 'Dutch'
       Dutch_wind_lowT_scheme = 'de Jager'
 
+      !varcontrol_target = 1d-4
       mesh_delta_coeff = 2.0
       mesh_delta_coeff_for_highT = 2.5
       !mesh_delta_coeff = 0.75
