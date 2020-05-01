@@ -3,6 +3,7 @@
 !===============================================================================
 MODULE dll_mod
   USE trace_mod
+  USE io_mod
   USE omp_lock_mod
   implicit none
   private
@@ -18,6 +19,7 @@ MODULE dll_mod
     integer:: n=0
     character(len=32):: name
     class(lock_t), pointer:: lock => null()
+    logical:: initialized = .false.
   contains
     procedure:: init
     procedure:: append
@@ -29,6 +31,7 @@ MODULE dll_mod
     procedure:: delete
     procedure:: pop
     procedure:: test
+    procedure, private:: check_initialized
   end type
 CONTAINS
 
@@ -40,8 +43,8 @@ SUBROUTINE init (self, name)
   character(len=*), optional:: name
   !.............................................................................
   call trace%begin ('dll_t%init')
+  call io%lock%set ('dll_t%init')
   nullify (self%head, self%tail)
-  !$omp atomic write
   self%n = 0
   if (present(name)) then
     self%name = name
@@ -52,6 +55,7 @@ SUBROUTINE init (self, name)
     allocate (self%lock)
     call self%lock%init ('dll')
   end if
+  call io%lock%unset ('dll_t%init')
   call trace%end ()
 END SUBROUTINE init
 
@@ -62,6 +66,7 @@ SUBROUTINE append (self, new)
   class(dll_t):: self
   class(dll_node_t), pointer:: new
   !.............................................................................
+  call self%check_initialized
   new%prev => self%tail
   nullify(new%next)
   if (.not.associated(self%head)) self%head => new
@@ -78,6 +83,7 @@ SUBROUTINE prepend (self, new)
   class(dll_t):: self
   class(dll_node_t), pointer:: new
   !.............................................................................
+  call self%check_initialized
   if (.not.associated(self%tail)) self%tail => new
   new%next => self%head
   nullify (new%prev)
@@ -94,6 +100,7 @@ SUBROUTINE find (self, old, prev, next)
   class(dll_node_t), pointer:: prev, next
   class(*), pointer:: old
   !.............................................................................
+  call self%check_initialized
   next => self%head
   nullify (prev)
   do while (associated(next))
@@ -113,6 +120,7 @@ SUBROUTINE insert_before (self, old, new)
   class(dll_t):: self
   class(dll_node_t), pointer:: old, new
   !.............................................................................
+  call self%check_initialized
   new%prev => old%prev
   new%next => old
   if (associated(new%prev)) new%prev%next => new
@@ -128,6 +136,7 @@ SUBROUTINE insert_after (self, old, new)
   class(dll_t):: self
   class(dll_node_t), pointer:: old, new
   !.............................................................................
+  call self%check_initialized
   new%next => old%next
   old%next => new
   if (associated(new%prev)) new%prev%next => new
@@ -143,6 +152,7 @@ SUBROUTINE remove (self, old)
   class(dll_t):: self
   class(dll_node_t), pointer:: old
   !.............................................................................
+  call self%check_initialized
   if (associated(old%prev)) old%prev%next => old%next
   if (associated(old%next)) old%next%prev => old%prev
   if (associated(old, self%head)) then
@@ -163,6 +173,7 @@ FUNCTION pop (self)
   class(dll_t):: self
   class(dll_node_t), pointer:: pop
   !.............................................................................
+  call self%check_initialized
   pop => self%tail
   if (associated(pop%prev)) then
     self%tail => pop%prev
@@ -240,6 +251,7 @@ SUBROUTINE delete (self)
   !.............................................................................
   class (dll_node_t), pointer:: item, next
   !-----------------------------------------------------------------------------
+  call self%check_initialized
   item => self%head
   do while (associated(item))
     next => item%next
@@ -252,5 +264,16 @@ SUBROUTINE delete (self)
   self%n = 0
   call self%init
 END SUBROUTINE delete
+
+!===============================================================================
+!> Check that the dll has been initialized
+!===============================================================================
+SUBROUTINE check_initialized (self)
+  class(dll_t):: self
+  !-----------------------------------------------------------------------------
+  if (.not. self%initialized) then
+    call io%abort ('dll_t instance not initialized')
+  end if
+END SUBROUTINE check_initialized
 
 END MODULE dll_mod

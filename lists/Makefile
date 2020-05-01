@@ -21,4 +21,4 @@ counters_mod.o      : io_mod.o trace_mod.o omp_lock_mod.o
 plist_mod.o         : omp_timer_mod.o dll_mod.o
 hash_table_mod.o    : mpi_mod.o io_mod.o trace_mod.o
 task_block_mod.o    : io_mod.o trace_mod.o link_mod.o
-dll_mod.o           : omp_lock_mod.o trace_mod.o
+dll_mod.o           : io_mod.o omp_lock_mod.o trace_mod.o
