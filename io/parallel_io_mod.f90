@@ -314,7 +314,7 @@ contains
       p1 => patch%mem(l1(1):u1(1),l1(2):u1(2),l1(3):u1(3),idx%px,iit,1)
       p2 => patch%mem(l1(1):u1(1),l1(2):u1(2),l1(3):u1(3),idx%py,iit,1)
       p3 => patch%mem(l1(1):u1(1),l1(2):u1(2),l1(3):u1(3),idx%pz,iit,1)
-      mem(:,:,:,it,idx%d ) = log(d)
+      mem(:,:,:,it,idx%d ) = d
       mem(:,:,:,it,idx%px) = p1/d
       mem(:,:,:,it,idx%py) = p2/d
       mem(:,:,:,it,idx%pz) = p3/d
@@ -326,6 +326,15 @@ contains
         b1u => patch%mem(l2(1):u2(1),l2(2):u2(2),l2(3):u2(3),idx%bx,iit,1)
         b2u => patch%mem(l2(1):u2(1),l2(2):u2(2),l2(3):u2(3),idx%by,iit,1)
         b3u => patch%mem(l2(1):u2(1),l2(2):u2(2),l2(3):u2(3),idx%bz,iit,1)
+        if (patch%kind(1:6) == 'ramses') then
+          mem(:,:,:,it,idx%bx) = 0.5*(b1d+b1u)
+          mem(:,:,:,it,idx%by) = 0.5*(b2d+b2u)
+          mem(:,:,:,it,idx%bz) = 0.5*(b3d+b3u)
+        else if(patch%kind(1:7) == 'stagger') then
+          mem(:,:,:,it,idx%bx) = b1d
+          mem(:,:,:,it,idx%by) = b2d
+          mem(:,:,:,it,idx%bz) = b3d
+        endif
         mem(1:n(1),1:n(2),1:n(3),it,idx%e) = &
           (e - 0.125*((b1d+b1u)**2+(b2d+b2u)**2+(b3d+b3u)**2) &
              - 0.5*(p1**2+p2**2+p3**2)/d)/d

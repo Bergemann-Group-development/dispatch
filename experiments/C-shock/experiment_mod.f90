@@ -221,7 +221,7 @@ SUBROUTINE update (self)
 !    end do 
 !  endif
 
-  call self%mhd_t%update
+  call self%solver_t%update
 
   !call self%courant_condition
   call self%check_density('before timestep')
