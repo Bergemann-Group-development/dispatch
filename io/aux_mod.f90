@@ -73,7 +73,7 @@ MODULE aux_mod
 CONTAINS
 
 !===============================================================================
-!> This routine is called from data_io%init, already inside a critical region
+!> This routine is called from data_io%init, already inside an OMP lock region
 !===============================================================================
 SUBROUTINE init (self, name)
   class(aux_t):: self
@@ -100,11 +100,11 @@ SUBROUTINE init (self, name)
       call write_namelist (io%namelist)
     first_time = .false.
   end if
+  call self%dll_t%init
   call io%lock%unset ('aux_t%init')
   !-----------------------------------------------------------------------------
   ! Initialize the underlying data type, with its lock
   !-----------------------------------------------------------------------------
-  call self%dll_t%init
   call trace%end()
 END SUBROUTINE init
 
@@ -115,7 +115,8 @@ FUNCTION new_item (self, name)
   logical          :: new_item
   class(dll_node_t), pointer:: item
   !-----------------------------------------------------------------------------
-  call aux%lock%set ('new_item')
+  if (verbose > 0) call trace%begin ('aux_t%new_item')
+  call self%lock%set ('new_item')
   new_item = .true.
   item => self%head
   do while (associated(item))
@@ -130,7 +131,8 @@ FUNCTION new_item (self, name)
   end do
   if (verbose > 1) &
     write (io_unit%log,*) 'aux_t%new_item: ', trim(name), new_item
-  call aux%lock%unset ('new_item')
+  call self%lock%unset ('new_item')
+  if (verbose > 0) call trace%end ()
   END FUNCTION new_item
 
 !===============================================================================
@@ -410,6 +412,7 @@ SUBROUTINE register4r (self, name, r)
             exit
           end if
         end select
+        item => item%next
       end do
     end if
     if (verbose > 0) &
