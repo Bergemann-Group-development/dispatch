@@ -1,12 +1,13 @@
 
 # Option groups
 #OPTS = full_debug
-#OPTS = debug
-OPTS =
+OPTS = debug
+#OPTS =
 #OPTS = optimized
 #OPTS = optimized_diagnostics
 
 # Default target and methods
+UPD             = adams_bashforth
 #PATCH           = dispatchers
 SOLVER          = ramses/hydro
 #SOLVER          = ramses/mhd
