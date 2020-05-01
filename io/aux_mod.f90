@@ -174,6 +174,7 @@ SUBROUTINE register0i (self, name, i)
           exit
         end if
       end select
+      item => item%next
     end do
   end if
   call trace%end()
@@ -218,6 +219,7 @@ SUBROUTINE register0r (self, name, r)
           exit
         end if
       end select
+      item => item%next
     end do
   end if
   call trace%end()
@@ -256,6 +258,7 @@ SUBROUTINE register1i (self, name, i)
           exit
         end if
       end select
+      item => item%next
     end do
   end if
   call trace%end()
@@ -294,6 +297,7 @@ SUBROUTINE register1r (self, name, r)
           exit
         end if
       end select
+      item => item%next
     end do
   end if
   call trace%end()
@@ -331,6 +335,7 @@ SUBROUTINE register2r (self, name, r)
           exit
         end if
       end select
+      item => item%next
     end do
   end if
   call trace%end()
@@ -368,7 +373,7 @@ SUBROUTINE register3r (self, name, r)
           exit
         end if
       end select
-    item => item%next
+      item => item%next
     end do
   end if
   call trace%end()
