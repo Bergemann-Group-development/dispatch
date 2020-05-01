@@ -28,6 +28,8 @@ MODULE sinks_mod
   USE task_mod
   USE patch_mod
   USE gpatch_mod
+  USE link_mod
+  USE list_mod
   USE mesh_mod
   USE scaling_mod
   USE units_mod
@@ -42,16 +44,21 @@ MODULE sinks_mod
     real, pointer:: mass_p=>null(), vel_p(:)=>null(), pos_p(:)=>null()
     real(8), allocatable:: pos(:,:)
     real(8):: SN_time=0.0, previous_time=0d0, dt_min=1e-7
-    class(gpatch_t), pointer:: patch
+    class(gpatch_t), pointer:: patch => null()
+    class(list_t), pointer:: task_list => null()
+    class(link_t), pointer:: link => null()
   contains
     procedure:: pre_init
     procedure:: init
+    procedure:: init_task_list
     procedure:: check_refine
-    procedure:: create
+    procedure:: create_sink
+    procedure:: create_task
     procedure:: accrete
     procedure:: pre_update
     procedure:: update
     procedure:: post_update
+    procedure:: output
   end type
   real::     jeans_limit = 4.0        ! create at jeans_limit cells per Jean's L 
   real::       per_omega = 0.001      ! fraction of mass per radian orbital
@@ -100,6 +107,49 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !===============================================================================
+!> Save a pointer to the task list
+!===============================================================================
+SUBROUTINE init_task_list (self, task_list)
+  class(sinks_t), target:: self
+  class(list_t), pointer:: task_list
+  !-----------------------------------------------------------------------------
+  call trace%begin ('sinks_t%init_task_list')
+  self%task_list => task_list
+  call trace%end ()
+END SUBROUTINE init_task_list
+
+!===============================================================================
+!> Create a task link, with a pointer to this sink task, and append it to the
+!> task list.  As a test, set a fixed dtime, and no nbor list, and check what
+!> happens to the task.
+!===============================================================================
+SUBROUTINE create_task (self)
+  class(sinks_t), target:: self
+  class(link_t), pointer:: link
+  class(nbor_t), pointer:: nbor
+  !-----------------------------------------------------------------------------
+  call trace%begin ('sinks_t%create_task')
+  !-----------------------------------------------------------------------------
+  ! Create a task link, and initialize the task and link pointers
+  !-----------------------------------------------------------------------------
+  allocate (link)
+  link%task => self
+  self%link => link
+  !-----------------------------------------------------------------------------
+  ! Create an nbor node, point it to the patch task, and use it as the nbor list
+  !-----------------------------------------------------------------------------
+  allocate (nbor)
+  nbor%task => self%patch
+  nbor%link => self%link
+  link%nbor => nbor
+  !-----------------------------------------------------------------------------
+  ! Append the task to the task list
+  !-----------------------------------------------------------------------------
+  call self%task_list%append (link)
+  call trace%end ()
+END SUBROUTINE create_task
+
+!===============================================================================
 !> Check sink creation criterion, which is to have the local Jeans' length
 !> resolved by at least "jeans_limit" cells.  The Jeans length is defined as
 !> L = c_sound/free_fall_time, where free_fall_time = 1/sqrt(G*rho), with G
@@ -143,7 +193,7 @@ SUBROUTINE check_refine (self, patch)
        'sinks_t%check_refine: creating sink id, ipos, jeans =', &
         patch%id, ipos, jeans_resolution(ipos(1),ipos(2),ipos(3))
     !...........................................................................
-    call self%create (patch, ipos+l)
+    call self%create_sink (patch, ipos+l)
   else if (verbose > 1) then
     !...........................................................................
     write(io_unit%log,'(1x,a,i6,f10.3,f12.6,1p,e11.2)') &
@@ -158,7 +208,7 @@ END SUBROUTINE check_refine
 !===============================================================================
 !> Check sink creation criterion
 !===============================================================================
-SUBROUTINE create (self, patch, ipos)
+SUBROUTINE create_sink (self, patch, ipos)
   class(sinks_t):: self
   class(gpatch_t), pointer:: patch
   integer:: ipos(3)
@@ -168,7 +218,7 @@ SUBROUTINE create (self, patch, ipos)
   class(mesh_t), pointer:: m1, m2, m3
   real, allocatable, dimension(:,:,:):: delta_d
   !-----------------------------------------------------------------------------
-  call trace%begin ('sinks_t%create')
+  call trace%begin ('sinks_t%create_sink')
   !$omp critical (create_cr)
   m1 => patch%mesh(1)
   m2 => patch%mesh(2)
@@ -185,9 +235,10 @@ SUBROUTINE create (self, patch, ipos)
     write (io_unit%log,'(1x,a,i6,2x,3i4,3f10.4)') &
      'sinks_t%create: id, ipos, position =', patch%id, ipos, self%position
   !.............................................................................
+  call self%create_task
   !$omp end critical (create_cr)
   call trace%end ()
-END SUBROUTINE create
+END SUBROUTINE create_sink
 
 !===============================================================================
 !> Accrete to sink particle from patch
@@ -323,9 +374,8 @@ END SUBROUTINE accrete
 !===============================================================================
 !> Update sink task
 !===============================================================================
-SUBROUTINE pre_update (self, patch)
+SUBROUTINE pre_update (self)
   class(sinks_t):: self
-  class(gpatch_t), pointer:: patch
   !-----------------------------------------------------------------------------
   call trace%begin ('sinks_t%pre_update')
   call trace%end ()

@@ -9,6 +9,7 @@ OMP      ?= yes
 MPI      ?= mpi
 MOD      ?= mod
 SOLVER   ?= VOID
+UPD      ?= adams_bashforth
 PREC     ?= SINGLE
 EXEC     ?= dispatch.x
 DEFS = -D$(PREC) -DDISPATCH
