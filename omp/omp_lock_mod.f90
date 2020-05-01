@@ -199,13 +199,13 @@ SUBROUTINE set (self, label, itimer)
   log = start < verbose_time .or. omp_lock%verbose > 1
   if (log) then
     if (present(label)) then
-      write (unit,'(f10.6,a,a4,i6,i3,i4,2x,a)') start, &
+      write (unit,'(f10.6,a,a4,i6,i3,i4,12x,a)') start, &
         ' lock kind, id, level, thread = ', self%kind, self%id, &
-        self%level, omp%thread, '   get at '//label
+        self%level, omp_get_thread_num(), '   get at '//label
     else
-      write (unit,'(f10.6,a,a4,i6,i3,i4,2x,a)') start, &
+      write (unit,'(f10.6,a,a4,i6,i3,i4,12x,a)') start, &
         ' lock kind, id, level, thread = ', self%kind, self%id, &
-        self%level, omp%thread, '   get'
+        self%level,   omp_get_thread_num(), '   get'
     end if
     !flush (unit)
   end if
@@ -320,7 +320,7 @@ END FUNCTION check
 SUBROUTINE unset (self, label)
   class(lock_t):: self
   character(len=*), optional:: label
-  integer:: level, thread
+  integer:: level
   real(8):: wc, used
   !-----------------------------------------------------------------------------
   if (.not.omp_lock%on) return
@@ -347,11 +347,11 @@ SUBROUTINE unset (self, label)
     if (present(label)) then
       write (unit,'(f10.6,a,a4,i6,i3,i4,6p,f10.1,2x,a)') wc, &
         ' lock kind, id, level, thread = ', self%kind, self%id, level, &
-        thread, used, ' unset at '//label
+        omp%thread, used, ' unset at '//label
     else
       write (unit,'(f10.6,a,a4,i6,i3,i4,6p,f10.1,2x,a)') wc, &
         ' lock kind, id, level, thread = ', self%kind, self%id, level, &
-        thread, used, ' unset'
+        omp%thread, used, ' unset'
     end if
   end if
 #ifdef TRACE 
