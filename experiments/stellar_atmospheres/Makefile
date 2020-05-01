@@ -2,7 +2,7 @@
 # Option groups
 OPTS = debug
 #OPTS = full_debug
-OPTS = optimized
+#OPTS = optimized
 
 # Default target and methods
 SOLVER          = stagger2/e

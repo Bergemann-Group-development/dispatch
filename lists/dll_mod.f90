@@ -55,6 +55,7 @@ SUBROUTINE init (self, name)
     allocate (self%lock)
     call self%lock%init ('dll')
   end if
+  self%initialized = .true.
   call io%lock%unset ('dll_t%init')
   call trace%end ()
 END SUBROUTINE init

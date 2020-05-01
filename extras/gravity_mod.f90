@@ -2,10 +2,9 @@
 !> Add gravity to any solver
 !===============================================================================
 MODULE gravity_mod
-  USE patch_mod
+  USE gpatch_mod
   USE units_mod
   USE scaling_mod
-  USE link_mod
   USE io_mod
   USE kinds_mod
   USE trace_mod
@@ -16,11 +15,12 @@ MODULE gravity_mod
     real(kind=KindScalarVar)       :: const_grav = 0.0
     real(kind=KindScalarVar)       :: mass = -1.0
     real(8)                        :: minrad = 0.0
-    real(8)                        :: position(3) = 0.0                    ! centre of gravity
+    real(8)                        :: position(3) = 0.0   ! centre of gravity
     integer                        :: axis = 3
-    class(patch_t), pointer:: patch
+    class(gpatch_t),        pointer:: patch => null()
     logical:: on=.false.
   contains
+    procedure:: pre_init
     procedure:: init
     procedure:: pre_update
   end type
@@ -30,11 +30,10 @@ CONTAINS
 !===============================================================================
 !> Initialize gravity
 !===============================================================================
-SUBROUTINE init (self, link)
+SUBROUTINE pre_init (self, patch)
   class(gravity_t):: self
-  class(link_t), pointer :: link
+  class(gpatch_t), pointer :: patch
   ! ............................................................................
-  class(patch_t), pointer:: patch
   integer                           :: iostat, gn(3)
   real(kind=KindScalarVar), save    :: constant = 0.0
   logical, save                     :: first_time=.true.
@@ -45,8 +44,9 @@ SUBROUTINE init (self, link)
   integer, save :: axis  = 3
   namelist /gravity_params/ on, constant, axis, position, mass, minrad
   !-----------------------------------------------------------------------------
-  call trace%begin ('selfgravity_t%init')
-  call io%lock%set
+  call trace%begin ('selfgravity_t%pre_init')
+  self%patch => patch
+  call io%lock%set ('selfgravity_t%pre_init')
   if (first_time) then
     first_time = .false.
     rewind (io%input)
@@ -54,9 +54,8 @@ SUBROUTINE init (self, link)
     if (io%master) write (io%output, gravity_params)
     if (constant/=0.0) constant = constant * scaling%t**2 / scaling%l
   end if
-  call io%lock%unset
+  call io%lock%unset ('selfgravity_t%pre_init')
   if (on) then
-    self%patch => task2patch(link%task)
     self%on = on
     self%const_grav = constant
     self%axis = axis
@@ -70,11 +69,22 @@ SUBROUTINE init (self, link)
     else
       call io%abort("gravity_mod%init:: neither constant nor mass is set.")
     end if
-    if (.not.allocated(self%patch%force_per_unit_mass)) then
-      gn = self%patch%gn
-      allocate (self%patch%force_per_unit_mass(gn(1),gn(2),gn(3),3))
-      self%patch%force_per_unit_mass = 0.0
-    end if
+  end if
+  call trace%end()
+END SUBROUTINE pre_init
+
+!===============================================================================
+!> Initialize gravity
+!===============================================================================
+SUBROUTINE init (self)
+  class(gravity_t):: self
+  integer:: gn(3)
+  !-----------------------------------------------------------------------------
+  call trace%begin ('selfgravity_t%init')
+  if (.not.allocated(self%patch%force_per_unit_mass)) then
+    gn = self%patch%gn
+    allocate (self%patch%force_per_unit_mass(gn(1),gn(2),gn(3),3))
+    self%patch%force_per_unit_mass = 0.0
   end if
   call trace%end()
 END SUBROUTINE init

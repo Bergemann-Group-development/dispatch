@@ -125,9 +125,9 @@ CONTAINS
 !===============================================================================
 !> Read parameters
 !===============================================================================
-SUBROUTINE pre_init (self, link)
+SUBROUTINE pre_init (self, patch)
   class (rt_t), target:: self
-  class (link_t), pointer :: link
+  class (gpatch_t), pointer :: patch
   !-----------------------------------------------------------------------------
   integer:: dir, i_mu, i_phi, i_omega, n_omega, iostat, n
   integer, save:: n_mu=3, n_phi=4, n_bin=4, nt=3, n_warmup=3, ng=1
@@ -154,7 +154,7 @@ SUBROUTINE pre_init (self, link)
     if (io%master) write (io%output, sc_rt_params)
   end if
   call io%lock%unset ('rt_t%pre_init')
-  self%patch => gpatch%cast2gpatch(link%task)
+  self%patch => patch
   self%on = on
   self%nt = nt
   !self%ng = ng
@@ -171,6 +171,7 @@ SUBROUTINE pre_init (self, link)
   self%courant = courant
   self%cdtd    = cdtd
   call rt_integral%init
+  call self%patch%aux%init
   call trace%end()
 END SUBROUTINE pre_init
 
@@ -194,7 +195,6 @@ SUBROUTINE init_task (self)
   !-----------------------------------------------------------------------------
   ! interconnect itself
   !-----------------------------------------------------------------------------
-  nullify(self%link)
   allocate(link)
   link%task => self
   self%link => link
