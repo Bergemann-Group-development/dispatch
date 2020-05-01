@@ -50,7 +50,7 @@ MODULE extras_mod
   type, public, extends(gpatch_t):: extras_t
     type(SN_t):: SN                                                     ! SN
     type(cooling_t):: cooling                                           ! cool
-    class(patch_t), pointer:: patch => null()
+    class(gpatch_t), pointer:: patch => null()
   contains
     procedure, nopass:: cast2extras
     procedure:: pre_init
@@ -75,6 +75,8 @@ SUBROUTINE pre_init (self)
   !.............................................................................
   call trace%begin ('extras_t%pre_init')
   self%patch => self
+  call self%SN%pre_init (self%patch)                                    ! SN
+  call self%cooling%pre_init (self%patch)                               ! cool
   call trace%end ()
 END SUBROUTINE pre_init
 
@@ -85,8 +87,6 @@ SUBROUTINE init (self)
   class(extras_t):: self
   !.............................................................................
   call trace%begin ('extras_t%init')
-  call self%SN%init (self%patch)                                        ! SN
-  call self%cooling%init                                                ! cool
   call trace%end ()
 END SUBROUTINE init
 
@@ -101,8 +101,8 @@ SUBROUTINE pre_update (self)
   !.............................................................................
   call trace%begin ('extras_t%pre_update')
   call self%patch_t%pre_update                                          ! reset
-  call self%SN%update (self%patch)                                      ! SN
-  call self%cooling%pre_update (self)                                   ! cool
+  call self%SN%pre_update                                               ! SN
+  call self%cooling%pre_update                                          ! cool
   call trace%end ()
 END SUBROUTINE pre_update
 
@@ -137,7 +137,7 @@ SUBROUTINE courant_condition (self, detailed_timer)
   !-----------------------------------------------------------------------------
   call trace%begin ('extras_t%courant_condition')
   call self%gpatch_t%courant_condition (detailed_timer)                 ! keep
-  call self%cooling%courant_condition (self)                            ! cool
+  call self%cooling%courant_condition                                   ! cool
   call trace%end ()
 END SUBROUTINE courant_condition
 
