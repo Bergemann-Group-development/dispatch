@@ -74,7 +74,7 @@ SUBROUTINE pre_init (self, patch)
   !-----------------------------------------------------------------------------
   call trace%begin ('sinks_t%pre_init')
   self%patch => patch
-  !$omp critical (init_cr)
+  call io%lock%set
   if (first_time) then
     rewind (io%input)
     read (io%input, sinks_params, iostat=iostat)
@@ -83,7 +83,7 @@ SUBROUTINE pre_init (self, patch)
     write (io%namelist, sinks_params)
     first_time = .false.
   end if
-  !$omp end critical (init_cr)
+  call io%lock%unset
   call trace%end ()
 END SUBROUTINE pre_init
 

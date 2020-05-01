@@ -19,6 +19,7 @@ MODULE selfgravity_mod
   USE omp_timer_mod
   USE bits_mod
   USE vector_ops
+  USE timestep_mod
   implicit none
   private
   type, public:: selfgravity_t
@@ -37,10 +38,9 @@ MODULE selfgravity_mod
   end type
   real(8), save :: total_mass=0d0, total_volume=0d0
   real(8), save :: restart_time = 0d0
-  logical, save :: selfgravity=.false., prediction=.true., detailed_timer=.false.
+  logical, save :: selfgravity=.false., prediction=.true.
   integer, save :: verbose=0
   integer, save :: order=1
-  integer, save :: nw=1
 CONTAINS
 
 !===============================================================================
@@ -61,25 +61,20 @@ SUBROUTINE pre_init (self, patch)
   call trace%begin ('selfgravity_t%pre_init')
   self%patch => patch
   !
-  !$omp critical (input_cr)
+  call io%lock%set ('selfgravity_t%pre_init')
   if (first_time) then
-    first_time = .false.
     rewind (io%input)
     read (io%input, selfgravity_params, iostat=iostat)
     call io%namelist_warning('selfgravity_params', iostat)
     if (io%master) write (io%output, selfgravity_params)
+    first_time = .false.
   end if
-  !$omp end critical (input_cr)
-  !
-  patch%nw = nw
+  call io%lock%unset ('selfgravity_t%pre_init')
+  !.............................................................................
   self%d0 = d0
   if (selfgravity) then
     self%selfgravity = selfgravity
-    if (patch%kind(1:4) /= 'zeus') then
-      call patch%idx%request_index (patch%idx%phi, patch%nv)
-    else
-      patch%idx%phi = patch%nv
-    end if
+    call patch%idx%request_index (patch%idx%phi, patch%nv)
     if (patch%nw == 2) then
       patch%idx%dphi = patch%idx%phi
     else
@@ -159,6 +154,18 @@ END SUBROUTINE init
 !===============================================================================
 SUBROUTINE pre_update (self)
   class(selfgravity_t):: self
+ !-----------------------------------------------------------------------------
+  call trace%begin ('selfgravity_t%pre_update')
+  call solve (self, self%patch%it)
+  call trace%end ()
+END SUBROUTINE pre_update
+
+!===============================================================================
+!> Solve for the potential, for a given time slot
+!===============================================================================
+SUBROUTINE solve (self, it)
+  class(selfgravity_t):: self
+  integer:: it
   !.............................................................................
   class(gpatch_t), pointer:: patch
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, phi
@@ -168,9 +175,9 @@ SUBROUTINE pre_update (self)
   !-----------------------------------------------------------------------------
   if (.not. selfgravity) return
   patch => self%patch
-  call trace%begin ('selfgravity_t%pre_update', itimer=itimer)
-  d   => patch%mem(:,:,:,patch%idx%d  ,patch%new,1)
-  phi => patch%mem(:,:,:,patch%idx%phi,patch%new,1)
+  call trace%begin ('selfgravity_t%solve', itimer=itimer)
+  d   => patch%mem(:,:,:,patch%idx%d  ,it,1)
+  phi => patch%mem(:,:,:,patch%idx%phi,it,1)
   if (self%d0==-1.0) then
     self%d0 = total_mass/total_volume
     if (verbose > 0) then
@@ -179,15 +186,19 @@ SUBROUTINE pre_update (self)
         patch%id, self%d0, patch%faver(d)
     end if
   end if
+  !.............................................................................
   dmin = patch%fminval (d)
   dmax = patch%fmaxval (d)
-  !.............................................................................
   if (dmin==0.0) then
     print *, patch%id, 'WARNING: selfgravity_t%gravity, dmin, dmax, it =', &
       dmin, dmax, patch%new
   end if
   !.............................................................................
-  call self%poisson%update (patch, phi, d, self%d0, detailed_timer)
+  call self%poisson%update (patch, phi, d, self%d0)
+  if (verbose > 1) then
+    call patch%stats (d  , '  d', io_unit%log)
+    call patch%stats (phi, 'phi', io_unit%log)
+  end if
   !-----------------------------------------------------------------------------
   ! Compute the force per unit volume (except for ZEUS solvers, which take the
   ! gradient of the potential internally.
@@ -199,7 +210,7 @@ SUBROUTINE pre_update (self)
   !-----------------------------------------------------------------------------
   call time_derivs (patch)
   call trace%end (itimer)
-END SUBROUTINE pre_update
+END SUBROUTINE solve
 
 !===============================================================================
 !> Having advanced the MHD state to the new time, we make a preliminary
@@ -209,24 +220,40 @@ END SUBROUTINE pre_update
 !> or the poisson_time; the two are updated alternatingly
 !===============================================================================
 SUBROUTINE post_update (self)
-  class(selfgravity_t):: self
-  !.............................................................................
+  class(selfgravity_t):: self  !.............................................................................
   class(gpatch_t), pointer:: patch
+  real(kind=KindScalarVar), pointer, dimension(:,:,:,:):: phi, dphi
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not. selfgravity) return
-  patch => self%patch
   call trace%begin ('selfgravity_t%post_update', itimer=itimer)
   if (selfgravity) then
+    patch => self%patch
     if (self%poisson_time == patch%time) then
       if (verbose > 0) then
         write (io_unit%log,'(a,i6,1p,e12.4)') &
          'selfgravity_t%post_update: id, patch%time =', patch%id, patch%time
       end if
     else
+      !-------------------------------------------------------------------------
+      ! Extrapolate phi forward in time, if not done in the task update
+      !-------------------------------------------------------------------------
+      if (prediction .and. patch%nw==1) then
+        phi  => patch%mem(:,:,:,patch%idx%phi ,:,1)
+        dphi => patch%mem(:,:,:,patch%idx%dphi,:,1)
+        call timestep%update_single (patch%id, patch%iit, patch%dt, phi, dphi, &
+          patch%mesh, patch%lock, order)
+      end if
+      !-------------------------------------------------------------------------
+      ! Advance the time to time+dtime, to prepare for post_update of phi
+      !-------------------------------------------------------------------------
+      call patch%rotate
+      !-------------------------------------------------------------------------
+      ! Fill guard zones with time extrapolated values and solve
+      !-------------------------------------------------------------------------
       call patch%dnload (only=patch%idx%d)
       call patch%dnload (only=patch%idx%phi)
-      call self%pre_update
+      call solve (self, patch%it)
       self%poisson_time = patch%time
       if (verbose > 0) then
         write (io_unit%log,'(a,i6,1p,e12.4)') &
@@ -250,12 +277,13 @@ SUBROUTINE time_derivs (self)
   integer, save:: itimer=0
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: dphidt
   !-----------------------------------------------------------------------------
-  if (detailed_timer) call trace%begin ('selfgravity_t%time_derivs', itimer=itimer)
+  call trace%begin ('selfgravity_t%time_derivs', itimer=itimer)
   if (self%nw == 2) then
     dphidt => self%mem(:,:,:,self%idx%phi,self%new,2)
   else
     dphidt => self%mem(:,:,:,self%idx%dphi,self%new,1)
   end if
+  dphidt = 0.0
 
   if (prediction) then
     nt = self%nt
@@ -265,7 +293,6 @@ SUBROUTINE time_derivs (self)
     t1 = self%t(it1)
     t2 = self%t(it2)
     t3 = self%t(it3)
-    dphidt = 0.0
     if (it2/=it1 .and. t1/=t2) then
       l = self%mesh%li
       u = self%mesh%ui
@@ -291,7 +318,7 @@ SUBROUTINE time_derivs (self)
   else
     dphidt = 0.0
   end if
-  if (detailed_timer) call trace%end (itimer)
+  call trace%end (itimer)
 END SUBROUTINE time_derivs
 
 !===============================================================================

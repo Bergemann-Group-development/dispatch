@@ -50,7 +50,7 @@ SUBROUTINE init (self, patch)
   !-----------------------------------------------------------------------------
   call trace%begin ('pdf_io_t%init')
   if (first_time) then
-    !$omp critical (input_cr)
+    call io%lock%set ('pdf_io_t%init')
     if (first_time) then
       rewind (io%input)
       read (io%input, pdf_io_params, iostat=iostat)
@@ -66,7 +66,7 @@ SUBROUTINE init (self, patch)
       end if
       first_time = .false.
     end if
-    !$omp end critical (input_cr)
+    call io%lock%unset ('pdf_io_t%init')
   end if
   self%on = on
   if (on) then

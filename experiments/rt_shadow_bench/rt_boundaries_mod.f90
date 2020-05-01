@@ -46,14 +46,14 @@ SUBROUTINE init (self, mesh)
   !-----------------------------------------------------------------------------
   self%mesh => mesh
   !
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
     read (io%input, rt_bc_params)
     if (io%master) write (*, rt_bc_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   allocate(d(1,1,2))
     allocate(e(1,1,2))
     allocate(src(1,1,2, eos%n_lambda))

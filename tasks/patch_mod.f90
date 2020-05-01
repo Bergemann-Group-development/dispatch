@@ -430,10 +430,19 @@ SUBROUTINE init (self)
   class(patch_t):: self
   character(len=120):: id = &
     '$Id$ tasks/patch_mod.f90'
+  logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%init')
   call trace%print_id (id)
   call self%setup
+  call io%lock%set ('patch_t%init')
+  if (first_time) then
+    write (stdout,'(a,6i4)') &
+      'patch_t%init: shape(patch%mem) =', shape(self%mem)
+    call self%idx%print (stdout)
+    first_time = .false.
+  end if
+  call io%lock%unset ('patch_t%init')
   call trace%end()
 END SUBROUTINE init
 
@@ -497,7 +506,7 @@ SUBROUTINE init_default (self)
   ! Read and set patch parameters; the preferred defalts may have been set by
   ! the calling code -- typically in experiment_mod.f90
   !-----------------------------------------------------------------------------
-  !$omp critical (input_cr)
+  call io%lock%set ('patch_t%init_default')
   if (first_time) then
     ! -- if values have been imposed from above, FI show them as default
     if (any(self%n  /= 0)) n  = self%n          ! patch dimensions
@@ -532,7 +541,7 @@ SUBROUTINE init_default (self)
   io%print_time    = print_time
   if (io%nv==0) &
     io%nv = self%nv
-  !$omp end critical (input_cr)
+  call io%lock%unset ('patch_t%init_default')
   call self%task_t%init                         ! sets unique id
   self%restart     = io%restart                 ! restart snapshot
   self%grace       = grace                      ! grace fraction of dtime
@@ -2332,15 +2341,25 @@ END SUBROUTINE check_density
 !===============================================================================
 !> Statistics for all vars in a patch
 !===============================================================================
-SUBROUTINE stats_patch (self, label)
+SUBROUTINE stats_patch (self, label, unit)
   class (patch_t):: self
   character(len=*):: label
-  integer:: iv
+  integer, optional:: unit
+  !.............................................................................
+  integer:: iv, unit_l
   real(8), dimension(4):: si, sb
+  class(mesh_t), pointer:: mesh(:)
+  !-----------------------------------------------------------------------------
+  if (present(unit)) then
+    unit_l = unit
+  else
+    unit_l = io%output
+  end if
+  mesh => self%mesh
   do iv=1,self%nv
-    call scalar_stats (self%mem(:,:,:,iv,self%it,1), self%mesh%li, self%mesh%ui, si)
-    call scalar_stats (self%mem(:,:,:,iv,self%it,1), self%mesh%lb, self%mesh%ub, sb)
-    write (io_unit%log,'(i7,2x,a,i3,1p,2(3x,4g12.4))') &
+    call scalar_stats (self%mem(:,:,:,iv,self%it,1), mesh%li, mesh%ui, si)
+    call scalar_stats (self%mem(:,:,:,iv,self%it,1), mesh%lb, mesh%ub, sb)
+    write (unit_l, '(i7,2x,a,i3,1p,2(3x,4g12.4))') &
       self%id, trim(label)//' stats: iv, min, aver, rms, max =', iv, si, sb
   end do
 END SUBROUTINE stats_patch
@@ -2348,16 +2367,23 @@ END SUBROUTINE stats_patch
 !===============================================================================
 !> Statistics for a scalar field
 !===============================================================================
-SUBROUTINE stats_scalar (self, var, label)
+SUBROUTINE stats_scalar (self, var, label, unit)
   class (patch_t):: self
   real(kind=KindScalarVar), dimension(:,:,:):: var
   character(len=*):: label
+  integer, optional:: unit
   !.............................................................................
+  integer:: unit_l
   real(8), dimension(4):: si, sb
   !-----------------------------------------------------------------------------
+  if (present(unit)) then
+    unit_l = unit
+  else
+    unit_l = io%output
+  end if
   call scalar_stats (var, self%mesh%li, self%mesh%ui, si)
   call scalar_stats (var, self%mesh%lb, self%mesh%ub, sb)
-  write (io_unit%output,'(i7,2x,a,1p,2(3x,4g12.4))') &
+  write (unit_l, '(i7,2x,a,1p,2(3x,4g12.4))') &
     self%id, trim(label)//' stats: min, aver, rms, max =', si, sb
 END SUBROUTINE stats_scalar
 

@@ -59,8 +59,9 @@ CONTAINS
 !===============================================================================
 SUBROUTINE init (self, kind, id)
   class(lock_t), target:: self
-  integer, optional:: id
   character(len=*), optional:: kind
+  integer, optional:: id
+  !.............................................................................
   character(len=64):: filename
   logical omp_in_parallel
   logical, save:: tasks=.true., links=.false.
@@ -75,69 +76,75 @@ SUBROUTINE init (self, kind, id)
 #ifdef TRACE 
   call trace%begin('lock_t%init')
 #endif
+  !$omp critical (input_cr)
   if (.not.self%initialized) then
-    if (.not.self%initialized) then
-      if (first_time) then
-      !$omp critical (input_cr)
-      if (first_time) then
-        rewind (io_unit%input)
-        read (io_unit%input, lock_params, iostat=iostat)
-        write (io_unit%output, lock_params)
-        unit = io_unit%lock1
-        if (alternate_time > 0d0) then
-          filename = trim(io_unit%rankbase)//'.lock1'
-          open (io_unit%lock1, file=trim(filename), form='formatted', &
-                status='unknown')
-          filename = trim(io_unit%rankbase)//'.lock2'
-          open (io_unit%lock2, file=trim(filename), form='formatted', &
-                status='unknown')
-          alternate_next = wallclock() + alternate_time
+    !---------------------------------------------------------------------------
+    ! This part is executed only once, reading parameters and opening log files
+    !---------------------------------------------------------------------------
+    if (first_time) then
+      rewind (io_unit%input)
+      read (io_unit%input, lock_params, iostat=iostat)
+      write (io_unit%output, lock_params)
+      unit = io_unit%lock1
+      if (alternate_time > 0d0) then
+        filename = trim(io_unit%rankbase)//'.lock1'
+        open (io_unit%lock1, file=trim(filename), form='formatted', &
+              status='unknown')
+        filename = trim(io_unit%rankbase)//'.lock2'
+        open (io_unit%lock2, file=trim(filename), form='formatted', &
+              status='unknown')
+        alternate_next = wallclock() + alternate_time
+      else
+        if (trim(log)=='queue') then
+          unit = io_unit%queue
+        else if (trim(log)=='log') then
+          unit = io_unit%log
         else
-          if (trim(log)=='queue') then
-            unit = io_unit%queue
-          else if (trim(log)=='log') then
-            unit = io_unit%log
-          else
-            unit = io_unit%lock1
-          end if
-          filename = trim(io_unit%rankbase)//'.lock'
-          open (io_unit%lock1, file=trim(filename), form='formatted', &
-                status='unknown')
+          unit = io_unit%lock1
         end if
-        omp_lock%verbose = verbose
-        omp_lock%tasks = tasks
-        omp_lock%links = links
-        if (omp%nthreads == 1) then
-          on = .false.
-        end if
-        omp_lock%on = on
-        first_time = .false.
+        filename = trim(io_unit%rankbase)//'.lock'
+        open (io_unit%lock1, file=trim(filename), form='formatted', &
+              status='unknown')
       end if
-      !$omp end critical (input_cr)
+      omp_lock%verbose = verbose
+      omp_lock%tasks = tasks
+      omp_lock%links = links
+      if (omp%nthreads == 1) then
+        on = .false.
       end if
-      call omp_init_nest_lock (self%lock)
-      if (present(id)) then
-        self%id = id
-        id_save = max(id_save,id)
-        set_id = .true.
-      else
-        id_save = id_save+1
-        self%id = id_save
-        set_id = .false.
-      end if
-      if (present(kind)) then
-        self%kind = kind(1:4)
-      else
-        self%kind = 'void'
-      end if
-      self%on  = on
-      n_lock = n_lock+1
-      if (wallclock() < verbose_time .or. omp_lock%verbose > 1) &
-        write(unit,*) omp_get_thread_num(), 'initialized lock kind, id ', &
-          self%kind, self%id, set_id
-      self%initialized = .true.
+      omp_lock%on = on
+      first_time = .false.
     end if
+    !---------------------------------------------------------------------------
+    ! The part below is executed once for all locks
+    !---------------------------------------------------------------------------
+    call omp_init_nest_lock (self%lock)
+    if (present(id)) then
+      self%id = id
+      id_save = max(id_save,id)
+      set_id = .true.
+    else
+      id_save = id_save+1
+      self%id = id_save
+      set_id = .false.
+    end if
+    if (present(kind)) then
+      self%kind = kind(1:min(len(kind),4))
+    else
+      self%kind = 'void'
+    end if
+    self%on  = on
+    n_lock = n_lock+1
+    if (wallclock() < verbose_time .or. omp_lock%verbose > 1) &
+      write(unit,*) omp_get_thread_num(), 'initialized lock kind, id ', &
+        self%kind, self%id, set_id
+    self%initialized = .true.
   end if
+  if (verbose > 0) then
+    write (io_unit%log,'(a,i8,l4)') &
+      'omp_lock_t%init: id, initialized =', self%id, self%initialized
+  end if
+  !$omp end critical (input_cr)
 #ifdef TRACE 
   call trace%end()
 #endif
@@ -176,10 +183,14 @@ SUBROUTINE set (self, label, itimer)
   logical:: log
   !-----------------------------------------------------------------------------
   if (.not.omp_lock%on) return
-  if (.not.self%initialized) call self%init
 #ifdef TRACE 
   call trace%begin('lock_t%set')
 #endif
+  if (.not. self%initialized) then
+    write (stderr,'(a,i4)') &
+    'omp_lock_t%set WARNING: lock not initialized, thread =', omp%thread
+  call self%init
+  end if
   !-----------------------------------------------------------------------------
   ! Must print log info before the lock, to reveal dead-locks
   !-----------------------------------------------------------------------------
@@ -188,13 +199,13 @@ SUBROUTINE set (self, label, itimer)
   log = start < verbose_time .or. omp_lock%verbose > 1
   if (log) then
     if (present(label)) then
-      write (unit,'(f10.6,a,a4,i6,i3,i4,2x,a)') start, &
+      write (unit,'(f10.6,a,a4,i6,i3,i4,12x,a)') start, &
         ' lock kind, id, level, thread = ', self%kind, self%id, &
-        self%level, omp%thread, '   get at '//label
+        self%level, omp_get_thread_num(), '   get at '//label
     else
-      write (unit,'(f10.6,a,a4,i6,i3,i4,2x,a)') start, &
+      write (unit,'(f10.6,a,a4,i6,i3,i4,12x,a)') start, &
         ' lock kind, id, level, thread = ', self%kind, self%id, &
-        self%level, omp%thread, '   get'
+        self%level,   omp_get_thread_num(), '   get'
     end if
     !flush (unit)
   end if
@@ -309,13 +320,21 @@ END FUNCTION check
 SUBROUTINE unset (self, label)
   class(lock_t):: self
   character(len=*), optional:: label
-  integer:: level, thread
+  integer:: level
   real(8):: wc, used
   !-----------------------------------------------------------------------------
   if (.not.omp_lock%on) return
 #ifdef TRACE 
   call trace%begin('lock_t%unset')
 #endif
+  !-----------------------------------------------------------------------------
+  ! It should be impossible to come here with an uninitialized lock
+  !-----------------------------------------------------------------------------
+  if (.not. self%initialized) then
+    write (stderr,'(a,i4)') &
+      'omp_lock_t%unset ERROR: lock not initialized, thread =', omp%thread
+    stop 'omp_lock_t%unset'
+  end if
   self%level = self%level-1
   level = self%level
   !$omp flush
@@ -328,11 +347,11 @@ SUBROUTINE unset (self, label)
     if (present(label)) then
       write (unit,'(f10.6,a,a4,i6,i3,i4,6p,f10.1,2x,a)') wc, &
         ' lock kind, id, level, thread = ', self%kind, self%id, level, &
-        thread, used, ' unset at '//label
+        omp%thread, used, ' unset at '//label
     else
       write (unit,'(f10.6,a,a4,i6,i3,i4,6p,f10.1,2x,a)') wc, &
         ' lock kind, id, level, thread = ', self%kind, self%id, level, &
-        thread, used, ' unset'
+        omp%thread, used, ' unset'
     end if
   end if
 #ifdef TRACE 

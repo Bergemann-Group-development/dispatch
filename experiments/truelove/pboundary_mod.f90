@@ -76,16 +76,24 @@ SUBROUTINE conditions (self, patch, it)
     if (patch%boundaries%is_set(bits%xl)) then
       do ix=mx%lb,mx%lo
         patch%mem(ix,my%lb:my%ub,mz%lb:mz%ub,:,it,1) = patch%mem(mx%li+1,my%lb:my%ub,mz%lb:mz%ub,:,it,1)
-        patch%mem(ix,my%lb:my%ub,mz%lb:mz%ub,patch%idx%phi,it,1) = 0.0
       end do
+      if (patch%idx%phi > 0) then
+        do ix=mx%lb,mx%lo
+          patch%mem(ix,my%lb:my%ub,mz%lb:mz%ub,patch%idx%phi,it,1) = 0.0
+        end do
+      end if
     end if
-    ! upper x
+  ! upper x
     if (patch%boundaries%is_set(bits%xu)) then
-      do ix=mx%uo,mx%ub
-        patch%mem(ix,my%lb:my%ub,mz%lb:mz%ub,:,it,1) = patch%mem(mx%ui-1,my%lb:my%ub,mz%lb:mz%ub,:,it,1)
-        patch%mem(ix,my%lb:my%ub,mz%lb:mz%ub,patch%idx%phi,it,1) = 0.0
+      do ix=mx%lb,mx%lo
+        patch%mem(ix,my%lb:my%ub,mz%lb:mz%ub,:,it,1) = patch%mem(mx%li+1,my%lb:my%ub,mz%lb:mz%ub,:,it,1)
       end do
-    endif
+      if (patch%idx%phi > 0) then
+        do ix=mx%lb,mx%lo
+          patch%mem(ix,my%lb:my%ub,mz%lb:mz%ub,patch%idx%phi,it,1) = 0.0
+        end do
+      endif
+    end if
   end if
 
   ! y-boundaries
@@ -94,15 +102,23 @@ SUBROUTINE conditions (self, patch, it)
     if (patch%boundaries%is_set(bits%yl)) then
       do iy=my%lb,my%lo
         patch%mem(mx%lb:mx%ub,iy,mz%lb:mz%ub,:,it,1) = patch%mem(mx%lb:mx%ub,my%li+1,mz%lb:mz%ub,:,it,1)
-        patch%mem(mx%lb:mx%ub,iy,mz%lb:mz%ub,patch%idx%phi,it,1) = 0.0
       end do
+      if (patch%idx%phi > 0) then
+        do iy=my%lb,my%lo
+          patch%mem(mx%lb:mx%ub,iy,mz%lb:mz%ub,patch%idx%phi,it,1) = 0.0
+        end do
+      end if
     end if
-    ! upper y
+  ! upper y
     if (patch%boundaries%is_set(bits%yu)) then
       do iy=my%uo,my%ub
         patch%mem(mx%lb:mx%ub,iy,mz%lb:mz%ub,:,it,1) = patch%mem(mx%lb:mx%ub,my%ui-1,mz%lb:mz%ub,:,it,1)
-        patch%mem(mx%lb:mx%ub,iy,mz%lb:mz%ub,patch%idx%phi,it,1) = 0.0
       end do
+      if (patch%idx%phi > 0) then
+        do iy=my%uo,my%ub
+          patch%mem(mx%lb:mx%ub,iy,mz%lb:mz%ub,patch%idx%phi,it,1) = 0.0
+        end do
+      end if
     end if
   end if
 
@@ -112,15 +128,23 @@ SUBROUTINE conditions (self, patch, it)
     if (patch%boundaries%is_set(bits%zl)) then
       do iz=mz%lb,mz%lo
         patch%mem(mx%lb:mx%ub,my%lb:my%ub,iz,:,it,1) = patch%mem(mx%lb:mx%ub,my%lb:my%ub,mz%li+1,:,it,1)
-        patch%mem(mx%lb:mx%ub,my%lb:my%ub,iz,patch%idx%phi,it,1) = 0.0
       end do
+      if (patch%idx%phi > 0) then
+        do iz=mz%lb,mz%lo
+          patch%mem(mx%lb:mx%ub,my%lb:my%ub,iz,patch%idx%phi,it,1) = 0.0
+        end do
+      end if
     end if
     ! upper z
     if (patch%boundaries%is_set(bits%zu)) then
-      do iz=mz%uo,mz%ub
-        patch%mem(mx%lb:mx%ub,my%lb:my%ub,iz,:,it,1) = patch%mem(mx%lb:mx%ub,my%lb:my%ub,mz%ui-1,:,it,1)
-        patch%mem(mx%lb:mx%ub,my%lb:my%ub,iz,patch%idx%phi,it,1) = 0.0
+      do iz=mz%lb,mz%lo
+        patch%mem(mx%lb:mx%ub,my%lb:my%ub,iz,:,it,1) = patch%mem(mx%lb:mx%ub,my%lb:my%ub,mz%li+1,:,it,1)
       end do
+      if (patch%idx%phi > 0) then
+        do iz=mz%lb,mz%lo
+          patch%mem(mx%lb:mx%ub,my%lb:my%ub,iz,patch%idx%phi,it,1) = 0.0
+        end do
+      end if
     end if
   end if
 

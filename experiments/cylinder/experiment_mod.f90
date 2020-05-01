@@ -43,14 +43,14 @@ SUBROUTINE init (self)
   call trace_begin('experiment_t%init')
   call self%cpatch_t%init
   !----------------------------------------------------------------------------
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io_unit%input)
     read (io_unit%input, experiment_params)
     write (io_unit%output, experiment_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   !----------------------------------------------------------------------------
   v_k = v_kepler/sqrt(self%r)                   ! mid point Kepler speed
   self%omega = [0d0, 0d0, v_k/self%r]           ! angular velocity

@@ -67,14 +67,14 @@ SUBROUTINE conditions (self, mesh, mem, idx)
   ! Read and print the namelist only once
   !-----------------------------------------------------------------------------
   call trace%begin ('initial_t%conditions')
-  !$omp critical (init_cr)
+  call io%lock%set
   if (first_time) then
     first_time=.false.
     rewind (io%input)
     read (io%input, initial_params,iostat=iostat)
     if (io%master) write (*,initial_params)
   end if
-  !$omp end critical (init_cr)
+  call io%lock%unset
   d => mem(:,:,:,idx%d)
   s => mem(:,:,:,idx%s)
   p => mem(:,:,:,idx%px:idx%pz)
@@ -110,14 +110,14 @@ SUBROUTINE sedov (self, mesh, mem, idx)
   ! Read and print the namelist only once
   !-----------------------------------------------------------------------------
   call trace%begin ('initial_t%conditions')
-  !$omp critical (init_cr)
+  call io%lock%set
   if (first_time) then
     first_time=.false.
     rewind (io%input)
     read (io%input, sedov_params,iostat=iostat)
     if (io%master) write (*,sedov_params)
   end if
-  !$omp end critical (init_cr)
+  call io%lock%unset
   !-----------------------------------------------------------------------------
   ! Physical initial conditions: Gaussian top hat in entropy if at time=0
   !-----------------------------------------------------------------------------
@@ -170,14 +170,14 @@ SUBROUTINE advection (self, mesh, mem, idx)
   ! Read and print the namelist only once
   !-----------------------------------------------------------------------------
   call trace%begin ('initial_t%conditions')
-  !$omp critical (init_cr)
+  call io%lock%set
   if (first_time) then
     first_time=.false.
     rewind (io%input)
     read (io%input, advection_params,iostat=iostat)
     if (io%master) write (*,advection_params)
   end if
-  !$omp end critical (init_cr)
+  call io%lock%unset
   !-----------------------------------------------------------------------------
   ! Physical initial conditions: Constant advection speed
   !-----------------------------------------------------------------------------

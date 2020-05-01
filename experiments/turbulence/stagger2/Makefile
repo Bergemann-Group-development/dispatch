@@ -13,6 +13,7 @@ STAGGER         = stagger_2nd.o
 SOLVER          = stagger2
 #SOLVER          = paper/s
 EXEC            = dispatch.x
+PARTICLE_SOLVER = KDK
 TOP             = ../../..
 
 # Tomida & Hori, with opacity
@@ -21,7 +22,6 @@ TOP             = ../../..
 
 # include Makefile chain
 include $(TOP)/config/Makefile
-include $(TOP)/solvers/particles/Makefile
 
 #PPCODE          = $(TOP)/solvers/pic/PPcode
 #sinclude $(PPCODE)/Experiments/DISPATCH/Makefile

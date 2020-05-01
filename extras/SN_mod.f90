@@ -24,7 +24,7 @@ MODULE SN_mod
   USE io_mod
   USE trace_mod
   USE task_mod
-  USE patch_mod
+  USE gpatch_mod
   USE link_mod
   USE sinks_mod
   USE scaling_mod
@@ -33,10 +33,10 @@ MODULE SN_mod
   private
   real, parameter:: fourpi = 16.*atan(1.)
   type, public:: SN_t
-    class(patch_t), pointer:: patch => null()
-    type(sinks_t), pointer:: sink
+    class(gpatch_t), pointer:: patch => null()
+    class(sinks_t), pointer:: sink => null()
   contains
-    procedure:: init
+    procedure:: pre_init
     procedure:: pre_update
     procedure:: courant_condition
   end type
@@ -48,15 +48,18 @@ CONTAINS
 !===============================================================================
 !> Pre-init, to pick up a pointer to the patch we belong to.
 !===============================================================================
-SUBROUTINE init (self, patch)
+SUBROUTINE pre_init (self, patch, sink)
   class(SN_t):: self
-  class(patch_t), target:: patch
+  class(gpatch_t), target:: patch
+  class(sinks_t), pointer:: sink
   integer:: iostat
   logical, save:: first_time=.true.
   namelist /SN_params/ verbose, radius
   !-----------------------------------------------------------------------------
-  call trace%begin ('SN_t%init')
-  !$omp critical (input_cr)
+  call trace%begin ('SN_t%pre_init')
+  self%patch => patch
+  self%sink => sink
+  call io%lock%set
   if (first_time) then
     rewind (io%input)
     read (io%input, SN_params, iostat=iostat)
@@ -65,26 +68,26 @@ SUBROUTINE init (self, patch)
     write (io%namelist, SN_params)
     first_time = .false.
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   call trace%end ()
-END SUBROUTINE init
+END SUBROUTINE pre_init
 
 !===============================================================================
 !> The update procedure consists of finding the sink(s) that overlap with our
 !> parent task.  The sink tasks are available in the nbor list of the patch
 !===============================================================================
-SUBROUTINE pre_update (self, patch, sink)
+SUBROUTINE pre_update (self)
   class(SN_t):: self
-  class(patch_t), pointer:: patch
-  class(sinks_t), pointer:: sink
   !.............................................................................
+  class(gpatch_t), pointer:: patch
+  class(sinks_t), pointer:: sink
   class(nbor_t), pointer:: nbor
   class(task_t), pointer:: task
   logical:: just_happened, contains_sink
   !-----------------------------------------------------------------------------
   call trace%begin ('SN_t%pre_update')
-  self%sink => sink
-  self%patch => patch
+  patch => self%patch
+  sink => self%sink
   contains_sink = patch%contains (sink%position)
   if (contains_sink) then
     just_happened = sink%previous_time < sink%SN_time &
@@ -93,7 +96,7 @@ SUBROUTINE pre_update (self, patch, sink)
 !print *,patch%id, sink%position
 !print *,patch%id, sink%previous_time, sink%SN_time, sink%time, just_happened
     if (just_happened) then
-      call SN (self, patch, sink)
+      call SN (self)
       sink%previous_time = sink%time
     end if
   end if
@@ -112,10 +115,11 @@ END SUBROUTINE pre_update
 !===============================================================================
 !> Compute the SN input to the patch
 !===============================================================================
-SUBROUTINE SN (self, patch, sink)
+SUBROUTINE SN (self)
   class(SN_t):: self
-  class(patch_t):: patch
-  class(sinks_t):: sink
+  !.............................................................................
+  class(gpatch_t), pointer:: patch
+  class(sinks_t), pointer:: sink
   class(task_t), pointer:: task
   real(8):: m_sun               ! solar mass in code units
   real(4):: dm                  ! change in mass per cell
@@ -129,6 +133,8 @@ SUBROUTINE SN (self, patch, sink)
   real:: ee, ee_min, foe
   !-----------------------------------------------------------------------------
   call trace%begin ('SN_t%SN')
+  patch => self%patch
+  sink => self%sink
   !-----------------------------------------------------------------------------
   ! Fitting formula for the mass loss rate (Paolo)
   !-----------------------------------------------------------------------------

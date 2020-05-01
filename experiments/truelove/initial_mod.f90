@@ -11,16 +11,14 @@ MODULE initial_mod
   USE scaling_mod
   implicit none
   private
-
   type, public:: initial_t
     character(len=64):: solver
     logical:: mhd
-    real:: gamma
+    real(8):: gamma, g1
   contains
     procedure:: init
     procedure:: condition
   end type
-
   real(8), parameter:: pi = asin(1.0) * 2.0
 CONTAINS
 
@@ -34,9 +32,14 @@ SUBROUTINE init (self, solver, gamma)
   !----------------------------------------------------------------------------
   self%solver = solver
   if (present(gamma)) then
-    self%gamma = max(gamma, 1.0001)
+    self%gamma = gamma
   else
-    self%gamma = 1.0001
+    self%gamma = 1d0
+  end if
+  if (self%gamma == 1d0) then
+    self%g1 = 1d0
+  else
+    self%g1 = self%gamma-1d0
   end if
 END SUBROUTINE init
 
@@ -108,22 +111,22 @@ SUBROUTINE condition (self, m, f, idx)
           , egrav   , etherm  , erot    , pamb    , rhoamb  , rz       &
           , rzsq    , tff     , cjlen   , cjnum   , csqiso  , vff      &
           , nrg     , x       , y       , z       , rzxy    , rzxm1    &
-          , rzym1
+          , rzym1   , d
   real(8), parameter:: gammaad = 5.0 / 3.0
   real(8), parameter:: r2 = 1.0
   logical, save:: first_time=.true.
   namelist / experiment_params / rho0, r0, truealpha, truebeta, chipres &
                                , chirho, x0, y0, z0, perta, pertm
   !----------------------------------------------------------------------------
-  call trace%begin('initial_t%condition')
+  call trace%begin ('initial_t%condition')
 
-  !$omp critical (input_cr)
+  call io%lock%set ('initial_t%condition')
   if (first_time) then
     rewind (io%input)
     read (io%input, experiment_params)
     if (io%master) write (*, experiment_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset ('initial_t%condition')
 
 !-----------------------------------------------------------------------
 !      Calculate uniform cloud parameters.
@@ -170,7 +173,7 @@ SUBROUTINE condition (self, m, f, idx)
     print "('Initial Jeans number = ',1pe10.3)", cjnum
     print "('Initial angular speed =',1pe10.3)", omega
   end if
-
+  !
   m1 => m(1)
   m2 => m(2)
   m3 => m(3)
@@ -184,19 +187,20 @@ SUBROUTINE condition (self, m, f, idx)
         rzsq = (x - x0)**2 + (y - y0)**2 + (z - z0)**2 ! zone-centred
         rz = sqrt(rzsq)
         rzxy = sqrt((x - x0)**2 + (y - y0)**2) ! zone-centred
-
+        !
         if (rz <= r0) then
           phi0             = datan2(y - y0, x - x0)
           q1               = 1.0 + perta * cos(real(pertm,kind=8) * phi0)
-          nrg              = pcloud / (self%gamma - 1.0)
-          f(i,j,k,idx%d)   = q1 * rho0
+          nrg              = pcloud / self%g1
+          d                = q1 * rho0
           !!!f(i,j,k,idx%phi) = c1 + 2.0 * pi * scaling%grav * rho0 * rzsq / 3.0
         else
-          nrg              = pamb / (self%gamma - 1.0)
-          f(i,j,k,idx%d)   = rhoamb
+          nrg              = pamb /self%g1
+          d                = rhoamb
           !!!f(i,j,k,idx%phi) = c2 - c3 / rz + 2.0 * scaling%grav * pi * rhoamb * rzsq / 3.0
         endif
-        f(i,j,k,idx%phi) = 0.0
+        f(i,j,k,idx%d)   = d
+        if (idx%phi > 0) f(i,j,k,idx%phi) = 0.0
         ! set momenta for staggered solvers appropriately
         f(i,j,k,idx%px)  = 0.0
         f(i,j,k,idx%py)  = 0.0
@@ -216,20 +220,19 @@ SUBROUTINE condition (self, m, f, idx)
             f(i,j,k,idx%py)  = omega * rzxy * cos(phi0) * f(i,j,k,idx%d)
           end if
         end if
-
-        if (self%solver(1:9) == 'stagger2_') then
-          f(i,j,k,idx%s) = (log(nrg * (self%gamma - 1.0)) - log(f(i,j,k,idx%d)) * self%gamma) &
-                         * f(i,j,k,idx%d) / (self%gamma - 1.0)
-        else if (self%solver(1:10) == 'stagger2e_') then
-          f(i,j,k,idx%e) = nrg
-        else if (self%solver(1:7) == 'ramses_') then
-          f(i,j,k,idx%e) = nrg + 0.5 * (f(i,j,k,idx%px)**2 + f(i,j,k,idx%py)**2) / f(i,j,k,idx%d)
-        else if (trim(self%solver) == 'zeus_mhd_patch') then
+        !
+        if (self%solver(1:7) == 'ramses_') then
+          nrg = nrg + 0.5 * (f(i,j,k,idx%px)**2 + f(i,j,k,idx%py)**2)/d
+        end if
+        ! internal energy or enrtopy
+        if (idx%e > 0) then
           f(i,j,k,idx%e) = nrg
         end if
-
+        if (idx%s > 0) then
+          f(i,j,k,idx%s) = (log(nrg*self%g1) - log(d)*self%gamma)*d/self%g1
+        end if
         ! this experiment is hydro and gravity only.
-        if (self%mhd) then
+        if (idx%bx > 0) then
           f(i,j,k,idx%bx) = 0.0
           f(i,j,k,idx%by) = 0.0
           f(i,j,k,idx%bz) = 0.0

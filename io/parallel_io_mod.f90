@@ -88,7 +88,7 @@ SUBROUTINE init (patch)
   !-----------------------------------------------------------------------------
   call trace%print_id (id)
   call trace%begin ('parallel_io_t%init')
-  !$omp critical (input_cr)
+  call io%lock%set ('parallel_io_t%init')
   if (first_time) then
     first_time = .false.
     rewind (io%input)
@@ -106,7 +106,7 @@ SUBROUTINE init (patch)
       call file_out%openw (filename)
     end if
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset ('parallel_io_t%init')
   call time_slices%init (patch%nt)
   call trace%end()
 END SUBROUTINE init
@@ -194,8 +194,10 @@ SUBROUTINE output (patch, count)
   !-----------------------------------------------------------------------------
   if (io%guard_zones) then
     n = patch%gn
-  else
+  else if (patch%no_mans_land) then
     n = patch%n
+  else
+    n = patch%n-1
   end if
   !-----------------------------------------------------------------------------
   ! io%format=14 then slots in the file are ordered (id,iv,iout), while for 15
@@ -293,10 +295,13 @@ contains
     call trace%begin ('parallel_io-t%output::prepare_time_slices')
     if (io%guard_zones) then
       l1 = patch%mesh%lb
-      u1 = max(patch%mesh%ub,patch%mesh%gn)-1
-    else
+      u1 = max(patch%mesh%ub,patch%mesh%gn)
+    else if (patch%no_mans_land) then
       l1 = patch%mesh%li
       u1 = patch%mesh%ui
+    else
+      l1 = patch%mesh%li
+      u1 = patch%mesh%ui-1
     end if
     n = u1-l1+1
     l2 = l1+1

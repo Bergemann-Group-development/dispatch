@@ -64,7 +64,7 @@ SUBROUTINE init (self, solver, gamma)
                             density_floor, rotating_disk
   !----------------------------------------------------------------------------
   call trace%begin('initial_t%init')
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
@@ -72,7 +72,7 @@ SUBROUTINE init (self, solver, gamma)
     if (iostat/=0) call io%namelist_warning ('initial_params')
     if (io%master) write (*, initial_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
 
   self%aspect_ratio = aspect_ratio
   self%opening_angle = opening_angle

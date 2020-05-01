@@ -45,7 +45,7 @@ SUBROUTINE init (self)
   call trace%begin ('eos_t%init', itimer=itimer)
   if (io_unit%master) print *, &
  '------------------------ ideal equation-of-state -----------------------------'
-  !$omp critical (init_cr)
+  call io%lock%set ('eos_t%init')
   if (first_time) then
     gamma = self%gamma
     do_rt = self%do_rt
@@ -53,7 +53,7 @@ SUBROUTINE init (self)
     rewind (io%input); read (io%input, eos_params, iostat=iostat)
     if (io%master) write (io%output, eos_params)
   end if
-  !$omp end critical (init_cr)
+  call io%lock%unset ('eos_t%init')
   self%gamma = gamma
   self%do_rt = do_rt
   self%kappa = kappa * scaling%m/scaling%l**2
@@ -90,25 +90,32 @@ SUBROUTINE lookup (self, dim, lnd, ee, lnx, x, lny, y, pg, tt, ss, rk, src, gamm
   real, dimension(:,:,:), intent(in), pointer, optional :: lnx, x, lny, y, lnd, ee
   real, dimension(:,:,:),                      optional :: pg, tt, ss
   real, dimension(:,:,:,:),                    optional :: src, rk
-  real, dimension(:,:,:), pointer :: x_loc, y_loc
+  real, dimension(:,:,:), pointer, contiguous :: x_loc, y_loc
   integer:: i
   integer, save:: itimer=0
   real:: stefan
+  logical:: x_alloc, y_alloc
   !-----------------------------------------------------------------------------
   call trace%begin ('eos_t%lookup', itimer=itimer)
   if (present(gamma)) then
     self%gamma = gamma
   end if
+  x_alloc = .false.
+  y_alloc = .false.
   if (present(lnd)) then
-    call mpi%abort('trying to use lnd in eos/ideal/eos_mod.f90')
-  else if (present(ee)) then
-    call mpi%abort('trying to use ee in eos/ideal/eos_mod.f90')
+    allocate (x_loc(dim(1),dim(2),dim(3)))
+    x_alloc = .true.
+    x_loc = exp(lnd)
+  end if
+  if (present(ee)) then
+    y_loc => ee
   end if
   !-----------------------------------------------------------------------------
   if (present(y)) then
     y_loc => y
   else if (present(lny)) then
     allocate (y_loc(dim(1),dim(2),dim(3)))
+    y_alloc = .true.
     y_loc = exp(lny)
   else
     call mpi%abort ('eos_t: missing 2nd argument')
@@ -118,6 +125,7 @@ SUBROUTINE lookup (self, dim, lnd, ee, lnx, x, lny, y, pg, tt, ss, rk, src, gamm
     x_loc => x
   else if (present(lnx)) then
     allocate (x_loc(dim(1),dim(2),dim(3)))
+    x_alloc = .true.
     x_loc = exp(lnx)
   else
     call mpi%abort ('eos_t: missing 1st argument')
@@ -140,8 +148,8 @@ SUBROUTINE lookup (self, dim, lnd, ee, lnx, x, lny, y, pg, tt, ss, rk, src, gamm
       rk(:,:,:,i) = y_loc*self%kappa
     end do
   end if
-  if (present(lnx)) deallocate(x_loc)
-  if (present(lny)) deallocate(y_loc)
+  if (x_alloc) deallocate(x_loc)
+  if (y_alloc) deallocate(y_loc)
   call trace%end(itimer)
 END SUBROUTINE lookup
 
@@ -160,21 +168,21 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne,lnee, pg, tt, ne, rk, &
   integer:: i
   integer, save:: itimer=0
   real:: stefan
+  logical:: d_alloc, e_alloc
   !-----------------------------------------------------------------------------
   call trace%begin ('eos_t%lookup', itimer=itimer)
+  nullify (d_loc, ee_loc)
   if (present(gamma)) then
     self%gamma = gamma
   end if
-  if (present(lnd)) then
-    call mpi%abort('trying to use lnd in eos/ideal/eos_mod.f90')
-  else if (present(ee)) then
-    call mpi%abort('trying to use ee in eos/ideal/eos_mod.f90')
-  end if
-  !-----------------------------------------------------------------------------
+  d_alloc = .false.
+  e_alloc = .false.
+   !-----------------------------------------------------------------------------
   if (present(d)) then
     d_loc => d
   else if (present(lnd)) then
     allocate (d_loc(dim(1),dim(2),dim(3)))
+    d_alloc = .true.
     d_loc = exp(lnd)
   else
     call mpi%abort ('eos_t: missing 1st argument')
@@ -184,9 +192,11 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne,lnee, pg, tt, ne, rk, &
     ee_loc => ee
   else if (present(lne)) then
     allocate (ee_loc(dim(1),dim(2),dim(3)))
+    e_alloc = .true.
     ee_loc = exp(lne)/d_loc
   else if (present(e)) then
     allocate (ee_loc(dim(1),dim(2),dim(3)))
+    e_alloc = .true.
     ee_loc = e/d_loc
   else
     call mpi%abort ('eos_t: missing 2nd argument')
@@ -209,8 +219,8 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne,lnee, pg, tt, ne, rk, &
       rk(:,:,:,i) = d_loc*self%kappa
     end do
   end if
-  if (present(lne).or.present(e).or.present(lnee)) deallocate(ee_loc)
-  if (present(lnd)) deallocate(d_loc)
+  if (d_alloc) deallocate(d_loc)
+  if (e_alloc) deallocate(ee_loc)
   call trace%end(itimer)
 END SUBROUTINE lookup_table
 

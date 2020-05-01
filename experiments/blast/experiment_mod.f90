@@ -85,7 +85,7 @@ SUBROUTINE initial_conditions (patch)
   !----------------------------------------------------------------------------
   call trace_begin('initial_t%init')
 
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
@@ -93,7 +93,7 @@ SUBROUTINE initial_conditions (patch)
     call io%namelist_warning ('experiment_params', iostat)
     if (io%master) write (io%output, experiment_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
 
   m1 => patch%mesh(1)
   m2 => patch%mesh(2)

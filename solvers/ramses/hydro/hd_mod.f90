@@ -86,6 +86,7 @@ SUBROUTINE pre_init (self)
   !-----------------------------------------------------------------------------
   call trace%begin('hd_mod%pre_init')
   self%nv = 5
+  self%nw = 1
   call self%extras_t%pre_init
   call trace%end ()
 END SUBROUTINE pre_init
@@ -114,12 +115,12 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Here we call patch_t%init directly, to initialize %mem and %mesh
   !-----------------------------------------------------------------------------
-  call self%idx%init (5, self%mhd)
+  call self%idx%init (ie=5, mhd=self%mhd)
   call self%patch_t%init
   !-----------------------------------------------------------------------------
   ! Ramses specific things
   !-----------------------------------------------------------------------------
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
@@ -132,7 +133,7 @@ SUBROUTINE init (self)
     isothermal = .true.
   if (isothermal) &
     gamma = 1d0
-  !$omp end critical (input_cr)
+  call io%lock%unset
   self%riemann = riemann
   self%courant = courant_factor
   self%gamma = gamma
@@ -615,7 +616,7 @@ end subroutine ctoprim
 subroutine uslope(self)
   class(hd_t):: self
   integer::ngrid
-  integer::i, j, k, n, l(3), u(3), islope_type
+  integer::i, j, k, n, l(3), u(3), islope_type, nv
   real(dp)::dsgn, dlim, dcen, dlft, drgt, slop, c1, c2
   real(dp)::dfll,dflm,dflr,dfml,dfmm,dfmr,dfrl,dfrm,dfrr
   real(dp)::dflll,dflml,dflrl,dfmll,dfmml,dfmrl,dfrll,dfrml,dfrrl
@@ -639,6 +640,7 @@ subroutine uslope(self)
   u = self%mesh%uo
   if(islope_type==-1)then
     do n = 1, self%nv
+      if (n==self%idx%phi .or. n==self%idx%dphi) cycle
       do k = l(3),u(3)
         do j = l(2),u(2)
           !dir$ ivdep
@@ -661,6 +663,7 @@ subroutine uslope(self)
     return
   else if (islope_type==1) then  ! minmod
     do n = 1, self%nv
+      if (n==self%idx%phi .or. n==self%idx%dphi) cycle
       do k = l(3),u(3)
         do j = l(2),u(2)
           !dir$ ivdep
@@ -686,6 +689,7 @@ subroutine uslope(self)
     c1 = slope_type
     c2 = 0.5_dp/c1
     do n = 1, self%nv
+      if (n==self%idx%phi .or. n==self%idx%dphi) cycle
       do k = l(3),u(3)
         do j = l(2),u(2)
           !dir$ ivdep
@@ -722,6 +726,7 @@ subroutine uslope(self)
   else if (islope_type==3) then ! positivity preserving 3d unsplit slope
     xslope_type = real(slope_type - 2_dp,kind=dp)
     do n = 1, self%nv
+      if (n==self%idx%phi .or. n==self%idx%dphi) cycle
       do k = l(3),u(3)
         do j = l(2),u(2)
           !dir$ ivdep
@@ -792,6 +797,12 @@ subroutine uslope(self)
     end do
   else if (islope_type==4) then ! positivity preserving 3d unsplit slope
     xslope_type = real(slope_type - 3_dp,kind=dp)
+    nv = self%nv
+    if (self%idx%phi > 0) then
+      nv = self%idx%phi-1
+    else
+      nv = self%nv
+    end if
     do k = l(3),u(3)
       do j = l(2),u(2)
         do i = l(1),u(1)
@@ -803,7 +814,7 @@ subroutine uslope(self)
           !$omp    & dfrrl,dfllm,dflmm,dflrm,dfmlm,dfmmm,dfmrm,dfrlm,dfrmm, &
           !$omp    & dfrrm,dfllr,dflmr,dflrr,dfmlr,dfmmr,dfmrr,dfrlr,dfrmr, &
           !$omp    & dfrrr,vmin,vmax,dfx,dfy,dfz,idff,slop,dlim)
-          do n = 1, self%nv
+          do n = 1, nv
             dflll = q(i-1,j-1,k-1,n)-q(i,j,k,n)
             dflml = q(i-1,j  ,k-1,n)-q(i,j,k,n)
             dflrl = q(i-1,j+1,k-1,n)-q(i,j,k,n)
@@ -870,7 +881,7 @@ subroutine uslope(self)
           end do
           !dir$ ivdep
           !$omp simd
-          do n = 1, self%nv
+          do n = 1, nv
             ! use saved fluxes, with common dlim
             dq(i,n,1,j,k) = dlim*adfx(n)
             dq(i,n,2,j,k) = dlim*adfy(n)
@@ -881,8 +892,8 @@ subroutine uslope(self)
       end do
     end do
   else
-     write(*,*)'Unknown slope type'
-     stop
+    write(*,*)'Unknown slope type'
+    stop
   endif
   if (detailed_timer) then
     call trace%end (itimer)

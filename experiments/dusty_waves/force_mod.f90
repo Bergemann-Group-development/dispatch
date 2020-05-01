@@ -44,14 +44,14 @@ SUBROUTINE init (self, solver)
                            drag, csound, b, sigma
    !----------------------------------------------------------------------------
    call trace%begin('force_t%init')
-   !$omp critical (input_cr)
+   call io%lock%set
    if (first_time) then
      first_time = .false.
      rewind (io%input)
      read (io%input, force_params)
      if (io%master) write (*, force_params)
    end if
-   !$omp end critical (input_cr)
+   call io%lock%unset
    self%solver = trim(solver)
    self%drag   = trim(drag)
    self%seed   = seed

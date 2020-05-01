@@ -62,6 +62,7 @@ MODULE dust_mod
     integer(2), pointer, contiguous:: na(:,:,:,:) => null()  ! added per bin
     integer(2), pointer, contiguous:: np(:,:,:,:) => null()  ! number per bin
     real      , pointer, contiguous:: k (:,:)     => null()  ! kernel
+    real      , pointer, contiguous:: vg(:,:,:,:) => null()  ! gas velocity
     class(gpatch_t), pointer:: patch          ! pointer to the MHD patch
     type(particles_t), pointer:: particles    ! pointer to particles
     real, pointer, contiguous:: d(:,:,:)      ! density
@@ -73,9 +74,11 @@ MODULE dust_mod
     real(8):: next_time                       ! next evolve time
     procedure(test_kernel), pointer:: kernel  ! kernel procedure
     class(list_t), pointer:: task_list        ! task list
+    integer, dimension(3):: lb=0, ub=0        ! lower and upper index bounds
+    integer, dimension(5):: i_dbg=0           ! debug selection
     integer:: verbose
     integer:: n_bin
-    integer:: id_dbg = -1
+    integer:: id_dbg=0, ip_dbg=0
     logical:: detailed_timer = .false.
   contains
     procedure:: init
@@ -126,7 +129,7 @@ SUBROUTINE init (self, particles)
   !-----------------------------------------------------------------------------
   call trace%begin ('dust_t%init')
   self%particles => particles
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     rewind (io%input)
     read (io%input, dust_params, iostat=iostat)
@@ -137,10 +140,11 @@ SUBROUTINE init (self, particles)
     n_bin = max(1,n_bin)
     first_time = .false.
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   self%kernel => test_kernel
   self%n_bin = n_bin
   self%verbose = verbose
+  call self%aux%init
   !-----------------------------------------------------------------------------
   ! Scaling to code units (keep dust size and mass in cgs)
   !-----------------------------------------------------------------------------
@@ -167,14 +171,14 @@ END SUBROUTINE init
 !> Initialize an initial particle distribution, with weights equal to the local
 !> mass density in code units (this must be taken into account in the kernel)
 !===============================================================================
-SUBROUTINE initial_condition (self, l, u)
+SUBROUTINE initial_condition (self)
   class(dust_t):: self
-  integer:: l(3), u(3)
   !.............................................................................
   class(gpatch_t), pointer:: patch
   class(particle_t), pointer:: p
   real, pointer, contiguous:: d(:,:,:)
   integer:: i1, i2, i3, bin, j
+  integer:: l(3), u(3)
   real:: c
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -182,6 +186,8 @@ SUBROUTINE initial_condition (self, l, u)
   call self%random%init
   patch => self%patch
   d => patch%mem(:,:,:,patch%idx%d,patch%it,1)
+  l = self%lb
+  u = self%ub
   do i3=l(3),u(3)
   do i2=l(2),u(2)
   do i1=l(1),u(1)
@@ -197,8 +203,8 @@ SUBROUTINE initial_condition (self, l, u)
         call self%particles%append (p)
         p%w = d(i1,i2,i3)*dust_to_gas
         !.......................................................................
-        if (verbose > 2 .or. p%id == self%id_dbg) &
-          write (io_unit%log,'(a,i6,2x,3i3,1x,3f5.2,1x,1p,2e11.2)') &
+        if (verbose > 2 .or. p%id == self%ip_dbg) &
+          write (io_unit%log,'(a,i8,2x,3i3,1x,3f5.2,1x,1p,2e11.2)') &
           'particle_t%IC: id, q, r, w, c =', p%id, p%q, p%r, p%w, p%c
       end do
     end do
@@ -207,7 +213,7 @@ SUBROUTINE initial_condition (self, l, u)
   end do
   !.............................................................................
   if (verbose > 1) &
-    write (io_unit%log,'(a,i6,1p,2e11.2)') &
+    write (io_unit%log,'(a,i8,1p,2e11.2)') &
     'particle_t%IC: id, n =', patch%id, real(counter%update(0)), &
     real(product(u-l+1)*n_bin*particles_per_bin)
   !.............................................................................
@@ -221,7 +227,7 @@ SUBROUTINE update (self, particles)
   class(dust_t):: self
   type(particles_t), pointer:: particles
   logical:: do_dust
-  integer:: n(3), l(3), u(3)
+  integer:: n(3), i
   integer, save:: itimer=0
   !.............................................................................
   call trace%begin ('dust_t%update', itimer=itimer)
@@ -241,8 +247,6 @@ SUBROUTINE update (self, particles)
   end if
   !...........................................................................
   n = self%patch%mesh%gn                        ! cells in patch
-  l = self%patch%mesh%li                        ! lower index limit
-  u = self%patch%mesh%ui                        ! upper index limit
   allocate (self%n (n(1),n(2),n(3),n_bin))      ! work array for histograms
   allocate (self%na(n(1),n(2),n(3),n_bin))      ! number of added particles
   allocate (self%dv(n_bin))                     ! average speed difference
@@ -266,7 +270,7 @@ END SUBROUTINE update
 SUBROUTINE gather (self)
   class(dust_t):: self
   !.............................................................................
-  integer:: bin, it, i(3), n(3), np, l(3), u(3)
+  integer:: bin, it, i(3), n(3), np
   type(particle_t), pointer:: p
   real(8):: dv(n_bin)
   integer, save:: itimer=0
@@ -280,13 +284,7 @@ SUBROUTINE gather (self)
   self%np = 0
   np = 0                                        ! number of updates
   dv = 0d0                                      ! average speed difference
-  if (self%lower(3)) l(3)=self%patch%mesh(3)%lb ! adjust at boundaries
-  if (self%upper(3)) u(3)=self%patch%mesh(3)%ub ! adjust at boundaries
   p => self%particles%head                      ! first particle
-  !.............................................................................
-  if (verbose > 0) &
-    write (io_unit%log,*) 'GATHER'
-  !.............................................................................
   do while (associated(p))                      ! loop over particle
     bin = p%bin                                 ! particle bin
     i = p%q                                     ! particle space index
@@ -327,16 +325,18 @@ SUBROUTINE evolve (self)
   class(dust_t):: self
   !.............................................................................
   real:: n(n_bin), delta_n
-  integer:: i1, i2, i3, i, j
+  integer:: i1, i2, i3, i, j, l(3), u(3)
   class(mesh_t), pointer:: mesh(:)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('dust_t%evolve', itimer=itimer)
   if (self%particles%n > 0) then
+    l = self%lb
+    u = self%ub
     mesh  => self%patch%mesh
-    do i3=mesh(3)%li,mesh(3)%ui
-    do i2=mesh(2)%li,mesh(2)%ui
-    do i1=mesh(1)%li,mesh(1)%ui
+    do i3=l(3),u(3)
+    do i2=l(2),u(2)
+    do i1=l(1),u(1)
       call self%kernel
       n(:) = self%n(i1,i2,i3,:)
       !-------------------------------------------------------------------------
@@ -450,20 +450,20 @@ SUBROUTINE drag (self, p)
   i = p%q
   bin = p%bin
   s = self%s_cgs(bin)
-!  i = min(max(i,1),self%patch%gn)
   d = self%d(i(1),i(2),i(3))
-  v = self%p(i(1),i(2),i(3),:)*ods/d
+  v = self%vg(:,i(1),i(2),i(3))*ods
   p%dv = v - p%v
   p%c = drag_coeff*d/s            !*sqrt((speed2+sound2)/sound2)
   p%d = p%c*p%dv
 !  self%patch%force_per_unit_volume(i(1),i(2),i(3),:) = &
 !  self%patch%force_per_unit_volume(i(1),i(2),i(3),:) - p%d*p%w
   !.............................................................................
-  if (verbose > 4 .or. p%id == self%id_dbg) then
-    write (io_unit%log,'(a,i8,1p,3e9.2,0p,3i3,1x,3f6.2,4(1x,1p,3e9.2))') &
-      'drag: id,s,d,c,q,r,v,vg,d=', &
-      p%id, s, d, p%c, p%q, p%r, p%v, v, p%d
-  end if
+  if (verbose > 4 .or. p%id == self%ip_dbg) then
+    write (io_unit%log,1) &
+      '  drag: id,t,d,c,q,r,v,vg,d=', &
+      self%patch%id, p%id, p%t, d, p%c, p%q, p%r, p%v, v
+    1 format(a,i5,i8,3x,1p,3e10.3,0p,3i3,5(3f6.2,2x))
+end if
   !.............................................................................
 #ifdef DBG
   if (self%detailed_timer) call trace%end (itimer)
@@ -476,21 +476,82 @@ END SUBROUTINE drag
 SUBROUTINE renormalize (self)
   class(dust_t):: self
   !.............................................................................
-  integer:: i(3), l(3), u(3), bin, i1, i2, i3, count, unit
+  integer:: i(3), l(3), u(3), bin, i1, i2, i3, i4, np, nmin, nmax, count, unit
   class(particle_t), pointer:: p, next
   !integer(kind=2), allocatable:: n(:,:,:,:)
-  logical:: add, rem, alloc
+  logical:: add, rem, warn, alloc
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('dust_t%renormalize', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Check if they are within limits, and adjust if not
   !-----------------------------------------------------------------------------
-  rem = any(self%np > particles_per_bin*max_fraction)
-  add = any(self%np < particles_per_bin*min_fraction)
+  rem = .false.
+  add = .false.
+  warn = .false.
+  nmin = particles_per_bin*min_fraction
+  nmax = particles_per_bin*max_fraction
+  l = self%lb
+  u = self%ub
+  do i4=1,n_bin
+  do i3=l(3),u(3)
+  do i2=l(2),u(2)
+    if (verbose > 0 .and. self%patch%id == self%i_dbg(1) .and. &
+        all([i2,i3,i4] == self%i_dbg(3:5))) then
+      do i1=l(1),u(1)
+        np = self%np(i1,i2,i3,i4)
+        if (i1 == self%i_dbg(2)) then
+          write(io_unit%log,'(a,5i4,i6)') &
+            'dust_t%renormalize: i_dbg, np =', self%i_dbg, np
+        end if
+        rem = rem .or. np > nmax
+        add = add .or. np < nmin
+        warn = warn .or. np == 0
+      end do
+    else
+      do i1=l(1),u(1)
+        np = self%np(i1,i2,i3,i4)
+        rem = rem .or. np > nmax
+        add = add .or. np < nmin
+        warn = warn .or. np == 0
+      end do
+    end if
+  end do
+  end do
+  end do
+  !.............................................................................
+  if (verbose > 2 .or. self%patch%id == self%id_dbg) then
+    write (io_unit%log,'(a,i6,2x,3l1)') &
+      'dust_t%renormalize: id, add, rem, warn =', self%patch%id, add, rem, warn
+  end if
+  !-----------------------------------------------------------------------------
+  ! Warn about cells with no particles
+  !-----------------------------------------------------------------------------
+  if (warn) then
+    if (verbose > 0) then
+      write (stderr,1) self%patch%id
+    1 format("dust_t%renormalize WARNING: zero particles somewhere in patch",i6)
+      do i4=1,n_bin
+      do i3=l(3),u(3)
+      do i2=l(2),u(2)
+      do i1=l(1),u(1)
+        if (self%np(i1,i2,i3,i4) == 0) then
+          write (io_unit%log,'(a,i6,4i4)') &
+            'dust_t%renormalize WARNING: zero particles in id, ii =', &
+            self%patch%id, i1, i2, i3, i4
+        end if
+      end do
+      end do
+      end do
+      end do
+    else
+      write (io_unit%log,1) self%patch%id
+    end if
+  end if
+  !-----------------------------------------------------------------------------
+  ! Add or remove id outside limits
+  !-----------------------------------------------------------------------------
   if (add .or. rem) then
-    l = self%patch%mesh%li                        ! lower index limit
-    u = self%patch%mesh%ui                        ! upper index limit
     !---------------------------------------------------------------------------
     if (verbose > 0) then
       unit = io_unit%log
@@ -502,6 +563,7 @@ SUBROUTINE renormalize (self)
       if (add) call add_particles
       if (rem) call remove_particles
     end if
+    call normalize_weights
   end if
   !.............................................................................
   call trace%end (itimer)
@@ -515,29 +577,35 @@ contains
   ! conserved.
   !=============================================================================
   subroutine add_particles
-    integer:: np, n, na
+    integer:: np, na
     real:: w, c, d_cgs
+    integer:: ii(5)
+    real(8):: time
     integer, save:: itimer1=0
     !---------------------------------------------------------------------------
     call trace%begin ('dust_t%add_particles', itimer=itimer1)
+    !---------------------------------------------------------------------------
+    ! Add new macro-particles at the current time (after MHD update)
+    !---------------------------------------------------------------------------
     na = 0
     p => self%particles%head
     do while (associated(p))
       next => p%next
       bin = p%bin                                 ! particle bin
       i = p%q                                     ! particle space index
+      time = p%t
       if (all(i >= l .and. i <= u)) then
         !-----------------------------------------------------------------------
+        ii = [self%patch%id,i,bin]
         d_cgs = self%n(i(1),i(2),i(3),bin)*scaling%d
         if (d_cgs > d_min_cgs) then
           np = self%np(i(1),i(2),i(3),bin) + self%na(i(1),i(2),i(3),bin)
           !.....................................................................
-          if (verbose > 1) then
-            if (i(1)==3 .and. i(2)==3 .and. bin==3) &
+          if (verbose > 1 .or. all(ii == self%i_dbg)) then
             write (io_unit%log,'(a,4i4,2x,3i6,1p,2e11.2,2(2x,3i4))') &
-            'add_part',i,bin,self%np(i(1),i(2),i(3),bin), &
-            self%na(i(1),i(2),i(3),bin), &
-            particles_per_bin, d_cgs, d_min_cgs, l, u
+            'add_part: i,bin,self%np,self%na,ppb,d_cgs,d_min_cgs=', &
+            i, bin, self%np(i(1),i(2),i(3),bin), self%na(i(1),i(2),i(3),bin), &
+            particles_per_bin, d_cgs, d_min_cgs
           endif
           !.....................................................................
           if (np < particles_per_bin) then
@@ -548,17 +616,25 @@ contains
               p%q = i
               p%bin = bin
               p%r = self%random%uniform (3)
-              p%v = 0.0
+              p%v = self%vg(:,i(1),i(2),i(3))
               p%c = c
               p%w = 0.0
+              p%t = time
               call self%particles%append (p)
               self%na(i(1),i(2),i(3),bin) = self%na(i(1),i(2),i(3),bin) + 1
               np = self%np(i(1),i(2),i(3),bin) + self%na(i(1),i(2),i(3),bin)
               na = na + 1
+              if (p%id == self%ip_dbg) then
+                write (io_unit%log,'(a,i6,i8,4i4,3f6.2)') &
+                  'add_particles: pa%id,p%id,i,bin,r=', &
+                  self%patch%id,p%id,i,bin,p%r
+              end if
             end do
             !...................................................................
-            if (verbose > 2) then
-              write (io_unit%log,*) 'ADDED', n, np, particles_per_bin, &
+            if (verbose > 2 .or. all(ii == self%i_dbg)) then
+              write (io_unit%log,'(a,5i4,2x,4i4)') &
+                'add_particles: n,np,ppb,na,self%np=', &
+                self%i_dbg, np, particles_per_bin, &
                 self%na(i(1),i(2),i(3),bin), self%np(i(1),i(2),i(3),bin)
             end if
             !...................................................................
@@ -572,7 +648,6 @@ contains
       write (io_unit%log,*) 'add_particles: id, na', self%patch%id, na
     end if
     !...........................................................................
-    call normalize_weights
     call trace%end (itimer1)
   end subroutine add_particles
   !=============================================================================
@@ -592,7 +667,7 @@ contains
       write (io_unit%log,*) 'REMOVE'
     endif
     !...........................................................................
-    nr = 0
+     nr = 0
     p => self%particles%head
     do while (associated(p))
       next => p%next
@@ -618,7 +693,6 @@ contains
       write (io_unit%log,*) 'remove_particles: id, nr', self%patch%id, nr
     end if
     call trace%end (itimer2)
-    call normalize_weights
   end subroutine remove_particles
   !=============================================================================
   !> Renormalize weights, so the new set of particles in a cell carry the same
@@ -627,7 +701,7 @@ contains
   !> new particle weight should be set to self%n()/np.
   !=============================================================================
   subroutine normalize_weights
-    integer:: np
+    integer:: np, ii(5)
     integer, save:: itimer3=0
     !---------------------------------------------------------------------------
     call trace%begin ('dust_t%normalize_weights', itimer=itimer3)
@@ -643,6 +717,11 @@ contains
         p%w = self%n(i(1),i(2),i(3),bin)/np
       else
         p%w = 0.0
+      end if
+      ii = [self%patch%id,i,bin]
+      if (all(ii == self%i_dbg)) then
+        write (io_unit%log,'(a,i8,5i4,i5,1p,e10.2)') &
+          'normalize_weights: ii, np, w =', p%id, ii, np, p%w
       end if
       p => p%next
     end do
@@ -690,14 +769,13 @@ contains
         write(unit,'(a,i3,2x,1p,10e11.2)') 'bins redone:', bin, self%n(3,3,1:10,bin)
       end do
     end if
-    call normalize_weights
   end subroutine
   !=============================================================================
   subroutine print_after
     integer:: n
     n = min(size(self%np,3),20)
     do bin=1,n_bin
-      write(unit,'(a,i3,2x,20i4)') 'added particles:', bin, self%na(3,3,1:n,bin)
+      write(unit,'(a,i3,2x,20i4)') ' added particles:', bin, self%na(3,3,1:n,bin)
     end do
     if (verbose > 1) then
       call get_densities

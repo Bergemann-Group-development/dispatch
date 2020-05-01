@@ -79,8 +79,8 @@ SUBROUTINE pre_init (self)
     do_smooth, unsigned, do_maxwell, do_temperature, verbose, divb_cleaner, &
     do_test
   !----------------------------------------------------------------------------
-  call trace%begin('mhd_t%pre_init')
-  !$omp critical (input_cr)
+  call trace%begin ('mhd_t%pre_init')
+  call io%lock%set ('mhd_t%pre_init')
   if (first_time) then
     first_time = .false.
     eos = self%eos
@@ -93,7 +93,7 @@ SUBROUTINE pre_init (self)
     ! fool-proofing
     if (timestep%time_order <= 0) call mpi%abort("The Stagger solvers require `time_order` > 0. Abort!")
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset ('mhd_t%pre_init')
   self%eos = eos
   self%mhd = mhd
   self%nu = nu
@@ -102,50 +102,8 @@ SUBROUTINE pre_init (self)
   self%courant = courant
   self%cdtd = cdtd
   !-----------------------------------------------------------------------------
-  ! Read IC parameters, which determine if this is HD or MHD.  The IC init is
-  ! called again, from extras_t%init, when gamma is known and can be passed on.
+  ! Choose div(B) cleaner
   !-----------------------------------------------------------------------------
-  self%initial%mhd = self%mhd
-  call self%initial%init (self%kind, real(self%gamma))
-  self%mhd = self%initial%mhd
-  if (self%mhd) then
-    self%kind = 'stagger2e_mhd_patch'
-  else
-    self%kind = 'stagger2e_hd_patch'
-  end if
-  if (self%nv == 0) then
-    if (self%mhd) then
-      self%nv = 8
-    else
-      self%nv = 5
-    end if
-  else
-    self%nv = self%nv + 5
-    if (self%mhd) self%nv = self%nv + 3
-  end if
-  select case(divb_cleaner)
-  case(1)
-    self%divb_clean => divb_clean1
-  case(2)
-    self%divb_clean => divb_clean2
-  case default
-  end select
-  call self%idx%init (5, self%mhd)
-  !-----------------------------------------------------------------------------
-  ! Patch initialization
-  !-----------------------------------------------------------------------------
-  self%type = 'mhd_t'
-  call self%patch_t%init
-  do i=1,3
-    self%mesh(i)%h(self%idx%px+i-1) = -0.5
-    if (self%mhd) self%mesh(i)%h(self%idx%bx+i-1) = -0.5
-  end do
-  if (verbose > 1 .and. self%track) then
-    do i=1,3
-      print '("h:",8f5.2)', self%mesh(i)%h
-    end do
-  end if
-  !call self%patch_t%init
   select case(divb_cleaner)
   case(1)
     self%divb_clean => divb_clean1
@@ -154,8 +112,22 @@ SUBROUTINE pre_init (self)
   case default
     call io%abort('mhd_mod:: divb cleaner method not understood')
   end select
-  self%unsigned(self%idx%d)  = unsigned
-  self%pervolume(self%idx%e) = unsigned
+   !-----------------------------------------------------------------------------
+  ! Read IC parameters, which determine if this is HD or MHD.  The IC init is
+  ! called again, from extras_t%init, when gamma is known and can be passed on.
+  !-----------------------------------------------------------------------------
+  self%initial%mhd = self%mhd
+  call self%initial%init (self%kind, real(self%gamma))
+  self%mhd = self%initial%mhd
+  if (self%mhd) then
+    self%kind = 'stagger2e_mhd_patch'
+    self%nv = 8
+  else
+    self%kind = 'stagger2e_hd_patch'
+    self%nv = 5
+  end if
+  self%nw = 2
+  call self%idx%init (ie=5, mhd=self%mhd)
   !-----------------------------------------------------------------------------
   ! Call extras pre-init
   !-----------------------------------------------------------------------------
@@ -172,6 +144,19 @@ SUBROUTINE init (self)
   integer :: i
   ! ----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
+  call self%patch_t%init
+  self%type = 'mhd_t'
+  self%unsigned(self%idx%d)  = unsigned
+  self%pervolume(self%idx%e) = unsigned
+  do i=1,3
+    self%mesh(i)%h(self%idx%px+i-1) = -0.5
+    if (self%mhd) self%mesh(i)%h(self%idx%bx+i-1) = -0.5
+  end do
+  if (verbose > 1 .and. self%track) then
+    do i=1,3
+      print '("h:",8f5.2)', self%mesh(i)%h
+    end do
+  end if
   call self%gpatch_t%init
   call self%extras_t%init
   call trace%end()
@@ -207,6 +192,10 @@ SUBROUTINE pde (self)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%pde',itimer=itimer)
+  if (self%nw < 2) then
+    write (stderr,*) 'self%nw =', self%nw
+    call io%abort ('memory slot for time derivatives missing')
+  end if
   associate (i => self%idx)
   self%d => self%mem(:,:,:,i%d      ,self%it,1); self%dddt => self%mem(:,:,:,i%d      ,self%it,2)
   self%e => self%mem(:,:,:,i%e      ,self%it,1); self%dedt => self%mem(:,:,:,i%e      ,self%it,2)
@@ -334,6 +323,7 @@ SUBROUTINE pde (self)
     fyy = pp + d*(fyy - du*Tyy)                                                 ! ops: 2 2 0
     fzz = pp + d*(fzz - du*Tzz)                                                 ! ops: 2 2 0
   end if
+  self%u_phase = cs+uu
   u_max = self%fmaxval(cs+uu,outer=.true.)
   self%u_max = max(self%u_max,u_max)
   if (verbose > 2) print 1, 'u_max(cs+u)', u_max, self%u_max

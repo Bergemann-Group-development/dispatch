@@ -97,7 +97,7 @@ SUBROUTINE pre_init (self)
   !-----------------------------------------------------------------------------
   ! Read solver-relevant parameters and store in the task instance
   !-----------------------------------------------------------------------------
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io_unit%input)
@@ -109,7 +109,7 @@ SUBROUTINE pre_init (self)
     if (isothermal) gamma=1.0d0
     if (mpi%master) write (*, ramses_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   rieman%max_dlogd = max_dlogd
   self%n_dump = n_dump
   self%riemann = riemann

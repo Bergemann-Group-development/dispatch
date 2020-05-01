@@ -75,7 +75,7 @@ SUBROUTINE init (self)
   logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
   call trace%begin ('pic_particles_t%init')
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     rewind (io_unit%input)
     read (io_unit%input, pic_particles_params, iostat=iostat)
@@ -84,7 +84,7 @@ SUBROUTINE init (self)
     first_time = .false.
   end if
   self%time = time
-  !$omp end critical (input_cr)
+  call io%lock%unset
   call trace%end ()
 END SUBROUTINE init
 

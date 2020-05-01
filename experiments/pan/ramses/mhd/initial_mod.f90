@@ -45,14 +45,14 @@ SUBROUTINE init (self, solver, gamma)
   namelist /initial_params/ type
   !----------------------------------------------------------------------------
   call trace_begin('initial_t%init')
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
     read (io%input, initial_params)
     if (io%master) write (*, initial_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   if (present(gamma)) &
     self%gamma = gamma
   self%solver = trim(solver)
@@ -104,7 +104,7 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t%single_solenoidal', itimer=itimer)
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     gamma = self%gamma
     rewind (io%input)
@@ -113,7 +113,7 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
     if (io%master) write (*, initial_solenoidal_params)
     first_time = .false.
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   self%gamma = gamma
   if (self%gamma == 1d0) then
     gamma_factor = csound**2
@@ -169,7 +169,7 @@ SUBROUTINE single_compressive (self, m, ff, idx)
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t%single_compressive', itimer=itimer)
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     gamma = self%gamma
     rewind (io%input)
@@ -178,7 +178,7 @@ SUBROUTINE single_compressive (self, m, ff, idx)
     if (io%master) write (*, initial_compressive_params)
     first_time = .false.
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   self%gamma = gamma
   if (self%gamma == 1d0) then
     gamma_factor = csound**2
@@ -237,7 +237,7 @@ SUBROUTINE compressive_shear (self, m, ff, idx)
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t%compressive_shear', itimer=itimer)
   if (first_time) then
-    !$omp critical (input_cr)
+    call io%lock%set
     if (first_time) then
       gamma = self%gamma
       rewind (io%input)
@@ -246,7 +246,7 @@ SUBROUTINE compressive_shear (self, m, ff, idx)
       if (io%master) write (*, IC_compressive_params)
       first_time = .false.
     end if
-    !$omp end critical (input_cr)
+    call io%lock%unset
   end if
   self%gamma = gamma
   if (self%gamma == 1d0) then
@@ -315,7 +315,7 @@ SUBROUTINE single_advection (self, m, ff, idx)
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t%single_advection', itimer=itimer)
   if (first_time) then
-    !$omp critical (input_cr)
+    call io%lock%set
     if (first_time) then
       gamma = self%gamma
       rewind (io%input)
@@ -324,7 +324,7 @@ SUBROUTINE single_advection (self, m, ff, idx)
       if (io%master) write (*, initial_advection_params)
       first_time = .false.
     end if
-    !$omp end critical (input_cr)
+    call io%lock%unset
   end if
   self%gamma = gamma
   if (self%gamma == 1d0) then
@@ -381,13 +381,13 @@ SUBROUTINE exa256 (self, m, ff, idx)
   ff(:,:,:,:) = 0.0
   allocate (u(m(1)%n))
   allocate (d(m(1)%n))
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     open (io_unit%data, file='data/exa256/t0.02.raw', form='unformatted', &
       access='direct', recl=m(1)%n*4)
     first_time = .false.
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   self%time = 0.02
   ix=m(1)%p/m(1)%d+0.5-m(1)%n/2
   iy=m(2)%p/m(2)%d+0.5-m(2)%n/2
@@ -503,14 +503,14 @@ SUBROUTINE turbulence (self, m, ff, idx)
   integer, save         :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t%turbulence', itimer=itimer)
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
     read (io%input, IC_turbulence_params)
     if (io%master) write (io%output, IC_turbulence_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   ff(:,:,:,idx%d        ) = 1.0
   ff(:,:,:,idx%e        ) = 1.0
   if (gamma==1.0) then

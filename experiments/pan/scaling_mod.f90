@@ -29,14 +29,14 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   if (.not.first_time) return
   call trace_begin('scaling_t%init')
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
     read (io%input, scaling_params, iostat=iostat)
     write (io%output, scaling_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   call cgs%init
   self%l = l_pc*cgs%pc                                  ! length in pc
   self%d = d_cgs                                        ! mass density in cgs

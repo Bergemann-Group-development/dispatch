@@ -38,7 +38,7 @@ SUBROUTINE init (self)
    namelist /initial_params/ seed, k, a0, u0, b0, d0, e0, mhd, type
    !----------------------------------------------------------------------------
    call trace_begin('initial_t%init')
-   !$omp critical (input_cr)
+   call io%lock%set
    if (first_time) then
      first_time = .false.
      rewind (io%input)
@@ -46,7 +46,7 @@ SUBROUTINE init (self)
      mhd = any(b0 /= 0.0)
      if (io%master) write (*, initial_params)
    end if
-   !$omp end critical (input_cr)
+   call io%lock%unset
    self%seed   = seed
    self%k      = k
    self%a0     = a0

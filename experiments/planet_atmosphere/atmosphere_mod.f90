@@ -84,7 +84,7 @@ SUBROUTINE hydrostatic (self)
   !-----------------------------------------------------------------------------
   ! Start with the external pressure and integrate inwards
   !-----------------------------------------------------------------------------
-  !$omp critical (init_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     call trace_begin('experiment_t%hydrostatic_balance')
@@ -136,7 +136,7 @@ SUBROUTINE hydrostatic (self)
       self%surface%temperature*scaling%temp
     call trace_end
   end if
-  !$omp end critical (init_cr)
+  call io%lock%unset
 END SUBROUTINE hydrostatic
 
 END MODULE atmosphere_mod

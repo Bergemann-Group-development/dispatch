@@ -122,14 +122,14 @@ SUBROUTINE pre_init (self, link)
   ! Read parameters
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_t%pre_init')
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
     read (io%input, hybrid_rt_params)
     if (io%master) write (io%output, hybrid_rt_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   if (on) then
     if (.not. io%master) verbose=0
     self%on = on

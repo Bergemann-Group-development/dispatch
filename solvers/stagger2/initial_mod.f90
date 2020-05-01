@@ -48,7 +48,7 @@ SUBROUTINE init (self, solver, gamma)
    !----------------------------------------------------------------------------
    call trace_begin('initial_t%init')
    if (present(gamma)) self%gamma = gamma
-   !$omp critical (input_cr)
+   call io%lock%set
    if (first_time) then
      first_time = .false.
      mhd = self%mhd
@@ -58,7 +58,7 @@ SUBROUTINE init (self, solver, gamma)
      if (io%master) write (*, initial_params)
    end if
    self%solver = trim(solver)
-   !$omp end critical (input_cr)
+   call io%lock%unset
    self%seed   = seed
    self%k      = k
    self%a0     = a0

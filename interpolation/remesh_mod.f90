@@ -36,7 +36,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('remesh_t%init')
   if (first_time) then
-    !$omp critical (input_cr)
+    call io%lock%set ('remesh_t%init')
     if (first_time) then
       rewind (io%input)
       read (io%input, remesh_params, iostat=iostat)
@@ -45,7 +45,7 @@ SUBROUTINE init (self)
       write (io%namelist, remesh_params)
       first_time = .false.
     end if
-    !$omp end critical (input_cr)
+    call io%lock%unset ('remesh_t%init')
   end if
   call trace%end ()
 END SUBROUTINE init

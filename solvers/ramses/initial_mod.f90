@@ -42,7 +42,7 @@ SUBROUTINE init (self, solver, gamma1)
   namelist /initial_params/ type
   !----------------------------------------------------------------------------
   call trace_begin('initial_t%init')
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
@@ -50,7 +50,7 @@ SUBROUTINE init (self, solver, gamma1)
     if (iostat/=0) call io%namelist_warning ('ramses/hydro/initial_mod.f90: initial_params')
     if (io%master) write (*, initial_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   self%solver = trim(solver)
   select case (type)
   case ('single_solenoidal')
@@ -107,7 +107,7 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_solenoidal', itimer=itimer)
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
@@ -115,7 +115,7 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
     mhd = mhd .and. any(b0 /= 0.0)
     if (io%master) write (*, initial_solenoidal_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   self%mhd = mhd
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
@@ -160,7 +160,7 @@ SUBROUTINE single_compressive (self, m, ff, idx)
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_compressive', itimer=itimer)
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
@@ -168,7 +168,7 @@ SUBROUTINE single_compressive (self, m, ff, idx)
     mhd = mhd .and. any(b0 /= 0.0)
     if (io%master) write (*, initial_compressive_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   self%mhd = mhd
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
@@ -212,7 +212,7 @@ SUBROUTINE single_advection (self, m, ff, idx)
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_advection', itimer=itimer)
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
@@ -220,7 +220,7 @@ SUBROUTINE single_advection (self, m, ff, idx)
     mhd = mhd .and. any(b0 /= 0.0)
     if (io%master) write (*, initial_advection_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   self%mhd = mhd
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
@@ -388,14 +388,14 @@ SUBROUTINE turbulence (self, m, ff, idx)
   integer, save         :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t%turbulence', itimer=itimer)
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
     read (io%input, IC_turbulence_params)
     if (io%master) write (io%output, IC_turbulence_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   ff(:,:,:,idx%d        ) = 1.0
   ff(:,:,:,idx%e        ) = 1.0
   if (gamma==1.0) then

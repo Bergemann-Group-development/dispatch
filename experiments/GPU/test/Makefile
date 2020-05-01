@@ -33,7 +33,7 @@ mockup2.o               : muscl.o
 muscl.o                 : riemann.o
 riemann.o               :
 riemann2.o              :
-muscl2.o                : #riemann2.o
+muscl2.o                : riemann2.o
 mockup3.o               : muscl2.o
 mockup4.o               :
 
@@ -44,7 +44,7 @@ mockup2.x: mockup2.o
 	$(FC) $(LDFLAGS) $(BUILD)/{mockup2,muscl,riemann}.o -o mockup2.x
 
 mockup3.x: mockup3.o
-	$(FC) $(LDFLAGS) $(BUILD)/{mockup3,muscl2}.o -o mockup3.x
+	$(FC) $(LDFLAGS) $(BUILD)/{mockup3,muscl2,riemann2}.o -o mockup3.x
 
 mockup4.x: mockup4.o
 	$(FC) $(LDFLAGS) $(BUILD)/mockup4.o -o mockup4.x

@@ -9,7 +9,8 @@
 !> slopes are derived from well-conditioned per-unit-mass variables.
 !===============================================================================
 MODULE solver_mod
-  !USE riemann_mod
+  USE io_mod
+  USE riemann_mod
   USE omp_lib
   implicit none
   private
@@ -52,7 +53,7 @@ MODULE solver_mod
   character(len=4):: method='hll'       ! riemann method
 
   !$omp declare target(csound, slope_type, method)
-  !$omp declare target(ctoprim, sources, divflux, riemn3d, predict, slopes, solve, hll)
+  !$omp declare target(ctoprim, sources, divflux, riemn3d, predict, slopes)
 CONTAINS
 
 !===============================================================================
@@ -88,7 +89,7 @@ SUBROUTINE init (self)
   self%mem(:,:,:,3,:,:) = 0.0
   self%mem(:,:,:,4,:,:) = 0.0
   self%mem(:,:,:,5,:,:) = 1.0
-  !$omp critical (init_cr)
+  call io%lock%set
   if (first_time) then
     print *, 'solver_t%init:'
     print *, 'id', self%id
@@ -104,7 +105,7 @@ SUBROUTINE init (self)
     start = omp_get_wtime()
     first_time = .false.
   end if
-  !$omp end critical (init_cr)
+  call io%lock%unset
   !call self%patch_t%init
   !-----------------------------------------------------------------------------
   ! Ramses-like specific things
@@ -185,14 +186,14 @@ SUBROUTINE update (self)
   ui = self%ui
   !riemann = self%riemann
   !$omp target data map(to:grad) map(to:prim) map(tofrom:mem) map(to: flux) map(to:left) map(to:rght) map(to:self)
-  !$omp target
+  !$omp target teams
   call ctoprim (self, mem, new, it, prim, lb, ub, gamma)
   call slopes  (self, nv, prim, grad, lb, ub)
   call predict (self, grad, prim, mem, new, dtime, ds, g1, lo, uo)
   call riemn3d (self, prim, grad, flux, left, rght, nv, lo, uo, g1, g2)
   call divflux (self, mem, flux, nv, new, ds, dtime, li, ui)
   call sources (self, mem, prim, new, gamma)
-  !$omp end target
+  !$omp end target teams
   !$omp end target data
   !call dealloc (self)
   self%time = self%time + self%dtime
@@ -276,7 +277,7 @@ SUBROUTINE ctoprim (self, mem, new, it, prim, l, u, gamma)
   !-----------------------------------------------------------------------------
   !l = self%lb
   !u = self%ub
-  !$omp teams distribute parallel do collapse(2)
+  !$omp distribute parallel do simd collapse(2)
   do i3=l(3),u(3)
   do i2=l(2),u(2)
     prim(:,i2,i3,1) = log(mem(:,i2,i3, 1,new,1))
@@ -286,7 +287,7 @@ SUBROUTINE ctoprim (self, mem, new, it, prim, l, u, gamma)
     end do
   end do
   end do
-  !$omp end teams distribute parallel do
+  !$omp end distribute parallel do simd
   !-----------------------------------------------------------------------------
   ! Subtract kinetic energy per unit mass and compute self%u_max
   !-----------------------------------------------------------------------------
@@ -296,7 +297,7 @@ SUBROUTINE ctoprim (self, mem, new, it, prim, l, u, gamma)
     g2 = (gamma-1d0)*gamma
   end if
   u2_max = 0.0
-  !$omp teams distribute parallel do collapse(3)
+  !$omp distribute parallel do simd collapse(3)
   do i3=l(3),u(3)
   do i2=l(2),u(2)
     do i1=l(1),u(1)
@@ -310,7 +311,7 @@ SUBROUTINE ctoprim (self, mem, new, it, prim, l, u, gamma)
     end do
   end do
   end do
-  !$omp end teams distribute parallel do
+  !$omp end distribute parallel do simd
   !self%u_max = sqrt(u2_max)
 !print *,self%id,self%u_max
   !call self%patch_t%courant_condition
@@ -358,11 +359,10 @@ subroutine central (self)
   prim => self%prim
   grad => self%grad
   nv = self%nv
-  !$omp teams distribute parallel do collapse(3)
+  !$omp distribute parallel do collapse(4)
   do iv=1,nv
   do i3=l(3),u(3)
   do i2=l(2),u(2)
-    !$omp simd
     do i1=l(1),u(1)
       grad (i1,i2,i3,iv,1) = 0.5*(prim(i1+1,i2,i3,iv) - prim(i1-1,i2,i3,iv))
       grad (i1,i2,i3,iv,2) = 0.5*(prim(i1,i2+1,i3,iv) - prim(i1,i2-1,i3,iv))
@@ -371,7 +371,7 @@ subroutine central (self)
   end do
   end do
   end do
-  !$omp end teams distribute parallel do
+  !$omp end distribute parallel do
 end subroutine central
 !===============================================================================
 subroutine minmod (self)
@@ -385,11 +385,10 @@ subroutine minmod (self)
   grad => self%grad
   nv = self%nv
 
-  !$omp teams distribute parallel do collapse(3)
+  !$omp distribute parallel do collapse(4)
   do iv=1,nv
   do i3=l(3),u(3)
   do i2=l(2),u(2)
-    !$omp simd
     do i1=l(1),u(1)
       ! slopes in first coordinate direction
       dlft = prim(i1  ,i2,i3,iv) - prim(i1-1,i2,i3,iv)
@@ -407,7 +406,7 @@ subroutine minmod (self)
   end do
   end do
   end do
-  !$omp end teams distribute parallel do
+  !$omp end distribute parallel do
 end subroutine minmod
 !===============================================================================
 subroutine moncen(self)
@@ -421,7 +420,7 @@ subroutine moncen(self)
   !grad => self%grad
   !nv = self%nv
   c2 = 0.5
-  !$omp teams distribute parallel do collapse(3)
+  !$omp distribute parallel do collapse(3)
   do iv=1,nv
   do i3=l(3),u(3)
   do i2=l(2),u(2)
@@ -455,7 +454,7 @@ subroutine moncen(self)
   end do
   end do
   end do
-  !$omp end teams distribute parallel do
+  !$omp end distribute parallel do
 end subroutine moncen
 END SUBROUTINE slopes
 
@@ -471,40 +470,40 @@ SUBROUTINE predict (self, grad, prim, mem, new, dtime, ds, g1, l, u)
   real, dimension(:,:,:,:,:), pointer :: grad
   real, dimension(:,:,:,:), pointer :: prim
   real, dimension(:,:,:,:,:,:),  pointer:: mem
-  real, pointer, contiguous, dimension(:,:,:):: &
-    ln_1, ln_2, ln_3, &
-    ee_1, ee_2, ee_3, &
-    u1_1, u1_2, u1_3, &
-    u2_1, u2_2, u2_3, &
-    u3_1, u3_2, u3_3, &
-    ln, ee, u1, u2, u3, d
+  !real, pointer, dimension(:,:,:):: &
+  !  ln_1, ln_2, ln_3, &
+  !  ee_1, ee_2, ee_3, &
+  !  u1_1, u1_2, u1_3, &
+  !  u2_1, u2_2, u2_3, &
+  !  u3_1, u3_2, u3_3, &
+  !  ln, ee, u1, u2, u3, d
   real:: divu, dtd1, dtd2, dtd3, dt2
   real:: ff(size(prim,1),3)
   integer:: i1, i2, i3, l(3), u(3)
   integer, save:: itimer=0
   !.............................................................................
   !call tracebegin ('solver_t%predict', itimer=itimer)
-  ln_1 => grad(:,:,:,1,1)
-  ln_2 => grad(:,:,:,1,2)
-  ln_3 => grad(:,:,:,1,3)
-  u1_1 => grad(:,:,:,2,1)
-  u1_2 => grad(:,:,:,2,2)
-  u1_3 => grad(:,:,:,2,3)
-  u2_1 => grad(:,:,:,3,1)
-  u2_2 => grad(:,:,:,3,2)
-  u2_3 => grad(:,:,:,3,3)
-  u3_1 => grad(:,:,:,4,1)
-  u3_2 => grad(:,:,:,4,2)
-  u3_3 => grad(:,:,:,4,3)
-  ee_1 => grad(:,:,:,5,1)
-  ee_2 => grad(:,:,:,5,2)
-  ee_3 => grad(:,:,:,5,3)
-  ln   => prim(:,:,:,1)
-  u1   => prim(:,:,:,2)
-  u2   => prim(:,:,:,3)
-  u3   => prim(:,:,:,4)
-  ee   => prim(:,:,:,5)
-  d    => mem(:,:,:,1,new,1)
+  !ln_1 => grad(:,:,:,1,1)
+  !ln_2 => grad(:,:,:,1,2)
+  !ln_3 => grad(:,:,:,1,3)
+  !u1_1 => grad(:,:,:,2,1)
+  !u1_2 => grad(:,:,:,2,2)
+  !u1_3 => grad(:,:,:,2,3)
+  !u2_1 => grad(:,:,:,3,1)
+  !u2_2 => grad(:,:,:,3,2)
+  !u2_3 => grad(:,:,:,3,3)
+  !u3_1 => grad(:,:,:,4,1)
+  !u3_2 => grad(:,:,:,4,2)
+  !u3_3 => grad(:,:,:,4,3)
+  !ee_1 => grad(:,:,:,5,1)
+  !ee_2 => grad(:,:,:,5,2)
+  !ee_3 => grad(:,:,:,5,3)
+  !ln   => prim(:,:,:,1)
+  !u1   => prim(:,:,:,2)
+  !u2   => prim(:,:,:,3)
+  !u3   => prim(:,:,:,4)
+  !ee   => prim(:,:,:,5)
+  !d    => mem(:,:,:,1,new,1)
   !-----------------------------------------------------------------------------
   ! Evolution of self%primitive variables over half a time step, with
   ! \partial\ln(d) / \partial t = -u*self%grad(ln_d) - div(u)
@@ -520,7 +519,7 @@ SUBROUTINE predict (self, grad, prim, mem, new, dtime, ds, g1, l, u)
   !g1 = g1
   !l = lo
   !u = uo
-  !$omp teams distribute parallel do collapse(3)
+  !$omp distribute parallel do simd collapse(3)
   do i3=l(3),u(3)
   do i2=l(2),u(2)
     !ff(:,:) = 0.0
@@ -536,34 +535,38 @@ SUBROUTINE predict (self, grad, prim, mem, new, dtime, ds, g1, l, u)
     !end if
     !!$omp simd
     do i1=l(1),u(1)
-      divu = u1_1(i1,i2,i3)*dtd1 + u2_2(i1,i2,i3)*dtd2 + u3_3(i1,i2,i3)*dtd3
-      ln(i1,i2,i3) = ln(i1,i2,i3) - ( &
-        u1(i1,i2,i3)*ln_1(i1,i2,i3)*dtd1 + &
-        u2(i1,i2,i3)*ln_2(i1,i2,i3)*dtd2 + &
-        u3(i1,i2,i3)*ln_3(i1,i2,i3)*dtd3) - divu
-      u1(i1,i2,i3) = u1(i1,i2,i3) - ( &
-        u1(i1,i2,i3)*u1_1(i1,i2,i3)*dtd1 + &
-        u2(i1,i2,i3)*u1_2(i1,i2,i3)*dtd2 + &
-        u3(i1,i2,i3)*u1_3(i1,i2,i3)*dtd3) - &
-        (ee_1(i1,i2,i3) + ee(i1,i2,i3)*ln_1(i1,i2,i3))*g1*dtd1! + ff(i1,1)*dt2
-      u2(i1,i2,i3) = u2(i1,i2,i3) - ( &
-        u1(i1,i2,i3)*u2_1(i1,i2,i3)*dtd1 + &
-        u2(i1,i2,i3)*u2_2(i1,i2,i3)*dtd2 + &
-        u3(i1,i2,i3)*u2_3(i1,i2,i3)*dtd3) - &
-        (ee_2(i1,i2,i3) + ee(i1,i2,i3)*ln_2(i1,i2,i3))*g1*dtd2! + ff(i1,2)*dt2
-      u3(i1,i2,i3) = u3(i1,i2,i3) - ( &
-        u1(i1,i2,i3)*u3_1(i1,i2,i3)*dtd1 + &
-        u2(i1,i2,i3)*u3_2(i1,i2,i3)*dtd2 + &
-        u3(i1,i2,i3)*u3_3(i1,i2,i3)*dtd3) - &
-        (ee_3(i1,i2,i3) + ee(i1,i2,i3)*ln_3(i1,i2,i3))*g1*dtd3! + ff(i1,3)*dt2
-      ee(i1,i2,i3) = ee(i1,i2,i3) - ( &
-        u1(i1,i2,i3)*ee_1(i1,i2,i3)*dtd1 + &
-        u2(i1,i2,i3)*ee_2(i1,i2,i3)*dtd2 + &
-        u3(i1,i2,i3)*ee_3(i1,i2,i3)*dtd3) - divu*g1
+      divu = grad(i1,i2,i3,2,1)*dtd1 + grad(i1,i2,i3,3,2)*dtd2 + grad(i1,i2,i3,4,3)*dtd3
+      !divu = u1_1(i1,i2,i3)*dtd1 + u2_2(i1,i2,i3)*dtd2 + u3_3(i1,i2,i3)*dtd3
+      prim(i1,i2,i3,1) = prim(i1,i2,i3,1) - ( &
+        prim(i1,i2,i3,2)*grad(i1,i2,i3,1,1)*dtd1 + &
+        prim(i1,i2,i3,3)*grad(i1,i2,i3,1,2)*dtd2 + &
+        prim(i1,i2,i3,4)*grad(i1,i2,i3,1,3)*dtd3) - divu
+      prim(i1,i2,i3,2) = prim(i1,i2,i3,2) - ( & !u1(i1,i2,i3) - ( &
+        prim(i1,i2,i3,2)*grad(i1,i2,i3,2,1)*dtd1 + & !u1(i1,i2,i3)*u1_1(i1,i2,i3)*dtd1 + &
+        prim(i1,i2,i3,3)*grad(i1,i2,i3,2,2)*dtd2 + & !u2(i1,i2,i3)*u1_2(i1,i2,i3)*dtd2 + &
+        prim(i1,i2,i3,4)*grad(i1,i2,i3,2,3)*dtd3) - & !u3(i1,i2,i3)*u1_3(i1,i2,i3)*dtd3) - &
+        (grad(i1,i2,i3,5,1) + prim(i1,i2,i3,5)*grad(i1,i2,i3,1,1))*g1*dtd1! + ff(i1,1)*dt2
+        !(ee_1(i1,i2,i3) + ee(i1,i2,i3)*ln_1(i1,i2,i3))*g1*dtd1! + ff(i1,1)*dt2
+      prim(i1,i2,i3,3) = prim(i1,i2,i3,3) - ( & !u2(i1,i2,i3) - ( &
+        prim(i1,i2,i3,2)*grad(i1,i2,i3,3,1)*dtd1 + &  !u1(i1,i2,i3)*u2_1(i1,i2,i3)*dtd1 + &
+        prim(i1,i2,i3,3)*grad(i1,i2,i3,3,2)*dtd2 + &  !u2(i1,i2,i3)*u2_2(i1,i2,i3)*dtd2 + &
+        prim(i1,i2,i3,4)*grad(i1,i2,i3,3,3)*dtd3) - & !u3(i1,i2,i3)*u2_3(i1,i2,i3)*dtd3) - &
+        (grad(i1,i2,i3,5,2) + prim(i1,i2,i3,5)*grad(i1,i2,i3,1,2))*g1*dtd2! + ff(i1,2)*dt2
+        !(ee_2(i1,i2,i3) + ee(i1,i2,i3)*ln_2(i1,i2,i3))*g1*dtd2! + ff(i1,2)*dt2
+      prim(i1,i2,i3,4) = prim(i1,i2,i3,4) - ( & !u3(i1,i2,i3) - ( &
+        prim(i1,i2,i3,2)*grad(i1,i2,i3,4,1)*dtd1 + &  !u1(i1,i2,i3)*u3_1(i1,i2,i3)*dtd1 + &
+        prim(i1,i2,i3,3)*grad(i1,i2,i3,4,2)*dtd2 + &  !u2(i1,i2,i3)*u3_2(i1,i2,i3)*dtd2 + &
+        prim(i1,i2,i3,4)*grad(i1,i2,i3,4,3)*dtd3) - & !u3(i1,i2,i3)*u3_3(i1,i2,i3)*dtd3) - &
+        (grad(i1,i2,i3,5,3) + prim(i1,i2,i3,5)*grad(i1,i2,i3,1,3))*g1*dtd3! + ff(i1,3)*dt2
+        !(ee_3(i1,i2,i3) + ee(i1,i2,i3)*ln_3(i1,i2,i3))*g1*dtd3! + ff(i1,3)*dt2
+      prim(i1,i2,i3,5) = prim(i1,i2,i3,5) - ( & !ee(i1,i2,i3) - ( &
+        prim(i1,i2,i3,2)*grad(i1,i2,i3,5,1)*dtd1 + &        !u1(i1,i2,i3)*ee_1(i1,i2,i3)*dtd1 + &
+        prim(i1,i2,i3,3)*grad(i1,i2,i3,5,2)*dtd2 + &        !u2(i1,i2,i3)*ee_2(i1,i2,i3)*dtd2 + &
+        prim(i1,i2,i3,4)*grad(i1,i2,i3,5,3)*dtd3) - divu*g1 !u3(i1,i2,i3)*ee_3(i1,i2,i3)*dtd3) - divu*g1
     end do
   end do
   end do
-  !$omp end teams distribute parallel do
+  !$omp end distribute parallel do simd
   !call traceend (itimer)
 END SUBROUTINE predict
 
@@ -594,7 +597,7 @@ SUBROUTINE riemn3d (self, prim, grad, flux, left, rght, nv, l, u, g1, g2)
   real(8):: g1,g2
   !type(riemann_t) :: riemann
   !-----------------------------------------------------------------------------
-  call tracebegin ('solver_t%riemn3d', itimer=itimer)
+  !call tracebegin ('solver_t%riemn3d', itimer=itimer)
   !grad => self%grad
   !prim => self%prim
   !flux => self%flux
@@ -607,44 +610,44 @@ SUBROUTINE riemn3d (self, prim, grad, flux, left, rght, nv, l, u, g1, g2)
   !-----------------------------------------------------------------------------
   ! X-direction
   !-----------------------------------------------------------------------------
-  !$omp teams distribute parallel do collapse(4)
+  !$omp distribute parallel do simd collapse(4)
   do iv=1,nv; do i3=l(3),u(3); do i2=l(2),u(2); do i1=l(1),u(1)
     left(i1,i2,i3,iv) = prim(i1,i2,i3,iv) + grad(i1,i2,i3,iv,1)*0.5
     rght(i1,i2,i3,iv) = prim(i1,i2,i3,iv) - grad(i1,i2,i3,iv,1)*0.5
   end do; end do; end do; end do
-  !$omp end teams distribute parallel do
+  !$omp end distribute parallel do simd
   !                  call tracebegin ('riemann_t%'//trim(method), itimer=itimer1)
-  solverflux => flux(:,:,:,:,1)
-  call solve (1, l+1, u, left, rght, solverflux,g1,g2)
+  !solverflux => flux(:,:,:,:,1)
+  call solve (1, l+1, u, left, rght, flux,g1,g2)
   !                  call traceend (itimer1)
   !-----------------------------------------------------------------------------
   ! Y-direction
   !-----------------------------------------------------------------------------
-  !$omp teams distribute parallel do collapse(4)
+  !$omp distribute parallel do simd collapse(4)
   do iv=1,nv; do i3=l(3),u(3); do i2=l(2),u(2); do i1=l(1),u(1)
     left(i1,i2,i3,iv) = prim(i1,i2,i3,iv) + grad(i1,i2,i3,iv,2)*0.5
     rght(i1,i2,i3,iv) = prim(i1,i2,i3,iv) - grad(i1,i2,i3,iv,2)*0.5
   end do; end do; end do; end do
-  !$omp end teams distribute parallel do
+  !$omp end distribute parallel do simd
   !                  call tracebegin ('riemann_t%'//trim(method), itimer=itimer1)
-  solverflux => flux(:,:,:,:,2)
-  call solve (2, l+1, u, left, rght, solverflux,g1,g2)
+  !solverflux => flux(:,:,:,:,2)
+  call solve (2, l+1, u, left, rght, flux,g1,g2)
   !                  call traceend (itimer1)
   !-----------------------------------------------------------------------------
   ! Z-direction
   !-----------------------------------------------------------------------------
-  !$omp teams distribute parallel do collapse(4)
+  !$omp distribute parallel do simd collapse(4)
   do iv=1,nv; do i3=l(3),u(3); do i2=l(2),u(2); do i1=l(1),u(1)
     left(i1,i2,i3,iv) = prim(i1,i2,i3,iv) + grad(i1,i2,i3,iv,3)*0.5
     rght(i1,i2,i3,iv) = prim(i1,i2,i3,iv) - grad(i1,i2,i3,iv,3)*0.5
   end do; end do; end do; end do
-  !$omp end teams distribute parallel do
+  !$omp end distribute parallel do simd
   !                  call tracebegin ('riemann_t%'//trim(method), itimer=itimer1)
-  solverflux => flux(:,:,:,:,3)
-  call solve (3, l+1, u, left, rght, solverflux,g1,g2)
+  !solverflux => flux(:,:,:,:,3)
+  call solve (3, l+1, u, left, rght, flux,g1,g2)
   !                  call traceend (itimer1)
   !-----------------------------------------------------------------------------
-  call traceend (itimer)
+  !call traceend (itimer)
 END SUBROUTINE riemn3d
 
 !===============================================================================
@@ -673,7 +676,7 @@ SUBROUTINE divflux (self, mem, flux, nv, new, ds, dtime, l, u)
   dtd3 = dtime/ds(3)
   !l = self%li
   !u = self%ui
-  !$omp teams distribute parallel do collapse(4)
+  !$omp distribute parallel do simd collapse(4)
   do iv=1,nv
   do i3=l(3),u(3)
   do i2=l(2),u(2)
@@ -687,7 +690,7 @@ SUBROUTINE divflux (self, mem, flux, nv, new, ds, dtime, l, u)
   end do
   end do
   end do
-  !$omp end teams distribute parallel do
+  !$omp end distribute parallel do simd
   !call traceend (itimer)
 END SUBROUTINE divflux
 
@@ -769,130 +772,5 @@ SUBROUTINE traceend (itimer)
  else
  end if
 END SUBROUTINE traceend
-
-! riemann
-SUBROUTINE solve (dir, l, u, left, rght, flux, g1, g2)
-  !class(riemann_t):: self
-  integer:: dir, l(3), u(3)
-  real, dimension(:,:,:,:), contiguous, intent(in) :: left
-  real, dimension(:,:,:,:),             intent(in) :: rght
-  real, dimension(:,:,:,:), contiguous, intent(out):: flux
-  real(8)          :: g1, g2
-  !.............................................................................
-  !select case (trim(self%method))
-  !case ('hll')
-   call hll  (dir, l, u, left, rght, flux, g1,g2)
-  !case ('hllc')
-    !call hllc (self, dir, l, u, left, rght, flux)
-  !end select
-END SUBROUTINE solve
-
-!===============================================================================
-!> Solve for the HLL flux give two HD state vectors (left and right of the
-!> interface) stored in s
-!===============================================================================
-SUBROUTINE hll (dir, l, u, left, rght, flux,g1,g2)
-  !class(riemann_t):: self
-  integer:: dir, l(3), u(3)
-  real, dimension(:,:,:,:), contiguous, intent(in) :: left
-  real, dimension(:,:,:,:),             intent(in) :: rght
-  real, dimension(:,:,:,:), contiguous, intent(out):: flux
-  !.............................................................................
-  real:: &
-    Dl, Ul, Pl, El, Vl, Wl, Tl, cl, fDl, fTl, fUl, fVl, fWl, Sl, &
-    Dr, Ur, Pr, Er, Vr, Wr, Tr, cr, fDr, fTr, fUr, fVr, fWr, Sr, &
-    cmax
-  real(8) :: g1, g2
-  integer:: i1, i2, i3, j1, j2, j3, v1, v2, v3
-  integer, save:: itimer=0
-  !g1 = self%g1
-  !g2 = self%g2
-  !-----------------------------------------------------------------------------
-  !  Parallel and perpendicular velocity components
-  !-----------------------------------------------------------------------------
-  v1 = 2 + mod(dir-1,3)
-  v2 = 2 + mod(dir  ,3)
-  v3 = 2 + mod(dir+1,3)
-  !-----------------------------------------------------------------------------
-  ! For the left states, we need to refer to index-1 in the flux direction
-  !-----------------------------------------------------------------------------
-  if (dir==1) then
-    j1=1; j2=0; j3=0
-  else if (dir==2) then
-    j1=0; j2=1; j3=0
-  else
-    j1=0; j2=0; j3=1
-  end if
-  !-----------------------------------------------------------------------------
-  !$omp teams distribute parallel do collapse(3)
-  do i3=l(3),u(3)
-  do i2=l(2),u(2)
-  do i1=l(1),u(1)
-    Dl = exp(&
-         left(i1-j1,i2-j2,i3-j3,1))
-    El = exp(&
-         left(i1-j1,i2-j2,i3-j3,5))
-    Ul = left(i1-j1,i2-j2,i3-j3,v1)
-    Vl = left(i1-j1,i2-j2,i3-j3,v2)
-    Wl = left(i1-j1,i2-j2,i3-j3,v3)
-    Dr = exp(&
-         rght(i1,i2,i3,1))
-    Er = exp(&
-         rght(i1,i2,i3,5))
-    Ur = rght(i1,i2,i3,v1)
-    Vr = rght(i1,i2,i3,v2)
-    Wr = rght(i1,i2,i3,v3)
-    !---------------------------------------------------------------------------
-    ! Pressure and sound speed for each side of interface (l==left, r==right)
-    !---------------------------------------------------------------------------
-    Pl = Dl*El*g1
-    Pr = Dr*Er*g1
-    cl = sqrt(g2*El)
-    cr = sqrt(g2*Er)
-    cmax = max(cl,cr)
-    !---------------------------------------------------------------------------
-    ! Total energy per unit volume
-    !---------------------------------------------------------------------------
-    Tl = Dl*(El + 0.5*(Ul**2 + Vl**2 + Wl**2))
-    Tr = Dr*(Er + 0.5*(Ur**2 + Vr**2 + Wr**2))
-    !---------------------------------------------------------------------------
-    ! Hydro fluxes
-    !---------------------------------------------------------------------------
-    fDl = Dl*Ul
-    fDr = Dr*Ur
-    fUl = Dl*Ul*Ul + Pl
-    fUr = Dr*Ur*Ur + Pr
-    fTl = Ul*(Tl + Pl)
-    fTr = Ur*(Tr + Pr)
-    fVl = Dl*Ul*Vl
-    fVr = Dr*Ur*Vr
-    fWl = Dl*Ul*Wl
-    fWr = Dr*Ur*Wr
-    !---------------------------------------------------------------------------
-    ! maximum wave speeds to the l and r (guaranteed to have correct sign)
-    !---------------------------------------------------------------------------
-    SL = min(min(Ul,Ur)-cmax,0.0)
-    SR = max(max(Ul,Ur)+cmax,0.0)
-    !---------------------------------------------------------------------------
-    ! HLL flux based on wavespeeds.  The general form is 
-    !    (SR*F_l - SL*F_r + SL*SR *(u_r - u_l))/(SR-SL)
-    ! where u = (rho, rho*v, E_tot) are the conserved variables
-    !---------------------------------------------------------------------------
-    flux(i1,i2,i3, 1) = (SR * fDl - SL*fDr + SL*SR*(Dr    - Dl   )) / (SR - SL)
-    flux(i1,i2,i3,v1) = (SR * fUl - SL*fUr + SL*SR*(Dr*Ur - Dl*Ul)) / (SR - SL)
-    flux(i1,i2,i3,v2) = (SR * fVl - SL*fVr + SL*SR*(Dr*Vr - Dl*Vl)) / (SR - SL)
-    flux(i1,i2,i3,v3) = (SR * fWl - SL*fWr + SL*SR*(Dr*Wr - Dl*Wl)) / (SR - SL)
-    flux(i1,i2,i3, 5) = (SR * fTl - SL*fTr + SL*SR*(Tr    - Tl   )) / (SR - SL)
-!#ifdef DBG
-!    if (dir==1 .and. i2==l(2) .and. i3==l(3)) then
-!      print '(i3,3(2x,5f10.4))', &
-!        i1, Dl,ul,el,Pl,SL, Dr,ur,er,Pr,SR, flux(i1,i2,i3,1:5)
-!      end if
-!#endif
-  end do
-  end do
-  end do
-  !$omp end teams distribute parallel do
-END SUBROUTINE hll
 
 END MODULE solver_mod

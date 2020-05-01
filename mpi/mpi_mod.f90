@@ -258,13 +258,13 @@ SUBROUTINE abort_mpi (self, reason)
   class(mpi_t):: self
   character(len=*), optional:: reason
 !...............................................................................
-#ifdef MPI
   !-----------------------------------------------------------------------------
   ! Give other ranks a chance to issue messages as well, then abort
   !-----------------------------------------------------------------------------
   flush (io_unit%output)
   call message (stderr)
   call message (io_unit%log)
+#ifdef MPI
   call delay (3e3)
   call MPI_Abort (mpi_comm_world, 127, mpi_err)
 #endif

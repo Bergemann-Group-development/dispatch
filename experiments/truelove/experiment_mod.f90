@@ -13,8 +13,8 @@ MODULE experiment_mod
 
   type, public, extends(solver_t):: experiment_t
   contains
-    procedure :: init => init_experiment
-    procedure :: update => update_experiment
+    procedure :: init
+    procedure :: update
   end type
 
 CONTAINS
@@ -23,24 +23,22 @@ CONTAINS
 !> Initialise this experiment.  The experiment can be run both as periodic and
 !> non-periodic, depending on the setting 'fixedbcs' in pboundary_mod.f90
 !===============================================================================
-SUBROUTINE init_experiment (self)
+SUBROUTINE init (self)
   class(experiment_t) :: self
   !----------------------------------------------------------------------------
   if (self%mem_allocated) return
   call trace%begin('experiment_t%init')
-  self%nv = 5
-  self%periodic = .true.                ! possibly changed in pboundary_t%init
-  self%mhd = .false.
   call self%solver_t%init()
+  self%periodic = .false.               ! possibly changed in pboundary_t%init
   call pboundaries%init(self)
   call trace%end()
-END SUBROUTINE init_experiment
+END SUBROUTINE init
 
 !===============================================================================
 !> Update procedure for this experiment. In this case the call falls through to
 !> mhd_t%update, which organizes the preliminary and final selfgravity solutions
 !===============================================================================
-SUBROUTINE update_experiment (self)
+SUBROUTINE update (self)
   class(experiment_t):: self
   integer:: m
   !----------------------------------------------------------------------------
@@ -49,6 +47,6 @@ SUBROUTINE update_experiment (self)
   call self%solver_t%update()
   call pboundaries%conditions(self, self%new)
   call trace%end()
-END SUBROUTINE update_experiment
+END SUBROUTINE update
 
 END MODULE experiment_mod

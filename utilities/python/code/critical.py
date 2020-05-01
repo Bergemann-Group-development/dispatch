@@ -6,66 +6,88 @@ Created on Tue Nov 12 16:14:06 2019
 """
 
 import os
-import sys
 
 #%%
-def critical(file,verbose=0):
-    """ Find and check legality of double if """
+def critical(file,log1,log2,commit=False,verbose=0):
+    """ Find and change omp critical (input_cr) """
+    region='(cleanup_cr)'
     with open(file) as fo:
+        lines=[]
         n0=0        # line number
         watch=False
-        ok=True
+        use_io=False
+        critical=False
+        filename=False
         if verbose>1:
             print('')
             print(file)
-        for line in fo:
+        for full_line in fo:
             n0+=1
-            line=line.lstrip()
+            line=full_line.lstrip()
+            
+            if line.startswith('USE io_mod'):
+                use_io=True
 
             # detect critical-block start
-            if line.startswith('!$omp critical'):
-                if (line.find('test_cr') < 0 and 
-                    line.find('list_cr') < 0 and
-                    line.find('cleanup_cr')) < 0:
-                    watch=True
+            if line.startswith('!$omp critical '+region):
+                #print('')
+                if not filename:
+                    str='EDITED: '+file
+                    print(str)
+                    log1.write(str+'\n')
+                    filename=True
+                full_line=full_line.replace('!$omp critical '+region,
+                                            'call io%lock%set')
+                watch=True
+                critical=True
 
-            # detect 'first_time ='
+            # detect 'end critical'
             elif watch:
-                if line.startswith('call'):
-                    if line.find('%init') > 0:
-                        ok=False
-                        if verbose>0:
-                            print('')
-                            print(file)
-                            print(n0,line.rstrip())
-
-                # detect critical-block end
-                if line.startswith('!$omp end'):
+                if line.startswith('!$omp end critical '+region):
+                    full_line=full_line.replace('!$omp end critical '+region,
+                                                'call io%lock%unset')
                     watch=False
-        if ok:
-            if verbose>1:
-                print(' OK:',file)
-            return 0
-        else:
-            if verbose>1:
-                print('NOK:',file)
-            return 1
+            lines.append(full_line)
+
+            # detect other crtical regions
+            if line.startswith('!$omp critical') or \
+               line.startswith('!$omp end critical'):
+                if line.find('input_cr') < 0:
+                    if not filename:
+                        str='OTHER: '+file
+                        print(str)
+                        log2.write(str+'\n')
+                        filename=True
+                    str='{:4d} {}'.format(n0,full_line)
+                    print(str.rstrip())
+                    log2.write(str)
+
+        if critical and commit:
+            print("writing",file)
+            with open(file,'w') as fo:
+                for line in lines:
+                    if not use_io:
+                        if line.lstrip().startswith('USE'):
+                            i=line.index('_mod')
+                            fo.write('  USE io'+line[i:])
+                            print("wrote USE io_mod")
+                            use_io=True
+                    fo.write(line)
+        return 0
 
 #%%
-def find():
-    n=0
+def find(log1,log2):
     for root, dirs, files in os.walk("."):
         for file in files:
              if root != './.git' and root != './patch' and not root.endswith('temporary_files'):
                  if file.endswith('.f90'):
                     f=file if root=='.' else root.lstrip('.').lstrip(os.sep)+os.sep+file
                     f=f.strip()
-                    try:
-                        n+=critical(f,verbose=1)
-                    except:
-                        print('ERROR: '+f)
-    if n==0:
-        print('no problems found')
+                    critical(f,log1,log2,verbose=1,commit=True)
 
 if __name__ == '__main__':
-    find()
+    log1=open('critical_input.log','w')
+    log2=open('critical_other.log','w')
+    find(log1,log2)
+    log1.close()
+    log2.close()

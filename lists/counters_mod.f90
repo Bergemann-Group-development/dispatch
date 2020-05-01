@@ -74,7 +74,7 @@ SUBROUTINE init(self)
   !-----------------------------------------------------------------------------
   if (first_time) then
     call trace%begin ('counters_t%init')
-    !$omp critical (input_cr)
+    call io%lock%set ('counters_t%init')
     if (first_time) then
       self%id = 0
       rewind (io_unit%input)
@@ -82,7 +82,7 @@ SUBROUTINE init(self)
       write (io_unit%output, counters_params)
       first_time = .false.
     end if
-    !$omp end critical (input_cr)
+    call io%lock%unset ('counters_t%init')
     call self%lock%init ('coun')
     call trace%end()
   end if

@@ -66,8 +66,8 @@ MODULE extras_mod
     type(selfgravity_t):: selfgravity                           ! selfg
     type(cooling_t):: cooling                                   ! cool
     type(lagrangian_t):: lagrangian                             ! move
-    class(gpatch_t), pointer:: gpatch => null()                 ! keep
     type(SN_t):: SN                                             ! SN
+    class(gpatch_t), pointer:: gpatch => null()                 ! keep
   contains
     procedure:: pre_init
     procedure:: init
@@ -79,7 +79,7 @@ MODULE extras_mod
     procedure:: check_refine
     procedure:: courant_condition
   end type
-  class(sinks_t), pointer:: sink => null()                      ! sinks
+  class(sinks_t), pointer:: sinks => null()                     ! sinks
   type(extras_t), public:: extras
 CONTAINS
 
@@ -91,27 +91,31 @@ SUBROUTINE pre_init (self)
   !.............................................................................
   call trace%begin ('extras_t%pre_init')
   self%gpatch => self
-  call self%selfgravity%pre_init(self)                          ! selfg
-  !call self%lagrangian%pre_init                                ! move
+  call self%forces%pre_init          (self%gpatch)              ! forces
+  call self%selfgravity%pre_init     (self%gpatch)              ! selfg
+  call self%cooling%pre_init         (self%gpatch)              ! cool
+  call io%lock%set ('extras_t%pre_init')
+  if (.not. associated(sinks)) then
+    allocate (sinks)
+    call sinks%pre_init              (self%gpatch)              ! sinks
+  end if
+  call io%lock%unset ('extras_t%pre_init')
+  call self%SN%pre_init              (self%gpatch, sinks)       ! sinks
+  !allocate (self%trace_particles)                               ! tracep
+  !call self%trace_particles%pre_init (self%gpatch)              ! tracep
+   !call self%lagrangian%pre_init     (self%gpatch)              ! lagr
   call trace%end()
 END SUBROUTINE pre_init
 
  !===============================================================================
- !> Initialize the modules that are to be included and used
+ !> Initialize the modules that need the allocated patch to initialize
  !===============================================================================
 SUBROUTINE init (self)
   class(extras_t):: self
   !.............................................................................
   call trace%begin ('extras_t%init')
-  call self%forces%init (self%link)                             ! forces
-  !allocate (self%trace_particles)                               ! tracep
-  !call self%trace_particles%add (self%link)                     ! tracep
-  if (.not.associated(sink)) then                               ! sinks
-    allocate (sink)                                             ! sinks
-    call sink%init                                              ! sinks
-  end if                                                        ! sinks
-  call self%cooling%init                                        ! cool
-  call self%SN%init (self%gpatch)                               ! SN
+  call self%forces%init                                         ! forces
+  call self%selfgravity%init                                    ! selfg
   call trace%end()
 END SUBROUTINE init
 
@@ -155,11 +159,11 @@ SUBROUTINE pre_update (self)
   self%gpatch => self                                           ! keep
   patch => self                                                 ! keep
   call self%forces%pre_update                                   ! forces
-  call sink%pre_update (patch)                                  ! sinks
+  call sinks%pre_update                                         ! sinks
   !call self%trace_particles%update                              ! tracep
-  call self%selfgravity%pre_update (self)                       ! selfg
-  call self%cooling%pre_update (self%gpatch)                    ! cool
-  call self%SN%pre_update (patch, sink)                         ! SN
+  call self%selfgravity%pre_update                              ! selfg
+  call self%cooling%pre_update                                  ! cool
+  call self%SN%pre_update                                       ! SN
   call trace%end()
 END SUBROUTINE pre_update
 
@@ -171,7 +175,7 @@ SUBROUTINE post_update (self)
   !.............................................................................
   call self%forces%post_update                                  ! forces
   !call self%trace_particles%post_update                         ! tracep
-  call self%selfgravity%post_update (self)                      ! selfg
+  call self%selfgravity%post_update                             ! selfg
   !call self%lagrangian%post_update                              ! move
 END SUBROUTINE post_update
 
@@ -209,7 +213,7 @@ SUBROUTINE courant_condition (self, detailed_timer)
 !print *, self%u_max, self%dtime, 1
   call self%gpatch_t%courant_condition (detailed_timer)          ! keep
 !print *, self%u_max, self%dtime, 2
-  call self%cooling%courant_condition (self%gpatch)              ! cool
+  call self%cooling%courant_condition                            ! cool
 !print *, self%u_max, self%dtime, 3
   call self%SN%courant_condition                                 ! SN
 !print *, self%u_max, self%dtime, 4

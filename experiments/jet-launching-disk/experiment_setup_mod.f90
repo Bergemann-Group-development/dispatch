@@ -57,7 +57,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('experiment_setup_t%init')
 
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
@@ -65,7 +65,7 @@ SUBROUTINE init (self)
     if (iostat/=0) call io%namelist_warning ('experiment_params')
     if (io%master) write (*, experiment_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
 
   if (coord_type == 'spherical') then
     if (extent(2) == 1.0) then

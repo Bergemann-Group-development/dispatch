@@ -8,19 +8,16 @@ include $(TOP)/extras/spitzer_conductivity/Makefile
 include $(TOP)/extras/cooling/Makefile
 
 # Dependencies
-extras_mod.o            : io_mod.o trace_mod.o patch_mod.o gpatch_mod.o connect_mod.o \
+extras_mod.o            : io_mod.o trace_mod.o gpatch_mod.o connect_mod.o \
                           task_mod.o list_mod.o
-selfgravity_mod.o       : gpatch_mod.o poisson_mod.o vector_ops.o download_mod.o
-gravity_mod.o           : patch_mod.o units_mod.o scaling_mod.o link_mod.o io_mod.o
+selfgravity_mod.o       : gpatch_mod.o poisson_mod.o vector_ops.o download_mod.o \
+                          timestep_mod.o
+gravity_mod.o           : gpatch_mod.o units_mod.o scaling_mod.o link_mod.o io_mod.o
 trace_particles_mod.o   : io_mod.o trace_mod.o dll_mod.o omp_timer_mod.o random_mod.o \
-                          mesh_mod.o link_mod.o patch_mod.o mpi_buffer_mod.o \
+                          mesh_mod.o link_mod.o gpatch_mod.o mpi_buffer_mod.o \
                           particle_mod.o particles_mod.o
 newton_mod.o            : io_unit_mod.o trace_mod.o link_mod.o gpatch_mod.o mesh_mod.o
-lagrangian_mod.o        : io_mod.o trace_mod.o patch_mod.o link_mod.o
+lagrangian_mod.o        : io_mod.o trace_mod.o gpatch_mod.o link_mod.o
 connect_mod.o           :
 SN_mod.o                : sinks_mod.o
-sinks_mod.o             : io_mod.o trace_mod.o patch_mod.o scaling_mod.o
-particles_mod.o         : io_mod.o trace_mod.o mpi_mod.o
-particle_solver_mod.o   : omp_timer_mod.o timer_mod.o task_mod.o link_mod.o \
-                          gpatch_mod.o particles_mod.o dust_mod.o list_mod.o
-dust_mod.o              : gpatch_mod.o particles_mod.o random_mod.o scaling_mod.o
+sinks_mod.o             : io_mod.o trace_mod.o gpatch_mod.o scaling_mod.o

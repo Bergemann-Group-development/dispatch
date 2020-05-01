@@ -70,7 +70,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Ramses-like specific things
   !-----------------------------------------------------------------------------
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
@@ -79,7 +79,7 @@ SUBROUTINE init (self)
     write (io%output, muscl_params)
     write (io%namelist, muscl_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   self%riemann%method = method
   self%courant = courant
   self%csound = csound

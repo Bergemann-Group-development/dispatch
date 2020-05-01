@@ -722,7 +722,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('lagrange_t%init')
   if (.not.self%initialized) then
-    !$omp critical (input_cr)
+    call io%lock%set ('lagrange_t%init')
     if (.not.self%initialized) then
       rewind (io%input)
       read (io%input, lagrange_params, iostat=iostat)
@@ -732,7 +732,7 @@ SUBROUTINE init (self)
       self%order = order
       self%initialized = .true.
     end if
-    !$omp end critical (input_cr)
+    call io%lock%unset ('lagrange_t%init')
   end if
   call trace%end ()
 END SUBROUTINE init

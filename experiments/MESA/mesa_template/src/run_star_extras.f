@@ -6,23 +6,15 @@
          
          implicit none       
          
-         !TODO: put this in ../com_structs so that it can be compiled from both MESA and Dispatch, and compatibility is maintained by the compiler
-         ! communication between MESA and Dispatch is done in cgs
          type acc_struct 
          sequence
             real(8) :: time, mdot
          end type acc_struct
-
-         type feedback_struct
-         sequence
-            real :: time, dm_wind, loum
-            logical :: supernova = .false. !! booooommmm !!
-         end type feedback_struct  
          
          TYPE(acc_struct), DIMENSION(:), allocatable :: acc_hist
          TYPE(integer) :: acc_len = 0
-         character(256) :: photo_path
-         logical :: save_point = .false.
+         character(64) :: model_path
+         real(dp) :: next_save = huge(0d0)
          integer :: read_unit, write_unit
 
          contains        
@@ -38,15 +30,16 @@
             s% use_other_energy = .true.
             s% use_other_adjust_mdot = .true.
             
-            s% extras_finish_step => other_after_step           ! Get accretion up to a given syncronization point
-            s% other_adjust_mdot => other_dispatch_adjust_mdot ! Calculate mdot from loaded data
-            s% other_energy => accretion_other_energy          ! put energy onto the star
+            s% extras_finish_step => extras_finish_step           ! Get accretion up to a given syncronization point
+            s% other_adjust_mdot => other_adjust_mdot ! Calculate mdot from loaded data
+            s% other_energy => other_energy          ! put energy onto the star
+            s% extras_after_evolve => extras_after_evolve ! Report supernova
             ! todo: other_photo_write and other_photo_read to conserve acc_hist
          end subroutine extras_controls
          
          ! opens the pipes and initialize the acc_hist array
          subroutine init(s)
-            use utils_lib, only : alloc_iounit
+            use utils_lib,only:alloc_iounit
             integer :: ierr
             type(star_info) :: s
             character(64):: start_year
@@ -73,44 +66,54 @@
             acc_hist%time=age
             acc_len = 1
             call read_next ! read first
+            s% dt_next = min(min(acc_hist(acc_len)% time,next_save) - age, s% dt_next)
          end subroutine init
 
-         integer function other_after_step(id, id_extra)
-            integer, intent(in) :: id, id_extra
+         integer function extras_finish_step(id)
+            integer, intent(in) :: id
             integer :: ierr
             type (star_info), pointer :: s
-
+            real(dp) :: unbounded_dt = 0;
+            logical :: step_forced;
+            step_forced = .false.
             call star_ptr(id, s, ierr)
-            if (s% time >= acc_hist(acc_len)%time) then
-               ! When we get here, the timestep was usually decreased in order to hit. This is not neccecary
-               s% dt_next = max(s% dt_next,s%dt_old*1.1)
-
-               call write_feedback(0d0, s% L(1), s% time + s% dt_next, .false.)
-
-               if (save_point)  call star_save_for_restart(id, photo_path, ierr)
-               
-               call read_next ! read next batch of inputs
-            else 
-
-            end if
-            s% dt_next = min(acc_hist(acc_len)% time-s%time, s% dt_next)
             
-            other_after_step = keep_going
-         end function other_after_step
+            ! handle save point
+            if (s% time >= next_save) then
+               call star_write_model(id, model_path, ierr)
+               step_forced = .true.
+               next_save = huge(0d0)
+            end if 
+            ! hand sync point
+            if (s% time >= acc_hist(acc_len)%time) then
+               call write_feedback(s, .false.)
+               call read_next
+               step_forced = .true.
+            end if
+            !write(*,*) s%time, acc_hist(acc_len)% time, next_save, s% dt_next, unbounded_dt, step_forced
+            ! Ensure resetting dt_next after artificially short steps
+            if (step_forced) then
+               s% dt_next = unbounded_dt
+            else
+               unbounded_dt = s% dt_next
+            end if
+            ! Bound to dt_next to hit sync and save times
+            s% dt_next = min(acc_hist(acc_len)% time-s%time, &
+                             next_save-s%time, &
+                             s% dt_next)
 
-         subroutine other_dispatch_adjust_mdot(id, ierr)
+            extras_finish_step = keep_going
+         end function extras_finish_step
+
+         subroutine other_adjust_mdot(id, ierr)
             integer, intent(in):: id
             integer,intent(out) :: ierr
+            real(dp) :: tstart, tend, dm, lower_t, upper_t
+            integer :: i
             type(star_info), pointer :: s
             call star_ptr(id, s, ierr)
-
-            s% mstar_dot = acc_rate(s% time, s% time + s% dt)
-         end subroutine other_dispatch_adjust_mdot
-         
-         ! calulate acc_rate assuming lineara accretion rate between subsequent timestamps
-         function acc_rate(tstart, tend)
-            real(dp) :: tstart, tend, dm, acc_rate, lower_t, upper_t
-            integer:: i
+            tstart = s% time
+            tend = s% time + s% dt
 
             ! accretet mass in the given period is the sum of dm's - partial periods.
             ! TODO: this is 0'th order in rate. Possibly upgrade to 1'st order
@@ -122,60 +125,12 @@
                   dm = dm + acc_hist(i)%mdot*(upper_t-lower_t)
             end do
 
-            acc_rate = dm / (tend - tstart)
-         end function acc_rate
+            s% mstar_dot = dm / (tend - tstart)
+         end subroutine other_adjust_mdot
 
 
-         ! blocking read of inputs untill syncronization point
-         ! returns time of syncronization point
-         subroutine read_next()
-            type(acc_struct) :: accretion
-            logical :: sync_point
-            namelist /query/ accretion, sync_point, save_point, photo_path
-            
-      100   read (read_unit,query)
-            ! if add accretion to list
-            acc_len = acc_len + 1
-            ! If no more capacity in accretion_hist, resize using doubling strategy
-            if (acc_len > size(acc_hist)) then
-               call resize_acc_hist(size(acc_hist)*2)
-            endif
-            acc_hist(acc_len) = accretion
-            ! continue untill all queries are read
-            if (.not.sync_point) goto 100
-         end subroutine read_next
-
-         subroutine write_feedback(dm_wind, loum, time, supernova)
-            type(feedback_struct) :: feedback
-            real(dp) :: dm_wind, loum, time
-            logical :: supernova
-            namelist /query/ feedback
-
-            feedback%dm_wind = dm_wind
-            feedback%loum = loum
-            feedback%time = time
-            feedback%supernova = supernova
-
-            write(write_unit, query)
-         end subroutine write_feedback
-
-
-         subroutine resize_acc_hist(newSize)
-            INTEGER, INTENT(IN) :: newSize
-            type(acc_struct), DIMENSION(:), ALLOCATABLE :: temp
-            
-            allocate(temp(size(acc_hist)))
-            temp = acc_hist
-            deallocate(acc_hist)
-            allocate(acc_hist(newSize))
-            acc_hist(1:size(temp)) = temp
-         end subroutine resize_acc_hist
-
-
-         
-         subroutine accretion_other_energy(id, ierr)
-
-            use crlibm_lib, only: safe_log10_cr
+         ! not mine, from sigurd
+         subroutine other_energy(id, ierr)
             use star_def
 
 
@@ -245,8 +200,59 @@
             !write(*,*) "Ratio, r(k) / r(1), Heat mass / mass : " , s% r(k) / radius, mcumul / mass
             !write(*,*) "Extra heat: " , extra_heat_var
 
-      end subroutine accretion_other_energy
+      end subroutine other_energy
 
+      subroutine extras_after_evolve(id, ierr)
+         type (star_info), pointer :: s
+         integer, intent(in) :: id
+         integer, intent(out) :: ierr
+         call get_star_ptr(id, s, ierr)
+         call write_feedback(s, .true.)
+      end subroutine extras_after_evolve
       
+         ! blocking read of inputs untill syncronization point
+         ! returns time of syncronization point
+      subroutine read_next()
+         type(acc_struct) :: accretion
+         logical :: sync_point
+         namelist /query/ accretion, sync_point, next_save, model_path
+         
+   100   read (read_unit,query)
+         ! if add accretion to list
+         acc_len = acc_len + 1
+         ! If no more capacity in accretion_hist, resize using doubling strategy
+         if (acc_len > size(acc_hist)) then
+            call resize_acc_hist(size(acc_hist)*2)
+         endif
+         acc_hist(acc_len) = accretion
+         ! continue untill all queries are read
+         if (.not.sync_point) goto 100
+      end subroutine read_next
+
+      subroutine write_feedback(s, supernova)
+         type (star_info), pointer :: s
+         real(dp) :: dm_wind, loum, t_eff
+         logical :: supernova
+         namelist /query/ dm_wind, loum, t_eff, supernova
+
+         dm_wind = 0!s% dm_wind
+         loum = s% L(1)
+         t_eff = s%teff
+         
+         write(write_unit, query)
+      end subroutine write_feedback
+
+
+      subroutine resize_acc_hist(newSize)
+         INTEGER, INTENT(IN) :: newSize
+         type(acc_struct), DIMENSION(:), ALLOCATABLE :: temp
+         
+         allocate(temp(size(acc_hist)))
+         temp = acc_hist
+         deallocate(acc_hist)
+         allocate(acc_hist(newSize))
+         acc_hist(1:size(temp)) = temp
+      end subroutine resize_acc_hist
+
       end module run_star_extras
       

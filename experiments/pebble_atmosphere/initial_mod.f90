@@ -51,14 +51,14 @@ SUBROUTINE init (self, solver, gamma)
    !----------------------------------------------------------------------------
    call trace%begin('initial_t%init')
    call scaling%init
-   !$omp critical (init_cr)
+   call io%lock%set
    if (first_time) then
      first_time = .false.
      initial_condition = self%initial_condition
      rewind (io%input); read (io%input, initial_params, iostat=iostat)
      if (io%master) write (*, initial_params)
    end if
-   !$omp end critical (init_cr)
+   call io%lock%unset
    self%initial_condition = initial_condition
    self%solver = trim(solver)
    select case(trim(self%initial_condition))
@@ -94,7 +94,7 @@ SUBROUTINE planet_atmosphere (self, m, mem, idx)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('initial_t%planet_atmosphere', itimer=itimer)
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     omega = planet%omega*cgs%yr/(2.*cgs%pi*scaling%t)
@@ -102,7 +102,7 @@ SUBROUTINE planet_atmosphere (self, m, mem, idx)
     read (io%input, planet_atm_params)
     if (io%master) write (*, planet_atm_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   planet%omega   = omega*2.*cgs%pi*scaling%t/cgs%yr
   planet%v_head    =    v_head_cgs/scaling%u
   planet%v_accrete = v_accrete_cgs/scaling%u
@@ -228,7 +228,7 @@ SUBROUTINE disk (self, m, mem, idx)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('initial_t%disk', itimer=itimer)
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     omega = planet%omega*cgs%yr/(2.*cgs%pi*scaling%t)
@@ -236,7 +236,7 @@ SUBROUTINE disk (self, m, mem, idx)
     read (io%input, planet_atm_params)
     if (io%master) write (*, planet_atm_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   planet%omega   = omega*2.*cgs%pi*scaling%t/cgs%yr
   planet%v_head    =    v_head_cgs/scaling%u
   planet%v_accrete = v_accrete_cgs/scaling%u

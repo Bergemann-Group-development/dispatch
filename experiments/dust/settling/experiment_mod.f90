@@ -35,6 +35,7 @@ MODULE experiment_mod
   USE particles_mod
   USE scaling_mod
   USE units_mod
+  USE omp_lock_mod
   implicit none
   private
   type, public, extends(solver_t):: experiment_t
@@ -67,7 +68,7 @@ SUBROUTINE init (self)
   ! The OpenMP "critical region" only allows one thread at a time, and the first
   ! one sets first_time = .false., which prevents the nexts ones from reading.
   !-----------------------------------------------------------------------------
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     rewind (io%input)
     read (io%input, experiment_params, iostat=iostat)
@@ -75,7 +76,7 @@ SUBROUTINE init (self)
     write (io%output, experiment_params)
     first_time = .false.
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   call scaling%init
   self%gamma = scaling%gamma
   self%csound = 1.0
@@ -321,12 +322,14 @@ SUBROUTINE total_dust_mass (self)
     task => link%task
     select type (task)
     class is (experiment_t)
+      call task%particle_solver%particles%lock%set ('total_dust_mass')
       p => task%particle_solver%particles%head
       do while (associated(p))
         mass(p%bin) = mass(p%bin) + p%w
         n = n+1
         p => p%next
       end do
+      call task%particle_solver%particles%lock%unset ('total_dust_mass')
     end select
     link => link%next
   end do
@@ -346,6 +349,7 @@ SUBROUTINE total_dust_mass (self)
       task => link%task
       select type (task)
       class is (experiment_t)
+        call task%particle_solver%particles%lock%set ('total_dust_mass')
         p => task%particle_solver%particles%head
         do while (associated(p))
           if (abs(p%w) > 1e20) then
@@ -354,6 +358,7 @@ SUBROUTINE total_dust_mass (self)
           end if
           p => p%next
         end do
+        call task%particle_solver%particles%lock%unset ('total_dust_mass')
       end select
       link => link%next
     end do

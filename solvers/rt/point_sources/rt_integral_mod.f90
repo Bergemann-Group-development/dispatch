@@ -45,14 +45,14 @@ SUBROUTINE init (self)
     dtau_max, detailed_timer
   !-----------------------------------------------------------------------------
   if (first_time) then
-    !$omp critical (input_cr)
+    call io%lock%set
     if (first_time) then
       first_time=.false.
       rewind (io_unit%input)
       read (io_unit%input, rt_integral_params, iostat=iostat)
       write (io_unit%output, rt_integral_params)
     end if
-    !$omp end critical (input_cr)
+    call io%lock%unset
     select case (solver)
     case (1)
       self%solver => solve1

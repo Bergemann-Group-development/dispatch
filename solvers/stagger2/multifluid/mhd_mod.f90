@@ -58,7 +58,7 @@ SUBROUTINE init (self)
                         force_coupled, courant                                          ! ADDED tracer AND alpha TO THE NAMELIST
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     allocate(nu(6*self%nc))
     first_time = .false.
@@ -72,7 +72,7 @@ SUBROUTINE init (self)
     call non_ideal%init
     call timestep%init
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   self%eos           = eos
   self%gamma         = gamma
   self%csound        = csound

@@ -35,14 +35,14 @@ SUBROUTINE init (self, solver, id, mesh)
    namelist /force_params/ type
    !----------------------------------------------------------------------------
    call trace_begin('force_t%init')
-   !$omp critical (input_cr)
+   call io%lock%set
    if (first_time) then
      first_time = .false.
      rewind (io%input)
      read (io%input, force_params, iostat=iostat)
      if (io%master) write (*, force_params)
    end if
-   !$omp end critical (input_cr)
+   call io%lock%unset
    select case (trim(type))
    case ('planet_atmosphere')
      self%selected => star_and_planet
@@ -331,14 +331,14 @@ FUNCTION single_solenoidal (self, time, Ux, Uy, Uz, m) RESULT (ff)
   namelist /solenoidal_params/ k, a0, t_turn
   !-----------------------------------------------------------------------------
   call trace_begin('force_t:single_solenoidal')
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
     read (io%input, solenoidal_params, iostat=iostat)
     if (io%master) write (*, solenoidal_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   if (time >= t_save) then
     a = a0*random%ran3()
     t_save = t_save + t_turn

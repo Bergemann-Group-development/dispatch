@@ -176,7 +176,7 @@ SUBROUTINE trace_output (self, i, close_key)
     print*,'pebble_trace: file, record, n: ', trim(filename), self%buffer(i)%record, self%buffer(i)%n
   unit = io_unit%tmp + omp%thread
   if (self%buffer(i)%record == 0) then
-    call os%mkdir(dirname)
+    if (io%do_output) call os%mkdir(dirname)
     open (unit, file=trim(filename), form='unformatted', &
       status='unknown')
     close (unit, status='delete')

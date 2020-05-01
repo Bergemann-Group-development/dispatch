@@ -17,6 +17,9 @@ MODULE aux_mod
   USE io_unit_mod
   USE trace_mod
   USE dll_mod
+  USE omp_timer_mod
+  USE omp_mod
+!  USE omp_lock_mod
   implicit none
   private
   !
@@ -24,6 +27,7 @@ MODULE aux_mod
   type, public, extends(dll_t):: aux_t
     integer:: iout = 0
     real(8):: aux_next = 0.0
+!    type(lock_t), pointer:: lock => null()
   contains
     procedure:: init
     procedure:: new_item
@@ -64,13 +68,12 @@ MODULE aux_mod
     procedure:: output => output_item
   end type
   integer:: version=1, verbose=0, uniq=200, iout_prv=-1
-  logical:: first_time=.true.
   character(len=32), allocatable:: select(:)
   type(aux_t), public:: aux
 CONTAINS
 
 !===============================================================================
-!> This routine is called from data_io%init, already inside a critical region
+!> This routine is called from data_io%init, already inside an OMP lock region
 !===============================================================================
 SUBROUTINE init (self, name)
   class(aux_t):: self
@@ -80,9 +83,10 @@ SUBROUTINE init (self, name)
   real(8):: aux_time = 1.0
   integer:: iostat, i
   namelist /aux_params/ verbose, select
-  logical, save:: fist_time=.true.
+  logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
   call trace%begin ('aux_t%init')
+  call io%lock%set ('aux_t%init')
   if (first_time) then
     if (.not.allocated(select)) then
       allocate (select(max_select))
@@ -94,8 +98,13 @@ SUBROUTINE init (self, name)
     call write_namelist (stdout)
     if (io_unit%master) &
       call write_namelist (io%namelist)
-    fist_time = .false.
+    first_time = .false.
   end if
+  call self%dll_t%init
+  call io%lock%unset ('aux_t%init')
+  !-----------------------------------------------------------------------------
+  ! Initialize the underlying data type, with its lock
+  !-----------------------------------------------------------------------------
   call trace%end()
 END SUBROUTINE init
 
@@ -106,6 +115,8 @@ FUNCTION new_item (self, name)
   logical          :: new_item
   class(dll_node_t), pointer:: item
   !-----------------------------------------------------------------------------
+  if (verbose > 0) call trace%begin ('aux_t%new_item')
+  call self%lock%set ('new_item')
   new_item = .true.
   item => self%head
   do while (associated(item))
@@ -120,7 +131,9 @@ FUNCTION new_item (self, name)
   end do
   if (verbose > 1) &
     write (io_unit%log,*) 'aux_t%new_item: ', trim(name), new_item
-END FUNCTION
+  call self%lock%unset ('new_item')
+  if (verbose > 0) call trace%end ()
+  END FUNCTION new_item
 
 !===============================================================================
 ! Scalar output: Allow the argument to be non-pointer, and allocate a copy
@@ -133,6 +146,7 @@ SUBROUTINE register0i (self, name, i)
   class(*), pointer  :: c
   class(dll_node_t), pointer:: item
   !-----------------------------------------------------------------------------
+  if (.not.io%do_output) return
   call trace%begin ('aux_t%register0r')
   if (self%new_item (name)) then
     allocate (item_t:: item)
@@ -176,6 +190,7 @@ SUBROUTINE register0r (self, name, r)
   class(*), pointer  :: c
   class(dll_node_t), pointer:: item
   !-----------------------------------------------------------------------------
+  if (.not.io%do_output) return
   call trace%begin ('aux_t%register0r')
   if (self%new_item (name)) then
     allocate (item_t:: item)
@@ -216,6 +231,7 @@ SUBROUTINE register1i (self, name, i)
   class(*), pointer  :: c(:)
   class(dll_node_t), pointer:: item
   !-----------------------------------------------------------------------------
+  if (.not.io%do_output) return
   call trace%begin ('aux_t%register1i')
   if (self%new_item (name)) then
     allocate (item_t:: item)
@@ -253,6 +269,7 @@ SUBROUTINE register1r (self, name, r)
   class(*), pointer  :: c(:)
   class(dll_node_t), pointer:: item
   !-----------------------------------------------------------------------------
+  if (.not.io%do_output) return
   call trace%begin ('aux_t%register1r')
   if (self%new_item (name)) then
     allocate (item_t:: item)
@@ -289,6 +306,7 @@ SUBROUTINE register2r (self, name, r)
   real    , pointer  :: r(:,:)
   class(dll_node_t), pointer:: item
   !-----------------------------------------------------------------------------
+  if (.not.io%do_output) return
   call trace%begin ('aux_t%register2r')
   if (self%new_item (name)) then
     allocate (item_t:: item)
@@ -325,6 +343,7 @@ SUBROUTINE register3r (self, name, r)
   real    , pointer  :: r(:,:,:)
   class(dll_node_t), pointer:: item
   !-----------------------------------------------------------------------------
+  if (.not.io%do_output) return
   call trace%begin ('aux_t%register3r')
   if (self%new_item (name)) then
     allocate (item_t:: item)
@@ -362,6 +381,7 @@ SUBROUTINE register4r (self, name, r)
   real    , pointer  :: r(:,:,:,:)
   class(dll_node_t), pointer:: item
   !-----------------------------------------------------------------------------
+  if (.not.io%do_output) return
   call trace%begin ('aux_t%register4r')
   if (verbose > 1) &
     write (io_unit%log,*) 'aux_t%register4r: '//name
@@ -392,6 +412,7 @@ SUBROUTINE register4r (self, name, r)
             exit
           end if
         end select
+        item => item%next
       end do
     end if
     if (verbose > 0) &
@@ -448,15 +469,35 @@ SUBROUTINE output_sequence (self, id, time, singlefile)
   real(8), optional:: time
   !-----------------------------------------------------------------------------
   call trace%begin ('aux_t%output_sequence')
-  do while (time >= self%aux_next)
-    call os%mkdir_no (self%iout+1)
-    call output_aux (self, self%iout, id, singlefile)
-    self%aux_next = self%aux_next + io%out_time
-    self%iout = self%iout + 1
-  end do
+  if (io%do_output) then
+    call aux%lock%set ('output_seq')
+    if (verbose > 1) then
+      write (io_unit%log,'(a,i6,2f12.6)') &
+        'aux_t%output_sequence: id, time, aux_next =', &
+        id, time, self%aux_next
+    end if
+    !...........................................................................
+    do while (time >= self%aux_next)
+      call os%mkdir_no (self%iout+1)
+      call output_aux (self, self%iout, id, singlefile)
+      self%aux_next = self%aux_next + io%out_time
+      self%iout = self%iout + 1
+    end do
+    !...........................................................................
+    if (verbose > 2) then
+      write (io_unit%log,'(a,i6,2f12.6)') &
+        'aux_t%output_sequence: id, time, aux_next =', &
+        id, time, self%aux_next
+    end if
+    call aux%lock%unset ('output_seq')
+  end if
   call trace%end ()
 END SUBROUTINE output_sequence
 
+!===============================================================================
+! This procedure is called from data_io_t%output, inside a locked region, and
+! only when io%do_output is true, so it needs to lock and no test on do_output.
+! When called from other places, it should also be from with locked regions.
 !===============================================================================
 SUBROUTINE output_aux (self, iout, id, singlefile)
   class(aux_t):: self
@@ -475,10 +516,10 @@ SUBROUTINE output_aux (self, iout, id, singlefile)
   if (self%n == 0) &
     return
   call trace%begin ('aux_t%output')
+  call aux%lock%set ('output_aux')
   !-----------------------------------------------------------------------------
   ! Once per snapshot, re-read the input namelist, to allow edits
   !-----------------------------------------------------------------------------
-  !$omp critical (aux_cr)
   if (iout > iout_prv) then
     rewind (stdin)
     read (stdin, aux_params, iostat=iostat)
@@ -487,6 +528,8 @@ SUBROUTINE output_aux (self, iout, id, singlefile)
   !-----------------------------------------------------------------------------
   ! Open one file per task, or use a single file
   !-----------------------------------------------------------------------------
+  write (io_unit%mpi,'(f12.6,i4,1x,a,i6)') wallclock(), omp%thread, &
+    'aux_t%ouput_aux: opened unit', io_unit%aux
   if (present(singlefile)) then
     filename = singlefile
     open (io_unit%aux, file=trim(singlefile), form='unformatted', &
@@ -523,7 +566,9 @@ SUBROUTINE output_aux (self, iout, id, singlefile)
     item => item%next
   end do
   close (io_unit%aux)
-  !$omp end critical (aux_cr)
+  write (io_unit%mpi,'(f12.6,i4,1x,a,i6)') wallclock(), omp%thread, &
+    'aux_t%ouput_aux: closed unit', io_unit%aux
+  call aux%lock%unset ('output_aux')
   call trace%end()
 END SUBROUTINE output_aux
 
@@ -545,6 +590,7 @@ SUBROUTINE write_namelist (unit)
   flush (unit)
 END SUBROUTINE write_namelist
 
+!===============================================================================
 !===============================================================================
 SUBROUTINE output_item (self, unit)
   class(item_t):: self

@@ -1,6 +1,6 @@
 !===============================================================================
 !> Methods for solving the Poisson equation; partially derived from routines
-!> developed by Troels Haugbølle for the course Computational Astrophysics.
+!> developed by Troels Haugbï¿½lle for the course Computational Astrophysics.
 !===============================================================================
 MODULE poisson_mod
   USE mpi_mod
@@ -23,7 +23,7 @@ MODULE poisson_mod
     procedure:: init
     procedure:: cg
     procedure:: sor
-    procedure, nopass:: laplace
+    procedure, nopass:: laplace_2nd
   end type
   real,    save:: floor=1e-2, tolerance=1e-4, fourPiG=1.0
   integer, save:: verbose=0
@@ -31,7 +31,6 @@ MODULE poisson_mod
   logical, save:: precondition=.true.
   real(8), parameter:: pi = asin(1.0) * 2.0
   logical, save:: chebyshev = .true. ! Activate Chebyshev acceleration of SOR?
-
 CONTAINS
 
 !===============================================================================
@@ -48,7 +47,8 @@ SUBROUTINE init (self)
   namelist /poisson_params/ tolerance, floor, max_iter, fourPiG, precondition, &
                             verbose, solver, chebyshev
   !-----------------------------------------------------------------------------
-  !$omp critical (input_cr)
+  call trace%begin ('poisson_t%init')
+  call io%lock%set ('poisson_t%init')
   if (first_time) then
     first_time = .false.
     fourpiG = scaling%grav
@@ -57,7 +57,7 @@ SUBROUTINE init (self)
     call io%namelist_warning ('poisson_params', iostat)
     if (io%master) write (io%output, poisson_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset ('poisson_t%init')
   select case(trim(solver))
   case ('cg')
     self%update => cg
@@ -70,6 +70,7 @@ SUBROUTINE init (self)
       call mpi%abort()
     end if
   end select
+  call trace%end ()
 END SUBROUTINE init
 
 !===============================================================================
@@ -80,13 +81,12 @@ END SUBROUTINE init
 !> or http://ieeexplore.ieee.org/document/5452414/
 !> See also the CG method in RAMSES: `ramses/poisson/phi_fine_cg.f90`.
 !===============================================================================
-SUBROUTINE cg (self, patch, phi1, d, d0, detailed_timer)
+SUBROUTINE cg (self, patch, phi1, d, d0)
   class(poisson_t)       :: self
   class(patch_t)         :: patch
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: phi1
   real(kind=KindScalarVar), dimension(:,:,:), pointer, intent(in):: d
   real(8)                :: d0
-  logical                :: detailed_timer
   !.............................................................................
   integer                :: niter
   real                   :: error, error0, usppt
@@ -94,16 +94,8 @@ SUBROUTINE cg (self, patch, phi1, d, d0, detailed_timer)
   integer                :: iter, m(3), ione, jone, kone
   integer, save          :: itimer=0
   real(8), dimension(:,:,:), allocatable:: source, phi, r, p, s, u
-  interface
-    subroutine laplace_interface(ds, phi, out)
-      real(8), intent(in)                   :: ds(3)
-      real(8), dimension(:,:,:), intent(in) :: phi
-      real(8), dimension(:,:,:), intent(out):: out
-    end subroutine laplace_interface
-  end interface
-  procedure(laplace_interface), pointer:: laplace
   !-----------------------------------------------------------------------------
-  if (detailed_timer) call trace%begin('poisson_mod%cg', itimer=itimer)
+  call trace%begin('poisson_t%cg', itimer=itimer)
   ione = 1
   jone = 1
   kone = 1
@@ -111,11 +103,6 @@ SUBROUTINE cg (self, patch, phi1, d, d0, detailed_timer)
   if (size(phi1,2) <= 1) jone = 0
   if (size(phi1,3) <= 1) kone = 0
   !
-  if (patch%mesh_type == mesh_types%Cartesian) then
-    laplace => laplace_Cartesian
-  else
-    laplace => laplace_curvilinear
-  end if
   !-----------------------------------------------------------------------------
   ! Allocate double precision scratch arrays
   !-----------------------------------------------------------------------------
@@ -185,7 +172,7 @@ SUBROUTINE cg (self, patch, phi1, d, d0, detailed_timer)
   end if
   phi1 = phi
   deallocate (phi, source, r, p, s, u)
-  if (detailed_timer) call trace%end (itimer)
+  call trace%end (itimer)
 contains
   !===============================================================================
   !> Set scratch array outer boundary to zero
@@ -210,13 +197,26 @@ contains
     end if
   end subroutine zero_boundaries
   !===============================================================================
-  !> 2nd order Laplace operator
+  !> Laplace operator chooser
   !===============================================================================
-  subroutine laplace_Cartesian (ds, phi, out)
+  subroutine laplace (ds, phi, out)
     real(8), intent(in)                   :: ds(3)
     real(8), dimension(:,:,:), intent(in) :: phi
     real(8), dimension(:,:,:), intent(out):: out
-    !.............................................................................
+    if (patch%mesh_type == mesh_types%Cartesian) then
+      call laplace_Cartesian (ds, phi, out)
+    else
+      call laplace_curvilinear  (ds, phi, out)
+    end if
+  end subroutine laplace
+  !===============================================================================
+  !> 2nd order Laplace operator
+  !===============================================================================
+  subroutine laplace_Cartesian (ds, phi, out)
+      real(8), intent(in)                   :: ds(3)
+      real(8), dimension(:,:,:), intent(in) :: phi
+      real(8), dimension(:,:,:), intent(out):: out
+      !.............................................................................
     integer                   :: i, j, k, im1, jm1, km1, ip1, jp1, kp1, li(3), n(3)
     real(8)                   :: c(3)
     !-----------------------------------------------------------------------------
@@ -386,13 +386,12 @@ END SUBROUTINE cg
 !===============================================================================
 !> 2nd order successive over relaxation with red-black ordering
 !===============================================================================
-SUBROUTINE sor (self, patch, phi1, d, d0, detailed_timer)
+SUBROUTINE sor (self, patch, phi1, d, d0)
   class(poisson_t)       :: self
   class(patch_t)         :: patch
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: phi1
   real(kind=KindScalarVar), dimension(:,:,:), pointer, intent(in):: d
   real(8):: d0
-  logical                :: detailed_timer
   !.............................................................................
   integer                :: i, j, k, sweep, ss, ione, jone, kone, m(3), iter, niter
   real                   :: error, error0
@@ -401,7 +400,7 @@ SUBROUTINE sor (self, patch, phi1, d, d0, detailed_timer)
   real(8), dimension(:,:,:), allocatable:: phi, source
 
   !-----------------------------------------------------------------------------
-  if (detailed_timer) call trace%begin ('poisson_t%sor_iter', itimer=itimer)
+  call trace%begin ('poisson_t%sor', itimer=itimer)
 
   associate(n=>patch%n,ds=>patch%ds,l=>patch%li,u=>patch%ui,gn=>patch%gn)
   allocate (phi(gn(1),gn(2),gn(3)), source(gn(1),gn(2),gn(3)))
@@ -512,15 +511,14 @@ SUBROUTINE sor (self, patch, phi1, d, d0, detailed_timer)
   niter = iter
   phi1 = phi
   deallocate (phi)
-
   end associate
-  if (detailed_timer) call trace%end (itimer)
+  call trace%end (itimer)
 END SUBROUTINE sor
 
 !===============================================================================
 !> 2nd order Laplace operator
 !===============================================================================
-SUBROUTINE laplace (ds, phi, source, res)
+SUBROUTINE laplace_2nd (ds, phi, source, res)
   real(8)                   :: ds(3)
   real, dimension(:,:,:)    :: phi, source, res
   !.............................................................................
@@ -549,6 +547,6 @@ SUBROUTINE laplace (ds, phi, source, res)
   end do
   end do
   end do
-END SUBROUTINE laplace
+END SUBROUTINE laplace_2nd
 
 END MODULE poisson_mod

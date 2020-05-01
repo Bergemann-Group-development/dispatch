@@ -31,14 +31,14 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('experiment_t%init')
   call self%solver_t%init
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     rewind (io%input)
     read (io%input, experiment_params, iostat=iostat)
     write (io%output, experiment_params)
     first_time = .false.
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   solver%csound = cs_kms*cgs%kms/scaling%u
   d = n_H2*scaling%mu*cgs%m_u/scaling%d
   if (self%gamma == 1d0) then

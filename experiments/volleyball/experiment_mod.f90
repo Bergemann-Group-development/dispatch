@@ -33,14 +33,14 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%init')
   call self%solver_t%init
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
     read (io%input, experiment_params)
     write (io%output, experiment_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   !-----------------------------------------------------------------------------
   ! Setup local coordinate system, with unit vectors
   !-----------------------------------------------------------------------------

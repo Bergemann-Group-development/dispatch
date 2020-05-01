@@ -1,7 +1,8 @@
 !---  Setup parameters ---------------------------------------------------------
 &scaling_params         orbit_au=1                ! orbital size in AU
                         temperature_K=300         ! isothermal temperature
-                        d_midplane_cgs=1e-9       ! disk mid-plane density
+                        mass_msun=1               ! mass of star in solar masses
+                        surface_density_cgs       ! surface density in cgs
 /
 &experiment_params      verbose=1                 ! information level
 /

@@ -42,7 +42,7 @@ SUBROUTINE init (self)
   namelist /timestep_params/ verbose, time_order
   !.............................................................................
   call trace_begin ('timestep_t%init', 1)
-  !$omp critical (timestep_cr)
+  call io%lock%set ('timestep_t%init')
   if (time_order==-1) then
     time_order = 2
     rewind (io%input)
@@ -50,7 +50,7 @@ SUBROUTINE init (self)
     call io%namelist_warning ('timestep_params', iostat)
     write (io%output, timestep_params)
   end if
-  !$omp end critical (timestep_cr)
+  call io%lock%unset ('timestep_t%init')
   self%verbose = verbose
   self%time_order = time_order
   !---------------------------------------------------------------------------
@@ -159,7 +159,9 @@ SUBROUTINE update_single (self, id, iit, dt, mem, dmem, mesh, lock, time_order)
   !......................................................................
   call trace_begin ('timestep_t%update_single', itimer=itimer)
   if (time_order <= 0) return
-
+  !
+  call lock%set ('single_timestep')
+  !
   nt = size(iit)                                ! number of time slots
   l = mesh%lb
   u = mesh%ub
@@ -209,6 +211,7 @@ SUBROUTINE update_single (self, id, iit, dt, mem, dmem, mesh, lock, time_order)
       minval(mem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt  ))), &
       maxval(mem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt  ))), shape(mem)
   end if
+  call lock%unset ('single_timestep')
   call trace_end (itimer)
 END SUBROUTINE update_single
 

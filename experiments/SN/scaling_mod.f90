@@ -32,7 +32,7 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   if (.not.first_time) return
   call trace_begin('scaling_t%init')
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     rewind (io%input)
     read (io%input, scaling_params, iostat=iostat)
@@ -53,7 +53,7 @@ SUBROUTINE init (self)
     write (io_unit%nml, scaling_nml)
     first_time = .false.
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   self%l = l
   self%d = d
   self%u = u

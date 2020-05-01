@@ -82,7 +82,7 @@ MODULE extras_mod
   ! states, must be accessed via a private instance in the extras_t data type
   !-----------------------------------------------------------------------------
   type, public, extends(gpatch_t):: extras_t
-    type(forces_t):: forces                                     ! forces
+    type(forces_t):: forces                                            ! forces
     !class(pic_t), pointer:: pic                                        ! pic
     !type (spitzer_t):: spitzer                                         ! spitzer
     !type(gravity_t):: gravity                                          ! gravity
@@ -115,9 +115,11 @@ CONTAINS
 !> periodicity, etc.
 !===============================================================================
 SUBROUTINE pre_init (self)
-  class(extras_t):: self
+  class(extras_t), target:: self
+  class(gpatch_t), pointer:: patch                                     ! keep
   !.............................................................................
-  !call self%forces%init (self)                                         ! forces
+  patch => self                                                        ! keep
+  call self%forces%pre_init (patch)                                    ! forces
   !-----------------------------------------------------------------------------
   ! Allocate a trace_particles data type, connect a pointer, and initialize
   !-----------------------------------------------------------------------------
@@ -137,7 +139,7 @@ SUBROUTINE init (self)
   class(extras_t):: self
   !.............................................................................
   call trace%begin ('extras_t%init')
-  call self%forces%init (self%link)                                     ! forces
+  call self%forces%init                                                 ! forces
   !-----------------------------------------------------------------------------
   ! Allocate a trace_particles data type, connect a pointer, and initialize
   !-----------------------------------------------------------------------------
@@ -151,7 +153,7 @@ SUBROUTINE init (self)
   !call self%spitzer%init (self%link)                                   ! spitzer
   !call self%gravity%init (self%link)                                   ! gravity
   !call self%rt%init_task (self%rt)                                     ! RT
-  ! -- ensure consistency (a value is already set via rt%init)         ! experiment
+  ! -- ensure consistency (a value is already set via rt%init)          ! experiment
   !self%rt%rt_boundaries%grav = self%gravity%const_grav                 ! experiment
   !call sink_patch%init (self%link)                                     ! sinkp
   !allocate (self%patch_force)                                          ! sinkp
@@ -166,7 +168,7 @@ SUBROUTINE dealloc (self)
   class(extras_t):: self
   !.............................................................................
   call trace%begin ('extras_t%dealloc')
-  call self%forces%dealloc                                              ! forces
+  call self%forces%dealloc                                             ! forces
   !call trace_particles%dealloc                                         ! sinkp
   !deallocate (self%trace_particles)                                    ! tracep
   !call sink_patch%dealloc                                              ! sinkp

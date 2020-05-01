@@ -2,6 +2,7 @@
 !> Construct a spherical layer, with volleyball distribution of patches
 !===============================================================================
 MODULE volleyball_layers_mod
+  USE io_mod
   USE sphere_points_mod
   USE dll_mod
   USE io_unit_mod
@@ -40,12 +41,12 @@ SUBROUTINE init (self)
   namelist /volleyball_layers_params/ verbose, nlayer, radius
   !-----------------------------------------------------------------------------
   call trace%begin ('volleyball_layers_t%init')
-  !$omp critical (input_cr)
+  call io%lock%set
   rewind (io_unit%input)
   read (io_unit%input, volleyball_layers_params, iostat=iostat)
   write (io_unit%output, volleyball_layers_params)
   self%nlayer = nlayer
-  !$omp end critical (input_cr)
+  call io%lock%unset
   !-----------------------------------------------------------------------------
   ! Construct nlayer layers and append to self%list
   !-----------------------------------------------------------------------------
@@ -72,10 +73,10 @@ SUBROUTINE init_layer (self, layer, radius)
   namelist /volleyball_layer_params/ ntheta
   !-----------------------------------------------------------------------------
   call trace%begin ('volleyball_layer_t%init_layer')
-  !$omp critical (input_cr)
+  call io%lock%set
   read (io_unit%input, volleyball_layer_params, iostat=iostat)
   write (io_unit%output, volleyball_layer_params)
-  !$omp end critical (input_cr)
+  call io%lock%unset
   !-----------------------------------------------------------------------------
   ! Construct a set of patch positions that define a volleyball front face
   !-----------------------------------------------------------------------------

@@ -150,7 +150,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call trace_begin('pic_t%pic_mod%init', itimer=itimer)
   self%first_pic = first_time
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     stdin = io%input
     rewind (io%input)
@@ -171,7 +171,7 @@ SUBROUTINE init (self)
     mpi%interior = .false.
     periodic = .false.
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   self%do_pairs = do_pairs
   self%llc = region_llc
   self%extent = region_extent

@@ -18,9 +18,10 @@ MODULE cooling_mod
     real(dp), dimension(:,:,:), pointer:: tt => null()
     real(dp), dimension(:,:,:), pointer:: qq => null()
     real(dp), dimension(:,:,:), pointer:: e  => null()
-  contains
-    procedure:: init
-    procedure:: pre_update
+    class(gpatch_t), pointer:: patch => null()
+    contains
+   procedure:: pre_init
+   procedure:: pre_update
     procedure:: courant_condition
     procedure, private:: subcycle
     procedure, private:: test
@@ -46,16 +47,18 @@ CONTAINS
 !===============================================================================
 !> Initialize parameters for cooling / heating
 !===============================================================================
-SUBROUTINE init (self)
-  class (cooling_t):: self
+SUBROUTINE pre_init (self, patch)
+  class(cooling_t):: self
+  class(gpatch_t), pointer:: patch
   integer:: iostat
   logical, save:: first_time=.true.
   namelist /cooling_params/ verbose, type, courant, &
     on, do_heat, do_subcycle, G0, G1, G2, G_MC, T_G0, T_MC, N_crit, &
     niter_max, max_fraction, end_fraction, mu
   !-----------------------------------------------------------------------------
-  call trace%begin ('simple/cooling_t%init')
-  !$omp critical (input_cr)
+  call trace%begin ('simple/cooling_t%pre_init')
+  self%patch => patch
+  call io%lock%set
   if (first_time) then
     rewind (io%input)
     read (io%input, cooling_params, iostat=iostat)
@@ -68,7 +71,7 @@ SUBROUTINE init (self)
     end if
     first_time = .false.
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   select case (trim(type))
   case ('Casiana')
     self%function => cooling_Casiana
@@ -84,14 +87,15 @@ SUBROUTINE init (self)
     self%function => cooling_Gnedin
   end select
   call trace%end ()
-END SUBROUTINE init
+END SUBROUTINE pre_init
 
 !===============================================================================
 !> Implement actual cooling
 !===============================================================================
-SUBROUTINE pre_update (self, patch)
+SUBROUTINE pre_update (self)
   class (cooling_t):: self
-  class (gpatch_t):: patch
+  !.............................................................................
+  class (gpatch_t), pointer:: patch
   integer:: i1, i2, i3, l(3), u(3)
   real(dp):: q1, q2, eth, eth0, T, qq, d, e, px, py, pz, v, ekin, eth_MC
   real(dp):: crate, hrate, eth_lim
@@ -101,6 +105,7 @@ SUBROUTINE pre_update (self, patch)
   !-----------------------------------------------------------------------------
   call trace%begin ('cooling_t%pre_update', itimer=itimer)
   if (on) then
+    patch => self%patch
     if (.not.allocated(patch%heating_per_unit_volume)) then
       u = patch%gn
       allocate (patch%heating_per_unit_volume(u(1),u(2),u(3)))
@@ -191,14 +196,16 @@ END SUBROUTINE pre_update
 !===============================================================================
 !> Limit on timestep from cooling
 !===============================================================================
-SUBROUTINE courant_condition (self, patch)
+SUBROUTINE courant_condition (self)
   class(cooling_t):: self
-  class(gpatch_t):: patch
+  !.............................................................................
+  class(gpatch_t), pointer:: patch
   integer:: i1, i2, i3, l(3), u(3), unit
   real(dp), dimension(:,:,:), pointer:: e
   !----------------------------------------------------------------------------
   call trace%begin ('cooling_t%courant_condition')
   if (on) then
+    patch => self%patch
     if (self%dtime < patch%dtime) then
       unit = merge (stdout, io_unit%log, verbose > 1)
       if (verbose > 0) then

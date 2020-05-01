@@ -81,7 +81,7 @@ SUBROUTINE pre_init (self)
     do_test
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%pre_init')
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     eos = self%eos
@@ -94,7 +94,7 @@ SUBROUTINE pre_init (self)
     ! fool-proofing
     if (timestep%time_order <= 0) call mpi%abort("The Stagger solvers require `time_order` > 0. Abort!")
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   self%eos = eos
   self%mhd = mhd
   self%nu = nu

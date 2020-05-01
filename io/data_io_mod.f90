@@ -238,9 +238,9 @@ SUBROUTINE output (self, patch, experiment_name)
       do while (patch%t(it) >= patch%out_next)
         if (created < patch%iout) then
           created = patch%iout
-          call os%mkdir (trim(io%outputname))
+          if (io%do_output) call os%mkdir (trim(io%outputname))
         end if
-        call os%mkdir_no (patch%iout)
+        if (io%do_output) call os%mkdir_no (patch%iout)
         !-----------------------------------------------------------------------
         count = self%counters%decrement (patch%iout+1, io%nwrite)
         if (io%verbose > 0) &
@@ -292,7 +292,7 @@ SUBROUTINE output (self, patch, experiment_name)
             patch%iout, io%nwrite, count
         !-----------------------------------------------------------------------
         patch%out_next = patch%out_next + io%out_time
-        call os%mkdir_no (patch%iout)
+        if (io%do_output) call os%mkdir_no (patch%iout)
       end do
       if (io%verbose > 1) &
         write (io%output,*) wallclock(),' thread',omp%thread,' unlocked output'

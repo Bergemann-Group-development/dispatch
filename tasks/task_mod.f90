@@ -227,6 +227,7 @@ SUBROUTINE init (self)
     call self%lock%init (self%kind(1:4), id=self%id+2)
   end if
   call self%random%init
+  call self%aux%init
   !-----------------------------------------------------------------------------
   ! Only initialize time slot values when first allocated
   !-----------------------------------------------------------------------------
@@ -262,7 +263,7 @@ SUBROUTINE init_params (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('task_t%init_params')
   call trace%print_id (ids)
-  !$omp critical (input_cr)
+  call io%lock%set ('task_t%init_params')
   !-----------------------------------------------------------------------------
   ! First thread to enter reads task_params
   !-----------------------------------------------------------------------------
@@ -293,7 +294,7 @@ SUBROUTINE init_params (self)
       end if
     end do
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset ('task_t%init_params')
   call trace%end ()
 END SUBROUTINE init_params
 

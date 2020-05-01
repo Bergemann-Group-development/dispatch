@@ -58,7 +58,7 @@ SUBROUTINE init (self, solver, id, mesh)
   namelist /force_params/ type, seed
   !-----------------------------------------------------------------------------
   call trace_begin('force_t%init')
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
@@ -66,7 +66,7 @@ SUBROUTINE init (self, solver, id, mesh)
     if (iostat /= 0) call io%namelist_warning ('ramses%force_mod: force_params')
     if (io%master) write (*, force_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   select case (type)
   case ('single_solenoidal')
     self%selected => single_solenoidal
@@ -110,14 +110,14 @@ FUNCTION single_solenoidal (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
   namelist /force_solenoidal_params/ k, a0, t_turn
   !-----------------------------------------------------------------------------
   call trace_begin('force_t%single_solenoidal', itimer=itimer)
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
     read (io%input, force_solenoidal_params, iostat=iostat)
     if (io%master) write (*, force_solenoidal_params)
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   if (time >= self%t_save) then
     self%t_save = self%t_save + t_turn
     self%a = a0*2./3.*(1.0+0.1*self%random%ran3())/t_turn
@@ -140,7 +140,6 @@ FUNCTION single_solenoidal (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
   call trace_end (itimer)
 END FUNCTION single_solenoidal
 
-
 !===============================================================================
 !> Initialize the force module
 !===============================================================================
@@ -156,8 +155,8 @@ SUBROUTINE init_turbulence (self, solver, id, mesh)
                                ampl_turb, t_turn, t_turb, seed, t_damp, verbose
   logical, save:: first_time = .true.
   !-----------------------------------------------------------------------------
-  call trace%begin ('force_t%init')
-  !$omp critical (input_cr)
+  call trace%begin ('force_t%init_turbulence')
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
@@ -181,7 +180,7 @@ SUBROUTINE init_turbulence (self, solver, id, mesh)
   self%fran = 0.0
   self%selected => turbulence
   call self%random%init (seed)
-  !$omp end critical (input_cr)
+  call io%lock%unset
   call trace%end()
 END SUBROUTINE init_turbulence
 

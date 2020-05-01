@@ -5,6 +5,7 @@ MODULE scaling_mod
   USE units_mod
   USE io_mod
   USE trace_mod
+  USE math_mod
   implicit none
   private
   type, public:: scaling_t
@@ -14,8 +15,9 @@ MODULE scaling_mod
     procedure:: m_sun
     procedure:: myr
   end type
+  real:: mass_msun = 1.0
   real:: orbit_au = 1.0
-  real:: d_midplane_cgs = 1e-9
+  real:: surface_density_cgs = 1.0
   real:: temperature_K = 300.
   real:: gamma = 1.0
   real:: mu = 2.4
@@ -31,9 +33,9 @@ SUBROUTINE init (self, l_o, d_o, u_o, mu_o)
   real, save:: l=1, d=1, u=1, mu=1
   real:: t, m, e, ee, p
   real:: l_au, v_kms, temp, grav, n_H2
-  real:: orbit_cgs, orbit_speed_cgs, sound_speed_cgs, scale_height_cgs
+  real:: d_midplane_cgs, orbit_cgs, orbit_speed_cgs, sound_speed_cgs, scale_height_cgs
   integer:: iostat
-  namelist /scaling_params/ orbit_au, d_midplane_cgs, temperature_K, &
+  namelist /scaling_params/ mass_msun, orbit_au, surface_density_cgs, temperature_K, &
     mu, gamma
   namelist /scaling_nml/ l_au, v_kms, &
     l, t, m, d, e, ee, p, u, temp, grav, mu
@@ -41,7 +43,7 @@ SUBROUTINE init (self, l_o, d_o, u_o, mu_o)
   !----------------------------------------------------------------------------
   if (.not.first_time) return
   call trace_begin('scaling_t%init')
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     !-----------------------------------------------------------------------------
     ! Compute CGS values of orbit speed, sound speed, and disk scale height
@@ -52,9 +54,11 @@ SUBROUTINE init (self, l_o, d_o, u_o, mu_o)
     write (io%output, scaling_params)
     call cgs%init
     orbit_cgs = orbit_au*cgs%au
-    orbit_speed_cgs = sqrt(cgs%grav*cgs%m_sun/orbit_cgs)
+    mass_msun = mass_msun*cgs%m_sun
+    orbit_speed_cgs = sqrt(cgs%grav*mass_msun/orbit_cgs)
     sound_speed_cgs = sqrt(gamma*cgs%k_B*temperature_K/(mu*cgs%m_u))
     scale_height_cgs = orbit_cgs*sound_speed_cgs/orbit_speed_cgs
+    d_midplane_cgs = surface_density_cgs/(scale_height_cgs*2.0*math%pi)  
     !-----------------------------------------------------------------------------
     ! Choose code units = scale height, midplane density, and sound speed
     !-----------------------------------------------------------------------------
@@ -77,7 +81,7 @@ SUBROUTINE init (self, l_o, d_o, u_o, mu_o)
     write (io_unit%nml, scaling_nml)                 ! pass on to Python
     first_time = .false.
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   self%l = l
   self%d = d
   self%u = u

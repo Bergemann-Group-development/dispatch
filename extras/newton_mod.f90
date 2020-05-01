@@ -2,6 +2,7 @@
 !> Add Newton cooling to any solver
 !===============================================================================
 MODULE newton_mod
+  USE io_mod
   USE link_mod
   USE gpatch_mod
   USE mesh_mod
@@ -12,6 +13,7 @@ MODULE newton_mod
   type, public:: newton_t
     class(gpatch_t), pointer:: patch
   contains
+    procedure:: pre_init
     procedure:: init
     procedure:: pre_update
   end type
@@ -24,32 +26,42 @@ CONTAINS
 !===============================================================================
 !> Initialize Newton cooling
 !===============================================================================
-SUBROUTINE init (self, link)
+SUBROUTINE pre_init (self, patch)
   class(newton_t):: self
-  class(link_t), pointer :: link
+  class(gpatch_t), pointer:: patch
   ! ............................................................................
-  integer:: iostat
+  integer:: iostat, m(3)
   logical, save:: first_time=.true.
   namelist /newton_params/ on, axis, position, scale, ee0, ee1, time
   !-----------------------------------------------------------------------------
-  call trace%begin ('newton_t%init')
-  !$omp critical (input_cr)
+  call trace%begin ('newton_t%pre_init')
+  self%patch => patch
+  call io%lock%set ('newton_t%pre_init')
   if (first_time) then
-    first_time = .false.
     rewind (io_unit%input)
-    read (io_unit%input, newton_params, iostat=iostat)
-    write (io_unit%output, newton_params)
+    read (io%input, newton_params, iostat=iostat)
+    call io%namelist_warning ('newton_params', iostat)
+    write (io%output, newton_params)
+    write (io%namelist, newton_params)
+    first_time = .false.
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset ('newton_t%pre_init')
+  call trace%end()
+END SUBROUTINE pre_init
+
+!===============================================================================
+!> Initialize Newton cooling, allocating heating array knowing patch%gn
+!===============================================================================
+SUBROUTINE init (self)
+  class(newton_t):: self
+  ! ............................................................................
+  integer:: m(3)
   !-----------------------------------------------------------------------------
-  associate (task => link%task)
-  select type (task)
-  class is (gpatch_t)
-  self%patch => task
-  if (.not.allocated(task%heating_per_unit_volume)) &
-    allocate (task%heating_per_unit_volume(task%gn(1),task%gn(2),task%gn(3)))
-  end select
-  end associate
+  call trace%begin ('newton_t%init')
+  if (.not.allocated(self%patch%heating_per_unit_volume)) then
+    m = self%patch%gn
+    allocate (self%patch%heating_per_unit_volume(m(1),m(2),m(3)))
+  end if
   call trace%end()
 END SUBROUTINE init
 

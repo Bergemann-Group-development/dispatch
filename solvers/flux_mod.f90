@@ -32,14 +32,14 @@ SUBROUTINE init (self)
   !.............................................................................
   call trace%begin ('flux_t%init')
   if (first_time) then
-    !$omp critical (input_cr)
+    call io%lock%set
     if (first_time) then
       rewind (io_unit%input)
       read (io%input, flux_params, iostat=iostat)
       write (io%output, flux_params)
       first_time = .false.
     end if
-    !$omp end critical (input_cr)
+    call io%lock%unset
   end if
   call trace%end ()
 END SUBROUTINE init

@@ -17,6 +17,7 @@ MODULE index_mod
     procedure:: copy
     procedure:: request_index
     procedure:: output
+    procedure:: print
   end type
   type(index_t), public:: idx
 CONTAINS
@@ -24,27 +25,44 @@ CONTAINS
 !===============================================================================
 !> Initialize the indices to default values, possibly to be modified by solvers
 !===============================================================================
-SUBROUTINE init (self, ie, mhd)
+SUBROUTINE init (self, ie, is, mhd)
   class(index_t):: self
-  integer:: ie
-  logical:: mhd
+  integer, optional:: ie, is
+  logical, optional:: mhd
+  integer:: ie_l, is_l
+  logical:: mhd_l
   !-----------------------------------------------------------------------------
-  if (ie==2) then
+  if (present(ie)) then
+    ie_l = ie
+  else
+    ie_l = -1
+  end if
+  if (present(is)) then
+    is_l = is
+  else
+    is_l = -1
+  end if
+  if (present(mhd)) then
+    mhd_l = mhd
+  else
+    mhd_l = .false.
+  end if
+  if (ie_l==2 .or. is_l==2) then
     self%d  = 1
-    self%e  = 2
-    self%s  = 2
     self%px = 3
     self%py = 4
     self%pz = 5
-  else
+  else if (ie_l==5 .or. is_l==5) then
     self%d  = 1
     self%px = 2
     self%py = 3
     self%pz = 4
-    self%e  = 5
-    self%s  = 5
+  else
+    call io%abort ('ie or is not equal to 2 or 5')
   end if
-  if (mhd) then
+  self%e  = ie_l
+  self%s  = is_l
+  if (mhd_l) then
     self%bx = 6
     self%by = 7
     self%bz = 8
@@ -231,5 +249,25 @@ SUBROUTINE output_time_derivs (self, unit)
   db3dt  = dbzdt
   write (unit, idx_nml)
 END SUBROUTINE output_time_derivs
+
+!===============================================================================
+!> Write out index value namelist, for python/dispatch/
+!===============================================================================
+SUBROUTINE print (self, unit)
+  class(index_t):: self
+  integer:: unit
+  !.............................................................................
+  print 1, 'patch_t%idx%d    =', self%d
+  print 1, 'patch_t%idx%px   =', self%px
+  print 1, 'patch_t%idx%py   =', self%py
+  print 1, 'patch_t%idx%pz   =', self%pz
+  print 1, 'patch_t%idx%e    =', self%e
+  if (self%bx   > 0) print 1, 'patch_t%idx%bx   =', self%bx
+  if (self%by   > 0) print 1, 'patch_t%idx%by   =', self%by
+  if (self%bz   > 0) print 1, 'patch_t%idx%bz   =', self%bz
+  if (self%phi  > 0) print 1, 'patch_t%idx%phi  =', self%phi
+  if (self%dphi > 0) print 1, 'patch_t%idx%dphi =', self%dphi
+  1 format(a,i3)
+END SUBROUTINE print
 
 END MODULE index_mod

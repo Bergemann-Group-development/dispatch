@@ -63,7 +63,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call trace%begin('experiment_t%init')
   !-----------------------------------------------------------------------------
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     rewind (io%input)
     read (io%input, experiment_params, iostat=iostat)
@@ -72,7 +72,7 @@ SUBROUTINE init (self)
     !e_bot = e_bot/scaling%e
     first_time = .false.
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   if (.not. io%master) verbose=0
   !-----------------------------------------------------------------------------
   ! Initialize the MHD task and the RT sub-tasks, and setup their nbor lists

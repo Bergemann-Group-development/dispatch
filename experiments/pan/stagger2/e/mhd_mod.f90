@@ -72,7 +72,7 @@ SUBROUTINE init (self)
                             mhd, do_smooth, verbose, test_p, d_floor, unsigned
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     eos = self%eos
@@ -84,7 +84,7 @@ SUBROUTINE init (self)
     ! fool-proofing
     if (timestep%time_order <= 0) call mpi%abort("The Stagger solvers require `time_order` > 0. Abort!")
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   self%mhd = mhd
   self%eos = eos
   self%nu = nu

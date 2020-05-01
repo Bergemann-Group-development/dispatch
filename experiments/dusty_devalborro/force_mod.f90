@@ -54,14 +54,14 @@ SUBROUTINE init (self, solver)
    !----------------------------------------------------------------------------
    call trace%begin('force_t%init')
    self%nc = experiment_params%nc
-   !$omp critical (input_cr)
+   call io%lock%set
    if (first_time) then
      first_time = .false.
      rewind (io%input)
      read (io%input, force_params)
      if (io%master) write (*, force_params)
    end if
-   !$omp end critical (input_cr)
+   call io%lock%unset
    self%solver  = trim(solver)
    self%drag    = trim(drag)
    self%i_gas   = i_gas

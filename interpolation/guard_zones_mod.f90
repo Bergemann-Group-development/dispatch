@@ -52,7 +52,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('guard_zones_t%init')
   if (first_time) then
-    !$omp critical (init_cr)
+    call io%lock%set ('guard_zones_t')
     if (first_time) then
       rewind (io%input)
       read (io%input, guard_zone_params, iostat=iostat)
@@ -61,7 +61,7 @@ SUBROUTINE init (self)
       write (io%namelist, guard_zone_params)
       first_time = .false.
     end if
-    !$omp end critical (init_cr)
+    call io%lock%unset ('guard_zones_t')
   end if
   select case (trim(method))
   case ('simple')

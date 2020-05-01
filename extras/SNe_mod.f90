@@ -75,7 +75,7 @@ SUBROUTINE init (self, name)
   namelist /sne_params/ on, verbose, file
   !-----------------------------------------------------------------------------
   call trace%begin ('sne_t%init')
-  !$omp critical (input_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
@@ -83,7 +83,7 @@ SUBROUTINE init (self, name)
     call read_table
     call SN_test
   end if
-  !$omp end critical (input_cr)
+  call io%lock%unset
   call trace%end()
 END SUBROUTINE init
 

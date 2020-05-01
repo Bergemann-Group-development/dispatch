@@ -42,14 +42,14 @@ SUBROUTINE init (self, kind)
   namelist /initial_params/ type, mhd
   !-----------------------------------------------------------------------------
   call trace_begin('initial_mod:init')
-  !$omp critical (init_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     mhd = self%mhd
     rewind (io%input); read (io%input, initial_params, iostat=iostat)
     if (io%master) write (*, initial_params)
   end if
-  !$omp end critical (init_cr)
+  call io%lock%unset
   !-----------------------------------------------------------------------------
   select case (trim(type))
   case ('snapshot')
@@ -96,13 +96,13 @@ SUBROUTINE snapshot (self, m, ff. idx)
   !-----------------------------------------------------------------------------
   call trace_begin('initial_mod::stagger')
   !-----------------------------------------------------------------------------
-  !$omp critical (init_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input); read (io%input, snapshot_params)
     if (io%master) write (*, snapshot_params)
   end if
-  !$omp end critical (init_cr)
+  call io%lock%unset
   self%iread = iread
   self%iwrite = iwrite
   self%nv = dims(4)
@@ -130,7 +130,7 @@ SUBROUTINE stagger (self, m, ff, idx)
   !-----------------------------------------------------------------------------
   call trace_begin('initial_mod::stagger')
   !-----------------------------------------------------------------------------
-  !$omp critical (init_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input); read (io%input, stagger_params)
@@ -177,7 +177,7 @@ SUBROUTINE stagger (self, m, ff, idx)
       read(io_unit%data) dzm, dzmdn, zm, zmdn, dzidzup, dzidzdn
     close (io_unit%data)
   end if
-  !$omp end critical (init_cr)
+  call io%lock%unset
   self%nv = self%nv
   !-----------------------------------------------------------------------------
   ! Pick out the piece that belongs to this patch, based on its position
@@ -237,7 +237,7 @@ SUBROUTINE raw (self, m, ff, idx)
   ! we only use one thread per rank to initialize, computing also how many calls
   ! will be made, so the buffer can be deallocated when all patches are done
   !-----------------------------------------------------------------------------
-  !$omp critical (init_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input); read (io%input, raw_params)
@@ -256,7 +256,7 @@ SUBROUTINE raw (self, m, ff, idx)
     end do
     close (io_unit%data)
   end if
-  !$omp end critical (init_cr)
+  call io%lock%unset
   self%nv = dims(4)+1
   i = 1 + nint(m%p/m%d) - (m%n+1)/2                             ! index offsets
   ff = 0.0
@@ -291,13 +291,13 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   namelist /solenoidal_params/ seed, k, a0, d0, e0, u0, b0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_mod:single_solenoidal')
-  !$omp critical (init_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input); read (io%input, solenoidal_params)
     if (io%master) write (*, solenoidal_params)
   end if
-  !$omp end critical (init_cr)
+  call io%lock%unset
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
     kz   =  math%pi2*k(3)*(r3(iz)+m(3)%p-0.5d0*m(3)%s)/m(3)%b + phi(3)

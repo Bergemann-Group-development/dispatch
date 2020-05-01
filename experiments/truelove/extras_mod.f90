@@ -94,6 +94,7 @@ MODULE extras_mod
     !class(patch_force_t), pointer:: patch_force                        ! sinkp
     !class(trace_particles_t), pointer:: trace_particles                ! tracep
     !real, dimension(:,:,:,:), pointer:: v                              ! tracep
+    class(gpatch_t), pointer:: patch => null()
     logical :: do_mhd = .true.
   contains
     procedure, nopass:: cast2extras
@@ -117,7 +118,9 @@ CONTAINS
 !> periodicity, etc.
 !===============================================================================
 SUBROUTINE pre_init (self)
-  class(extras_t):: self
+  class(extras_t), target:: self
+  class(gpatch_t), pointer:: patch
+  self%patch => self
   !.............................................................................
   !call self%forces%init (self)                                         ! forces
   !-----------------------------------------------------------------------------
@@ -130,7 +133,7 @@ SUBROUTINE pre_init (self)
   !allocate(self%pic)                                                   ! pic
   !self%connect%pic_patch => self%pic                                   ! pic
   !call self%pic%pre_init(self%link)                                    ! pic
-  call self%selfgravity%pre_init(self)                                  ! self-gravity
+  call self%selfgravity%pre_init (self%patch)                          ! selfg
 END SUBROUTINE pre_init
 
 !===============================================================================
@@ -140,7 +143,7 @@ SUBROUTINE init (self)
   class(extras_t):: self
   !.............................................................................
   call trace%begin ('extras_t%init')
-  call self%selfgravity%init(self)
+  call self%selfgravity%init                                           ! selfg
   !call self%forces%init (self)                                         ! forces
   !-----------------------------------------------------------------------------
   ! Allocate a trace_particles data type, connect a pointer, and initialize
@@ -155,7 +158,7 @@ SUBROUTINE init (self)
   !call self%spitzer%init (self%link)                                   ! spitzer
   !call self%gravity%init (self%link)                                   ! gravity
   !call self%rt%init_task (self%rt)                                     ! RT
-  ! -- ensure consistency (a value is already set via rt%init)         ! experiment
+  ! -- ensure consistency (a value is already set via rt%init)          ! experiment
   !self%rt%rt_boundaries%grav = self%gravity%const_grav                 ! experiment
   !call sink_patch%init (self%link)                                     ! sinkp
   !allocate (self%patch_force)                                          ! sinkp
@@ -184,7 +187,7 @@ END SUBROUTINE dealloc
 !> force can be added separately, and to prevent these contributions to pile up.
 !===============================================================================
 SUBROUTINE pre_update (self)
-  class(extras_t):: self
+  class(extras_t), target:: self
   !.............................................................................
   call trace%begin ('extras_t%pre_update')
   if (allocated (self%force_per_unit_mass)) &                          ! keep
@@ -204,7 +207,7 @@ SUBROUTINE pre_update (self)
   !call self%gravity%pre_update()                                       ! gravity
   !call particle_solver%force_field (self)                              ! sinkp
   !call self%pic%pre_update()                                           ! pic
-  call self%selfgravity%pre_update (self)
+  call self%selfgravity%pre_update                                     ! selfg
   call trace%end()
 END SUBROUTINE pre_update
 
@@ -215,7 +218,7 @@ END SUBROUTINE pre_update
 SUBROUTINE post_update (self)
   class(extras_t):: self
   !.............................................................................
-  call self%selfgravity%post_update (self)
+  call self%selfgravity%post_update                                    ! selfg
   !call self%rt%post_update                                             ! RT
   !call self%forces%post_update                                         ! forces
   !call self%trace_particles%post_update (self)                         ! tracep

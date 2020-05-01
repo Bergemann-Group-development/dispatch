@@ -63,14 +63,14 @@ SUBROUTINE init (self)
   logical, save:: first_time=.true.
   namelist /non_ideal_params/ gamma_AD, eta_Ohm, etaMD, rho_ions, mhd_AD, mhd_Ohm, ntestDADM
   !---------------------------------------------------------------------------
-  !$omp critical (init_cr)
+  call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io_unit%input)
     read (io_unit%input, non_ideal_params,iostat=iostat)
     if (io%master) write (*, non_ideal_params)
   end if
-  !$omp end critical (init_cr)
+  call io%lock%unset
   self%mhd_Ohm  = mhd_Ohm
   self%eta_Ohm  = eta_Ohm
   self%mhd_AD   = mhd_AD

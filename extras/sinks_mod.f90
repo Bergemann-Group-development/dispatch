@@ -5,7 +5,7 @@ MODULE sinks_mod
   USE io_mod
   USE trace_mod
   USE task_mod
-  USE patch_mod
+  USE gpatch_mod
   USE scaling_mod
   USE units_mod
   implicit none
@@ -14,8 +14,9 @@ MODULE sinks_mod
     real(8):: mass=0.0, radius=8.0
     real(8), allocatable:: pos(:,:)
     real(8):: SN_time=0.0, previous_time=0d0, dt_min=1e-7
+    class(gpatch_t), pointer:: patch => null()
   contains
-    procedure:: init
+    procedure:: pre_init
     procedure:: pre_update
   end type
   integer:: verbose=0
@@ -27,23 +28,26 @@ CONTAINS
 !===============================================================================
 !> Initialize sink task
 !===============================================================================
-SUBROUTINE init (self)
+SUBROUTINE pre_init (self, patch)
   class(sinks_t):: self
+  class(gpatch_t), pointer:: patch
+  !.............................................................................
   integer:: iostat
   real:: velocity(3)=0.0, position(3)=0.5
   logical, save:: first_time=.true.
   namelist /sinks_params/ verbose, mass_msun, radius, velocity, SN_time, &
     position
   !-----------------------------------------------------------------------------
-  call trace%begin ('sinks_t%init')
+  call trace%begin ('sinks_t%pre_init')
+  self%patch => patch
   if (first_time) then
     !$omp critical (sinks_cr)
     if (first_time) then
-      !$omp critical (input_cr)
+      call io%lock%set
       rewind (io%input)
       read (io%input, sinks_params, iostat=iostat)
       write (io%output, sinks_params)
-      !$omp end critical (input_cr)
+      call io%lock%unset
       self%radius = radius
       self%velocity = velocity
       self%SN_time = SN_time
@@ -64,17 +68,19 @@ SUBROUTINE init (self)
     !$omp end critical (sinks_cr)
   end if
   call trace%end ()
-END SUBROUTINE init
+END SUBROUTINE pre_init
 
 !===============================================================================
 !> Update sink task
 !===============================================================================
-SUBROUTINE pre_update (self, patch)
+SUBROUTINE pre_update (self)
   class(sinks_t):: self
-  class(patch_t):: patch
+  !.............................................................................
+  class(gpatch_t), pointer:: patch
   logical:: contains_sink
   !-----------------------------------------------------------------------------
   call trace%begin ('sinks_t%pre_update')
+  patch => self%patch
   contains_sink = patch%contains (self%position)
   if (verbose > 1) then
     print '(a,i6,2(2x,3f9.6),l5)', 'sinks_t%pre_update: patch%id, pos, patch%pos =', &

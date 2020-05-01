@@ -7,7 +7,7 @@
 ! copy input.nml to other.nml, and run ./dispatch.x other.nml, which produces
 ! data files named data/other/ttttt/, where ttttt is the snapshot number.
 
-&io_params              verbose=0 do_trace=t omp_trace=f
+&io_params              verbose=0 do_trace=f omp_trace=t
                         do_output=t guard_zones=f time_derivs=0
                         method='parallel'
                         !method='legacy'
@@ -28,7 +28,7 @@
                         !use_same='guard_zones'
                         !use_same='guard_same'
                         detailed_timer=f /
-&guard_zone_params      verbose=1 detailed_timer=f /
+&guard_zone_params      verbose=0 detailed_timer=f /
 &timestep_params        /
 
 &initial_params
