@@ -89,7 +89,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('download_t%init')
   call trace%print_id (id)
-  !$omp critical (download_cr)
+  call io%lock%set ('download_t%init')
   if (first_time) then
     first_time = .false.
     rewind (io%input)
@@ -108,7 +108,7 @@ SUBROUTINE init (self)
   self%check_filled = check_filled
   self%order_interpolator = order_interpolator
   self%interpolate => SelectInterpolator(order_interpolator)
-  !$omp end critical (download_cr)
+  call io%lock%unset ('download_t%init')
   call trace%end()
 END SUBROUTINE init
 

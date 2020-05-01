@@ -256,7 +256,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('refine_t%init')
   call trace%print_id (id)
-  call io%lock%set
+  call io%lock%set ('refine_params')
   if (first_time) then
     first_time=.false.
     levelmin = shared%levelmin
@@ -284,7 +284,7 @@ SUBROUTINE init (self)
     if (max_vorticity > 0.0) n_criteria = n_criteria+1
     write (io%output,*) 'n_criteria =', n_criteria
   end if
-  call io%lock%unset
+  call io%lock%unset ('refine_params')
   self%levelmin = levelmin
   self%levelmax = levelmax
   shared%levelmin = levelmin

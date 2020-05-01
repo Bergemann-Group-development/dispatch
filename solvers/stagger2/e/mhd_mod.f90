@@ -79,8 +79,8 @@ SUBROUTINE pre_init (self)
     do_smooth, unsigned, do_maxwell, do_temperature, verbose, divb_cleaner, &
     do_test
   !----------------------------------------------------------------------------
-  call trace%begin('mhd_t%pre_init')
-  call io%lock%set
+  call trace%begin ('mhd_t%pre_init')
+  call io%lock%set ('mhd_t%pre_init')
   if (first_time) then
     first_time = .false.
     eos = self%eos
@@ -93,7 +93,7 @@ SUBROUTINE pre_init (self)
     ! fool-proofing
     if (timestep%time_order <= 0) call mpi%abort("The Stagger solvers require `time_order` > 0. Abort!")
   end if
-  call io%lock%unset
+  call io%lock%unset ('mhd_t%pre_init')
   self%eos = eos
   self%mhd = mhd
   self%nu = nu

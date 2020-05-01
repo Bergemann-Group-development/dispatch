@@ -92,8 +92,9 @@ SUBROUTINE init (self, n, ng)
   integer:: gn, iostat, i1, i2, i3
   namelist /prolong_params/ verbose, array_notation, fix_nml
   !-----------------------------------------------------------------------------
+  call trace%begin ('prolong_t%init')
   if (first_time) then
-    call io%lock%set
+    call io%lock%set ('prolong_t%init')
     if (first_time) then
       call trace%begin ('prolong_t%init')
       rewind (io%input)
@@ -125,8 +126,9 @@ SUBROUTINE init (self, n, ng)
       call trace%end ()
       first_time = .false.
     end if
-    call io%lock%unset
+    call io%lock%unset ('prolong_t%init')
   end if
+  call trace%end ()
 END SUBROUTINE init
 
 !===============================================================================

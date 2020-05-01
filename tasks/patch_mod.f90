@@ -435,14 +435,14 @@ SUBROUTINE init (self)
   call trace%begin ('patch_t%init')
   call trace%print_id (id)
   call self%setup
-  call io%lock%set
+  call io%lock%set ('patch_t%init')
   if (first_time) then
     write (stdout,'(a,6i4)') &
       'patch_t%init: shape(patch%mem) =', shape(self%mem)
     call self%idx%print (stdout)
     first_time = .false.
   end if
-  call io%lock%set
+  call io%lock%unset ('patch_t%init')
   call trace%end()
 END SUBROUTINE init
 
@@ -506,7 +506,7 @@ SUBROUTINE init_default (self)
   ! Read and set patch parameters; the preferred defalts may have been set by
   ! the calling code -- typically in experiment_mod.f90
   !-----------------------------------------------------------------------------
-  call io%lock%set
+  call io%lock%set ('patch_t%init_default')
   if (first_time) then
     ! -- if values have been imposed from above, FI show them as default
     if (any(self%n  /= 0)) n  = self%n          ! patch dimensions
@@ -541,7 +541,7 @@ SUBROUTINE init_default (self)
   io%print_time    = print_time
   if (io%nv==0) &
     io%nv = self%nv
-  call io%lock%unset
+  call io%lock%unset ('patch_t%init_default')
   call self%task_t%init                         ! sets unique id
   self%restart     = io%restart                 ! restart snapshot
   self%grace       = grace                      ! grace fraction of dtime

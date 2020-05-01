@@ -42,7 +42,7 @@ SUBROUTINE init (self)
   namelist /timestep_params/ verbose, time_order
   !.............................................................................
   call trace_begin ('timestep_t%init', 1)
-  call io%lock%set
+  call io%lock%set ('timestep_t%init')
   if (time_order==-1) then
     time_order = 2
     rewind (io%input)
@@ -50,7 +50,7 @@ SUBROUTINE init (self)
     call io%namelist_warning ('timestep_params', iostat)
     write (io%output, timestep_params)
   end if
-  call io%lock%unset
+  call io%lock%unset ('timestep_t%init')
   self%verbose = verbose
   self%time_order = time_order
   !---------------------------------------------------------------------------

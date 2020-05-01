@@ -263,7 +263,7 @@ SUBROUTINE init_params (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('task_t%init_params')
   call trace%print_id (ids)
-  call io%lock%set
+  call io%lock%set ('task_t%init_params')
   !-----------------------------------------------------------------------------
   ! First thread to enter reads task_params
   !-----------------------------------------------------------------------------
@@ -294,7 +294,7 @@ SUBROUTINE init_params (self)
       end if
     end do
   end if
-  call io%lock%unset
+  call io%lock%unset ('task_t%init_params')
   call trace%end ()
 END SUBROUTINE init_params
 

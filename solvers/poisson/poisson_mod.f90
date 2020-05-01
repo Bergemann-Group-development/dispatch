@@ -47,7 +47,8 @@ SUBROUTINE init (self)
   namelist /poisson_params/ tolerance, floor, max_iter, fourPiG, precondition, &
                             verbose, solver, chebyshev
   !-----------------------------------------------------------------------------
-  call io%lock%set
+  call trace%begin ('poisson_t%init')
+  call io%lock%set ('poisson_t%init')
   if (first_time) then
     first_time = .false.
     fourpiG = scaling%grav
@@ -56,7 +57,7 @@ SUBROUTINE init (self)
     call io%namelist_warning ('poisson_params', iostat)
     if (io%master) write (io%output, poisson_params)
   end if
-  call io%lock%unset
+  call io%lock%unset ('poisson_t%init')
   select case(trim(solver))
   case ('cg')
     self%update => cg
@@ -69,6 +70,7 @@ SUBROUTINE init (self)
       call mpi%abort()
     end if
   end select
+  call trace%end ()
 END SUBROUTINE init
 
 !===============================================================================

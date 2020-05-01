@@ -61,7 +61,7 @@ SUBROUTINE pre_init (self, patch)
   call trace%begin ('selfgravity_t%pre_init')
   self%patch => patch
   !
-  call io%lock%set
+  call io%lock%set ('selfgravity_t%pre_init')
   if (first_time) then
     rewind (io%input)
     read (io%input, selfgravity_params, iostat=iostat)
@@ -69,7 +69,7 @@ SUBROUTINE pre_init (self, patch)
     if (io%master) write (io%output, selfgravity_params)
     first_time = .false.
   end if
-  call io%lock%unset
+  call io%lock%unset ('selfgravity_t%pre_init')
   !.............................................................................
   self%d0 = d0
   if (selfgravity) then

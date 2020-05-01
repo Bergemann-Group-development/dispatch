@@ -79,14 +79,14 @@ SUBROUTINE init (self)
   !.............................................................................
   call trace%begin ('validate_t%init')
   call trace%print_id (id)
-  call io%lock%set
+  call io%lock%set ('validate_t%init')
   if (first_time) then
     first_time = .false.
     rewind (io%input)
     read (io%input, validate_params, iostat=iostat)
     write (io%output, validate_params)
   end if
-  call io%lock%unset
+  call io%lock%unset ('validate_t%init')
   self%mode = mode
   self%verbose = verbose
   call trace%end()

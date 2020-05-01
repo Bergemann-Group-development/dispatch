@@ -34,13 +34,13 @@ SUBROUTINE init (self)
   namelist / scaling_params / l0
   !----------------------------------------------------------------------------
   if (.not.first_time) return
-  call io%lock%set
+  call io%lock%set ('scaling_t%init')
   if (first_time) then
     rewind (io%input)
     read (io%input, scaling_params)
     if (io%master) write (*, scaling_params)
   end if
-  call io%lock%unset
+  call io%lock%unset ('scaling_t%init')
   first_time = .false.
 
   call cgs%init

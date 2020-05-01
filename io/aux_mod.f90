@@ -86,7 +86,7 @@ SUBROUTINE init (self, name)
   logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
   call trace%begin ('aux_t%init')
-  call io%lock%set
+  call io%lock%set ('aux_t%init')
   if (first_time) then
     if (.not.allocated(select)) then
       allocate (select(max_select))
@@ -100,7 +100,7 @@ SUBROUTINE init (self, name)
       call write_namelist (io%namelist)
     first_time = .false.
   end if
-  call io%lock%unset
+  call io%lock%unset ('aux_t%init')
   !-----------------------------------------------------------------------------
   ! Initialize the underlying data type, with its lock
   !-----------------------------------------------------------------------------

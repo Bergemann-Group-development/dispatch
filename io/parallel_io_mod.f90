@@ -88,7 +88,7 @@ SUBROUTINE init (patch)
   !-----------------------------------------------------------------------------
   call trace%print_id (id)
   call trace%begin ('parallel_io_t%init')
-  call io%lock%set
+  call io%lock%set ('parallel_io_t%init')
   if (first_time) then
     first_time = .false.
     rewind (io%input)
@@ -106,7 +106,7 @@ SUBROUTINE init (patch)
       call file_out%openw (filename)
     end if
   end if
-  call io%lock%unset
+  call io%lock%unset ('parallel_io_t%init')
   call time_slices%init (patch%nt)
   call trace%end()
 END SUBROUTINE init

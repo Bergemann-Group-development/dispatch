@@ -45,7 +45,7 @@ SUBROUTINE init (self)
   call trace%begin ('eos_t%init', itimer=itimer)
   if (io_unit%master) print *, &
  '------------------------ ideal equation-of-state -----------------------------'
-  call io%lock%set
+  call io%lock%set ('eos_t%init')
   if (first_time) then
     gamma = self%gamma
     do_rt = self%do_rt
@@ -53,7 +53,7 @@ SUBROUTINE init (self)
     rewind (io%input); read (io%input, eos_params, iostat=iostat)
     if (io%master) write (io%output, eos_params)
   end if
-  call io%lock%unset
+  call io%lock%unset ('eos_t%init')
   self%gamma = gamma
   self%do_rt = do_rt
   self%kappa = kappa * scaling%m/scaling%l**2

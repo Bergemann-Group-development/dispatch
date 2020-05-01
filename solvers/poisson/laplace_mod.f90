@@ -31,6 +31,7 @@ SUBROUTINE init (self, patch, solver_name, omega_sor)
   character(len=12) :: solver_name
   real              :: omega_sor
   !.............................................................................
+  call trace%begin ('laplace_t%init')
   self%n  = patch%n
   self%gn = patch%gn
   self%li = patch%li
@@ -92,6 +93,7 @@ end block
     write(*,*) 'Only valid solvers are: jacobi, gauss-seidel, and sor'
   end select
   first_time = .false.
+  call trace%end()
 END SUBROUTINE init
 !===============================================================================
 ! 3pt 2nd order Jacobi iteration, for filtering high-k

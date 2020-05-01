@@ -118,15 +118,15 @@ SUBROUTINE condition (self, m, f, idx)
   namelist / experiment_params / rho0, r0, truealpha, truebeta, chipres &
                                , chirho, x0, y0, z0, perta, pertm
   !----------------------------------------------------------------------------
-  call trace%begin('initial_t%condition')
+  call trace%begin ('initial_t%condition')
 
-  call io%lock%set
+  call io%lock%set ('initial_t%condition')
   if (first_time) then
     rewind (io%input)
     read (io%input, experiment_params)
     if (io%master) write (*, experiment_params)
   end if
-  call io%lock%unset
+  call io%lock%unset ('initial_t%condition')
 
 !-----------------------------------------------------------------------
 !      Calculate uniform cloud parameters.
