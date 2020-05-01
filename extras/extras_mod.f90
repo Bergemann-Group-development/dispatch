@@ -95,7 +95,6 @@ MODULE extras_mod
     !type(cooling_t):: cooling                                          ! cool
     logical :: do_mhd = .true.
   contains
-    procedure, nopass:: cast2extras
     procedure:: pre_init
     procedure:: init
     procedure:: post_init
@@ -120,15 +119,16 @@ CONTAINS
 SUBROUTINE pre_init (self)
   class(extras_t), target:: self
   !.............................................................................
-  !call self%forces%init (self)                                         ! forces
+  self%patch => self
+  !call self%forces%pre_init (self%patch)                               ! forces
   !allocate(self%rt)                                                    ! RT
-  !call self%rt%pre_init (self%link)                                    ! RT
+  !call self%rt%pre_init (self%patch)                                   ! RT
   !allocate (self%trace_particles)                                      ! tracep
   !self%connect%trace_particles => self%trace_particles                 ! tracep
   !allocate (self%pic)                                                  ! pic
   !self%connect%pic_patch => self%pic                                   ! pic
-  !call self%pic%pre_init (self%link)                                   ! pic
-  !call self%selfgravity%pre_init (self)                                ! selfg
+  !call self%pic%pre_init (self%patch)                                  ! pic
+  !call self%selfgravity%pre_init (self%patch)                          ! selfg
 END SUBROUTINE pre_init
 
 !===============================================================================
@@ -137,7 +137,6 @@ END SUBROUTINE pre_init
 SUBROUTINE post_init (self)
   class(extras_t):: self
   !.............................................................................
-  !
 END SUBROUTINE post_init
 
 !===============================================================================
@@ -150,21 +149,20 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Optional inits
   !-----------------------------------------------------------------------------
-  !call self%forces%init (self)                                         ! forces
-  !call self%newton%init (self%link)                                    ! Newton
+  !call self%forces%init                                                ! forces
+  !call self%newton%init                                                ! Newton
   !allocate (self%trace_particles)                                      ! tracep
   !self%connect%trace_particles => self%trace_particles                 ! tracep
   !call self%trace_particles%add (self%link%task)                       ! tracep
   !call self%pic%init                                                   ! pic
   !if (self%pic%on) self%do_mhd = self%pic%do_mhd                       ! pic
-  !call self%spitzer%init(self%link)                                    ! spitzer
-  !call self%spitzer%init (self%link)                                   ! spitzer
-  !call self%gravity%init (self%link)                                   ! gravity
+  !call self%spitzer%init                                               ! spitzer
+  !call self%gravity%init                                               ! gravity
   !call self%rt%init_task (self%rt)                                     ! RT
   ! -- ensure consistency (a value is already set via rt%init)          ! experiment
   !self%rt%rt_boundaries%grav = self%gravity%const_grav                 ! experiment
   !call sink_particles%init                                             ! sinkp
-  !call self%cooling%init (self)                                        ! cool
+  !call self%cooling%init                                               ! cool
   call trace%end()
 END SUBROUTINE init
 
@@ -180,7 +178,7 @@ SUBROUTINE init_task_list (self, task_list)
   !.............................................................................
   call trace%begin ('extras_t%init_task_list')
   call self%gpatch_t%init_task_list (task_list)                        ! keep
-  !call sink_particles%ad_hoc_add (self%link)                           ! sinkp
+  !call sink_particles%ad_hoc_add                                       ! sinkp
   call trace%end ()
 END SUBROUTINE init_task_list
 
@@ -208,7 +206,6 @@ SUBROUTINE pre_update (self)
   class(extras_t), target:: self
   !.............................................................................
   call trace%begin ('extras_t%pre_update')                             ! keep
-  !self%gpatch => self                                                  ! forces
   !if (allocated (self%force_per_unit_mass)) &                          ! forces
     !self%force_per_unit_mass = 0.0                                     ! forces
   !if (allocated (self%force_per_unit_volume)) &                        ! forces
@@ -218,16 +215,16 @@ SUBROUTINE pre_update (self)
   !if (allocated (self%heating_per_unit_volume)) &                      ! forces
     !self%heating_per_unit_volume = 0.0                                 ! forces
   !
-  !call self%rt%pre_update()                                            ! RT
-  !call self%newton%pre_update()                                        ! Newton
+  !call self%rt%pre_update                                              ! RT
+  !call self%newton%pre_update                                          ! Newton
   !call self%forces%pre_update                                          ! forces
   !call self%trace_particles%update                                     ! tracep
-  !call self%spitzer%pre_update()                                       ! spitzer
-  !call self%gravity%pre_update()                                       ! gravity
-  !call sink_particles%force_field (self)                               ! sinkp
-  !call self%pic%pre_update()                                           ! pic
-  !call self%selfgravity%post_update (self)                             ! selfg
-  !call self%cooling%pre_update (self)                                  ! cool
+  !call self%spitzer%pre_update                                         ! spitzer
+  !call self%gravity%pre_update                                         ! gravity
+  !call sink_particles%force_field                                      ! sinkp
+  !call self%pic%pre_update                                             ! pic
+  !call self%selfgravity%post_update                                    ! selfg
+  !call self%cooling%pre_update                                         ! cool
   call trace%end()
 END SUBROUTINE pre_update
 
@@ -240,9 +237,9 @@ SUBROUTINE post_update (self)
   !.............................................................................
   !call self%rt%post_update                                             ! RT
   !call self%forces%post_update                                         ! forces
-  !call self%trace_particles%post_update (self)                         ! tracep
-  !call self%pic%post_update()                                          ! pic
-  !call self%selfgravity%post_update (self)                             ! selfg
+  !call self%trace_particles%post_update                                ! tracep
+  !call self%pic%post_update                                            ! pic
+  !call self%selfgravity%post_update                                    ! selfg
 END SUBROUTINE post_update
 
 !===============================================================================
@@ -267,23 +264,6 @@ INTEGER function check_refine (self, patch)
   !check_refine = max (check_refine, &                                  ! sinkp
   !  sinkparticles%check_refine (patch))                                ! sinkp
 END FUNCTION check_refine
-
-!===============================================================================
-!> Cast a generic task_t to patch_t
-!===============================================================================
-FUNCTION cast2extras (task) RESULT(extras)
-  USE task_mod
-  class(task_t), pointer:: task
-  class(extras_t), pointer:: extras
-  !.............................................................................
-  select type (task)
-  class is (extras_t)
-    extras => task
-  class default
-    nullify(extras)
-    call io%abort ('extras_t%cast: failed to cast a task to extras_t')
-  end select
-END FUNCTION cast2extras
 
 !===============================================================================
 !> Set default nbor relations, and allow underlings to modify them.  This is

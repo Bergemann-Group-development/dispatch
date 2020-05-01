@@ -52,10 +52,9 @@ MODULE trace_particles_mod
   USE particles_mod
   USE omp_timer_mod
   USE random_mod
+  USE gpatch_mod
   USE link_mod
-  USE patch_mod
   USE task_mod
-  USE link_mod
   USE mpi_buffer_mod
   implicit none
   private
@@ -72,9 +71,9 @@ MODULE trace_particles_mod
     logical:: on
     type(particles_t):: export, import
     type(mpi_buffer_t):: mpi_buffer
-    class(patch_t), pointer:: patch
+    class(gpatch_t), pointer:: patch => null()
   contains
-    procedure:: init
+    procedure:: pre_init
     procedure:: dealloc
     procedure:: add
     procedure:: update
@@ -89,13 +88,14 @@ CONTAINS
 !===============================================================================
 !> Initialize trace particles
 !===============================================================================
-SUBROUTINE init (self, name)
-  class (trace_particles_t):: self
-  character(len=*), optional:: name
+SUBROUTINE pre_init (self, patch)
+  class(trace_particles_t):: self
+  class(gpatch_t), pointer:: patch
   !-----------------------------------------------------------------------------
-  call trace%begin ('trace_particles_t%init')
+  call trace%begin ('trace_particles_t%pre_init')
+  self%patch => patch
   call trace%end()
-END SUBROUTINE init
+END SUBROUTINE pre_init
 
 !===============================================================================
 !> Deallocate
@@ -115,9 +115,8 @@ END SUBROUTINE dealloc
 !===============================================================================
 !> Add trace particles, if requested by the namelist
 !===============================================================================
-SUBROUTINE add (self, link)
+SUBROUTINE add (self)
   class(trace_particles_t):: self
-  class(link_t), pointer:: link
   !.............................................................................
   real, pointer:: d(:,:,:), pv(:,:,:,:)
   integer:: iostat
@@ -130,7 +129,6 @@ SUBROUTINE add (self, link)
   namelist /trace_particle_params/ on, verbose, per_cell, per_mass, time_order
   !-----------------------------------------------------------------------------
   call trace%begin ('trace_particles_t%add')
-  self%patch => task2patch (link%task)
   associate (patch => self%patch)
   call io%lock%set
   if (first_time) then
@@ -142,8 +140,6 @@ SUBROUTINE add (self, link)
     call random%init
   end if
   call io%lock%unset
-  select type (patch)
-  class is (patch_t)
   self%on = on
   self%nt = patch%nt
   self%per_cell = per_cell
@@ -203,7 +199,6 @@ SUBROUTINE add (self, link)
     end do
     end do
   end if
-  end select
   call io%bits_mem (-storage_size(self%v), &
                     product(shape(self%v)), '-tracep%v')
   deallocate (self%v)
@@ -453,7 +448,7 @@ SUBROUTINE post_update (self)
     do while (associated(nbor))
       nbtask => nbor%task
       select type (nbtask)
-      class is (patch_t)
+      class is (gpatch_t)
         nbpart => nbtask%connect%trace_particles
         select type (nbpart)
         class is (trace_particles_t)

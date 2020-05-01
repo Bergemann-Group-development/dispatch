@@ -44,8 +44,10 @@ MODULE SNe_mod
   ! Linked list of -- as of yet unexploded -- supernovae
   !-----------------------------------------------------------------------------
   type, public, extends(dll_t):: sne_t
-    class(list_t), pointer:: task_list
+    class(list_t), pointer:: task_list => null()
+    class(gpatch_t), pointer:: patch => null()
   contains
+    procedure:: pre_init
     procedure:: init
     procedure:: init_task_list
     procedure, nopass:: lifetime
@@ -62,6 +64,32 @@ MODULE SNe_mod
   type(sne_t):: sn_list
   type(sne_t), public:: sne
 CONTAINS
+
+!===============================================================================
+!> Initialize
+!===============================================================================
+SUBROUTINE pre_init (self, patch)
+  class(sne_t):: self
+  class(gpatch_t), pointer:: patch
+  !.............................................................................
+  integer:: iostat
+  logical:: first_time=.true.
+  namelist /sne_params/ on, verbose, file
+  !-----------------------------------------------------------------------------
+  call trace%begin ('sne_t%pre_init')
+  self%patch => patch
+  call io%lock%set ('sne_t%pre_init')
+  if (first_time) then
+    first_time = .false.
+    rewind (io%input)
+    read (io%input, sne_params, iostat=iostat)
+    call io%namelist_warning ('sne_params', iostat)
+    call read_table
+    call SN_test
+  end if
+  call io%lock%unset ('sne_t%pre_init')
+  call trace%end()
+END SUBROUTINE pre_init
 
 !===============================================================================
 !> Initialize
@@ -139,9 +167,8 @@ END FUNCTION lifetime
 !> Timestep condition imposed on a patch (selected for overlapping).  Make sure
 !> that the patch does not evolve beyond the next SN explosion time
 !===============================================================================
-SUBROUTINE courant (self, gpatch)
+SUBROUTINE courant (self)
   class(sne_t):: self
-  class(gpatch_t):: gpatch
   class(dll_node_t), pointer:: sn
   !.............................................................................
   call trace%begin ('sne_t%courant')
@@ -149,10 +176,11 @@ SUBROUTINE courant (self, gpatch)
   do while (associated(sn))
     select type (sn)
     class is (sn_t)
-    if (gpatch%contains (sn%position)) then
+    if (self%patch%contains (sn%position)) then
       select type (sn)
       class is (sn_t)
-      gpatch%dtime = min(gpatch%dtime, sn%start+sn%lifetime-gpatch%time)
+      self%patch%dtime = min(self%patch%dtime, &
+                             sn%start+sn%lifetime - self%patch%time)
       end select
     end if
     end select
@@ -164,12 +192,8 @@ END SUBROUTINE courant
 !===============================================================================
 !> Update and manage explosion. This gets called for all MHD patches
 !===============================================================================
-SUBROUTINE pre_update (self, patch)
+SUBROUTINE pre_update (self)
   class(sne_t):: self
-  class(patch_t):: patch
-  !.............................................................................
-  class(link_t), pointer:: link
-  class(dll_node_t), pointer:: sn
   !-----------------------------------------------------------------------------
   call trace%begin ('sne_t%pre_update')
   call trace%end()
