@@ -133,7 +133,7 @@ SUBROUTINE pre_init (self)
   !allocate(self%pic)                                                   ! pic
   !self%connect%pic_patch => self%pic                                   ! pic
   !call self%pic%pre_init(self%link)                                    ! pic
-  call self%selfgravity%pre_init (self%patch)                           ! self-gravity
+  call self%selfgravity%pre_init (self%patch)                          ! selfg
 END SUBROUTINE pre_init
 
 !===============================================================================
@@ -143,7 +143,7 @@ SUBROUTINE init (self)
   class(extras_t):: self
   !.............................................................................
   call trace%begin ('extras_t%init')
-  call self%selfgravity%init
+  call self%selfgravity%init                                           ! selfg
   !call self%forces%init (self)                                         ! forces
   !-----------------------------------------------------------------------------
   ! Allocate a trace_particles data type, connect a pointer, and initialize
@@ -158,7 +158,7 @@ SUBROUTINE init (self)
   !call self%spitzer%init (self%link)                                   ! spitzer
   !call self%gravity%init (self%link)                                   ! gravity
   !call self%rt%init_task (self%rt)                                     ! RT
-  ! -- ensure consistency (a value is already set via rt%init)         ! experiment
+  ! -- ensure consistency (a value is already set via rt%init)          ! experiment
   !self%rt%rt_boundaries%grav = self%gravity%const_grav                 ! experiment
   !call sink_patch%init (self%link)                                     ! sinkp
   !allocate (self%patch_force)                                          ! sinkp
