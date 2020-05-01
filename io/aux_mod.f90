@@ -144,6 +144,7 @@ SUBROUTINE register0i (self, name, i)
   class(*), pointer  :: c
   class(dll_node_t), pointer:: item
   !-----------------------------------------------------------------------------
+  if (.not.io%do_output) return
   call trace%begin ('aux_t%register0r')
   if (self%new_item (name)) then
     allocate (item_t:: item)
@@ -187,6 +188,7 @@ SUBROUTINE register0r (self, name, r)
   class(*), pointer  :: c
   class(dll_node_t), pointer:: item
   !-----------------------------------------------------------------------------
+  if (.not.io%do_output) return
   call trace%begin ('aux_t%register0r')
   if (self%new_item (name)) then
     allocate (item_t:: item)
@@ -227,6 +229,7 @@ SUBROUTINE register1i (self, name, i)
   class(*), pointer  :: c(:)
   class(dll_node_t), pointer:: item
   !-----------------------------------------------------------------------------
+  if (.not.io%do_output) return
   call trace%begin ('aux_t%register1i')
   if (self%new_item (name)) then
     allocate (item_t:: item)
@@ -264,6 +267,7 @@ SUBROUTINE register1r (self, name, r)
   class(*), pointer  :: c(:)
   class(dll_node_t), pointer:: item
   !-----------------------------------------------------------------------------
+  if (.not.io%do_output) return
   call trace%begin ('aux_t%register1r')
   if (self%new_item (name)) then
     allocate (item_t:: item)
@@ -300,6 +304,7 @@ SUBROUTINE register2r (self, name, r)
   real    , pointer  :: r(:,:)
   class(dll_node_t), pointer:: item
   !-----------------------------------------------------------------------------
+  if (.not.io%do_output) return
   call trace%begin ('aux_t%register2r')
   if (self%new_item (name)) then
     allocate (item_t:: item)
@@ -336,6 +341,7 @@ SUBROUTINE register3r (self, name, r)
   real    , pointer  :: r(:,:,:)
   class(dll_node_t), pointer:: item
   !-----------------------------------------------------------------------------
+  if (.not.io%do_output) return
   call trace%begin ('aux_t%register3r')
   if (self%new_item (name)) then
     allocate (item_t:: item)
@@ -373,6 +379,7 @@ SUBROUTINE register4r (self, name, r)
   real    , pointer  :: r(:,:,:,:)
   class(dll_node_t), pointer:: item
   !-----------------------------------------------------------------------------
+  if (.not.io%do_output) return
   call trace%begin ('aux_t%register4r')
   if (verbose > 1) &
     write (io_unit%log,*) 'aux_t%register4r: '//name
