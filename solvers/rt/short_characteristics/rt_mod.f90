@@ -146,14 +146,14 @@ SUBROUTINE pre_init (self, link)
   ! Read parameters
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_t%pre_init')
-  call io%lock%set
+  call io%lock%set ('rt_t%pre_init')
   if (first_time) then
     first_time = .false.
     rewind (io%input)
     read (io%input, sc_rt_params)
     if (io%master) write (io%output, sc_rt_params)
   end if
-  call io%lock%unset
+  call io%lock%unset ('rt_t%pre_init')
   self%patch => gpatch%cast2gpatch(link%task)
   self%on = on
   self%nt = nt

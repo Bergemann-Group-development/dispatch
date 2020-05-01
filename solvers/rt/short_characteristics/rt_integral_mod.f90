@@ -44,15 +44,16 @@ SUBROUTINE init (self)
   namelist /rt_integral_params/ verbose, solver, order, dtau_min, dtau_dif, &
     dtau_max, detailed_timer
   !-----------------------------------------------------------------------------
+  call trace%begin ('rt_integral_t%init')
   if (first_time) then
-    call io%lock%set
+    call io%lock%set ('rt_integral_t%init')
     if (first_time) then
       first_time=.false.
       rewind (io_unit%input)
       read (io_unit%input, rt_integral_params, iostat=iostat)
       write (io_unit%output, rt_integral_params)
     end if
-    call io%lock%unset
+    call io%lock%unset ('rt_integral_t%init')
     select case (solver)
     case (1)
       self%solver => solve1
@@ -64,6 +65,7 @@ SUBROUTINE init (self)
       call io%abort ('rt_integral%init: wrong solver')
     end select
   end if
+  call trace%end ()
 END SUBROUTINE init
 
 !===============================================================================

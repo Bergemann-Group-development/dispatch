@@ -94,12 +94,12 @@ SUBROUTINE pre_init (self)
   call self%forces%pre_init          (self%gpatch)              ! forces
   call self%selfgravity%pre_init     (self%gpatch)              ! selfg
   call self%cooling%pre_init         (self%gpatch)              ! cool
- !$omp single
+  call io%lock%set ('extras_t%pre_init')
   if (.not. associated(sinks)) then
     allocate (sinks)
     call sinks%pre_init              (self%gpatch)              ! sinks
   end if
-  !$omp end single
+  call io%lock%unset ('extras_t%pre_init')
   call self%SN%pre_init              (self%gpatch, sinks)       ! sinks
   !allocate (self%trace_particles)                               ! tracep
   !call self%trace_particles%pre_init (self%gpatch)              ! tracep
