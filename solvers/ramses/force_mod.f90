@@ -140,7 +140,6 @@ FUNCTION single_solenoidal (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
   call trace_end (itimer)
 END FUNCTION single_solenoidal
 
-
 !===============================================================================
 !> Initialize the force module
 !===============================================================================
@@ -156,7 +155,7 @@ SUBROUTINE init_turbulence (self, solver, id, mesh)
                                ampl_turb, t_turn, t_turb, seed, t_damp, verbose
   logical, save:: first_time = .true.
   !-----------------------------------------------------------------------------
-  call trace%begin ('force_t%init')
+  call trace%begin ('force_t%init_turbulence')
   call io%lock%set
   if (first_time) then
     first_time = .false.
