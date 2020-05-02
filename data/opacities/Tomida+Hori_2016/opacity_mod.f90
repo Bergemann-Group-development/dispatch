@@ -29,7 +29,7 @@ CONTAINS
 !===============================================================================
 SUBROUTINE init (self)
   class (opacity_t):: self
-  real:: row(3)
+  real:: row(3), log_d, log_T
   integer:: iT, id, iv, i, j, k
   real, dimension(:), pointer:: x, y
   real, dimension(:,:,:), pointer:: table1, table2
@@ -79,9 +79,11 @@ SUBROUTINE init (self)
     do i=1,self%nT
       y => table1(i,:,k)
       do j=1,eos%nd
-        table2(i,j,k) = interpolate(x, y, real(eos%lnd(j)/log(10.)+log10(scaling%d)))
+        log_d = eos%table%y_min + (j-1)*eos%table%y_step + log10(scaling%d)
+        table2(i,j,k) = interpolate(x, y, log_d)
         if (io%verbose > 2 .and. io%master) then
-          if ((i==1.or.i==252.or.i==253.or.i==self%nT).and.(j==1.or.j==eos%nd)) &
+          if ((i==1.or.i==252.or.i==253.or.i==self%nT) .and. &
+              (j==1.or.j==eos%nd)) &
             print *, i, j, k, self%log_T(i), &
               eos%lnd(j)/log(10.)+log10(scaling%d), table2(i,j,k)
         end if
@@ -95,21 +97,22 @@ SUBROUTINE init (self)
     end if
   end do
   !-----------------------------------------------------------------------------
-  ! For each density, interpolate in temperature to the EOS table values, which
-  ! are eos%table(:,:,2)
+  ! For each density, interpolate in temperature to the EOS table values for T,
+  ! which are eos%table%data(:,:,eos%table%i_tt)
   !-----------------------------------------------------------------------------
   allocate (table(eos%ne,eos%nd,eos%nv+self%nv))
-  table(:,:,1:eos%nv) = eos%table
+  table(:,:,1:eos%nv) = eos%table%data
   x => self%log_T                       ! opacity table temperatures
   do k=1,self%nv
     do j=1,eos%nd
       y => table2(:,j,k)                   ! interpolated table values
+      log_d = eos%table%y_min + (j-1)*eos%table%y_step + log10(scaling%d)
       do i=1,eos%ne
-        table(i,j,eos%nv+k) = 10.**interpolate(x, y, log10(eos%table(i,j,2)))
+        log_T =  log10(eos%table%data(i,j,eos%table%i_tt))
+        table(i,j,eos%nv+k) = 10.**interpolate(x, y, log_T)
         if (io%verbose > 2 .and. io%master) then
           if ((i==1.or.i==eos%ne).and.(j==1.or.j==eos%nd)) &
-            print *, i, j, k, log10(eos%table(i,j,2)), &
-              eos%lnd(j)/log(10.)+log10(scaling%d), table(i,j,eos%nv+k)
+            print *, i, j, k, log_T, log_d, table(i,j,eos%nv+k)
         end if
       end do
     end do
@@ -130,11 +133,12 @@ SUBROUTINE init (self)
   ! Deallocate the reader table and the old EOS table, insert the new EOS table
   ! and register the new table size
   !-----------------------------------------------------------------------------
-  deallocate (eos%table, table1, table2)
-  eos%table => table
-  eos%i_kappa = eos%nv+1
+  deallocate (eos%table%data, table1, table2)
+  eos%table%data => table
+  eos%table%i_rk = eos%nv+1
+  eos%table%i_src = eos%nv+2
   eos%nv = eos%nv+self%nv
-  call timer%toc ('opacity_reader%init')
+  call timer%toc ('opacity_t%init')
   call trace%end()
 END SUBROUTINE init
 

@@ -2,7 +2,7 @@
 !> Module using a table prepared by a Python procedure
 !===============================================================================
 MODULE table_mod
-  USE mpi_mod
+  USE trace_mod
   USE io_mod
   USE io_unit_mod
   USE scaling_mod
@@ -29,8 +29,9 @@ SUBROUTINE init (self, file)
   class(table_t):: self
   character(len=*):: file
   !-----------------------------------------------------------------------------
+  call trace%begin ('table_t%init')
   if (self%first_time) then
-    !$omp critical (io_cr)
+    call io%lock%set ('table_t%init')
     if (self%first_time) then
       self%first_time = .false.
       !-------------------------------------------------------------------------
@@ -58,8 +59,9 @@ SUBROUTINE init (self, file)
       if (self%i_src>0) &
       self%data(:,:,self%i_src) = self%data(:,:,self%i_src)/(scaling%e/scaling%l**2/scaling%t)
     end if
-    !$omp end critical (io_cr)
+    call io%lock%unset ('table_t%init')
   end if
+  call trace%end ()
 END SUBROUTINE init
 
 !===============================================================================
@@ -115,7 +117,7 @@ SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
     allocate (x_loc(dim(1),dim(2),dim(3)))
     x_loc = log(x)
   else
-    call mpi%abort ('eos_t: missing 1st argument')
+    call io%abort ('eos_t: missing 1st argument')
   end if
   if (present(lny)) then
     y_loc => lny
@@ -123,7 +125,7 @@ SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
     allocate (y_loc(dim(1),dim(2),dim(3)))
     y_loc = log(y)
   else
-    call mpi%abort ('eos_t: missing 2nd argument')
+    call io%abort ('eos_t: missing 2nd argument')
   end if
   !-----------------------------------------------------------------------------
   ! Loop over points
@@ -215,7 +217,7 @@ SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
   ! Test printout
   !-----------------------------------------------------------------------------
   if (self%first_print) then
-    !$omp critical (io_cr)
+    call io%lock%set ('table_t%test')
     if (self%first_print) then
       self%first_print = .false.
       print *, 'lookup: x_loc =', x_loc(1,1,1)
@@ -225,7 +227,7 @@ SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
       if (present(ss)) &
       print *, 'lookup: ss    =', ss(1,1,1)
     end if
-    !$omp end critical (io_cr)
+    call io%lock%unset ('table_t%test')
   end if
   !-----------------------------------------------------------------------------
   ! Deallocate if allocated
