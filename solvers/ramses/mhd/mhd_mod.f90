@@ -57,6 +57,7 @@ MODULE mhd_mod
   logical, save:: first_time=.true.
   logical, save:: detailed_timer=.false.
   logical, save:: unsigned=.true.
+  logical, save:: do_temperature=.false.
   integer, save:: verbose=0
   integer, save:: divb_cleaner=0
   integer, save:: divb_iter=4
@@ -75,55 +76,46 @@ SUBROUTINE pre_init (self)
   real, save:: max_dlogd=20.
   integer, save:: n_dump=0
   real:: csound=1.
-  integer:: i, iv
+  integer:: iostat
   namelist /ramses_params/ gamma, riemann, slope_type, b_slope_type, &
     u_slope_type, courant_factor, smallr, smallc, isothermal, csound, &
     detailed_timer, unsigned, courant_type, max_dlogd, n_dump, &
-    divb_cleaner, divb_iter, verbose
+    divb_cleaner, divb_iter, do_temperature, verbose
   character(len=120):: id = &
    '$Id$ solvers/ramses/mhd/mhd_mod.f90'
 !...............................................................................
-  call trace%begin('mhd_mod%pre_init')
+  call trace%begin ('mhd_mod%pre_init')
   call trace%print_id (id)
   self%nw = 2
   self%ng = 3
-  self%nv = 9
+  self%nv = 8
   self%kind = 'ramses_mhd_patch'
-  call self%idx%init (5, self%mhd)
-  self%idx%tt = 9
-  call self%patch_t%init
+  call self%idx%init (ie=5, mhd=self%mhd)
+  if (do_temperature) then
+    call self%idx%request_index (self%idx%tt, self%nv)
+  end if
   !-----------------------------------------------------------------------------
   ! Read solver-relevant parameters and store in the task instance
   !-----------------------------------------------------------------------------
-  call io%lock%set
+  call io%lock%set ('mhd_mod%pre_init')
   if (first_time) then
+    rewind (io%input)
+    read (io%input, ramses_params, iostat=iostat)
+    call io%namelist_warning ('ramses_params', iostat)
+    if (gamma == 1d0) isothermal = .true.
+    if (isothermal)   gamma = 1d0
+    write (io%output, ramses_params)
+    write (io%namelist, ramses_params)
     first_time = .false.
-    rewind (io_unit%input)
-    read (io_unit%input, ramses_params)
-    isothermal = isothermal .or. gamma==1d0
-    !---------------------------------------------------------------------------
-    ! The HLLD solver throws a divide fault if gamma==1, hence this workaround:
-    !---------------------------------------------------------------------------
-    if (isothermal) gamma=1.0d0
-    if (mpi%master) write (*, ramses_params)
   end if
-  call io%lock%unset
+  call io%lock%unset ('mhd_mod%pre_init')
   rieman%max_dlogd = max_dlogd
-  self%n_dump = n_dump
+  self%n_dump  = n_dump
   self%riemann = riemann
   self%courant = courant_factor
   self%gamma = gamma
   self%csound = csound
   self%staggered = .false.
-  do i=1,3
-    self%mesh(i)%h = 0d0
-    self%mesh(i)%h(self%idx%bx+i-1) = -0.5
-  end do
-  self%unsigned(self%idx%d) = unsigned
-  self%unsigned(self%idx%e) = unsigned
-  self%pervolume(self%idx%px) = unsigned
-  self%pervolume(self%idx%py) = unsigned
-  self%pervolume(self%idx%pz) = unsigned
   !-----------------------------------------------------------------------------
   call non_ideal%init  
   call self%extras_t%pre_init
@@ -133,8 +125,19 @@ END SUBROUTINE pre_init
 !===============================================================================
 SUBROUTINE init (self)
   class(mhd_t):: self
+  integer:: i
 !...............................................................................
   call trace%begin('mhd_mod%init')
+  call self%patch_t%init
+  do i=1,3
+    self%mesh(i)%h = 0d0
+    self%mesh(i)%h(self%idx%bx+i-1) = -0.5
+  end do
+  self%unsigned(self%idx%d) = unsigned
+  self%unsigned(self%idx%e) = unsigned
+  self%pervolume(self%idx%px) = unsigned
+  self%pervolume(self%idx%py) = unsigned
+  self%pervolume(self%idx%pz) = unsigned
   call self%gpatch_t%init
   call self%extras_t%init
   call trace%end()

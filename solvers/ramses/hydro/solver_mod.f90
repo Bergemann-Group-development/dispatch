@@ -12,6 +12,7 @@ MODULE solver_mod
   USE kinds_mod
   USE hd_mod
   USE stagger_mod
+  USE validate_mod
   implicit none
   private
   type, public, extends(hd_t):: solver_t
@@ -56,6 +57,7 @@ SUBROUTINE init (self)
   call trace%begin ('solver_t%init')
   call self%hd_t%pre_init
   call self%hd_t%init
+  call validate%init
   call trace%end ()
 END SUBROUTINE init
 

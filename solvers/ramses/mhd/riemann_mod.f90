@@ -44,7 +44,7 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
   REAL(dp)::d,P,u,v,w,B,C,B2,c2,d2,cf
 #endif
   INTEGER ::ivar,i,icase, ndiff
-  logical:: flag
+  logical:: flag, illconditioned
   integer, save:: itimer=0
   !.............................................................................
   if (detailed_timer) &
@@ -136,18 +136,27 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
     estar =rl*(SL-ul)*(SL-ustar)-A**2
     el    =rl*(SL-ul)*(SL-ul   )-A**2
     !if (dbg) print 1,'hlld4', estar,rl,SL,ul,ustar,A
+!define MERGE
+#ifdef MERGE
+    illconditioned = abs(estar) < 1d-4*A**2
+    vstarl = merge (vl, vl-A*Bl*(ustar-ul)/estar, illconditioned)
+    Bstarl = merge (Bl, Bl*el/estar             , illconditioned)
+    wstarl = merge (wl, wl-A*Cl*(ustar-ul)/estar, illconditioned)
+    cstarl = merge (cl, Cl*el/estar             , illconditioned)
+#else
     if(abs(estar) < 1d-4*A**2)then
-       vstarl=vl
-       Bstarl=Bl
-       wstarl=wl
-       Cstarl=Cl
+      vstarl=vl
+      Bstarl=Bl
+      wstarl=wl
+      Cstarl=Cl
     else
-       vstarl=vl-A*Bl*(ustar-ul)/estar
-       Bstarl=Bl*el/estar
-       wstarl=wl-A*Cl*(ustar-ul)/estar
-       Cstarl=Cl*el/estar
+      vstarl=vl-A*Bl*(ustar-ul)/estar
+      Bstarl=Bl*el/estar
+      wstarl=wl-A*Cl*(ustar-ul)/estar
+      Cstarl=Cl*el/estar
     endif
-    vdotBstarl=ustar*A+vstarl*Bstarl+wstarl*Cstarl
+#endif
+     vdotBstarl=ustar*A+vstarl*Bstarl+wstarl*Cstarl
     etotstarl=((SL-ul)*etotl-Ptotl*ul+Ptotstar*ustar+A*(vdotBl-vdotBstarl))/(SL-ustar)
     sqrrstarl=sqrt(rstarl)
     calfvenl=abs(A)/sqrrstarl
@@ -157,17 +166,25 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
     rstarr=rr*(SR-ur)/(SR-ustar)
     estar =rr*(SR-ur)*(SR-ustar)-A**2
     er    =rr*(SR-ur)*(SR-ur   )-A**2
-    if(abs(estar) < 1d-4*A**2)then
-       vstarr=vr
-       Bstarr=Br
-       wstarr=wr
-       Cstarr=Cr
-    else
-       vstarr=vr-A*Br*(ustar-ur)/estar
-       Bstarr=Br*er/estar
-       wstarr=wr-A*Cr*(ustar-ur)/estar
-       Cstarr=Cr*er/estar
-    endif
+#ifdef MERGE
+    illconditioned = abs(estar) < 1d-4*A**2
+    vstarr = merge (vr, vr-A*Br*(ustar-ur)/estar, illconditioned)
+    Bstarr = merge (Br, Br*er/estar             , illconditioned)
+    wstarr = merge (wr, wr-A*Cr*(ustar-ur)/estar, illconditioned)
+    cstarr = merge (cr, Cr*er/estar             , illconditioned)
+#else
+  if(abs(estar) < 1d-4*A**2)then
+      vstarr=vr
+      Bstarr=Br
+      wstarr=wr
+      Cstarr=Cr
+  else
+      vstarr=vr-A*Br*(ustar-ur)/estar
+      Bstarr=Br*er/estar
+      wstarr=wr-A*Cr*(ustar-ur)/estar
+      Cstarr=Cr*er/estar
+  endif
+#endif
     !
 
 
@@ -260,9 +277,12 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
        vdotBo=vdotBr
        emago=emagr
     end if
-    ! Add a diffusive flux in the down grad(ln(rho)) direction, which is only nonzero when the
-    ! smallest of the left/right density is within a factor 10 from smallr, and which has at most
-    ! magnitude of 0.25 times the largest of the left/right fast mode speeds.
+    !---------------------------------------------------------------------------
+    ! Add a diffusive flux in the down grad(ln(rho)) direction, which is only
+    ! nonzero when the smallest of the left/right density is within a factor 10
+    ! from smallr, and which has at most magnitude of 0.25 times the largest of
+    ! the left/right fast mode speeds.
+    !---------------------------------------------------------------------------
     ustar = alog(rl/rr)*max(0.0, alog10((10.*smallr)/min(rl,rr)))
     ustar = 0.25*max(cfastr,cfastl)*min(1.0, max(-1.0, ustar))
     uo = uo + ustar

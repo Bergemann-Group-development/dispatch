@@ -83,10 +83,40 @@ CONTAINS
 !===============================================================================
 SUBROUTINE pre_init (self)
   class(hd_t), target:: self
+  character(len=10):: riemann='hllc'
+  real, save:: csound=1.
+  integer:: i, iv, iostat
+  namelist /ramses_params/ gamma, riemann, slope_type, courant_factor, smallr, &
+    smallc, isothermal, csound, detailed_timer, unsigned, courant_type, debug
+  type(index_t):: idx
   !-----------------------------------------------------------------------------
   call trace%begin('hd_mod%pre_init')
   self%nv = 5
   self%nw = 1
+  self%ng = 2
+  self%mhd = .false.
+  self%kind = 'ramses_hd_patch'
+  call self%idx%init (ie=5, mhd=self%mhd)
+  !-----------------------------------------------------------------------------
+  ! Ramses specific parameters
+  !-----------------------------------------------------------------------------
+  call io%lock%set ('hd_mod%init')
+  if (first_time) then
+    rewind (io%input)
+    read (io%input, ramses_params, iostat=iostat)
+    call io%namelist_warning ('ramses_params', iostat)
+    if (gamma == 1d0) isothermal = .true.
+    if (isothermal)   gamma = 1d0
+    write (io%output, ramses_params)
+    write (io%namelist, ramses_params)
+    first_time = .false.
+  end if
+  call io%lock%unset ('hd_mod%init')
+  self%riemann = riemann
+  self%courant = courant_factor
+  self%gamma = gamma
+  self%csound = csound
+  self%staggered = .false.
   call self%extras_t%pre_init
   call trace%end ()
 END SUBROUTINE pre_init
@@ -96,61 +126,24 @@ END SUBROUTINE pre_init
 !===============================================================================
 SUBROUTINE init (self)
   class(hd_t):: self
-  character(len=10):: riemann='hllc'
-  real, save:: csound=1.
-  integer:: i, iv, iostat
-  namelist /ramses_params/ gamma, riemann, slope_type, courant_factor, smallr, &
-    smallc, isothermal, csound, detailed_timer, unsigned, courant_type, debug
-  type(index_t):: idx
+  integer:: i
   character(len=120):: id = &
    '$Id$ solvers/ramses/hydro/hd_mod.f90'
-!...............................................................................
-  call trace%begin('hd_mod%init')
+  !.............................................................................
+  call trace%begin ('hd_mod%init')
   call trace%print_id (id)
-  self%mhd = .false.
-  self%nw = 1
-  self%ng = 2
-  self%kind = 'ramses_hd_patch'
-  if (self%nv == 0) self%nv = 5
-  !-----------------------------------------------------------------------------
-  ! Here we call patch_t%init directly, to initialize %mem and %mesh
-  !-----------------------------------------------------------------------------
-  call self%idx%init (ie=5, mhd=self%mhd)
   call self%patch_t%init
   !-----------------------------------------------------------------------------
-  ! Ramses specific things
+  ! When unsigned is true, intepolate in log and per-mass variables
   !-----------------------------------------------------------------------------
-  call io%lock%set
-  if (first_time) then
-    first_time = .false.
-    rewind (io%input)
-    read (io%input, ramses_params, iostat=iostat)
-    call io%namelist_warning ('ramses_params', iostat)
-    write (io%output, ramses_params)
-    write (io%namelist, ramses_params)
-  end if
-  if (gamma == 1d0) &
-    isothermal = .true.
-  if (isothermal) &
-    gamma = 1d0
-  call io%lock%unset
-  self%riemann = riemann
-  self%courant = courant_factor
-  self%gamma = gamma
-  self%csound = csound
-  self%staggered = .false.
-  do i=1,3
-    self%mesh(i)%h = 0d0
-  end do
   self%unsigned(self%idx%d) = unsigned
   self%unsigned(self%idx%e) = unsigned
   self%pervolume(self%idx%px) = unsigned
   self%pervolume(self%idx%py) = unsigned
   self%pervolume(self%idx%pz) = unsigned
-  !-----------------------------------------------------------------------------
-  ! Calling gpatch_t%init, which may call ICs, must wait until all properties
-  ! of patches (mesh, idx, patch_t%h staggering) are in place.
-  !-----------------------------------------------------------------------------
+  do i=1,3
+    self%mesh(i)%h = 0d0
+  end do
   call self%gpatch_t%init
   call self%extras_t%init
   call trace%end()
