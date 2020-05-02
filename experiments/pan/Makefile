@@ -5,27 +5,27 @@
 OPTS = optimized
 #OPTS = optimized_diagnostics
 
-# Default target and methods
-#PATCH           = dispatchers
-UPD             = adams_bashforth
-SOLVER          = ramses/hydro
-#SOLVER          = ramses/mhd
-#SOLVER          = stagger2/e
-PARTICLE_SOLVER = KDK
-EXEC            = dispatch.x
+# TOP directory and default target
 TOP             = ../..
-#HDF5 = /software/astro/hdf5-1.10.4
-HDF5 =
+EXEC            = dispatch.x
+
+# Choice of solvers
+PARTICLE_SOLVER = KDK
+#SOLVER          = ramses/hydro
+SOLVER          = ramses/mhd
+#SOLVER          = stagger2/e
 
 # Tomida & Hori, with opacity
+#SOLVER          = ramses/mhd_eos
 #EOS             = data/eos/Tomida+Hori_2016/e
 #OPACITY         = Tomida+Hori_2016
+
+# HDF5 option
+#HDF5 = /software/astro/hdf5-1.10.4
 
 sinclude $(TOP)/config/Makefile
 VPATH := $(SOLVER):.:$(VPATH)
 sinclude $(SOLVER)/Makefile
-
-#VPATH := $(VPATH):$(TOP)/microphysics/opacities/stub
 
 # List the .o files the main program depends on after the colon:
 $(EXEC)                 : setup_mod.o restart_mod.o cartesian_mod.o dispatcher_mod.o io_unit_mod.o
