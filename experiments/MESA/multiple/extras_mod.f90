@@ -1,52 +1,30 @@
 !===============================================================================
-!> Template version of a module intended for adding extra features, at a level
-!> between the basic patch and the layer of solvers.
+!> Example of an extras_mod that creates new tasks, which start operating
+!> independently.
 !>
-!> To add extra features to the code, copy this file to experiments/your_dir/,
-!> and add (only) the extra dependencies to the Makefile there.
+!> In this case, the refinement criterion for creating sink particles is
+!> checked before each update of the parent patch task.  When the criterion
+!> is met, the refinement procedure calls a procedure that creates a new
+!> task and adds it to the task list.  The new task should be created with
+!> an nbor list that includes the patches that overlap with the accretion
+!> sphere.
 !>
-!>                    experiment_t
-!>                     solver_t
-!>                       mhd_t
-!>                      extras_t
-!>                      /    \
-!>                     /      \
-!>                extras_1_t extras_2_t
-!>                       \    /   |
-!>                      gpatch_t  |
-!>                       patch_t  |
-!>                       /    \   |
-!>                    task_t  connect_t
+!> Since the new task gets called by the dispatcher, its update procedure
+!> should not be called from here, while other minions to the patch task,
+!> such as forcing and cooling, are called directly from here, in pre_update()
+!> or post_update() procedures.
 !>
-!> The extra modules needed in an experiment should be chosen and coordinated
-!> in this module, and the ones that are "below" (USEd by) this module should
-!> generally refer to array memory in patch_t, and/or to local memory allocated
-!> inside these extra modules.  Only key physics effects, such as forcing,
-!> cooling or heating, ionization, etc., should be added to the patch_t module,
+!> The call hierarchy involved in creating the sink task is:
+!>   task_list%update
+!>     refine_t%check_current
+!>      refine_t%refine_needed
+!>        extras_t%check_refine
+!>          sink_t%check_refine
+!>            sink_t%create_sink
+!>            sink_t%create_task
+!>              task_list_t%append
 !>
-!> Modules that prepare input to the solvers should generally be called from the
-!> pre_upate() procedure, while modules that rely on results from the solver
-!> should be called from the post_update() procedure.
-!>
-!> This module should generally NOT use the h5_mod (HDF5) module itself. It
-!> should instead be USEd from the actual extra modules, to assist in saving
-!> ad hoc results in a standardized format.
-!>
-!> The call hierarchy that initializes things runs in this order (using as an
-!> example patch creation by the cartesian_mod module)
-!>
-!> cartesian%init
-!>   allocate ...
-!>   experiment_t%init
-!>     solver_t%init
-!>       mhd_t%pre_init
-!>         extras_t%pre_init
-!>       mhd_t%init
-!>         extras_t%init
-!>
-!> The corresponding update call hierarchy is
-!>
-!> task_list%update
+!> The extras_mod role in the patch update call hierarchy is:
 !>   experiment_t%update
 !>     solver_t%update
 !>       mhd_t%pre_update
@@ -55,18 +33,10 @@
 !>       mhd_t%post_update
 !>         extras_t%post_update
 !>
-!> The general convention is that the solver_t layer (which is there basically
-!> to allow the actual solver layer to have any module name) calls the actual
-!> solver layers' procedures, but that layer may choose to not have for example
-!> a pre_ and post_update, so those calls "fall through" to the extras_t layer.
-!>
-!> If the solver layer implements pre_ and post_ calls, it has the responsibility
-!> to call the the extras_ layer.
-!>
-!> Step 1: We refer to the static mesa instance (not the sinks instance), and
-!>         check that only one sink is created
-!> Step 2: We refer to the mesa instance for creation, but to the mesa nbor task
-!>         for anything that requires access to the individual sink particle
+!> The call hierarchy involved in updating the sink task is:
+!>   task_list_t%update
+!>     sink_t%update
+!>       sink_t%accrete
 !===============================================================================
 
 MODULE extras_mod
@@ -85,7 +55,7 @@ MODULE extras_mod
   USE forces_mod                                                ! forces
   USE selfgravity_mod                                           ! selfg
   USE cooling_mod                                               ! cool
-  USE sinks_mod                                                 ! sinks
+  USE sink_mod                                                 ! sink
   !-----------------------------------------------------------------------------
   implicit none
   private
@@ -97,7 +67,7 @@ MODULE extras_mod
     type(forces_t):: forces                                     ! forces
     type(selfgravity_t):: selfgravity                           ! selfg
     type(cooling_t):: cooling                                   ! cool
-    type(sinks_t):: sinks                                       ! sinks
+    type(sink_t):: sink                                       ! sink
     class(gpatch_t), pointer:: patch => null()                  ! keep
   contains
     procedure:: pre_init
@@ -123,7 +93,7 @@ SUBROUTINE pre_init (self)
   self%patch => self
   call self%selfgravity%pre_init(self%patch)                   ! selfg
   call self%forces%pre_init(self%patch)                        ! forces
-  call self%sinks%pre_init (self%patch)                        ! sinks
+  call self%sink%pre_init (self%patch)                        ! sink
   call trace%end()
 END SUBROUTINE pre_init
 
@@ -135,7 +105,7 @@ SUBROUTINE init (self)
   !.............................................................................
   call trace%begin ('extras_t%init')
   call self%forces%init                                         ! forces
-  call self%sinks%init                                          ! sinks
+  call self%sink%init                                          ! sink
   call trace%end()
 END SUBROUTINE init
 
@@ -151,7 +121,7 @@ SUBROUTINE init_task_list (self, task_list)
   !.............................................................................
   call trace%begin ('extras_t%init_task_list')
   call self%gpatch_t%init_task_list (task_list)                 ! keep
-  call self%sinks%init_task_list (task_list)
+  call self%sink%init_task_list (task_list)
   call trace%end ()
 END SUBROUTINE init_task_list
 
@@ -178,7 +148,7 @@ SUBROUTINE pre_update (self)
   call self%forces%pre_update                                   ! forces
   call self%selfgravity%pre_update                              ! selfg
   call self%cooling%pre_update                                  ! cool
-  call self%sinks%pre_update                                    ! sinks
+  !call self%sink%pre_update                                    ! sink
   call trace%end()
 END SUBROUTINE pre_update
 
@@ -191,7 +161,7 @@ SUBROUTINE post_update (self)
   call trace%begin ('extras_t%post_update')
   call self%forces%post_update                                  ! forces
   call self%selfgravity%post_update                             ! elfg
-  call self%sinks%update                                        ! sinks
+  !call self%sink%update                                        ! sink
   call trace%end ()
 END SUBROUTINE post_update
 
@@ -201,7 +171,7 @@ END SUBROUTINE post_update
 SUBROUTINE output (self)
   class(extras_t):: self
   !.............................................................................
-  call self%sinks%output                                        ! sinks
+  !call self%sink%output                                        ! sink
 END SUBROUTINE output
 
 !===============================================================================
@@ -213,7 +183,7 @@ INTEGER FUNCTION check_refine (self, patch)
   class(gpatch_t), pointer:: gpatch
   !.............................................................................
   gpatch => patch
-  call sinks%check_refine (gpatch)                              ! sinks
+  call sink%check_refine (gpatch)                              ! sink
   check_refine = -1                                             ! keep
 END FUNCTION check_refine
 

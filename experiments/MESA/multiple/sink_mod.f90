@@ -1,18 +1,18 @@
 !===============================================================================
 !> Simplified sink particle data type. The task makes its presence known
 !> by being an nbor task to patches that it overlaps with.  When they update,
-!> and encounter an nbor whose data type is sinks_t, it should call the
-!> sinks_t%accrete procedure, which computes the mass accreted from that
-!> task, and adds it to the sinks_t data type. The patch_t task gets access
-!> to the sinks_t%accrete procedure via the pointer to the nbor task, and there
-!> is thus no need for the sinks_t task to compute any accretion.  Its %update
+!> and encounter an nbor whose data type is sink_t, it should call the
+!> sink_t%accrete procedure, which computes the mass accreted from that
+!> task, and adds it to the sink_t data type. The patch_t task gets access
+!> to the sink_t%accrete procedure via the pointer to the nbor task, and there
+!> is thus no need for the sink_t task to compute any accretion.  Its %update
 !> procedure should instead just update its position, and compute whatever
 !> consequence it may have (e.g. using MESA).
 !>
 !> Since there are only a few scalar properties that need to be updated by the
 !> patch nbors, this can be handled by atomic updates, without task locking.
 !>
-!> The sink_t data type needs to have the following procedures:
+!> The sink_t data type should eventually have the following procedures:
 !>
 !>    * accrete(): called by nbor patches to compute accretion onto the sink
 !>    *   force(): called by nbor patches to compute force on their gas, and
@@ -21,7 +21,7 @@
 !>    *    wind(): computes the wind output from the sink particle
 !>    * explode(): computes the momentum input from the SN explosion of the star
 !===============================================================================
-MODULE sinks_mod
+MODULE sink_mod
   USE io_mod
   USE io_unit_mod
   USE trace_mod
@@ -37,7 +37,7 @@ MODULE sinks_mod
   USE aux_mod
   implicit none
   private
-  type, public, extends(task_t):: sinks_t
+  type, public, extends(task_t):: sink_t
     real(8):: mass=0d0, radius=8.0
     real(8):: px=0d0, py=0d0, pz=0d0
     real(8):: gamma=1.0
@@ -52,42 +52,43 @@ MODULE sinks_mod
     procedure:: init
     procedure:: init_task_list
     procedure:: check_refine
-    procedure:: create_sink
-    procedure:: create_task
+    procedure:: setup
+    procedure:: add_task
     procedure:: accrete
     procedure:: pre_update
     procedure:: update
     procedure:: post_update
     procedure:: output
+    procedure:: force
   end type
   real::     jeans_limit = 4.0        ! create at jeans_limit cells per Jean's L 
   real::       per_omega = 0.001      ! fraction of mass per radian orbital
   real:: create_fraction = 0.01       ! fraction of mass to accrete initially
   integer:: accretion_cells = 8       ! accretion radius in cells
   integer::         verbose = 0       ! information level
-  type(sinks_t), public:: sinks
+  type(sink_t), public:: sink
 CONTAINS
 
 !===============================================================================
 !> Initialize sink task patch connection
 !===============================================================================
 SUBROUTINE pre_init (self, patch)
-  class(sinks_t):: self
+  class(sink_t):: self
   class(gpatch_t), pointer:: patch
   integer:: iostat
-  namelist /sinks_params/ jeans_limit, accretion_cells, create_fraction, &
+  namelist /sink_params/ jeans_limit, accretion_cells, create_fraction, &
     per_omega, verbose
   logical:: first_time = .true.
   !-----------------------------------------------------------------------------
-  call trace%begin ('sinks_t%pre_init')
+  call trace%begin ('sink_t%pre_init')
   self%patch => patch
   call io%lock%set
   if (first_time) then
     rewind (io%input)
-    read (io%input, sinks_params, iostat=iostat)
-    call io%namelist_warning ('sinks_params', iostat)
-    write (io%output, sinks_params)
-    write (io%namelist, sinks_params)
+    read (io%input, sink_params, iostat=iostat)
+    call io%namelist_warning ('sink_params', iostat)
+    write (io%output, sink_params)
+    write (io%namelist, sink_params)
     first_time = .false.
   end if
   call io%lock%unset
@@ -98,9 +99,9 @@ END SUBROUTINE pre_init
 !> Initialize sink task patch connection
 !===============================================================================
 SUBROUTINE init (self)
-  class(sinks_t):: self
+  class(sink_t):: self
   !-----------------------------------------------------------------------------
-  call trace%begin ('sinks_t%init')
+  call trace%begin ('sink_t%init')
   self%size = 2d0*accretion_cells*self%patch%ds
   self%position = huge(1.0)
   call trace%end ()
@@ -110,44 +111,13 @@ END SUBROUTINE init
 !> Save a pointer to the task list
 !===============================================================================
 SUBROUTINE init_task_list (self, task_list)
-  class(sinks_t), target:: self
+  class(sink_t), target:: self
   class(list_t), pointer:: task_list
   !-----------------------------------------------------------------------------
-  call trace%begin ('sinks_t%init_task_list')
+  call trace%begin ('sink_t%init_task_list')
   self%task_list => task_list
   call trace%end ()
 END SUBROUTINE init_task_list
-
-!===============================================================================
-!> Create a task link, with a pointer to this sink task, and append it to the
-!> task list.  As a test, set a fixed dtime, and no nbor list, and check what
-!> happens to the task.
-!===============================================================================
-SUBROUTINE create_task (self)
-  class(sinks_t), target:: self
-  class(link_t), pointer:: link
-  class(nbor_t), pointer:: nbor
-  !-----------------------------------------------------------------------------
-  call trace%begin ('sinks_t%create_task')
-  !-----------------------------------------------------------------------------
-  ! Create a task link, and initialize the task and link pointers
-  !-----------------------------------------------------------------------------
-  allocate (link)
-  link%task => self
-  self%link => link
-  !-----------------------------------------------------------------------------
-  ! Create an nbor node, point it to the patch task, and use it as the nbor list
-  !-----------------------------------------------------------------------------
-  allocate (nbor)
-  nbor%task => self%patch
-  nbor%link => self%link
-  link%nbor => nbor
-  !-----------------------------------------------------------------------------
-  ! Append the task to the task list
-  !-----------------------------------------------------------------------------
-  call self%task_list%append (link)
-  call trace%end ()
-END SUBROUTINE create_task
 
 !===============================================================================
 !> Check sink creation criterion, which is to have the local Jeans' length
@@ -158,15 +128,16 @@ END SUBROUTINE create_task
 !> gamma, d is density, and e is thermal energy per unit volume.
 !===============================================================================
 SUBROUTINE check_refine (self, patch)
-  class(sinks_t):: self
+  class(sink_t):: self
   class(gpatch_t), pointer:: patch
   real, pointer, dimension(:,:,:):: d, e
   real, allocatable:: jeans_resolution(:,:,:)
+  type(sink_t), pointer:: sink
   real:: ds, g2, min_jeans
   integer:: m(3), ipos(3), l(3), u(3)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('sinks_t%check_refine', itimer=itimer)
+  call trace%begin ('sink_t%check_refine', itimer=itimer)
   l = patch%mesh%li
   u = patch%mesh%ui
   d => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,patch%it,1)
@@ -190,14 +161,15 @@ SUBROUTINE check_refine (self, patch)
     !...........................................................................
     if (verbose > 0) &
       write(io_unit%log,'(1x,a,i6,2x,3i4,f6.1)') &
-       'sinks_t%check_refine: creating sink id, ipos, jeans =', &
+       'sink_t%check_refine: creating sink id, ipos, jeans =', &
         patch%id, ipos, jeans_resolution(ipos(1),ipos(2),ipos(3))
     !...........................................................................
-    call self%create_sink (patch, ipos+l)
+    allocate (sink)
+    call sink%setup (patch, ipos+l)
   else if (verbose > 1) then
     !...........................................................................
     write(io_unit%log,'(1x,a,i6,f10.3,f12.6,1p,e11.2)') &
-     'sinks_t%check_refine: id, min_jeans, time, max(d) =', &
+     'sink_t%check_refine: id, min_jeans, time, max(d) =', &
       patch%id, min_jeans, patch%time, maxval(d)
     !...........................................................................
   end if
@@ -206,10 +178,10 @@ SUBROUTINE check_refine (self, patch)
 END SUBROUTINE check_refine
 
 !===============================================================================
-!> Check sink creation criterion
+!> Setup a sink particle at the give location in the patch
 !===============================================================================
-SUBROUTINE create_sink (self, patch, ipos)
-  class(sinks_t):: self
+SUBROUTINE setup (self, patch, ipos)
+  class(sink_t):: self
   class(gpatch_t), pointer:: patch
   integer:: ipos(3)
   !.............................................................................
@@ -218,7 +190,7 @@ SUBROUTINE create_sink (self, patch, ipos)
   class(mesh_t), pointer:: m1, m2, m3
   real, allocatable, dimension(:,:,:):: delta_d
   !-----------------------------------------------------------------------------
-  call trace%begin ('sinks_t%create_sink')
+  call trace%begin ('sink_t%setup')
   !$omp critical (create_cr)
   m1 => patch%mesh(1)
   m2 => patch%mesh(2)
@@ -233,18 +205,49 @@ SUBROUTINE create_sink (self, patch, ipos)
   !.............................................................................
   if (verbose > 0) &
     write (io_unit%log,'(1x,a,i6,2x,3i4,3f10.4)') &
-     'sinks_t%create: id, ipos, position =', patch%id, ipos, self%position
+     'sink_t%create: id, ipos, position =', patch%id, ipos, self%position
   !.............................................................................
-  call self%create_task
+  call self%add_task
   !$omp end critical (create_cr)
   call trace%end ()
-END SUBROUTINE create_sink
+END SUBROUTINE setup
+
+!===============================================================================
+!> Create a task link, with a pointer to this sink task, and append it to the
+!> task list.  As a test, set a fixed dtime, and no nbor list, and check what
+!> happens to the task.
+!===============================================================================
+SUBROUTINE add_task (self)
+  class(sink_t), target:: self
+  class(link_t), pointer:: link
+  class(nbor_t), pointer:: nbor
+  !-----------------------------------------------------------------------------
+  call trace%begin ('sink_t%add_task')
+  !-----------------------------------------------------------------------------
+  ! Create a task link, and initialize the task and link pointers
+  !-----------------------------------------------------------------------------
+  allocate (link)
+  link%task => self
+  self%link => link
+  !-----------------------------------------------------------------------------
+  ! Create an nbor node, point it to the patch task, and use it as the nbor list
+  !-----------------------------------------------------------------------------
+  allocate (nbor)
+  nbor%task => self%patch
+  nbor%link => self%link
+  link%nbor => nbor
+  !-----------------------------------------------------------------------------
+  ! Append the task to the task list
+  !-----------------------------------------------------------------------------
+  call self%task_list%append (link)
+  call trace%end ()
+END SUBROUTINE add_task
 
 !===============================================================================
 !> Accrete to sink particle from patch
 !===============================================================================
 SUBROUTINE accrete (self, patch)
-  class(sinks_t):: self
+  class(sink_t):: self
   class(gpatch_t), pointer:: patch
   integer:: pos(3)
   !.............................................................................
@@ -259,13 +262,13 @@ SUBROUTINE accrete (self, patch)
   logical:: overlaps
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('sinks_t%accrete', itimer=itimer)
+  call trace%begin ('sink_t%accrete', itimer=itimer)
   overlaps = self%overlaps(patch)
   if (patch%time > self%time .and. overlaps) then
     !...........................................................................
     if (verbose > 2) then
       write (io_unit%log,'(1x,a,i4,l3,4(3f8.3,2x))') &
-       'sinks_t%accrete: id, over, sink%size, pos, patsh%size, pos =', &
+       'sink_t%accrete: id, over, sink%size, pos, patsh%size, pos =', &
         patch%id, overlaps, self%size, self%position, patch%size, patch%position
     end if
     !...........................................................................
@@ -355,7 +358,7 @@ SUBROUTINE accrete (self, patch)
     if (verbose > 0) then
       dr = self%point_distance (self%position, patch%position)
       write (io_unit%log,'(1x,a,i4,i8,3(3f8.3,2x),1p,4e10.2)') &
-       'sinks_t%accrete: id, nm, pos, rpos, vel, m, dm, d_max =', &
+       'sink_t%accrete: id, nm, pos, rpos, vel, m, dm, d_max =', &
         patch%id, nm, self%position, dr/patch%size, self%velocity, &
         self%mass, dm, maxval(d)
     end if
@@ -363,7 +366,7 @@ SUBROUTINE accrete (self, patch)
     deallocate (radius2, delta_d, inside)
   else if (verbose > 2) then
     !...........................................................................
-    write (io_unit%log,'(1x,a,i6,l4,5(3f10.6,1x))') 'sinks_t%accrete: skip', &
+    write (io_unit%log,'(1x,a,i6,l4,5(3f10.6,1x))') 'sink_t%accrete: skip', &
       patch%id, overlaps, patch%time, self%time, self%mass, &
       self%position, self%size, patch%position, patch%size
     !...........................................................................
@@ -375,9 +378,9 @@ END SUBROUTINE accrete
 !> Update sink task
 !===============================================================================
 SUBROUTINE pre_update (self)
-  class(sinks_t):: self
+  class(sink_t):: self
   !-----------------------------------------------------------------------------
-  call trace%begin ('sinks_t%pre_update')
+  call trace%begin ('sink_t%pre_update')
   call trace%end ()
 END SUBROUTINE pre_update
 
@@ -385,30 +388,13 @@ END SUBROUTINE pre_update
 !> Update sink task
 !===============================================================================
 SUBROUTINE update (self)
-  class(sinks_t):: self
-  !-----------------------------------------------------------------------------
-  call trace%begin ('sinks_t%update')
-  call trace%end ()
-END SUBROUTINE update
-
-!===============================================================================
-!> Post-update sink task -- placing accretion here for now
-!===============================================================================
-SUBROUTINE post_update (self, patch)
-  class(sinks_t):: self
-  class(gpatch_t), pointer:: patch
+  class(sink_t):: self
   real:: velocity(3), dr(3)
   !-----------------------------------------------------------------------------
-  call trace%begin ('sinks_t%post_update')
-  call self%check_refine (patch)
-  call self%accrete (patch)
-  !-----------------------------------------------------------------------------
-  ! The patch that actually contains the sink is responsible for updating the
-  ! time and position of the sink
-  !-----------------------------------------------------------------------------
-  if (self%mass > tiny(1.0) .and. patch%contains(self%position)) then
-    self%dtime = patch%time - self%time
-    self%time = patch%time
+  call trace%begin ('sink_t%update')
+  if (self%mass > tiny(1.0)) then
+    self%dtime = self%patch%time - self%time
+    self%time = self%patch%time
     if (self%mass > tiny(1.0)) then
       velocity = [self%px,self%py,self%pz]/self%mass
     else
@@ -418,15 +404,28 @@ SUBROUTINE post_update (self, patch)
     !...........................................................................
     if (verbose > 0) &
       write (io_unit%log,'(1x,a,i6,1p,3(2x,3e12.2))') &
-       'sinks_t%post_update: id, position, velocity, mass =', &
-        patch%id, self%position, velocity, self%mass
+       'sink_t%post_update: id, position, velocity, mass =', &
+        self%patch%id, self%position, velocity, self%mass
     !...........................................................................
   else if (verbose > 1) then
-    dr = self%point_distance (self%position, patch%position)
+    dr = self%point_distance (self%position, self%patch%position)
     write (io_unit%log,'(1x,a,i6,1p,3(2x,1p,3e10.2))') &
-     'sinks_t%post_update: id, pos, (sink-patch)/size =', patch%id, &
-      self%position, dr/patch%size
+     'sink_t%post_update: id, pos, (sink-patch)/size =', self%patch%id, &
+      self%position, dr/self%patch%size
   end if
+  call trace%end ()
+END SUBROUTINE update
+
+!===============================================================================
+!> Post-update sink task -- placing accretion here for now
+!===============================================================================
+SUBROUTINE post_update (self, patch)
+  class(sink_t):: self
+  class(gpatch_t), pointer:: patch
+  !-----------------------------------------------------------------------------
+  call trace%begin ('sink_t%post_update')
+  call self%check_refine (patch)
+  call self%accrete (patch)
   call trace%end ()
 END SUBROUTINE post_update
 
@@ -434,9 +433,9 @@ END SUBROUTINE post_update
 !> Update sink task
 !===============================================================================
 SUBROUTINE output (self)
-  class(sinks_t):: self
+  class(sink_t):: self
   !-----------------------------------------------------------------------------
-  call trace%begin ('sinks_t%output')
+  call trace%begin ('sink_t%output')
   if (.not.associated(self%mass_p)) then
     allocate (self%mass_p, self%pos_p(3), self%vel_p(3))
     self%mass_p = self%mass
@@ -449,5 +448,19 @@ SUBROUTINE output (self)
   call trace%end ()
 END SUBROUTINE output
 
+!===============================================================================
+!> Force towards sink position
+!===============================================================================
+FUNCTION force (self, position)
+  class(sink_t):: self
+  real(8):: position(3)
+  real:: force(3), dist(3), dist2
+  !-----------------------------------------------------------------------------
+  call trace%begin ('sink_t%force')
+  dist = self%patch%point_distance (self%position, position)
+  dist2 = sum(dist**2)
+  force = self%mass*scaling%grav*dist/dist2/sqrt(dist2)
+  call trace%end ()
+END FUNCTION force
 
-END MODULE sinks_mod
+END MODULE sink_mod
