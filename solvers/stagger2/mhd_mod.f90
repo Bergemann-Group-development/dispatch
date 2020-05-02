@@ -70,7 +70,7 @@ CONTAINS
 SUBROUTINE pre_init (self)
   class(mhd_t), target:: self
   type(index_t):: idx
-  integer:: i, iv
+  integer:: i, iv, iostat
   real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], csound=1.0, cdtd=0.5, courant=0.2
   real(8), save:: gamma=1.4_8
   logical, save:: first_time=.true.
@@ -80,21 +80,23 @@ SUBROUTINE pre_init (self)
     do_smooth, unsigned, do_maxwell, do_temperature, verbose, divb_cleaner, &
     do_test
   !----------------------------------------------------------------------------
-  call trace%begin('mhd_t%pre_init')
-  call io%lock%set
+  call trace%begin ('mhd_t%pre_init')
+  call io%lock%set ('mhd_t%pre_init')
   if (first_time) then
     first_time = .false.
     eos = self%eos
     mhd = self%mhd
     rewind (io%input)
-    read (io%input, stagger_params)
-    if (io%master) write (*, stagger_params)
+    read (io%input, stagger_params, iostat=iostat)
+    call io%namelist_warning ('stagger_params', iostat)
+    write (io%output, stagger_params)
+    write (io%namelist, stagger_params)
     call non_ideal%init
     call timestep%init
     ! fool-proofing
     if (timestep%time_order <= 0) call mpi%abort("The Stagger solvers require `time_order` > 0. Abort!")
   end if
-  call io%lock%unset
+  call io%lock%unset ('mhd_t%pre_init')
   self%eos = eos
   self%mhd = mhd
   self%nu = nu
@@ -103,27 +105,8 @@ SUBROUTINE pre_init (self)
   self%courant = courant
   self%cdtd = cdtd
   !-----------------------------------------------------------------------------
-  ! Read IC parameters, which determine if this is HD or MHD.  The IC init is
-  ! called again, from extras_t%init, when gamma is known and can be passed on.
+  ! Choose div(B) cleaner
   !-----------------------------------------------------------------------------
-  self%initial%mhd = self%mhd
-  call self%initial%init (self%kind, real(self%gamma))
-  self%mhd = self%initial%mhd
-  if (self%mhd) then
-    self%kind = 'stagger2_mhd_patch'
-  else
-    self%kind = 'stagger2_hd_patch'
-  end if
-  if (self%nv == 0) then
-    if (self%mhd) then
-      self%nv = 8
-    else
-      self%nv = 5
-    end if
-  else
-    self%nv = self%nv + 5
-    if (self%mhd) self%nv = self%nv + 3
-  end if
   select case(divb_cleaner)
   case(1)
     self%divb_clean => divb_clean1
@@ -132,7 +115,26 @@ SUBROUTINE pre_init (self)
   case default
     call io%abort('mhd_mod:: divb cleaner method not understood')
   end select
-  call self%idx%init (5, self%mhd)
+  !-----------------------------------------------------------------------------
+  ! Read IC parameters, which determine if this is HD or MHD.  The IC init is
+  ! called again, from extras_t%init, when gamma is known and can be passed on.
+  !-----------------------------------------------------------------------------
+  self%initial%mhd = self%mhd
+  call self%initial%init (self%kind, real(self%gamma))
+  self%mhd = self%initial%mhd
+  if (self%mhd) then
+    self%kind = 'stagger2e_mhd_patch'
+    self%nv = 8
+  else
+    self%kind = 'stagger2e_hd_patch'
+    self%nv = 5
+  end if
+  self%nw = 2
+  call self%idx%init (is=5, mhd=self%mhd)
+  !-----------------------------------------------------------------------------
+  ! Call extras pre-init
+  !-----------------------------------------------------------------------------
+  call self%extras_t%pre_init
   call trace%end()
 END SUBROUTINE pre_init
 
@@ -143,15 +145,12 @@ END SUBROUTINE pre_init
 SUBROUTINE init (self)
   class(mhd_t):: self
   integer :: i
-  logical, save:: first_time=.true.
   ! ----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
-  !-----------------------------------------------------------------------------
-  ! Allocate memory and mesh, etc
-  !-----------------------------------------------------------------------------
-  call self%idx%init (5,self%mhd)
   call self%patch_t%init
   self%type = 'mhd_t'
+  self%unsigned(self%idx%d)  = unsigned
+  self%pervolume(self%idx%s) = unsigned
   do i=1,3
     self%mesh(i)%h(self%idx%px+i-1) = -0.5
     if (self%mhd) self%mesh(i)%h(self%idx%bx+i-1) = -0.5
@@ -161,24 +160,17 @@ SUBROUTINE init (self)
       print '("h:",8f5.2)', self%mesh(i)%h
     end do
   end if
-  self%unsigned(self%idx%d)  = unsigned
-  self%pervolume(self%idx%s) = unsigned
-  !-----------------------------------------------------------------------------
-  ! Now the setup is complete enough to call gpatch_t%init, for possible ICs
-  !-----------------------------------------------------------------------------
   call self%gpatch_t%init
+  call self%extras_t%init
   !-----------------------------------------------------------------------------
   ! Self tests, only on one thread
   !-----------------------------------------------------------------------------
-  !$omp critical (test_cr)
-  if (first_time) then
-    first_time = .false.
-    if (do_test) then
-      call stagger_test
-      call self%test
-    end if
+  if (do_test) then
+    !$omp single
+    call stagger_test
+    call self%test
+    !$omp end single
   end if
-  !$omp end critical (test_cr)
   call trace%end()
 END SUBROUTINE init
 
@@ -196,7 +188,7 @@ SUBROUTINE test (self)
   allocate (tmp)
   tmp%nv = self%nv
   tmp%mhd = self%mhd
-  call tmp%idx%init (5, tmp%mhd)
+  call tmp%idx%init (is=5, mhd=tmp%mhd)
   call tmp%patch_t%init
   n0 = 2*(tmp%ncell/2)
   if (any(tmp%n /= n0)) then
@@ -310,19 +302,38 @@ SUBROUTINE pde (self)
   real:: u_max
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%pde',itimer=itimer)
+  call io%assert ((self%nw == 2), &
+    'mhd_t%pde: memory slot for time derivatives missing')
   associate (i => self%idx)
-  self%d => self%mem(:,:,:,i%d      ,self%it,1); self%dddt => self%mem(:,:,:,i%d      ,self%it,2)
-  self%s => self%mem(:,:,:,i%s      ,self%it,1); self%dsdt => self%mem(:,:,:,i%s      ,self%it,2)
-  self%p => self%mem(:,:,:,i%px:i%pz,self%it,1); self%dpdt => self%mem(:,:,:,i%px:i%pz,self%it,2)
-  d=>self%d; dddt=>self%dddt; s=>self%s; dsdt=>self%dsdt;
-  p=>self%p; dpdt=>self%dpdt
-  px=>p(:,:,:,1); py=>p(:,:,:,2); pz=>p(:,:,:,3);
-  dpdtx=>dpdt(:,:,:,1); dpdty=>dpdt(:,:,:,2); dpdtz=>dpdt(:,:,:,3);
+  self%d    => self%mem(:,:,:,i%d      ,self%it,1)
+  self%s    => self%mem(:,:,:,i%s      ,self%it,1)
+  self%p    => self%mem(:,:,:,i%px:i%pz,self%it,1)
+  self%dddt => self%mem(:,:,:,i%d      ,self%it,2)
+  self%dsdt => self%mem(:,:,:,i%s      ,self%it,2)
+  self%dpdt => self%mem(:,:,:,i%px:i%pz,self%it,2)
+  d     => self%d
+  s     => self%s
+  p     => self%p
+  dddt  => self%dddt
+  dsdt  => self%dsdt
+  dpdt  => self%dpdt
+  px    => p(:,:,:,1)
+  py    => p(:,:,:,2)
+  pz    => p(:,:,:,3)
+  dpdtx => dpdt(:,:,:,1)
+  dpdty => dpdt(:,:,:,2)
+  dpdtz => dpdt(:,:,:,3)
   if (self%mhd) then
-    self%B => self%mem(:,:,:,i%bx:i%bz,self%it,1); self%dBdt => self%mem(:,:,:,i%bx:i%bz,self%it,2)
-    B=>self%B; dBdt=>self%dBdt
-    Bx=>B(:,:,:,1); By=>B(:,:,:,2); Bz=>B(:,:,:,3);
-    dBdtx=>dBdt(:,:,:,1); dBdty=>dBdt(:,:,:,2); dBdtz=>dBdt(:,:,:,3);
+    self%B    => self%mem(:,:,:,i%bx:i%bz,self%it,1)
+    self%dBdt => self%mem(:,:,:,i%bx:i%bz,self%it,2)
+    B     => self%B
+    dBdt  => self%dBdt
+    Bx    => B(:,:,:,1)
+    By    => B(:,:,:,2)
+    Bz    => B(:,:,:,3)
+    dBdtx => dBdt(:,:,:,1)
+    dBdty => dBdt(:,:,:,2)
+    dBdtz => dBdt(:,:,:,3);
   end if
   end associate
   call allocate_vectors_a (self%gn, ld, dd, emf, J, fd, fx, fy, fz, fm)
@@ -335,15 +346,21 @@ SUBROUTINE pde (self)
     call allocate_scalars (self%gn, pg)
     call allocate_vectors (self%gn, U)
   end if
-  Ux=>U(:,:,:,1); Uy=>U(:,:,:,2); Uz=>U(:,:,:,3)
-  Ex=>emf(:,:,:,1); Ey=>emf(:,:,:,2); Ez=>emf(:,:,:,3)
-  Jx=>J(:,:,:,1); Jy=>J(:,:,:,2); Jz=>J(:,:,:,3)
-  fxx=>fx(:,:,:,1); fxy=>fx(:,:,:,2)
-                    fyy=>fy(:,:,:,2); fyz=>fy(:,:,:,3)
-  fzx=>fz(:,:,:,1);                   fzz=>fz(:,:,:,3)
-  fdx=>fd(:,:,:,1); fdy=>fd(:,:,:,2); fdz=>fd(:,:,:,3)
-  ldx=>ld(:,:,:,1); ldy=>ld(:,:,:,2); ldz=>ld(:,:,:,3)
-  ddx=>dd(:,:,:,1); ddy=>dd(:,:,:,2); ddz=>dd(:,:,:,3)
+  Ux => U(:,:,:,1)
+  Uy => U(:,:,:,2)
+  Uz => U(:,:,:,3)
+  Ex => emf(:,:,:,1)
+  Ey => emf(:,:,:,2)
+  Ez => emf(:,:,:,3)
+  Jx => J(:,:,:,1)
+  Jy => J(:,:,:,2)
+  Jz => J(:,:,:,3)
+  fxx => fx(:,:,:,1); fxy => fx(:,:,:,2)
+                    fyy => fy(:,:,:,2); fyz => fy(:,:,:,3)
+  fzx => fz(:,:,:,1);                   fzz => fz(:,:,:,3)
+  fdx => fd(:,:,:,1); fdy => fd(:,:,:,2); fdz => fd(:,:,:,3)
+  ldx => ld(:,:,:,1); ldy => ld(:,:,:,2); ldz => ld(:,:,:,3)
+  ddx => dd(:,:,:,1); ddy => dd(:,:,:,2); ddz => dd(:,:,:,3)
   !-----------------------------------------------------------------------------
   ! Compute velocity U=momentum/density, leaving down shifted density and log
   ! density for reuse below.  U is valid in (2:gn)

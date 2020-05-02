@@ -45,6 +45,7 @@ MODULE mhd_mod
     logical:: first_time=.true.
   contains
     procedure:: pre_init
+    procedure:: test
     procedure:: init
     procedure:: pde
     procedure:: pre_update
@@ -69,7 +70,7 @@ CONTAINS
 SUBROUTINE pre_init (self)
   class(mhd_t), target:: self
   type(index_t):: idx
-  integer:: i, iv
+  integer:: i, iv, iostat
   real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], csound=1.0, cdtd=0.5, courant=0.2
   real(8), save:: gamma=1.4_8
   logical, save:: first_time=.true.
@@ -86,8 +87,10 @@ SUBROUTINE pre_init (self)
     eos = self%eos
     mhd = self%mhd
     rewind (io%input)
-    read (io%input, stagger_params)
-    if (io%master) write (*, stagger_params)
+    read (io%input, stagger_params, iostat=iostat)
+    call io%namelist_warning ('stagger_params', iostat)
+    write (io%output, stagger_params)
+    write (io%namelist, stagger_params)
     call non_ideal%init
     call timestep%init
     ! fool-proofing
@@ -159,8 +162,116 @@ SUBROUTINE init (self)
   end if
   call self%gpatch_t%init
   call self%extras_t%init
+  !-----------------------------------------------------------------------------
+  ! Self tests, only on one thread
+  !-----------------------------------------------------------------------------
+  if (do_test) then
+    !$omp single
+    call stagger_test
+    call self%test
+    !$omp end single
+  end if
   call trace%end()
 END SUBROUTINE init
+
+!===============================================================================
+SUBROUTINE test (self)
+  class(mhd_t):: self
+  integer      :: ix, iy, iz, m(3), n(3), n0(3), i1
+  real         :: fx, fy, fz, eps
+  logical      :: ok, allok
+  class(mhd_t), pointer:: tmp
+  !-----------------------------------------------------------------------------
+  ! Allocate mem to a temporary patch
+  !-----------------------------------------------------------------------------
+  call trace%begin('mhd_t%test')
+  allocate (tmp)
+  tmp%nv = self%nv
+  tmp%mhd = self%mhd
+  call tmp%idx%init (ie=5, mhd=tmp%mhd)
+  call tmp%patch_t%init
+  n0 = 2*(tmp%ncell/2)
+  if (any(tmp%n /= n0)) then
+    print *,io%hs
+    print *, 'mhd_t%test not possible with n, no_mans_land =', tmp%n, tmp%no_mans_land
+    print *,io%hs
+    call tmp%dealloc
+    call trace%end()
+    return
+  end if
+  !-----------------------------------------------------------------------------
+  ! Give it initial values (linear compression), also in the guard zones
+  !-----------------------------------------------------------------------------
+  do iz=tmp%mesh(3)%lb,tmp%mesh(3)%ub
+    fz = sin(4.*cgs%pi*tmp%mesh(3)%r(iz)/tmp%size(3))
+    do iy=tmp%mesh(2)%lb,tmp%mesh(2)%ub
+      fy = sin(4.*cgs%pi*tmp%mesh(2)%r(iy)/tmp%size(2))
+      do ix=tmp%mesh(1)%lb,tmp%mesh(1)%ub
+        fx = sin(4.*cgs%pi*tmp%mesh(1)%r(ix)/tmp%size(1))
+        tmp%mem(ix,iy,iz,tmp%idx%d,tmp%it,1) = 1.0+0.1*(fx+fy+fz)
+        tmp%mem(ix,iy,iz,tmp%idx%s,tmp%it,1) = 0.1*(fx+fy+fz)
+        tmp%mem(ix,iy,iz,tmp%idx%px,tmp%it,1) = fx
+        tmp%mem(ix,iy,iz,tmp%idx%py,tmp%it,1) = fy
+        tmp%mem(ix,iy,iz,tmp%idx%pz,tmp%it,1) = fz
+        if (tmp%mhd) then
+          tmp%mem(ix,iy,iz,tmp%idx%bx,tmp%it,1) = fy
+          tmp%mem(ix,iy,iz,tmp%idx%by,tmp%it,1) = fz
+          tmp%mem(ix,iy,iz,tmp%idx%bz,tmp%it,1) = fx
+        end if
+      end do
+    end do
+  end do
+  !-----------------------------------------------------------------------------
+  ! Evaluate the PDE and print the time derivatives (which are placed in the 2nd
+  ! time slot and the 2nd variable slot)
+  !-----------------------------------------------------------------------------
+  call tmp%pde
+  m = (1+tmp%gn)/2
+  allok = .true.
+  eps = 3e-6/minval(tmp%ds)
+  print *,io%hl
+  print *,'minval(ds), eps =', minval(tmp%ds), eps
+  n = nint(tmp%size*0.5_8/tmp%ds)
+  do ix=tmp%mesh(1)%li,tmp%mesh(1)%ui
+    i1 = mod(ix-tmp%mesh(1)%li+n(1),2*n(1)) + tmp%mesh(1)%li
+    ok = all(abs(tmp%mem(ix,m(2),m(3),1:5,tmp%it,2)- &
+                 tmp%mem(i1,m(2),m(3),1:5,tmp%it,2)) < eps)
+    allok = allok .and. ok
+    if (io%verbose>0 .or. io_unit%do_validate .or. .not.ok) &
+      print 1,ix,tmp%mem(ix,m(2),m(3),1:5,tmp%it,2), &
+                 tmp%mem(i1,m(2),m(3),1:5,tmp%it,2)
+    1 format("mhd_t%test:",i4,1p,2(2x,5e14.5))
+  end do
+  do iy=tmp%mesh(2)%li,tmp%mesh(2)%ui
+    i1 = mod(iy-tmp%mesh(2)%li+n(2),2*n(2)) + tmp%mesh(2)%li
+    ok = all(abs(tmp%mem(m(1),iy,m(3),1:5,tmp%it,2)- &
+                 tmp%mem(m(1),i1,m(3),1:5,tmp%it,2)) < eps)
+    allok = allok .and. ok
+    if (io%verbose>0 .or. io_unit%do_validate .or. .not.ok) &
+      print 1,iy,tmp%mem(m(1),iy,m(3),1:5,tmp%it,2), &
+                 tmp%mem(m(1),i1,m(3),1:5,tmp%it,2)
+  end do
+  do iz=tmp%mesh(3)%li,tmp%mesh(3)%ui
+    i1 = mod(iz-tmp%mesh(3)%li+n(3),2*n(3)) + tmp%mesh(3)%li
+    ok = all(abs(tmp%mem(m(1),m(2),iz,1:5,tmp%it,2)- &
+                 tmp%mem(m(1),m(2),i1,1:5,tmp%it,2)) < eps)
+    allok = allok .and. ok
+    if (io%verbose>0 .or. io_unit%do_validate .or. .not.ok) &
+      print 1,iz,tmp%mem(m(1),m(2),iz,1:5,tmp%it,2), &
+                 tmp%mem(m(1),m(2),i1,1:5,tmp%it,2)
+  end do
+  if (allok) then
+    print *,'mhd_t%test passed'
+    print *,io%hl
+  else
+    print *,'mhd_t%test failed'
+    print *,io%hl
+    call io%abort('mhd_t%test')
+  end if
+  call tmp%dealloc
+  deallocate (tmp)
+  call trace%end()
+END SUBROUTINE test
 
 !===============================================================================
 SUBROUTINE pde (self)
@@ -192,23 +303,38 @@ SUBROUTINE pde (self)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%pde',itimer=itimer)
-  if (self%nw < 2) then
-    write (stderr,*) 'self%nw =', self%nw
-    call io%abort ('memory slot for time derivatives missing')
-  end if
+  call io%assert (self%nw == 2, &
+    'mhd_t%pde: memory slot for time derivatives missing')
   associate (i => self%idx)
-  self%d => self%mem(:,:,:,i%d      ,self%it,1); self%dddt => self%mem(:,:,:,i%d      ,self%it,2)
-  self%e => self%mem(:,:,:,i%e      ,self%it,1); self%dedt => self%mem(:,:,:,i%e      ,self%it,2)
-  self%p => self%mem(:,:,:,i%px:i%pz,self%it,1); self%dpdt => self%mem(:,:,:,i%px:i%pz,self%it,2)
-  d=>self%d; dddt=>self%dddt; e=>self%e; dedt=>self%dedt;
-  p=>self%p; dpdt=>self%dpdt
-  px=>p(:,:,:,1); py=>p(:,:,:,2); pz=>p(:,:,:,3);
-  dpdtx=>dpdt(:,:,:,1); dpdty=>dpdt(:,:,:,2); dpdtz=>dpdt(:,:,:,3);
+  self%d    => self%mem(:,:,:,i%d      ,self%it,1)
+  self%e    => self%mem(:,:,:,i%e      ,self%it,1)
+  self%p    => self%mem(:,:,:,i%px:i%pz,self%it,1)
+  self%dddt => self%mem(:,:,:,i%d      ,self%it,2)
+  self%dedt => self%mem(:,:,:,i%e      ,self%it,2)
+  self%dpdt => self%mem(:,:,:,i%px:i%pz,self%it,2)
+  d     => self%d
+  e     => self%e
+  p     => self%p
+  dddt  => self%dddt
+  dedt  => self%dedt
+  dpdt  => self%dpdt
+  px    => p(:,:,:,1)
+  py    => p(:,:,:,2)
+  pz    => p(:,:,:,3)
+  dpdtx => dpdt(:,:,:,1)
+  dpdty => dpdt(:,:,:,2)
+  dpdtz => dpdt(:,:,:,3)
   if (self%mhd) then
-    self%B => self%mem(:,:,:,i%bx:i%bz,self%it,1); self%dBdt => self%mem(:,:,:,i%bx:i%bz,self%it,2)
-    B=>self%B; dBdt=>self%dBdt
-    Bx=>B(:,:,:,1); By=>B(:,:,:,2); Bz=>B(:,:,:,3);
-    dBdtx=>dBdt(:,:,:,1); dBdty=>dBdt(:,:,:,2); dBdtz=>dBdt(:,:,:,3);
+    self%B    => self%mem(:,:,:,i%bx:i%bz,self%it,1)
+    self%dBdt => self%mem(:,:,:,i%bx:i%bz,self%it,2)
+    B     => self%B
+    dBdt  => self%dBdt
+    Bx    => B(:,:,:,1)
+    By    => B(:,:,:,2)
+    Bz    => B(:,:,:,3)
+    dBdtx => dBdt(:,:,:,1)
+    dBdty => dBdt(:,:,:,2)
+    dBdtz => dBdt(:,:,:,3);
   end if
   end associate
   call allocate_vectors_a (self%gn, ld, dd, emf, J, fd, fx, fy, fz, fm)
@@ -221,15 +347,21 @@ SUBROUTINE pde (self)
     call allocate_scalars (self%gn, pg)
     call allocate_vectors (self%gn, U)
   end if
-  Ux=>U(:,:,:,1); Uy=>U(:,:,:,2); Uz=>U(:,:,:,3)
-  Ex=>emf(:,:,:,1); Ey=>emf(:,:,:,2); Ez=>emf(:,:,:,3)
-  Jx=>J(:,:,:,1); Jy=>J(:,:,:,2); Jz=>J(:,:,:,3)
-  fxx=>fx(:,:,:,1); fxy=>fx(:,:,:,2)
-                    fyy=>fy(:,:,:,2); fyz=>fy(:,:,:,3)
-  fzx=>fz(:,:,:,1);                   fzz=>fz(:,:,:,3)
-  fdx=>fd(:,:,:,1); fdy=>fd(:,:,:,2); fdz=>fd(:,:,:,3)
-  ldx=>ld(:,:,:,1); ldy=>ld(:,:,:,2); ldz=>ld(:,:,:,3)
-  ddx=>dd(:,:,:,1); ddy=>dd(:,:,:,2); ddz=>dd(:,:,:,3)
+  Ux => U(:,:,:,1)
+  Uy => U(:,:,:,2)
+  Uz => U(:,:,:,3)
+  Ex => emf(:,:,:,1)
+  Ey => emf(:,:,:,2)
+  Ez => emf(:,:,:,3)
+  Jx => J(:,:,:,1)
+  Jy => J(:,:,:,2)
+  Jz => J(:,:,:,3)
+  fxx => fx(:,:,:,1); fxy => fx(:,:,:,2)
+                    fyy => fy(:,:,:,2); fyz => fy(:,:,:,3)
+  fzx => fz(:,:,:,1);                   fzz => fz(:,:,:,3)
+  fdx => fd(:,:,:,1); fdy => fd(:,:,:,2); fdz => fd(:,:,:,3)
+  ldx => ld(:,:,:,1); ldy => ld(:,:,:,2); ldz => ld(:,:,:,3)
+  ddx => dd(:,:,:,1); ddy => dd(:,:,:,2); ddz => dd(:,:,:,3)
   !-----------------------------------------------------------------------------
   ! Compute velocity U=momentum/density, leaving down shifted density and log
   ! density for reuse below.  U is valid in (2:gn)
