@@ -121,10 +121,10 @@ SUBROUTINE pre_init (self)
   !.............................................................................
   call trace%begin ('extras_t%pre_init')
   self%gpatch => self
-  call self%selfgravity%pre_init(self%gpatch)                           ! selfg
-  call self%cooling%pre_init(self%gpatch)                               ! cool
-  call self%forces%pre_init(self%gpatch)
-  call mesa%pre_init (self%gpatch)                              ! sinks
+  call self%selfgravity%pre_init(self%gpatch)                          ! selfg
+  call self%forces%pre_init(self%gpatch)                               ! forcces
+  call self%cooling%pre_init (self%gpatch)                             ! cool 
+  call mesa%pre_init (self%gpatch)                                     ! sinks
   call trace%end()
 END SUBROUTINE pre_init
 
