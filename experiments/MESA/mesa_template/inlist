@@ -1,46 +1,125 @@
 
 &star_job
+      show_log_description_at_start = .false.
+      warn_run_star_extras = .false.
 
-      !mesa_dir = '/software/astro/mesa/code/mesa-r12115'
+      kappa_lowT_prefix = 'lowT_Freedman11'
 
-      read_extra_star_job_inlist2 = .true.
-      extra_star_job_inlist2_name = '/software/astro/mesa/code/mesa-r12115/star/inlist_massive_defaults'
+      set_uniform_initial_composition = .true.
+      initial_h1 = 0.70
+      initial_h2 = 2e-5
+      initial_he3 = 2.98e-5
+      initial_he4 = 0.28
+      
+      h_he_net = 'pp_extras.net'
 
-      read_extra_star_job_inlist3 = .true.
-      extra_star_job_inlist3_name = 'inlist_common'
+      change_v_flag = .true.
+      new_v_flag = .true.
 
-      read_extra_star_job_inlist4 = .true.
-      extra_star_job_inlist4_name = 'inlist_to_zams'
+      logT_for_conv_vel_flag = 8.5d0
 
+      create_pre_main_sequence_model = .true.
+      report_retries = .true.
 / ! end of star_job namelist
 
 
 &controls
+      photo_interval = 0
+      history_interval = 1
+      profile_interval = 0
+      terminal_interval = 1
+      warn_when_large_rel_run_E_err = 1d-1
+      !report_why_dt_limits = .true.
 
-      read_extra_controls_inlist1 = .true.
-      extra_controls_inlist1_name = '/software/astro/mesa/code/mesa-r12115/star/inlist_massive_defaults'
+      use_dedt_form_of_energy_eqn = .true.
+      min_energy_for_dedt_form_of_energy_eqn = 1d13
 
-      read_extra_controls_inlist2 = .true.
-      extra_controls_inlist2_name = 'inlist_set_alpha_mlt'
+      ignore_too_large_correction = .true. ! for conv_vel's
 
-      read_extra_controls_inlist3 = .true.
-      extra_controls_inlist3_name = 'inlist_common'
+      !limit_for_rel_error_in_energy_conservation = 1d-4
+      !hard_limit_for_rel_error_in_energy_conservation = 1d-3
 
-      read_extra_controls_inlist4 = .true.
-      extra_controls_inlist4_name = 'inlist_to_zams'
+      !----- Make sure we use a network with deuterium for proper PMS evolution -------
+      default_net_name = 'pp_extras.net'
 
+      !----- Accrete at a given metallicity. Same as initial composition -------
+      accrete_same_as_surface = .false.
+      accretion_h1 = 0.70 ! mass fraction
+      accretion_h2 = 2e-5 ! if no h2 in current net, then this is automatically added to h1
+      accretion_he3 = 2.98E-5
+      accretion_he4 = 0.28
+      accretion_zfracs = 3
+
+      !---------------------------
+      ! limit for change in mdot
+      delta_mdot_atol = 1d-5 ! Msun/yr --- tolerance for absolute changes
+      delta_mdot_rtol = 3.0 ! tolerance for relative changes
+
+      velocity_logT_lower_bound = 8 
+      max_dt_yrs_for_velocity_logT_lower_bound = 0.1
+ 
+      dX_nuc_drop_limit = 5d-2
+      dX_nuc_drop_limit_at_high_T = 5d-3 ! for center logT > 9.45
+
+      
+      delta_Ye_highT_limit = 1d-3
+
+      okay_to_reduce_gradT_excess = .true. 
+         
+      gradT_excess_f1 = 1d-4
+      gradT_excess_f2 = 1d-2
+      gradT_excess_age_fraction = 0.9d0
+
+      gradT_excess_lambda1 = 1.0
+      gradT_excess_beta1 = 0.35
+      
+      gradT_excess_lambda2 = 0.5
+      gradT_excess_beta2 = 0.25
+      
+      gradT_excess_dlambda = 0.1
+      gradT_excess_dbeta = 0.1
+
+      use_other_alpha_mlt = .true.
+      x_ctrl(21) = 3.0 ! alpha_H
+      x_ctrl(22) = 1.5 ! alpha_other
+      x_ctrl(23) = 0.5 ! H_limit 
+         ! use alpha_H if cell X >= H_limit; else use alpha_other
+
+      overshoot_scheme(1) = 'exponential'
+      overshoot_zone_type(1) = 'any'
+      overshoot_zone_loc(1) = 'any'
+      overshoot_bdy_loc(1) = 'any'
+      overshoot_f(1) = 0.010
+      overshoot_f0(1) = 0.004
+
+      when_to_stop_rtol = 1d-3
+      when_to_stop_atol = 1d-3
+
+      !hot_wind_full_on_T = 1d0
+      !cool_wind_full_on_T = 0d0
+      hot_wind_scheme = 'Dutch'
+      Dutch_wind_lowT_scheme = 'de Jager'
+
+      am_nu_visc_factor = 0
+      am_D_mix_factor = 0.0333333333333333d00
+      D_DSI_factor = 0
+      D_SH_factor = 1
+      D_SSI_factor = 1
+      D_ES_factor = 1
+      D_GSF_factor = 1
+      D_ST_factor = 1
+
+      he_core_boundary_h1_fraction = 0.5
+      c_core_boundary_he4_fraction = 0.5
+      o_core_boundary_c12_fraction = 0.5
+      si_core_boundary_o16_fraction = 0.5
+
+      ignore_too_large_correction = .true. ! for conv_vel's
+
+      xa_central_lower_limit_species(1) = 'he4'
+      xa_central_lower_limit(1) = 1d-6
 / ! end of controls namelist
 
 
 &pgstar
-
-      read_extra_pgstar_inlist1 = .true.
-      extra_pgstar_inlist1_name = '/software/astro/mesa/code/mesa-r12115/star/inlist_massive_defaults'
-
-      read_extra_pgstar_inlist2 = .true.
-      extra_pgstar_inlist2_name = 'inlist_common'
-
-      read_extra_pgstar_inlist3 = .true.
-      extra_pgstar_inlist3_name = 'inlist_to_zams'
-
 / ! end of pgstar namelist

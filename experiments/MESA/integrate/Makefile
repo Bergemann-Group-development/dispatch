@@ -7,6 +7,7 @@ OPTS = debug
 #OPTS = optimized_diagnostics
 
 # Default target and methods
+UPD             = adams_bashforth
 #PATCH           = dispatchers
 SOLVER          = ramses/hydro
 #SOLVER          = ramses/mhd

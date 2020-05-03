@@ -66,7 +66,9 @@
             acc_hist%time=age
             acc_len = 1
             call read_next ! read first
-            s% dt_next = min(min(acc_hist(acc_len)% time,next_save) - age, s% dt_next)
+            s% dt_next = min(acc_hist(acc_len)% time-s%time, &
+                             next_save-s%time, &
+                             s% dt_next)
          end subroutine init
 
          integer function extras_finish_step(id)
@@ -74,10 +76,10 @@
             integer :: ierr
             type (star_info), pointer :: s
             real(dp) :: unbounded_dt = 0;
-            logical :: step_forced;
+            logical :: step_forced
             step_forced = .false.
             call star_ptr(id, s, ierr)
-            
+
             ! handle save point
             if (s% time >= next_save) then
                call star_write_model(id, model_path, ierr)
@@ -93,7 +95,7 @@
             !write(*,*) s%time, acc_hist(acc_len)% time, next_save, s% dt_next, unbounded_dt, step_forced
             ! Ensure resetting dt_next after artificially short steps
             if (step_forced) then
-               s% dt_next = unbounded_dt
+               s% dt_next = unbounded_dt * s% max_timestep_factor
             else
                unbounded_dt = s% dt_next
             end if
@@ -217,7 +219,7 @@
          logical :: sync_point
          namelist /query/ accretion, sync_point, next_save, model_path
          
-   100   read (read_unit,query)
+   100   read(read_unit,query)
          ! if add accretion to list
          acc_len = acc_len + 1
          ! If no more capacity in accretion_hist, resize using doubling strategy

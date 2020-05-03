@@ -121,7 +121,8 @@ SUBROUTINE pre_init (self)
   !.............................................................................
   call trace%begin ('extras_t%pre_init')
   self%gpatch => self
-  call self%selfgravity%pre_init(self%gpatch)                          ! selfg
+  call self%selfgravity%pre_init(self%gpatch)                           ! selfg
+  call self%cooling%pre_init(self%gpatch)                               ! cool
   call self%forces%pre_init(self%gpatch)
   call mesa%pre_init (self%gpatch)                              ! sinks
   call trace%end()
@@ -135,7 +136,6 @@ SUBROUTINE init (self)
   !.............................................................................
   call trace%begin ('extras_t%init')
   call self%forces%init                                         ! forces
-  call self%cooling%init                                        ! cool
   call mesa%init                                                ! sinks
   call trace%end()
 END SUBROUTINE init
@@ -177,7 +177,7 @@ SUBROUTINE pre_update (self)
   call trace%begin ('extras_t%pre_update')
   call self%forces%pre_update                                   ! forces
   call self%selfgravity%pre_update                              ! selfg
-  call self%cooling%pre_update (self%gpatch)                    ! cool
+  call self%cooling%pre_update                                  ! cool
   call mesa%pre_update (self%gpatch)                            ! sinks
   call trace%end()
 END SUBROUTINE pre_update
@@ -227,7 +227,7 @@ SUBROUTINE courant_condition (self, detailed_timer)
   !-----------------------------------------------------------------------------
   call trace%begin ('extras_t%courant_condition')
   call self%gpatch_t%courant_condition (detailed_timer)          ! keep
-  call self%cooling%courant_condition (self%gpatch)              ! cool
+  call self%cooling%courant_condition                            ! cool
   call trace%end()
 END SUBROUTINE courant_condition
 

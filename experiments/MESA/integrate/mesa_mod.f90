@@ -38,8 +38,8 @@ MODULE mesa_mod
     class(mesa_t):: self
     class(gpatch_t), pointer:: patch
     integer:: iostat
-    real :: mesa_threshhold_msun, mesa_min_mass_msun
-    namelist /mesa_params/ mesa_threshhold_msun, mesa_min_mass_msun
+    real :: mesa_threshhold_msun
+    namelist /mesa_params/ mesa_threshhold_msun
     call trace%begin ('mesa_t%pre_init')
     call self%sinks_t%pre_init(patch)
     call io%lock%set
@@ -47,7 +47,6 @@ MODULE mesa_mod
       rewind (io%input)
       read (io%input, mesa_params, iostat=iostat)
       mesa_threshhold = mesa_threshhold_msun * cgs%m_sun/ scaling%m
-      mesa_min_mass   = mesa_min_mass_msun   * cgs%m_sun/ scaling%m
       call io%namelist_warning ('sinks_params', iostat)
       write (io%output, mesa_params)
       write (io%namelist, mesa_params)
@@ -56,6 +55,9 @@ MODULE mesa_mod
     call io%lock%unset
     !-----------------------------------------------------------------------------
     call trace%end ()
+
+    !TODO: initialize MESA model from mesa_threshhold-deltaM with log(mdot)=-6.5
+    ! and then save. Thereby the startup cost will will be severely reduced
   END SUBROUTINE pre_init
 
   SUBROUTINE post_update (self, patch)
@@ -70,7 +72,8 @@ MODULE mesa_mod
     if (self%mass > mesa_threshhold .and. patch%contains(self%position) .and. .not. self%exploded) then
       if (.not.self%mesa_simulated) then
         call self%start_mesa
-      else
+      end if
+      if (self%time>self%last_time) then
         !!! insert criteria for when to submit data here !!!
         write (filename,'("../../",a,i5.5,"/sink_",i5.5)') trim(io%outputname), patch%iout, self%id;
         call self%send_accrection(.true., patch% out_next*scaling%t, filename)
@@ -96,12 +99,12 @@ MODULE mesa_mod
   !$omp critical
     ! todo: Handle case where masa_processes is not created, or where any files are locked
     call system("(rm -r "  // trim(self%folder) //  & ! Make sure folder is empty& !";mkdir " // trim(folder) //  & ! create folder
-                ";cp -r ../mesa_template "    // trim(self%folder) //  & ! cd to it so that this will be the working directory
-                ";cd "    // trim(self%folder) //  & ! cd to it so that this will be the working directory
+                ";mkdir "  // trim(self%folder) //  & ! cd to it so that this will be the working directory
+                ";cd "     // trim(self%folder) //  & ! cd to it so that this will be the working directory
                 ";mkfifo pipe1 pipe2" // & ! create the two pipes
-                ";./star &)") ! start mesa instance
+                ";../../../mesa_template/star ../../../mesa_template/inlist &)") ! start mesa instance
     open (newunit(self%write_unit), file=trim(self%folder) // 'pipe1', form='formatted', status='unknown', action='write')
-    open (newunit(self%read_unit), file=trim(self%folder) // 'pipe2', form='formatted', status='unknown', action='read')
+    open (newunit(self%read_unit),  file=trim(self%folder) // 'pipe2', form='formatted', status='unknown', action='read')
   !$OMP END CRITICAL
     
     ! Send startup data to MESA
@@ -109,7 +112,6 @@ MODULE mesa_mod
     age = self%time*scaling%t
     initial_mass = self%mass*scaling%m
     write(self%write_unit,startup)
-    write(*,startup)
 
     self%mesa_simulated=.true.
     self%last_mass = self%mass
@@ -127,23 +129,14 @@ MODULE mesa_mod
     real(8) :: next_save
     character(64) :: model_path
     type(acc_struct) :: accretion
-<<<<<<< HEAD
 
     namelist /query/ accretion, sync_point, next_save, model_path
-    next_save = next_save*scaling%t
-=======
-    character(*) :: path
-    character(256) :: photo_path
 
-    namelist /query/ accretion, sync_point, save_point, photo_path
-
-    photo_path = path
->>>>>>> cab3af90fcd1a6bc03651e71901d38121866fad1
     accretion%time = self%time*scaling%t
     accretion%mdot =  (self%mass-self%last_mass)*scaling%m/((self%time-self%last_time)*scaling%t)
     write(self%write_unit, query,DELIM="APOSTROPHE")
     write(*,query)
-
+    
     self%last_mass = self%mass
     self%last_time = self%time
   end subroutine send_accrection
