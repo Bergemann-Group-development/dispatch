@@ -14,15 +14,18 @@
 !> such as forcing and cooling, are called directly from here, in pre_update()
 !> or post_update() procedures.
 !>
-!> The call hierarchy involved in creating the sink task is:
+!> The call hierarchy creating the sink task and accreting to it is:
 !>   task_list%update
 !>     refine_t%check_current
 !>      refine_t%refine_needed
-!>        extras_t%check_refine
-!>          sink_t%check_refine
-!>            sink_t%create_sink
-!>            sink_t%create_task
-!>              task_list_t%append
+!>        extras_t%pre_update
+!>          sink_t%pre_update
+!>            sink_t%check
+!>              sink_t%create
+!>                sink_t%accrete
+!>                sink_t%add_task
+!>                  task_list_t%append
+!>              sink_t%accrete
 !>
 !> The extras_mod role in the patch update call hierarchy is:
 !>   experiment_t%update
@@ -36,7 +39,6 @@
 !> The call hierarchy involved in updating the sink task is:
 !>   task_list_t%update
 !>     sink_t%update
-!>       sink_t%accrete
 !===============================================================================
 
 MODULE extras_mod
@@ -148,6 +150,7 @@ SUBROUTINE pre_update (self)
   call self%forces%pre_update                                   ! forces
   call self%selfgravity%pre_update                              ! selfg
   call self%cooling%pre_update                                  ! cool
+  call self%sink%pre_update                                     ! sink
   !call self%sink%pre_update                                    ! sink
   call trace%end()
 END SUBROUTINE pre_update
@@ -183,7 +186,6 @@ INTEGER FUNCTION check_refine (self, patch)
   class(gpatch_t), pointer:: gpatch
   !.............................................................................
   gpatch => patch
-  call sink%check_refine (gpatch)                              ! sink
   check_refine = -1                                             ! keep
 END FUNCTION check_refine
 
