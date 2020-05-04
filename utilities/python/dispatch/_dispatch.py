@@ -382,7 +382,7 @@ def _var(patch,filed,snap,verbose=0,copy=None):
             return f
 
     def internal(v,all=False):
-        if all:
+        if all or len(v.shape) < 3 or min(v.shape) <= 4:
             return v
         elif patch.guard_zones:
             l=patch.ng
@@ -448,13 +448,13 @@ def _var(patch,filed,snap,verbose=0,copy=None):
 
         # Check if the index corresponds to a cached array
         if iv in patch.data.keys():
-                v=patch.data[iv]
+            v=patch.data[iv]
 
         # or an aux item
         elif iv in patch.aux.vars.keys():
-                print(iv,'in keys')
-                v=patch.aux.vars[iv]['v']
-                print(v.shape)
+            v=patch.aux.vars[iv]['v']
+            if verbose:
+                print(iv,'in keys',v.shape)
 
         # or a numeric index
         elif iv in patch.keys['numbers']:

@@ -33,6 +33,7 @@ MODULE aux_mod
     procedure:: new_item
     procedure, private:: register0i
     procedure, private:: register1i
+    procedure, private:: register2i
     procedure, private:: register0r
     procedure, private:: register1r
     procedure, private:: register2r
@@ -40,7 +41,8 @@ MODULE aux_mod
     procedure, private:: register4r
     generic:: register => &
       register0r, register1r, register2r, register3r, register4r, &
-      register0i, register1i
+      register0i, register1i, register2i
+    procedure:: list
     procedure:: output => output_aux
     procedure:: output_sequence
     procedure:: test
@@ -55,7 +57,8 @@ MODULE aux_mod
       c4(:,:,:,:) => null()
     integer, pointer:: &
       i0          => null(), &
-      i1(:)       => null()
+      i1(:)       => null(), &
+      i2(:,:)     => null()
     real, pointer:: &
       r0          => null(), &
       r1(:)       => null(), &
@@ -223,6 +226,7 @@ SUBROUTINE register0r (self, name, r)
     end do
   end if
   call trace%end()
+  call self%list
 END SUBROUTINE register0r
 
 !===============================================================================
@@ -230,7 +234,7 @@ SUBROUTINE register1i (self, name, i)
   class(aux_t)       :: self
   character(len=*)   :: name
   integer , pointer  :: i(:)
-  class(*), pointer  :: c(:)
+  !class(*), pointer  :: c(:)
   class(dll_node_t), pointer:: item
   !-----------------------------------------------------------------------------
   if (.not.io%do_output) return
@@ -261,6 +265,7 @@ SUBROUTINE register1i (self, name, i)
       item => item%next
     end do
   end if
+  call self%list
   call trace%end()
 END SUBROUTINE register1i
 
@@ -300,8 +305,49 @@ SUBROUTINE register1r (self, name, r)
       item => item%next
     end do
   end if
+  call self%list
   call trace%end()
 END SUBROUTINE register1r
+
+!===============================================================================
+SUBROUTINE register2i (self, name, i)
+  class(aux_t)       :: self
+  character(len=*)   :: name
+  integer , pointer  :: i(:,:)
+  !class(*), pointer  :: c(:,:)
+  class(dll_node_t), pointer:: item
+  !-----------------------------------------------------------------------------
+  if (.not.io%do_output) return
+  call trace%begin ('aux_t%register2i')
+  if (self%new_item (name)) then
+    allocate (item_t:: item)
+    select type (item)
+    class is (item_t)
+      item%rank = 2
+      item%name = name
+      item%i2 => i
+    end select
+    call self%append (item)
+    if (verbose > 0) &
+      write (io_unit%log,*) self%n, ' items registered'
+  else
+    item => self%head
+    do while (associated(item))
+      select type (item)
+      class is (item_t)
+        if (trim(item%name) == trim(name)) then
+          item%i2 => i
+          if (verbose > 1) &
+            write (io_unit%log,*) 'aux_io_t: re-registered(2i) '//name
+          exit
+        end if
+      end select
+      item => item%next
+    end do
+  end if
+  call self%list
+  call trace%end()
+END SUBROUTINE register2i
 
 !===============================================================================
 SUBROUTINE register2r (self, name, r)
@@ -338,6 +384,7 @@ SUBROUTINE register2r (self, name, r)
       item => item%next
     end do
   end if
+  call self%list
   call trace%end()
 END SUBROUTINE register2r
 
@@ -376,6 +423,7 @@ SUBROUTINE register3r (self, name, r)
       item => item%next
     end do
   end if
+  call self%list
   call trace%end()
 END SUBROUTINE register3r
 
@@ -425,6 +473,7 @@ SUBROUTINE register4r (self, name, r)
   else
     call io%warning ('aux_t%register4r called with pointer not associated')
   end if
+  call self%list
   call trace%end()
 END SUBROUTINE register4r
 
@@ -445,6 +494,7 @@ SUBROUTINE register1 (self, name, c)
     end select
     call self%append (item)
   end if
+  call self%list
 END SUBROUTINE register1
 
 !===============================================================================
@@ -464,7 +514,26 @@ SUBROUTINE register2 (self, name, c)
     end select
   call self%append (item)
   end if
+  call self%list
 END SUBROUTINE register2
+
+!===============================================================================
+!===============================================================================
+SUBROUTINE list (self)
+  class(aux_t):: self
+  class(dll_node_t), pointer:: item
+  !-----------------------------------------------------------------------------
+  if (verbose > 2) then
+    item => self%head
+    do while (associated(item))
+      select type (item)
+      class is (item_t)
+        write (io_unit%log,*) 'aux_io_t: '//trim(item%name)
+      end select
+      item => item%next
+    end do
+  end if
+END SUBROUTINE list
 
 !===============================================================================
 SUBROUTINE output_sequence (self, id, time, singlefile)
@@ -522,12 +591,13 @@ SUBROUTINE output_aux (self, iout, id, singlefile)
     return
   call trace%begin ('aux_t%output')
   call aux%lock%set ('output_aux')
+  call self%list
   !-----------------------------------------------------------------------------
   ! Once per snapshot, re-read the input namelist, to allow edits
   !-----------------------------------------------------------------------------
   if (iout > iout_prv) then
-    rewind (stdin)
-    read (stdin, aux_params, iostat=iostat)
+    rewind (io%input)
+    read (io%input, aux_params, iostat=iostat)
     iout_prv = iout
   end if
   !-----------------------------------------------------------------------------
@@ -561,10 +631,10 @@ SUBROUTINE output_aux (self, iout, id, singlefile)
         exit
       end if
     end do
+    if (verbose > 1 .or. iout > iout_prv) &
+      write (io_unit%log,'(a,a,2x,a,l3)') &
+        'aux_t%output: ', trim(filename), trim(item%name), ok
     if (ok) then
-      if (verbose > 1 .or. iout > iout_prv) &
-        write (io_unit%log,'(a,a,2x,a)') &
-          'aux_t%output: ', trim(filename), trim(item%name)
       call item%output (io_unit%aux) 
     end if
     end select
@@ -607,9 +677,17 @@ SUBROUTINE output_item (self, unit)
   rank = self%rank
   select case (rank)
   case(1)
-    call write1 (self%r1)
+    if (associated (self%r1)) then
+      call write1r (unit, self%r1)                             ! write: value
+    else if (associated (self%i1)) then
+      call write1i (unit, self%i1)                             ! write: value
+    end if
   case(2)
-    call write2 (self%r2)
+    if (associated (self%r2)) then
+      call write2r (unit, self%r2)                             ! write: value
+    else if (associated (self%i2)) then
+      call write2i (unit, self%i2)                             ! write: value
+    end if
   case(3)
     if (associated (self%r3)) then
       if (verbose > 1) then
@@ -637,19 +715,59 @@ SUBROUTINE output_item (self, unit)
   call trace%end()
 !===============================================================================
 contains
-subroutine write1 (c)
-  real, pointer:: c(:)
-  write (unit) shape(c)
-  write (unit) 'r1'
-  write (unit) c
-end subroutine write1
-subroutine write2 (c)
-  real, pointer:: c(:,:)
-  write (unit) shape(c)
-  write (unit) 'r2'
-  write (unit) c
-end subroutine write2
 END SUBROUTINE 
+
+!===============================================================================
+subroutine write1i (unit, r)
+  integer:: unit
+  integer, pointer:: r(:)
+  !-----------------------------------------------------------------------------
+  call trace%begin ('write1i')
+  write (unit) shape(r)
+  if (verbose > 2) write (io_unit%log,*) 'i1', shape(r)
+  write (unit) 'i1'
+  write (unit) r
+  call trace%end()
+end subroutine write1i
+
+!===============================================================================
+subroutine write1r (unit, r)
+  integer:: unit
+  real, pointer:: r(:)
+  !-----------------------------------------------------------------------------
+  call trace%begin ('write1r')
+  write (unit) shape(r)
+  if (verbose > 2) write (io_unit%log,*) 'r1', shape(r)
+  write (unit) 'r1'
+  write (unit) r
+  call trace%end()
+end subroutine write1r
+
+!===============================================================================
+subroutine write2r (unit, r)
+  integer:: unit
+  real, pointer:: r(:,:)
+  !-----------------------------------------------------------------------------
+  call trace%begin ('write2r')
+  write (unit) shape(r)
+  if (verbose > 2) write (io_unit%log,*) 'r2', shape(r)
+  write (unit) 'r2'
+  write (unit) r
+  call trace%end()
+end subroutine write2r
+
+!===============================================================================
+subroutine write2i (unit, r)
+  integer:: unit
+  integer, pointer:: r(:,:)
+  !-----------------------------------------------------------------------------
+  call trace%begin ('write2i')
+  write (unit) shape(r)
+  if (verbose > 2) write (io_unit%log,*) 'i2', shape(r)
+  write (unit) 'i2'
+  write (unit) r
+  call trace%end()
+end subroutine write2i
 
 !===============================================================================
 subroutine write3 (unit, r)

@@ -29,6 +29,7 @@ MODULE particles_mod
     real            :: r(3)                     ! real positions (cell units)
     integer(kind=2) :: q(3)                     ! integer position (cell units)
     integer(kind=2) :: bin=1                    ! size bin
+    integer(kind=2) :: flag                     ! flag / bits
   contains
     procedure:: init
   end type
@@ -38,7 +39,7 @@ MODULE particles_mod
   type, public:: particles_t
     class(particle_t), pointer:: head => null() ! pointer to start of list
     class(particle_t), pointer:: tail => null() ! pointer to end of list
-    integer:: n=0                               ! number of particles in list
+    integer(8):: n=0, max=0                     ! number of particles in list
     real(8):: dtime                             ! collective dtime
     type(lock_t), pointer:: lock => null()      ! OMP lock
   contains
@@ -49,6 +50,7 @@ MODULE particles_mod
     procedure:: delete
   end type
   integer:: verbose=0
+  integer(8):: id=0
 CONTAINS
 
 !===============================================================================
@@ -56,7 +58,6 @@ CONTAINS
 !===============================================================================
 SUBROUTINE init (self)
   class(particle_t):: self
-  integer(8), save:: id=0
   !.............................................................................
   self%id = 1 + mpi%rank + mpi%size*id
   !$omp atomic update
@@ -92,6 +93,8 @@ SUBROUTINE prepend (self, new)
   self%head => new
   !$omp atomic
   self%n = self%n+1
+  !$omp atomic write
+  self%max = id
 END SUBROUTINE prepend
 
 !===============================================================================
@@ -108,6 +111,8 @@ SUBROUTINE append (self, new)
   self%tail => new
   !$omp atomic
   self%n = self%n+1
+  !$omp atomic write
+  self%max = id
 END SUBROUTINE append
 
 !===============================================================================

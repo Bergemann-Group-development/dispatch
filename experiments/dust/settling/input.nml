@@ -7,15 +7,15 @@
 
 !--- Dust and particle solver parameters ---------------------------------------
 &particle_solver_params verbose=1 courant=1.0 detailed_timer=f id_dbg=-1 /
-&dust_params            verbose=1 n_bin=1
+&dust_params            verbose=1 n_bin=5 particle_io=t output_every=1000
                         particles_per_bin=20 min_fraction=0.7 max_fraction=1.4 /
 
 !--- Input/Output parameters ---------------------------------------------------
-&io_params              verbose=0 do_trace=f omp_trace=t do_output=t
+&io_params              verbose=0 do_trace=t omp_trace=t do_output=t
                         method='legacy' guard_zones=f time_derivs=0 /
 &out_params             end_time=5.00 out_time=0.50 print_every=50 /
 &timer_params           sec_per_report=5 /
-&aux_params             verbose=2 select='dust_d' /
+&aux_params             verbose=2 select='dust_d','dust_p','dust_id' /
 
 !--- Solver parameters ---------------------------------------------------------
 &muscl_params           gamma=1.0 courant=0.25 slope_type=2 method='hllc' /

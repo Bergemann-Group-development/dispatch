@@ -97,6 +97,7 @@ MODULE dust_mod
   integer:: cadence = 10                      ! particle steps per evolve step
   integer:: seed = 11                         ! random seed
   integer:: particles_per_bin = 10            ! particles per cell-bin
+  integer:: output_every=1000                 ! output only that fraction
   real(8):: dust_time = 0.01                  ! dust evolution timestep
   real:: min_fraction = 0.7                   ! particles per bin (max decrease)
   real:: max_fraction = 1.4                   ! particles per bin (max increase)
@@ -125,7 +126,7 @@ SUBROUTINE init (self, particles)
   logical:: first_time = .true.
   namelist /dust_params/ n_bin, cadence, seed, particles_per_bin, particle_io, &
     min_size_cgs, max_size_cgs, solid_density_cgs, density_yr_cgs, dust_time, &
-    growth_rate, min_fraction, max_fraction, d_min_cgs, verbose
+    growth_rate, min_fraction, max_fraction, d_min_cgs, output_every, verbose
   !-----------------------------------------------------------------------------
   call trace%begin ('dust_t%init')
   self%particles => particles
@@ -178,7 +179,7 @@ SUBROUTINE initial_condition (self)
   class(particle_t), pointer:: p
   real, pointer, contiguous:: d(:,:,:)
   integer:: i1, i2, i3, bin, j
-  integer:: l(3), u(3)
+  integer:: l(3), u(3), i
   real:: c
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -188,13 +189,16 @@ SUBROUTINE initial_condition (self)
   d => patch%mem(:,:,:,patch%idx%d,patch%it,1)
   l = self%lb
   u = self%ub
+  i = 0
   do i3=l(3),u(3)
   do i2=l(2),u(2)
   do i1=l(1),u(1)
-    do bin=1,n_bin
-      do j=1,particles_per_bin
+    do j=1,particles_per_bin
+      i = i+1
+      do bin=1,n_bin
         allocate (p)
         call p%init
+        if (mod(i,output_every)==0) p%flag = 1   ! selet for tracking
         p%bin = bin
         p%q = [i1,i2,i3]
         p%r = self%random%uniform (3)
@@ -592,7 +596,7 @@ contains
     do while (associated(p))
       next => p%next
       bin = p%bin                                 ! particle bin
-      i = p%q                                     ! particle space index
+      i = p%q                                     ! particle space 
       time = p%t
       if (all(i >= l .and. i <= u)) then
         !-----------------------------------------------------------------------
@@ -680,15 +684,20 @@ contains
           if (verbose > 2) then
             write (io_unit%log,*) 'remove', p%id, p%q, p%bin
           endif
-          !.....................................................................
-          call self%particles%remove (p)
-          deallocate (p)
-          self%na(i(1),i(2),i(3),bin) = self%na(i(1),i(2),i(3),bin) - 1
-          nr = nr + 1
+          !---------------------------------------------------------------------
+          ! Do not remove particles that are flagged for output
+          !---------------------------------------------------------------------
+          if (p%flag == 0) then
+            call self%particles%remove (p)
+            deallocate (p)
+            self%na(i(1),i(2),i(3),bin) = self%na(i(1),i(2),i(3),bin) - 1
+            nr = nr + 1
+          end if
         end if
       end if
       p => next
     end do
+
     if (verbose > 1) then
       write (io_unit%log,*) 'remove_particles: id, nr', self%patch%id, nr
     end if
@@ -798,8 +807,9 @@ SUBROUTINE output (self)
   !.............................................................................
   class(particle_t), pointer:: p
   class(mesh_t), pointer:: mesh(:)
-  real, pointer, contiguous:: tmp(:,:)
-  integer:: i
+  real, pointer, contiguous:: tmp_r(:,:)
+  integer, pointer, contiguous:: tmp_i(:)
+  integer:: i, j, n
   !-----------------------------------------------------------------------------
   call trace%begin ('dust_t%output')
   if (verbose > 1) then
@@ -818,23 +828,38 @@ SUBROUTINE output (self)
     end if
     !...........................................................................
     if (particle_io) then
-      allocate (tmp(3,self%particles%n))
-      i = 1
       mesh => self%patch%mesh
+      n = 0
       p => self%particles%head
       do while (associated(p))
-        tmp(:,i) = mesh%p + (p%q + p%r - mesh%o)*mesh%d
-        i = i+1
+        if (p%flag > 0) then
+          n = n+1
+        end if
         p => p%next
       end do
-      call self%aux%register ('dust_p', tmp)
+      allocate (tmp_r(5,n))
+      allocate (tmp_i(  n))
+      i = 0
+      p => self%particles%head
+      do while (associated(p))
+        if (p%flag > 0) then
+          i = i+1
+          tmp_r(1:3,i) = mesh%p + (p%q + p%r - mesh%o)*mesh%d
+          tmp_r(  4,i) = p%w
+          tmp_r(  5,i) = self%s_cgs(p%bin)
+          tmp_i(    i) = p%id
+        end if
+        p => p%next
+      end do
+      call self%aux%register ('dust_p' , tmp_r)
+      call self%aux%register ('dust_id', tmp_i)
       call self%aux%output_sequence (self%patch%id, self%time)
-      if (verbose > 1) then
-        write (io_unit%log, '(a,f8.4,2i8)') &
+      if (verbose > 0) then
+        write (io_unit%log, '(a,i6,f8.4,i3,2i8)') &
          'dust_t%output: id, particle array =', &
-          self%patch%id, self%time, shape(tmp)
+          self%patch%id, self%time, shape(tmp_r), i
       end if
-      deallocate (tmp)
+      deallocate (tmp_r, tmp_i)
     else
       call self%aux%output_sequence (self%patch%id, self%time)
     end if
