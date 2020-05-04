@@ -72,9 +72,10 @@ SUBROUTINE hll (dir, l, u, left, rght, flux,g1,g2)
     j1=0; j2=0; j3=1
   end if
   !-----------------------------------------------------------------------------
-  !$omp distribute parallel do collapse(3)
+  !$omp distribute parallel do collapse(2)
   do i3=l(3),u(3)
   do i2=l(2),u(2)
+  !$omp simd private(dir,v1,v2,v3,j1,j2,j3,g1,g2,Dl, El, Ul, Vl, Wl, Dr, Er, Ur, Vr, Wr, Pl, Pr, cl, cr, cmax, Tl, Tr, fDl, fDr, fUr, fUl, fTl, fTr, fVl, fVr, fWl, fWr, SL, SR)
   do i1=l(1),u(1)
     Dl = exp(&
          left(i1-j1,i2-j2,i3-j3,1))
@@ -127,10 +128,10 @@ SUBROUTINE hll (dir, l, u, left, rght, flux,g1,g2)
     ! where u = (rho, rho*v, E_tot) are the conserved variables
     !---------------------------------------------------------------------------
     flux(i1,i2,i3, 1, dir) = (SR * fDl - SL*fDr + SL*SR*(Dr    - Dl   )) / (SR - SL)
-    !flux(i1,i2,i3,v1, dir) = (SR * fUl - SL*fUr + SL*SR*(Dr*Ur - Dl*Ul)) / (SR - SL)
-    !flux(i1,i2,i3,v2, dir) = (SR * fVl - SL*fVr + SL*SR*(Dr*Vr - Dl*Vl)) / (SR - SL)
-    !flux(i1,i2,i3,v3, dir) = (SR * fWl - SL*fWr + SL*SR*(Dr*Wr - Dl*Wl)) / (SR - SL)
-    !flux(i1,i2,i3, 5, dir) = (SR * fTl - SL*fTr + SL*SR*(Tr    - Tl   )) / (SR - SL)
+    flux(i1,i2,i3,v1, dir) = (SR * fUl - SL*fUr + SL*SR*(Dr*Ur - Dl*Ul)) / (SR - SL)
+    flux(i1,i2,i3,v2, dir) = (SR * fVl - SL*fVr + SL*SR*(Dr*Vr - Dl*Vl)) / (SR - SL)
+    flux(i1,i2,i3,v3, dir) = (SR * fWl - SL*fWr + SL*SR*(Dr*Wr - Dl*Wl)) / (SR - SL)
+    flux(i1,i2,i3, 5, dir) = (SR * fTl - SL*fTr + SL*SR*(Tr    - Tl   )) / (SR - SL)
 !#ifdef DBG
 !    if (dir==1 .and. i2==l(2) .and. i3==l(3)) then
 !      print '(i3,3(2x,5f10.4))', &
