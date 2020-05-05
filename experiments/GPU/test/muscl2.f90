@@ -9,7 +9,6 @@
 !> slopes are derived from well-conditioned per-unit-mass variables.
 !===============================================================================
 MODULE solver_mod
-  USE io_mod
   USE riemann_mod
   USE omp_lib
   implicit none
@@ -65,7 +64,9 @@ SUBROUTINE init (self)
   namelist /solver_params/ verbose, courant, gamma, csound, slope_type, &
     method, detailed_timer
   integer:: iostat, i
-  integer:: m
+  integer:: m, i1, i2, i3
+  real(8):: r1, r2, r3
+  real(8), parameter:: pi2=8d0*atan(1d0)
   integer, save:: id=0
   logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
@@ -85,11 +86,19 @@ SUBROUTINE init (self)
   m = self%gn(1)
   allocate (self%mem(m,m,m,self%nv,self%nt,self%nw))
   self%mem(:,:,:,1,:,:) = 1.0
-  self%mem(:,:,:,2,:,:) = 0.0
-  self%mem(:,:,:,3,:,:) = 0.0
-  self%mem(:,:,:,4,:,:) = 0.0
   self%mem(:,:,:,5,:,:) = 1.0
-  call io%lock%set
+  do i3=1,self%gn(3)
+    r3 = (i3-1)/self%gn(3)
+    do i2=1,self%gn(2)
+      r2 = (i2-1)/self%gn(2)
+      do i1=1,self%gn(1)
+        r1 = (i1-1)/self%gn(1)
+        self%mem(i1,i2,i3,2,:,:) = sin(r1*pi2)
+        self%mem(i1,i2,i3,3,:,:) = sin(r2*pi2)
+        self%mem(i1,i2,i3,4,:,:) = sin(r3*pi2)
+      end do
+    end do
+  end do
   if (first_time) then
     print *, 'solver_t%init:'
     print *, 'id', self%id
@@ -105,7 +114,6 @@ SUBROUTINE init (self)
     start = omp_get_wtime()
     first_time = .false.
   end if
-  call io%lock%unset
   !call self%patch_t%init
   !-----------------------------------------------------------------------------
   ! Ramses-like specific things
