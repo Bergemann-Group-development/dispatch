@@ -1372,7 +1372,6 @@ SUBROUTINE init_nbors (self, link)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('list_t%init_nbors ', itimer=itimer)
-  print *, 'init_nbors: id =', link%task%id, link%task%time
   if (self%verbose > 0) then
     write (io_unit%log,'(f12.6,1x,a,2i6)') wallclock(), &
      'list_t%init_nbors: task', link%task%id
