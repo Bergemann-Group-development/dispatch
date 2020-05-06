@@ -119,7 +119,7 @@ CONTAINS
 SUBROUTINE pre_init (self)
   class(extras_t), target:: self
   !.............................................................................
-  self%patch => self
+  !self%patch => self
   !call self%forces%pre_init (self%patch)                               ! forces
   !allocate(self%rt)                                                    ! RT
   !call self%rt%pre_init (self%patch)                                   ! RT
