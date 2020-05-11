@@ -9,7 +9,7 @@ s $Id$
 &patch_params           nt=5 grace=0.5 n=3*16 no_mans_land=t /
 &out_params             end_time=2 out_time=0.010 print_every=20 /
 &io_params              verbose=0 do_trace=f omp_trace=t do_output=t
-                        method='legacy' format=10 guard_zones=f time_derivs=0 /
+                        method='parallel' format=10 guard_zones=f time_derivs=0 /
 &download_params        verbose=0 check_filled=t /
 
 !--- Initial condition and forces ----------------------------------------------
@@ -32,7 +32,7 @@ s $Id$
 
 !--- Dispatcher and task list params -------------------------------------------
 &dispatcher_params      method=0 test=f /
-&dispatcher0_params     verbose=0 /
+&dispatcher0_params     verbose=0 RETRY_STALLED=60/
 &task_list_params       verbose=0 /
 &timer_params           sec_per_report=15 detailed=f /
 

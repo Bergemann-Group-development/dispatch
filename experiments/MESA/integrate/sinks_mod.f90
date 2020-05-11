@@ -43,6 +43,8 @@ MODULE sinks_mod
     real(8), allocatable:: pos(:,:)
     real(8):: SN_time=0.0, previous_time=0d0, dt_min=1e-7
     class(gpatch_t), pointer:: patch
+    real(8):: dm_accreted=0, dm_wind=0, mdot_wind=0 ! mass change due to wind and accretion. Update when update mass.
+    real(8):: v_wind=tiny(0d0)                      ! v_inf of wind
   contains
     procedure:: pre_init
     procedure:: init
@@ -52,6 +54,7 @@ MODULE sinks_mod
     procedure:: pre_update
     procedure:: update
     procedure:: post_update
+    procedure:: output
   end type
   real::     jeans_limit = 4.0        ! create at jeans_limit cells per Jean's L 
   real::       per_omega = 0.001      ! fraction of mass per radian orbital
@@ -287,6 +290,9 @@ SUBROUTINE accrete (self, patch)
     dpx = product(patch%ds)*sum(delta_d*px)
     dpy = product(patch%ds)*sum(delta_d*py)
     dpz = product(patch%ds)*sum(delta_d*pz)
+    
+    !$omp atomic update
+    self%dm_accreted = self%dm_accreted + dm
     !$omp atomic update
     self%mass = self%mass + dm
     !$omp atomic update
@@ -381,11 +387,14 @@ SUBROUTINE post_update (self, patch)
 END SUBROUTINE post_update
 
 !===============================================================================
-!> Update sink task
+!> Output sink task
 !===============================================================================
-SUBROUTINE output (self)
+SUBROUTINE output (self, patch)
   class(sinks_t):: self
+  class(gpatch_t), pointer:: patch
   !-----------------------------------------------------------------------------
+  !todo: fix.
+  return
   call trace%begin ('sinks_t%output')
   if (.not.associated(self%mass_p)) then
     allocate (self%mass_p, self%pos_p(3), self%vel_p(3))
