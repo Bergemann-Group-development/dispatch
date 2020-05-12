@@ -21,7 +21,8 @@
          contains        
          
          subroutine extras_controls(id, ierr)
-            integer :: id, ierr
+            integer, intent(in) :: id
+            integer, intent(out) :: ierr
             type (star_info), pointer :: s
 
             call star_ptr(id, s, ierr)
