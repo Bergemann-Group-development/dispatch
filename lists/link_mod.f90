@@ -620,6 +620,8 @@ SUBROUTINE garbage_collect (link)
       write (io_unit%log,'(f12.6,2x,a,i4,2l4)') &
         wallclock(), 'garbage_collect deleted: id =', link%task%id, &
         link%task%n_needed, link%task%is_set(bits%virtual)
+      write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,i6)') &
+        wallclock(), omp%thread, 'removed', link%task%id, link%task%time
     end if
     !---------------------------------------------------------------------------
     ! At this point, the link task has been removed from the task list, and

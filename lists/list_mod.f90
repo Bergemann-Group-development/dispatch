@@ -375,6 +375,8 @@ SUBROUTINE remove_and_reset (self, link)
     write (io_unit%log,'(f12.6,1x,a,i6,2l3)') &
       wallclock(), 'list_t%remove_and_reset: id =', link%task%id, &
       link%task%is_set(bits%boundary), link%task%is_set(bits%virtual)
+    write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,i6)') &
+      wallclock(), omp%thread, 'remove', link%task%id, link%task%time
   end if
   !-----------------------------------------------------------------------------
   call self%lock%set ('remove_and_reset')  ! lock task list while changing
@@ -2875,6 +2877,10 @@ SUBROUTINE send_to_vnbors (self, link)
           task%is_set (bits%external), &
           task%is_set (bits%swap_request)
         flush (io_unit%mpi)
+      end if
+      if (self%verbose > 1) then
+        write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,i6)') &
+          wallclock(), omp%thread, 'sent', task%id, task%time, rank
       end if
     end if
     nbor => nbor%next                                           ! next nbor

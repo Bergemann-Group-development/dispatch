@@ -296,7 +296,11 @@ SUBROUTINE check_recv (self, link, n_unpk)
     end if
   end if
   call trace%begin ('task_mesg_t%check_recv')
-  !-----------------------------------------------------------------------------
+  if (verbose > 1) then
+    write (io_unit%log,'(f12.6,i4,1x,a12,i6,f12.6,i6)') &
+      wallclock(), omp%thread, 'check_recv', task%id, task%time, task%mesg%seq
+  end if
+!-----------------------------------------------------------------------------
   ! If the task has no pending request, issue one
   !-----------------------------------------------------------------------------
   if (task%mesg%req == 0) then
@@ -311,7 +315,7 @@ SUBROUTINE check_recv (self, link, n_unpk)
     call unpack (self, task%mesg, link)
     n_unpk = n_unpk+1
     if (verbose > 1) then
-      write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,i4)') &
+      write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,i6)') &
         wallclock(), omp%thread, 'unpacked', task%id, task%time, n_unpk
     end if
     call new_request (task)
@@ -329,6 +333,7 @@ SUBROUTINE new_request (task)
   class(task_t):: task
   !-----------------------------------------------------------------------------
   task%seq = task%seq + 1
+  task%mesg%id = task%id
   task%mesg%tag = task%id*100 + mod(task%seq,100)
   task%mesg%sender = task%rank
   call task%mesg%request
@@ -554,6 +559,10 @@ SUBROUTINE unpack (self, mesg, link)
       !-------------------------------------------------------------------------
       if (self%verbose > 1) write(io_unit%log,*) task%id, 'init_nbors', &
         task%is_set(bits%boundary)
+      if (verbose > 0) then
+        write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,i6)') &
+          wallclock(), omp%thread, 'vinitnbors', task%id, task%time
+      end if
       call self%init_nbors (link)
       call task%clear (bits%init_nbors)
     end if
@@ -562,6 +571,10 @@ SUBROUTINE unpack (self, mesg, link)
       ! If the task has the update_status bit set, re-evaluate status bits
       !-------------------------------------------------------------------------
       if (self%verbose > 1) write(io_unit%log,*) task%id, 'update_nbors'
+      if (verbose > 0) then
+        write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,i6)') &
+          wallclock(), omp%thread, 'vupnbors', task%id, task%time
+      end if
       call self%update_status (link)
     end if
     if (task%is_set(bits%remove)) then
@@ -569,9 +582,17 @@ SUBROUTINE unpack (self, mesg, link)
       !-------------------------------------------------------------------------
       ! 1) Suicide note, remove the task and delete the message
       !-------------------------------------------------------------------------
+      if (verbose > 0) then
+        write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,i6)') &
+          wallclock(), omp%thread, 'vremove', task%id, task%time
+      end if
       call self%remove_and_reset (link)
     else if (task%is_set(bits%swap_request)) then
       if (self%verbose > 0) write(io_unit%log,*) task%id, 'swap'
+      if (verbose > 0) then
+        write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,i6)') &
+          wallclock(), omp%thread, 'vswap', task%id, task%time
+      end if
       !-------------------------------------------------------------------------
       ! 2) swap_request bit set; the task has just changed owner, and the task
       !    should become a boundary task on this rank.  Indeed, since it was
@@ -605,12 +626,20 @@ SUBROUTINE unpack (self, mesg, link)
       !    request for the next message.
       !-------------------------------------------------------------------------
       call self%check_nbors (link)
+      if (verbose > 0) then
+        write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,i6)') &
+          wallclock(), omp%thread, 'vupdate', task%id, task%time
+      end if
     end if
   else
     if (self%verbose > 1) write(io_unit%log,*) task%id, 'crap'
     !---------------------------------------------------------------------------
     ! 5) not bonafide, so ignore
     !---------------------------------------------------------------------------
+    if (verbose > 0) then
+      write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,i6)') &
+        wallclock(), omp%thread, 'vcrap', task%id, task%time
+    end if
   end if
   call trace%end (itimer)
 END SUBROUTINE unpack

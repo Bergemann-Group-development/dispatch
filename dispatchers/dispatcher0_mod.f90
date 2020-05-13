@@ -347,10 +347,10 @@ SUBROUTINE update (self, task_list, test)
             flush (io_unit%queue)
           end if
         else
-          if (omp%master) then
-            write (io_unit%queue,'(f12.6,2i7,f12.6,2i5)') &
-              wallclock(), task%id, task%istep, task%time, &
-              task_list%nq, task_list%nac
+          if (omp%master .and. verbose > 0) then
+            write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,2i6)') &
+              wallclock(), omp%thread, 'take', task%id, task%time, &
+              task%istep, task_list%nq
             flush (io_unit%queue)
           end if
         end if
@@ -419,9 +419,9 @@ SUBROUTINE update (self, task_list, test)
     !...........................................................................
     if (debug) then
       wc = wallclock()
-      write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,1x,2i6,f12.6)') &
+      write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,2i6,f12.6)') &
         wc, omp%thread, 'updated', task%id, task%time, stalled_l, &
-        n_spin, wc-stall_start
+        task%istep, task%dtime
       !$omp atomic write
       n_spin = 0
     end if

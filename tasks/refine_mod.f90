@@ -941,6 +941,10 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
       maxval(child%mem(l(1):u(1),l(2):u(2),l(3):u(3),child%idx%d,child%it,1))
     flush (io_unit%log)
   end if
+  if (tlist%verbose > 1) then
+    write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,i6)') &
+      wallclock(), omp%thread, 'created', child%id, child%time, parent%id
+  end if
   !-----------------------------------------------------------------------------
   call child%log ('refine', 2)
   call trace%end (itimer, detailed_timer=detailed_timer)
