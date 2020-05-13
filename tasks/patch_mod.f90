@@ -1450,7 +1450,7 @@ SUBROUTINE unpack (self, mesg)
   ! Copy relevant patch info from sequenced header
   !-----------------------------------------------------------------------------
   if (omp_lock%tasks) &
-    call self%lock%set ('unpack')
+    call self%lock%set ('unpack1')
   ibuf = 1
   call anonymous_copy (n_header, buffer(ibuf), header)
   ibuf = ibuf + n_header
@@ -1459,7 +1459,7 @@ SUBROUTINE unpack (self, mesg)
   !-----------------------------------------------------------------------------
   lock => self%mem_lock(self%new)
   call omp_lock%check_pointer (lock, 'mem_lock', self%id)
-  call lock%set ('unpack')
+  call lock%set ('unpack2')
   call self%header_to_patch (header)
   if (io%verbose > 1) &
     write (io_unit%log,'(f12.6,3x,a,i7,2i4,2x,3l1,2i4,f8.4,f11.6)') &
@@ -1494,7 +1494,7 @@ SUBROUTINE unpack (self, mesg)
   if (self%is_set(bits%swap_request) .and. self%is_set(bits%virtual)) then
     it = mod(self%it-1+self%nt-1,self%nt)+1
     lock => self%mem_lock(it)
-    call lock%set ('unpack')
+    call lock%set ('unpack3')
     if (io%verbose>0) then
       write (io_unit%log,*) self%id, 'extra time slot unpacked', it
       flush (io_unit%log)
@@ -1503,11 +1503,11 @@ SUBROUTINE unpack (self, mesg)
       call anonymous_copy (n_buf, buffer(ibuf), self%mem(:,:,:,iv,it,1))
       ibuf = ibuf + n_buf
     end do
-    call lock%unset ('unpack2')
+    call lock%unset ('unpack3')
   end if
   !-----------------------------------------------------------------------------
   if (omp_lock%tasks) &
-    call self%lock%set ('unpack')
+    call self%lock%unset ('unpack1')
   if (io%verbose > 2) &
     write (io_unit%log,*) self%id, 'after unpack', minval(self%mem(:,:,:,1,self%it,1))
   call self%clear (bits%busy)
