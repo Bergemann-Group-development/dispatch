@@ -136,7 +136,7 @@ SUBROUTINE pre_init (self)
   ! called again, from extras_t%init, when gamma is known and can be passed on.
   !-----------------------------------------------------------------------------
   self%initial%mhd = self%mhd
-  call self%idx%init (self%nv, self%mhd)
+  call self%idx%init (self%nv, mhd=self%mhd)
   call self%initial%init (self%kind, real(self%gamma))
   self%mhd = self%initial%mhd
   if (self%mhd) then
