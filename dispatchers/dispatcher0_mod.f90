@@ -542,11 +542,15 @@ subroutine stall_handler
       end if
     end if
     if (stall_start > 0d0 .and. now-stall_start > max_stalled) then
+      !$omp single
       write (io_unit%task,'(f12.6,i4,4x,a)') now, omp%thread, 'max_stalled reached'
       print *, mpi%rank, 'STALLED diagnostics'
+      call task_list%check_all
+      call task_list%check_oldest
       call mpi_mesg%diagnostics (1)
       print *, mpi%rank, 'STALLED bailing out'
       call mpi%abort ('exceeded max_stalled')
+      !$omp end single
     else if (stall_start > 0d0 .and. wallclock()-stall_start > retry_stalled) then
       write (io_unit%task,'(f12.6,i4,4x,a)') now, omp%thread, 'retry_stalled reached'
       call task_list%lock%set ('stall_handler')
@@ -572,7 +576,7 @@ subroutine stall_handler
         ! ranks.
         !-----------------------------------------------------------------------
         else
-          call task_list%check_oldest
+          call task_list%check_oldest (clear=.true.)
           if (associated(task_list%queue)) then
             write(stderr,1) mpi%rank, omp%thread, 'check_oldest', wallclock()
             if (verbose > 1) &

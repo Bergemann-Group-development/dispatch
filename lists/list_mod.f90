@@ -672,7 +672,7 @@ SUBROUTINE check_nbors (self, link)
         nbor%task%is_clear(bits%busy)
     end if
     if (nbor%needs_me .and. nbor%task%is_clear(bits%busy)) then
-      call self%check_ready (nbor%link, .true., status) ! pointer back
+      call self%check_ready (nbor%link, lock=.true., status=status) ! pointer back
       if (self%verbose > 1) &
         write (io_unit%log,'(f12.6,i6,1x,a,i6,2i4)') wallclock(), task%id, &
         'checked nbor ', nbor%task%id, nbor%task%level, status
@@ -682,7 +682,7 @@ SUBROUTINE check_nbors (self, link)
         ! list and try again -- it may have aquired support in the meantime.
         !---------------------------------------------------------------------
         call self%init_nbors (nbor%link)
-        call self%check_ready (nbor%link, .true., status)
+        call self%check_ready (nbor%link, lock=.true., status=status)
         if (self%verbose > 1) &
           write (io_unit%log,'(f12.6,i6,2x,a,i6,2i4)') wallclock(), task%id, &
           'checked again', nbor%task%id, nbor%task%level, status
@@ -792,8 +792,9 @@ END SUBROUTINE resend_bdry
 !===============================================================================
 !> Find the oldest local and virtual patches
 !===============================================================================
-SUBROUTINE check_oldest (self)
+SUBROUTINE check_oldest (self, clear)
   class(list_t):: self
+  logical, optional:: clear
   class(link_t), pointer:: link, oldest, oldestv
   class(nbor_t), pointer:: oldestnb, nbor
   real(8):: told, toldv
@@ -853,10 +854,12 @@ SUBROUTINE check_oldest (self)
         nbor%task%is_ahead_of (oldest%task), nbor%task%unpack_time
       nbor => nbor%next
     end do
-    call oldest%task%clear (bits%ready+bits%busy)
-    call self%queue_by_time (oldest)                  ! add task to queue
-    write (io_unit%log,*) 'task queued'
-    flush (io_unit%log)
+    if (present(clear)) then
+      call oldest%task%clear (bits%ready+bits%busy)
+      call self%queue_by_time (oldest)                  ! add task to queue
+      write (io_unit%log,*) 'task queued'
+      flush (io_unit%log)
+    end if
     write (io_unit%log,*) 'check_oldest: phase 1 done'
     flush (io_unit%log)
     link => oldest
