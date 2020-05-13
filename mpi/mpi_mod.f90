@@ -472,23 +472,18 @@ SUBROUTINE init8 (self, n)
   call trace%begin ('mpi_counter_t%init')
 #ifdef MPI
   if (self%window==0) then
-    !$omp critical (counter_cr)
+  !-----------------------------------------------------------------------------
+  ! Do NOT make this depend on MPI_THREAD_MULTIPLE -- this really needs a
+  ! critical region
+  !-----------------------------------------------------------------------------
+    !$omp critical (mpi_cr)
     if (self%window==0) then
-      if (mpi%mode == MPI_THREAD_MULTIPLE) then
-        self%i = n
-        call MPI_Win_create (self%i, nbytes, 8, MPI_INFO_NULL, MPI_COMM_WORLD, &
-                             self%window, mpi_err)
-        call mpi%assert ('MPI_Win_create', mpi_err)
-      else
-        !$omp critical (mpi_cr)
-        self%i = n
-        call MPI_Win_create (self%i, nbytes, 8, MPI_INFO_NULL, MPI_COMM_WORLD, &
-                             self%window, mpi_err)
-        call mpi%assert ('MPI_Win_create', mpi_err)
-        !$omp end critical (mpi_cr)
-      end if
+      self%i = n
+      call MPI_Win_create (self%i, nbytes, 8, MPI_INFO_NULL, MPI_COMM_WORLD, &
+                           self%window, mpi_err)
+      call mpi%assert ('MPI_Win_create', mpi_err)
     end if
-    !$omp end critical (counter_cr)
+    !$omp end critical (mpi_cr)
   end if
 #endif
   call trace%end ()
@@ -539,7 +534,11 @@ FUNCTION update8 (self, i) RESULT (j)
   integer(kind=MPI_ADDRESS_KIND):: offset=0
   !-----------------------------------------------------------------------------
   call trace%begin ('mpi_counter_t%update', 2)
-  !$omp critical (mpi_win_cr)
+  !-----------------------------------------------------------------------------
+  ! Do NOT make this depend on MPI_THREAD_MULTIPLE -- this really needs a
+  ! critical region
+  !-----------------------------------------------------------------------------
+  !$omp critical (mpi_cr)
   call MPI_Win_lock (MPI_LOCK_EXCLUSIVE, master, 0, self%window, mpi_err)
   call mpi%assert ('MPI_Win_lock', mpi_err)
   call MPI_Get_accumulate (i, 1, MPI_INTEGER8, &
@@ -548,7 +547,7 @@ FUNCTION update8 (self, i) RESULT (j)
   call mpi%assert ('MPI_Get_accumulate', mpi_err)
   call MPI_Win_unlock (master, self%window, mpi_err)
   call mpi%assert ('MPI_Win_unlock', mpi_err)
-  !$omp end critical (mpi_win_cr)
+  !$omp end critical (mpi_cr)
   j = k+i
 #else
   call trace%begin ('mpi_counter_t%update')
