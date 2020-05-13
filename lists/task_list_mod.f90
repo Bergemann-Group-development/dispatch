@@ -30,6 +30,7 @@ MODULE task_list_mod
     logical:: syncing=.false.
     logical:: dispatcher=.false.
     real(8):: sync_time=-1.0, sync_next=-1.0
+    real(8):: update_time=0d0
   contains
     procedure:: init
     procedure:: initialize
@@ -367,11 +368,10 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
     return
   end if
   !-----------------------------------------------------------------------------
-  ! Update the task, whatever that means (may include call to task%output)
+  ! Update the task, whatever that means (may include call to task%output),
+  ! and measure the task update time with a running mean
   !-----------------------------------------------------------------------------
-  if (mpi_mesg%delay_ms==0.0) then
-    wc = wallclock()
-  end if
+  wc = wallclock()
   task%rotated = .false.
   if (test) then
     call task%test_update
@@ -400,12 +400,18 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
     end if
   end if
   !----------------------------------------------------------------------------
-  ! Default delay time = 10% of first update time
+  ! Typical update time, running mean over the number of active tasks
   !----------------------------------------------------------------------------
-  if (mpi_mesg%delay_ms==0.0) then
+  block
+    real(8):: update_time
+    !$omp atomic read
+    update_time = self%update_time
+    update_time = update_time &
+                + (wallclock()-wc-update_time)/max(self%na,1)
     !$omp atomic write
-    mpi_mesg%delay_ms = 1d3*(wallclock()-wc)*0.1
-  end if
+    self%update_time = update_time
+  end block
+  !............................................................................
   !$omp atomic
   mpi_mesg%n_update = mpi_mesg%n_update+1
   if (self%verbose > 1) &

@@ -32,7 +32,7 @@ SUBROUTINE mkdir (dir)
       inquire (file=dir, exist=exists)
 #endif
       if (exists) exit
-      call mpi%delay (ms=ms)
+      call omp%delay (ms=ms)
     end do
     if (.not.exists) then
       write (io_unit%output,*) 'WARNING: rank',mpi%rank,' cannot see',dir
@@ -79,7 +79,7 @@ SUBROUTINE mkdir_real (dir)
   if (.not.exists) then
     do iter=1,10
       i = fmkdir(dir, int(o'772',c_int16_t))
-      call mpi%delay (ms=ms)
+      call omp%delay (ms=ms)
       inquire (file=dir, exist=exists)
       if (exists) then
         if (.not.io_unit%do_validate) &
@@ -91,7 +91,7 @@ SUBROUTINE mkdir_real (dir)
             ' WARNING: C-binding call failed to create directory '//dir
       end if
       call system ('mkdir -p '//dir)
-      call mpi%delay (ms=ms)
+      call omp%delay (ms=ms)
       inquire (file=dir, exist=exists)
       if (exists) then
         if (.not.io_unit%do_validate) &

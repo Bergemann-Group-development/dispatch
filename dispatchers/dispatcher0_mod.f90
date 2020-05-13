@@ -32,8 +32,10 @@ MODULE dispatcher0_mod
     procedure:: init
     procedure:: execute
     procedure:: update
+    procedure:: no_queue
   end type
   real(8):: stall_start=0d0, max_stalled=600d0, retry_stalled=30d0
+  real:: delay_ms=0.0
   integer, save:: mpi_only_master=100
   integer, save:: verbose=0
   integer, save:: stalled=0
@@ -64,7 +66,7 @@ SUBROUTINE init (self, name)
   ! An optional namelist can be used to turn debugging on
   !-----------------------------------------------------------------------------
   namelist /dispatcher0_params/ verbose, max_stalled, retry_stalled, do_delay, &
-    mpi_only_master, debug, detailed_timer
+    delay_ms, mpi_only_master, debug, detailed_timer
   character(len=120):: ids = &
   '$Id$ dispatchers/dispatcher0_mod.f90'
   !-----------------------------------------------------------------------------
@@ -584,10 +586,44 @@ subroutine stall_handler
       end if
       call task_list%lock%unset ('stall_handler')
     else if (do_delay) then
-      call mpi_mesg%delay (stalled)
+      call self%no_queue (stalled, task_list)
       return
     end if
 end subroutine stall_handler
 END SUBROUTINE update
+
+!===============================================================================
+!> When the queue is empty, delay for about a task update time when MPI is
+!> active, to avoid pounding MPI with a very large number of MPI_TEST calls.
+!> For single rank runs, just avoid overflowing the rank log.
+!===============================================================================
+SUBROUTINE no_queue (self, stalled, task_list)
+  class(dispatcher0_t):: self
+  integer:: stalled
+  type(task_list_t), pointer:: task_list
+  real:: ms
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin ('dispatcher0%no_queue', itimer=itimer)
+  if (delay_ms > 0.0) then
+    ms = delay_ms
+  else
+    ms = task_list%update_time*1e3
+  end if
+  if (mpi%size == 1) then
+    if (verbose > 0) then
+      ms = ms*0.1
+    else
+      ms = 0.001
+    end if
+  end if
+  if (verbose > 0) then
+    write (io_unit%log,'(f12.6,2x,a,i8,3f7.3)') wallclock(), &
+     'dispatcher0_t%no_queue: stalled, update_time_ms, delay_ms =', &
+     stalled, task_list%update_time*1e3, delay_ms, ms
+  end if
+  call omp%delay (ms)
+  call trace%end (itimer)
+END SUBROUTINE no_queue
 
 END MODULE

@@ -96,17 +96,14 @@ MODULE mpi_mesg_mod
     logical:: send_priv=.true.
     logical:: debug=.false.
     logical:: uniq_mesg=.true.
-    real:: delay_ms=0.0
     real:: test_time=0.0
   contains
     procedure:: init
-    procedure:: delay
     procedure:: diagnostics
     procedure:: test
     procedure:: log_files
   end type
   type(mpi_mesg_t), public:: mpi_mesg
-  real, save:: delay_ms=30.0                    ! default setting
   integer, save:: max_fail=3                    ! max MPI_TEST before resend
   integer, save:: every_send=2                  ! how often to check send_list
   logical, save:: resend=.false.                ! if true, resend late mesgs
@@ -671,7 +668,7 @@ SUBROUTINE init (self)
   logical, save:: queue_unpack
   logical, save:: uniq_mesg
   real, save:: test_time=20e-3
-  namelist /mpi_mesg_params/ every_send, delay_ms, resend, &
+  namelist /mpi_mesg_params/ every_send, resend, &
     max_fail, test_time, uniq_mesg, debug, verbose, detailed_timer
   integer:: iostat
   character(len=120):: id = &
@@ -700,7 +697,6 @@ SUBROUTINE init (self)
 !  self%max_probe = max_probe
 !  self%recv_wait = recv_wait
   self%uniq_mesg = uniq_mesg
-  self%delay_ms = delay_ms
   mpi_mesg%test_time = test_time
   call trace%end()
 END SUBROUTINE init
@@ -760,33 +756,6 @@ SUBROUTINE test (self)
     associated(test_list%head), associated(test_list%tail)
   call test_list%print ('test3')
 END SUBROUTINE test
-
-!===============================================================================
-!> Delay for about 1 ms, to encourage incoming messages to complete
-!===============================================================================
-SUBROUTINE delay (self, n, ms)
-  class(mpi_mesg_t):: self
-  integer, optional:: n
-  real, optional:: ms
-  real:: ms_l
-  integer, save:: itimer=0
-  !-----------------------------------------------------------------------------
-  if (present(ms)) then
-    ms_l = ms
-  else
-    ms_l = mpi_mesg%delay_ms
-  end if
-  if (ms_l==0.0) return
-  call trace%begin ('mpi_mesg_t%no_queue', itimer=itimer)
-  if (verbose > 0) then
-    write (io_unit%log,'(f12.6,1x,a,f6.0)') wallclock(), &
-    'mpi_mesg_t%delay: ms =', ms_l
-  end if
-  call mpi%delay (ms_l)
-  !$omp atomic
-  self%n_delay = self%n_delay + 1
-  call trace%end (itimer)
-END SUBROUTINE delay
 
 !===============================================================================
 !> Diagnostic printout, called when task_list_mod::update stalls

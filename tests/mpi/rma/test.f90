@@ -58,7 +58,7 @@ PROGRAM test_mpi_io
   ! Same thing, but w/o the barrier, and with a delay of one rank
   !-----------------------------------------------------------------------------
   if (mpi%rank==1) then
-    call omp_timer%delay (2.)
+    call omp%delay (2.)
     call win%lock_x    (mpi%rank)
     r = (240+mpi%rank)
     call win%unlock    (mpi%rank)

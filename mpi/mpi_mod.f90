@@ -78,7 +78,6 @@ MODULE mpi_mod
     procedure:: assert
     procedure:: abort => abort_mpi
     procedure:: end => end_mpi
-    procedure, nopass:: delay
   end type
   type(mpi_t), public:: mpi
 CONTAINS
@@ -413,18 +412,6 @@ CONTAINS
     new = .true.
   end function
 END SUBROUTINE detect_cores
-
-!===============================================================================
-!> Delay for about 1 ms, to encourage incoming messages to complete
-!===============================================================================
-SUBROUTINE delay (ms)
-  real:: ms
-  real(8):: wc
-  !-----------------------------------------------------------------------------
-  wc = wallclock()
-  do while ((wallclock()-wc) < 1e-3*ms)
-  end do
-END SUBROUTINE delay
 
 !===============================================================================
 !> Create and initialize a counter to value = n. NOTE: This is COLLECTIVE call!

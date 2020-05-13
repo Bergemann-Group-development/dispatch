@@ -19,6 +19,7 @@ MODULE omp_mod
     procedure, nopass:: mythread
     procedure, nopass:: numthreads => omp_numthreads
     procedure, nopass:: set_stacksize
+    procedure, nopass:: delay
   end type
   logical, public, save:: omp_master
   integer, public, save:: omp_nthreads
@@ -62,8 +63,6 @@ END FUNCTION
 #endif
 #endif
 #endif
-
-
 
 !===============================================================================
 INTEGER FUNCTION mythread()
@@ -160,6 +159,20 @@ SUBROUTINE set_stacksize (nv)
     '*************************************************************************************'
   end if
 END SUBROUTINE set_stacksize
+
+!===============================================================================
+!> Active spin delay in milliseconds
+!===============================================================================
+SUBROUTINE delay (ms)
+  real:: ms
+#if defined (_OPENMP)
+  real(8):: wc
+  !.............................................................................
+  wc = omp_get_wtime()
+  do while (omp_get_wtime()-wc < ms*1d-3)
+  end do
+#endif
+END SUBROUTINE delay
 
 !===============================================================================
 END MODULE omp_mod
