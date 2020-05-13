@@ -236,6 +236,7 @@ SUBROUTINE interpolate (self, source, jt, pt, target, ipos, all, l, u)
   integer                  :: ls(3), us(3), lt(3), ut(3), i
   integer                  :: lb, lo, li, ui, uo, ub, n, ng, gn
   integer                  :: itimer=0
+  logical                  :: all_l
   real(kind=KindScalarVar), allocatable        :: src_mem(:,:,:)
   !-----------------------------------------------------------------------------
   ! Cf. the sketch at top for index choices
@@ -243,6 +244,11 @@ SUBROUTINE interpolate (self, source, jt, pt, target, ipos, all, l, u)
   call trace%begin ('prolong_t%interpolate',itimer=itimer)
   if (verbose > 0) &
     write (io_unit%log,*) 'interpolate', ipos
+  if (present(all)) then
+    all_l = all
+  else
+    all_l = .false.
+  end if
   n  = self%n
   ng = self%ng
   gn = n + 2*ng
@@ -344,8 +350,9 @@ SUBROUTINE interpolate (self, source, jt, pt, target, ipos, all, l, u)
   !-----------------------------------------------------------------------------
   ! Interpolate in 3-D
   !-----------------------------------------------------------------------------
-  if (present(all) .and. all) then
-    !call self%interp (src_mem, ls, us, target, lt, ut, mask=.not.outside)
+  call io%assert (.not.any(shape(outside)/=shape(src_mem)), &
+    'interpolation%interpolate')
+  if (all_l) then
     call self%interp (src_mem, ls, us, target, lt, ut)
   else
     call self%interp (src_mem, ls, us, target, lt, ut, mask=outside)
