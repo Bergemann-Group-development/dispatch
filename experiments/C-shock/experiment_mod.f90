@@ -28,7 +28,7 @@ CONTAINS
 SUBROUTINE init (self)
   class(experiment_t):: self
   integer:: i, j, k
-  real:: x, y, z
+  real:: x, y, z, g1
   logical:: first_time = .true.
   real, dimension(:,:,:,:), pointer:: b, p
   real, dimension(:,:,:), pointer:: d, vx, vy, vz, Bx, By, Bz, px, py, pz, s, e1, et
@@ -72,6 +72,11 @@ SUBROUTINE init (self)
   print*, 'gn is:', self%gn(1)
   print*, 'P and rho and gamma:', P_l, P_r, rho_l, rho_r, self%gamma
 
+  if (self%gamma == 1d0) then
+    g1 = 1.0
+  else
+    g1 = self%gamma-1d0
+  end if
   do i=self%mesh(1)%lb,self%mesh(1)%ub
     x = self%mesh(1)%p + self%mesh(1)%r(i)
     !y = self%mesh(2)%p + self%mesh(2)%r(i)
@@ -85,14 +90,10 @@ SUBROUTINE init (self)
       By(i,:,:) = By_l
       Bz(i,:,:) = Bz_l
       if (self%kind(1:6) == 'ramses') then
-          et(i,:,:)= P_l/(self%gamma-1d0) + 0.5*rho_l * (vx_l**2+vy_l**2+vz_l**2) + 0.5 * (Bx(i,:,:)**2 + By(i,:,:)**2 + Bz(i,:,:)**2)  
+          et(i,:,:)= P_l/g1 + 0.5*rho_l * (vx_l**2+vy_l**2+vz_l**2) + 0.5 * (Bx(i,:,:)**2 + By(i,:,:)**2 + Bz(i,:,:)**2)  
       end if
       if (self%kind(1:7) == 'stagger') then
-        if (self%gamma .eq. 1.) then
-          s (i,:,:) = -log(rho_l)*rho_l
-        else
-          s (i,:,:) = (log(P_l)-log(rho_l)*self%gamma)/(self%gamma-1.0) * rho_l
-        end if
+        s (i,:,:) = (log(P_l)-log(rho_l)*self%gamma)/g1 * rho_l
       end if
     else
       d (i,:,:) = rho_r
@@ -103,18 +104,10 @@ SUBROUTINE init (self)
       By(i,:,:) = By_r
       Bz(i,:,:) = Bz_r 
       if (self%kind(1:6) == 'ramses') then
-        if (self%gamma .eq. 1.) then
-          et(i,:,:)= P_r
-        else
-          et(i,:,:)= P_r/(self%gamma-1d0) + 0.5*rho_r * (vx_r**2+vy_r**2+vz_r**2) + 0.5 * (Bx(i,:,:)**2 + By(i,:,:)**2 + Bz(i,:,:)**2)            
-        end if
+        et(i,:,:)= P_r/g1 + 0.5*rho_r * (vx_r**2+vy_r**2+vz_r**2) + 0.5 * (Bx(i,:,:)**2 + By(i,:,:)**2 + Bz(i,:,:)**2)            
       end if
       if (self%kind(1:7) == 'stagger') then
-        if (self%gamma .eq. 1.) then
-          s (i,:,:) = -log(rho_r)*rho_r
-        else
-          s (i,:,:) = (log(P_r)-log(rho_r)*self%gamma)/(self%gamma-1.0) * rho_r
-        end if
+        s (i,:,:) = (log(P_r)-log(rho_r)*self%gamma)/g1 * rho_r
       end if
     endif
   end do
