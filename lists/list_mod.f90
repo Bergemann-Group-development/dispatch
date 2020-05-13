@@ -1849,6 +1849,26 @@ SUBROUTINE remove_task (self, task)
   call self%lock%set ('remove_task')
   if (self%verbose > 3) &
     write (io%output,*) wallclock(),' thread',omp%thread,' locked tasklist(3)'
+  !-----------------------------------------------------------------------------
+  ! First remove the task from the ready queu
+  !-----------------------------------------------------------------------------
+    link => self%queue
+    nullify (prev)
+    do while (associated(link))
+      if (link%task%id == task%id) then
+        if (associated(prev)) then
+          prev%next_time => link%next_time
+        else
+          self%queue => link%next_time
+        end if
+        exit
+      end if
+      prev => link
+      link => link%next_time
+    end do
+  !-----------------------------------------------------------------------------
+  ! Now remove the task from the full task list
+  !-----------------------------------------------------------------------------
   link => self%head
   nullify (prev)
   do while (associated(link))
@@ -1865,23 +1885,6 @@ SUBROUTINE remove_task (self, task)
   end do
   print*,'ERROR: failed to remove from task list, task', task%id
 9 continue
-  !-----------------------------------------------------------------------------
-  ! Also remove the task from the ready queu
-  !-----------------------------------------------------------------------------
-  link => self%queue
-  nullify (prev)
-  do while (associated(link))
-    if (link%task%id == task%id) then
-      if (associated(prev)) then
-        prev%next_time => link%next_time
-      else
-        self%queue => link%next_time
-      end if
-      exit
-    end if
-    prev => link
-    link => link%next_time
-  end do
   !-----------------------------------------------------------------------------
   ! IMPORTANT: Some procedures depend on knowing the size of the list!
   !-----------------------------------------------------------------------------
