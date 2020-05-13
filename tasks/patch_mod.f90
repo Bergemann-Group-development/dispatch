@@ -1977,7 +1977,7 @@ SUBROUTINE nbor_courant_conditions (self)
     class is (patch_t)
       call overlap_range (self, nbtask, l, u)
       nbor%u_max = maxval(self%u_phase(l(1):u(1),l(2):u(2),l(3):u(3)))
-      if (self%id==63) then
+      if (self%id==io%id_debug) then
         write(io_unit%log,'(1x,a,2(i6,f12.6),2(2x,3i4),1p,2e12.2)') &
          'overlap_range:', self%id, self%time, nbtask%id, nbtask%time, &
           l, u, nbor%u_max, maxval(self%u_phase)

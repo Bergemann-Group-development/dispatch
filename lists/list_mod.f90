@@ -825,15 +825,18 @@ SUBROUTINE check_oldest (self)
     link => link%next
   end do
   if (associated(oldest)) then
-    write (io_unit%log,*) 'oldest active is ', oldest%task%id , told, &
+    write (io_unit%log,'(f12.6,2x,a,i6,f12.6," rb:",2l1)') wallclock(), &
+      'the oldest active task is ', oldest%task%id , told, &
       oldest%task%is_set(bits%ready), oldest%task%is_set(bits%busy) 
   else
     write (stderr,*) 'STALLED: oldest active not found '
   end if
   flush (io_unit%log)
   if (associated(oldestv)) then
-    write (io_unit%log,*) 'the oldest virtual task is ', oldestv%task%id, toldv
-    write (io_unit%log,*) 'it was last unpacked at', oldestv%task%unpack_time
+    write (io_unit%log,'(f12.6,2x,a,i6,f12.6)') wallclock(), &
+      'the oldest virtual task is ', oldestv%task%id, toldv
+    write (io_unit%log,'(f12.6,2x,a,f12.6)') wallclock(), &
+      'it was last unpacked at', oldestv%task%unpack_time
     flush (io_unit%log)
   end if
   if (associated(oldest)) then
@@ -1011,7 +1014,7 @@ SUBROUTINE check_ready (self, link, lock, status)
             wallclock(), &
             'list_t%check_ready:', link%task%id, &
             'nbor, level, delta_t, ahead =', nbor%task%id, nbor%task%level, &
-            (nbor%task%time-task%time)/max(task%dtime,tiny(1d0)), &
+            (nbor%task%time-task%time)/max(nbor%task%dtime,tiny(1d0)), &
             nbor%task%is_ahead_of(task)
         !.......................................................................
       else
@@ -1062,7 +1065,7 @@ SUBROUTINE check_ready (self, link, lock, status)
       ! while at verbose=2 we get a line for ever fail, and line on stderr for
       ! every 10000 failures
       !-------------------------------------------------------------------------
-      if (self%verbose > 0) then
+      if (self%verbose > 1  ) then
         write (io_unit%log,'(f12.6,i6,l3,f12.6,1x,a,i6,f12.6,i5,l3)') &
           wallclock(), task%id, task%is_set(bits%boundary), task%time, &
           'list_t%check_ready: failed with id, time, rank, V =', &
