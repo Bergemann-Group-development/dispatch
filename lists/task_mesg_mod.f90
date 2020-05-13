@@ -445,7 +445,7 @@ SUBROUTINE unpack (self, mesg, link)
   !.............................................................................
   class(task_t), pointer:: task
   logical:: found, bonafide, new
-  integer:: save_bits
+  integer:: save_bits, it
   integer, save:: itimer=0
   character(len=24):: label
   type(patch_t):: patch
@@ -611,17 +611,27 @@ SUBROUTINE unpack (self, mesg, link)
         call load_balance%lock%unset ('task_mesg_t%unpack')
       call self%lock%unset ('task_mesg_t%unpack')
     else if (new) then
-      if (self%verbose > 0) write(io_unit%log,*) task%id, 'new'
+      if (self%verbose > 0) write(io_unit%log,*) task%id, 'new', task%it
       !-------------------------------------------------------------------------
       ! 3) the task is a new virtual task.  It has the init_nbors bit set, and
       !    since it is a virtual task that bit should be cleared the next time
       !    the task is updated, coming back not as new task but as a virtual
       !    task update.  But first, issue a request for the next message.
       !-------------------------------------------------------------------------
+      it = task%it
       select type (task)
       class is (experiment_t)
         call task%setup
       end select
+      !-------------------------------------------------------------------------
+      ! Let all time slots refer to the mem slot the new task data is in
+      !-------------------------------------------------------------------------
+      task%t(:) = task%time
+      task%dt(:) = task%dtime
+      task%iit(:) = it
+      !-------------------------------------------------------------------------
+      ! Add the new task to the task list, and give it an nbor list, etc
+      !-------------------------------------------------------------------------
       call self%add_new_link (link)
       task%mesg%seq = task%mesg%seq-1             ! adjust the sequence number
       if (verbose > 0) then
