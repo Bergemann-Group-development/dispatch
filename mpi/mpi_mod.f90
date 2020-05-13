@@ -102,10 +102,19 @@ SUBROUTINE init (self, mpi_dims, dims)
     call omp%init
     call detect_cores
 #ifdef MPI
-    call MPI_Bcast (omp%ncores, 1, MPI_INTEGER, 0, self%comm, mpi_err)
-    call omp_timer%get (offset)
-    call MPI_Bcast (offset, 1, MPI_REAL8, 0, self%comm, mpi_err)
-    call omp_timer%set (offset)
+    if (mpi%mode == MPI_THREAD_MULTIPLE) then
+      call MPI_Bcast (omp%ncores, 1, MPI_INTEGER, 0, self%comm, mpi_err)
+      call omp_timer%get (offset)
+      call MPI_Bcast (offset, 1, MPI_REAL8, 0, self%comm, mpi_err)
+      call omp_timer%set (offset)
+    else
+      !$omp critical (mpi_cr)
+      call MPI_Bcast (omp%ncores, 1, MPI_INTEGER, 0, self%comm, mpi_err)
+      call omp_timer%get (offset)
+      call MPI_Bcast (offset, 1, MPI_REAL8, 0, self%comm, mpi_err)
+      call omp_timer%set (offset)
+      !$omp end critical (mpi_cr)
+     end if
 #endif
   end if
 #ifdef MPI
@@ -244,7 +253,13 @@ SUBROUTINE end_mpi (self, label)
 #ifdef MPI
   write (io_unit%mpi,*) self%rank, wallclock(), 'calling MPI_Finalize'
   flush (io_unit%mpi)
-  call MPI_Finalize (mpi_err)
+  if (mpi%mode == MPI_THREAD_MULTIPLE) then
+    call MPI_Finalize (mpi_err)
+  else
+    !$omp critical (mpi_cr)
+    call MPI_Finalize (mpi_err)
+    !$omp end critical (mpi_cr)
+  end if
   write (io_unit%mpi,*) self%rank, wallclock(), 'returned from MPI_Finalize'
   flush (io_unit%mpi)
 #endif
@@ -256,7 +271,6 @@ END SUBROUTINE
 SUBROUTINE abort_mpi (self, reason)
   class(mpi_t):: self
   character(len=*), optional:: reason
-!...............................................................................
   !-----------------------------------------------------------------------------
   ! Give other ranks a chance to issue messages as well, then abort
   !-----------------------------------------------------------------------------
@@ -264,8 +278,14 @@ SUBROUTINE abort_mpi (self, reason)
   call message (stderr)
   call message (io_unit%log)
 #ifdef MPI
-  call delay (3e3)
-  call MPI_Abort (mpi_comm_world, 127, mpi_err)
+  call omp%delay (3e3)
+  if (mpi%mode == MPI_THREAD_MULTIPLE) then
+    call MPI_Abort (mpi_comm_world, 127, mpi_err)
+  else
+    !$omp critical (mpi_cr)
+    call MPI_Abort (mpi_comm_world, 127, mpi_err)
+    !$omp end critical (mpi_cr)
+  end if
 #endif
   call exit
 contains
@@ -287,7 +307,14 @@ END SUBROUTINE abort_mpi
 SUBROUTINE clean_stop
 !...............................................................................
 #ifdef MPI
-  call MPI_Abort (mpi_comm_world, 127, mpi_err)
+  call omp%delay (3e3)
+  if (mpi%mode == MPI_THREAD_MULTIPLE) then
+    call MPI_Abort (mpi_comm_world, 127, mpi_err)
+  else
+    !$omp critical (mpi_cr)
+    call MPI_Abort (mpi_comm_world, 127, mpi_err)
+    !$omp end critical (mpi_cr)
+  end if
 #endif
   call exit
 END SUBROUTINE clean_stop
@@ -302,7 +329,14 @@ SUBROUTINE barrier_mpi (self, label)
     flush (output)
   end if
 #ifdef MPI
-  call MPI_Barrier (mpi_comm_world, mpi_err)
+  call omp%delay (3e3)
+  if (mpi%mode == MPI_THREAD_MULTIPLE) then
+    call MPI_Barrier (mpi_comm_world, mpi_err)
+  else
+    !$omp critical (mpi_cr)
+    call MPI_Barrier (mpi_comm_world, mpi_err)
+    !$omp end critical (mpi_cr)
+  end if
 #endif
 END SUBROUTINE barrier_mpi
 
@@ -440,10 +474,19 @@ SUBROUTINE init8 (self, n)
   if (self%window==0) then
     !$omp critical (counter_cr)
     if (self%window==0) then
-      self%i = n
-      call MPI_Win_create (self%i, nbytes, 8, MPI_INFO_NULL, MPI_COMM_WORLD, &
-                           self%window, mpi_err)
-      call mpi%assert ('MPI_Win_create', mpi_err)
+      if (mpi%mode == MPI_THREAD_MULTIPLE) then
+        self%i = n
+        call MPI_Win_create (self%i, nbytes, 8, MPI_INFO_NULL, MPI_COMM_WORLD, &
+                             self%window, mpi_err)
+        call mpi%assert ('MPI_Win_create', mpi_err)
+      else
+        !$omp critical (mpi_cr)
+        self%i = n
+        call MPI_Win_create (self%i, nbytes, 8, MPI_INFO_NULL, MPI_COMM_WORLD, &
+                             self%window, mpi_err)
+        call mpi%assert ('MPI_Win_create', mpi_err)
+        !$omp end critical (mpi_cr)
+      end if
     end if
     !$omp end critical (counter_cr)
   end if
@@ -495,16 +538,27 @@ FUNCTION update8 (self, i) RESULT (j)
   integer(kind=MPI_ADDRESS_KIND):: offset=0
   !-----------------------------------------------------------------------------
   call trace%begin ('mpi_counter_t%update', 2)
-  !$omp critical (mpi_win_cr)
-  call MPI_Win_lock (MPI_LOCK_EXCLUSIVE, master, 0, self%window, mpi_err)
-  call mpi%assert ('MPI_Win_lock', mpi_err)
-  call MPI_Get_accumulate (i, 1, MPI_INTEGER8, &
-                           k, 1, MPI_INTEGER8, master, offset, &
-                              1, MPI_INTEGER8, MPI_SUM, self%window, mpi_err)
-  call mpi%assert ('MPI_Get_accumulate', mpi_err)
-  call MPI_Win_unlock (master, self%window, mpi_err)
-  call mpi%assert ('MPI_Win_unlock', mpi_err)
-  !$omp end critical (mpi_win_cr)
+  if (mpi%mode == MPI_THREAD_MULTIPLE) then
+    call MPI_Win_lock (MPI_LOCK_EXCLUSIVE, master, 0, self%window, mpi_err)
+    call mpi%assert ('MPI_Win_lock', mpi_err)
+    call MPI_Get_accumulate (i, 1, MPI_INTEGER8, &
+                             k, 1, MPI_INTEGER8, master, offset, &
+                                1, MPI_INTEGER8, MPI_SUM, self%window, mpi_err)
+    call mpi%assert ('MPI_Get_accumulate', mpi_err)
+    call MPI_Win_unlock (master, self%window, mpi_err)
+    call mpi%assert ('MPI_Win_unlock', mpi_err)
+  else
+    !$omp critical (mpi_cr)
+    call MPI_Win_lock (MPI_LOCK_EXCLUSIVE, master, 0, self%window, mpi_err)
+    call mpi%assert ('MPI_Win_lock', mpi_err)
+    call MPI_Get_accumulate (i, 1, MPI_INTEGER8, &
+                              k, 1, MPI_INTEGER8, master, offset, &
+                                1, MPI_INTEGER8, MPI_SUM, self%window, mpi_err)
+    call mpi%assert ('MPI_Get_accumulate', mpi_err)
+    call MPI_Win_unlock (master, self%window, mpi_err)
+    call mpi%assert ('MPI_Win_unlock', mpi_err)
+    !$omp end critical (mpi_cr)
+  end if
   j = k+i
 #else
   call trace%begin ('mpi_counter_t%update')
