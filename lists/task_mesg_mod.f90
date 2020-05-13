@@ -172,6 +172,7 @@ SUBROUTINE check_mpi (self, n)
   n_unpk = 0
   if (mpi%size > 1) then
     call trace%begin ('task_mesg_t%check_mpi', itimer=itimer)
+    call self%lock%set ('task_mesg_t%check_mpi')
     link => self%head
     do while (associated(link))
       task => link%task
@@ -182,6 +183,7 @@ SUBROUTINE check_mpi (self, n)
       end if
       link => link%next
     end do
+    call self%lock%unset ('task_mesg_t%check_mpi')
     call check_new(self)
     call trace%end (itimer)
   end if
@@ -233,6 +235,7 @@ SUBROUTINE check_sent (self, task)
   !-----------------------------------------------------------------------------
   call trace%begin ('task_mesg_t%check_sent')
   if (associated(task%sent_list)) then
+    call self%lock%set ('task_mesg_t%check_sent')
     mesg => task%sent_list%head
     do while (associated(mesg))
       next => mesg%next
@@ -242,6 +245,7 @@ SUBROUTINE check_sent (self, task)
       end if
       mesg => next
     end do
+    call self%lock%unset ('task_mesg_t%check_sent')
   end if
   call trace%end()
 END SUBROUTINE check_sent

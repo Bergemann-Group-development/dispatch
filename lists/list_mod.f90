@@ -730,6 +730,7 @@ SUBROUTINE check_all (self, repair)
     nullify (self%queue)
   end if
   nq = self%nq
+  call self%lock%set ('check_all')
   link => self%head
   do while (associated (link))                          ! keep going until end
     if (link%task%is_clear (bits%virtual+bits%external)) then
@@ -747,11 +748,13 @@ SUBROUTINE check_all (self, repair)
     end if
     link => link%next
   end do
+  call self%lock%unset ('check_all')
   if (associated(self%queue)) then
     write (io_unit%log,*) wallclock(), 'check_all: done, nq =', &
       self%nq, associated(self%queue)
   else
     write (io_unit%log,*) 'check_all: phase 2, clearing ready bits'
+    call self%lock%set ('check_all(2)')
     link => self%head
     do while (associated (link))                        ! keep going until end
       if (link%task%is_clear (bits%virtual+bits%external)) then
@@ -763,6 +766,7 @@ SUBROUTINE check_all (self, repair)
       end if
       link => link%next
     end do
+    call self%lock%unset ('check_all(2)')
   end if
   write (io_unit%log,*) wallclock(), 'check_all: done, nq =', &
     self%nq, associated(self%queue)
@@ -808,6 +812,7 @@ SUBROUTINE check_oldest (self, clear)
   nullify (oldest)
   nullify (oldestv)
   nullify (oldestnb)
+  call self%lock%set ('check_oldest')
   link => self%head
   do while (associated (link))                        ! keep going until end
     if (link%task%is_clear (bits%frozen)) then
@@ -825,6 +830,7 @@ SUBROUTINE check_oldest (self, clear)
     end if
     link => link%next
   end do
+  call self%lock%unset ('check_oldest')
   if (associated(oldest)) then
     write (io_unit%log,'(f12.6,2x,a,i6,f12.6," rb:",2l1)') wallclock(), &
       'the oldest active task is ', oldest%task%id , told, &
@@ -1822,6 +1828,7 @@ SUBROUTINE append_list (self, task_list)
   integer:: n
   !-----------------------------------------------------------------------------
   call trace%begin ('list_t%append_list')
+  call self%lock%set ('append_list')
   if (associated(self%tail)) then
     self%tail%next => task_list%head
   else
@@ -1835,6 +1842,7 @@ SUBROUTINE append_list (self, task_list)
     link => link%next
     n = n+1
   end do
+  call self%lock%unset ('append_list')
   if (n==self%n) then
     write (io_unit%log,*) trim(self%name)//': OK append of '//task_list%name
   else
