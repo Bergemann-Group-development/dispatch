@@ -72,8 +72,8 @@ SUBROUTINE init(self)
   logical, save:: first_time=.true.
   namelist /counters_params/ verbose
   !-----------------------------------------------------------------------------
+  call trace%begin ('counters_t%init')
   if (first_time) then
-    call trace%begin ('counters_t%init')
     call io%lock%set ('counters_t%init')
     if (first_time) then
       self%id = 0
@@ -83,9 +83,9 @@ SUBROUTINE init(self)
       first_time = .false.
     end if
     call io%lock%unset ('counters_t%init')
-    call self%lock%init ('coun')
-    call trace%end()
   end if
+  call self%lock%init ('coun')
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
