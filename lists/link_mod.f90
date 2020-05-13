@@ -409,7 +409,7 @@ SUBROUTINE remove_nbor_list (self, nbors)
       next => nbor%next
       !$omp atomic update
       nbor%task%n_needed = nbor%task%n_needed - 1
-      if (verbose > 1) then
+      if (verbose > 2) then
         write (io_unit%mpi,'(f12.6,i4,i6,2x,a,i4,2x,a)') wallclock(), omp%thread, &
           nbor%task%id, 'needed by', nbor%task%n_needed, 'remove_nb_list'
         flush (io_unit%mpi)
@@ -439,9 +439,9 @@ SUBROUTINE remove_nbor_list2 (self, nbors)
     next => nbor%next
     !$omp atomic update
     nbor%task%n_needed = nbor%task%n_needed - 1
-    if (verbose > 1) then
+    if (verbose > 2) then
       write (io_unit%mpi,'(f12.6,i4,i6,2x,a,i4,2x,a)') wallclock(), omp%thread, &
-        nbor%task%id, 'needed by', nbor%task%n_needed, 'remove_nb_list'
+        nbor%task%id, 'needed by', nbor%task%n_needed, 'remove_nb_list2'
       flush (io_unit%mpi)
     end if
     !---------------------------------------------------------------------------
@@ -486,8 +486,8 @@ SUBROUTINE copy_nbor_list (self, old_head, new_head)
     new%link => nbor%link
     !$omp atomic update
     nbor%task%n_needed = nbor%task%n_needed + 1
-    if (verbose > 1) &
-      write (io_unit%mpi,'(f12.6,i4,i6,2x,a,i4,2x,a)') wallclock(), omp%thread, &
+    if (verbose > 2) &
+      write (io_unit%mpi,'(f12.6,i4,i6,2x,a,i5,2x,a)') wallclock(), omp%thread, &
       nbor%task%id, 'needed by', nbor%task%n_needed, 'copy_nb_list'
     flush (io_unit%mpi)
     !---------------------------------------------------------------------------
@@ -620,6 +620,8 @@ SUBROUTINE garbage_collect (link)
       write (io_unit%log,'(f12.6,2x,a,i4,2l4)') &
         wallclock(), 'garbage_collect deleted: id =', link%task%id, &
         link%task%n_needed, link%task%is_set(bits%virtual)
+      write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,i6)') &
+        wallclock(), omp%thread, 'removed', link%task%id, link%task%time
     end if
     !---------------------------------------------------------------------------
     ! At this point, the link task has been removed from the task list, and

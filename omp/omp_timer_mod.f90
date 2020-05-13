@@ -9,7 +9,6 @@ MODULE omp_timer_mod
   real(8), external:: omp_get_wtime
   type omp_timer_t
   contains
-    procedure, nopass:: delay
     procedure, nopass:: get
     procedure, nopass:: set
   end type
@@ -28,18 +27,6 @@ FUNCTION wallclock() result (time)
   end if
   time = time-offset
 END FUNCTION wallclock
-
-!===============================================================================
-!> Active spin delay
-!===============================================================================
-SUBROUTINE delay (delta)
-  real:: delta
-  real(8):: wc
-  !.............................................................................
-  wc = wallclock()
-  do while (wallclock()-wc < delta)
-  end do
-END SUBROUTINE delay
 
 !===============================================================================
 !> Get offset

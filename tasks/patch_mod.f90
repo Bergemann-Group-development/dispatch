@@ -27,21 +27,21 @@ MODULE patch_mod
   private
   integer, parameter:: ndim = 3
   type, extends(task_t), public:: patch_t
-    real(kind=KindScalarVar), dimension(:,:,:,:,:,:), pointer:: mem      => null()
-    real(kind=KindScalarVar), dimension(:,:,:,:,:),   pointer:: vgas     => null()
-    real(kind=KindScalarVar), dimension(:,:,:,:),     pointer:: density  => null()
-    real(kind=KindScalarVar), dimension(:,:,:,:),     pointer:: pressure => null()
+    real(kind=KindScalarVar), dimension(:,:,:,:,:,:), pointer, contiguous:: mem      => null()
+    real(kind=KindScalarVar), dimension(:,:,:,:,:),   pointer, contiguous:: vgas     => null()
+    real(kind=KindScalarVar), dimension(:,:,:,:),     pointer, contiguous:: density  => null()
+    real(kind=KindScalarVar), dimension(:,:,:,:),     pointer, contiguous:: pressure => null()
     !dir$ attributes align: 64 :: mem, vgas, density, pressure
     !---------------------------------------------------------------------------
     ! These allocatables are intended to deposite external forces and heating in,
     ! typically used by methods called from the extras_t data type procedures.
     !---------------------------------------------------------------------------
-    real(kind=KindScalarVar), dimension(:,:,:,:),     allocatable:: force_per_unit_mass
-    real(kind=KindScalarVar), dimension(:,:,:,:),     allocatable:: force_per_unit_volume
-    real(kind=KindScalarVar), dimension(:,:,:),       allocatable:: heating_per_unit_mass
-    real(kind=KindScalarVar), dimension(:,:,:),       allocatable:: heating_per_unit_volume
-    integer(kind=int8)      , dimension(:,:,:),       allocatable:: filled
-    real(kind=KindScalarVar), dimension(:,:,:),       pointer:: u_phase
+    real(kind=KindScalarVar), dimension(:,:,:,:),     pointer, contiguous:: force_per_unit_mass     => null()
+    real(kind=KindScalarVar), dimension(:,:,:,:),     pointer, contiguous:: force_per_unit_volume   => null()
+    real(kind=KindScalarVar), dimension(:,:,:),       pointer, contiguous:: heating_per_unit_mass   => null()
+    real(kind=KindScalarVar), dimension(:,:,:),       pointer, contiguous:: heating_per_unit_volume => null()
+    integer(kind=int8)      , dimension(:,:,:),       pointer, contiguous:: filled  => null()
+    real(kind=KindScalarVar), dimension(:,:,:),       pointer, contiguous:: u_phase => null()
     !dir$ attributes align: 64 :: force_per_unit_mass, force_per_unit_volume
     !dir$ attributes align: 64 :: heating_per_unit_mass, heating_per_unit_volume
     !dir$ attributes align: 64 :: filled
@@ -82,9 +82,9 @@ MODULE patch_mod
     real:: safety_factor=1.0
     real:: ee_min=tiny(1.0)
     !--- used in extras ---
-    logical, allocatable:: mask(:,:,:)
+    logical, pointer, contiguous:: mask(:,:,:) => null()
     !--- used in refine ---
-    real, allocatable:: irefine(:,:,:)
+    real, pointer, contiguous:: irefine(:,:,:) => null()
     type(lock_t), pointer:: mem_lock(:) => null()
     !---------------------------------------------------------------------------
     ! HACKs below:  FIXME
@@ -451,13 +451,13 @@ END SUBROUTINE init
 !===============================================================================
 SUBROUTINE pre_update (self)
   class(patch_t), target:: self
-  if (allocated (self%force_per_unit_mass)) &
+  if (associated (self%force_per_unit_mass)) &
     self%force_per_unit_mass = 0.0
-  if (allocated (self%force_per_unit_volume)) &
+  if (associated (self%force_per_unit_volume)) &
     self%force_per_unit_volume = 0.0
-  if (allocated (self%heating_per_unit_mass)) &
+  if (associated (self%heating_per_unit_mass)) &
     self%heating_per_unit_mass = 0.0
-  if (allocated (self%heating_per_unit_volume)) &
+  if (associated (self%heating_per_unit_volume)) &
     self%heating_per_unit_volume = 0.0
 END SUBROUTINE pre_update
 
@@ -708,7 +708,7 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
     !$omp end critical (log_cr)
   end if
   !-----------------------------------------------------------------------------
-  ! Allocate memory, if not already allocated
+  ! Allocate memory, if not already associated
   !-----------------------------------------------------------------------------
   if (.not.self%mem_allocated) then
     allocate (self%mem(self%mesh(1)%gn, &
@@ -757,22 +757,22 @@ SUBROUTINE dealloc (self)
   if (associated(self%mem)) deallocate (self%mem)
   nullify (self%mem)
   self%mem_allocated = .false.
-  if (allocated(self%force_per_unit_mass)) then
+  if (associated(self%force_per_unit_mass)) then
     call io%bits_mem (-storage_size(self%force_per_unit_mass), &
                       product(shape(self%force_per_unit_mass)),'-fpm')
     deallocate (self%force_per_unit_mass)
   end if
-  if (allocated(self%force_per_unit_volume)) then
+  if (associated(self%force_per_unit_volume)) then
     call io%bits_mem (-storage_size(self%force_per_unit_volume), &
                       product(shape(self%force_per_unit_volume)),'-fpv')
     deallocate (self%force_per_unit_volume)
   end if
-  if (allocated(self%heating_per_unit_mass)) then
+  if (associated(self%heating_per_unit_mass)) then
     call io%bits_mem (-storage_size(self%heating_per_unit_mass), &
                       product(shape(self%heating_per_unit_mass)),'-qpm')
     deallocate (self%heating_per_unit_mass)
   end if
-  if (allocated(self%heating_per_unit_volume)) then
+  if (associated(self%heating_per_unit_volume)) then
     call io%bits_mem (-storage_size(self%heating_per_unit_volume), &
                       product(shape(self%heating_per_unit_volume)),'-qpv')
     deallocate (self%heating_per_unit_volume)
@@ -792,12 +792,12 @@ SUBROUTINE dealloc (self)
                       product(shape(self%pressure)),'-pressure')
     deallocate (self%pressure)
   end if
-  if (allocated(self%mask)) then
+  if (associated(self%mask)) then
     call io%bits_mem (-storage_size(self%mask), &
                       product(shape(self%mask)), '-mask')
     deallocate (self%mask)
   end if
-  if (allocated(self%irefine)) then
+  if (associated(self%irefine)) then
     call io%bits_mem (-storage_size(self%irefine), &
                       product(shape(self%irefine)), '-irefine')
     deallocate (self%irefine)
@@ -812,22 +812,22 @@ END SUBROUTINE dealloc
 
 SUBROUTINE clone_mem_accounting (self)
   class(patch_t):: self
-  if (allocated(self%mask)) &
+  if (associated(self%mask)) &
     call io%bits_mem (storage_size(self%mask), &
                      product(shape(self%mask)), 'mask')
-  if (allocated(self%irefine)) &
+  if (associated(self%irefine)) &
     call io%bits_mem (storage_size(self%irefine), &
                      product(shape(self%irefine)), 'irefine')
-  if (allocated(self%force_per_unit_mass)) &
+  if (associated(self%force_per_unit_mass)) &
     call io%bits_mem (storage_size(self%force_per_unit_mass), &
                      product(shape(self%force_per_unit_mass)),'fpm')
-  if (allocated(self%force_per_unit_volume)) &
+  if (associated(self%force_per_unit_volume)) &
     call io%bits_mem (storage_size(self%force_per_unit_volume), &
                      product(shape(self%force_per_unit_volume)),'fpv')
-  if (allocated(self%heating_per_unit_mass)) &
+  if (associated(self%heating_per_unit_mass)) &
     call io%bits_mem (storage_size(self%heating_per_unit_mass), &
                      product(shape(self%heating_per_unit_mass)),'qpm')
-  if (allocated(self%heating_per_unit_volume)) &
+  if (associated(self%heating_per_unit_volume)) &
     call io%bits_mem (storage_size(self%heating_per_unit_volume), &
                      product(shape(self%heating_per_unit_volume)),'qpv')
 END SUBROUTINE clone_mem_accounting
@@ -1450,7 +1450,7 @@ SUBROUTINE unpack (self, mesg)
   ! Copy relevant patch info from sequenced header
   !-----------------------------------------------------------------------------
   if (omp_lock%tasks) &
-    call self%lock%set ('unpack')
+    call self%lock%set ('unpack1')
   ibuf = 1
   call anonymous_copy (n_header, buffer(ibuf), header)
   ibuf = ibuf + n_header
@@ -1459,7 +1459,7 @@ SUBROUTINE unpack (self, mesg)
   !-----------------------------------------------------------------------------
   lock => self%mem_lock(self%new)
   call omp_lock%check_pointer (lock, 'mem_lock', self%id)
-  call lock%set ('unpack')
+  call lock%set ('unpack2')
   call self%header_to_patch (header)
   if (io%verbose > 1) &
     write (io_unit%log,'(f12.6,3x,a,i7,2i4,2x,3l1,2i4,f8.4,f11.6)') &
@@ -1494,7 +1494,7 @@ SUBROUTINE unpack (self, mesg)
   if (self%is_set(bits%swap_request) .and. self%is_set(bits%virtual)) then
     it = mod(self%it-1+self%nt-1,self%nt)+1
     lock => self%mem_lock(it)
-    call lock%set ('unpack')
+    call lock%set ('unpack3')
     if (io%verbose>0) then
       write (io_unit%log,*) self%id, 'extra time slot unpacked', it
       flush (io_unit%log)
@@ -1503,11 +1503,11 @@ SUBROUTINE unpack (self, mesg)
       call anonymous_copy (n_buf, buffer(ibuf), self%mem(:,:,:,iv,it,1))
       ibuf = ibuf + n_buf
     end do
-    call lock%unset ('unpack2')
+    call lock%unset ('unpack3')
   end if
   !-----------------------------------------------------------------------------
   if (omp_lock%tasks) &
-    call self%lock%set ('unpack')
+    call self%lock%unset ('unpack1')
   if (io%verbose > 2) &
     write (io_unit%log,*) self%id, 'after unpack', minval(self%mem(:,:,:,1,self%it,1))
   call self%clear (bits%busy)
@@ -1977,7 +1977,7 @@ SUBROUTINE nbor_courant_conditions (self)
     class is (patch_t)
       call overlap_range (self, nbtask, l, u)
       nbor%u_max = maxval(self%u_phase(l(1):u(1),l(2):u(2),l(3):u(3)))
-      if (self%id==63) then
+      if (self%id==io%id_debug) then
         write(io_unit%log,'(1x,a,2(i6,f12.6),2(2x,3i4),1p,2e12.2)') &
          'overlap_range:', self%id, self%time, nbtask%id, nbtask%time, &
           l, u, nbor%u_max, maxval(self%u_phase)

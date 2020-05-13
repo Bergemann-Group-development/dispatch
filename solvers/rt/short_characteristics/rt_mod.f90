@@ -257,7 +257,7 @@ SUBROUTINE init_task (self)
     !---------------------------------------------------------------------------
     ! Allocate heating for MHD
     !---------------------------------------------------------------------------
-    if (.not.allocated(self%patch%heating_per_unit_volume)) then
+    if (.not.associated(self%patch%heating_per_unit_volume)) then
       allocate(self%patch%heating_per_unit_volume(p%gn(1), p%gn(2), p%gn(3)))
       self%patch%heating_per_unit_volume = 0.0
     end if

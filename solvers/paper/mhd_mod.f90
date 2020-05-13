@@ -499,10 +499,10 @@ SUBROUTINE pde (self)
   ! applied here, and should not be included in the function definition
   !-----------------------------------------------------------------------------
   if (self%do_force) then
-    if (allocated(self%force_per_unit_mass)) then
+    if (associated(self%force_per_unit_mass)) then
       dpdt = dpdt + dd*self%force_per_unit_mass                                  ! ops: 2 2 0
     end if
-    if (allocated(self%force_per_unit_volume)) then
+    if (associated(self%force_per_unit_volume)) then
       dpdt = dpdt + self%force_per_unit_volume
     end if
   end if

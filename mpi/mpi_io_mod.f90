@@ -452,7 +452,13 @@ SUBROUTINE sync (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('mpi_io_t%sync')
 #ifdef MPI
-  call MPI_File_sync (self%file%handle, err)
+  if (mp%mode == MPI_THREAD_MULTIPLE) then
+    call MPI_File_sync (self%file%handle, err)
+  else
+    !$omp critical (mpi_cr)
+    call MPI_File_sync (self%file%handle, err)
+    !$omp end critical (mpi_cr)
+  end if
 #endif
   call trace%end ()
 END SUBROUTINE sync

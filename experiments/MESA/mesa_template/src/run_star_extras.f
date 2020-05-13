@@ -8,19 +8,21 @@
          
          type acc_struct 
          sequence
-            real(8) :: time, mdot
+            real(8) :: time, dm_acc
          end type acc_struct
+         
          
          TYPE(acc_struct), DIMENSION(:), allocatable :: acc_hist
          TYPE(integer) :: acc_len = 0
-         character(64) :: model_path
-         real(dp) :: next_save = huge(0d0)
+         character(64) :: next_model_filename
+         real(dp) :: next_model_save = huge(0d0)
          integer :: read_unit, write_unit
 
          contains        
          
          subroutine extras_controls(id, ierr)
-            integer :: id, ierr
+            integer, intent(in) :: id
+            integer, intent(out) :: ierr
             type (star_info), pointer :: s
 
             call star_ptr(id, s, ierr)
@@ -30,11 +32,13 @@
             s% use_other_energy = .true.
             s% use_other_adjust_mdot = .true.
             
-            s% extras_finish_step => extras_finish_step           ! Get accretion up to a given syncronization point
+            s% extras_start_step => extras_start_step           ! Get accretion up to a given syncronization point
             s% other_adjust_mdot => other_adjust_mdot ! Calculate mdot from loaded data
             s% other_energy => other_energy          ! put energy onto the star
             s% extras_after_evolve => extras_after_evolve ! Report supernova
             ! todo: other_photo_write and other_photo_read to conserve acc_hist
+            s% how_many_extra_history_columns => how_many_extra_history_columns
+            s% data_for_extra_history_columns => data_for_extra_history_columns
          end subroutine extras_controls
          
          ! opens the pipes and initialize the acc_hist array
@@ -65,13 +69,9 @@
             allocate(acc_hist(1))
             acc_hist%time=age
             acc_len = 1
-            call read_next ! read first
-            s% dt_next = min(acc_hist(acc_len)% time-s%time, &
-                             next_save-s%time, &
-                             s% dt_next)
          end subroutine init
 
-         integer function extras_finish_step(id)
+         integer function extras_start_step(id)
             integer, intent(in) :: id
             integer :: ierr
             type (star_info), pointer :: s
@@ -81,54 +81,59 @@
             call star_ptr(id, s, ierr)
 
             ! handle save point
-            if (s% time >= next_save) then
-               call star_write_model(id, model_path, ierr)
+            if (s%time >= next_model_save) then
+               call star_write_model(id, next_model_filename, ierr)
                step_forced = .true.
-               next_save = huge(0d0)
+               next_model_save = huge(0d0)
             end if 
-            ! hand sync point
-            if (s% time >= acc_hist(acc_len)%time) then
-               call write_feedback(s, .false.)
+            ! handle no more accretion data
+            if (s%time >= acc_hist(acc_len)%time) then
+               if (acc_len > 1) & ! write feedback if this is not first invocation
+                  call write_feedback(s, .false.)
                call read_next
                step_forced = .true.
             end if
-            !write(*,*) s%time, acc_hist(acc_len)% time, next_save, s% dt_next, unbounded_dt, step_forced
             ! Ensure resetting dt_next after artificially short steps
             if (step_forced) then
-               s% dt_next = unbounded_dt * s% max_timestep_factor
+               s% dt_next = max(s% dt_next, unbounded_dt * s% max_timestep_factor)
             else
                unbounded_dt = s% dt_next
             end if
             ! Bound to dt_next to hit sync and save times
             s% dt_next = min(acc_hist(acc_len)% time-s%time, &
-                             next_save-s%time, &
+                             next_model_save-s%time, &
                              s% dt_next)
-
-            extras_finish_step = keep_going
-         end function extras_finish_step
+            extras_start_step = keep_going
+         end function extras_start_step
 
          subroutine other_adjust_mdot(id, ierr)
             integer, intent(in):: id
             integer,intent(out) :: ierr
-            real(dp) :: tstart, tend, dm, lower_t, upper_t
-            integer :: i
+            real(dp) :: change
             type(star_info), pointer :: s
             call star_ptr(id, s, ierr)
-            tstart = s% time
-            tend = s% time + s% dt
+            ! I use time_old here, because of some reason when there is a restart, s% time has been progressed,
+            ! And s% time + s% dt is not == the next s% time
+            change = get_accretion(s% time_old,  s% time_old + s% dt)
+            s% mstar_dot = s% mstar_dot + change
+         end subroutine other_adjust_mdot
 
+         function get_accretion(tstart, tend)
+            real(dp) :: tstart, tend, dm, lower_t, upper_t, frac, get_accretion
+            integer :: i
             ! accretet mass in the given period is the sum of dm's - partial periods.
             ! TODO: this is 0'th order in rate. Possibly upgrade to 1'st order
             dm = 0
-            do i = acc_len,  2, -1
-               lower_t = max(acc_hist(i-1)%time, tstart)
+            do i = 2,  acc_len
                upper_t = min(acc_hist(i)%time, tend)
-               if (lower_t >= upper_t) cycle
-                  dm = dm + acc_hist(i)%mdot*(upper_t-lower_t)
+               lower_t = max(acc_hist(i-1)%time, tstart)
+               frac = (upper_t-lower_t)/(acc_hist(i)%time-acc_hist(i-1)%time)
+               if (frac <= 0) cycle
+               dm = dm + acc_hist(i)%dm_acc * frac
             end do
 
-            s% mstar_dot = dm / (tend - tstart)
-         end subroutine other_adjust_mdot
+            get_accretion = dm / (tend - tstart)
+         end function get_accretion
 
 
          ! not mine, from sigurd
@@ -212,39 +217,28 @@
          call write_feedback(s, .true.)
       end subroutine extras_after_evolve
       
-         ! blocking read of inputs untill syncronization point
-         ! returns time of syncronization point
       subroutine read_next()
-         type(acc_struct) :: accretion
-         logical :: sync_point
-         namelist /query/ accretion, sync_point, next_save, model_path
-         
-   100   read(read_unit,query)
-         ! if add accretion to list
+         logical :: save_query
+         real(8) :: time, dm_acc
+         character(64) :: filename
+         namelist /to_mesa/ save_query, time, dm_acc, filename
+
+         read(read_unit,to_mesa)
+         if (save_query) then
+            next_model_save = time
+            next_model_filename = filename
+            read(read_unit,to_mesa) ! only 1 save in a row
+         end if
+
          acc_len = acc_len + 1
          ! If no more capacity in accretion_hist, resize using doubling strategy
          if (acc_len > size(acc_hist)) then
             call resize_acc_hist(size(acc_hist)*2)
          endif
-         acc_hist(acc_len) = accretion
-         ! continue untill all queries are read
-         if (.not.sync_point) goto 100
+         acc_hist(acc_len)%time = time
+         acc_hist(acc_len)%dm_acc = dm_acc
       end subroutine read_next
-
-      subroutine write_feedback(s, supernova)
-         type (star_info), pointer :: s
-         real(dp) :: dm_wind, loum, t_eff
-         logical :: supernova
-         namelist /query/ dm_wind, loum, t_eff, supernova
-
-         dm_wind = 0!s% dm_wind
-         loum = s% L(1)
-         t_eff = s%teff
-         
-         write(write_unit, query)
-      end subroutine write_feedback
-
-
+      
       subroutine resize_acc_hist(newSize)
          INTEGER, INTENT(IN) :: newSize
          type(acc_struct), DIMENSION(:), ALLOCATABLE :: temp
@@ -256,5 +250,65 @@
          acc_hist(1:size(temp)) = temp
       end subroutine resize_acc_hist
 
+
+      subroutine write_feedback(s, supernova)
+         use chem_def, only : ih1, ihe4, nuclide_not_found
+         type (star_info), pointer :: s
+         real(dp) :: dm_wind, loum, t_eff, Zsurf
+         real(dp), save :: lastmass, lasttime = 0
+         logical :: supernova
+         namelist /to_dispatch/ dm_wind, loum, t_eff, Zsurf, supernova
+
+         if (lasttime == 0) then
+            lasttime = acc_hist(1)%time
+            lastmass = s% initial_mass * Msun
+         end if
+         ! mass loss = wind + accretion
+         dm_wind = (lastmass - s% mstar) + &
+            get_accretion(lasttime, s% time) * (s% time - lasttime)
+         lasttime = s% time
+         lastmass = s% mstar
+
+         loum = s% L(1)
+         t_eff = s%teff
+
+         Zsurf = 1
+         if (ih1 .NE. nuclide_not_found) Zsurf = Zsurf - s% xa(s% net_iso(ih1),1)
+         if (ihe4 .NE. nuclide_not_found) Zsurf = Zsurf - s% xa(s% net_iso(ihe4),1)
+         
+         write(write_unit, to_dispatch)
+      end subroutine write_feedback
+
+      integer function how_many_extra_history_columns(id)
+         integer, intent(in) :: id
+         integer :: ierr
+         type (star_info), pointer :: s
+         ierr = 0
+         call star_ptr(id, s, ierr)
+         if (ierr /= 0) return
+         how_many_extra_history_columns = 2
+      end function how_many_extra_history_columns
+
+      subroutine data_for_extra_history_columns(id, n, names, vals, ierr)
+         integer, intent(in) :: id, n
+         character (len=maxlen_history_column_name) :: names(n)
+         real(dp) :: vals(n)
+         integer, intent(out) :: ierr
+         type (star_info), pointer :: s
+      
+         ierr = 0
+         call star_ptr(id, s, ierr)
+         if (ierr /= 0) return
+      
+         names(1) = "mdot_accretion"
+         vals(1) = get_accretion(s% time-s%dt, s%time) * secyer / msun 
+      
+         ! wind = total mass loss + mass added
+         names(2) = "mdot_wind"
+         vals(2) = -s% mstar_dot * secyer / msun  + vals(1)
+
+         ierr = 0
+      end subroutine data_for_extra_history_columns
+      
       end module run_star_extras
       

@@ -12,21 +12,22 @@ MODULE mesa_mod
   private
   
   type, public, extends(sinks_t):: mesa_t
-    integer :: read_unit, write_unit   ! Units kept open to allow communication with mesa
-    logical :: mesa_simulated=.false. ! The evolution is handled by mesa
-    real(8) :: last_mass, last_time      ! The state at previous submittion
-    character(64)::folder=""          ! folder of pipe, used for reopening the write pipe
-    logical :: exploded = .false.
+    integer :: read_unit, write_unit      ! Units kept open to allow communication with mesa
+    logical :: mesa_simulated=.false.     ! Whether stellar simulation is done by MESA
+    real(8) :: last_time                  ! Previously submitted data
+    character(64) :: folder               ! Folder where this sink's data is located (should this just be infered?)
+    logical :: exploded = .false.         ! This star has exploded
   contains
   procedure:: pre_init
   procedure:: post_update 
-
+  procedure:: output
+  
   ! private procedures:
-  procedure:: start_mesa
-  procedure:: send_accrection
-  procedure:: recive_feedback
+  procedure, private :: start_mesa
+  procedure, private :: eval_mesa
   end type
-  real :: mesa_threshhold, mesa_min_mass
+  real :: mesa_threshhold
+  
   type(mesa_t), public:: mesa
   logical:: first_time = .true.
   CONTAINS
@@ -40,6 +41,8 @@ MODULE mesa_mod
     integer:: iostat
     real :: mesa_threshhold_msun
     namelist /mesa_params/ mesa_threshhold_msun
+    !-----------------------------------------------------------------------------
+
     call trace%begin ('mesa_t%pre_init')
     call self%sinks_t%pre_init(patch)
     call io%lock%set
@@ -60,38 +63,36 @@ MODULE mesa_mod
     ! and then save. Thereby the startup cost will will be severely reduced
   END SUBROUTINE pre_init
 
+  !===============================================================================
+  !> Send accretion to mesa and respond to feedback
+  !===============================================================================
   SUBROUTINE post_update (self, patch)
-    USE omp_timer_mod, only : wallclock
     class(mesa_t):: self
     class(gpatch_t), pointer:: patch
-    character(64):: filename
-    real(8) :: start
     !-----------------------------------------------------------------------------
     call trace%begin ('mesa_t%post_update')
     call self%sinks_t%post_update (patch)
-    if (self%mass > mesa_threshhold .and. patch%contains(self%position) .and. .not. self%exploded) then
+    if (self%mass > mesa_threshhold .and. patch% contains(self%position) .and. .not. self%exploded) then
       if (.not.self%mesa_simulated) then
-        call self%start_mesa
-      end if
-      if (self%time>self%last_time) then
-        !!! insert criteria for when to submit data here !!!
-        write (filename,'("../../",a,i5.5,"/sink_",i5.5)') trim(io%outputname), patch%iout, self%id;
-        call self%send_accrection(.true., patch% out_next*scaling%t, filename)
-        call self%recive_feedback()
+        call self% start_mesa
+      else
+        !!! insert criteria for when to syncronize !!!
+        if (.true.) call self%eval_mesa
       end if
     end if 
-    call trace%end ()
+    call trace%end()
   end subroutine post_update
   
-  ! create working directory fro mesa instance, start it up and connect
-  ! the star is assumed to have constant accretion rate from sink creation to mesa handover.
-  ! In practice, mesa cannot handle 0 mass stars. Therefore, we do not let mesa accrete the 
-  ! first self%mesa_min_mass
+!===============================================================================
+!> Creates a working directory for the mesa instance, 
+!> starts up an instance, and gives startup data
+!===============================================================================
   subroutine start_mesa(self)
     class(mesa_t):: self
     integer :: num_threads
     real(8) :: age, initial_mass
     namelist /startup/ num_threads,age,initial_mass
+    !-----------------------------------------------------------------------------
 
     write (self%folder, "(A, I4.4, A)") "mesa_processes/star_", self%id, "/"
 
@@ -114,48 +115,18 @@ MODULE mesa_mod
     write(self%write_unit,startup)
 
     self%mesa_simulated=.true.
-    self%last_mass = self%mass
     self%last_time = self%time
   end subroutine start_mesa
-
-  subroutine send_accrection(self, sync_point, next_save, model_path)
-    type acc_struct 
-    sequence
-      real(8) :: time, mdot
-    end type acc_struct
-
-    class(mesa_t):: self
-    logical :: sync_point
-    real(8) :: next_save
-    character(64) :: model_path
-    type(acc_struct) :: accretion
-
-    namelist /query/ accretion, sync_point, next_save, model_path
-
-    accretion%time = self%time*scaling%t
-    accretion%mdot =  (self%mass-self%last_mass)*scaling%m/((self%time-self%last_time)*scaling%t)
-    write(self%write_unit, query,DELIM="APOSTROPHE")
-    write(*,query)
-    
-    self%last_mass = self%mass
-    self%last_time = self%time
-  end subroutine send_accrection
-
-  subroutine recive_feedback(self)
-    class(mesa_t):: self
-    real(8) :: dm_wind, loum, t_eff
-    logical :: supernova
-    namelist /query/ dm_wind, loum, t_eff, supernova
-    read(self%read_unit, query)
-    if (supernova) self%exploded = supernova
-  end subroutine recive_feedback
-
-  ! get a new unit for a mesa pipe. This ensures that closed units can be reused
+  
+!===============================================================================
+!> Get a new unit for a mesa pipe. This ensures that closed units can be reused
+!> Cannot be called concurrently
+!===============================================================================
   integer function newunit(unit)
     integer, intent(out) :: unit
     integer :: LUN_MIN, LUN_MAX = 300 !should there be a io_unit%mesa_max?
     logical :: opened
-
+    !-----------------------------------------------------------------------------
     LUN_MIN = io_unit%mesa
     do newunit=LUN_MIN,LUN_MAX
       unit = newunit
@@ -165,5 +136,64 @@ MODULE mesa_mod
     ! TODO: handle all units occupied
   end function newunit
 
+!===============================================================================
+!> blockingly sends updated accretion data to mesa, and updates wind info
+!===============================================================================
+  subroutine eval_mesa(self)
+    class(mesa_t):: self
+    real(8) :: dm_wind, loum, t_eff, Zsurf
+    logical :: supernova
+    character(64) :: dummy = ""
+    namelist /to_dispatch/ dm_wind, loum, t_eff, Zsurf, supernova
+    !-----------------------------------------------------------------------------
+    call send_query(self%write_unit, .false., self%time*scaling%t, self%dm_accreted*scaling%m, dummy)
+    self%dm_accreted = 0
 
+    read(self%read_unit, to_dispatch)
+    if (supernova) then 
+      self%exploded = .true.
+      self%mesa_simulated = .false.
+    end if 
+
+    ! set mass loss rate, compensating for 
+    ! excess/lack caused by non-syncronos timestepping. If all mass has 
+    ! been put out in surrounding, then self% dm_wind = 0
+    self%dm_wind = dm_wind - self% dm_wind / scaling%m
+    self%mdot_wind = self%dm_wind/(self%time - self%last_time)
+
+    self%last_time = self%time
+  end subroutine eval_mesa
+
+!===============================================================================
+!> Output mesa task
+!===============================================================================
+  SUBROUTINE output (self, patch)
+    class(mesa_t):: self
+    class(gpatch_t), pointer:: patch
+    character(64):: filename
+    !-----------------------------------------------------------------------------
+    call trace%begin ('mesa_t%output')
+    if (self%mesa_simulated .and. patch% contains(self%position)) then
+      if (self%time + self%dtime > patch% out_next) then
+        write (filename,'("../../",a,i5.5,"/sink_",i5.5,".data")') trim(io%outputname), patch%iout, self%id;
+        call send_query(self%write_unit, .true., patch% out_next*scaling%t, 0d0, filename)
+      end if
+    end if
+    call self%sinks_t%output(patch)
+    call trace%end
+  END SUBROUTINE output
+
+  !===============================================================================
+  !> Submits the specified data to MESA, namelist can only be defined once. 
+  !> IN CGS, AND NOT 2 save_query IN A ROW
+  !===============================================================================
+    subroutine send_query(unit, save_query, time, dm_acc, filename)
+      integer :: unit
+      logical :: save_query
+      real(8) :: time, dm_acc
+      character(64) :: filename
+      namelist /to_mesa/ save_query, time, dm_acc, filename
+      !-----------------------------------------------------------------------------
+      write(unit, to_mesa, DELIM="APOSTROPHE")
+    end subroutine  
 END MODULE mesa_mod

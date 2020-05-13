@@ -112,7 +112,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('selfgravity_t%init')
   patch => self%patch
-  if (.not. allocated(patch%force_per_unit_mass)) then
+  if (.not. associated(patch%force_per_unit_mass)) then
     if (patch%kind(1:4) /= 'zeus') &
       allocate (patch%force_per_unit_mass(patch%gn(1),patch%gn(2),patch%gn(3),3))
   end if

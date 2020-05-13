@@ -46,8 +46,8 @@ MODULE download_mod
     procedure:: test
     procedure, nopass:: set_verbose
   end type
-  integer(kind=int8), dimension(:,:,:,:), allocatable:: filled
-  integer(kind=4), dimension(:,:,:), allocatable:: src
+  integer(kind=int8), dimension(:,:,:,:), pointer, contiguous:: filled
+  integer(kind=4), dimension(:,:,:), pointer, contiguous:: src
   !$omp threadprivate (filled, src)
   integer:: verbose=0
   integer:: id_debug=0
@@ -1436,7 +1436,7 @@ SUBROUTINE different_prolong (self, target, source, all_cells, only)
               !-----------------------------------------------------------------
               if (filled(ix,iy,iz,iv) >  source%level .or. &
                   filled(ix,iy,iz,iv) == target%level) then
-                if (allocated(src)) then
+                if (associated(src)) then
                   srcid = src(ix,iy,iz)
                 else
                   srcid = -1
@@ -1597,7 +1597,7 @@ SUBROUTINE prolong (self, target, source, all_cells, only)
             !  !-----------------------------------------------------------------
             !  if (filled(ix,iy,iz,iv) >  source%level .or. &
             !      filled(ix,iy,iz,iv) == target%level) then
-            !    if (allocated(src)) then
+            !    if (associated(src)) then
             !      srcid = src(ix,iy,iz)
             !    else
             !      srcid = -1

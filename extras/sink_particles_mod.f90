@@ -633,19 +633,19 @@ SUBROUTINE dealloc (self)
   class(sink_particles_t):: self
   !-----------------------------------------------------------------------------
   call trace%begin ('sink_particles_t%dealloc')
-  if (allocated(self%r)) then
+  if (associated(self%r)) then
     call io%bits_mem (-storage_size(self%r), product(shape(self%r)), '-sink%r')
     deallocate (self%r)
   end if
-  if (allocated(self%p)) then
+  if (associated(self%p)) then
     call io%bits_mem (-storage_size(self%p), product(shape(self%p)), '-sink%p')
     deallocate (self%p)
   end if
-  if (allocated(self%v)) then
+  if (associated(self%v)) then
     call io%bits_mem (-storage_size(self%v), product(shape(self%v)), '-sink%v')
     deallocate (self%v)
   end if
-  if (allocated(self%a)) then
+  if (associated(self%a)) then
     call io%bits_mem (-storage_size(self%a), product(shape(self%a)), '-sink%a')
     deallocate (self%a)
   end if

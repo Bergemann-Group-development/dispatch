@@ -194,13 +194,13 @@ END SUBROUTINE dealloc
 SUBROUTINE pre_update (self)
   class(extras_t), target:: self
   !.............................................................................
-  if (allocated (self%force_per_unit_mass)) &                   ! keep
+  if (associated (self%force_per_unit_mass)) &                   ! keep
     self%force_per_unit_mass = 0.0                              ! keep
-  if (allocated (self%force_per_unit_volume)) &                 ! keep
+  if (associated (self%force_per_unit_volume)) &                 ! keep
     self%force_per_unit_volume = 0.0                            ! keep
-  if (allocated (self%heating_per_unit_mass)) &                 ! keep
+  if (associated (self%heating_per_unit_mass)) &                 ! keep
     self%heating_per_unit_mass = 0.0                            ! keep
-  if (allocated (self%heating_per_unit_volume)) &               ! keep
+  if (associated (self%heating_per_unit_volume)) &               ! keep
     self%heating_per_unit_volume = 0.0                          ! keep
   !
   !call self%rt%pre_update()                                     ! radiative transfer

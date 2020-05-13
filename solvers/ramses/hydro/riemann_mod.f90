@@ -571,6 +571,15 @@ subroutine hllc (qleft,qright,fgdnv,ngrid,nvar,isothermal,error,detailed_timer)
          Ptoto=Ptotr
          etoto=etotr
       end if
+      !-------------------------------------------------------------------------
+      ! Add a diffusive flux in the down grad(ln(rho)) direction, which is
+      ! only nonzero when the smallest of the left/right density is within
+      ! a factor 10 from smallr, and which has at most magnitude of 0.25
+      ! times the largest of the left/right fast mode speeds.
+      !-------------------------------------------------------------------------
+      ustar = alog(rl/rr)*max(0.0, alog10((10.*smallr)/min(rl,rr)))
+      ustar = 0.25*max(cfastr,cfastl)*min(1.0, max(-1.0, ustar))
+      uo = uo + ustar
       !
       ! Compute the Godunov flux
       fgdnv(i,1) = ro*uo

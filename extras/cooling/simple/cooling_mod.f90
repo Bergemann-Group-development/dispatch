@@ -106,7 +106,7 @@ SUBROUTINE pre_update (self)
   call trace%begin ('cooling_t%pre_update', itimer=itimer)
   if (on) then
     patch => self%patch
-    if (.not.allocated(patch%heating_per_unit_volume)) then
+    if (.not.associated(patch%heating_per_unit_volume)) then
       u = patch%gn
       allocate (patch%heating_per_unit_volume(u(1),u(2),u(3)))
       patch%heating_per_unit_volume = 0.0

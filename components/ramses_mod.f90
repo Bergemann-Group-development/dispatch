@@ -333,13 +333,13 @@ SUBROUTINE mem_test
   type(solver_t)    , allocatable:: solver(:)
   type(experiment_t), allocatable:: experiment(:)
   !-----------------------------------------------------------------------------
-  print*,'MEMORY TEST: Top GB gives kB per instance'  ; call mpi%delay(ms)
-  print*,'oct'    ; allocate (oct(n))        ; call mpi%delay(ms); deallocate(oct)
-  print*,'task'   ; allocate (task(n))       ; call mpi%delay(ms); deallocate(task)
-  print*,'patch'  ; allocate (patch(n))      ; call mpi%delay(ms); deallocate(patch)
-  print*,'extras' ; allocate (extras(n))     ; call mpi%delay(ms); deallocate(extras)
-  print*,'mhd'    ; allocate (mhd(n))        ; call mpi%delay(ms); deallocate(mhd)
-  print*,'solver' ; allocate (solver(n))     ; call mpi%delay(ms); deallocate(solver)
+  print*,'MEMORY TEST: Top GB gives kB per instance'  ; call omp%delay(ms)
+  print*,'oct'    ; allocate (oct(n))        ; call omp%delay(ms); deallocate(oct)
+  print*,'task'   ; allocate (task(n))       ; call omp%delay(ms); deallocate(task)
+  print*,'patch'  ; allocate (patch(n))      ; call omp%delay(ms); deallocate(patch)
+  print*,'extras' ; allocate (extras(n))     ; call omp%delay(ms); deallocate(extras)
+  print*,'mhd'    ; allocate (mhd(n))        ; call omp%delay(ms); deallocate(mhd)
+  print*,'solver' ; allocate (solver(n))     ; call omp%delay(ms); deallocate(solver)
 END SUBROUTINE mem_test
 
 !===============================================================================
@@ -1062,7 +1062,7 @@ END SUBROUTINE read_snapshot
 SUBROUTINE memtest_delay
   if (do_memtest) then
     write (stdout,*) 'create_patches: exit in 5 sec'
-    call mpi%delay (5e3)
+    call omp%delay (5e3)
   end if
 END SUBROUTINE memtest_delay
 

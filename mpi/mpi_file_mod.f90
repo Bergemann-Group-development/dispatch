@@ -108,8 +108,12 @@ SUBROUTINE open (self, filename, mode)
   !call mp%barrier ('mpi_file_t%open')
   if (self%handle == 0) then
     self%filename = filename
-    call MPI_File_open (mp%comm, filename, mode, MPI_INFO_NULL, self%handle, self%err)
-    if (io%verbose > 0) then
+    if (mp%mode == MPI_THREAD_MULTIPLE) then
+      call MPI_File_open (mp%comm, filename, mode, MPI_INFO_NULL, self%handle, self%err)
+    else
+      call MPI_File_open (mp%comm, filename, mode, MPI_INFO_NULL, self%handle, self%err)
+    end if
+      if (io%verbose > 0) then
       write(io_unit%mpi,'(a," status:",i4)') &
         ' MPI_File_open: file='//trim(filename)//'  mode='// &
         trim(merge('MPI_MODE_CREATE', &

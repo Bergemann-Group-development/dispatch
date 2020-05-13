@@ -7,7 +7,7 @@
  retry_stalled=100
 /
 &mpi_mesg_params
- delay_ms=300.0
+ 
  send_priv=t
  recv_priv=f
 /

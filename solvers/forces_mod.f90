@@ -92,7 +92,7 @@ SUBROUTINE pre_update (self)
   !-----------------------------------------------------------------------------
   if (associated(self%force%selected)) then
     patch => self%patch
-    if (.not.allocated(patch%force_per_unit_mass)) then
+    if (.not.associated(patch%force_per_unit_mass)) then
       m = patch%mesh%gn
       allocate (patch%force_per_unit_mass(m(1),m(2),m(3),3))
       call io%bits_mem (storage_size(patch%force_per_unit_mass), &
@@ -119,7 +119,7 @@ END SUBROUTINE pre_update
 SUBROUTINE post_update (self)
   class(forces_t):: self
   !-----------------------------------------------------------------------------
-  if (allocated(self%patch%force_per_unit_mass)) then
+  if (associated(self%patch%force_per_unit_mass)) then
     call io%bits_mem (-storage_size(self%patch%force_per_unit_mass), &
                       product(shape(self%patch%force_per_unit_mass)), '-fpm')
     deallocate (self%patch%force_per_unit_mass)

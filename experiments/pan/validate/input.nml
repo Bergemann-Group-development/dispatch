@@ -27,7 +27,7 @@
  !sync_time=0.003
 /
 &mpi_mesg_params
- delay_ms=300
+ 
  send_priv=t            ! IMPORTANT
  recv_priv=f            ! CHECK
 /

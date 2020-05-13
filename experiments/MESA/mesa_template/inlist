@@ -10,7 +10,6 @@
       initial_h2 = 2e-5
       initial_he3 = 2.98e-5
       initial_he4 = 0.28
-      
       h_he_net = 'pp_extras.net'
 
       change_v_flag = .true.
@@ -27,7 +26,7 @@
       photo_interval = 0
       history_interval = 1
       profile_interval = 0
-      terminal_interval = 1
+      terminal_interval = 0
       warn_when_large_rel_run_E_err = 1d-1
       !report_why_dt_limits = .true.
 
@@ -95,10 +94,10 @@
       when_to_stop_rtol = 1d-3
       when_to_stop_atol = 1d-3
 
-      !hot_wind_full_on_T = 1d0
-      !cool_wind_full_on_T = 0d0
-      hot_wind_scheme = 'Dutch'
-      Dutch_wind_lowT_scheme = 'de Jager'
+      hot_wind_scheme = 'Vink'
+      cool_wind_RGB_scheme = 'Vink'
+      cool_wind_AGB_scheme = 'Vink'
+      Vink_scaling_factor = 1
 
       am_nu_visc_factor = 0
       am_D_mix_factor = 0.0333333333333333d00

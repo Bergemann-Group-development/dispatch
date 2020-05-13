@@ -172,6 +172,7 @@ SUBROUTINE check_mpi (self, n)
   n_unpk = 0
   if (mpi%size > 1) then
     call trace%begin ('task_mesg_t%check_mpi', itimer=itimer)
+    call self%lock%set ('task_mesg_t%check_mpi')
     link => self%head
     do while (associated(link))
       task => link%task
@@ -182,6 +183,7 @@ SUBROUTINE check_mpi (self, n)
       end if
       link => link%next
     end do
+    call self%lock%unset ('task_mesg_t%check_mpi')
     call check_new(self)
     call trace%end (itimer)
   end if
@@ -233,6 +235,7 @@ SUBROUTINE check_sent (self, task)
   !-----------------------------------------------------------------------------
   call trace%begin ('task_mesg_t%check_sent')
   if (associated(task%sent_list)) then
+    call self%lock%set ('task_mesg_t%check_sent')
     mesg => task%sent_list%head
     do while (associated(mesg))
       next => mesg%next
@@ -242,6 +245,7 @@ SUBROUTINE check_sent (self, task)
       end if
       mesg => next
     end do
+    call self%lock%unset ('task_mesg_t%check_sent')
   end if
   call trace%end()
 END SUBROUTINE check_sent
@@ -296,7 +300,11 @@ SUBROUTINE check_recv (self, link, n_unpk)
     end if
   end if
   call trace%begin ('task_mesg_t%check_recv')
-  !-----------------------------------------------------------------------------
+  if (verbose > 1) then
+    write (io_unit%log,'(f12.6,i4,1x,a12,i6,f12.6,i6)') &
+      wallclock(), omp%thread, 'check_recv', task%id, task%time, task%mesg%seq
+  end if
+!-----------------------------------------------------------------------------
   ! If the task has no pending request, issue one
   !-----------------------------------------------------------------------------
   if (task%mesg%req == 0) then
@@ -311,7 +319,7 @@ SUBROUTINE check_recv (self, link, n_unpk)
     call unpack (self, task%mesg, link)
     n_unpk = n_unpk+1
     if (verbose > 1) then
-      write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,i4)') &
+      write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,i6)') &
         wallclock(), omp%thread, 'unpacked', task%id, task%time, n_unpk
     end if
     call new_request (task)
@@ -329,6 +337,7 @@ SUBROUTINE new_request (task)
   class(task_t):: task
   !-----------------------------------------------------------------------------
   task%seq = task%seq + 1
+  task%mesg%id = task%id
   task%mesg%tag = task%id*100 + mod(task%seq,100)
   task%mesg%sender = task%rank
   call task%mesg%request
@@ -436,7 +445,7 @@ SUBROUTINE unpack (self, mesg, link)
   !.............................................................................
   class(task_t), pointer:: task
   logical:: found, bonafide, new
-  integer:: save_bits
+  integer:: save_bits, it
   integer, save:: itimer=0
   character(len=24):: label
   type(patch_t):: patch
@@ -554,6 +563,10 @@ SUBROUTINE unpack (self, mesg, link)
       !-------------------------------------------------------------------------
       if (self%verbose > 1) write(io_unit%log,*) task%id, 'init_nbors', &
         task%is_set(bits%boundary)
+      if (verbose > 0) then
+        write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,i6)') &
+          wallclock(), omp%thread, 'vinitnbors', task%id, task%time
+      end if
       call self%init_nbors (link)
       call task%clear (bits%init_nbors)
     end if
@@ -562,6 +575,10 @@ SUBROUTINE unpack (self, mesg, link)
       ! If the task has the update_status bit set, re-evaluate status bits
       !-------------------------------------------------------------------------
       if (self%verbose > 1) write(io_unit%log,*) task%id, 'update_nbors'
+      if (verbose > 0) then
+        write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,i6)') &
+          wallclock(), omp%thread, 'vupnbors', task%id, task%time
+      end if
       call self%update_status (link)
     end if
     if (task%is_set(bits%remove)) then
@@ -569,9 +586,17 @@ SUBROUTINE unpack (self, mesg, link)
       !-------------------------------------------------------------------------
       ! 1) Suicide note, remove the task and delete the message
       !-------------------------------------------------------------------------
+      if (verbose > 0) then
+        write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,i6)') &
+          wallclock(), omp%thread, 'vremove', task%id, task%time
+      end if
       call self%remove_and_reset (link)
     else if (task%is_set(bits%swap_request)) then
       if (self%verbose > 0) write(io_unit%log,*) task%id, 'swap'
+      if (verbose > 0) then
+        write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,i6)') &
+          wallclock(), omp%thread, 'vswap', task%id, task%time
+      end if
       !-------------------------------------------------------------------------
       ! 2) swap_request bit set; the task has just changed owner, and the task
       !    should become a boundary task on this rank.  Indeed, since it was
@@ -586,18 +611,34 @@ SUBROUTINE unpack (self, mesg, link)
         call load_balance%lock%unset ('task_mesg_t%unpack')
       call self%lock%unset ('task_mesg_t%unpack')
     else if (new) then
-      if (self%verbose > 0) write(io_unit%log,*) task%id, 'new'
+      if (self%verbose > 0) write(io_unit%log,*) task%id, 'new', task%it
       !-------------------------------------------------------------------------
       ! 3) the task is a new virtual task.  It has the init_nbors bit set, and
       !    since it is a virtual task that bit should be cleared the next time
       !    the task is updated, coming back not as new task but as a virtual
       !    task update.  But first, issue a request for the next message.
       !-------------------------------------------------------------------------
+      it = task%it
       select type (task)
       class is (experiment_t)
         call task%setup
       end select
+      !-------------------------------------------------------------------------
+      ! Let all time slots refer to the mem slot the new task data is in
+      !-------------------------------------------------------------------------
+      task%t(:) = task%time
+      task%dt(:) = task%dtime
+      task%iit(:) = it
+      !-------------------------------------------------------------------------
+      ! Add the new task to the task list, and give it an nbor list, etc
+      !-------------------------------------------------------------------------
       call self%add_new_link (link)
+      task%mesg%seq = task%mesg%seq-1             ! adjust the sequence number
+      if (verbose > 0) then
+        write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,3i6)') &
+          wallclock(), omp%thread, 'vnew', task%id, task%time, task%istep, &
+          task%mesg%seq
+      end if
     else
       if (self%verbose > 1) write(io_unit%log,*) task%id, 'update'
       !-------------------------------------------------------------------------
@@ -605,12 +646,20 @@ SUBROUTINE unpack (self, mesg, link)
       !    request for the next message.
       !-------------------------------------------------------------------------
       call self%check_nbors (link)
+      if (verbose > 0) then
+        write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,i6)') &
+          wallclock(), omp%thread, 'vupdate', task%id, task%time
+      end if
     end if
   else
     if (self%verbose > 1) write(io_unit%log,*) task%id, 'crap'
     !---------------------------------------------------------------------------
     ! 5) not bonafide, so ignore
     !---------------------------------------------------------------------------
+    if (verbose > 0) then
+      write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,i6)') &
+        wallclock(), omp%thread, 'vcrap', task%id, task%time
+    end if
   end if
   call trace%end (itimer)
 END SUBROUTINE unpack

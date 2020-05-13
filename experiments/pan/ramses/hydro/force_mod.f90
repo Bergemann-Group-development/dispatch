@@ -14,7 +14,7 @@ MODULE force_mod
     integer :: verbose
     real :: t_turb = 0.0
     real :: t_damp
-    real, allocatable, dimension(:,:,:,:,:)   :: fran
+    real, pointer, contiguous, dimension(:,:,:,:,:) :: fran => null()
     procedure(turbulence), pointer :: selected=>null()
     class(mesh_t), dimension(:), pointer  :: mesh
     type(random_t):: random
@@ -70,7 +70,7 @@ SUBROUTINE init (self, solver, id, mesh)
   mx = self%mesh(1)%gn
   my = self%mesh(2)%gn
   mz = self%mesh(3)%gn
-  if (.not.allocated(self%fran)) then
+  if (.not.associated(self%fran)) then
     allocate (self%fran(mx,my,mz,3,2))
     call io%bits_mem (storage_size(self%fran), product(shape(self%fran)), 'fran')
   end if
@@ -88,7 +88,7 @@ SUBROUTINE dealloc (self)
   class(force_t):: self
   !-----------------------------------------------------------------------------
   call trace%begin ('force_t%dealloc')
-  if (allocated(self%fran)) then
+  if (associated(self%fran)) then
     call io%bits_mem (-storage_size(self%fran), product(shape(self%fran)), '-fran')
     deallocate (self%fran)
   end if

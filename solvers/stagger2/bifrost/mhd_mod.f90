@@ -535,13 +535,13 @@ SUBROUTINE pde (self)
   ! External force; e.g. point source gravity.  Note that the density factor is
   ! applied here, and should not be included in the function definition
   !-----------------------------------------------------------------------------
-  if (allocated(self%force_per_unit_mass)) then
+  if (associated(self%force_per_unit_mass)) then
     !if (self%id==2) print *, 'minval pre-fpum', minval(dpdtz), maxval(dpdtz)
     dpdt = dpdt + dd*self%force_per_unit_mass                                  ! ops: 2 2 0
     !if (self%id==2) print *, 'minval fpum', minval(self%force_per_unit_mass(:,:,:,3)*dd(:,:,:,3)), maxval(self%force_per_unit_mass(:,:,:,3)*dd(:,:,:,3))
     !if (self%id==2) print *, 'minval post-fpum', minval(dpdt(:,:,:,3)), maxval(dpdt(:,:,:,3))
   end if
-  if (allocated(self%force_per_unit_volume)) then
+  if (associated(self%force_per_unit_volume)) then
     dpdt = dpdt + self%force_per_unit_volume
   end if
   ! ----------------------------------------------------------------------------
@@ -586,10 +586,10 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   ! External heating / cooling, if any; e.g. radiative or conductive
   !-----------------------------------------------------------------------------
-  if (allocated(self%heating_per_unit_mass)) then
+  if (associated(self%heating_per_unit_mass)) then
     dedt = dedt + d*self%heating_per_unit_mass                                  ! ops: 2 2 0
   end if
-  if (allocated(self%heating_per_unit_volume)) then
+  if (associated(self%heating_per_unit_volume)) then
     dedt = dedt + self%heating_per_unit_volume
   end if
   !-----------------------------------------------------------------------------

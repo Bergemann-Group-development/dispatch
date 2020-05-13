@@ -444,7 +444,7 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
     ! set to -derefine_limit, where the value should be less than 1.0, to give
     ! some hysteresis to refinement/derefinement
     !---------------------------------------------------------------------------
-    if (.not.allocated(patch%irefine)) then
+    if (.not.associated(patch%irefine)) then
       allocate (patch%irefine(patch%gn(1),patch%gn(2),patch%gn(3)))
       if (verbose > 1) &
         write (io_unit%log,*) 'allocated irefine in refine', mpi%rank, patch%id
@@ -509,7 +509,7 @@ SUBROUTINE selective_refine (self, tasklist, patch, refine, was_refined, was_der
   real(8), dimension(3):: size, pos
   logical:: not_already_refined
   integer:: refine_it, n_added, ratio_per_dim(3)
-  integer(int8), allocatable:: refined(:,:,:)
+  integer(int8), pointer, contiguous:: refined(:,:,:)
   integer:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('refine_t%selective_refine', itimer=itimer, detailed_timer=detailed_timer)
@@ -802,10 +802,10 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   nullify (child%pressure)
   nullify (child%vgas)
   nullify (child%u_phase)
-  if (allocated(child%force_per_unit_volume  )) deallocate(child%force_per_unit_volume)
-  if (allocated(child%force_per_unit_mass    )) deallocate(child%force_per_unit_mass)
-  if (allocated(child%heating_per_unit_volume)) deallocate(child%heating_per_unit_volume)
-  if (allocated(child%heating_per_unit_mass  )) deallocate(child%heating_per_unit_mass)
+  if (associated(child%force_per_unit_volume  )) nullify(child%force_per_unit_volume)
+  if (associated(child%force_per_unit_mass    )) nullify(child%force_per_unit_mass)
+  if (associated(child%heating_per_unit_volume)) nullify(child%heating_per_unit_volume)
+  if (associated(child%heating_per_unit_mass  )) nullify(child%heating_per_unit_mass)
   child%id = 0                                       ! ensure a new ID
   child%seq = -1                                     ! triggers tag=0 in send
   child%size = child_size                            ! new size
@@ -941,6 +941,10 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
       maxval(child%mem(l(1):u(1),l(2):u(2),l(3):u(3),child%idx%d,child%it,1))
     flush (io_unit%log)
   end if
+  if (tlist%verbose > 1) then
+    write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,i6)') &
+      wallclock(), omp%thread, 'created', child%id, child%time, parent%id
+  end if
   !-----------------------------------------------------------------------------
   call child%log ('refine', 2)
   call trace%end (itimer, detailed_timer=detailed_timer)
@@ -972,7 +976,7 @@ FUNCTION check_Jeans (self, patch) RESULT(refine_it)
   !.............................................................................
   integer:: imin(3), l(3), u(3)
   real:: Jeans_num, dmin, ds, c
-  real, dimension(:,:,:), allocatable:: pg
+  real, dimension(:,:,:), pointer, contiguous:: pg
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, e
   real, pointer:: test(:,:,:)
   logical:: masked
@@ -1006,6 +1010,7 @@ FUNCTION check_Jeans (self, patch) RESULT(refine_it)
     ! Combine with previous tests and evaluate
     !---------------------------------------------------------------------------
     call self%evaluate ('Jeans', patch, test, refine_it)
+    deallocate (test)
   end if
   deallocate (pg)
   call trace%end()
@@ -1047,6 +1052,7 @@ FUNCTION check_compress (self, patch) RESULT(refine_it)
   ! Combine with previous tests and evaluate
   !---------------------------------------------------------------------------
   call self%evaluate ('compress', patch, test, refine_it)
+  deallocate (test)
   call trace%end (itimer, detailed_timer=detailed_timer)
 END FUNCTION check_compress
 
@@ -1086,6 +1092,7 @@ FUNCTION check_vorticity (self, patch) RESULT(refine_it)
   ! Combine with previous tests and evaluate
   !---------------------------------------------------------------------------
   call self%evaluate ('vorticity', patch, test, refine_it)
+  deallocate (test)
   call trace%end (itimer, detailed_timer=detailed_timer)
 END FUNCTION check_vorticity
 
@@ -1102,8 +1109,8 @@ FUNCTION shock_and_cd_detector (self, patch) RESULT (refine)
   integer:: ix, iy, iz, ione=0, jone=0, kone=0
   real(kind=KindScalarVar):: dp1, dp2, dp3, dv1, dv2, dv3, dd1, dd2, dd3
   real, parameter:: small = 1.0e-10
-  real(kind=KindScalarVar), dimension(:,:,:), allocatable:: pg
-  real(kind=KindScalarVar), dimension(:,:,:,:), allocatable:: v
+  real(kind=KindScalarVar), dimension(:,:,:), pointer, contiguous:: pg
+  real(kind=KindScalarVar), dimension(:,:,:,:), pointer, contiguous:: v
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, e
   logical:: derefine(3)
   !-----------------------------------------------------------------------------
@@ -1206,7 +1213,7 @@ FUNCTION gradient_detector (self, patch) RESULT (refine)
   integer:: i, j, k, ione=0, jone=0, kone=0, im1, jm1, km1, ip1, jp1, kp1, n
   real, parameter:: small=1e-10
   real(kind=KindScalarVar):: dqmax
-  real(kind=KindScalarVar), dimension(:,:,:), allocatable:: q, dq1, dq2, dq3
+  real(kind=KindScalarVar), dimension(:,:,:), pointer, contiguous:: q, dq1, dq2, dq3
   real, parameter:: rsmall = 1.0e-10
   logical:: is_unsigned
   character(len=1):: unsigned(3) = ['d', 'p', 'e']
@@ -1334,6 +1341,7 @@ FUNCTION check_support (self, tasklist, patch) RESULT(refine_it)
   ! Combine with previous tests and evaluate
   !---------------------------------------------------------------------------
   call self%evaluate ('support', patch, test, refine_it)
+  deallocate (test)
   call trace%end (itimer, detailed_timer=detailed_timer)
 END FUNCTION check_support
 
@@ -1382,7 +1390,6 @@ SUBROUTINE evaluate (self, label, patch, test, refine_it)
       label//' criterion: ', 'time, id, max_test, max_crit, refine', &
       patch%time, patch%id, max_test, max_crit, refine_it, merge ('R',' ',refine_it==1)
   end if
-  deallocate (test)
   if (patch%level <= self%levelmin) refine_it = max(0,refine_it)
   if (patch%level >= self%levelmax) refine_it = min(0,refine_it)
   call trace%end ()

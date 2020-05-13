@@ -172,7 +172,6 @@ END SUBROUTINE dealloc
 !===============================================================================
 SUBROUTINE pre_update (self)
   class(extras_t), target:: self
-  class(patch_t), pointer:: patch
   !.............................................................................
   call trace%begin ('extras_t%pre_update')
   call self%forces%pre_update                                   ! forces
@@ -201,8 +200,9 @@ END SUBROUTINE post_update
 SUBROUTINE output (self)
   class(extras_t):: self
   !.............................................................................
-  
+  !Has to be in this order, for out_next not be < self% time once
   call self%gpatch_t%output                                     ! keep
+  call mesa%output(self%gpatch)
 END SUBROUTINE output
 
 !===============================================================================

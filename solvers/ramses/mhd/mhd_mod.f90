@@ -345,7 +345,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Add external force as source term
   !-----------------------------------------------------------------------------
-  if (allocated(self%force_per_unit_mass)) then
+  if (associated(self%force_per_unit_mass)) then
     p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
     do i=1,3
       p(:,:,:,i) = p(:,:,:,i) + self%dtime*self%force_per_unit_mass(:,:,:,i)*d
@@ -1184,14 +1184,14 @@ SUBROUTINE trace3d(self)
   d => self%mem(:,:,:,self%idx%d,self%new,1)
   do k=lo(3),uo(3)
   do j=lo(2),uo(2)
-  if (allocated(self%force_per_unit_mass)) then
+  if (associated(self%force_per_unit_mass)) then
     !dir$ simd
     do i=2,self%gn(2)-1
       ff(i,1) = self%force_per_unit_mass(i,j,k,1)
       ff(i,2) = self%force_per_unit_mass(i,j,k,2)
       ff(i,3) = self%force_per_unit_mass(i,j,k,3)
     end do
-  else if (allocated(self%force_per_unit_volume)) then
+  else if (associated(self%force_per_unit_volume)) then
     do i=lo(1),uo(1)
       ff(i,1) = self%force_per_unit_mass(i,j,k,1)/d(i,j,k)
       ff(i,2) = self%force_per_unit_mass(i,j,k,2)/d(i,j,k)
@@ -1200,11 +1200,11 @@ SUBROUTINE trace3d(self)
   else
     ff(:,:) = 0.0_dp
   end if
-  if (allocated(self%heating_per_unit_volume)) then
+  if (associated(self%heating_per_unit_volume)) then
     do i=lo(1),uo(1)
       qq(i) = self%heating_per_unit_volume(i,j,k)
     end do
-  else if (allocated(self%heating_per_unit_mass)) then
+  else if (associated(self%heating_per_unit_mass)) then
     do i=lo(1),uo(1)
       qq(i) = self%heating_per_unit_mass(i,j,k)*d(i,j,k)
     end do

@@ -71,7 +71,7 @@ MODULE aux_mod
     procedure:: output => output_item
   end type
   integer:: version=1, verbose=0, uniq=200, iout_prv=-1
-  character(len=32), allocatable:: select(:)
+  character(len=32), pointer:: select(:)
   type(aux_t), public:: aux
 CONTAINS
 
@@ -91,7 +91,7 @@ SUBROUTINE init (self, name)
   call trace%begin ('aux_t%init')
   call io%lock%set ('aux_t%init')
   if (first_time) then
-    if (.not.allocated(select)) then
+    if (.not.associated(select)) then
       allocate (select(max_select))
       select(:) = ''
     end if

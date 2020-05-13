@@ -18,7 +18,7 @@ MODULE force_mod
     real :: t_damp
     real(8):: t_save=0d0
     real:: phase(3), a(3)
-    real, allocatable, dimension(:,:,:,:,:)   :: fran
+    real, pointer, contiguous, dimension(:,:,:,:,:)   :: fran => null()
     procedure(single_solenoidal), pointer:: selected=>null()
     class(mesh_t), dimension(:), pointer  :: mesh
     character(len=64):: solver
@@ -173,7 +173,7 @@ SUBROUTINE init_turbulence (self, solver, id, mesh)
   mx = self%mesh(1)%gn
   my = self%mesh(2)%gn
   mz = self%mesh(3)%gn
-  if (.not.allocated(self%fran)) then
+  if (.not.associated(self%fran)) then
     allocate (self%fran(mx,my,mz,3,2))
     call io%bits_mem (storage_size(self%fran), product(shape(self%fran)), 'fran')
   end if

@@ -119,7 +119,7 @@ CONTAINS
 SUBROUTINE pre_init (self)
   class(extras_t), target:: self
   !.............................................................................
-  !self%patch => self
+  self%gpatch => self
   !call self%forces%pre_init (self%patch)                               ! forces
   !allocate(self%rt)                                                    ! RT
   !call self%rt%pre_init (self%patch)                                   ! RT
@@ -184,7 +184,7 @@ END SUBROUTINE init_task_list
 
 
 !===============================================================================
-!> Deallocate allocated arrays
+!> Deallocate associated arrays
 !===============================================================================
 SUBROUTINE dealloc (self)
   class(extras_t):: self
@@ -199,20 +199,20 @@ END SUBROUTINE dealloc
 !===============================================================================
 !> The pre_update hierarchy is called before the solver updates. To allow for
 !> a general case, with several force data types adding their contributions,
-!> the generic patch_t%arrays must (if allocated), be set to zero here, so each
+!> the generic patch_t%arrays must (if associated), be set to zero here, so each
 !> force can be added separately, and to prevent these contributions to pile up.
 !===============================================================================
 SUBROUTINE pre_update (self)
   class(extras_t), target:: self
   !.............................................................................
   call trace%begin ('extras_t%pre_update')                             ! keep
-  !if (allocated (self%force_per_unit_mass)) &                          ! forces
+  !if (associated (self%force_per_unit_mass)) &                          ! forces
     !self%force_per_unit_mass = 0.0                                     ! forces
-  !if (allocated (self%force_per_unit_volume)) &                        ! forces
+  !if (associated (self%force_per_unit_volume)) &                        ! forces
     !self%force_per_unit_volume = 0.0                                   ! forces
-  !if (allocated (self%heating_per_unit_mass)) &                        ! forces
+  !if (associated (self%heating_per_unit_mass)) &                        ! forces
     !self%heating_per_unit_mass = 0.0                                   ! forces
-  !if (allocated (self%heating_per_unit_volume)) &                      ! forces
+  !if (associated (self%heating_per_unit_volume)) &                      ! forces
     !self%heating_per_unit_volume = 0.0                                 ! forces
   !
   !call self%rt%pre_update                                              ! RT

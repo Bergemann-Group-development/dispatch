@@ -77,8 +77,15 @@ FUNCTION rank_to_coords (self, rank) result (coords)
   if (self%size == 1) then
     coords = 0
   else
-    call MPI_CART_COORDS (self%cart_comm, rank, 3, coords, mpi_err)
-    call mpi%assert ('MPI_CART_COORDS', mpi_err)
+    if (mpi%mode == MPI_THREAD_MULTIPLE) then
+      call MPI_CART_COORDS (self%cart_comm, rank, 3, coords, mpi_err)
+      call mpi%assert ('MPI_CART_COORDS', mpi_err)
+    else
+      !$omp critical (mpi_cr)
+      call MPI_CART_COORDS (self%cart_comm, rank, 3, coords, mpi_err)
+      call mpi%assert ('MPI_CART_COORDS', mpi_err)
+      !$omp end critical (mpi_cr)
+    end if
   end if
 #else
   coords = 0
@@ -96,9 +103,16 @@ FUNCTION coords_to_rank (self, coords) result (rank)
   if (mpi%size==1) then
     rank=0
   else
-    call MPI_CART_RANK (self%cart_comm, coords, rank, mpi_err)
+    if (mpi%mode == MPI_THREAD_MULTIPLE) then
+      call MPI_CART_RANK (self%cart_comm, coords, rank, mpi_err)
+      call mpi%assert ('MPI_CART_RANK', mpi_err)
+    else
+      !$omp critical (mpi_cr)
+      call MPI_CART_RANK (self%cart_comm, coords, rank, mpi_err)
+      call mpi%assert ('MPI_CART_RANK', mpi_err)
+      !$omp end critical (mpi_cr)
+    end if
   end if
-  call mpi%assert ('MPI_CART_RANK', mpi_err)
 #else
   rank = 0
 #endif
@@ -165,6 +179,19 @@ SUBROUTINE print (self)
   end if
 END SUBROUTINE
 
+SUBROUTINE cart_create_mpi (self, mpi_dims, dims)
+  implicit none
+  class(mpi_coords_t):: self
+  integer, dimension(3), optional:: mpi_dims, dims
+!-------------------------------------------------------------------------------
+  if (mpi%mode == MPI_THREAD_MULTIPLE) then
+      call cart_create_mpi_real (self, mpi_dims, dims)
+    else
+    !$omp critical (mpi_cr)
+    call cart_create_mpi_real (self, mpi_dims, dims)
+    !$omp end critical (mpi_cr)
+  end if
+END SUBROUTINE cart_create_mpi
 !===============================================================================
 !> Create a Cartesian arrangement of MPI ranks, with dimension n_mpi(3).  If
 !> dims(3) is non-zero, these are taken as information about the global number
@@ -172,7 +199,7 @@ END SUBROUTINE
 !> dimension to get product(dims) = mpi%size.  If mpi_dims is present, the
 !> dims(3) information is ignored, even if present.
 !===============================================================================
-SUBROUTINE cart_create_mpi (self, mpi_dims, dims)
+SUBROUTINE cart_create_mpi_real (self, mpi_dims, dims)
   implicit none
   class(mpi_coords_t):: self
   integer, dimension(3), optional:: mpi_dims, dims
@@ -291,7 +318,7 @@ SUBROUTINE cart_create_mpi (self, mpi_dims, dims)
         end if
       end if
     end subroutine
-END SUBROUTINE cart_create_mpi
+END SUBROUTINE cart_create_mpi_real
 !
 !===============================================================================
 !===============================================================================

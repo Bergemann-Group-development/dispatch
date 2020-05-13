@@ -24,12 +24,14 @@ MODULE mpi_mesg_mod
   USE mpi_lib
   implicit none
   private
-  !
+  !-----------------------------------------------------------------------------
+  ! Data type holding various attributes of MPI messages
+  !-----------------------------------------------------------------------------
   type, public:: mesg_t
     class(mesg_t), pointer:: next => null()
     class(mesg_t), pointer:: prev => null()
     integer, dimension(:), pointer:: buffer => null()
-    integer:: nbuf, nreq=0, req=0, sender, id, ntry=0
+    integer:: nbuf, nreq=0, req=0, sender, id, n_try=0
     integer:: n_failed=0
     integer:: i=0
     integer:: seq=0
@@ -56,7 +58,9 @@ MODULE mpi_mesg_mod
   integer(8) :: n_wait_all=0  , n_wait_for=0
   real(8)    :: t_wait_all=0d0, t_wait_for=0d0
   integer, save:: ident=0
-  !
+  !-----------------------------------------------------------------------------
+  ! Data type for lists of MPI messages
+  !-----------------------------------------------------------------------------
   type, public:: mesg_list_t
     class(mesg_t), pointer:: head => null()
     class(mesg_t), pointer:: tail => null()
@@ -76,7 +80,7 @@ MODULE mpi_mesg_mod
     !procedure:: count
   end type
   !-----------------------------------------------------------------------------
-  ! Data type collecting parameters and message lists into one object
+  ! Data type collecting parameters and several message lists into one object
   !-----------------------------------------------------------------------------
   type, public:: mpi_mesg_t
     logical:: initialized=.false.
@@ -96,17 +100,14 @@ MODULE mpi_mesg_mod
     logical:: send_priv=.true.
     logical:: debug=.false.
     logical:: uniq_mesg=.true.
-    real:: delay_ms=0.0
     real:: test_time=0.0
   contains
     procedure:: init
-    procedure:: delay
     procedure:: diagnostics
     procedure:: test
     procedure:: log_files
   end type
   type(mpi_mesg_t), public:: mpi_mesg
-  real, save:: delay_ms=30.0                    ! default setting
   integer, save:: max_fail=3                    ! max MPI_TEST before resend
   integer, save:: every_send=2                  ! how often to check send_list
   logical, save:: resend=.false.                ! if true, resend late mesgs
@@ -292,6 +293,7 @@ SUBROUTINE test_all (self, flag)
 #else
   flag = .true.
 #endif MPI
+  if (.not.flag) self%n_try = self%n_try + 1
   if (verbose > 1) then
     write (io_unit%log,'(f12.6,1x,a,2i6,l4)') wallclock(), &
       'mpi_mesg_t%test_all: id, nreq, flag =', self%id, self%nreq, flag
@@ -589,9 +591,9 @@ SUBROUTINE delete (self, mesg, send)
   if (.not. associated(mesg)) &
     return
   if (verbose > 0) then
-    write (io_unit%log,'(f12.6,1x,a,i6,i5,i8)') wallclock(), &
-      'mesg_list_t%delete: id, sender, tag =', &
-      mesg%id, mesg%sender, mesg%tag
+    write (io_unit%log,'(f12.6,1x,a,i6,i5,i8,i4)') wallclock(), &
+      'mesg_list_t%delete: id, sender, tag, n_try =', &
+      mesg%id, mesg%sender, mesg%tag, mesg%n_try
   end if
   call mesg%dealloc
   deallocate (mesg)
@@ -632,7 +634,7 @@ SUBROUTINE print_list (self, label)
   mesg => self%head
   do while (associated(mesg))
     write (io_unit%log,'(a,i5,i9,2i5)') ' mesg_list: '//self%name, &
-      self%n, mesg%id, mesg%sender, mesg%ntry
+      self%n, mesg%id, mesg%sender, mesg%n_try
     mesg => mesg%next
   end do
 END SUBROUTINE print_list
@@ -671,7 +673,7 @@ SUBROUTINE init (self)
   logical, save:: queue_unpack
   logical, save:: uniq_mesg
   real, save:: test_time=20e-3
-  namelist /mpi_mesg_params/ every_send, delay_ms, resend, &
+  namelist /mpi_mesg_params/ every_send, resend, &
     max_fail, test_time, uniq_mesg, debug, verbose, detailed_timer
   integer:: iostat
   character(len=120):: id = &
@@ -700,7 +702,6 @@ SUBROUTINE init (self)
 !  self%max_probe = max_probe
 !  self%recv_wait = recv_wait
   self%uniq_mesg = uniq_mesg
-  self%delay_ms = delay_ms
   mpi_mesg%test_time = test_time
   call trace%end()
 END SUBROUTINE init
@@ -760,33 +761,6 @@ SUBROUTINE test (self)
     associated(test_list%head), associated(test_list%tail)
   call test_list%print ('test3')
 END SUBROUTINE test
-
-!===============================================================================
-!> Delay for about 1 ms, to encourage incoming messages to complete
-!===============================================================================
-SUBROUTINE delay (self, n, ms)
-  class(mpi_mesg_t):: self
-  integer, optional:: n
-  real, optional:: ms
-  real:: ms_l
-  integer, save:: itimer=0
-  !-----------------------------------------------------------------------------
-  if (present(ms)) then
-    ms_l = ms
-  else
-    ms_l = mpi_mesg%delay_ms
-  end if
-  if (ms_l==0.0) return
-  call trace%begin ('mpi_mesg_t%no_queue', itimer=itimer)
-  if (verbose > 0) then
-    write (io_unit%log,'(f12.6,1x,a,f6.0)') wallclock(), &
-    'mpi_mesg_t%delay: ms =', ms_l
-  end if
-  call mpi%delay (ms_l)
-  !$omp atomic
-  self%n_delay = self%n_delay + 1
-  call trace%end (itimer)
-END SUBROUTINE delay
 
 !===============================================================================
 !> Diagnostic printout, called when task_list_mod::update stalls

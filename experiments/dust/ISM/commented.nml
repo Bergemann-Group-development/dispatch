@@ -34,10 +34,10 @@
                         detailed_timer=f          ! fine grained cost 
 /
 &dust_params            verbose=0                 ! information level
-                        n_bin=1                   ! just one bin
+                        n_bin=3                   ! just one bin
                         cadence=0                 ! no dust evolution
-                        min_size_cm=3e-4          ! minimum dust size
-                        max_size_cm=3e-1          ! maximum dust size
+                        min_size_cgs=3e-4         ! minimum dust size
+                        max_size_cgs=3e-1         ! maximum dust size
                         particles_per_bin=30      ! particles per cell-bin
 /
 

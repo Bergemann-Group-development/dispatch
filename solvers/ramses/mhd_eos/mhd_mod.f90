@@ -355,7 +355,7 @@ SUBROUTINE update (self)
   allocate (d2ekin(l(1):u(1)))
   e => self%mem(:,:,:,self%idx%e,self%new,1)
   p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
-  if (allocated(self%force_per_unit_mass)) then
+  if (associated(self%force_per_unit_mass)) then
     do k=l(3),u(3)
     do j=l(2),u(2)
       !-------------------------------------------------------------------------
@@ -379,7 +379,7 @@ SUBROUTINE update (self)
     end do
     end do
   end if
-  if (allocated(self%force_per_unit_volume)) then
+  if (associated(self%force_per_unit_volume)) then
     do k=l(3),u(3)
     do j=l(2),u(2)
       !-------------------------------------------------------------------------
@@ -407,10 +407,10 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Add external heating as source term
   !-----------------------------------------------------------------------------
-  if (allocated(self%heating_per_unit_mass)) then
+  if (associated(self%heating_per_unit_mass)) then
     e = e + self%dtime*self%heating_per_unit_mass*d
   end if
-  if (allocated(self%heating_per_unit_volume)) then
+  if (associated(self%heating_per_unit_volume)) then
     if (verbose > 1) then
       write (io_unit%log,'(i6," heating:",1p,10e11.2)') self%id, &
       sum(sum(self%heating_per_unit_volume(:,:,l(3):l(3)+9),1),1)
@@ -1316,14 +1316,14 @@ SUBROUTINE trace3d(self)
   d => self%mem(:,:,:,self%idx%d,self%it,1)
   do k=lo(3),uo(3)
   do j=lo(2),uo(2)
-  if (allocated(self%force_per_unit_mass)) then
+  if (associated(self%force_per_unit_mass)) then
     !dir$ simd
     do i=2,self%gn(2)-1
       ff(i,1) = self%force_per_unit_mass(i,j,k,1)
       ff(i,2) = self%force_per_unit_mass(i,j,k,2)
       ff(i,3) = self%force_per_unit_mass(i,j,k,3)
     end do
-  else if (allocated(self%force_per_unit_volume)) then
+  else if (associated(self%force_per_unit_volume)) then
     do i=lo(1),uo(1)
       ff(i,1) = self%force_per_unit_mass(i,j,k,1)/d(i,j,k)
       ff(i,2) = self%force_per_unit_mass(i,j,k,2)/d(i,j,k)
@@ -1332,11 +1332,11 @@ SUBROUTINE trace3d(self)
   else
     ff(:,:) = 0.0_dp
   end if
-  if (allocated(self%heating_per_unit_volume)) then
+  if (associated(self%heating_per_unit_volume)) then
     do i=lo(1),uo(1)
       qq(i) = self%heating_per_unit_volume(i,j,k)
     end do
-  else if (allocated(self%heating_per_unit_mass)) then
+  else if (associated(self%heating_per_unit_mass)) then
     do i=lo(1),uo(1)
       qq(i) = self%heating_per_unit_mass(i,j,k)*d(i,j,k)
     end do

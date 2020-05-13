@@ -160,7 +160,7 @@ SUBROUTINE init (self, name)
       self%rundir = trim(datadir)//self%sep                     ! data/
     end if
     !---------------------------------------------------------------------------
-    if (io%do_output) call os%mkdir (trim(self%rundir))
+    call os%mkdir (trim(self%rundir))
     open (io_unit%nml, file=trim(self%rundir)//'params.nml', form='formatted', status='unknown')
     open (io_unit%hash, file=trim(self%rundir)//'hash.log', form='formatted', status='unknown')
     open (self%input, file=self%inputname, form='formatted', status='old')
@@ -183,7 +183,6 @@ SUBROUTINE init (self, name)
     self%inputdir = inputdir
     self%outputname = self%rundir                               ! compatibility
     write (filename,'(a,i5.5,"/")') trim(self%rundir), 0
-    if (io%do_output) call os%mkdir (trim(self%rundir))
     if (io%do_output) call os%mkdir (trim(filename))
     call ensure_dirname (self%inputdir)
     call ensure_dirname (self%rundir)
@@ -210,7 +209,6 @@ SUBROUTINE init (self, name)
     ! -- io_unit%dispatcher : data/run/rank_rrrrr.disp
     ! -- io_unit%log        : data/run/thread_rrrrr_ttt.log
     !---------------------------------------------------------------------------
-    call self%open_rank_file (io_unit%lock1     , ".lock" , 'formatted')
     call self%open_rank_file (io_unit%queue     , ".que"  , 'formatted')
     call self%open_rank_file (io_unit%mpi       , ".log"  , 'formatted')
     call self%open_rank_file (io_unit%dbg       , ".dbg"  , 'unformatted')
