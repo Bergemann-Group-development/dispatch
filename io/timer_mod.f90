@@ -227,6 +227,8 @@ SUBROUTINE end (self, itimer)
   next_report = timer%next_report_sec
   if (wc > next_report) then
     !$omp critical (timer_print_cr)
+    !$omp atomic read
+    next_report = timer%next_report_sec
     if (wc > next_report) then
       call real_print (self)
       next_report = (nint(wc/self%sec_per_report)+1)*self%sec_per_report
@@ -368,7 +370,7 @@ contains
       musppt, ' core-mus/cell-upd', wc, ' wall sec'
     self%prev = self%time
     timer%latency%aver = timer%latency%aver/max(1,timer%latency%n)
-    write (unit,'(1x,"MPI recv:",f10.1," MB/s",f11.3," MB/mesg",i8, &
+    write (unit,'(1x,"MPI recv:",f9.1," MB/s",f10.3," MB/mesg",i8, &
       " nq_send_max",i8, " nq_recv_max",2f8.3," max, aver latency",f7.2, &
       " f_unpk",f7.2," f_mem",f7.2," f_que",f7.2," f_cheap")') &
       timer%bytes_recv/1024.**2/sec, timer%bytes_recv/1024.**2/n_recv, &
