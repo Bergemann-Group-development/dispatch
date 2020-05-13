@@ -130,7 +130,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Allocate force array
   !-----------------------------------------------------------------------------
-  if (.not.allocated(self%patch%force_per_unit_volume)) then
+  if (.not.associated(self%patch%force_per_unit_volume)) then
     m = self%patch%mesh%gn
     allocate (self%patch%force_per_unit_volume(m(1),m(2),m(3),3))
   end if
