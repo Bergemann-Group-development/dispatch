@@ -530,6 +530,7 @@ FUNCTION update4 (self, i) RESULT (j)
   !.............................................................................
   j = update8 (self, int(i,kind=8))
 END FUNCTION update4
+
 !===============================================================================
 FUNCTION update8 (self, i) RESULT (j)
   class(mpi_counter_t):: self
@@ -540,27 +541,16 @@ FUNCTION update8 (self, i) RESULT (j)
   integer(kind=MPI_ADDRESS_KIND):: offset=0
   !-----------------------------------------------------------------------------
   call trace%begin ('mpi_counter_t%update', 2)
-  if (mpi%mode == MPI_THREAD_MULTIPLE) then
-    call MPI_Win_lock (MPI_LOCK_EXCLUSIVE, master, 0, self%window, mpi_err)
-    call mpi%assert ('MPI_Win_lock', mpi_err)
-    call MPI_Get_accumulate (i, 1, MPI_INTEGER8, &
-                             k, 1, MPI_INTEGER8, master, offset, &
-                                1, MPI_INTEGER8, MPI_SUM, self%window, mpi_err)
-    call mpi%assert ('MPI_Get_accumulate', mpi_err)
-    call MPI_Win_unlock (master, self%window, mpi_err)
-    call mpi%assert ('MPI_Win_unlock', mpi_err)
-  else
-    !$omp critical (mpi_cr)
-    call MPI_Win_lock (MPI_LOCK_EXCLUSIVE, master, 0, self%window, mpi_err)
-    call mpi%assert ('MPI_Win_lock', mpi_err)
-    call MPI_Get_accumulate (i, 1, MPI_INTEGER8, &
-                              k, 1, MPI_INTEGER8, master, offset, &
-                                1, MPI_INTEGER8, MPI_SUM, self%window, mpi_err)
-    call mpi%assert ('MPI_Get_accumulate', mpi_err)
-    call MPI_Win_unlock (master, self%window, mpi_err)
-    call mpi%assert ('MPI_Win_unlock', mpi_err)
-    !$omp end critical (mpi_cr)
-  end if
+  !$omp critical (mpi_win_cr)
+  call MPI_Win_lock (MPI_LOCK_EXCLUSIVE, master, 0, self%window, mpi_err)
+  call mpi%assert ('MPI_Win_lock', mpi_err)
+  call MPI_Get_accumulate (i, 1, MPI_INTEGER8, &
+                           k, 1, MPI_INTEGER8, master, offset, &
+                              1, MPI_INTEGER8, MPI_SUM, self%window, mpi_err)
+  call mpi%assert ('MPI_Get_accumulate', mpi_err)
+  call MPI_Win_unlock (master, self%window, mpi_err)
+  call mpi%assert ('MPI_Win_unlock', mpi_err)
+  !$omp end critical (mpi_win_cr)
   j = k+i
 #else
   call trace%begin ('mpi_counter_t%update')
