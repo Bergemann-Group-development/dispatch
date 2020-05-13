@@ -172,15 +172,10 @@ SUBROUTINE barrier_ (self, label, delay)
   !.............................................................................
   if (.not.self%ok) return
   call trace%begin ('mpi_t%barrier')
-  if (present(delay)) then
-    wc = wallclock()
-    do while (wallclock()-wc < delay)
-    end do
-  end if
   if (present(label)) then
-    call barrier_mpi (self, label)
+    call barrier_mpi (self, label, delay=delay)
   else
-    call barrier_mpi (self, 'mpi%barrier')
+    call barrier_mpi (self, 'mpi%barrier', delay=delay)
   end if
   call trace%end ()
 END SUBROUTINE barrier_
@@ -320,8 +315,9 @@ SUBROUTINE clean_stop
 END SUBROUTINE clean_stop
 
 !===============================================================================
-SUBROUTINE barrier_mpi (self, label)
+SUBROUTINE barrier_mpi (self, label, delay)
   class(mpi_t):: self
+  real, optional:: delay
   character(len=*) label
 !...............................................................................
   if (self%verbose > 2) then
@@ -329,13 +325,19 @@ SUBROUTINE barrier_mpi (self, label)
     flush (output)
   end if
 #ifdef MPI
-  call omp%delay (3e3)
-  if (mpi%mode == MPI_THREAD_MULTIPLE) then
-    call MPI_Barrier (mpi_comm_world, mpi_err)
-  else
-    !$omp critical (mpi_cr)
-    call MPI_Barrier (mpi_comm_world, mpi_err)
-    !$omp end critical (mpi_cr)
+  if (mpi%size > 1) then
+    if (present(delay)) then
+      call omp%delay (1e3*delay)
+    else
+      call omp%delay (3e3)
+    end if
+    if (mpi%mode == MPI_THREAD_MULTIPLE) then
+      call MPI_Barrier (mpi_comm_world, mpi_err)
+    else
+      !$omp critical (mpi_cr)
+      call MPI_Barrier (mpi_comm_world, mpi_err)
+      !$omp end critical (mpi_cr)
+    end if
   end if
 #endif
 END SUBROUTINE barrier_mpi
