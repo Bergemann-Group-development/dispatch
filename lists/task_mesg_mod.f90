@@ -623,6 +623,12 @@ SUBROUTINE unpack (self, mesg, link)
         call task%setup
       end select
       call self%add_new_link (link)
+      task%mesg%seq = task%mesg%seq-1             ! adjust the sequence number
+      if (verbose > 0) then
+        write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,3i6)') &
+          wallclock(), omp%thread, 'vnew', task%id, task%time, task%istep, &
+          task%mesg%seq
+      end if
     else
       if (self%verbose > 1) write(io_unit%log,*) task%id, 'update'
       !-------------------------------------------------------------------------
