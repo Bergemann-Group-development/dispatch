@@ -7,7 +7,7 @@
  max_sent=500
  max_probe=12
  min_nq=10
- delay_ms=0.1
+ 
 /
 &timer_params
  sec_per_report=5

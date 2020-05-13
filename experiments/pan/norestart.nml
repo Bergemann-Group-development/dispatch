@@ -61,5 +61,5 @@
 !&task_mesg_params       verbose=0 method='private' /
 !&mpi_mesg_params        verbose=0 /
 !&mpi_mesg_params        verbose=0 send_priv=f max_send=5 max_sent=1000 min_nq=0 max_recv=1000 max_probe=1000 /
-&mpi_mesg_params        verbose=0 send_priv=f max_sent=30 min_nq=0 max_recv=1000 max_probe=1000 delay_ms=0.1 /
-!&mpi_mesg_params        verbose=0 send_priv=t max_sent=30 min_nq=0 max_recv=1000 max_probe=1000 delay_ms=0.1 /
+&mpi_mesg_params        verbose=0 send_priv=f max_sent=30 min_nq=0 max_recv=1000 max_probe=1000  /
+!&mpi_mesg_params        verbose=0 send_priv=t max_sent=30 min_nq=0 max_recv=1000 max_probe=1000  /

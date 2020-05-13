@@ -7,7 +7,7 @@
  max_sent=50
  max_probe=10
  min_nq=10
- delay_ms=0.1
+ 
 /
 &microphysics_params
  do_rt = f

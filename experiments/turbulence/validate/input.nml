@@ -10,7 +10,7 @@
 &dispatcher_params      method=5 /
 &load_balance_params    /
 &task_list_params       /
-&mpi_mesg_params        verbose=0 debug=f delay_ms=300 /
+&mpi_mesg_params        verbose=0 debug=f  /
 &task_mesg_params       verbose=0 /
 &timer_params           sec_per_report=10 /
 &experiment_params      test=t /
