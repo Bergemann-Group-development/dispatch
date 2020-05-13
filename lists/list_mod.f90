@@ -279,19 +279,19 @@ SUBROUTINE append_link (self, link)
   !-----------------------------------------------------------------------------
   ! Append in such a way that the task list does not need to be locked
   !-----------------------------------------------------------------------------
-  call link%qlock%set ('append_link')
+!  call link%qlock%set ('append_link1')
   nullify(link%next)
   if (associated(self%tail)) then
     link%prev => self%tail
     link%prev%next => link
-    call self%tail%qlock%set ('append_link')
+!    call self%tail%qlock%set ('append_link2')
     self%tail => link
-    call self%tail%qlock%unset ('append_link')
+!    call self%tail%qlock%unset ('append_link2')
   else
     self%head => link
     self%tail => link
   end if
-  call link%qlock%unset ('append_link')
+!  call link%qlock%unset ('append_link1')
   !-----------------------------------------------------------------------------
   ! IMPORTANT: Some procedures depend on knowing the size of the list!
   !-----------------------------------------------------------------------------
