@@ -385,6 +385,7 @@ SUBROUTINE turbulence (self, m, ff, idx)
   !.............................................................................
   real, save            :: b0(3)=[0.0,0.0,0.1]
   logical, save         :: first_time=.true.
+  integer               :: iostat
   namelist /IC_turbulence_params/ b0
   integer, save         :: itimer=0
   !-----------------------------------------------------------------------------
@@ -393,8 +394,9 @@ SUBROUTINE turbulence (self, m, ff, idx)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
-    read (io%input, IC_turbulence_params)
-    if (io%master) write (io%output, IC_turbulence_params)
+    read (io%input, IC_turbulence_params, iostat=iostat)
+    call io%namelist_warning ('IC_turbulence_params', iostat)
+    write (io%namelist, IC_turbulence_params)
   end if
   call io%lock%unset
   ff(:,:,:,idx%d        ) = 1.0

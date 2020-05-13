@@ -14,7 +14,7 @@ s $Id$
 &download_params        verbose=0 check_filled=t /
 
 !--- Initial condition and forces ----------------------------------------------
-&experiment_params      l_pc=5 n_H2=240 c_kms=0.18 /
+&experiment_params      l_pc=5 n_H2=240 cs_kms=0.18 /
 &scaling_params         l_pc=5 n_H2=240 v_kms=0.18 mu=2.4 /
 &initial_params         type='turbulence' /
 &force_params           type='turbulence' /

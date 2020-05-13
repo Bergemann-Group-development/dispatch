@@ -150,7 +150,7 @@ SUBROUTINE init_turbulence (self, solver, id, mesh)
   character(len=64):: solver
   class(mesh_t), dimension(:), pointer:: mesh
   !.............................................................................
-  integer :: mx, my, mz
+  integer :: mx, my, mz, iostat
   real    :: rhoav, xav, yav, zav
   namelist /turbulence_params/ do_force, do_helmh, a_helmh, k1, k2, pk, &
                                ampl_turb, t_turn, t_turb, seed, t_damp, verbose
@@ -161,8 +161,9 @@ SUBROUTINE init_turbulence (self, solver, id, mesh)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
-    read (io%input,turbulence_params)
-    if (io%master) write (*,turbulence_params)
+    read (io%input, turbulence_params, iostat=iostat)
+    call io%namelist_warning ('turbulence_params', iostat)
+    write (io%namelist, turbulence_params)
   end if
   if (t_turb == 0.) t_turb = -1.5*t_turn
   self%id     = id
