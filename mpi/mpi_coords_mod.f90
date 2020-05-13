@@ -184,6 +184,7 @@ SUBROUTINE cart_create_mpi (self, mpi_dims, dims)
   class(mpi_coords_t):: self
   integer, dimension(3), optional:: mpi_dims, dims
 !-------------------------------------------------------------------------------
+#ifdef MPI
   if (mpi%mode == MPI_THREAD_MULTIPLE) then
       call cart_create_mpi_real (self, mpi_dims, dims)
     else
@@ -191,6 +192,7 @@ SUBROUTINE cart_create_mpi (self, mpi_dims, dims)
     call cart_create_mpi_real (self, mpi_dims, dims)
     !$omp end critical (mpi_cr)
   end if
+#endif
 END SUBROUTINE cart_create_mpi
 !===============================================================================
 !> Create a Cartesian arrangement of MPI ranks, with dimension n_mpi(3).  If
