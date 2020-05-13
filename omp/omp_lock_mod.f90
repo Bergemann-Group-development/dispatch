@@ -189,6 +189,8 @@ SUBROUTINE set (self, label, itimer)
   if (.not. self%initialized) then
     write (stderr,'(a,i4)') &
     'omp_lock_t%set WARNING: lock not initialized, thread =', omp%thread
+    write (io_unit%log,'(f12.6,2x,a,i4)') wallclock(), &
+    'omp_lock_t%set WARNING: lock not initialized, thread =', omp%thread
   call self%init
   end if
   !-----------------------------------------------------------------------------
@@ -207,7 +209,7 @@ SUBROUTINE set (self, label, itimer)
         ' lock kind, id, level, thread = ', self%kind, self%id, &
         self%level,   omp_get_thread_num(), '   get'
     end if
-    !flush (unit)
+    flush (unit)
   end if
   start = wallclock()
   !$omp flush
@@ -215,6 +217,7 @@ SUBROUTINE set (self, label, itimer)
   !$omp flush
   end = wallclock()
   used = end-start
+  self%start_time = end
   !$omp atomic update
   wait_time = wait_time + used
   self%level = self%level+1
@@ -229,6 +232,7 @@ SUBROUTINE set (self, label, itimer)
         ' lock kind, id, level, thread = ', self%kind, self%id, &
         self%level, omp%thread, used, '   set'
     end if
+    flush (unit)
   end if
 #ifdef TRACE 
   call trace%end()
@@ -353,6 +357,7 @@ SUBROUTINE unset (self, label)
         ' lock kind, id, level, thread = ', self%kind, self%id, level, &
         omp%thread, used, ' unset'
     end if
+    flush (unit)
   end if
 #ifdef TRACE 
   call trace%end()
@@ -389,7 +394,7 @@ SUBROUTINE info (self, unit, p_verbose)
     !$omp atomic read
     time = wait_time
     write (stdout,'(a,1p,g11.2,a,10f8.1)') ' total lock waiting time =', &
-      time, ' s'
+      time, ' core-s'
     !$omp atomic write
     wait_time = 0d0
   end if
