@@ -17,7 +17,7 @@ MODULE force_mod
     integer :: verbose = 0
     real :: t_turb = 0.0
     real :: t_damp
-    real, allocatable, dimension(:,:,:,:,:)   :: fran
+    real, pointer, contiguous, dimension(:,:,:,:,:)   :: fran => null()
     real(8):: a(3), phase(3)
     real(8):: t_turn, t_save=0.0
     type(random_t):: random
@@ -172,7 +172,7 @@ SUBROUTINE init_turbulence (self, solver, id, mesh)
   mx = self%mesh(1)%gn
   my = self%mesh(2)%gn
   mz = self%mesh(3)%gn
-  if (.not.allocated(self%fran)) then
+  if (.not.associated(self%fran)) then
     allocate (self%fran(mx,my,mz,3,2))
     call io%bits_mem (storage_size(self%fran), product(shape(self%fran)), 'fran')
   end if

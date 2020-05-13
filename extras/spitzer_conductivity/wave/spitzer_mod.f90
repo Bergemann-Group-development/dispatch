@@ -75,7 +75,7 @@ SUBROUTINE init (self, link)
     self%sigma0 = sigma_e / scaling%l/scaling%l/(scaling%e/scaling%t) * amp
     self%csat = csat * scaling%d/(scaling%e/scaling%t)
     self%on = do_spitzer
-    if (.not.allocated(self%patch%heating_per_unit_volume)) &
+    if (.not.associated(self%patch%heating_per_unit_volume)) &
       call allocate_scalars_a(gn,self%patch%heating_per_unit_volume)
     call self%compute_q(self%patch%mem(:,:,:,:,self%patch%it,1))
   end if

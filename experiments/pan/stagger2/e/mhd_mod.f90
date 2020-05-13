@@ -32,10 +32,10 @@ MODULE mhd_mod
   implicit none
   private
   type, extends(extras_t), public:: mhd_t
-    real, dimension(:,:,:),   pointer:: d, dddt, e, dedt
+    real, dimension(:,:,:),   pointer, contiguous:: d, dddt, e, dedt
     real, dimension(:,:,:,:), pointer:: p, dpdt, B, dBdt
-    real, dimension(:,:,:),   pointer:: lnd, ee, pg
-    real, dimension(:,:,:), allocatable:: qrad
+    real, dimension(:,:,:),   pointer, contiguous:: lnd, ee, pg
+    real, dimension(:,:,:),   pointer, contiguous:: qrad
     real:: nu(6)
     real:: cdtd
     logical:: mhd=.false.
@@ -414,10 +414,10 @@ SUBROUTINE pde (self)
       dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)! ops: 1 0 0
     end if
   end if
-  if (allocated(self%force_per_unit_mass)) then
+  if (associated(self%force_per_unit_mass)) then
    dpdt = dpdt + dd*self%force_per_unit_mass                                    ! ops: 3 3 0
   end if
-  if (allocated(self%force_per_unit_volume)) then
+  if (associated(self%force_per_unit_volume)) then
    dpdt = dpdt + self%force_per_unit_volume                                     ! ops: 3 3 0
   end if
   !-----------------------------------------------------------------------------

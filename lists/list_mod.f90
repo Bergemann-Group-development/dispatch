@@ -3140,7 +3140,7 @@ FUNCTION check_support (self, link, sign, test) RESULT (refine)
     ! Task%irefine is used additively, so make sure refinement happen if and
     ! where the local irefine is still set    
     !---------------------------------------------------------------------------
-    if (allocated(task%irefine)) then
+    if (associated(task%irefine)) then
       task%irefine = task%irefine + irefine
     end if
     if (.not. present(test)) then

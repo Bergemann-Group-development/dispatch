@@ -6,7 +6,7 @@ MODULE mpi_buffer_mod
   private
   type, public:: mpi_buffer_t
     integer:: n
-    integer, allocatable:: buffer(:)
+    integer, pointer, contiguous:: buffer(:)
     integer(8):: position=0
   contains
     procedure:: init
@@ -47,7 +47,7 @@ SUBROUTINE reset (self)
   class (mpi_buffer_t):: self
   !-----------------------------------------------------------------------------
   !call trace%begin ('mpi_buffer_t%reset')
-  if (allocated(self%buffer)) deallocate(self%buffer)
+  if (associated(self%buffer)) deallocate(self%buffer)
   self%position = 0
   !call trace%end()
 END SUBROUTINE reset

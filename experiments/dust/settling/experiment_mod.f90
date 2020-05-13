@@ -157,7 +157,7 @@ SUBROUTINE initial_conditions (self)
   !-----------------------------------------------------------------------------
   ! Make sure force_per_unit_mass is allocated
   !-----------------------------------------------------------------------------
-  if (.not.allocated(self%force_per_unit_mass)) then
+  if (.not.associated(self%force_per_unit_mass)) then
     m = self%mesh%gn
     allocate (self%force_per_unit_mass(m(1),m(2),m(3),3))
     self%force_per_unit_mass = 0.0

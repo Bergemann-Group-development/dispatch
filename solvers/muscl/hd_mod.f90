@@ -29,11 +29,11 @@ MODULE hd_mod
   ! (with gfortran the deallocate is more costly than the allocate), so a
   ! better alternative is to have permanent, thread-private scratch arrays:
   !-----------------------------------------------------------------------------
-  real, dimension(:,:,:,:)  , allocatable, target:: prim
-  real, dimension(:,:,:,:)  , allocatable        :: left
-  real, dimension(:,:,:,:)  , allocatable        :: rght
-  real, dimension(:,:,:,:,:), allocatable, target:: grad
-  real, dimension(:,:,:,:,:), allocatable        :: flux
+  real, dimension(:,:,:,:)  , pointer, contiguous:: prim => null()
+  real, dimension(:,:,:,:)  , pointer, contiguous:: left => null()
+  real, dimension(:,:,:,:)  , pointer, contiguous:: rght => null()
+  real, dimension(:,:,:,:,:), pointer, contiguous:: grad => null()
+  real, dimension(:,:,:,:,:), pointer, contiguous:: flux => null()
   !$omp threadprivate (prim,left,rght,grad,flux)
   !-----------------------------------------------------------------------------
   ! Input parameters:
@@ -147,7 +147,7 @@ SUBROUTINE alloc (self)
   integer, save:: itimer=0
   !.............................................................................
   call tracebegin ('hd_t%alloc', itimer=itimer)
-  if (.not.allocated(prim)) then
+  if (.not.associated(prim)) then
     allocate (prim (self%gn(1), self%gn(2), self%gn(3), self%nv   ))
     allocate (left (self%gn(1), self%gn(2) ,self%gn(3), self%nv   ))
     allocate (rght (self%gn(1), self%gn(2) ,self%gn(3), self%nv   ))
@@ -406,12 +406,12 @@ SUBROUTINE predict (self)
   do i3=l(3),u(3)
   do i2=l(2),u(2)
     ff(:,:) = 0.0
-    if (allocated(self%force_per_unit_mass)) then
+    if (associated(self%force_per_unit_mass)) then
       ff(:,1) = ff(:,1) + self%force_per_unit_mass(:,i2,i3,1)
       ff(:,2) = ff(:,2) + self%force_per_unit_mass(:,i2,i3,2)
       ff(:,3) = ff(:,3) + self%force_per_unit_mass(:,i2,i3,3)
     end if
-    if (allocated(self%force_per_unit_volume)) then
+    if (associated(self%force_per_unit_volume)) then
       ff(:,1) = ff(:,1) + self%force_per_unit_volume(:,i2,i3,1)/d(:,i2,i3)
       ff(:,2) = ff(:,2) + self%force_per_unit_volume(:,i2,i3,2)/d(:,i2,i3)
       ff(:,3) = ff(:,3) + self%force_per_unit_volume(:,i2,i3,3)/d(:,i2,i3)
@@ -556,20 +556,20 @@ SUBROUTINE sources (self)
   p2 => self%mem(:,:,:,3,self%new,1)
   p3 => self%mem(:,:,:,4,self%new,1)
   e  => self%mem(:,:,:,5,self%new,1)
-  forcing = allocated(self%force_per_unit_mass) .or. &
-            allocated(self%force_per_unit_volume)
+  forcing = associated(self%force_per_unit_mass) .or. &
+            associated(self%force_per_unit_volume)
   if (self%gamma /= 1d0 .and. forcing) then
     prim(:,:,:,5) = p1**2 + p2**2 + p3**2
   end if
   !-----------------------------------------------------------------------------
   ! Add forcing to momentum
   !-----------------------------------------------------------------------------
-  if (allocated(self%force_per_unit_mass)) then
+  if (associated(self%force_per_unit_mass)) then
     p1 = p1 + self%force_per_unit_mass(:,:,:,1)*d*self%dtime
     p2 = p2 + self%force_per_unit_mass(:,:,:,2)*d*self%dtime
     p3 = p3 + self%force_per_unit_mass(:,:,:,3)*d*self%dtime
   end if
-  if (allocated(self%force_per_unit_volume)) then
+  if (associated(self%force_per_unit_volume)) then
     p1 = p1 + self%force_per_unit_volume(:,:,:,1)*self%dtime
     p2 = p2 + self%force_per_unit_volume(:,:,:,2)*self%dtime
     p3 = p3 + self%force_per_unit_volume(:,:,:,3)*self%dtime

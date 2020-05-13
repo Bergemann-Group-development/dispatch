@@ -553,10 +553,10 @@ SUBROUTINE pde (self)
   ! External force; e.g. point source gravity.  Note that the density factor is
   ! applied here, and should not be included in the function definition
   !-----------------------------------------------------------------------------
-  if (allocated(self%force_per_unit_mass)) then
+  if (associated(self%force_per_unit_mass)) then
     dpdt = dpdt + dd*self%force_per_unit_mass                                  ! ops: 2 2 0
   end if
-  if (allocated(self%force_per_unit_volume)) then
+  if (associated(self%force_per_unit_volume)) then
     dpdt = dpdt + self%force_per_unit_volume
   end if
   !-----------------------------------------------------------------------------
@@ -616,10 +616,10 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   ! External heating / cooling, if any; e.g. radiative or conductive
   !-----------------------------------------------------------------------------
-  if (allocated(self%heating_per_unit_mass)) then
+  if (associated(self%heating_per_unit_mass)) then
     dsdt = dsdt + d*self%heating_per_unit_mass/pg                                  ! ops: 2 2 0
   end if
-  if (allocated(self%heating_per_unit_volume)) then
+  if (associated(self%heating_per_unit_volume)) then
     dsdt = dsdt + self%heating_per_unit_volume/pg
   end if
   !-----------------------------------------------------------------------------

@@ -184,7 +184,7 @@ SUBROUTINE force_field (self, patch)
   !-----------------------------------------------------------------------------
   ! For each cell, loop over particles and accumulate force in double precision
   !-----------------------------------------------------------------------------
-  if (.not.allocated(patch%force_per_unit_mass)) then
+  if (.not.associated(patch%force_per_unit_mass)) then
     associate (m=>patch%gn)
     allocate (patch%force_per_unit_mass(m(1),m(2),m(3),3))
     end associate

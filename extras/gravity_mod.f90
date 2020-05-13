@@ -81,7 +81,7 @@ SUBROUTINE init (self)
   integer:: gn(3)
   !-----------------------------------------------------------------------------
   call trace%begin ('selfgravity_t%init')
-  if (.not.allocated(self%patch%force_per_unit_mass)) then
+  if (.not.associated(self%patch%force_per_unit_mass)) then
     gn = self%patch%gn
     allocate (self%patch%force_per_unit_mass(gn(1),gn(2),gn(3),3))
     self%patch%force_per_unit_mass = 0.0

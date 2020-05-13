@@ -56,8 +56,8 @@ MODULE download_mod
     procedure, nopass:: set_verbose
     procedure, nopass:: cast2patch
   end type
-  integer(kind=int8), dimension(:,:,:,:), allocatable:: filled
-  integer(kind=4), dimension(:,:,:), allocatable:: src
+  integer(kind=int8), dimension(:,:,:,:), pointer, contiguous:: filled
+  integer(kind=4), dimension(:,:,:), pointer, contiguous:: src
   !$omp threadprivate (filled, src)
   integer:: verbose=0
   integer:: id_debug=0
@@ -1302,7 +1302,6 @@ END SUBROUTINE same_lagrange
 SUBROUTINE same_rt (self, target, source, jt, pt)
   class(download_t):: self
   class(patch_t), pointer :: target, source
-  !integer(int8), dimension(:,:,:,:), allocatable:: filled
   !.............................................................................
   integer                 :: l(3), u(3), o(3), ii(3), jt(2), li(3), ui(3)
   real(8)                 :: position(3)
@@ -1481,9 +1480,10 @@ SUBROUTINE different_prolong (self, target, source, jt, pt, all_cells, only)
   real                    :: pt(2), pp(3)
   real(kind=KindScalarVar):: qint, dint
   logical                 :: all_cells_l
-  real(kind=KindScalarVar), pointer:: q1(:,:,:), q2(:,:,:), d1(:,:,:), d2(:,:,:)
   real(kind=KindScalarVar), pointer:: q(:,:,:,:)
-  real(kind=KindScalarVar), allocatable:: dtmp(:,:,:)
+  real(kind=KindScalarVar), pointer, contiguous:: q1(:,:,:), q2(:,:,:)
+  real(kind=KindScalarVar), pointer, contiguous:: d1(:,:,:), d2(:,:,:)
+  real(kind=KindScalarVar), pointer, contiguous:: dtmp(:,:,:)
   integer, save           :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%different_prolong', itimer=itimer)
@@ -1555,7 +1555,7 @@ SUBROUTINE different_prolong (self, target, source, jt, pt, all_cells, only)
               !-----------------------------------------------------------------
               if (filled(ix,iy,iz,iv) >  source%level .or. &
                   filled(ix,iy,iz,iv) == target%level) then
-                if (allocated(src)) then
+                if (associated(src)) then
                   srcid = src(ix,iy,iz)
                 else
                   srcid = -1
@@ -1651,8 +1651,8 @@ SUBROUTINE prolong (self, target, source, jt, pt, all_cells, only)
   real                    :: pt(2), pp(3)
   real(kind=KindScalarVar):: qint, dint
   logical                 :: all_cells_l
-  real(kind=KindScalarVar), allocatable::  sbuf(:,:,:,:,:),  tbuf(:), pbuf(:,:)
-  real(kind=KindScalarVar), allocatable:: sdbuf(:,:,:,:,:), tdbuf(:)
+  real(kind=KindScalarVar), pointer, contiguous::  sbuf(:,:,:,:,:),  tbuf(:), pbuf(:,:)
+  real(kind=KindScalarVar), pointer, contiguous:: sdbuf(:,:,:,:,:), tdbuf(:)
   integer                 :: mv(target%nv)
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%prolong', itimer=itimer)
@@ -1722,7 +1722,7 @@ SUBROUTINE prolong (self, target, source, jt, pt, all_cells, only)
             !  !-----------------------------------------------------------------
             !  if (filled(ix,iy,iz,iv) >  source%level .or. &
             !      filled(ix,iy,iz,iv) == target%level) then
-            !    if (allocated(src)) then
+            !    if (associated(src)) then
             !      srcid = src(ix,iy,iz)
             !    else
             !      srcid = -1
@@ -1909,7 +1909,6 @@ END SUBROUTINE different_rt
 SUBROUTINE different_restrict (self, target, source, jt, pt, only)
   class(download_t):: self
   class(patch_t), pointer :: target, source
-  !integer(int8), dimension(:,:,:,:), allocatable:: filled
   integer, optional:: only
   integer                 :: ix, iy, iz, iv, jt(2), iv1, iv2, i, jx, jy, jz
   integer, dimension(3)   :: l, u, ii, li, ui, jj
@@ -2050,7 +2049,6 @@ END SUBROUTINE different_restrict
 SUBROUTINE restrict_centered (self, target, source, jt, pt, only)
   class(download_t):: self
   class(patch_t), pointer :: target, source
-  !integer(int8), dimension(:,:,:,:), allocatable:: filled
   integer, optional:: only
   integer                 :: ix, iy, iz, iv, jt(2), iv1, iv2, i, jx, jy, jz
   integer, dimension(3)   :: l, u, ii, li, ui, jj
