@@ -695,7 +695,8 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   rewind (io%input)
   read (io%input, mpi_mesg_params,iostat=iostat)
-  write (io%output, mpi_mesg_params)
+  call io%namelist_warning ('mpi_mesg_params', iostat)
+  write (io%namelist, mpi_mesg_params)
   self%debug = debug
 !  self%min_nq = min_nq
 !  self%max_recv = max_recv

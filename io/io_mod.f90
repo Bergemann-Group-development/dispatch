@@ -85,6 +85,7 @@ MODULE io_mod
     procedure, nopass:: abort
     procedure, nopass:: assert
     procedure, nopass:: header
+    procedure, nopass:: line
     procedure, nopass:: print_hl
   end type
   type(io_t), public:: io
@@ -132,8 +133,7 @@ SUBROUTINE init (self, name)
   '$Id$ io/io_mod.f90'
   !.............................................................................
   if (mpi%master) then
-    print'(a)', self%hl
-    print'(a)', trim(ids)
+    write (io_unit%hash,'(a)') trim(ids)
   end if
   self%master = mpi%master
   io%master   = mpi%master
@@ -165,10 +165,10 @@ SUBROUTINE init (self, name)
     open (io_unit%nml, file=trim(self%rundir)//'params.nml', form='formatted', status='unknown')
     open (io_unit%hash, file=trim(self%rundir)//'hash.log', form='formatted', status='unknown')
     open (self%input, file=self%inputname, form='formatted', status='old')
+    write(io_unit%output,'(a,i2)') &
+      ' This version was compiled with default real KIND =', kind(test)
+    call io%header ('io_t%init:')
     !---------------------------------------------------------------------------
-    ! Read io_params namelist
-    !---------------------------------------------------------------------------
-    inputdir = self%rundir
     rewind (io%input)
     read (io%input, io_params, iostat=iostat)
     call self%namelist_warning ('io_params', iostat)
@@ -176,7 +176,17 @@ SUBROUTINE init (self, name)
       print'(a,i4)', ' n_socket =', omp%nsockets
       print'(a,i4)', '   n_core =', omp%ncores
       print'(a,i4)', ' n_thread =', omp_nthreads
+      print'(a,i4)', '   n_rank =', mpi%size
     end if
+    !---------------------------------------------------------------------------
+    call os%mkdir (trim(self%rundir))
+    open (io_unit%nml, file=trim(self%rundir)//'params.nml', form='formatted', status='unknown')
+    open (io_unit%hash, file=trim(self%rundir)//'hash.log', form='formatted', status='unknown')
+    open (self%input, file=self%inputname, form='formatted', status='old')
+    !---------------------------------------------------------------------------
+    ! Read io_params namelist
+    !---------------------------------------------------------------------------
+    inputdir = self%rundir
     self%task_logging = task_logging
     self%log_interval = log_interval
     self%format = format
@@ -245,18 +255,14 @@ SUBROUTINE init (self, name)
     ! stdout is the same as the the %output unit, and is not threadprivate
     !---------------------------------------------------------------------------
     stdout = io_unit%output
-    write (stdout,io_params)
     write (self%namelist,io_params)
     !---------------------------------------------------------------------------
     ! Backwards compatibility
     !---------------------------------------------------------------------------
     io%output    = io_unit%output
     io%data_unit = io_unit%data
-    write(io%output,*) 'logfile:', filename
-    write(io%output,*) '======================================================================='
-    write(io%output,*) 'NOTE: Reading parameters from '//trim(self%inputname)
-    write(io%output,*) ' This version was compiled with default real KIND=', kind(test)
-    write(io%output,*) '======================================================================='
+    write(io%output,*) 'output directory: '//self%rundir
+    write(io%output,*) 'reading parameters from: '//trim(self%inputname)
     first_time=.false.
   end if
   self%guard_zones = guard_zones
@@ -592,65 +598,64 @@ SUBROUTINE header (str, left)
   character(len=*):: str
   integer, optional:: left
   !.............................................................................
-  call timer%print()
+!  call timer%print()
   if (io%master) then
     if (str(1:1) == '-') then
       call line (str, left)
     else
-      call line ('=', left)
+      !call line ('=', left)
       call line (str, left)
-      call line ('=', left)
     end if
   end if
+END SUBROUTINE header
+
 !===============================================================================
 !> Print a centered or left adjusted message, surrounded by repeated c chars
 !===============================================================================
-contains
-  subroutine line (s, left)
-    character(len=*):: s
-    integer, optional:: left
-    !...........................................................................
-    character(len=1):: c
-    integer, parameter:: w=80
-    character(len=w):: buf
-    integer:: i, j, l1, l2, l
-    !---------------------------------------------------------------------------
-    l = len_trim(s)
-    !---------------------------------------------------------------------------
-    ! Optionally, use a fixed left start, else center
-    !---------------------------------------------------------------------------
-    if (s(1:1)=='-') then
-      c = '-'
-      j = 2
+SUBROUTINE line (s, left)
+  character(len=*):: s
+  integer, optional:: left
+  !...........................................................................
+  character(len=1):: c
+  integer, parameter:: w=80
+  character(len=w):: buf
+  integer:: i, j, l1, l2, l
+  !---------------------------------------------------------------------------
+  l = len_trim(s)
+  !---------------------------------------------------------------------------
+  ! Optionally, use a fixed left start, else center
+  !---------------------------------------------------------------------------
+  if (s(1:1)=='-') then
+    c = '-'
+    j = 2
+  else
+    c = '='
+    j = 1
+  end if
+  if (present(left)) then
+    l1 = left
+  else
+    l1 = (w-l)/2-1
+  end if
+  l2 = l1 + l
+  do i=1,w
+    if (l <= 1) then
+      ! --- no message ---
+      buf(i:i) = c
+    else if (i==l1 .or. i==l2) then
+      ! --- space before and after message ---
+      buf(i:i) = ' '
+    else if (i > l1 .and. i < l2 .and. j <= l) then
+      ! --- copy message ---
+      buf(i:i) = s(j:j)
+      j = j+1
     else
-      c = '='
-      j = 1
+      ! --- surrounding char ---
+      buf(i:i) = c
     end if
-    if (present(left)) then
-      l1 = left
-    else
-      l1 = (w-l)/2-1
-    end if
-    l2 = l1 + l
-    do i=1,w
-      if (l <= 1) then
-        ! --- no message ---
-        buf(i:i) = c
-      else if (i==l1 .or. i==l2) then
-        ! --- space before and after message ---
-        buf(i:i) = ' '
-      else if (i > l1 .and. i < l2 .and. j <= l) then
-        ! --- copy message ---
-        buf(i:i) = s(j:j)
-        j = j+1
-      else
-        ! --- surrounding char ---
-        buf(i:i) = c
-      end if
-    end do
-    print '(a)', buf
-  end subroutine line
-END SUBROUTINE header
+  end do
+  print '(a)', buf
+END SUBROUTINE line
 
 !===============================================================================
 SUBROUTINE print_hl

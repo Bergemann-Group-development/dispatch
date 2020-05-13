@@ -63,8 +63,8 @@ SUBROUTINE init (self, solver, id, mesh)
     first_time = .false.
     rewind (io%input)
     read (io%input, force_params, iostat=iostat)
-    if (iostat /= 0) call io%namelist_warning ('ramses%force_mod: force_params')
-    if (io%master) write (*, force_params)
+    call io%namelist_warning ('force_params', iostat)
+    write (io%namelist, force_params)
   end if
   call io%lock%unset
   select case (type)
@@ -115,7 +115,8 @@ FUNCTION single_solenoidal (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
     first_time = .false.
     rewind (io%input)
     read (io%input, force_solenoidal_params, iostat=iostat)
-    if (io%master) write (*, force_solenoidal_params)
+    call io%namelist_warning ('force_solenoidal_params', iostat)
+    write (io%namelist, force_solenoidal_params)
   end if
   call io%lock%unset
   if (time >= self%t_save) then

@@ -47,9 +47,9 @@ SUBROUTINE init (self, solver, gamma1)
     first_time = .false.
     rewind (io%input)
     read (io%input, initial_params, iostat=iostat)
-    if (iostat/=0) call io%namelist_warning ('ramses/hydro/initial_mod.f90: initial_params')
-    if (io%master) write (*, initial_params)
-  end if
+    call io%namelist_warning ('ramses/hydro/initial_mod.f90: initial_params', iostat)
+    write (io%namelist, initial_params)
+ end if
   call io%lock%unset
   self%solver = trim(solver)
   select case (type)
@@ -97,7 +97,7 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   real, dimension(:,:,:,:) :: ff
   type(index_t):: idx
   !.............................................................................
-  integer        :: ix, iy, iz
+  integer        :: ix, iy, iz, iostat
   real(8)        :: kx, ky, kz
   logical, save  :: mhd=.false.
   real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
@@ -111,9 +111,10 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
-    read (io%input, initial_solenoidal_params)
+    read (io%input, initial_solenoidal_params, iostat=iostat)
     mhd = mhd .and. any(b0 /= 0.0)
-    if (io%master) write (*, initial_solenoidal_params)
+    call io%namelist_warning ('initial_solenoidal_params', iostat)
+    write (io%namelist, initial_solenoidal_params)
   end if
   call io%lock%unset
   self%mhd = mhd

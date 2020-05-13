@@ -78,7 +78,7 @@ SUBROUTINE init (self, name)
   rewind (io%input)
   read(io%input, task_list_params, iostat=iostat)
   call io%namelist_warning ('task_list_params', iostat)
-  write (io%output, task_list_params)
+  write (io%namelist, task_list_params)
   if (sync_time > 0.0) &
     self%sync_next = sync_time
   self%sync_time = sync_time
@@ -156,8 +156,8 @@ SUBROUTINE init_levels (self)
     refine%levelmin = levelmin
     refine%levelmax = levelmax
   end if
-  write (io%output,*) &
-    'task_list_t%init_levels: levelmin,max =', refine%levelmin, refine%levelmax
+  write (io%output,'(1x,a,2i4)') &
+    'AMR levels:  min, max = ', refine%levelmin, refine%levelmax
   !-----------------------------------------------------------------------------
   ! If more than one level is active, for check that guard zones are filled
   !-----------------------------------------------------------------------------
@@ -226,10 +226,10 @@ SUBROUTINE startup (self)
   ! Initialize the data I/O, and start timer
   !-----------------------------------------------------------------------------
   if (mpi%master) &
-    print '(a,f8.3,a)', ' Memory per process:', io%gb, ' GB'
+    print '(a,f8.3,a)', ' memory per process:', io%gb, ' GB'
   call mpi%barrier ('self%execute')
   call tic (time=sec)
-  call timer%print()
+!  call timer%print()
   self%n_tasks = self%na
   call trace%end (itimer)
 END SUBROUTINE startup

@@ -51,7 +51,8 @@ SUBROUTINE init (task_list)
   rewind (io%input)
   read (io%input, snapshot_params, iostat=iostat)
   if (io%master) then
-    write (*, snapshot_params)
+    call io%namelist_warning ('snapshot_params', iostat)
+    write (io%namelist, snapshot_params)
   else
     verbose = 0
   end if

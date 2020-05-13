@@ -438,7 +438,7 @@ SUBROUTINE init (self)
   call io%lock%set ('patch_t%init')
   if (first_time) then
     write (stdout,'(a,6i4)') &
-      'patch_t%init: shape(patch%mem) =', shape(self%mem)
+      ' memory shape:', shape(self%mem)
     call self%idx%print (stdout)
     first_time = .false.
   end if
@@ -515,12 +515,14 @@ SUBROUTINE init_default (self)
     if (    self%nt /= 0 ) nt = self%nt         ! number of time slices
     first_time = .false.
     rewind (io%input)
-    read (io%input, patch_params)
+    read (io%input, patch_params, iostat=iostat)
     if (dt_fixed > 0.0) grace=max(grace,1e-6)
-    if (io%master) write (*, patch_params)
+    call io%namelist_warning ('patch_params', iostat)
+    write (io%namelist, patch_params)
     rewind (io%input)
     read (io%input, out_params)
-    if (io%master) write (*, out_params)
+    call io%namelist_warning ('out_params', iostat)
+    write (io%namelist, out_params)
     if (mpi%rank > 0) &
       self%track = .true.
     iprint = print_every                        ! print 1st task

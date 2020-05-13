@@ -257,17 +257,21 @@ SUBROUTINE print (self, unit)
   class(index_t):: self
   integer:: unit
   !.............................................................................
-  print 1, 'patch_t%idx%d    =', self%d
-  print 1, 'patch_t%idx%px   =', self%px
-  print 1, 'patch_t%idx%py   =', self%py
-  print 1, 'patch_t%idx%pz   =', self%pz
-  print 1, 'patch_t%idx%e    =', self%e
-  if (self%bx   > 0) print 1, 'patch_t%idx%bx   =', self%bx
-  if (self%by   > 0) print 1, 'patch_t%idx%by   =', self%by
-  if (self%bz   > 0) print 1, 'patch_t%idx%bz   =', self%bz
-  if (self%phi  > 0) print 1, 'patch_t%idx%phi  =', self%phi
-  if (self%dphi > 0) print 1, 'patch_t%idx%dphi =', self%dphi
-  1 format(a,i3)
+  print 1, 'variable indices:   d' , self%d
+  print 1, ' p1', self%px
+  print 1, ' p2', self%py
+  print 1, ' p3', self%pz
+  if (self%e > 0) print 1, ' e', self%e
+  if (self%s > 0) print 1, ' s', self%s
+  if (idx%bx > 0) then
+    print 1, ' b1', self%bx
+    print 1, ' b2', self%by
+    print 1, ' b3', self%bz
+  end if
+  if (self%phi  > 0) print 1, ' phi' , self%phi
+  if (self%dphi > 0) print 1, ' dphi', self%dphi
+  print *, ''
+  1 format(1x,a,':',i2,2x,$)
 END SUBROUTINE print
 
 END MODULE index_mod

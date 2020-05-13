@@ -130,7 +130,6 @@ SUBROUTINE init (self, task_list)
   rewind (io%input)
   read (io%input, load_balance_params, iostat=iostat)
   call io%namelist_warning ('load_balance_params', iostat)
-  write (io%output, load_balance_params)
   write (io%namelist, load_balance_params)
   !-----------------------------------------------------------------------------
   allocate (self%task_list%running_mean)

@@ -75,7 +75,6 @@ SUBROUTINE init (self, name)
   rewind (io%input)
   read(io%input, dispatcher0_params, iostat=iostat)
   call io%namelist_warning ('dispatcher0_params', iostat)
-  write (io%output, dispatcher0_params)
   write (io%namelist, dispatcher0_params)
   call mpi_mesg%init
   !-----------------------------------------------------------------------------
@@ -102,11 +101,11 @@ SUBROUTINE execute (self, task_list, test)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('dispatcher0_t%execute', itimer=itimer)
-  call io%header('begin dispatcher0_t%execute:')
+  call io%header ('dispatcher0: begin execution:')
   call task_list%startup
   call task_list%list_t%info
   call tic (time=sec)
-  call timer%print()
+!  call timer%print()
   !-----------------------------------------------------------------------------
   ! Loop over tasks
   !-----------------------------------------------------------------------------
@@ -124,7 +123,7 @@ SUBROUTINE execute (self, task_list, test)
   flush (io_unit%log)
   !$omp barrier
   !$omp end parallel
-  call timer%print()
+!  call timer%print()
   call mpi_mesg%diagnostics(1)
   call toc ('wall time', timer%n_update, time=sec)
   write (io_unit%mpi,*) 'at mpi%barrier'

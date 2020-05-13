@@ -51,7 +51,7 @@ SUBROUTINE init (self)
   class (eos_t):: self
   real, dimension(:,:,:), pointer:: d, ee, pg
   real, save :: kappa = 1.0
-  integer:: ir
+  integer:: ir, iostat
   namelist /eos_params/ do_eos, top, tablefile, kappa, verbose
   !-----------------------------------------------------------------------------
   call trace%begin ('eos_t%init')
@@ -61,8 +61,10 @@ SUBROUTINE init (self)
     do_eos = .true.
     top       = '../../'
     tablefile = 'data/eos/stagger/table.dat'
-    rewind (io%input); read (io%input,eos_params)
-    if (io%master) write (*,eos_params)
+    rewind (io%input)
+    read (io%input,eos_params, iostat=iostat)
+    call io%namelist_warning ('eos_params', iostat)
+    write (io%namelist, eos_params)
     !-----------------------------------------------------------------------------
     ! Read the table file
     !-----------------------------------------------------------------------------

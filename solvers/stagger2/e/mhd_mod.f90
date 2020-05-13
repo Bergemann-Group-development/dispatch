@@ -89,7 +89,6 @@ SUBROUTINE pre_init (self)
     rewind (io%input)
     read (io%input, stagger_params, iostat=iostat)
     call io%namelist_warning ('stagger_params', iostat)
-    write (io%output, stagger_params)
     write (io%namelist, stagger_params)
     call non_ideal%init
     call timestep%init

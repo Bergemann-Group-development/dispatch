@@ -57,7 +57,6 @@ SUBROUTINE init (self)
       rewind (io%input)
       read (io%input, guard_zone_params, iostat=iostat)
       call io%namelist_warning ('guard_zone_params', iostat)
-      write (io%output, guard_zone_params)
       write (io%namelist, guard_zone_params)
       first_time = .false.
     end if

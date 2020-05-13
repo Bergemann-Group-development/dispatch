@@ -51,7 +51,8 @@ SUBROUTINE pre_init (self, patch)
     first_time = .false.
     rewind (io%input)
     read (io%input, gravity_params, iostat=iostat)
-    if (io%master) write (io%output, gravity_params)
+    call io%namelist_warning ('gravity_params', iostat)
+    write (io%namelist, gravity_params)
     if (constant/=0.0) constant = constant * scaling%t**2 / scaling%l
   end if
   call io%lock%unset ('selfgravity_t%pre_init')

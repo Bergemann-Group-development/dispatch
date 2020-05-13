@@ -84,7 +84,7 @@ SUBROUTINE init (self)
     first_time = .false.
     rewind (io%input)
     read (io%input, validate_params, iostat=iostat)
-    write (io%output, validate_params)
+    write (io%namelist, validate_params)
   end if
   call io%lock%unset ('validate_t%init')
   self%mode = mode

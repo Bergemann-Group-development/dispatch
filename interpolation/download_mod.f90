@@ -95,7 +95,6 @@ SUBROUTINE init (self)
     rewind (io%input)
     read (io%input, download_params, iostat=iostat)
     call io%namelist_warning ('download_params', iostat)
-    write (io%output, download_params)
     write (io%namelist, download_params)
     call guard_zones%init
     call remesh%init

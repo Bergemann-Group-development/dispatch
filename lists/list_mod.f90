@@ -1746,7 +1746,7 @@ SUBROUTINE init_all_nbors (self)
   end do
   !$omp end parallel
   !call self%reset_status                                ! set bits and count
-  call timer%toc ('init_all_nbors', 1, time)
+  call timer%toc ('time to initialize nbor lists', 1, time)
   call trace%end (itimer)
 END SUBROUTINE init_all_nbors
 

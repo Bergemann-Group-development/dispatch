@@ -36,8 +36,9 @@ SUBROUTINE init (self)
     if (first_time) then
       rewind (io_unit%input)
       read (io%input, flux_params, iostat=iostat)
-      write (io%output, flux_params)
-      first_time = .false.
+      call io%namelist_warning ('flux_params', iostat)
+      write (io%namelist, flux_params)
+       first_time = .false.
     end if
     call io%lock%unset
   end if

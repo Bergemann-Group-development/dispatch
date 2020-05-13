@@ -58,7 +58,8 @@ SUBROUTINE init (self, solver, id, mesh)
     first_time = .false.
     rewind (io%input)
     read (io%input,turbulence_params)
-    if (io%master) write (*,turbulence_params)
+    call io%namelist_warning ('turbulence_params', iostat)
+    write (io%namelist, turbulence_params)
   end if
   if (t_turb == 0.) t_turb = -1.5*t_turn
   self%id     = id

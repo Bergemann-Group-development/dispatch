@@ -41,7 +41,6 @@ SUBROUTINE init (self)
       rewind (io%input)
       read (io%input, remesh_params, iostat=iostat)
       call io%namelist_warning ('remesh_params', iostat)
-      write (io%output, remesh_params)
       write (io%namelist, remesh_params)
       first_time = .false.
     end if

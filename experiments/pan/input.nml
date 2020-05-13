@@ -20,6 +20,7 @@
 !---------------------------------------------
 ! For unigrid run, use the no_mans_land=t line
 !---------------------------------------------
+&patch_params           /
 &patch_params           nt=5 grace=0.5 n=3*32 no_mans_land=t /
 !patch_params           nt=5 grace=0.1 n=3*21 no_mans_land=f /
 &out_params             end_time=0.200 out_time=0.025 print_every=30 /
@@ -78,5 +79,5 @@
 !&task_mesg_params       verbose=1 method='virtual' /    ! works for unigrid
 !&task_mesg_params       verbose=0 method='master' /     ! works for both AMR & unig
 &task_list_params       verbose=0 /
-&mpi_mesg_params        verbose=0 send_priv=t /
+&mpi_mesg_params        verbose=0 /
 

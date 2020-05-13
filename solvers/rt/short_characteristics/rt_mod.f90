@@ -129,7 +129,7 @@ SUBROUTINE pre_init (self, patch)
   class (rt_t), target:: self
   class (gpatch_t), pointer :: patch
   !-----------------------------------------------------------------------------
-  integer:: dir, i_mu, i_phi, i_omega, n_omega, iostat, n
+  integer:: dir, i_mu, i_phi, i_omega, n_omega, iostat, nsnapshot
   integer, save:: n_mu=3, n_phi=4, n_bin=4, nt=3, n_warmup=3, ng=1
   real, save   :: courant=0.5, cdtd=1.0
   real,    save:: rt_grace=0.01
@@ -150,8 +150,9 @@ SUBROUTINE pre_init (self, patch)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
-    read (io%input, sc_rt_params)
-    if (io%master) write (io%output, sc_rt_params)
+    read (io%input, sc_rt_params, iostat=iostat)
+    call io%namelist_warning ('sc_rt_params', iostat)
+    write (io%namelist, sc_rt_params)
   end if
   call io%lock%unset ('rt_t%pre_init')
   self%patch => patch

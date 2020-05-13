@@ -42,7 +42,7 @@ CONTAINS
 !===============================================================================
 SUBROUTINE init (self, solver, id, mesh)
   class(force_t):: self
-  integer:: id
+  integer:: id, iostat
   character(len=64):: solver
   class(mesh_t), dimension(:), pointer:: mesh
   !.............................................................................
@@ -55,10 +55,11 @@ SUBROUTINE init (self, solver, id, mesh)
   call trace%begin ('force_t%init')
   call io%lock%set
   if (first_time) then
-    first_time = .false.
     rewind (io%input)
-    read (io%input,turbulence_params)
-    if (io%master) write (*,turbulence_params)
+    read (io%input, turbulence_params, iostat=iostat)
+    call io%namelist_warning ('turbulence_params', iostat)
+    write (io%namelist, turbulence_params)
+    first_time = .false.
   end if
   if (t_turb == 0.) t_turb = -1.5*t_turn
   self%id     = id
@@ -230,7 +231,7 @@ FUNCTION turbulence (self, time, d, p, Ux, Uy, Uz, mesh) RESULT (ff)
     if (nprint>0 .and. self%id==1) then
       !$omp atomic
       nprint = nprint-1
-      print '(a,i6,f10.4,i4,f10.4)', 'turbulence: id, t_turb, nrand, fpow =', &
+      print '(a,i6,f10.4,i4,f10.4)', ' turbulence: id, t_turb, nrand, fpow =', &
         self%id, self%t_turb, nrand, fpow
     end if
   enddo

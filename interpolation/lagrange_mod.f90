@@ -727,7 +727,7 @@ SUBROUTINE init (self)
       rewind (io%input)
       read (io%input, lagrange_params, iostat=iostat)
       call io%namelist_warning ('lagrange_params', iostat)
-      write (io%output, lagrange_params)
+      write (io%namelist, lagrange_params)
       self%verbose = verbose
       self%order = order
       self%initialized = .true.

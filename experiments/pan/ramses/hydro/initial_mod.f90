@@ -39,6 +39,7 @@ SUBROUTINE init (self, solver, gamma)
   character(len=64):: solver
   real, optional:: gamma
   character(len=32), save:: type='turbulence'
+  integer:: iostat
   logical, save:: first_time=.true.
   namelist /initial_params/ type
   !----------------------------------------------------------------------------
@@ -47,8 +48,9 @@ SUBROUTINE init (self, solver, gamma)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
-    read (io%input, initial_params)
-    if (io%master) write (*, initial_params)
+    read (io%input, initial_params, iostat=iostat)
+    call io%namelist_warning ('initial_params', iostat)
+    write (io%namelist, initial_params)
   end if
   call io%lock%unset
   if (present(gamma)) &
@@ -93,6 +95,7 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   type(random_t) :: random
   integer        :: ix, iy, iz
   real(8)        :: kx, ky, kz, gamma_factor
+  integer        :: iostat
   integer, save  :: seed=-33
   logical, save  :: mhd=.false.
   real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
@@ -108,7 +111,8 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
     rewind (io%input)
     read (io%input, IC_solenoidal_params)
     mhd = mhd .and. any(b0 /= 0.0)
-    if (io%master) write (*, IC_solenoidal_params)
+    call io%namelist_warning ('IC_solenoidal_params', iostat)
+    write (io%namelist, IC_solenoidal_params)
     first_time = .false.
   end if
   call io%lock%unset
@@ -155,6 +159,7 @@ SUBROUTINE single_compressive (self, m, ff, idx)
   type(random_t) :: random
   integer        :: ix, iy, iz
   real(8)        :: kx, ky, kz, gamma_factor
+  integer        :: iostat
   integer, save  :: seed=-33
   logical, save  :: mhd=.false.
   real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
@@ -168,9 +173,10 @@ SUBROUTINE single_compressive (self, m, ff, idx)
   if (first_time) then
     gamma = self%gamma
     rewind (io%input)
-    read (io%input, IC_compressive_params)
+    read (io%input, IC_compressive_params, iostat=iostat)
     mhd = mhd .and. any(b0 /= 0.0)
-    if (io%master) write (*, IC_compressive_params)
+    call io%namelist_warning ('IC_compressive_params', iostat)
+    write (io%namelist, IC_compressive_params)
     first_time = .false.
   end if
   call io%lock%unset
@@ -218,6 +224,7 @@ SUBROUTINE compressive_shear (self, m, ff, idx)
   type(random_t) :: random
   integer        :: ix, iy, iz
   real(8)        :: kx, ky, kz,gamma_factor
+  integer        :: iostat
   integer, save  :: seed=-33
   logical, save  :: mhd=.false.
   real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0
@@ -234,9 +241,10 @@ SUBROUTINE compressive_shear (self, m, ff, idx)
   if (first_time) then
     gamma = self%gamma
     rewind (io%input)
-    read (io%input, IC_compressive_params)
+    read (io%input, IC_compressive_params, iostat=iostat)
     mhd = mhd .and. any(b0 /= 0.0)
-    if (io%master) write (*, IC_compressive_params)
+    call io%namelist_warning ('IC_compressive_params', iostat)
+    write (io%namelist, IC_compressive_params)
     first_time = .false.
   end if
   call io%lock%unset
@@ -278,6 +286,7 @@ SUBROUTINE single_advection (self, m, ff, idx)
   type(random_t) :: random
   integer        :: ix, iy, iz
   real(8)        :: kx, ky, kz, gamma_factor
+  integer        :: iostat
   integer, save  :: seed=-33
   logical, save  :: mhd=.false.
   logical, save  :: first_time=.true.
@@ -290,9 +299,10 @@ SUBROUTINE single_advection (self, m, ff, idx)
   if (first_time) then
     gamma = self%gamma
     rewind (io%input)
-    read (io%input, IC_advection_params)
+    read (io%input, IC_advection_params, iostat=iostat)
     mhd = mhd .and. any(b0 /= 0.0)
-    if (io%master) write (*, IC_advection_params)
+    call io%namelist_warning ('IC_advection_params', iostat)
+    write (io%namelist, IC_advection_params)
     first_time = .false.
   end if
   call io%lock%unset

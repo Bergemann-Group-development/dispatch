@@ -54,7 +54,6 @@ SUBROUTINE init (self)
   rewind (io%input)
   read (io%input, dispatcher_params, iostat=iostat)
   call io%namelist_warning ('dispatcher_params', iostat)
-  write (io%output, dispatcher_params)
   write (io%namelist, dispatcher_params)
   !-----------------------------------------------------------------------------
   select case (method)

@@ -31,7 +31,8 @@ SUBROUTINE init (self)
   !---------------------------------------------------------------------------
   rewind (io_unit%input)
   read (io_unit%input, non_ideal_params,iostat=iostat)
-  if (io%master) write (*, non_ideal_params)
+  call io%namelist_warning ('non_ideal_params', iostat)
+  write (io%namelist, non_ideal_params)
   self%mhd_Ohm  = mhd_Ohm
   self%eta_Ohm  = eta_Ohm
   self%mhd_AD   = mhd_AD
