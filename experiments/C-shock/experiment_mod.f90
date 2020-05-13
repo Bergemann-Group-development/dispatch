@@ -47,13 +47,15 @@ SUBROUTINE init (self)
   self%nv = 8
   self%mhd = .true.
   call self%solver_t%init
- 
+
+  call io%lock%set ('experiment_t%init')
   if (first_time) then
     rewind (io%input)
     read (io%input, experiment_params)
     if (io%master) write (*,experiment_params)
     first_time = .false.
   end if
+  call io%lock%unset ('experiment_t%init')
 
   if (self%kind(1:6) == 'ramses') then 
     et => self%mem(:,:,:,self%idx%e,self%it,1)
