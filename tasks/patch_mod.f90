@@ -612,7 +612,7 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
   !.............................................................................
   type(header_t):: header
   character(len=4) kind
-  integer:: i
+  integer:: i, gn(3)
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%setup')
   call self%init_default                        ! read default params
