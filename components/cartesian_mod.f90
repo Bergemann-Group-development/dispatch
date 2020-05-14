@@ -77,6 +77,8 @@ SUBROUTINE init (self, task_list, label)
   !-----------------------------------------------------------------------------
   rewind (io%input)
   read (io%input, cartesian_params, iostat=iostat)
+  write (io%output, cartesian_params)
+  write (io%namelist, cartesian_params)
   call io%namelist_warning ('cartesian_params', iostat)
   if (any(per_rank/=0)) then
     where (per_rank/=0) dims=per_rank*mpi_dims
