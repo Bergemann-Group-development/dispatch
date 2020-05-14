@@ -33,13 +33,14 @@ CONTAINS
 !> Initialize the boundary data type, while testing also if the patch contains
 !> a spherical boundary, or possibly is completely immersed in such a boundary.
 !===============================================================================
-SUBROUTINE init (self, mesh, position, radius)
+SUBROUTINE init (self, mesh, id, position, radius)
   class(boundaries_t)              :: self
   class(mesh_t) , pointer :: mesh(:)
   real(8), optional       :: position(3), radius
+  integer:: id
   !.............................................................................
 
-  call self%standard_boundaries_t%init(mesh, position, radius)
+  call self%standard_boundaries_t%init(mesh, id, position, radius)
 END SUBROUTINE init
 
 SUBROUTINE primary(self, mem)
