@@ -18,6 +18,7 @@ MODULE solver_mod
   private
   type, public, extends(mhd_t):: solver_t
   contains
+    procedure:: pre_init
     procedure:: init
     procedure:: update
     procedure, nopass:: cast2solver
@@ -51,14 +52,26 @@ MODULE solver_mod
 CONTAINS
 
 !===============================================================================
+!> pre-initialize the hydro solver. 
+!===============================================================================
+SUBROUTINE pre_init (self)
+  class(solver_t), target :: self
+  !.............................................................................
+  call trace%begin ('solver_t%pre_init')
+  call self%mhd_t%pre_init              ! calls self%mhd_t%pre_init
+  call trace%end ()
+END SUBROUTINE pre_init
+
+!===============================================================================
 !> Organize calls to the extras and the hydro solver. 
 !===============================================================================
 SUBROUTINE init (self)
   class(solver_t) :: self
   !.............................................................................
   call trace%begin ('solver_t%init')
-  call self%mhd_t%pre_init              ! calls self%mhd_t%pre_init
+  call self%pre_init   ! temporary hack until more changes will arrive
   call self%mhd_t%init                  ! calls self%gpatch_t%init
+  call self%mhd_t%post_init 
   call validate%init
   call trace%end ()
 END SUBROUTINE init
