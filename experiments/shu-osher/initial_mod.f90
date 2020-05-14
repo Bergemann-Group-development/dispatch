@@ -12,7 +12,6 @@ MODULE initial_mod
   USE io_unit_mod
   USE math_mod
   USE kinds_mod
-  USE pboundary_mod
   implicit none
   private
   type, public:: initial_t
@@ -52,7 +51,7 @@ SUBROUTINE condition (self, m, ff, idx)
   real, dimension(:,:,:,:), pointer :: ff
   ! ....................................................................
   integer:: i, j, k
-  real:: x, y, z, ds2(3), xs, rd
+  real:: x, y, z, ds2(3), xs, ys, zs, rd
   logical:: first_time = .true.
   real(kind=KindScalarVar), dimension(:,:,:),   pointer:: d, s
   real(kind=KindScalarVar), dimension(:,:,:),   pointer:: e1, et
@@ -61,16 +60,17 @@ SUBROUTINE condition (self, m, ff, idx)
                   rho_l=3.857143, &
                   vx_l=2.629369, vx_r=0.0, &
                   a_d=0.2, f_d=5.0, x_disc = -4.0
+  integer, save:: idir=1
   namelist /initial_params/ P_l, P_r, rho_l, &
-                           vx_l, vx_r, a_d, f_d, x_disc
-  call io%lock%set
+                           vx_l, vx_r, a_d, f_d, x_disc, idir
+  call io%lock%set('initial_t%condition')
   if (first_time) then
     rewind (io%input)
     read (io%input, initial_params)
     if (io%master) write (*,initial_params)
     first_time = .false.
   end if
-  call io%lock%unset
+  call io%lock%unset('initial_t%condition')
   !---------------------------------------------------------------------
   ! Point amd allocate memory
   !---------------------------------------------------------------------
@@ -101,40 +101,113 @@ SUBROUTINE condition (self, m, ff, idx)
   ! --------------------------------------------------------------------
   ! Set initial conditions
   ! --------------------------------------------------------------------
-  do i=m(1)%lb,m(1)%ub
-    x = m(1)%p + m(1)%r(i)
-    xs = x - ds2(1)
-    if (x < x_disc) then
-      d (i,:,:)= rho_l
-      if (self%solver(1:14) == 'zeus_mhd_patch' .or. self%solver(1:10) == 'stagger2e_') then
-        e1(i,:,:) = P_l / (self%gamma - 1.0)
-      else if (self%solver(1:9) == 'stagger2_') then
-        s (i,:,:) = (log(P_l) - log(rho_l) * self%gamma) * rho_l / (self%gamma - 1.0)
-      else if (self%solver(1:6) == 'ramses')  then
-        e1(i,:,:) = P_l / (self%gamma - 1.0)
+  select case(idir)
+  case(1)
+    do i=m(1)%lb,m(1)%ub
+      x = m(1)%p + m(1)%r(i)
+      xs = x - ds2(1)
+      if (x < x_disc) then
+        d (i,:,:)= rho_l
+        if (self%solver(1:14) == 'zeus_mhd_patch' .or. self%solver(1:10) == 'stagger2e_') then
+          e1(i,:,:) = P_l / (self%gamma - 1.0)
+        else if (self%solver(1:9) == 'stagger2_') then
+          s (i,:,:) = (log(P_l) - log(rho_l) * self%gamma) * rho_l / (self%gamma - 1.0)
+        else if (self%solver(1:6) == 'ramses')  then
+          e1(i,:,:) = P_l / (self%gamma - 1.0)
+        end if
+        ff(i,:,:,idx%px) = vx_l * rho_l
+      else
+        d (i,:,:) = 1.0*(1.+a_d*sin(f_d*x))
+        if (self%solver(1:14) == 'zeus_mhd_patch' .or. self%solver(1:10) == 'stagger2e_') then
+          e1(i,:,:) = P_r / (self%gamma - 1.0)
+        else if (self%solver(1:9) == 'stagger2_') then
+          s (i,:,:) = (log(P_r) - log(d(i,:,:)) * self%gamma) * d(i,:,:) / (self%gamma - 1.0)
+        else if (self%solver(1:6) == 'ramses')  then
+          e1(i,:,:) = P_r / (self%gamma - 1.0)
+        end if
+        ff(i,:,:,idx%px) = 0.0
       end if
-      ff(i,:,:,idx%px) = vx_l * rho_l
-    else
-      d (i,:,:) = 1.0*(1.+a_d*sin(f_d*x))
-      if (self%solver(1:14) == 'zeus_mhd_patch' .or. self%solver(1:10) == 'stagger2e_') then
-        e1(i,:,:) = P_r / (self%gamma - 1.0)
-      else if (self%solver(1:9) == 'stagger2_') then
-        s (i,:,:) = (log(P_r) - log(d(i,:,:)) * self%gamma) * d(i,:,:) / (self%gamma - 1.0)
-      else if (self%solver(1:6) == 'ramses')  then
-        e1(i,:,:) = P_r / (self%gamma - 1.0)
+          ! 
+      ! correction for staggered momentum
+      if (self%solver(1:14) == 'zeus_mhd_patch' .or. self%solver(1:7) == 'stagger') then
+        if (x >= x_disc .and. (x - m(1)%d) < x_disc) then
+          rd = 1.0*(1.+a_d*sin(f_d*x))
+          ff(i,:,:,idx%px) = (rho_l + rd) * (vx_l + 0.0) * 0.25
+        end if
       end if
-      ff(i,:,:,idx%px) = 0.0
-    end if
-        ! 
-    ! correction for staggered momentum
-    if (self%solver(1:14) == 'zeus_mhd_patch' .or. self%solver(1:7) == 'stagger') then
-      if (x >= x_disc .and. (x - m(1)%d) < x_disc) then
-        rd = 1.0*(1.+a_d*sin(f_d*x))
-        ff(i,:,:,idx%px) = (rho_l + rd) * (vx_l + 0.0) * 0.25
+    end do
+
+  case(2)
+    do i=m(2)%lb,m(2)%ub
+      y = m(2)%p + m(2)%r(i)
+      ys = y - ds2(2)
+      if (y < x_disc) then
+        d (:,i,:)= rho_l
+        if (self%solver(1:14) == 'zeus_mhd_patch' .or. self%solver(1:10) == 'stagger2e_') then
+          e1(:,i,:) = P_l / (self%gamma - 1.0)
+        else if (self%solver(1:9) == 'stagger2_') then
+          s (:,i,:) = (log(P_l) - log(rho_l) * self%gamma) * rho_l / (self%gamma - 1.0)
+        else if (self%solver(1:6) == 'ramses')  then
+          e1(:,i,:) = P_l / (self%gamma - 1.0)
+        end if
+        ff(:,i,:,idx%py) = vx_l * rho_l
+      else
+        d (:,i,:) = 1.0*(1.+a_d*sin(f_d*y))
+        if (self%solver(1:14) == 'zeus_mhd_patch' .or. self%solver(1:10) == 'stagger2e_') then
+          e1(:,i,:) = P_r / (self%gamma - 1.0)
+        else if (self%solver(1:9) == 'stagger2_') then
+          s (:,i,:) = (log(P_r) - log(d(:,i,:)) * self%gamma) * d(:,i,:) / (self%gamma - 1.0)
+        else if (self%solver(1:6) == 'ramses')  then
+          e1(:,i,:) = P_r / (self%gamma - 1.0)
+        end if
+        ff(:,i,:,idx%py) = 0.0
       end if
-    end if
-  end do
-  
+          ! 
+      ! correction for staggered momentum
+      if (self%solver(1:14) == 'zeus_mhd_patch' .or. self%solver(1:7) == 'stagger') then
+        if (y >= x_disc .and. (y - m(2)%d) < x_disc) then
+          rd = 1.0*(1.+a_d*sin(f_d*y))
+          ff(:,i,:,idx%py) = (rho_l + rd) * (vx_l + 0.0) * 0.25
+        end if
+      end if
+    end do
+
+  case(3)
+    do i=m(3)%lb,m(3)%ub
+      z = m(3)%p + m(3)%r(i)
+      zs = z - ds2(3)
+      if (z < x_disc) then
+        d (:,:,i)= rho_l
+        if (self%solver(1:14) == 'zeus_mhd_patch' .or. self%solver(1:10) == 'stagger2e_') then
+          e1(:,:,i) = P_l / (self%gamma - 1.0)
+        else if (self%solver(1:9) == 'stagger2_') then
+          s (:,:,i) = (log(P_l) - log(rho_l) * self%gamma) * rho_l / (self%gamma - 1.0)
+        else if (self%solver(1:6) == 'ramses')  then
+          e1(:,:,i) = P_l / (self%gamma - 1.0)
+        end if
+        ff(:,:,i,idx%pz) = vx_l * rho_l
+      else
+        d (:,:,i) = 1.0*(1.+a_d*sin(f_d*z))
+        if (self%solver(1:14) == 'zeus_mhd_patch' .or. self%solver(1:10) == 'stagger2e_') then
+          e1(:,:,i) = P_r / (self%gamma - 1.0)
+        else if (self%solver(1:9) == 'stagger2_') then
+          s (:,:,i) = (log(P_r) - log(d(:,:,i)) * self%gamma) * d(:,:,i) / (self%gamma - 1.0)
+        else if (self%solver(1:6) == 'ramses')  then
+          e1(:,:,i) = P_r / (self%gamma - 1.0)
+        end if
+        ff(:,:,i,idx%pz) = 0.0
+      end if
+          ! 
+      ! correction for staggered momentum
+      if (self%solver(1:14) == 'zeus_mhd_patch' .or. self%solver(1:7) == 'stagger') then
+        if (z >= x_disc .and. (z - m(3)%d) < x_disc) then
+          rd = 1.0*(1.+a_d*sin(f_d*z))
+          ff(:,:,i,idx%pz) = (rho_l + rd) * (vx_l + 0.0) * 0.25
+        end if
+      end if
+    end do
+  end select
+      
   
   ! set total energy; it needs to be done after because it uses the `i+1` values.
   ! only applies to ZEUS and RAMSES solvers.
@@ -159,11 +232,7 @@ SUBROUTINE condition (self, m, ff, idx)
   
   ! --------------------------------------------------------------------
   ! Set boundary values
-  ! --------------------------------------------------------------------
-  pboundary%rho_l = rho_l
-  pboundary%e_l   = ff(m(1)%li,m(2)%li,m(3)%li,idx%e)
-  pboundary%vx_l  = vx_l
-  pboundary%P_l   = p_l
+  ! -------------------------------------------------------------------
   !
   if (self%solver(1:6) == 'ramses') then
     deallocate (e1)
