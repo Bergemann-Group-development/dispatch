@@ -18,11 +18,11 @@ def parameters(s):
                'sim_time': s.time,
       'domain_dimensions': s.cartesian.dims,
             'periodicity': p.periodic,
-            'length_unit': 1.0,
-              'time_unit': 1.0,
-              'mass_unit': 1.0,
-          'magnetic_unit': 1.0,
-          'velocity_unit': 1.0,
+            'length_unit': s.units.l,
+              'time_unit': s.units.t,
+              'mass_unit': s.units.m,
+          'magnetic_unit': s.units.b,
+          'velocity_unit': s.units.u,
             'unit_system': 'cgs',
             #'unit_system': s.units.system,
                    'bbox': domain_bbox(s),
@@ -48,14 +48,18 @@ tr={'d':'density',
 
 def patch(p,copy=False):
     p_void=(np.array([]),'code_length')
-    #if p.guard_zones:
-    #    l=p.li
-    #    u=p.ui+1
-    #else:
-    l=[0,0,0]
-    u=p.n
-    #    if l[2]==u[2]:
-    #        u[2]=u[2]+1
+    if p.guard_zones:
+        l=p.li-1
+        u=l+p.n
+        if l[0]==u[0]:
+            u[0]=u[0]+1
+        if l[1]==u[1]:
+            u[1]=u[1]+1
+        if l[2]==u[2]:
+            u[2]=u[2]+1
+    else:
+        l=[0,0,0]
+        u=p.n
     dict={      'left_edge': p.llc_cart,
                'right_edge': p.llc_cart+p.size,
                     'level': 1,
@@ -76,17 +80,11 @@ def patch(p,copy=False):
             print (p.kind)
         key = tr[k] if k in tr.keys() else k
         if iv >= 0:
-            #if p.guard_zones:
-            #    l=p.li
-            #    u=p.ui+1
-            #    if l[2]==u[2]:
-            #        u[2]=u[2]+1
-            #    dict[key]=p.var(iv,copy=copy)[l[0]:u[0],l[1]:u[1],l[2]:u[2]]
-            #else:
-            dict[key]=p.var(iv,copy=copy)
+            dict[key]=p.var(iv,copy=copy)[l[0]:u[0],l[1]:u[1],l[2]:u[2]]
     if 'aux' in p.keys:
         for k in p.keys['aux']:
-            dict[k]=p.var(k,copy=copy)
+            key = tr[k] if k in tr.keys() else k
+            dict[key]=p.var(k,copy=copy)[l[0]:u[0],l[1]:u[1],l[2]:u[2]]
     return dict
 
 def patches(s,copy=True):
@@ -102,7 +100,7 @@ def magnetic_unit(s):
     return s.units.l**(-0.5)*s.units.m**(0.5)*s.units.t**(-1.0)
 
 def domain_bbox(s):
-    return np.array([s.cartesian.origin,s.cartesian.size]).T
+    return np.array([s.cartesian.origin,np.array(s.cartesian.origin)+np.array(s.cartesian.size)]).T
 
 def open_amr(iout=1,run='.',data='../data',verbose=0,copy=True):
     return snapshot(iout=iout,run=run,data=data,verbose=verbose,copy=copy)
