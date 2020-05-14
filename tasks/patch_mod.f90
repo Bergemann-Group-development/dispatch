@@ -596,6 +596,7 @@ SUBROUTINE init_bdries (self)
       self%mesh(3)%upper_boundary = .true.
     end if
   end if
+  call self%boundaries%init(mesh=self%mesh, id=self%id)
   call trace%end()
 END SUBROUTINE init_bdries
 
@@ -712,14 +713,12 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
   !-----------------------------------------------------------------------------
   ! Allocate memory, if not already associated
   !-----------------------------------------------------------------------------
+  do i=1,3
+    gn(i) = self%mesh(i)%gn
+  end do
   if (.not.self%mem_allocated) then
-    allocate (self%mem(self%mesh(1)%gn, &
-                       self%mesh(2)%gn, &
-                       self%mesh(3)%gn, &
-                       self%nv,self%nt,self%nw))
-    allocate (self%u_phase(self%mesh(1)%gn, &
-                           self%mesh(2)%gn, &
-                           self%mesh(3)%gn))
+    allocate (self%mem    (gn(1), gn(2), gn(3), self%nv,self%nt,self%nw))
+    allocate (self%u_phase(gn(1), gn(2), gn(3)))
     self%u_phase = 0.0
     allocate (self%mem_lock(self%nt))
     do i=1,self%nt
@@ -1721,7 +1720,7 @@ contains
     dmin = io%dmin
     !$omp atomic read
     dmax = io%dmax
-    if (self%time < 1d4) then
+    if (self%time < 1d4 .and. self%time > 1e-4) then
       fmt = '(a,i8,2i4,i3,f12.6,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,i6,3i5,i6,4i5,i4,l3,l1,o12)'
     else
       fmt = '(a,i8,2i4,i3,1p,2e12.5,     0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,i6,3i5,i6,4i5,i4,l3,l1,o12)'
@@ -1884,7 +1883,7 @@ END FUNCTION highest
 SUBROUTINE courant_condition (self, detailed_timer)
   class(patch_t):: self
   logical, optional:: detailed_timer
-  real(8):: dtime, ds(3), courant
+  real(8):: dtime, ds(3), courant, dsmin
   integer:: i2
   integer, save:: itimer=0
   logical, parameter:: save_dbg=.false.
@@ -1900,14 +1899,15 @@ SUBROUTINE courant_condition (self, detailed_timer)
       ds(3) = min(ds(3),self%ds(3)*self%mesh(1)%h31c(i2)*abs(self%mesh(2)%h32c(i2)))
     end do
   end if
+  dsmin = minval(ds,self%n>1)
   if (self%dt_fixed > 0.0) then
     dtime = self%dt_fixed
-    courant = dtime*self%u_max/minval(ds)
+    courant = dtime*self%u_max/dsmin
   else if (self%u_fixed > 0.0) then
-    dtime = self%courant*minval(ds)/self%u_fixed
+    dtime = self%courant*dsmin/self%u_fixed
     courant = self%courant
   else
-    dtime = self%courant*minval(ds)/self%u_max*self%safety_factor
+    dtime = self%courant*dsmin/self%u_max*self%safety_factor
     courant = self%courant
   endif
   !$omp atomic write
