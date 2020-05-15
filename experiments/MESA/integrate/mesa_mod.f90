@@ -150,12 +150,11 @@ MODULE mesa_mod
     self%dm_accreted = 0
 
     read(self%read_unit, to_dispatch)
-    write(*,to_dispatch)
     if (supernova) then 
       self%exploded = .true.
       self%mesa_simulated = .false.
     end if 
-    v_esc = sqrt(2*cgs%grav*self%mass/radius)/(cgs%kms*scaling%u)
+    v_esc = sqrt(2*cgs%grav*scaling%grav*self%mass/(radius/scaling%l))
     self%v_wind = get_vink_alpha(t_eff, Zsurf) * v_esc
     ! set mass loss rate, compensating for 
     ! excess/lack caused by non-syncronos timestepping. If all mass has 
@@ -164,11 +163,6 @@ MODULE mesa_mod
     self%mdot_wind = -self%dm_wind/(self%time - self%last_time)
 
     self%last_time = self%time
-    !if (verbose > 1) then
-      write (*,*) &
-        'mesa_t%eval_mesa sent: time, accretion ,', self%time, self%dm_accreted, &
-        ', recived: v_wind, dm_wind, mdot_wind', self%v_wind, self%dm_wind, self%mdot_wind
-    !end if
   end subroutine eval_mesa
 
   ! code inspired by MESA impleentation, returns v_inf/v_esc
@@ -229,6 +223,5 @@ MODULE mesa_mod
       namelist /to_mesa/ save_query, time, dm_acc, filename
       !-----------------------------------------------------------------------------
       write(unit, to_mesa, DELIM="APOSTROPHE")
-      write(*, to_mesa)
     end subroutine  
 END MODULE mesa_mod

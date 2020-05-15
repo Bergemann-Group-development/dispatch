@@ -355,6 +355,12 @@ SUBROUTINE put_wind (self, patch)
        'sinks_t%put_wind: id, over, sink%size, pos, patsh%size, pos =', &
         patch%id, .true., self%size, self%position, patch%size, patch%position
     end if
+    !...........................................................................
+    l = patch%mesh%li
+    u = patch%mesh%ui
+    m1 => patch%mesh(1)
+    m2 => patch%mesh(2)
+    m3 => patch%mesh(3)
     !---------------------------------------------------------------------------
     ! Density, energy per unit volume, intertia
     !---------------------------------------------------------------------------
@@ -364,12 +370,6 @@ SUBROUTINE put_wind (self, patch)
     py => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%py,patch%it,1)
     pz => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%pz,patch%it,1)
     dm = 0
-    !...........................................................................
-    l = patch%mesh%li
-    u = patch%mesh%ui
-    m1 => patch%mesh(1)
-    m2 => patch%mesh(2)
-    m3 => patch%mesh(3)
 
     do i3=l(3),u(3)
       r3 = m3%p + m3%r(i3)
@@ -402,7 +402,7 @@ SUBROUTINE put_wind (self, patch)
     !$omp atomic update
     self%dm_wind = self%dm_wind + dm
     !$omp atomic update
-    self%mass = self%mass*frac_remain
+    self%mass = self%mass - dm
     !$omp atomic update
     self%px = self%px*frac_remain
     !$omp atomic update
