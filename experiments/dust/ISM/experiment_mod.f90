@@ -46,7 +46,7 @@ SUBROUTINE init (self)
     rewind (io%input)
     read (io%input, experiment_params, iostat=iostat)
     call io%namelist_warning ('experiment_params', iostat)
-    write (io%output, experiment_params)
+    write (io%namelist, experiment_params)
     csound = sqrt(cgs%k_B*T_K/(cgs%m_u*scaling%mu))/scaling%u
     d = 1.0
     if (gamma == 1d0) then

@@ -34,8 +34,8 @@ SUBROUTINE init (self, patch)
   if (first_time) then
     rewind (io%input)
     read (io%input, boundary_params, iostat=iostat)
-    if (iostat/=0) call io%namelist_warning ('boundary_params')
-    if (io%master) write (io%output, boundary_params)
+    call io%namelist_warning ('boundary_params', iostat)
+    write (io%namelist, boundary_params)
     first_time = .false.
   end if
   !$omp end critical (boundary_cr)

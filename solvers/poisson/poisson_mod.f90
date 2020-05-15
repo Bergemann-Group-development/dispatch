@@ -55,7 +55,7 @@ SUBROUTINE init (self)
     rewind (io%input)
     read (io%input, poisson_params, iostat=iostat)
     call io%namelist_warning ('poisson_params', iostat)
-    if (io%master) write (io%output, poisson_params)
+    write (io%namelist, poisson_params)
   end if
   call io%lock%unset ('poisson_t%init')
   select case(trim(solver))

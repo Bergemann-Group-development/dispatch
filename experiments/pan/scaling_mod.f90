@@ -34,7 +34,8 @@ SUBROUTINE init (self)
     first_time = .false.
     rewind (io%input)
     read (io%input, scaling_params, iostat=iostat)
-    write (io%output, scaling_params)
+    call io%namelist_warning ('scaling_params', iostat)
+    write (io%namelist, scaling_params)
   end if
   call io%lock%unset
   call cgs%init
@@ -50,7 +51,7 @@ SUBROUTINE init (self)
   self%temp = self%mu*(cgs%m_u*self%u**2)/cgs%k_b       ! temperature for given mu
   self%grav = cgs%grav*(self%m/self%l**3)*self%t**2     ! constant of gravity
   if (io%master) then
-    print 1,' CODE UNITS:   (cgs):'
+    call io%header ('CODE UNITS: (CGS):')
     print 1,'     length: ',self%l
     print 1,'   velocity: ',self%u
     print 1,'       mass: ',self%m

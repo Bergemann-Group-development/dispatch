@@ -266,7 +266,6 @@ SUBROUTINE init (self)
     call io%namelist_warning ('refine_params', iostat)
     if (max_compress_level == -1) &
       max_compress_level = levelmax
-    write (io%output, refine_params)
     write (io%namelist, refine_params)
     !---------------------------------------------------------------------------
     ! If AMR is active, we must use check_filled, since nbor levels are in
@@ -282,7 +281,7 @@ SUBROUTINE init (self)
     if (min_jeans     > 0.0) n_criteria = n_criteria+1
     if (max_compress  > 0.0) n_criteria = n_criteria+1
     if (max_vorticity > 0.0) n_criteria = n_criteria+1
-    write (io%output,*) 'n_criteria =', n_criteria
+    write (io%output,'(a,i4)') ' number of AMR criteria:', n_criteria
   end if
   call io%lock%unset ('refine_params')
   self%levelmin = levelmin

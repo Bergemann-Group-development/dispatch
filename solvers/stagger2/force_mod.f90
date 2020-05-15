@@ -62,8 +62,9 @@ SUBROUTINE init (self, solver, id, mesh)
     first_time = .false.
     rewind (io%input)
     read (io%input, force_params, iostat=iostat)
-    if (io%master) write (*, force_params)
-  end if
+    call io%namelist_warning ('force_params', iostat)
+    write (io%namelist, force_params)
+end if
   call io%lock%unset
   self%id     = id
   self%solver = trim(solver)

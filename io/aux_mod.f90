@@ -98,9 +98,7 @@ SUBROUTINE init (self, name)
     rewind (stdin)
     read (stdin, aux_params, iostat=iostat)
     call io%namelist_warning ('aux_params', iostat)
-    call write_namelist (stdout)
-    if (io_unit%master) &
-      call write_namelist (io%namelist)
+    call write_namelist (io%namelist)
     first_time = .false.
   end if
   call self%dll_t%init
@@ -653,7 +651,7 @@ END SUBROUTINE output_aux
 !===============================================================================
 SUBROUTINE write_namelist (unit)
   integer:: unit, i
-  write (unit,'(a)') '&AUX_PARAMS'
+  write (unit,'(a)') ' &AUX_PARAMS'
   write (unit,'(a,i10,",")') ' VERBOSE=', verbose
   write (unit,'(a,$)') ' SELECT='
   do i=1,max_select

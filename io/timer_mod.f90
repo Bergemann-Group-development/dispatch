@@ -92,7 +92,8 @@ SUBROUTINE init (self)
     first_time = .false.
     rewind (io_unit%input)
     read (io_unit%input, timer_params, iostat=ignore)
-    write (io_unit%output, timer_params)
+    !call io%namelist_warning ('timer_params', iostat)
+    write (io_unit%nml, timer_params)
     self%sec_per_report = sec_per_report
     !$omp atomic write
     timer%next_report_sec = wallclock() + sec_per_report

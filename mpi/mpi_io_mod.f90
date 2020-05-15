@@ -136,7 +136,8 @@ SUBROUTINE init (self)
     first_time = .false.
     rewind (io%input)
     read (io%input, mpi_io_params, iostat=iostat)
-    if (io%master) write (io%output, mpi_io_params)
+    call io%namelist_warning ('mpi_io_params', iostat)
+    write (io%namelist, mpi_io_params)
   end if
   !$omp end critical (mpi_io_cr)
   !$omp critical (iwrite_cr)

@@ -63,8 +63,8 @@ SUBROUTINE init (self, solver, id, mesh)
     first_time = .false.
     rewind (io%input)
     read (io%input, force_params, iostat=iostat)
-    if (iostat /= 0) call io%namelist_warning ('ramses%force_mod: force_params')
-    if (io%master) write (*, force_params)
+    call io%namelist_warning ('force_params', iostat)
+    write (io%namelist, force_params)
   end if
   call io%lock%unset
   select case (type)
@@ -115,7 +115,8 @@ FUNCTION single_solenoidal (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
     first_time = .false.
     rewind (io%input)
     read (io%input, force_solenoidal_params, iostat=iostat)
-    if (io%master) write (*, force_solenoidal_params)
+    call io%namelist_warning ('force_solenoidal_params', iostat)
+    write (io%namelist, force_solenoidal_params)
   end if
   call io%lock%unset
   if (time >= self%t_save) then
@@ -149,7 +150,7 @@ SUBROUTINE init_turbulence (self, solver, id, mesh)
   character(len=64):: solver
   class(mesh_t), dimension(:), pointer:: mesh
   !.............................................................................
-  integer :: mx, my, mz
+  integer :: mx, my, mz, iostat
   real    :: rhoav, xav, yav, zav
   namelist /turbulence_params/ do_force, do_helmh, a_helmh, k1, k2, pk, &
                                ampl_turb, t_turn, t_turb, seed, t_damp, verbose
@@ -160,8 +161,9 @@ SUBROUTINE init_turbulence (self, solver, id, mesh)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
-    read (io%input,turbulence_params)
-    if (io%master) write (*,turbulence_params)
+    read (io%input, turbulence_params, iostat=iostat)
+    call io%namelist_warning ('turbulence_params', iostat)
+    write (io%namelist, turbulence_params)
   end if
   if (t_turb == 0.) t_turb = -1.5*t_turn
   self%id     = id

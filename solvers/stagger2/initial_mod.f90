@@ -55,8 +55,9 @@ SUBROUTINE init (self, solver, gamma)
      rewind (io%input)
      read (io%input, initial_params, iostat=iostat)
      mhd = mhd .or. any(b0 /= 0.0)
-     if (io%master) write (*, initial_params)
-   end if
+     call io%namelist_warning ('initial_params', iostat)
+     write (io%namelist, initial_params)
+    end if
    self%solver = trim(solver)
    call io%lock%unset
    self%seed   = seed

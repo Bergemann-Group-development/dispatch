@@ -48,7 +48,7 @@ SUBROUTINE init (self)
     rewind (io%input)
     read (io%input, timestep_params, iostat=iostat)
     call io%namelist_warning ('timestep_params', iostat)
-    write (io%output, timestep_params)
+    write (io%namelist, timestep_params)
   end if
   call io%lock%unset ('timestep_t%init')
   self%verbose = verbose

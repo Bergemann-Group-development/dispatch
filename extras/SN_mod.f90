@@ -64,7 +64,6 @@ SUBROUTINE pre_init (self, patch, sink)
     rewind (io%input)
     read (io%input, SN_params, iostat=iostat)
     call io%namelist_warning ('SN_params', iostat)
-    write (io%output, SN_params)
     write (io%namelist, SN_params)
     first_time = .false.
   end if

@@ -107,7 +107,6 @@ SUBROUTINE pre_init (self)
     call io%namelist_warning ('ramses_params', iostat)
     if (gamma == 1d0) isothermal = .true.
     if (isothermal)   gamma = 1d0
-    write (io%output, ramses_params)
     write (io%namelist, ramses_params)
     first_time = .false.
   end if

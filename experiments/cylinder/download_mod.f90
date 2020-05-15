@@ -78,7 +78,8 @@ SUBROUTINE init (self)
     first_time = .false.
     rewind (io%input)
     read (io%input, download_params, iostat=iostat)
-    if (io%master) write (*, download_params)
+    call io%namelist_warning ('download_params', iostat)
+    write (io%namelist, download_params)
   end if
   if (order_time==1) then
     self%same => same_linear

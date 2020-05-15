@@ -72,7 +72,7 @@ SUBROUTINE init (self, task_list, label)
   end if
   !-----------------------------------------------------------------------------
   call trace%begin ('cartesian_t%init')
-  call io%header('begin cartesian_t%init: Cartesian patch arrangement')
+  call io%header('cartesian_t%init: Cartesian patch arrangement:')
   call trace%print_id (ids)
   !-----------------------------------------------------------------------------
   rewind (io%input)
@@ -201,8 +201,8 @@ SUBROUTINE init (self, task_list, label)
   io%ntask = self%task_list%na
   io%nwrite = self%task_list%na
   io%ntotal = self%task_list%n_tasks
-  write (stdout,*) 'Number of tasks in task list:', self%task_list%n
-  write(stdout,*) 'ntask, nwrite, ntotal =', io%ntask, io%nwrite, io%ntotal
+  write (stdout,'(a,i8)') ' number of tasks in task list:', self%task_list%n
+!  write(stdout,*) 'ntask, nwrite, ntotal =', io%ntask, io%nwrite, io%ntotal
   !-----------------------------------------------------------------------------
   ! Initialize tasks
   !-----------------------------------------------------------------------------
@@ -217,7 +217,6 @@ SUBROUTINE init (self, task_list, label)
   call self%task_list%init_bdries
   !-----------------------------------------------------------------------------
   if (io_unit%master) then
-    write (io%output, cartesian_params)
     write (io%namelist, cartesian_params)
     flush (io%namelist)
   end if
@@ -305,7 +304,7 @@ END SUBROUTINE init_exp
 !===============================================================================
 SUBROUTINE diagnostics
   if (mpi%master) then
-    print '(a,i8)',     ' Patches per process:', np
+    print '(a,i8)', ' patches per process:', np
   end if
 END SUBROUTINE diagnostics
 

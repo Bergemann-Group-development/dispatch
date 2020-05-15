@@ -63,7 +63,6 @@ SUBROUTINE pre_init (self, patch)
     rewind (io%input)
     read (io%input, cooling_params, iostat=iostat)
     call io%namelist_warning ('cooling_params', iostat)
-    write (io%output, cooling_params)
     write (io%namelist, cooling_params)
     if (verbose > 0) then
       self%function => cooling_Gnedin

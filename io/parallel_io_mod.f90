@@ -94,7 +94,6 @@ SUBROUTINE init (patch)
     rewind (io%input)
     read(io%input, parallel_io_params, iostat=iostat)
     call io%namelist_warning ('parallel_io_params', iostat)
-    write (io%output, parallel_io_params)
     write (io%namelist, parallel_io_params)
     if (io%ntask==0) &
       call io%abort ('parallel_io_t%init: io%ntask == 0')
@@ -276,7 +275,7 @@ SUBROUTINE output (patch, count)
     call mpi_io%sync ()
   end if
   !-----------------------------------------------------------------------------
-  ! Deallocate mem, and buffer.  If io_write uses non-blocking MPI_File_iwrite 
+  ! Deallocate mem, and buffer.  If io_write uses non-blocking MPI_File_iwrite
   ! calls, the buffer must remain allocated, until a later call to check_io
   ! finds that it is no longer needed, and deallocates it
   !-----------------------------------------------------------------------------
@@ -319,34 +318,34 @@ contains
       p1 => patch%mem(l1(1):u1(1),l1(2):u1(2),l1(3):u1(3),idx%px,iit,1)
       p2 => patch%mem(l1(1):u1(1),l1(2):u1(2),l1(3):u1(3),idx%py,iit,1)
       p3 => patch%mem(l1(1):u1(1),l1(2):u1(2),l1(3):u1(3),idx%pz,iit,1)
-      mem(:,:,:,it,idx%d ) = d
-      mem(:,:,:,it,idx%px) = p1/d
-      mem(:,:,:,it,idx%py) = p2/d
-      mem(:,:,:,it,idx%pz) = p3/d
+      mem(:,:,:,it,idx%d ) = log(d)
+      !-------------------------------------------------------------------------
+      ! For RAMSES cases, convert to velocity and energy per unit mass,
+      ! excluding kinetic energy
+      !-------------------------------------------------------------------------
+      if (patch%kind(1:6) == 'ramses') then
+        mem(:,:,:,it,idx%px) = p1/d
+        mem(:,:,:,it,idx%py) = p2/d
+        mem(:,:,:,it,idx%pz) = p3/d
+        mem(:,:,:,it,idx%e ) = (e-0.5*(p1**2+p2**2+p3**2)/d)/d
+      else
+        mem(:,:,:,it,idx%px) = p1
+        mem(:,:,:,it,idx%py) = p2
+        mem(:,:,:,it,idx%pz) = p3
+        mem(:,:,:,it,idx%e ) = e/d
+      end if
+      !-------------------------------------------------------------------------
+      ! MHD variables and potential, if present
+      !-------------------------------------------------------------------------
       if (patch%idx%bx > 0) then
         mem(:,:,:,it,idx%e) = patch%ee_min
         b1d => patch%mem(l1(1):u1(1),l1(2):u1(2),l1(3):u1(3),idx%bx,iit,1)
         b2d => patch%mem(l1(1):u1(1),l1(2):u1(2),l1(3):u1(3),idx%by,iit,1)
         b3d => patch%mem(l1(1):u1(1),l1(2):u1(2),l1(3):u1(3),idx%bz,iit,1)
-        b1u => patch%mem(l2(1):u2(1),l2(2):u2(2),l2(3):u2(3),idx%bx,iit,1)
-        b2u => patch%mem(l2(1):u2(1),l2(2):u2(2),l2(3):u2(3),idx%by,iit,1)
-        b3u => patch%mem(l2(1):u2(1),l2(2):u2(2),l2(3):u2(3),idx%bz,iit,1)
-        if (patch%kind(1:6) == 'ramses') then
-          mem(:,:,:,it,idx%bx) = 0.5*(b1d+b1u)
-          mem(:,:,:,it,idx%by) = 0.5*(b2d+b2u)
-          mem(:,:,:,it,idx%bz) = 0.5*(b3d+b3u)
-        else if(patch%kind(1:7) == 'stagger') then
-          mem(:,:,:,it,idx%bx) = b1d
-          mem(:,:,:,it,idx%by) = b2d
-          mem(:,:,:,it,idx%bz) = b3d
-        endif
-        mem(1:n(1),1:n(2),1:n(3),it,idx%e) = &
-          (e - 0.125*((b1d+b1u)**2+(b2d+b2u)**2+(b3d+b3u)**2) &
-             - 0.5*(p1**2+p2**2+p3**2)/d)/d
-      else
-        mem(:,:,:,it,idx%e) = (e - 0.5*(p1**2+p2**2+p3**2)/d)/d
+        mem(:,:,:,it,idx%bx) = b1d
+        mem(:,:,:,it,idx%by) = b2d
+        mem(:,:,:,it,idx%bz) = b3d
       end if
-      mem(:,:,:,it,idx%e) = max(mem(:,:,:,it,idx%e),patch%ee_min)
       if (patch%idx%phi > 0) then
         phi => patch%mem(l1(1):u1(1),l1(2):u1(2),l1(3):u1(3),idx%phi,iit,1)
         mem(:,:,:,it,idx%phi) = phi
@@ -525,11 +524,24 @@ contains
     !-----------------------------------------------------------------------------
     if (iv == patch%idx%d) then
       patch%mem(:,:,:,iv,:,1) = exp(patch%mem(:,:,:,iv,:,1))
+    end if
     !-----------------------------------------------------------------------------
-    ! Convert velocity to momentum
+    ! Convert velocity to momentum in RAMSES cases
     !-----------------------------------------------------------------------------
-    else if (iv >= patch%idx%px .and. iv <= patch%idx%pz) then
-      patch%mem(:,:,:,iv,:,1) = patch%mem(:,:,:,iv,:,1)*patch%mem(:,:,:,patch%idx%d,:,1)
+    if (patch%kind(1:6) == 'ramses') then
+      if (iv >= patch%idx%px .and. iv <= patch%idx%pz) then
+        patch%mem(:,:,:,iv,:,1) = patch%mem(:,:,:,iv,:,1)*patch%mem(:,:,:,patch%idx%d,:,1)
+      !-----------------------------------------------------------------------------
+      ! Convert per-unit-mass energy to per-unit-volume, adding kinetic energy
+      !-----------------------------------------------------------------------------
+      else if (iv == patch%idx%e) then
+        patch%mem(:,:,:,iv,:,1) = patch%mem(:,:,:,patch%idx%d,:,1) * &
+                                  patch%mem(:,:,:,patch%idx%e,:,1) + &
+                             0.5*(patch%mem(:,:,:,patch%idx%px,:,1)**2 + &
+                                  patch%mem(:,:,:,patch%idx%py,:,1)**2 + &
+                                  patch%mem(:,:,:,patch%idx%pz,:,1)**2) &
+                                 /patch%mem(:,:,:,patch%idx%d ,:,1)
+      end if
     end if
   end subroutine
 END SUBROUTINE input

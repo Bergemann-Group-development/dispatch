@@ -51,7 +51,8 @@ SUBROUTINE init (self)
       first_time=.false.
       rewind (io_unit%input)
       read (io_unit%input, rt_integral_params, iostat=iostat)
-      write (io_unit%output, rt_integral_params)
+      call io%namelist_warning ('rt_integral_params', iostat)
+      write (io%namelist, rt_integral_params)
     end if
     call io%lock%unset ('rt_integral_t%init')
     select case (solver)

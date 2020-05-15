@@ -30,6 +30,7 @@ SUBROUTINE init (self)
   USE math_mod
   class(scaling_t):: self
   real(kind=8):: l0=3.12e16
+  integer:: iostat
   logical, save:: first_time=.true.
   namelist / scaling_params / l0
   !----------------------------------------------------------------------------
@@ -37,8 +38,9 @@ SUBROUTINE init (self)
   call io%lock%set ('scaling_t%init')
   if (first_time) then
     rewind (io%input)
-    read (io%input, scaling_params)
-    if (io%master) write (*, scaling_params)
+    read (io%input, scaling_params, iostat=iostat)
+    call io%namelist_warning ('scaling_params', iostat)
+    write (io%namelist, scaling_params)
   end if
   call io%lock%unset ('scaling_t%init')
   first_time = .false.

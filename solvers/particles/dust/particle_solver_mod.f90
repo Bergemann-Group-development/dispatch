@@ -97,7 +97,7 @@ SUBROUTINE pre_init (self, patch)
     rewind (io%input)
     read (io%input, particle_solver_params, iostat=iostat)
     call io%namelist_warning ('particle_solver_params', iostat)
-    write (io%output, particle_solver_params)
+    write (io%namelist, particle_solver_params)
     first_time = .false.
   end if
   call io%lock%unset

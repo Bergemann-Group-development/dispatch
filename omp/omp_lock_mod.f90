@@ -84,7 +84,7 @@ SUBROUTINE init (self, kind, id)
     if (first_time) then
       rewind (io_unit%input)
       read (io_unit%input, lock_params, iostat=iostat)
-      write (io_unit%output, lock_params)
+      write (io_unit%nml, lock_params)
       unit = io_unit%lock1
       if (alternate_time > 0d0) then
         filename = trim(io_unit%rankbase)//'.lock1'

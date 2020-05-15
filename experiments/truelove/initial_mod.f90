@@ -102,7 +102,7 @@ SUBROUTINE condition (self, m, f, idx)
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: f
   class(mesh_t), pointer:: m(:), m1, m2, m3
   type(index_t):: idx
-  integer:: i, j, k
+  integer:: i, j, k, iostat
   integer:: pertm=2
   real(8):: rho0=15.27026, r0=0.25, truealpha=0.0475, truebeta=0.0, perta=0.0, &
             chipres=1.0, chirho=100.0, x0=0.0, y0=0.0, z0=0.0
@@ -119,12 +119,12 @@ SUBROUTINE condition (self, m, f, idx)
                                , chirho, x0, y0, z0, perta, pertm
   !----------------------------------------------------------------------------
   call trace%begin ('initial_t%condition')
-
   call io%lock%set ('initial_t%condition')
   if (first_time) then
     rewind (io%input)
-    read (io%input, experiment_params)
-    if (io%master) write (*, experiment_params)
+    read (io%input, experiment_params, iostat=iostat)
+    call io%namelist_warning ('experiment_params', iostat)
+    write (io%namelist, experiment_params)
   end if
   call io%lock%unset ('initial_t%condition')
 

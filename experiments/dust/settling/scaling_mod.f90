@@ -51,7 +51,7 @@ SUBROUTINE init (self, l_o, d_o, u_o, mu_o)
     rewind (io%input)
     read (io%input, scaling_params, iostat=iostat)
     call io%namelist_warning ('scaling_params', iostat)
-    write (io%output, scaling_params)
+    write (io%namelist, scaling_params)
     call cgs%init
     orbit_cgs = orbit_au*cgs%au
     mass_msun = mass_msun*cgs%m_sun

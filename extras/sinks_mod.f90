@@ -46,7 +46,8 @@ SUBROUTINE pre_init (self, patch)
       call io%lock%set
       rewind (io%input)
       read (io%input, sinks_params, iostat=iostat)
-      write (io%output, sinks_params)
+      call io%namelist_warning ('sinks_params', iostat)
+      write (io%namelist, sinks_params)
       call io%lock%unset
       self%radius = radius
       self%velocity = velocity

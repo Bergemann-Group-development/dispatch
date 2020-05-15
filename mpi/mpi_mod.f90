@@ -203,9 +203,8 @@ SUBROUTINE init_mpi (self)
   mpi_master = (mpi_rank == 0)
   master = mpi_master
   if (master) then
-    print 1, '--------------------------------------------------------------------------------'
-    !!!print 1, ' '//id
-    print 1, ' MPI initialized, mpi%size =', mpi_size
+    print 1, '================================================================================'
+    !print 1, ' MPI initialized, mpi%size =', mpi_size
   1 format(a,i7)
     select case (mpi_provided)
     case(MPI_THREAD_MULTIPLE)
@@ -219,7 +218,6 @@ SUBROUTINE init_mpi (self)
     case default
       print 1, ' unknown MPI implementation'
     end select
-    print 1, '--------------------------------------------------------------------------------'
   end if
   if (self%verbose > 1) then
     write (filename,'(a,i4.4,a)') 'rank_', mpi_rank, '.dat'

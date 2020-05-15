@@ -120,7 +120,7 @@ SUBROUTINE init (self, name)
   rewind (io%input)
   read (io%input, task_mesg_params, iostat=iostat)
   call io%namelist_warning ('task_mesg_params', iostat)
-  write (io%output, task_mesg_params)
+  write (io%namelist, task_mesg_params)
   !-----------------------------------------------------------------------------
   ! Choose a unique tag for each message and task ID, based on task%seq
   !-----------------------------------------------------------------------------

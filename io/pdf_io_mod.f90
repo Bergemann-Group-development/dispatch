@@ -55,7 +55,7 @@ SUBROUTINE init (self, patch)
       rewind (io%input)
       read (io%input, pdf_io_params, iostat=iostat)
       call io%namelist_warning ('pdf_io_params', iostat)
-      write (io%output, pdf_io_params)
+      write (io%namelist, pdf_io_params)
       if (on) then
         allocate (bins(nbins), counts(nbins))
         bin_delta = (bin_max-bin_min)/(nbins-1.0)

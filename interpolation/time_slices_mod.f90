@@ -45,7 +45,6 @@ SUBROUTINE init (self, nt)
     read (io%input, time_slices_params, iostat=iostat)
     call io%namelist_warning ('time_slices_params', iostat)
     order = min(order,nt-2)
-    write (io%output, time_slices_params)
     write (io%namelist, time_slices_params)
     call lagrange%test
     first_time = .false.

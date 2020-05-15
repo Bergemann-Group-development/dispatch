@@ -40,6 +40,7 @@ SUBROUTINE init (self, solver, gamma)
   class(initial_t):: self
   character(len=64):: solver
   real, optional:: gamma
+  integer:: iostat
   character(len=32), save:: type='turbulence'
   logical, save:: first_time=.true.
   namelist /initial_params/ type
@@ -49,8 +50,9 @@ SUBROUTINE init (self, solver, gamma)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
-    read (io%input, initial_params)
-    if (io%master) write (*, initial_params)
+    read (io%input, initial_params, iostat=iostat)
+    call io%namelist_warning ('initial_params', iostat)
+    write (io%namelist, initial_params)
   end if
   call io%lock%unset
   if (present(gamma)) &
@@ -93,7 +95,7 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   real, dimension(:,:,:,:) :: ff
   !.............................................................................
   type(random_t) :: random
-  integer        :: ix, iy, iz
+  integer        :: ix, iy, iz, iostat
   real(8)        :: kx, ky, kz, gamma, gamma_factor
   integer, save  :: seed=-33
   logical, save  :: mhd=.false.
@@ -108,9 +110,10 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   if (first_time) then
     gamma = self%gamma
     rewind (io%input)
-    read (io%input, initial_solenoidal_params)
+    read (io%input, initial_solenoidal_params, iostat=iostat)
     mhd = mhd .and. any(b0 /= 0.0)
-    if (io%master) write (*, initial_solenoidal_params)
+    call io%namelist_warning ('initial_solenoidal_params', iostat)
+    write (io%namelist, initial_solenoidal_params)
     first_time = .false.
   end if
   call io%lock%unset
@@ -158,7 +161,7 @@ SUBROUTINE single_compressive (self, m, ff, idx)
   real, dimension(:,:,:,:) :: ff
   !.............................................................................
   type(random_t) :: random
-  integer        :: ix, iy, iz
+  integer        :: ix, iy, iz, iostat
   real(8)        :: kx, ky, kz, gamma, gamma_factor
   integer, save  :: seed=-33
   logical, save  :: mhd=.false.
@@ -173,9 +176,10 @@ SUBROUTINE single_compressive (self, m, ff, idx)
   if (first_time) then
     gamma = self%gamma
     rewind (io%input)
-    read (io%input, initial_compressive_params)
+    read (io%input, initial_compressive_params, iostat=iostat)
     mhd = mhd .and. any(b0 /= 0.0)
-    if (io%master) write (*, initial_compressive_params)
+    call io%namelist_warning ('initial_compressive_params', iostat)
+    write (io%namelist, initial_compressive_params)
     first_time = .false.
   end if
   call io%lock%unset
@@ -304,7 +308,7 @@ SUBROUTINE single_advection (self, m, ff, idx)
   real, dimension(:,:,:,:) :: ff
   !.............................................................................
   type(random_t) :: random
-  integer        :: ix, iy, iz
+  integer        :: ix, iy, iz, iostat
   real(8)        :: kx, ky, kz, gamma, gamma_factor
   integer, save  :: seed=-33
   logical, save  :: mhd=.false.
@@ -319,10 +323,11 @@ SUBROUTINE single_advection (self, m, ff, idx)
     if (first_time) then
       gamma = self%gamma
       rewind (io%input)
-      read (io%input, initial_advection_params)
+      read (io%input, initial_advection_params, iostast=iostat)
       mhd = mhd .and. any(b0 /= 0.0)
-      if (io%master) write (*, initial_advection_params)
-      first_time = .false.
+      call io%namelist_warning ('initial_advection_params', iostat)
+      write (io%namelist, initial_advection_params)
+        first_time = .false.
     end if
     call io%lock%unset
   end if
@@ -499,6 +504,7 @@ SUBROUTINE turbulence (self, m, ff, idx)
   !.............................................................................
   real, save            :: b0(3)=[0.0,0.0,0.1]
   logical, save         :: first_time=.true.
+  integer               :: iostat
   namelist /IC_turbulence_params/ b0
   integer, save         :: itimer=0
   !-----------------------------------------------------------------------------
@@ -507,8 +513,9 @@ SUBROUTINE turbulence (self, m, ff, idx)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
-    read (io%input, IC_turbulence_params)
-    if (io%master) write (io%output, IC_turbulence_params)
+    read (io%input, IC_turbulence_params, iostat=iostat)
+    call io%namelist_warning ('IC_turbulence_params', iostat)
+    write (io%namelist, IC_turbulence_params)
   end if
   call io%lock%unset
   ff(:,:,:,idx%d        ) = 1.0

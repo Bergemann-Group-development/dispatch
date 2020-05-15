@@ -67,7 +67,8 @@ SUBROUTINE init (self)
   if (first_time) then
     rewind (io%input)
     read (io%input, experiment_params, iostat=iostat)
-    if (io%master) write (*, experiment_params)
+    call io%namelist_warning ('experiment_params', iostat)
+    write (io%namelist, experiment_params)
     !d_bot = d_bot/scaling%d
     !e_bot = e_bot/scaling%e
     first_time = .false.

@@ -271,7 +271,7 @@ SUBROUTINE init_params (self)
     rewind (io%input)
     read (io%input, task_params, iostat=iostat)
     call io%namelist_warning ('task_params', iostat)
-    write (io%output, task_params)
+    write (io%namelist, task_params)
     first_time = .false.
   end if
   !-----------------------------------------------------------------------------
@@ -289,7 +289,7 @@ SUBROUTINE init_params (self)
         self%verbose = verbose
         self%dump_it = .true.
         write (io_unit%log,*) 'task_t%init: dump_id =', id
-        write (io%output, dump_params)
+        write (io%namelist, dump_params)
         exit
       end if
     end do

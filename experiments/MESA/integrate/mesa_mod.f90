@@ -51,7 +51,6 @@ MODULE mesa_mod
       read (io%input, mesa_params, iostat=iostat)
       mesa_threshhold = mesa_threshhold_msun * cgs%m_sun/ scaling%m
       call io%namelist_warning ('sinks_params', iostat)
-      write (io%output, mesa_params)
       write (io%namelist, mesa_params)
       first_time = .false.
     end if

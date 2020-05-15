@@ -77,9 +77,10 @@ SUBROUTINE init(self)
     call io%lock%set ('counters_t%init')
     if (first_time) then
       self%id = 0
-      rewind (io_unit%input)
-      read (io_unit%input, counters_params, iostat=iostat)
-      write (io_unit%output, counters_params)
+      rewind (io%input)
+      read (io%input, counters_params, iostat=iostat)
+      call io%namelist_warning ('counters_params', iostat)
+      write (io%namelist, counters_params)
       first_time = .false.
     end if
     call io%lock%unset ('counters_t%init')
