@@ -157,7 +157,6 @@
             real(dp) :: omega
             integer :: k
             ierr  = 0
-
             call star_ptr(id, s, ierr)
             if (ierr /= 0) then ! OOPS
                return
@@ -178,7 +177,6 @@
             ! crossover for alpha in range mdot [1e-5, 1e-6]
             ! settle at alpha = 0.01 when mdot < 1e-6
             mdot_msun = mdot*(secyer/msun)
-            !write(*,*) "Mdot (msun)", mdot_msun
             if (mdot_msun >= 1e-5) then
             alpha = 0.25
             else if (mdot_msun <= 1e-6) then
@@ -198,15 +196,6 @@
 
             extra_heat_var = Lacc * alpha / mcumul
             s% extra_heat(1:k) = extra_heat_var
-
-            !omega = sqrt((s% cgrav(1) * mass)/(2*radius)**3)
-            !s% omega(1:k) = omega
-            !write(*,*) "Omega: ", omega
-            !write(*,*) "k = ", k
-            !write(*,*) "Radius(k): " , s% r(k)
-            !write(*,*) "Ratio, r(k) / r(1), Heat mass / mass : " , s% r(k) / radius, mcumul / mass
-            !write(*,*) "Extra heat: " , extra_heat_var
-
       end subroutine other_energy
 
       subroutine extras_after_evolve(id, ierr)
@@ -254,16 +243,16 @@
       subroutine write_feedback(s, supernova)
          use chem_def, only : ih1, ihe4, nuclide_not_found
          type (star_info), pointer :: s
-         real(dp) :: dm_wind, loum, t_eff, Zsurf
+         real(dp) :: radius, dm_wind, loum, t_eff, Zsurf
          real(dp), save :: lastmass, lasttime = 0
          logical :: supernova
-         namelist /to_dispatch/ dm_wind, loum, t_eff, Zsurf, supernova
-
+         namelist /to_dispatch/ radius, dm_wind, loum, t_eff, Zsurf, supernova
          if (lasttime == 0) then
             lasttime = acc_hist(1)%time
             lastmass = s% initial_mass * Msun
          end if
          ! mass loss = wind + accretion
+         radius = s% r(1)
          dm_wind = (lastmass - s% mstar) + &
             get_accretion(lasttime, s% time) * (s% time - lasttime)
          lasttime = s% time
