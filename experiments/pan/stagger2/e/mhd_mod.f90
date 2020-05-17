@@ -169,15 +169,15 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%pde',itimer=itimer)
   associate (i => self%idx)
-  self%d => self%mem(:,:,:,i%d      ,self%it,1); self%dddt => self%mem(:,:,:,i%d      ,self%it,2)
-  self%e => self%mem(:,:,:,i%e      ,self%it,1); self%dedt => self%mem(:,:,:,i%e      ,self%it,2)
-  self%p => self%mem(:,:,:,i%px:i%pz,self%it,1); self%dpdt => self%mem(:,:,:,i%px:i%pz,self%it,2)
+  self%d => self%mem(:,:,:,i%d      ,self%new,1); self%dddt => self%mem(:,:,:,i%d      ,self%new,2)
+  self%e => self%mem(:,:,:,i%e      ,self%new,1); self%dedt => self%mem(:,:,:,i%e      ,self%new,2)
+  self%p => self%mem(:,:,:,i%px:i%pz,self%new,1); self%dpdt => self%mem(:,:,:,i%px:i%pz,self%new,2)
   d=>self%d; dddt=>self%dddt; e=>self%e; dedt=>self%dedt;
   p=>self%p; dpdt=>self%dpdt
   px=>p(:,:,:,1); py=>p(:,:,:,2); pz=>p(:,:,:,3);
   dpdtx=>dpdt(:,:,:,1); dpdty=>dpdt(:,:,:,2); dpdtz=>dpdt(:,:,:,3);
   if (self%mhd) then
-    self%B => self%mem(:,:,:,i%bx:i%bz,self%it,1); self%dBdt => self%mem(:,:,:,i%bx:i%bz,self%it,2)
+    self%B => self%mem(:,:,:,i%bx:i%bz,self%new,1); self%dBdt => self%mem(:,:,:,i%bx:i%bz,self%new,2)
     B=>self%B; dBdt=>self%dBdt
     Bx=>B(:,:,:,1); By=>B(:,:,:,2); Bz=>B(:,:,:,3);
     dBdtx=>dBdt(:,:,:,1); dBdty=>dBdt(:,:,:,2); dBdtz=>dBdt(:,:,:,3);
@@ -186,8 +186,8 @@ SUBROUTINE pde (self)
   call allocate_vectors_a (self%gn, ld, dd, emf, J, fd, fx, fy, fz, fm)
   call allocate_scalars_a (self%gn, lnd, pa, du, ee, cs, pp, pb, Q, uu, divU)
   if (self%do_pebbles) then
-    U => self%vgas(:,:,:,:,self%it)
-    pg => self%pressure(:,:,:,self%it)
+    U => self%vgas(:,:,:,:,self%new)
+    pg => self%pressure(:,:,:,self%new)
     self%density => self%mem(:,:,:,1,:,1)
   else
     call allocate_scalars (self%gn, pg)
@@ -464,7 +464,7 @@ SUBROUTINE pde (self)
   ! Radiative heating / cooling, if any
   !-----------------------------------------------------------------------------
   if (self%idx%qr > 0) then
-    dedt = dedt + self%mem(:,:,:,self%idx%qr,self%it,1)
+    dedt = dedt + self%mem(:,:,:,self%idx%qr,self%new,1)
   end if
   !-----------------------------------------------------------------------------
   ! Time step limitation for rate of change dE/dt = (de/dt-(e/d)*dddt)/d
@@ -512,8 +512,8 @@ SUBROUTINE update (self)
 !print *, self%id, self%fmaxval(self%mem(:,:,:,4,1,1)), 'mhd_t%update 4'
   call self%output
   if (self%gamma==1d0) then
-    self%mem(:,:,:,self%idx%e,self%it,1) = &
-    self%mem(:,:,:,self%idx%d,self%it,1)*self%csound**2
+    self%mem(:,:,:,self%idx%e,self%new,1) = &
+    self%mem(:,:,:,self%idx%d,self%new,1)*self%csound**2
   end if
   call self%pde
   call self%courant_condition
@@ -527,7 +527,7 @@ SUBROUTINE update (self)
       it = self%iit(i)
       print'(a,i7,2x,4i3,2x,1p,e14.5,a,4e12.4)', &
         'id,it,new,i,iit(i),t(iit(i)):', &
-        self%id, self%it, self%new, i, it, self%t(it), 'minmax(d):', &
+        self%id, self%new, self%new, i, it, self%t(it), 'minmax(d):', &
         self%fminval(self%mem(:,:,:,1,it,2)), self%fmaxval(self%mem(:,:,:,1,it,2)), &
         self%fminval(self%mem(:,:,:,1,it,1)), self%fmaxval(self%mem(:,:,:,1,it,1))
     end do
@@ -573,8 +573,8 @@ FUNCTION gas_pressure (self) RESULT (pg)
   integer, save:: nprint=3
   !-----------------------------------------------------------------------------
   if (trim(self%eos)=='ideal') then
-    d => self%mem(:,:,:,self%idx%d,self%it,1)
-    e => self%mem(:,:,:,self%idx%e,self%it,1)
+    d => self%mem(:,:,:,self%idx%d,self%new,1)
+    e => self%mem(:,:,:,self%idx%e,self%new,1)
     if (self%gamma==1d0) then
       pg = d*self%csound**2
     else

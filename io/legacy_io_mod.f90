@@ -106,12 +106,15 @@ SUBROUTINE output (self, experiment_name)
       !$omp atomic read
       it2 = self%iit(self%nt-1)
       !$omp end atomic
-      if (io%out_time == 0.0) then
-        buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,jo)
       !-------------------------------------------------------------------------
-      ! Normally, we write out only variable values, which can then be interpolated
-      ! to the exact output time, self%out_next, the update of which must come
-      ! after this point
+      ! By writing out the self%new slot when t, we catch any changes that may
+      ! have been made by pre_update() procedures, before update() calls output()
+      !-------------------------------------------------------------------------
+      if (io%out_time == 0.0) then
+        buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%new,jo)
+      !-------------------------------------------------------------------------
+      ! Normally, we write out only variable values interpolated to the exact
+      ! output time, self%out_next, the update of which must come after this
       !-------------------------------------------------------------------------
       else
         !$omp atomic read

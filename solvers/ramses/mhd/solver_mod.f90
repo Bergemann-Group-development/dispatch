@@ -72,11 +72,9 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('solver_t%update')
   call self%mem_lock(self%new)%set ('update')
-  call self%mem_lock(self%it )%set ('update')
   self%uin  => self%mem(:,:,:,:,self%it ,1)
   self%unew => self%mem(:,:,:,:,self%new,1)
   self%unew = self%uin
-  call self%mem_lock(self%it )%unset ('update')
   !-----------------------------------------------------------------------------
   ! Proceed, referring everywhere to the %new time slot
   !-----------------------------------------------------------------------------

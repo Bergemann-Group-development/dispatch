@@ -90,20 +90,21 @@ FUNCTION cast2solver (task) RESULT(solver)
 END FUNCTION cast2solver
 
 !===============================================================================
-!> Organize calls to the extras and the hydro solver
+!> Organize calls to the extras and the hydro solver.  Note that is is NOT
+!> necessary to lock the %it time slot when copying data to the %new time slot,
+!> since the only task that is allowed to change the data in a time slot is the
+!> current one.
 !===============================================================================
 SUBROUTINE update (self)
   class(solver_t) :: self
   !-----------------------------------------------------------------------------
-  ! Lock %it & %new slots, copy, and unlock %it slot
+  ! Lock %new slots, copy to it, and keep locked until update is finished
   !-----------------------------------------------------------------------------
   call trace%begin ('solver_t%update')
-  call self%mem_lock(self%new)%set ('update')
-  call self%mem_lock(self%it )%set ('update')
   self%uin  => self%mem(:,:,:,:,self%it ,1)
+  call self%mem_lock(self%new)%set ('update')
   self%unew => self%mem(:,:,:,:,self%new,1)
   self%unew = self%uin
-  call self%mem_lock(self%it )%unset ('update')
   !-----------------------------------------------------------------------------
   ! Proceed, referring everywhere to the %new time slot
   !-----------------------------------------------------------------------------
