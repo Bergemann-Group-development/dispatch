@@ -47,6 +47,7 @@ MODULE lagrange_mod
     procedure interpolate1d8
     generic:: interpolate1d => interpolate1d4, interpolate1d8
   end type
+  integer:: verbose=0, order=2
   type(lagrange_t), public:: lagrange
 CONTAINS
 
@@ -661,7 +662,7 @@ SUBROUTINE test (self)
   real(8), dimension(n):: x, y, w
   real(8):: x0, y0
   !-----------------------------------------------------------------------------
-  if (.not. io_unit%master) return
+  if (verbose <= 0 .or. .not. io_unit%master) return
   call trace%begin ('lagrange_t%test')
   print *,'--------------- lagrange_t%test ------------------'
   x = 0.0
@@ -717,7 +718,6 @@ END FUNCTION debug
 SUBROUTINE init (self)
   class(lagrange_t):: self
   integer:: iostat
-  integer:: verbose=0, order=2
   namelist /lagrange_params/ verbose, order
   !-----------------------------------------------------------------------------
   call trace%begin ('lagrange_t%init')

@@ -18,7 +18,7 @@ MODULE sinks_mod
     procedure:: update
   end type
   integer:: verbose=0
-  real:: radius_au=4e3
+  real:: radius=8.0
   real:: mass_msun=30
 CONTAINS
 
@@ -29,7 +29,7 @@ SUBROUTINE init (self)
   class(sinks_t):: self
   integer:: iostat
   logical, save:: first_time=.true.
-  namelist /sinks_params/ verbose, mass_msun, radius_au  
+  namelist /sinks_params/ verbose, mass_msun, radius
   !-----------------------------------------------------------------------------
   call trace%begin ('sinks_t%init')
   call io%lock%set
@@ -43,7 +43,7 @@ SUBROUTINE init (self)
   end if
   call io%lock%unset
   self%mass = mass_msun*cgs%m_sun/scaling%m
-  self%radius = radius_au*cgs%au/scaling%l
+  self%radius = radius
   if (verbose > 0) &
     print *,'radius',self%radius
   self%nt = 5

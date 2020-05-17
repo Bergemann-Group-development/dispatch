@@ -24,48 +24,51 @@ MODULE winds_mod
   USE io_mod
   USE trace_mod
   USE task_mod
+  USE gpatch_mod
   USE patch_mod
   USE link_mod
   USE sinks_mod
   USE scaling_mod
   USE units_mod
+  USE math_mod
   USE parameters_mod, only: smallc
   implicit none
   private
   type, public:: winds_t
     real:: velocity, mdot, ramp_time, energy
-    class(patch_t), pointer:: patch => null()
+    class(gpatch_t), pointer:: patch => null()
   contains
-    procedure:: init
-    procedure:: update
+    procedure:: pre_init
+    procedure:: pre_update
+    procedure:: post_update
     procedure:: wind
+    procedure:: force
   end type
   integer::     verbose = 0
   real::   velocity_kms = 2e3
   real::  ramp_time_myr = 0.1
   real::    msun_per_yr = 1e-5
   real::         cs_kms = 0.18
-  logical:: incremental = .false.
   type(winds_t), public:: winds
 CONTAINS
 
 !===============================================================================
 !> Pre-init, to pick up a pointer to the patch we belong to.
 !===============================================================================
-SUBROUTINE init (self, patch)
+SUBROUTINE pre_init (self, patch)
   class(winds_t):: self
-  class(patch_t), target:: patch
+  class(gpatch_t), pointer:: patch
   integer:: iostat
   logical, save:: first_time=.true.
   namelist /winds_params/ verbose, velocity_kms, ramp_time_myr, msun_per_yr, &
-                          cs_kms, incremental
+                          cs_kms
   !-----------------------------------------------------------------------------
-  call trace%begin ('winds_t%init')
+  call trace%begin ('winds_t%pre_init')
+  self%patch => patch
   call io%lock%set
   if (first_time) then
     rewind (io%input)
     read (io%input, winds_params, iostat=iostat)
-    write (io%output, winds_params)
     call io%namelist_warning ('winds_params', iostat)
     write (io%namelist, winds_params)
     first_time = .false.
@@ -76,57 +79,83 @@ SUBROUTINE init (self, patch)
   self%ramp_time = ramp_time_myr*cgs%yr*1e6/scaling%t
   self%energy = (cs_kms*cgs%kms/scaling%u)**2/(patch%gamma*(patch%gamma-1d0))
   call trace%end ()
-END SUBROUTINE init
+END SUBROUTINE pre_init
 
 !===============================================================================
 !> The update procedure consists of finding the sink(s) that overlap with our
 !> parent task.  The sink tasks are available in the nbor list of the patch
 !===============================================================================
-SUBROUTINE update (self, patch)
+SUBROUTINE pre_update (self)
   class(winds_t):: self
-  class(patch_t):: patch
-  class(link_t), pointer:: nbor
+  class(nbor_t), pointer:: nbor
   class(task_t), pointer:: task
   !-----------------------------------------------------------------------------
-  call trace%begin ('winds_t%update')
-  nbor => patch%link%nbor
+  call trace%begin ('winds_t%pre_update')
+  nbor => self%patch%link%nbor
   do while (associated(nbor))
     task => nbor%task
     select type (task)
     class is (sinks_t)
-    call self%wind (patch, task)
+    call self%force (task)
     end select
     nbor => nbor%next
   end do
   call trace%end ()
-END SUBROUTINE update
+END SUBROUTINE pre_update
+
+!===============================================================================
+!> The post_update procedure consists of finding the sink(s) that overlap with
+!> our parent task.  The sink tasks are available in the nbor list of the patch
+!===============================================================================
+SUBROUTINE post_update (self)
+  class(winds_t):: self
+  class(nbor_t), pointer:: nbor
+  class(task_t), pointer:: task
+  !-----------------------------------------------------------------------------
+  call trace%begin ('winds_t%post_update')
+  nbor => self%patch%link%nbor
+  do while (associated(nbor))
+    task => nbor%task
+    select type (task)
+    class is (sinks_t)
+    call self%wind (task)
+    end select
+    nbor => nbor%next
+  end do
+  call trace%end ()
+END SUBROUTINE post_update
 
 !===============================================================================
 !> Compute the wind input to the patch
 !===============================================================================
-SUBROUTINE wind (self, patch, sink)
+SUBROUTINE force (self, sink)
   class(winds_t):: self
-  class(patch_t):: patch
   class(sinks_t):: sink
+  class(patch_t), pointer:: patch
   class(task_t), pointer:: task
   real(8):: m_sun               ! solar mass in code units
-  real(4):: dm                  ! change in mass per cell
-  real(4):: dd                  ! change in mass density
+  real(4):: dt                  ! time step
   real(4):: ramp                ! ramp profile
   real(4):: mdot                ! mass loss rate
+  real(4):: r0, d0, v0, e0      ! scaling constants
   real, pointer, dimension(:,:,:):: d, px, py, pz, e
-  real, allocatable, dimension(:,:,:):: x, y, z, r
+  real, allocatable, dimension(:,:,:):: x, y, z, r, dd_dt, du_dt
   logical, allocatable:: inside(:,:,:)
-  integer:: i, i1, i2, i3, m(6), n_inside
+  integer:: i, i1, i2, i3, m(6), it, n_inside
   real:: ee, ee_min, t
+  logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
-  call trace%begin ('winds_t%wind')
+  call trace%begin ('winds_t%force')
+  patch => self%patch
+  !-----------------------------------------------------------------------------
+  ! Ramp, increasing the forcing gradually with time
+  !-----------------------------------------------------------------------------
+  t = patch%time/self%ramp_time
+  ramp = 1.0-(1.0+t+0.5*t**2)*exp(-t)
   !-----------------------------------------------------------------------------
   ! Fitting formula for the mass loss rate (Paolo)
   !-----------------------------------------------------------------------------
   m_sun = cgs%m_sun/scaling%m
-  t = patch%time/self%ramp_time
-  ramp = 1.0-(1.0+t+0.5*t**2)*exp(-t)
   mdot = ramp*1.19e-10*(sink%mass/m_sun-7.57)**2.60
   !-----------------------------------------------------------------------------
   ! Distances from sink
@@ -136,6 +165,9 @@ SUBROUTINE wind (self, patch, sink)
   allocate (y(m(1),m(2),m(3)))
   allocate (z(m(1),m(2),m(3)))
   allocate (r(m(1),m(2),m(3)))
+  allocate (dd_dt(m(1),m(2),m(3)))
+  allocate (du_dt(m(1),m(2),m(3)))
+  allocate (inside(m(1),m(2),m(3)))
   do i3=1,m(3)
   do i2=1,m(2)
   do i1=1,m(1)
@@ -145,50 +177,83 @@ SUBROUTINE wind (self, patch, sink)
   end do
   end do
   end do
-  r = sqrt(x**2+y**2+z**2)
   !-----------------------------------------------------------------------------
-  ! Compute the change in mass in the timestep, and distribute over the cells
+  ! Scaling constants in code units
   !-----------------------------------------------------------------------------
-  allocate (inside(m(1),m(2),m(3)))
-  inside = (r < sink%radius)
-  dm = mdot*patch%dtime
+  r0 = sink%radius*patch%ds(1)
+  v0 = velocity_kms*1e5/scaling%u
+  d0 = self%mdot/(4.*math%pi*r0**2*v0)
+  e0 = d0*0.01*v0**2
+  !-----------------------------------------------------------------------------
+  ! Express the rate of adding mass and radial momentum as functions of r,
+  ! leaving one power of r to the final expressions
+  !-----------------------------------------------------------------------------
+  r = sqrt(x**2+y**2+z**2)/r0
+  ramp = 1.0
+  dd_dt = ramp*d0*v0/r0*2.*r*(6.-5.*r)
+  du_dt = ramp*v0**2/r0*6.*r**2*(1.-r)*(3.-2.*r)
+  print '(a,1p,10e11.2)', &
+    'wind: radius, r0,v0,d0,dd_dt,du_dt =', &
+    sink%radius, r0, v0, d0, maxval(dd_dt), maxval(du_dt)
+  !-----------------------------------------------------------------------------
+  ! If this patch has overlapping points, add mass and radial momentum
+  !-----------------------------------------------------------------------------
+  inside = (r < 1)
   n_inside = count(inside)
   if (n_inside > 0) then
-    dm = dm/n_inside
-    dd = dm/product(patch%ds)
     !---------------------------------------------------------------------------
     ! Add mass and momentum inside the given radius, letting the velocity approach
     ! a pattern with constant divergence
     !---------------------------------------------------------------------------
-    d  => patch%mem(:,:,:,patch%idx%d ,patch%new,1)
-    e  => patch%mem(:,:,:,patch%idx%e ,patch%new,1)
-    px => patch%mem(:,:,:,patch%idx%px,patch%new,1)
-    py => patch%mem(:,:,:,patch%idx%py,patch%new,1)
-    pz => patch%mem(:,:,:,patch%idx%pz,patch%new,1)
+    it = patch%new
+    d  => patch%mem(:,:,:,patch%idx%d ,it,1)
+    e  => patch%mem(:,:,:,patch%idx%e ,it,1)
+    px => patch%mem(:,:,:,patch%idx%px,it,1)
+    py => patch%mem(:,:,:,patch%idx%py,it,1)
+    pz => patch%mem(:,:,:,patch%idx%pz,it,1)
     ee_min = (smallc*cgs%kms/scaling%u)**2/(patch%gamma*(patch%gamma-1d0))
     if (verbose > 1) &
       write (io_unit%output,*) &
         'before:', patch%id, patch%fmaxval(abs(px/d)), maxval(abs(px/d))
-    if (incremental) then
-      ee = self%energy
+    ee = self%energy
+    dt = patch%dtime
+    if (first_time) then
+      if (.not.associated(patch%force_per_unit_mass)) then
+        allocate (patch%force_per_unit_mass(m(1),m(2),m(3),3))
+        print *,patch%id, ' force allocated'
+      end if
       where (inside)
-        e  = e - 0.5*(px**2+py**2+pz**2)/d
-        e  = max(e,d*ee_min)
-        px = px + dd*(self%velocity*x/sink%radius + sink%velocity(1))
-        py = py + dd*(self%velocity*y/sink%radius + sink%velocity(2))
-        pz = pz + dd*(self%velocity*z/sink%radius + sink%velocity(3))
-        d  = d  + dd
-        e  = e  + dd*ee + 0.5*(px**2+py**2+pz**2)/d
+        d = d0
+        px = d0*v0*x/r0*r*(3.0-2.0*r)
+        py = d0*v0*y/r0*r*(3.0-2.0*r)
+        pz = d0*v0*z/r0*r*(3.0-2.0*r)
+      else where (r < 1.5)
+        d = d0
+        px = d0*v0*x/(r*r0)
+        py = d0*v0*y/(r*r0)
+        pz = d0*v0*z/(r*r0)
+      else where
+        px = 0.0
+        py = 0.0
+        pz = 0.0
       end where
+      e  = e0 + 0.5*(px**2+py**2+pz**2)/d
+      first_time = .false.
+      print *, minval(px/d), maxval(px/d), 'minmax(d)'
     else
-      ee = max(ee_min,ramp*self%energy)
       where (inside)
-        d  = d  + dd
-        px = d*(ramp*self%velocity*x/sink%radius + sink%velocity(1))
-        py = d*(ramp*self%velocity*y/sink%radius + sink%velocity(2))
-        pz = d*(ramp*self%velocity*z/sink%radius + sink%velocity(3))
-        e  = d*ee + 0.5*(px**2+py**2+pz**2)/d
+        patch%force_per_unit_mass(:,:,:,1) = du_dt*x/r0 + dd_dt*px/(d0*d)
+        patch%force_per_unit_mass(:,:,:,2) = du_dt*y/r0 + dd_dt*py/(d0*d)
+        patch%force_per_unit_mass(:,:,:,3) = du_dt*z/r0 + dd_dt*pz/(d0*d)
+        ! px = d*v0*x/r0*r*(3.0-2.0*r)
+        ! py = d*v0*y/r0*r*(3.0-2.0*r)
+        ! pz = d*v0*z/r0*r*(3.0-2.0*r)
+      else where (r < 1.25)
+        ! px = d*v0*x/(r*r0)
+        ! py = d*v0*y/(r*r0)
+        ! pz = d*v0*z/(r*r0)
       end where
+      e  = e0 + 0.5*(px**2+py**2+pz**2)/d
     end if
     if (verbose > 1) &
       write (io_unit%output,*) &
@@ -199,8 +264,116 @@ SUBROUTINE wind (self, patch, sink)
     write (io_unit%output,'(1x,a,i5,i8,i4,1p,2e11.2)') &
       'winds_t: id, n, i, e, T =', patch%id, n_inside, i, e(i,i,i), &
       e(i,i,i)/d(i,i,i)*(patch%gamma-1.0)*scaling%temp
+    write (io_unit%log,'(a,1p,11e10.2)') &
+      'winds_t:  d1',     d(i:i+10,i,i)
+    write (io_unit%log,'(a,1p,11e10.2)') &
+      'winds_t: dd1', dd_dt(i:i+10,i,i)
   end if
-  deallocate (inside, x, y, z, r)
+  deallocate (inside, x, y, z, r, dd_dt, du_dt)
+  call trace%end ()
+END SUBROUTINE force
+
+!===============================================================================
+!> Compute the wind input to the patch
+!===============================================================================
+SUBROUTINE wind (self, sink)
+  class(winds_t):: self
+  class(sinks_t):: sink
+  class(patch_t), pointer:: patch
+  class(task_t), pointer:: task
+  real(8):: m_sun               ! solar mass in code units
+  real(4):: dt                  ! time step
+  real(4):: ramp                ! ramp profile
+  real(4):: mdot                ! mass loss rate
+  real(4):: r0, d0, v0, e0      ! scaling constants
+  real, pointer, dimension(:,:,:):: d, e
+  real, allocatable, dimension(:,:,:):: x, y, z, r, dd_dt
+  logical, allocatable:: inside(:,:,:)
+  integer:: i, i1, i2, i3, m(6), it, n_inside
+  real:: ee, ee_min, t, dd_dt_max
+  logical, save:: first_time=.true.
+  !-----------------------------------------------------------------------------
+  call trace%begin ('winds_t%wind')
+  patch => self%patch
+  !-----------------------------------------------------------------------------
+  ! Ramp, increasing the forcing gradually with time
+  !-----------------------------------------------------------------------------
+  t = patch%time/self%ramp_time
+  ramp = 1.0-(1.0+t+0.5*t**2)*exp(-t)
+  !-----------------------------------------------------------------------------
+  ! Fitting formula for the mass loss rate (Paolo)
+  !-----------------------------------------------------------------------------
+  m_sun = cgs%m_sun/scaling%m
+  mdot = ramp*1.19e-10*(sink%mass/m_sun-7.57)**2.60
+  !-----------------------------------------------------------------------------
+  ! Distances from sink
+  !-----------------------------------------------------------------------------
+  m = shape(patch%mem)
+  allocate (x(m(1),m(2),m(3)))
+  allocate (y(m(1),m(2),m(3)))
+  allocate (z(m(1),m(2),m(3)))
+  allocate (r(m(1),m(2),m(3)))
+  allocate (dd_dt(m(1),m(2),m(3)))
+  allocate (inside(m(1),m(2),m(3)))
+  do i3=1,m(3)
+  do i2=1,m(2)
+  do i1=1,m(1)
+    x(i1,i2,i3) = (patch%mesh(1)%p - sink%position(1)) + patch%mesh(1)%r(i1)
+    y(i1,i2,i3) = (patch%mesh(2)%p - sink%position(2)) + patch%mesh(2)%r(i2)
+    z(i1,i2,i3) = (patch%mesh(3)%p - sink%position(3)) + patch%mesh(3)%r(i3)
+  end do
+  end do
+  end do
+  !-----------------------------------------------------------------------------
+  ! Scaling constants in code units
+  !-----------------------------------------------------------------------------
+  r0 = sink%radius*patch%ds(1)
+  v0 = velocity_kms*1e5/scaling%u
+  d0 = self%mdot/(4.*math%pi*r0**2*v0)
+  e0 = d0*0.01*v0**2
+  !-----------------------------------------------------------------------------
+  ! Express the rate of adding mass and radial momentum as functions of r,
+  ! leaving one power of r to the final expressions
+  !-----------------------------------------------------------------------------
+  r = sqrt(x**2+y**2+z**2)/r0
+  ramp = 1.0
+  dd_dt = ramp*d0*v0/r0*2.*r*(6.-5.*r)
+  print '(a,1p,10e11.2)', &
+    'wind: radius, r0,v0,d0,dd_dt =', &
+    sink%radius, r0, v0, d0, maxval(dd_dt)
+  !-----------------------------------------------------------------------------
+  ! If this patch has overlapping points, add mass and radial momentum
+  !-----------------------------------------------------------------------------
+  inside = (r < 1)
+  n_inside = count(inside)
+  if (n_inside > 0) then
+    !---------------------------------------------------------------------------
+    ! Add mass and momentum inside the given radius, letting the velocity approach
+    ! a pattern with constant divergence
+    !---------------------------------------------------------------------------
+    it = patch%new
+    d  => patch%mem(:,:,:,patch%idx%d ,it,1)
+    e  => patch%mem(:,:,:,patch%idx%e ,it,1)
+    ee_min = (smallc*cgs%kms/scaling%u)**2/(patch%gamma*(patch%gamma-1d0))
+    ee = self%energy
+    dt = patch%dtime
+    where (inside)
+      d  = d  + dd_dt*dt
+      e  = e  + e*dd_dt/d*dt
+    end where
+    dd_dt_max = maxval(dd_dt,mask=inside)
+  end if
+  if (verbose > 0) then
+    i = patch%gn(1)/2
+    write (io_unit%output,'(1x,a,i5,i8,i4,1p,3e11.2)') &
+      'winds_t: id, n, i, e, T =', patch%id, n_inside, i, e(i,i,i), &
+      e(i,i,i)/d(i,i,i)*(patch%gamma-1.0)*scaling%temp, dd_dt_max
+    write (io_unit%log,'(a,1p,11e10.2)') &
+      'winds_t:  d2',     d(i:i+10,i,i)
+    write (io_unit%log,'(a,1p,11e10.2)') &
+      'winds_t: dd2', dd_dt(i:i+10,i,i)
+  end if
+  deallocate (inside, x, y, z, r, dd_dt)
   call trace%end ()
 END SUBROUTINE wind
 

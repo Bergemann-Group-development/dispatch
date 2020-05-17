@@ -33,7 +33,8 @@ SUBROUTINE init (self)
   if (first_time) then
     rewind (io%input)
     read (io%input, experiment_params, iostat=iostat)
-    write (io%output, experiment_params)
+    call io%namelist_warning ('experiment_params', iostat)
+    write (io%namelist, experiment_params)
     first_time = .false.
   end if
   call io%lock%unset
