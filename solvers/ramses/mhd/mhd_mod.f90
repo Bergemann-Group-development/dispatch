@@ -128,6 +128,9 @@ SUBROUTINE init (self)
 !...............................................................................
   call trace%begin('mhd_mod%init')
   call self%patch_t%init
+  if (minval(self%mesh%n) < 3) then
+    call io%abort ('SOLVER=ramses/mhd needs at least 3 mesh points in any direction')
+  end if
   do i=1,3
     self%mesh(i)%h = 0d0
     self%mesh(i)%h(self%idx%bx+i-1) = -0.5
@@ -231,9 +234,9 @@ SUBROUTINE update (self)
   call cmpflxm(self,self%gn(2),3,2,4,7,6,8,fl(:,:,:,:,2))
   call cmpflxm(self,self%gn(3),4,2,3,8,6,7,fl(:,:,:,:,3))
 
-  call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,2,3,4,6,7,8,em(:,:,:,3),self%gn(3)-1,self%nv)
-  call cmp_mag_flx(self, self%qRT, self%qLT, self%qRB, self%qLB,4,2,3,8,6,7,em(:,:,:,2),self%gn(2)-1,self%nv)
-  call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,3,4,2,7,8,6,em(:,:,:,1),self%gn(1)-1,self%nv)
+  call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,2,3,4,6,7,8,em(:,:,:,3),self%gn(1),self%nv)
+  call cmp_mag_flx(self, self%qRT, self%qLT, self%qRB, self%qLB,4,2,3,8,6,7,em(:,:,:,2),self%gn(1),self%nv)
+  call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,3,4,2,7,8,6,em(:,:,:,1),self%gn(1),self%nv)
 
   dtdx = self%dtime/self%ds(1) 
   dtdy = self%dtime/self%ds(2) 

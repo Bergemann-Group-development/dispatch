@@ -285,13 +285,16 @@ contains
   subroutine message (unit)
   integer:: unit
   flush (unit)
+  write (unit,*) ''
+  write (unit,'(a)') &
+'********************************************************************************'
+  write (unit,'(" ABORT:  rank",i5,4x,"thread",i4)') mpi_rank, omp%thread
   if (present(reason)) then
-    write (unit,'("ABORT:  rank",i5,4x,"thread",i4,4x,"reason: ",a)') &
-      mpi_rank, omp%thread, trim(reason)
-  else
-    write (unit,'("ABORT:  rank",i5,4x,"thread",i4,4x,"generic")') &
-      mpi_rank, omp%thread
+    write (unit,'(" ABORT:  rank",i5,4x,"thread",i4)') mpi_rank, omp%thread
+    write (unit,'("REASON: ",a)') trim(reason)
   end if
+  write (unit,'(a)') &
+'********************************************************************************'
   flush (unit)
   end subroutine
 END SUBROUTINE abort_mpi

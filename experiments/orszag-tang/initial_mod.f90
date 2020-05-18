@@ -79,26 +79,21 @@ SUBROUTINE initial_conditions (self, m, ff, idx)
   d0 = self%gamma * self%p0
 
   ! "pre"-initialisation of all variables, independent of `idirect`.
-  if (self%gamma==1.0) then
-    entropy = 1.0
+  ff(:,:,:,idx%d) = d0
+  ff(:,:,:,idx%px) = 0.0
+  ff(:,:,:,idx%py) = 0.0
+  ff(:,:,:,idx%pz) = 0.0
+  ff(:,:,:,idx%bx) = 0.0
+  ff(:,:,:,idx%by) = 0.0
+  ff(:,:,:,idx%bz) = 0.0
+  if (self%gamma==1d0) then
+    entropy = 0.0
+    if (idx%e > 0) ff(:,:,:,idx%e) = self%p0
   else
-    entropy = (log(self%p0)-log(d0)*self%gamma)/(self%gamma-1.0)
+    entropy = (log(self%p0)-log(d0)*self%gamma)/(self%gamma-1d0)
+    if (idx%e > 0) ff(:,:,:,idx%e) = self%p0/(self%gamma-1d0)
   end if
-  do iz=m(3)%lb,m(3)%ub
-    do iy=m(2)%lb,m(2)%ub
-      do ix=m(1)%lb,m(1)%ub
-        ff(ix,iy,iz,idx%d) = d0
-        ff(ix,iy,iz,idx%e) = entropy*d0
-        ff(ix,iy,iz,idx%px) = 0.0
-        ff(ix,iy,iz,idx%py) = 0.0
-        ff(ix,iy,iz,idx%pz) = 0.0
-        ff(ix,iy,iz,idx%bx) = 0.0
-        ff(ix,iy,iz,idx%by) = 0.0
-        ff(ix,iy,iz,idx%bz) = 0.0
-      end do
-    end do
-  end do
- 
+  if (idx%s > 0) ff(:,:,:,idx%s) = entropy*d0
 
   ! initialisation based on value of `idirect`
   ! ---- x1-x2 plane ----
