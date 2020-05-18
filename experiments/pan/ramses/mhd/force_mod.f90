@@ -42,7 +42,7 @@ CONTAINS
 !===============================================================================
 SUBROUTINE init (self, solver, id, mesh)
   class(force_t):: self
-  integer:: id
+  integer:: id, iostat
   character(len=64):: solver
   class(mesh_t), dimension(:), pointer:: mesh
   !.............................................................................
