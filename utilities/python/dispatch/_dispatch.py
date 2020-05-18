@@ -49,6 +49,7 @@ class _units:
     e=1.0
     t=1.0
     m=1.0
+    b=1.0
 
 def _p2():
     """ convenience function to check Python version """
@@ -599,6 +600,16 @@ class _patch():
         if not hasattr(self,'units'):
             if hasattr(snap,'units'):
                 self.units=snap.units
+                if not hasattr(self.units,'u'):
+                    self.units.u = self.units.l/self.units.t
+                if not hasattr(self.units,'d'):
+                    self.units.d = self.units.m/self.units.l**3
+                if not hasattr(self.units,'p'):
+                    self.units.p = self.units.d*self.units.u**2
+                if not hasattr(self.units,'e'):
+                    self.units.e = self.units.m*self.units.u**2
+                if not hasattr(self.units,'b'):
+                    self.units.b = self.units.u*np.sqrt(np.pi*4.0*self.units.d)
         # modify `mesh_type` from integer to string for readability
         #timer.add('_patch(6)')
         if hasattr(self,'mesh_type'):

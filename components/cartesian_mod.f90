@@ -107,6 +107,7 @@ SUBROUTINE init (self, task_list, label)
   patches_per_mpi = self%dims/mpi_dims
   mpi_coords%npatch = patches_per_mpi
   io%mpi_dims = mpi_dims
+  write (io%namelist, cartesian_params)
   !-----------------------------------------------------------------------------
   ! Set attritbutes of the rank_t data type -- just enough to use distance().
   !-----------------------------------------------------------------------------
@@ -216,10 +217,6 @@ SUBROUTINE init (self, task_list, label)
     write(stdout,*) 'cartesian_t%init: init boundaries'
   call self%task_list%init_bdries
   !-----------------------------------------------------------------------------
-  if (io_unit%master) then
-    write (io%namelist, cartesian_params)
-    flush (io%namelist)
-  end if
   if (verbose > 0) &
     write(stdout,*) 'cartesian_t%init: diagnostics'
   call self%diagnostics()

@@ -13,6 +13,7 @@ MODULE stagger_mod
     integer:: count=0
     integer:: up(2)=[2,-3]
     integer:: dn(2)=[3,-2]
+    integer:: order=6
   contains
     procedure, nopass:: ddxdn1
     procedure, nopass:: ddydn1

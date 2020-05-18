@@ -7,10 +7,9 @@
 MODULE experiment_mod
   USE io_mod
   USE trace_mod
-  USE pboundary_mod
-  USE bits_mod
-  USE index_mod
   USE solver_mod
+  USE bits_mod
+  USE mesh_mod
   implicit none
   private
 
@@ -23,11 +22,10 @@ MODULE experiment_mod
 CONTAINS
 
 !===============================================================================
-!> Setup a patch with an Alfven wave (see Masson et al. 2012)
-!===============================================================================
 SUBROUTINE init (self)
   class(experiment_t):: self
   logical:: first_time = .true.
+  class(mesh_t), pointer:: m(:)
   call trace_begin('experiment_t%init')
   !----------------------------------------------------------------------------
   ! Initial conditions
@@ -42,12 +40,14 @@ SUBROUTINE init (self)
   end if
   self%gamma=1.4
   self%unsigned(self%idx%d) = .true.
-  self%periodic = [.false., .true., .true.]
   ! assign boundary conditions.
-  if (self%mesh(1)%lower_boundary) &
-  call pboundary%condition(self%mem(:,:,:,:,self%it,1), self%mesh, self%idx, .true.,self%kind)
-  if (self%mesh(1)%upper_boundary) &
-  call pboundary%condition(self%mem(:,:,:,:,self%it,1), self%mesh, self%idx, .false.,self%kind)
+  m=>self%mesh
+  self%boundaries%rho_l = self%mem(m(1)%lo,m(2)%li,m(3)%li,self%idx%d,1,1)
+  self%boundaries%e_l   = self%mem(m(1)%lo,m(2)%li,m(3)%li,self%idx%e,1,1)
+  self%boundaries%s_l   = self%mem(m(1)%lo,m(2)%li,m(3)%li,self%idx%s,1,1)
+  self%boundaries%px_l  = self%mem(m(1)%lo,m(2)%li,m(3)%li,self%idx%px,1,1)
+  self%boundaries%solver = self%kind
+
   call trace_end
 END SUBROUTINE init
 
@@ -68,12 +68,6 @@ SUBROUTINE update (self)
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
 
-  if (self%mesh(1)%lower_boundary) then
-    call pboundary%condition (self%mem(:,:,:,:,self%it,1), self%mesh, self%idx,.true.,self%kind)
-  endif
-  if (self%mesh(1)%upper_boundary) then
-    call pboundary%condition (self%mem(:,:,:,:,self%it,1), self%mesh, self%idx, .false.,self%kind)
-  endif
   
   call self%solver_t%update
 

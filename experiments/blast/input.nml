@@ -5,64 +5,58 @@
  verbose=0
  do_trace=f
  do_debug=f
- do_output=f
+ do_output=t
  guard_zones=t
  nml_version=1
 /
 
-&cartesian_params
- size=3*1
- dims=16,16,1 mpi_dims=2,2,1            ! 2-D case (not for HLLC/HLLD)
- !dims=8,8,8 mpi_dims=2,2,2              ! 3-D case
- !origin=-0.5,-0.5,-0.5
- origin=3*0
+! --- XY plane ---
+&cartesian_params  size=1,1,1  dims=12,12,1 mpi_dims=2,2,1 origin=0.0,0.0,0.0 periodic = f,f,t /
+&patch_params      nt=5 ng=3*8 n=32,32,1 do_check_nan=t grace=0.05 no_mans_land=t
 /
+
+! --- XZ plane ---
+!&cartesian_params  size=1,1,1  dims=8,1,8 origin=-0.5,0.0,-0.5 periodic = f,t,f /
+!&patch_params       nt=5 ng=3*8 n=32,1,32 do_check_nan=t grace=0.05 no_mans_land=t /
+
+! --- YZ plane ---
+!&cartesian_params  size=1,1,1  dims=1,8,8 origin=0.0,-0.5,-0.5 periodic = t,f,f /
+!&patch_params       nt=5 ng=3*8 n=1,32,32 do_check_nan=t grace=0.05 no_mans_land=t /
+
 
 &out_params
- end_time=0.5
- end_time=0.02
- out_time=0.01
+ end_time=0.022
+ out_time=0.001
  print_time=0
- print_every=500
-/
-
-
-&patch_params
- nt=5
- n=32,32,1                              ! 2-D case (not for HLLC/HLLD)
- !n=3*16                                 ! 3-D case
- do_check_nan=f
- !dt_fixed=0.0001
- grace=0.05
- no_mans_land=t
 /
 
 &experiment_params
- r0=0.125
- d0=1.0,1.0
- e0=1.0,100.0
- bx0=7.0711,7.0711
- by0=7.0711,7.0711
- !bz0=7.0711,7.0711
+  r0=0.125
+  d0=1.0,1.0
+  p0=1.0,100.0
+  centre=0.5,0.5,0.0
+  bx0=7.0711,7.0711
+  by0=7.0711,7.0711
+  !bz0=7.0711,7.0711
 /
 
 &zeus_params
- gamma=1.6666666666667
- trnvrsn=0
- dtinit=1.0e-5
- itote=0
- qlin=0.1
- qcon=1.0
- iord=2
- iords=2
- istp=0
+  gamma=1.6666666666667
+  trnvrsn=0
+  dtinit=1.0e-5
+  itote=0
+  qlin=0.1
+  qcon=1.0
+  iord=2
+  iords=2
+  istp=0
 /
 
 &timestep_params
 /
 
 &refine_params
- on=f
+  on=f
 /
 
 &ramses_params
@@ -89,14 +83,27 @@
 &force_params
 /
 
+& initial_refine_params
+  on = f
+  n_refine = 0,0,2
+  center   = 0.0,0.0,0.0
+  extent   = 0.0,0.0,0.5
+
+&refine_params          on=f levelmax=12 levelmin=1 verbose=3 check_interval=2 /
+
 &bifrost_params             
- gamma=1.6666666666667
- loginterpolation=t
- ca_max = 3e2 
- courant=0.2
- max_r=3
- symmetric_e=f
- !     Ca    U    Uv   d     e      E
- !     nu1   nu2  nu3  nu_d  nu_ee  eta3
- nu=  0.03 , 0.3,  0.1,  0.0,  0.05, 0.9
-/
+gamma=1.6666666666667
+loginterpolation=f
+ca_max = 3e2 
+courant=0.2
+max_r=3
+symmetric_e=f
+!     Ca    U    Uv   d     e      E
+!     nu1   nu2  nu3  nu_d  nu_ee  eta3
+nu=  0.03 , 0.3,  0.1,  0.05,  0.05, 0.9 /
+
+&divb_clean_params
+ on=t
+ divb_iter=4
+ divb_cleaner=0
+ /

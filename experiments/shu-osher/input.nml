@@ -1,20 +1,37 @@
 &timer_params           /
 &io_params              verbose=0 do_trace=f do_debug=f do_output=t guard_zones=t nml_version=1/
 
-!&cartesian_params       size=2,0.002,0.002 dims=1,1,1 origin=-1,-0.001,-0.001 periodic=f,t,t /
-&cartesian_params       size=9,0.003,0.003 dims=5,1,1 origin=-4.5,0.0,0.0 periodic=f,t,t /
-&patch_params           n=150,1,1 ng=3*6 nt=5 no_mans_land=t grace=0.05 do_check_nan=t/
+! in X
+&cartesian_params       size=10,0.003,0.003 dims=6,1,1 mpi_dims=2,1,1 origin=-4.5,0.0,0.0 periodic = f,t,t /
+&patch_params           n=150,1,1 ng=8,8,8 nt=5 no_mans_land=t grace=0.05 do_check_nan=t use_data_hub=f/
+! in Y
+!&cartesian_params       size=0.003,9,0.003 dims=1,5,1 origin=0.0,-4.5,0.0 periodic = t,f,t /
+!&patch_params           n=1,150,1 ng=8,8,8 nt=5 no_mans_land=t grace=0.05 do_check_nan=t/
+! in Z
+!&cartesian_params       size=0.003,0.003,9 dims=1,1,5 origin=0.0,0.0,-4.5 periodic = t,t,f /
+!&patch_params           n=1,1,150 ng=8,8,8 nt=5 no_mans_land=t grace=0.05 do_check_nan=t/
 !
 &out_params             end_time=2.001 out_time=0.1 print_time=0.0 /
 !
 &initial_params         P_l=10.33333 P_r=1.0 rho_l=3.857143 
                         vx_l=2.629369 vx_r=0.0 x_disc = -4.0
-                        a_d = 0.2 f_d = 5.0 /
-&timestep_params        time_order=3 /
-&refine_params          on=f /
+                        a_d = 0.2 f_d = 5.0 
+                        idir = 1
+                        /
+&timestep_params        time_order=2 /
+
+& initial_refine_params
+  on = f
+  n_refine = 0,0,2
+  center   = 0.0,0.0,0.0
+  extent   = 0.0,0.0,0.5
+
+&refine_params          on=f levelmax=12 levelmin=1 verbose=3 check_interval=2 /
+
+grad_var='d' tol_grad=0.1 /
 &zeus_params            gamma=1.4 trnvrsn=0 dtinit=1.0e-5 itote=1 qlin=0.2 qcon=1.0 iord=2 iords=3 istp=2 /
                                         !     cs   pa  ofd  mas  kap  eta
-&stagger_params             gamma=1.4 nu=  0.12, 0.05, 1.0, 0.0, 1.0, 1.0 /
+&stagger_params             gamma=1.4 nu=  0.1, 1.0, 1.0, 0.0, 1.0, 1.0 /
 
 &force_params           /
 
@@ -36,11 +53,16 @@ gamma=1.4
 loginterpolation=t
 ca_max = 3e2 
 courant=0.2
-max_r=3
 symmetric_e=f
 !     Ca    U    Uv   d     e      E
 !     nu1   nu2  nu3  nu_d  nu_ee  eta3
-nu=  0.03 , 0.3,  0.1,  0.0,  0.05, 0.9 /
+nu=  0.01 , 0.3,  0.1,  0.05,  0.05, 0.9 /
 
 &dispatcher_params      method=0 /
 &dispatcher3_params     verbose=0 f_over=3 use_taskyield=f use_critical=f /
+
+&divb_clean_params
+ on=f
+ divb_iter=4
+ divb_cleaner=0
+ /
