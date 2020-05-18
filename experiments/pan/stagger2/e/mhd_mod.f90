@@ -142,7 +142,7 @@ SUBROUTINE pde (self)
   USE scalar_mod
   class(mhd_t):: self
   !.............................................................................
-  real, dimension(:,:,:),   pointer:: d, e, dddt, dedt
+  real, dimension(:,:,:),   pointer, contiguous:: d, e, dddt, dedt
   real, dimension(:,:,:),   pointer:: dpdtx, dpdty, dpdtz, dBdtx, dBdty, dBdtz
   real, dimension(:,:,:),   pointer:: Bx, By, Bz, px, py, pz, phi
   real, dimension(:,:,:),   pointer:: Ux, Uy, Uz, pg

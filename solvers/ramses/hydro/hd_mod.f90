@@ -250,7 +250,7 @@ SUBROUTINE p2U(self, U, it)
   !.....................................................................
   integer:: i
   real, contiguous, dimension(:,:,:)  , pointer:: d
-  real, contiguous, dimension(:,:,:,:), pointer:: p
+  real, dimension(:,:,:,:), pointer:: p
   !---------------------------------------------------------------------
   d => self%mem(:,:,:,self%idx%d,             it,1)
   p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1)
@@ -269,7 +269,7 @@ SUBROUTINE U2p(self, U, it)
   !.....................................................................
   integer:: i
   real, contiguous, dimension(:,:,:)  , pointer:: d
-  real, contiguous, dimension(:,:,:,:), pointer:: p
+  real, dimension(:,:,:,:), pointer:: p
   !---------------------------------------------------------------------
   d => self%mem(:,:,:,self%idx%d             ,it,1)
   p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1)
@@ -288,7 +288,7 @@ SUBROUTINE e2E_th(self, E_th, it)
   !.....................................................................
   integer :: i
   real, contiguous, dimension(:,:,:), pointer:: k, d, e
-  real, contiguous, dimension(:,:,:,:), pointer:: p
+  real, dimension(:,:,:,:), pointer:: p
   !---------------------------------------------------------------------
   d => self%mem(:,:,:,self%idx%d             ,it,1)
   e => self%mem(:,:,:,self%idx%e             ,it,1)
@@ -313,7 +313,7 @@ SUBROUTINE e2S(self, s, it)
   !.....................................................................
   integer :: i
   real, contiguous, dimension(:,:,:), pointer:: k, d, e
-  real, contiguous, dimension(:,:,:,:), pointer:: p
+  real, dimension(:,:,:,:), pointer:: p
   !---------------------------------------------------------------------
   if (isothermal) then
     s = 0.0
@@ -342,7 +342,7 @@ SUBROUTINE S2e (self, s, it)
   !.....................................................................
   integer :: i
   real, contiguous, dimension(:,:,:), pointer:: k, d, e
-  real, contiguous, dimension(:,:,:,:), pointer:: p
+  real, dimension(:,:,:,:), pointer:: p
   !---------------------------------------------------------------------
   d => self%mem(:,:,:,self%idx%d             ,it,1)
   e => self%mem(:,:,:,self%idx%e             ,it,1)
@@ -371,7 +371,7 @@ SUBROUTINE E_th2e(self, E_th, it)
   !.....................................................................
   integer :: i
   real, contiguous, dimension(:,:,:), pointer:: k, d, e
-  real, contiguous, dimension(:,:,:,:), pointer:: p
+  real, dimension(:,:,:,:), pointer:: p
   !---------------------------------------------------------------------
   d => self%mem(:,:,:,self%idx%d             ,it,1)
   e => self%mem(:,:,:,self%idx%e             ,it,1)
@@ -1248,7 +1248,7 @@ END FUNCTION gas_pressure
 SUBROUTINE gravitational_force (self)
   class(hd_t):: self
   real, contiguous, dimension(:,:,:), pointer:: phi, d, et, gradphi1, gradphi2, gradphi3
-  real, contiguous, dimension(:,:,:,:), pointer:: p
+  real, dimension(:,:,:,:), pointer:: p
   integer:: i,j,k
   real, dimension(3):: wtp1, wtm1
   real:: etemp
