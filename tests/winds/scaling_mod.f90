@@ -37,7 +37,7 @@ SUBROUTINE init (self)
     rewind (io%input)
     read (io%input, scaling_params, iostat=iostat)
     call io%namelist_warning ('scaling_params', iostat)
-    write (io%output, scaling_params)
+    write (io%namelist, scaling_params)
     call cgs%init
     u = v_kms*cgs%kms
     l = l_pc*cgs%pc                                  ! length in pc

@@ -72,8 +72,10 @@ SUBROUTINE init_particles (self)
   !.............................................................................
   call trace%begin ('particles_t%init')
   nullify (self%head, self%tail)
+  associate (n=>self%n)
   !$omp atomic write
-  self%n = 0
+  n = 0
+  end associate
   allocate (self%lock)
   call self%lock%init ('particles')
   call trace%end ()
@@ -91,28 +93,41 @@ SUBROUTINE prepend (self, new)
   if (.not.associated(self%tail)) self%tail => new
   if (associated(self%head)) self%head%next => new
   self%head => new
+  associate (n=>self%n, max=>self%max)
   !$omp atomic
-  self%n = self%n+1
+  n = n+1
   !$omp atomic write
-  self%max = id
+  max = id
+  end associate
 END SUBROUTINE prepend
 
 !===============================================================================
 !> Add an particle at the tail
 !===============================================================================
-SUBROUTINE append (self, new)
-  class(particles_t)              :: self
+SUBROUTINE append (self, new, atomic)
+  class(particles_t):: self
   class(particle_t), pointer :: new
+  logical, optional:: atomic
   !.............................................................................
   nullify (new%next)
   new%prev => self%tail
-  if (.not.associated(self%head)) self%head => new
-  if (associated(self%tail)) self%tail%next => new
+  if (self%n > 0) then
+    self%tail%next => new
+  else
+    self%head => new
+  end if
   self%tail => new
-  !$omp atomic
-  self%n = self%n+1
-  !$omp atomic write
-  self%max = id
+  if (present(atomic)) then
+    associate (n=>self%n, max=>self%max)
+    !$omp atomic
+    n = n+1
+    !$omp atomic write
+    max = id
+    end associate
+  else
+    self%n = self%n+1
+    self%max = id
+  end if
 END SUBROUTINE append
 
 !===============================================================================
@@ -122,6 +137,7 @@ SUBROUTINE remove (self, old)
   class(particles_t):: self
   class(particle_t), pointer:: old
   !.............................................................................
+  call self%lock%set ('particles_t%remove')
   if (associated(old%prev)) old%prev%next => old%next
   if (associated(old%next)) old%next%prev => old%prev
   if (associated(old, self%head)) then
@@ -130,8 +146,12 @@ SUBROUTINE remove (self, old)
   if (associated(old, self%tail)) then
     self%tail => old%prev
   end if
+  nullify (old%prev, old%next)
+  associate (n=>self%n)
   !$omp atomic
-  self%n = self%n-1
+  n = n-1
+  end associate
+  call self%lock%unset ('particles_t%remove')
 END SUBROUTINE remove
 
 !===============================================================================

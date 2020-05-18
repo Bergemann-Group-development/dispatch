@@ -1,10 +1,11 @@
 
 # Option groups
-#OPTS = debug
 #OPTS = full_debug
+#OPTS = debug
+#OPTS =
 OPTS = optimized
 
-# Default target and methods
+# Default target and methods	
 EXEC            = dispatch.x
 UPD             = adams_bashforth
 #SOLVER          = stagger2/e
@@ -26,6 +27,6 @@ $(EXEC)                 : dispatcher_mod.o io_mod.o trace_mod.o scaling_mod.o \
                           timer_mod.o cartesian_mod.o sinks_mod.o winds_mod.o
 experiment_mod.o        : io_mod.o trace_mod.o solver_mod.o scaling_mod.o
 extras_mod.o            : gpatch_mod.o winds_mod.o cooling_mod.o
-winds_mod.o             : sinks_mod.o
+winds_mod.o             : sinks_mod.o math_mod.o
 sinks_mod.o             : io_mod.o trace_mod.o patch_mod.o scaling_mod.o
 scaling_mod.o           : io_mod.o units_mod.o

@@ -9,37 +9,35 @@
 
 ! To make the box 2 times larger:
 
-!scaling_params         v_kms=1.0 l_pc=0.50 d_cgs=2e-23 /               ! increase l_pc
-&scaling_params         v_kms=1.0 l_pc=2.00 d_cgs=2e-23 /               ! increase l_pc
-&experiment_params      density_cgs=6e-22 cs_kms=0.18 /
-!sinks_params           verbose=0 radius_au=2.6e3 mass_msun=30 /        ! increase radius_au
-&sinks_params           verbose=0 radius_au=10.4e3 mass_msun=30 /       ! increase radius_au
-&winds_params           verbose=0 velocity_kms=2e3 msun_per_yr=1e-5
-                       !ramp_time_myr=0.0012 cs_kms=180.                ! increase ramp_time_myr
-                        ramp_time_myr=0.0050 cs_kms=180.                ! increase ramp_time_myr
-                        incremental=t /
+&scaling_params         v_kms=1.0 l_pc=5.00 d_cgs=4e-24 /               ! increase l_pc
+&experiment_params      density_cgs=1e-24 cs_kms=10 /
+&sinks_params           radius=8.0                                      ! radius in cells
+                        mass_msun=30                                    ! solar masses
+                        verbose=0 /                                     ! info level
+&winds_params           velocity_kms=250.        			                  ! terminal speed
+                        msun_per_yr=1e-5				                        ! mass loss rate
+                        ramp_time_myr=0.0010                            ! ramp-up time
+                        cs_kms=10.                                      ! sound speed
+                        verbose=1 /					                            ! info level
 &cooling_params         verbose=1 type='Casiana'
                         on=f do_heat=t do_subcycle=t /
-&io_params              verbose=0 do_trace=f omp_trace=f id_debug=0
+&io_params              verbose=0 do_trace=t omp_trace=t id_debug=365
                         do_output=t guard_zones=f time_derivs=0
-                        method='parallel' format=8
+                        method='legacy' format=8
                         !method='legacy'
 /
-!out_params             end_time=0.07 out_time=0.0005 print_every=100   ! increase out_time
-&out_params             end_time=0.07 out_time=0.0005 print_every=500   ! increase out_time
-                        print_time=0 /
+&out_params             end_time=50e-5 out_time=2e-5 print_every=50 / ! increase out_time
 &mpi_io_params          verbose=0 /
 &parallel_io_params     verbose=0 id_debug=0 /
 &time_slices_params     verbose=0 order=1 id_debug=-1 /
 &timer_params           sec_per_report=30 /
-&ramses_params          detailed_timer=f courant_factor=0.25 slope_type=2
-                        isothermal=f gamma=1.67 smallr=1e-6 smallc=0.18 /
+&ramses_params          detailed_timer=f courant_factor=0.10 slope_type=2
+                        isothermal=f gamma=1.67 smallr=1e-4 smallc=0.18 /
 &dispatcher0_params     verbose=0 detailed_timer=f /
-&cartesian_params       size=1,1,1                                      ! physical size
-                        dims=3*07                                       ! Cartesian patch arrangement
+&cartesian_params       size=1,1,1                                      ! box size in code
+                        dims=3*9                                        ! patch arrangement
                         mpi_dims=2,1,1                                  ! MPI rank distribution
-                        origin=0,0,0                                    ! Cartesian system origin
-                        omp_init=t                                      ! spread memory allocation
+                        origin=0,0,0                                    ! Cartesian origin
 /
 &patch_params           nt=5 grace=0.1 n=3*32 no_mans_land=t do_check_nan=f /
 &download_params        verbose=0 order_time=1

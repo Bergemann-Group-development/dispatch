@@ -176,8 +176,11 @@ SUBROUTINE output (patch, count)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('parallel_io_t%output', itimer=itimer)
-  if (io%format /= 14) then
-    io%format = 15
+  !-----------------------------------------------------------------------------
+  ! Prefer format 14, which is much faster to read
+  !-----------------------------------------------------------------------------
+  if (io%format /= 15) then
+    io%format = 14
   end if
   !-----------------------------------------------------------------------------
   ! Initialize file_out

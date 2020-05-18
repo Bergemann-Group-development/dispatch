@@ -50,6 +50,8 @@ SUBROUTINE setup (task_list)
     sink%position = (i-(n_sink+1)/2.0)*0.25 + 0.5d0
     sink%velocity = [0.0,0.0,0.0]
     task => sink
+    print '(a,2i6,2(2x,3f6.3))', &
+      'setup:', i, sink%id, sink%size, sink%position
     call task_list%append_task (task)
   end do
   call task_list%init_all_nbors

@@ -51,6 +51,7 @@ MODULE sinks_mod
     procedure:: check_refine
     procedure:: create
     procedure:: accrete
+    procedure:: put_wind
     procedure:: pre_update
     procedure:: update
     procedure:: post_update
@@ -220,7 +221,6 @@ SUBROUTINE accrete (self, patch)
         patch%id, overlaps, self%size, self%position, patch%size, patch%position
     end if
     !...........................................................................
-    m = patch%mesh%gn
     l = patch%mesh%li
     u = patch%mesh%ui
     allocate (radius2(l(1):u(1),l(2):u(2),l(3):u(3)), &
@@ -229,6 +229,7 @@ SUBROUTINE accrete (self, patch)
     m1 => patch%mesh(1)
     m2 => patch%mesh(2)
     m3 => patch%mesh(3)
+
     do i3=l(3),u(3)
       r3 = m3%p + m3%r(i3)
       do i2=l(2),u(2)
@@ -326,6 +327,108 @@ SUBROUTINE accrete (self, patch)
 END SUBROUTINE accrete
 
 !===============================================================================
+!> Places wind form the sink into /patch/ according to the profile derived
+!> in wind-symbolic.ipynb
+!===============================================================================
+SUBROUTINE put_wind (self, patch)
+  class(sinks_t):: self
+  class(gpatch_t), pointer:: patch
+  !.............................................................................
+  real(8):: r1, r2, r3, dr(3), dist                       ! position variables
+  class(mesh_t), pointer:: m1, m2, m3                     ! dimmensions of the mesh
+  integer:: i1, i2, i3, m(3), l(3), u(3)                  ! mesh iteration variables
+  real, pointer, dimension(:,:,:):: d, e, px, py, pz      ! shorthands for patch
+  real(8):: R_0, v_0, rho_0, cell_volume                  ! wind formula constants
+  real(8):: dm, dd, de, dp(3), frac_remain                ! cell calulated changes
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin ('sinks_t%put_wind', itimer=itimer)
+  if (patch%time > self%time .and. self%overlaps(patch) .and. self%mdot_wind>0) then
+    ! Constants for wind formula
+    R_0 = accretion_cells*maxval(patch%mesh%d, mask=patch%mesh%n > 1)
+    v_0 = self%v_wind
+    rho_0 = self%mdot_wind/(4*math%pi*R_0**2*v_0)
+    cell_volume = product(patch%ds)
+    !...........................................................................
+    if (verbose > 2) then
+      write (io_unit%log,'(1x,a,i4,l3,4(3f8.3,2x))') &
+       'sinks_t%put_wind: id, over, sink%size, pos, patsh%size, pos =', &
+        patch%id, .true., self%size, self%position, patch%size, patch%position
+    end if
+    !...........................................................................
+    l = patch%mesh%li
+    u = patch%mesh%ui
+    m1 => patch%mesh(1)
+    m2 => patch%mesh(2)
+    m3 => patch%mesh(3)
+    !---------------------------------------------------------------------------
+    ! Density, energy per unit volume, intertia
+    !---------------------------------------------------------------------------
+    d  => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d ,patch%it,1)
+    e  => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%e ,patch%it,1)
+    px => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%px,patch%it,1)
+    py => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%py,patch%it,1)
+    pz => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%pz,patch%it,1)
+    dm = 0
+
+    do i3=l(3),u(3)
+      r3 = m3%p + m3%r(i3)
+      do i2=l(2),u(2)
+        r2 = m2%p + m2%r(i2)
+        do i1=l(1),u(1)
+          r1 = m1%p + m1%r(i1)
+          dr = self%point_distance (self%position, [r1,r2,r3])
+          dist = norm2(dr)
+          if (dist > R_0) cycle
+
+          dd = patch%dtime*rho_0*v_0/R_0     * 2*dist*(6-5*dist)
+          de = e(i1,i2,i3)/d(i1,i2,i3)*dd ! cold accretion for now
+          dp = patch%dtime*rho_0*v_0*v_0/R_0 * 6*dr*dist**2*(dist-1)*(2*dist-3) &
+                    + dd * self%velocity ! compensate for movenment
+
+          d(i1,i2,i3) = d(i1,i2,i3) + dd
+          e(i1,i2,i3) = e(i1,i2,i3) + de
+          px(i1,i2,i3) = px(i1,i2,i3) + dp(1)
+          py(i1,i2,i3) = py(i1,i2,i3) + dp(2)
+          pz(i1,i2,i3) = pz(i1,i2,i3) + dp(3)
+
+          dm = dm + dd * cell_volume
+        end do
+      end do
+    end do
+    ! Modify properties of sink so velocity is unchanged
+    ! This means radial momentum deposited is assumed to cancel out
+    frac_remain = 1-dm/self%mass
+    !$omp atomic update
+    self%dm_wind = self%dm_wind + dm
+    !$omp atomic update
+    self%mass = self%mass - dm
+    !$omp atomic update
+    self%px = self%px*frac_remain
+    !$omp atomic update
+    self%py = self%py*frac_remain
+    !$omp atomic update
+    self%pz = self%pz*frac_remain
+    !...........................................................................
+    if (verbose > 0) then
+      dr = self%point_distance (self%position, patch%position)
+      write (io_unit%log,'(1x,a,i4,i8,3(3f8.3,2x),1p,4e10.2)') &
+       'sinks_t%put_wind: id, pos, rpos, vel, m, dm, d_max =', &
+        patch%id, self%position, dr/patch%size, self%velocity, &
+        self%mass, dm, maxval(d)
+    end if
+    !...........................................................................
+  else if (verbose > 2) then
+    !...........................................................................
+    write (io_unit%log,'(1x,a,i6,l4,5(3f10.6,1x))') 'sinks_t%put_wind: skip', &
+      patch%id, .false., patch%time, self%time, self%mass, &
+      self%position, self%size, patch%position, patch%size
+    !...........................................................................
+  end if
+  call trace%end (itimer)
+END SUBROUTINE put_wind
+
+!===============================================================================
 !> Update sink task
 !===============================================================================
 SUBROUTINE pre_update (self, patch)
@@ -357,6 +460,7 @@ SUBROUTINE post_update (self, patch)
   call trace%begin ('sinks_t%post_update')
   call self%check_refine (patch)
   call self%accrete (patch)
+  call self%put_wind (patch)
   !-----------------------------------------------------------------------------
   ! The patch that actually contains the sink is responsible for updating the
   ! time and position of the sink

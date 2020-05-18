@@ -194,18 +194,6 @@ SUBROUTINE update (self)
   allocate (self%s(n(1),n(2),n(3)))
   !self%q=0.0; self%qp=0.0; self%qm=0.0; self%dq=0.0; self%fl=0.; self%c=0.0; self%s=0.0
   if (detailed_timer) call trace_end (itimer)
-  if (debug) then
-    if (self%id==229.or.self%id==231) then
-      print *,self%id, 'mk1:px', self%mem(19-2:19+2,19,19,self%idx%px,self%it,1), self%idx%px
-      print *,self%id, 'mk1: d', self%mem(19-2:19+2,19,19,self%idx%d ,self%it,1)
-      print *,self%id, 'mk1: e', self%mem(19-2:19+2,19,19,self%idx%e ,self%it,1), self%idx%e
-    end if
-    if (self%id==230) then
-      print *,self%id, 'mk1:px', self%mem( m-7:m-3 ,19,19,self%idx%px,self%it,1), self%idx%px
-      print *,self%id, 'mk1: d', self%mem( m-7:m-3 ,19,19,self%idx%d ,self%it,1)
-      print *,self%id, 'mk1: e', self%mem( m-7:m-3 ,19,19,self%idx%e ,self%it,1), self%idx%e
-    end if
-  end if
   !-----------------------------------------------------------------------------
   ! Godunov solver
   !-----------------------------------------------------------------------------
@@ -1243,11 +1231,11 @@ FUNCTION gas_pressure (self) RESULT (pg)
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
   real, dimension(:,:,:), pointer, contiguous:: d, px, py, pz, e
   !-----------------------------------------------------------------------------
-  d  => self%mem(:,:,:,self%idx%d ,self%it,1)
-  px => self%mem(:,:,:,self%idx%px,self%it,1)
-  py => self%mem(:,:,:,self%idx%py,self%it,1)
-  pz => self%mem(:,:,:,self%idx%pz,self%it,1)
-  e  => self%mem(:,:,:,self%idx%e ,self%it,1)
+  d  => self%mem(:,:,:,self%idx%d ,self%new,1)
+  px => self%mem(:,:,:,self%idx%px,self%new,1)
+  py => self%mem(:,:,:,self%idx%py,self%new,1)
+  pz => self%mem(:,:,:,self%idx%pz,self%new,1)
+  e  => self%mem(:,:,:,self%idx%e ,self%new,1)
   if (isothermal) then
     pg = d*self%csound**2
   else
@@ -1268,9 +1256,9 @@ SUBROUTINE gravitational_force (self)
   associate (l => self%li, u => self%ui)
   wtp1 = 0.50 * 4.0 / 3.0 / self%ds
   wtm1 = 0.25 * 1.0 / 3.0 / self%ds
-  phi => self%mem(:,:,:,self%idx%phi,self%it,1)
-  d   => self%mem(:,:,:,self%idx%d,self%it,1)
-  et  => self%mem(:,:,:,self%idx%e,self%new,1)
+  phi => self%mem(:,:,:,self%idx%phi,self%new,1)
+  d   => self%mem(:,:,:,self%idx%d  ,self%new,1)
+  et  => self%mem(:,:,:,self%idx%e  ,self%new,1)
   p   => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
   allocate (gradphi1(self%gn(1),self%gn(2),self%gn(3)), &
             gradphi2(self%gn(1),self%gn(2),self%gn(3)), &

@@ -102,7 +102,7 @@ MODULE mesa_mod
                 ";mkdir "  // trim(self%folder) //  & ! cd to it so that this will be the working directory
                 ";cd "     // trim(self%folder) //  & ! cd to it so that this will be the working directory
                 ";mkfifo pipe1 pipe2" // & ! create the two pipes
-                ";../../../mesa_template/star ../../../mesa_template/inlist &)") ! start mesa instance
+                ";../../../mesa_template/star ../../../mesa_template/inlist > log.txt &)") ! start mesa instance
     open (newunit(self%write_unit), file=trim(self%folder) // 'pipe1', form='formatted', status='unknown', action='write')
     open (newunit(self%read_unit),  file=trim(self%folder) // 'pipe2', form='formatted', status='unknown', action='read')
   !$OMP END CRITICAL
@@ -115,6 +115,7 @@ MODULE mesa_mod
 
     self%mesa_simulated=.true.
     self%last_time = self%time
+    self%dm_accreted = 0
   end subroutine start_mesa
   
 !===============================================================================
@@ -140,10 +141,10 @@ MODULE mesa_mod
 !===============================================================================
   subroutine eval_mesa(self)
     class(mesa_t):: self
-    real(8) :: dm_wind, loum, t_eff, Zsurf
+    real(8) :: radius, dm_wind, loum, t_eff, Zsurf, v_esc
     logical :: supernova
     character(64) :: dummy = ""
-    namelist /to_dispatch/ dm_wind, loum, t_eff, Zsurf, supernova
+    namelist /to_dispatch/ radius, dm_wind, loum, t_eff, Zsurf, supernova
     !-----------------------------------------------------------------------------
     call send_query(self%write_unit, .false., self%time*scaling%t, self%dm_accreted*scaling%m, dummy)
     self%dm_accreted = 0
@@ -153,15 +154,43 @@ MODULE mesa_mod
       self%exploded = .true.
       self%mesa_simulated = .false.
     end if 
-
+    v_esc = sqrt(2*cgs%grav*scaling%grav*self%mass/(radius/scaling%l))
+    self%v_wind = get_vink_alpha(t_eff, Zsurf) * v_esc
     ! set mass loss rate, compensating for 
     ! excess/lack caused by non-syncronos timestepping. If all mass has 
     ! been put out in surrounding, then self% dm_wind = 0
-    self%dm_wind = dm_wind - self% dm_wind / scaling%m
-    self%mdot_wind = self%dm_wind/(self%time - self%last_time)
+    self%dm_wind = self% dm_wind - dm_wind / scaling%m
+    self%mdot_wind = -self%dm_wind/(self%time - self%last_time)
 
     self%last_time = self%time
   end subroutine eval_mesa
+
+  ! code inspired by MESA impleentation, returns v_inf/v_esc
+  real(8) function get_vink_alpha(T, Z)
+    real(8), intent(in) :: T, Z
+    real(8) :: alfa, Teff_jump, dT
+    real(8), parameter :: Zsolar=0.019d0
+
+    ! alfa = 1 for hot side, = 0 for cool side
+    if (T > 27500d0) then
+       alfa = 1
+    else if (T < 22500d0) then
+       alfa = 0
+    else ! use Vink et al 2001, eqns 14 and 15 to set "jump" temperature
+       Teff_jump = 1d3*(61.2d0 + 2.59d0*(-13.636d0 + 0.889d0*log10(Z/Zsolar)))
+       dT = 100d0
+       if (T > Teff_jump + dT) then
+          alfa = 1
+       else if (T < Teff_jump - dT) then
+          alfa = 0
+       else
+          alfa = (T - (Teff_jump - dT)) / (2*dT)
+       end if
+    end if
+
+    ! weighted averagy from v(alfa=0)=1.3 to v(alfa=1)=2.6
+    get_vink_alpha = (Z/Zsolar)**0.13d0 * (1+alfa) * 1.3d0
+  end function get_vink_alpha
 
 !===============================================================================
 !> Output mesa task

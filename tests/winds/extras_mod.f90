@@ -31,6 +31,7 @@ MODULE extras_mod
   !-----------------------------------------------------------------------------
   USE gpatch_mod
   USE list_mod
+  USE gpatch_mod
   USE patch_mod
   USE task_mod
   USE io_mod
@@ -50,9 +51,8 @@ MODULE extras_mod
   type, public, extends(gpatch_t):: extras_t
     type(winds_t):: winds                                               ! wind
     type(cooling_t):: cooling                                           ! cool
-    class(patch_t), pointer:: patch => null()
+    class(gpatch_t), pointer:: patch => null()
   contains
-    procedure, nopass:: cast2extras
     procedure:: pre_init
     procedure:: init
     !procedure:: dealloc
@@ -75,6 +75,8 @@ SUBROUTINE pre_init (self)
   !.............................................................................
   call trace%begin ('extras_t%pre_init')
   self%patch => self
+  call self%cooling%pre_init (self%patch)                               ! cool
+  call self%winds%pre_init (self%patch)
   call trace%end ()
 END SUBROUTINE pre_init
 
@@ -85,8 +87,6 @@ SUBROUTINE init (self)
   class(extras_t):: self
   !.............................................................................
   call trace%begin ('extras_t%init')
-  call self%winds%init (self%patch)
-  call self%cooling%init                                                ! cool
   call trace%end ()
 END SUBROUTINE init
 
@@ -101,7 +101,8 @@ SUBROUTINE pre_update (self)
   !.............................................................................
   call trace%begin ('extras_t%pre_update')
   call self%patch_t%pre_update                                          ! reset
-  call self%cooling%pre_update (self)                                   ! cool
+  call self%cooling%pre_update                                          ! cool
+  call self%winds%pre_update
   call trace%end ()
 END SUBROUTINE pre_update
 
@@ -113,7 +114,7 @@ SUBROUTINE post_update (self)
   class(extras_t):: self
   !.............................................................................
   call trace%begin ('extras_t%post_update')
-  call self%winds%update (self%patch)
+  call self%winds%post_update
   call trace%end ()
 END SUBROUTINE post_update
 
@@ -136,8 +137,9 @@ SUBROUTINE courant_condition (self, detailed_timer)
   logical, optional:: detailed_timer
   !-----------------------------------------------------------------------------
   call trace%begin ('extras_t%courant_condition')
+  call self%cooling%courant_condition                                   ! cool
   call self%gpatch_t%courant_condition (detailed_timer)                 ! keep
-  call self%cooling%courant_condition (self)                            ! cool
+  if (self%time == 0d0) self%dtime=1e-10
   call trace%end ()
 END SUBROUTINE courant_condition
 
@@ -150,23 +152,6 @@ INTEGER function check_refine (self, patch)
   !.............................................................................
   check_refine = -1                                                     ! keep
 END FUNCTION check_refine
-
-!===============================================================================
-!> Cast a generic task_t to patch_t
-!===============================================================================
-FUNCTION cast2extras (task) RESULT(extras)
-  USE task_mod
-  class(task_t), pointer:: task
-  class(extras_t), pointer:: extras
-  !.............................................................................
-  select type (task)
-  class is (extras_t)
-  extras => task
-  class default
-  nullify(extras)
-  call io%abort ('extras_t%cast: failed to cast a task to extras_t')
-  end select
-END FUNCTION cast2extras
 
 !===============================================================================
 !> Set default nbor relations, and allow underlings to modify them.  This is

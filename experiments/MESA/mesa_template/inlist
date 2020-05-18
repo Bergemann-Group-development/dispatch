@@ -10,6 +10,7 @@
       initial_h2 = 2e-5
       initial_he3 = 2.98e-5
       initial_he4 = 0.28
+      
       h_he_net = 'pp_extras.net'
 
       change_v_flag = .true.
@@ -19,6 +20,8 @@
 
       create_pre_main_sequence_model = .true.
       report_retries = .true.
+      pgstar_flag = .true.
+
 / ! end of star_job namelist
 
 
@@ -26,10 +29,16 @@
       photo_interval = 0
       history_interval = 1
       profile_interval = 0
-      terminal_interval = 0
-      warn_when_large_rel_run_E_err = 1d-1
-      !report_why_dt_limits = .true.
-
+      terminal_interval = 1
+      warn_when_large_rel_run_E_err = 1d0
+      report_why_dt_limits = .true.
+      !report_hydro_dt_info = .true.
+      !report_hydro_solver_progress = .true.
+      ! remove these to get higher precision
+      use_gold_tolerances = .false.
+      varcontrol_target = 5d-4
+      newton_iterations_limit = 10
+      
       use_dedt_form_of_energy_eqn = .true.
       min_energy_for_dedt_form_of_energy_eqn = 1d13
 
@@ -51,8 +60,8 @@
 
       !---------------------------
       ! limit for change in mdot
-      delta_mdot_atol = 1d-5 ! Msun/yr --- tolerance for absolute changes
-      delta_mdot_rtol = 3.0 ! tolerance for relative changes
+      !delta_mdot_atol = 1d-5 ! Msun/yr --- tolerance for absolute changes
+      !delta_mdot_rtol = 3.0 ! tolerance for relative changes
 
       velocity_logT_lower_bound = 8 
       max_dt_yrs_for_velocity_logT_lower_bound = 0.1
@@ -108,17 +117,28 @@
       D_GSF_factor = 1
       D_ST_factor = 1
 
-      he_core_boundary_h1_fraction = 0.5
-      c_core_boundary_he4_fraction = 0.5
-      o_core_boundary_c12_fraction = 0.5
-      si_core_boundary_o16_fraction = 0.5
-
       ignore_too_large_correction = .true. ! for conv_vel's
 
-      xa_central_lower_limit_species(1) = 'he4'
-      xa_central_lower_limit(1) = 1d-6
+      !xa_central_lower_limit_species(1) = 'c12'
+      !xa_central_lower_limit(1) = 1d-5
+      HB_limit = 1d-5
 / ! end of controls namelist
 
 
 &pgstar
+  TRho_Profile_file_flag = .true.
+  ! MESA uses PGPLOT for live plotting and gives the user a tremendous
+  ! amount of control of the presentation of the information.
+
+  ! add legend explaining colors
+    show_TRho_Profile_legend = .true.
+
+  ! display numerical info about the star
+    show_TRho_Profile_text_info = .true.
+
+  ! set window size (aspect_ratio = height/width)
+    TRho_Profile_win_width = 8
+    TRho_Profile_win_aspect_ratio = 0.75
+
+
 / ! end of pgstar namelist

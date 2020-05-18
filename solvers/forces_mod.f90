@@ -80,7 +80,7 @@ SUBROUTINE pre_update (self)
   class(forces_t)                               :: self
   !.............................................................................
   real, dimension(:,:,:)  , pointer, contiguous :: d
-  real, dimension(:,:,:,:), pointer, contiguous :: p
+  real, dimension(:,:,:,:), pointer :: p
   class(gpatch_t), pointer:: patch
   type(index_t), pointer:: idx
   integer:: m(3), new

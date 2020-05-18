@@ -133,13 +133,17 @@ SUBROUTINE dnload (self, only)
 END SUBROUTINE dnload
 
 !===============================================================================
-!> Take one time step, by copying relevant data to BIFROST, calling its update
-!> procedure, and then copying the patch data back from Bifrost.
+!> Organize calls to the extras and the hydro solver.  To be compatible with
+!> Riemann solvers, which initially copy the %it slot to %new, and expect
+!> pre_update() methods to refer to %new, we do the same copy operation here.
 !===============================================================================
 SUBROUTINE update (self)
   class(solver_t):: self
   !.............................................................................
   call trace%begin ('solver_t%update')
+  call self%mem_lock(self%new)%set ('update')
+  self%mem(:,:,:,:,self%new,1) = self%mem(:,:,:,:,self%it,1)
+  call self%mem_lock(self%new)%unset ('update')
   call self%pre_update
   call self%put
   call bifrost%alloc_scratches
