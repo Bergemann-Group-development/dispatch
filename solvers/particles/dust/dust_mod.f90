@@ -56,7 +56,7 @@ MODULE dust_mod
     real(8):: dtime = 1d0                     ! dust evolution cadence
     real:: solid_density                      ! mass per unit volume, code units
     real(8), allocatable:: m_cgs(:)           ! bin mass
-    real(8), pointer, contiguous:: s_cgs(:)   ! particle size
+    real, pointer, contiguous:: s_cgs(:)      ! particle size
     real(8), allocatable:: dv(:)              ! average speed difference
     real      , pointer, contiguous:: n (:,:,:,:) => null()  ! number density per bin
     integer(2), pointer, contiguous:: na(:,:,:,:) => null()  ! added per bin
