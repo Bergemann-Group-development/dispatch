@@ -206,10 +206,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   ! level that supplied values, and skipping nbor contributions from lower levels.
   ! To avoid dead-lock, make a copy of it, and release the lock
   !-----------------------------------------------------------------------------
-  call link%lock%set ('dnload')
-  call link%copy_nbor_list (link%nbors_by_level, nbors)
-  call link%lock%unset ('dnload')
-  nbor => nbors
+  nbor => link%nbors_by_level
   !-----------------------------------------------------------------------------
   ! Insert a value only if "filled" indicates that one is missing.  With the 
   ! nbor list sorted in decreasing level order, values are only computed where
@@ -419,7 +416,6 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
     call source%mem_lock(jt(1))%unset ('download_link1')
     nbor => nbor%next
   end do
-  call link%remove_nbor_list (nbors)
   if (verbose > 1) then
     write(io_unit%log,'(f12.6,3x,a,i6,i3,f12.5,1p,2e12.3)') &
       wallclock(), 'download_link: target, level, time, fminval, minval =', &
