@@ -431,13 +431,8 @@ SUBROUTINE interpolate (iv, patch, buffer, mx, my, mz, xm, ym, zm, xmdn, ymdn, z
   xo = modulo(xo-xi(1),xm(mx+1)-xm(1))
   yo = modulo(yo-yi(1),ym(my+1)-ym(1))
   associate (ff => patch%mem(:,:,:,iv,patch%it,1))
-  if (order==1) then
-    call lagrange%trilinear3d (xi, yi, zi, buffer, &
+  call lagrange%interpolate3d (xi, yi, zi, buffer, &
                                xo, yo, zo, ff, order)
-  else
-    call lagrange%interpolate3d (xi, yi, zi, buffer, &
-                                 xo, yo, zo, ff, order)
-  end if
   !-----------------------------------------------------------------------
   ! Diagnostic output
   !-----------------------------------------------------------------------
