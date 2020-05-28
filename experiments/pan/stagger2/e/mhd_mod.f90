@@ -36,12 +36,14 @@ MODULE mhd_mod
     real, dimension(:,:,:,:), pointer:: p, dpdt, B, dBdt
     real, dimension(:,:,:),   pointer, contiguous:: lnd, ee, pg
     real, dimension(:,:,:),   pointer, contiguous:: qrad
+    procedure(divB_clean1),   pointer    :: divB_clean => null()
     real:: nu(6)
     real:: cdtd
     logical:: mhd=.false.
     logical:: first_time=.true.
     type(force_t):: force
   contains
+    procedure:: pre_init
     procedure:: init
     procedure:: pde
     procedure:: update
@@ -52,8 +54,83 @@ MODULE mhd_mod
   logical, save:: test_p=.false.
   logical, save:: unsigned=.false.
   logical, save:: do_smooth=.false.
+  logical, save:: do_temperature = .false.
   integer, save:: verbose=0
+  integer, save:: divb_cleaner=2
 CONTAINS
+
+!===============================================================================
+!> Read the namelist parameters, store them, determine the type of the solver
+!> (HD or MHD) and set the indices.
+!===============================================================================
+SUBROUTINE pre_init (self)
+  class(mhd_t), target:: self
+  type(index_t):: idx
+  integer:: i, iv, iostat
+  real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], csound=1.0, cdtd=0.5, courant=0.2
+  real(8), save:: gamma=1.4_8
+  logical, save:: first_time=.true.
+  logical, save:: mhd=.false.
+  character(len=16), save:: eos
+  namelist /stagger_params/ nu, courant, gamma, csound, cdtd, hardwire, eos, &
+    do_smooth, unsigned, do_temperature, verbose, divb_cleaner
+  !----------------------------------------------------------------------------
+  call trace%begin ('mhd_t%pre_init')
+  call io%lock%set ('mhd_t%pre_init')
+  if (first_time) then
+    first_time = .false.
+    eos = self%eos
+    mhd = self%mhd
+    rewind (io%input)
+    read (io%input, stagger_params, iostat=iostat)
+    call io%namelist_warning ('stagger_params', iostat)
+    write (io%namelist, stagger_params)
+    call non_ideal%init
+    call timestep%init
+    ! fool-proofing
+    if (timestep%time_order <= 0) call mpi%abort("The Stagger solvers require `time_order` > 0. Abort!")
+  end if
+  call io%lock%unset ('mhd_t%pre_init')
+  self%eos = eos
+  self%mhd = mhd
+  self%nu = nu
+  self%gamma = gamma
+  self%csound = csound
+  self%courant = courant
+  self%cdtd = cdtd
+  !-----------------------------------------------------------------------------
+  ! Choose div(B) cleaner
+  !-----------------------------------------------------------------------------
+  select case(divb_cleaner)
+  case(1)
+    self%divb_clean => divb_clean1
+  case(2)
+    self%divb_clean => divb_clean2
+  case default
+    call io%abort('mhd_mod:: divb cleaner method not understood')
+  end select
+   !-----------------------------------------------------------------------------
+  ! Read IC parameters, which determine if this is HD or MHD.  The IC init is
+  ! called again, from extras_t%init, when gamma is known and can be passed on.
+  !-----------------------------------------------------------------------------
+  self%initial%mhd = self%mhd
+  call self%initial%init (self%kind, real(self%gamma))
+  self%mhd = self%initial%mhd
+  if (self%mhd) then
+    self%kind = 'stagger2e_mhd_patch'
+    self%nv = 8
+  else
+    self%kind = 'stagger2e_hd_patch'
+    self%nv = 5
+  end if
+  self%nw = 2
+  call self%idx%init (ie=5, mhd=self%mhd)
+  !-----------------------------------------------------------------------------
+  ! Call extras pre-init
+  !-----------------------------------------------------------------------------
+  call self%extras_t%pre_init
+  call trace%end()
+END SUBROUTINE pre_init
 
 !===============================================================================
 !> The construction with a double test on first_time avoids entering a critical
@@ -61,80 +138,25 @@ CONTAINS
 !===============================================================================
 SUBROUTINE init (self)
   class(mhd_t):: self
-  type(index_t):: idx
-  integer:: i, iv
-  real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], csound=1.0, cdtd=0.5, courant=0.2
-  real(8), save:: gamma=1.4_8
-  logical, save:: mhd=.false.
-  logical, save:: first_time=.true.
-  character(len=16), save:: eos
-  namelist /stagger_params/ nu, courant, gamma, csound, cdtd, hardwire, eos, &
-                            mhd, do_smooth, verbose, test_p, d_floor, unsigned
-  !----------------------------------------------------------------------------
+  integer :: i
+  ! ----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
-  call io%lock%set
-  if (first_time) then
-    first_time = .false.
-    eos = self%eos
-    rewind (io%input)
-    read (io%input, stagger_params)
-    if (io%master) write (*, stagger_params)
-    call non_ideal%init
-    call timestep%init
-    ! fool-proofing
-    if (timestep%time_order <= 0) call mpi%abort("The Stagger solvers require `time_order` > 0. Abort!")
-  end if
-  call io%lock%unset
-  self%mhd = mhd
-  self%eos = eos
-  self%nu = nu
-  self%gamma = gamma
-  self%csound = csound
-  self%courant = courant
-  self%cdtd = cdtd
-  !-----------------------------------------------------------------------------
-  ! Read IC parameters, which determine if this is HD or MHD.  The IC init is
-  ! called again, from extras_t%init, when gamma is known and can be passed on.
-  !-----------------------------------------------------------------------------
-  self%initial%mhd = self%mhd
-  call self%idx%init (5, self%mhd)
-  call self%initial%init (self%kind, real(self%gamma))
-  self%mhd = self%initial%mhd
-  if (self%mhd) then
-    self%kind = 'stagger2e_mhd_patch'
-  else
-    self%kind = 'stagger2e_hd_patch'
-    self%idx%bx = -1
-    self%idx%by = -1
-    self%idx%bz = -1
-  end if
-  if (self%nv == 0) then
-    if (self%mhd) then
-      self%nv = 8
-    else
-      self%nv = 5
-    end if
-  end if
-  !-----------------------------------------------------------------------------
-  ! Allocate memory and mesh, etc
-  !-----------------------------------------------------------------------------
-  call self%idx%init (5, self%mhd)
   call self%patch_t%init
   self%type = 'mhd_t'
+  self%unsigned(self%idx%d)  = unsigned
+  self%pervolume(self%idx%e) = unsigned
   do i=1,3
     self%mesh(i)%h(self%idx%px+i-1) = -0.5
     if (self%mhd) self%mesh(i)%h(self%idx%bx+i-1) = -0.5
   end do
-  if (verbose>1 .and. self%track) then
+  if (verbose > 1 .and. self%track) then
     do i=1,3
       print '("h:",8f5.2)', self%mesh(i)%h
     end do
   end if
-  self%unsigned(self%idx%d)  = unsigned
-  self%pervolume(self%idx%s) = unsigned
   call self%gpatch_t%init
-  call self%force%init (self%kind, self%id, self%mesh)
- call trace%end()
+  call self%extras_t%init
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -142,7 +164,7 @@ SUBROUTINE pde (self)
   USE scalar_mod
   class(mhd_t):: self
   !.............................................................................
-  real, dimension(:,:,:),   pointer:: d, e, dddt, dedt
+  real, dimension(:,:,:),   pointer, contiguous:: d, e, dddt, dedt
   real, dimension(:,:,:),   pointer:: dpdtx, dpdty, dpdtz, dBdtx, dBdty, dBdtz
   real, dimension(:,:,:),   pointer:: Bx, By, Bz, px, py, pz, phi
   real, dimension(:,:,:),   pointer:: Ux, Uy, Uz, pg
@@ -536,6 +558,119 @@ SUBROUTINE update (self)
   call self%counter_update
   call trace%end (itimer)
 END SUBROUTINE update
+
+!===============================================================================
+!> Perform a single iteration of a div(B) clean.  The limit of stability is
+!> eps=1./6.  This is intended to prevent build-up of layers of large div(B)
+!> between patches. An exact solution would be to solve an internal Laplace
+!> equation, with boundary conditiosn = the boundary value of div(B), and then
+!> subtract the gradient of the resulting potential.
+!>
+!> The problem can also be greatly reduced by using a higher order time
+!> interpoation scheme, thus making the electric field computed from the
+!> guard zone values of B and U a better match to the neighbors E-fields.
+!===============================================================================
+SUBROUTINE divb_clean1(self)
+  class(mhd_t):: self
+  !.............................................................................
+  real, dimension(:,:,:,:), pointer:: b
+  real, dimension(:,:,:)  , pointer:: bx, by, bz, divb
+  real, dimension(:,:,:,:)  , allocatable:: dndivb
+  real, parameter:: eps=0.11
+  !-----------------------------------------------------------------------------
+  b  => self%mem(:,:,:,self%idx%bx:self%idx%bz,self%it,1)
+  bx => b(:,:,:,1)
+  by => b(:,:,:,2)
+  bz => b(:,:,:,3)
+  call allocate_scalars (self%gn, divb)
+  call allocate_vectors_a (self%gn, dndivb)
+  divb = ddup(bx,1) + ddup(by,2) + ddup(bz,3)
+  bx = bx + eps*dddn(divb,1)
+  by = by + eps*dddn(divb,2)
+  bz = bz + eps*dddn(divb,3)
+  call deallocate_vectors_a (dndivb)
+  call deallocate_scalars(divb)
+    return
+contains
+  !-----------------------------------------------------------------------------
+  function ddup(f,i) result (g)
+  real:: f(:,:,:), g(size(f,1),size(f,2),size(f,3))
+  integer:: i
+  !.............................................................................
+  g = cshift(f,1,i) - f
+  end function
+  !-----------------------------------------------------------------------------
+  function dddn(f,i) result (g)
+  real:: f(:,:,:), g(size(f,1),size(f,2),size(f,3))
+  integer:: i
+  !.............................................................................
+  g = f - cshift(f,-1,i)
+  end function
+END SUBROUTINE divb_clean1
+
+!===============================================================================
+!> Enforce div(B)=0 in the guard zones, by succesively imposing the condition,
+!> layer-by-layer, on the component perpendicular to each of the patch faces.
+!===============================================================================
+SUBROUTINE divb_clean2 (self)
+  class(mhd_t):: self
+  !.............................................................................
+  real, dimension(:,:,:), pointer:: bx, by, bz
+  real, dimension(:,:,:), allocatable:: divb
+  real, parameter:: eps=0.11
+  integer:: l(3), u(3), ix, iy, iz, i1, j1, k1
+  integer:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin('mhd_t%divb_clean2', itimer=itimer)
+  bx => self%mem(:,:,:,self%idx%bx,self%it,1)
+  by => self%mem(:,:,:,self%idx%by,self%it,1)
+  bz => self%mem(:,:,:,self%idx%bz,self%it,1)
+  l = self%mesh%lb
+  u = self%mesh%ub-1
+  i1 = merge(1, 0, self%n(1) > 1)
+  j1 = merge(1, 0, self%n(2) > 1)
+  k1 = merge(1, 0, self%n(3) > 1)
+  !--- x-direction -------------------------------------------------------------
+  do ix=self%mesh(1)%lo,self%mesh(1)%lb,-1
+    bx(ix   ,l(2):u(2),l(3):u(3)) = &
+    bx(ix+i1,l(2):u(2),l(3):u(3)) + ( &
+      by(ix,l(2)+j1:u(2)+j1,l(3)   :u(3)   ) - by(ix,l(2):u(2),l(3):u(3)) + &
+      bz(ix,l(2)   :u(2)   ,l(3)+k1:u(3)+k1) - bz(ix,l(2):u(2),l(3):u(3)))
+  end do
+  do ix=self%mesh(1)%ui,self%mesh(1)%ub-1
+    bx(ix+i1,l(2):u(2),l(3):u(3)) = &
+    bx(ix   ,l(2):u(2),l(3):u(3)) - ( &
+      by(ix,l(2)+j1:u(2)+j1,l(3)   :u(3)   ) - by(ix,l(2):u(2),l(3):u(3)) + &
+      bz(ix,l(2)   :u(2)   ,l(3)+k1:u(3)+k1) - bz(ix,l(2):u(2),l(3):u(3)))
+  end do
+  !--- y-direction -------------------------------------------------------------
+  do iy=self%mesh(2)%lo,self%mesh(2)%lb,-1
+    by(l(1):u(1),iy   ,l(3):u(3)) = &
+    by(l(1):u(1),iy+j1,l(3):u(3)) + ( &
+      bx(l(1)+i1:u(1)+i1,iy,l(3)   :u(3)   ) - bx(l(1):u(1),iy,l(3):u(3)) + &
+      bz(l(1)   :u(1)   ,iy,l(3)+k1:u(3)+k1) - bz(l(1):u(1),iy,l(3):u(3)))
+  end do
+  do iy=self%mesh(2)%ui,self%mesh(2)%ub-1
+    by(l(1):u(1),iy+j1,l(3):u(3)) = &
+    by(l(1):u(1),iy   ,l(3):u(3)) - ( &
+      bx(l(1)+i1:u(1)+i1,iy,l(3)   :u(3)   ) - bx(l(1):u(1),iy,l(3):u(3)) + &
+      bz(l(1)   :u(1)   ,iy,l(3)+k1:u(3)+k1) - bz(l(1):u(1),iy,l(3):u(3)))
+  end do
+  !--- z-direction -------------------------------------------------------------
+  do iz=self%mesh(3)%lo,self%mesh(3)%lb,-1
+    bz(l(1):u(1),l(2):u(2),iz  ) = &
+    bz(l(1):u(1),l(2):u(2),iz+k1) + ( &
+      bx(l(1)+i1:u(1)+i1,l(2)   :u(2)   ,iz) - bx(l(1):u(1),l(2):u(2),iz) + &
+      by(l(1)   :u(1)   ,l(2)+j1:u(2)+j1,iz) - by(l(1):u(1),l(2):u(2),iz))
+  end do
+  do iz=self%mesh(3)%ui,self%mesh(3)%ub-1
+    bz(l(1):u(1),l(2):u(2),iz+k1) = &
+    bz(l(1):u(1),l(2):u(2),iz   ) - ( &
+      bx(l(1)+i1:u(1)+i1,l(2)   :u(2)   ,iz) - bx(l(1):u(1),l(2):u(2),iz) + &
+      by(l(1)   :u(1)   ,l(2)+j1:u(2)+j1,iz) - by(l(1):u(1),l(2):u(2),iz))
+  end do
+  call trace%end (itimer)
+END SUBROUTINE divb_clean2
 
 !===============================================================================
 !> Add extra, MHD-related information to the patch .txt output file

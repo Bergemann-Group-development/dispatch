@@ -83,6 +83,7 @@ MODULE list_mod
     integer:: nb=0                      ! boundary
     integer:: ni=0                      ! internal
     integer:: ne=0                      ! external
+    integer:: no=0                      ! has output
     integer:: na=0                      ! active = internal+boundary
     integer:: nac=0                     ! active tasks
     real(8):: lc(3) = +huge(0d0)        ! lower corner
@@ -115,6 +116,7 @@ MODULE list_mod
     generic:: remove => remove_task, remove_link
     procedure:: remove_and_reset
     procedure:: update_counts
+    procedure:: set_io_counts
     procedure:: count_status
     procedure:: reset_status
     procedure:: check_nbors
@@ -294,11 +296,13 @@ SUBROUTINE append_link (self, link)
 !  call link%qlock%unset ('append_link1')
   !-----------------------------------------------------------------------------
   ! IMPORTANT: Some procedures depend on knowing the size of the list!
+  ! Calling update_counts is robust, but may take significant time.
+  ! FIXME: Maintain counts incrementally (teesting & validating consistency)
   !-----------------------------------------------------------------------------
   if (self%verbose > 2) &
     write (io_unit%log,*) 'list_t%append: (1) n =', &
       trim(self%name), self%n, link%task%id
-  call self%update_counts (link, +1)
+  !call self%update_counts (link, +1)
   if (self%verbose > 2) &
     write (io_unit%log,*) 'list_t%append: (2) n =', &
       trim(self%name), self%n, link%task%id
@@ -443,24 +447,33 @@ SUBROUTINE update_counts (self, link, delta)
   ! The counter updates below do not need to be atomic if the list is locked,
   ! but the penalty is minimal
   !-----------------------------------------------------------------------------
+  call trace%begin ('list_t%update_counts')
+  associate (self_nv=>self%nv, self_nb=>self%nb, self_ni=>self%ni, &
+             self_na=>self%na, self_no=>self%no, self_n=>self%n)
   if      (link%task%is_set (bits%virtual)) then
     !$omp atomic update
-    self%nv = self%nv + delta
+    self_nv = self_nv + delta
   else if (link%task%is_set (bits%boundary)) then
     !$omp atomic update
-    self%nb = self%nb + delta
+    self_nb = self_nb + delta
   else if (link%task%is_set (bits%internal)) then
     !$omp atomic update
-    self%ni = self%ni + delta
+    self_ni = self_ni + delta
   end if
   if (link%task%is_set (bits%boundary) .or. &
       link%task%is_set (bits%internal)) then
     !$omp atomic update
-    self%na = self%na + delta
+    self_na = self_na + delta
+  end if
+  if (link%task%is_set (bits%has_output)) then
+    !$omp atomic update
+    self_no = self_no + delta
   end if
   n = self%na + self%nv
   !$omp atomic write
-  self%n = n
+  self_n = n
+  end associate
+  call self%set_io_counts
   !-----------------------------------------------------------------------------
   ! Validate the incremental method when task_list_t%verbose > 0
   !-----------------------------------------------------------------------------
@@ -485,7 +498,25 @@ SUBROUTINE update_counts (self, link, delta)
         link%task%is_set(bits%virtual)
     end if
   end if
+  call trace%end ()
 END SUBROUTINE update_counts 
+
+SUBROUTINE set_io_counts (self)
+  class (list_t):: self
+  !-----------------------------------------------------------------------------
+  ! Make sure task counts for I/O purposes are up-to-date
+  !-----------------------------------------------------------------------------
+  call trace%begin ('list_t%set_io_counts')
+  associate (io_ntask=>io%ntask, io_nwrite=>io%nwrite, io_ntotal=>io%ntotal)
+  !$omp atomic write
+  io_ntask = self%na
+  !$omp atomic write
+  io_nwrite = self%no
+  !$omp atomic write
+  io_ntotal = self%n_tasks
+  end associate
+  call trace%end ()
+END SUBROUTINE set_io_counts
 
 !===============================================================================
 !> Count the number of internal, boundary, virtual, frozen, and external tasks
@@ -496,12 +527,12 @@ SUBROUTINE count_status (self, label)
   class(link_t) , pointer:: link
   class(nbor_t) , pointer:: nbor
   class(task_t), pointer:: task
-  integer:: n, ni, nb, nv, ne, nf
+  integer:: n, ni, nb, nv, ne, nf, no
   integer, save:: itimer=0
   !.............................................................................
   call trace%begin ('list_t%count_status', itimer=itimer)
   call self%lock%set ('count_status', itimer)
-  nb=0; ni=0; nv=0; ne=0; nf=0; n = 0
+  nb=0; ni=0; nv=0; ne=0; nf=0; n = 0; no = 0
   link => self%head
   do while (associated(link))
     task => link%task
@@ -511,6 +542,7 @@ SUBROUTINE count_status (self, label)
     if (task%is_set(bits%virtual )) nv = nv+1
     if (task%is_set(bits%internal)) ni = ni+1
     if (task%is_set(bits%external)) ne = ne+1
+    if (task%is_set(bits%has_output)) no = no+1
     if (task%is_clear (bits%boundary + &
                        bits%virtual  + &
                        bits%internal + &
@@ -537,6 +569,7 @@ SUBROUTINE count_status (self, label)
   self%ni = ni
   self%nb = nb
   self%nv = nv
+  self%no = no
   self%n  = n
   if (self%verbose > 0) then
     if (present(label)) then
@@ -550,6 +583,7 @@ SUBROUTINE count_status (self, label)
     end if
   end if
   self%na = n - nv - ne
+  call self%set_io_counts
   !-----------------------------------------------------------------------------
   call self%lock%unset ('count_status')
   call trace%end (itimer)
@@ -1777,7 +1811,9 @@ SUBROUTINE remove_parents (self)
       if (associated(parent)) then
         write (*,'(2(1x,a,i9,5x))') &
           'removing parent task', parent%task%id, 'level', parent%task%level
-        io%nwrite = io%nwrite - 1
+        if (parent%task%is_set (bits%has_output)) then
+          io%nwrite = io%nwrite - 1
+        end if
         io%ntask  = io%ntask - 1
         call parent%remove_from_nbors (parent)
         call self%remove_link (parent)
@@ -2203,7 +2239,8 @@ print *,'remove_from_queue: found it'
       else
         self%queue => next%next_time
       end if
-      self%nq = self%nq-1
+      call self%count_status
+      !self%nq = self%nq-1
       !if (io%verbose > 1) &
         write (io_unit%mpi,*) &
          'remove_from_queue: id, nq =', this%task%id, self%nq
@@ -2569,16 +2606,13 @@ SUBROUTINE swap (self, link, sender, rank)
      'list_t%swap: task', link%task%id
   end if
   one = merge(+1,-1,sender)
-  !$omp atomic
-   self%na = self%na-one                  ! active tasks
-  !$omp atomic
-   self%nb = self%nb-one                  ! boundary tasks
-  !$omp atomic
-   self%nv = self%nv+one                  ! virtual tasks
-  !$omp atomic
-   io%nwrite = io%nwrite-one              ! virtual tasks
-  !$omp atomic
-   io%ntask = io%ntask-one                ! virtual tasks
+  !$omp atomic update
+  self%na = self%na-one                  ! active tasks
+  !$omp atomic update
+  self%nb = self%nb-one                  ! boundary tasks
+  !$omp atomic update
+  self%nv = self%nv+one                  ! virtual tasks
+  call self%set_io_counts                ! apply counts
   !$omp atomic update
   timer%levelpop (link%task%level) = &    ! level population count
   timer%levelpop (link%task%level) - one

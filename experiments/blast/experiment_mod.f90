@@ -6,9 +6,7 @@ MODULE experiment_mod
   USE trace_mod
   USE kinds_mod
   USE mesh_mod
-  USE pboundary_mod
   USE solver_mod
-  USE pboundary_mod
   implicit none
   private
 
@@ -30,9 +28,9 @@ SUBROUTINE init_experiment (self)
   !----------------------------------------------------------------------------
   if (self%mem_allocated) return
   call trace_begin('experiment_t%init')
+  self%mhd=.true.
   call self%solver_t%init()
   call initial_conditions(self)
-  call pboundaries%conditions(self, self%it)
   call self%output
   call trace_end
 END SUBROUTINE init_experiment
@@ -45,9 +43,7 @@ SUBROUTINE update_experiment (self)
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
 
-  call pboundaries%conditions(self, self%it)
   call self%solver_t%update()
-  call pboundaries%conditions(self, self%new)
 
   call trace_end
 END SUBROUTINE update_experiment
@@ -63,7 +59,7 @@ END SUBROUTINE update_experiment
 !>  r0: the radius of the initial spherical "discontinuity"
 !>  centre: the coordinates of the centre of the initial discontinuity
 !>  d0: the gas density in the ambient [d0(1)] and central regions [d0(2)]
-!>  e0: the gas thermal en. "     "    [e0(1)]  "     "       "    [e0(2)]
+!>  p0: the gas pressure "  "     "    [p0(1)]  "     "       "    [p0(2)]
 !>  vx0: the x-velocity in the ambient [vx0(1)] and central regions [vx0(2)]
 !>  vy0: the y-velocity  "  "     "    [vy0(1)]  "     "       "    [vy0(2)]
 !>  vz0: the z-velocity  "  "     "    [vz0(1)]  "     "       "    [vz0(2)]
@@ -73,19 +69,20 @@ END SUBROUTINE update_experiment
 !>
 !===============================================================================
 SUBROUTINE initial_conditions (patch)
-  class(experiment_t):: patch
+  class(experiment_t), target:: patch
   class(mesh_t), pointer:: m1, m2, m3
-  integer:: i1, i2, i3, iostat
-  real(4):: speedsq, bsq, dxmax
-  real(4):: r0=0.125, centre(3)=0.0, d0(2)=1.0, e0(2)=0.6, vx0(2)=0.0, vy0(2)=0.0, &
+  integer:: i1, i2, i3
+  real(4), save:: speedsq, bsq, dxmax
+  real(4), save:: r0=0.125, centre(3)=0.0, d0(2)=1.0, p0(2)=0.6, vx0(2)=0.0, vy0(2)=0.0, &
              vz0(2)=0.0, bx0(2)=0.0, by0(2)=0.0, bz0(2)=0.0
-  real(8):: x, y, z, r2, e2p
+  real(8):: x, y, z, r2
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: f
-  namelist / experiment_params / r0, centre, d0, e0, vx0, vy0, vz0, bx0, by0, bz0
+  integer:: iostat
+  namelist / experiment_params / r0, centre, d0, p0, vx0, vy0, vz0, bx0, by0, bz0
   !----------------------------------------------------------------------------
   call trace_begin('initial_t%init')
 
-  call io%lock%set
+  call io%lock%set('initial_t%init')
   if (first_time) then
     first_time = .false.
     rewind (io%input)
@@ -93,7 +90,7 @@ SUBROUTINE initial_conditions (patch)
     call io%namelist_warning ('experiment_params', iostat)
     if (io%master) write (io%output, experiment_params)
   end if
-  call io%lock%unset
+  call io%lock%unset('initial_t%init')
 
   m1 => patch%mesh(1)
   m2 => patch%mesh(2)
@@ -104,8 +101,8 @@ SUBROUTINE initial_conditions (patch)
   dxmax = maxval(patch%ds,mask=(patch%n>1))
   r0 = max(r0, dxmax)
 
-  speedsq = vx0(1)**2 + vy0(1)**2 + vz0(1)**2
-  bsq = bx0(1)**2 + by0(1)**2 + bz0(1)**2
+  speedsq = sqrt(vx0(1)**2 + vy0(1)**2 + vz0(1)**2)
+  bsq = sqrt(bx0(1)**2 + by0(1)**2 + bz0(1)**2)
   ! set up atmosphere/ambient.
   do i3=m3%lb,m3%ub
     z = m3%centre_nat + patch%mesh(3)%r(i3)
@@ -118,21 +115,19 @@ SUBROUTINE initial_conditions (patch)
         f(i1,i2,i3,patch%idx%px) = d0(1) * vx0(1)
         f(i1,i2,i3,patch%idx%py) = d0(1) * vy0(1)
         f(i1,i2,i3,patch%idx%pz) = d0(1) * vz0(1)
-        if (patch%nv > 5) then
-          f(i1,i2,i3,patch%idx%bx) = bx0(1)
-          f(i1,i2,i3,patch%idx%by) = by0(1)
-          f(i1,i2,i3,patch%idx%bz) = bz0(1)
-        end if
+        f(i1,i2,i3,patch%idx%bx) = bx0(1)
+        f(i1,i2,i3,patch%idx%by) = by0(1)
+        f(i1,i2,i3,patch%idx%bz) = bz0(1)
 
         if (trim(patch%kind) == 'stagger2_mhd_patch') then
-          f(i1,i2,i3,patch%idx%s)  = (log(e0(1)*e2p) - log(d0(1)) * patch%gamma) &
+          f(i1,i2,i3,patch%idx%s)  = (log(p0(1)) - log(d0(1)) * patch%gamma) &
                             * d0(1) / (patch%gamma - 1.0)
-        else if (trim(patch%kind(1:9)) == 'stagger2e') then
-          f(i1,i2,i3,patch%idx%e) = e0(1)
-        else if (trim(patch%kind(1:6)) == 'ramses') then
-          f(i1,i2,i3,patch%idx%e) = e0(1) + 0.5 * d0(1) * speedsq + 0.5 * bsq
+        else if (trim(patch%kind) == 'stagger2e_mhd_patch') then
+          f(i1,i2,i3,patch%idx%e) = p0(1)
+        else if (trim(patch%kind) == 'ramses_mhd_patch') then
+          f(i1,i2,i3,patch%idx%e) = p0(1) + 0.5 * d0(1) * speedsq + 0.5 * bsq
         else if (trim(patch%kind) == 'zeus_mhd_patch') then
-          f(i1,i2,i3,patch%idx%e) = e0(1)
+          f(i1,i2,i3,patch%idx%e) = p0(1)
 
           ! the ZEUS module stores the angular momentum rather than the linear momentum
           f(i1,i2,i3,patch%idx%py) = f(i1,i2,i3,patch%idx%py) * m1%h2c(i1)
@@ -143,9 +138,8 @@ SUBROUTINE initial_conditions (patch)
   end do
 
   ! set up central region.
-  speedsq = vx0(2)**2 + vy0(2)**2 + vz0(2)**2
-  bsq = bx0(2)**2 + by0(2)**2 + bz0(2)**2
-  e2p = (1d0 - patch%gamma)
+  speedsq = sqrt(vx0(2)**2 + vy0(2)**2 + vz0(2)**2)
+  bsq = sqrt(bx0(2)**2 + by0(2)**2 + bz0(2)**2)
   do i3=m3%lb,m3%ub
     z = m3%centre_nat + patch%mesh(3)%r(i3)
     do i2=m2%lb,m2%ub
@@ -158,21 +152,19 @@ SUBROUTINE initial_conditions (patch)
           f(i1,i2,i3,patch%idx%px) = d0(2) * vx0(2)
           f(i1,i2,i3,patch%idx%py) = d0(2) * vy0(2)
           f(i1,i2,i3,patch%idx%pz) = d0(2) * vz0(2)
-          if (patch%nv > 5) then
-            f(i1,i2,i3,patch%idx%bx) = bx0(2)
-            f(i1,i2,i3,patch%idx%by) = by0(2)
-            f(i1,i2,i3,patch%idx%bz) = bz0(2)
-          end if
+          f(i1,i2,i3,patch%idx%bx) = bx0(2)
+          f(i1,i2,i3,patch%idx%by) = by0(2)
+          f(i1,i2,i3,patch%idx%bz) = bz0(2)
 
           if (trim(patch%kind) == 'stagger2_mhd_patch') then
-            f(i1,i2,i3,patch%idx%s)  = (log(e0(2)) - log(d0(2)) * patch%gamma) &
+            f(i1,i2,i3,patch%idx%s)  = (log(p0(2)) - log(d0(2)) * patch%gamma) &
                               * d0(2) / (patch%gamma - 1.0)
           else if (trim(patch%kind) == 'stagger2e_mhd_patch') then
-            f(i1,i2,i3,patch%idx%e) = e0(2)
-          else if (trim(patch%kind(1:6)) == 'ramses') then
-            f(i1,i2,i3,patch%idx%e) = e0(2) + 0.5 * d0(2) * speedsq + 0.5 * bsq
+            f(i1,i2,i3,patch%idx%e) = p0(2)
+          else if (trim(patch%kind) == 'ramses_mhd_patch') then
+            f(i1,i2,i3,patch%idx%e) = p0(2) + 0.5 * d0(2) * speedsq + 0.5 * bsq
           else if (trim(patch%kind) == 'zeus_mhd_patch') then
-            f(i1,i2,i3,patch%idx%e) = e0(2)
+            f(i1,i2,i3,patch%idx%e) = p0(2)
 
             ! the ZEUS module stores the angular momentum rather than the linear momentum
             f(i1,i2,i3,patch%idx%py) = f(i1,i2,i3,patch%idx%py) * m1%h2c(i1)

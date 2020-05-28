@@ -556,17 +556,21 @@ SUBROUTINE namelist_warning (self, namelist, iostat, error)
 END SUBROUTINE namelist_warning
 
 !===============================================================================
-!> Issue warnings, unless io%verbose==0
+!> Issue warnings, to stdout if io%verbose > 1, otherwise to rank log
 !===============================================================================
 SUBROUTINE warning (text)
   character(len=*), optional:: text
+  integer:: unit
   !.............................................................................
   if (io%verbose > 0) then
-    if (present(text)) then
-      write (stdout,*) 'io_t%warning: '//trim(text)
-    else
-      write (stdout,*) 'io_t%warning: called without specific text'
-    end if
+    unit = stdout
+  else
+    unit = io_unit%mpi
+  end if
+  if (present(text)) then
+    write (unit,*) 'io_t%warning: '//trim(text)
+  else
+    write (unit,*) 'io_t%warning: called without specific text'
   end if
 END SUBROUTINE warning
 

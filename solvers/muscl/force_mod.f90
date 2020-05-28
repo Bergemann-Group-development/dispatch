@@ -94,7 +94,7 @@ FUNCTION single_solenoidal (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
   real(8)                                       :: time
   real, dimension(:,:,:)  , pointer             :: Ux, Uy, Uz
   real, dimension(:,:,:)  , pointer, contiguous :: d
-  real, dimension(:,:,:,:), pointer, contiguous :: p
+  real, dimension(:,:,:,:), pointer             :: p
   class(mesh_t), dimension(:), pointer          :: m
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,3)    :: ff
   !.............................................................................
@@ -218,7 +218,7 @@ FUNCTION turbulence (self, time, d, p, Ux, Uy, Uz, mesh) RESULT (ff)
   class(mesh_t), pointer, dimension(:)          :: mesh
   real, dimension(:,:,:)  , pointer             :: Ux, Uy, Uz
   real, dimension(:,:,:)  , pointer, contiguous :: d
-  real, dimension(:,:,:,:), pointer, contiguous :: p
+  real, dimension(:,:,:,:), pointer             :: p
   real, dimension(mesh(1)%gn,mesh(2)%gn,mesh(3)%gn,3) :: ff
   !.............................................................................
   integer                :: i, j, k, jx, jy, jz, mx, my, mz, nrand, kmax

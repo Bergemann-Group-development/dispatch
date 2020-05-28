@@ -230,10 +230,10 @@ SUBROUTINE update (self, task_list, test)
     return
   end if
   !-----------------------------------------------------------------------------
+  head => task_list%queue                                    ! queue start
+  !-----------------------------------------------------------------------------
   ! Pick a task off the queue, in what is normally a very brief OMP lock region
   !-----------------------------------------------------------------------------
-  call task_list%lock%set ('dispatch0_t%update 1')
-  head => task_list%queue                                    ! queue start
   if (detailed_timer) then
     call trace%end (itimer(i))
     i = i+1
@@ -373,7 +373,6 @@ SUBROUTINE update (self, task_list, test)
     if (verbose > 0) &
       write(io_unit%log,'(f12.6,i6,2x,a)') wallclock(), task_list%na, 'no queue'
   end if
-  call task_list%lock%unset ('dispatch0_t%update 1')
   if (task_list%verbose > 3) &
     write (io%output,*) wallclock(),' thread',omp%thread,' unlocked tasklist(1)'
   !-----------------------------------------------------------------------------
@@ -567,7 +566,6 @@ subroutine stall_handler
         1 format("rank:",i5,2x,"thread:",i4,3x,"STALL revived by ",a," at",f12.3)
           if (verbose > 1) &
             call io%abort ('STALLED revided by check_all -- check thread log')
-          stall_start = 0d0
         !-----------------------------------------------------------------------
         ! If that did not result in queued tasks, find the oldest tasks and the
         ! oldest virtual task.  Discovering that the queue is held up by such
@@ -586,6 +584,7 @@ subroutine stall_handler
             call io%abort ('STALLED, revived FAILED')
           end if
         end if
+        stall_start = wallclock()
       end if
       call task_list%lock%unset ('stall_handler')
     else if (do_delay) then

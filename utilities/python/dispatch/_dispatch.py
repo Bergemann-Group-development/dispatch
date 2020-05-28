@@ -49,6 +49,7 @@ class _units:
     e=1.0
     t=1.0
     m=1.0
+    b=1.0
 
 def _p2():
     """ convenience function to check Python version """
@@ -530,14 +531,22 @@ def _var(patch,filed,snap,verbose=0,copy=None):
 
             # Thermal energy
             elif iv=='eth':
-                if patch.ioformat==14 or patch.ioformat==15 or is_st:
+                if patch.gamma==1.0:
+                    v=mem('e')
+                elif patch.ioformat==14 or patch.ioformat==15 or is_st:
                     v=mem('e')
                 else:
-                    v=mem('e')-var('ekin',all=True,verbose=verbose)
+                    v=mem('e') \
+                     -var('ekin',all=True,verbose=verbose)
+
+            # Thermal energy
+            elif iv=='Eth':
+                v=var('eth',all=True,verbose=verbose) \
+                 /var('d',all=True,verbose=verbose)
 
             # Temperature
             elif iv=='tt' or iv=='T':
-                v=var('eth',all=True,verbose=verbose)
+                v=var('Eth',all=True,verbose=verbose)
                 if hasattr(snap,'scaling'):
                     v=v*snap.scaling.temp
 
@@ -599,6 +608,16 @@ class _patch():
         if not hasattr(self,'units'):
             if hasattr(snap,'units'):
                 self.units=snap.units
+                if not hasattr(self.units,'u'):
+                    self.units.u = self.units.l/self.units.t
+                if not hasattr(self.units,'d'):
+                    self.units.d = self.units.m/self.units.l**3
+                if not hasattr(self.units,'p'):
+                    self.units.p = self.units.d*self.units.u**2
+                if not hasattr(self.units,'e'):
+                    self.units.e = self.units.m*self.units.u**2
+                if not hasattr(self.units,'b'):
+                    self.units.b = self.units.u*np.sqrt(np.pi*4.0*self.units.d)
         # modify `mesh_type` from integer to string for readability
         #timer.add('_patch(6)')
         if hasattr(self,'mesh_type'):
@@ -626,7 +645,7 @@ class _patch():
         self.keys['numbers']=list(snap.idx.dict.values())
         timer.add('numbers')
         self.keys['known']=['d','lnd','logd','ux','uy','uz','u1','u2','u3',
-                 'ee','E','T','eth','ekin']
+                 'ee','E','T','eth','Eth','ekin']
         timer.add('known')
 
         # attach an aux filaname, if one exists for this task

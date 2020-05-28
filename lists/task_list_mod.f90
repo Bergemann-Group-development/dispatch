@@ -24,6 +24,7 @@ MODULE task_list_mod
   USE validate_mod
   USE download_mod
   USE shared_mod
+  USE mesh_mod
   implicit none
   private
   type, public, extends(task_mesg_t):: task_list_t
@@ -31,6 +32,7 @@ MODULE task_list_mod
     logical:: dispatcher=.false.
     real(8):: sync_time=-1.0, sync_next=-1.0
     real(8):: update_time=0d0
+    integer:: mulligan_level=0
   contains
     procedure:: init
     procedure:: initialize
@@ -79,6 +81,9 @@ SUBROUTINE init (self, name)
   read(io%input, task_list_params, iostat=iostat)
   call io%namelist_warning ('task_list_params', iostat)
   write (io%namelist, task_list_params)
+  if (mulligan_level > 1 .and. omp%nthreads > 1) then
+    call io%abort ('The current Mulligan mechanism is not multi-thread-safe')
+  end if
   if (sync_time > 0.0) &
     self%sync_next = sync_time
   self%sync_time = sync_time
@@ -86,6 +91,7 @@ SUBROUTINE init (self, name)
   timer%dead_mans_hand = dead_mans_hand
   self%verbose = verbose
   self%detailed_timer = detailed_timer
+  self%mulligan_level = mulligan_level
   call trace_end
 END SUBROUTINE init
 
@@ -103,8 +109,7 @@ SUBROUTINE initialize (self)
   !-----------------------------------------------------------------------------
   ! Initialize counters used in data_io_mod
   !-----------------------------------------------------------------------------
-  io%ntask = self%na
-  io%nwrite = self%na
+  call self%set_io_counts
   call trace%end()
 END SUBROUTINE initialize
 
@@ -195,7 +200,7 @@ SUBROUTINE startup (self)
   !-----------------------------------------------------------------------------
   !call self%init_bdries
   !call self%init_all_nbors
-  !call self%reset_status
+  call self%count_status
   !-----------------------------------------------------------------------------
   ! Must initialize refine before calling init_levels and task_mesg_t%init, but
   ! after tasks with levels have been created and initialized
@@ -305,10 +310,8 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
   !.............................................................................
   class(task_t), pointer:: task
   class(nbor_t), pointer:: nbor
-  real(8):: wc, levelstart, time
+  real(8):: wc, levelstart  !, time
   logical:: refined, derefined
-  integer:: end_count, io_count, na
-  integer, save:: count=1
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('task_list_t%update', itimer=itimer)
@@ -385,11 +388,12 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
     ! of active tasks on the rank (io%nwrite is set in data_io_mod)
     !---------------------------------------------------------------------------
     !$omp atomic write
-    io%ntask  = self%na                                        ! Authoritative !
+    io%ntask  = self%na                               ! Authoritative !
     !---------------------------------------------------------------------------
     call task%update                                  ! update the task
-    if (mulligan_level > 0) &
+    if (mulligan_level > 0) then
       call self%check_mulligan (head)                 ! check for nbor do-over
+    end if
     if (self%verbose > 1) then
       associate (unit => merge (io_unit%log, io_unit%mpi, self%verbose > 1))
       write (unit,'(f12.6,2x,a,i6,1p,g14.6,l4)') &
@@ -489,58 +493,10 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
   !  call self%recv_from_vnbors (head)
   !end if
   !-----------------------------------------------------------------------------
-  ! For the purpose of deciding to end the run, we check the task out_next if
-  ! I/O is active, or else just the task time.  This ensures we get a complete 
-  ! last snapshot
+  ! If the task has passed io%end_time, count finished tasks and ranks
   !-----------------------------------------------------------------------------
-  if (io%do_output) then
-    time = task%out_next-task%dtime
-  else
-    time = task%time
-  end if
-  !-----------------------------------------------------------------------------
-  ! Task that pass the end_time are flagged as finished, but continue updating,
-  ! while load balancing and refinement are turned off.  The number of tasks
-  ! that have finished is counted, and then the number reaches the number of
-  ! active tasks the MPI end_counter is incremented from this rank.  When all
-  ! other ranks have incremented the end_counter, AND have also finished their
-  ! contributions to any active output, the timer%done flag is set, which causes
-  ! exit from the event loop in the dispatcher, and the code exits.
-  !-----------------------------------------------------------------------------
-  if (time > io%end_time .and. .not.task%finished) then
-    !$omp critical (finish_cr)
-    task%finished = .true.
-    call self%count_status                          ! make sure counts are OK
-    if (first_finished == 0.0) then
-      first_finished = wallclock()                  ! cf. dispatcher
-      call load_balance%set (active=.false.)        ! turn off load balancing
-      refine%on = .false.                           ! turn off refinement
-      na = self%na
-      if (self%na /= na) &
-        write (io_unit%mpi,*) 'task_list_t%update: na revised', na, self%na
-      count = 0                                     ! start counting tasks
-    else if (wallclock() > first_finished+dead_mans_hand) then
-      call dead_mans_hand_list (self)
-      timer%done = .true.
-    end if
-    count = count+1                                 ! count finished tasks
-    write (io_unit%mpi,'(f12.6,4x,a,i6,f12.6,2i5)') &
-      wallclock(), 'task_list_t%update: id, time, count =', &
-      task%id, task%time, count, self%na
-    if (count == self%na) then
-      end_count = mpi%end_counter%update(+1)
-    end if
-    !$omp end critical (finish_cr)
-  end if
-  if (count >= self%na) then
-    end_count = mpi%end_counter%update(0)
-    io_count = mod(io%counter%update(0),mpi%size)
-    if (self%verbose > 0) then
-      write (io_unit%mpi,'(f12.6,4x,a,i6,f12.6,3i5)') wallclock(), &
-        'id, time, end_count, io_count =', task%id, task%time, count, &
-        end_count, io_count
-    end if
-    timer%done = (end_count >= mpi%size .and. io_count == 0)
+  if (task%time > io%end_time) then
+    call end_game (self, task)
   end if
   !-----------------------------------------------------------------------------
   ! Periodic task syncronization:  The first time a task%time is exactly equal
@@ -572,23 +528,102 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
 END SUBROUTINE update
 
 !===============================================================================
+!> Task that pass the end_time are flagged as finished, but continue updating,
+!> while load balancing and refinement are turned off.  The number of tasks
+!> that have finished is counted, and when the number reaches the number of
+!> active tasks the MPI end_counter is incremented from this rank.  When all
+!> ranks have incremented the end_counter, AND have also finished their
+!> contributions to any active output, the timer%done flag is set, which causes
+!> exit from the event loop in the dispatcher, and the code exits.
+!===============================================================================
+SUBROUTINE end_game (self, task)
+  class(task_list_t):: self
+  class(task_t), pointer:: task
+  integer:: end_count, io_count, na
+  integer, save:: count=0
+  !-----------------------------------------------------------------------------
+  call trace%begin ('task_list_t%end_game')
+  if (task%finished) then
+    !---------------------------------------------------------------------------
+    ! If all active tasks have been counted, check MPI end counter and I/O,
+    ! which is accepted if either no I/O is active or it is finished
+    !---------------------------------------------------------------------------
+    if (count >= self%na) then
+      end_count = mpi%end_counter%update(0)
+      io_count = mod(io%counter%update(0),mpi%size)
+      !$omp atomic write
+      timer%done = (end_count >= mpi%size .and. io_count == 0)
+      !.........................................................................
+      if (self%verbose > 0) then
+        write (io_unit%mpi,'(f12.6,4x,2a,i6,f12.6,5i6,l3)') &
+          wallclock(), 'task_list_t%end_game: ', &
+          'id, time, count, end_count, io_count, io%nwrite, io%ntask, done =', &
+          task%id, task%time, count, end_count, io_count, io%nwrite, io%ntask, &
+          timer%done
+      end if
+    end if
+    !---------------------------------------------------------------------------
+    ! Check dead_mans_hand interval
+    !---------------------------------------------------------------------------
+    if (wallclock() > first_finished + dead_mans_hand) then
+      call io%warning ('dead_mans_hand time expired -- run stopping')
+      write (io_unit%mpi,'(1x,a,a,5i6)') 'task_list_t%end_game: ', &
+        'count, end_count, io_count, io%nwrite, io%ntask =', &
+        count, end_count, io_count, io%nwrite, io%ntask
+      call dead_mans_hand_list (self)
+      !$omp atomic write
+      timer%done = .true.
+    end if
+  else
+    !---------------------------------------------------------------------------
+    ! If this is the first time this task%time is larger than end_time, start
+    ! the first_finished clock, increment the task finished count, and when
+    ! that reaches the number of active tasks, increment the MPI counter also
+    !---------------------------------------------------------------------------
+    !$omp critical (finish_cr)
+    task%finished = .true.
+    na = self%na
+    call self%count_status                          ! make sure counts are OK
+    if (self%na /= na) &
+      write (io_unit%mpi,*) 'task_list_t%end_game: na revised', na, self%na
+    if (first_finished == 0.0) then
+      first_finished = wallclock()                  ! cf. dispatcher
+      call load_balance%set (active=.false.)        ! turn off load balancing
+      refine%on = .false.                           ! turn off refinement
+    end if
+    count = count+1                                 ! count finished tasks
+    if (count == self%na) then
+      end_count = mpi%end_counter%update(+1)
+    end if
+    end_count = mpi%end_counter%update(0)
+    io_count = mod(io%counter%update(0),mpi%size)
+    timer%done = (end_count >= mpi%size .and. io_count == 0)
+    !...........................................................................
+    write (io_unit%mpi,'(f12.6,4x,a,i6,f12.6,4i6,l3)') wallclock(), &
+      'task_list_t%end_game: id, time, cnt, na, end_cnt, io_cnt, done =', &
+      task%id, task%time, count, self%na, end_count, io_count, timer%done
+    !$omp end critical (finish_cr)
+  end if
+  call trace%end ()
+END SUBROUTINE end_game
+
+!===============================================================================
 !> List remaining tasks when dead_mans_hand time interval has expired
 !===============================================================================
 SUBROUTINE dead_mans_hand_list (self)
   class (task_list_t):: self
   class(link_t), pointer:: link
   !-----------------------------------------------------------------------------
-  write (stderr,*) 'Updates stopped after expired dead_mans_hand time!'
-  write (stderr,*) 'Active tasks remaining:', self%na
+  write (io_unit%mpi,*) 'Active tasks remaining:', self%na
   link => self%head
   do while (associated(link))
-    write (stderr,*) 'task id, time =', link%task%id, link%task%time
+    write (io_unit%mpi,*) 'task id, time =', link%task%id, link%task%time
     link => link%next
   end do        
-  write (stderr,*) 'tasks in garbage:'
+  write (io_unit%mpi,*) 'tasks in garbage:'
   link => garbage%next
   do while (associated(link))
-    write (stderr,*) 'task id, time =', &
+    write (io_unit%mpi,*) 'task id, time, n_needed =', &
       link%task%id, link%task%time, link%task%n_needed
     link => link%next
   end do        
@@ -755,33 +790,74 @@ END SUBROUTINE init_task_list_pointers
 !> (1.0+grace) times the maximum time step it would currently take, based on
 !> the Courant condition computed from the u_phase(:,:,:) values in its guard
 !> cells, owned by the link task.
+!>
+!> The order of work by a thread that takes on a task is
+!> dispatcher0_t%update
+!>   task_list%head => head%next
+!>   task => head%task
+!>   task%set (bits%busy)
+!>   task%clear (bits%ready)
+!>   task_list%update
+!>     task%dnload to load guard zones
+!>     refine%check_current (task) to check for refinement
+!>     task%update to update the task%mem(task%new) values
+!>     task%rodate to update the task metadata (task%time, task%dtime)
+!>     lod_balanceA%check_queue (head)
+!>     self%send_to_vnbors (head)
+!>     self%init_nbors (task%link) if requested by a status bit
+!>     self%update_status (head) if requested by a status bit¨
+!>   task_list%check_nbors to check of any nbors have become ready
+!>   task_list%heck_ready on itself, to see if the task is ready
 !===============================================================================
 SUBROUTINE check_mulligan (self, link)
   class(task_list_t):: self
   class(link_t), pointer:: link
   class(nbor_t), pointer:: nbor
   class(task_t), pointer:: task, nbtask
+  logical, allocatable:: border(:,:,:)
   real:: ds, dt
-  logical:: triggered
+  integer:: m(3), l(3), u(3), li(3), ui(3), i1, i2, i3
+  logical:: border1, border2, border3
   !-----------------------------------------------------------------------------
   ! Call on the task to compute the nbor%u_max of its nbors
   !-----------------------------------------------------------------------------
   call trace%begin ('list_t%check_mulligan')
+  !-----------------------------------------------------------------------------
+  ! Create a border mask
+  !-----------------------------------------------------------------------------
   task => link%task
   select type (task)
   class is (patch_t)
-    call task%nbor_courant_conditions ()
+    m = task%gn
+    allocate (border(m(1),m(2),m(3)))
     ds = minval(task%ds,mask=task%mesh%n > 1)
     !---------------------------------------------------------------------------
     ! Check if the nbor%u_max calls for a do-over of the nbor task
     !---------------------------------------------------------------------------
-    triggered = .false.
     nbor => link%nbor
     do while (associated(nbor))
       nbtask => nbor%task
       select type (nbtask)
       class is (patch_t)
-        dt = merge (ds/nbor%u_max, huge(1.0), nbor%u_max > 0.0)
+        !-----------------------------------------------------------------------
+        ! The calculation of the Courant time in the border rang can proceed
+        ! before the lock is attempted, while the final calculation of dt should
+        ! be done after obtaining the lock
+        !-----------------------------------------------------------------------
+        border = .false.
+        call overlap_range (nbtask, task)
+        border (l(1):u(1),l(2):u(2),l(3):u(3)) = .true.
+        !-----------------------------------------------------------------------
+        dt = task%courant*ds/maxval(task%u_phase,mask=border)
+        !-----------------------------------------------------------------------
+        ! The dt above is the Courant time step of the region from which the
+        ! nbor task picks up its guard zones.  If the nbor task is way ahead,
+        ! relative to that time step, it is likely that it advanced too far,
+        ! and it should retrace its steps, with a smaller time step.  If the
+        ! nbor task is actually advancing with the same time step as this task,
+        ! it could possibly be up to (1+grace)*dt ahead, so we use that as the
+        ! limit for "way ahead".
+        !-----------------------------------------------------------------------
         if (task%track .and. mulligan_verbose > 1) then
           write (io_unit%log,'(1x,a,2(i6,f12.6),1p,4e12.2)') &
             'list_t%check_mulligan: id, time, nbor, time, lead/dt, dt, u_max =', &
@@ -792,13 +868,10 @@ SUBROUTINE check_mulligan (self, link)
           !---------------------------------------------------------------------
           ! Verbose output to rank log, if the condition is triggered
           !---------------------------------------------------------------------
-          if (.not.triggered) then
-            write (io_unit%log,'(1x,a,2(i6,f12.6),1p,4e12.2)') &
-              'list_t%check_mulligan: id, time, nbor, time, lead/dt, dt, u_max =', &
-              task%id, task%time, nbtask%id, nbtask%time, &
-              (nbtask%time-task%time)/dt, dt, nbor%u_max
-            triggered = .true.
-          end if
+          write (io_unit%log,'(1x,a,2(i6,f12.6),1p,4e12.2)') &
+            'list_t%check_mulligan: id, time, nbor, time, lead/dt, dt, u_max =', &
+            task%id, task%time, nbtask%id, nbtask%time, &
+            (nbtask%time-task%time)/dt, dt, nbor%u_max
           if (task%track .and. mulligan_verbose > 0) then
             write (io_unit%log,'(1x,a,2(i6,f12.6),1p,4e12.2)') &
               'list_t%check_mulligan: id, time, nbor, time, lead/dt, dt, u_max =', &
@@ -835,8 +908,36 @@ SUBROUTINE check_mulligan (self, link)
       end select
       nbor => nbor%next
     end do
+    deallocate (border)
   end select
   call trace%end ()
+contains
+  subroutine overlap_range (nbtask, task)
+    class(patch_t):: nbtask, task
+    class(mesh_t), pointer:: m
+    integer:: i
+    real(8):: dist, la, ua
+    do i=1,3
+      dist = nbtask%position(i) - task%position(i)
+      m => nbtask%mesh(i)
+      if (nbtask%periodic(i)) then
+        dist = modulo (dist+0.5_8*m%b, m%b) &
+             - 0.5_8*m%b
+      end if
+      if (task%n(i) == 1) then
+        l(i) = 1
+        u(i) = 1
+      else
+        la = dist + m%r(m%lb) 
+        ua = dist + m%r(m%ub)
+        m => task%mesh(i)
+        l(i) =   floor(la/m%d + m%o) - 1
+        u(i) = ceiling(ua/m%d + m%o) + 1
+        l(i) = max(l(i),m%li)
+        u(i) = min(u(i),m%ui)
+      end if
+    end do
+    end subroutine overlap_range
 END SUBROUTINE check_mulligan
 
 !===============================================================================
@@ -850,63 +951,55 @@ SUBROUTINE mulligan (self, link, patch)
   class(task_list_t):: self
   class(link_t), pointer:: link
   class(patch_t):: patch
-  class(task_t), pointer:: task
+  class(task_t), pointer:: nbtask
   !-----------------------------------------------------------------------------
   ! Lock the task list, nbor list, and task
   !-----------------------------------------------------------------------------
   call trace%begin ('list_t%mulligan')
-  call self%lock%set ('mulligan')
-  call link%lock%set ('mulligan')
-  call link%task%lock%set ('mulligan')
-  task => link%task
-  select type (task)
+  nbtask => link%task
+  select type (nbtask)
   class is (experiment_t)
-    !-----------------------------------------------------------------------------
-    ! If the task is in the ready queue, remove it
-    !-----------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     if (self%verbose > 0) &
-      write (io_unit%log,*) &
-        'task_list_t%mulligan: begin', task%id, task%time, task%is_set (bits%ready)
-    if (task%is_set (bits%ready)) then
-      if (self%verbose > 1) &
-        write (io_unit%log,*) &
-          'mulligan: remove_from_queue', task%id
-      call self%remove_from_queue (link)
-      call task%clear (bits%ready)
-    else
-      if (self%verbose > 1) &
-        write (io_unit%log,*) &
-          'mulligan:      not in queue', task%id
-    end if
-    !-----------------------------------------------------------------------------
-    ! De-rotate the task, effectively backing up one timestep
-    !-----------------------------------------------------------------------------
-    call task%derotate ()
-    !-----------------------------------------------------------------------------
-    ! Set a fixed timestep, which brings the task to the same time as the patch
-    !-----------------------------------------------------------------------------
-    task%dt_fixed = patch%time-task%time
-    !-----------------------------------------------------------------------------
-    ! Update the task, which already has OK guard zones in the time slot
-    !-----------------------------------------------------------------------------
+    write (io_unit%log,*) 'task_list_t%mulligan: begin', &
+    nbtask%id, nbtask%time, nbtask%is_set (bits%ready)
+    !---------------------------------------------------------------------------
+    ! De-rotate the nbtask, effectively backing up one or more timesteps, until
+    ! a time that is behind the current patch%time
+    !---------------------------------------------------------------------------
+    do while (nbtask%time > patch%time)
+      print *, 'mulligan: path%id, nbtask%id, nbtask%time =', &
+      patch%id, nbtask%id, nbtask%time
+      print '(a,2i6,1p,3e12.3)', &
+      '      mulligan: id, dtime =', patch%id, nbtask%id, nbtask%time
+      call nbtask%derotate ()
+    end do
+    !---------------------------------------------------------------------------
+    ! Set a fixed timestep, which brings the nbtask to the same time as the patch
+    !---------------------------------------------------------------------------
+    nbtask%dt_fixed = patch%time-nbtask%time
+    print '(a,2i6,1p,3e12.3)', &
+    '      mulligan: id, dtime =', patch%id, nbtask%id, nbtask%time, nbtask%dt_fixed
+    !---------------------------------------------------------------------------
+    ! Update the nbtask, which already has OK guard zones in the time slot
+    !---------------------------------------------------------------------------
     if (self%verbose > 1) &
-      write (io_unit%log,*) &
-        'mulligan: before update', task%id, task%time, task%dt_fixed
-    task%rotated = .false.
-    call task%update ()
-    call task%rotate ()
-    task%dt_fixed = -1d0
+    write (io_unit%log,*) &
+    'mulligan: before update', nbtask%id, nbtask%time, nbtask%dt_fixed
+    nbtask%rotated = .false.
+    call nbtask%update ()
+    call nbtask%rotate ()
+    print '(a,2i6,1p,3e12.3)', &
+    'after mulligan: id, dtime =', patch%id, nbtask%id, nbtask%time
+    nbtask%dt_fixed = -1d0
     !-----------------------------------------------------------------------------
-    ! Check if the task should be put into the queue
+    ! Check if the nbtask should be put into the queue
     !-----------------------------------------------------------------------------
-    call self%check_ready (link)
+    call self%check_nbor_nbors (link)
     if (self%verbose > 0) &
-      write (io_unit%log,*) &
-        'task_list_t%mulligan:   end', task%id, task%time, task%is_set (bits%ready)
+      write (io_unit%log,*) 'task_list_t%mulligan:   end', &
+        nbtask%id, nbtask%time, nbtask%is_set (bits%ready)
   end select
-  call link%task%lock%unset ('mulligan')
-  call link%lock%unset ('mulligan')
-  call self%lock%unset ('mulligan')
   call trace%end ()
 END SUBROUTINE mulligan 
 

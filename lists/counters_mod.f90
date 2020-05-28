@@ -44,12 +44,20 @@ MODULE counters_mod
 CONTAINS
 
 !===============================================================================
+!> Initialize a counter, optionally setting count and start
 !===============================================================================
 SUBROUTINE init_counter (self, n)
   class(counter_t):: self
-  integer:: n
-  !$omp atomic write
-  self%count = n
+  integer, optional:: n
+  call trace%begin ('counter_t%init')
+  call self%lock%init ('counter')
+  if (present(n)) then
+    !$omp atomic write
+    self%count = n
+    !$omp atomic write
+    self%start = n
+  end if
+  call trace%end()
 END SUBROUTINE init_counter
 
 !===============================================================================
@@ -57,10 +65,12 @@ END SUBROUTINE init_counter
 INTEGER FUNCTION update_counter (self, i)
   class(counter_t):: self
   integer:: i
+  call trace%begin ('counter_t%init')
   !$omp atomic capture
   self%count = self%count + i
   update_counter = self%count
   !$omp end atomic
+  call trace%end()
 END FUNCTION update_counter
 
 !===============================================================================
@@ -182,7 +192,7 @@ FUNCTION find (self, id, start) RESULT (counter)
   !-----------------------------------------------------------------------------
   if (.not.associated(counter)) then
     allocate (counter)
-    call counter%lock%init ('counter')
+    call counter%init (start)
     call counter%lock%set ('init')
     !---------------------------------------------------------------------------
     ! If id is zero on entry, give it a unique value, otherwise use the given id
@@ -196,9 +206,7 @@ FUNCTION find (self, id, start) RESULT (counter)
     call io%assert (present(start), &
       'counters_t%find: start parameter must be present on new counters')
     counter%id    = self%id
-    counter%start = start
-    counter%count = start
-    call counter%lock%set ('init')
+    call counter%lock%unset ('init')
     call append (self, counter)
     if (verbose > 0) then
       write (stdout,*) 'counters_t%find: new id, start =', counter%id, start

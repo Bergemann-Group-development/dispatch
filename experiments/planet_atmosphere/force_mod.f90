@@ -37,7 +37,7 @@ FUNCTION star_and_planet (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
   real(8)                                       :: time
   real, dimension(:,:,:)  , pointer             :: Ux, Uy, Uz
   real, dimension(:,:,:)  , pointer, contiguous :: d
-  real, dimension(:,:,:,:), pointer, contiguous :: p
+  real, dimension(:,:,:,:), pointer             :: p
   class(mesh_t), dimension(:), pointer          :: m
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,3)    :: ff
   !.............................................................................

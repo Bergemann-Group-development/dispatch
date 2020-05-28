@@ -139,7 +139,6 @@ SUBROUTINE courant_condition (self, detailed_timer)
   call trace%begin ('extras_t%courant_condition')
   call self%cooling%courant_condition                                   ! cool
   call self%gpatch_t%courant_condition (detailed_timer)                 ! keep
-  if (self%time == 0d0) self%dtime=1e-10
   call trace%end ()
 END SUBROUTINE courant_condition
 

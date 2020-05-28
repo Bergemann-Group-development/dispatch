@@ -138,7 +138,6 @@ SUBROUTINE update_counters (self, patch, incr)
   ! to should be correspondingly updated.
   !-----------------------------------------------------------------------------
   io%ntask = io%ntask+incr
-  io%nwrite = io%ntask
   call self%lock%unset ('update_counters')
   call trace%end ()
 END SUBROUTINE update_counters

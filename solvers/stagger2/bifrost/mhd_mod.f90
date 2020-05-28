@@ -32,13 +32,14 @@ MODULE mhd_mod
   USE non_ideal_mod
   USE initial_mod
   USE divb_clean_mod
-  !USE hyperdiffusion_mod
+  USE task_mod
+  USE timer_mod
   implicit none
   private
   type, extends(extras_t), public:: mhd_t
     real, dimension(:,:,:),   pointer    :: d, dddt, e, dedt
-    real, dimension(:,:,:,:), pointer    :: p, dpdt, B, dBdt, emf =>null()
-    real, dimension(:,:,:),   pointer    :: lnd, ee, pg, tt=>null()
+    real, dimension(:,:,:,:), pointer    :: p, dpdt, B, dBdt, emf
+    real, dimension(:,:,:),   pointer    :: lnd, ee, pg, tt
     real, dimension(:,:,:),   allocatable:: qrad
     real:: nu(6)
     real, pointer:: nu_e(:) => null()                                           ! Enhanced energy diffusion at some Z
@@ -131,12 +132,13 @@ SUBROUTINE pre_init (self)
   self%csound = csound
   self%courant = courant
   self%cdtd = cdtd
+  self%ng   = 8
   !-----------------------------------------------------------------------------
   ! Read IC parameters, which determine if this is HD or MHD.  The IC init is
   ! called again, from extras_t%init, when gamma is known and can be passed on.
   !-----------------------------------------------------------------------------
   self%initial%mhd = self%mhd
-  call self%idx%init (self%nv, mhd=self%mhd)
+  call self%idx%init (ie=5, is=5, mhd=self%mhd)
   call self%initial%init (self%kind, real(self%gamma))
   self%mhd = self%initial%mhd
   if (self%mhd) then
@@ -798,8 +800,8 @@ SUBROUTINE pre_update (self)
   !-----------------------------------------------------------------------------
   ! Set boundary conditions on primary variables
   !-----------------------------------------------------------------------------
-  !mem => self%mem(:,:,:,:,self%it,1)
-  !call self%boundaries%primary(mem)
+  mem => self%mem(:,:,:,:,self%it,1)
+  call self%boundaries%primary(mem)
   !
   if (do_temperature .and. .not. associated(self%tt)) then
     allocate (real:: self%tt(self%gn(1),self%gn(2),self%gn(3)))
@@ -834,12 +836,6 @@ SUBROUTINE update (self)
   real(kind=KindScalarVar), pointer:: B(:,:,:,:)
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%update',itimer=itimer)
-  !-----------------------------------------------------------------------------
-  ! Output the state after guard zone downloads, selfgravity, and boundary
-  ! conditions. If another call is placed at an earlier point in the task handling
-  ! the call here will have no effect, since out_next has already been updated.
-  !-----------------------------------------------------------------------------
-  call self%output
   if (self%gamma==1d0) then
     self%mem(:,:,:,self%idx%e,self%it,1) = &
     self%mem(:,:,:,self%idx%d,self%it,1)*self%csound**2
@@ -852,8 +848,14 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Set boundary conditions on time derivatives
   !-----------------------------------------------------------------------------
-  !mem => self%mem(:,:,:,:,self%it,:)
-  !call self%boundaries%derivative(mem)
+  mem => self%mem(:,:,:,:,self%it,:)
+  call self%boundaries%derivative(mem)
+  !-----------------------------------------------------------------------------
+  ! Output the state after guard zone downloads, selfgravity, and boundary
+  ! conditions. If another call is placed at an earlier point in the task handling
+  ! the call here will have no effect, since out_next has already been updated.
+  !-----------------------------------------------------------------------------
+  call self%output
   !-----------------------------------------------------------------------------
   ! The call to courant_condition may optionally be interscepted in extras_t
   !-----------------------------------------------------------------------------

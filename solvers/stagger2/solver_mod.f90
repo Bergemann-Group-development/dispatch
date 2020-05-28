@@ -18,13 +18,16 @@ MODULE solver_mod
   private
   type, public, extends(mhd_t):: solver_t
   contains
+    procedure:: pre_init
     procedure:: init
     procedure:: update
     procedure, nopass:: cast2solver
     procedure:: p2U
     procedure:: U2p
     procedure:: e2E_th
+    procedure:: s2E_th
     procedure:: E_th2e
+    procedure:: E_th2s
     procedure:: e2s
     procedure:: s2e
     procedure:: e2ss
@@ -51,13 +54,24 @@ MODULE solver_mod
 CONTAINS
 
 !===============================================================================
+!> pre-initialize the hydro solver. 
+!===============================================================================
+SUBROUTINE pre_init (self)
+  class(solver_t), target :: self
+  !.............................................................................
+  call trace%begin ('solver_t%pre_init')
+  call self%mhd_t%pre_init              ! calls self%mhd_t%pre_init
+  call trace%end ()
+END SUBROUTINE pre_init
+
+!===============================================================================
 !> Organize calls to the extras and the hydro solver. 
 !===============================================================================
 SUBROUTINE init (self)
   class(solver_t) :: self
   !.............................................................................
   call trace%begin ('solver_t%init')
-  call self%mhd_t%pre_init              ! calls self%mhd_t%pre_init
+  call self%pre_init   ! temporary hack until more changes will arrive
   call self%mhd_t%init                  ! calls self%gpatch_t%init
   call validate%init
   call trace%end ()
@@ -160,16 +174,15 @@ SUBROUTINE e2E_th(self, E_th, it)
   real:: g1
   !-----------------------------------------------------------------------------
   associate(d => self%mem(:,:,:,self%idx%d,it,1), &
-            s => self%mem(:,:,:,self%idx%s,it,1))
-  g1 = self%gamma-1.0
-  E_th = d**g1*exp(s*g1/d)/g1
+            e => self%mem(:,:,:,self%idx%e,it,1))
+  E_th = e/d
   end associate
 END SUBROUTINE e2E_th
 
 !===============================================================================
-!> Put thermal energy to entropy per unit volume
+!> Get thermal energy per unit mass from entropy
 !===============================================================================
-SUBROUTINE E_th2e(self, E_th, it)
+SUBROUTINE s2E_th(self, E_th, it)
   class(solver_t) :: self
   integer:: it
   !.............................................................................
@@ -178,10 +191,44 @@ SUBROUTINE E_th2e(self, E_th, it)
   !-----------------------------------------------------------------------------
   associate(d => self%mem(:,:,:,self%idx%d,it,1), &
             s => self%mem(:,:,:,self%idx%s,it,1))
-  g1 = self%gamma-1.0
-  s = d*log(E_th*g1/d**g1)/g1
+  g1 = self%gamma-1d0
+  E_th = d**g1*exp(s*g1/d)/g1
+  end associate
+END SUBROUTINE s2E_th
+
+!===============================================================================
+!> Put thermal energy to entropy per unit volume
+!===============================================================================
+SUBROUTINE E_th2e (self, E_th, it)
+  class(solver_t) :: self
+  integer:: it
+  !.............................................................................
+  real, dimension(:,:,:), pointer:: E_th
+  real:: g1
+  !-----------------------------------------------------------------------------
+  associate(d => self%mem(:,:,:,self%idx%d,it,1), &
+            e => self%mem(:,:,:,self%idx%e,it,1))
+  g1 = self%gamma-1d0
+  e = d*E_th
   end associate
 END SUBROUTINE E_th2e
+
+!===============================================================================
+!> Put thermal energy to entropy per unit volume
+!===============================================================================
+SUBROUTINE E_th2s (self, E_th, it)
+  class(solver_t) :: self
+  integer:: it
+  !.............................................................................
+  real, dimension(:,:,:), pointer:: E_th
+  real:: g1
+  !-----------------------------------------------------------------------------
+  associate(d => self%mem(:,:,:,self%idx%d,it,1), &
+            s => self%mem(:,:,:,self%idx%s,it,1))
+  g1 = self%gamma-1d0
+  s = d*log(E_th*g1/d**g1)/g1
+  end associate
+END SUBROUTINE E_th2s
 
 !===============================================================================
 !> Get entropy per unit volume from energy per unit volume
@@ -194,8 +241,8 @@ SUBROUTINE e2s(self, s, it)
   real:: g1
   !-----------------------------------------------------------------------------
   associate(d => self%mem(:,:,:,self%idx%d,it,1), &
-            e => self%mem(:,:,:,self%idx%s,it,1))
-  g1 = self%gamma-1.0
+            e => self%mem(:,:,:,self%idx%e,it,1))
+  g1 = self%gamma-1d0
   s = d*log(e*g1/d**self%gamma)/g1
   end associate
 END SUBROUTINE e2s
@@ -211,8 +258,8 @@ SUBROUTINE e2ss(self, ss, it)
   real:: g1
   !-----------------------------------------------------------------------------
   associate(d => self%mem(:,:,:,self%idx%d,it,1), &
-            e => self%mem(:,:,:,self%idx%s,it,1))
-  g1 = self%gamma-1.0
+            e => self%mem(:,:,:,self%idx%e,it,1))
+  g1 = self%gamma-1d0
   ss = log(e*g1/d**self%gamma)/g1
   end associate
 END SUBROUTINE e2ss
@@ -227,12 +274,19 @@ SUBROUTINE s2e(self, s, it)
   real, dimension(:,:,:):: s
   real:: g1
   !-----------------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%idx%d,it,1), &
-            e => self%mem(:,:,:,self%idx%s,it,1))
-  g1 = self%gamma-1.0
-  e = d**self%gamma*exp(s/d*g1)/g1
-  end associate
-END SUBROUTINE S2e
+  g1 = self%gamma-1d0
+  if (self%idx%s > 0) then
+    associate(d => self%mem(:,:,:,self%idx%d,it,1), &
+              e => self%mem(:,:,:,self%idx%s,it,1))
+    e = d**self%gamma*exp(s/d*g1)/g1
+    end associate
+  else
+    associate(d => self%mem(:,:,:,self%idx%d,it,1), &
+              e => self%mem(:,:,:,self%idx%e,it,1))
+    e = d**self%gamma*exp(s/d*g1)/g1
+    end associate
+  end if
+END SUBROUTINE s2e
 
 !===============================================================================
 !> Get thermal energy per unit volume from entropy per unit mass
@@ -244,11 +298,18 @@ SUBROUTINE ss2e(self, ss, it)
   real, dimension(:,:,:):: ss
   real:: g1
   !-----------------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%idx%d,it,1), &
-            e => self%mem(:,:,:,self%idx%s,it,1))
-  g1 = self%gamma-1.0
-  e = d**self%gamma*exp(ss*g1)/g1
-  end associate
+  g1 = self%gamma-1d0
+  if (self%idx%s > 0) then
+    associate(d => self%mem(:,:,:,self%idx%d,it,1), &
+              e => self%mem(:,:,:,self%idx%s,it,1))
+    e = d**self%gamma*exp(ss*g1)/g1
+    end associate
+  else
+    associate(d => self%mem(:,:,:,self%idx%d,it,1), &
+              e => self%mem(:,:,:,self%idx%e,it,1))
+    e = d**self%gamma*exp(ss*g1)/g1
+    end associate
+  end if
 END SUBROUTINE ss2e
 
 !===============================================================================

@@ -323,7 +323,7 @@ SUBROUTINE single_advection (self, m, ff, idx)
     if (first_time) then
       gamma = self%gamma
       rewind (io%input)
-      read (io%input, initial_advection_params, iostast=iostat)
+      read (io%input, initial_advection_params, iostat=iostat)
       mhd = mhd .and. any(b0 /= 0.0)
       call io%namelist_warning ('initial_advection_params', iostat)
       write (io%namelist, initial_advection_params)

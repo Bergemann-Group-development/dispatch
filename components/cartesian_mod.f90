@@ -17,6 +17,7 @@ MODULE cartesian_mod
   type, public, extends(task_t):: rank_t
   end type
   type, public:: cartesian_t
+    real(8):: position(3)
     real(8):: size(3)
     integer:: dims(3)
     type(task_list_t), pointer:: task_list => null()
@@ -50,12 +51,13 @@ SUBROUTINE init (self, task_list, label)
   integer:: per_rank(3) = [0,0,0]
   real(8):: size(3) = [1.0,1.0,1.0]
   real(8):: origin(3) = [-0.5,-0.5,-0.5]
+  real(8):: position(3) = tiny(1d0)
   real(8):: wc
   logical:: face_nbors=.false.
   logical:: periodic(3)=.true.
   integer, save:: itimer=0
-  namelist /cartesian_params/ size, dims, mpi_dims, per_rank, origin, face_nbors, &
-    omp_init, periodic, verbose
+  namelist /cartesian_params/ size, position, dims, mpi_dims, per_rank, origin, &
+    face_nbors, omp_init, periodic, verbose
   character(len=120):: ids = &
     '$Id$ components/cartesian_mod.f90'
   !-----------------------------------------------------------------------------
@@ -78,6 +80,12 @@ SUBROUTINE init (self, task_list, label)
   rewind (io%input)
   read (io%input, cartesian_params, iostat=iostat)
   call io%namelist_warning ('cartesian_params', iostat)
+  if (any(position /= tiny(1d0))) then
+    origin = position - size/2d0
+    call io%warning ('cartesian_t%init: position used, origin ignored')
+  else
+    position = origin + size/2d0
+  end if
   if (any(per_rank/=0)) then
     where (per_rank/=0) dims=per_rank*mpi_dims
   end if
@@ -85,6 +93,7 @@ SUBROUTINE init (self, task_list, label)
   if (any(dims == 2)) then
     call io%abort ('two patches per dimension is not allowed')
   end if
+  self%position = position
   self%dims = dims
   self%size = size
   io%dims     = dims
@@ -107,6 +116,7 @@ SUBROUTINE init (self, task_list, label)
   patches_per_mpi = self%dims/mpi_dims
   mpi_coords%npatch = patches_per_mpi
   io%mpi_dims = mpi_dims
+  write (io%namelist, cartesian_params)
   !-----------------------------------------------------------------------------
   ! Set attritbutes of the rank_t data type -- just enough to use distance().
   !-----------------------------------------------------------------------------
@@ -121,6 +131,7 @@ SUBROUTINE init (self, task_list, label)
   call self%task_list%init ('tlist')
   self%task_list%size = self%size
   self%task_list%dims = self%dims
+  self%task_list%position = self%position
   io%dims = self%dims
   self%task_list%n_tasks = product(self%dims)
   self%task_list%face_nbors = face_nbors
@@ -216,10 +227,6 @@ SUBROUTINE init (self, task_list, label)
     write(stdout,*) 'cartesian_t%init: init boundaries'
   call self%task_list%init_bdries
   !-----------------------------------------------------------------------------
-  if (io_unit%master) then
-    write (io%namelist, cartesian_params)
-    flush (io%namelist)
-  end if
   if (verbose > 0) &
     write(stdout,*) 'cartesian_t%init: diagnostics'
   call self%diagnostics()
