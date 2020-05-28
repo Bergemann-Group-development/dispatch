@@ -143,7 +143,7 @@ SUBROUTINE init (self, mpi_dims, dims)
   self%master = mpi%master
   self%ok     = mpi%ok
   !-----------------------------------------------------------------------------
-  call mpi%id%init (1)
+  call mpi%id%init (0)
   call mpi%file_size%init (0)
   call mpi%end_counter%init (0)
   !-----------------------------------------------------------------------------
