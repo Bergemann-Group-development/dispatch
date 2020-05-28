@@ -834,7 +834,7 @@ class snapshot():
             return None
         if datadir=='':
             datadir=_dir(rundir,'{:05d}'.format(iout))
-            self.datadir=datadir
+        self.datadir=datadir
         self.rundir=rundir
         if not os.path.isdir(datadir):
             print('directory {} does not exist'.format(datadir))
