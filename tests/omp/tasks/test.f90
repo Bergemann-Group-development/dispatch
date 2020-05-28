@@ -1,14 +1,14 @@
 !*******************************************************************************
 PROGRAM test
   USE omp_lib
-  USE mpi_mod
   USE omp_mod
   USE omp_timer_mod
   USE timer_mod
   implicit none
   integer:: i, j, n, parent, child, task
+  real:: s=1.0
+  integer:: ntasks=20
   !-----------------------------------------------------------------------------
-  call mpi%init
   call omp%init
   !-----------------------------------------------------------------------------
   ! Each of the OMP_NUM_THREAD tasks makes 10 iterations, each time spawning a
@@ -21,7 +21,7 @@ PROGRAM test
   n = 0
   call tic
   !$omp parallel private (parent, child)
-  do i=1,10
+  do i=1,ntasks
     parent = omp_get_thread_num()
     !$omp task
     !$omp critical
@@ -29,18 +29,23 @@ PROGRAM test
     task = n
     !$omp end critical
     child = omp_get_thread_num()
-    !print*,mpi%rank,parent,' starts', child,' on task',task
-    call delay (real(mpi%rank+2))
+    print 1,wallclock(),parent,' starts', child,' on task',task
+    1 format(f12.6,i4,a,i4,a,i4)
+    call delay (s)
     child = omp_get_thread_num()
-    !print*,mpi%rank,parent,'   ends', child,' on task',task
+    print 1,wallclock(),parent,'   ends', child,' on task',task
     !$omp end task
+    print 1,wallclock(),parent,' starts', parent,' on task',0
+    call delay(s)
+    print 1,wallclock(),parent,'   ends', parent,' on task',0
+    !$omp taskyield
+    print 1,wallclock(),parent,' back from taskyield'
   end do
-  print*,wallclock(),mpi%rank,parent,' loop done', n
+  print*,wallclock(),parent,' loop done', n
   !$omp taskwait
-  print*,wallclock(),mpi%rank,parent,' wait done', n
+  print*,wallclock(),parent,' wait done', n
   !$omp end parallel
   call toc ('took')
-  call mpi%end
 CONTAINS
   !-----------------------------------------------------------------------------
   subroutine delay (s)

@@ -8,4 +8,4 @@ EXEC = test.x
 TOP = ../../..
 include $(TOP)/config/Makefile
 
-test.x: mpi_mod.o omp_timer_mod.o timer_mod.o
+test.x: omp_timer_mod.o timer_mod.o
