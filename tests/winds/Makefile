@@ -2,8 +2,8 @@
 # Option groups
 #OPTS = full_debug
 #OPTS = debug
-#OPTS =
-OPTS = optimized
+OPTS =
+#OPTS = optimized
 
 # Default target and methods	
 EXEC            = dispatch.x

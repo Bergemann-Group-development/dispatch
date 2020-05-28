@@ -5,6 +5,7 @@ MODULE experiment_mod
   USE trace_mod
   USE solver_mod
   USE scaling_mod
+  USE units_mod
   USE link_mod
   implicit none
   private
@@ -39,9 +40,14 @@ SUBROUTINE init (self)
   end if
   call io%lock%unset
   d = density_cgs/scaling%d
-  e = (cs_kms*1e5/scaling%u)**2*d/(self%gamma*(self%gamma-1.0))
-  self%mem(:,:,:,self%idx%d,1,1) = d
-  self%mem(:,:,:,self%idx%e,1,1) = e
+  e = (cs_kms*cgs%kms/scaling%u)**2*d/(self%gamma*(self%gamma-1.0))
+  self%mem(:,:,:,self%idx%d,:,1) = d
+  self%mem(:,:,:,self%idx%e,:,1) = e
+  self%unsigned(self%idx%d) = .true.
+  self%unsigned(self%idx%e) = .true.
+  self%pervolume(self%idx%px) = .true.
+  self%pervolume(self%idx%py) = .false.
+  self%pervolume(self%idx%pz) = .true.
   call trace%end ()
 END SUBROUTINE init
 
@@ -50,10 +56,24 @@ END SUBROUTINE init
 SUBROUTINE update (self)
   class(experiment_t):: self
   class(link_t), pointer:: link
+  integer:: iv, i1, i2, m, m1, m2, m3, m4
   logical, save:: first_time=.true.
   !----------------------------------------------------------------------------
   call trace%begin ('experiment_t%update')
   call self%solver_t%update
+  i1 = self%task_list%na/2
+  i2 = i1+1
+  m = self%gn(1)/2
+  m1 = self%mesh(1)%ui-1
+  m2 = self%mesh(1)%ub
+  m3 = 1
+  m4 = self%mesh(1)%li+1
+  do iv=1,2
+   if (self%id==i1) write (stdout,'(i5,2i2,1p,3e12.3,05x,4e12.3)') self%istep, self%new, iv, self%time, self%dtime, self%u_max, self%mem(m1:m2,m,m,iv,self%it ,1)
+   if (self%id==i1) write (stdout,'(i5,2i2,1p,3e12.3,05x,4e12.3)') self%istep, self%new, iv, self%time, self%dtime, self%u_max, self%mem(m1:m2,m,m,iv,self%new,1)
+   if (self%id==i2) write (stdout,'(i5,2i2,1p,3e12.3,55x,4e12.3)') self%istep, self%new, iv, self%time, self%dtime, self%u_max, self%mem(m3:m4,m,m,iv,self%it ,1)
+   if (self%id==i2) write (stdout,'(i5,2i2,1p,3e12.3,55x,4e12.3)') self%istep, self%new, iv, self%time, self%dtime, self%u_max, self%mem(m3:m4,m,m,iv,self%new,1)
+  end do
   call trace%end ()
 END SUBROUTINE update
 

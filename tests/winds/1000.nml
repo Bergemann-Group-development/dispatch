@@ -1,0 +1,62 @@
+! $Id$
+!
+&scaling_params         v_kms=1.0 l_pc=5.00 d_cgs=4e-24 /               ! increase l_pc
+&experiment_params      density_cgs=400e-24 cs_kms=1 /
+&sinks_params           radius=18                                       ! radius in cells
+                        mass_msun=30                                    ! solar masses
+                        verbose=0 /                                     ! info level
+&winds_params           velocity_kms=1000.                              ! terminal speed
+                        msun_per_yr=1e-5                                ! mass loss rate
+                        ramp_time_myr=0.0010                            ! ramp-up time
+                        cs_kms=100                                      ! sound speed
+                        verbose=0 /                                     ! info level
+&cooling_params         verbose=1 type='Casiana'
+                        on=f do_heat=t do_subcycle=t /
+&io_params              verbose=0 do_trace=f omp_trace=t id_debug=-1
+                        do_output=t guard_zones=f time_derivs=0
+                        method='legacy' format=8
+                        !method='legacy'
+/
+&out_params             end_time=50.1e-6 out_time=2e-6 print_every=10 /
+&mpi_io_params          verbose=0 /
+&parallel_io_params     verbose=0 id_debug=0 /
+&time_slices_params     verbose=0 order=1 id_debug=-1 /
+&timer_params           sec_per_report=30 /
+&ramses_params          detailed_timer=f courant_factor=0.25 slope_type=3
+                        isothermal=f gamma=1.4 smallr=1e-4 smallc=0.18 /
+&dispatcher0_params     verbose=0 debug=t detailed_timer=f /
+&task_list_params       verbose=0 mulligan_level=2 job_seconds=18000 dead_mans_hand=15 /
+&lock_params            verbose=0 /
+&cartesian_params       size=3*0.25                                     ! box size in code
+                        dims=3*25                                       ! patch arrangement
+                        mpi_dims=1,1,1                                  ! MPI rank distribution
+                        position=3*0.5                                  ! Cartesian center
+/
+&patch_params           nt=5 grace=0.05 n=3*40 no_mans_land=t
+                        do_check_nan=f dt_fixed=-1 /
+&download_params        verbose=2 order_time=1
+                        !use_same='different'
+                        !use_same='guard_zones'
+                        !use_same='guard_same'
+                        detailed_timer=f /
+&guard_zone_params      verbose=0 detailed_timer=f /
+&timestep_params        /
+
+&initial_params
+ type='single_solenoidal'
+!type='single_compressive'
+!type='single_advection'
+!type='exa256'
+!type='raw'
+/
+&initial_solenoidal_params  k=1,1,2 a0=0.0,0.0,0.0                           /
+&initial_compressive_params k=3,3,3 a0=0.0,0.0,0.0 u0=0.1,0.2,0.3 b0=0,0,0.0 /
+&initial_advection_params   k=3,3,3 a0=0.0,0.0,0.0 u0=0.1,0.2,0.3 b0=0,0,0.0 /
+
+&force_params               type='single_solenoidal' /
+&force_solenoidal_params    k=1,1,2 a0=10.0,10.2,10.1 t_turn=0.1000 /
+
+                            !    cs   pa  ofd  mas  kap  eta
+&stagger_params             nu=0.30, 1.0, 1.0, 0.0, 1.0, 1.0
+                            courant=0.2 eos='ideal' gamma=1.6666667
+/
