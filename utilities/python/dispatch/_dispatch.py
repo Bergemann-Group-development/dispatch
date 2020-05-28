@@ -531,14 +531,22 @@ def _var(patch,filed,snap,verbose=0,copy=None):
 
             # Thermal energy
             elif iv=='eth':
-                if patch.ioformat==14 or patch.ioformat==15 or is_st:
+                if patch.gamma==1.0:
+                    v=mem('e')
+                elif patch.ioformat==14 or patch.ioformat==15 or is_st:
                     v=mem('e')
                 else:
-                    v=mem('e')-var('ekin',all=True,verbose=verbose)
+                    v=mem('e') \
+                     -var('ekin',all=True,verbose=verbose)
+
+            # Thermal energy
+            elif iv=='Eth':
+                v=var('eth',all=True,verbose=verbose) \
+                 /var('d',all=True,verbose=verbose)
 
             # Temperature
             elif iv=='tt' or iv=='T':
-                v=var('eth',all=True,verbose=verbose)
+                v=var('Eth',all=True,verbose=verbose)
                 if hasattr(snap,'scaling'):
                     v=v*snap.scaling.temp
 
@@ -637,7 +645,7 @@ class _patch():
         self.keys['numbers']=list(snap.idx.dict.values())
         timer.add('numbers')
         self.keys['known']=['d','lnd','logd','ux','uy','uz','u1','u2','u3',
-                 'ee','E','T','eth','ekin']
+                 'ee','E','T','eth','Eth','ekin']
         timer.add('known')
 
         # attach an aux filaname, if one exists for this task
