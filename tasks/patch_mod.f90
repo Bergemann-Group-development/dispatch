@@ -741,6 +741,7 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
     call self%set (bits%root_grid)
     if (io%verbose > 1) write(io%output,*) 'set bits%root_grid id =', self%id
   end if
+  call self%set (bits%has_output)
   call trace%end()
 END SUBROUTINE setup
 
@@ -1952,7 +1953,7 @@ SUBROUTINE courant_condition (self, detailed_timer)
   if (io%do_output .and. io%out_time > 0.0) &
     self%dtime = min (self%dtime, io%out_time)
   self%dt(self%it) = self%dtime
-  if (io%verbose>3) &
+  if (io%verbose> 3 .or. self%id == io%id_debug) &
     write(io%output,'(a,i7,f12.6,f8.4,1p,e10.2)') 'courant:', &
       self%id, self%dtime, self%courant, self%u_max
   call trace%end (itimer)
