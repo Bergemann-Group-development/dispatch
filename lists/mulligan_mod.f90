@@ -1,0 +1,274 @@
+MODULE mulligan_mod
+!===============================================================================
+!> Check if any nbor of the link task should do a mulligan.  The criterion is
+!> triggered if an nbor task is leading the current task with more than a factor
+!> (1.0+grace) times the maximum time step it would currently take, based on
+!> the Courant condition computed from the u_phase(:,:,:) values in its guard
+!> cells, owned by the link task.
+!>
+!===============================================================================
+  USE trace_mod
+  USE io_mod
+  USE omp_mod
+  USE task_mod
+  USE bits_mod
+  USE mesh_mod
+  USE patch_mod
+  USE link_mod
+  USE list_mod
+  implicit none
+  private
+  type, public:: mulligan_t
+  contains
+    procedure:: init
+    procedure:: check
+  end type
+  integer, save:: verbose=0, level=0
+  type(mulligan_t), public:: mulligan
+CONTAINS
+
+!===============================================================================
+!===============================================================================
+SUBROUTINE init (self)
+  class(mulligan_t):: self
+  integer:: iostat
+  namelist /mulligan_params/ verbose, level
+  !-----------------------------------------------------------------------------
+  call trace%begin ('mulligan_t%init')
+  rewind (io%input)
+  read(io%input, mulligan_params, iostat=iostat)
+  call io%namelist_warning ('mulligan_params', iostat)
+  write (io%namelist, mulligan_params)
+  if (level > 1 .and. omp%nthreads > 1) then
+    call io%abort ('The current Mulligan mechanism is not multi-thread-safe')
+  end if
+  call trace%end ()
+END SUBROUTINE init
+
+!===============================================================================
+!===============================================================================
+SUBROUTINE check (self, task_list, link)
+  class(mulligan_t):: self
+  class(list_t):: task_list
+  class(link_t), pointer:: link
+  !-----------------------------------------------------------------------------
+  call trace%begin ('mulligan_t%check')
+  if (level > 0) then
+    if (link%task%mulligan_time > 0d0) then
+      call update (task_list, link)
+    else
+      call nbor_check (task_list, link)
+    end if
+  end if
+  call trace%end ()
+END SUBROUTINE check
+
+!===============================================================================
+!===============================================================================
+SUBROUTINE nbor_check (task_list, link)
+  class(list_t):: task_list
+  class(link_t), pointer:: link
+  !.............................................................................
+  class(nbor_t), pointer:: nbor
+  class(task_t), pointer:: task, nbtask
+  logical, allocatable:: border(:,:,:)
+  real:: ds, dt
+  integer:: m(3), l(3), u(3), li(3), ui(3), i1, i2, i3
+  logical:: border1, border2, border3
+  !-----------------------------------------------------------------------------
+  call trace%begin ('mulligan_t%nbor_check')
+  !-----------------------------------------------------------------------------
+  ! Create a border mask
+  !-----------------------------------------------------------------------------
+  task => link%task
+  select type (task)
+  class is (patch_t)
+    m = task%gn
+    allocate (border(m(1),m(2),m(3)))
+    ds = minval(task%ds,mask=task%mesh%n > 1)
+    !---------------------------------------------------------------------------
+    ! Check if the nbor%u_max calls for a do-over of the nbor task
+    !---------------------------------------------------------------------------
+    nbor => link%nbor
+    do while (associated(nbor))
+      nbtask => nbor%task
+      select type (nbtask)
+      class is (patch_t)
+        !-----------------------------------------------------------------------
+        ! The calculation of the Courant time in the border rang can proceed
+        ! before the lock is attempted, while the final calculation of dt should
+        ! be done after obtaining the lock
+        !-----------------------------------------------------------------------
+        border = .false.
+        call overlap_range (nbtask, task)
+        border (l(1):u(1),l(2):u(2),l(3):u(3)) = .true.
+        !-----------------------------------------------------------------------
+        dt = task%courant*ds/maxval(task%u_phase,mask=border)
+        !-----------------------------------------------------------------------
+        ! The dt above is the Courant time step of the region from which the
+        ! nbor task picks up its guard zones.  If the nbor task is way ahead,
+        ! relative to that time step, it is likely that it advanced too far,
+        ! and it should retrace its steps, with a smaller time step.  If the
+        ! nbor task is actually advancing with the same time step as this task,
+        ! it could possibly be up to (1+grace)*dt ahead, so we use that as the
+        ! limit for "way ahead".
+        !-----------------------------------------------------------------------
+        if (task%track .and. verbose > 1) then
+          write (io_unit%log,'(1x,a,2(i6,f12.6),1p,4e12.2)') &
+            'list_t%mulligan_check: id, time, nbor, time, lead/dt, dt, u_max =', &
+            task%id, task%time, nbtask%id, nbtask%time, &
+            (nbtask%time-task%time)/dt, dt, nbor%u_max
+        end if
+        if (nbtask%time - task%time > dt*(1d0+task%grace)) then
+          !---------------------------------------------------------------------
+          ! Write diagnostics if level is 1
+          !---------------------------------------------------------------------
+          if (level == 1) then
+            write (stdout,'(1x,a,2i6,1p,4e12.2)') &
+              'list_t%mulligan_check: id, nbor, time, lead/dt, dt, u_max =', &
+              task%id, nbtask%id, task%time, &
+              (nbtask%time-task%time)/dt, dt, nbor%u_max
+          !---------------------------------------------------------------------
+          ! Trigger a Mulligan if level is 2
+          !---------------------------------------------------------------------
+          else if (level > 1) then
+            call trigger (task_list, link, task, nbtask)
+          end if
+        end if
+      end select
+      nbor => nbor%next
+    end do
+    deallocate (border)
+  end select
+  call trace%end ()
+contains
+  subroutine overlap_range (nbtask, task)
+    class(patch_t):: nbtask, task
+    class(mesh_t), pointer:: m
+    integer:: i
+    real(8):: dist, la, ua
+    do i=1,3
+      dist = nbtask%position(i) - task%position(i)
+      m => nbtask%mesh(i)
+      if (nbtask%periodic(i)) then
+        dist = modulo (dist+0.5_8*m%b, m%b) &
+             - 0.5_8*m%b
+      end if
+      if (task%n(i) == 1) then
+        l(i) = 1
+        u(i) = 1
+      else
+        la = dist + m%r(m%lb) 
+        ua = dist + m%r(m%ub)
+        m => task%mesh(i)
+        l(i) =   floor(la/m%d + m%o) - 1
+        u(i) = ceiling(ua/m%d + m%o) + 1
+        l(i) = max(l(i),m%li)
+        u(i) = min(u(i),m%ui)
+      end if
+    end do
+  end subroutine overlap_range
+END SUBROUTINE nbor_check
+
+!===============================================================================
+!> Setup a task to do a Mulligan, under the control of a thread that owns it,
+!> just like any other task, thus avoiding all problem with task locking,
+!> associated with trying to manipulate the status of a task not owned by
+!> the thread.
+!>
+!> The nbtask could be in an idle state, a ready state, or a busy state, as
+!> shown by bits%ready and bits%busy.  In practice it is extremely unlikely
+!> to be in a busy state, since it was selected exactly by being too far ahead
+!> in time.  The only aspect that needs to be protected against is then that
+!> the task time will become updated after it is modified here.  This can be
+!> prevented by changing the "rotated" state from false to true, and by 
+!> testing (under lock), in task%rotate that it is not set.
+!>
+!> This procedure requires only single locks, first on the task meta data,
+!> then on the task list, so there is no change that this will cause a deadlock.
+!===============================================================================
+SUBROUTINE trigger (task_list, link, task, nbtask)
+  class(list_t):: task_list
+  class(link_t), pointer:: link
+  class(patch_t), pointer:: task, nbtask
+  !-----------------------------------------------------------------------------
+  call trace%begin ('mulligan_t%trigger')
+  !-----------------------------------------------------------------------------
+  ! Lock the task meta-data, set the mulligan_time and modify the task time
+  !-----------------------------------------------------------------------------
+  call nbtask%lock%set ('mulligan')
+  nbtask%mulligan_time =  task%time
+  nbtask%time = task%time
+  if (nbtask%is_set (bits%busy)) then
+    nbtask%rotated = .true.
+  end if
+  call nbtask%lock%unset ('mulligan')
+  !-----------------------------------------------------------------------------
+  ! Now make sure the task is in the ready queue, by locking the task list,
+  ! removing the task from the queue if it is there, and adding it back at the
+  ! new, older time.  If the task should happen to be in the busy state, all
+  ! that will happen is that when the task is checked in check_ready, it will
+  ! be found to already have the ready bit set, and it will remain in the queue.
+  !-----------------------------------------------------------------------------
+  call task_list%lock%set ('mulligan')
+  if (task%is_set (bits%ready)) then
+    call task_list%remove_from_queue (link)
+  end if
+  call task_list%queue_by_time (link)
+  call task_list%lock%unset ('mulligan')
+call trace%end()
+END SUBROUTINE trigger
+
+!===============================================================================
+!> Do-over on a task; this is signalled by task%mulligan_time being non-zero,
+!> and results in a modified task%update, implemented here.
+!===============================================================================
+SUBROUTINE update (task_list, link)
+  class(list_t):: task_list
+  class(link_t), pointer:: link
+  !.............................................................................
+  class(task_t), pointer:: task
+  class(nbor_t), pointer:: nbor
+  !-----------------------------------------------------------------------------
+  call trace%begin ('mulligan_t%update')
+  !-----------------------------------------------------------------------------
+  task => link%task
+  select type (task)
+  class is (patch_t)
+    !---------------------------------------------------------------------------
+    ! De-rotate the task, effectively backing up one or more timesteps, until
+    ! a time that is behind the current task%mulligan_time
+    !---------------------------------------------------------------------------
+    task%time = task%t(task%it)
+    do while (task%time >= task%mulligan_time)
+      if (verbose > 0) then
+        write (io_unit%log,1) &
+        'mulligan_t%update: id,  time =', task%id, task%time, task%mulligan_time
+        1 format(a,i6,1p,3e12.3)
+      end if
+      call task%derotate ()
+    end do
+    !---------------------------------------------------------------------------
+    ! Set a fixed timestep, which brings the task to the same time as the patch
+    !---------------------------------------------------------------------------
+    task%dt_fixed = task%mulligan_time - task%time
+    if (verbose > 0) then
+      write (io_unit%log,1) &
+      'mulligan_t%update: id, dtime =', task%id, task%time, task%dt_fixed
+    end if
+    !---------------------------------------------------------------------------
+    ! Cancel any nbors in the ready queue; they will be checked again
+    !---------------------------------------------------------------------------
+    call task_list%lock%set ('mulligan_t%update')
+    nbor => link%nbor
+    do while (associated(nbor))
+      if (nbor%task%is_set (bits%ready)) then
+        call task_list%remove_from_queue (nbor%link)
+      end if
+    end do
+    call task_list%lock%unset ('mulligan_t%update')
+  end select
+  call trace%end ()
+END SUBROUTINE update 
+
+END MODULE mulligan_mod

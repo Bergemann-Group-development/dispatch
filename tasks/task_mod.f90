@@ -64,6 +64,7 @@ MODULE task_mod
     real(8):: wallclock
     real(8):: unpack_time=0d0
     real(8):: dnload_time=-1d0          ! last dnload time
+    real(8):: mulligan_time=-1d0        ! time to rewind to
     real(4):: quality = 0.0
     character(len=64):: kind='task'     ! solver name
     character(len=12):: type='task_t'   ! task type
