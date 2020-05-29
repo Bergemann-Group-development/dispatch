@@ -25,7 +25,8 @@
 &ramses_params          detailed_timer=f courant_factor=0.25 slope_type=3
                         isothermal=f gamma=1.4 smallr=1e-4 smallc=0.18 /
 &dispatcher0_params     verbose=0 debug=t detailed_timer=f /
-&task_list_params       verbose=0 mulligan_level=2 job_seconds=18000 dead_mans_hand=15 /
+&task_list_params       verbose=0 job_seconds=18000 dead_mans_hand=15 /
+&mulligan_params        verbose=1 level=0 /
 &lock_params            verbose=0 /
 &cartesian_params       size=3*0.01                                     ! box size in code
                         dims=3*1                                        ! patch arrangement

@@ -46,6 +46,7 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !===============================================================================
+!> Check if this task should do a Mullligan, or if it should check nbor tasks
 !===============================================================================
 SUBROUTINE check (self, task_list, link)
   class(mulligan_t):: self
@@ -64,6 +65,7 @@ SUBROUTINE check (self, task_list, link)
 END SUBROUTINE check
 
 !===============================================================================
+!> Check if any nbor needs to do a Mulligan
 !===============================================================================
 SUBROUTINE nbor_check (task_list, link)
   class(list_t):: task_list
@@ -71,10 +73,9 @@ SUBROUTINE nbor_check (task_list, link)
   !.............................................................................
   class(nbor_t), pointer:: nbor
   class(task_t), pointer:: task, nbtask
-  logical, allocatable:: border(:,:,:)
-  real:: ds, dt
-  integer:: m(3), l(3), u(3), li(3), ui(3), i1, i2, i3
-  logical:: border1, border2, border3
+  real:: ds
+  real(8):: gsize(3), dist(3), dt
+  integer:: l(3), u(3)
   !-----------------------------------------------------------------------------
   call trace%begin ('mulligan_t%nbor_check')
   !-----------------------------------------------------------------------------
@@ -83,8 +84,6 @@ SUBROUTINE nbor_check (task_list, link)
   task => link%task
   select type (task)
   class is (patch_t)
-    m = task%gn
-    allocate (border(m(1),m(2),m(3)))
     ds = minval(task%ds,mask=task%mesh%n > 1)
     !---------------------------------------------------------------------------
     ! Check if the nbor%u_max calls for a do-over of the nbor task
@@ -95,15 +94,21 @@ SUBROUTINE nbor_check (task_list, link)
       select type (nbtask)
       class is (patch_t)
         !-----------------------------------------------------------------------
-        ! The calculation of the Courant time in the border rang can proceed
-        ! before the lock is attempted, while the final calculation of dt should
-        ! be done after obtaining the lock
+        ! Compute the index range where the nbtask guard zones overlap
         !-----------------------------------------------------------------------
-        border = .false.
-        call overlap_range (nbtask, task)
-        border (l(1):u(1),l(2):u(2),l(3):u(3)) = .true.
-        !-----------------------------------------------------------------------
-        dt = task%courant*ds/maxval(task%u_phase,mask=border)
+        dist = nbtask%task_t%distance (task)
+        gsize = nbtask%mesh%s/2d0 + nbtask%mesh%d*(nbtask%mesh%ng+1)
+        where (task%n == 1)
+          l = 1
+          u = 1
+        else where
+          l =   floor((dist - gsize)/task%mesh%d + task%mesh%o)
+          u = ceiling((dist + gsize)/task%mesh%d + task%mesh%o)
+          l = max (l, task%mesh%li)
+          u = min (u, task%mesh%ui)
+        end where
+        dt = task%courant*ds &
+           / maxval(task%u_phase(l(1):u(1),l(2):u(2),l(3):u(3)))
         !-----------------------------------------------------------------------
         ! The dt above is the Courant time step of the region from which the
         ! nbor task picks up its guard zones.  If the nbor task is way ahead,
@@ -113,7 +118,7 @@ SUBROUTINE nbor_check (task_list, link)
         ! it could possibly be up to (1+grace)*dt ahead, so we use that as the
         ! limit for "way ahead".
         !-----------------------------------------------------------------------
-        if (task%track .and. verbose > 1) then
+        if (verbose > 1) then
           write (io_unit%log,'(1x,a,2(i6,f12.6),1p,4e12.2)') &
             'list_t%mulligan_check: id, time, nbor, time, lead/dt, dt, u_max =', &
             task%id, task%time, nbtask%id, nbtask%time, &
@@ -138,36 +143,8 @@ SUBROUTINE nbor_check (task_list, link)
       end select
       nbor => nbor%next
     end do
-    deallocate (border)
   end select
   call trace%end ()
-contains
-  subroutine overlap_range (nbtask, task)
-    class(patch_t):: nbtask, task
-    class(mesh_t), pointer:: m
-    integer:: i
-    real(8):: dist, la, ua
-    do i=1,3
-      dist = nbtask%position(i) - task%position(i)
-      m => nbtask%mesh(i)
-      if (nbtask%periodic(i)) then
-        dist = modulo (dist+0.5_8*m%b, m%b) &
-             - 0.5_8*m%b
-      end if
-      if (task%n(i) == 1) then
-        l(i) = 1
-        u(i) = 1
-      else
-        la = dist + m%r(m%lb) 
-        ua = dist + m%r(m%ub)
-        m => task%mesh(i)
-        l(i) =   floor(la/m%d + m%o) - 1
-        u(i) = ceiling(ua/m%d + m%o) + 1
-        l(i) = max(l(i),m%li)
-        u(i) = min(u(i),m%ui)
-      end if
-    end do
-  end subroutine overlap_range
 END SUBROUTINE nbor_check
 
 !===============================================================================
