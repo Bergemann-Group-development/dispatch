@@ -527,12 +527,12 @@ SUBROUTINE count_status (self, label)
   class(link_t) , pointer:: link
   class(nbor_t) , pointer:: nbor
   class(task_t), pointer:: task
-  integer:: n, ni, nb, nv, ne, nf, no
+  integer:: n, ni, nb, nv, ne, nf, no, nq
   integer, save:: itimer=0
   !.............................................................................
   call trace%begin ('list_t%count_status', itimer=itimer)
   call self%lock%set ('count_status', itimer)
-  nb=0; ni=0; nv=0; ne=0; nf=0; n = 0; no = 0
+  nb=0; ni=0; nv=0; ne=0; nf=0; n = 0; no = 0; nq = 0
   link => self%head
   do while (associated(link))
     task => link%task
@@ -542,6 +542,7 @@ SUBROUTINE count_status (self, label)
     if (task%is_set(bits%virtual )) nv = nv+1
     if (task%is_set(bits%internal)) ni = ni+1
     if (task%is_set(bits%external)) ne = ne+1
+    if (task%is_set(bits%ready   )) nq = nq+1
     if (task%is_set(bits%has_output)) no = no+1
     if (task%is_clear (bits%boundary + &
                        bits%virtual  + &
@@ -570,6 +571,7 @@ SUBROUTINE count_status (self, label)
   self%nb = nb
   self%nv = nv
   self%no = no
+  self%nq = nq
   self%n  = n
   if (self%verbose > 0) then
     if (present(label)) then
@@ -1053,7 +1055,7 @@ SUBROUTINE check_ready (self, link, lock, status)
         end if
         !.......................................................................
         if (self%verbose > 1) &
-          write (io_unit%log,'(f12.6,1x,a,i6,1x,a,i6,i4,f12.6,l2)') &
+          write (io_unit%log,'(f12.6,1x,a,i6,1x,a,i6,i4,1p,e12.3,l2)') &
             wallclock(), &
             'list_t%check_ready:', link%task%id, &
             'nbor, level, delta_t, ahead =', nbor%task%id, nbor%task%level, &
@@ -2226,30 +2228,28 @@ SUBROUTINE remove_from_queue (self, this)
   class(link_t), pointer:: this
   class(link_t), pointer:: next, prev
   !-----------------------------------------------------------------------------
-  if (.not.associated(self%active)) return
   call trace%begin ('list_t%remove_from_queue')
-  !$omp critical (active_cr)
   nullify (prev)
   next => self%queue
   do while (associated(next))
     if (associated(next%task, this%task)) then
-print *,'remove_from_queue: found it'
       if (associated(prev)) then
         prev%next_time => next%next_time
       else
         self%queue => next%next_time
       end if
+      call this%task%clear (bits%ready)
       call self%count_status
-      !self%nq = self%nq-1
-      !if (io%verbose > 1) &
+      !if (self%verbose > 0) &
         write (io_unit%mpi,*) &
          'remove_from_queue: id, nq =', this%task%id, self%nq
-      exit
+      call trace%end ()
+      return
     end if
     prev => next
     next => next%next_time
   end do
-  !$omp end critical (active_cr)
+  call io%warning ('list_t%remove_from_queue did not find task')
   call trace%end()
 END SUBROUTINE remove_from_queue
 

@@ -21,7 +21,8 @@ MODULE mulligan_mod
   type, public:: mulligan_t
   contains
     procedure:: init
-    procedure:: check
+    procedure, nopass:: check
+    procedure, nopass:: update
   end type
   integer, save:: verbose=0, level=0
   type(mulligan_t), public:: mulligan
@@ -46,37 +47,20 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !===============================================================================
-!> Check if this task should do a Mullligan, or if it should check nbor tasks
-!===============================================================================
-SUBROUTINE check (self, task_list, link)
-  class(mulligan_t):: self
-  class(list_t):: task_list
-  class(link_t), pointer:: link
-  !-----------------------------------------------------------------------------
-  call trace%begin ('mulligan_t%check')
-  if (level > 0) then
-    if (link%task%mulligan_time > 0d0) then
-      call update (task_list, link)
-    else
-      call nbor_check (task_list, link)
-    end if
-  end if
-  call trace%end ()
-END SUBROUTINE check
-
-!===============================================================================
 !> Check if any nbor needs to do a Mulligan
 !===============================================================================
-SUBROUTINE nbor_check (task_list, link)
+SUBROUTINE check (task_list, link)
   class(list_t):: task_list
   class(link_t), pointer:: link
   !.............................................................................
   class(nbor_t), pointer:: nbor
   class(task_t), pointer:: task, nbtask
-  real:: ds
-  real(8):: gsize(3), dist(3), dt
+  real(8):: gsize(3), dist(3), dt, ds
+  real:: u_max
   integer:: l(3), u(3)
+  logical:: trigger
   !-----------------------------------------------------------------------------
+  if (level <= 0) return
   call trace%begin ('mulligan_t%nbor_check')
   !-----------------------------------------------------------------------------
   ! Create a border mask
@@ -84,6 +68,8 @@ SUBROUTINE nbor_check (task_list, link)
   task => link%task
   select type (task)
   class is (patch_t)
+    !$omp atomic write
+    task%dt_fixed = 0d0
     ds = minval(task%ds,mask=task%mesh%n > 1)
     !---------------------------------------------------------------------------
     ! Check if the nbor%u_max calls for a do-over of the nbor task
@@ -97,7 +83,7 @@ SUBROUTINE nbor_check (task_list, link)
         ! Compute the index range where the nbtask guard zones overlap
         !-----------------------------------------------------------------------
         dist = nbtask%task_t%distance (task)
-        gsize = nbtask%mesh%s/2d0 + nbtask%mesh%d*(nbtask%mesh%ng+1)
+        gsize = nbtask%mesh%s/2d0 + nbtask%mesh%d*nbtask%mesh%ng
         where (task%n == 1)
           l = 1
           u = 1
@@ -107,8 +93,14 @@ SUBROUTINE nbor_check (task_list, link)
           l = max (l, task%mesh%li)
           u = min (u, task%mesh%ui)
         end where
-        dt = task%courant*ds &
-           / maxval(task%u_phase(l(1):u(1),l(2):u(2),l(3):u(3)))
+        u_max = maxval(task%u_phase(l(1):u(1),l(2):u(2),l(3):u(3))) 
+        dt = task%courant*ds/u_max
+        !.......................................................................
+        if (verbose > 2) then
+          write (io_unit%log,'(1x,a,2i6,3f6.2,2(2x,3i4))') &
+            'mulligan_t%nbor_check: id, nbor, dist, l, u =', &
+            task%id, nbtask%id, dist/task%size, l, u
+        end if
         !-----------------------------------------------------------------------
         ! The dt above is the Courant time step of the region from which the
         ! nbor task picks up its guard zones.  If the nbor task is way ahead,
@@ -118,26 +110,29 @@ SUBROUTINE nbor_check (task_list, link)
         ! it could possibly be up to (1+grace)*dt ahead, so we use that as the
         ! limit for "way ahead".
         !-----------------------------------------------------------------------
+        trigger = (nbtask%time-task%time) > dt*(1d0+task%grace)
         if (verbose > 1) then
-          write (io_unit%log,'(1x,a,2(i6,f12.6),1p,4e12.2)') &
-            'list_t%mulligan_check: id, time, nbor, time, lead/dt, dt, u_max =', &
-            task%id, task%time, nbtask%id, nbtask%time, &
-            (nbtask%time-task%time)/dt, dt, nbor%u_max
+          write (io_unit%log,'(1x,a,1p,2(i6,e12.3),1x,3i3,3g11.2,l3)') &
+            'mulligan_t%nbor_check: id, time, nbor, time, u_max, lead/dt =', &
+            task%id, task%time, nbtask%id, nbtask%time, nint(dist/task%size), &
+            nbtask%u_max, u_max, (nbtask%time-task%time)/dt, trigger
         end if
-        if (nbtask%time - task%time > dt*(1d0+task%grace)) then
+        if (trigger) then
           !---------------------------------------------------------------------
           ! Write diagnostics if level is 1
           !---------------------------------------------------------------------
           if (level == 1) then
-            write (stdout,'(1x,a,2i6,1p,4e12.2)') &
+            if (verbose > 0) then
+              write (io_unit%log,'(1x,a,2i6,1p,4e12.2)') &
               'list_t%mulligan_check: id, nbor, time, lead/dt, dt, u_max =', &
               task%id, nbtask%id, task%time, &
               (nbtask%time-task%time)/dt, dt, nbor%u_max
+            end if
           !---------------------------------------------------------------------
           ! Trigger a Mulligan if level is 2
           !---------------------------------------------------------------------
           else if (level > 1) then
-            call trigger (task_list, link, task, nbtask)
+            call trigger (task_list, task, nbtask, dt)
           end if
         end if
       end select
@@ -145,7 +140,7 @@ SUBROUTINE nbor_check (task_list, link)
     end do
   end select
   call trace%end ()
-END SUBROUTINE nbor_check
+END SUBROUTINE check
 
 !===============================================================================
 !> Setup a task to do a Mulligan, under the control of a thread that owns it,
@@ -164,36 +159,51 @@ END SUBROUTINE nbor_check
 !> This procedure requires only single locks, first on the task meta data,
 !> then on the task list, so there is no change that this will cause a deadlock.
 !===============================================================================
-SUBROUTINE trigger (task_list, link, task, nbtask)
+SUBROUTINE trigger (task_list, task, nbtask, dt)
   class(list_t):: task_list
-  class(link_t), pointer:: link
   class(patch_t), pointer:: task, nbtask
+  real(8):: dt
+  class(nbor_t), pointer:: nbor
   !-----------------------------------------------------------------------------
   call trace%begin ('mulligan_t%trigger')
   !-----------------------------------------------------------------------------
-  ! Lock the task meta-data, set the mulligan_time and modify the task time
+  ! Lock the task meta-data, set the mulligan_time and modify the task time,
+  ! in order to put the task near the head of the queue
   !-----------------------------------------------------------------------------
   call nbtask%lock%set ('mulligan')
-  nbtask%mulligan_time =  task%time
+  nbtask%mulligan_time =  task%time + dt
   nbtask%time = task%time
   if (nbtask%is_set (bits%busy)) then
     nbtask%rotated = .true.
   end if
+  !.............................................................................
+  if (verbose > 1) then
+    write (io_unit%log,'(a,l4)') &
+    'mulligan_t%trigger: busy =', nbtask%is_set (bits%busy)
+  end if
+  !.............................................................................
   call nbtask%lock%unset ('mulligan')
   !-----------------------------------------------------------------------------
-  ! Now make sure the task is in the ready queue, by locking the task list,
-  ! removing the task from the queue if it is there, and adding it back at the
-  ! new, older time.  If the task should happen to be in the busy state, all
+  ! Make sure the task is near the head of the ready queue, by locking the task
+  ! list, removing the task from the queue if it is there, and adding it back at
+  ! the new, older time.  If the task should happen to be in the busy state, all
   ! that will happen is that when the task is checked in check_ready, it will
   ! be found to already have the ready bit set, and it will remain in the queue.
   !-----------------------------------------------------------------------------
   call task_list%lock%set ('mulligan')
-  if (task%is_set (bits%ready)) then
-    call task_list%remove_from_queue (link)
+  if (nbtask%is_set (bits%ready)) then
+    call task_list%remove_from_queue (nbtask%link)
+    !...........................................................................
+    if (verbose > 1) then
+      write (io_unit%log,'(a,l4)') &
+      'mulligan_t%trigger: remove_from_queue nbtask =', nbtask%id
+    end if
+    !...........................................................................
   end if
-  call task_list%queue_by_time (link)
+  call task_list%queue_by_time (nbtask%link)
+  !-----------------------------------------------------------------------------
   call task_list%lock%unset ('mulligan')
-call trace%end()
+  call trace%end()
 END SUBROUTINE trigger
 
 !===============================================================================
@@ -206,45 +216,61 @@ SUBROUTINE update (task_list, link)
   !.............................................................................
   class(task_t), pointer:: task
   class(nbor_t), pointer:: nbor
+  integer:: n
   !-----------------------------------------------------------------------------
   call trace%begin ('mulligan_t%update')
   !-----------------------------------------------------------------------------
   task => link%task
-  select type (task)
-  class is (patch_t)
-    !---------------------------------------------------------------------------
-    ! De-rotate the task, effectively backing up one or more timesteps, until
-    ! a time that is behind the current task%mulligan_time
-    !---------------------------------------------------------------------------
-    task%time = task%t(task%it)
-    do while (task%time >= task%mulligan_time)
+  if (level > 1 .and. task%mulligan_time > 0d0) then
+    select type (task)
+    class is (patch_t)
+      !-------------------------------------------------------------------------
+      ! De-rotate the task, effectively backing up one or more timesteps, until
+      ! a time that is behind the current task%mulligan_time
+      !-------------------------------------------------------------------------
+      task%time = task%t(task%it)
+      n = 0
+      do while (task%time > task%mulligan_time)
+        call task%derotate ()
+        n = n+1
+        !.......................................................................
+        if (verbose > 0) then
+          write (io_unit%log,1) 'mulligan_t%update: id,  time =', &
+          task%id, n, task%time, task%mulligan_time
+          1 format(a,i6,i3,1p,3e12.3)
+        end if
+      end do
+      !-------------------------------------------------------------------------
+      ! Set a fixed timestep, which brings the task to the same time as the patch
+      !-------------------------------------------------------------------------
+      task%dt_fixed = task%mulligan_time - task%time
+      task%mulligan_time = 0d0
+      !.........................................................................
       if (verbose > 0) then
         write (io_unit%log,1) &
-        'mulligan_t%update: id,  time =', task%id, task%time, task%mulligan_time
-        1 format(a,i6,1p,3e12.3)
+        'mulligan_t%update: id, n, time, dtime =', &
+         task%id, n, task%time, task%dt_fixed
       end if
-      call task%derotate ()
-    end do
-    !---------------------------------------------------------------------------
-    ! Set a fixed timestep, which brings the task to the same time as the patch
-    !---------------------------------------------------------------------------
-    task%dt_fixed = task%mulligan_time - task%time
-    if (verbose > 0) then
-      write (io_unit%log,1) &
-      'mulligan_t%update: id, dtime =', task%id, task%time, task%dt_fixed
-    end if
-    !---------------------------------------------------------------------------
-    ! Cancel any nbors in the ready queue; they will be checked again
-    !---------------------------------------------------------------------------
-    call task_list%lock%set ('mulligan_t%update')
-    nbor => link%nbor
-    do while (associated(nbor))
-      if (nbor%task%is_set (bits%ready)) then
-        call task_list%remove_from_queue (nbor%link)
+      if (verbose > 1) then
+        write (stdout,1) &
+        'mulligan_t%update: id, n, time, dtime =', &
+         task%id, n, task%time, task%dt_fixed
       end if
-    end do
-    call task_list%lock%unset ('mulligan_t%update')
-  end select
+      !-------------------------------------------------------------------------
+      ! Cancel any nbors in the ready queue; they will be checked again
+      !-------------------------------------------------------------------------
+      call task_list%lock%set ('mulligan_t%update')
+      nbor => link%nbor
+      do while (associated(nbor))
+        if (nbor%task%is_set (bits%ready)) then
+          !call task_list%remove_from_queue (nbor%link)
+          write (io_unit%log,*) 'should be removed:', nbor%task%id, nbor%task%time
+        end if
+        nbor => nbor%next
+      end do
+      call task_list%lock%unset ('mulligan_t%update')
+    end select
+  end if
   call trace%end ()
 END SUBROUTINE update 
 

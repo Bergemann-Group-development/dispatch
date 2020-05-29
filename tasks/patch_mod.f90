@@ -52,7 +52,8 @@ MODULE patch_mod
     real(8):: pdf_next=0.0              ! next PDF output time
     real(8):: gamma=1.4                 ! gas gamma
     real(8):: dt_fixed                  ! for fixed time step Courant condition
-    real:: u_fixed, u_max               ! for fixed time step Courant condition
+    real:: u_max=0.0                    ! for Courant condition
+    real:: u_fixed                      ! for fixed time step Courant condition
     real:: d_min, d_max                 ! for info
     integer:: ndim = ndim               ! number of dimensions
     integer:: nv=0                      ! number of variables
@@ -1903,7 +1904,7 @@ SUBROUTINE courant_condition (self, detailed_timer)
   dsmin = minval(ds,self%n>1)
   if (self%dt_fixed > 0.0) then
     dtime = self%dt_fixed
-    courant = dtime*self%u_max/dsmin
+    self%u_max = self%courant*dsmin/dtime
   else if (self%u_fixed > 0.0) then
     dtime = self%courant*dsmin/self%u_fixed
     courant = self%courant
@@ -2614,6 +2615,11 @@ SUBROUTINE time_interval (self, time, jt, pt, all)
       pt(2) = (time-t(j))/dt
       pt(2) = max(0d0-self%grace, min(1d0+self%grace, pt(2)))
     end if
+  end if
+  if (time-t(j+1) > dt) then
+    call io%warning ('patch_t%time_interval: excessive extrapolatiion')
+    write (io_unit%log,'(a,i6,1p,e11.2)') &
+    'patch_t%time_interval: id, f =', self%id, (time-t(j))/dt
   end if
   pt(1) = 1.-pt(2)
   if (io%verbose > 3) then

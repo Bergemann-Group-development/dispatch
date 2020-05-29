@@ -15,6 +15,7 @@ MODULE experiment_mod
     procedure:: update
     procedure:: dnload
   end type
+  integer, save:: verbose=0
   real, save:: density_cgs=1e-20, cs_kms=0.18
 CONTAINS
 
@@ -26,7 +27,7 @@ SUBROUTINE init (self)
   real:: d, e
   integer:: iostat
   logical, save:: first_time=.true.
-  namelist /experiment_params/ density_cgs, cs_kms
+  namelist /experiment_params/ density_cgs, cs_kms, verbose
   !-----------------------------------------------------------------------------
   call trace%begin ('experiment_t%init')
   call self%solver_t%init
@@ -68,12 +69,14 @@ SUBROUTINE update (self)
   m2 = self%mesh(1)%ub
   m3 = 1
   m4 = self%mesh(1)%li+1
-  do iv=1,2
-   if (self%id==i1) write (stdout,'(i5,2i2,1p,3e12.3,05x,4e12.3)') self%istep, self%new, iv, self%time, self%dtime, self%u_max, self%mem(m1:m2,m,m,iv,self%it ,1)
-   if (self%id==i1) write (stdout,'(i5,2i2,1p,3e12.3,05x,4e12.3)') self%istep, self%new, iv, self%time, self%dtime, self%u_max, self%mem(m1:m2,m,m,iv,self%new,1)
-   if (self%id==i2) write (stdout,'(i5,2i2,1p,3e12.3,55x,4e12.3)') self%istep, self%new, iv, self%time, self%dtime, self%u_max, self%mem(m3:m4,m,m,iv,self%it ,1)
-   if (self%id==i2) write (stdout,'(i5,2i2,1p,3e12.3,55x,4e12.3)') self%istep, self%new, iv, self%time, self%dtime, self%u_max, self%mem(m3:m4,m,m,iv,self%new,1)
-  end do
+  if (verbose > 0) then
+    do iv=1,2
+      if (self%id==i1) write (stdout,'(i5,2i2,1p,3e12.3,05x,4e12.3)') self%istep, self%new, iv, self%time, self%dtime, self%u_max, self%mem(m1:m2,m,m,iv,self%it ,1)
+      if (self%id==i1) write (stdout,'(i5,2i2,1p,3e12.3,05x,4e12.3)') self%istep, self%new, iv, self%time, self%dtime, self%u_max, self%mem(m1:m2,m,m,iv,self%new,1)
+      if (self%id==i2) write (stdout,'(i5,2i2,1p,3e12.3,55x,4e12.3)') self%istep, self%new, iv, self%time, self%dtime, self%u_max, self%mem(m3:m4,m,m,iv,self%it ,1)
+      if (self%id==i2) write (stdout,'(i5,2i2,1p,3e12.3,55x,4e12.3)') self%istep, self%new, iv, self%time, self%dtime, self%u_max, self%mem(m3:m4,m,m,iv,self%new,1)
+    end do
+  end if
   call trace%end ()
 END SUBROUTINE update
 

@@ -580,13 +580,13 @@ subroutine ctoprim (self)
   else
     c = c + (abs(q(:,:,:,2)) + abs(q(:,:,:,3)) + abs(q(:,:,:,4)))/3.0
   end if
-  l = self%mesh%lb
-  u = self%mesh%ub
   !-----------------------------------------------------------------------------
   ! With this solver we can take into account the phase speed also in the
   ! entire guard zone, since it is based on values valid in all points
   !-----------------------------------------------------------------------------
-  self%u_max = maxval(c(l(1):u(1),l(2):u(2),l(3):u(3)))
+  self%u_max = maxval(c)
+  l = maxloc(c)
+  write (io_unit%log,*) 'u_max:', l, c(l(1),l(2),l(3))
   if (detailed_timer) then
     call trace%end (itimer)
   else

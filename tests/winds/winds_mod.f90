@@ -205,7 +205,6 @@ SUBROUTINE force (self, sink)
         'before:', patch%id, patch%fmaxval(abs(px/d)), maxval(abs(px/d))
     ee = self%energy
     dt = patch%dtime
-    if (patch%time == 0d0) dt = 0d0
     if (.not.associated(patch%force_per_unit_mass)) then
       allocate (patch%force_per_unit_mass(m(1),m(2),m(3),3))
       patch%force_per_unit_mass = 0.0
