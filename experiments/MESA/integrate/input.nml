@@ -1,15 +1,16 @@
 s $Id$
 
 !--- Sink particle parameters --------------------------------------------------
-&sinks_params           verbose=0 jeans_limit=4 per_omega=0.5 /
-&mesa_params            mesa_threshhold_msun=0.5 /
+&sinks_params           verbose=1 jeans_limit=4 per_omega=0.5 /
+&mesa_params            verbose=2 mesa_threshhold_msun=0.5 /
 
 !--- Experiment setup ----------------------------------------------------------
 &cartesian_params       size=1,1,1 dims=3*4 mpi_dims=1,1,1 origin=0,0,0 /
-&patch_params           nt=5 grace=0.5 n=3*16 no_mans_land=t /
-&out_params             end_time=2 out_time=0.010 print_every=20 /
+&patch_params           nt=5 grace=0.1 n=3*16 no_mans_land=t /
+&out_params             end_time=2 out_time=0.010 print_every=50 /
 &io_params              verbose=0 do_trace=f omp_trace=t do_output=t
                         method='parallel' format=10 guard_zones=f time_derivs=0 /
+&aux_params             select='sink_m','sink_p','sink_v' /
 &download_params        verbose=0 check_filled=t /
 
 !--- Initial condition and forces ----------------------------------------------
@@ -32,7 +33,7 @@ s $Id$
 
 !--- Dispatcher and task list params -------------------------------------------
 &dispatcher_params      method=0 test=f /
-&dispatcher0_params     verbose=0 RETRY_STALLED=60/
+&dispatcher0_params     verbose=0 retry_stalled=1e4 max_stalled=1e4 /
 &task_list_params       verbose=0 /
 &timer_params           sec_per_report=15 detailed=f /
 

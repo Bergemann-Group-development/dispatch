@@ -141,10 +141,14 @@ SUBROUTINE check_refine (self, patch)
   if (min_jeans < jeans_limit .and. self%mass == 0d0) then
     ipos = minloc(jeans_resolution)
     !...........................................................................
-    if (verbose > 0) &
+    if (verbose > 0) then
       write(io_unit%log,'(1x,a,i6,2x,3i4,f6.1)') &
        'sinks_t%check_refine: creating sink id, ipos, jeans =', &
         patch%id, ipos, jeans_resolution(ipos(1),ipos(2),ipos(3))
+      write(io_unit%log,'(1x,a,i6,f10.3,f12.6,1p,e11.2)') &
+       'sinks_t%check_refine: id, min_jeans, time, max(d) =', &
+        patch%id, min_jeans, patch%time, maxval(d)
+    end if
     !...........................................................................
     call self%create (patch, ipos+l)
   else if (verbose > 1) then
@@ -183,10 +187,19 @@ SUBROUTINE create (self, patch, ipos)
   self%size = 2d0*accretion_cells*patch%ds
   self%ds = 0d0
   self%time = patch%time-patch%dtime
+  if (.not.associated(self%mass_p)) then
+    allocate (self%mass_p, self%pos_p(3), self%vel_p(3))
+  end if
+  call aux%register ('sink_m', self%mass_p)
+  call aux%register ('sink_p', self%pos_p)
+  call aux%register ('sink_v', self%vel_p)
   !.............................................................................
-  if (verbose > 0) &
-    write (io_unit%log,'(1x,a,i6,2x,3i4,3f10.4)') &
-     'sinks_t%create: id, ipos, position =', patch%id, ipos, self%position
+  if (verbose > 0) then
+    write (stdout,*) patch%id, ' CRETING SINK AT', ipos
+    write (io_unit%log,'(1x,a,f12.6,i6,2x,3i4,3f10.4)') &
+     'sinks_t%create: time, id, ipos, position =', &
+     patch%time, patch%id, ipos, self%position
+  end if
   !.............................................................................
   !$omp end critical (create_cr)
   call trace%end ()
@@ -307,7 +320,7 @@ SUBROUTINE accrete (self, patch)
       self%velocity = 0d0
     end if
     !...........................................................................
-    if (verbose > 0) then
+    if (verbose > 1) then
       dr = self%point_distance (self%position, patch%position)
       write (io_unit%log,'(1x,a,i4,i8,3(3f8.3,2x),1p,4e10.2)') &
        'sinks_t%accrete: id, nm, pos, rpos, vel, m, dm, d_max =', &
@@ -412,7 +425,7 @@ SUBROUTINE put_wind (self, patch)
     !...........................................................................
     if (verbose > 0) then
       dr = self%point_distance (self%position, patch%position)
-      write (io_unit%log,'(1x,a,i4,i8,3(3f8.3,2x),1p,4e10.2)') &
+      write (io_unit%mpi,'(1x,a,i4,i8,3(3f8.3,2x),1p,4e10.2)') &
        'sinks_t%put_wind: id, pos, rpos, vel, m, dm, d_max =', &
         patch%id, self%position, dr/patch%size, self%velocity, &
         self%mass, dm, maxval(d)
@@ -490,26 +503,30 @@ SUBROUTINE post_update (self, patch)
 END SUBROUTINE post_update
 
 !===============================================================================
-!> Output sink task
+!> Prepare for output of sink data, byu copying current values to the aux
+!> pointer variables, which were registered in sink_t%create()
 !===============================================================================
 SUBROUTINE output (self, patch)
   class(sinks_t):: self
   class(gpatch_t), pointer:: patch
+  integer, save:: iout=-1
   !-----------------------------------------------------------------------------
-  !todo: fix.
-  return
   call trace%begin ('sinks_t%output')
-  if (.not.associated(self%mass_p)) then
-    allocate (self%mass_p, self%pos_p(3), self%vel_p(3))
+  if (associated(self%mass_p)) then
     self%mass_p = self%mass
     self%pos_p = self%position
     self%vel_p = self%velocity
+    !...........................................................................
+    if (verbose > 0) then
+      if (iout /= patch%iout .or. verbose > 1) then
+        iout = patch%iout
+        write (io_unit%mpi,'(a,1p,2g15.6,2(2x,3g15.6))') &
+          'sinks_t%output: t,m,p,v=', &
+          patch%time, self%mass, self%position, self%velocity
+      end if
+    end if
   end if
-  call aux%register ('sink_m', self%mass_p)
-  call aux%register ('sink_p', self%pos_p)
-  call aux%register ('sink_v', self%vel_p)
   call trace%end ()
 END SUBROUTINE output
-
 
 END MODULE sinks_mod
