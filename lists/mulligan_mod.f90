@@ -41,7 +41,7 @@ SUBROUTINE init (self)
   call io%namelist_warning ('mulligan_params', iostat)
   write (io%namelist, mulligan_params)
   if (level > 1 .and. omp%nthreads > 1) then
-    call io%abort ('The current Mulligan mechanism is not multi-thread-safe')
+    call io%warning ('The current Mulligan mechanism may not be entirely multi-thread-safe')
   end if
   call trace%end ()
 END SUBROUTINE init

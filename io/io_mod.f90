@@ -562,7 +562,7 @@ SUBROUTINE warning (text)
   character(len=*), optional:: text
   integer:: unit
   !.............................................................................
-  if (io%verbose > 0) then
+  if (io%verbose >= 0) then
     unit = stdout
   else
     unit = io_unit%mpi

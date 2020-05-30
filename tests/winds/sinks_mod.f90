@@ -17,6 +17,7 @@ MODULE sinks_mod
   contains
     procedure:: init
     procedure:: update
+    procedure:: dnload
   end type
   integer:: verbose=0
   real:: radius=8.0
@@ -73,5 +74,16 @@ SUBROUTINE update (self)
       self%id, 'sinks_t: dt, t, moved to', self%dtime, self%time, self%position
   call trace%end ()
 END SUBROUTINE update
+
+!===============================================================================
+!> Dummy download for sink task
+!===============================================================================
+SUBROUTINE dnload (self, only)
+  class(sinks_t):: self
+  integer, optional:: only
+  !-----------------------------------------------------------------------------
+  call trace%begin ('sinks_t%dnload�')
+  call trace%end ()
+END SUBROUTINE dnload
 
 END MODULE sinks_mod
