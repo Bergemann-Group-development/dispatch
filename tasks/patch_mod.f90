@@ -2617,9 +2617,10 @@ SUBROUTINE time_interval (self, time, jt, pt, all)
     end if
   end if
   if (time-t(j+1) > dt) then
-    call io%warning ('patch_t%time_interval: excessive extrapolatiion')
-    write (io_unit%log,'(a,i6,1p,e11.2)') &
-    'patch_t%time_interval: id, f =', self%id, (time-t(j))/dt
+    call io%warning ('patch_t%time_interval: excessive extrapolatiion prevented')
+    write (io_unit%log,'(a,i6,1p,4e11.2)') &
+    'patch_t%time_interval: excessive id, f =', &
+    self%id, time, t(j), dt, (time-t(j))/dt
   end if
   pt(1) = 1.-pt(2)
   if (io%verbose > 3) then

@@ -21,7 +21,8 @@ MODULE mulligan_mod
   type, public:: mulligan_t
   contains
     procedure:: init
-    procedure, nopass:: check
+    procedure:: check
+    procedure, nopass:: trigger
     procedure, nopass:: update
   end type
   integer, save:: verbose=0, level=0
@@ -49,7 +50,8 @@ END SUBROUTINE init
 !===============================================================================
 !> Check if any nbor needs to do a Mulligan
 !===============================================================================
-SUBROUTINE check (task_list, link)
+SUBROUTINE check (self, task_list, link)
+  class(mulligan_t):: self
   class(list_t):: task_list
   class(link_t), pointer:: link
   !.............................................................................
@@ -132,7 +134,7 @@ SUBROUTINE check (task_list, link)
           ! Trigger a Mulligan if level is 2
           !---------------------------------------------------------------------
           else if (level > 1) then
-            call trigger (task_list, task, nbtask, dt)
+            call self%trigger (task_list, task, nbtask, dt)
           end if
         end if
       end select
@@ -161,7 +163,7 @@ END SUBROUTINE check
 !===============================================================================
 SUBROUTINE trigger (task_list, task, nbtask, dt)
   class(list_t):: task_list
-  class(patch_t), pointer:: task, nbtask
+  class(patch_t):: task, nbtask
   real(8):: dt
   class(nbor_t), pointer:: nbor
   !-----------------------------------------------------------------------------
