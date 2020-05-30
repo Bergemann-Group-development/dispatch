@@ -38,7 +38,7 @@ size=1,1,1 dims=3*4  mpi_dims=1,1,2      !    2       1         64        20    
                         max_vorticity=6
                         max_compress=8 max_compress_level=8
                         check_interval=20 /
-&task_list_params       verbose=2 mulligan_level=0 mulligan_verbose=0
+&task_list_params       verbose=2  
                         detailed_timer=f dead_mans_hand=60 /
 &scaling_params         v_kms=1 l_pc=40 d_cgs=1e-22 /
 !---------------------------------

@@ -29,7 +29,7 @@
                         max_compress=8 max_compress_level=9
                         quadrature=f check_interval=5 /
 &scaling_params         v_kms=1 l_pc=40 d_cgs=1e-22 /
-&task_list_params       verbose=0 mulligan_level=1 mulligan_verbose=1
+&task_list_params       verbose=0  
                         detailed_timer=f dead_mans_hand=60 /
 !---------------------------------
 ! Initial condition and forces

@@ -32,7 +32,8 @@
  size=1,1,1 dims=3*05     mpi_dims=2,1,1                !  1-2 processes
  origin=0,0,0                                           ! Cartesian system origin
 /
-&task_list_params       mulligan_verbose=1 /
+&task_list_params       /
+&mulligan_params        verbose=1 /
 &task_params            track_id=63 /
 &patch_params           nt=5 grace=0.1 n=3*32 no_mans_land=t do_check_nan=f /
 &download_params        verbose=0 order_time=1
