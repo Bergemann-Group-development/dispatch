@@ -36,6 +36,7 @@ SUBROUTINE setup (task_list)
   USE task_mod
   USE bits_mod
   USE io_mod
+  USE link_mod
   implicit none
   type(task_list_t):: task_list
   !.............................................................................
@@ -52,10 +53,12 @@ SUBROUTINE setup (task_list)
     sink%position = (i-(n_sink+1)/2.0)*0.25 + task_list%position
     sink%velocity = [0.0,0.0,0.0]
     call sink%set (bits%internal)
-    task => sink
     print '(a,2i6,3(2x,3f6.3))', &
       'setup:', i, sink%id, sink%size, sink%position, task_list%position
-    call task_list%append_task (task)
+    allocate (sink%link)
+    call sink%link%init
+    sink%link%task => sink
+    call task_list%append (sink%link)
   end do
   call task_list%init_all_nbors
 END SUBROUTINE setup

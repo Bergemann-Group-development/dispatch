@@ -7,12 +7,13 @@ MODULE sinks_mod
   USE task_mod
   USE patch_mod
   USE scaling_mod
+  USE link_mod
   USE units_mod
   implicit none
   private
   type, public, extends(task_t):: sinks_t
     real:: mass, radius
-    real(8), allocatable:: pos(:,:)
+    class(link_t), pointer:: link => null()
   contains
     procedure:: init
     procedure:: update
@@ -47,7 +48,6 @@ SUBROUTINE init (self)
   if (verbose > 0) &
     print *,'radius',self%radius
   self%nt = 5
-  allocate (self%pos(3,self%nt))
   call self%task_t%init
   self%size = 2d0*self%radius
   call trace%end ()
@@ -58,12 +58,19 @@ END SUBROUTINE init
 !===============================================================================
 SUBROUTINE update (self)
   class(sinks_t):: self
+  class(nbor_t), pointer:: nbor
   !-----------------------------------------------------------------------------
   call trace%begin ('sinks_t%update')
-  self%dtime = 0.01
+  self%dtime = huge(1d0)
+  nbor => self%link%nbor
+  do while (associated(nbor))
+    self%dtime = min(self%dtime,nbor%task%dtime)
+    nbor => nbor%next
+  end do
   self%position = self%position + self%dtime*self%velocity
   if (verbose > 0) &
-    print *, self%id, 'sinks_t: moved to', real(self%position,kind=4)
+    print '(i6,2x,a,1p,2e12.4,2x,3e12.4)', &
+      self%id, 'sinks_t: dt, t, moved to', self%dtime, self%time, self%position
   call trace%end ()
 END SUBROUTINE update
 
