@@ -243,7 +243,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
     !-------------------------------------------------------------------------
     call source%time_interval (target%time, jt, pt)
     if (verbose > 1) &
-      write (io_unit%log,'(a,2i3,1x,2i3,2x,2f6.3,i5,f12.6,i5,10f12.6)') &
+      write (io_unit%mpi,'(a,2i3,1x,2i3,2x,2f6.3,i5,f12.6,i5,10f12.6)') &
         'download_link: it, new, jt, pt, tgt, time, src, t =', &
         source%it, source%new, jt, pt, target%id, target%time, &
         source%id, source%t
@@ -699,7 +699,7 @@ SUBROUTINE same_linear (self, target, source, jt, pt, all_cells, only, all_times
   else
     all_cells_l = .false.
   end if
-  if (verbose > 1) then
+  if (verbose > 2) then
     write(io_unit%log,'(a,2i7,2i4)') &
       ' same_linear: target, source, iv1, iv2 =', target%id, source%id, iv1, iv2
   end if
@@ -712,7 +712,7 @@ SUBROUTINE same_linear (self, target, source, jt, pt, all_cells, only, all_times
     call io%abort("download::same_linear::iv2 > source%nv")
   end if
   do iv=iv1, iv2
-    if (verbose > 1 .and. source%unsigned(iv)) then
+    if (verbose > 2 .and. source%unsigned(iv)) then
       fmin = min(minval(source%mem(:,:,:,iv,jt(1),1)), &
                  minval(source%mem(:,:,:,iv,jt(2),1)))
       if (fmin <= 0.0) then
@@ -727,7 +727,7 @@ SUBROUTINE same_linear (self, target, source, jt, pt, all_cells, only, all_times
       end if
     end if
     if (iv == target%idx%phi) then
-      if (verbose > 1) write(io_unit%log,*) &
+      if (verbose > 2) write(io_unit%log,*) &
         target%id, '     using same level potential from', source%id
     end if
     if (source%quality > 1000.) then
@@ -742,12 +742,12 @@ SUBROUTINE same_linear (self, target, source, jt, pt, all_cells, only, all_times
     li = target%mesh%li
     ui = target%mesh%ui
     call dnload_range (target, source, iv, l, u, o)
-    if (target%id==id_debug .or. verbose > 1) &
+    if (target%id==id_debug .or. verbose > 2) &
       write(io_unit%log,'(a,2i7," a l:",3i3,3x,"u:",3i3,3x,"o:",3i3)') &
         ' same_linear:', target%id,source%id, l, u, o
     l = max(l,source%mesh%lb-o)
     u = min(u,source%mesh%ub-o)
-    if (target%id==id_debug .or. verbose > 1) then
+    if (target%id==id_debug .or. verbose > 2) then
       write(io_unit%log,'(a,2i7," b l:",3i3,3x,"u:",3i3,3x,"o:",3i3)') &
         ' same_linear:', target%id,source%id, l, u, o
       flush(io_unit%log)
