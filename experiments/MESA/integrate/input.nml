@@ -10,7 +10,7 @@ s $Id$
 &out_params             end_time=2 out_time=0.010 print_every=50 /
 &io_params              verbose=0 do_trace=f omp_trace=t do_output=t
                         method='parallel' format=10 guard_zones=f time_derivs=0 /
-&aux_params             select='sink_m','sink_p','sink_v' /
+&aux_params             verbose=2 select='sink_m','sink_p','sink_v' /
 &download_params        verbose=0 check_filled=t /
 
 !--- Initial condition and forces ----------------------------------------------

@@ -158,7 +158,8 @@ SUBROUTINE eval_mesa (self)
   call trace%begin ('mesa_t%start_mesa')
   !$omp critical (mesa_cr)
   if (mod(count,cadence)==0) then
-    print *, 'SENDING QUERY'
+    if (count == 0) &
+      write (stdout,'(f12.6,2x,a)') wallclock(), 'SENDING QUERY'
     call send_query (self%write_unit, .false., self%time*scaling%t, &
                     self%dm_accreted*scaling%m, dummy)
     self%dm_accreted = 0
