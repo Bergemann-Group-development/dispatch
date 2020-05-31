@@ -24,6 +24,7 @@
 MODULE sinks_mod
   USE io_mod
   USE io_unit_mod
+  USE omp_timer_mod
   USE trace_mod
   USE task_mod
   USE patch_mod
@@ -195,7 +196,8 @@ SUBROUTINE create (self, patch, ipos)
   call aux%register ('sink_v', self%vel_p)
   !.............................................................................
   if (verbose > 0) then
-    write (stdout,*) patch%id, ' CRETING SINK AT', ipos
+    write (stdout,'(f12.6,i6,2x,a,3i4)') &
+      wallclock(), patch%id, ' CREATING SINK AT', ipos
     write (io_unit%log,'(1x,a,f12.6,i6,2x,3i4,3f10.4)') &
      'sinks_t%create: time, id, ipos, position =', &
      patch%time, patch%id, ipos, self%position
