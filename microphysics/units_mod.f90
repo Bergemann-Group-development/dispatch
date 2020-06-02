@@ -50,11 +50,11 @@ MODULE units_mod
   contains
     procedure:: output
   end type
-  !type(units_t), public:: units
 CONTAINS
 
 SUBROUTINE init (self)
   class(const_t):: self
+  type(units_t):: units
   !-----------------------------------------------------------------------------
   ! CGS units
   !-----------------------------------------------------------------------------
@@ -110,6 +110,7 @@ SUBROUTINE init (self)
   si%mu_0    = math%pi4*1d-7
   si%eps_0   = 8.8542d-12
   si%pi      = math%pi
+  call units%output
 END SUBROUTINE init
 
 !===============================================================================
@@ -119,7 +120,10 @@ SUBROUTINE output (self)
   class(units_t):: self
   character(len=4):: system
   real(kind=8):: l, t, m
+  real:: m_sun, r_sun, pc, au, grav, stefan, yr, myr
   namelist /units_nml/ system, l, t, m
+  namelist /cgs_nml/ m_sun, r_sun, pc, au, grav, stefan, yr, myr
+  namelist /si_nml/ m_sun, r_sun, pc, au, grav, stefan, yr, myr
   !----------------------------------------------------------------------------
   call trace%begin ('units_t%init')
   system = self%system
@@ -129,6 +133,24 @@ SUBROUTINE output (self)
   if (omp%master) then
     !$omp critical (write_nml_cr)
     write (io_unit%nml, units_nml)
+    m_sun  = cgs%m_sun
+    r_sun  = cgs%r_sun
+    pc     = cgs%pc
+    au     = cgs%au
+    grav   = cgs%grav
+    stefan = cgs%stefan
+    yr     = cgs%yr
+    myr    = cgs%myr
+    write (io_unit%nml, cgs_nml)
+    m_sun  = si%m_sun
+    r_sun  = si%r_sun
+    pc     = si%pc
+    au     = si%au
+    grav   = si%grav
+    stefan = si%stefan
+    yr     = si%yr
+    myr    = si%myr
+    write (io_unit%nml, si_nml)
     !$omp end critical (write_nml_cr)
   end if
   call trace%end
