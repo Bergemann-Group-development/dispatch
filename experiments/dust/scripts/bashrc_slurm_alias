@@ -1,0 +1,14 @@
+# check which job are running under my user
+alias sq="squeue -u $USER"
+
+# submit a job (syntax: sb "script-name")
+alias sb=sbatch
+
+# kill a job (syntax is "sc JOBID")
+alias sc=scancel
+
+# check how many nodes are idle in each queue
+alias sidle="sinfo | egrep 'astro_' | grep idle"
+
+# check which jobs are running and queued by all users
+alias sqa="squeue |grep astro_"
