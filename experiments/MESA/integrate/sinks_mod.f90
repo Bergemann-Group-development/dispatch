@@ -123,8 +123,8 @@ SUBROUTINE check_refine (self, patch)
   call trace%begin ('sinks_t%check_refine', itimer=itimer)
   l = patch%mesh%li
   u = patch%mesh%ui
-  d => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,patch%it,1)
-  e => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%e,patch%it,1)
+  d => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,patch%new,1)
+  e => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%e,patch%new,1)
   if (self%gamma==1d0) then
     g2 = 1d0
   else
@@ -263,11 +263,11 @@ SUBROUTINE accrete (self, patch)
     !---------------------------------------------------------------------------
     ! Density, energy per unit volume, intertia
     !---------------------------------------------------------------------------
-    d  => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d ,patch%it,1)
-    e  => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%e ,patch%it,1)
-    px => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%px,patch%it,1)
-    py => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%py,patch%it,1)
-    pz => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%pz,patch%it,1)
+    d  => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d ,patch%new,1)
+    e  => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%e ,patch%new,1)
+    px => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%px,patch%new,1)
+    py => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%py,patch%new,1)
+    pz => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%pz,patch%new,1)
     !---------------------------------------------------------------------------
     ! Accretion radius in code units, and accretion rate, scaled by rotation
     ! rate.  The accretion rate is expressed as a fraction times the rotation
@@ -386,13 +386,12 @@ SUBROUTINE put_wind (self, patch)
     !---------------------------------------------------------------------------
     ! Density, energy per unit volume, intertia
     !---------------------------------------------------------------------------
-    d  => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d ,patch%it,1)
-    e  => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%e ,patch%it,1)
-    px => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%px,patch%it,1)
-    py => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%py,patch%it,1)
-    pz => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%pz,patch%it,1)
+    d  => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d ,patch%new,1)
+    e  => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%e ,patch%new,1)
+    px => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%px,patch%new,1)
+    py => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%py,patch%new,1)
+    pz => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%pz,patch%new,1)
     dm = 0
-
     do i3=l(3),u(3)
       r3 = m3%p + m3%r(i3)
       do i2=l(2),u(2)
