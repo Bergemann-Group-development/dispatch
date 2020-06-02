@@ -249,7 +249,7 @@ SUBROUTINE output (self, patch)
   call trace%begin ('mesa_t%output')
   if (self%mesa_simulated .and. patch% contains(self%position)) then
     if (self%time + self%dtime > patch% out_next) then
-      write (filename,'("../../",a,i5.5,"/sink_",i5.5,".data")') trim(io%outputname), patch%iout, self%id;
+      write (filename,'("../",i5.5,"/sink_",i5.5,".data")') patch%iout, self%id;
       call send_query(self%write_unit, .true., patch% out_next*scaling%t, 0d0, filename)
     end if
   end if
