@@ -1,0 +1,39 @@
+#!/bin/bash
+#SBATCH --job-name=dust_ism
+#SBATCH --nodes=1 --ntasks-per-node=1 --cpus-per-task=40
+#SBATCH --ntasks-per-core=2
+##SBATCH --partition=astro_long
+##SBATCH --time=4-23:59:59
+#SBATCH --partition=astro_short
+#SBATCH --time=11:59:59
+#SBATCH --no-requeue
+
+# number of threads and OpenMP affinity
+export KMP_AFFINITY="granularity=thread,scatter,1,0"
+
+set -x
+
+# file names for input and executable
+exe=./dispatch.x
+
+in=input.nml
+
+# time stamp files
+time=`date +%y%m%d_%H%M`
+log=log_$time
+
+# redirect stdout and stderr
+exec >$log 2>&1
+echo jobid=$SLURM_JOB_ID
+
+#module purge
+#module load astro
+#module load intel
+#module load intelmpi
+module list
+
+# No MPI execution command
+srun --cpu_bind=threads $exe $in
+
+# With MPI execution command
+#srun --cpu_bind=threads --label --distribution=block:block $exe $in
