@@ -20,7 +20,7 @@
 
       create_pre_main_sequence_model = .true.
       report_retries = .true.
-      pgstar_flag = .true.
+      pgstar_flag = .false.
 
 / ! end of star_job namelist
 
