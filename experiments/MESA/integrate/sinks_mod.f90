@@ -41,11 +41,11 @@ MODULE sinks_mod
     real(8):: px=0d0, py=0d0, pz=0d0
     real(8):: gamma=1.0
     real, pointer:: mass_p=>null(), vel_p(:)=>null(), pos_p(:)=>null()
-    real(8), allocatable:: pos(:,:)
     real(8):: SN_time=0.0, previous_time=0d0, dt_min=1e-7
     class(gpatch_t), pointer:: patch
     real(8):: dm_accreted=0, dm_wind=0, mdot_wind=0 ! mass change due to wind and accretion. Update when update mass.
     real(8):: v_wind=tiny(0d0)                      ! v_inf of wind
+    logical:: created=.false.
   contains
     procedure:: pre_init
     procedure:: init
@@ -63,6 +63,7 @@ MODULE sinks_mod
   real:: create_fraction = 0.01       ! fraction of mass to accrete initially
   integer:: accretion_cells = 8       ! accretion radius in cells
   integer::         verbose = 0       ! information level
+  logical:: wind=.true.
   type(sinks_t), public:: sinks
 CONTAINS
 
@@ -74,7 +75,7 @@ SUBROUTINE pre_init (self, patch)
   class(gpatch_t), pointer:: patch
   integer:: iostat
   namelist /sinks_params/ jeans_limit, accretion_cells, create_fraction, &
-    per_omega, verbose
+    per_omega, wind, verbose
   logical:: first_time = .true.
   !-----------------------------------------------------------------------------
   call trace%begin ('sinks_t%pre_init')
@@ -99,7 +100,6 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('sinks_t%init')
   self%size = 2d0*accretion_cells*self%patch%ds
-  self%position = huge(1.0)
   call trace%end ()
 END SUBROUTINE init
 
@@ -178,6 +178,7 @@ SUBROUTINE create (self, patch, ipos)
   !-----------------------------------------------------------------------------
   call trace%begin ('sinks_t%create')
   !$omp critical (create_cr)
+  self%created = .true.
   m1 => patch%mesh(1)
   m2 => patch%mesh(2)
   m3 => patch%mesh(3)
@@ -226,6 +227,7 @@ SUBROUTINE accrete (self, patch)
   logical:: overlaps
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
+  if (.not.self%created) return
   call trace%begin ('sinks_t%accrete', itimer=itimer)
   overlaps = self%overlaps(patch)
   if (patch%time > self%time .and. overlaps) then
@@ -244,7 +246,6 @@ SUBROUTINE accrete (self, patch)
     m1 => patch%mesh(1)
     m2 => patch%mesh(2)
     m3 => patch%mesh(3)
-
     do i3=l(3),u(3)
       r3 = m3%p + m3%r(i3)
       do i2=l(2),u(2)
@@ -281,6 +282,7 @@ SUBROUTINE accrete (self, patch)
       omega = sqrt(scaling%grav*self%mass/accretion_radius**3)
       fraction =  omega*per_omega*patch%dtime
     end if
+    fraction = min(fraction,0.5)
     delta_d = 0.0
     inside = 0
     !---------------------------------------------------------------------------
@@ -365,8 +367,13 @@ SUBROUTINE put_wind (self, patch)
     rho_0 = self%mdot_wind/(4*math%pi*R_0**2*v_0)
     cell_volume = product(patch%ds)
     !...........................................................................
+    if (verbose > 1) then
+      write (io_unit%mpi,'(a,1p,3g12.3)') &
+        'sinks_t%put_wind: R_AU, v_kms, d_cgs =', &
+        R_0*scaling%l/cgs%au, v_0*scaling%u/cgs%kms, rho_0*scaling%d/cgs%m_u
+    end if
     if (verbose > 2) then
-      write (io_unit%log,'(1x,a,i4,l3,4(3f8.3,2x))') &
+      write (io_unit%mpi,'(1x,a,i4,l3,4(3f8.3,2x))') &
        'sinks_t%put_wind: id, over, sink%size, pos, patsh%size, pos =', &
         patch%id, .true., self%size, self%position, patch%size, patch%position
     end if
@@ -394,19 +401,19 @@ SUBROUTINE put_wind (self, patch)
           r1 = m1%p + m1%r(i1)
           dr = self%point_distance (self%position, [r1,r2,r3])
           dist = norm2(dr)
-          if (dist > R_0) cycle
-
+          if (dist > R_0 .or. .not.wind) cycle
+          !
           dd = patch%dtime*rho_0*v_0/R_0     * 2*dist*(6-5*dist)
           de = e(i1,i2,i3)/d(i1,i2,i3)*dd ! cold accretion for now
           dp = patch%dtime*rho_0*v_0*v_0/R_0 * 6*dr*dist**2*(dist-1)*(2*dist-3) &
                     + dd * self%velocity ! compensate for movenment
-
+          !
           d(i1,i2,i3) = d(i1,i2,i3) + dd
           e(i1,i2,i3) = e(i1,i2,i3) + de
           px(i1,i2,i3) = px(i1,i2,i3) + dp(1)
           py(i1,i2,i3) = py(i1,i2,i3) + dp(2)
           pz(i1,i2,i3) = pz(i1,i2,i3) + dp(3)
-
+          !
           dm = dm + dd * cell_volume
         end do
       end do
@@ -427,7 +434,7 @@ SUBROUTINE put_wind (self, patch)
     !...........................................................................
     if (verbose > 0) then
       dr = self%point_distance (self%position, patch%position)
-      write (io_unit%mpi,'(1x,a,i4,i8,3(3f8.3,2x),1p,4e10.2)') &
+      write (io_unit%mpi,'(1x,a,i6,3(3f8.3,2x),1p,4e10.2)') &
        'sinks_t%put_wind: id, pos, rpos, vel, m, dm, d_max =', &
         patch%id, self%position, dr/patch%size, self%velocity, &
         self%mass, dm, maxval(d)
@@ -516,16 +523,20 @@ SUBROUTINE output (self, patch)
   call trace%begin ('sinks_t%output')
   if (associated(self%mass_p)) then
     self%mass_p = self%mass
+  end if
+  if (associated(self%pos_p)) then
     self%pos_p = self%position
+  end if
+  if (associated(self%vel_p)) then
     self%vel_p = self%velocity
-    !...........................................................................
-    if (verbose > 0) then
-      if (iout /= patch%iout .or. verbose > 1) then
-        iout = patch%iout
-        write (io_unit%mpi,'(a,1p,2g15.6,2(2x,3g15.6))') &
-          'sinks_t%output: t,m,p,v=', &
-          patch%time, self%mass, self%position, self%velocity
-      end if
+  end if
+  !...........................................................................
+  if (verbose > 0) then
+    if (self%mass > 0d0 .and. (iout /= patch%iout .or. verbose > 1)) then
+      iout = patch%iout
+      write (io_unit%mpi,'(a,1p,2g15.6,2(2x,3g15.6))') &
+        'sinks_t%output: t,m,p,v=', &
+        patch%time, self%mass, self%position, self%velocity
     end if
   end if
   call trace%end ()
