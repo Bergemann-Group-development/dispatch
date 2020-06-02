@@ -94,16 +94,15 @@ SUBROUTINE start_mesa (self)
   namelist /startup/ num_threads,age,initial_mass
   !-----------------------------------------------------------------------------
   call trace%begin ('mesa_t%start_mesa')
-  write (self%folder, "(A, I4.4, A)") "mesa_processes/star_", self%id, "/"
+  write (self%folder, "(a,i4.4,a)") trim(io%rundir)//"/star_", self%id, "/"
+  if (verbose > 0) then
+    write (stdout,*) trim(self%folder)//' starting'
+  end if
   !
-  ! system calls and newunit() is not threadsafe
+  ! system calls and newunit() are not threadsafe
   !$omp critical (mesa_cr)
   ! todo: Handle case where masa_processes is not created, or where any files are locked
-  call system("(rm -r "  // trim(self%folder) //  & ! Make sure folder is empty& !";mkdir " // trim(folder) //  & ! create folder
-              ";mkdir "  // trim(self%folder) //  & ! cd to it so that this will be the working directory
-              ";cd "     // trim(self%folder) //  & ! cd to it so that this will be the working directory
-              ";mkfifo pipe1 pipe2" // & ! create the two pipes
-              ";../../../mesa_template/star ../../../mesa_template/inlist > log.txt &)") ! start mesa instance
+  call system("../mesa_template/startup.sh "//trim(self%folder)) ! start mesa instance
   open (newunit(self%write_unit), file=trim(self%folder) // 'pipe1', form='formatted', status='unknown', action='write')
   open (newunit(self%read_unit),  file=trim(self%folder) // 'pipe2', form='formatted', status='unknown', action='read')
   !
@@ -118,9 +117,6 @@ SUBROUTINE start_mesa (self)
   self%dm_accreted = 0
   !$omp end critical (mesa_cr)
   !.............................................................................
-  if (verbose > 0) then
-    write (stdout,*) trim(self%folder)//' starting'
-  end if
   if (verbose > 1) then
     write (io_unit%mpi, startup)
   end if
