@@ -5,6 +5,7 @@ MODULE mesa_mod
   use scaling_mod
   use units_mod
   USE io_mod
+  USE omp_mod
   USE omp_timer_mod
   USE trace_mod, only: trace
   USE sinks_mod
@@ -153,43 +154,63 @@ SUBROUTINE eval_mesa (self)
   logical :: supernova
   character(64) :: dummy = ""
   integer :: count=0
+  integer :: itimer=0
   namelist /to_dispatch/ radius, dm_wind, loum, t_eff, Zsurf, supernova
   !-----------------------------------------------------------------------------
-  call trace%begin ('mesa_t%start_mesa')
-  !$omp critical (mesa_cr)
+  call trace%begin ('mesa_t%start_mesa', itimer=itimer)
+  call self%patch%lock%set ('mesa')
+  !!omp critical (mesa_cr)
   if (mod(count,cadence)==0) then
     if (count == 0) &
       write (stdout,'(f12.6,2x,a)') wallclock(), 'SENDING QUERY'
+    if (verbose > 0) &
+      write (io_unit%mpi,'(f12.6,i4,2x,a)') wallclock(), omp%thread, 'SENDING QUERY'
     call send_query (self%write_unit, .false., self%time*scaling%t, &
                     self%dm_accreted*scaling%m, dummy)
     self%dm_accreted = 0
-    !
+    !...........................................................................
+    if (verbose > 0) &
+      write (io_unit%mpi,'(f12.6,i4,2x,a)') wallclock(), omp%thread, 'WAITING FOR REPLY'
     if (count == 0) &
       write (stdout,'(f12.6,2x,a)') wallclock(), 'WAITING FOR REPLY'
+    !...........................................................................
     read (self%read_unit, to_dispatch)
+    !...........................................................................
+    if (verbose > 0) &
+      write (io_unit%mpi,'(f12.6,i4,2x,a)') wallclock(), omp%thread, 'RECEIVED REPLY'
     if (count == 0) &
       write (stdout,'(f12.6,2x,a)') wallclock(), 'RECEIVED REPLY'
+    !...........................................................................
     if (supernova) then 
       self%exploded = .true.
       self%mesa_simulated = .false.
     end if 
-    v_esc = sqrt(2*cgs%grav*scaling%grav*self%mass/(radius/scaling%l))
+    v_esc = sqrt(2*scaling%grav*self%mass/(radius/scaling%l))
     self%v_wind = get_vink_alpha(t_eff, Zsurf) * v_esc
     ! set mass loss rate, compensating for 
     ! excess/lack caused by non-syncronos timestepping. If all mass has 
     ! been put out in surrounding, then self% dm_wind = 0
     self%dm_wind = self% dm_wind - dm_wind / scaling%m
     self%mdot_wind = -self%dm_wind/(self%time - self%last_time)
-    !
-    self%last_time = self%time
     !.............................................................................
+    if (verbose > 0) then
+      write (io_unit%mpi,'(a,1p,8g11.3)') &
+        'mesa_t%eval_mesa: t,m_sun,v_e,v,dm_sun,mdot,mdot=', &
+        self%time, self%mass*scaling%m/cgs%m_sun, v_esc*scaling%u/cgs%kms, &
+        self%v_wind*scaling%u/cgs%kms, -self%dm_wind*scaling%m/cgs%m_sun, &
+        self%mdot_wind*scaling%m/cgs%m_sun/(scaling%t/cgs%myr), &
+        dm_wind/(self%time-self%last_time)/cgs%m_sun/(scaling%t/cgs%myr)
+    end if
     if (verbose > 1) then
       write (io_unit%mpi, to_dispatch)
     end if
+    !.............................................................................
+    self%last_time = self%time
   end if
   count = count+1
-  !$omp end critical (mesa_cr)
-  call trace%end ()
+  call self%patch%lock%unset ('mesa')
+  !!omp end critical (mesa_cr)
+  call trace%end (itimer)
 END SUBROUTINE eval_mesa
 !
 !===============================================================================
