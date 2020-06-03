@@ -230,6 +230,7 @@ SUBROUTINE update (task_list, link)
       ! De-rotate the task, effectively backing up one or more timesteps, until
       ! a time that is behind the current task%mulligan_time
       !-------------------------------------------------------------------------
+      call task%lock%set ('mulligan')
       task%time = task%t(task%it)
       n = 0
       do while (task%time > task%mulligan_time)
@@ -258,6 +259,7 @@ SUBROUTINE update (task_list, link)
         'mulligan_t%update: id, n, time, dtime =', &
          task%id, n, task%time, task%dt_fixed
       end if
+      call task%lock%unset ('mulligan')
       !-------------------------------------------------------------------------
       ! Cancel any nbors in the ready queue; they will be checked again
       !-------------------------------------------------------------------------
