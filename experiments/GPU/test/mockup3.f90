@@ -40,7 +40,7 @@ FUNCTION pop (self) RESULT (link)
   !$omp critical (head_cr)
   link => self%head
   self%head => self%head%next
-  nullify(self%head%prev)
+  if (associated(self%head)) nullify(self%head%prev)
   self%n = self%n - 1
   !$omp end critical (head_cr)
 END FUNCTION pop
@@ -53,7 +53,9 @@ PROGRAM DISPATCH_mockup
   class(link_t), pointer:: link
   type(task_list_t):: task_list
   integer:: i
+#ifdef __OPENMP__
   double precision, external :: omp_get_wtime
+#endif
   real(8):: used
   !-----------------------------------------------------------------------------
   ! Main parameters
@@ -78,5 +80,15 @@ PROGRAM DISPATCH_mockup
   end do
   !$omp end single
   used = omp_get_wtime() - used
-  print *, 'FINISHED: the answer is ...', link%task%mem(1,1,1,1,1,1), real(used)
+  task => link%task
+  print "('FINISHED: the answer is ...',f10.6,9x,'used:',f7.3,'s')", &
+    task%mem(5,5,5,1,task%it,1), used
+#ifndef __OPENMP__
+contains
+  real(8) function omp_get_wtime()
+  integer:: count, count_rate
+  call system_clock (count, count_rate)
+  omp_get_wtime = real(count)/real(count_rate)
+  end function
+#endif
 END PROGRAM DISPATCH_mockup

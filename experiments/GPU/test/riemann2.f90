@@ -127,10 +127,10 @@ SUBROUTINE hll (dir, l, u, left, rght, flux,g1,g2)
     ! where u = (rho, rho*v, E_tot) are the conserved variables
     !---------------------------------------------------------------------------
     flux(i1,i2,i3, 1, dir) = (SR * fDl - SL*fDr + SL*SR*(Dr    - Dl   )) / (SR - SL)
-    !flux(i1,i2,i3,v1, dir) = (SR * fUl - SL*fUr + SL*SR*(Dr*Ur - Dl*Ul)) / (SR - SL)
-    !flux(i1,i2,i3,v2, dir) = (SR * fVl - SL*fVr + SL*SR*(Dr*Vr - Dl*Vl)) / (SR - SL)
-    !flux(i1,i2,i3,v3, dir) = (SR * fWl - SL*fWr + SL*SR*(Dr*Wr - Dl*Wl)) / (SR - SL)
-    !flux(i1,i2,i3, 5, dir) = (SR * fTl - SL*fTr + SL*SR*(Tr    - Tl   )) / (SR - SL)
+    flux(i1,i2,i3,v1, dir) = (SR * fUl - SL*fUr + SL*SR*(Dr*Ur - Dl*Ul)) / (SR - SL)
+    flux(i1,i2,i3,v2, dir) = (SR * fVl - SL*fVr + SL*SR*(Dr*Vr - Dl*Vl)) / (SR - SL)
+    flux(i1,i2,i3,v3, dir) = (SR * fWl - SL*fWr + SL*SR*(Dr*Wr - Dl*Wl)) / (SR - SL)
+    flux(i1,i2,i3, 5, dir) = (SR * fTl - SL*fTr + SL*SR*(Tr    - Tl   )) / (SR - SL)
 !#ifdef DBG
 !    if (dir==1 .and. i2==l(2) .and. i3==l(3)) then
 !      print '(i3,3(2x,5f10.4))', &

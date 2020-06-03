@@ -50,7 +50,6 @@ MODULE solver_mod
   real:: csound=1.0                     ! sound speed
   real:: courant=0.2                    ! courant number
   character(len=4):: method='hll'       ! riemann method
-
   !$omp declare target(csound, slope_type, method)
   !$omp declare target(ctoprim, sources, divflux, riemn3d, predict, slopes)
 CONTAINS
@@ -86,16 +85,16 @@ SUBROUTINE init (self)
   m = self%gn(1)
   allocate (self%mem(m,m,m,self%nv,self%nt,self%nw))
   self%mem(:,:,:,1,:,:) = 1.0
-  self%mem(:,:,:,5,:,:) = 1.0
+  self%mem(:,:,:,5,:,:) = 0.2
   do i3=1,self%gn(3)
-    r3 = (i3-1)/self%gn(3)
+    r3 = (i3-1.0)/self%gn(3)
     do i2=1,self%gn(2)
-      r2 = (i2-1)/self%gn(2)
+      r2 = (i2-1.0)/self%gn(2)
       do i1=1,self%gn(1)
-        r1 = (i1-1)/self%gn(1)
-        self%mem(i1,i2,i3,2,:,:) = sin(r1*pi2)
-        self%mem(i1,i2,i3,3,:,:) = sin(r2*pi2)
-        self%mem(i1,i2,i3,4,:,:) = sin(r3*pi2)
+        r1 = (i1-1.0)/self%gn(1)
+        self%mem(i1,i2,i3,2,:,:) = 0.03*sin(r1*pi2)
+        self%mem(i1,i2,i3,3,:,:) = 0.03*sin(r2*pi2)
+        self%mem(i1,i2,i3,4,:,:) = 0.03*sin(r3*pi2)
       end do
     end do
   end do
@@ -111,7 +110,7 @@ SUBROUTINE init (self)
     print *, 'ui', self%ui
     print *, 'mem', shape(self%mem)
     print *, 'muscl2'
-    start = omp_get_wtime()
+    !start = omp_get_wtime()
     first_time = .false.
   end if
   !call self%patch_t%init
@@ -205,8 +204,10 @@ SUBROUTINE update (self)
   !$omp end target data
   !call dealloc (self)
   self%time = self%time + self%dtime
-  print '(f12.6,2x,a,i4,f8.2)', &
-    omp_get_wtime()-start, 'solver_t%update: id, time =', self%id, self%time
+  self%it = self%new
+  self%new = mod(self%new,nt) + 1
+  !print '(f12.6,2x,a,i4,f8.2)', &
+    !omp_get_wtime()-start, 'solver_t%update: id, time =', self%id, self%time
   !call self%counter_update
 END SUBROUTINE update
 
@@ -718,7 +719,7 @@ SUBROUTINE sources (self, mem, prim, new, gamma)
   logical:: forcing
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call tracebegin ('solver_t%sources', itimer=itimer)
+  !call tracebegin ('solver_t%sources', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! If adjusting total energy, save kinetic part in self%prim(:,:,:,5)
   !-----------------------------------------------------------------------------
