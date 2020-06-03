@@ -624,9 +624,7 @@ SUBROUTINE derotate (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('task_t%deroate')
   if (self%time > 0d0 .and. self%istep > 0) then
-    do i=self%nt,2,-1
-      self%iit(i) = self%iit(i-1)
-    end do
+    self%iit = modulo(self%iit-2,self%nt) + 1
     self%istep = self%istep - 1
     self%it = self%iit(self%nt-1)
     self%new = self%iit(self%nt)
