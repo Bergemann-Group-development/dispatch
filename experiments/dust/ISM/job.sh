@@ -1,4 +1,5 @@
 #!/bin/bash
+#SBATCH --mem-per-cpu=3g --exclusive
 #SBATCH --job-name=dust_ism
 #SBATCH --nodes=1 --ntasks-per-node=1 --cpus-per-task=20
 ##SBATCH --ntasks-per-core=2
@@ -33,6 +34,7 @@ echo jobid=$SLURM_JOB_ID
 module list
 
 # No MPI execution command
+export OMP_NUM_THREADS=20
 srun --cpu_bind=threads $exe $in
 
 # With MPI execution command
