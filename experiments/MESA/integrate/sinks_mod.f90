@@ -282,7 +282,7 @@ SUBROUTINE accrete (self, patch)
       omega = sqrt(scaling%grav*self%mass/accretion_radius**3)
       fraction =  omega*per_omega*patch%dtime
     end if
-    fraction = min(fraction,0.5)
+    fraction = min(fraction,0.9)
     delta_d = 0.0
     inside = 0
     !---------------------------------------------------------------------------
@@ -335,9 +335,9 @@ SUBROUTINE accrete (self, patch)
     deallocate (radius2, delta_d, inside)
   else if (verbose > 2) then
     !...........................................................................
-    write (io_unit%log,'(1x,a,i6,l4,5(3f10.6,1x))') 'sinks_t%accrete: skip', &
-      patch%id, overlaps, patch%time, self%time, self%mass, &
-      self%position, self%size, patch%position, patch%size
+    write (io_unit%log,'(1x,a,i6,1x,3l1,l4,5(3f10.6,1x))') 'sinks_t%accrete: skip', &
+      patch%id, patch%periodic, overlaps, patch%time, self%time, self%mass, &
+      (self%position-patch%position)/patch%size, self%size(1)
     !...........................................................................
   end if
   call trace%end (itimer)
@@ -398,13 +398,13 @@ SUBROUTINE put_wind (self, patch)
         r2 = m2%p + m2%r(i2)
         do i1=l(1),u(1)
           r1 = m1%p + m1%r(i1)
-          dr = self%point_distance (self%position, [r1,r2,r3])
+          dr = self%point_distance (self%position, [r1,r2,r3])/R_0
           dist = norm2(dr)
-          if (dist > R_0 .or. .not.wind) cycle
+          if (dist > 1.0 .or. .not.wind) cycle
           !
-          dd = patch%dtime*rho_0*v_0/R_0     * 2*dist*(6-5*dist)
+          dd = patch%dtime*rho_0*v_0/R_0     * 2.*dist*(6.-5.*dist)
           de = e(i1,i2,i3)/d(i1,i2,i3)*dd ! cold accretion for now
-          dp = patch%dtime*rho_0*v_0*v_0/R_0 * 6*dr*dist**2*(dist-1)*(2*dist-3) &
+          dp = patch%dtime*rho_0*v_0*v_0/R_0 * 6.*dr*dist**2*(1.-dist)*(3.-2.*dist) &
                     + dd * self%velocity ! compensate for movenment
           !
           d(i1,i2,i3) = d(i1,i2,i3) + dd
@@ -434,16 +434,16 @@ SUBROUTINE put_wind (self, patch)
     if (verbose > 0) then
       dr = self%point_distance (self%position, patch%position)
       write (io_unit%mpi,'(1x,a,i6,3(3f8.3,2x),1p,4e10.2)') &
-       'sinks_t%put_wind: id, pos, rpos, vel, m, dm, d_max =', &
+       'sinks_t%put_wind: id, pos, rpos, vel, dm, dm_w, f_dm =', &
         patch%id, self%position, dr/patch%size, self%velocity, &
-        self%mass, dm, maxval(d)
+        dm, -self%dm_wind, dm/(self%mdot_wind*patch%dtime)
     end if
     !...........................................................................
   else if (verbose > 2) then
     !...........................................................................
-    write (io_unit%log,'(1x,a,i6,l4,5(3f10.6,1x))') 'sinks_t%put_wind: skip', &
-      patch%id, .false., patch%time, self%time, self%mass, &
-      self%position, self%size, patch%position, patch%size
+    write (io_unit%log,'(1x,a,i6,1x,3l1,l4,5(3f10.6,1x))') 'sinks_t%put_wind: skip', &
+      patch%id, patch%periodic, .false., patch%time, self%time, self%mass, &
+      (self%position-patch%position)/patch%size, self%size(1)
     !...........................................................................
   end if
   call trace%end (itimer)
