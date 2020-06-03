@@ -5,7 +5,7 @@
 ##SBATCH --partition=astro_long
 ##SBATCH --time=4-23:59:59
 #SBATCH --partition=astro_short
-#SBATCH --time=11:59:59
+#SBATCH --time=00:30:59
 #SBATCH --no-requeue
 
 # number of threads and OpenMP affinity
