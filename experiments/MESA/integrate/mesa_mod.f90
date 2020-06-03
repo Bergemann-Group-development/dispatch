@@ -153,7 +153,7 @@ SUBROUTINE eval_mesa (self)
   integer :: itimer=0
   namelist /to_dispatch/ radius, dm_wind, loum, t_eff, Zsurf, supernova
   !-----------------------------------------------------------------------------
-  call trace%begin ('mesa_t%start_mesa', itimer=itimer)
+  call trace%begin ('mesa_t%eval_mesa', itimer=itimer)
   call self%patch%lock%set ('mesa')
   !!omp critical (mesa_cr)
   if (mod(count,cadence)==0) then
@@ -186,16 +186,17 @@ SUBROUTINE eval_mesa (self)
     ! set mass loss rate, compensating for 
     ! excess/lack caused by non-syncronos timestepping. If all mass has 
     ! been put out in surrounding, then self% dm_wind = 0
-    self%dm_wind = self% dm_wind - dm_wind / scaling%m
+    !$omp atomic update
+    self%dm_wind = self%dm_wind - dm_wind / scaling%m
     self%mdot_wind = -self%dm_wind/(self%time - self%last_time)
     !.............................................................................
     if (verbose > 0) then
-      write (io_unit%mpi,'(a,1p,8g11.3)') &
-        'mesa_t%eval_mesa: t,m_sun,v_e,v,dm_sun,mdot,mdot=', &
+      write (io_unit%mpi,'(a,1p,9g11.3)') &
+        'mesa_t%eval_mesa: t,m_sun,v_e,v,dm_sun.dm_mesa,mdot,mdot=', &
         self%time, self%mass*scaling%m/cgs%m_sun, v_esc*scaling%u/cgs%kms, &
-        self%v_wind*scaling%u/cgs%kms, -self%dm_wind*scaling%m/cgs%m_sun, &
-        self%mdot_wind*scaling%m/cgs%m_sun/(scaling%t/cgs%myr), &
-        dm_wind/(self%time-self%last_time)/cgs%m_sun/(scaling%t/cgs%myr)
+        self%v_wind*scaling%u/cgs%kms, self%dm_wind, dm_wind/scaling%m, &
+        self%mdot_wind*scaling%m/cgs%m_sun/(scaling%t/cgs%yr), &
+        dm_wind/(self%time-self%last_time)/cgs%m_sun/(scaling%t/cgs%yr)
     end if
     if (verbose > 1) then
       write (io_unit%mpi, to_dispatch)
