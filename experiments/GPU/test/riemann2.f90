@@ -72,9 +72,10 @@ SUBROUTINE hll (dir, l, u, left, rght, flux,g1,g2)
     j1=0; j2=0; j3=1
   end if
   !-----------------------------------------------------------------------------
-  !$omp distribute parallel do collapse(3)
+  !$omp distribute parallel do collapse(2)
   do i3=l(3),u(3)
   do i2=l(2),u(2)
+  !$omp simd private(dir,v1,v2,v3,j1,j2,j3,g1,g2,Dl, El, Ul, Vl, Wl, Dr, Er, Ur, Vr, Wr, Pl, Pr, cl, cr, cmax, Tl, Tr, fDl, fDr, fUr, fUl, fTl, fTr, fVl, fVr, fWl, fWr, SL, SR)
   do i1=l(1),u(1)
     Dl = exp(&
          left(i1-j1,i2-j2,i3-j3,1))
