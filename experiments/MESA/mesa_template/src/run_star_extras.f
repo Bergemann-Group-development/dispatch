@@ -211,13 +211,21 @@
          real(8) :: time, dm_acc
          character(64) :: filename
          namelist /to_mesa/ save_query, time, dm_acc, filename
-
-         read(read_unit,to_mesa)
-         if (save_query) then
-            next_model_save = time
-            next_model_filename = filename
-            read(read_unit,to_mesa) ! only 1 save in a row
-         end if
+         save_query = .true.
+         do while (save_query)  ! read until the query actually contains new accretion info
+            read(read_unit,to_mesa)
+            if (save_query) then
+               if (time < acc_hist(acc_len)%time) then
+                  write(*,*) "BUG: This save query was sent too late. Should be sent before the"&
+                  , "accretion data for the same time. Will ignore for now, but this is a problem."
+               else if (time <= next_model_save .and. next_model_save < huge(0d0)) then
+                  write(*,*) "BUG: This save query was sent twice. Will ignore this query."
+               else
+                  next_model_save = time
+                  next_model_filename = filename
+               end if
+            end if
+         end do
 
          acc_len = acc_len + 1
          ! If no more capacity in accretion_hist, resize using doubling strategy
