@@ -103,7 +103,7 @@ SUBROUTINE start_mesa (self)
   ! system calls and newunit() are not threadsafe
   !$omp critical (mesa_cr)
   ! todo: Handle case where masa_processes is not created, or where any files are locked
-  call system("../mesa_template/startup.sh "//trim(self%folder)) ! start mesa instance
+  call system("bash ../mesa_template/startup.sh "//trim(self%folder)) ! start mesa instance
   open (newunit(self%write_unit), file=trim(self%folder) // 'pipe1', form='formatted', status='unknown', action='write')
   open (newunit(self%read_unit),  file=trim(self%folder) // 'pipe2', form='formatted', status='unknown', action='read')
   !
