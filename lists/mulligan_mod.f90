@@ -61,9 +61,10 @@ SUBROUTINE check (self, task_list, link)
   real:: u_max
   integer:: l(3), u(3)
   logical:: trigger
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (level <= 0) return
-  call trace%begin ('mulligan_t%nbor_check')
+  call trace%begin ('mulligan_t%check', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Create a border mask
   !-----------------------------------------------------------------------------
@@ -141,7 +142,7 @@ SUBROUTINE check (self, task_list, link)
       nbor => nbor%next
     end do
   end select
-  call trace%end ()
+  call trace%end (itimer)
 END SUBROUTINE check
 
 !===============================================================================
@@ -219,8 +220,9 @@ SUBROUTINE update (task_list, link)
   class(task_t), pointer:: task
   class(nbor_t), pointer:: nbor
   integer:: n
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('mulligan_t%update')
+  call trace%begin ('mulligan_t%update', itimer=itimer)
   !-----------------------------------------------------------------------------
   task => link%task
   if (level > 1 .and. task%mulligan_time > 0d0) then
@@ -275,7 +277,7 @@ SUBROUTINE update (task_list, link)
       call task_list%lock%unset ('mulligan_t%update')
     end select
   end if
-  call trace%end ()
+  call trace%end (itimer)
 END SUBROUTINE update 
 
 END MODULE mulligan_mod

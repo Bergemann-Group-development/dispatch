@@ -195,8 +195,9 @@ END SUBROUTINE counter_update
 SUBROUTINE dnload (self, only)
   class(gpatch_t):: self
   integer, optional:: only
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('gpatch_t%dnload')
+  call trace%begin ('gpatch_t%dnload', itimer=itimer)
   if (self%is_clear (bits%frozen)) then
     if (self%use_data_hub) then
       call self%data_hub%update (self%link, only=only)
@@ -204,7 +205,7 @@ SUBROUTINE dnload (self, only)
       call download%download_link (self%link, only=only)
     end if
   end if
-  call trace%end()
+  call trace%end (itimer)
 END SUBROUTINE dnload
 
 !===============================================================================

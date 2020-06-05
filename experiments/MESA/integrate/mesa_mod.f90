@@ -68,8 +68,9 @@ END SUBROUTINE pre_init
 SUBROUTINE post_update (self, patch)
   class(mesa_t):: self
   class(gpatch_t), pointer:: patch
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('mesa_t%post_update')
+  call trace%begin ('mesa_t%post_update', itimer=itimer)
   call self%sinks_t%post_update (patch)
   if (self%mass > mesa_threshhold .and. patch% contains(self%position) .and. &
       .not. self%exploded) then
@@ -80,7 +81,7 @@ SUBROUTINE post_update (self, patch)
       if (.true.) call self%eval_mesa
     end if
   end if 
-  call trace%end()
+  call trace%end (itimer)
 END SUBROUTINE post_update
 
 !===============================================================================
@@ -102,7 +103,7 @@ SUBROUTINE start_mesa (self)
   ! system calls and newunit() are not threadsafe
   !$omp critical (mesa_cr)
   ! todo: Handle case where masa_processes is not created, or where any files are locked
-  call system("../mesa_template/startup.sh "//trim(self%folder)) ! start mesa instance
+  call system("bash ../mesa_template/startup.sh "//trim(self%folder)) ! start mesa instance
   open (newunit(self%write_unit), file=trim(self%folder) // 'pipe1', form='formatted', status='unknown', action='write')
   open (newunit(self%read_unit),  file=trim(self%folder) // 'pipe2', form='formatted', status='unknown', action='read')
   !

@@ -2613,7 +2613,7 @@ SUBROUTINE time_interval (self, time, jt, pt, all)
       pt(2) = 0.0
     else
       pt(2) = (time-t(j))/dt
-      if (pt(2) > 1d0+self%grace) then
+      if (pt(2) > 1.01d0 + self%grace) then
         call io%warning ('patch_t%time_interval: excessive extrapolatiion prevented')
         write (io_unit%mpi,'(i4,2x,a,i6,1p,4e11.2)') omp%thread, &
           'patch_t%time_interval: excessive id, f =', &

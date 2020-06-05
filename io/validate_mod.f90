@@ -119,7 +119,9 @@ SUBROUTINE check0 (self, patch, f1, label1)
   character(len=64)    :: label0
   integer              :: id0, id1, sz, dims
   real                 :: diff
+  integer, save        :: itimer=0
   !-----------------------------------------------------------------------------
+  call trace%begin ('validate_t%check0', itimer=itimer)
   if (self%verbose > 0) &
     write (io_unit%output,'(a,i6,2x,i1,20x,f12.6,2x,a)') &
       ' validate:', patch%id, 1, patch%time, label1
@@ -148,6 +150,7 @@ SUBROUTINE check0 (self, patch, f1, label1)
     1 format(a,i12,3x,a)
     2 format(a,1pe12.3,2x,a,1pe12.3)
   end if
+  call trace%end (itimer)
 END SUBROUTINE check0
 
 !===============================================================================
@@ -370,8 +373,9 @@ SUBROUTINE check3 (self, patch, f1, label1)
   integer              :: id0, id1, sz, dims(3), ix, iy, iz, l(3), u(3)
   real, dimension(2)   :: aver, averx, avery
   real                 :: di_min, di_max, do_min, do_max, rms, diff
+  integer, save        :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('validate_t%check3')
+  call trace%begin ('validate_t%check3', itimer=itimer)
   if (self%verbose > 0) &
     write (io_unit%output,'(a,i6,2x,i1,2x,3i4,6x,f12.6,2x,a)') &
       ' validate:', patch%id, 3, shape(f1), patch%time, label1
@@ -441,7 +445,7 @@ SUBROUTINE check3 (self, patch, f1, label1)
     1 format(a,i12,3x,a)
     2 format(a,1pe12.3,3x,a,1pe12.3)
   end if
-  call trace%end()
+  call trace%end (itimer)
 END SUBROUTINE check3
 
 !===============================================================================

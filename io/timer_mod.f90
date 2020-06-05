@@ -51,6 +51,7 @@ MODULE timer_mod
     logical:: done=.false.
     real(8):: next_report_sec=0d0
     integer(8):: n_cheap=0, n_expensive=0
+    type(lock_t), pointer:: lock
   contains
     procedure:: init
     procedure:: begin
@@ -100,6 +101,8 @@ SUBROUTINE init (self)
     omp%nthreads = max(1,omp%nthreads)
     timer%detailed = detailed
     allocate (timers(0:omp%nthreads-1))
+    allocate (self%lock)
+    call self%lock%init ('timr')
   end if
   !$omp end critical (timer_cr)
   ntimer = 0

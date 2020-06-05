@@ -1,3 +1,3 @@
 OPT = -O3
-HW = -xHost -align array64byte -qopt-assume-safe-padding -fp-model strict -vec-threshold0 -assume norealloc_lhs
+HW = -xHost -align array64byte -qopt-assume-safe-padding -vec-threshold0 -assume norealloc_lhs
 DEBUG = -traceback
