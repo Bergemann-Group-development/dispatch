@@ -1,8 +1,8 @@
 !---  Setup parameters ---------------------------------------------------------
 &experiment_params      verbose=1 gamma=1d0 T_K=10 /
 &scaling_params         l_pc=5 n_H2=240 v_kms=1.0 /
-&cartesian_params       size=3*1.0 dims=3*8 mpi_dims=1,1,2 origin=3*-0.5 /
-&patch_params           n=3*32 grace=0.1 /
+&cartesian_params       size=3*1.0 dims=3*4 mpi_dims=1,1,2 origin=3*-0.5 /
+&patch_params           n=3*16 grace=0.1 /
 &selfgravity_params     selfgravity=f /
 &poisson_params         verbose=1 solver='sor' /
 
@@ -10,7 +10,7 @@
 &particle_solver_params verbose=0 courant=0.5 detailed_timer=f
                         / !ip_dbg=2628992 i_dbg=20,3,3,7,1 /
 &dust_params            verbose=0 n_bin=3 min_size_cgs=3e-8 max_size_cgs=3e-1
-                        particles_per_bin=20 /
+                        particles_per_bin=30 /
 
 !--- Input/Output parameters ---------------------------------------------------
 &io_params              verbose=0 do_trace=f omp_trace=t
