@@ -99,14 +99,18 @@ END FUNCTION cast2solver
 !===============================================================================
 SUBROUTINE update (self)
   class(solver_t) :: self
+  integer:: i1, i2, i3, i4
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! Lock %new slots, copy to it, and keep locked until update is finished
   !-----------------------------------------------------------------------------
-  call trace%begin ('solver_t%update')
+  call trace%begin ('solver_t%update', itimer=itimer)
   self%uin  => self%mem(:,:,:,:,self%it ,1)
   call self%mem_lock(self%new)%set ('update')
   self%unew => self%mem(:,:,:,:,self%new,1)
-  self%unew = self%uin
+  do i4=1,self%nv; do i3=1,self%gn(3); do i2=1,self%gn(2); do i1=1,self%gn(1)
+    self%unew(i1,i2,i3,i4) = self%uin(i1,i2,i3,i4)
+  end do; end do; end do; end do
   !-----------------------------------------------------------------------------
   ! Proceed, referring everywhere to the %new time slot
   !-----------------------------------------------------------------------------
@@ -118,7 +122,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   call self%mem_lock(self%new)%unset ('update')
   !-----------------------------------------------------------------------------
-  call trace%end ()
+  call trace%end (itimer)
 END SUBROUTINE update
 
 !===============================================================================

@@ -477,8 +477,9 @@ SUBROUTINE post_update (self, patch)
   class(sinks_t):: self
   class(gpatch_t), pointer:: patch
   real:: velocity(3), dr(3)
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('sinks_t%post_update')
+  call trace%begin ('sinks_t%post_update', itimer=itimer)
   call self%check_refine (patch)
   call self%accrete (patch)
   call self%put_wind (patch)
@@ -507,7 +508,7 @@ SUBROUTINE post_update (self, patch)
      'sinks_t%post_update: id, pos, (sink-patch)/size =', patch%id, &
       self%position, dr/patch%size
   end if
-  call trace%end ()
+  call trace%end (itimer)
 END SUBROUTINE post_update
 
 !===============================================================================

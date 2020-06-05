@@ -68,8 +68,9 @@ END SUBROUTINE pre_init
 SUBROUTINE post_update (self, patch)
   class(mesa_t):: self
   class(gpatch_t), pointer:: patch
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('mesa_t%post_update')
+  call trace%begin ('mesa_t%post_update', itimer=itimer)
   call self%sinks_t%post_update (patch)
   if (self%mass > mesa_threshhold .and. patch% contains(self%position) .and. &
       .not. self%exploded) then
@@ -80,7 +81,7 @@ SUBROUTINE post_update (self, patch)
       if (.true.) call self%eval_mesa
     end if
   end if 
-  call trace%end()
+  call trace%end (itimer)
 END SUBROUTINE post_update
 
 !===============================================================================

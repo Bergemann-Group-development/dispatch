@@ -85,8 +85,9 @@ SUBROUTINE pre_update (self)
   type(index_t), pointer:: idx
   integer:: m(3), new
   logical, save:: first_time=.true.
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('forces_t%pre_update')
+  call trace%begin ('forces_t%pre_update', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Use existing function call, if associated
   !-----------------------------------------------------------------------------
@@ -110,7 +111,7 @@ SUBROUTINE pre_update (self)
     first_time = .false.
     !$omp end critical (forces_cr)
   end if
-  call trace%end()
+  call trace%end (itimer)
 END SUBROUTINE pre_update
 
 !===============================================================================
@@ -118,12 +119,15 @@ END SUBROUTINE pre_update
 !===============================================================================
 SUBROUTINE post_update (self)
   class(forces_t):: self
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
+  call trace%begin ('forces_t%post_update', itimer=itimer)
   if (associated(self%patch%force_per_unit_mass)) then
     call io%bits_mem (-storage_size(self%patch%force_per_unit_mass), &
                       product(shape(self%patch%force_per_unit_mass)), '-fpm')
     deallocate (self%patch%force_per_unit_mass)
   end if
+  call trace%end (itimer)
 END SUBROUTINE post_update
 
 END MODULE forces_mod
