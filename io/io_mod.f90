@@ -160,7 +160,7 @@ SUBROUTINE init (self, name)
     open (io_unit%nml, file=trim(self%rundir)//'params.nml', form='formatted', status='unknown')
     open (io_unit%hash, file=trim(self%rundir)//'hash.log', form='formatted', status='unknown')
     open (self%input, file=self%inputname, form='formatted', status='old')
-    write(io_unit%output,'(a,i2)') &
+    write(io%output,'(a,i2)') &
       ' This version was compiled with default real KIND =', kind(test)
     call io%header ('io_t%init:')
     !---------------------------------------------------------------------------

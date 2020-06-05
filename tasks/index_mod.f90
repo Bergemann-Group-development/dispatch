@@ -257,20 +257,20 @@ SUBROUTINE print (self, unit)
   class(index_t):: self
   integer:: unit
   !.............................................................................
-  print 1, 'variable indices:   d' , self%d
-  print 1, ' p1', self%px
-  print 1, ' p2', self%py
-  print 1, ' p3', self%pz
-  if (self%e > 0) print 1, ' e', self%e
-  if (self%s > 0) print 1, ' s', self%s
+  write (stdout,1) 'variable indices:   d' , self%d
+  write (stdout,1) ' p1', self%px
+  write (stdout,1) ' p2', self%py
+  write (stdout,1) ' p3', self%pz
+  if (self%e > 0) write (stdout,1) ' e', self%e
+  if (self%s > 0) write (stdout,1) ' s', self%s
   if (idx%bx > 0) then
-    print 1, ' b1', self%bx
-    print 1, ' b2', self%by
-    print 1, ' b3', self%bz
+    write (stdout,1) ' b1', self%bx
+    write (stdout,1) ' b2', self%by
+    write (stdout,1) ' b3', self%bz
   end if
-  if (self%phi  > 0) print 1, ' phi' , self%phi
-  if (self%dphi > 0) print 1, ' dphi', self%dphi
-  print *, ''
+  if (self%phi  > 0) write (stdout,1) ' phi' , self%phi
+  if (self%dphi > 0) write (stdout,1) ' dphi', self%dphi
+  write (stdout,1) ''
   1 format(1x,a,':',i2,2x,$)
 END SUBROUTINE print
 
