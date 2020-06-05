@@ -155,6 +155,7 @@ END SUBROUTINE init
 SUBROUTINE pre_update (self)
   class(selfgravity_t):: self
  !-----------------------------------------------------------------------------
+  if (.not. selfgravity) return
   call trace%begin ('selfgravity_t%pre_update')
   call solve (self, self%patch%it)
   call trace%end ()

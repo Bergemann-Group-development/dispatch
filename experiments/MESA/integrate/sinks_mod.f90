@@ -120,6 +120,7 @@ SUBROUTINE check_refine (self, patch)
   integer:: m(3), ipos(3), l(3), u(3)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
+  if (self%created) return
   call trace%begin ('sinks_t%check_refine', itimer=itimer)
   l = patch%mesh%li
   u = patch%mesh%ui
