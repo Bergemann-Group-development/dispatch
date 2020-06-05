@@ -539,6 +539,7 @@ SUBROUTINE rotate (self)
     if (io%grace    > 0.0) self%grace    = io%grace
   end if
   if (self%rotated) return
+  !-----------------------------------------------------------------------------
   call trace%begin ('task_t%rotate',itimer=itimer)
   call self%log ('rotate', 3)
   !-----------------------------------------------------------------------------
@@ -547,9 +548,6 @@ SUBROUTINE rotate (self)
   if (io%verbose > 1) then
     write (io_unit%log,'(a,7i10)')   'task_t%rotate iit =', self%iit
     flush (io_unit%log)
-  end if
-  if (omp_lock%tasks) then
-    call self%lock%set ('rotate', itimer=itimer)
   end if
   !-----------------------------------------------------------------------------
   ! If this task has self%syncing set, then the time step has been set so as to
@@ -570,6 +568,45 @@ SUBROUTINE rotate (self)
   ! new self%time is what a task is judged on!  Also, note that the only time
   ! slot information accessed from other tasks is self%it, self%time, self%iit,
   ! self%t(iit(1:nt-1)), and self%dt(iit(1:nt-1)).  The iit((nt) entries are
+  ! not accessed.  Do the actual rotation of the buffer under lock, or atomic
+  !-----------------------------------------------------------------------------
+  if (omp_lock%tasks) then
+    call self%lock%set ('rotate')
+    call rotate_locked
+    call self%lock%unset ('rotate')
+  else
+    call rotate_atomic
+  end if
+  self%rotated = .true.
+  !.............................................................................
+  if (io%verbose>2) then
+   write (io_unit%log,*) 'task id:',self%id,'  it:',self%it,'  new:',self%new
+   if (io%verbose>3) then
+     write (io_unit%log,*) 'task iit:', self%iit
+     write (io_unit%log,*) 'task t(iit):', self%t(self%iit)
+    end if
+  end if
+  call trace%end (itimer)
+contains
+
+subroutine rotate_locked
+  self%dt(self%new)= self%dtime                         ! next estimate
+  self%t(self%new) = time                               ! initial time
+  self%it = self%new                                    ! update time slot, new
+  self%iit = mod(self%iit,self%nt)+1
+  self%new = self%iit(self%nt)
+  self%istep = self%istep + 1
+  self%rank_steps = self%rank_steps + 1
+  self%time = time
+end subroutine rotate_locked
+
+subroutine rotate_atomic
+  !-----------------------------------------------------------------------------
+  ! Time slot rotation.  Note that self%time should be the LAST of these
+  ! updates, since we do not want to enforce a critical region, and the
+  ! new self%time is what a task is judged on!  Also, note that the only time
+  ! slot information accessed from other tasks is self%it, self%time, self%iit,
+  ! self%t(iit(1:nt-1)), and self%dt(iit(1:nt-1)).  The iit((nt) entries are
   ! not accessed.
   !-----------------------------------------------------------------------------
   rptr => self%dt(self%it)
@@ -578,13 +615,13 @@ SUBROUTINE rotate (self)
   self%dt(self%new)= self%dtime                         ! next estimate
   self%t(self%new) = time                               ! initial time
   new = self%new
+  associate (self_istep=>self%istep,self_it=>self%it,snew=>self%new, &
+             self_time=>self%time,self_rank_steps=>self%rank_steps)
   !$omp atomic write
-  self%it = new                                         ! update time slot, new
+  self_it = new                                         ! update time slot, new
   new = mod(new,self%nt)+1                              ! increment / rotate
-  associate (snew=>self%new)
   !$omp atomic write
   snew = new
-  end associate
   do i=1,self%nt-1
     iptr => self%iit(i)
     !$omp atomic write
@@ -594,23 +631,13 @@ SUBROUTINE rotate (self)
   !$omp atomic write
   iptr = self%new                                       ! new right-most slot
   !$omp atomic update
-  self%istep = self%istep + 1
+  self_istep = self_istep + 1
   !$omp atomic update
-  self%rank_steps = self%rank_steps + 1
+  self_rank_steps = self_rank_steps + 1
   !$omp atomic write
-  self%time = time
-  if (io%verbose>2) &
-   write (io_unit%log,*) 'task id:',self%id,'  it:',self%it,'  new:',self%new
-  if (io%verbose>3) &
-   write (io_unit%log,*) 'task iit:', self%iit
-  if (io%verbose>3) &
-   write (io_unit%log,*) 'task t(iit):', self%t(self%iit)
-  nullify (rptr, iptr)
-  self%rotated = .true.
-  if (omp_lock%tasks) then
-    call self%lock%unset ('rotate')
-  end if
-  call trace%end (itimer)
+  self_time = time
+  end associate
+end subroutine rotate_atomic
 END SUBROUTINE rotate
 
 !===============================================================================
