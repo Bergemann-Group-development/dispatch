@@ -281,13 +281,14 @@ SUBROUTINE header_to_patch (self, head)
   class(patch_t):: self
   type(header_t):: head
   integer:: nt, new, i, save_bits
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! Swap the roles of boundary and virtual on incoming patches.  Also clear the
   ! ready bit, which is an indicator of a patch being in the ready queue, which
   ! an incoming patch is not.  By doing this here, we avoid having to do it in
   ! a critical region, otherwise needed to protect an operation on the patch
   !-----------------------------------------------------------------------------
-  call trace%begin ('patch_t%header_to_patch')
+  call trace%begin ('patch_t%header_to_patch', itimer=itimer)
   if (iand(head%status, bits%boundary) /= 0) then
     head%status = ior(head%status, bits%virtual)
     head%status = iand(head%status, not(bits%boundary))
@@ -343,32 +344,11 @@ SUBROUTINE header_to_patch (self, head)
   self%time       = head%time
   self%out_next   = head%out_next
   self%print_next = head%print_next
-  self%dtime      = head%dtime
+!  self%dtime      = head%dtime
   self%position   = head%position
   self%velocity   = head%velocity
   self%size       = head%size
   self%rank_steps = head%rank_steps
-  !$omp atomic write
-  self%it         = head%it
-  new             = mod(head%it,head%nt) + 1
-  !$omp atomic write
-  self%new        = new
-  self%nt         = head%nt
-  nt              = head%nt
-  if (nt > 0) then
-    do i=1,nt
-      !$omp atomic write
-      self%t(i)   = head%t(i)
-      !$omp atomic write
-      self%dt(i)  = head%dt(i)
-      !$omp atomic write
-      self%iit(i) = head%iit(i)
-    end do
-    !self%new      = head%iit(nt)
-  else
-    write (io_unit%log,*) omp%thread,'header_to_patch WARNING: nt non-positive', nt
-    flush (io_unit%log)
-  end if
   if (head%istep == 0) then
     write (io_unit%log,'(1x,a,i6,f12.6,2x,9f12.6)') &
       'patch_t%header_to_patch: id, time, t =', &
@@ -395,7 +375,7 @@ SUBROUTINE header_to_patch (self, head)
   !$omp atomic
   timer%latency%n    = timer%latency%n+1
   !.............................................................................
-  call trace%end ()
+  call trace%end (itimer)
 END SUBROUTINE header_to_patch
 
 !===============================================================================
@@ -1429,7 +1409,12 @@ INTEGER FUNCTION unpack_id (mesg)
 END FUNCTION unpack_id
 
 !===============================================================================
-!> Unpack patch info from a buffer, for MPI communication
+!> Unpack patch info from an MPI buffer.  To ensure consistency, the task meta-
+!> data should not be updated until after the time slot data are in place.
+!> Any task that has this task as virtual nbor and is waiting for the time slot
+!> will thus not be scheduled until both the meta-data and the time slot data
+!> are up-to-date.  This also reduces the chance of lock contention with respect
+!> to the new time slot.
 !===============================================================================
 SUBROUTINE unpack (self, mesg)
   class(patch_t):: self
@@ -1437,7 +1422,7 @@ SUBROUTINE unpack (self, mesg)
   !.............................................................................
   type(header_t):: header
   type(lock_t), pointer:: lock
-  integer:: n_buf, ibuf, iv, it
+  integer:: n_buf, ibuf, iv, it, i
   integer, dimension(:), pointer:: buffer
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -1447,75 +1432,87 @@ SUBROUTINE unpack (self, mesg)
   call self%set (bits%busy)
   self%unpack_time = wallclock()
   buffer => mesg%buffer
-  n_buf = product(self%gn)      ! 4-bytes per element; `anonymous_copy` also uses 4-bytes.
-  if (kind(self%mem)==8) &
-    n_buf = n_buf * 2           ! 8-bytes per element, but `anonymous_copy` uses 4-bytes!
+  !--- 4-bytes per element; `anonymous_copy` also uses 4-bytes ---
+  n_buf = product(self%gn)      
+  !--- 8-bytes per element, but `anonymous_copy` uses 4-bytes! ---
+  if (kind(self%mem)==8) n_buf = n_buf * 2
   !-----------------------------------------------------------------------------
-  ! Copy relevant patch info from sequenced header
+  ! Copy buffer into sequenced header, to get the new %it slot
   !-----------------------------------------------------------------------------
-  if (omp_lock%tasks) &
-    call self%lock%set ('unpack1')
   ibuf = 1
   call anonymous_copy (n_header, buffer(ibuf), header)
   ibuf = ibuf + n_header
-  !-----------------------------------------------------------------------------
-  ! Lock the %new slot, which will become the %it slot after header_to_patch
-  !-----------------------------------------------------------------------------
-  lock => self%mem_lock(self%new)
-  call omp_lock%check_pointer (lock, 'mem_lock', self%id)
-  call lock%set ('unpack2')
   call self%header_to_patch (header)
-  if (io%verbose > 1) &
+  !-----------------------------------------------------------------------------
+  ! Copy array data from the buffer to the time slot, under time slot lock
+  !-----------------------------------------------------------------------------
+  lock => self%mem_lock(header%it)
+  call lock%set ('unpack2')
+  do iv=1,self%nv
+    call anonymous_copy (n_buf, buffer(ibuf), self%mem(:,:,:,iv,header%it,1))
+    ibuf = ibuf + n_buf
+  end do
+  call lock%unset ('unpack2')
+  !-----------------------------------------------------------------------------
+  ! Update the patch meta-data under lock, now that the time slices are in place
+  !-----------------------------------------------------------------------------
+  call self%lock%set ('unpack2')
+  self%it         = header%it
+  self%time       = header%time
+  self%nt         = header%nt
+  if (header%nt > 0) then
+    self%new      = mod(header%it,header%nt) + 1
+    do i=1,self%nt
+      self%t(i)   = header%t(i)
+      self%dt(i)  = header%dt(i)
+      self%iit(i) = header%iit(i)
+    end do
+  else
+    write (io_unit%log,*) omp%thread, &
+      'header_to_patch WARNING: nt non-positive', header%nt
+    flush (io_unit%log)
+  end if
+!.............................................................................
+!write (io_unit%log,'(f12.6,i4,2x,a,i6,2i3,2x,9i3)') &
+!  wallclock(), omp%thread, &
+!  'patch_t%header_to_patch: id,it,new,iit=', &
+!  self%id, self%it, self%new, self%iit
+!write (io_unit%log,'(f12.6,i4,2x,a,i6,i3,f10.6,2x,9f10.6)') &
+!  wallclock(), omp%thread, &
+!  'patch_t%header_to_patch: id,it,time,t=', &
+!  self%id, self%it, self%time, self%t
+!.............................................................................
+  call self%lock%unset ('unpack2')
+  call self%clear (bits%busy)
+  self%wc_last = wallclock()
+  !-----------------------------------------------------------------------------
+  ! Diagnostics
+  !-----------------------------------------------------------------------------
+  if (io%verbose > 1) then
     write (io_unit%log,'(f12.6,3x,a,i7,2i4,2x,3l1,2i4,f8.4,f11.6)') &
-      wallclock(), 'header_to_patch: id, nq, BVS, nsnd, nrcv, latency, time =', &
+      wallclock(), 'patch_t%unpack: id, nq, BVS, nsnd, nrcv, latency, time =', &
       self%id, mesg%sender, self%nq, &
       self%is_set(bits%boundary), &
       self%is_set(bits%virtual), &
       self%is_set(bits%swap_request), &
       mpi_mesg%sent_list%n, mpi_mesg%recv_list%n, self%latency, self%time
-  self%wc_last = wallclock()
-  if (io%verbose > 1) write (io_unit%log,1) &
-    'patch_mod::unpk id, it, nq, time  after:', &
-    self%id, self%it, self%nq, self%time, &
-    self%is_set (bits%internal), &
-    self%is_set (bits%boundary), &
-    self%is_set (bits%virtual), &
-    self%is_set (bits%external), &
-    self%is_set (bits%swap_request), &
-    self%wc_last
+    write (io_unit%log,1) &
+      'patch_t%unpack id, it, nq, time  after:', &
+      self%id, self%it, self%nq, self%time, &
+      self%is_set (bits%internal), &
+      self%is_set (bits%boundary), &
+      self%is_set (bits%virtual), &
+      self%is_set (bits%external), &
+      self%is_set (bits%swap_request), &
+      self%wc_last
     1 format(a,3i6,f12.6,2x,5l1,f12.1)
-  !-----------------------------------------------------------------------------
-  ! Copy the variables from the output buffer.  If this is swap of patch roles
-  ! expect at least one more time slot.
-  !-----------------------------------------------------------------------------
-  do iv=1,self%nv
-    call anonymous_copy (n_buf, buffer(ibuf), self%mem(:,:,:,iv,self%it,1))
-    ibuf = ibuf + n_buf
-  end do
-  !-----------------------------------------------------------------------------
-  call lock%unset ('unpack2')
-  !-----------------------------------------------------------------------------
-  if (self%is_set(bits%swap_request) .and. self%is_set(bits%virtual)) then
-    it = mod(self%it-1+self%nt-1,self%nt)+1
-    lock => self%mem_lock(it)
-    call lock%set ('unpack3')
-    if (io%verbose>0) then
-      write (io_unit%log,*) self%id, 'extra time slot unpacked', it
-      flush (io_unit%log)
+    if (io%verbose > 2) then
+      write (io_unit%log,*) &
+        self%id, 'after unpack', minval(self%mem(:,:,:,1,self%it,1))
     end if
-    do iv=1,self%nv
-      call anonymous_copy (n_buf, buffer(ibuf), self%mem(:,:,:,iv,it,1))
-      ibuf = ibuf + n_buf
-    end do
-    call lock%unset ('unpack3')
   end if
   !-----------------------------------------------------------------------------
-  if (omp_lock%tasks) &
-    call self%lock%unset ('unpack1')
-  if (io%verbose > 2) &
-    write (io_unit%log,*) self%id, 'after unpack', minval(self%mem(:,:,:,1,self%it,1))
-  call self%clear (bits%busy)
-  call trace%end (itimer)
+    call trace%end (itimer)
 END SUBROUTINE unpack
 
 !===============================================================================
@@ -2560,12 +2557,13 @@ END SUBROUTINE log_interpolate
 !> Search for a time interval to interpolate in, and return the time
 !> slot indices and weight factors
 !===============================================================================
-SUBROUTINE time_interval (self, time, jt, pt, all)
+SUBROUTINE time_interval (self, time, jt, pt, all, id)
   class (patch_t)                 :: self
   real(8)                         :: time
   integer                         :: jt(2)
   real                            :: pt(2)
   logical, optional               :: all
+  integer, optional               :: id
   !.............................................................................
   integer                         :: i, j, n, iit(self%nt-1)
   real(8)                         :: t(self%nt-1), dt
@@ -2618,9 +2616,20 @@ SUBROUTINE time_interval (self, time, jt, pt, all)
       pt(2) = (time-t(j))/dt
       if (pt(2) > 1.01d0 + self%grace) then
         call io%warning ('patch_t%time_interval: excessive extrapolatiion prevented')
-        write (io_unit%mpi,'(i4,2x,a,i6,1p,4e11.2)') omp%thread, &
-          'patch_t%time_interval: excessive id, f =', &
-          self%id, time, t(j), dt, (time-t(j))/dt
+        if (present(id)) then
+          write (io_unit%mpi,'(f8.3,i4,2x,a,2i6,1p,4e11.2)') &
+            wallclock(), omp%thread, &
+            'patch_t%time_interval: excessive id,id,t,tm,t,f =', &
+            self%id, id, t(j), time, t(j+1), (time-t(j))/dt
+          write (io_unit%mpi,'(f8.3,i4,2x,a,2i2,2f5.2,1p,10e11.3)') &
+            wallclock(), omp%thread, &
+            'patch_t%time_interval: jt,pt,tm,t(:) =', &
+            jt, pt, time, self%t
+        else
+          write (io_unit%mpi,'(i4,2x,a,i6,1p,4e11.2)') omp%thread, &
+            'patch_t%time_interval: excessive id,t,tm,t,f =', &
+            self%id, t(j), time, t(j+1), (time-t(j))/dt
+        end if
         flush (io_unit%mpi)
       end if
       pt(2) = max(0d0-self%grace, min(1d0+self%grace, pt(2)))
