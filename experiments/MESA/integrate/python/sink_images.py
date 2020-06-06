@@ -8,15 +8,21 @@ import dispatch.graphics as dgr
 from sink_data import sink_data
 
 run='128'
+io0=9; io1=151
+if len(sys.argv) > 3:
+    io1=int(sys.argv[3])
+if len(sys.argv) > 2:
+    io0=int(sys.argv[2])
 if len(sys.argv) > 1:
     run=sys.argv[1]
+print(run,io0,io1)
 data='../data'
 dir=data+'/'+run+'/figures'
 if not os.path.exists(dir): os.mkdir(dir)
 v=sink_data(run)
 
 slice_average=False
-for io in range(9,201):
+for io in range(io0,io1):
     sn=dis.snapshot(io,run)
     f=dse.unigrid_volume(sn)
     w=np.where(v.t > sn.time)[0][0]
