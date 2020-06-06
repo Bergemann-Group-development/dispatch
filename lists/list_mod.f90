@@ -2025,7 +2025,7 @@ SUBROUTINE real_queue_by_time (self, this, error)
       'ERROR: tried to queue virtual or frozen task, VF =', &
       task%is_set(bits%virtual), task%is_set(bits%frozen)
     return
-end if
+  end if
   !-----------------------------------------------------------------------------
   !$omp atomic
   mpi_mesg%n_ready = mpi_mesg%n_ready+1
@@ -2104,6 +2104,12 @@ end if
       self%queue => this
     end if
     nullify (this%next_time)
+    !...........................................................................
+    if (self%verbose > 1) then
+      write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,2i6)') &
+      wallclock(), omp%thread, 'queued', task%id, task%time, &
+      task%istep, self%nq
+    end if
   9 continue
     call self%remove_active (this)                    ! remove from active_queue
   !-----------------------------------------------------------------------------

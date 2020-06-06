@@ -357,6 +357,12 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
   ! guard zones may be needed
   !-----------------------------------------------------------------------------
   if (.not.test) then
+    if (self%verbose > 1) then
+      wc = wallclock()
+      write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,2i6,f12.6)') &
+        wc, omp%thread, 'dnload', task%id, task%time, task%it, &
+        task%istep, task%dtime
+    end if
     call task%dnload                                  ! download nbor info
   end if
   !-----------------------------------------------------------------------------
