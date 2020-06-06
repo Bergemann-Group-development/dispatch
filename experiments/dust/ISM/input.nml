@@ -10,7 +10,7 @@
 &particle_solver_params verbose=0 courant=0.5 detailed_timer=f
                         / !ip_dbg=2628992 i_dbg=20,3,3,7,1 /
 &dust_params            verbose=0 n_bin=4 min_size_cgs=3e-8 max_size_cgs=3e-1
-                        particles_per_bin=61 /
+                        particles_per_bin=60 /
 
 !--- Input/Output parameters ---------------------------------------------------
 &io_params              verbose=0 do_trace=f omp_trace=t
