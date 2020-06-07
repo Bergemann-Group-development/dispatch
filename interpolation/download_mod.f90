@@ -241,7 +241,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
     ! during the guard zone loading or, if the lock is already set, access to
     ! the source will have to wait until after the source update.
     !-------------------------------------------------------------------------
-    call source%time_interval (target%time, jt, pt)
+    call source%time_interval (target%time, jt, pt, id=target%id)
     if (verbose > 1) &
       write (io_unit%mpi,'(a,2i3,1x,2i3,2x,2f6.3,i5,f12.6,i5,10f12.6)') &
         'download_link: it, new, jt, pt, tgt, time, src, t =', &
@@ -2261,7 +2261,7 @@ SUBROUTINE test (self)
       call set_values (src)
       call set_values (target)
       if (src%level==target%level) then
-        call src%time_interval (target%time, jt, pt)
+        call src%time_interval (target%time, jt, pt, id=target%id)
         call self%same (target, src, jt, pt, all_cells=.false.)
         if (self%check_filled) then
           if (any(filled < 0)) then

@@ -278,6 +278,7 @@ SUBROUTINE init (self)
       omp_lock%links = .false.
     end if
     shared%f_zoom = 1.0/ratio
+    shared%refine_on = on
     if (min_jeans     > 0.0) n_criteria = n_criteria+1
     if (max_compress  > 0.0) n_criteria = n_criteria+1
     if (max_vorticity > 0.0) n_criteria = n_criteria+1

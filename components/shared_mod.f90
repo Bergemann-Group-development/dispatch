@@ -19,6 +19,7 @@ MODULE shared_mod
     integer:: n_queue = 0
     integer:: mpi_size=0, mpi_rank=0
     logical:: mpi_master=.true.
+    logical:: refine_on=.false.
     real:: f_zoom(3)=1.0
   contains
     procedure, nopass:: abort

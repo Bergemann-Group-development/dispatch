@@ -83,6 +83,7 @@ MODULE task_mesg_mod
   USE experiment_mod
   USE bits_mod
   USE load_balance_mod
+  USE shared_mod
   implicit none
   private
   type, public, extends(list_t):: task_mesg_t
@@ -164,32 +165,119 @@ SUBROUTINE check_mpi (self, n)
   class(task_mesg_t):: self
   integer, optional:: n
   !.............................................................................
-  class(link_t), pointer:: link
+  class(link_t), pointer:: link, next, new, head
+  class(link_t), pointer, save:: shared_head => null()
   class(task_t), pointer:: task
   integer:: n_unpk
   integer, save:: itimer=0
+  real(8):: times(5)
+  integer:: j
+  logical:: do_copy=.false.
   !-----------------------------------------------------------------------------
   n_unpk = 0
   if (mpi%size > 1) then
     call trace%begin ('task_mesg_t%check_mpi', itimer=itimer)
-    call self%lock%set ('task_mesg_t%check_mpi')
-    link => self%head
-    do while (associated(link))
-      task => link%task
-      if (associated(task)) then
-        if (task%is_set(bits%virtual)) then
-          call check_recv (self, link, n_unpk)
+    if (do_copy) then
+      j=0; times(j)=wallclock()
+      !---------------------------------------------------------------------------
+      ! Make a single linked list of the virtual tasks om the task list
+      !---------------------------------------------------------------------------
+      if (shared%refine_on) then
+        call self%lock%set ('task_mesg_t%check_mpi')
+        call copy_virtual
+        call self%lock%unset ('task_mesg_t%check_mpi')
+        write (io_unit%mpi,*) 'made head'
+      else if (associated (shared_head)) then
+        head => shared_head
+        write (io_unit%mpi,*) 'use shared head'
+      else
+        call self%lock%set ('task_mesg_t%check_mpi')
+        if (.not.associated (shared_head)) then
+          call copy_virtual
+          shared_head => head
         end if
+        write (io_unit%mpi,*) 'made shared head'
+        call self%lock%unset ('task_mesg_t%check_mpi')
       end if
-      link => link%next
-    end do
-    call self%lock%unset ('task_mesg_t%check_mpi')
-    call check_new(self)
+      j=j+1; times(j)=wallclock()
+      !---------------------------------------------------------------------------
+      ! Use the list (reuse if unigrid)
+      !---------------------------------------------------------------------------
+      link => head
+      do while (associated(link))
+        write (io_unit%log,*) wallclock(), ' task:', link%task%id
+        call check_recv (self, link, n_unpk)
+        link => link%next
+      end do
+      j=j+1; times(j)=wallclock()
+      !---------------------------------------------------------------------------
+      ! If AMR is on, drop the list
+      !---------------------------------------------------------------------------
+      if (shared%refine_on) then
+        link => head
+        do while (associated(link))
+          next => link%next
+          deallocate (link)
+          link => next
+        end do
+        nullify (shared_head)
+      end if
+      j=j+1; times(j)=wallclock()
+      call check_new (self)
+      j=j+1; times(j)=wallclock()
+      write (io_unit%mpi,'("task_mesg_t%check_mpi: times =",3p,10f8.3)') &
+        times(2:j)-times(1:j-1)
+    !---------------------------------------------------------------------------
+    ! When using the original task list, locking is needed only in AMR
+    !---------------------------------------------------------------------------
+    else
+      if (shared%refine_on) then
+        call self%lock%set ('task_mesg_t%check_mpi')
+        write (stdout,*) 'locking'
+      end if
+      link => self%head
+      do while (associated(link))
+        task => link%task
+        if (associated(task)) then
+          if (task%is_set(bits%virtual)) then
+            call check_recv (self, link, n_unpk)
+          end if
+        end if
+        link => link%next
+      end do
+      if (shared%refine_on) then
+        call self%lock%unset ('task_mesg_t%check_mpi')
+        write (stdout,*) 'unlocking'
+      end if
+    end if
     call trace%end (itimer)
   end if
   if (present(n)) then
     n = n_unpk
   end if
+contains
+  subroutine copy_virtual
+    link => self%head
+    do while (associated(link))
+      task => link%task
+      if (associated(task)) then
+        if (task%is_set(bits%virtual)) then
+          allocate (new)
+          new%task => task
+          if (associated(head)) then
+            next%next => new
+            !write (stdout,*) 'next%next set'
+          else
+            head => new
+            !write (stdout,*) 'head set'
+          end if
+          next => new
+          !write (stdout,*) 'next set'
+        end if
+      end if
+      link => link%next
+    end do
+  end subroutine
 END SUBROUTINE check_mpi
 
 !===============================================================================
