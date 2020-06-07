@@ -160,6 +160,9 @@ SUBROUTINE init (self, name)
     open (io_unit%nml, file=trim(self%rundir)//'params.nml', form='formatted', status='unknown')
     open (io_unit%hash, file=trim(self%rundir)//'hash.log', form='formatted', status='unknown')
     open (self%input, file=self%inputname, form='formatted', status='old')
+    if (mpi%rank > 0) then
+      io%output = io_unit%mpi
+    end if
     write(io%output,'(a,i2)') &
       ' This version was compiled with default real KIND =', kind(test)
     call io%header ('io_t%init:')
@@ -257,7 +260,6 @@ SUBROUTINE init (self, name)
     !---------------------------------------------------------------------------
     ! Backwards compatibility
     !---------------------------------------------------------------------------
-    io%output    = io_unit%output
     io%data_unit = io_unit%data
     write(io%output,*) 'output directory: '//self%rundir
     write(io%output,*) 'reading parameters from: '//trim(self%inputname)
