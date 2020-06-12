@@ -139,9 +139,11 @@ END SUBROUTINE pre_update
 SUBROUTINE post_update (self)
   class(extras_t):: self
   !.............................................................................
+  call trace%begin ('extras_t%post_update')
   call self%forces%post_update                                  ! forces
   call self%selfgravity%post_update                             ! selfg
   call self%particle_solver%update                              ! dust
+  call trace%end ()
 END SUBROUTINE post_update
 
 !===============================================================================

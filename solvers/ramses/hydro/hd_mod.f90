@@ -586,7 +586,6 @@ subroutine ctoprim (self)
   !-----------------------------------------------------------------------------
   self%u_max = maxval(c)
   l = maxloc(c)
-  write (io_unit%log,*) 'u_max:', l, c(l(1),l(2),l(3))
   if (detailed_timer) then
     call trace%end (itimer)
   else
