@@ -118,6 +118,8 @@ MODULE dust_mod
   logical:: particle_io = .false.             ! output particle positions?
   logical:: validate = .false.                ! check consistency
   type(mpi_counter_t):: counter               ! counter returning uniq id
+  class(particle_t), pointer:: pp(:,:,:,:,:)
+  !$omp threadprivate (pp)
   public:: n_bin
 CONTAINS
 
@@ -192,7 +194,7 @@ SUBROUTINE initial_condition (self)
   real, pointer, contiguous:: d(:,:,:)
   integer:: i1, i2, i3, bin, j
   integer:: l(3), u(3), i
-  real:: c
+  real:: c, w
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('dust_t%initial_condition', itimer=itimer)
@@ -201,23 +203,33 @@ SUBROUTINE initial_condition (self)
   d => patch%mem(:,:,:,patch%idx%d,patch%it,1)
   l = self%lb
   u = self%ub
+  !allocate (pp(particles_per_bin,n_bin,l(1):u(1),l(2):u(2),l(3):u(3)))
   i = 0
   do i3=l(3),u(3)
   do i2=l(2),u(2)
   do i1=l(1),u(1)
-    do j=1,particles_per_bin
-      i = i+1
-      do bin=1,n_bin
+    w = d(i1,i2,i3)*dust_to_gas
+    do bin=1,n_bin
+      c = drag_coeff/self%s_cgs(bin)
+      do j=1,particles_per_bin
+        i = i+1
+        !p => pp(j,bin,i1,i2,i3)
+        !nullify (p%next, p%prev)
         allocate (p)
         call p%init
-        if (mod(i,output_every)==0) p%flag = 1   ! selet for tracking
+        if (mod(i,output_every)==0) then
+          p%flag = 1   ! select for tracking
+        else
+          p%flag = 0
+        end if
         p%bin = bin
         p%q = [i1,i2,i3]
         p%r = self%random%uniform (3)
+        p%a = 0.0
         p%v = 0.0
-        p%c = drag_coeff/self%s_cgs(bin)
+        p%c = c
+        p%w = w
         call self%particles%append (p)
-        p%w = d(i1,i2,i3)*dust_to_gas
         !.......................................................................
         if (verbose > 2 .or. p%id == self%ip_dbg) &
           write (io_unit%log,'(a,i8,2x,3i3,1x,3f5.2,1x,1p,2e11.2)') &

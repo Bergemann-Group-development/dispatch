@@ -158,6 +158,7 @@ SUBROUTINE initial_condition (self)
   !-----------------------------------------------------------------------------
   if (.not. on) return
   call trace%begin ('particle_solver_t%initial_condition')
+  call self%lock%set ('ICs')
   self%upper = .false.
   self%lower = .false.
   pa => self%patch
@@ -182,7 +183,9 @@ SUBROUTINE initial_condition (self)
   !-----------------------------------------------------------------------------
   ! Initialize dust.  At boundaries, add particles also in guard zones
   !-----------------------------------------------------------------------------
+  !$omp critical (alloc_cr)
   call self%dust%initial_condition
+  !$omp end critical (alloc_cr)
   !.............................................................................
   if (verbose > 0) then
     if (verbose > 1) then
