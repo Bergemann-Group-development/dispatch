@@ -48,7 +48,8 @@ MODULE omp_lock_mod
   integer, save:: id_save=-1, n_lock=0
   character(len=6):: log='lock'
   character(len=6):: ext, ext1, ext2
-  integer:: unit
+  integer, save:: unit=0
+  !$omp threadprivate (unit)
   real(8):: alternate_time=0d0, alternate_next=0d0
   real(8):: wait_time = 0d0
   type(lock_t), save, public:: omp_lock
@@ -76,16 +77,35 @@ SUBROUTINE init (self, kind, id)
 #ifdef TRACE 
   call trace%begin('lock_t%init')
 #endif
-  !$omp critical (input_cr)
-  if (.not.self%initialized) then
-    !---------------------------------------------------------------------------
-    ! This part is executed only once, reading parameters and opening log files
-    !---------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
+  ! This part is executed only once, reading parameters
+  !-----------------------------------------------------------------------------
+  if (first_time) then
+    !$omp critical (input_cr)
     if (first_time) then
       rewind (io_unit%input)
       read (io_unit%input, lock_params, iostat=iostat)
       write (io_unit%nml, lock_params)
-      unit = io_unit%lock1
+      if (omp%nthreads == 1) then
+        on = .false.
+      end if
+      omp_lock%on = on
+      omp_lock%verbose = verbose
+      omp_lock%tasks = tasks
+      omp_lock%links = links
+      first_time = .false.
+    end if
+    !$omp end critical (input_cr)
+  end if
+  !-----------------------------------------------------------------------------
+  ! This part is executed once per thread, choosing unit, depending on params
+  !-----------------------------------------------------------------------------
+  if (unit == 0) then
+    !$omp critical (unit_cr)
+    if (unit == 0) then
+      block
+      integer:: u
+      u = io_unit%lock1
       if (alternate_time > 0d0) then
         filename = trim(io_unit%rankbase)//'.lock1'
         open (io_unit%lock1, file=trim(filename), form='formatted', &
@@ -96,55 +116,55 @@ SUBROUTINE init (self, kind, id)
         alternate_next = wallclock() + alternate_time
       else
         if (trim(log)=='queue') then
-          unit = io_unit%queue
+          u = io_unit%queue
         else if (trim(log)=='log') then
-          unit = io_unit%log
+          u = io_unit%log
         else
-          unit = io_unit%lock1
+          u = io_unit%lock1
         end if
         filename = trim(io_unit%rankbase)//'.lock'
         open (io_unit%lock1, file=trim(filename), form='formatted', &
               status='unknown')
       end if
-      omp_lock%verbose = verbose
-      omp_lock%tasks = tasks
-      omp_lock%links = links
-      if (omp%nthreads == 1) then
-        on = .false.
+      unit = u
+      end block
+    end if
+    !$omp end critical (unit_cr)
+  end if
+  !-----------------------------------------------------------------------------
+  ! This part is executed once per lock, initializing it
+  !-----------------------------------------------------------------------------
+  if (.not.self%initialized) then
+    !$omp critical (lock_cr)
+    if (.not.self%initialized) then
+      call omp_init_nest_lock (self%lock)
+      if (present(id)) then
+        self%id = id
+        id_save = max(id_save,id)
+        set_id = .true.
+      else
+        id_save = id_save+1
+        self%id = id_save
+        set_id = .false.
       end if
-      omp_lock%on = on
-      first_time = .false.
+      if (present(kind)) then
+        self%kind = kind(1:min(len(kind),4))
+      else
+        self%kind = 'void'
+      end if
+      self%on  = on
+      n_lock = n_lock+1
+      if (wallclock() < verbose_time .or. omp_lock%verbose > 1) &
+        write(unit,*) omp_get_thread_num(), 'initialized lock kind, id ', &
+          self%kind, self%id, set_id
+      if (verbose > 0) then
+        write (io_unit%log,'(a,i8,l4)') &
+          'omp_lock_t%init: id, initialized =', self%id, self%initialized
+      end if
+      self%initialized = .true.
     end if
-    !---------------------------------------------------------------------------
-    ! The part below is executed once for all locks
-    !---------------------------------------------------------------------------
-    call omp_init_nest_lock (self%lock)
-    if (present(id)) then
-      self%id = id
-      id_save = max(id_save,id)
-      set_id = .true.
-    else
-      id_save = id_save+1
-      self%id = id_save
-      set_id = .false.
-    end if
-    if (present(kind)) then
-      self%kind = kind(1:min(len(kind),4))
-    else
-      self%kind = 'void'
-    end if
-    self%on  = on
-    n_lock = n_lock+1
-    if (wallclock() < verbose_time .or. omp_lock%verbose > 1) &
-      write(unit,*) omp_get_thread_num(), 'initialized lock kind, id ', &
-        self%kind, self%id, set_id
-    self%initialized = .true.
+    !$omp end critical (lock_cr)
   end if
-  if (verbose > 0) then
-    write (io_unit%log,'(a,i8,l4)') &
-      'omp_lock_t%init: id, initialized =', self%id, self%initialized
-  end if
-  !$omp end critical (input_cr)
 #ifdef TRACE 
   call trace%end()
 #endif
