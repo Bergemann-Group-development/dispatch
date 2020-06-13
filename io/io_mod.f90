@@ -109,8 +109,6 @@ END FUNCTION debug
 !===============================================================================
 SUBROUTINE init (self, name)
   class(io_t):: self
-  character(len=120), save:: id = &
-  'io_mod.f90 $Id$'
   integer, save:: verbose=0, levelmax=10
   character(len=*), optional:: name
   character(len=64):: filename, datadir='data', inputdir='data'
@@ -132,9 +130,6 @@ SUBROUTINE init (self, name)
   character(len=120):: ids = &
   '$Id$ io/io_mod.f90'
   !.............................................................................
-  if (mpi%master) then
-    write (io_unit%hash,'(a)') trim(ids)
-  end if
   self%master = mpi%master
   io%master   = mpi%master
   !-----------------------------------------------------------------------------
@@ -177,6 +172,9 @@ SUBROUTINE init (self, name)
       print'(a,i4)', '   n_core =', omp%ncores
       print'(a,i4)', ' n_thread =', omp_nthreads
       print'(a,i4)', '   n_rank =', mpi%size
+    end if
+    if (mpi%master) then
+      write (io_unit%hash,'(a)') trim(ids)
     end if
     !---------------------------------------------------------------------------
     call os%mkdir (trim(self%rundir))
