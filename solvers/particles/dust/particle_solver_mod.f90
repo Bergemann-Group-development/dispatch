@@ -221,6 +221,7 @@ SUBROUTINE init_task_list (self, task_list)
   call trace%begin ('particle_solver_t%init_task_list')
   self%task_list => task_list
   self%dust%task_list => task_list
+  call self%dust%init_task_list (task_list)
   call trace%end ()
 END SUBROUTINE init_task_list
 

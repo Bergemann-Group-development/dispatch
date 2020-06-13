@@ -85,6 +85,7 @@ MODULE dust_mod
     real:: drag_coeff=0.0                     ! constant in front of drag force
   contains
     procedure:: init
+    procedure:: init_task_list
     procedure:: initial_condition
     procedure:: update
     procedure:: drag
@@ -117,8 +118,6 @@ MODULE dust_mod
   integer:: n_bin = 15                        ! 5 bins per power of ten
   logical:: particle_io = .false.             ! output particle positions?
   logical:: validate = .false.                ! check consistency
-  class(particle_t), pointer:: pp(:,:,:,:,:)
-  !$omp threadprivate (pp)
   public:: n_bin
 CONTAINS
 
@@ -180,6 +179,31 @@ SUBROUTINE init (self, particles)
 END SUBROUTINE init
 
 !===============================================================================
+!> Initialize particle solver, after nbor lists are created, making it possible
+!> to create a copy of the patch nbor list, with tasks pointing to self
+!===============================================================================
+SUBROUTINE init_task_list (self, task_list)
+  class(dust_t):: self
+  class(list_t), pointer:: task_list
+  type(particle_t):: particle
+  integer:: bytes
+  real:: gb
+  !-----------------------------------------------------------------------------
+  call trace%begin ('dust_t%init_task_list')
+  if (self%patch%id == 1) then
+    bytes = storage_size(particle)/8
+    write (stdout,'(" bytes per particle:",i5)') bytes
+    gb = io%ntotal*product(self%patch%n) &
+      *real(particles_per_bin*n_bin)*bytes/1024.**3
+    write (stdout,'(" estimated memory for particles:",f5.1," --", f5.1," GB")') &
+      gb, max_fraction*gb
+    gb = io%ntotal*product(shape(self%patch%mem))*4./1024**3
+    write (stdout,'(" estimated memory for cells:",f6.2," GB")') gb
+  end if
+  call trace%end ()
+END SUBROUTINE init_task_list
+
+!===============================================================================
 !> Initialize an initial particle distribution, with weights equal to the local
 !> mass density in code units (this must be taken into account in the kernel)
 !===============================================================================
@@ -200,7 +224,6 @@ SUBROUTINE initial_condition (self)
   d => patch%mem(:,:,:,patch%idx%d,patch%it,1)
   l = self%lb
   u = self%ub
-  !allocate (pp(particles_per_bin,n_bin,l(1):u(1),l(2):u(2),l(3):u(3)))
   i = 0
   do i3=l(3),u(3)
   do i2=l(2),u(2)
@@ -210,8 +233,6 @@ SUBROUTINE initial_condition (self)
       c = drag_coeff/self%s_cgs(bin)
       do j=1,particles_per_bin
         i = i+1
-        !p => pp(j,bin,i1,i2,i3)
-        !nullify (p%next, p%prev)
         allocate (p)
         call p%init
         if (mod(i,output_every)==0) then
@@ -1033,14 +1054,16 @@ contains
     do while (np-nr_l > particles_per_bin)
       next => p%next
       !.........................................................................
-      !if (verbose > 2) then
-      !  write (io_unit%log,*) 'remove', p%id, p%q, p%bin
-      !endif
+      if (verbose > 2) then
+        write (io_unit%log,'(a,i10,4i4,i2,2i4)') &
+          'remove: id,q,bin,fl,np,nr=', p%id, p%q, p%bin, p%flag, np, nr_l
+        flush (io_unit%log)
+      endif
       !-------------------------------------------------------------------------
       ! Do not remove particles that are flagged for output
       !-------------------------------------------------------------------------
       if (p%flag == 0) then
-        call self%particles%remove_sorted(p, i1, i2, i3, bin)
+        call self%particles%remove_sorted (p, i1, i2, i3, bin)
         deallocate (p)
         nr_l = nr_l + 1
       else
