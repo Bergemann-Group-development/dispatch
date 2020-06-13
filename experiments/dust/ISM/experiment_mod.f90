@@ -121,26 +121,26 @@ END SUBROUTINE init_task_list
 !===============================================================================
 SUBROUTINE update (self)
   class(experiment_t):: self
+  class(task_t), pointer:: task
+  class(link_t), pointer:: link
+  integer(8):: np
   !----------------------------------------------------------------------------
   call trace%begin ('experiment_t%update')
   call self%solver_t%update
   if (self%id == 1) then
-    block
-      class(task_t), pointer:: task
-      class(link_t), pointer:: link
-      integer(8):: np
-      np = 0
-      link => self%task_list%head
-      do while (associated(link))
-        task => link%task
-        select type (task)
-          class is (solver_t)
-          np = np + task%particle_solver%particles%n
-        end select
-        link => link%next
-      end do
-      print '(a,1p,e12.3)', 'number of particles =', real(np)
-    end block
+    np = 0
+    link => self%task_list%head
+    do while (associated(link))
+      task => link%task
+      select type (task)
+        class is (solver_t)
+        np = np + task%particle_solver%particles%n
+      end select
+      link => link%next
+    end do
+    if (verbose > 0) then
+      write (stdout,'(a,1p,e12.3)') 'number of particles =', real(np)
+    end if
   end if
   call trace%end ()
 END SUBROUTINE update
