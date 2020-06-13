@@ -8,6 +8,7 @@ MODULE particles_mod
   USE io_mod
   USE trace_mod
   USE mpi_mod
+  USE omp_mod
   USE omp_lock_mod
   implicit none
   private
@@ -61,6 +62,7 @@ MODULE particles_mod
   end type
   integer:: verbose=0
   integer(8):: id=0
+  !$omp threadprivate (id)
 CONTAINS
 
 !===============================================================================
@@ -69,8 +71,7 @@ CONTAINS
 SUBROUTINE init (self)
   class(particle_t):: self
   !.............................................................................
-  self%id = 1 + mpi%rank + mpi%size*id
-  !$omp atomic update
+  self%id = 1 + omp%thread + (mpi%rank + mpi%size*id)*omp%nthreads
   id = id+1
 END SUBROUTINE init
 
