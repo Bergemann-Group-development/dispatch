@@ -1,6 +1,7 @@
 from __future__ import print_function
 
-class cgs:
+
+class cgs(object):
     name='cgs'
     m_earth=5.972e27
     m_sun=1.989e33
@@ -13,17 +14,21 @@ class cgs:
     m_u=1.6726e-24
     m_e=9.109e-28
     k_b=1.3807e-16
-    k_B=k_b
+    k_B=1.3807e-16
     h_p=6.6260e-27
-    h_P=h_p
+    h_P=6.6260e-27
     e=4.8032e-10
     c=2.9979e10
     stefan=5.6704e-8
     m_e=9.109e-31
     pc=3e18
     AU=1.5e13
+    def print(self):
+        for k,v in vars(cgs).items():
+            if type(v) is float:
+                print('{:>12}:  {:.4}'.format(k,v))
 
-class SI:
+class SI(unit_system):
     name='SI'
     m_earth=5.972e24
     m_sun=1.989e30
@@ -43,6 +48,10 @@ class SI:
     stefan=5.6704e-5
     pc=3e16
     AU=1.5e11
+    def print(self):
+        for k,v in vars(cgs).items():
+            if type(v) is float:
+                print('{:>12}:  {:.4}'.format(k,v))
 
 def scaling(type='ISM',units=cgs,verbose=0,mu=2):
     '''
