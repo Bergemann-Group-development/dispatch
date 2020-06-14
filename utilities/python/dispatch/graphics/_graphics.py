@@ -209,67 +209,89 @@ def unigrid_plane(sn,**kw):
     imshow(ff)
 
 
-def amr_plane(sn,iv='d',z=0.5,log=False,mesh=False,ident=False,cmap=None,
-              title=None,zero=False,vmin=None,vmax=None,verbose=0):
-    def contains(p,z):
-        return p.level >= 6 and abs(z-p.position[2]) <= p.size[2]/2
+def amr_plane(sn,iv='d',z=0.5,x=None,y=None,log=False,mesh=False,
+        ident=False,cmap=None,title=None,zero=False,vmin=None,vmax=None,verbose=0):
+    def contains(p,s,axis):
+        return p.level >= 6 and abs(s-p.position[axis]) <= p.size[axis]/2
     def outline(e):
         x=[e[0],e[0],e[1],e[1],e[0]]
         y=[e[2],e[3],e[3],e[2],e[2]]
         pl.plot(x,y,color='grey')
-    def interpolate(p,iv,z,log=False):
-        n=p.n[2]
-        dz=p.size[2]/n
-        z0=p.position[2]-p.size[2]/2+dz/2
-        w=(z-z0)/dz
+    def interpolate(p,iv,s,axis=2,log=False,verbose=0):
+        n=p.n[axis]
+        ds=p.size[axis]/n
+        s0=p.position[axis]-p.size[axis]/2+ds/2
+        w=(s-s0)/ds
         i=int(w)
         i=max(0,min(i,n-2))
         w=w-i
+        if verbose:
+            print('id: {:3d}   i: {:2d}   w: {:6.3f}'.format(p.id,i,w))
         f=p.var(iv)
-        if iv==0 or iv==4 or iv=='d' or iv=='e':
-            log=True
         if log:
             f=np.log(f)
-        f=(1-w)*f[:,:,i]+w*f[:,:,i+1]
+        if axis==2:
+            f=(1-w)*f[:,:,i]+w*f[:,:,i+1]
+        elif axis==1:
+            f=(1-w)*f[:,i,:]+w*f[:,i+1,:]
+            f=f.transpose()
+        elif axis==0:
+            f=(1-w)*f[i,:,:]+w*f[i+1,:,:]
         if log:
             f=np.exp(f)
         return f
-    pp=[p for p in sn.patches if contains(p,z)]
+    if not z is None:
+        axis=2
+        s=z
+    if not y is None:
+        axis=1
+        s=y
+    if not x is None:
+        axis=0
+        s=x
+    pp=[p for p in sn.patches if contains(p,s,axis)]
     vmin1=1e20
     vmax1=0.0
     for p in pp:
-        d=interpolate(p,iv,z)
+        d=interpolate(p,iv,s,axis)
         vmin1=min(vmin1,d.min())
         vmax1=max(vmax1,d.max())
-        if verbose>0:
-            print(p.id,d.min(),d.max())
+        if verbose>1:
+            print('id: {:3d}  dmin: {:10.3e}  dmax: {:10.3e}'.format(p.id,d.min(),d.max()))
     if vmin is None: vmin=vmin1
     if vmax is None: vmax=vmax1
     if zero:
         vmax = max(abs(vmax),abs(vmin))
         vmin = -vmax
-    pl.xlim(0,1); pl.ylim(0,1)
     if log:
         vmin=np.log10(vmin)
         vmax=np.log10(vmax)
+    xmin,xmax,ymin,ymax=pp[0].extent[axis]
     for p in pp:
-        e=p.extent[2]
-        d=interpolate(p,iv,z)
+        e=p.extent[axis]
+        d=interpolate(p,iv,s,axis,verbose=verbose)
         if log:
-            d=np.log10(interpolate(p,iv,z))
+            d=np.log10(interpolate(p,iv,s,axis,log,verbose=verbose))
+        xmin=min(xmin,e[0])
+        xmax=max(xmax,e[1])
+        ymin=min(xmin,e[2])
+        ymax=max(xmax,e[3])
         pl.imshow(d.transpose(),extent=e,
               vmin=vmin,vmax=vmax,origin='lower',cmap=cmap)
-        x0,x1,y0,y1=p.extent[2]
+        x0,x1,y0,y1=p.extent[axis]
         if mesh:
-            outline(p.extent[2])
+            outline(p.extent[axis])
         if ident:
-            x0,x1,y0,y1=p.extent[2]
+            x0,x1,y0,y1=p.extent[axis]
             pl.text(x0,y0,'{}'.format(p.id))
+    pl.xlim(xmin,xmax)
+    pl.ylim(ymin,ymax)
     pl.colorbar()
     if title:
         pl.title(title)
     else:
-        pl.title('iv={},  z={:.2f},  t={:.4f}'.format(iv,z,sn.time))
+        ax=['x','y','z'][axis]
+        pl.title('iv={},  {}={:.3f},  t={:.4f}'.format(iv,ax,s,sn.time))
     pl.tight_layout()
 
 def plot_pdf(pdf,**kwargs):
