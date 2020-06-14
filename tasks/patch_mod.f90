@@ -231,6 +231,7 @@ MODULE patch_mod
   logical, save:: extrapolate_gz=.false.            ! extrapolate guard zones?
   logical, save:: do_check_nan=.false.              ! check for NaN?
   logical, save:: zero_order_extrap=.true.          ! extrap to no-mans-land
+  logical, save:: courant_ramp=.false.              ! ramp up Courant param
   public task2patch
 CONTAINS
 
@@ -497,7 +498,7 @@ SUBROUTINE init_default (self)
   integer:: iostat, i, n_alloc=0, n_ext=0
   namelist /patch_params/ n, nv, ng, nt, u_fixed, dt_fixed, &
     grace, extrapolate_gz, no_mans_land, use_data_hub, do_check_nan, &
-    zero_order_extrap, limit_dtime
+    zero_order_extrap, limit_dtime, courant_ramp
   namelist /out_params/ out_time, end_time, print_time, print_every, &
     max_files
   logical, save:: first_time = .true.
@@ -1902,15 +1903,17 @@ SUBROUTINE courant_condition (self, detailed_timer)
     end do
   end if
   dsmin = minval(ds,self%n>1)
+  courant = self%courant
   if (self%dt_fixed > 0.0) then
     dtime = self%dt_fixed
     self%u_max = self%courant*dsmin/dtime
   else if (self%u_fixed > 0.0) then
     dtime = self%courant*dsmin/self%u_fixed
-    courant = self%courant
   else
-    dtime = self%courant*dsmin/self%u_max*self%safety_factor
-    courant = self%courant
+    if (courant_ramp) then
+      courant = self%courant*min(self%istep+1,self%nt)/real(self%nt)
+    end if
+    dtime = courant*dsmin/self%u_max*self%safety_factor
   endif
   !$omp atomic write
   self%dtime = dtime
@@ -1956,7 +1959,7 @@ SUBROUTINE courant_condition (self, detailed_timer)
   self%dt(self%it) = self%dtime
   if (io%verbose> 3 .or. self%id == io%id_debug) &
     write(io%output,'(a,i7,f12.6,f8.4,1p,e10.2)') 'courant:', &
-      self%id, self%dtime, self%courant, self%u_max
+      self%id, self%dtime, courant, self%u_max
   call trace%end (itimer)
 END SUBROUTINE courant_condition
 
