@@ -117,7 +117,6 @@ MODULE dust_mod
   integer:: n_bin = 15                        ! 5 bins per power of ten
   logical:: particle_io = .false.             ! output particle positions?
   logical:: validate = .false.                ! check consistency
-  type(mpi_counter_t):: counter               ! counter returning uniq id
   class(particle_t), pointer:: pp(:,:,:,:,:)
   !$omp threadprivate (pp)
   public:: n_bin
@@ -145,10 +144,8 @@ SUBROUTINE init (self, particles)
     rewind (io%input)
     read (io%input, dust_params, iostat=iostat)
     call io%namelist_warning ('dust_params', iostat)
-    write (stdout,dust_params)
     write (stdout,*) io%namelist
     write (io%namelist, dust_params)
-    call counter%init (0_8)
     n_bin = max(1,n_bin)
     first_time = .false.
   end if
@@ -242,7 +239,7 @@ SUBROUTINE initial_condition (self)
   !.............................................................................
   if (verbose > 1) &
     write (io_unit%log,'(a,i8,1p,2e11.2)') &
-    'particle_t%IC: id, n =', patch%id, real(counter%update(0)), &
+    'particle_t%IC: id, n =', patch%id, &
     real(product(u-l+1)*n_bin*particles_per_bin)
   !.............................................................................
   call trace%end (itimer)
