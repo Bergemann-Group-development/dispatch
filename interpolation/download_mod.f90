@@ -1075,9 +1075,10 @@ SUBROUTINE same_lagrange (self, target, source, jj, pt, all_cells, only, all_tim
   call source%timeslots (iit, times)
   call lagrange%sequence_weights (target%time, times, j0, j1, w, order)
   if (verbose > 2) &
-    write(io_unit%log,'(a,2i4,1p,10e14.6)') &
-      'same_lagrange: j0, j1, time, times, w:', &
-    j0, j1, target%time, times(j0:j1), w
+    write(io_unit%log,'(a,2i6,3i4,1p,10e14.6)') &
+      'same_lagrange: tid, sid, j0, j1, order, time, times, w:', target%id, &
+      source%id, j0, j1, min(order,j1-j0), target%time, times(j0:j1), &
+      w(1:1+j1-j0)
   if (present(only)) then
     iv1 = only
     iv2 = only
@@ -1108,14 +1109,11 @@ SUBROUTINE same_lagrange (self, target, source, jj, pt, all_cells, only, all_tim
     li = target%mesh%li
     ui = target%mesh%ui
     call dnload_range (target, source, iv, l, u, o)
-    if (target%id==id_debug) &
-      write(io_unit%log,'(2i7," a l:",3i3,3x,"u:",3i3,3x,"o:",3i3)') &
-        target%id,source%id,l,u,o
     l = max(l,source%mesh%lb-o)
     u = min(u,source%mesh%ub-o)
-    if (target%id==id_debug) &
-      write(io_unit%log,'(2i7," b l:",3i3,3x,"u:",3i3,3x,"o:",3i3)') &
-        target%id,source%id,l,u,o
+    if (verbose > 2 .or. target%id == id_debug) &
+      write(io_unit%log,'(a,2(i6," l:",3i3,3x,"u:",3i3,3x))') &
+        'same_lagrange:', target%id,l,u, source%id,l+o,u+o
     if (product(max(0,u-l+1))>0) then
       !-------------------------------------------------------------------------
       ! Extend the pick-up region to fill the guard zones also in the BC regions
@@ -1125,7 +1123,8 @@ SUBROUTINE same_lagrange (self, target, source, jj, pt, all_cells, only, all_tim
         if (source%mesh(i)%upper_boundary) u(i) = target%mesh(i)%ub
       end do
       !-------------------------------------------------------------------------
-      ! Check if we need to filter away internal points
+      ! Check if we need to filter away internal points; if there are points
+      ! that fall inside, and all_cells_l is not set, then we do.
       !-------------------------------------------------------------------------
       filter = .false.
       if (.not. all_cells_l) then
@@ -1201,24 +1200,24 @@ SUBROUTINE same_lagrange (self, target, source, jj, pt, all_cells, only, all_tim
                     w(1+jt-j0)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,iit(jt),1))
                 end do
               end if
-              if (self%check_filled) then
+            end do
+            if (self%check_filled) then
+              do ix=l(1),u(1)
+                target%mem(ix,iy,iz,iv,target%it,1) = &
+                  exp(target%mem(ix,iy,iz,iv,target%it,1))
+                filled(ix,iy,iz,iv) = source%level
+              end do
+              if (verbose > 0) then
                 do ix=l(1),u(1)
-                  target%mem(ix,iy,iz,iv,target%it,1) = &
-                    exp(target%mem(ix,iy,iz,iv,target%it,1))
-                  filled(ix,iy,iz,iv) = source%level
-                end do
-                if (verbose > 0) then
-                  do ix=l(1),u(1)
-                    src(ix,iy,iz) = source%id
-                  end do
-                end if
-              else
-                do ix=l(1),u(1)
-                  target%mem(ix,iy,iz,iv,target%it,1) = &
-                    exp(target%mem(ix,iy,iz,iv,target%it,1))
+                  src(ix,iy,iz) = source%id
                 end do
               end if
-            end do
+            else
+              do ix=l(1),u(1)
+                target%mem(ix,iy,iz,iv,target%it,1) = &
+                  exp(target%mem(ix,iy,iz,iv,target%it,1))
+              end do
+            end if
           end if
         end do
         end do
@@ -1278,14 +1277,26 @@ SUBROUTINE same_lagrange (self, target, source, jj, pt, all_cells, only, all_tim
         end do
         end do
       end if
-      if ((verbose>2.or.target%id==id_debug).and.product(max(0,u-l+1))>0) &
+      if ((verbose>2.or.target%id==id_debug).and.product(max(0,u-l+1))>0) then
+        block
+        integer:: m(3),n(3)
         write(io_unit%log,'(i6,4(2x,a,i6),1p,2e12.4)') target%id, &
-        'same picked up', product(max(0,u-l+1)), &
+        'same_lagrange picked up', product(max(0,u-l+1)), &
         'values of', product(target%n), &
         'from', source%id, &
         ' iv, min, max =', iv, &
         minval(target%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,target%it,1)), &
         maxval(target%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,target%it,1))
+        m = l+o
+        n = u+o
+        do jt=j0,j1
+          write(io_unit%log,'(i6,2x,a,i3,1p,2e12.4)') source%id, &
+          'same_lagrance: source iv, min, max =', iv, &
+          minval(source%mem(m(1):n(1),m(2):n(2),m(3):n(3),iv,iit(jt),1)), &
+          maxval(source%mem(m(1):n(1),m(2):n(2),m(3):n(3),iv,iit(jt),1))
+        end do
+        end block
+      end if
     end if
   end do
   call trace%end (itimer)

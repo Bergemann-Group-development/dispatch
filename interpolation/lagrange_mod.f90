@@ -275,7 +275,7 @@ SUBROUTINE interval4 (self, x0, x, i0, i2, o, order)
   real(kind=4), dimension(:):: x
   real(kind=4), dimension(size(x)):: y
   real(kind=4):: x0, f
-  integer:: i0, i1, i2, o, n
+  integer:: i0, i1, i2, i3, o, n
   !.............................................................................
   ! Default order = 3, or n-1 if that is smaller
   n = size(x)
@@ -284,7 +284,9 @@ SUBROUTINE interval4 (self, x0, x, i0, i2, o, order)
   o = min(o,n-1)
   ! Search for identical initial points
   i1 = 1
+  i3 = 1
   do while (x(i1)==x(1) .and. i1<n)
+    i3 = i1
     i1 = i1+1
   end do
   ! All points are equal to x(1)
@@ -292,13 +294,20 @@ SUBROUTINE interval4 (self, x0, x, i0, i2, o, order)
     i0 = 1
     i2 = 1
     o = 0
+    if (verbose > 0) &
+      write (io_unit%log,*) 'lagrange: all points equal'
     return
   ! Only the last point is not equal to x(1)
   else if (i1==n) then
     i0 = n-1
     i2 = n
     o = 1
+    if (verbose > 0) &
+      write (io_unit%log,*) 'lagrange: only last point differs'
     return
+  else if (i0 > 1) then
+    if (verbose > 0) &
+    write (io_unit%log,*) 'lagrange: skipped identical to', i0
   end if
   ! Normal search
   do while (x(i1)<x0 .and. i1<n)
@@ -306,6 +315,8 @@ SUBROUTINE interval4 (self, x0, x, i0, i2, o, order)
   end do
   if (i1 < 3 .or. i1 > n-1) then
     o = min(o,2)
+    if (verbose > 0) &
+      write (io_unit%log,*) 'lagrange: order limited to at most 2'
   end if
 
   if (i1 < 2+o/2) then
@@ -317,7 +328,8 @@ SUBROUTINE interval4 (self, x0, x, i0, i2, o, order)
     i2 = i0+o
     if (i2 > n) then
       i2 = n
-      o = min(o,i2-i0)
+      if (verbose > 0) &
+        write (io_unit%log,*) 'lagrange: i2 > n limited'
     end if
   else
     ! We are in the middle or end of the interval
@@ -325,16 +337,27 @@ SUBROUTINE interval4 (self, x0, x, i0, i2, o, order)
     ! Shift left if not enough points
     if (i2 > n) then
       i2 = n
+      if (verbose > 0) &
+        write (io_unit%log,*) 'lagrange: i2 > n, shift left'
     end if
     i0 = i2 - o
     if (i0 < 1) then
       i0 = 1
       i2 = min(i2,n)
-      o = min(o,i2-i0)
+      if (verbose > 0) &
+      write (io_unit%log,*) 'lagrange: i0 < 1 case'
     end if
   end if
-  if (self%verbose>0) then
-    print*,'lagrange_interval: i0, i2, o =', i0, i2, o
+  i0 = max(i0,i3)
+  o = min(o,i2-i0)
+  if (verbose > 1) then
+    print 1, "lagrange_interval: i0,i2:", &
+      i0,i2,          o,         x0,           x
+    1 format(a,2i3,3x,"o:",i2,3x,"x0:",f10.6,3x,"x:",10f10.6)
+  end if
+  if (verbose > 0) then
+    write (io_unit%log,1) "lagrange_interval4: i0,i2:", &
+      i0,i2,          o,         x0,           x
   end if
 END SUBROUTINE interval4
 SUBROUTINE interval8 (self, x0, x, i0, i2, o, order)
@@ -343,7 +366,7 @@ SUBROUTINE interval8 (self, x0, x, i0, i2, o, order)
   real(kind=8), dimension(:):: x
   real(kind=8), dimension(size(x)):: y
   real(kind=8):: x0, f
-  integer:: i0, i1, i2, o, n
+  integer:: i0, i1, i2, i3, o, n
   !.............................................................................
   ! Default order = 3, or n-1 if that is smaller
   n = size(x)
@@ -352,7 +375,9 @@ SUBROUTINE interval8 (self, x0, x, i0, i2, o, order)
   o = min(o,n-1)
   ! Search for identical initial points
   i1 = 1
+  i3 = 1
   do while (x(i1)==x(1) .and. i1<n)
+    i3 = i1
     i1 = i1+1
   end do
   ! All points are equal to x(1)
@@ -360,13 +385,20 @@ SUBROUTINE interval8 (self, x0, x, i0, i2, o, order)
     i0 = 1
     i2 = 1
     o = 0
+    if (verbose > 0) &
+      write (io_unit%log,*) 'lagrange: all points equal'
     return
   ! Only the last point is not equal to x(1)
   else if (i1==n) then
     i0 = n-1
     i2 = n
     o = 1
+    if (verbose > 0) &
+      write (io_unit%log,*) 'lagrange: only last point differs'
     return
+  else if (i0 > 1) then
+    if (verbose > 0) &
+    write (io_unit%log,*) 'lagrange: skipped identical to', i3
   end if
   ! Normal search
   do while (x(i1)<x0 .and. i1<n)
@@ -385,7 +417,8 @@ SUBROUTINE interval8 (self, x0, x, i0, i2, o, order)
     i2 = i0+o
     if (i2 > n) then
       i2 = n
-      o = min(o,i2-i0)
+      if (verbose > 0) &
+        write (io_unit%log,*) 'lagrange: order limited to at most 2'
     end if
   else
     ! We are in the middle or end of the interval
@@ -393,17 +426,27 @@ SUBROUTINE interval8 (self, x0, x, i0, i2, o, order)
     ! Shift left if not enough points
     if (i2 > n) then
       i2 = n
+      if (verbose > 0) &
+        write (io_unit%log,*) 'lagrange: i2 > n limited'
     end if
     i0 = i2 - o
     if (i0 < 1) then
       i0 = 1
       i2 = min(i2,n)
-      o = min(o,i2-i0)
+      if (verbose > 0) &
+        write (io_unit%log,*) 'lagrange: i0 < 1 case'
     end if
   end if
-  if (self%debug(1)) then
-    print '("lagrange_interval: i0,i2:",2i3,3x,"o:",i2,3x,"x0:",f10.6,3x,"x:",10f10.6)', &
-                                i0,i2,          o,         x0,           x
+  i0 = max(i0,i3)
+  o = min(o,i2-i0)
+  if (verbose > 1) then
+    print 1, "lagrange_interval: i0,i2:", &
+      i0,i2,          o,         x0,           x
+    1 format(a,2i3,3x,"o:",i2,3x,"x0:",f10.6,3x,"x:",10f10.6)
+    end if
+  if (verbose > 0) then
+    write (io_unit%log,1) "lagrange_interval8: i0,i2:", &
+      i0,i2,          o,         x0,           x
   end if
 END SUBROUTINE interval8
 
