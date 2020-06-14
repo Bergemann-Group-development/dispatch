@@ -589,8 +589,9 @@ SUBROUTINE rotate (self)
   call trace%end (itimer)
 contains
 
-subroutine rotate_locked
-  self%dt(self%new)= self%dtime                         ! next estimate
+subroutine rotate_locked2
+  self%dt(self%it)= self%dtime                          ! save dt
+  self%dt(self%new)= self%dtime                         ! estimate
   self%t(self%new) = time                               ! initial time
   self%it = self%new                                    ! update time slot, new
   self%iit = mod(self%iit,self%nt)+1
@@ -598,6 +599,19 @@ subroutine rotate_locked
   self%istep = self%istep + 1
   self%rank_steps = self%rank_steps + 1
   self%time = time
+end subroutine rotate_locked2
+
+subroutine rotate_locked
+  self%dt(self%it)= self%dtime                          ! save dt
+  self%dt(self%new)= self%dtime                         ! estimate
+  self%t(self%new) = time                               ! initial time
+  self%it = self%new                                    ! update time slot, new
+  self%new = mod(self%new,self%nt) + 1                  ! circular increment
+  self%iit(1:self%nt-1) = self%iit(2:self%nt)           ! rotate left
+  self%iit(self%nt) = self%new                          ! top slot
+  self%istep = self%istep + 1                           ! increment task step
+  self%rank_steps = self%rank_steps + 1                 ! increment rank step
+  self%time = time                                      ! reveal new time
 end subroutine rotate_locked
 
 subroutine rotate_atomic
