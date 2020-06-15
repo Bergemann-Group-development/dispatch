@@ -67,7 +67,7 @@ SUBROUTINE init (self, kind, id)
   logical omp_in_parallel
   logical, save:: tasks=.true., links=.false.
   integer, save:: verbose=0
-  integer:: iostat, i
+  integer:: iostat, i, u
   logical:: set_id
   logical, save:: on = .true.
   logical, save:: first_time=.true.
@@ -103,8 +103,6 @@ SUBROUTINE init (self, kind, id)
   if (unit == 0) then
     !$omp critical (unit_cr)
     if (unit == 0) then
-      block
-      integer:: u
       u = io_unit%lock1
       if (alternate_time > 0d0) then
         filename = trim(io_unit%rankbase)//'.lock1'
@@ -127,7 +125,6 @@ SUBROUTINE init (self, kind, id)
               status='unknown')
       end if
       unit = u
-      end block
     end if
     !$omp end critical (unit_cr)
   end if
