@@ -59,7 +59,7 @@ MODULE dust_mod
     real(8), allocatable:: m_cgs(:)           ! bin mass
     real, pointer, contiguous:: s_cgs(:)      ! particle size
     real(8), allocatable:: dv(:)              ! average speed difference
-    real      , pointer, contiguous:: n (:,:,:,:) => null()  ! number density per bin
+    real      , pointer, contiguous:: dd(:,:,:,:) => null()  ! number density per bin
     integer(2), pointer, contiguous:: na(:,:,:,:) => null()  ! added per bin
     integer(2), pointer, contiguous:: np(:,:,:,:) => null()  ! number per bin
     real      , pointer, contiguous:: k (:,:)     => null()  ! kernel
@@ -166,7 +166,7 @@ SUBROUTINE init (self, particles)
       'dust_t%init: bin, s_cgs, m_cgs =', bin, self%s_cgs(bin), self%m_cgs(bin)
   end do
   m = self%patch%gn
-  allocate (self%n(m(1),m(2),m(3),n_bin))
+  allocate (self%dd(m(1),m(2),m(3),n_bin))
   !-----------------------------------------------------------------------------
   ! Pre-factor for drag force.  The input parameter density_yr_cgs is the
   ! density (in CGS) for which the stopping time in 1 yr for a 1 cm particle.
@@ -228,8 +228,9 @@ SUBROUTINE initial_condition (self)
   do i3=l(3),u(3)
   do i2=l(2),u(2)
   do i1=l(1),u(1)
-    w = d(i1,i2,i3)*dust_to_gas
+    w = d(i1,i2,i3)*dust_to_gas/(n_bin*particles_per_bin)
     do bin=1,n_bin
+      self%dd(i1,i2,i3,bin) = 0.0
       c = drag_coeff/self%s_cgs(bin)
       do j=1,particles_per_bin
         i = i+1
@@ -247,6 +248,7 @@ SUBROUTINE initial_condition (self)
         p%v = 0.0
         p%c = c
         p%w = w
+        self%dd(i1,i2,i3,bin) = self%dd(i1,i2,i3,bin) + w
         call self%particles%append (p)
         !.......................................................................
         if (verbose > 2 .or. p%id == self%ip_dbg) &
@@ -329,7 +331,7 @@ SUBROUTINE gather (self)
   !-----------------------------------------------------------------------------
   ! Compute histograms of particle number densities in each cell
   !-----------------------------------------------------------------------------
-  self%n = 0.0                                  ! prepare to accumulate
+  self%dd = 0.0                                 ! prepare to accumulate
   self%na = 0                                   ! initialize
   self%np = 0
   np = 0                                        ! number of updates
@@ -340,8 +342,8 @@ SUBROUTINE gather (self)
   do while (associated(p))
     bin = p%bin                                 ! particle bin
     i = p%q
-    self%n (i(1),i(2),i(3),bin) = &                   ! accumulate
-    self%n (i(1),i(2),i(3),bin) + p%w                 ! into self%n
+    self%dd(i(1),i(2),i(3),bin) = &                   ! accumulate
+    self%dd (i(1),i(2),i(3),bin) + p%w                 ! into self%n
     self%np(i(1),i(2),i(3),bin) = &                   ! accumulate
     self%np(i(1),i(2),i(3),bin) + 1                   ! into self%np
     np = np+1
@@ -349,7 +351,7 @@ SUBROUTINE gather (self)
     if (verbose > 2) then
       write(io_unit%log,'(a,i6,2i8,i3,1x,3i3,1p,2e11.2)') &
         'gather: patch%id, pa%id, np, bin, i, w, n =', &
-        self%patch%id, p%id, np, bin, i, p%w, self%n(i(1),i(2),i(3),bin)
+        self%patch%id, p%id, np, bin, i, p%w, self%dd(i(1),i(2),i(3),bin)
     end if
     !.......................................................................
     dv(bin) = dv(bin) + sqrt(sum(p%dv**2))      ! sum up speed differences
@@ -390,7 +392,7 @@ SUBROUTINE gather_sorted (self)
   dv = 0d0                                      ! average speed difference
   l = self%patch%mesh%lb
   u = self%patch%mesh%ub
-  self%n = 0.0                                  ! prepare to accumulate
+  self%dd = 0.0                                 ! prepare to accumulate
   self%na = 0                                   ! initialize
   self%np = 0
   do bin=1,n_bin
@@ -408,13 +410,13 @@ SUBROUTINE gather_sorted (self)
         if (verbose > 2) then
           write(io_unit%log,'(a,i6,2i8,i3,1x,3i3,1p,2e11.2)') &
             'gather: patch%id, pa%id, np, bin, i, w, n =', &
-            self%patch%id, p%id, np, bin, [i1,i2,i3], p%w, self%n(i1,i2,i3,bin)
+            self%patch%id, p%id, np, bin, [i1,i2,i3], p%w, self%dd(i1,i2,i3,bin)
         end if
         !.......................................................................
         dv(bin) = dv(bin) + sqrt(sum(p%dv**2))      ! sum up speed differences
         p => p%next                                 ! next particle
       end do
-      self%n(i1,i2,i3,bin) = dn
+      self%dd(i1,i2,i3,bin) = dn
     end if
   end do
   end do
@@ -455,14 +457,14 @@ SUBROUTINE evolve (self)
     do i2=l(2),u(2)
     do i1=l(1),u(1)
       call self%kernel
-      n(:) = self%n(i1,i2,i3,:)
+      n(:) = self%dd(i1,i2,i3,:)
       !-------------------------------------------------------------------------
       ! In order to conserve mass the number density added to bin j must be
       ! normalized by the ratio of bin masses.
       !-------------------------------------------------------------------------
       do i=1,n_bin
         do j=i+1,n_bin
-          delta_n = self%n(i1,i2,i3,i)*self%k(i,j)*abs(self%dv(j)-self%dv(i))
+          delta_n = self%dd(i1,i2,i3,i)*self%k(i,j)*abs(self%dv(j)-self%dv(i))
           n(i) = n(i) - delta_n
           n(j) = n(j) + delta_n*self%m_cgs(i)/self%m_cgs(j)
         end do
@@ -493,10 +495,10 @@ SUBROUTINE evolve (self)
       ! the bin would appear to become empty, maintain current weights.
       !-------------------------------------------------------------------------
       do i=1,n_bin
-        if (n(i) == 0.0 .or. self%n(i1,i2,i3,i) == 0.0) then
-          self%n(i1,i2,i3,i) = 1.0
+        if (n(i) == 0.0 .or. self%dd(i1,i2,i3,i) == 0.0) then
+          self%dd(i1,i2,i3,i) = 1.0
         else
-          self%n(i1,i2,i3,i) = n(i)/self%n(i1,i2,i3,i)
+          self%dd(i1,i2,i3,i) = n(i)/self%dd(i1,i2,i3,i)
         end if
       end do
     end do
@@ -543,7 +545,7 @@ SUBROUTINE scatter (self)
   do while (associated(pa))                     ! loop over particle
     bin = pa%bin                                ! particle bin
     i = pa%q                                    ! particle space index
-    pa%w = pa%w*self%n(i(1),i(2),i(2),bin)      ! renormalize
+    pa%w = pa%w*self%dd(i(1),i(2),i(2),bin)      ! renormalize
     pa => pa%next                               ! next particle
   end do
   call trace%end (itimer)
@@ -718,7 +720,7 @@ contains
       if (all(i >= l .and. i <= u)) then
         !-----------------------------------------------------------------------
         ii = [self%patch%id,i,bin]
-        d_cgs = self%n(i(1),i(2),i(3),bin)*scaling%d
+        d_cgs = self%dd(i(1),i(2),i(3),bin)*scaling%d
         if (d_cgs > d_min_cgs) then
           np = self%np(i(1),i(2),i(3),bin) + self%na(i(1),i(2),i(3),bin)
           !.....................................................................
@@ -840,7 +842,7 @@ contains
       bin = p%bin
       np = self%np(i(1),i(2),i(3),bin) + self%na(i(1),i(2),i(3),bin)
       if (np > 0) then
-        p%w = self%n(i(1),i(2),i(3),bin)/np
+        p%w = self%dd(i(1),i(2),i(3),bin)/np
       else
         p%w = 0.0
       end if
@@ -864,15 +866,15 @@ contains
     !---------------------------------------------------------------------------
     ! Compute total weights of new particle set
     !---------------------------------------------------------------------------
-    self%n  = 0.0
+    self%dd = 0.0
     self%na = 0.0
     self%np = 0
     p => self%particles%head
     do while (associated(p))
       i = p%q                                     ! particle space index
       bin = p%bin                                 ! particle bin
-      self%n(i(1),i(2),i(3),bin) = &
-      self%n(i(1),i(2),i(3),bin) + p%w
+      self%dd(i(1),i(2),i(3),bin) = &
+      self%dd(i(1),i(2),i(3),bin) + p%w
       self%np(i(1),i(2),i(3),bin) = &
       self%np(i(1),i(2),i(3),bin) + 1
       p => p%next
@@ -887,12 +889,12 @@ contains
       write(unit,'(a,i3,2x,20i4)') 'particles before:', bin, self%np(3,3,1:n,bin)
     end do
     do bin=1,n_bin
-      write(unit,'(a,i3,2x,1p,10e11.2)') 'bins before:', bin, self%n(3,3,1:10,bin)
+      write(unit,'(a,i3,2x,1p,10e11.2)') 'bins before:', bin, self%dd(3,3,1:10,bin)
     end do
     if (verbose > 1) then
       call get_densities
       do bin=1,n_bin
-        write(unit,'(a,i3,2x,1p,10e11.2)') 'bins redone:', bin, self%n(3,3,1:10,bin)
+        write(unit,'(a,i3,2x,1p,10e11.2)') 'bins redone:', bin, self%dd(3,3,1:10,bin)
       end do
     end if
   end subroutine
@@ -906,7 +908,7 @@ contains
     if (verbose > 1) then
       call get_densities
       do bin=1,n_bin
-        write(unit,'(a,i3,2x,1p,10e11.2)') 'bins  after:', bin, self%n(3,3,1:10,bin)
+        write(unit,'(a,i3,2x,1p,10e11.2)') 'bins  after:', bin, self%dd(3,3,1:10,bin)
       end do
     end if
     do bin=1,n_bin
@@ -1003,7 +1005,7 @@ contains
     !---------------------------------------------------------------------------
     c = drag_coeff/self%s_cgs(bin)
     !---------------------------------------------------------------------------
-    d_cgs = self%n(i1,i2,i3,bin)*scaling%d
+    d_cgs = self%dd(i1,i2,i3,bin)*scaling%d
     if (d_cgs > d_min_cgs) then
       vg = self%vg(:,i1,i2,i3)
       q = [i1,i2,i3]
@@ -1099,7 +1101,7 @@ contains
     ! Renormalize weights to get the same total as before
     !---------------------------------------------------------------------------
     np = sorted%n
-    w = self%n(i1,i2,i3,bin)/np
+    w = self%dd(i1,i2,i3,bin)/np
     p => sorted%head
     do j=1,np
       p%w = w
@@ -1115,12 +1117,12 @@ contains
       write(unit,'(a,i3,2x,20i4)') 'particles before:', bin, self%np(3,3,1:n,bin)
     end do
     do bin=1,n_bin
-      write(unit,'(a,i3,2x,1p,10e11.2)') 'bins before:', bin, self%n(3,3,1:10,bin)
+      write(unit,'(a,i3,2x,1p,10e11.2)') 'bins before:', bin, self%dd(3,3,1:10,bin)
     end do
     if (verbose > 1) then
       call get_densities
       do bin=1,n_bin
-        write(unit,'(a,i3,2x,1p,10e11.2)') 'bins redone:', bin, self%n(3,3,1:10,bin)
+        write(unit,'(a,i3,2x,1p,10e11.2)') 'bins redone:', bin, self%dd(3,3,1:10,bin)
       end do
     end if
   end subroutine
@@ -1146,12 +1148,12 @@ SUBROUTINE output (self)
   end if
   if (self%time >= self%aux%aux_next) then
     call self%aux%register ('dust_s', self%s_cgs)
-    call self%aux%register ('dust_d', self%n)
+    call self%aux%register ('dust_d', self%dd)
     !...........................................................................
     if (verbose > 1) then
       do i=1,n_bin
         write (io_unit%log, '(a,i6, i3,2x,1p,10e11.2)') &
-          'dust_t%output: id, bin, n =', self%patch%id, i, self%n(3,3,1:10,i)
+          'dust_t%output: id, bin, n =', self%patch%id, i, self%dd(3,3,1:10,i)
       end do
     end if
     !...........................................................................

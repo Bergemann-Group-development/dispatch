@@ -47,7 +47,6 @@ MODULE particle_solver_mod
     class(nbor_t),     pointer :: nbor => null()       ! nbor list
     type(link_t)   ,   pointer :: link => null()       ! task link
     type(dust_t)               :: dust                 ! dust solver
-    real, pointer, contiguous  :: d(:,:,:)             ! density
     logical                    :: forced = .false.     ! external force
     logical, dimension(3)      :: lower                ! has lower boundary
     logical, dimension(3)      :: upper                ! has upper boundary
@@ -74,7 +73,7 @@ MODULE particle_solver_mod
   integer:: i_dbg(5) = 0    ! cell index triplet to debug
   real:: courant = 1.0
   logical:: detailed_timer = .false.
-  logical:: do_sort = .false.
+  logical:: do_sort = .true.
   logical:: on = .true.
 CONTAINS
 
@@ -659,29 +658,28 @@ SUBROUTINE update_sorted (self)
                     q1(5) = self%particles%n
                     call self%dust%consistency2 ('before remove',i1,i2,i3,bin)
                     call self%particles%remove_sorted (p,i1,i2,i3,bin)
-                    self%dust%n(i1,i2,i3,bin) = self%dust%n(i1,i2,i3,bin) - p%w
                     call self%dust%consistency2 ('after remove',i1,i2,i3,bin)
                     q2(1:3) = p%q
                     q2(4) = self%particles%sorted(p%q(1),p%q(2),p%q(3),bin)%n+1
                     q2(5) = self%particles%n+1
                     write (io_unit%log,'(" moving:",2(4i4,i10,4x))') q1, q2
                     call self%particles%add_sorted (p,p%q(1),p%q(2),p%q(3),bin)
-                    self%dust%n(p%q(1),p%q(2),p%q(3),bin) = &
-                    self%dust%n(p%q(1),p%q(2),p%q(3),bin) + p%w
                     call self%dust%consistency2 ('after add',p%q(1),p%q(2),p%q(3),bin)
                   else
                     call self%particles%remove_sorted (p, i1, i2, i3, bin)
                     call self%particles%add_sorted (p, p%q(1), p%q(2), p%q(3), bin)
-                    self%dust%n(p%q(1),p%q(2),p%q(3),bin) = &
-                    self%dust%n(p%q(1),p%q(2),p%q(3),bin) + p%w
                   endif
+                  self%dust%dd(i1,i2,i3,bin) = &
+                  self%dust%dd(i1,i2,i3,bin) - p%w
+                  self%dust%dd(p%q(1),p%q(2),p%q(3),bin) = &
+                  self%dust%dd(p%q(1),p%q(2),p%q(3),bin) + p%w
                 end block
               end if
               outside = any(p%q < self%lb .or. p%q > self%ub)
               if (outside) then
                 call self%particles%remove_sorted (p, p%q(1), p%q(2), p%q(3), bin)
-                self%dust%n(p%q(1),p%q(2),p%q(3),bin) = &
-                self%dust%n(p%q(1),p%q(2),p%q(3),bin) - p%w
+                self%dust%dd(p%q(1),p%q(2),p%q(3),bin) = &
+                self%dust%dd(p%q(1),p%q(2),p%q(3),bin) - p%w
                 call self%dust%consistency2 ('after rem',p%q(1),p%q(2),p%q(3), bin)
                 call exports%append (p)
                 no = no+1
@@ -1155,8 +1153,8 @@ SUBROUTINE import_sorted (self)
           p%q = q
           call nbtask%exports%remove (p)
           call self%particles%add_sorted (p, q(1), q(2), q(3), p%bin)
-          self%dust%n(q(1),q(2),q(3),p%bin) = &
-          self%dust%n(q(1),q(2),q(3),p%bin) + p%w
+          self%dust%dd(q(1),q(2),q(3),p%bin) = &
+          self%dust%dd(q(1),q(2),q(3),p%bin) + p%w
           self%time = min(self%time, p%t)
           ni = ni + 1
           ii(1) = self%patch%id; ii(2:4) = p%q; ii(5) = p%bin
