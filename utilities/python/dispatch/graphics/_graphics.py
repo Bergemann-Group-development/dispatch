@@ -204,10 +204,10 @@ def pdf_d(iout,run='',data='../data',iv='d',i4=0,nbin=100,xlim=[-4,3],lnd=False)
     pl.hist(bins[0:n],bins=bins,weights=htot,log=True,density=True)
     return bins,htot
 
-def unigrid_plane(sn,**kw):
+def unigrid_plane(sn,vmin=None,vmax=None,**kw):
     import dispatch.select as dse
     ff,pp=dse.unigrid_plane(sn,patches=True,**kw)
-    imshow(ff)
+    imshow(ff,vmin=vmin,vmax=vmax)
 
 
 def amr_plane(sn,iv='d',z=0.5,x=None,y=None,log=False,mesh=False,
