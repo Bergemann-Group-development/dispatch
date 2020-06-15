@@ -91,6 +91,8 @@ def corner_indices(sn,p,dir=-1):
 
 def unigrid_plane(snap,iv=0,x=None,y=None,z=0.5,point=0.5,dir=2,
                   all=False,i4=0,patches=False,verbose=0):
+    if not hasattr(snap,'patches'):
+        return
     pp=snap.patches
     p=pp[0]
     dim=list(snap.cartesian.dims*p.n)

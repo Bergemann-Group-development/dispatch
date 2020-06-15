@@ -32,6 +32,7 @@ def imshow(f,colorbar=None,origin='lower',interpolation='nearest',
 
         The second call updates the colorbar from the 1st call
     """
+    if f is None: return
     if verbose>0:
         print ('min:',f.min(),' max:',f.max())
     pl.imshow(np.transpose(f),origin=origin,interpolation=interpolation,cmap=cmap,**kw)
