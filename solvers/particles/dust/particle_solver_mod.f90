@@ -182,9 +182,13 @@ SUBROUTINE initial_condition (self)
   !-----------------------------------------------------------------------------
   ! Initialize dust.  At boundaries, add particles also in guard zones
   !-----------------------------------------------------------------------------
+#ifdef __GFORTRAN__
   !$omp critical (alloc_cr)
   call self%dust%initial_condition
   !$omp end critical (alloc_cr)
+#else
+  call self%dust%initial_condition
+#endif
   !.............................................................................
   if (verbose > 0) then
     if (verbose > 1) then

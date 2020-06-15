@@ -143,7 +143,6 @@ SUBROUTINE init (self, particles)
     rewind (io%input)
     read (io%input, dust_params, iostat=iostat)
     call io%namelist_warning ('dust_params', iostat)
-    write (stdout,*) io%namelist
     write (io%namelist, dust_params)
     n_bin = max(1,n_bin)
     first_time = .false.
