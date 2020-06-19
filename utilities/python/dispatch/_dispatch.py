@@ -449,13 +449,15 @@ def _var(patch,filed,snap,verbose=0,copy=None):
 
         # Check if the index corresponds to a cached array
         if iv in patch.data.keys():
+            if verbose:
+                print(iv,'in data keys',v.shape)
             v=patch.data[iv]
 
         # or an aux item
         elif iv in patch.aux.vars.keys():
             v=patch.aux.vars[iv]['v']
             if verbose:
-                print(iv,'in keys',v.shape)
+                print(iv,'in aux keys',v.shape)
 
         # or a numeric index
         elif iv in patch.keys['numbers']:

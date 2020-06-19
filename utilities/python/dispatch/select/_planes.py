@@ -154,5 +154,10 @@ def unigrid_volume(snap,iv=0,i4=0,verbose=0):
             if n%100==0:
                 print(n)
         k=corner_indices(snap,p)
-        ff[k[0]:k[1],k[2]:k[3],k[4]:k[5]]=p.var(iv)
+        if verbose>0:
+            print('id,corner indices',p.id,p.keys['aux'],k)
+        try:
+            ff[k[0]:k[1],k[2]:k[3],k[4]:k[5]]=p.var(iv,i4=i4)
+        except:
+            print('WARNING: no values for patch',p.id)
     return ff
