@@ -17,7 +17,7 @@ set -x
 # file names for input and executable
 exe=./dispatch.x
 
-in=run1.2.nml
+in=run12.nml
 
 # time stamp files
 time=`date +%y%m%d_%H%M`
