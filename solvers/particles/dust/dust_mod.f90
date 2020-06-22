@@ -747,9 +747,9 @@ contains
               np = self%np(i(1),i(2),i(3),bin) + self%na(i(1),i(2),i(3),bin)
               na = na + 1
               if (p%id == self%ip_dbg) then
-                write (io_unit%log,'(a,i6,i8,4i4,3f6.2)') &
+                write (io_unit%log,'(a,i6,i8,4i4,3f6.2,1p,e11.3)') &
                   'add_particles: pa%id,p%id,i,bin,r=', &
-                  self%patch%id,p%id,i,bin,p%r
+                  self%patch%id,p%id,i,bin,p%r,p%t
               end if
             end do
             !...................................................................
@@ -992,10 +992,9 @@ contains
   !=============================================================================
   subroutine add_particles
     integer:: np, j
-    real:: w, c, d_cgs
+    real:: w, c, d_cgs, vg(3)
     integer:: ii(5), q(3)
     real(8):: time
-    real:: vg(3)
     integer, save:: itimer1=0
     !---------------------------------------------------------------------------
     call trace%begin ('dust_t%add_particles', itimer=itimer1)
@@ -1006,6 +1005,7 @@ contains
     !---------------------------------------------------------------------------
     d_cgs = self%dd(i1,i2,i3,bin)*scaling%d
     if (d_cgs > d_min_cgs) then
+      c = drag_coeff/self%s_cgs(bin)
       vg = self%vg(:,i1,i2,i3)
       q = [i1,i2,i3]
       time = self%patch%time
@@ -1017,6 +1017,7 @@ contains
         p%r = self%random%uniform (3)
         p%t = time
         p%v = vg
+        p%c = c
         call self%particles%add_sorted (p, i1, i2, i3, bin)
       end do
       !.........................................................................

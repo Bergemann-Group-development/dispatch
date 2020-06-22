@@ -637,6 +637,14 @@ SUBROUTINE update_sorted (self)
                 p%r = p%r - q                                     ! remove
                 p%q = p%q + q                                     ! add
                 nk = nk+1                                         ! count
+                if (p%id == ip_dbg) then
+                  write (io_unit%log,'(a,3i6,i10,2x,4i4,3f6.2,i5,1p,2e11.3)') &
+                    '   move: id, nk, pid, q, bin, r, n =', &
+                    patch%id, exports%n, nk, p%id, p%q, bin, p%r, &
+                    self%particles%sorted(i1,i2,i3,bin)%n , &
+                    p%t, p%dt
+                  flush (io_unit%log)
+                end if
               end do
               p%dt = dt
               !-----------------------------------------------------------------
@@ -647,14 +655,20 @@ SUBROUTINE update_sorted (self)
                   integer:: q1(5), q2(5), itp
                   outside = any(p%q < 1 .or. p%q > m)
                   if (outside) then
-                    write (stderr,'(a,i8,i4,1x,3i3,3f6.2,1p,3(1x,3e10.2))') &
-                    'particle_solver_t%update outside: id, nj, q, p, pv, v =', &
+                    write (stderr,'(a,i10,i4,1x,3i3,3f6.2,1p,3(1x,3e10.2))') &
+                    'particle_solver_t%update outside: id,nj,q,r,pv,gv,pc,dt,ods =', &
                     p%id, nj, p%q, p%r, p%v, v, pc, dt, ods
                     write (stderr,'(1p,10e10.2)') dt_prv(1:nj)
                     write (stderr,'(1p,10e10.2)')  t_prv(1:nj)
                     itp = modulo(patch%it-2,patch%nt) + 1
                     write (stderr,'(1p,3(3e10.2,2x))') &
                       patch%time, patch%t(itp), patch%t(patch%it), v, u
+                    write (io_unit%log,'(a,3i6,i10,2x,4i4,3f6.2,i5,1p,2e11.3)') &
+                      'outside: id, nj, pid, q, n =', &
+                      patch%id, exports%n, no, p%id, p%q, p%bin, p%r, &
+                      self%particles%sorted(i1,i2,i3,bin)%n , &
+                      p%t, p%dt
+                    flush (io_unit%log)
                   end if
                   if (verbose > 0) then
                     q1(1:3) = [i1,i2,i3]
@@ -677,6 +691,14 @@ SUBROUTINE update_sorted (self)
                   self%dust%dd(i1,i2,i3,bin) - p%w
                   self%dust%dd(p%q(1),p%q(2),p%q(3),bin) = &
                   self%dust%dd(p%q(1),p%q(2),p%q(3),bin) + p%w
+                  if (p%id == ip_dbg) then
+                    write (io_unit%log,'(a,3i6,i10,2x,4i4,3f6.2,i5,1p,2e11.3)') &
+                      ' change: id, nk, pid, q, bin, r, n =', &
+                      patch%id, exports%n, nk, p%id, p%q, bin, p%r, &
+                      self%particles%sorted(p%q(1),p%q(2),p%q(3),bin)%n, &
+                      p%t, p%dt
+                    flush (io_unit%log)
+                  end if
                 end block
               end if
               outside = any(p%q < self%lb .or. p%q > self%ub)
@@ -690,11 +712,12 @@ SUBROUTINE update_sorted (self)
                 ii(1) = patch%id; ii(2:4) = p%q; ii(5) = p%bin
                 if (verbose > 1 .or. patch%id == id_dbg .or. p%id == ip_dbg .or. &
                     all(ii == i_dbg)) then
-                  write (io_unit%log,'(a,3i6,i10,2x,3i4,i5)') &
-                    'export: id, no, pid, q, n =', &
-                    patch%id, exports%n, no, p%id, p%q, &
+                  write (io_unit%log,'(a,3i6,i10,2x,3i4,3f6.2,i5)') &
+                    ' export: id, no, pid, q, n =', &
+                    patch%id, exports%n, no, p%id, p%q, p%r, &
                     self%particles%sorted(p%q(1),p%q(2),p%q(3),p%bin)%n 
-                endif
+                  flush (io_unit%log)
+                end if
               end if
             end if
             !-------------------------------------------------------------------
