@@ -8,7 +8,7 @@
 
 !--- Dust and particle solver parameters ---------------------------------------
 &particle_solver_params verbose=0 courant=0.5 detailed_timer=f /
-&dust_params            verbose=0 n_bin=3 particles_per_bin=10
+&dust_params            verbose=0 n_bin=3 particles_per_bin=1
                         min_size_cgs=3e-8 max_size_cgs=3e-1 /
 
 !--- Input/Output parameters ---------------------------------------------------
@@ -23,5 +23,5 @@
 &ramses_params          gamma=1.0 csound=0.18 courant_factor=0.25 slope_type=3 /
 &initial_params         type='void' /
 &force_params           type='turbulence' /
-&turbulence_params      ampl_turb=1.5 t_turn=0.45 k1=1 k2=2 pk=0.0 seed=5 
+&turbulence_params      ampl_turb=2.5 t_turn=0.45 k1=1 k2=2 pk=0.0 seed=5 
                         verbose=0 /
