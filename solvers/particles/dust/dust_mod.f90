@@ -887,11 +887,13 @@ SUBROUTINE consistency2 (self, label, i1, i2, i3, bin)
       if (j < s%n) then
         if (associated(p,s%tail)) then
           write (stdout,1) 'mismatch1 in local n:',j,s%n,i1,i2,i3,label
+          write (io_unit%log,1) 'mismatch1 in local n:',j,s%n,i1,i2,i3,label
         1 format(a,2i4,2x,3i4,2x,a)
           exit
         end if
       else if (.not. associated(p,s%tail)) then
         write (stdout,1) 'mismatch2 in local n:',j,s%n,i1,i2,i3,label
+        write (io_unit%log,1) 'mismatch2 in local n:',j,s%n,i1,i2,i3,label
         exit
       end if
       p => p%next

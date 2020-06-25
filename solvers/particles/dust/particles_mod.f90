@@ -209,13 +209,16 @@ SUBROUTINE add_sorted (self, p, i1, i2, i3, i4)
     call self%append (p)
     sorted%tail => p
     sorted%head => p
+    !write (io_unit%log,*) p%id,'added at tail & head'
   else
     if (associated(sorted%tail,self%tail)) then     ! tail of ALL particles
       nullify(p%next)                               ! maintain null at end
       self%tail => p                                ! new tail
+      !write (io_unit%log,*) p%id,'added at self%tail'
     else
       p%next => sorted%tail%next                    ! connect to next cell
       p%next%prev => p                              ! point back past it
+      !write (io_unit%log,*) p%id,'added at sorted%tail'
     end if
     p%prev => sorted%tail                           ! attach to the tail
     p%prev%next => p                                ! point fwd past it
@@ -239,27 +242,35 @@ SUBROUTINE remove_sorted (self, p, i1, i2, i3, i4)
   !--- if there is a particle after this one, change its %prev to p%prev
   if (associated(p%next)) then
     p%next%prev => p%prev
+    !write (io_unit%log,*) 'rem from next'
   end if
   !--- if there is a particle before this one, change its %next to p%next
   if (associated(p%prev)) then
     p%prev%next => p%next
+    !write (io_unit%log,*) 'rem from prev'
   end if
   !--- if the remove particle is the tail in a cell, repoint the tail
   if (associated(p,sorted%tail)) then
     sorted%tail => p%prev
+    !write(io_unit%log,*) 'remove at sorted%tail'
     !--- if the removed particle is alse the very last tail, reassign tail
     if (associated(p,self%tail)) then
+      !write(io_unit%log,*) 'remove at self%tail'
       self%tail => p%prev
       !--- for good measure, make sure the tail has no next
       nullify (self%tail%next)
     end if
+  !else
+    !write(io_unit%log,*) p%id,'remove'
   end if
   !--- if the remove particle is the head in a cell, repoint the head
   if (associated(p,sorted%head)) then
     sorted%head => p%next
+    !write(io_unit%log,*) 'remove at sorted%head'
     !--- if the removed particle is alse the very first head, reassign head
     if (associated(p,self%head)) then
       self%head => p%next
+      !write(io_unit%log,*) 'remove at self%head'
       !--- for good measure, make sure the head has no prev
       nullify (self%head%prev)
     end if
@@ -267,6 +278,7 @@ SUBROUTINE remove_sorted (self, p, i1, i2, i3, i4)
   sorted%n = sorted%n - 1                                ! decrement box count
   if (sorted%n == 0) then                                ! if box empty
     nullify (sorted%head, sorted%tail)                   ! reset head & tail
+    write(io_unit%log,*) 'nullify head & tail'
   end if
   self%n =  self%n - 1                                   ! decrement total
 END SUBROUTINE remove_sorted

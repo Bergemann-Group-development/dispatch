@@ -300,8 +300,9 @@ SUBROUTINE update (self)
     m = patch%gn
     do dir=1,3
       dust%vg(dir,:,:,:) = patch%mem(:,:,:,patch%idx%px+dir-1,patch%it,1) &
-                         / patch%mem(:,:,:,patch%idx%d       ,patch%it,1)
-    end do
+                         / (patch%ds(dir) &
+                            *patch%mem(:,:,:,patch%idx%d       ,patch%it,1))
+      end do
     !---------------------------------------------------------------------------
     !> Non-vectorized pusher
     !---------------------------------------------------------------------------
@@ -323,9 +324,9 @@ SUBROUTINE update (self)
         block
         class(sorted_t), pointer:: sorted
         real:: d, u, v(3), pc, dt, pd(3)
-        real(8):: t_prv(10), dt_prv(10)
+        real(8):: t_prv(50), dt_prv(50)
         integer:: j, nj, m(3)
-        logical:: error
+        logical:: error, removed
         m = self%patch%gn
         sorted => self%particles%sorted(i1,i2,i3,bin)
         if (sorted%n > 0) then
@@ -339,18 +340,20 @@ SUBROUTINE update (self)
             if (.not. associated(p)) then
               write (stderr,*) 'error at', i1, i2, i3, sorted%n, j
             end if
+            removed = .false.
             next => p%next
             if (p%t <= patch_time) then
               !-----------------------------------------------------------------
               ! To optimize, the KDK update assumes the density and gas velocity
               ! to remain unchanged during the particle update
               !-----------------------------------------------------------------
-              nj = 0
+              !nj = 0
               do while (p%t <= patch_time)
-                nj = nj+1
+                !nj = nj+1
                 dt = courant*0.5/max(u,abs(p%v(1)),abs(p%v(2)),abs(p%v(3)))
-                t_prv(nj) = p%t
-                dt_prv(nj) = dt
+                p%dt = dt
+                !t_prv(nj) = p%t
+                !dt_prv(nj) = dt
                 !--- kick 1 ----------------------------------------------------
                 pd = pc*(v-p%v)                                   ! drag force
                 p%v = p%v + dt*ods*(p%a+pd)/(1.+pc*dt*ods)        ! stiff kick
@@ -370,6 +373,35 @@ SUBROUTINE update (self)
                 p%r = p%r - q                                     ! remove
                 p%q = p%q + q                                     ! add
                 nk = nk+1                                         ! count
+                if (any(p%q < self%lb .or. p%q > self%ub)) then
+                  !call self%dust%consistency2 ('before exp',i1,i2,i3,bin)
+                  call self%particles%remove_sorted (p,i1,i2,i3,bin)
+                  !call self%dust%consistency2 ('after exp',i1,i2,i3,bin)
+                  self%dust%dd(i1,i2,i3,bin) = &
+                  self%dust%dd(i1,i2,i3,bin) - p%w
+                  call exports%append (p)
+                  no = no+1
+                  !write(io_unit%log,*) 'export', p%id, sorted%n
+                  removed = .true.
+                  exit
+                end if
+                if (any(p%q /= [i1,i2,i3])) then
+                  !call self%dust%consistency2 ('before rem',i1,i2,i3,bin)
+                  call self%particles%remove_sorted (p,i1,i2,i3,bin)
+                  !call self%dust%consistency2 ('after rem',i1,i2,i3,bin)
+                  call self%particles%add_sorted (p,p%q(1),p%q(2),p%q(3),bin)
+                  !call self%dust%consistency2 ('after add',p%q(1),p%q(2),p%q(3),bin)
+                  self%dust%dd(i1,i2,i3,bin) = &
+                  self%dust%dd(i1,i2,i3,bin) - p%w
+                  self%dust%dd(p%q(1),p%q(2),p%q(3),bin) = &
+                  self%dust%dd(p%q(1),p%q(2),p%q(3),bin) + p%w
+                  !write(io_unit%log,'(a,i10,2(2x,5i4))') 'move', p%id, &
+                    !i1,i2,i3,bin,sorted%n, &
+                    !p%q,p%bin, &
+                    !self%particles%sorted(p%q(1),p%q(2),p%q(3),p%bin)%n
+                  removed = .true.
+                  exit
+                end if
                 if (p%id == ip_dbg) then
                   write (io_unit%log,'(a,3i6,i10,2x,5i4,3f6.2,1p,2(3e11.3,2x))') &
                     '   move: ', &
@@ -379,92 +411,15 @@ SUBROUTINE update (self)
                   flush (io_unit%log)
                 end if
               end do
-              p%dt = dt
-              !-----------------------------------------------------------------
-              ! If the particle is now in a different cell, update sorted
-              !-----------------------------------------------------------------
-              if (.not. all(p%q == [i1,i2,i3])) then
-                block
-                  integer:: q1(5), q2(5), itp
-                  outside = any(p%q < 1 .or. p%q > m)
-                  if (outside) then
-                    write (stderr,'(a,i10,i4,1x,3i3,3f6.2,1p,3(1x,3e10.2))') &
-                    'particle_solver_t%update outside: id,nj,q,r,pv,gv,pc,dt,ods =', &
-                    p%id, nj, p%q, p%r, p%v, v, pc, dt, ods
-                    write (stderr,'(1p,10e10.2)') dt_prv(1:nj)
-                    write (stderr,'(1p,10e10.2)')  t_prv(1:nj)
-                    itp = modulo(patch%it-2,patch%nt) + 1
-                    write (stderr,'(1p,3(3e10.2,2x))') &
-                      patch%time, patch%t(itp), patch%t(patch%it), v, u
-                    write (io_unit%log,'(a,3i6,i10,2x,5i4,3f6.2,1p,2(3e11.3,2x))') &
-                      'outside: ', &
-                      patch%id, exports%n, nk, p%id, p%q, bin, &
-                      self%particles%sorted(i1,i2,i3,bin)%n , &
-                      p%r, p%v, p%t, dt, patch_time
-                    flush (io_unit%log)
-                  end if
-                  if (verbose > 0) then
-                    q1(1:3) = [i1,i2,i3]
-                    q1(4) = sorted%n
-                    q1(5) = self%particles%n
-                    call self%dust%consistency2 ('before remove',i1,i2,i3,bin)
-                    call self%particles%remove_sorted (p,i1,i2,i3,bin)
-                    call self%dust%consistency2 ('after remove',i1,i2,i3,bin)
-                    q2(1:3) = p%q
-                    q2(4) = self%particles%sorted(p%q(1),p%q(2),p%q(3),bin)%n+1
-                    q2(5) = self%particles%n+1
-                    write (io_unit%log,'(" moving:",2(4i4,i10,4x))') q1, q2
-                    call self%particles%add_sorted (p,p%q(1),p%q(2),p%q(3),bin)
-                    call self%dust%consistency2 ('after add',p%q(1),p%q(2),p%q(3),bin)
-                  else
-                    call self%particles%remove_sorted (p, i1, i2, i3, bin)
-                    call self%particles%add_sorted (p, p%q(1), p%q(2), p%q(3), bin)
-                  endif
-                  self%dust%dd(i1,i2,i3,bin) = &
-                  self%dust%dd(i1,i2,i3,bin) - p%w
-                  self%dust%dd(p%q(1),p%q(2),p%q(3),bin) = &
-                  self%dust%dd(p%q(1),p%q(2),p%q(3),bin) + p%w
-                  if (p%id == ip_dbg) then
-                    write (io_unit%log,'(a,3i6,i10,2x,4i4,6f6.2,i5,1p,3e11.3)') &
-                      ' change: id, nk, pid, q, bin, r, n =', &
-                      patch%id, exports%n, nk, p%id, p%q, bin, p%r, p%v, &
-                      self%particles%sorted(p%q(1),p%q(2),p%q(3),bin)%n, &
-                      p%t, dt, patch_time
-                    flush (io_unit%log)
-                  end if
-                end block
-              end if
-              outside = any(p%q < self%lb .or. p%q > self%ub)
-              if (outside) then
-                call self%particles%remove_sorted (p, p%q(1), p%q(2), p%q(3), bin)
-                self%dust%dd(p%q(1),p%q(2),p%q(3),bin) = &
-                self%dust%dd(p%q(1),p%q(2),p%q(3),bin) - p%w
-                call self%dust%consistency2 ('after rem',p%q(1),p%q(2),p%q(3), bin)
-                call exports%append (p)
-                no = no+1
-                ii(1) = patch%id; ii(2:4) = p%q; ii(5) = p%bin
-                if (verbose > 1 .or. patch%id == id_dbg .or. p%id == ip_dbg .or. &
-                    all(ii == i_dbg)) then
-                  write (io_unit%log,'(a,3i6,i10,2x,3i4,3f6.2,i5)') &
-                    ' export: id, no, pid, q, n =', &
-                    patch%id, exports%n, no, p%id, p%q, p%r, &
-                    self%particles%sorted(p%q(1),p%q(2),p%q(3),p%bin)%n 
-                  flush (io_unit%log)
-                end if
-              end if
             end if
             !-------------------------------------------------------------------
-            ! t is the smallest particle time of the set
+            ! If the particles was not removed, its time is beyond patch_time
+            ! and we register the smallest particle time as the time of the
+            ! particle task. This includes particles that were already ahead of
+            ! patch_time.
             !-------------------------------------------------------------------
-            t = min(t,p%t)
-            ip = ip+1
-            ii(1) = self%patch%id; ii(2:4) = p%q; ii(5) = p%bin
-            if (verbose > 2 .or. p%id == ip_dbg .or. all(ii==i_dbg)) then
-              write (io_unit%log,1) &
-                'update: id,out,t,dt,c,q,r,v=', &
-                patch%id, p%id, outside, p%t, p%dt, p%c, p%q, p%r, p%v, p%a, &
-                patch%u_phase(i(1),i(2),i(3))/ds
-              1 format(a,i5,i8,l3,1p,3e10.3,0p,3i3,5(3f6.2,2x))
+            if (.not. removed) then
+              t = min(t,p%t)
             end if
             j = j+1
             p => next
@@ -839,13 +794,15 @@ SUBROUTINE import (self)
           p%r = r-q
           p%q = q
           call nbtask%exports%remove (p)
+          call self%dust%consistency2 ('before add',p%q(1),p%q(2),p%q(3),p%bin)
           call self%particles%add_sorted (p, q(1), q(2), q(3), p%bin)
+          call self%dust%consistency2 ('after add',p%q(1),p%q(2),p%q(3),p%bin)
           self%dust%dd(q(1),q(2),q(3),p%bin) = &
           self%dust%dd(q(1),q(2),q(3),p%bin) + p%w
           self%time = min(self%time, p%t)
           ni = ni + 1
           ii(1) = self%patch%id; ii(2:4) = p%q; ii(5) = p%bin
-          if (verbose > 1 .or. p%id == ip_dbg .or. all(ii == i_dbg)) then
+          if (verbose > 0 .or. p%id == ip_dbg .or. all(ii == i_dbg)) then
             write (io_unit%log,'(a,3i6,i10,2x3i4,l4)') &
              'import: id, nbor, ni, pid, q =', &
               self%patch%id, nbtask%patch%id, ni, p%id, q
