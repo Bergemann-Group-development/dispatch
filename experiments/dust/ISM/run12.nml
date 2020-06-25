@@ -8,7 +8,7 @@
 
 !--- Dust and particle solver parameters ---------------------------------------
 &particle_solver_params verbose=0 courant=0.5 detailed_timer=f /
-&dust_params            verbose=0 n_bin=3 particles_per_bin=10
+&dust_params            verbose=0 n_bin=3 particles_per_bin=5
                         min_size_cgs=3e-8 max_size_cgs=3e-1 /
 
 !--- Input/Output parameters ---------------------------------------------------
