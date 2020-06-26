@@ -35,6 +35,7 @@ MODULE particle_solver_mod
   USE gpatch_mod
   USE particles_mod
   USE dust_mod
+  USE scaling_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -239,12 +240,13 @@ SUBROUTINE update (self)
   real                       :: ods, dtds
   class(particle_t), pointer :: p, next
   real(8)                    :: tmin, tmax, t, time(2), patch_time
-  real                       :: ds, dt, os
-  logical                    :: outside
+  real                       :: ds, dt, os, n_min
+  logical                    :: outside, restart
   integer                    :: ip, np, no, nk, it, m(3), i(3), ii(5), dir
   integer(kind=2)            :: i1, i2, i3, bin, l(3), u(3)
   class(gpatch_t), pointer   :: patch
   class(particles_t), pointer:: exports
+  class(sorted_t), pointer   :: sorted
   integer, save              :: itimer=0, itimer1=0
   !-----------------------------------------------------------------------------
   if (.not. on) return
@@ -267,7 +269,7 @@ SUBROUTINE update (self)
   ! Only evolve particles if the last particle is behind the patch%time (which
   ! has not been updated yet, so we add the patch timestep)
   !-----------------------------------------------------------------------------
-  patch_time = patch%time + patch%dtime
+  patch_time = patch%time + patch%dtime*courant/patch%courant
   self%v_min = patch%fminval(patch%u_phase)/patch%ds(1)
   self%v_max = patch%fmaxval(patch%u_phase)/patch%ds(1)
   if (verbose > 1) then
@@ -322,7 +324,6 @@ SUBROUTINE update (self)
       do i2=l(2),u(2)
       do i1=l(1),u(1)
         block
-        class(sorted_t), pointer:: sorted
         real:: d, u, v(3), pc, dt, pd(3)
         real(8):: t_prv(50), dt_prv(50)
         integer:: j, nj, m(3)
@@ -356,7 +357,7 @@ SUBROUTINE update (self)
                 !dt_prv(nj) = dt
                 !--- kick 1 ----------------------------------------------------
                 pd = pc*(v-p%v)                                   ! drag force
-                p%v = p%v + dt*ods*(p%a+pd)/(1.+pc*dt*ods)        ! stiff kick
+                p%v = p%v + dt*(p%a+pd)/(1.+pc*dt)                ! stiff kick
                 !--- drift -----------------------------------------------------
                 p%r = p%r + 2.*dt*p%v                             ! forward two dr
                 p%t = p%t + 2.*dt                                 ! forward two dt
@@ -367,12 +368,17 @@ SUBROUTINE update (self)
                 !end if
                 !--- kick 2 ----------------------------------------------------
                 pd = pc*(v-p%v)                                   ! drag force
-                p%v = p%v + dt*ods*(p%a+pd)/(1.+pc*dt*ods)        ! stiff kick
+                p%v = p%v + dt*(p%a+pd)/(1.+pc*dt)                ! stiff kick
                 !--- update q+r representation ---------------------------------
                 q = floor(p%r)                                    ! integer shift
                 p%r = p%r - q                                     ! remove
                 p%q = p%q + q                                     ! add
                 nk = nk+1                                         ! count
+                if (sorted%n < self%dust%n_min) then
+                  call add_particles
+                  restart = .true.
+                  exit
+                end if
                 if (any(p%q < self%lb .or. p%q > self%ub)) then
                   !call self%dust%consistency2 ('before exp',i1,i2,i3,bin)
                   call self%particles%remove_sorted (p,i1,i2,i3,bin)
@@ -411,6 +417,11 @@ SUBROUTINE update (self)
                   flush (io_unit%log)
                 end if
               end do
+              if (restart) then
+                p => sorted%head
+                j = 1
+                cycle
+              end if
             end if
             !-------------------------------------------------------------------
             ! If the particles was not removed, its time is beyond patch_time
@@ -511,6 +522,41 @@ SUBROUTINE update (self)
       self%time-self%dtime, self%dtime, 1./self%dtime, self%time
   end if
   call trace%end (itimer)
+contains
+!===============================================================================
+!> top up particles per bin
+!===============================================================================
+subroutine add_particles
+  real:: d_cgs, w
+  real(8):: time
+  integer:: j, n, pp_bin
+  d_cgs = self%dust%dd(i1,i2,i3,bin)*scaling%d
+  !if (d_cgs > d_min_cgs) then
+    q = [i1,i2,i3]
+    pp_bin = self%dust%pp_bin
+    w = self%dust%dd(i1,i2,i3,bin)/pp_bin
+    time = 0d0
+    n = sorted%n
+    p => sorted%head
+    do j=1,n
+      time = time + p%t
+      p%w = w
+      p => p%next
+    end do
+    time = time/n
+    do j=1,pp_bin-n
+      allocate (p)
+      call p%init
+      p%q = q
+      p%bin = bin
+      p%r = self%dust%random%uniform (3)
+      p%t = time
+      p%w = w
+      p%v = v
+      call self%particles%add_sorted (p,i1,i2,i3,bin)
+    end do
+  !end if
+end subroutine add_particles
 END SUBROUTINE update
 
 !===============================================================================
@@ -662,61 +708,6 @@ SUBROUTINE sort (self)
   !.............................................................................
   call trace%end (itimer)
 END SUBROUTINE sort
-
-!===============================================================================
-!> Kick-Drift-Kick (KDK) update of particles with drag.  The standard KDK steps
-!> need to be modified by computing the drag force at an approximate position
-!> at time t+dt, then moving the particle back for the first kick, followed by
-!> drift, and a 2nd kick, now with the drag force evaluated at t+2*dt. Since
-!> velocity is measured in cells per unit time, the acceleration is multiploied
-!> by the inverse cell size, ods.
-!===============================================================================
-SUBROUTINE kdk (self, p, dtds)
-  class(particle_solver_t):: self
-  type(particle_t):: p
-  real:: dtds
-  integer, save:: itimer=0
-  !-----------------------------------------------------------------------------
-  ! First kick, with drag at t+dt, for v(t) -> v(t+dt)
-  !-----------------------------------------------------------------------------
-  if (detailed_timer) call trace%begin ('particle_solver_t%kdk',itimer=itimer)
-  p%r = p%r + p%dt*p%v
-  p%t = p%t + p%dt
-  call self%dust%drag (p)
-  p%r = p%r - p%dt*p%v
-  p%v = p%v + dtds*(p%a+p%d)/(1.+p%c*dtds)
-  if (verbose > 3 .or. p%id == ip_dbg) then
-    write (io_unit%log,1) &
-      '  kdk1: id,out,t,dt,c,q,r,v=', &
-      self%patch%id, p%id, .false., p%t, p%dt, p%c, p%q, p%r, p%v, p%a, p%d, &
-      self%patch%u_phase(p%q(1),p%q(2),p%q(3))/self%patch%ds(1), &
-      self%v_min, self%v_max
-    1 format(a,i5,i8,l3,1p,3e10.3,0p,3i3,5(3f6.2,2x))
-  end if
-!-----------------------------------------------------------------------------
-  ! Drift, r -> r+2*dt*v(t+dt*a), with v -> vg(t+dt) if drag dominates
-  !-----------------------------------------------------------------------------
-  p%r = p%r + 2.*p%dt*p%v
-  p%t = p%t + p%dt
-  !-----------------------------------------------------------------------------
-  ! Get external and drag acceleration at p(t+2*dt) and do the 2nd kick
-  !-----------------------------------------------------------------------------
-  call self%dust%drag (p)
-  if (self%forced) then
-    call self%force (p)
-  end if
-  p%v = p%v + dtds*(p%a+p%d)/(1.+p%c*dtds)
-  if (verbose > 3 .or. p%id == ip_dbg) then
-    write (io_unit%log,1) &
-      '  kdk2: id,out,dt,c,q,r,v,a=', &
-      self%patch%id, p%id, .false., p%t, p%dt, p%c, p%q, p%r, p%v, p%a, p%d, &
-      self%patch%u_phase(p%q(1),p%q(2),p%q(3))/self%patch%ds(1), &
-      self%v_min, self%v_max
-    flush (io_unit%log)
-   end if
-!-----------------------------------------------------------------------------
-  if (detailed_timer) call trace%end (itimer)
-END SUBROUTINE kdk
 
 !===============================================================================
 !> Add external force (acceleration) on a particle.

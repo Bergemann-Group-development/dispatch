@@ -78,11 +78,12 @@ MODULE dust_mod
     integer, dimension(3):: lb=0, ub=0        ! lower and upper index bounds
     integer, dimension(5):: i_dbg=0           ! debug selection
     integer:: verbose
-    integer:: n_bin
+    integer:: n_bin, pp_bin
     integer:: id_dbg=0, ip_dbg=0
     logical:: do_sort = .false.
     logical:: detailed_timer = .false.
     real:: drag_coeff=0.0                     ! constant in front of drag force
+    real:: n_min, n_max
   contains
     procedure:: init
     procedure:: init_task_list
@@ -150,6 +151,9 @@ SUBROUTINE init (self, particles)
   call io%lock%unset
   self%kernel => test_kernel
   self%n_bin = n_bin
+  self%pp_bin = particles_per_bin
+  self%n_min = particles_per_bin*min_fraction
+  self%n_max = particles_per_bin*max_fraction
   self%verbose = verbose
   call self%aux%init
   !-----------------------------------------------------------------------------
