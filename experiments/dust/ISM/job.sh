@@ -5,7 +5,7 @@
 ##SBATCH --ntasks-per-core=2
 #SBATCH --partition=astro_long
 ##SBATCH --time=4-23:59:59
-##SBATCH --partition=astro_short
+##SBATCH --partition=astro_long
 #SBATCH --time=10:00:00
 #SBATCH --no-requeue
 
