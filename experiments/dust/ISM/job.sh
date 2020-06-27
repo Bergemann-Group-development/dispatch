@@ -23,11 +23,11 @@ in=run12.nml
 
 # time stamp files
 time=`date +%y%m%d_%H%M`
-log=log_$time
+log=log_files/log_$time
 
 # redirect stdout and stderr
 exec >$log 2>&1
-echo jobid=$SLURM_JOB_ID
+echo jobid=log_files/$SLURM_JOB_ID
 
 #module purge
 #module load astro
