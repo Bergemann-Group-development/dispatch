@@ -89,7 +89,6 @@ MODULE dust_mod
     procedure:: init_task_list
     procedure:: initial_condition
     procedure:: update
-    procedure:: drag
     procedure:: output
     procedure:: check_particles
     procedure:: gather
@@ -218,7 +217,7 @@ SUBROUTINE initial_condition (self)
   real, pointer, contiguous:: d(:,:,:)
   integer:: i1, i2, i3, bin, j
   integer:: l(3), u(3), i
-  real:: c, w
+  real:: c, w, vg(3)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('dust_t%initial_condition', itimer=itimer)
@@ -232,9 +231,10 @@ SUBROUTINE initial_condition (self)
   do i2=l(2),u(2)
   do i1=l(1),u(1)
     w = d(i1,i2,i3)*dust_to_gas/(n_bin*particles_per_bin)
+    vg = patch%mem(i1,i2,i3,patch%idx%px:patch%idx%pz,patch%it,1) &
+       / (patch%ds*patch%mem(i1,i2,i3,patch%idx%d,patch%it,1))
     do bin=1,n_bin
       self%dd(i1,i2,i3,bin) = 0.0
-      c = drag_coeff/self%s_cgs(bin)
       do j=1,particles_per_bin
         i = i+1
         allocate (p)
@@ -247,16 +247,14 @@ SUBROUTINE initial_condition (self)
         p%bin = bin
         p%q = [i1,i2,i3]
         p%r = self%random%uniform (3)
-        p%a = 0.0
-        p%v = 0.0
-        p%c = c
+        p%v = vg
         p%w = w
         self%dd(i1,i2,i3,bin) = self%dd(i1,i2,i3,bin) + w
         call self%particles%append (p)
         !.......................................................................
         if (verbose > 2 .or. p%id == self%ip_dbg) &
           write (io_unit%log,'(a,i8,2x,3i3,1x,3f5.2,1x,1p,2e11.2)') &
-          'particle_t%IC: id, q, r, w, c =', p%id, p%q, p%r, p%w, p%c
+          'particle_t%IC: id, q, r, w, c =', p%id, p%q, p%r, p%w
       end do
     end do
   end do
@@ -298,11 +296,11 @@ SUBROUTINE update (self, particles)
   end if
   !...........................................................................
   n = self%patch%mesh%gn                        ! cells in patch
-  allocate (self%na(n(1),n(2),n(3),n_bin))      ! number of added particles
-  allocate (self%dv(n_bin))                     ! average speed difference
-  allocate (self%np(n(1),n(2),n(3),n_bin))      ! work array for pp-cell-bin
-  call self%gather
-  call self%renormalize
+  !allocate (self%na(n(1),n(2),n(3),n_bin))      ! number of added particles
+  !allocate (self%dv(n_bin))                     ! average speed difference
+  !allocate (self%np(n(1),n(2),n(3),n_bin))      ! work array for pp-cell-bin
+  !call self%gather
+  !call self%renormalize
   call self%output
   if (do_dust) then
     allocate (self%k(n_bin,n_bin))              ! kernel expressing exchange
@@ -310,7 +308,7 @@ SUBROUTINE update (self, particles)
     call self%scatter
     deallocate (self%k)
   end if
-  deallocate (self%na, self%dv, self%np)
+  !deallocate (self%na, self%dv, self%np)
   call trace%end (itimer)
 END SUBROUTINE update
 
@@ -357,7 +355,7 @@ SUBROUTINE gather (self)
             self%patch%id, p%id, np, bin, [i1,i2,i3], p%w, self%dd(i1,i2,i3,bin)
         end if
         !.......................................................................
-        dv(bin) = dv(bin) + sqrt(sum(p%dv**2))      ! sum up speed differences
+        !dv(bin) = dv(bin) + sqrt(sum(p%dv**2))      ! sum up speed differences
         p => p%next                                 ! next particle
       end do
       self%dd(i1,i2,i3,bin) = dn
@@ -496,44 +494,6 @@ SUBROUTINE scatter (self)
 END SUBROUTINE scatter
 
 !===============================================================================
-!> Compute drag force on a particle, and add opposite force to the gas. 
-!===============================================================================
-SUBROUTINE drag (self, p)
-  class(dust_t):: self
-  type(particle_t):: p
-  integer:: i(3), bin
-  real:: d, s, v(3), ods(3)
-  integer, save:: itimer=0
-  !-----------------------------------------------------------------------------
-#ifdef DBG
-  if (self%detailed_timer) &
-    call trace%begin ('particle_solver_t%drag',itimer=itimer)
-#endif
-  ods = 1d0/self%patch%ds
-  i = p%q
-  bin = p%bin
-  s = self%s_cgs(bin)
-  d = self%d(i(1),i(2),i(3))
-  v = self%vg(:,i(1),i(2),i(3))
-  p%dv = v - p%v
-  p%c = drag_coeff*d/s            !*sqrt((speed2+sound2)/sound2)
-  p%d = p%c*p%dv
-!  self%patch%force_per_unit_volume(i(1),i(2),i(3),:) = &
-!  self%patch%force_per_unit_volume(i(1),i(2),i(3),:) - p%d*p%w
-  !.............................................................................
-  if (verbose > 4 .or. p%id == self%ip_dbg) then
-    write (io_unit%log,1) &
-      '  drag: id,t,d,c,q,r,v,vg,d=', &
-      self%patch%id, p%id, p%t, d, p%c, p%q, p%r, p%v, v
-    1 format(a,i5,i8,3x,1p,3e10.3,0p,3i3,5(3f6.2,2x))
-end if
-  !.............................................................................
-#ifdef DBG
-  if (self%detailed_timer) call trace%end (itimer)
-#endif
-END SUBROUTINE drag
-
-!===============================================================================
 !> Add or remove macro-particles, to maintain good statistics
 !===============================================================================
 SUBROUTINE renormalize (self)
@@ -633,7 +593,6 @@ contains
         p%r = self%random%uniform (3)
         p%t = time
         p%v = vg
-        p%c = c
         call self%particles%add_sorted (p, i1, i2, i3, bin)
       end do
       !.........................................................................

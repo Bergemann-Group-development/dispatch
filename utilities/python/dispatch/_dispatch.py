@@ -31,16 +31,19 @@ class _timer():
     def print(self,verbose=0,timeit=False):
         l=0
         skip=not timeit
+        s=0.0
         for k,v in self.dict.items():
             l=max(l,len(k))
-            if v>2.0:
-                skip=False
+            s+=v
+        if s>5:
+            skip=False
         if not skip or verbose:
             s='{:>XX}: {:7.3f} sec'
             s=s.replace('XX','{}'.format(l))
             print('\ntimer:')
             for k,v in self.dict.items():
-                print(s.format(k,v))
+                if v>0.1:
+                    print(s.format(k,v))
 timer=_timer()
 
 class _units:

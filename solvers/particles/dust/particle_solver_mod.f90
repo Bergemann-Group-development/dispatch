@@ -65,7 +65,6 @@ MODULE particle_solver_mod
     procedure:: init_task_list
     procedure:: update
     procedure:: sort
-    procedure:: force
     procedure:: import
   end type
   integer:: verbose = 0
@@ -211,6 +210,7 @@ SUBROUTINE initial_condition (self)
       pa%id, pa%position, pa%box, self%lower, self%upper, real(self%particles%n)
   end if
   call self%sort
+  call self%dust%consistency ('IC')
   call trace%end ()
 END SUBROUTINE initial_condition
 
@@ -239,7 +239,7 @@ SUBROUTINE update (self)
   integer, dimension(3)      :: q, ir
   real                       :: ods, dtds
   class(particle_t), pointer :: p, next
-  real(8)                    :: tmin, tmax, t, time(2), patch_time
+  real(8)                    :: tmin, tmax, t, time(2), patch_time, wc, start
   real                       :: ds, dt, os, n_min
   logical                    :: outside, restart
   integer                    :: ip, np, no, nk, it, m(3), i(3), ii(5), dir
@@ -248,9 +248,14 @@ SUBROUTINE update (self)
   class(particles_t), pointer:: exports
   class(sorted_t), pointer   :: sorted
   integer, save              :: itimer=0, itimer1=0
-  !-----------------------------------------------------------------------------
+  real    :: d, up, pc, pd(3), pa(3)
+  real(8) :: t_prv(50), dt_prv(50), times(9), wc1, wc2, sum
+  integer :: j, nj
+  logical :: error, removed
+!-----------------------------------------------------------------------------
   if (.not. on) return
   call trace%begin ('particle_solver_t%update', itimer=itimer)
+  start = wallclock()
   patch => self%patch
   if (self%patch%id == i_dbg(1)) then
     patch%dtime = max(patch%dtime,1d-10)
@@ -261,6 +266,7 @@ SUBROUTINE update (self)
       self%time, self%dtime, 1.0/self%dtime, self%time+self%dtime
   end if
   call self%import
+  !print *,wallclock()-start,'import'
   !call self%dust%consistency ('after import')
   !call self%sort
   !call self%dust%consistency ('after sort')
@@ -269,7 +275,8 @@ SUBROUTINE update (self)
   ! Only evolve particles if the last particle is behind the patch%time (which
   ! has not been updated yet, so we add the patch timestep)
   !-----------------------------------------------------------------------------
-  patch_time = patch%time + patch%dtime*courant/patch%courant
+  patch_time = patch%time + patch%dtime
+  dt = patch%dtime*0.5d0
   self%v_min = patch%fminval(patch%u_phase)/patch%ds(1)
   self%v_max = patch%fmaxval(patch%u_phase)/patch%ds(1)
   if (verbose > 1) then
@@ -277,7 +284,7 @@ SUBROUTINE update (self)
       'particle_solver_t%update: id, time, dtime, min/max =', patch%id, patch%time, patch%dtime, &
       patch%fmaxval(patch%u_phase), patch%fminval(patch%u_phase)
   end if
-  if (self%time <= patch_time) then
+  !if (self%time <= patch_time) then
     !---------------------------------------------------------------------------
     ! Allocate a new exports list, while the previous one may still be in use
     !---------------------------------------------------------------------------
@@ -318,129 +325,139 @@ SUBROUTINE update (self)
     u = self%ub
     !mesh => patch%mesh
     call dust%consistency ('before KDK loop')
+    !print *,wallclock()-start,'kdk start'
+    wc = wallclock()
+    times = 0d0
+    wc1 = wc
     do bin=1,n_bin
       os = dust%drag_coeff/dust%s_cgs(bin)
       do i3=l(3),u(3)
       do i2=l(2),u(2)
       do i1=l(1),u(1)
-        block
-        real:: d, u, v(3), pc, dt, pd(3)
-        real(8):: t_prv(50), dt_prv(50)
-        integer:: j, nj, m(3)
-        logical:: error, removed
         m = self%patch%gn
         sorted => self%particles%sorted(i1,i2,i3,bin)
-        if (sorted%n > 0) then
+        ip = ip + sorted%n
+        !if (sorted%n > 0) then
+          wc1 = wallclock()
           d = patch%mem(i1,i2,i3,patch%idx%d,patch%it,1)
-          u = patch%u_phase(i1,i2,i3)/ds
+          up = patch%u_phase(i1,i2,i3)/ds
           v = dust%vg(:,i1,i2,i3)
           pc = d*os
           p => sorted%head
           j = 1
+          !wc2=wallclock(); times(1)=times(1)+(wc2-wc1); wc1=wc2
           do while (j <= sorted%n .and. associated(p))
-            if (.not. associated(p)) then
-              write (stderr,*) 'error at', i1, i2, i3, sorted%n, j
-            end if
             removed = .false.
             next => p%next
-            if (p%t <= patch_time) then
+            !wc2=wallclock(); times(2)=times(2)+(wc2-wc1); wc1=wc2
+            !if (p%t <= patch_time) then
               !-----------------------------------------------------------------
               ! To optimize, the KDK update assumes the density and gas velocity
               ! to remain unchanged during the particle update
               !-----------------------------------------------------------------
               !nj = 0
-              do while (p%t <= patch_time)
-                !nj = nj+1
-                dt = courant*0.5/max(u,abs(p%v(1)),abs(p%v(2)),abs(p%v(3)))
-                p%dt = dt
-                !t_prv(nj) = p%t
-                !dt_prv(nj) = dt
-                !--- kick 1 ----------------------------------------------------
-                pd = pc*(v-p%v)                                   ! drag force
-                p%v = p%v + dt*(p%a+pd)/(1.+pc*dt)                ! stiff kick
-                !--- drift -----------------------------------------------------
-                p%r = p%r + 2.*dt*p%v                             ! forward two dr
-                p%t = p%t + 2.*dt                                 ! forward two dt
-                !if (self%forced) then
-                !  !call self%force (p)
-                !  r = mesh%p + (p%q + p%r - mesh%o)*mesh%d
-                !  p%a = self%pforce (r)
-                !end if
-                !--- kick 2 ----------------------------------------------------
-                pd = pc*(v-p%v)                                   ! drag force
-                p%v = p%v + dt*(p%a+pd)/(1.+pc*dt)                ! stiff kick
-                !--- update q+r representation ---------------------------------
-                q = floor(p%r)                                    ! integer shift
-                p%r = p%r - q                                     ! remove
-                p%q = p%q + q                                     ! add
-                nk = nk+1                                         ! count
-                if (sorted%n < self%dust%n_min) then
-                  call add_particles
-                  restart = .true.
-                  exit
-                end if
-                if (any(p%q < self%lb .or. p%q > self%ub)) then
-                  !call self%dust%consistency2 ('before exp',i1,i2,i3,bin)
-                  call self%particles%remove_sorted (p,i1,i2,i3,bin)
-                  !call self%dust%consistency2 ('after exp',i1,i2,i3,bin)
-                  self%dust%dd(i1,i2,i3,bin) = &
-                  self%dust%dd(i1,i2,i3,bin) - p%w
-                  call exports%append (p)
-                  no = no+1
-                  !write(io_unit%log,*) 'export', p%id, sorted%n
-                  removed = .true.
-                  exit
-                end if
-                if (any(p%q /= [i1,i2,i3])) then
-                  !call self%dust%consistency2 ('before rem',i1,i2,i3,bin)
-                  call self%particles%remove_sorted (p,i1,i2,i3,bin)
-                  !call self%dust%consistency2 ('after rem',i1,i2,i3,bin)
-                  call self%particles%add_sorted (p,p%q(1),p%q(2),p%q(3),bin)
-                  !call self%dust%consistency2 ('after add',p%q(1),p%q(2),p%q(3),bin)
-                  self%dust%dd(i1,i2,i3,bin) = &
-                  self%dust%dd(i1,i2,i3,bin) - p%w
-                  self%dust%dd(p%q(1),p%q(2),p%q(3),bin) = &
-                  self%dust%dd(p%q(1),p%q(2),p%q(3),bin) + p%w
-                  !write(io_unit%log,'(a,i10,2(2x,5i4))') 'move', p%id, &
-                    !i1,i2,i3,bin,sorted%n, &
-                    !p%q,p%bin, &
-                    !self%particles%sorted(p%q(1),p%q(2),p%q(3),p%bin)%n
-                  removed = .true.
-                  exit
-                end if
-                if (p%id == ip_dbg) then
-                  write (io_unit%log,'(a,3i6,i10,2x,5i4,3f6.2,1p,2(3e11.3,2x))') &
-                    '   move: ', &
-                    patch%id, exports%n, nk, p%id, p%q, bin, &
-                    self%particles%sorted(i1,i2,i3,bin)%n , &
-                    p%r, p%v, p%t, dt, patch_time
-                  flush (io_unit%log)
-                end if
-              end do
-              if (restart) then
-                p => sorted%head
-                j = 1
-                cycle
-              end if
+              !do while (p%t <= patch_time)
+            !nj = nj+1
+            !dt = courant*0.5/max(up,abs(p%v(1)),abs(p%v(2)),abs(p%v(3)))
+            p%dt = dt
+            !t_prv(nj) = p%t
+            !dt_prv(nj) = dt
+            !--- kick 1 ----------------------------------------------------
+            pd = pc*(v-p%v)                                   ! drag force
+            pa = 0.0                                          ! external
+            p%v = p%v + dt*(pa+pd)/(1.+pc*dt)                 ! stiff kick
+            !--- drift -----------------------------------------------------
+            p%r = p%r + 2.*dt*p%v                             ! forward two dr
+            p%t = p%t + 2.*dt                                 ! forward two dt
+            !if (self%forced) then
+            !  !call self%force (p)
+            !  r = mesh%p + (p%q + p%r - mesh%o)*mesh%d
+            !  p%a = self%pforce (r)
+            !end if
+            !--- kick 2 ----------------------------------------------------
+            pd = pc*(v-p%v)                                   ! drag force
+            p%v = p%v + dt*(pa+pd)/(1.+pc*dt)                 ! stiff kick
+            !--- update q+r representation ---------------------------------
+            q = floor(p%r)                                    ! integer shift
+            p%r = p%r - q                                     ! remove
+            p%q = p%q + q                                     ! add
+            nk = nk+1                                         ! count
+            !wc2=wallclock(); times(3)=times(3)+(wc2-wc1); wc1=wc2
+            if (sorted%n < self%dust%n_min) then
+              call add_particles
+              restart = .true.
+              !exit
             end if
+            !wc2=wallclock(); times(4)=times(4)+(wc2-wc1); wc1=wc2
+            if (any(p%q < self%lb .or. p%q > self%ub)) then
+              !call self%dust%consistency2 ('before exp',i1,i2,i3,bin)
+              call self%particles%remove_sorted (p,i1,i2,i3,bin)
+              !call self%dust%consistency2 ('after exp',i1,i2,i3,bin)
+              self%dust%dd(i1,i2,i3,bin) = &
+              self%dust%dd(i1,i2,i3,bin) - p%w
+              call exports%append (p)
+              no = no+1
+              !write(io_unit%log,*) 'export', p%id, sorted%n
+              removed = .true.
+              !exit
+            !wc2=wallclock(); times(5)=times(5)+(wc2-wc1); wc1=wc2
+            else if (any(p%q /= [i1,i2,i3])) then
+              !call self%dust%consistency2 ('before rem',i1,i2,i3,bin)
+              call self%particles%remove_sorted (p,i1,i2,i3,bin)
+              !call self%dust%consistency2 ('after rem',i1,i2,i3,bin)
+              call self%particles%add_sorted (p,p%q(1),p%q(2),p%q(3),bin)
+              !call self%dust%consistency2 ('after add',p%q(1),p%q(2),p%q(3),bin)
+              self%dust%dd(i1,i2,i3,bin) = &
+              self%dust%dd(i1,i2,i3,bin) - p%w
+              self%dust%dd(p%q(1),p%q(2),p%q(3),bin) = &
+              self%dust%dd(p%q(1),p%q(2),p%q(3),bin) + p%w
+              !write(io_unit%log,'(a,i10,2(2x,5i4))') 'move', p%id, &
+                !i1,i2,i3,bin,sorted%n, &
+                !p%q,p%bin, &
+                !self%particles%sorted(p%q(1),p%q(2),p%q(3),p%bin)%n
+              removed = .true.
+              !exit
+            !wc2=wallclock(); times(6)=times(6)+(wc2-wc1); wc1=wc2
+            else if (p%id == ip_dbg) then
+              write (io_unit%log,'(a,3i6,i10,2x,5i4,3f6.2,1p,2(3e11.3,2x))') &
+                '   move: ', &
+                patch%id, exports%n, nk, p%id, p%q, bin, &
+                self%particles%sorted(i1,i2,i3,bin)%n , &
+                p%r, p%v, p%t, dt, patch_time
+              flush (io_unit%log)
+            end if
+              !end do
+              !if (restart) then
+              !  p => sorted%head
+              !  j = 1
+              !  cycle
+              !end if
+            !end if
+            !wc2=wallclock(); times(7)=times(7)+(wc2-wc1); wc1=wc2
             !-------------------------------------------------------------------
             ! If the particles was not removed, its time is beyond patch_time
             ! and we register the smallest particle time as the time of the
             ! particle task. This includes particles that were already ahead of
             ! patch_time.
             !-------------------------------------------------------------------
-            if (.not. removed) then
-              t = min(t,p%t)
-            end if
             j = j+1
             p => next
+            !wc2=wallclock(); times(8)=times(8)+(wc2-wc1); wc1=wc2
           end do
+        !end if
+        !wc2=wallclock(); times(8)=times(8)+(wc2-wc1); wc1=wc2
+        if (sorted%n > self%dust%n_max) then
+          call remove_particles
         end if
-        end block
+        !wc2=wallclock(); times(9)=times(9)+(wc2-wc1); wc1=wc2
       end do
       end do
       end do
     end do
+    !print *,wallclock()-start,'kdk'
+    !print '(9f6.2)',times
+    wc = wallclock()-wc
+    write (io_unit%log,'(2i12,f6.2,6p,2f6.2)') np, nk, wc, wc/np, wc/nk
     call self%dust%consistency ('after KDK + export')
     !call self%dust%check_particles ('after kdk')
     !---------------------------------------------------------------------------
@@ -449,7 +466,7 @@ SUBROUTINE update (self)
     !---------------------------------------------------------------------------
     self%no = no
     if (nk > 0) then
-      self%dtime = t - self%time
+      self%dtime = patch%dtime
       if (self%dtime <= 0d0) then
         write (stderr,'(a,2i6,1p,2(2(3e11.2,2x),2x))') &
         'particl_solver%update: ERROR', patch%id, nk, self%time, self%dtime, &
@@ -462,7 +479,7 @@ SUBROUTINE update (self)
           self%time, self%dtime, 1./self%dtime, self%time+self%dtime
       end if
       !---------------------------------------------------------------------------
-      self%time = self%time + self%dtime
+      self%time = patch%time + patch%dtime
       self%dust%time = self%time
       self%dust%dtime = self%dtime
       self%particles%dtime = self%dtime
@@ -481,9 +498,10 @@ SUBROUTINE update (self)
     !---------------------------------------------------------------------------
     ! Do dust evolution after move, since we need the particle timestep values
     !---------------------------------------------------------------------------
-    call dust%consistency ('before dust%update')
+    !call dust%consistency ('before dust%update')
     call self%dust%update (self%particles)
-    call dust%consistency ('after dust%update')
+    !call dust%consistency ('after dust%update')
+    !print *,wallclock()-start,'dust%update'
     if (self%patch%id == i_dbg(1)) then
       write (io_unit%log,'(a,2(1p,4e10.3,2x))') &
         'particle_solver_t%update  dust: t, dt, t+dt =', &
@@ -508,21 +526,25 @@ SUBROUTINE update (self)
     !---------------------------------------------------------------------------
     call exports%dealloc
     deallocate (exports)
+    !print *,wallclock()-start,'copy export'
     deallocate (dust%vg)
     end associate
   !else if (verbose > 0) then
   !  write (io_unit%log,'(a,2f12.6,i10)') &
   !    'particle_solver_t%update: self%time, patch_time, n =', &
   !    self%time, patch_time, self%particles%n
-  end if
+  !end if
+  self%time = patch%time + patch%dtime
   if (self%patch%id == i_dbg(1)) then
     write (io_unit%log,'(a,2(1p,4e10.3,2x))') &
       'particle_solver_t%update   end: t, dt, t+dt =', &
       patch%time, patch%dtime, 1./patch%dtime, patch%time+patch%dtime, &
       self%time-self%dtime, self%dtime, 1./self%dtime, self%time
   end if
+  !print *,wallclock()-start,'end'
   call trace%end (itimer)
 contains
+
 !===============================================================================
 !> top up particles per bin
 !===============================================================================
@@ -530,33 +552,58 @@ subroutine add_particles
   real:: d_cgs, w
   real(8):: time
   integer:: j, n, pp_bin
-  d_cgs = self%dust%dd(i1,i2,i3,bin)*scaling%d
-  !if (d_cgs > d_min_cgs) then
-    q = [i1,i2,i3]
-    pp_bin = self%dust%pp_bin
-    w = self%dust%dd(i1,i2,i3,bin)/pp_bin
-    time = 0d0
-    n = sorted%n
-    p => sorted%head
-    do j=1,n
-      time = time + p%t
-      p%w = w
-      p => p%next
-    end do
-    time = time/n
-    do j=1,pp_bin-n
-      allocate (p)
-      call p%init
-      p%q = q
-      p%bin = bin
-      p%r = self%dust%random%uniform (3)
-      p%t = time
-      p%w = w
-      p%v = v
-      call self%particles%add_sorted (p,i1,i2,i3,bin)
-    end do
-  !end if
+  q = [i1,i2,i3]
+  pp_bin = self%dust%pp_bin
+  w = self%dust%dd(i1,i2,i3,bin)/pp_bin
+  n = sorted%n
+  p => sorted%head
+  do j=1,n
+    p%w = w
+    p => p%next
+  end do
+  time = self%patch%time
+  do j=1,pp_bin-n
+    allocate (p)
+    call p%init
+    p%q = q
+    p%bin = bin
+    p%r = self%dust%random%uniform (3)
+    p%t = time
+    p%w = w
+    p%v = v
+    call self%particles%add_sorted (p,i1,i2,i3,bin)
+  end do
+  !call self%dust%consistency2 ('add_p',i1,i2,i3,bin)
 end subroutine add_particles
+
+!===============================================================================
+!> Bring particles per bin below max
+!===============================================================================
+subroutine remove_particles
+  real:: d_cgs, w
+  integer:: np, nr
+  p => sorted%head
+  do while (sorted%n > self%dust%n_max)
+    next => p%next
+    if (p%flag == 0) then
+      call self%particles%remove_sorted (p, i1, i2, i3, bin)
+      deallocate (p)
+      nr = nr+1
+    end if
+    if (associated(p,sorted%tail)) then
+      exit
+    end if
+    p => next
+  end do
+  np = sorted%n
+  w = self%dust%dd(i1,i2,i3,bin)/np
+  p => sorted%head
+  do j=1,np
+    p%w = w
+    p => p%next
+  end do
+  !call self%dust%consistency2 ('rem_p',i1,i2,i3,bin)
+end subroutine remove_particles
 END SUBROUTINE update
 
 !===============================================================================
@@ -708,34 +755,6 @@ SUBROUTINE sort (self)
   !.............................................................................
   call trace%end (itimer)
 END SUBROUTINE sort
-
-!===============================================================================
-!> Add external force (acceleration) on a particle.
-!===============================================================================
-SUBROUTINE force (self, p)
-  class(particle_solver_t):: self
-  type(particle_t):: p
-  class(mesh_t), pointer:: mesh(:)
-  real(8):: r(3)
-  integer, save:: itimer=0
-  !-----------------------------------------------------------------------------
-#ifdef DBG
-  if (detailed_timer) call trace%begin ('particle_solver_t%force',itimer=itimer)
-#endif
-  if (self%forced) then
-    mesh => self%patch%mesh
-    r = mesh%p + (p%q + p%r - mesh%o)*mesh%d
-    p%a = self%pforce (r)
-  else
-    p%a = 0.0
-  end if
-#ifdef DBG
-  if (verbose > 4) then
-    write (io_unit%log,'(a,i6,1p,4e11.2)') 'force: id, z, a =', p%id, r(3), p%a
-  end if
-  if (detailed_timer) call trace%end (itimer)
-#endif
-END SUBROUTINE force
 
 !===============================================================================
 !> Template

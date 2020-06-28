@@ -20,13 +20,13 @@ MODULE particles_mod
     type(particle_t), pointer:: prev => null()  ! previous particle
     integer(8)      :: id = 0                   ! particle id
     real(8)         :: t = 0.0_8                ! time
-    real(8)         :: dt                       ! time step
+    real            :: dt                       ! time step
     real            :: w                        ! weight factor
-    real            :: c                        ! drag coefficient
+    !real            :: c                        ! drag coefficient
     real            :: v(3)                     ! velocity (cell units / time)
-    real            :: dv(3)                    ! vgas - velocity
-    real            :: a(3) = 0.0               ! acceleration
-    real            :: d(3)                     ! drag
+    !real            :: dv(3)                    ! vgas - velocity
+    !real            :: a(3) = 0.0               ! acceleration
+    !real            :: d(3)                     ! drag
     real            :: r(3)                     ! real positions (cell units)
     integer(kind=2) :: q(3)                     ! integer position (cell units)
     integer(kind=2) :: bin=1                    ! size bin
@@ -209,23 +209,33 @@ SUBROUTINE add_sorted (self, p, i1, i2, i3, i4)
     call self%append (p)
     sorted%tail => p
     sorted%head => p
-    !write (io_unit%log,*) p%id,'added at tail & head'
+    !write (io_unit%log,1) 'added at tail & head', i1, i2, i3, i4, sorted%n, self%n
+    1 format(a,5i4,2i12)
   else
     if (associated(sorted%tail,self%tail)) then     ! tail of ALL particles
       nullify(p%next)                               ! maintain null at end
       self%tail => p                                ! new tail
-      !write (io_unit%log,*) p%id,'added at self%tail'
+      p%prev => sorted%tail                           ! attach to the tail
+      p%prev%next => p                                ! point fwd past it
+      sorted%tail => p
+      !write (io_unit%log,1) 'added at self%tail', i1, i2, i3, i4, sorted%n, self%n, p%id
     else
       p%next => sorted%tail%next                    ! connect to next cell
       p%next%prev => p                              ! point back past it
-      !write (io_unit%log,*) p%id,'added at sorted%tail'
+      p%prev => sorted%tail                           ! attach to the tail
+      p%prev%next => p                                ! point fwd past it
+      sorted%tail => p
+      !write (io_unit%log,1) 'added at sorted%tail', i1, i2, i3, i4, sorted%n, self%n, p%id
+      !write (io_unit%log,1) 'prev: ', &
+      !  p%prev%q, p%prev%bin, sorted%n, p%prev%id
+      !write (io_unit%log,1) 'next: ',  &
+      !  p%next%q, p%next%bin, sorted%n, p%next%id
+      !write (io_unit%log,1) 'tail: ', &
+      !  sorted%tail%q, sorted%tail%bin, sorted%n, sorted%tail%id
     end if
-    p%prev => sorted%tail                           ! attach to the tail
-    p%prev%next => p                                ! point fwd past it
-    sorted%tail => p
-    self%n = self%n + 1                             ! increment total count
   end if
   sorted%n = sorted%n + 1                           ! increment box count
+  self%n = self%n + 1                               ! increment total count
 END SUBROUTINE add_sorted
 
 !===============================================================================
@@ -236,41 +246,54 @@ SUBROUTINE remove_sorted (self, p, i1, i2, i3, i4)
   integer(kind=2):: i1, i2, i3, i4
   !-----------------------------------------------------------------------------
   if (.not. associated(self%sorted)) then
-    write(stdout,*) 'remove_sorted: not associated', i1, i2, i3, i4
+    write(stdout,1) 'remove_sorted: not associated', i1, i2, i3, i4
   end if
   sorted => self%sorted(i1,i2,i3,i4)
+  !if (.not.associated(p)) then
+  !  write(stdout,1) 'remove_sorted: p not associated', i1, i2, i3, i4, sorted%n, self%n
+  !  return
+  !end if
+  if (.not.associated(p%next) .and. .not.associated(p%prev)) then
+    write(stdout,1) 'remove_sorted: p% not associated', i1, i2, i3, i4, sorted%n, self%n, p%id
+  end if
+  !.............................................................................
+  !write (io_unit%log,1) 'prev: ', &
+  !  p%prev%q, p%prev%bin, sorted%n, p%prev%id
+  !write (io_unit%log,1) 'next: ',  &
+  !  p%next%q, p%next%bin, sorted%n, p%next%id
+  !write (io_unit%log,1) 'tail: ', &
+  !  sorted%tail%q, sorted%tail%bin, sorted%n, sorted%tail%id
   !--- if there is a particle after this one, change its %prev to p%prev
   if (associated(p%next)) then
     p%next%prev => p%prev
-    !write (io_unit%log,*) 'rem from next'
+    !write (io_unit%log,1) 'rem from next', i1, i2, i3, i4, sorted%n, self%n, p%id
+    1 format(a,5i4,2i12)
   end if
   !--- if there is a particle before this one, change its %next to p%next
   if (associated(p%prev)) then
     p%prev%next => p%next
-    !write (io_unit%log,*) 'rem from prev'
+    !write (io_unit%log,1) 'rem from prev', i1, i2, i3, i4, sorted%n, self%n, p%id
   end if
   !--- if the remove particle is the tail in a cell, repoint the tail
   if (associated(p,sorted%tail)) then
     sorted%tail => p%prev
-    !write(io_unit%log,*) 'remove at sorted%tail'
+    !write(io_unit%log,1) 'remove at sorted%tail', i1, i2, i3, i4, sorted%n, self%n
     !--- if the removed particle is alse the very last tail, reassign tail
     if (associated(p,self%tail)) then
-      !write(io_unit%log,*) 'remove at self%tail'
+      !write(io_unit%log,1) 'remove at self%tail', i1, i2, i3, i4, sorted%n, self%n
       self%tail => p%prev
       !--- for good measure, make sure the tail has no next
       nullify (self%tail%next)
     end if
-  !else
-    !write(io_unit%log,*) p%id,'remove'
   end if
   !--- if the remove particle is the head in a cell, repoint the head
   if (associated(p,sorted%head)) then
     sorted%head => p%next
-    !write(io_unit%log,*) 'remove at sorted%head'
+    !write(io_unit%log,1) 'remove at sorted%head', i1, i2, i3, i4, sorted%n, self%n
     !--- if the removed particle is alse the very first head, reassign head
     if (associated(p,self%head)) then
       self%head => p%next
-      !write(io_unit%log,*) 'remove at self%head'
+      !write(io_unit%log,1) 'remove at self%head', i1, i2, i3, i4, sorted%n, self%n
       !--- for good measure, make sure the head has no prev
       nullify (self%head%prev)
     end if
@@ -280,7 +303,7 @@ SUBROUTINE remove_sorted (self, p, i1, i2, i3, i4)
     nullify (sorted%head, sorted%tail)                   ! reset head & tail
     write(io_unit%log,*) 'nullify head & tail'
   end if
-  self%n =  self%n - 1                                   ! decrement total
+  self%n =  self%n - 1                                   ! decrement total¨
 END SUBROUTINE remove_sorted
 
 END MODULE particles_mod

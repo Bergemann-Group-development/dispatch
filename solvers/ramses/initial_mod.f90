@@ -26,7 +26,6 @@ MODULE initial_mod
     procedure, nopass:: cleanup
   end type
   real, save, pointer, dimension(:,:,:,:):: buffer => null()
-  real, save:: csound=1.
 CONTAINS
 
 !===============================================================================
@@ -52,10 +51,11 @@ SUBROUTINE init (self, solver, gamma1)
  end if
   call io%lock%unset
   self%solver = trim(solver)
-  select case (type)
+  select case (trim(type))
   case ('single_solenoidal')
     self%condition => single_solenoidal
   case ('single_compressive')
+print *, 'compressive'
     self%condition => single_compressive
   case ('single_advection')
     self%condition => single_advection
@@ -107,6 +107,7 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_solenoidal', itimer=itimer)
+print *,'IC_COMPRESSIVE'
   call io%lock%set
   if (first_time) then
     first_time = .false.
@@ -151,13 +152,13 @@ SUBROUTINE single_compressive (self, m, ff, idx)
   class(mesh_t)    :: m(3)
   real, dimension(:,:,:,:) :: ff
   !.............................................................................
-  integer        :: ix, iy, iz
+  integer        :: ix, iy, iz, iostat
   real(8)        :: kx, ky, kz
   logical, save  :: mhd=.false.
-  real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
+  real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, e0=1.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
   real(8), save  :: t_turn=0.1
   logical, save  :: first_time=.true.
-  namelist /initial_compressive_params/ k, a0, u0, b0, d0, s0, mhd, gamma, t_turn
+  namelist /IC_compressive_params/ k, a0, u0, b0, d0, e0, mhd, gamma, t_turn
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_compressive', itimer=itimer)
@@ -165,23 +166,27 @@ SUBROUTINE single_compressive (self, m, ff, idx)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
-    read (io%input, initial_compressive_params)
+    read (io%input, IC_compressive_params,iostat=iostat)
     mhd = mhd .and. any(b0 /= 0.0)
-    if (io%master) write (*, initial_compressive_params)
+    call io%namelist_warning ('IC_compressive_params', iostat)
+    write (io%namelist, IC_compressive_params)
   end if
   call io%lock%unset
   self%mhd = mhd
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
-    kz   =  pi2*k(3)*(r3(iz)+m(3)%p-0.5d0*m(3)%s)/m(3)%b + phi(3)
+    kz   =  pi2*k(3)*(r3(iz)+m(3)%p)/m(3)%b + phi(3)
     do iy=m(2)%lb,m(2)%ub
-      ky   =  pi2*k(2)*(r2(iy)+m(2)%p-0.5d0*m(2)%s)/m(2)%b + phi(2)
+      ky   =  pi2*k(2)*(r2(iy)+m(2)%p)/m(2)%b + phi(2)
       do ix=m(1)%lb,m(1)%ub
-        kx   =  pi2*k(1)*(r1(ix)+m(1)%p-0.5d0*m(1)%s)/m(1)%b + phi(1)
+        kx   =  pi2*k(1)*(r1(ix)+m(1)%p)/m(1)%b + phi(1)
         ff(ix,iy,iz,idx%d ) = d0
+        ff(ix,iy,iz,idx%e ) = e0
         ff(ix,iy,iz,idx%px) = d0*u0(1)*sin(kx)
         ff(ix,iy,iz,idx%py) = d0*u0(2)*sin(ky)
         ff(ix,iy,iz,idx%pz) = d0*u0(3)*sin(kz)
+        if (iy==1.and.iz==1) &  
+          print'(i6,5f10.4)',ix,r1(ix),m(1)%p,kx,ff(ix,iy,iz,idx%px)
         if (self%mhd) then
           ff(ix,iy,iz,idx%bx) = b0(1)
           ff(ix,iy,iz,idx%by) = b0(2)

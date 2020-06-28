@@ -8,6 +8,9 @@ MODULE experiment_mod
   USE solver_mod
   USE scaling_mod
   USE units_mod
+  USE particles_mod
+  USE particle_solver_mod
+  USE dust_mod
   USE link_mod
   USE list_mod
   implicit none
@@ -30,8 +33,10 @@ CONTAINS
 SUBROUTINE init (self)
   class(experiment_t) :: self
   integer             :: iostat
-  real, save          :: d, e, csound
+  real, save          :: d0, e0, csound
   logical, save       :: first_time=.true.
+  real, pointer, dimension(:,:,:):: d, e, px, py, pz
+  real, pointer, dimension(:,:,:,:):: p
   namelist /experiment_params/ verbose, T_K, gamma
   !-----------------------------------------------------------------------------
   ! Initialize the task instance, which includes allocating self%mem()
@@ -48,16 +53,16 @@ SUBROUTINE init (self)
     call io%namelist_warning ('experiment_params', iostat)
     write (io%namelist, experiment_params)
     csound = sqrt(cgs%k_B*T_K/(cgs%m_u*scaling%mu))/scaling%u
-    d = 1.0
+    d0 = 1.0
     if (gamma == 1d0) then
-      e = self%csound**2*d
+      e0 = self%csound**2*d0
     else
-      e = self%csound**2*d/(self%gamma*(self%gamma-1.0))
+      e0 = self%csound**2*d0/(self%gamma*(self%gamma-1.0))
     end if
     if (verbose > 0) then
       write (io%output,'(a,f6.2)') '           gas gamma:', gamma
-      write (io%output,'(a,f6.2)') 'density (code units):', d
-      write (io%output,'(a,f6.2)') ' energy (code units):', e
+      write (io%output,'(a,f6.2)') 'density (code units):', d0
+      write (io%output,'(a,f6.2)') ' energy (code units):', e0
       write (io%output,'(a,f6.2)') '     temperature (K):', T_K
       write (io%output,'(a,f6.2)') '  sound speed (km/s):', &
         self%csound*scaling%u/cgs%kms
@@ -66,12 +71,25 @@ SUBROUTINE init (self)
   end if
   call io%lock%unset
   !-----------------------------------------------------------------------------
-  ! Store the saved values in each of the many task instances
+  ! Initialize constant density and thermal energy, and a velocity estimated
+  ! from constant acceleration for a time period of t_turb.
   !-----------------------------------------------------------------------------
   self%gamma = gamma
   self%csound = csound
-  self%mem(:,:,:,self%idx%d,:,1) = d
-  self%mem(:,:,:,self%idx%e,:,1) = e
+  self%mem(:,:,:,self%idx%d,:,1) = d0
+  self%mem(:,:,:,self%idx%e,:,1) = e0
+  d => self%mem(:,:,:,self%idx%d,self%it,1)
+  e => self%mem(:,:,:,self%idx%e,self%it,1)
+  p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
+  p = self%forces%force%t_turb*d0* &
+      self%forces%force%selected (self%time, d, p, d, d, d, self%mesh)
+  if (self%kind(1:6) == 'ramses') then
+    px => self%mem(:,:,:,self%idx%px,self%it,1)
+    py => self%mem(:,:,:,self%idx%py,self%it,1)
+    pz => self%mem(:,:,:,self%idx%pz,self%it,1)
+    e = e + (px**2+py**2+pz**2)/d
+  end if
+  !call self%initial%condition (self%mesh, self%mem(:,:,:,:,1,1), self%idx)
   !-----------------------------------------------------------------------------
   ! Initialize particles
   !-----------------------------------------------------------------------------
@@ -123,11 +141,16 @@ SUBROUTINE update (self)
   class(experiment_t):: self
   class(task_t), pointer:: task
   class(link_t), pointer:: link
+  real(8):: sum
   integer(8):: np
+  integer:: i1, i2, i3, bin, j
+  class(particle_t), pointer:: p
+  class(sorted_t), pointer:: sorted
+  class(particle_solver_t), pointer:: particle_solver
   !----------------------------------------------------------------------------
   call trace%begin ('experiment_t%update')
   call self%solver_t%update
-  if (self%id == 1) then
+  if (self%id == 1 .and. verbose > 0) then
     np = 0
     link => self%task_list%head
     do while (associated(link))
@@ -138,9 +161,32 @@ SUBROUTINE update (self)
       end select
       link => link%next
     end do
-    if (verbose > 0) then
-      write (stdout,'(a,1p,e12.3)') 'number of particles =', real(np)
-    end if
+    associate (dust=>self%particle_solver%dust)
+    write (stdout,'(a,1p,e12.3)') 'number of particles =', real(np)
+    sum = 0d0
+    do bin=1,dust%n_bin
+    do i3=dust%lb(3),dust%ub(3)
+    do i2=dust%lb(2),dust%ub(2)
+      if (verbose == 1) then
+        do i1=dust%lb(1),dust%ub(1)
+          sum = sum + dust%dd(i1,i2,i3,bin)
+        end do
+      else
+        do i1=dust%lb(1),dust%ub(1)
+          sorted => self%particle_solver%particles%sorted(i1,i2,i3,bin)
+          p => sorted%head
+          do j=1,sorted%n
+            sum = sum + p%w
+            p => p%next
+          end do
+        end do
+      end if
+    end do
+    end do
+    end do
+    sum = sum/product(dust%ub-dust%lb+1)
+    end associate
+    write(stdout,*) 'total dust mass =', self%id, sum
   end if
   call trace%end ()
 END SUBROUTINE update

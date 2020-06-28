@@ -70,6 +70,8 @@ SUBROUTINE init (self, solver, id, mesh)
   select case (type)
   case ('single_solenoidal')
     self%selected => single_solenoidal
+  case ('single_compressive')
+    self%selected => single_compressive
   case ('turbulence')
     self%selected => turbulence
     call init_turbulence (self, solver, id, mesh)
@@ -140,6 +142,54 @@ FUNCTION single_solenoidal (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
   end associate
   call trace_end (itimer)
 END FUNCTION single_solenoidal
+
+!===============================================================================
+!> Forcing on a single 3-D wavenumber, changing amplitude and phase periodically
+!> Note that random%ran3() returns 3 numbers in the range (-1.0,1.0)
+!===============================================================================
+FUNCTION single_compressive (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
+  class(force_t)                                :: self
+  real(8)                                       :: time
+  real, dimension(:,:,:)  , pointer             :: Ux, Uy, Uz
+  real, dimension(:,:,:)  , pointer, contiguous :: d
+  real, dimension(:,:,:,:), pointer             :: p
+  class(mesh_t), dimension(:), pointer          :: m
+  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,3)    :: ff
+  !.............................................................................
+  integer        :: ix, iy, iz, iostat
+  real(8)        :: kx, ky, kz
+  logical, save  :: first_time=.true.
+  real, save     :: t_turn=0.3, a(3)=0.1, k(3)=1.0, t_turb=1.0
+  integer, save  :: itimer=0
+  namelist /force_compressive_params/ k, a, t_turn, t_turb
+  !-----------------------------------------------------------------------------
+  call trace_begin('force_t%single_compressive', itimer=itimer)
+  call io%lock%set
+  if (first_time) then
+    first_time = .false.
+    rewind (io%input)
+    read (io%input, force_compressive_params, iostat=iostat)
+    call io%namelist_warning ('force_compressive_params', iostat)
+    write (io%namelist, force_compressive_params)
+  end if
+  call io%lock%unset
+  self%t_turb = t_turb
+  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
+  do iz=m(3)%lb,m(3)%ub
+    kz = pi2*k(3)*(r3(iz)+m(3)%p)/m(3)%b + self%phase(3)
+    do iy=m(2)%lb,m(2)%ub
+      ky = pi2*k(2)*(r2(iy)+m(2)%p)/m(2)%b + self%phase(2)
+      do ix=m(1)%lb,m(1)%ub
+        kx = pi2*k(1)*(r1(ix)+m(1)%p)/m(1)%b + self%phase(1)
+        ff(ix,iy,iz,1) = a(1)*sin(kx)
+        ff(ix,iy,iz,2) = a(2)*sin(ky)
+        ff(ix,iy,iz,3) = a(3)*sin(kz)
+      end do
+    end do
+  end do
+  end associate
+  call trace_end (itimer)
+END FUNCTION single_compressive
 
 !===============================================================================
 !> Initialize the force module
