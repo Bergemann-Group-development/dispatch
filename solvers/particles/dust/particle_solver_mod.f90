@@ -239,7 +239,7 @@ SUBROUTINE update (self)
   integer, dimension(3)      :: q, ir
   real                       :: ods, dtds
   class(particle_t), pointer :: p, next
-  real(8)                    :: tmin, tmax, t, time(2), patch_time, wc, start
+  real(8)                    :: tmin, tmax, t, time(2), self_time, wc, start
   real                       :: ds, dt, os, n_min
   logical                    :: outside, restart
   integer                    :: ip, np, no, nk, it, m(3), i(3), ii(5), dir
@@ -275,8 +275,8 @@ SUBROUTINE update (self)
   ! Only evolve particles if the last particle is behind the patch%time (which
   ! has not been updated yet, so we add the patch timestep)
   !-----------------------------------------------------------------------------
-  patch_time = patch%time + patch%dtime
-  dt = patch%dtime*0.5d0
+  self_time = patch%time + patch%dtime*2d0
+  dt = patch%dtime
   self%v_min = patch%fminval(patch%u_phase)/patch%ds(1)
   self%v_max = patch%fmaxval(patch%u_phase)/patch%ds(1)
   if (verbose > 1) then
@@ -284,9 +284,9 @@ SUBROUTINE update (self)
       'particle_solver_t%update: id, time, dtime, min/max =', patch%id, patch%time, patch%dtime, &
       patch%fmaxval(patch%u_phase), patch%fminval(patch%u_phase)
   end if
-  !if (self%time <= patch_time) then
+  if (self%time <= self_time + 0.5*patch%dtime) then
     !---------------------------------------------------------------------------
-    ! Allocate a new exports list, while the previous one may still be in use
+    ! Allocate00 a new exports list, while the previous one may still be in use
     !---------------------------------------------------------------------------
     allocate (exports)
     call exports%init
@@ -350,13 +350,13 @@ SUBROUTINE update (self)
             removed = .false.
             next => p%next
             !wc2=wallclock(); times(2)=times(2)+(wc2-wc1); wc1=wc2
-            !if (p%t <= patch_time) then
+            !if (p%t <= self_time) then
               !-----------------------------------------------------------------
               ! To optimize, the KDK update assumes the density and gas velocity
               ! to remain unchanged during the particle update
               !-----------------------------------------------------------------
               !nj = 0
-              !do while (p%t <= patch_time)
+              !do while (p%t <= self_time)
             !nj = nj+1
             !dt = courant*0.5/max(up,abs(p%v(1)),abs(p%v(2)),abs(p%v(3)))
             p%dt = dt
@@ -423,7 +423,7 @@ SUBROUTINE update (self)
                 '   move: ', &
                 patch%id, exports%n, nk, p%id, p%q, bin, &
                 self%particles%sorted(i1,i2,i3,bin)%n , &
-                p%r, p%v, p%t, dt, patch_time
+                p%r, p%v, p%t, dt, self_time
               flush (io_unit%log)
             end if
               !end do
@@ -435,10 +435,10 @@ SUBROUTINE update (self)
             !end if
             !wc2=wallclock(); times(7)=times(7)+(wc2-wc1); wc1=wc2
             !-------------------------------------------------------------------
-            ! If the particles was not removed, its time is beyond patch_time
+            ! If the particles was not removed, its time is beyond self_time
             ! and we register the smallest particle time as the time of the
             ! particle task. This includes particles that were already ahead of
-            ! patch_time.
+            ! self_time.
             !-------------------------------------------------------------------
             j = j+1
             p => next
@@ -470,7 +470,7 @@ SUBROUTINE update (self)
       if (self%dtime <= 0d0) then
         write (stderr,'(a,2i6,1p,2(2(3e11.2,2x),2x))') &
         'particl_solver%update: ERROR', patch%id, nk, self%time, self%dtime, &
-        patch_time, patch%dtime
+        self_time, patch%dtime
       end if
       if (self%patch%id == i_dbg(1)) then
         write (io_unit%log,'(a,2(1p,4e10.3,2x))') &
@@ -529,12 +529,12 @@ SUBROUTINE update (self)
     !print *,wallclock()-start,'copy export'
     deallocate (dust%vg)
     end associate
-  !else if (verbose > 0) then
-  !  write (io_unit%log,'(a,2f12.6,i10)') &
-  !    'particle_solver_t%update: self%time, patch_time, n =', &
-  !    self%time, patch_time, self%particles%n
-  !end if
-  self%time = patch%time + patch%dtime
+  else if (verbose > 0) then
+    write (io_unit%log,'(a,2f12.6,i10)') &
+      'particle_solver_t%update: self%time, self_time, n =', &
+      self%time, self_time, self%particles%n
+  end if
+  self%time = self_time 
   if (self%patch%id == i_dbg(1)) then
     write (io_unit%log,'(a,2(1p,4e10.3,2x))') &
       'particle_solver_t%update   end: t, dt, t+dt =', &
