@@ -232,7 +232,7 @@ SUBROUTINE update (self)
   fl = 0.0d0
   em = 0.0d0
   call cmpflxm(self,self%gn(1),2,3,4,6,7,8,fl(:,:,:,:,1))
-  call cmpflxm(self,self%gn(2),3,2,4,7,6,8,fl(:,:,:,:,2))
+  call cmpflxm(self,self%gn(2),3,4,2,7,8,6,fl(:,:,:,:,2))
   call cmpflxm(self,self%gn(3),4,2,3,8,6,7,fl(:,:,:,:,3))
 
   call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,2,3,4,6,7,8,em(:,:,:,3), self%gn(3)-1, self%nv)
