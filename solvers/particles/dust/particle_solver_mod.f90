@@ -242,7 +242,7 @@ SUBROUTINE update (self)
   real(8)                    :: tmin, tmax, t, time(2), self_time, wc, start
   real                       :: ds, dt, os, n_min
   logical                    :: outside, restart
-  integer                    :: ip, np, no, nk, it, m(3), i(3), ii(5), dir
+  integer                    :: ip, np, no, nk, nm, it, m(3), i(3), ii(5), dir
   integer(kind=2)            :: i1, i2, i3, bin, l(3), u(3)
   class(gpatch_t), pointer   :: patch
   class(particles_t), pointer:: exports
@@ -318,6 +318,7 @@ SUBROUTINE update (self)
     ip = 0
     nk = 0
     no = 0
+    nm = 0
     ds = minval(patch%ds, mask=patch%mesh%n > 1)
 !call self%dust%check_particles ('before kdk')
     t = huge(1d0)
@@ -411,6 +412,7 @@ SUBROUTINE update (self)
               self%dust%dd(i1,i2,i3,bin) - p%w
               self%dust%dd(p%q(1),p%q(2),p%q(3),bin) = &
               self%dust%dd(p%q(1),p%q(2),p%q(3),bin) + p%w
+              nm = nm+1
               !write(io_unit%log,'(a,i10,2(2x,5i4))') 'move', p%id, &
                 !i1,i2,i3,bin,sorted%n, &
                 !p%q,p%bin, &
@@ -454,10 +456,12 @@ SUBROUTINE update (self)
       end do
       end do
     end do
+    !write (io_unit%log,*) self%patch%id, real(nm)/nk, 'fraction'
     !print *,wallclock()-start,'kdk'
     !print '(9f6.2)',times
     wc = wallclock()-wc
-    write (io_unit%log,'(2i12,f6.2,6p,2f6.2)') np, nk, wc, wc/np, wc/nk
+    write (io_unit%log,'(2i12,f6.2,6p,2f6.2," mus/p",0p,2f6.2)') &
+      np, nk, wc, wc/np, wc/nk, real(nm)/nk, real(no)/nk
     call self%dust%consistency ('after KDK + export')
     !call self%dust%check_particles ('after kdk')
     !---------------------------------------------------------------------------
