@@ -275,8 +275,8 @@ SUBROUTINE update (self)
   ! Only evolve particles if the last particle is behind the patch%time (which
   ! has not been updated yet, so we add the patch timestep)
   !-----------------------------------------------------------------------------
-  self_time = patch%time + patch%dtime*2d0
-  dt = patch%dtime
+  self_time = patch%time + patch%dtime
+  dt = patch%dtime/2d0
   self%v_min = patch%fminval(patch%u_phase)/patch%ds(1)
   self%v_max = patch%fmaxval(patch%u_phase)/patch%ds(1)
   if (verbose > 1) then
@@ -284,7 +284,7 @@ SUBROUTINE update (self)
       'particle_solver_t%update: id, time, dtime, min/max =', patch%id, patch%time, patch%dtime, &
       patch%fmaxval(patch%u_phase), patch%fminval(patch%u_phase)
   end if
-  if (self%time <= self_time + 0.5*patch%dtime) then
+  !if (self%time <= self_time + 0.5*patch%dtime) then
     !---------------------------------------------------------------------------
     ! Allocate00 a new exports list, while the previous one may still be in use
     !---------------------------------------------------------------------------
@@ -529,11 +529,11 @@ SUBROUTINE update (self)
     !print *,wallclock()-start,'copy export'
     deallocate (dust%vg)
     end associate
-  else if (verbose > 0) then
-    write (io_unit%log,'(a,2f12.6,i10)') &
-      'particle_solver_t%update: self%time, self_time, n =', &
-      self%time, self_time, self%particles%n
-  end if
+  !else if (verbose > 0) then
+  !  write (io_unit%log,'(a,2f12.6,i10)') &
+  !    'particle_solver_t%update: self%time, self_time, n =', &
+  !    self%time, self_time, self%particles%n
+  !end if
   self%time = self_time 
   if (self%patch%id == i_dbg(1)) then
     write (io_unit%log,'(a,2(1p,4e10.3,2x))') &

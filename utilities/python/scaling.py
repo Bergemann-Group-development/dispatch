@@ -28,7 +28,7 @@ class cgs(object):
             if type(v) is float:
                 print('{:>12}:  {:.4}'.format(k,v))
 
-class SI(unit_system):
+class SI(object):
     name='SI'
     m_earth=5.972e24
     m_sun=1.989e30
@@ -49,7 +49,7 @@ class SI(unit_system):
     pc=3e16
     AU=1.5e11
     def print(self):
-        for k,v in vars(cgs).items():
+        for k,v in vars(SI).items():
             if type(v) is float:
                 print('{:>12}:  {:.4}'.format(k,v))
 
