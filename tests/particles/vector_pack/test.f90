@@ -6,12 +6,12 @@ MODULE pic_mod
   implicit none
   private
   type, public:: particles_t
-    integer:: np=50
+    integer:: np=30
     real, pointer, contiguous:: r(:,:), v(:,:)
     integer(kind=2), pointer, contiguous:: q(:,:)
   end type
   type, public:: cells_t
-    integer:: n=32, n_bin=5, mp=100
+    integer:: n=32, n_bin=5, mp=60
     real(8):: time=0d0, dtime=1d0
     type(particles_t), pointer:: particles(:,:,:,:)
     real, pointer, contiguous:: s(:)
@@ -72,7 +72,7 @@ SUBROUTINE update (self)
   integer:: q1, q2, q3
   integer(8):: nu
   real:: dt, cs, a, v, c
-  real(8):: wc, omp_get_wtime
+  real(8):: wc, wu, omp_get_wtime
   type(particles_t), pointer:: p, pn
   real, pointer, contiguous:: pv(:,:), pr(:,:)
   n  = self%n
@@ -80,6 +80,9 @@ SUBROUTINE update (self)
   dt = self%dtime
   wc = omp_get_wtime()
   nu = 0
+  !-----------------------------------------------------------------------------
+  ! Kick-drift-kick update
+  !-----------------------------------------------------------------------------
   do i3=1,self%n
   do i2=1,self%n
   do i1=1,self%n
@@ -107,8 +110,11 @@ SUBROUTINE update (self)
   end do
   end do
   end do
-  wc = omp_get_wtime() - wc
-  print '(f6.3," s",6p,f8.3," mu/p",i10," updates")', wc, wc/nu, nu
+  wu = omp_get_wtime() - wc
+  print '(f6.3," s",6p,f8.3," mu/p",i10," KDK")', wu, wu/nu, nu
+  !-----------------------------------------------------------------------------
+  ! Re-assign particles to other cells
+  !-----------------------------------------------------------------------------
   wc = omp_get_wtime()
   n = 0
   do i3=1,self%n
@@ -124,19 +130,53 @@ SUBROUTINE update (self)
           q2 = p%q(j,2)
           q3 = p%q(j,3)
           pn => self%particles(q1,q2,q3,ib)
+          !pn => self%particles(p%q(j,1),p%q(j,2),p%q(j,3),ib)
           pn%np = pn%np + 1
           jp = pn%np
-          pn%r(jp,:) = p%r(j,:)
-          pn%v(jp,:) = p%v(j,:)
-          pn%q(jp,:) = p%q(j,:)
+          do i=1,3
+            pn%r(jp,i) = p%r(j,i)
+            pn%v(jp,i) = p%v(j,i)
+            pn%q(jp,i) = p%q(j,i)
+          end do
+          p%q(j,1) = 0
         end if
       end do
     end do
   end do
   end do
   end do
-  wc = omp_get_wtime() - wc
-  print '(f6.3," s",6p,f8.3," mu/p",i10," updates",i10)', wc, wc/nu, nu, n
+  wu = wu + omp_get_wtime() - wc
+  print '(f6.3," s",6p,f8.3," mu/p",i10," move",i10)', wu, wu/nu, nu, n
+  !-----------------------------------------------------------------------------
+  ! Remove the holes in the arrays
+  !-----------------------------------------------------------------------------
+  wc = omp_get_wtime()
+  n = 0
+  do i3=1,self%n
+  do i2=1,self%n
+  do i1=1,self%n
+    do ib=1,nb
+      p => self%particles(i1,i2,i3,ib)
+      np = p%np
+      j = 1
+      do while (j <= p%np)
+        jp = p%np
+        if (p%q(j,1) == 0) then
+          p%q(j,:) = p%q(jp,:)
+          p%r(j,:) = p%r(jp,:)
+          p%v(j,:) = p%v(jp,:)
+          p%np = p%np-1
+          n = n+1
+        end if
+        j = j+1
+      end do
+    end do
+  end do
+  end do
+  end do
+  wu = wu + omp_get_wtime() - wc
+  print '(f6.3," s",6p,f8.3," mu/p",i10," pack",i10)', wu, wu/nu, nu, n
+
 END SUBROUTINE
 END MODULE
 
