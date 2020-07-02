@@ -67,7 +67,7 @@ MODULE dust_mod
     class(gpatch_t), pointer:: patch          ! pointer to the MHD patch
     type(particles_t), pointer:: particles    ! pointer to particles
     real, pointer, contiguous:: d(:,:,:)      ! density
-    real, pointer, contiguous:: p(:,:,:,:)    ! momentum
+    real, pointer            :: p(:,:,:,:)    ! momentum
     type(random_t):: random                   ! local random number generator
     logical, dimension(3):: lower             ! has lower boundary
     logical, dimension(3):: upper             ! has upper boundary
@@ -166,7 +166,9 @@ SUBROUTINE init (self, particles)
   end do
   m = self%patch%gn
   allocate (self%dd(m(1),m(2),m(3),n_bin))
-  !-----------------------------------------------------------------------------
+  call io%bits_mem (storage_size(self%dd), &
+                   product(shape(self%dd)), 'dd')
+!-----------------------------------------------------------------------------
   ! Pre-factor for drag force.  The input parameter density_yr_cgs is the
   ! density (in CGS) for which the stopping time in 1 yr for a 1 cm particle.
   ! Since we keep size in cm, we just need to multiply with the density scaling
@@ -218,7 +220,7 @@ SUBROUTINE initial_condition (self)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('dust_t%initial_condition', itimer=itimer)
-  call self%random%init
+  call self%random%init (seed)
   patch => self%patch
   d => patch%mem(:,:,:,patch%idx%d,patch%it,1)
   l = self%lb
@@ -235,6 +237,7 @@ SUBROUTINE initial_condition (self)
       do j=1,particles_per_bin
         i = i+1
         allocate (p)
+        call io%bits_mem (storage_size(p), 1, 'p')
         call p%init
         if (mod(i,output_every)==0) then
           p%flag = 1   ! select for tracking
@@ -293,19 +296,22 @@ SUBROUTINE update (self, particles)
   end if
   !...........................................................................
   n = self%patch%mesh%gn                        ! cells in patch
+  allocate (self%dv(n_bin))                     ! average speed difference
   !allocate (self%na(n(1),n(2),n(3),n_bin))      ! number of added particles
-  !allocate (self%dv(n_bin))                     ! average speed difference
   !allocate (self%np(n(1),n(2),n(3),n_bin))      ! work array for pp-cell-bin
   !call self%gather
   !call self%renormalize
   call self%output
   if (do_dust) then
     allocate (self%k(n_bin,n_bin))              ! kernel expressing exchange
+    call io%bits_mem (storage_size(self%k), product(shape(self%k)), 'k')
     call self%evolve
     call self%scatter
+    call io%bits_mem (storage_size(self%k), -product(shape(self%k)), '-k')
     deallocate (self%k)
   end if
   !deallocate (self%na, self%dv, self%np)
+  deallocate (self%dv)
   call trace%end (itimer)
 END SUBROUTINE update
 

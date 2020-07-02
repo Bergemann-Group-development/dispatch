@@ -179,6 +179,7 @@ SUBROUTINE dealloc (self)
   do while (associated(item))
     n = n+1
     next => item%next
+    call io%bits_mem (storage_size(item), 1, '-p')
     deallocate (item)
     item => next
   end do

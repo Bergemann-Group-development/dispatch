@@ -8,9 +8,8 @@ MODULE experiment_mod
   USE solver_mod
   USE scaling_mod
   USE units_mod
-  USE particles_mod
   USE particle_solver_mod
-  USE dust_mod
+  !USE dust_mod
   USE link_mod
   USE list_mod
   implicit none
@@ -139,55 +138,9 @@ END SUBROUTINE init_task_list
 !===============================================================================
 SUBROUTINE update (self)
   class(experiment_t):: self
-  class(task_t), pointer:: task
-  class(link_t), pointer:: link
-  real(8):: sum
-  integer(8):: np
-  integer:: i1, i2, i3, bin, j
-  class(particle_t), pointer:: p
-  class(sorted_t), pointer:: sorted
-  class(particle_solver_t), pointer:: particle_solver
   !----------------------------------------------------------------------------
   call trace%begin ('experiment_t%update')
   call self%solver_t%update
-  if (self%id == 1 .and. verbose > 0) then
-    np = 0
-    link => self%task_list%head
-    do while (associated(link))
-      task => link%task
-      select type (task)
-        class is (solver_t)
-        np = np + task%particle_solver%particles%n
-      end select
-      link => link%next
-    end do
-    associate (dust=>self%particle_solver%dust)
-    write (stdout,'(a,1p,e12.3)') 'number of particles =', real(np)
-    sum = 0d0
-    do bin=1,dust%n_bin
-    do i3=dust%lb(3),dust%ub(3)
-    do i2=dust%lb(2),dust%ub(2)
-      if (verbose == 1) then
-        do i1=dust%lb(1),dust%ub(1)
-          sum = sum + dust%dd(i1,i2,i3,bin)
-        end do
-      else
-        do i1=dust%lb(1),dust%ub(1)
-          sorted => self%particle_solver%particles%sorted(i1,i2,i3,bin)
-          p => sorted%head
-          do j=1,sorted%n
-            sum = sum + p%w
-            p => p%next
-          end do
-        end do
-      end if
-    end do
-    end do
-    end do
-    sum = sum/product(dust%ub-dust%lb+1)
-    end associate
-    write(stdout,*) 'total dust mass =', self%id, sum
-  end if
   call trace%end ()
 END SUBROUTINE update
 

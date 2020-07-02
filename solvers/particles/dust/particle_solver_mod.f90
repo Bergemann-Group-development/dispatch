@@ -133,8 +133,13 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   m = self%patch%mesh%gn
   allocate (self%particles%sorted(m(1),m(2),m(3),n_bin))
+  call io%bits_mem (storage_size(self%particles%sorted), &
+                   product(shape(self%particles%sorted)), 'sorted')
   if (.not.associated(self%patch%force_per_unit_volume)) then
     allocate (self%patch%force_per_unit_volume(m(1),m(2),m(3),3))
+    call io%bits_mem (storage_size(self%patch%force_per_unit_volume), &
+                     product(shape(self%patch%force_per_unit_volume)), &
+                     'force')
   end if
   if (.not.associated(self%lock)) then
     allocate (self%lock)
@@ -303,7 +308,9 @@ SUBROUTINE update (self)
     associate (dust=>self%dust)
     m = patch%gn
     allocate (dust%vg(3,m(1),m(2),m(3)))
-    !---------------------------------------------------------------------------
+    call io%bits_mem (storage_size(dust%vg), &
+                     product(shape(dust%vg)), 'vg')
+!---------------------------------------------------------------------------
     ! Cache the gas velocity
     !---------------------------------------------------------------------------
     m = patch%gn
@@ -531,6 +538,8 @@ SUBROUTINE update (self)
     call exports%dealloc
     deallocate (exports)
     !print *,wallclock()-start,'copy export'
+    call io%bits_mem (storage_size(dust%vg), &
+                    -product(shape(dust%vg)), '-vg')
     deallocate (dust%vg)
     end associate
   !else if (verbose > 0) then
@@ -568,6 +577,7 @@ subroutine add_particles
   time = self%patch%time
   do j=1,pp_bin-n
     allocate (p)
+    call io%bits_mem (storage_size(p), 1, 'p')
     call p%init
     p%q = q
     p%bin = bin
@@ -586,6 +596,7 @@ end subroutine add_particles
 subroutine remove_particles
   real:: d_cgs, w
   integer:: np, nr
+  nr = 0
   p => sorted%head
   do while (sorted%n > self%dust%n_max)
     next => p%next

@@ -90,7 +90,6 @@ SUBROUTINE init (self)
   !.............................................................................
   !$omp critical (timer_cr)
   if (first_time) then
-    first_time = .false.
     rewind (io_unit%input)
     read (io_unit%input, timer_params, iostat=ignore)
     !call io%namelist_warning ('timer_params', iostat)
@@ -103,13 +102,14 @@ SUBROUTINE init (self)
     allocate (timers(0:omp%nthreads-1))
     allocate (self%lock)
     call self%lock%init ('timr')
+    first_time = .false.
   end if
   !$omp end critical (timer_cr)
   ntimer = 0
   do i=0,omp%nthreads-1
-    timers(i)%calls = 0
-    timers(i)%start = 0d0
-    timers(i)%total = 0d0
+    timers(i)%calls(:) = 0
+    timers(i)%start(:) = 0d0
+    timers(i)%total(:) = 0d0
   end do
 END SUBROUTINE init
 

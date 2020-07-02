@@ -10,6 +10,9 @@
 &particle_solver_params verbose=0 courant=0.5 detailed_timer=f /
 &dust_params            verbose=0 n_bin=3 particles_per_bin=10
                         min_size_cgs=3e-8 max_size_cgs=3e-1 /
+&dust_cell_params       on=t verbose=0 n_bin=1 particles_per_bin=30
+                        min_fraction=0.4 max_fraction=2
+                        min_size_cgs=1e-5 max_size_cgs=1e-5 /
 
 !--- Input/Output parameters ---------------------------------------------------
 &io_params              verbose=0 do_trace=f omp_trace=t

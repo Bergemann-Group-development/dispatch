@@ -12,7 +12,8 @@ UPD             = adams_bashforth
 SOLVER          = ramses/hydro
 #SOLVER          = ramses/mhd
 #SOLVER          = stagger2/e
-PARTICLE_SOLVER = dust
+#PARTICLE_SOLVER = dust
+PARTICLE_SOLVER = dust_in_cells
 EXEC            = dispatch.x
 TOP             = ../../..
 
