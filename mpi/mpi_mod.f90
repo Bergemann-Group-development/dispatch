@@ -290,7 +290,6 @@ contains
 '********************************************************************************'
   write (unit,'(" ABORT:  rank",i5,4x,"thread",i4)') mpi_rank, omp%thread
   if (present(reason)) then
-    write (unit,'(" ABORT:  rank",i5,4x,"thread",i4)') mpi_rank, omp%thread
     write (unit,'("REASON: ",a)') trim(reason)
   end if
   write (unit,'(a)') &

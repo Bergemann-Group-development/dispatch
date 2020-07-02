@@ -538,7 +538,7 @@ end subroutine unsplit
 !===============================================================================
 subroutine ctoprim (self)
   class(hd_t):: self
-  real(dp):: smallp, dtxhalf
+  real(dp):: smallp, dtds
   integer,save:: itimer=0
   integer:: l(3), u(3)
   real, contiguous, dimension(:,:,:)  , pointer:: d, e, pg, c, s
@@ -585,6 +585,7 @@ subroutine ctoprim (self)
   ! entire guard zone, since it is based on values valid in all points
   !-----------------------------------------------------------------------------
   self%u_max = maxval(c)
+  dtds = self%dtime/self%ds(1)
   l = maxloc(c)
   if (detailed_timer) then
     call trace%end (itimer)

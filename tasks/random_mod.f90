@@ -104,46 +104,24 @@ END FUNCTION ran3
 
 !===============================================================================
 !===============================================================================
-FUNCTION uniform_1 (self, a, b) RESULT (out)
+FUNCTION uniform_1 (self) RESULT (out)
   class(random_t):: self
-  real, intent(in), optional:: a, b
   real:: out
   !-----------------------------------------------------------------------------
-  if (present(a)) then
-    if (present(b)) then
-      out = a + (b-a)*self%ran1()
-    else
-      out = a*self%ran1()
-    end if
-  else
-    out = self%ran1()
-  end if
+  out = self%ran1()
 END FUNCTION
 
 !===============================================================================
 !===============================================================================
-FUNCTION uniform_n (self, n, a, b) RESULT (out)
+FUNCTION uniform_n (self, n) RESULT (out)
   class(random_t):: self
   integer, intent(in):: n
-  real, intent(in), optional:: a, b
   real, dimension(n):: out
   integer:: i
   !-----------------------------------------------------------------------------
-  if (present(a)) then
-    if (present(b)) then
-      do i=1,n
-        out(i) = a*self%ran1()
-      end do
-    else
-      do i=1,n
-        out(i) = a + (b-a)*self%ran1()
-      end do
-    end if
-  else
-    do i=1,n
-      out(i) = self%ran1()
-    end do
-  end if
+  do i=1,n
+    out(i) = self%ran1()
+  end do
 END FUNCTION
 
 END MODULE random_mod
