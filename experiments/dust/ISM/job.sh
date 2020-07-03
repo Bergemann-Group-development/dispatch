@@ -3,9 +3,9 @@
 #SBATCH --job-name=dust_ism
 #SBATCH --nodes=1 --ntasks-per-node=1 --cpus-per-task=20
 ##SBATCH --ntasks-per-core=2
-##SBATCH --partition=astro_long
+#SBATCH --partition=astro_long
 ##SBATCH --time=4-23:59:59
-#SBATCH --partition=astro_short
+##SBATCH --partition=astro_short
 #SBATCH --time=10:00:00
 #SBATCH --no-requeue
 ##SBATCH --exclude=astro06-08
