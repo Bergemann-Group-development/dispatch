@@ -188,6 +188,7 @@ MODULE particle_solver_mod
   integer:: verbose = 0
   integer:: n_bin = 1
   integer:: particles_per_bin = 30
+  integer:: output_every = 1000
   integer:: seed = 11                         ! random seed
   real:: dust_to_gas = 0.01                   ! total dust-to-gas ratio
   real:: min_fraction = 0.7                   ! particles per bin (max decrease)
@@ -195,7 +196,7 @@ MODULE particle_solver_mod
   real:: min_size_cgs = 3e-4                  ! 3 micron
   real:: max_size_cgs = 3000e-4               ! 3000 micron = 3 mm
   real:: solid_density_cgs = 2.0              ! g/cm**3
-  real:: density_yr_cgs = 1e-12               ! volume density giving 1 yr stop
+  real:: density_yr_cgs = 3e-12               ! volume density giving 1 yr stop
 CONTAINS
 
 !===============================================================================
@@ -217,7 +218,8 @@ SUBROUTINE init (self)
   class(particle_solver_t):: self
   integer:: iostat
   namelist /dust_cell_params/ on, verbose, particles_per_bin, n_bin, seed, &
-  dust_to_gas, min_size_cgs, max_size_cgs, min_fraction, max_fraction
+    dust_to_gas, min_size_cgs, max_size_cgs, min_fraction, max_fraction, &
+    solid_density_cgs, density_yr_cgs, particle_io
   logical:: first_time = .true.
   !-----------------------------------------------------------------------------
   call trace%begin ('particle_solver_t%init')
@@ -269,6 +271,7 @@ SUBROUTINE initial_condition (self)
     self%s_cgs(ib) = exp(log(min_size_cgs) &
                      + (ib-0.5)*log(max_size_cgs/min_size_cgs)/n_bin)
     allocate (self%exports(ib)%lock)
+    call self%exports(ib)%lock%init ('exp')
     p => self%exports(ib)
     call p%init (self%me)
     do i3=1,m(3)
@@ -855,12 +858,10 @@ END SUBROUTINE sumup
       9 format(3f8.3,i4)
       call io%assert (p%np==p%lp, 'The state must be packed before renorm')
       if (self%dd(i1,i2,i3,ib) <= 0.0) then
-        write (io_unit%log,'(a,i6,4i4,2i6,1p,e10.2)') &
-        'ERROR: id,np,lp,dd=', &
-        p%id,p%np,p%lp, self%dd(i1,i2,i3,ib)
-        call io%abort ('Dust density non-positive')
+        write (io_unit%log,'(a,i6,4i4,2i6,1p,3e10.2)') &
+        'zero density warning: id,np,lp,v=', &
+        p%id,p%np,p%lp, self%v(:,i1,i2,i3)
       end if
-      call io%assert (self%dd(i1,i2,i3,ib) > 0.0, 'Dust density non-positive')
       !-------------------------------------------------------------------------
       ! If too few particles, add new ones and set new weights to all
       !-------------------------------------------------------------------------
