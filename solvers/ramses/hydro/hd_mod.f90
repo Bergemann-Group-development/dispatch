@@ -69,7 +69,7 @@ MODULE hd_mod
   integer, parameter:: ndim=3
   real, save:: slope_type=2.0
   real, save:: courant_factor=0.25
-  integer, save:: courant_type=0
+  integer, save:: courant_type=1
   logical, save:: debug=.false.
   logical, save:: first_time=.true.
   logical, save:: detailed_timer=.false.
