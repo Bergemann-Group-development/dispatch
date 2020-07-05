@@ -109,7 +109,7 @@ MODULE dust_mod
   real:: max_size_cgs = 3000e-4               ! 3000 micron = 3 mm
   real:: d_min_cgs = 1e-24                    ! lowest density for renormalizing
   real:: solid_density_cgs = 2.0              ! g/cm**3
-  real:: density_yr_cgs = 1e-12               ! volume density giving 1 yr stop
+  real:: density_yr_cgs = 3e-12               ! volume density giving 1 yr stop
   real:: drag_coeff = 0.0                     ! constant in front of drag force
   real:: growth_rate = 1e-2                   ! per unit code time
   integer:: n_bin = 15                        ! 5 bins per power of ten
