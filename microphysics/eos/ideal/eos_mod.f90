@@ -44,7 +44,10 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('eos_t%init', itimer=itimer)
   call io%header ('microphysics/eos/ideal/eos_mod:')
-  call io%lock%set ('eos_t%init')
+  !----------------------------------------------------------------------------
+  ! Note that this is called from setup_mod.f90, while the code is still
+  ! single-threaded, so there should be no critical region or io%lock here
+  !----------------------------------------------------------------------------
   if (first_time) then
     gamma = self%gamma
     do_rt = self%do_rt
@@ -53,8 +56,7 @@ SUBROUTINE init (self)
     read (io%input, eos_params, iostat=iostat)
     call io%namelist_warning ('eos_params', iostat)
     write (io%namelist, eos_params)
-end if
-  call io%lock%unset ('eos_t%init')
+  end if
   self%gamma = gamma
   self%do_rt = do_rt
   self%kappa = kappa * scaling%m/scaling%l**2

@@ -55,7 +55,10 @@ SUBROUTINE init (self)
   namelist /eos_params/ do_eos, top, tablefile, kappa, verbose
   !-----------------------------------------------------------------------------
   call trace%begin ('eos_t%init')
-  !$omp critical (eos_cr)
+  !----------------------------------------------------------------------------
+  ! Note that this is called from setup_mod.f90, while the code is still
+  ! single-threaded, so there should be no critical region or io%lock here
+  !----------------------------------------------------------------------------
   if (first_time) then
     first_time = .false.
     do_eos = .true.
@@ -99,8 +102,6 @@ SUBROUTINE init (self)
   end if
   self%on = do_eos
   self%kappa = kappa
-  !$omp end critical (eos_cr)
-  !$omp barrier
   call trace%end()
 END SUBROUTINE init
 

@@ -51,16 +51,16 @@ SUBROUTINE init (self)
   logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
   call trace%begin ('guard_zones_t%init')
+  !----------------------------------------------------------------------------
+  ! Note that this is called from setup_mod.f90, while the code is still
+  ! single-threaded, so there should be no critical region or io%lock here
+  !----------------------------------------------------------------------------
   if (first_time) then
-    call io%lock%set ('guard_zones_t')
-    if (first_time) then
-      rewind (io%input)
-      read (io%input, guard_zone_params, iostat=iostat)
-      call io%namelist_warning ('guard_zone_params', iostat)
-      write (io%namelist, guard_zone_params)
-      first_time = .false.
-    end if
-    call io%lock%unset ('guard_zones_t')
+    rewind (io%input)
+    read (io%input, guard_zone_params, iostat=iostat)
+    call io%namelist_warning ('guard_zone_params', iostat)
+    write (io%namelist, guard_zone_params)
+    first_time = .false.
   end if
   select case (trim(method))
   case ('simple')

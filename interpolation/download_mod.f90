@@ -89,7 +89,10 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('download_t%init')
   call trace%print_id (id)
-  call io%lock%set ('download_t%init')
+  !----------------------------------------------------------------------------
+  ! Note that this is called from setup_mod.f90, while the code is still
+  ! single-threaded, so there should be no critical region or io%lock here
+  !----------------------------------------------------------------------------
   if (first_time) then
     first_time = .false.
     rewind (io%input)
@@ -107,7 +110,6 @@ SUBROUTINE init (self)
   self%check_filled = check_filled
   self%order_interpolator = order_interpolator
   self%interpolate => SelectInterpolator(order_interpolator)
-  call io%lock%unset ('download_t%init')
   call trace%end()
 END SUBROUTINE init
 

@@ -32,7 +32,10 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   if (.not.first_time) return
   call trace_begin('scaling_t%init')
-  call io%lock%set
+  !----------------------------------------------------------------------------
+  ! Note that this is called from setup_mod.f90, while the code is still
+  ! single-threaded, so there should be no critical region or io%lock here
+  !----------------------------------------------------------------------------
   if (first_time) then
     rewind (io%input)
     read (io%input, scaling_params, iostat=iostat)
@@ -54,7 +57,6 @@ SUBROUTINE init (self)
     write (io_unit%nml, scaling_nml)
     first_time = .false.
   end if
-  call io%lock%unset
   self%l = l
   self%d = d
   self%u = u

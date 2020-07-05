@@ -35,16 +35,16 @@ SUBROUTINE init (self)
   namelist /remesh_params/ verbose, order
   !-----------------------------------------------------------------------------
   call trace%begin ('remesh_t%init')
+  !----------------------------------------------------------------------------
+  ! Note that this is called from setup_mod.f90, while the code is still
+  ! single-threaded, so there should be no critical region or io%lock here
+  !----------------------------------------------------------------------------
   if (first_time) then
-    call io%lock%set ('remesh_t%init')
-    if (first_time) then
-      rewind (io%input)
-      read (io%input, remesh_params, iostat=iostat)
-      call io%namelist_warning ('remesh_params', iostat)
-      write (io%namelist, remesh_params)
-      first_time = .false.
-    end if
-    call io%lock%unset ('remesh_t%init')
+    rewind (io%input)
+    read (io%input, remesh_params, iostat=iostat)
+    call io%namelist_warning ('remesh_params', iostat)
+    write (io%namelist, remesh_params)
+    first_time = .false.
   end if
   call trace%end ()
 END SUBROUTINE init
