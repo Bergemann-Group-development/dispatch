@@ -3,308 +3,124 @@
 !>
 !>   particle_t         : data type for particles
 !>   particles_t        : data type for particle lists
+!>        bins_t        : Cartesian collection of particle lists
+!>
+!> Optimized for speed of list operations by adding permanent head and tail
 !===============================================================================
 MODULE particles_mod
   USE io_mod
-  USE trace_mod
-  USE mpi_mod
-  USE omp_mod
   USE omp_lock_mod
   implicit none
   private
-  !-----------------------------------------------------------------------------
-  ! Particle data type
-  !-----------------------------------------------------------------------------
+  !--- link structure for particles ---
   type, public:: particle_t
-    type(particle_t), pointer:: next => null()  ! next particle
-    type(particle_t), pointer:: prev => null()  ! previous particle
-    integer(8)      :: id = 0                   ! particle id
-    real(8)         :: t = 0.0_8                ! time
-    real            :: dt                       ! time step
-    real            :: w                        ! weight factor
-    !real            :: c                        ! drag coefficient
-    real            :: v(3)                     ! velocity (cell units / time)
-    !real            :: dv(3)                    ! vgas - velocity
-    !real            :: a(3) = 0.0               ! acceleration
-    !real            :: d(3)                     ! drag
-    real            :: r(3)                     ! real positions (cell units)
-    integer(kind=2) :: q(3)                     ! integer position (cell units)
-    integer(kind=2) :: bin=1                    ! size bin
-    integer(kind=2) :: flag=0                   ! flag / bits
+    type(particle_t), pointer:: next, prev
+    real:: r(3), v(3), w
+    integer(8):: id = 0
+    integer(2):: q(3), bin
+    integer(2):: flag = 0
+  end type
+  !--- collection of particles ---
+  type, public:: particles_t
+    type(particle_t), pointer:: head => null(), tail => null()
+    type(lock_t), pointer:: lock
+    integer:: n = 0
   contains
     procedure:: init
-  end type
-  !-----------------------------------------------------------------------------
-  !-----------------------------------------------------------------------------
-  type, public:: sorted_t
-    class(particle_t), pointer:: head => null()
-    class(particle_t), pointer:: tail => null()
-    integer:: n=0
-  end type
-  !-----------------------------------------------------------------------------
-  ! List of particles
-  !-----------------------------------------------------------------------------
-  type, public:: particles_t
-    class(particle_t), pointer:: head => null() ! pointer to start of list
-    class(particle_t), pointer:: tail => null() ! pointer to end of list
-    class(sorted_t), pointer:: sorted(:,:,:,:) => null()
-    integer(8):: n=0, max=0                     ! number of particles in list
-    real(8):: dtime                             ! collective dtime
-    type(lock_t), pointer:: lock => null()      ! OMP lock
-  contains
-    procedure:: init => init_particles
-    procedure:: prepend
     procedure:: append
+    procedure:: prepend
     procedure:: remove
-    procedure:: dealloc
-    procedure:: add_sorted
-    procedure:: remove_sorted
+    procedure:: transfer
+    procedure:: pop
   end type
-  integer:: verbose=0
-  integer(8):: id=0
-  !$omp threadprivate (id)
+  !--- cartesian arrangement of particle bins ---
+  type, public:: bins_t
+    class(particles_t), pointer:: particles(:,:,:,:)
+    integer:: n
+  end type
 CONTAINS
 
 !===============================================================================
-!> Initialize a particle
+!> Initialize particle list
 !===============================================================================
 SUBROUTINE init (self)
-  class(particle_t):: self
-  !.............................................................................
-  self%id = 1 + omp%thread + (mpi%rank + mpi%size*id)*omp%nthreads
-  id = id+1
+  class(particles_t):: self
+  allocate (self%head, self%tail)
+  self%head%next => self%tail
+  self%tail%prev => self%head
+  allocate (self%lock)
+  call self%lock%init
 END SUBROUTINE init
 
 !===============================================================================
-!> Initialize a particle list
+!> Append to the list
 !===============================================================================
-SUBROUTINE init_particles (self)
+SUBROUTINE append (self, p)
   class(particles_t):: self
+  class(particle_t), pointer:: p
   !.............................................................................
-  call trace%begin ('particles_t%init')
-  nullify (self%head, self%tail)
-  associate (n=>self%n)
-  !$omp atomic write
-  n = 0
-  end associate
-  allocate (self%lock)
-  call self%lock%init ('particles')
-  call trace%end ()
-END SUBROUTINE init_particles
-
-!===============================================================================
-!> Add an particle at the tail
-!===============================================================================
-SUBROUTINE prepend (self, new)
-  class(particles_t)              :: self
-  class(particle_t), pointer :: new
-  !.............................................................................
-  nullify (new%prev)
-  new%next => self%head
-  if (.not.associated(self%tail)) self%tail => new
-  if (associated(self%head)) self%head%next => new
-  self%head => new
-  associate (n=>self%n, max=>self%max)
-  !$omp atomic
-  n = n+1
-  !$omp atomic write
-  max = id
-  end associate
-END SUBROUTINE prepend
-
-!===============================================================================
-!> Add an particle at the tail
-!===============================================================================
-SUBROUTINE append (self, new, atomic)
-  class(particles_t):: self
-  class(particle_t), pointer :: new
-  logical, optional:: atomic
-  !.............................................................................
-  nullify (new%next)
-  new%prev => self%tail
-  if (self%n > 0) then
-    self%tail%next => new
-  else
-    self%head => new
-  end if
-  self%tail => new
-  if (present(atomic)) then
-    associate (n=>self%n, max=>self%max)
-    !$omp atomic
-    n = n+1
-    !$omp atomic write
-    max = id
-    end associate
-  else
-    self%n = self%n+1
-    self%max = id
-  end if
+  p%next => self%tail
+  p%prev => self%tail%prev
+  p%next%prev => p
+  p%prev%next => p
+  self%n = self%n + 1
 END SUBROUTINE append
 
 !===============================================================================
-!> Remove a particle from the list (the particle is not deallocated)
+!> Prepend to the list
 !===============================================================================
-SUBROUTINE remove (self, old)
+SUBROUTINE prepend (self, p)
   class(particles_t):: self
-  class(particle_t), pointer:: old
+  class(particle_t), pointer:: p
   !.............................................................................
-  call self%lock%set ('particles_t%remove')
-  if (associated(old%prev)) old%prev%next => old%next
-  if (associated(old%next)) old%next%prev => old%prev
-  if (associated(old, self%head)) then
-    self%head => old%next
-  end if
-  if (associated(old, self%tail)) then
-    self%tail => old%prev
-  end if
-  nullify (old%prev, old%next)
-  associate (n=>self%n)
-  !$omp atomic
-  n = n-1
-  end associate
-  call self%lock%unset ('particles_t%remove')
+  p%prev => self%head
+  p%next => self%head%next
+  p%next%prev => p
+  p%prev%next => p
+  self%n = self%n + 1
+END SUBROUTINE prepend
+
+!===============================================================================
+!> Remove given particle
+!===============================================================================
+SUBROUTINE remove (self, p)
+  class(particles_t):: self
+  class(particle_t), pointer:: p
+  p%next%prev => p%prev
+  p%prev%next => p%next
+  self%n = self%n - 1
 END SUBROUTINE remove
 
 !===============================================================================
-!> Delete a particle list, including particles
+!> Remove the last particle appended
 !===============================================================================
-SUBROUTINE dealloc (self)
+FUNCTION pop(self) RESULT (p)
   class(particles_t):: self
-  !.............................................................................
-  class (particle_t), pointer:: item, next
-  integer:: n
-  !-----------------------------------------------------------------------------
-  item => self%head
-  n = 0
-  do while (associated(item))
-    n = n+1
-    next => item%next
-    call io%bits_mem (storage_size(item), 1, '-p')
-    deallocate (item)
-    item => next
-  end do
-  if (n > 0) then
-    call io%warning ('particles_t%deallocate: particles remained')
-  end if
-  call omp_lock%destroy (self%lock)
-call self%init
-END SUBROUTINE dealloc
-
-!===============================================================================
-SUBROUTINE add_sorted (self, p, i1, i2, i3, i4)
-  class(particles_t):: self
-  class(particle_t), pointer:: p
-  class(sorted_t), pointer:: sorted
-  integer(kind=2):: i1, i2, i3, i4
-  !-----------------------------------------------------------------------------
-  if (.not. associated(self%sorted)) then
-    write(stdout,*) 'add_sorted: not associated', i1, i2, i3, i4
-  end if
-  sorted => self%sorted(i1,i2,i3,i4)
-  !-----------------------------------------------------------------------------
-  ! If the sorted box is empty, the particle becomes the only one in the box,
-  ! but since it was removed from the particle list it needs to also be linked
-  ! into the list again
-  !-----------------------------------------------------------------------------
-  if (sorted%n == 0) then
-    call self%append (p)
-    sorted%tail => p
-    sorted%head => p
-    !write (io_unit%log,1) 'added at tail & head', i1, i2, i3, i4, sorted%n, self%n
-    1 format(a,5i4,2i12)
+  type(particle_t), pointer:: p
+  if (self%n > 0) then
+    p => self%tail%prev
+    self%tail%prev => p%prev
+    self%n = self%n - 1
   else
-    if (associated(sorted%tail,self%tail)) then     ! tail of ALL particles
-      nullify(p%next)                               ! maintain null at end
-      self%tail => p                                ! new tail
-      p%prev => sorted%tail                           ! attach to the tail
-      p%prev%next => p                                ! point fwd past it
-      sorted%tail => p
-      !write (io_unit%log,1) 'added at self%tail', i1, i2, i3, i4, sorted%n, self%n, p%id
-    else
-      p%next => sorted%tail%next                    ! connect to next cell
-      p%next%prev => p                              ! point back past it
-      p%prev => sorted%tail                           ! attach to the tail
-      p%prev%next => p                                ! point fwd past it
-      sorted%tail => p
-      !write (io_unit%log,1) 'added at sorted%tail', i1, i2, i3, i4, sorted%n, self%n, p%id
-      !write (io_unit%log,1) 'prev: ', &
-      !  p%prev%q, p%prev%bin, sorted%n, p%prev%id
-      !write (io_unit%log,1) 'next: ',  &
-      !  p%next%q, p%next%bin, sorted%n, p%next%id
-      !write (io_unit%log,1) 'tail: ', &
-      !  sorted%tail%q, sorted%tail%bin, sorted%n, sorted%tail%id
-    end if
+    allocate (p)
+    call io%bits_mem (storage_size(p), 1, 'p')
   end if
-  sorted%n = sorted%n + 1                           ! increment box count
-  self%n = self%n + 1                               ! increment total count
-END SUBROUTINE add_sorted
+END FUNCTION pop
 
 !===============================================================================
-SUBROUTINE remove_sorted (self, p, i1, i2, i3, i4)
+!> Trasnfer all particles to a pool
+!===============================================================================
+SUBROUTINE transfer (self, pool)
   class(particles_t):: self
-  class(particle_t), pointer:: p
-  class(sorted_t), pointer:: sorted
-  integer(kind=2):: i1, i2, i3, i4
-  !-----------------------------------------------------------------------------
-  if (.not. associated(self%sorted)) then
-    write(stdout,1) 'remove_sorted: not associated', i1, i2, i3, i4
-  end if
-  sorted => self%sorted(i1,i2,i3,i4)
-  !if (.not.associated(p)) then
-  !  write(stdout,1) 'remove_sorted: p not associated', i1, i2, i3, i4, sorted%n, self%n
-  !  return
-  !end if
-  if (.not.associated(p%next) .and. .not.associated(p%prev)) then
-    write(stdout,1) 'remove_sorted: p% not associated', i1, i2, i3, i4, sorted%n, self%n, p%id
-  end if
-  !.............................................................................
-  !write (io_unit%log,1) 'prev: ', &
-  !  p%prev%q, p%prev%bin, sorted%n, p%prev%id
-  !write (io_unit%log,1) 'next: ',  &
-  !  p%next%q, p%next%bin, sorted%n, p%next%id
-  !write (io_unit%log,1) 'tail: ', &
-  !  sorted%tail%q, sorted%tail%bin, sorted%n, sorted%tail%id
-  !--- if there is a particle after this one, change its %prev to p%prev
-  if (associated(p%next)) then
-    p%next%prev => p%prev
-    !write (io_unit%log,1) 'rem from next', i1, i2, i3, i4, sorted%n, self%n, p%id
-    1 format(a,5i4,2i12)
-  end if
-  !--- if there is a particle before this one, change its %next to p%next
-  if (associated(p%prev)) then
-    p%prev%next => p%next
-    !write (io_unit%log,1) 'rem from prev', i1, i2, i3, i4, sorted%n, self%n, p%id
-  end if
-  !--- if the remove particle is the tail in a cell, repoint the tail
-  if (associated(p,sorted%tail)) then
-    sorted%tail => p%prev
-    !write(io_unit%log,1) 'remove at sorted%tail', i1, i2, i3, i4, sorted%n, self%n
-    !--- if the removed particle is alse the very last tail, reassign tail
-    if (associated(p,self%tail)) then
-      !write(io_unit%log,1) 'remove at self%tail', i1, i2, i3, i4, sorted%n, self%n
-      self%tail => p%prev
-      !--- for good measure, make sure the tail has no next
-      nullify (self%tail%next)
-    end if
-  end if
-  !--- if the remove particle is the head in a cell, repoint the head
-  if (associated(p,sorted%head)) then
-    sorted%head => p%next
-    !write(io_unit%log,1) 'remove at sorted%head', i1, i2, i3, i4, sorted%n, self%n
-    !--- if the removed particle is alse the very first head, reassign head
-    if (associated(p,self%head)) then
-      self%head => p%next
-      !write(io_unit%log,1) 'remove at self%head', i1, i2, i3, i4, sorted%n, self%n
-      !--- for good measure, make sure the head has no prev
-      nullify (self%head%prev)
-    end if
-  end if
-  sorted%n = sorted%n - 1                                ! decrement box count
-  if (sorted%n == 0) then                                ! if box empty
-    nullify (sorted%head, sorted%tail)                   ! reset head & tail
-    write(io_unit%log,*) 'nullify head & tail'
-  end if
-  self%n =  self%n - 1                                   ! decrement total¨
-END SUBROUTINE remove_sorted
-
+  class(particles_t), pointer:: pool
+  class(particle_t), pointer:: p, next
+  integer:: i
+  p => self%head%next
+  do i=1,self%n
+    next => p%next
+    call self%remove (p)
+    call pool%append (p)
+    p => next
+  end do
+END SUBROUTINE transfer
 END MODULE particles_mod
