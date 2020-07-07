@@ -9,28 +9,26 @@
 !===============================================================================
 MODULE particles_mod
   USE io_mod
-  USE omp_lock_mod
   implicit none
   private
   !--- link structure for particles ---
   type, public:: particle_t
-    type(particle_t), pointer:: next, prev
-    real:: r(3), v(3), w
-    integer(8):: id = 0
-    integer(2):: q(3), bin
-    integer(2):: flag = 0
-  end type
+    type(particle_t), pointer:: next, prev  ! 2*8 = 16
+    integer(8):: id = -1                    !        8
+    real:: r(3), v(3), w, rpad              ! 7*4 = 28
+    integer(2):: q(3), bin                  ! 4*2 =  8
+    integer(2):: flag = 0, ipad             !        2
+  end type                                  ! sum:  62  
   !--- collection of particles ---
   type, public:: particles_t
     type(particle_t), pointer:: head => null(), tail => null()
-    type(lock_t), pointer:: lock
     integer:: n = 0
   contains
     procedure:: init
     procedure:: append
-    procedure:: prepend
+    !procedure:: prepend
     procedure:: remove
-    procedure:: transfer
+    !procedure:: transfer
     procedure:: pop
   end type
   !--- cartesian arrangement of particle bins ---
@@ -48,8 +46,6 @@ SUBROUTINE init (self)
   allocate (self%head, self%tail)
   self%head%next => self%tail
   self%tail%prev => self%head
-  allocate (self%lock)
-  call self%lock%init
 END SUBROUTINE init
 
 !===============================================================================
@@ -57,7 +53,7 @@ END SUBROUTINE init
 !===============================================================================
 SUBROUTINE append (self, p)
   class(particles_t):: self
-  class(particle_t), pointer:: p
+  type(particle_t), pointer:: p
   !.............................................................................
   p%next => self%tail
   p%prev => self%tail%prev
@@ -71,7 +67,7 @@ END SUBROUTINE append
 !===============================================================================
 SUBROUTINE prepend (self, p)
   class(particles_t):: self
-  class(particle_t), pointer:: p
+  type(particle_t), pointer:: p
   !.............................................................................
   p%prev => self%head
   p%next => self%head%next
@@ -85,7 +81,7 @@ END SUBROUTINE prepend
 !===============================================================================
 SUBROUTINE remove (self, p)
   class(particles_t):: self
-  class(particle_t), pointer:: p
+  type(particle_t), pointer:: p
   p%next%prev => p%prev
   p%prev%next => p%next
   self%n = self%n - 1
@@ -113,7 +109,7 @@ END FUNCTION pop
 SUBROUTINE transfer (self, pool)
   class(particles_t):: self
   class(particles_t), pointer:: pool
-  class(particle_t), pointer:: p, next
+  type(particle_t), pointer:: p, next
   integer:: i
   p => self%head%next
   do i=1,self%n
