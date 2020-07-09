@@ -56,7 +56,6 @@ SUBROUTINE init (self, name)
   ! An optional namelist can be used to turn debugging on
   !-----------------------------------------------------------------------------
   call trace%begin('dispatcher5_t%init')
-  call mpi_mesg%init
   rewind (io%input)
   read(io%input, dispatcher5_params, iostat=iostat)
   write (io%output, dispatcher5_params)

@@ -42,8 +42,7 @@ CONTAINS
 
 !===============================================================================
 !> Choose and initialize the dispatcher method.  For full flexibility, default
-!> parameters for mpi_mesg_mod are first set, and may then be overwritten in the
-!> mpi_mesg%init call.
+!> parameters for mpi_mesg_mod are first set, and may then be overwritten
 !===============================================================================
 SUBROUTINE init (self)
   class(dispatcher_t):: self
@@ -79,7 +78,6 @@ SUBROUTINE init (self)
   ! Pass the method choice on to task_method_t, in case it has an impact
   !-----------------------------------------------------------------------------
   task_mesg%method = method
-  call mpi_mesg%init
   call trace%end()
 END SUBROUTINE init
 

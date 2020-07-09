@@ -1,40 +1,56 @@
 !===============================================================================
+!> Dependence hierarchy of main service modules, initialize here:
+!>
+!> io
+!>   mpi
+!>     trace
+!>       timer
+!>         omp_lock
+!>           omp_timer
+!>           omp
 !===============================================================================
 MODULE setup_mod
-  USE io_mod
-  USE trace_mod
+  USE omp_mod
   USE mpi_mod
+  USE io_mod
+  USE omp_lock_mod
+  USE timer_mod
+  USE trace_mod
+  USE mpi_mesg_mod
+  USE scaling_mod
   USE eos_mod
   USE opacity_mod
-  USE scaling_mod
-  USE timer_mod
   USE download_mod
   implicit none
   private
-
   type, public:: setup_t
     contains
     procedure:: init
     procedure:: end
   end type
   type(setup_t), public:: setup
-
 CONTAINS
 
 !===============================================================================
-!> Initialise basic components.
+!> Initialise basic components.  Note that since omp_lock_mod uses unit numbers
+!> and directory names defined by io_mod and stored in io_unit_mod, its init
+!> must called after io%init.
 !===============================================================================
 SUBROUTINE init (self)
   class(setup_t):: self
   !.............................................................................
+  call omp%init                         ! OpenMP startup
   call mpi%init                         ! MPI startup
   call io%init                          ! I/O system
-  call trace%begin ('setup_t%init')
+  call omp_lock%init ('setup')          ! needs omp, io%init
+  call timer%init                       ! needs locks
+  call mpi_mesg%init                    ! needs locks
+  call trace%begin ('setup_t%init')     ! needs timer
   call scaling%init                     ! Scaling to code units
   call eos%init                         ! Equation-of-state
   call opacity%init                     ! Opacity
   call download%init                    ! Downloading and interpolation parameters
-  call trace%end()
+  call trace%end ()
 END SUBROUTINE init
  
 !===============================================================================

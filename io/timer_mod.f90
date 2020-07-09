@@ -87,30 +87,56 @@ SUBROUTINE init (self)
   integer:: ignore, i
   real(8):: sec_per_report=10.
   namelist /timer_params/ sec_per_report, min_fraction, verbose, detailed
-  !.............................................................................
-  !$omp critical (timer_cr)
-  if (first_time) then
-    rewind (io_unit%input)
-    read (io_unit%input, timer_params, iostat=ignore)
-    !call io%namelist_warning ('timer_params', iostat)
-    write (io_unit%nml, timer_params)
-    self%sec_per_report = sec_per_report
-    !$omp atomic write
-    timer%next_report_sec = wallclock() + sec_per_report
-    omp%nthreads = max(1,omp%nthreads)
-    timer%detailed = detailed
-    allocate (timers(0:omp%nthreads-1))
-    allocate (self%lock)
-    call self%lock%init ('timr')
-    first_time = .false.
+  !.............................................................................¨
+  if (omp_in_parallel()) then
+    !$omp critical (timer_cr)
+    if (first_time) then
+      rewind (io_unit%input)
+      read (io_unit%input, timer_params, iostat=ignore)
+      !call io%namelist_warning ('timer_params', iostat)
+      write (io_unit%nml, timer_params)
+      self%sec_per_report = sec_per_report
+      !$omp atomic write
+      timer%next_report_sec = wallclock() + sec_per_report
+      omp%nthreads = max(1,omp%nthreads)
+      timer%detailed = detailed
+      allocate (timers(0:omp%nthreads-1))
+      allocate (self%lock)
+      call self%lock%init ('timr')
+      first_time = .false.
+    end if
+    !$omp end critical (timer_cr)
+    ntimer = 0
+    do i=0,omp%nthreads-1
+      timers(i)%calls(:) = 0
+      timers(i)%start(:) = 0d0
+      timers(i)%total(:) = 0d0
+    end do
+  else
+    if (first_time) then
+      rewind (io_unit%input)
+      read (io_unit%input, timer_params, iostat=ignore)
+      !call io%namelist_warning ('timer_params', iostat)
+      write (io_unit%nml, timer_params)
+      self%sec_per_report = sec_per_report
+      !$omp atomic write
+      timer%next_report_sec = wallclock() + sec_per_report
+      omp%nthreads = max(1,omp%nthreads)
+      timer%detailed = detailed
+      allocate (timers(0:omp%nthreads-1))
+      allocate (self%lock)
+      call self%lock%init ('timr')
+      first_time = .false.
+    end if
+    ntimer = 0
+    !$omp parallel
+    do i=0,omp%nthreads-1
+      timers(i)%calls(:) = 0
+      timers(i)%start(:) = 0d0
+      timers(i)%total(:) = 0d0
+    end do
+    !$omp end parallel
   end if
-  !$omp end critical (timer_cr)
-  ntimer = 0
-  do i=0,omp%nthreads-1
-    timers(i)%calls(:) = 0
-    timers(i)%start(:) = 0d0
-    timers(i)%total(:) = 0d0
-  end do
 END SUBROUTINE init
 
 !===============================================================================

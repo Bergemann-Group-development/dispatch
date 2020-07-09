@@ -288,7 +288,6 @@ SUBROUTINE init (self, name)
   io_unit%top    = top
   io_unit%do_validate = do_validate
   stdout = io_unit%output
-  call timer%init
   call io%counter%init (0)
 contains
   !-----------------------------------------------------------------------------

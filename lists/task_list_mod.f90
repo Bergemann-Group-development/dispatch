@@ -90,7 +90,6 @@ SUBROUTINE init (self, name)
   !-----------------------------------------------------------------------------
   call trace%begin('task_list_t%init')
   call self%list_t%init (name)
-  call mpi_mesg%init
   rewind (io%input)
   read(io%input, task_list_params, iostat=iostat)
   call io%namelist_warning ('task_list_params', iostat)

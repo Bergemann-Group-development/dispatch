@@ -76,12 +76,6 @@ SUBROUTINE init (self, name)
   read(io%input, dispatcher0_params, iostat=iostat)
   call io%namelist_warning ('dispatcher0_params', iostat)
   write (io%namelist, dispatcher0_params)
-  call mpi_mesg%init
-  !-----------------------------------------------------------------------------
-  ! Bootstrap locks; first initializing the one static lock, then allocating
-  ! and initializing this first pointer lock
-  !-----------------------------------------------------------------------------
-  call omp_lock%init ('dispather0_t%init')
   allocate (self%lock)
   call self%lock%init ('dispather0_t%init')
   call trace_end ()

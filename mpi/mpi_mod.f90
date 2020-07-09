@@ -22,7 +22,7 @@
 !> call mpi%end                         ! closes MPI
 !>
 !> Too see which variables and procedures are inside mpi%, just look below!
-!>
+!>  
 !===============================================================================
 MODULE mpi_mod
   USE omp_mod
@@ -96,10 +96,10 @@ SUBROUTINE init (self, mpi_dims, dims)
   '$Id$ mpi/mpi_mod.f90'
   !-----------------------------------------------------------------------------
   if (self%ok) return
+  call trace%begin ('mpi_t%init')
   if (first_time) then
     first_time = .false.
     call init_mpi (self)
-    call omp%init
     call detect_cores
 #ifdef MPI
     if (mpi%mode == MPI_THREAD_MULTIPLE) then
@@ -151,6 +151,7 @@ SUBROUTINE init (self, mpi_dims, dims)
   !-----------------------------------------------------------------------------
   flush (io_unit%output)
   call self%barrier (delay=0.1)
+  call trace%end ()
 END SUBROUTINE init
 
 !===============================================================================
@@ -190,6 +191,7 @@ SUBROUTINE init_mpi (self)
 !-------------------------------------------------------------------------------
 !  Start up MPI and get number of nodes and our node rank
 !-------------------------------------------------------------------------------
+  call trace%begin ('mpi_t%init_mpi')
 #ifdef MPI
 #ifdef __GFORTRAN__
   call MPI_INIT_THREAD (MPI_THREAD_SINGLE, mpi_provided, mpi_err)
@@ -229,6 +231,7 @@ SUBROUTINE init_mpi (self)
   master = mpi_master
   print*,'MPI is not enabled!'
 #endif
+  call trace%end ()
 END SUBROUTINE init_mpi
 
 !===============================================================================
