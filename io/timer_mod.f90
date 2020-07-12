@@ -32,6 +32,7 @@ MODULE timer_mod
     real(8):: bytes_recv=0.0_8
     real(8):: sec_per_report=10d0
     real(8):: time, prev=0d0
+    real(8):: t_particles=0d0, n_particles=0d0
     integer(8):: n_master(4)=0
     integer(8):: n_update=0
     integer(8):: n_recv=0_8
@@ -409,6 +410,10 @@ contains
       timer%mem_hit/real(max(1,timer%mem_test)), &
       timer%busy_time/max(timer%spin_time + timer%busy_time,1d-30), &
       timer%n_cheap/real(timer%n_cheap+timer%n_expensive+1)
+    if (timer%n_particles > 0d0) then
+      write (unit,'(" particles:",9p,f6.1," core-ns/p-upd")') &
+        timer%t_particles/timer%n_particles
+    end if
     flush (unit)
   end subroutine write_to
 END SUBROUTINE real_print

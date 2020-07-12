@@ -37,6 +37,7 @@ MODULE particle_solver_mod
   USE dust_mod
   USE scaling_mod
   USE units_mod
+  USE timer_mod
   USE omp_mod
   implicit none
   private
@@ -391,14 +392,6 @@ SUBROUTINE update (self)
       patch%id, patch%time, patch%dtime, &
       patch%fmaxval(patch%u_phase), patch%fminval(patch%u_phase)
   end if
-  !-----------------------------------------------------------------------------
-  ! Allocate00 a new exports list, while the previous one may still be in use
-  !-----------------------------------------------------------------------------
-  allocate (exports(n_bin))
-  do bin=1,n_bin
-    paid = [patch%id,0,0,0,int(bin)]
-    call exports(bin)%init (paid)
-  end do
   !call self%particles%lock%set ('update')
   time(1) = wallclock()
   !-----------------------------------------------------------------------------
@@ -408,7 +401,6 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Allocate array for number of particles per cell-bin
   !-----------------------------------------------------------------------------
-  !associate (dust=>self%dust)
   m = patch%gn
   allocate (vg(3,m(1),m(2),m(3)))
   call io%bits_mem (storage_size(vg), &
@@ -431,6 +423,15 @@ SUBROUTINE update (self)
   end do
   end do
   !-----------------------------------------------------------------------------
+  ! Allocate00 a new exports list, while the previous one may still be in use
+  !-----------------------------------------------------------------------------
+  wc = wallclock()
+  allocate (exports(n_bin))
+  do bin=1,n_bin
+    paid = [patch%id,0,0,0,int(bin)]
+    call exports(bin)%init (paid)
+  end do
+  !-----------------------------------------------------------------------------
   ! Import from other patches
   !-----------------------------------------------------------------------------
   call self%import
@@ -443,7 +444,6 @@ SUBROUTINE update (self)
   nm = 0
   ds = minval(patch%ds, mask=patch%mesh%n > 1)
   call self%dust%consistency ('before KDK loop')
-  wc = wallclock()
   times = 0d0
   wc1 = wc
   n_min = particles_per_bin*min_fraction
@@ -458,6 +458,10 @@ SUBROUTINE update (self)
         wc = wallclock()
       end if
       particles => self%particles(i1,i2,i3,bin)
+      associate (n_particles => timer%n_particles)
+      !$omp atomic update
+      n_particles = n_particles + particles%n
+      end associate
       paid = particles%id
       ip = ip + particles%n
       d = patch%mem(i1,i2,i3,patch%idx%d,patch%it,1)
@@ -546,9 +550,25 @@ SUBROUTINE update (self)
     end do
     end do
   end do
+  !-----------------------------------------------------------------------------
+  ! Briefly lock self%xports and copy in particles from the scratch exports
+  !-----------------------------------------------------------------------------
+  call self%lock%set ('copy')
+  do bin=1,n_bin
+    exportp => self%exports(bin)
+    call exports(bin)%transfer (exportp)
+  end do
+  call self%lock%unset ('copy')
+  deallocate (exports)
+  !-----------------------------------------------------------------------------
+  wc = wallclock()-wc
+  associate (t_particles => timer%t_particles)
+  !$omp atomic update
+  t_particles = t_particles + wc
+  end associate
+  !-----------------------------------------------------------------------------
   np = self%np
   if (verbose > 0) then
-    wc = wallclock()-wc
     write (stdlog,'(2i12,f6.2,6p,2f6.2," mus/p",0p,2f6.2)') &
     np, nk, wc, wc/np, wc/nk, real(nm)/nk, real(no)/nk
     call self%dust%consistency ('after KDK + export')
@@ -577,16 +597,6 @@ SUBROUTINE update (self)
     !---------------------------------------------------------------------------
   end if
   self%time = self_time 
-  !-----------------------------------------------------------------------------
-  ! Briefly lock self%xports and copy in particles from the scratch exports
-  !-----------------------------------------------------------------------------
-  call self%lock%set ('copy')
-  do bin=1,n_bin
-    exportp => self%exports(bin)
-    call exports(bin)%transfer (exportp)
-  end do
-  call self%lock%unset ('copy')
-  deallocate (exports)
   !-----------------------------------------------------------------------------
   ! Do dust evolution after move, since we need the particle timestep values
   !-----------------------------------------------------------------------------
