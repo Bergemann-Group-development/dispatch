@@ -89,7 +89,7 @@ MODULE io_mod
     procedure, nopass:: print_hl
   end type
   type(io_t), public:: io
-  public mch, io_unit, stderr, stdout, stdin
+  public mch, io_unit, stderr, stdout, stdin, stdlog
 CONTAINS
 
 !===============================================================================
@@ -239,6 +239,7 @@ SUBROUTINE init (self, name)
     else
       io_unit%log = io_unit%mpi
     end if
+    stdlog = io_unit%log
     !---------------------------------------------------------------------------
     ! For non-master MPI ranks, redirect log file output to rundir/rank_rrrrr.log
     !---------------------------------------------------------------------------
@@ -590,7 +591,7 @@ SUBROUTINE assert (ok, message)
   character(len=*):: message
   !.............................................................................
   if (.not.ok) &
-    call mpi%abort (message)
+    call io%abort (message)
 END SUBROUTINE assert
 
 !===============================================================================

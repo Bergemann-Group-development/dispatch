@@ -20,6 +20,6 @@ MODULE io_unit_mod
   end type
   integer, parameter, public:: mch=120
   type(io_unit_t), public:: io_unit
-  integer, public:: stdout=6, stderr=6, stdin=1
-  !$omp threadprivate (io_unit)
+  integer, public:: stdout=6, stderr=6, stdin=1, stdlog=4
+  !$omp threadprivate (io_unit,stdlog)
 END MODULE io_unit_mod
