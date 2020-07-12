@@ -9,6 +9,7 @@ MODULE omp_mod
   logical, save:: omp_trace=.false.
   type, public:: omp_t
     integer:: thread=0
+    integer:: thread_global=0, nthreads_global=0
     integer:: ncores=1
     integer:: nthreads=1
     integer:: nsockets=1

@@ -147,6 +147,13 @@ SUBROUTINE init (self, mpi_dims, dims)
   call mpi%file_size%init (0)
   call mpi%end_counter%init (0)
   !-----------------------------------------------------------------------------
+  ! Number all cores
+  !-----------------------------------------------------------------------------
+  !$omp parallel
+  omp%nthreads_global = mpi%size*omp%nthreads
+  omp%thread_global = 1 + omp%thread + mpi%rank*omp%nthreads
+  !$omp end parallel
+  !-----------------------------------------------------------------------------
   ! Make sure output from startup is finished
   !-----------------------------------------------------------------------------
   flush (io_unit%output)
