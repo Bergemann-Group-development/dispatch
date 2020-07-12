@@ -61,7 +61,6 @@ MODULE dust_mod
     integer(2), pointer, contiguous:: na(:,:,:,:) => null()  ! added per bin
     integer(2), pointer, contiguous:: np(:,:,:,:) => null()  ! number per bin
     real      , pointer, contiguous:: k (:,:)     => null()  ! kernel
-    real      , pointer, contiguous:: vg(:,:,:,:) => null()  ! gas velocity
     class(gpatch_t), pointer:: patch          ! pointer to the MHD patch
     type(particles_t), pointer:: particles(:)
     type(particles_t), pointer:: sorted(:,:,:,:)
