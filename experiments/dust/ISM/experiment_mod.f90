@@ -34,7 +34,7 @@ SUBROUTINE init (self)
   integer             :: iostat
   real, save          :: d0, e0, csound
   logical, save       :: first_time=.true.
-  real, pointer, dimension(:,:,:):: d, e, px, py, pz
+  real, pointer, dimension(:,:,:), contiguous:: d, e, px, py, pz
   real, pointer, dimension(:,:,:,:):: p
   namelist /experiment_params/ verbose, T_K, gamma
   !-----------------------------------------------------------------------------
