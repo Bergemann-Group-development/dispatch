@@ -34,7 +34,7 @@ SUBROUTINE init (self)
   integer             :: iostat
   real, save          :: d0, e0, csound
   logical, save       :: first_time=.true.
-  real, pointer, dimension(:,:,:), contiguous:: d, e, px, py, pz
+  real, pointer, dimension(:,:,:):: d, e, px, py, pz
   real, pointer, dimension(:,:,:,:):: p
   namelist /experiment_params/ verbose, T_K, gamma
   !-----------------------------------------------------------------------------
@@ -80,8 +80,11 @@ SUBROUTINE init (self)
   d => self%mem(:,:,:,self%idx%d,self%it,1)
   e => self%mem(:,:,:,self%idx%e,self%it,1)
   p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
-  p = self%forces%force%t_turb*d0* &
-      self%forces%force%selected (self%time, d, p, d, d, d, self%mesh)
+  !-----------------------------------------------------------------------------
+  ! Use pre_update to get access to the force (ifort 20.1 problem circumvent)
+  !-----------------------------------------------------------------------------
+  call self%pre_update
+  p = p + d0*self%force_per_unit_mass*self%forces%force%t_turb
   if (self%kind(1:6) == 'ramses') then
     px => self%mem(:,:,:,self%idx%px,self%it,1)
     py => self%mem(:,:,:,self%idx%py,self%it,1)

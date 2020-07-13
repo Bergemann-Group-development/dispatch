@@ -1,0 +1,113 @@
+================================================================================
+ MPI implementation provides support for simultaneous MPI calls by different threads
+================================= io_t%init ====================================
+ n_socket =   1
+   n_core =  20
+ n_thread =  10
+   n_rank =   1
+  CODE UNITS:   (cgs):
+      length:   3.086E+18         pc:  1.000E+00
+    velocity:   1.000E+05       km/s:  1.000E+00
+     density:   4.817E-21       n_H2:  1.200E+03
+        mass:   1.416E+35       Msun:  7.118E+01
+        time:   3.086E+13        Myr:  9.780E-01
+    pressure:   4.817E-11
+      energy:   1.416E+45
+     gravity:   3.062E-01
+ temperature:   1.211E+02
+====================== microphysics/eos/ideal/eos_mod ==========================
+=============== cartesian_t%init: Cartesian patch arrangement ==================
+ time to initialize nbor lists:  20.3 ms,  
+ number of tasks in task list:     216
+ OpenMP stacksize default: 50.0 MB
+ memory shape:  20  20  20   5   5   1
+ variable indices:   d: 1  p1: 2  p2: 3  p3: 4  e: 5 :
+turbulence: id, t_turb, nrand, fpow =     1   -0.2250  32   19.4746
+turbulence: id, t_turb, nrand, fpow =     1    0.2250  32   20.1421
+ estimated memory for particles (105 bytes):             4.153 GB
+ process memory allocated:   2.000 GB
+ process memory allocated:   3.000 GB
+ process memory allocated:   4.000 GB
+ process memory allocated:   5.000 GB
+ patches per process:     216
+======================= dispatcher0: begin execution ===========================
+ memory per process:   5.103 GB
+                               procedure       calls          time       time(%)      s/call  locks(%)
+                       list_t%init_nbors       216.          0.194           0.2    0.000899       0.0  
+                     forces_t%pre_update      3.026E+03      0.106           0.1    0.000035       0.0  
+                      force_t%turbulence      3.026E+03       4.31           4.6    0.001424       0.0  
+     particle_solver_t%initial_condition       216.           12.6          13.4    0.058398       0.0  
+                   dispatcher0_t%execute       0.00          0.285           0.3    0.284519       0.0  
+                 dispatcher0_t%update(1)      1.434E+06       6.00           6.4    0.000004       0.0  
+                download_t%download_link      2.810E+03      0.349           0.4    0.000124       0.0  
+                  download_t%same_linear      7.306E+04       2.60           2.8    0.000036       0.0  
+                         solver_t%update      2.800E+03      0.288           0.3    0.000103       0.0  
+                             hd_t%update      2.810E+03       5.85           6.2    0.002083       0.0  
+                particle_solver_t%update      2.800E+03       51.5          55.0    0.018408       0.0  
+                particle_solver_t%import      2.807E+03       5.84           6.2    0.002081       0.0  
+                      list_t%check_nbors      2.800E+03      0.160           0.2    0.000057       0.0  
+                    dispatcher0%no_queue      1.430E+06       3.54           3.8    0.000002       0.0  
+            TOTAL updates, thread time          1.151E+07     93.8         100.            4.28E-02 time advance       8.70 core-mus/cell-upd      10. wall sec
+ MPI recv:      0.0 MB/s     0.000 MB/mesg       0 nq_send_max       0 nq_recv_max   0.000   0.000 max, aver latency   0.00 f_unpk   0.00 f_mem   0.45 f_que   0.00 f_cheap
+ particles:  97.8 core-ns/p-upd
+ total lock waiting time =   0.48     core-s
+                               procedure       calls          time       time(%)      s/call  locks(%)
+                     forces_t%pre_update      3.719E+03      0.114           0.1    0.000031       0.0  
+                      force_t%turbulence      3.719E+03      0.177           0.2    0.000048       0.0  
+                download_t%download_link      3.719E+03      0.351           0.4    0.000094       0.0  
+                  download_t%same_linear      9.669E+04       3.22           3.2    0.000033       0.0  
+                         solver_t%update      3.719E+03      0.310           0.3    0.000083       0.0  
+                             hd_t%update      3.718E+03       7.43           7.4    0.002000       0.0  
+                particle_solver_t%update      3.720E+03       77.7          77.9    0.020898       0.0  
+                particle_solver_t%import      3.718E+03       10.1          10.1    0.002723       0.0  
+                      list_t%check_nbors      3.719E+03      0.223           0.2    0.000060       0.0  
+            TOTAL updates, thread time          1.523E+07     99.8         100.            4.67E-02 time advance       6.56 core-mus/cell-upd      20. wall sec
+ MPI recv:      0.0 MB/s     0.000 MB/mesg       0 nq_send_max       0 nq_recv_max   0.000   0.000 max, aver latency   0.00 f_unpk   0.00 f_mem   1.00 f_que   0.00 f_cheap
+ particles: 104.0 core-ns/p-upd
+ total lock waiting time =   0.26     core-s
+                               procedure       calls          time       time(%)      s/call  locks(%)
+                     forces_t%pre_update      3.483E+03      0.106           0.1    0.000030       0.0  
+                      force_t%turbulence      3.483E+03      0.163           0.2    0.000047       0.0  
+                download_t%download_link      3.483E+03      0.321           0.3    0.000092       0.0  
+                  download_t%same_linear      9.059E+04       2.99           3.0    0.000033       0.0  
+                         solver_t%update      3.485E+03      0.280           0.3    0.000080       0.0  
+                             hd_t%update      3.483E+03       6.91           6.9    0.001985       0.0  
+                particle_solver_t%update      3.484E+03       78.0          78.0    0.022392       0.0  
+                particle_solver_t%import      3.482E+03       10.9          10.9    0.003134       0.0  
+                      list_t%check_nbors      3.485E+03      0.203           0.2    0.000058       0.0  
+            TOTAL updates, thread time          1.427E+07     100.         100.            3.92E-02 time advance       7.01 core-mus/cell-upd      30. wall sec
+ MPI recv:      0.0 MB/s     0.000 MB/mesg       0 nq_send_max       0 nq_recv_max   0.000   0.000 max, aver latency   0.00 f_unpk   0.00 f_mem   1.00 f_que   0.00 f_cheap
+ particles: 107.9 core-ns/p-upd
+ total lock waiting time =   0.22     core-s
+                               procedure       calls          time       time(%)      s/call  locks(%)
+                     forces_t%pre_update      3.284E+03      0.101           0.1    0.000031       0.0  
+                      force_t%turbulence      3.284E+03      0.153           0.2    0.000047       0.0  
+                download_t%download_link      3.284E+03      0.303           0.3    0.000092       0.0  
+                  download_t%same_linear      8.535E+04       2.82           2.8    0.000033       0.0  
+                         solver_t%update      3.283E+03      0.263           0.3    0.000080       0.0  
+                             hd_t%update      3.285E+03       6.56           6.6    0.001997       0.0  
+                particle_solver_t%update      3.283E+03       77.8          77.8    0.023698       0.0  
+                particle_solver_t%import      3.285E+03       11.6          11.6    0.003544       0.0  
+                      list_t%check_nbors      3.282E+03      0.189           0.2    0.000058       0.0  
+            TOTAL updates, thread time          1.346E+07     99.9         100.            3.43E-02 time advance       7.43 core-mus/cell-upd      40. wall sec
+ MPI recv:      0.0 MB/s     0.000 MB/mesg       0 nq_send_max       0 nq_recv_max   0.000   0.000 max, aver latency   0.00 f_unpk   0.00 f_mem   1.00 f_que   0.00 f_cheap
+ particles: 111.3 core-ns/p-upd
+ total lock waiting time =   0.21     core-s
+                               procedure       calls          time       time(%)      s/call  locks(%)
+                     forces_t%pre_update      3.136E+03      9.532E-02       0.1    0.000030       0.0  
+                      force_t%turbulence      3.136E+03      0.146           0.1    0.000047       0.0  
+                download_t%download_link      3.136E+03      0.289           0.3    0.000092       0.0  
+                  download_t%same_linear      8.154E+04       2.69           2.7    0.000033       0.0  
+                         solver_t%update      3.136E+03      0.248           0.2    0.000079       0.0  
+                             hd_t%update      3.135E+03       6.24           6.2    0.001990       0.0  
+                particle_solver_t%update      3.136E+03       78.2          78.2    0.024942       0.0  
+                particle_solver_t%import      3.134E+03       11.8          11.8    0.003770       0.0  
+                      list_t%check_nbors      3.137E+03      0.180           0.2    0.000057       0.0  
+            TOTAL updates, thread time          1.284E+07     100.         100.            2.93E-02 time advance       7.79 core-mus/cell-upd      50. wall sec
+ MPI recv:      0.0 MB/s     0.000 MB/mesg       0 nq_send_max       0 nq_recv_max   0.000   0.000 max, aver latency   0.00 f_unpk   0.00 f_mem   1.00 f_que   0.00 f_cheap
+ particles: 114.4 core-ns/p-upd
+ total lock waiting time =   0.21     core-s
+first finish at run time =   52.73    
+average wait_for time:  0.00E+00, with  0.00E+00 waits
+average wait_all time:  0.00E+00, with  0.00E+00 waits
+ wall time:  52.3 s,  7.18 mus/upd,  7.29E+07 updates/process,   1 process,    10 cores/process
