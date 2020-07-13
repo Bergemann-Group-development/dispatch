@@ -13,7 +13,7 @@
 
 !--- Input/Output parameters ---------------------------------------------------
 &io_params              verbose=0 do_trace=f omp_trace=t
-                        do_output=t method='legacy' format=10
+                        do_output=f method='legacy' format=10
                         guard_zones=f time_derivs=0 /
 &out_params             end_time=0.101 out_time=0.1 print_every=300 /
 &timer_params           sec_per_report=10 /

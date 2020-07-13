@@ -569,7 +569,7 @@ SUBROUTINE end_game (self, task)
     ! Count tasks that have gone past io%end_time with both task%time and
     ! task%out_next, and increment mpi%end_counter until done
     !---------------------------------------------------------------------------
-    if (task%out_next > io%end_time) then
+    if (task%out_next > io%end_time .or. .not.io%do_output) then
       count = count+1                                 ! count finished tasks
       if (count == self%na) then
         end_count = mpi%end_counter%update(+1)
