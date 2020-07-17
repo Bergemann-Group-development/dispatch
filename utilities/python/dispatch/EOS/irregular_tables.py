@@ -31,6 +31,9 @@ class linear_scale_c(object):
     def print(self):
         print('{}: min={:10.3} step:{:10.3} n:{} max:{:10.3}'.format(
             self.name,self.min,self.step,self.n,self.max))
+    def write(self,fd):
+        fd.write_record(np.int(self.n))
+        fd.write_record(np.array([self.min,self.step,self.max],dtype=np.float32))
 
 class table_c(object):
     """ Table class, the name and values of the dependent variable, 
@@ -45,6 +48,11 @@ class table_c(object):
         self.name=name
         self.interpolate=scipy.interpolate.interp1d(
             scale.values,values,self.kind,fill_value=self.fill_value)
+    def write(self,fd):
+        fd.write_record(len(self.name))
+        fd.write_record(self.name)
+        fd.write_record(len(self.values))
+        fd.write_record(self.values)
 
 class irregular_table(object):
     """ Template EOS object, with methods to
@@ -64,7 +72,7 @@ class irregular_table(object):
         self.variables={}
 
     def set_independent1(self,id,n,min,step):
-        """ Define values of the independent variable """
+        """ Define values of the 2nd independent variable """
         self.scales[id]=linear_scale_c('v',n,min,step)
         self.scale1.accumulate(n,min,step)
         self.table[id]={}
@@ -86,22 +94,6 @@ class irregular_table(object):
         """ Return x,y for y(x) at log density and variable indices ir,iv """
         table=self.table[ir][iv]
         return table.scale.values,table.values
-
-    def lookup1(self,v,x,y):
-        """ Lookup a table(x,y) value for variable v
-            Serial version (a few tens of mus/pt)
-        """
-        i,p=self.index(x)
-        if type(i) is np.ndarray:
-            value=np.zeros_like(x)
-            for j,k in enumerate(i):
-                value[j]=((1-p[j])*self.table[k  ][v].interpolate(y[j])+
-                             p[j] *self.table[k+1][v].interpolate(y[j]))
-            return value
-        else:
-            v1=self.table[i  ][v].interpolate(y)
-            v2=self.table[i+1][v].interpolate(y)
-            return (1-p)*v1+p*v2
 
     def lookup(self,v,x,y,verbose=0):
         """ Lookup a table(x,y) value for variable v
@@ -133,3 +125,13 @@ class irregular_table(object):
             v1=self.table[ix  ][v].interpolate(y)
             v2=self.table[ix+1][v].interpolate(y)
             return (1-px)*v1+px*v2
+        
+    def write(self,file):
+        with scipy.io.FortranFile(file,'w') as fd:
+            fd.write_record(self.nv)
+            self.scale0.write(fd)
+            self.scale1.write(fd)
+            for id in range(self.scale0.n):
+                self.scales[id].write(fd)
+                for iv in range(self.nv):
+                    self.table[id][iv].write(fd)

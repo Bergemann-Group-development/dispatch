@@ -6,7 +6,7 @@ class stagger(irregular_table):
     """ Read a STAGGER code EOS table, storing the information
         in a generic format, consisting of a linear scale of log
         density values, a dictionary with tables for each density,
-        and an 'extra' dictionary with non-mandatory info.
+        and an 'info' dictionary with non-mandatory extra information.
     """
     def __init__(self,file='table.dat'):
         self.name=file
