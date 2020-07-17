@@ -5,8 +5,8 @@
    n_core =   6
  n_thread =   0
    n_rank =   1
- itable:  1.25 s,  46.3 ns/upd,  2.70E+07 updates/process,   1 process,     1 core/process 
- itable:  498. ms,  18.4 ns/upd,  2.70E+07 updates/process,   1 process,     1 core/process 
- itable:  493. ms,  18.2 ns/upd,  2.70E+07 updates/process,   1 process,     1 core/process 
- itable:  497. ms,  18.4 ns/upd,  2.70E+07 updates/process,   1 process,     1 core/process 
- itable:  498. ms,  18.4 ns/upd,  2.70E+07 updates/process,   1 process,     1 core/process 
+ itable:  1.07 s,  39.8 ns/upd,  2.70E+07 updates/process,   1 process,     1 core/process 
+ itable:  1.00 s,  37.2 ns/upd,  2.70E+07 updates/process,   1 process,     1 core/process 
+ itable:  1.00 s,  37.2 ns/upd,  2.70E+07 updates/process,   1 process,     1 core/process 
+ itable:  1.00 s,  37.3 ns/upd,  2.70E+07 updates/process,   1 process,     1 core/process 
+ itable:  1.00 s,  37.3 ns/upd,  2.70E+07 updates/process,   1 process,     1 core/process 

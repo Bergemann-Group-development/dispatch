@@ -112,10 +112,10 @@ SUBROUTINE init (self, file)
   call trace%end ()
 END SUBROUTINE init
 
-SUBROUTINE lookup1 (self, x1, x2, v)
+SUBROUTINE lookup1 (self, iv, x1, x2, v)
   class(itable_t):: self
   integer:: iv
-  real:: x1(:), x2(:), v(:,:)
+  real:: x1(:), x2(:), v(:)
   !.............................................................................
   real   , pointer, contiguous:: p1(:), p2(:), a(:,:)
   integer, pointer, contiguous:: q1(:), q2(:)
@@ -140,7 +140,6 @@ SUBROUTINE lookup1 (self, x1, x2, v)
   !-----------------------------------------------------------------------------
   ! Pick up corner values in a loop with indirect addressing (slow)
   !-----------------------------------------------------------------------------
-  do iv=1,self%nv
     do i=1,n
       values1 => self%values(q1(i)  )%v(iv,:)
       values2 => self%values(q1(i)+1)%v(iv,:)
@@ -153,15 +152,14 @@ SUBROUTINE lookup1 (self, x1, x2, v)
     ! Bilinear interpolation
     !---------------------------------------------------------------------------
     do i=1,n
-      v(i,iv) = (1.-p1(i))*(a(i,1)*(1.-p2(i))+a(i,2)*p2(i)) &
+      v(i) = (1.-p1(i))*(a(i,1)*(1.-p2(i))+a(i,2)*p2(i)) &
                   + p1(i) *(a(i,3)*(1.-p2(i))+a(i,4)*p2(i))
     end do
-  end do
   deallocate (p1, p2, q1, q2, a)
   call trace%end (itimer)
 END SUBROUTINE lookup1
 
-SUBROUTINE lookup2 (self, x1, x2, v)
+SUBROUTINE lookup2 (self, iv, x1, x2, v)
   class(itable_t):: self
   integer:: iv
   real:: x1(:,:), x2(:,:), v(:,:)
@@ -211,13 +209,14 @@ SUBROUTINE lookup2 (self, x1, x2, v)
   call trace%end (itimer)
 END SUBROUTINE lookup2
 
-SUBROUTINE lookup3 (self, x1, x2, v)
+SUBROUTINE lookup3 (self, iv, x1, x2, v)
   class(itable_t):: self
-  real:: x1(:,:,:), x2(:,:,:), v(:,:,:,:)
+  integer:: iv
+  real:: x1(:,:,:), x2(:,:,:), v(:,:,:)
   !.............................................................................
-  real   , pointer, contiguous:: p1(:), p2(:), a(:,:,:)
+  real   , pointer, contiguous:: p1(:), p2(:), a(:,:)
   integer, pointer, contiguous:: q1(:), q2(:)
-  integer:: i, n, iv, i2, n2, i3, n3, nv
+  integer:: i, n, i2, n2, i3, n3, nv
   integer, save:: itimer=0
   real, pointer, contiguous:: values1(:,:), values2(:,:)
   !-----------------------------------------------------------------------------
@@ -226,7 +225,7 @@ SUBROUTINE lookup3 (self, x1, x2, v)
   n2 = size(x1,2)
   n3 = size(x1,3)
   nv = self%nv
-  allocate (p1(n), p2(n), q1(n), q2(n), a(n,nv,4))
+  allocate (p1(n), p2(n), q1(n), q2(n), a(n,4))
   !-----------------------------------------------------------------------------
   ! Compute interpolation indices and weights in a vectorized loop
   !-----------------------------------------------------------------------------
@@ -246,21 +245,17 @@ SUBROUTINE lookup3 (self, x1, x2, v)
     do i=1,n
       values1 => self%values(q1(i)  )%v
       values2 => self%values(q1(i)+1)%v
-      do iv=1,nv
-        a(i,iv,1) = values1(iv,q2(i)  )
-        a(i,iv,2) = values1(iv,q2(i)+1)
-        a(i,iv,2) = values2(iv,q2(i)  )
-        a(i,iv,4) = values2(iv,q2(i)+1)
-      end do
+      a(i,1) = values1(iv,q2(i)  )
+      a(i,2) = values1(iv,q2(i)+1)
+      a(i,2) = values2(iv,q2(i)  )
+      a(i,4) = values2(iv,q2(i)+1)
     end do
     !---------------------------------------------------------------------------
     ! Bilinear interpolation
     !---------------------------------------------------------------------------
-    do iv=1,nv
-      do i=1,n
-        v(i,i2,i3,iv) = (1.-p1(i))*(a(i,iv,1)*(1.-p2(i))+a(i,iv,2)*p2(i)) &
-                          + p1(i) *(a(i,iv,3)*(1.-p2(i))+a(i,iv,4)*p2(i))
-      end do
+    do i=1,n
+       v(i,i2,i3) = (1.-p1(i))*(a(i,1)*(1.-p2(i))+a(i,2)*p2(i)) &
+                      + p1(i) *(a(i,3)*(1.-p2(i))+a(i,4)*p2(i))
     end do
   end do
   end do
