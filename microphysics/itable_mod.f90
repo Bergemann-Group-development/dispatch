@@ -140,6 +140,7 @@ SUBROUTINE lookup1 (self, iv, x1, x2, v)
   !-----------------------------------------------------------------------------
   ! Pick up corner values in a loop with indirect addressing (slow)
   !-----------------------------------------------------------------------------
+  do iv=1,self%nv
     do i=1,n
       values1 => self%values(q1(i)  )%v(iv,:)
       values2 => self%values(q1(i)+1)%v(iv,:)
@@ -153,8 +154,9 @@ SUBROUTINE lookup1 (self, iv, x1, x2, v)
     !---------------------------------------------------------------------------
     do i=1,n
       v(i) = (1.-p1(i))*(a(i,1)*(1.-p2(i))+a(i,2)*p2(i)) &
-                  + p1(i) *(a(i,3)*(1.-p2(i))+a(i,4)*p2(i))
+               + p1(i) *(a(i,3)*(1.-p2(i))+a(i,4)*p2(i))
     end do
+  end do
   deallocate (p1, p2, q1, q2, a)
   call trace%end (itimer)
 END SUBROUTINE lookup1
@@ -211,12 +213,11 @@ END SUBROUTINE lookup2
 
 SUBROUTINE lookup3 (self, iv, x1, x2, v)
   class(itable_t):: self
-  integer:: iv
   real:: x1(:,:,:), x2(:,:,:), v(:,:,:)
   !.............................................................................
   real   , pointer, contiguous:: p1(:), p2(:), a(:,:)
   integer, pointer, contiguous:: q1(:), q2(:)
-  integer:: i, n, i2, n2, i3, n3, nv
+  integer:: i, n, iv, i2, n2, i3, n3, nv
   integer, save:: itimer=0
   real, pointer, contiguous:: values1(:,:), values2(:,:)
   !-----------------------------------------------------------------------------
@@ -254,8 +255,8 @@ SUBROUTINE lookup3 (self, iv, x1, x2, v)
     ! Bilinear interpolation
     !---------------------------------------------------------------------------
     do i=1,n
-       v(i,i2,i3) = (1.-p1(i))*(a(i,1)*(1.-p2(i))+a(i,2)*p2(i)) &
-                      + p1(i) *(a(i,3)*(1.-p2(i))+a(i,4)*p2(i))
+      v(i,i2,i3) = (1.-p1(i))*(a(i,1)*(1.-p2(i))+a(i,2)*p2(i)) &
+                     + p1(i) *(a(i,3)*(1.-p2(i))+a(i,4)*p2(i))
     end do
   end do
   end do
