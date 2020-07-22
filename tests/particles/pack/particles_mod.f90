@@ -15,7 +15,7 @@ MODULE particles_mod
   private
   !--- link structure for particles ---
   type, public:: particle_t
-    type(particle_t), pointer:: next, prev  ! 2*8 = 16
+    class(particle_t), pointer:: next, prev ! 2*8 = 16
     real(8):: t                             !        8
     integer(2):: q(4)                       ! 4*2 =  8
     real:: r(3), v(3), w                    ! 7*4 = 28
@@ -23,13 +23,15 @@ MODULE particles_mod
     procedure:: init => init_particle
     procedure:: pack => pack_particle
   end type                                  ! sum:  60
-  type, extends(particle_t):: dressed_particle_t
+  type, public, extends(particle_t):: vparticle_t
     integer(8):: id
     real:: vg(3), d
+  contains
+    procedure:: pack => pack_vparticle
   end type
   !--- collection of particles ---
   type, public:: particles_t
-    type(particle_t), pointer:: head => null(), tail => null()
+    class(particle_t), pointer:: head => null(), tail => null()
     integer:: n = 0
     integer:: id(5)
   contains
@@ -61,15 +63,29 @@ SUBROUTINE init_particle (self)
 END SUBROUTINE init_particle
 
 !===============================================================================
-SUBROUTINE pack_particle (self, mpi_buffer)
+SUBROUTINE pack_particle (self, buffer)
   class(particle_t):: self
-  type(mpi_buffer_t):: mpi_buffer
-  call mpi_buffer%append (self%r)
-  call mpi_buffer%append (self%v)
-  call mpi_buffer%append (self%q)
-  call mpi_buffer%append (self%w)
-  call mpi_buffer%append (self%t)
+  type(mpi_buffer_t):: buffer
+  call buffer%append (self%r)
+  call buffer%append (self%v)
+  call buffer%append (self%q)
+  call buffer%append (self%w)
+  call buffer%append (self%t)
 END SUBROUTINE pack_particle
+
+!===============================================================================
+SUBROUTINE pack_vparticle (self, buffer)
+  class(vparticle_t):: self
+  type(mpi_buffer_t):: buffer
+  call buffer%append (self%r)
+  call buffer%append (self%v)
+  call buffer%append (self%q)
+  call buffer%append (self%w)
+  call buffer%append (self%t)
+  call buffer%append (self%d)
+  call buffer%append (self%vg)
+  call buffer%append (self%id)
+END SUBROUTINE pack_vparticle
 
 !===============================================================================
 !> Initialize particle list
@@ -89,7 +105,7 @@ END SUBROUTINE init
 !===============================================================================
 SUBROUTINE append (self, p)
   class(particles_t):: self
-  type(particle_t), pointer:: p
+  class(particle_t), pointer:: p
   !.............................................................................
   p%next => self%tail
   p%prev => self%tail%prev
@@ -162,7 +178,7 @@ END FUNCTION pop
 SUBROUTINE transfer (self, pool)
   class(particles_t):: self
   type(particles_t), pointer:: pool
-  type(particle_t), pointer:: p, next
+  class(particle_t), pointer:: p, next
   integer:: j
   !.............................................................................
   p => self%head%next
@@ -209,10 +225,10 @@ SUBROUTINE dump (self)
 END SUBROUTINE dump
 
 !===============================================================================
-SUBROUTINE pack_particles (self, mpi_buffer)
+SUBROUTINE pack_particles (self, mpi_buffer, viz_buffer)
   class(particles_t):: self
   class(particle_t), pointer:: p
-  type(mpi_buffer_t):: mpi_buffer
+  type(mpi_buffer_t):: mpi_buffer, viz_buffer
   integer(2), allocatable:: qp(:,:), qs(:,:)
   integer(8), allocatable:: id(:)
   real, allocatable:: rp(:,:), vp(:,:), rs(:,:), vs(:,:), vg(:,:), ds(:)
@@ -229,13 +245,14 @@ SUBROUTINE pack_particles (self, mpi_buffer)
   !-----------------------------------------------------------------------------
   do i=1,n
     select type (p)
-    type is (dressed_particle_t)
+    type is (vparticle_t)
       ns = ns+1
     type is (particle_t)
       np = np+1
     end select
     p => p%next
   end do
+  !print *,'counts(1):',np,ns
   !-----------------------------------------------------------------------------
   ! Allocate and fill buffers
   !-----------------------------------------------------------------------------
@@ -249,7 +266,7 @@ SUBROUTINE pack_particles (self, mpi_buffer)
   p => self%head%next
   do i=1,n
     select type (p)
-    type is (dressed_particle_t)
+    type is (vparticle_t)
       ns = ns+1
       rs(:,ns) = p%r        ! float position
       qs(:,ns) = p%q        ! integer position
@@ -269,10 +286,11 @@ SUBROUTINE pack_particles (self, mpi_buffer)
     end select
     p => p%next
   end do
+  !print *,'counts(2):',np,ns
   !-----------------------------------------------------------------------------
   ! Pack into mpi_buffer
   !-----------------------------------------------------------------------------
-  call mpi_buffer%append (np)         ! npp
+  call mpi_buffer%append (np)           ! np
   if (np > 0) then
     call mpi_buffer%append (rp)         ! 3*n
     call mpi_buffer%append (vp)         ! 3*n
@@ -281,16 +299,16 @@ SUBROUTINE pack_particles (self, mpi_buffer)
     call mpi_buffer%append (tp)         ! 2*n = 11*n + npp
     deallocate (rp, vp, qp, tp, wp)
   end if
-  call mpi_buffer%append (ns)
+  call viz_buffer%append (ns)
   if (ns > 0) then
-    call mpi_buffer%append (rs)
-    call mpi_buffer%append (vs)
-    call mpi_buffer%append (qs)
-    call mpi_buffer%append (ws)
-    call mpi_buffer%append (ts)
-    call mpi_buffer%append (ds)         ! 1*n
-    call mpi_buffer%append (vg)         ! 3*n
-    call mpi_buffer%append (id)         ! 2*n = 6*n
+    call viz_buffer%append (rs)
+    call viz_buffer%append (vs)
+    call viz_buffer%append (qs)
+    call viz_buffer%append (ws)
+    call viz_buffer%append (ts)
+    call viz_buffer%append (ds)         ! 1*n
+    call viz_buffer%append (vg)         ! 3*n
+    call viz_buffer%append (id)         ! 2*n = 6*n
     deallocate (id,rs,vs,qs,ts,ws,vg,ds)
   end if
 END SUBROUTINE pack_particles
