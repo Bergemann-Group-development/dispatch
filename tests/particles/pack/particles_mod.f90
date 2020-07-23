@@ -9,6 +9,7 @@
 !===============================================================================
 MODULE particles_mod
   USE io_mod
+  USE trace_mod
   USE omp_mod
   USE mpi_buffer_mod
   implicit none
@@ -23,13 +24,16 @@ MODULE particles_mod
     procedure:: init => init_particle
     procedure:: pack => pack_particle
   end type                                  ! sum:  60
+  integer, parameter:: vparticle_type=1
   type, public, extends(particle_t):: vparticle_t
     integer(8):: id
     real:: vg(3), d
   contains
     procedure:: pack => pack_vparticle
+    procedure:: output => output_vparticle
   end type
   !--- collection of particles ---
+  integer, parameter:: particles_type=2
   type, public:: particles_t
     class(particle_t), pointer:: head => null(), tail => null()
     integer:: n = 0
@@ -44,6 +48,8 @@ MODULE particles_mod
     procedure:: validate
     procedure:: dump
     procedure:: pack => pack_particles
+    procedure:: output => output_particles
+    procedure:: output1
   end type
   !--- cartesian arrangement of particle bins ---
   type, public:: bins_t
@@ -86,6 +92,17 @@ SUBROUTINE pack_vparticle (self, buffer)
   call buffer%append (self%vg)
   call buffer%append (self%id)
 END SUBROUTINE pack_vparticle
+
+!===============================================================================
+SUBROUTINE output_vparticle (self)
+  class(vparticle_t) :: self
+  integer            :: n, j
+  integer, save      :: itimer=0
+  !-----------------------------------------------------------------------------
+  write (io_unit%tmp) vparticle_type
+  write (io_unit%tmp) self%q, self%r, self%v, self%vg, self%w, self%d, &
+    self%t, self%id
+END SUBROUTINE output_vparticle
 
 !===============================================================================
 !> Initialize particle list
@@ -218,7 +235,6 @@ SUBROUTINE dump (self)
   write (stdlog,*) 'dump:', self%id
   p => self%head%next
   do j=1,self%n
-    write (stdlog,'(i4,3i10)') j
     p => p%next
   end do
   flush (stdlog)
@@ -312,5 +328,77 @@ SUBROUTINE pack_particles (self, mpi_buffer, viz_buffer)
     deallocate (id,rs,vs,qs,ts,ws,vg,ds)
   end if
 END SUBROUTINE pack_particles
+
+!===============================================================================
+SUBROUTINE output1 (self)
+  class(particles_t)         :: self
+  class(particle_t), pointer :: p
+  real,       allocatable    :: r(:,:), v(:,:), g(:,:), d(:), w(:)
+  integer(2), allocatable    :: q(:,:)
+  real(8),    allocatable    :: t(:)
+  integer(8), allocatable    :: i(:)
+  integer                    :: n, j
+  integer, save              :: itimer=0
+  !-----------------------------------------------------------------------------
+  ! Count viz particles
+  !-----------------------------------------------------------------------------
+!  call trace%begin ('particles_t%output', itimer=itimer)
+  n = 0
+  p => self%head%next
+  do j=1,self%n
+    select type (p)
+    type is (vparticle_t)
+      n = n+1
+    end select
+    p => p%next
+  end do
+  !-----------------------------------------------------------------------------
+  ! Collect and write out
+  !-----------------------------------------------------------------------------
+  write (io_unit%tmp) particles_type
+  write (io_unit%tmp) n
+  if (n>0) then
+    allocate (q(n,4), r(n,3), v(n,3), g(n,3), w(n), t(n), d(n), i(n))
+    n = 0
+    p => self%head%next
+    do j=1,self%n
+      select type (p)
+      type is (vparticle_t)
+        n = n+1
+        q(n,:) = p%q        ! integer position
+        r(n,:) = p%r        ! float position
+        v(n,:) = p%v        ! particle velocity
+        g(n,:) = p%vg       ! gas velocity
+        w(n)   = p%w        ! particle weight
+        t(n)   = p%t        ! particle time
+        d(n)   = p%d        ! gas density
+        i(n)   = p%id       ! particle id
+      end select
+      p => p%next
+    end do
+    write (io_unit%tmp) q, r, v, g, w, d, t, i
+    deallocate (q, r, v, g, w, d, t, i)
+  end if
+!  call trace%end (itimer)
+END SUBROUTINE output1
+
+!===============================================================================
+SUBROUTINE output_particles (self)
+  class(particles_t)         :: self
+  class(particle_t), pointer :: p
+  integer                    :: i
+  integer, save              :: itimer=0
+  !-----------------------------------------------------------------------------
+!  call trace%begin ('particles_t%output', itimer=itimer)
+  p => self%head%next
+  do i=1,self%n
+    select type (p)
+    type is (vparticle_t)
+      call p%output
+    end select
+    p => p%next
+  end do
+!  call trace%end (itimer)
+END SUBROUTINE output_particles
 
 END MODULE particles_mod

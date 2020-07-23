@@ -7,19 +7,22 @@ PROGRAM test
   USE mpi_buffer_mod
   USE particles_mod
   USE omp_lib
+  USE random_mod
   implicit none
   type(particle_t), allocatable:: pn(:), pv(:)       ! particle arrays
   class(particle_t), pointer:: pn1, pv1      ! viz particle
   type(particles_t), allocatable:: cells(:)          ! cell info
   type(mpi_buffer_t):: mpi_buffer, viz_buffer        ! separate buffers
+  type(random_t):: random
   real(8):: used
   integer:: nn, nv, nc, np, i, j, ppc, npp, id(5)=0, every=1000, sz(2)
   integer(8):: mp, mv
+  integer, parameter:: EOF=-1
   !-----------------------------------------------------------------------------
   ! Find the sizes of particles in the buffers
   !-----------------------------------------------------------------------------
   nn = 2**21                      ! number of MPI-only particles
-  print '(f6.1,a)', nn/1e6, ' million particles'
+  print '(/f6.1,a,i5  )', nn/1e6, ' million particles, output every', every
   mp = 1000
   call mpi_buffer%init (mp)
   call viz_buffer%init (mp)
@@ -55,14 +58,14 @@ PROGRAM test
     call pv(i)%pack(viz_buffer)   ! pack viz info into viz-buffer
   end do
   used = omp_get_wtime()-used
-  print 1, used, used/np
-  1 format(f6.2,' sec',9p,f8.1,' ns/p')
+  1 format(a,f6.2,' sec',6p,f10.2,' mus/p')
   !-----------------------------------------------------------------------------
   ! Divide the particles among a number of cells, with 128 in each
   !-----------------------------------------------------------------------------
   ppc = 128                           ! particles per cell
   nc = np/ppc                         ! number of cells
   allocate (cells(nc))                ! allocate cells
+  call random%init
   do i=1,nc
     call cells(i)%init (id)           ! initialize cell
     do j=1,ppc
@@ -72,6 +75,14 @@ PROGRAM test
     if (mod(i,every)==1) then         ! every so often also add viz particles
       do j=1,ppc
         allocate (vparticle_t:: pv1)  ! allocate viz particle
+        call randomize (pv1)
+        select type(pv1)
+        type is (vparticle_t)
+          pv1%t=i
+          pv1%w=0.5
+          pv1%d=1.0
+          pv1%id=j
+        end select
         call cells(i)%append (pv1)    ! append to cell
       end do
     end if
@@ -85,9 +96,10 @@ PROGRAM test
   call cells(1)%pack (mpi_buffer, viz_buffer)
   sz(1) = mpi_buffer%position
   sz(2) = viz_buffer%position
-  print *, 'sizes of cell buffers:', sz
+  print *, '    sizes of cell buffers:', sz
   call mpi_buffer%reset
   call viz_buffer%reset
+  print 1, 'single-particle pack:', used, used/np
   !-----------------------------------------------------------------------------
   ! Test particles_t%pack()
   !-----------------------------------------------------------------------------
@@ -101,10 +113,27 @@ PROGRAM test
   do i=1,nc
     call cells(i)%pack (mpi_buffer, viz_buffer)
   end do
+  call mpi_buffer%append (EOF)
+  call viz_buffer%append (EOF)
   used = omp_get_wtime()-used
-  print 1, used, used/np
+  print 1, ' multi-particle pack:', used, used/np
   !-----------------------------------------------------------------------------
-  ! Write out the buffer (into fort.1), for Python development
+  ! Write out the buffer, for Python development
   !-----------------------------------------------------------------------------
-  write (1) viz_buffer%buffer
+  used = omp_get_wtime()
+  do i=1,nc
+    call cells(i)%output()
+  end do
+  write (io_unit%tmp) EOF
+  used = omp_get_wtime()-used
+  print 1, '     particle output:', used, used/(np/every)
+CONTAINS
+
+SUBROUTINE randomize (p)
+  class(particle_t):: p
+  p%q = 1 + (random%uniform(4)-tiny(1.0))*[10,10,10,4]
+  p%r = random%uniform(3)
+  p%v = random%uniform(3)
+END SUBROUTINE randomize
+
 END PROGRAM

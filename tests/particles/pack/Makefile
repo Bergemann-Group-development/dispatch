@@ -12,4 +12,4 @@ TOP = ../../..
 include $(TOP)/config/Makefile
 
 $(EXEC): io_mod.o trace_mod.o mpi_buffer_mod.o particles_mod.o
-particles_mod.o: io_mod.o trace_mod.o
+particles_mod.o: io_mod.o trace_mod.o random_mod.o
