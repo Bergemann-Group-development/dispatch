@@ -10,7 +10,9 @@ PROGRAM test
   USE random_mod
   implicit none
   type(particle_t), allocatable:: pn(:), pv(:)       ! particle arrays
-  class(particle_t), pointer:: pn1, pv1      ! viz particle
+  type(particle_t), pointer:: pn1                    ! normal particle
+  type(vparticle_t), pointer:: pv1                   ! viz particle
+  class(particle_t), pointer:: p                     ! any particle
   type(particles_t), allocatable:: cells(:)          ! cell info
   type(mpi_buffer_t):: mpi_buffer, viz_buffer        ! separate buffers
   type(random_t):: random
@@ -69,21 +71,20 @@ PROGRAM test
   do i=1,nc
     call cells(i)%init (id)           ! initialize cell
     do j=1,ppc
-      allocate (particle_t:: pn1)     ! make a normal particle
-      call cells(i)%append (pn1)      ! append to cell
+      allocate (pn1)     ! make a normal particle
+      p => pn1
+      call cells(i)%append (p)      ! append to cell
     end do
     if (mod(i,every)==1) then         ! every so often also add viz particles
       do j=1,ppc
-        allocate (vparticle_t:: pv1)  ! allocate viz particle
+        allocate (pv1)  ! allocate viz particle
         call randomize (pv1)
-        select type(pv1)
-        type is (vparticle_t)
-          pv1%t=i
-          pv1%w=0.5
-          pv1%d=1.0
-          pv1%id=j
-        end select
-        call cells(i)%append (pv1)    ! append to cell
+        pv1%t=i
+        pv1%w=0.5
+        pv1%d=1.0
+        pv1%id=j
+        p => pv1
+        call cells(i)%append (p)    ! append to cell
       end do
     end if
   end do
