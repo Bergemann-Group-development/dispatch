@@ -30,9 +30,19 @@ MODULE mpi_buffer_mod
     procedure, private:: read_c
     procedure, private:: read_0
     procedure, private:: read_1
+    procedure, private:: read_0d
+    procedure, private:: read_0i
+    procedure, private:: read_0id
+    procedure, private:: read_1i
+    procedure, private:: read_1id
+    procedure, private:: read_1d
+    procedure, private:: read_1q
     procedure, private:: read_2
+    procedure, private:: read_2q
     procedure, private:: read_3
-    generic, public:: read => read_c, read_1, read_2, read_3
+    generic, public:: read => read_0, read_1, read_2, read_3, &
+      read_c, read_1i, read_1q, read_1d, read_2q, read_0d, &
+      read_0i, read_0id, read_1id
   end type
 CONTAINS
 
@@ -263,6 +273,42 @@ END SUBROUTINE read_0
 
 !===============================================================================
 !===============================================================================
+SUBROUTINE read_0i (self, a)
+  class (mpi_buffer_t):: self
+  integer:: a
+  integer:: na
+  !-----------------------------------------------------------------------------
+  !call trace%begin ('mpi_buffer_t%read_c')
+  call from_buffer1 (a, self%buffer, self%n, self%position)
+  !call trace%end()
+END SUBROUTINE read_0i
+
+!===============================================================================
+!===============================================================================
+SUBROUTINE read_0id (self, a)
+  class (mpi_buffer_t):: self
+  integer(8):: a
+  integer:: na
+  !-----------------------------------------------------------------------------
+  !call trace%begin ('mpi_buffer_t%read_c')
+  call from_buffer (a, 2, self%buffer, self%n, self%position)
+  !call trace%end()
+END SUBROUTINE read_0id
+
+!===============================================================================
+!===============================================================================
+SUBROUTINE read_0d (self, a)
+  class (mpi_buffer_t):: self
+  real(8):: a
+  integer:: na
+  !-----------------------------------------------------------------------------
+  !call trace%begin ('mpi_buffer_t%read_c')
+  call from_buffer (a, 2, self%buffer, self%n, self%position)
+  !call trace%end()
+END SUBROUTINE read_0d
+
+!===============================================================================
+!===============================================================================
 SUBROUTINE read_1 (self, a)
   class (mpi_buffer_t):: self
   real:: a(:)
@@ -273,6 +319,32 @@ SUBROUTINE read_1 (self, a)
   call from_buffer (a, na, self%buffer, self%position)
   !call trace%end()
 END SUBROUTINE read_1
+
+!===============================================================================
+!===============================================================================
+SUBROUTINE read_1d (self, a)
+  class (mpi_buffer_t):: self
+  real(8):: a(:)
+  integer:: na
+  !-----------------------------------------------------------------------------
+  !call trace%begin ('mpi_buffer_t%read_c')
+  na = size(a)*2
+  call from_buffer (a, na, self%buffer, self%n, self%position)
+  !call trace%end()
+END SUBROUTINE read_1d
+
+!===============================================================================
+!===============================================================================
+SUBROUTINE read_1q (self, a)
+  class (mpi_buffer_t):: self
+  integer(2):: a(:)
+  integer:: na
+  !-----------------------------------------------------------------------------
+  !call trace%begin ('mpi_buffer_t%read_c')
+  na = size(a)/2
+  call from_buffer (a, na, self%buffer, self%n, self%position)
+  !call trace%end()
+END SUBROUTINE read_1q
 
 !===============================================================================
 !===============================================================================
@@ -289,6 +361,19 @@ END SUBROUTINE read_1i
 
 !===============================================================================
 !===============================================================================
+SUBROUTINE read_1id (self, a)
+  class (mpi_buffer_t):: self
+  integer(8):: a(:)
+  integer:: na
+  !-----------------------------------------------------------------------------
+  !call trace%begin ('mpi_buffer_t%read_c')
+  na = size(a)*2
+  call from_buffer (a, na, self%buffer, self%n, self%position)
+  !call trace%end()
+END SUBROUTINE read_1id
+
+!===============================================================================
+!===============================================================================
 SUBROUTINE read_2 (self, a)
   class (mpi_buffer_t):: self
   real:: a(:,:)
@@ -299,6 +384,19 @@ SUBROUTINE read_2 (self, a)
   call from_buffer (a, na, self%buffer, self%position)
   !call trace%end()
 END SUBROUTINE read_2
+
+!===============================================================================
+!===============================================================================
+SUBROUTINE read_2q (self, a)
+  class (mpi_buffer_t):: self
+  integer(2):: a(:,:)
+  integer:: na
+  !-----------------------------------------------------------------------------
+  !call trace%begin ('mpi_buffer_t%read_c')
+  na = product(shape(a))/2
+  call from_buffer (a, na, self%buffer, self%n, self%position)
+  !call trace%end()
+END SUBROUTINE read_2q
 
 !===============================================================================
 !===============================================================================
@@ -341,7 +439,7 @@ SUBROUTINE from_buffer (a, n, b, o)
   o = o+n
 END SUBROUTINE from_buffer
 
-SUBROUTINE from_buffer1 (a, b, o)
+SUBROUTINE from_buffer1 (a, n, b, o)
   integer:: a, n, b(n), o
   !-----------------------------------------------------------------------------
   a = b(o)
