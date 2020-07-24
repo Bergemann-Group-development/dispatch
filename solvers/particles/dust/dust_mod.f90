@@ -306,8 +306,8 @@ SUBROUTINE consistency (self, label)
   u = self%patch%mesh%ub
   p => self%particles(1)%head%next
   do while (associated(p))
-    if (any(p%q < l .or. p%q > u)) then
-      print *,'outside:', p%id,p%q,p%bin
+    if (any(p%q(1:3) < l .or. p%q(1:3) > u)) then
+      print *,'outside:', p%q
     end if
     p => p%next
   end do

@@ -205,7 +205,9 @@ END SUBROUTINE init
 SUBROUTINE initial_condition (self)
   class(particle_solver_t)    :: self
   class(particles_t), pointer :: particles
-  type(particle_t), pointer   :: p
+  type(particle_t), pointer   :: pn
+  type(vparticle_t), pointer  :: pv
+  class(particle_t), pointer  :: p
   class(gpatch_t), pointer    :: patch
   integer                     :: m(3), i1, i2, i3, bin, i, j, n, l, bytes, id(5)
   real                        :: d, w, vg(3)
@@ -273,25 +275,21 @@ SUBROUTINE initial_condition (self)
         do j=1,particles_per_bin
           n = n+1
           l = l+1
-          allocate(p)
-          call p%init
           if (particle_io .and. mod(l,output_every)==0) then
-            p%flag = 1   ! select for tracking
+            allocate(pv)
+            p => pv
           else
-            p%flag = 0
+            allocate(pn)
+            p => pn
           end if
-          p%bin = bin
-          p%q = [i1,i2,i3]
+          call p%init
+          p%q = [i1,i2,i3,bin]
           p%r = self%random%uniform (3)
           p%v = 0.0
           p%w = w
           p%t = 0
           self%dd(i1,i2,i3,bin) = self%dd(i1,i2,i3,bin) + w
           call particles%append (p)
-          !.....................................................................
-          if (verbose > 2 .or. p%id == ip_dbg) &
-            write (stdlog,'(a,i8,2x,3i3,1x,3f5.2,1x,1p,2e11.2)') &
-            'particle_t%IC: id, q, r, w, c =', p%id, p%q, p%r, p%w
         end do
       end do
       if (verbose > 0) call particles%validate ('IC')
@@ -346,7 +344,7 @@ SUBROUTINE update (self)
   class(particle_solver_t)    :: self
   !.............................................................................
   real, dimension(3)          :: r, dr, v
-  type(particle_t), pointer   :: p, next
+  class(particle_t), pointer  :: p, next
   real(8)                     :: time(2), self_time, wc, start
   real                        :: ds, dt, os, n_min, n_max, ods
   integer                     :: ip, n, np, no, nk, nm, it, m(3), ii(3), dir
@@ -474,7 +472,6 @@ SUBROUTINE update (self)
       j = 1
       np = particles%n
       do j=1,np
-        pid = p%id
         next => p%next
         dt = 0.5*(self_time - p%t)
         if (dt > 0.0) then
@@ -496,7 +493,7 @@ SUBROUTINE update (self)
           !--- update q+r representation -----------------------------------------
           q = floor(p%r)                                    ! integer shift
           p%r = p%r - q                                     ! remove
-          p%q = p%q + q                                     ! add
+          p%q(1:3) = p%q(1:3) + q                           ! add
           nk = nk+1                                         ! count
           if (particles%n < n_min) then
             call add_particles
@@ -505,7 +502,6 @@ SUBROUTINE update (self)
           move = .false.
           export = .false.
           do i=1,3
-            pid = p%id
             if (p%q(i) /= ii(i)) then
               if (p%q(i) < l(i) .or. p%q(i) > u(i)) then
                 export = .true.
@@ -524,20 +520,12 @@ SUBROUTINE update (self)
           !---------------------------------------------------------------------
           else if (move) then
             call particles%remove (p)
-            call self%particles(p%q(1),p%q(2),p%q(3),p%bin)%append (p)
+            call self%particles(p%q(1),p%q(2),p%q(3),p%q(4))%append (p)
             self%dd(i1,i2,i3,bin) = &
             self%dd(i1,i2,i3,bin) - p%w
             self%dd(p%q(1),p%q(2),p%q(3),bin) = &
             self%dd(p%q(1),p%q(2),p%q(3),bin) + p%w
             nm = nm+1
-          else if (p%id == ip_dbg) then
-            write (stdlog, &
-              '(a,i10,3i6,i10,2x,5i4,3f6.2,1p,2(3e11.3,2x))') &
-              '   move: ', &
-              pid, id, exports(bin)%n, nk, p%id, p%q, bin, &
-              self%particles(i1,i2,i3,bin)%n , &
-              p%r, p%v, self_time
-            flush (stdlog)
           end if
         end if
         p => next
@@ -645,7 +633,7 @@ subroutine add_particles
       p%v(i) = v(i)
       p%r(i) = self%random%ran1()
     end do
-    p%bin = bin
+    p%q(4) = bin
     p%w = w
     p%t = time
     call particles%append (p)
@@ -659,21 +647,27 @@ END SUBROUTINE update
 SUBROUTINE remove (self, particles, dd)
   class(particle_solver_t)    :: self
   type(particles_t), pointer  :: particles
+  class(particle_t), pointer  :: p, next
   real                        :: dd
-  type(particle_t), pointer   :: p, next
   real                        :: w
   integer                     :: np, nf, j
+  logical                     :: kill
   !.............................................................................
   nf = 0
   p => particles%head%next
   np = particles%n - particles_per_bin
   do j=1,np
     next => p%next
-    if (p%flag == 0) then
+    select type (p)
+    type is (particle_t)
+      kill = .true.
+    type is (vparticle_t)
+      kill = .false.
+      nf = nf+1
+    end select
+    if (kill) then
       call particles%remove (p)
       call pool%append (p)
-    else
-      nf = nf+1
     end if
     p => next
   end do
@@ -706,7 +700,7 @@ SUBROUTINE import (self)
   class(nbor_t)    , pointer :: nbor
   class(task_t)    , pointer :: nbtask
   class(particles_t), pointer:: particles
-  type(particle_t), pointer  :: p, next
+  class(particle_t), pointer :: p, next
   real(8)                    :: r(3), dist(3)
   integer                    :: ni, ii(5), j, bin
   integer(kind=2)            :: q(3)
@@ -732,26 +726,21 @@ SUBROUTINE import (self)
         p => nbtask%exports(bin)%head%next
         do j=1,nbtask%exports(bin)%n
           next => p%next
-          r = dist + (p%r+p%q)
+          r = dist + (p%r+p%q(1:3))
           q = floor(r)
           inside = all(q >= self%lb .and. q <= self%ub)
           if (inside) then
             p%r = r-q
-            p%q = q
+            p%q(1:3) = q
             call nbtask%exports(bin)%remove (p)
-            call self%dust%consistency2 ('before add',p%q(1),p%q(2),p%q(3),p%bin)
-            particles => self%particles(p%q(1),p%q(2),p%q(3),p%bin)
+            call self%dust%consistency2 ('before add',p%q(1),p%q(2),p%q(3),p%q(4))
+            particles => self%particles(p%q(1),p%q(2),p%q(3),p%q(4))
             call particles%append (p)
-            call self%dust%consistency2 ('after add',p%q(1),p%q(2),p%q(3),p%bin)
-            self%dd(q(1),q(2),q(3),p%bin) = &
-            self%dd(q(1),q(2),q(3),p%bin) + p%w
+            call self%dust%consistency2 ('after add',p%q(1),p%q(2),p%q(3),p%q(4))
+            self%dd(q(1),q(2),q(3),p%q(4)) = &
+            self%dd(q(1),q(2),q(3),p%q(4)) + p%w
             ni = ni + 1
-            ii(1) = self%patch%id; ii(2:4) = p%q; ii(5) = p%bin
-            if (verbose > 0 .or. p%id == ip_dbg .or. all(ii == i_dbg)) then
-              write (stdlog,'(a,3i6,i10,2x3i4,l4)') &
-              'import: id, nbor, ni, pid, q =', &
-                self%patch%id, nbtask%patch%id, ni, p%id, q
-            end if
+            ii(1) = self%patch%id; ii(2:4) = p%q(1:3); ii(5) = p%q(4)
           end if
           p => next
         end do
@@ -782,7 +771,7 @@ SUBROUTINE output (self)
   !.............................................................................
   class(particles_t), pointer   :: particles
   class(mesh_t), pointer        :: mesh(:)
-  type(particle_t), pointer     :: p
+  class(particle_t), pointer    :: p
   real, pointer, contiguous     :: tmp_r(:,:)
   integer, pointer, contiguous  :: tmp_i(:)
   integer                       :: i, j, n, i1, i2, i3, bin
@@ -810,9 +799,10 @@ SUBROUTINE output (self)
       n = 0
       p => particles%head%next
       do j=1,particles%n
-        if (p%flag > 0) then
+        select type (p)
+        type is (vparticle_t)
           n = n+1
-        end if
+        end select
         p => p%next
       end do
       allocate (tmp_r(5,n))
@@ -825,13 +815,14 @@ SUBROUTINE output (self)
           particles => self%particles(i1,i2,i3,bin)
           p => particles%head%next
           do j=1,particles%n
-            if (p%flag > 0) then
+            select type (p)
+            type is (vparticle_t)
               i = i+1
-              tmp_r(1:3,i) = mesh%p + (p%q + p%r - mesh%o)*mesh%d
+              tmp_r(1:3,i) = mesh%p + (p%q(1:3) + p%r - mesh%o)*mesh%d
               tmp_r(  4,i) = p%w
-              tmp_r(  5,i) = self%s_cgs(p%bin)
+              tmp_r(  5,i) = self%s_cgs(p%q(4))
               tmp_i(    i) = p%id
-            end if
+            end select
             p => p%next
           end do
         end do
