@@ -362,6 +362,7 @@ SUBROUTINE update (self)
   integer                     :: id, paid(5), istep
   integer(8)                  :: pid
   logical                     :: move, export
+  real, pointer, contiguous   :: dg(:,:,:)     ! gas density
   real, pointer, contiguous   :: vg(:,:,:,:)   ! gas velocity
   class(gpatch_t), pointer    :: patch
   type(particles_t), pointer  :: exports(:), exportp
@@ -416,6 +417,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Cache the gas velocity
   !-----------------------------------------------------------------------------
+  dg => patch%mem(:,:,:,patch%idx%d,patch%it,1)
   m = patch%gn
   l = self%lb
   u = self%ub
@@ -424,8 +426,7 @@ SUBROUTINE update (self)
   do i2=l(2),u(2)
   do i1=l(1),u(1)
     vg(dir,i1,i2,i3) = patch%mem(i1,i2,i3,patch%idx%px+dir-1,patch%it,1) &
-                     /(patch%mem(i1,i2,i3,patch%idx%d       ,patch%it,1) &
-                      *patch%ds(dir))
+                     /(dg(i1,i2,i3)*patch%ds(dir))
   end do
   end do
   end do
@@ -468,8 +469,8 @@ SUBROUTINE update (self)
       end associate
       paid = particles%id
       ip = ip + particles%n
-      d = patch%mem(i1,i2,i3,patch%idx%d,patch%it,1)
       up = patch%u_phase(i1,i2,i3)/ds
+      d = dg(i1,i2,i3)
       v(1) = vg(1,i1,i2,i3)
       v(2) = vg(2,i1,i2,i3)
       v(3) = vg(3,i1,i2,i3)
@@ -564,6 +565,10 @@ SUBROUTINE update (self)
   ! Import from other patches
   !-----------------------------------------------------------------------------
   call self%import
+  !-----------------------------------------------------------------------------
+  ! Pick up local conditions in varticles
+  !-----------------------------------------------------------------------------
+  call vparticles (self, dg, vg)
   !-----------------------------------------------------------------------------
   np = self%np
   if (verbose > 0) then
@@ -700,6 +705,35 @@ FUNCTION pforce (r) RESULT (f)
   real(8):: r(3), f(3)
   f = 0d0
 END FUNCTION pforce
+
+!===============================================================================
+!> Import particles from nbors export lists
+!===============================================================================
+SUBROUTINE vparticles (self, dg, vg)
+  class(particle_solver_t)   :: self
+  real, pointer:: dg(:,:,:), vg(:,:,:,:)
+  class(particles_t), pointer:: particles
+  class(particle_t), pointer:: p
+  integer:: i1, i2, i3, i4, j
+  do i4=1,n_bin
+  do i3=self%lb(3),self%ub(3)
+  do i2=self%lb(2),self%ub(2)
+  do i1=self%lb(1),self%ub(1)
+    particles => self%particles(i1,i2,i3,i4)
+    p => particles%head%next
+    do j=1,particles%n
+      select type (p)
+      type is (vparticle_t)
+        p%d  = dg(i1,i2,i3)
+        p%vg = vg(i1,i2,i3,:)
+      end select
+      p => p%next
+    end do
+  end do
+  end do
+  end do
+  end do
+END SUBROUTINE vparticles
 
 !===============================================================================
 !> Import particles from nbors export lists
