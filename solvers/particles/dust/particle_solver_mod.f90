@@ -362,7 +362,6 @@ SUBROUTINE update (self)
   integer                     :: id, paid(5), istep
   integer(8)                  :: pid
   logical                     :: move, export
-  real, pointer, contiguous   :: dg(:,:,:)     ! gas density
   real, pointer, contiguous   :: vg(:,:,:,:)   ! gas velocity
   class(gpatch_t), pointer    :: patch
   type(particles_t), pointer  :: exports(:), exportp
@@ -417,7 +416,6 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Cache the gas velocity
   !-----------------------------------------------------------------------------
-  dg => patch%mem(:,:,:,patch%idx%d,patch%it,1)
   m = patch%gn
   l = self%lb
   u = self%ub
@@ -426,7 +424,8 @@ SUBROUTINE update (self)
   do i2=l(2),u(2)
   do i1=l(1),u(1)
     vg(dir,i1,i2,i3) = patch%mem(i1,i2,i3,patch%idx%px+dir-1,patch%it,1) &
-                     /(dg(i1,i2,i3)*patch%ds(dir))
+                     /(patch%mem(i1,i2,i3,patch%idx%d       ,patch%it,1) &
+                      *patch%ds(dir))
   end do
   end do
   end do
@@ -469,8 +468,8 @@ SUBROUTINE update (self)
       end associate
       paid = particles%id
       ip = ip + particles%n
+      d = patch%mem(i1,i2,i3,patch%idx%d,patch%it,1)
       up = patch%u_phase(i1,i2,i3)/ds
-      d = dg(i1,i2,i3)
       v(1) = vg(1,i1,i2,i3)
       v(2) = vg(2,i1,i2,i3)
       v(3) = vg(3,i1,i2,i3)
@@ -565,10 +564,6 @@ SUBROUTINE update (self)
   ! Import from other patches
   !-----------------------------------------------------------------------------
   call self%import
-  !-----------------------------------------------------------------------------
-  ! Pick up local conditions in varticles
-  !-----------------------------------------------------------------------------
-  call vparticles (self, dg, vg)
   !-----------------------------------------------------------------------------
   np = self%np
   if (verbose > 0) then
@@ -709,35 +704,6 @@ END FUNCTION pforce
 !===============================================================================
 !> Import particles from nbors export lists
 !===============================================================================
-SUBROUTINE vparticles (self, dg, vg)
-  class(particle_solver_t)   :: self
-  real, pointer:: dg(:,:,:), vg(:,:,:,:)
-  class(particles_t), pointer:: particles
-  class(particle_t), pointer:: p
-  integer:: i1, i2, i3, i4, j
-  do i4=1,n_bin
-  do i3=self%lb(3),self%ub(3)
-  do i2=self%lb(2),self%ub(2)
-  do i1=self%lb(1),self%ub(1)
-    particles => self%particles(i1,i2,i3,i4)
-    p => particles%head%next
-    do j=1,particles%n
-      select type (p)
-      type is (vparticle_t)
-        p%d  = dg(i1,i2,i3)
-        p%vg = vg(i1,i2,i3,:)
-      end select
-      p => p%next
-    end do
-  end do
-  end do
-  end do
-  end do
-END SUBROUTINE vparticles
-
-!===============================================================================
-!> Import particles from nbors export lists
-!===============================================================================
 SUBROUTINE import (self)
   class(particle_solver_t)   :: self
   !.............................................................................
@@ -873,6 +839,81 @@ SUBROUTINE output (self)
   end if
   call trace%end (itimer)
 END SUBROUTINE output
+
+!===============================================================================
+!> Initialize module
+!===============================================================================
+SUBROUTINE voutput (self)
+  class(particle_solver_t):: self
+  class(particles_t), pointer:: pp
+  class(particle_t), pointer:: p
+  real,       pointer, contiguous:: r(:,:), v(:,:), vg(:,:), w(:), d(:)
+  real(8),    pointer, contiguous:: t(:)
+  integer(2), pointer, contiguous:: q(:,:)
+  integer(8), pointer, contiguous:: id(:)
+  integer:: n, i1, i2, i3, i4, j
+  integer, save:: n_tot = 0, EOF = -1, particle_io_key = 2
+  !-----------------------------------------------------------------------------
+  n = 0
+  do i4=1,n_bin
+  do i3=self%lb(3),self%ub(3)
+  do i2=self%lb(2),self%ub(2)
+  do i1=self%lb(1),self%ub(1)
+    n = n + self%particles(i1,i2,i3,i4)%n
+  end do
+  end do
+  end do
+  end do
+  allocate (q(n,4), r(n,3), v(n,3), vg(n,3), d(n), w(n), t(n), id(n))
+  !-----------------------------------------------------------------------------
+  n = 0
+  do i3=self%lb(3),self%ub(3)
+  do i2=self%lb(2),self%ub(2)
+  do i1=self%lb(1),self%ub(1)
+  do i4=1,n_bin
+    pp => self%particles(i1,i2,i3,i4)
+    p => pp%head%next
+    do j=1,pp%n
+      select type (p)
+      type is (vparticle_t)
+        n = n + 1
+        q (n,:) = p%q
+        r (n,:) = p%r
+        v (n,:) = p%v
+        vg(n,:) = p%vg
+        w (n)   = p%w
+        d (n)   = p%d
+        t (n)   = p%t
+        id(n)   = p%id
+      end select
+      p => p%next
+    end do
+  end do
+  end do
+  end do
+  end do
+  !-----------------------------------------------------------------------------
+  ! Write out info on dimensions -- before data to ensure it is up-to-date
+  ! during live runs
+  !-----------------------------------------------------------------------------
+  call io%lock%set ('particle_solver_t%voutput')
+  rewind (io_unit%particle_i)
+  write (io_unit%particle_i) n, self%iout
+  flush (io_unit%particle_i)
+  !-----------------------------------------------------------------------------
+  ! Write out buffered data
+  !-----------------------------------------------------------------------------
+  write (io_unit%particle_d) particle_io_key
+  write (io_unit%particle_d) n
+  write (io_unit%particle_d) q, r, v, vg, w, d, t, id
+  write (io_unit%particle_d) EOF
+  backspace (io_unit%particle_d)
+  n_tot = n_tot + n
+  if (mod(n_tot,1000000) == 0) then
+    write(stdout,'(a,f8.2,a)') 'particle_io:', n_tot*1e-6, ' Mp'
+  end if
+  call io%lock%unset ('particle_solver_t%voutput')
+END SUBROUTINE voutput
 
 !===============================================================================
 SUBROUTINE statistics (self)

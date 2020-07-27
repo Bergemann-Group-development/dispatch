@@ -7,6 +7,7 @@ MODULE particle_io_mod
   implicit none
   private
   type, public:: particle_io_t
+    class(gpatch_t), pointer:: patch
   contains
     procedure:: init
     procedure:: update
@@ -27,21 +28,23 @@ CONTAINS
 !===============================================================================
 !> Initialize module
 !===============================================================================
-SUBROUTINE init (self, m_set)
+SUBROUTINE output (self, patch, lb, ub)
   class(particle_io_t) :: self
-  integer,  optional       :: m_set
+  class(particles_t) :: particles
+  class(gpatch_t), pointer:: patch
+  integer:: n
   !-----------------------------------------------------------------------------
-  if (present(m_set)) then
-    m = m_set
-  end if
-  allocate (q(m,4), r(m,3), v(m,3), vg(m,3), d(m), w(m), t(m), id(m))
   n = 0
-END SUBROUTINE init
-
-!===============================================================================
-!> A a particle to the buffer
-!===============================================================================
-SUBROUTINE update (self, pp)
+  do i4=1,n_bin
+  do i3=self%lb(3),self%ub(3)
+  do i2=self%lb(2),self%ub(2)
+  do i1=self%lb(1),self%ub(1)
+    n = n + self%particles(i1,i2,i3,i4)%n
+  end do
+  end do
+  end do
+  end do
+  allocate (q(n,4), r(n,3), v(n,3), vg(n,3), d(n), w(n), t(n), id(n))
   class(particle_io_t)   :: self
   type(particles_t)          :: pp
   !.............................................................................
