@@ -24,7 +24,7 @@ MODULE particles_mod
     procedure:: init => init_particle
     procedure:: pack => pack_particle
   end type                                  ! sum:  60
-  integer, parameter:: vparticle_type=1
+  integer, parameter:: vparticle_key=1
   type, public, extends(particle_t):: vparticle_t
     integer(8):: id
     real:: vg(3), d
@@ -33,7 +33,7 @@ MODULE particles_mod
     procedure:: output => output_vparticle
   end type
   !--- collection of particles ---
-  integer, parameter:: particles_type=2
+  integer, parameter:: particles_key=2
   type, public:: particles_t
     class(particle_t), pointer:: head => null(), tail => null()
     integer:: n = 0
@@ -99,7 +99,7 @@ SUBROUTINE output_vparticle (self)
   integer            :: n, j
   integer, save      :: itimer=0
   !-----------------------------------------------------------------------------
-  write (io_unit%tmp) vparticle_type
+  write (io_unit%tmp) vparticle_key
   write (io_unit%tmp) self%q, self%r, self%v, self%vg, self%w, self%d, &
     self%t, self%id
 END SUBROUTINE output_vparticle
@@ -355,7 +355,7 @@ SUBROUTINE output1 (self)
   !-----------------------------------------------------------------------------
   ! Collect and write out
   !-----------------------------------------------------------------------------
-  write (io_unit%tmp) particles_type
+  write (io_unit%tmp) particles_key
   write (io_unit%tmp) n
   if (n>0) then
     allocate (q(n,4), r(n,3), v(n,3), g(n,3), w(n), t(n), d(n), i(n))
@@ -394,7 +394,7 @@ SUBROUTINE output_particles (self)
   do i=1,self%n
     select type (p)
     type is (vparticle_t)
-      call p%output
+      call p%output1
     end select
     p => p%next
   end do

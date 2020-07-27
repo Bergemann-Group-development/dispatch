@@ -34,6 +34,7 @@ MODULE particle_solver_mod
   USE list_mod
   USE gpatch_mod
   USE particles_mod
+  USE particle_io_mod
   USE dust_mod
   USE scaling_mod
   USE units_mod
@@ -73,7 +74,9 @@ MODULE particle_solver_mod
     procedure:: update
     procedure:: import
     procedure:: output
+    procedure:: statistics
   end type
+  type(particle_io_t), save     :: p_io
   type(particles_t), pointer :: pool          ! particle pool
   !$omp threadprivate (pool)                  ! for each thread
   integer:: verbose = 0                       ! noise level
@@ -92,6 +95,7 @@ MODULE particle_solver_mod
   real:: min_fraction = 0.7                   ! lower limit
   real:: max_fraction = 1.4                   ! upper limit
   real:: drag_coeff                           ! scaled value
+  real(8):: out_time = -1.0                   ! output cadence
   logical:: particle_io = .false.             ! output particle positions?
   logical:: detailed_timer = .false.
   logical:: on = .true.
@@ -107,10 +111,10 @@ SUBROUTINE pre_init (self, patch)
   real                              :: solid_density, dln_m
   logical, save                     :: first_time=.true.
   namelist /particle_solver_params/ &
-    on, verbose, detailed_timer, particle_io, &
+    on, verbose, detailed_timer, particle_io, out_time, &
     n_bin, particles_per_bin, seed, ip_dbg, id_dbg, i_dbg, &
     min_fraction, max_fraction, max_size_cgs, min_size_cgs, &
-    density_yr_cgs, solid_density_cgs, dust_to_gas
+    density_yr_cgs, solid_density_cgs, dust_to_gas, output_every
   !-----------------------------------------------------------------------------
   call trace%begin ('particle_solver_t%pre_init')
   self%patch => patch                           ! make the patch known
@@ -125,6 +129,8 @@ SUBROUTINE pre_init (self, patch)
     first_time = .false.
   end if
   call io%lock%unset ('particle_solver_t%pre_init')
+  call p_io%init
+  self%out_next = out_time
   self%dust%detailed_timer = detailed_timer
   self%dust%ip_dbg = ip_dbg
   self%dust%i_dbg = i_dbg
@@ -152,6 +158,7 @@ SUBROUTINE pre_init (self, patch)
   !-----------------------------------------------------------------------------
   allocate (self%link)
   self%link%task => self
+  self%iout = 0
   call trace%end ()
 END SUBROUTINE pre_init
 
@@ -258,6 +265,7 @@ SUBROUTINE initial_condition (self)
   !$omp critical (alloc_cr)
 #endif
   l = 0
+  i = 0
   do i3=self%lb(3),self%ub(3)
   do i2=self%lb(2),self%ub(2)
     n = 0
@@ -274,15 +282,16 @@ SUBROUTINE initial_condition (self)
         self%dd(i1,i2,i3,bin) = 0.0
         do j=1,particles_per_bin
           n = n+1
-          l = l+1
-          if (particle_io .and. mod(l,output_every)==0) then
+          if (mod(l,output_every)==0) then
             allocate(pv)
+            call pv%init
             p => pv
+            i = i+1
           else
             allocate(pn)
+            call pn%init
             p => pn
           end if
-          call p%init
           p%q = [i1,i2,i3,bin]
           p%r = self%random%uniform (3)
           p%v = 0.0
@@ -291,6 +300,7 @@ SUBROUTINE initial_condition (self)
           self%dd(i1,i2,i3,bin) = self%dd(i1,i2,i3,bin) + w
           call particles%append (p)
         end do
+        l = l+1
       end do
       if (verbose > 0) call particles%validate ('IC')
     end do
@@ -774,14 +784,41 @@ SUBROUTINE output (self)
   class(particle_t), pointer    :: p
   real, pointer, contiguous     :: tmp_r(:,:)
   integer, pointer, contiguous  :: tmp_i(:)
-  integer                       :: i, j, n, i1, i2, i3, bin
+  integer                       :: i, j, n, i1, i2, i3, i4
+  integer, parameter            :: particle_solver_key=3
+  integer, save                 :: itimer=0
   !-----------------------------------------------------------------------------
   if (.not. on) return
-  call trace%begin ('particles_t%output')
+  call trace%begin ('particles_t%output', itimer,itimer)
   if (verbose > 1) then
     write (stdlog, '(a,i6,2f8.4)') &
       'particles_t%output: id, time, aux_next =', &
       self%patch%id, self%time, self%aux%aux_next
+  end if
+  !-----------------------------------------------------------------------------
+  ! High-cadence output of v_particle_t particles
+  !-----------------------------------------------------------------------------
+  if (out_time > 0d0 .and. self%time >= self%out_next) then
+    call io%lock%set ('particle_solver_t%output')
+    do while (self%time >= self%out_next)
+      write (io_unit%particle_d) particle_solver_key
+      write (io_unit%particle_d) &
+        self%iout, self%id, self%time, self%patch%position, self%patch%ds
+      n = 0
+      do i3=self%lb(3),self%ub(3)
+        do i2=self%lb(2),self%ub(2)
+          do i1=self%lb(1),self%ub(1)
+            do i4=1,n_bin
+              call p_io%update (self%particles(i1,i2,i3,i4))
+            end do
+          end do
+        end do
+      end do
+      call p_io%output (self%iout)
+      self%iout = self%iout + 1
+      self%out_next = self%out_next + out_time
+    end do
+    call io%lock%unset ('particle_solver_t%output')
   end if
   if (self%time >= self%aux%aux_next) then
     call self%aux%register ('dust_s', self%s_cgs)
@@ -793,61 +830,14 @@ SUBROUTINE output (self)
           'particles_t%output: id, bin, n =', self%patch%id, i, self%dd(3,3,1:10,i)
       end do
     end if
-    !...........................................................................
-    if (particle_io) then
-      mesh => self%patch%mesh
-      n = 0
-      p => particles%head%next
-      do j=1,particles%n
-        select type (p)
-        type is (vparticle_t)
-          n = n+1
-        end select
-        p => p%next
-      end do
-      allocate (tmp_r(5,n))
-      allocate (tmp_i(  n))
-      i = 0
-      do i3=self%lb(3),self%ub(3)
-      do i2=self%lb(2),self%ub(2)
-      do i1=self%lb(1),self%ub(1)
-        do bin=1,n_bin
-          particles => self%particles(i1,i2,i3,bin)
-          p => particles%head%next
-          do j=1,particles%n
-            select type (p)
-            type is (vparticle_t)
-              i = i+1
-              tmp_r(1:3,i) = mesh%p + (p%q(1:3) + p%r - mesh%o)*mesh%d
-              tmp_r(  4,i) = p%w
-              tmp_r(  5,i) = self%s_cgs(p%q(4))
-              tmp_i(    i) = p%id
-            end select
-            p => p%next
-          end do
-        end do
-        end do
-      end do
-      end do
-      call self%aux%register ('dust_p' , tmp_r)
-      call self%aux%register ('dust_id', tmp_i)
-      call self%aux%output_sequence (self%patch%id, self%time)
-      if (verbose > 0) then
-        write (stdlog, '(a,i6,f8.4,i3,2i8)') &
-         'particles_t%output: id, particle array =', &
-          self%patch%id, self%time, shape(tmp_r), i
-      end if
-      deallocate (tmp_r, tmp_i)
-    else
-      call self%aux%output_sequence (self%patch%id, self%time)
-    end if
+    call self%aux%output_sequence (self%patch%id, self%time)
     if (verbose > 1) then
       write (stdlog, '(a,i6,1p,10e11.2)') &
        'particles_t%output: self%aux%aux_next =', &
         self%patch%id, self%aux%aux_next
     end if
   end if
-  call trace%end ()
+  call trace%end (itimer)
 END SUBROUTINE output
 
 !===============================================================================

@@ -227,6 +227,8 @@ SUBROUTINE init (self, name)
     call self%open_rank_file (io_unit%dump      , ".dump" , 'unformatted')
     call self%open_rank_file (io_unit%validate  , ".val"  , 'unformatted')
     call self%open_rank_file (io_unit%dispatcher, ".disp" , 'formatted')
+    call self%open_rank_file (io_unit%particle_d, ".pdat" , 'unformatted')
+    call self%open_rank_file (io_unit%particle_i, ".pinf" , 'unformatted')
     if (self%task_logging > 0) &
     call self%open_rank_file (io_unit%task      , ".task0", 'formatted')
     !---------------------------------------------------------------------------

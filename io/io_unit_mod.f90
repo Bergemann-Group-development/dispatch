@@ -12,7 +12,8 @@ MODULE io_unit_mod
       flag=8, index=9, dump=10, trace=11, os=12, mpi=13, queue=14, direct=15, &
       validate=16, dispatcher=17, nml=18, copy1=19, copy2=20, datain=21, &
       nml1=22, nml2=23, dbg=24, hash=25, sinks=26, task=27, lock1=28, lock2=29, &
-      aux=30, tmp=50, sent=150, mesa=200 ! Mesa has reserved numbers >= 200
+      aux=30, particle_d=31, particle_i=32, tmp=50, sent=150, &
+      mesa=200 ! Mesa has reserved numbers >= 200
     integer:: iodir = -1
     character(len=64):: inputname, datadir='data', top
     character(len=64):: rundir, inputdir

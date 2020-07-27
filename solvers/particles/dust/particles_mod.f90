@@ -2,6 +2,7 @@
 !> Particle data types for dust-gas interaction:
 !>
 !>   particle_t         : data type for particles
+!>   vparticle_t        : data type for visualization particles
 !>   particles_t        : data type for particle lists
 !>        bins_t        : Cartesian collection of particle lists
 !>
@@ -11,6 +12,7 @@ MODULE particles_mod
   USE io_mod
   USE trace_mod
   USE omp_mod
+  USE mpi_mod
   USE mpi_buffer_mod
   implicit none
   private
@@ -24,22 +26,23 @@ MODULE particles_mod
     procedure:: init => init_particle
     procedure:: pack => pack_particle
   end type                                  ! sum:  60
-  integer, parameter:: vparticle_type=1
+  integer, parameter:: vparticle_key=1
   type, public, extends(particle_t):: vparticle_t
     integer(8):: id
     real:: vg(3), d
   contains
+    procedure:: init => init_vparticle
     procedure:: pack => pack_vparticle
     procedure:: output => output_vparticle
   end type
   !--- collection of particles ---
-  integer, parameter:: particles_type=2
+  integer, parameter:: particles_key=2
   type, public:: particles_t
     class(particle_t), pointer:: head => null(), tail => null()
     integer:: n = 0
     integer:: id(5)
   contains
-    procedure:: init
+    procedure:: init => init_particles
     procedure:: append
     !procedure:: prepend
     procedure:: remove
@@ -50,6 +53,7 @@ MODULE particles_mod
     procedure:: pack => pack_particles
     procedure:: output => output_particles
     procedure:: output1
+    procedure:: statistics
   end type
   !--- cartesian arrangement of particle bins ---
   type, public:: bins_t
@@ -67,6 +71,11 @@ CONTAINS
 SUBROUTINE init_particle (self)
   class(particle_t):: self
 END SUBROUTINE init_particle
+SUBROUTINE init_vparticle (self)
+  class(vparticle_t):: self
+  self%id = 1 + omp%thread_global + id*omp%nthreads_global
+  id = id+1
+END SUBROUTINE init_vparticle
 
 !===============================================================================
 SUBROUTINE pack_particle (self, buffer)
@@ -99,7 +108,7 @@ SUBROUTINE output_vparticle (self)
   integer            :: n, j
   integer, save      :: itimer=0
   !-----------------------------------------------------------------------------
-  write (io_unit%tmp) vparticle_type
+  write (io_unit%tmp) vparticle_key
   write (io_unit%tmp) self%q, self%r, self%v, self%vg, self%w, self%d, &
     self%t, self%id
 END SUBROUTINE output_vparticle
@@ -107,7 +116,7 @@ END SUBROUTINE output_vparticle
 !===============================================================================
 !> Initialize particle list
 !===============================================================================
-SUBROUTINE init (self, id)
+SUBROUTINE init_particles (self, id)
   class(particles_t):: self
   integer:: id(5)
   allocate (self%head, self%tail)
@@ -115,7 +124,7 @@ SUBROUTINE init (self, id)
   self%n = 0
   self%head%next => self%tail
   self%tail%prev => self%head
-END SUBROUTINE init
+END SUBROUTINE init_particles
 
 !===============================================================================
 !> Append to the list
@@ -355,10 +364,10 @@ SUBROUTINE output1 (self)
   !-----------------------------------------------------------------------------
   ! Collect and write out
   !-----------------------------------------------------------------------------
-  write (io_unit%tmp) particles_type
-  write (io_unit%tmp) n
   if (n>0) then
-    allocate (q(n,4), r(n,3), v(n,3), g(n,3), w(n), t(n), d(n), i(n))
+    write (io_unit%tmp) particles_key
+    write (io_unit%tmp) n
+      allocate (q(n,4), r(n,3), v(n,3), g(n,3), w(n), t(n), d(n), i(n))
     n = 0
     p => self%head%next
     do j=1,self%n
@@ -389,7 +398,7 @@ SUBROUTINE output_particles (self)
   integer                    :: i
   integer, save              :: itimer=0
   !-----------------------------------------------------------------------------
-!  call trace%begin ('particles_t%output', itimer=itimer)
+  call trace%begin ('particles_t%output', itimer=itimer)
   p => self%head%next
   do i=1,self%n
     select type (p)
@@ -398,7 +407,14 @@ SUBROUTINE output_particles (self)
     end select
     p => p%next
   end do
-!  call trace%end (itimer)
+  call trace%end (itimer)
 END SUBROUTINE output_particles
+
+!===============================================================================
+SUBROUTINE statistics (self)
+  class(particles_t):: self
+  write (stdlog,'(a,i12,2x,a,i5)') &
+    'particles_t%statistics:',id,'particles on thread',omp%thread_global
+END SUBROUTINE statistics
 
 END MODULE particles_mod
