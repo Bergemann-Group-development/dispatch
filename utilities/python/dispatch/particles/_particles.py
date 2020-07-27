@@ -8,6 +8,7 @@ class particles(object):
         ifile=file.replace('.pdat','.pinf')
         with FortranFile(ifile) as fd:
             parts,snaps=fd.read_record('i4,i4')[0]
+            snaps=snaps+1
             if verbose>1:
                 print(snaps,parts)
             self.bin=np.zeros((parts,snaps),dtype=np.int16)
@@ -26,32 +27,28 @@ class particles(object):
                 print('{} format={}'.format(file,fmt))
             m=0
             m0=0
-            rec='(4)i2,(3)f4,(3)f4,(3)f4,f4,f4,f8,i8'
-            if verbose>3:
-                print(rec)
             while fmt==3:
-                iout,id,t,position,size=fd.read_record('i4,i4,f8,(3)f8,(3)f8')[0]
-                iout=iout-1
+                iout,n,id,t,position,size=fd.read_record('i4,i4,i4,f8,(3)f8,(3)f8')[0]
                 pos=position.astype(np.float32)
-                fmt=fd.read_record('i4')[0]
                 if verbose>2:
-                    print('id,t,pos,fmt: {:6d} {:8.3f} {} {}'.format(id,iout,t,pos,fmt))
-                while fmt==2:
-                    n=fd.read_record('i4')[0]
-                    s='(4,n)i2,(3,n)f4,(3,n)f4,(3,n)f4,(n)f4,(n)f4,(n)f8,(n)i8'
-                    s=s.replace('n','{}'.format(n))
-                    (q,r,v,vg,w,d,t,id)=fd.read_record(s)[0]
-                    i=id-1
-                    for dir in range(3):
-                        self.r[i,dir,iout]=(r[dir,:]+q[dir,:])*size[dir]+pos[dir]
-                        self.v[i,dir,iout]=v[dir,:]
-                        self.vg[i,dir,iout]=vg[dir,:]
-                    self.bin[i,iout]=q[3,:]-1
-                    self.w[i,iout]=w
-                    self.d[i,iout]=d
-                    self.t[i,iout]=t
-                    fmt=fd.read_record('i4')[0]
-                    m=m+n
+                    print('id,n,io,t,pos,fmt: {} {} {} {:8.3f} {} {}'
+                          .format(id,n,iout,t,pos,size))
+                s='(4,n)i2,(3,n)f4,(3,n)f4,(3,n)f4,(n)f4,(n)f4,(n)f8,(n)i8'
+                s=s.replace('n','{}'.format(n))
+                if verbose>3:
+                    print(s)
+                (q,r,v,vg,w,d,t,id)=fd.read_record(s)[0]
+                i=id-1
+                for dir in range(3):
+                    self.r[i,dir,iout]=(r[dir,:]+q[dir,:])*size[dir]+pos[dir]
+                    self.v[i,dir,iout]=v[dir,:]
+                    self.vg[i,dir,iout]=vg[dir,:]
+                self.bin[i,iout]=q[3,:]-1
+                self.w[i,iout]=w
+                self.d[i,iout]=d
+                self.t[i,iout]=t
+                fmt=fd.read_record('i4')[0]
+                m=m+n
             if verbose>0:
                 used = time()-start
                 print('{:5.2f} Mp -> {:.2f} Mp/s   {} snapshots {} particles'

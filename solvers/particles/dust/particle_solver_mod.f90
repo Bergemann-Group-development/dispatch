@@ -785,11 +785,10 @@ SUBROUTINE output (self)
   real, pointer, contiguous     :: tmp_r(:,:)
   integer, pointer, contiguous  :: tmp_i(:)
   integer                       :: i, j, n, i1, i2, i3, i4
-  integer, parameter            :: particle_solver_key=3
   integer, save                 :: itimer=0
   !-----------------------------------------------------------------------------
   if (.not. on) return
-  call trace%begin ('particles_t%output', itimer,itimer)
+  call trace%begin ('particles_t%output', itimer=itimer)
   if (verbose > 1) then
     write (stdlog, '(a,i6,2f8.4)') &
       'particles_t%output: id, time, aux_next =', &
@@ -799,26 +798,9 @@ SUBROUTINE output (self)
   ! High-cadence output of v_particle_t particles
   !-----------------------------------------------------------------------------
   if (out_time > 0d0 .and. self%time >= self%out_next) then
-    call io%lock%set ('particle_solver_t%output')
-    do while (self%time >= self%out_next)
-      write (io_unit%particle_d) particle_solver_key
-      write (io_unit%particle_d) &
-        self%iout, self%id, self%time, self%patch%position, self%patch%ds
-      n = 0
-      do i3=self%lb(3),self%ub(3)
-        do i2=self%lb(2),self%ub(2)
-          do i1=self%lb(1),self%ub(1)
-            do i4=1,n_bin
-              call p_io%update (self%particles(i1,i2,i3,i4))
-            end do
-          end do
-        end do
-      end do
-      call p_io%output (self%iout)
-      self%iout = self%iout + 1
-      self%out_next = self%out_next + out_time
-    end do
-    call io%lock%unset ('particle_solver_t%output')
+    call voutput (self)
+    self%iout = self%iout + 1
+    self%out_next = self%out_next + out_time
   end if
   if (self%time >= self%aux%aux_next) then
     call self%aux%register ('dust_s', self%s_cgs)
@@ -852,14 +834,24 @@ SUBROUTINE voutput (self)
   integer(2), pointer, contiguous:: q(:,:)
   integer(8), pointer, contiguous:: id(:)
   integer:: n, i1, i2, i3, i4, j
-  integer, save:: n_tot = 0, EOF = -1, particle_io_key = 2
+  integer, save:: n_tot = 0, i_max = 0, o_max = 0, itimer = 0
+  integer, parameter::particle_solver_key = 3, EOF = -1
   !-----------------------------------------------------------------------------
+  call trace%begin ('particles_t%voutput', itimer=itimer)
   n = 0
   do i4=1,n_bin
   do i3=self%lb(3),self%ub(3)
   do i2=self%lb(2),self%ub(2)
   do i1=self%lb(1),self%ub(1)
-    n = n + self%particles(i1,i2,i3,i4)%n
+    pp => self%particles(i1,i2,i3,i4)
+    p => pp%head%next
+    do j=1,pp%n
+      select type (p)
+      type is (vparticle_t)
+        n = n + 1
+      end select
+      p => p%next
+      end do
   end do
   end do
   end do
@@ -898,13 +890,16 @@ SUBROUTINE voutput (self)
   !-----------------------------------------------------------------------------
   call io%lock%set ('particle_solver_t%voutput')
   rewind (io_unit%particle_i)
-  write (io_unit%particle_i) n, self%iout
+  i_max = max(i_max,maxval(id))
+  o_max = max(o_max,self%iout)
+  write (io_unit%particle_i) i_max, o_max
   flush (io_unit%particle_i)
   !-----------------------------------------------------------------------------
   ! Write out buffered data
   !-----------------------------------------------------------------------------
-  write (io_unit%particle_d) particle_io_key
-  write (io_unit%particle_d) n
+  write (io_unit%particle_d) particle_solver_key
+  write (io_unit%particle_d) &
+   self%iout, n, self%id, self%time, self%patch%position, self%patch%ds
   write (io_unit%particle_d) q, r, v, vg, w, d, t, id
   write (io_unit%particle_d) EOF
   backspace (io_unit%particle_d)
@@ -913,6 +908,9 @@ SUBROUTINE voutput (self)
     write(stdout,'(a,f8.2,a)') 'particle_io:', n_tot*1e-6, ' Mp'
   end if
   call io%lock%unset ('particle_solver_t%voutput')
+  !-----------------------------------------------------------------------------
+  deallocate (q, r, v, vg, d, w, t, id)
+  call trace%end (itimer)
 END SUBROUTINE voutput
 
 !===============================================================================
