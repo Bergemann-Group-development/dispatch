@@ -159,7 +159,7 @@ END SUBROUTINE prepend
 !===============================================================================
 SUBROUTINE remove (self, p)
   class(particles_t):: self
-  type(particle_t), pointer:: p
+  class(particle_t), pointer:: p
 !define DBG
 #ifdef DBG
   if (p%id == -1 .or. .not.associated(p%next) &
