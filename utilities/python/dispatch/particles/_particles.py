@@ -7,17 +7,19 @@ class particles(object):
         self.file=file
         ifile=file.replace('.pdat','.pinf')
         with FortranFile(ifile) as fd:
-            parts,snaps=fd.read_record('i4,i4')[0]
+            bins,parts,snaps=fd.read_record('i4,i4,i4')[0]
+            snaps=snaps+1
+            if verbose>1:
+                print('bins: {} particles: {} snapshots: {}'.format(bins,parts,snaps))
             snaps=snaps+1
             if verbose>1:
                 print(snaps,parts)
-            self.bin=np.zeros((parts,snaps),dtype=np.int16)
-            self.r=np.zeros((parts,3,snaps),dtype=np.float32)
-            self.v=np.zeros((parts,3,snaps),dtype=np.float32)
-            self.vg=np.zeros((parts,3,snaps),dtype=np.float32)
-            self.w=np.zeros((parts,snaps),dtype=np.float32)
-            self.d=np.zeros((parts,snaps),dtype=np.float32)
-            self.t=np.zeros((parts,snaps),dtype=np.float64)
+            self.r =np.zeros((bins,parts,3,snaps),dtype=np.float32)
+            self.v =np.zeros((bins,parts,3,snaps),dtype=np.float32)
+            self.vg=np.zeros((bins,parts,3,snaps),dtype=np.float32)
+            self.w =np.zeros((bins,parts,snaps),dtype=np.float32)
+            self.dg=np.zeros((bins,parts,snaps),dtype=np.float32)
+            self.t =np.zeros((bins,parts,snaps),dtype=np.float64)
         from time import time
         start=time()
         with FortranFile(file) as fd:
@@ -37,16 +39,18 @@ class particles(object):
                 s=s.replace('n','{}'.format(n))
                 if verbose>3:
                     print(s)
-                (q,r,v,vg,w,d,t,id)=fd.read_record(s)[0]
+                (q,r,v,vg,w,dg,t,id)=fd.read_record(s)[0]
                 i=id-1
+                bin=q[3,:]-1
+                #print(t[bin==1].max())
+                #print(bin.shape,bin.min(),bin.max(),i.shape)
                 for dir in range(3):
-                    self.r[i,dir,iout]=(r[dir,:]+q[dir,:])*size[dir]+pos[dir]
-                    self.v[i,dir,iout]=v[dir,:]
-                    self.vg[i,dir,iout]=vg[dir,:]
-                self.bin[i,iout]=q[3,:]-1
-                self.w[i,iout]=w
-                self.d[i,iout]=d
-                self.t[i,iout]=t
+                    self.r [bin,i,dir,iout]=(r[dir,:]+q[dir,:])*size[dir]+pos[dir]
+                    self.v [bin,i,dir,iout]= v[dir,:]
+                    self.vg[bin,i,dir,iout]=vg[dir,:]
+                self.w [bin,i,iout]=w
+                self.dg[bin,i,iout]=dg
+                self.t [bin,i,iout]=t
                 fmt=fd.read_record('i4')[0]
                 m=m+n
             if verbose>0:
@@ -54,14 +58,16 @@ class particles(object):
                 print('{:5.2f} Mp -> {:.2f} Mp/s   {} snapshots {} particles'
                       .format(m*1e-6,m*1e-6/used,snaps,parts))
                 #print('{:5.2f} Mp'.format(m*1e-6))
-        w=np.where(self.t[:,1] > 0.0)[0]
-        self.r =self.r[w]
-        self.v =self.v[w]
-        self.vg=self.vg[w]
-        self.w =self.w[w]
-        self.d =self.d[w]
-        self.t =self.t[w]
-        self.bin=self.bin[w]
+        """ Keep only entries with non-zero density in the initial snapshot """
+        w=np.where(self.dg[0,:,0] > 0.0)[0]
+        if verbose>1:
+            print('dropping',self.dg.shape[1]-len(w),'entries with no density')
+        self.r =self.r [:,w,:,:]
+        self.v =self.v [:,w,:,:]
+        self.vg=self.vg[:,w,:,:]
+        self.w =self.w [:,w,:]
+        self.dg=self.dg[:,w,:]
+        self.t =self.t [:,w,:]
 
 def open(file='fort.50',verbose=0):
     """ Read all cell information in the given file, and

@@ -51,6 +51,8 @@ MODULE particle_solver_mod
     class(nbor_t),     pointer :: nbor => null()       ! nbor list
     type(link_t)   ,   pointer :: link => null()       ! task link
     type(dust_t)               :: dust                 ! dust solver
+    real, pointer, contiguous  :: dg(:,:,:)            ! gas density
+    real, pointer, contiguous  :: vg(:,:,:,:)          ! gas velocity
     real, pointer, contiguous  :: dd(:,:,:,:) => null()! number density per bin
     real, pointer, contiguous  :: s_cgs(:)             ! particle size
     real, pointer, contiguous  :: m_cgs(:)             ! particle size
@@ -127,7 +129,7 @@ SUBROUTINE pre_init (self, patch)
     first_time = .false.
   end if
   call io%lock%unset ('particle_solver_t%pre_init')
-  self%out_next = out_time
+  self%out_next = 0d0
   self%dust%detailed_timer = detailed_timer
   self%dust%ip_dbg = ip_dbg
   self%dust%i_dbg = i_dbg
@@ -213,9 +215,11 @@ SUBROUTINE initial_condition (self)
   type(vparticle_t), pointer  :: pv
   class(particle_t), pointer  :: p
   class(gpatch_t), pointer    :: patch
-  integer                     :: m(3), i1, i2, i3, bin, i, j, n, l, bytes, id(5)
+  integer                     :: m(3), i1, i2, i3, bin, i, j, n, nv, l, nb, id(5)
   real                        :: d, w, vg(3)
   integer, save               :: itimer=0, extra_bits
+  integer, save               :: lid = 0
+  !$omp threadprivate (lid)
   !-----------------------------------------------------------------------------
   ! Set flags indicating upper and lower boundaries.  The box size is self%box,
   ! and the patch position, size, and cell size are self%position, self%size,
@@ -249,9 +253,9 @@ SUBROUTINE initial_condition (self)
   if (self%patch%id == 1) then
     allocate (p)
     call p%init
-    bytes = (storage_size(p)+extra_bits)/8
+    nb = (storage_size(p)+extra_bits)/8
     print '(a,i3,a,f18.3,a)', ' estimated memory for particles (', &
-      bytes,' bytes):',bytes*n_bin*particles_per_bin/1024.**3 &
+      nb,' bytes):',nb*n_bin*particles_per_bin/1024.**3 &
       *product(self%patch%mesh%b/self%patch%mesh%d), ' GB'
     call pool%append (p)
   end if
@@ -262,7 +266,6 @@ SUBROUTINE initial_condition (self)
   !$omp critical (alloc_cr)
 #endif
   l = 0
-  i = 0
   do i3=self%lb(3),self%ub(3)
   do i2=self%lb(2),self%ub(2)
     n = 0
@@ -277,13 +280,17 @@ SUBROUTINE initial_condition (self)
         call particles%init (id)
         n = n+2
         self%dd(i1,i2,i3,bin) = 0.0
+        nv = 0
         do j=1,particles_per_bin
           n = n+1
-          if (mod(l,output_every)==0) then
+          if (mod(l+j,output_every) == 0) then  ! every output_every is for I/O
             allocate(pv)
             call pv%init
+            pv%id = 1 + omp%thread_global + (lid+nv)*omp%nthreads_global
+            nv = nv+1
+            pv%dg = d
+            pv%vg = vg
             p => pv
-            i = i+1
           else
             allocate(pn)
             call pn%init
@@ -297,8 +304,9 @@ SUBROUTINE initial_condition (self)
           self%dd(i1,i2,i3,bin) = self%dd(i1,i2,i3,bin) + w
           call particles%append (p)
         end do
-        l = l+1
       end do
+      l = l+particles_per_bin
+      lid = lid+nv
       if (verbose > 0) call particles%validate ('IC')
     end do
     call io%bits_mem (storage_size(p)+extra_bits, n, 'p')
@@ -355,11 +363,10 @@ SUBROUTINE update (self)
   real(8)                     :: time(2), self_time, wc, start
   real                        :: ds, dt, os, n_min, n_max, ods
   integer                     :: ip, n, np, no, nk, nm, it, m(3), ii(3), dir
-  integer(kind=2)             :: i, i1, i2, i3, bin, j, l(3), u(3), q(3)
+  integer(kind=2)             :: i, i1, i2, i3, i4, j, l(3), u(3), q(3)
   integer                     :: id, paid(5), istep
   integer(8)                  :: pid
   logical                     :: move, export
-  real, pointer, contiguous   :: vg(:,:,:,:)   ! gas velocity
   class(gpatch_t), pointer    :: patch
   type(particles_t), pointer  :: exports(:), exportp
   type(particles_t), pointer  :: particles, bins(:)
@@ -369,7 +376,6 @@ SUBROUTINE update (self)
 !-----------------------------------------------------------------------------
   if (.not. on) return
   call trace%begin ('particle_solver_t%update', itimer=itimer)
-  call self%output
   start = wallclock()
   patch => self%patch
   id = patch%id
@@ -407,12 +413,13 @@ SUBROUTINE update (self)
   ! Allocate array for number of particles per cell-bin
   !-----------------------------------------------------------------------------
   m = patch%gn
-  allocate (vg(3,m(1),m(2),m(3)))
-  call io%bits_mem (storage_size(vg), &
-                   product(shape(vg)), 'vg')
+  allocate (self%vg(3,m(1),m(2),m(3)))
+  call io%bits_mem (storage_size(self%vg), &
+                   product(shape(self%vg)), 'vg')
   !-----------------------------------------------------------------------------
   ! Cache the gas velocity
   !-----------------------------------------------------------------------------
+  self%dg => patch%mem(:,:,:,patch%idx%d,patch%it,1)
   m = patch%gn
   l = self%lb
   u = self%ub
@@ -420,9 +427,8 @@ SUBROUTINE update (self)
   do i3=l(3),u(3)
   do i2=l(2),u(2)
   do i1=l(1),u(1)
-    vg(dir,i1,i2,i3) = patch%mem(i1,i2,i3,patch%idx%px+dir-1,patch%it,1) &
-                     /(patch%mem(i1,i2,i3,patch%idx%d       ,patch%it,1) &
-                      *patch%ds(dir))
+    self%vg(dir,i1,i2,i3) = patch%mem(i1,i2,i3,patch%idx%px+dir-1,patch%it,1) &
+                          /(self%dg(i1,i2,i3)*patch%ds(dir))
   end do
   end do
   end do
@@ -432,10 +438,15 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   wc = wallclock()
   allocate (exports(n_bin))
-  do bin=1,n_bin
-    paid = [patch%id,0,0,0,int(bin)]
-    call exports(bin)%init (paid)
+  do i4=1,n_bin
+    paid = [patch%id,0,0,0,int(i4)]
+    call exports(i4)%init (paid)
   end do
+  !-----------------------------------------------------------------------------
+  ! Import from other patches
+  !-----------------------------------------------------------------------------
+  call self%import
+  call self%output
   !-----------------------------------------------------------------------------
   ! Non-vectorized pusher
   !-----------------------------------------------------------------------------
@@ -449,8 +460,8 @@ SUBROUTINE update (self)
   wc1 = wc
   n_min = particles_per_bin*min_fraction
   n_max = particles_per_bin*max_fraction
-  do bin=1,n_bin
-    os = drag_coeff/self%s_cgs(bin)
+  do i4=1,n_bin
+    os = drag_coeff/self%s_cgs(i4)
     do i3=l(3),u(3)
     do i2=l(2),u(2)
     do i1=l(1),u(1)
@@ -458,7 +469,7 @@ SUBROUTINE update (self)
       if (verbose > 0) then
         wc = wallclock()
       end if
-      particles => self%particles(i1,i2,i3,bin)
+      particles => self%particles(i1,i2,i3,i4)
       associate (n_particles => timer%n_particles)
       !$omp atomic update
       n_particles = n_particles + particles%n
@@ -467,9 +478,9 @@ SUBROUTINE update (self)
       ip = ip + particles%n
       d = patch%mem(i1,i2,i3,patch%idx%d,patch%it,1)
       up = patch%u_phase(i1,i2,i3)/ds
-      v(1) = vg(1,i1,i2,i3)
-      v(2) = vg(2,i1,i2,i3)
-      v(3) = vg(3,i1,i2,i3)
+      v(1) = self%vg(1,i1,i2,i3)
+      v(2) = self%vg(2,i1,i2,i3)
+      v(3) = self%vg(3,i1,i2,i3)
       pc = d*os
       p => particles%head%next
       j = 1
@@ -478,11 +489,11 @@ SUBROUTINE update (self)
         next => p%next
         dt = 0.5*(self_time - p%t)
         if (dt > 0.0) then
-          !--- kick 1 ------------------------------------------------------------
+          !--- kick 1 ----------------------------------------------------------
           pd = pc*(v-p%v)                                   ! drag force
           pa = 0.0                                          ! external force
           p%v = p%v + dt*(pa+pd)/(1.+pc*dt)                 ! stiff kick
-          !--- drift -------------------------------------------------------------
+          !--- drift -----------------------------------------------------------
           p%r = p%r + 2.*dt*p%v                             ! forward two dr
           p%t = self_time
           !if (self%forced) then
@@ -490,10 +501,10 @@ SUBROUTINE update (self)
           !  r = mesh%p + (p%q + p%r - mesh%o)*mesh%d
           !  p%a = self%pforce (r)
           !end if
-          !--- kick 2 ------------------------------------------------------------
+          !--- kick 2 ----------------------------------------------------------
           pd = pc*(v-p%v)                                   ! drag force
           p%v = p%v + dt*(pa+pd)/(1.+pc*dt)                 ! stiff kick
-          !--- update q+r representation -----------------------------------------
+          !--- update q+r representation ---------------------------------------
           q = floor(p%r)                                    ! integer shift
           p%r = p%r - q                                     ! remove
           p%q(1:3) = p%q(1:3) + q                           ! add
@@ -516,18 +527,18 @@ SUBROUTINE update (self)
           !---------------------------------------------------------------------
           if (export) then
             call particles%remove (p)
-            call exports(bin)%append (p)
-            self%dd(i1,i2,i3,bin) = &
-            self%dd(i1,i2,i3,bin) - p%w
+            call exports(i4)%append (p)
+            self%dd(i1,i2,i3,i4) = &
+            self%dd(i1,i2,i3,i4) - p%w
             no = no+1
           !---------------------------------------------------------------------
           else if (move) then
             call particles%remove (p)
             call self%particles(p%q(1),p%q(2),p%q(3),p%q(4))%append (p)
-            self%dd(i1,i2,i3,bin) = &
-            self%dd(i1,i2,i3,bin) - p%w
-            self%dd(p%q(1),p%q(2),p%q(3),bin) = &
-            self%dd(p%q(1),p%q(2),p%q(3),bin) + p%w
+            self%dd(i1,i2,i3,i4) = &
+            self%dd(i1,i2,i3,i4) - p%w
+            self%dd(p%q(1),p%q(2),p%q(3),i4) = &
+            self%dd(p%q(1),p%q(2),p%q(3),i4) + p%w
             nm = nm+1
           end if
         end if
@@ -535,19 +546,23 @@ SUBROUTINE update (self)
       end do
       if (verbose > 0) call particles%validate ('after update')
       if (particles%n > n_max) then
-        call remove (self, particles, self%dd(i1,i2,i3,bin))
+        call remove (self, particles, self%dd(i1,i2,i3,i4))
       end if
     end do
     end do
     end do
   end do
   !-----------------------------------------------------------------------------
+  ! Output
+  !-----------------------------------------------------------------------------
+  self%time = self_time
+  !-----------------------------------------------------------------------------
   ! Briefly lock self%xports and copy in particles from the scratch exports
   !-----------------------------------------------------------------------------
   call self%lock%set ('copy')
-  do bin=1,n_bin
-    exportp => self%exports(bin)
-    call exports(bin)%transfer (exportp)
+  do i4=1,n_bin
+    exportp => self%exports(i4)
+    call exports(i4)%transfer (exportp)
   end do
   call self%lock%unset ('copy')
   deallocate (exports)
@@ -557,10 +572,6 @@ SUBROUTINE update (self)
   !$omp atomic update
   t_particles = t_particles + wc
   end associate
-  !-----------------------------------------------------------------------------
-  ! Import from other patches
-  !-----------------------------------------------------------------------------
-  call self%import
   !-----------------------------------------------------------------------------
   np = self%np
   if (verbose > 0) then
@@ -591,7 +602,6 @@ SUBROUTINE update (self)
     end if
     !---------------------------------------------------------------------------
   end if
-  self%time = self_time 
   !-----------------------------------------------------------------------------
   ! Do dust evolution after move, since we need the particle timestep values
   !-----------------------------------------------------------------------------
@@ -608,14 +618,14 @@ SUBROUTINE update (self)
   end if
   call self%dust%consistency ('after dust%update')
   !-----------------------------------------------------------------------------
-  call io%bits_mem (storage_size(vg), -product(shape(vg)), 'vg')
-  deallocate (vg)
+  call io%bits_mem (storage_size(self%vg), -product(shape(self%vg)), 'vg')
+  deallocate (self%vg)
   !-----------------------------------------------------------------------------
   call trace%end (itimer)
 contains
 
 !===============================================================================
-!> top up particles per bin
+!> top up particles per i4
 !===============================================================================
 subroutine add_particles
   real:: d_cgs, w
@@ -623,7 +633,7 @@ subroutine add_particles
   integer:: i, j, n
   !.............................................................................
   q = [i1,i2,i3]
-  w = self%dd(i1,i2,i3,bin)/particles_per_bin
+  w = self%dd(i1,i2,i3,i4)/particles_per_bin
   n = particles%n
   p => particles%head%next
   time = 0d0
@@ -640,7 +650,7 @@ subroutine add_particles
       p%v(i) = v(i)
       p%r(i) = self%random%ran1()
     end do
-    p%q(4) = bin
+    p%q(4) = i4
     p%w = w
     p%t = time
     call particles%append (p)
@@ -826,70 +836,53 @@ SUBROUTINE voutput (self)
   class(particle_solver_t):: self
   class(particles_t), pointer:: pp
   class(particle_t), pointer:: p
-  real,       pointer, contiguous:: r(:,:), v(:,:), vg(:,:), w(:), d(:)
+  real,       pointer, contiguous:: r(:,:), v(:,:), vg(:,:), w(:), dg(:)
   real(8),    pointer, contiguous:: t(:)
   integer(2), pointer, contiguous:: q(:,:)
   integer(8), pointer, contiguous:: id(:)
-  integer:: n, i1, i2, i3, i4, j
-  integer, save:: n_tot = 0, i_max = 0, o_max = 0, itimer = 0
+  integer:: n, m, i1, i2, i3, i4, j
+  integer, save:: n_tot = 0, i_max = 0, o_max = 0, itimer(2) = 0
   integer, parameter::particle_solver_key = 3, EOF = -1
   !-----------------------------------------------------------------------------
-  call trace%begin ('particle_solver_t%voutput', itimer=itimer)
+  call trace%begin ('particle_solver_t%voutput(1)', itimer=itimer(1))
   n = 0
+  m = 0
   do i4=1,n_bin
-  do i3=self%lb(3),self%ub(3)
-  do i2=self%lb(2),self%ub(2)
-  do i1=self%lb(1),self%ub(1)
-    pp => self%particles(i1,i2,i3,i4)
-    p => pp%head%next
-    do j=1,pp%n
-      select type (p)
-      type is (vparticle_t)
-        n = n + 1
-      end select
-      p => p%next
-      end do
-  end do
-  end do
-  end do
-  end do
-  allocate (q(n,4), r(n,3), v(n,3), vg(n,3), d(n), w(n), t(n), id(n))
-  !-----------------------------------------------------------------------------
-  n = 0
-  do i3=self%lb(3),self%ub(3)
-  do i2=self%lb(2),self%ub(2)
-  do i1=self%lb(1),self%ub(1)
-  do i4=1,n_bin
-    pp => self%particles(i1,i2,i3,i4)
-    p => pp%head%next
-    do j=1,pp%n
-      select type (p)
-      type is (vparticle_t)
-        n = n + 1
-        q (n,:) = p%q
-        r (n,:) = p%r
-        v (n,:) = p%v
-        vg(n,:) = p%vg
-        w (n)   = p%w
-        d (n)   = p%d
-        t (n)   = p%t
-        id(n)   = p%id
-      end select
-      p => p%next
+    do i3=self%lb(3),self%ub(3)
+    do i2=self%lb(2),self%ub(2)
+    do i1=self%lb(1),self%ub(1)
+      pp => self%particles(i1,i2,i3,i4)
+      call harvest (.false.)
+    end do
+    end do
     end do
   end do
-  end do
-  end do
+  !m = (product(self%ub-self%lb+1)*particles_per_bin*n_bin)/output_every + 1
+  !print *,m,n
+  m = n
+  allocate (q(m,4), r(m,3), v(m,3), vg(m,3), dg(m), w(m), t(m), id(m))
+  !-----------------------------------------------------------------------------
+  n = 0
+  do i4=1,n_bin
+    do i3=self%lb(3),self%ub(3)
+    do i2=self%lb(2),self%ub(2)
+    do i1=self%lb(1),self%ub(1)
+      pp => self%particles(i1,i2,i3,i4)
+      call harvest (.true.)
+    end do
+    end do
+    end do
   end do
   !-----------------------------------------------------------------------------
   ! Write out info on dimensions -- before data to ensure it is up-to-date
   ! during live runs
   !-----------------------------------------------------------------------------
   call io%lock%set ('particle_solver_t%voutput')
+  call trace%begin ('particle_solver_t%voutput(2)', itimer=itimer(2))
   rewind (io_unit%particle_i)
   i_max = max(i_max,maxval(id))
   o_max = max(o_max,self%iout)
-  write (io_unit%particle_i) i_max, o_max
+  write (io_unit%particle_i) n_bin, i_max, o_max
   flush (io_unit%particle_i)
   !-----------------------------------------------------------------------------
   ! Write out buffered data
@@ -897,17 +890,42 @@ SUBROUTINE voutput (self)
   write (io_unit%particle_d) particle_solver_key
   write (io_unit%particle_d) &
    self%iout, n, self%id, self%time, self%patch%position, self%patch%ds
-  write (io_unit%particle_d) q, r, v, vg, w, d, t, id
+  write (io_unit%particle_d) q(1:n,:), r(1:n,:), v(1:n,:), vg(1:n,:), &
+    w(1:n), dg(1:n), t(1:n), id(1:n)
   write (io_unit%particle_d) EOF
   backspace (io_unit%particle_d)
   n_tot = n_tot + n
   if (mod(n_tot,1000000) == 0) then
     write(stdout,'(a,f8.2,a)') 'particle_io:', n_tot*1e-6, ' Mp'
   end if
+  call trace%end (itimer(2))
   call io%lock%unset ('particle_solver_t%voutput')
   !-----------------------------------------------------------------------------
-  deallocate (q, r, v, vg, d, w, t, id)
-  call trace%end (itimer)
+  deallocate (q, r, v, vg, dg, w, t, id)
+  call trace%end (itimer(1))
+contains
+
+subroutine harvest (copy)
+  logical:: copy
+  p => pp%head%next
+  do j=1,pp%n
+    select type (p)
+    type is (vparticle_t)
+      n = n + 1
+      if (copy) then
+        q (n,:) = p%q
+        r (n,:) = p%r
+        v (n,:) = p%v
+        vg(n,:) = self%vg(:,p%q(1),p%q(2),p%q(3))
+        dg(n)   = self%dg(  p%q(1),p%q(2),p%q(3))
+        w (n)   = p%w
+        t (n)   = p%t
+        id(n)   = p%id
+      end if
+    end select
+    p => p%next
+  end do
+end subroutine harvest
 END SUBROUTINE voutput
 
 !===============================================================================

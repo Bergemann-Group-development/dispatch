@@ -29,7 +29,7 @@ MODULE particles_mod
   integer, parameter:: vparticle_key=1
   type, public, extends(particle_t):: vparticle_t
     integer(8):: id
-    real:: vg(3), d
+    real:: vg(3), dg
   contains
     procedure:: init => init_vparticle
     procedure:: pack => pack_vparticle
@@ -95,7 +95,7 @@ SUBROUTINE pack_vparticle (self, buffer)
   call buffer%append (self%q)
   call buffer%append (self%w)
   call buffer%append (self%t)
-  call buffer%append (self%d)
+  call buffer%append (self%dg)
   call buffer%append (self%vg)
   call buffer%append (self%id)
 END SUBROUTINE pack_vparticle
@@ -107,7 +107,7 @@ SUBROUTINE output_vparticle (self)
   integer, save      :: itimer=0
   !-----------------------------------------------------------------------------
   write (io_unit%tmp) vparticle_key
-  write (io_unit%tmp) self%q, self%r, self%v, self%vg, self%w, self%d, &
+  write (io_unit%tmp) self%q, self%r, self%v, self%vg, self%w, self%dg, &
     self%t, self%id
 END SUBROUTINE output_vparticle
 
@@ -295,7 +295,7 @@ SUBROUTINE pack_particles (self, mpi_buffer, viz_buffer)
       qs(:,ns) = p%q        ! integer position
       vs(:,ns) = p%v        ! particle velocity
       vg(:,ns) = p%vg       ! gas velocity
-      ds(ns)   = p%d        ! gas density
+      ds(ns)   = p%dg       ! gas density
       ts(ns)   = p%t        ! particle time
       ws(ns)   = p%w        ! particle weight
       id(ns)   = p%id       ! particle id
