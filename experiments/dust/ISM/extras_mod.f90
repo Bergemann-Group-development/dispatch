@@ -73,6 +73,7 @@ MODULE extras_mod
     procedure:: output
     procedure:: check_refine
     procedure:: courant_condition
+    procedure:: statistics
   end type
   type(extras_t), public:: extras
 CONTAINS
@@ -179,5 +180,13 @@ SUBROUTINE courant_condition (self, detailed_timer)
   call self%cooling%courant_condition                            ! cool
   call trace%end()
 END SUBROUTINE courant_condition
+
+!===============================================================================
+!> Called to allow statistics collection
+!===============================================================================
+SUBROUTINE statistics (self)
+  class(extras_t):: self
+  call self%particle_solver%statistics
+END SUBROUTINE statistics
 
 END MODULE extras_mod

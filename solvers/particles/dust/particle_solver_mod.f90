@@ -850,4 +850,11 @@ SUBROUTINE output (self)
   call trace%end ()
 END SUBROUTINE output
 
+!===============================================================================
+SUBROUTINE statistics (self)
+  class(particle_solver_t):: self
+  !-----------------------------------------------------------------------------
+  call self%particles(1,1,1,1)%statistics
+END SUBROUTINE statistics
+
 END MODULE particle_solver_mod

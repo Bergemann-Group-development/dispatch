@@ -104,6 +104,7 @@ SUBROUTINE execute (self, task_list, test)
   ! Loop over tasks
   !-----------------------------------------------------------------------------
   !$omp parallel
+  call task_list%head%task%statistics
   do while (.not.timer%done .and. wallclock() < io%job_seconds)
     call self%update (task_list, test)
     if (task_list%na == task_list%n_tasks) then
@@ -113,6 +114,7 @@ SUBROUTINE execute (self, task_list, test)
       min_nq = min(min_nq,nq)
     end if
   end do
+  call task_list%head%task%statistics
   write (io_unit%log,*) 'thread',omp%thread,' arrived'
   flush (io_unit%log)
   !$omp barrier

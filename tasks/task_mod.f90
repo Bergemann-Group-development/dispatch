@@ -131,6 +131,7 @@ MODULE task_mod
     procedure:: task_info
     procedure:: log
     procedure:: run => void
+    procedure:: statistics
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -1219,5 +1220,15 @@ SUBROUTINE log (self, label, level)
     !$omp end critical (tasklog_cr)
   end if
 END SUBROUTINE log
+
+!===============================================================================
+!> Statistics collection stub; this call is made to only one task (the first
+!> on the task list), allowing it to report solver statistics commont to, and
+!> available to, all tasks
+!===============================================================================
+SUBROUTINE statistics (self)
+  class(task_t):: self
+  write (stdlog,*) 'task_t%statistics: stub'
+END SUBROUTINE statistics
 
 END MODULE task_mod
