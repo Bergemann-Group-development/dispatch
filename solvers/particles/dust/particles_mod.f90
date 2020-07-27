@@ -51,8 +51,6 @@ MODULE particles_mod
     procedure:: validate
     procedure:: dump
     procedure:: pack => pack_particles
-    procedure:: output => output_particles
-    procedure:: output1
     procedure:: statistics
   end type
   !--- cartesian arrangement of particle bins ---
@@ -337,78 +335,6 @@ SUBROUTINE pack_particles (self, mpi_buffer, viz_buffer)
     deallocate (id,rs,vs,qs,ts,ws,vg,ds)
   end if
 END SUBROUTINE pack_particles
-
-!===============================================================================
-SUBROUTINE output1 (self)
-  class(particles_t)         :: self
-  class(particle_t), pointer :: p
-  real,       allocatable    :: r(:,:), v(:,:), g(:,:), d(:), w(:)
-  integer(2), allocatable    :: q(:,:)
-  real(8),    allocatable    :: t(:)
-  integer(8), allocatable    :: i(:)
-  integer                    :: n, j
-  integer, save              :: itimer=0
-  !-----------------------------------------------------------------------------
-  ! Count viz particles
-  !-----------------------------------------------------------------------------
-!  call trace%begin ('particles_t%output', itimer=itimer)
-  n = 0
-  p => self%head%next
-  do j=1,self%n
-    select type (p)
-    type is (vparticle_t)
-      n = n+1
-    end select
-    p => p%next
-  end do
-  !-----------------------------------------------------------------------------
-  ! Collect and write out
-  !-----------------------------------------------------------------------------
-  if (n>0) then
-    write (io_unit%tmp) particles_key
-    write (io_unit%tmp) n
-      allocate (q(n,4), r(n,3), v(n,3), g(n,3), w(n), t(n), d(n), i(n))
-    n = 0
-    p => self%head%next
-    do j=1,self%n
-      select type (p)
-      type is (vparticle_t)
-        n = n+1
-        q(n,:) = p%q        ! integer position
-        r(n,:) = p%r        ! float position
-        v(n,:) = p%v        ! particle velocity
-        g(n,:) = p%vg       ! gas velocity
-        w(n)   = p%w        ! particle weight
-        t(n)   = p%t        ! particle time
-        d(n)   = p%d        ! gas density
-        i(n)   = p%id       ! particle id
-      end select
-      p => p%next
-    end do
-    write (io_unit%tmp) q, r, v, g, w, d, t, i
-    deallocate (q, r, v, g, w, d, t, i)
-  end if
-!  call trace%end (itimer)
-END SUBROUTINE output1
-
-!===============================================================================
-SUBROUTINE output_particles (self)
-  class(particles_t)         :: self
-  class(particle_t), pointer :: p
-  integer                    :: i
-  integer, save              :: itimer=0
-  !-----------------------------------------------------------------------------
-  call trace%begin ('particles_t%output', itimer=itimer)
-  p => self%head%next
-  do i=1,self%n
-    select type (p)
-    type is (vparticle_t)
-      call p%output
-    end select
-    p => p%next
-  end do
-  call trace%end (itimer)
-END SUBROUTINE output_particles
 
 !===============================================================================
 SUBROUTINE statistics (self)

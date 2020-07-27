@@ -34,7 +34,6 @@ MODULE particle_solver_mod
   USE list_mod
   USE gpatch_mod
   USE particles_mod
-  USE particle_io_mod
   USE dust_mod
   USE scaling_mod
   USE units_mod
@@ -76,7 +75,6 @@ MODULE particle_solver_mod
     procedure:: output
     procedure:: statistics
   end type
-  type(particle_io_t), save     :: p_io
   type(particles_t), pointer :: pool          ! particle pool
   !$omp threadprivate (pool)                  ! for each thread
   integer:: verbose = 0                       ! noise level
@@ -129,7 +127,6 @@ SUBROUTINE pre_init (self, patch)
     first_time = .false.
   end if
   call io%lock%unset ('particle_solver_t%pre_init')
-  call p_io%init
   self%out_next = out_time
   self%dust%detailed_timer = detailed_timer
   self%dust%ip_dbg = ip_dbg
@@ -788,7 +785,7 @@ SUBROUTINE output (self)
   integer, save                 :: itimer=0
   !-----------------------------------------------------------------------------
   if (.not. on) return
-  call trace%begin ('particles_t%output', itimer=itimer)
+  call trace%begin ('particle_solver_t%output', itimer=itimer)
   if (verbose > 1) then
     write (stdlog, '(a,i6,2f8.4)') &
       'particles_t%output: id, time, aux_next =', &
@@ -837,7 +834,7 @@ SUBROUTINE voutput (self)
   integer, save:: n_tot = 0, i_max = 0, o_max = 0, itimer = 0
   integer, parameter::particle_solver_key = 3, EOF = -1
   !-----------------------------------------------------------------------------
-  call trace%begin ('particles_t%voutput', itimer=itimer)
+  call trace%begin ('particle_solver_t%voutput', itimer=itimer)
   n = 0
   do i4=1,n_bin
   do i3=self%lb(3),self%ub(3)
