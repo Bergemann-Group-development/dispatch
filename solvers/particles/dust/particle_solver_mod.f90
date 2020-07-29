@@ -216,7 +216,8 @@ SUBROUTINE initial_condition (self)
   class(particle_t), pointer  :: p
   class(gpatch_t), pointer    :: patch
   integer                     :: m(3), i1, i2, i3, bin, i, j, n, nv, l, nb, id(5)
-  real                        :: d, w, vg(3)
+  real                        :: d, w, vg(3), chance
+  logical                     :: draw
   integer, save               :: itimer=0, extra_bits
   integer, save               :: lid = 0
   !$omp threadprivate (lid)
@@ -265,6 +266,11 @@ SUBROUTINE initial_condition (self)
 #ifdef __GFORTRAN__
   !$omp critical (alloc_cr)
 #endif
+  if (output_every > 0) then
+    chance = 1.0/output_every
+  else
+    chance = 0.0
+  end if
   l = 0
   do i3=self%lb(3),self%ub(3)
   do i2=self%lb(2),self%ub(2)
@@ -283,7 +289,12 @@ SUBROUTINE initial_condition (self)
         nv = 0
         do j=1,particles_per_bin
           n = n+1
-          if (mod(l+j,output_every) == 0) then  ! every output_every is for I/O
+          if (output_every > 0) then
+            draw = self%random%ran1() < chance
+          else
+            draw = .false.
+          end if
+          if (draw) then  ! every output_every is for I/O
             allocate(pv)
             call pv%init
             pv%id = 1 + omp%thread_global + (lid+nv)*omp%nthreads_global
@@ -840,6 +851,7 @@ SUBROUTINE voutput (self)
   real(8),    pointer, contiguous:: t(:)
   integer(2), pointer, contiguous:: q(:,:)
   integer(8), pointer, contiguous:: id(:)
+  real(8):: llc
   integer:: n, m, i1, i2, i3, i4, j
   integer, save:: n_tot = 0, i_max = 0, o_max = 0, itimer(2) = 0
   integer, parameter::particle_solver_key = 3, EOF = -1
@@ -882,14 +894,15 @@ SUBROUTINE voutput (self)
   rewind (io_unit%particle_i)
   i_max = max(i_max,maxval(id))
   o_max = max(o_max,self%iout)
-  write (io_unit%particle_i) n_bin, i_max, o_max
+  write (io_unit%particle_i) n_bin, i_max+1, o_max
   flush (io_unit%particle_i)
   !-----------------------------------------------------------------------------
   ! Write out buffered data
   !-----------------------------------------------------------------------------
   write (io_unit%particle_d) particle_solver_key
   write (io_unit%particle_d) &
-   self%iout, n, self%id, self%time, self%patch%position, self%patch%ds
+   self%iout, n, self%id, self%time, self%patch%position-self%patch%size/2, &
+   self%patch%ds
   write (io_unit%particle_d) q(1:n,:), r(1:n,:), v(1:n,:), vg(1:n,:), &
     w(1:n), dg(1:n), t(1:n), id(1:n)
   write (io_unit%particle_d) EOF
@@ -907,20 +920,23 @@ contains
 
 subroutine harvest (copy)
   logical:: copy
+  integer:: ng(4)
+  ng(1:3) = self%patch%mesh%ng
+  ng(4) = 0
   p => pp%head%next
   do j=1,pp%n
     select type (p)
     type is (vparticle_t)
       n = n + 1
       if (copy) then
-        q (n,:) = p%q
+        q (n,:) = p%q-ng-1
         r (n,:) = p%r
         v (n,:) = p%v
         vg(n,:) = self%vg(:,p%q(1),p%q(2),p%q(3))
         dg(n)   = self%dg(  p%q(1),p%q(2),p%q(3))
         w (n)   = p%w
         t (n)   = p%t
-        id(n)   = p%id
+        id(n)   = p%id-1
       end if
     end select
     p => p%next
