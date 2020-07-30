@@ -8,36 +8,71 @@ class stagger(irregular_table):
         density values, a dictionary with tables for each density,
         and an 'info' dictionary with non-mandatory extra information.
     """
-    def __init__(self,file='table.dat'):
-        self.name=file
-        """ Read the Fortran sequential file records """
+    def __init__(self,file='table.dat',verbose=0):
+        self.file=file
         fp=FortranFile(file)
-        """ Scalar parameters """
-        (ints,reals)=fp.read_record('(4)i4,(9)<f4')[0]
-        nd,iupdate,nvar,mbox=ints
-        eosmin,dbox,ul,ut,ur,eps,tff,grv,abnd=reals
-        """ Array values """
-        fmt='(10,{0:})f4,(2,{0:})i4'.format(nd)
-        (reals2,ints2)=fp.read_record(fmt)[0]
-        itab,ntab=ints2
-        tmean,_,rhm,xcorr,_,_,_,eemin,_,dee=reals2
-        _=fp.read_ints()[0]
-        tab=fp.read_record('f4')
-                
-        """ Log density scale """
-        self.set_independent0(nd,np.log(rhm[0]),np.log(rhm[1]/rhm[0]))
-
-        """ Store variable values and names """
-        for id in range(nd):
-            vars=['ln(P)','rkap','T','','S1','S2','S3','S4']
-            i=itab[id]-1
-            n=ntab[id]
-            self.set_independent1(id,n,eemin[id],dee[id])
-            for iv in range(nvar):
-                self.set_dependent(id,iv,vars[iv],tab[i:i+n])
-                i+=3*n
         
+        if file=='tabcmp.dat':
+            """ tamcmp.dat files, with T as axis 1 """
+            vars=['ln(P)','rkap','E','','S1','S2','S3','S4']
+
+            """ Read dimensions and parameters """
+            nd=fp.read_ints()[0]
+            mtab1=fp.read_ints()[0]
+            fmt='(3)i4,(9)f4,(10,{0:})f4,(2,{0:})i4'.format(nd)
+            i3,f9,f12,i2=fp.read_record(fmt)[0]
+
+            """ Pick up integer and real parameters """
+            iupdte,nvar,mbox=i3
+            (xmin,dbox,ul,ut,ur,eps,teff,grav,abnd)=f9
+
+            """ Array data """
+            (tmean,tamp,rhm,xcorr,ymin,ymax,dy,eemin,eemax,deetab)=(
+                f12[0],f12[1],f12[2],f12[3],f12[4],f12[5],f12[6],f12[7],f12[8],f12[9])
+            (itab,ntab)=i2
+            
+        else:
+            """ table.dat type files, with E as axis 1 """
+            vars=['ln(P)','rkap','T','','S1','S2','S3','S4']
+            
+            """ Scalar parameters """
+            (ints,reals)=fp.read_record('(4)i4,(9)<f4')[0]
+            nd,iupdate,nvar,mbox=ints
+            eosmin,dbox,ul,ut,ur,eps,teff,grav,abnd=reals
+            
+            """ Array data """
+            fmt='(10,{0:})f4,(2,{0:})i4'.format(nd)
+            (reals2,ints2)=fp.read_record(fmt)[0]
+            itab,ntab=ints2
+            tmean,_,rhm,xcorr,_,_,_,ymin,_,dy=reals2
+            
         """ Store extra info """
         self.set_info({'tmean':tmean,'xcorr':xcorr,'mbox':mbox,
                    'dbox':dbox,'ul':ul,'ut':ut,'ur':ur,'abund':abnd})
-        print(self.name)
+            
+        nx=nd
+        x_min=np.log(rhm[0])
+        x_step=np.log(rhm[nx-1]/rhm[0])/(nx-1)
+
+        """ Read the binary table """
+        _=fp.read_ints()[0]
+        tab=fp.read_record('f4')
+
+        if verbose>0:
+            print('vars:',vars)
+            print('teff:',teff,' grav:',grav,' abund:',abnd)
+            print('n_lnd:',nx,'nd_min:',x_min,'lnd_step:',x_step,'n_table:',len(tab))
+
+        """ Log density scale """
+        self.set_independent0(nx,x_min,x_step)
+
+        """ Store variable values and names """
+        for id in range(nd):
+            i=itab[id]-1
+            n=ntab[id]
+            if verbose>1:
+                print(n,ymin[n],dy[n])
+            self.set_independent1(id,n,ymin[id],dy[id])
+            for iv in range(nvar):
+                self.set_dependent(id,iv,vars[iv],tab[i:i+n])
+                i+=3*n
