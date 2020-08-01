@@ -25,6 +25,6 @@ class bifrost(irregular_table):
         for i0 in range(n_x):
             self.set_independent1(i0,n_y,y_min,y_step,'ln(E)')
             for iv in range(nvar):
-                self.set_dependent(i0,iv,vars[iv],data[:,i0,iv])
+                self.set_dependent(i0,iv,data[:,i0,iv],vars[iv])
 
         self.set_info({'units':'CGS'})

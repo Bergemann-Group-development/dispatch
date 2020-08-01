@@ -6,21 +6,21 @@ def consistency(eos,j0=300,k0=0,k1=10,index=False,plot=False,verbose=0):
     def values(eos,j):
         """ Get a set of standard variables """
         d=np.exp(eos.scale0.values[j])
-        if eos.scale1.name=='th':
+        if eos.type=='stagger-T':
             th,lnP=eos.values(j,0)
             th,E=eos.values(j,2)
             T=5040/th
             lnE=np.log(E)
-        elif eos.scale1.name=='ln(E)':
+        elif eos.type=='bifrost':
             lnE,T=eos.values(j,'T')
             lnE,lnP=eos.values(j,'ln(P)')
             E=np.exp(lnE)
-        elif eos.scale1.name=='ln(T)':
+        elif eos.type=='tomida':
             lnT,lnE=eos.values(j,'ln(E)')
             lnT,lnP=eos.values(j,'ln(P)')
             T=np.exp(lnT)
             E=np.exp(lnE)
-        else:
+        elif eos.type=='stagger-E':
             E,T=eos.values(j,'T')
             E,lnP=eos.values(j,'ln(P)')
             lnE=np.log(E)

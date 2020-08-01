@@ -2,6 +2,7 @@ import numpy as np
 import scipy
 import scipy.io
 import scipy.interpolate
+from copy import deepcopy
 
 class linear_scale_c(object):
     """ Linear scale for independent variables """
@@ -14,6 +15,19 @@ class linear_scale_c(object):
         self.offset=0
         if type(name) is str:
             self.name=name
+        
+    def clone(self,min,max):
+        """ Create a new, shorter scale, with integer offset """
+        new=deepcopy(self)
+        i0=int((min-self.min)/self.step+1)
+        i1=int((max-self.min)/self.step)
+        new.offset=i0
+        new.min=self.min+i0*new.step
+        new.max=self.min+i1*new.step
+        new.n=i1-i0+1
+        new.values=new.min+new.step*np.arange(new.n)
+        return new
+        
     def accumulate(self,n,mn,step):
         """ Accumulate index ranges """
         self.step=step
@@ -21,6 +35,7 @@ class linear_scale_c(object):
         self.max=max(self.max,mn+(n-1)*step)
         self.n=int((self.max-self.min)/self.step+1.5)
         self.values=self.min+self.step*np.arange(self.n)
+        
     def index(self,x):
         """ Return interpolation index and weight """
         p=(x-self.min)/self.step
@@ -72,7 +87,7 @@ class irregular_table(object):
         self.scale1=linear_scale_c(0,1e9,0.0)
         self.scale1.max=-1e9
         self.index=self.scale0.index
-        self.table={}
+        self.tables={}
         self.scales={}
         self.variables={}
 
@@ -81,15 +96,28 @@ class irregular_table(object):
         self.scales[id]=linear_scale_c(n,min,step,name)
         self.scale1.name=self.scales[id].name
         self.scale1.accumulate(n,min,step)
-        self.table[id]={}
+        self.tables[id]={}
+
+    def first_independent1(self,n,min,max,name='y'):
+        """ Define values of the 2nd independent variable """
+        step=(max-min)/(n-1)
+        min=int(min/step+1)*step
+        self.scale1=linear_scale_c(n,min,step,name)
+        self.scales={}
+
+    def next_independent1(self,id,min,max):
+        """ Clone a local scale off the main one """
+        self.scales[id]=self.scale1.clone(min,max)
+        self.tables[id]={}
         
-    def set_dependent(self,id,iv,name,values):
+    def set_dependent(self,id,iv,values,name=None):
         """ Define values of dependent variables """
         table=table_c(self.scales[id],values,name)
-        self.table[id][iv]=table
-        self.table[id][name]=table
-        self.variables[iv]=name
-        self.nv=len(self.variables)
+        self.tables[id][iv]=table
+        self.tables[id][name]=table
+        if type(name) is str:
+            self.variables[iv]=name
+            self.nv=len(self.variables)
         table.scale.offset=self.scale1.nint(table.scale.min)
     
     def set_info(self,info):
@@ -98,7 +126,7 @@ class irregular_table(object):
     
     def values(self,ir,iv):
         """ Return x,y for y(x) at log density and variable indices ir,iv """
-        table=self.table[ir][iv]
+        table=self.tables[ir][iv]
         return table.scale.values,table.values
 
     def lookup(self,v,x,y,verbose=0):
@@ -119,8 +147,8 @@ class irregular_table(object):
                     the indices of the local table minima.
                 """
                 ixj =ix[j]
-                table0=self.table[ixj+0][v]
-                table1=self.table[ixj+1][v]
+                table0=self.tables[ixj+0][v]
+                table1=self.tables[ixj+1][v]
                 iyj0=iy[j]-table0.scale.offset
                 iyj1=iy[j]-table1.scale.offset
                 t[0:2,j]=table0.values[iyj0:iyj0+2]
@@ -128,11 +156,12 @@ class irregular_table(object):
             qy=1.0-py
             return (1.-px)*(qy*t[0]+py*t[1])+px*(qy*t[2]+py*t[3])
         else:
-            v1=self.table[ix  ][v].interpolate(y)
-            v2=self.table[ix+1][v].interpolate(y)
+            v1=self.tables[ix  ][v].interpolate(y)
+            v2=self.tables[ix+1][v].interpolate(y)
             return (1-px)*v1+px*v2
         
     def write(self,file):
+        self.file=file
         with scipy.io.FortranFile(file,'w') as fd:
             fd.write_record(self.nv)
             self.scale0.write(fd)
@@ -140,7 +169,7 @@ class irregular_table(object):
             for id in range(self.scale0.n):
                 self.scales[id].write(fd)
                 for iv in range(self.nv):
-                    self.table[id][iv].write(fd)
+                    self.tables[id][iv].write(fd)
                     
     def all_table_derivatives(self,verbose=0):
         import dispatch.EOS
@@ -149,3 +178,39 @@ class irregular_table(object):
     def table_derivatives(self,v,verbose=0):
         import dispatch.EOS
         dispatch.EOS.table_derivatives(self,v,verbose=verbose)
+        
+    def show(self,verbose=0,plot=False):
+        if verbose>0:
+            print('type:',self.type)
+        if verbose>1:
+            print('variables:',self.variables)
+        s0=self.scale0
+        s1=self.scale1
+        if verbose>2:
+            print('independent variables, axis 0:')
+            s0.print()
+            print('independent variables, axis 1:')
+            s1.print()
+        if plot:
+            import matplotlib.pyplot as pl
+            if s0.name.find('ln')>=0:
+                c0=1./np.log(19)
+                name0=s0.name.replace('ln','log10')
+            else:
+                c0=1.
+                name0=s0.name
+            if s1.name.find('ln')>=0:
+                c1=1./np.log(19)
+                name1=s1.name.replace('ln','log10')
+            else:
+                c1=1.
+                name1=s1.name
+            s0=self.scale0
+            for i in range(s0.n):
+                si=self.scales[i]
+                pl.plot(s0.values[i]*c0,si.min*c0,'+',color='g')
+                pl.plot(s0.values[i]*c1,si.max*c1,'+',color='r')
+            pl.xlabel(name0)
+            pl.ylabel(name1)
+            pl.title('type:'+self.type+'     file:'+self.file)
+            pl.tight_layout()

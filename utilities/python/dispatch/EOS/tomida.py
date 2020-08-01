@@ -22,7 +22,7 @@ class tomida(irregular_table):
             vars=['ln(P)','ln(E)','ln(C_T)','ln(cs)','gamma','ln(Cv)']
             self.set_independent1(id,self.nT,self.lnT_min,self.lnT_step,'ln(T)')
             for iv in range(self.nv):
-                self.set_dependent(id,iv,vars[iv],self.data[:,id,iv])
+                self.set_dependent(id,iv,self.data[:,id,iv],vars[iv])
         
         """ Store extra info """
         ud=1
@@ -90,3 +90,4 @@ class tomida(irregular_table):
                         if it>self.nT-1:
                             ir+=1
                             it=0
+                            

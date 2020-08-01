@@ -1,6 +1,9 @@
 import numpy as np
+import dispatch.EOS
 from scipy.io import FortranFile
+from dispatch.EOS import deriv,interp
 from dispatch.EOS.irregular_tables import irregular_table
+from copy import deepcopy
 
 class stagger(irregular_table):
     """ Read a STAGGER code EOS table, storing the information
@@ -76,5 +79,107 @@ class stagger(irregular_table):
                 print(n,ymin[n],dy[n])
             self.set_independent1(id,n,ymin[id],dy[id],'E')
             for iv in range(nvar):
-                self.set_dependent(id,iv,vars[iv],tab[i:i+n])
+                self.set_dependent(id,iv,tab[i:i+n],vars[iv])
                 i+=3*n
+
+    def theta_to_lnE(self,verbose=0):
+        """ Make a clone, where theta is replaced by ln(E) """
+        if self.type=='stagger-T':
+            new=deepcopy(self)
+
+            # Get the bounds for a global log internal energy scale
+            n=self.scale0.n
+            E_min=1e30
+            E_max=-100
+            for i in range(n):
+                th,E=self.values(i,'E')
+                T=5040/th
+                E_min=min(E_min,E.min())
+                E_max=max(E_max,E.max())
+            n_y=np.int(1000)
+            y_min=np.log(E_min)
+            y_max=np.log(E_max)
+            new.first_independent1(n_y,y_min,y_max,'ln(E)')
+
+            s1=new.scale1
+            for i in range(n):
+                th,E=self.values(i,'E')
+                y_min=np.log(E.min())
+                y_max=np.log(E.max())
+                new.next_independent1(i,y_min,y_max)
+                s=new.scales[i]
+                if verbose>1:
+                    s.print()
+
+            # Interpolate the known values of (E,T) into (ln(T),ln(E))
+            for i in range(n):
+                th,E=self.values(i,'E')             # slot to be replaced
+                T=5040/th                           # convert to T
+                lnT=np.log(T)                       # self values of ln(T)
+                lnE=np.log(E)                       # self values of ln(E)
+                lnE_new=new.scales[i].values        # uniform values of ln(E)
+                for iv in range(self.nv):           # loop over values
+                    name=self.variables[iv]         # existing name
+                    if name=='E':                   # self has E in the slot
+                        iT=iv                       # save slot index
+                        continue
+                    th,v=self.values(i,iv)          # old values
+                    v=interp(lnE,v,lnE_new)         # new values
+                    new.set_dependent(i,iv,v,name)  # insert (same names)
+                v=interp(lnE,lnT,lnE_new)           # interpolation of ln(T)
+                new.set_dependent(i,iT,v,'ln(T)')   # insert into new tables
+
+            new.type='stagger-lnE'
+            return new
+        else:
+            print("EOS must be of type 'stagger-T'")
+
+    def E_to_lnE(self,verbose=0):
+        """ Make a clone, where E is replaced by ln(E) """
+        if self.type=='stagger-E':
+            new=deepcopy(self)
+
+            # Get the bounds for a global log internal energy scale
+            n=self.scale0.n
+            E_min=1e30
+            E_max=-100
+            for i in range(n):
+                E,T=self.values(i,'T')
+                E_min=min(E_min,E.min())
+                E_max=max(E_max,E.max())
+            n_y=np.int(1000)
+            y_min=np.log(E_min)
+            y_max=np.log(E_max)
+            new.first_independent1(n_y,y_min,y_max,'ln(E)')
+
+            s1=new.scale1
+            for i in range(n):
+                E,T=self.values(i,'T')
+                y_min=np.log(E.min())
+                y_max=np.log(E.max())
+                new.next_independent1(i,y_min,y_max)
+                s=new.scales[i]
+                if verbose>1:
+                    s.print()
+
+            # Interpolate the known values of (E,T) into (ln(T),ln(E))
+            for i in range(n):
+                E,T=self.values(i,'T')             # slot to be replaced
+                lnT=np.log(T)                       # self values of ln(T)
+                lnE=np.log(E)                       # self values of ln(E)
+                lnE_new=new.scales[i].values        # uniform values of ln(E)
+                for iv in range(self.nv):           # loop over values
+                    name=self.variables[iv]         # existing name
+                    if name=='T':                   # self has E in the slot
+                        iT=iv                       # save slot index
+                        continue
+                    th,v=self.values(i,iv)          # old values
+                    v=interp(lnE,v,lnE_new)         # new values
+                    new.set_dependent(i,iv,v,name)  # insert (same names)
+                v=interp(lnE,lnT,lnE_new)           # interpolation of ln(T)
+                new.set_dependent(i,iT,v,'ln(T)')   # insert into new tables
+
+            new.type='stagger-lnE'
+            return new
+        else:
+            print("EOS must be of type 'stagger-E'")

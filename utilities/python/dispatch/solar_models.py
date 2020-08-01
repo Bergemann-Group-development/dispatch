@@ -8,15 +8,11 @@ class JCD_S(object):
             a=[]
             for line in fd:
                 line=line.rstrip()
-                words=line.split()
-                if words[0].startswith('#'):
+                if line.startswith('#'):
                     if verbose>0:
                         print(line)
                 else:
-                    l=[]
-                    for word in words:
-                        l.append(float(word))
-                    a.append(l)
+                    a.append([float(word) for word in line.split()])
         a=np.array(a).T
         self.r     =a[0]
         self.cs    =a[1]
