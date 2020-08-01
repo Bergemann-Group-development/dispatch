@@ -5,32 +5,37 @@ import scipy.interpolate
 
 class linear_scale_c(object):
     """ Linear scale for independent variables """
-    def __init__(self,name,n,min,step):
-        self.name=name
+    def __init__(self,n,min,step,name=None):
         self.n=n
         self.min=min
         self.max=min+(n-1)*step
         self.step=step
         self.values=min+step*np.arange(n)
         self.offset=0
+        if type(name) is str:
+            self.name=name
     def accumulate(self,n,mn,step):
         """ Accumulate index ranges """
         self.step=step
         self.min=min(self.min,mn)
-        self.max=max(self.max,mn+n*step)
-        self.n=int((self.max-self.min)/self.step+0.5)
+        self.max=max(self.max,mn+(n-1)*step)
+        self.n=int((self.max-self.min)/self.step+1.5)
+        self.values=self.min+self.step*np.arange(self.n)
     def index(self,x):
         """ Return interpolation index and weight """
         p=(x-self.min)/self.step
-        i=p.astype('int')
+        if type(p) is np.ndarray:
+            i=p.astype('int')
+        else:
+            i=int(p)
         p=p-i
         return i,p
     def nint(self,x):
         """ Return nearest integer of value x """
         return int((x-self.min)/self.step+0.5)
     def print(self):
-        print('{}: min={:10.3} step:{:10.3} n:{} max:{:10.3}'.format(
-            self.name,self.min,self.step,self.n,self.max))
+        print('{}: min={:10.3} step:{:10.3}    o:{}  n:{} max:{:10.3}'.format(
+            self.name,self.min,self.step,self.offset,self.n,self.max))
     def write(self,fd):
         fd.write_record(np.int(self.n))
         fd.write_record(np.array([self.min,self.step,self.max],dtype=np.float32))
@@ -61,19 +66,20 @@ class irregular_table(object):
         3) dictionaries with tables for each density
         4) a dictionary with non-mandatory info
     """      
-    def set_independent0(self,nd,min,step):
+    def set_independent0(self,nd,min,step,name='0'):
         """ Define values of the first independent variable (e.g. log density) """
-        self.scale0=linear_scale_c('0',nd,min,step)
-        self.scale1=linear_scale_c('1',0,1e9,0.0)
+        self.scale0=linear_scale_c(nd,min,step,name)
+        self.scale1=linear_scale_c(0,1e9,0.0)
         self.scale1.max=-1e9
         self.index=self.scale0.index
         self.table={}
         self.scales={}
         self.variables={}
 
-    def set_independent1(self,id,n,min,step):
+    def set_independent1(self,id,n,min,step,name='x1'):
         """ Define values of the 2nd independent variable """
-        self.scales[id]=linear_scale_c('v',n,min,step)
+        self.scales[id]=linear_scale_c(n,min,step,name)
+        self.scale1.name=self.scales[id].name
         self.scale1.accumulate(n,min,step)
         self.table[id]={}
         
@@ -135,3 +141,11 @@ class irregular_table(object):
                 self.scales[id].write(fd)
                 for iv in range(self.nv):
                     self.table[id][iv].write(fd)
+                    
+    def all_table_derivatives(self,verbose=0):
+        import dispatch.EOS
+        dispatch.EOS.all_table_derivatives(self,verbose=verbose)
+                    
+    def table_derivatives(self,v,verbose=0):
+        import dispatch.EOS
+        dispatch.EOS.table_derivatives(self,v,verbose=verbose)

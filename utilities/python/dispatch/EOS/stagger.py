@@ -13,8 +13,9 @@ class stagger(irregular_table):
         fp=FortranFile(file)
         
         if file=='tabcmp.dat':
-            """ tamcmp.dat files, with T as axis 1 """
+            """ tabcmp.dat files, with T as axis 1 """
             vars=['ln(P)','rkap','E','','S1','S2','S3','S4']
+            self.type='stagger-T'
 
             """ Read dimensions and parameters """
             nd=fp.read_ints()[0]
@@ -34,6 +35,7 @@ class stagger(irregular_table):
         else:
             """ table.dat type files, with E as axis 1 """
             vars=['ln(P)','rkap','T','','S1','S2','S3','S4']
+            self.type='stagger-E'
             
             """ Scalar parameters """
             (ints,reals)=fp.read_record('(4)i4,(9)<f4')[0]
@@ -64,7 +66,7 @@ class stagger(irregular_table):
             print('n_lnd:',nx,'nd_min:',x_min,'lnd_step:',x_step,'n_table:',len(tab))
 
         """ Log density scale """
-        self.set_independent0(nx,x_min,x_step)
+        self.set_independent0(nx,x_min,x_step,'ln(rho)')
 
         """ Store variable values and names """
         for id in range(nd):
@@ -72,7 +74,7 @@ class stagger(irregular_table):
             n=ntab[id]
             if verbose>1:
                 print(n,ymin[n],dy[n])
-            self.set_independent1(id,n,ymin[id],dy[id])
+            self.set_independent1(id,n,ymin[id],dy[id],'E')
             for iv in range(nvar):
                 self.set_dependent(id,iv,vars[iv],tab[i:i+n])
                 i+=3*n
