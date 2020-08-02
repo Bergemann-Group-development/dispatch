@@ -1,9 +1,9 @@
 import numpy as np
 import f90nml
-from dispatch.EOS.irregular_tables import irregular_table
+from dispatch.EOS.irregular_tables import table
 
 
-class bifrost(irregular_table):
+class bifrost(table):
     def __init__(self,file='eostable.dat',verbose=0):
         self.file=file
         self.type='bifrost'

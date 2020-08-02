@@ -4,14 +4,18 @@ from dispatch.EOS import deriv
 def table_derivatives(eos,v,verbose=0):
     if verbose>0:
         print(v,eos.variables[v])
-    """ Add derivates for one table variable """
+    """ Add derivates for one table variable; the derivatives
+        in the two axis directions (expressed in grid units)
+        are added as attributes deriv0 and deriv1 of the table.
+    """
+
     def left1(eos,i,o,o10,o00,verbose=0):
         """ 1st order, left axis=0 derivative """
         if verbose>1:
             print('left1',i,o)
         d=eos.table[i][v].deriv0
         d[o-o10]=(eos.table[i  ][v].values[o-o10]-
-                  eos.table[i-1][v].values[o-o00])    
+                  eos.table[i-1][v].values[o-o00])
 
     def right1(eos,i,o,o10,o20,verbose=0):
         """ 1st order, right axis=0 derivative """
@@ -19,7 +23,7 @@ def table_derivatives(eos,v,verbose=0):
             print('right1',i,o)
         d=eos.table[i][v].deriv0
         d[o-o10]=(eos.table[i+1][v].values[o-o20]-
-                  eos.table[i  ][v].values[o-o10])    
+                  eos.table[i  ][v].values[o-o10])
 
     def left(eos,i):
         table=eos.table[i][v]

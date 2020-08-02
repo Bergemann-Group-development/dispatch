@@ -2,10 +2,10 @@ import numpy as np
 import dispatch.EOS
 from scipy.io import FortranFile
 from dispatch.EOS import deriv,interp
-from dispatch.EOS.irregular_tables import irregular_table
+from dispatch.EOS.irregular_tables import table
 from copy import deepcopy
 
-class stagger(irregular_table):
+class stagger(table):
     """ Read a STAGGER code EOS table, storing the information
         in a generic format, consisting of a linear scale of log
         density values, a dictionary with tables for each density,

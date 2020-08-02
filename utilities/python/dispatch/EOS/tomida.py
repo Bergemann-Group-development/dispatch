@@ -1,9 +1,9 @@
 import os
 import numpy as np
 from scipy.io import FortranFile
-from dispatch.EOS.irregular_tables import irregular_table
+from dispatch.EOS.irregular_tables import table
 
-class tomida(irregular_table):
+class tomida(table):
     """ Read a STAGGER code EOS table, storing the information
         in a generic format, consisting of a linear scale of log
         density values, a dictionary with tables for each density,
@@ -15,14 +15,16 @@ class tomida(irregular_table):
         self.read(file,verbose)
                 
         """ Log density scale """
-        self.set_independent0(self.nd,self.lnd_min,self.lnd_step,'ln(rho)')
+        self.set_independent0(self.nd,self.lnd_min,self.lnd_step,'ln(rho)',verbose=verbose)
+        if verbose>0:
+            self.scale1.print('scale1')
 
         """ Store variable values and names """
         for id in range(self.nd):
             vars=['ln(P)','ln(E)','ln(C_T)','ln(cs)','gamma','ln(Cv)']
-            self.set_independent1(id,self.nT,self.lnT_min,self.lnT_step,'ln(T)')
+            self.set_independent1(id,self.nT,self.lnT_min,self.lnT_step,'ln(T)',verbose=verbose)
             for iv in range(self.nv):
-                self.set_dependent(id,iv,self.data[:,id,iv],vars[iv])
+                self.set_dependent(id,iv,self.data[:,id,iv],vars[iv],verbose=verbose)
         
         """ Store extra info """
         ud=1
