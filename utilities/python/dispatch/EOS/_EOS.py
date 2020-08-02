@@ -28,6 +28,11 @@ def integral(x,y,y1=None):
 def open(case='stagger',file=None,top='~/codes/dispatch2',verbose=0):
     import dispatch.EOS
     import os
+    if os.getenv('DISPATCH') is None:
+        if verbose>0:
+            print('set DISPATCH in the environment to avoid having to set "top=" ')
+    else:
+        top=os.getenv('DISPATCH')
     if case=='stagger':
         os.chdir(top+'/data/eos/stagger')
         eos=dispatch.EOS.stagger

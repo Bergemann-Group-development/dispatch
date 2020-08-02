@@ -92,4 +92,103 @@ class tomida(table):
                         if it>self.nT-1:
                             ir+=1
                             it=0
-                            
+
+    def lnT_to_S(self,n_y=1000,verbose=0):
+        """ Transform the EOS to have entropy on axis 1 """
+        from dispatch.EOS import deriv,interp,integral
+
+        # Clone the input EOS
+        from copy import deepcopy
+        new=deepcopy(self)
+        new.type='tomida-S'
+
+        # Compute and save a first entropy array for each ln(rho)
+        n0=self.scale0.n
+        iS=new.nv
+        new.nv+=1
+        for i in range(n0):
+            lnT,lnE=self.values(i,'ln(E)')
+            T=np.exp(lnT)
+            E=np.exp(lnE)
+            S=integral(E,1/T)
+            new.set_dependent(i,iS,S,'S')
+
+        # Function returning dS_dlnr_E
+        def dS_E(i):
+            s0=self.scale0
+            dlnr=s0.step
+            d=np.exp(s0.values[i])
+            lnT,lnP=self.values(i,'ln(P)')
+            T=np.exp(lnT)
+            P=np.exp(lnP)
+            return -P/(d*T)*dlnr
+
+        # Connect the S(lnT) values at all densities
+        for i in range(n0-1):
+            lnT0,S0=new.values(i  ,'S')
+            lnT1,S1=new.values(i+1,'S')
+            lnT0,lnE0=new.values(i  ,'ln(E)')
+            lnT1,lnE1=new.values(i+1,'ln(E)')
+            dS0=dS_E(i)                           # dS_dlnr_E for lnE at i
+            dS1=dS_E(i+1)                         # dS_dlnr_E for lnE at i+1
+            dS0=interp(lnE0,dS0,lnE1)             # interpolate to lnE at i+1
+            dSa=(dS0+dS1)/2                       # at constant E = lnE at i
+            S0=interp(lnE0,S0,lnE1)               # interpolate to lnE at i+1
+            Sa=S0+dSa                             # expect S(lnE) at i+1
+            dS=Sa-S1                              # difference
+            dS0=np.median(dS)                     # choose the median value
+            Sb=S1+dS0                             # adjust the S-level at i+1
+            dS=dS-dS0                             # save fluctuation
+            new.set_dependent(i+1,iS ,Sb,'S')     # save in table
+            if verbose>3:
+                print('{:4d}{:15.3e}{:15.3e}'.format(i,dS0,dS.mean()))
+
+        # Get the bounds for a global S scale
+        y_min=1e30
+        y_max=-y_min
+        for i in range(n0):
+            lnT,S=new.values(i,'S')
+            y_min=min(y_min,S.min())
+            y_max=max(y_max,S.max())
+        new.first_independent1(n_y,y_min,y_max,'S',verbose=verbose)
+
+        def check_scales(label=''):
+            """ Check if the scales of all variables agree with the common scale """
+            ok=True
+            for i in range(new.scale0.n):
+                for iv in range(self.nv):
+                    vok=new.scales[i].step==new.tables[i][iv].scale.step
+                    if verbose>1 and not vok:
+                        print(label,'variable',new.variables[iv],'differ at i=',i)
+                    ok=ok and vok
+            print('scales','are the same' if ok else 'differ',label)
+            return ok
+
+        # Setup local S-scales, while keeping the existing tables
+        if verbose>2:
+            check_scales('before interpolations')
+        for i in range(n0):
+            lnT,S=new.values(i,'S')
+            y_min=S.min()
+            y_max=S.max()
+            new.next_independent1(i,y_min,y_max,new_tables=False,verbose=verbose)
+        if verbose>1:
+            check_scales('after interpolations')
+
+        # Interpolate the known values of (E,T) into (ln(T),ln(E))
+        for i in range(n0):
+            lnT,S=new.values(i,'S')
+            S_new=new.scales[i].values          # uniform values of S
+            for iv in range(6):                 # loop over values
+                name=self.variables[iv]         # existing name
+                lnT,v=self.values(i,iv)         # old values
+                v=interp(S,v,S_new)             # new values
+                new.set_dependent(i,iv,v,name)  # insert (same names)
+            lnT=interp(S,lnT,S_new)             # also do lnT
+            new.set_dependent(i,iS,lnT,'ln(T)') # replace the 'S' variable
+        if verbose>1:
+            check_scales('at end')
+        if verbose>0:
+            print('variables:',new.variables)
+
+        return new

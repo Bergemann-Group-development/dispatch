@@ -152,7 +152,7 @@ class table(object):
 
     def set_dependent(self,id,iv,values,name=None,verbose=0):
         """ Define values of dependent variables """
-        table=dependent_c(self.scales[id],values,name)
+        table=dependent_c(self.scales[id],values,name,verbose=verbose)
         if verbose==1:
             print('dependent:',id,iv,name)
         self.tables[id][iv]=table
@@ -164,17 +164,18 @@ class table(object):
         if verbose>1:
             print(id,iv,self.scales[id].n,table.values.shape[0])
 
-    def first_independent1(self,n,min,max,name='y'):
+    def first_independent1(self,n,min,max,name='y',verbose=0):
         """ Define values of the 2nd independent variable """
         step=(max-min)/(n-1)
         min=int(min/step+1)*step
-        self.scale1=independent_c(n,min,step,name)
+        self.scale1=independent_c(n,min,step,name,verbose=verbose)
         self.scales={}
 
-    def next_independent1(self,id,min,max):
+    def next_independent1(self,id,min,max,new_tables=True,verbose=0):
         """ Clone a local scale off the main one """
         self.scales[id]=self.scale1.clone(min,max)
-        self.tables[id]={}
+        if new_tables:
+            self.tables[id]={}
 
     def set_info(self,info):
         """ Set non-mandatory information """
@@ -297,7 +298,7 @@ class table(object):
             n=self.scale0.n
         n1=self.scale1.n+1
         f=np.zeros((n,n1))
-        if verbose:
+        if verbose>0:
             print('shape of f:',f.shape)
         n1max=0
         n0max=0
@@ -330,9 +331,26 @@ class table(object):
             e,f=self.square(iv,n,verbose=verbose)
             if extent is None:
                 extent=e
-            a=(extent[1]-extent[0])/(extent[3]-extent[2])*0.7
-            pl.imshow(f.T,origin='lower',cmap=cmap,extent=extent,aspect=a)
-            pl.title(iv);
+            if type(iv) is not str:
+                iv=self.variables[iv]
+            if iv.find('ln')>=0:
+                f=f/np.log(10)
+                iv=iv.replace('ln','log10')
+            name0=self.scale0.name
+            if name0.find('ln')>=0:
+                extent[0]=extent[0]/np.log(10)
+                extent[1]=extent[1]/np.log(10)
+                name0=name0.replace('ln','log10')
+            pl.xlabel(name0)
+            name1=self.scale1.name
+            if name1.find('ln')>=0:
+                extent[2]=extent[2]/np.log(10)
+                extent[3]=extent[3]/np.log(10)
+                name1=name1.replace('ln','log10')
+            pl.ylabel(name1)
+            pl.imshow(f.T,origin='lower',cmap=cmap,extent=extent,aspect='auto')
+            pl.title(iv)
+            pl.colorbar()
             return np.array(extent)
         else:
             print(iv,'is not among variables',self.variables)

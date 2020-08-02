@@ -11,7 +11,7 @@ class stagger(table):
         density values, a dictionary with tables for each density,
         and an 'info' dictionary with non-mandatory extra information.
     """
-    def __init__(self,file='table.dat',verbose=0):
+    def __init__(self,file='48h1/table.dat',verbose=0):
         self.file=file
         fp=FortranFile(file)
         

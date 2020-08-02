@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as pl
 from dispatch.EOS import deriv,interp
 
-def consistency(eos,j0=300,k0=0,k1=10,index=False,plot=False,verbose=0):
+def inconsistency(eos,j0=300,k0=0,k1=10,index=False,plot=False,verbose=0):
     def values(eos,j):
         """ Get a set of standard variables """
         d=np.exp(eos.scale0.values[j])
@@ -98,7 +98,7 @@ def consistency(eos,j0=300,k0=0,k1=10,index=False,plot=False,verbose=0):
         pl.tight_layout();
     return d2S_1-d2S_2
 
-def consistencies(eos):
+def inconsistencies(eos):
     c=np.zeros((eos.scale0.n,eos.scale1.n))
     for i in range(1,eos.scale0.n-1):
         j0=eos.scales[i].offset
