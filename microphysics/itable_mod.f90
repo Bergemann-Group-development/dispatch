@@ -7,13 +7,14 @@ MODULE itable_mod
   USE trace_mod
   implicit none
   private
-  type, public:: scale_t
+  type, public:: independent_t
    integer:: n
+   character(len=32):: name
    real:: min=huge(1.), step, max=-huge(1.)
   contains
-    procedure:: read => read_scale
+    procedure:: read => read_independent
   end type
-  type, public:: values_t
+  type, public:: dependent_t
     integer:: n, nv
     character(32):: name
     real, pointer, contiguous:: v(:,:)
@@ -22,9 +23,9 @@ MODULE itable_mod
   end type
   type, public:: itable_t
     integer:: n1, n2, nv
-    type(scale_t):: scale1, scale2
-    type(scale_t), pointer:: scales(:)
-    type(values_t), pointer:: values(:)
+    type(independent_t):: scale1, scale2
+    type(independent_t), pointer:: scales(:)
+    type(dependent_t), pointer:: values(:)
   contains
     procedure:: init
     procedure:: lookup1
@@ -35,38 +36,52 @@ MODULE itable_mod
   integer:: verbose = 0
 CONTAINS
 
+SUBROUTINE read_str (u, str)
+  integer:: u, n, m, i
+  character(len=1):: c(32)
+  character(len=*) str
+  !-----------------------------------------------------------------------------
+  call trace%begin ('dependent_t%read')
+  read (u) m
+  read (u) (c(i),i=1,m)
+  do i=1,m
+    str(i:i)=c(i)
+  end do
+END SUBROUTINE read_str
+
 !===============================================================================
 !> Read scale parameters
 !===============================================================================
-SUBROUTINE read_scale (self, u)
-  class(scale_t):: self
+SUBROUTINE read_independent (self, u)
+  class(independent_t):: self
   integer:: u
   !.............................................................................
-  integer:: n
+  integer:: n, m
   real:: amin, amax, step
   !-----------------------------------------------------------------------------
-  call trace%begin ('scale_t%read')
+  call trace%begin ('independent_t%read')
+  call read_str (u, self%name)
   read (u) self%n
   read (u) self%min, self%step, self%max
   if (verbose > 0) then
     write (stdlog,'(a,i4,1p,3e12.3)') &
-      'scale_t%read:', self%n, self%min, self%step, self%max
+      'independent_t%read:', self%n, self%min, self%step, self%max
   end if
   call trace%end ()
-END SUBROUTINE read_scale
+END SUBROUTINE read_independent
 
 !===============================================================================
 !> Read table values
 !===============================================================================
 SUBROUTINE read_values (self, u, iv, o)
-  class(values_t):: self
+  class(dependent_t):: self
   integer:: u, iv, o
   !.............................................................................
   integer:: n, m, i
-  character(len=4):: c(32)
+  character(len=1):: c(32)
   character(len=32):: name
   !-----------------------------------------------------------------------------
-  call trace%begin ('values_t%read')
+  call trace%begin ('dependent_t%read')
   read (u) m
   read (u) (c(i),i=1,m)
   do i=1,m
@@ -94,6 +109,7 @@ SUBROUTINE init (self, file)
   u = io_unit%tmp
   open (u,file=file,form='unformatted',status='old')
   read (u) self%nv
+  if (verbose>0) print *,'nv',self%nv
   write (stdlog,'(a,i2)') 'itable_t%read: nv =', self%nv
   call self%scale1%read (u)
   call self%scale2%read (u)

@@ -9,23 +9,34 @@ def inconsistency(eos,j0=300,k0=0,k1=10,index=False,plot=False,verbose=0):
         if eos.type=='stagger-T':
             th,lnP=eos.values(j,0)
             th,E=eos.values(j,2)
+            P=np.exp(lnP)
             T=5040/th
+            lnT=np.log(T)
             lnE=np.log(E)
         elif eos.type=='bifrost':
             lnE,T=eos.values(j,'T')
             lnE,lnP=eos.values(j,'ln(P)')
+            lnT=np.log(T)
+            P=np.exp(lnP)
             E=np.exp(lnE)
+        elif eos.type=='bifrost-lnT':
+            lnT,lnE=eos.values(j,'ln(E)')
+            lnT,lnP=eos.values(j,'ln(P)')
+            E=np.exp(lnE)
+            T=np.exp(lnT)
+            P=np.exp(lnP)
         elif eos.type=='tomida':
             lnT,lnE=eos.values(j,'ln(E)')
             lnT,lnP=eos.values(j,'ln(P)')
             T=np.exp(lnT)
             E=np.exp(lnE)
+            P=np.exp(lnP)
         elif eos.type=='stagger-E':
             E,T=eos.values(j,'T')
             E,lnP=eos.values(j,'ln(P)')
             lnE=np.log(E)
-        lnT=np.log(T)
-        P=np.exp(lnP)
+            lnT=np.log(T)
+            P=np.exp(lnP)
         return d,T,P,E,lnT,lnP,lnE
             
     def d2S_dlnE_dlnd(j0):

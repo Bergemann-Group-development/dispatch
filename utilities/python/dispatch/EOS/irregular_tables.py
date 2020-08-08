@@ -6,6 +6,7 @@ from copy import deepcopy
 
 def write_str(fd,s):
     """ Write a string to an unformatted Fortran file """
+    fd.write_record(np.int(len(s)))
     fd.write_record(bytes(s,'utf-8'))
 
 def read_str(fd):
@@ -52,7 +53,7 @@ class independent_c(object):
         mn=min(self.min,scale.min)
         mx=max(self.max,scale.max)
         n=int((mx-mn)/step+1.5)
-        self.setup(n,mn,step,self.name,verbose=verbose)
+        self.setup(n,mn,step,scale.name,verbose=verbose)
 
     def index(self,x):
         """ Return interpolation index and weight """
@@ -223,7 +224,12 @@ class table(object):
         """ Write out an EOS table as unformatted Fortran records """
         with scipy.io.FortranFile(file,'w') as fd:
             fd.write_record(self.nv)
+            if verbose>1:
+                print('nv:',self.nv)
+                print('scale0')
             self.scale0.write(fd)
+            if verbose>1:
+                print('scale1')
             self.scale1.write(fd)
             for id in range(self.scale0.n):
                 self.scales[id].write(fd)
