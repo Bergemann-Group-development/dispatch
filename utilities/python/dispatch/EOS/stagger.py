@@ -1,19 +1,28 @@
 import numpy as np
+import dispatch
 import dispatch.EOS
 from scipy.io import FortranFile
-from dispatch.EOS import deriv,interp
-from dispatch.EOS.irregular_tables import table
+from dispatch.EOS import deriv,interp,eos_c
 from copy import deepcopy
 
-class stagger(table):
+class stagger(eos_c):
     """ Read a STAGGER code EOS table, storing the information
         in a generic format, consisting of a linear scale of log
         density values, a dictionary with tables for each density,
         and an 'info' dictionary with non-mandatory extra information.
     """
-    def __init__(self,file='48h1/table.dat',verbose=0):
-        self.file=file
-        fp=FortranFile(file)
+    def __init__(self,file='48h1/table.dat',dir='data/eos/stagger/',top=None,verbose=0):
+        if top is None:
+            path=file
+            self.file=file
+        else:
+            path=top+'/'+dir+file
+            path=path.replace('//','/')
+            self.file=dir+file
+        if verbose>2:
+            print('reading',path)
+        self.type='stagger'
+        fp=FortranFile(path)
         
         if file=='tabcmp.dat':
             """ tabcmp.dat files, with T as axis 1 """
@@ -52,7 +61,7 @@ class stagger(table):
             tmean,_,rhm,xcorr,_,_,_,ymin,_,dy=reals2
             
         """ Store extra info """
-        self.set_info({'tmean':tmean,'xcorr':xcorr,'mbox':mbox,
+        self.set_info({'units':'code','tmean':tmean,'xcorr':xcorr,'mbox':mbox,
                    'dbox':dbox,'ul':ul,'ut':ut,'ur':ur,'abund':abnd})
             
         nx=nd
@@ -63,7 +72,7 @@ class stagger(table):
         _=fp.read_ints()[0]
         tab=fp.read_record('f4')
 
-        if verbose>0:
+        if verbose>1:
             print('vars:',vars)
             print('teff:',teff,' grav:',grav,' abund:',abnd)
             print('n_lnd:',nx,'nd_min:',x_min,'lnd_step:',x_step,'n_table:',len(tab))
@@ -75,13 +84,13 @@ class stagger(table):
         for id in range(nd):
             i=itab[id]-1
             n=ntab[id]
-            if verbose>1:
-                print(n,ymin[n],dy[n])
             self.set_independent1(id,n,ymin[id],dy[id],'E')
             for iv in range(nvar):
                 self.set_dependent(id,iv,tab[i:i+n],vars[iv])
                 i+=3*n
 
+        self.show(verbose)
+        
     def theta_to_lnE(self,verbose=0):
         """ Make a clone, where theta is replaced by ln(E) """
         if self.type=='stagger-T':
@@ -183,3 +192,12 @@ class stagger(table):
             return new
         else:
             print("EOS must be of type 'stagger-E'")
+            
+    def all_values(self,i):
+        d=np.exp(self.scale0.values[i])
+        E,lnP=self.values(i,'ln(P)')
+        E,T=self.values(i,'T')
+        P=np.exp(lnP)
+        lnT=np.log(T)
+        lnE=np.log(E)
+        return d,T,P,E,lnT,lnP,lnE

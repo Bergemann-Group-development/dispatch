@@ -29,7 +29,7 @@ class independent_c(object):
         self.step=step
         self.values=min+step*np.arange(n)
         self.offset=0
-        if verbose>0:
+        if verbose>2:
             self.print()
 
     def clone(self,min,max):
@@ -47,7 +47,7 @@ class independent_c(object):
     def accumulate(self,scale,verbose=0):
         """ Accumulate index ranges """
         step=scale.step
-        if verbose>0:
+        if verbose>2:
             self.print()
             scale.print()
         mn=min(self.min,scale.min)
@@ -71,7 +71,7 @@ class independent_c(object):
 
     def print(self,label=None):
         s=self.name if label is None else label
-        print('{}: min={:10.3} step:{:10.3}    o:{}  n:{} max:{:10.3}'.format(
+        print('{}   min={:10.3} step:{:10.3}    o:{}  n:{} max:{:10.3}'.format(
             s,self.min,self.step,self.offset,self.n,self.max))
 
     def write(self,fd):
@@ -83,7 +83,7 @@ class independent_c(object):
         name=read_str(fd)
         n=fd.read_record('i4')[0]
         min,step,max=fd.read_record('f8,f8,f8')[0]
-        if verbose:
+        if verbose>2:
             print(name,min,step,max)
         self.setup(name,n,min,step)
 
@@ -117,7 +117,7 @@ class dependent_c(object):
         self.n=fd.read_record('i4')[0]
         self.values=fd.read_record('f8')
 
-class table(object):
+class table_c(object):
     """ Template EOS object, with methods to
         1) set up a linear scale of the 1st independent variable
         2) set up 2nd linear independent variable for each 1st variable value
@@ -154,7 +154,7 @@ class table(object):
     def set_dependent(self,id,iv,values,name=None,verbose=0):
         """ Define values of dependent variables """
         table=dependent_c(self.scales[id],values,name,verbose=verbose)
-        if verbose==1:
+        if verbose==3:
             print('dependent:',id,iv,name)
         self.tables[id][iv]=table
         self.tables[id][name]=table
@@ -162,7 +162,7 @@ class table(object):
             self.variables[iv]=name
             self.nv=len(self.variables)
         table.scale.offset=self.scale1.nint(table.scale.min)
-        if verbose>1:
+        if verbose>3:
             print(id,iv,self.scales[id].n,table.values.shape[0])
 
     def first_independent1(self,n,min,max,name='y',verbose=0):
@@ -184,7 +184,7 @@ class table(object):
 
     def values(self,ir,iv,verbose=0):
         """ Return x,y for y(x) at log density and variable indices ir,iv """
-        if verbose:
+        if verbose>2:
             print(ir,iv,len(self.tables.keys()),self.tables[ir].keys())
         table=self.tables[ir][iv]
         return table.scale.values,table.values
@@ -193,7 +193,7 @@ class table(object):
         """ Lookup a table(x,y) value for variable v
             Vectorized in the computational part (a few mus/pt)
         """
-        if verbose:
+        if verbose>1:
             self.scale0.print()
             self.scale1.print()
         ix,px=self.scale0.index(x)
@@ -224,11 +224,11 @@ class table(object):
         """ Write out an EOS table as unformatted Fortran records """
         with scipy.io.FortranFile(file,'w') as fd:
             fd.write_record(self.nv)
-            if verbose>1:
+            if verbose>2:
                 print('nv:',self.nv)
                 print('scale0')
             self.scale0.write(fd)
-            if verbose>1:
+            if verbose>2:
                 print('scale1')
             self.scale1.write(fd)
             for id in range(self.scale0.n):
@@ -238,18 +238,18 @@ class table(object):
                     if type(iv) is int:
                         nv+=1
                 fd.write_record(nv)
-                if verbose:
+                if verbose>1:
                     print(id,nv)
                 for iv,table in self.tables[id].items():
                     if type(iv) is int:
                         self.tables[id][iv].write(fd)
-                        if verbose>1:
+                        if verbose>2:
                             print('write:',id,iv,self.tables[id][iv].values.shape[0])
 
     def read(self,file,verbose=0):
         """ Read an EOS file produce by write() """
-        if verbose:
-            print(file)
+        if verbose>1:
+            print('reading',file)
         self.file=file
         with scipy.io.FortranFile(file,'r') as fd:
             nv=fd.read_record('i4')[0]
@@ -260,13 +260,13 @@ class table(object):
             self.scale1.read(fd=fd,verbose=verbose)
             self.scale1.max=-1e9
             self.index=self.scale0.index
-            if verbose:
+            if verbose>2:
                 print('nv:',self.nv,'n:',self.scale0.n)
             for id in range(self.scale0.n):
                 """ Setup local scale for dependent variables """
                 s1=independent_c(fd=fd,verbose=verbose)
                 s1.offset=self.scale1.nint(s1.min)
-                if verbose>1:
+                if verbose>3:
                     print(id,s1.file,s1.n,s1.values[0])
                 self.scales[id]=s1
                 self.scale1.accumulate(s1)
@@ -276,12 +276,12 @@ class table(object):
                 for iv in range(nv):
                     table=dependent_c(fd=fd)
                     table.scale=s1
-                    if verbose>2:
+                    if verbose>3:
                         print('iv:',iv,table.name)
                     self.tables[id][iv]=table
                     self.tables[id][table.name]=table
                     self.variables[iv]=table.name
-                    if verbose>1:
+                    if verbose>3:
                         print('read:',id,iv,nv,table.values.shape[0])
         self.nv=len(self.variables)
 
@@ -304,7 +304,7 @@ class table(object):
             n=self.scale0.n
         n1=self.scale1.n+1
         f=np.zeros((n,n1))
-        if verbose>0:
+        if verbose>2:
             print('shape of f:',f.shape)
         n1max=0
         n0max=0
@@ -312,7 +312,7 @@ class table(object):
             if iv in self.tables[i]:
                 o=self.scales[i].offset
                 n=self.scales[i].n
-                if verbose>1:
+                if verbose>3:
                     sz=self.tables[i][iv].values.shape[0]
                     print(i,n,sz,o+n-1,f.shape[1])
                 f[i,o:o+n]=self.tables[i][iv].values
@@ -376,9 +376,12 @@ class table(object):
 
     def show(self,verbose=0,plot=False):
         """ Show text and optionally graphic information about an EOS """
-        if verbose>0:
-            print('type:',self.type)
         if verbose>1:
+            print('type:',self.type)
+            print('file:',self.file)
+            self.scale0.print(label='axis 0: '+self.scale0.name)
+            self.scale1.print(label='axis 1: '+self.scale1.name)
+        if verbose>0:
             print('variables:',self.variables)
         s0=self.scale0
         s1=self.scale1

@@ -1,12 +1,23 @@
+import sys
 import numpy as np
-from dispatch.EOS.irregular_tables import table
+import dispatch.EOS
+from dispatch.EOS import eos_c
 
+class bifrost(eos_c):
+    def __init__(self,file='eostable.dat',dir='data/eos/bifrost/',top=None,verbose=0):
+        if top is None:
+            self.file=file
+            path=''
+        else:
+            self.file=dir+file
+            path=top+'/'+dir
+            path=path.replace('//','/')
+        self.type='bifrost'
+        if verbose>2:
+            print('reading',path)
 
-class bifrost(table,):
-    def __init__(self,file='eostable.dat',verbose=0):
-        self.file=file
         params={}
-        with open('tabparam.in') as fd:
+        with open(path+'tabparam.in') as fd:
             for line in fd:
                 if line.startswith('/') or line.startswith('&'):
                     continue
@@ -16,8 +27,8 @@ class bifrost(table,):
                     params[lhs]=eval(rhs.lstrip('0'))
                 except:
                     pass
-        if verbose>0:
-            print(params)
+        if verbose>2:
+            print('params:',params)
         x_min=np.log(params['RhoMin'])
         x_max=np.log(params['RhoMax'])
         n_x=params['nRhoBin']
@@ -35,7 +46,7 @@ class bifrost(table,):
             n_y=params['nTBin']
             vars=['ln(P)','ln(Ne)','ln(E)','ln(rkap)']
         y_step=(y_max-y_min)/(n_y-1)
-        data=np.memmap(file,mode='r',order='F',shape=(n_y,n_x,4),dtype='<f4')
+        data=np.memmap(path+file,mode='r',order='F',shape=(n_y,n_x,4),dtype='<f4')
 
         nvar=len(vars)
 
@@ -46,3 +57,25 @@ class bifrost(table,):
                 self.set_dependent(i0,iv,data[:,i0,iv],vars[iv])
 
         self.set_info({'units':'CGS'})
+        self.show(verbose)
+        if verbose>1:
+            print('params from '+path+'tabparam.in:')
+            print(params)
+
+    def all_values(self,i):
+        d=np.exp(self.scale0.values[i])
+        if self.type=='bifrost-lnT':
+            lnT,lnP=self.values(i,'ln(P)')
+            lnT,lnE=self.values(i,'ln(E)')
+            T=np.exp(lnT)
+            P=np.exp(lnP)
+            E=np.exp(lnE)
+        elif self.type=='bifrost':
+            lnE,T=self.values(i,'T')
+            lnE,lnP=self.values(i,'ln(P)')
+            lnT=np.log(T)
+            P=np.exp(lnP)
+            E=np.exp(lnE)
+        else:
+            print('unknown',self.type)
+        return d,T,P,E,lnT,lnP,lnE

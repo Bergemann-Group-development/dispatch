@@ -3,11 +3,11 @@
 """
 """
 
-from ._EOS              import deriv,interp,integral,open
+from ._EOS              import deriv,interp,integral,eos_c,open
 from .bifrost           import bifrost
 from .stagger           import stagger
 from .tomida            import tomida
-from .irregular_tables  import table
+from .irregular_tables  import table_c
 from .consistency       import inconsistency,inconsistencies
 from .table_derivatives import *
 
