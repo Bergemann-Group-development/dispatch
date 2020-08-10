@@ -1,0 +1,29 @@
+
+! -- Run parameters ------------------------------------------------------------
+&io_params              verbose=0 do_output=t do_trace=f omp_trace=t
+                        method='legacy' guard_zones=t namelist_errors=t /
+&out_params             end_time=1000.01 out_time=100. print_time=0.0
+                        print_every=300 /
+&timer_params           /
+
+! -- Experiment parameters -----------------------------------------------------
+&cartesian_params       size=1,0.13,0.13 dims=4,1,1 position=3*0.0 /
+&patch_params           n=16,4,4 ng=3*3 nt=5 no_mans_land=t grace=0.01 /
+&experiment_params      vx_l=1e-3 vx_r=1e-3 /
+&force_params           /
+&initial_params         /
+
+! -- AMR parameters ------------------------------------------------------------
+&refine_params          verbose=1 on=f check_interval=2 min_dx=0.003 levelmax=3
+                        max_shock=0.1 max_contact=0.1 grad_var='d' max_grad=0.1 /
+
+! -- Solver parameters ---------------------------------------------------------
+&zeus_params            gamma=1.6666667 trnvrsn=0 dtinit=1.0e-5 itote=0 qlin=0.2 qcon=1.0 /
+
+&zeustw_params          iohmic=0 ihall=0 with_ad_1f=f withchem=f gamma=1.6666667 qlin=0.2 qcon=1.0 /
+
+&ramses_params          courant_factor=0.25 gamma=1.6666667 slope_type=3 /
+
+                                        !     cs   pa  ofd  mas  kap  eta
+&stagger_params         gamma=1.666667 nu=  0.10, 1.0, 1.0, 0.1, 1.0, 1.0 /
+&timestep_params        time_order=2 /
