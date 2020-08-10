@@ -58,6 +58,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! CGS units
   !-----------------------------------------------------------------------------
+  call trace%begin ('const_t%init')
   cgs%name    = 'cgs'
   cgs%m_u     = 1.6726219d-24
   cgs%m_e     = 9.10938356d-28
@@ -111,6 +112,7 @@ SUBROUTINE init (self)
   si%eps_0   = 8.8542d-12
   si%pi      = math%pi
   call units%output
+  call trace%end ()
 END SUBROUTINE init
 
 !===============================================================================
@@ -125,7 +127,7 @@ SUBROUTINE output (self)
   namelist /cgs_nml/ m_sun, r_sun, pc, au, grav, stefan, yr, myr
   namelist /si_nml/ m_sun, r_sun, pc, au, grav, stefan, yr, myr
   !----------------------------------------------------------------------------
-  call trace%begin ('units_t%init')
+  call trace%begin ('units_t%output')
   system = self%system
   l      = self%l
   t      = self%t
@@ -153,7 +155,7 @@ SUBROUTINE output (self)
     write (io_unit%nml, si_nml)
     !$omp end critical (write_nml_cr)
   end if
-  call trace%end
+  call trace%end ()
 END SUBROUTINE output
 
 END MODULE units_mod

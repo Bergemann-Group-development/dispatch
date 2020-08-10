@@ -16,9 +16,11 @@ MODULE scaling_mod
     real(kind=8):: d, e, ee, p, u, temp, grav, mu, kr, b
   contains
     procedure:: init
+    procedure:: output
   end type
   type(scaling_t), public:: scaling
 CONTAINS
+
 !===============================================================================
 !> Initialize code units:
 !===============================================================================
@@ -33,10 +35,10 @@ SUBROUTINE init (self)
   first_time = .false.
   call cgs%init
   !--------------------------- defining quantities ---------------------
-  self%system = 'cgs'                                                   ! pass on to Python
-  self%l  = 1d0                                                         ! length = 1Mm = 1e8 cm
-  self%d  = 1d0                                                        ! photospheric density
-  self%t  = 1d0                                                         ! time = 100 sec
+  self%system = 'cgs'
+  self%l  = 1d0
+  self%d  = 1d0
+  self%t  = 1d0
   !--------------------------- derived quantities ----------------------
   self%u  = self%l/self%t                                               ! speed
   self%m  = self%d*self%l**3                                            ! mass
@@ -65,4 +67,19 @@ SUBROUTINE init (self)
   call self%output
   call trace%end()
 END SUBROUTINE init
+
+!===============================================================================
+!> Output scaling units. Do NOT call units%output from here!
+!===============================================================================
+SUBROUTINE output (self)
+  class(scaling_t):: self
+  real:: l, t, d
+  namelist /scaling_nml/ l, t, d
+  !-----------------------------------------------------------------------------
+  l = self%l
+  t = self%t
+  d = self%d
+  write (io%namelist,scaling_nml)
+END SUBROUTINE output
+
 END MODULE scaling_mod
