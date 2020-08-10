@@ -4,6 +4,11 @@ import dispatch.EOS
 from dispatch.EOS import eos_c
 
 class bifrost(eos_c):
+    """ Read a BIFROST code EOS table, storing the information
+        in a generic format, consisting of a linear scale of log
+        density values, a dictionary with tables for each density,
+        and an 'info' dictionary with non-mandatory extra information.
+    """
     def __init__(self,file='eostable.dat',dir='data/eos/bifrost/',top=None,verbose=0):
         if top is None:
             self.file=file

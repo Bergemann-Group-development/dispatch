@@ -45,8 +45,8 @@ def open(self,case='stagger',file=None,top='~/codes/dispatch2',verbose=0):
     return eos(top=top,verbose=verbose) if file is None else eos(file,top=top,verbose=verbose)
 
 class eos_c(table_c):
-    """ Sub-class that inherits all table_c methods, and adds knowledge about
-        default location of some example cases, and other EOS specific methods.
+    """ Sub-class that inherits all table_c methods, and adds other EOS 
+        specific methods.
     """
 
     def to_S(self,n1=1000,verbose=0):

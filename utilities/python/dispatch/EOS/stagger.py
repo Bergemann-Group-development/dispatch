@@ -1,9 +1,7 @@
 import numpy as np
-import dispatch
 import dispatch.EOS
 from scipy.io import FortranFile
-from dispatch.EOS import deriv,interp,eos_c
-from copy import deepcopy
+from dispatch.EOS import eos_c
 
 class stagger(eos_c):
     """ Read a STAGGER code EOS table, storing the information
