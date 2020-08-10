@@ -57,6 +57,7 @@ SUBROUTINE init (self)
   class(solver_t) :: self
   !.............................................................................
   call trace%begin ('solver_t%init')
+  self%etype = 'total'
   call self%hd_t%pre_init
   call self%hd_t%init
   call validate%init

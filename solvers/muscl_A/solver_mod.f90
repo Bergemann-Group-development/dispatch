@@ -54,6 +54,7 @@ SUBROUTINE init (self)
   class(solver_t) :: self
   !.............................................................................
   call trace%begin ('solver_t%init')
+  self%etype = 'entropy'
   call self%extras_t%pre_init
   call self%mhd_t%init
   call self%extras_t%init

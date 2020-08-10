@@ -44,6 +44,7 @@ MODULE mhd_mod
     real:: eta
     real(8):: g1, g2
     type(riemann_t):: riemann
+    logical:: mhd=.true.
   contains
     procedure:: init
     procedure:: update
@@ -108,12 +109,12 @@ SUBROUTINE init (self)
   self%nw = 1
   if (trim(method) == 'hlld') then
     self%ng = 3
-    self%mhd = .true.
+    !self%mhd = .true.
     self%kind = 'muscl_A_mhd_patch'
     if (self%nv == 0) self%nv = 9
   else
     self%ng = 2
-    self%mhd = .false.
+    !self%mhd = .false.
     self%kind = 'muscl_A_hd_patch'
     if (self%nv == 0) self%nv = 6
   end if
@@ -122,9 +123,9 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   if (verbose > 1) then
     write (io%output,'(a,2i4,l4)') 'mhd_t%init: nv, ng, mhd =', &
-      self%nv, self%ng, self%mhd
+      self%nv, self%ng !, self%mhd
   end if
-  call self%idx%init (mhd=self%mhd, ie=5)
+  call self%idx%init (mhd=.true., ie=5)
   call self%patch_t%init
   !-----------------------------------------------------------------------------
   ! Make sure to save and use consistent gamma factors throughout
@@ -595,12 +596,12 @@ SUBROUTINE predict (self)
   do i3=l(3),u(3)
   do i2=l(2),u(2)
     ff(:,:) = 0.0
-    if (allocated(self%force_per_unit_mass)) then
+    if (associated(self%force_per_unit_mass)) then
       ff(:,1) = ff(:,1) + self%force_per_unit_mass(:,i2,i3,1)
       ff(:,2) = ff(:,2) + self%force_per_unit_mass(:,i2,i3,2)
       ff(:,3) = ff(:,3) + self%force_per_unit_mass(:,i2,i3,3)
     end if
-    if (allocated(self%force_per_unit_volume)) then
+    if (associated(self%force_per_unit_volume)) then
       ff(:,1) = ff(:,1) + self%force_per_unit_volume(:,i2,i3,1)/d(:,i2,i3)
       ff(:,2) = ff(:,2) + self%force_per_unit_volume(:,i2,i3,2)/d(:,i2,i3)
       ff(:,3) = ff(:,3) + self%force_per_unit_volume(:,i2,i3,3)/d(:,i2,i3)
@@ -779,8 +780,8 @@ SUBROUTINE sources (self)
   p1 => self%mem(:,:,:,2,self%new,1)
   p2 => self%mem(:,:,:,3,self%new,1)
   p3 => self%mem(:,:,:,4,self%new,1)
-  forcing = allocated(self%force_per_unit_mass) .or. &
-            allocated(self%force_per_unit_volume)
+  forcing = associated(self%force_per_unit_mass) .or. &
+            associated(self%force_per_unit_volume)
   !-----------------------------------------------------------------------------
   if (self%mhd) then
     b1 => self%mem(:,:,:,6,self%new,1)
@@ -800,12 +801,12 @@ SUBROUTINE sources (self)
   !-----------------------------------------------------------------------------
   ! Add forcing to momentum
   !-----------------------------------------------------------------------------
-  if (allocated(self%force_per_unit_mass)) then
+  if (associated(self%force_per_unit_mass)) then
     p1 = p1 + self%force_per_unit_mass(:,:,:,1)*d*self%dtime
     p2 = p2 + self%force_per_unit_mass(:,:,:,2)*d*self%dtime
     p3 = p3 + self%force_per_unit_mass(:,:,:,3)*d*self%dtime
   end if
-  if (allocated(self%force_per_unit_volume)) then
+  if (associated(self%force_per_unit_volume)) then
     p1 = p1 + self%force_per_unit_volume(:,:,:,1)*self%dtime
     p2 = p2 + self%force_per_unit_volume(:,:,:,2)*self%dtime
     p3 = p3 + self%force_per_unit_volume(:,:,:,3)*self%dtime

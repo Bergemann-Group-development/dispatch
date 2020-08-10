@@ -16,6 +16,7 @@ MODULE index_mod
     procedure:: init
     procedure:: copy
     procedure:: request_index
+    procedure:: print
     procedure:: output
   end type
   type(index_t), public:: idx
@@ -108,6 +109,15 @@ SUBROUTINE copy (self)
   end select
   !$omp end critical (index_cr)
 END SUBROUTINE copy
+
+!===============================================================================
+!> Write out index value namelist, for python/dispatch/
+!===============================================================================
+SUBROUTINE print (self, unit)
+  class(index_t):: self
+  integer:: unit
+  call self%output (unit)
+END SUBROUTINE print
 
 !===============================================================================
 !> Write out index value namelist, for python/dispatch/

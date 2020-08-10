@@ -28,6 +28,7 @@ MODULE gpatch_mod
     type(data_hub_t):: data_hub
     class(list_t), pointer:: task_list => null()
     real(8):: d0
+    character(len=8):: etype='thermal' ! or 'total', 'entropy'
   contains
     procedure, nopass:: cast2gpatch
     procedure:: init_task_list
