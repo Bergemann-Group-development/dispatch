@@ -33,7 +33,7 @@ CONTAINS
 SUBROUTINE init (self)
   class(experiment_t):: self
   class(mesh_t), pointer:: m1, m2, m3
-  integer:: i, j, k
+  integer:: i, j, k, iostat
   real(8):: x, y, z
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, vx, vy, vz, Bx, By, Bz, &
                                                         px, py, pz, e1, et, s
@@ -53,13 +53,13 @@ SUBROUTINE init (self)
   ! intialise solver
   self%mhd = .true.
   call self%solver_t%init
-  self%periodic = [.false., .true., .true.]
 
   call io%lock%set
   if (first_time) then
     rewind (io%input)
-    read (io%input, experiment_params)
-    if (io%master) write (*,experiment_params)
+    read (io%input, experiment_params, iostat=iostat)
+    call io%namelist_warning ('experiment_params', iostat)
+    write (io%namelist, experiment_params)
     first_time = .false.
   end if
   call io%lock%unset
