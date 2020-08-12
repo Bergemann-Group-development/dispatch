@@ -107,7 +107,6 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_solenoidal', itimer=itimer)
-print *,'IC_COMPRESSIVE'
   call io%lock%set
   if (first_time) then
     first_time = .false.

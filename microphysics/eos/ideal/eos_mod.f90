@@ -86,10 +86,12 @@ END FUNCTION
 !===============================================================================
 !> General EOS lookup routine, returning values in optional arguments
 !===============================================================================
-SUBROUTINE lookup (self, dim, lnd, ee, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
+SUBROUTINE lookup (self, dim, lnd, ee, lnx, x, lny, y, pg, tt, ss, rk, src, &
+                   gamma, e_below)
   class (eos_t):: self
   integer:: dim(3)
   real, optional:: gamma
+  logical, optional:: e_below
   real, dimension(:,:,:), intent(in), pointer, optional :: lnx, x, lny, y, lnd, ee
   real, dimension(:,:,:),                      optional :: pg, tt, ss
   real, dimension(:,:,:,:),                    optional :: src, rk
@@ -100,6 +102,7 @@ SUBROUTINE lookup (self, dim, lnd, ee, lnx, x, lny, y, pg, tt, ss, rk, src, gamm
   logical:: x_alloc, y_alloc
   !-----------------------------------------------------------------------------
   call trace%begin ('eos_t%lookup', itimer=itimer)
+  e_below = .false.
   if (present(gamma)) then
     self%gamma = gamma
   end if
@@ -160,10 +163,11 @@ END SUBROUTINE lookup
 !> General EOS lookup routine, returning values in optional arguments
 !===============================================================================
 SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne,lnee, pg, tt, ne, rk, &
-                         ss, src, gamma)
+                         ss, src, gamma, e_below)
   class (eos_t):: self
   integer:: dim(3)
   real, optional:: gamma
+  logical, optional:: e_below
   real, dimension(:,:,:), intent(in), pointer, optional :: e, lne, d, lnee, lnd, ee
   real, dimension(:,:,:),                      optional :: pg, tt, ne, ss
   real, dimension(:,:,:,:),                    optional :: src, rk
@@ -193,6 +197,10 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne,lnee, pg, tt, ne, rk, &
   !-----------------------------------------------------------------------------
   if (present(ee)) then
     ee_loc => ee
+    e_below = any(ee < 0.0)
+    if (e_below) then
+      ee = max(ee,0.0)
+    end if
   else if (present(lne)) then
     allocate (ee_loc(dim(1),dim(2),dim(3)))
     e_alloc = .true.
@@ -200,6 +208,10 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne,lnee, pg, tt, ne, rk, &
   else if (present(e)) then
     allocate (ee_loc(dim(1),dim(2),dim(3)))
     e_alloc = .true.
+    e_below = any(e < 0.0)
+    if (e_below) then
+      e = max(e,0.0)
+    end if
     ee_loc = e/d_loc
   else
     call mpi%abort ('eos_t: missing 2nd argument')

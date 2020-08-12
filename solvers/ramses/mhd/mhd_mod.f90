@@ -695,6 +695,7 @@ subroutine ctoprim(self)
   real(dp):: eken, emag, etot, eint, B1, B2, B3
   integer, save:: itimer=0
   integer:: i, j, k, loc(3), l(3), u(3)
+  real, pointer:: ee(:,:,:)
   associate(uin=>self%uin,q=>self%q,bf=>self%bf,dt=>self%dtime,c=>self%c)
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%ctoprim', itimer=itimer, detailed_timer=detailed_timer)
@@ -721,7 +722,7 @@ subroutine ctoprim(self)
   bf(:,:,:,3) = uin(:,:,:,8)
   if (verbose>0) print *,  'ctoprim:rh', self%id, minval(q(:,:,:,1)), maxval(q(:,:,:,1))
   if (verbose>0) print *,  'ctoprim:bf', self%id, minval(bf), maxval(bf)
-
+  !
   do k=1,self%gn(3)-1
   do j=1,self%gn(2)-1
   do i=1,self%gn(1)-1
@@ -731,6 +732,17 @@ subroutine ctoprim(self)
     B3 = half*(q(i,j,k,8)+q(i,j,k+1,8))
     emag = half*(B1**2 + B2**2 + B3**2)
     q(i,j,k,5) = (uin(i,j,k,5) - emag - eken)*(gamma-1d0)
+  end do
+  end do
+  end do
+  ee => q(:,:,:,5)
+  if (any(ee < 0.0)) then
+    write (io_unit%log,'(a,i6,1p,2e11.2,3i4)') 'ctoprim: ee < 0.0', &
+      self%id, maxval(ee), minval(ee), minloc(ee)
+  end if
+  do k=1,self%gn(3)-1
+  do j=1,self%gn(2)-1
+  do i=1,self%gn(1)-1
     q(i,j,k,5) = merge(q(i,j,k,1)*self%csound**2, max(q(i,j,k,5),smallp), isothermal)
     c(i,j,k) = sqrt((q(i,j,k,5)*gamma + 2.0*emag)/q(i,j,k,1))
   end do

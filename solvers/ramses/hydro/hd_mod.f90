@@ -541,33 +541,44 @@ subroutine ctoprim (self)
   class(hd_t):: self
   real(dp):: smallp, dtds
   integer,save:: itimer=0
-  integer:: l(3), u(3)
-  real, contiguous, dimension(:,:,:)  , pointer:: d, e, pg, c, s
+  integer:: l(3), u(3), i1, i2, i3
+  real:: s
+  real, contiguous, dimension(:,:,:)  , pointer:: d, e, pg, c
   real, contiguous, dimension(:,:,:,:), pointer:: unew, q
   !-----------------------------------------------------------------------------
   unew => self%unew
   q   => self%q
   c   => self%u_phase
-  s   => self%s
+  pg => q(:,:,:,5)
   if (detailed_timer) then
     call trace%begin ('hd_mod::ctoprim', itimer=itimer)
   else
     call trace%begin ('hd_mod::ctoprim')
   end if
   smallp = smallr*smallc**2/gamma
-  q(:,:,:,1) = max(unew(:,:,:,self%idx%d),smallr)
-  s = 1.d0/q(:,:,:,1)
-  q(:,:,:,2) = unew(:,:,:,self%idx%px)*s
-  q(:,:,:,3) = unew(:,:,:,self%idx%py)*s
-  q(:,:,:,4) = unew(:,:,:,self%idx%pz)*s
-  s = q(:,:,:,2)**2+q(:,:,:,3)**2+q(:,:,:,4)**2
-  !-----------------------------------------------------------------------------
+  do i3=1,self%gn(3)
+  do i2=1,self%gn(2)
+  do i1=1,self%gn(1)
+    q(i1,i2,i3,1) = max(unew(i1,i2,i3,self%idx%d),smallr)
+    s = 1.0/q(i1,i2,i3,1)
+    q(i1,i2,i3,2) = unew(i1,i2,i3,self%idx%px)*s
+    q(i1,i2,i3,3) = unew(i1,i2,i3,self%idx%py)*s
+    q(i1,i2,i3,4) = unew(i1,i2,i3,self%idx%pz)*s
+    s = q(i1,i2,i3,2)**2+q(i1,i2,i3,3)**2+q(i1,i2,i3,4)**2
+    pg(i1,i2,i3) = unew(i1,i2,i3,self%idx%e) - half*s
+  end do
+  end do
+  end do
+  if (any(pg < 0.0)) then
+    if (verbose > 0) write (io_unit%log,'(a,i6,1p,2e11.2,3i4)') &
+      'ctoprim pg < 0.0', self%id, maxval(pg), minval(pg), minloc(pg)
+    pg = max(pg,smallp)
+  end if
+!-----------------------------------------------------------------------------
   ! Equation-of-state: s is the internal energy, and pg is the gas pressure
   !-----------------------------------------------------------------------------
-  s = max((unew(:,:,:,self%idx%e)-half*q(:,:,:,1)*s(:,:,:)),smallp)
   d => q(:,:,:,1)
-  e => s
-  pg => q(:,:,:,5)
+  e => pg
   if (isothermal) then
     pg = d*self%csound**2
   else
