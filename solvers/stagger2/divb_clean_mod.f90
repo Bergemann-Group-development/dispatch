@@ -33,8 +33,9 @@ SUBROUTINE init_clean(self)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
-    read (io%input, divb_clean_params)
-    if (io%master) write (*, divb_clean_params,iostat=iostat)
+    read (io%input, divb_clean_params, iostat=iostat)
+    call io%namelist_warning ('divb_clean_params', iostat)
+    write (io%namelist, divb_clean_params,iostat=iostat)
     select case(divb_cleaner)
     case(0)
       self%clean => divb_clean0

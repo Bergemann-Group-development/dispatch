@@ -65,6 +65,7 @@ MODULE rt_mod
   USE omp_timer_mod
   USE math_mod
   USE bits_mod
+  USE scratch_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -258,9 +259,9 @@ SUBROUTINE init_task (self)
     !---------------------------------------------------------------------------
     ! Allocate heating for MHD
     !---------------------------------------------------------------------------
-    if (.not.associated(self%patch%heating_per_unit_volume)) then
-      allocate(self%patch%heating_per_unit_volume(p%gn(1), p%gn(2), p%gn(3)))
-      self%patch%heating_per_unit_volume = 0.0
+    if (.not.associated(scratch%heating_per_unit_volume)) then
+      allocate(scratch%heating_per_unit_volume(p%gn(1), p%gn(2), p%gn(3)))
+      scratch%heating_per_unit_volume = 0.0
     end if
     !---------------------------------------------------------------------------
     ! Integration weights (w_bin is baked into the source function in this case)
@@ -643,8 +644,8 @@ SUBROUTINE pre_update (self)
   !---------------------------------------------------------------------------
   l = self%patch%mesh%li - self%mesh%ng
   u = self%patch%mesh%ui + self%mesh%ng
-  self%patch%heating_per_unit_volume(l(1):u(1),l(2):u(2),l(3):u(3)) = &
-  self%patch%heating_per_unit_volume(l(1):u(1),l(2):u(2),l(3):u(3)) + self%qr
+  scratch%heating_per_unit_volume(l(1):u(1),l(2):u(2),l(3):u(3)) = &
+  scratch%heating_per_unit_volume(l(1):u(1),l(2):u(2),l(3):u(3)) + self%qr
   !---------------------------------------------------------------------------
   call trace%end (itimer)
 END SUBROUTINE pre_update

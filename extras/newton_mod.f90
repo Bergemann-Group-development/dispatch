@@ -8,6 +8,8 @@ MODULE newton_mod
   USE mesh_mod
   USE io_unit_mod
   USE trace_mod
+  USE bits_mod
+  USE scratch_mod
   implicit none
   private
   type, public:: newton_t
@@ -57,9 +59,9 @@ SUBROUTINE init (self)
   integer:: m(3)
   !-----------------------------------------------------------------------------
   call trace%begin ('newton_t%init')
-  if (.not.associated(self%patch%heating_per_unit_volume)) then
+  if (.not.associated(scratch%heating_per_unit_volume)) then
     m = self%patch%gn
-    allocate (self%patch%heating_per_unit_volume(m(1),m(2),m(3)))
+    allocate (scratch%heating_per_unit_volume(m(1),m(2),m(3)))
   end if
   call trace%end()
 END SUBROUTINE init
@@ -88,9 +90,9 @@ SUBROUTINE pre_update (self)
             s = m1%p + m1%r(ix)-position
             f = exp(-s/scale)
             r = f/((1.0+f)*time)
-            ee = ee0 + ee1*s
-            self%patch%heating_per_unit_volume(ix,iy,iz) = &
-            self%patch%heating_per_unit_volume(ix,iy,iz) + &
+            ee = ee_top + ee1*s
+            scratch%heating_per_unit_volume(ix,iy,iz) = &
+            scratch%heating_per_unit_volume(ix,iy,iz) + &
               (ee*d(ix,iy,iz)-e(ix,iy,iz))*r
           end do
         end do
@@ -111,8 +113,8 @@ SUBROUTINE pre_update (self)
             ee = ee0 + ee1*s
           end if
           do ix = m1%li, m1%ui
-            self%patch%heating_per_unit_volume(ix,iy,iz) = &
-            self%patch%heating_per_unit_volume(ix,iy,iz) + &
+            scratch%heating_per_unit_volume(ix,iy,iz) = &
+            scratch%heating_per_unit_volume(ix,iy,iz) + &
               (ee*d(ix,iy,iz)-e(ix,iy,iz))*r
           end do
         end do

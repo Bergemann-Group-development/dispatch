@@ -36,6 +36,7 @@ MODULE experiment_mod
   USE scaling_mod
   USE units_mod
   USE omp_lock_mod
+  USE scratch_mod
   implicit none
   private
   type, public, extends(solver_t):: experiment_t
@@ -157,10 +158,10 @@ SUBROUTINE initial_conditions (self)
   !-----------------------------------------------------------------------------
   ! Make sure force_per_unit_mass is allocated
   !-----------------------------------------------------------------------------
-  if (.not.associated(self%force_per_unit_mass)) then
+  if (.not.associated(scratch%force_per_unit_mass)) then
     m = self%mesh%gn
-    allocate (self%force_per_unit_mass(m(1),m(2),m(3),3))
-    self%force_per_unit_mass = 0.0
+    allocate (scratch%force_per_unit_mass(m(1),m(2),m(3),3))
+    scratch%force_per_unit_mass = 0.0
   end if
   call trace%end (itimer)
 END SUBROUTINE initial_conditions
@@ -196,7 +197,7 @@ SUBROUTINE init_task_list (self, task_list)
 END SUBROUTINE init_task_list
 
 !===============================================================================
-!> Update the stat, by computing the self%force_per_unit_mass() that the solver
+!> Update the stat, by computing the scratch%force_per_unit_mass() that the solver
 !> needs, and then calling the solver to do the rest
 !===============================================================================
 SUBROUTINE update (self)
@@ -213,8 +214,8 @@ SUBROUTINE update (self)
   !----------------------------------------------------------------------------
   ! Allocate an (nx,ny,nz,3) array and increment the memory count
   !----------------------------------------------------------------------------
-  call io%bits_mem (storage_size(self%force_per_unit_mass), &
-                    product(shape(self%force_per_unit_mass)), 'fpm')
+  call io%bits_mem (storage_size(scratch%force_per_unit_mass), &
+                    product(shape(scratch%force_per_unit_mass)), 'fpm')
   !----------------------------------------------------------------------------
   ! The expression for the force is linear in z; cf. the intitial condition.
   ! The mesh%h(iv) (in cell units) is the offset for staggered variables.
@@ -222,9 +223,9 @@ SUBROUTINE update (self)
   mesh => self%mesh(3)
   do iz=mesh%li,mesh%ui
     z = mesh%p + mesh%r(iz) + mesh%h(self%idx%pz)*mesh%d
-    self%force_per_unit_mass(:,:,iz,1) = 0.0
-    self%force_per_unit_mass(:,:,iz,2) = 0.0
-    self%force_per_unit_mass(:,:,iz,3) = -z
+    scratch%force_per_unit_mass(:,:,iz,1) = 0.0
+    scratch%force_per_unit_mass(:,:,iz,2) = 0.0
+    scratch%force_per_unit_mass(:,:,iz,3) = -z
   end do
   !-----------------------------------------------------------------------------
   ! Enforce boundary conditions, conditionally write output,  before calling
@@ -236,8 +237,8 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Deallocate the force field, to save memory
   !-----------------------------------------------------------------------------
-  call io%bits_mem (-storage_size(self%force_per_unit_mass), &
-                    product(shape(self%force_per_unit_mass)), '-fpm')
+  call io%bits_mem (-storage_size(scratch%force_per_unit_mass), &
+                    product(shape(scratch%force_per_unit_mass)), '-fpm')
   call trace%end(itimer)
 END SUBROUTINE update
 

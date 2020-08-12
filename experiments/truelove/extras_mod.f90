@@ -62,6 +62,7 @@ MODULE extras_mod
   USE io_mod
   USE trace_mod
   USE connect_mod
+  USE scratch_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.
   !-----------------------------------------------------------------------------
@@ -189,16 +190,7 @@ END SUBROUTINE dealloc
 SUBROUTINE pre_update (self)
   class(extras_t), target:: self
   !.............................................................................
-  call trace%begin ('extras_t%pre_update')
-  if (associated (self%force_per_unit_mass)) &                          ! keep
-    self%force_per_unit_mass = 0.0                                     ! keep
-  if (associated (self%force_per_unit_volume)) &                        ! keep
-    self%force_per_unit_volume = 0.0                                   ! keep
-  if (associated (self%heating_per_unit_mass)) &                        ! keep
-    self%heating_per_unit_mass = 0.0                                   ! keep
-  if (associated (self%heating_per_unit_volume)) &                      ! keep
-    self%heating_per_unit_volume = 0.0                                 ! keep
-  !
+  call self%gpatch_t%pre_update                                        ! keep
   !call self%rt%pre_update()                                            ! RT
   !call self%newton%pre_update()                                        ! Newton
   !call self%forces%pre_update                                          ! forces

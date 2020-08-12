@@ -28,6 +28,7 @@ MODULE mhd_mod
   USE eos_mod
   USE non_ideal_mod
   USE initial_mod
+  USE scratch_mod
   implicit none
   private
   type, extends(extras_t), public:: mhd_t
@@ -499,11 +500,11 @@ SUBROUTINE pde (self)
   ! applied here, and should not be included in the function definition
   !-----------------------------------------------------------------------------
   if (self%do_force) then
-    if (associated(self%force_per_unit_mass)) then
-      dpdt = dpdt + dd*self%force_per_unit_mass                                  ! ops: 2 2 0
+    if (associated(scratch%force_per_unit_mass)) then
+      dpdt = dpdt + dd*scratch%force_per_unit_mass                                  ! ops: 2 2 0
     end if
-    if (associated(self%force_per_unit_volume)) then
-      dpdt = dpdt + self%force_per_unit_volume
+    if (associated(scratch%force_per_unit_volume)) then
+      dpdt = dpdt + scratch%force_per_unit_volume
     end if
   end if
   !-----------------------------------------------------------------------------

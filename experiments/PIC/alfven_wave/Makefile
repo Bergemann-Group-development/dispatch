@@ -38,4 +38,4 @@ experiment_mod.o        : trace_mod.o io_mod.o timestep_mod.o solver_mod.o pboun
 pboundary_mod.o         : io_mod.o trace_mod.o patch_mod.o mesh_mod.o bits_mod.o
 initial_mod.o           : io_mod.o trace_mod.o mesh_mod.o math_mod.o index_mod.o scaling_mod.o vector_ops.o
 extras_mod.o            : patch_mod.o gpatch_mod.o connect_mod.o pic_mod.o \
-                          pic_particles_mod.o
+                          pic_particles_mod.o scratch_mod.o

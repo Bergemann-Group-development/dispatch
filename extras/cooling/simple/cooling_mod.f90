@@ -106,17 +106,14 @@ SUBROUTINE pre_update (self)
   call trace%begin ('cooling_t%pre_update', itimer=itimer)
   if (on) then
     patch => self%patch
-    if (.not.associated(scratch%heating_per_unit_volume)) then
-      u = patch%gn
-      allocate (scratch%heating_per_unit_volume(u(1),u(2),u(3)))
-      scratch%heating_per_unit_volume = 0.0
-      if (info) then
-        !$omp critical (info_cr)
-        write (io_unit%output,*) &
-          'cooling_t%pre_update INFO: allocated heating_per_unit_volume'
-        info = .false.
-        !$omp end critical (info_cr)
-      end if
+    call scratch%allocate (scratch%heating_per_unit_volume, patch%gn)
+    scratch%heating_per_unit_volume = 0.0
+    if (info) then
+      call io%lock%set ('cooling_t%pre_update')
+      write (io_unit%output,*) &
+        'cooling_t%pre_update INFO: allocated heating_per_unit_volume'
+      info = .false.
+      call io%lock%unset ('cooling_t%pre_update')
     end if
     if (do_subcycle) then
       self%dtime = patch%dtime

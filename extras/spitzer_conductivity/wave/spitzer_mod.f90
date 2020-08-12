@@ -16,6 +16,7 @@ MODULE spitzer_mod
   USE scaling_mod
   USE patch_mod
   USE link_mod
+  USE scratch_mod
   implicit none
   private
   logical  :: do_spitzer = .false.
@@ -170,16 +171,20 @@ SUBROUTINE pre_update(self)
   else
     dtime = self%patch%dtime
   end if
-  ! save conductive flux values from previous timestep
-  self%fc(:,:,:,1) = self%fc(:,:,:,1)+self%dfc(:,:,:,1)*dtime
-  self%fc(:,:,:,2) = self%fc(:,:,:,2)+self%dfc(:,:,:,2)*dtime
-  self%fc(:,:,:,3) = self%fc(:,:,:,3)+self%dfc(:,:,:,3)*dtime
-  ! Calculate conductive flux for this timestep
-  f => self%patch%mem(:,:,:,:,self%patch%it,1)
-  call self%conductive_flux(f,dtime)
-  
-  self%patch%heating_per_unit_volume = & 
-  self%patch%heating_per_unit_volume - div(ds,down(self%fc))
+  if (self%first_iter) then
+    self%first_iter = .false.
+    call self%compute_q(self%patch%mem(:,:,:,:,self%patch%it,1))
+  else
+    ! save conductive flux values from previous timestep
+    self%fc(:,:,:,1) = self%fc(:,:,:,1)+self%dfc(:,:,:,1)*dtime
+    self%fc(:,:,:,2) = self%fc(:,:,:,2)+self%dfc(:,:,:,2)*dtime
+    self%fc(:,:,:,3) = self%fc(:,:,:,3)+self%dfc(:,:,:,3)*dtime
+    ! Calculate conductive flux for this timestep
+    f => self%patch%mem(:,:,:,:,self%patch%it,1)
+    call self%conductive_flux(f,dtime)
+  end if
+  scratch%heating_per_unit_volume = & 
+  scratch%heating_per_unit_volume - div(ds,down(self%fc))
 
   !print *, 'max dedt before spitz', maxval(abs(ff(:,:,:,self%idx%e,it,2)))
   !print *, 'max spitz', maxval(abs(div(ds,down(self%fc))))

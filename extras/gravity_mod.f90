@@ -8,6 +8,8 @@ MODULE gravity_mod
   USE io_mod
   USE kinds_mod
   USE trace_mod
+  USE bits_mod
+  USE scratch_mod
   implicit none
   private
   type, public:: gravity_t
@@ -82,10 +84,10 @@ SUBROUTINE init (self)
   integer:: gn(3)
   !-----------------------------------------------------------------------------
   call trace%begin ('selfgravity_t%init')
-  if (.not.associated(self%patch%force_per_unit_mass)) then
+  if (.not.associated(scratch%force_per_unit_mass)) then
     gn = self%patch%gn
-    allocate (self%patch%force_per_unit_mass(gn(1),gn(2),gn(3),3))
-    self%patch%force_per_unit_mass = 0.0
+    allocate (scratch%force_per_unit_mass(gn(1),gn(2),gn(3),3))
+    scratch%force_per_unit_mass = 0.0
   end if
   call trace%end()
 END SUBROUTINE init
@@ -103,8 +105,8 @@ END SUBROUTINE pre_update
 SUBROUTINE const_grav(self)
   class(gravity_t) :: self
   ! ----------------------------------------------------------------------------
-  self%patch%force_per_unit_mass(:,:,:,self%axis) = &
-  self%patch%force_per_unit_mass(:,:,:,self%axis) + self%const_grav
+  scratch%force_per_unit_mass(:,:,:,self%axis) = &
+  scratch%force_per_unit_mass(:,:,:,self%axis) + self%const_grav
 END SUBROUTINE const_grav
 
 !===============================================================================
@@ -141,16 +143,16 @@ SUBROUTINE var_grav(self)
         !-----------------------------------------------------------------------
         rp = sqrt(xs**2+yp**2+zp**2)
         rp = max(rp,self%minrad)
-        self%patch%force_per_unit_mass(ix,iy,iz,1) = &
-        self%patch%force_per_unit_mass(ix,iy,iz,1) - newton*xs/rp**3
+        scratch%force_per_unit_mass(ix,iy,iz,1) = &
+        scratch%force_per_unit_mass(ix,iy,iz,1) - newton*xs/rp**3
         rp = sqrt(xp**2+ys**2+zp**2)
         rp = max(rp,self%minrad)
-        self%patch%force_per_unit_mass(ix,iy,iz,2) = &
-        self%patch%force_per_unit_mass(ix,iy,iz,2) - newton*ys/rp**3
+        scratch%force_per_unit_mass(ix,iy,iz,2) = &
+        scratch%force_per_unit_mass(ix,iy,iz,2) - newton*ys/rp**3
         rp = sqrt(xp**2+yp**2+zs**2)
         rp = max(rp,self%minrad)
-        self%patch%force_per_unit_mass(ix,iy,iz,3) = &
-        self%patch%force_per_unit_mass(ix,iy,iz,3) - newton*zs/rp**3
+        scratch%force_per_unit_mass(ix,iy,iz,3) = &
+        scratch%force_per_unit_mass(ix,iy,iz,3) - newton*zs/rp**3
       end do
     end do
   end do

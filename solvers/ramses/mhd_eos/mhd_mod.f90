@@ -821,17 +821,23 @@ subroutine ctoprim(self)
   !-----------------------------------------------------------------------------
   allocate (ee0(n(1),n(2),n(3)))
   ee0 = ee
-  call eos%lookup_table (shape(ee), lnd=lnd, ee=ee, pg=pg, tt=tt, e_below=e_below)
-  if (e_below) then
-    do k=1,n(3)
-    do j=1,n(2)
-    do i=1,n(1)
-      q(i,j,k,9) = ee(i,j,k)
-      uin(i,j,k,5) = uin(i,j,k,5) + (ee(i,j,k)-ee0(i,j,k))*uin(i,j,k,1)
-    end do
-    end do
-    end do
+  call eos%lookup_table (shape(ee), lnd=lnd, ee=ee, pg=pg, tt=tt, e_below=e_below, label='mhd', id=self%id)
+  if (verbose > 1) then
+    print *,'lnd',lnd(12,12,:)
+    print *,'ee',ee(12,12,:)
+    print *,'pg',pg(12,12,:)
   end if
+ ! if (e_below) then
+ !   do k=1,n(3)
+ !   do j=1,n(2)
+ !   do i=1,n(1)
+ !     q(i,j,k,9) = ee(i,j,k)
+ !     uin(i,j,k,5) = uin(i,j,k,5) + &
+ !                            (ee(i,j,k)-ee0(i,j,k))*uin(i,j,k,1)
+ !   end do
+ !   end do
+ !   end do
+ ! end if
   deallocate (ee0)
   do k=1,n(3)
   do j=1,n(2)

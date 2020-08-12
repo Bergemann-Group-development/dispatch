@@ -36,6 +36,7 @@ MODULE rt_mod
   USE ray_geometry_v3_mod
   USE scaling_mod
   USE kinds_mod
+  USE scratch_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -250,9 +251,9 @@ SUBROUTINE init (self)
     !---------------------------------------------------------------------------
     ! Allocate heating for MHD
     !---------------------------------------------------------------------------
-    if (.not.associated(self%patch%heating_per_unit_volume)) then
-      allocate(self%patch%heating_per_unit_volume(p%gn(1), p%gn(2), p%gn(3)))
-      self%patch%heating_per_unit_volume = 0.0
+    if (.not.associated(scratch%heating_per_unit_volume)) then
+      allocate(scratch%heating_per_unit_volume(p%gn(1), p%gn(2), p%gn(3)))
+      scratch%heating_per_unit_volume = 0.0
     end if
     !---------------------------------------------------------------------------
     ! Allocate wights and omegas. 
@@ -473,13 +474,13 @@ SUBROUTINE pre_update (self)
   call trace%begin ('rt_t%pre_update', itimer=itimer)
   l = self%patch%mesh%lo
   u = self%patch%mesh%uo
-  q => self%patch%heating_per_unit_volume(l(1):u(1),l(2):u(2),l(3):u(3))
+  q => scratch%heating_per_unit_volume(l(1):u(1),l(2):u(2),l(3):u(3))
   if (self%constant_q) then
     call self%get_q(time, q)
     !print *, 'minmax heating', minval(q), maxval(q)
     !print *, 'minmax loc heating', minloc(q), maxloc(q)
     !print *, 'after Q retrieval for heating'
-    !print *, self%patch%heating_per_unit_volume(4,l(2):u(2),4)
+    !print *, scratch%heating_per_unit_volume(4,l(2):u(2),4)
   else
     call io%abort("time-interpolated q in rt_t%pre_update is not implemented yet")
   end if

@@ -43,6 +43,7 @@ MODULE extras_mod
   USE connect_mod
   USE patch_mod
   USE list_mod
+  USE scratch_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.
   !-----------------------------------------------------------------------------
@@ -51,7 +52,7 @@ MODULE extras_mod
   !USE forces_mod                                                       ! forces
   !USE trace_particles_mod                                              ! tracep
   !USE spitzer_mod                                                      ! spitzer
-  USE selfgravity_mod                                                      ! gravity
+  USE selfgravity_mod                                                  ! gravity
   !USE sink_particles_mod                                               ! sinkp
   !USE pic_mod                                                          ! PIC
   !USE cooling_mod                                                      ! PIC
@@ -138,7 +139,7 @@ SUBROUTINE init (self)
   !if (self%pic%on) self%do_mhd = self%pic%do_mhd                       ! pic
   !call self%spitzer%init(self%link)                                    ! spitzer
   !call self%spitzer%init (self%link)                                   ! spitzer
-  call self%selfgravity%init (self)                                   ! gravity
+  call self%selfgravity%init (self)                                    ! gravity
   !call self%rt%init_task (self%rt)                                     ! RT
   ! -- ensure consistency (a value is already set via rt%init)          ! experiment
   !self%rt%rt_boundaries%grav = self%gravity%const_grav                 ! experiment
@@ -158,8 +159,8 @@ SUBROUTINE init_task_list (self, task_list)
   class(list_t), pointer:: task_list
   !.............................................................................
   call trace%begin ('extras_t%init_task_list')
-  call self%gpatch_t%init_task_list (task_list)                 ! keep
-  !call sink_particles%ad_hoc_add (self%link)                    ! sinkp
+  call self%gpatch_t%init_task_list (task_list)                        ! keep
+  !call sink_particles%ad_hoc_add (self%link)                           ! sinkp
   call trace%end ()
 END SUBROUTINE init_task_list
 
@@ -189,21 +190,13 @@ SUBROUTINE pre_update (self)
   !.............................................................................
   call trace%begin ('extras_t%pre_update')                             ! keep
   self%gpatch => self                                                  ! keep
-  if (associated (self%force_per_unit_mass)) &                          ! keep
-    self%force_per_unit_mass = 0.0                                     ! keep
-  if (associated (self%force_per_unit_volume)) &                        ! keep
-    self%force_per_unit_volume = 0.0                                   ! keep
-  if (associated (self%heating_per_unit_mass)) &                        ! keep
-    self%heating_per_unit_mass = 0.0                                   ! keep
-  if (associated (self%heating_per_unit_volume)) &                      ! keep
-    self%heating_per_unit_volume = 0.0                                 ! keep
-  !
+  call self%gpatch_t%pre_update                                        ! keep
   !call self%rt%pre_update()                                            ! RT
   !call self%newton%pre_update()                                        ! Newton
   !call self%forces%pre_update                                          ! forces
   !call self%trace_particles%update                                     ! tracep
   !call self%spitzer%pre_update()                                       ! spitzer
-  call self%selfgravity%pre_update(self)                                ! gravity
+  call self%selfgravity%pre_update(self)                               ! gravity
   !call sink_particles%force_field (self)                               ! sinkp
   !call self%pic%pre_update()                                           ! pic
   !call self%cooling%pre_update (self)                                  ! cool
@@ -221,7 +214,7 @@ SUBROUTINE post_update (self)
   !call self%forces%post_update                                         ! forces
   !call self%trace_particles%post_update (self)                         ! tracep
   !call self%pic%post_update()                                          ! pic
-  call self%selfgravity%post_update (self)                              ! selfg
+  call self%selfgravity%post_update (self)                             ! selfg
 END SUBROUTINE post_update
 
 !===============================================================================

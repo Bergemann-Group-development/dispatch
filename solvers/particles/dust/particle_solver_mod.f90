@@ -168,7 +168,7 @@ END SUBROUTINE pre_init
 SUBROUTINE init (self)
   class(particle_solver_t) :: self
   class(gpatch_t), pointer :: pa
-  integer                  :: m(3), i1, i2, i3, ib
+  integer                  :: m(4), i1, i2, i3, ib
   !-----------------------------------------------------------------------------
   ! Initialize particle lists and dust density array
   !-----------------------------------------------------------------------------
@@ -190,12 +190,9 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Allocate force array
   !-----------------------------------------------------------------------------
-  if (.not.associated(scratch%force_per_unit_volume)) then
-    allocate (scratch%force_per_unit_volume(m(1),m(2),m(3),3))
-    call io%bits_mem (storage_size(scratch%force_per_unit_volume), &
-                     product(shape(scratch%force_per_unit_volume)), &
-                     'force')
-  end if
+  m(1:3) = self%patch%mesh%gn
+  m(4) = 3
+  call scratch%allocate (scratch%force_per_unit_volume, m)
   if (.not.associated(self%lock)) then
     allocate (self%lock)
     call self%lock%init ('part')

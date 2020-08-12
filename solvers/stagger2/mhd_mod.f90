@@ -29,13 +29,15 @@ MODULE mhd_mod
   USE eos_mod
   USE non_ideal_mod
   USE initial_mod
+  USE divb_clean_mod
+  USE scratch_mod
   implicit none
   private
   type, extends(extras_t), public:: mhd_t
     real, dimension(:,:,:),   pointer:: d, dddt, s, dsdt, pg=>null(), tt=>null()
     real, dimension(:,:,:),   pointer:: lnd, ss
     real, dimension(:,:,:,:), pointer:: p, dpdt, B, dBdt
-    procedure(divB_clean1),   pointer:: divB_clean => null()
+    real, dimension(:,:,:,:), pointer:: emf => null()
     real:: nu(6)
     real:: cdtd
     logical:: mhd=.false.
@@ -59,6 +61,7 @@ MODULE mhd_mod
   logical, save:: do_2nd_div=.true.
   logical, save:: do_smooth=.false.
   logical, save:: do_maxwell=.true.
+  logical, save:: do_2nd_div= .false.
   logical, save:: do_temperature = .false.
   integer, save:: divb_cleaner=2
 CONTAINS
@@ -78,7 +81,7 @@ SUBROUTINE pre_init (self)
   character(len=16), save:: eos
   namelist /stagger_params/ nu, courant, gamma, csound, cdtd, hardwire, eos, &
     do_smooth, unsigned, do_maxwell, do_temperature, verbose, divb_cleaner, &
-    do_test
+    do_test, do_2nd_div
   !----------------------------------------------------------------------------
   call trace%begin ('mhd_t%pre_init')
   call io%lock%set ('mhd_t%pre_init')
@@ -552,11 +555,11 @@ SUBROUTINE pde (self)
   ! External force; e.g. point source gravity.  Note that the density factor is
   ! applied here, and should not be included in the function definition
   !-----------------------------------------------------------------------------
-  if (associated(self%force_per_unit_mass)) then
-    dpdt = dpdt + dd*self%force_per_unit_mass                                  ! ops: 2 2 0
+  if (associated(scratch%force_per_unit_mass)) then
+    dpdt = dpdt + dd*scratch%force_per_unit_mass                                  ! ops: 2 2 0
   end if
-  if (associated(self%force_per_unit_volume)) then
-    dpdt = dpdt + self%force_per_unit_volume
+  if (associated(scratch%force_per_unit_volume)) then
+    dpdt = dpdt + scratch%force_per_unit_volume
   end if
   !-----------------------------------------------------------------------------
   ! Conservation of entropy.  The formulation that works best so far is to make
@@ -615,11 +618,11 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   ! External heating / cooling, if any; e.g. radiative or conductive
   !-----------------------------------------------------------------------------
-  if (associated(self%heating_per_unit_mass)) then
-    dsdt = dsdt + d*self%heating_per_unit_mass/pg                                  ! ops: 2 2 0
+  if (associated(scratch%heating_per_unit_mass)) then
+    dsdt = dsdt + d*scratch%heating_per_unit_mass/pg                                  ! ops: 2 2 0
   end if
-  if (associated(self%heating_per_unit_volume)) then
-    dsdt = dsdt + self%heating_per_unit_volume/pg
+  if (associated(scratch%heating_per_unit_volume)) then
+    dsdt = dsdt + scratch%heating_per_unit_volume/pg
   end if
   !-----------------------------------------------------------------------------
   ! Time step limitation for rate of change dS/dt = (ds/dt-(s/d)*dddt)/d
@@ -857,12 +860,24 @@ FUNCTION gas_pressure (self, lnd, ss) RESULT (pg)
   if (present(lnd)) then
     pg = exp(lnd*self%gamma)*exp(ss*(self%gamma-1d0))
   else
-    d => self%mem(:,:,:,self%idx%d,self%it,1)
-    s => self%mem(:,:,:,self%idx%s,self%it,1)
-    pg = d**self%gamma*exp(s/d*(self%gamma-1d0))
+    if (do_temperature) then
+      call eos%lookup_table (shape(lnd), lnd=lnd, ss=ss, pg=pg, &
+        tt=self%tt)
+    else
+      call eos%lookup_table (shape(lnd), lnd=lnd, ss=ss, pg=pg)
+    end if
+    if (verbose > 1 .or. nprint > 0) then
+      nprint = nprint-1
+      write(io%output,*) self%id, 'lookup_table: lnd =', minval(lnd), maxval(lnd)
+      write(io%output,*) self%id, 'lookup_table:  ss =', minval(ss) , maxval(ss )
+      write(io%output,*) self%id, 'lookup_table:  pg =', minval(pg) , maxval(pg)
+      if (do_temperature) &
+      write(io%output,*) self%id, 'lookup_table:  tt =', minval(self%tt), maxval(self%tt)
+    end if
   end if
+  call deallocate_scalars(ss)
+  call trace%end()
 END FUNCTION gas_pressure
-
 !===============================================================================
 SUBROUTINE gas_pressure_sub (self, d, lnd, ss, pg)
   class(mhd_t):: self

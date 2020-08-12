@@ -158,6 +158,7 @@ MODULE patch_mod
     procedure:: MapVectors
     procedure:: beyond_patch_edge
     procedure:: myfloatindex_scalar
+    procedure:: periodic_grid
     procedure:: log_interpolate
     procedure:: time_interval
     procedure:: distance => distance_curvilinear

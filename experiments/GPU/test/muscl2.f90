@@ -11,6 +11,7 @@
 MODULE solver_mod
   USE riemann_mod
   USE omp_lib
+  USE scratch_mod
   implicit none
   private
   integer, parameter:: nt=5
@@ -532,15 +533,15 @@ SUBROUTINE predict (self, grad, prim, mem, new, dtime, ds, g1, l, u)
   do i3=l(3),u(3)
   do i2=l(2),u(2)
     !ff(:,:) = 0.0
-    !if (allocated(self%force_per_unit_mass)) then
-    !  ff(:,1) = ff(:,1) + self%force_per_unit_mass(:,i2,i3,1)
-    !  ff(:,2) = ff(:,2) + self%force_per_unit_mass(:,i2,i3,2)
-    !  ff(:,3) = ff(:,3) + self%force_per_unit_mass(:,i2,i3,3)
+    !if (allocated(scratch%force_per_unit_mass)) then
+    !  ff(:,1) = ff(:,1) + scratch%force_per_unit_mass(:,i2,i3,1)
+    !  ff(:,2) = ff(:,2) + scratch%force_per_unit_mass(:,i2,i3,2)
+    !  ff(:,3) = ff(:,3) + scratch%force_per_unit_mass(:,i2,i3,3)
     !end if
-    !if (allocated(self%force_per_unit_volume)) then
-    !  ff(:,1) = ff(:,1) + self%force_per_unit_volume(:,i2,i3,1)/d(:,i2,i3)
-    !  ff(:,2) = ff(:,2) + self%force_per_unit_volume(:,i2,i3,2)/d(:,i2,i3)
-    !  ff(:,3) = ff(:,3) + self%force_per_unit_volume(:,i2,i3,3)/d(:,i2,i3)
+    !if (allocated(scratch%force_per_unit_volume)) then
+    !  ff(:,1) = ff(:,1) + scratch%force_per_unit_volume(:,i2,i3,1)/d(:,i2,i3)
+    !  ff(:,2) = ff(:,2) + scratch%force_per_unit_volume(:,i2,i3,2)/d(:,i2,i3)
+    !  ff(:,3) = ff(:,3) + scratch%force_per_unit_volume(:,i2,i3,3)/d(:,i2,i3)
     !end if
     !!$omp simd
     do i1=l(1),u(1)
@@ -729,8 +730,8 @@ SUBROUTINE sources (self, mem, prim, new, gamma)
   p3 => mem(:,:,:,4,new,1)
   e  => mem(:,:,:,5,new,1)
   forcing = .false.
-  !forcing = allocated(self%force_per_unit_mass) .or. &
-  !!          allocated(self%force_per_unit_volume)
+  !forcing = allocated(scratch%force_per_unit_mass) .or. &
+  !!          allocated(scratch%force_per_unit_volume)
   if (gamma /= 1d0 .and. forcing) then
   !$omp parallel workshare
     prim(:,:,:,5) = p1**2 + p2**2 + p3**2
@@ -739,15 +740,15 @@ SUBROUTINE sources (self, mem, prim, new, gamma)
   !-----------------------------------------------------------------------------
   ! Add forcing to momentum
   !-----------------------------------------------------------------------------
-  !if (allocated(self%force_per_unit_mass)) then
-  !  p1 = p1 + self%force_per_unit_mass(:,:,:,1)*d*self%dtime
-  !  p2 = p2 + self%force_per_unit_mass(:,:,:,2)*d*self%dtime
-  !  p3 = p3 + self%force_per_unit_mass(:,:,:,3)*d*self%dtime
+  !if (allocated(scratch%force_per_unit_mass)) then
+  !  p1 = p1 + scratch%force_per_unit_mass(:,:,:,1)*d*self%dtime
+  !  p2 = p2 + scratch%force_per_unit_mass(:,:,:,2)*d*self%dtime
+  !  p3 = p3 + scratch%force_per_unit_mass(:,:,:,3)*d*self%dtime
   !end if
-  !if (allocated(self%force_per_unit_volume)) then
-  !  p1 = p1 + self%force_per_unit_volume(:,:,:,1)*self%dtime
-  !  p2 = p2 + self%force_per_unit_volume(:,:,:,2)*self%dtime
-  !  p3 = p3 + self%force_per_unit_volume(:,:,:,3)*self%dtime
+  !if (allocated(scratch%force_per_unit_volume)) then
+  !  p1 = p1 + scratch%force_per_unit_volume(:,:,:,1)*self%dtime
+  !  p2 = p2 + scratch%force_per_unit_volume(:,:,:,2)*self%dtime
+  !  p3 = p3 + scratch%force_per_unit_volume(:,:,:,3)*self%dtime
   !end if
   !-----------------------------------------------------------------------------
   ! If adjusting total energy, use saved kinetic part

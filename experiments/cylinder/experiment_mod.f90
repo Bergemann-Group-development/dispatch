@@ -10,6 +10,7 @@ MODULE experiment_mod
   USE mesh_mod
   USE scaling_mod
   USE download_mod
+  USE scratch_mod
   implicit none
   private
   type, public, extends(cpatch_t):: experiment_t
@@ -218,8 +219,8 @@ SUBROUTINE force (self)
   else
     error stop 'force'
   end if
-  allocate (self%force_per_unit_mass(m(1)%gn,m(2)%gn,m(3)%gn,3))
-  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r, ff => self%force_per_unit_mass)
+  allocate (scratch%force_per_unit_mass(m(1)%gn,m(2)%gn,m(3)%gn,3))
+  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r, ff => scratch%force_per_unit_mass)
   if (with_planet) then
     newton = self%mass*scaling%grav
   else

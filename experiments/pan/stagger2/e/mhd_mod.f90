@@ -29,6 +29,7 @@ MODULE mhd_mod
   USE eos_mod
   USE non_ideal_mod
   USE initial_mod
+  USE scratch_mod
   implicit none
   private
   type, extends(extras_t), public:: mhd_t
@@ -436,11 +437,11 @@ SUBROUTINE pde (self)
       dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)! ops: 1 0 0
     end if
   end if
-  if (associated(self%force_per_unit_mass)) then
-   dpdt = dpdt + dd*self%force_per_unit_mass                                    ! ops: 3 3 0
+  if (associated(scratch%force_per_unit_mass)) then
+   dpdt = dpdt + dd*scratch%force_per_unit_mass                                    ! ops: 3 3 0
   end if
-  if (associated(self%force_per_unit_volume)) then
-   dpdt = dpdt + self%force_per_unit_volume                                     ! ops: 3 3 0
+  if (associated(scratch%force_per_unit_volume)) then
+   dpdt = dpdt + scratch%force_per_unit_volume                                     ! ops: 3 3 0
   end if
   !-----------------------------------------------------------------------------
   ! Conservation of energy; reuse the mass flux for the energy flux

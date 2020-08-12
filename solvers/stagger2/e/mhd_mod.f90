@@ -30,6 +30,10 @@ MODULE mhd_mod
   USE eos_mod
   USE non_ideal_mod
   USE initial_mod
+  USE divb_clean_mod
+  USE task_mod
+  USE timer_mod
+  USE scratch_mod
   implicit none
   private
   type, extends(extras_t), public:: mhd_t
@@ -537,11 +541,11 @@ SUBROUTINE pde (self)
   ! External force; e.g. point source gravity.  Note that the density factor is
   ! applied here, and should not be included in the function definition
   !-----------------------------------------------------------------------------
-  if (associated(self%force_per_unit_mass)) then
-    dpdt = dpdt + dd*self%force_per_unit_mass                                  ! ops: 2 2 0
+  if (associated(scratch%force_per_unit_mass)) then
+    dpdt = dpdt + dd*scratch%force_per_unit_mass                                  ! ops: 2 2 0
   end if
-  if (associated(self%force_per_unit_volume)) then
-    dpdt = dpdt + self%force_per_unit_volume
+  if (associated(scratch%force_per_unit_volume)) then
+    dpdt = dpdt + scratch%force_per_unit_volume
   end if
   !-----------------------------------------------------------------------------
   ! Conservation of energy; reuse the mass flux for the energy flux
@@ -599,17 +603,17 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   ! External heating / cooling, if any; e.g. radiative or conductive
   !-----------------------------------------------------------------------------
-  if (associated(self%heating_per_unit_mass)) then
-    dedt = dedt + d*self%heating_per_unit_mass                                  ! ops: 2 2 0
+  if (associated(scratch%heating_per_unit_mass)) then
+    dedt = dedt + d*scratch%heating_per_unit_mass                                  ! ops: 2 2 0
   end if
-  if (associated(self%heating_per_unit_volume)) then
+  if (associated(scratch%heating_per_unit_volume)) then
     if (verbose > 1) then
       associate (l3=>self%mesh(3)%li)
       write (io_unit%log,'(i6," heating:",1p,10e11.2)') self%id, &
-      sum(sum(self%heating_per_unit_volume(:,:,l3:l3+9),1),1)
+      sum(sum(scratch%heating_per_unit_volume(:,:,l3:l3+9),1),1)
       end associate
     end if
-    dedt = dedt + self%heating_per_unit_volume
+    dedt = dedt + scratch%heating_per_unit_volume
   end if
   !-----------------------------------------------------------------------------
   ! Time step limitation for rate of change dE/dt = (de/dt-(e/d)*dddt)/d
@@ -646,11 +650,16 @@ SUBROUTINE pre_update (self)
   ! Compute initial temperature
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%pre_update')
-  if (do_temperature) then
-    if (.not.associated(self%tt)) &
-    allocate (self%tt(self%gn(1),self%gn(2),self%gn(3)))
-    allocate (    lnd(self%gn(1),self%gn(2),self%gn(3)))
-    allocate (     ee(self%gn(1),self%gn(2),self%gn(3)))
+  !-----------------------------------------------------------------------------
+  ! Set boundary conditions on primary variables
+  !-----------------------------------------------------------------------------
+  mem => self%mem(:,:,:,:,self%it,1)
+  call self%boundaries%primary (mem)
+  !
+  if (do_temperature .and. .not. associated(self%tt)) then
+    allocate (real:: self%tt(self%gn(1),self%gn(2),self%gn(3)))
+    allocate (           lnd(self%gn(1),self%gn(2),self%gn(3)))
+    allocate (            ee(self%gn(1),self%gn(2),self%gn(3)))
     d => self%mem(:,:,:,self%idx%d,self%it,1)
     e => self%mem(:,:,:,self%idx%e,self%it,1)
     lnd = alog(d)

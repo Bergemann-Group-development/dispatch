@@ -21,6 +21,8 @@ MODULE mhd_mod
   USE eos_mod
   USE non_ideal_mod
   USE initial_mod
+  USE divb_clean_mod
+  USE scratch_mod
   implicit none
   private
   type, extends(extras_t), public:: mhd_t
@@ -393,11 +395,11 @@ SUBROUTINE pde (self)
   ! External force; e.g. point source gravity.  Note that the density factor is
   ! applied here, and should not be included in the function definition
   !-----------------------------------------------------------------------------
-  if (associated(self%force_per_unit_mass)) then
-    dpdt = dpdt + dd*self%force_per_unit_mass                                  ! ops: 2 2 0
+  if (associated(scratch%force_per_unit_mass)) then
+    dpdt = dpdt + dd*scratch%force_per_unit_mass                                  ! ops: 2 2 0
   end if
-  if (associated(self%force_per_unit_volume)) then
-    dpdt = dpdt + self%force_per_unit_volume
+  if (associated(scratch%force_per_unit_volume)) then
+    dpdt = dpdt + scratch%force_per_unit_volume
   end if
   !-----------------------------------------------------------------------------
   ! Conservation of energy.  The formulation that works best so far is to make
@@ -465,11 +467,11 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   ! External heating / cooling, if any; e.g. radiative or conductive
   !-----------------------------------------------------------------------------
-  if (associated(self%heating_per_unit_mass)) then
-    dedt = dedt + d*self%heating_per_unit_mass                                  ! ops: 2 2 0
+  if (associated(scratch%heating_per_unit_mass)) then
+    dedt = dedt + d*scratch%heating_per_unit_mass                                  ! ops: 2 2 0
   end if
-  if (associated(self%heating_per_unit_volume)) then
-    dedt = dedt + self%heating_per_unit_volume
+  if (associated(scratch%heating_per_unit_volume)) then
+    dedt = dedt + scratch%heating_per_unit_volume
   end if
   !-----------------------------------------------------------------------------
   ! Time step limitation for rate of change dE/dt = (de/dt-(e/d)*dddt)/d

@@ -70,6 +70,7 @@ MODULE hd_mod
   integer, parameter:: ndim=3
   real, save:: slope_type=2.0
   real, save:: courant_factor=0.25
+  integer, save:: verbose=0
   integer, save:: courant_type=1
   logical, save:: debug=.false.
   logical, save:: first_time=.true.
@@ -88,7 +89,8 @@ SUBROUTINE pre_init (self)
   real, save:: csound=1.
   integer:: i, iv, iostat
   namelist /ramses_params/ gamma, riemann, slope_type, courant_factor, smallr, &
-    smallc, isothermal, csound, detailed_timer, unsigned, courant_type, debug
+    smallc, isothermal, csound, detailed_timer, unsigned, courant_type, debug, &
+    verbose
   type(index_t):: idx
   !-----------------------------------------------------------------------------
   call trace%begin('hd_mod%pre_init')

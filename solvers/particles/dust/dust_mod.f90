@@ -47,6 +47,7 @@ MODULE dust_mod
   USE particles_mod
   USE aux_mod
   USE omp_timer_mod
+  USE scratch_mod
   implicit none
   private
   !-----------------------------------------------------------------------------

@@ -21,4 +21,4 @@ index_mod.o             :
 solver_mod.o            : io_mod.o trace_mod.o task_mod.o kinds_mod.o extras_mod.o
 initial_mod.o           : io_mod.o trace_mod.o mesh_mod.o index_mod.o kinds_mod.o
 extras_mod.o            : io_mod.o trace_mod.o patch_mod.o gpatch_mod.o connect_mod.o \
-                          task_mod.o list_mod.o selfgravity_mod.o
+                          task_mod.o list_mod.o selfgravity_mod.o scratch_mod.o

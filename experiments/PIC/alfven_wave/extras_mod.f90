@@ -62,6 +62,7 @@ MODULE extras_mod
   USE connect_mod
   USE list_mod
   USE task_mod
+  USE scratch_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.
   !-----------------------------------------------------------------------------
@@ -194,15 +195,7 @@ END SUBROUTINE dealloc
 SUBROUTINE pre_update (self)
   class(extras_t), target:: self
   !.............................................................................
-  if (associated (self%force_per_unit_mass)) &                   ! keep
-    self%force_per_unit_mass = 0.0                              ! keep
-  if (associated (self%force_per_unit_volume)) &                 ! keep
-    self%force_per_unit_volume = 0.0                            ! keep
-  if (associated (self%heating_per_unit_mass)) &                 ! keep
-    self%heating_per_unit_mass = 0.0                            ! keep
-  if (associated (self%heating_per_unit_volume)) &               ! keep
-    self%heating_per_unit_volume = 0.0                          ! keep
-  !
+  call self%gpatch_t%pre_update                                 ! keep
   !call self%rt%pre_update()                                     ! radiative transfer
   !call self%forces%pre_update                                   ! forces
   !call self%trace_particles%update                              ! tracep
