@@ -363,6 +363,7 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
         task%istep, task%dtime
     end if
     call task%dnload                                  ! download nbor info
+    call task%bndries                                 ! task boundary conditions
   end if
   !-----------------------------------------------------------------------------
   ! Check if refinement is needed on the task; if so this will push new tasks

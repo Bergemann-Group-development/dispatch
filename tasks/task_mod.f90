@@ -132,6 +132,7 @@ MODULE task_mod
     procedure:: log
     procedure:: run => void
     procedure:: statistics
+    procedure:: bndries
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -1230,5 +1231,12 @@ SUBROUTINE statistics (self)
   class(task_t):: self
   write (stdlog,*) 'task_t%statistics: stub'
 END SUBROUTINE statistics
+
+!===============================================================================
+!> Stub for boundary condition implementations
+!===============================================================================
+SUBROUTINE bndries (self)
+  class(task_t):: self
+END SUBROUTINE bndries
 
 END MODULE task_mod
