@@ -9,9 +9,9 @@ MODULE experiment_mod
   USE scaling_mod
   USE units_mod
   USE particle_solver_mod
-  !USE dust_mod
   USE link_mod
   USE list_mod
+  USE scratch_mod
   implicit none
   private
   type, public, extends(solver_t):: experiment_t
@@ -84,7 +84,7 @@ SUBROUTINE init (self)
   ! Use pre_update to get access to the force (ifort 20.1 problem circumvent)
   !-----------------------------------------------------------------------------
   call self%pre_update
-  p = p + d0*self%force_per_unit_mass*self%forces%force%t_turb
+  p = p + d0*scratch%force_per_unit_mass*self%forces%force%t_turb
   if (self%kind(1:6) == 'ramses') then
     px => self%mem(:,:,:,self%idx%px,self%it,1)
     py => self%mem(:,:,:,self%idx%py,self%it,1)

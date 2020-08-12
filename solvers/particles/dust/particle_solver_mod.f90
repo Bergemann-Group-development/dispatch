@@ -39,6 +39,7 @@ MODULE particle_solver_mod
   USE units_mod
   USE timer_mod
   USE omp_mod
+  USE scratch_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -189,10 +190,10 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Allocate force array
   !-----------------------------------------------------------------------------
-  if (.not.associated(self%patch%force_per_unit_volume)) then
-    allocate (self%patch%force_per_unit_volume(m(1),m(2),m(3),3))
-    call io%bits_mem (storage_size(self%patch%force_per_unit_volume), &
-                     product(shape(self%patch%force_per_unit_volume)), &
+  if (.not.associated(scratch%force_per_unit_volume)) then
+    allocate (scratch%force_per_unit_volume(m(1),m(2),m(3),3))
+    call io%bits_mem (storage_size(scratch%force_per_unit_volume), &
+                     product(shape(scratch%force_per_unit_volume)), &
                      'force')
   end if
   if (.not.associated(self%lock)) then

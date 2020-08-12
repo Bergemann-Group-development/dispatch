@@ -46,6 +46,7 @@ MODULE hd_mod
   USE index_mod
   USE patch_mod
   USE validate_mod
+  USE scratch_mod
   implicit none
   PRIVATE
   type, public, extends(extras_t):: hd_t
@@ -214,23 +215,23 @@ SUBROUTINE update (self)
   pz => self%mem(:,:,:,self%idx%pz,self%new,1)
   eth = e - 0.5*(px**2+py**2+pz**2)/d
   deallocate (eth)
-  if (associated(self%force_per_unit_mass)) then
+  if (associated(scratch%force_per_unit_mass)) then
     do i=1,3
-      p(:,:,:,i) = p(:,:,:,i) + self%dtime*self%force_per_unit_mass(:,:,:,i)*d
+      p(:,:,:,i) = p(:,:,:,i) + self%dtime*scratch%force_per_unit_mass(:,:,:,i)*d
     end do
   end if
-  if (associated(self%force_per_unit_volume)) then
-    p = p + self%dtime*self%force_per_unit_volume
+  if (associated(scratch%force_per_unit_volume)) then
+    p = p + self%dtime*scratch%force_per_unit_volume
   end if
   call validate%check (self%link, p, 'after force')
   !-----------------------------------------------------------------------------
   ! Add the external heating per unit mass as a source term
   !-----------------------------------------------------------------------------
-  if (associated(self%heating_per_unit_mass)) then
-    e = e + self%dtime*self%heating_per_unit_mass*d
+  if (associated(scratch%heating_per_unit_mass)) then
+    e = e + self%dtime*scratch%heating_per_unit_mass*d
   end if
-  if (associated(self%heating_per_unit_volume)) then
-    e = e + self%dtime*self%heating_per_unit_volume
+  if (associated(scratch%heating_per_unit_volume)) then
+    e = e + self%dtime*scratch%heating_per_unit_volume
   end if
   !-----------------------------------------------------------------------------
   ! Deallocate
@@ -926,28 +927,28 @@ subroutine trace3d(self)
     do j = lb(2),ub(2)
       d => self%mem(:,:,:,self%idx%d,self%new,1)
       dt2 = half*self%dtime
-      if (associated(self%force_per_unit_mass)) then
+      if (associated(scratch%force_per_unit_mass)) then
         do i=lb(1),ub(1)
-          ff(i,1) = self%force_per_unit_mass(i,j,k,1)*dt2
-          ff(i,2) = self%force_per_unit_mass(i,j,k,2)*dt2
-          ff(i,3) = self%force_per_unit_mass(i,j,k,3)*dt2
+          ff(i,1) = scratch%force_per_unit_mass(i,j,k,1)*dt2
+          ff(i,2) = scratch%force_per_unit_mass(i,j,k,2)*dt2
+          ff(i,3) = scratch%force_per_unit_mass(i,j,k,3)*dt2
         end do
-      else if (associated(self%force_per_unit_volume)) then
+      else if (associated(scratch%force_per_unit_volume)) then
         do i=lb(1),ub(1)
-          ff(i,1) = self%force_per_unit_volume(i,j,k,1)*dt2/d(i,j,k)
-          ff(i,2) = self%force_per_unit_volume(i,j,k,2)*dt2/d(i,j,k)
-          ff(i,3) = self%force_per_unit_volume(i,j,k,3)*dt2/d(i,j,k)
+          ff(i,1) = scratch%force_per_unit_volume(i,j,k,1)*dt2/d(i,j,k)
+          ff(i,2) = scratch%force_per_unit_volume(i,j,k,2)*dt2/d(i,j,k)
+          ff(i,3) = scratch%force_per_unit_volume(i,j,k,3)*dt2/d(i,j,k)
         end do
       else
         ff(:,:) = 0.0_dp
       end if
-      if (associated(self%heating_per_unit_volume)) then
+      if (associated(scratch%heating_per_unit_volume)) then
         do i=lb(1),ub(1)
-          qq(i) = self%heating_per_unit_volume(i,j,k)*dt2
+          qq(i) = scratch%heating_per_unit_volume(i,j,k)*dt2
         end do
-      else if (associated(self%heating_per_unit_mass)) then
+      else if (associated(scratch%heating_per_unit_mass)) then
         do i=lb(1),ub(1)
-          qq(i) = self%heating_per_unit_mass(i,j,k)*d(i,j,k)*dt2
+          qq(i) = scratch%heating_per_unit_mass(i,j,k)*d(i,j,k)*dt2
         end do
       else
           qq(:) = 0.0

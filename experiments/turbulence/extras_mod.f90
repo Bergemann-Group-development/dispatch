@@ -185,14 +185,7 @@ SUBROUTINE pre_update (self)
   class(extras_t), target:: self
   !.............................................................................
   call trace%begin ('extras_t%pre_update')
-  if (associated (self%force_per_unit_mass)) &                          ! keep
-    self%force_per_unit_mass = 0.0                                     ! keep
-  if (associated (self%force_per_unit_volume)) &                        ! keep
-    self%force_per_unit_volume = 0.0                                   ! keep
-  if (associated (self%heating_per_unit_mass)) &                        ! keep
-    self%heating_per_unit_mass = 0.0                                   ! keep
-  if (associated (self%heating_per_unit_volume)) &                      ! keep
-    self%heating_per_unit_volume = 0.0                                 ! keep
+  call self%gpatch_t%pre_update                                         ! keep
   !call self%rt%pre_update()                                            ! RT
   !call self%newton%pre_update()                                        ! Newton
   call self%forces%pre_update                                           ! forces
@@ -212,7 +205,6 @@ SUBROUTINE post_update (self)
   class(extras_t):: self
   !.............................................................................
   !call self%rt%post_update                                             ! RT
-  call self%forces%post_update                                          ! forces
   !call self%trace_particles%post_update (self)                         ! tracep
   !call self%pic%post_update()                                          ! pic
 END SUBROUTINE post_update

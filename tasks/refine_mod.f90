@@ -802,10 +802,6 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   nullify (child%pressure)
   nullify (child%vgas)
   nullify (child%u_phase)
-  if (associated(child%force_per_unit_volume  )) nullify(child%force_per_unit_volume)
-  if (associated(child%force_per_unit_mass    )) nullify(child%force_per_unit_mass)
-  if (associated(child%heating_per_unit_volume)) nullify(child%heating_per_unit_volume)
-  if (associated(child%heating_per_unit_mass  )) nullify(child%heating_per_unit_mass)
   child%id = 0                                       ! ensure a new ID
   child%seq = -1                                     ! triggers tag=0 in send
   child%size = child_size                            ! new size

@@ -36,14 +36,8 @@ MODULE patch_mod
     ! These allocatables are intended to deposite external forces and heating in,
     ! typically used by methods called from the extras_t data type procedures.
     !---------------------------------------------------------------------------
-    real(kind=KindScalarVar), dimension(:,:,:,:),     pointer, contiguous:: force_per_unit_mass     => null()
-    real(kind=KindScalarVar), dimension(:,:,:,:),     pointer, contiguous:: force_per_unit_volume   => null()
-    real(kind=KindScalarVar), dimension(:,:,:),       pointer, contiguous:: heating_per_unit_mass   => null()
-    real(kind=KindScalarVar), dimension(:,:,:),       pointer, contiguous:: heating_per_unit_volume => null()
     integer(kind=int8)      , dimension(:,:,:),       pointer, contiguous:: filled  => null()
     real(kind=KindScalarVar), dimension(:,:,:),       pointer, contiguous:: u_phase => null()
-    !dir$ attributes align: 64 :: force_per_unit_mass, force_per_unit_volume
-    !dir$ attributes align: 64 :: heating_per_unit_mass, heating_per_unit_volume
     !dir$ attributes align: 64 :: filled
     !--- anonymous pointer, which may be used to connect extra info to the solvers
     type(connect_t):: connect
@@ -110,7 +104,6 @@ MODULE patch_mod
   contains
     procedure, nopass:: cast2patch
     procedure:: init
-    procedure:: pre_update
     procedure:: init_default
     procedure:: init_bdries
     procedure:: setup
@@ -429,21 +422,6 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !===============================================================================
-!> Post-initialize
-!===============================================================================
-SUBROUTINE pre_update (self)
-  class(patch_t), target:: self
-  if (associated (self%force_per_unit_mass)) &
-    self%force_per_unit_mass = 0.0
-  if (associated (self%force_per_unit_volume)) &
-    self%force_per_unit_volume = 0.0
-  if (associated (self%heating_per_unit_mass)) &
-    self%heating_per_unit_mass = 0.0
-  if (associated (self%heating_per_unit_volume)) &
-    self%heating_per_unit_volume = 0.0
-END SUBROUTINE pre_update
-
-!===============================================================================
 !> Initialize default values for the patch memory and patch dimensions. The 
 !> order of setting values is that the calling code, typically experiment_mod,
 !> may set preferred defaults that differ from the ones set here.  The input
@@ -741,26 +719,6 @@ SUBROUTINE dealloc (self)
   if (associated(self%mem)) deallocate (self%mem)
   nullify (self%mem)
   self%mem_allocated = .false.
-  if (associated(self%force_per_unit_mass)) then
-    call io%bits_mem (-storage_size(self%force_per_unit_mass), &
-                      product(shape(self%force_per_unit_mass)),'-fpm')
-    deallocate (self%force_per_unit_mass)
-  end if
-  if (associated(self%force_per_unit_volume)) then
-    call io%bits_mem (-storage_size(self%force_per_unit_volume), &
-                      product(shape(self%force_per_unit_volume)),'-fpv')
-    deallocate (self%force_per_unit_volume)
-  end if
-  if (associated(self%heating_per_unit_mass)) then
-    call io%bits_mem (-storage_size(self%heating_per_unit_mass), &
-                      product(shape(self%heating_per_unit_mass)),'-qpm')
-    deallocate (self%heating_per_unit_mass)
-  end if
-  if (associated(self%heating_per_unit_volume)) then
-    call io%bits_mem (-storage_size(self%heating_per_unit_volume), &
-                      product(shape(self%heating_per_unit_volume)),'-qpv')
-    deallocate (self%heating_per_unit_volume)
-  end if
   if (associated(self%vgas)) then
     call io%bits_mem (-storage_size(self%vgas), &
                       product(shape(self%vgas)),'-vgas')
@@ -794,6 +752,8 @@ SUBROUTINE dealloc (self)
   call trace%end()
 END SUBROUTINE dealloc
 
+!===============================================================================
+!===============================================================================
 SUBROUTINE clone_mem_accounting (self)
   class(patch_t):: self
   if (associated(self%mask)) &
@@ -802,18 +762,6 @@ SUBROUTINE clone_mem_accounting (self)
   if (associated(self%irefine)) &
     call io%bits_mem (storage_size(self%irefine), &
                      product(shape(self%irefine)), 'irefine')
-  if (associated(self%force_per_unit_mass)) &
-    call io%bits_mem (storage_size(self%force_per_unit_mass), &
-                     product(shape(self%force_per_unit_mass)),'fpm')
-  if (associated(self%force_per_unit_volume)) &
-    call io%bits_mem (storage_size(self%force_per_unit_volume), &
-                     product(shape(self%force_per_unit_volume)),'fpv')
-  if (associated(self%heating_per_unit_mass)) &
-    call io%bits_mem (storage_size(self%heating_per_unit_mass), &
-                     product(shape(self%heating_per_unit_mass)),'qpm')
-  if (associated(self%heating_per_unit_volume)) &
-    call io%bits_mem (storage_size(self%heating_per_unit_volume), &
-                     product(shape(self%heating_per_unit_volume)),'qpv')
 END SUBROUTINE clone_mem_accounting
 
 !===============================================================================

@@ -9,6 +9,7 @@ MODULE cooling_mod
   USE scaling_mod
   USE units_mod
   USE kinds_mod
+  USE scratch_mod
   implicit none
   private
   integer, parameter:: dp=KindScalarVar
@@ -105,10 +106,10 @@ SUBROUTINE pre_update (self)
   call trace%begin ('cooling_t%pre_update', itimer=itimer)
   if (on) then
     patch => self%patch
-    if (.not.associated(patch%heating_per_unit_volume)) then
+    if (.not.associated(scratch%heating_per_unit_volume)) then
       u = patch%gn
-      allocate (patch%heating_per_unit_volume(u(1),u(2),u(3)))
-      patch%heating_per_unit_volume = 0.0
+      allocate (scratch%heating_per_unit_volume(u(1),u(2),u(3)))
+      scratch%heating_per_unit_volume = 0.0
       if (info) then
         !$omp critical (info_cr)
         write (io_unit%output,*) &
@@ -169,7 +170,7 @@ SUBROUTINE pre_update (self)
       else if (patch%dt_fixed < 0d0) then
           self%dtime = min(self%dtime, courant*eth/max(crate,hrate))
       end if
-      patch%heating_per_unit_volume(i1,i2,i3) = d*qq
+      scratch%heating_per_unit_volume(i1,i2,i3) = d*qq
       T = eth*scaling%temp*mu
       T_min = min(T_min,T)
       T_max = max(T_max,T)
@@ -181,7 +182,7 @@ SUBROUTINE pre_update (self)
     end do
     end do
     if (patch%istep < 2) then
-      patch%heating_per_unit_volume = 0.0
+      scratch%heating_per_unit_volume = 0.0
     end if
     if (verbose > 0) then
       write (io_unit%log,'(1x,a,i6,f12.6,1p,3(2x,2e10.2))') &

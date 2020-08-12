@@ -30,6 +30,7 @@ MODULE mhd_mod
   USE flux_mod
   USE omp_timer_mod
   USE timer_mod
+  USE scratch_mod
   implicit none
   PRIVATE
   type, public, extends(extras_t):: mhd_t
@@ -347,10 +348,10 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Add external force as source term
   !-----------------------------------------------------------------------------
-  if (associated(self%force_per_unit_mass)) then
+  if (associated(scratch%force_per_unit_mass)) then
     p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
     do i=1,3
-      p(:,:,:,i) = p(:,:,:,i) + self%dtime*self%force_per_unit_mass(:,:,:,i)*d
+      p(:,:,:,i) = p(:,:,:,i) + self%dtime*scratch%force_per_unit_mass(:,:,:,i)*d
     end do
   end if
   !-----------------------------------------------------------------------------
@@ -1186,29 +1187,29 @@ SUBROUTINE trace3d(self)
   d => self%mem(:,:,:,self%idx%d,self%new,1)
   do k=lo(3),uo(3)
   do j=lo(2),uo(2)
-  if (associated(self%force_per_unit_mass)) then
+  if (associated(scratch%force_per_unit_mass)) then
     !dir$ simd
     do i=2,self%gn(2)-1
-      ff(i,1) = self%force_per_unit_mass(i,j,k,1)
-      ff(i,2) = self%force_per_unit_mass(i,j,k,2)
-      ff(i,3) = self%force_per_unit_mass(i,j,k,3)
+      ff(i,1) = scratch%force_per_unit_mass(i,j,k,1)
+      ff(i,2) = scratch%force_per_unit_mass(i,j,k,2)
+      ff(i,3) = scratch%force_per_unit_mass(i,j,k,3)
     end do
-  else if (associated(self%force_per_unit_volume)) then
+  else if (associated(scratch%force_per_unit_volume)) then
     do i=lo(1),uo(1)
-      ff(i,1) = self%force_per_unit_mass(i,j,k,1)/d(i,j,k)
-      ff(i,2) = self%force_per_unit_mass(i,j,k,2)/d(i,j,k)
-      ff(i,3) = self%force_per_unit_mass(i,j,k,3)/d(i,j,k)
+      ff(i,1) = scratch%force_per_unit_mass(i,j,k,1)/d(i,j,k)
+      ff(i,2) = scratch%force_per_unit_mass(i,j,k,2)/d(i,j,k)
+      ff(i,3) = scratch%force_per_unit_mass(i,j,k,3)/d(i,j,k)
     end do
   else
     ff(:,:) = 0.0_dp
   end if
-  if (associated(self%heating_per_unit_volume)) then
+  if (associated(scratch%heating_per_unit_volume)) then
     do i=lo(1),uo(1)
-      qq(i) = self%heating_per_unit_volume(i,j,k)
+      qq(i) = scratch%heating_per_unit_volume(i,j,k)
     end do
-  else if (associated(self%heating_per_unit_mass)) then
+  else if (associated(scratch%heating_per_unit_mass)) then
     do i=lo(1),uo(1)
-      qq(i) = self%heating_per_unit_mass(i,j,k)*d(i,j,k)
+      qq(i) = scratch%heating_per_unit_mass(i,j,k)*d(i,j,k)
     end do
   else
       qq(:) = 0.0

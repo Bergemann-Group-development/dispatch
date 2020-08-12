@@ -1,0 +1,6 @@
+shu-osher
+blast
+orszag-tang
+rt_shadow_bench
+current_sheet
+all tests have corresponding notebooks in python folder

@@ -20,6 +20,7 @@ MODULE selfgravity_mod
   USE bits_mod
   USE vector_ops
   USE timestep_mod
+  USE scratch_mod
   implicit none
   private
   type, public:: selfgravity_t
@@ -112,9 +113,9 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('selfgravity_t%init')
   patch => self%patch
-  if (.not. associated(patch%force_per_unit_mass)) then
+  if (.not. associated(scratch%force_per_unit_mass)) then
     if (patch%kind(1:4) /= 'zeus') &
-      allocate (patch%force_per_unit_mass(patch%gn(1),patch%gn(2),patch%gn(3),3))
+      allocate (scratch%force_per_unit_mass(patch%gn(1),patch%gn(2),patch%gn(3),3))
   end if
   !$omp critical (poisson_cr)
   if (first_poisson) then
@@ -205,7 +206,7 @@ SUBROUTINE solve (self, it)
   ! gradient of the potential internally.
   !-----------------------------------------------------------------------------
   if (patch%kind(1:4) /= 'zeus') &
-    patch%force_per_unit_mass = -grad (patch%mesh, phi)
+    scratch%force_per_unit_mass = -grad (patch%mesh, phi)
   !-----------------------------------------------------------------------------
   ! compute estimate of dphi/dt
   !-----------------------------------------------------------------------------

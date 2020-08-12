@@ -10,7 +10,7 @@
 !> In the future, external forces should NOT use this interface.  Instead, each
 !> type of force should use its own data type (primarily to hold parameters
 !> specific to that force), while the resulting force should be addded to
-!> (not overwrite) the generic patch_t%force_per_unit_mass or _volume arrays.
+!> (not overwrite) the generic scratch_t%force_per_unit_mass or _volume arrays.
 !>
 !> To comply with that policy, this interface also adds the force, and thus
 !> assumes that the generic array is set to zero elsewhere, before each timestep.
@@ -24,6 +24,7 @@ MODULE forces_mod
   USE force_mod
   USE link_mod
   USE index_mod
+  USE scratch_mod
   implicit none
   private
   type, public:: forces_t
@@ -35,7 +36,6 @@ MODULE forces_mod
     procedure:: init
     procedure:: dealloc
     procedure:: pre_update
-    procedure:: post_update
   end type
 CONTAINS
 
@@ -93,17 +93,17 @@ SUBROUTINE pre_update (self)
   !-----------------------------------------------------------------------------
   if (associated(self%force%selected)) then
     patch => self%patch
-    if (.not.associated(patch%force_per_unit_mass)) then
+    if (.not.associated(scratch%force_per_unit_mass)) then
       m = patch%mesh%gn
-      allocate (patch%force_per_unit_mass(m(1),m(2),m(3),3))
-      call io%bits_mem (storage_size(patch%force_per_unit_mass), &
-                       product(shape(patch%force_per_unit_mass)), 'fpm')
+      allocate (scratch%force_per_unit_mass(m(1),m(2),m(3),3))
+      call io%bits_mem (storage_size(scratch%force_per_unit_mass), &
+                       product(shape(scratch%force_per_unit_mass)), 'fpm')
     end if
     idx => patch%idx
     new = patch%new
     d => patch%mem(:,:,:,idx%d,new,1)
     p => patch%mem(:,:,:,idx%px:idx%pz,new,1)
-    patch%force_per_unit_mass = &
+    scratch%force_per_unit_mass = &
       self%force%selected(patch%time, d, p, self%Ux, self%Uy, self%Uz, patch%mesh)
   else if (first_time) then
     !$omp critical (forces_cr)
@@ -113,21 +113,5 @@ SUBROUTINE pre_update (self)
   end if
   call trace%end (itimer)
 END SUBROUTINE pre_update
-
-!===============================================================================
-!> Save on node memory, by deallocating
-!===============================================================================
-SUBROUTINE post_update (self)
-  class(forces_t):: self
-  integer, save:: itimer=0
-  !-----------------------------------------------------------------------------
-  call trace%begin ('forces_t%post_update', itimer=itimer)
-  if (associated(self%patch%force_per_unit_mass)) then
-    call io%bits_mem (-storage_size(self%patch%force_per_unit_mass), &
-                      product(shape(self%patch%force_per_unit_mass)), '-fpm')
-    deallocate (self%patch%force_per_unit_mass)
-  end if
-  call trace%end (itimer)
-END SUBROUTINE post_update
 
 END MODULE forces_mod

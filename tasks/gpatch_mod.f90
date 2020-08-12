@@ -21,6 +21,7 @@ MODULE gpatch_mod
   USE validate_mod
   USE list_mod
   USE task_mod
+  USE scratch_mod
   implicit none
   private
   type, public, extends(patch_t):: gpatch_t
@@ -32,6 +33,7 @@ MODULE gpatch_mod
   contains
     procedure, nopass:: cast2gpatch
     procedure:: init_task_list
+    procedure:: pre_update
     procedure:: update
     procedure:: input
     procedure:: output
@@ -40,6 +42,7 @@ MODULE gpatch_mod
     procedure:: dnload
     procedure:: courant_condition
     procedure:: to_thermal
+    procedure:: clone_mem_accounting
   end type
   real(8), save :: restart_time = 0d0
   logical, save :: detailed_timer=.false.
@@ -75,6 +78,21 @@ SUBROUTINE init_task_list (self, task_list)
   self%task_list => task_list
   call trace%end()
 END SUBROUTINE init_task_list
+
+!===============================================================================
+!> Post-initialize
+!===============================================================================
+SUBROUTINE pre_update (self)
+  class(gpatch_t), target:: self
+  if (associated (scratch%force_per_unit_mass)) &
+    scratch%force_per_unit_mass = 0.0
+  if (associated (scratch%force_per_unit_volume)) &
+    scratch%force_per_unit_volume = 0.0
+  if (associated (scratch%heating_per_unit_mass)) &
+    scratch%heating_per_unit_mass = 0.0
+  if (associated (scratch%heating_per_unit_volume)) &
+    scratch%heating_per_unit_volume = 0.0
+END SUBROUTINE pre_update
 
 !===============================================================================
 !> Interface allowing intercept
@@ -265,5 +283,22 @@ SUBROUTINE to_thermal (self, it, eth, kind)
   end if
   call trace%end (itimer)
 END SUBROUTINE to_thermal
+
+!===============================================================================
+SUBROUTINE clone_mem_accounting (self)
+  class(gpatch_t):: self
+  if (associated(scratch%force_per_unit_mass)) &
+    call io%bits_mem (storage_size(scratch%force_per_unit_mass), &
+                     product(shape(scratch%force_per_unit_mass)),'fpm')
+  if (associated(scratch%force_per_unit_volume)) &
+    call io%bits_mem (storage_size(scratch%force_per_unit_volume), &
+                     product(shape(scratch%force_per_unit_volume)),'fpv')
+  if (associated(scratch%heating_per_unit_mass)) &
+    call io%bits_mem (storage_size(scratch%heating_per_unit_mass), &
+                     product(shape(scratch%heating_per_unit_mass)),'qpm')
+  if (associated(scratch%heating_per_unit_volume)) &
+    call io%bits_mem (storage_size(scratch%heating_per_unit_volume), &
+                     product(shape(scratch%heating_per_unit_volume)),'qpv')
+END SUBROUTINE clone_mem_accounting
 
 END MODULE gpatch_mod
