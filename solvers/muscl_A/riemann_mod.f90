@@ -196,6 +196,7 @@ SUBROUTINE hllc (self, dir, l, u, qleft, qrght, fgdnv)
       vl = qleft(i-j1,i2-j2,i3-j3,v2)
       wl = qleft(i-j1,i2-j2,i3-j3,v3)
       rl = exp(ll)
+      sl = sl*rl
       pl = exp(self%g1*sl + self%gamma*ll)
       !
       ! Right variables
@@ -205,6 +206,7 @@ SUBROUTINE hllc (self, dir, l, u, qleft, qrght, fgdnv)
       vr = qrght(i,i2,i3,v2)
       wr = qrght(i,i2,i3,v3)
       rr = exp(lr)
+      sr = sr*rr
       pr = exp(self%g1*sr + self%gamma*lr)
       !
       ! Find the largest eigenvalues in the normal direction to the interface
@@ -263,7 +265,7 @@ SUBROUTINE hllc (self, dir, l, u, qleft, qrght, fgdnv)
       !
       ! Compute the Godunov flux
       fgdnv(i,i2,i3, 1) = ro*uo
-      fgdnv(i,i2,i3, 5) = ro*uo*so
+      fgdnv(i,i2,i3, 5) = so*uo
       fgdnv(i,i2,i3,v1) = ro*uo*uo + Ptoto
       fgdnv(i,i2,i3,v2) = fgdnv(i,i2,i3,1)*merge(vl,vr,uo>0.0)
       fgdnv(i,i2,i3,v3) = fgdnv(i,i2,i3,1)*merge(wl,wr,uo>0.0)
