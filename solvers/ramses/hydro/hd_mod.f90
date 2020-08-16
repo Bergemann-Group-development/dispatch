@@ -72,7 +72,6 @@ MODULE hd_mod
   real, save:: courant_factor=0.25
   integer, save:: verbose=0
   integer, save:: courant_type=1
-  integer, save:: verbose=0
   logical, save:: debug=.false.
   logical, save:: first_time=.true.
   logical, save:: detailed_timer=.false.

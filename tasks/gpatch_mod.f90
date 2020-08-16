@@ -83,7 +83,7 @@ FUNCTION cast2gpatch (task) RESULT(gpatch)
 END FUNCTION cast2gpatch
 
 !===============================================================================
-!> Cast a generic task_t to patch_t
+!> Initialize boundary bits
 !===============================================================================
 SUBROUTINE init_bdries (self)
   class(gpatch_t):: self

@@ -171,7 +171,6 @@ MODULE patch_mod
     procedure:: init_level
     procedure:: dump
     procedure:: cost
-    procedure:: periodic_grid
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O

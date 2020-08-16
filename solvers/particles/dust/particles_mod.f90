@@ -41,8 +41,10 @@ MODULE particles_mod
     class(particle_t), pointer:: head => null(), tail => null()
     integer:: n = 0
     integer:: id(5)
+    real(8):: momentum(3)=0d0
   contains
     procedure:: init => init_particles
+    procedure:: dealloc
     procedure:: append
     !procedure:: prepend
     procedure:: remove
@@ -117,12 +119,22 @@ END SUBROUTINE output_vparticle
 SUBROUTINE init_particles (self, id)
   class(particles_t):: self
   integer:: id(5)
+  !-----------------------------------------------------------------------------
   allocate (self%head, self%tail)
   self%id = id
   self%n = 0
   self%head%next => self%tail
   self%tail%prev => self%head
 END SUBROUTINE init_particles
+
+!===============================================================================
+!> Deallocate particle list
+!===============================================================================
+SUBROUTINE dealloc (self)
+  class(particles_t):: self
+  !-----------------------------------------------------------------------------
+  deallocate (self%head, self%tail)
+END SUBROUTINE dealloc
 
 !===============================================================================
 !> Append to the list
@@ -210,6 +222,8 @@ SUBROUTINE transfer (self, pool)
     next => p%next
     call self%remove (p)
     call pool%append (p)
+    if (abs(maxval(p%q)) > 100) &
+      write (stdlog,*) 'transfer error', j, self%n, p%q
     p => next
   end do
 END SUBROUTINE transfer

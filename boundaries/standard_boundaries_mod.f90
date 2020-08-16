@@ -55,10 +55,9 @@ CONTAINS
 !> Initialize the boundary data type, while testing also if the patch contains
 !> a spherical boundary, or possibly is completely immersed in such a boundary.
 !===============================================================================
-SUBROUTINE init (self, patch) !mesh, id, position, radius)
+SUBROUTINE init (self, patch)
   class(standard_boundaries_t) :: self
   class(patch_t)               :: patch
-  class(mesh_t), pointer       :: mesh(:)
   integer                      :: id
   real(8)                      :: position(3), radius
   !.............................................................................
@@ -70,10 +69,11 @@ SUBROUTINE init (self, patch) !mesh, id, position, radius)
   self%id = id
   self%radius = radius
   self%position = position
-  self%mesh => mesh
   one_inside = .false.
   all_inside = .true.
-  size(:) = mesh(:)%s
+  do i=1,3
+    size(i) = patch%size(i)
+  end do
   do k=-1,1; do j=-1,1; do i=-1,1
     p(:) = position(:) + 0.5*size(:)*[i,j,k]
     if (sum(p**2) < radius**2) then
