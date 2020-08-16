@@ -27,6 +27,7 @@ MODULE force_mod
     procedure:: init
     procedure:: dealloc
     procedure:: single_solenoidal
+    procedure:: zero_force
   end type
   real :: ampl_turb = 0.1
   real :: a_helmh=1.
@@ -68,6 +69,8 @@ SUBROUTINE init (self, solver, id, mesh)
   end if
   call io%lock%unset
   select case (type)
+  case ('zero')
+    self%selected => zero_force
   case ('single_solenoidal')
     self%selected => single_solenoidal
   case ('single_compressive')
@@ -383,5 +386,20 @@ FUNCTION turbulence (self, time, d, p, Ux, Uy, Uz, mesh) RESULT (ff)
   ff(:,:,:,:) = self%fran(:,:,:,:,1) + (self%fran(:,:,:,:,2)-self%fran(:,:,:,:,1))*w
   call trace_end (itimer)
 END FUNCTION turbulence
+
+!===============================================================================
+!> Zero force
+!===============================================================================
+FUNCTION zero_force (self, time, d, p, Ux, Uy, Uz, mesh) RESULT (ff)
+  class(force_t)                                :: self
+  real(8)                                       :: time
+  real, dimension(:,:,:)  , pointer             :: Ux, Uy, Uz
+  real, dimension(:,:,:)  , pointer, contiguous :: d
+  real, dimension(:,:,:,:), pointer             :: p
+  class(mesh_t), dimension(:), pointer          :: mesh
+  real, dimension(mesh(1)%gn,mesh(2)%gn,mesh(3)%gn,3)    :: ff
+  !-----------------------------------------------------------------------------
+  ff(:,:,:,:) = 0.0
+END FUNCTION zero_force
 
 END MODULE
