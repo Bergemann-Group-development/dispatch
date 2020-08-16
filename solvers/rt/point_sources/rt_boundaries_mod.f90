@@ -10,6 +10,7 @@ MODULE rt_boundaries_mod
   USE eos_mod
   USE units_mod
   USE scaling_mod
+  USE patch_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -31,11 +32,11 @@ CONTAINS
 !===============================================================================
 !> Initialize the boundary data type
 !===============================================================================
-SUBROUTINE init (self, mesh)
+SUBROUTINE init (self, patch)
   class(rt_boundaries_t):: self
-  class(mesh_t), pointer, optional:: mesh(:)
+  class(patch_t):: patch
   !.............................................................................
-  self%mesh => mesh
+  self%mesh => patch%mesh
   self%grav = scaling%grav*(cgs%m_sun/scaling%m)/(cgs%r_sun/scaling%l)**2
 END SUBROUTINE init
 

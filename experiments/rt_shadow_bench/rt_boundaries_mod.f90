@@ -12,6 +12,7 @@ MODULE rt_boundaries_mod
   USE units_mod
   USE scaling_mod
   USE math_mod
+  USE patch_mod
   implicit none
   private
   !-----------------------------------------------------------------------
@@ -30,9 +31,9 @@ CONTAINS
 !=======================================================================
 !> Initialize the boundary data type
 !=======================================================================
-SUBROUTINE init (self, mesh)
+SUBROUTINE init (self, patch)
   class(rt_boundaries_t):: self
-  class(mesh_t), pointer:: mesh(:)
+  class(patch_t):: patch
   !.....................................................................
   real, dimension(:,:,:), pointer :: d, e
   real, dimension(:,:,:,:), pointer :: src, rk
@@ -44,7 +45,8 @@ SUBROUTINE init (self, mesh)
   real, save :: cool = 0.0, hot = 0.0
   namelist /rt_bc_params/ cool_temp, hot_temp, wall
   !-----------------------------------------------------------------------------
-  self%mesh => mesh
+  call trace%begin ('rt_boundaries_t%init')
+  self%mesh => patch%mesh
   !
   call io%lock%set
   if (first_time) then
@@ -69,6 +71,7 @@ SUBROUTINE init (self, mesh)
   self%cool = cool
   self%hot  = hot
   self%wall = wall
+  call trace%end ()
 END SUBROUTINE init
 
 !===============================================================================

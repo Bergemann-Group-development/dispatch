@@ -10,6 +10,7 @@ MODULE boundaries_mod
   USE mesh_mod
   USE index_mod
   USE standard_boundaries_mod
+  USE patch_mod
   !
   implicit none
   private
@@ -42,14 +43,11 @@ CONTAINS
 !> Initialize the boundary data type, while testing also if the patch contains
 !> a spherical boundary, or possibly is completely immersed in such a boundary.
 !===============================================================================
-SUBROUTINE init (self, mesh, id, position, radius)
-  class(boundaries_t)              :: self
-  class(mesh_t) , pointer :: mesh(:)
-  real(8), optional       :: position(3), radius
-  integer :: id
+SUBROUTINE init (self, patch)
+  class(boundaries_t)     :: self
+  class(patch_t)          :: patch
   !.............................................................................
-
-  call self%standard_boundaries_t%init(mesh, id, position, radius)
+  call self%standard_boundaries_t%init (patch)
 END SUBROUTINE init
 
 SUBROUTINE primary(self, mem)

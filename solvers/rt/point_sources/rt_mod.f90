@@ -305,7 +305,7 @@ SUBROUTINE init_task (self)
   !-----------------------------------------------------------------------------
   call self%setup_boundaries()
   if (self%on) then
-    call self%rt_boundaries%init (self%mesh)
+    call self%rt_boundaries%init (self%patch)
     !---------------------------------------------------------------------------
     ! Allocate heating for MHD
     !---------------------------------------------------------------------------
