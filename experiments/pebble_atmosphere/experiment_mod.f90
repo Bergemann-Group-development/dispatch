@@ -135,12 +135,7 @@ SUBROUTINE init (self)
   call self%idx%copy
   call self%pebble_patch_t%init
   call self%set (bits%static)
-  self%boundaries%id = self%id
-  if (trim(type)=='disk') then
-    call self%boundaries%init (self%mesh, self%position)
-  else
-    call self%boundaries%init (self%mesh, self%position-planet%position, planet%radius)
-  end if
+  call self%boundaries%init (self)
   if (self%boundaries%is_set (bits%spherical)) then
     print *, 'experiment_t%init: setting spherical BC bits on patch', self%id
     call self%set (bits%has_BC)

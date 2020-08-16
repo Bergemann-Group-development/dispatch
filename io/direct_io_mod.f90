@@ -178,7 +178,6 @@ SUBROUTINE input (self, patch, ok)
     patch%mem(    :    ,    :    ,    :    ,:,patch%it,1) = 0.0
     patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),:,patch%it,1) = buf
     if (verbose>1) print *, 'id, dmin, dmax', patch%id, minval(buf(:,:,:,1)), maxval(buf(:,:,:,1)), l, u
-    if (verbose>1) print *, 'id, dmin, dmax', patch%id, patch%fminval(patch%idx%d), patch%fmaxval(patch%idx%d), shape(buf)
     deallocate (buf)
     ok = .true.
     if (self%count==self%nbuf) then

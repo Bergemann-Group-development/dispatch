@@ -26,4 +26,4 @@ pdf_io_mod.o:           io_mod.o trace_mod.o patch_mod.o counters_mod.o mpi_mod.
                         bits_mod.o
 used_mod.o:             io_unit_mod.o omp_timer_mod.o
 amr_io_mod.o:           io_unit_mod.o trace_mod.o patch_mod.o mpi_io_mod.o \
-                        mpi_mod.o list_mod.o time_slices_mod.o
+                        mpi_mod.o list_mod.o time_slices_mod.o list_mod.o

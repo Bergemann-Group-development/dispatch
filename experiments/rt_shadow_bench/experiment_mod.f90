@@ -60,7 +60,7 @@ SUBROUTINE init (self)
   ! Boundary setup
   !----------------------------------------------------------------------------
   call self%init_bdries
-  call self%boundaries%init(mesh=self%mesh)
+  call self%boundaries%init (self)
   self%boundaries%id = self%id
 END SUBROUTINE init
 

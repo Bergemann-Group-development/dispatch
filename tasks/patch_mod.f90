@@ -19,7 +19,6 @@ MODULE patch_mod
   USE task_mod
   USE link_mod
   USE mesh_mod
-  USE boundaries_mod
   USE index_mod
   USE shared_mod
   USE connect_mod
@@ -46,6 +45,7 @@ MODULE patch_mod
     real(8):: pdf_next=0.0              ! next PDF output time
     real(8):: gamma=1.4                 ! gas gamma
     real(8):: dt_fixed                  ! for fixed time step Courant condition
+    real(8):: radius                    ! generic radius
     real:: u_max=0.0                    ! for Courant condition
     real:: u_fixed                      ! for fixed time step Courant condition
     real:: d_min, d_max                 ! for info
@@ -69,7 +69,6 @@ MODULE patch_mod
     logical, dimension(:), pointer:: unsigned  => null()
     logical, dimension(:), pointer:: pervolume => null()
     class(link_t), pointer:: link       ! this could be useful
-    type(boundaries_t):: boundaries
     character(len=32):: eos='ideal'
     character(len=32):: opacity='none'
     integer:: file_offset(4)
@@ -105,16 +104,13 @@ MODULE patch_mod
     procedure, nopass:: cast2patch
     procedure:: init
     procedure:: init_default
-    procedure:: init_bdries
     procedure:: setup
     procedure:: dealloc
     procedure:: clone_mem_accounting
-    procedure:: rotate
     procedure:: allocate_mesg           ! allocate a mesg buffer
     procedure:: pack                    ! pack patch into buffer
     procedure, nopass:: unpack_id       ! unpack patch id
     procedure:: unpack                  ! unpack buffer into patch
-    procedure:: info                    ! print info to stdout
     procedure:: overlaps                ! patch overlaps test
     procedure:: index                   ! compute the index for a single point
     procedure:: nearest                 ! the nearest index that maps to patch point
@@ -122,7 +118,6 @@ MODULE patch_mod
     procedure:: highest                 ! the highest index that maps to patch point
     procedure:: myposition
     procedure:: myposition_staggered
-    procedure:: periodic_grid
     procedure:: extrapolate_guards
     procedure:: is_periodic
     procedure, private :: make_periodic4
@@ -176,6 +171,7 @@ MODULE patch_mod
     procedure:: init_level
     procedure:: dump
     procedure:: cost
+    procedure:: periodic_grid
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -221,8 +217,6 @@ MODULE patch_mod
     real:: num(3)
     integer:: dim(3)
   end type
-  integer, save:: print_every=0, iprint=0           ! print cadence
-  logical, save:: extrapolate_gz=.false.            ! extrapolate guard zones?
   logical, save:: do_check_nan=.false.              ! check for NaN?
   logical, save:: zero_order_extrap=.true.          ! extrap to no-mans-land
   logical, save:: courant_ramp=.false.              ! ramp up Courant param
@@ -449,14 +443,14 @@ END SUBROUTINE init
 SUBROUTINE init_default (self)
   class(patch_t):: self
   !.............................................................................
-  integer, save:: n(3)=16, ng(3)=2, nv=5, nt=5, nw, max_files=1000
+  integer, save:: n(3)=16, ng(3)=2, nv=5, nt=5, nw, max_files=1000, print_every=0
   logical, save:: no_mans_land=.true., use_data_hub=.false., limit_dtime=.false.
   real, save:: u_fixed=-1.0, grace=0.0
   real(8), save:: end_time=1.0, out_time=0.1, print_time=0.0, dt_fixed=-1.0
   real(8):: position(3), size(3)
   integer:: iostat, i, n_alloc=0, n_ext=0
   namelist /patch_params/ n, nv, ng, nt, u_fixed, dt_fixed, &
-    grace, extrapolate_gz, no_mans_land, use_data_hub, do_check_nan, &
+    grace, no_mans_land, use_data_hub, do_check_nan, &
     zero_order_extrap, limit_dtime, courant_ramp
   namelist /out_params/ out_time, end_time, print_time, print_every, &
     max_files
@@ -486,7 +480,8 @@ SUBROUTINE init_default (self)
     write (io%namelist, out_params)
     if (mpi%rank > 0) &
       self%track = .true.
-    iprint = print_every                        ! print 1st task
+    io%print_every = print_every                ! print 1st task
+    io%iprint = print_every                     ! print 1st task
   end if
   !-----------------------------------------------------------------------------
   ! To allow patches to have n, ng, nv, and nt values that differ, values that
@@ -517,49 +512,6 @@ SUBROUTINE init_default (self)
   self%limit_dtime = limit_dtime
   call trace%end()
 END SUBROUTINE init_default
-
-SUBROUTINE init_bdries (self)
-  class(patch_t):: self
-  real(8):: position(3), limit(3)
-  !-----------------------------------------------------------------------------
-  ! If at edge, set boundary bits
-  !-----------------------------------------------------------------------------
-  call trace%begin ('patch_t%init_bdries')
-  position = self%position - self%origin - 0.5d0 * self%box
-  limit = 0.5d0 * (self%box - self%size - self%ds)
-  if (.not.self%periodic(1)) then
-    if (position(1)  <= -limit(1)) then
-      call self%boundaries%set (bits%xl)
-      self%mesh(1)%lower_boundary = .true.
-    end if
-    if (position(1) >= +limit(1)) then
-      call self%boundaries%set (bits%xu)
-      self%mesh(1)%upper_boundary = .true.
-    end if
-  end if
-  if (.not.self%periodic(2)) then
-    if (position(2)  <= -limit(2)) then
-      call self%boundaries%set (bits%yl)
-      self%mesh(2)%lower_boundary = .true.
-    end if
-    if (position(2) >= +limit(2)) then
-      call self%boundaries%set (bits%yu)
-      self%mesh(2)%upper_boundary = .true.
-    end if
-  end if
-  if (.not.self%periodic(3)) then
-    if (position(3)  <= -limit(3)) then
-      call self%boundaries%set (bits%zl)
-      self%mesh(3)%lower_boundary = .true.
-    end if
-    if (position(3) >= +limit(3)) then
-      call self%boundaries%set (bits%zu)
-      self%mesh(3)%upper_boundary = .true.
-    end if
-  end if
-  call self%boundaries%init(mesh=self%mesh, id=self%id)
-  call trace%end()
-END SUBROUTINE init_bdries
 
 !===============================================================================
 !> Setup a patch, possibly with non-standard parameters. First setup with
@@ -764,50 +716,6 @@ SUBROUTINE clone_mem_accounting (self)
     call io%bits_mem (storage_size(self%irefine), &
                      product(shape(self%irefine)), 'irefine')
 END SUBROUTINE clone_mem_accounting
-
-!===============================================================================
-!> Rotate time slots.  The initial conditions are in slot 1, and the first time
-!> step puts new values in the 'new' slot 2, while saving the time step used in
-!> dt(1). Then the current slot (it) becomes 2, and the new one becomes 3, etc.
-!> This way, there is no need to copy memory btw time steps.
-!===============================================================================
-SUBROUTINE rotate (self)
-  class(patch_t):: self
-  integer:: iv, nv, new
-  real(8):: time
-  integer, save:: itimer=0
-  !-----------------------------------------------------------------------------
-  ! Periodic wrapping, time extrapolation
-  !-----------------------------------------------------------------------------
-  if (self%rotated) return
-  call trace%begin ('patch_t%rotate', itimer=itimer)
-  if (self%is_periodic()) then
-    call self%periodic_grid                     ! periodic root grid
-  else if (extrapolate_gz) then
-    call self%extrapolate_guards                ! time-extrapolate guard cells
-  end if
-  !-----------------------------------------------------------------------------
-  ! One line summary
-  !-----------------------------------------------------------------------------
-  if (io%verbose>1) then
-    write (io_unit%log,'(a,i6,2i3,2e13.6,2x,a,1p,6e10.2)') 'update: id,j,k,l,n,dt,t', &
-      self%id, self%it, self%new, self%dtime, self%time, 'minmax:', &
-      minval(self%mem(:,:,:,1,self%it ,self%nw)), &
-      maxval(self%mem(:,:,:,1,self%it ,self%nw)), &
-      minval(self%mem(:,:,:,1,self%new,1)), &
-      maxval(self%mem(:,:,:,1,self%new,1))
-  end if
-  !-----------------------------------------------------------------------------
-  ! Update patch position for non-zero patch velocities;
-  ! This happens *before* `rotate` because `dtime` stores the time step just taken.
-  !-----------------------------------------------------------------------------
-  call self%update_position
-  !-----------------------------------------------------------------------------
-  ! Task time slot rotation
-  !-----------------------------------------------------------------------------
-  call self%task_t%rotate
-  call trace%end (itimer)
-END SUBROUTINE rotate
 
 !===============================================================================
 !> This function gives the physical position of an index triple (patch point)
@@ -1465,228 +1373,6 @@ SUBROUTINE unpack (self, mesg)
 END SUBROUTINE unpack
 
 !===============================================================================
-!> Print info to stdout.  If
-!>   verbose==0:        print only id=1 to stdout and io_unit%log
-!>   verbose==1:        print only id=1 to stdout but all to io_unit%log
-!>   verbose==2:        print iv=1 to stdout and io_unit%log for all id
-!>   verbose==3:        print iv=1,nv to stdout and io_unit%log for all id
-!===============================================================================
-SUBROUTINE info (self, nq, ntask, experiment_name)
-  class(patch_t)     :: self
-  integer            :: nq, ntask
-  character(len=64)  :: experiment_name
-  optional           :: nq, ntask, experiment_name
-  !.............................................................................
-  type(lock_t), save :: lock
-  integer, parameter :: max_lines=50
-  integer, save      :: itimer=0
-  integer, save      :: counts(6)=0, id_prv=0
-  integer            :: counts_l(6), i
-  integer            :: it0, it1, it, iv, nv, iprint_l
-  real, save         :: d_min=0.0, d_max=huge(1.)
-  real               :: fmin, fmax
-  real, pointer      :: df(:,:,:)
-  real(8)            :: time, print_next
-  logical            :: print_it
-  character(len=120) :: fmt
-  !-----------------------------------------------------------------------------
-  call trace%begin ('patch_t%info', itimer=itimer)
-  !$omp atomic write
-  timer%time = self%time
-  if (io_unit%do_validate) then
-    it0 = merge (self%iit(self%nt-2), 1, self%nt>2)
-    it1 = merge (self%iit(self%nt-1), 1, self%nt>1)
-    if (self%nw==1) then
-      allocate (df(size(self%mem,1),size(self%mem,2),size(self%mem,3)))
-    end if
-    do iv=1,self%nv
-      if (self%nw==1) then
-        df = self%mem(:,:,:,iv,it1,1) &
-           - self%mem(:,:,:,iv,it0,1)
-        fmin = self%fminval(df)
-        fmax = self%fmaxval(df)
-      else
-        fmin = self%fminval(self%mem(:,:,:,iv,it0,self%nw))
-        fmax = self%fmaxval(self%mem(:,:,:,iv,it0,self%nw))
-      end if
-      write(io%output,2) &
-      'upd',self%id, self%level, iv, self%istep, self%time-self%dtime, &
-      self%dtime, self%u_max, fmin, fmax, &
-      self%fminval(self%mem(:,:,:,iv,it0,1)), &
-      self%fmaxval(self%mem(:,:,:,iv,it0,1)), &
-      real(timer%n_update), ntask, nq, self%is_set(bits%boundary), self%is_set(bits%virtual)
-    2 format(a,i8,2i4,i3,1p,e14.5,e12.4,0p,f7.2,2x,1p,2e12.4,1x,2e12.4,2x,e10.2,2i5,l3,l1,o12)
-    end do
-    if (self%nw==1) then
-      deallocate (df)
-    end if
-    call trace%end (itimer)
-    return
-  end if
-  !-----------------------------------------------------------------------------
-  if ((io%verbose >= 0) .and. self%is_clear(bits%no_density)) then
-    !call self%mem_lock(self%it)%set ('info')
-    self%d_min = self%fminval(self%idx%d)
-    self%d_max = self%fmaxval(self%idx%d)
-    !call self%mem_lock(self%it)%unset ('info')
-    !$omp atomic
-    io%dmin = min(io%dmin, self%d_min)
-    !$omp atomic
-    io%dmax = max(io%dmax, self%d_max)
-    !---------------------------------------------------------------------------
-    ! After coming back to the saved ID, reset it, so we stop searching
-    !---------------------------------------------------------------------------
-    if (self%id == id_prv) then
-      !$omp atomic write
-      id_prv = 0
-    end if
-    !---------------------------------------------------------------------------
-    ! Allow print every print_every update, if print_every > 0
-    !---------------------------------------------------------------------------
-    if (print_every > 0) then
-      !$omp atomic read
-      iprint_l = iprint
-      if (iprint_l >= print_every .and. print_every > 0) then
-        !$omp atomic write
-        iprint = 1
-        print_it = .true.
-      else
-        !$omp atomic update
-        iprint = iprint+1
-        print_it = .false.
-      end if
-    !---------------------------------------------------------------------------
-    ! If print_every==0, then check if print_time controls cadence, using
-    ! an if-lock-if sequence to ensure only one thread prints and updates
-    !---------------------------------------------------------------------------
-    else if (io%print_time > 0.0) then
-      if (print_every == 0 .and. self%time >= io%print_next) then
-        call lock%set ('print')
-        if (self%time >= io%print_next) then
-          print_it = .true.
-          print_next = (nint(self%time/io%print_time)+1)*io%print_time
-          io%print_next = print_next
-        end if
-        call lock%unset ('print')
-      end if
-    !---------------------------------------------------------------------------
-    ! Otherwise, fall back on printing the task update with the smallest dt
-    !---------------------------------------------------------------------------
-    else if (self%id==io%id) then
-      print_it = .true.
-    end if
-    !$omp atomic update
-    d_min = min(d_min, self%d_min)
-    !$omp atomic update
-    d_max = min(d_max, self%d_max)
-    !---------------------------------------------------------------------------
-    ! Write info to rank log for every time step if io%verbose > 0
-    !---------------------------------------------------------------------------
-    if (io%verbose > 0) then
-      time = self%time
-      iv = 1
-      call write_info (io_unit%mpi)
-    end if
-    !---------------------------------------------------------------------------
-    ! Print info for selected task, or tracked task
-    !---------------------------------------------------------------------------
-    print_it = print_it .or. self%track
-    if (print_it) then
-      nv = 1
-      if (io%verbose>2) nv = self%nv
-      !-------------------------------------------------------------------------
-      counts_l = &
-        [mpi_mesg%n_check, mpi_mesg%n_ready, mpi_mesg%n_update, &
-         mpi_mesg%n_send , mpi_mesg%n_recv , mpi_mesg%n_unpk  ]
-      do i=1,size(counts)
-        !$omp atomic update
-        counts(i) = counts(i) + counts_l(i)
-      end do
-      !$omp atomic update
-      timer%n_lines = timer%n_lines-1
-      if (timer%n_lines==0) then
-        !$omp critical (info_cr2)
-        !$omp atomic write
-        timer%n_lines = max_lines
-        !$omp end atomic
-        write(io%output,'(a)') &
-        '0....+....1....+....2....+....3....+....4....+....5....+....' &
-        //'6....+....7....+....8....+....9....+....0....+....1  ntsk   nq ' &
-        //' chk  rdy   upd  snd  rcv  unp  snq rcq  BV'
-        !$omp end critical (info_cr2)
-      end if
-      !-----------------------------------------------------------------------
-      ! time-dtime is the task time when update started; it is guaranteed to
-      ! be increasing monotomically, since the ready queue is time sorted.
-      ! To allow using the column for plotting, we show this time when all
-      ! times are printed.
-      !-----------------------------------------------------------------------
-      if (io%print_time == 0.0 .and. io%verbose == 0) then
-        time = self%time - self%dtime
-      else
-        time = self%time
-      end if
-      do iv=1,nv
-        call write_info (io%output)
-      end do
-      flush (io%output)
-      !$omp atomic write
-      io%dmin = huge(1.)
-      !$omp atomic write
-      io%dmax = tiny(1.)
-      !$omp atomic write
-      io%dtime = huge(1d0)
-      !$omp atomic write
-      id_prv = io%id
-      counts(:) = 0
-      !-----------------------------------------------------------------------
-      ! Reset the message counters after every timestep, if relevant
-      !-----------------------------------------------------------------------
-      mpi_mesg%n_check=0; mpi_mesg%n_ready=0; mpi_mesg%n_update=0
-      mpi_mesg%n_send=0 ; mpi_mesg%n_recv=0 ; mpi_mesg%n_unpk=0
-      mpi_mesg%n_delay=0
-    end if
-    !---------------------------------------------------------------------------
-    ! Keep track of the shortest times step between updates of the io%id local
-    ! task.  Use this task in patch%info, rather than the one with ip==1.  As
-    ! long as shorter dtime are being found, io%id will not match the next self%id.
-    ! But if the same io%id survices one update cycle, it will match.
-    !---------------------------------------------------------------------------
-    if (self%dtime < io%dtime .and. id_prv /= 0) then
-      !$omp atomic write
-      io%id = self%id
-      !$omp atomic write
-      io%dtime = self%dtime
-    end if
-  end if
-  call trace%end (itimer)
-contains
-  !=============================================================================
-  subroutine write_info (unit)
-    integer:: unit
-    real:: dmin, dmax
-    !$omp atomic read
-    dmin = io%dmin
-    !$omp atomic read
-    dmax = io%dmax
-    if (self%time < 1d4 .and. self%time > 1e-4) then
-      fmt = '(a,i8,2i4,i3,f12.6,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,i6,3i5,i6,4i5,i4,l3,l1,o12)'
-    else
-      fmt = '(a,i8,2i4,i3,1p,2e12.5,     0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,i6,3i5,i6,4i5,i4,l3,l1,o12)'
-    end if
-    write(unit,fmt) &
-      'upd',self%id, self%level, iv, omp_mythread, time, &
-      self%dtime, log10(max(self%u_max,1e-30)), &
-      dmin, dmax, &
-      self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
-      self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
-      real(timer%n_update), ntask, nq, counts, &
-      mpi_mesg%nq_send, mpi_mesg%nq_recv, &
-      self%is_set(bits%boundary), self%is_set(bits%virtual)
-  end subroutine write_info 
-END SUBROUTINE info
-
-!===============================================================================
 !> Check if there is overlap, using the size plus an extra cell margin. The
 !> definition of overlap MUST be symmetric, since it is being used to define
 !> neighbor relations.  This function overloads task_t%overlaps, in order to
@@ -2053,9 +1739,7 @@ FUNCTION fmaxval4 (self, f, outer) RESULT (fmaxval)
   else
     outer_l = .false.
   end if
-  if (self%boundaries%is_set (bits%spherical)) then
-    fmaxval = maxval(f, mask=self%boundaries%mask(self%mesh))
-  else if (outer_l) then
+  if (outer_l) then
     fmaxval = maxval(f(self%mesh(1)%lo:self%mesh(1)%uo, &
                        self%mesh(2)%lo:self%mesh(2)%uo, &
                        self%mesh(3)%lo:self%mesh(3)%uo))
@@ -2071,13 +1755,9 @@ FUNCTION fminval4 (self, f) RESULT(fminval)
   class(patch_t):: self
   real, dimension(:,:,:), intent(in):: f
   !-----------------------------------------------------------------------------
-  if (self%boundaries%is_set (bits%spherical)) then
-    fminval = minval(f, mask=self%boundaries%mask(self%mesh))
-  else
-    fminval = minval(f(self%mesh(1)%li:self%mesh(1)%ui, &
-                       self%mesh(2)%li:self%mesh(2)%ui, &
-                       self%mesh(3)%li:self%mesh(3)%ui))
-  end if
+  fminval = minval(f(self%mesh(1)%li:self%mesh(1)%ui, &
+                     self%mesh(2)%li:self%mesh(2)%ui, &
+                     self%mesh(3)%li:self%mesh(3)%ui))
 END FUNCTION fminval4
 !===============================================================================
 FUNCTION fmaxval8 (self, f, outer) RESULT (fmaxval)
@@ -2092,9 +1772,7 @@ FUNCTION fmaxval8 (self, f, outer) RESULT (fmaxval)
   else
     outer_l = .false.
   end if
-  if (self%boundaries%is_set (bits%spherical)) then
-    fmaxval = maxval(f, mask=self%boundaries%mask(self%mesh))
-  else if (outer_l) then
+  if (outer_l) then
     fmaxval = maxval(f(self%mesh(1)%lo:self%mesh(1)%uo, &
                        self%mesh(2)%lo:self%mesh(2)%uo, &
                        self%mesh(3)%lo:self%mesh(3)%uo))
@@ -2110,13 +1788,9 @@ FUNCTION fminval8 (self, f) RESULT(fminval)
   class(patch_t):: self
   real(8), dimension(:,:,:), intent(in):: f
   !-----------------------------------------------------------------------------
-  if (self%boundaries%is_set (bits%spherical)) then
-    fminval = minval(f, mask=self%boundaries%mask(self%mesh))
-  else
-    fminval = minval(f(self%mesh(1)%li:self%mesh(1)%ui, &
-                       self%mesh(2)%li:self%mesh(2)%ui, &
-                       self%mesh(3)%li:self%mesh(3)%ui))
-  end if
+  fminval = minval(f(self%mesh(1)%li:self%mesh(1)%ui, &
+                     self%mesh(2)%li:self%mesh(2)%ui, &
+                     self%mesh(3)%li:self%mesh(3)%ui))
 END FUNCTION fminval8
 
 !===============================================================================
@@ -2209,7 +1883,7 @@ SUBROUTINE check_density (self, label)
   logical:: inside, nan, panic
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  if ((io%verbose < 2 .or. io%print_time > 0.0 .or. print_every > 1) .and. &
+  if ((io%verbose < 2 .or. io%print_time > 0.0 .or. io%print_every > 1) .and. &
       .not.do_check_nan) return
   if (self%is_set(bits%no_density+bits%frozen)) return
   if (.not. associated(self%mem)) return
@@ -3129,6 +2803,5 @@ REAL FUNCTION cost (self)
     cost = 0.0
   end if
 END FUNCTION cost
-
 
 END MODULE patch_mod

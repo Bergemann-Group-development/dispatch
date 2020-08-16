@@ -200,6 +200,11 @@ SUBROUTINE init (self)
   call self%dust%init (n_bin, self%m_cgs, self%dd)
   call self%aux%init
   call self%random%init (seed)        ! FIXME: check seed inheritance
+  do i=1,3
+  do j=1,3
+    call momentum_counter(i,j)%init (0d0)
+  end do
+  end do
   call trace%end ()
 END SUBROUTINE init
 

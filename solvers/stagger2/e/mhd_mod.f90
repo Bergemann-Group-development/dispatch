@@ -30,7 +30,7 @@ MODULE mhd_mod
   USE eos_mod
   USE non_ideal_mod
   USE initial_mod
-  USE divb_clean_mod
+  !USE divb_clean_mod
   USE task_mod
   USE timer_mod
   USE scratch_mod
@@ -645,6 +645,7 @@ END SUBROUTINE pde
 SUBROUTINE pre_update (self)
   class(mhd_t), target:: self
   real, dimension(:,:,:), pointer:: d, e, lnd, ee
+  real, dimension(:,:,:,:), pointer:: mem
   integer:: iz
   !-----------------------------------------------------------------------------
   ! Compute initial temperature

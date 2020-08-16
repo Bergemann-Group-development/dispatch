@@ -39,6 +39,7 @@ MODULE experiment_mod
   contains
     procedure:: init
     procedure:: init_task_list
+    procedure:: bndries
     procedure:: update
     procedure:: boundary_condition
   end type
@@ -86,8 +87,7 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   self%periodic(3) = .false.                     ! non-periodic vertically
   call self%init_bdries
-  call self%boundaries%init(self%mesh)
-  self%boundaries%id = self%id
+  call self%boundaries%init (self)
   if (verbose > 0) then
     if (self%mesh(3)%lower_boundary) write(io_unit%log,*) self%id, 'at lower B'
     if (self%mesh(3)%upper_boundary) write(io_unit%log,*) self%id, 'at upper B'
@@ -114,6 +114,18 @@ SUBROUTINE init_task_list (self, task_list)
   end if
   call trace%end()
 END SUBROUTINE init_task_list
+
+!===============================================================================
+!> Experiment update
+!===============================================================================
+SUBROUTINE bndries (self)
+  class(experiment_t):: self
+  class(link_t), pointer:: link
+  logical, save:: first_time=.true.
+  !----------------------------------------------------------------------------
+  call trace%begin('experiment_t%bndries')
+  call trace%end()
+END SUBROUTINE bndries
 
 !===============================================================================
 !> Experiment update

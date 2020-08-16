@@ -37,7 +37,7 @@ SUBROUTINE init_experiment (self)
   call self%pebble_patch_t%init()
   ! intialize time-independent gravitational potential of the central star
   call potential%init(self%mesh, self%idx, self%initial%star_mass, self%mem(:,:,:,:,1,1))
-  call pboundaries%init_bdries(self%mesh,self%position,self%idx)
+  call pboundaries%init_bdries (self)
   call self%density_floor(self%it)
   call self%check_density()
 

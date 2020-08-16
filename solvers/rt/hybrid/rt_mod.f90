@@ -454,7 +454,7 @@ SUBROUTINE setup_boundaries(self)
     end if
   end do
   !
-  call self%rt_boundaries%init(self%mesh)
+  call self%rt_boundaries%init (self)
 END SUBROUTINE setup_boundaries
 
 !===============================================================================

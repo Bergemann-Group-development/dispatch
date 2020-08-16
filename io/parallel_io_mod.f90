@@ -490,7 +490,7 @@ SUBROUTINE input (patch, ok)
   if (verbose > 1) then
     do iv=1,io%nv
       write (io_unit%output,*) 'parallel_io_t%input: id, iv, iout, min, max =', &
-        patch%id, iv, patch%iout, patch%fminval(iv), patch%fmaxval(iv)
+        patch%id, iv, patch%iout !, patch%fminval(iv), patch%fmaxval(iv)
     end do
   else if (verbose > 0) then
     write (io_unit%output,*) 'parallel_io_t%input: id, iout =', &

@@ -25,6 +25,7 @@ MODULE io_mod
     integer:: restart=-1
     integer:: nwrite=0, ntask=0, ntotal=0
     integer:: dims(3)=0, mpi_dims(3), mpi_odims(3)=1
+    integer:: print_every=0, iprint=0           ! print cadence
     character(len=64):: inputname               ! input namelist file (e.g. run.nml)
     character(len=64):: datadir='data'          ! top output directory (e.g. data)
     character(len=64):: rundir='data'           ! experiment output directory (data/run/)

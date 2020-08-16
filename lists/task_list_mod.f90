@@ -33,6 +33,7 @@ MODULE task_list_mod
   USE link_mod
   USE task_mod
   USE patch_mod
+  USE gpatch_mod
   USE experiment_mod
   USE bits_mod
   USE refine_mod
@@ -64,6 +65,7 @@ MODULE task_list_mod
     procedure:: print => print1
     procedure:: init_levelstats
     procedure:: init_task_list_pointers
+    procedure:: init_bdries
   end type
   real(8), save:: dead_mans_hand=60d0, first_finished=0d0
   public:: task2patch
@@ -801,5 +803,46 @@ SUBROUTINE init_task_list_pointers (self, task_list)
   end do
   call trace%end()
 END SUBROUTINE init_task_list_pointers
+
+!===============================================================================
+!> Initialize boundary bits, which may (optionally) be used to apply boundary
+!> conditions in experiment_t%update() procedures. 
+!===============================================================================
+SUBROUTINE init_bdries (self)
+  implicit none
+  class(task_list_t):: self
+  class(link_t), pointer:: link
+  class(task_t), pointer:: patch
+  real(8):: position(3), limit(3)
+  !-----------------------------------------------------------------------------
+  call trace%begin('task_list_t%init_bdries')
+  link => self%head
+  do while (associated(link))
+    patch => link%task
+    select type (patch)
+    class is (gpatch_t)
+      call patch%init_bdries
+    end select
+    self%lc  = min(self%lc,  link%task%position)
+    self%uc  = max(self%uc,  link%task%position)
+    self%llc = min(self%llc, link%task%position-0.5000000001_8*link%task%size)
+    self%urc = max(self%urc, link%task%position+0.5000000001_8*link%task%size)
+    link => link%next
+  end do
+  call trace%end()
+contains
+  !-----------------------------------------------------------------------------
+  function formatted (task) result (out)
+  class(gpatch_t):: task
+  character(len=6):: out
+  out = '......'
+  if (task%boundaries%is_set(bits%xl))  out(1:1) = 'T'
+  if (task%boundaries%is_set(bits%xu))  out(2:2) = 'T'
+  if (task%boundaries%is_set(bits%yl))  out(3:3) = 'T'
+  if (task%boundaries%is_set(bits%yu))  out(4:4) = 'T'
+  if (task%boundaries%is_set(bits%zl))  out(5:5) = 'T'
+  if (task%boundaries%is_set(bits%zu))  out(6:6) = 'T'
+  end function formatted
+END SUBROUTINE init_bdries
 
 END MODULE task_list_mod

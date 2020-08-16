@@ -9,6 +9,7 @@ MODULE standard_boundaries_mod
   USE bits_mod
   USE mesh_mod
   USE index_mod
+  USE patch_mod
   USE boundary_wavekill_mod
   implicit none
   private
@@ -54,35 +55,34 @@ CONTAINS
 !> Initialize the boundary data type, while testing also if the patch contains
 !> a spherical boundary, or possibly is completely immersed in such a boundary.
 !===============================================================================
-SUBROUTINE init (self, mesh, id, position, radius)
-  class(standard_boundaries_t)              :: self
-  class(mesh_t), pointer :: mesh(:)
-  integer:: id
-  real(8), optional                :: position(3), radius
+SUBROUTINE init (self, patch) !mesh, id, position, radius)
+  class(standard_boundaries_t) :: self
+  class(patch_t)               :: patch
+  class(mesh_t), pointer       :: mesh(:)
+  integer                      :: id
+  real(8)                      :: position(3), radius
   !.............................................................................
-  real(8)                          :: size(3), p(3)
-  integer                          :: i, j, k
-  logical                          :: one_inside, all_inside
+  real(8)                      :: size(3), p(3)
+  integer                      :: i, j, k
+  logical                      :: one_inside, all_inside
   !-----------------------------------------------------------------------------
   call trace%begin ('standard_boundaries_t%init')
   self%id = id
-  if (present(radius))   self%radius   = radius
-  if (present(position)) self%position = position
-    self%mesh => mesh
-    if (present(position).and.present(radius))   then
-      one_inside = .false.
-      all_inside = .true.
-      size(:) = mesh(:)%s
-      do k=-1,1; do j=-1,1; do i=-1,1
-        p(:) = position(:) + 0.5*size(:)*[i,j,k]
-        if (sum(p**2) < radius**2) then
-          one_inside = .true.
-        else
-          all_inside = .false.
-        end if
-      end do; end do; end do
-      if (one_inside) call self%set (bits%spherical)
+  self%radius = radius
+  self%position = position
+  self%mesh => mesh
+  one_inside = .false.
+  all_inside = .true.
+  size(:) = mesh(:)%s
+  do k=-1,1; do j=-1,1; do i=-1,1
+    p(:) = position(:) + 0.5*size(:)*[i,j,k]
+    if (sum(p**2) < radius**2) then
+      one_inside = .true.
+    else
+      all_inside = .false.
     end if
+  end do; end do; end do
+  if (one_inside) call self%set (bits%spherical)
   self%unset = .false.
   call trace%end()
 END SUBROUTINE init
