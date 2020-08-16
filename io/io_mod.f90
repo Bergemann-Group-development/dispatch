@@ -52,6 +52,7 @@ MODULE io_mod
     integer:: id_track=0
     integer:: nv=0
     integer:: id=1              ! the task to print a one-liner for
+    real(8):: start_time=0d0
     real(8):: end_time=1d30
     real(8):: out_time=1d0
     real(8):: out_next=1d0

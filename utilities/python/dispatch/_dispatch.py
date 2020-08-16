@@ -653,14 +653,22 @@ class _patch():
                  'ee','E','T','eth','Eth','ekin']
         timer.add('known')
 
-        # attach an aux filaname, if one exists for this task
+        # attach an aux filename, if one exists for this task
         auxfile='{:05d}.aux'.format(id)
         #timer.add('_patch(9c))')
         auxfile=_pathjoin(snap.datadir,auxfile)
         timer.add('auxfile')
         self.auxfile=auxfile
+
+        # read the information from the aux file and add as attribute
         self.aux=aux(id=id,io=snap.iout,file=auxfile)
         self.keys['aux']=self.aux.vars.keys()
+
+        # for patch id=1, add items with less than 100 elements to snapshot.aux
+        if id==1:
+          for k,v in self.aux.vars.items():
+            if np.product(v['shape']) < 100:
+              setattr(snap.aux,v['name'],v['v'])
         timer.add('read-aux')
         
         """ Now collect all keys in a single list """

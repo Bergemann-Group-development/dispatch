@@ -55,6 +55,8 @@ class aux():
             print(' type:',tpe)
           if tpe[0]=='r':
             v=ff.read_reals('<f4')                       # value
+          elif tpe[0]=='d':
+            v=ff.read_reals('<f8')
           else:
             v=ff.read_ints('<i4')
           v=v.reshape(shp[-1::-1]).transpose()

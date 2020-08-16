@@ -48,18 +48,21 @@ MODULE mpi_mod
   !-----------------------------------------------------------------------------
   type, public:: mpi_counter_t
     integer:: window=0          ! MPI window
+    real(8):: r=0               ! shared window value
     integer(8):: i=0            ! shared window value
     integer(8):: value=0        ! actual counter value, after update
   contains
     procedure, private:: init4
     procedure, private:: init8
-    generic:: init => init4, init8
+    procedure, private:: init8d
+    generic:: init => init4, init8, init8d
     procedure, private:: reset4
     procedure, private:: reset8
     generic:: reset => reset4, reset8
     procedure, private:: update4
     procedure, private:: update8
-    generic:: update => update4, update8
+    procedure, private:: update8d
+    generic:: update => update4, update8, update8d
   end type
   !-----------------------------------------------------------------------------
   ! Object that contains the most important MPI parameters
@@ -502,6 +505,38 @@ SUBROUTINE init8 (self, n)
 END SUBROUTINE init8
 
 !===============================================================================
+!> Create and initialize a counter to value = n. NOTE: This is COLLECTIVE call!
+!===============================================================================
+SUBROUTINE init8d (self, r)
+  class(mpi_counter_t):: self
+  real(8):: r
+  !.............................................................................
+#ifdef MPI
+  integer(kind=MPI_ADDRESS_KIND):: nbytes=8
+  integer:: mpi_err
+#endif
+  !-----------------------------------------------------------------------------
+  call trace%begin ('mpi_counter_t%init')
+#ifdef MPI
+  if (self%window==0) then
+  !-----------------------------------------------------------------------------
+  ! Do NOT make this depend on MPI_THREAD_MULTIPLE -- this really needs a
+  ! critical region
+  !-----------------------------------------------------------------------------
+    !$omp critical (mpi_cr)
+    if (self%window==0) then
+      self%r = r
+      call MPI_Win_create (self%r, nbytes, 8, MPI_INFO_NULL, MPI_COMM_WORLD, &
+                           self%window, mpi_err)
+      call mpi%assert ('MPI_Win_create', mpi_err)
+    end if
+    !$omp end critical (mpi_cr)
+  end if
+#endif
+  call trace%end ()
+END SUBROUTINE init8d
+
+!===============================================================================
 !> Reset the counter to n
 !===============================================================================
 SUBROUTINE reset4 (self, n)
@@ -575,6 +610,46 @@ FUNCTION update8 (self, i) RESULT (j)
   end if
   call trace%end ()
 END FUNCTION update8
+
+!===============================================================================
+FUNCTION update8d (self, i) RESULT (j)
+  class(mpi_counter_t):: self
+  real(8):: i, j, k
+  !.............................................................................
+#ifdef MPI
+  integer:: master=0, mpi_err
+  integer(kind=MPI_ADDRESS_KIND):: offset=0
+  !-----------------------------------------------------------------------------
+  call trace%begin ('mpi_counter_t%update', 2)
+  !-----------------------------------------------------------------------------
+  ! Do NOT make this depend on MPI_THREAD_MULTIPLE -- this really needs a
+  ! critical region
+  !-----------------------------------------------------------------------------
+  !$omp critical (mpi_cr)
+  call MPI_Win_lock (MPI_LOCK_EXCLUSIVE, master, 0, self%window, mpi_err)
+  call mpi%assert ('MPI_Win_lock', mpi_err)
+  call MPI_Get_accumulate (i, 1, MPI_REAL8, &
+                           k, 1, MPI_REAL8, master, offset, &
+                              1, MPI_REAL8, MPI_SUM, self%window, mpi_err)
+  call mpi%assert ('MPI_Get_accumulate', mpi_err)
+  call MPI_Win_unlock (master, self%window, mpi_err)
+  call mpi%assert ('MPI_Win_unlock', mpi_err)
+  !$omp end critical (mpi_cr)
+  j = k+i
+#else
+  call trace%begin ('mpi_counter_t%update')
+  !$omp atomic capture
+  self%r = self%r + i
+  j = self%r
+  !$omp end atomic
+#endif
+  if (io_unit%verbose > 0) then
+    write (io_unit%log,'(a,2(2x,3i4))') &
+      'mpi_counter_t%update: incr, sum, rank, size =', &
+      i, j, mpi%rank, mpi%size
+  end if
+  call trace%end ()
+END FUNCTION update8d
 
 END MODULE mpi_mod
 

@@ -10,6 +10,13 @@
 !> call aux%register ('a3', a3)
 !> ...
 !> call aux%output ('test.aux')
+!>
+!> From data_io%output, the call hierarchy is (for each task):
+!>
+!> aux_t%output_sequence
+!>   aux_t%output => output_aux
+!>     item_t%output => output_item
+!>
 !===============================================================================
 MODULE aux_mod
   USE os_mod
@@ -39,9 +46,10 @@ MODULE aux_mod
     procedure, private:: register2r
     procedure, private:: register3r
     procedure, private:: register4r
+    procedure, private:: register2d
     generic:: register => &
       register0r, register1r, register2r, register3r, register4r, &
-      register0i, register1i, register2i
+      register0i, register1i, register2i, register2d
     procedure:: list
     procedure:: output => output_aux
     procedure:: output_sequence
@@ -65,6 +73,12 @@ MODULE aux_mod
       r2(:,:)     => null(), &
       r3(:,:,:)   => null(), &
       r4(:,:,:,:) => null()
+    real(8), pointer:: &
+      d0          => null(), &
+      d1(:)       => null(), &
+      d2(:,:)     => null(), &
+      d3(:,:,:)   => null(), &
+      d4(:,:,:,:) => null()
     character(len=32):: name
     integer:: rank
   contains
@@ -101,6 +115,7 @@ SUBROUTINE init (self, name)
     call write_namelist (io%namelist)
     first_time = .false.
   end if
+  self%aux_next = io%start_time
   call self%dll_t%init
   call io%lock%unset ('aux_t%init')
   !-----------------------------------------------------------------------------
@@ -387,6 +402,45 @@ SUBROUTINE register2r (self, name, r)
 END SUBROUTINE register2r
 
 !===============================================================================
+SUBROUTINE register2d (self, name, r)
+  class(aux_t)       :: self
+  character(len=*)   :: name
+  real(8), pointer   :: r(:,:)
+  class(dll_node_t), pointer:: item
+  !-----------------------------------------------------------------------------
+  if (.not.io%do_output) return
+  call trace%begin ('aux_t%register2r')
+  if (self%new_item (name)) then
+    allocate (item_t:: item)
+    select type (item)
+    class is (item_t)
+      item%rank = 2
+      item%name = name
+      item%d2 => r
+    end select
+    call self%append (item)
+    if (verbose > 0) &
+      write (io_unit%log,*) self%n, ' items registered'
+  else
+    item => self%head
+    do while (associated(item))
+      select type (item)
+      class is (item_t)
+        if (trim(item%name) == trim(name)) then
+          item%d2 => r
+          if (verbose > 1) &
+            write (io_unit%log,*) 'aux_io_t: re-registered(2r) '//name
+          exit
+        end if
+      end select
+      item => item%next
+    end do
+  end if
+  call self%list
+  call trace%end()
+END SUBROUTINE register2d
+
+!===============================================================================
 SUBROUTINE register3r (self, name, r)
   class(aux_t)       :: self
   character(len=*)   :: name
@@ -568,8 +622,8 @@ END SUBROUTINE output_sequence
 
 !===============================================================================
 ! This procedure is called from data_io_t%output, inside a locked region, and
-! only when io%do_output is true, so it needs to lock and no test on do_output.
-! When called from other places, it should also be from with locked regions.
+! only when io%do_output is true, so it needs no lock and no test on do_output.
+! When called from other places, it should also be from within locked regions.
 !===============================================================================
 SUBROUTINE output_aux (self, iout, id, singlefile)
   class(aux_t):: self
@@ -685,6 +739,8 @@ SUBROUTINE output_item (self, unit)
       call write2r (unit, self%r2)                             ! write: value
     else if (associated (self%i2)) then
       call write2i (unit, self%i2)                             ! write: value
+    else if (associated (self%d2)) then
+      call write2d (unit, self%d2)                             ! write: value
     end if
   case(3)
     if (associated (self%r3)) then
@@ -753,6 +809,19 @@ subroutine write2r (unit, r)
   write (unit) r
   call trace%end()
 end subroutine write2r
+
+!===============================================================================
+subroutine write2d (unit, d)
+  integer:: unit
+  real(8), pointer:: d(:,:)
+  !-----------------------------------------------------------------------------
+  call trace%begin ('write2d')
+  write (unit) shape(d)
+  if (verbose > 2) write (io_unit%log,*) 'd2', shape(d)
+  write (unit) 'd2'
+  write (unit) d
+  call trace%end()
+end subroutine write2d
 
 !===============================================================================
 subroutine write2i (unit, r)

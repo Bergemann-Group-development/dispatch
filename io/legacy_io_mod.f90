@@ -247,7 +247,7 @@ SUBROUTINE input (self, ok)
     if (self%id==io%id_debug) &
       print *,'MK input_legacy', self%id, ok, self%mem(18,18,36,1,self%it,1)
     !---------------------------------------------------------------------------
-    ! Update the iout and out_next for continued experiment
+    ! Update the out_next for continued experiment
     !---------------------------------------------------------------------------
     self%out_next = (nint(self%time/io%out_time)+1)*io%out_time
   end if
