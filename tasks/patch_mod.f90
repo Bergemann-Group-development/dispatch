@@ -45,7 +45,7 @@ MODULE patch_mod
     real(8):: pdf_next=0.0              ! next PDF output time
     real(8):: gamma=1.4                 ! gas gamma
     real(8):: dt_fixed                  ! for fixed time step Courant condition
-    real(8):: radius                    ! generic radius
+    real(8):: radius=0d0                ! generic radius
     real:: u_max=0.0                    ! for Courant condition
     real:: u_fixed                      ! for fixed time step Courant condition
     real:: d_min, d_max                 ! for info

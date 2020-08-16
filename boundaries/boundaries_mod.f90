@@ -38,14 +38,6 @@ SUBROUTINE init (self, patch)
   class(boundaries_t)     :: self
   class(patch_t)          :: patch
   !.............................................................................
-  class(mesh_t) , pointer :: mesh(:)
-  real(8)                 :: position(3), radius
-  integer                 :: id
-  !.............................................................................
-  id = patch%id
-  mesh => patch%mesh
-  position = patch%position
-  radius = patch%radius
   call self%standard_boundaries_t%init (patch)
 END SUBROUTINE init
 
