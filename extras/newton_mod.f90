@@ -90,7 +90,7 @@ SUBROUTINE pre_update (self)
             s = m1%p + m1%r(ix)-position
             f = exp(-s/scale)
             r = f/((1.0+f)*time)
-            ee = ee_top + ee1*s
+            ee = ee0 + ee1*s
             scratch%heating_per_unit_volume(ix,iy,iz) = &
             scratch%heating_per_unit_volume(ix,iy,iz) + &
               (ee*d(ix,iy,iz)-e(ix,iy,iz))*r

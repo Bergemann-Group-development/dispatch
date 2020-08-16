@@ -29,7 +29,7 @@ MODULE mhd_mod
   USE eos_mod
   USE non_ideal_mod
   USE initial_mod
-  USE divb_clean_mod
+  !USE divb_clean_mod
   USE scratch_mod
   implicit none
   private
@@ -38,6 +38,7 @@ MODULE mhd_mod
     real, dimension(:,:,:),   pointer:: lnd, ss
     real, dimension(:,:,:,:), pointer:: p, dpdt, B, dBdt
     real, dimension(:,:,:,:), pointer:: emf => null()
+    procedure(divB_clean1),   pointer:: divB_clean => null()
     real:: nu(6)
     real:: cdtd
     logical:: mhd=.false.
@@ -61,7 +62,6 @@ MODULE mhd_mod
   logical, save:: do_2nd_div=.true.
   logical, save:: do_smooth=.false.
   logical, save:: do_maxwell=.true.
-  logical, save:: do_2nd_div= .false.
   logical, save:: do_temperature = .false.
   integer, save:: divb_cleaner=2
 CONTAINS
@@ -856,6 +856,7 @@ FUNCTION gas_pressure (self, lnd, ss) RESULT (pg)
   real, dimension(:,:,:), pointer:: lnd, ss, d, s
   optional:: lnd, ss
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
+  integer, save:: nprint=5
   !-----------------------------------------------------------------------------
   if (present(lnd)) then
     pg = exp(lnd*self%gamma)*exp(ss*(self%gamma-1d0))
