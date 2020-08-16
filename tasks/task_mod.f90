@@ -279,6 +279,8 @@ SUBROUTINE init_params (self)
     write (io%namelist, task_params)
     first_time = .false.
   end if
+  self%out_next = io%start_time
+  self%aux%aux_next = io%start_time
   !-----------------------------------------------------------------------------
   ! If dumps are requested, read a list of task ids for which dumps should be on
   !-----------------------------------------------------------------------------

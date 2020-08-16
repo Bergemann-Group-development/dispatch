@@ -446,14 +446,15 @@ SUBROUTINE init_default (self)
   integer, save:: n(3)=16, ng(3)=2, nv=5, nt=5, nw, max_files=1000, print_every=0
   logical, save:: no_mans_land=.true., use_data_hub=.false., limit_dtime=.false.
   real, save:: u_fixed=-1.0, grace=0.0
-  real(8), save:: end_time=1.0, out_time=0.1, print_time=0.0, dt_fixed=-1.0
+  real(8), save:: start_time=0d0, end_time=1.0, out_time=0.1, print_time=0.0
+  real(8):: dt_fixed=-1.0
   real(8):: position(3), size(3)
   integer:: iostat, i, n_alloc=0, n_ext=0
   namelist /patch_params/ n, nv, ng, nt, u_fixed, dt_fixed, &
     grace, no_mans_land, use_data_hub, do_check_nan, &
     zero_order_extrap, limit_dtime, courant_ramp
-  namelist /out_params/ out_time, end_time, print_time, print_every, &
-    max_files
+  namelist /out_params/ start_time, out_time, end_time, print_time, &
+    print_every, max_files
   logical, save:: first_time = .true.
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%init_default')
@@ -494,6 +495,7 @@ SUBROUTINE init_default (self)
   !-----------------------------------------------------------------------------
   ! Output related parameters
   !-----------------------------------------------------------------------------
+  io%start_time    = start_time
   io%end_time      = end_time
   io%out_time      = out_time
   io%print_time    = print_time
