@@ -126,6 +126,7 @@ SUBROUTINE pre_update (self)
   class(patch_t), pointer:: patch
   !.............................................................................
   call trace%begin ('extras_t%pre_update')
+  call self%gpatch_t%pre_update                                 ! keep
   self%gpatch => self                                           ! keep
   patch => self                                                 ! keep
   call self%forces%pre_update                                   ! forces

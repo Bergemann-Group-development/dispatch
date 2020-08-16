@@ -40,7 +40,6 @@ MODULE gpatch_mod
     procedure:: init_bdries
     procedure:: init_task_list
     procedure:: pre_update
-    procedure:: update
     procedure:: input
     procedure:: output
     procedure:: init
@@ -110,24 +109,10 @@ END SUBROUTINE init_task_list
 !===============================================================================
 SUBROUTINE pre_update (self)
   class(gpatch_t), target:: self
-  if (associated (scratch%force_per_unit_mass)) &
-    scratch%force_per_unit_mass = 0.0
-  if (associated (scratch%force_per_unit_volume)) &
-    scratch%force_per_unit_volume = 0.0
-  if (associated (scratch%heating_per_unit_mass)) &
-    scratch%heating_per_unit_mass = 0.0
-  if (associated (scratch%heating_per_unit_volume)) &
-    scratch%heating_per_unit_volume = 0.0
+  call trace%begin ('gpatch_t%pre_update')
+  call scratch%pre_update
+  call trace%end ()
 END SUBROUTINE pre_update
-
-!===============================================================================
-!> Interface allowing intercept
-!===============================================================================
-SUBROUTINE update (self)
-  class(gpatch_t):: self
-  !-----------------------------------------------------------------------------
-  call self%patch_t%update
-END SUBROUTINE update
 
 !===============================================================================
 !> Interface routine to the data_io input procedure, signalling if the patch
@@ -311,20 +296,10 @@ SUBROUTINE to_thermal (self, it, eth, kind)
 END SUBROUTINE to_thermal
 
 !===============================================================================
+!> Stub -- left for compatibility only
+!===============================================================================
 SUBROUTINE clone_mem_accounting (self)
   class(gpatch_t):: self
-  if (associated(scratch%force_per_unit_mass)) &
-    call io%bits_mem (storage_size(scratch%force_per_unit_mass), &
-                     product(shape(scratch%force_per_unit_mass)),'fpm')
-  if (associated(scratch%force_per_unit_volume)) &
-    call io%bits_mem (storage_size(scratch%force_per_unit_volume), &
-                     product(shape(scratch%force_per_unit_volume)),'fpv')
-  if (associated(scratch%heating_per_unit_mass)) &
-    call io%bits_mem (storage_size(scratch%heating_per_unit_mass), &
-                     product(shape(scratch%heating_per_unit_mass)),'qpm')
-  if (associated(scratch%heating_per_unit_volume)) &
-    call io%bits_mem (storage_size(scratch%heating_per_unit_volume), &
-                     product(shape(scratch%heating_per_unit_volume)),'qpv')
 END SUBROUTINE clone_mem_accounting
 
 !===============================================================================

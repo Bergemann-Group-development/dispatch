@@ -11,7 +11,6 @@ MODULE extras_mod
   USE task_mod
   USE io_mod
   USE trace_mod
-  USE scratch_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.
   !-----------------------------------------------------------------------------
@@ -86,8 +85,7 @@ SUBROUTINE pre_update (self)
   class(extras_t), target:: self
   !.............................................................................
   call trace%begin ('extras_t%pre_update')
-  scratch%force_per_unit_mass = 0.0                                    ! gravity
-  scratch%heating_per_unit_volume = 0.0                                ! newton
+  call self%gpatch_t%pre_update                                        ! keep
   call self%rt%pre_update()                                            ! RT
   call self%newton%pre_update()                                        ! Newton
   call self%gravity%pre_update()                                       ! gravity

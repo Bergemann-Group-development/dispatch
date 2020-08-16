@@ -62,7 +62,6 @@ MODULE extras_mod
   USE io_mod
   USE trace_mod
   USE connect_mod
-  USE scratch_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.
   !-----------------------------------------------------------------------------

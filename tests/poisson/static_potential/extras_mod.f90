@@ -43,7 +43,6 @@ MODULE extras_mod
   USE connect_mod
   USE patch_mod
   USE list_mod
-  USE scratch_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.
   !-----------------------------------------------------------------------------

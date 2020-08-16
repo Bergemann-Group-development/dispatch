@@ -62,7 +62,6 @@ MODULE extras_mod
   USE connect_mod
   USE list_mod
   USE task_mod
-  USE scratch_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.
   !-----------------------------------------------------------------------------

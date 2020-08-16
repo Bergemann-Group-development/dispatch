@@ -110,6 +110,7 @@ END SUBROUTINE dealloc
 SUBROUTINE pre_update (self)
   class(extras_t):: self
   !.............................................................................
+  call self%gpatch_t%pre_update                                 ! keep
   call self%forces%pre_update                                   ! forces
   !call self%trace_particles%update                              ! tracep
   !call particle_solver%force_field (self)                       ! sinkp

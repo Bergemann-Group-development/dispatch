@@ -100,7 +100,7 @@ SUBROUTINE pre_update (self)
   class(extras_t), target:: self
   !.............................................................................
   call trace%begin ('extras_t%pre_update')
-  call self%patch_t%pre_update                                          ! reset
+  call self%gpatch_t%pre_update                                         ! keep
   call self%SN%pre_update                                               ! SN
   call self%cooling%pre_update                                          ! cool
   call trace%end ()

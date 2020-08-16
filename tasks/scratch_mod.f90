@@ -12,6 +12,7 @@ MODULE scratch_mod
     real(kind=KindScalarVar), pointer, contiguous, dimension(:,:,:,:):: &
       force_per_unit_mass => null(), force_per_unit_volume => null()
   contains
+    procedure:: pre_update
     procedure, nopass:: allocate_3d
     procedure, nopass:: allocate_4d
     generic:: allocate => allocate_3d, allocate_4d
@@ -19,6 +20,17 @@ MODULE scratch_mod
   type(scratch_t), public:: scratch
   !$threadptivate (scratch)
 CONTAINS
+
+!===============================================================================
+!> Allocate a 3-D real array
+!===============================================================================
+SUBROUTINE pre_update (self)
+  class(scratch_t):: self
+  if (associated(self%heating_per_unit_volume)) self%heating_per_unit_volume=0.0
+  if (associated(self%heating_per_unit_mass  )) self%heating_per_unit_mass=0.0
+  if (associated(self%force_per_unit_volume)) self%force_per_unit_volume=0.0
+  if (associated(self%force_per_unit_mass  )) self%force_per_unit_mass=0.0
+END SUBROUTINE pre_update
 
 !===============================================================================
 !> Allocate a 3-D real array
