@@ -205,9 +205,9 @@ SUBROUTINE force (self, sink)
         'before:', patch%id, patch%fmaxval(abs(px/d)), maxval(abs(px/d))
     ee = self%energy
     dt = patch%dtime
-    if (.not.associated(patch%force_per_unit_mass)) then
-      allocate (patch%force_per_unit_mass(m(1),m(2),m(3),3))
-      patch%force_per_unit_mass = 0.0
+    if (.not.associated(scratch%force_per_unit_mass)) then
+      allocate (scratch%force_per_unit_mass(m(1),m(2),m(3),3))
+      scratch%force_per_unit_mass = 0.0
       print *,patch%id, ' force allocated'
     end if
     where (inside)
@@ -216,9 +216,9 @@ SUBROUTINE force (self, sink)
       px = px + dt*(d*du_dt*x/r0 + dd_dt*px/d0)
       py = py + dt*(d*du_dt*y/r0 + dd_dt*py/d0)
       pz = pz + dt*(d*du_dt*z/r0 + dd_dt*pz/d0)
-      !patch%force_per_unit_mass(:,:,:,1) = du_dt*x/r0 + dd_dt*px/(d0*d)
-      !patch%force_per_unit_mass(:,:,:,2) = du_dt*y/r0 + dd_dt*py/(d0*d)
-      !patch%force_per_unit_mass(:,:,:,3) = du_dt*z/r0 + dd_dt*pz/(d0*d)
+      !scratch%force_per_unit_mass(:,:,:,1) = du_dt*x/r0 + dd_dt*px/(d0*d)
+      !scratch%force_per_unit_mass(:,:,:,2) = du_dt*y/r0 + dd_dt*py/(d0*d)
+      !scratch%force_per_unit_mass(:,:,:,3) = du_dt*z/r0 + dd_dt*pz/(d0*d)
     end where
     if (verbose > 1) &
       write (io_unit%output,*) &

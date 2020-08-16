@@ -19,6 +19,7 @@ MODULE particles_mod
   USE trace_mod
   USE scaling_mod
   USE lagrange_mod
+  USE scratch_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -184,9 +185,9 @@ SUBROUTINE force_field (self, patch)
   !-----------------------------------------------------------------------------
   ! For each cell, loop over particles and accumulate force in double precision
   !-----------------------------------------------------------------------------
-  if (.not.associated(patch%force_per_unit_mass)) then
+  if (.not.associated(scratch%force_per_unit_mass)) then
     associate (m=>patch%gn)
-    allocate (patch%force_per_unit_mass(m(1),m(2),m(3),3))
+    allocate (scratch%force_per_unit_mass(m(1),m(2),m(3),3))
     end associate
   end if
   associate (m1=>patch%mesh(1), m2=>patch%mesh(2), m3=>patch%mesh(3))
@@ -228,8 +229,8 @@ SUBROUTINE force_field (self, patch)
               patch%id,ix,iy,iz,force
           end if
         end if
-        patch%force_per_unit_mass(ix,iy,iz,:) = &
-        patch%force_per_unit_mass(ix,iy,iz,:) + force
+        scratch%force_per_unit_mass(ix,iy,iz,:) = &
+        scratch%force_per_unit_mass(ix,iy,iz,:) + force
       end do
     end do
   end do

@@ -32,6 +32,7 @@ MODULE mhd_mod
   USE timer_mod
   USE eos_mod
   USE task_mod
+  USE scratch_mod
   implicit none
   PRIVATE
   type, public, extends(extras_t):: mhd_t
@@ -423,7 +424,7 @@ SUBROUTINE update (self)
   !allocate (d2ekin(l(1):u(1)))
   !e => self%mem(:,:,:,self%idx%e,self%new,1)
   !p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
-  !if (associated(self%force_per_unit_mass)) then
+  !if (associated(scratch%force_per_unit_mass)) then
 !    do k=l(3),u(3)
 !    do j=l(2),u(2)
 !      !-------------------------------------------------------------------------
@@ -434,7 +435,7 @@ SUBROUTINE update (self)
 !      do i=l(1),u(1)
 !        d2ekin(i) = d2ekin(i) - p(i,j,k,dir)**2/d(i,j,k)
 !        p(i,j,k,dir) = p(i,j,k,dir) &
-!                   +  self%dtime*self%force_per_unit_mass(i,j,k,dir)*d(i,j,k)
+!                   +  self%dtime*scratch%force_per_unit_mass(i,j,k,dir)*d(i,j,k)
 !        d2ekin(i) = d2ekin(i) + p(i,j,k,dir)**2/d(i,j,k)
 !      end do
 !      end do
@@ -447,7 +448,7 @@ SUBROUTINE update (self)
 !    end do
 !    end do
 !  end if
-!  if (associated(self%force_per_unit_volume)) then
+!  if (associated(scratch%force_per_unit_volume)) then
 !    do k=l(3),u(3)
 !    do j=l(2),u(2)
 !      !-------------------------------------------------------------------------
@@ -458,7 +459,7 @@ SUBROUTINE update (self)
 !      do i=l(1),u(1)
 !        d2ekin(i) = d2ekin(i) - p(i,j,k,dir)**2/d(i,j,k)
 !        p(i,j,k,dir) = p(i,j,k,dir) &
-!                   +  self%dtime*self%force_per_unit_volume(i,j,k,dir)
+!                   +  self%dtime*scratch%force_per_unit_volume(i,j,k,dir)
 !        d2ekin(i) = d2ekin(i) + p(i,j,k,dir)**2/d(i,j,k)
 !      end do
 !      end do
@@ -1127,18 +1128,18 @@ SUBROUTINE trace3d(self)
   d => self%mem(:,:,:,self%idx%d,self%new,1)
   do k=lo(3),uo(3)
   do j=lo(2),uo(2)
-    if (associated(self%force_per_unit_mass)) then
+    if (associated(scratch%force_per_unit_mass)) then
       !dir$ simd
       do i=lo(1),uo(1)
-        ff(i,1) = self%force_per_unit_mass(i,j,k,1)
-        ff(i,2) = self%force_per_unit_mass(i,j,k,2)
-        ff(i,3) = self%force_per_unit_mass(i,j,k,3)
+        ff(i,1) = scratch%force_per_unit_mass(i,j,k,1)
+        ff(i,2) = scratch%force_per_unit_mass(i,j,k,2)
+        ff(i,3) = scratch%force_per_unit_mass(i,j,k,3)
       end do
-    else if (associated(self%force_per_unit_volume)) then
+    else if (associated(scratch%force_per_unit_volume)) then
       do i=lo(1),uo(1)
-        ff(i,1) = self%force_per_unit_volume(i,j,k,1)/d(i,j,k)
-        ff(i,2) = self%force_per_unit_volume(i,j,k,2)/d(i,j,k)
-        ff(i,3) = self%force_per_unit_volume(i,j,k,3)/d(i,j,k)
+        ff(i,1) = scratch%force_per_unit_volume(i,j,k,1)/d(i,j,k)
+        ff(i,2) = scratch%force_per_unit_volume(i,j,k,2)/d(i,j,k)
+        ff(i,3) = scratch%force_per_unit_volume(i,j,k,3)/d(i,j,k)
       end do
     else
       ff(:,:) = 0.0_dp
