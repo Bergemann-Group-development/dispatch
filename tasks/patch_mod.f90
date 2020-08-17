@@ -2785,7 +2785,7 @@ SUBROUTINE dump (self, tag, ad_hoc)
     ! Write nt time slots, in reverse order, starting from the most recent one
     !---------------------------------------------------------------------------
     do it=1,nt
-      jt = self%iit(self%nt-it)
+      jt = self%iit(self%nt-it+1)
       write (io_unit%dump) self%mem(:,:,:,:,jt,1)
     end do
     !$omp end critical (dump_cr)
