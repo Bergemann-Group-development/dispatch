@@ -111,7 +111,7 @@ SUBROUTINE init (self)
   si%mu_0    = math%pi4*1d-7
   si%eps_0   = 8.8542d-12
   si%pi      = math%pi
-  call units%output
+  !call units%output
   call trace%end ()
 END SUBROUTINE init
 
@@ -123,7 +123,7 @@ SUBROUTINE output (self)
   character(len=4):: system
   real(kind=8):: l, t, m
   real:: m_sun, r_sun, pc, au, grav, stefan, yr, myr
-  namelist /units_nml/ system, l, t, m
+  namelist /scaling_nml/ system, l, t, m
   namelist /cgs_nml/ m_sun, r_sun, pc, au, grav, stefan, yr, myr
   namelist /si_nml/ m_sun, r_sun, pc, au, grav, stefan, yr, myr
   !----------------------------------------------------------------------------
@@ -134,7 +134,7 @@ SUBROUTINE output (self)
   m      = self%m
   if (omp%master) then
     !$omp critical (write_nml_cr)
-    write (io_unit%nml, units_nml)
+    write (io_unit%nml, scaling_nml)
     m_sun  = cgs%m_sun
     r_sun  = cgs%r_sun
     pc     = cgs%pc
