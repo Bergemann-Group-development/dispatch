@@ -1123,7 +1123,8 @@ SUBROUTINE output (self)
   !-----------------------------------------------------------------------------
   ! High-cadence output of v_particle_t particles
   !-----------------------------------------------------------------------------
-  if (out_time > 0d0 .and. self%time >= self%out_next) then
+  if (out_time > 0d0 .and. self%time >= self%out_next &
+                     .and. self%time >= io%start_time) then
     call voutput (self)
     self%iout = self%iout + 1
     self%out_next = self%out_next + out_time
