@@ -29,7 +29,7 @@ MODULE particles_mod
   integer, parameter:: vparticle_key=1
   type, public, extends(particle_t):: vparticle_t
     integer(8):: id
-    real:: vg(3), dg
+    real:: vg(3), dg, dd
   contains
     procedure:: init => init_vparticle
     procedure:: pack => pack_vparticle

@@ -1110,8 +1110,8 @@ SUBROUTINE output (self)
   real, pointer, contiguous     :: tmp_r(:,:)
   real(8), pointer              :: total_mom(:,:)
   integer, pointer, contiguous  :: tmp_i(:)
-  integer                       :: i, j, n, i1, i2, i3, i4
-  integer, save                 :: itimer=0
+  integer                       :: i, j, n, i1, i2, i3, i4, n_out
+  integer, save                 :: itimer=0, n_print=5
   !-----------------------------------------------------------------------------
   if (.not. on) return
   call trace%begin ('particle_solver_t%output', itimer=itimer)
@@ -1125,9 +1125,22 @@ SUBROUTINE output (self)
   !-----------------------------------------------------------------------------
   if (out_time > 0d0 .and. self%time >= self%out_next &
                      .and. self%time >= io%start_time) then
-    call voutput (self)
-    self%iout = self%iout + 1
-    self%out_next = self%out_next + out_time
+    self%out_next = max(self%out_next,io%start_time)
+    n_out = 0
+    do while (self%time >= self%out_next)
+      if (n_print > 0) then
+        n_out = n_out+1
+        if (n_out > 1) then
+          !$omp critical (voutput_cr)
+          write (stdout,*) 'WARNING: duplicated output, cadence may be too high'
+          n_print = n_print-1
+          !$omp end critical (voutput_cr)
+        end if
+      end if
+      call voutput (self)
+      self%iout = self%iout + 1
+      self%out_next = self%out_next + out_time
+    end do
   end if
   if (self%time >= self%aux%aux_next) then
     call self%aux%register ('dust_s', self%s_cgs)
@@ -1158,7 +1171,7 @@ SUBROUTINE voutput (self)
   class(particle_solver_t):: self
   class(particles_t), pointer:: pp
   class(particle_t), pointer:: p
-  real,       pointer, contiguous:: r(:,:), v(:,:), vg(:,:), w(:), dg(:)
+  real,       pointer, contiguous:: r(:,:), v(:,:), vg(:,:), w(:), dg(:), dd(:)
   real(8),    pointer, contiguous:: t(:)
   integer(2), pointer, contiguous:: q(:,:)
   integer(8), pointer, contiguous:: id(:)
@@ -1183,7 +1196,7 @@ SUBROUTINE voutput (self)
   !m = (product(self%ub-self%lb+1)*particles_per_bin*n_bin)/output_every + 1
   !print *,m,n
   m = n
-  allocate (q(m,4), r(m,3), v(m,3), vg(m,3), dg(m), w(m), t(m), id(m))
+  allocate (q(m,4), r(m,3), v(m,3), vg(m,3), dg(m), dd(m), w(m), t(m), id(m))
   !-----------------------------------------------------------------------------
   n = 0
   do i4=1,n_bin
@@ -1215,7 +1228,7 @@ SUBROUTINE voutput (self)
    self%iout, n, self%id, self%time, self%patch%position-self%patch%size/2, &
    self%patch%ds
   write (io_unit%particle_d) q(1:n,:), r(1:n,:), v(1:n,:), vg(1:n,:), &
-    w(1:n), dg(1:n), t(1:n), id(1:n)
+    w(1:n), dg(1:n), dd(1:n), t(1:n), id(1:n)
   write (io_unit%particle_d) EOF
   backspace (io_unit%particle_d)
   n_tot = n_tot + n
@@ -1225,13 +1238,17 @@ SUBROUTINE voutput (self)
   call trace%end (itimer(2))
   call io%lock%unset ('particle_solver_t%voutput')
   !-----------------------------------------------------------------------------
-  deallocate (q, r, v, vg, dg, w, t, id)
+  deallocate (q, r, v, vg, dg, dd, w, t, id)
   call trace%end (itimer(1))
 contains
 
 subroutine harvest (copy)
   logical:: copy
   integer:: ng(4)
+  real(8):: llc(3), ds(3), pos(3)
+  !-----------------------------------------------------------------------------
+  llc = self%patch%position - self%patch%size/2d0 
+  ds = self%patch%ds
   ng(1:3) = self%patch%mesh%ng
   ng(4) = 0
   p => pp%head%next
@@ -1245,6 +1262,7 @@ subroutine harvest (copy)
         v (n,:) = p%v
         vg(n,:) = self%vg(:,p%q(1),p%q(2),p%q(3))
         dg(n)   = self%dg(  p%q(1),p%q(2),p%q(3))
+        dd(n)   = self%dd(  p%q(1),p%q(2),p%q(3),p%q(4))
         w (n)   = p%w
         t (n)   = p%t
         id(n)   = p%id-1

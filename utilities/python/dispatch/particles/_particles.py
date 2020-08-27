@@ -21,6 +21,7 @@ class particles(object):
             self.vg=np.zeros((parts,3,snaps),dtype=np.float32)
             self.w =np.zeros((parts,snaps),dtype=np.float32)
             self.dg=np.zeros((parts,snaps),dtype=np.float32)
+            self.dd=np.zeros((parts,snaps),dtype=np.float32)
             self.t =np.zeros((parts,snaps),dtype=np.float64)
             self.bin=np.zeros(parts,dtype=np.int16)
         from time import time
@@ -38,11 +39,11 @@ class particles(object):
                 if verbose>2:
                     print('id,n,io,t,pos,fmt: {} {} {} {:8.3f} {} {}'
                           .format(id,n,iout,t,pos,size))
-                s='(4,n)i2,(3,n)f4,(3,n)f4,(3,n)f4,(n)f4,(n)f4,(n)f8,(n)i8'
+                s='(4,n)i2,(3,n)f4,(3,n)f4,(3,n)f4,(n)f4,(n)f4,(n)f4,(n)f8,(n)i8'
                 s=s.replace('n','{}'.format(n))
                 if verbose>3:
                     print(s)
-                (q,p,v,vg,w,dg,t,i)=fd.read_record(s)[0]
+                (q,p,v,vg,w,dg,dd,t,i)=fd.read_record(s)[0]
                 bin=q[3,:]
                 for dir in range(3):
                     self.p [i,dir,iout]=(p[dir,:]+q[dir,:])*size[dir]+pos[dir]
@@ -50,6 +51,7 @@ class particles(object):
                     self.vg[i,dir,iout]=vg[dir,:]
                 self.w [i,iout]=w
                 self.dg[i,iout]=dg
+                self.dd[i,iout]=dd
                 self.t [i,iout]=t
                 self.bin[i]=bin
                 fmt=fd.read_record('i4')[0]
@@ -67,6 +69,7 @@ class particles(object):
         self.vg=self.vg[w,:,:]
         self.w =self.w [w,:]
         self.dg=self.dg[w,:]
+        self.dd=self.dd [w,:]
         self.t =self.t [w,:]
         self.bin=self.bin[w]
 
