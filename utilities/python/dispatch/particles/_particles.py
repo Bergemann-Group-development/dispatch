@@ -1,13 +1,29 @@
 import numpy as np
 from scipy.io import FortranFile
 
+class track(object):
+    """ track is an object with array attributes, which are
+        for example the times and weights of a single particle
+        as a function of time. Since these are pointer assignments,
+        the procedure is very fast.
+    """
+    def __init__(self,t,w,p,v,vg,dg,dd,bin):
+        self.t=t
+        self.w=w
+        self.p=p
+        self.v=v
+        self.vg=vg
+        self.dg=dg
+        self.dd=dd
+        self.bin=bin
+
 class particles(object):
     """ Create object holding array information on particles,
-        dimensioned [nbin,np,3,nt] and [nbin,np,nt].
+        dimensioned [np,3,nt] and [np,nt].
     """
-    def __init__(self,file,verbose=0):
-        self.file=file
-        ifile=file.replace('.pdat','.pinf')
+    def __init__(self,run='',data='../data',file='rank_00000.pdat',verbose=0):
+        self.file=data+'/'+run+'/'+file.replace('//','/')
+        ifile=self.file.replace('.pdat','.pinf')
         with FortranFile(ifile) as fd:
             bins,parts,snaps=fd.read_record('i4,i4,i4')[0]
             snaps=snaps+1
@@ -26,7 +42,7 @@ class particles(object):
             self.bin=np.zeros(parts,dtype=np.int16)
         from time import time
         start=time()
-        with FortranFile(file) as fd:
+        with FortranFile(self.file) as fd:
             fmt=fd.read_record('i4')[0]          # file format
             self.format=fmt
             if verbose>1:
@@ -73,6 +89,18 @@ class particles(object):
         self.t =self.t [w,:]
         self.bin=self.bin[w]
 
+    def list(self):
+        """ Return a list of particle tracks, where each track is
+            an object with array attributes.
+        """
+        tracks=[]
+        n=self.t.shape[0]
+        for i in range(n):
+            tr=track(self.t[i] ,self.w[i] ,self.p[i] ,self.v[i],
+                     self.vg[i],self.dg[i],self.dd[i],self.bin[i])
+            tracks.append(tr)
+        return tracks
+
     def select(self,condition):
         """ Make a selection using np.where, which is used to select 
             the elements that fulfil the criterion. All mumpy arrays
@@ -92,8 +120,8 @@ class particles(object):
         new.np=len(w)                   # number selected
         return new
         
-def open(file='fort.50',verbose=0):
+def open(run='',data='../data',file='rank_00000.pdat',verbose=0):
     """ Read all cell information in the given file, and
         concatenate the information into a single object
     """
-    return particles(file,verbose)
+    return particles(run,data,file,verbose)
