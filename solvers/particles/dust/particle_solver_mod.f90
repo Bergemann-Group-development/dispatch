@@ -25,6 +25,7 @@
 MODULE particle_solver_mod
   USE io_mod
   USE trace_mod
+  USE omp_lib
   USE omp_timer_mod
   USE omp_lock_mod
   USE mpi_mod
@@ -394,19 +395,19 @@ SUBROUTINE update (self)
   !.............................................................................
   real, dimension(3)          :: r, dr
   class(particle_t), pointer  :: p, next
-  real(8)                     :: time(2), v(3), wc, start
+  real(8)                     :: time(2), v(3), wc, start, self_time
   real                        :: ds, dt, os, n_min, n_max, ods, dd
   integer                     :: n, np, ne, nk, nm, nu, nx, m(3), ii(3), j
   integer(kind=2)             :: i, i1, i2, i3, i4, l(3), u(3), q(3)
   integer                     :: id, paid(5), istep, n_add, n_rem, np_prev
-  integer                     :: dim(4)
+  integer                     :: dim(4), n_update
   integer(8)                  :: pid
   logical                     :: move, export
   class(gpatch_t), pointer    :: patch
   type(particles_t), pointer  :: exports(:), exportp
   type(particles_t), pointer  :: particles, bins(:)
   real                        :: d, up, pc, pd(3), pa(3), w, pv(3), dv(3), pwd
-  real(8)                     :: times(9), wc1, wc2, sum
+  real(8)                     :: times(12), wc1, wc2, sum
   real(8)                     :: momentum(3,2), dvol
   real, pointer, contiguous   :: p1(:,:,:), p2(:,:,:), p3(:,:,:)
   type(mpi_counter_t), pointer:: counter
@@ -492,14 +493,17 @@ SUBROUTINE update (self)
   ! Non-vectorized pusher
   !-----------------------------------------------------------------------------
   ds = minval(patch%ds, mask=patch%mesh%n > 1)
-  times = 0d0
-  wc1 = wc
   n_min = particles_per_bin*min_fraction
   n_max = particles_per_bin*max_fraction
   !-----------------------------------------------------------------------------
   ! Import from other patches.
   !-----------------------------------------------------------------------------
   call self%import
+!define TIMER
+#ifdef TIMER
+  wc1=omp_get_wtime()
+  times = 0d0
+#endif
   !-----------------------------------------------------------------------------
   ! After the import, the interior particles should be maximally smoothly
   ! distributed, which is thus a good point to measure the dust bin density,
@@ -513,6 +517,9 @@ SUBROUTINE update (self)
     do i3=l(3)+1,u(3)-1
     do i2=l(2)+1,u(2)-1
     do i1=l(1)+1,u(1)-1
+#ifdef TIMER
+      wc2=omp_get_wtime(); times(1)=times(1)+(wc2-wc1); wc1=wc2
+#endif
       particles => self%particles(i1,i2,i3,i4)
       dd = 0.0
       p => particles%head%next
@@ -521,6 +528,9 @@ SUBROUTINE update (self)
         p => p%next
       end do
       self%dd(i1,i2,i3,i4) = dd
+#ifdef TIMER
+      wc2=omp_get_wtime(); times(2)=times(2)+(wc2-wc1); wc1=wc2
+#endif
       np = particles%n
       if (particles%n < n_min) then
         n_add = n_add+1
@@ -528,17 +538,29 @@ SUBROUTINE update (self)
           write(stdlog,'(2i6,3i4,2x,a,i4)') &
             patch%id,patch%istep,i1,i2,i3,'add',particles%n
         call add (self, particles)
+#ifdef TIMER
+        wc2=omp_get_wtime(); times(12)=times(12)+(wc2-wc1); wc1=wc2
+#endif
       else if (particles%n > n_max) then
         n_rem = n_rem+1
         if (verbose > 3) &
           write(stdlog,'(2i6,3i4,2x,a,i4)') &
             patch%id,patch%istep,i1,i2,i3,'rem',particles%n
         call remove (self, particles)
+#ifdef TIMER
+        wc2=omp_get_wtime(); times(11)=times(11)+(wc2-wc1); wc1=wc2
+#endif
       end if
       self%np = self%np + (particles%n - np)
+#ifdef TIMER
+      wc2=omp_get_wtime(); times(7)=times(7)+(wc2-wc1); wc1=wc2
+#endif
     end do
     end do
     end do
+#ifdef TIMER
+    wc2=omp_get_wtime(); times(9)=times(9)+(wc2-wc1); wc1=wc2
+#endif
     !---------------------------------------------------------------------------
     ! Copy edges from the next interior layer -- this is better than relying on
     ! particles that may be missing delayed import.  The dust densities are ONLY
@@ -569,6 +591,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   self%dtime = patch%dtime
   self%time = self%time + self%dtime
+  self_time = self%time
   !-----------------------------------------------------------------------------
   ! Now move
   !-----------------------------------------------------------------------------
@@ -580,6 +603,7 @@ SUBROUTINE update (self)
   self%new_momentum = 0d0
   self%vmax = 0.0
   self%np = 0
+  n_update = 0
   do i3=l(3),u(3)
   do i2=l(2),u(2)
   do i1=l(1),u(1)
@@ -589,27 +613,30 @@ SUBROUTINE update (self)
     d = patch%mem(i1,i2,i3,patch%idx%d,patch%it,1)
     ii = [i1,i2,i3]
     momentum(:,1) = 0d0
+#ifdef TIMER
+    wc2=omp_get_wtime(); times(3)=times(3)+(wc2-wc1); wc1=wc2
+#endif
     do i4=1,n_bin
       particles => self%particles(i1,i2,i3,i4)
       nu = nu + particles%n
       os = drag_coeff/self%s_cgs(i4)
-      associate (n_particles => timer%n_particles)
-      !$omp atomic update
-      n_particles = n_particles + particles%n
-      end associate
+      n_update = n_update + particles%n
       paid = particles%id
       up = patch%u_phase(i1,i2,i3)/ds
       pc = d*os
       np = particles%n
       p => particles%head%next
       do j=1,np
+#ifdef TIMER
+        wc2=omp_get_wtime(); times(4)=times(4)+(wc2-wc1); wc1=wc2
+#endif
         next => p%next
-        dt = 0.5*(self%time - p%t)
+        !dt = 0.5*(self_time - p%t)
+        dt = 1e-8
         if (dt > 0.0) then
-          if (abs(maxval(p%q)) > 100) then
-            write (stdlog,'(i6,2x,a,2i4,2x,3i6,3(2x,1p,3e12.3))') &
-            patch%id, 'move error0', j, particles%n, p%q(1:3), p%r, p%v, dt
-          end if
+#ifdef TIMER
+          wc2=omp_get_wtime(); times(5)=times(5)+(wc2-wc1); wc1=wc2
+#endif
           !- kick 1 ------------------------------------------------------------
           pa = 0.0                                     ! external force
           pd = pc*(v-p%v)                              ! drag force
@@ -621,43 +648,27 @@ SUBROUTINE update (self)
             dv = dt*(pa+pd)/(1.+pc*dt*(1.+pwd))        ! particle velocity delta
             p%v = p%v + dv                             ! particle update
             v = v - dv*pwd                             ! gas update
-          else
-            p%v = p%v + dt*(pa+pd)/(1.+pc*dt)          ! particle update
-          end if
-          if (max(abs(p%v(1)),abs(p%v(2)),abs(p%v(3))) > 1e5) then
-            write(stderr,*) 'warning, large p%v:', patch%id,i1,i2,i3,i4,j
-          end if
-          !- drift -------------------------------------------------------------
-          p%r = p%r + 2.*dt*p%v                        ! forward two dr
-          p%t = self%time
-          !if (self%forced) then
-          !  !call self%force (p)
-          !  r = mesh%p + (p%q + p%r - mesh%o)*mesh%d
-          !  p%a = self%pforce (r)
-          !end if
-          !- kick 2 ------------------------------------------------------------
-          pd = pc*(v-p%v)                              ! drag force
-          if (backreaction) then
+            p%r = p%r + 2.*dt*p%v                      ! forward two dr
+            p%t = self%time
+            pd = pc*(v-p%v)                            ! drag force
             dv = dt*(pa+pd)/(1.+pc*dt*(1.+pwd))        ! particle velocity delta
             p%v = p%v + dv                             ! particle update
             v = v - dv*pwd                             ! gas update
           else
             p%v = p%v + dt*(pa+pd)/(1.+pc*dt)          ! particle update
+            p%r = p%r + 2.*dt*p%v                      ! forward two dr
+            p%t = self%time
+            pd = pc*(v-p%v)                            ! drag force
+            p%v = p%v + dt*(pa+pd)/(1.+pc*dt)          ! particle update
           end if
           momentum(:,1) = momentum(:,1) + p%v*p%w      ! particle momentum
+#ifdef TIMER
+          wc2=omp_get_wtime(); times(6)=times(6)+(wc2-wc1); wc1=wc2
+#endif
           !- update q+r representation -----------------------------------------
-          if (abs(maxval(p%r)) > 100) then
-            q = floor(p%r)
-            write (stdlog,'(i6,2x,a,2i4,2(2x,3i6),3(2x,1p,3e12.3))') &
-            patch%id, 'move error1', j, particles%n, p%q(1:3), q, p%r, p%v, dt
-          end if
           q = floor(p%r)                               ! integer shift
           p%r = p%r - q                                ! remove
           p%q(1:3) = p%q(1:3) + q                      ! add
-          if (abs(maxval(p%q)) > 100) then
-            write (stdlog,'(i6,2x,a,2i4,2(2x,3i6),3(2x,1p,3e12.3))') &
-            patch%id, 'move error2', j, particles%n, p%q(1:3), q, p%r, p%v, dt
-          end if
           !---------------------------------------------------------------------
           move = .false.
           export = .false.
@@ -707,6 +718,9 @@ SUBROUTINE update (self)
           nk = nk + 1
         end if
         p => next
+#ifdef TIMER
+        wc2=omp_get_wtime(); times(8)=times(8)+(wc2-wc1); wc1=wc2
+#endif
       end do ! loop over particles
       self%np = self%np + particles%n
     end do ! loop over bins
@@ -738,6 +752,10 @@ SUBROUTINE update (self)
   end do
   end do
   end do
+  associate (n_particles => timer%n_particles)
+  !$omp atomic update
+  n_particles = n_particles + n_update
+  end associate
   self%ne = ne
   if (self%np > np_prev) then
     write(stdlog,*) patch%id, self%np,' should be <=', np_prev
@@ -822,6 +840,10 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   call io%bits_mem (storage_size(self%vg), -product(shape(self%vg)), 'vg')
   deallocate (self%vg)
+#ifdef TIMER
+  wc2=omp_get_wtime(); times(10)=times(10)+(wc2-wc1); wc1=wc2
+  write (stdout,'("times",3p,12f8.2)') times(1:12)
+#endif
   !-----------------------------------------------------------------------------
   call trace%end (itimer)
 END SUBROUTINE update
