@@ -520,7 +520,9 @@ SUBROUTINE update (self)
 #ifdef TIMER
       wc2=omp_get_wtime(); times(1)=times(1)+(wc2-wc1); wc1=wc2
 #endif
+#define DD
       particles => self%particles(i1,i2,i3,i4)
+#ifdef DD
       dd = 0.0
       p => particles%head%next
       do j=1,particles%n
@@ -528,6 +530,7 @@ SUBROUTINE update (self)
         p => p%next
       end do
       self%dd(i1,i2,i3,i4) = dd
+#endif
 #ifdef TIMER
       wc2=omp_get_wtime(); times(2)=times(2)+(wc2-wc1); wc1=wc2
 #endif
@@ -563,9 +566,10 @@ SUBROUTINE update (self)
 #endif
     !---------------------------------------------------------------------------
     ! Copy edges from the next interior layer -- this is better than relying on
-    ! particles that may be missing delayed import.  The dust densities are ONLY
-    ! used for dust size evolution!
+    ! particles that may be missing due to delayed import.  The dust densities
+    ! are ONLY used for diagnostics and dust size evolution!
     !---------------------------------------------------------------------------
+#ifdef DD
     do i3=l(3),u(3)
     do i2=l(2),u(2)
       self%dd(l(1),i2,i3,i4) = self%dd(l(1)+1,i2,i3,i4)
@@ -584,6 +588,7 @@ SUBROUTINE update (self)
       self%dd(i1,i2,u(3),i4) = self%dd(i1,i2,u(3)-1,i4)
     end do
     end do
+#endif
   end do
   call self%output
   !-----------------------------------------------------------------------------
@@ -687,10 +692,10 @@ SUBROUTINE update (self)
           if (export) then
             call particles%remove (p)
             call exports(i4)%append (p)
-            if (abs(maxval(p%q)) > 100) &
-              write (stdlog,*) 'export error', j, exports(i4)%n, p%q
+#ifdef DD
             self%dd(i1,i2,i3,i4) = &
             self%dd(i1,i2,i3,i4) - p%w
+#endif
             ne = ne+1
             if (verbose > 2) then
               write (stdlog,*) patch%id, 'export: q=', patch%id, p%q
@@ -703,10 +708,12 @@ SUBROUTINE update (self)
             self%vmax = max(self%vmax,abs(p%v(1)),abs(p%v(2)),abs(p%v(3)))
             call particles%remove (p)
             call self%particles(p%q(1),p%q(2),p%q(3),p%q(4))%append (p)
+#ifdef DD
             self%dd(i1,i2,i3,i4) = &
             self%dd(i1,i2,i3,i4) - p%w
             self%dd(p%q(1),p%q(2),p%q(3),i4) = &
             self%dd(p%q(1),p%q(2),p%q(3),i4) + p%w
+#endif
             nm = nm+1
           !---------------------------------------------------------------------
           ! Particle stays in this cell -- update vmax
@@ -1051,8 +1058,10 @@ SUBROUTINE import (self)
             call nbtask%exports(bin)%remove (p)
             particles => self%particles(p%q(1),p%q(2),p%q(3),p%q(4))
             call particles%append (p)
+#ifdef DD
             self%dd(q(1),q(2),q(3),p%q(4)) = &
             self%dd(q(1),q(2),q(3),p%q(4)) + p%w
+#endif
             ni = ni + 1
             ii(1) = self%patch%id; ii(2:4) = p%q(1:3); ii(5) = p%q(4)
           else if (verbose > 2) then

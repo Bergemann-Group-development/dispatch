@@ -1,9 +1,10 @@
 #!/bin/bash
-#SBATCH --job-name=tmp --exclusive --no-requeue
+#SBATCH --job-name=copyee2a
+#SBATCH --exclusive --no-requeue
 #SBATCH --nodes=1 --ntasks-per-node=1 --cpus-per-task=96 --ntasks-per-core=2
-#SBATCH --partition=astro2_devel
+##SBATCH --partition=astro2_devel
 ##SBATCH --partition=astro2_long
-##SBATCH --partition=astro2_short
+#SBATCH --partition=astro2_short
 ##SBATCH --exclude=astro06-08
 ##SBATCH --mem=NNNgb
 
@@ -14,6 +15,7 @@ set -x
 
 # data/run directory
 run=tmp
+run=input-copyee2a
 mkdir -p data/$run
 
 # file names for input and executable
