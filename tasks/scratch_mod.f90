@@ -18,7 +18,7 @@ MODULE scratch_mod
     generic:: allocate => allocate_3d, allocate_4d
   end type
   type(scratch_t), public:: scratch
-  !$threadptivate (scratch)
+  !$omp threadprivate (scratch)
 CONTAINS
 
 !===============================================================================

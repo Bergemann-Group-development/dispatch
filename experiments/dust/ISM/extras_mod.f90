@@ -123,12 +123,10 @@ END SUBROUTINE dealloc
 !===============================================================================
 SUBROUTINE pre_update (self)
   class(extras_t), target:: self
-  class(patch_t), pointer:: patch
   !.............................................................................
   call trace%begin ('extras_t%pre_update')
   call self%gpatch_t%pre_update                                 ! keep
   self%gpatch => self                                           ! keep
-  patch => self                                                 ! keep
   call self%forces%pre_update                                   ! forces
   call self%selfgravity%pre_update                              ! selfg
   call self%cooling%pre_update                                  ! cool

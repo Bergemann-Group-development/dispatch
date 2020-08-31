@@ -83,7 +83,7 @@ SUBROUTINE pre_update (self)
   real, dimension(:,:,:,:), pointer :: p
   class(gpatch_t), pointer:: patch
   type(index_t), pointer:: idx
-  integer:: m(3), new
+  integer:: new
   logical, save:: first_time=.true.
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -93,12 +93,7 @@ SUBROUTINE pre_update (self)
   !-----------------------------------------------------------------------------
   if (associated(self%force%selected)) then
     patch => self%patch
-    if (.not.associated(scratch%force_per_unit_mass)) then
-      m = patch%mesh%gn
-      allocate (scratch%force_per_unit_mass(m(1),m(2),m(3),3))
-      call io%bits_mem (storage_size(scratch%force_per_unit_mass), &
-                       product(shape(scratch%force_per_unit_mass)), 'fpm')
-    end if
+    call scratch%allocate (scratch%force_per_unit_mass, patch%mesh%gn)
     idx => patch%idx
     new = patch%new
     d => patch%mem(:,:,:,idx%d,new,1)
