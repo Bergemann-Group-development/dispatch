@@ -60,7 +60,7 @@ SUBROUTINE init (self, patch)
   class(patch_t)               :: patch
   integer                      :: id
   !.............................................................................
-  real(8)                      :: position(3), radius
+  real(8)                      :: position(3)
   real(8)                      :: size(3), p(3), limit(3)
   integer                      :: i, j, k
   logical                      :: one_inside, all_inside
@@ -115,7 +115,7 @@ SUBROUTINE init (self, patch)
   end do
   do k=-1,1; do j=-1,1; do i=-1,1
     p(:) = position(:) + 0.5*size(:)*[i,j,k]
-    if (sum(p**2) < radius**2) then
+    if (sum(p**2) < self%radius**2) then
       one_inside = .true.
     else
       all_inside = .false.
