@@ -36,6 +36,7 @@ MODULE forces_mod
     procedure:: init
     procedure:: dealloc
     procedure:: pre_update
+    procedure:: post_update
   end type
 CONTAINS
 
@@ -108,5 +109,13 @@ SUBROUTINE pre_update (self)
   end if
   call trace%end (itimer)
 END SUBROUTINE pre_update
+
+!===============================================================================
+!> Stub
+!===============================================================================
+SUBROUTINE post_update (self)
+  class(forces_t)                               :: self
+  !.............................................................................
+END SUBROUTINE post_update
 
 END MODULE forces_mod

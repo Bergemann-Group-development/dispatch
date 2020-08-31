@@ -471,7 +471,7 @@ SUBROUTINE pack (self)
   integer, pointer:: buffer(:)
   real, allocatable:: r(:,:,:)
   class(dll_node_t), pointer:: part
-  integer:: np
+  integer(8):: np
   !-----------------------------------------------------------------------------
   call trace%begin ('trace_particles_t%pack')
   !-----------------------------------------------------------------------------
@@ -494,7 +494,7 @@ SUBROUTINE unpack (self)
   integer, pointer:: buffer(:)
   real, allocatable:: r(:,:,:)
   class(dll_node_t), pointer:: part
-  integer:: np
+  integer(8):: np
   !-----------------------------------------------------------------------------
   call trace%begin ('trace_particles_t%pack')
   !-----------------------------------------------------------------------------
