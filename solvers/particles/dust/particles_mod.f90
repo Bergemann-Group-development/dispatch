@@ -55,6 +55,7 @@ MODULE particles_mod
     procedure:: pack => pack_particles
     procedure:: statistics
     procedure:: total_momentum
+    procedure:: density
   end type
   !--- cartesian arrangement of particle bins ---
   type, public:: bins_t
@@ -374,5 +375,22 @@ FUNCTION total_momentum (self) RESULT (sum)
     p => p%next
   end do
 END FUNCTION total_momentum
+
+!===============================================================================
+!> Compute total momentum of particles
+!===============================================================================
+FUNCTION density (self) RESULT (sum)
+  class(particles_t):: self
+  real:: sum
+  type(particle_t), pointer:: p
+  integer:: j
+  !-----------------------------------------------------------------------------
+  sum = 0.0
+  p => self%head%next
+  do j=1,self%n
+    sum = sum + p%w
+    p => p%next
+  end do
+END FUNCTION density
 
 END MODULE particles_mod

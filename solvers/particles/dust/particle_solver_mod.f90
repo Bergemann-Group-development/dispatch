@@ -86,6 +86,7 @@ MODULE particle_solver_mod
     procedure:: update_momentum
     procedure:: global_momentum
     procedure:: courant_condition
+    procedure:: density
   end type
   type(particles_t), pointer :: pool          ! particle pool
   !$omp threadprivate (pool)                  ! for each thread
@@ -506,7 +507,11 @@ SUBROUTINE update (self)
 #ifdef TIMER
   wc1=omp_get_wtime()
   times = 0d0
+#define TIMEIT(i) wc2=omp_get_wtime(); times(i)=times(i)+(wc2-wc1); wc1=wc2
+#else
+#define TIMEIT(i) 
 #endif
+
   !-----------------------------------------------------------------------------
   ! After the import, the interior particles should be maximally smoothly
   ! distributed, which is thus a good point to measure the dust bin density,
@@ -520,11 +525,9 @@ SUBROUTINE update (self)
     do i3=l(3)+1,u(3)-1
     do i2=l(2)+1,u(2)-1
     do i1=l(1)+1,u(1)-1
-#ifdef TIMER
-      wc2=omp_get_wtime(); times(1)=times(1)+(wc2-wc1); wc1=wc2
-#endif
+      TIMEIT(1)
       particles => self%particles(i1,i2,i3,i4)
-#define DD
+!define DD
 #ifdef DD
       dd = 0.0
       p => particles%head%next
@@ -534,9 +537,7 @@ SUBROUTINE update (self)
       end do
       self%dd(i1,i2,i3,i4) = dd
 #endif
-#ifdef TIMER
-      wc2=omp_get_wtime(); times(2)=times(2)+(wc2-wc1); wc1=wc2
-#endif
+      TIMEIT(2)
       np = particles%n
       if (particles%n < n_min) then
         n_add = n_add+1
@@ -544,29 +545,20 @@ SUBROUTINE update (self)
           write(stdlog,'(2i6,3i4,2x,a,i4)') &
             patch%id,patch%istep,i1,i2,i3,'add',particles%n
         call add (self, particles)
-#ifdef TIMER
-        wc2=omp_get_wtime(); times(12)=times(12)+(wc2-wc1); wc1=wc2
-#endif
+      TIMEIT(3)
       else if (particles%n > n_max) then
         n_rem = n_rem+1
         if (verbose > 3) &
           write(stdlog,'(2i6,3i4,2x,a,i4)') &
             patch%id,patch%istep,i1,i2,i3,'rem',particles%n
         call remove (self, particles)
-#ifdef TIMER
-        wc2=omp_get_wtime(); times(11)=times(11)+(wc2-wc1); wc1=wc2
-#endif
+      TIMEIT(4)
       end if
       self%np = self%np + (particles%n - np)
-#ifdef TIMER
-      wc2=omp_get_wtime(); times(7)=times(7)+(wc2-wc1); wc1=wc2
-#endif
+      TIMEIT(5)
     end do
     end do
     end do
-#ifdef TIMER
-    wc2=omp_get_wtime(); times(9)=times(9)+(wc2-wc1); wc1=wc2
-#endif
     !---------------------------------------------------------------------------
     ! Copy edges from the next interior layer -- this is better than relying on
     ! particles that may be missing due to delayed import.  The dust densities
@@ -621,9 +613,7 @@ SUBROUTINE update (self)
     d = patch%mem(i1,i2,i3,patch%idx%d,patch%new,1)
     ii = [i1,i2,i3]
     momentum(:,1) = 0d0
-#ifdef TIMER
-    wc2=omp_get_wtime(); times(3)=times(3)+(wc2-wc1); wc1=wc2
-#endif
+    TIMEIT(6)
     do i4=1,n_bin
       particles => self%particles(i1,i2,i3,i4)
       nu = nu + particles%n
@@ -635,15 +625,11 @@ SUBROUTINE update (self)
       np = particles%n
       p => particles%head%next
       do j=1,np
-#ifdef TIMER
-        wc2=omp_get_wtime(); times(4)=times(4)+(wc2-wc1); wc1=wc2
-#endif
+        TIMEIT(7)
         next => p%next
         dt = 0.5*(self_time - p%t)
         if (dt > 0.0) then
-#ifdef TIMER
-          wc2=omp_get_wtime(); times(5)=times(5)+(wc2-wc1); wc1=wc2
-#endif
+          TIMEIT(8)
           !- kick 1 ------------------------------------------------------------
           pa = 0.0                                     ! external force
           pd = pc*(v-p%v)                              ! drag force
@@ -656,7 +642,7 @@ SUBROUTINE update (self)
             p%v = p%v + dv                             ! particle update
             v = v - dv*pwd                             ! gas update
             p%r = p%r + 2.*dt*p%v                      ! forward two dr
-            p%t = self%time
+            p%t = self_time
             pd = pc*(v-p%v)                            ! drag force
             dv = dt*(pa+pd)/(1.+pc*dt*(1.+pwd))        ! particle velocity delta
             p%v = p%v + dv                             ! particle update
@@ -664,14 +650,12 @@ SUBROUTINE update (self)
           else
             p%v = p%v + dt*(pa+pd)/(1.+pc*dt)          ! particle update
             p%r = p%r + 2.*dt*p%v                      ! forward two dr
-            p%t = self%time
+            p%t = self_time
             pd = pc*(v-p%v)                            ! drag force
             p%v = p%v + dt*(pa+pd)/(1.+pc*dt)          ! particle update
           end if
           momentum(:,1) = momentum(:,1) + p%v*p%w      ! particle momentum
-#ifdef TIMER
-          wc2=omp_get_wtime(); times(6)=times(6)+(wc2-wc1); wc1=wc2
-#endif
+          TIMEIT(9)
           !- update q+r representation -----------------------------------------
           q = floor(p%r)                               ! integer shift
           p%r = p%r - q                                ! remove
@@ -727,9 +711,7 @@ SUBROUTINE update (self)
           nk = nk + 1
         end if
         p => next
-#ifdef TIMER
-        wc2=omp_get_wtime(); times(8)=times(8)+(wc2-wc1); wc1=wc2
-#endif
+        TIMEIT(10)
       end do ! loop over particles
       self%np = self%np + particles%n
     end do ! loop over bins
@@ -850,8 +832,7 @@ SUBROUTINE update (self)
   call io%bits_mem (storage_size(self%vg), -product(shape(self%vg)), 'vg')
   deallocate (self%vg)
 #ifdef TIMER
-  wc2=omp_get_wtime(); times(10)=times(10)+(wc2-wc1); wc1=wc2
-  write (stdout,'("times",3p,12f8.2)') times(1:12)
+  write (stdout,'("times",3p,12f8.2)') times(1:10)
 #endif
   !-----------------------------------------------------------------------------
   call trace%end (itimer)
@@ -1164,6 +1145,7 @@ SUBROUTINE output (self)
     end do
   end if
   if (self%time >= self%aux%aux_next) then
+    call self%density
     call self%aux%register ('dust_s', self%s_cgs)
     call self%aux%register ('dust_d', self%dd)
     total_mom => total_momentum
@@ -1352,5 +1334,23 @@ SUBROUTINE courant_condition (self)
   end if
   call trace%end ()
 END SUBROUTINE courant_condition
+
+!===============================================================================
+!> Compute dust density
+!===============================================================================
+SUBROUTINE density (self)
+  class(particle_solver_t):: self
+  integer:: i1, i2, i3, i4
+  !-----------------------------------------------------------------------------
+  do i4=1,self%n_bin
+    do i3=self%lb(3),self%ub(3)
+      do i2=self%lb(2),self%ub(2)
+        do i1=self%lb(1),self%ub(1)
+          self%dd(i1,i2,i3,i4) = self%particles(i1,i2,i3,i4)%density()
+        end do
+      end do
+    end do
+  end do
+END SUBROUTINE density
 
 END MODULE particle_solver_mod
