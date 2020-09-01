@@ -105,10 +105,12 @@ MODULE particle_solver_mod
   real:: min_fraction = 0.7                   ! lower limit
   real:: max_fraction = 1.4                   ! upper limit
   real:: drag_coeff                           ! scaled value
+  real:: eps=1e-5                             ! momentum error tolerance
   real(8):: out_time = -1.0                   ! output cadence
   logical:: particle_io = .false.             ! output particle positions?
   logical:: backreaction = .false.            ! backreaction on gas
-  logical:: detailed_timer = .false.
+  logical:: detailed_timer = .false.          ! precision timing
+  logical:: debug=.false.                     ! check things
   logical:: on = .true.
   !-----------------------------------------------------------------------------
   ! Total momentum is counted using the mpi_counter data type.  The
@@ -131,7 +133,7 @@ SUBROUTINE pre_init (self, patch)
     n_bin, particles_per_bin, seed, ip_dbg, id_dbg, i_dbg, &
     min_fraction, max_fraction, max_size_cgs, min_size_cgs, &
     density_yr_cgs, solid_density_cgs, dust_to_gas, output_every, &
-    backreaction
+    backreaction, debug
   logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
   call trace%begin ('particle_solver_t%pre_init')
@@ -303,9 +305,9 @@ SUBROUTINE initial_condition (self)
   do i2=self%lb(2),self%ub(2)
     n = 0
     do i1=self%lb(1),self%ub(1)
-      d = patch%mem(i1,i2,i3,patch%idx%d,patch%it,1)
+      d = patch%mem(i1,i2,i3,patch%idx%d,patch%new,1)
       w = d*dust_to_gas/(n_bin*particles_per_bin)
-      vg = patch%mem(i1,i2,i3,patch%idx%px:patch%idx%pz,patch%it,1) &
+      vg = patch%mem(i1,i2,i3,patch%idx%px:patch%idx%pz,patch%new,1) &
         / (patch%ds*d)
       do i4=1,n_bin
         particles => self%particles(i1,i2,i3,i4)
@@ -448,8 +450,8 @@ SUBROUTINE update (self)
   time(1) = wallclock()
   !-----------------------------------------------------------------------------
   ods = 1.0/patch%ds(1)
-  self%dust%d => patch%mem(:,:,:,patch%idx%d              ,patch%it,1)
-  self%dust%p => patch%mem(:,:,:,patch%idx%px:patch%idx%pz,patch%it,1)
+  self%dust%d => patch%mem(:,:,:,patch%idx%d              ,patch%new,1)
+  self%dust%p => patch%mem(:,:,:,patch%idx%px:patch%idx%pz,patch%new,1)
   !-----------------------------------------------------------------------------
   ! Allocate array for number of particles per cell-bin
   !-----------------------------------------------------------------------------
@@ -457,6 +459,7 @@ SUBROUTINE update (self)
   allocate (self%vg(3,m(1),m(2),m(3)))
   call io%bits_mem (storage_size(self%vg), &
                    product(shape(self%vg)), 'vg')
+  self%vg = 0.0
   !-----------------------------------------------------------------------------
   ! Cache the gas velocity
   !-----------------------------------------------------------------------------
@@ -468,12 +471,12 @@ SUBROUTINE update (self)
   do i3=l(3),u(3)
   do i2=l(2),u(2)
   do i1=l(1),u(1)
-    self%vg(i,i1,i2,i3) = patch%mem(i1,i2,i3,patch%idx%px+i-1,patch%it,1) &
+    self%vg(i,i1,i2,i3) = patch%mem(i1,i2,i3,patch%idx%px+i-1,patch%new,1) &
                         / (self%dg(i1,i2,i3)*patch%ds(i))
     if (abs(self%vg(i,i1,i2,i3)) > 1e1/patch%ds(1)) then
       write(stderr,'(a,2i6,4i4,2(2x,1p,3e11.2))') &
       'warning, large vg:', patch%id,patch%istep,i1,i2,i3,i, &
-      patch%mem(i1,i2,i3,patch%idx%px+i-1,patch%it,1), &
+      patch%mem(i1,i2,i3,patch%idx%px+i-1,patch%new,1), &
       self%dg(i1,i2,i3)
     end if
   end do
@@ -520,8 +523,8 @@ SUBROUTINE update (self)
 #ifdef TIMER
       wc2=omp_get_wtime(); times(1)=times(1)+(wc2-wc1); wc1=wc2
 #endif
-#define DD
       particles => self%particles(i1,i2,i3,i4)
+#define DD
 #ifdef DD
       dd = 0.0
       p => particles%head%next
@@ -615,7 +618,7 @@ SUBROUTINE update (self)
     v(1) = self%vg(1,i1,i2,i3)
     v(2) = self%vg(2,i1,i2,i3)
     v(3) = self%vg(3,i1,i2,i3)
-    d = patch%mem(i1,i2,i3,patch%idx%d,patch%it,1)
+    d = patch%mem(i1,i2,i3,patch%idx%d,patch%new,1)
     ii = [i1,i2,i3]
     momentum(:,1) = 0d0
 #ifdef TIMER
@@ -636,8 +639,7 @@ SUBROUTINE update (self)
         wc2=omp_get_wtime(); times(4)=times(4)+(wc2-wc1); wc1=wc2
 #endif
         next => p%next
-        !dt = 0.5*(self_time - p%t)
-        dt = 1e-8
+        dt = 0.5*(self_time - p%t)
         if (dt > 0.0) then
 #ifdef TIMER
           wc2=omp_get_wtime(); times(5)=times(5)+(wc2-wc1); wc1=wc2
@@ -753,7 +755,7 @@ SUBROUTINE update (self)
     momentum(:,1) = momentum(:,1)*patch%ds          ! particle momentum
     momentum(:,2) = d*v*patch%ds                    ! gas momentum
     self%new_momentum(:,1) = &
-    self%new_momentum(:,1) + momentum(:,1)*dvol     ! measured gas momentum
+    self%new_momentum(:,1) + momentum(:,1)*dvol     ! measured particle momentum
     self%new_momentum(:,2) = &
     self%new_momentum(:,2) + momentum(:,2)*dvol     ! measured gas momentum
   end do
@@ -856,7 +858,7 @@ SUBROUTINE update (self)
 END SUBROUTINE update
 
 !===============================================================================
-!> top up particles per size bin
+!> Top up particles per size bin
 !===============================================================================
 SUBROUTINE add (self, particles)
   class(particle_solver_t)    :: self
@@ -865,55 +867,60 @@ SUBROUTINE add (self, particles)
   real                        :: w, m0(3), m1(3), v(3), dd
   real(8)                     :: t
   integer                     :: n, i, j, q(4), n_add
-  !.............................................................................
-  m0 = 0.0                    ! initial momentum
-  dd = 0.0                    ! dust bin density
+  !-----------------------------------------------------------------------------
   n = particles%n
+  if (debug .and. n == 0) then
+    write (stdlog,'(a,4i4)') &
+      'particle_solver_t%add WARNING: zero particles', self%id
+    return
+  end if
+  m0 = 0.0                              ! initial momentum
+  dd = 0.0                              ! dust bin density
   p => particles%head%next
   do j=1,n
     dd = dd + p%w
     m0 = m0 + p%v*p%w
     p => p%next
   end do
-  t = 0d0                      ! time
-  m1 = 0.0                     ! momentum after renormalization
-  w = dd/particles_per_bin     ! new weights
-  p => particles%head%next
-  q = p%q
+  !-----------------------------------------------------------------------------
+  t = 0d0                               ! time
+  m1 = 0.0                              ! momentum after renormalization
+  w = dd/particles_per_bin              ! new weights
+  p => particles%head%next              ! first particle
+  q = p%q                               ! for new particles
   do j=1,n
     p%w = w
     m1 = m1 + p%v*p%w
     t = t + p%t
     p => p%next
   end do
-  t = t/n                       ! average time
-  n_add = particles_per_bin-n   ! number to add
+  t = t/n                               ! average time
+  !-----------------------------------------------------------------------------
+  n_add = particles_per_bin-n           ! number to add
   if (w==0.0 .or. n_add==0) then
-    v = 0.0                     ! rare case, or many zero-w particles
+    v = 0.0                             ! rare case, or many zero-w particles
   else
-    v = (m0-m1)/(n_add*w)       ! speed to match momentum
+    v = (m0-m1)/(n_add*w)               ! speed to match momentum
   end if
+  !-----------------------------------------------------------------------------
   do j=1,n_add
-    p => pool%pop ()
+    p => pool%pop ()                    ! re-cycled particle
     do i=1,3
-      p%q(i) = q(i)
-      p%v(i) = v(i)
-      p%r(i) = self%random%ran1()
+      p%q(i) = q(i)                     ! place it
+      p%v(i) = v(i)                     ! kick it
+      p%r(i) = self%random%ran1()       ! stir it
     end do
-    p%q(4) = q(4)
-    p%w = w
-    p%t = t
-    call particles%append (p)
+    p%q(4) = q(4)                       ! bin it
+    p%w = w                             ! weigh it
+    p%t = t                             ! time it
+    call particles%append (p)           ! add it
   end do
-  if (.false.) then
-    m1 = 0.0
-    p => particles%head%next
-    q = p%q
-    do j=1,particles%n
-      m1 = m1 + p%v*p%w
-      p => p%next
-    end do
-    print '(4i4,2(2x,1p,3e14.6))',q(1:3),n_add,m0,m1
+  !-----------------------------------------------------------------------------
+  if (debug) then
+    m1 = particles%total_momentum()
+    if (sum((m0-m1)**2) > eps*sum((m0+m1)**2)) then
+      write (stderr,*) 'particle_solver_t%add error:', m0, m1
+    end if
   end if
 END SUBROUTINE add
 
@@ -924,28 +931,22 @@ SUBROUTINE remove (self, particles)
   class(particle_solver_t)    :: self
   type(particles_t), pointer  :: particles
   class(particle_t), pointer  :: p, next
-  real                        :: dd
-  real                        :: w, m0(3), m1(3), m2(3), v(3)
-  integer                     :: np, nf, j, q(4)
+  real                        :: dd, dw, mm(3), dm(3), m0(3), m1(3)
+  integer                     :: n, j
   logical                     :: kill
-  logical                     :: debug=.false.
+  real                        :: eps=1e-5
   !-----------------------------------------------------------------------------
-  ! Measure momentum
+  if (debug) then
+    m0 = particles%total_momentum()
+  end if
   !-----------------------------------------------------------------------------
-  m0 = 0.0
+  ! Remove particles into the threadprivate re-use pool, while measuring the
+  ! mass and momentum removed
+  !-----------------------------------------------------------------------------
   dd = 0.0
-  np = particles%n
+  mm = 0.0
   p => particles%head%next
-  do j=1,np
-    m0 = m0 + p%v*p%w                   ! total momentum
-    dd = dd + p%w                       ! dust bin density
-    p => p%next
-  end do
-  !-----------------------------------------------------------------------------
-  ! Remove particles
-  !-----------------------------------------------------------------------------
-  p => particles%head%next
-  do j=1,np
+  do j=1,particles%n
     next => p%next
     if (particles%n > particles_per_bin) then
       kill = .false.
@@ -954,6 +955,8 @@ SUBROUTINE remove (self, particles)
         kill = .true.
       end select
       if (kill) then
+        dd = dd + p%w
+        mm = mm + p%w*p%v
         call particles%remove (p)
         call pool%append (p)
       end if
@@ -963,39 +966,26 @@ SUBROUTINE remove (self, particles)
     p => next
   end do
   !-----------------------------------------------------------------------------
-  ! Measure momentum with renormalized weights
+  ! Adjust mass and momentum of remaining particles
   !-----------------------------------------------------------------------------
-  np = particles%n
-  w = dd/np                               ! new weight factor
-  m1 = 0.0
+  n = particles%n
+  dw = dd/n                     ! mass to add to each particle
+  dm = mm/n                     ! momentum to add to each particle
   p => particles%head%next
-  do j=1,np
-    p%w = w
-    m1 = m1 + p%v*p%w
+  do j=1,n
+    p%w = p%w + dw              ! times np = dd
+    p%v = p%v*(p%w-dw)/p%w      ! conserve momentum with new weight
+    p%v = p%v + dm/p%w          ! p%w weighted sum = dm
     p => p%next
   end do
-  !-----------------------------------------------------------------------------
-  ! Adjust momentum
-  !-----------------------------------------------------------------------------
-  if (w==0.0) then
-    v = 0.0                       ! rare case, or many particle-w = 0.0
-  else
-    v = (m0-m1)/(w*np)            ! velocity increment to compensate
-  end if
-  p => particles%head%next
-  do j=1,np
-    p%v = p%v + v
-    p => p%next
-  end do
+  !.............................................................................
   if (debug) then
-    m2 = 0.0
-    p => particles%head%next
-    q = p%q
-    do j=1,particles%n
-      m2 = m2 + p%v*p%w
-      p => p%next
-    end do
-    print '(4i4,5(2x,1p,3f8.4))', q(1:3),np,m0,m1,m2
+    m1 = particles%total_momentum()
+    if (sum((m0-m1)**2) > eps*sum((m0+m1)**2)) then
+      write (stderr,'(a,5i4,3(2x,1p,3e11.2))') &
+      'particle_solver_t%remove error:', particles%id, m0, m1, &
+      sum((m0-m1)**2), sum((m0+m1)**2)
+    end if
   end if
 END SUBROUTINE remove
 

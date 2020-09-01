@@ -54,6 +54,7 @@ MODULE particles_mod
     procedure:: dump
     procedure:: pack => pack_particles
     procedure:: statistics
+    procedure:: total_momentum
   end type
   !--- cartesian arrangement of particle bins ---
   type, public:: bins_t
@@ -356,5 +357,22 @@ SUBROUTINE statistics (self)
   write (stdlog,'(a,i12,2x,a,i5)') &
     'particles_t%statistics:',id,'particles on thread',omp%thread_global
 END SUBROUTINE statistics
+
+!===============================================================================
+!> Compute total momentum of particles
+!===============================================================================
+FUNCTION total_momentum (self) RESULT (sum)
+  class(particles_t):: self
+  real:: sum(3)
+  type(particle_t), pointer:: p
+  integer:: j
+  !-----------------------------------------------------------------------------
+  sum = 0.0
+  p => self%head%next
+  do j=1,self%n
+    sum = sum + p%v*p%w
+    p => p%next
+  end do
+END FUNCTION total_momentum
 
 END MODULE particles_mod
