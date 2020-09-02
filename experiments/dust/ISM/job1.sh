@@ -16,7 +16,7 @@ set -x
 # data/run directory
 run=tmp
 #run=input-copyee2a
-run=1pc-2
+#run=1pc-2
 #run=1pc-2-128
 mkdir -p data/$run
 

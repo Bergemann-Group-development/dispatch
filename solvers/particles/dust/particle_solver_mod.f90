@@ -410,7 +410,7 @@ SUBROUTINE update (self)
   type(particles_t), pointer  :: exports(:), exportp
   type(particles_t), pointer  :: particles, bins(:)
   real                        :: d, up, pc, pd(3), pa(3), w, pv(3), dv(3), pwd
-  real(8)                     :: times(12), wc1, wc2, sum
+  real(8)                     :: times(15), wc1, wc2, sum
   real(8)                     :: momentum(3,2), dvol
   real, pointer, contiguous   :: p1(:,:,:), p2(:,:,:), p3(:,:,:)
   type(mpi_counter_t), pointer:: counter
@@ -503,6 +503,10 @@ SUBROUTINE update (self)
   ! Import from other patches.
   !-----------------------------------------------------------------------------
   call self%import
+
+  !-----------------------------------------------------------------------------
+  !> Macro for performance measurement -- no impaact when TIMER is undefined
+  !-----------------------------------------------------------------------------
 !define TIMER
 #ifdef TIMER
   wc1=omp_get_wtime()
@@ -511,7 +515,6 @@ SUBROUTINE update (self)
 #else
 #define TIMEIT(i) 
 #endif
-
   !-----------------------------------------------------------------------------
   ! After the import, the interior particles should be maximally smoothly
   ! distributed, which is thus a good point to measure the dust bin density,
@@ -525,19 +528,7 @@ SUBROUTINE update (self)
     do i3=l(3)+1,u(3)-1
     do i2=l(2)+1,u(2)-1
     do i1=l(1)+1,u(1)-1
-      TIMEIT(1)
       particles => self%particles(i1,i2,i3,i4)
-!define DD
-#ifdef DD
-      dd = 0.0
-      p => particles%head%next
-      do j=1,particles%n
-        dd = dd + p%w
-        p => p%next
-      end do
-      self%dd(i1,i2,i3,i4) = dd
-#endif
-      TIMEIT(2)
       np = particles%n
       if (particles%n < n_min) then
         n_add = n_add+1
@@ -545,17 +536,18 @@ SUBROUTINE update (self)
           write(stdlog,'(2i6,3i4,2x,a,i4)') &
             patch%id,patch%istep,i1,i2,i3,'add',particles%n
         call add (self, particles)
-      TIMEIT(3)
+        TIMEIT(1)
       else if (particles%n > n_max) then
         n_rem = n_rem+1
         if (verbose > 3) &
           write(stdlog,'(2i6,3i4,2x,a,i4)') &
             patch%id,patch%istep,i1,i2,i3,'rem',particles%n
         call remove (self, particles)
-      TIMEIT(4)
+        TIMEIT(2)
+      else
+        TIMEIT(3)
       end if
       self%np = self%np + (particles%n - np)
-      TIMEIT(5)
     end do
     end do
     end do
@@ -564,28 +556,9 @@ SUBROUTINE update (self)
     ! particles that may be missing due to delayed import.  The dust densities
     ! are ONLY used for diagnostics and dust size evolution!
     !---------------------------------------------------------------------------
-#ifdef DD
-    do i3=l(3),u(3)
-    do i2=l(2),u(2)
-      self%dd(l(1),i2,i3,i4) = self%dd(l(1)+1,i2,i3,i4)
-      self%dd(u(1),i2,i3,i4) = self%dd(u(1)-1,i2,i3,i4)
-    end do
-    end do
-    do i3=l(3),u(3)
-    do i1=l(1),u(1)
-      self%dd(i1,l(2),i3,i4) = self%dd(i1,l(2)+1,i3,i4)
-      self%dd(i1,u(2),i3,i4) = self%dd(i1,u(2)-1,i3,i4)
-    end do
-    end do
-    do i2=l(2),u(2)
-    do i1=l(1),u(1)
-      self%dd(i1,i2,l(3),i4) = self%dd(i1,i2,l(3)+1,i4)
-      self%dd(i1,i2,u(3),i4) = self%dd(i1,i2,u(3)-1,i4)
-    end do
-    end do
-#endif
   end do
   call self%output
+  TIMEIT(4)
   !-----------------------------------------------------------------------------
   ! Time step control
   !-----------------------------------------------------------------------------
@@ -613,7 +586,6 @@ SUBROUTINE update (self)
     d = patch%mem(i1,i2,i3,patch%idx%d,patch%new,1)
     ii = [i1,i2,i3]
     momentum(:,1) = 0d0
-    TIMEIT(6)
     do i4=1,n_bin
       particles => self%particles(i1,i2,i3,i4)
       nu = nu + particles%n
@@ -625,11 +597,11 @@ SUBROUTINE update (self)
       np = particles%n
       p => particles%head%next
       do j=1,np
-        TIMEIT(7)
+        TIMEIT(5)
         next => p%next
         dt = 0.5*(self_time - p%t)
         if (dt > 0.0) then
-          TIMEIT(8)
+          TIMEIT(6)
           !- kick 1 ------------------------------------------------------------
           pa = 0.0                                     ! external force
           pd = pc*(v-p%v)                              ! drag force
@@ -655,7 +627,7 @@ SUBROUTINE update (self)
             p%v = p%v + dt*(pa+pd)/(1.+pc*dt)          ! particle update
           end if
           momentum(:,1) = momentum(:,1) + p%v*p%w      ! particle momentum
-          TIMEIT(9)
+          TIMEIT(7)
           !- update q+r representation -----------------------------------------
           q = floor(p%r)                               ! integer shift
           p%r = p%r - q                                ! remove
@@ -672,20 +644,18 @@ SUBROUTINE update (self)
               move = .true.
             end if
           end do
+          TIMEIT(8)
           !---------------------------------------------------------------------
           ! Export particle to another patch
           !---------------------------------------------------------------------
           if (export) then
             call particles%remove (p)
             call exports(i4)%append (p)
-#ifdef DD
-            self%dd(i1,i2,i3,i4) = &
-            self%dd(i1,i2,i3,i4) - p%w
-#endif
             ne = ne+1
             if (verbose > 2) then
               write (stdlog,*) patch%id, 'export: q=', patch%id, p%q
             end if
+            TIMEIT(9)
           !---------------------------------------------------------------------
           ! Move particle to another cell. In case the cell has been visited,
           ! the dust bin density is updated as well.
@@ -694,24 +664,19 @@ SUBROUTINE update (self)
             self%vmax = max(self%vmax,abs(p%v(1)),abs(p%v(2)),abs(p%v(3)))
             call particles%remove (p)
             call self%particles(p%q(1),p%q(2),p%q(3),p%q(4))%append (p)
-#ifdef DD
-            self%dd(i1,i2,i3,i4) = &
-            self%dd(i1,i2,i3,i4) - p%w
-            self%dd(p%q(1),p%q(2),p%q(3),i4) = &
-            self%dd(p%q(1),p%q(2),p%q(3),i4) + p%w
-#endif
             nm = nm+1
+            TIMEIT(10)
           !---------------------------------------------------------------------
           ! Particle stays in this cell -- update vmax
           !---------------------------------------------------------------------
           else
             self%vmax = max(self%vmax,abs(p%v(1)),abs(p%v(2)),abs(p%v(3)))
+            TIMEIT(11)
           end if
         else
           nk = nk + 1
         end if
         p => next
-        TIMEIT(10)
       end do ! loop over particles
       self%np = self%np + particles%n
     end do ! loop over bins
@@ -743,6 +708,7 @@ SUBROUTINE update (self)
   end do
   end do
   end do
+  TIMEIT(12)
   associate (n_particles => timer%n_particles)
   !$omp atomic update
   n_particles = n_particles + n_update
@@ -762,6 +728,7 @@ SUBROUTINE update (self)
   !   old_momentum: old momentum of this patch  
   !-----------------------------------------------------------------------------
   call self%update_momentum
+  TIMEIT(13)
   !-----------------------------------------------------------------------------
   ! Briefly lock self%xports and copy in particles from the scratch exports
   !-----------------------------------------------------------------------------
@@ -781,6 +748,7 @@ SUBROUTINE update (self)
         self%patch%id, 'added', ne, 'to exports with', nx 
     end if
   end if
+  TIMEIT(14)
   !-----------------------------------------------------------------------------
   wc = wallclock()-wc
   associate (t_particles => timer%t_particles)
@@ -831,8 +799,9 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   call io%bits_mem (storage_size(self%vg), -product(shape(self%vg)), 'vg')
   deallocate (self%vg)
+  TIMEIT(15)
 #ifdef TIMER
-  write (stdout,'("times",3p,12f8.2)') times(1:10)
+  write (stdout,'("times",3p,15f8.2)') times
 #endif
   !-----------------------------------------------------------------------------
   call trace%end (itimer)
@@ -1029,10 +998,6 @@ SUBROUTINE import (self)
             call nbtask%exports(bin)%remove (p)
             particles => self%particles(p%q(1),p%q(2),p%q(3),p%q(4))
             call particles%append (p)
-#ifdef DD
-            self%dd(q(1),q(2),q(3),p%q(4)) = &
-            self%dd(q(1),q(2),q(3),p%q(4)) + p%w
-#endif
             ni = ni + 1
             ii(1) = self%patch%id; ii(2:4) = p%q(1:3); ii(5) = p%q(4)
           else if (verbose > 2) then
@@ -1115,7 +1080,7 @@ SUBROUTINE output (self)
   integer                       :: i, j, n, i1, i2, i3, i4, n_out
   integer, save                 :: itimer=0, n_print=5
   !-----------------------------------------------------------------------------
-  if (.not. on) return
+  if (.not. on .or. .not. io%do_output) return
   call trace%begin ('particle_solver_t%output', itimer=itimer)
   if (verbose > 1) then
     write (stdlog, '(a,i6,2f8.4)') &
