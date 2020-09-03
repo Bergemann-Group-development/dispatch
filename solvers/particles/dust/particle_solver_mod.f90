@@ -603,35 +603,71 @@ SUBROUTINE update (self)
         if (dt > 0.0) then
           TIMEIT(6)
           !- kick 1 ------------------------------------------------------------
-          pa = 0.0                                     ! external force
-          pd = pc*(v-p%v)                              ! drag force
-          pwd = p%w/d                                  ! density ratio
+          pa(1) = 0.0                                     ! external force
+          pa(2) = 0.0                                     ! external force
+          pa(3) = 0.0                                     ! external force
+          pd(1) = pc*(v(1)-p%v(1))                        ! drag force
+          pd(2) = pc*(v(2)-p%v(2))                        ! drag force
+          pd(3) = pc*(v(3)-p%v(3))                        ! drag force
+          pwd = p%w/d                                     ! density ratio
           !---------------------------------------------------------------------
           ! To allow extreme dust:gas ratios, compute the largest action first
           !---------------------------------------------------------------------
           if (backreaction) then
-            dv = dt*(pa+pd)/(1.+pc*dt*(1.+pwd))        ! particle velocity delta
-            p%v = p%v + dv                             ! particle update
-            v = v - dv*pwd                             ! gas update
-            p%r = p%r + 2.*dt*p%v                      ! forward two dr
+            dv(1) = dt*(pa(1)+pd(1))/(1.+pc*dt*(1.+pwd))  ! velocity delta
+            dv(2) = dt*(pa(2)+pd(2))/(1.+pc*dt*(1.+pwd))  ! velocity delta
+            dv(3) = dt*(pa(3)+pd(3))/(1.+pc*dt*(1.+pwd))  ! velocity delta
+            p%v(1) = p%v(1) + dv(1)                       ! particle update
+            p%v(2) = p%v(2) + dv(2)                       ! particle update
+            p%v(3) = p%v(3) + dv(3)                       ! particle update
+            v(1) = v(1) - dv(1)*pwd                       ! gas update
+            v(2) = v(2) - dv(2)*pwd                       ! gas update
+            v(3) = v(3) - dv(3)*pwd                       ! gas update
+            p%r(1) = p%r(1) + 2.*dt*p%v(1)                ! forward two dr
+            p%r(2) = p%r(2) + 2.*dt*p%v(2)                ! forward two dr
+            p%r(3) = p%r(3) + 2.*dt*p%v(3)                ! forward two dr
             p%t = self_time
-            pd = pc*(v-p%v)                            ! drag force
-            dv = dt*(pa+pd)/(1.+pc*dt*(1.+pwd))        ! particle velocity delta
-            p%v = p%v + dv                             ! particle update
-            v = v - dv*pwd                             ! gas update
+            pd(1) = pc*(v(1)-p%v(1))                      ! drag force
+            pd(2) = pc*(v(2)-p%v(2))                      ! drag force
+            pd(3) = pc*(v(3)-p%v(3))                      ! drag force
+            dv(1) = dt*(pa(1)+pd(1))/(1.+pc*dt*(1.+pwd))  ! velocity delta
+            dv(2) = dt*(pa(2)+pd(2))/(1.+pc*dt*(1.+pwd))  ! velocity delta
+            dv(3) = dt*(pa(3)+pd(3))/(1.+pc*dt*(1.+pwd))  ! velocity delta
+            p%v(1) = p%v(1) + dv(1)                       ! particle update
+            p%v(2) = p%v(2) + dv(2)                       ! particle update
+            p%v(3) = p%v(3) + dv(3)                       ! particle update
+            v(1) = v(1) - dv(1)*pwd                       ! gas update
+            v(2) = v(2) - dv(2)*pwd                       ! gas update
+            v(3) = v(3) - dv(3)*pwd                       ! gas update
           else
-            p%v = p%v + dt*(pa+pd)/(1.+pc*dt)          ! particle update
-            p%r = p%r + 2.*dt*p%v                      ! forward two dr
+            p%v(1) = p%v(1) + dt*(pa(1)+pd(1))/(1.+pc*dt) ! particle update
+            p%v(2) = p%v(2) + dt*(pa(2)+pd(2))/(1.+pc*dt) ! particle update
+            p%v(3) = p%v(3) + dt*(pa(3)+pd(3))/(1.+pc*dt) ! particle update
+            p%r(1) = p%r(1) + 2.*dt*p%v(1)                ! forward two dr
+            p%r(2) = p%r(2) + 2.*dt*p%v(2)                ! forward two dr
+            p%r(3) = p%r(3) + 2.*dt*p%v(3)                ! forward two dr
             p%t = self_time
-            pd = pc*(v-p%v)                            ! drag force
-            p%v = p%v + dt*(pa+pd)/(1.+pc*dt)          ! particle update
+            pd(1) = pc*(v(1)-p%v(1))                      ! drag force
+            pd(2) = pc*(v(2)-p%v(2))                      ! drag force
+            pd(3) = pc*(v(3)-p%v(3))                      ! drag force
+            p%v(1) = p%v(1) + dt*(pa(1)+pd(1))/(1.+pc*dt) ! particle update
+            p%v(2) = p%v(2) + dt*(pa(2)+pd(2))/(1.+pc*dt) ! particle update
+            p%v(3) = p%v(3) + dt*(pa(3)+pd(3))/(1.+pc*dt) ! particle update
           end if
-          momentum(:,1) = momentum(:,1) + p%v*p%w      ! particle momentum
+          momentum(1,1) = momentum(1,1) + p%v(1)*p%w      ! particle momentum
+          momentum(2,1) = momentum(2,1) + p%v(2)*p%w      ! particle momentum
+          momentum(3,1) = momentum(3,1) + p%v(3)*p%w      ! particle momentum
           TIMEIT(7)
           !- update q+r representation -----------------------------------------
-          q = floor(p%r)                               ! integer shift
-          p%r = p%r - q                                ! remove
-          p%q(1:3) = p%q(1:3) + q                      ! add
+          q(1) = floor(p%r(1))                            ! integer shift
+          q(2) = floor(p%r(2))                            ! integer shift
+          q(3) = floor(p%r(3))                            ! integer shift
+          p%r(1) = p%r(1) - q(1)                          ! subtract
+          p%r(2) = p%r(2) - q(2)                          ! subtract
+          p%r(3) = p%r(3) - q(3)                          ! subtract
+          p%q(1) = p%q(1) + q(1)                          ! add
+          p%q(2) = p%q(2) + q(2)                          ! add
+          p%q(3) = p%q(3) + q(3)                          ! add
           !---------------------------------------------------------------------
           move = .false.
           export = .false.
