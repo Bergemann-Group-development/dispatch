@@ -844,7 +844,9 @@ SUBROUTINE update (self)
 END SUBROUTINE update
 
 !===============================================================================
-!> Top up particles per size bin
+!> Top up particles per size bin.  Note that if there are no particles it is 
+!> better to do nothing than to add particles, since they would either have to
+!> have zero weight, or they would add additional dust mass.
 !===============================================================================
 SUBROUTINE add (self, particles)
   class(particle_solver_t)    :: self
@@ -855,11 +857,14 @@ SUBROUTINE add (self, particles)
   integer                     :: n, i, j, q(4), n_add
   !-----------------------------------------------------------------------------
   n = particles%n
-  if (debug .and. n == 0) then
-    write (stdlog,'(a,4i4)') &
-      'particle_solver_t%add WARNING: zero particles', self%id
+  if (n == 0) then
+    if (debug) then
+      write (stdout,'(a,i6,4i4)') &
+        'particle_solver_t%add WARNING: zero particles', particles%id
+    end if
     return
   end if
+  !-----------------------------------------------------------------------------
   m0 = 0.0                              ! initial momentum
   dd = 0.0                              ! dust bin density
   p => particles%head%next
@@ -873,7 +878,6 @@ SUBROUTINE add (self, particles)
   m1 = 0.0                              ! momentum after renormalization
   w = dd/particles_per_bin              ! new weights
   p => particles%head%next              ! first particle
-  q = p%q                               ! for new particles
   do j=1,n
     p%w = w
     m1 = m1 + p%v*p%w
@@ -889,6 +893,7 @@ SUBROUTINE add (self, particles)
     v = (m0-m1)/(n_add*w)               ! speed to match momentum
   end if
   !-----------------------------------------------------------------------------
+  q(1:4) = particles%id(2:5)            ! cell indices, bin number
   do j=1,n_add
     p => pool%pop ()                    ! re-cycled particle
     do i=1,3
@@ -956,14 +961,25 @@ SUBROUTINE remove (self, particles)
   !-----------------------------------------------------------------------------
   n = particles%n
   dw = dd/n                     ! mass to add to each particle
-  dm = mm/n                     ! momentum to add to each particle
-  p => particles%head%next
-  do j=1,n
-    p%w = p%w + dw              ! times np = dd
-    p%v = p%v*(p%w-dw)/p%w      ! conserve momentum with new weight
-    p%v = p%v + dm/p%w          ! p%w weighted sum = dm
-    p => p%next
-  end do
+  if (dw > 0.0) then
+    dm = mm/n                   ! momentum to add to each particle
+    p => particles%head%next
+    do j=1,n
+      p%w = p%w + dw            ! times np = dd
+      p%v = p%v*(p%w-dw)/p%w    ! conserve momentum with new weight
+      p%v = p%v + dm/p%w        ! p%w weighted sum = dm
+      p => p%next
+    end do
+  else
+    write (stdout,'(a,i6,4i4,i5,1p,4e11.2)') &
+      'particle_solver_t%remove WARNING:', particles%id, n, dd, dm
+    p => particles%head%next
+    do j=1,n
+      write (stdout,'(a,i4,2x,4i4,3f8.3,1p,4e12.3)') &
+        'remove WARNING:', j, p%q, p%r, p%w, p%v
+      p => p%next
+    end do
+  end if
   !.............................................................................
   if (debug) then
     m1 = particles%total_momentum()
@@ -1146,6 +1162,7 @@ SUBROUTINE output (self)
     end do
   end if
   if (self%time >= self%aux%aux_next) then
+    call self%import
     call self%density
     call self%aux%register ('dust_s', self%s_cgs)
     call self%aux%register ('dust_d', self%dd)
@@ -1342,7 +1359,7 @@ END SUBROUTINE courant_condition
 SUBROUTINE density (self)
   class(particle_solver_t):: self
   integer:: i1, i2, i3, i4
-  !-----------------------------------------------------------------------------
+  call self%import
   do i4=1,self%n_bin
     do i3=self%lb(3),self%ub(3)
       do i2=self%lb(2),self%ub(2)
