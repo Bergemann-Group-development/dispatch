@@ -74,6 +74,7 @@ MODULE extras_mod
     procedure:: check_refine
     procedure:: courant_condition
     procedure:: statistics
+    procedure:: is_ahead_of
   end type
   type(extras_t), public:: extras
 CONTAINS
@@ -188,5 +189,34 @@ SUBROUTINE statistics (self)
   class(extras_t):: self
   call self%particle_solver%statistics
 END SUBROUTINE statistics
+
+!===============================================================================
+!> Modify grace, to force nbor tasks to be very close in time, before output.
+!> This is called from task_list%check_ready(), with self as the nbor and
+!> target as the task to check.
+!===============================================================================
+FUNCTION is_ahead_of (self, target)
+  class(extras_t):: self
+  class(task_t):: target
+  logical:: is_ahead_of
+  real:: grace
+  !-----------------------------------------------------------------------------
+  grace=self%grace
+  if (target%out_next - target%time < 1.1*target%dtime) then
+    grace = self%grace
+    self%grace=0.0001
+    if (self%extras%particle_solver%debug) then
+      if (target%id == 1 .and. self%id==2) then
+        write (stdout,'(a,2i6,4f10.6)') &
+        'grace reduced', self%id, target%id, target%out_next, target%time, &
+        self%time, self%dtime
+      end if
+    end if
+    is_ahead_of = self%task_t%is_ahead_of (target)
+    self%grace = grace
+  else
+    is_ahead_of = self%task_t%is_ahead_of (target)
+  end if
+END FUNCTION is_ahead_of
 
 END MODULE extras_mod
