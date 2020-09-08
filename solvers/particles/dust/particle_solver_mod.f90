@@ -191,7 +191,7 @@ END SUBROUTINE pre_init
 !===============================================================================
 SUBROUTINE init (self)
   class(particle_solver_t) :: self
-  class(gpatch_t), pointer :: pa
+  class(gpatch_t), pointer :: patch
   integer                  :: m(4), i, j
   !-----------------------------------------------------------------------------
   ! Initialize particle lists and dust density array
@@ -221,6 +221,32 @@ SUBROUTINE init (self)
     allocate (self%lock)
     call self%lock%init ('part')
   end if
+  !-----------------------------------------------------------------------------
+  self%upper = .false.
+  self%lower = .false.
+  patch => self%patch
+  self%position = patch%position
+  do i=1,3
+    self%lb(i) = patch%mesh(i)%li
+    self%ub(i) = patch%mesh(i)%ui
+    if (.not.patch%periodic(i)) then
+      if (patch%position(i) - patch%size(i)/2.0 - patch%ds(i) &
+          < -patch%box(i)/2.0) then
+        self%lower(i) = .true.
+        self%lb(i) = patch%mesh(i)%lb
+      end if
+      if (patch%position(i) + patch%size(i)/2.0 + patch%ds(i) &
+          > +patch%box(i)/2.0) then
+        self%upper(i) = .true.
+        self%ub(i) = patch%mesh(i)%ub
+      end if
+    end if
+  end do
+  self%dust%lower = self%lower
+  self%dust%upper = self%upper
+  self%dust%lb = self%lb
+  self%dust%ub = self%ub
+  !-----------------------------------------------------------------------------
   call self%dust%init (n_bin, self%m_cgs, self%dd)
   call self%aux%init
   call self%random%init (seed)        ! FIXME: check seed inheritance
@@ -255,30 +281,8 @@ SUBROUTINE initial_condition (self)
   !-----------------------------------------------------------------------------
   if (.not. on) return
   call trace%begin ('particle_solver_t%initial_condition', itimer=itimer)
-  self%upper = .false.
-  self%lower = .false.
-  patch => self%patch
-  do i=1,3
-    self%lb = patch%mesh%li
-    self%ub = patch%mesh%ui
-    if (.not.patch%periodic(i)) then
-      if (patch%position(i) - patch%size(i)/2.0 - patch%ds(i) &
-          < -patch%box(i)/2.0) then
-        self%lower(i) = .true.
-        self%lb(i) = patch%mesh(i)%lb
-      end if
-      if (patch%position(i) + patch%size(i)/2.0 + patch%ds(i) &
-          > +patch%box(i)/2.0) then
-        self%upper(i) = .true.
-        self%ub(i) = patch%mesh(i)%ub
-      end if
-    end if
-  end do
-  self%dust%lower = self%lower
-  self%dust%upper = self%upper
-  self%dust%lb = self%lb
-  self%dust%ub = self%ub
   !-----------------------------------------------------------------------------
+  patch => self%patch
   extra_bits = 200
   if (self%patch%id == 1) then
     allocate (p)

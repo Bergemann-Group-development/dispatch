@@ -83,7 +83,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Use pre_update to get access to the force (ifort 20.1 problem circumvent)
   !-----------------------------------------------------------------------------
-  call self%pre_update
+  call self%forces%pre_update
   p = p + d0*scratch%force_per_unit_mass*self%forces%force%t_turb
   if (self%kind(1:6) == 'ramses') then
     px => self%mem(:,:,:,self%idx%px,self%it,1)

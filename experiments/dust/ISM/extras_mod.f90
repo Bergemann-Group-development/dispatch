@@ -130,6 +130,8 @@ SUBROUTINE pre_update (self)
   call self%forces%pre_update                                   ! forces
   call self%selfgravity%pre_update                              ! selfg
   call self%cooling%pre_update                                  ! cool
+  call self%courant_condition                                   ! dust
+  call self%particle_solver%update                              ! dust
   call trace%end()
 END SUBROUTINE pre_update
 
@@ -141,7 +143,6 @@ SUBROUTINE post_update (self)
   !.............................................................................
   call trace%begin ('extras_t%post_update')
   call self%selfgravity%post_update                             ! selfg
-  call self%particle_solver%update                              ! dust
   call trace%end ()
 END SUBROUTINE post_update
 
@@ -174,8 +175,9 @@ SUBROUTINE courant_condition (self, detailed_timer)
   logical, optional:: detailed_timer
   !-----------------------------------------------------------------------------
   call trace%begin ('extras_t%courant_condition')
-  call self%gpatch_t%courant_condition (detailed_timer)          ! keep
   call self%cooling%courant_condition                            ! cool
+  call self%particle_solver%courant_condition                    ! dust
+  call self%gpatch_t%courant_condition (detailed_timer)          ! keep
   call trace%end()
 END SUBROUTINE courant_condition
 
