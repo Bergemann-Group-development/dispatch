@@ -87,6 +87,7 @@ MODULE particle_solver_mod
     procedure:: global_momentum
     procedure:: courant_condition
     procedure:: density
+    procedure:: dispersion
     procedure:: exports_info
   end type
   type(particles_t), pointer :: pool          ! particle pool
@@ -1178,10 +1179,10 @@ SUBROUTINE output (self)
   class(particles_t), pointer   :: particles
   class(mesh_t), pointer        :: mesh(:)
   class(particle_t), pointer    :: p
-  real, pointer, contiguous     :: tmp_r(:,:)
+  real, pointer, contiguous     :: tmp_r(:,:), vd(:,:,:,:)
   real(8), pointer              :: total_mom(:,:)
   integer, pointer, contiguous  :: tmp_i(:)
-  integer                       :: i, j, n, i1, i2, i3, i4, n_out
+  integer                       :: i, j, n, i1, i2, i3, i4, n_out, m(3)
   integer, save                 :: itimer=0, n_print=5
   !-----------------------------------------------------------------------------
   if (.not. on .or. .not. io%do_output) return
@@ -1216,8 +1217,12 @@ SUBROUTINE output (self)
   if (self%time >= self%aux%aux_next) then
     call self%import (count=debug)
     call self%density
+    m = self%patch%gn
+    allocate (vd(m(1),m(2),m(3),n_bin))
+    call self%dispersion (vd)
     call self%aux%register ('dust_s', self%s_cgs)
     call self%aux%register ('dust_d', self%dd)
+    call self%aux%register ('dust_vrms', vd)
     total_mom => total_momentum
     call self%aux%register ('total_momentum', total_mom)
     !...........................................................................
@@ -1228,6 +1233,7 @@ SUBROUTINE output (self)
       end do
     end if
     call self%aux%output_sequence (self%patch%id, self%time)
+    deallocate (vd)
     if (verbose > 1) then
       write (stdlog, '(a,i6,1p,10e11.2)') &
        'particles_t%output: self%aux%aux_next =', &
@@ -1425,7 +1431,25 @@ SUBROUTINE density (self)
 END SUBROUTINE density
 
 !===============================================================================
-!> Compute dust density
+!> Compute velocity diespersion
+!===============================================================================
+SUBROUTINE dispersion (self, vd)
+  class(particle_solver_t):: self
+  real:: vd(:,:,:,:), ds
+  integer:: i1, i2, i3, i4
+  !-----------------------------------------------------------------------------
+  ds = self%patch%ds(1)
+  do i4=1,self%n_bin
+    do i3=self%lb(3),self%ub(3)
+      do i2=self%lb(2),self%ub(2)
+        do i1=self%lb(1),self%ub(1)
+          vd(i1,i2,i3,i4) = ds*self%particles(i1,i2,i3,i4)%dispersion()
+        end do
+      end do
+    end do
+  end do
+END SUBROUTINE dispersion
+
 !===============================================================================
 SUBROUTINE exports_info (self)
   class(particle_solver_t):: self
