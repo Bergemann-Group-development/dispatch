@@ -231,11 +231,6 @@ FUNCTION is_ahead_of (self, target)
   if (target%out_next - target%time < 1.1*target%dtime) then
     grace = self%grace
     self%grace=0.0001
-    if (target%id == 1 .and. self%id==2) then
-      write (stdout,'(a,2i6,4f10.6)') &
-      'grace reduced', self%id, target%id, target%out_next, target%time, &
-      self%time, self%dtime
-    end if
     is_ahead_of = self%task_t%is_ahead_of (target)
     self%grace = grace
   else
@@ -243,6 +238,9 @@ FUNCTION is_ahead_of (self, target)
   end if
 END FUNCTION is_ahead_of
 
+!===============================================================================
+!> Sum up number of particles in export bins (for debugging)
+!===============================================================================
 FUNCTION total_particles (self, details) RESULT (n)
   class(extras_t):: self
   logical, optional:: details
