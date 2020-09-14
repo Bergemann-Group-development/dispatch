@@ -7,6 +7,18 @@
 !>        bins_t        : Cartesian collection of particle lists
 !>
 !> Optimized for speed of list operations by adding permanent head and tail
+!>
+!> To include particles in the MPI communication, one could send the exports
+!> particle bins along with the patch data, but this would be problematic,
+!> since the exports particle bins also contain particles that don't belong
+!> to the MPI nbor, but to local (boundary or internal) nbors.  The most
+!> common MPI nbor has only one face in common with the sender, and hence it
+!> would be a 6 times overkill to send all particle, and delete or never
+!> append the irrelevant ones.
+!>
+!> But the alternative means to send different buffers to different nbors,
+!> which is also not a good alternative. So, at least initially we should
+!> accept the simpler alternative
 !===============================================================================
 MODULE particles_mod
   USE io_mod
@@ -40,6 +52,7 @@ MODULE particles_mod
   type, public:: particles_t
     class(particle_t), pointer:: head => null(), tail => null()
     integer:: n = 0
+    integer:: type = 0
     integer:: id(5)
     real(8):: momentum(3)=0d0
   contains
@@ -65,6 +78,8 @@ MODULE particles_mod
   end type
   integer(8), save:: id=0
   !$omp threadprivate(id)
+  type(particles_t), public :: pool, vpool    ! particle pool
+  !$omp threadprivate (pool, vpool)           ! for each thread
 CONTAINS
 
 !===============================================================================
@@ -119,12 +134,13 @@ END SUBROUTINE output_vparticle
 !===============================================================================
 !> Initialize particle list
 !===============================================================================
-SUBROUTINE init_particles (self, id)
+SUBROUTINE init_particles (self, id, type)
   class(particles_t):: self
-  integer:: id(5)
+  integer:: id(5), type
   !-----------------------------------------------------------------------------
   allocate (self%head, self%tail)
   self%id = id
+  self%type = type
   self%n = 0
   self%head%next => self%tail
   self%tail%prev => self%head
@@ -198,16 +214,26 @@ END SUBROUTINE remove
 !===============================================================================
 FUNCTION pop(self) RESULT (p)
   class(particles_t):: self
-  type(particle_t), pointer:: p
+  class(particle_t), pointer:: p
+  type(particle_t), pointer:: p0
+  type(vparticle_t), pointer:: p1
   if (self%n > 0) then
     p => self%tail%prev
     p%next%prev => p%prev
     p%prev%next => p%next
     self%n = self%n - 1
   else
-    allocate (p)
-    call io%bits_mem (storage_size(p), 1, 'p')
-    call p%init
+    if (self%type == 0) then
+      allocate (p0)
+      call io%bits_mem (storage_size(p0), 1, 'p0')
+      call p0%init
+      p => p0
+    else
+      allocate (p1)
+      call io%bits_mem (storage_size(p1), 1, 'p1')
+      call p1%init
+      p => p1
+    end if
   end if
 END FUNCTION pop
 
@@ -265,17 +291,18 @@ SUBROUTINE dump (self)
 END SUBROUTINE dump
 
 !===============================================================================
-SUBROUTINE pack_particles (self, mpi_buffer, viz_buffer)
+SUBROUTINE pack_particles (self, mpi_buffer)
   class(particles_t):: self
+  type(mpi_buffer_t):: mpi_buffer
   class(particle_t), pointer:: p
-  type(mpi_buffer_t):: mpi_buffer, viz_buffer
-  integer(2), allocatable:: qp(:,:), qs(:,:)
-  integer(8), allocatable:: id(:)
-  real, allocatable:: rp(:,:), vp(:,:), rs(:,:), vs(:,:), vg(:,:), ds(:)
-  real, allocatable:: wp(:), ws(:)
-  real(8), allocatable:: tp(:), ts(:)
+  integer(2), pointer, contiguous:: qp(:,:), qs(:,:)
+  integer(8), pointer, contiguous:: id(:)
+  real(8),    pointer, contiguous:: tp(:), ts(:)
+  real,       pointer, contiguous:: rp(:,:), vp(:,:), wp(:)
+  real,       pointer, contiguous:: rs(:,:), vs(:,:), ws(:)
   integer:: i, n, np, ns
   !-----------------------------------------------------------------------------
+  call trace%begin ('particle_solver_t%pack_particles')
   n = self%n
   np = 0
   ns = 0
@@ -299,8 +326,7 @@ SUBROUTINE pack_particles (self, mpi_buffer, viz_buffer)
   if (np > 0) &
     allocate (rp(3,np), vp(3,np), qp(4,np), tp(np), wp(np))
   if (ns > 0) &
-    allocate (rs(3,ns), vs(3,ns), qs(4,ns), ts(ns), ws(ns), &
-    vg(3,ns), ds(ns), id(ns))
+    allocate (rs(3,ns), vs(3,ns), qs(4,ns), ts(ns), ws(ns), id(ns))
   np = 0
   ns = 0
   p => self%head%next
@@ -311,16 +337,14 @@ SUBROUTINE pack_particles (self, mpi_buffer, viz_buffer)
       rs(:,ns) = p%r        ! float position
       qs(:,ns) = p%q        ! integer position
       vs(:,ns) = p%v        ! particle velocity
-      vg(:,ns) = p%vg       ! gas velocity
-      ds(ns)   = p%dg       ! gas density
       ts(ns)   = p%t        ! particle time
       ws(ns)   = p%w        ! particle weight
       id(ns)   = p%id       ! particle id
     type is (particle_t)
       np = np+1
       rp(:,np) = p%r
-      vp(:,np) = p%v
       qp(:,np) = p%q
+      vp(:,np) = p%v
       tp(np)   = p%t
       wp(np)   = p%w
     end select
@@ -330,6 +354,7 @@ SUBROUTINE pack_particles (self, mpi_buffer, viz_buffer)
   !-----------------------------------------------------------------------------
   ! Pack into mpi_buffer
   !-----------------------------------------------------------------------------
+  call mpi_buffer%append (1)            ! normal particles
   call mpi_buffer%append (np)           ! np
   if (np > 0) then
     call mpi_buffer%append (rp)         ! 3*n
@@ -339,19 +364,77 @@ SUBROUTINE pack_particles (self, mpi_buffer, viz_buffer)
     call mpi_buffer%append (tp)         ! 2*n = 11*n + npp
     deallocate (rp, vp, qp, tp, wp)
   end if
-  call viz_buffer%append (ns)
+  call mpi_buffer%append (2)            ! dressed particles
+  call mpi_buffer%append (ns)
   if (ns > 0) then
-    call viz_buffer%append (rs)
-    call viz_buffer%append (vs)
-    call viz_buffer%append (qs)
-    call viz_buffer%append (ws)
-    call viz_buffer%append (ts)
-    call viz_buffer%append (ds)         ! 1*n
-    call viz_buffer%append (vg)         ! 3*n
-    call viz_buffer%append (id)         ! 2*n = 6*n
-    deallocate (id,rs,vs,qs,ts,ws,vg,ds)
+    call mpi_buffer%append (rs)
+    call mpi_buffer%append (vs)
+    call mpi_buffer%append (qs)
+    call mpi_buffer%append (ws)
+    call mpi_buffer%append (ts)
+    call mpi_buffer%append (id)         ! 2*n = 6*n
+    deallocate (id,rs,vs,qs,ts,ws)
   end if
+  call trace%end ()
 END SUBROUTINE pack_particles
+
+!===============================================================================
+!> Unpack particle buffer, from MPI or I/O
+!===============================================================================
+SUBROUTINE unpack_particles (self, mpi_buffer)
+  class(particles_t)           :: self
+  type(mpi_buffer_t)           :: mpi_buffer
+  class(particle_t),      pointer:: p
+  integer(2), pointer, contiguous:: qp(:,:)
+  integer(8), pointer, contiguous:: id(:)
+  real(8)   , pointer, contiguous:: tp(:)
+  real      , pointer, contiguous:: rp(:,:), vp(:,:), wp(:)
+  integer:: j, n, np, ns, type
+  !-----------------------------------------------------------------------------
+  call trace%begin ('particle_solver_t%unpack_particles')
+  !-----------------------------------------------------------------------------
+  ! Read mpi_buffer into particle arrays
+  !-----------------------------------------------------------------------------
+  call mpi_buffer%read (type)        ! particle type?
+  call mpi_buffer%read (np)
+  allocate (rp(3,np), vp(3,np), qp(4,np), tp(np), wp(np))
+  call mpi_buffer%read (rp)
+  call mpi_buffer%read (vp)
+  call mpi_buffer%read (qp)
+  call mpi_buffer%read (wp)
+  call mpi_buffer%read (tp)
+  if (type==0) then
+    do j=1,np
+      p => pool%pop()
+      p%r = rp(:,j)
+      p%q = qp(:,j)
+      p%v = vp(:,j)
+      p%t = tp(j)
+      p%w = wp(j)
+      call self%append (p)
+    end do
+  else
+    allocate (id(ns))
+    call mpi_buffer%read (id)
+    do j=1,np
+      p => vpool%pop()
+      select type (p)
+      class is (vparticle_t)
+      p%r = rp(:,j)
+      p%q = qp(:,j)
+      p%v = vp(:,j)
+      p%t = tp(j)
+      p%w = wp(j)
+      p%id = id(j)
+      end select
+      call self%append (p)
+    end do
+    deallocate (id)
+  end if
+  deallocate (rp, vp, qp, tp, wp)
+  !.............................................................................
+  call trace%end ()
+END SUBROUTINE unpack_particles
 
 !===============================================================================
 SUBROUTINE statistics (self)

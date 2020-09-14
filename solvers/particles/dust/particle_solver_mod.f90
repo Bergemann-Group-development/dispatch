@@ -20,6 +20,12 @@
 !> The particle solver is either called as a post_update() of a patch solver,
 !> or else as an independent task, which depends on the patch task it is
 !> associated with.
+!>
+!> While updating, the task local particle bins are used to accumulate export
+!> particles, which are then placed in visibke task%exports particle bins, from
+!> where they are removed by other tasks.  Both the nbor tasks and the owner
+!> task must use task locks to avoid data races; i.e. both readin and writing
+!> needs to be protected.
 !===============================================================================
 !define DBG
 MODULE particle_solver_mod
@@ -90,8 +96,6 @@ MODULE particle_solver_mod
     procedure:: dispersion
     procedure:: exports_info
   end type
-  type(particles_t), pointer :: pool          ! particle pool
-  !$omp threadprivate (pool)                  ! for each thread
   integer:: verbose = 0                       ! noise level
   integer:: n_bin = 1                         ! number of size bins
   integer:: seed = 11                         ! random seed
@@ -204,11 +208,11 @@ SUBROUTINE init (self)
   allocate (self%particles(m(1),m(2),m(3),n_bin)) 
   call io%bits_mem (storage_size(self%particles), &
                    product(shape(self%particles)), 'particles')
-  allocate (pool, self%exports(n_bin))
-  call io%bits_mem (storage_size(pool), omp%nthreads+n_bin, 'exports')
-  call pool%init ([self%patch%id,0,0,0,0])
+  allocate (self%exports(n_bin))
+  call pool%init  ([self%patch%id,0,0,0,0], 0)
+  call vpool%init ([self%patch%id,0,0,0,0], 1)
   do i=1,n_bin
-    call self%exports(i)%init ([self%patch%id,0,0,0,i])
+    call self%exports(i)%init ([self%patch%id,0,0,0,i], 0)
   end do
   !-----------------------------------------------------------------------------
   allocate (self%dd(m(1),m(2),m(3),n_bin))
@@ -319,7 +323,7 @@ SUBROUTINE initial_condition (self)
       do i4=1,n_bin
         particles => self%particles(i1,i2,i3,i4)
         id = [self%patch%id,i1,i2,i3,i4]
-        call particles%init (id)
+        call particles%init (id, 0)
         n = n+2
         nv = 0
         do j=1,particles_per_bin
@@ -497,7 +501,7 @@ SUBROUTINE update (self)
   allocate (exports(n_bin))
   do i4=1,n_bin
     paid = [patch%id,0,0,0,int(i4)]
-    call exports(i4)%init (paid)
+    call exports(i4)%init (paid, 0)
   end do
   !-----------------------------------------------------------------------------
   ! Non-vectorized pusher
@@ -807,8 +811,8 @@ SUBROUTINE update (self)
         'n:', nu, np, self%ni, ne, nx, nk, n_add, n_rem, &
         'mus/p:', time(2)/nu, 'ms:', time(2)
     else
-      write (stdlog,'(i6,2i12,f6.3,"s",6p,2f6.3," mus/p",0p,2f6.2)') &
-      patch%id, np, nk, wc, wc/np, wc/nk, real(nm)/nk, real(ne)/nk
+      write (stdlog,'(i6,4i12,f6.3,"s",6p,2f8.3," mus/p",0p,2f6.2)') &
+      patch%id, np, nk, n_add, n_rem, wc, wc/np, wc/nk, real(nm)/nk, real(ne)/nk
     end if
   end if
   !-----------------------------------------------------------------------------
@@ -926,7 +930,7 @@ SUBROUTINE remove (self, particles)
   type(particles_t), pointer  :: particles
   class(particle_t), pointer  :: p, next
   real                        :: dd, dw, mm(3), dm(3), m0(3), m1(3)
-  integer                     :: n, j
+  integer                     :: n0, n, j
   logical                     :: kill
   real                        :: eps=1e-5
   !-----------------------------------------------------------------------------
@@ -939,8 +943,9 @@ SUBROUTINE remove (self, particles)
   !-----------------------------------------------------------------------------
   dd = 0.0
   mm = 0.0
+  n0 = particles%n
   p => particles%head%next
-  do j=1,particles%n
+  do j=1,n0
     next => p%next
     if (particles%n > particles_per_bin) then
       kill = .false.
@@ -974,8 +979,8 @@ SUBROUTINE remove (self, particles)
       p => p%next
     end do
   else
-    write (stdout,'(a,i6,4i4,i5,1p,4e11.2)') &
-      'particle_solver_t%remove WARNING:', particles%id, n, dd, dm
+    write (stdout,'(a,i6,4i4,2i5,1p,4e11.2)') &
+      'particle_solver_t%remove WARNING:', particles%id, n0, n, dd, dm
     p => particles%head%next
     do j=1,n
       write (stdout,'(a,i4,2x,4i4,3f8.3,1p,4e12.3)') &
