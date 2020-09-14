@@ -1097,6 +1097,7 @@ SUBROUTINE import (self, count)
   end if
   if (debug .and. present(count)) then
     if (count) then
+      call self%lock%set ('particle_solver_t%count self')
       write (stdlog,'(a,f12.6,3i6)') &
         'particle_solver_t%import: n_before, n_after =', &
         self%time, self%id, n_before, n_after
@@ -1109,10 +1110,12 @@ SUBROUTINE import (self, count)
           p => p%next
         end do
       end do
+      call self%lock%unset ('particle_solver_t%count self')
       nbor => self%nbor
       do while (associated(nbor))
         ni = 0
         nbtask => nbor%task
+        call nbtask%lock%set ('particle_solver_t%count nbor')
         select type (nbtask)
         class is (particle_solver_t)
           dist = -nbtask%patch%task_t%distance(self%patch)/nbtask%patch%ds
@@ -1133,6 +1136,7 @@ SUBROUTINE import (self, count)
             'import: nbtask, time, dtime, distance, owns =', nbtask%id, &
             self%time, nbtask%time-self%time, int(dist), ni
         end select
+        call nbtask%lock%unset ('particle_solver_t%count nbor')
         nbor => nbor%next
       end do
     end if
@@ -1451,12 +1455,15 @@ SUBROUTINE dispersion (self, vd)
 END SUBROUTINE dispersion
 
 !===============================================================================
+!> Debug information about exports particle bins
+!===============================================================================
 SUBROUTINE exports_info (self)
   class(particle_solver_t):: self
   class(particles_t), pointer:: particles
   class(particle_t), pointer:: p
   integer:: bin, j
   !.............................................................................
+  call self%lock%set ('particle_solver_t%exports_info')
   do bin=1,n_bin
     particles => self%exports(bin)
     p => particles%head%next
@@ -1467,6 +1474,7 @@ SUBROUTINE exports_info (self)
       p => p%next
     end do
   end do
+  call self%lock%unset ('particle_solver_t%exports_info')
 END SUBROUTINE exports_info
 
 END MODULE particle_solver_mod
