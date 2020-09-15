@@ -117,6 +117,7 @@ MODULE particle_solver_mod
   logical:: particle_io = .false.             ! output particle positions?
   logical:: backreaction = .false.            ! backreaction on gas
   logical:: detailed_timer = .false.          ! precision timing
+  logical:: do_supersonic = .true.            ! supersonic dust friction
   logical:: debug=.false.                     ! check things
   logical:: on = .true.
   !-----------------------------------------------------------------------------
@@ -140,7 +141,7 @@ SUBROUTINE pre_init (self, patch)
     n_bin, particles_per_bin, seed, ip_dbg, id_dbg, i_dbg, &
     min_fraction, max_fraction, max_size_cgs, min_size_cgs, &
     density_yr_cgs, solid_density_cgs, dust_to_gas, output_every, &
-    backreaction, debug
+    backreaction, do_supersonic, debug
   logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
   call trace%begin ('particle_solver_t%pre_init')
@@ -409,7 +410,7 @@ SUBROUTINE update (self)
   real, dimension(3)          :: r, dr
   class(particle_t), pointer  :: p, next
   real(8)                     :: time(2), v(3), wc, start, self_time
-  real                        :: ds, dt, os, n_min, n_max, ods, dd
+  real                        :: ds, dt, os, n_min, n_max, dd
   integer                     :: n, np, ne, nk, nm, nu, nx, m(3), ii(3), j
   integer(kind=2)             :: i, i1, i2, i3, i4, l(3), u(3), q(3)
   integer                     :: id, paid(5), istep, n_add, n_rem
@@ -420,6 +421,7 @@ SUBROUTINE update (self)
   type(particles_t), pointer  :: exports(:), exportp
   type(particles_t), pointer  :: particles, bins(:)
   real                        :: d, up, pc, pd(3), pa(3), w, pv(3), dv(3), pwd
+  real                        :: e, cs, pc0
   real(8)                     :: times(15), wc1, wc2, sum
   real(8)                     :: momentum(3,2), dvol
   real, pointer, contiguous   :: p1(:,:,:), p2(:,:,:), p3(:,:,:)
@@ -460,7 +462,6 @@ SUBROUTINE update (self)
   !call self%particles%lock%set ('update')
   time(1) = wallclock()
   !-----------------------------------------------------------------------------
-  ods = 1.0/patch%ds(1)
   self%dust%d => patch%mem(:,:,:,patch%idx%d              ,patch%new,1)
   self%dust%p => patch%mem(:,:,:,patch%idx%px:patch%idx%pz,patch%new,1)
   !-----------------------------------------------------------------------------
@@ -595,6 +596,13 @@ SUBROUTINE update (self)
     v(2) = self%vg(2,i1,i2,i3)
     v(3) = self%vg(3,i1,i2,i3)
     d = patch%mem(i1,i2,i3,patch%idx%d,patch%new,1)
+    e = patch%mem(i1,i2,i3,patch%idx%e,patch%new,1)
+    if (patch%gamma==1d0) then
+      cs = sqrt(e/d)
+    else
+      cs = sqrt(e*patch%gamma*(patch%gamma-1d0)/d)
+    end if
+    cs = cs/ds
     ii = [i1,i2,i3]
     momentum(:,1) = 0d0
     do i4=1,n_bin
@@ -604,7 +612,7 @@ SUBROUTINE update (self)
       n_update = n_update + particles%n
       paid = particles%id
       up = patch%u_phase(i1,i2,i3)/ds
-      pc = d*os
+      pc0 = d*os
       np = particles%n
       p => particles%head%next
       do j=1,np
@@ -617,6 +625,13 @@ SUBROUTINE update (self)
           pa(1) = 0.0                                     ! external force
           pa(2) = 0.0                                     ! external force
           pa(3) = 0.0                                     ! external force
+          if (do_supersonic) then
+            pc = pc0*sqrt(1.0 + ((v(1)-p%v(1))**2 &
+                              +  (v(2)-p%v(2))**2 &
+                              +  (v(3)-p%v(3))**2)/cs**2)
+          else
+            pc = pc0
+          end if
           pd(1) = pc*(v(1)-p%v(1))                        ! drag force
           pd(2) = pc*(v(2)-p%v(2))                        ! drag force
           pd(3) = pc*(v(3)-p%v(3))                        ! drag force
