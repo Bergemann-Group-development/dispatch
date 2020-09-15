@@ -1046,7 +1046,8 @@ SUBROUTINE import (self, count)
         do j=1,nbtask%exports(bin)%n
           if (abs(maxval(p%q)) > 100) write (stdlog,*) 'import error', j, p%q
           next => p%next
-          r = dist + (p%r+p%q(1:3))
+          where (p%r==1d0) p%r=0.9999d0
+          r = dist + real(p%r,kind=8) + real(p%q(1:3),kind=8)
           q = floor(r)
           inside = all(q >= self%lb .and. q <= self%ub)
           if (inside) then
