@@ -596,13 +596,15 @@ SUBROUTINE update (self)
     v(2) = self%vg(2,i1,i2,i3)
     v(3) = self%vg(3,i1,i2,i3)
     d = patch%mem(i1,i2,i3,patch%idx%d,patch%new,1)
-    e = patch%mem(i1,i2,i3,patch%idx%e,patch%new,1)
-    if (patch%gamma==1d0) then
-      cs = sqrt(e/d)
-    else
-      cs = sqrt(e*patch%gamma*(patch%gamma-1d0)/d)
+    if (do_supersonic) then
+      e = patch%mem(i1,i2,i3,patch%idx%e,patch%new,1)
+      if (patch%gamma==1d0) then
+        cs = sqrt(e/d)
+      else
+        cs = sqrt(e*patch%gamma*(patch%gamma-1d0)/d)
+      end if
+      cs = cs/ds
     end if
-    cs = cs/ds
     ii = [i1,i2,i3]
     momentum(:,1) = 0d0
     do i4=1,n_bin
@@ -626,15 +628,20 @@ SUBROUTINE update (self)
           pa(2) = 0.0                                     ! external force
           pa(3) = 0.0                                     ! external force
           if (do_supersonic) then
-            pc = pc0*sqrt(1.0 + ((v(1)-p%v(1))**2 &
-                              +  (v(2)-p%v(2))**2 &
-                              +  (v(3)-p%v(3))**2)/cs**2)
+            dv(1) = v(1)-p%v(1)                           ! speed difference
+            dv(2) = v(2)-p%v(2)                           ! speed difference
+            dv(3) = v(3)-p%v(3)                           ! speed difference
+            pc = pc0*sqrt(1.0 &
+               + (dv(1)**2+dv(2)**2+dv(3)**2)/cs**2)      ! supersonic Epstein
+            pd(1) = pc*dv(1)                              ! drag force
+            pd(2) = pc*dv(2)                              ! drag force
+            pd(3) = pc*dv(3)                              ! drag force
           else
             pc = pc0
+            pd(1) = pc*(v(1)-p%v(1))                      ! drag force
+            pd(2) = pc*(v(2)-p%v(2))                      ! drag force
+            pd(3) = pc*(v(3)-p%v(3))                      ! drag force
           end if
-          pd(1) = pc*(v(1)-p%v(1))                        ! drag force
-          pd(2) = pc*(v(2)-p%v(2))                        ! drag force
-          pd(3) = pc*(v(3)-p%v(3))                        ! drag force
           pwd = p%w/d                                     ! density ratio
           !---------------------------------------------------------------------
           ! To allow extreme dust:gas ratios, compute the largest action first
