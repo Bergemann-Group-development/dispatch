@@ -34,7 +34,9 @@ MODULE link_mod
     logical:: needs_me  = .true.    ! marks nbors included in check_ready()
     logical:: download = .true.     ! marks nbors included in download_link()
     real:: u_max
+    real(8):: distance(3)=0.0       ! relative distance
   contains
+    procedure:: init => init_nbor
     procedure:: nbor_info
   end type
 
@@ -82,6 +84,16 @@ MODULE link_mod
   integer:: garbage_n=0, verbose=0
   logical, save:: debug=.false.
 CONTAINS
+
+!===============================================================================
+!> For now, we set the distance from known task positions.
+!> FIXME: The nbor%distance should ultimately be the only position information
+!===============================================================================
+SUBROUTINE init_nbor (self, nbtask)
+  class(nbor_t):: self
+  class(task_t):: nbtask
+  self%distance = self%task%distance (nbtask)
+END SUBROUTINE init_nbor
 
 !===============================================================================
 !> If link is not already initialized, initialize its lock.  If an init is at
