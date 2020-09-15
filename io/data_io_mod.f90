@@ -3,6 +3,36 @@
 !> by the io%method text string -- optionally (but deprecated) by io%do_legacy
 !> or io%do_direct.
 !>
+!> The output chain of routines should be called just before a solver updates,
+!> at a point where both guard zone loading and boundary conditions have been
+!> applied.  That ensures a consistent state, that includes the guard zones,
+!> and any action that has taken place in the extras_t%pre_update() procedure.
+!>
+!> Calling sequence:
+!>   task_list%t%update
+!>     experiment_t%dnload
+!>     experiment_t%bdries
+!>     experiment_t%update
+!>       solver_t%update
+!>         solver_t%pre_update
+!>           mhd_t%pre_update       ! [optional]
+!>           extras_t%pre_update
+!>       mhd_t%update
+!>         self%output
+!>           gpatch_t%output
+!>             date_io_t%output
+!>
+!> At this point timeslot %it has been copied to timeslot%new, in preparation
+!> for the update, and which timeslot data_io_t%output uses is unimportant,
+!> since only the current thread is allowed to change the timeslot info.
+!>
+!> The correct time is held in self%time = self%t(self%it), where self%it =
+!> self%iit(self%nt-1).
+!>
+!> To force the output to occur exactly at self%out_next, the time step in the
+!> previous update, where the courant condition routine decided on a self%dtime
+!> large enough to reach self%out_next, should be reduced accordingly.
+!>
 !> Concerning thread safety: Simultaneous calls from many threads are typical,
 !> and it is the responsibility of each sub-module here (e.g. parallel_io_mod)
 !> to introduce critical regions to protect agains simultaneus calls to non-
@@ -221,6 +251,8 @@ SUBROUTINE output (self, patch, experiment_name)
     !$omp atomic read
     t = patch%t(it)
     if (t >= patch%out_next) then
+      write (stdout,'(a,i6,3i4,2f12.6)') &
+        'data_io_t%output: ', patch%id, np, it, patch%nt, t, patch%time
       call self%lock%set ('output2')
       if (io%verbose > 1) &
         write (io%output,*) wallclock(),' thread',omp%thread,' waitfor output'

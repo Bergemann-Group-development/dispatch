@@ -37,8 +37,8 @@
 !> to the output list, they must operate one-at-a-time, so that part should be
 !> inside a unique critical region (or should use a lock).
 !>
-!> data_io%output indeed has name critical regions around all calls that end up
-!> inside amr_io_mod, so only one thread can ever be inside the procedures below.
+!> data_io%output indeed has named critical regions around all calls that end up
+!> inside amr_io_mod so only one thread can ever be inside the procedures below.
 !> But we must also make sure that when that thread decides to do collective MPI
 !> calls, which may only be done by one thread on some systems (laptops), all
 !> other threads must be held up at the very same critical region (data_io_cr).

@@ -117,6 +117,7 @@ MODULE task_mod
     procedure:: overlaps
     procedure:: overlaps_point
     procedure:: nbor_relations
+    procedure:: distance_from
     procedure:: distance
     procedure:: point_distance
     procedure:: pack
@@ -1048,6 +1049,16 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   if (timer%detailed) &
     call trace%end (itimer)
 END SUBROUTINE nbor_relations
+
+!===============================================================================
+!> Disambiguation
+!===============================================================================
+FUNCTION distance_from (self, task)
+  class(task_t):: self
+  class(task_t):: task
+  real(8):: distance_from(3)
+  distance_from = distance (self, task)
+END FUNCTION distance_from
 
 !===============================================================================
 !> Signed distance between the centers of two tasks in a possibly periodic box

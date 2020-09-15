@@ -67,6 +67,7 @@ MODULE extras_mod
   contains
     procedure:: pre_init
     procedure:: init
+    procedure:: init_task_list
     procedure:: dealloc
     procedure:: pre_update
     procedure:: post_update
@@ -75,6 +76,7 @@ MODULE extras_mod
     procedure:: courant_condition
     procedure:: statistics
     procedure:: is_ahead_of
+    procedure:: total_particles
   end type
   type(extras_t), public:: extras
 CONTAINS
@@ -94,9 +96,9 @@ SUBROUTINE pre_init (self)
   call trace%end()
 END SUBROUTINE pre_init
 
- !===============================================================================
- !> Initialize the modules that are to be included and used
- !===============================================================================
+!===============================================================================
+!> Initialize the modules that are to be included and used
+!===============================================================================
 SUBROUTINE init (self)
   class(extras_t):: self
   !.............................................................................
@@ -106,6 +108,18 @@ SUBROUTINE init (self)
   call self%particle_solver%init                                ! dust
   call trace%end()
 END SUBROUTINE init
+
+!===============================================================================
+!> Initialize pointers to the task list
+!===============================================================================
+SUBROUTINE init_task_list (self, task_list)
+  class(extras_t):: self
+  class(list_t), pointer:: task_list
+  !.............................................................................
+  call trace%begin ('extras_t%init_task_list')
+  call self%particle_solver%init_task_list (task_list)
+  call trace%end()
+END SUBROUTINE init_task_list
 
 !===============================================================================
 !> Deallocate allocated arrays
@@ -124,6 +138,7 @@ END SUBROUTINE dealloc
 !===============================================================================
 SUBROUTINE pre_update (self)
   class(extras_t), target:: self
+  integer:: n(2,3)
   !.............................................................................
   call trace%begin ('extras_t%pre_update')
   call self%gpatch_t%pre_update                                 ! keep
@@ -131,8 +146,19 @@ SUBROUTINE pre_update (self)
   call self%forces%pre_update                                   ! forces
   call self%selfgravity%pre_update                              ! selfg
   call self%cooling%pre_update                                  ! cool
-  call self%courant_condition                                   ! dust
-  call self%particle_solver%update                              ! dust
+  call self%courant_condition                                   ! keep
+  if (self%time + self%dtime >= self%out_next) then
+    n(:,1) = self%total_particles()
+    call self%particle_solver%import
+    n(:,2) = self%total_particles (details=.true.)
+    call self%particle_solver%exports_info
+    call self%particle_solver%update
+    n(:,3) = self%total_particles()
+    write (stdlog,'(a,i6,3(2x,2i5))') &
+      'extras_t%pre_update: id, n_before, n_after =', self%id, n
+  else
+    call self%particle_solver%update                            ! dust
+  end if
   call trace%end()
 END SUBROUTINE pre_update
 
@@ -205,12 +231,10 @@ FUNCTION is_ahead_of (self, target)
   if (target%out_next - target%time < 1.1*target%dtime) then
     grace = self%grace
     self%grace=0.0001
-    if (self%extras%particle_solver%debug) then
-      if (target%id == 1 .and. self%id==2) then
-        write (stdout,'(a,2i6,4f10.6)') &
-        'grace reduced', self%id, target%id, target%out_next, target%time, &
-        self%time, self%dtime
-      end if
+    if (target%id == 1 .and. self%id==2) then
+      write (stdout,'(a,2i6,4f10.6)') &
+      'grace reduced', self%id, target%id, target%out_next, target%time, &
+      self%time, self%dtime
     end if
     is_ahead_of = self%task_t%is_ahead_of (target)
     self%grace = grace
@@ -218,5 +242,34 @@ FUNCTION is_ahead_of (self, target)
     is_ahead_of = self%task_t%is_ahead_of (target)
   end if
 END FUNCTION is_ahead_of
+
+FUNCTION total_particles (self, details) RESULT (n)
+  class(extras_t):: self
+  logical, optional:: details
+  class(link_t), pointer:: link
+  class(task_t), pointer:: task
+  integer:: bin, n(2), np
+  !.............................................................................
+  n = 0
+  do bin=1,self%particle_solver%n_bin
+    n(1) = n(1) + self%particle_solver%exports(bin)%n
+  end do
+  link => self%task_list%head
+  do while (associated(link))
+    task => link%task
+    select type (task)
+    class is (extras_t)
+      do bin=1,task%particle_solver%n_bin
+        np = task%particle_solver%exports(bin)%n
+        n(2) = n(2) + np
+        if (np > 0 .and. present(details)) then
+          write (stdlog,'(a,i6,i3,i6)') &
+          'total_particles: id, bin, np', task%id, bin, np
+        end if
+      end do
+    end select
+    link => link%next
+  end do
+END FUNCTION total_particles
 
 END MODULE extras_mod

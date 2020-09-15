@@ -87,6 +87,7 @@ MODULE particle_solver_mod
     procedure:: global_momentum
     procedure:: courant_condition
     procedure:: density
+    procedure:: exports_info
   end type
   type(particles_t), pointer :: pool          ! particle pool
   !$omp threadprivate (pool)                  ! for each thread
@@ -406,7 +407,7 @@ SUBROUTINE update (self)
   real                        :: ds, dt, os, n_min, n_max, ods, dd
   integer                     :: n, np, ne, nk, nm, nu, nx, m(3), ii(3), j
   integer(kind=2)             :: i, i1, i2, i3, i4, l(3), u(3), q(3)
-  integer                     :: id, paid(5), istep, n_add, n_rem, np_prev
+  integer                     :: id, paid(5), istep, n_add, n_rem
   integer                     :: dim(4), n_update
   integer(8)                  :: pid
   logical                     :: move, export
@@ -507,7 +508,6 @@ SUBROUTINE update (self)
   ! Import from other patches.
   !-----------------------------------------------------------------------------
   call self%import
-
   !-----------------------------------------------------------------------------
   !> Macro for performance measurement -- no impaact when TIMER is undefined
   !-----------------------------------------------------------------------------
@@ -526,12 +526,11 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   n_add = 0
   n_rem = 0
-  np_prev = self%np
   call check_count (self, self%np, 'before add/rem')
   do i4=1,n_bin
-    do i3=l(3)+1,u(3)-1
-    do i2=l(2)+1,u(2)-1
-    do i1=l(1)+1,u(1)-1
+    do i3=l(3),u(3)
+    do i2=l(2),u(2)
+    do i1=l(1),u(1)
       particles => self%particles(i1,i2,i3,i4)
       np = particles%n
       if (particles%n < n_min) then
@@ -561,6 +560,10 @@ SUBROUTINE update (self)
     ! are ONLY used for diagnostics and dust size evolution!
     !---------------------------------------------------------------------------
   end do
+  !-----------------------------------------------------------------------------
+  ! Do output, if arrived at self%out_time
+  !-----------------------------------------------------------------------------
+  self%time = patch%time
   call self%output
   TIMEIT(4)
   !-----------------------------------------------------------------------------
@@ -572,7 +575,6 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Now move
   !-----------------------------------------------------------------------------
-  np_prev = self%np
   nu = 0
   nk = 0
   ne = 0
@@ -754,10 +756,6 @@ SUBROUTINE update (self)
   n_particles = n_particles + n_update
   end associate
   self%ne = ne
-  if (self%np > np_prev) then
-    write(stdlog,*) patch%id, self%np,' should be <=', np_prev
-    call check_count (self, self%np, 'after move')
-  end if
   !-----------------------------------------------------------------------------
   ! Update the total momentum, maintained by one counter per direction and
   ! category.  The counter returns the total after the increment, and should
@@ -1006,15 +1004,16 @@ END FUNCTION pforce
 !===============================================================================
 !> Import particles from nbors export lists
 !===============================================================================
-SUBROUTINE import (self)
+SUBROUTINE import (self, count)
   class(particle_solver_t)   :: self
+  logical, optional          :: count
   !.............................................................................
   class(nbor_t)    , pointer :: nbor
   class(task_t)    , pointer :: nbtask
   class(particles_t), pointer:: particles
   class(particle_t), pointer :: p, next
-  real(8)                    :: r(3), dist(3)
-  integer                    :: ni, ii(5), j, bin, n(4)
+  real(8)                    :: r(3), dist(3), t_nbors
+  integer                    :: ni, ii(5), j, bin, n(4), n_before, n_after
   integer(kind=2)            :: q(3)
   logical                    :: inside
   integer, save              :: itimer=0
@@ -1023,11 +1022,15 @@ SUBROUTINE import (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('particle_solver_t%import',itimer=itimer)
   self%ni = 0
+  n_before = 0
+  n_after = 0
+  t_nbors = huge(1.)
   nbor => self%nbor
   do while (associated(nbor))
     nbtask => nbor%task
     select type (nbtask)
     class is (particle_solver_t)
+      t_nbors = min(t_nbors,nbtask%patch%time)
       call nbtask%lock%set ('import')
       dist = nbtask%patch%task_t%distance(self%patch)/nbtask%patch%ds
       !-------------------------------------------------------------------------
@@ -1038,6 +1041,7 @@ SUBROUTINE import (self)
       do bin=1,n_bin
         p => nbtask%exports(bin)%head%next
         n(1) = nbtask%exports(bin)%n
+        n_before = n_before + nbtask%exports(bin)%n
         n(3) = self%np
         do j=1,nbtask%exports(bin)%n
           if (abs(maxval(p%q)) > 100) write (stdlog,*) 'import error', j, p%q
@@ -1062,6 +1066,7 @@ SUBROUTINE import (self)
           end if
           p => next
         end do
+        n_after = n_after + nbtask%exports(bin)%n
         self%np = self%np + ni
         n(2) = nbtask%exports(bin)%n
         n(4) = self%np
@@ -1087,6 +1092,48 @@ SUBROUTINE import (self)
     write (stdlog,'(a,i6,i10)') 'imported: id, self%ni =', &
       self%patch%id, self%ni
     flush (stdlog)
+  end if
+  if (debug .and. present(count)) then
+    if (count) then
+      write (stdlog,'(a,f12.6,3i6)') &
+        'particle_solver_t%import: n_before, n_after =', &
+        self%time, self%id, n_before, n_after
+      do bin=1,n_bin
+        particles => self%exports(bin)
+        p => particles%head%next
+        do j=1,particles%n
+          write (stdlog,'(a,i4,2x,4i4,3f12.7)') &
+          'import: j, q, r =', j, p%q, p%r
+          p => p%next
+        end do
+      end do
+      nbor => self%nbor
+      do while (associated(nbor))
+        ni = 0
+        nbtask => nbor%task
+        select type (nbtask)
+        class is (particle_solver_t)
+          dist = -nbtask%patch%task_t%distance(self%patch)/nbtask%patch%ds
+          do bin=1,n_bin
+            particles => self%exports(bin)
+            p => particles%head%next
+            do j=1,particles%n
+              r = dist + real(p%q(1:3),kind=8)
+              q = floor(r)
+              inside = all(q >= self%lb .and. q <= self%ub)
+              if (inside) then
+                ni = ni+1
+              end if
+              p => p%next
+            end do
+          end do
+          write (stdlog,'(a,i6,f12.6, 1p,e11.2,2x,0p,3i4,i5)') &
+            'import: nbtask, time, dtime, distance, owns =', nbtask%id, &
+            self%time, nbtask%time-self%time, int(dist), ni
+        end select
+        nbor => nbor%next
+      end do
+    end if
   end if
   call trace%end (itimer)
 END SUBROUTINE import
@@ -1166,7 +1213,7 @@ SUBROUTINE output (self)
     end do
   end if
   if (self%time >= self%aux%aux_next) then
-    call self%import
+    call self%import (count=debug)
     call self%density
     call self%aux%register ('dust_s', self%s_cgs)
     call self%aux%register ('dust_d', self%dd)
@@ -1339,15 +1386,16 @@ END FUNCTION global_momentum
 !===============================================================================
 !> Allow at most mostion over one cell, given the current Courant number
 !===============================================================================
-SUBROUTINE courant_condition (self)
+SUBROUTINE courant_condition (self, detailed_timer)
   class(particle_solver_t):: self
+  logical, optional:: detailed_timer
   class(gpatch_t), pointer:: patch
   real:: dust_velocity
   !.............................................................................
   call trace%begin ('particle_solver_t%courant_condition')
   patch => self%patch
   dust_velocity = self%vmax*minval(patch%ds)
-  patch%u_max = max(patch%u_max, dust_velocity)
+  patch%u_max = max(patch%u_max, dust_velocity, tiny(1.))
   self%dtime = patch%courant*minval(patch%ds)/patch%u_max       ! dt <= 1/vmax
   if (verbose > 1) then
     write(stdlog,'(a,i6,1p,7e11.2)') &
@@ -1374,5 +1422,26 @@ SUBROUTINE density (self)
     end do
   end do
 END SUBROUTINE density
+
+!===============================================================================
+!> Compute dust density
+!===============================================================================
+SUBROUTINE exports_info (self)
+  class(particle_solver_t):: self
+  class(particles_t), pointer:: particles
+  class(particle_t), pointer:: p
+  integer:: bin, j
+  !.............................................................................
+  do bin=1,n_bin
+    particles => self%exports(bin)
+    p => particles%head%next
+    do j=1,particles%n
+      write (stdlog,'(a,i6,4i4,3f12.8)') &
+        'particle_solver_t%exports_info: id, j, q, p =', &
+        self%id, j, p%q(1:3), p%r
+      p => p%next
+    end do
+  end do
+END SUBROUTINE exports_info
 
 END MODULE particle_solver_mod

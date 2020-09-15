@@ -132,7 +132,9 @@ END SUBROUTINE input
 SUBROUTINE output (self)
   class(gpatch_t):: self
   !-----------------------------------------------------------------------------
+  call trace%begin ('gpatch_t%output')
   call data_io%output (self)
+  call trace%end ()
 END SUBROUTINE output
 
 !===============================================================================
