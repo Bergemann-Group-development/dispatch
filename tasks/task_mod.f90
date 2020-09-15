@@ -133,6 +133,7 @@ MODULE task_mod
     procedure:: run => void
     procedure:: statistics
     procedure:: bndries
+    procedure:: courant_condition
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -1240,5 +1241,28 @@ END SUBROUTINE statistics
 SUBROUTINE bndries (self)
   class(task_t):: self
 END SUBROUTINE bndries
+
+!===============================================================================
+!> Make sure the time step is not longer than io%out_time, and set exactly
+!> syncronized output time from all tasks, if possible
+!===============================================================================
+SUBROUTINE courant_condition (self, detailed_timer)
+  class(task_t):: self
+  logical, optional:: detailed_timer
+  !-----------------------------------------------------------------------------
+  call trace%begin ('task_t%courant_condition')
+  if (io%do_output .and. io%out_time > 0.0) then
+    self%dtime = min (self%dtime, io%out_time)
+  end if
+  if (self%time + self%dtime > self%out_next) then
+    self%dtime = self%out_next - self%time
+    do while (self%time + self%dtime < self%out_next)
+      self%dtime = self%dtime*1.00001d0
+      write (stdlog,'(a,i6,1p,e115.6)') &
+        'task_t%courant_condition: iterating, dtime =', self%id, self%dtime
+    end do
+  end if
+  call trace%end()
+END SUBROUTINE courant_condition
 
 END MODULE task_mod

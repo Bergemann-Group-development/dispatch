@@ -1585,11 +1585,11 @@ SUBROUTINE courant_condition (self, detailed_timer)
         self%id, self%time
   end if
   !-----------------------------------------------------------------------------
-  ! Prevent large (cheap) patches from taking time steps longer than the out_time
+  ! Apply constraints that should hold for tasks of any kind, and set %dt(it)
   !-----------------------------------------------------------------------------
-  if (io%do_output .and. io%out_time > 0.0) &
-    self%dtime = min (self%dtime, io%out_time)
+  call self%task_t%courant_condition (detailed_timer)
   self%dt(self%it) = self%dtime
+  !-----------------------------------------------------------------------------
   if (io%verbose> 3 .or. self%id == io%id_debug) &
     write(io%output,'(a,i7,f12.6,f8.4,1p,e10.2)') 'courant:', &
       self%id, self%dtime, courant, self%u_max
