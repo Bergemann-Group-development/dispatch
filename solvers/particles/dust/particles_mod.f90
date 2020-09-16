@@ -137,7 +137,10 @@ END SUBROUTINE output_vparticle
 SUBROUTINE init_particles (self, id, type)
   class(particles_t):: self
   integer:: id(5), type
+  character(len=120):: id= &
+  '$Id$'
   !-----------------------------------------------------------------------------
+  call print_id (id)
   allocate (self%head, self%tail)
   self%id = id
   self%type = type
@@ -230,7 +233,7 @@ FUNCTION pop(self) RESULT (p)
       p => p0
     else
       if (mpi%size == 1) then
-        !write (stderr,*) 'ERROR:', self%id
+        write (stderr,*) 'ERROR:', self%id
         allocate (p0)
         call io%bits_mem (storage_size(p0), 1, 'p0')
         call p0%init

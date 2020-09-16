@@ -200,9 +200,12 @@ SUBROUTINE init (self)
   class(particle_solver_t) :: self
   class(gpatch_t), pointer :: patch
   integer                  :: m(4), i, j
+  character(len=120):: id= &
+  '$Id$'
   !-----------------------------------------------------------------------------
   ! Initialize particle lists and dust density array
   !-----------------------------------------------------------------------------
+  call io%print_id (id)
   ! if (.not.on) return
   call trace%begin ('particle_solver_t%init')
   m(1:3) = self%patch%mesh%gn
@@ -1005,8 +1008,14 @@ SUBROUTINE remove (self, particles)
       'particle_solver_t%remove WARNING:', particles%id, n0, n, dd, dm
     p => particles%head%next
     do j=1,n
-      write (stdout,'(a,i4,2x,4i4,3f8.3,1p,4e12.3)') &
-        'remove WARNING:', j, p%q, p%r, p%w, p%v
+      select type (p)
+      class is (vparticle_t)
+        write (stdout,'(a,i4,2x,4i4,3f8.3,1p,2(2x,4e12.3))') &
+          'remove WARNING:', j, p%q, p%r, p%w, p%v, p%dg, p%vg
+      class is (particle_t)
+        write (stdout,'(a,i4,2x,4i4,3f8.3,1p,4e12.3)') &
+          'remove WARNING:', j, p%q, p%r, p%w, p%v
+      end select
       p => p%next
     end do
   end if
