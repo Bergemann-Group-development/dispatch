@@ -229,10 +229,18 @@ FUNCTION pop(self) RESULT (p)
       call p0%init
       p => p0
     else
-      allocate (p1)
-      call io%bits_mem (storage_size(p1), 1, 'p1')
-      call p1%init
-      p => p1
+      if (mpi%size == 1) then
+        !write (stderr,*) 'ERROR:', self%id
+        allocate (p0)
+        call io%bits_mem (storage_size(p0), 1, 'p0')
+        call p0%init
+        p => p0
+      else
+        allocate (p1)
+        call io%bits_mem (storage_size(p1), 1, 'p1')
+        call p1%init
+        p => p1
+      end if
     end if
   end if
 END FUNCTION pop
