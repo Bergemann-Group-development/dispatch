@@ -138,7 +138,7 @@ SUBROUTINE init_particles (self, id, type)
   class(particles_t):: self
   integer:: id(5), type
   character(len=120), save:: ids= &
-  '$Id$
+  '$Id$'
   !-----------------------------------------------------------------------------
   call trace%print_id (ids)
   allocate (self%head, self%tail)
