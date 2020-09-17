@@ -49,33 +49,40 @@ class particles(object):
                 print('{} format={}'.format(file,fmt))
             m=0
             m0=0
+            ioutp=-1
             while fmt==3:
                 iout,n,id,t,position,size=fd.read_record('i4,i4,i4,f8,(3)f8,(3)f8')[0]
                 pos=position.astype(np.float32)
-                if verbose>2:
+                if verbose>3 or (verbose>2 and iout!=ioutp):
+                    ioutp=iout
                     print('id,n,io,t,pos,fmt: {} {} {} {:8.3f} {} {}'
                           .format(id,n,iout,t,pos,size))
-                s='(4,n)i2,(3,n)f4,(3,n)f4,(3,n)f4,(n)f4,(n)f4,(n)f4,(n)f8,(n)i8'
-                s=s.replace('n','{}'.format(n))
-                if verbose>3:
-                    print(s)
-                (q,p,v,vg,w,dg,dd,t,i)=fd.read_record(s)[0]
-                bin=q[3,:]
-                for dir in range(3):
-                    self.p [i,dir,iout]=(p[dir,:]+q[dir,:])*size[dir]+pos[dir]
-                    self.v [i,dir,iout]= v[dir,:]
-                    self.vg[i,dir,iout]=vg[dir,:]
-                self.w [i,iout]=w
-                self.dg[i,iout]=dg
-                self.dd[i,iout]=dd
-                self.t [i,iout]=t
-                self.bin[i]=bin
+                if n>0:
+                    s='(4,n)i2,(3,n)f4,(3,n)f4,(3,n)f4,(n)f4,(n)f4,(n)f4,(n)f8,(n)i8'
+                    s=s.replace('n','{}'.format(n))
+                    if verbose>4:
+                        print(s)
+                    (q,p,v,vg,w,dg,dd,t,i)=fd.read_record(s)[0]
+                    bin=q[3,:]
+                    if iout < self.p.shape[2]:
+                        for dir in range(3):
+                            self.p [i,dir,iout]=(p[dir,:]+q[dir,:])*size[dir]+pos[dir]
+                            self.v [i,dir,iout]= v[dir,:]
+                            self.vg[i,dir,iout]=vg[dir,:]
+                        self.w [i,iout]=w
+                        self.dg[i,iout]=dg
+                        self.dd[i,iout]=dd
+                        self.t [i,iout]=t
+                    self.bin[i]=bin
+                else:
+                    void=fd.read_ints()
+                    print('zero particles',type(void),len(void))
                 fmt=fd.read_record('i4')[0]
                 m=m+n
             if verbose>0:
                 used = time()-start
-                print('{:5.2f} Mp -> {:.2f} Mp/s   {} snapshots {} particles/snapshot'
-                      .format(m*1e-6,m*1e-6/used,snaps,parts))
+                print('{:.0f}s  {:5.2f} Mp -> {:.2f} Mp/s   {} snapshots {} particles/snapshot'
+                      .format(used,m*1e-6,m*1e-6/used,snaps,parts))
         """ Keep only entries with non-zero density in the initial snapshot """
         w=np.where(self.dg[:,0] > 0.0)[0]
         if verbose>1:

@@ -200,12 +200,12 @@ SUBROUTINE init (self)
   class(particle_solver_t) :: self
   class(gpatch_t), pointer :: patch
   integer                  :: m(4), i, j
-  character(len=120):: id= &
-  '$Id$'
+  character(len=120), save:: id= &
+  '$Id$
   !-----------------------------------------------------------------------------
   ! Initialize particle lists and dust density array
   !-----------------------------------------------------------------------------
-  call io%print_id (id)
+  call trace%print_id (id)
   ! if (.not.on) return
   call trace%begin ('particle_solver_t%init')
   m(1:3) = self%patch%mesh%gn
@@ -416,7 +416,7 @@ SUBROUTINE update (self)
   real                        :: ds, dt, os, n_min, n_max, dd
   integer                     :: n, np, ne, nk, nm, nu, nx, m(3), ii(3), j
   integer(kind=2)             :: i, i1, i2, i3, i4, l(3), u(3), q(3)
-  integer                     :: id, paid(5), istep, n_add, n_rem
+  integer                     :: id, paid(5), istep, n_add, n_rem, n_norem
   integer                     :: dim(4), n_update
   integer(8)                  :: pid
   logical                     :: move, export
@@ -535,6 +535,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   n_add = 0
   n_rem = 0
+  n_norem = 0
   call check_count (self, self%np, 'before add/rem')
   do i4=1,n_bin
     do i3=l(3),u(3)
@@ -550,11 +551,31 @@ SUBROUTINE update (self)
         call add (self, particles)
         TIMEIT(1)
       else if (particles%n > n_max) then
-        n_rem = n_rem+1
-        if (verbose > 3) &
-          write(stdlog,'(2i6,3i4,2x,a,i4)') &
-            patch%id,patch%istep,i1,i2,i3,'rem',particles%n
-        call remove (self, particles)
+        !-----------------------------------------------------------------------
+        ! Potentially too many particles, but remove vparticles from the count
+        ! before deciding, since they cannot be removed in any case.
+        !-----------------------------------------------------------------------
+        n = particles%n
+        p => particles%head%next
+        do j=1,particles%n
+          select type (p)
+          class is (vparticle_t)
+            n = n-1
+          end select
+          p => p%next
+        end do
+        !-----------------------------------------------------------------------
+        ! Actually remove & renormalize?
+        !-----------------------------------------------------------------------
+        if (n > n_max) then
+          n_rem = n_rem+1
+          if (verbose > 3) &
+            write(stdlog,'(2i6,3i4,2x,a,i4)') &
+              patch%id,patch%istep,i1,i2,i3,'rem',particles%n
+          call remove (self, particles)
+        else
+          n_norem = n_norem+1
+        end if
         TIMEIT(2)
       else
         TIMEIT(3)
@@ -836,8 +857,9 @@ SUBROUTINE update (self)
         'n:', nu, np, self%ni, ne, nx, nk, n_add, n_rem, &
         'mus/p:', time(2)/nu, 'ms:', time(2)
     else
-      write (stdlog,'(i6,4i12,f6.3,"s",6p,2f8.3," mus/p",0p,2f6.2)') &
-      patch%id, np, nk, n_add, n_rem, wc, wc/np, wc/nk, real(nm)/nk, real(ne)/nk
+      write (stdlog,'(i6,5i12,f6.3,"s",6p,2f8.3," mus/p",0p,2f6.2)') &
+      patch%id, np, nk, n_add, n_rem, n_norem, wc, wc/np, wc/nk, &
+      real(nm)/nk, real(ne)/nk
     end if
   end if
   !-----------------------------------------------------------------------------
