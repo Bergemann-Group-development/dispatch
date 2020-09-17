@@ -1351,30 +1351,35 @@ SUBROUTINE voutput (self)
     end do
   end do
   !-----------------------------------------------------------------------------
-  ! Write out info on dimensions -- before data to ensure it is up-to-date
-  ! during live runs
+  ! Only do I/O if there are particles to write
   !-----------------------------------------------------------------------------
-  call io%lock%set ('particle_solver_t%voutput')
-  call trace%begin ('particle_solver_t%voutput(2)', itimer=itimer(2))
-  rewind (io_unit%particle_i)
-  i_max = max(i_max,maxval(id))
-  o_max = max(o_max,self%iout)
-  write (io_unit%particle_i) n_bin, i_max+1, o_max
-  flush (io_unit%particle_i)
-  !-----------------------------------------------------------------------------
-  ! Write out buffered data
-  !-----------------------------------------------------------------------------
-  write (io_unit%particle_d) particle_solver_key
-  write (io_unit%particle_d) &
-   self%iout, n, self%id, self%time, self%patch%position-self%patch%size/2, &
-   self%patch%ds
-  write (io_unit%particle_d) q(1:n,:), r(1:n,:), v(1:n,:), vg(1:n,:), &
-    w(1:n), dg(1:n), dd(1:n), t(1:n), id(1:n)
-  write (io_unit%particle_d) EOF
-  backspace (io_unit%particle_d)
-  n_tot = n_tot + n
-  if (mod(n_tot,1000000) == 0) then
-    write(stdout,'(a,f8.2,a)') 'particle_io:', n_tot*1e-6, ' Mp'
+  if (n > 0) then
+    !---------------------------------------------------------------------------
+    ! Write out info on dimensions -- before data to ensure it is up-to-date
+    ! during live runs
+    !---------------------------------------------------------------------------
+    call io%lock%set ('particle_solver_t%voutput')
+    call trace%begin ('particle_solver_t%voutput(2)', itimer=itimer(2))
+    rewind (io_unit%particle_i)
+    i_max = max(i_max,maxval(id))
+    o_max = max(o_max,self%iout)
+    write (io_unit%particle_i) n_bin, i_max+1, o_max
+    flush (io_unit%particle_i)
+    !---------------------------------------------------------------------------
+    ! Write out buffered data
+    !---------------------------------------------------------------------------
+    write (io_unit%particle_d) particle_solver_key
+    write (io_unit%particle_d) &
+    self%iout, n, self%id, self%time, self%patch%position-self%patch%size/2, &
+    self%patch%ds
+    write (io_unit%particle_d) q(1:n,:), r(1:n,:), v(1:n,:), vg(1:n,:), &
+      w(1:n), dg(1:n), dd(1:n), t(1:n), id(1:n)
+    write (io_unit%particle_d) EOF
+    backspace (io_unit%particle_d)
+    n_tot = n_tot + n
+    if (mod(n_tot,1000000) == 0) then
+      write(stdout,'(a,f8.2,a)') 'particle_io:', n_tot*1e-6, ' Mp'
+    end if
   end if
   call trace%end (itimer(2))
   call io%lock%unset ('particle_solver_t%voutput')
