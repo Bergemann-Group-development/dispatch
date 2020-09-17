@@ -206,11 +206,10 @@ SUBROUTINE print_id (id)
   character(len=120), save:: hl= &
     '--------------------------------------------------------------------------------'
   !..............................................................................
-  if (io_unit%do_validate) return
-  if (id .ne. '') then
+  if (id /= '') then
     !$omp critical (print_id_cr)
-    if (id .ne. '') then
-      write (io_unit%hash,'(a)') id
+    if (id /= '' .and. len_trim(id) > 8) then
+      write (io_unit%hash,'(a)') id(6:len_trim(id)-2)
       flush (io_unit%hash)
       id = ''
     end if

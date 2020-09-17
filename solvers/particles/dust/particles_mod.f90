@@ -137,10 +137,10 @@ END SUBROUTINE output_vparticle
 SUBROUTINE init_particles (self, id, type)
   class(particles_t):: self
   integer:: id(5), type
-  character(len=120):: id= &
-  '$Id$'
+  character(len=120), save:: ids= &
+  '$Id$
   !-----------------------------------------------------------------------------
-  call print_id (id)
+  call trace%print_id (ids)
   allocate (self%head, self%tail)
   self%id = id
   self%type = type
