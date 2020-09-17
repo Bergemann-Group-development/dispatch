@@ -1,5 +1,5 @@
 !|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-!> $Id$
+!> $Id: 53f3fcc80c54153589bfc3a2e5229d567694864e $
 !> Source of authoritative I/O unit number information
 !|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE io_unit_mod
@@ -18,9 +18,30 @@ MODULE io_unit_mod
     character(len=64):: inputname, datadir='data', top
     character(len=64):: rundir, inputdir
     character(len=64):: rankbase, threadbase
+  contains
+    procedure, nopass:: print_id
   end type
   integer, parameter, public:: mch=120
   type(io_unit_t), public:: io_unit
   integer, public:: stdout=6, stderr=6, stdin=1, stdlog=4
   !$omp threadprivate (io_unit,stdlog)
+CONTAINS
+
+!===============================================================================
+!> Write information from $Id$ string to data/[run/]hash.log
+!===============================================================================
+SUBROUTINE print_id (id)
+  character(len=120) id
+  !.............................................................................
+  if (id .ne. '') then
+    !$omp critical (print_id_cr)
+    if (len_trim(id) > 8) then
+      write (io_unit%hash,'(a)') id(6:len_trim(id)-2)
+      flush (io_unit%hash)
+      id = ''
+    end if
+    !$omp end critical (print_id_cr)
+  end if
+END SUBROUTINE print_id
+
 END MODULE io_unit_mod

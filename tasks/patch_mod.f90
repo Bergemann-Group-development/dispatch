@@ -402,7 +402,7 @@ SUBROUTINE init (self)
   logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%init')
-  call trace%print_id (id)
+  call io_unit%print_id (id)
   call self%setup
   call io%lock%set ('patch_t%init')
   if (first_time) then
@@ -2198,7 +2198,9 @@ SUBROUTINE time_interval (self, time, jt, pt, all, id)
     jt = 1
     pt(2) = 0.0
   else
+    if (omp_lock%tasks) call self%lock%set ('time_interval')
     call self%timeslots (iit, t)
+    if (omp_lock%tasks) call self%lock%unset ('time_interval')
     if (io%verbose > 0) then
       !-------------------------------------------------------------------------
       ! Self test

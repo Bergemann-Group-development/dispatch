@@ -1,4 +1,4 @@
-! $Id$
+! $Id: d9fd308a786b218bf1bc6eb1464c5909f35ffd02 $
 !===============================================================================
 !> The lock module uses nested locks, to allow versatile use of locks, where
 !> a procedure may want to make sure to lock a data type, even though it may
@@ -33,7 +33,7 @@ MODULE omp_lock_mod
     real(8):: time(maxproc) = 0d0                 ! lock waiting times
     real(8):: start_time = 0d0
     logical:: links=.false.             ! lock nbor lists
-    logical:: tasks=.false.             ! lock task memory updates
+    logical:: tasks=.true.              ! lock task memory updates
   contains
     procedure:: init
     procedure, nopass:: check_pointer
@@ -73,6 +73,10 @@ SUBROUTINE init (self, kind, id)
   logical, save:: first_time=.true.
   namelist /lock_params/ on, verbose, verbose_time, log, tasks, links, &
     alternate_time
+  character(len=120):: ids= &
+  '$Id$'
+  !-----------------------------------------------------------------------------
+  call io_unit%print_id (ids)
   !-----------------------------------------------------------------------------
 #ifdef TRACE 
   call trace%begin('lock_t%init')
