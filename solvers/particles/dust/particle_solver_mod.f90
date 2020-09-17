@@ -201,7 +201,7 @@ SUBROUTINE init (self)
   class(gpatch_t), pointer :: patch
   integer                  :: m(4), i, j
   character(len=120), save:: id= &
-  '$Id$
+  '$Id$'
   !-----------------------------------------------------------------------------
   ! Initialize particle lists and dust density array
   !-----------------------------------------------------------------------------

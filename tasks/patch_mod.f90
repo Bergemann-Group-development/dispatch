@@ -398,7 +398,7 @@ END FUNCTION task2patch
 SUBROUTINE init (self)
   class(patch_t):: self
   character(len=120):: id = &
-    '$Id$ tasks/patch_mod.f90'
+    '$Id$'
   logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%init')
@@ -2240,19 +2240,20 @@ SUBROUTINE time_interval (self, time, jt, pt, all, id)
       pt(2) = (time-t(j))/dt
       if (pt(2) > 1.01d0 + self%grace) then
         call io%warning ('patch_t%time_interval: excessive extrapolatiion prevented')
+        pt(1) = 1.-pt(2)
         if (present(id)) then
           write (io_unit%mpi,'(f8.3,i4,2x,a,2i6,1p,4e11.2)') &
             wallclock(), omp%thread, &
             'patch_t%time_interval: excessive id,id,t,tm,t,f =', &
-            self%id, id, t(j), time, t(j+1), (time-t(j))/dt
+            self%id, id, time, time-t(j), t(j+1)-t(j), (time-t(j))/dt
           write (io_unit%mpi,'(f8.3,i4,2x,a,2i2,2f5.2,1p,10e11.3)') &
             wallclock(), omp%thread, &
             'patch_t%time_interval: jt,pt,tm,t(:) =', &
-            jt, pt, time, self%t
+            jt, pt, time, self%t-time
         else
           write (io_unit%mpi,'(i4,2x,a,i6,1p,4e11.2)') omp%thread, &
             'patch_t%time_interval: excessive id,t,tm,t,f =', &
-            self%id, t(j), time, t(j+1), (time-t(j))/dt
+            self%id, time, t(j+1),time, time-t(j), t(j+1)-t(j), (time-t(j))/dt
         end if
         flush (io_unit%mpi)
       end if
