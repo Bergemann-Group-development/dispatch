@@ -771,24 +771,39 @@ LOGICAL FUNCTION is_ahead_of (self, target)
   class (task_t):: self, target
   real(8):: nbtime, nbdtime, tgtime
   !.............................................................................
-  !$omp atomic read
-  nbtime = self%time
-  !$omp atomic read
-  nbdtime = self%dtime
-  !$omp atomic read
-  tgtime = target%time
-  ! -- if a task is frozen (in time) assume it is forever ahead of other tasks
-  if (self%is_set(bits%frozen)) then
-    is_ahead_of = .true.
-  ! -- a negative nbor time signals an invalid (e.g. initial RT) state
-!  else if (nbtime < 0.0) then
-!    is_ahead_of = .false.
-  ! -- do not use a grace interval for the first few steps
-  else if (self%istep < 3) then
-    is_ahead_of = nbtime >= tgtime
-  ! -- use a grace interval that is fraction of the nbor time step
+  if (omp_lock%tasks) then
+    call self%lock%set ('is_ahead_of')
+    nbtime = self%time
+    nbdtime = self%dtime
+    tgtime = target%time
+    if (self%is_set(bits%frozen)) then
+      is_ahead_of = .true.
+    else if (self%istep < 3) then
+      is_ahead_of = nbtime >= tgtime
+    else
+      is_ahead_of = nbtime + nbdtime*self%grace > tgtime
+    end if
+    call self%lock%unset ('is_ahead_of')
   else
-    is_ahead_of = nbtime + nbdtime*self%grace > tgtime
+    !$omp atomic read
+    nbtime = self%time
+    !$omp atomic read
+    nbdtime = self%dtime
+    !$omp atomic read
+    tgtime = target%time
+    ! -- if a task is frozen (in time) assume it is forever ahead of other tasks
+    if (self%is_set(bits%frozen)) then
+      is_ahead_of = .true.
+    ! -- a negative nbor time signals an invalid (e.g. initial RT) state
+  !  else if (nbtime < 0.0) then
+  !    is_ahead_of = .false.
+    ! -- do not use a grace interval for the first few steps
+    else if (self%istep < 3) then
+      is_ahead_of = nbtime >= tgtime
+    ! -- use a grace interval that is fraction of the nbor time step
+    else
+      is_ahead_of = nbtime + nbdtime*self%grace > tgtime
+    end if
   end if
   if (io_unit%verbose>1) then
     if (target%id==io%id_debug.or.io_unit%verbose>4) &
