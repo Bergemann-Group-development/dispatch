@@ -1380,9 +1380,9 @@ SUBROUTINE voutput (self)
     if (mod(n_tot,1000000) == 0) then
       write(stdout,'(a,f8.2,a)') 'particle_io:', n_tot*1e-6, ' Mp'
     end if
+    call io%lock%unset ('particle_solver_t%voutput')
   end if
   call trace%end (itimer(2))
-  call io%lock%unset ('particle_solver_t%voutput')
   !-----------------------------------------------------------------------------
   deallocate (q, r, v, vg, dg, dd, w, t, id)
   call trace%end (itimer(1))
