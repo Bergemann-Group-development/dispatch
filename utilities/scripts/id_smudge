@@ -1,0 +1,3 @@
+#!/bin/sh
+s=`git log -n1 --pretty=format:"%h %ci" -- $1`
+sed -e 's|$Id.*\$|$Id: xxMAGICxx $|' -e "s|xxMAGICxx|$s $1|"

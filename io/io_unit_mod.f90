@@ -28,7 +28,7 @@ MODULE io_unit_mod
 CONTAINS
 
 !===============================================================================
-!> Write information from $Id$ string to data/[run/]hash.log
+!> Write information from Id string to data/[run/]hash.log
 !===============================================================================
 SUBROUTINE print_id (id)
   character(len=120) id

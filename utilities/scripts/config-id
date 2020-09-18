@@ -1,0 +1,5 @@
+git config --unset --local filter.id.smudge
+git config --unset --local filter.id.clean
+git config --add --local filter.id.smudge 'sh utilities/scripts/id_smudge %f'
+git config --add --local filter.id.clean 'sh utilities/scripts/id_clean %f'
+git config --list --local | grep filter
