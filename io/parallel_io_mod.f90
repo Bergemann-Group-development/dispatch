@@ -84,7 +84,7 @@ SUBROUTINE init (patch)
   logical:: first_time=.true.
   namelist /parallel_io_params/ verbose, id_debug
   character(len=120):: id = &
-  '$Id$ io/parallel_io_mod.f90'
+  '$Id$'
   !-----------------------------------------------------------------------------
   call trace%print_id (id)
   call trace%begin ('parallel_io_t%init')

@@ -70,7 +70,7 @@ SUBROUTINE init (self)
   namelist /download_params/ order_interpolator, order_time, check_filled, &
     use_different, sorted, use_locks, id_debug, verbose
   character(len=120):: id = &
-    '$Id$ interpolation/download_mod.f90'
+    '$Id$'
   !-----------------------------------------------------------------------------
   call trace%begin ('download_t%init')
   call trace%print_id (id)

@@ -102,7 +102,7 @@ SUBROUTINE init (self, task)
   !.............................................................................
   logical, save:: first_time=.true.
   character(len=120):: id = &
-  '$Id$ io/data_io_mod.f90'
+  '$Id$'
   !-----------------------------------------------------------------------------
   call trace%begin('data_io_t%init')
   call trace%print_id (id)

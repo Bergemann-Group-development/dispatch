@@ -68,7 +68,7 @@ SUBROUTINE init (self, name)
   namelist /dispatcher0_params/ verbose, max_stalled, retry_stalled, do_delay, &
     delay_ms, mpi_only_master, debug, detailed_timer
   character(len=120):: ids = &
-  '$Id$ dispatchers/dispatcher0_mod.f90'
+  '$Id$'
   !-----------------------------------------------------------------------------
   call trace%print_id (ids)
   call trace%begin('dispatcher0_t%init')

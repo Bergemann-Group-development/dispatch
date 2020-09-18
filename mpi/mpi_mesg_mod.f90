@@ -677,7 +677,7 @@ SUBROUTINE init (self)
     max_fail, test_time, uniq_mesg, debug, verbose, detailed_timer
   integer:: iostat
   character(len=120):: id = &
-  '$Id$ mpi_mesg_mod.f90'
+  '$Id$'
   !-----------------------------------------------------------------------------
   ! Prevent initializing more than once
   !-----------------------------------------------------------------------------

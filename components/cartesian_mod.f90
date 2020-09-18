@@ -59,7 +59,7 @@ SUBROUTINE init (self, task_list, label)
   namelist /cartesian_params/ size, position, dims, mpi_dims, per_rank, origin, &
     face_nbors, omp_init, periodic, verbose
   character(len=120):: ids = &
-    '$Id$ components/cartesian_mod.f90'
+    '$Id$'
   !-----------------------------------------------------------------------------
   if (present (task_list)) then
     if (associated(task_list)) then

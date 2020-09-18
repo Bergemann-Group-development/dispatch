@@ -96,7 +96,7 @@ SUBROUTINE init (self, mpi_dims, dims)
   integer, optional, dimension(3):: mpi_dims, dims
   real(8):: offset
   character(len=120):: ids = &
-  '$Id$ mpi/mpi_mod.f90'
+  '$Id$'
   !-----------------------------------------------------------------------------
   if (self%ok) return
   call trace%begin ('mpi_t%init')

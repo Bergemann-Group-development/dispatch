@@ -112,7 +112,7 @@ SUBROUTINE init (self, name)
   class(task_t), pointer:: task
   namelist /task_mesg_params/ verbose, method, lock_recv
   character(len=120):: id = &
-    '$Id$ lists/task_mesg_mod.f90'
+    '$Id$'
   !-----------------------------------------------------------------------------
   if (mpi%size == 1) &
     return

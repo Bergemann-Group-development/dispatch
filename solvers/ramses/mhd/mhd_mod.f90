@@ -83,7 +83,7 @@ SUBROUTINE pre_init (self)
     detailed_timer, unsigned, courant_type, max_dlogd, n_dump, &
     divb_cleaner, divb_iter, do_temperature, verbose
   character(len=120):: id = &
-   '$Id$ solvers/ramses/mhd/mhd_mod.f90'
+   '$Id$'
 !...............................................................................
   call trace%begin ('mhd_mod%pre_init')
   call trace%print_id (id)

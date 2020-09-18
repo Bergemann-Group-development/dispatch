@@ -130,7 +130,7 @@ SUBROUTINE init (self, name)
   real:: test
   integer:: iostat
   character(len=120):: ids = &
-  '$Id$ io/io_mod.f90'
+  '$Id$'
   !.............................................................................
   self%master = mpi%master
   io%master   = mpi%master

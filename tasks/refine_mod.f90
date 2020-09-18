@@ -252,7 +252,7 @@ SUBROUTINE init (self)
     grad_var, region_llc, region_urc, force_cubical, n_locks, wait_refine_nsteps, &
     detailed_timer, do_dump
   character(len=120):: id = &
-    '$Id$ tasks/refine_mod.f90'
+    '$Id$'
   !-----------------------------------------------------------------------------
   call trace%begin ('refine_t%init')
   call trace%print_id (id)

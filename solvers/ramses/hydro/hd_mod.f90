@@ -130,7 +130,7 @@ SUBROUTINE init (self)
   class(hd_t):: self
   integer:: i
   character(len=120):: id = &
-   '$Id$ solvers/ramses/hydro/hd_mod.f90'
+   '$Id$'
   !.............................................................................
   call trace%begin ('hd_mod%init')
   call trace%print_id (id)

@@ -75,7 +75,7 @@ SUBROUTINE init (self)
   character(len=8), save:: mode='off'
   namelist /validate_params/ verbose, mode
   character(len=120):: id = &
-   '$Id$ io/validate_mod.f90'
+   '$Id$'
   !.............................................................................
   call trace%begin ('validate_t%init')
   call trace%print_id (id)

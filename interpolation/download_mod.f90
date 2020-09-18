@@ -85,7 +85,7 @@ SUBROUTINE init (self)
     use_prolong, use_restrict, use_same, sorted, use_locks, id_debug, &
     detailed_timer, verbose
   character(len=120):: id = &
-    '$Id$ interpolation/download_mod.f90'
+    '$Id$'
   !-----------------------------------------------------------------------------
   call trace%begin ('download_t%init')
   call trace%print_id (id)

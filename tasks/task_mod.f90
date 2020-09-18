@@ -261,7 +261,7 @@ END SUBROUTINE init
 SUBROUTINE init_params (self)
   class (task_t):: self
   character(len=120):: ids= &
-    '$Id$ tasks/task_mod.f90'
+    '$Id$'
   integer:: iostat, id, id_master
   logical, save:: do_dumps
   integer, save:: id_max=0
