@@ -37,10 +37,13 @@ SUBROUTINE init (self)
   real, pointer, dimension(:,:,:):: d, e, px, py, pz
   real, pointer, dimension(:,:,:,:):: p
   namelist /experiment_params/ verbose, T_K, gamma
+  character(len=120):: id= &
+  '$Id$'
   !-----------------------------------------------------------------------------
   ! Initialize the task instance, which includes allocating self%mem()
   !-----------------------------------------------------------------------------
   call trace%begin ('experiment_t%init')
+  call io_unit%print_id (id)
   call self%solver_t%init
   !-----------------------------------------------------------------------------
   ! Read experiment parameters and compute initial condition values

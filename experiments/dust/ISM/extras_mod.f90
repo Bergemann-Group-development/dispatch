@@ -82,18 +82,18 @@ MODULE extras_mod
 CONTAINS
 
 !===============================================================================
-!> Initialize the modules that are to be included and used
+!> Pre-initialize the modules that are to be included and used
 !===============================================================================
 SUBROUTINE pre_init (self)
   class(extras_t), target:: self
   !.............................................................................
-  call trace%begin ('extras_t%pre_init')
-  self%gpatch => self
+  call trace%begin ('extras_t%pre_init')                        ! keep
+  self%gpatch => self                                           ! keep
   call self%forces%pre_init (self%gpatch)                       ! forces
   call self%cooling%pre_init (self%gpatch)                      ! cool
   call self%selfgravity%pre_init (self%gpatch)                  ! selfg
   call self%particle_solver%pre_init (self%gpatch)              ! dust
-  call trace%end()
+  call trace%end()                                              ! keep
 END SUBROUTINE pre_init
 
 !===============================================================================
@@ -101,12 +101,15 @@ END SUBROUTINE pre_init
 !===============================================================================
 SUBROUTINE init (self)
   class(extras_t):: self
+  character(len=120):: id= &
+  '$Id$'
   !.............................................................................
-  call trace%begin ('extras_t%init')
+  call trace%begin ('extras_t%init')                            ! keep
+  call io_unit%print_id (id)                                    ! keep
   call self%forces%init                                         ! forces
   call self%selfgravity%init                                    ! selfg
   call self%particle_solver%init                                ! dust
-  call trace%end()
+  call trace%end()                                              ! keep
 END SUBROUTINE init
 
 !===============================================================================

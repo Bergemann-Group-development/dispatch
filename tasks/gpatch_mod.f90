@@ -153,10 +153,13 @@ SUBROUTINE init (self)
   character(len=64)                 :: filename
   logical                           :: ok
   real(kind=KindScalarVar), pointer :: d(:,:,:)
+  character(len=129):: id= &
+  '$Id$'
   !-----------------------------------------------------------------------------
   if (self%is_set(bits%frozen)) &
     return
   call trace%begin ('gpatch_t%init')
+  call io_unit%print_id (id)
   call self%initial%init (self%kind, real(self%gamma))
   call data_io%init (self)
   call guard_zones%init

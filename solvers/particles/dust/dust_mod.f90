@@ -111,8 +111,11 @@ SUBROUTINE init (self, nbin, m_cgs, dd)
   real:: dln_m
   logical:: first_time = .true.
   namelist /dust_params/ on, cadence, dust_time, growth_rate, validate, verbose
+  character(len=120):: id= &
+  '$Id$'
   !-----------------------------------------------------------------------------
   call trace%begin ('dust_t%init')
+  call io_unit%print_id (id)
   call io%lock%set
   if (first_time) then
     rewind (io%input)
