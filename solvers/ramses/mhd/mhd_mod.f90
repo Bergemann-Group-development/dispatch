@@ -37,19 +37,20 @@ MODULE mhd_mod
     logical:: mhd=.true.
     integer:: idim=3
     character(len=10):: riemann='hlld'
-    real, pointer, dimension(:,:,:,:):: q         ! primitive
-    real, pointer, dimension(:,:,:,:):: bf, em    ! face centered B, emf
-    real, pointer, dimension(:,:,:,:,:):: qp, qm  ! face centered
-    real, pointer, dimension(:,:,:,:,:):: dq, dq2, dbf ! slopes
-    real, pointer, dimension(:,:,:,:,:):: qLB,qRB,qLT,qRT
-    real, pointer, dimension(:,:,:,:):: uin       ! conserved
-    real, pointer, dimension(:,:,:,:):: unew      ! new conserved
-    real, pointer, dimension(:,:,:):: Ex,Ey,Ez
-    real, pointer, dimension(:,:,:):: c
+    real, contiguous, pointer, dimension(:,:,:,:):: q         ! primitive
+    real, contiguous, pointer, dimension(:,:,:,:):: bf, em    ! face centered B, emf
+    real, contiguous, pointer, dimension(:,:,:,:,:):: qp, qm  ! face centered
+    real, contiguous, pointer, dimension(:,:,:,:,:):: dq, dq2, dbf ! slopes
+    real, contiguous, pointer, dimension(:,:,:,:,:):: qLB,qRB,qLT,qRT
+    real, contiguous, pointer, dimension(:,:,:,:):: uin       ! conserved
+    real, contiguous, pointer, dimension(:,:,:,:):: unew      ! new conserved
+    real, contiguous, pointer, dimension(:,:,:):: Ex,Ey,Ez
+    real, contiguous, pointer, dimension(:,:,:):: c
     !dir$ attributes align:64 :: q,bf,em,qp,qm,dq,dq2,dbf,qLB,qRB,qLT,qRT,Ex,Ey,Ez,c
   contains
     procedure:: pre_init
     procedure:: init
+    procedure:: pre_update
     procedure:: update
     procedure:: gas_pressure
   end type
@@ -148,6 +149,28 @@ END SUBROUTINE init
 
 !===============================================================================
 !===============================================================================
+SUBROUTINE pre_update (self)
+  class(mhd_t), target:: self
+  integer:: n(3)
+  !-----------------------------------------------------------------------------
+  call trace%begin ('mhd_t%pre_update')
+  !-----------------------------------------------------------------------------
+  ! Primitive variables may be needed in extras courant_conditions
+  !-----------------------------------------------------------------------------
+  if (io%smallr  /= 0.0) smallr = io%smallr
+  if (io%courant /= 0.0) self%courant = io%courant
+  call ctoprim(self)                  ! Primitive variables, sound speeds
+  call self%extras_t%courant_condition (detailed_timer)
+  call self%gpatch_t%courant_condition (detailed_timer)
+  !-----------------------------------------------------------------------------
+  ! Pre-update extras components
+  !-----------------------------------------------------------------------------
+  call self%extras_t%pre_update
+  call trace%end ()
+END SUBROUTINE pre_update
+
+!===============================================================================
+!===============================================================================
 SUBROUTINE update (self)
   class(mhd_t):: self
   real, pointer, dimension(:,:,:,:):: p
@@ -174,20 +197,15 @@ SUBROUTINE update (self)
   ! being called.  Set all values to zero initially, in case some loop extends
   ! beyond defined values.
   !-----------------------------------------------------------------------------
-  self%uin  => self%mem(:,:,:,:,self%new,1)
-  self%unew => self%mem(:,:,:,:,self%new,1)
 
   n = self%mesh%gn
-  allocate (self%c  (n(1),n(2),n(3)))                           ! self%c   = 0_dp
   allocate (self%Ex (n(1),n(2),n(3)))                           ! self%Ex  = 0_dp
   allocate (self%Ey (n(1),n(2),n(3)))                           ! self%Ey  = 0_dp
   allocate (self%Ez (n(1),n(2),n(3)))                           ! self%Ez  = 0_dp
-  allocate (self%q  (n(1),n(2),n(3),self%nv))                   ! self%q   = 0_dp
   allocate (self%qp (n(1),self%nv,ndim,n(2),n(3)))              ! self%qp  = 0_dp
   allocate (self%qm (n(1),self%nv,ndim,n(2),n(3)))              ! self%qm  = 0_dp
   allocate (self%dq (n(1),self%nv,ndim,n(2),n(3)))              ! self%dq  = 0_dp
   allocate (self%dq2(n(1),self%nv,ndim,n(2),n(3)))              ! self%dq2 = 0_dp
-  allocate (self%bf (n(1),n(2),n(3),3))                         ! self%bf  = 0_dp
   allocate (self%dbf(n(1),3,2,n(2),n(3)))                       ! self%dbf = 0_dp
   allocate (self%qLB(n(1),self%nv,ndim,n(2),n(3)))              ! self%qLB = 0_dp
   allocate (self%qLT(n(1),self%nv,ndim,n(2),n(3)))              ! self%qLT = 0_dp
@@ -199,8 +217,6 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Compute update using second-order Godunov method
   !-----------------------------------------------------------------------------
-  call check_small (self)                               ! Check smallr, smallp
-  call ctoprim(self)                                    ! Primitive variables
   !self%dq = 0d0 ; self%dq2 = 0d0 ; self%dbf = 0d0
   call uslope(self,self%bf,self%q,self%dq,self%dbf,slope_type)   ! TVD slopes
   if (verbose>0) print *, 'uslope', self%id, minval(self%dbf), maxval(self%dbf)
@@ -694,11 +710,20 @@ subroutine ctoprim(self)
   real(dp):: smallp, c, entho
   real(dp):: eken, emag, etot, eint, B1, B2, B3
   integer, save:: itimer=0
-  integer:: i, j, k, loc(3), l(3), u(3)
+  integer:: i, j, k, loc(3), l(3), u(3), m(3)
   real, pointer:: ee(:,:,:)
-  associate(uin=>self%uin,q=>self%q,bf=>self%bf,dt=>self%dtime,c=>self%c)
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%ctoprim', itimer=itimer, detailed_timer=detailed_timer)
+  !-----------------------------------------------------------------------------
+  self%uin  => self%mem(:,:,:,:,self%new,1)
+  self%unew => self%mem(:,:,:,:,self%new,1)
+  m = self%mesh%gn
+  allocate (self%c  (m(1),m(2),m(3)))
+  allocate (self%q  (m(1),m(2),m(3),self%nv))
+  allocate (self%bf (m(1),m(2),m(3),3))
+  call check_small (self)
+  associate(uin=>self%uin,q=>self%q,bf=>self%bf,dt=>self%dtime,c=>self%c)
+  !-----------------------------------------------------------------------------
   if (isothermal) then
     entho = one
   else
