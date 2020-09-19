@@ -101,8 +101,11 @@ SUBROUTINE init (self, name)
   integer:: iostat, i
   namelist /aux_params/ verbose, select
   logical, save:: first_time=.true.
+  character(len=120):: id= &
+  '$Id$'
   !-----------------------------------------------------------------------------
   call trace%begin ('aux_t%init')
+  call trace%print_id (id)
   call io%lock%set ('aux_t%init')
   if (first_time) then
     if (.not.associated(select)) then
