@@ -51,7 +51,6 @@ MODULE hd_mod
   PRIVATE
   type, public, extends(extras_t):: hd_t
     logical:: mhd=.false.
-    integer:: idim=3
     character(len=10):: riemann='hllc'
     real, pointer, contiguous, dimension(:,:,:,:):: uin       ! conserved
     real, pointer, contiguous, dimension(:,:,:,:):: unew      ! new conserved
@@ -59,11 +58,11 @@ MODULE hd_mod
     real, pointer, contiguous, dimension(:,:,:,:,:):: qp, qm  ! face centered
     real, pointer, contiguous, dimension(:,:,:,:,:):: dq      ! slopes
     real, pointer, contiguous, dimension(:,:,:,:,:):: fl      ! 3D fluxes
-    real, pointer, contiguous, dimension(:,:,:):: s           ! scratch
   contains
     procedure:: pre_init
     procedure:: init
     procedure:: dealloc
+    procedure:: pre_update
     procedure:: update
     procedure:: gas_pressure
   end type
@@ -163,68 +162,88 @@ SUBROUTINE dealloc (self)
 END SUBROUTINE dealloc
 
 !===============================================================================
+! Preparation steps, of which calling extras_t%pre_update is mandatory.
+! First, primitive variables, which include u_max, are computed and made
+! available to the pre_update step of extras_t procedures, which may need to,
+! or choose to, make use of the information to call their courant_conditions.
+! The pre_update step of extras_t procedures may also need to know the final
+! timestep, so it isn't called until after the final courant_condition call,
+! via self%gpatch_t, has actually set self%dtime.
+!
+! Note that extras_t components that need to call their own courant_conditions
+! only as part of their pre_update are free to do do, by not placing their
+! calls inside the extras_t%courant_condition.
+!===============================================================================
+SUBROUTINE pre_update (self)
+  class(hd_t), target:: self
+  !-----------------------------------------------------------------------------
+  call trace%begin ('hd_t%pre_update')
+  !-----------------------------------------------------------------------------
+  ! Primitive variables may be needed in extras courant_conditions
+  !-----------------------------------------------------------------------------
+  if (io%smallr  /= 0.0) smallr = io%smallr
+  if (io%courant /= 0.0) self%courant = io%courant
+  call ctoprim(self)                  ! Primitive variables, sound speeds
+  call self%extras_t%courant_condition (detailed_timer)
+  call self%gpatch_t%courant_condition (detailed_timer)
+  !-----------------------------------------------------------------------------
+  ! Pre-update extras components
+  !-----------------------------------------------------------------------------
+  call self%extras_t%pre_update
+  call trace%end ()
+END SUBROUTINE pre_update
+
+!===============================================================================
 !===============================================================================
 SUBROUTINE update (self)
   class(hd_t):: self
-  integer:: n(3), m, i, l(3), u(3)
-  integer, save:: itimer=0
+  real, dimension(:,:,:), pointer, contiguous:: px, py, pz, d, e
   real, dimension(:,:,:,:), pointer:: p
-  real, dimension(:,:,:), pointer:: px, py, pz, eth
-  real, contiguous, dimension(:,:,:), pointer:: d, e, Ux=>null(), Uy=>null(), Uz=>null()
-  real, contiguous, dimension(:,:,:), pointer:: tmp
-  real:: error
-  !-----------------------------------------------------------------------------
-  call trace%begin ('hd_t%update', itimer=itimer)
-  if (io%smallr  /= 0.0) smallr  = io%smallr
-  if (io%courant /= 0.0) self%courant = io%courant
+  integer:: n(3)
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! The call to output below catches the state after both guard zone downloads
   ! and boundary conditions.  The call here is a fall back; if another call is
   ! placed at an earlier point in the task handling the call here will have no
   ! effect, since out_next has already been updated.
   !-----------------------------------------------------------------------------
+  call trace_begin ('hd_t%update', itimer=itimer)
   call self%output
   !-----------------------------------------------------------------------------
-  ! Memory mapping and allocations
+  ! Memory allocations
   !-----------------------------------------------------------------------------
   n = self%mesh%gn
-  m = n(1)
-  allocate (self%q (n(1),n(2),n(3),self%nv))
   allocate (self%qp(n(1),self%nv,ndim,n(2),n(3)))
   allocate (self%qm(n(1),self%nv,ndim,n(2),n(3)))
   allocate (self%dq(n(1),self%nv,ndim,n(2),n(3)))
   allocate (self%fl(n(1),n(2),n(3),self%nv,ndim))
-  allocate (self%s(n(1),n(2),n(3)))
-  !self%q=0.0; self%qp=0.0; self%qm=0.0; self%dq=0.0; self%fl=0.; self%c=0.0; self%s=0.0
-  if (detailed_timer) call trace_end (itimer)
   !-----------------------------------------------------------------------------
   ! Godunov solver
   !-----------------------------------------------------------------------------
   call godunov (self)
+  !-----------------------------------------------------------------------------
   if (isothermal) &
     self%mem(:,:,:,self%idx%e,self%new,1) = &
     self%mem(:,:,:,self%idx%d,self%new,1)*self%csound**2
-  if (detailed_timer) call trace_begin ('hd_t%update', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Add the external force per unit mass as a source term
   !-----------------------------------------------------------------------------
   d => self%mem(:,:,:,self%idx%d,self%new,1)
   e => self%mem(:,:,:,self%idx%e,self%new,1)
-  p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
-  allocate (eth(self%gn(1),self%gn(2),self%gn(3)))
   px => self%mem(:,:,:,self%idx%px,self%new,1)
   py => self%mem(:,:,:,self%idx%py,self%new,1)
   pz => self%mem(:,:,:,self%idx%pz,self%new,1)
-  eth = e - 0.5*(px**2+py**2+pz**2)/d
-  deallocate (eth)
   if (associated(scratch%force_per_unit_mass)) then
-    do i=1,3
-      p(:,:,:,i) = p(:,:,:,i) + self%dtime*scratch%force_per_unit_mass(:,:,:,i)*d
-    end do
+    px = px + self%dtime*scratch%force_per_unit_mass(:,:,:,1)*d
+    py = py + self%dtime*scratch%force_per_unit_mass(:,:,:,2)*d
+    pz = pz + self%dtime*scratch%force_per_unit_mass(:,:,:,3)*d
   end if
   if (associated(scratch%force_per_unit_volume)) then
-    p = p + self%dtime*scratch%force_per_unit_volume
+    px = px + self%dtime*scratch%force_per_unit_volume(:,:,:,1)
+    py = py + self%dtime*scratch%force_per_unit_volume(:,:,:,2)
+    pz = pz + self%dtime*scratch%force_per_unit_volume(:,:,:,3)
   end if
+  p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
   call validate%check (self%link, p, 'after force')
   !-----------------------------------------------------------------------------
   ! Add the external heating per unit mass as a source term
@@ -239,7 +258,7 @@ SUBROUTINE update (self)
   ! Deallocate
   !-----------------------------------------------------------------------------
   call self%counter_update
-  deallocate (self%q,self%qp,self%qm,self%dq,self%fl,self%s)
+  deallocate (self%q,self%qp,self%qm,self%dq,self%fl)
   call trace%end (itimer)
 END SUBROUTINE update
 
@@ -419,7 +438,7 @@ subroutine godunov (self)
   !-----------------------------------------------------------------------------
   if (detailed_timer) call trace%begin ('hd_t%godunov', itimer=itimer)
   do ivar=1,self%nv
-    do idim=1,self%ndim
+    do idim=1,ndim
       i0 = merge(1,0,idim==1)
       j0 = merge(1,0,idim==2)
       k0 = merge(1,0,idim==3)
@@ -526,8 +545,6 @@ subroutine unsplit(self)
   real(dp):: dtds(3)
   !-----------------------------------------------------------------------------
   call trace%begin ('hd_t%unsplit')
-  call ctoprim(self)                  ! Primitive variables, sound speeds
-  call self%extras_t%courant_condition (detailed_timer)
   call self%dump (1)                  ! dump, now that dtime is known
   call uslope(self)                   ! TVD slopes
   call trace3d(self)                  ! predictor step
@@ -543,14 +560,16 @@ subroutine ctoprim (self)
   class(hd_t):: self
   real(dp):: smallp, dtds
   integer,save:: itimer=0
-  integer:: l(3), u(3), i1, i2, i3
+  integer:: l(3), u(3), n(3), i1, i2, i3
   real:: s
   real, contiguous, dimension(:,:,:)  , pointer:: d, e, pg, c
   real, contiguous, dimension(:,:,:,:), pointer:: unew, q
   !-----------------------------------------------------------------------------
+  n = self%mesh%gn
+  allocate (self%q (n(1),n(2),n(3),self%nv))
+  q    => self%q
+  c    => self%u_phase
   unew => self%unew
-  q   => self%q
-  c   => self%u_phase
   pg => q(:,:,:,5)
   if (detailed_timer) then
     call trace%begin ('hd_mod::ctoprim', itimer=itimer)

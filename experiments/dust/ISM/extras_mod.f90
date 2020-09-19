@@ -149,19 +149,7 @@ SUBROUTINE pre_update (self)
   call self%forces%pre_update                                   ! forces
   call self%selfgravity%pre_update                              ! selfg
   call self%cooling%pre_update                                  ! cool
-  call self%courant_condition                                   ! keep
-  if (self%time + self%dtime >= self%out_next) then
-    n(:,1) = self%total_particles()
-    call self%particle_solver%import
-    n(:,2) = self%total_particles (details=.true.)
-    call self%particle_solver%exports_info
-    call self%particle_solver%update
-    n(:,3) = self%total_particles()
-    write (stdlog,'(a,i6,3(2x,2i5))') &
-      'extras_t%pre_update: id, n_before, n_after =', self%id, n
-  else
-    call self%particle_solver%update                            ! dust
-  end if
+  call self%particle_solver%update                              ! dust
   call trace%end()
 END SUBROUTINE pre_update
 
@@ -207,7 +195,6 @@ SUBROUTINE courant_condition (self, detailed_timer)
   call trace%begin ('extras_t%courant_condition')
   call self%cooling%courant_condition                            ! cool
   call self%particle_solver%courant_condition                    ! dust
-  call self%gpatch_t%courant_condition (detailed_timer)          ! keep
   call trace%end()
 END SUBROUTINE courant_condition
 
