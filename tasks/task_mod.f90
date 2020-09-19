@@ -1279,14 +1279,14 @@ SUBROUTINE courant_condition (self, detailed_timer)
   call trace%begin ('task_t%courant_condition')
   if (io%do_output .and. io%out_time > 0.0) then
     self%dtime = min (self%dtime, io%out_time)
-  end if
-  if (self%time + self%dtime*(1.+self%grace) > self%out_next) then
-    self%dtime = self%out_next - self%time
-    do while (self%time + self%dtime*(1.+self%grace) < self%out_next)
-      self%dtime = self%dtime*1.00001d0
-      write (stdlog,'(a,i6,1p,e115.6)') &
-        'task_t%courant_condition: iterating, dtime =', self%id, self%dtime
-    end do
+    if (self%time + self%dtime*(1.+self%grace) > self%out_next) then
+      self%dtime = self%out_next - self%time
+      do while (self%time + self%dtime*(1.+self%grace) < self%out_next)
+        self%dtime = self%dtime*1.00001d0
+        write (stdlog,'(a,i6,1p,e115.6)') &
+          'task_t%courant_condition: iterating, dtime =', self%id, self%dtime
+      end do
+    end if
   end if
   call trace%end()
 END SUBROUTINE courant_condition
