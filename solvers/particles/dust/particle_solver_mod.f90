@@ -1321,6 +1321,7 @@ SUBROUTINE voutput (self)
   integer, save:: n_tot = 0, i_max = 0, o_max = 0, itimer(2) = 0
   integer, parameter::particle_solver_key = 3, EOF = -1
   !-----------------------------------------------------------------------------
+  if (.not. particle_io) return 
   call trace%begin ('particle_solver_t%voutput(1)', itimer=itimer(1))
   n = 0
   m = 0
