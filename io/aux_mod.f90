@@ -655,7 +655,8 @@ SUBROUTINE output_aux (self, iout, id, singlefile)
   !-----------------------------------------------------------------------------
   ! Open one file per task, or use a single file
   !-----------------------------------------------------------------------------
-  write (io_unit%mpi,'(f12.6,i4,1x,a,i6)') wallclock(), omp%thread, &
+  if (verbose > 0) &
+    write (io_unit%mpi,'(f12.6,i4,1x,a,i6)') wallclock(), omp%thread, &
     'aux_t%ouput_aux: opened unit', io_unit%aux
   if (present(singlefile)) then
     filename = singlefile
@@ -693,7 +694,8 @@ SUBROUTINE output_aux (self, iout, id, singlefile)
     item => item%next
   end do
   close (io_unit%aux)
-  write (io_unit%mpi,'(f12.6,i4,1x,a,i6)') wallclock(), omp%thread, &
+  if (verbose > 0) &
+    write (io_unit%mpi,'(f12.6,i4,1x,a,i6)') wallclock(), omp%thread, &
     'aux_t%ouput_aux: closed unit', io_unit%aux
   call aux%lock%unset ('output_aux')
   call trace%end()

@@ -251,7 +251,8 @@ SUBROUTINE output (self, patch, experiment_name)
     !$omp atomic read
     t = patch%t(it)
     if (t >= patch%out_next) then
-      write (stdout,'(a,i6,3i4,2f12.6)') &
+      if (io%verbose > 0) &
+        write (stdout,'(a,i6,3i4,2f12.6)') &
         'data_io_t%output: ', patch%id, np, it, patch%nt, t, patch%time
       call self%lock%set ('output2')
       if (io%verbose > 1) &
