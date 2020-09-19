@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Pick up run name from argument, and set time string
-run=$1
+run=$(basename $1 .nml)
 time=`date +%y%m%d_%H%M%S`
 
 # Set queue to short by default, or 2nd argument
@@ -15,6 +15,7 @@ exe=./dispatch.x
 # Make data/run directory
 mkdir -p data/$run
 cp $in data/$run/input_$time.nml
+cp $exe data/$run/dispatch_$time.nml
 ln -sf $log log
 
 # Submit job script
