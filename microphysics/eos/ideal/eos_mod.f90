@@ -92,7 +92,7 @@ SUBROUTINE lookup (self, dim, lnd, ee, lnx, x, lny, y, pg, tt, ss, rk, src, &
   integer:: dim(3)
   real, optional:: gamma
   logical, optional:: e_below
-  real, dimension(:,:,:), intent(in), pointer, optional :: lnx, x, lny, y, lnd, ee
+  real, dimension(:,:,:), intent(in), pointer, contiguous,optional :: lnx, x, lny, y, lnd, ee
   real, dimension(:,:,:),                      optional :: pg, tt, ss
   real, dimension(:,:,:,:),                    optional :: src, rk
   real, dimension(:,:,:), pointer, contiguous :: x_loc, y_loc
