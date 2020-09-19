@@ -295,7 +295,15 @@ SUBROUTINE initial_condition (self)
   patch => self%patch
   extra_bits = 200
   if (self%patch%id == 1) then
-    allocate (p)
+    allocate (p,pn,pv)
+    write (stdout,'(a,4i6)') 'particle storaga_size:', &
+      storage_size(p), storage_size(pn), storage_size(pv)
+    write (stdout,'(a,6i6)') 'particle storaga_size:', &
+      storage_size(p%t), storage_size(p%r), &
+      storage_size(p%q), storage_size(p%v), storage_size(p%w), &
+      storage_size(p%t) + 3*storage_size(p%r) + 4*storage_size(p%q) + &
+      storage_size(p%w) + 3*storage_size(p%v) + 2*64
+    deallocate (pn,pv)
     call p%init
     nb = (storage_size(p)+extra_bits)/8
     print '(a,i3,a,f18.3,a)', ' estimated memory for particles (', &
@@ -1079,6 +1087,7 @@ SUBROUTINE import (self, count)
   !-----------------------------------------------------------------------------
   ! Loop over patch nbors
   !-----------------------------------------------------------------------------
+  if (.not. on) return
   call trace%begin ('particle_solver_t%import',itimer=itimer)
   self%ni = 0
   n_before = 0
@@ -1459,7 +1468,10 @@ FUNCTION global_momentum (self)
 END FUNCTION global_momentum
 
 !===============================================================================
-!> Allow at most mostion over one cell, given the current Courant number
+!> Allow at most mostion over one cell, given the current Courant number.
+!> self%vmax is updated by self%update(), and hence there is no need to wait
+!> until after self%pre_update to call this routine.  It must, on the other
+!> hand, be called after the HD/MHD solver has computed its patch%u_max.
 !===============================================================================
 SUBROUTINE courant_condition (self, detailed_timer)
   class(particle_solver_t):: self
@@ -1467,6 +1479,7 @@ SUBROUTINE courant_condition (self, detailed_timer)
   class(gpatch_t), pointer:: patch
   real:: dust_velocity
   !.............................................................................
+  if (.not. on) return
   call trace%begin ('particle_solver_t%courant_condition')
   patch => self%patch
   dust_velocity = self%vmax*minval(patch%ds)
@@ -1527,6 +1540,8 @@ SUBROUTINE exports_info (self)
   class(particle_t), pointer:: p
   integer:: bin, j
   !.............................................................................
+  if (.not. on) return
+  call trace%begin ('particle_solver_t%exports_info')
   call self%lock%set ('particle_solver_t%exports_info')
   do bin=1,n_bin
     particles => self%exports(bin)
@@ -1539,6 +1554,7 @@ SUBROUTINE exports_info (self)
     end do
   end do
   call self%lock%unset ('particle_solver_t%exports_info')
+  call trace%end ()
 END SUBROUTINE exports_info
 
 END MODULE particle_solver_mod
