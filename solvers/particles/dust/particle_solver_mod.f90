@@ -274,9 +274,8 @@ END SUBROUTINE init
 SUBROUTINE initial_condition (self)
   class(particle_solver_t)    :: self
   class(particles_t), pointer :: particles
-  type(particle_t), pointer   :: pn
-  type(vparticle_t), pointer  :: pv
   class(particle_t), pointer  :: p
+  type(particle_t), pointer   :: pn
   class(gpatch_t), pointer    :: patch
   integer                     :: m(3), i1, i2, i3, i4, i, j, n, nv, l, nb, id(5)
   real                        :: d, w, vg(3), chance
@@ -295,15 +294,14 @@ SUBROUTINE initial_condition (self)
   patch => self%patch
   extra_bits = 200
   if (self%patch%id == 1) then
-    allocate (p,pn,pv)
+    allocate (p)
     write (stdout,'(a,4i6)') 'particle storaga_size:', &
-      storage_size(p), storage_size(pn), storage_size(pv)
+      storage_size(p)
     write (stdout,'(a,6i6)') 'particle storaga_size:', &
       storage_size(p%t), storage_size(p%r), &
       storage_size(p%q), storage_size(p%v), storage_size(p%w), &
       storage_size(p%t) + 3*storage_size(p%r) + 4*storage_size(p%q) + &
       storage_size(p%w) + 3*storage_size(p%v) + 2*64
-    deallocate (pn,pv)
     call p%init
     nb = (storage_size(p)+extra_bits)/8
     print '(a,i3,a,f18.3,a)', ' estimated memory for particles (', &
@@ -346,17 +344,16 @@ SUBROUTINE initial_condition (self)
             draw = .false.
           end if
           if (draw) then  ! every output_every is for I/O
-            allocate(pv)
-            call pv%init
-            pv%id = 1 + omp%thread_global + (lid+nv)*omp%nthreads_global
-            nv = nv+1
-            pv%dg = d
-            pv%vg = vg
-            p => pv
-          else
             allocate(pn)
-            call pn%init
             p => pn
+            call p%init_vparticle
+            p%cell%id = 1 + omp%thread_global + (lid+nv)*omp%nthreads_global
+            nv = nv+1
+            p%cell%dg = d
+            p%cell%vg = vg
+          else
+            allocate(p)
+            call p%init
           end if
           p%q = [i1,i2,i3,i4]
           p%r = self%random%uniform (3)
@@ -566,10 +563,9 @@ SUBROUTINE update (self)
         n = particles%n
         p => particles%head%next
         do j=1,particles%n
-          select type (p)
-          class is (vparticle_t)
+          if (associated(p%cell)) then
             n = n-1
-          end select
+          end if
           p => p%next
         end do
         !-----------------------------------------------------------------------
@@ -1003,12 +999,7 @@ SUBROUTINE remove (self, particles)
   do j=1,n0
     next => p%next
     if (particles%n > particles_per_bin) then
-      kill = .false.
-      select type (p)
-      type is (particle_t)
-        kill = .true.
-      end select
-      if (kill) then
+      if (.not.associated(p%cell)) then
         dd = dd + p%w
         mm = mm + p%w*p%v
         call particles%remove (p)
@@ -1038,14 +1029,13 @@ SUBROUTINE remove (self, particles)
       'particle_solver_t%remove WARNING:', particles%id, n0, n, dd, dm
     p => particles%head%next
     do j=1,n
-      select type (p)
-      class is (vparticle_t)
+      if (associated(p%cell)) then
         write (stdout,'(a,i4,2x,4i4,3f8.3,1p,2(2x,4e12.3))') &
-          'remove WARNING:', j, p%q, p%r, p%w, p%v, p%dg, p%vg
-      class is (particle_t)
+          'remove WARNING:', j, p%q, p%r, p%w, p%v, p%cell%dg, p%cell%vg
+      else
         write (stdout,'(a,i4,2x,4i4,3f8.3,1p,4e12.3)') &
           'remove WARNING:', j, p%q, p%r, p%w, p%v
-      end select
+      end if
       p => p%next
     end do
   end if
@@ -1344,32 +1334,30 @@ SUBROUTINE voutput (self)
     end do
     end do
   end do
-  !m = (product(self%ub-self%lb+1)*particles_per_bin*n_bin)/output_every + 1
-  !print *,m,n
-  m = n
-  allocate (q(m,4), r(m,3), v(m,3), vg(m,3), dg(m), dd(m), w(m), t(m), id(m))
-  !-----------------------------------------------------------------------------
-  n = 0
-  do i4=1,n_bin
-    do i3=self%lb(3),self%ub(3)
-    do i2=self%lb(2),self%ub(2)
-    do i1=self%lb(1),self%ub(1)
-      pp => self%particles(i1,i2,i3,i4)
-      call harvest (.true.)
-    end do
-    end do
-    end do
-  end do
   !-----------------------------------------------------------------------------
   ! Only do I/O if there are particles to write
   !-----------------------------------------------------------------------------
   if (n > 0) then
+    m = n
+    allocate (q(m,4), r(m,3), v(m,3), vg(m,3), dg(m), dd(m), w(m), t(m), id(m))
+    call self%density
+    n = 0
+    do i4=1,n_bin
+      do i3=self%lb(3),self%ub(3)
+      do i2=self%lb(2),self%ub(2)
+      do i1=self%lb(1),self%ub(1)
+        pp => self%particles(i1,i2,i3,i4)
+        call harvest (.true.)
+      end do
+      end do
+      end do
+    end do
     !---------------------------------------------------------------------------
     ! Write out info on dimensions -- before data to ensure it is up-to-date
     ! during live runs
     !---------------------------------------------------------------------------
-    call io%lock%set ('particle_solver_t%voutput')
     call trace%begin ('particle_solver_t%voutput(2)', itimer=itimer(2))
+    call io%lock%set ('particle_solver_t%voutput')
     rewind (io_unit%particle_i)
     i_max = max(i_max,maxval(id))
     o_max = max(o_max,self%iout)
@@ -1391,10 +1379,10 @@ SUBROUTINE voutput (self)
       write(stdout,'(a,f8.2,a)') 'particle_io:', n_tot*1e-6, ' Mp'
     end if
     call io%lock%unset ('particle_solver_t%voutput')
+    deallocate (q, r, v, vg, dg, dd, w, t, id)
+    call trace%end (itimer(2))
   end if
-  call trace%end (itimer(2))
   !-----------------------------------------------------------------------------
-  deallocate (q, r, v, vg, dg, dd, w, t, id)
   call trace%end (itimer(1))
 contains
 
@@ -1409,8 +1397,7 @@ subroutine harvest (copy)
   ng(4) = 0
   p => pp%head%next
   do j=1,pp%n
-    select type (p)
-    type is (vparticle_t)
+    if (associated(p%cell)) then
       n = n + 1
       if (copy) then
         q (n,:) = p%q-ng-1
@@ -1421,9 +1408,9 @@ subroutine harvest (copy)
         dd(n)   = self%dd(  p%q(1),p%q(2),p%q(3),p%q(4))
         w (n)   = p%w
         t (n)   = p%t
-        id(n)   = p%id-1
+        id(n)   = p%cell%id-1
       end if
-    end select
+    end if
     p => p%next
   end do
 end subroutine harvest

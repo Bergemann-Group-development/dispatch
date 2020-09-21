@@ -2,7 +2,7 @@
 !> Particle data types for dust-gas interaction:
 !>
 !>   particle_t         : data type for particles
-!>   vparticle_t        : data type for visualization particles
+!>   cell_t             : data type for extra cell data
 !>   particles_t        : data type for particle lists
 !>        bins_t        : Cartesian collection of particle lists
 !>
@@ -28,29 +28,28 @@ MODULE particles_mod
   USE mpi_buffer_mod
   implicit none
   private
+  type, public:: cell_t
+    integer(8):: id
+    real:: vg(3), dg, dd
+  end type
   !--- link structure for particles ---
   type, public:: particle_t
-    class(particle_t), pointer:: next, prev ! 2*8 = 16
-    real(8):: t                             !        8
-    integer(2):: q(4)                       ! 4*2 =  8
-    real:: r(3), v(3), w                    ! 7*4 = 28
+    type(particle_t), pointer:: next, prev  ! 2*64 = 128
+    type(cell_t), pointer:: cell => null()  !         64
+    real(8):: t                             !         64
+    integer(2):: q(4)                       ! 4*16 =  64
+    real:: r(3), v(3), w                    ! 8*32 = 256
   contains
     procedure:: init => init_particle
     procedure:: pack => pack_particle
-  end type                                  ! sum:  60
+    procedure:: init_vparticle
+  end type                                  ! sum:   576 bits
   integer, parameter:: vparticle_key=1
-  type, public, extends(particle_t):: vparticle_t
-    integer(8):: id
-    real:: vg(3), dg, dd
-  contains
-    procedure:: init => init_vparticle
-    procedure:: pack => pack_vparticle
-    procedure:: output => output_vparticle
-  end type
   !--- collection of particles ---
   integer, parameter:: particles_key=2
   type, public:: particles_t
-    class(particle_t), pointer:: head => null(), tail => null()
+    type(particle_t), pointer:: head => null()
+    type(particle_t), pointer:: tail => null()
     integer:: n = 0
     integer:: type = 0
     integer:: id(5)
@@ -89,9 +88,12 @@ CONTAINS
 SUBROUTINE init_particle (self)
   class(particle_t):: self
 END SUBROUTINE init_particle
+
 SUBROUTINE init_vparticle (self)
-  class(vparticle_t):: self
-  self%id = 1 + omp%thread_global + id*omp%nthreads_global
+  class(particle_t):: self
+  allocate (self%cell)
+  call io%bits_mem (storage_size(self%cell), 1, 'c')
+  self%cell%id = 1 + omp%thread_global + id*omp%nthreads_global
   id = id+1
 END SUBROUTINE init_vparticle
 
@@ -108,28 +110,18 @@ END SUBROUTINE pack_particle
 
 !===============================================================================
 SUBROUTINE pack_vparticle (self, buffer)
-  class(vparticle_t):: self
+  class(particle_t):: self
   type(mpi_buffer_t):: buffer
   call buffer%append (self%r)
   call buffer%append (self%v)
   call buffer%append (self%q)
   call buffer%append (self%w)
   call buffer%append (self%t)
-  call buffer%append (self%dg)
-  call buffer%append (self%vg)
-  call buffer%append (self%id)
+  call buffer%append (self%cell%dd)
+  call buffer%append (self%cell%dg)
+  call buffer%append (self%cell%vg)
+  call buffer%append (self%cell%id)
 END SUBROUTINE pack_vparticle
-
-!===============================================================================
-SUBROUTINE output_vparticle (self)
-  class(vparticle_t) :: self
-  integer            :: n, j
-  integer, save      :: itimer=0
-  !-----------------------------------------------------------------------------
-  write (io_unit%tmp) vparticle_key
-  write (io_unit%tmp) self%q, self%r, self%v, self%vg, self%w, self%dg, &
-    self%t, self%id
-END SUBROUTINE output_vparticle
 
 !===============================================================================
 !> Initialize particle list
@@ -217,33 +209,20 @@ END SUBROUTINE remove
 !===============================================================================
 FUNCTION pop(self) RESULT (p)
   class(particles_t):: self
-  class(particle_t), pointer:: p
-  type(particle_t), pointer:: p0
-  type(vparticle_t), pointer:: p1
+  type(particle_t), pointer:: p
+  !-----------------------------------------------------------------------------
   if (self%n > 0) then
     p => self%tail%prev
     p%next%prev => p%prev
     p%prev%next => p%next
     self%n = self%n - 1
   else
+    allocate (p)
+    call io%bits_mem (storage_size(p), 1, 'p')
     if (self%type == 0) then
-      allocate (p0)
-      call io%bits_mem (storage_size(p0), 1, 'p0')
-      call p0%init
-      p => p0
+      call p%init
     else
-      if (mpi%size == 1) then
-        write (stderr,*) 'ERROR:', self%id
-        allocate (p0)
-        call io%bits_mem (storage_size(p0), 1, 'p0')
-        call p0%init
-        p => p0
-      else
-        allocate (p1)
-        call io%bits_mem (storage_size(p1), 1, 'p1')
-        call p1%init
-        p => p1
-      end if
+      call p%init_vparticle
     end if
   end if
 END FUNCTION pop
@@ -322,15 +301,13 @@ SUBROUTINE pack_particles (self, mpi_buffer)
   ! Count categories
   !-----------------------------------------------------------------------------
   do i=1,n
-    select type (p)
-    type is (vparticle_t)
+    if (associated(p%cell)) then
       ns = ns+1
-    type is (particle_t)
+    else
       np = np+1
-    end select
+    end if
     p => p%next
   end do
-  !print *,'counts(1):',np,ns
   !-----------------------------------------------------------------------------
   ! Allocate and fill buffers
   !-----------------------------------------------------------------------------
@@ -342,23 +319,22 @@ SUBROUTINE pack_particles (self, mpi_buffer)
   ns = 0
   p => self%head%next
   do i=1,n
-    select type (p)
-    type is (vparticle_t)
+    if (associated(p%cell)) then
       ns = ns+1
       rs(:,ns) = p%r        ! float position
       qs(:,ns) = p%q        ! integer position
       vs(:,ns) = p%v        ! particle velocity
       ts(ns)   = p%t        ! particle time
       ws(ns)   = p%w        ! particle weight
-      id(ns)   = p%id       ! particle id
-    type is (particle_t)
+      id(ns)   = p%cell%id  ! particle id
+    else
       np = np+1
       rp(:,np) = p%r
       qp(:,np) = p%q
       vp(:,np) = p%v
       tp(np)   = p%t
       wp(np)   = p%w
-    end select
+    end if
     p => p%next
   end do
   !print *,'counts(2):',np,ns
@@ -428,16 +404,13 @@ SUBROUTINE unpack_particles (self, mpi_buffer)
     allocate (id(ns))
     call mpi_buffer%read (id)
     do j=1,np
-      p => vpool%pop()
-      select type (p)
-      class is (vparticle_t)
+      p => pool%pop()
       p%r = rp(:,j)
       p%q = qp(:,j)
       p%v = vp(:,j)
       p%t = tp(j)
       p%w = wp(j)
-      p%id = id(j)
-      end select
+      p%cell%id = id(j)
       call self%append (p)
     end do
     deallocate (id)
@@ -450,6 +423,7 @@ END SUBROUTINE unpack_particles
 !===============================================================================
 SUBROUTINE statistics (self)
   class(particles_t):: self
+  !-----------------------------------------------------------------------------
   write (stdlog,'(a,i12,2x,a,i5)') &
     'particles_t%statistics:',id,'particles on thread',omp%thread_global
 END SUBROUTINE statistics
