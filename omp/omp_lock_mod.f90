@@ -1,4 +1,4 @@
-! $Id: d9fd308a786b218bf1bc6eb1464c5909f35ffd02 $
+! $Id$
 !===============================================================================
 !> The lock module uses nested locks, to allow versatile use of locks, where
 !> a procedure may want to make sure to lock a data type, even though it may
