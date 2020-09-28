@@ -66,10 +66,12 @@
 !===============================================================================
 MODULE ramses_mod
   USE io_mod
+  USE omp_mod
   USE trace_mod
   USE bits_mod
   USE mpi_mod
   USE task_mod
+  USE link_mod
   USE patch_mod
   USE gpatch_mod
   USE extras_mod
@@ -333,7 +335,7 @@ SUBROUTINE mem_test
   type(solver_t)    , allocatable:: solver(:)
   type(experiment_t), allocatable:: experiment(:)
   !-----------------------------------------------------------------------------
-  print*,'MEMORY TEST: Top GB gives kB per instance'  ; call omp%delay(ms)
+  print*,'MEMORY TEST: Top GB gives kB per instance'  ; call omp%delay (ms)
   print*,'oct'    ; allocate (oct(n))        ; call omp%delay(ms); deallocate(oct)
   print*,'task'   ; allocate (task(n))       ; call omp%delay(ms); deallocate(task)
   print*,'patch'  ; allocate (patch(n))      ; call omp%delay(ms); deallocate(patch)
@@ -1586,16 +1588,17 @@ END SUBROUTINE download_link
 !===============================================================================
 SUBROUTINE download_link2 (self, link)
   class(ramses_t):: self
-  class(link_t), pointer:: link, nbor
+  class(nbor_t), pointer:: nbor
+  class(link_t), pointer:: link
   class(patch_t), pointer:: target, source
   integer:: jt(2)
   real:: pt(2)
   !-----------------------------------------------------------------------------
+  nbor => link%nbor
   associate (task=>link%task)
   select type(task)
   class is (patch_t)
     target => task
-    nbor => link%nbor
     do while (associated(nbor))
       if (nbor%task%level == link%task%level-1) then
         associate(nbtask => nbor%task)
@@ -1621,7 +1624,8 @@ END SUBROUTINE download_link2
 SUBROUTINE check_filled (self)
   class(ramses_t):: self
   integer:: level, gap, nok
-  class(link_t), pointer:: link, nbor
+  class(nbor_t), pointer:: nbor
+  class(link_t), pointer:: link
   class(task_t), pointer:: task, nbtask
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -1678,7 +1682,7 @@ contains
     class(patch_t):: task
     class(experiment_t), pointer:: new
     integer:: key(4)
-    class(link_t), pointer:: nbor
+    class(nbor_t), pointer:: nbor
     integer, save:: itimer=0
     !...........................................................................
     call trace%begin ('create_support', itimer=itimer)
