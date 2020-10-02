@@ -224,7 +224,7 @@ SUBROUTINE test (self)
   do i=1,3
     call source(i)%dealloc
   end do
-  call target%init_id_reset
+  !call target%init_id_reset            ! FIXME
   deallocate (target, source)
   self%interpolate => SelectInterpolator(self%order_interpolator)
   call trace%end()
@@ -341,7 +341,8 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   integer, optional:: only
   real, dimension(:,:,:), pointer:: d
   !.............................................................................
-  class(link_t), pointer:: nbor, sorted_head
+  class(link_t), pointer:: sorted_head
+  class(nbor_t), pointer:: nbor
   class(patch_t), pointer:: target, source
   integer:: edges, l(3), u(3), ix, iy, iz
   integer, save:: itimer=0
@@ -531,7 +532,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   !-----------------------------------------------------------------------------
   ! Decrement n_needed counters, and remove the sorted nbor list
   !-----------------------------------------------------------------------------
-  call link%decrement_needed
+  !call link%decrement_needed           ! FIXME
   call link%remove_nbor_list (link%nbors_by_level)
   call validate%check (target%link, d, ' after download')
   call trace%end (itimer)

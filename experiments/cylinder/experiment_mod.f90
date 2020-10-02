@@ -15,7 +15,7 @@ MODULE experiment_mod
   private
   type, public, extends(cpatch_t):: experiment_t
     real:: mass=1.0
-    real:: radius=1.0
+    !real:: radius=1.0          ! FIXME
   contains
     procedure:: init
     procedure:: update

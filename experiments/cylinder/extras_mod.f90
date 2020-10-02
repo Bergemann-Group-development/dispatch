@@ -64,6 +64,7 @@ MODULE extras_mod
     !real, dimension(:,:,:,:), pointer:: v                       ! tracep
     !type(selfgravity_t) :: selfgravity                         ! selfg
   contains
+    procedure:: pre_init
     procedure:: init
     procedure:: dealloc
     procedure:: pre_update
@@ -77,11 +78,21 @@ CONTAINS
 !===============================================================================
 !> Initialize the modules that are to be included and used
 !===============================================================================
+SUBROUTINE pre_init (self)
+  class(extras_t), target:: self
+  !.............................................................................
+  call trace%begin ('extras_t%init')
+  call trace%end()
+END SUBROUTINE pre_init
+
+!===============================================================================
+!> Initialize the modules that are to be included and used
+!===============================================================================
 SUBROUTINE init (self)
   class(extras_t):: self
   !.............................................................................
   call trace%begin ('extras_t%init')
-  call self%forces%init (self%link)                             ! forces
+  !call self%forces%init (self%link)                             ! forces
   !allocate (self%trace_particles)                               ! tracep
   !self%connect%trace_particles => self%trace_particles          ! tracep
   !call self%trace_particles%add (self%link)                     ! tracep
@@ -108,7 +119,7 @@ END SUBROUTINE dealloc
 !> The pre_update hierarchy is called before the solver updates
 !===============================================================================
 SUBROUTINE pre_update (self)
-  class(extras_t):: self
+  class(extras_t), target:: self
   !.............................................................................
   call self%gpatch_t%pre_update                                 ! keep
   call self%forces%pre_update                                   ! forces
