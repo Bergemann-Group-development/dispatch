@@ -1,7 +1,7 @@
 
 # Option groups
+OPTS = full_debug
 #OPTS = debug
-#OPTS = full_debug
 #OPTS = optimized
 
 # Default target and methods
@@ -9,7 +9,8 @@
 SOLVER          = ramses/hydro
 #SOLVER          = ramses/mhd
 #SOLVER          = stagger2/e
-PARTICLE_SOLVER = KDK
+PARTICLE_SOLVER = dust
+COOLING         = simple
 EXEC            = dispatch.x
 TOP             = ../..
 
@@ -28,6 +29,7 @@ $(EXEC)                 : setup_mod.o cylinder_mod.o dispatcher_mod.o io_unit_mo
 experiment_mod.o        : io_mod.o trace_mod.o cpatch_mod.o mesh_mod.o boundaries_mod.o \
                           download_mod.o
 scaling_mod.o           : io_mod.o units_mod.o
-extras_mod.o            : io_mod.o trace_mod.o patch_mod.o gpatch_mod.o list_mod.o forces_mod.o
+extras_mod.o            : io_mod.o trace_mod.o patch_mod.o gpatch_mod.o list_mod.o forces_mod.o \
+                          selfgravity_mod.o particle_solver_mod.o cooling_mod.o
 download_mod.o          : io_mod.o trace_mod.o task_mod.o patch_mod.o link_mod.o interpolate_mod.o \
                           kinds_mod.o lagrange_mod.o validate_mod.o
