@@ -3,143 +3,76 @@
  ! Physical initial conditions: !!!AD!!! Same values as in Masson et al. 2012
  ! Left hand side
  !-----------------------------------------------------------------------------
- rho_l = 5d-1
+ rho_l = 0.5
  P_l   = 0.125 
  vx_l = 5d0 
  vy_l = 0d0
  Bx_l = 1.4142135623730951d0
  By_l = 1.4142135623730951d0
- ! Same, but using cgs units (see Duffin & Pudritz 2008)
- !rho_l = 1.0
- !P_l   = 0.01 
- !vx_l = 5.
- !vy_l = 0
- !Bx_l = 2.507
- !By_l = 2.507
  !!-----------------------------------------------------------------------------
  ! Physical initial conditions: right hand side (isothermal)
  !-----------------------------------------------------------------------------
- !gamma_exp = 1.0000001
  rho_r = 1.0727d0
  P_r = 0.2681
  vx_r = 2.3305d0
  vy_r = 1.3953d0
  Bx_r = 1.4142135623730951d0
  By_r = 3.8809d0
- ! Same, but using cgs units (see Duffin & Pudritz 2008)
- !rho_r = 8.045
- !P_r = 0.0804
- !vx_r = 0.621
- !vy_r = 0.84
- !Bx_r = 2.507
- !By_r = 23.553
- !-----------------------------------------------------------------------------
- ! Physical initial conditions: right hand side (non-isothermal)
- !-----------------------------------------------------------------------------
- !gamma_exp = 1.666667
- !rho_r = 0.988d0
- !P_r = 1.4075
- !vx_r = 2.5303d0
- !vy_r = 1.1415d0
- !Bx_r = 1.4142135623730951d0
- !By_r = 3.4327d0
-
- !!-----------------------------------------------------------------------------
- ! Physical initial conditions: !!!OHMIC!!! Same values as in Masson et al. 2012
- ! Left hand side
- !-----------------------------------------------------------------------------
- !rho_l = 0.4
- !P_l   = 0.4
- !vx_l = 3d0 
- !vy_l = 0d0
- !Bx_l = 0.7071067811865476
- !By_l = 0.7071067811865476
- !!-----------------------------------------------------------------------------
- !! Physical initial conditions: right hand side (Ohmic)
- !!-----------------------------------------------------------------------------
- !gamma_exp = 1.4 !666667
- !rho_r = 0.71084
- !P_r = 1.19222
- !vx_r = 1.68814
- !vy_r = 0.4299
- !Bx_r = 0.7071067811865476
- !By_r = 1.43667
-
-/
-&mhd_params              ! defaults are visible in the log file
- !nu= 0.1, 0., 0., 0., 1., 0.
- !nu=    0.5, 1., 0., 1., 0.1, 0.1
- !nu=    0.1, 1., 1., 1., 0.1, 0.1
- !nu=    0., 1., 1., 1., 1., 1.
- !     cs    du   pa   ofd   mas   eta
- gamma=1.00001  
- !gamma=1.666667
- !ksi = 1d-17
 /
 &non_ideal_params
  mhd_AD=.true.
  mhd_Ohm=.false.
- ntestdadm=.true.
+ ntestDADM=.true.
  etaMD=0.0
- gammaAD=75.
- rhoi0=1.
-! rhocode_to_nd
-! Tcode_to_K
-! Bcode_to_Gauss
-! s_to_tcode
+ gamma_AD=75.
+ rho_ions=1.
 /
-
 &patch_params
- !dims=32,3,3          ! patch dimensions
- n=32,32,32          	! patch dimensions
- !dt_fixed=1d-6        ! fixed time step
+ n=16,16,16             ! patch dimensions
+! dt_fixed=1d-6        ! fixed time step
  nt=8                   ! time slots
- ng=3,3,3
- !end_time=4.1
- !nt=1                   ! time slots
+ ng=0,0,0
  no_mans_land = t
 /
 &out_params
  out_time = 0.01
  end_time = 5.00
- !print_time = 0.05
  print_time = 0.05
- guard_zones=f
-/ 
+/
 &cartesian_params
  size=1,1,1
- dims=1,1,1				! number of patches
+ dims=1,1,1             ! number of patches
  origin=-0.5,-0.5,-0.5
+ omp_init=f
 /
 &timestep_params
- verbose=1
+ verbose=0
  time_order=2
 /
 &refine_params
- refine_until=-0.01     ! disables refinment
- min_jeans=10.
- levelmax=10
+ on=f                   ! disables refinement
+ check_interval=2    
+/
+&parallel_io_params
+ verbose=0              ! =1 for output file messages
+ id_debug=0
+/
+&mpi_io_params
+ verbose=0              ! =1 for output file messages
 /
 &io_params
  do_trace=f             ! =t to trace execution
- verbose=1              ! =1 for output file messages
+ verbose=0              ! =1 for output file messages
  do_output=t
  do_debug=f 
  method='parallel'
-/
-&initial_params
-/
-&force_params
+ guard_zones=f
 /
 &ramses_params
-! detailed_timer=f
- courant_factor=0.8
- !courant_factor=0.266667
- !gamma=1.66666666
- gamma=1.00001  
+ !gamma=1.0001
  slope_type=3.5
- !slope_type=-1
- !smallr=1e-4
- !smallc=5e-1
- riemann='hlld'
+ isothermal=t
 /
+&flux_params
+ verbose=0
+ /
