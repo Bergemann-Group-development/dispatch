@@ -68,6 +68,7 @@ MODULE particles_mod
     procedure:: statistics
     procedure:: total_momentum
     procedure:: density
+    procedure:: velocity
     procedure:: dispersion
   end type
   !--- cartesian arrangement of particle bins ---
@@ -461,6 +462,26 @@ FUNCTION density (self) RESULT (sum)
     p => p%next
   end do
 END FUNCTION density
+
+!===============================================================================
+!> Compute total momentum of particles
+!===============================================================================
+FUNCTION velocity (self) RESULT (sumv)
+  class(particles_t):: self
+  real:: sumv(3), sumd
+  type(particle_t), pointer:: p
+  integer:: j
+  !-----------------------------------------------------------------------------
+  sumd = 0.0
+  sumv = 0.0
+  p => self%head%next
+  do j=1,self%n
+    sumd = sumd + p%w
+    sumv = sumv + p%w*p%v
+    p => p%next
+  end do
+  sumv = sumv/sumd
+END FUNCTION velocity
 
 !===============================================================================
 !> Compute total momentum of particles

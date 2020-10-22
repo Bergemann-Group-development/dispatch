@@ -30,6 +30,7 @@
 !define DBG
 MODULE particle_solver_mod
   USE io_mod
+  USE os_mod
   USE trace_mod
   USE omp_lib
   USE omp_timer_mod
@@ -93,6 +94,7 @@ MODULE particle_solver_mod
     procedure:: global_momentum
     procedure:: courant_condition
     procedure:: density
+    procedure:: velocities
     procedure:: dispersion
     procedure:: exports_info
   end type
@@ -1240,7 +1242,10 @@ SUBROUTINE output (self)
   class(particles_t), pointer   :: particles
   class(mesh_t), pointer        :: mesh(:)
   class(particle_t), pointer    :: p
-  real, pointer, contiguous     :: tmp_r(:,:), vd(:,:,:,:)
+  real, pointer, contiguous     :: tmp_r(:,:), vr(:,:,:,:)
+  real, pointer, contiguous     :: vdx(:,:,:,:)
+  real, pointer, contiguous     :: vdy(:,:,:,:)
+  real, pointer, contiguous     :: vdz(:,:,:,:)
   real(8), pointer              :: total_mom(:,:)
   integer, pointer, contiguous  :: tmp_i(:)
   integer                       :: i, j, n, i1, i2, i3, i4, n_out, m(3)
@@ -1270,7 +1275,7 @@ SUBROUTINE output (self)
           !$omp end critical (voutput_cr)
         end if
       end if
-      call voutput (self)
+      call poutput (self)
       self%iout = self%iout + 1
       self%out_next = self%out_next + out_time
     end do
@@ -1279,11 +1284,18 @@ SUBROUTINE output (self)
     call self%import (count=debug)
     call self%density
     m = self%patch%gn
-    allocate (vd(m(1),m(2),m(3),n_bin))
-    call self%dispersion (vd)
+    allocate (vr(m(1),m(2),m(3),n_bin))
+    allocate (vdx(m(1),m(2),m(3),n_bin))
+    allocate (vdy(m(1),m(2),m(3),n_bin))
+    allocate (vdz(m(1),m(2),m(3),n_bin))
+    call self%dispersion (vr)
+    call self%velocities (vdx, vdy, vdz)
     call self%aux%register ('dust_s', self%s_cgs)
     call self%aux%register ('dust_d', self%dd)
-    call self%aux%register ('dust_vrms', vd)
+    call self%aux%register ('dust_vrms', vr)
+    call self%aux%register ('dust_vx'  , vdx)
+    call self%aux%register ('dust_vy'  , vdy)
+    call self%aux%register ('dust_vz'  , vdz)
     total_mom => total_momentum
     call self%aux%register ('total_momentum', total_mom)
     !...........................................................................
@@ -1294,7 +1306,7 @@ SUBROUTINE output (self)
       end do
     end if
     call self%aux%output_sequence (self%patch%id, self%time)
-    deallocate (vd)
+    deallocate (vr, vdx, vdy, vdz)
     if (verbose > 1) then
       write (stdlog, '(a,i6,1p,10e11.2)') &
        'particles_t%output: self%aux%aux_next =', &
@@ -1307,7 +1319,7 @@ END SUBROUTINE output
 !===============================================================================
 !> Initialize module
 !===============================================================================
-SUBROUTINE voutput (self)
+SUBROUTINE poutput (self)
   class(particle_solver_t):: self
   class(particles_t), pointer:: pp
   class(particle_t), pointer:: p
@@ -1318,10 +1330,12 @@ SUBROUTINE voutput (self)
   real(8):: llc
   integer:: n, m, i1, i2, i3, i4, j
   integer, save:: n_tot = 0, i_max = 0, o_max = 0, itimer(2) = 0
-  integer, parameter::particle_solver_key = 3, EOF = -1
+  integer, parameter:: particle_solver_key = 3, EOF = -1
+  integer, save:: iout = -99
+  character(len=120):: file
   !-----------------------------------------------------------------------------
   if (.not. particle_io) return 
-  call trace%begin ('particle_solver_t%voutput(1)', itimer=itimer(1))
+  call trace%begin ('particle_solver_t%poutput(1)', itimer=itimer(1))
   n = 0
   m = 0
   do i4=1,n_bin
@@ -1353,11 +1367,27 @@ SUBROUTINE voutput (self)
       end do
     end do
     !---------------------------------------------------------------------------
+    ! Re-open a new file for each snapshot
+    !---------------------------------------------------------------------------
+    call trace%begin ('particle_solver_t%poutput(2)', itimer=itimer(2))
+    call io%lock%set ('particle_solver_t%poutput')
+    if (iout < self%iout) then
+      iout = self%iout
+      close (io_unit%particle_d)
+      close (io_unit%particle_i)
+      call os%mkdir (trim(io%rundir)//'particles/')
+      write (file,'(a,i5.5,a)') trim(io%rundir)//'particles/', self%iout, '.dat'
+      open (unit=io_unit%particle_d, file=file, form='unformatted', &
+            status='unknown')
+      write (stdout,*) trim(file)//' opened'
+      write (file,'(a,i5.5,a)') trim(io%rundir)//'particles/', self%iout, '.inf'
+      open (unit=io_unit%particle_i, file=file, form='unformatted', &
+            status='unknown')
+    end if
+    !---------------------------------------------------------------------------
     ! Write out info on dimensions -- before data to ensure it is up-to-date
     ! during live runs
     !---------------------------------------------------------------------------
-    call trace%begin ('particle_solver_t%voutput(2)', itimer=itimer(2))
-    call io%lock%set ('particle_solver_t%voutput')
     rewind (io_unit%particle_i)
     i_max = max(i_max,maxval(id))
     o_max = max(o_max,self%iout)
@@ -1378,7 +1408,7 @@ SUBROUTINE voutput (self)
     if (mod(n_tot,1000000) == 0) then
       write(stdout,'(a,f8.2,a)') 'particle_io:', n_tot*1e-6, ' Mp'
     end if
-    call io%lock%unset ('particle_solver_t%voutput')
+    call io%lock%unset ('particle_solver_t%poutput')
     deallocate (q, r, v, vg, dg, dd, w, t, id)
     call trace%end (itimer(2))
   end if
@@ -1414,7 +1444,7 @@ subroutine harvest (copy)
     p => p%next
   end do
 end subroutine harvest
-END SUBROUTINE voutput
+END SUBROUTINE poutput
 
 !===============================================================================
 SUBROUTINE statistics (self)
@@ -1497,6 +1527,30 @@ SUBROUTINE density (self)
     end do
   end do
 END SUBROUTINE density
+
+!===============================================================================
+!> Compute dust density
+!===============================================================================
+SUBROUTINE velocities (self, vdx, vdy, vdz)
+  class(particle_solver_t):: self
+  real, dimension(:,:,:,:):: vdx, vdy, vdz
+  real:: vd(3)
+  integer:: i1, i2, i3, i4
+  !-----------------------------------------------------------------
+  call self%import
+  do i4=1,self%n_bin
+    do i3=self%lb(3),self%ub(3)
+      do i2=self%lb(2),self%ub(2)
+        do i1=self%lb(1),self%ub(1)
+          !vd = self%particles(i1,i2,i3,i4)%velocity()
+          !vdx(i1,i2,i3,i4) = vd(1)
+          !vdy(i1,i2,i3,i4) = vd(2)
+          !vdz(i1,i2,i3,i4) = vd(3)
+        end do
+      end do
+    end do
+  end do
+END SUBROUTINE velocities
 
 !===============================================================================
 !> Compute velocity diespersion
