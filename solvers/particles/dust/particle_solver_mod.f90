@@ -1329,7 +1329,7 @@ SUBROUTINE poutput (self)
   integer(8), pointer, contiguous:: id(:)
   real(8):: llc
   integer:: n, m, i1, i2, i3, i4, j
-  integer, save:: n_tot = 0, i_max = 0, o_max = 0, itimer(2) = 0
+  integer, save:: n_tot = 0, i_max = 0, o_max = 0, itimer(3) = 0
   integer, parameter:: particle_solver_key = 3, EOF = -1
   integer, save:: iout = -99
   character(len=120):: file
@@ -1384,10 +1384,12 @@ SUBROUTINE poutput (self)
       open (unit=io_unit%particle_i, file=file, form='unformatted', &
             status='unknown')
     end if
+    call trace%end (itimer(2))
     !---------------------------------------------------------------------------
     ! Write out info on dimensions -- before data to ensure it is up-to-date
     ! during live runs
     !---------------------------------------------------------------------------
+    call trace%begin ('particle_solver_t%poutput(3)', itimer=itimer(3))
     rewind (io_unit%particle_i)
     i_max = max(i_max,maxval(id))
     o_max = max(o_max,self%iout)
@@ -1410,7 +1412,7 @@ SUBROUTINE poutput (self)
     end if
     call io%lock%unset ('particle_solver_t%poutput')
     deallocate (q, r, v, vg, dg, dd, w, t, id)
-    call trace%end (itimer(2))
+    call trace%end (itimer(3))
   end if
   !-----------------------------------------------------------------------------
   call trace%end (itimer(1))
@@ -1542,7 +1544,7 @@ SUBROUTINE velocities (self, vdx, vdy, vdz)
     do i3=self%lb(3),self%ub(3)
       do i2=self%lb(2),self%ub(2)
         do i1=self%lb(1),self%ub(1)
-          vd = self%particles(i1,i2,i3,i4)%velocity()
+          vd = self%particles(i1,i2,i3,i4)%velocity()*self%patch%ds
           vdx(i1,i2,i3,i4) = vd(1)
           vdy(i1,i2,i3,i4) = vd(2)
           vdz(i1,i2,i3,i4) = vd(3)
