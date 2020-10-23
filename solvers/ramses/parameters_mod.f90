@@ -9,7 +9,7 @@ module parameters_mod
   integer,parameter::dp=kind(1.0D0) ! real*8
 #endif
   logical:: isothermal=.false.
-  real(dp):: gamma=1.4d0
+  real(8):: gamma=1.4d0
   real(dp):: smallc=1.d-10
   real(dp):: smallr=1.d-10
   ! from module const

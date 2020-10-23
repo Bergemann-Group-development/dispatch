@@ -100,10 +100,10 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   integer        :: ix, iy, iz, iostat
   real(8)        :: kx, ky, kz
   logical, save  :: mhd=.false.
-  real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
+  real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, e0=1.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
   real(8), save  :: t_turn=0.1
   logical, save  :: first_time=.true.
-  namelist /initial_solenoidal_params/ k, a0, u0, b0, d0, s0, mhd, gamma, t_turn
+  namelist /IC_solenoidal_params/ k, a0, u0, b0, d0, e0, mhd, gamma, t_turn
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_solenoidal', itimer=itimer)
@@ -111,10 +111,10 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
-    read (io%input, initial_solenoidal_params, iostat=iostat)
+    read (io%input, IC_solenoidal_params, iostat=iostat)
     mhd = mhd .and. any(b0 /= 0.0)
-    call io%namelist_warning ('initial_solenoidal_params', iostat)
-    write (io%namelist, initial_solenoidal_params)
+    call io%namelist_warning ('IC_solenoidal_params', iostat)
+    write (io%namelist, IC_solenoidal_params)
   end if
   call io%lock%unset
   self%mhd = mhd
@@ -126,6 +126,7 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
       do ix=m(1)%lb,m(1)%ub
         kx   =  pi2*k(1)*(r1(ix)+m(1)%p-0.5d0*m(1)%s)/m(1)%b + phi(1)
         ff(ix,iy,iz,idx%d ) = d0
+        ff(ix,iy,iz,idx%e ) = e0
         ff(ix,iy,iz,idx%px) = d0*a0(1)*(sin(ky)+sin(kz))
         ff(ix,iy,iz,idx%py) = d0*a0(2)*(sin(kz)+sin(kx))
         ff(ix,iy,iz,idx%pz) = d0*a0(3)*(sin(kx)+sin(ky))
@@ -190,6 +191,7 @@ SUBROUTINE single_compressive (self, m, ff, idx)
           ff(ix,iy,iz,idx%bx) = b0(1)
           ff(ix,iy,iz,idx%by) = b0(2)
           ff(ix,iy,iz,idx%bz) = b0(3)
+          ff(ix,iy,iz,idx%e ) = e0 + 0.5*(b0(1)**2 + b0(2)**2 + b0(3)**2)
         end if
       end do
     end do
@@ -212,8 +214,8 @@ SUBROUTINE single_advection (self, m, ff, idx)
   real(8)        :: kx, ky, kz
   logical, save  :: mhd=.false.
   logical, save  :: first_time=.true.
-  real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
-  namelist /initial_advection_params/ k, a0, u0, b0, d0, s0, mhd, gamma
+  real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, e0=1.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
+  namelist /IC_advection_params/ k, a0, u0, b0, d0, e0, mhd, gamma
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_advection', itimer=itimer)
@@ -221,9 +223,9 @@ SUBROUTINE single_advection (self, m, ff, idx)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
-    read (io%input, initial_advection_params)
+    read (io%input, IC_advection_params)
     mhd = mhd .and. any(b0 /= 0.0)
-    if (io%master) write (*, initial_advection_params)
+    if (io%master) write (*, IC_advection_params)
   end if
   call io%lock%unset
   self%mhd = mhd
@@ -235,6 +237,7 @@ SUBROUTINE single_advection (self, m, ff, idx)
       do ix=m(1)%lb,m(1)%ub
         kx   =  pi2*k(1)*(r1(ix)+m(1)%p-0.5d0*m(1)%s)/m(1)%b + phi(1)
         ff(ix,iy,iz,idx%d ) = d0*(1.+a0(1)*sin(kx)+a0(2)*sin(ky)+a0(3)*sin(kz))
+        ff(ix,iy,iz,idx%e ) = e0
         ff(ix,iy,iz,idx%px) = d0*u0(1)
         ff(ix,iy,iz,idx%py) = d0*u0(2)
         ff(ix,iy,iz,idx%pz) = d0*u0(3)
@@ -242,6 +245,7 @@ SUBROUTINE single_advection (self, m, ff, idx)
           ff(ix,iy,iz,idx%bx) = b0(3)*sin(kz)
           ff(ix,iy,iz,idx%by) = b0(1)*sin(kx)
           ff(ix,iy,iz,idx%bz) = b0(2)*sin(ky)
+          ff(ix,iy,iz,idx%e ) = e0 + 0.5*(b0(1)**2 + b0(2)**2 + b0(3)**2)
         end if
       end do
     end do
@@ -405,17 +409,13 @@ SUBROUTINE turbulence (self, m, ff, idx)
   call io%lock%unset
   ff(:,:,:,idx%d        ) = 1.0
   ff(:,:,:,idx%e        ) = 1.0
-  if (gamma==1.0) then
-    ff(:,:,:,idx%e        ) = 1.0 + 0.5*(b0(1)**2+b0(2)**2+b0(3)**2)
-  else
-    ff(:,:,:,idx%e        ) = 1.0/(gamma-1.) + 0.5*(b0(1)**2+b0(2)**2+b0(3)**2)
-  end if
   ff(:,:,:,idx%px:idx%pz) = 0.0
   if (idx%bx > 0) then
     ff(:,:,:,idx%bx       ) = b0(1)
     ff(:,:,:,idx%by       ) = b0(2)
     ff(:,:,:,idx%bz       ) = b0(3)
   end if
+  call energy (self, m, idx, ff)
   call trace_end (itimer)
 END SUBROUTINE turbulence
 
@@ -431,20 +431,20 @@ SUBROUTINE energy (self, m, idx, ff)
   real(dp):: fgamma
   !-----------------------------------------------------------------------------
   call trace%begin ('initial_t%energy')
-  if (isothermal .or. gamma==1.0_dp) then
-    fgamma = 1.0_dp
+  if (isothermal .or. gamma==1d0) then
+    fgamma = 1d0
   else
-    fgamma = gamma*(gamma-1.0_dp)
+    fgamma = gamma*(gamma-1d0)
   end if
   ff(:,:,:,idx%e) = 0.5*(ff(:,:,:,idx%px)**2+ &
                          ff(:,:,:,idx%py)**2+ &
                          ff(:,:,:,idx%pz)**2)/ff(:,:,:,idx%d) &
-                  + ff(:,:,:,idx%d)/fgamma
+                  + ff(:,:,:,idx%e)
   if (self%mhd) then
     ff(:,:,:,idx%e) = ff(:,:,:,idx%e) + &
       0.5*(ff(:,:,:,idx%bx)**2 + &
            ff(:,:,:,idx%by)**2 + &
-         ff(:,:,:,idx%bz)**2)
+           ff(:,:,:,idx%bz)**2)
   end if
   !print *, 'IIII', idx%e, fgamma, &
     !minval(ff(m(1)%lb:m(1)%ub,m(2)%lb:m(2)%ub,m(3)%lb:m(3)%ub,idx%d)), &
