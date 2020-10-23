@@ -1542,10 +1542,10 @@ SUBROUTINE velocities (self, vdx, vdy, vdz)
     do i3=self%lb(3),self%ub(3)
       do i2=self%lb(2),self%ub(2)
         do i1=self%lb(1),self%ub(1)
-          !vd = self%particles(i1,i2,i3,i4)%velocity()
-          !vdx(i1,i2,i3,i4) = vd(1)
-          !vdy(i1,i2,i3,i4) = vd(2)
-          !vdz(i1,i2,i3,i4) = vd(3)
+          vd = self%particles(i1,i2,i3,i4)%velocity()
+          vdx(i1,i2,i3,i4) = vd(1)
+          vdy(i1,i2,i3,i4) = vd(2)
+          vdz(i1,i2,i3,i4) = vd(3)
         end do
       end do
     end do
