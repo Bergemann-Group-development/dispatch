@@ -11,12 +11,16 @@ PROGRAM test
   real:: micron, mps
   !-----------------------------------------------------------------------------
   print *,"Initializing starting conditions"
+  call cgs%init
+  print *,cgs%grav,cgs%au,cgs%k_b,cgs%m_u,cgs%m_sun
   T = 196
   mu = 2.37
-  cs = sqrt(T*cgs%k_b/mu*cgs%m_u)
+  cs = sqrt(T*cgs%k_b/(mu*cgs%m_u))
+  print *,'cs', cs
   r = 1.0*cgs%au
   msolar = 0.5*cgs%m_sun
-  Omega_K = sqrt(cgs%grav*msolar/r**3)
+  Omega_K = sqrt(cgs%grav*msolar)/r**1.5
+  print *,'Omega_K', Omega_K
   Hp = cs / Omega_K
   sigma_d = 0.18
   !rho_d = sigma_d/(2*math%pi)*Hp
