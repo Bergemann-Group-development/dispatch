@@ -41,7 +41,8 @@ MODULE omp_lock_mod
     procedure:: test
     procedure:: check
     procedure:: unset
-    procedure, nopass:: destroy
+    procedure:: dealloc
+    procedure:: destroy
     procedure:: info
   end type
   real, save:: verbose_time=0.0
@@ -386,13 +387,12 @@ SUBROUTINE unset (self, label)
 END SUBROUTINE unset
 
 !===============================================================================
-SUBROUTINE destroy (this)
+SUBROUTINE dealloc (self, this)
+  class(lock_t):: self
   type(lock_t), pointer:: this
   !-----------------------------------------------------------------------------
   if (omp_lock%on .and. associated(this)) then
-    if (this%initialized) then
-      call omp_destroy_nest_lock (this%lock)
-    end if
+    call this%destroy
     if (omp_lock%verbose > 0) then
       write (unit,'(f10.6,a,a4,i6,i3,i4,6p,f10.1,2x,a)') wallclock(), &
         ' lock kind, id, level, thread = ', this%kind, this%id, this%level, &
@@ -400,6 +400,16 @@ SUBROUTINE destroy (this)
     end if
     deallocate (this)
     nullify (this)
+  end if
+END SUBROUTINE dealloc
+
+!===============================================================================
+SUBROUTINE destroy (self)
+  class(lock_t):: self
+  !-----------------------------------------------------------------------------
+  if (self%initialized) then
+    call omp_destroy_nest_lock (self%lock)
+    self%initialized = .false.
   end if
 END SUBROUTINE destroy
 

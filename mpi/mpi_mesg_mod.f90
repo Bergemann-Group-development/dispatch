@@ -137,7 +137,7 @@ SUBROUTINE dealloc_mesg (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('mesg_t%dealloc_mesg')
   if (associated(self%lock)) then
-    call omp_lock%destroy (self%lock)
+    call omp_lock%dealloc (self%lock)
   end if
   if (associated(self%buffer)) then
     call io%bits_mem (-storage_size(self%buffer), &
@@ -506,7 +506,7 @@ SUBROUTINE dealloc_list (self)
   class(mesg_list_t):: self
   !-----------------------------------------------------------------------------
   call trace%begin ('msg_list_t%dealloc_list')
-  call omp_lock%destroy (self%lock)
+  call omp_lock%dealloc (self%lock)
   call trace%end ()
 END SUBROUTINE dealloc_list
 

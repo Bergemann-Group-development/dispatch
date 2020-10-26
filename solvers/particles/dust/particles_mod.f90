@@ -24,6 +24,7 @@ MODULE particles_mod
   USE io_mod
   USE trace_mod
   USE omp_mod
+  USE omp_lock_mod
   USE mpi_mod
   USE mpi_buffer_mod
   implicit none
@@ -48,6 +49,7 @@ MODULE particles_mod
   !--- collection of particles ---
   integer, parameter:: particles_key=2
   type, public:: particles_t
+    type(lock_t):: lock
     type(particle_t), pointer:: head => null()
     type(particle_t), pointer:: tail => null()
     integer:: n = 0
@@ -134,6 +136,7 @@ SUBROUTINE init_particles (self, id, type)
   '$Id$'
   !-----------------------------------------------------------------------------
   call trace%print_id (ids)
+  call self%lock%init ('particles_t%init')
   allocate (self%head, self%tail)
   self%id = id
   self%type = type
@@ -148,6 +151,7 @@ END SUBROUTINE init_particles
 SUBROUTINE dealloc (self)
   class(particles_t):: self
   !-----------------------------------------------------------------------------
+  call self%lock%destroy
   deallocate (self%head, self%tail)
 END SUBROUTINE dealloc
 

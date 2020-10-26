@@ -1154,52 +1154,6 @@ SUBROUTINE import (self, count)
       self%patch%id, self%ni
     flush (stdlog)
   end if
-  if (debug .and. present(count)) then
-    if (count) then
-      call self%lock%set ('particle_solver_t%count self')
-      write (stdlog,'(a,f12.6,3i6)') &
-        'particle_solver_t%import: n_before, n_after =', &
-        self%time, self%id, n_before, n_after
-      do bin=1,n_bin
-        particles => self%exports(bin)
-        p => particles%head%next
-        do j=1,particles%n
-          write (stdlog,'(a,i4,2x,4i4,3f12.7)') &
-          'import: j, q, r =', j, p%q, p%r
-          p => p%next
-        end do
-      end do
-      call self%lock%unset ('particle_solver_t%count self')
-      nbor => self%nbor
-      do while (associated(nbor))
-        ni = 0
-        nbtask => nbor%task
-        call nbtask%lock%set ('particle_solver_t%count nbor')
-        select type (nbtask)
-        class is (particle_solver_t)
-          dist = -nbtask%patch%task_t%distance(self%patch)/nbtask%patch%ds
-          do bin=1,n_bin
-            particles => self%exports(bin)
-            p => particles%head%next
-            do j=1,particles%n
-              r = dist + real(p%q(1:3),kind=8)
-              q = floor(r)
-              inside = all(q >= self%lb .and. q <= self%ub)
-              if (inside) then
-                ni = ni+1
-              end if
-              p => p%next
-            end do
-          end do
-          write (stdlog,'(a,i6,f12.6, 1p,e11.2,2x,0p,3i4,i5)') &
-            'import: nbtask, time, dtime, distance, owns =', nbtask%id, &
-            self%time, nbtask%time-self%time, int(dist), ni
-        end select
-        call nbtask%lock%unset ('particle_solver_t%count nbor')
-        nbor => nbor%next
-      end do
-    end if
-  end if
   call trace%end (itimer)
 END SUBROUTINE import
 
@@ -1336,6 +1290,7 @@ SUBROUTINE poutput (self)
   !-----------------------------------------------------------------------------
   if (.not. particle_io) return 
   call trace%begin ('particle_solver_t%poutput(1)', itimer=itimer(1))
+  call self%lock%set ('particle_solver_t%poutput')
   n = 0
   m = 0
   do i4=1,n_bin
@@ -1347,6 +1302,8 @@ SUBROUTINE poutput (self)
     end do
     end do
     end do
+    pp => self%exports(i4)
+    call harvest (.false.)
   end do
   !-----------------------------------------------------------------------------
   ! Only do I/O if there are particles to write
@@ -1354,7 +1311,6 @@ SUBROUTINE poutput (self)
   if (n > 0) then
     m = n
     allocate (q(m,4), r(m,3), v(m,3), vg(m,3), dg(m), dd(m), w(m), t(m), id(m))
-    call self%density
     n = 0
     do i4=1,n_bin
       do i3=self%lb(3),self%ub(3)
@@ -1365,6 +1321,8 @@ SUBROUTINE poutput (self)
       end do
       end do
       end do
+      pp => self%exports(i4)
+      call harvest (.true.)
     end do
     !---------------------------------------------------------------------------
     ! Re-open a new file for each snapshot
@@ -1415,6 +1373,7 @@ SUBROUTINE poutput (self)
     call trace%end (itimer(3))
   end if
   !-----------------------------------------------------------------------------
+  call self%lock%unset ('particle_solver_t%poutput')
   call trace%end (itimer(1))
 contains
 
