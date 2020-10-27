@@ -16,7 +16,7 @@ msolar = 0.5 *u.solMass
 Omega_K = np.sqrt(const.G*msolar/r**3)
 Hp = (cs / Omega_K).decompose()
 sigma_d = 0.18 * u.g/u.cm**2
-#rho_d = (sigma_d/(np.sqrt(2*np.pi)*Hp)).decompose()
+rho_d = (sigma_d/(np.sqrt(2*np.pi)*Hp)).decompose()
 rho_s = 1.6 *u.g * u.cm**(-3)
 a_s = 1*u.micron
 m_s = (4/3*np.pi*a_s**3 * rho_s).decompose()
@@ -26,7 +26,7 @@ alpha = 1e-3
 Cdt = 0.1
 xi = 1.83
 
-dt = 0.1 * 60*60*24*365 * u.s
+dt = 2 * 60*60*24*365 * u.s
 t_end = 1e3 * 60*60*24*365 * u.s
 save_time = 1 *u.yr
 eps_time = 1.10
@@ -36,7 +36,7 @@ eps_time = 1.10
 # rho_d = (2/5 * ((1e-3 * u.cm)**(5/2) - a_s**(5/2)) * rho_s * np.pi /
 #          ((12. * const.k_B * T/rho_s)**(1/2) * 6e4 * u.yr)).decompose()
 # rho_d
-rho_d =( (1e4*u.cm)*2*rho_s*np.sqrt(np.pi)/sigma_d * 1/(8*1e3*u.yr)/cs * sigma_d /(np.sqrt(2*np.pi)) ).decompose()
+#rho_d =( (1e4*u.cm)*2*rho_s*np.sqrt(np.pi)/sigma_d * 1/(8*1e3*u.yr)/cs * sigma_d /(np.sqrt(2*np.pi)) ).decompose()
 
 #print("rho_d :", rho_d)
 
@@ -47,7 +47,7 @@ print("Calculating bins")
 nbin = 200 # 40 for brown 200 for turb as per birnstiel
 a = np.logspace(-4, 2, nbin) * u.cm
 st = rho_s * a * np.pi/(2*sigma_d*100)
-rho_d = (sigma_d/ (np.sqrt(2*np.pi)* Hp * min(1,np.sqrt(alpha/min(st[0],1/2)*(1+st[0]**2))) )).decompose()
+#rho_d = (sigma_d/ (np.sqrt(2*np.pi)* Hp * min(1,np.sqrt(alpha/min(st[0],1/2)*(1+st[0]**2))) )).decompose()
 
 m = 4/3 * a**3 * rho_s * np.pi
 n = np.zeros(len(m)) * u.m**(-3)
@@ -63,7 +63,7 @@ utm[st>1] = cs*np.sqrt(2*alpha/st[st>1])
 
 utm = np.maximum.outer(utm,utm)
 
-np.max(utm) /np.max(ubm)
+#np.max(utm) /np.max(ubm)
 
 du = ubm + utm
 #du = ubm
@@ -71,7 +71,7 @@ sigma_col = np.pi * np.add.outer(a, a)**2
 
 # %%
 %%time
-print("Setting up neighbour, probability matrices etc. ")
+print("Setting up probabilities and fragmentation matrix ")
 
 size = len(a)
 mn = np.zeros((size,size))
@@ -141,13 +141,6 @@ K = (np.multiply( np.multiply(du, sigma_col), pc)).decompose()
 L = (np.multiply( np.multiply(du, sigma_col), pf)).decompose()
 
 # %%
-# pf = (du > u_f) * 1
-# pf[du < u_f-trans_width] = 0
-# elseind = (du < u_f) | (du > u_f-trans_width)
-# pf[elseind] = (1-(u_f-du)/trans_width)
-
-
-# %%
 %%time
 print("Time evolving the number density")
 
@@ -175,30 +168,28 @@ while t < t_end:
         break
 
     dn = np.zeros(size)
-    dnk_frag = np.zeros(size)
     S = np.zeros(size)
     J = np.zeros((size,size))
     nn = np.outer(n,n)
     Q = np.multiply(K,nn)
     Q_frag = np.multiply(L,nn)
     for k in range(size):
+        #dn_coag[k] = (0.5 * np.sum(np.multiply(KC_k, nn)) - np.sum(Kn_k*n[k]))   # Explicit method
         #dnk_frag[k] = 1/2 * np.sum( np.multiply( Q_frag, SS[k])) - np.sum(Q_frag[k])
         KC_k = np.multiply(K, C[k])
         LS_k = np.multiply(L, SS[k])
-        #QC = np.multiply(KC_k, nn)
 
         Kn_k = np.multiply(K[k], n)
-        #dn[k] = (0.5 * np.sum(QC) - np.sum(Kn_k*n[k]))   # Explicit method
-        #S[k] = (0.5 * np.sum(QC) - np.sum(Kn_k*n[k]))
+        Ln_k = np.multiply(L[k], n)
         S[k] = (0.5 * np.sum(np.multiply(Q, C[k])) - np.sum(Q[k])) + \
                (0.5 * np.sum(np.multiply(Q_frag, SS[k])) - np.sum(Q_frag[k]))
 
         J[k] = (np.dot(KC_k, n) - n[k]*K[k]) + \
                (np.dot(LS_k, n) - n[k]*L[k])
-        J[k][k] -= np.sum(Kn_k)
+        J[k][k] -= np.sum(Kn_k) + np.sum(Ln_k)
 
     dn = np.linalg.solve((np.identity(size)/dt - J), S)
-    #dn = (S + dnk_frag) * dt 
+    #dn = S * dt        # explicit
     n += dn  # (u.s * u.m**3)**(-1)
     t += dt
 
@@ -260,6 +251,9 @@ ax.loglog(x,y)
 ax.grid(True)
 
 # %%
-%%time
-# Fragmenting and cratering
-np.set_printoptions(threshold=sys.maxsize)
+
+
+#np.set_printoptions(threshold=sys.maxsize)
+plt.loglog(a,n*m)
+
+# %%
