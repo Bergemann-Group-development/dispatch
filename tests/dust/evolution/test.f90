@@ -6,14 +6,16 @@ PROGRAM test
   USE units_mod
   USE math_mod
   implicit none
-  real:: T, mu, cs, r, msolar, Omega_K, sigma_d, rho_d, rho_s, u_f
+  real:: tt, mu, cs, r, msolar, Omega_K, sigma_d, rho_d, rho_s, u_f, t
   real:: trans_width, alpha, Cdt, xi, dt, t_end, save_time, eps_time, Hp
   real:: micron, mps
 
-  integer:: i, j, k, l, nbin, kn, minij, maxij
+  integer:: i, j, k, l, nbin, kn, minij, maxij, itime
   real:: ratio_r, min_a, max_a, m_crat, eps, Stot
-  real, ALLOCATABLE, DIMENSION(:):: a, n, m, st, dn, S, utm_ini
-  real, ALLOCATABLE, DIMENSION(:,:):: ms, sigma_col, mn, mm, pf, pc, ep, ubm, utm, du, Q, Q_frag, jj, kk, ll
+  real(8), ALLOCATABLE, DIMENSION(:):: m, n
+  real(8), ALLOCATABLE, DIMENSION(:,:):: mn, mm, ms, nn
+  real, ALLOCATABLE, DIMENSION(:):: a, st, dn, S, utm_ini
+  real, ALLOCATABLE, DIMENSION(:,:):: sigma_col, pf, pc, ep, ubm, utm, du, Q, Q_frag, jj, kk, ll
   real, ALLOCATABLE, DIMENSION(:,:,:):: SS, C
   !-----------------------------------------------------------------------------
   nbin = 5
@@ -21,24 +23,22 @@ PROGRAM test
   ALLOCATE(sigma_col(nbin,nbin), mn(nbin,nbin), mm(nbin,nbin), pf(nbin,nbin), pc(nbin,nbin), du(nbin,nbin))
   ALLOCATE(ep(nbin,nbin), ubm(nbin,nbin), utm(nbin,nbin), Q(nbin,nbin))
   ALLOCATE(Q_frag(nbin,nbin), jj(nbin,nbin), SS(nbin,nbin,nbin), C(nbin,nbin,nbin))
-  ALLOCATE(kk(nbin,nbin),ll(nbin,nbin))
+  ALLOCATE(kk(nbin,nbin),ll(nbin,nbin), nn(nbin,nbin))
 
 
   print *,"Initializing starting conditions"
   call cgs%init
   print *,cgs%grav,cgs%au,cgs%k_b,cgs%m_u,cgs%m_sun
-  T = 196
+  tt = 196
   mu = 2.37
-  cs = sqrt(T*cgs%k_b/(mu*cgs%m_u))
-  print *,'cs', cs
+  cs = sqrt(tt*cgs%k_b/(mu*cgs%m_u))
   r = 1.0*cgs%au
   msolar = 0.5*cgs%m_sun
   Omega_K = sqrt(cgs%grav*msolar)/r**1.5
-  print *,'Omega_K', Omega_K
   Hp = cs / Omega_K
-  sigma_d = 0.18
-  rho_d = sigma_d/(2*math%pi)*Hp
-  rho_s = 1.6
+  sigma_d = 0.18                                      ! g / cm**2
+  rho_d = sigma_d/(sqrt(2*math%pi)*Hp)
+  rho_s = 1.6                                         ! g / cm**3
   micron = 1e-4
 
   mps = 1e2
@@ -83,7 +83,7 @@ PROGRAM test
         if ( m(kn)<ms(i,j) ) exit
       end do 
 
-      ubm(i,j) = sqrt(8 * cgs%k_b* T * ((m(i) + m(j)))/(math%pi*( m(i)*m(j) )))
+      ubm(i,j) = sqrt(8 * cgs%k_b* tt * (m(i) + m(j) )/(math%pi*m(i)*m(j) ))
       utm(i,j) = max(utm_ini(i), utm_ini(j))
       du(i,j) = ubm(i,j) + utm(i,j)
       sigma_col(i,j) = math%pi * (a(i) + a(j))**2
@@ -111,7 +111,7 @@ PROGRAM test
       end if
 
 
-      if (kn+1 < nbin) then
+      if (kn+1 <= nbin) then
         mm(i,j) = m(kn)
         mn(i,j) = m(kn+1)
       else
@@ -141,8 +141,35 @@ PROGRAM test
     where (m(k) == mn) C(k,:,:) = 1 - ep
   end do
 
-
   kk = du * sigma_col * pc
   ll = du * sigma_col * pf
   
+  t = 0
+  itime = 0
+
+  do while (t < t_end)
+    dn = 0
+    do i=1,nbin
+      do j=1,nbin
+        nn(i,j) = n(i)*n(j)
+      end do
+    end do
+
+    S = 0
+    J = 0
+    Q = kk*nn
+    Q_frag = ll * nn
+
+    do k=1,nbin
+      S(k) = ( 0.5* SUM(Q*C(k,:,:)) - SUM(Q(k,:)) ) + ( 0.5 * SUM( Q_frag*SS(k,:,:)) - SUM(Q_frag(k,:)) )
+    end do
+
+    dn = S * dt ! Explicit
+    n = n + dn
+    t = t + dt
+
+  end do
+
+
+
 END PROGRAM
