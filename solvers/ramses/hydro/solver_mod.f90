@@ -13,6 +13,7 @@ MODULE solver_mod
   USE hd_mod
   USE stagger_mod
   USE validate_mod
+  USE parameters_mod
   implicit none
   private
   type, public, extends(hd_t):: solver_t
@@ -34,6 +35,7 @@ MODULE solver_mod
     procedure:: e2ss
     procedure:: log_density => void
     procedure:: log_pressure => void
+    procedure:: gas_pressure
     procedure:: gas_pressure_ngz
     procedure:: gas_temperature
     procedure:: gas_temperature_ngz
@@ -333,6 +335,25 @@ FUNCTION up(f,i) RESULT (g)
   !.............................................................................
   g = 0.5*(cshift(f,1,i)+f)
 END FUNCTION
+
+!===============================================================================
+!===============================================================================
+FUNCTION gas_pressure (self) RESULT (pg)
+  class(solver_t):: self
+  real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
+  real, dimension(:,:,:), pointer, contiguous:: d, px, py, pz, e
+  !-----------------------------------------------------------------------------
+  d  => self%mem(:,:,:,self%idx%d ,self%new,1)
+  px => self%mem(:,:,:,self%idx%px,self%new,1)
+  py => self%mem(:,:,:,self%idx%py,self%new,1)
+  pz => self%mem(:,:,:,self%idx%pz,self%new,1)
+  e  => self%mem(:,:,:,self%idx%e ,self%new,1)
+  if (isothermal) then
+    pg = d*self%csound**2
+  else
+    pg = (gamma-1d0)*(e-0.5*((px**2+py**2+pz**2)/d))
+  end if
+END FUNCTION gas_pressure
 
 !===============================================================================
 FUNCTION gas_pressure_ngz (self) RESULT (pg)

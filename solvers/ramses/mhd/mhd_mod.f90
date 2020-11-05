@@ -52,7 +52,6 @@ MODULE mhd_mod
     procedure:: init
     procedure:: pre_update
     procedure:: update
-    procedure:: gas_pressure
   end type
   real, save:: slope_type=2.0
   real, save:: courant_factor=0.25
@@ -2107,29 +2106,6 @@ FUNCTION up(f,i) RESULT (g)
   !.............................................................................
   g = 0.5*(cshift(f,1,i)+f)
 END FUNCTION
-
-!===============================================================================
-FUNCTION gas_pressure (self) RESULT (pg)
-  class(mhd_t):: self
-  real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
-  integer :: l(3), u(3)
-  !-----------------------------------------------------------------------------
-  associate (d  => self%mem(:,:,:,self%idx%d ,self%new,1), &
-             px => self%mem(:,:,:,self%idx%px,self%new,1), &
-             py => self%mem(:,:,:,self%idx%py,self%new,1), &
-             pz => self%mem(:,:,:,self%idx%pz,self%new,1), &
-             bx => self%mem(:,:,:,self%idx%bx,self%new,1), &
-             by => self%mem(:,:,:,self%idx%by,self%new,1), &
-             bz => self%mem(:,:,:,self%idx%bz,self%new,1), &
-             e  => self%mem(:,:,:,self%idx%e ,self%new,1))
-  if (isothermal) then
-    pg = d*self%csound**2
-  else
-    pg = (gamma-1d0)* &
-      (e-0.5*(up(bx,1)**2+up(by,2)**2+up(bz,3)**2+(px**2+py**2+pz**2)/d))
-  end if
-  end associate
-END FUNCTION gas_pressure
 
 !===============================================================================
 !> Add gradient of phi gravitational force.  FIXME: This should be in extras

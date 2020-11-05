@@ -64,7 +64,6 @@ MODULE hd_mod
     procedure:: dealloc
     procedure:: pre_update
     procedure:: update
-    procedure:: gas_pressure
   end type
   integer, parameter:: ndim=3
   real, save:: slope_type=2.0
@@ -1260,25 +1259,6 @@ subroutine solver (self,ngrid,qleft,qright,fgdnv,error,detailed_timer)
     stop
   end if
 end subroutine solver
-
-!===============================================================================
-!===============================================================================
-FUNCTION gas_pressure (self) RESULT (pg)
-  class(hd_t):: self
-  real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
-  real, dimension(:,:,:), pointer, contiguous:: d, px, py, pz, e
-  !-----------------------------------------------------------------------------
-  d  => self%mem(:,:,:,self%idx%d ,self%new,1)
-  px => self%mem(:,:,:,self%idx%px,self%new,1)
-  py => self%mem(:,:,:,self%idx%py,self%new,1)
-  pz => self%mem(:,:,:,self%idx%pz,self%new,1)
-  e  => self%mem(:,:,:,self%idx%e ,self%new,1)
-  if (isothermal) then
-    pg = d*self%csound**2
-  else
-    pg = (gamma-1d0)*(e-0.5*((px**2+py**2+pz**2)/d))
-  end if
-END FUNCTION gas_pressure
 
 !===============================================================================
 !===============================================================================

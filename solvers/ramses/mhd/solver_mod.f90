@@ -13,6 +13,7 @@ MODULE solver_mod
   USE mhd_mod
   USE validate_mod
   USE stagger_mod
+  USE parameters_mod
   implicit none
   private
   type, public, extends(mhd_t):: solver_t
@@ -30,6 +31,7 @@ MODULE solver_mod
     procedure:: ss2e
     procedure:: log_density => void
     procedure:: log_pressure => void
+    procedure:: gas_pressure
     procedure:: gas_pressure_ngz
     !procedure:: cell_gas_pressure
     procedure:: gas_temperature
@@ -266,6 +268,29 @@ FUNCTION up(f,i) RESULT (g)
   !.............................................................................
   g = 0.5*(cshift(f,1,i)+f)
 END FUNCTION
+
+!===============================================================================
+FUNCTION gas_pressure (self) RESULT (pg)
+  class(solver_t):: self
+  real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
+  integer :: l(3), u(3)
+  !-----------------------------------------------------------------------------
+  associate (d  => self%mem(:,:,:,self%idx%d ,self%it,1), &
+             px => self%mem(:,:,:,self%idx%px,self%it,1), &
+             py => self%mem(:,:,:,self%idx%py,self%it,1), &
+             pz => self%mem(:,:,:,self%idx%pz,self%it,1), &
+             bx => self%mem(:,:,:,self%idx%bx,self%it,1), &
+             by => self%mem(:,:,:,self%idx%by,self%it,1), &
+             bz => self%mem(:,:,:,self%idx%bz,self%it,1), &
+             e  => self%mem(:,:,:,self%idx%e ,self%it,1))
+  if (isothermal) then
+    pg = d*self%csound**2
+  else
+    pg = (gamma-1d0)* &
+      (e-0.5*(up(bx,1)**2+up(by,2)**2+up(bz,3)**2+(px**2+py**2+pz**2)/d))
+  end if
+  end associate
+END FUNCTION gas_pressure
 
 !===============================================================================
 FUNCTION gas_pressure_ngz (self) RESULT (pg)
