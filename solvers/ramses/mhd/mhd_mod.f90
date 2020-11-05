@@ -2109,13 +2109,13 @@ FUNCTION up(f,i) RESULT (g)
 END FUNCTION
 
 !===============================================================================
-FUNCTION gas_pressure (self, idx) RESULT (pg)
+FUNCTION gas_pressure (self, it) RESULT (pg)
   class(mhd_t):: self
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
   integer :: l(3), u(3), i
-  integer, optional, intent(in) :: idx
+  integer, optional, intent(in) :: it
   !-----------------------------------------------------------------------------
-  if (present(idx)) then; i = idx; else; i = self%new; endif
+  if (present(it)) then; i = it; else; i = self%new; endif
   associate (d  => self%mem(:,:,:,self%idx%d ,i,1), &
              px => self%mem(:,:,:,self%idx%px,i,1), &
              py => self%mem(:,:,:,self%idx%py,i,1), &

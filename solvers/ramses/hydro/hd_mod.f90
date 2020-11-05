@@ -1263,16 +1263,19 @@ end subroutine solver
 
 !===============================================================================
 !===============================================================================
-FUNCTION gas_pressure (self) RESULT (pg)
+FUNCTION gas_pressure (self, it) RESULT (pg)
   class(hd_t):: self
+  integer, optional:: it
+  integer:: i
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
   real, dimension(:,:,:), pointer, contiguous:: d, px, py, pz, e
   !-----------------------------------------------------------------------------
-  d  => self%mem(:,:,:,self%idx%d ,self%new,1)
-  px => self%mem(:,:,:,self%idx%px,self%new,1)
-  py => self%mem(:,:,:,self%idx%py,self%new,1)
-  pz => self%mem(:,:,:,self%idx%pz,self%new,1)
-  e  => self%mem(:,:,:,self%idx%e ,self%new,1)
+  if (present(it)) then; i = it; else; i = self%new; endif
+  d  => self%mem(:,:,:,self%idx%d ,i,1)
+  px => self%mem(:,:,:,self%idx%px,i,1)
+  py => self%mem(:,:,:,self%idx%py,i,1)
+  pz => self%mem(:,:,:,self%idx%pz,i,1)
+  e  => self%mem(:,:,:,self%idx%e ,i,1)
   if (isothermal) then
     pg = d*self%csound**2
   else

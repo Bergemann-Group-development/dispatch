@@ -415,15 +415,15 @@ FUNCTION gas_velocity_vector (self) RESULT (v)
 END FUNCTION gas_velocity_vector
 
 !===============================================================================
-FUNCTION gas_velocity_scalar (self, idir, idx) RESULT (v)
+FUNCTION gas_velocity_scalar (self, idir, it) RESULT (v)
   class (solver_t):: self
   real(kind=KindScalarVar), dimension(:,:,:), pointer :: d
   real(kind=KindScalarVar), dimension(self%gn(1),self%gn(2),self%gn(3)) :: v
   integer :: idir
-  integer, optional, intent(in) :: idx
+  integer, optional, intent(in) :: it
   integer :: j
   !-----------------------------------------------------------------------------
-  if (present(idx)) then; j = idx; else; j = self%it; endif
+  if (present(it)) then; j = it; else; j = self%it; endif
   d => self%mem(:,:,:,self%idx%d,j,1)
   select case (idir)
   case (1)

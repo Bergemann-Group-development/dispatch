@@ -458,20 +458,24 @@ FUNCTION gas_velocity_vector (self) RESULT (v)
 END FUNCTION gas_velocity_vector
 
 !===============================================================================
-FUNCTION gas_velocity_scalar (self, idir) RESULT (v)
+FUNCTION gas_velocity_scalar (self, idir, it) RESULT (v)
   class (solver_t):: self
-  real(kind=KindScalarVar), dimension(:,:,:), pointer :: d
-  real(kind=KindScalarVar), dimension(self%gn(1),self%gn(2),self%gn(3)):: v
   integer:: idir
+  integer, optional, intent(in) :: it
+  real(kind=KindScalarVar), dimension(self%gn(1),self%gn(2),self%gn(3)):: v
+  !.............................................................................
+  real(kind=KindScalarVar), dimension(:,:,:), pointer :: d
+  integer :: j
   !-----------------------------------------------------------------------------
-  d => self%mem(:,:,:,self%idx%d,self%it,1)
+  if (present(it)) then; j = it; else; j = self%it; endif
+  d => self%mem(:,:,:,self%idx%d,j,1)
   select case (idir)
   case (1)
-    v = self%mem(:,:,:,self%idx%px,self%it,1) / d
+    v = self%mem(:,:,:,self%idx%px,j,1) / d
   case (2)
-    v = self%mem(:,:,:,self%idx%py,self%it,1) / d
+    v = self%mem(:,:,:,self%idx%py,j,1) / d
   case (3)
-    v = self%mem(:,:,:,self%idx%pz,self%it,1) / d
+    v = self%mem(:,:,:,self%idx%pz,j,1) / d
   case default
     error stop "solver_mod::gas_velocity_scalar:: invalid value of idir"
   end select
