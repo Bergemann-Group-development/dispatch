@@ -1,5 +1,5 @@
 !*******************************************************************************
-!> $Id$
+!> $Id: 13122ad6955dabc9008409fc32743031a7e12d4c $
 !*******************************************************************************
 MODULE force_mod
   USE io_mod
@@ -57,7 +57,7 @@ SUBROUTINE init (self, solver, id, mesh)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
-    read (io%input,turbulence_params)
+    read (io%input,turbulence_params,iostat=iostat)
     call io%namelist_warning ('turbulence_params', iostat)
     write (io%namelist, turbulence_params)
   end if
