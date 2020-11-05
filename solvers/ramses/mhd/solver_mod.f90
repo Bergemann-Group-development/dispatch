@@ -397,15 +397,16 @@ SUBROUTINE apply_heating (self, q)
 END SUBROUTINE
 
 !===============================================================================
-FUNCTION gas_velocity_vector (self,idx) RESULT (v)
+FUNCTION gas_velocity_vector (self) RESULT (v)
   class (solver_t):: self
-  integer, optional, intent(in) :: idx
+  !integer, optional, intent(in) :: idx
   real(kind=KindScalarVar), dimension(:,:,:),   pointer :: d
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: p
   real(kind=KindScalarVar), dimension(self%gn(1),self%gn(2),self%gn(3),3) :: v
   integer:: i,j
   !-----------------------------------------------------------------------------
-  if (present(idx)) then; j = idx; else; j = self%it; endif
+  !if (present(idx)) then; j = idx; else; j = self%it; endif
+  j = self%it
   d => self%mem(:,:,:,self%idx%d,j,1)
   p => self%mem(:,:,:,self%idx%px:self%idx%pz,j,1)
   do i=1,3

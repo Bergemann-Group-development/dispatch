@@ -1125,7 +1125,7 @@ FUNCTION shock_and_cd_detector (self, patch) RESULT (refine)
     d => patch%mem(:,:,:,patch%idx%d,patch%it,1)
     e => patch%mem(:,:,:,patch%idx%e,patch%it,1)
     pg = patch%gas_pressure(idx=patch%it)
-    v  = patch%gas_velocity(idx=patch%it)
+    v  = patch%gas_velocity()
   class default
     call mpi%abort("Unrecognised patch type. Abort!")
   end select
