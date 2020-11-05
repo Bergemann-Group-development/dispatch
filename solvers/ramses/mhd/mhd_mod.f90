@@ -2109,19 +2109,21 @@ FUNCTION up(f,i) RESULT (g)
 END FUNCTION
 
 !===============================================================================
-FUNCTION gas_pressure (self) RESULT (pg)
+FUNCTION gas_pressure (self, idx) RESULT (pg)
   class(mhd_t):: self
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
-  integer :: l(3), u(3)
+  integer :: l(3), u(3), i
+  integer, optional, intent(in) :: idx
   !-----------------------------------------------------------------------------
-  associate (d  => self%mem(:,:,:,self%idx%d ,self%new,1), &
-             px => self%mem(:,:,:,self%idx%px,self%new,1), &
-             py => self%mem(:,:,:,self%idx%py,self%new,1), &
-             pz => self%mem(:,:,:,self%idx%pz,self%new,1), &
-             bx => self%mem(:,:,:,self%idx%bx,self%new,1), &
-             by => self%mem(:,:,:,self%idx%by,self%new,1), &
-             bz => self%mem(:,:,:,self%idx%bz,self%new,1), &
-             e  => self%mem(:,:,:,self%idx%e ,self%new,1))
+  if (present(idx)) then; i = idx; else; i = self%new; endif
+  associate (d  => self%mem(:,:,:,self%idx%d ,i,1), &
+             px => self%mem(:,:,:,self%idx%px,i,1), &
+             py => self%mem(:,:,:,self%idx%py,i,1), &
+             pz => self%mem(:,:,:,self%idx%pz,i,1), &
+             bx => self%mem(:,:,:,self%idx%bx,i,1), &
+             by => self%mem(:,:,:,self%idx%by,i,1), &
+             bz => self%mem(:,:,:,self%idx%bz,i,1), &
+             e  => self%mem(:,:,:,self%idx%e ,i,1))
   if (isothermal) then
     pg = d*self%csound**2
   else
