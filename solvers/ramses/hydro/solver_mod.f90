@@ -343,11 +343,11 @@ FUNCTION gas_pressure (self) RESULT (pg)
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
   real, dimension(:,:,:), pointer, contiguous:: d, px, py, pz, e
   !-----------------------------------------------------------------------------
-  d  => self%mem(:,:,:,self%idx%d ,self%new,1)
-  px => self%mem(:,:,:,self%idx%px,self%new,1)
-  py => self%mem(:,:,:,self%idx%py,self%new,1)
-  pz => self%mem(:,:,:,self%idx%pz,self%new,1)
-  e  => self%mem(:,:,:,self%idx%e ,self%new,1)
+  d  => self%mem(:,:,:,self%idx%d ,self%it,1)
+  px => self%mem(:,:,:,self%idx%px,self%it,1)
+  py => self%mem(:,:,:,self%idx%py,self%it,1)
+  pz => self%mem(:,:,:,self%idx%pz,self%it,1)
+  e  => self%mem(:,:,:,self%idx%e ,self%it,1)
   if (isothermal) then
     pg = d*self%csound**2
   else
