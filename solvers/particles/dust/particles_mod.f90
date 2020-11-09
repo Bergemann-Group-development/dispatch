@@ -184,11 +184,12 @@ SUBROUTINE prepend (self, p)
 END SUBROUTINE prepend
 
 !===============================================================================
-!> Remove given particle
+!> Remove a given particle
 !===============================================================================
 SUBROUTINE remove (self, p)
   class(particles_t):: self
-  class(particle_t), pointer:: p
+  class(particle_t), pointer:: p, this, prev, next
+  logical, parameter:: safe = .true.
 !define DBG
 #ifdef DBG
   if (p%id == -1 .or. .not.associated(p%next) &
@@ -204,9 +205,47 @@ SUBROUTINE remove (self, p)
     call io%warning ('self%n == 0')
   end if
 #endif
-  p%next%prev => p%prev
-  p%prev%next => p%next
   self%n = self%n - 1
+  if (safe) then
+    !---------------------------------------------------------------------------
+    ! Cache the pointers to the three specific instances, to avoid changing the
+    ! pointer p, which initially is then the same as next%prev and prev%next
+    !---------------------------------------------------------------------------
+    this => p
+    prev => p%prev
+    next => p%next
+    next%prev => prev
+    prev%next => next
+    nullify (this%next, this%prev)
+  else
+    !---------------------------------------------------------------------------
+    ! Simpler, possibly unsafe method. This is unsafe if the object p is
+    ! pointing to is itself a pointer reference to the actual object.
+    ! In this case p%next%prev could be a reference to p itself.
+    !---------------------------------------------------------------------------
+    p%next%prev => p%prev
+    p%prev%next => p%next
+    nullify (p%next, p%prev)
+    !---------------------------------------------------------------------------
+    ! Check list length
+    !--------------------------------------------------------------------------
+    block
+      integer:: n
+      integer, save:: nprint=5
+      n = 0
+      this => self%head%next
+      do while (.not. associated(this,self%tail))
+        n = n+1
+        this => this%next
+      end do
+      if (n /= self%n) then
+        write (stderr,*) 'error in particles_t%remove: self%n, n =', self%n, n
+      else if (nprint > 0) then
+        nprint = nprint-1
+        write (stderr,*) 'particles_t%remove: OK'
+      end if
+    end block
+  end if
 END SUBROUTINE remove
 
 !===============================================================================
