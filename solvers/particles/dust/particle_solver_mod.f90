@@ -1309,7 +1309,6 @@ SUBROUTINE poutput (self)
   ! Only do I/O if there are particles to write
   !-----------------------------------------------------------------------------
   if (n > 0) then
-    call self%lock%set ('particle_solver_t%poutput')
     m = n
     allocate (q(m,4), r(m,3), v(m,3), vg(m,3), dg(m), dd(m), w(m), t(m), id(m))
     n = 0
@@ -1329,6 +1328,7 @@ SUBROUTINE poutput (self)
     ! Re-open a new file for each snapshot
     !---------------------------------------------------------------------------
     call trace%begin ('particle_solver_t%poutput(2)', itimer=itimer(2))
+    call io%lock%set ('poutput')
     if (iout < self%iout) then
       iout = self%iout
       close (io_unit%particle_d)
@@ -1368,9 +1368,9 @@ SUBROUTINE poutput (self)
     if (mod(n_tot,1000000) == 0) then
       write(stdout,'(a,f8.2,a)') 'particle_io:', n_tot*1e-6, ' Mp'
     end if
-    call self%lock%unset ('particle_solver_t%poutput')
     deallocate (q, r, v, vg, dg, dd, w, t, id)
     call trace%end (itimer(3))
+    call io%lock%unset ('poutput')
   end if
   !-----------------------------------------------------------------------------
   call self%lock%unset ('particle_solver_t%poutput')
