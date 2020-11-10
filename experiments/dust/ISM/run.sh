@@ -6,6 +6,7 @@ time=`date +%y%m%d_%H%M%S`
 
 # Set queue to short by default, or 2nd argument
 q=${2:-short}
+t=${3:-48}
 
 # File names for input, log, and executable
 in=$run.nml
@@ -15,7 +16,7 @@ exe=./dispatch.x
 # Make data/run directory
 mkdir -p data/$run
 cp $in data/$run/input_$time.nml
-cp $exe data/$run/dispatch_$time.nml
+cp $exe data/$run/dispatch_$time.x
 ln -sf $log log
 
 # Submit job script
@@ -31,7 +32,7 @@ sbatch << EOF
 set -x
 
 # number of threads and OpenMP affinity
-export OMP_NUM_THREADS=48
+export OMP_NUM_THREADS=$t
 export KMP_AFFINITY="verbose,granularity=core,scatter"
 
 # redirect stdout and stderr
