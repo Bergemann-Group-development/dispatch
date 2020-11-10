@@ -3,6 +3,7 @@
 !===============================================================================
 MODULE force_mod
   USE io_mod
+  USE mpi_global_mod
   USE trace_mod
   USE mesh_mod
   USE random_mod
@@ -15,7 +16,7 @@ MODULE force_mod
     integer :: seed
     integer :: verbose = 0
     real :: t_turb = 0.0
-    real :: t_damp
+    real :: t_damp = 0.0
     real(8):: t_save=0d0
     real:: phase(3), a(3)
     real, pointer, contiguous, dimension(:,:,:,:,:)   :: fran => null()
@@ -23,6 +24,7 @@ MODULE force_mod
     class(mesh_t), dimension(:), pointer  :: mesh
     character(len=64):: solver
     type(random_t):: random
+    real(8), dimension(4):: momentum=0d0
   contains
     procedure:: init
     procedure:: dealloc
@@ -30,18 +32,19 @@ MODULE force_mod
     procedure:: zero_force
   end type
   real :: ampl_turb = 0.1
-  real :: a_helmh=1.
-  real :: k1=1.
-  real :: k2=1.5
-  real :: pk=7./6.
+  real :: a_helmh = 1.0
+  real :: k1 = 1.0
+  real :: k2 = 1.5
+  real :: pk = 7./6.
   real :: t_turn = 0.1
   real :: t_turb = 0.0
-  real :: t_damp = 3e-4
+  real :: t_damp = 0.01
   real :: pi=3.14159365
   logical :: do_force = .true.
   logical :: do_helmh = .true.
   integer :: verbose = 0
   integer :: seed = -3
+  type(mpi_global_t):: global_momentum
 CONTAINS
 
 !===============================================================================
@@ -205,6 +208,7 @@ SUBROUTINE init_turbulence (self, solver, id, mesh)
   !.............................................................................
   integer :: mx, my, mz, iostat
   real    :: rhoav, xav, yav, zav
+  real(8) :: momentum(4)
   namelist /turbulence_params/ do_force, do_helmh, a_helmh, k1, k2, pk, &
                                ampl_turb, t_turn, t_turb, seed, t_damp, verbose
   logical, save:: first_time = .true.
@@ -217,6 +221,7 @@ SUBROUTINE init_turbulence (self, solver, id, mesh)
     read (io%input, turbulence_params, iostat=iostat)
     call io%namelist_warning ('turbulence_params', iostat)
     write (io%namelist, turbulence_params)
+    call global_momentum%init (4)
   end if
   if (t_turb == 0.) t_turb = -1.5*t_turn
   self%id     = id
@@ -272,6 +277,8 @@ FUNCTION turbulence (self, time, d, p, Ux, Uy, Uz, mesh) RESULT (ff)
   real                   :: x, y, z, w, fact, fpow, accel
   real                   :: dx, dy, dz, eps, fk
   class(mesh_t), pointer :: m
+  real(8)                :: momentum(4)
+  integer                :: l(3), u(3)
   integer, save          :: itimer=0, nprint=5
   !-----------------------------------------------------------------------------
   if (.not.do_force) then
@@ -379,11 +386,71 @@ FUNCTION turbulence (self, time, d, p, Ux, Uy, Uz, mesh) RESULT (ff)
     end if
   enddo
   !-----------------------------------------------------------------------------
+  ! Update the total momentum vector, by adding the new mean and subtracting
+  ! the previous mean
+  !-----------------------------------------------------------------------------
+  l = self%mesh%li
+  u = self%mesh%ui
+  block
+    real(8):: new(4), c1, c2
+    integer, save:: nprint=10
+    !---------------------------------------------------------------------------
+    ! Compute average momentum and density in this patch
+    !---------------------------------------------------------------------------
+    c1 = 1d0/product(u-l+1)
+    new = 0d0
+    do jz=l(3),u(3)
+    do jy=l(2),u(2)
+      do i=1,3
+        new(i) = new(i) + sum(p(l(1):u(1),jy,jz,i))*c1
+      end do
+      new(4) = new(4) + sum(d(l(1):u(1),jy,jz))*c1
+    end do
+    end do
+    !---------------------------------------------------------------------------
+    ! Add and subtract the local contribution, weighted with the siz/box volume
+    !---------------------------------------------------------------------------
+    c2 = product(mesh%s/mesh%b)
+    momentum = global_momentum%update (c2*(new - self%momentum))
+    if (verbose > 0) then
+      write (stdlog,'(i6,2x,a,3(2x,1p,4e12.3))') self%id, &
+        'momentum = ', self%momentum, new, momentum
+    else if (nprint > 0) then
+      nprint = nprint-1
+      write (stdlog,*) 'force: verbose =', verbose
+    end if
+    self%momentum = new
+    if (any(isnan(new))) then
+      print '(a,1p,5e12.3,2(2x,3i4))', 'NaN error:', new, c1, l, u
+      !call io%abort ('NaN in force')
+    end if
+  end block
+  !-----------------------------------------------------------------------------
   ! Time interpolation of the force
   !-----------------------------------------------------------------------------
   w = (t_turn-(self%t_turb-time))/t_turn
   w = 0.5*(1.-cos(w*pi))
-  ff(:,:,:,:) = self%fran(:,:,:,:,1) + (self%fran(:,:,:,:,2)-self%fran(:,:,:,:,1))*w
+  l = self%mesh%lb
+  u = self%mesh%ub
+  do i=1,3
+    !---------------------------------------------------------------------------
+    ! Friction force per unit mass, with t_damp in units of t_turn, which
+    ! damps out bulk net momentum (momentum(4) is the average density)
+    !---------------------------------------------------------------------------
+    if (t_damp > 0.0 .and. time > 0d0) then
+      accel = -momentum(i)/momentum(4)/(t_damp*t_turn)
+    else
+      accel = 0.0
+    end if
+    do jz=l(3),u(3)
+    do jy=l(2),u(2)
+    do jx=l(1),u(1)
+      ff(jx,jy,jz,i) = accel + self%fran(jx,jy,jz,i,1) + &
+        (self%fran(jx,jy,jz,i,2)-self%fran(jx,jy,jz,i,1))*w
+    end do
+    end do
+    end do
+  end do
   call trace_end (itimer)
 END FUNCTION turbulence
 

@@ -82,6 +82,7 @@ FUNCTION update8 (self, a) RESULT (b)
   real(8):: a(self%n), b(self%n)
   integer:: i
   !.............................................................................
+  call trace%begin('mpi_global_t%update8')
 #ifdef MPI
   if (mpi%size == 1) then
     do i=1,self%n
@@ -99,6 +100,7 @@ FUNCTION update8 (self, a) RESULT (b)
   end do
   b = self%a
 #endif
+  call trace%end()
 END FUNCTION update8
 
 !===============================================================================
@@ -108,7 +110,6 @@ FUNCTION update8_real (self, a) RESULT (b)
   !.............................................................................
   integer:: master=0, mpi_err
   !-----------------------------------------------------------------------------
-  call trace%begin('mpi_global_t%init')
 #ifdef MPI
   if (mpi%mode == MPI_THREAD_MULTIPLE) then
     call update_l
@@ -119,21 +120,20 @@ FUNCTION update8_real (self, a) RESULT (b)
   end if
 #endif
   b = b + a
-  call trace%end()
 contains
 
 !===============================================================================
   subroutine update_l
 #ifdef MPI
   integer(kind=MPI_ADDRESS_KIND):: offset=0
-    call MPI_Win_lock (MPI_LOCK_EXCLUSIVE, master, 0, self%window, mpi_err)
-    call mpi%assert ('MPI_Win_lock', mpi_err)
-    call MPI_Get_accumulate (a, self%n, MPI_REAL8, &
-                             b, self%n, MPI_REAL8, master, offset, &
-                                self%n, MPI_REAL8, MPI_SUM, self%window, mpi_err)
-    call mpi%assert ('MPI_Accumulate', mpi_err)
-    call MPI_Win_unlock (master, self%window, mpi_err)
-    call mpi%assert ('MPI_Win_unlockx½', mpi_err)
+  call MPI_Win_lock (MPI_LOCK_EXCLUSIVE, master, 0, self%window, mpi_err)
+  call mpi%assert ('MPI_Win_lock', mpi_err)
+  call MPI_Get_accumulate (a, self%n, MPI_REAL8, &
+                           b, self%n, MPI_REAL8, master, offset, &
+                              self%n, MPI_REAL8, MPI_SUM, self%window, mpi_err)
+  call mpi%assert ('MPI_Accumulate', mpi_err)
+  call MPI_Win_unlock (master, self%window, mpi_err)
+  call mpi%assert ('MPI_Win_unlockx½', mpi_err)
 #endif
   end subroutine update_l
 END FUNCTION update8_real
