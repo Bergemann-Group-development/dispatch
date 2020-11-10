@@ -44,7 +44,7 @@ eps_time = 1.10
 %%time
 print("Calculating bins")
 
-nbin = 200 # 40 for brown 200 for turb as per birnstiel
+nbin = 5 # 40 for brown 200 for turb as per birnstiel
 a = np.logspace(-4, 2, nbin) * u.cm
 st = rho_s * a * np.pi/(2*sigma_d*100)
 #rho_d = (sigma_d/ (np.sqrt(2*np.pi)* Hp * min(1,np.sqrt(alpha/min(st[0],1/2)*(1+st[0]**2))) )).decompose()

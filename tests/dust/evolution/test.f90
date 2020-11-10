@@ -11,14 +11,15 @@ PROGRAM test
   real:: micron, mps
 
   integer:: i, j, k, l, nbin, kn, minij, maxij, itime
-  real:: ratio_r, min_a, max_a, m_crat, eps, Stot
-  real(8), ALLOCATABLE, DIMENSION(:):: m, n
-  real(8), ALLOCATABLE, DIMENSION(:,:):: mn, mm, ms, nn
-  real, ALLOCATABLE, DIMENSION(:):: a, st, dn, S, utm_ini
-  real, ALLOCATABLE, DIMENSION(:,:):: sigma_col, pf, pc, ep, ubm, utm, du, Q, Q_frag, jj, kk, ll
+  real(8):: ratio_r, min_a, max_a, m_crat, eps, Stot
+  real(8):: m_big, m_small
+  real(8), ALLOCATABLE, DIMENSION(:):: m, n, S, dn, a
+  real(8), ALLOCATABLE, DIMENSION(:,:):: mn, mm, ms, nn, Q, Q_frag, jj, kk, ll
+  real, ALLOCATABLE, DIMENSION(:):: st, utm_ini
+  real, ALLOCATABLE, DIMENSION(:,:):: sigma_col, pf, pc, ep, ubm, utm, du
   real, ALLOCATABLE, DIMENSION(:,:,:):: SS, C
   !-----------------------------------------------------------------------------
-  nbin = 5
+  nbin = 40
   ALLOCATE(a(nbin), n(nbin), m(nbin), st(nbin), dn(nbin), S(nbin), ms(nbin,nbin), utm_ini(nbin))
   ALLOCATE(sigma_col(nbin,nbin), mn(nbin,nbin), mm(nbin,nbin), pf(nbin,nbin), pc(nbin,nbin), du(nbin,nbin))
   ALLOCATE(ep(nbin,nbin), ubm(nbin,nbin), utm(nbin,nbin), Q(nbin,nbin))
@@ -26,9 +27,9 @@ PROGRAM test
   ALLOCATE(kk(nbin,nbin),ll(nbin,nbin), nn(nbin,nbin))
 
 
-  print *,"Initializing starting conditions"
+  !print *,"Initializing starting conditions"
   call cgs%init
-  print *,cgs%grav,cgs%au,cgs%k_b,cgs%m_u,cgs%m_sun
+  !print *,cgs%grav,cgs%au,cgs%k_b,cgs%m_u,cgs%m_sun
   tt = 196
   mu = 2.37
   cs = sqrt(tt*cgs%k_b/(mu*cgs%m_u))
@@ -72,6 +73,9 @@ PROGRAM test
   m = 4.0/3.0 * a**3 * rho_s * math%pi
   n(1) = rho_d / m(1)
 
+  SS = 0
+  print *, n
+
   do i=1,nbin
     do j=1,nbin                                       ! Setup of matrices
       minij = min(i,j)
@@ -88,26 +92,29 @@ PROGRAM test
       du(i,j) = ubm(i,j) + utm(i,j)
       sigma_col(i,j) = math%pi * (a(i) + a(j))**2
 
-      if (m(i)/m(j) > 10 .or. m(i)/m(j) < 0.1 ) then
+      if (m(i)/m(j) > 10 .or. m(i)/m(j) < 0.1 ) then        !!!
         !Cratering 
-        SS(:minij,i,j) = a(:minij) ** (-3*xi)
+        SS(1:minij,i,j) = a(1:minij) ** (-3*xi)
         Stot = SUM(m * SS(:,i,j) ) / (m(minij) *2)
-        SS(:minij,i,j) = SS(:minij,i,j) / Stot
+        SS(1:minij,i,j) = SS(1:minij,i,j) / Stot
         m_crat =  abs(m(i)-m(j))
+        m_big = max(m(i),m(j))
+        m_small = min(m(i),m(j))
 
         do l = nbin,1,-1
-          if (m(l)<ms(i,j) ) exit
-        end do 
+          if (m(l)-m_big<-m_small) exit
+        end do
 
-        eps = (m_crat - m(l-1))/(m(l) - m(l-1))
-        SS(l-1,i,j) = 1-eps
-        SS(l,i,j) = eps   
+
+        eps = (m_crat - m(l))/(m(l+1) - m(l))
+        SS(l,i,j) = 1-eps
+        SS(l+1,i,j) = eps   
 
       else
         !Fragmentation
-        SS(:maxij,i,j) = a(:maxij) ** (-3*xi)
+        SS(1:maxij,i,j) = a(1:maxij) ** (-3*xi)
         Stot = SUM(m * SS(:,i,j) ) / (m(i) + m(j)) 
-        SS(:maxij,i,j) = SS(:maxij,i,j) / Stot
+        SS(1:maxij,i,j) = SS(1:maxij,i,j) / Stot
       end if
 
 
@@ -124,7 +131,7 @@ PROGRAM test
         pf(i,j) = 0
       else if (du(i,j) > u_f) then
         pf(i,j) = 1
-      else
+      else 
         pf(i,j) = 1-(u_f-du(i,j))/trans_width
       end if
 
@@ -137,8 +144,8 @@ PROGRAM test
   where (sigma_col /= 0) ep = (mn - ms) / (mn - mm)
 
   do k=1,nbin
-    where (m(k) == mm) C(k,:,:) = ep
-    where (m(k) == mn) C(k,:,:) = 1 - ep
+    where (mm == m(k) ) C(k,:,:) = ep
+    where (mn == m(k) ) C(k,:,:) = 1.0 - ep             !!
   end do
 
   kk = du * sigma_col * pc
@@ -149,6 +156,7 @@ PROGRAM test
 
   do while (t < t_end)
     dn = 0
+
     do i=1,nbin
       do j=1,nbin
         nn(i,j) = n(i)*n(j)
@@ -168,8 +176,17 @@ PROGRAM test
     n = n + dn
     t = t + dt
 
+    if (t > save_time) then
+      save_time = save_time * eps_time
+      itime = itime + 1
+      if (mod(itime,10)==0) then
+        print *,"Time left: ", (t_end-t)/(60*60*24*365), n(1)
+      end if
+    end if
+
   end do
 
+  print *, n
 
 
 END PROGRAM
