@@ -109,7 +109,25 @@ END SUBROUTINE init_task_list
 !===============================================================================
 SUBROUTINE pre_update (self)
   class(gpatch_t), target:: self
+  integer:: i1, i2, i3, i4
+  !-----------------------------------------------------------------------------
   call trace%begin ('gpatch_t%pre_update')
+  !-----------------------------------------------------------------------------
+  ! For all solver, copy the %it slot to the %new slot. Note that memory slot
+  ! locking needs to be done in the solver, where it covers more calls
+  !-----------------------------------------------------------------------------
+  do i4=1,self%nv
+  do i3=1,self%gn(3)
+  do i2=1,self%gn(2)
+  do i1=1,self%gn(1)
+    self%mem(i1,i2,i3,i4,self%new,1) = self%mem(i1,i2,i3,i4,self%it,1)
+  end do
+  end do
+  end do
+  end do
+  !-----------------------------------------------------------------------------
+  ! Initialize scratch arrays
+  !-----------------------------------------------------------------------------
   call scratch%pre_update
   call trace%end ()
 END SUBROUTINE pre_update

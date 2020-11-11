@@ -47,7 +47,7 @@ MODULE omp_lock_mod
   end type
   real, save:: verbose_time=0.0
   integer, save:: id_save=-1, n_lock=0
-  integer, save:: verbose=-1
+  integer, save:: verbose=0
   integer, save:: unit=0
   character(len=6):: log='lock'
   character(len=6):: ext, ext1, ext2
