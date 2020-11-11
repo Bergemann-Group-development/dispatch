@@ -302,7 +302,7 @@ SUBROUTINE append_link (self, link)
   if (self%verbose > 2) &
     write (io_unit%log,*) 'list_t%append: (1) n =', &
       trim(self%name), self%n, link%task%id
-  !call self%update_counts (link, +1)
+  call self%update_counts (link, +1)
   if (self%verbose > 2) &
     write (io_unit%log,*) 'list_t%append: (2) n =', &
       trim(self%name), self%n, link%task%id
