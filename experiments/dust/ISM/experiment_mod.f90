@@ -78,11 +78,12 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   self%gamma = gamma
   self%csound = csound
-  self%mem(:,:,:,self%idx%d,:,1) = d0
-  self%mem(:,:,:,self%idx%e,:,1) = e0
   d => self%mem(:,:,:,self%idx%d,self%it,1)
   e => self%mem(:,:,:,self%idx%e,self%it,1)
   p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
+  d = d0
+  e = e0
+  p = 0.0
   !-----------------------------------------------------------------------------
   ! Use pre_update to get access to the force (ifort 20.1 problem circumvent)
   !-----------------------------------------------------------------------------
