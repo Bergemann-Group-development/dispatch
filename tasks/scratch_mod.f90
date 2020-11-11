@@ -3,6 +3,7 @@
 !===============================================================================
 MODULE scratch_mod
   USE io_mod
+  USE trace_mod
   USE kinds_mod
   implicit none
   private
@@ -52,10 +53,13 @@ SUBROUTINE allocate_4d(a, m)
   real(kind=KindScalarVar), pointer, contiguous:: a(:,:,:,:)
   integer:: m(:)
   !-----------------------------------------------------------------------------
+  call trace%begin ('scratch_t%allocate_4d')
   if (.not.associated(a)) then
     allocate (a(m(1),m(2),m(3),m(4)))
     call io%bits_mem (storage_size(a), product(shape(a)), 'fpm')
+    a = 0.0
   end if
+  call trace%end ()
 END SUBROUTINE allocate_4d
 
 END MODULE scratch_mod
