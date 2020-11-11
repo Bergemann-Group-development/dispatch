@@ -78,13 +78,13 @@ END SUBROUTINE dealloc
 !> Use the pre-existing force%selected () function to set or add the force
 !===============================================================================
 SUBROUTINE pre_update (self)
-  class(forces_t)                               :: self
+  class(forces_t):: self
   !.............................................................................
   real, dimension(:,:,:)  , pointer, contiguous :: d
   real, dimension(:,:,:,:), pointer :: p
   class(gpatch_t), pointer:: patch
   type(index_t), pointer:: idx
-  integer:: new, m(4)
+  integer:: it, m(4)
   logical, save:: first_time=.true.
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -98,9 +98,9 @@ SUBROUTINE pre_update (self)
     m(4) = 3
     call scratch%allocate (scratch%force_per_unit_mass, m)
     idx => patch%idx
-    new = patch%new
-    d => patch%mem(:,:,:,idx%d,new,1)
-    p => patch%mem(:,:,:,idx%px:idx%pz,new,1)
+    it = patch%it
+    d => patch%mem(:,:,:,idx%d,it,1)
+    p => patch%mem(:,:,:,idx%px:idx%pz,it,1)
     scratch%force_per_unit_mass = &
       self%force%selected(patch%time, d, p, self%Ux, self%Uy, self%Uz, patch%mesh)
   else if (first_time) then

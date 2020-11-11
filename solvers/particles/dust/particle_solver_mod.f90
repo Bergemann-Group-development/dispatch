@@ -328,9 +328,9 @@ SUBROUTINE initial_condition (self)
   do i2=self%lb(2),self%ub(2)
     n = 0
     do i1=self%lb(1),self%ub(1)
-      d = patch%mem(i1,i2,i3,patch%idx%d,patch%new,1)
+      d = patch%mem(i1,i2,i3,patch%idx%d,patch%it,1)
       w = d*dust_to_gas/(n_bin*particles_per_bin)
-      vg = patch%mem(i1,i2,i3,patch%idx%px:patch%idx%pz,patch%new,1) &
+      vg = patch%mem(i1,i2,i3,patch%idx%px:patch%idx%pz,patch%it,1) &
         / (patch%ds*d)
       do i4=1,n_bin
         particles => self%particles(i1,i2,i3,i4)
