@@ -114,8 +114,9 @@ SUBROUTINE pre_update (self)
   call trace%begin ('gpatch_t%pre_update')
   !-----------------------------------------------------------------------------
   ! For all solver, copy the %it slot to the %new slot. Note that memory slot
-  ! locking needs to be done in the solver, where it covers more calls
+  ! locking needs to be done in the solver, where it covers more calls.
   !-----------------------------------------------------------------------------
+  self%new = 1 + mod(self%it,self%nt)           ! ensure using the next slot
   do i4=1,self%nv
   do i3=1,self%gn(3)
   do i2=1,self%gn(2)
@@ -430,7 +431,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   logical            :: print_it
   character(len=120) :: fmt
   !-----------------------------------------------------------------------------
-  call trace%begin ('patch_t%info', itimer=itimer)
+  call trace%begin ('gpatch_t%info', itimer=itimer)
   !$omp atomic write
   timer%time = self%time
   if (io_unit%do_validate) then
