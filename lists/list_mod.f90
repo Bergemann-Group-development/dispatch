@@ -1542,6 +1542,8 @@ SUBROUTINE prune_nbors (self, link, head, status)
   integer, optional:: status
   !.............................................................................
   class(nbor_t), pointer:: nbor, next, nbor2
+  class(task_t), pointer:: task
+  real, pointer, contiguous:: irefine(:,:,:)
   logical:: removed
   integer:: n(2)
   !-----------------------------------------------------------------------------
@@ -1551,7 +1553,12 @@ SUBROUTINE prune_nbors (self, link, head, status)
   !-----------------------------------------------------------------------------
   ! If link%task has support, then remove any L-2 nbors
   !-----------------------------------------------------------------------------
-  if (check_support (self, link, -1) <= 0) then
+  task => link%task
+  select type (task)
+  class is (patch_t)
+  allocate (irefine(task%gn(1),task%gn(2),task%gn(3)))
+  end select
+  if (check_support (self, link, -1, irefine) <= 0) then
     nbor => head
     do while (associated(nbor))
       next => nbor%next
@@ -1591,7 +1598,7 @@ SUBROUTINE prune_nbors (self, link, head, status)
       ! Prune any level L+2 task from nbor list, if it has support
       !-------------------------------------------------------------------------
       n(2) = n(2)+1
-      if (self%check_support (nbor%link, -1) <= 0) then
+      if (self%check_support (nbor%link, -1, irefine) <= 0) then
         !.......................................................................
         if (self%verbose > 1) then
           write (io_unit%log,'(f12.6,1x,a,i6,i4)') wallclock(), &
@@ -1607,6 +1614,7 @@ SUBROUTINE prune_nbors (self, link, head, status)
     end if
     nbor => next
   end do
+  deallocate (irefine)
   if (removed) then
     !---------------------------------------------------------------------------
     ! If any task was removed, the status bits and flags need to be recomputed,
@@ -3009,18 +3017,17 @@ END SUBROUTINE info
 !> require stationary patches, or exact Cartesian overlap.  It only requires
 !> that the source index regions computed are correct, so the bitmap is correct.
 !===============================================================================
-FUNCTION check_support (self, link, sign, test) RESULT (refine)
+FUNCTION check_support (self, link, sign, irefine) RESULT (refine)
   class(list_t):: self
   class(link_t), pointer:: link
   integer, intent(in):: sign
-  real, pointer, optional:: test(:,:,:)
+  real, pointer:: irefine(:,:,:)
   integer:: refine
   !-----------------------------------------------------------------------------
   class(nbor_t), pointer:: nbor
   class(task_t), pointer:: task, nbtask
   logical:: guards, check
   integer:: l(3), u(3), n(3)
-  real, pointer:: irefine(:,:,:)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('list_t%check_support', itimer=itimer)
@@ -3040,13 +3047,6 @@ FUNCTION check_support (self, link, sign, test) RESULT (refine)
     ! Use an external test array when called from refine_t, and a local one
     ! when called stand-alone
     !---------------------------------------------------------------------------
-    if (present(test)) then
-      irefine => test
-    else
-      !print *, task%id, task%gn
-      n = task%gn
-      allocate (irefine(n(1),n(2),n(3)))
-    end if
     irefine = 0.0
     !---------------------------------------------------------------------------
     ! Find L+-2 tasks, and check for overlap of their guard zones
@@ -3141,9 +3141,6 @@ FUNCTION check_support (self, link, sign, test) RESULT (refine)
     !---------------------------------------------------------------------------
     if (associated(task%irefine)) then
       task%irefine = task%irefine + irefine
-    end if
-    if (.not. present(test)) then
-      deallocate (irefine)
     end if
   end select
   !-----------------------------------------------------------------------------
