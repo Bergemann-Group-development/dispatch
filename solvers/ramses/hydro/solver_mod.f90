@@ -6,6 +6,7 @@
 !===============================================================================
 MODULE solver_mod
   USE io_mod
+  USE omp_lock_mod
   USE trace_mod
   USE patch_mod
   USE task_mod
@@ -102,11 +103,14 @@ END FUNCTION cast2solver
 !===============================================================================
 SUBROUTINE update (self)
   class(solver_t) :: self
+  type(lock_t), pointer:: lock
   call trace%begin ('solver_t%update')
   !-----------------------------------------------------------------------------
   ! Lock the %new slot and copy the %it slot to the %new slot
   !-----------------------------------------------------------------------------
-  call self%mem_lock(self%new)%set ('update')
+  self%new = 1 + mod(self%it,self%nt)
+  lock => self%mem_lock(self%new)
+  call lock%set ('update')
   call self%gpatch_t%pre_update ()
   self%uin  => self%mem(:,:,:,:,self%it ,1)
   self%unew => self%mem(:,:,:,:,self%new,1)
@@ -119,7 +123,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Unlock %new slot
   !-----------------------------------------------------------------------------
-  call self%mem_lock(self%new)%unset ('update')
+  call lock%unset ('update')
   !-----------------------------------------------------------------------------
   call trace%end ()
 END SUBROUTINE update
