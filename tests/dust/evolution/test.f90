@@ -10,21 +10,23 @@ PROGRAM test
   real:: trans_width, alpha, Cdt, xi, dt, t_end, save_time, eps_time, Hp
   real:: micron, mps
 
-  integer:: i, j, k, l, nbin, kn, minij, maxij, itime
-  real(8):: ratio_r, min_a, max_a, m_crat, eps, Stot
-  real(8):: m_big, m_small
-  real(8), ALLOCATABLE, DIMENSION(:):: m, n, S, dn, a
-  real(8), ALLOCATABLE, DIMENSION(:,:):: mn, mm, ms, nn, Q, Q_frag, jj, kk, ll
+  integer, parameter :: dp = selected_real_kind(15, 100)
+  integer:: i, j, k, l, nbin, kn, minij, maxij, itime, js_n, js_nrhs, js_lda, js_ldb, js_info
+  integer, ALLOCATABLE, DIMENSION(:):: js_ipiv
+  real(dp):: ratio_r, min_a, max_a, m_crat, eps, Stot
+  real(dp):: m_big, m_small
+  real(dp), ALLOCATABLE, DIMENSION(:):: m, n, S, dn, a
+  real(dp), ALLOCATABLE, DIMENSION(:,:):: mn, mm, ms, nn, Q, Q_frag, jj, kk, ll, KC_k, LS_k, IJJ, sigma_col, ep, identity, pf, pc, du, ubm, utm
   real, ALLOCATABLE, DIMENSION(:):: st, utm_ini
-  real, ALLOCATABLE, DIMENSION(:,:):: sigma_col, pf, pc, ep, ubm, utm, du
-  real, ALLOCATABLE, DIMENSION(:,:,:):: SS, C
+  real(dp), ALLOCATABLE, DIMENSION(:,:,:):: SS, C                                                      ! Necesarry?
+  logical :: do_implicit=.true. 
   !-----------------------------------------------------------------------------
   nbin = 40
   ALLOCATE(a(nbin), n(nbin), m(nbin), st(nbin), dn(nbin), S(nbin), ms(nbin,nbin), utm_ini(nbin))
   ALLOCATE(sigma_col(nbin,nbin), mn(nbin,nbin), mm(nbin,nbin), pf(nbin,nbin), pc(nbin,nbin), du(nbin,nbin))
   ALLOCATE(ep(nbin,nbin), ubm(nbin,nbin), utm(nbin,nbin), Q(nbin,nbin))
   ALLOCATE(Q_frag(nbin,nbin), jj(nbin,nbin), SS(nbin,nbin,nbin), C(nbin,nbin,nbin))
-  ALLOCATE(kk(nbin,nbin),ll(nbin,nbin), nn(nbin,nbin))
+  ALLOCATE(kk(nbin,nbin),ll(nbin,nbin), nn(nbin,nbin), identity(nbin,nbin), js_ipiv(nbin)  , KC_k(nbin,nbin), LS_k(nbin,nbin) , IJJ(nbin,nbin) )
 
 
   !print *,"Initializing starting conditions"
@@ -49,7 +51,7 @@ PROGRAM test
   Cdt = 0.1
   xi = 1.83
 
-  dt = 0.1 * 60*60*24*365
+  dt = 1 * 60*60*24*365
   t_end = 1e3 * 60*60*24*365
   save_time = 1*cgs%yr
   eps_time = 1.10
@@ -74,7 +76,13 @@ PROGRAM test
   n(1) = rho_d / m(1)
 
   SS = 0
+
+  print *,"Starting n, number density:"
   print *, n
+  print "(/)"
+
+  ForAll(i = 1:nbin, j = 1:nbin) identity(i,j) = (i/j)*(j/i)
+  identity = identity / dt
 
   do i=1,nbin
     do j=1,nbin                                       ! Setup of matrices
@@ -125,8 +133,6 @@ PROGRAM test
         sigma_col(i,j) = 0
       end if
 
-
-
       if (du(i,j) < u_f - trans_width) then
         pf(i,j) = 0
       else if (du(i,j) > u_f) then
@@ -143,13 +149,41 @@ PROGRAM test
   where (sigma_col == 0) ep = 0
   where (sigma_col /= 0) ep = (mn - ms) / (mn - mm)
 
+  ! print *, "ms"
+  ! do i = 1, nbin
+  !   print '(5ES20.6)', ms(i,:)
+  ! end do
+  ! print "(/)"
+
+  ! print *, "mn"
+  ! do i = 1, nbin
+  !   print '(5ES20.6)', mn(i,:)
+  ! end do
+  ! print "(/)"
+
+  ! print *, "sigma_col"
+  ! do i = 1, nbin
+  !   print '(5ES20.6)', sigma_col(i,:)
+  ! end do
+  ! print "(/)"
+
   do k=1,nbin
     where (mm == m(k) ) C(k,:,:) = ep
-    where (mn == m(k) ) C(k,:,:) = 1.0 - ep             !!
+    where (mn == m(k) ) C(k,:,:) = 1 - ep             
   end do
 
+
   kk = du * sigma_col * pc
-  ll = du * sigma_col * pf
+  ll = du * sigma_col * pf                              ! Checked
+
+  ! print *, "SS"
+  ! do k = 1, nbin
+  !   do i = 1, nbin
+  !     print '(5ES13.3)', SS(k,i,:)
+  !   end do
+  !   print "(/)"
+  ! end do
+  ! print "(/)"
   
   t = 0
   itime = 0
@@ -164,15 +198,58 @@ PROGRAM test
     end do
 
     S = 0
-    J = 0
-    Q = kk*nn
+    JJ = 0
+    IJJ = 0
+    Q = kk * nn
     Q_frag = ll * nn
 
     do k=1,nbin
       S(k) = ( 0.5* SUM(Q*C(k,:,:)) - SUM(Q(k,:)) ) + ( 0.5 * SUM( Q_frag*SS(k,:,:)) - SUM(Q_frag(k,:)) )
     end do
 
-    dn = S * dt ! Explicit
+    if (.not. do_implicit) then
+      dn = S * dt
+    else
+      do k=1,nbin 
+
+        KC_k = kk * C(k,:,:)
+        LS_k = ll * SS(k,:,:)
+        JJ(k,:) = (matmul(KC_k , n) - n(k) * kk(k,:) ) + (matmul(LS_k,  n) - n(k) * ll(k,:) )
+        JJ(k,k) = JJ(k,k) - (SUM(kk(k,:) * n) + SUM(ll(k,:) * n) )                                ! Checked
+      end do
+
+      ! print *, S
+      ! print "(/)"
+    
+      IJJ = identity - JJ
+
+      ! print *,"JJ"
+      ! do i = 1, nbin
+      !   print '(5ES13.3)', JJ(i,:)
+      ! end do
+      ! print "(/)"
+
+      ! print *, "I-JJ"
+      ! do i = 1, nbin
+      !   print '(5ES13.3)', IJJ(i,:)
+      ! end do
+      ! print "(/)"
+
+      js_n = nbin
+      js_nrhs = 1
+      js_lda = nbin
+      js_ldb = nbin
+
+      CALL DGESV( js_n, js_nrhs, IJJ, js_lda, js_ipiv, S, js_ldb, js_info )
+
+      ! print *, S
+      ! print "(/)"
+      ! print *, js_ipiv
+      ! print "(/)"
+
+      dn = S
+    end if
+
     n = n + dn
     t = t + dt
 
@@ -186,7 +263,9 @@ PROGRAM test
 
   end do
 
+  print *,"Final n, number density:"
   print *, n
+  print "(/)"
 
 
 END PROGRAM
