@@ -66,18 +66,21 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !===============================================================================
-!> Organize calls to the extras and the MHD solver
+!> Organize calls to the extras and the hydro solver.  Note that is is NOT
+!> necessary to lock the %it time slot when copying data to the %new time slot,
+!> since the only task that is allowed to change the data in a time slot is the
+!> current one.
 !===============================================================================
 SUBROUTINE update (self)
   class(solver_t) :: self
-  !-----------------------------------------------------------------------------
-  ! Lock %it & %new slots, copy, and unlock %it slot
-  !-----------------------------------------------------------------------------
   call trace%begin ('solver_t%update')
+  !-----------------------------------------------------------------------------
+  ! Lock the %new slot and copy the %it slot to the %new slot
+  !-----------------------------------------------------------------------------
   call self%mem_lock(self%new)%set ('update')
+  call self%gpatch_t%pre_update ()
   self%uin  => self%mem(:,:,:,:,self%it ,1)
   self%unew => self%mem(:,:,:,:,self%new,1)
-  self%unew = self%uin
   !-----------------------------------------------------------------------------
   ! Proceed, referring everywhere to the %new time slot
   !-----------------------------------------------------------------------------

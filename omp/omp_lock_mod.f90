@@ -28,7 +28,7 @@ MODULE omp_lock_mod
     integer:: thread=-1
     character(len=4):: kind = 'orig'
     integer:: level=0
-    logical:: on
+    logical:: on = .true., log = .false.
     logical:: initialized=.false.
     real(8):: time(maxproc) = 0d0                 ! lock waiting times
     real(8):: start_time = 0d0
@@ -47,12 +47,13 @@ MODULE omp_lock_mod
   end type
   real, save:: verbose_time=0.0
   integer, save:: id_save=-1, n_lock=0
+  integer, save:: verbose=0
+  integer, save:: unit=0
   character(len=6):: log='lock'
   character(len=6):: ext, ext1, ext2
-  integer, save:: unit=0
-  !$omp threadprivate (unit)
   real(8):: alternate_time=0d0, alternate_next=0d0
   real(8):: wait_time = 0d0
+  real(8):: log_time = 0d0
   type(lock_t), save, public:: omp_lock
 CONTAINS
 
@@ -67,7 +68,6 @@ SUBROUTINE init (self, kind, id)
   character(len=64):: filename
   logical omp_in_parallel
   logical, save:: tasks=.true., links=.false.
-  integer, save:: verbose=0
   integer:: iostat, i, u
   logical:: set_id
   logical, save:: on = .true.
@@ -156,11 +156,11 @@ SUBROUTINE init (self, kind, id)
       end if
       self%on  = on
       n_lock = n_lock+1
-      if (wallclock() < verbose_time .or. omp_lock%verbose > 1) &
+      if (wallclock() < verbose_time .or. verbose > 2) &
         write(unit,*) omp_get_thread_num(), 'initialized lock kind, id ', &
           self%kind, self%id, set_id
-      if (verbose > 0) then
-        write (io_unit%log,'(a,i8,l4)') &
+      if (verbose > 2) then
+        write (io_unit%log,'(a,i10,l4)') &
           'omp_lock_t%init: id, initialized =', self%id, self%initialized
       end if
       self%initialized = .true.
@@ -171,6 +171,19 @@ SUBROUTINE init (self, kind, id)
   call trace%end()
 #endif
 END SUBROUTINE init
+
+!===============================================================================
+!> Local clock function, returning the fine-grained OMP time when verbose > 0
+!===============================================================================
+FUNCTION wclock()
+  real(8):: wclock
+  !.............................................................................
+  if (verbose > 0) then
+    wclock = wallclock()
+  else
+    wclock = 0d0
+  end if
+END FUNCTION
 
 !===============================================================================
 !> Check a pointer to a lock
@@ -202,7 +215,6 @@ SUBROUTINE set (self, label, itimer)
   character(len=32):: filename
   real(8):: start, end, used
   integer:: thread
-  logical:: log
   !-----------------------------------------------------------------------------
   if (.not.omp_lock%on) return
 #ifdef TRACE 
@@ -211,7 +223,7 @@ SUBROUTINE set (self, label, itimer)
   if (.not. self%initialized) then
     write (stderr,'(a,i4)') &
     'omp_lock_t%set WARNING: lock not initialized, thread =', omp%thread
-    write (io_unit%log,'(f12.6,2x,a,i4)') wallclock(), &
+    write (io_unit%log,'(f14.6,2x,a,i4)') wallclock(), &
     'omp_lock_t%set WARNING: lock not initialized, thread =', omp%thread
   call self%init
   end if
@@ -219,42 +231,47 @@ SUBROUTINE set (self, label, itimer)
   ! Must print log info before the lock, to reveal dead-locks
   !-----------------------------------------------------------------------------
   call alternate_log (self)
-  start = wallclock()
-  log = start < verbose_time .or. omp_lock%verbose > 1
-  if (log) then
+  start = wclock()
+  self%log = start < verbose_time .or. verbose > 1
+  if (self%log) then
     if (present(label)) then
-      write (unit,'(f10.6,a,a4,i6,i3,i4,12x,a)') start, &
+      write (unit,'(f14.6,a,a4,i10,i3,i4,12x,a)') start, &
         ' lock kind, id, level, thread = ', self%kind, self%id, &
         self%level, omp_get_thread_num(), '   get at '//label
     else
-      write (unit,'(f10.6,a,a4,i6,i3,i4,12x,a)') start, &
+      write (unit,'(f14.6,a,a4,i10,i3,i4,12x,a)') start, &
         ' lock kind, id, level, thread = ', self%kind, self%id, &
         self%level,   omp_get_thread_num(), '   get'
     end if
-    flush (unit)
+    !flush (unit)
+    used = wclock()-start
+    !$omp atomic update
+    log_time = log_time + used
   end if
-  start = wallclock()
   !$omp flush
   call omp_set_nest_lock (self%lock)
   !$omp flush
-  end = wallclock()
+  end = wclock()
   used = end-start
   self%start_time = end
   !$omp atomic update
   wait_time = wait_time + used
   self%level = self%level+1
   !$omp flush
-  if (log) then
+  if (self%log) then
     if (present(label)) then
-      write (unit,'(f10.6,a,a4,i6,i3,i4,6p,f10.1,2x,a)') end, &
+      write (unit,'(f14.6,a,a4,i10,i3,i4,6p,f10.1,2x,a)') end, &
         ' lock kind, id, level, thread = ', self%kind, self%id, &
         self%level, omp%thread, used, '   set at '//label
     else
-      write (unit,'(f10.6,a,a4,i6,i3,i4,6p,f10.1,2x,a)') end, &
+      write (unit,'(f14.6,a,a4,i10,i3,i4,6p,f10.1,2x,a)') end, &
         ' lock kind, id, level, thread = ', self%kind, self%id, &
         self%level, omp%thread, used, '   set'
     end if
-    flush (unit)
+    !flush (unit)
+    used = wclock()-start
+    !$omp atomic update
+    log_time = log_time + used
   end if
 #ifdef TRACE 
   call trace%end()
@@ -315,8 +332,8 @@ FUNCTION test (self) RESULT (out)
       !$omp atomic update
       self%level = self%level+1
       wc = wallclock()
-      if (wc < verbose_time .or. omp_lock%verbose > 1 .or. alternate_time > 0d0) then
-        write (io_unit%log,'(f10.6,i4,a,i6,i3,a)') wc, omp%thread, ' lock id', &
+      if (wc < verbose_time .or. verbose > 1 .or. alternate_time > 0d0) then
+        write (io_unit%log,'(f14.6,i4,a,i10,i3,a)') wc, omp%thread, ' lock id', &
           self%id, self%level, '  test'
       end if
     else
@@ -366,16 +383,16 @@ SUBROUTINE unset (self, label)
   !$omp flush
   call omp_unset_nest_lock (self%lock)
   !$omp flush
-  wc = wallclock()
+  wc = wclock()
   used = wc - self%start_time
   !call alternate_log (self)
-  if (wc < verbose_time .or. omp_lock%verbose > 1) then
+  if (wc < verbose_time .or. verbose > 1) then
     if (present(label)) then
-      write (unit,'(f10.6,a,a4,i6,i3,i4,6p,f10.1,2x,a)') wc, &
+      write (unit,'(f14.6,a,a4,i10,i3,i4,6p,f10.1,2x,a)') wc, &
         ' lock kind, id, level, thread = ', self%kind, self%id, level, &
         omp%thread, used, ' unset at '//label
     else
-      write (unit,'(f10.6,a,a4,i6,i3,i4,6p,f10.1,2x,a)') wc, &
+      write (unit,'(f14.6,a,a4,i10,i3,i4,6p,f10.1,2x,a)') wc, &
         ' lock kind, id, level, thread = ', self%kind, self%id, level, &
         omp%thread, used, ' unset'
     end if
@@ -393,8 +410,8 @@ SUBROUTINE dealloc (self, this)
   !-----------------------------------------------------------------------------
   if (omp_lock%on .and. associated(this)) then
     call this%destroy
-    if (omp_lock%verbose > 0) then
-      write (unit,'(f10.6,a,a4,i6,i3,i4,6p,f10.1,2x,a)') wallclock(), &
+    if (verbose > 0) then
+      write (unit,'(f14.6,a,a4,i10,i3,i4,6p,f10.1,2x,a)') wallclock(), &
         ' lock kind, id, level, thread = ', this%kind, this%id, this%level, &
         omp_get_thread_num(), 0.0, ' destroy'
     end if
@@ -421,13 +438,19 @@ SUBROUTINE info (self, unit, p_verbose)
   real(8):: time
   !-----------------------------------------------------------------------------
   if (.not.omp_lock%on) return
-  if (omp_lock%verbose > -1) then
+  if (verbose > 0) then
     !$omp atomic read
     time = wait_time
-    write (stdout,'(a,1p,g11.2,a,10f8.1)') ' total lock waiting time =', &
+    write (stdout,'(a,1p,g11.2,a)') ' lock waiting time =', &
+      time, ' core-s'
+    !$omp atomic read
+    time = log_time
+    write (stdout,'(a,1p,g11.2,a)') ' lock     log time =', &
       time, ' core-s'
     !$omp atomic write
     wait_time = 0d0
+    !$omp atomic write
+    log_time = 0d0
   end if
   return
 END SUBROUTINE info

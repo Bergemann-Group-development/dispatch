@@ -82,14 +82,14 @@ SUBROUTINE update (self)
   class(solver_t) :: self
   !.....................................................................
   call trace%begin ('solver_t%update')
+  call self%gpatch_t%pre_update
   call self%mem_lock(self%new)%set ('update')
-  self%mem(:,:,:,:,self%new,1) = self%mem(:,:,:,:,self%it,1)
-  call self%mem_lock(self%new)%unset ('update')
   call self%extras_t%pre_update
   call validate%check (self, d, 'before update')
   call self%mhd_t%update
   call validate%check (self, d, ' after update')
   call self%extras_t%post_update
+  call self%mem_lock(self%new)%unset ('update')
   call trace%end ()
 END SUBROUTINE update
 

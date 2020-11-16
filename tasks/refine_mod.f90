@@ -307,21 +307,25 @@ FUNCTION refine_needed (self, tasklist, link) RESULT (refine)
   class(link_t), pointer:: link
   integer:: refine
   !.............................................................................
+  class(task_t), pointer:: task
   class(solver_t), pointer:: patch
   class(extras_t), pointer:: extras
   real:: dxmin, dxmax
   integer, save:: itimer=0
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   refine = 0
   call trace%begin('refine_t%needed', itimer=itimer, detailed_timer=detailed_timer)
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   ! Refinement criteria, starting with assumed derefinement
-  !------------------------------------------------------------------------
-  patch => solver%cast2solver (link%task)
+  !-----------------------------------------------------------------------------
+  task => link%task
+  select type (task)
+  class is (solver_t)
+  patch => task
   refine = -1
   !
   ! Extras refinement
-  extras => patch
+  extras => task
   refine = max(refine, extras%check_refine (extras))
   if (verbose > 3) write (io_unit%output,*) &
     patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'extras'
@@ -375,6 +379,7 @@ FUNCTION refine_needed (self, tasklist, link) RESULT (refine)
   if (verbose > 3) write (io_unit%output,*) &
     patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'derefine support'
   !
+  end select  
   call trace%end (itimer, detailed_timer=detailed_timer)
 END FUNCTION refine_needed
 
@@ -444,11 +449,9 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
     ! set to -derefine_limit, where the value should be less than 1.0, to give
     ! some hysteresis to refinement/derefinement
     !---------------------------------------------------------------------------
-    if (.not.associated(patch%irefine)) then
-      allocate (patch%irefine(patch%gn(1),patch%gn(2),patch%gn(3)))
-      if (verbose > 1) &
-        write (io_unit%log,*) 'allocated irefine in refine', mpi%rank, patch%id
-    end if
+    allocate (patch%irefine(patch%gn(1),patch%gn(2),patch%gn(3)))
+    if (verbose > 1) &
+      write (io_unit%log,*) 'allocated irefine in refine', mpi%rank, patch%id
     patch%irefine = -derefine_limit
     l = patch%mesh%li
     u = patch%mesh%ui
@@ -473,10 +476,6 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
     !---------------------------------------------------------------------------
     if (refine /= 0) then
       call selective_refine (self, tasklist, patch, refine, was_refined, was_derefined)
-      if (was_derefined) then
-        call trace%end (itimer)
-        return
-      end if
     end if
     !---------------------------------------------------------------------------
     ! Update next refinement step counter and deallocate local irefine
@@ -802,6 +801,7 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   nullify (child%pressure)
   nullify (child%vgas)
   nullify (child%u_phase)
+  nullify (child%irefine)
   child%id = 0                                       ! ensure a new ID
   child%seq = -1                                     ! triggers tag=0 in send
   child%size = child_size                            ! new size
@@ -972,22 +972,19 @@ FUNCTION check_Jeans (self, patch) RESULT(refine_it)
   !.............................................................................
   integer:: imin(3), l(3), u(3)
   real:: Jeans_num, dmin, ds, c
-  real, dimension(:,:,:), pointer, contiguous:: pg
+  real, dimension(:,:,:), pointer, contiguous:: pg, test
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, e
-  real, pointer:: test(:,:,:)
   logical:: masked
   !-----------------------------------------------------------------------------
   call trace%begin ('refine_t%check_jeans')
+  refine_it = 0
   l = 1
   u = patch%gn
   d => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,patch%it,1)
+  call io%assert (associated(patch), '%patch not associated in check_Jeans')
   allocate(pg(patch%gn(1),patch%gn(2),patch%gn(3)))
-  select type (patch)
-  class is (solver_t)
-    pg = patch%gas_pressure() + tiny(1.0)
-  class default
-    call mpi%abort("Unrecognised patch type. Abort!")
-  end select
+  pg = patch%gas_pressure()
+  pg = pg + tiny(1.0)
   dmin = patch%fminval(d)
   if (dmin <= 0.0) then
     imin = minloc(d)
@@ -1017,23 +1014,17 @@ END FUNCTION check_Jeans
 !===============================================================================
 FUNCTION check_compress (self, patch) RESULT(refine_it)
   class(refine_t):: self
-  class(solver_t), pointer:: patch
+  class(solver_t):: patch
   integer:: refine_it
   !.............................................................................
   integer:: imin(3), l(3), u(3)
-  real:: w_num, wmin, c, ds, cut_off
-  real, pointer:: test(:,:,:)
-  logical:: masked
+  real:: c, ds, cut_off
+  real, dimension(:,:,:), pointer, contiguous:: test
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('refine_t%check_compress', itimer=itimer, detailed_timer=detailed_timer)
   allocate (test(patch%gn(1),patch%gn(2),patch%gn(3)))
-  select type (patch)
-  class is (solver_t)
-    call patch%compression_magnitude (test)
-  class default
-    call mpi%abort("Unrecognised patch type. Abort!")
-  end select
+  call patch%compression_magnitude (test)
   !---------------------------------------------------------------------------
   ! Evaluate a normalized criterion, which becomes 2.0 at max_compress, and
   ! is reduced with a factor 0.5 for each level at or above max_compress_level,
@@ -1057,12 +1048,12 @@ END FUNCTION check_compress
 !===============================================================================
 FUNCTION check_vorticity (self, patch) RESULT(refine_it)
   class(refine_t):: self
-  class(solver_t), pointer:: patch
+  class(solver_t):: patch
   integer:: refine_it
   !.............................................................................
   integer:: imin(3), l(3), u(3)
-  real:: w_num, wmin, c, ds, max_test
-  real, pointer:: test(:,:,:)
+  real:: c, ds
+  real, dimension(:,:,:), pointer, contiguous:: test
   logical:: masked
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -1071,19 +1062,13 @@ FUNCTION check_vorticity (self, patch) RESULT(refine_it)
   ! Compute vorticity
   !---------------------------------------------------------------------------
   allocate (test(patch%gn(1),patch%gn(2),patch%gn(3)))
-  select type (patch)
-  class is (solver_t)
-    call patch%vorticity_magnitude (test)
-  class default
-    call mpi%abort("Unrecognised patch type. Abort!")
-  end select
+  call patch%vorticity_magnitude (test)
   !---------------------------------------------------------------------------
   ! Evaluate a per-cell criterion, which adds to patch%irefine
   !---------------------------------------------------------------------------
   ds = maxval(patch%mesh%d, mask=patch%mesh%n > 1)
   c = ds/max_vorticity
   test = test*c
-  max_test = maxval(test)
   !---------------------------------------------------------------------------
   ! Combine with previous tests and evaluate
   !---------------------------------------------------------------------------
@@ -1098,7 +1083,7 @@ END FUNCTION check_vorticity
 FUNCTION shock_and_cd_detector (self, patch) RESULT (refine)
   USE mesh_mod
   class(refine_t):: self
-  class(solver_t), pointer:: patch
+  class(solver_t):: patch
   integer:: refine
   !.............................................................................
   class(mesh_t), pointer:: mx, my, mz
@@ -1120,15 +1105,10 @@ FUNCTION shock_and_cd_detector (self, patch) RESULT (refine)
   allocate(pg(patch%mesh(1)%gn,patch%mesh(2)%gn,patch%mesh(3)%gn), &
            v(patch%mesh(1)%gn,patch%mesh(2)%gn,patch%mesh(3)%gn,3))
   ! we need the gas pressure, density and velocity
-  select type (patch)
-  class is (solver_t)
-    d => patch%mem(:,:,:,patch%idx%d,patch%it,1)
-    e => patch%mem(:,:,:,patch%idx%e,patch%it,1)
-    pg = patch%gas_pressure()
-    v  = patch%gas_velocity()
-  class default
-    call mpi%abort("Unrecognised patch type. Abort!")
-  end select
+  d => patch%mem(:,:,:,patch%idx%d,patch%it,1)
+  e => patch%mem(:,:,:,patch%idx%e,patch%it,1)
+  pg = patch%gas_pressure()
+  v  = patch%gas_velocity()
   !
   refine = 0
   do iz=mz%li,mz%ui
@@ -1202,7 +1182,7 @@ FUNCTION gradient_detector (self, patch) RESULT (refine)
   USE mesh_mod
   USE solver_mod
   class(refine_t):: self
-  class(solver_t), pointer:: patch
+  class(solver_t) :: patch
   integer:: refine
   !.............................................................................
   class(mesh_t), pointer:: mx, my, mz
@@ -1236,15 +1216,10 @@ FUNCTION gradient_detector (self, patch) RESULT (refine)
     if (trim(grad_var(n)) == 'b1') q = patch%mem(:,:,:,patch%idx%bx,patch%it,1)
     if (trim(grad_var(n)) == 'b2') q = patch%mem(:,:,:,patch%idx%by,patch%it,1)
     if (trim(grad_var(n)) == 'b3') q = patch%mem(:,:,:,patch%idx%bz,patch%it,1)
-    select type(patch)
-    class is (solver_t)
-      if (trim(grad_var(n)) == 'p')  q = patch%gas_pressure()
-      if (trim(grad_var(n)) == 'v1') q = patch%gas_velocity(1)
-      if (trim(grad_var(n)) == 'v2') q = patch%gas_velocity(2)
-      if (trim(grad_var(n)) == 'v3') q = patch%gas_velocity(3)
-    class default
-      call mpi%abort("Unrecognised patch type. Abort!")
-    end select
+    if (trim(grad_var(n)) == 'p')  q = patch%gas_pressure()
+    if (trim(grad_var(n)) == 'v1') q = patch%gas_velocity(1)
+    if (trim(grad_var(n)) == 'v2') q = patch%gas_velocity(2)
+    if (trim(grad_var(n)) == 'v3') q = patch%gas_velocity(3)
     is_unsigned = .false.
     do i=1,size(unsigned)
       if (grad_var(n) == unsigned(i)) then
@@ -1324,7 +1299,7 @@ FUNCTION check_support (self, tasklist, patch) RESULT(refine_it)
   class(solver_t), pointer:: patch
   integer:: refine_it
   !.............................................................................
-  real, dimension(:,:,:), pointer:: test
+  real, dimension(:,:,:), pointer, contiguous:: test
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('refine_t%check_support', itimer=itimer, detailed_timer=detailed_timer)
@@ -1332,7 +1307,7 @@ FUNCTION check_support (self, tasklist, patch) RESULT(refine_it)
   ! Compute support bitmap
   !---------------------------------------------------------------------------
   allocate (test(patch%gn(1),patch%gn(2),patch%gn(3)))
-  refine_it = tasklist%check_support (patch%link, +1, test=test)
+  refine_it = tasklist%check_support (patch%link, +1, test)
   !---------------------------------------------------------------------------
   ! Combine with previous tests and evaluate
   !---------------------------------------------------------------------------
@@ -1349,8 +1324,8 @@ END FUNCTION check_support
 SUBROUTINE evaluate (self, label, patch, test, refine_it)
   class(refine_t):: self
   character(len=*):: label
-  class(solver_t), pointer:: patch
-  real, pointer:: test(:,:,:)
+  class(solver_t):: patch
+  real:: test(:,:,:)
   integer:: refine_it
   !...........................................................................
   real:: max_crit, max_test, norm

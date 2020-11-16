@@ -136,7 +136,7 @@ SUBROUTINE init_particles (self, id, type)
   '$Id$'
   !-----------------------------------------------------------------------------
   call trace%print_id (ids)
-  call self%lock%init ('particles_t%init')
+  call self%lock%init ('prts')
   allocate (self%head, self%tail)
   self%id = id
   self%type = type
@@ -190,6 +190,7 @@ SUBROUTINE remove (self, p)
   class(particles_t):: self
   class(particle_t), pointer:: p, this, prev, next
   logical, parameter:: safe = .true.
+  logical, parameter:: check = .false.
 !define DBG
 #ifdef DBG
   if (p%id == -1 .or. .not.associated(p%next) &
@@ -229,7 +230,8 @@ SUBROUTINE remove (self, p)
     !---------------------------------------------------------------------------
     ! Check list length
     !--------------------------------------------------------------------------
-    block
+    if (check) then
+      block
       integer:: n
       integer, save:: nprint=5
       n = 0
@@ -244,7 +246,8 @@ SUBROUTINE remove (self, p)
         nprint = nprint-1
         write (stderr,*) 'particles_t%remove: OK'
       end if
-    end block
+      end block
+    end if
   end if
 END SUBROUTINE remove
 

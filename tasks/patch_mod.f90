@@ -1219,6 +1219,8 @@ SUBROUTINE pack (self)
   call patch_to_header (self, header)
   ibuf = 1
   lock => self%mem_lock(self%it)
+  if (omp_lock%tasks) &
+    call self%lock%unset ('pack')
   call lock%set ('pack')
   call anonymous_copy (n_header, header, mesg%buffer(ibuf))
   ibuf = ibuf + n_header
@@ -1245,8 +1247,6 @@ SUBROUTINE pack (self)
   end if
   !-----------------------------------------------------------------------------
   call lock%unset ('pack')
-  if (omp_lock%tasks) &
-    call self%lock%unset ('pack')
   if (io%verbose > 2) &
     write (io_unit%log,*) self%id, 'after pack', minval(self%mem(:,:,:,1,self%it,1))
   call trace%end (itimer)

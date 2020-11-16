@@ -18,4 +18,4 @@ random_mod.o:     io_mod.o trace_mod.o
 radiation_mod.o:  io_mod.o trace_mod.o mesh_mod.o link_mod.o
 index_mod.o:      io_mod.o trace_mod.o
 cpatch_mod.o:     io_mod.o trace_mod.o solver_mod.o
-scratch_mod.o:    io_mod.o kinds_mod.o
+scratch_mod.o:    io_mod.o kinds_mod.o trace_mod.o

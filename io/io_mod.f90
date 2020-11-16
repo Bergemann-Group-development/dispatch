@@ -151,7 +151,7 @@ SUBROUTINE init (self, name)
     if (filename/=' '.and.trim(filename)/='input.nml') then
       self%inputname = filename                                 ! run_name.nml
       self%rundir = trim(datadir)//self%sep// &                 ! data/run_name/
-        trim(filename(1:index(filename,'.')-1))//self%sep
+        trim(filename(1:index(filename,'.',back=.true.)-1))//self%sep
     else
       self%inputname = 'input.nml'
       self%rundir = trim(datadir)//self%sep                     ! data/
@@ -503,10 +503,14 @@ contains
       if (present(lvalue).and.iostat==0) read (io_unit%flag,*,iostat=iostat) lvalue
       if (iostat/=0) lvalue = .not.lvalue
       close (io_unit%flag)
-      if (present(lvalue)) write (io_unit%output,*) 'flag: ', file(1:index(file,'.')-1), ' =', lvalue
-      if (present(ivalue)) write (io_unit%output,*) 'flag: ', file(1:index(file,'.')-1), ' =', ivalue
-      if (present(rvalue)) write (io_unit%output,*) 'flag: ', file(1:index(file,'.')-1), ' =', rvalue
-      if (present(dvalue)) write (io_unit%output,*) 'flag: ', file(1:index(file,'.')-1), ' =', dvalue
+      if (present(lvalue)) write (io_unit%output,*) &
+        'flag: ', file(1:index(file,'.',back=.true.)-1), ' =', lvalue
+      if (present(ivalue)) write (io_unit%output,*) &
+        'flag: ', file(1:index(file,'.',back=.true.)-1), ' =', ivalue
+      if (present(rvalue)) write (io_unit%output,*) &
+        'flag: ', file(1:index(file,'.',back=.true.)-1), ' =', rvalue
+      if (present(dvalue)) write (io_unit%output,*) &
+        'flag: ', file(1:index(file,'.',back=.true.)-1), ' =', dvalue
     end if
   end if
   end subroutine
