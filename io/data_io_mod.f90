@@ -48,6 +48,7 @@ MODULE data_io_mod
   USE io_mod
   USE os_mod
   USE mpi_mod
+  USE mpi_coords_mod
   USE timer_mod
   USE omp_mod
   USE omp_timer_mod
@@ -538,7 +539,7 @@ SUBROUTINE output_nml_v1 (patch, append)
   real(8), dimension(3):: size, position, ds, box, velocity, &
                           llc_nat, llc_cart, centre_nat
   integer              :: time_derivs
-  integer              :: omp_nthreads, mpi_size
+  integer              :: omp_nthreads, mpi_size, mpi_dims(3)
   logical              :: guard_zones, no_mans_land, periodic(3)
   integer, save        :: last_snapshot=-1
   character(len=16)    :: kind, eos, opacity, method
@@ -547,7 +548,7 @@ SUBROUTINE output_nml_v1 (patch, append)
   namelist /snapshot_nml/ ioformat, iout, time, ntotal, istep, mesh_type, &
     position, size, ds, box, velocity, level, quality, gamma, ncell, li, ui, n, &
     ng, gn, nv, nt, nw, kind, eos, opacity, periodic, guard_zones, time_derivs, &
-    omp_nthreads, mpi_size, no_mans_land
+    omp_nthreads, mpi_size, no_mans_land, mpi_dims
   namelist /patch_nml/ id, time, position, size, level, dtime
   !-----------------------------------------------------------------------------
   ! Write a small text file with info
@@ -604,6 +605,7 @@ SUBROUTINE output_nml_v1 (patch, append)
   opacity      = patch%opacity
   no_mans_land = patch%no_mans_land
   periodic     = patch%periodic
+  mpi_dims     = mpi_coords%dims
   if (mpi%master .and. patch%iout > last_snapshot) then
     last_snapshot = patch%iout
     mpi_size = mpi%size
@@ -669,7 +671,7 @@ SUBROUTINE output_nml_v2 (patch, append)
   real(8), dimension(3):: size, position, ds, box, velocity, &
                           llc_nat, llc_cart, centre_nat
   integer              :: time_derivs
-  integer              :: omp_nthreads, mpi_size
+  integer              :: omp_nthreads, mpi_size, mpi_dims(3)
   logical              :: guard_zones, no_mans_land, periodic(3)
   integer, save        :: last_snapshot=-1
   character(len=32)    :: kind, eos, opacity, method
@@ -677,7 +679,7 @@ SUBROUTINE output_nml_v2 (patch, append)
     nml_version
   namelist /snapshot_nml/ ioformat, iout, time, ntotal, box, li, ui, ng, gn, n, &
     nv, nt, gamma, eos, opacity, periodic, guard_zones, time_derivs, no_mans_land, &
-    omp_nthreads, mpi_size, mesh_type
+    omp_nthreads, mpi_size, mesh_type, mpi_dims
   namelist /patch_nml/ id, position, size, level, dtime, istep, ds, ncell, n, nw, &
     velocity, quality, mesh_type, kind
   integer, allocatable :: nbor_ids(:)
@@ -739,6 +741,7 @@ SUBROUTINE output_nml_v2 (patch, append)
   opacity      = patch%opacity
   no_mans_land = patch%no_mans_land
   periodic     = patch%periodic
+  mpi_dims     = mpi_coords%dims
   if (mpi%master .and. patch%iout > last_snapshot) then
     mpi_size = mpi%size
     omp_nthreads = omp%nthreads
@@ -808,7 +811,7 @@ SUBROUTINE output_nml_v3 (patch, append)
   real(8), dimension(3):: size, position, ds, box, velocity, &
                           llc_nat, llc_cart, centre_nat
   integer              :: time_derivs, now, prv
-  integer              :: omp_nthreads, mpi_size
+  integer              :: omp_nthreads, mpi_size, mpi_dims(3)
   integer(8)           :: task_offset
   logical              :: guard_zones, no_mans_land, periodic(3)
   integer, save        :: last_snapshot=-1
@@ -818,7 +821,7 @@ SUBROUTINE output_nml_v3 (patch, append)
   namelist /snapshot_nml/ ioformat, iout, time, ntotal, istep, mesh_type, &
     position, size, ds, box, velocity, level, quality, gamma, ncell, li, ui, n, &
     ng, gn, nv, nt, nw, kind, eos, opacity, periodic, guard_zones, time_derivs, &
-    omp_nthreads, mpi_size, no_mans_land
+    omp_nthreads, mpi_size, no_mans_land, mpi_dims
   namelist /patch_nml/ id, time, position, size, level, dtime, times, dtimes, &
     task_offset
   integer, allocatable :: nbor_ids(:)
@@ -890,6 +893,7 @@ SUBROUTINE output_nml_v3 (patch, append)
   opacity      = patch%opacity
   no_mans_land = patch%no_mans_land
   periodic     = patch%periodic
+  mpi_dims     = mpi_coords%dims
   if (mpi%master .and. patch%iout > last_snapshot) then
     mpi_size = mpi%size
     omp_nthreads = omp%nthreads
@@ -986,18 +990,14 @@ SUBROUTINE input_nml_v1 (patch)
   integer, save        :: time_derivs
   logical, save        :: guard_zones, no_mans_land, periodic(3)
   character(len=16)    :: kind, eos, opacity, method
-  integer              :: iostat
-  integer              :: omp_threads, mpi_size
+  integer              :: omp_nthreads, mpi_size, mpi_dims(3)
   namelist /snapshot_nml/ ioformat, iout, time, ntotal, istep, mesh_type, &
     position, size, ds, box, velocity, level, quality, gamma, ncell, li, ui, n, &
     ng, gn, nv, nt, nw, kind, eos, opacity, periodic, guard_zones, time_derivs, &
-    omp_threads, mpi_size, no_mans_land
+    omp_nthreads, mpi_size, no_mans_land, mpi_dims
   !-----------------------------------------------------------------------------
   real(8), save        :: origin(3)
-  integer, save        :: dims(3), mpi_dims(3), per_rank(3)
-  logical, save        :: face_nbors, fast_nbors, omp_init
-  namelist /cartesian_params/ size, dims, mpi_dims, per_rank, origin, face_nbors, &
-    fast_nbors, omp_init
+  integer, save        :: dims(3)
   logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
   ! Read info from namelist
@@ -1009,10 +1009,10 @@ SUBROUTINE input_nml_v1 (patch)
     patch%iout = io%restart
     write (filename,'(a,i5.5,"/snapshot.nml")') trim(io%inputdir), patch%iout
     open  (unit=io_unit%nml1, file=filename, form='formatted', status='old')
-    read  (io_unit%nml1, snapshot_nml, iostat=iostat)
-    read  (io_unit%nml1, cartesian_params, iostat=iostat)
+    read  (io_unit%nml1, snapshot_nml)
     close (io_unit%nml1)
     io%mpi_odims = mpi_dims
+    io%format = ioformat
   end if
   patch%t     = time
   patch%dt    = 0d0
@@ -1044,15 +1044,12 @@ SUBROUTINE input_nml_v2 (patch)
   logical, save        :: guard_zones, no_mans_land, periodic(3)
   character(len=32)    :: kind, eos, opacity, method
   integer              :: iostat
+  integer, save        :: dims(3), mpi_dims(3)
   namelist /snapshot_nml/ ioformat, iout, time, ntotal, box, li, ui, ng, &
     gn, n, nv, nt, gamma, eos, opacity, periodic, guard_zones, time_derivs, &
-    no_mans_land
+    no_mans_land, mpi_dims
   !-----------------------------------------------------------------------------
   real(8), save        :: origin(3)
-  integer, save        :: dims(3), mpi_dims(3), per_rank(3)
-  logical, save        :: face_nbors, fast_nbors, omp_init
-  namelist /cartesian_params/ size, dims, mpi_dims, per_rank, origin, face_nbors, &
-    fast_nbors, omp_init
   namelist /patch_nml/ id, position, size, level, dtime, istep, ds, ncell, n, nw, &
     velocity, quality, mesh_type, kind
   logical, save:: first_time=.true.
@@ -1066,8 +1063,7 @@ SUBROUTINE input_nml_v2 (patch)
     first_time = .false.
     write (filename,'(a,i5.5,"/snapshot.nml")') trim(io%inputdir), patch%iout
     open  (unit=io_unit%nml1, file=filename, form='formatted', status='old')
-    read  (io_unit%nml1, snapshot_nml, iostat=iostat)
-    read  (io_unit%nml1, cartesian_params, iostat=iostat)
+    read  (io_unit%nml1, snapshot_nml)
     close (io_unit%nml1)
     io%mpi_odims = mpi_dims
     io%format = ioformat
@@ -1128,13 +1124,10 @@ SUBROUTINE input_nml_v3 (patch)
   integer              :: iostat
   namelist /snapshot_nml/ ioformat, iout, time, ntotal, box, li, ui, ng, &
     gn, n, nv, nt, gamma, eos, opacity, periodic, guard_zones, time_derivs, &
-    no_mans_land
+    no_mans_land, mpi_dims
   !-----------------------------------------------------------------------------
   real(8), save        :: origin(3)
-  integer, save        :: dims(3), mpi_dims(3), per_rank(3)
-  logical, save        :: face_nbors, fast_nbors, omp_init
-  namelist /cartesian_params/ size, dims, mpi_dims, per_rank, origin, face_nbors, &
-    fast_nbors, omp_init
+  integer, save        :: dims(3), mpi_dims(3)
   namelist /patch_nml/ id, position, size, level, dtime, istep, ds, ncell, n, nw, &
     velocity, quality, mesh_type, kind
   logical, save:: first_time=.true.
@@ -1148,8 +1141,7 @@ SUBROUTINE input_nml_v3 (patch)
     first_time = .false.
     write (filename,'(a,i5.5,"/snapshot.nml")') trim(io%inputdir), patch%iout
     open  (unit=io_unit%nml1, file=filename, form='formatted', status='old')
-    read  (io_unit%nml1, snapshot_nml, iostat=iostat)
-    read  (io_unit%nml1, cartesian_params, iostat=iostat)
+    read  (io_unit%nml1, snapshot_nml)
     close (io_unit%nml1)
     io%mpi_odims = mpi_dims
     io%format = ioformat
@@ -1205,6 +1197,7 @@ SUBROUTINE file_append (unit1, unit2)
     if (iostat /= 0) exit
     write (unit2,'(a)') trim(line)
   end do
+  backspace (unit1)
 END SUBROUTINE file_append
 
 !===============================================================================

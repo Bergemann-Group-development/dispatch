@@ -11,11 +11,15 @@ MODULE os_mod
   contains
     procedure, nopass:: mkdir
     procedure, nopass:: mkdir_no
+    procedure, nopass:: copy_file
   end type
   type(os_t), public:: os
   real, parameter:: ms=100.
 CONTAINS
 
+!===============================================================================
+!> Create a new directory
+!===============================================================================
 SUBROUTINE mkdir (dir)
   character(len=*):: dir
   real(8):: start
@@ -125,4 +129,38 @@ SUBROUTINE mkdir_no (iout)
   end if
   !$omp end critical (mkdir_no_cr)
 END SUBROUTINE mkdir_no
+
+!===============================================================================
+!===============================================================================
+SUBROUTINE copy_file (file1, file2)
+  character(len=*):: file1, file2
+  !.............................................................................
+  logical:: exists
+  integer:: u1, u2, n, iostat
+  character(len=120):: line
+  !-----------------------------------------------------------------------------
+  call mpi%barrier ('copy_file')
+  if (mpi%master .and. omp%master) then
+    print *, 'copying '//trim(file1)//' to '//trim(file2)
+    inquire (file=trim(file1), exist=exists)
+    if (exists) then
+      open (newunit=u1,file=trim(file1), form='formatted', status='old')
+      open (newunit=u2,file=trim(file2), form='formatted', status='unknown')
+      n = 0
+      do while (.true.)
+        read (u1,'(a)', iostat=iostat) line
+        if (iostat /= 0) then
+          exit
+        end if
+        write (u2,'(a)') trim(line)
+        n = n+1
+      end do
+      close (u1)
+      close (u2)
+      print *, n,' lines copied'
+    end if
+  end if
+  call mpi%barrier ('copy_file')
+END SUBROUTINE copy_file
+
 END MODULE os_mod

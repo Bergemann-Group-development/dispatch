@@ -142,7 +142,7 @@ SUBROUTINE input (self, ok)
   logical:: ok
   !-----------------------------------------------------------------------------
   ok = .false.
-  !call data_io%input (self, ok)
+  call data_io%input (self, ok)
 END SUBROUTINE input
 
 !===============================================================================

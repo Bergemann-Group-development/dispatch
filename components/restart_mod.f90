@@ -61,6 +61,7 @@ SUBROUTINE init (self, task_list)
   end if
   !-----------------------------------------------------------------------------
   call trace%begin ('restart_t%init')
+  call io%header ('restart_t%init.')
   rewind (io%input)
   read (io%input, restart_params, iostat=iostat)
   !-----------------------------------------------------------------------------
@@ -73,6 +74,15 @@ SUBROUTINE init (self, task_list)
     call self%read_metadata                     ! get size & position
     call self%task_list%initialize              ! build nbor lists
     call self%select_tasks                      ! select tasks by MPI rank
+    !---------------------------------------------------------------------------
+    ! Initialize the I/O counters
+    !---------------------------------------------------------------------------
+    io%ntask  = self%task_list%na
+    io%nwrite = self%task_list%na
+    io%ntotal = product(self%dims)*product(self%mpi%dims)
+    if (self%verbose > 0) &
+      write (stdout,*) 'restart_t%init: ntask, nwrite, ntotal =', &
+      io%ntask, io%nwrite, io%ntotal
     call self%read_task_data                    ! read task data
   end if
   !-----------------------------------------------------------------------------
@@ -88,13 +98,14 @@ SUBROUTINE read_metadata (self)
   class(link_t), pointer:: link
   integer:: iostat, rank, n_patch
   !-- io_nml -------------------------------------------------------------------
-  integer:: format, time_derivs, verbose
+  integer:: format, time_derivs, verbose, nml_version
   logical:: do_debug, do_trace, do_output, do_flags
   character(len=16):: method
-  namelist /io_nml/ format, ntotal, out_time, guard_zones, time_derivs, method
+  namelist /io_nml/ format, ntotal, out_time, guard_zones, time_derivs, method, &
+    nml_version
   !-- snapshot_nml -------------------------------------------------------------
   integer:: ioformat, restart, iout, ntotal, istep, mesh_type, level, ncell(3), &
-    li(3), ui(3), n(3), ng(3), gn(3), nv, nw, nt
+    li(3), ui(3), n(3), ng(3), gn(3), nv, nw, nt, omp_nthreads, mpi_size
   real(8):: position(3), size(3), ds(3), box(3), velocity(3), gamma, time, &
     out_time
   real(4):: quality
@@ -103,7 +114,7 @@ SUBROUTINE read_metadata (self)
   namelist /snapshot_nml/ ioformat, iout, time, ntotal, istep, mesh_type, &
     position, size, ds, box, velocity, level, quality, gamma, ncell, li, ui, n, &
     ng, gn, nv, nt, nw, kind, eos, opacity, periodic, guard_zones, time_derivs, &
-    no_mans_land, top
+    omp_nthreads, mpi_size, no_mans_land, top
   !-- io_params ----------------------------------------------------------------
   logical:: do_validate, do_legacy, do_direct, omp_trace, namelist_errors
   integer:: id_debug, levelmax, log_sent, task_logging
@@ -119,13 +130,13 @@ SUBROUTINE read_metadata (self)
   call trace%begin ('restart_t%read_metadata')
   write (fromdir,'(a,"/",a,"/")') trim(io%datadir), trim(run)
   io%inputdir = trim(fromdir)
-  file = trim(fromdir)//'params.nml'
+  file = trim(fromdir)//'restart.nml'
   if (self%verbose > 0) &
     write(stdout,*) 'restart_t: reading '//trim(file)
-  open (io_unit%data,file=file,form='formatted',status='old',iostat=iostat)
+  open (io_unit%data,file=trim(file),form='formatted',status='old',iostat=iostat)
   if (iostat /= 0) then
     write (stdout,*) 'restart_t%init: return -- did not find '//trim(file)
-    return
+    call io%abort ('missing '//trim(file))
   end if
   !-----------------------------------------------------------------------------
   ! io_params
@@ -181,7 +192,7 @@ SUBROUTINE read_metadata (self)
   do rank=0,self%mpi%size-1
     write (file,'(a,"rank_",i5.5,"_patches.nml")') trim(fromdir), rank
     if (self%verbose > 0) &
-      write (stdout,*) 'restart_t: reading '//trim(file)
+      write (stdout,*) 'restart_t: reading metadata from '//trim(file)
     open (io_unit%data,file=file,form='formatted',status='old')
     n_patch = 0
     do while (.true.)
@@ -192,20 +203,16 @@ SUBROUTINE read_metadata (self)
       if (self%read_patch_metadata (patch)) then
         patch%rank = rank
         call self%task_list%append_link (link)
+        n_patch = n_patch+1
       else
         exit
       end if
-      n_patch = n_patch+1
     end do
-    if (self%verbose > 1) &
-      write (stdout,*) n_patch, 'patches'
+    if (self%verbose > 0) &
+      write (stdout,'(1x,a,i6,1x,a)') 'metadata for', n_patch, 'patches read'
     close (io_unit%data)
   end do
   close (io_unit%data)
-  !-----------------------------------------------------------------------------
-  ! Initialize the task_list
-  !-----------------------------------------------------------------------------
-  io%ntotal = product(self%dims)
   !-----------------------------------------------------------------------------
   call trace%end ()
 END SUBROUTINE read_metadata
@@ -265,7 +272,6 @@ FUNCTION read_patch_metadata (self, patch) RESULT (ok)
     patch%dt       = dtime
     patch%istep    = istep
     patch%size     = size
-    patch%size     = size
     patch%position = position
     patch%origin   = position - size/2d0
     patch%velocity = velocity
@@ -274,8 +280,8 @@ FUNCTION read_patch_metadata (self, patch) RESULT (ok)
     patch%new      = 2
     patch%iit(patch%nt) = 2
     patch%out_next = (nint(patch%time/io%out_time+1.0))*io%out_time
-!print *, 'restart_t%read_patch_metadata: id, out_next =', &
-!patch%id, patch%out_next
+print *, 'restart_t%read_patch_metadata: id, out_next =', &
+patch%id, patch%out_next, patch%unsigned
     !---------------------------------------------------------------------------
     ! Derived
     !---------------------------------------------------------------------------
@@ -291,6 +297,8 @@ FUNCTION read_patch_metadata (self, patch) RESULT (ok)
       print 2, patch%id, patch%position, patch%mesh%p, patch%size, &
         patch%mesh%s, patch%ds, patch%mesh%d, 'reset'
   end if
+  if (self%verbose > 1) then
+  end if
   call trace%end ()
 END FUNCTION read_patch_metadata
 
@@ -303,11 +311,11 @@ FUNCTION read_cartesian_metadata (self) RESULT (ok)
   type(patch_t), pointer:: patch
   logical:: ok
   integer:: iostat
-  real(8), dimension(3):: size, origin
+  real(8), dimension(3):: size, origin, position
   integer, dimension(3):: mpi_dims, dims, per_rank(3)
   logical:: omp_init, periodic(3), face_nbors(3)
-  namelist /cartesian_params/ size, dims, mpi_dims, per_rank, origin, &
-    face_nbors, omp_init, periodic
+  namelist /cartesian_params/ size, position, dims, mpi_dims, per_rank, origin, &
+    face_nbors, omp_init, periodic, verbose
   !-----------------------------------------------------------------------------
   call trace%begin ('restart_t%read_cartesian_metadata')
   read (io_unit%data, cartesian_params, iostat=iostat)
@@ -364,14 +372,12 @@ SUBROUTINE select_tasks (self)
   logical:: keep
   !-----------------------------------------------------------------------------
   call trace%begin ('restart_t%select_tasks')
-  if (self%verbose > 0) &
-    write (stdout, *) 'restart_t: reading task data from '//trim(io%inputdir)
   !-----------------------------------------------------------------------------
   ! Keep real and virtual tasks on this rank
   !-----------------------------------------------------------------------------
-  keep = .false.
   link => self%task_list%head
   do while (associated(link))
+    keep = .false.
     if (link%task%rank == mpi%rank) then
       keep = .true.
       exit
@@ -384,22 +390,22 @@ SUBROUTINE select_tasks (self)
       end if
       nbor => nbor%next
     end do
+    !---------------------------------------------------------------------------
+    ! Deallocate and remove other tasks, with their nbor_lists
+    !---------------------------------------------------------------------------
+    if (.not. keep) then
+      task => link%task
+      if (self%verbose > 1) &
+        write (stdout,*) 'restart_t: remove task', task%id
+      select type (task)
+      class is (experiment_t)
+      call task%dealloc
+      end select
+      call link%remove_nbor_list2 (link%nbor)
+      call self%task_list%remove (link)
+    end if
     link => link%next
   end do
-  !-----------------------------------------------------------------------------
-  ! Deallocate and remove other tasks, with their nbor_lists
-  !-----------------------------------------------------------------------------
-  if (.not. keep) then
-    task => link%task
-    if (self%verbose > 1) &
-      write (stdout,*) 'restart_t: remove task', task%id
-    select type (task)
-    class is (experiment_t)
-    call task%dealloc
-    end select
-    call link%remove_nbor_list2 (link%nbor)
-    call self%task_list%remove (link)
-  end if
   call trace%end ()
 END SUBROUTINE select_tasks
 
@@ -416,16 +422,18 @@ SUBROUTINE read_task_data (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('restart_t%read_task_data')
   if (self%verbose > 0) &
-    write (stdout, *) 'restart_t: reading task data from '//trim(io%inputdir), &
-      snapshot, nml_version
+    write (stdout,'(1x,a,i5.5,a,i6,a)') &
+      'restart_t: reading task data from '//trim(io%inputdir), snapshot, &
+      '/ for', self%task_list%n,' tasks'
   io%restart = snapshot
   io%nml_version = nml_version
+  i = 0
   link => self%task_list%head
   do while (associated(link))
     task => link%task
     select type (task)
     class is (experiment_t)
-      if (self%verbose > 1) &
+      if (self%verbose > 2) &
         write (stdout,*) 'reading patch data for task', task%id
       !-------------------------------------------------------------------------
       ! The experiment input procedure should always work, for any task, but
@@ -434,12 +442,14 @@ SUBROUTINE read_task_data (self)
       task%restart = snapshot
       task%iout    = snapshot
       call task%input (ok)
+      i = i+1
     class default
       if (self%verbose > 1) &
         write (stdout,*) 'no data for task', task%id
     end select
     link => link%next
   end do
+  io%restart = -9
   call trace%end ()
 END SUBROUTINE read_task_data
 

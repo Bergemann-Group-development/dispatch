@@ -441,12 +441,8 @@ def _var(patch,filed,snap,verbose=0,copy=None):
 
         # Determine data representation
         is_ln = ((patch.ioformat-6)/2==0
-                 or (patch.ioformat-10)//2==0
-                 or patch.ioformat==15
-                 or patch.ioformat==14)
-        is_v  = ((patch.ioformat-6)%2==0 
-                 or patch.ioformat==15
-                 or patch.ioformat==14)
+              or (patch.ioformat-10)//2==0)
+        is_v  = ((patch.ioformat-6)%2==0)
         is_st = patch.kind[0:4] == 'zeus' or patch.kind[0:7] == 'stagger'
         v = None
 

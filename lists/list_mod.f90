@@ -297,7 +297,7 @@ SUBROUTINE append_link (self, link)
   !-----------------------------------------------------------------------------
   ! IMPORTANT: Some procedures depend on knowing the size of the list!
   ! Calling update_counts is robust, but may take significant time.
-  ! FIXME: Maintain counts incrementally (teesting & validating consistency)
+  ! FIXME: Maintain counts incrementally (testing & validating consistency)
   !-----------------------------------------------------------------------------
   if (self%verbose > 2) &
     write (io_unit%log,*) 'list_t%append: (1) n =', &

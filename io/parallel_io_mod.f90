@@ -95,8 +95,6 @@ SUBROUTINE init (patch)
     read(io%input, parallel_io_params, iostat=iostat)
     call io%namelist_warning ('parallel_io_params', iostat)
     write (io%namelist, parallel_io_params)
-    if (io%ntask==0) &
-      call io%abort ('parallel_io_t%init: io%ntask == 0')
     call mpi_io%init
     call mpi_io%set (nwrite=io%nwrite*(io%time_derivs+1))
     if (io%method=='parallel') then
@@ -167,9 +165,9 @@ SUBROUTINE output (patch, count)
   integer:: count
   !.............................................................................
   integer(8):: snapshot_words, buffer_words, pos
-  integer:: iv, n(3), jt(2), iw, nw
-  real(kind=KindScalarVar), dimension(:,:,:,:,:), allocatable, target:: mem
-  real(kind=4),             dimension(:,:,:,:)  , allocatable, target:: buffer
+  integer:: iv, n(3), jt(2), iw, nw, l(3), u(3)
+  real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: mem
+  real(kind=4),             dimension(:,:,:,:), allocatable, target:: buffer
   character(len=120):: filename
   real:: pt(2)
   logical, save:: first_time=.true.
@@ -243,19 +241,23 @@ SUBROUTINE output (patch, count)
     write (io_unit%log,'(a,i6,2i4)') 'parallel_io_t%output: id, nv, io%nv =', &
       patch%id, patch%nv, io%nv
   end if
-  allocate (mem(n(1),n(2),n(3),patch%nt-1,io%nv))
   allocate (buffer(n(1),n(2),n(3),io%nv))
-  call prepare_time_slices
   do iv=1,io%nv
-    call time_slices%interpolate (patch, mem(:,:,:,:,iv), buffer(:,:,:,iv))
+    if (io%guard_zones) then
+      mem => patch%mem(:,:,:,iv,:,1)
+    else
+      l = patch%mesh%li
+      u = patch%mesh%ui
+      mem => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,:,1)
+    end if
+    call time_slices%interpolate (patch, mem, buffer(:,:,:,iv))
     if (patch%id==id_debug) then
       write (io_unit%output,'(1x,a,i6,i5,i4,1p,g14.6,3(2x,2e11.2))') &
         'parallel_io_t%output: id, io, iv, time, minval, maxval =', &
         patch%id, patch%iout, iv, patch%time, &
         minval(patch%mem(:,:,:,iv,patch%it,1)), &
         maxval(patch%mem(:,:,:,iv,patch%it,1)), &
-        minval(buffer(:,:,:,iv)), maxval(buffer(:,:,:,iv)), &
-        minval(mem(:,:,:,patch%nt-1,iv)), maxval(mem(:,:,:,patch%nt-1,iv))
+        minval(buffer(:,:,:,iv)), maxval(buffer(:,:,:,iv))
     end if
   end do
   call io_write ((io%time_derivs+1)*patch%iout, 0)
@@ -264,12 +266,26 @@ SUBROUTINE output (patch, count)
   !-----------------------------------------------------------------------------
   if (io%time_derivs>0) then
     do iv=1,io%nv
-      call time_slices%derivative1 (patch, mem(:,:,:,:,iv), buffer(:,:,:,iv))
+      if (io%guard_zones) then
+        mem => patch%mem(:,:,:,iv,:,1)
+      else
+        l = patch%mesh%li
+        u = patch%mesh%ui
+        mem => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,:,1)
+      end if
+      call time_slices%derivative1 (patch, mem, buffer(:,:,:,iv))
     end do
     call io_write ((io%time_derivs+1)*patch%iout, 1)
     if (io%time_derivs==2) then
+      if (io%guard_zones) then
+        mem => patch%mem(:,:,:,iv,:,1)
+      else
+        l = patch%mesh%li
+        u = patch%mesh%ui
+        mem => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,:,1)
+      end if
       do iv=1,io%nv
-        call time_slices%derivative2 (patch, mem(:,:,:,:,iv), buffer(:,:,:,iv))
+        call time_slices%derivative2 (patch, mem, buffer(:,:,:,iv))
       end do
       call io_write ((io%time_derivs+1)*patch%iout, 2)
     end if
@@ -282,81 +298,9 @@ SUBROUTINE output (patch, count)
   ! calls, the buffer must remain allocated, until a later call to check_io
   ! finds that it is no longer needed, and deallocates it
   !-----------------------------------------------------------------------------
-  deallocate (mem, buffer)
+  deallocate (buffer)
   call trace%end (itimer)
 contains
-  !-----------------------------------------------------------------------------
-  ! Copy variables from `patch%mem` to `mem` array, converting to unsigned (log)
-  ! or pervolume representation, if requested
-  !-----------------------------------------------------------------------------
-  subroutine prepare_time_slices
-    integer:: l1(3), u1(3), l2(3), u2(3), n(3), it, iit
-    real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, e, p1, p2, p3, phi
-    real(kind=KindScalarVar), dimension(:,:,:), pointer:: b1d, b2d, b3d, b1u, b2u, b3u
-    !...........................................................................
-    call trace%begin ('parallel_io-t%output::prepare_time_slices')
-    if (io%guard_zones) then
-      l1 = patch%mesh%lb
-      u1 = max(patch%mesh%ub,patch%mesh%gn)
-    else if (patch%no_mans_land) then
-      l1 = patch%mesh%li
-      u1 = patch%mesh%ui
-    else
-      l1 = patch%mesh%li
-      u1 = patch%mesh%ui-1
-    end if
-    n = u1-l1+1
-    l2 = l1+1
-    u2 = u1+1
-    associate (idx=>patch%idx)
-    if (verbose > 0) then
-      write (io_unit%log,'(a,i6,4i4)') &
-       'parallel_io_t%prepare_time_slices: nv, nw, bx, phi =', &
-        patch%id, patch%nv, patch%nw, patch%idx%bx, patch%idx%bx
-    end if
-    do it=1,patch%nt-1
-      iit = patch%iit(it)
-      d  => patch%mem(l1(1):u1(1),l1(2):u1(2),l1(3):u1(3),idx%d ,iit,1)
-      e  => patch%mem(l1(1):u1(1),l1(2):u1(2),l1(3):u1(3),idx%e ,iit,1)
-      p1 => patch%mem(l1(1):u1(1),l1(2):u1(2),l1(3):u1(3),idx%px,iit,1)
-      p2 => patch%mem(l1(1):u1(1),l1(2):u1(2),l1(3):u1(3),idx%py,iit,1)
-      p3 => patch%mem(l1(1):u1(1),l1(2):u1(2),l1(3):u1(3),idx%pz,iit,1)
-      mem(:,:,:,it,idx%d ) = log(d)
-      !-------------------------------------------------------------------------
-      ! For RAMSES cases, convert to velocity and energy per unit mass,
-      ! excluding kinetic energy
-      !-------------------------------------------------------------------------
-      if (patch%kind(1:6) == 'ramses') then
-        mem(:,:,:,it,idx%px) = p1/d
-        mem(:,:,:,it,idx%py) = p2/d
-        mem(:,:,:,it,idx%pz) = p3/d
-        mem(:,:,:,it,idx%e ) = (e-0.5*(p1**2+p2**2+p3**2)/d)/d
-      else
-        mem(:,:,:,it,idx%px) = p1
-        mem(:,:,:,it,idx%py) = p2
-        mem(:,:,:,it,idx%pz) = p3
-        mem(:,:,:,it,idx%e ) = e/d
-      end if
-      !-------------------------------------------------------------------------
-      ! MHD variables and potential, if present
-      !-------------------------------------------------------------------------
-      if (patch%idx%bx > 0) then
-        mem(:,:,:,it,idx%e) = patch%ee_min
-        b1d => patch%mem(l1(1):u1(1),l1(2):u1(2),l1(3):u1(3),idx%bx,iit,1)
-        b2d => patch%mem(l1(1):u1(1),l1(2):u1(2),l1(3):u1(3),idx%by,iit,1)
-        b3d => patch%mem(l1(1):u1(1),l1(2):u1(2),l1(3):u1(3),idx%bz,iit,1)
-        mem(:,:,:,it,idx%bx) = b1d
-        mem(:,:,:,it,idx%by) = b2d
-        mem(:,:,:,it,idx%bz) = b3d
-      end if
-      if (patch%idx%phi > 0) then
-        phi => patch%mem(l1(1):u1(1),l1(2):u1(2),l1(3):u1(3),idx%phi,iit,1)
-        mem(:,:,:,it,idx%phi) = phi
-      end if
-    end do
-    end associate
-    call trace%end()
-  end subroutine prepare_time_slices
   !-----------------------------------------------------------------------------
   subroutine io_write (slot, ider)
     integer:: slot, ider, irec
@@ -388,7 +332,7 @@ SUBROUTINE input (patch, ok)
   logical:: ok
   !.............................................................................
   integer(8):: snapshot_words, buffer_words
-  integer:: iv, n(3), slot
+  integer:: iv, n(3), slot, irec
   real, dimension(:,:,:,:), pointer:: buffer
   character(len=120):: filename
   logical:: single_patch
@@ -441,14 +385,18 @@ SUBROUTINE input (patch, ok)
   ! Catch reading from a snapshot with different mpi_size
   !-----------------------------------------------------------------------------
   single_patch = any(io%mpi_odims/=io%mpi_dims)
+  if (single_patch) then
+    write (stderr,'(2(3i4,2x))') io%mpi_dims, io%mpi_odims
+    call io%abort("changing MPI geometry not supported with method='parallel'")
+  end if
   !-----------------------------------------------------------------------------
   ! Compute offset size constants for the mpi_io reader
   !-----------------------------------------------------------------------------
   snapshot_words = product(n)*io%ntotal*io%nv*(io%time_derivs+1)
-  if (single_patch) then
+  if (io%format==14) then
     buffer_words = product(n)
-  else
-    buffer_words = product(n)*io%ntask
+  else if (io%format==15) then
+    buffer_words = product(n)*io%nv
   end if
   !-----------------------------------------------------------------------------
   ! Info
@@ -457,11 +405,11 @@ SUBROUTINE input (patch, ok)
   if (first_time) then
     first_time = .false.
     write(io%output,'(a,f8.3,a,i10,a)') &
-      ' output snapshot size =', snapshot_words*4d0/1024d0**3, ' GB, in', &
+      ' input snapshot size =', snapshot_words*4d0/1024d0**3, ' GB, in', &
       io%ntotal, ' patches'
-    write(io%output,'(a,4i6,2i12)') &
-      ' parallel_io_t%output: iout, n, snapshot_words, buffer_words =', &
-      patch%iout, n, snapshot_words, buffer_words
+    !write(io%output,'(a,4i6,2i12)') &
+      !' parallel_io_t%input: iout, n, snapshot_words, buffer_words =', &
+      !patch%iout, n, snapshot_words, buffer_words
   end if
   !$omp end critical (first_cr)
   !-----------------------------------------------------------------------------
@@ -475,6 +423,25 @@ SUBROUTINE input (patch, ok)
   patch%iout = io%restart
   slot = (io%time_derivs+1)*patch%iout
   call mpi_io%read (buffer, 1+slot, 1+(patch%id-1)*(io%time_derivs+1))
+
+  if (io%format==14) then
+    !-------------------------------------------------------------------------
+    ! Ordering with (ip,iv,ider,io)
+    !-------------------------------------------------------------------------
+    do iv=1,io%nv
+      irec = patch%id + io%ntotal*((iv-1))
+      call mpi_io%read (buffer(:,:,:,iv), 1+slot, irec)
+    end do
+  else
+    !-------------------------------------------------------------------------
+    ! This ordering has the derivative order added to the patch%id, which is
+    ! in turn causing an increment by (io%time_derivs+1), so effectively adding
+    ! nv additional variables for each derivative order, making it easy to
+    ! address the derivatives, while using snapshot numbers incremented by 1.
+    !-------------------------------------------------------------------------
+    call mpi_io%write (buffer, 1+slot, 1+(patch%id-1)*(io%time_derivs+1))
+  end if
+
   if (mpi_io%err /= 0) then
     ok = .false.
     call trace%end (itimer)
@@ -490,16 +457,13 @@ SUBROUTINE input (patch, ok)
   if (verbose > 1) then
     do iv=1,io%nv
       write (io_unit%output,*) 'parallel_io_t%input: id, iv, iout, min, max =', &
-        patch%id, iv, patch%iout !, patch%fminval(iv), patch%fmaxval(iv)
+        patch%id, iv, patch%iout, patch%fminval(iv), patch%fmaxval(iv)
     end do
   else if (verbose > 0) then
     write (io_unit%output,*) 'parallel_io_t%input: id, iout =', &
       patch%id, patch%iout
   end if
   deallocate (buffer)
-  do iv=1,io%nv
-    call convert_variables ! copy `patch%mem` into `mem`, converting if desired
-  end do
   !-----------------------------------------------------------------------------
   ! Make sure all time slots have the correct time set
   !-----------------------------------------------------------------------------
@@ -516,37 +480,6 @@ SUBROUTINE input (patch, ok)
     ' parallel_io_t%input: iout, n, snapshot_words, buffer_words =', &
     patch%iout, n, snapshot_words, buffer_words
   call trace%end (itimer)
-contains
-  !-----------------------------------------------------------------------------
-  ! Copy variables from `patch%mem` to `mem` array, converting variables based
-  ! on the I/O format parameter.
-  !-----------------------------------------------------------------------------
-  subroutine convert_variables
-    !-----------------------------------------------------------------------------
-    ! Convert log(d) to d
-    !-----------------------------------------------------------------------------
-    if (iv == patch%idx%d) then
-      patch%mem(:,:,:,iv,:,1) = exp(patch%mem(:,:,:,iv,:,1))
-    end if
-    !-----------------------------------------------------------------------------
-    ! Convert velocity to momentum in RAMSES cases
-    !-----------------------------------------------------------------------------
-    if (patch%kind(1:6) == 'ramses') then
-      if (iv >= patch%idx%px .and. iv <= patch%idx%pz) then
-        patch%mem(:,:,:,iv,:,1) = patch%mem(:,:,:,iv,:,1)*patch%mem(:,:,:,patch%idx%d,:,1)
-      !-----------------------------------------------------------------------------
-      ! Convert per-unit-mass energy to per-unit-volume, adding kinetic energy
-      !-----------------------------------------------------------------------------
-      else if (iv == patch%idx%e) then
-        patch%mem(:,:,:,iv,:,1) = patch%mem(:,:,:,patch%idx%d,:,1) * &
-                                  patch%mem(:,:,:,patch%idx%e,:,1) + &
-                             0.5*(patch%mem(:,:,:,patch%idx%px,:,1)**2 + &
-                                  patch%mem(:,:,:,patch%idx%py,:,1)**2 + &
-                                  patch%mem(:,:,:,patch%idx%pz,:,1)**2) &
-                                 /patch%mem(:,:,:,patch%idx%d ,:,1)
-      end if
-    end if
-  end subroutine
 END SUBROUTINE input
 
 END MODULE parallel_io_mod

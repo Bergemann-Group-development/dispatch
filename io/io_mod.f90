@@ -159,8 +159,12 @@ SUBROUTINE init (self, name)
     !---------------------------------------------------------------------------
     call os%mkdir (trim(self%datadir))
     call os%mkdir (trim(self%rundir))
-    open (io_unit%nml, file=trim(self%rundir)//'params.nml', form='formatted', status='unknown')
-    open (io_unit%hash, file=trim(self%rundir)//'hash.log', form='formatted', status='unknown')
+    call os%copy_file (trim(self%rundir)//'params.nml', &
+                       trim(self%rundir)//'restart.nml')
+    open (io_unit%nml, file=trim(self%rundir)//'params.nml', form='formatted', &
+          status='unknown')
+    open (io_unit%hash, file=trim(self%rundir)//'hash.log', form='formatted', &
+          status='unknown')
     open (self%input, file=self%inputname, form='formatted', status='old')
     if (mpi%rank > 0) then
       io%output = io_unit%mpi
@@ -169,6 +173,7 @@ SUBROUTINE init (self, name)
       ' This version was compiled with default real KIND =', kind(test)
     call io%header ('io_t%init:')
     !---------------------------------------------------------------------------
+    inputdir = self%rundir
     rewind (io%input)
     read (io%input, io_params, iostat=iostat)
     call self%namelist_warning ('io_params', iostat)
@@ -183,13 +188,14 @@ SUBROUTINE init (self, name)
     end if
     !---------------------------------------------------------------------------
     call os%mkdir (trim(self%rundir))
-    open (io_unit%nml, file=trim(self%rundir)//'params.nml', form='formatted', status='unknown')
-    open (io_unit%hash, file=trim(self%rundir)//'hash.log', form='formatted', status='unknown')
+    open (io_unit%nml, file=trim(self%rundir)//'params.nml', form='formatted', &
+          status='unknown')
+    open (io_unit%hash, file=trim(self%rundir)//'hash.log', form='formatted', &
+          status='unknown')
     open (self%input, file=self%inputname, form='formatted', status='old')
     !---------------------------------------------------------------------------
     ! Read io_params namelist
     !---------------------------------------------------------------------------
-    inputdir = self%rundir
     self%task_logging = task_logging
     self%log_interval = log_interval
     self%format = format
