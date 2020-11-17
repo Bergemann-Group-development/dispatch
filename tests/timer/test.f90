@@ -2,12 +2,13 @@
 !> Measure granularity of MPI_Wtime(), system_clock, and omp_get_wtime()
 !===============================================================================
 PROGRAM test
-  USE mpi
+  !USE mpi
   USE io_unit_mod
   USE omp_lib
   USE omp_timer_mod
   USE omp_lock_mod
   implicit none
+  include "mpif.h"
   real(8):: a, start, time1, time2, time3, end_time, test_time
   integer:: istart, itime, rate, i, j, k, n
   type(lock_t):: lock
@@ -95,6 +96,7 @@ PROGRAM test
   test_time = omp_get_wtime() - start
   print '(6p,f7.3,a)', test_time/n, ' microsec per omp atomic update'
  
+  n = 1e6
   omp_lock%on = .true.
   omp_lock%verbose = 0
   start = omp_get_wtime()
