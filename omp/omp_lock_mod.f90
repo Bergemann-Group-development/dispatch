@@ -225,7 +225,7 @@ SUBROUTINE set (self, label, itimer)
     'omp_lock_t%set WARNING: lock not initialized, thread =', omp%thread
     write (io_unit%log,'(f14.6,2x,a,i4)') wallclock(), &
     'omp_lock_t%set WARNING: lock not initialized, thread =', omp%thread
-  call self%init
+    call self%init
   end if
   !-----------------------------------------------------------------------------
   ! Must print log info before the lock, to reveal dead-locks
