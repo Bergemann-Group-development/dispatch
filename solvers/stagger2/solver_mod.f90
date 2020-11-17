@@ -103,6 +103,7 @@ SUBROUTINE update (self)
   associate (d=>self%mem(:,:,:,self%idx%d,self%it,1))
   !.............................................................................
   call trace%begin ('solver_t%update')
+  self%new = 1 + mod(self%it,self%nt)           ! ensure using the next slot
   call self%mem_lock(self%new)%set ('update')
   call self%gpatch_t%pre_update
   call self%mhd_t%pre_update

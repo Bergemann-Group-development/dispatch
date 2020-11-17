@@ -77,6 +77,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Lock the %new slot and copy the %it slot to the %new slot
   !-----------------------------------------------------------------------------
+  self%new = 1 + mod(self%it,self%nt)           ! ensure using the next slot
   call self%mem_lock(self%new)%set ('update')
   call self%gpatch_t%pre_update ()
   self%uin  => self%mem(:,:,:,:,self%it ,1)
