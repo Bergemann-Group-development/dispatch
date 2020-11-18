@@ -6,7 +6,7 @@ MODULE pboundary_mod
   USE io_mod
   USE trace_mod
   USE mesh_mod
-  USE patch_mod
+  USE gpatch_mod
   USE bits_mod
   implicit none
   private
@@ -25,7 +25,7 @@ CONTAINS
 !===============================================================================
 SUBROUTINE init (self, patch)
   class(pboundary_t):: self
-  class(patch_t):: patch
+  class(gpatch_t):: patch
   logical, save:: first_time=.true.
   integer:: iostat
   namelist /boundary_params/ fixedbcs
@@ -59,7 +59,7 @@ END SUBROUTINE init
 !===============================================================================
 SUBROUTINE conditions (self, patch, it)
   class(pboundary_t) :: self
-  class(patch_t), target :: patch
+  class(gpatch_t), target :: patch
   class(mesh_t), pointer :: mx, my, mz
   integer :: ix, iy, iz, it
   !-----------------------------------------------------------------------------
