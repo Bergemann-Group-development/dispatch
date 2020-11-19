@@ -823,7 +823,7 @@ subroutine ctoprim(self)
   !-----------------------------------------------------------------------------
   allocate (ee0(n(1),n(2),n(3)))
   ee0 = ee
-  call eos%lookup_table (shape(ee), lnd=lnd, ee=ee, pg=pg, tt=tt, e_below=e_below, label='mhd', id=self%id)
+  call eos%lookup_table (shape(ee), lnd=lnd, ee=ee, pg=pg, tt=tt, e_below=e_below)
   if (verbose > 1) then
     print *,'lnd',lnd(12,12,:)
     print *,'ee',ee(12,12,:)
