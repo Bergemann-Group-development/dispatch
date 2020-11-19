@@ -43,6 +43,7 @@ SUBROUTINE allocate_3d(a, m)
   if (.not.associated(a)) then
     allocate (a(m(1),m(2),m(3)))
     call io%bits_mem (storage_size(a), product(shape(a)), 'fpm')
+    a = 0.0
   end if
 END SUBROUTINE allocate_3d
 

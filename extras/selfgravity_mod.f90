@@ -113,10 +113,6 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('selfgravity_t%init')
   patch => self%patch
-  if (.not. associated(scratch%force_per_unit_mass)) then
-    if (patch%kind(1:4) /= 'zeus') &
-      allocate (scratch%force_per_unit_mass(patch%gn(1),patch%gn(2),patch%gn(3),3))
-  end if
   !$omp critical (poisson_cr)
   if (first_poisson) then
     first_poisson = .false.
@@ -124,10 +120,10 @@ SUBROUTINE init (self)
   end if
   !$omp end critical (poisson_cr)
   if (selfgravity) then
-    !-------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     ! Sum up the total mass and total volume, to get the average density d0.
     ! FIXME: This needs to be modified for MPI
-    !-------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     if (patch%time == 0.0) then
       d => patch%mem(:,:,:,patch%idx%d,patch%it,1)
       dm = patch%fsum(d)*product(patch%ds)
@@ -155,7 +151,7 @@ END SUBROUTINE init
 !===============================================================================
 SUBROUTINE pre_update (self)
   class(selfgravity_t):: self
- !-----------------------------------------------------------------------------
+ !------------------------------------------------------------------------------
   if (.not. selfgravity) return
   call trace%begin ('selfgravity_t%pre_update')
   call solve (self, self%patch%it)
@@ -203,10 +199,12 @@ SUBROUTINE solve (self, it)
   end if
   !-----------------------------------------------------------------------------
   ! Compute the force per unit volume (except for ZEUS solvers, which take the
-  ! gradient of the potential internally.
+  ! gradient of the potential internally).
   !-----------------------------------------------------------------------------
-  if (patch%kind(1:4) /= 'zeus') &
+  if (patch%kind(1:4) /= 'zeus') then
+    call scratch%allocate (scratch%force_per_unit_mass, [patch%gn, 3])
     scratch%force_per_unit_mass = -grad (patch%mesh, phi)
+  endif
   !-----------------------------------------------------------------------------
   ! compute estimate of dphi/dt
   !-----------------------------------------------------------------------------
@@ -222,7 +220,8 @@ END SUBROUTINE solve
 !> or the poisson_time; the two are updated alternatingly
 !===============================================================================
 SUBROUTINE post_update (self)
-  class(selfgravity_t):: self  !.............................................................................
+  class(selfgravity_t):: self
+  !.............................................................................
   class(gpatch_t), pointer:: patch
   real(kind=KindScalarVar), pointer, dimension(:,:,:,:):: phi, dphi
   integer, save:: itimer=0
@@ -259,7 +258,8 @@ SUBROUTINE post_update (self)
       self%poisson_time = patch%time
       if (verbose > 0) then
         write (io_unit%log,'(a,i6,1p,e12.4)') &
-         'selfgravity_t%post_update: id, poisson_time =', patch%id, self%poisson_time
+         'selfgravity_t%post_update: id, poisson_time =', &
+         patch%id, self%poisson_time
       end if
     end if
   end if
@@ -300,14 +300,14 @@ SUBROUTINE time_derivs (self)
       u = self%mesh%ui
       if (order==2 .and. t2/=t3) then
         dphidt(l(1):u(1),l(2):u(2),l(3):u(3)) = &
-                 (self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%phi,it1,1) - &
-                  self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%phi,it2,1))/(t1-t2)*1.5 - &
-                 (self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%phi,it2,1) - &
-                  self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%phi,it3,1))/(t2-t3)*0.5
+        (self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%phi,it1,1) - &
+        self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%phi,it2,1))/(t1-t2)*1.5 &
+       -(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%phi,it2,1) - &
+        self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%phi,it3,1))/(t2-t3)*0.5
       else
         dphidt(l(1):u(1),l(2):u(2),l(3):u(3)) = &
-                 (self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%phi,it1,1) - &
-                  self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%phi,it2,1))/(t1-t2)
+          (self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%phi,it1,1) - &
+          self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%phi,it2,1))/(t1-t2)
       end if
       !.........................................................................
       if (verbose > 2) then
