@@ -160,6 +160,7 @@ SUBROUTINE update (self)
   integer:: n(3), nv3, i, j, k, l(3), u(3), dir
   integer, parameter:: ndim=3
   integer, save:: itimer=0
+  type(lock_t), pointer:: lock
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%update', itimer=itimer)
   n = self%mesh%ui-self%mesh%li+1
@@ -279,7 +280,8 @@ SUBROUTINE update (self)
              i1=>self%mesh(1)%ui, j1=>self%mesh(2)%ui, k1=>self%mesh(3)%ui, &
              uin=>self%uin,unew=>self%unew)
 
-  call self%lock%set ('update')
+  lock => self%mem_lock(self%new)
+  call lock%set ('update')
   unew = uin
   nv3 = 5
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3  ) = &
@@ -443,7 +445,7 @@ SUBROUTINE update (self)
   call divb_clean2 (self)
   end select
   !.............................................................................
-  call self%lock%unset ('update')
+  call lock%unset ('update')
   call trace%end (itimer)
   if (rieman%ndiff > 0) then
     write(io_unit%mpi,*) 'id,ndiff', self%id, rieman%ndiff, rieman%nsolu

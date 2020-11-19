@@ -6,6 +6,7 @@
 !===============================================================================
 MODULE solver_mod
   USE io_mod
+  USE omp_lock_mod
   USE trace_mod
   USE task_mod
   USE patch_mod
@@ -66,32 +67,28 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !===============================================================================
-!> Organize calls to the extras and the hydro solver.  Note that is is NOT
-!> necessary to lock the %it time slot when copying data to the %new time slot,
-!> since the only task that is allowed to change the data in a time slot is the
-!> current one.
+!> Organize calls to the extras and the MHD solver.
 !===============================================================================
 SUBROUTINE update (self)
   class(solver_t) :: self
+  type(lock_t), pointer:: lock
+  !-----------------------------------------------------------------------------
+  ! Make sure %new refers to the next timeslot, and assign pointers
+  !-----------------------------------------------------------------------------
   call trace%begin ('solver_t%update')
-  !-----------------------------------------------------------------------------
-  ! Lock the %new slot and copy the %it slot to the %new slot
-  !-----------------------------------------------------------------------------
-  self%new = 1 + mod(self%it,self%nt)           ! ensure using the next slot
-  call self%mem_lock(self%new)%set ('update')
-  call self%gpatch_t%pre_update ()
+  self%new = 1 + mod(self%it,self%nt)
   self%uin  => self%mem(:,:,:,:,self%it ,1)
   self%unew => self%mem(:,:,:,:,self%new,1)
   !-----------------------------------------------------------------------------
   ! Proceed, referring everywhere to the %new time slot
   !-----------------------------------------------------------------------------
+  lock => self%mem_lock(self%new)
+                                                      call lock%set ('update')
+  call self%gpatch_t%pre_update ()
   call self%mhd_t%pre_update
   call self%mhd_t%update
   call self%mhd_t%post_update
-  !-----------------------------------------------------------------------------
-  ! Unlock %new slot
-  !-----------------------------------------------------------------------------
-  call self%mem_lock(self%new)%unset ('update')
+                                                      call lock%unset ('update')
   !-----------------------------------------------------------------------------
   call trace%end ()
 END SUBROUTINE update

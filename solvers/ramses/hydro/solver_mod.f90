@@ -104,26 +104,23 @@ END FUNCTION cast2solver
 SUBROUTINE update (self)
   class(solver_t) :: self
   type(lock_t), pointer:: lock
+  !-----------------------------------------------------------------------------
+  ! Make sure %new refers to the next timeslot, and assign pointers
+  !-----------------------------------------------------------------------------
   call trace%begin ('solver_t%update')
-  !-----------------------------------------------------------------------------
-  ! Lock the %new slot and copy the %it slot to the %new slot
-  !-----------------------------------------------------------------------------
   self%new = 1 + mod(self%it,self%nt)
-  lock => self%mem_lock(self%new)
-  call lock%set ('update')
-  call self%gpatch_t%pre_update ()
   self%uin  => self%mem(:,:,:,:,self%it ,1)
   self%unew => self%mem(:,:,:,:,self%new,1)
   !-----------------------------------------------------------------------------
   ! Proceed, referring everywhere to the %new time slot
   !-----------------------------------------------------------------------------
+  lock => self%mem_lock(self%new)
+                                                      call lock%set ('update')
+  call self%gpatch_t%pre_update ()
   call self%hd_t%pre_update
   call self%hd_t%update
   call self%hd_t%post_update
-  !-----------------------------------------------------------------------------
-  ! Unlock %new slot
-  !-----------------------------------------------------------------------------
-  call lock%unset ('update')
+                                                      call lock%unset ('update')
   !-----------------------------------------------------------------------------
   call trace%end ()
 END SUBROUTINE update

@@ -7,6 +7,7 @@
 MODULE solver_mod
   USE io_mod
   USE trace_mod
+  USE omp_lock_mod
   USE task_mod
   USE patch_mod
   USE kinds_mod
@@ -100,19 +101,24 @@ END FUNCTION cast2solver
 !===============================================================================
 SUBROUTINE update (self)
   class(solver_t) :: self
-  associate (d=>self%mem(:,:,:,self%idx%d,self%it,1))
+  type(lock_t), pointer:: lock
   !.............................................................................
   call trace%begin ('solver_t%update')
-  self%new = 1 + mod(self%it,self%nt)           ! ensure using the next slot
-  call self%mem_lock(self%new)%set ('update')
+  !-----------------------------------------------------------------------------
+  ! Make sure %new refers to the next timeslot, and assign pointers
+  !-----------------------------------------------------------------------------
+  self%new = 1 + mod(self%it,self%nt)
+  lock => self%mem_lock(self%new)
+                                                call self%lock%set ('update')
   call self%gpatch_t%pre_update
   call self%mhd_t%pre_update
+  associate (d => self%mem(:,:,:,self%idx%d,self%new,1))
   call validate%check (self, d, 'before update')
   call self%mhd_t%update
   call validate%check (self, d, ' after update')
-  call self%mhd_t%post_update
-  call self%mem_lock(self%new)%unset ('update')
   end associate
+  call self%mhd_t%post_update
+                                                call self%lock%unset ('update')
   call trace%end()
 END SUBROUTINE update
 
