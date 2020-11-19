@@ -1,5 +1,5 @@
 &timer_params       sec_per_report=10 /
-&io_params          verbose=1 do_trace=t omp_trace=t do_output=f
+&io_params          verbose=1 do_trace=f omp_trace=t do_output=f
                     namelist_errors=t guard_zones=t method='parallel' /
 &out_params         end_time=0.511 out_time=0.05 print_every=1 /
 
@@ -38,7 +38,7 @@
                     qcon=1.0 iord=2 iords=2 istp=0 /
 
 &ramses_params      courant_factor=0.2666667 gamma=1.0001 slope_type=2
-                    smallr=1e-4 smallc=5e-1 riemann='hllc' isothermal=t /
+                    smallr=1e-4 smallc=5e-1 isothermal=t /
 
 &stagger_params     nu=  0.20, 1.0, 1.0, 0.2, 1.0, 1.0
                     !     cs    pa  ofd  mas  kap  eta
@@ -46,4 +46,5 @@
                     !csound=0.08451 ! rotating case
                     !csound=0.1829 ! rotating, perturbed case
 /
+&lock_params        verbose=0 /
 
