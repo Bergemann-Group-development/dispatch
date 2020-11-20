@@ -2181,13 +2181,14 @@ END SUBROUTINE log_interpolate
 !> Search for a time interval to interpolate in, and return the time
 !> slot indices and weight factors
 !===============================================================================
-SUBROUTINE time_interval (self, time, jt, pt, all, id)
+SUBROUTINE time_interval (self, time, jt, pt, all, id, extrap)
   class (patch_t)                 :: self
   real(8)                         :: time
   integer                         :: jt(2)
   real                            :: pt(2)
   logical, optional               :: all
   integer, optional               :: id
+  logical, optional               :: extrap
   !.............................................................................
   integer                         :: i, j, n, iit(self%nt-1)
   real(8)                         :: t(self%nt-1), dt
@@ -2240,7 +2241,7 @@ SUBROUTINE time_interval (self, time, jt, pt, all, id)
       pt(2) = 0.0
     else
       pt(2) = (time-t(j))/dt
-      if (pt(2) > 1.01d0 + self%grace) then
+      if (pt(2) > 1.01d0 + self%grace .and. .not.present(extrap)) then
         call io%warning ('patch_t%time_interval: excessive extrapolatiion prevented')
         pt(1) = 1.-pt(2)
         if (present(id)) then
@@ -2257,7 +2258,22 @@ SUBROUTINE time_interval (self, time, jt, pt, all, id)
             'patch_t%time_interval: excessive id,t,tm,t,f =', &
             self%id, time, t(j+1),time, time-t(j), t(j+1)-t(j), (time-t(j))/dt
         end if
-        flush (io_unit%mpi)
+        if (io%verbose > 1) then
+          write (stdlog,'(a,2i6,2f6.2      )') 'time_interval:', jt, pt
+          write (stdlog,'(a,2i6            )') '   nbor, targ:', self%id, id
+          write (stdlog,'(a,9i4            )') '     self%iit:', self%iit
+          write (stdlog,'(a,9i4            )') '          iit:', iit
+          write (stdlog,'(a,f12.6,2x,9f12.6)') '  time, times:', time, self%time
+          write (stdlog,'(a,f12.6,2x,9f12.6)') '     grace, t:', self%grace, t
+          flush (stdlog)
+        end if
+        if (io%task_logging > 2) then
+          block
+          character(len=24):: label
+          write (label,'(a,i6,f10.5)') 'excess ', id, time
+          call self%log (label)
+          end block
+        end if
       end if
       pt(2) = max(0d0-self%grace, min(1d0+self%grace, pt(2)))
     end if
