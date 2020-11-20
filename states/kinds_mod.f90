@@ -4,13 +4,17 @@ MODULE kinds_mod
   private
 #ifdef DOUBLE
   integer, public, parameter :: KindScalarVar = real64
+  integer, public, parameter :: var_k = real64
 #else
   integer, public, parameter :: KindScalarVar = real32
+  integer, public, parameter :: var_k = real32
 #endif DOUBLE
 #ifdef RT_DOUBLE
   integer, public, parameter :: KindRTVar = real64
+  integer, public, parameter :: rt_k = real64
 #else
   integer, public, parameter :: KindRTVar = real32
+  integer, public, parameter :: rt_k = real32
 #endif RT_DOUBLE
   type, public:: kinds_t
   contains
