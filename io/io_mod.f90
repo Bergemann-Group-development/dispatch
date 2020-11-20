@@ -13,7 +13,7 @@ MODULE io_mod
   private
   logical:: mpi_trace=.false.
   type io_t
-    integer:: verbose=0, input, output, data_unit, namelist
+    integer:: verbose=0, input, output=6, data_unit, namelist
     logical:: master=.true.
     logical:: do_legacy, do_direct, omp_trace
     character(len=16):: method='legacy'
