@@ -17,7 +17,7 @@ s $Id$
 !--- Initial condition and forces ----------------------------------------------
 &experiment_params      l_pc=5 n_H2=240 cs_kms=0.18 /
 &scaling_params         l_pc=5 n_H2=240 v_kms=0.18 mu=2.4 /
-&initial_params         type='turbulence' /
+&IC_params         type='turbulence' /
 &force_params           type='turbulence' /
 &turbulence_params      ampl_turb=2 t_turn=0.05 k1=1 k2=2 pk=0.0 seed=5 
                         verbose=0 t_damp=3e-4 /

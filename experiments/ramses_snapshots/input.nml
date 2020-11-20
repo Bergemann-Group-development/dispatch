@@ -32,7 +32,7 @@
                         direct_load=t do_evaluate=f detailed_timer=f /
 &guard_zone_params      verbose=0 method='opt' /
 &download_params        verbose=0 use_different=0 id_debug=0 /
-&initial_params         /
+&IC_params         /
 &force_params           type='turbulence' /
 &turbulence_params      ampl_turb=2 t_turn=0.05 k1=1 k2=2 pk=0.0 seed=5 /
 &selfgravity_params     selfgravity=f /

@@ -52,7 +52,7 @@
  v_head_cgs=0.0
  v_accrete_cgs=0.0
 /
-&initial_params
+&IC_params
 /
 &patch_params
  !n=3*20

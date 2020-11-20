@@ -54,11 +54,11 @@
  do_debug=f
  method='parallel'
 /
-&initial_params
+&IC_params
 /
 &force_params
 /
-&initial_solenoidal_params
+&IC_solenoidal_params
 /
 &ramses_params
 ! detailed_timer=f

@@ -37,7 +37,7 @@
   no_mans_land=f
 /
 
-&initial_params
+&IC_params
  r0=0.1
 /
 

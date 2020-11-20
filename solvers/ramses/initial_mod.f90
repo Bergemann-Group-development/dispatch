@@ -38,16 +38,16 @@ SUBROUTINE init (self, solver, gamma1)
   integer:: iostat
   real, optional:: gamma1
   logical, save:: first_time=.true.
-  namelist /initial_params/ type
+  namelist /IC_params/ type
   !----------------------------------------------------------------------------
   call trace_begin('initial_t%init')
   call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
-    read (io%input, initial_params, iostat=iostat)
-    call io%namelist_warning ('ramses/hydro/initial_mod.f90: initial_params', iostat)
-    write (io%namelist, initial_params)
+    read (io%input, IC_params, iostat=iostat)
+    call io%namelist_warning ('ramses/hydro/initial_mod.f90: IC_params', iostat)
+    write (io%namelist, IC_params)
  end if
   call io%lock%unset
   self%solver = trim(solver)

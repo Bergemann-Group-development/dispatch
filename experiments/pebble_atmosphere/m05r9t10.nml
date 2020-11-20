@@ -3,7 +3,7 @@
 &experiment_params
  x_sponge=500.
 /
-&initial_params /
+&IC_params /
 &force_params   /
 
 &timer_params sec_per_report=10 /

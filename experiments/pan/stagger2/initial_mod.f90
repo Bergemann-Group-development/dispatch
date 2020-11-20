@@ -40,7 +40,7 @@ SUBROUTINE init (self, solver, gamma)
   character(len=64):: solver
   real, optional:: gamma
   logical, save:: first_time=.true.
-  namelist /initial_params/ type
+  namelist /IC_params/ type
   !----------------------------------------------------------------------------
   call trace_begin('initial_t%init')
   call io%lock%set

@@ -17,7 +17,7 @@
   on=f
 /
 
-&initial_params
+&IC_params
   mstar=1.7		! Mass of central star in solar masses
   dust2gas=0.01		! Dust-to-gas mass ratio
   a=1.0			! Dust grain size in cgs units

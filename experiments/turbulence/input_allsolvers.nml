@@ -1,4 +1,4 @@
-! $Id$
+! $Id: 601d8c5660e56bd074de963947a73f5acc16587b $
 
 &timer_params
  sec_per_report=5.0
@@ -74,7 +74,7 @@
  !t_turn=10.
  type='single_solenoidal'
 /
-&initial_params
+&IC_params
  k=3,3,3
  a0=0.0,0.0,0.0
  u0=0,0,0

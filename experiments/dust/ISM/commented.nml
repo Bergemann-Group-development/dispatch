@@ -17,7 +17,7 @@
 /
 
 !--- Initial condition and forces ----------------------------------------------
-&initial_params         type='turbulence' /       ! type of initial condition
+&IC_params         type='turbulence' /       ! type of initial condition
 &IC_turbulence_params   b0=0.0 /                  ! initial magnetic field
 &force_params           type='turbulence' /       ! type of forcing
 &turbulence_params      verbose=0                 ! information level

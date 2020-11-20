@@ -59,7 +59,7 @@ SUBROUTINE init (self, solver, gamma)
   logical, save:: first_time=.true.
   logical, save:: with_density_floor=.true.
   integer:: iostat
-  namelist /initial_params/ aspect_ratio, opening_angle, disc_r0, rpindex, disc_mass, &
+  namelist /IC_params/ aspect_ratio, opening_angle, disc_r0, rpindex, disc_mass, &
                             pbeta0, mbend, disc_rmax, star_mass, with_density_floor, &
                             density_floor, rotating_disk
   !----------------------------------------------------------------------------
@@ -68,9 +68,9 @@ SUBROUTINE init (self, solver, gamma)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
-    read (io%input, initial_params, iostat=iostat)
-    if (iostat/=0) call io%namelist_warning ('initial_params')
-    if (io%master) write (*, initial_params)
+    read (io%input, IC_params, iostat=iostat)
+    if (iostat/=0) call io%namelist_warning ('IC_params')
+    if (io%master) write (*, IC_params)
   end if
   call io%lock%unset
 

@@ -41,16 +41,16 @@ SUBROUTINE init (self, solver, gamma)
   character(len=32), save:: type='turbulence'
   integer:: iostat
   logical, save:: first_time=.true.
-  namelist /initial_params/ type
+  namelist /IC_params/ type
   !----------------------------------------------------------------------------
   call trace_begin('initial_t%init')
   call io%lock%set
   if (first_time) then
     first_time = .false.
     rewind (io%input)
-    read (io%input, initial_params, iostat=iostat)
-    call io%namelist_warning ('initial_params', iostat)
-    write (io%namelist, initial_params)
+    read (io%input, IC_params, iostat=iostat)
+    call io%namelist_warning ('IC_params', iostat)
+    write (io%namelist, IC_params)
   end if
   call io%lock%unset
   if (present(gamma)) &

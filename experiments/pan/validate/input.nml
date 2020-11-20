@@ -8,7 +8,7 @@
 &io_params         verbose=0 do_trace=f omp_trace=f do_debug=f do_output=f do_direct=f id_debug=0 do_validate=t /
 &timer_params      sec_per_report=30 /
 
-&initial_params    type='turbulence' /
+&IC_params    type='turbulence' /
 &force_params      type='turbulence' /
 &turbulence_params ampl_turb=2 t_turn=0.01 k1=1 k2=1.5 /
 

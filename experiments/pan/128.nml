@@ -1,4 +1,4 @@
-! $Id$
+! $Id: 76af997d210adc711bc863a92bfd989d4f93e6f5 $
 
 &cartesian_params
  omp_init=f
@@ -28,7 +28,7 @@
 !---------------------------------
 ! Initial condition and forces.  ADJUST: t_turn
 !---------------------------------
-&initial_params         type='turbulence' /
+&IC_params         type='turbulence' /
 &force_params           type='turbulence' /
 !&turbulence_params      ampl_turb=1 t_turn=0.5000 k1=1 k2=2 pk=0.0 seed=5 /   ! Mach ~2
 !&turbulence_params      ampl_turb=2 t_turn=0.2500 k1=1 k2=2 pk=0.0 seed=5 /   ! Mach ~4

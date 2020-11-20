@@ -44,7 +44,7 @@ SUBROUTINE init (self, solver, gamma)
    logical, save:: mhd=.true.
    real, save:: a0(3)=0.1, k(3)=1.0, d0=1.0, p0=1.0, b0(3)=0.0, u0(3)=0.0
    character(len=32), save:: type='void'
-   namelist /initial_params/ type, seed, k, a0, u0, b0, d0, p0, mhd
+   namelist /IC_params/ type, seed, k, a0, u0, b0, d0, p0, mhd
    !----------------------------------------------------------------------------
    call trace_begin('initial_t%init')
    if (present(gamma)) self%gamma = gamma

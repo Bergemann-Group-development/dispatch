@@ -44,7 +44,7 @@ SUBROUTINE init_setup (self)
   logical :: ramp_mass
   real(8) :: mtotal, aplanet, mplanet, gpp_soften, aspect_rat, phiplanet
   real(4) :: kill_rmin, kill_rmax
-  namelist / initial_params / mtotal, aplanet, mplanet, gpp_soften, kill_rmin, &
+  namelist / IC_params / mtotal, aplanet, mplanet, gpp_soften, kill_rmin, &
                               kill_rmax, aspect_rat, ramp_mass, phiplanet
   !-----------------------------------------------------------------------------
   call trace_begin ('setup_t%init')

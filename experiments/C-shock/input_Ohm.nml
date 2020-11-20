@@ -74,7 +74,7 @@
  do_debug=f
  guard_zones=f
 /
-&initial_params
+&IC_params
 /
 &force_params
 /

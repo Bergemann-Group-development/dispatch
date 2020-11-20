@@ -39,7 +39,7 @@ SUBROUTINE init (self, kind)
   logical, save:: first_time=.true.
   character(len=20), save:: type='stagger'
   logical, save:: mhd=.true.
-  namelist /initial_params/ type, mhd
+  namelist /IC_params/ type, mhd
   !-----------------------------------------------------------------------------
   call trace_begin('initial_mod:init')
   call io%lock%set

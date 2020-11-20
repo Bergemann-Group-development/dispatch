@@ -29,7 +29,7 @@ SUBROUTINE init (self, solver, gamma)
   character(len=*):: solver
   real(8), save :: p0, v0, b0
   logical, save :: first_time=.true.
-  namelist /initial_params/ idirect, b0, p0, v0
+  namelist /IC_params/ idirect, b0, p0, v0
   !-----------------------------------------------------------------------------
   call trace_begin ('initial_t%init')
   if (present(gamma)) self%gamma = gamma

@@ -18,7 +18,7 @@
  n_per_patch=1,50,360
 /
 
-&initial_params
+&IC_params
 /
 
 &zeus_params

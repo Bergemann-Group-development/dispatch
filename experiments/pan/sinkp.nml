@@ -1,4 +1,4 @@
-! $Id$
+! $Id: b55f6bf7db0cf8ddc57f9976ccdec5d67c3e061a $
 
 &cartesian_params
  omp_init=f
@@ -43,7 +43,7 @@
 !---------------------------------
 ! Initial condition and forces
 !---------------------------------
-&initial_params         type='turbulence' /
+&IC_params         type='turbulence' /
 &force_params           type='turbulence' /
 &turbulence_params      ampl_turb=2 t_turn=0.05 k1=1 k2=2 pk=0.0 seed=5 
                         verbose=0 t_damp=3e-4 /

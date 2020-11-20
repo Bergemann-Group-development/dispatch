@@ -49,7 +49,7 @@ SUBROUTINE init (self, solver, gamma)
   !............................................................................
   logical, save:: mhd=.true.
   character(len=32), save:: type='politano+95'
-  namelist /initial_params/ alpha, beta, epsilon, seed, read_random
+  namelist /IC_params/ alpha, beta, epsilon, seed, read_random
   !----------------------------------------------------------------------------
   call trace_begin('initial_t%init')
   call io%lock%set

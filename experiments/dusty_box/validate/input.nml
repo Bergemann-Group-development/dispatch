@@ -64,7 +64,7 @@
  guard_zones=f
  do_legacy=t
 /
-&initial_params
+&IC_params
 /
 &force_params
  type = 'dust_gas_interaction'
@@ -83,5 +83,5 @@
 /
 &viscosity_params
 /
-&initial_solenoidal_params
+&IC_solenoidal_params
 /

@@ -9,15 +9,15 @@
 
 ! --- XY plane ---
 &cartesian_params size=1,1,0.001 dims=6,6,1 mpi_dims=2,2,1 origin=-0.5,-0.5,0 /
-&initial_params   d0=1.0 beta=0.1 ampl=0.1 idir=3 /
+&IC_params   d0=1.0 beta=0.1 ampl=0.1 idir=3 /
 &patch_params     nt=5 ng=3*8 n=32,32,1 do_check_nan=t grace=0.01 /
 ! --- XZ plane ---
 !&cartesian_params size=1,0.001,1 dims=5,1,5 origin=-0.5,0,-0.5 /
-!&initial_params   d0=1.0 beta=0.1 ampl=0.1 idir=2 /
+!&IC_params   d0=1.0 beta=0.1 ampl=0.1 idir=2 /
 !&patch_params     nt=5 ng=3*8 n=32,1,32 do_check_nan=t grace=0.01 /
 ! --- YZ plane ---
 !&cartesian_params size=0.001,1,1 dims=1,5,5 origin=0,-0.5,-0.5 /
-!&initial_params   d0=1.0 beta=0.1 ampl=0.1 idir=1 /
+!&IC_params   d0=1.0 beta=0.1 ampl=0.1 idir=1 /
 !&patch_params     nt=5 ng=3*8 n=1,32,32 do_check_nan=t grace=0.01 /
 
 &eos_params

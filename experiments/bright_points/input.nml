@@ -1,4 +1,4 @@
-&initial_params
+&IC_params
  nx=1170
  ny=351
  nz=351

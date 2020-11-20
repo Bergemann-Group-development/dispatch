@@ -57,7 +57,7 @@ space_diagonals=t
 ! Treatment of boundary conditions for RT solver. obc - outer boundaries, outside the simulation box.
 ! ibc - inner boundaries, e.g. any objects (planets, stars, etc.)
 &rt_bc_params
-obc_treatment = 'custom'    !use code in initial_rt.f90
+obc_treatment = 'custom'    !use code in IC_rt.f90
 !obc_treatment = 'reflective' ! not implemented yet
 !obc_treatment = 'periodic'   ! not implemented yet
 !ibc_treatment = 'initial'    ! not implemented yet
@@ -81,7 +81,7 @@ hot_temp  = 2000
  time_order=2
 /
 
-&initial_params
+&IC_params
  clump_pos = 0.5,0.5,0.5 
  !clump_pos = 0.6666,0.6666,0.6666
  d0=1.0

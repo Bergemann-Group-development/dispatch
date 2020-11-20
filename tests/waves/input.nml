@@ -17,6 +17,6 @@
 
 &timer_params                   sec_per_report=15 /
 &refine_params                  do_refine=f /
-&initial_params                 /
+&IC_params                 /
 &force_params                   /
-&initial_solenoidal_params      /
+&IC_solenoidal_params      /

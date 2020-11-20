@@ -1,7 +1,7 @@
 &experiment_params
 type = 'disk'
 /
-&initial_params /
+&IC_params /
  type='disk'
 &force_params
  type='disk'

@@ -1,4 +1,4 @@
-! $Id$
+! $Id: 37ab6f9104c4477c6fa29abd72c794a25e8807dc $
 !
 ! Input file for speed measurements
 
@@ -42,7 +42,7 @@
  t_turn=0.30
  type='single_solenoidal'
 /
-&initial_params
+&IC_params
  k=3,3,3
  a0=0.0,0.0,0.0
  u0=0,0,0

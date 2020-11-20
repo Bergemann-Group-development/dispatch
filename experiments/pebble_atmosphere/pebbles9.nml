@@ -32,7 +32,7 @@
  size_r_earth=1.0
  position_au=0.0,1.0,0.0
 /
-&initial_params
+&IC_params
  v_head_cgs=5e3         ! 50 m/s head wind
  v_accrete_cgs=5e3      ! 30 m/s accretion speed = 0.001 of orbit speed
 /

@@ -40,7 +40,7 @@
  gamma=1.4
 /
 &timer_params       sec_per_report=2       /
-&initial_params     type='stagger'         /
+&IC_params     type='stagger'         /
 &force_params                              /
 &solenoidal_params                         /
 &stagger_params     file='mhd63' dims=3*63 /

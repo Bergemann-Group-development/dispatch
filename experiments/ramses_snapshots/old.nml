@@ -20,10 +20,10 @@
 
 &download_params order_interpolator=1 /
 
-&initial_params
+&IC_params
 /
 
-&initial_solenoidal_params
+&IC_solenoidal_params
 /
 
 &patch_params

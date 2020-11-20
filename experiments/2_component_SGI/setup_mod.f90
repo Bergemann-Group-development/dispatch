@@ -48,7 +48,7 @@ SUBROUTINE init_setup (self)
              nu, a, d_int
   real(4) :: kill_rmin, kill_rmax, roffset, R, Rc, RT
   integer :: nv, nc
-  namelist / initial_params / R, sigma0, Rc, mstar, kill_rmin, kill_rmax,roffset, &
+  namelist / IC_params / R, sigma0, Rc, mstar, kill_rmin, kill_rmax,roffset, &
                               gamma_c, dust2gas, nv, nc, T0, RT, mu, gamma_T, &
                               wave_kill, amp, lambda, nu, a, d_int
   !-----------------------------------------------------------------------------

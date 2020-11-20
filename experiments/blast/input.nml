@@ -83,7 +83,7 @@
 &force_params
 /
 
-& initial_refine_params
+& IC_refine_params
   on = f
   n_refine = 0,0,2
   center   = 0.0,0.0,0.0

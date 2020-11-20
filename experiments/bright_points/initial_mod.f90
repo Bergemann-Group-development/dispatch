@@ -72,7 +72,7 @@ SUBROUTINE read_conditions (self, m, ff)
   integer, parameter :: rrlen=4 ! This could also be 1, depending on the compiler
   integer, save      :: nx=1170, ny=351, nz=351
   character(len=64), save :: filename='data.fe'
-  namelist /initial_params/ nx, ny, nz, filename
+  namelist /IC_params/ nx, ny, nz, filename
   !.............................................................................
   call trace_begin ('initial_t%init_mhd_vars', itimer=itimer)
   !-----------------------------------------------------------------------------

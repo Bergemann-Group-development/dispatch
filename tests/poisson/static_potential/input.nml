@@ -41,7 +41,7 @@
   grace=0.01
 /
 
-&initial_params
+&IC_params
  r0=0.1
 /
 

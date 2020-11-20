@@ -27,7 +27,7 @@
  size_r_earth=1.0
  position_au=1.0,0.0,0.0
 /
-&initial_params
+&IC_params
 /
 &patch_params
  n=20,20,20

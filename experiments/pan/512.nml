@@ -13,7 +13,7 @@
                      method='parallel' format=12 guard_zones=t time_derivs=0 /
 &timer_params        sec_per_report=15 /
 
-&initial_params      type='turbulence' /
+&IC_params      type='turbulence' /
 &force_params        type='turbulence' /
 &turbulence_params   ampl_turb=7 t_turn=0.1 k1=1 k2=1.5 seed=5 /
 

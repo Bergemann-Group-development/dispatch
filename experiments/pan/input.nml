@@ -5,7 +5,7 @@
 &cartesian_params
  omp_init=f
  !size=1,1,1 dims=3*3  mpi_dims=1,1,1                !  1 process    1 node      27 patches    2 cores       96x96x96  13 patches/core
- size=1,1,1 dims=3*4  mpi_dims=1,1,1                !  1 process    1 node      27 patches    2 cores       96x96x96  13 patches/core
+ size=1,1,1 dims=3*4  mpi_dims=1,1,2                !  1 process    1 node      27 patches    2 cores       96x96x96  13 patches/core
  !size=1,1,1 dims=3*8  mpi_dims=2,2,1                !  1 process    1 node      64 patches    2 cores    128x128x128  32 patches/core
  !size=2,1,1 dims=3*8  mpi_dims=2,1,1                !  1 process    1 node      64 patches    2 cores    128x128x128  32 patches/core
  !size=1,1,1 dims=3*8  mpi_dims=1,1,1                !  1 process    1 node     512 patches   10 cores    256x256x256  51 patches/core
@@ -34,7 +34,7 @@
 !---------------------------------
 ! Initial condition and forces
 !---------------------------------
-&initial_params         type='turbulence' /
+&IC_params         type='turbulence' /
 &force_params           type='turbulence' /
 &turbulence_params      ampl_turb=2 t_turn=0.05 k1=1 k2=2 pk=0.0 seed=5 
                         verbose=0 t_damp=3e-4 /

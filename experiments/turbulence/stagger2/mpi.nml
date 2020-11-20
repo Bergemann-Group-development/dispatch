@@ -1,4 +1,4 @@
-! $Id$
+! $Id: d0b3b15a82f3c55fa30a90e67309108d5a02253a $
 !
 ! This default input file runs turbulence at 50x50x50 resolution in 2x2x2 patches.
 ! It should take only a few minutes on a laptop, and produces 10 snapshots in time.
@@ -57,7 +57,7 @@
  t_turn=0.30
  type='single_solenoidal'
 /
-&initial_params
+&IC_params
  mhd=f
  k=3,3,3
  a0=0.0,0.0,0.0

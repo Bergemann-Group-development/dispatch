@@ -20,7 +20,7 @@
  print_time=0.314
 /
 
-&initial_params
+&IC_params
   ramp_mass=f
   mtotal=1.001
   mplanet=1.0e-3

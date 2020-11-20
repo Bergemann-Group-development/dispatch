@@ -1,4 +1,4 @@
-! $Id$
+! $Id: ed1fd8e821dcc69f66d874bee22d49c941b25b80 $
 
 &io_params
  verbose=1
@@ -41,7 +41,7 @@
  t_turn=0.30
  type='single_solenoidal'
 /
-&initial_params
+&IC_params
  k=3,3,3
  a0=0.0,0.0,0.0
  u0=0,0,0

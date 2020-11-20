@@ -1,5 +1,5 @@
 &experiment_params /
-&initial_params /
+&IC_params /
 &force_params   /
 
 &timer_params sec_per_report=30 /

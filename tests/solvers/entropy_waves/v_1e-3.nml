@@ -11,7 +11,7 @@
 &patch_params           n=16,4,4 ng=3*3 nt=5 no_mans_land=t grace=0.01 /
 &experiment_params      vx_l=1e-3 vx_r=1e-3 /
 &force_params           /
-&initial_params         /
+&IC_params         /
 
 ! -- AMR parameters ------------------------------------------------------------
 &refine_params          verbose=1 on=f check_interval=2 min_dx=0.003 levelmax=3

@@ -7,7 +7,7 @@
 ! copy input.nml to other.nml, and run ./dispatch.x other.nml, which produces
 ! data files named data/other/ttttt/, where ttttt is the snapshot number.
 
-&io_params              verbose=0 do_trace=f omp_trace=t
+&io_params              verbose=0 do_trace=t omp_trace=t
                         do_output=t guard_zones=f time_derivs=0
                         method='parallel'
                         !method='legacy'
@@ -31,20 +31,20 @@
 &guard_zone_params      verbose=0 detailed_timer=f /
 &timestep_params        /
 
-&initial_params
+&IC_params
  type='single_solenoidal'
 /
-&initial_solenoidal_params  k=1,1,2 a0=0.0,0.0,0.0                           /
-&initial_compressive_params k=3,3,3 a0=0.0,0.0,0.0 u0=0.1,0.2,0.3 b0=0,0,0.0 /
-&initial_advection_params   k=3,3,3 a0=0.0,0.0,0.0 u0=0.1,0.2,0.3 b0=0,0,0.0 /
+&IC_solenoidal_params  k=1,1,2 a0=0.0,0.0,0.0                           /
+&IC_compressive_params k=3,3,3 a0=0.0,0.0,0.0 u0=0.1,0.2,0.3 b0=0,0,0.0 /
+&IC_advection_params   k=3,3,3 a0=0.0,0.0,0.0 u0=0.1,0.2,0.3 b0=0,0,0.0 /
 
-&force_params               type='single_solenoidal' /
+&force_params          type='single_solenoidal' /
 &force_solenoidal_params    k=1,1,2 a0=10.0,10.2,10.1 t_turn=0.1000 /
 
-                            !    cs   pa  ofd  mas  kap  eta
-&stagger_params             nu=0.10, 1.0, 1.0, 0.1, 1.0, 1.0
-                            courant=0.2 eos='ideal' gamma=1.6666667
+                       !    cs   pa  ofd  mas  kap  eta
+&stagger_params        nu=0.10, 1.0, 1.0, 0.1, 1.0, 1.0
+                       courant=0.2 eos='ideal' gamma=1.6666667
 /
-&ramses_params              detailed_timer=f courant_factor=0.25 slope_type=2
-                            isothermal=f gamma=1.4 smallr=1e-6 smallc=1e-2
+&ramses_params         detailed_timer=f courant_factor=0.25 slope_type=2
+                       isothermal=t gamma=1.4 smallr=1e-6 smallc=1e-2
 /

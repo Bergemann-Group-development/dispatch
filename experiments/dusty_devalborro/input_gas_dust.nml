@@ -18,7 +18,7 @@
   on=f
 /
 
-&initial_params
+&IC_params
   ramp_mass=t
   mtotal=1.0!1.001
   mplanet=1.0e-3!1.0e-3

@@ -46,7 +46,7 @@ SUBROUTINE init_pic_experiment (self)
   integer, save :: isp, i, ix, iy, iz, isign
   real, save    :: x, y, z, sign, vz, v, w, wpe, m_electron, q_electron, vg(3)
   namelist /init/ d0_pic, v0, do_pairs, ksign, a0_pic
-  namelist /initial_params/ x0, y0, z0, r0, b0, a0, temp, gamma, beta, expe
+  namelist /IC_params/ x0, y0, z0, r0, b0, a0, temp, gamma, beta, expe
   
   
   !.............................................................................

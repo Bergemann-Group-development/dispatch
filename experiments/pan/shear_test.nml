@@ -30,13 +30,13 @@
 !---------------------------------
 ! Shear test
 !---------------------------------
-&initial_params         type='compressive_shear' /
+&IC_params         type='compressive_shear' /
 &IC_compressive_params  verbose=2 u0=2,8,2,0 b0=0.0 /
 &turbulence_params      do_force=f ampl_turb=0 t_turn=0.10 k1=1 k2=2 pk=0.0 seed=5 /
 !---------------------------------
 ! Initial condition and forces
 !---------------------------------
-!&initial_params         type='turbulence' /
+!&IC_params         type='turbulence' /
 !&turbulence_params      ampl_turb=8 t_turn=0.10 k1=1 k2=2 pk=0.0 seed=5 /
 &force_params           type='turbulence' /
 &IC_turbulence_params   b0=0.1 /

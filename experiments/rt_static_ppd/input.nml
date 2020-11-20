@@ -35,7 +35,7 @@ print_time=0.001
  time_order=2
 /
 
-&initial_params
+&IC_params
 /
 
 &disk_params

@@ -75,7 +75,7 @@
  time_order=2
 /
 &force_params /
-&initial_params /
+&IC_params /
 &ramses_params
  courant_factor=0.8
  !courant_factor=0.266667

@@ -35,7 +35,7 @@ SUBROUTINE init (self)
    logical, save:: mhd=.true.
    real, save:: a0(3)=0.1, k(3)=1.0, d0=1.0, e0=1.0, b0(3)=0.0, u0(3)=0.0
    character(len=32), save:: type='single_solenoidal'
-   namelist /initial_params/ seed, k, a0, u0, b0, d0, e0, mhd, type
+   namelist /IC_params/ seed, k, a0, u0, b0, d0, e0, mhd, type
    !----------------------------------------------------------------------------
    call trace_begin('initial_t%init')
    call io%lock%set

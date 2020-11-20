@@ -37,7 +37,7 @@
  a0=0,0,0
  t_turn=0.10
 /
-&initial_params
+&IC_params
  k=3,3,3
  a0=0.0,0.0,0.1
  b0=0,0,0

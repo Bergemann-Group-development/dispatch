@@ -1,7 +1,7 @@
 &experiment_params
  x_sponge=500.0     ! spatial extent over which to apply the sponge wave-killing conditions
 /
-&initial_params /
+&IC_params /
 &force_params   /
 
 &timer_params sec_per_report=10 /

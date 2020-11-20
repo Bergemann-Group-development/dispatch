@@ -68,7 +68,7 @@
  do_output=t
  do_debug=f 
 /
-&initial_params
+&IC_params
 /
 &force_params
 /

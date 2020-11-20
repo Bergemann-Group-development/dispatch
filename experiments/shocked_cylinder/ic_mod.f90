@@ -27,7 +27,7 @@ CONTAINS
 SUBROUTINE init_initial(self)
   class(ic_t) :: self
   logical, save :: first_time = .true.
-  namelist / initial_params / x0, rhol, rhor, presl, presr, vxl, vxr, vyl, vyr, vzl, vzr
+  namelist / IC_params / x0, rhol, rhor, presl, presr, vxl, vxr, vyl, vyr, vzl, vzr
   !----------------------------------------------------------------------------
   call trace_begin('ic_t%init')
 

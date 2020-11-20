@@ -54,7 +54,7 @@ SUBROUTINE init (self, solver, gamma1)
     end if
     rewind (io%input)
     read (io%input, IC_params, iostat=iostat)
-    if (iostat/=0) call io%namelist_warning ('ramses/hydro/initial_mod.f90: initial_params')
+    if (iostat/=0) call io%namelist_warning ('ramses/hydro/initial_mod.f90: IC_params')
     write (io%output, IC_params)
     first_time = .false.
   end if

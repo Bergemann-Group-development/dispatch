@@ -13,7 +13,7 @@
  guard_zones=t
 /
 
-&initial_params
+&IC_params
   mstar=1.0
 /
 

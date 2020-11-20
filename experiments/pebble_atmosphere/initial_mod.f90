@@ -46,7 +46,7 @@ SUBROUTINE init (self, solver, gamma)
    !............................................................................
    logical, save:: first_time=.true.
    character(len=20), save:: initial_condition = 'planet_atmosphere'
-   namelist /initial_params/ initial_condition
+   namelist /IC_params/ initial_condition
    integer :: iostat
    !----------------------------------------------------------------------------
    call trace%begin('initial_t%init')
@@ -55,8 +55,8 @@ SUBROUTINE init (self, solver, gamma)
    if (first_time) then
      first_time = .false.
      initial_condition = self%initial_condition
-     rewind (io%input); read (io%input, initial_params, iostat=iostat)
-     if (io%master) write (*, initial_params)
+     rewind (io%input); read (io%input, IC_params, iostat=iostat)
+     if (io%master) write (*, IC_params)
    end if
    call io%lock%unset
    self%initial_condition = initial_condition

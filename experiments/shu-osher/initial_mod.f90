@@ -61,7 +61,7 @@ SUBROUTINE condition (self, m, ff, idx)
                   vx_l=2.629369, vx_r=0.0, &
                   a_d=0.2, f_d=5.0, x_disc = -4.0
   integer, save:: idir=1
-  namelist /initial_params/ P_l, P_r, rho_l, &
+  namelist /IC_params/ P_l, P_r, rho_l, &
                            vx_l, vx_r, a_d, f_d, x_disc, idir
   call io%lock%set('initial_t%condition')
   if (first_time) then

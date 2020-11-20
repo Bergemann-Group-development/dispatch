@@ -34,7 +34,7 @@ SUBROUTINE init (self, solver)
   character(len=64):: solver
   character(len=32), save:: type='single_solenoidal'
   logical, save:: first_time=.true.
-  namelist /initial_params/ type
+  namelist /IC_params/ type
   !----------------------------------------------------------------------------
   call trace_begin('initial_t%init')
   call io%lock%set
@@ -86,7 +86,7 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, e0=1.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
   real(8), save  :: t_turn=0.1
   logical, save  :: first_time=.true.
-  namelist /initial_solenoidal_params/ seed, k, a0, u0, b0, d0, e0, mhd, t_turn
+  namelist /IC_solenoidal_params/ seed, k, a0, u0, b0, d0, e0, mhd, t_turn
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_solenoidal', itimer=itimer)
@@ -142,7 +142,7 @@ SUBROUTINE single_compressive (self, m, ff, idx)
   real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, e0=1.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
   real(8), save  :: t_turn=0.1
   logical, save  :: first_time=.true.
-  namelist /initial_compressive_params/ seed, k, a0, u0, b0, d0, e0, mhd, t_turn
+  namelist /IC_compressive_params/ seed, k, a0, u0, b0, d0, e0, mhd, t_turn
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_compressive', itimer=itimer)
@@ -197,7 +197,7 @@ SUBROUTINE single_advection (self, m, ff, idx)
   logical, save  :: mhd=.false.
   logical, save  :: first_time=.true.
   real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, e0=1.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
-  namelist /initial_advection_params/ seed, k, a0, u0, b0, d0, e0, mhd
+  namelist /IC_advection_params/ seed, k, a0, u0, b0, d0, e0, mhd
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_advection', itimer=itimer)

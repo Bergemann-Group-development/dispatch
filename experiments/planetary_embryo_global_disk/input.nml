@@ -14,7 +14,7 @@
  print_time=1e-4
 /
 
-&initial_params
+&IC_params
   mstar=1.0
 /
 

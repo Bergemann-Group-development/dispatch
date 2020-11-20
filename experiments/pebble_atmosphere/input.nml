@@ -2,7 +2,7 @@
 
 &experiment_params
 /
-&initial_params /
+&IC_params /
 &force_params   /
 
 &io_params

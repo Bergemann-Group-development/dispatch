@@ -39,7 +39,7 @@ SUBROUTINE init (self, solver)
    !............................................................................
    logical, save:: first_time=.true.
    real, save:: b0(3) = 0.0
-   namelist /initial_params/ b0
+   namelist /IC_params/ b0
    !----------------------------------------------------------------------------
    call trace_begin('initial_t%init')
    call scaling%init

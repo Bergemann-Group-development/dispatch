@@ -26,7 +26,7 @@ CONTAINS
 SUBROUTINE init (self)
   class(experiment_parameters_t):: self
   real(4) :: kill_rmin, kill_rmax, aspect_rat, mstar
-  namelist / initial_params / kill_rmin, kill_rmax, aspect_rat, mstar
+  namelist / IC_params / kill_rmin, kill_rmax, aspect_rat, mstar
   !----------------------------------------------------------------------------
   call trace_begin ('experiment_parameters_t%init')
 

@@ -23,7 +23,7 @@
  print_time=100.0
 /
 
-&initial_params
+&IC_params
   with_density_floor=.true.
   disc_mass=0.01 ! in M_Sun
   pbeta0=0.922e3

@@ -1,4 +1,4 @@
-! $Id$
+! $Id: a33823342ec62671eb1f62b53f989b5be52c31c0 $
 
 &cartesian_params
  omp_init=f
@@ -36,7 +36,7 @@ size=1,1,1 dims=04,04,04 mpi_dims=1,1,1                !  1 process    1 node   
 !---------------------------------
 ! Initial condition and forces
 !---------------------------------
-&initial_params         type='turbulence' /
+&IC_params         type='turbulence' /
 &force_params           type='turbulence' /
 &turbulence_params      ampl_turb=2 t_turn=0.05 k1=1 k2=2 pk=0.0 seed=5 /
 &IC_turbulence_params   b0=0.1 /

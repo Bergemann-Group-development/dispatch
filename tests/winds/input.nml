@@ -44,16 +44,16 @@
 &guard_zone_params      verbose=0 detailed_timer=f /
 &timestep_params        /
 
-&initial_params
+&IC_params
  type='single_solenoidal'
 !type='single_compressive'
 !type='single_advection'
 !type='exa256'
 !type='raw'
 /
-&initial_solenoidal_params  k=1,1,2 a0=0.0,0.0,0.0                           /
-&initial_compressive_params k=3,3,3 a0=0.0,0.0,0.0 u0=0.1,0.2,0.3 b0=0,0,0.0 /
-&initial_advection_params   k=3,3,3 a0=0.0,0.0,0.0 u0=0.1,0.2,0.3 b0=0,0,0.0 /
+&IC_solenoidal_params  k=1,1,2 a0=0.0,0.0,0.0                           /
+&IC_compressive_params k=3,3,3 a0=0.0,0.0,0.0 u0=0.1,0.2,0.3 b0=0,0,0.0 /
+&IC_advection_params   k=3,3,3 a0=0.0,0.0,0.0 u0=0.1,0.2,0.3 b0=0,0,0.0 /
 
 &force_params               type='single_solenoidal' /
 &force_solenoidal_params    k=1,1,2 a0=10.0,10.2,10.1 t_turn=0.1000 /

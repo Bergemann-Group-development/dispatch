@@ -1,5 +1,5 @@
 &experiment_params /
-&initial_params /
+&IC_params /
 &force_params   /
 
 &timer_params sec_per_report=5 /
@@ -28,7 +28,7 @@ gamma=1.4
  vz_pebble_cgs=1.5e6                ! about 15 km/s vertically
  !vz_pebble_cgs = 3e6               ! about 30 km/s vertically
  pebble_rate_cgs = 1e2              ! about one pebble per 10 second (3e6 per year)
- initial_density=1e-7
+ IC_density=1e-7
  solid_density_cgs=3.               ! density of a pebble
  pebble_size_cm=1.                  ! size of a pebble
 /

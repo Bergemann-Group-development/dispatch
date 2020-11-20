@@ -62,7 +62,7 @@ SUBROUTINE conditions (self, mesh, mem, idx)
   logical, save:: first_time=.true.
   !.............................................................................
   character(len=16), save:: type='sedov'
-  namelist /initial_params/ type
+  namelist /IC_params/ type
   !-----------------------------------------------------------------------------
   ! Read and print the namelist only once
   !-----------------------------------------------------------------------------

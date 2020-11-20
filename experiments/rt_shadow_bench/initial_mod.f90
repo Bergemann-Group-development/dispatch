@@ -33,7 +33,7 @@ SUBROUTINE init (self, solver, gam)
   real, optional :: gam
   real, save:: clump_pos(3)=0.0, clump_a=0.1, clump_b=0.06, d0=1.0, t0=290.0, clump_dfact=10.0
   real, save:: gamma=1.4
-  namelist /initial_params/ clump_pos, clump_a, clump_b, d0, t0, clump_dfact, gamma
+  namelist /IC_params/ clump_pos, clump_a, clump_b, d0, t0, clump_dfact, gamma
   integer:: iostat
   !----------------------------------------------------------------------------
   call trace_begin('initial_t%init')

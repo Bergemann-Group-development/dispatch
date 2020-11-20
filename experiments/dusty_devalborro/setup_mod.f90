@@ -47,7 +47,7 @@ SUBROUTINE init_setup (self)
   real(8) :: mtotal, aplanet, mplanet, gpp_soften, aspect_rat, phiplanet, dust2gas
   real(4) :: kill_rmin, kill_rmax
   integer :: nv, nc
-  namelist / initial_params / mtotal, aplanet, mplanet, gpp_soften, kill_rmin, &
+  namelist / IC_params / mtotal, aplanet, mplanet, gpp_soften, kill_rmin, &
                               kill_rmax, aspect_rat, ramp_mass, phiplanet, &
                               dust2gas, nv, nc
   !-----------------------------------------------------------------------------

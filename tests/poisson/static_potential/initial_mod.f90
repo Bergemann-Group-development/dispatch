@@ -28,7 +28,7 @@ SUBROUTINE init (self, solver, gamma)
   real, optional:: gamma
   real:: r0 = 1.0
   logical:: first_time = .true.
-  namelist / initial_params / r0
+  namelist / IC_params / r0
   !----------------------------------------------------------------------------
   call trace%begin('initial_t%init')
 

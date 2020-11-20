@@ -25,4 +25,4 @@
 
 &force_params           /
 
-&initial_params         /
+&IC_params         /

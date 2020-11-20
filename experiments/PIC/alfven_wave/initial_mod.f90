@@ -51,7 +51,7 @@ SUBROUTINE init (self, solver, gam)
   logical, save :: mhd=.true.
   logical, save :: pic_needed = .false.
   logical, save :: first_pic = .true.
-  namelist /initial_params/ r0, B0, db, temp, gamma, beta, expe, first_pic
+  namelist /IC_params/ r0, B0, db, temp, gamma, beta, expe, first_pic
   !.............................................................................
   call trace%begin ('initial_t%init')
 

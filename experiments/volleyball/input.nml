@@ -16,7 +16,7 @@
 &newton_params      on=t axis=3 position=-0.5 scale=0.1 ee0=5.2 ee1=0.3 time=0.2 /
 &eos_params         /
 &download_params    verbose=0 check_filled=t use_different=0 /
-&initial_params     /
+&IC_params     /
 
 ! -- RT parameters -------------------------------------------------------------
 &rt_setup_params    on=t verbose=0 /

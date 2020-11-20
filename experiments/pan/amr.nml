@@ -45,7 +45,7 @@ size=1,1,1 dims=3*4  mpi_dims=1,1,2      !    2       1         64        20    
 ! Initial condition and forces
 !---------------------------------
 &cooling_params         on=f /
-&initial_params         type='turbulence' /
+&IC_params         type='turbulence' /
 &force_params           type='turbulence' /
 &turbulence_params      ampl_turb=8 t_turn=0.10 k1=1 k2=2 pk=0.0 seed=5 /
 &IC_turbulence_params   b0=0.1 /

@@ -1,6 +1,6 @@
 &experiment_params /
-&initial_params
- initial_condition='planet_atmosphere'
+&IC_params
+ IC_condition='planet_atmosphere'
 /
 &force_params   /
 

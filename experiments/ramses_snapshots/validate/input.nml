@@ -47,10 +47,10 @@
  time_order=0
 /
 
-&initial_params
+&IC_params
 /
 
-&initial_solenoidal_params
+&IC_solenoidal_params
 /
 
 &force_params

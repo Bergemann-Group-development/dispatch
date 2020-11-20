@@ -21,7 +21,7 @@
 /
 &planet_params
 /
-&initial_params
+&IC_params
 /
 &patch_params
  n=20,20,20

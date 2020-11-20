@@ -1,4 +1,4 @@
-! $Id$
+! $Id: e6d4c4e2fed24b58a48189ab077456b8b5bd3b0e $
 
 &timer_params
  sec_per_report=10.
@@ -60,7 +60,7 @@
 &force_params
  type='zero'
 /
-&initial_params
+&IC_params
  k=3,3,3
  a0=0.0,0.0,0.0
  u0=0,0,0

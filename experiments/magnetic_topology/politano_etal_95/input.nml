@@ -1,4 +1,4 @@
-&initial_params
+&IC_params
  seed=11
  alpha=0.8
  epsilon=0.1
