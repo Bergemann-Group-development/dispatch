@@ -1993,6 +1993,13 @@ SUBROUTINE queue_by_time (self, this)
   if (self%verbose > 3) &
     write (io%output,*) wallclock(),' thread',omp%thread,' locked tasklist(4)'
   call real_queue_by_time (self, this, error)
+  if (io%task_logging > 2) then
+    block
+    character(len=24):: label
+    write (label,'(a)') 'queue  '
+    call this%task%log (label)
+    end block
+  end if
   if (error) then
     io%do_trace = .true.
     verbose = io%verbose

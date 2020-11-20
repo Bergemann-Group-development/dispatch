@@ -364,8 +364,7 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
         wc, omp%thread, 'dnload', task%id, task%time, task%it, &
         task%istep, task%dtime
     end if
-    call task%dnload                                  ! download nbor info
-    call task%bndries                                 ! task boundary conditions
+    call head%update                                  ! halo update
   end if
   !-----------------------------------------------------------------------------
   ! Check if refinement is needed on the task; if so this will push new tasks

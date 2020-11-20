@@ -34,9 +34,12 @@ MODULE link_mod
     logical:: needs_me  = .true.    ! marks nbors included in check_ready()
     logical:: download = .true.     ! marks nbors included in download_link()
     real:: u_max
-    real(8):: distance(3)=0.0       ! relative distance
+    real(8):: distance(3)
+    class(task_t), pointer:: target => null()
+    class(task_t), pointer:: source => null()
   contains
     procedure:: init => init_nbor
+    procedure:: update => update_nbor
     procedure:: nbor_info
   end type
 
@@ -56,6 +59,7 @@ MODULE link_mod
     logical:: check = .true.
   contains
     procedure:: init
+    procedure:: update
     procedure, nopass:: init_verbose
     procedure:: add_nbor_by_quality
     procedure:: add_nbor_by_rank
@@ -89,11 +93,23 @@ CONTAINS
 !> For now, we set the distance from known task positions.
 !> FIXME: The nbor%distance should ultimately be the only position information
 !===============================================================================
-SUBROUTINE init_nbor (self, nbtask)
+SUBROUTINE init_nbor (self, target)
   class(nbor_t):: self
-  class(task_t):: nbtask
-  self%distance = self%task%distance (nbtask)
+  class(task_t), pointer:: target
+  call trace%begin ('nbor_t%init')
+  self%distance = self%task%distance (target)
+  call trace%end ()
 END SUBROUTINE init_nbor
+
+!===============================================================================
+!> Update the part of a halo (possibly abstract) related to an nbor
+!===============================================================================
+SUBROUTINE update_nbor (self)
+  class(nbor_t):: self
+  !-----------------------------------------------------------------------------
+  call trace%begin ('nbor_t%update')
+  call trace%end ()
+END SUBROUTINE update_nbor
 
 !===============================================================================
 !> If link is not already initialized, initialize its lock.  If an init is at
@@ -113,6 +129,27 @@ SUBROUTINE init (self)
     end if
   end if
 END SUBROUTINE init
+
+!===============================================================================
+!> Update a task link, as per the nbor%update procedure.
+!===============================================================================
+SUBROUTINE update (self)
+  class(link_t):: self
+  class(nbor_t), pointer:: nbor
+  !.............................................................................
+  call trace%begin ('link_t%update')
+  nbor => self%nbor
+  do while (associated(nbor))
+    call nbor%update
+    nbor => nbor%next
+  end do
+  !-----------------------------------------------------------------------------
+  ! For now, overrule the nbor%update with the legacy methods (FIXME)
+  !-----------------------------------------------------------------------------
+  call self%task%dnload
+  call self%task%bndries
+  call trace%end ()
+END SUBROUTINE update
 
 !===============================================================================
 !> Set the verbosity level (called from task_mesg_mod -- duplicates the setting
