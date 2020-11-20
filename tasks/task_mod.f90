@@ -89,6 +89,7 @@ MODULE task_mod
     logical:: limit_dtime=.false.
     logical:: dump_it=.false.
     logical:: finished=.false.
+    logical:: allow_extrapolate=.false.
     type(random_t):: random             ! pseudo-random number generator
     type(aux_t):: aux
     integer(8):: amr_offset=0_8         ! byte offset in amr_io
@@ -547,7 +548,6 @@ SUBROUTINE rotate (self)
   if (self%rotated) return
   !-----------------------------------------------------------------------------
   call trace%begin ('task_t%rotate',itimer=itimer)
-  call self%log ('rotate', 3)
   !-----------------------------------------------------------------------------
   ! Call timestep update procedure to fill the next time slot with values
   !-----------------------------------------------------------------------------
@@ -592,6 +592,7 @@ SUBROUTINE rotate (self)
      write (io_unit%log,*) 'task t(iit):', self%t(self%iit)
     end if
   end if
+  call self%log ('rotate', 3)
   call trace%end (itimer)
 contains
 

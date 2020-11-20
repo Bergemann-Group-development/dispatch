@@ -75,10 +75,12 @@ SUBROUTINE pre_init (self, patch)
   self%d0 = d0
   if (selfgravity) then
     self%selfgravity = selfgravity
+    patch%idx%phi = 0
     call patch%idx%request_index (patch%idx%phi, patch%nv)
     if (patch%nw == 2) then
       patch%idx%dphi = patch%idx%phi
     else
+      patch%idx%dphi = 0
       call patch%idx%request_index (patch%idx%dphi, patch%nv)
     end if
     !...........................................................................
@@ -252,8 +254,10 @@ SUBROUTINE post_update (self)
       !-------------------------------------------------------------------------
       ! Fill guard zones with time extrapolated values and solve
       !-------------------------------------------------------------------------
+      patch%allow_extrapolate = .true.
       call patch%dnload (only=patch%idx%d)
       call patch%dnload (only=patch%idx%phi)
+      patch%allow_extrapolate = .false.
       call solve (self, patch%it)
       self%poisson_time = patch%time
       if (verbose > 0) then
