@@ -442,6 +442,7 @@ SUBROUTINE read_task_data (self)
       task%restart = snapshot
       task%iout    = snapshot
       call task%input (ok)
+      call task%gpatch_t%pre_update ()
       i = i+1
     class default
       if (self%verbose > 1) &

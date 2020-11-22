@@ -245,7 +245,7 @@ SUBROUTINE init (self)
     self%t  = 0d0                                 ! initial time
     self%iit = 1                                  ! initial slots
     self%it = 1                                   ! slot for current values
-    self%new = 1                                  ! slot for new values
+    self%new = 2                                  ! slot for new values
     self%iit(self%nt) = self%new                  ! slot for new values
     self%time = self%t(self%it)                   ! initial time
   end if

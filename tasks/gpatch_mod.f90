@@ -203,6 +203,10 @@ SUBROUTINE init (self)
     ff => self%mem(:,:,:,:,1,1)
     call self%initial%condition (self%mesh, ff, self%idx)
     !---------------------------------------------------------------------------
+    ! Must copy the %it slot to %new
+    !---------------------------------------------------------------------------
+    call self%pre_update
+    !---------------------------------------------------------------------------
     ! patch_t%setup sets time = -1, to prevent downloading until nbors have been
     ! initialized, and their time has been set to 0.0 here
     !---------------------------------------------------------------------------
