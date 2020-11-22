@@ -129,6 +129,12 @@ MODULE patch_mod
     procedure, private :: faver4
     procedure, private :: faver8
     generic, public :: faver    => faver4, faver8     ! interior average
+    procedure, private :: fminloc4
+    procedure, private :: fminloc8
+    generic, public :: fminloc => fminloc4, fminloc8
+    procedure, private :: fmaxloc4
+    procedure, private :: fmaxloc8
+    generic, public :: fmaxloc => fmaxloc4, fmaxloc8
     procedure, private :: fminval4
     procedure, private :: fminval8
     procedure, private :: fminvali
@@ -1795,6 +1801,47 @@ FUNCTION fminval8 (self, f) RESULT(fminval)
 END FUNCTION fminval8
 
 !===============================================================================
+FUNCTION fminloc4 (self, f) RESULT(fminloc)
+  integer, dimension(3):: fminloc
+  class(patch_t):: self
+  real, dimension(:,:,:), intent(in):: f
+  !-----------------------------------------------------------------------------
+  fminloc = minloc(f(self%mesh(1)%li:self%mesh(1)%ui, &
+                     self%mesh(2)%li:self%mesh(2)%ui, &
+                     self%mesh(3)%li:self%mesh(3)%ui)) + self%ng
+END FUNCTION fminloc4
+!===============================================================================
+FUNCTION fmaxloc4 (self, f) RESULT(fmaxloc)
+  integer, dimension(3):: fmaxloc
+  class(patch_t):: self
+  real, dimension(:,:,:), intent(in):: f
+  !-----------------------------------------------------------------------------
+  fmaxloc = maxloc(f(self%mesh(1)%li:self%mesh(1)%ui, &
+                     self%mesh(2)%li:self%mesh(2)%ui, &
+                     self%mesh(3)%li:self%mesh(3)%ui)) + self%ng
+END FUNCTION fmaxloc4
+!===============================================================================
+FUNCTION fminloc8 (self, f) RESULT(fminloc)
+  integer, dimension(3):: fminloc
+  class(patch_t):: self
+  real(8), dimension(:,:,:), intent(in):: f
+  !-----------------------------------------------------------------------------
+  fminloc = minloc(f(self%mesh(1)%li:self%mesh(1)%ui, &
+                     self%mesh(2)%li:self%mesh(2)%ui, &
+                     self%mesh(3)%li:self%mesh(3)%ui)) + self%ng
+END FUNCTION fminloc8
+!===============================================================================
+FUNCTION fmaxloc8 (self, f) RESULT(fmaxloc)
+  integer, dimension(3):: fmaxloc
+  class(patch_t):: self
+  real(8), dimension(:,:,:), intent(in):: f
+  !-----------------------------------------------------------------------------
+  fmaxloc = maxloc(f(self%mesh(1)%li:self%mesh(1)%ui, &
+                     self%mesh(2)%li:self%mesh(2)%ui, &
+                     self%mesh(3)%li:self%mesh(3)%ui)) + self%ng
+END FUNCTION fmaxloc8
+
+!===============================================================================
 !> Check for NaN
 !===============================================================================
 SUBROUTINE check_nan (self, panic, label, always)
@@ -1884,10 +1931,14 @@ SUBROUTINE check_density (self, label)
   logical:: inside, nan, panic
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
+  ! If I/O reducing measures are in effect, or self%mem is not associated, or
+  ! the task is frozen, skip the test
+  !-----------------------------------------------------------------------------
   if ((io%verbose < 2 .or. io%print_time > 0.0 .or. io%print_every > 1) .and. &
       .not.do_check_nan) return
   if (self%is_set(bits%no_density+bits%frozen)) return
   if (.not. associated(self%mem)) return
+  !-----------------------------------------------------------------------------
   call timer%begin ('patch_t%check_density', itimer=itimer)
   l = self%mesh%lb
   u = self%mesh%ub
