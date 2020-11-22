@@ -275,9 +275,16 @@ SUBROUTINE interval4 (self, x0, x, i0, i2, o, order)
   real(kind=4), dimension(:):: x
   real(kind=4), dimension(size(x)):: y
   real(kind=4):: x0, f
-  integer:: i0, i1, i2, i3, o, n
+  integer:: i0, i1, i2, i3, o, n, ii(1)
   !.............................................................................
   ! Default order = 3, or n-1 if that is smaller
+  if (order==0) then
+    ii = minloc(abs(x-x0))
+    i0 = ii(1)
+    i2 = ii(1)
+    o = 0
+    return
+  end if
   n = size(x)
   o = 3
   if (present(order)) o = order
@@ -366,9 +373,16 @@ SUBROUTINE interval8 (self, x0, x, i0, i2, o, order)
   real(kind=8), dimension(:):: x
   real(kind=8), dimension(size(x)):: y
   real(kind=8):: x0, f
-  integer:: i0, i1, i2, i3, o, n
+  integer:: i0, i1, i2, i3, o, n, ii(1)
   !.............................................................................
   ! Default order = 3, or n-1 if that is smaller
+  if (order==0) then
+    ii = minloc(abs(x-x0))
+    i0 = ii(1)
+    i2 = ii(1)
+    o = 0
+    return
+  end if
   n = size(x)
   o = 3
   if (present(order)) o = order
@@ -460,8 +474,15 @@ FUNCTION sequence4 (self, x0, x, y, order, correct) RESULT(f)
   real(kind=4), optional:: correct
   real(kind=4), dimension(:):: x, y
   real(kind=4):: x0, f
-  integer:: i0, i2, o, n
+  integer:: i0, i2, o, n, ii(1)
   !.............................................................................
+  if (order==0) then
+    ii = minloc(abs(x-x0))
+    i0 = ii(1)
+    i2 = ii(1)
+    o = 0
+    return
+  end if
   n = size(x)
   call self%interval (x0, x, i0, i2, o, order)
   if (self%verbose>0) then
@@ -485,8 +506,15 @@ FUNCTION sequence8 (self, x0, x, y, order, correct) RESULT(f)
   real(kind=8), optional:: correct
   real(kind=8), dimension(:):: x, y
   real(kind=8):: x0, f
-  integer:: i0, i2, o, n
+  integer:: i0, i2, o, n, ii(1)
   !.............................................................................
+  if (order==0) then
+    ii = minloc(abs(x-x0))
+    i0 = ii(1)
+    i2 = ii(1)
+    o = 0
+    return
+  end if
   n = size(x)
   call self%interval (x0, x, i0, i2, o, order)
   if (self%verbose>0) then
@@ -514,8 +542,16 @@ SUBROUTINE sequence_weights4 (self, x0, x, i0, i2, w, order)
   integer, optional:: order
   real(kind=4), dimension(:):: x, w
   real(kind=4):: x0
-  integer:: i0, i2, o, n
+  integer:: i0, i2, o, n, ii(1)
   !.............................................................................
+  if (order == 0) then
+    ii = minloc(abs(x-x0))
+    i0 = ii(1)
+    i2 = ii(1)
+    o = 0
+    w(1) = 1.0
+    return
+  end if
   n = size(x)
   call self%interval (x0, x, i0, i2, o, order)
   w = 0d0
@@ -530,8 +566,16 @@ SUBROUTINE sequence_weights8 (self, x0, x, i0, i2, w, order)
   integer, optional:: order
   real(kind=8), dimension(:):: x, w
   real(kind=8):: x0
-  integer:: i0, i2, o, n
+  integer:: i0, i2, o, n, ii(1)
   !.............................................................................
+  if (order == 0) then
+    ii = minloc(abs(x-x0))
+    i0 = ii(1)
+    i2 = ii(1)
+    o = 0
+    w(1) = 1d0
+    return
+  end if
   n = size(x)
   call self%interval (x0, x, i0, i2, o, order)
   w = 0d0

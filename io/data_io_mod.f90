@@ -242,7 +242,7 @@ SUBROUTINE output (self, patch, experiment_name)
     if (io%verbose > 1) &
       write (io_unit%log,*) 'io%nwrite =', io%nwrite
     !---------------------------------------------------------------------------
-    if (io%method=='legacy') then
+    if (io%method=='legacy' .or. time_slices%order <= 0) then
       np = 1
     else
       np = (time_slices%order+1)/2
