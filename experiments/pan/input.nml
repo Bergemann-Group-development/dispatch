@@ -20,10 +20,10 @@
 !---------------------------------------------
 ! For unigrid run, use the no_mans_land=t line
 !---------------------------------------------
-&patch_params           nt=5 grace=0.5 n=3*32 no_mans_land=t /
+&patch_params           nt=5 grace=0.5 n=3*16 no_mans_land=t /
 !patch_params           nt=5 grace=0.1 n=3*21 no_mans_land=f /
-&out_params             end_time=0.200 out_time=0.025 print_every=30 /
-&io_params              verbose=0 do_trace=f omp_trace=f do_output=f restart=-2
+&out_params             end_time=0.100 out_time=0.025 print_every=30 /
+&io_params              verbose=0 do_trace=f omp_trace=f do_output=t restart=-2
                         method='parallel' format=11 guard_zones=f time_derivs=0 /
 &download_params        verbose=0 check_filled=t /
 &guard_zone_params      method='simple' verbose=0 /

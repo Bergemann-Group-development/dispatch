@@ -60,7 +60,7 @@ MODULE mhd_mod
   logical, save:: unsigned=.true.
   logical, save:: do_temperature=.false.
   integer, save:: verbose=0
-  integer, save:: divb_cleaner=0
+  integer, save:: divb_cleaner=-1
   integer, save:: divb_iter=4
   integer, save:: b_slope_type=0
   integer, save:: u_slope_type=0
@@ -87,7 +87,7 @@ SUBROUTINE pre_init (self)
 !...............................................................................
   call trace%begin ('mhd_mod%pre_init')
   call trace%print_id (id)
-  self%nw = 2
+  self%nw = 1
   self%ng = 3
   self%nv = 8
   self%kind = 'ramses_mhd_patch'
@@ -174,11 +174,12 @@ SUBROUTINE update (self)
   class(mhd_t):: self
   real, pointer, dimension(:,:,:,:):: p
   real, allocatable, dimension(:,:,:,:):: em
-  real, allocatable, dimension(:,:,:,:,:):: fl
+  real, pointer, contiguous, dimension(:,:,:,:,:):: fl
   real, allocatable, dimension(:,:,:,:)::fluxambdiff,emfambdiff
   real, pointer, dimension(:,:,:):: d, e, Ux=>null(), Uy=>null(), Uz=>null()
   real(dp):: dtdx, dtdy, dtdz
-  integer:: n(3), nv3, i
+  real:: u0, u1
+  integer:: n(3), nv3, i, j, k, idir
   integer, parameter:: ndim=3
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -218,7 +219,8 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   !self%dq = 0d0 ; self%dq2 = 0d0 ; self%dbf = 0d0
   call uslope(self,self%bf,self%q,self%dq,self%dbf,slope_type)   ! TVD slopes
-  if (verbose>0) print *, 'uslope', self%id, minval(self%dbf), maxval(self%dbf)
+  if (verbose > 2) write (stdlog,*) &
+   'uslope', self%id, minval(self%dbf), maxval(self%dbf)
   !-----------------------------------------------------------------------------
   ! For slope types in the interval 3-4, use the conservative 3.0 for corners
   ! (cf. RAMSES/CPH)
@@ -229,8 +231,10 @@ SUBROUTINE update (self)
     call uslope(self,self%bf,self%q,self%dq2,self%dbf,3.0)       ! TVD slopes
   endif
 
-  if (verbose>0) print *, 'uslope', self%id, minval(self%dq), maxval(self%dq)
-  if (verbose>0) print *, 'uslope', self%id, minval(self%dq2), maxval(self%dq2)
+  if (verbose > 2) then
+    write (stdlog,*) 'uslope', self%id, minval(self%dq), maxval(self%dq)
+    write (stdlog,*) 'uslope', self%id, minval(self%dq2), maxval(self%dq2)
+  end if
 
   if (non_ideal%is_used) then
     allocate (fluxambdiff(self%gn(1),self%gn(2),self%gn(3),3))
@@ -303,71 +307,94 @@ SUBROUTINE update (self)
     fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3,3) - &
     fl(i0  :i1  ,j0  :j1  ,k0+1:k1+1,1:nv3,3)   
 
-  !!!! TO DO !!!! 
-  !!! Instead of applying the update in time explicitly in mhd_mod
-  !!! only compute the fluxes and provide them to call timestep%update
-  !!! analogous to what is done in stagger2/mhd_mod.f90  
-
-  ! Compute emf fluxes with appropriate time steps
   if (self%id == io%id_debug) then
     write (io%output,'("M1",f10.6,i4,1p,10e12.3)') self%time, i, em(4:13,8,8,1)
     write (io%output,'("M2",f10.6,i4,1p,10e12.3)') self%time, i, em(4:13,8,8,2)
     write (io%output,'("M3",f10.6,i4,1p,10e12.3)') self%time, i, em(4:13,8,8,3)
   end if
-
-
   !-----------------------------------------------------------------------------
   ! Update Bx 
   !-----------------------------------------------------------------------------
-  self%mem(i0:i1, j0:j1, k0:k1, self%idx%bx, self%new, 2) = &
-    ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,2)   - &
-      em(i0  :i1  ,j0  :j1  ,k0+1:k1+1,2) ) - &
-    ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,3)   - &
-      em(i0  :i1  ,j0+1:j1+1,k0  :k1  ,3) )
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) =  &
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) + &
-    self%mem(i0:i1, j0:j1, k0:k1, self%idx%bx, self%new, 2)
-
+   (( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,2)   - &
+      em(i0  :i1  ,j0  :j1  ,k0+1:k1+1,2) ) - &
+    ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,3)   - &
+      em(i0  :i1  ,j0+1:j1+1,k0  :k1  ,3) ))
   !-----------------------------------------------------------------------------
   ! Update By 
   !-----------------------------------------------------------------------------
-  self%mem(i0:i1, j0:j1, k0:k1, self%idx%by, self%new, 2) = &
-    ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,3)   - &
-      em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,3) ) - &
-    ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,1)   - &
-      em(i0  :i1  ,j0  :j1  ,k0+1:k1+1,1) )
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) = &
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) + &
-    self%mem(i0:i1, j0:j1, k0:k1, self%idx%by, self%new, 2)
-
+   (( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,3)   - &
+      em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,3) ) - &
+    ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,1)   - &
+      em(i0  :i1  ,j0  :j1  ,k0+1:k1+1,1) ))
   !-----------------------------------------------------------------------------
   ! Update Bz 
   !-----------------------------------------------------------------------------
-  self%mem(i0:i1, j0:j1, k0:k1, self%idx%bz, self%new, 2) = &
-    ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,1)   - &
-      em(i0  :i1  ,j0+1:j1+1,k0  :k1  ,1) ) - &
-    ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,2)   - &
-      em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,2) )
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) = &
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) + &
-    self%mem(i0:i1, j0:j1, k0:k1, self%idx%bz, self%new, 2)
-
-  if (verbose>0) print *, 'unew', self%id, minval(unew), maxval(unew)
+   (( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,1)   - &
+      em(i0  :i1  ,j0+1:j1+1,k0  :k1  ,1) ) - &
+    ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,2)   - &
+      em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,2) ))
   end associate
+  !-----------------------------------------------------------------------------
+  ! Add the external force per unit mass as a source term, and add the
+  ! corresponding total energy
+  !-----------------------------------------------------------------------------
+  d => self%mem(:,:,:,self%idx%d,self%new,1)
+  e => self%mem(:,:,:,self%idx%e,self%new,1)
+  p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
+  do idir=1,3
+  do k=self%li(3),self%ui(3)
+  do j=self%li(2),self%ui(2)
+    if (associated(scratch%force_per_unit_mass)) then
+      do i=self%li(1),self%ui(1)
+        u0 = p(i,j,k,idir)/d(i,j,k)
+        u1 = u0 + self%dtime*scratch%force_per_unit_mass(i,j,k,idir)
+        p(i,j,k,idir) = p(i,j,k,idir) + (u1-u0)*d(i,j,k)
+        e(i,j,k) = e(i,j,k) + 0.5*(u1**2-u0**2)*d(i,j,k)
+      end do
+    end if
+    if (associated(scratch%force_per_unit_volume)) then
+      do i=self%li(1),self%ui(1)
+        u0 = p(i,j,k,idir)/d(i,j,k)
+        u1 = u0 + self%dtime*scratch%force_per_unit_mass(i,j,k,idir)/d(i,j,k)
+        p(i,j,k,idir) = p(i,j,k,idir) + (u1-u0)*d(i,j,k)
+        e(i,j,k) = e(i,j,k) + 0.5*(u1**2-u0**2)*d(i,j,k)
+      end do
+    end if
+  end do
+  end do
+  end do
   !-----------------------------------------------------------------------------
   ! Reset the energy variable in isothermal cases
   !-----------------------------------------------------------------------------
   if (isothermal) &
     self%mem(:,:,:,self%idx%e,self%new,1) = &
     self%mem(:,:,:,self%idx%d,self%new,1)
-  !-----------------------------------------------------------------------------
-  ! Add external force as source term
-  !-----------------------------------------------------------------------------
-  if (associated(scratch%force_per_unit_mass)) then
-    p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
-    do i=1,3
-      p(:,:,:,i) = p(:,:,:,i) + self%dtime*scratch%force_per_unit_mass(:,:,:,i)*d
+  !.............................................................................
+  if (verbose > 1) then
+    block
+    integer:: i
+    do i=1,5 !self%nv
+      d => self%mem(:,:,:,i,self%new,1)
+      write (stdlog,'(a,i6,i4,2(1p,e14.4,3i4))') 'unew', self%id, i, &
+      self%fminval(d), self%fminloc(d), self%fmaxval(d), self%fmaxloc(d)
     end do
+    do i=1,3
+      d => scratch%force_per_unit_mass(:,:,:,i)
+      write (stdlog,'(a,i6,i4,2(1p,e14.4,3i4))') ' fpm', self%id, i, &
+      self%fminval(d), self%fminloc(d), self%fmaxval(d), self%fmaxloc(d)
+    end do
+    do i=1,3
+      d => fl(:,:,:,5,i)
+      write (stdlog,'(a,i6,i4,2(1p,e14.4,3i4))') 'flux', self%id, i, &
+        self%fminval(d), self%fminloc(d), self%fmaxval(d), self%fmaxloc(d)
+    end do
+    end block
   end if
   !-----------------------------------------------------------------------------
   ! Deallocate
@@ -648,7 +675,7 @@ subroutine check_small (self)
       panic = .true.
       if (nprint>0) then
         nprint = nprint-1
-        write (io_unit%log,'(i7,3i5,1p,2e12.3)') self%id,i,j,k,uu(i,j,k,1),smallr
+        write (stdlog,'(i7,3i5,1p,2e12.3)') self%id,i,j,k,uu(i,j,k,1),smallr
       end if
       n_smalld = n_smalld+1
       uu(i,j,k,1) = smallr
@@ -677,11 +704,13 @@ subroutine check_small (self)
   end do
   end do
   end do
+  end associate
+  !.............................................................................
   if (n_smalld+n_smallp > 0) then
-    write (io_unit%log,*) 'small: id,nr,np', &
+    write (stdlog,*) 'small: id,nr,np', &
       wallclock(),self%id,self%time,n_smalld,n_smallp
   end if
-  end associate
+  !.............................................................................
   if (panic .and. self%n_dump > 0) then
     !$omp critical (panic_cr)
     self%n_dump = self%n_dump-1
@@ -696,6 +725,7 @@ subroutine check_small (self)
     write (io_unit%mpi,*) 'density < SMALLR, dumped', self%id, self%time
     !$omp end critical (panic_cr)
   end if
+  !.............................................................................
   call trace%end (itimer, detailed_timer=detailed_timer)
 end subroutine check_small
 
@@ -710,7 +740,7 @@ subroutine ctoprim(self)
   real(dp):: eken, emag, etot, eint, B1, B2, B3
   integer, save:: itimer=0
   integer:: i, j, k, loc(3), l(3), u(3), m(3)
-  real, pointer:: ee(:,:,:)
+  real, pointer:: pg(:,:,:)
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%ctoprim', itimer=itimer, detailed_timer=detailed_timer)
   !-----------------------------------------------------------------------------
@@ -744,8 +774,10 @@ subroutine ctoprim(self)
   bf(:,:,:,1) = uin(:,:,:,6)
   bf(:,:,:,2) = uin(:,:,:,7)
   bf(:,:,:,3) = uin(:,:,:,8)
-  if (verbose>0) print *,  'ctoprim:rh', self%id, minval(q(:,:,:,1)), maxval(q(:,:,:,1))
-  if (verbose>0) print *,  'ctoprim:bf', self%id, minval(bf), maxval(bf)
+  if (verbose > 1) then
+    write (stdlog,*) 'ctoprim:rh', self%id, minval(q(:,:,:,1)), maxval(q(:,:,:,1))
+    write (stdlog,*) 'ctoprim:bf', self%id, minval(bf), maxval(bf)
+  end if
   !
   do k=1,self%gn(3)-1
   do j=1,self%gn(2)-1
@@ -759,11 +791,15 @@ subroutine ctoprim(self)
   end do
   end do
   end do
-  ee => q(:,:,:,5)
-  if (any(ee < 0.0)) then
-    write (io_unit%log,'(a,i6,1p,2e11.2,3i4)') 'ctoprim: ee < 0.0', &
-      self%id, maxval(ee), minval(ee), minloc(ee)
+  !.............................................................................
+  pg => q(:,:,:,5)
+  l = self%mesh%li
+  u = self%mesh%ui
+  if (any(pg(l(1):u(1),l(2):u(2),l(3):u(3)) < 0.0) .or. verbose > 0) then
+    write (stdlog,'(a,i6,1p,2e11.2,3i4)') 'ctoprim: max(pg),min(pg),loc=', &
+      self%id, self%fmaxval(pg), self%fminval(pg), self%fminloc(pg)
   end if
+  !.............................................................................
   do k=1,self%gn(3)-1
   do j=1,self%gn(2)-1
   do i=1,self%gn(1)-1
@@ -786,8 +822,6 @@ subroutine ctoprim(self)
   else
     c(:,:,:) = c(:,:,:) +    (abs(q(:,:,:,2)) + abs(q(:,:,:,3)) + abs(q(:,:,:,4)))/3.0
   end if
-  ! Gravity predictor step
-  !q(:,:,:,2:4) = q(:,:,:,idim+1) + Grho*gravin(:,:,:,1:3)*dt*half
   l = self%mesh%lo
   u = self%mesh%uo
   if (any(l < 0 .or. u > self%gn)) then
@@ -797,14 +831,14 @@ subroutine ctoprim(self)
   self%u_max = maxval(c(l(1):u(1),l(2):u(2),l(3):u(3)))
   if (self%get_umax_location) then
     loc = maxloc(c(l(1):u(1),l(2):u(2),l(3):u(3))) + l-1
-    write (io_unit%log,'(a,i6,f12.6,2(1x,3i4),3f9.4,2(1x,a,1p,4g10.2))') 'u_max:', &
+    write (stdlog,'(a,i6,f12.6,2(1x,3i4),3f9.4,2(1x,a,1p,4g10.2))') 'u_max:', &
       self%id, self%time, self%ipos, loc, &
       (self%mesh(1)%p + self%mesh(1)%r(loc(1))-self%mesh(2)%llc_cart)/self%mesh(1)%b, &
       (self%mesh(2)%p + self%mesh(2)%r(loc(2))-self%mesh(2)%llc_cart)/self%mesh(2)%b, &
       (self%mesh(3)%p + self%mesh(3)%r(loc(3))-self%mesh(2)%llc_cart)/self%mesh(3)%b, &
       'P,B:', q(loc(1),loc(2),loc(3),5:8), &
       'D,U:', q(loc(1),loc(2),loc(3),1:4)
-    flush (io_unit%log)
+    flush (stdlog)
   end if
   end associate
   call trace%end (itimer, detailed_timer=detailed_timer)
@@ -975,6 +1009,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
   else if (islope_type==3) then ! positivity preserving 3d unsplit slope
     xslope_type = real(slope_type - 2_dp,kind=dp)
     do n = 1, nv
+      if (n==self%idx%phi .or. n==self%idx%dphi) cycle
       do k = l(3),u(3)
         do j = l(2),u(2)
           !dir$ vector aligned
@@ -1138,6 +1173,7 @@ SUBROUTINE trace3d(self)
   real(dp), dimension(:,:,:), allocatable:: rho_t, p_t
   real(dp) :: eff_gamma, off
   real(dp) :: ff(self%gn(1),3), qq(self%gn(1))
+  real(8):: dt2
   integer:: lo(3), uo(3)
   integer, save:: itimer(4)=0
   !-----------------------------------------------------------------------------
@@ -1218,37 +1254,41 @@ SUBROUTINE trace3d(self)
   ! below accesses {i,j,k}+-1, and needs to be good in (lo,uo).  With ng=3, the
   ! loop limits are (lo-1,uo+1) = (2,gn-1)
   !-----------------------------------------------------------------------------
+  dt2 = 0.5d0*self%dtime
   lo = self%mesh%lo-1
   uo = self%mesh%uo+1
   d => self%mem(:,:,:,self%idx%d,self%new,1)
   do k=lo(3),uo(3)
   do j=lo(2),uo(2)
+  ff(:,:) = 0.0_dp
   if (associated(scratch%force_per_unit_mass)) then
     !dir$ simd
     do i=2,self%gn(2)-1
-      ff(i,1) = scratch%force_per_unit_mass(i,j,k,1)
-      ff(i,2) = scratch%force_per_unit_mass(i,j,k,2)
-      ff(i,3) = scratch%force_per_unit_mass(i,j,k,3)
+      ff(i,1) = ff(i,1) + scratch%force_per_unit_mass(i,j,k,1)*dt2
+      ff(i,2) = ff(i,2) + scratch%force_per_unit_mass(i,j,k,2)*dt2
+      ff(i,3) = ff(i,3) + scratch%force_per_unit_mass(i,j,k,3)*dt2
     end do
-  else if (associated(scratch%force_per_unit_volume)) then
-    do i=lo(1),uo(1)
-      ff(i,1) = scratch%force_per_unit_mass(i,j,k,1)/d(i,j,k)
-      ff(i,2) = scratch%force_per_unit_mass(i,j,k,2)/d(i,j,k)
-      ff(i,3) = scratch%force_per_unit_mass(i,j,k,3)/d(i,j,k)
-    end do
-  else
-    ff(:,:) = 0.0_dp
   end if
+  if (associated(scratch%force_per_unit_volume)) then
+    !dir$ simd
+    do i=lo(1),uo(1)
+      ff(i,1) = ff(i,1) + scratch%force_per_unit_mass(i,j,k,1)*dt2/d(i,j,k)
+      ff(i,2) = ff(i,2) + scratch%force_per_unit_mass(i,j,k,2)*dt2/d(i,j,k)
+      ff(i,3) = ff(i,3) + scratch%force_per_unit_mass(i,j,k,3)*dt2/d(i,j,k)
+    end do
+  end if
+  qq(:) = 0.0
   if (associated(scratch%heating_per_unit_volume)) then
+    !dir$ simd
     do i=lo(1),uo(1)
-      qq(i) = scratch%heating_per_unit_volume(i,j,k)
+      qq(i) = qq(i) + scratch%heating_per_unit_volume(i,j,k)
     end do
-  else if (associated(scratch%heating_per_unit_mass)) then
+  end if
+  if (associated(scratch%heating_per_unit_mass)) then
+    !dir$ simd
     do i=lo(1),uo(1)
-      qq(i) = scratch%heating_per_unit_mass(i,j,k)*d(i,j,k)
+      qq(i) = qq(i) + scratch%heating_per_unit_mass(i,j,k)*d(i,j,k)
     end do
-  else
-      qq(:) = 0.0
   end if
   !dir$ ivdep
   !$omp simd private( &
@@ -1361,12 +1401,12 @@ SUBROUTINE trace3d(self)
         + (-w*dpz-dwz*eff_gamma*p)*dtdz
     !
     ! Add external force
-    su0 = su0 + ff(i,1)*half*self%dtime
-    sv0 = sv0 + ff(i,2)*half*self%dtime
-    sw0 = sw0 + ff(i,3)*half*self%dtime
+    su0 = su0 + ff(i,1)
+    sv0 = sv0 + ff(i,2)
+    sw0 = sw0 + ff(i,3)
     !
     ! Add external heating
-    sp0 = sp0  + (eff_gamma-1d0)*qq(i)*self%dtime
+    sp0 = sp0  + (eff_gamma-1d0)*qq(i)*half*self%dtime
     !
     ! Evolve entropy instead of pressure
     !sS0 = (-u*dSx)*dtdx + (-v*dSy)*dtdy + (-w*dSz)*dtdz
@@ -1377,7 +1417,7 @@ SUBROUTINE trace3d(self)
 !    if (entropy_fix) then
 !       if ((i==1.or.i==2).and.(j==1.or.j==2).and.(k==1.or.k==2)) then
 !          q(:,i,j,k,ip) = S + 2.0*sS0
-!          if (verbose>0) then
+!          if (verbose > 0) then
 !             do ig=1,ngrid
 !                if (in_debug_region(ind_grid(ig))) then
 !                   print'(3hMKE,i8,i3,3f10.6,1p,12e11.3)', &
@@ -1600,8 +1640,8 @@ SUBROUTINE trace3d(self)
   ! This loop needs to produce data in the interval (lo,uo), since the loop
   ! in cmp_mag_flux uses {i,j,k}-1
   !-----------------------------------------------------------------------------
-  lo = self%mesh%lo
-  uo = self%mesh%uo
+  lo = self%mesh%lo-1
+  uo = self%mesh%uo+1
   do k=lo(3),uo(3)
   do j=lo(2),uo(2)
   !$omp simd private(drx,dry,drz,dpx,dpy,dpz)
@@ -1763,7 +1803,7 @@ SUBROUTINE cmpflxm (self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
   real(dp), dimension(:,:), allocatable:: qleft, qright, fgdnv
   real(dp):: dtds(3)
   integer, save:: itimer=0
-  integer:: n, nvar, i0, i1
+  integer:: n, nvar, i0, i1 
   associate (qp=>self%qp, qm=>self%qm)
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%cmpflxm', itimer=itimer, detailed_timer=detailed_timer)
@@ -1771,7 +1811,8 @@ SUBROUTINE cmpflxm (self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
   ub = self%mesh%uo
   nvar = self%nv
   xdim = ln-1
-  if (verbose>0) print '(a,2(2x,3i4))', 'mhd_t%cmpflxm: lb, ub=', lb, ub
+  if (verbose > 2) write (stdlog,'(a,2(2x,3i4))') &
+   'mhd_t%cmpflxm: lb, ub=', lb, ub
   !
   ! Avoid using spurious values from allocated, but non-defined entries
   !
@@ -1807,12 +1848,6 @@ SUBROUTINE cmpflxm (self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
           qright(i,7) = qp(i1+i,lt2,xdim,j,k) ! Tangential velocity 2
           qright(i,8) = qp(i1+i,bt2,xdim,j,k) ! Tangential magnetic field 2
         end do
-if (self%id==io%id_debug .and. j==8 .and. k==8) then
-  do i=1,8
-    write (io%output,'("L3",f10.6,i4,1p,10e12.3)') self%time, i, qleft(1:10,i)
-    write (io%output,'("R3",f10.6,i4,1p,10e12.3)') self%time, i, qright(1:10,i)
-  end do
-end if
         call solver (self,qleft,qright,fgdnv,n,nvar)
         ! Output fluxes
         !dir$ ivdep
@@ -1861,12 +1896,6 @@ end if
           qright(i,7) = qp(i+i1,lt2,xdim,j  ,k) ! Tangential velocity 2
           qright(i,8) = qp(i+i1,bt2,xdim,j  ,k) ! Tangential magnetic field 2
         end do
-if (self%id==io%id_debug .and. j==8 .and. k==8) then
-  do i=1,8
-    write (io%output,'("L4",f10.6,i4,1p,10e12.3)') self%time, i, qleft (1:10,i)
-    write (io%output,'("R4",f10.6,i4,1p,10e12.3)') self%time, i, qright(1:10,i)
-  end do
-end if
         call solver (self,qleft,qright,fgdnv,n,nvar)
         !dir$ ivdep
         !dir$ simd
@@ -1915,12 +1944,6 @@ end if
           qright(i,7) = qp(i+i1,lt2,xdim,j,k  ) ! Tangential velocity 2
           qright(i,8) = qp(i+i1,bt2,xdim,j,k  ) ! Tangential magnetic field 2
         end do
-if (self%id==io%id_debug .and. j==8 .and. k==8) then
-  do i=1,8
-    write (io%output,'("L5",f10.6,i4,1p,10e12.3)') self%time, i, qleft(1:10,i)
-    write (io%output,'("R5",f10.6,i4,1p,10e12.3)') self%time, i, qright(1:10,i)
-  end do
-end if
         call solver (self,qleft,qright,fgdnv,n,nvar)
         !dir$ ivdep
         !dir$ simd
@@ -2042,14 +2065,6 @@ SUBROUTINE cmp_mag_flx (self, qRT, qRB, qLT, qLB, lp1 ,lp2 ,lor ,bp1 , bp2, bor,
       qRR (i,8) = qLB(i-iLB,  bor, xdim, j-jLB, k-kLB)
      end do
      call solver_2d (self,qLL,qRL,qLR,qRR,emf,j,k,l,u,nvar,xdim,detailed_timer=detailed_timer)
-     if (self%id == io%id_debug .and. j==8 .and. k==8) then
-       do i=1,8
-         write (io%output,'("LL",i1,f10.6,i4,1p,10e12.3)') xdim, self%time, i, qLL(l:l+9,i)
-         write (io%output,'("RL",i1,f10.6,i4,1p,10e12.3)') xdim, self%time, i, qRL(l:l+9,i)
-         write (io%output,'("LR",i1,f10.6,i4,1p,10e12.3)') xdim, self%time, i, qLR(l:l+9,i)
-         write (io%output,'("RR",i1,f10.6,i4,1p,10e12.3)') xdim, self%time, i, qRR(l:l+9,i)
-       end do
-     end if
     end do
   end do
   call trace%end (itimer, detailed_timer=detailed_timer)

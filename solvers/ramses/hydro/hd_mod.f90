@@ -196,9 +196,10 @@ END SUBROUTINE pre_update
 !===============================================================================
 SUBROUTINE update (self)
   class(hd_t):: self
-  real, dimension(:,:,:), pointer, contiguous:: px, py, pz, d, e
+  real, dimension(:,:,:), pointer, contiguous:: d, e
   real, dimension(:,:,:,:), pointer:: p
-  integer:: n(3)
+  real:: u0, u1
+  integer:: n(3), i, j, k, idir
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! The call to output below catches the state after both guard zone downloads
@@ -221,28 +222,34 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   call godunov (self)
   !-----------------------------------------------------------------------------
-  if (isothermal) &
-    self%mem(:,:,:,self%idx%e,self%new,1) = &
-    self%mem(:,:,:,self%idx%d,self%new,1)*self%csound**2
-  !-----------------------------------------------------------------------------
-  ! Add the external force per unit mass as a source term
+  ! Add the external force per unit mass as a source term, and add the
+  ! corresponding total energy
   !-----------------------------------------------------------------------------
   d => self%mem(:,:,:,self%idx%d,self%new,1)
   e => self%mem(:,:,:,self%idx%e,self%new,1)
-  px => self%mem(:,:,:,self%idx%px,self%new,1)
-  py => self%mem(:,:,:,self%idx%py,self%new,1)
-  pz => self%mem(:,:,:,self%idx%pz,self%new,1)
-  if (associated(scratch%force_per_unit_mass)) then
-    px = px + self%dtime*scratch%force_per_unit_mass(:,:,:,1)*d
-    py = py + self%dtime*scratch%force_per_unit_mass(:,:,:,2)*d
-    pz = pz + self%dtime*scratch%force_per_unit_mass(:,:,:,3)*d
-  end if
-  if (associated(scratch%force_per_unit_volume)) then
-    px = px + self%dtime*scratch%force_per_unit_volume(:,:,:,1)
-    py = py + self%dtime*scratch%force_per_unit_volume(:,:,:,2)
-    pz = pz + self%dtime*scratch%force_per_unit_volume(:,:,:,3)
-  end if
   p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
+  do idir=1,3
+  do k=self%li(3),self%ui(3)
+  do j=self%li(2),self%ui(2)
+    if (associated(scratch%force_per_unit_mass)) then
+      do i=self%li(1),self%ui(1)
+        u0 = p(i,j,k,idir)/d(i,j,k)
+        u1 = u0 + self%dtime*scratch%force_per_unit_mass(i,j,k,idir)
+        p(i,j,k,idir) = p(i,j,k,idir) + (u1-u0)*d(i,j,k)
+        e(i,j,k) = e(i,j,k) + 0.5*(u1**2-u0**2)*d(i,j,k)
+      end do
+    end if
+    if (associated(scratch%force_per_unit_volume)) then
+      do i=self%li(1),self%ui(1)
+        u0 = p(i,j,k,idir)/d(i,j,k)
+        u1 = u0 + self%dtime*scratch%force_per_unit_mass(i,j,k,idir)/d(i,j,k)
+        p(i,j,k,idir) = p(i,j,k,idir) + (u1-u0)*d(i,j,k)
+        e(i,j,k) = e(i,j,k) + 0.5*(u1**2-u0**2)*d(i,j,k)
+      end do
+    end if
+  end do
+  end do
+  end do
   call validate%check (self%link, p, 'after force')
   !-----------------------------------------------------------------------------
   ! Add the external heating per unit mass as a source term
@@ -252,6 +259,33 @@ SUBROUTINE update (self)
   end if
   if (associated(scratch%heating_per_unit_volume)) then
     e = e + self%dtime*scratch%heating_per_unit_volume
+  end if
+  !-----------------------------------------------------------------------------
+  ! Reset the energy variable in isothermal cases
+  !-----------------------------------------------------------------------------
+  if (isothermal) &
+    self%mem(:,:,:,self%idx%e,self%new,1) = &
+    self%mem(:,:,:,self%idx%d,self%new,1)
+  !.............................................................................
+  if (verbose>0) then
+    block
+    integer:: i
+    do i=1,self%nv
+      d => self%mem(:,:,:,i,self%new,1)
+      write (stdlog,'(a,i6,i4,2(1p,e14.4,3i4))') 'unew', self%id, i, &
+      self%fminval(d), self%fminloc(d)+1, self%fmaxval(d), self%fmaxloc(d)+1
+    end do
+    do i=1,3
+      d => scratch%force_per_unit_mass(:,:,:,i)
+      write (stdlog,'(a,i6,i4,2(1p,e14.4,3i4))') 'fpm', self%id, i, &
+      self%fminval(d), self%fminloc(d)+1, self%fmaxval(d), self%fmaxloc(d)+1
+    end do
+    do i=1,3
+      d => self%fl(:,:,:,5,i)
+      write (stdlog,'(a,i6,i4,2(1p,e14.4,3i4))') 'flux', self%id, i, &
+        self%fminval(d), self%fminloc(d), self%fmaxval(d), self%fmaxloc(d)
+    end do
+    end block
   end if
   !-----------------------------------------------------------------------------
   ! Deallocate
@@ -451,6 +485,16 @@ subroutine godunov (self)
       end do
       end do
       end do
+  !.............................................................................
+  if (verbose>0) then
+    block
+    real, pointer:: d(:,:,:)
+    d => self%fl(:,:,:,ivar,idim)
+    write (stdlog,'(a,i6,2i4,2(1p,e14.4,3i4))') &
+    'fl', self%id, ivar, idim, &
+    self%fminval(d), self%fminloc(d), self%fmaxval(d), self%fmaxloc(d)
+    end block
+  end if
     end do
   end do
   call check_small (self, unew)
@@ -515,7 +559,8 @@ subroutine check_small (self, uu)
   end do
   end do
   if (n_smalld+n_smallp > 0) then
-    write (io_unit%log,*) 'small: id,nr,np', self%id,n_smalld,n_smallp
+    write (stdlog,'(a,i6,1p,e14.5,2i6)') &
+      'small: id,nr,np', self%id, self%time, n_smalld, n_smallp
   end if
   if (panic .and. self%n_dump > 0) then
     !$omp critical (panic_cr)
@@ -589,12 +634,7 @@ subroutine ctoprim (self)
   end do
   end do
   end do
-  if (any(pg < 0.0)) then
-    if (verbose > 0) write (io_unit%log,'(a,i6,1p,2e11.2,3i4)') &
-      'ctoprim pg < 0.0', self%id, maxval(pg), minval(pg), minloc(pg)
-    pg = max(pg,smallp)
-  end if
-!-----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   ! Equation-of-state: s is the internal energy, and pg is the gas pressure
   !-----------------------------------------------------------------------------
   d => q(:,:,:,1)
@@ -604,8 +644,15 @@ subroutine ctoprim (self)
   else
     pg = e*(gamma-1d0)
   end if
-  !call eos%lookup (shape(e), ee=e, d=d, pg=pg, gamma=gamma)
-  !
+  !.............................................................................
+  l = self%mesh%li
+  u = self%mesh%ui
+  if (any(pg(l(1):u(1),l(2):u(2),l(3):u(3)) < 0.0) .or. verbose > 0) then
+    write (stdlog,'(a,i6,1p,2e11.2,3i4)') 'ctoprim: max(pg),min(pg),loc=', &
+      self%id, self%fmaxval(pg), self%fminval(pg), self%fminloc(pg)
+    pg = max(pg,smallp)
+  end if
+  !.............................................................................
   c(:,:,:)=sqrt(gamma*q(:,:,:,5)/q(:,:,:,1))
   if (courant_type==1) then
     c = c + max(abs(q(:,:,:,2)), abs(q(:,:,:,3)), abs(q(:,:,:,4)))
@@ -617,8 +664,6 @@ subroutine ctoprim (self)
   ! entire guard zone, since it is based on values valid in all points
   !-----------------------------------------------------------------------------
   self%u_max = maxval(c)
-  dtds = self%dtime/self%ds(1)
-  l = maxloc(c)
   if (detailed_timer) then
     call trace%end (itimer)
   else
@@ -745,6 +790,7 @@ subroutine uslope(self)
       if (n==self%idx%phi .or. n==self%idx%dphi) cycle
       do k = l(3),u(3)
         do j = l(2),u(2)
+          !dir$ vector aligned
           !dir$ ivdep
           !$omp simd private(dflll,dflml,dflrl,dfmll,dfmml,dfmrl,dfrll,dfrml, &
           !$omp    & dfrrl,dfllm,dflmm,dflrm,dfmlm,dfmmm,dfmrm,dfrlm,dfrmm, &
@@ -798,12 +844,12 @@ subroutine uslope(self)
             ! while dfx (dff for any direction) will also be = dq, unless we keep
             ! the 'half' in front of the sqrt.  With that kept, the dlim factor
             ! will remain unity until the slopes differ with a factor of 2. Then,
-            ! if any of the 26 slopes is steeper than twice the gradient slope, 
+            ! if any of the 26 slopes is steeper than twice the gradient slope,
             ! the gradient will be diminished.
             !
             ! idff > 0, so 1/dff = idff < 0.001 * huge is equivalent to dff > 0
-            slop = merge(min(one,min(abs(vmin),abs(vmax))*idff), one, idff<0.001_dp * huge(1.0_dp))
-            dlim = slop
+            dlim = merge(min(one,min(abs(vmin),abs(vmax))*idff), one, idff<0.001_dp * huge(1.0_dp))
+            !
             dq(i,n,1,j,k) = dlim*dfx
             dq(i,n,2,j,k) = dlim*dfy
             dq(i,n,3,j,k) = dlim*dfz
@@ -952,37 +998,37 @@ subroutine trace3d(self)
   dtdz = self%dtime/self%mesh(3)%d
   smallp = smallr*smallc**2/gamma
   !-----------------------------------------------------------------------------
+  dt2 = 0.5d0*self%dtime
   lb = self%mesh%lo
   ub = self%mesh%uo
   do k = lb(3),ub(3)
     do j = lb(2),ub(2)
       d => self%mem(:,:,:,self%idx%d,self%new,1)
-      dt2 = half*self%dtime
+      ff(:,:) = 0.0_dp
       if (associated(scratch%force_per_unit_mass)) then
         do i=lb(1),ub(1)
-          ff(i,1) = scratch%force_per_unit_mass(i,j,k,1)*dt2
-          ff(i,2) = scratch%force_per_unit_mass(i,j,k,2)*dt2
-          ff(i,3) = scratch%force_per_unit_mass(i,j,k,3)*dt2
+          ff(i,1) = ff(i,1) + scratch%force_per_unit_mass(i,j,k,1)*dt2
+          ff(i,2) = ff(i,2) + scratch%force_per_unit_mass(i,j,k,2)*dt2
+          ff(i,3) = ff(i,3) + scratch%force_per_unit_mass(i,j,k,3)*dt2
         end do
-      else if (associated(scratch%force_per_unit_volume)) then
-        do i=lb(1),ub(1)
-          ff(i,1) = scratch%force_per_unit_volume(i,j,k,1)*dt2/d(i,j,k)
-          ff(i,2) = scratch%force_per_unit_volume(i,j,k,2)*dt2/d(i,j,k)
-          ff(i,3) = scratch%force_per_unit_volume(i,j,k,3)*dt2/d(i,j,k)
-        end do
-      else
-        ff(:,:) = 0.0_dp
       end if
+      if (associated(scratch%force_per_unit_volume)) then
+        do i=lb(1),ub(1)
+          ff(i,1) = ff(i,1) + scratch%force_per_unit_volume(i,j,k,1)*dt2/d(i,j,k)
+          ff(i,2) = ff(i,2) + scratch%force_per_unit_volume(i,j,k,2)*dt2/d(i,j,k)
+          ff(i,3) = ff(i,3) + scratch%force_per_unit_volume(i,j,k,3)*dt2/d(i,j,k)
+        end do
+      end if
+      qq(:) = 0.0
       if (associated(scratch%heating_per_unit_volume)) then
         do i=lb(1),ub(1)
-          qq(i) = scratch%heating_per_unit_volume(i,j,k)*dt2
+          qq(i) = qq(i) + scratch%heating_per_unit_volume(i,j,k)*dt2
         end do
-      else if (associated(scratch%heating_per_unit_mass)) then
+      end if
+      if (associated(scratch%heating_per_unit_mass)) then
         do i=lb(1),ub(1)
-          qq(i) = scratch%heating_per_unit_mass(i,j,k)*d(i,j,k)*dt2
+          qq(i) = qq(i) + scratch%heating_per_unit_mass(i,j,k)*d(i,j,k)*dt2
         end do
-      else
-          qq(:) = 0.0
       end if
       !dir$ ivdep
       !$omp simd
