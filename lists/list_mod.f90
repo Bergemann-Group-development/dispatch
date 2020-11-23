@@ -1547,6 +1547,7 @@ SUBROUTINE prune_nbors (self, link, head, status)
   logical:: removed
   integer:: n(2)
   !-----------------------------------------------------------------------------
+  if (link%task%nt == 0) return
   call trace%begin ('list_t%prune_nbors')
   removed = .false.
   n = 0
