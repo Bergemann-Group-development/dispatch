@@ -471,7 +471,7 @@ subroutine hllc (qleft,qright,fgdnv,ngrid,nvar,isothermal,error,detailed_timer)
   REAL(dp)::ustar,ptotstar
   REAL(dp)::ro,uo,ptoto,etoto
   REAL(dp)::smallp
-  INTEGER ::ivar, i
+  INTEGER ::ivar, i, icase
   LOGICAL :: isothermal,error,detailed_timer
   INTEGER, SAVE:: itimer=0
   !
@@ -656,27 +656,35 @@ subroutine hllc (qleft,qright,fgdnv,ngrid,nvar,isothermal,error,detailed_timer)
       etoto=merge(etotl    ,etoto  ,SL>0d0)
 #else
       if(SL>0d0)then
+         !icase=1
          ro=rl
          uo=ul
          Ptoto=Ptotl
          etoto=etotl
       else if(ustar>0d0)then
+         !icase=2
          ro=rstarl
          uo=ustar
          Ptoto=Ptotstar
          etoto=etotstarl
       else if (SR>0d0)then
+         !icase=3
          ro=rstarr
          uo=ustar
          Ptoto=Ptotstar
          etoto=etotstarr
       else
+         !icase=4
          ro=rr
          uo=ur
          Ptoto=Ptotr
          etoto=etotr
       end if
 #endif
+      ! Diffusive flux enhancement at low density
+      ustar = alog(rl/rr)*max(0.0, alog10((10.*smallr)/min(rl,rr)))
+      ustar = 0.25*max(cfastr,cfastl)*min(1.0, max(-1.0, ustar))
+      uo = uo + ustar
       !
       ! Compute the Godunov flux
       fgdnv(i,1) = ro*uo
