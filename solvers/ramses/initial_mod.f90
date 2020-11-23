@@ -55,7 +55,6 @@ SUBROUTINE init (self, solver, gamma1)
   case ('single_solenoidal')
     self%condition => single_solenoidal
   case ('single_compressive')
-print *, 'compressive'
     self%condition => single_compressive
   case ('single_advection')
     self%condition => single_advection
@@ -112,12 +111,10 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
     first_time = .false.
     rewind (io%input)
     read (io%input, IC_solenoidal_params, iostat=iostat)
-    mhd = mhd .and. any(b0 /= 0.0)
     call io%namelist_warning ('IC_solenoidal_params', iostat)
     write (io%namelist, IC_solenoidal_params)
   end if
   call io%lock%unset
-  self%mhd = mhd
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
     kz   =  pi2*k(3)*(r3(iz)+m(3)%p-0.5d0*m(3)%s)/m(3)%b + phi(3)
@@ -130,7 +127,7 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
         ff(ix,iy,iz,idx%px) = d0*a0(1)*(sin(ky)+sin(kz))
         ff(ix,iy,iz,idx%py) = d0*a0(2)*(sin(kz)+sin(kx))
         ff(ix,iy,iz,idx%pz) = d0*a0(3)*(sin(kx)+sin(ky))
-        if (self%mhd) then
+        if (idx%bx > 0) then
           ff(ix,iy,iz,idx%bx) = b0(1)
           ff(ix,iy,iz,idx%by) = b0(2)
           ff(ix,iy,iz,idx%bz) = b0(3)
@@ -172,7 +169,6 @@ SUBROUTINE single_compressive (self, m, ff, idx)
     write (io%namelist, IC_compressive_params)
   end if
   call io%lock%unset
-  self%mhd = mhd
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
     kz   =  pi2*k(3)*(r3(iz)+m(3)%p)/m(3)%b + phi(3)
@@ -180,18 +176,17 @@ SUBROUTINE single_compressive (self, m, ff, idx)
       ky   =  pi2*k(2)*(r2(iy)+m(2)%p)/m(2)%b + phi(2)
       do ix=m(1)%lb,m(1)%ub
         kx   =  pi2*k(1)*(r1(ix)+m(1)%p)/m(1)%b + phi(1)
-        ff(ix,iy,iz,idx%d ) = d0
+        ff(ix,iy,iz,idx%d ) = d0*(1.0+a0(1)*sin(kx)+a0(2)*sin(ky)+a0(3)*sin(kz))
         ff(ix,iy,iz,idx%e ) = e0
         ff(ix,iy,iz,idx%px) = d0*u0(1)*sin(kx)
         ff(ix,iy,iz,idx%py) = d0*u0(2)*sin(ky)
         ff(ix,iy,iz,idx%pz) = d0*u0(3)*sin(kz)
         if (iy==1.and.iz==1) &  
           print'(i6,5f10.4)',ix,r1(ix),m(1)%p,kx,ff(ix,iy,iz,idx%px)
-        if (self%mhd) then
+        if (idx%bx > 0) then
           ff(ix,iy,iz,idx%bx) = b0(1)
           ff(ix,iy,iz,idx%by) = b0(2)
           ff(ix,iy,iz,idx%bz) = b0(3)
-          ff(ix,iy,iz,idx%e ) = e0 + 0.5*(b0(1)**2 + b0(2)**2 + b0(3)**2)
         end if
       end do
     end do
@@ -228,7 +223,6 @@ SUBROUTINE single_advection (self, m, ff, idx)
     if (io%master) write (*, IC_advection_params)
   end if
   call io%lock%unset
-  self%mhd = mhd
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
     kz   =  pi2*k(3)*(r3(iz)+m(3)%p-0.5d0*m(3)%s)/m(3)%b + phi(3)
@@ -241,11 +235,10 @@ SUBROUTINE single_advection (self, m, ff, idx)
         ff(ix,iy,iz,idx%px) = d0*u0(1)
         ff(ix,iy,iz,idx%py) = d0*u0(2)
         ff(ix,iy,iz,idx%pz) = d0*u0(3)
-        if (self%mhd) then
+        if (idx%bx > 0) then
           ff(ix,iy,iz,idx%bx) = b0(3)*sin(kz)
           ff(ix,iy,iz,idx%by) = b0(1)*sin(kx)
           ff(ix,iy,iz,idx%bz) = b0(2)*sin(ky)
-          ff(ix,iy,iz,idx%e ) = e0 + 0.5*(b0(1)**2 + b0(2)**2 + b0(3)**2)
         end if
       end do
     end do
@@ -273,7 +266,6 @@ SUBROUTINE exa256 (self, m, ff, idx)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t::exa256', itimer=itimer)
-  self%mhd = .false.
   ff(:,:,:,:) = 0.0
   allocate (u(m(1)%n))
   allocate (d(m(1)%n))
@@ -307,6 +299,11 @@ SUBROUTINE exa256 (self, m, ff, idx)
     umax=max(umax,3.+maxval(abs(ff(li(1):ui(1),jy,jz,idx%px)) &
                            +abs(ff(li(1):ui(1),jy,jz,idx%py)) &
                            +abs(ff(li(1):ui(1),jy,jz,idx%pz))))
+    if (idx%bx > 0) then
+      ff(li(1):ui(1),jy,jz,idx%bx) = 0.0
+      ff(li(1):ui(1),jy,jz,idx%by) = 0.0
+      ff(li(1):ui(1),jy,jz,idx%bz) = 0.0
+    end if
   end do
   end do
   do iv=idx%px,idx%pz
@@ -339,7 +336,6 @@ SUBROUTINE raw (self, m, ff, idx)
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t::raw', itimer=itimer)
   !$omp critical (raw_cr)
-  self%mhd = .false.
   self%time = 0.02
   !-----------------------------------------------------------------------------
   ! At first call, allocate a buffer and read the entire file -- this is OK since
@@ -440,7 +436,7 @@ SUBROUTINE energy (self, m, idx, ff)
                          ff(:,:,:,idx%py)**2+ &
                          ff(:,:,:,idx%pz)**2)/ff(:,:,:,idx%d) &
                   + ff(:,:,:,idx%e)
-  if (self%mhd) then
+  if (idx%bx > 0) then
     ff(:,:,:,idx%e) = ff(:,:,:,idx%e) + &
       0.5*(ff(:,:,:,idx%bx)**2 + &
            ff(:,:,:,idx%by)**2 + &

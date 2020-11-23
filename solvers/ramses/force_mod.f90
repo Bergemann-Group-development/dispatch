@@ -71,7 +71,7 @@ SUBROUTINE init (self, solver, id, mesh)
     write (io%namelist, force_params)
   end if
   call io%lock%unset
-  select case (type)
+  select case (trim(type))
   case ('zero')
     self%selected => zero_force
   case ('single_solenoidal')
@@ -112,9 +112,9 @@ FUNCTION single_solenoidal (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
   !.............................................................................
   integer        :: ix, iy, iz, iostat
   real(8)        :: kx, ky, kz
-  logical, save  :: first_time=.true.
   real, save     :: t_turn=0.3, a0(3)=0.1, k(3)=1.0
   integer, save  :: itimer=0
+  logical, save  :: first_time=.true.
   namelist /force_solenoidal_params/ k, a0, t_turn
   !-----------------------------------------------------------------------------
   call trace_begin('force_t%single_solenoidal', itimer=itimer)
