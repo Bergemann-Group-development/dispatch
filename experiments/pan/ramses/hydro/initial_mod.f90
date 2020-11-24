@@ -37,7 +37,7 @@ CONTAINS
 SUBROUTINE init (self, solver, gamma)
   class(initial_t):: self
   character(len=64):: solver
-  real, optional:: gamma
+  real(8), optional:: gamma
   character(len=32), save:: type='turbulence'
   integer:: iostat
   logical, save:: first_time=.true.

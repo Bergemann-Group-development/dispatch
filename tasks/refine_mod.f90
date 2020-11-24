@@ -802,6 +802,7 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   nullify (child%vgas)
   nullify (child%u_phase)
   nullify (child%irefine)
+  nullify (child%mask)
   child%id = 0                                       ! ensure a new ID
   child%seq = -1                                     ! triggers tag=0 in send
   child%size = child_size                            ! new size
@@ -857,6 +858,10 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
 !print *, 'refine_t%make_child: id, out_next =', child%id, child%out_next
   child%dnload_time = -1.0                           ! for duplicate call test
   child%check_refine_next = 0                        ! allow recursive refine
+  !-----------------------------------------------------------------------------
+  ! Copy the %it slot to %new
+  !-----------------------------------------------------------------------------
+  call child%pre_update ()
   !-----------------------------------------------------------------------------
   ! Check consistency
   !-----------------------------------------------------------------------------
@@ -1001,6 +1006,11 @@ FUNCTION check_Jeans (self, patch) RESULT(refine_it)
     ds = maxval(patch%mesh%d, mask=patch%mesh%n > 1)
     c =  ds*sqrt(scaling%grav/(math%pi*patch%gamma))
     test = min_jeans*c*d/sqrt(pg)
+    if (verbose > 1) then
+      call patch%stats (d   , '   d', stdlog)
+      call patch%stats (pg  , '  pg', stdlog)
+      call patch%stats (test, 'test', stdlog)
+    end if
     !---------------------------------------------------------------------------
     ! Combine with previous tests and evaluate
     !---------------------------------------------------------------------------

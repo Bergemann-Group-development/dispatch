@@ -2,16 +2,17 @@
 &io_params          verbose=0 do_trace=f omp_trace=t do_output=t
                     task_logging=0
                     namelist_errors=t guard_zones=t method='parallel' /
-&out_params         end_time=0.511 out_time=0.05 print_every=1 /
+!&out_params         end_time=0.511 out_time=0.05 print_every=1 /
+&out_params         start_time=0.35 end_time=0.511 out_time=0.01 print_every=10 /
 
 &cartesian_params   size=3*2.0 dims=3*1 mpi_dims=1,1,1
                     origin=-1.0,-1.0,-1.0 periodic=3*f verbose=2 /
 !&patch_params       n=33,33,33 nt=5 grace=0.1no_mans_land=f /
-&patch_params       n=3*32 nt=5 grace=0.1 no_mans_land=t /
+&patch_params       n=3*32 nt=9 grace=0.1 no_mans_land=t /
 
 &selfgravity_params selfgravity=t prediction=t order=2 verbose=2 /
 &poisson_params     floor=1e-6 tolerance=1e-4 fourPiG=1.0 max_iter=100
-                    precondition=t verbose=1 solver='sor' verbose=1 /
+                    precondition=t verbose=1 solver='cg' /
 
 ! uniform, non-rotating
 &experiment_params  rho0=15.27026 r0=0.25 truealpha=0.0475 truebeta=0.0
@@ -19,9 +20,9 @@
 &scaling_params     l0=3.12e16 /
 &force_params       /
 
-&refine_params      on=t check_interval=2 verbose=3
-                    levelmin=5 levelmax=9
-                    min_jeans=32
+&refine_params      on=t check_interval=1 verbose=3
+                    levelmin=5 levelmax=10
+                    min_jeans=4
                     refine_from_t=0.0 refine_until_t=99.0 /
 
 ! uniform, rotating
@@ -40,8 +41,8 @@
 &zeus_params        gamma=1.0001 trnvrsn=0 dtinit=1.0e-3 itote=0 qlin=0.1
                     qcon=1.0 iord=2 iords=2 istp=0 /
 
-&ramses_params      courant_factor=0.2666667 gamma=1.001 slope_type=2
-                    smallr=1e-4 smallc=5e-1 isothermal=f /
+&ramses_params      courant_factor=0.2666667 gamma=1.0001 slope_type=3.5
+                    smallr=1e-4 smallc=1e-3 isothermal=f /
 
 &stagger_params     nu=  0.20, 1.0, 1.0, 0.2, 1.0, 1.0
                     !     cs    pa  ofd  mas  kap  eta
