@@ -62,10 +62,10 @@ MODULE extras_mod
   USE io_mod
   USE trace_mod
   USE connect_mod
-  !USE selfgravity_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.
   !-----------------------------------------------------------------------------
+  !USE selfgravity_mod                                                  ! selfg
   !USE rt_mod                                                           ! RT
   !USE newton_mod                                                       ! Newton
   !USE forces_mod                                                       ! forces
@@ -74,7 +74,7 @@ MODULE extras_mod
   !USE gravity_mod                                                      ! gravity
   !USE sink_particles_mod                                               ! sinkp
   !USE pic_mod                                                          ! PIC
-  !USE cooling_mod                                                      ! PIC
+  !USE cooling_mod                                                      ! cool
   !-----------------------------------------------------------------------------
   implicit none
   private
@@ -83,7 +83,8 @@ MODULE extras_mod
   ! states, must be accessed via a private instance in the extras_t data type
   !-----------------------------------------------------------------------------
   type, public, extends(gpatch_t):: extras_t
-    class(gpatch_t), pointer:: gpatch => null()                         ! keep
+    class(gpatch_t), pointer:: gpatch => null()                        ! keep
+    !type(selfgravity_t):: selfgravity                                  ! selfg
     !type(forces_t):: forces                                            ! forces
     !class(pic_t), pointer:: pic                                        ! pic
     !type (spitzer_t):: spitzer                                         ! spitzer
@@ -120,6 +121,7 @@ SUBROUTINE pre_init (self)
   class(extras_t), target:: self
   !.............................................................................
   self%gpatch => self
+  !call self%selfgravity%pre_init (self%patch)                          ! selfg
   !call self%forces%pre_init (self%patch)                               ! forces
   !allocate(self%rt)                                                    ! RT
   !call self%rt%pre_init (self%patch)                                   ! RT
@@ -128,7 +130,6 @@ SUBROUTINE pre_init (self)
   !allocate (self%pic)                                                  ! pic
   !self%connect%pic_patch => self%pic                                   ! pic
   !call self%pic%pre_init (self%patch)                                  ! pic
-  !call self%selfgravity%pre_init (self%patch)                          ! selfg
 END SUBROUTINE pre_init
 
 !===============================================================================
@@ -149,6 +150,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Optional inits
   !-----------------------------------------------------------------------------
+  !call self%selfgravity%init                                           ! selfg
   !call self%forces%init                                                ! forces
   !call self%newton%init                                                ! Newton
   !allocate (self%trace_particles)                                      ! tracep
@@ -207,6 +209,7 @@ SUBROUTINE pre_update (self)
   !.............................................................................
   call trace%begin ('extras_t%pre_update')                             ! keep
   call self%gpatch_t%pre_update                                        ! keep
+  !call self%selfgravity%pre_update                                     ! selfg
   !call self%rt%pre_update                                              ! RT
   !call self%newton%pre_update                                          ! Newton
   !call self%forces%pre_update                                          ! forces
@@ -215,7 +218,6 @@ SUBROUTINE pre_update (self)
   !call self%gravity%pre_update                                         ! gravity
   !call sink_particles%force_field                                      ! sinkp
   !call self%pic%pre_update                                             ! pic
-  !call self%selfgravity%post_update                                    ! selfg
   !call self%cooling%pre_update                                         ! cool
   call trace%end()
 END SUBROUTINE pre_update
@@ -227,11 +229,11 @@ END SUBROUTINE pre_update
 SUBROUTINE post_update (self)
   class(extras_t):: self
   !.............................................................................
+  !call self%selfgravity%post_update                                    ! selfg
   !call self%rt%post_update                                             ! RT
   !call self%forces%post_update                                         ! forces
   !call self%trace_particles%post_update                                ! tracep
   !call self%pic%post_update                                            ! pic
-  !call self%selfgravity%post_update                                    ! selfg
 END SUBROUTINE post_update
 
 !===============================================================================
