@@ -26,4 +26,5 @@ def restore(file):
         fd.close()
         return var
     except:
+        print('misssing file:',file)
         return {}
