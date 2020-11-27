@@ -826,7 +826,7 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
     uyfx=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)+u(1:n(1)-2,2:n(2)-1,2:n(3)-1,3))
     uzfx=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,4)+u(1:n(1)-2,2:n(2)-1,2:n(3)-1,4))
     etfx=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,5)+u(1:n(1)-2,2:n(2)-1,2:n(3)-1,5))
-    Brms2 = bsquarex
+    Brms2 = bsquarexx
     Eth = etfx - 0.5 / rhofx * ( uxfx**2 + uyfx**2 + uzfx**2 ) - &
           0.5 * Brms2
     Brms = Brms2**0.5
@@ -851,7 +851,7 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
     uyfy=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)+u(2:n(1)-1,1:n(2)-2,2:n(3)-1,3))
     uzfy=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,4)+u(2:n(1)-1,1:n(2)-2,2:n(3)-1,4))
     etfy=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,5)+u(2:n(1)-1,1:n(2)-2,2:n(3)-1,5))
-    Brms2 = bsquarey
+    Brms2 = bsquareyy
     Eth = etfy - 0.5 / rhofy * ( uxfy**2 + uyfy**2 + uzfy**2 ) - &
           0.5 * Brms2
     Brms = Brms2**0.5
@@ -876,7 +876,7 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
     uyfz=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)+u(2:n(1)-1,2:n(2)-1,1:n(3)-2,3))
     uzfz=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,4)+u(2:n(1)-1,2:n(2)-1,1:n(3)-2,4))
     etfz=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,5)+u(2:n(1)-1,2:n(2)-1,1:n(3)-2,5))
-    Brms2 = bsquarez
+    Brms2 = bsquarezz
     Eth = etfz - 0.5 / rhofz * ( uxfz**2 + uyfz**2 + uzfz**2 ) - &
           0.5 * Brms2
     Brms = Brms2**0.5
