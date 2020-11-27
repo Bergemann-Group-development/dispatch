@@ -268,7 +268,7 @@ SUBROUTINE patch_to_header (self, head)
 END SUBROUTINE patch_to_header
 
 !===============================================================================
-!> Copy he most important fields to a sequenced header, for communication and I/O
+!> Copy he most important fields from a sequenced header, for communication and I/O
 !===============================================================================
 SUBROUTINE header_to_patch (self, head)
   class(patch_t):: self
@@ -297,8 +297,7 @@ SUBROUTINE header_to_patch (self, head)
   !-----------------------------------------------------------------------------
   ! Lock task while modifying metadata
   !-----------------------------------------------------------------------------
-  if (omp_lock%tasks) &
-    call self%lock%set ('header_to_patch')
+  call self%lock%set ('header_to_patch')
   !-----------------------------------------------------------------------------
   ! Except for the first and last appearance, istep should increase be one
   !-----------------------------------------------------------------------------
@@ -337,11 +336,18 @@ SUBROUTINE header_to_patch (self, head)
   self%time       = head%time
   self%out_next   = head%out_next
   self%print_next = head%print_next
-!  self%dtime      = head%dtime
+  self%dtime      = head%dtime
   self%position   = head%position
   self%velocity   = head%velocity
   self%size       = head%size
   self%rank_steps = head%rank_steps
+  self%it         = head%it
+  self%nt         = head%nt
+  self%nq         = head%nq
+  self%t          = head%t  (1:self%nt)
+  self%dt         = head%dt (1:self%nt)
+  self%iit        = head%iit(1:self%nt)
+  !
   if (head%istep == 0) then
     write (io_unit%log,'(1x,a,i6,f12.6,2x,9f12.6)') &
       'patch_t%header_to_patch: id, time, t =', &
@@ -356,8 +362,7 @@ SUBROUTINE header_to_patch (self, head)
   end if
   self%nq         = head%nq
   self%latency    = wallclock() - head%send_time
-  if (omp_lock%tasks) &
-    call self%lock%unset ('header_to_patch')
+  call self%lock%unset ('header_to_patch')
   !-----------------------------------------------------------------------------
   ! Latency stats
   !-----------------------------------------------------------------------------
