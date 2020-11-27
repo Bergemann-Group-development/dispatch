@@ -566,7 +566,9 @@ SUBROUTINE end_game (self, task)
   call trace%begin ('task_list_t%end_game')
   end_count = mpi%end_counter%update(0)
   io_count = io%counter%update(0)
+  !.............................................................................
   if (task%finished) then
+    self%verbose = 2
     !---------------------------------------------------------------------------
     ! Count tasks that have gone past io%end_time with both task%time and
     ! task%out_next, and increment mpi%end_counter until done
@@ -575,24 +577,33 @@ SUBROUTINE end_game (self, task)
       count = count+1                                 ! count finished tasks
       if (count == self%na) then
         end_count = mpi%end_counter%update(+1)
-        !$omp atomic write
-        timer%done = (end_count >= mpi%size)
+      else
+        end_count = mpi%end_counter%update(0)
       end if
+      !$omp atomic write
+      timer%done = (end_count >= mpi%size)
     end if
     !---------------------------------------------------------------------------
     ! Check dead_mans_hand
     !---------------------------------------------------------------------------
-    if (first_finished > 0d0 .and. &
-        wallclock() > first_finished + dead_mans_hand) then
-      call io%warning ('dead_mans_hand time expired -- run stopping')
-      write (io_unit%mpi,'(1x,a,a,5i6,1p,3g12.4)') &
-      'task_list_t%end_game, dead_mans_hand: ', &
-      'count, end_count, io_count, io%nwrite, io%ntask, times =', &
-      count, end_count, io_count, io%nwrite, io%ntask, &
-      first_finished, dead_mans_hand, wallclock()
-      call dead_mans_hand_list (self)
-      !$omp atomic write
-      timer%done = .true.
+    if (first_finished > 0d0) then
+      if (wallclock() > first_finished + dead_mans_hand) then
+        call io%warning ('dead_mans_hand time expired -- run stopping')
+        write (io_unit%mpi,'(1x,a,a,5i6,1p,2g12.4,l3)') &
+          'task_list_t%end_game, dead_mans_hand: ', &
+          'count, end_count, io_count, io%nwrite, io%ntask, times =', &
+          count, end_count, io_count, io%nwrite, io%ntask, &
+          wallclock(), first_finished + dead_mans_hand, timer%done
+        call dead_mans_hand_list (self)
+        !$omp atomic write
+        timer%done = .true.
+      else
+        write (io_unit%mpi,'(1x,a,a,5i6,1p,2g12.4,l3)') &
+          'task_list_t%end_game, dead_mans_hand: ', &
+          'count, end_count, io_count, io%nwrite, io%ntask, times =', &
+          count, end_count, io_count, io%nwrite, io%ntask, &
+          wallclock(), first_finished + dead_mans_hand, timer%done
+      end if
     end if
   else
     !---------------------------------------------------------------------------
@@ -612,16 +623,18 @@ SUBROUTINE end_game (self, task)
       first_finished = wallclock()                  ! cf. dispatcher
       write (stdout,'(a,1p,g12.4)') &
         'first finish at run time =', first_finished
+      write (stdlog,'(a,1p,g12.4)') &
+        'first finish at run time =', first_finished
     end if
     !$omp end critical (finish_cr)
   end if
   !.............................................................................
   if (self%verbose > 0) then
-    write (io_unit%mpi,'(f12.6,4x,2a,i6,f12.6,5i6,l3)') &
+    write (io_unit%mpi,'(f9.3,2x,2a,i6,3f12.6,6i6,2l3)') &
       wallclock(), 'task_list_t%end_game: ', &
-      'id, time, count, end_count, io_count, io%nwrite, io%ntask, done =', &
-      task%id, task%time, count, end_count, io_count, io%nwrite, io%ntask, &
-      timer%done
+      'id,time,count,na,end_count,io_count,io%nwrite,io%ntask,done=', &
+      task%id, task%time, task%out_next, io%end_time, count, self%na, &
+      end_count, io_count, io%nwrite, io%ntask, task%finished, timer%done
   end if
   call trace%end ()
 END SUBROUTINE end_game

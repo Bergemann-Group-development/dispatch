@@ -333,7 +333,6 @@ SUBROUTINE header_to_patch (self, head)
   self%istep      = head%istep
   self%iout       = head%iout
   self%level      = head%level
-  self%time       = head%time
   self%out_next   = head%out_next
   self%print_next = head%print_next
   self%dtime      = head%dtime
@@ -347,6 +346,7 @@ SUBROUTINE header_to_patch (self, head)
   self%t          = head%t  (1:self%nt)
   self%dt         = head%dt (1:self%nt)
   self%iit        = head%iit(1:self%nt)
+  self%time       = head%time
   !
   if (head%istep == 0) then
     write (io_unit%log,'(1x,a,i6,f12.6,2x,9f12.6)') &

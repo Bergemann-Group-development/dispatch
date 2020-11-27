@@ -526,19 +526,26 @@ subroutine stall_handler
       if (stall_start > 0d0 .and. now-stall_start > io%log_interval*0.9) then
         !$omp critical (tasklog_cr)
         if (io%task_logging > 0) then
-          write (io_unit%task,'(f12.6,i4,4x,a)') now, omp%thread, 'shutting down logging'
+          write (io_unit%task,'(f12.6,i4,4x,a)') &
+            now, omp%thread, 'shutting down logging'
           flush (io_unit%task)
           write (stderr,'(1x,a,i5,3f12.5)') 'task logging stopped on rank', &
             mpi%rank, now, stall_start, io%log_interval*0.9
           write (stderr,*) 'task logging stopped on rank', mpi%rank
           io%task_logging = .false.
+          !---------------------------------------------------------------------
+          ! Check what's holding up tasks on this rank
+          !---------------------------------------------------------------------
+          call task_list%check_all
+          call task_list%check_oldest
         end if
         !$omp end critical (tasklog_cr)
       end if
     end if
     if (stall_start > 0d0 .and. now-stall_start > max_stalled) then
       !$omp single
-      write (io_unit%task,'(f12.6,i4,4x,a)') now, omp%thread, 'max_stalled reached'
+      write (io_unit%task,'(f12.6,i4,4x,a)') &
+        now, omp%thread, 'max_stalled reached'
       print *, mpi%rank, 'STALLED diagnostics'
       call task_list%check_all
       call task_list%check_oldest

@@ -553,11 +553,6 @@ SUBROUTINE unpack (self, mesg, link)
     new = .false.
   end if
   !-----------------------------------------------------------------------------
-  if (io%task_logging > 1) then
-    write (label,'(a,i4,i8)') 'unpack ', mesg%sender, mesg%seq
-    call task%log (label)
-  end if
-  !-----------------------------------------------------------------------------
   bonafide = .true.
   if (verbose > 1) &
     write (io_unit%log,'(a,i6,2x,6l1)') 'unpack: id, bits IBVRES =', mesg%id, &
@@ -595,6 +590,11 @@ SUBROUTINE unpack (self, mesg, link)
   task%status = ior (task%status, save_bits)
   !$omp atomic
   mpi_mesg%n_unpk = mpi_mesg%n_unpk+1
+  !-----------------------------------------------------------------------------
+  if (io%task_logging > 1) then
+    write (label,'(a,i4,i8)') 'unpack ', mesg%sender, mesg%seq
+    call task%log (label)
+  end if
   !-----------------------------------------------------------------------------
   ! Since an already existing patch may, at any one time, be under investigation
   ! by check_nbors, it must be protected by a critical region (or an OMP

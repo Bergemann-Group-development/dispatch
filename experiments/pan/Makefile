@@ -1,8 +1,9 @@
 
 # Option groups
-#OPTS = debug
 #OPTS = full_debug
-OPTS = optimized
+#OPTS = debug
+OPTS =
+#OPTS = optimized
 #OPTS = optimized_diagnostics
 
 # TOP directory and default target
