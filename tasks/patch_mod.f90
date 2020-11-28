@@ -297,7 +297,6 @@ SUBROUTINE header_to_patch (self, head)
   !-----------------------------------------------------------------------------
   ! Lock task while modifying metadata
   !-----------------------------------------------------------------------------
-  call self%lock%set ('header_to_patch')
   !-----------------------------------------------------------------------------
   ! Except for the first and last appearance, istep should increase be one
   !-----------------------------------------------------------------------------
@@ -322,6 +321,7 @@ SUBROUTINE header_to_patch (self, head)
   ! If the task is virtual, preserve bits%init_nbors and bits%update_status
   ! across the task update
   !-----------------------------------------------------------------------------
+                                        call self%lock%set ('header_to_patch')
   if (self%is_set(bits%virtual)) then
     save_bits = iand(self%status,bits%init_nbors+bits%update_status)
     self%status = ior(self%status,save_bits)
@@ -362,7 +362,7 @@ SUBROUTINE header_to_patch (self, head)
   end if
   self%nq         = head%nq
   self%latency    = wallclock() - head%send_time
-  call self%lock%unset ('header_to_patch')
+                                        call self%lock%unset ('header_to_patch')
   !-----------------------------------------------------------------------------
   ! Latency stats
   !-----------------------------------------------------------------------------
@@ -1189,7 +1189,6 @@ SUBROUTINE pack (self)
   type(header_t):: header
   integer:: n_buf, ibuf, iv, it
   real:: pt
-  type(lock_t), pointer:: lock
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%pack', itimer=itimer)
@@ -1225,14 +1224,11 @@ SUBROUTINE pack (self)
     1 format(f12.6,2x,a,2i9,f12.6,2x,5l1)
     flush (io_unit%log)
   end if
-  if (omp_lock%tasks) &
-    call self%lock%set ('pack')
+  !-----------------------------------------------------------------------------
+  ! Packing meta-data is a task-owner read operation, and does not need locking
+  !-----------------------------------------------------------------------------
   call patch_to_header (self, header)
   ibuf = 1
-  lock => self%mem_lock(self%it)
-  if (omp_lock%tasks) &
-    call self%lock%unset ('pack')
-  call lock%set ('pack')
   call anonymous_copy (n_header, header, mesg%buffer(ibuf))
   ibuf = ibuf + n_header
   !-----------------------------------------------------------------------------
@@ -1257,7 +1253,6 @@ SUBROUTINE pack (self)
     end do
   end if
   !-----------------------------------------------------------------------------
-  call lock%unset ('pack')
   if (io%verbose > 2) &
     write (io_unit%log,*) self%id, 'after pack', minval(self%mem(:,:,:,1,self%it,1))
   call trace%end (itimer)
@@ -1316,16 +1311,16 @@ SUBROUTINE unpack (self, mesg)
   ! Copy array data from the buffer to the time slot, under time slot lock
   !-----------------------------------------------------------------------------
   lock => self%mem_lock(header%it)
-  call lock%set ('unpack2')
+                                                        call lock%set ('unpack')
   do iv=1,self%nv
     call anonymous_copy (n_buf, buffer(ibuf), self%mem(:,:,:,iv,header%it,1))
     ibuf = ibuf + n_buf
   end do
-  call lock%unset ('unpack2')
+                                                      call lock%unset ('unpack')
   !-----------------------------------------------------------------------------
   ! Update the patch meta-data under lock, now that the time slices are in place
   !-----------------------------------------------------------------------------
-  call self%lock%set ('unpack2')
+                                                   call self%lock%set ('unpack')
   self%it         = header%it
   self%time       = header%time
   self%nt         = header%nt
@@ -1351,7 +1346,7 @@ SUBROUTINE unpack (self, mesg)
 !  'patch_t%header_to_patch: id,it,time,t=', &
 !  self%id, self%it, self%time, self%t
 !.............................................................................
-  call self%lock%unset ('unpack2')
+                                               call self%lock%unset ('unpack')
   call self%clear (bits%busy)
   self%wc_last = wallclock()
   !-----------------------------------------------------------------------------
@@ -2255,15 +2250,12 @@ SUBROUTINE time_interval (self, time, jt, pt, all, id, extrap)
     jt = 1
     pt(2) = 0.0
   else
-    if (omp_lock%tasks) call self%lock%set ('time_interval')
     call self%timeslots (iit, t)
-    if (omp_lock%tasks) call self%lock%unset ('time_interval')
     if (io%verbose > 0) then
       !-------------------------------------------------------------------------
       ! Self test
       !-------------------------------------------------------------------------
       call omp_lock%check_pointer (self%lock, 'time_interval', self%id)
-      call self%lock%set ('time_interval')
       call self%timeslots (iit, t)
       if (self%verbose > 2) then
         do i=1,self%nt-1
@@ -2277,7 +2269,6 @@ SUBROUTINE time_interval (self, time, jt, pt, all, id, extrap)
           end if
         end do
       end if
-      call self%lock%unset ('time_interval')
     end if
     j = 1
     n = self%nt-2

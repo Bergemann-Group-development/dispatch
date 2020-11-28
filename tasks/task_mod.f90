@@ -428,11 +428,6 @@ SUBROUTINE header_to_task (self, head)
   end if
   head%status = iand(head%status, not(bits%ready+bits%busy))
   !-----------------------------------------------------------------------------
-  ! Lock task while modifying metadata
-  !-----------------------------------------------------------------------------
-  if (omp_lock%tasks) &
-    call self%lock%set ('header_to_task')
-  !-----------------------------------------------------------------------------
   ! Except for the first and last appearance, istep should increase be one
   !-----------------------------------------------------------------------------
   if (head%id /= self%id) then
@@ -456,6 +451,7 @@ SUBROUTINE header_to_task (self, head)
   ! If the task is virtual, preserve bits%init_nbors and bits%update_status
   ! across the task update
   !-----------------------------------------------------------------------------
+                                         call self%lock%set ('header_to_task')
   if (self%is_set(bits%virtual)) then
     save_bits = iand(self%status,bits%init_nbors+bits%update_status)
     self%status = ior(self%status,save_bits)
@@ -510,8 +506,7 @@ SUBROUTINE header_to_task (self, head)
   end if
   self%nq         = head%nq
   self%latency    = wallclock() - head%send_time
-  if (omp_lock%tasks) &
-    call self%lock%unset ('header_to_task')
+                                         call self%lock%unset ('header_to_task')
   !-----------------------------------------------------------------------------
   ! Latency stats
   !-----------------------------------------------------------------------------
@@ -569,46 +564,9 @@ SUBROUTINE rotate (self)
     time = self%time + self%dtime
   end if
   !-----------------------------------------------------------------------------
-  ! Time slot rotation.  Note that self%time should be the LAST of these
-  ! updates, since we do not want to enforce a critical region, and the
-  ! new self%time is what a task is judged on!  Also, note that the only time
-  ! slot information accessed from other tasks is self%it, self%time, self%iit,
-  ! self%t(iit(1:nt-1)), and self%dt(iit(1:nt-1)).  The iit((nt) entries are
-  ! not accessed.  Do the actual rotation of the buffer under lock, or atomic
+  ! Time slot rotation.
   !-----------------------------------------------------------------------------
-  if (omp_lock%tasks) then
-    call self%lock%set ('rotate')
-    call rotate_locked
-    call self%lock%unset ('rotate')
-  else
-    call rotate_atomic
-  end if
-  self%rotated = .true.
-  !.............................................................................
-  if (io%verbose>2) then
-   write (io_unit%log,*) 'task id:',self%id,'  it:',self%it,'  new:',self%new
-   if (io%verbose>3) then
-     write (io_unit%log,*) 'task iit:', self%iit
-     write (io_unit%log,*) 'task t(iit):', self%t(self%iit)
-    end if
-  end if
-  call self%log ('rotate', 3)
-  call trace%end (itimer)
-contains
-
-subroutine rotate_locked2
-  self%dt(self%it)= self%dtime                          ! save dt
-  self%dt(self%new)= self%dtime                         ! estimate
-  self%t(self%new) = time                               ! initial time
-  self%it = self%new                                    ! update time slot, new
-  self%iit = mod(self%iit,self%nt)+1
-  self%new = self%iit(self%nt)
-  self%istep = self%istep + 1
-  self%rank_steps = self%rank_steps + 1
-  self%time = time
-end subroutine rotate_locked2
-
-subroutine rotate_locked
+                                                 call self%lock%set ('rotate')
   self%dt(self%it)= self%dtime                          ! save dt
   self%dt(self%new)= self%dtime                         ! estimate
   self%t(self%new) = time                               ! initial time
@@ -619,46 +577,19 @@ subroutine rotate_locked
   self%istep = self%istep + 1                           ! increment task step
   self%rank_steps = self%rank_steps + 1                 ! increment rank step
   self%time = time                                      ! reveal new time
-end subroutine rotate_locked
+  self%rotated = .true.
+                                                 call self%lock%unset ('rotate')
+  !.............................................................................
+  if (io%verbose>2) then
+   write (io_unit%log,*) 'task id:',self%id,'  it:',self%it,'  new:',self%new
+   if (io%verbose>3) then
+     write (io_unit%log,*) 'task iit:', self%iit
+     write (io_unit%log,*) 'task t(iit):', self%t(self%iit)
+    end if
+  end if
+  call self%log ('rotate', 3)
+  call trace%end (itimer)
 
-subroutine rotate_atomic
-  !-----------------------------------------------------------------------------
-  ! Time slot rotation.  Note that self%time should be the LAST of these
-  ! updates, since we do not want to enforce a critical region, and the
-  ! new self%time is what a task is judged on!  Also, note that the only time
-  ! slot information accessed from other tasks is self%it, self%time, self%iit,
-  ! self%t(iit(1:nt-1)), and self%dt(iit(1:nt-1)).  The iit((nt) entries are
-  ! not accessed.
-  !-----------------------------------------------------------------------------
-  rptr => self%dt(self%it)
-  !$omp atomic write
-  rptr = self%dtime                                     ! just updated
-  self%dt(self%new)= self%dtime                         ! next estimate
-  self%t(self%new) = time                               ! initial time
-  new = self%new
-  associate (self_istep=>self%istep,self_it=>self%it,snew=>self%new, &
-             self_time=>self%time,self_rank_steps=>self%rank_steps)
-  !$omp atomic write
-  self_it = new                                         ! update time slot, new
-  new = mod(new,self%nt)+1                              ! increment / rotate
-  !$omp atomic write
-  snew = new
-  do i=1,self%nt-1
-    iptr => self%iit(i)
-    !$omp atomic write
-    iptr = self%iit(i+1)
-  end do
-  iptr => self%iit(self%nt)
-  !$omp atomic write
-  iptr = self%new                                       ! new right-most slot
-  !$omp atomic update
-  self_istep = self_istep + 1
-  !$omp atomic update
-  self_rank_steps = self_rank_steps + 1
-  !$omp atomic write
-  self_time = time
-  end associate
-end subroutine rotate_atomic
 END SUBROUTINE rotate
 
 !===============================================================================
@@ -710,13 +641,13 @@ SUBROUTINE timeslots (self, slots, times)
   ! Cache the current slot index, and the times.  If the times happen to
   ! advance in the middle of the loop, the time may jump over one slot
   !-----------------------------------------------------------------------------
+                                              call self%lock%set ('timeslots')
   do i=1,self%nt-1
-    !$omp atomic read
     j = self%iit(i)
-    !$omp atomic read
     times(i)  = self%t(j)
     slots(i) = j
   end do
+                                              call self%lock%unset ('timeslots')
 END SUBROUTINE timeslots
 
 !===============================================================================
@@ -773,7 +704,7 @@ LOGICAL FUNCTION is_ahead_of (self, target)
   real(8):: nbtime, nbdtime, tgtime
   !.............................................................................
   if (omp_lock%tasks) then
-    call self%lock%set ('is_ahead_of')
+                                            call self%lock%set ('is_ahead_of')
     nbtime = self%time
     nbdtime = self%dtime
     tgtime = target%time
@@ -784,7 +715,7 @@ LOGICAL FUNCTION is_ahead_of (self, target)
     else
       is_ahead_of = nbtime + nbdtime*self%grace > tgtime
     end if
-    call self%lock%unset ('is_ahead_of')
+                                            call self%lock%unset ('is_ahead_of')
   else
     !$omp atomic read
     nbtime = self%time
@@ -1240,7 +1171,7 @@ SUBROUTINE log (self, label, level)
         call io%open_rank_file (io_unit%task, ".task1", 'formatted')
         ilog = 1
       else
-        call io%open_rank_file (io_unit%task, ".task0", 'formatted')
+        call io%open_rank_file (io_unit%task, ".task2", 'formatted')
         ilog = 0
       end if
       last = now
