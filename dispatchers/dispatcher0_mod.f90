@@ -555,7 +555,7 @@ subroutine stall_handler
                                       call task_list%qlock%set ('stall_handler')
       if (wallclock()-stall_start > retry_stalled) then
         !-----------------------------------------------------------------------
-        ! Try reviving the queue by using fiŕst check_all, which checks the whole
+        ! Try reviving the queue by using first check_all, which checks the whole
         ! task list for ready tasks -- finding such tasks shows that check_nbors()
         ! is not working correctly.
         !-----------------------------------------------------------------------
