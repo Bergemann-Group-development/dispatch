@@ -103,7 +103,7 @@ SUBROUTINE update (self, id, iit, dt, mem, mesh, lock)
     if (io%master) print *,id,'WARNING: setting time_order=0 in timestep%update'
     self%time_order=0
   end if
-  call lock%set ('timestep')
+                                                      call lock%set ('timestep')
   select case (self%time_order)
   case (0)
   case (1)
@@ -129,6 +129,7 @@ SUBROUTINE update (self, id, iit, dt, mem, mesh, lock)
     mem(l(1):u(1),l(2):u(2),l(3):u(3),:,iit(nt-3),2)*(self%wt(3)*dt(iit(nt-3))) + &
     mem(l(1):u(1),l(2):u(2),l(3):u(3),:,iit(nt-4),2)*(self%wt(4)*dt(iit(nt-4)))
   end select
+                                                    call lock%unset ('timestep')
   if (self%verbose>3) then
     print'(a,i4,2x,a,1p,6e10.2,2x,6i5)', 'timestep, id:', &
       id, 'minmax:', &
@@ -139,7 +140,6 @@ SUBROUTINE update (self, id, iit, dt, mem, mesh, lock)
       minval(mem(l(1):u(1),l(2):u(2),l(3):u(3),1,iit(nt  ),1)), &
       maxval(mem(l(1):u(1),l(2):u(2),l(3):u(3),1,iit(nt  ),1)), shape(mem)
   end if
-  call lock%unset ('timestep')
   call trace_end (itimer)
 END SUBROUTINE update
 

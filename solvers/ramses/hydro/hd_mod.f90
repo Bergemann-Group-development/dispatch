@@ -199,6 +199,7 @@ SUBROUTINE update (self)
   real, dimension(:,:,:), pointer, contiguous:: d, e
   real, dimension(:,:,:,:), pointer:: p
   real:: u0, u1
+  type(lock_t), pointer:: lock
   integer:: n(3), i, j, k, idir
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -228,6 +229,8 @@ SUBROUTINE update (self)
   d => self%mem(:,:,:,self%idx%d,self%new,1)
   e => self%mem(:,:,:,self%idx%e,self%new,1)
   p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
+                                                 lock => self%mem_lock(self%new)
+                                                 call lock%set ('hd_t%update')
   do idir=1,3
   do k=self%li(3),self%ui(3)
   do j=self%li(2),self%ui(2)
@@ -266,6 +269,7 @@ SUBROUTINE update (self)
   if (isothermal) &
     self%mem(:,:,:,self%idx%e,self%new,1) = &
     self%mem(:,:,:,self%idx%d,self%new,1)
+                                                 call lock%unset ('hd_t%update')
   !.............................................................................
   if (verbose>0) then
     block

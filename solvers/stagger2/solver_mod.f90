@@ -109,7 +109,6 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   self%new = 1 + mod(self%it,self%nt)
   lock => self%mem_lock(self%new)
-                                                call self%lock%set ('update')
   call self%gpatch_t%pre_update
   call self%mhd_t%pre_update
   associate (d => self%mem(:,:,:,self%idx%d,self%new,1))
@@ -118,7 +117,6 @@ SUBROUTINE update (self)
   call validate%check (self, d, ' after update')
   end associate
   call self%mhd_t%post_update
-                                                call self%lock%unset ('update')
   call trace%end()
 END SUBROUTINE update
 

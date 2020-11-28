@@ -296,7 +296,7 @@ SUBROUTINE update (self)
   associate (i0=>self%mesh(1)%li, j0=>self%mesh(2)%li, k0=>self%mesh(3)%li, &
              i1=>self%mesh(1)%ui, j1=>self%mesh(2)%ui, k1=>self%mesh(3)%ui, &
              uin=>self%uin,unew=>self%unew)
-
+                                                        call lock%set ('update')
   nv3 = 5
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3  ) = &
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3  ) + &
@@ -420,6 +420,7 @@ SUBROUTINE update (self)
   case (2)
   call divb_clean2 (self)
   end select
+                                                      call lock%unset ('update')
   !.............................................................................
   call trace%end (itimer)
   if (rieman%ndiff > 0) then

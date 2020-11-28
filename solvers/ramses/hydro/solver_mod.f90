@@ -115,12 +115,10 @@ SUBROUTINE update (self)
   ! Proceed, referring everywhere to the %new time slot
   !-----------------------------------------------------------------------------
   lock => self%mem_lock(self%new)
-                                                      call lock%set ('update')
   call self%gpatch_t%pre_update ()
   call self%hd_t%pre_update
   call self%hd_t%update
   call self%hd_t%post_update
-                                                      call lock%unset ('update')
   !-----------------------------------------------------------------------------
   call trace%end ()
 END SUBROUTINE update

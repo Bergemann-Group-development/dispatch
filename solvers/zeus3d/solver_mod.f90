@@ -80,16 +80,18 @@ END SUBROUTINE init
 !===============================================================================
 SUBROUTINE update (self)
   class(solver_t) :: self
+  type(lock_t), pointer:: lock
   !.....................................................................
   call trace%begin ('solver_t%update')
   call self%gpatch_t%pre_update
-  call self%mem_lock(self%new)%set ('update')
   call self%extras_t%pre_update
   call validate%check (self, d, 'before update')
+  lock => self%mem_lock(self%new)
+                                                        call lock%set ('update')
   call self%mhd_t%update
+                                                      call lock%unset ('update')
   call validate%check (self, d, ' after update')
   call self%extras_t%post_update
-  call self%mem_lock(self%new)%unset ('update')
   call trace%end ()
 END SUBROUTINE update
 
