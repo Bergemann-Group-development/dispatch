@@ -216,7 +216,7 @@ SUBROUTINE set (self, label, itimer)
   real(8):: start, end, used
   integer:: thread
   !-----------------------------------------------------------------------------
-  if (.not.omp_lock%on) return
+  if (.not. self%on) return
 #ifdef TRACE 
   call trace%begin('lock_t%set')
 #endif
@@ -285,7 +285,7 @@ SUBROUTINE alternate_log (self)
   class(lock_t):: self
   real(8):: wc
   !-----------------------------------------------------------------------------
-  if (.not.omp_lock%on) return
+  if (.not. self%on) return
   if (alternate_time > 0d0) then
     wc = wallclock()
     if (wc > alternate_next) then
@@ -317,7 +317,7 @@ FUNCTION test (self) RESULT (out)
   logical:: out
   real(8):: wc
   !-----------------------------------------------------------------------------
-  if (.not.omp_lock%on) return
+  if (.not. self%on) return
 #ifdef TRACE 
   call trace%begin('lock_t%test')
 #endif
@@ -353,7 +353,7 @@ FUNCTION check (self) RESULT (out)
   class(lock_t):: self
   logical:: out
   !-----------------------------------------------------------------------------
-  if (.not.omp_lock%on) return
+  if (.not. self%on) return
   out = (omp%thread == self%thread)
 END FUNCTION check
 
@@ -366,7 +366,7 @@ SUBROUTINE unset (self, label)
   integer:: level
   real(8):: wc, used
   !-----------------------------------------------------------------------------
-  if (.not.omp_lock%on) return
+  if (.not. self%on) return
 #ifdef TRACE 
   call trace%begin('lock_t%unset')
 #endif
@@ -437,7 +437,7 @@ SUBROUTINE info (self, unit, p_verbose)
   class(lock_t), pointer:: lock
   real(8):: time
   !-----------------------------------------------------------------------------
-  if (.not.omp_lock%on) return
+  if (.not. self%on) return
   if (verbose > 0) then
     !$omp atomic read
     time = wait_time
