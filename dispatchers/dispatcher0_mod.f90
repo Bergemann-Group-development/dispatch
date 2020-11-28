@@ -228,7 +228,7 @@ SUBROUTINE update (self, task_list, test)
   !-----------------------------------------------------------------------------
   ! Pick a task off the queue, in what is normally a very brief OMP lock region
   !-----------------------------------------------------------------------------
-  call task_list%lock%set ('dispatch0_t%update 1')
+                               call task_list%qlock%set ('dispatch0_t%update 1')
   head => task_list%queue                                    ! queue start
   if (detailed_timer) then
     call trace%end (itimer(i))
@@ -312,14 +312,10 @@ SUBROUTINE update (self, task_list, test)
       call task%set (bits%busy)                              ! mark task busy
       if (associated(prev)) then
         !print *, omp%thread, 'match'
-        !call prev%qlock%set ('dipatcher0')
         prev%next_time => head%next_time                     ! skip over
-        !call prev%qlock%unset ('dipatcher0')
       else
         !print *, omp%thread, 'fall back'
-        !call task_list%queue%qlock%set ('dipatcher0')
         task_list%queue => head%next_time                    ! chop head off
-        !call task_list%queue%qlock%unset ('dipatcher0')
       end if
       call task%clear (bits%ready)                           ! not in queue
       if (track_active) &
@@ -369,7 +365,7 @@ SUBROUTINE update (self, task_list, test)
     if (verbose > 0) &
       write(io_unit%log,'(f12.6,i6,2x,a)') wallclock(), task_list%na, 'no queue'
   end if
-  call task_list%lock%unset ('dispatch0_t%update 1')
+                             call task_list%qlock%unset ('dispatch0_t%update 1')
   if (task_list%verbose > 3) &
     write (io%output,*) wallclock(),' thread',omp%thread,' unlocked tasklist(1)'
   !-----------------------------------------------------------------------------
@@ -386,10 +382,11 @@ SUBROUTINE update (self, task_list, test)
     end if
     if (already_busy) then
       !$omp critical (stderr_cr)
-      write (io_unit%log,*) mpi%rank,' WARNING: thread', omp%thread, &
+      write (stdlog,*) mpi%rank,' WARNING: thread', omp%thread, &
         ' tried to update busy task', task%id
-      write (stderr,*) mpi%rank,' WARNING: thread', omp%thread, &
-        ' tried to update busy task', task%id
+      write (stderr,'(f12.6,i5,2x,a,i4,1x,a,i6)') &
+        wallclock(), mpi%rank,' WARNING: thread', omp%thread, &
+        'tried to update busy task', task%id
       !$omp end critical (stderr_cr)
       call trace%end (itimer(i))
       return
@@ -555,7 +552,7 @@ subroutine stall_handler
       !$omp end single
     else if (stall_start > 0d0 .and. wallclock()-stall_start > retry_stalled) then
       write (io_unit%task,'(f12.6,i4,4x,a)') now, omp%thread, 'retry_stalled reached'
-      call task_list%lock%set ('stall_handler')
+                                      call task_list%qlock%set ('stall_handler')
       if (wallclock()-stall_start > retry_stalled) then
         !-----------------------------------------------------------------------
         ! Try reviving the queue by using fiŕst check_all, which checks the whole
@@ -590,7 +587,7 @@ subroutine stall_handler
           stall_start = wallclock()
         end if
       end if
-      call task_list%lock%unset ('stall_handler')
+                                    call task_list%qlock%unset ('stall_handler')
     else if (do_delay) then
       call self%no_queue (stalled, task_list)
       return

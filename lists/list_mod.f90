@@ -97,7 +97,7 @@ MODULE list_mod
     integer:: n_tasks=1
     integer:: dims(3)=0
     integer:: verbose=0
-    type(lock_t):: lock
+    type(lock_t):: lock, qlock
     logical:: face_nbors=.false.
     logical:: detailed_timer=.false.
     character(len=4)              :: kind='list'
@@ -180,9 +180,11 @@ SUBROUTINE init (self, name)
     self%name = name
     write (io_unit%log,*)'init_list: ', name
     call self%lock%init (name(1:4))
+    call self%qlock%init (name(1:4))
   else
     write (io_unit%log,*)'init_list: list_t'
     call self%lock%init ('list')
+    call self%qlock%init ('list')
   end if
   !$omp critical (sequence_alloc_cr)
   if (.not.allocated(sequence)) then
@@ -281,19 +283,15 @@ SUBROUTINE append_link (self, link)
   !-----------------------------------------------------------------------------
   ! Append in such a way that the task list does not need to be locked
   !-----------------------------------------------------------------------------
-!  call link%qlock%set ('append_link1')
   nullify(link%next)
   if (associated(self%tail)) then
     link%prev => self%tail
     link%prev%next => link
-!    call self%tail%qlock%set ('append_link2')
     self%tail => link
-!    call self%tail%qlock%unset ('append_link2')
   else
     self%head => link
     self%tail => link
   end if
-!  call link%qlock%unset ('append_link1')
   !-----------------------------------------------------------------------------
   ! IMPORTANT: Some procedures depend on knowing the size of the list!
   ! Calling update_counts is robust, but may take significant time.
@@ -406,25 +404,17 @@ SUBROUTINE remove_link (self, link)
   ! Check for tail task
   !-----------------------------------------------------------------------------
   if (associated(next)) then
-    !call next%qlock%set ('remove_link')
     next%prev => link%prev                  ! point backwards, possibly null
-    !call next%qlock%unset ('remove_link')
   else
-    !call self%tail%qlock%set ('remove_link')
     self%tail => link%prev                  ! new tail link
-    !call self%tail%qlock%unset ('remove_link')
   end if
   !-----------------------------------------------------------------------------
   ! Check for head task
   !-----------------------------------------------------------------------------
   if (associated(link%prev)) then           ! not head task
-    !call link%prev%qlock%set ('remove_link')
     link%prev%next => next                  ! make prev point to next
-    !call link%prev%qlock%unset ('remove_link')
   else                                      ! link was head
-    !call self%head%qlock%set ('remove_link')
     self%head => next                       ! make head point to next
-    !call self%head%qlock%unset ('remove_link')
   end if
   !-----------------------------------------------------------------------------
   ! IMPORTANT: Some procedures depend on knowing the size of the list!
@@ -743,7 +733,6 @@ SUBROUTINE check_nbors (self, link)
       'checked self', task%id, task%level, status
   end if
   call trace%end (itimer)
-  return
 END SUBROUTINE check_nbors
 
 !===============================================================================
@@ -1985,11 +1974,11 @@ SUBROUTINE queue_by_time (self, this)
     call trace%begin ('list_t%queue_by_time ', itimer=itimer)
     if (self%verbose > 3) &
       write (io%output,*) wallclock(),' thread',omp%thread,' waitfor tasklist(4)'
-    call self%lock%set ('queue_by_time', itimer=itimer)
+    call self%qlock%set ('queue_by_time', itimer=itimer)
   else
     if (self%verbose > 3) &
       write (io%output,*) wallclock(),' thread',omp%thread,' waitfor tasklist(4)'
-    call self%lock%set ('queue_by_time')
+    call self%qlock%set ('queue_by_time')
   end if
   if (self%verbose > 3) &
     write (io%output,*) wallclock(),' thread',omp%thread,' locked tasklist(4)'
@@ -2015,7 +2004,7 @@ SUBROUTINE queue_by_time (self, this)
     io%verbose = verbose
     io%do_trace = .false.
   end if
-  call self%lock%unset ('queue_by_time')
+  call self%qlock%unset ('queue_by_time')
   if (self%detailed_timer) then
     call trace%end (itimer)
   end if
@@ -2051,16 +2040,22 @@ SUBROUTINE real_queue_by_time (self, this, error)
   ! Double check that no other thread has set the ready bit on this task.
   !-----------------------------------------------------------------------------
   if (task%is_clear (bits%ready+bits%busy)) then
+    !---------------------------------------------------------------------------
+    ! Briefly lock the task, inc case two threads arrive at the same time
+    !---------------------------------------------------------------------------
+    call task%lock%set ('check_ready')
+    if (task%is_set (bits%ready)) then
+      write (stdlog,*) 'INFO: 2nd thread tried to queue task', task%id
+      return
+    end if
     call task%set(bits%ready)
+    call task%lock%unset ('check_ready')
     if (self%verbose > 1) &
       write (io_unit%log,'(f12.6,i5,1x,a,i9,a,f12.6,2x,a,i5)') wallclock(), omp%thread, &
         'list_t%queue_by_time: adding task', task%id, ' at time', task%time, &
         'nq', self%nq
-    !call this%qlock%set ('queue_by_time')
     nullify (prev)
-    !call self%queue%qlock%set ('queue_by_time')
     next => self%queue
-    !call self%queue%qlock%unset ('queue_by_time')
     nit = 0
     do while (associated(next))
       nit = nit+1
@@ -2074,9 +2069,7 @@ SUBROUTINE real_queue_by_time (self, this, error)
           ' is already in ready queue'
         go to 9
       else if (next%task%time > task%time) then
-        !call this%qlock%set ('queue_by_time')
         this%next_time => next
-        !call this%qlock%unset ('queue_by_time')
         if (associated(prev)) then
           if (self%verbose > 1) then
             write (io_unit%log,'(i4,2x,a,i6,a,i6,i5,1p,3g16.6)') &
@@ -2084,13 +2077,9 @@ SUBROUTINE real_queue_by_time (self, this, error)
               prev%task%id,next%task%id, prev%task%time, this%task%time, &
               next%task%time
           end if
-          !call prev%qlock%set ('queue_by_time')
           prev%next_time => this
-          !call prev%qlock%unset ('queue_by_time')
         else
-          !call self%queue%qlock%set ('queue_by_time')
           self%queue => this
-          !call self%queue%qlock%unset ('queue_by_time')
           if (self%verbose > 1) then
             write (io_unit%log,*) 'task',task%id,' at ready queue head',self%nq
           end if
@@ -2099,10 +2088,8 @@ SUBROUTINE real_queue_by_time (self, this, error)
         self%nq = self%nq+1
         go to 9
       end if
-      !call next%qlock%set ('queue_by_time')
       prev => next
       next => next%next_time
-      !call next%qlock%unset ('queue_by_time')
     end do
     self%nq = self%nq+1
     if (associated(prev)) then
@@ -2133,8 +2120,8 @@ SUBROUTINE real_queue_by_time (self, this, error)
   ! region, it is perfectly normal that several threads compete about putting
   ! a given task onto the queue, so there is no reason to print a warning here
   !-----------------------------------------------------------------------------
-  else if (io%verbose > 1) then
-    if (io%verbose > 2) &
+  else if (self%verbose > 0) then
+    if (self%verbose > 1) &
       print '(i6,a,i5,a,i6,1p,e15.6)', mpi%rank,' INFO: thread',omp%thread, &
       ' found ready bit in queue_by_time for task', task%id, task%time
     write (io_unit%log,*) wallclock(),' INFO: thread',omp%thread, &
