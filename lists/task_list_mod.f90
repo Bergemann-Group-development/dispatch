@@ -138,6 +138,11 @@ SUBROUTINE init_levels (self)
   call trace%begin ('task_list_t%init_levels')
   call refine%init                      ! refinement parameters
   !-----------------------------------------------------------------------------
+  ! Active task_list locking is needed only when AMR is on
+  !-----------------------------------------------------------------------------
+  self%lock%on = refine%on
+  write (stdlog,*) 'task_list%lock%on =', self%lock%on
+  !-----------------------------------------------------------------------------
   ! Loop to find the initial level interval (e.g. due to fixed mesh refinement)
   !-----------------------------------------------------------------------------
   first_time = .true.
@@ -214,10 +219,8 @@ SUBROUTINE startup (self)
   !call self%init_all_nbors
   call self%count_status
   !-----------------------------------------------------------------------------
-  ! Must initialize refine before calling init_levels and task_mesg_t%init, but
-  ! after tasks with levels have been created and initialized
+  ! Note that refine%init is called as part of self%init_levels
   !-----------------------------------------------------------------------------
-  call refine%init
   call self%init_levels
   call self%task_mesg_t%init
   call validate%init

@@ -53,7 +53,7 @@ MODULE link_mod
     class(link_t), pointer :: next_time => null()     ! next link in time order
     class(link_t), pointer :: next_active => null()   ! next link to an active process, in time order
     class(nbor_t), pointer :: nbors_by_level => null()! decreasing level sorted list
-    type(lock_t):: lock, qlock
+    type(lock_t):: lock
     logical:: needs_nbors = .true.  ! flag indicating if a link is in need of adding nbors
     logical:: initialized = .false.
     logical:: check = .true.
@@ -122,11 +122,14 @@ SUBROUTINE init (self)
   if (.not.self%initialized) then
     self%initialized = .true.
     call self%lock%init ('nbor')
-    call self%qlock%init ('queue')
     if (associated(self%task)) then
       self%lock%id  = self%task%id
-      self%qlock%id = self%task%id
     end if
+    !---------------------------------------------------------------------------
+    ! Only turn locks on if the static instance flag (set by refine%init)
+    ! says so
+    !---------------------------------------------------------------------------
+    self%lock%on = omp_lock%links
   end if
 END SUBROUTINE init
 
