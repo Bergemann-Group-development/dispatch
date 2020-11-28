@@ -144,7 +144,6 @@ SUBROUTINE pre_update (self)
   integer:: n(2,3)
   !.............................................................................
   call trace%begin ('extras_t%pre_update')
-  call self%gpatch_t%pre_update                                 ! keep
   self%gpatch => self                                           ! keep
   call self%forces%pre_update                                   ! forces
   call self%selfgravity%pre_update                              ! selfg

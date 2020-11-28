@@ -183,7 +183,6 @@ END SUBROUTINE dealloc
 SUBROUTINE pre_update (self)
   class(extras_t):: self
   !.............................................................................
-  call self%gpatch_t%pre_update                                 ! keep
   !call self%rt%pre_update()                                     ! radiative transfer
   !call self%forces%pre_update                                   ! forces
   !call self%trace_particles%update                              ! tracep

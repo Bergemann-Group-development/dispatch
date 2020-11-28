@@ -208,7 +208,6 @@ SUBROUTINE pre_update (self)
   class(extras_t), target:: self
   !.............................................................................
   call trace%begin ('extras_t%pre_update')                             ! keep
-  call self%gpatch_t%pre_update                                        ! keep
   !call self%selfgravity%pre_update                                     ! selfg
   !call self%rt%pre_update                                              ! RT
   !call self%newton%pre_update                                          ! Newton

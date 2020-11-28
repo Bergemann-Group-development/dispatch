@@ -158,7 +158,6 @@ SUBROUTINE pre_update (self)
   call trace%begin ('extras_t%pre_update')
   self%gpatch => self                                           ! keep
   patch => self                                                 ! keep
-  call self%gpatch_t%pre_update                                 ! keep
   call self%forces%pre_update                                   ! forces
   call sinks%pre_update                                         ! sinks
   !call self%trace_particles%update                              ! tracep
