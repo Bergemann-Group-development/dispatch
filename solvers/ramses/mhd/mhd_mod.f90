@@ -18,6 +18,7 @@ MODULE mhd_mod
   !USE const
   USE io_mod
   USE io_unit_mod
+  USE omp_lock_mod
   USE extras_mod
   USE link_mod
   USE riemann_mod
@@ -180,6 +181,7 @@ SUBROUTINE update (self)
   real(dp):: dtdx, dtdy, dtdz
   real:: u0, u1
   integer:: n(3), nv3, i, j, k, idir
+  type(lock_t), pointer:: lock
   integer, parameter:: ndim=3
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -296,6 +298,7 @@ SUBROUTINE update (self)
   associate (i0=>self%mesh(1)%li, j0=>self%mesh(2)%li, k0=>self%mesh(3)%li, &
              i1=>self%mesh(1)%ui, j1=>self%mesh(2)%ui, k1=>self%mesh(3)%ui, &
              uin=>self%uin,unew=>self%unew)
+  lock => self%mem_lock(self%new)
                                                         call lock%set ('update')
   nv3 = 5
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3  ) = &
