@@ -1466,7 +1466,7 @@ END FUNCTION energy
 !===============================================================================
 SUBROUTINE check_support (self)
   class(ramses_t):: self
-  integer:: level, i1, i2, i3, key(4)
+  integer:: level, i1, i2, i3, key(4), n
   class(link_t), pointer:: link, nbor
   class(task_t), pointer:: task, nbtask
   class(experiment_t), pointer:: patch
@@ -1491,6 +1491,11 @@ SUBROUTINE check_support (self)
             position = task%position + [i1,i2,i3]*task%size
             key(1) = task%level-1
             key(2:4) = floor(position/(2d0*task%size))
+            !-------------------------------------------------------------------
+            ! Periodic wrapping
+            !-------------------------------------------------------------------
+            n = 2**(task%level-1-self%minlvl)
+            key(2:4) = modulo(key(2:4),n)
             !-------------------------------------------------------------------
             ! Create a patch there if none exists; it will be prepended to the 
             ! task list, to avoid problems with looping over the same list
