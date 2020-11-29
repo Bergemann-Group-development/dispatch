@@ -239,7 +239,7 @@ SUBROUTINE init (self, name)
     patch_n = 16
     ! read namelist
     rewind (io%input); read (io%input,ramses_reader_params)
-    if (io%master) write(*, ramses_reader_params)
+    write(io%namelist,ramses_reader_params)
     shared%levelmin = levelmin
     shared%levelmax = levelmax
   end if
@@ -497,7 +497,7 @@ SUBROUTINE read_snapshot (self, keep, load)
     !
     read(ilun) noutput, iout, ifout
     if (verbose > 2) &
-      write(stdout,*)'noutput, iout, ifout:', noutput, iout, ifout
+      write(stdlog,*)'noutput, iout, ifout:', noutput, iout, ifout
     read(ilun) ! SKIP tout
     read(ilun) ! SKIP aout
     read(ilun) time
@@ -785,7 +785,7 @@ SUBROUTINE read_snapshot (self, keep, load)
       read(ilun) ngrid_level ! aka `numb_list`
       ngrid_file(1:ncpu,1:nlevelmax) = ngrid_level
       if (verbose > 3) &
-        write (stdout, '(a,i4.1,a,/,40i6)') &
+        write (stdlog, '(a,i4.1,a,/,40i6)') &
         'ngrids(cpu=',k,')',ngrid_level(k,1:nlevelmax)
       !
       read(ilun) ! SKIP numb_tot
@@ -948,6 +948,10 @@ SUBROUTINE read_snapshot (self, keep, load)
               oct%key(1) = ilevel
               oct%key(2:4) = position/size
               oct%ii = floor((position-ds-oct%key(2:4)*size)/ds)
+              if (verbose > 2) then
+                write (stdlog,'(a,3f10.4,4i4)') &
+                  'oct: position,key=', position, oct%key
+              end if
               if (keep) then
                 allocate (oct%var(8,nvar_mhd+1))
                 call io%bits_mem (storage_size(oct%var), product(shape(oct%var)), 'oct')
@@ -977,7 +981,7 @@ SUBROUTINE read_snapshot (self, keep, load)
               n_grid = n_grid + 1
             end do
             if (verbose > 1) &
-              write(stdout,'(1x,a,i10,i6,i4,1p,e12.3)') &
+              write(stdlog,'(1x,a,i10,i6,i4,1p,e12.3)') &
                 'n_oct, rank, level, u_max:',self%npatch, k, ilevel, u_max
           endif
           deallocate(xg,son,x,var,ref)
@@ -985,12 +989,12 @@ SUBROUTINE read_snapshot (self, keep, load)
       end do ! end loop ilevel=1,self%maxlvl
       self%u_max = u_max
       if (verbose > 0) &
-        write(stdout,'(1x,a,i10,i6,1p,e12.3)') &
+        write(stdlog,'(1x,a,i10,i6,1p,e12.3)') &
           'n_oct, rank(in), u_max:',self%npatch, k, u_max
       close(ilun)  ! close `amr_` file
       close(ilun2) ! close `hydro_` file
       if (verbose > 2) & 
-        write (stdout,'(4(a,i8,3x),a,1p,e9.2)') &
+        write (stdlog,'(4(a,i8,3x),a,1p,e9.2)') &
         ' n_active:',n_active,'n_passive:',n_passive,'n_onrank:',n_onrank, &
         ' n_offrank:',n_offrank
       !
@@ -1249,8 +1253,8 @@ SUBROUTINE add_to (self, patch, oct)
     patch%mem(i1+j1,i2+j2,i3+j3,patch%idx%by,1,1) = oct%var(j,6)
     patch%mem(i1+j1,i2+j2,i3+j3,patch%idx%bz,1,1) = oct%var(j,7)
     patch%filled(k1+j1,k2+j2,k3+j3) = level
-    if (verbose > 2) &
-      write(stdout,'("add_to:",i7,i4,2x,3i4,1p,e11.2)') &
+    if (verbose > 3) &
+      write(stdlog,'("add_to:",i7,i4,2x,3i4,1p,e11.2)') &
         patch%id, patch%level, i1+j1, i2+j2, i3+j3, d
     j = j+1
   end do
@@ -1274,13 +1278,13 @@ SUBROUTINE add_to_task_list (self, patch)
   link%task => patch
   patch%link => link
   call self%task_list%prepend_link (link)
-  if (verbose > 2) then
-    write (stdout,'(a,i7,2x,4i6)') &
+  if (verbose > 3) then
+    write (stdlog,'(a,i7,2x,4i6)') &
       'add_to_task_list: id, key =', patch%id, patch%key
   else if (verbose > 0) then
     i = i+1
     if (mod(i,5000)==0) &
-      write (stdout,'(a,i7,2x,4i6)') &
+      write (stdlog,'(a,i7,2x,4i6)') &
         'add_to_task_list: id, key =', patch%id, patch%key
   end if
   if (detailed_timer) &
@@ -1541,7 +1545,7 @@ SUBROUTINE prolong (self)
             write(stderr,*) 'prolong: ERROR, id, dmin, n=', task%id, dmin, n0
           end if
           if (verbose > 1 .or. (verbose > 0 .and. mod(n,5000)==0)) &
-            write(stdout,'(a,i7,i4,1p,2e11.2)') &
+            write(stdlog,'(a,i7,i4,1p,2e11.2)') &
             'prolong: id, level, dmin, dmin_all =', task%id, task%level, dmin, dmin_all
         end select
         end associate
@@ -1566,6 +1570,7 @@ SUBROUTINE download_link (self, link)
   class(*), pointer:: ptr
   integer:: jt(2), key(4)
   real:: pt(2)
+  logical:: ok
   !-----------------------------------------------------------------------------
   associate (task=>link%task)
   select type(task)
@@ -1573,13 +1578,22 @@ SUBROUTINE download_link (self, link)
     target => task
     key = [task%key(1)-1, floor(target%position/(2d0*target%size))]
     call self%patch_table%get (key, ptr)
-    select type(ptr)
-    class is (experiment_t)
-      source => ptr
-      jt = [1,1]
-      pt = [1.0,0.0]
-      call download%different (target, source, jt, pt, all_cells=.true.)
-    end select
+    ok = .false.
+    if (associated(ptr)) then
+      select type(ptr)
+      class is (experiment_t)
+        source => ptr
+        jt = [1,1]
+        pt = [1.0,0.0]
+        call download%different (target, source, jt, pt, all_cells=.true.)
+        ok = .true.
+      end select
+    else
+      write (stderr,'(a,4i5)') 'ramses_t%download_link: key not found =', key
+    end if
+    if (verbose > 3) then
+      write (stdlog,'(a,4i5,l3)') 'ramses_t%download_link: key =', key, ok
+    end if
   end select
   end associate
 END SUBROUTINE download_link
@@ -1919,10 +1933,10 @@ SUBROUTINE cartesian_init (self, key, patch)
     class is (experiment_t)
     patch => ptr
     end select
-    if (verbose > 2) then
-      write (stdout,1) 'cartesian_init: patch already exists: id =', &
+    if (verbose > 3) then
+      write (stdlog,1) 'cartesian_init: patch already exists: id =', &
         patch%id, key
-      1 format(a,i7,2x,4i5)
+      1 format(a,i7,2x,4i5,3f10.4)
     end if
   else
     allocate (patch)
@@ -1962,9 +1976,11 @@ SUBROUTINE cartesian_init (self, key, patch)
     ! Add the patch to the task list -- this creates the patch%link
     !---------------------------------------------------------------------------
     call self%add_to_task_list (patch)
-    if (verbose > 1) &
-      write (stdout,1) &
-        'cartesian_init: new patch created: id, key =', patch%id, key
+    if (verbose > 1) then
+      write (stdlog,1) &
+        'cartesian_init: new patch created: id, key =', &
+        patch%id, key, patch%position
+    end if
   end if
   call trace%end ()
 END SUBROUTINE cartesian_init
