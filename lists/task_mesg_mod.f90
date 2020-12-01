@@ -233,7 +233,7 @@ SUBROUTINE check_mpi (self, n)
     else
       if (shared%refine_on) then
         call self%lock%set ('task_mesg_t%check_mpi')
-        write (stdout,*) 'locking'
+        !write (stdout,*) 'locking'
       end if
       link => self%head
       do while (associated(link))
@@ -247,7 +247,7 @@ SUBROUTINE check_mpi (self, n)
       end do
       if (shared%refine_on) then
         call self%lock%unset ('task_mesg_t%check_mpi')
-        write (stdout,*) 'unlocking'
+        !write (stdout,*) 'unlocking'
       end if
     end if
     call trace%end (itimer)
