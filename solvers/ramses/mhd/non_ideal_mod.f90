@@ -742,6 +742,8 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
 
     eta_AD = eta_AD * c2_4pi            ! account for necessary prefactor 
     eta_AD = eta_AD / scale_v**2 / scale_t ! transfer back to code units
+    ! Indirectly account for time step constraint (for more details see technical guide)
+    eta_AD = min(eta_AD, 0.1 * dx**2/dt)
     betaad2 = eta_AD / Brms2  
   endif
 
@@ -777,6 +779,8 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
     ! from seconds to code time
     eta_AD = eta_AD * c2_4pi            ! account for necessary prefactor 
     eta_AD = eta_AD / scale_v**2 / scale_t ! transfer back to code units
+    ! Indirectly account for time step constraint (for more details see technical guide)
+    eta_AD = min(eta_AD, 0.1 * dx**2/dt)
     betaad2 = eta_AD / Brms2
   endif
   emfambdiff(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)=emfambdiff(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)*betaad2            
@@ -810,6 +814,8 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
     ! from seconds to code time
     eta_AD = eta_AD * c2_4pi            ! account for necessary prefactor 
     eta_AD = eta_AD / scale_v**2 / scale_t ! transfer back to code units
+    ! Indirectly account for time step constraint (for more details see technical guide)
+    eta_AD = min(eta_AD, 0.1 * dx**2/dt)
     betaad2 = eta_AD / Brms2
   endif
 
@@ -839,6 +845,8 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
     ! from seconds to code time
     eta_AD = eta_AD * c2_4pi            ! account for necessary prefactor 
     eta_AD = eta_AD / scale_v**2 / scale_t ! transfer back to code units
+    ! Indirectly account for time step constraint (for more details see technical guide)
+    eta_AD = min(eta_AD, 0.1 * dx**2/dt)
     betaad2 = eta_AD / Brms2  
   endif
   fluxambdiff(2:n(1)-1,2:n(2)-1,2:n(3)-1,1)=-betaad2*fluxad(2:n(1)-1,2:n(2)-1,2:n(3)-1,1)
@@ -864,6 +872,8 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
     ! from seconds to code time
     eta_AD = eta_AD * c2_4pi            ! account for necessary prefactor 
     eta_AD = eta_AD / scale_v**2 / scale_t ! transfer back to code units
+    ! Indirectly account for time step constraint (for more details see technical guide)
+    eta_AD = min(eta_AD, 0.1 * dx**2/dt)
     betaad2 = eta_AD / Brms2 
   endif
   fluxambdiff(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)=-betaad2*fluxad(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)
@@ -889,6 +899,8 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
     ! from seconds to code time
     eta_AD = eta_AD * c2_4pi            ! account for necessary prefactor 
     eta_AD = eta_AD / scale_v**2 / scale_t ! transfer back to code units
+    ! Indirectly account for time step constraint (for more details see technical guide)
+    eta_AD = min(eta_AD, 0.1 * dx**2/dt)
     betaad2 = eta_AD / Brms2 
   endif
   fluxambdiff(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)=-betaad2*fluxad(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)
@@ -923,6 +935,8 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
     ! from seconds to code time
     eta_AD = eta_AD * c2_4pi            ! account for necessary prefactor 
     eta_AD = eta_AD / scale_v**2 / scale_t ! transfer back to code units
+    ! Indirectly account for time step constraint (for more details see technical guide)
+    eta_AD = min(eta_AD, 0.1 * dx**2/dt)
     betaad = eta_AD / Brms2
   endif
   jxbsquare(2:n(1)-1,2:n(2)-1,2:n(3)-1)=(jxb(2:n(1)-1,2:n(2)-1,2:n(3)-1,1)*jxb(2:n(1)-1,2:n(2)-1,2:n(3)-1,1) +&
