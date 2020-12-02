@@ -1,7 +1,7 @@
 # Default for gfortran
 OPT = -O1
 HW =
-W = -Wline-truncation -Wno-surprising -w -fno-range-check
+W = -Wline-truncation -Wno-surprising -w -fno-range-check -Wno-argument-mismatch
 DEBUG = -g -fbacktrace 
 
 # Magic strings for dependencies
