@@ -65,6 +65,7 @@ MODULE download_mod
   logical:: sorted=.false.
   logical:: use_locks=.true.
   logical:: detailed_timer=.false.
+  logical:: check_filled=.false.
   character(len=20):: use_restrict='different'
   character(len=20):: use_prolong='different_prolong'
   character(len=20):: use_same='same'
@@ -79,7 +80,6 @@ SUBROUTINE init (self)
   class(download_t):: self
   integer:: iostat
   integer, save:: order_interpolator=-1, order_time=1
-  logical, save:: check_filled=.false.
   logical, save:: first_time=.true.
   namelist /download_params/ order_interpolator, order_time, check_filled, &
     use_prolong, use_restrict, use_same, sorted, use_locks, id_debug, &
@@ -527,14 +527,16 @@ SUBROUTINE prolong_it (target, source, jt, pt, all)
     call prolng%interpolate (source%mem(:,:,:,iv,:,1), jt, pt, &
       target%mem(:,:,:,iv,target%it,1), &
       ipos, all=all, l=l, u=u)
-    if (present(all) .and. all) then
-      filled = source%level
-    else
-      filled(l(1):u(1),l(2):u(2),l(3):u(3),iv) = source%level
-    end if
+      if (check_filled) then
+        if (present(all) .and. all) then
+          filled = source%level
+        else
+          filled(l(1):u(1),l(2):u(2),l(3):u(3),iv) = source%level
+        end if
+      end if
     if (verbose > 1 .and. iv==1) then
       write(io_unit%log,'(a,l2,3(2x,i2,";":i2))') &
-      'download_it: all, filled, intervals =', all_l, &
+      'download_it: all, intervals =', all_l, &
       l(1),u(1),l(2),u(2),l(3),u(3)
       do i3=l(3),u(3)
       do i2=l(2),u(2)
@@ -1031,6 +1033,17 @@ SUBROUTINE same_linear (self, target, source, jt, pt, all_cells, only, all_times
         2 format(2(i6,i3),2x,a,i6,a,2(2x,3i4),1p,e14.4,2x,0p2f6.3)
       end if
     end if
+    block
+    integer:: l, u
+    l=target%mesh(1)%ui
+    u=target%mesh(1)%ub
+   !write (stdlog,'(a,7i3,1p,2e12.3,0p,4(1x,4f9.5))') 'dnl:', &
+   !   target%id, target%it, source%id, source%it, iv, jt, pt, &
+   !   target%mem(1:4,9,9,iv,target%it,1), &
+   !   target%mem(l:u,9,9,iv,target%it,1), &
+   !   source%mem(4:7,9,9,iv,target%it,1), &
+   !   source%mem(l-3:l,9,9,iv,target%it,1)
+    end block
   end do
   if (detailed_timer) then
     if (cells > 0) then
