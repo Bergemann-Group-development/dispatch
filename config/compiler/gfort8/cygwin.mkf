@@ -1,0 +1,2 @@
+# explicit 100 MB stack size needed / sufficien on some Cygwin systems
+LD += -Wl,--stack,100000000

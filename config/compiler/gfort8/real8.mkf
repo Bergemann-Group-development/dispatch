@@ -1,0 +1,4 @@
+DEBUG = -fbacktrace
+OPT = -O -fdefault-real-8
+HW = -Wline-truncation -Wno-surprising
+#LDFLAGS = $(OPT) $(PAR) $(HW)

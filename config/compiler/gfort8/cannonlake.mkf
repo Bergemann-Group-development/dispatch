@@ -1,0 +1,4 @@
+DEBUG = -fbacktrace
+OPT = -O3
+MA = cannonlake
+HW = -march=$(MA) -mtune=$(MA)

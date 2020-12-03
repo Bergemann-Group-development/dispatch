@@ -1,0 +1,4 @@
+DEBUG = -fbacktrace
+OPT = -O3
+MA = cooperlake
+HW = -march=$(MA) -mtune=$(MA)
