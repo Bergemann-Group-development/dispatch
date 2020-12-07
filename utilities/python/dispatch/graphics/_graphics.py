@@ -73,7 +73,8 @@ def plot_patch_values_along(pp_in,pt=[0.5,0.5,0.5],hold=False,**kw):
     if not hold:
         pl.xlim(xmin,xmax)
     for p in pp:
-        plot(ds.values_in(p,pt,**kv),**kw)
+        plot(ds.values_in(p,pt,**kv),label=p.id,**kw)
+    pl.legend()
 
 def _rotate(d,e):
     '''Rotate data and extent to landscape format'''
@@ -204,14 +205,67 @@ def pdf_d(iout,run='',data='../data',iv='d',i4=0,nbin=100,xlim=[-4,3],lnd=False)
     pl.hist(bins[0:n],bins=bins,weights=htot,log=True,density=True)
     return bins,htot
 
-def unigrid_plane(sn,vmin=None,vmax=None,**kw):
+def _axis(x,y,z):
+    if not z is None:
+        axis=2
+        s=z
+    if not y is None:
+        axis=1
+        s=y
+    if not x is None:
+        axis=0
+        s=x
+    return axis,s
+
+def _title(sn,x=None,y=None,z=0.5,iv=None,title=None):
+    if title:
+        pl.title(title)
+    else:
+        axis,s=_axis(x,y,z)
+        ax=['x','y','z'][axis]
+        pl.title('iv={},  {}={:.3f},  t={:.4f}'.format(iv,ax,s,sn.time))
+    pl.tight_layout()
+
+def _cmap(v,cmap):
+    if cmap is None:
+        if v.min()<=0.0:
+            cmap='coolwarm'
+    return cmap
+
+def unigrid_plane(sn,iv='d',z=0.5,x=None,y=None,title=None,cmap=None,**kw):
+    """
+    keywords passed on to dispatch.select.unigrid_plane(),
+    and to dispatch.graphics.imshow()
+    """
     import dispatch.select as dse
-    ff,pp=dse.unigrid_plane(sn,patches=True,**kw)
-    imshow(ff,vmin=vmin,vmax=vmax)
+    if not hasattr(sn,'patches'):
+        print('snapshot has no patches')
+        return
+    ff,pp=dse.unigrid_plane(sn,patches=True,iv=iv,x=x,y=y,z=z,**kw)
+    cmap=_cmap(ff,cmap)
+    imshow(ff,cmap=cmap,**kw)  
+    _title(sn,x,y,z,iv,title)
 
-
-def amr_plane(sn,iv='d',z=0.5,x=None,y=None,log=False,mesh=False,
-        ident=False,cmap=None,title=None,zero=False,vmin=None,vmax=None,verbose=0):
+def amr_plane(sn,iv='d',z=0.5,x=None,y=None,log=False,
+        xmin=None,xmax=None,ymin=None,ymax=None,lmax=None,
+        cmap=None,vmin=None,vmax=None,zero=False,title=None,
+        mesh=False,ident=False,bbox=dict(facecolor='grey',alpha=1),
+        verbose=0):
+    """ 
+        x,y,z: select plane by specifying one
+          log: force log10 values
+         cmap: color map
+     vmin/max: colorscale end points
+         zero: symmetric colorscale around value=0.0
+        title: text title
+         mesh: display patch boundaries
+        ident: print the patch ID at lower left corner
+         bbox: bounding box of ident text
+      verbose: noise level
+    """
+    if not hasattr(sn,'patches'):
+        print('snapshot has no patches')
+        return
     def contains(p,s,axis):
         return p.level >= 6 and abs(s-p.position[axis]) <= p.size[axis]/2
     def outline(e):
@@ -241,16 +295,11 @@ def amr_plane(sn,iv='d',z=0.5,x=None,y=None,log=False,mesh=False,
         if log:
             f=np.exp(f)
         return f
-    if not z is None:
-        axis=2
-        s=z
-    if not y is None:
-        axis=1
-        s=y
-    if not x is None:
-        axis=0
-        s=x
-    pp=[p for p in sn.patches if contains(p,s,axis)]
+    axis,s=_axis(x,y,z)
+    if lmax:
+        pp=[p for p in sn.patches if contains(p,s,axis) and p.level<=lmax]
+    else:
+        pp=[p for p in sn.patches if contains(p,s,axis)]
     vmin1=1e20
     vmax1=0.0
     for p in pp:
@@ -264,19 +313,31 @@ def amr_plane(sn,iv='d',z=0.5,x=None,y=None,log=False,mesh=False,
     if zero:
         vmax = max(abs(vmax),abs(vmin))
         vmin = -vmax
+    vv=np.array([vmin,vmax])
+    cmap=_cmap(vv,cmap)
     if log:
         vmin=np.log10(vmin)
         vmax=np.log10(vmax)
-    xmin,xmax,ymin,ymax=pp[0].extent[axis]
+    xmn,xmx,ymn,ymx=pp[0].extent[axis]
+    for p in pp:
+        e=p.extent[axis]
+        xmn=min(xmn,e[0])
+        xmx=max(xmx,e[1])
+        ymn=min(xmn,e[2])
+        ymx=max(xmx,e[3])
+    if xmin:
+        xmn=xmin
+    if xmax:
+        xmx=xmax
+    if ymin:
+        ymn=ymin
+    if ymax:
+        ymx=ymax
     for p in pp:
         e=p.extent[axis]
         d=interpolate(p,iv,s,axis,verbose=verbose)
         if log:
             d=np.log10(interpolate(p,iv,s,axis,log,verbose=verbose))
-        xmin=min(xmin,e[0])
-        xmax=max(xmax,e[1])
-        ymin=min(xmin,e[2])
-        ymax=max(xmax,e[3])
         pl.imshow(d.transpose(),extent=e,
               vmin=vmin,vmax=vmax,origin='lower',cmap=cmap)
         x0,x1,y0,y1=p.extent[axis]
@@ -284,16 +345,12 @@ def amr_plane(sn,iv='d',z=0.5,x=None,y=None,log=False,mesh=False,
             outline(p.extent[axis])
         if ident:
             x0,x1,y0,y1=p.extent[axis]
-            pl.text(x0,y0,'{}'.format(p.id))
-    pl.xlim(xmin,xmax)
-    pl.ylim(ymin,ymax)
+            if x0>=xmn and x1<=xmx and y0>=ymn and y1<=ymx:
+                pl.text(x0,y0,'{}'.format(p.id),bbox=bbox)
+    pl.xlim(xmn,xmx)
+    pl.ylim(ymn,ymx)
     pl.colorbar()
-    if title:
-        pl.title(title)
-    else:
-        ax=['x','y','z'][axis]
-        pl.title('iv={},  {}={:.3f},  t={:.4f}'.format(iv,ax,s,sn.time))
-    pl.tight_layout()
+    _title(sn,x,y,z,iv,title)
 
 def plot_pdf(pdf,**kwargs):
     """ Plot the output of the dispatch.pdf() procedure """

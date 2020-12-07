@@ -86,7 +86,8 @@ def patches_along(pp,point=[0.5,0.5,0.5],dir=0,verbose=0):
             p=patch_at(pp,pt)
         if verbose>0:
             for p in out:
-                print('id: {:4d}        position: {}'.format(p.id,p.position))
+                print('id: {:4d}  level:{:2d}  position: {}'
+                      .format(p.id,p.level,p.position))
     else:
         out=None
     np.set_printoptions(formatter=None)
@@ -107,9 +108,9 @@ def patches_along_z(pp,point=[0.5,0.5,0.5],verbose=0):
 def indices_and_weights(p,point=[0.5,0.5,0.5],iv=0):
     ''' Return indices and interpolation weights for a point in a patch p
     '''
-    x0=p.x[0]
-    y0=p.y[0]
-    z0=p.z[0]
+    x0=p.xi[0]
+    y0=p.yi[0]
+    z0=p.zi[0]
     if 'p1' in p.idx.dict.keys():
         if iv==p.idx.p1: x0=p.xs[0]
         if iv==p.idx.p2: y0=p.ys[0]
@@ -142,7 +143,7 @@ def values_in(p,point=[0.5,0.5,0.5],dir=0,iv=0,i4=0,var=None,verbose=0,all=0):
     jone = (0,1)[p.gn[1] > 1]
     kone = (0,1)[p.gn[2] > 1]
 
-    if verbose:
+    if verbose>1:
         print('{:3d} {}   {} {:5.1f} {:4.1f} {:4.1f}'.\
           format(p.id,iv,ii,w[0],w[1],w[2]))
     if not p.guard_zones or not all:
@@ -159,47 +160,63 @@ def values_in(p,point=[0.5,0.5,0.5],dir=0,iv=0,i4=0,var=None,verbose=0,all=0):
     if dir==0:
         j=ii[1]
         k=ii[2]
+        if verbose>0:
+            print('{:4d} y-interpolation: {}-{} w={:.2f} y={:.3f}-{:.3f}'
+                  .format(p.id,j,j+jone,w[1],p.yi[j],p.yi[j+jone]))
+            print('{:4d} z-interpolation: {}-{} w={:.2f} z={:.3f}-{:.3f}'
+                  .format(p.id,k,k+kone,w[2],p.zi[k],p.zi[k+kone]))
         for i in range(m[0],m[0]+n[0]):
             f1=data[i,j,k     ]*(1-w[1])+data[i,j+jone,k,    ]*w[1]
             f2=data[i,j,k+kone]*(1-w[1])+data[i,j+jone,k+kone]*w[1]
             f=f1*(1-w[2])+f2*w[2]
             if hasattr(p,'p1'):
                 if iv==p.idx.p1:
-                    ss.append(p.xs[i])
+                    ss.append(p.xis[i])
                 else:
-                    ss.append(p.x[i])
+                    ss.append(p.xi[i])
             else:
-                ss.append(p.x[i])
+                ss.append(p.xi[i])
             ff.append(f)
     elif dir==1:
         i=ii[0]
         k=ii[2]
+        if verbose>0:
+            print('{:4d} x-interpolation: {}-{} w={:.2f} x={:.3f}-{:.3f}'
+                  .format(p.id,i,i+ione,w[1],p.xi[i],p.xi[i+ione]))
+            print('{:4d} z-interpolation: {}-{} w={:.2f} z={:.3f}-{:.3f}'
+                  .format(p.id,k,k+kone,w[2],p.zi[k],p.zi[k+kone]))
+        print(m[1],m[1]+n[1])
         for j in range(m[1],m[1]+n[1]):
             f1=data[i,j,k     ]*(1-w[0])+data[i+ione,j,k     ]*w[0]
             f2=data[i,j,k+kone]*(1-w[0])+data[i+ione,j,k+kone]*w[0]
             f=f1*(1-w[2])+f2*w[2]
             if hasattr(p,'p2'):
                 if iv==p.idx.p2:
-                    ss.append(p.ys[j])
+                    ss.append(p.yis[j])
                 else:
-                    ss.append(p.y[j])
+                    ss.append(p.yi[j])
             else:
-                ss.append(p.y[j])
+                ss.append(p.yi[j])
             ff.append(f)
     else:
         i=ii[0]
         j=ii[1]
+        if verbose>0:
+            print('{:4d} x-interpolation: {}-{} w={:.2f} x={:.3f}-{:.3f}'
+                  .format(p.id,i,i+ione,w[1],p.xi[i],p.xi[i+ione]))
+            print('{:4d} y-interpolation: {}-{} w={:.2f} y={:.3f}-{:.3f}'
+                  .format(p.id,j,j+jone,w[2],p.yi[j],p.yi[j+jone]))
         for k in range(m[2],m[2]+n[2]):
             f1=data[i,j     ,k]*(1-w[0])+data[i+ione,j     ,k]*w[0]
             f2=data[i,j+jone,k]*(1-w[0])+data[i+ione,j+jone,k]*w[0]
             f=f1*(1-w[1])+f2*w[1]
             if hasattr(p,'p3'):
                 if iv==p.idx.p3:
-                    ss.append(p.zs[k])
+                    ss.append(p.zis[k])
                 else:
-                    ss.append(p.z[k])
+                    ss.append(p.zi[k])
             else:
-                ss.append(p.z[k])
+                ss.append(p.zi[k])
             ff.append(f)
     ss=np.array(ss)
     ff=np.array(ff)
