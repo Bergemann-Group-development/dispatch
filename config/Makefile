@@ -133,6 +133,7 @@ E = @
 %.o: %.mod
 #############################################################################
 # Pattern rules
+CP = cp -p
 COPY = $(BUILD)/$(EXEC)
 %.o: %.f90 $(DEPDIR)/%.d
 	@if [ "x$(E)" == "x@" ] ; then echo " [ FC ]" $@ ; fi
@@ -148,7 +149,7 @@ COPY = $(BUILD)/$(EXEC)
 	@if [ "x$(E)" == "x@" ] ; then echo " [ LD ]" $@ ; fi
 	$(eval OBJS+=$(subst .d,.o,$(notdir $(wildcard $(DEPDIR)/*.d))))
 	$(E)$(LD) $(LDFLAGS) $< $(sort $(patsubst %,$(BUILD)/%,$(OBJS))) -I$(BUILD) -o $@ $(LIBS)
-	cp -p $@ $(COPY)
+	$(CP) $@ $(COPY)
 %.x.mic: %.f90
 	@if [ "x$(E)" == "x@" ] ; then echo " [ LD ]" $@ ; fi
 	$(eval OBJS+=$(subst .d,.o,$(notdir $(wildcard $(DEPDIR)/*.d))))
