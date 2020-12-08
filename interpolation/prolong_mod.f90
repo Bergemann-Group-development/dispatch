@@ -67,7 +67,7 @@ MODULE prolong_mod
     procedure         :: z_interp1
     procedure         :: z_interp3
     generic           :: z_interp => z_interp1, z_interp3
-    procedure         :: interp
+    procedure         :: interp => interpx
     procedure         :: interpolate
     procedure         :: test
     procedure         :: patch_test
@@ -259,7 +259,7 @@ SUBROUTINE interpolate (self, source, jt, pt, target, ipos, all, l, u)
   uo = ui + 1
   ub = ui + ng
   !-----------------------------------------------------------------------------
-  ! Loop over directions.  For each direction the relative position is giveń,
+  ! Loop over directions.  For each direction the relative position is given,
   ! in terms of the displacement of the target position relative to the source,
   ! measured in half target size units (integers -3 -1, +1, +3)
   !-----------------------------------------------------------------------------
@@ -282,31 +282,31 @@ SUBROUTINE interpolate (self, source, jt, pt, target, ipos, all, l, u)
   !-----------------------------------------------------------------------------
   ! Target is in the left part of the source
   !-----------------------------------------------------------------------------
-!>          1       2   |   3       4       5       6
-!>      ...-x---+---x---|---o---+---o---+---o---+---o--
-!>                x---x-|-o---o---o---o---o---o
+!>          1       2   |   3       4   |   5       6
+!>      ...-x---+---x---|---o---+---o---|---o---+---o--
+!>                x---x-|-o---o---o---o-|-o---o
 !>                1   2   3   4   5   6   7   8   1   2   3   4
     case (+1)
       if (verbose > 2) &
         write(io_unit%log,*) 'source in direction', i,' is inside right'
-      lt(i) = li
+      lt(i) = lb
       ut(i) = ub
-      ls(i) = lo                      ! 2
-      us(i) = lo + ng/2 + 1 + n/2     ! 2 + 1 + 1 + 2 = 6
+      ls(i) = li - ng/2 - 1         ! 3 - 1 -1 = 1
+      us(i) = ls(i) + gn/2 + 1      ! 1 + 4 + 1 = 6
   !-----------------------------------------------------------------------------
   ! Target is in the right part of the source
   !-----------------------------------------------------------------------------
 !>          1       2   |   3       4       5       6   |   7       8
 !>      ...-x---+---x---|---o---+---o---+---o---+---o---|---x---+---x-
-!>                                o---o---o---o---o---o---x---x-
+!>                                o---o---o---o---o---o-|-x---x-
 !>                                1   2   3   4   5   6   7   8
     case (-1)
       if (verbose > 2) &
         write(io_unit%log,*) 'source in direction', i,' is inside left'
       lt(i) = lb
-      ut(i) = ui
-      ls(i) = uo - ng/2 - 1 - n/2   ! 7 - 1 - 1 - 2 = 3
-      us(i) = uo                    ! 7
+      ut(i) = ub
+      us(i) = ui + ng/2 + 1           ! 6 + 1 + 1 = 8
+      ls(i) = us(i) - gn/2 - 1        ! 8 - 4 - 1 = 3
   !-----------------------------------------------------------------------------
   ! Target is to the right of the source
   !-----------------------------------------------------------------------------
@@ -319,8 +319,8 @@ SUBROUTINE interpolate (self, source, jt, pt, target, ipos, all, l, u)
         write(io_unit%log,*) 'source in direction', i,' is to the left'
       lt(i) = lb
       ut(i) = lo
-      ls(i) = ui - 1              ! = 5
-      us(i) = ui + ng/2           ! = 6 + 1 = 7
+      ls(i) = ui                  ! = 6
+      us(i) = ui + ng/2 + 1       ! = 6 + 1 + 1 = 8
     case default
       write (io_unit%log,'(1x,a,3i3)') &
         'prolong_t%interpolat: unexpcted ipos =', ipos
@@ -368,9 +368,9 @@ SUBROUTINE interpolate (self, source, jt, pt, target, ipos, all, l, u)
 END SUBROUTINE interpolate
 
 !===============================================================================
-!> Case with 3D weights
+!> In x-axis cases take the y-direction first
 !===============================================================================
-SUBROUTINE interp (self, source, ls, us, target, lt, ut, mask)
+SUBROUTINE interpx (self, source, ls, us, target, lt, ut, mask)
   class(prolong_t):: self
   real(kind=KindScalarVar), intent(in):: source(:,:,:)
   real(kind=KindScalarVar), intent(out):: target(:,:,:)
@@ -380,7 +380,7 @@ SUBROUTINE interp (self, source, ls, us, target, lt, ut, mask)
   integer:: m(3), l(3), u(3)
   real(kind=KindScalarVar), allocatable:: target1(:,:,:), target2(:,:,:)
   !-----------------------------------------------------------------------------
-  call trace%begin ('prolong_t%interp')
+  call trace%begin ('prolong_t%interpx')
   m = shape(target)
   allocate (target1(m(1),m(2),m(3)), target2(m(1),m(2),m(3)))
   l(1)=lt(1); u(1)=ut(1)        ! target range in x
@@ -391,6 +391,8 @@ SUBROUTINE interp (self, source, ls, us, target, lt, ut, mask)
   else
     call self%x_interp (source , self%w3d(:,:,:,1), ls(1), target1, l, u)
   end if
+  if (verbose > 1) &
+    write (stdlog,*) 'target1', u-l+1, maxval(target1(l(1):u(1),l(2):u(2),l(3):u(3)))
   l(1)=lt(1); u(1)=ut(1)        ! target range in x
   l(2)=lt(2); u(2)=ut(2)        ! source range in y
   l(3)=ls(3); u(3)=us(3)        ! source range in z
@@ -399,6 +401,62 @@ SUBROUTINE interp (self, source, ls, us, target, lt, ut, mask)
   else
     call self%y_interp (target1, self%w3d(:,:,:,2), ls(2), target2, l, u)
   end if
+  if (verbose > 1) &
+    write (stdlog,*) 'target2', u-l+1, maxval(target2(l(1):u(1),l(2):u(2),l(3):u(3)))
+  l(1)=lt(1); u(1)=ut(1)        ! target range in x
+  l(2)=lt(2); u(2)=ut(2)        ! source range in y
+  l(3)=lt(3); u(3)=ut(3)        ! source range in z
+  if (associated(self%w1d)) then
+    call self%z_interp (target2, self%w1d         , ls(3), target , l, u, &
+      mask=mask)
+  else
+    call self%z_interp (target2, self%w3d(:,:,:,3), ls(3), target , l, u, &
+      mask=mask)
+  end if
+  if (verbose > 1) &
+    write (stdlog,*) 'target ', u-l+1, maxval(target(l(1):u(1),l(2):u(2),l(3):u(3)))
+  deallocate (target1, target2)
+  ! --- NML fix ----------------------------------------------------------------
+  if (fix_nml) &
+    call nml_fix (self, target, l, u)
+  call trace%end ()
+END SUBROUTINE interpx
+
+!===============================================================================
+!> In y-axis cases take the y-direction first
+!===============================================================================
+SUBROUTINE interpy (self, source, ls, us, target, lt, ut, mask)
+  class(prolong_t):: self
+  real(kind=KindScalarVar), intent(in):: source(:,:,:)
+  real(kind=KindScalarVar), intent(out):: target(:,:,:)
+  integer, intent(in):: lt(3), ut(3), ls(3), us(3)
+  logical, optional:: mask(:,:,:)
+  !.............................................................................
+  integer:: m(3), l(3), u(3)
+  real(kind=KindScalarVar), allocatable:: target1(:,:,:), target2(:,:,:)
+  !-----------------------------------------------------------------------------
+  call trace%begin ('prolong_t%interpy')
+  m = shape(target)
+  allocate (target1(m(1),m(2),m(3)), target2(m(1),m(2),m(3)))
+  !--- y-direction -------------
+  l(1)=ls(1); u(1)=us(1)        ! target range in x
+  l(2)=lt(2); u(2)=ut(2)        ! source range in y
+  l(3)=ls(3); u(3)=us(3)        ! source range in z
+  if (associated(self%w1d)) then
+    call self%y_interp (source , self%w1d         , ls(2), target1, l, u)
+  else
+    call self%y_interp (source , self%w3d(:,:,:,2), ls(2), target1, l, u)
+  end if
+  !--- x-direction -------------
+  l(1)=lt(1); u(1)=ut(1)        ! target range in x
+  l(2)=lt(2); u(2)=ut(2)        ! source range in y
+  l(3)=ls(3); u(3)=us(3)        ! source range in z
+  if (associated(self%w1d)) then
+    call self%x_interp (target1, self%w1d         , ls(1), target2, l, u)
+  else
+    call self%x_interp (target1, self%w3d(:,:,:,1), ls(1), target2, l, u)
+  end if
+  !--- z-direction -------------
   l(1)=lt(1); u(1)=ut(1)        ! target range in x
   l(2)=lt(2); u(2)=ut(2)        ! source range in y
   l(3)=lt(3); u(3)=ut(3)        ! source range in z
@@ -414,7 +472,59 @@ SUBROUTINE interp (self, source, ls, us, target, lt, ut, mask)
   if (fix_nml) &
     call nml_fix (self, target, l, u)
   call trace%end ()
-END SUBROUTINE interp
+END SUBROUTINE interpy
+
+!===============================================================================
+!> In z-axis cases to the y-direction first
+!===============================================================================
+SUBROUTINE interpz (self, source, ls, us, target, lt, ut, mask)
+  class(prolong_t):: self
+  real(kind=KindScalarVar), intent(in):: source(:,:,:)
+  real(kind=KindScalarVar), intent(out):: target(:,:,:)
+  integer, intent(in):: lt(3), ut(3), ls(3), us(3)
+  logical, optional:: mask(:,:,:)
+  !.............................................................................
+  integer:: m(3), l(3), u(3)
+  real(kind=KindScalarVar), allocatable:: target1(:,:,:), target2(:,:,:)
+  !-----------------------------------------------------------------------------
+  call trace%begin ('prolong_t%interpz')
+  m = shape(target)
+  allocate (target1(m(1),m(2),m(3)), target2(m(1),m(2),m(3)))
+  !--- z-direction -------------
+  l(1)=ls(1); u(1)=us(1)        ! target range in x
+  l(2)=ls(2); u(2)=us(2)        ! source range in y
+  l(3)=lt(3); u(3)=ut(3)        ! source range in z
+  if (associated(self%w1d)) then
+    call self%z_interp (source , self%w1d         , ls(3), target1, l, u, &
+      mask=mask)
+  else
+    call self%z_interp (source , self%w3d(:,:,:,3), ls(3), target1, l, u, &
+      mask=mask)
+  end if
+  !--- y-direction -------------
+  l(1)=ls(1); u(1)=us(1)        ! target range in x
+  l(2)=lt(2); u(2)=ut(2)        ! source range in y
+  l(3)=lt(3); u(3)=ut(3)        ! source range in z
+  if (associated(self%w1d)) then
+    call self%y_interp (target1, self%w1d         , ls(2), target2, l, u)
+  else
+    call self%y_interp (target1, self%w3d(:,:,:,2), ls(2), target2, l, u)
+  end if
+  !--- x-direction -------------
+  l(1)=lt(1); u(1)=ut(1)        ! target range in x
+  l(2)=lt(2); u(2)=ut(2)        ! source range in y
+  l(3)=lt(3); u(3)=ut(3)        ! source range in z
+  if (associated(self%w1d)) then
+    call self%x_interp (target2, self%w1d         , ls(1), target , l, u)
+  else
+    call self%x_interp (target2, self%w3d(:,:,:,1), ls(1), target , l, u)
+  end if
+  deallocate (target1, target2)
+  ! --- NML fix ----------------------------------------------------------------
+  if (fix_nml) &
+    call nml_fix (self, target, l, u)
+  call trace%end ()
+END SUBROUTINE interpz
 
 !===============================================================================
 !> Patch up the no-mans-land points, by interpolating btw the next point --

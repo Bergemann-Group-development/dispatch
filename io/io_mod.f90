@@ -300,6 +300,8 @@ SUBROUTINE init (self, name)
   io_unit%do_validate = do_validate
   stdout = io_unit%output
   call io%counter%init (0)
+  call omp_lock%init ('io')
+  call timer%init
 contains
   !-----------------------------------------------------------------------------
   subroutine ensure_dirname (s)

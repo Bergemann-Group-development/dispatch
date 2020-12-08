@@ -856,11 +856,11 @@ contains
   subroutine nbor_print (head)
     class(nbor_t), pointer:: head, nbor
     !---------------------------------------------------------------------------
-    write(io_unit%output,*) 'target: ', self%task%id
-    write(io_unit%output,*) 'sorted nbors:'
+    write(stdlog,*) 'target: ', self%task%id
+    write(stdlog,*) 'sorted nbors:'
     nbor => head
     do while (associated(nbor))
-      write (io_unit%output,*) nbor%task%id, nbor%task%level
+      write (stdlog,*) nbor%task%id, nbor%task%level
       nbor => nbor%next
     end do
   end subroutine nbor_print

@@ -2289,7 +2289,7 @@ SUBROUTINE time_interval (self, time, jt, pt, all, id, extrap)
     else
       pt(2) = (time-t(j))/dt
       if (pt(2) > 1.01d0 + self%grace .and. .not.present(extrap)) then
-        call io%warning ('patch_t%time_interval: excessive extrapolatiion prevented')
+        call io%warning ('patch_t%time_interval: excessive extrapolation prevented')
         pt(1) = 1.-pt(2)
         if (present(id)) then
           write (io_unit%mpi,'(f8.3,i4,2x,a,2i6,1p,4e11.2)') &
@@ -2301,9 +2301,9 @@ SUBROUTINE time_interval (self, time, jt, pt, all, id, extrap)
             'patch_t%time_interval: jt,pt,tm,t(:) =', &
             jt, pt, time, self%t-time
         else
-          write (io_unit%mpi,'(i4,2x,a,i6,1p,4e11.2)') omp%thread, &
+          write (io_unit%mpi,'(i4,2x,a,i6,1p,6e11.2)') omp%thread, &
             'patch_t%time_interval: excessive id,t,tm,t,f =', &
-            self%id, time, t(j+1),time, time-t(j), t(j+1)-t(j), (time-t(j))/dt
+            self%id, time, t(j+1), time-t(j), t(j+1)-t(j), (time-t(j))/dt
         end if
         if (io%verbose > 1) then
           write (stdlog,'(a,2i6,2f6.2      )') 'time_interval:', jt, pt
@@ -2429,11 +2429,11 @@ END SUBROUTINE index_space_of
 !> not informed about the target grid spacing it must be adjusted for staggering
 !> before the call.
 !===============================================================================
-FUNCTION index_only (self, pos, iv, roundup, nowrap) RESULT (ii)
+FUNCTION index_only (self, pos, iv, roundup, rounddn, nowrap) RESULT (ii)
   class(patch_t)      :: self
   real(8), intent(in) :: pos(3)
   integer, optional   :: iv
-  logical, optional   :: roundup, nowrap
+  logical, optional   :: roundup, rounddn, nowrap
   integer             :: ii(3)
   !.............................................................................
   integer             :: i
@@ -2459,8 +2459,10 @@ FUNCTION index_only (self, pos, iv, roundup, nowrap) RESULT (ii)
     end if
     if (present(roundup)) then
       ii(i) = ceiling(p(i))                                     ! round up
+    else if (present(rounddn)) then
+      ii(i) = floor(p(i))                                       ! round dn
     else
-      ii(i) = p(i) + 0.0001                                     ! floor w margin
+      ii(i) = floor(p(i) + 0.0001)                              ! floor w margin
     end if
   end do
 END FUNCTION index_only

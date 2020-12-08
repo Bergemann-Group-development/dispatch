@@ -67,7 +67,7 @@ MODULE download_mod
   logical:: detailed_timer=.false.
   logical:: check_filled=.false.
   character(len=20):: use_restrict='different'
-  character(len=20):: use_prolong='different_prolong'
+  character(len=20):: use_prolong='guard_zones'
   character(len=20):: use_same='same'
   type(download_t), public:: download
   type(prolong_t), save:: prolng

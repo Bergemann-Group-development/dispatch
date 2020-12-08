@@ -409,7 +409,7 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
       link%task%istep < wait_refine_nsteps) then
         return
   end if
-  if (verbose > 1) then
+  if (verbose > 2) then
     if (link%task%is_set (bits%init_nbors)) &
       write(io_unit%log,'(i6,f12.6,4x,a,3x,2l1)') &
         link%task%id, link%task%time, 'has bits%init_nbors', &
@@ -450,8 +450,8 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
     ! some hysteresis to refinement/derefinement
     !---------------------------------------------------------------------------
     allocate (patch%irefine(patch%gn(1),patch%gn(2),patch%gn(3)))
-    if (verbose > 1) &
-      write (io_unit%log,*) 'allocated irefine in refine', mpi%rank, patch%id
+    if (verbose > 2) &
+      write (io_unit%log,*) '  allocated irefine in refine', mpi%rank, patch%id
     patch%irefine = -derefine_limit
     l = patch%mesh%li
     u = patch%mesh%ui
@@ -482,7 +482,7 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
     !---------------------------------------------------------------------------
     patch%check_refine_next = patch%istep + check_interval
     deallocate (patch%irefine)
-    if (verbose > 1) &
+    if (verbose > 2) &
       write (io_unit%log,*) 'deallocated irefine in refine', mpi%rank, patch%id
   end if
   call trace%end (itimer)
@@ -542,7 +542,7 @@ SUBROUTINE selective_refine (self, tasklist, patch, refine, was_refined, was_der
       !-------------------------------------------------------------------------
       if (verbose > 2) then
         write (io_unit%log,'(a,i6,a,i6,2(3x,3i4))') &
-          'derefine: patch', patch%id, ' contains', nbpatch%id, l, u
+          'selective_refine: patch', patch%id, ' contains', nbpatch%id, l, u
       end if
       !-------------------------------------------------------------------------
     end if
@@ -921,19 +921,21 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
     l = max(l,parent%mesh%li)
     u = min(u,parent%mesh%ui)
     write(io_unit%log,1) &
-     'make_child_patch: parent id, level, time, size(3), position(3), max(d) =', &
+     'make_child_patch: parent id,level,time,size,pos,min,max(d)=', &
       parent%id, parent%level, parent%time, parent%size, parent%position, &
-      maxval(parent%mem(l(1):u(1),l(2):u(2),l(3):u(3),parent%idx%d,parent%it,1))
+      minval(child%mem(l(1):u(1),l(2):u(2),l(3):u(3),child%idx%d,child%it,1)), &
+      maxval(child%mem(l(1):u(1),l(2):u(2),l(3):u(3),child%idx%d,child%it,1))
     write(io_unit%log,2) &
      '                      l, u, contains(child) =', &
       l, u, parent%contains(child)
-    1 format(a,i6,i3,f9.6,2(1x,3f8.4),1pe12.2)
+    1 format(a,i6,i3,f9.6,2(1x,3f8.4),1p,2e12.2)
     2 format(a,2(1x,3i3),l2)
     l(:) = parent%mesh(:)%li
     u(:) = parent%mesh(:)%ui
     write(io_unit%log,1) &
-     '                   child id, level, time, size(3), position(3), max(d) =', &
+     '                   child id,level,time,size,pos,min,max(d)=', &
       child%id, child%level, child%time, child%size, child%position , &
+      minval(child%mem(l(1):u(1),l(2):u(2),l(3):u(3),child%idx%d,child%it,1)), &
       maxval(child%mem(l(1):u(1),l(2):u(2),l(3):u(3),child%idx%d,child%it,1))
     flush (io_unit%log)
   end if

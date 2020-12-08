@@ -45,7 +45,7 @@ CONTAINS
 !===============================================================================
 SUBROUTINE init (self)
   class(guard_zones_t):: self
-  character(len=6):: method='opt'
+  character(len=6):: method='simple'
   namelist /guard_zone_params/ method, detailed_timer, verbose
   integer:: iostat
   logical, save:: first_time=.true.
@@ -89,7 +89,7 @@ SUBROUTINE restrict_simple (self, target, source, jt, pt, same)
   real, dimension(:,:,:), pointer:: tmem, smem, td, sd
   class(mesh_t), pointer:: mesh
   integer:: i1, i2, i3, iv, jv, tl(3), tu(3), sl(3), su(3)
-  real(8):: tlc(3), tuc(3), slc(3), suc(3), dist(3)
+  real(8), dimension(3):: tlc, tuc, slc, suc, lc, uc
   real(4):: pl(3), pu(3)
   real(8):: used
   integer, save:: itimer=0
@@ -99,33 +99,24 @@ SUBROUTINE restrict_simple (self, target, source, jt, pt, same)
   call trace%begin ('guard_zones_t%restrict_simple', itimer=itimer)
   if (detailed_timer) &
     used = wallclock()
-  call source%time_interval (target%time, jt, pt)
   do iv=1,target%nv
-    jv = 0
+    jv = iv
     !---------------------------------------------------------------------------
     ! Target lower and upper corner in real space
     !---------------------------------------------------------------------------
-    tlc = target%myposition (target%mesh%lb, jv)
-    tuc = target%myposition (target%mesh%ub, jv)
-    !---------------------------------------------------------------------------
-    ! Map to source index space and limit to source interior
-    !---------------------------------------------------------------------------
-    sl = source%index_only (tlc, jv, nowrap=.true.)
-    su = source%index_only (tuc, jv, nowrap=.true.)
-    sl = min(max(sl,source%mesh%li),source%mesh%ui-1)
-    su = min(max(su,source%mesh%li),source%mesh%ui-1)
-    !---------------------------------------------------------------------------
-    ! Map source points to target legal index space
-    !---------------------------------------------------------------------------
-    slc = source%myposition(sl, jv)
-    suc = source%myposition(su, jv)
-    tl = target%index_only (slc, jv, nowrap=.true., roundup=.true.)
-    tu = target%index_only (suc, jv, nowrap=.true., roundup=.true.)
-    tl = min(max(tl,target%mesh%lb),target%mesh%ub)
-    tu = min(max(tu,target%mesh%lb),target%mesh%ub)
+    tlc = target%position - target%size/2d0 - target%mesh%ng*target%mesh%d
+    tuc = target%position + target%size/2d0 + target%mesh%ng*target%mesh%d
+    slc = source%position - source%size/2d0
+    suc = source%position + source%size/2d0
+    lc = max(tlc,slc)
+    uc = min(tuc,suc)
+    tl = target%index_only (lc, jv, nowrap=.true., roundup=.true.)
+    tu = target%index_only (uc, jv, nowrap=.true.)
     if (verbose > 0) &
-      write(io_unit%log,'(a,i3,2(2x,3i4),2(2x,3f7.3))') &
-        'guard_zones_t%restrict_simple1: iv, tl, tu =', iv, tl, tu
+      write(io_unit%log,'(a,2i6,i3,2(2x,3i4),2(2x,3f7.3))') &
+        'guard_zones_t%restrict_simple1: tgt,src,iv,tl,tu,sl,su,dst =', &
+        target%id, source%id, iv, tl, tu, &
+        target%distance(source)/target%size
     !call dnload_range (target, source, iv, tl, tu)
     !if (verbose > 0) &
     !  write(io_unit%log,'(a,i3,2(2x,3i4),2(2x,3f7.3))') &
@@ -699,7 +690,7 @@ SUBROUTINE interpolate_specific (source, target, ii, iv, jt, pt)
 END SUBROUTINE interpolate_specific
 
 SUBROUTINE info
-  if (verbose > 0) then
+  if (verbose > 1) then
     write (stdout,*) 'guard_zones_t%info: update_t =', update_t
   end if
 END SUBROUTINE info
