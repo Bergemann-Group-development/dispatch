@@ -222,6 +222,10 @@ SUBROUTINE check_mpi (self, n)
         end do
         nullify (shared_head)
       end if
+      if (verbose > 0) then
+        write (io_unit%mpi,'("task_mesg_t%check_mpi: times =",3p,10f8.3)') &
+          times(2:j)-times(1:j-1)
+      end if
     !---------------------------------------------------------------------------
     ! When using the original task list, locking is needed only in AMR
     !---------------------------------------------------------------------------
@@ -246,13 +250,8 @@ SUBROUTINE check_mpi (self, n)
       end if
     end if
     call trace%end (itimer)
-    j=j+1; times(j)=wallclock()
     call check_new (self)
-    j=j+1; times(j)=wallclock()
   end if
-  if (verbose > 0) &
-    write (io_unit%mpi,'("task_mesg_t%check_mpi: times =",3p,10f8.3)') &
-      times(2:j)-times(1:j-1)
   if (present(n)) then
     n = n_unpk
   end if
