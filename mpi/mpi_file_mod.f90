@@ -15,8 +15,10 @@ MODULE mpi_file_mod
     integer:: comm = 0
     integer:: mode = 0
     integer:: err = 0
+    integer(8):: size = 0_8
+    integer(8):: offset = 0_8
     logical:: closed=.true.
-    character(len=64):: filename
+    character(len=64):: name
   contains
     procedure:: request_open
     procedure:: request_close
@@ -27,7 +29,8 @@ MODULE mpi_file_mod
     procedure:: close
     procedure, private:: write1
     procedure, private:: write5
-    generic, public :: write => write1, write5
+    procedure, private:: writes
+    generic, public :: write => write1, write5, writes
     procedure:: assert
   end type
 #ifndef MPI
@@ -50,7 +53,7 @@ SUBROUTINE request_open (self, filename)
 #ifdef MPI
   if (self%closed) then
     self%mode = MPI_MODE_CREATE + MPI_MODE_RDWR
-    self%filename = filename
+    self%name = filename
     self%closed = .false.
   end if
 #endif
@@ -78,12 +81,12 @@ SUBROUTINE open_and_close (self)
   if (self%closed .and. self%handle/=0) then
     call self%close ()
     write(io_unit%mpi,'(g12.5,i4,2x,a)') wallclock(), omp%thread, &
-      'mpi_file_t%open_and_close: closed '//trim(self%filename)
+      'mpi_file_t%open_and_close: closed '//trim(self%name)
     flush (io_unit%mpi)
   else if (.not. self%closed .and. self%handle==0) then
-    call self%openw (self%filename)
+    call self%openw (self%name)
     write(io_unit%mpi,'(g12.5,i4,2x,a)') wallclock(), omp%thread, &
-      'mpi_file_t%open_and_close: opened '//trim(self%filename)
+      'mpi_file_t%open_and_close: opened '//trim(self%name)
     flush (io_unit%mpi)
   end if
   call trace%end()
@@ -96,32 +99,41 @@ END SUBROUTINE open_and_close
 !===============================================================================
 SUBROUTINE open (self, filename, mode)
   class(mpi_file_t):: self
-  character(len=*) filename
-  integer:: mode
+  character(len=*), optional:: filename
+  integer, optional:: mode
   !.............................................................................
-  integer:: n
+  integer:: n, mode_l
 #ifdef MPI
   integer(kind=MPI_OFFSET_KIND):: pos
 #endif
   !-----------------------------------------------------------------------------
+  if (present(filename)) then
+    self%name = filename
+  end if
+  if (present(mode)) then
+  else
+    mode = MPI_MODE_RDWR
+  end if
 #ifdef MPI
   !call mp%barrier ('mpi_file_t%open')
   if (self%handle == 0) then
-    self%filename = filename
     if (mp%mode == MPI_THREAD_MULTIPLE) then
-      call MPI_File_open (mp%comm, filename, mode, MPI_INFO_NULL, self%handle, self%err)
+      call MPI_File_open &
+        (mp%comm, self%name, mode, MPI_INFO_NULL, self%handle, self%err)
     else
-      call MPI_File_open (mp%comm, filename, mode, MPI_INFO_NULL, self%handle, self%err)
+      call MPI_File_open &
+        (mp%comm, self%name, mode, MPI_INFO_NULL, self%handle, self%err)
     end if
       if (io%verbose > 0) then
-      write(io_unit%mpi,'(a," status:",i4)') &
-        ' MPI_File_open: file='//trim(filename)//'  mode='// &
-        trim(merge('MPI_MODE_CREATE', &
-                   '               ' ,iand(mode,MPI_MODE_CREATE) .ne. 0)) // &
-        trim(merge('+MPI_MODE_RDWR' , &
-                   '              '  ,iand(mode,MPI_MODE_RDWR)   .ne. 0)) // &
-        trim(merge('MPI_MODE_RDONLY', &
-                   '               ' ,iand(mode,MPI_MODE_RDONLY) .ne. 0)), self%err
+        write(io_unit%mpi,'(a," status:",i4)') &
+          ' MPI_File_open: file='//trim(self%name)//'  mode='// &
+          trim(merge('MPI_MODE_CREATE', &
+                     '               ' ,iand(mode,MPI_MODE_CREATE) .ne. 0)) // &
+          trim(merge('+MPI_MODE_RDWR' , &
+                     '              '  ,iand(mode,MPI_MODE_RDWR)   .ne. 0)) // &
+          trim(merge('MPI_MODE_RDONLY', &
+                     '               ' ,iand(mode,MPI_MODE_RDONLY) .ne. 0)), &
+          self%err
       flush (io_unit%mpi)
     end if
   end if
@@ -200,7 +212,7 @@ SUBROUTINE close (self)
     end if
     if (io%verbose > 0) then
       write (io_unit%mpi,'(1x,a,i8)') &
-        'mpi_file_t%close: '//trim(self%filename)//'  err:', self%err
+        'mpi_file_t%close: '//trim(self%name)//'  err:', self%err
       flush (io_unit%mpi)
     end if
     self%handle = 0
@@ -252,6 +264,35 @@ SUBROUTINE write5 (self, off, size, buffer)
 #endif MPI
   call trace%end ()
 END SUBROUTINE write5
+
+!===============================================================================
+!> Write out a buffer at a given offset into the file
+!===============================================================================
+SUBROUTINE writes (self, buffer, off, size)
+  class(mpi_file_t):: self
+  integer(8), optional:: off
+  integer, optional:: size
+  integer:: err, st(MPI_STATUS_SIZE)
+  class(*), pointer:: buffer
+  !-----------------------------------------------------------------------------
+  call trace%begin ('mpi_io_t%writes')
+  if (present(off)) then
+    self%offset = off
+  end if
+  if (present(size)) then
+    self%size = size
+  end if
+#ifdef MPI
+  if (mp%mode == MPI_THREAD_MULTIPLE) then
+    call MPI_File_write_at (self%handle, off, buffer, size, MPI_REAL, st, err)
+  else
+    !$omp critical (mpi_cr)
+    call MPI_File_write_at (self%handle, off, buffer, size, MPI_REAL, st, err)
+    !$omp end critical (mpi_cr)
+  end if
+#endif MPI
+  call trace%end ()
+END SUBROUTINE writes
 
 !===============================================================================
 !> Assert no error

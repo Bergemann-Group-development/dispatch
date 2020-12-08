@@ -211,7 +211,7 @@ SUBROUTINE write3 (self, f, rec, id)
                             self%status, self%err)
     !$omp end critical (mpi_cr)
   end if
-  call self%assert ('mpi_io_mod::write MPI_File_write_at '//trim(self%file%filename))
+  call self%assert ('mpi_io_mod::write MPI_File_write_at '//trim(self%file%name))
   call trace%end()
 #endif
 END SUBROUTINE write3
@@ -235,7 +235,7 @@ SUBROUTINE write4 (self, f, rec, id)
       rec, id, self%chunk_words, pos, minval(f), maxval(f)
   if (verbose > 0) then
     write(io_unit%mpi,'(g12.5,i4,2x,a)') wallclock(), omp%thread, &
-      'mpi_io_t%write4: writing to '//trim(self%file%filename)
+      'mpi_io_t%write4: writing to '//trim(self%file%name)
     flush (io_unit%mpi)
   end if
   if (mp%mode == MPI_THREAD_MULTIPLE) then
@@ -247,7 +247,7 @@ SUBROUTINE write4 (self, f, rec, id)
                             self%status, self%err)
     !$omp end critical (mpi_cr)
   end if
-  call self%assert ('mpi_io_mod::write MPI_File_write_at '//trim(self%file%filename))
+  call self%assert ('mpi_io_mod::write MPI_File_write_at '//trim(self%file%name))
   call trace%end()
 #endif
 END SUBROUTINE write4
