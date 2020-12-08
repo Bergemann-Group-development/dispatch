@@ -202,24 +202,29 @@ SUBROUTINE init (self, task_list, label)
     link => next
   end do
   !-----------------------------------------------------------------------------
-  ! This call is not valid until the patch meshes have been allocated
+  ! This counts are not fully correct until the patch meshes have been allocated
   !-----------------------------------------------------------------------------
   if (verbose > 0) write(stdout,*) 'cartesian_t%init: count status'
   call self%task_list%count_status
   !-----------------------------------------------------------------------------
-  ! These must be set before reading input snapshots
+  ! The I/O conunters must be set before initializing patches
   !-----------------------------------------------------------------------------
-  io%ntask = self%task_list%na
-  io%nwrite = self%task_list%na
-  io%ntotal = self%task_list%n_tasks
+  call self%task_list%set_io_counts
   write (stdout,'(a,i8)') ' number of tasks in task list:', self%task_list%n
-!  write(stdout,*) 'ntask, nwrite, ntotal =', io%ntask, io%nwrite, io%ntotal
+  write (stdlog,*) 'cartesian_mod: ntask,nwrite,ntotal=', &
+    io%ntask, io%nwrite, io%ntotal
   !-----------------------------------------------------------------------------
   ! Initialize tasks
   !-----------------------------------------------------------------------------
   !$omp parallel default(shared)
   call init_exp (self, origin)
   !$omp end parallel
+  !-----------------------------------------------------------------------------
+  ! Refresh the counts, now with bits%has_output set on tasks
+  !-----------------------------------------------------------------------------
+  call self%task_list%set_io_counts
+  write (stdlog,*) 'cartesian_mod: ntask,nwrite,ntotal=', &
+    io%ntask, io%nwrite, io%ntotal
   !-----------------------------------------------------------------------------
   ! This call is not valid until the patch mem and meshes have been allocated
   !-----------------------------------------------------------------------------

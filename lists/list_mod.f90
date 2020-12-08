@@ -463,7 +463,6 @@ SUBROUTINE update_counts (self, link, delta)
   !$omp atomic write
   self_n = n
   end associate
-  call self%set_io_counts
   !-----------------------------------------------------------------------------
   ! Validate the incremental method when task_list_t%verbose > 0
   !-----------------------------------------------------------------------------
@@ -491,12 +490,16 @@ SUBROUTINE update_counts (self, link, delta)
   call trace%end ()
 END SUBROUTINE update_counts 
 
+!===============================================================================
+!> Set the io% attributes needed to keep track of I/O progress
+!===============================================================================
 SUBROUTINE set_io_counts (self)
   class (list_t):: self
   !-----------------------------------------------------------------------------
   ! Make sure task counts for I/O purposes are up-to-date
   !-----------------------------------------------------------------------------
   call trace%begin ('list_t%set_io_counts')
+  call self%count_status ('set_io_counts')
   associate (io_ntask=>io%ntask, io_nwrite=>io%nwrite, io_ntotal=>io%ntotal)
   !$omp atomic write
   io_ntask = self%na
@@ -533,7 +536,8 @@ SUBROUTINE count_status (self, label)
     if (task%is_set(bits%internal)) ni = ni+1
     if (task%is_set(bits%external)) ne = ne+1
     if (task%is_set(bits%ready   )) nq = nq+1
-    if (task%is_set(bits%has_output)) no = no+1
+    if (task%is_set(bits%has_output) .and. &
+        task%is_clear(bits%virtual)) no = no+1
     if (task%is_clear (bits%boundary + &
                        bits%virtual  + &
                        bits%internal + &
@@ -575,7 +579,6 @@ SUBROUTINE count_status (self, label)
     end if
   end if
   self%na = n - nv - ne
-  call self%set_io_counts
   !-----------------------------------------------------------------------------
   call self%lock%unset ('count_status')
   call trace%end (itimer)
@@ -2580,7 +2583,6 @@ SUBROUTINE swap (self, link, sender, rank)
   self%nb = self%nb-one                  ! boundary tasks
   !$omp atomic update
   self%nv = self%nv+one                  ! virtual tasks
-  call self%set_io_counts                ! apply counts
   !$omp atomic update
   timer%levelpop (link%task%level) = &    ! level population count
   timer%levelpop (link%task%level) - one
