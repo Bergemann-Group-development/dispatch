@@ -222,9 +222,6 @@ SUBROUTINE output (self, patch, experiment_name)
   !-----------------------------------------------------------------------------
   call self%lock%set ('output1')
   if (io%needs_check) then
-    if (io%method=='amr') then
-      call amr_io%check
-    end if
     call self%lock%unset ('output1')
   else
     call self%lock%unset ('output1')
@@ -283,7 +280,7 @@ SUBROUTINE output (self, patch, experiment_name)
         if      (io%method=='direct') then
           call direct_io%output (patch)
         else if (io%method=='amr') then
-          call amr_io%output (patch, count)
+          call amr_io%update (patch, count)
         else if (io%method=='legacy') then
           call legacy_io%output (patch)
           !call output_txt (patch, append)
