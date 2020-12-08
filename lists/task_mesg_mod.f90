@@ -246,10 +246,10 @@ SUBROUTINE check_mpi (self, n)
       end if
     end if
     call trace%end (itimer)
+    j=j+1; times(j)=wallclock()
+    call check_new (self)
+    j=j+1; times(j)=wallclock()
   end if
-  j=j+1; times(j)=wallclock()
-  call check_new (self)
-  j=j+1; times(j)=wallclock()
   if (verbose > 0) &
     write (io_unit%mpi,'("task_mesg_t%check_mpi: times =",3p,10f8.3)') &
       times(2:j)-times(1:j-1)
@@ -490,7 +490,9 @@ contains
     allocate (task_link)
     task%link => task_link
     task_link%task => task
+    task%id = 1
     call task%init
+    task%id = 0
     call task_link%init
     call task%allocate_mesg
     if (lock_recv) then
