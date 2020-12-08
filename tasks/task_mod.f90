@@ -136,6 +136,8 @@ MODULE task_mod
     procedure:: statistics
     procedure:: bndries
     procedure:: courant_condition
+    procedure:: output_metadata
+    procedure:: pack_output
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -1225,5 +1227,27 @@ SUBROUTINE courant_condition (self, detailed_timer)
   end if
   call trace%end()
 END SUBROUTINE courant_condition
+
+!===============================================================================
+!> Template for metadata output
+!===============================================================================
+SUBROUTINE output_metadata (self)
+  class(task_t):: self
+  !-----------------------------------------------------------------------------
+  call trace%begin ('task_t%write_metadata')
+  call trace%end ()
+END SUBROUTINE output_metadata
+
+!===============================================================================
+!> Template for self-packing routine
+!===============================================================================
+SUBROUTINE pack_output (self, p)
+  class(task_t):: self
+  class(*), pointer:: p
+  !-----------------------------------------------------------------------------
+  call trace%begin ('task_t%pack_output')
+  nullify(p)
+  call trace%end ()
+END SUBROUTINE pack_output
 
 END MODULE task_mod
