@@ -145,7 +145,7 @@ SUBROUTINE output (self)
   node => self%list%head
   do while (associated(node))
     next => node%next
-    call self%file%write (node%car)
+    !call self%file%write (node%car)
     self%offset = self%offset + self%size
     deallocate (node%car)
     deallocate (node)
