@@ -1999,14 +1999,14 @@
                COLSSQ( 1 ) = ZERO
                COLSSQ( 2 ) = ONE
                CALL DLASSQ( J-1, A( 1, J ), 1, COLSSQ(1), COLSSQ(2) )
-               CALL DCOMBSSQ( SSQ, COLSSQ )
+               !FIXME CALL DCOMBSSQ( SSQ, COLSSQ )
   110       CONTINUE
          ELSE
             DO 120 J = 1, N - 1
                COLSSQ( 1 ) = ZERO
                COLSSQ( 2 ) = ONE
                CALL DLASSQ( N-J, A( J+1, J ), 1, COLSSQ(1), COLSSQ(2) )
-               CALL DCOMBSSQ( SSQ, COLSSQ )
+               !FIXME CALL DCOMBSSQ( SSQ, COLSSQ )
   120       CONTINUE
          END IF
          SSQ( 2 ) = 2*SSQ( 2 )
@@ -2016,7 +2016,7 @@
          COLSSQ( 1 ) = ZERO
          COLSSQ( 2 ) = ONE
          CALL DLASSQ( N, A, LDA+1, COLSSQ( 1 ), COLSSQ( 2 ) )
-         CALL DCOMBSSQ( SSQ, COLSSQ )
+         !FIXME CALL DCOMBSSQ( SSQ, COLSSQ )
          VALUE = SSQ( 1 )*SQRT( SSQ( 2 ) )
       END IF
 *
