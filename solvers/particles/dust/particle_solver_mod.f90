@@ -43,7 +43,7 @@ MODULE particle_solver_mod
   USE list_mod
   USE gpatch_mod
   USE particles_mod
-  USE dust_mod
+  USE dust_evolve_mod
   USE scaling_mod
   USE units_mod
   USE timer_mod
@@ -60,7 +60,7 @@ MODULE particle_solver_mod
     class(gpatch_t),   pointer :: patch => null()      ! pointer to patch
     class(nbor_t),     pointer :: nbor => null()       ! nbor list
     type(link_t)   ,   pointer :: link => null()       ! task link
-    type(dust_t)               :: dust                 ! dust solver
+    type(dust_evolve_t)        :: dust_evolve          ! dust evolution solver
     real, pointer, contiguous  :: dg(:,:,:)            ! gas density
     real, pointer, contiguous  :: vg(:,:,:,:)          ! gas velocity
     real, pointer, contiguous  :: vd(:,:,:,:,:)        ! dust velocity
@@ -88,6 +88,7 @@ MODULE particle_solver_mod
     procedure:: initial_condition
     procedure:: init_task_list
     procedure:: update
+    procedure:: update_bins
     procedure:: import
     procedure:: output
     procedure:: statistics
@@ -150,7 +151,7 @@ SUBROUTINE pre_init (self, patch)
   call trace%begin ('particle_solver_t%pre_init')
   self%patch => patch                           ! make the patch known
   self%id = patch%id                            ! for now, inherit
-  self%dust%patch => self%patch                 ! make the patch known
+  !self%dust%patch => self%patch                 ! make the patch known
   !-----------------------------------------------------------------------------
   call io%lock%set ('particle_solver_t%pre_init')
   rewind (io%input)
@@ -165,9 +166,9 @@ SUBROUTINE pre_init (self, patch)
   self%n_bin = n_bin
   self%dust_to_gas = dust_to_gas
   self%out_next = 0d0
-  self%dust%detailed_timer = detailed_timer
-  self%dust%ip_dbg = ip_dbg
-  self%dust%i_dbg = i_dbg
+  !self%dust%detailed_timer = detailed_timer
+  !self%dust%ip_dbg = ip_dbg
+  !self%dust%i_dbg = i_dbg
   !-----------------------------------------------------------------------------
   ! Pre-factor for drag force.  The input parameter density_yr_cgs is the
   ! density (in CGS) for which the stopping time in 1 yr for a 1 cm particle.
@@ -255,12 +256,8 @@ SUBROUTINE init (self)
       end if
     end if
   end do
-  self%dust%lower = self%lower
-  self%dust%upper = self%upper
-  self%dust%lb = self%lb
-  self%dust%ub = self%ub
   !-----------------------------------------------------------------------------
-  call self%dust%init (n_bin, self%m_cgs, self%dd)
+  call self%dust_evolve%init (n_bin, self%m_cgs)
   call self%aux%init
   call self%random%init (seed)        ! FIXME: check seed inheritance
   do i=1,3
@@ -473,8 +470,8 @@ SUBROUTINE update (self)
   !call self%particles%lock%set ('update')
   time(1) = wallclock()
   !-----------------------------------------------------------------------------
-  self%dust%d => patch%mem(:,:,:,patch%idx%d              ,patch%new,1)
-  self%dust%p => patch%mem(:,:,:,patch%idx%px:patch%idx%pz,patch%new,1)
+  !self%dust%d => patch%mem(:,:,:,patch%idx%d              ,patch%new,1)
+  !self%dust%p => patch%mem(:,:,:,patch%idx%px:patch%idx%pz,patch%new,1)
   !-----------------------------------------------------------------------------
   ! Allocate array for number of particles per cell-bin
   !-----------------------------------------------------------------------------
@@ -883,15 +880,8 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Do dust evolution after move, since we need the particle timestep values
   !-----------------------------------------------------------------------------
-  if (self%dust%on) then
-    do i3=l(3),u(3)
-    do i2=l(2),u(2)
-    do i1=l(1),u(1)
-      bins => self%particles(i1,i2,i3,:)
-      call self%dust%update (bins)
-    end do
-    end do
-    end do
+  if (self%dust_evolve%on) then
+    call evolve_dust (self)
   end if
   !-----------------------------------------------------------------------------
   call io%bits_mem (storage_size(self%vg), -product(shape(self%vg)), 'vg')
@@ -903,6 +893,103 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   call trace%end (itimer)
 END SUBROUTINE update
+
+!===============================================================================
+!> Evolve the dust -- changing the distibution btw bins while conserving
+!> dust mass and dust momentum
+!===============================================================================
+SUBROUTINE evolve_dust (self)
+  class(particle_solver_t):: self
+  real, allocatable:: dd(:,:,:,:), vd(:,:,:,:,:)
+  integer:: i1, i2, i3, l(3), u(3), m(5)
+  !-----------------------------------------------------------------------------
+  ! Save the current dust densities and velocities
+  !-----------------------------------------------------------------------------
+  call trace%begin ('particle_solver_t%evolve_dust')
+  call self%density (self%dd)
+  call self%velocities (self%vd)
+  m = shape(self%vd)
+  allocate(vd(m(1),m(2),m(3),m(4),m(5)))
+  allocate(dd(m(1),m(2),m(3),m(4)))
+  !-----------------------------------------------------------------------------
+  ! Evolve the dust bins
+  !-----------------------------------------------------------------------------
+  l = self%lb
+  u = self%ub
+  do i3=l(3),u(3)
+  do i2=l(2),u(2)
+  do i1=l(1),u(1)
+    call self%dust_evolve%update ( &
+      self%dd(i1,i2,i3,:), self%vd(i1,i2,i3,:,:), &
+           dd(i1,i2,i3,:),      vd(i1,i2,i3,:,:))
+  end do
+  end do
+  end do
+  !-----------------------------------------------------------------------------
+  ! Implement the new densities and velocities in the particle representation
+  !-----------------------------------------------------------------------------
+  call self%update_bins (dd, vd)
+  deallocate (dd, vd)
+  call trace%end()
+END SUBROUTINE evolve_dust
+
+!===============================================================================
+!> Update the dust state in the task, based on the evolved values given in the
+!> argument list.  The current values are assumed to be stored in self%dd and
+!> self%vd, respectively.
+!===============================================================================
+SUBROUTINE update_bins (self, dd, vd)
+  class(particle_solver_t):: self
+  real, intent(in):: dd(:,:,:,:)
+  real, intent(in):: vd(:,:,:,:,:)
+  !.............................................................................
+  integer:: bin, it, i(3), n(3)
+  type(particle_t), pointer:: pa
+  type(particles_t), pointer:: particles
+  integer:: m(4), i1, i2, i3, i4
+  real:: dv(3)
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  ! Renormalize bin densities
+  !-----------------------------------------------------------------------------
+  call trace%begin ('dust_t%scatter', itimer=itimer)
+  do i4=1,n_bin
+  do i3=self%lb(3),self%ub(3)
+  do i2=self%lb(2),self%ub(2)
+  do i1=self%lb(1),self%ub(1)
+    particles => self%particles(i1,i2,i3,i4)
+    pa => particles%head%next                     ! first particle
+    do while (associated(pa%next))                ! loop over particles
+      pa%w = pa%w* &
+        dd(i1,i2,i3,i4)/self%dd(i1,i2,i3,i4)      ! renormalize
+      pa => pa%next                               ! next particle
+    end do
+  end do
+  end do
+  end do
+  end do
+  !-----------------------------------------------------------------------------
+  ! Ajust particle velocities with the difference btw existing and new vd values
+  !-----------------------------------------------------------------------------
+  do i4=1,n_bin
+  do i3=self%lb(3),self%ub(3)
+  do i2=self%lb(2),self%ub(2)
+  do i1=self%lb(1),self%ub(1)
+    dv = vd(i1,i2,i3,i4,:) - self%vd(i1,i2,i3,i4,:)
+    particles => self%particles(i1,i2,i3,i4)
+    pa => particles%head%next                     ! first particle
+    do while (associated(pa%next))                ! loop over particles
+      pa%v(1) = pa%v(1) + dv(1)                   ! adjust
+      pa%v(2) = pa%v(2) + dv(2)                   ! adjust
+      pa%v(3) = pa%v(3) + dv(3)                   ! adjust
+      pa => pa%next                               ! next particle
+    end do
+  end do
+  end do
+  end do
+  end do
+  call trace%end (itimer)
+END SUBROUTINE update_bins
 
 !===============================================================================
 !> Top up particles per size bin.  Note that if there are no particles it is 
@@ -1237,7 +1324,7 @@ SUBROUTINE output (self)
   end if
   if (self%time >= self%aux%aux_next) then
     call self%import (count=debug)
-    call self%density
+    call self%density (self%dd)
     m = self%patch%gn
     allocate (vr(m(1),m(2),m(3),n_bin))
     allocate (vd(m(1),m(2),m(3),n_bin,3))
@@ -1476,15 +1563,17 @@ END SUBROUTINE courant_condition
 !===============================================================================
 !> Compute dust density
 !===============================================================================
-SUBROUTINE density (self)
+SUBROUTINE density (self, dd)
   class(particle_solver_t):: self
+  real:: dd(:,:,:,:)
   integer:: i1, i2, i3, i4
+  !-----------------------------------------------------------------------------
   call self%import
   do i4=1,self%n_bin
     do i3=self%lb(3),self%ub(3)
       do i2=self%lb(2),self%ub(2)
         do i1=self%lb(1),self%ub(1)
-          self%dd(i1,i2,i3,i4) = self%particles(i1,i2,i3,i4)%density()
+          dd(i1,i2,i3,i4) = self%particles(i1,i2,i3,i4)%density()
         end do
       end do
     end do
@@ -1516,64 +1605,6 @@ SUBROUTINE velocities (self, vd)
     end do
   end do
 END SUBROUTINE velocities
-
-!===============================================================================
-!> Update the dust state in the task, based on the evolved values given in the
-!> argument list.  The current values are assumed to be stored in self%dd and
-!> self%vd, respectively.
-!===============================================================================
-SUBROUTINE update_bins (self, dd, vd)
-  class(particle_solver_t):: self
-  real, intent(in):: dd(:,:,:,:)
-  real, intent(in):: vd(:,:,:,:,:)
-  !.............................................................................
-  integer:: bin, it, i(3), n(3)
-  type(particle_t), pointer:: pa
-  type(particles_t), pointer:: particles
-  integer:: m(4), i1, i2, i3, i4
-  real:: dv(3)
-  integer, save:: itimer=0
-  !-----------------------------------------------------------------------------
-  ! Renormalize bin densities
-  !-----------------------------------------------------------------------------
-  call trace%begin ('dust_t%scatter', itimer=itimer)
-  do i4=1,n_bin
-  do i3=self%lb(3),self%ub(3)
-  do i2=self%lb(2),self%ub(2)
-  do i1=self%lb(1),self%ub(1)
-    particles => self%particles(i1,i2,i3,i4)
-    pa => particles%head%next                     ! first particle
-    do while (associated(pa%next))                ! loop over particles
-      pa%w = pa%w* &
-        dd(i1,i2,i3,i4)/self%dd(i1,i2,i3,i4)      ! renormalize
-      pa => pa%next                               ! next particle
-    end do
-  end do
-  end do
-  end do
-  end do
-  !-----------------------------------------------------------------------------
-  ! Ajust particle velocities with the difference btw existing and new vd values
-  !-----------------------------------------------------------------------------
-  do i4=1,n_bin
-  do i3=self%lb(3),self%ub(3)
-  do i2=self%lb(2),self%ub(2)
-  do i1=self%lb(1),self%ub(1)
-    dv = vd(i1,i2,i3,i4,:) - self%vd(i1,i2,i3,i4,:)
-    particles => self%particles(i1,i2,i3,i4)
-    pa => particles%head%next                     ! first particle
-    do while (associated(pa%next))                ! loop over particles
-      pa%v(1) = pa%v(1) + dv(1)                   ! adjust
-      pa%v(2) = pa%v(2) + dv(2)                   ! adjust
-      pa%v(3) = pa%v(3) + dv(3)                   ! adjust
-      pa => pa%next                               ! next particle
-    end do
-  end do
-  end do
-  end do
-  end do
-  call trace%end (itimer)
-END SUBROUTINE update_bins
 
 !===============================================================================
 !> Compute velocity diespersion
