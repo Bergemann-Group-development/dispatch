@@ -309,10 +309,10 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
             end if
           end if
          if (verbose > 1) &
-           write (io_unit%log,'(2(a,":",i5,i3,2(1x,3f8.3,2x)),1x,3f8.3)') &
+           write (io_unit%log,'(2(a,":",i5,i3,2(1x,3f8.3,2x)),1x,3f8.3,l3)') &
            'target', target%id, target%level, target%position, target%size, &
            'source', source%id, source%level, source%position, source%size, &
-            target%distance(source)*2./target%size
+            target%distance(source)*2./target%size, present(all_cells)
          if (source%level==target%level) then
            select case (trim(use_same))
            case ('different')
