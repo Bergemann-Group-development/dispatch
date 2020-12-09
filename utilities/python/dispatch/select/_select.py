@@ -5,7 +5,7 @@ from __future__ import print_function
 
 import numpy as np
 from time import time
-import dispatch
+#import dispatch
 
 def _patches(s):
     """ Allow a snapshot, a patch, or a list of patches """

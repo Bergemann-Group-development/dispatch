@@ -11,6 +11,7 @@ import dispatch.select as dse
 from time import time
 from dispatch._dispatch_grid import GeometricFactors
 from dispatch._aux import aux
+from dispatch._utils import read_patch_metadata
 from dispatch._expr import expression_parser
 from scipy.io import FortranFile
 
@@ -444,6 +445,9 @@ def _var(patch,filed,snap,verbose=0,copy=None):
               or (patch.ioformat-10)//2==0)
         is_v  = ((patch.ioformat-6)%2==0)
         is_st = patch.kind[0:4] == 'zeus' or patch.kind[0:7] == 'stagger'
+        if patch.ioformat==14:
+            is_v=False
+            is_ln=False
         v = None
 
         # Check if the index corresponds to a cached array
@@ -513,6 +517,7 @@ def _var(patch,filed,snap,verbose=0,copy=None):
                         v=zup(mem('p3')/ \
                               np.exp(zdn(var('lnd',all=True,verbose=verbose))))
                     else:
+                        #print('is_v',is_v,patch.mesh_type)
                         v=mem('p3')/var('d',all=True,verbose=verbose)
 
             # Energy per unit mass
@@ -576,10 +581,9 @@ def _var(patch,filed,snap,verbose=0,copy=None):
     return var
 
 class _patch():
-    def __init__(self,id,patch_dict,snap,rank,verbose=0):
+    def __init__(self,id,patch_dict,snap,verbose=0):
         #timer.add('_patch(0)')
         self.id=id
-        self.rank=rank
         self.memmap=1
         # add general attributes from snapshot_nml
         for k,v in snap.dict.items():
@@ -598,7 +602,10 @@ class _patch():
             self.idx.h=self._h()
         timer.add('add-idx-attr')
         # reconstruct items pruned from patch_nml
-        if hasattr(self,'size') and hasattr(self,'position') :
+        if hasattr(self,'size') and hasattr(self,'n'):
+            if not hasattr(self,'ds'):
+                self.dsx=self.size/self.n
+        if hasattr(self,'size') and hasattr(self,'position'):
             llc=self.position-self.size/2.0
             urc=self.position+self.size/2.0
             self.extent=np.array(((llc[1],urc[1],llc[2],urc[2]),
@@ -735,109 +742,6 @@ object takes both numeric and text key values: Examples:\n\
         if verbose:
             print('plane: i, p = {:d} {:.3f}'.format(i,p))
         return f
-            
-def _parse_namelist (items):
-    pos=items[1:]
-    if len(pos)==1:
-        pos[0]=pos[0].replace('3*','')
-        pos=[pos[0],pos[0],pos[0]]
-    elif len(pos)==2:
-        if pos[0].find('2*')>=0:
-            pos[0]=pos[0].replace('2*','')
-            pos=[pos[0],pos[0],pos[1]]
-        if pos[1].find('2*')>=0:
-            pos[1]=pos[1].replace('2*','')
-            pos=[pos[0],pos[1],pos[1]]
-    # choose right data type for the resulting array
-    try:
-        pos = [int(p) for p in pos]
-    except:
-        pos = [float(p) for p in pos]
-
-    return np.array(pos)
-
-def parse_patches(snap,file='../data/00000/rank_00000_patches.nml',
-                  verbose=0):
-    """ Optimized parsing of patch namelist entries.
-    """
-    prop_dict={}
-    class props():
-        pass
-
-    # Determine nml_version
-    nml_version=1
-    nbor_info=None
-    if hasattr(snap,'params_list'):
-        params_list=snap.params_list
-        if 'io_params' in params_list:
-            io_params=params_list['io_params']
-            if 'nml_version' in io_params:
-                nml_version=io_params['nml_version']
-    # Inform about nbor_nml, if present
-    if nml_version>1:
-        patches_nml=f90nml.read(file)
-        if 'nbor_nml' in patches_nml:
-            start=time()
-            nbor_nml=patches_nml['nbor_nml']
-            nbor_info={}
-            for nb in nbor_nml:
-                id=nb['id']
-                parent_id=nb['parent_id']
-                nbor_ids=nb['nbor_ids']
-                nbor_info[id]={'parent_id':parent_id,'nbor_ids':nbor_ids}
-            if verbose:
-                print('snapshot nbor_nml info ({:.3f}s):'.format(time()-start))
-                print(nbor_nml[0].keys())
-
-    with open(file,'r') as fo:
-        watch_block = False
-        for line in fo:
-            # strip commas and equal sign from line and split
-            line=line.replace('=',' ').replace(',',' ').replace('"',' ')
-            items=line.split()
-            if len(items)==0:
-                pass
-            elif items[0] == "&PATCH_NML":
-                d={}
-                watch_block = True
-            elif items[0]=='ID':
-                id=int(items[1])
-            elif items[0]=='POSITION':
-                d['position'] = _parse_namelist(items)
-            elif items[0]=='SIZE':
-                d['size'] = _parse_namelist(items)
-                if hasattr(snap,'n'):
-                    n=snap.n
-                else:
-                    n=1
-                if not 'ds' in d.keys():
-                    if snap.no_mans_land:
-                        d['ds'] = d['size']/n
-                    else:
-                        d['ds'] = d['size']/(np.array(snap.n)-1).clip(min=1)
-            elif items[0]=='LEVEL':
-                d['level']=int(items[1])
-            elif items[0]=='DTIME':
-                d['dtime']=float(items[1])
-            elif items[0]=='TIME':
-                d['time']=float(items[1])
-            elif items[0]=='ISTEP':
-                d['istep']=int(items[1])
-            elif items[0]=='DS':
-                d['ds'] = _parse_namelist(items)
-            elif items[0]=='MESH_TYPE':
-                d['mesh_type'] = int(items[1])
-            elif items[0]=='NCELL':
-                d['ncell'] = _parse_namelist(items)
-            elif items[0]=='KIND':
-                d['kind']=items[1]
-            elif items[0]=='/' and watch_block: # the final entry of a namelist is always "/"
-                if nbor_info:
-                    d['parent_id']=nbor_info[id]['parent_id']
-                    d['nbor_ids']=nbor_info[id]['nbor_ids']
-                prop_dict[id]=d
-                watch_block = False
-    return prop_dict
 
 class snapshot():
     """ Return a snapshot worth of metadata, including memory mapped variables
@@ -957,54 +861,46 @@ class snapshot():
         files=[f for f in os.listdir(datadir) if f.endswith('_patches.nml')]
         
         # make sure to ignore left-over *_patches.nml from other runs
-        save=[]
-        for i in range(self.mpi_size):
-            f = files[i]
-            # split name to get rank number
-            rank=np.int(f.split('_')[1])
-            # add parameter groups from data/run/NNNNN/*patches.nml
-            file=_file(datadir,f)
-            if verbose>1:
-                print ('parsing',file)
-            patch_dict=parse_patches(self,file,verbose=verbose)
-            save.append(patch_dict)
+        patch_dict=read_patch_metadata(iout,run,data,self.mpi_size,verbose=verbose)
+        if patch_dict is None:
+            print('could not find patch metadata')
+            return
         timer.add('parse_patches')   # 0.7s
-        for patch_dict in save:
-            """ 
-                At this point all metadata about patches is available in the
-                patch_dict, with patch IDs as keys.  This makes it possible to
-                scan for files that can supply both regular and auxiliary data 
-            """
-            ids=sorted(patch_dict.keys())
-            timer.add('sorted-keys')
-            for id in ids:
-                """ The _patch procedure collects all information about a patch
-                    into an instancc of the _patch class, and appends it to
-                    the snapshot.patches list """
-                p=_patch(id,patch_dict[id],self,rank,verbose=verbose)
-                timer.add('snapshot(1)')
-                self._add_axes(p)
-                # Append to array of patch instances
-                self.patches.append(p)
+        """ 
+            At this point all metadata about patches is available in the
+            patch_dict, with patch IDs as keys.  This makes it possible to
+            scan for files that can supply both regular and auxiliary data 
+        """
+        ids=sorted(patch_dict.keys())
+        timer.add('sorted-keys')
+        for id in ids:
+            """ The _patch procedure collects all information about a patch
+                into an instancc of the _patch class, and appends it to
+                the snapshot.patches list """
+            p=_patch(id,patch_dict[id],self,verbose=verbose)
+            timer.add('snapshot(1)')
+            self._add_axes(p)
+            # Append to array of patch instances
+            self.patches.append(p)
 
-                # verbose info
-                if verbose==2 and hasattr(p,'idx'):
-                    data=p.var('d')
-                    dmax=data.max()
-                    print ('    id:{:4d}  pos: {} {}'.format(p.id,p.position,dmax))
-                elif verbose==3:
-                    print('id:',p.id)
-                    for iv in range(p.nv):
-                        data=p.var(iv)
-                        vmin=float(data.min())
-                        vmax=float(data.max())
-                        print ('{:>5}:  min = {:10.3e}   max = {:10.3e}'.format(
-                            p.idx.vars[iv], vmin, vmax))
-                elif verbose==4:
-                    attributes(p)
-                timer.add('append+verbose')
-            if verbose==1:
-                print('  added',len(self.patches),'patches')
+            # verbose info
+            if verbose==2 and hasattr(p,'idx'):
+                data=p.var('d')
+                dmax=data.max()
+                print ('    id:{:4d}  pos: {} {}'.format(p.id,p.position,dmax))
+            elif verbose==3:
+                print('id:',p.id)
+                for iv in range(p.nv):
+                    data=p.var(iv)
+                    vmin=float(data.min())
+                    vmax=float(data.max())
+                    print ('{:>5}:  min = {:10.3e}   max = {:10.3e}'.format(
+                        p.idx.vars[iv], vmin, vmax))
+            elif verbose==4:
+                attributes(p)
+            timer.add('append+verbose')
+        if verbose==1:
+            print('  added',len(self.patches),'patches')
         timer.add('_patches')
         timer.print(verbose=verbose,timeit=timeit)
 

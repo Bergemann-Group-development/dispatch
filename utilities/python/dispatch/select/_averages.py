@@ -8,7 +8,7 @@ Created on Tue Aug 07 23:05:36 2018
 from __future__ import print_function
 
 import numpy as np
-import dispatch
+#import dispatch
 #import types
 
 def aver(s,iv=0):

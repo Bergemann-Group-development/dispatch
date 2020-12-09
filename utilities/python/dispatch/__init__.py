@@ -27,6 +27,7 @@
 
 from ._dispatch import *
 from ._expr import *
+from ._utils import *
 from .demo import demo
 
-#__all__ = "snapshot,snapshots,attributes,select,yt"
+__all__ = "snapshot,snapshots,read_patch_metadata,attributes,select,yt,graphics"
