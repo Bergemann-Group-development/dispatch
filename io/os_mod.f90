@@ -10,7 +10,7 @@ MODULE os_mod
   type, public:: os_t
   contains
     procedure, nopass:: mkdir
-    procedure, nopass:: mkdir_no
+    procedure, nopass:: mkdir_next_output
     procedure, nopass:: copy_file
   end type
   type(os_t), public:: os
@@ -113,9 +113,11 @@ SUBROUTINE mkdir_real (dir)
 END SUBROUTINE mkdir_real
 
 !===============================================================================
-!> Make sure the next directory is created ahead of time
+!> Make sure the *next* directory is created ahead of time; failure to do so
+!> can sometimes result in a thread trying to write output to a non-existent
+!> directory!
 !===============================================================================
-SUBROUTINE mkdir_no (iout)
+SUBROUTINE mkdir_next_output (iout)
   integer:: iout
   character(len=120):: filename
   integer, save:: checked=-1
@@ -128,7 +130,7 @@ SUBROUTINE mkdir_no (iout)
     checked = iout
   end if
   !$omp end critical (mkdir_no_cr)
-END SUBROUTINE mkdir_no
+END SUBROUTINE mkdir_next_output
 
 !===============================================================================
 !===============================================================================

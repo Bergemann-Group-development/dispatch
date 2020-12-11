@@ -607,7 +607,7 @@ SUBROUTINE output_sequence (self, id, time, singlefile)
     end if
     !...........................................................................
     do while (time >= self%aux_next)
-      call os%mkdir_no (self%iout+1)
+      call os%mkdir_next_output (self%iout+1)
       call output_aux (self, self%iout, id, singlefile)
       self%aux_next = self%aux_next + io%out_time
       self%iout = self%iout + 1
