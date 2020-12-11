@@ -157,7 +157,8 @@ SUBROUTINE init (self, name)
       self%rundir = trim(datadir)//self%sep                     ! data/
     end if
     !---------------------------------------------------------------------------
-    call os%mkdir (trim(self%datadir))
+    ! `mkdir -p` doesn't work from inside the code, so two `mkdir` are required
+    call os%mkdir (trim(self%datadir)//self%sep)
     call os%mkdir (trim(self%rundir))
     call os%copy_file (trim(self%rundir)//'params.nml', &
                        trim(self%rundir)//'restart.nml')
