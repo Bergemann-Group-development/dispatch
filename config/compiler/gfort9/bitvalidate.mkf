@@ -1,3 +1,0 @@
-OPT = -O1 -mieee-fp
-PAR = -fopenmp
-DEBUG = -g -fbacktrace
