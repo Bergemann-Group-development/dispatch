@@ -207,7 +207,7 @@ subroutine flux_upd(self,flux,fluxambdiff, dx, dt, idim)
    allocate (fluxohm(n(1),n(2),n(3),3))
 
    fluxohm=0d0
-   if (self%mhd_AD .eqv. .true. .or. self%mhd_Ohm .eqv. .true.) then
+   if (self%mhd_AD .or. self%mhd_Ohm ) then
       flux(:,:,:,5,idim) = flux(:,:,:,5,idim) + (fluxambdiff(:,:,:,idim)+fluxohm(:,:,:,idim) ) * dt / dx
    end if
 
@@ -229,7 +229,7 @@ subroutine non_ideal_emf_up(self,emfup,emfambdiff, dx, dt, idim)
    allocate (emfohmdiss(n(1),n(2),n(3),n(4)))
    emfohmdiss = 0d0
 
-   if (self%mhd_AD .eqv. .true. .or. self%mhd_Ohm .eqv. .true.) then
+   if (self%mhd_AD .or. self%mhd_Ohm) then
 
 #if NDIM==1
 
@@ -447,13 +447,18 @@ subroutine computdifmag(self,u,q,bemfx,bemfy,bemfz,jemfx,jemfy,jemfz,bmagij,flux
   real(8)::rhocell,bcell,Cv
 
   real(8), allocatable, dimension(:,:,:)::bsquarex,bsquarey,bsquarez,dtlim
-  real(8), allocatable, dimension(:,:,:)::rhox,rhoy,rhoz,epsx,epsy,epsz
+  real(8), allocatable, dimension(:,:,:)::rhox,rhoy,rhoz
   real(8), allocatable, dimension(:,:,:)::rhof,pf,bsqf,epsf
 
-  integer, dimension(3) :: index_i,index_j,index_k
+  real(8), allocatable, dimension(:,:,:)::eta_AD,eta_Ohm
 
-  real(8):: ds(3)
-  real(8):: dx, dy, dz, dt
+  real(8), allocatable, dimension(:,:,:)::uxx,uxy,uxz,uyx,uyy,uyz,uzx,uzy,uzz,uxf,uyf,uzf,Brms2,Eth,Brms,rho,B,P,T
+  real(8), allocatable, dimension(:,:,:)::etx,ety,etz,etf
+
+  real(8) :: ds(3)
+  real(8) :: dx, dy, dz, dt, c2_4pi, mp, kB, Bcode_to_Gauss, pi, scale_v, scale_d, scale_l, scale_t, scale_T2
+
+  integer, dimension(3) :: index_i,index_j,index_k
 
   n = shape(u)
   allocate (jcenter (n(1),n(2),n(3),3))
@@ -463,12 +468,23 @@ subroutine computdifmag(self,u,q,bemfx,bemfy,bemfz,jemfx,jemfy,jemfz,bmagij,flux
   allocate (bsquarey(n(1)-2,n(2)-2,n(3)-2) )
   allocate (bsquarez(n(1)-2,n(2)-2,n(3)-2) )
   allocate (dtlim   (n(1)-2,n(2)-2,n(3)-2) )
+  allocate (eta_AD    (n(1)-2,n(2)-2,n(3)-2))
+  allocate (eta_Ohm   (n(1)-2,n(2)-2,n(3)-2))
   allocate (rhox    (n(1)-2,n(2)-2,n(3)-2) )
   allocate (rhoy    (n(1)-2,n(2)-2,n(3)-2) )
   allocate (rhoz    (n(1)-2,n(2)-2,n(3)-2) )
-  allocate (epsx    (n(1)-2,n(2)-2,n(3)-2) )
-  allocate (epsy    (n(1)-2,n(2)-2,n(3)-2) )
-  allocate (epsz    (n(1)-2,n(2)-2,n(3)-2) )
+  allocate (uxx     (n(1)-2,n(2)-2,n(3)-2) )
+  allocate (uxy     (n(1)-2,n(2)-2,n(3)-2) )
+  allocate (uxz     (n(1)-2,n(2)-2,n(3)-2) )
+  allocate (uyx     (n(1)-2,n(2)-2,n(3)-2) )
+  allocate (uyy     (n(1)-2,n(2)-2,n(3)-2) )
+  allocate (uyz     (n(1)-2,n(2)-2,n(3)-2) )
+  allocate (uzx     (n(1)-2,n(2)-2,n(3)-2) )
+  allocate (uzy     (n(1)-2,n(2)-2,n(3)-2) )
+  allocate (uzz     (n(1)-2,n(2)-2,n(3)-2) )
+  allocate (etx     (n(1)-2,n(2)-2,n(3)-2) )
+  allocate (ety     (n(1)-2,n(2)-2,n(3)-2) )
+  allocate (etz     (n(1)-2,n(2)-2,n(3)-2) )
   allocate (rhof    (n(1)-2,n(2)-2,n(3)-2) )
   allocate (pf      (n(1)-2,n(2)-2,n(3)-2) )
   allocate (bsqf    (n(1)-1,n(2)-1,n(3)-1) )
@@ -481,16 +497,36 @@ subroutine computdifmag(self,u,q,bemfx,bemfy,bemfz,jemfx,jemfy,jemfz,bmagij,flux
   bsquarey = 0.d0
   bsquarez = 0.d0
   dtlim    = 0.d0
+  uxx     = 0.d0
+  uxy     = 0.d0
+  uxz     = 0.d0
+  uyx     = 0.d0
+  uyy     = 0.d0
+  uyz     = 0.d0
+  uzx     = 0.d0
+  uzy     = 0.d0
+  uzz     = 0.d0
   rhox     = 0.d0
   rhoy     = 0.d0
   rhoz     = 0.d0
-  epsx     = 0.d0
-  epsy     = 0.d0
-  epsz     = 0.d0
+  etx     = 0.d0
+  ety     = 0.d0
+  etz     = 0.d0
   rhof     = 0.d0
   pf       = 0.d0
   bsqf     = 0.d0
   epsf     = 0.d0
+
+  if ( self%ntestDADM .eqv. .false. ) then
+    scale_v = 1e6
+    scale_d = 1e-17
+    scale_l = 5e15
+    scale_t = scale_l/scale_v
+    scale_T2 = (scale_v)**2 * self%mp / self%kB
+    pi = 4.*atan(1.d0)
+    c2_4pi = 7.152426325648638e+19
+    Bcode_to_Gauss = (4.d0*pi*scale_d)**0.5*scale_v
+  endif
 
   index_i = (/1,0,0/)
   index_j = (/0,1,0/)
@@ -505,17 +541,75 @@ subroutine computdifmag(self,u,q,bemfx,bemfy,bemfz,jemfx,jemfy,jemfz,bmagij,flux
   rhox=0.25d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,1) + u(2:n(1)-1,1:n(2)-2,2:n(3)-1,1) + u(2:n(1)-1,2:n(2)-1,1:n(3)-2,1) + u(2:n(1)-1,1:n(2)-2,1:n(3)-2,1))
   rhoy=0.25d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,1) + u(1:n(1)-2,2:n(2)-1,2:n(3)-1,1) + u(2:n(1)-1,2:n(2)-1,1:n(3)-2,1) + u(1:n(1)-2,2:n(2)-1,1:n(3)-2,1))
   rhoz=0.25d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,1) + u(1:n(1)-2,2:n(2)-1,2:n(3)-1,1) + u(2:n(1)-1,1:n(2)-2,2:n(3)-1,1) + u(1:n(1)-2,1:n(2)-2,2:n(3)-1,1))
-  !epsx=0.25d0*(u(2:ng-1,2:ng-1,2:ng-1,nvar) + u(2:ng-1,j-1,2:ng-1,nvar) + u(2:ng-1,2:ng-1,1:ng-2,nvar) + u(2:ng-1,1:ng-2,1:ng-2,nvar))
-  !epsy=0.25d0*(u(2:ng-1,2:ng-1,2:ng-1,nvar) + u(i-1,2:ng-1,2:ng-1,nvar) + u(2:ng-1,2:ng-1,1:ng-2,nvar) + u(1:ng-2,2:ng-1,1:ng-2,nvar))
-  !epsz=0.25d0*(u(2:ng-1,2:ng-1,2:ng-1,nvar) + u(i-1,2:ng-1,2:ng-1,nvar) + u(2:ng-1,1:ng-2,2:ng-1,nvar) + u(1:ng-2,1:ng-2,2:ng-1,nvar))
+
+  etx=0.25d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,5) + u(2:n(1)-1,1:n(2)-2,2:n(3)-1,5) + u(2:n(1)-1,2:n(2)-1,1:n(3)-2,5) + u(2:n(1)-1,1:n(2)-2,1:n(3)-2,5))
+  ety=0.25d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,5) + u(1:n(1)-2,2:n(2)-1,2:n(3)-1,5) + u(2:n(1)-1,2:n(2)-1,1:n(3)-2,5) + u(1:n(1)-2,2:n(2)-1,1:n(3)-2,5))
+  etz=0.25d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,5) + u(1:n(1)-2,2:n(2)-1,2:n(3)-1,5) + u(2:n(1)-1,1:n(2)-2,2:n(3)-1,5) + u(1:n(1)-2,1:n(2)-2,2:n(3)-1,5))
    if(self%mhd_Ohm)then
      bsquarex=bemfx(2:n(1)-1,2:n(2)-1,2:n(3)-1,1)**2+bemfx(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)**2+bemfx(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)**2
      bsquarey=bemfy(2:n(1)-1,2:n(2)-1,2:n(3)-1,1)**2+bemfy(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)**2+bemfy(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)**2
      bsquarez=bemfz(2:n(1)-1,2:n(2)-1,2:n(3)-1,1)**2+bemfz(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)**2+bemfz(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)**2
    end if
               
-  ! WARNING dB/dt=-curl(eta*J)
-  emfohmdiss(2:n(1)-1,2:n(2)-1,2:n(3)-1,:)=-self%etaMD*jemf(2:n(1)-1,2:n(2)-1,2:n(3)-1,:)
+  if (self%ntestDADM .eqv. .true.) then
+      ! WARNING dB/dt=-curl(eta*J)
+     emfohmdiss(2:n(1)-1,2:n(2)-1,2:n(3)-1,:)=-self%etaMD*jemf(2:n(1)-1,2:n(2)-1,2:n(3)-1,:)
+  else
+     ! x-direction
+     Brms2 = bsquarex
+     Eth = etx - 0.5 / rhox * ( uxx**2 + uyx**2 + uzx**2 ) - 0.5 * Brms2
+     Brms = Brms2**0.5      
+     rho  = rhox * scale_d   
+     P    = Eth * (gamma-1.) 
+     T    = P / rhox * scale_T2 * self%mu
+     B    = Brms * Bcode_to_Gauss
+     call eta_table(self,eta_AD,eta_Ohm,rho,T,B)
+     ! Convert back to code units. Reminder: eta_Masson = c^2/(4*pi) * eta_Marchand
+     ! from seconds to code time
+     
+     eta_Ohm = eta_Ohm * c2_4pi            ! account for necessary prefactor 
+     eta_Ohm = eta_Ohm / scale_v**2 / scale_t ! transfer back to code units
+     ! Indirectly account for time step constraint (for more details see technical guide)
+     eta_Ohm = min(eta_Ohm, 0.1 * dx**2/dt)
+     emfohmdiss(2:n(1)-1,2:n(2)-1,2:n(3)-1,1)=-self%eta_Ohm*jemf(2:n(1)-1,2:n(2)-1,2:n(3)-1,1)
+
+     ! y-direction
+     Brms2 = bsquarey
+     Eth = ety - 0.5 / rhoy * ( uxy*2 + uyy**2 + uzy**2 ) - 0.5 * Brms2
+     Brms = Brms2**0.5      
+     rho  = rhoy * scale_d   
+     P    = Eth * (gamma-1.) 
+     T    = P / rhoy * scale_T2 * self%mu
+     B    = Brms * Bcode_to_Gauss
+     call eta_table(self,eta_AD,eta_Ohm,rho,T,B)
+     ! Convert back to code units. Reminder: eta_Masson = c^2/(4*pi) * eta_Marchand
+     ! from seconds to code time
+     
+     eta_Ohm = eta_Ohm * c2_4pi            ! account for necessary prefactor 
+     eta_Ohm = eta_Ohm / scale_v**2 / scale_t ! transfer back to code units
+     ! Indirectly account for time step constraint (for more details see technical guide)
+     eta_Ohm = min(eta_Ohm, 0.1 * dy**2/dt)
+     emfohmdiss(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)=-self%eta_Ohm*jemf(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)
+
+     ! z-direction
+     Brms2 = bsquarez
+     Eth = etz - 0.5 / rhoz * ( uxz*2 + uyz**2 + uzz**2 ) - 0.5 * Brms2
+     Brms = Brms2**0.5      
+     rho  = rhoz * scale_d   
+     P    = Eth * (gamma-1.) 
+     T    = P / rhoz * scale_T2 * self%mu
+     B    = Brms * Bcode_to_Gauss
+     call eta_table(self,eta_AD,eta_Ohm,rho,T,B)
+     ! Convert back to code units. Reminder: eta_Masson = c^2/(4*pi) * eta_Marchand
+     ! from seconds to code time
+     
+     eta_Ohm = eta_Ohm * c2_4pi            ! account for necessary prefactor 
+     eta_Ohm = eta_Ohm / scale_v**2 / scale_t ! transfer back to code units
+     ! Indirectly account for time step constraint (for more details see technical guide)
+     eta_Ohm = min(eta_Ohm, 0.1 * dz**2/dt)
+     emfohmdiss(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)=-self%eta_Ohm*jemf(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)
+
+    endif 
   !!!!!!!!!!!!!!!!!!!!!!!
   !
   ! compute j at center of cells
@@ -533,16 +627,40 @@ subroutine computdifmag(self,u,q,bemfx,bemfy,bemfz,jemfx,jemfy,jemfz,bmagij,flux
   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   !
   do h = 1,3
-     
-     rhof=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,1) + u(2-index_i(h):n(1)-index_i(h),2-index_j(h):n(2)-index_j(h),2-index_k(h):n(3)-index_k(h),1))
-     !epsf=0.5d0*(u(2:ng-1,2:ng-1,2:ng-1,nvar)+u(2-index_i(h):ng-index_i(h),2-index_j(h):ng-index_j(h),2-index_k(h):ng-index_k(h),nvar))
-     bsqf=bmagij(2:n(1)-1,2:n(2)-1,2:n(3)-1,1,h)**2+bmagij(2:n(1)-1,2:n(2)-1,2:n(3)-1,2,h)**2+bmagij(2:n(1)-1,2:n(2)-1,2:n(3)-1,3,h)**2
-          
-     fluxohm(2:n(1)-1,2:n(2)-1,2:n(3)-1,h)=self%etaMD*fluxmd(2:n(1)-1,2:n(2)-1,2:n(3)-1,h)
-     
+
+     if (self%ntestDADM ) then
+        fluxohm(2:n(1)-1,2:n(2)-1,2:n(3)-1,h)=self%etaMD*fluxmd(2:n(1)-1,2:n(2)-1,2:n(3)-1,h)
+     else 
+        rhof=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,1) + u(2-index_i(h):n(1)-index_i(h)-1,2-index_j(h):n(2)-index_j(h)-1,2-index_k(h):n(3)-index_k(h)-1,1))
+        !epsf=0.5d0*(u(2:ng-1,2:ng-1,2:ng-1,nvar)+u(2-index_i(h):ng-index_i(h),2-index_j(h):ng-index_j(h),2-index_k(h):ng-index_k(h),nvar))
+        bsqf=bmagij(2:n(1)-1,2:n(2)-1,2:n(3)-1,1,h)**2+bmagij(2:n(1)-1,2:n(2)-1,2:n(3)-1,2,h)**2+bmagij(2:n(1)-1,2:n(2)-1,2:n(3)-1,3,h)**2
+   
+        uxf=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,2) + u(2-index_i(h):n(1)-index_i(h)-1,2-index_j(h):n(2)-index_j(h)-1,2-index_k(h):n(3)-index_k(h)-1,2))
+        uyf=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,3) + u(2-index_i(h):n(1)-index_i(h)-1,2-index_j(h):n(2)-index_j(h)-1,2-index_k(h):n(3)-index_k(h)-1,3))
+        uzf=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,4) + u(2-index_i(h):n(1)-index_i(h)-1,2-index_j(h):n(2)-index_j(h)-1,2-index_k(h):n(3)-index_k(h)-1,4))
+        etf=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,5) + u(2-index_i(h):n(1)-index_i(h)-1,2-index_j(h):n(2)-index_j(h)-1,2-index_k(h):n(3)-index_k(h)-1,5))
+        Brms2 = bsqf
+        Eth = etf - 0.5 / rhof * ( uxf**2 + uyf**2 + uzf**2 ) - &
+              0.5 * Brms2
+        Brms = Brms2**0.5
+        rho  = rhof*scale_d 
+        P    = Eth * (gamma-1.) 
+        T    = P / rhof * scale_T2 *self%mu
+        B    = Brms * Bcode_to_Gauss
+        call eta_table(self,eta_AD,eta_Ohm,rho,T,B)   
+   
+        ! Convert back to code units. Reminder: eta_Masson = c^2/(4*pi) * eta_Marchand
+        ! from seconds to code time
+        
+        eta_Ohm = eta_Ohm * c2_4pi            ! account for necessary prefactor 
+        eta_Ohm = eta_Ohm / scale_v**2 / scale_t ! transfer back to code units
+        ! Indirectly account for time step constraint (for more details see technical guide)
+        eta_Ohm = min(eta_Ohm, 0.1 * dz**2/dt)
+        fluxohm(2:n(1)-1,2:n(2)-1,2:n(3)-1,h)=eta_Ohm*fluxmd(2:n(1)-1,2:n(2)-1,2:n(3)-1,h)
+     endif
   enddo
 
-  deallocate(jcenter, jface, jemf, bsquarex, bsquarey, bsquarez, dtlim, rhox, rhoy, rhoz, epsx, epsy, epsz, rhof, pf, bsqf, epsf )
+  deallocate(jcenter, jface, jemf, bsquarex, bsquarey, bsquarez, dtlim, eta_Ohm, eta_AD, rhox, rhoy, rhoz, etx, ety, etz, rhof, pf, bsqf, epsf )
   
 end subroutine computdifmag
 !###########################################################
