@@ -66,9 +66,9 @@ END SUBROUTINE init
 !> Update the dust state for one cell, with _in and _out arguments
 !> holding particle mass density dd(n_bin) and velocity vd(n_bin,3)
 !===============================================================================
-SUBROUTINE update (self, dd_in, vd_in, dd_out, vd_out)
+SUBROUTINE update (self, vrms, dd_in, vd_in, dd_out, vd_out)
   class(dust_evolve_t):: self
-  real:: dd_in(:), dd_out(:), vd_in(:,:), vd_out(:,:)
+  real:: vrms(:), dd_in(:), dd_out(:), vd_in(:,:), vd_out(:,:)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('dust_evolve_t%update', itimer=itimer)
