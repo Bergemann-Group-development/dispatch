@@ -265,6 +265,7 @@ SUBROUTINE init (self)
     call momentum_counter(i,j)%init (0d0)
   end do
   end do
+  call dust_evolve%init (n_bin, self%m_cgs)
   call trace%end ()
 END SUBROUTINE init
 
