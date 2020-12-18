@@ -917,9 +917,9 @@ class snapshot():
         patch.y=first[1]+patch.ds[1]*np.arange(n[1])
         patch.z=first[2]+patch.ds[2]*np.arange(n[2])
         timer.add('_add_axes(1)')  # 6.9s
-        patch.xi=patch.x[ng[0]:-ng[0]]
-        patch.yi=patch.y[ng[1]:-ng[1]]
-        patch.zi=patch.z[ng[2]:-ng[2]]
+        patch.xi = patch.x[ng[0]:-ng[0]] if patch.n[0] > 1 else patch.x
+        patch.yi = patch.y[ng[1]:-ng[1]] if patch.n[1] > 1 else patch.y
+        patch.zi = patch.z[ng[2]:-ng[2]] if patch.n[2] > 1 else patch.z
         patch.xs=patch.x-0.5*patch.ds[0]
         patch.ys=patch.y-0.5*patch.ds[1]
         patch.zs=patch.z-0.5*patch.ds[2]
