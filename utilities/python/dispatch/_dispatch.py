@@ -429,7 +429,7 @@ def _var(patch,filed,snap,verbose=0,copy=None):
 
     def var(iv,all=False,copy=None,i4=0,verbose=0):
         """
-        Evaluate arguments of varuious forms, including expressions.
+        Evaluate arguments of various forms, including expressions.
 
         If the data is in spherical or cylindrical coords., then it is the angular
         momentum in the snapshot, and thus the division by metric factors.
@@ -443,11 +443,15 @@ def _var(patch,filed,snap,verbose=0,copy=None):
         # Determine data representation
         is_ln = ((patch.ioformat-6)/2==0
               or (patch.ioformat-10)//2==0)
-        is_v  = ((patch.ioformat-6)%2==0)
-        is_st = patch.kind[0:4] == 'zeus' or patch.kind[0:7] == 'stagger'
+        is_vel = ((patch.ioformat-6)%2==0)
+        is_staggered = patch.kind[0:4] == 'zeus' or patch.kind[0:7] == 'stagger'
         if patch.ioformat==14:
-            is_v=False
-            is_ln=False
+            is_vel = False
+            is_ln = False
+        if verbose:
+            print("is_ln:",is_ln)
+            print("is_vel:",is_vel)
+            print("is_staggered:",is_staggered)
         v = None
 
         # Check if the index corresponds to a cached array
@@ -486,38 +490,37 @@ def _var(patch,filed,snap,verbose=0,copy=None):
 
             # Velocity
             elif iv=='u1' or iv=='ux' or iv=='vx':
-                if is_v:
+                if is_vel:
                     v=mem('p1')
-                elif is_st:
+                elif is_staggered:
                     v=xup(mem('p1')/ \
                           np.exp(xdn(var('lnd',all=True,verbose=verbose))))
                 else:
                     v=mem('p1')/var('d',all=True,verbose=verbose)
             elif iv=='u2' or iv=='uy' or iv=='vy':
-                if is_v:
+                if is_vel:
                     v=mem('p2')
                 elif patch.mesh_type != 'Cartesian':
                      v=mem('p2')/ydn('d') \
                             /patch.geometric_factors['h2c'][:,np.newaxis,np.newaxis]
                 else:
-                    if is_st:
+                    if is_staggered:
                         v=yup(mem('p2')/ \
                               np.exp(ydn(var('lnd',all=True,verbose=verbose))))
                     else:
                         v=mem('p2')/var('d',all=True,verbose=verbose)
             elif iv=='u3' or iv=='uz' or iv=='vz':
-                if is_v:
+                if is_vel:
                     v=mem('p3')
                 elif patch.mesh_type != 'Cartesian':
                     gf = patch.geometric_factors # shorthand
                     v=mem('p3')/zdn('d')/gf['h31c'][:,np.newaxis,np.newaxis] \
                             /gf['h32c'][np.newaxis,:,np.newaxis]
                 else:
-                    if is_st:
+                    if is_staggered:
                         v=zup(mem('p3')/ \
                               np.exp(zdn(var('lnd',all=True,verbose=verbose))))
                     else:
-                        #print('is_v',is_v,patch.mesh_type)
                         v=mem('p3')/var('d',all=True,verbose=verbose)
 
             # Energy per unit mass
@@ -539,7 +542,7 @@ def _var(patch,filed,snap,verbose=0,copy=None):
             elif iv=='eth':
                 if patch.gamma==1.0:
                     v=mem('e')
-                elif patch.ioformat==14 or patch.ioformat==15 or is_st:
+                elif patch.ioformat==14 or patch.ioformat==15 or is_staggered:
                     v=mem('e')
                 else:
                     v=mem('e') \
@@ -575,7 +578,7 @@ def _var(patch,filed,snap,verbose=0,copy=None):
             return post_process(v,copy=copy,all=all,i4=i4)
         else:
             """ None of the above worked, so the iv key is not known """
-            print('variable exoression not understood:',iv)
+            print('variable expression not understood:',iv)
             return None
     # THe _var() funcion returns the var() functions
     return var
