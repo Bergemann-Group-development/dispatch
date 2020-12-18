@@ -176,7 +176,7 @@ SUBROUTINE update (self)
   real, pointer, dimension(:,:,:,:):: p
   real, allocatable, dimension(:,:,:,:):: em
   real, pointer, contiguous, dimension(:,:,:,:,:):: fl
-  real, allocatable, dimension(:,:,:,:)::fluxambdiff,emfambdiff
+  real, allocatable, dimension(:,:,:,:)::fluxambdiff,emfambdiff,fluxohmdiss,emfohmdiss
   real, pointer, dimension(:,:,:):: d, e, Ux=>null(), Uy=>null(), Uz=>null()
   real(dp):: dtdx, dtdy, dtdz
   real:: u0, u1
@@ -241,8 +241,11 @@ SUBROUTINE update (self)
   if (non_ideal%is_used) then
     allocate (fluxambdiff(self%gn(1),self%gn(2),self%gn(3),3))
     allocate (emfambdiff(self%gn(1),self%gn(2),self%gn(3),3))
+    allocate (fluxohmdiss(self%gn(1),self%gn(2),self%gn(3),3))
+    allocate (emfohmdiss(self%gn(1),self%gn(2),self%gn(3),3))
+    fluxambdiff = 0d0; emfambdiff = 0d0; fluxohmdiss = 0d0; emfohmdiss = 0d0;   
     call non_ideal%non_ideal_comp(self%mesh,self%idx,self%bf,self%uin,self%q,&
-      fluxambdiff,emfambdiff,self%u_max,self%ds,self%dtime,self%gamma)
+      fluxambdiff,emfambdiff,fluxohmdiss,emfohmdiss,self%u_max,self%ds,self%dtime,self%gamma)
   end if
   call self%courant_condition                           ! compute dt
 
@@ -273,12 +276,12 @@ SUBROUTINE update (self)
   end if
 
   if (non_ideal%is_used) then
-    call non_ideal%flux_upd(fl,fluxambdiff,self%ds(1),self%dtime,1)
-    call non_ideal%flux_upd(fl,fluxambdiff,self%ds(2),self%dtime,2)
-    call non_ideal%flux_upd(fl,fluxambdiff,self%ds(3),self%dtime,3)
-    call non_ideal%non_ideal_emf_up(em(:,:,:,3),emfambdiff,self%ds(3),self%dtime,3)
-    call non_ideal%non_ideal_emf_up(em(:,:,:,2),emfambdiff,self%ds(2),self%dtime,2)
-    call non_ideal%non_ideal_emf_up(em(:,:,:,1),emfambdiff,self%ds(1),self%dtime,1)
+    call non_ideal%flux_upd(fl,fluxambdiff,fluxohmdiss,self%ds(1),self%dtime,1)
+    call non_ideal%flux_upd(fl,fluxambdiff,fluxohmdiss,self%ds(2),self%dtime,2)
+    call non_ideal%flux_upd(fl,fluxambdiff,fluxohmdiss,self%ds(3),self%dtime,3)
+    call non_ideal%non_ideal_emf_up(em(:,:,:,3),emfambdiff,emfohmdiss,self%ds(3),self%dtime,3)
+    call non_ideal%non_ideal_emf_up(em(:,:,:,2),emfambdiff,emfohmdiss,self%ds(2),self%dtime,2)
+    call non_ideal%non_ideal_emf_up(em(:,:,:,1),emfambdiff,emfohmdiss,self%ds(1),self%dtime,1)
   end if
   ! Compute fluxes with appropriate time step
   fl(:,:,:,:,1) = fl(:,:,:,:,1) * dtdx
@@ -404,7 +407,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   call self%counter_update
   if (non_ideal%is_used) &
-    deallocate (fluxambdiff,emfambdiff)
+    deallocate (fluxambdiff,emfambdiff,fluxohmdiss,emfohmdiss)
   deallocate (fl,em,self%q,self%qp,self%qm,self%dq,self%dq2,self%bf,self%dbf, &
               self%qLT,self%qLB,self%qRT,self%qRB,self%c, &
               self%Ex,self%Ey,self%Ez)

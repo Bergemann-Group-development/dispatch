@@ -92,7 +92,7 @@ SUBROUTINE init (self)
 
 END SUBROUTINE init
 
-subroutine non_ideal_comp(self,mesh,idx,bf,uin,qin,fluxambdiff,emfambdiff,u_max,ds,dt,gamma)
+subroutine non_ideal_comp(self,mesh,idx,bf,uin,qin,fluxambdiff,emfambdiff,fluxohmdiss,emfohmdiss,u_max,ds,dt,gamma)
   class (non_ideal_t):: self
   class (mesh_t):: mesh(:)
   class (index_t):: idx
@@ -100,7 +100,7 @@ subroutine non_ideal_comp(self,mesh,idx,bf,uin,qin,fluxambdiff,emfambdiff,u_max,
   real :: u_max
   real(8) :: gamma
   real(8) :: ds(3), dt
-  real, dimension(:,:,:,:):: bf, uin, qin, fluxambdiff, emfambdiff
+  real, dimension(:,:,:,:):: bf, uin, qin, fluxambdiff, emfambdiff, fluxohmdiss, emfohmdiss
   ! Output electromotive force
   real(8), allocatable, dimension(:,:,:)::emfx
   real(8), allocatable, dimension(:,:,:)::emfy
@@ -113,7 +113,6 @@ subroutine non_ideal_comp(self,mesh,idx,bf,uin,qin,fluxambdiff,emfambdiff,u_max,
   real(8), allocatable, dimension(:,:,:,:)::jemfx,jemfy,jemfz
   real(8), allocatable, dimension(:,:,:,:)::florentzx,florentzy,florentzz
   real(8), allocatable, dimension(:,:,:,:)::fluxmd,fluxh,fluxad
-  real(8), allocatable, dimension(:,:,:,:)::emfohmdiss,fluxohm 
 
   n = shape(uin)
   allocate (emfx         (n(1),n(2),n(3)))
@@ -134,8 +133,6 @@ subroutine non_ideal_comp(self,mesh,idx,bf,uin,qin,fluxambdiff,emfambdiff,u_max,
   allocate (fluxmd       (n(1),n(2),n(3),3))
   allocate (fluxh        (n(1),n(2),n(3),3))
   allocate (fluxad       (n(1),n(2),n(3),3))
-  allocate (emfohmdiss   (n(1),n(2),n(3),3))
-  allocate (fluxohm      (n(1),n(2),n(3),3))
 
   emfx=0.d0
   emfy=0.d0
@@ -155,9 +152,7 @@ subroutine non_ideal_comp(self,mesh,idx,bf,uin,qin,fluxambdiff,emfambdiff,u_max,
   fluxmd=0.d0
   fluxh=0.d0
   fluxad=0.d0
-  emfohmdiss=0.d0
-  fluxohm=0.d0
-
+ 
 
   if((self%mhd_AD).or.(self%mhd_Ohm)) then
   !  compute Lorentz Force with current
@@ -182,52 +177,45 @@ subroutine non_ideal_comp(self,mesh,idx,bf,uin,qin,fluxambdiff,emfambdiff,u_max,
   ! OHMIC DISSIPATION
   
   if(self%mhd_Ohm) then
-     call computdifmag(self,uin,qin,bemfx,bemfy,bemfz,jemfx,jemfy,jemfz,bmagij,fluxmd,emfohmdiss,fluxohm,jcentersquare,ds,dt)
+     call computdifmag(self,uin,qin,bemfx,bemfy,bemfz,jemfx,jemfy,jemfz,bmagij,fluxmd,emfohmdiss,fluxohmdiss,jcentersquare,ds,dt)
      u_max = max(u_max,self%eta_Ohm/ minval(ds))
   endif
 
   
-  deallocate(emfx,emfy,emfz,bmagij,jcentersquare,jxbsquare,bemfx,bemfy,bemfz,jemfx,jemfy,jemfz,florentzx,florentzy,florentzz,fluxmd,fluxh,fluxad,emfohmdiss,fluxohm)
+  deallocate(emfx,emfy,emfz,bmagij,jcentersquare,jxbsquare,bemfx,bemfy,bemfz,jemfx,jemfy,jemfz,florentzx,florentzy,florentzz,fluxmd,fluxh,fluxad)
 
 end subroutine
 
-subroutine flux_upd(self,flux,fluxambdiff, dx, dt, idim)
+subroutine flux_upd(self,flux,fluxambdiff,fluxohmdiss, dx, dt, idim)
    class (non_ideal_t):: self
 
    integer:: n(5)
    integer :: i, j, k, idim
    real, dimension(:,:,:,:,:):: flux 
-   real, dimension(:,:,:,:)::fluxambdiff
+   real, dimension(:,:,:,:)::fluxambdiff,fluxohmdiss
 
-   real, allocatable, dimension(:,:,:,:)::fluxohm
    real(8) :: dx, dt
 
 
    n = shape(flux)
-   allocate (fluxohm(n(1),n(2),n(3),3))
 
-   fluxohm=0d0
    if (self%mhd_AD .or. self%mhd_Ohm ) then
-      flux(:,:,:,5,idim) = flux(:,:,:,5,idim) + (fluxambdiff(:,:,:,idim)+fluxohm(:,:,:,idim) ) * dt / dx
+      flux(:,:,:,5,idim) = flux(:,:,:,5,idim) + (fluxambdiff(:,:,:,idim)+fluxohmdiss(:,:,:,idim) ) * dt / dx
    end if
 
-   deallocate(fluxohm)
 
 end subroutine
 
 
-subroutine non_ideal_emf_up(self,emfup,emfambdiff, dx, dt, idim)
+subroutine non_ideal_emf_up(self,emfup,emfambdiff,emfohmdiss, dx, dt, idim)
    class (non_ideal_t):: self
    integer:: n(4)
    integer :: idim
    real, dimension(:,:,:)::emfup
-   real, dimension(:,:,:,:)::emfambdiff
-   real, allocatable, dimension(:,:,:,:)::emfohmdiss
+   real, dimension(:,:,:,:)::emfambdiff,emfohmdiss
    real(8) :: dx, dt
 
    n = shape(emfambdiff)
-   allocate (emfohmdiss(n(1),n(2),n(3),n(4)))
-   emfohmdiss = 0d0
 
    if (self%mhd_AD .or. self%mhd_Ohm) then
 
@@ -239,8 +227,6 @@ subroutine non_ideal_emf_up(self,emfup,emfambdiff, dx, dt, idim)
         ( emfambdiff(2:n(1)-1,2:n(2)-1,2:n(3)-1,idim) + emfohmdiss(2:n(1)-1,2:n(2)-1,2:n(3)-1,idim) ) * dt / dx
 #endif     
    end if
-
-   deallocate(emfohmdiss)
 
 end subroutine
 
@@ -417,7 +403,7 @@ end subroutine computejb2
 !###########################################################
 !###########################################################
 !###########################################################
-subroutine computdifmag(self,u,q,bemfx,bemfy,bemfz,jemfx,jemfy,jemfz,bmagij,fluxmd,emfohmdiss,fluxohm,jcentersquare,ds,dt)
+subroutine computdifmag(self,u,q,bemfx,bemfy,bemfz,jemfx,jemfy,jemfz,bmagij,fluxmd,emfohmdiss,fluxohmdiss,jcentersquare,ds,dt)
   class (non_ideal_t):: self
 
   integer :: i, j, k
@@ -431,7 +417,7 @@ subroutine computdifmag(self,u,q,bemfx,bemfy,bemfz,jemfx,jemfy,jemfz,bmagij,flux
   real(8), dimension(:,:,:,:,:)::bmagij
   real(8), dimension(:,:,:,:)::fluxmd
 
-  real(8), dimension(:,:,:,:):: emfohmdiss,fluxohm 
+  real, dimension(:,:,:,:):: emfohmdiss,fluxohmdiss 
   real(8), dimension(:,:,:)::jcentersquare
 
   ! declare local variables
@@ -570,7 +556,7 @@ subroutine computdifmag(self,u,q,bemfx,bemfy,bemfz,jemfx,jemfy,jemfz,bmagij,flux
      eta_Ohm = eta_Ohm * c2_4pi            ! account for necessary prefactor 
      eta_Ohm = eta_Ohm / scale_v**2 / scale_t ! transfer back to code units
      ! Indirectly account for time step constraint (for more details see technical guide)
-     eta_Ohm = min(eta_Ohm, 0.1 * dx**2/dt)
+     !eta_Ohm = min(eta_Ohm, 0.1 * dx**2/dt)
      emfohmdiss(2:n(1)-1,2:n(2)-1,2:n(3)-1,1)=-self%eta_Ohm*jemf(2:n(1)-1,2:n(2)-1,2:n(3)-1,1)
 
      ! y-direction
@@ -588,7 +574,7 @@ subroutine computdifmag(self,u,q,bemfx,bemfy,bemfz,jemfx,jemfy,jemfz,bmagij,flux
      eta_Ohm = eta_Ohm * c2_4pi            ! account for necessary prefactor 
      eta_Ohm = eta_Ohm / scale_v**2 / scale_t ! transfer back to code units
      ! Indirectly account for time step constraint (for more details see technical guide)
-     eta_Ohm = min(eta_Ohm, 0.1 * dy**2/dt)
+     !eta_Ohm = min(eta_Ohm, 0.1 * dy**2/dt)
      emfohmdiss(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)=-self%eta_Ohm*jemf(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)
 
      ! z-direction
@@ -606,7 +592,7 @@ subroutine computdifmag(self,u,q,bemfx,bemfy,bemfz,jemfx,jemfy,jemfz,bmagij,flux
      eta_Ohm = eta_Ohm * c2_4pi            ! account for necessary prefactor 
      eta_Ohm = eta_Ohm / scale_v**2 / scale_t ! transfer back to code units
      ! Indirectly account for time step constraint (for more details see technical guide)
-     eta_Ohm = min(eta_Ohm, 0.1 * dz**2/dt)
+     !eta_Ohm = min(eta_Ohm, 0.1 * dz**2/dt)
      emfohmdiss(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)=-self%eta_Ohm*jemf(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)
 
     endif 
@@ -629,7 +615,7 @@ subroutine computdifmag(self,u,q,bemfx,bemfy,bemfz,jemfx,jemfy,jemfz,bmagij,flux
   do h = 1,3
 
      if (self%ntestDADM ) then
-        fluxohm(2:n(1)-1,2:n(2)-1,2:n(3)-1,h)=self%etaMD*fluxmd(2:n(1)-1,2:n(2)-1,2:n(3)-1,h)
+        fluxohmdiss(2:n(1)-1,2:n(2)-1,2:n(3)-1,h)=self%etaMD*fluxmd(2:n(1)-1,2:n(2)-1,2:n(3)-1,h)
      else 
         rhof=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,1) + u(2-index_i(h):n(1)-index_i(h)-1,2-index_j(h):n(2)-index_j(h)-1,2-index_k(h):n(3)-index_k(h)-1,1))
         !epsf=0.5d0*(u(2:ng-1,2:ng-1,2:ng-1,nvar)+u(2-index_i(h):ng-index_i(h),2-index_j(h):ng-index_j(h),2-index_k(h):ng-index_k(h),nvar))
@@ -655,8 +641,8 @@ subroutine computdifmag(self,u,q,bemfx,bemfy,bemfz,jemfx,jemfy,jemfz,bmagij,flux
         eta_Ohm = eta_Ohm * c2_4pi            ! account for necessary prefactor 
         eta_Ohm = eta_Ohm / scale_v**2 / scale_t ! transfer back to code units
         ! Indirectly account for time step constraint (for more details see technical guide)
-        eta_Ohm = min(eta_Ohm, 0.1 * dz**2/dt)
-        fluxohm(2:n(1)-1,2:n(2)-1,2:n(3)-1,h)=eta_Ohm*fluxmd(2:n(1)-1,2:n(2)-1,2:n(3)-1,h)
+        !eta_Ohm = min(eta_Ohm, 0.1 * dz**2/dt)
+        fluxohmdiss(2:n(1)-1,2:n(2)-1,2:n(3)-1,h)=eta_Ohm*fluxmd(2:n(1)-1,2:n(2)-1,2:n(3)-1,h)
      endif
   enddo
 
@@ -861,7 +847,7 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
     eta_AD = eta_AD * c2_4pi            ! account for necessary prefactor 
     eta_AD = eta_AD / scale_v**2 / scale_t ! transfer back to code units
     ! Indirectly account for time step constraint (for more details see technical guide)
-    eta_AD = min(eta_AD, 0.1 * dx**2/dt)
+    !eta_AD = min(eta_AD, 0.1 * dx**2/dt)
     betaad2 = eta_AD / Brms2  
   endif
 
@@ -898,7 +884,7 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
     eta_AD = eta_AD * c2_4pi            ! account for necessary prefactor 
     eta_AD = eta_AD / scale_v**2 / scale_t ! transfer back to code units
     ! Indirectly account for time step constraint (for more details see technical guide)
-    eta_AD = min(eta_AD, 0.1 * dx**2/dt)
+    !eta_AD = min(eta_AD, 0.1 * dx**2/dt)
     betaad2 = eta_AD / Brms2
   endif
   emfambdiff(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)=emfambdiff(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)*betaad2            
@@ -933,7 +919,7 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
     eta_AD = eta_AD * c2_4pi            ! account for necessary prefactor 
     eta_AD = eta_AD / scale_v**2 / scale_t ! transfer back to code units
     ! Indirectly account for time step constraint (for more details see technical guide)
-    eta_AD = min(eta_AD, 0.1 * dx**2/dt)
+    !eta_AD = min(eta_AD, 0.1 * dx**2/dt)
     betaad2 = eta_AD / Brms2
   endif
 
@@ -964,7 +950,7 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
     eta_AD = eta_AD * c2_4pi            ! account for necessary prefactor 
     eta_AD = eta_AD / scale_v**2 / scale_t ! transfer back to code units
     ! Indirectly account for time step constraint (for more details see technical guide)
-    eta_AD = min(eta_AD, 0.1 * dx**2/dt)
+    !eta_AD = min(eta_AD, 0.1 * dx**2/dt)
     betaad2 = eta_AD / Brms2  
   endif
   fluxambdiff(2:n(1)-1,2:n(2)-1,2:n(3)-1,1)=-betaad2*fluxad(2:n(1)-1,2:n(2)-1,2:n(3)-1,1)
@@ -991,7 +977,7 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
     eta_AD = eta_AD * c2_4pi            ! account for necessary prefactor 
     eta_AD = eta_AD / scale_v**2 / scale_t ! transfer back to code units
     ! Indirectly account for time step constraint (for more details see technical guide)
-    eta_AD = min(eta_AD, 0.1 * dx**2/dt)
+    !eta_AD = min(eta_AD, 0.1 * dx**2/dt)
     betaad2 = eta_AD / Brms2 
   endif
   fluxambdiff(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)=-betaad2*fluxad(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)
@@ -1018,7 +1004,7 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
     eta_AD = eta_AD * c2_4pi            ! account for necessary prefactor 
     eta_AD = eta_AD / scale_v**2 / scale_t ! transfer back to code units
     ! Indirectly account for time step constraint (for more details see technical guide)
-    eta_AD = min(eta_AD, 0.1 * dx**2/dt)
+    !eta_AD = min(eta_AD, 0.1 * dx**2/dt)
     betaad2 = eta_AD / Brms2 
   endif
   fluxambdiff(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)=-betaad2*fluxad(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)
@@ -1054,7 +1040,7 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
     eta_AD = eta_AD * c2_4pi            ! account for necessary prefactor 
     eta_AD = eta_AD / scale_v**2 / scale_t ! transfer back to code units
     ! Indirectly account for time step constraint (for more details see technical guide)
-    eta_AD = min(eta_AD, 0.1 * dx**2/dt)
+    !eta_AD = min(eta_AD, 0.1 * dx**2/dt)
     betaad = eta_AD / Brms2
   endif
   jxbsquare(2:n(1)-1,2:n(2)-1,2:n(3)-1)=(jxb(2:n(1)-1,2:n(2)-1,2:n(3)-1,1)*jxb(2:n(1)-1,2:n(2)-1,2:n(3)-1,1) +&
@@ -1130,7 +1116,9 @@ subroutine comp_weight_element(x,xarr,cx,idx,w)
     mult = x / x0 
     ! log rule: log_b(x) = log_d(x)/log_d(b)
     idx  = int( log10(mult) / log10(cx) )
-    idx_r = real(idx)
+    ! Constrain the possible variables here such that corner cases of extreme density, 
+    ! temperature or B-field in excess of the range in the table do not cause crashing of the code  
+    idx_r = real(min(idx,nxarr))
  
     xd = x0 * cx**idx_r
     xu = x0 * cx**(idx_r+1.d0)
