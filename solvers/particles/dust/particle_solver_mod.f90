@@ -265,6 +265,7 @@ SUBROUTINE init (self)
     call momentum_counter(i,j)%init (0d0)
   end do
   end do
+  call dust_evolve%init (n_bin, self%m_cgs)
   call trace%end ()
 END SUBROUTINE init
 
@@ -900,7 +901,7 @@ END SUBROUTINE update
 !===============================================================================
 SUBROUTINE evolve_dust (self)
   class(particle_solver_t):: self
-  real, allocatable:: dd(:,:,:,:), vd(:,:,:,:,:)
+  real, allocatable:: dd(:,:,:,:), vd(:,:,:,:,:), vrms(:,:,:,:)
   integer:: i1, i2, i3, l(3), u(3), m(5)
   !-----------------------------------------------------------------------------
   ! Save the current dust densities and velocities
@@ -911,6 +912,8 @@ SUBROUTINE evolve_dust (self)
   m = shape(self%vd)
   allocate(vd(m(1),m(2),m(3),m(4),m(5)))
   allocate(dd(m(1),m(2),m(3),m(4)))
+  allocate(vrms(m(1),m(2),m(3),m(4)))
+  call self%dispersion(vrms)
   !-----------------------------------------------------------------------------
   ! Evolve the dust bins
   !-----------------------------------------------------------------------------
@@ -920,6 +923,7 @@ SUBROUTINE evolve_dust (self)
   do i2=l(2),u(2)
   do i1=l(1),u(1)
     call self%dust_evolve%update ( &
+           vrms(i1,i2,i3,:), &
       self%dd(i1,i2,i3,:), self%vd(i1,i2,i3,:,:), &
            dd(i1,i2,i3,:),      vd(i1,i2,i3,:,:))
   end do
@@ -929,7 +933,7 @@ SUBROUTINE evolve_dust (self)
   ! Implement the new densities and velocities in the particle representation
   !-----------------------------------------------------------------------------
   call self%update_bins (dd, vd)
-  deallocate (dd, vd)
+  deallocate (dd, vd, vrms)
   call trace%end()
 END SUBROUTINE evolve_dust
 

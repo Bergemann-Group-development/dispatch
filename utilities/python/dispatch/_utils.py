@@ -27,7 +27,7 @@ def read_patch_metadata(io=0,run='',data='../data',n_rank=1,verbose=0):
     np=len(patches.keys())
     if verbose>0:
         sec=time.time()-start
-        print('{} patches, {:.2f} sec'.format(n,sec))
+        print('{} patches, {:.2f} sec'.format(np,sec))
 
     if np==0:
         print('no files found')

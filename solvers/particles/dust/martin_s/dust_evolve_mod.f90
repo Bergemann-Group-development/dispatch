@@ -52,6 +52,7 @@ SUBROUTINE init (self, n_bin, m_cgs)
     end if
     call io%namelist_warning ('dust_evolve_params', iostat)
     write (io%namelist, dust_evolve_params)    ! write to data/run/params.nml
+    self%n_bin = n_bin
     call self%test                             ! run a self%test once
     first_time = .false.
   end if
@@ -65,9 +66,9 @@ END SUBROUTINE init
 !> Update the dust state for one cell, with _in and _out arguments
 !> holding particle mass density dd(n_bin) and velocity vd(n_bin,3)
 !===============================================================================
-SUBROUTINE update (self, dd_in, vd_in, dd_out, vd_out)
+SUBROUTINE update (self, vrms, dd_in, vd_in, dd_out, vd_out)
   class(dust_evolve_t):: self
-  real:: dd_in(:), dd_out(:), vd_in(:,:), vd_out(:,:)
+  real:: vrms(:), dd_in(:), dd_out(:), vd_in(:,:), vd_out(:,:)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('dust_evolve_t%update', itimer=itimer)
