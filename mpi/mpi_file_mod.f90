@@ -105,7 +105,6 @@ SUBROUTINE open (self, filename, mode)
   integer:: n, mode_l
 #ifdef MPI
   integer(kind=MPI_OFFSET_KIND):: pos
-#endif
   !-----------------------------------------------------------------------------
   if (present(filename)) then
     self%name = filename
@@ -114,7 +113,6 @@ SUBROUTINE open (self, filename, mode)
   else
     mode = MPI_MODE_RDWR
   end if
-#ifdef MPI
   !call mp%barrier ('mpi_file_t%open')
   if (self%handle == 0) then
     if (mp%mode == MPI_THREAD_MULTIPLE) then
