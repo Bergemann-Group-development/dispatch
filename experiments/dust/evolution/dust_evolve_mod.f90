@@ -350,7 +350,7 @@ SUBROUTINE test (self)
         s2 = LS_k * 1/ms
         Jp(k,:) = matmul(s1, n) + matmul(s2, n) * m
         Jp(k,k) = Jp(k,k) - (SUM(kk(k,:) * n) + SUM(ll(k,:) * n) )                            
-        Jm(k,:) = (matmul(s1, p) * m + matmul(s2, p) * m) - p(k) * kk(k,:) - p(k) * ll(k,:)        
+        Jm(k,:) = matmul(s1, p) * m + matmul(s2, p) * m - p(k) * kk(k,:) - p(k) * ll(k,:)
         JJ(k,:) = (matmul(KC_k , n) - n(k) * kk(k,:) ) + (matmul(LS_k,  n) - n(k) * ll(k,:) )
         JJ(k,k) = JJ(k,k) - (SUM(kk(k,:) * n) + SUM(ll(k,:) * n) )                                ! Checked
       end do
@@ -405,7 +405,7 @@ SUBROUTINE test (self)
       save_time = save_time * eps_time
       itime = itime + 1
       if (mod(itime,10)==0) then
-        print *,"Time left: ", (t_end-t)/(60*60*24*365), n(1)
+        print *,"Time left: ", (t_end-t)/(60*60*24*365), n(1:10), p(1:10)
       end if
     end if
 
