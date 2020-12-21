@@ -52,6 +52,7 @@ SUBROUTINE init (self, n_bin, m_cgs)
     end if
     call io%namelist_warning ('dust_evolve_params', iostat)
     write (io%namelist, dust_evolve_params)    ! write to data/run/params.nml
+    self%n_bin = n_bin
     call self%test                             ! run a self%test once
     first_time = .false.
   end if
