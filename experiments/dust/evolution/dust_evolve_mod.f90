@@ -126,7 +126,7 @@ SUBROUTINE test (self)
     mv, p, v, mp
   real(precision_e), ALLOCATABLE, DIMENSION(:,:):: mn, mm, ms, nn, Q, Q_frag, jj, kk, &
     ll, KC_k, LS_k, IJJ, sigma_col, ep, identity, pf, pc, du, ubm, utm, &
-    Jp, Jm, IJp, pn
+    Jp, Jm, IJp, pn, s1, s2
   real, ALLOCATABLE, DIMENSION(:):: st, utm_ini
   real(precision_e), ALLOCATABLE, DIMENSION(:,:,:):: SS, C                                                      ! Necesarry?
   logical :: do_implicit=.true.
@@ -144,7 +144,7 @@ SUBROUTINE test (self)
   ALLOCATE(KC_k(nbin,nbin), LS_k(nbin,nbin) , IJJ(nbin,nbin))
   ALLOCATE(Jp(nbin,nbin), Jm(nbin,nbin), Sp(nbin), dp(nbin))
   ALLOCATE(IJp(nbin,nbin))
-  ALLOCATE(mv(nbin), p(nbin), v(nbin), mp(nbin), pn(nbin,nbin))
+  ALLOCATE(mv(nbin), p(nbin), v(nbin), mp(nbin), pn(nbin,nbin), s1(nbin,nbin),s2(nbin,nbin))
 
   !print *,"Initializing starting conditions"
   call cgs%init
@@ -346,9 +346,11 @@ SUBROUTINE test (self)
       dp = Sp * dt
     else
       do k=1,nbin
-        Jp(k,:) = matmul(KC_k * 1/ms, n) + matmul(LS_k * 1/ms, n) * m
+        s1 = KC_k * 1/ms
+        s2 = LS_k * 1/ms
+        Jp(k,:) = matmul(s1, n) + matmul(s2, n) * m
         Jp(k,k) = Jp(k,k) - (SUM(kk(k,:) * n) + SUM(ll(k,:) * n) )                            
-        Jm(k,:) = (matmul(KC_k * 1/ms, p) * m + matmul(LS_k * 1/ms, p) * m) - p(k) * kk(k,:) - p(k) * ll(k,:)        
+        Jm(k,:) = (matmul(s1, p) * m + matmul(s2, p) * m) - p(k) * kk(k,:) - p(k) * ll(k,:)        
         JJ(k,:) = (matmul(KC_k , n) - n(k) * kk(k,:) ) + (matmul(LS_k,  n) - n(k) * ll(k,:) )
         JJ(k,k) = JJ(k,k) - (SUM(kk(k,:) * n) + SUM(ll(k,:) * n) )                                ! Checked
       end do
