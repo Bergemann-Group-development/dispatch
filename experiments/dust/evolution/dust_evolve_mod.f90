@@ -14,13 +14,17 @@ MODULE dust_evolve_mod
   type, public:: dust_evolve_t
     logical:: on=.false.
     integer:: n_bin
+    real, allocatable :: m_cgs(:)
   contains
     procedure:: init
     procedure:: update
     procedure:: test
   end type
+  integer, parameter :: precision_e = selected_real_kind(15, 100)
   integer:: verbose=0
   logical:: on=.false.
+  logical:: do_brownian=.true.
+  logical:: do_in_cell_turbulence=.false.
   type(dust_evolve_t), public:: dust_evolve
 CONTAINS
 
@@ -36,7 +40,7 @@ SUBROUTINE init (self, n_bin, m_cgs)
   integer              :: iostat              ! missing(<0), syntax errors (>0)
   logical, save        :: first_time=.true.   ! shared memory
   !--- add parameters here -----------------------------------------------------
-  namelist /dust_evolve_params/ on, verbose
+  namelist /dust_evolve_params/ on, verbose, do_brownian, do_in_cell_turbulence
   !-----------------------------------------------------------------------------
   call trace%begin ('dust_evolve_t%init')
   !-----------------------------------------------------------------------------
@@ -53,12 +57,17 @@ SUBROUTINE init (self, n_bin, m_cgs)
     call io%namelist_warning ('dust_evolve_params', iostat)
     write (io%namelist, dust_evolve_params)    ! write to data/run/params.nml
     self%n_bin = n_bin
+    allocate(self%m_cgs(n_bin))
+    self%m_cgs = m_cgs 
     call self%test                             ! run a self%test once
+    
     first_time = .false.
   end if
   call io%lock%set ('dust_evolve_t%init')
   self%on = on                                 ! task private copy
   self%n_bin = n_bin
+  if (.not. allocated(self%m_cgs)) allocate(self%m_cgs(n_bin))
+  self%m_cgs = m_cgs
   call trace%end ()
 END SUBROUTINE init
 
@@ -66,16 +75,36 @@ END SUBROUTINE init
 !> Update the dust state for one cell, with _in and _out arguments
 !> holding particle mass density dd(n_bin) and velocity vd(n_bin,3)
 !===============================================================================
-SUBROUTINE update (self, vrms, dd_in, vd_in, dd_out, vd_out)
+SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
   class(dust_evolve_t):: self
-  real:: vrms(:), dd_in(:), dd_out(:), vd_in(:,:), vd_out(:,:)
+  real(kind=8), intent(in)  :: dt_dispatch
+  real,         intent(in)  :: vrms_in(:), dd_in(:), vd_in(:,:)
+  real,         intent(out) :: dd_out(:), vd_out(:,:)
+  ! CGS units below
+  real(precision_e) :: tend, vd(self%n_bin,3), vrms(self%n_bin), nd(self%n_bin), vdiff(self%n_bin,self%n_bin)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('dust_evolve_t%update', itimer=itimer)
-  !....= ... dd_in
-  !....= vd_in(i) ...
-  !... dd_out = ...
-  !... vd_out(i) = ...
+  ! convert from code units to cgs
+  tend = scaling%t * dt_dispatch
+  nd = scaling%d * dd_in / self%m_cgs
+  vd = scaling%u * vd_in
+  vrms = scaling%u * vrms_in
+
+  ! compute velocity difference between different size bins
+  ! 1) use vd for bulk difference:
+  !        vdiff(i,j) = sqrt((vd(i,1) - vd(j,1))**2 + (vd(i,2) - vd(j,2))**2 + (vd(i,3) - vd(j,3))**2)
+  ! 2) add vrms in square: vdiff(i,j) += sqrt(vrms(i)**2 + vrms(j)**2)
+  ! 3) possibly add brownian motion
+  ! 4) possibly add a sub-cell turbulent motion contribution
+
+  ! move forward one timestep
+  ! call dust_evolve_step(tend,nd,vd,vdiff)
+
+  ! convert back to code units
+  dd_out = self%m_cgs * nd / scaling%d
+  vd_out = vd / scaling%u
+   
   call trace%end ()
 END SUBROUTINE update
 
@@ -88,7 +117,6 @@ SUBROUTINE test (self)
   real:: trans_width, alpha, Cdt, xi, dt, t_end, save_time, eps_time, Hp
   real:: micron, mps
 
-  integer, parameter :: precision_e = selected_real_kind(15, 100)
   integer:: i, j, k, l, nbin, kn, minij, maxij, itime, js_n, js_nrhs, js_lda, &
     js_ldb, js_info
   integer, ALLOCATABLE, DIMENSION(:):: js_ipiv

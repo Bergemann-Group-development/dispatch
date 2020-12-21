@@ -923,6 +923,7 @@ SUBROUTINE evolve_dust (self)
   do i2=l(2),u(2)
   do i1=l(1),u(1)
     call self%dust_evolve%update ( &
+      self%dtime, &
            vrms(i1,i2,i3,:), &
       self%dd(i1,i2,i3,:), self%vd(i1,i2,i3,:,:), &
            dd(i1,i2,i3,:),      vd(i1,i2,i3,:,:))
