@@ -861,7 +861,7 @@ FUNCTION gas_pressure (self) result(pg)
   real, dimension(:,:,:), pointer:: d, lnd, e, ee
   integer, save:: nprint=1
   !-----------------------------------------------------------------------------
-  call trace%begin ('mhd_t%gas_pressure_sub')
+  call trace%begin ('mhd_t%gas_pressure')
   d  => self%mem(:,:,:,self%idx%d ,self%it,1)
   e  => self%mem(:,:,:,self%idx%e ,self%it,1)
   call allocate_scalars(self%gn,ee)
@@ -884,14 +884,15 @@ FUNCTION gas_pressure (self) result(pg)
       write(io%output,*) self%id, 'lookup_table:  ee =', minval(ee) , maxval(ee)
       write(io%output,*) self%id, 'lookup_table:  pg =', minval(pg) , maxval(pg)
       if (do_temperature) &
-        write(io%output,*) self%id, 'lookup_table:  tt =', minval(self%tt), &
-          maxval(self%tt)
+        write(io%output,*) self%id, 'lookup_table:  tt =', minval(self%tt), maxval(self%tt)
     end if
   end if
   call deallocate_scalars(ee)
   call trace%end()
 END FUNCTION gas_pressure
 
+!===============================================================================
+! Subroutine-version; only called by `pde`.
 !===============================================================================
 SUBROUTINE gas_pressure_sub (self, d, lnd, ee, pg)
   class(mhd_t):: self

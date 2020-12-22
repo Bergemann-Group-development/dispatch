@@ -851,19 +851,27 @@ END SUBROUTINE output
 !> temperature from ideal gas law, taking into account that the temperature is
 !> normalised by k_B and mu (so that specific gas constant = 1)
 !===============================================================================
-FUNCTION gas_pressure (self, lnd, ss) RESULT (pg)
+FUNCTION gas_pressure (self) RESULT (pg)
   class(mhd_t):: self
-  real, dimension(:,:,:), pointer:: lnd, ss, d, s
-  optional:: lnd, ss
+  real, dimension(:,:,:), pointer:: d, s, ss, lnd
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
-  integer, save:: nprint=5
+  integer, save:: nprint=1
   !-----------------------------------------------------------------------------
-  if (present(lnd)) then
-    pg = exp(lnd*self%gamma)*exp(ss*(self%gamma-1d0))
+  call trace%begin('mhd_t%gas_pressure')
+  d => self%mem(:,:,:,self%idx%d ,self%it,1)
+  s => self%mem(:,:,:,self%idx%s ,self%it,1)
+  call allocate_scalars(self%gn,ss)
+  ss = s / d
+  if (trim(self%eos)=='ideal') then
+    if (self%gamma==1d0) then
+      pg = d*self%csound**2
+    else
+      pg = d**self%gamma*exp(ss*(self%gamma-1d0))
+    end if
   else
+    call allocate_scalars(self%gn,lnd)
     if (do_temperature) then
-      call eos%lookup_table (shape(lnd), lnd=lnd, ss=ss, pg=pg, &
-        tt=self%tt)
+      call eos%lookup_table (shape(lnd), lnd=lnd, ss=ss, pg=pg, tt=self%tt)
     else
       call eos%lookup_table (shape(lnd), lnd=lnd, ss=ss, pg=pg)
     end if
@@ -873,8 +881,9 @@ FUNCTION gas_pressure (self, lnd, ss) RESULT (pg)
       write(io%output,*) self%id, 'lookup_table:  ss =', minval(ss) , maxval(ss )
       write(io%output,*) self%id, 'lookup_table:  pg =', minval(pg) , maxval(pg)
       if (do_temperature) &
-      write(io%output,*) self%id, 'lookup_table:  tt =', minval(self%tt), maxval(self%tt)
+        write(io%output,*) self%id, 'lookup_table:  tt =', minval(self%tt), maxval(self%tt)
     end if
+    call deallocate_scalars(lnd)
   end if
   call deallocate_scalars(ss)
   call trace%end()
@@ -895,8 +904,7 @@ SUBROUTINE gas_pressure_sub (self, d, lnd, ss, pg)
     end if
   else
     if (do_temperature) then
-      call eos%lookup_table (shape(lnd), lnd=lnd, ss=ss, pg=pg, &
-        tt=self%tt)
+      call eos%lookup_table (shape(lnd), lnd=lnd, ss=ss, pg=pg, tt=self%tt)
     else
       call eos%lookup_table (shape(lnd), lnd=lnd, ss=ss, pg=pg)
     end if
@@ -906,7 +914,7 @@ SUBROUTINE gas_pressure_sub (self, d, lnd, ss, pg)
       write(io%output,*) self%id, 'lookup_table:  ss =', minval(ss) , maxval(ss )
       write(io%output,*) self%id, 'lookup_table:  pg =', minval(pg) , maxval(pg)
       if (do_temperature) &
-      write(io%output,*) self%id, 'lookup_table:  tt =', minval(self%tt), maxval(self%tt)
+        write(io%output,*) self%id, 'lookup_table:  tt =', minval(self%tt), maxval(self%tt)
     end if
   call trace%end()
   end if
