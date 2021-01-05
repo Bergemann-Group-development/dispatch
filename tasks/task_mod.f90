@@ -905,6 +905,10 @@ END FUNCTION overlaps_point
 !===============================================================================
 !> Decide if another task is needed, if it needs_me, and if it should be
 !> downloaded (= used in one way or another to prepare the task for update)
+!> This is the lowest, most generic relations call. The checks are based solely
+!> on ranks and some bits.
+!> Initially all 3 logicals are set to true and if any criterion is not met,
+!> the particular flag is set to .false.
 !===============================================================================
 SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   class(task_t):: self
