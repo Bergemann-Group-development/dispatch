@@ -59,15 +59,15 @@ SUBROUTINE condition (self, m, ff, idx)
   real(4), save:: P_l=10.33333  , P_r=1.0, &
                   rho_l=3.857143, &
                   vx_l=2.629369, vx_r=0.0, &
-                  a_d=0.2, f_d=5.0, x_disc = -4.0
+                  a_d=0.2, f_d=5.0, x_disc = -4.0, bx=0.0, gamma=1.4
   integer, save:: idir=1
   namelist /IC_params/ P_l, P_r, rho_l, &
-                           vx_l, vx_r, a_d, f_d, x_disc, idir
+                           vx_l, vx_r, a_d, f_d, x_disc, idir, bx, gamma
   call io%lock%set('initial_t%condition')
   if (first_time) then
     rewind (io%input)
-    read (io%input, initial_params)
-    if (io%master) write (*,initial_params)
+    read (io%input, IC_params)
+    if (io%master) write (*,IC_params)
     first_time = .false.
   end if
   call io%lock%unset('initial_t%condition')
@@ -86,8 +86,12 @@ SUBROUTINE condition (self, m, ff, idx)
     et => ff(:,:,:,idx%et)
   end if
   if (self%solver(1:6) == 'ramses') then
-    et => ff(:,:,:,idx%e)
-    allocate (e1(m(1)%gn,m(2)%gn,m(3)%gn))
+    if (idx%e>0) then
+      et => ff(:,:,:,idx%e)
+      allocate (e1(m(1)%gn,m(2)%gn,m(3)%gn))
+    else
+      s => ff(:,:,:,idx%s)
+    end if
   end if
   ff(:,:,:,idx%py) = 0.0
   ff(:,:,:,idx%pz) = 0.0
@@ -108,31 +112,72 @@ SUBROUTINE condition (self, m, ff, idx)
       xs = x - ds2(1)
       if (x < x_disc) then
         d (i,:,:)= rho_l
-        if (self%solver(1:14) == 'zeus_mhd_patch' .or. self%solver(1:10) == 'stagger2e_') then
+        if (idx%e>0) then
           e1(i,:,:) = P_l / (self%gamma - 1.0)
-        else if (self%solver(1:9) == 'stagger2_') then
-          s (i,:,:) = (log(P_l) - log(rho_l) * self%gamma) * rho_l / (self%gamma - 1.0)
-        else if (self%solver(1:6) == 'ramses')  then
-          e1(i,:,:) = P_l / (self%gamma - 1.0)
+        else if (idx%s>0) then
+          !s (i,:,:) = (log(P_l) - log(rho_l) * self%gamma) * rho_l / (self%gamma - 1.0)
+          !s (i,:,:) = log(P_l/rho_l**self%gamma)  * rho_l / (self%gamma - 1.0)
+          s (i,:,:) = (log(P_l)-log(rho_l)*self%gamma)  * rho_l / (self%gamma - 1.0)
+        else 
+          error stop "inital_mod: neither energy nor entropy in mem indices"
         end if
         ff(i,:,:,idx%px) = vx_l * rho_l
       else
         d (i,:,:) = 1.0*(1.+a_d*sin(f_d*x))
-        if (self%solver(1:14) == 'zeus_mhd_patch' .or. self%solver(1:10) == 'stagger2e_') then
+        if (idx%e>0) then
           e1(i,:,:) = P_r / (self%gamma - 1.0)
-        else if (self%solver(1:9) == 'stagger2_') then
-          s (i,:,:) = (log(P_r) - log(d(i,:,:)) * self%gamma) * d(i,:,:) / (self%gamma - 1.0)
-        else if (self%solver(1:6) == 'ramses')  then
-          e1(i,:,:) = P_r / (self%gamma - 1.0)
+        else if (idx%s>0) then
+          !s (i,:,:) = (log(P_r) - log(d(i,:,:)) * self%gamma) * d(i,:,:) / (self%gamma - 1.0)
+          s (i,:,:) = (log(P_r)-log(d(i,:,:))*self%gamma) * d(i,:,:) / (self%gamma - 1.0)
+        else 
+          error stop "inital_mod: neither energy nor entropy in mem indices"
         end if
         ff(i,:,:,idx%px) = 0.0
       end if
           ! 
       ! correction for staggered momentum
-      if (self%solver(1:14) == 'zeus_mhd_patch' .or. self%solver(1:7) == 'stagger') then
+      if (any(ds2>0)) then
         if (x >= x_disc .and. (x - m(1)%d) < x_disc) then
           rd = 1.0*(1.+a_d*sin(f_d*x))
           ff(i,:,:,idx%px) = (rho_l + rd) * (vx_l + 0.0) * 0.25
+        end if
+      end if
+    end do
+
+  case(-1)
+    do i=m(1)%lb,m(1)%ub
+      x = m(1)%p + m(1)%r(i)
+      xs = x - ds2(1)
+      if (x > x_disc) then
+        d (i,:,:)= rho_l
+        if (idx%e>0) then
+          e1(i,:,:) = P_l / (self%gamma - 1.0)
+        else if (idx%s>0) then
+          !s (i,:,:) = (log(P_l) - log(rho_l) * self%gamma) * rho_l / (self%gamma - 1.0)
+          !s (i,:,:) = log(P_l/rho_l**self%gamma)  * rho_l / (self%gamma - 1.0)
+          s (i,:,:) = (log(P_l)-log(rho_l)*self%gamma)  * rho_l / (self%gamma - 1.0)
+        else 
+          error stop "inital_mod: neither energy nor entropy in mem indices"
+        end if
+        ff(i,:,:,idx%px) = -vx_l * rho_l
+      else
+        d (i,:,:) = 1.0*(1.-a_d*sin(f_d*x))
+        if (idx%e>0) then
+          e1(i,:,:) = P_r / (self%gamma - 1.0)
+        else if (idx%s>0) then
+          !s (i,:,:) = (log(P_r) - log(d(i,:,:)) * self%gamma) * d(i,:,:) / (self%gamma - 1.0)
+          s (i,:,:) = (log(P_r)-log(d(i,:,:))*self%gamma) * d(i,:,:) / (self%gamma - 1.0)
+        else 
+          error stop "inital_mod: neither energy nor entropy in mem indices"
+        end if
+        ff(i,:,:,idx%px) = 0.0
+      end if
+          ! 
+      ! correction for staggered momentum
+      if (any(ds2>0)) then
+        if (x >= x_disc .and. (x - m(1)%d) < x_disc) then
+          rd = 1.0*(1.-a_d*sin(f_d*(x - m(1)%d)))
+          ff(i,:,:,idx%px) = (rho_l + rd) * (-vx_l + 0.0) * 0.25
         end if
       end if
     end do
@@ -143,28 +188,28 @@ SUBROUTINE condition (self, m, ff, idx)
       ys = y - ds2(2)
       if (y < x_disc) then
         d (:,i,:)= rho_l
-        if (self%solver(1:14) == 'zeus_mhd_patch' .or. self%solver(1:10) == 'stagger2e_') then
+        if (idx%e>0) then
           e1(:,i,:) = P_l / (self%gamma - 1.0)
-        else if (self%solver(1:9) == 'stagger2_') then
+        else if (idx%s>0) then
           s (:,i,:) = (log(P_l) - log(rho_l) * self%gamma) * rho_l / (self%gamma - 1.0)
-        else if (self%solver(1:6) == 'ramses')  then
-          e1(:,i,:) = P_l / (self%gamma - 1.0)
+        else 
+          error stop "inital_mod: neither energy nor entropy in mem indices"
         end if
         ff(:,i,:,idx%py) = vx_l * rho_l
       else
         d (:,i,:) = 1.0*(1.+a_d*sin(f_d*y))
-        if (self%solver(1:14) == 'zeus_mhd_patch' .or. self%solver(1:10) == 'stagger2e_') then
+        if (idx%e>0) then
           e1(:,i,:) = P_r / (self%gamma - 1.0)
-        else if (self%solver(1:9) == 'stagger2_') then
+        else if (idx%s>0) then
           s (:,i,:) = (log(P_r) - log(d(:,i,:)) * self%gamma) * d(:,i,:) / (self%gamma - 1.0)
-        else if (self%solver(1:6) == 'ramses')  then
-          e1(:,i,:) = P_r / (self%gamma - 1.0)
+        else 
+          error stop "inital_mod: neither energy nor entropy in mem indices"
         end if
         ff(:,i,:,idx%py) = 0.0
       end if
           ! 
       ! correction for staggered momentum
-      if (self%solver(1:14) == 'zeus_mhd_patch' .or. self%solver(1:7) == 'stagger') then
+      if (any(ds2>0)) then
         if (y >= x_disc .and. (y - m(2)%d) < x_disc) then
           rd = 1.0*(1.+a_d*sin(f_d*y))
           ff(:,i,:,idx%py) = (rho_l + rd) * (vx_l + 0.0) * 0.25
@@ -178,28 +223,28 @@ SUBROUTINE condition (self, m, ff, idx)
       zs = z - ds2(3)
       if (z < x_disc) then
         d (:,:,i)= rho_l
-        if (self%solver(1:14) == 'zeus_mhd_patch' .or. self%solver(1:10) == 'stagger2e_') then
+        if (idx%e>0) then
           e1(:,:,i) = P_l / (self%gamma - 1.0)
-        else if (self%solver(1:9) == 'stagger2_') then
+        else if (idx%s>0) then
           s (:,:,i) = (log(P_l) - log(rho_l) * self%gamma) * rho_l / (self%gamma - 1.0)
-        else if (self%solver(1:6) == 'ramses')  then
-          e1(:,:,i) = P_l / (self%gamma - 1.0)
+        else 
+          error stop "inital_mod: neither energy nor entropy in mem indices"
         end if
         ff(:,:,i,idx%pz) = vx_l * rho_l
       else
         d (:,:,i) = 1.0*(1.+a_d*sin(f_d*z))
-        if (self%solver(1:14) == 'zeus_mhd_patch' .or. self%solver(1:10) == 'stagger2e_') then
+        if (idx%e>0) then
           e1(:,:,i) = P_r / (self%gamma - 1.0)
-        else if (self%solver(1:9) == 'stagger2_') then
+        else if (idx%s>0) then
           s (:,:,i) = (log(P_r) - log(d(:,:,i)) * self%gamma) * d(:,:,i) / (self%gamma - 1.0)
-        else if (self%solver(1:6) == 'ramses')  then
-          e1(:,:,i) = P_r / (self%gamma - 1.0)
+        else 
+          error stop "inital_mod: neither energy nor entropy in mem indices"
         end if
         ff(:,:,i,idx%pz) = 0.0
       end if
           ! 
       ! correction for staggered momentum
-      if (self%solver(1:14) == 'zeus_mhd_patch' .or. self%solver(1:7) == 'stagger') then
+      if (any(ds2>0)) then
         if (z >= x_disc .and. (z - m(3)%d) < x_disc) then
           rd = 1.0*(1.+a_d*sin(f_d*z))
           ff(:,:,i,idx%pz) = (rho_l + rd) * (vx_l + 0.0) * 0.25
@@ -211,30 +256,34 @@ SUBROUTINE condition (self, m, ff, idx)
   
   ! set total energy; it needs to be done after because it uses the `i+1` values.
   ! only applies to ZEUS and RAMSES solvers.
-  if (self%solver(1:7) /= 'stagger') then
+  if (associated(et)) then
   do k=m(3)%lb,m(3)%ub
   do j=m(2)%lb,m(2)%ub
-    do i=m(1)%lb,m(1)%uo
+    do i=m(1)%lb,m(1)%ub-1
       if (self%solver(1:14) == 'zeus_mhd_patch') then
         rhov2 = (0.25 * (ff(i,j,k,idx%px) + ff(i+1,j,k,idx%px))**2) / d(i,j,k) 
       else if (self%solver(1:6) == 'ramses') then
-        rhov2 = ff(i,j,k,idx%px)**2 / d(i,j,k) 
+        rhov2 = (ff(i,j,k,idx%px)**2 + ff(i,j,k,idx%py)**2 + ff(i,j,k,idx%pz)**2) / d(i,j,k) 
       end if
       et(i,j,k) = e1(i,j,k) + 0.5 * rhov2
     end do
+     et(m(1)%ub,j,k)=et(m(1)%ub-1,j,k)
   end do
   end do
   end if
+
+
   
   if (idx%bx >0) then
   ff(:,:,:,idx%bx:idx%bz) = 0.0
+  ff(:,:,:,idx%bx) = bx
   end if
   
   ! --------------------------------------------------------------------
   ! Set boundary values
   ! -------------------------------------------------------------------
   !
-  if (self%solver(1:6) == 'ramses') then
+  if (associated(et)) then
     deallocate (e1)
   else
     nullify (e1)

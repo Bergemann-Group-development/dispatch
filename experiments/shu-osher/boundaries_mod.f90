@@ -24,7 +24,7 @@ MODULE boundaries_mod
     real::  px_l =  10.141852233 !2.629369 * 3.857143
     real:: gamma=1.4
     real:: vy_l, vz_l, Bx_l, By_l, Bz_l, &
-           P_r, rho_r, e1_r, px_r, py_r, pz_r, Bx_r, By_r, Bz_r
+           P_r, rho_r, e1_r, px_r, py_r, pz_r, Bx_r, By_r, Bz_r, e_r, s_r
     character(32):: solver
   contains
     ! --------------------------------------------------------------------------
@@ -45,7 +45,7 @@ CONTAINS
 !===============================================================================
 SUBROUTINE init (self, patch)
   class(boundaries_t)     :: self
-  class(patch_t)          :: patch
+  class(patch_t),target          :: patch
   !.............................................................................
   call self%standard_boundaries_t%init (patch)
 END SUBROUTINE init
@@ -65,19 +65,26 @@ SUBROUTINE primary(self, mem)
       mem(i,:,:,idx%py) = 0.0
       mem(i,:,:,idx%pz) = 0.0
           
-      if (self%solver(1:14) == 'zeus_mhd_patch' .or. self%solver(1:10) == 'stagger2e_') then
+      if (idx%e>0) then
         mem(i,:,:,idx%e) = self%e_l
-      else if (self%solver(1:9) == 'stagger2_') then
+      else if (idx%s) then
         mem(i,:,:,idx%s) = self%s_l
-      else if (self%solver(1:6) == 'ramses')  then
-        mem(i,:,:,idx%e) = self%e_l
       end if
     end do  
   end if
   !
   if (self%mesh(1)%upper_boundary) then
     do i=m(1)%uo,m(1)%gn
-      mem(i,:,:,:) = mem(m(1)%ui,:,:,:)
+      mem(i,:,:,idx%d) = self%rho_r
+      mem(i,:,:,idx%px) = self%px_r
+      mem(i,:,:,idx%py) = 0.0
+      mem(i,:,:,idx%pz) = 0.0
+          
+      if (idx%e>0) then
+        mem(i,:,:,idx%e) = self%e_r
+      else if (idx%s) then
+        mem(i,:,:,idx%s) = self%s_r
+      end if
     end do
   end if
   end associate
