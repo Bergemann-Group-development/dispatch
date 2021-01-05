@@ -10,9 +10,10 @@ MODULE initial_mod
   private
   type, public :: initial_t
     integer :: idirect
-    real    :: gamma=1.66667
+    real    :: gamma=1.66666666666670
     logical :: mhd=.true.
     real(8) :: p0, v0, b0
+    character(len=64):: solver
     procedure(initial_conditions), pointer :: condition => null()
   contains
     procedure :: init
@@ -41,8 +42,8 @@ SUBROUTINE init (self, solver, gamma)
     b0 = 0.5 / sqrt(math%pi)
     p0 = 5.0 / (12.0 * math%pi)
     v0 = 1.0
-    rewind (io%input); read (io%input,initial_params)
-    if (io%master) write(*,initial_params)
+    rewind (io%input); read (io%input,IC_params)
+    if (io%master) write(*,IC_params)
     first_time = .false.
   end if
   call io%lock%unset('initial_t%init')
@@ -51,6 +52,7 @@ SUBROUTINE init (self, solver, gamma)
   self%p0 = p0
   self%v0 = v0
   self%b0 = b0
+  self%solver=solver
 
   self%condition => initial_conditions
 
@@ -67,33 +69,45 @@ SUBROUTINE initial_conditions (self, m, ff, idx)
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
   !.............................................................................
   integer:: ix, iy, iz                                       ! loop indices
-  real:: entropy, twopi, xa, ya, za, xb, yb, zb, d0          ! local variables
-  real,dimension(:,:,:),allocatable :: vecpot
+  real:: entropy, twopi, xa, ya, za, xb, yb, zb, d0 , rhov2, b2         ! local variables
+  real,dimension(:,:,:),allocatable :: vecpot, emag
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   !.............................................................................
   call trace_begin ('initial_t%initial_conditions')
 
   allocate(vecpot(m(1)%gn+2,m(2)%gn+2,m(3)%gn+2))
+  if (self%solver(1:6)=='ramses') then
+    allocate(emag(m(1)%gn,m(2)%gn,m(3)%gn))
+    emag=0.0
+  end if
 
   twopi = 2.0 * math%pi
   d0 = self%gamma * self%p0
 
   ! "pre"-initialisation of all variables, independent of `idirect`.
-  ff(:,:,:,idx%d) = d0
-  ff(:,:,:,idx%px) = 0.0
-  ff(:,:,:,idx%py) = 0.0
-  ff(:,:,:,idx%pz) = 0.0
-  ff(:,:,:,idx%bx) = 0.0
-  ff(:,:,:,idx%by) = 0.0
-  ff(:,:,:,idx%bz) = 0.0
-  if (self%gamma==1d0) then
-    entropy = 0.0
-    if (idx%e > 0) ff(:,:,:,idx%e) = self%p0
+  if (self%gamma==1.0) then
+    entropy = 1.0
   else
-    entropy = (log(self%p0)-log(d0)*self%gamma)/(self%gamma-1d0)
-    if (idx%e > 0) ff(:,:,:,idx%e) = self%p0/(self%gamma-1d0)
+    entropy = (log(self%p0)-log(d0)*self%gamma)/(self%gamma-1.0)
   end if
-  if (idx%s > 0) ff(:,:,:,idx%s) = entropy*d0
+
+
+  do iz=m(3)%lb,m(3)%ub
+    do iy=m(2)%lb,m(2)%ub
+      do ix=m(1)%lb,m(1)%ub
+        ff(ix,iy,iz,idx%d) = d0
+        if (idx%s>0) ff(ix,iy,iz,idx%s) = entropy*d0
+        if (idx%e>0) ff(ix,iy,iz,idx%e) = self%p0/(self%gamma-1.0)
+        ff(ix,iy,iz,idx%px) = 0.0
+        ff(ix,iy,iz,idx%py) = 0.0
+        ff(ix,iy,iz,idx%pz) = 0.0
+        ff(ix,iy,iz,idx%bx) = 0.0
+        ff(ix,iy,iz,idx%by) = 0.0
+        ff(ix,iy,iz,idx%bz) = 0.0
+      end do
+    end do
+  end do
+ 
 
   ! initialisation based on value of `idirect`
   ! ---- x1-x2 plane ----
@@ -111,20 +125,27 @@ SUBROUTINE initial_conditions (self, m, ff, idx)
       end do
     end do
     
-    do iz=m(3)%lb,m(3)%ub
-      do iy=m(2)%lb,m(2)%ub
+    do iz=m(3)%lb,m(3)%ub-1
+      do iy=m(2)%lb,m(2)%ub-1
         ya = m(2)%p + r2(iy) - 0.5*m(2)%d
-        do ix=m(1)%lb,m(1)%ub
+        do ix=m(1)%lb,m(1)%ub-1
           xa = m(1)%p + r1(ix) - 0.5*m(1)%d
           vecpot(ix+1,iy+1,iz+1) = (self%b0 / twopi) * ( 0.5 * cos(2.0 * twopi * xa) + cos(twopi  * ya) )
         end do
       end do
     end do
     
-    do iz=m(3)%ub-1,m(3)%ub
-      do iy=m(2)%ub-1,m(2)%ub
+    do iz=m(3)%lb,m(3)%ub
+      do iy=m(2)%lb,m(2)%ub
         ya = m(2)%p + r2(iy) + 1.5*m(2)%d
         do ix=m(1)%ub-1,m(1)%ub
+          xa = m(1)%p + r1(ix) + 1.5*m(1)%d
+          vecpot(ix+2,iy+2,iz+2) = (self%b0 / twopi) * ( 0.5 * cos(2.0 * twopi * xa) + cos(twopi  * ya) )
+        end do
+      end do
+      do iy=m(2)%ub-1,m(2)%ub
+        ya = m(2)%p + r2(iy) + 1.5*m(2)%d
+        do ix=m(1)%lb,m(1)%ub
           xa = m(1)%p + r1(ix) + 1.5*m(1)%d
           vecpot(ix+2,iy+2,iz+2) = (self%b0 / twopi) * ( 0.5 * cos(2.0 * twopi * xa) + cos(twopi  * ya) )
         end do
@@ -200,9 +221,34 @@ SUBROUTINE initial_conditions (self, m, ff, idx)
       end do
     end do
   end if
-
+  
+  do iz=m(3)%lb,m(3)%ub
+    ff(:,:,iz,:) = ff(:,:,m(3)%li,:)
+  end do
 
   deallocate(vecpot)
+  if (self%solver(1:6)=='ramses') then 
+    if (idx%e>0) then
+      do iz=m(3)%lb,m(3)%ub-1
+        do iy=m(2)%lb,m(2)%ub-1
+          do ix=m(1)%lb,m(1)%ub-1
+            rhov2 = (ff(ix,iy,iz,idx%px)**2 + &
+                    ff(ix,iy,iz,idx%py)**2 + &
+                    ff(ix,iy,iz,idx%pz)**2)/ff(ix,iy,iz,idx%d) 
+            if (idx%bx > 0) then
+              B2 = 0.25*(ff(ix,iy,iz,idx%bx) + ff(ix+1,iy,iz,idx%bx))**2 + &
+                  0.25*(ff(ix,iy,iz,idx%by) + ff(ix,iy+1,iz,idx%by))**2 + &
+                  0.25*(ff(ix,iy,iz,idx%bz) + ff(ix,iy,iz+1,idx%bz))**2
+            else
+              B2 = 0.0
+            end if
+            ff(ix,iy,iz,idx%e) = ff(ix,iy,iz,idx%e) + 0.5*rhov2 + 0.5*B2
+          end do
+        end do
+      end do
+    end if
+    deallocate(emag)
+  end if
 
   call trace_end
   end associate
