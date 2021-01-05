@@ -25,6 +25,7 @@ MODULE mhd_mod
   USE trace_mod
   USE mpi_mod
   USE omp_mod
+  USE omp_lock_mod
   USE index_mod
   USE non_ideal_mod
   USE flux_mod
@@ -33,6 +34,7 @@ MODULE mhd_mod
   USE eos_mod
   USE task_mod
   USE scratch_mod
+  USE divb_clean_mod
   implicit none
   PRIVATE
   type, public, extends(extras_t):: mhd_t
@@ -47,7 +49,7 @@ MODULE mhd_mod
     real, pointer, dimension(:,:,:,:):: uin       ! conserved
     real, pointer, dimension(:,:,:,:):: unew      ! new conserved
     real, pointer, dimension(:,:,:):: Ex,Ey,Ez, eb, ekin, ee
-    real, pointer, dimension(:,:,:):: c
+    real, pointer, dimension(:,:,:):: c, pg
     !dir$ attributes align:64 :: q,bf,em,qp,qm,dq,dq2,dbf,qLB,qRB,qLT,qRT,Ex,Ey,Ez,c
   contains
     procedure:: pre_init
@@ -56,6 +58,7 @@ MODULE mhd_mod
     procedure:: update
     procedure:: post_update
     procedure:: gas_pressure
+    procedure:: emag
     procedure:: set_solver_vars
     procedure:: nbor_relations
   end type
@@ -89,10 +92,20 @@ SUBROUTINE pre_init (self)
     detailed_timer, unsigned, courant_type, max_dlogd, n_dump, &
     divb_iter, do_temperature, verbose, do_corners
   character(len=120):: id = &
-   '$Id$'
+   '$Id$ solvers/ramses/mhd_eos/mhd_mod.f90'
 !...............................................................................
   call trace%begin ('mhd_mod%pre_init')
   call trace%print_id (id)
+    self%nw = 2
+  self%ng = 3
+  self%nv = 8
+  !self%nv = 9
+  self%kind = 'ramses_s_mhd_patch'
+  call self%idx%init (is=5, mhd=self%mhd)
+  !self%idx%tt = 9
+  !if (do_temperature) then
+  !  call self%idx%request_index (self%idx%tt, self%nv)
+  !end if
   !-----------------------------------------------------------------------------
   ! Read solver-relevant parameters and store in the task instance
   !-----------------------------------------------------------------------------
@@ -106,18 +119,9 @@ SUBROUTINE pre_init (self)
     write (io%output, ramses_params)
     write (io%namelist, ramses_params)
     first_time = .false.
+    call divb%init
   end if
   call io%lock%unset ('mhd_mod%pre_init')
-  self%nw = 2
-  self%ng = 3
-  self%nv = 8
-  !self%nv = 9
-  self%kind = 'ramses_s_mhd_patch'
-  call self%idx%init (is=5, mhd=self%mhd)
-  !self%idx%tt = 9
-  !if (do_temperature) then
-  !  call self%idx%request_index (self%idx%tt, self%nv)
-  !end if
   rieman%max_dlogd = max_dlogd
   self%n_dump  = n_dump
   self%riemann = riemann
@@ -130,7 +134,7 @@ SUBROUTINE pre_init (self)
   !-----------------------------------------------------------------------------
   ! Call patch_pre-init
   !-----------------------------------------------------------------------------
-  !call self%patch_t%pre_init
+  call self%patch_t%pre_init
   !-----------------------------------------------------------------------------
   ! Call extras pre-init
   !-----------------------------------------------------------------------------
@@ -159,8 +163,8 @@ SUBROUTINE init (self)
   self%pervolume(self%idx%pz) = unsigned
   call self%gpatch_t%init
   call self%extras_t%init
-  self%etype = 'entropy'
   call self%set_solver_vars
+  allocate(self%pg(self%gn(1),self%gn(2),self%gn(3)))
   call trace%end()
 END SUBROUTINE init
 
@@ -174,12 +178,13 @@ END SUBROUTINE init
 !> 6: Bx
 !> 7: By
 !> 8: Bz
-!> 9: entropy
+!> 9: temperature
+!>10: entropy
 !===============================================================================
 SUBROUTINE set_solver_vars (self)
   class(mhd_t):: self
   ! ----------------------------------------------------------------------------
-  self%nvar=9
+  self%nvar=10
 END SUBROUTINE set_solver_vars
 
 !===============================================================================
@@ -198,7 +203,7 @@ SUBROUTINE pre_update (self)
   ! Set boundary conditions on primary variables
   !-----------------------------------------------------------------------------
   mem => self%mem(:,:,:,:,self%new,1)
-  !call self%boundaries%primary(mem, self%dtime)
+  call self%boundaries%primary(mem)
   !-----------------------------------------------------------------------------
   ! Now we can call the extras_t%pre_update, which may need the temperature
   !-----------------------------------------------------------------------------
@@ -230,7 +235,7 @@ SUBROUTINE update (self)
   real, pointer, dimension(:,:,:):: d, s, Ux=>null(), Uy=>null(), Uz=>null()
   real, pointer:: B(:,:,:,:)
   real(dp):: dtdx, dtdy, dtdz
-  integer:: n(3), nv3, i, j, k, l(3), u(3), dir
+  integer:: n(3), nv3, i, j, k, l(3), u(3), dir, iv
   integer, parameter:: ndim=3
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -350,6 +355,32 @@ SUBROUTINE update (self)
              uin=>self%uin,unew=>self%unew)
 
   nv3 = 5
+  !do iv=1,nv3
+  !  if (iv/= idx%s) then
+  !    do k=k0,k1
+  !      do j=j0,j1
+  !        do i=i0,i1
+  !          unew(i,j,k,iv) = unew(i,j,k,iv) + &
+  !          fl(i,j,k,iv,1) - fl(i+1,j  ,k  ,iv,1)+ &
+  !          fl(i,j,k,iv,2) - fl(i,  j+1,k  ,iv,2)+ &
+  !          fl(i,j,k,iv,3) - fl(i,  j,  k+1,iv,3)
+  !        end do
+  !      end do
+  !    end do
+  !  else
+  !    do k=k0,k1
+  !      do j=j0,j1
+  !        do i=i0,i1
+  !          unew(i,j,k,iv) = unew(i,j,k,iv) + &
+  !          (fl(i,j,k,iv,1) - fl(i+1,j  ,k  ,iv,1)+ &
+  !          fl(i,j,k,iv,2) - fl(i,  j+1,k  ,iv,2)+ &
+  !          fl(i,j,k,iv,3) - fl(i,  j,  k+1,iv,3)) *  unew(i,j,k,1)  / (gamma-one)
+  !        end do
+  !      end do
+  !    end do
+  !  end if
+  !end do
+
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3  ) = &
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3  ) + &
     fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3,1) - &
@@ -357,7 +388,16 @@ SUBROUTINE update (self)
     fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3,2) - &
     fl(i0  :i1  ,j0+1:j1+1,k0  :k1  ,1:nv3,2) + &
     fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3,3) - &
-    fl(i0  :i1  ,j0  :j1  ,k0+1:k1+1,1:nv3,3)   
+    fl(i0  :i1  ,j0  :j1  ,k0+1:k1+1,1:nv3,3)  
+    
+  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,5  ) = &
+  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,5  ) + &
+    (fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,9,1) - &
+    fl(i0+1:i1+1,j0  :j1  ,k0  :k1  ,9,1) + &
+    fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,9,2) - &
+    fl(i0  :i1  ,j0+1:j1+1,k0  :k1  ,9,2) + &
+    fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,9,3) - &
+    fl(i0  :i1  ,j0  :j1  ,k0+1:k1+1,9,3)) / self%q(i0  :i1  ,j0  :j1  ,k0  :k1  ,9)
 
   !!!! TO DO !!!! 
   !!! Instead of applying the update in time explicitly in mhd_mod
@@ -435,7 +475,7 @@ SUBROUTINE update (self)
 !      do i=l(1),u(1)
 !        d2ekin(i) = d2ekin(i) - p(i,j,k,dir)**2/d(i,j,k)
 !        p(i,j,k,dir) = p(i,j,k,dir) &
-!                   +  self%dtime*scratch%force_per_unit_mass(i,j,k,dir)*d(i,j,k)
+!                   +  self%dtime*self%force_per_unit_mass(i,j,k,dir)*d(i,j,k)
 !        d2ekin(i) = d2ekin(i) + p(i,j,k,dir)**2/d(i,j,k)
 !      end do
 !      end do
@@ -448,7 +488,7 @@ SUBROUTINE update (self)
 !    end do
 !    end do
 !  end if
-!  if (associated(scratch%force_per_unit_volume)) then
+!  if (associated(self%force_per_unit_volume)) then
 !    do k=l(3),u(3)
 !    do j=l(2),u(2)
 !      !-------------------------------------------------------------------------
@@ -514,6 +554,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   if (self%mhd) then
     B => self%mem(:,:,:,self%idx%bx:self%idx%bz,self%new,1)
+    call divB%clean(self%mesh,B)
   end if
   !.............................................................................
   call trace%end (itimer)
@@ -548,6 +589,7 @@ subroutine check_small (self)
   do j=lo(2),uo(2)
   do i=lo(1),uo(1)
     if (uu(i,j,k,1) < smallr) then
+      error stop "d< smallr"
       panic = .true.
       if (nprint>0) then
         nprint = nprint-1
@@ -563,15 +605,14 @@ subroutine check_small (self)
     w =  uu(i,j,k,self%idx%pz)*c
     if (isothermal) then
       p = d*self%csound**2
-      uu(i,j,k,self%idx%s) = log(p/d**gamma) * d / (gamma - one)
+      uu(i,j,k,self%idx%s) = log(p/d**gamma)* d / (gamma - one)
     else
       p = d**gamma*exp(uu(i,j,k,self%idx%s)/d*(gamma-one))
-      if (p < smallr*smallc**2) then
-        p = smallr*smallc**2
-        print *, 'small s swap'
-        uu(i,j,k,self%idx%s) = log(p/d**gamma) * d / (gamma - one)
-        n_smallp = n_smallp+1
-      end if
+    end if
+    if (p < smallr*smallc**2) then
+      p = smallr*smallc**2
+      print *, 'small s swap'
+      uu(i,j,k,self%idx%s) = log(p/d**gamma) * d / (gamma - one)
     end if
   end do
   end do
@@ -630,10 +671,11 @@ subroutine ctoprim(self)
   q(:,:,:,3)  = uin(:,:,:,3)/q(:,:,:,1)                                         ! vy
   q(:,:,:,4)  = uin(:,:,:,4)/q(:,:,:,1)                                         ! vz
   q(:,:,:,5) = 0.0                                                              ! p_t; initialised for safety
+  q(:,:,:,9) = 0.0                                                              ! t_gas; initialised for safety
   q(:,:,:,6) = uin(:,:,:,6)                                                     ! Bx
   q(:,:,:,7) = uin(:,:,:,7)                                                     ! By
   q(:,:,:,8) = uin(:,:,:,8)                                                     ! Bz
-  q(:,:,:,9) = uin(:,:,:,5) / uin(:,:,:,1)                                      ! entropy / mass
+  q(:,:,:,10) = uin(:,:,:,5)! / uin(:,:,:,1)                                      ! entropy / mass
   bf(:,:,:,1) = uin(:,:,:,6)
   bf(:,:,:,2) = uin(:,:,:,7)
   bf(:,:,:,3) = uin(:,:,:,8)
@@ -643,14 +685,16 @@ subroutine ctoprim(self)
   ! Arrays for EOS
   !-----------------------------------------------------------------------------
   allocate (lnd(gn(1),gn(2),gn(3)))
-  !allocate (ss(gn(1),gn(2),gn(3)))
+  allocate (ss(gn(1),gn(2),gn(3)))
   lnd = log(q(:,:,:,1))
-   !ss = q(:,:,:,9)/q(:,:,:,1)
-   ss => q(:,:,:,9)!/q(:,:,:,1)
+  ss = q(:,:,:,10)/q(:,:,:,1)
+  ! ss => q(:,:,:,9)
   !-----------------------------------------------------------------------------
   ! Pressure
   !-----------------------------------------------------------------------------
-  !call eos%lookup_table (shape(lnd), lnd=lnd, ss=ss, pg=q(:,:,:,5), label='mhd', id=self%id)
+  call eos%lookup_table (shape(lnd), lnd=lnd, ss=ss, pg=q(:,:,:,5), tt=q(:,:,:,9),label='mhd', id=self%id)
+  self%pg = q(:,:,:,5)
+  call self%aux%register ('pg', self%pg)
   !-----------------------------------------------------------------------------
   ! Fast mode speed
   !-----------------------------------------------------------------------------
@@ -668,13 +712,15 @@ subroutine ctoprim(self)
 !print '(i6,1x,a,i4,1p,2(2x,2e11.2))', self%id, 'idx%tt, min, max =', self%idx%tt, &
 !minval(tt), maxval(tt), minval(c(1:n(1),1:n(2),1:n(3))), maxval(c(1:n(1),1:n(2),1:n(3)))
   deallocate (lnd)
- ! deallocate (ss)
+  deallocate (ss)
   if (self%id == io%id_debug) then
     do i=1,9
       write (io%output,'("X1",f10.6,i4,1p,10e12.3)') self%time, i, uin(4:13,8,8,i)
       write (io%output,'("X2",f10.6,i4,1p,10e12.3)') self%time, i,   q(4:13,8,8,i)
     end do
   end if
+   !Normalize physical entropy density by (gamma - one)
+  !q(:,:,:,9) = q(:,:,:,9) * (gamma-one)
   !-----------------------------------------------------------------------------
   ! Alternative Courant condition formulations
   !-----------------------------------------------------------------------------
@@ -761,18 +807,46 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
             dlft = q(i  ,j,k,n) - q(i-1,j,k,n)
             drgt = q(i+1,j,k,n) - q(i  ,j,k,n)
             dq(i,n,1,j,k) = merge(zero,merge(min(dlft,drgt),max(dlft,drgt),dlft>0),(dlft*drgt)<=zero)
+            dq(i,n,1,j,k) = merge(min(dlft,drgt),max(dlft,drgt),dlft>0)
             ! slopes in second coordinate direction
             dlft = q(i,j  ,k,n) - q(i,j-1,k,n)
             drgt = q(i,j+1,k,n) - q(i,j  ,k,n)
             dq(i,n,2,j,k) = merge(zero,merge(min(dlft,drgt),max(dlft,drgt),dlft>0),(dlft*drgt)<=zero)
+            dq(i,n,2,j,k) = merge(min(dlft,drgt),max(dlft,drgt),dlft>0)
             ! slopes in third coordinate direction
             dlft = q(i,j,k  ,n) - q(i,j,k-1,n)
             drgt = q(i,j,k+1,n) - q(i,j,k  ,n)
             dq(i,n,3,j,k) = merge(zero,merge(min(dlft,drgt),max(dlft,drgt),dlft>0),(dlft*drgt)<=zero)
+            dq(i,n,3,j,k) = merge(min(dlft,drgt),max(dlft,drgt),dlft>0)
           end do
         end do
       end do
     end do
+    ! A separate loop for entropy
+   ! n=10
+   ! do k = l(3),u(3)
+   !   do j = l(2),u(2)
+   !     !dir$ ivdep
+   !     !$omp simd private(dlft,drgt)
+   !     do i = l(1),u(1)
+   !       ! slopes in first coordinate direction
+   !       dlft = q(i  ,j,k,n) - q(i-1,j,k,n)
+   !       drgt = q(i+1,j,k,n) - q(i  ,j,k,n)
+   !      ! dq(i,n,1,j,k) = merge(zero,merge(min(dlft,drgt),max(dlft,drgt),dlft>0),(dlft*drgt)<=zero)
+   !       dq(i,n,1,j,k) = merge(min(dlft,drgt),max(dlft,drgt),dlft>0)
+   !       ! slopes in second coordinate direction
+   !       dlft = q(i,j  ,k,n) - q(i,j-1,k,n)
+   !       drgt = q(i,j+1,k,n) - q(i,j  ,k,n)
+   !      ! dq(i,n,2,j,k) = merge(zero,merge(min(dlft,drgt),max(dlft,drgt),dlft>0),(dlft*drgt)<=zero)
+   !       dq(i,n,2,j,k) = merge(min(dlft,drgt),max(dlft,drgt),dlft>0)
+   !       ! slopes in third coordinate direction
+   !       dlft = q(i,j,k  ,n) - q(i,j,k-1,n)
+   !       drgt = q(i,j,k+1,n) - q(i,j,k  ,n)
+   !       !dq(i,n,3,j,k) = merge(zero,merge(min(dlft,drgt),max(dlft,drgt),dlft>0),(dlft*drgt)<=zero)
+   !       dq(i,n,3,j,k) = merge(min(dlft,drgt),max(dlft,drgt),dlft>0)
+   !     end do
+   !   end do
+   ! end do
   else if (islope_type==2) then ! moncen
     xslope_type= 2 !MIN(slope_type,2)
     do n = 1, nv
@@ -808,6 +882,38 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
         end do
       end do
     end do
+  !  n = 10
+  !  do k = l(3),u(3)
+  !    do j = l(2),u(2)
+  !      !dir$ ivdep
+  !      !$omp simd private(dlft,drgt,dcen,dsgn,slop)
+  !      do i = l(1),u(1)
+  !        ! slopes in first coordinate direction
+  !        dlft = (q(i  ,j,k,n) - q(i-1,j,k,n))          ! = dq
+  !        drgt = (q(i+1,j,k,n) - q(i  ,j,k,n))          ! = dq
+  !        dcen = half*(dlft+drgt)                       ! = dq
+  !        dsgn = sign(one, dcen)                        ! sign(slope)
+  !        slop = xslope_type*min(abs(dlft),abs(drgt))   ! slope_type=1: slope=dq, slope_type=2: slope=2*dq 
+  !        !slop = merge(slop,zero,(dlft*drgt)>zero)      ! if both are non-zero, use the smaller one, or times 2
+  !        dq(i,n,1,j,k) = dsgn*min(slop,abs(dcen))      ! the smaller of the twice the smaller slope, and the central one            ! slopes in second coordinate direction
+  !        dlft = (q(i,j  ,k,n) - q(i,j-1,k,n))
+  !        drgt = (q(i,j+1,k,n) - q(i,j  ,k,n))
+  !        dcen = half*(dlft+drgt)
+  !        dsgn = sign(one, dcen)
+  !        slop = xslope_type*min(abs(dlft),abs(drgt))
+  !        !slop = merge(slop,zero,(dlft*drgt)>zero)
+  !        dq(i,n,2,j,k) = dsgn*min(slop,abs(dcen))
+  !        ! slopes in third coordinate direction
+  !        dlft = (q(i,j,k  ,n) - q(i,j,k-1,n))
+  !        drgt = (q(i,j,k+1,n) - q(i,j,k  ,n))
+  !        dcen = half*(dlft+drgt)
+  !        dsgn = sign(one, dcen)
+  !        slop = xslope_type*min(abs(dlft),abs(drgt))
+  !        !slop = merge(slop,zero,(dlft*drgt)>zero)
+  !        dq(i,n,3,j,k) = dsgn*min(slop,abs(dcen))
+  !      end do
+  !    end do
+  !  end do
 
     do k = l(3),u(3)
       do j = l(2),u(2)
@@ -1013,27 +1119,27 @@ end subroutine uslope
 SUBROUTINE trace3d(self)
   IMPLICIT NONE
   class(mhd_t):: self
-  real(dp):: dx, dy, dz, dt
+  real(dp):: dx, dy, dz, dt, dsmax
   integer :: i, j, k, n
-  integer, parameter ::ir=1, iu=2, iv=3, iw=4, ip=5, ia=6, ib=7, ic=8, is=9
+  integer, parameter ::ir=1, iu=2, iv=3, iw=4, ip=5, ia=6, ib=7, ic=8, is=10, itg=9
   real(dp)::dtdx, dtdy, dtdz, smallp
-  real(dp) :: invr
-  real(dp) :: r, u, v, w, p, A, B, C, s
+  real(dp) :: invr, q_visc, ekin, emag, pmag, cs, du, visc_max
+  real(dp) :: r, u, v, w, p,s, A, B, C, s0, tg
   real(dp) :: hLL, hLR, hRL, hRR
   real(dp) :: ELL, ELR, ERL, ERR
   real(dp) :: FLL, FLR, FRL, FRR
   real(dp) :: GLL, GLR, GRL, GRR
-  real(dp) :: drx, dux, dvx, dwx, dpx, dsx, dAx, dBx, dCx
-  real(dp) :: dry, duy, dvy, dwy, dpy, dsy, dAy, dbY, dCy
-  real(dp) :: drz, duz, dvz, dwz, dpz, dsz, dAz, dBz, dCz
+  real(dp) :: drx, dux, dvx, dwx, dpx, dsx, dAx, dBx, dCx, dtgx
+  real(dp) :: dry, duy, dvy, dwy, dpy, dsy, dAy, dbY, dCy, dtgy
+  real(dp) :: drz, duz, dvz, dwz, dpz, dsz, dAz, dBz, dCz, dtgz
   real(dp) :: drx2,dpx2,dry2,dpy2,drz2,dpz2
-  real(dp) :: sr0, su0, sv0, sw0, sp0, ss0, sA0, sB0, sC0
+  real(dp) :: sr0, su0, sv0, sw0, sp0, ss0, sA0, sB0, sC0, tg0
   real(dp) :: AL, AR, BL, BR, CL, CR
   real(dp) :: dALy, dARy, dALz, dARz
   real(dp) :: dBLx, dBRx, dBLz, dBRz
   real(dp) :: dCLx, dCRx, dCLy, dCRy
   real(dp) :: sAL0, sAR0, sBL0, sBR0, sCL0, sCR0
-  real(dp), dimension(:,:,:), allocatable:: rho_t, p_t, s_t
+  real(dp), dimension(:,:,:), allocatable:: rho_t, p_t, s_t, tg_t
   real(dp) :: eff_gamma, off
   real(dp) :: ff(self%gn(1),3), qq(self%gn(1))
   integer:: lo(3), uo(3)
@@ -1081,6 +1187,8 @@ SUBROUTINE trace3d(self)
   dtdy = self%dtime/self%ds(2)
   dtdz = self%dtime/self%ds(3)
   smallp = smallr*smallc**2/gamma
+  dsmax = maxval(self%ds)
+  visc_max=0d0
   !
   ! E = - UxB = BxU
   Ex = ydn(zdn(Uy))*ydn(Bz) - zdn(ydn(Uz))*zdn(By) 
@@ -1144,13 +1252,13 @@ SUBROUTINE trace3d(self)
     else
       ff(:,:) = 0.0_dp
     end if
-    if (associated(self%heating_per_unit_volume)) then
+    if (associated(scratch%heating_per_unit_volume)) then
       do i=lo(1),uo(1)
-        qq(i) = self%heating_per_unit_volume(i,j,k)
+        qq(i) = scratch%heating_per_unit_volume(i,j,k)
       end do
-    else if (associated(self%heating_per_unit_mass)) then
+    else if (associated(scratch%heating_per_unit_mass)) then
       do i=lo(1),uo(1)
-        qq(i) = self%heating_per_unit_mass(i,j,k)*d(i,j,k)
+        qq(i) = scratch%heating_per_unit_mass(i,j,k)*d(i,j,k)
       end do
     else
         qq(:) = 0.0
@@ -1162,7 +1270,7 @@ SUBROUTINE trace3d(self)
     !$omp & dCRy,dCx,dCy,dpx,dpx2,dpy,dpy2,dpz,dpz2,drx,drx2,dry,dry2,drz,drz2,dux, &
     !$omp & duy,duz,dvx,dvy,dvz,dwx,dwy,dwz,invr,p,r,sAL0,sAR0,sBL0,sBR0,sCL0,sCR0, &
     !$omp & sp0,sr0,su0,sv0,sw0,u,v,w, &
-    !$omp & dsx,dsy,dsz,ss0)
+    !$omp & dsx,dsy,dsz,ss0, pmag, cs, du, q_visc)
     do i=lo(1),uo(1)
       r=q(i,j,k,ir)
       u=q(i,j,k,iu)
@@ -1170,6 +1278,7 @@ SUBROUTINE trace3d(self)
       w=q(i,j,k,iw)
       p=q(i,j,k,ip)
       s=q(i,j,k,is)
+      tg=q(i,j,k,itg)
       A=q(i,j,k,iA)
       B=q(i,j,k,iB)
       C=q(i,j,k,iC)
@@ -1202,6 +1311,7 @@ SUBROUTINE trace3d(self)
       dwx = half * dq(i,iw,1,j,k)
       dpx = half * dq(i,ip,1,j,k)
       dsx = half * dq(i,is,1,j,k)
+      dtgx= half * dq(i,itg,1,j,k)
       dpx2= half *dq2(i,ip,1,j,k)
       dBx = half * dq(i,iB,1,j,k)
       dCx = half * dq(i,iC,1,j,k)
@@ -1213,6 +1323,7 @@ SUBROUTINE trace3d(self)
       dwy = half * dq(i,iw,2,j,k)
       dpy = half * dq(i,ip,2,j,k)
       dsy = half * dq(i,is,2,j,k)
+      dtgy= half * dq(i,itg,2,j,k)
       dpy2= half *dq2(i,ip,2,j,k)
       duy = half * dq(i,iu,2,j,k)
       dAy = half * dq(i,iA,2,j,k)
@@ -1225,6 +1336,7 @@ SUBROUTINE trace3d(self)
       dwz = half * dq(i,iw,3,j,k)
       dpz = half * dq(i,ip,3,j,k)
       dsz = half * dq(i,is,3,j,k)
+      dtgz= half * dq(i,itg,3,j,k)
       dpz2= half *dq2(i,ip,3,j,k)
       dAz = half * dq(i,iA,3,j,k)
       dBz = half * dq(i,iB,3,j,k)
@@ -1245,6 +1357,14 @@ SUBROUTINE trace3d(self)
       dCLy = half * dbf(i  ,3,2,j  ,k  )
       dCRy = half * dbf(i  ,3,2,j  ,k+1)
       !
+      pmag=half*(half*(AL+AR)*half*(AL+AR)+ &
+                 half*(BL+BR)*half*(BL+BR)+ &
+                 half*(CL+CR)*half*(CL+CR))
+      cs = sqrt((eff_gamma*p+2d0*pmag)/r)
+      du = dsmax*(cs+2d0*sqrt(u*u+v*v+w*w))
+
+
+      !
       ! Face-centered predicted states
       sAL0 = +(GLR-GLL)*dtdy*half -(FLR-FLL)*dtdz*half
       sAR0 = +(GRR-GRL)*dtdy*half -(FRR-FRL)*dtdz*half
@@ -1261,7 +1381,20 @@ SUBROUTINE trace3d(self)
       CR = CR + sCR0
       !
       ! Source terms (including transverse derivatives)
+
+      ! The negative divergence of the sum of the fluxes of kinetic
+      ! and magnetic energy, PLUS the work done by the sum of the 
+      ! pressure gradient and the Lorents force, MINUS the partial 
+      !derivative with respect to time of the sum of kinetic and 
+      !magnetic energy
       invr = one / r
+      !ekin = half*(u*u+v*v+w*w)*r
+     ! q_visc = r*du*((dux*dux + dvy*dvy + dwz*dwz) + 0.25_dp * &
+     !               ((dux + dvy)*(dux + dvy) + &
+     !                (dwz + dvy)*(dwz + dvy) + &
+     !                (dux + dwz)*(dux + dwz))) 
+     ! q_visc = max(0d0, q_visc)
+     ! visc_max=max(visc_max,q_visc)
       sr0 = (-u*drx-dux*r)*dtdx + (-v*dry-dvy*r)*dtdy + (-w*drz-dwz*r)*dtdz
       su0 = (-u*dux-(dpx+B*dBx+C*dCx)*invr)*dtdx + (-v*duy+B*dAy*invr)*dtdy + (-w*duz+C*dAz*invr)*dtdz
       sv0 = (-u*dvx+A*dBx*invr)*dtdx + (-v*dvy-(dpy+A*dAy+C*dCy)*invr)*dtdy + (-w*dvz+C*dBz*invr)*dtdz
@@ -1269,9 +1402,21 @@ SUBROUTINE trace3d(self)
       sp0 = (-u*dpx-dux*eff_gamma*p)*dtdx &
           + (-v*dpy-dvy*eff_gamma*p)*dtdy &
           + (-w*dpz-dwz*eff_gamma*p)*dtdz
-      ss0 = (-u*dsx*dtdx) &
+      tg0 = ((dtgx*dtdx) &
+          +  (dtgy*dtdy) &
+          +  (dtgz*dtdz))
+      ss0 = ((-u*dsx*dtdx) &
           + (-v*dsy*dtdy) &
-          + (-w*dsz*dtdz)
+          + (-w*dsz*dtdz))!+log(p/(p+sp0)*(r/(r+sr0))**gamma)*half*self%dtime! &
+      !    + (r/p*eff_gamma/(eff_gamma-one) *((p+sp0)/(r+sr0) - (p/r))  &
+      !    - half*(one/(s+sr0)+one/r)*((p+sp0)-p))*self%dtime
+     ! if(ss0/=0) print *, 'bef', ss0, log(p/(p+sp0)*(r/(r+sr0))**gamma)*self%dtime, (log(p/(p+dpx)*(r/(r+drx))**gamma)*dtdx)+(log(p/(p+dpy)*(r/(r+dry))**gamma)*dtdy)+(log(p/(p+dpz)*(r/(r+drz))**gamma)*dtdz)
+
+      ss0 = ss0+(-u*half*log(p/(p+dpx)*(r/(r+drx)))*dtdx)
+      ss0 = ss0+(-v*half*log(p/(p+dpy)*(r/(r+dry)))*dtdy)
+      ss0 = ss0+(-w*half*log(p/(p+dpz)*(r/(r+drz)))*dtdz)
+     ! if(ss0/=0) print *, 'af',ss0, (log(p/(p-dpx)*(r/(r-drx))**gamma)*dtdx),(log(p/(p+dpy)*(r/(r+dry))**gamma)*dtdy),(log(p/(p+dpz)*(r/(r+drz))**gamma)*dtdz)
+
   !write(io_unit%log,'("pred: i,j,k,h,dex,dey,dez,se0 =",3i4,2x,1p,5e11.2)') &
   !i,j,k,h,dex,dey,dez,se0
       !
@@ -1281,8 +1426,10 @@ SUBROUTINE trace3d(self)
       sw0 = sw0 + ff(i,3)*half*self%dtime
       !
       ! Add external heating
-      sp0 = sp0  + (eff_gamma-1d0)*qq(i)*half*self%dtime*r
-      ss0 = ss0  +                 qq(i)*half*self%dtime*r/p
+      sp0 = sp0  + (eff_gamma-1d0)* qq(i)*self%dtime
+      tg0 = tg0  + qq(i)*self%dtime
+      ss0 = ss0  +                 (qq(i) )/p*self%dtime !+(gamma-one)*r/p   &
+         !    *(gamma/(gamma-one)*((p+sp0)/(r+sr0) - p/r) -half*(one/(r+sr0)+one/r)*((p+sp0)-p)) * self%dtime
       !
       ! Evolve entropy instead of pressure
       !sS0 = (-u*dSx)*dtdx + (-v*dSy)*dtdy + (-w*dSz)*dtdz
@@ -1322,6 +1469,7 @@ SUBROUTINE trace3d(self)
       w = w + sw0
       p = p + sp0
       s = s + ss0
+      tg= tg+ tg0
       p = max(p,smallp)
       p_t(i,j,k) = p
       s_t(i,j,k) = s
@@ -1336,6 +1484,7 @@ SUBROUTINE trace3d(self)
       qp(i,iw,1,j,k) = w - dwx
       qp(i,ip,1,j,k) = p - dpx
       qp(i,is,1,j,k) = s - dsx
+      qp(i,itg,1,j,k) = tg - dtgx
       qp(i,iA,1,j,k) = AL
       qp(i,iB,1,j,k) = B - dBx
       qp(i,iC,1,j,k) = C - dCx
@@ -1347,6 +1496,7 @@ SUBROUTINE trace3d(self)
       qm(i,iw,1,j,k) = w + dwx
       qm(i,ip,1,j,k) = p + dpx
       qm(i,is,1,j,k) = s + dsx
+      qm(i,itg,1,j,k) = tg + dtgx
       qm(i,iA,1,j,k) = AR
       qm(i,iB,1,j,k) = B + dBx
       qm(i,iC,1,j,k) = C + dCx
@@ -1358,6 +1508,7 @@ SUBROUTINE trace3d(self)
       qp(i,iw,2,j,k) = w - dwy
       qp(i,ip,2,j,k) = p - dpy
       qp(i,is,2,j,k) = s - dsy
+      qp(i,itg,2,j,k) = tg - dtgy
       qp(i,iA,2,j,k) = A - dAy
       qp(i,iB,2,j,k) = BL
       qp(i,iC,2,j,k) = C - dCy
@@ -1369,6 +1520,7 @@ SUBROUTINE trace3d(self)
       qm(i,iw,2,j,k) = w + dwy
       qm(i,ip,2,j,k) = p + dpy
       qm(i,is,2,j,k) = s + dsy
+      qm(i,itg,2,j,k) = tg + dtgy
       qm(i,iA,2,j,k) = A + dAy
       qm(i,iB,2,j,k) = BR
       qm(i,iC,2,j,k) = C + dCy
@@ -1380,6 +1532,7 @@ SUBROUTINE trace3d(self)
       qp(i,iw,3,j,k) = w - dwz
       qp(i,ip,3,j,k) = p - dpz
       qp(i,is,3,j,k) = s - dsz
+      qp(i,itg,3,j,k) = tg - dtgz
       qp(i,iA,3,j,k) = A - dAz
       qp(i,iB,3,j,k) = B - dBz
       qp(i,iC,3,j,k) = CL
@@ -1391,6 +1544,7 @@ SUBROUTINE trace3d(self)
       qm(i,iw,3,j,k) = w + dwz
       qm(i,ip,3,j,k) = p + dpz
       qm(i,is,3,j,k) = s + dsz
+      qm(i,itg,3,j,k) = tg + dtgz
       qm(i,iA,3,j,k) = A + dAz
       qm(i,iB,3,j,k) = B + dBz
       qm(i,iC,3,j,k) = CR
@@ -1402,6 +1556,7 @@ SUBROUTINE trace3d(self)
       qRT(i,iw,1,j,k) = w + (+dwy+dwz)
       qRT(i,ip,1,j,k) = p + (+dpy2+dpz2)
       qRT(i,is,1,j,k) = s + (+dsy+dsz)
+      qRT(i,itg,1,j,k) = tg + (+dtgy+dtgz)
       qRT(i,iA,1,j,k) = A + (+dAy+dAz)
       qRT(i,iB,1,j,k) = BR+ (   +dBRz)
       qRT(i,iC,1,j,k) = CR+ (+dCRy   )
@@ -1413,6 +1568,7 @@ SUBROUTINE trace3d(self)
       qRB(i,iw,1,j,k) = w + (+dwy-dwz)
       qRB(i,ip,1,j,k) = p + (+dpy2-dpz2)
       qRB(i,is,1,j,k) = s + (+dsy-dsz)
+      qRB(i,itg,1,j,k) = tg + (+dtgy-dtgz)
       qRB(i,iA,1,j,k) = A + (+dAy-dAz)
       qRB(i,iB,1,j,k) = BR+ (   -dBRz)
       qRB(i,iC,1,j,k) = CL+ (+dCLy   )
@@ -1424,6 +1580,7 @@ SUBROUTINE trace3d(self)
       qLT(i,iw,1,j,k) = w + (-dwy+dwz)
       qLT(i,ip,1,j,k) = p + (-dpy2+dpz2)
       qLT(i,is,1,j,k) = s + (-dsy+dsz)
+      qLT(i,itg,1,j,k) = tg + (-dtgy+dtgz)
       qLT(i,iA,1,j,k) = A + (-dAy+dAz)
       qLT(i,iB,1,j,k) = BL+ (   +dBLz)
       qLT(i,iC,1,j,k) = CR+ (-dCRy   )
@@ -1435,6 +1592,7 @@ SUBROUTINE trace3d(self)
       qLB(i,iw,1,j,k) = w + (-dwy-dwz)
       qLB(i,ip,1,j,k) = p + (-dpy2-dpz2)
       qLB(i,is,1,j,k) = s + (-dsy-dsz)
+      qLB(i,itg,1,j,k) = tg + (-dtgy-dtgz)
       qLB(i,iA,1,j,k) = A + (-dAy-dAz)
       qLB(i,iB,1,j,k) = BL+ (   -dBLz)
       qLB(i,iC,1,j,k) = CL+ (-dCLy   )
@@ -1446,6 +1604,7 @@ SUBROUTINE trace3d(self)
       qRT(i,iw,2,j,k) = w + (+dwx+dwz)
       qRT(i,ip,2,j,k) = p + (+dpx2+dpz2)
       qRT(i,is,2,j,k) = s + (+dsx+dsz)
+      qRT(i,itg,2,j,k) = tg + (+dtgx+dtgz)
       qRT(i,iA,2,j,k) = AR+ (   +dARz)
       qRT(i,iB,2,j,k) = B + (+dBx+dBz)
       qRT(i,iC,2,j,k) = CR+ (+dCRx   )
@@ -1457,6 +1616,7 @@ SUBROUTINE trace3d(self)
       qRB(i,iw,2,j,k) = w + (+dwx-dwz)
       qRB(i,ip,2,j,k) = p + (+dpx2-dpz2)
       qRB(i,is,2,j,k) = s + (+dsx-dsz)
+      qRB(i,itg,2,j,k) = tg + (+dtgx-dtgz)
       qRB(i,iA,2,j,k) = AR+ (   -dARz)
       qRB(i,iB,2,j,k) = B + (+dBx-dBz)
       qRB(i,iC,2,j,k) = CL+ (+dCLx   )
@@ -1468,6 +1628,7 @@ SUBROUTINE trace3d(self)
       qLT(i,iw,2,j,k) = w + (-dwx+dwz)
       qLT(i,ip,2,j,k) = p + (-dpx2+dpz2)
       qLT(i,is,2,j,k) = s + (-dsx+dsz)
+      qLT(i,itg,2,j,k) = tg + (-dtgx+dtgz)
       qLT(i,iA,2,j,k) = AL+ (   +dALz)
       qLT(i,iB,2,j,k) = B + (-dBx+dBz)
       qLT(i,iC,2,j,k) = CR+ (-dCRx   )
@@ -1479,6 +1640,7 @@ SUBROUTINE trace3d(self)
       qLB(i,iw,2,j,k) = w + (-dwx-dwz)
       qLB(i,ip,2,j,k) = p + (-dpx2-dpz2)
       qLB(i,is,2,j,k) = s + (-dsx-dsz)
+      qLB(i,itg,2,j,k) = s + (-dtgx-dtgz)
       qLB(i,iA,2,j,k) = AL+ (   -dALz)
       qLB(i,iB,2,j,k) = B + (-dBx-dBz)
       qLB(i,iC,2,j,k) = CL+ (-dCLx   )
@@ -1490,6 +1652,7 @@ SUBROUTINE trace3d(self)
       qRT(i,iw,3,j,k) = w + (+dwx+dwy)
       qRT(i,ip,3,j,k) = p + (+dpx2+dpy2)
       qRT(i,is,3,j,k) = s + (+dsx+dsy)
+      qRT(i,itg,3,j,k) = tg + (+dtgx+dtgy)
       qRT(i,iA,3,j,k) = AR+ (   +dARy)
       qRT(i,iB,3,j,k) = BR+ (+dBRx   )
       qRT(i,iC,3,j,k) = C + (+dCx+dCy)
@@ -1501,6 +1664,7 @@ SUBROUTINE trace3d(self)
       qRB(i,iw,3,j,k) = w + (+dwx-dwy)
       qRB(i,ip,3,j,k) = p + (+dpx2-dpy2)
       qRB(i,is,3,j,k) = s + (+dsx-dsy)
+      qRB(i,itg,3,j,k) = tg + (+dtgx-dtgy)
       qRB(i,iA,3,j,k) = AR+ (   -dARy)
       qRB(i,iB,3,j,k) = BL+ (+dBLx   )
       qRB(i,iC,3,j,k) = C + (+dCx-dCy)
@@ -1512,6 +1676,7 @@ SUBROUTINE trace3d(self)
       qLT(i,iw,3,j,k) = w + (-dwx+dwy)
       qLT(i,ip,3,j,k) = p + (-dpx2+dpy2)
       qLT(i,is,3,j,k) = s + (-dsx+dsy)
+      qLT(i,itg,3,j,k) = tg + (-dtgx+dtgy)
       qLT(i,iA,3,j,k) = AL+ (   +dALy)
       qLT(i,iB,3,j,k) = BR+ (-dBRx   )
       qLT(i,iC,3,j,k) = C + (-dCx+dCy)
@@ -1523,6 +1688,7 @@ SUBROUTINE trace3d(self)
       qLB(i,iw,3,j,k) = w + (-dwx-dwy)
       qLB(i,ip,3,j,k) = p + (-dpx2-dpy2)
       qLB(i,is,3,j,k) = s + (-dsx-dsy)
+      qLB(i,itg,3,j,k) = tg + (-dtgx-dtgy)
       qLB(i,iA,3,j,k) = AL+ (   -dALy)
       qLB(i,iB,3,j,k) = BL+ (-dBLx   )
       qLB(i,iC,3,j,k) = C + (-dCx-dCy)
@@ -1772,7 +1938,8 @@ SUBROUTINE cmpflxm (self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
           qleft (i,6) = qm(i0+i,bt1,xdim,j,k) ! Tangential magnetic field 1
           qleft (i,7) = qm(i0+i,lt2,xdim,j,k) ! Tangential velocity 2
           qleft (i,8) = qm(i0+i,bt2,xdim,j,k) ! Tangential magnetic field 2
-          qleft (i,9) = qm(i0+i,9  ,xdim,j,k) ! Entropy
+          qleft (i,9) = qm(i0+i,9  ,xdim,j,k) ! Temperature
+          qleft (i,10) = qm(i0+i,10  ,xdim,j,k) ! Entropy
           ! Right state
           qright(i,1) = qp(i1+i,1  ,xdim,j,k) ! Mass density
           qright(i,2) = qp(i1+i,5  ,xdim,j,k) ! Pressure
@@ -1782,7 +1949,8 @@ SUBROUTINE cmpflxm (self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
           qright(i,6) = qp(i1+i,bt1,xdim,j,k) ! Tangential magnetic field 1
           qright(i,7) = qp(i1+i,lt2,xdim,j,k) ! Tangential velocity 2
           qright(i,8) = qp(i1+i,bt2,xdim,j,k) ! Tangential magnetic field 2
-          qright(i,9) = qp(i1+i,9  ,xdim,j,k) ! Entropy
+          qright(i,9) = qp(i1+i,9  ,xdim,j,k) ! Temperature
+          qright(i,10) = qp(i1+i,10  ,xdim,j,k) ! Entropy
         end do
 if (self%id==io%id_debug .and. j==8 .and. k==8) then
   do i=1,nvar
@@ -1797,6 +1965,7 @@ end if
         do i=1,n
           fl(i1+i,j,k,1  ) = fgdnv(i,1)  ! Mass density
           fl(i1+i,j,k,5  ) = fgdnv(i,2)  ! Entropy
+          fl(i1+i,j,k,9  ) = fgdnv(i,9)  ! Entropy
           fl(i1+i,j,k,ln ) = fgdnv(i,3)  ! Normal momentum
           fl(i1+i,j,k,bn ) = fgdnv(i,4)  ! Normal magnetic field
           fl(i1+i,j,k,lt1) = fgdnv(i,5)  ! Transverse momentum 1
@@ -1828,7 +1997,8 @@ end if
           qleft (i,6) = qm(i+i1,bt1,xdim,j-1,k) ! Tangential magnetic field 1
           qleft (i,7) = qm(i+i1,lt2,xdim,j-1,k) ! Tangential velocity 2
           qleft (i,8) = qm(i+i1,bt2,xdim,j-1,k) ! Tangential magnetic field 2
-          qleft (i,9) = qm(i+i1,9  ,xdim,j-1,k) ! Entropy
+          qleft (i,9) = qm(i+i1,9  ,xdim,j-1,k) ! Temperature
+          qleft (i,10) = qm(i+i1,10  ,xdim,j-1,k) ! Entropy
           ! Right state
           qright(i,1) = qp(i+i1,1  ,xdim,j  ,k) ! Mass density
           qright(i,2) = qp(i+i1,5  ,xdim,j  ,k) ! Pressure
@@ -1838,7 +2008,8 @@ end if
           qright(i,6) = qp(i+i1,bt1,xdim,j  ,k) ! Tangential magnetic field 1
           qright(i,7) = qp(i+i1,lt2,xdim,j  ,k) ! Tangential velocity 2
           qright(i,8) = qp(i+i1,bt2,xdim,j  ,k) ! Tangential magnetic field 2
-          qright(i,9) = qp(i+i1,9  ,xdim,j  ,k) ! Entropy
+          qright(i,9) = qp(i+i1,9  ,xdim,j  ,k) ! Temperature
+          qright(i,10) = qp(i+i1,10  ,xdim,j  ,k) ! Entropy
         end do
 if (self%id==io%id_debug .and. j==8 .and. k==8) then
   do i=1,nvar
@@ -1853,6 +2024,7 @@ end if
           ! Output fluxes
           fl(i+i1,j,k,1  ) = fgdnv(i,1)  ! Mass density
           fl(i+i1,j,k,5  ) = fgdnv(i,2)  ! Entropy
+          fl(i+i1,j,k,9  ) = fgdnv(i,9)  ! Entropy
           fl(i+i1,j,k,ln ) = fgdnv(i,3)  ! Normal momentum
           fl(i+i1,j,k,bn ) = fgdnv(i,4)  ! Normal magnetic field
           fl(i+i1,j,k,lt1) = fgdnv(i,5)  ! Transverse momentum 1
@@ -1886,7 +2058,8 @@ write(io_unit%log,'(a,i6,3x,a,f8.3)') &
           qleft (i,6) = qm(i+i1,bt1,xdim,j,k-1) ! Tangential magnetic field 1
           qleft (i,7) = qm(i+i1,lt2,xdim,j,k-1) ! Tangential velocity 2
           qleft (i,8) = qm(i+i1,bt2,xdim,j,k-1) ! Tangential magnetic field 2
-          qleft (i,9) = qm(i+i1,9  ,xdim,j,k-1) ! Entropy
+          qleft (i,9) = qm(i+i1,9  ,xdim,j,k-1) ! Temperature
+          qleft (i,10) = qm(i+i1,10  ,xdim,j,k-1) ! Entropy
           ! Right state
           qright(i,1) = qp(i+i1,1  ,xdim,j,k  ) ! Mass density
           qright(i,2) = qp(i+i1,5  ,xdim,j,k  ) ! Pressure
@@ -1896,7 +2069,8 @@ write(io_unit%log,'(a,i6,3x,a,f8.3)') &
           qright(i,6) = qp(i+i1,bt1,xdim,j,k  ) ! Tangential magnetic field 1
           qright(i,7) = qp(i+i1,lt2,xdim,j,k  ) ! Tangential velocity 2
           qright(i,8) = qp(i+i1,bt2,xdim,j,k  ) ! Tangential magnetic field 2
-          qright(i,9) = qp(i+i1,9  ,xdim,j,k  ) ! Ebntropy
+          qright(i,9) = qp(i+i1,9  ,xdim,j,k  ) ! Temperature
+          qright(i,10) = qp(i+i1,10  ,xdim,j,k  ) ! Ebntropy
         end do
 if (self%id==io%id_debug .and. j==8 .and. k==8) then
   do i=1,nvar
@@ -1911,6 +2085,7 @@ end if
           ! Output fluxes
           fl(i+i1,j,k,1  ) = fgdnv(i,1)  ! Mass density
           fl(i+i1,j,k,5  ) = fgdnv(i,2)  ! Entropy
+          fl(i+i1,j,k,9  ) = fgdnv(i,9)  ! Entropy
           fl(i+i1,j,k,ln ) = fgdnv(i,3)  ! Normal momentum
           fl(i+i1,j,k,bn ) = fgdnv(i,4)  ! Normal magnetic field
           fl(i+i1,j,k,lt1) = fgdnv(i,5)  ! Transverse momentum 1
@@ -2038,7 +2213,6 @@ SUBROUTINE cmp_mag_flx (self, qRT, qRB, qLT, qLB, lp1 ,lp2 ,lor ,bp1 , bp2, bor,
   call trace%end (itimer, detailed_timer=detailed_timer)
 !  end associate
 END SUBROUTINE cmp_mag_flx
-
 !===============================================================================
 !> Selection of 1-D solvers
 !===============================================================================
@@ -2050,8 +2224,12 @@ SUBROUTINE solver (self, qleft, qright, fgdnv, n, nvar)
   n1 = size(qleft,1)
   if (self%riemann == 'hlld') then
     call rieman%hlld (qleft, qright, fgdnv, n1, detailed_timer)
+  else if (self%riemann == 'hllc') then
+    call rieman%hllc (qleft, qright, fgdnv, n1, detailed_timer)
   else if (self%riemann == 'llf')then
     call rieman%llf (qleft, qright, fgdnv, n1, detailed_timer)
+  else if (self%riemann == 'roe_ec')then
+    call rieman%roe_ec (qleft, qright, fgdnv, n1, detailed_timer)
   else
     write(*,*)'unknown Riemann solver'
     stop
@@ -2075,8 +2253,9 @@ SUBROUTINE solver_2d (self,qLL,qRL,qLR,qRR,emf,j,k,l,u,nvar,xdim,detailed_timer)
   else if (self%riemann == 'llf')then
     call rieman%llf_2d (qLL,qRL,qLR,qRR,emf,j,k,l,u,nvar,xdim,detailed_timer=detailed_timer)
   else
-    write(*,*)'unknown Riemann 2D solver'
-    stop
+    call rieman%hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l,u,nvar,xdim,detailed_timer=detailed_timer)
+    !write(*,*)'unknown Riemann 2D solver'
+   ! stop
   end if
 END SUBROUTINE solver_2d
 
@@ -2087,14 +2266,183 @@ FUNCTION gas_pressure (self) RESULT (pg)
   integer :: l(3), u(3)
   !-----------------------------------------------------------------------------
   associate (d  => self%mem(:,:,:,self%idx%d ,self%new,1), &
-             s  => self%mem(:,:,:,self%idx%s ,self%new,1))
+             px => self%mem(:,:,:,self%idx%px,self%new,1), &
+             py => self%mem(:,:,:,self%idx%py,self%new,1), &
+             pz => self%mem(:,:,:,self%idx%pz,self%new,1), &
+             bx => self%mem(:,:,:,self%idx%bx,self%new,1), &
+             by => self%mem(:,:,:,self%idx%by,self%new,1), &
+             bz => self%mem(:,:,:,self%idx%bz,self%new,1), &
+             e  => self%mem(:,:,:,self%idx%e ,self%new,1))
   if (isothermal) then
     pg = d*self%csound**2
   else
-    pg = d**gamma*exp((gamma-1d0)*s/d)
+    pg = (gamma-1d0)* &
+      (e-0.5*(up(bx,1)**2+up(by,2)**2+up(bz,3)**2+(px**2+py**2+pz**2)/d))
   end if
   end associate
+  contains
+    !===========================================================================
+    FUNCTION up(f,i) RESULT (g)
+      real, dimension(:,:,:), intent(in):: f
+      real, dimension(size(f,1),size(f,2),size(f,3)):: g
+      integer:: i
+      !.........................................................................
+      g = 0.5*(cshift(f,1,i)+f)
+    END FUNCTION
 END FUNCTION gas_pressure
+
+!===============================================================================
+!> Add gradient of phi gravitational force.  FIXME: This should be in extras
+!===============================================================================
+SUBROUTINE gravitational_force (self)
+  class(mhd_t):: self
+  real, dimension(:,:,:), pointer:: phi, d, et, gradphi1, gradphi2, gradphi3
+  real, dimension(:,:,:,:), pointer:: p
+  integer:: i,j,k
+  real, dimension(3):: wtp1, wtm1
+  real:: etemp
+  !.............................................................................
+  associate (l => self%li, u => self%ui)
+  wtp1 = 0.50 * 4.0 / 3.0 / self%ds
+  wtm1 = 0.25 * 1.0 / 3.0 / self%ds
+  phi => self%mem(:,:,:,self%idx%phi,self%new,1)
+  d   => self%mem(:,:,:,self%idx%d,self%new,1)
+  et  => self%mem(:,:,:,self%idx%e,self%new,1)
+  p   => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
+  allocate (gradphi1(self%gn(1),self%gn(2),self%gn(3)), &
+            gradphi2(self%gn(1),self%gn(2),self%gn(3)), &
+            gradphi3(self%gn(1),self%gn(2),self%gn(3)))
+  !
+  do k=l(3),u(3)
+    do j=l(2),u(2)
+      do i=l(1),u(1)
+        ! calculate energy minus the kinetic energy
+        etemp = et(i,j,k) - 0.5 * p(i,j,k,1)**2 / d(i,j,k) &
+                          - 0.5 * p(i,j,k,2)**2 / d(i,j,k) &
+                          - 0.5 * p(i,j,k,3)**2 / d(i,j,k)
+        ! calculate gradient of phi
+        gradphi1(i,j,k) = wtp1(1) * (phi(i+1,j,k) - phi(i-1,j,k)) &
+                 - wtm1(1) * (phi(i+2,j,k) - phi(i-2,j,k))
+        gradphi2(i,j,k) = wtp1(2) * (phi(i,j+1,k) - phi(i,j-1,k)) &
+                 - wtm1(2) * (phi(i,j+2,k) - phi(i,j-2,k))
+        gradphi3(i,j,k) = wtp1(3) * (phi(i,j,k+1) - phi(i,j,k-1)) &
+                 - wtm1(3) * (phi(i,j,k+2) - phi(i,j,k-2))
+        ! update momentum
+        p(i,j,k,1) = p(i,j,k,1) - self%dtime * d(i,j,k) * gradphi1(i,j,k)
+        p(i,j,k,2) = p(i,j,k,2) - self%dtime * d(i,j,k) * gradphi2(i,j,k)
+        p(i,j,k,3) = p(i,j,k,3) - self%dtime * d(i,j,k) * gradphi3(i,j,k)
+        ! update total energy with new momentum
+        et(i,j,k) = etemp + 0.5 * p(i,j,k,1)**2 / d(i,j,k) &
+                          + 0.5 * p(i,j,k,2)**2 / d(i,j,k) &
+                          + 0.5 * p(i,j,k,3)**2 / d(i,j,k)
+      end do
+    end do
+  end do
+  deallocate (gradphi1, gradphi2, gradphi3)
+  end associate
+END SUBROUTINE gravitational_force
+
+
+
+!===============================================================================
+!> For Riemann solvers we need to convert internal energy to total energy
+!===============================================================================
+SUBROUTINE emag(self, bx, by, bz, e_mag)
+  class(mhd_t):: self
+  integer, dimension(3):: lb, lo, li, ui, uo, ub, n, gn
+  integer:: ix, iy, iz, iz1, i, it, i1, i2, i3, iter
+  real, dimension(:,:,:), pointer:: bx, by, bz, b1, b2, b3, e_mag
+  ! ----------------------------------------------------------------------------
+  do i=1,3
+    lb(i) = self%mesh(i)%lb; lo(i) = self%mesh(i)%lo; li = self%mesh%li
+    ub(i) = self%mesh(i)%ub; uo(i) = self%mesh(i)%uo; ui = self%mesh%ui
+    gn(i) = self%mesh(i)%gn
+  end do
+
+  allocate(b1(gn(1)+1,gn(2)+1,gn(3)+1))
+  allocate(b2(gn(1)+1,gn(2)+1,gn(3)+1))
+  allocate(b3(gn(1)+1,gn(2)+1,gn(3)+1))
+  !
+  b1(:gn(1),:gn(2),:gn(3))=bx
+  b2(:gn(1),:gn(2),:gn(3))=by
+  b3(:gn(1),:gn(2),:gn(3))=bz
+
+  b1(gn(1)+1,:,:)=b1(gn(1),:,:)
+  b2(gn(1)+1,:,:)=b2(gn(1),:,:)
+  b3(gn(1)+1,:,:)=b3(gn(1),:,:)
+
+  b1(:,gn(2)+1,:)=b1(:,gn(2),:)
+  b2(:,gn(2)+1,:)=b2(:,gn(2),:)
+  b3(:,gn(2)+1,:)=b3(:,gn(2),:)
+
+  b1(:,:,gn(3)+1)=b1(:,:,gn(3))
+  b2(:,:,gn(3)+1)=b2(:,:,gn(3))
+  b3(:,:,gn(3)+1)=b3(:,:,gn(3))
+
+  do iter=1,divb_iter
+    call iter_x
+    call iter_y
+    call iter_z
+    call iter_y
+  end do  
+  
+  do iz=1,gn(3)
+    do iy=1,gn(2)
+      do ix=1,gn(1)
+        e_mag(ix,iy,iz) = &
+                         ((b1(ix,iy,iz)+b1(ix+1,iy,iz))**2 + &
+                          (b2(ix,iy,iz)+b2(iy,iy+1,iz))**2 + &
+                          (b3(ix,iy,iz)+b3(iz,iy,iz+1))**2) * 0.125
+      end do
+    end do
+  end do
+
+  deallocate(b1, b2, b3)
+
+contains
+  subroutine iter_x
+    !---------------------------------------------------------------------------
+    ! Right x-face.  Initially unconstrained: b2(z) and b3(y) along edges
+    !---------------------------------------------------------------------------
+    do i1=ui(1),ub(1)
+    do i3=lb(3),ub(3)
+    do i2=lb(2),ub(2)
+      b1(i1+1,i2,i3) =                + b1(i1,i2,i3) &
+                     - b2(i1,i2+1,i3) + b2(i1,i2,i3) &
+                     - b3(i1,i2,i3+1) + b3(i1,i2,i3)
+    end do
+    end do
+    end do
+  end subroutine iter_x
+  subroutine iter_y
+    !---------------------------------------------------------------------------
+    ! Right y-face.
+    !---------------------------------------------------------------------------
+    do i2=ui(2),ub(2)
+    do i3=lb(3),ub(3)
+    do i1=lb(1),ub(1)
+      b2(i1,i2+1,i3) =                + b2(i1,i2,i3) &
+                     - b3(i1,i2,i3+1) + b3(i1,i2,i3) &
+                     - b1(i1+1,i2,i3) + b1(i1,i2,i3)
+    end do
+    end do
+    end do
+  end subroutine iter_y
+  subroutine iter_z
+    !---------------------------------------------------------------------------
+    ! Right z-face: Not known, b3(i1,i2,i3+1)
+    !---------------------------------------------------------------------------
+    do i3=ui(3),ub(3)
+    do i2=lb(2),ub(2)
+    do i1=lb(1),ub(1)
+      b3(i1,i2,i3+1) =                + b3(i1,i2,i3) &
+                     - b1(i1+1,i2,i3) + b1(i1,i2,i3) &
+                     - b2(i1,i2+1,i3) + b2(i1,i2,i3)
+    end do
+    end do
+    end do
+  end subroutine iter_z
+END subroutine emag
 
 !===============================================================================
 !> Set up nbor relations between MHD tasks

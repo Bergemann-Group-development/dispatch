@@ -13,6 +13,7 @@ module riemann_mod
   contains
     procedure:: hlld
     procedure:: hllc
+    procedure:: roe_ec
     procedure, nopass:: hlld_2d
     procedure, nopass:: llf
     procedure, nopass:: llf_2d
@@ -25,23 +26,24 @@ contains
 subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
   IMPLICIT none
   class(riemann_t):: self
-  integer:: ngrid
+  integer:: ngrid, scase
   real(dp),dimension(:,:)::qleft,qright,fgdnv
   LOGICAL:: detailed_timer
   REAL(dp)::SSL,SSR
-  REAL(dp)::re,le,lim
+  REAL(dp)::re,le,lim, tgl, tgr, tgstarl, tgstarr
   REAL(dp)::rl,pl,sl,ul,ecinl,stotl,ptotl,Bl,Cl,wstarl,vtotBl,emagl,SAL,sqrrstarl,vl,wl
   REAL(dp)::rr,pr,sr,ur,ecinr,stotr,ptotr,Br,Cr,wstarr,vtotBr,emagr,SAR,sqrrstarr,vr,wr
   REAL(dp)::cfastl,rcl,rstarl,el,vdotBstarl,vstarl,stotstarstarl,stotstarl,vdotBl
   REAL(dp)::cfastr,rcr,rstarr,er,vdotBstarr,vstarr,stotstarstarr,stotstarr,vdotBr
   REAL(dp)::ustar,ptotstar,estar,vstarstar,wstarstar
-  REAL(dp)::ro,uo,ptoto,so,vo,wo
-  REAL(dp)::A,sgnm
-  REAL(dp)::Bstarl,Bstarr,Cstarl,Cstarr,calfvenl,calfvenr
+  REAL(dp)::ro,uo,ptoto,so,vo,wo,visc, scond, smax, temp, M
+  REAL(dp)::A,sgnm, somax, csl2, csr2, csl, csr, tgo
+  REAL(dp)::alfa_s, alfa_f, alfa_m,tt1,tt2,tt3, tt4, tt5, tt6, bp1, bp2
+  REAL(dp)::Bstarl,Bstarr,Cstarl,Cstarr,calfvenl,calfvenr,cslowl, cslowr
   REAL(dp)::Bo,Co,Bstarstar,Cstarstar,vdotBstarstar,vdotBo,emago
 #define INLINE
 #ifdef INLINE
-  REAL(dp)::d,P,u,v,w,B,C,B2,c2,d2,cf
+  REAL(dp)::d,P,u,v,w,B,C,B2,d2,cf
 #endif
   INTEGER ::ivar,i,icase, ndiff
   logical:: flag, illconditioned
@@ -53,66 +55,79 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
   ndiff = 0
 !define PRIVATE
 #ifdef PRIVATE
-  !$omp simd private(sgnm,d,P,u,v,w,A,B,C,B2,c2,d2,cf,Ptotstar,estar, &
+  !$omp simd private(sgnm,d,P,u,v,w,A,B,C,B2,d2,cf,Ptotstar,estar, &
   !$omp &  sl,rl,vl,ecinl,emagl,stotl,Ptotl,vdotBl,Bl,Cl,cfastl,SSL, &
   !$omp &  sr,rr,vr,ecinr,emagr,stotr,Ptotr,vdotBr,Br,Cr,cfastr,SSR, &
-  !$omp &  rcl,rstarl,el,Bstarl,Cstarl,vstarl,wstarl, &
-  !$omp &  rcr,rstarr,er,Bstarr,Cstarr,vstarr,wstarr, &
-  !$omp &  vdotBstarl,stotstarl,sqrrstarl,calfvenl,SAR, &
+  !$omp &  rcl,rstarl,el,Bstarl,Cstarl,vstarl,wstarl, tgl, tgr, tgo &
+  !$omp &  rcr,rstarr,er,Bstarr,Cstarr,vstarr,wstarr, M,&
+  !$omp &  vdotBstarl,stotstarl,sqrrstarl,calfvenl,SAR, c2l, c2r, cl, cr&
   !$omp &  vdotBstarr,stotstarr,sqrrstarr,calfvenr,SAL, &
-  !$omp &  vstarstar,wstarstar,Bstarstar,Cstarstar,vdotBstarstar, &
+  !$omp &  vstarstar,wstarstar,Bstarstar,Cstarstar,vdotBstarstar,visc, &
+  !$omp &  scond, tt1, tt2, tt3, tt4, tt5, tt6, aa2, alfa_s, alfa_f, bp1,bp2, &
   !$omp &  icase,ro,uo,vo,wo,Bo,Co,Ptoto,so,vdotBo,emago,ustar)
 #endif
+smax=0.0
+somax=0.0
+scase=0
   do i=1,ngrid
     !print '(i3,1p,8e10.2,2x,8e10.2)',i,qleft(i,:),qright(i,:)
     !
     ! Enforce continuity of normal component
     A=half*(qleft(i,4)+qright(i,4))
     sgnm=sign(one,A)
+    scond=0.0
     qleft(i,4)=A; qright(i,4)=A
     !
     ! Left variables
-    rl=qleft(i,1); Pl=qleft(i,2); ul=qleft(i,3); sl=qleft(i,9)
-    vl=qleft(i,5); Bl=qleft(i,6); wl=qleft(i,7); Cl=qleft(i,8)
+    rl=qleft(i,1); Pl=qleft(i,2); ul=qleft(i,3); sl=qleft(i,10)!/qleft(i,1)*(gamma-one)
+    vl=qleft(i,5); Bl=qleft(i,6); wl=qleft(i,7); Cl=qleft(i,8); tgl=qleft(i,9)
     ecinl = half*(ul*ul+vl*vl+wl*wl)*rl
     emagl = half*(A*A+Bl*Bl+Cl*Cl)
     !etotl = El*rl+ecinl+emagl
     Ptotl = Pl + emagl
+    !if (ptotl/=rl**gamma*exp(sl)) print *, ptotl,rl**gamma*exp(sl)
+  !  ptotl=rl**gamma*exp(sl/rl*(gamma-one))
     vdotBl= ul*A+vl*Bl+wl*cl
     !
     ! Right variables
-    rr=qright(i,1); Pr=qright(i,2); ur=qright(i,3); sr=qright(i,9)
-    vr=qright(i,5); Br=qright(i,6); wr=qright(i,7); Cr=qright(i,8)
+    rr=qright(i,1); Pr=qright(i,2); ur=qright(i,3); sr=qright(i,10)!/qright(i,1)*(gamma-one)
+    vr=qright(i,5); Br=qright(i,6); wr=qright(i,7); Cr=qright(i,8); tgr=qright(i,9)
     ecinr = half*(ur*ur+vr*vr+wr*wr)*rr
     emagr = half*(A*A+Br*Br+Cr*Cr)
     !etotr = Er*rr+ecinr+emagr
     Ptotr = Pr + emagr
+   ! ptotr=rr**gamma*exp(sr/rr*(gamma-one))
     vdotBr= ur*A+vr*Br+wr*Cr
     !
     ! Find the largest eigenvalues in the normal direction to the interface
-#ifdef INLINE
+!#ifdef INLINE
     d=qleft(i,1); P=qleft(i,2); u=qleft(i,3); A=qleft(i,4)
     v=qleft(i,5); B=qleft(i,6); w=qleft(i,7); C=qleft(i,8)
     B2 = A*A+B*B+C*C
-    c2 = gamma*P/d
-    d2 = half*(B2/d+c2)
-    cf = sqrt( d2 + sqrt(max(d2*d2-c2*A*A/d,zero)) )
+    csl2 = gamma*P/d
+    csl = sqrt(csl2)
+    d2 = half*(B2/d+csl2)
+    cf = sqrt( d2 + sqrt(max(d2*d2-csl2*A*A/d,zero)) )
+    cslowl = sqrt(max(d2 - sqrt(max(d2*d2-csl2*A*A/d,zero)),zero))
     cfastl=cf
     d=qright(i,1); P=qright(i,2); u=qright(i,3); A=qright(i,4)
     v=qright(i,5); B=qright(i,6); w=qright(i,7); C=qright(i,8)
     B2 = A*A+B*B+C*C
-    c2 = gamma*P/d
-    d2 = half*(B2/d+c2)
-    cf = sqrt( d2 + sqrt(max(d2*d2-c2*A*A/d,zero)) )
+    csr2 = gamma*P/d
+    csr=sqrt(csr2)
+    d2 = half*(B2/d+csr2)
+    cf = sqrt( d2 + sqrt(max(d2*d2-csr2*A*A/d,zero)) )
+    cslowr = sqrt(max(d2 - sqrt(max(d2*d2-csr2*A*A/d,zero)),zero))
     cfastr=cf
-#else
-    CALL find_speed_fast(qleft (i,:),cfastl)
-    CALL find_speed_fast(qright(i,:),cfastr)
-#endif
+    !if (abs(rpsc)>1e-1) print *, rpsc, gamma/(gamma-one)*(ptotr/rr-ptotl/rl)
+!#else
+!    CALL find_speed_fast(qleft (i,:),cfastl)
+!    CALL find_speed_fast(qright(i,:),cfastr)
+!#endif
     !
     ! Compute HLL wave speed
-    SSL=min(ul,ur)-max(cfastl,cfastr)
-    SSR=max(ul,ur)+max(cfastl,cfastr)
+    SSL=min(ul,ur)-max(cfastl,cfastr)!*sqrt((gamma-one)/(two*gamma))
+    SSR=max(ul,ur)+max(cfastl,cfastr)!*sqrt((gamma-one)/(two*gamma))
     !
     lim = 1.0_dp
     !
@@ -150,8 +165,26 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
     endif
 #endif
     vdotBstarl=ustar*A+vstarl*Bstarl+wstarl*Cstarl
+    tgstarl = tgl*(SSL-ul)/(SSL-ustar)
     !etotstarl=((SSL-ul)*etotl-Ptotl*ul+Ptotstar*ustar+A*(vdotBl-vdotBstarl))/(SSL-ustar)
-    stotstarl=((SSL-ul)*sl)/(SSL-ustar)
+   ! stotstarl=((SSL-ul)*sl   +  one/tgstarl   &
+   !          *((ptotstar/rstarl - ptotl/rl) - half*(one/rstarl+one/rl)*(ptotstar-ptotl)) )/(SSL-ustar)
+    !stotstarl=((SSL-ul)*sl   +  one/tgstarl   &
+    !         *((one/rl-one/rstarl)*(ptotstar+ptotl)) )/(SSL-ustar)
+   ! stotstarl=((SSL-ul)*sl  +  one/tgstarl   &
+   !          *(ptotstar*ustar-ptotl*ul)/rcl - half*(ecinr/rr-ecinl/rl) )/(SSL-ustar)
+  !  stotstarl=((SSL-ul)*sl )/(SSL-ustar)
+    scond = (log(ptotl/ptotstar)-log(rl/rstarl)*gamma)
+    scond = scond +half*(ul*ul+vl*vl+wl*wl) - half*(ustar*ustar+vstarl*vstarl+wstarl*wstarl)
+  !  stotstarl=sl!-scond/tgstarl/rstarl!((log(ptotl/ptotstar)-log(rl/rstarl)*gamma))/tgstarl!one/tgstarl   &
+    stotstarl=sl!(SSL-ul)/(SSL-ustar)*(sl-scond/tgstarl/rstarl)!  + ((log(one+ptotl/ptotstar)-log(one+(rl/rstarl)**gamma)))*gamma/(gamma-one))!one/tgstarl   &
+   ! stotstarl=(SSL-ul)/(SSL-ustar)*sl  + scond/tgstarl!one/tgstarl   &
+             !*(gamma/(gamma-one)*(ptotstar/rstarl - ptotl/rl) - half*(one/rstarl+one/rl)*(ptotstar-ptotl))  
+
+    ! remnoved gamma/(gamma-one)* from first term
+    !print *, 's1', stotstarl
+    !stotstarl=(SSL-ul)*(sl+(Ptotl*ul-Ptotstar*ustar)*rstarl/ptotstar/(gamma-1)+A*(vdotBl-vdotBstarl))/(SSL-ustar)
+    !print *, 's2', stotstarl
     sqrrstarl=sqrt(rstarl)
     calfvenl=abs(A)/sqrrstarl
     SAL=ustar-calfvenl
@@ -181,10 +214,27 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
 #endif
     !
     vdotBstarr=ustar*A+vstarr*Bstarr+wstarr*Cstarr
+    tgstarr = tgr*(SSR-ur)/(SSR-ustar)
     !etotstarr=((SSR-ur)*etotr-Ptotr*ur+Ptotstar*ustar+A*(vdotBr-vdotBstarr))/(SSR-ustar)
-    stotstarr=((SSR-ur)*sr)/(SSR-ustar)
+    !stotstarr=((SSR-ur)*sr -  one/tgstarr   &
+    !         *((one/rr-one/rstarr)*(ptotr+ptotstar))) /(SSR-ustar)
+   ! stotstarr=((SSR-ur)*sr -  one/tgstarr   &
+   !          *(ptotstar*ustar-ptotr*ur)/rcr - half*(ecinl/rl-ecinr/rr)) /(SSR-ustar)
+   !  stotstarr=((SSR-ur)*sr) /(SSR-ustar)
+    scond = (log(ptotr/ptotstar)-log(rr/rstarr)*gamma)
+    scond = scond -half*(ur*ur+vr*vr+wr*wr) + half*(ustar*ustar+vstarr*vstarr+wstarr*wstarr)
+  !  stotstarr=sr!+scond/tgstarr/rstarr!((log(ptotr/ptotstar)-log(rr/rstarr)*gamma))/tgstarr!+((log(ptotr/ptotstar)+log(rr/rstarr)*gamma)/tgstarr)!one/tgstarr   &
+    stotstarr=sr!(SSR-ur)/(SSR-ustar)*(sr+scond/tgstarr/rstarr)! - ((log(one+ptotr/ptotstar)-log(one+(rr/rstarr)**gamma)))*gamma/(gamma-one))!one/tgstarr   &
+    ! stotstarr=(SSR-ur)/(SSR-ustar)*sr -scond/tgstarr!one/tgstarr   &
+           !  *(gamma/(gamma-one)*(ptotr/rr-ptotstar/rstarr) - half*(one/rr+one/rstarr)*(ptotr-ptotstar))
+          !   )
+
+    ! removed gamma/(gamma-one)
+    !print *, 's1', stotstarr
+    !stotstarr=(SSR-ur)*(sr+(Ptotr*ur-Ptotstar*ustar)*rstarr/ptotstar/(gamma-1)+A*(vdotBr-vdotBstarr))/(SSr-ustar)
+    !print *, 's2', stotstarr
     sqrrstarr=sqrt(rstarr)
-    calfvenr=abs(A)/sqrrstarr
+    calfvenr=abs(A)/sqrrstarr 
     SAR=ustar+calfvenr
     !
     ! Double star region variables
@@ -199,7 +249,7 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
     stotstarstarr=stotstarr!+sgnm*sqrrstarr*(vdotBstarr-vdotBstarstar)
     !
     ! Sample the solution at x/t=0
-    if(SSL>0d0)then
+    if(SSL>=0d0)then
        icase=1
        ro=rl
        uo=ul
@@ -208,10 +258,77 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
        Bo=Bl
        Co=Cl
        Ptoto=Ptotl
-       !etoto=etotl
+       tgo=tgl
        so=sl
+       M = uo/csl
        vdotBo=vdotBl
        emago=emagl
+      ! M = uo/csl
+      ! if (csl==cfastl) then
+         alfa_f = sqrt(max(0.0,(csl2-cslowl*cslowl)/(cfastl*cfastl-cslowl*cslowl)))
+         alfa_s = sqrt(max(0.0,(cfastl*cfastl-csl2)/(cfastl*cfastl-cslowl*cslowl)))
+         alfa_m = sqrt(max(0.0,(csl2-cfastl*cfastl)/(cfastl*cfastl-cslowl*cslowl)))
+         bp1 = sqrt(A*A+Co*Co)
+         bp1 = merge(Bo/bp1,one/sqrt(two),bp1>0.0)
+         bp2 = sqrt(A*A+Bo*Bo)
+         bp2 = merge(Co/bp2,one/sqrt(two),bp2>0.0)
+         !tt1 = half
+     !     print *, ecinl, ecinl/rl, ecinr, ecinr/rr
+         tt2 = + alfa_f*(ecinl/rl)!((uo*uo+vo*vo+wo*wo)/2-(cfastl*cfastl)/2)*ro!(ecinl-ecinr)
+         !tt2 = + alfa_f*ecinl!(uo*uo-cfastl*cfastl)*ro!(ecinl-ecinr)
+         tt3 = + (ul-SSL)*alfa_s*ro*sqrt((Co*Co+Bo*Bo)/ro)
+         tt4 = + alfa_f*Ptoto/(gamma-one)
+         tt4 = +alfa_f*csl2/(gamma-one)
+       !  tt4 = + alfa_f*csl2*ro/(gamma-one)*(ul/(ul-ssl)-ssl/csl)!*((uo/(ul-SSL))**2-one)
+         tt5 = + alfa_f*cfastl*(ul-SSL)!ssl/(ul-SSL)
+         tt6 = - alfa_s*cslowl*ro*sgnm*(vo*bp1+wo*bp2)
+         scond = log(ptoto+ro)+one/tgl *(ptoto/ro+tt2)!(tt2+tt4)!(((ptotl*ul)/rcl - tt2)+tzt3/rl+tt4/ro+tt5/ro+tt6/rl)!*sqrt(ro/ptoto)*SSL/(gamma-one)
+         tt2 = log(Ptoto)
+         tt3=(gamma+one)*M*M/((gamma-one)*M*M+two)
+         tt4= log(tt3**gamma)
+         M = ul/(ul-ssl)
+
+         scond = log(one+ptoto)-log(one+ro**gamma)+uo*ro*log(one+half*uo*uo)!+log(one+ecinl)*gamma)!(log(ptoto)-log(ro))!+half*log(ptoto/ro))!+tt2!+tt2!+alfa_f*ecinl/rl/tgo!*tt2!/tgo!+tt5/tgl/ro
+         scond=ssl*scond*(gamma+1)/(gamma-one)
+         scond=(M-1)*(log(ptoto*ro**gamma)+half*uo*uo)
+         scond=((log(ptoto)-log(ro**gamma))/(gamma-one))
+         tt1=ssl*((log(ptoto)+log(ro**gamma))+half*uo*uo)/(gamma-one)
+         scond = log(ptoto)+log(ro**gamma)+log(ro*half*(ul*ul))
+         tt1 = log(ptoto)!+log(ptoto)-log(ro)*gamma
+         scond = (M*M-one)*(log(ptoto/ro)+half*uo*uo)!+log(one+half*(ul*ul))
+         !print *, so, scond
+         !csl/(ul-ssl)*
+        ! scond = log(one+ptoto)+log(one+ro**gamma)+m/gamma*half*(uo*uo+vo*vo+wo*wo)
+       !  scond = log(one+ptoto)+log(one+ro**gamma) + half*uo*uo
+         !print *, ecinl, gamma/(gamma-one)*ptoto/ro, ecinl/ro ,(log(ptoto)-log(ro)*gamma)
+         !scond = half*ssl*(log(ptoto)-log(ro)*gamma)!(log(ptoto)-log(ro))!+half*log(ptoto/ro))!+tt2!+tt2!+alfa_f*ecinl/rl/tgo!*tt2!/tgo!+tt5/tgl/ro
+        !print *, tt1,tt2,tt1+log(tt2),-log(ptoto)+log(ro)*gamma, log(one/ptoto)+log(ro)*gamma
+        ! scond=ssl*(tt1*tt2)
+         !scond=tgo*(log(ptoto)-log(ro)*gamma)
+        ! print *, scond, ssl, log(tgo)!, (log(ptoto)+log(ro)*gamma),  (log(ptoto)+log(ro)*gamma)*tgo
+         !print *, scond, ssl, (log(ptoto)+log(ro)*gamma)
+         ! print *, M, ssl, (sqrt(M*M-one))
+         !scond=ssl*log(alfa_f*sqrt(ptoto*ro)/tgo*gamma/(gamma-one))
+         ! print *, m, sqrt(one-(gamma+one)*(m*m-one)/((two*gamma*M*M)-(gamma-one)))
+       !  print *, M, log(m), sqrt(m), m*m
+    ! print *, scond, tt3,tt5!sqrt((ul/(ul-ssl)-1)**2), ssl/sqrt((ul/(ul-ssl)-1)**2*2)!ssl, ssl/(gamma-one), gamma*ssl, ssl/ul/(gamma-one), ssl/(ul-ssl)/(gamma-one)
+         !print *, scond,log(ptoto*ro), log(ptoto), log(ro**gamma),uo*ptoto/tgo/ro
+         !print *, scond, scond*ptoto/tgo,ptoto/tgo, ptoto/tgo/ro
+        ! print *, scond, tt2, tt1, log(ptoto*ro), uo*log(ptoto)*tt2
+        ! print *, scond, uo*ro*(tt1*tt2)*Ptoto/(ro*tgo),  alfa_f*(ecinl/rl)/tgl/ro,alfa_f*csl2/(gamma-one)
+         !scond = ptoto/(ro*tgo)*(tt2+tt4)!(tt2+tt4)!(((ptotl*ul)/rcl - tt2)+tt3/rl+tt4/ro+tt5/ro+tt6/rl)!*sqrt(ro/ptoto)*SSL/(gamma-one)
+    ! print *, scond, tt2, tt3, tt4
+         ! print *, scond,ssl/csl,((uo/(ul-SSL))**2-one), ul/(ul-ssl), tt4/ro, tt4/ro*one/tgl
+         !print *, scond, sqrt(ro/ptoto)*SSL, uo/(ul-SSL), tt4, tt5, alfa_f*cfastl*rcl
+         !print *, tt5, tt4, tt2, scond,sqrt(ro/ptoto)
+        ! print *, scond, ssl
+    !     if (alfa_f>1) error stop "end"
+         ! else
+      !  scond = 0
+       !end if
+
+     !  print *, scond, (aa2-cfastl*cfastl),tt4/rr, tt5/rr
+  !     print *, 'ic1',so, scond
     else if(SAL>0d0)then
        icase=2
        ro=rstarl
@@ -221,10 +338,23 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
        Bo=Bstarl
        Co=Cstarl
        Ptoto=Ptotstar
-       !etoto=etotstarl
-       so=stotstarl
+       so=stotstarl 
+       tgo=tgstarl
+       scond=0
+        M = ul/(ul-ssl)
+       tt4 = sign(one,rl)
+       tt5=(csl-(ul-ssl))*ro/tgo*gamma/(gamma-one)
+       tt1 = log(ptoto)+log(ro**gamma)
+       scond=0
+       tt1=0
        vdotBo=vdotBstarl
        emago=half*(A*A+Bo*Bo+Co*Co)
+    !   print *, 'c2', so
+    !   print *, csl, ul-ssl, csl/(ul-ssl)
+       scond=0!log(ptoto)-log(ro)*gamma+half*uo*uo!log(ptoto)+log(one+ro*half*(ul*ul))
+       !scond = -M*(half*(uo*uo+vo*vo+wo*wo))
+     !  scond=merge(-(log(ptoto)+log(ro**gamma)),0.0,m>1.0)
+       !if (M>0.8) print *,  m, ul/(ul-ssl),ssl, ul, ur, (SSL-ul)/(SSL-ustar),(SSR-ur)/(SSR-ustar)
     else if(ustar>0d0)then
        icase=3
        ro=rstarl
@@ -234,12 +364,18 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
        Bo=Bstarstar
        Co=Cstarstar
        Ptoto=Ptotstar
-       !etoto=etotstarstarl
        so=stotstarstarl
+       tgo=tgstarl
+       M = uo/csl
+       tt1 = log(ptoto)+log(ro**gamma)
+       tt1=0
+       scond=0
        vdotBo=vdotBstarstar
        emago=half*(A*A+Bo*Bo+Co*Co)
+       !print *, 'ic3'
     else if(SAR>0d0)then
        icase=4
+       !print *, 'c4'
        ro=rstarr
        uo=ustar
        vo=vstarstar
@@ -247,12 +383,20 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
        Bo=Bstarstar
        Co=Cstarstar
        Ptoto=Ptotstar
-       !etoto=etotstarstarr
        so=stotstarstarr
+       tgo=tgstarr
+       scond=0
+       M = -uo/csr
+       tt1 = log(ptoto)+log(ro**gamma)
+       tt1=0
+       scond=0
        vdotBo=vdotBstarstar
        emago=half*(A*A+Bo*Bo+Co*Co)
     else if (SSR>0d0)then
        icase=5
+   !   if (abs(one/tgstarr   &
+   !          *(gamma/(gamma-one)*(ptotstar/rstarr-ptotr/rr) - half*(one/rr+one/rstarr)*(ptotstar-ptotr)))>1.0) print *, 'sr', one/tgstarr   &
+   !          *(gamma/(gamma-one)*(ptotstar/rstarr-ptotr/rr) - half*(one/rr+one/rstarr)*(ptotstar-ptotr))
        ro=rstarr
        uo=ustar
        vo=vstarr
@@ -261,23 +405,82 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
        Co=Cstarr
        Ptoto=Ptotstar
        so = stotstarr
-       !etoto=etotstarr
+       tgo=tgstarr
+       scond=0
+      ! scond=ecinr/tgo
+    !   scond = one/tgstarr *(gamma/(gamma-one)*((ptoto*uo - ptotr*ur)/rcr - tt2)+tt4/ro)!+tt3/ro+tt4/ro+tt5/ro+tt6/ro)
        vdotBo=vdotBstarr
        emago=half*(A*A+Bo*Bo+Co*Co)
+       M=uo/(SSR-ur)
+       tt1 = sign(one,ro)
+       tt4 = sign(one,rr)
+       tt5=(csl-(ul-ssl))*ro/tgo*gamma/(gamma-one)
+       tt1 = (log(ptotr/ptoto)+tt4*log(rr/ro))
+       tt1 = log(ptoto)+log(ro**gamma)
+       scond=0!-log(ptoto)+log(ro)*gamma-half*uo*uo!-(log(ptoto)+log(one+ro*half*(ul*ul)))
+       !scond = -M*(half*(uo*uo+vo*vo+wo*wo))
+      ! scond=merge((log(ptoto)+log(ro**gamma)),0.0,m>1.0)
+       tt1=0
+     !  print *, 'ic5', -rstarr*((log(ptotr/ptotstar)+log(rr/rstarr)*gamma))
+   !  scond = -(log(ptoto+emagr)-log(ro)*gamma+log(one+ecinr))!+log(ro)*gamma))!+log(one+ssr*)*gamma)
+     !  scond = -ur*scond/(gamma-one)
+     
+       ! scond = -ptoto/tgo/ro*(tt1*log(ptoto))+log(abs(ro)**(tt1*gamma))
+    !   print *, scond, tt1
+   !    scond = ptoto/tgo/ro*(log(ptoto)+log(ro)**gamma)+alfa_f*ecinl/rl/tgo
+     !if (so /= ((SSR-ur)*sr) /(SSR-ustar) +  one/tgstarr   &
+     !        *(gamma/(gamma-one)*(ptotr/rr- ptotstar/rstarr) - half*(one/rr+one/rstarr)*(ptotr-ptotstar))) print *, 'ic5', so, ((SSR-ur)*sr) /(SSR-ustar) +  one/tgstarr   &
+     !        *(gamma/(gamma-one)*(ptotr/rr- ptotstar/rstarr) - half*(one/rr+one/rstarr)*(ptotr-ptotstar))
     else
        icase=6
+       
        ro=rr
        uo=ur
        vo=vr
        wo=wr
        Bo=Br
        Co=Cr
-       so=sr
+       so=sr 
+       tgo=tgr
        Ptoto=Ptotr
-       !etoto=etotr
        vdotBo=vdotBr
        emago=emagr
+ !      if (csr==cfastr) then
+         alfa_f = sqrt(max(0.0,(csr2-cslowr*cslowr)/(cfastr*cfastr-cslowr*cslowr)))
+         alfa_s = sqrt(max(0.0,(cfastr*cfastr-csr2)/(cfastr*cfastr-cslowr*cslowr)))
+         bp1 = sqrt(A*A+Co*Co)
+         bp1 = merge(Bo/bp1,one/sqrt(two),bp1>0.0)
+         bp2 = sqrt(A*A+Bo*Bo)
+         bp2 = merge(Co/bp2,one/sqrt(two),bp2>0.0)
+         tt1 = -  sqrt(one/(half*ro*gamma))!one/(two*gamma) *  (uo-cfastr)
+         tt2 = + alfa_f*(ecinr/rr-ecinl/rl)
+         tt3 = + (SSR-ur)*alfa_s*ro*sqrt((Co*Co+Bo*Bo)/ro)
+         tt4 = + alfa_f*csr2*gamma/(gamma-one)*csr/(SSR-ur)!sqrt(ro/ptoto)*SSR!*csr/(ssr-ur)
+         tt5 = - alfa_f*cfastr*ro*SSR
+         tt6 = + alfa_s*cslowr*ro*sgnm*(vo*bp1+wo*bp2)
+         scond = SSR*one/tgr *((gamma/(gamma-one)*(ptotr*ur - ptotl*ul)/rcr - tt2)+tt3/rr+tt4/rr+tt5/rr+tt6/rr)
+         M = -uo/(SSR-ur)
+       scond = (log(ptoto)-log(ro**gamma)+half*ssr*ssr*ro/(gamma-one))!+log(ro)*gamma))!+log(one+ssr*)*gamma)
+       scond = -(M-1)*(log(ptoto*ro**gamma)+half*uo*uo)
+       scond = ((log(ptoto)-log(ro**gamma)))
+       tt1=ssr*((log(ptoto)+log(ro**gamma))+half*uo*uo)/(gamma-one)
+     !  print *, -scond
+       tt1 = ssr*(log(ptoto)-log(ro))
+     !  tt2 = merge (ptotr/(rr-rl),0.0, (rr-rl)/=0.0)
+       scond = -(M*M-one)*half*uo*uo
+      ! print *, (M*M-one), tt2, scond
+   !    scond = -(log(one+ptoto)+log(one+ro**gamma))-m/gamma*half*(uo*uo+vo*vo+wo*wo)
+     !  scond = -(log(one+ptoto)+log(one+ro**gamma) + half*uo*uo)
+       !   print *, m, (m-1), sqrt(m-1), m*m-1, (m*m-1)/gamma, m/gamma
+!1.244341      0.2443413      0.4943089      0.5483851      0.7405303  
+         !  print *, scond, sqrt(ro/ptoto)*SSR, ro/ptoto*SSR, uo/(SSR-ur)
+  !     else
+  !       scond = 0
+  !     end if
     end if
+   ! print *, 'cf,cs,af,as,aa2', cfastl, cfastr, cslowl, cslowr,alfa_f, alfa_s, aa2
+   ! print *, 'tt', tt1, tt2, tt3, tt4, tt5, tt6
+   ! print *, 'icase', icase, scond, ro*(so*uo)/(gamma-one)
     !---------------------------------------------------------------------------
     ! Add a diffusive flux in the down grad(ln(rho)) direction, which is only
     ! nonzero when the smallest of the left/right density is within a factor 10
@@ -287,18 +490,317 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
     ustar = alog(rl/rr)*max(0.0, alog10((10.*smallr)/min(rl,rr)))
     ustar = 0.25*max(cfastr,cfastl)*min(1.0, max(-1.0, ustar))
     uo = uo + ustar
+    if (abs(so*uo)>abs(somax)) somax=so*uo
     !
     ndiff = ndiff + merge(1,0,abs(ustar)>0.0)
     !
+  !  if (so/= ro*log(ptoto/ro**gamma)/(gamma-one)) print *, so, ro*log(ptoto/ro**gamma)/(gamma-one)
     ! Compute the Godunov flux
     fgdnv(i,1) = ro*uo
-    fgdnv(i,2) = ro*uo*so
-    fgdnv(i,3) = ro*uo*uo+Ptoto+emago*(lim-1.0_dp)-A*A*lim
+    !fgdnv(i,2) = so*uo + log(ptoto+ro)+one/tgo *((uo*uo+vo*vo+wo+wo)*half)!scond
+    fgdnv(i,2) = uo*so+tt1!ro*log(ptoto/ro**gamma)/(gamma-one)
+   ! print *, (scond-half*((uo*uo+Ptoto)**2+uo*uo*vo*vo+uo*uo*wo*wo)*ro)/tgo
+  ! print *,icase,so*uo,so*uo+scond, log(ptoto), log(ro**gamma)
+  !  print *, sl, sr, stotstarl,stotstarr
+  !  if (scond/=0) print *, icase, scond, so*uo
+    fgdnv(i,3) = ro*uo*uo+Ptoto+emago*(lim-one)-A*A*lim
     fgdnv(i,4) = zero
     fgdnv(i,5) = ro*uo*vo-A*Bo*lim
     fgdnv(i,6) = Bo*uo-A*vo
     fgdnv(i,7) = ro*uo*wo-A*Co*lim
     fgdnv(i,8) = Co*uo-A*wo
+    !+log(one+ecinl)*gamma)!(log(ptoto)-log(ro))!+half*log(ptoto/ro))!+tt2!+tt2!+alfa_f*ecinl/rl/tgo!*tt2!/tgo!+tt5/tgl/ro
+    !scond=scond*(gamma+1)/(gamma-one)
+    fgdnv(i,9) = scond!half*uo*uo!scond!(-log(ptoto/ro**gamma)+half*uo*uo)!*(gamma-one)!+half*uo*uo)/(gamma+one)
+    if (abs(scond)>abs(smax)) then
+      scase=icase
+      smax = scond
+    end if
+    !print *, so, scond, ro, uo, ro*(so*uo)/(gamma-one)+0.5*scond
+  end do
+ ! error stop "end"
+!#define ATOMIC
+#ifdef ATOMIC
+  !$omp atomic
+  self%ndiff = self%ndiff + ndiff
+  !$omp atomic
+  self%nsolu = self%nsolu + ngrid
+#endif
+  if (detailed_timer) &
+    call timer%end (itimer)
+
+end subroutine hlld
+
+!===============================================================================
+!===============================================================================
+subroutine roe_ec (self, qleft, qright, fgdnv, ngrid, detailed_timer)
+  IMPLICIT none
+  class(riemann_t):: self
+  integer:: ngrid
+  real(dp),dimension(:,:)::qleft,qright,fgdnv
+  LOGICAL:: detailed_timer
+  !
+  REAL(dp)::A,sgnm, arbit
+  REAL(dp)::z1l, z1r, z5l, z5r, lnz5, lnz1, avz5, avz1, ecin
+  REAL(dp)::d, P, u, v, w, B, C, sqd
+  REAL(dp)::r_hat, p_hat1, u_hat1, v_hat1, w_hat1
+  REAL(dp)::       p_hat2, u_hat2, v_hat2, w_hat2
+  REAL(dp)::       A_hat , B_hat , C_hat , AB_hat 
+  REAL(dp)::       A_dot , B_dot , C_dot , BC_hat 
+  REAL(dp):: alfa_f, alfa_s, beta1, beta2, beta3, aa, aa2, bb2, cc, cs, cf, cf2, cs2
+  REAL(dp):: b_perp
+  REAL(dp):: matR(8,8), matRT(8,8), Tdiag(8), diss(8), jump(8), inter(8,8),stab(8)
+  REAL(dp)::rl,pl,sl,ul,Bl,Cl,wstarl,vl,wl
+  REAL(dp)::rr,pr,sr,ur,Br,Cr,wstarr,vr,wr
+  REAL(dp)::ro,uo,so,vo,wo, Bo, Co
+  INTEGER ::ivar,i,icase, ndiff, im
+  logical:: flag, illconditioned
+  integer, save:: itimer=0
+  !.............................................................................
+  if (detailed_timer) &
+    call timer%begin('riemann_t%hlld',  itimer=itimer)
+  !
+  ndiff = 0
+!define PRIVATE
+#ifdef PRIVATE
+  !$omp simd private(sgnm,d,P,u,v,w,A,B,C,B2,c2,d2,cf,Ptotstar,estar, &
+  !$omp &  sl,rl,vl,ecinl,emagl,stotl,Ptotl,vdotBl,Bl,Cl,cfastl,SSL, &
+  !$omp &  sr,rr,vr,ecinr,emagr,stotr,Ptotr,vdotBr,Br,Cr,cfastr,SSR, &
+  !$omp &  rcl,rstarl,el,Bstarl,Cstarl,vstarl,wstarl, &
+  !$omp &  rcr,rstarr,er,Bstarr,Cstarr,vstarr,wstarr, &
+  !$omp &  vdotBstarl,stotstarl,sqrrstarl,calfvenl,SAR, &
+  !$omp &  vdotBstarr,stotstarr,sqrrstarr,calfvenr,SAL, &
+  !$omp &  vstarstar,wstarstar,Bstarstar,Cstarstar,vdotBstarstar,visc, &
+  !$omp &  icase,ro,uo,vo,wo,Bo,Co,Ptoto,so,vdotBo,emago,ustar)
+#endif
+  do i=1,ngrid
+    !print '(i3,1p,8e10.2,2x,8e10.2)',i,qleft(i,:),qright(i,:)
+    !
+    ! Enforce continuity of normal component
+    A=half*(qleft(i,4)+qright(i,4))
+    sgnm=sign(one,A)
+    arbit=1.0_dp/sqrt(2.0_dp)
+    qleft(i,4)=A; qright(i,4)=A
+    !
+    ! Left variables
+    rl=qleft(i,1); Pl=qleft(i,2); ul=qleft(i,3); sl=qleft(i,9)/qleft(i,1)*(gamma-one)
+    vl=qleft(i,5); Bl=qleft(i,6); wl=qleft(i,7); Cl=qleft(i,8)
+    !
+    ! Right variables
+    rr=qright(i,1); Pr=qright(i,2); ur=qright(i,3); sr=qright(i,9)/qright(i,1)*(gamma-one)
+    vr=qright(i,5); Br=qright(i,6); wr=qright(i,7); Cr=qright(i,8)
+    ! Compute Z-values
+    z1l  = sqrt(rl/Pl)
+    z1r  = sqrt(rr/Pr)
+    z5l  = sqrt(rl*Pl)
+    z5r  = sqrt(rr*Pr)
+    lnz1 = log_mean(z1l,z1r)
+    avz1 = aver(z1l,z1r)
+    lnz5 = log_mean(z5l,z5r)
+    avz5 = aver(z5l,z5r)
+    ! Compute averaged quantities and products
+    u = aver(ul,ur)
+    v = aver(vl,vr)
+    w = aver(wl,wr)
+    d = aver(rl,rr)
+    sqd = sqrt(d)
+    P = aver(Pl,Pr)
+    B = aver(Bl,Br)
+    C = aver(Cl,Cr)
+    r_hat  = avz1*lnz5
+    p_hat1 = avz5/avz1
+    p_hat2 = (gamma+1.0_dp)/(2.0_dp*gamma)*lnz5/lnz1+(gamma-1.0_dp)/(2.0_dp*gamma)*avz5/avz1
+    u_hat1 = aver(z1l*ul,z1r*ul)/avz1
+    v_hat1 = aver(z1l*vl,z1r*vl)/avz1
+    w_hat1 = aver(z1l*wl,z1r*wl)/avz1
+    z1l = z1l*z1l; z1r=z1r*z1r
+    avz1 = aver(z1l,z1r)
+    u_hat2 = aver(z1l*ul,z1r*ul)/avz1
+    v_hat2 = aver(z1l*vl,z1r*vl)/avz1
+    w_hat2 = aver(z1l*wl,z1r*wl)/avz1
+    A_hat  = A
+    B_hat  = aver(Bl,Br)
+    C_hat  = aver(Cl,Cr)
+    A_dot  = A * A
+    B_dot  = aver(Bl*Bl,Br*Br)
+    C_dot  = aver(Cl*Cl,Cr*Cr)
+    AB_hat = aver(A*Bl,A*Br)
+    BC_hat = aver(A*Cl,A*Cr)
+    ! Compute entropy conserving flux
+    ro = r_hat*u_hat1
+    uo = p_hat1 + r_hat*u_hat1*u_hat1 + 0.5_dp*(A_dot+B_dot+C_dot) - A_dot
+    vo = r_hat*u_hat1*v_hat1 - AB_hat
+    wo = r_hat*u_hat1*w_hat1 - BC_hat
+    so = gamma/(gamma-1.0_dp)*u_hat1*p_hat2 + 0.5_dp*r_hat*u_hat1*&
+         (u_hat1*u_hat1 + v_hat1*v_hat1 + w_hat1*w_hat1) &
+         + u_hat2*(B_hat*B_hat + C_hat*C_hat) &
+         - A_hat *(v_hat2*B_hat + w_hat2*C_hat)
+    Bo = u_hat2*B_hat - v_hat2*A
+    Co = u_hat2*C_hat - w_hat2*A
+    ! Stabilize based on propagating plane-wave solutions
+    ! Compute the convenience functions
+   ! print *, 'src', ro, uo, vo, wo, so, bo, co
+    ecin = (u*u + v*v + w*w)* 0.5_dp
+    beta1 = merge(A/(B*C),A/arbit,B*C>0.0_dp)
+    beta2 = merge(B/(A*C),B/arbit,A*C>0.0_dp)
+    beta3 = merge(C/(A*B),C/arbit,A*B>0.0_dp)
+    aa2 = gamma*p/d
+    aa  = sqrt(aa2)
+    bb2 = A*A+B*B+C*C
+    b_perp = sqrt(B*B+C*C)
+    cc = sqrt((aa2+bb2)*(aa2+bb2)-4.0_dp*aa2*A*A)
+    cf2 = 0.5_dp*((aa2+bb2)+cc)              ! Fast mode wave
+    cs2 = 0.5_dp*((aa2+bb2)-cc)              ! Slow mode wave
+    cf  = sqrt(cf2)
+    cs  = sqrt(cs2)
+    alfa_f = (aa2-cs2)/(cf2-cs2)
+    alfa_s = (cf2-aa2)/(cf2-cs2)
+    ! ---------------------------------------------
+    ! Fill in the matrix of eigenvectors
+    ! ---------------------------------------------
+    ! Magnetoacoustic wave +f
+    matR(1,1)=alfa_f*d               
+    matR(2,1)=alfa_f*d*(u+cf) 
+    matR(3,1)=d*(alfa_f*v - alfa_s*cs*beta2*sgnm)
+    matR(4,1)=d*(alfa_f*w - alfa_s*cs*beta3*sgnm)
+    matR(5,1)=alfa_f*d*ecin+aa*alfa_s*d*b_perp+(alfa_f*d*aa2/(gamma-1)) &
+            + alfa_f*cf*d*u - alfa_s*cs*d*sgnm*(v*beta2+w*beta3)
+    matR(6,1)=0.0_dp    
+    matR(7,1)=alfa_s*aa*beta2*sqd      
+    matR(8,1)=alfa_s*aa*beta3*sqd
+    ! Alfven wave +a
+    matR(1,2)=0_dp
+    matR(2,2)=0_dp
+    matR(3,2)=+d**1.5*beta3
+    matR(4,2)=-d**1.5*beta2
+    matR(5,2)=-d**1.5*(beta2*w-beta3*v)
+    matR(6,2)=0_dp
+    matR(7,2)=-d*beta3
+    matR(8,2)=+d*beta2
+    ! Magnetoacoustic wave +s
+    matR(1,3)=alfa_s*d
+    matR(2,3)=alfa_s*d*(u + cs)
+    matR(3,3)=d*(alfa_s*v + alfa_f*cf*beta2*sgnm)
+    matR(4,3)=d*(alfa_s*w + alfa_f*cf*beta3*sgnm)
+    matR(5,3)=alfa_s*d*ecin-aa*alfa_f*d*b_perp+(alfa_s*d*aa2/(gamma-1)) &
+            + alfa_s*cs*d*u + alfa_f*cf*d*sgnm*(v*beta2+w*beta3)
+    matR(6,3)=0.0_dp    
+    matR(7,3)=-alfa_f*aa*beta2*sqd 
+    matR(8,3)=-alfa_f*aa*beta3*sqd 
+    ! Entropy wave
+    matR(1,4)=1.0_dp
+    matR(2,4)=u
+    matR(3,4)=v
+    matR(4,4)=w
+    matR(5,4)=ecin
+    matR(6,4)=0.0_dp
+    matR(7,4)=0.0_dp
+    matR(8,4)=0.0_dp
+    ! Divergence wave
+    matR(:,5)=0.0_dp
+    matR(5,5)=A
+    matR(6,5)=1.0_dp
+    ! Magnetoacoustic wave -s
+    matR(1,6)=matR(1,3)
+    matR(2,6)=alfa_s*d*(u - cs)
+    matR(3,6)=d*(alfa_s*v - alfa_f*cf*beta2*sgnm)
+    matR(4,6)=d*(alfa_s*w - alfa_f*cf*beta3*sgnm)
+    matR(5,6)=alfa_s*d*ecin-aa*alfa_f*d*b_perp+(alfa_s*d*aa2/(gamma-1)) &
+            - alfa_s*cs*d*u - alfa_f*cf*d*sgnm*(v*beta2+w*beta3)
+    matR(6,6)=0.0_dp  
+    matR(7,6)=matR(7,3) 
+    matR(8,6)=matR(8,3)   
+    ! Alfven wave -a
+    matR(1,7)= 0_dp
+    matR(2,7)= 0_dp
+    matR(3,7)= -d**1.5*beta3
+    matR(4,7)= +d**1.5*beta2
+    matR(5,7)= +d**1.5*(beta2*w-beta3*v)
+    matR(6,7)= 0_dp
+    matR(7,7)= matR(7,2)
+    matR(8,7)= matR(8,2)
+    ! Magnetoacoustic wave -f
+    matR(1,8)=matR(1,1)
+    matR(2,8)=alfa_f*d*(u-cf)
+    matR(3,8)=d*(alfa_f*v + alfa_s*cs*beta2*sgnm)
+    matR(4,8)=d*(alfa_f*w + alfa_s*cs*beta3*sgnm)
+    matR(5,8)=(alfa_f*d*ecin)+aa*alfa_s*d*b_perp+(alfa_f*d*aa2/(gamma-1)) &
+            - alfa_f*cf*d*u + alfa_s*cs*d*sgnm*(v*beta2+w*beta3)
+    matR(6,8)=0.0_dp
+    matR(7,8)=matR(7,1)
+    matR(8,8)=matR(8,1)
+    ! -----------------------------
+    ! Diagonal scaling matrix
+    ! -----------------------------
+    Tdiag(1) = 1.0_dp/(2.0_dp*d*gamma)
+    Tdiag(2) = p/(2.0_dp*d*d*d)
+    Tdiag(3) = Tdiag(1)
+    Tdiag(4) = d*(gamma-1.0_dp)/gamma
+    Tdiag(5) = p/d
+    Tdiag(6) = Tdiag(1)
+    Tdiag(7) = Tdiag(2)
+    Tdiag(8) = Tdiag(1)
+
+    do im=1,8
+      matR(:,im)=matR(:,im)*sqrt(Tdiag(im))
+    end do
+    ! ------------------------------
+    ! Transpose the matrix
+    ! ------------------------------
+    matRT = transpose(matR)
+    ! ------------------------------
+    ! Select scalar dissipation type
+    ! ------------------------------
+    !Roe
+    diss(1)=abs(u+cf)
+    diss(2)=abs(u+A)
+    diss(3)=abs(u+cs)
+    diss(4)=abs(u)
+    diss(5)=abs(u)
+    diss(6)=abs(u-cs)
+    diss(7)=abs(u-A)
+    diss(8)=abs(u-cf)
+    if (sqrt(max(0.0,(Pl-Pr)/(Pl+Pr)))>0.5) then
+      !LLF
+      diss(:) = maxval(diss)
+    end if
+    do im=1,8
+      matR(:,im)=matR(:,im)*diss(im)
+    end do
+    ! ------------------------------
+    ! Compute jump in the entropy vector, if s scaled in negative direction, remove minus in front,
+    ! ------------------------------
+    jump(1) = ((gamma-sr)/(gamma-1.0_dp) - rr*(ur*ur+vr*vr+wr*wr)/(2.0_dp*pr)) &
+            - ((gamma-sl)/(gamma-1.0_dp) - rl*(ul*ul+vl*vl+wl*wl)/(2.0_dp*pl))
+    jump(2) = rr*ur/pr - rl*ul/pl
+    jump(3) = rr*vr/pr - rl*vl/pl
+    jump(4) = rr*wr/pr - rl*wl/pl
+    jump(5) = (-rr/pr) - (-rl/pl)
+    jump(6) = rr/pr*A - rl/pl*A
+    jump(7) = rr/pr*B - rl/pl*B
+    jump(8) = rr/pr*C - rl/pl*C
+    jump = -jump
+    ! -----------------------------
+    ! Multiply the matrixes
+    ! ----------------------------
+    inter = matmul(matR,matRT)
+    stab  = matmul(inter,jump)
+    !print *, 'flx',fgdnv(i,:)
+    !print *, 'stab',0.5*stab
+    stab = 0.5_dp*stab
+    !
+    ! Compute the Godunov flux
+    !visc = ro*uo/2*(uo*uo+vo*vo+wo*wo)+uo*Bo*Bo+uo*Co*Co-vo*A*Bo-w*A*Co
+    fgdnv(i,1) = ro+stab(1) 
+    fgdnv(i,2) = so+stab(5)
+    !fgdnv(i,2) = ((gamma*uo*Ptoto)/(gamma-one) + ro*uo/2d0*(uo*uo + vo*vo + wo*wo) + &
+    !             uo*(Bo*Bo + Co*Co) - vo*A*Bo - wo*A*Co)
+    fgdnv(i,3) = uo+stab(2)
+    fgdnv(i,4) = zero
+    fgdnv(i,5) = vo+stab(3)
+    fgdnv(i,6) = Bo+stab(7)
+    fgdnv(i,7) = wo+stab(4)
+    fgdnv(i,8) = Co+stab(8)
   end do
 !#define ATOMIC
 #ifdef ATOMIC
@@ -309,7 +811,24 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
 #endif
   if (detailed_timer) &
     call timer%end (itimer)
-end subroutine hlld
+  contains
+  function log_mean(aL, aR) result (F)
+    real(dp):: aL, aR, F
+    real(dp):: psi, ff, u, F1
+    real(dp):: eps=1e-2
+    ! --------------------------------------------------------------------------
+    psi = aL/aR
+    ff = (psi-1.0_dp)/(psi+1.0_dp)
+    u  = ff * ff
+    F1 = merge(1.0+u/3.0_dp+u*u/5.0_dp+u*u*u/7.0_dp,log(psi)/2.0_dp/ff,u<eps)
+    F  = (aL+aR)/(2.0_dp*F1)
+  end function log_mean
+  function aver(aL, aR) result (F)
+    real(dp):: aL, aR, F
+    ! --------------------------------------------------------------------------
+    F  = (aL+aR)*0.5_dp
+  end function aver
+END SUBROUTINE roe_ec
 
 !===============================================================================
 !> Solve for the HLLC flux give two HD state vectors (left and right of the
@@ -375,7 +894,7 @@ SUBROUTINE hllc (self, qleft, qrght, fgdnv, ngrid, detailed_timer)
         !if (dir==1 .and. i2==l(2) .and. i3==l(3)) print *,'SL case',i
         ro = rl
         uo = ul
-        so = sl
+        so =sl
         Ptoto = pl
         n_cheap = n_cheap+1
       else if (SSR < 0.0) then
@@ -420,7 +939,7 @@ SUBROUTINE hllc (self, qleft, qrght, fgdnv, ngrid, detailed_timer)
       !
       ! Compute the Godunov flux
       fgdnv(i,1) = ro*uo
-      fgdnv(i,2) = ro*uo*so
+      fgdnv(i,2) = uo*so
       fgdnv(i,3) = ro*uo*uo + Ptoto
       fgdnv(i,5) = fgdnv(i,1)*merge(vl,vr,uo>0.0)
       fgdnv(i,7) = fgdnv(i,1)*merge(wl,wr,uo>0.0)
