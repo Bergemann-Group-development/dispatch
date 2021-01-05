@@ -97,12 +97,11 @@ SUBROUTINE initial_conditions (patch)
   m3 => patch%mesh(3)
 
   f => patch%mem(:,:,:,:,1,1)
-
   dxmax = maxval(patch%ds,mask=(patch%n>1))
   r0 = max(r0, dxmax)
 
-  speedsq = sqrt(vx0(1)**2 + vy0(1)**2 + vz0(1)**2)
-  bsq = sqrt(bx0(1)**2 + by0(1)**2 + bz0(1)**2)
+  speedsq = vx0(1)**2 + vy0(1)**2 + vz0(1)**2
+  bsq = bx0(1)**2 + by0(1)**2 + bz0(1)**2
   ! set up atmosphere/ambient.
   do i3=m3%lb,m3%ub
     z = m3%centre_nat + patch%mesh(3)%r(i3)
@@ -119,16 +118,15 @@ SUBROUTINE initial_conditions (patch)
         f(i1,i2,i3,patch%idx%by) = by0(1)
         f(i1,i2,i3,patch%idx%bz) = bz0(1)
 
-        if (trim(patch%kind) == 'stagger2_mhd_patch') then
-          f(i1,i2,i3,patch%idx%s)  = (log(p0(1)) - log(d0(1)) * patch%gamma) &
-                            * d0(1) / (patch%gamma - 1.0)
-        else if (trim(patch%kind) == 'stagger2e_mhd_patch') then
-          f(i1,i2,i3,patch%idx%e) = p0(1)
-        else if (trim(patch%kind) == 'ramses_mhd_patch') then
-          f(i1,i2,i3,patch%idx%e) = p0(1) + 0.5 * d0(1) * speedsq + 0.5 * bsq
-        else if (trim(patch%kind) == 'zeus_mhd_patch') then
-          f(i1,i2,i3,patch%idx%e) = p0(1)
-
+        if (patch%idx%s>0) then
+          f(i1,i2,i3,patch%idx%s)  = log(p0(1)*d0(1)**-patch%gamma) * d0(1) / (patch%gamma - 1.0)
+        else if (patch%idx%e>0) then
+          f(i1,i2,i3,patch%idx%e) = p0(1)/(patch%gamma-1)
+          if (patch%kind(1:6) == 'ramses') then
+            f(i1,i2,i3,patch%idx%e) = f(i1,i2,i3,patch%idx%e) + 0.5 *d0(1)  * speedsq + 0.5 * bsq
+          end if
+        end if
+        if (trim(patch%kind) == 'zeus_mhd_patch') then
           ! the ZEUS module stores the angular momentum rather than the linear momentum
           f(i1,i2,i3,patch%idx%py) = f(i1,i2,i3,patch%idx%py) * m1%h2c(i1)
           f(i1,i2,i3,patch%idx%pz) = f(i1,i2,i3,patch%idx%pz) * m1%h31c(i1) * m2%h32c(i2)
@@ -138,8 +136,8 @@ SUBROUTINE initial_conditions (patch)
   end do
 
   ! set up central region.
-  speedsq = sqrt(vx0(2)**2 + vy0(2)**2 + vz0(2)**2)
-  bsq = sqrt(bx0(2)**2 + by0(2)**2 + bz0(2)**2)
+  speedsq = vx0(2)**2 + vy0(2)**2 + vz0(2)**2
+  bsq = bx0(2)**2 + by0(2)**2 + bz0(2)**2
   do i3=m3%lb,m3%ub
     z = m3%centre_nat + patch%mesh(3)%r(i3)
     do i2=m2%lb,m2%ub
@@ -156,16 +154,15 @@ SUBROUTINE initial_conditions (patch)
           f(i1,i2,i3,patch%idx%by) = by0(2)
           f(i1,i2,i3,patch%idx%bz) = bz0(2)
 
-          if (trim(patch%kind) == 'stagger2_mhd_patch') then
-            f(i1,i2,i3,patch%idx%s)  = (log(p0(2)) - log(d0(2)) * patch%gamma) &
-                              * d0(2) / (patch%gamma - 1.0)
-          else if (trim(patch%kind) == 'stagger2e_mhd_patch') then
-            f(i1,i2,i3,patch%idx%e) = p0(2)
-          else if (trim(patch%kind) == 'ramses_mhd_patch') then
-            f(i1,i2,i3,patch%idx%e) = p0(2) + 0.5 * d0(2) * speedsq + 0.5 * bsq
-          else if (trim(patch%kind) == 'zeus_mhd_patch') then
-            f(i1,i2,i3,patch%idx%e) = p0(2)
-
+          if (patch%idx%s>0) then
+            f(i1,i2,i3,patch%idx%s)  = log(p0(2)*d0(2)**-patch%gamma) * d0(2) / (patch%gamma - 1.0)
+          else if (patch%idx%e>0) then
+            f(i1,i2,i3,patch%idx%e) = p0(2)/(patch%gamma-1)
+            if (patch%kind(1:6) == 'ramses') then
+              f(i1,i2,i3,patch%idx%e) = f(i1,i2,i3,patch%idx%e) + 0.5 * d0(2) * speedsq + 0.5 * bsq
+            end if
+          end if
+          if (trim(patch%kind) == 'zeus_mhd_patch') then
             ! the ZEUS module stores the angular momentum rather than the linear momentum
             f(i1,i2,i3,patch%idx%py) = f(i1,i2,i3,patch%idx%py) * m1%h2c(i1)
             f(i1,i2,i3,patch%idx%pz) = f(i1,i2,i3,patch%idx%pz) * m1%h31c(i1) * m2%h32c(i2)
