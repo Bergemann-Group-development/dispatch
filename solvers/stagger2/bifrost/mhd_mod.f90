@@ -63,6 +63,7 @@ MODULE mhd_mod
     procedure:: gas_pressure_sub
     procedure :: smooth_loc
     procedure :: cowboy_hat
+    procedure :: to_total_e
     procedure, nopass:: cowboy_hat_1d
     procedure, nopass:: cowboy_hat_2d
     procedure, nopass:: cowboy_hat_3d
@@ -73,6 +74,7 @@ MODULE mhd_mod
     procedure :: quenchx
     procedure :: quenchy
     procedure :: quenchz
+    procedure :: nbor_relations
   end type
   logical, save:: symmetric_e = .true.
   logical, save:: symmetric_b = .false.
@@ -91,14 +93,12 @@ MODULE mhd_mod
   real, save:: nu_e_tr_loc = 0.0
 CONTAINS
 
-!> =============================================================================
-!> The construction with a double test on first_time avoids entering a critical
-!> region once the variable has been set.
-!> =============================================================================
+!===============================================================================
+!> Read the namelist info and set the default parameters.
+!===============================================================================
 SUBROUTINE pre_init (self)
   class(mhd_t), target:: self
   ! ----------------------------------------------------------------------------
-  integer:: i
   real, save:: nu(6), ca_max, csound=1.0, cdtd=0.5, courant=0.2
   real(8), save:: gamma=1.4_8
   logical, save:: first_time=.true.
@@ -111,21 +111,22 @@ SUBROUTINE pre_init (self)
     nu_e_w_transition, nu_e_high, nu_e_tr_loc
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%pre_init')
-  call io%lock%set
+  call io%lock%set('mhd_t%pre_init')
   if (first_time) then
     first_time = .false.
     eos = self%eos
     mhd = self%mhd
     rewind (io%input)
     read (io%input, bifrost_params)
-    if (io%master) write (*, bifrost_params)
+    write (io%output, bifrost_params)
+    write (io%namelist, bifrost_params)
     call non_ideal%init
     call divb%init
     call timestep%init
     ! fool-proofing
     if (timestep%time_order <= 0) call mpi%abort("The Stagger solvers require `time_order` > 0. Abort!")
   end if
-  call io%lock%unset
+  call io%lock%unset('mhd_t%pre_init')
   self%eos = eos
   self%mhd = mhd
   self%nu = nu
@@ -139,16 +140,13 @@ SUBROUTINE pre_init (self)
   ! called again, from extras_t%init, when gamma is known and can be passed on.
   !-----------------------------------------------------------------------------
   self%initial%mhd = self%mhd
-  call self%idx%init (ie=5, is=5, mhd=self%mhd)
+  call self%idx%init (ie=5, mhd=self%mhd)
   call self%initial%init (self%kind, real(self%gamma))
   self%mhd = self%initial%mhd
   if (self%mhd) then
     self%kind = 'stagger2e_mhd_patch'
   else
     self%kind = 'stagger2e_hd_patch'
-    self%idx%bx = -1
-    self%idx%by = -1
-    self%idx%bz = -1
   end if
   if (self%nv == 0) then
     if (self%mhd) then
@@ -157,44 +155,44 @@ SUBROUTINE pre_init (self)
       self%nv = 5
     end if
   end if
-  ! ----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
+  ! Call patch_pre-init
+  !-----------------------------------------------------------------------------
+  call self%patch_t%pre_init
+  !-----------------------------------------------------------------------------
   ! Call extras pre-init
-  ! ----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   call self%extras_t%pre_init
- call trace%end()
+  call trace%end()
 END SUBROUTINE pre_init
 
-!> =============================================================================
-!> The construction with a double test on first_time avoids entering a critical
-!> region once the variable has been set.
-!> =============================================================================
+!===============================================================================
+!> Initialize what is required for the MHD solver.
+!===============================================================================
 SUBROUTINE init (self)
   class(mhd_t):: self
-  ! ----------------------------------------------------------------------------
   integer:: i
-  logical, save:: first_time = .true.
-  !----------------------------------------------------------------------------
+  logical, save:: first_time=.true.
+  ! ----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
+  !
   !-----------------------------------------------------------------------------
-  ! Allocate memory and mesh, etc
+  ! Patch initialization
   !-----------------------------------------------------------------------------
-  call self%patch_t%init
   self%type = 'mhd_t'
+  call self%patch_t%init
   do i=1,3
     self%mesh(i)%h(self%idx%px+i-1) = -0.5
     if (self%mhd) self%mesh(i)%h(self%idx%bx+i-1) = -0.5
   end do
-  if (verbose>1 .and. self%track) then
+  self%unsigned(self%idx%d)  = unsigned
+  self%pervolume(self%idx%e) = unsigned
+  if (verbose > 1 .and. self%track) then
     do i=1,3
       print '("h:",8f5.2)', self%mesh(i)%h
     end do
   end if
-  !-----------------------------------------------------------------------------
-  ! Now the setup is complete enough to call gpatch_t%init, for possible ICs
-  !-----------------------------------------------------------------------------
   call self%gpatch_t%init
-  self%unsigned(self%idx%d)  = unsigned
-  self%pervolume(self%idx%e) = unsigned
   if (first_time.and.io%master) then
     call stagger_test
     first_time = .false.
@@ -224,8 +222,6 @@ SUBROUTINE post_init (self)
   !----------------------------------------------------------------------------
   ! Boundary setup
   !----------------------------------------------------------------------------
-  call self%init_bdries
-  self%boundaries%id  = self%id
   self%boundaries%mhd = self%mhd
  call trace%end()
 END SUBROUTINE post_init
@@ -812,7 +808,7 @@ SUBROUTINE pre_update (self)
     e => self%mem(:,:,:,self%idx%e,self%it,1)
     lnd = alog(d)
     ee = e/d
-    call eos%lookup_table (shape(self%tt), lnd=lnd, ee=ee, tt=self%tt)
+    call eos%lookup_table (shape(self%tt), lnd=lnd, ee=ee, tt=self%tt, label='mhd')
     deallocate (lnd, ee)
     if (verbose > 0) &
       write(io%output,*) self%id, 'mhd_t%pre_update:  tt =', &
@@ -883,7 +879,7 @@ SUBROUTINE output (self)
   out_next = self%out_next
   call self%extras_t%output
   if (self%time >= out_next .and. io%do_output .and. io%do_legacy) then
-    !$omp critical (out_cr)
+    call io%lock%set ('mhd_t%output')
     write (filename,'(a,i4.4,"_",i4.4,".txt")') trim(io%outputname), &
       self%id, self%iout
     inquire(file=filename, exist=exists)
@@ -893,7 +889,7 @@ SUBROUTINE output (self)
       write (io%data_unit,'(8f10.4)') self%nu
       close (io%data_unit)
     end if
-  !$omp end critical (out_cr)
+  call io%lock%unset ('mhd_t%output')
   end if
   call trace%end()
 END SUBROUTINE output
@@ -914,9 +910,9 @@ SUBROUTINE gas_pressure_sub (self, d, lnd, ee, pg)
     end if
   else
     if (do_temperature) then
-      call eos%lookup_table (shape(lnd), lnd=lnd, ee=ee, pg=pg, tt=self%tt)
+      call eos%lookup_table (shape(lnd), lnd=lnd, ee=ee, pg=pg, tt=self%tt, label='mhd_gp_sub')
     else
-      call eos%lookup_table (shape(lnd), lnd=lnd, ee=ee, pg=pg)
+      call eos%lookup_table (shape(lnd), lnd=lnd, ee=ee, pg=pg, label='mhd_gp_sub2')
     end if
     if (verbose > 1 .or. nprint > 0) then
       nprint = nprint-1
@@ -951,9 +947,9 @@ FUNCTION gas_pressure (self) result(pg)
     end if
   else
     if (do_temperature) then
-      call eos%lookup_table (shape(d), d=d, ee=ee, pg=pg, tt=self%tt)
+      call eos%lookup_table (shape(d), d=d, ee=ee, pg=pg, tt=self%tt, label='mhd_gp')
     else
-      call eos%lookup_table (shape(d), d=d, ee=ee, pg=pg)
+      call eos%lookup_table (shape(d), d=d, ee=ee, pg=pg, label='mhd_gp2')
     end if
     if (verbose > 1 .or. nprint > 0) then
       nprint = nprint-1
@@ -1375,7 +1371,7 @@ SUBROUTINE cowboy_hat(self,f,g)
   class (mesh_t), dimension(:), pointer :: m
   ! ............................................................................
   integer:: itimer=0
-  call trace%begin ('stagger_mod::cowboy_hat', itimer=itimer)
+  !call trace%begin ('stagger_mod::cowboy_hat', itimer=itimer)
   m => self%mesh
   !
   if (all(self%n>2)) then
@@ -1419,7 +1415,7 @@ SUBROUTINE cowboy_hat(self,f,g)
   else
     call io%abort("mhd_mod::cowboy_hat failed finding the right dimensions")
   end if
-  call trace%end (itimer)
+  !call trace%end (itimer)
 END SUBROUTINE cowboy_hat
 
 
@@ -1436,7 +1432,7 @@ FUNCTION cowboy_hat_1d(a) RESULT (b)
     b(i) = a(i-1)*c2 + a(i)*c1 + a(i+1)*c2
   end do
   b(1)=b(2)
-  b(n)=b(n)-1
+  b(n)=b(n-1)
 END FUNCTION cowboy_hat_1d
  
 FUNCTION cowboy_hat_2d(a,ds) RESULT (b)
@@ -1480,7 +1476,7 @@ FUNCTION cowboy_hat_3d(a,ds) RESULT (b)
   real:: c1, c2, c3
   real(8), dimension(3,3,3):: m
   integer:: itimer=0
-  call trace%begin ('stagger_mod::cowboy_hat_3d', itimer=itimer)
+  !call trace%begin ('stagger_mod::cowboy_hat_3d', itimer=itimer)
   n = shape(a)
   nds=ds/minval(ds)
   
@@ -1488,7 +1484,7 @@ FUNCTION cowboy_hat_3d(a,ds) RESULT (b)
     do my = -1,1,1
       do mx = -1,1,1
         m(mx+2,my+2,mz+2)= 0.4/(sqrt(nds(1)**2*mx**2+nds(2)**2*my**2+ &
-                                     nds(3)**2*mx**2)+tiny(1.0_8))
+                                     nds(3)**2*mz**2)+tiny(1.0_8))
       end do
     end do
   end do
@@ -1517,9 +1513,50 @@ FUNCTION cowboy_hat_3d(a,ds) RESULT (b)
   b(1,   :,:)=b(2,   :,:)
   b(n(1),:,:)=b(n(1)-1,:,:)
   
-  call trace%end (itimer)
+  !call trace%end (itimer)
 END FUNCTION cowboy_hat_3d
  
- 
+
+!===============================================================================
+!> Set up nbor relations between MHD tasks
+!===============================================================================
+SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
+  class(mhd_t):: self
+  class(task_t), pointer:: another, task
+  logical:: needed, needs_me, download, overlaps
+  ! ----------------------------------------------------------------------------
+  integer, save:: itimer=0
+  class(mhd_t),  pointer:: nb_mhd
+  ! ----------------------------------------------------------------------------
+  if (timer%detailed) &
+    call trace%begin ('mhd_t%nbor_relations', 2, itimer=itimer)
+  task => another
+  call self%task_t%nbor_relations(task,needed,needs_me,download)
+  select type (another)
+  class is (mhd_t)
+    ! do nothing, all is done in the base task_t layer
+  class default
+    needed=.false.; needs_me=.false.; download=.false.
+  end select
+
+  if (timer%detailed) &
+    call trace%end(itimer=itimer)
+
+END SUBROUTINE nbor_relations
+
+!===============================================================================
+!> For Riemann solvers we need to convert internal energy to total energy
+!===============================================================================
+SUBROUTINE to_total_e(self, it)
+  class(mhd_t):: self
+  integer, dimension(3):: lb, lo, li, ui, uo, ub, n, gn
+  integer:: ix, iy, iz, iz1, i, it
+  real, dimension(:,:,:), pointer:: d, e, px, py, pz
+  real, dimension(:,:,:), pointer:: bx, by, bz, emag
+  real, dimension(:,:,:), pointer:: b1, b2, b3
+  ! ----------------------------------------------------------------------------
+  call io%abort('mhd_t: to_total_e not set up')
+
+END subroutine to_total_e
  
 END MODULE mhd_mod
