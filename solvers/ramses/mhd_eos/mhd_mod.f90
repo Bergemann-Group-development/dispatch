@@ -863,14 +863,14 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
             dcen = half*(dlft+drgt)                       ! = dq
             dsgn = sign(one, dcen)                        ! sign(slope)
             slop = xslope_type*min(abs(dlft),abs(drgt))   ! slope_type=1: slope=dq, slope_type=2: slope=2*dq 
-            slop = merge(slop,zero,(dlft*drgt)>zero)      ! if both are non-zero, use the smaller one, or times 2
+            slop = merge(slop,zero,(sign(one,dlft)*sign(one,drgt))>zero)      ! if both are non-zero, use the smaller one, or times 2
             dq(i,n,1,j,k) = dsgn*min(slop,abs(dcen))      ! the smaller of the twice the smaller slope, and the central one            ! slopes in second coordinate direction
             dlft = (q(i,j  ,k,n) - q(i,j-1,k,n))
             drgt = (q(i,j+1,k,n) - q(i,j  ,k,n))
             dcen = half*(dlft+drgt)
             dsgn = sign(one, dcen)
             slop = xslope_type*min(abs(dlft),abs(drgt))
-            slop = merge(slop,zero,(dlft*drgt)>zero)
+            slop = merge(slop,zero,(sign(one,dlft)*sign(one,drgt))>zero)
             dq(i,n,2,j,k) = dsgn*min(slop,abs(dcen))
             ! slopes in third coordinate direction
             dlft = (q(i,j,k  ,n) - q(i,j,k-1,n))
@@ -878,7 +878,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
             dcen = half*(dlft+drgt)
             dsgn = sign(one, dcen)
             slop = xslope_type*min(abs(dlft),abs(drgt))
-            slop = merge(slop,zero,(dlft*drgt)>zero)
+            slop = merge(slop,zero,(sign(one,dlft)*sign(one,drgt))>zero)
             dq(i,n,3,j,k) = dsgn*min(slop,abs(dcen))
           end do
         end do
@@ -897,7 +897,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
           dcen = half*(dlft+drgt)
           dsgn = sign(one, dcen)
           slop = xslope_type*min(abs(dlft),abs(drgt))
-          slop = merge(slop,zero,(dlft*drgt)>zero)
+          slop = merge(slop,zero,(sign(one,dlft)*sign(one,drgt))>zero)
           dbf(i,1,1,j,k) = dsgn*min(slop,abs(dcen))
           ! slopes in second coordinate direction
           dlft = (bf(i,j,k  ,1) - bf(i,j,k-1,1))
@@ -905,7 +905,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
           dcen = half*(dlft+drgt)
           dsgn = sign(one, dcen)
           slop = xslope_type*min(abs(dlft),abs(drgt))
-          slop = merge(slop,zero,(dlft*drgt)>zero)
+          slop = merge(slop,zero,(sign(one,dlft)*sign(one,drgt))>zero)
           dbf(i,1,2,j,k) = dsgn*min(slop,abs(dcen))
           ! By
           ! slopes in first coordinate direction
@@ -914,7 +914,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
           dcen = half*(dlft+drgt)
           dsgn = sign(one, dcen)
           slop = xslope_type*min(abs(dlft),abs(drgt))
-          slop = merge(slop,zero,(dlft*drgt)>zero)
+          slop = merge(slop,zero,(sign(one,dlft)*sign(one,drgt))>zero)
           dbf(i,2,1,j,k) = dsgn*min(slop,abs(dcen))
           ! slopes in second coordinate direction
           dlft = (bf(i,j,k  ,2) - bf(i,j,k-1,2))
@@ -922,7 +922,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
           dcen = half*(dlft+drgt)
           dsgn = sign(one, dcen)
           slop = xslope_type*min(abs(dlft),abs(drgt))
-          slop = merge(slop,zero,(dlft*drgt)>zero)
+          slop = merge(slop,zero,(sign(one,dlft)*sign(one,drgt))>zero)
           dbf(i,2,2,j,k) = dsgn*min(slop,abs(dcen))
           ! Bz
           ! slopes in first coordinate direction
@@ -931,7 +931,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
           dcen = half*(dlft+drgt)
           dsgn = sign(one, dcen)
           slop = xslope_type*min(abs(dlft),abs(drgt))
-          slop = merge(slop,zero,(dlft*drgt)>zero)
+          slop = merge(slop,zero,(sign(one,dlft)*sign(one,drgt))>zero)
           dbf(i,3,1,j,k) = dsgn*min(slop,abs(dcen))
           ! slopes in second coordinate direction
           dlft = (bf(i,j  ,k,3) - bf(i,j-1,k,3))
@@ -939,7 +939,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
           dcen = half*(dlft+drgt)
           dsgn = sign(one, dcen)
           slop = xslope_type*min(abs(dlft),abs(drgt))
-          slop = merge(slop,zero,(dlft*drgt)>zero)
+          slop = merge(slop,zero,(sign(one,dlft)*sign(one,drgt))>zero)
           dbf(i,3,2,j,k) = dsgn*min(slop,abs(dcen))
         end do
       end do
@@ -1028,7 +1028,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
             dcen = half*(dlft+drgt)
             dsgn = sign(one, dcen)
             slop = xslope_type*min(abs(dlft),abs(drgt))
-            slop = merge(slop,zero,(dlft*drgt)>zero)
+            slop = merge(slop,zero,(sign(one,dlft)*sign(one,drgt))>zero)
             dbf(i,1,1,j,k) = dsgn*min(slop,abs(dcen))
             ! slopes in second coordinate direction
             dlft = (bf(i,j,k  ,1) - bf(i,j,k-1,1))
@@ -1036,7 +1036,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
             dcen = half*(dlft+drgt)
             dsgn = sign(one, dcen)
             slop = xslope_type*min(abs(dlft),abs(drgt))
-            slop = merge(slop,zero,(dlft*drgt)>zero)
+            slop = merge(slop,zero,(sign(one,dlft)*sign(one,drgt))>zero)
             dbf(i,1,2,j,k) = dsgn*min(slop,abs(dcen))
             !By
             ! slopes in first coordinate direction
@@ -1045,7 +1045,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
             dcen = half*(dlft+drgt)
             dsgn = sign(one, dcen)
             slop = xslope_type*min(abs(dlft),abs(drgt))
-            slop = merge(slop,zero,(dlft*drgt)>zero)
+            slop = merge(slop,zero,(sign(one,dlft)*sign(one,drgt))>zero)
             dbf(i,2,1,j,k) = dsgn*min(slop,abs(dcen))
             ! slopes in second coordinate direction
             dlft = (bf(i,j,k  ,2) - bf(i,j,k-1,2))
@@ -1053,7 +1053,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
             dcen = half*(dlft+drgt)
             dsgn = sign(one, dcen)
             slop = xslope_type*min(abs(dlft),abs(drgt))
-            slop = merge(slop,zero,(dlft*drgt)>zero)
+            slop = merge(slop,zero,(sign(one,dlft)*sign(one,drgt))>zero)
             dbf(i,2,2,j,k) = dsgn*min(slop,abs(dcen))
             ! Bz
             ! slopes in first coordinate direction
@@ -1062,7 +1062,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
             dcen = half*(dlft+drgt)
             dsgn = sign(one, dcen)
             slop = xslope_type*min(abs(dlft),abs(drgt))
-            slop = merge(slop,zero,(dlft*drgt)>zero)
+            slop = merge(slop,zero,(sign(one,dlft)*sign(one,drgt))>zero)
             dbf(i,3,1,j,k) = dsgn*min(slop,abs(dcen))
             ! slopes in second coordinate direction
             dlft = (bf(i,j  ,k,3) - bf(i,j-1,k,3))
@@ -1070,7 +1070,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
             dcen = half*(dlft+drgt)
             dsgn = sign(one, dcen)
             slop = xslope_type*min(abs(dlft),abs(drgt))
-            slop = merge(slop,zero,(dlft*drgt)>zero)
+            slop = merge(slop,zero,(sign(one,dlft)*sign(one,drgt))>zero)
             dbf(i,3,2,j,k) = dsgn*min(slop,abs(dcen))
           end do
         end do
