@@ -277,12 +277,13 @@ END SUBROUTINE
 SUBROUTINE abort_mpi (self, reason)
   class(mpi_t):: self
   character(len=*), optional:: reason
+  integer:: i
   !-----------------------------------------------------------------------------
   ! Give other ranks a chance to issue messages as well, then abort
   !-----------------------------------------------------------------------------
   flush (io_unit%output)
   call message (stderr)
-  call message (io_unit%log)
+  call message (stdlog)
 #ifdef MPI
   call omp%delay (3e3)
   if (mpi%mode == MPI_THREAD_MULTIPLE) then
@@ -295,18 +296,23 @@ SUBROUTINE abort_mpi (self, reason)
 #endif
   call exit
 contains
+  !-----------------------------------------------------------------------------
   subroutine message (unit)
   integer:: unit
+  integer, parameter:: n=80
+  character(len=n):: text
+  !.............................................................................
   flush (unit)
   write (unit,*) ''
-  write (unit,'(a)') &
-'********************************************************************************'
-  write (unit,'(" ABORT:  rank",i5,4x,"thread",i4)') mpi_rank, omp%thread
+  write (unit,'(80a)') ('*',i=1,n)
+  write (text,'("  ABORT: rank",i5,6x,"thread",i4)') mpi_rank, omp%thread
+  write (unit,'(80a)') '**',trim(text),(' ',i=1,n-len(trim(text))-4),'**'
   if (present(reason)) then
-    write (unit,'("REASON: ",a)') trim(reason)
+    text = ' REASON: '//reason
+    write (unit,'(80a)') '**',trim(text),(' ',i=1,n-len(trim(text))-4),'**'
   end if
-  write (unit,'(a)') &
-'********************************************************************************'
+  write (unit,'(80a)') ('*',i=1,n)
+  write (unit,*) ''
   flush (unit)
   end subroutine
 END SUBROUTINE abort_mpi

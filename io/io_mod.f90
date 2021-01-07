@@ -177,6 +177,10 @@ SUBROUTINE init (self, name)
     inputdir = self%rundir
     rewind (io%input)
     read (io%input, io_params, iostat=iostat)
+    if (iostat > 0) then
+      rewind (io%input)
+      read (io%input, io_params)
+    end if
     call self%namelist_warning ('io_params', iostat)
     if (mpi%master .and. .not. do_validate) then
       print'(a,i4)', ' n_socket =', omp%nsockets
@@ -239,7 +243,7 @@ SUBROUTINE init (self, name)
     call self%open_rank_file (io_unit%particle_d, ".pdat" , 'unformatted')
     call self%open_rank_file (io_unit%particle_i, ".pinf" , 'unformatted')
     if (self%task_logging > 0) &
-    call self%open_rank_file (io_unit%task      , ".task0", 'formatted')
+    call self%open_rank_file (io_unit%task      , ".task1", 'formatted')
     !---------------------------------------------------------------------------
     ! Open MPI rank and OMP thread-specific log files if omp_trace is true,
     ! else fall back to io_unit%log being just MPI rank-specific
@@ -586,8 +590,16 @@ SUBROUTINE warning (text)
   end if
   if (present(text)) then
     write (unit,*) 'io_t%warning: '//trim(text)
+    if (unit == stdout) then
+      write (stdlog,*) 'io_t%warning: '//trim(text)
+      flush (stdlog)
+    end if
   else
     write (unit,*) 'io_t%warning: called without specific text'
+    if (unit == stdout) then
+      write (stdlog,*) 'io_t%warning: called without specific text'
+      flush (stdlog)
+    end if
   end if
 END SUBROUTINE warning
 
