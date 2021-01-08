@@ -8,12 +8,12 @@ MODULE dispatcher_mod
   USE mpi_mod
   USE task_list_mod
   USE dispatcher0_mod
-  USE dispatcher1_mod
-  USE dispatcher2_mod
-  USE dispatcher3_mod
-  USE dispatcher4_mod
-  USE dispatcher5_mod
-  USE dispatcher6_mod
+  !USE dispatcher1_mod
+  !USE dispatcher2_mod
+  !USE dispatcher3_mod
+  !USE dispatcher4_mod
+  !USE dispatcher5_mod
+  !USE dispatcher6_mod
   USE mpi_mesg_mod
   USE data_io_mod
   USE experiment_mod
@@ -59,18 +59,18 @@ SUBROUTINE init (self)
   case (0)
     self%method => method0
     call dispatcher0%init
-  case (1)
-    self%method => method1
-  case (2)
-    self%method => method2
-  case (3)
-    self%method => method3
-  case (4)
-    self%method => method4
-  case (5)
-    self%method => method5
-  case (6)
-    self%method => method6
+  !case (1)
+    !self%method => method1
+  !case (2)
+    !self%method => method2
+  !case (3)
+    !self%method => method3
+  !case (4)
+    !self%method => method4
+  !case (5)
+    !self%method => method5
+  !case (6)
+    !self%method => method6
   case default
     call io%abort ('unknown method in dispatcher_mod')
   end select
@@ -132,42 +132,42 @@ END SUBROUTINE method0
 SUBROUTINE method1 (task_list)
   type(task_list_t), pointer:: task_list
   if (test) call set_io
-  call dispatcher1%execute (task_list, test)
+  !call dispatcher1%execute (task_list, test)
 END SUBROUTINE method1
 
 !===============================================================================
 SUBROUTINE method2 (task_list)
   type(task_list_t), pointer:: task_list
   if (test) call set_io
-  call dispatcher2%execute (task_list, test)
+  !call dispatcher2%execute (task_list, test)
 END SUBROUTINE method2
 
 !===============================================================================
 SUBROUTINE method3 (task_list)
   type(task_list_t), pointer:: task_list
   if (test) call set_io
-  call dispatcher3%execute (task_list, test)
+  !call dispatcher3%execute (task_list, test)
 END SUBROUTINE method3
 
 !===============================================================================
 SUBROUTINE method4 (task_list)
   type(task_list_t), pointer:: task_list
   if (test) call set_io
-  call dispatcher4%execute (task_list, test)
+  !call dispatcher4%execute (task_list, test)
 END SUBROUTINE method4
 
 !===============================================================================
 SUBROUTINE method5 (task_list)
   type(task_list_t), pointer:: task_list
   if (test) call set_io
-  call dispatcher5%execute (task_list, test)
+  !call dispatcher5%execute (task_list, test)
 END SUBROUTINE method5
 
 !===============================================================================
 SUBROUTINE method6 (task_list)
   type(task_list_t), pointer:: task_list
   if (test) call set_io
-  call dispatcher6%execute (task_list, test)
+  !call dispatcher6%execute (task_list, test)
 END SUBROUTINE method6
 
 END MODULE dispatcher_mod
