@@ -40,7 +40,7 @@ SUBROUTINE init (self)
   call io%init
   call trace_begin ('experiment_t%init')
   self%nv = 8
-  call self%mhd_t%init
+  call self%solver_t%init
 
   if (first_time) then
     first_time = .false.
@@ -131,7 +131,7 @@ associate (li=>self%li,ui=>self%ui,gn=>self%gn,ds=>self%ds,pos=>self%position)
   end do
   call self%patch_t%courant_condition()
 !  print*,'before timestep self%dt and minval(self%mem(:,:,:,1,self%it,1))',self%dt, minval(self%mem(:,:,:,1,self%it,1))
-  call timestep%update(self%id, self%iit, self%dt, self%mem, self%mesh)
+  call self%solver_t%update
   call self%check_density('after timestep')
 
 end associate

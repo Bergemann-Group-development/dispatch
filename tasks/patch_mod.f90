@@ -103,7 +103,7 @@ MODULE patch_mod
   contains
     procedure, nopass:: cast2patch
     procedure:: init
-    procedure:: init_default
+    procedure:: pre_init
     procedure:: setup
     procedure:: dealloc
     procedure:: clone_mem_accounting
@@ -414,6 +414,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%init')
   call io_unit%print_id (id)
+  call self%task_t%init
   call self%setup
   call io%lock%set ('patch_t%init')
   if (first_time) then
@@ -450,8 +451,8 @@ END SUBROUTINE init
 !> call init_default + set values + call setup, since otherwise it would have
 !> to rely on the values being set correctly in the input namelist.
 !===============================================================================
-SUBROUTINE init_default (self)
-  class(patch_t):: self
+SUBROUTINE pre_init (self)
+  class(patch_t), target:: self
   !.............................................................................
   integer, save:: n(3)=16, ng(3)=2, nv=5, nt=5, nw, max_files=1000, print_every=0
   logical, save:: no_mans_land=.true., use_data_hub=.false., limit_dtime=.false.
@@ -467,12 +468,12 @@ SUBROUTINE init_default (self)
     print_every, max_files
   logical, save:: first_time = .true.
   !-----------------------------------------------------------------------------
-  call trace%begin ('patch_t%init_default')
+  call trace%begin ('patch_t%pre_init')
   !-----------------------------------------------------------------------------
   ! Read and set patch parameters; the preferred defalts may have been set by
   ! the calling code -- typically in experiment_mod.f90
   !-----------------------------------------------------------------------------
-  call io%lock%set ('patch_t%init_default')
+  call io%lock%set ('patch_t%pre_init')
   if (first_time) then
     ! -- if values have been imposed from above, FI show them as default
     if (any(self%n  /= 0)) n  = self%n          ! patch dimensions
@@ -511,8 +512,7 @@ SUBROUTINE init_default (self)
   io%print_time    = print_time
   if (io%nv==0) &
     io%nv = self%nv
-  call io%lock%unset ('patch_t%init_default')
-  call self%task_t%init                         ! sets unique id
+  call io%lock%unset ('patch_t%pre_init')
   self%restart     = io%restart                 ! restart snapshot
   self%grace       = grace                      ! grace fraction of dtime
   self%dt_fixed    = dt_fixed
@@ -523,7 +523,7 @@ SUBROUTINE init_default (self)
   self%print_next  = print_time
   self%limit_dtime = limit_dtime
   call trace%end()
-END SUBROUTINE init_default
+END SUBROUTINE pre_init
 
 !===============================================================================
 !> Setup a patch, possibly with non-standard parameters. First setup with
@@ -540,7 +540,6 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
   integer:: i, gn(3)
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%setup')
-  call self%init_default                        ! read default params
   if (present(position)) self%position = position
   if (present(size    )) self%size     = size
   if (present(n       )) self%n        = n

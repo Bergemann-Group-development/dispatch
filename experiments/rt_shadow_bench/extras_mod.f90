@@ -122,9 +122,10 @@ SUBROUTINE pre_init (self)
   !-----------------------------------------------------------------------------
   ! Allocate a trace_particles data type, connect a pointer, and initialize
   !-----------------------------------------------------------------------------
-  self%patch => self
+  self%patch => self                                                   ! keep
+  call self%gpatch_t%pre_init                                          ! keep
   allocate(self%rt)                                                    ! RT
-  call self%rt%pre_init (self%patch)                                   ! RT
+  call self%rt%pre_init                                                ! RT
   !allocate (self%trace_particles)                                      ! tracep
   !self%connect%trace_particles => self%trace_particles                 ! tracep
   !allocate(self%pic)                                                   ! pic
@@ -139,6 +140,7 @@ SUBROUTINE init (self)
   class(extras_t):: self
   !.............................................................................
   call trace%begin ('extras_t%init')
+  call self%gpatch_t%init                                              ! keep
   !call self%forces%init (self)                                         ! forces
   !-----------------------------------------------------------------------------
   ! Allocate a trace_particles data type, connect a pointer, and initialize

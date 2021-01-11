@@ -14,6 +14,7 @@ MODULE trace_mod
   ! replaced by trace%begin calls, for consistency
   !-----------------------------------------------------------------------------
   type trace_t
+    integer:: indent=4
   contains
     procedure, nopass:: begin => trace_begin
     procedure, nopass:: tag   => trace_tag
@@ -23,6 +24,7 @@ MODULE trace_mod
     procedure, nopass:: back
   end type
   type(trace_t), public:: trace
+  character(len=120), public:: pad_trace=''
   !-----------------------------------------------------------------------------
   ! The data manipulated by the trace routines are thread private, and do not
   ! need to be visible from the calling code.
@@ -30,7 +32,7 @@ MODULE trace_mod
   integer, parameter:: maxlev=30                                ! max number of levels
   character(len=80), dimension(maxlev), save:: tracing          ! active routine
   integer, save:: verbosity(maxlev)                             ! verbosity level
-  integer, private, save:: indent=4                             ! trace indent
+  integer, public, save:: indent=4                             ! trace indent
   integer, private, save:: level=1                              ! trace level
   !$omp threadprivate(indent,level,tracing,verbosity)
 PUBLIC trace_begin, trace_tag, trace_end
@@ -60,7 +62,6 @@ SUBROUTINE trace_begin (id, set_verbose, itimer, detailed_timer)
       call timer%begin (id, itimer)
     end if
   end if
-  if (.not.io_unit%do_trace) return
   tracing(level) = trim(id)
   if (present(set_verbose)) then
     verbosity(level) = set_verbose
@@ -70,8 +71,9 @@ SUBROUTINE trace_begin (id, set_verbose, itimer, detailed_timer)
   verbose = verbosity(level)
   if (level<maxlev) then
     level = level+1
-    indent = indent + 3
+    indent = indent+2
   end if
+  if (.not.io_unit%do_trace) return
   write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.6,',indent,'x,a,i5)'
   if (io_unit%verbose>=verbose) then
     wc = wallclock()
@@ -134,7 +136,7 @@ SUBROUTINE trace_end (itimer, detailed_timer)
   implicit none
   integer, optional:: itimer
   logical, optional:: detailed_timer
-  integer i
+  integer:: i, ind
   character(len=mch):: fmt
   integer:: verbose
   real(8):: wc
@@ -148,12 +150,13 @@ SUBROUTINE trace_end (itimer, detailed_timer)
       call timer%end(itimer)
     end if
   end if
-  if (.not.io_unit%do_trace) return
   level  = max(level-1,1)
-  indent = max(indent,4)
+  ind    = max(indent,4)
+  indent = max(indent-2,4)
+  if (.not.io_unit%do_trace) return
   verbose = verbosity(level)
   if (io_unit%verbose>=verbose) then
-    write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.6,',indent,'x,a,i5)'
+    write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.6,',ind,'x,a,i5)'
     wc = wallclock()
     if (io_unit%do_validate) wc = 0d0
     if (io_unit%omp_trace) then
@@ -164,7 +167,6 @@ SUBROUTINE trace_end (itimer, detailed_timer)
       !$omp end critical (trace_cr)
     end if
   end if
-  indent = max(indent-3,4)
 contains
 !===============================================================================
 subroutine print_out (unit)

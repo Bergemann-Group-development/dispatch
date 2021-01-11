@@ -60,6 +60,7 @@ MODULE extras_mod
   !-----------------------------------------------------------------------------
   type, public, extends(gpatch_t):: extras_t
     type(forces_t):: forces                                     ! forces
+    class(gpatch_t), pointer:: patch => null()                  ! keep
     !class(trace_particles_t), pointer:: trace_particles         ! tracep
     !real, dimension(:,:,:,:), pointer:: v                       ! tracep
     !type(selfgravity_t) :: selfgravity                         ! selfg
@@ -82,6 +83,8 @@ SUBROUTINE pre_init (self)
   class(extras_t), target:: self
   !.............................................................................
   call trace%begin ('extras_t%init')
+  self%patch => self                                            ! keep
+  call self%gpatch_t%pre_init                                   ! keep
   call trace%end()
 END SUBROUTINE pre_init
 
@@ -92,6 +95,7 @@ SUBROUTINE init (self)
   class(extras_t):: self
   !.............................................................................
   call trace%begin ('extras_t%init')
+  call self%gpatch_t%init                                       ! keep
   !call self%forces%init (self%link)                             ! forces
   !allocate (self%trace_particles)                               ! tracep
   !self%connect%trace_particles => self%trace_particles          ! tracep

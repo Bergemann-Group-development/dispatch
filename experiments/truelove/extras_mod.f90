@@ -120,7 +120,8 @@ CONTAINS
 SUBROUTINE pre_init (self)
   class(extras_t), target:: self
   class(gpatch_t), pointer:: patch
-  self%patch => self
+  self%patch => self                                                    ! keep
+  call self%gpatch_t%pre_init                                           ! keep
   !.............................................................................
   !call self%forces%init (self)                                         ! forces
   !-----------------------------------------------------------------------------
@@ -143,6 +144,7 @@ SUBROUTINE init (self)
   class(extras_t):: self
   !.............................................................................
   call trace%begin ('extras_t%init')
+  call self%gpatch_t%init                                              ! keep
   call self%selfgravity%init                                           ! selfg
   !call self%forces%init (self)                                         ! forces
   !-----------------------------------------------------------------------------

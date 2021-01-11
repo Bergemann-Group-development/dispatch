@@ -95,6 +95,7 @@ SUBROUTINE pre_init (self)
   self%nv = 5
   self%nw = 1
   self%ng = 2
+  call self%extras_t%pre_init
   self%mhd = .false.
   self%kind = 'ramses_hd_patch'
   call self%idx%init (ie=5, mhd=self%mhd)
@@ -117,7 +118,6 @@ SUBROUTINE pre_init (self)
   self%gamma = gamma
   self%csound = csound
   self%staggered = .false.
-  call self%extras_t%pre_init
   call trace%end ()
 END SUBROUTINE pre_init
 
@@ -132,7 +132,7 @@ SUBROUTINE init (self)
   !.............................................................................
   call trace%begin ('hd_mod%init')
   call trace%print_id (id)
-  call self%patch_t%init
+  call self%extras_t%init
   !-----------------------------------------------------------------------------
   ! When unsigned is true, intepolate in log and per-mass variables
   !-----------------------------------------------------------------------------
@@ -144,8 +144,6 @@ SUBROUTINE init (self)
   do i=1,3
     self%mesh(i)%h = 0d0
   end do
-  call self%gpatch_t%init
-  call self%extras_t%init
   call trace%end()
 END SUBROUTINE init
 

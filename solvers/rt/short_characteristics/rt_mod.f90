@@ -126,7 +126,7 @@ CONTAINS
 !===============================================================================
 !> Read parameters
 !===============================================================================
-SUBROUTINE pre_init (self, patch)
+SUBROUTINE pre_init (self)
   class (rt_t), target:: self
   class (gpatch_t), pointer :: patch
   !-----------------------------------------------------------------------------
@@ -147,6 +147,7 @@ SUBROUTINE pre_init (self, patch)
   ! Read parameters
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_t%pre_init')
+  self%patch => self
   call io%lock%set ('rt_t%pre_init')
   if (first_time) then
     first_time = .false.
