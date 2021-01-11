@@ -758,6 +758,7 @@ SUBROUTINE same_linear (self, target, source, jt, pt, all_cells, only, all_times
     end if
     ! -- `dphi` is part of `mem` when `time_order` = 0; do not download it.
     if (iv == target%idx%dphi) cycle 
+    if (iv == target%idx%rphi) cycle 
     li = target%mesh%li
     ui = target%mesh%ui
     call dnload_range (target, source, iv, l, u, o)
