@@ -1956,9 +1956,7 @@ SUBROUTINE check_density (self, label)
   panic = .false.
   if (mind <= 0.0) then
     panic = .true.
-    do it=1,self%nt
-      call self%dump (2, .true.)
-    end do
+    call self%dump (2, .true.)
     !---------------------------------------------------------------------------
     ! Negative densities appear to develop at a few points in the guard zones,
     ! so this tries to patch up, sampling densitites in the guard zone.
@@ -2071,8 +2069,8 @@ SUBROUTINE stats_scalar (self, var, label, unit)
   end if
   call scalar_stats (var, self%mesh%li, self%mesh%ui, si)
   call scalar_stats (var, self%mesh%lb, self%mesh%ub, sb)
-  write (unit_l, '(i7,2x,a,1p,2(3x,4g12.4))') &
-    self%id, trim(label)//' stats: min, aver, rms, max =', si, sb
+  write (unit_l, '(i7,2x,a,1p,2(3x,4g12.4),2x,a)') &
+    self%id, ' stats: min, aver, rms, max =', si, sb,label
 END SUBROUTINE stats_scalar
 
 !===============================================================================
@@ -2837,27 +2835,15 @@ SUBROUTINE dump (self, tag, ad_hoc)
   integer:: it, nt, jt
   !-----------------------------------------------------------------------------
   if (self%dump_it .or. present(ad_hoc)) then
-    !$omp critical (dump_cr)
-    if (present(ad_hoc)) then
-      nt = self%nt
-    else
-      nt = 1
-    end if
+    call io%lock%set ('dump')
+    nt = merge (self%nt, 1, present(ad_hoc))
     if (self%verbose > 0) then
       write (io_unit%log,*) 'patch_t%dump: id, time =', self%id, self%time
     end if
-    !--- integers --------------------------------------------------------------
     write (io_unit%dump) tag, self%id, self%level, self%nv, self%nt, nt, &
-                         self%nw, self%istep, self%it
-    write (io_unit%dump) self%gn
-    write (io_unit%dump) self%n
-    write (io_unit%dump) self%iit
-    !--- floats ----------------------------------------------------------------
-    write (io_unit%dump) self%time, self%dtime
-    write (io_unit%dump) self%position
-    write (io_unit%dump) self%size 
-    write (io_unit%dump) self%t
-    write (io_unit%dump) self%dt
+                         self%nw, self%istep, self%it, self%gn, self%n
+    write (io_unit%dump) self%time, self%dtime, self%position, self%size, &
+                         self%t, self%dt, self%iit
     !---------------------------------------------------------------------------
     ! Write nt time slots, in reverse order, starting from the most recent one
     !---------------------------------------------------------------------------
@@ -2865,7 +2851,7 @@ SUBROUTINE dump (self, tag, ad_hoc)
       jt = self%iit(self%nt-it+1)
       write (io_unit%dump) self%mem(:,:,:,:,jt,1)
     end do
-    !$omp end critical (dump_cr)
+    call io%lock%unset ('dump')
   end if
 END SUBROUTINE dump
 
