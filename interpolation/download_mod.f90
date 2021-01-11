@@ -126,7 +126,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   !.............................................................................
   class(nbor_t), pointer:: nbor, sorted_head, nbors
   class(patch_t), pointer:: target, source
-  integer:: edges, l(3), u(3), ix, iy, iz, jt(2)
+  integer:: edges, l(3), u(3), ix, iy, iz, jt(2), tid, sid, tlv, slv
   integer, save:: itimer=0, n_print=30
   real:: pt(2), d_min
   character(len=64):: info
@@ -148,6 +148,8 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
     call trace%end (itimer)
     return
   end if
+  tid = target%id
+  tlv = target%level
   call target%log ('download', 2)
   !-----------------------------------------------------------------------------
   ! Avoid downloading values more than once at the same time (unless overruled
@@ -225,6 +227,15 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
     if (.not.associated(source)) then
       nbor => nbor%next
       cycle
+    end if
+    !---------------------------------------------------------------------------
+    ! Cache task ids for dbg viewing
+    !---------------------------------------------------------------------------
+    sid = source%id
+    slv = source%level
+    if (verbose > 1) then
+      write(stdout,'(a,2(i6,":",i2.2,2x,1p,3e11.2))') 'download_link', &
+        tid, tlv, target%ds, sid, slv, source%ds
     end if
     call source%log ('download', 3)
     if (source%quality == 1024) then
