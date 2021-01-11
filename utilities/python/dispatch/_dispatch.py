@@ -588,14 +588,21 @@ class _patch():
         #timer.add('_patch(0)')
         self.id=id
         self.memmap=1
+
         # add general attributes from snapshot_nml
         for k,v in snap.dict.items():
             setattr(self,k,v)
         timer.add('attrib-from-snapshot_nml')
+
         # add per-patch attributes from parsing
         for k,v in patch_dict.items():
             setattr(self,k,v)
         #timer.add('_patch(2)')
+
+        # if a short variant of the patch metadata does not have ds, compute it
+        if not 'ds' in patch_dict.keys():
+            self.ds=self.size/self.n
+
         if not self.guard_zones:
             self.li[:]=0
             self.ui[:]=self.n-1
@@ -604,6 +611,7 @@ class _patch():
             self.idx=snap.idx
             self.idx.h=self._h()
         timer.add('add-idx-attr')
+
         # reconstruct items pruned from patch_nml
         if hasattr(self,'size') and hasattr(self,'n'):
             if not hasattr(self,'ds'):
