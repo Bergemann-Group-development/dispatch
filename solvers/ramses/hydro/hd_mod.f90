@@ -478,31 +478,34 @@ subroutine godunov (self)
   !-----------------------------------------------------------------------------
   if (detailed_timer) call trace%begin ('hd_t%godunov', itimer=itimer)
   do ivar=1,self%nv
-    do idim=1,ndim
-      i0 = merge(1,0,idim==1)
-      j0 = merge(1,0,idim==2)
-      k0 = merge(1,0,idim==3)
-      do k=li(3),ui(3)
-      do j=li(2),ui(2)
-      do i=li(1),ui(1)
-        ! Update conservative variables
-        unew(i,j,k,ivar) = unew(i,j,k,ivar)+ &
-          & (fl(i   ,j   ,k   ,ivar,idim) &
-          & -fl(i+i0,j+j0,k+k0,ivar,idim))
+    if (ivar /= self%idx%phi .and. ivar /= self%idx%dphi) then
+      do idim=1,ndim
+        i0 = merge(1,0,idim==1)
+        j0 = merge(1,0,idim==2)
+        k0 = merge(1,0,idim==3)
+        do k=li(3),ui(3)
+        do j=li(2),ui(2)
+        do i=li(1),ui(1)
+          ! Update conservative variables
+          unew(i,j,k,ivar) = unew(i,j,k,ivar)+ &
+            & (fl(i   ,j   ,k   ,ivar,idim) &
+            & -fl(i+i0,j+j0,k+k0,ivar,idim))
+        end do
+        end do
+        end do
+        !.......................................................................
+        if (verbose>0) then
+          block
+          real, pointer:: d(:,:,:)
+          d => self%fl(:,:,:,ivar,idim)
+          write (stdlog,'(a,i6,2i4,2(1p,e14.4,3i4))') &
+          'fl', self%id, ivar, idim, &
+          self%fminval(d), self%fminloc(d), self%fmaxval(d), self%fmaxloc(d)
+          end block
+        end if
+        !.......................................................................
       end do
-      end do
-      end do
-  !.............................................................................
-  if (verbose>0) then
-    block
-    real, pointer:: d(:,:,:)
-    d => self%fl(:,:,:,ivar,idim)
-    write (stdlog,'(a,i6,2i4,2(1p,e14.4,3i4))') &
-    'fl', self%id, ivar, idim, &
-    self%fminval(d), self%fminloc(d), self%fmaxval(d), self%fmaxloc(d)
-    end block
-  end if
-    end do
+    end if
   end do
   call check_small (self, unew)
   if (detailed_timer) then
