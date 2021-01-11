@@ -265,11 +265,11 @@ SUBROUTINE init_params (self)
   class (task_t):: self
   character(len=120):: ids= &
     '$Id$'
-  integer:: iostat, id, id_master
-  logical, save:: do_dumps
+  integer:: iostat, id=0, id_master
+  logical, save:: do_dumps=.false., dump_all=.false.
   integer, save:: id_max=0
-  namelist /task_params/ track_id, do_dumps, verbose
-  namelist /dump_params/ id, iostat
+  namelist /task_params/ track_id, do_dumps, dump_all, verbose
+  namelist /dump_params/ id
   !-----------------------------------------------------------------------------
   call trace%begin ('task_t%init_params')
   call trace%print_id (ids)
@@ -289,7 +289,10 @@ SUBROUTINE init_params (self)
   !-----------------------------------------------------------------------------
   ! If dumps are requested, read a list of task ids for which dumps should be on
   !-----------------------------------------------------------------------------
-  if (do_dumps) then
+  if (dump_all) then
+    self%dump_it = .true.
+    self%verbose = verbose
+  else if (do_dumps) then
     rewind (io%input)
     do
       iostat = 0
