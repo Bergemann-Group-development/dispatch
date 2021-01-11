@@ -904,13 +904,17 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
     !child%mem(:,:,:,:,child%it,1) = parent%mem(:,:,:,:,parent%it,1)
     call download%download_link (child_link, all_cells=.true.)
     child%dnload_time = -1.0
-    if (do_dump) &
-      call dump (child, parent)
+    if (do_dump) then
+      call child%dump (3, ad_hoc=.true.)
+      call parent%dump (4, ad_hoc=.true.)
+    end if
   else
     ff => child%mem(:,:,:,:,child%it,1)
     call child%initial%condition (child%mesh, ff, child%idx)
-    if (do_dump) &
-      call dump (child, parent)
+    if (do_dump) then
+      call child%dump (5, ad_hoc=.true.)
+      call parent%dump (6, ad_hoc=.true.)
+    end if
   end if
   !-----------------------------------------------------------------------------
   ! Add the child task to the task list, including giving it an nbor list etc,
@@ -1432,32 +1436,5 @@ FUNCTION refine_region (self, patch) RESULT (refine)
   refine = merge(1,0,refine_it)
   call trace%end()
 END FUNCTION refine_region
-
-!===============================================================================
-!> Dump
-!===============================================================================
-SUBROUTINE dump (child, parent)
-  class (patch_t):: child, parent
-  character(len=64):: file
-  !-----------------------------------------------------------------------------
-  call trace%begin('refine_t%dump')
-  write (file,'(a,"child_",i5.5,".dat")') trim(io%rundir), child%id
-  write (io_unit%log,*) trim(file), child%time
-  open (io_unit%tmp, file=file, form='unformatted', status='unknown')
-  call dump1 (child)
-  call dump1 (parent)
-  close (io_unit%tmp)
-  call trace%end ()
-contains
-  !-----------------------------------------------------------------------------
-  ! Dump one patch
-  !-----------------------------------------------------------------------------
-  subroutine dump1 (patch)
-    class(patch_t):: patch
-    write (io_unit%tmp) patch%id, patch%gn, patch%n
-    write (io_unit%tmp) patch%time, patch%position, patch%ds
-    write (io_unit%tmp) patch%mem(:,:,:,:,patch%it,1)
-  end subroutine
-END SUBROUTINE dump
 
 END MODULE refine_mod
