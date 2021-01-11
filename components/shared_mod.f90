@@ -8,19 +8,21 @@ MODULE shared_mod
   implicit none
   public
   type, public:: shared_t
-    integer:: levelmin=99
-    integer:: levelmax=0
-    integer:: n_repeat(3) = 1
-    integer:: n_patch
-    integer:: n_initial = 0
-    integer:: n_add = 0
+    integer:: levelmin      = 99
+    integer:: levelmax      = 0
+    integer:: n_repeat(3)   = 1
+    integer:: n_patch       = 0
+    integer:: n_initial     = 0
+    integer:: n_add         = 0
     integer:: n_patch_total = 0
-    integer:: patch_n(3) = 0
-    integer:: n_queue = 0
-    integer:: mpi_size=0, mpi_rank=0
-    logical:: mpi_master=.true.
-    logical:: refine_on=.false.
-    real:: f_zoom(3)=1.0
+    integer:: patch_n(3)    = 0
+    integer:: n_queue       = 0
+    integer:: mpi_size      = 0
+    integer:: mpi_rank      = 0
+    logical:: mpi_master    = .true.
+    logical:: refine_on     = .false.
+    real:: f_zoom(3)        = 1.0
+    real(8):: mean_density  = 0d0
   contains
     procedure, nopass:: abort
   end type
