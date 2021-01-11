@@ -29,7 +29,6 @@ SUBROUTINE init (self)
   if (self%mem_allocated) return
   call trace%begin('experiment_t%init')
   call self%solver_t%init()
-  self%periodic = .false.               ! possibly changed in pboundary_t%init
   call pboundaries%init(self)
   call trace%end()
 END SUBROUTINE init

@@ -394,7 +394,8 @@ SUBROUTINE init_exp (self, origin)
         periodic = patch%periodic
         call patch%init
         if (any(patch%periodic .neqv. periodic)) then
-          call io%abort ('cartesian_t%init: experiment init tried to change %periodic')
+          write (stdlog,*) 'cartesian_t%init: id=', patch%id, patch%periodic
+          call io%warning ('cartesian_t%init: experiment%init changed %periodic')
         end if
         if (omp%nthreads>1) then
           task%mem_thread = omp%thread
