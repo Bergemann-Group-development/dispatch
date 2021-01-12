@@ -118,7 +118,7 @@ SUBROUTINE pre_init (self)
     mhd = self%mhd
     rewind (io%input)
     read (io%input, bifrost_params)
-    if (io%master) write (*, bifrost_params)
+    write (io%namelist, bifrost_params)
     call non_ideal%init
     call divb%init
     call timestep%init
@@ -140,7 +140,7 @@ SUBROUTINE pre_init (self)
   !-----------------------------------------------------------------------------
   self%initial%mhd = self%mhd
   call self%idx%init (ie=5, is=5, mhd=self%mhd)
-  call self%initial%init (self%kind, real(self%gamma))
+  call self%initial%init (self%kind, self%gamma)
   self%mhd = self%initial%mhd
   if (self%mhd) then
     self%kind = 'stagger2e_mhd_patch'
@@ -195,7 +195,7 @@ SUBROUTINE init (self)
   call self%gpatch_t%init
   self%unsigned(self%idx%d)  = unsigned
   self%pervolume(self%idx%e) = unsigned
-  if (first_time.and.io%master) then
+  if (first_time.and.io%master.and.omp%master) then
     call stagger_test
     first_time = .false.
   end if

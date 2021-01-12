@@ -34,7 +34,7 @@ CONTAINS
 SUBROUTINE init (self, solver, gamma)
   class(initial_t):: self
   character(len=64):: solver
-  real, optional:: gamma
+  real(8), optional:: gamma
   !---------------------------------------------------------------------
   call trace_begin('initial_t%init')
   self%solver = trim(solver)
@@ -66,8 +66,8 @@ SUBROUTINE condition (self, m, ff, idx)
   call io%lock%set('initial_t%condition')
   if (first_time) then
     rewind (io%input)
-    read (io%input, initial_params)
-    if (io%master) write (*,initial_params)
+    read (io%input, IC_params)
+    write (io%namelist, IC_params)
     first_time = .false.
   end if
   call io%lock%unset('initial_t%condition')
