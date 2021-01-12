@@ -34,11 +34,10 @@ CONTAINS
 SUBROUTINE init (self, solver, gamma)
   class(initial_t):: self
   character(len=64):: solver
-  real, optional:: gamma
+  real(8), optional:: gamma
   !---------------------------------------------------------------------
   call trace_begin('initial_t%init')
   self%solver = trim(solver)
-  self%gamma=1.4
   self%mhd = .true.
   call trace%end()
 END subroutine init

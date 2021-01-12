@@ -25,7 +25,7 @@ CONTAINS
 SUBROUTINE init (self, solver, gamma)
   class(initial_t) :: self
   integer, save :: idirect
-  real, optional:: gamma
+  real(8), optional:: gamma
   !.............................................................................
   character(len=*):: solver
   real(8), save :: p0, v0, b0
