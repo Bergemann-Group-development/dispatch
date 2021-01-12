@@ -43,6 +43,7 @@ MODULE eos_mod
   USE trace_mod
   USE scaling_mod
   USE timer_mod
+  USE kinds_mod
   implicit none
   private
   logical, save:: do_eos
@@ -60,7 +61,7 @@ MODULE eos_mod
     character(len=70) :: RhoEiRadTableFile = 'rhoei_radtab.dat'
     character(len=70) ::NeTgRadTableFile = 'netg_radtab.dat'
     real:: lnd_min, lnd_max, lnd_stp
-    real:: lne_min, lne_max, lne_stp
+    real:: lne_min, lne_max, lne_stp, ee_min
     real:: mu_l = 0.62    
     real:: gamma = 5.0e0/3.0e0
     real, dimension(:,:,:), pointer :: eostable,epstable
@@ -102,6 +103,7 @@ MODULE eos_mod
     procedure:: pressure
     procedure:: lookup
     procedure:: lookup_table
+    procedure:: ddeos
   end type
   type (eos_t), public:: eos
 CONTAINS
@@ -132,18 +134,19 @@ SUBROUTINE init (self)
   character(len=70)       :: file
   !.....................................................................
   integer:: i, recl
-  real:: mudens, muntot
+  real:: mudens, muntot, lneir
+  real, dimension(:),pointer:: lnei
   !.....................................................................
   namelist /eos_params/ table_loc, tabparam
   namelist /tabpar/     EOSTableFile, RhoEiRadTableFile, NeTgRadTableFile, &
                         nRhoBin, RhoMin, RhoMax, nEiBin, EiMin, EiMax, nRadBins
   !-----------------------------------------------------------------------------
   call trace%begin ('eos_t%init')
-  
-  !$omp critical (eos_cr)
+  call io%lock%set ('eos_t%init')
   if (first_time) then
     first_time = .false.
     do_eos = .true.
+    call scaling%init
     rewind (io%input); read (io%input,eos_params)
     if (io%master) write (*,eos_params)
     ! ------------------------------------------------------------------
@@ -168,9 +171,19 @@ SUBROUTINE init (self)
     self%lnd_stp = (self%lnd_max-self%lnd_min)/real(self%nd-1)
     ! set log internal energy axis
     self%lne_min = log(eimin/scaling%ee)
+    self%ee_min  = eimin/scaling%ee
     self%lne_max = log(eimax/scaling%ee)
-    self%lne_stp = (self%lne_max-self%lne_min)/real(self%ne-1)
-    
+    self%lne_stp = (log(eimax-eimin)-log(scaling%ee))/real(self%ne-1)
+    allocate(lnEi(nEiBin))
+    lnEir=log(EiMax)-log(EiMin)
+    do i=1,nEiBin
+      lnEi(i)=log(EiMin)+real(i-1)/real(nEiBin-1)*lnEir
+    end do
+    lnei=lnei-log(scaling%ee)
+    self%lne_stp=lnEi(2)-lnEi(1)
+    self%lne_min=lnei(1)
+    self%lne_max=lnei(neibin)
+    deallocate(lnei)
     ! ------------------------------------------------------------------
     ! Allocate arrays
     ! ------------------------------------------------------------------
@@ -181,19 +194,15 @@ SUBROUTINE init (self)
     !-------------------------------------------------------------------
     ! Read the table files
     !-------------------------------------------------------------------
-    print *, 'reading tables..'
+    if (io%master) print *, 'reading tables..'
     recl = kind(1.0)*nrhobin*neibin
-         
     ! read the EOS tables
     file = trim(table_loc)//'/'//trim(self%EOSTableFile)
     open  (io_unit%data, file=file, access='direct', form='unformatted', status='old', &
                                     recl=4*recl)
-    !do i=1,4            
-    !print *, i                    
-      read  (io_unit%data,rec=1) self%eostable
-    !end do
+    read  (io_unit%data,rec=1) self%eostable
     close (io_unit%data)
-    print *, 'EOS table read',trim(self%EOSTableFile)
+    if (io%master) print *, 'EOS table read',trim(self%EOSTableFile)
     ! read radiation tables
     file = trim(table_loc)//'/'//trim(self%RhoEiRadTableFile)
     open  (io_unit%data, file=file, access='direct', form='unformatted', status='old', &
@@ -202,7 +211,7 @@ SUBROUTINE init (self)
     read  (io_unit%data, rec=2) self%temtable
     read  (io_unit%data, rec=3) self%opatable
     close (io_unit%data)
-    print *, 'radiation table',trim(self%RhoEiRadTableFile), 'read'
+    if (io%master) print *, 'radiation table',trim(self%RhoEiRadTableFile), 'read'
     ! ------------------------------------------------------------------
     ! Convert to code units
     ! ------------------------------------------------------------------
@@ -219,9 +228,7 @@ SUBROUTINE init (self)
       call io%abort("eos_mod::init: noneq and hion not set up in this eos yet")
     !
   end if
-  !$omp end critical (eos_cr)
-  !$omp barrier
-
+  call io%lock%unset ('eos_t%_init')
   call trace%end()
 END SUBROUTINE init
 
@@ -262,13 +269,16 @@ END SUBROUTINE lookup
 !=======================================================================
 !> General EOS lookup routine, returning values in optional arguments
 !=======================================================================
-SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne,lnee, pg, tt, ne, rk, src, scat, ross,gamma)
+SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne,lnee, pg, tt, ne, rk, src, scat, ross,gamma, e_below, label,id)
   class (eos_t):: self
   integer:: dim(3)
+  integer, optional:: id
   real, dimension(:,:,:)  , pointer, optional :: lnd,d,lne,lnee,e,ee,tt,ne,ross
   real, dimension(:,:,:,:)         , optional :: src,rk,scat
   real, dimension(:,:,:)           , optional :: pg
   real, optional:: gamma
+  logical, optional:: e_below
+  character(len=*),optional::label
   ! --------------------------------------------------------------------
   real, dimension(:,:,:), pointer    :: lnd_loc, ee_loc
   integer,         dimension(dim(1)) :: il, jl
@@ -281,7 +291,11 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne,lnee, pg, tt, ne, rk, src
   call trace%begin ('eos_t%lookup_table', itimer=itimer)
   if (io%verbose>2) then
     print *, 'present(lnd) =', present(lnd)
+    print *, 'present(d) =', present(d)
     print *, 'present(ee)  =', present(ee)
+    print *, 'present(e)  =', present(e)
+    print *, 'present(lne)  =', present(lne)
+    print *, 'present(lnee)  =', present(lnee)
     print *, 'present(pg)  =', present(pg)
     print *, 'present(src) =', present(src)
     print *, 'present(rk)  =', present(rk)
@@ -312,7 +326,7 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne,lnee, pg, tt, ne, rk, src
     ee_loc => lnee
   else if (present(e)) then
     allocate (ee_loc(dim(1),dim(2),dim(3)))
-    ee_loc = log(e/d)
+    ee_loc = log(e)-lnd_loc
   else if (present(lne)) then
     allocate (ee_loc(dim(1),dim(2),dim(3)))
     ee_loc = lne-lnd_loc
@@ -358,10 +372,23 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne,lnee, pg, tt, ne, rk, src
     ! ------------------------------------------------------------------
     ! Check ranges
     ! ------------------------------------------------------------------
-    if (any(jl>self%nd-1).or.any(jl<1)) &
+    if (any(jl>self%nd-1).or.any(jl<1)) then
+      print *, 'minval, maxval lnd', minval(lnd_loc), maxval(lnd_loc)
+      print *, 'table ranges', dmin, dmax
+      if (present(label)) print *, 'table was called from ', trim(label)
       call io%abort("EOS outside of density range")
-    if (any(il>self%ne-1).or.any(il<1)) &
+    end if
+    if (any(il>self%ne-1).or.any(il<1)) then
+      print *, il, 'ne total', self%ne
+      print *, 'minval, maxval lnee', minval(ee_loc), exp(minval(ee_loc)), maxval(ee_loc), exp(maxval(ee_loc)), present(e)
+      print *, 'table ranges', emin, exp(emin),emax, exp(emax)
+      print *, 'minloc ee', minloc(ee_loc)
+      print *, 'maxloc ee', maxloc(ee_loc)
+      print *, 'temperature would be approx., loc, table', exp(minval(ee_loc))*0.6666667, exp(emin)*0.6666667, exp(emax)*0.6666667
+      print *, minval(lne)
+      if (present(label)) print *, 'table was called from ', trim(label)
       call io%abort("EOS outside of internal energy range")
+    end if
     ! ------------------------------------------------------------------
     !  Loop over table entries, nvar = 4.  Would this be more efficent
     !  if split into one gather loop and one calculation loop?
@@ -463,5 +490,87 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne,lnee, pg, tt, ne, rk, src
   end if
   call trace%end (itimer)
 END SUBROUTINE lookup_table
+
+!===============================================================================
+!> Thermodynamic derivatives of the gas pressure
+! ee - internal energy
+! d  - density
+! pg - gas pressure
+! dpdecr - dpde at constant density
+! dpdrce - dpdr at constant energy
+! dpdrcs - dpdr at constant entropy
+!===============================================================================
+SUBROUTINE ddeos(self,ee,d,dlnpde_r,dlnpdlnr_E,dpdrcs)
+  class(eos_t):: self
+  real(kind=KindScalarVar), dimension(:,:), pointer:: ee, d
+  real(kind=KindScalarVar), dimension(:,:), pointer:: dlnpde_r, dlnpdlnr_E
+  real(kind=KindScalarVar), dimension(:,:), pointer, optional ::dpdrcs
+  ! ----------------------------------------------------------------------------
+  real    :: dmin,dmax,dd, emin,emax,de,fr, m1t, m1u, t, u, pg
+  real    :: f1, f2, f3, f4
+  integer :: i,j, il, jl
+  integer:: n(2)
+  ! ............................................................................
+  n = shape(d)
+
+  do j=1,n(2)
+      do i=1,n(1)
+        ! ----------------------------------------------------------------------
+        ! fractional indices
+        ! ----------------------------------------------------------------------
+        ! log(rho)
+        fr = (log(d(i,j))-self%lnd_min)/self%lnd_stp+1d0
+        jl = int(fr)
+        u = fr-jl
+        m1u = 1d0-u
+        ! log(ei)
+        fr = (log(ee(i,j))-self%lne_min)/self%lne_stp+1d0
+        il = int(fr)
+        t = fr-il
+        m1t = 1d0-t
+        !
+        f1= m1t * m1u
+        f2=   t * m1u
+        f3=   t *   u
+        f4= m1t *   u
+        ! ------------------------------------------------------------------
+        ! Check ranges
+        ! ------------------------------------------------------------------
+        if ((jl+1>self%nd).or.(jl<1)) then
+          print *, jl+1, self%nd
+          print *, log(d(i,j)), self%lnd_min, self%lnd_max
+          call io%abort("ddEOS outside of density range")
+        end if
+        if ((il+1>self%ne).or.(il<1)) then
+          print *, il+1, self%ne
+          print *, ee(i,j), self%lnd_min, self%lnd_max
+          call io%abort("ddEOS outside of internal energy range")
+        end if
+
+        if ((il+1.le.self%ne).and.(jl+1.le.self%nd)) then
+          ! linear interpolation
+          ! thermodynamic derivatives of the gas pressure
+          pg = exp( &
+               f1 * self%eostable(il  ,jl  ,1) &
+             + f2 * self%eostable(il+1,jl  ,1) &
+             + f3 * self%eostable(il+1,jl+1,1) &
+             + f4 * self%eostable(il  ,jl+1,1))
+          dlnpdE_r(i,j) = ( m1u * self%eostable(il+1,jl  ,1) &
+                        -   m1u * self%eostable(il  ,jl  ,1) &
+                        +     u * self%eostable(il+1,jl+1,1) &
+                        -     u * self%eostable(il  ,jl+1,1) ) &
+                        / self%lne_stp * pg/ee(i,j)
+
+          dlnpdlnr_e(i,j) = ( m1t * self%eostable(il  ,jl+1,1) &
+                          -   m1t * self%eostable(il  ,jl  ,1) &
+                          +     t * self%eostable(il+1,jl+1,1) &
+                          -     t * self%eostable(il+1,jl  ,1) ) &
+                          / self%lnd_stp
+        endif
+      end do ! ~ end over i
+    end do ! ~ end over j
+
+
+END SUBROUTINE ddeos
 
 END MODULE eos_mod
