@@ -792,9 +792,10 @@ END SUBROUTINE init
 !> =============================================================================
 !> Use default 1-D Lagrange interpolation
 !> =============================================================================
-FUNCTION interpolate1d4 (self,x0, n, x, y) RESULT(f)
+FUNCTION interpolate1d4 (self,x0, n, x, y,order) RESULT(f)
   class(lagrange_t):: self
   integer:: n
+  integer, optional:: order
   real(kind=4):: x0, x(n), y(n), f
   !.............................................................................
   if (x0 < x(1)) then
@@ -802,13 +803,14 @@ FUNCTION interpolate1d4 (self,x0, n, x, y) RESULT(f)
   else if (x0 > x(n)) then
     f = y(n)
   else
-    f = self%sequence (x0, x, y)
+    f = self%sequence (x0, x, y,order)
   end if
 END FUNCTION interpolate1d4
 
-FUNCTION interpolate1d8 (self,x0, n, x, y) RESULT(f)
+FUNCTION interpolate1d8 (self,x0, n, x, y,order) RESULT(f)
   class(lagrange_t):: self
   integer:: n
+  integer, optional:: order
   real(kind=8):: x0, x(n), y(n), f
   !.............................................................................
   if (x0 < x(1)) then
@@ -816,7 +818,7 @@ FUNCTION interpolate1d8 (self,x0, n, x, y) RESULT(f)
   else if (x0 > x(n)) then
     f = y(n)
   else
-    f = self%sequence (x0, x, y)
+    f = self%sequence (x0, x, y,order)
   end if
 END FUNCTION interpolate1d8
 
