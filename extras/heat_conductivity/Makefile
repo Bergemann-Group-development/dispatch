@@ -1,5 +1,5 @@
-SPITZER ?= extras/spitzer_conductivity/wave
+conductivity ?= extras/heat_conductivity/spitzer
 
-VPATH := $(VPATH):$(TOP)/$(SPITZER)/
-sinclude          $(TOP)/$(SPITZER)/Makefile
+VPATH := $(VPATH):$(TOP)/$(conductivity)/
+sinclude          $(TOP)/$(conductivity)/Makefile
 
