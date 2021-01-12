@@ -41,15 +41,15 @@ MODULE mhd_mod
     logical:: mhd=.true.
     integer:: idim=3, nvar=9
     character(len=10):: riemann='hlld'
-    real, pointer, dimension(:,:,:,:):: q         ! primitive
-    real, pointer, dimension(:,:,:,:):: bf, em    ! face centered B, emf
-    real, pointer, dimension(:,:,:,:,:):: qp, qm  ! face centered
-    real, pointer, dimension(:,:,:,:,:):: dq, dq2, dbf ! slopes
-    real, pointer, dimension(:,:,:,:,:):: qLB,qRB,qLT,qRT
-    real, pointer, dimension(:,:,:,:):: uin       ! conserved
-    real, pointer, dimension(:,:,:,:):: unew      ! new conserved
-    real, pointer, dimension(:,:,:):: Ex,Ey,Ez, pg
-    real, pointer, dimension(:,:,:):: c
+    real, contiguous, pointer, dimension(:,:,:,:):: q         ! primitive
+    real, contiguous, pointer, dimension(:,:,:,:):: bf, em    ! face centered B, emf
+    real, contiguous, pointer, dimension(:,:,:,:,:):: qp, qm  ! face centered
+    real, contiguous, pointer, dimension(:,:,:,:,:):: dq, dq2, dbf ! slopes
+    real, contiguous, pointer, dimension(:,:,:,:,:):: qLB,qRB,qLT,qRT
+    real, contiguous, pointer, dimension(:,:,:,:):: uin       ! conserved
+    real, contiguous, pointer, dimension(:,:,:,:):: unew      ! new conserved
+    real, contiguous, pointer, dimension(:,:,:):: Ex,Ey,Ez, pg
+    real, contiguous, pointer, dimension(:,:,:):: c
     !dir$ attributes align:64 :: q,bf,em,qp,qm,dq,dq2,dbf,qLB,qRB,qLT,qRT,Ex,Ey,Ez,c
   contains
     procedure:: pre_init
@@ -101,6 +101,7 @@ SUBROUTINE pre_init (self)
   self%nw = 2
   self%ng = 3
   self%nv = 8
+  call self%extras_t%pre_init
   self%kind = 'ramses_mhd_patch'
   call self%idx%init (ie=5, mhd=self%mhd)
   if (do_temperature) then
@@ -131,14 +132,6 @@ SUBROUTINE pre_init (self)
   self%staggered = .false.
   !-----------------------------------------------------------------------------
   call non_ideal%init  
-  !-----------------------------------------------------------------------------
-  ! Call patch_pre-init
-  !-----------------------------------------------------------------------------
-  call self%patch_t%pre_init
-  !-----------------------------------------------------------------------------
-  ! Call extras pre-init
-  !-----------------------------------------------------------------------------
-  call self%extras_t%pre_init
   call trace%end()
 END SUBROUTINE pre_init
 
@@ -162,7 +155,9 @@ SUBROUTINE init (self)
   self%pervolume(self%idx%px) = unsigned
   self%pervolume(self%idx%py) = unsigned
   self%pervolume(self%idx%pz) = unsigned
-  call self%gpatch_t%init
+  !-----------------------------------------------------------------------------
+  ! Initialize everything else, and do a sanity check
+  !-----------------------------------------------------------------------------
   call self%extras_t%init
   call self%set_solver_vars
   call trace%end()
