@@ -182,7 +182,8 @@ SUBROUTINE init (self)
     return
   call trace%begin ('gpatch_t%init')
   call io_unit%print_id (id)
-  call self%initial%init (self%kind, real(self%gamma))
+  call self%patch_t%init
+  call self%initial%init (self%kind, self%gamma)
   call data_io%init (self)
   call guard_zones%init
   !-----------------------------------------------------------------------------

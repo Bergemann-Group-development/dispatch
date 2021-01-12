@@ -28,7 +28,7 @@ CONTAINS
 SUBROUTINE init (self, solver, gamma)
   class(initial_t):: self
   character(len=64):: solver
-  real, optional:: gamma
+  real(8), optional:: gamma
   !----------------------------------------------------------------------------
   self%solver = solver
   if (present(gamma)) then
@@ -103,7 +103,7 @@ SUBROUTINE condition (self, m, f, idx)
   class(mesh_t), pointer:: m(:), m1, m2, m3
   type(index_t):: idx
   integer:: i, j, k, iostat
-  integer:: pertm=2
+  integer:: pertm=2, verbose=0
   real(8):: rho0=15.27026, r0=0.25, truealpha=0.0475, truebeta=0.0, perta=0.0, &
             chipres=1.0, chirho=100.0, x0=0.0, y0=0.0, z0=0.0
   real(8):: phi0    , q1      , kappa   , c1      , c2      , c3       &
@@ -116,7 +116,7 @@ SUBROUTINE condition (self, m, f, idx)
   real(8), parameter:: r2 = 1.0
   logical, save:: first_time=.true.
   namelist / experiment_params / rho0, r0, truealpha, truebeta, chipres &
-                               , chirho, x0, y0, z0, perta, pertm
+                               , chirho, x0, y0, z0, perta, pertm, verbose
   !----------------------------------------------------------------------------
   call trace%begin ('initial_t%condition')
   call io%lock%set ('initial_t%condition')
@@ -165,13 +165,14 @@ SUBROUTINE condition (self, m, f, idx)
   if (first_time) then
     first_time = .false.
     print "('Gravitational constant =',1pe10.3)", scaling%grav
-    print "('Cloud mass =',1pe10.3)", mass
-    print "('Cloud free-fall time =',1pe10.3)", tff
-    print "('Cloud free-fall speed =',1pe10.3)", vff
-    print "('Initial isothermal sound speed =',1pe10.3)", sqrt(csqiso)
-    print "('Initial Jeans length = ',1pe10.3)", cjlen
-    print "('Initial Jeans number = ',1pe10.3)", cjnum
-    print "('Initial angular speed =',1pe10.3)", omega
+    print "('            Cloud mass =',1pe10.3)", mass
+    print "('  Cloud free-fall time =',1pe10.3)", tff
+    print "(' Cloud free-fall speed =',1pe10.3)", vff
+    print "('Isothermal sound speed =',1pe10.3)", sqrt(csqiso)
+    print "('  Initial Jeans length =',1pe10.3)", cjlen
+    print "('  Initial Jeans number =',1pe10.3)", cjnum
+    print "(' Initial angular speed =',1pe10.3)", omega
+    print "('             Gas gamma =',1pe10.3)", self%gamma
   end if
   !
   m1 => m(1)
@@ -237,6 +238,12 @@ SUBROUTINE condition (self, m, f, idx)
           f(i,j,k,idx%by) = 0.0
           f(i,j,k,idx%bz) = 0.0
         end if
+        !.......................................................................
+        if (verbose > 0) then
+          if (i==j .and. j==k) write (stdlog,'("IC:",i4,6f12.6)') &
+            i, d, f(i,j,k,idx%px:idx%pz), f(i,j,k,idx%e), nrg
+        end if
+        !.......................................................................
       end do
     end do
   end do

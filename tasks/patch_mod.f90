@@ -103,7 +103,7 @@ MODULE patch_mod
   contains
     procedure, nopass:: cast2patch
     procedure:: init
-    procedure:: init_default
+    procedure:: pre_init
     procedure:: setup
     procedure:: dealloc
     procedure:: clone_mem_accounting
@@ -414,6 +414,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%init')
   call io_unit%print_id (id)
+  call self%task_t%init
   call self%setup
   call io%lock%set ('patch_t%init')
   if (first_time) then
@@ -450,8 +451,8 @@ END SUBROUTINE init
 !> call init_default + set values + call setup, since otherwise it would have
 !> to rely on the values being set correctly in the input namelist.
 !===============================================================================
-SUBROUTINE init_default (self)
-  class(patch_t):: self
+SUBROUTINE pre_init (self)
+  class(patch_t), target:: self
   !.............................................................................
   integer, save:: n(3)=16, ng(3)=2, nv=5, nt=5, nw, max_files=1000, print_every=0
   logical, save:: no_mans_land=.true., use_data_hub=.false., limit_dtime=.false.
@@ -467,12 +468,12 @@ SUBROUTINE init_default (self)
     print_every, max_files
   logical, save:: first_time = .true.
   !-----------------------------------------------------------------------------
-  call trace%begin ('patch_t%init_default')
+  call trace%begin ('patch_t%pre_init')
   !-----------------------------------------------------------------------------
   ! Read and set patch parameters; the preferred defalts may have been set by
   ! the calling code -- typically in experiment_mod.f90
   !-----------------------------------------------------------------------------
-  call io%lock%set ('patch_t%init_default')
+  call io%lock%set ('patch_t%pre_init')
   if (first_time) then
     ! -- if values have been imposed from above, FI show them as default
     if (any(self%n  /= 0)) n  = self%n          ! patch dimensions
@@ -511,8 +512,7 @@ SUBROUTINE init_default (self)
   io%print_time    = print_time
   if (io%nv==0) &
     io%nv = self%nv
-  call io%lock%unset ('patch_t%init_default')
-  call self%task_t%init                         ! sets unique id
+  call io%lock%unset ('patch_t%pre_init')
   self%restart     = io%restart                 ! restart snapshot
   self%grace       = grace                      ! grace fraction of dtime
   self%dt_fixed    = dt_fixed
@@ -522,8 +522,34 @@ SUBROUTINE init_default (self)
   self%no_mans_land = no_mans_land              ! mesh centering
   self%print_next  = print_time
   self%limit_dtime = limit_dtime
+  !-----------------------------------------------------------------------------
+  ! Initialize the meshes, in order to be able to do the staggering, which
+  ! is needed in the mhd_t%init(), before the call to extras_t%init()
+  !-----------------------------------------------------------------------------
+  call MeshFactory(self%mesh_type, self%mesh, n=self%n, ng=self%ng, s=self%size, &
+                   p=self%position, llc_native=self%llc_nat, nml=self%no_mans_land)
+  !-----------------------------------------------------------------------------
+  ! Intialise staggering indices; it is the responsibility of the *solver* to
+  ! assign non-zero values to this variable (if any).
+  !-----------------------------------------------------------------------------
+  do i=1,3
+    allocate(self%mesh(i)%h(self%nv))
+    self%mesh(i)%h = 0.0
+    if (self%kind == 'zeus_mhd_patch' .and. &
+        self%staggered .and. self%n(i) /= 1) self%mesh(i)%gn = self%mesh(i)%gn + 1
+    if (self%kind == 'zeus_tw_mhd_patch' .and. &
+        self%staggered .and. self%n(i) /= 1) self%mesh(i)%gn = self%mesh(i)%gn + 1
+  end do
+  !-----------------------------------------------------------------------------
+  ! The unsigned and pervoleme flags should also be modified by the solver,
+  ! so they also need to be allocated here.
+  !-----------------------------------------------------------------------------
+  allocate (self%unsigned (self%nv))
+  allocate (self%pervolume(self%nv))
+  self%unsigned (:) = .false.
+  self%pervolume(:) = .false.
   call trace%end()
-END SUBROUTINE init_default
+END SUBROUTINE pre_init
 
 !===============================================================================
 !> Setup a patch, possibly with non-standard parameters. First setup with
@@ -540,7 +566,6 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
   integer:: i, gn(3)
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%setup')
-  call self%init_default                        ! read default params
   if (present(position)) self%position = position
   if (present(size    )) self%size     = size
   if (present(n       )) self%n        = n
@@ -581,18 +606,6 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
   ! box size and position
   !-----------------------------------------------------------------------------
   call omp%set_stacksize (self%nv)
-  call MeshFactory(self%mesh_type, self%mesh, n=self%n, ng=self%ng, s=self%size, &
-                   p=self%position, llc_native=self%llc_nat, nml=self%no_mans_land)
-  ! intialise staggering indices; it is the responsibility of the *solver* to
-  ! assign non-zero values to this variable (if any).
-  do i=1,3
-    allocate(self%mesh(i)%h(self%nv))
-    self%mesh(i)%h = 0.0
-    if (self%kind == 'zeus_mhd_patch' .and. &
-        self%staggered .and. self%n(i) /= 1) self%mesh(i)%gn = self%mesh(i)%gn + 1
-    if (self%kind == 'zeus_tw_mhd_patch' .and. &
-        self%staggered .and. self%n(i) /= 1) self%mesh(i)%gn = self%mesh(i)%gn + 1
-  end do
   self%ds = self%mesh%d
   self%ncell = self%mesh%nc
   self%mesh%id = self%id
@@ -651,10 +664,6 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
     end do
     self%mem_allocated = .true.               ! mark
     call io%bits_mem (storage_size(self%mem), product(shape(self%mem)), 'mem')
-    allocate (self%unsigned (self%nv))
-    allocate (self%pervolume(self%nv))
-    self%unsigned (:) = .false.
-    self%pervolume(:) = .false.
   end if
   self%wallclock = wallclock()                  ! starting time
   n_header = storage_size(header)/32            ! 32 bits per word

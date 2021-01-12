@@ -81,6 +81,7 @@ MODULE extras_mod
   ! states, must be accessed via a private instance in the extras_t data type
   !-----------------------------------------------------------------------------
   type, public, extends(gpatch_t):: extras_t
+    class(gpatch_t), pointer:: patch => null()                  ! keep
     !type(forces_t):: forces                                     ! forces
     class(pic_t), pointer:: pic                                 ! pic
     !type (spitzer_t):: spitzer                                  ! spitzer
@@ -113,6 +114,8 @@ CONTAINS
 SUBROUTINE pre_init (self)
   class(extras_t):: self
   !.............................................................................
+  self%patch => self                                            ! keep
+  call self%gpatch_t%pre_init                                   ! keep
   !call self%forces%init (self)                                  ! forces
   !-----------------------------------------------------------------------------
   ! Allocate a trace_particles data type, connect a pointer, and initialize
@@ -134,6 +137,7 @@ SUBROUTINE init (self)
   class(extras_t):: self
   !.............................................................................
   call trace%begin ('extras_t%init')
+  call self%gpatch_t%init                                       ! keep
   !call self%forces%init (self)                                  ! forces
   !-----------------------------------------------------------------------------
   ! Allocate a trace_particles data type, connect a pointer, and initialize

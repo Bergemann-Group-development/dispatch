@@ -119,6 +119,7 @@ SUBROUTINE pre_init (self)
   class(gpatch_t), pointer:: patch                                     ! keep
   !.............................................................................
   patch => self                                                        ! keep
+  call self%gpatch_t%pre_init                                          ! keep
   call self%forces%pre_init (patch)                                    ! forces
   !-----------------------------------------------------------------------------
   ! Allocate a trace_particles data type, connect a pointer, and initialize
@@ -139,7 +140,8 @@ SUBROUTINE init (self)
   class(extras_t):: self
   !.............................................................................
   call trace%begin ('extras_t%init')
-  call self%forces%init                                                 ! forces
+  call self%gpatch_t%init                                              ! keep
+  call self%forces%init                                                ! forces
   !-----------------------------------------------------------------------------
   ! Allocate a trace_particles data type, connect a pointer, and initialize
   !-----------------------------------------------------------------------------

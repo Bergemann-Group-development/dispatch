@@ -248,14 +248,20 @@ def unigrid_plane(sn,iv='d',z=0.5,x=None,y=None,title=None,cmap=None,**kw):
 
 def amr_plane(sn,iv='d',z=0.5,x=None,y=None,log=False,
         xmin=None,xmax=None,ymin=None,ymax=None,lmax=None,
+        xlim=None,ylim=None,center=None,width=None,
         cmap=None,vmin=None,vmax=None,zero=False,title=None,
         mesh=False,ident=False,bbox=dict(facecolor='grey',alpha=1),
         verbose=0):
     """ 
+         cmap: color map name (e.g. 'coolwarm')
         x,y,z: select plane by specifying one
+    vmin/vmax: colorscale end points
+    xmin/xmax: view limits in x
+    ymin/ymax: view limits in y
+    xlim/ylim: view limits (xmin,xmax), (ymin,ymax)
+       center: view center (x,y)
+        width: view width -> xlim=(center[0]-width/2,center[0]+width/2), ylim=...
           log: force log10 values
-         cmap: color map
-     vmin/max: colorscale end points
          zero: symmetric colorscale around value=0.0
         title: text title
          mesh: display patch boundaries
@@ -267,7 +273,7 @@ def amr_plane(sn,iv='d',z=0.5,x=None,y=None,log=False,
         print('snapshot has no patches')
         return
     def contains(p,s,axis):
-        return p.level >= 6 and abs(s-p.position[axis]) <= p.size[axis]/2
+        return abs(s-p.position[axis]) <= p.size[axis]/2
     def outline(e):
         x=[e[0],e[0],e[1],e[1],e[0]]
         y=[e[2],e[3],e[3],e[2],e[2]]
@@ -295,6 +301,17 @@ def amr_plane(sn,iv='d',z=0.5,x=None,y=None,log=False,
         if log:
             f=np.exp(f)
         return f
+    if center and width:
+        xmin=center[0]-width/2
+        xmax=center[0]+width/2
+        ymin=center[1]-width/2
+        ymax=center[1]+width/2
+    if xlim:
+        xmin=xlim[0]
+        xmax=xlim[1]
+    if ylim:
+        ymin=ylim[0]
+        ymax=ylim[1]
     axis,s=_axis(x,y,z)
     if lmax:
         pp=[p for p in sn.patches if contains(p,s,axis) and p.level<=lmax]

@@ -32,6 +32,7 @@ MODULE extras_mod
   USE gpatch_mod
   USE list_mod
   USE patch_mod
+  USE gpatch_mod
   USE task_mod
   USE io_mod
   USE trace_mod
@@ -74,7 +75,8 @@ SUBROUTINE pre_init (self)
   class(extras_t), target:: self
   !.............................................................................
   call trace%begin ('extras_t%pre_init')
-  self%patch => self
+  self%patch => self                                                    ! keep
+  call self%gpatch_t%pre_init                                           ! keep
   call self%SN%pre_init (self%patch)                                    ! SN
   call self%cooling%pre_init (self%patch)                               ! cool
   call trace%end ()
@@ -87,6 +89,7 @@ SUBROUTINE init (self)
   class(extras_t):: self
   !.............................................................................
   call trace%begin ('extras_t%init')
+  call self%gpatch_t%init                                               ! keep
   call trace%end ()
 END SUBROUTINE init
 

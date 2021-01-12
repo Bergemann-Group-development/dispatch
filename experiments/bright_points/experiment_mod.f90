@@ -17,7 +17,7 @@ MODULE experiment_mod
   USE bits_mod
   USE trace_mod
   USE pic_mod
-  USE mhd_mod
+  USE solver_mod
   USE initial_mod
   USE timestep_mod
   USE timer_mod
@@ -77,7 +77,7 @@ SUBROUTINE init (self)
     self%nv = 8
   end if
   !call io%print_patch_type(self%initial%pic_needed)
-  call self%mhd_t%init
+  call self%solver_t%init
   if (self%lower_boundary) then
     print *,'extra slot for patch id', self%id, self%nv, size(self%mem,4)
   end if
@@ -125,7 +125,7 @@ SUBROUTINE update (self)
   else
     !io%do_trace = .true.
     call self%boundary_conditions
-    call self%mhd_t%update
+    call self%solver_t%update
   end if
   call trace_end
 END SUBROUTINE update

@@ -84,6 +84,24 @@ SUBROUTINE pre_init (self)
     do_test, do_2nd_div
   !----------------------------------------------------------------------------
   call trace%begin ('mhd_t%pre_init')
+  !-----------------------------------------------------------------------------
+  ! Read IC parameters, which determine if this is HD or MHD.  The IC init is
+  ! called again, from extras_t%init, when gamma is known and can be passed on.
+  !-----------------------------------------------------------------------------
+  call self%initial%init (self%kind, self%gamma)
+  self%mhd = self%initial%mhd
+  if (self%mhd) then
+    self%kind = 'stagger2e_mhd_patch'
+    self%nv = 8
+  else
+    self%kind = 'stagger2e_hd_patch'
+    self%nv = 5
+  end if
+  self%nw = 2
+  !-----------------------------------------------------------------------------
+  ! Now pass on these wishes to the next layers, which may modify them
+  !-----------------------------------------------------------------------------
+  call self%extras_t%pre_init
   call io%lock%set ('mhd_t%pre_init')
   if (first_time) then
     first_time = .false.
@@ -117,26 +135,6 @@ SUBROUTINE pre_init (self)
   case default
     call io%abort('mhd_mod:: divb cleaner method not understood')
   end select
-  !-----------------------------------------------------------------------------
-  ! Read IC parameters, which determine if this is HD or MHD.  The IC init is
-  ! called again, from extras_t%init, when gamma is known and can be passed on.
-  !-----------------------------------------------------------------------------
-  self%initial%mhd = self%mhd
-  call self%initial%init (self%kind, real(self%gamma))
-  self%mhd = self%initial%mhd
-  if (self%mhd) then
-    self%kind = 'stagger2_mhd_patch'
-    self%nv = 8
-  else
-    self%kind = 'stagger2_hd_patch'
-    self%nv = 5
-  end if
-  self%nw = 2
-  call self%idx%init (is=5, mhd=self%mhd)
-  !-----------------------------------------------------------------------------
-  ! Call extras pre-init
-  !-----------------------------------------------------------------------------
-  call self%extras_t%pre_init
   call trace%end()
 END SUBROUTINE pre_init
 
@@ -147,12 +145,10 @@ END SUBROUTINE pre_init
 SUBROUTINE init (self)
   class(mhd_t):: self
   integer :: i
-  ! ----------------------------------------------------------------------------
-  call trace%begin('mhd_t%init')
-  call self%patch_t%init
-  self%type = 'mhd_t'
-  self%unsigned(self%idx%d)  = unsigned
-  self%pervolume(self%idx%s) = unsigned
+  !-----------------------------------------------------------------------------
+  ! Set the staggering, unsigned and pervolume flags before calling the rest
+  ! of the cascade if %init(), where %gpatch_t%init may need them, in IC calls
+  !-----------------------------------------------------------------------------
   do i=1,3
     self%mesh(i)%h(self%idx%px+i-1) = -0.5
     if (self%mhd) self%mesh(i)%h(self%idx%bx+i-1) = -0.5
@@ -161,9 +157,16 @@ SUBROUTINE init (self)
     do i=1,3
       print '("h:",8f5.2)', self%mesh(i)%h
     end do
-  end if
-  call self%gpatch_t%init
+  self%unsigned(self%idx%d) = unsigned
+  self%unsigned(self%idx%e) = unsigned
+  self%pervolume(self%idx%px) = unsigned
+  self%pervolume(self%idx%py) = unsigned
+  self%pervolume(self%idx%pz) = unsigned
+  !-----------------------------------------------------------------------------
+  ! Initialize everything else, and do a sanity check
+  !-----------------------------------------------------------------------------
   call self%extras_t%init
+  self%type = 'mhd_t'
   !-----------------------------------------------------------------------------
   ! Self tests, only on one thread
   !-----------------------------------------------------------------------------

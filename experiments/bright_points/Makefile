@@ -49,7 +49,7 @@ PPCODE          = $(TOP)/solvers/pic/PPcode
 $(EXEC): cartesian_mod.o $(PICOBJ)
 
 # Dependencies
-experiment_mod.o        : mhd_mod.o pic_mod.o trace_mod.o io_mod.o timestep_mod.o download_mod.o link_mod.o \
+experiment_mod.o        : solver_mod.o pic_mod.o trace_mod.o io_mod.o timestep_mod.o download_mod.o link_mod.o \
 			  bits_mod.o params.o units.o species.o debug.o particleoperations.o textio.o \
                           initial_mod.o driver_mod.o boundary_mod.o
 dispatch.o              : io_mod.o mpi_mod.o cartesian_mod.o
