@@ -138,7 +138,7 @@ END SUBROUTINE pre_init
 !===============================================================================
 SUBROUTINE init (self)
   class(mhd_t):: self
-  integer:: i
+  integer:: i, n(3)
 !...............................................................................
   call trace%begin('mhd_mod%init')
   call self%patch_t%init
@@ -160,6 +160,8 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call self%extras_t%init
   call self%set_solver_vars
+  n = self%mesh%gn
+  allocate (self%pg  (n(1),n(2),n(3)))                           ! Pg aux slot
   call trace%end()
 END SUBROUTINE init
 
