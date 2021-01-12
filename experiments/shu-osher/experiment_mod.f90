@@ -30,22 +30,27 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   ! Initial conditions
   !----------------------------------------------------------------------------
-  self%mhd = .true.
   call self%solver_t%init
 
-  call self%set (bits%static)
   if (self%initial%time > 0d0) then
     self%time = self%initial%time
     self%t(self%it) = self%initial%time
   end if
   self%gamma=1.4
-  self%unsigned(self%idx%d) = .true.
   ! assign boundary conditions.
   m=>self%mesh
   self%boundaries%rho_l = self%mem(m(1)%lo,m(2)%li,m(3)%li,self%idx%d,1,1)
+  self%boundaries%rho_r = self%mem(m(1)%uo,m(2)%li,m(3)%li,self%idx%d,1,1)
+  if (self%idx%e>0) then
   self%boundaries%e_l   = self%mem(m(1)%lo,m(2)%li,m(3)%li,self%idx%e,1,1)
+  self%boundaries%e_r   = self%mem(m(1)%uo,m(2)%li,m(3)%li,self%idx%e,1,1)
+  end if
+  if (self%idx%s>0) then
   self%boundaries%s_l   = self%mem(m(1)%lo,m(2)%li,m(3)%li,self%idx%s,1,1)
+  self%boundaries%s_r   = self%mem(m(1)%uo,m(2)%li,m(3)%li,self%idx%s,1,1)
+  end if
   self%boundaries%px_l  = self%mem(m(1)%lo,m(2)%li,m(3)%li,self%idx%px,1,1)
+  self%boundaries%px_r  = self%mem(m(1)%uo,m(2)%li,m(3)%li,self%idx%px,1,1)
   self%boundaries%solver = self%kind
 
   call trace_end

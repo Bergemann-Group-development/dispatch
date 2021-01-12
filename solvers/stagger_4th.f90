@@ -1,5 +1,5 @@
 !===============================================================================
-!> $Id$
+!> $Id: c6ca151bbd2f99957d95f72b9551488a33827009 $
 !===============================================================================
 MODULE stagger_mod
   USE io_mod
@@ -11,6 +11,9 @@ MODULE stagger_mod
   type, public:: stagger_t
     integer:: flops=0
     integer:: count=0
+    integer:: up(2)=[1,-2]
+    integer:: dn(2)=[2,-1]
+    integer:: order=4
   contains
     procedure, nopass:: ddxdn1
     procedure, nopass:: ddydn1

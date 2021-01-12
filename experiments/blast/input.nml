@@ -11,8 +11,8 @@
 /
 
 ! --- XY plane ---
-&cartesian_params  size=1,1,1  dims=12,12,1 mpi_dims=2,2,1 origin=0.0,0.0,0.0 periodic = f,f,t /
-&patch_params      nt=5 ng=3*8 n=32,32,1 do_check_nan=t grace=0.05 no_mans_land=t
+&cartesian_params  size=1,1,1  dims=8,8,8 mpi_dims=2,2,2 origin=0.0,0.0,0.0 periodic = t,t,t /
+&patch_params      nt=5 n=32,32,32 do_check_nan=t grace=0.05 no_mans_land=t
 /
 
 ! --- XZ plane ---
@@ -26,18 +26,24 @@
 
 &out_params
  end_time=0.022
- out_time=0.001
+ out_time=1e-3
  print_time=0
 /
+
+&aux_params         select='pg'/
 
 &experiment_params
   r0=0.125
   d0=1.0,1.0
   p0=1.0,100.0
-  centre=0.5,0.5,0.0
+  centre=0.5,0.5,0.5
   bx0=7.0711,7.0711
   by0=7.0711,7.0711
-  !bz0=7.0711,7.0711
+  bz0=7.0711,7.0711
+/
+
+&eos_params
+  gamma=1.6666666666667
 /
 
 &zeus_params
@@ -60,16 +66,21 @@
 /
 
 &ramses_params
- courant_factor=0.25
- csound=1.0
- gamma=1.6666667
+ !courant_factor=0.25
  slope_type=3
- !smallr=1e-4
- !smallc=5e-1
- !slope_type=3.5
-  smallr=1e-5
-  smallc=1e-0
+ !csound=1.0
+ gamma=1.6666667
+ !unsigned=t
+! do_corners=t
+ riemann='hlld'
 /
+
+&non_ideal_params
+ mhd_Ohm=f
+ eta_Ohm=0.01
+ mhd_AD=f
+/
+
 
 
 &stagger_params
@@ -98,12 +109,13 @@ ca_max = 3e2
 courant=0.2
 max_r=3
 symmetric_e=f
+eos='tabular'
 !     Ca    U    Uv   d     e      E
 !     nu1   nu2  nu3  nu_d  nu_ee  eta3
 nu=  0.03 , 0.3,  0.1,  0.05,  0.05, 0.9 /
 
 &divb_clean_params
- on=t
+ on=f
  divb_iter=4
  divb_cleaner=0
  /

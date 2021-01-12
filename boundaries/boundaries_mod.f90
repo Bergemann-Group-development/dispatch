@@ -36,7 +36,7 @@ CONTAINS
 !===============================================================================
 SUBROUTINE init (self, patch)
   class(boundaries_t)     :: self
-  class(patch_t)          :: patch
+  class(patch_t), target  :: patch
   !.............................................................................
   call self%standard_boundaries_t%init (patch)
 END SUBROUTINE init

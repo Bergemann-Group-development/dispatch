@@ -1,5 +1,5 @@
 !===============================================================================
-!> $Id$
+!> $Id: 5d1a00ac7f333dc239ec9c7ca3826d6f0b4a7604 $
 !===============================================================================
 MODULE stagger_mod
   USE io_mod
@@ -17,6 +17,9 @@ MODULE stagger_mod
     real(8):: ds(3)
     integer(kind=8):: flops=0
     integer(kind=8):: count=0
+    integer:: up(2)=[0,-1]
+    integer:: dn(2)=[1, 0]
+    integer:: order=2
   contains
     procedure, nopass:: ddxdn1
     procedure, nopass:: ddydn1
@@ -33,6 +36,12 @@ MODULE stagger_mod
     procedure, nopass:: ddx
     procedure, nopass:: ddy
     procedure, nopass:: ddz
+    procedure, nopass:: ddnx
+    procedure, nopass:: ddny
+    procedure, nopass:: ddnz
+    procedure, nopass:: dupx
+    procedure, nopass:: dupy
+    procedure, nopass:: dupz
     procedure, nopass:: ddxdn
     procedure, nopass:: ddydn
     procedure, nopass:: ddzdn
@@ -45,10 +54,18 @@ MODULE stagger_mod
     procedure, nopass:: xup
     procedure, nopass:: yup
     procedure, nopass:: zup
+    procedure, nopass:: xyzsm
+    procedure, nopass:: xmax3
+    procedure, nopass:: ymax3
+    procedure, nopass:: zmax3
+    procedure, nopass:: xmax5=>xmax3
+    procedure, nopass:: ymax5=>ymax3
+    procedure, nopass:: zmax5=>zmax3
     procedure, nopass:: xsm
     procedure, nopass:: ysm
     procedure, nopass:: zsm
-    procedure, nopass:: xyzsm
+    procedure, nopass:: max3
+    procedure, nopass:: max5
     procedure, nopass:: stagger_test
   end type
   type(stagger_t), public:: stagger
@@ -148,7 +165,7 @@ END FUNCTION zup1
 FUNCTION ddx (ds, a) RESULT (b)
   real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  real(8):: ds, c
+  real(8):: ds(3), c
   integer :: ix, iy, iz, n(3)
   integer, save:: itimer=0
 !...............................................................................
@@ -170,7 +187,7 @@ FUNCTION ddx (ds, a) RESULT (b)
   if (n(1) > 1) then
     b(   1,:,:) = 0.0
     b(n(1),:,:) = 0.0
-    c = 0.5/ds
+    c = 0.5/ds(1)
     do iz=1,n(3)
     do iy=1,n(2)
     !$vector always assert
@@ -191,7 +208,7 @@ END FUNCTION ddx
 FUNCTION ddy (ds, a) RESULT (b)
   real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  real(8):: ds, c
+  real(8):: ds(3), c
   integer :: ix, iy, iz, n(3)
   integer, save:: itimer=0
 !...............................................................................
@@ -213,7 +230,7 @@ FUNCTION ddy (ds, a) RESULT (b)
   if (n(2) > 1) then
     b(:,   1,:) = 0.0
     b(:,n(2),:) = 0.0
-    c = 0.5/ds
+    c = 0.5/ds(2)
     do iz=1,n(3)
     do iy=2,n(2)-1
     !$vector always assert
@@ -234,7 +251,7 @@ END FUNCTION ddy
 FUNCTION ddz (ds, a) RESULT (b)
   real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  real(8):: ds, c
+  real(8):: ds(3), c
   integer :: ix, iy, iz, n(3)
   integer, save:: itimer=0
 !...............................................................................
@@ -256,7 +273,7 @@ FUNCTION ddz (ds, a) RESULT (b)
   if (n(3) > 1) then
     b(:,:,   1) = 0.0
     b(:,:,n(3)) = 0.0
-    c = 0.5/ds
+    c = 0.5/ds(3)
     do iz=2,n(3)-1
     do iy=1,n(2)
     !$vector always assert
@@ -316,6 +333,33 @@ FUNCTION ddxdn (ds, a) RESULT (b)
 END FUNCTION ddxdn
 
 !*******************************************************************************
+FUNCTION ddnx (a) RESULT (b)
+  real, dimension(:,:,:), intent(in):: a
+  real, dimension(size(a,1),size(a,2),size(a,3)):: b
+  integer :: ix, iy, iz, n(3)
+  integer, save:: itimer=0
+!...............................................................................
+!  call trace%begin ('stagger_mod::ddxdn', itimer=itimer)
+  n = shape(a)
+  if (n(1) > 1) then
+    b(1,:,:) = 0.0
+    do iz=1,n(3)
+    do iy=1,n(2)
+    !$vector always assert
+    do ix=2,n(1)
+      b(ix,iy,iz) = a(ix  ,iy,iz) - a(ix-1,iy,iz)
+    end do
+    end do
+    end do
+  else
+    b = 0.0
+  endif
+!  call trace%end (itimer)
+  stagger%flops = stagger%flops + 2*n(2)*n(3)*(n(1)-1)
+  stagger%count = stagger%count + 1
+END FUNCTION ddnx
+
+!*******************************************************************************
 FUNCTION ddydn (ds, a) RESULT (b)
   real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
@@ -358,6 +402,33 @@ FUNCTION ddydn (ds, a) RESULT (b)
 END FUNCTION ddydn
 
 !*******************************************************************************
+FUNCTION ddny (a) RESULT (b)
+  real, dimension(:,:,:), intent(in):: a
+  real, dimension(size(a,1),size(a,2),size(a,3)):: b
+  integer :: ix, iy, iz, n(3)
+  integer, save:: itimer=0
+!...............................................................................
+!  call trace%begin ('stagger_mod::ddydn', itimer=itimer)
+  n = shape(a)
+  if (n(2) > 1) then
+    b(:,1,:) = 0.0
+    do iz=1,n(3)
+    do iy=2,n(2)
+    !$vector always assert
+    do ix=1,n(1)
+      b(ix,iy,iz) = a(ix,iy  ,iz) - a(ix,iy-1,iz)
+    end do
+    end do
+    end do
+  else
+    b = 0.0
+  endif
+!  call trace%end (itimer)
+  stagger%flops = stagger%flops + 2*n(1)*n(3)*(n(2)-1)
+  stagger%count = stagger%count + 1
+END FUNCTION ddny
+
+!*******************************************************************************
 FUNCTION ddzdn (ds, a) RESULT (b)
   real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
@@ -398,6 +469,33 @@ FUNCTION ddzdn (ds, a) RESULT (b)
   stagger%flops = stagger%flops + 2*n(1)*n(2)*(n(3)-1)
   stagger%count = stagger%count + 1
 END FUNCTION ddzdn
+
+!*******************************************************************************
+FUNCTION ddnz (a) RESULT (b)
+  real, dimension(:,:,:), intent(in):: a
+  real, dimension(size(a,1),size(a,2),size(a,3)):: b
+  integer :: ix, iy, iz, n(3)
+  integer, save:: itimer=0
+!...............................................................................
+!  call trace%begin ('stagger_mod::ddzdn', itimer=itimer)
+  n = shape(a)
+  if (n(3) > 1) then
+    b(:,:,1) = 0.0
+    do iz=2,n(3)
+    do iy=1,n(2)
+    !$vector always assert
+    do ix=1,n(1)
+      b(ix,iy,iz) = a(ix,iy,iz  ) - a(ix,iy,iz-1)
+    end do
+    end do
+    end do
+  else
+    b = 0.0
+  endif
+!  call trace%end (itimer)
+  stagger%flops = stagger%flops + 2*n(1)*n(2)*(n(3)-1)
+  stagger%count = stagger%count + 1
+END FUNCTION ddnz
 
 !*******************************************************************************
 FUNCTION ddxup (ds, a) RESULT (b)
@@ -443,6 +541,33 @@ FUNCTION ddxup (ds, a) RESULT (b)
 END FUNCTION ddxup
 
 !*******************************************************************************
+FUNCTION dupx (a) RESULT (b)
+  real, dimension(:,:,:), intent(in):: a
+  real, dimension(size(a,1),size(a,2),size(a,3)):: b
+  integer :: ix, iy, iz, n(3)
+  integer, save:: itimer=0
+!...............................................................................
+!  call trace%begin ('stagger_mod::ddxup', itimer=itimer)
+  n = shape(a)
+  if (n(1) > 1) then
+    b(n(1),:,:) = 0.0
+    do iz=1,n(3)
+    do iy=1,n(2)
+    !$vector always assert
+    do ix=1,n(1)-1
+      b(ix,iy,iz) = a(ix+1,iy,iz) - a(ix  ,iy,iz)
+    end do
+    end do
+    end do
+  else
+    b = 0.0
+  endif
+!  call trace%end (itimer)
+  stagger%flops = stagger%flops + 2*n(3)*n(2)*(n(1)-1)
+  stagger%count = stagger%count + 1
+END FUNCTION dupx
+
+!*******************************************************************************
 FUNCTION ddyup (ds, a) RESULT (b)
   real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
@@ -485,6 +610,33 @@ FUNCTION ddyup (ds, a) RESULT (b)
 END FUNCTION ddyup
 
 !*******************************************************************************
+FUNCTION dupy (a) RESULT (b)
+  real, dimension(:,:,:), intent(in):: a
+  real, dimension(size(a,1),size(a,2),size(a,3)):: b
+  integer :: ix, iy, iz, n(3)
+  integer, save:: itimer=0
+!...............................................................................
+!  call trace%begin ('stagger_mod::ddyup', itimer=itimer)
+  n = shape(a)
+  if (n(2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+    b(:,n(2),:) = 0.0
+    do iz=1,n(3)
+    do iy=1,n(2)-1
+    !$vector always assert
+    do ix=1,n(1)
+      b(ix,iy,iz) = a(ix,iy+1,iz) - a(ix,iy  ,iz)
+    end do
+    end do
+    end do
+  else
+    b = 0.0
+  endif
+!  call trace%end (itimer)
+  stagger%flops = stagger%flops + 2*n(1)*n(3)*(n(2)-1)
+  stagger%count = stagger%count + 1
+END FUNCTION dupy
+
+!*******************************************************************************
 FUNCTION ddzup (ds, a) RESULT (b)
   real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
@@ -525,6 +677,33 @@ FUNCTION ddzup (ds, a) RESULT (b)
   stagger%flops = stagger%flops + 2*n(1)*n(2)*(n(3)-1)
   stagger%count = stagger%count + 1
 END FUNCTION ddzup
+
+!*******************************************************************************
+FUNCTION dupz (a) RESULT (b)
+  real, dimension(:,:,:), intent(in):: a
+  real, dimension(size(a,1),size(a,2),size(a,3)):: b
+  integer :: ix, iy, iz, n(3)
+  integer, save:: itimer=0
+!...............................................................................
+!  call trace%begin ('stagger_mod::ddzup', itimer=itimer)
+  n = shape(a)
+  if (n(3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+    b(:,:,n(3)) = 0.0
+    do iz=1,n(3)-1
+    do iy=1,n(2)
+    !$vector always assert
+    do ix=1,n(1)
+      b(ix,iy,iz) = a(ix,iy,iz+1) - a(ix,iy,iz  )
+    end do
+    end do
+    end do
+  else
+    b = 0.0
+  endif
+!  call trace%end (itimer)
+  stagger%flops = stagger%flops + 2*n(1)*n(2)*(n(3)-1)
+  stagger%count = stagger%count + 1
+END FUNCTION dupz
 
 !*******************************************************************************
 FUNCTION xdn (a) RESULT (b)
@@ -859,6 +1038,91 @@ FUNCTION xyzsm(a) RESULT (b)
   b = zsm(ysm(xsm(a)))
   call trace%end (itimer)
 END FUNCTION
+
+!*******************************************************************************
+FUNCTION max3(a) RESULT (b)
+  real, dimension(:,:,:), intent(in):: a
+  real, dimension(size(a,1),size(a,2),size(a,3)):: b
+  integer, save:: itimer=0
+  call trace%begin ('stagger_mod::max3', itimer=itimer)
+  b = zmax3(ymax3(xmax3(a)))
+  call trace%end (itimer)
+END FUNCTION
+
+!*******************************************************************************
+FUNCTION max5(a) RESULT (b)
+  real, dimension(:,:,:), intent(in):: a
+  real, dimension(size(a,1),size(a,2),size(a,3)):: b
+  integer, save:: itimer=0
+  call trace%begin ('stagger_mod::max3', itimer=itimer)
+  b = zmax3(ymax3(xmax3(a)))
+  call trace%end (itimer)
+END FUNCTION
+
+!*******************************************************************************
+FUNCTION xmax3 (a) RESULT (b)
+  real, dimension(:,:,:), intent(in):: a
+  real, dimension(size(a,1),size(a,2),size(a,3)):: b
+  integer :: i, n
+  integer, save:: itimer=0
+!...............................................................................
+!  call trace%begin ('stagger_mod::xsm', itimer=itimer)
+  n = size(a,1)
+  if (n > 2) then
+    do i=2,n-1
+      b(i,:,:) = max(a(i-1,:,:),a(i,:,:),a(i+1,:,:))
+    end do
+    b(1,:,:)  = b(2,:,:)
+    b(n,:,:)  = b(n-1,:,:)
+  else
+    b = a
+  endif
+
+!  call trace%end (itimer)
+
+END FUNCTION
+
+!*******************************************************************************
+FUNCTION ymax3 (a) RESULT (b)
+  real, dimension(:,:,:), intent(in):: a
+  real, dimension(size(a,1),size(a,2),size(a,3)):: b
+  integer :: i, n
+  integer, save:: itimer=0
+!...............................................................................
+!  call trace%begin ('stagger_mod::xsm', itimer=itimer)
+  n = size(a,2)
+  if (n > 2) then
+    do i=2,n-1
+      b(:,i,:) = max(a(:,i-1,:),a(:,i,:),a(:,i+1,:))
+    end do
+    b(:,1,:)  = b(:,2,:)
+    b(:,n,:)  = b(:,n-1,:)
+  else
+    b = a
+  endif
+!  call trace%end (itimer)
+END FUNCTION ymax3
+
+!*******************************************************************************
+FUNCTION zmax3 (a) RESULT (b)
+  real, dimension(:,:,:), intent(in):: a
+  real, dimension(size(a,1),size(a,2),size(a,3)):: b
+  integer :: i, n
+  integer, save:: itimer=0
+!...............................................................................
+!  call trace%begin ('stagger_mod::xsm', itimer=itimer)
+  n = size(a,3)
+  if (n > 2) then
+    do i=2,n-1
+      b(:,:,i) = max(a(:,:,i-1),a(:,:,i),a(:,:,i+1))
+    end do
+    b(:,:,1)  = b(:,:,2)
+    b(:,:,n)  = b(:,:,n-1)
+  else
+    b = a
+  endif
+!  call trace%end (itimer)
+END FUNCTION zmax3
 
 !===============================================================================
 !> Unit test of 6th/5th order operators

@@ -19,6 +19,7 @@ MODULE standard_boundaries_mod
     logical:: unset = .true.
     logical :: mhd = .false.
     class(mesh_t), pointer:: mesh(:)
+    class(patch_t), pointer:: patch
     real(8):: position(3)=0d0, radius=0d0
     real:: vmax
     logical(kind=2), pointer:: filled(:,:,:,:)
@@ -57,7 +58,7 @@ CONTAINS
 !===============================================================================
 SUBROUTINE init (self, patch)
   class(standard_boundaries_t) :: self
-  class(patch_t)               :: patch
+  class(patch_t), target               :: patch
   integer                      :: id
   !.............................................................................
   real(8)                      :: position(3)
@@ -67,6 +68,7 @@ SUBROUTINE init (self, patch)
   !-----------------------------------------------------------------------------
   call trace%begin ('standard_boundaries_t%init')
   self%id = patch%id
+  self%patch => patch
   self%radius = patch%radius
   self%mesh => patch%mesh
   self%position = patch%position
@@ -304,7 +306,7 @@ SUBROUTINE symmetric (self, mem, iv, select)
   call trace%begin ('standard_boundaries_t%symmetric')
   if (self%id==io%id_debug) &
     print *, self%id, 'SYMM', iv, self%is_set(bits%yl), self%is_set(bits%yu)
-  call self%condition (mem, iv, operator)
+  call self%condition (mem, iv, operator, select=select)
   call trace%end()
 END SUBROUTINE symmetric
 
@@ -320,7 +322,7 @@ SUBROUTINE antisymmetric (self, mem, iv, select)
   !-----------------------------------------------------------------------------
   operator => make_antisymmetric
   call trace%begin ('standard_boundaries_t%antisymmetric')
-  call self%condition (mem, iv, operator)
+  call self%condition (mem, iv, operator, select=select)
   call trace%end()
 END SUBROUTINE antisymmetric
 
@@ -338,7 +340,7 @@ SUBROUTINE extrapolate (self, mem, iv, select)
   call trace%begin ('standard_boundaries_t%extrapolate')
   if (self%id==io%id_debug) &
     print *, self%id, 'EXTRAP', iv, self%is_set(bits%yl), self%is_set(bits%yu)
-  call self%condition (mem, iv, operator)
+  call self%condition (mem, iv, operator, select=select)
   call trace%end()
 END SUBROUTINE extrapolate
 
@@ -354,7 +356,7 @@ SUBROUTINE log_extrapolate (self, mem, iv, select)
   !-----------------------------------------------------------------------------
   operator => make_log_extrapolated
   call trace%begin ('standard_boundaries_t%extrapolate')
-  call self%condition (mem, iv, operator)
+  call self%condition (mem, iv, operator, select=select)
   call trace%end()
 END SUBROUTINE log_extrapolate
 
@@ -371,7 +373,7 @@ SUBROUTINE constant (self, mem, iv, value, select)
   !-----------------------------------------------------------------------------
   operator => make_constant
   call trace%begin ('standard_boundaries_t%constant')
-  call self%condition (mem, iv, operator, value=value)
+  call self%condition (mem, iv, operator, value=value, select=select)
   call trace%end()
 END SUBROUTINE constant
 
@@ -387,7 +389,7 @@ SUBROUTINE zero_gradient (self, mem, iv, select)
   !-----------------------------------------------------------------------------
   operator => make_zero_grad
   call trace%begin ('standard_boundaries_t%constant')
-  call self%condition (mem, iv, operator)
+  call self%condition (mem, iv, operator, select=select)
   call trace%end()
 END SUBROUTINE zero_gradient
 

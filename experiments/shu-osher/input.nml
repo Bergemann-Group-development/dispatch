@@ -2,23 +2,24 @@
 &io_params              verbose=0 do_trace=f do_debug=f do_output=t guard_zones=t nml_version=1/
 
 ! in X
-&cartesian_params       size=10,0.003,0.003 dims=6,1,1 mpi_dims=2,1,1 origin=-4.5,0.0,0.0 periodic = f,t,t /
-&patch_params           n=150,1,1 ng=8,8,8 nt=5 no_mans_land=t grace=0.05 do_check_nan=t use_data_hub=f/
+&cartesian_params       size=9,0.03,0.03 dims=10,1,1 mpi_dims=2,1,1 origin=-4.5,0.0,0.0 periodic = f,t,t /
+&patch_params           n=250,3,3  nt=5 no_mans_land=t grace=0.05 do_check_nan=t use_data_hub=f /
 ! in Y
 !&cartesian_params       size=0.003,9,0.003 dims=1,5,1 origin=0.0,-4.5,0.0 periodic = t,f,t /
 !&patch_params           n=1,150,1 ng=8,8,8 nt=5 no_mans_land=t grace=0.05 do_check_nan=t/
 ! in Z
 !&cartesian_params       size=0.003,0.003,9 dims=1,1,5 origin=0.0,0.0,-4.5 periodic = t,t,f /
-!&patch_params           n=1,1,150 ng=8,8,8 nt=5 no_mans_land=t grace=0.05 do_check_nan=t/
+!&patch_params           n=1,1,150 ng=8,8,8 nt=5 no_mans_land=t grace=0.05 do_check_nan=t  /
 !
-&out_params             end_time=2.001 out_time=0.1 print_time=0.0 /
+&out_params             end_time=2.001 out_time=1e-1 print_time=0.0 /
+
+& aux_params            select='tt','pg' /
 !
 &IC_params         P_l=10.33333 P_r=1.0 rho_l=3.857143 
                         vx_l=2.629369 vx_r=0.0 x_disc = -4.0
                         a_d = 0.2 f_d = 5.0 
-                        idir = 1
+                        idir = 1 !gamma=1.66667
                         /
-&timestep_params        time_order=2 /
 
 & IC_refine_params
   on = f
@@ -31,21 +32,29 @@
 grad_var='d' tol_grad=0.1 /
 &zeus_params            gamma=1.4 trnvrsn=0 dtinit=1.0e-5 itote=1 qlin=0.2 qcon=1.0 iord=2 iords=3 istp=2 /
                                         !     cs   pa  ofd  mas  kap  eta
-&stagger_params             gamma=1.4 nu=  0.1, 1.0, 1.0, 0.0, 1.0, 1.0 /
+&stagger_params             gamma=1.4 nu=  0.1, 1.0, 0.0, 0.2, 0.5, 0.5 
+                            mhd = t/
 
 &force_params           /
 
+&eos_params
+  gamma=1.4
+ ! gamma=1.66667
+/
+
 
 &ramses_params
- courant_factor=0.25
- csound=1.0
- gamma=1.6666667
- slope_type=3
- !smallr=1e-4
- !smallc=5e-1
- !slope_type=3.5
-  smallr=1e-5
-  smallc=1e-0
+! courant_factor=0.5
+ !csound=1.0
+ gamma=1.4
+! gamma=1.66667
+ riemann='hlld'
+! slope_type=3.5
+ !smallr=1e-8
+ !smallc=1e-8
+ !smallr=1e-10
+ ! smallc=1e-2
+! do_corners=t
 /
                                         
 &bifrost_params             
