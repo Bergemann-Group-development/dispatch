@@ -599,7 +599,7 @@ SUBROUTINE output_sequence (self, id, time, singlefile)
   !-----------------------------------------------------------------------------
   call trace%begin ('aux_t%output_sequence')
   if (io%do_output) then
-    call aux%lock%set ('output_seq')
+    call io%lock%set ('aux_output_seq')
     if (verbose > 1) then
       write (io_unit%log,'(a,i6,2f12.6)') &
         'aux_t%output_sequence: id, time, aux_next =', &
@@ -618,7 +618,7 @@ SUBROUTINE output_sequence (self, id, time, singlefile)
         'aux_t%output_sequence: id, time, aux_next =', &
         id, time, self%aux_next
     end if
-    call aux%lock%unset ('output_seq')
+    call io%lock%unset ('aux_output_seq')
   end if
   call trace%end ()
 END SUBROUTINE output_sequence
@@ -645,7 +645,7 @@ SUBROUTINE output_aux (self, iout, id, singlefile)
   if (self%n == 0) &
     return
   call trace%begin ('aux_t%output')
-  call aux%lock%set ('output_aux')
+  call io%lock%set ('output_aux')
   call self%list
   !-----------------------------------------------------------------------------
   ! Once per snapshot, re-read the input namelist, to allow edits
@@ -700,7 +700,7 @@ SUBROUTINE output_aux (self, iout, id, singlefile)
   if (verbose > 0) &
     write (io_unit%mpi,'(f12.6,i4,1x,a,i6)') wallclock(), omp%thread, &
     'aux_t%ouput_aux: closed unit', io_unit%aux
-  call aux%lock%unset ('output_aux')
+  call io%lock%unset ('output_aux')
   call trace%end()
 END SUBROUTINE output_aux
 
