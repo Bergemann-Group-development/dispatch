@@ -88,14 +88,14 @@ SUBROUTINE solve (self, k, s, q, mesh, dir, mu)
   debug = .false.
   m = shape(k)
   !-----------------------------------------------------------------------------
-  dr = 0.5*mesh(dir)%d/abs(mu(dir))
+  dr = mesh(dir)%d/abs(mu(dir))
   !-----------------------------------------------------------------------------
   ! Transpose dimensions to solver index coordinates and allocate
   !-----------------------------------------------------------------------------
   if (dir==1) then
     ii = [2,3,1]
   else if (dir==2) then
-    ii = [3,1,2]
+    ii = [1,3,2]
   else
     ii = [1,2,3]
   end if
@@ -206,8 +206,8 @@ SUBROUTINE calculate_offsets (self, mu, dir, mesh, o, p)
     dpdi(2) = mu(3)/abs(mu(1))*mesh(1)%d/mesh(3)%d
   else if (dir==2) then
     ! -- when dir==2, the 1st index is z, the 2nd is x
-    dpdi(1) = mu(3)/abs(mu(2))*mesh(2)%d/mesh(3)%d
-    dpdi(2) = mu(1)/abs(mu(2))*mesh(2)%d/mesh(1)%d
+    dpdi(1) = mu(1)/abs(mu(2))*mesh(2)%d/mesh(1)%d
+    dpdi(2) = mu(3)/abs(mu(2))*mesh(2)%d/mesh(3)%d
   else
     ! -- when dir==3, the 1st index is x, the 2nd is y
     dpdi(1) = mu(1)/abs(mu(3))*mesh(3)%d/mesh(1)%d
@@ -353,8 +353,8 @@ SUBROUTINE solve1 (self, k, s, qin, qout, dr, l, u, debug)
   m = shape(k)
   do ib=1,m(3)
     do i2=l(2),u(2)
-      dtau1(l(1):u(1)) = dr*(k(l(1):u(1),i2,ib,2)+k(l(1):u(1),i2,ib,1))
-      dtau2(l(1):u(1)) = dr*(k(l(1):u(1),i2,ib,2)+k(l(1):u(1),i2,ib,3))
+      dtau1(l(1):u(1)) = 0.5*dr*(k(l(1):u(1),i2,ib,2)+k(l(1):u(1),i2,ib,1))
+      dtau2(l(1):u(1)) = 0.5*dr*(k(l(1):u(1),i2,ib,2)+k(l(1):u(1),i2,ib,3))
       dtaumin = minval(dtau1(l(1):u(1)))
       dtaumax = maxval(dtau1(l(1):u(1)))
       !-------------------------------------------------------------------------
@@ -425,17 +425,24 @@ SUBROUTINE solve2 (self, k, s, qin, qout, dr, l, u, debug)
   logical:: debug
   !.............................................................................
   integer:: i1, i2, ib, m(4), icase
-  real:: dsdtau1, dsdtau2, d2sdtau1, d2sdtau2, ex0, ex1, ex2, dtaumin, dtaumax
+  real(8):: dsdtau1, dsdtau2, d2sdtau1, d2sdtau2, ex0, ex1, ex2, dtaumin, dtaumax
   real(8), pointer:: z(:)
-  real, dimension(size(k,1)):: dtau1, dtau2
+  real(8), dimension(size(k,1)):: dtau1, dtau2
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trc_begin ('rt_integral_t%solve2', itimer=itimer)
   m = shape(k)
   do ib=1,m(3)
     do i2=l(2),u(2)
-      dtau1(l(1):u(1)) = dr*(k(l(1):u(1),i2,ib,2)+k(l(1):u(1),i2,ib,1))
-      dtau2(l(1):u(1)) = dr*(k(l(1):u(1),i2,ib,2)+k(l(1):u(1),i2,ib,3))
+      !dtau1(l(1):u(1)) = 0.5*dr*(k(l(1):u(1),i2,ib,2)+k(l(1):u(1),i2,ib,1))
+      !dtau2(l(1):u(1)) = 0.5*dr*(k(l(1):u(1),i2,ib,2)+k(l(1):u(1),i2,ib,3))
+      dtau1(l(1):u(1)) = dr* min((k(l(1):u(1),i2,ib,2)+k(l(1):u(1),i2,ib,1))*0.5, &
+                            max(2*(k(l(1):u(1),i2,ib,2)*k(l(1):u(1),i2,ib,1))/ &
+                                  (k(l(1):u(1),i2,ib,2)+k(l(1):u(1),i2,ib,1)), 1.33333/dr))
+                                   
+      dtau2(l(1):u(1)) = dr* min((k(l(1):u(1),i2,ib,3)+k(l(1):u(1),i2,ib,2))*0.5, &
+                           max(2*(k(l(1):u(1),i2,ib,3)*k(l(1):u(1),i2,ib,2))/ &
+                                 (k(l(1):u(1),i2,ib,3)+k(l(1):u(1),i2,ib,2)), 1.33333/dr))
         do i1=l(1),u(1)
           ex0 = exp(-dtau1(i1))
           ex1 = 1.-ex0
@@ -447,7 +454,8 @@ SUBROUTINE solve2 (self, k, s, qin, qout, dr, l, u, debug)
           
           qout(i1,i2,ib) = qin(i1,i2,ib,1)*ex0 &
                          - d2sdtau1       *ex1 &
-                   + merge(d2sdtau2       *ex2, 0.0, dtau1(i1) > dtau_min) 
+                  ! + merge(d2sdtau2       *ex2, 0.0, dtau1(i1) > dtau_min) 
+                   + d2sdtau2       *ex2
         end do
     end do
     if (verbose > 1 .and. debug) then

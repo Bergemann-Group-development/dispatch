@@ -10,6 +10,7 @@ MODULE rt_nbors_mod
   USE trace_mod
   USE io_unit_mod
   USE bits_mod
+  USE io_mod
   implicit none
   private
   !.............................................................................
@@ -48,61 +49,67 @@ SUBROUTINE init (mhd)
   !-----------------------------------------------------------------------------
   needs=.true.; needs_me=.false.; download=.false.
   call init_nbor_pair (omega0%link, needs, mhd%link, needs_me, download)
-  !-----------------------------------------------------------------------------
-  ! Loop over all ray directions, and add nbors and nbor relations. The only
-  ! downloads that are needed are from upstream omega tasks
-  !-----------------------------------------------------------------------------
-  do i_omega=1,omega0%n_omega
-    omega => omega0%omega(i_omega)
+  omega => omega0%omega
+  do while (associated(omega))
     !---------------------------------------------------------------------------
-    ! Loop over all MHD nbors
+    ! 2) The omega task needs the RT task, which does not need the omega tasks
     !---------------------------------------------------------------------------
-    nbor => mhd%link%nbor
-    do while (associated(nbor))
-      !-------------------------------------------------------------------------
-      ! Cast the nbors to solver_t type
-      !-------------------------------------------------------------------------
-      nb_task => nbor%task
-      select type (nb_task)
-      class is (solver_t)
+    needs=.true.; needs_me=.false.; download=.false.
+    call init_nbor_pair (omega%link, needs, omega0%link, needs_me, download)
+    !---------------------------------------------------------------------------
+    ! 3) The MHD task needs the omega tasks, which do not need the MHD task
+    !---------------------------------------------------------------------------
+    needs=.true.; needs_me=.false.; download=.false.
+    call init_nbor_pair (mhd%link, needs, omega%link, needs_me, download)
+    omega => omega%next
+  end do    
+  !-----------------------------------------------------------------------------
+  ! Now loop over all MHD nbors
+  !-----------------------------------------------------------------------------
+  nbor => mhd%link%nbors_by_level
+  do while (associated(nbor))
+    !---------------------------------------------------------------------------
+    ! Cast the nbors to solver_t type
+    !---------------------------------------------------------------------------
+    nb_task => nbor%task
+    select type (nb_task)
+    class is (solver_t)
+    !---------------------------------------------------------------------------
+    ! 4) The omega0 task needs the MHD nbors, and needs download
+    !---------------------------------------------------------------------------
+    needs=.true.; needs_me=.false.; download=.true.
+    call init_nbor_pair (omega0%link, needs, nb_task%link, needs_me, download)
+    !---------------------------------------------------------------------------
+    ! Loop over all ray directions, and add nbors and nbor relations. The only
+    ! downloads that are needed are from upstream omega tasks
+    !---------------------------------------------------------------------------
+    omega => omega0%omega
+    do while (associated(omega))
       !-------------------------------------------------------------------------
       ! Select omega sub-tasks
       !-------------------------------------------------------------------------
       if (associated(nb_task%rt)) then
-      if (nb_task%rt%n_omega == 0) then
-        !-----------------------------------------------------------------------
-        ! 2) The omega0 task needs the MHD nbors, and needs download
-        !-----------------------------------------------------------------------
-        needs=.true.; needs_me=.false.; download=.true.
-        call init_nbor_pair (omega0%link, needs, nbor%link, needs_me, download)
-      else
         !-----------------------------------------------------------------------
         ! The omega0%needs() function tests for upstream nbor omega
         !-----------------------------------------------------------------------
-        upstream => nb_task%rt%omega(i_omega)
+        upstream => nb_task%rt%omega
+        do while (associated(upstream) .and. (upstream%i_omega/=omega%i_omega))
+          upstream => upstream%next
+        end do
+        if (.not.associated(upstream)) call io%abort('rt_nbors_mod: upstream err')
         if (omega%needs (omega, upstream) .and. upstream%on) then
           !---------------------------------------------------------------------
-          ! 3) The omega tasks need the upstream tasks, and should download from
+          ! 5) The omega tasks need the upstream tasks, and should download from
           ! them, but the upstream tasks do not need the downstream omega tasks
           !---------------------------------------------------------------------
           needs=.true.; needs_me=.false.; download=.true.
           call init_nbor_pair (omega%link, needs, upstream%link, needs_me, download)
         end if
       end if
-      end if
-      end select
-      nbor => nbor%next
+      omega => omega%next
     end do
-    !-----------------------------------------------------------------------
-    ! 4) The omega task needs the RT task, which does not need the omega tasks
-    !-----------------------------------------------------------------------
-    needs=.true.; needs_me=.false.; download=.false.
-    call init_nbor_pair (omega%link, needs, omega0%link, needs_me, download)
-    !---------------------------------------------------------------------------
-    ! 5) The MHD task needs the omega tasks, which do not need the MHD task
-    !---------------------------------------------------------------------------
-    needs=.true.; needs_me=.false.; download=.false.
-    call init_nbor_pair (mhd%link, needs, omega%link, needs_me, download)
+    end select
+    nbor => nbor%next
   end do
   call trace%end()
 END SUBROUTINE init
@@ -169,6 +176,8 @@ SUBROUTINE init_nbor_pair (link1, needed, link2, needs_me, download)
   !-----------------------------------------------------------------------------
   ! Add the two tasks, which now are guaranteed to have matching flags
   !-----------------------------------------------------------------------------
+  call link1%add_nbor_by_rank (link1%nbors_by_level, nbor1)
+  call link2%add_nbor_by_rank (link2%nbors_by_level, nbor2)
   call link1%add_nbor_by_rank (link1%nbor, nbor1)
   call link2%add_nbor_by_rank (link2%nbor, nbor2)
   if (.not.associated(link1%nbor)) &

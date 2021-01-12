@@ -2,6 +2,8 @@
 !> 
 !=======================================================================
 MODULE spitzer_mod
+  USE aux_mod
+  USE bits_mod
   USE io_mod
   USE trace_mod
   USE kinds_mod
@@ -14,34 +16,40 @@ MODULE spitzer_mod
   USE vector_mod
   USE vector_ops
   USE scaling_mod
-  USE patch_mod
+  USE gpatch_mod
   USE link_mod
   USE scratch_mod
   implicit none
   private
-  logical  :: do_spitzer = .false.
-  logical  :: first_time = .true.
-  real(kind=KindScalarVar)            :: sigma_e= 1.1e-6                           ! in CGS /ul/ul/(ue/ut)
-  real(kind=KindScalarVar), parameter :: csat   = 6.90256e12                       ! in CGS ur/(ue/ut)
-  real(kind=KindScalarVar)            :: amp = 1.0                                 ! spitzer amplification
-  real(kind=KindScalarVar)            :: theta_mg = 0.5                            ! should be ~0.5  for wave, how fast the wave propagates wrt alfvenic spd
-  real(kind=KindScalarVar)            :: dtgerr   = 1e-5 
-  real(kind=KindScalarVar)            :: bmin = 1e-10
-  real(kind=KindScalarVar)            :: texp = 3.5
+  logical, save  :: on = .false.
+  logical, save  :: first_time = .true.
+  character(len=8), save :: method='explicit'
+  real(kind=KindScalarVar), save            :: sigma_e= 1.1e-6                  ! in CGS /ul/ul/(ue/ut)
+  real(kind=KindScalarVar), parameter       :: csat   = 6.90256e12              ! in CGS ur/(ue/ut)
+  real(kind=KindScalarVar), save            :: amp = 1.0                        ! spitzer amplification
+  real(kind=KindScalarVar), save            :: theta_mg = 0.5                   ! should be ~0.5  for wave, how fast the wave propagates wrt alfvenic spd
+  real(kind=KindScalarVar), save            :: bmin = 1e-10
   type, public:: spitzer_t
     real(8) :: sigma0, csat
-    real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: bb     => null()
-    real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: bm     => null()
-    real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: fc     => null()      ! conductive flux
-    real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: dfc    => null()      ! conductive flux change
-    real(kind=KindScalarVar), dimension(:,:,:),   pointer :: sigmac => null()
-    class(patch_t), pointer :: patch 
+    real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: bb     
+    real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: bm     
+    real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: fc                 ! conductive flux
+    real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: dfc                ! conductive flux change
+    real(kind=KindScalarVar), dimension(:,:,:),   pointer :: sigmac   
+    real                                                  :: u_max = 0.0
+    class(gpatch_t), pointer :: patch 
     logical:: on = .false.   
     logical:: first_time = .true.
+    logical:: first_iter = .true.
   contains
+    procedure:: pre_init
     procedure:: init
     procedure:: compute_q
+    procedure:: courant_condition
     procedure:: pre_update
+    procedure:: post_update
+    procedure:: pre_update_wave
+    procedure:: post_update_explicit
     procedure:: compute_b_field_topology
     procedure:: conductive_flux
   end type
@@ -51,34 +59,45 @@ CONTAINS
 !=======================================================================
 !> Read parameters
 !=======================================================================
-SUBROUTINE init (self, link)
+SUBROUTINE pre_init (self, gpatch)
   class (spitzer_t):: self
-  class (link_t), pointer :: link
-  real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: ff
+  class (gpatch_t), target :: gpatch
   ! --------------------------------------------------------------------
-  integer:: iostat, gn(3)
-  namelist /spitzer_conductivity_params/ do_spitzer, amp, theta_mg, dtgerr, bmin, texp, sigma_e
+  integer:: iostat
+  namelist /spitzer_conductivity_params/ on, amp, theta_mg, bmin, sigma_e, method
   !.....................................................................
-  call io%lock%set
+  call io%lock%set ('spitzer_t%init')
   if (first_time) then
     rewind (io_unit%input)
     read (io_unit%input, spitzer_conductivity_params,iostat=iostat)
     if (io%master) write (*, spitzer_conductivity_params)
     first_time = .false.
   end if
-  call io%lock%unset
-  if (do_spitzer) then
-    self%patch => task2patch(link%task)
+  call io%lock%unset('spitzer_t%init')
+  if (on) then
+    self%patch => gpatch
+    self%sigma0 = sigma_e / scaling%l/scaling%l/(scaling%e/scaling%t) * amp
+    self%csat = csat * scaling%d/(scaling%e/scaling%t)
+    self%on = on
+    !---------------------------------------------------------------------------
+    ! Request heating per unit volume for MHD
+    !---------------------------------------------------------------------------
+    
+  end if
+END SUBROUTINE pre_init
+
+!=======================================================================
+!> Allocate arrays
+!=======================================================================
+SUBROUTINE init (self)
+  class (spitzer_t):: self
+  ! --------------------------------------------------------------------
+  integer:: iostat, gn(3)
+  if (self%on) then
     gn = self%patch%mesh%gn
     call allocate_vectors(gn,self%fc, self%dfc)
     self%fc  = 0.0
-    self%dfc = 0.0
-    self%sigma0 = sigma_e / scaling%l/scaling%l/(scaling%e/scaling%t) * amp
-    self%csat = csat * scaling%d/(scaling%e/scaling%t)
-    self%on = do_spitzer
-    if (.not.associated(self%patch%heating_per_unit_volume)) &
-      call allocate_scalars_a(gn,self%patch%heating_per_unit_volume)
-    call self%compute_q(self%patch%mem(:,:,:,:,self%patch%it,1))
+    self%dfc = 0.0    
   end if
 END SUBROUTINE init
 
@@ -90,7 +109,7 @@ SUBROUTINE compute_q(self, ff)
   real(kind=KindScalarVar), dimension(:,:,:,:), target :: ff
   ! --------------------------------------------------------------------
   real(kind=KindScalarVar), dimension(:,:,:),   pointer :: d, e
-  real(kind=KindScalarVar), dimension(:,:,:), allocatable :: tg, lntg
+  real(kind=KindScalarVar), dimension(:,:,:),   pointer :: tg, lntg
   real(kind=KindScalarVar), dimension(:,:,:),   pointer :: dtx, dty, dtz
   real(kind=KindScalarVar), dimension(:,:,:),   pointer :: bbx, bby, bbz
   real(kind=KindScalarVar), dimension(:,:,:),   pointer :: bmx, bmy, bmz
@@ -110,7 +129,7 @@ SUBROUTINE compute_q(self, ff)
   e => ff(:,:,:,self%patch%idx%e)
   n =  shape(d)
   ! allocate scratches
-  call allocate_scalars_a (n, lntg, tg)
+  call allocate_scalars (n, lntg, tg)
   call allocate_vectors (n, dtg, self%bb, self%bm)
   dtx => dtg(:,:,:,1)
   dty => dtg(:,:,:,2)
@@ -127,7 +146,7 @@ SUBROUTINE compute_q(self, ff)
   call eos%lookup_table (n, d=d, e=e, tt=tg)
   lntg = alog(tg)
   ! centered temperature gradient
-  dtg=up(grad(ds,lntg))
+  dtg=up(grad(self%patch%mesh,lntg))
   ! Spitzer wave propagation speed
     do k=lb(3),ub(3)
       do j=lb(2),ub(2)
@@ -147,8 +166,8 @@ SUBROUTINE compute_q(self, ff)
         end do
       end do
     end do
-    call deallocate_scalars_a (lntg, tg)
-    call deallocate_vectors(dtg, self%bb, self%bm)
+    call deallocate_scalars (lntg, tg)
+    call deallocate_vectors (dtg, self%bb, self%bm)
 END SUBROUTINE compute_q
   
 
@@ -158,16 +177,50 @@ END SUBROUTINE compute_q
 SUBROUTINE pre_update(self)
   class (spitzer_t):: self
   ! --------------------------------------------------------------------
+  if (.not.self%on) return
+  !
+  select case(trim(method))
+    case('explicit')
+    case ('wave')
+      call self%pre_update_wave
+    case default
+      call io%abort("spitzer conductivity: method not chosen")
+    end select
+END SUBROUTINE pre_update
+
+
+!=======================================================================
+!> Update Spitzer conductivity.
+!=======================================================================
+SUBROUTINE post_update(self)
+  class (spitzer_t):: self
+  ! --------------------------------------------------------------------
+  if (.not.self%on) return
+  !
+  select case(trim(method))
+    case('explicit')
+      call self%post_update_explicit
+    case ('wave')
+    case default
+      call io%abort("spitzer conductivity: method not chosen")
+    end select
+END SUBROUTINE post_update
+
+!=======================================================================
+!> Update Spitzer conductivity -- wave formulation
+!=======================================================================
+SUBROUTINE pre_update_wave(self)
+  class (spitzer_t):: self
+  ! --------------------------------------------------------------------
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: f
   real(8) :: ds(3), dtime
   ! ....................................................................
   if (.not.self%on) return
   !
-
   ds = self%patch%ds  
   !
   if (self%patch%dtime <= 1d-20) then 
-    dtime = 1d-5
+    dtime = 1d-10
   else
     dtime = self%patch%dtime
   end if
@@ -183,6 +236,7 @@ SUBROUTINE pre_update(self)
     f => self%patch%mem(:,:,:,:,self%patch%it,1)
     call self%conductive_flux(f,dtime)
   end if
+  call scratch%allocate (scratch%heating_per_unit_volume, self%patch%mesh%gn)
   scratch%heating_per_unit_volume = & 
   scratch%heating_per_unit_volume - div(ds,down(self%fc))
 
@@ -193,7 +247,125 @@ SUBROUTINE pre_update(self)
   
   !print *, 'max dedt after spitz', maxval(abs(ff(:,:,:,self%idx%e,it,2)))
   
-END SUBROUTINE pre_update
+END SUBROUTINE pre_update_wave
+
+!===============================================================================
+!> Update Spitzer conductivity -- explicit formulation
+!===============================================================================
+SUBROUTINE post_update_explicit(self)
+  class (spitzer_t):: self
+  ! ----------------------------------------------------------------------------
+  real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: dtg, B, Bc
+  real(kind=KindScalarVar), dimension(:,:,:), pointer :: d, e, tg, lnd, lntg, dedt
+  real(kind=KindScalarVar), dimension(:,:,:), pointer :: dtgx, dtgy, dtgz, dddt
+  real(kind=KindScalarVar), dimension(:,:,:), pointer :: bcx, bcy, bcz, qspitz
+  real(kind=KindScalarVar) ::  u_cond,lgtmin_loc,kappac,kappam,tmp
+  real(8) :: ds(3), dsmax
+  integer :: n(3), lb(3), ub(3), li(3), ui(3)
+  
+  real,save :: lgtmin = 0.0
+  integer :: count,i,j,k
+  ! ............................................................................
+  do i=1,3
+    lb(i) = self%patch%mesh(i)%lb
+    ub(i) = self%patch%mesh(i)%ub
+    li(i) = self%patch%mesh(i)%li
+    ui(i) = self%patch%mesh(i)%ui
+    ds(i) = self%patch%mesh(i)%d
+     n(i) = self%patch%gn(i)
+  end do
+  dsmax = maxval(ds,n>1)
+  d => self%patch%mem(:,:,:,self%patch%idx%d,self%patch%it,1)
+  e => self%patch%mem(:,:,:,self%patch%idx%e,self%patch%it,1)
+  dedt => self%patch%mem(:,:,:,self%patch%idx%e,self%patch%it,2)
+  dddt => self%patch%mem(:,:,:,self%patch%idx%d,self%patch%it,2)
+  B => self%patch%mem(:,:,:,self%patch%idx%bx:self%patch%idx%bz,self%patch%it,1)
+  n =  shape(d)
+  ! allocate scratches
+  call allocate_scalars (n, lntg, tg, qspitz)
+  call allocate_vectors (n, dtg, Bc)
+  ! gas temperature
+  call eos%lookup_table (n, d=d, e=e, tt=tg)
+  lntg = alog(tg)
+
+  u_cond=8e-7*scaling%temp**3.5/scaling%l**2*(scaling%t/scaling%e)
+
+  if (lgtmin == 0.0 ) then
+    lgtmin=alog(8.0e3)
+  endif
+
+! ** face centered temperature
+! scr7 - log temperature
+! scr1 - dtx
+! scr2 - dty
+! scr3 - dtz
+! scr4 - bxc
+! scr5 - byc
+! scr6 - bzc
+  ! ----------------------------------------------------------------------------
+  ! centered temperature gradient and magnetic field components
+  ! ----------------------------------------------------------------------------
+  dtg = up(grad(self%patch%mesh,lntg))
+  Bc  = up(B)
+  ! ----------------------------------------------------------------------------
+  ! point for convenience
+  ! ----------------------------------------------------------------------------
+  dtgx => dtg(:,:,:,1)
+  dtgy => dtg(:,:,:,2)
+  dtgz => dtg(:,:,:,3)
+  bcx  => bc (:,:,:,1)
+  bcy  => bc (:,:,:,2)
+  bcz  => bc (:,:,:,3)
+
+  count=0
+  do k=lb(3),ub(3)
+    do j=lb(2),ub(2)
+      do i=lb(1),ub(1)
+        kappac  = u_cond*exp(3.5*lntg(i,j,k))
+        kappam  = self%patch%u_max*e(i,j,k)
+        tmp = min(kappac,kappam)*(dtgx(i,j,k)*bcx(i,j,k) + &
+                                  dtgy(i,j,k)*bcy(i,j,k) + &
+                                  dtgz(i,j,k)*bcz(i,j,k))/ &
+                                 (bcx(i,j,k)*bcx(i,j,k) + &
+                                  bcy(i,j,k)*bcy(i,j,k) + &
+                                  bcz(i,j,k)*bcz(i,j,k) + 1e-20)
+        bcx(i,j,k) = bcx(i,j,k)*tmp
+        bcy(i,j,k) = bcy(i,j,k)*tmp
+        bcz(i,j,k) = bcz(i,j,k)*tmp
+        if ((kappac >= kappam).and. &
+            (i >= li(1)).and.(i <= ui(1)).and. &
+            (j >= li(2)).and.(j <= ui(2)).and. &
+            (k >= li(3)).and.(k <= ui(3))) count=count+1
+      end do
+    end do
+  end do
+
+!call extrap_fullz_upper(scr1)
+!call extrap_fullz_lower(scr2)
+
+  ! ----------------------------------------------------------------------------
+  ! divergence of a field aligned flux
+  ! ----------------------------------------------------------------------------
+  qspitz = div(ds,down(bc))
+
+
+  do k=lb(3),ub(3)
+    do j=lb(2),ub(2)
+      do i=lb(1),ub(1)
+        if (lntg(i,j,k) >= lgtmin) dedt(i,j,k)= dedt(i,j,k) + qspitz(i,j,k)
+      end do
+    end do
+  end do
+
+ ! print *, 'spitzer', self%patch%id, minval(qspitz), maxval(qspitz)
+  self%u_max = 0.5*dsmax*self%patch%fmaxval(abs((dedt-e/d*dddt)/d))                   ! ops: 1 1 1
+  call self%patch%aux%register ('qspitz', qspitz)
+  call deallocate_scalars (lntg, tg, qspitz)
+  call deallocate_vectors (dtg, Bc)
+
+!print*,'number of points with lowered conduction: ',self%patch%id,(1.0*count)/(1.0*product(n))
+  
+END SUBROUTINE post_update_explicit
 
 !=======================================================================
 !>
@@ -252,7 +424,7 @@ SUBROUTINE conductive_flux(self, ff, dt)
   ! magnetic field topology
   call self%compute_b_field_topology(ff)
   ! centered temperature gradient
-  dtg=up(grad(ds,tg))
+  dtg=up(grad(self%patch%mesh,tg))
   ! Spitzer wave propagation speed
     dtheta = theta_mg*minval(ds)/dt
   !
@@ -279,8 +451,6 @@ SUBROUTINE conductive_flux(self, ff, dt)
       end do
     end do
   end do
-  print *, 'ucmax',u_cmax
-  print *, '================= tau_spitz', tau_spitz, dt
   call deallocate_vectors (self%bb, self%bm,dtg)
   call deallocate_scalars (ux, uy, uz)
   call deallocate_scalars (lnd, self%sigmac, lntg, tg)
@@ -388,6 +558,20 @@ SUBROUTINE compute_b_field_topology(self,ff)
   call deallocate_scalars(scr1,scr2)
   call trace%end()
 END SUBROUTINE compute_b_field_topology
+
+!===============================================================================
+!> Intercept of courant_condition() call
+!===============================================================================
+SUBROUTINE courant_condition (self, detailed_timer)
+  class(spitzer_t):: self
+  logical, optional:: detailed_timer
+  !-----------------------------------------------------------------------------
+  if (.not.self%on) return
+  call trace%begin ('spitzer_t%courant_condition')
+  !print *, 'u_max(ee after spitzer)', self%patch%id, self%u_max, self%patch%u_max
+  self%patch%u_max = max (self%patch%u_max, self%u_max)
+  call trace%end()
+END SUBROUTINE courant_condition
 
 
 END MODULE spitzer_mod

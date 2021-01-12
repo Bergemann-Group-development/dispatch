@@ -11,7 +11,7 @@ shared_mod.o            :
 ray_geometry_mod.o      : io_mod.o trace_mod.o
 ray_geometry_v2_mod.o   : io_mod.o trace_mod.o
 ray_geometry_v3_mod.o   : io_mod.o trace_mod.o
-read_snapshot_mod.o     : task_list_mod.o lagrange_mod.o experiment_mod.o
+read_snapshot_mod.o     : task_list_mod.o lagrange_mod.o experiment_mod.o bifrost_scaling_mod.o scaling_mod.o
 setup_mod.o             : io_mod.o trace_mod.o mpi_mod.o omp_mod.o omp_lock_mod.o \
                           mpi_mesg_mod.o timer_mod.o eos_mod.o opacity_mod.o scaling_mod.o \
 			  download_mod.o 
