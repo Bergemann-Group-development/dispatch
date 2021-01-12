@@ -34,7 +34,7 @@ CONTAINS
 !===============================================================================
 SUBROUTINE pre_init (self, patch)
   class(gravity_t):: self
-  class(gpatch_t), pointer :: patch
+  class(gpatch_t), target :: patch
   ! ............................................................................
   integer                           :: iostat, gn(3)
   real(kind=KindScalarVar), save    :: constant = 0.0
@@ -65,6 +65,9 @@ SUBROUTINE pre_init (self, patch)
     self%position   = position
     self%mass       = mass
     self%minrad     = minrad
+    !---------------------------------------------------------------------------
+    ! Request force per unit mass for MHD
+    !---------------------------------------------------------------------------
     if (constant /= 0.0) then
       self%grav => const_grav
     else if (mass > -1.0) then
@@ -84,11 +87,6 @@ SUBROUTINE init (self)
   integer:: gn(3)
   !-----------------------------------------------------------------------------
   call trace%begin ('selfgravity_t%init')
-  if (.not.associated(scratch%force_per_unit_mass)) then
-    gn = self%patch%gn
-    allocate (scratch%force_per_unit_mass(gn(1),gn(2),gn(3),3))
-    scratch%force_per_unit_mass = 0.0
-  end if
   call trace%end()
 END SUBROUTINE init
 
@@ -97,6 +95,7 @@ END SUBROUTINE init
 SUBROUTINE pre_update(self)
   class(gravity_t) :: self
   ! ----------------------------------------------------------------------------
+  if (.not.self%on) return
   call self%grav()
 END SUBROUTINE pre_update
   
@@ -104,7 +103,11 @@ END SUBROUTINE pre_update
 !===============================================================================
 SUBROUTINE const_grav(self)
   class(gravity_t) :: self
+  integer:: nn(4)
   ! ----------------------------------------------------------------------------
+  nn(1:3)=self%patch%mesh%gn
+  nn(4) = 3
+  call scratch%allocate (scratch%force_per_unit_mass, nn)
   scratch%force_per_unit_mass(:,:,:,self%axis) = &
   scratch%force_per_unit_mass(:,:,:,self%axis) + self%const_grav
 END SUBROUTINE const_grav
@@ -114,12 +117,15 @@ END SUBROUTINE const_grav
 SUBROUTINE var_grav(self)
   class(gravity_t) :: self
   ! ----------------------------------------------------------------------------
-  integer:: ix, iy, iz, i
+  integer:: ix, iy, iz, i, nn(4)
   real(8):: rp
   real(8):: x, y, z, xs, ys, zs, xp, yp, zp, ds2(3)
   real(kind=KindScalarVar):: newton
   ! ............................................................................
   newton = self%mass*scaling%grav
+  nn(1:3)=self%patch%mesh%gn
+  nn(4) = 3
+  call scratch%allocate (scratch%force_per_unit_mass, nn)
   associate (m=>self%patch%mesh)
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do i=1,3
