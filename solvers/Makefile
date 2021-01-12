@@ -21,3 +21,5 @@ vector_ops.o            : $(STAGGER) mesh_mod.o
 forces_mod.o            : io_mod.o trace_mod.o gpatch_mod.o force_mod.o link_mod.o \
                           mpi_global_mod.o scratch_mod.o
 flux_mod.o              : io_mod.o trace_mod.o patch_mod.o
+divb_clean_mod.o        : io_mod.o trace_mod.o mesh_mod.o vector_mod.o scalar_mod.o vector_ops.o
+
