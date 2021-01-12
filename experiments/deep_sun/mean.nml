@@ -1,0 +1,153 @@
+
+&experiment_params
+ verbose=0
+ clamp_e = f
+ /
+
+&boundary_params    verbose=0
+                    !d_bot=231.
+                    !e_bot=2896.484
+                    bottom_bc_rate=0.9
+                    scale=t 
+                    divb_iter=0
+                    damp_rate=0.2
+                    r_sponge = 0.5
+                    deriv_bnd=t
+                    pb_fact=1.0
+                    t_bdry=3.0
+
+& snapshot_params       
+ order    =1
+ verbose  =0
+ meshfile ='input_data/boris/undeep.mesh'
+ snapfile ='input_data/boris/undeepb_1618.snap'
+ model    ='bifrost'
+ b0=0.0,0.0,0.0
+ flip_z   = t
+ force_mean=t
+/
+
+
+&spitzer_conductivity_params
+ on=f
+/
+
+&non_ideal_params
+ mhd_Ohm=f
+ eta_Ohm=0.01
+ mhd_AD=f
+/
+
+&gravity_params     on=t 
+                    constant=-27400 
+                    axis=3 
+                    position=0.0 
+                    mass=-1 
+                    minrad=-1 
+/
+&newton_params      on=f 
+                    axis=3 
+                    position=0.5 
+                    scale=0.12 
+                    !ee0=3.44 
+                    ee1=0.3 
+                    time=0.1 
+/
+
+
+&rt_integral_params verbose=0 dtau_min=1e-3 dtau_dif=1e2 dtau_max=1e3 solver=2 order=1 /
+&sc_rt_params       on=t verbose=0 nt=1 n_mu=2 n_phi=4  n_bin=4 rt_freq=1
+                    rt_grace=0.05 rt_llc=0,0,-2.4 rt_urc=12,12,0.45
+                    n_warmup=30 cdtd=0.1 /
+
+! -- I/O parameters ------------------------------------------------------------
+&io_params          verbose=0 do_trace=f omp_trace=f do_output=t id_debug=0
+                    restart=-1  guard_zones=t nml_version=1 /
+&out_params         end_time=100.101 out_time=1e-1 print_time=0 /
+&aux_params         select='tt','qr','qspitz'/
+
+&cartesian_params       
+ size=12,12,6 
+ dims=12,12,6 
+ mpi_dims=6,6,2 
+ origin=0,0,-5.5 
+ omp_init=f 
+ periodic = t,t,f
+ !fast_nbors=f 
+/
+&patch_params
+ do_check_nan=t 
+ nt=5 
+ grace=0.2
+ n=3*32 
+ no_mans_land=t 
+ use_data_hub=f 
+/
+
+                        
+&stagger_params         
+ !    cs    pa   ofd  mas   kap  eta
+ nu=  0.03, 1.0, 1.0, 0.0, 1.0, 1.0
+ gamma=1.6666666666666667 
+ do_temperature=t
+ eos='tabular' 
+ courant=0.15
+/
+
+& initial_refine_params
+  on = f
+  n_refine = 0,0,2
+  center   = 0.0,0.0,0.0
+  extent   = 0.0,0.0,0.5
+
+&refine_params          on=f levelmax=12 levelmin=1 verbose=3 check_interval=2 /
+
+&bifrost_params             
+gamma=1.6666666666667
+loginterpolation=t
+ca_max = 3e2 
+courant=0.15
+max_r=3
+symmetric_e=f
+do_temperature=t
+eos='tabular'
+!     nu1   nu2  nu3  nu_d  nu_ee  eta3
+!nu=  0.05 , 0.3,  0.7,  0.0,  0.05, 0.2 /
+!nu=  0.03 , 0.3,  0.1,  0.05,  0.05, 0.8 /
+nu=  0.05 , 0.1,  0.5,  0.05,  0.1, 0.2 /
+
+&divb_clean_params
+ on=f
+ divb_iter=4
+ divb_cleaner=0
+ /
+
+
+&eos_params
+ table_loc = 'input_data/boris'
+ !table_loc = '../../data/eos/square_gas'
+   /
+&timestep_params        
+time_order=2
+/
+
+&ramses_params
+ courant_factor=0.25
+ csound=1.0
+ gamma=1.6666667
+ slope_type=3
+ !smallr=1e-4
+ !smallc=5e-1
+ !slope_type=3.5
+  smallr=1e-20
+  smallc=1e-5
+/
+
+! -- Task control parameters ---------------------------------------------------
+&timer_params       sec_per_report=20 verbose=0 /
+&task_list_params   job_seconds=1e6 /
+&dispatcher_params  method=0 /
+&dispatcher3_params verbose=0 f_over=3 use_taskyield=f use_critical=f /
+&task_mesg_params   verbose=0 /
+&mpi_mesg_params    verbose=0 debug=f /
+

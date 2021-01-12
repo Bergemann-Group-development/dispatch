@@ -1,0 +1,125 @@
+
+&task_list_params
+job_seconds=1e6
+/
+&task_mesg_params
+verbose=1
+/
+&mpi_mesg_params
+verbose=1
+debug  =.true.
+/
+
+&experiment_params
+ verbose=0
+ d_bot  =3550 
+ e_bot  =78000
+ top_temperature = 4500 
+/
+
+& snapshot_params       
+ order    =1
+ verbose  =0
+ meshfile ='input_data/nw072100_ph.mesh'
+ snapfile ='input_data/nw072100_ph.snap'
+ model    ='bifrost'
+ b0       = -1.0
+ flip_z   = f
+/
+
+
+&spitzer_conductivity_params
+ on=t
+ amp = 1.0
+/
+
+&non_ideal_params
+ mhd_Ohm=t
+ eta_Ohm=0.o1
+ mhd_AD=t
+/
+
+&gravity_params
+ on=t
+ constant=27500     ! in CGS
+ const_axis=3
+ position=0.0       ! in code position
+ mass=-1            ! in code units
+ minrad=-1          ! in code units
+/
+
+
+&rt_params              
+ on =t 
+ verbose=0 
+ nt=1 
+ n_mu=2 
+ n_phi=4 
+ n_bin       = 4 
+ rt_timestep = 0.001
+ grace       = 0.0
+ rt_llc      = 0,0,-0.5
+ rt_extent   = 72,72,8.5
+/
+&rt_setup_params        
+ verbose      = 0 
+ n_warmup     = 4 
+ unique_ids   = t 
+ only_vertical= t 
+/
+
+&io_params              
+ verbose=0 
+ do_trace=f 
+ omp_trace=f 
+ do_output=t 
+ method='parallel' 
+ id_debug=0 
+ restart=-1  
+ guard_zones=t
+/
+
+&cartesian_params       
+ size=72,72,8.5 
+ dims=20,20,18 
+ mpi_dims=2,2,1 
+ origin=0,0,-0.5 
+ omp_init=f 
+ fast_nbors=f 
+/
+&patch_params
+ do_check_nan=t 
+ nt=5 
+ grace=0.05 
+ n=3*32 
+ no_mans_land=t 
+ use_data_hub=f 
+ dt_fixed=-1 
+/
+
+&out_params             
+ end_time=25.00 
+ out_time=0.05 
+ print_time=0
+/
+                        
+&stagger_params         
+ !    cs    pa   ofd  mas   kap  eta
+ nu=  0.03, 1.0, 1.0, 0.05, 1.0, 1.0
+ gamma=1.6666666666666667
+ eos='tabular' 
+ courant=0.15 
+/
+
+&eos_params
+ table_loc = 'input_data'
+   /
+&timestep_params        
+time_order=2
+/
+
+
+&timer_params  sec_per_report=20 /
+&dispatcher_params      method=0 /
+&dispatcher3_params     verbose=0 f_over=3 use_taskyield=f use_critical=f /
+&download_params        verbose=0 /
