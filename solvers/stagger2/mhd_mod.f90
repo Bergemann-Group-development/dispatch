@@ -145,12 +145,10 @@ END SUBROUTINE pre_init
 SUBROUTINE init (self)
   class(mhd_t):: self
   integer :: i
-  ! ----------------------------------------------------------------------------
-  call trace%begin('mhd_t%init')
-  call self%extras_t%init
-  self%type = 'mhd_t'
-  self%unsigned(self%idx%d)  = unsigned
-  self%pervolume(self%idx%s) = unsigned
+  !-----------------------------------------------------------------------------
+  ! Set the staggering, unsigned and pervolume flags before calling the rest
+  ! of the cascade if %init(), where %gpatch_t%init may need them, in IC calls
+  !-----------------------------------------------------------------------------
   do i=1,3
     self%mesh(i)%h(self%idx%px+i-1) = -0.5
     if (self%mhd) self%mesh(i)%h(self%idx%bx+i-1) = -0.5
@@ -159,7 +157,16 @@ SUBROUTINE init (self)
     do i=1,3
       print '("h:",8f5.2)', self%mesh(i)%h
     end do
-  end if
+  self%unsigned(self%idx%d) = unsigned
+  self%unsigned(self%idx%e) = unsigned
+  self%pervolume(self%idx%px) = unsigned
+  self%pervolume(self%idx%py) = unsigned
+  self%pervolume(self%idx%pz) = unsigned
+  !-----------------------------------------------------------------------------
+  ! Initialize everything else, and do a sanity check
+  !-----------------------------------------------------------------------------
+  call self%extras_t%init
+  self%type = 'mhd_t'
   !-----------------------------------------------------------------------------
   ! Self tests, only on one thread
   !-----------------------------------------------------------------------------

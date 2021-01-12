@@ -522,6 +522,32 @@ SUBROUTINE pre_init (self)
   self%no_mans_land = no_mans_land              ! mesh centering
   self%print_next  = print_time
   self%limit_dtime = limit_dtime
+  !-----------------------------------------------------------------------------
+  ! Initialize the meshes, in order to be able to do the staggering, which
+  ! is needed in the mhd_t%init(), before the call to extras_t%init()
+  !-----------------------------------------------------------------------------
+  call MeshFactory(self%mesh_type, self%mesh, n=self%n, ng=self%ng, s=self%size, &
+                   p=self%position, llc_native=self%llc_nat, nml=self%no_mans_land)
+  !-----------------------------------------------------------------------------
+  ! Intialise staggering indices; it is the responsibility of the *solver* to
+  ! assign non-zero values to this variable (if any).
+  !-----------------------------------------------------------------------------
+  do i=1,3
+    allocate(self%mesh(i)%h(self%nv))
+    self%mesh(i)%h = 0.0
+    if (self%kind == 'zeus_mhd_patch' .and. &
+        self%staggered .and. self%n(i) /= 1) self%mesh(i)%gn = self%mesh(i)%gn + 1
+    if (self%kind == 'zeus_tw_mhd_patch' .and. &
+        self%staggered .and. self%n(i) /= 1) self%mesh(i)%gn = self%mesh(i)%gn + 1
+  end do
+  !-----------------------------------------------------------------------------
+  ! The unsigned and pervoleme flags should also be modified by the solver,
+  ! so they also need to be allocated here.
+  !-----------------------------------------------------------------------------
+  allocate (self%unsigned (self%nv))
+  allocate (self%pervolume(self%nv))
+  self%unsigned (:) = .false.
+  self%pervolume(:) = .false.
   call trace%end()
 END SUBROUTINE pre_init
 
@@ -580,18 +606,6 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
   ! box size and position
   !-----------------------------------------------------------------------------
   call omp%set_stacksize (self%nv)
-  call MeshFactory(self%mesh_type, self%mesh, n=self%n, ng=self%ng, s=self%size, &
-                   p=self%position, llc_native=self%llc_nat, nml=self%no_mans_land)
-  ! intialise staggering indices; it is the responsibility of the *solver* to
-  ! assign non-zero values to this variable (if any).
-  do i=1,3
-    allocate(self%mesh(i)%h(self%nv))
-    self%mesh(i)%h = 0.0
-    if (self%kind == 'zeus_mhd_patch' .and. &
-        self%staggered .and. self%n(i) /= 1) self%mesh(i)%gn = self%mesh(i)%gn + 1
-    if (self%kind == 'zeus_tw_mhd_patch' .and. &
-        self%staggered .and. self%n(i) /= 1) self%mesh(i)%gn = self%mesh(i)%gn + 1
-  end do
   self%ds = self%mesh%d
   self%ncell = self%mesh%nc
   self%mesh%id = self%id
@@ -650,10 +664,6 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
     end do
     self%mem_allocated = .true.               ! mark
     call io%bits_mem (storage_size(self%mem), product(shape(self%mem)), 'mem')
-    allocate (self%unsigned (self%nv))
-    allocate (self%pervolume(self%nv))
-    self%unsigned (:) = .false.
-    self%pervolume(:) = .false.
   end if
   self%wallclock = wallclock()                  ! starting time
   n_header = storage_size(header)/32            ! 32 bits per word
