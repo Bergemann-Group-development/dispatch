@@ -515,7 +515,7 @@ SUBROUTINE read_stagger_snap (task_list)
       if ((iiv==patch%idx%pz).or.(iiv==patch%idx%py).or. &
         (iiv==patch%idx%bz).or.(iiv==patch%idx%by)) then
         !do iz=1,mz; do iy=1,my; do ix=1,mx
-        print  *, 'flipping buffer..'
+        if (io%master) print  *, 'flipping buffer..'
         buffer = -buffer
         !end do; end do; end do
       end if
