@@ -97,9 +97,10 @@ eos='tabular'
 &task_mesg_params   verbose=0 /
 &mpi_mesg_params    verbose=0 debug=f /
 /
-&refine_params          on=t verbose=0 levelmin=8 levelmax=10
-                        max_vorticity=5 !min_vorticity=2.0
-                        max_compress=10 min_compress =4.0
+&refine_params          on=t verbose=2 levelmin=8 levelmax=10
+                        max_vorticity=2.0 !min_vorticity=2.0
+                        max_compress=5 !min_compress =4.0
+                        max_shock=2.0
                         check_interval=5
                         /
 !&download_params order_interpolator=1 /
