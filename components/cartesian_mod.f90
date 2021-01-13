@@ -1,8 +1,10 @@
 MODULE cartesian_mod
   USE task_list_mod
   USE experiment_mod
+  USE gpatch_mod
   USE patch_mod
   USE link_mod
+  USE list_mod
   USE task_mod
   USE trace_mod
   USE io_mod
@@ -24,6 +26,7 @@ MODULE cartesian_mod
   contains
     procedure init
     procedure, nopass:: diagnostics
+    procedure:: initial_refine
   end type
   integer:: verbose=0
   logical:: omp_init=.true.
@@ -40,13 +43,13 @@ SUBROUTINE init (self, task_list, label)
   type(task_list_t), optional, pointer:: task_list
   character(len=*), optional:: label
   !.............................................................................
-  type(task_list_t), pointer:: patch_list
+  class(list_t), pointer:: tlist
   class(link_t), pointer:: link, next
   class(experiment_t), pointer:: patch
   class(task_t), pointer:: task
   integer:: i, j, k, id, ip, iostat
   integer:: dims(3) = [4,4,4]
-  integer:: patches_per_mpi(3)
+  integer:: patches_per_mpi(3), refine
   integer:: mpi_dims(3) = [1,1,1]
   integer:: per_rank(3) = [0,0,0]
   real(8):: size(3) = [1.0,1.0,1.0]
@@ -90,7 +93,7 @@ SUBROUTINE init (self, task_list, label)
     where (per_rank/=0) dims=per_rank*mpi_dims
   end if
   per_rank = dims/mpi_dims
-  if (any(dims == 2)) then
+  if (any(dims == 2 .and. periodic)) then
     call io%abort ('two patches per dimension is not allowed')
   end if
   self%position = position
@@ -129,6 +132,7 @@ SUBROUTINE init (self, task_list, label)
   ! Begin on task list
   !-----------------------------------------------------------------------------
   call self%task_list%init ('tlist')
+  tlist => self%task_list
   self%task_list%size = self%size
   self%task_list%dims = self%dims
   self%task_list%position = self%position
@@ -157,6 +161,7 @@ SUBROUTINE init (self, task_list, label)
     ! Generate the same IDs on all ranks, pruning the external tasks below
     !---------------------------------------------------------------------------
     call patch%task_t%init_unique (same=.true.)
+    patch%task_list => self%task_list
     patch%box = self%size
     patch%size = self%size / self%dims
     patch%position = ([i,j,k]+0.5d0)*patch%size + origin
@@ -174,8 +179,8 @@ SUBROUTINE init (self, task_list, label)
     call patch%set(bits%static)
     if (all(self%dims==1)) call task%set(bits%root_grid)
     ! -- initially append all tasks to the task list, to build nbor lists ------
-    call self%task_list%append_link (link)
-    write (io_unit%mpi,'(3i4,3f8.3,i4,a)') i,j,k,patch%position,patch%rank,'i,j,k,pos,rank'
+    call self%initial_refine(tlist, patch,patch%level,ip)
+    !call self%task_list%append_link (link)
   end do
   end do
   end do
@@ -196,6 +201,7 @@ SUBROUTINE init (self, task_list, label)
     if (link%task%is_set (bits%external)) then
       call link%remove_nbor_list2 (link%nbor)
       call self%task_list%remove (link)
+      call link%task%dealloc()
       deallocate (link%task)
       deallocate (link)
     end if
@@ -232,6 +238,10 @@ SUBROUTINE init (self, task_list, label)
     write(stdout,*) 'cartesian_t%init: init boundaries'
   call self%task_list%init_bdries
   !-----------------------------------------------------------------------------
+  if (io_unit%master) then
+    write (io%namelist, cartesian_params)
+    flush (io%namelist)
+  end if
   if (verbose > 0) &
     write(stdout,*) 'cartesian_t%init: diagnostics'
   call self%diagnostics()
@@ -244,6 +254,123 @@ SUBROUTINE init (self, task_list, label)
   !-----------------------------------------------------------------------------
   call trace%end ()
 END SUBROUTINE init
+
+recursive SUBROUTINE initial_refine(self,tlist, task,level_min, ip)
+  class(cartesian_t):: self
+  class(list_t), pointer:: tlist
+  class(experiment_t), pointer:: task
+  integer:: level_min, ip
+  ! ----------------------------------------------------------------------------
+  class(link_t), pointer:: link
+  class(experiment_t), pointer:: patch
+  logical, save:: on = .false.
+  real(8), save:: center(3)
+  real(8), save:: extent(3), ratio=2.0
+  integer, save:: n_refine(3)
+  logical, save:: first_time=.true.
+  logical, save:: keep_parent=.true.
+  real(8), dimension(3):: size, pos
+  integer:: refine=-1, iostat
+  integer:: level_max, i, j, k
+  namelist /initial_refine_params/ on, n_refine, center, extent, ratio, keep_parent
+  ! ............................................................................
+  if (first_time) then
+    first_time = .false.
+    rewind (io%input); read (io%input, initial_refine_params, iostat=iostat)
+    write (io%output, initial_refine_params)
+    if (on) call io%header('begin initial mesh refinement')
+  end if
+  if (.not.on) then
+    !call task%pre_init()
+    call self%task_list%append_link (task%link)
+    !call task%add_to_task_list (tlist)
+    write (io_unit%mpi,'(3i4,3f8.3,i4,a)') i,j,k,task%position,task%rank,'i,j,k,pos,rank'
+    return
+  end if
+  level_max = level_min+maxval(n_refine)
+  ! check X
+  refine=-1
+  refine = max(refine,nint(level_min+(level_max-level_min)* &
+           exp(-abs(task%position(1)-center(1))/(extent(1)+1e-20))) - task%level)
+  ! check Y
+  refine = max(refine,nint(level_min+(level_max-level_min)* &
+           exp(-abs(task%position(2)-center(2))/(extent(2)+1e-20))) - task%level)
+  ! check Z
+  refine = max(refine,nint(level_min+(level_max-level_min)* &
+           exp(-abs(task%position(3)-center(3))/(extent(3)+1e-20))) - task%level)
+  if (refine>0 .and. task%level<level_max) then
+    do k=1,ratio
+      do j=1,ratio
+        do i=1,ratio
+          !---------------------------------------------------------------------
+          ! Size and position
+          !---------------------------------------------------------------------
+          size = task%size/ratio
+          pos = task%position + ([i,j,k]-(ratio+1d0)*0.5d0)*size
+          !---------------------------------------------------------------------
+          ! Create a refined patch here
+          !---------------------------------------------------------------------
+          allocate (link, patch); link%task => patch; patch%link => link
+          ! --- patch 3D and 1D coordinates ---
+          call patch%task_t%init_unique (same=.true.)
+          patch%ipos = task%ipos
+          patch%rank = task%rank
+          patch%task_list => self%task_list
+          if (patch%rank == mpi%rank) then
+            ip = ip + 1
+            patch%ip = ip
+          end if
+          !---------------------------------------------------------------------
+          ! Generate the same IDs on all ranks, pruning the external tasks below
+          !---------------------------------------------------------------------
+          patch%box = self%size
+          patch%size = size
+          patch%position = pos
+          if (any(abs(rank%distance (patch)) > 0.5*(rank%size + 1.5*rank%ds))) then
+            deallocate (link, patch)
+            cycle
+          end if
+          call patch%set (bits%virtual)
+          patch%ds = patch%size*0.001
+          patch%origin = task%origin
+          patch%llc_cart = patch%position - 0.5 * patch%size
+          patch%centre_nat = patch%position
+          patch%llc_nat = patch%llc_cart
+          patch%periodic = task%periodic
+          patch%level = task%level + 1
+        !  if (any(abs(rank%distance (patch)) > 0.5*(rank%size + 1.5*rank%ds))) then
+        !    !call patch%dealloc()
+        !    deallocate (link, patch)
+        !    cycle
+        !  end if 
+          call patch%set(bits%static)
+          if (keep_parent) then
+            patch%link%parent => task%link
+            patch%parentid    = task%id
+          end if
+          !---------------------------------------------------------------------
+          call self%initial_refine(tlist, patch,level_min,ip)
+        end do
+      end do
+    end do
+    if (keep_parent) then
+      !call task%pre_init()
+      call self%task_list%append_link (task%link)
+      !call task%add_to_task_list (tlist)
+      write (io_unit%mpi,'(3i4,3f8.3,i4,a)') i,j,k,task%position,task%rank,'i,j,k,pos,rank'
+    else
+      link => task%link
+      call link%task%dealloc()
+      deallocate(task,link)
+    end if
+  else
+    call task%pre_init()
+    call self%task_list%append_link (task%link)
+    !call task%add_to_task_list (tlist)
+    write (io_unit%mpi,'(3i4,3f8.3,i4,a)') i,j,k,task%position,task%rank,'i,j,k,pos,rank'
+  end if
+END SUBROUTINE initial_refine
+
 
 SUBROUTINE init_exp (self, origin)
   class(cartesian_t):: self
