@@ -30,8 +30,8 @@ MODULE boundaries_mod
     ! --------------------------------------------------------------------------
     ! Experiment - specific variables
     ! --------------------------------------------------------------------------
-    real(kind=KindScalarVar)       :: gravity = -2.74
-    real(kind=KindScalarVar)       :: d_bot, e_bot, ee_top
+    real(var_k)       :: gravity = -2.74
+    real(var_k)       :: d_bot, e_bot, ee_top
     procedure(lower1), pointer     :: lower
     procedure(upper1), pointer     :: upper
   contains
@@ -525,7 +525,7 @@ deallocate(ep)
       end do
       zi = zi+1
     end do
-    deallocate(eth,emag, e1)
+    deallocate(eth,emag, e1,em)
   end if 
 call trace%end()
 END SUBROUTINE upper2
