@@ -165,10 +165,10 @@ SUBROUTINE init (self, task_list, label)
     patch%box = self%size
     patch%size = self%size / self%dims
     patch%position = ([i,j,k]+0.5d0)*patch%size + origin
-    if (any(abs(rank%distance (patch)) > 0.5*(rank%size + 1.5*rank%ds))) then
-      deallocate (link, patch)
-      cycle
-    end if
+    !if (any(abs(rank%distance (patch)) > 0.5*(rank%size + 1.5*rank%ds))) then
+    !  deallocate (link, patch)
+    !  cycle
+    !end if
     call patch%set (bits%virtual)
     patch%ds = patch%size*0.001
     patch%origin = origin
@@ -326,10 +326,10 @@ recursive SUBROUTINE initial_refine(self,tlist, task,level_min, ip)
           patch%box = self%size
           patch%size = size
           patch%position = pos
-          if (any(abs(rank%distance (patch)) > 0.5*(rank%size + 1.5*rank%ds))) then
-            deallocate (link, patch)
-            cycle
-          end if
+          !if (any(abs(rank%distance (patch)) > 0.5*(rank%size + 1.5*rank%ds))) then
+          !  deallocate (link, patch)
+          !  cycle
+          !end if
           call patch%set (bits%virtual)
           patch%ds = patch%size*0.001
           patch%origin = task%origin
