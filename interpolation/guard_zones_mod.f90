@@ -79,12 +79,13 @@ END SUBROUTINE init
 !> Compute interpolated guard zone values by setting up interface to the
 !> slow but correct patch_t%interpolate() point-by-point interpolation.
 !===============================================================================
-SUBROUTINE restrict_simple (self, target, source, jt, pt, same)
+SUBROUTINE restrict_simple (self, target, source, jt, pt, same, only)
   class(guard_zones_t):: self
   class(patch_t), pointer:: target, source
   integer:: jt(2)
   real(4):: pt(2)
   logical, optional:: same
+  integer, optional:: only
   !.............................................................................
   real, dimension(:,:,:), pointer:: tmem, smem, td, sd
   class(mesh_t), pointer:: mesh
@@ -100,6 +101,9 @@ SUBROUTINE restrict_simple (self, target, source, jt, pt, same)
   if (detailed_timer) &
     used = wallclock()
   do iv=1,target%nv
+    if (present(only)) then
+      if (iv /= only) cycle
+    end if
     jv = iv
     !---------------------------------------------------------------------------
     ! Target lower and upper corner in real space
@@ -137,12 +141,13 @@ END SUBROUTINE restrict_simple
 !> Compute interpolated guard zone values by setting up interface to the
 !> slow but correct patch_t%interpolate() point-by-point interpolation.
 !===============================================================================
-SUBROUTINE different_opt (self, target, source, jt, pt, same)
+SUBROUTINE different_opt (self, target, source, jt, pt, same, only)
   class(guard_zones_t):: self
   class(patch_t), pointer:: target, source
   integer:: jt(2)
   real(4):: pt(2)
   logical, optional:: same
+  integer, optional:: only
   !.............................................................................
   real, parameter:: eps=1e-4
   real, dimension(:,:,:), pointer:: tmem, smem, td, sd
@@ -162,6 +167,9 @@ SUBROUTINE different_opt (self, target, source, jt, pt, same)
   end if
   call source%time_interval (target%time, jt, pt)
   do iv=1,target%nv
+    if (present(only)) then
+      if (iv /= only) cycle
+    end if
     jv = 0
     do i=1,3
       !-------------------------------------------------------------------------
@@ -227,12 +235,13 @@ END SUBROUTINE different_opt
 !===============================================================================
 !> Compute interpolated guard zone values
 !===============================================================================
-SUBROUTINE restrict_vect (self, target, source, jt, pt, same)
+SUBROUTINE restrict_vect (self, target, source, jt, pt, same, only)
   class(guard_zones_t):: self
   class(patch_t), pointer:: target, source
   integer:: jt(2)
   real(4):: pt(2)
   logical, optional:: same
+  integer, optional:: only
   !.............................................................................
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: tmem, smem, td, sd
   class(mesh_t), pointer:: mesh
@@ -258,6 +267,9 @@ SUBROUTINE restrict_vect (self, target, source, jt, pt, same)
       source%id, source%level, source%llc_cart, &
       source%distance(target)/(0.5d0*(target%size+source%size))
   do iv=1,target%nv
+    if (present(only)) then
+      if (iv /= only) cycle
+    end if
     !---------------------------------------------------------------------------
     ! Target lower and upper corner in real space; these are the positions of
     ! the first and last target points.
