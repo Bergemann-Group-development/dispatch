@@ -92,6 +92,7 @@ SUBROUTINE request_index (self, idx, nv, success)
     !$omp end critical (index_cr)
     call self%copy
   end if
+  io%nv = max(io%nv,nv)
 END SUBROUTINE request_index
 
 !===============================================================================
@@ -123,10 +124,10 @@ SUBROUTINE output (self, unit)
   !.............................................................................
   integer:: &
     d, e, et, s, px, py, pz, bx, by, bz, qr, tt, phi, p1, p2, p3, b1, b2, b3, &
-    ex, ey, ez, jx, jy, jz
+    ex, ey, ez, jx, jy, jz, rphi
   namelist /idx_nml/ &
     d, e, et, s, px, py, pz, bx, by, bz, qr, tt, phi, p1, p2, p3, b1, b2, b3, &
-    ex, ey, ez, jx, jy, jz
+    ex, ey, ez, jx, jy, jz, rphi
   !-----------------------------------------------------------------------------
   if (io%time_derivs>0) then
     call output_time_derivs (self, unit)
@@ -151,6 +152,7 @@ SUBROUTINE output (self, unit)
     qr   = self%qr  - 1
     tt   = self%tt  - 1
     phi  = self%phi - 1
+    rphi = self%rphi- 1
     ex   = self%ex  - 1
     ey   = self%ey  - 1
     ez   = self%ez  - 1
@@ -172,12 +174,12 @@ SUBROUTINE output_time_derivs (self, unit)
     d, e, et, s, px, py, pz, bx, by, bz, qr, tt, phi, p1, p2, p3, b1, b2, b3, &
     dpxdt, dpydt, dpzdt, dbxdt, dbydt, dbzdt, dphidt, dddt, dedt, dsdt, &
     dp1dt, dp2dt, dp3dt, db1dt, db2dt, db3dt, ex, ey, ez, jx, jy, jz, &
-    dexdt, deydt, dezdt, djxdt, djydt, djzdt
+    dexdt, deydt, dezdt, djxdt, djydt, djzdt, rphi
   namelist /idx_nml/ &
     d, e, et, s, px, py, pz, bx, by, bz, qr, tt, phi, p1, p2, p3, b1, b2, b3, &
     dpxdt, dpydt, dpzdt, dbxdt, dbydt, dbzdt, dphidt, dddt, dedt, dsdt, &
     dp1dt, dp2dt, dp3dt, db1dt, db2dt, db3dt, ex, ey, ez, jx, jy, jz, &
-    dexdt, deydt, dezdt, djxdt, djydt, djzdt
+    dexdt, deydt, dezdt, djxdt, djydt, djzdt, rphi
   d   = self%d   - 1
   e   = self%e   - 1
   s   = self%s   - 1
@@ -197,6 +199,7 @@ SUBROUTINE output_time_derivs (self, unit)
   b2  = self%by  - 1
   b3  = self%bz  - 1
   phi = self%phi - 1
+  rphi = self%rphi- 1
   ex   = self%ex  - 1
   ey   = self%ey  - 1
   ez   = self%ez  - 1

@@ -63,7 +63,7 @@ SUBROUTINE init (self, patch, filename)
     self%dims(1:3) = mpatch*(patch%mesh%n-1)+1
   end if
   self%id = patch%id
-  self%dims(4) = patch%nv
+  self%dims(4) = io%nv
   self%nbuf = product(mpatch)
   !
   self%count = 0
@@ -108,7 +108,7 @@ SUBROUTINE output (self, patch)
     n = u-l+1
     id = mpi%rank
     write (io%data_unit,'(6(3i10.1,2x),3i2.1,1x,1i2.1,i3)') int(patch%box/patch%ds+0.5), &
-          n, l, u, n, n, ng, patch%nv, patch%level
+          n, l, u, n, n, ng, io%nv, patch%level
     write (io%data_unit,'(3(1i8.1,1x),i2.1)') id, patch%iout, patch%istep, patch%mesh_type
     close (io%data_unit)
     self%filename = trim(filename)//'.dat'
@@ -120,7 +120,7 @@ SUBROUTINE output (self, patch)
   u = patch%mesh%ui
   n = u-l+1
   if (verbose>1) print *, 'output:', patch%id, l, u
-  allocate (buf(n(1),n(2),n(3),patch%nv))
+  allocate (buf(n(1),n(2),n(3),io%nv))
   call patch%time_interval (patch%out_next, jt, pt)
   buf = patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),:,jt(1),1)*pt(1) &
       + patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),:,jt(2),1)*pt(2)
@@ -171,7 +171,7 @@ SUBROUTINE input (self, patch, ok)
     l = patch%mesh%li
     u = patch%mesh%ui
     n = u-l+1
-    allocate (buf(n(1),n(2),n(3),patch%nv))
+    allocate (buf(n(1),n(2),n(3),io%nv))
     !call patch%time_interval (patch%out_next, jt, pt)
     offset(1:3) = 1 + patch%ipos*patch%ncell
     call self%in (buf, offset)

@@ -76,18 +76,20 @@ SUBROUTINE pre_init (self, patch)
   if (selfgravity) then
     self%selfgravity = selfgravity
     patch%idx%phi = 0
-    call patch%idx%request_index (patch%idx%phi, patch%nv)
+    if (verbose > 0) &
+      write (stderr,*) 'id,nv,mv=', patch%id,patch%nv,patch%mv
+    call patch%idx%request_index (patch%idx%phi, patch%mv)
     if (patch%nw == 2) then
-      patch%idx%dphi = patch%idx%phi
+      patch%idx%rphi = patch%idx%phi
     else
-      patch%idx%dphi = 0
-      call patch%idx%request_index (patch%idx%dphi, patch%nv)
+      patch%idx%rphi = 0
+      call patch%idx%request_index (patch%idx%rphi, patch%mv)
     end if
     !...........................................................................
     if (verbose > 0) then
       write (io_unit%log,'(a,i6,4i4)') &
-       'selfgravity_t%pre_init: id, nv, nw, phi, dphi =', &
-        patch%id, patch%nv, patch%nw, patch%idx%phi, patch%idx%dphi
+       'selfgravity_t%pre_init: id, nv, nw, rphi, dphi =', &
+        patch%id, patch%nv, patch%nw, patch%idx%rphi, patch%idx%phi
     end if
     !...........................................................................
     call self%poisson%init

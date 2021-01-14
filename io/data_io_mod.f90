@@ -187,7 +187,7 @@ SUBROUTINE register_kind (self, patch)
   io_kind%patch => patch
   io_kind%filename = 'snapshot_'//trim(patch%kind)//'.dat'
   io_kind%size = product(shape(patch%mem))
-  io_kind%nv = patch%nv
+  io_kind%nv = patch%mv
   if (io%master) then
     print '(1x,a,4x,a,i8,4x,a,i3)', &
      'data_io_t%register_kind: filename = '//trim(io_kind%filename), &
@@ -465,7 +465,7 @@ SUBROUTINE output_txt (patch, append)
         patch%dtime, patch%position, patch%ds, patch%velocity, patch%llc_nat, &
         patch%llc_cart, patch%mesh%centre_nat, patch%quality, patch%gamma
   write (io_unit%data,'(6(3i10.1,2x),3i2.1,1x,1i2.1,i3)') int(patch%box/patch%ds+0.5), &
-        u-l+1, patch%li, patch%ui, patch%n, patch%gn, patch%ng, patch%nv, patch%level
+        u-l+1, patch%li, patch%ui, patch%n, patch%gn, patch%ng, patch%mv, patch%level
   write (io_unit%data,'(3(1i8.1,1x),i2.1)') patch%id, patch%iout, patch%istep, patch%mesh_type
   close (io_unit%data)
   !$omp end critical (output_cr)
@@ -592,8 +592,8 @@ SUBROUTINE output_nml_v1 (patch, append)
   n            = patch%n
   gn           = patch%gn
   ng           = patch%ng
-  nv           = patch%nv
-  nv           = merge (io%nv, patch%nv, io%nv>0 .and. io%nv<patch%nv)
+  nv           = patch%mv
+  nv           = merge (io%nv, nv, io%nv>0 .and. io%nv<nv)
   nv           = nv*(io%time_derivs+1)
   nt           = patch%nt
   nw           = patch%nw
@@ -728,8 +728,8 @@ SUBROUTINE output_nml_v2 (patch, append)
   n            = patch%n
   gn           = patch%gn
   ng           = patch%ng
-  nv           = patch%nv
-  nv           = merge (io%nv, patch%nv, io%nv>0 .and. io%nv<patch%nv)
+  nv           = patch%mv
+  nv           = merge (io%nv, nv, io%nv>0 .and. io%nv<nv)
   nv           = nv*(io%time_derivs+1)
   nt           = patch%nt
   nw           = patch%nw
@@ -880,8 +880,8 @@ SUBROUTINE output_nml_v3 (patch, append)
   n            = patch%n
   gn           = patch%gn
   ng           = patch%ng
-  nv           = patch%nv
-  nv           = merge (io%nv, patch%nv, io%nv>0 .and. io%nv<patch%nv)
+  nv           = patch%mv
+  nv           = merge (io%nv, nv, io%nv>0 .and. io%nv<nv)
   nv           = nv*(io%time_derivs+1)
   nt           = patch%nt
   nw           = patch%nw

@@ -70,7 +70,7 @@ SUBROUTINE output (patch)
   call trace_begin ('patch_t%output_new')
   !$omp critical (buffered_cr)
   n_buf = product(patch%gn)
-  n_data = n_header + patch%nv*n_buf
+  n_data = n_header + io%nv*n_buf
   allocate (buffer(n_data), var(patch%gn(1),patch%gn(2),patch%gn(3)))
   !-----------------------------------------------------------------------------
   ! Copy relevant patch info to sequenced header, and copy that to the buffer
@@ -85,7 +85,7 @@ SUBROUTINE output (patch)
   it1 = patch%iit(patch%nt-2)
   it2 = patch%iit(patch%nt-1)
   pt = (patch%out_next-patch%t(it1))/max(patch%t(it2)-patch%t(it1),1d-30)
-  do iv=1,patch%nv
+  do iv=1,io%nv
     var = patch%mem(:,:,:,iv,it1,1)*(1.-pt) + patch%mem(:,:,:,iv,it2,1)*pt
     call anonymous_copy (n_buf, var, buffer(ibuf))
     ibuf = ibuf + n_buf

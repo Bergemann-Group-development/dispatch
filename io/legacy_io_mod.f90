@@ -94,7 +94,7 @@ SUBROUTINE output (self, experiment_name)
   open (io_unit%data, file=trim(filename)//'.dat', form='unformatted', access='direct', &
     status='unknown', recl=kind(buf)*product(n))
   do jo=1,no
-    do iv=1,self%nv
+    do iv=1,io%nv
       allocate (buf(n(1),n(2),n(3)))
       !-------------------------------------------------------------------------
       ! If we write out time derivatives we want a pair of consistent values
@@ -133,7 +133,7 @@ SUBROUTINE output (self, experiment_name)
       if (io%verbose>1) &
         write (io_unit%log,'(1x,a,2i5,i3,1p,3e11.3)') &
           trim(filename),iv,it1,jo,minval(buf),maxval(buf),pt
-      write (io_unit%data,rec=iv+(jo-1)*self%nv) buf
+      write (io_unit%data,rec=iv+(jo-1)*io%nv) buf
       if (io%verbose>1 .and. iv==self%idx%d) &
         print *,'rho minmax',minval(buf), maxval(buf)
       deallocate (buf)
@@ -238,7 +238,7 @@ SUBROUTINE input (self, ok)
         self%id, self%restart, self%it
     open (io_unit%data, file=trim(filename)//'.dat', form='unformatted', &
       access='direct', status='unknown', recl=kind(self%mem)*product(u-l+1))
-    do iv=1,self%nv
+    do iv=1,io%nv
       read (io_unit%data,rec=iv) self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1)
     end do
     if (io%master .and. io%verbose>0 .or. self%track) &
