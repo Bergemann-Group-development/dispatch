@@ -264,9 +264,9 @@ recursive SUBROUTINE initial_refine(self,tlist, task,level_min, ip)
   class(link_t), pointer:: link
   class(experiment_t), pointer:: patch
   logical, save:: on = .false.
-  real(8), save:: center(3)
-  real(8), save:: extent(3), ratio=2.0
-  integer, save:: n_refine(3)
+  real(8), save:: center(3)=0d0
+  real(8), save:: extent(3)=0d0, ratio=2.0
+  integer, save:: n_refine(3)=0
   logical, save:: first_time=.true.
   logical, save:: keep_parent=.true.
   real(8), dimension(3):: size, pos
