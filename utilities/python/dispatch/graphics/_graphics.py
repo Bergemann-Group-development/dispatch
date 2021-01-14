@@ -247,7 +247,7 @@ def unigrid_plane(sn,iv='d',z=0.5,x=None,y=None,title=None,cmap=None,**kw):
     _title(sn,x,y,z,iv,title)
 
 def amr_plane(sn,iv='d',z=0.5,x=None,y=None,log=False,
-        xmin=None,xmax=None,ymin=None,ymax=None,lmax=None,
+        xmin=None,xmax=None,ymin=None,ymax=None,lmin=None,lmax=None,
         xlim=None,ylim=None,center=None,width=None,
         cmap=None,vmin=None,vmax=None,zero=False,title=None,
         mesh=False,ident=False,bbox=dict(facecolor='grey',alpha=1),
@@ -313,6 +313,10 @@ def amr_plane(sn,iv='d',z=0.5,x=None,y=None,log=False,
         ymin=ylim[0]
         ymax=ylim[1]
     axis,s=_axis(x,y,z)
+    if lmin:
+        pp=[p for p in sn.patches if contains(p,s,axis) and p.level<=lmin]
+    else:
+        pp=[p for p in sn.patches if contains(p,s,axis)]
     if lmax:
         pp=[p for p in sn.patches if contains(p,s,axis) and p.level<=lmax]
     else:
@@ -350,6 +354,7 @@ def amr_plane(sn,iv='d',z=0.5,x=None,y=None,log=False,
         ymn=ymin
     if ymax:
         ymx=ymax
+    pp=sort_by_level(pp)
     for p in pp:
         e=p.extent[axis]
         d=interpolate(p,iv,s,axis,verbose=verbose)
@@ -368,6 +373,10 @@ def amr_plane(sn,iv='d',z=0.5,x=None,y=None,log=False,
     pl.ylim(ymn,ymx)
     pl.colorbar()
     _title(sn,x,y,z,iv,title)
+
+def sort_by_level(pp):
+    ii=np.argsort([p.level for p in pp])
+    return [pp[i] for i in ii]
 
 def plot_pdf(pdf,**kwargs):
     """ Plot the output of the dispatch.pdf() procedure """
