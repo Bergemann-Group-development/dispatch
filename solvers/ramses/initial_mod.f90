@@ -34,9 +34,10 @@ CONTAINS
 SUBROUTINE init (self, solver, gamma1)
   class(initial_t):: self
   character(len=64):: solver
+  real(8), optional:: gamma1
+  !.............................................................................
   character(len=32), save:: type='void'
   integer:: iostat
-  real, optional:: gamma1
   logical, save:: first_time=.true.
   namelist /IC_params/ type
   !----------------------------------------------------------------------------
