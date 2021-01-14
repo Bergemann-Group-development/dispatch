@@ -51,6 +51,7 @@ MODULE patch_mod
     real:: d_min, d_max                 ! for info
     integer:: ndim = ndim               ! number of dimensions
     integer:: nv=0                      ! number of variables
+    integer:: mv=0                      ! number of memory slots
     integer:: nw=2                      ! number of work indices
     integer:: msplit=0                  ! how to split a patch when refining
     integer:: max_files                 ! prevent disk overrun when NaN happens
@@ -128,7 +129,8 @@ MODULE patch_mod
     generic, public :: fsum    => fsum4, fsum8        ! interior sum
     procedure, private :: faver4
     procedure, private :: faver8
-    generic, public :: faver    => faver4, faver8     ! interior average
+    procedure, private :: faveri
+    generic, public :: faver    => faver4, faver8, faveri   ! interior average
     procedure, private :: fminloc4
     procedure, private :: fminloc8
     generic, public :: fminloc => fminloc4, fminloc8
@@ -154,8 +156,9 @@ MODULE patch_mod
     procedure:: header_to_patch
     procedure, private:: stats_patch
     procedure, private:: stats_scalar
+    procedure, private:: stats_scalar8
     procedure, private:: stats_vector
-    generic,  public:: stats => stats_patch, stats_scalar, stats_vector
+    generic,  public:: stats => stats_patch, stats_scalar, stats_scalar8, stats_vector
     procedure:: MapVectors
     procedure:: beyond_patch_edge
     procedure:: myfloatindex_scalar
@@ -506,12 +509,14 @@ SUBROUTINE pre_init (self)
   !-----------------------------------------------------------------------------
   ! Output related parameters
   !-----------------------------------------------------------------------------
+  self%mv = max (self%mv, self%nv)
+  if (io%nv==0) then
+    io%nv = self%mv
+  end if
   io%start_time    = start_time
   io%end_time      = end_time
   io%out_time      = out_time
   io%print_time    = print_time
-  if (io%nv==0) &
-    io%nv = self%nv
   call io%lock%unset ('patch_t%pre_init')
   self%restart     = io%restart                 ! restart snapshot
   self%grace       = grace                      ! grace fraction of dtime
@@ -564,6 +569,7 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
   type(header_t):: header
   character(len=4) kind
   integer:: i, gn(3)
+  class(mesh_t), pointer:: m
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%setup')
   if (present(position)) self%position = position
@@ -606,6 +612,22 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
   ! box size and position
   !-----------------------------------------------------------------------------
   call omp%set_stacksize (self%nv)
+<<<<<<< HEAD
+=======
+  call MeshFactory(self%mesh_type, self%mesh, n=self%n, ng=self%ng, s=self%size, &
+                   p=self%position, llc_native=self%llc_nat, nml=self%no_mans_land)
+  ! intialise staggering indices; it is the responsibility of the *solver* to
+  ! assign non-zero values to this variable (if any).
+  do i=1,3
+    m => self%mesh(i)
+    allocate(m%h(self%nv))
+    m%h = 0.0
+    if (self%kind == 'zeus_mhd_patch' .and. &
+        self%staggered .and. self%n(i) /= 1) self%mesh(i)%gn = self%mesh(i)%gn + 1
+    if (self%kind == 'zeus_tw_mhd_patch' .and. &
+        self%staggered .and. self%n(i) /= 1) self%mesh(i)%gn = self%mesh(i)%gn + 1
+  end do
+>>>>>>> DIA add faver(iv) case, and add stats capabilities
   self%ds = self%mesh%d
   self%ncell = self%mesh%nc
   self%mesh%id = self%id
@@ -655,7 +677,16 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
     gn(i) = self%mesh(i)%gn
   end do
   if (.not.self%mem_allocated) then
-    allocate (self%mem    (gn(1), gn(2), gn(3), self%nv,self%nt,self%nw))
+    !---------------------------------------------------------------------------
+    ! extras%pre_init could increases elf%mv = the actual number of memory slots 
+    !---------------------------------------------------------------------------
+    if (self%id == 1 .and. self%mv > self%nv) then
+      write (stderr,'(a)')    'NOTE:'
+      write (stderr,'(a,i3)') '     Number of variables nv =', self%nv
+      write (stderr,'(a,i3)') '     Number of mem slots mv =', self%mv
+    end if
+    self%mv = max (self%mv, self%nv)
+    allocate (self%mem    (gn(1), gn(2), gn(3), self%mv, self%nt, self%nw))
     allocate (self%u_phase(gn(1), gn(2), gn(3)))
     self%u_phase = 0.0
     allocate (self%mem_lock(self%nt))
@@ -1725,6 +1756,17 @@ FUNCTION faver8 (self, f) RESULT (out)
   !-----------------------------------------------------------------------------
   out = self%fsum8(f)/product(self%ncell)
 END FUNCTION faver8
+!===============================================================================
+FUNCTION faveri (self, iv) RESULT (out)
+  class(patch_t):: self
+  real(8):: out
+  integer:: iv, l(3), u(3)
+  !-----------------------------------------------------------------------------
+  l = self%li
+  u = self%ui
+  out = sum(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1)) &
+      / product(u-l+1)
+END FUNCTION faveri
 
 !===============================================================================
 FUNCTION fminvali (self, iv) RESULT (fminval)
@@ -2048,6 +2090,7 @@ SUBROUTINE stats_patch (self, label, unit)
     write (unit_l, '(i7,2x,a,i3,1p,2(3x,4g12.4))') &
       self%id, trim(label)//' stats: iv, min, aver, rms, max =', iv, si, sb
   end do
+  flush (unit_l)
 END SUBROUTINE stats_patch
 
 !===============================================================================
@@ -2071,25 +2114,58 @@ SUBROUTINE stats_scalar (self, var, label, unit)
   call scalar_stats (var, self%mesh%lb, self%mesh%ub, sb)
   write (unit_l, '(i7,2x,a,1p,2(3x,4g12.4),2x,a)') &
     self%id, ' stats: min, aver, rms, max =', si, sb,label
+  flush (unit_l)
 END SUBROUTINE stats_scalar
+
+!===============================================================================
+!> Statistics for a scalar field
+!===============================================================================
+SUBROUTINE stats_scalar8 (self, var, label, unit)
+  class (patch_t):: self
+  real(8), dimension(:,:,:):: var
+  character(len=*):: label
+  integer, optional:: unit
+  !.............................................................................
+  integer:: unit_l
+  real(8), dimension(4):: si, sb
+  !-----------------------------------------------------------------------------
+  if (present(unit)) then
+    unit_l = unit
+  else
+    unit_l = io%output
+  end if
+  call scalar_stats (real(var), self%mesh%li, self%mesh%ui, si)
+  call scalar_stats (real(var), self%mesh%lb, self%mesh%ub, sb)
+  write (unit_l, '(i7,2x,a,1p,2(3x,4g12.4),2x,a)') &
+    self%id, ' stats: min, aver, rms, max =', si, sb,label
+  flush (unit_l)
+END SUBROUTINE stats_scalar8
 
 !===============================================================================
 !> Statistics for a vector field
 !===============================================================================
-SUBROUTINE stats_vector (self, var, label)
+SUBROUTINE stats_vector (self, var, label, unit)
   class (patch_t):: self
   real(kind=KindScalarVar), dimension(:,:,:,:):: var
   character(len=*):: label
+  integer, optional:: unit
+  integer:: unit_l
   !.............................................................................
   integer:: iv
   real(8), dimension(4):: si, sb
   !-----------------------------------------------------------------------------
+  if (present(unit)) then
+    unit_l = unit
+  else
+    unit_l = io%output
+  end if
   do iv=1,size(var,4)
     call scalar_stats (var(:,:,:,iv), self%mesh%li, self%mesh%ui, si)
     call scalar_stats (var(:,:,:,iv), self%mesh%lb, self%mesh%ub, sb)
     write (io_unit%output,'(i7,2x,a,i3,1p,2(3x,4g12.4))') &
       self%id, trim(label)//' stats: iv, min, aver, rms, max =', iv, si, sb
   end do
+  flush (unit_l)
 END SUBROUTINE stats_vector
 
 !===============================================================================
