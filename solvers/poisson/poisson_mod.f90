@@ -40,7 +40,7 @@ MODULE poisson_mod
     generic:: zero_boundaries => zero_boundaries4, zero_boundaries8
   end type
   real,    save:: floor=1e-2, tolerance=1e-4
-  real(8), save:: fourPiG=1d0
+  real(8), save:: fourPiG=4d0*acos(-1d0)
   integer, save:: verbose=0
   integer, save:: max_iter=500
   integer, save:: dump_unit=0

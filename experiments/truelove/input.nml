@@ -10,11 +10,14 @@
 !&patch_params       n=33,33,33 nt=5 grace=0.1no_mans_land=f /
 &patch_params       n=3*32 nt=9 grace=0.1 no_mans_land=t /
 
-&selfgravity_params selfgravity=t prediction=t order=2 verbose=2 /
-&poisson_params     floor=1e-6 tolerance=1e-4 fourPiG=1.0 max_iter=100
-                    precondition=t verbose=1 solver='cg' /
+&download_params    use_prolong='different' use_restrict='guard_zones' /
+!&download_params    use_prolong='different' use_restrict='different_restrict' /
 
-! uniform, non-rotating
+&selfgravity_params selfgravity=t prediction=f order=2 verbose=0 /
+&poisson_params     floor=1e-6 tolerance=1e-4 max_iter=100
+                    precondition=t verbose=1 solver='sor' /
+
+! u1niform, non-rotating
 &experiment_params  rho0=15.27026 r0=0.25 truealpha=0.0475 truebeta=0.0
                     perta=0.0 chipres=1.0 chirho=100.0 /
 &scaling_params     l0=3.12e16 /
@@ -22,7 +25,7 @@
 
 &refine_params      on=t check_interval=1 verbose=3
                     levelmin=5 levelmax=10
-                    min_jeans=4
+                    min_jeans=3
                     refine_from_t=0.0 refine_until_t=99.0 /
 
 ! uniform, rotating

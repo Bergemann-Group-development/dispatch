@@ -64,6 +64,7 @@ MODULE selfgravity_mod
   USE scratch_mod
   USE shared_mod
   USE scaling_mod
+  USE math_mod
   !
   USE download_mod
   USE guard_zones_mod
@@ -73,6 +74,7 @@ MODULE selfgravity_mod
     type(initial_t)  :: initial
     type(poisson_t)  :: poisson
     logical:: selfgravity=.false.
+    real(8):: fourPiG
     real(8):: d0
     real(8):: poisson_time=-1.0
     class(gpatch_t), pointer :: patch=>null()
@@ -153,7 +155,7 @@ SUBROUTINE pre_init (self, patch)
   else
     patch%idx%phi = -1
   end if
-  !
+  self%fourPiG = math%pi4*scaling%grav
   call trace%end()
 END SUBROUTINE pre_init
 
@@ -360,7 +362,7 @@ SUBROUTINE post_update (self)
   ! residual, now corrected for the local changes of the density
   !*****************************************************************************
   call poisson%laplace_2nd (patch%ds, self%phi, self%src, self%res)
-  self%res = self%res + scaling%grav*(self%d-self%d_pre)
+  self%res = self%res + self%fourPiG*(self%d-self%d_pre)
   call self%poisson%update (self%patch, self%res, self%dphi, self%d)
   self%phi = self%phi + self%dphi
   !*****************************************************************************
@@ -400,7 +402,7 @@ SUBROUTINE downloads (self)
   self%d   => patch%mem(:,:,:,patch%idx%d   ,patch%it,1)
   self%phi => patch%mem(:,:,:,patch%idx%phi ,patch%it,1)
   self%res => patch%mem(:,:,:,patch%idx%rphi,patch%it,1)
-  self%src = scaling%grav*(self%d-shared%mean_density)
+  self%src = self%fourPiG*(self%d-shared%mean_density)
   call sentinel (self, 'downloads')
   call poisson%laplace_2nd (patch%ds, self%phi, self%src, self%res)
   nbor => patch%link%nbor
