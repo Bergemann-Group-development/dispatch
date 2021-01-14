@@ -66,8 +66,8 @@ MODULE download_mod
   logical:: use_locks=.true.
   logical:: detailed_timer=.false.
   logical:: check_filled=.false.
-  character(len=20):: use_restrict='different'
-  character(len=20):: use_prolong='guard_zones'
+  character(len=20):: use_restrict='different_restrict'
+  character(len=20):: use_prolong='different'
   character(len=20):: use_same='same'
   type(download_t), public:: download
   type(prolong_t), save:: prolng
@@ -757,8 +757,9 @@ SUBROUTINE same_linear (self, target, source, jt, pt, all_cells, only, all_times
       end if
     end if
     ! -- `dphi` is part of `mem` when `time_order` = 0; do not download it.
-    if (iv == target%idx%dphi) cycle 
+    if (iv == target%idx%phi ) cycle 
     if (iv == target%idx%rphi) cycle 
+    if (iv == target%idx%dphi) cycle 
     li = target%mesh%li
     ui = target%mesh%ui
     call dnload_range (target, source, iv, l, u, o)
@@ -1135,8 +1136,10 @@ SUBROUTINE same_lagrange (self, target, source, jj, pt, all_cells, only, all_tim
             target%id, source%id, source%quality, source%level
       end if
     end if
-    ! -- `dphi` is part of `mem` when `time_order` = 0; do not download it.
-    if (iv == target%idx%dphi) cycle 
+    ! -- `*phi` is part of `mem` when `time_order` = 0; do not download it.
+    if (iv == target%idx%phi ) cycle 
+    if (iv == target%idx%rphi) cycle 
+    if (iv == target%idx%dphi) cycle
     li = target%mesh%li
     ui = target%mesh%ui
     call dnload_range (target, source, iv, l, u, o)
@@ -1420,6 +1423,10 @@ SUBROUTINE different (self, target, source, jt, pt, all_cells, only)
     all_cells_l = .false.
   end if
   do iv=iv1,iv2
+    ! -- `*phi` is part of `mem` when `time_order` = 0; do not download it.
+    if (iv == target%idx%phi ) cycle 
+    if (iv == target%idx%rphi) cycle 
+    if (iv == target%idx%dphi) cycle
     call dnload_range (target, source, iv, l, u)
     li = target%mesh%li
     ui = target%mesh%ui
@@ -1982,7 +1989,9 @@ SUBROUTINE different_restrict (self, target, source, jt, pt, only)
   li = target%mesh%li
   ui = target%mesh%ui
   do iv=iv1,iv2
-    ! -- `dphi` is part of `mem` when `time_order` = 0; do not download it.
+    ! -- `*phi` is part of `mem` when `time_order` = 0; do not download it.
+    if (iv == target%idx%phi ) cycle 
+    if (iv == target%idx%rphi) cycle 
     if (iv == target%idx%dphi) cycle
     ! -- logical mask to track if variable is averaged over a volume or an area
     qmask(:) = .true. 
