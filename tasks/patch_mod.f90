@@ -612,22 +612,6 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
   ! box size and position
   !-----------------------------------------------------------------------------
   call omp%set_stacksize (self%nv)
-<<<<<<< HEAD
-=======
-  call MeshFactory(self%mesh_type, self%mesh, n=self%n, ng=self%ng, s=self%size, &
-                   p=self%position, llc_native=self%llc_nat, nml=self%no_mans_land)
-  ! intialise staggering indices; it is the responsibility of the *solver* to
-  ! assign non-zero values to this variable (if any).
-  do i=1,3
-    m => self%mesh(i)
-    allocate(m%h(self%nv))
-    m%h = 0.0
-    if (self%kind == 'zeus_mhd_patch' .and. &
-        self%staggered .and. self%n(i) /= 1) self%mesh(i)%gn = self%mesh(i)%gn + 1
-    if (self%kind == 'zeus_tw_mhd_patch' .and. &
-        self%staggered .and. self%n(i) /= 1) self%mesh(i)%gn = self%mesh(i)%gn + 1
-  end do
->>>>>>> DIA add faver(iv) case, and add stats capabilities
   self%ds = self%mesh%d
   self%ncell = self%mesh%nc
   self%mesh%id = self%id
