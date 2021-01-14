@@ -485,7 +485,7 @@ END SUBROUTINE yz_indices
 !===============================================================================
 SUBROUTINE restrict0 (self, source, target, iv)
   class(selfgravity_t):: self
-  class(patch_t), pointer:: source, target
+  class(patch_t):: source, target
   integer:: iv, jt(2)
   real:: pt(2)
   !-----------------------------------------------------------------------------
@@ -502,7 +502,7 @@ END SUBROUTINE restrict0
 !===============================================================================
 SUBROUTINE restrict (self, source, target, iv)
   class(selfgravity_t)    :: self
-  class(patch_t), pointer :: source, target
+  class(patch_t)          :: source, target
   integer                 :: iv
   real, pointer           :: src(:,:,:,:), tgt(:,:,:)
   integer                 :: i1, i2, i3, j1, j2, j3, k(2), l(3), u(3)

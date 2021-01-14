@@ -574,7 +574,7 @@ END SUBROUTINE prolong_it
 !> FIXME: To be validated/improved for moving meshes
 !===============================================================================
 SUBROUTINE dnload_range (target, source, iv, l, u, offset)
-  class(patch_t), pointer :: target, source
+  class(patch_t)          :: target, source
   integer                 :: iv, l(3), u(3), offset(3), li, ui
   optional                :: offset
   !.............................................................................
@@ -1382,7 +1382,7 @@ END SUBROUTINE same_rt
 !===============================================================================
 SUBROUTINE different (self, target, source, jt, pt, all_cells, only)
   class(download_t):: self
-  class(patch_t), pointer :: target, source
+  class(patch_t)          :: target, source
   logical, optional:: all_cells
   integer, optional:: only
   !.............................................................................

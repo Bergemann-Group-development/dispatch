@@ -2639,7 +2639,7 @@ END FUNCTION count_edges
 !===============================================================================
 SUBROUTINE interpolate (self, target, ii, iv, jt, pt)
   class(patch_t)           :: self
-  class(patch_t), pointer  :: target
+  class(patch_t)           :: target
   integer                  :: ii(3), iv, jt(2)
   real                     :: pt(2)
   !.............................................................................
@@ -2727,7 +2727,7 @@ END SUBROUTINE interpolate
 !===============================================================================
 SUBROUTINE interpolate_specific (self, target, ii, iv, jt, pt)
   class(patch_t)           :: self
-  class(patch_t), pointer  :: target
+  class(patch_t)           :: target
   integer                  :: ii(3), iv, jt(2)
   real                     :: pt(2)
   real                     :: tmp(2,2,2,2)
