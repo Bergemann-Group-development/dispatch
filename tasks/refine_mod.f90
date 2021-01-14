@@ -230,7 +230,7 @@ MODULE refine_mod
   integer:: n_locks=1                         ! number of locks to use
   integer:: verbose=0                         ! Noise level
   integer:: n_criteria=0                      ! Number of active criteria
-  integer:: wait_refine_nsteps=3              ! How many time steps to wait before allowing refinement
+  integer:: wait_refine_nsteps=0              ! How many time steps to wait before allowing refinement
   logical:: quadrature=.false.                ! Combine criteria in quadrature
   type(refine_t), public:: refine
 CONTAINS
@@ -803,6 +803,7 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   nullify (child%u_phase)
   nullify (child%irefine)
   nullify (child%mask)
+  child%mv = child%nv                                ! extra output
   child%id = 0                                       ! ensure a new ID
   child%seq = -1                                     ! triggers tag=0 in send
   child%size = child_size                            ! new size
