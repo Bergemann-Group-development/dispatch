@@ -35,6 +35,9 @@ MODULE poisson_mod
     procedure, nopass:: dump4
     procedure, nopass:: dump8
     generic:: dump => dump4, dump8
+    procedure, nopass:: zero_boundaries4
+    procedure, nopass:: zero_boundaries8
+    generic:: zero_boundaries => zero_boundaries4, zero_boundaries8
   end type
   real,    save:: floor=1e-2, tolerance=1e-4
   real(8), save:: fourPiG=1d0
@@ -95,13 +98,12 @@ END SUBROUTINE init
 !> or http://ieeexplore.ieee.org/document/5452414/
 !> See also the CG method in RAMSES: `ramses/poisson/phi_fine_cg.f90`.
 !===============================================================================
-SUBROUTINE cg (self, patch, phi1, source, d, method)
+SUBROUTINE cg (self, patch, source, phi1, d)
   class(poisson_t)  :: self
   class(patch_t)    :: patch
-  character(*)      :: method
-  real(var_k), dimension(:,:,:), pointer             :: phi1
-  real(var_k), dimension(:,:,:), pointer, intent(in) :: d
-  real(8)    , dimension(:,:,:),          intent(in) :: source
+  real(var_k), dimension(:,:,:)             :: phi1
+  real(var_k), dimension(:,:,:), intent(in) :: source
+  real(var_k), dimension(:,:,:), intent(in) :: d
   !.............................................................................
   logical                :: dump_header
   integer                :: niter
@@ -148,7 +150,7 @@ SUBROUTINE cg (self, patch, phi1, source, d, method)
   ! correction, iterating to consistency, with zero boundaries impposed on the
   ! source, and use the resolt to correct -- rather than set -- the potential.
   !-----------------------------------------------------------------------------
-  call zero_boundaries (source)
+  call self%zero_boundaries (patch, source)
   r = source
   call self%dump (r, 0)
   error0 = patch%fmaxval(abs(r/(d+floor)))
@@ -187,9 +189,9 @@ SUBROUTINE cg (self, patch, phi1, source, d, method)
   end do
   if (iter==max_iter+1) then
     !...........................................................................
-    write (io_unit%log,*) &
-      'poisson_t%cg: NO CONVERGENCE! id, niter, error0, error =', &
-       patch%id, max_iter, error0, error
+    write (stdout,'(a,i6,i5,1p,2e11.2)') &
+      'poisson_t%cg: no convergence, id,niter,error0,error=', &
+      patch%id, max_iter, error0, error
     !...........................................................................
   else if (verbose > 0) then
     usppt = 1e6*(wallclock()-wc)/product(shape(phi))
@@ -206,28 +208,6 @@ SUBROUTINE cg (self, patch, phi1, source, d, method)
   deallocate (phi, r, p, s, u)
   call trace%end (itimer)
 contains
-  !=============================================================================
-  !> Set scratch array outer boundary to zero
-  !=============================================================================
-  subroutine zero_boundaries (f)
-    real(8):: f(:,:,:)
-    class(mesh_t), pointer:: m(:)
-    !...........................................................................
-    if (patch%is_periodic()) return
-    m => patch%mesh
-    if (size(f,1) > 1) then
-      f(m(1)%lb:m(1)%lo,:,:) = 0d0
-      f(m(1)%uo:m(1)%ub,:,:) = 0d0
-    end if
-    if (size(f,2) > 1) then
-      f(:,m(2)%lb:m(2)%lo,:) = 0d0
-      f(:,m(2)%uo:m(2)%ub,:) = 0d0
-    end if
-    if (size(f,3) > 1) then
-      f(:,:,m(3)%lb:m(3)%lo) = 0d0
-      f(:,:,m(3)%uo:m(3)%ub) = 0d0
-    end if
-  end subroutine zero_boundaries
   !=============================================================================
   !> Laplace operator chooser
   !=============================================================================
@@ -298,7 +278,7 @@ contains
     !---------------------------------------------------------------------------
     ! For non-periodic patches, loop from li to ui
     !---------------------------------------------------------------------------
-      call zero_boundaries (out)
+      call self%zero_boundaries (patch, out)
       do k=patch%mesh(3)%li,patch%mesh(3)%ui
         do j=patch%mesh(2)%li,patch%mesh(2)%ui
           do i=patch%mesh(1)%li,patch%mesh(1)%ui
@@ -340,7 +320,7 @@ contains
     !---------------------------------------------------------------------------
     ! For non-periodic patches, loop from li to ui
     !---------------------------------------------------------------------------
-      call zero_boundaries (out)
+      call self%zero_boundaries (patch, out)
       do k=patch%mesh(3)%li,patch%mesh(3)%ui
         do j=patch%mesh(2)%li,patch%mesh(2)%ui
           h32ci = 1.0d0 / m2%h32c(j)
@@ -413,7 +393,7 @@ contains
             end do
           end do
         end do
-        call zero_boundaries (out)
+        call self%zero_boundaries (patch, out)
       end if
     else
       out = res
@@ -423,7 +403,7 @@ contains
     integer, dimension(3):: m, l, u
     integer:: sentinel
     real(8):: a, b(3)
-    !-----------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     if (do_dump .and. dump_header) then
       if (dump_unit==0) then
         open (newunit=dump_unit, file=trim(io%rundir)//'cg.dump', &
@@ -439,13 +419,12 @@ END SUBROUTINE cg
 !===============================================================================
 !> 2nd order successive over relaxation with red-black ordering
 !===============================================================================
-SUBROUTINE sor (self, patch, phi1, source, d, method)
+SUBROUTINE sor (self, patch, source, phi1, d)
   class(poisson_t)  :: self
   class(patch_t)    :: patch
-  character(*)      :: method
-  real(var_k), dimension(:,:,:), pointer             :: phi1
-  real(8)    , dimension(:,:,:),          intent(in) :: source
-  real(var_k), dimension(:,:,:), pointer, intent(in) :: d
+  real(var_k), dimension(:,:,:)             :: phi1
+  real(var_k), dimension(:,:,:), intent(in) :: source
+  real(var_k), dimension(:,:,:), intent(in) :: d
   !.............................................................................
   integer                :: i, j, k, sweep, ss, ione, jone, kone, m(3), iter, &
                             niter
@@ -512,7 +491,7 @@ SUBROUTINE sor (self, patch, phi1, source, d, method)
   b1 = a / ds(1)**2 * ione
   b2 = a / ds(2)**2 * jone
   b3 = a / ds(3)**2 * kone
-  call zero_boundaries (source)
+  call self%zero_boundaries (patch, source)
   !.............................................................................
   call dump_init (gn(1:3), l, u, a, b1, b2, b3)
   call self%dump (source, 0)
@@ -566,7 +545,9 @@ SUBROUTINE sor (self, patch, phi1, source, d, method)
   end do
   !
   if (iter==max_iter+1) then
-    print *, 'poisson_t%sor: no convergence, niter, error =', max_iter, error
+    write (stdout,'(a,i6,i5,1p,2e11.2)') &
+      'poisson_t%sor: no convergence, id,niter,error0,error=', &
+      patch%id, max_iter, error0, error
   else if (verbose > 0) then
     usppt = 1e6 * (wallclock() - wc) / product(shape(phi))
     !...........................................................................
@@ -577,39 +558,12 @@ SUBROUTINE sor (self, patch, phi1, source, d, method)
     !...........................................................................
   end if
   niter = iter
-  if (method == 'simple') then
-    phi1 = phi
-  else
-    phi1 = phi1 + phi
-    call self%dump (phi , -1)
-  end if
+  phi1 = phi
   call self%dump (phi1, -2)
   deallocate (phi)
   end associate
   call trace%end (itimer)
 contains
-  !=============================================================================
-  !> Set scratch array outer boundary to zero
-  !=============================================================================
-  subroutine zero_boundaries (f)
-    real(8):: f(:,:,:)
-    class(mesh_t), pointer:: m(:)
-    !...........................................................................
-    if (patch%is_periodic()) return
-    m => patch%mesh
-    if (size(f,1) > 1) then
-      f(m(1)%lb:m(1)%lo,:,:) = 0d0
-      f(m(1)%uo:m(1)%ub,:,:) = 0d0
-    end if
-    if (size(f,2) > 1) then
-      f(:,m(2)%lb:m(2)%lo,:) = 0d0
-      f(:,m(2)%uo:m(2)%ub,:) = 0d0
-    end if
-    if (size(f,3) > 1) then
-      f(:,:,m(3)%lb:m(3)%lo) = 0d0
-      f(:,:,m(3)%uo:m(3)%ub) = 0d0
-    end if
-  end subroutine zero_boundaries
   subroutine dump_init (m, l, u, a, b1, b2, b3)
     integer, dimension(3):: m, l, u
     real(8):: a, b1, b2, b3
@@ -626,6 +580,50 @@ contains
     end if
   end subroutine dump_init
 END SUBROUTINE sor
+
+!=============================================================================
+!> Set scratch array outer boundary to zero
+!=============================================================================
+subroutine zero_boundaries4 (patch, f)
+  class(patch_t):: patch
+  real(4):: f(:,:,:)
+  class(mesh_t), pointer:: m(:)
+  !...........................................................................
+  if (patch%is_periodic()) return
+  m => patch%mesh
+  if (size(f,1) > 1) then
+    f(m(1)%lb:m(1)%lo,:,:) = 0d0
+    f(m(1)%uo:m(1)%ub,:,:) = 0d0
+  end if
+  if (size(f,2) > 1) then
+    f(:,m(2)%lb:m(2)%lo,:) = 0d0
+    f(:,m(2)%uo:m(2)%ub,:) = 0d0
+  end if
+  if (size(f,3) > 1) then
+    f(:,:,m(3)%lb:m(3)%lo) = 0d0
+    f(:,:,m(3)%uo:m(3)%ub) = 0d0
+  end if
+end subroutine zero_boundaries4
+subroutine zero_boundaries8 (patch, f)
+  class(patch_t):: patch
+  real(8):: f(:,:,:)
+  class(mesh_t), pointer:: m(:)
+  !...........................................................................
+  if (patch%is_periodic()) return
+  m => patch%mesh
+  if (size(f,1) > 1) then
+    f(m(1)%lb:m(1)%lo,:,:) = 0d0
+    f(m(1)%uo:m(1)%ub,:,:) = 0d0
+  end if
+  if (size(f,2) > 1) then
+    f(:,m(2)%lb:m(2)%lo,:) = 0d0
+    f(:,m(2)%uo:m(2)%ub,:) = 0d0
+  end if
+  if (size(f,3) > 1) then
+    f(:,:,m(3)%lb:m(3)%lo) = 0d0
+    f(:,:,m(3)%uo:m(3)%ub) = 0d0
+  end if
+end subroutine zero_boundaries8
 
 !===============================================================================
 !> Dump values for analysis
@@ -676,11 +674,10 @@ SUBROUTINE laplace_2nd (ds, phi, source, res)
   do iz=2,m(3)-kone
   do iy=2,m(2)-jone
   do ix=2,m(1)-ione
-    res(ix,iy,iz) = &
+    res(ix,iy,iz) = source(ix,iy,iz) - &
       (c(1)*(phi(ix+ione,iy,iz)+phi(ix-ione,iy,iz)-2d0*phi(ix,iy,iz)) &
      + c(2)*(phi(ix,iy+jone,iz)+phi(ix,iy-jone,iz)-2d0*phi(ix,iy,iz)) &
-     + c(3)*(phi(ix,iy,iz+kone)+phi(ix,iy,iz-kone)-2d0*phi(ix,iy,iz))) &
-      - source(ix,iy,iz)
+     + c(3)*(phi(ix,iy,iz+kone)+phi(ix,iy,iz-kone)-2d0*phi(ix,iy,iz)))
   end do
   end do
   end do
