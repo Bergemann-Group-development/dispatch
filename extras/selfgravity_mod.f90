@@ -576,7 +576,7 @@ END SUBROUTINE restrict
 !===============================================================================
 SUBROUTINE prolong (self, source, target, iv)
   class(selfgravity_t)    :: self
-  class(patch_t), pointer :: source, target
+  class(patch_t)          :: source, target
   integer                 :: iv
   real, pointer           :: src(:,:,:,:), tgt(:,:,:)
   integer                 :: i1, i2, i3, j1, j2, j3, k(2)
