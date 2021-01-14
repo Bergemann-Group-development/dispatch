@@ -1,13 +1,54 @@
 !===============================================================================
-!> Add selfgravity to any solver
+!> Add selfgravity to any solver.
+!>
+!> Use residuals r = source - laplace(phi) to generate delta-Phi values.
+!> Corrections computed by a patch should then by pushed back to the higher
+!> level child patches, recursively.  The point is to use the lower level
+!> corrections to bring the longer wavelength parts of the residuals at 
+!> higher levels down, before the local solutions are iterated.
+!>
+!> Residuals are computed at the current level for internal cells, and are then
+!> overloaded by restriction from child tasks, if any.
+!>
+!> Increments dphi to the potential are then downloaded from the parent into
+!> the interior and guard zones, and are overloaded by better values from
+!> tasks on the same level.
+!>
+!> Each patch computes, from the given residuals rphi, correctioins dphi in
+!> its interior, while also making the corrections available for download.
+!>
+!> pre_update step:
+!> ----------------
+!> The pre_update step has accurate BCs for the potential, and obtains the
+!> best possible values for the residual from the %downloads procedure.
+!> The Poisson solver produces %dphi values, which are applied to the %phi
+!> values, and are made available for time- and space-interpolation to nbors.
+!>
+!> post_update step:
+!> -----------------
+!> The purpose of this step is to correct the potential in response to the
+!> local changes in the density, while using potential BCs obtained from
+!> time extrapolation in the download procedure.
+!>
+!> Both solutions start by computing the residual as the difference between
+!> the local source function and the laplacian of the local potential.  The
+!> potential BCs and ICs have been modified by nbors at the same and lower
+!> levels, which help reduce longer range residuals, while the residuals
+!> include contributions from higher level task, which need help to correct
+!> their potentials.
+!>
+!> The scheme calls for three variable slots: %phi, %dphi, and %rphi, but
+!> only %dphi and %rphi need to exist as time slices
 !===============================================================================
 MODULE selfgravity_mod
   USE io_mod
   USE io_unit_mod
   USE os_mod
   USE trace_mod
+  USE task_mod
   USE patch_mod
   USE gpatch_mod
+  USE link_mod
   USE download_mod
   USE initial_mod
   USE kinds_mod
@@ -21,6 +62,11 @@ MODULE selfgravity_mod
   USE vector_ops
   USE timestep_mod
   USE scratch_mod
+  USE shared_mod
+  USE scaling_mod
+  !
+  USE download_mod
+  USE guard_zones_mod
   implicit none
   private
   type, public:: selfgravity_t
@@ -29,13 +75,24 @@ MODULE selfgravity_mod
     logical:: selfgravity=.false.
     real(8):: d0
     real(8):: poisson_time=-1.0
-    class(gpatch_t), pointer:: patch=>null()
+    class(gpatch_t), pointer :: patch=>null()
+    real(var_k), allocatable ::   src(:,:,:)
+    real(var_k), allocatable ::  dphi(:,:,:)
+    real(var_k), pointer     ::     d(:,:,:) => null()
+    real(var_k), pointer     :: d_pre(:,:,:) => null()
+    real(var_k), pointer     ::   res(:,:,:) => null()
+    real(var_k), pointer     ::   phi(:,:,:) => null()
   contains
     procedure:: pre_init
     procedure:: init
     procedure:: pre_update
+    procedure:: downloads
+    procedure:: uploads
+    procedure:: restrict
+    procedure:: prolong
     procedure:: post_update
-    procedure:: ahead_of
+    !procedure:: ahead_of
+    procedure:: stats
   end type
   real(8), save :: total_mass=0d0, total_volume=0d0
   real(8), save :: restart_time = 0d0
@@ -101,7 +158,7 @@ SUBROUTINE pre_init (self, patch)
 END SUBROUTINE pre_init
 
 !===============================================================================
-!> Further initialisation of the self-gravity module
+!> Actual initialisation of the self-gravity module
 !===============================================================================
 SUBROUTINE init (self)
   class(selfgravity_t):: self
@@ -112,7 +169,6 @@ SUBROUTINE init (self)
   logical                           :: ok
   integer                           :: iostat
   logical, save                     :: first_poisson=.true.
-  real(kind=KindScalarVar), pointer :: d(:,:,:)
   real                              :: dm
   !-----------------------------------------------------------------------------
   call trace%begin ('selfgravity_t%init')
@@ -128,9 +184,9 @@ SUBROUTINE init (self)
     ! Sum up the total mass and total volume, to get the average density d0.
     ! FIXME: This needs to be modified for MPI
     !---------------------------------------------------------------------------
+    self%d => patch%mem(:,:,:,patch%idx%d,patch%it,1)
     if (patch%time == 0.0) then
-      d => patch%mem(:,:,:,patch%idx%d,patch%it,1)
-      dm = patch%fsum(d)*product(patch%ds)
+      dm = patch%fsum(self%d)*product(patch%ds)
       !$omp atomic
       total_mass = total_mass + dm
       !$omp atomic
@@ -143,6 +199,10 @@ SUBROUTINE init (self)
       !.........................................................................
     end if
   end if
+  self%poisson%id = patch%id
+  !-----------------------------------------------------------------------------
+  if (.not.allocated(self%dphi)) &
+    allocate (self%dphi(patch%gn(1),patch%gn(2),patch%gn(3)))
   call trace%end()
 END SUBROUTINE init
 
@@ -155,51 +215,65 @@ END SUBROUTINE init
 !===============================================================================
 SUBROUTINE pre_update (self)
   class(selfgravity_t):: self
+  class(gpatch_t), pointer:: patch
+  integer, dimension(3):: l, u
+  integer:: iy, iz
  !------------------------------------------------------------------------------
   if (.not. selfgravity) return
   call trace%begin ('selfgravity_t%pre_update')
-  call solve (self, self%patch%it)
-  call trace%end ()
-END SUBROUTINE pre_update
-
-!===============================================================================
-!> Solve for the potential, for a given time slot
-!===============================================================================
-SUBROUTINE solve (self, it)
-  class(selfgravity_t):: self
-  integer:: it
-  !.............................................................................
-  class(gpatch_t), pointer:: patch
-  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, phi
-  real:: dmin, dmax
-  integer:: iter, ix ,iy, iz
-  integer, save:: itimer=0
-  !-----------------------------------------------------------------------------
-  if (.not. selfgravity) return
   patch => self%patch
-  call trace%begin ('selfgravity_t%solve', itimer=itimer)
-  d   => patch%mem(:,:,:,patch%idx%d  ,it,1)
-  phi => patch%mem(:,:,:,patch%idx%phi,it,1)
-  if (self%d0==-1.0) then
-    self%d0 = total_mass/total_volume
-    if (verbose > 0) then
-      write(io_unit%log,'(a,i6,1p,2e11.2)') &
-       'selfgravity_t%pre_update: id, self%d0, faver(d) = ', &
-        patch%id, self%d0, patch%faver(d)
-    end if
+  self%d   => patch%mem(:,:,:,patch%idx%d  ,patch%it,1)
+  self%phi => patch%mem(:,:,:,patch%idx%phi,patch%it,1)
+  self%d_pre => self%d
+  allocate (self%src(patch%gn(1),patch%gn(2),patch%gn(3)))
+  !-----------------------------------------------------------------------------
+  ! If the patch is the root patch, compute the mean density
+  !-----------------------------------------------------------------------------
+  call sentinel (self, 'pre beg')
+  if (patch%is_periodic()) then
+    call patch%make_periodic (self%phi)
+    l = patch%li
+    u = patch%ui
+    shared%mean_density = &
+      sum(self%d(l(1):u(1),l(2):u(2),l(3):u(3)))/product(u-l+1)
   end if
-  !.............................................................................
-  dmin = patch%fminval (d)
-  dmax = patch%fmaxval (d)
-  if (dmin==0.0) then
-    print *, patch%id, 'WARNING: selfgravity_t%gravity, dmin, dmax, it =', &
-      dmin, dmax, patch%new
+  !-----------------------------------------------------------------------------
+  ! Initialize potential first time around, then upload potentials from lower
+  ! levels as boundary conditions, compute residuals locally, amd download
+  ! residuals from overlying higher levels
+  !*****************************************************************************
+  if (patch%istep == 0) then
+    self%phi = 0.0
   end if
-  !.............................................................................
-  call self%poisson%update (patch, phi, d, self%d0)
+  call self%uploads
+  call self%downloads
+  !*****************************************************************************
   if (verbose > 1) then
-    call patch%stats (d  , '  d', io_unit%log)
-    call patch%stats (phi, 'phi', io_unit%log)
+    call yz_indices (patch, iy, iz)
+    write (stderr,*) 'pre1 src' , patch%id
+    write (stderr,'((18f8.4))') self%src (:,iy,iz)
+    write (stderr,*) 'pre1 res' , patch%id
+    write (stderr,'((18f8.4))') self%res (:,iy,iz)
+    write (stderr,*) 'pre1 phi', patch%id
+    write (stderr,'((18f8.4))') self%phi (:,iy,iz)
+  end if
+  !-----------------------------------------------------------------------------
+  ! The solver adds the correction to phi that corresponds to the source 
+  !*****************************************************************************
+  call self%poisson%update (self%patch, self%res, self%dphi, self%d)
+  self%phi = self%phi + self%dphi
+  !*****************************************************************************
+  call sentinel (self, 'pre upd')
+  if (verbose > 0) then
+    call yz_indices (patch, iy, iz)
+    write (stderr,*) 'pre2 res' , patch%id
+    write (stderr,'((18f8.4))') self%res(:,iy,iz)
+    write (stderr,*) 'pre2 src', patch%id
+    write (stderr,'((18f8.4))') self%src(:,iy,iz)
+    write (stderr,*) 'pre2 lap', patch%id
+    write (stderr,'((18f8.4))') self%src(:,iy,iz) - self%res(:,iy,iz)
+    write (stderr,*) 'pre2 phi', patch%id
+    write (stderr,'((18f8.4))') self%phi(:,iy,iz)
   end if
   !-----------------------------------------------------------------------------
   ! Compute the force per unit volume (except for ZEUS solvers, which take the
@@ -207,70 +281,381 @@ SUBROUTINE solve (self, it)
   !-----------------------------------------------------------------------------
   if (patch%kind(1:4) /= 'zeus') then
     call scratch%allocate (scratch%force_per_unit_mass, [patch%gn, 3])
-    scratch%force_per_unit_mass = -grad (patch%mesh, phi)
+    scratch%force_per_unit_mass = -grad (patch%mesh, self%phi)
   endif
   !-----------------------------------------------------------------------------
-  ! compute estimate of dphi/dt
+  ! Compute estimate of dphi/dt
   !-----------------------------------------------------------------------------
-  call time_derivs (patch)
-  call trace%end (itimer)
-END SUBROUTINE solve
+!  call time_derivs (patch)
+  call sentinel (self, 'pre end')
+  call trace%end ()
+END SUBROUTINE pre_update
 
 !===============================================================================
-!> Having advanced the MHD state to the new time, we make a preliminary
-!> call to the Poisson solver, based on extrapolation of the nbor potentials.
-!> We then provide this preliminary potential to nbors, until we have a
-!> better offer.  The poisson_time controls if an update affects the self%time
-!> or the poisson_time; the two are updated alternatingly
+!> Update the potential to the new time, using time extrapolated potential BCs
+!> and the increment of internal densities; this picks up most of the changes
+!> of interest to nbors looking for BCs.  The potential is sub-sequently
+!> corrected in the next pre_update, when the potenial BCs are better known.
 !===============================================================================
 SUBROUTINE post_update (self)
   class(selfgravity_t):: self
   !.............................................................................
   class(gpatch_t), pointer:: patch
-  real(kind=KindScalarVar), pointer, dimension(:,:,:,:):: phi, dphi
+  real(var_k), dimension(:,:,:), pointer:: phi_now, phi_prv, d_now, d_prv 
+  real(var_k), dimension(:,:,:,:), pointer:: phi_t, dphi_t
+  integer:: it_now, it_prv  
+  integer:: iy, iz
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not. selfgravity) return
+  call sentinel (self, 'post beg')
   call trace%begin ('selfgravity_t%post_update', itimer=itimer)
-  if (selfgravity) then
-    patch => self%patch
-    if (self%poisson_time == patch%time) then
-      if (verbose > 0) then
-        write (io_unit%log,'(a,i6,1p,e12.4)') &
-         'selfgravity_t%post_update: id, patch%time =', patch%id, patch%time
-      end if
-    else
-      !-------------------------------------------------------------------------
-      ! Extrapolate phi forward in time, if not done in the task update
-      !-------------------------------------------------------------------------
-      if (prediction .and. patch%nw==1) then
-        phi  => patch%mem(:,:,:,patch%idx%phi ,:,1)
-        dphi => patch%mem(:,:,:,patch%idx%dphi,:,1)
-        call timestep%update_single (patch%id, patch%iit, patch%dt, phi, dphi, &
-          patch%mesh, patch%lock, order)
-      end if
-      !-------------------------------------------------------------------------
-      ! Advance the time to time+dtime, to prepare for post_update of phi
-      !-------------------------------------------------------------------------
-      call patch%rotate
-      !-------------------------------------------------------------------------
-      ! Fill guard zones with time extrapolated values and solve
-      !-------------------------------------------------------------------------
-      patch%allow_extrapolate = .true.
-      call patch%dnload (only=patch%idx%d)
-      call patch%dnload (only=patch%idx%phi)
-      patch%allow_extrapolate = .false.
-      call solve (self, patch%it)
-      self%poisson_time = patch%time
-      if (verbose > 0) then
-        write (io_unit%log,'(a,i6,1p,e12.4)') &
-         'selfgravity_t%post_update: id, poisson_time =', &
-         patch%id, self%poisson_time
-      end if
-    end if
+  patch => self%patch
+  !-----------------------------------------------------------------------------
+  ! To improve the potential IC, extrapolate phi forward in time, if not done
+  ! in the task update
+  !-----------------------------------------------------------------------------
+  if (prediction .and. patch%nw==1) then
+    phi_t  => patch%mem(:,:,:,patch%idx%phi ,:,1)
+    dphi_t => patch%mem(:,:,:,patch%idx%dphi,:,1)
+    call timestep%update_single (patch%id, patch%iit, patch%dt, phi_t, dphi_t, &
+      patch%mesh, patch%lock, order)
   end if
+  !-----------------------------------------------------------------------------
+  ! Advance the patch%time to time+dtime, to prepare for post_update of phi
+  !-----------------------------------------------------------------------------
+  patch%mem(:,:,:,patch%idx%phi ,patch%new,1) = &
+  patch%mem(:,:,:,patch%idx%phi ,patch%it ,1)
+  patch%mem(:,:,:,patch%idx%rphi,patch%new,1) = &
+  patch%mem(:,:,:,patch%idx%rphi,patch%it ,1)
+  call patch%rotate
+  self%d   => patch%mem(:,:,:,patch%idx%d  ,patch%it,1)
+  self%phi => patch%mem(:,:,:,patch%idx%phi,patch%it,1)
+  !-----------------------------------------------------------------------------
+  ! Compute residuals locally, and download overlying higher levels and
+  ! pick up the potential from lower level
+  !-----------------------------------------------------------------------------
+  if (verbose > 1) then
+    call yz_indices (patch, iy, iz)
+    write (stderr,*) 'post0 phi', patch%id
+    write (stderr,'((18f8.4))') self%phi (:,iy,iz)
+  end if
+  !*****************************************************************************
+  patch%allow_extrapolate = .true.
+  call self%uploads
+  patch%allow_extrapolate = .false.
+  !*****************************************************************************
+  call sentinel (self, 'post dnl')
+  if (verbose > 1) then
+    call yz_indices (patch, iy, iz)
+    write (stderr,*) 'post1 src' , patch%id
+    write (stderr,'((18f8.4))') self%src (:,iy,iz)
+    write (stderr,*) 'post1 res' , patch%id
+    write (stderr,'((18f8.4))') self%res (:,iy,iz)
+    write (stderr,*) 'post1 phi', patch%id
+    write (stderr,'((18f8.4))') self%phi (:,iy,iz)
+  end if
+  !-----------------------------------------------------------------------------
+  ! The solver incremnts the potential, based on the new BC values and the
+  ! residual, now corrected for the local changes of the density
+  !*****************************************************************************
+  call poisson%laplace_2nd (patch%ds, self%phi, self%src, self%res)
+  self%res = self%res + scaling%grav*(self%d-self%d_pre)
+  call self%poisson%update (self%patch, self%res, self%dphi, self%d)
+  self%phi = self%phi + self%dphi
+  !*****************************************************************************
+  call sentinel (self, 'post upd')
+  if (verbose > 0) then
+    call yz_indices (patch, iy, iz)
+    write (stderr,*) 'post2 res' , patch%id
+    write (stderr,'((18f8.4))') self%res (:,iy,iz)
+    write (stderr,*) 'post2 dphi', patch%id
+    write (stderr,'((18f8.4))') self%dphi(:,iy,iz)
+    write (stderr,*) 'post2 phi', patch%id
+    write (stderr,'((18f8.4))') self%phi (:,iy,iz)
+  end if
+  !*****************************************************************************
+  deallocate (self%src)
+  call sentinel (self, 'post end')
   call trace%end(itimer)
 END SUBROUTINE post_update
+
+!===============================================================================
+!> Downlaod residuals (only) from higher level patches that overlap with the
+!> internal cells of the patch
+!===============================================================================
+SUBROUTINE downloads (self)
+  class(selfgravity_t):: self
+  class(link_t), pointer:: link
+  class(nbor_t), pointer:: nbor
+  class(task_t), pointer:: patch, nbpatch
+  real(var_k), pointer:: res(:,:,:)
+  integer:: iy, iz
+  !-----------------------------------------------------------------------------
+  ! Download values from the L+1 tasks contained in this task
+  !-----------------------------------------------------------------------------
+  patch => self%patch
+  select type (patch)
+  class is (patch_t)
+  self%d   => patch%mem(:,:,:,patch%idx%d   ,patch%it,1)
+  self%phi => patch%mem(:,:,:,patch%idx%phi ,patch%it,1)
+  self%res => patch%mem(:,:,:,patch%idx%rphi,patch%it,1)
+  self%src = scaling%grav*(self%d-shared%mean_density)
+  call sentinel (self, 'downloads')
+  call poisson%laplace_2nd (patch%ds, self%phi, self%src, self%res)
+  nbor => patch%link%nbor
+  do while (associated(nbor))
+    nbpatch => nbor%task
+    select type (nbpatch)
+    class is (patch_t)
+    if (nbpatch%level == patch%level+1 ) then
+      if (all(abs(patch%distance (nbpatch)) < 0.5*patch%size)) then
+        call restrict (self, nbpatch, patch, patch%idx%rphi)
+!        write (stdout,'(2(a,i6,":",i2.2))') 'downloads', &
+!          nbpatch%id, nbpatch%level, '  to', patch%id, patch%level
+!        call yz_indices (patch, iy, iz)
+!        write (stderr,*) 'res', patch%id, iy, iz
+!        write (stderr,'((18f8.4))') self%res(:,iy,iz)
+      end if
+    end if
+    end select
+    nbor => nbor%next
+  end do
+  end select
+END SUBROUTINE downloads
+
+!===============================================================================
+!> Uplaod potentials corrections (only) from higher level patches that overlap
+!> with the internal cells of the patch
+!===============================================================================
+SUBROUTINE uploads (self)
+  class(selfgravity_t):: self
+  class(link_t), pointer:: link
+  class(nbor_t), pointer:: nbor
+  class(task_t), pointer:: patch, nbpatch
+  integer:: iy, iz, iit(9)
+  !-----------------------------------------------------------------------------
+  ! Upload values from the L-1 tasks on the nbor list
+  !-----------------------------------------------------------------------------
+  patch => self%patch
+  select type (patch)
+  class is (patch_t)
+  self%d   => patch%mem(:,:,:,patch%idx%d  ,patch%it,1)
+  self%phi => patch%mem(:,:,:,patch%idx%phi,patch%it,1)
+  nbor => patch%link%nbor
+  do while (associated(nbor))
+    nbpatch => nbor%task
+    select type (nbpatch)
+    class is (patch_t)
+      if (nbpatch%level == patch%level-1) then
+        if (all(abs(patch%distance (nbpatch)) < 0.5*nbpatch%size)) then
+          call self%prolong (nbpatch, patch, patch%idx%phi)
+        end if
+      end if
+    end select
+    nbor => nbor%next
+  end do
+  end select
+END SUBROUTINE uploads
+
+!===============================================================================
+!> Indices through center
+!===============================================================================
+SUBROUTINE yz_indices (patch, iy, iz)
+  class(patch_t):: patch
+  integer:: iy, iz
+  if (patch%position(2) < -0.05) then
+    iy = 34
+  else if (patch%position(2) > 0.05) then
+    iy = 3
+  else
+    iy = 19
+  end if
+  if (patch%position(3) < -0.05) then
+    iz = 34
+  else if (patch%position(3) > 0.05) then
+    iz = 3
+  else
+    iz = 19
+  end if
+END SUBROUTINE yz_indices
+
+!===============================================================================
+!> Restrict
+!===============================================================================
+SUBROUTINE restrict0 (self, source, target, iv)
+  class(selfgravity_t):: self
+  class(patch_t), pointer:: source, target
+  integer:: iv, jt(2)
+  real:: pt(2)
+  !-----------------------------------------------------------------------------
+  call source%time_interval (target%time, jt, pt, &
+                             extrap=target%allow_extrapolate)
+  if (verbose > 1) then
+    write (stderr,'(a,i6,2f7.3)') 'extrap: src,pt=', source%id, pt
+  end if
+  call download%different (target, source, jt, pt, only=iv)
+END SUBROUTINE restrict0
+
+!===============================================================================
+!> Restrict
+!===============================================================================
+SUBROUTINE restrict (self, source, target, iv)
+  class(selfgravity_t)    :: self
+  class(patch_t), pointer :: source, target
+  integer                 :: iv
+  real, pointer           :: src(:,:,:,:), tgt(:,:,:)
+  integer                 :: i1, i2, i3, j1, j2, j3, k(2), l(3), u(3)
+  real                    :: pt(2), p1, p2, p3
+  real(8)                 :: d(3), fl(3), fu(3)
+  logical                 :: outside(3)
+  class(mesh_t), pointer  :: sm, tm
+  !-----------------------------------------------------------------------------
+  call source%time_interval (target%time, k, pt, &
+                             extrap=target%allow_extrapolate)
+  src => source%mem(:,:,:,iv,:,1)
+  tgt => target%mem(:,:,:,iv,target%it,1)
+  if (verbose > 1) then
+    write (stderr,'("source: id,t=",i6,f8.4)') source%id, source%time
+    write (stderr,'(10f8.4)') source%t(source%iit)
+    write (stderr,'(11i7)'  ) source%iit, k
+    write (stderr,'(9f8.4)' ) src(18,18,18,source%iit)
+  end if
+  d = target%distance (source)
+  fl = d - source%size/2d0
+  fu = d + source%size/2d0
+  l = ceiling(fl/target%mesh%d + target%mesh%o) + 1
+  u =   floor(fu/target%mesh%d + target%mesh%o) - 1
+  do i3=l(3),u(3)
+    tm => target%mesh(3)
+    sm => source%mesh(3)
+    outside(3) = i3 < tm%li .or. i3 > tm%ui
+    p3 = (tm%r(i3) + d(3))/sm%d + sm%o
+    j3 = p3
+    p3 = p3 - j3
+    do i2=l(2),u(2)
+      tm => target%mesh(2)
+      sm => source%mesh(2)
+      outside(2) = i2 < tm%li .or. i2 > tm%ui
+      p2 = (tm%r(i2) + d(2))/sm%d + sm%o
+      j2 = p2
+      p2 = p2 - j2
+      do i1=l(1),u(1)
+        outside(1) = i1 < tm%li .or. i1 > tm%ui
+        if (any(outside)) then
+          tm => target%mesh(1)
+          sm => source%mesh(1)
+          p1 = (tm%r(i1) + d(1))/sm%d + sm%o
+          j1 = p1
+          p1 = p1 - j1
+          tgt(i1,i2,i3) = &
+              pt(1)*((1.-p3)*((1.-p2)*((1.0-p1)*src(j1  ,j2  ,j3  ,k(1))    + &
+                                       (    p1)*src(j1+1,j2  ,j3  ,k(1)))   + &
+                              (   p2)*((1.0-p1)*src(j1  ,j2+1,j3  ,k(1))    + &
+                                       (    p1)*src(j1+1,j2+1,j3  ,k(1))))  + &
+                     (   p3)*((1.-p2)*((1.0-p1)*src(j1  ,j2  ,j3+1,k(1))    + &
+                                       (    p1)*src(j1+1,j2  ,j3+1,k(1)))   + &
+                              (   p2)*((1.0-p1)*src(j1  ,j2+1,j3+1,k(1))    + &
+                                       (    p1)*src(j1+1,j2+1,j3+1,k(1))))) + &
+              pt(2)*((1.-p3)*((1.-p2)*((1.0-p1)*src(j1  ,j2  ,j3  ,k(2))    + &
+                                       (    p1)*src(j1+1,j2  ,j3  ,k(2)))   + &
+                              (   p2)*((1.0-p1)*src(j1  ,j2+1,j3  ,k(2))    + &
+                                       (    p1)*src(j1+1,j2+1,j3  ,k(2))))  + &
+                     (   p3)*((1.-p2)*((1.0-p1)*src(j1  ,j2  ,j3+1,k(2))    + &
+                                       (    p1)*src(j1+1,j2  ,j3+1,k(2)))   + &
+                              (   p2)*((1.0-p1)*src(j1  ,j2+1,j3+1,k(2))    + &
+                                      (    p1)*src(j1+1,j2+1,j3+1,k(2)))))
+        end if
+      end do
+    end do
+  end do
+END SUBROUTINE restrict
+
+!===============================================================================
+!> Prolong
+!===============================================================================
+SUBROUTINE prolong (self, source, target, iv)
+  class(selfgravity_t)    :: self
+  class(patch_t), pointer :: source, target
+  integer                 :: iv
+  real, pointer           :: src(:,:,:,:), tgt(:,:,:)
+  integer                 :: i1, i2, i3, j1, j2, j3, k(2)
+  real                    :: pt(2), p1, p2, p3
+  real(8)                 :: d(3)
+  logical                 :: outside(3)
+  class(mesh_t), pointer  :: sm, tm
+  integer                 :: tid, sid
+  !-----------------------------------------------------------------------------
+  call source%time_interval (target%time, k, pt, &
+                             extrap=target%allow_extrapolate)
+  src => source%mem(:,:,:,iv,:,1)
+  tgt => target%mem(:,:,:,iv,target%it,1)
+  tid = target%id
+  sid = source%id
+  if (verbose > 1) then
+    write (stderr,'("source: id,t=",i6,f8.4)') source%id, source%time
+    write (stderr,'(10f8.4)') source%t(source%iit)
+    write (stderr,'(11i7)'  ) source%iit, k
+    write (stderr,'(9f8.4)' ) src(18,18,18,source%iit)
+  end if
+  d = target%distance (source)
+  do i3=target%mesh(3)%lb+1,target%mesh(3)%ub-1
+    tm => target%mesh(3)
+    sm => source%mesh(3)
+    outside(3) = i3 < tm%li .or. i3 > tm%ui
+    p3 = (tm%r(i3) + d(3))/sm%d + sm%o
+    j3 = p3
+    if (j3 > sm%gn-1) then
+      j3 = sm%gn - 1
+    end if
+    p3 = p3 - j3
+    do i2=target%mesh(2)%lb+1,target%mesh(2)%ub-1
+      tm => target%mesh(2)
+      sm => source%mesh(2)
+      outside(2) = i2 < tm%li .or. i2 > tm%ui
+      p2 = (tm%r(i2) + d(2))/sm%d + sm%o
+      j2 = p2
+      if (j2 > sm%gn-1) then
+        j2 = sm%gn - 1
+      end if
+      p2 = p2 - j2
+      do i1=target%mesh(1)%lb+1,target%mesh(1)%ub-1
+        outside(1) = i1 < tm%li .or. i1 > tm%ui
+        if (any(outside)) then
+          tm => target%mesh(1)
+          sm => source%mesh(1)
+          p1 = (tm%r(i1) + d(1))/sm%d + sm%o
+          j1 = p1
+          if (j1 > sm%gn-1) then
+            j1 = sm%gn - 1
+          end if
+          if (j1 < 1) then
+            j1 = 1
+          end if
+          p1 = p1 - j1
+          tgt(i1,i2,i3) = &
+              pt(1)*((1.-p3)*((1.-p2)*((1.0-p1)*src(j1  ,j2  ,j3  ,k(1))    + &
+                                       (    p1)*src(j1+1,j2  ,j3  ,k(1)))   + &
+                              (   p2)*((1.0-p1)*src(j1  ,j2+1,j3  ,k(1))    + &
+                                       (    p1)*src(j1+1,j2+1,j3  ,k(1))))  + &
+                     (   p3)*((1.-p2)*((1.0-p1)*src(j1  ,j2  ,j3+1,k(1))    + &
+                                       (    p1)*src(j1+1,j2  ,j3+1,k(1)))   + &
+                              (   p2)*((1.0-p1)*src(j1  ,j2+1,j3+1,k(1))    + &
+                                       (    p1)*src(j1+1,j2+1,j3+1,k(1))))) + &
+              pt(2)*((1.-p3)*((1.-p2)*((1.0-p1)*src(j1  ,j2  ,j3  ,k(2))    + &
+                                       (    p1)*src(j1+1,j2  ,j3  ,k(2)))   + &
+                              (   p2)*((1.0-p1)*src(j1  ,j2+1,j3  ,k(2))    + &
+                                       (    p1)*src(j1+1,j2+1,j3  ,k(2))))  + &
+                     (   p3)*((1.-p2)*((1.0-p1)*src(j1  ,j2  ,j3+1,k(2))    + &
+                                       (    p1)*src(j1+1,j2  ,j3+1,k(2)))   + &
+                              (   p2)*((1.0-p1)*src(j1  ,j2+1,j3+1,k(2))    + &
+                                      (    p1)*src(j1+1,j2+1,j3+1,k(2)))))
+        end if
+      end do
+    end do
+  end do
+  if (verbose > 99) print *, sid, tid
+END SUBROUTINE prolong
 
 !===============================================================================
 !> Compute an approximate, conservative estimate of dphi/dt, which will cause
@@ -376,5 +761,55 @@ LOGICAL FUNCTION ahead_of (self, target, source)
     !...........................................................................
   end if
 END FUNCTION ahead_of
+
+!===============================================================================
+SUBROUTINE stats (self, f, label, unit)
+  class(selfgravity_t)   :: self
+  real, dimension(:,:,:) :: f
+  character(*)           :: label
+  integer                :: unit
+  !-----------------------------------------------------------------------------
+  if (verbose > 1) then
+    call self%patch%stats (f, label, unit)
+  end if
+END SUBROUTINE stats
+
+SUBROUTINE sentinel (self, label)
+  class(selfgravity_t):: self
+  character(*):: label
+  class(patch_t), pointer:: patch => null()
+  real:: phi, phi_prv=0.0
+  save:: phi_prv, patch
+  !-----------------------------------------------------------------------------
+  if (verbose > 1) then
+    write (stderr,'(i6,2x,"average density:",f10.6,2x,a)') self%patch%id, &
+      self%patch%faver (self%patch%idx%d), label
+  end if
+  if (self%patch%id == 1) then
+    patch => self%patch
+    if (verbose > 0) then
+      write (stderr,'(i6,2x,"average density:",f10.6,2x,a)') self%patch%id, &
+        self%patch%faver (self%patch%idx%d), label
+    end if
+  end if
+  if (associated(patch)) then
+    phi = patch%mem(18,18,18,patch%idx%phi,patch%it,1)
+    if (phi /= phi_prv .and. verbose > 0) then
+      !write (stderr,'(a,i6,i4,f8.4,2x,a)') &
+      write (stderr,*) &
+       "phi changed(1): id,istep,phi=", self%patch%id, patch%istep, phi, label
+      phi_prv = phi
+    end if
+    if (self%patch%id == 1 .and. verbose > 0) then
+      phi = self%phi(18,18,18)
+      if (phi /= phi_prv) then
+        !write (stderr,'(a,i6,i4,f8.4,2x,a)') &
+        write (stderr,*) &
+        "phi changed(2): id,istep,phi=", self%patch%id, patch%istep, phi, label
+        phi_prv = phi
+      end if
+    end if
+  end if
+END SUBROUTINE sentinel
 
 END MODULE selfgravity_mod
