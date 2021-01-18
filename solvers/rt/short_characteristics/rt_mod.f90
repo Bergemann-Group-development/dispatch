@@ -221,8 +221,6 @@ recursive SUBROUTINE pre_init (self)
     !---------------------------------------------------------------------------
     ! Request heating per unit volume for MHD
     !---------------------------------------------------------------------------
-    error stop "qpv update needed, see below"
-    !call self%patch%set(bits%qpv)
     !
     if (self%i_omega==0) then
       call rt_integral%init

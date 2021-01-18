@@ -13,7 +13,7 @@
 !> update procedure in $(TOP)/lists/task_list_mod.f90.
 !===============================================================================
 MODULE experiment_mod
-  USE rt_nbors_mod
+  USE kinds_mod
   USE solver_mod
   USE list_mod
   USE download_mod
@@ -30,6 +30,7 @@ MODULE experiment_mod
   USE scaling_mod
   USE bits_mod
   USE omp_timer_mod
+  USe vector_ops
   implicit none
   private
   !.............................................................................
@@ -105,13 +106,6 @@ SUBROUTINE init_task_list (self, task_list)
   call trace%begin ('experiment_t%init_task_list')
   ! -- punt to the next level; picked up by extras_t ---------------------------
   call self%solver_t%init_task_list (task_list)
-  ! -- for RT tasks, modify the nbor lists and add tasks to the task list-------
-  if (associated (self%rt)) then
-    if (self%rt%on) then
-      call rt_nbors%init (self)
-      call self%rt%add_to_task_list
-    end if
-  end if
   call trace%end()
 END SUBROUTINE init_task_list
 
