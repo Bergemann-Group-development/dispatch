@@ -36,8 +36,8 @@
                     !dt_fixed=0.02 
                     /
 &snapshot_params    verbose=0 
-                    meshfile='input_data/mhd63.msh'
-                    snapfile='input_data/mhd63.dat' 
+                    meshfile='../../data/stellar_atmospheres/mhd63.msh'
+                    snapfile='../../data/stellar_atmospheres/mhd63.dat' 
                     model='stagger'
                     flip_z=t 
                     force_mean=f
