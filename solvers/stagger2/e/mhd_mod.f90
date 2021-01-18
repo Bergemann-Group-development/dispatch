@@ -126,7 +126,18 @@ SUBROUTINE pre_init (self)
   self%csound = csound
   self%courant = courant
   self%cdtd = cdtd
+  if (stagger%order==6) then
+    self%ng = 5
+  else if (stagger%order==4) then
+    self%ng = 3
+  else
+    self%ng = 2
+  end if
   call self%idx%init (ie=5, mhd=self%mhd)
+  !-----------------------------------------------------------------------------
+  ! Call extras pre-init
+  !-----------------------------------------------------------------------------
+  call self%extras_t%pre_init
   call trace%end()
 END SUBROUTINE pre_init
 
@@ -137,6 +148,7 @@ END SUBROUTINE pre_init
 SUBROUTINE init (self)
   class(mhd_t):: self
   integer :: i
+  call self%patch_t%init()
   !-----------------------------------------------------------------------------
   ! Set the staggering, unsigned and pervolume flags before calling the rest
   ! of the cascade if %init(), where %gpatch_t%init may need them, in IC calls
@@ -160,6 +172,8 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call self%extras_t%init
   self%type = 'mhd_t'
+  call non_ideal%init
+  call divb%init
   !-----------------------------------------------------------------------------
   ! Self tests, only on one thread
   !-----------------------------------------------------------------------------
@@ -357,7 +371,7 @@ SUBROUTINE pde (self)
   if (self%do_pebbles) then
     U => self%vgas(:,:,:,:,self%it)
     pg => self%pressure(:,:,:,self%it)
-    self%density => self%mem(:,:,:,1,:,1)
+   ! self%density => self%mem(:,:,:,1,:,1)
   else
     call allocate_scalars (self%gn, pg)
     call allocate_vectors (self%gn, U)
@@ -677,7 +691,7 @@ SUBROUTINE pre_update (self)
     e => self%mem(:,:,:,self%idx%e,self%it,1)
     lnd = alog(d)
     ee = e/d
-    call eos%lookup_table (shape(self%tt), lnd=lnd, ee=ee, tt=self%tt)
+    call eos%lookup_table (shape(self%tt), lnd=lnd, ee=ee, tt=self%tt, label='mhd')
     deallocate (lnd, ee)
     if (verbose > 0) &
       write(io%output,*) self%id, 'mhd_t%pre_update:  tt =', &
@@ -758,13 +772,13 @@ SUBROUTINE output (self)
 END SUBROUTINE output
 
 !===============================================================================
-FUNCTION gas_pressure (self) result(pg)
+SUBROUTINE gas_pressure_sub (self, d, lnd, ee, pg)
   class(mhd_t):: self
-  real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
+  real, dimension(:,:,:):: pg
   real, dimension(:,:,:), pointer:: d, lnd, e, ee
   integer, save:: nprint=1
   !-----------------------------------------------------------------------------
-  call trace%begin ('mhd_t%gas_pressure')
+  call trace%begin ('mhd_t%gas_pressure_sub')
   d  => self%mem(:,:,:,self%idx%d ,self%it,1)
   e  => self%mem(:,:,:,self%idx%e ,self%it,1)
   call allocate_scalars(self%gn,ee)
@@ -777,9 +791,9 @@ FUNCTION gas_pressure (self) result(pg)
     end if
   else
     if (do_temperature) then
-      call eos%lookup_table (shape(d), d=d, ee=ee, pg=pg, tt=self%tt)
+      call eos%lookup_table (shape(d), d=d, ee=ee, pg=pg, tt=self%tt, label='mhd_gp_sub')
     else
-      call eos%lookup_table (shape(d), d=d, ee=ee, pg=pg)
+      call eos%lookup_table (shape(d), d=d, ee=ee, pg=pg, label='mhd_gp_sub2')
     end if
     if (verbose > 1 .or. nprint > 0) then
       nprint = nprint-1
@@ -787,23 +801,26 @@ FUNCTION gas_pressure (self) result(pg)
       write(io%output,*) self%id, 'lookup_table:  ee =', minval(ee) , maxval(ee)
       write(io%output,*) self%id, 'lookup_table:  pg =', minval(pg) , maxval(pg)
       if (do_temperature) &
-        write(io%output,*) self%id, 'lookup_table:  tt =', minval(self%tt), maxval(self%tt)
+        write(io%output,*) self%id, 'lookup_table:  tt =', minval(self%tt), &
+          maxval(self%tt)
     end if
   end if
   call deallocate_scalars(ee)
   call trace%end()
-END FUNCTION gas_pressure
+END SUBROUTINE gas_pressure_sub
 
 !===============================================================================
-! Subroutine-version; only called by `pde`.
-!===============================================================================
-SUBROUTINE gas_pressure_sub (self, d, lnd, ee, pg)
+FUNCTION gas_pressure (self) result(pg)
   class(mhd_t):: self
-  real, dimension(:,:,:):: pg
-  real, dimension(:,:,:), pointer:: d, lnd, ee
+  real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
+  real, dimension(:,:,:), pointer:: d, lnd, e, ee
   integer, save:: nprint=1
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%gas_pressure_sub')
+  d  => self%mem(:,:,:,self%idx%d ,self%it,1)
+  e  => self%mem(:,:,:,self%idx%e ,self%it,1)
+  call allocate_scalars(self%gn,ee)
+  ee = e/d
   if (trim(self%eos)=='ideal') then
     if (self%gamma==1d0) then
       pg = d*self%csound**2
@@ -812,13 +829,13 @@ SUBROUTINE gas_pressure_sub (self, d, lnd, ee, pg)
     end if
   else
     if (do_temperature) then
-      call eos%lookup_table (shape(lnd), lnd=lnd, ee=ee, pg=pg, tt=self%tt)
+      call eos%lookup_table (shape(d), d=d, ee=ee, pg=pg, tt=self%tt, label='mhd_gp')
     else
-      call eos%lookup_table (shape(lnd), lnd=lnd, ee=ee, pg=pg)
+      call eos%lookup_table (shape(d), d=d, ee=ee, pg=pg, label='mhd_gp2')
     end if
     if (verbose > 1 .or. nprint > 0) then
       nprint = nprint-1
-      write(io%output,*) self%id, 'lookup_table: lnd =', minval(lnd), maxval(lnd)
+      write(io%output,*) self%id, 'lookup_table: lnd =', minval(d), maxval(d)
       write(io%output,*) self%id, 'lookup_table:  ee =', minval(ee) , maxval(ee)
       write(io%output,*) self%id, 'lookup_table:  pg =', minval(pg) , maxval(pg)
       if (do_temperature) &
@@ -826,8 +843,9 @@ SUBROUTINE gas_pressure_sub (self, d, lnd, ee, pg)
           maxval(self%tt)
     end if
   end if
+  call deallocate_scalars(ee)
   call trace%end()
-END SUBROUTINE gas_pressure_sub
+END FUNCTION gas_pressure
 
 !===============================================================================
 !> Set up nbor relations between MHD tasks

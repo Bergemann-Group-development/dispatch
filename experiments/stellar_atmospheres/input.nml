@@ -18,7 +18,7 @@
 &rt_setup_params    on=t verbose=0 /
 &rt_integral_params verbose=0 detailed_timer=f solver=2 
                     dtau_min=1e-1 dtau_dif=1e1 dtau_max=1e2 order=1 /
-&sc_rt_params       verbose=0 nt=5 n_mu=2 n_phi=4 n_bin=4
+&sc_rt_params       verbose=0 on=f nt=5 n_mu=2 n_phi=4 n_bin=4
                     rt_grace=1e-5 rt_llc=0,0,-0.5 rt_urc=6,6,0.45 courant=1.0
                     n_warmup=6 vertical_propagation=f cdtd=1.0 /
 &hybrid_rt_params   /

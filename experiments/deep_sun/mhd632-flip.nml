@@ -14,7 +14,7 @@
                     t_bdry=3.0
 /
 &cartesian_params   size=6,6,3 
-                    dims=12,12,6 
+                    dims=6,6,3 
                     mpi_dims=2,2,1 
                     origin=0,0,-2.5
                     omp_init=f 
@@ -29,7 +29,7 @@
 /
 &patch_params       nt=5  
                     grace=0.05 
-                    n=3*32 
+                    n=3*22 
                     no_mans_land=t 
                     use_data_hub=f 
                     do_check_nan=f 
@@ -42,8 +42,8 @@
                     flip_z=t 
                     force_mean=f
                     extension=1
-                    order=-1
-                    b0=0.0,0.0,-1.0 
+                    order=-2
+                    !b0=0.0,0.0,0.0 
                     /
 &gravity_params     on=t 
                     constant=-27500 
@@ -52,7 +52,7 @@
                     mass=-1 
                     minrad=-1 
 /
-&newton_params      on=f 
+&newton_params      on=t 
                     axis=3 
                     position=0.5
                     scale=0.1 

@@ -447,7 +447,7 @@ if (any(e1<eos%ee_min)) then
   print *, 'pz', pz(ix,iy,bn)
   if (any(e1<eos%ee_min))error stop "e1 leq ee_min"
 end if
-deallocate(ep)
+if (self%patch%kind(1:6)=='ramses') deallocate(ep)
   call eos%lookup_table (shape(pg), pg=pg, d=d1, ee=e1, label='upper_bnd2', id=self%id)
   zi = 1
   do iz=uo(3),ub(3)

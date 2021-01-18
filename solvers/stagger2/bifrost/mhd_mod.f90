@@ -136,13 +136,6 @@ SUBROUTINE pre_init (self)
   self%cdtd = cdtd
   self%ng   = 8
   !-----------------------------------------------------------------------------
-  ! Read IC parameters, which determine if this is HD or MHD.  The IC init is
-  ! called again, from extras_t%init, when gamma is known and can be passed on.
-  !-----------------------------------------------------------------------------
-  self%initial%mhd = self%mhd
-  call self%idx%init (ie=5, mhd=self%mhd)
-  call self%initial%init (self%kind, real(self%gamma))
-  self%mhd = self%initial%mhd
   if (self%mhd) then
     self%kind = 'stagger2e_mhd_patch'
   else
@@ -155,10 +148,7 @@ SUBROUTINE pre_init (self)
       self%nv = 5
     end if
   end if
-  !-----------------------------------------------------------------------------
-  ! Call patch_pre-init
-  !-----------------------------------------------------------------------------
-  call self%patch_t%pre_init
+  call self%idx%init (ie=5, mhd=self%mhd)
   !-----------------------------------------------------------------------------
   ! Call extras pre-init
   !-----------------------------------------------------------------------------
@@ -898,10 +888,14 @@ END SUBROUTINE output
 SUBROUTINE gas_pressure_sub (self, d, lnd, ee, pg)
   class(mhd_t):: self
   real, dimension(:,:,:):: pg
-  real, dimension(:,:,:), pointer:: d, lnd, ee
+  real, dimension(:,:,:), pointer:: d, lnd, e, ee
   integer, save:: nprint=1
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%gas_pressure_sub')
+  d  => self%mem(:,:,:,self%idx%d ,self%it,1)
+  e  => self%mem(:,:,:,self%idx%e ,self%it,1)
+  call allocate_scalars(self%gn,ee)
+  ee = e/d
   if (trim(self%eos)=='ideal') then
     if (self%gamma==1d0) then
       pg = d*self%csound**2
@@ -910,13 +904,13 @@ SUBROUTINE gas_pressure_sub (self, d, lnd, ee, pg)
     end if
   else
     if (do_temperature) then
-      call eos%lookup_table (shape(lnd), lnd=lnd, ee=ee, pg=pg, tt=self%tt, label='mhd_gp_sub')
+      call eos%lookup_table (shape(d), d=d, ee=ee, pg=pg, tt=self%tt, label='mhd_gp_sub')
     else
-      call eos%lookup_table (shape(lnd), lnd=lnd, ee=ee, pg=pg, label='mhd_gp_sub2')
+      call eos%lookup_table (shape(d), d=d, ee=ee, pg=pg, label='mhd_gp_sub2')
     end if
     if (verbose > 1 .or. nprint > 0) then
       nprint = nprint-1
-      write(io%output,*) self%id, 'lookup_table: lnd =', minval(lnd), maxval(lnd)
+      write(io%output,*) self%id, 'lookup_table: d =', minval(d), maxval(d)
       write(io%output,*) self%id, 'lookup_table:  ee =', minval(ee) , maxval(ee)
       write(io%output,*) self%id, 'lookup_table:  pg =', minval(pg) , maxval(pg)
       if (do_temperature) &
@@ -924,6 +918,7 @@ SUBROUTINE gas_pressure_sub (self, d, lnd, ee, pg)
           maxval(self%tt)
     end if
   end if
+  call deallocate_scalars(ee)
   call trace%end()
 END SUBROUTINE gas_pressure_sub
 
@@ -953,7 +948,7 @@ FUNCTION gas_pressure (self) result(pg)
     end if
     if (verbose > 1 .or. nprint > 0) then
       nprint = nprint-1
-      write(io%output,*) self%id, 'lookup_table: lnd =', minval(lnd), maxval(lnd)
+      write(io%output,*) self%id, 'lookup_table: lnd =', minval(d), maxval(d)
       write(io%output,*) self%id, 'lookup_table:  ee =', minval(ee) , maxval(ee)
       write(io%output,*) self%id, 'lookup_table:  pg =', minval(pg) , maxval(pg)
       if (do_temperature) &

@@ -7,9 +7,9 @@ OPTS = optimized
 # Default target and methods
 iUPD             = adams_bashforth
 RT_SOLVER       = short_characteristics
-SOLVER          = ramses/mhd_eos
-#SOLVER          = stagger2/bifrost
-STAGGER         = stagger_2nd.o
+#SOLVER          = ramses/mhd_eos
+SOLVER          = stagger2/bifrost
+STAGGER         = stagger_6th.o
 EXEC            = dispatch.x
 PARTICLE_SOLVER=
 TOP             = ../..

@@ -701,7 +701,42 @@ SUBROUTINE trilinear3d (self, xi, yi, zi, fi, xo, yo, zo, fo, order)
   integer:: nix, niy, niz, nox, noy, noz, ix, iy, iz, jx ,jy, jz
   real:: px, py, pz, qx, qy, qz, dx, dy, dz
   !-----------------------------------------------------------------------------
-  call io%abort('lagrange_mod:trilinear3d has been deprecated. Use interpolate3d instead.')
+  nix = size(xi)
+  niy = size(yi)
+  niz = size(zi)
+  nox = size(xo)
+  noy = size(yo)
+  noz = size(zo)
+  dx = (xi(nix)-xi(1))/(nix-1)
+  dy = (yi(niy)-yi(1))/(niy-1)
+  dz = (zi(niz)-zi(1))/(niz-1)
+  do iz=1,noz
+    do jz=1,niz-2
+      if (zi(jz+1)>zo(iz)) exit
+    end do
+    pz = (zo(iz)-zi(jz))/(zi(jz+1)-zi(jz))
+    pz = max(0.0,min(1.0,pz))
+    qz = 1.0-pz
+    do iy=1,noy
+      py = (yo(iy)-yi(1))/dy + 1.
+      jy = py
+      jy = max(1,min(niy-1,jy))
+      py = max(0.0,min(1.0,py -jy))
+      qy = 1.0-py
+      do ix=1,nox
+        px = (xo(ix)-xi(1))/dx + 1.
+        jx = px
+        jx = max(1,min(nix-1,jx))
+        px = max(0.0,min(1.0,px -jx))
+        qx = 1.0-px
+        fo(ix,iy,iz) = &
+          qz*(qy*(qx*fi(jx  ,jy  , jz  ) + px*fi(jx+1,jy  , jz  )) + &
+              py*(qx*fi(jx  ,jy+1, jz  ) + px*fi(jx+1,jy+1, jz  ))) + &
+          pz*(qy*(qx*fi(jx  ,jy  , jz+1) + px*fi(jx+1,jy  , jz+1)) + &
+              py*(qx*fi(jx  ,jy+1, jz+1) + px*fi(jx+1,jy+1, jz+1)))
+      end do
+    end do
+  end do
 END SUBROUTINE trilinear3d
 
 !> -----------------------------------------------------------------------------
