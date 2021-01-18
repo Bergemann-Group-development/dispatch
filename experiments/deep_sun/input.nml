@@ -1,142 +1,64 @@
 ! -- Parameters defining the run -----------------------------------------------
-&experiment_params  verbose=0 /
-&boundary_params    verbose=0
-                    !d_bot=231.
-                    !e_bot=2896.484
-                    bottom_bc_rate=0.01
-                    top_bc_rate=0.01
-                    scale=t 
-                    divb_iter=4
-                    damp_rate=0.2
-                    r_sponge = 0.5
-                    deriv_bnd=f
-                    pb_fact=1.0
-                    t_bdry=3.0
-/
-&cartesian_params   size=6,6,3 
-                    dims=6,6,3 
-                    mpi_dims=2,2,1 
-                    origin=0,0,-2.5
-                    omp_init=f 
-                    periodic=t,t,f
-/
-& initial_refine_params
-  on = f
-  n_refine = 0,0,1
-  center   = 0.0,0.0,0.0
-  extent   = 0.0,0.0,0.5
-  keep_parent=f
-/
-&patch_params       nt=5  
-                    grace=0.05 
-                    n=3*22 
-                    no_mans_land=t 
-                    use_data_hub=f 
-                    do_check_nan=f 
-                    !dt_fixed=0.02 
-                    /
-&snapshot_params    verbose=0 
+&cartesian_params   size=6,6,3 dims=6,6,3 mpi_dims=2,2,1 origin=0,0,-2.5
+                    omp_init=f periodic=t,t,f /
+&patch_params       nt=5  grace=0.05 n=3*22 do_check_nan=f /
+
+! -- I/O parameters ------------------------------------------------------------
+&snapshot_params    verbose=0 order=-2 !b0=0.0,0.0,0.0 
                     meshfile='../../data/stellar_atmospheres/mhd63.msh'
                     snapfile='../../data/stellar_atmospheres/mhd63.dat' 
-                    model='stagger'
-                    flip_z=t 
-                    force_mean=f
-                    extension=1
-                    order=-2
-                    !b0=0.0,0.0,0.0 
-                    /
-&gravity_params     on=t 
-                    constant=-27500 
-                    axis=3 
-                    position=0.0 
-                    mass=-1 
-                    minrad=-1 
-/
-&newton_params      on=t 
-                    axis=3 
-                    position=0.5
-                    scale=0.1 
-                    !ee0=5.2155 
-                    ee1=0.3 
-                    time=0.2 
-/
+                    model='stagger' flip_z=t force_mean=f extension=1 /
+&io_params          verbose=0 do_trace=f omp_trace=t do_output=t id_debug=0
+                    restart=-1 guard_zones=t nml_version=1 /
+&out_params         end_time=0.1 out_time=0.1 print_every=30 /
+&aux_params         select='tt','pg','qr' /
+
+! -- BC and physics parameters --------------------------------------------------
+&boundary_params    verbose=0
+                    bottom_bc_rate=0.01 top_bc_rate=0.01 scale=t 
+                    divb_iter=4 damp_rate=0.2 r_sponge = 0.5 deriv_bnd=f
+                    !d_bot=231.  e_bot=2896.484
+                    pb_fact=1.0 t_bdry=3.0 /
+&gravity_params     on=t axis=3 constant=-27500 position=0.0 mass=-1 minrad=-1 /
+&newton_params      !ee0=5.2155 !ee1=0.3
+                    on=t axis=3 position=0.5 scale=0.1 time=0.2 /
 &eos_params         /
-&lock_params verbose=2 alternate_time =30 /
-&spitzer_conductivity_params
- on=f
-/
+&spitzer_conductivity_params on=f /
+
+! -- Refinement parameters -----------------------------------------------------
+&refine_params      on=f levelmax=9 levelmin=1 verbose=3 check_interval=2 /
+&initial_refine_params on=f n_refine=0,0,1 center=3*0.0 extent=0.0,0.0,0.5 keep_parent=f /
+
 ! -- RT parameters -------------------------------------------------------------
 &rt_setup_params    on=t verbose=0 /
 &rt_integral_params verbose=0 dtau_min=1e-3 dtau_dif=1e3 dtau_max=1e4 
                     solver=2 order=1 /
-&sc_rt_params       on =f verbose=0 nt=5 n_mu=2 n_phi=4 n_bin=4
+&sc_rt_params       on =f verbose=0 nt=5 n_mu=2 n_phi=4 n_bin=4 dnload_mhd=f
                     rt_grace=0.05 rt_llc=0,0,-1.4 rt_urc=6,6,0.45
-                    dnload_mhd=f
-                    n_warmup=6 vertical_propagation=f cdtd=0.05 rt_freq=1.0/
+                    n_warmup=6 vertical_propagation=f cdtd=0.05 rt_freq=1.0 /
 &hybrid_rt_params   /
-! -- I/O parameters ------------------------------------------------------------
-&io_params          verbose=0 do_trace=f omp_trace=f do_output=t id_debug=0
-                    restart=-1  guard_zones=t nml_version=1 /
-&out_params         end_time=100.101 
-                    out_time=0.1 
-                    print_time=0 
-/
-&aux_params         select='tt','pg','qr'
-/
-! -- Stagger code parameters ---------------------------------------------------
+
+! -- Solver parameters ---------------------------------------------------------
+&bifrost_params     !     nu1   nu2  nu3  nu_d  nu_ee  eta3
+                    nu=  0.05 , 0.2, 0.4  0.07,  0.03,  0.3
+                    eos='tabular' loginterpolation=t ca_max=100.0 
+                    courant=0.2 max_r=3 symmetric_e=f do_temperature=t /
                     !   cs    pa   ofd  mas   kap  eta
 &stagger_params     nu= 0.03, 1.0, 1.0, 0.00, 1.0, 0.9 gamma=1.66666667 verbose=0
-eos='tabular'
-                    do_maxwell=f do_temperature=t courant=0.15 /
+                    eos='tabular' do_maxwell=f do_temperature=t courant=0.15 /
 &timestep_params    time_order=2 /
+&ramses_params      courant_factor=0.27 csound=1.0 gamma=1.6666667
+                    !smallr=1e-8 smallc=1e-8 smallr=1e-3 smallc=1e-2
+                    do_temperature=f slope_type=2 unsigned=t convert_e=f /
+&non_ideal_params   mhd_Ohm=f eta_Ohm=0.01 mhd_AD=f /
+&divb_clean_params  on=t divb_iter=4 divb_cleaner=0 /
+
 ! -- Task control parameters ---------------------------------------------------
-&timer_params       sec_per_report=20 verbose=0 /
-&task_list_params   job_seconds=1e6 /
 &dispatcher_params  method=0 /
-&dispatcher3_params verbose=0 f_over=3 use_taskyield=f use_critical=f /
+&timer_params       sec_per_report=10 /
+&task_list_params   verbose=0 job_seconds=1e6 /
 &task_mesg_params   verbose=0 /
+&lock_params        verbose=0 alternate_time=30 /
 &mpi_mesg_params    verbose=0 debug=f /
-/
-&refine_params          on=f levelmax=9 levelmin=1 verbose=3 check_interval=2 /
-!&download_params order_interpolator=1 /
-&ramses_params
- !courant_factor=0.5
- !csound=1.0
- gamma=1.6666667
- !do_temperature=t
- slope_type=2
- !smallr=1e-8
- !smallc=1e-8
- !smallr=1e-3
- ! smallc=1e-2
- !divb_iter=0
- unsigned=t
- !convert_e=f
-/
-&non_ideal_params
- mhd_Ohm=f
- eta_Ohm=0.01
- mhd_AD=f
-/
+&download_params    /
 
-&bifrost_params             
-gamma=1.6666667
-loginterpolation=t
-ca_max = 100.0 
-courant=0.2
-max_r=3
-symmetric_e=f
-do_temperature=t
-eos='tabular'
-!     nu1   nu2  nu3  nu_d  nu_ee  eta3
-!nu=  0.6, 0.6, 0.6, 0.6, 0.6, 0.3 /
-!nu=  0.3, 0.2, 0.3, 0.0, 0.3, 0.3 /
-!nu=  0.03 , 0.3,  0.1,  0.05,  0.05, 0.8 /
-!nu=  0.1 , 0.1,  0.5,  0.1,  0.1, 0.2 /
-nu=  0.05 , 0.2,  0.4,  0.07,  0.03, 0.3 /
-
-&divb_clean_params
- on=t
- divb_iter=4
- divb_cleaner=0
- /
