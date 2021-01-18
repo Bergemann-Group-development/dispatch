@@ -38,7 +38,7 @@ CONTAINS
 SUBROUTINE init (self, solver, gamma)
   class(initial_t):: self
   character(len=64):: solver
-  real, optional:: gamma
+  real(8), optional:: gamma
   character(len=32), save:: type='turbulence'
   logical, save:: first_time=.true.
   namelist /IC_params/ type
@@ -48,8 +48,8 @@ SUBROUTINE init (self, solver, gamma)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
-    read (io%input, initial_params)
-    if (io%master) write (*, initial_params)
+    read (io%input, IC_params)
+    if (io%master) write (*, IC_params)
   end if
   call io%lock%unset
   self%solver = trim(solver)
@@ -110,9 +110,9 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
     call io%lock%set
     if (first_time) then
       rewind (io%input)
-      read (io%input, initial_solenoidal_params)
+      read (io%input, IC_solenoidal_params)
       mhd = mhd .and. any(b0 /= 0.0)
-      if (io%master) write (*, initial_solenoidal_params)
+      if (io%master) write (*, IC_solenoidal_params)
       first_time = .false.
     end if
     call io%lock%unset
@@ -168,9 +168,9 @@ SUBROUTINE single_compressive (self, m, ff, idx)
     call io%lock%set
     if (first_time) then
       rewind (io%input)
-      read (io%input, initial_compressive_params)
+      read (io%input, IC_compressive_params)
       mhd = mhd .and. any(b0 /= 0.0)
-      if (io%master) write (*, initial_compressive_params)
+      if (io%master) write (*, IC_compressive_params)
       first_time = .false.
     end if
     call io%lock%unset
@@ -294,9 +294,9 @@ SUBROUTINE single_advection (self, m, ff, idx)
     call io%lock%set
     if (first_time) then
       rewind (io%input)
-      read (io%input, initial_advection_params)
+      read (io%input, IC_advection_params)
       mhd = mhd .and. any(b0 /= 0.0)
-      if (io%master) write (*, initial_advection_params)
+      if (io%master) write (*, IC_advection_params)
       first_time = .false.
     end if
     call io%lock%unset

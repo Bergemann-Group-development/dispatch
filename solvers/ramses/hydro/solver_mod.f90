@@ -510,9 +510,9 @@ SUBROUTINE compression_magnitude (self, w)
   vx = self%mem(:,:,:,self%idx%px,self%it,1)/self%mem(:,:,:,self%idx%d,self%it,1)
   vy = self%mem(:,:,:,self%idx%py,self%it,1)/self%mem(:,:,:,self%idx%d,self%it,1)
   vz = self%mem(:,:,:,self%idx%pz,self%it,1)/self%mem(:,:,:,self%idx%d,self%it,1)
-  w = max(- stagger%ddx(self%ds(1),vx) &
-          - stagger%ddy(self%ds(2),vy) &
-          - stagger%ddz(self%ds(3),vz), 0.0)
+  w = max(- stagger%ddx(self%ds,vx) &
+          - stagger%ddy(self%ds,vy) &
+          - stagger%ddz(self%ds,vz), 0.0)
   deallocate (vx, vy, vz)
   call trace%end (itimer)
 END SUBROUTINE compression_magnitude
@@ -534,9 +534,9 @@ SUBROUTINE vorticity_magnitude (self, w)
   vx = self%mem(:,:,:,self%idx%px,self%it,1)/self%mem(:,:,:,self%idx%d,self%it,1)
   vy = self%mem(:,:,:,self%idx%py,self%it,1)/self%mem(:,:,:,self%idx%d,self%it,1)
   vz = self%mem(:,:,:,self%idx%pz,self%it,1)/self%mem(:,:,:,self%idx%d,self%it,1)
-  w = sqrt((stagger%ddy(self%ds(2),vz)-stagger%ddz(self%ds(3),vy))**2 &
-         + (stagger%ddz(self%ds(3),vx)-stagger%ddx(self%ds(1),vz))**2 &
-         + (stagger%ddx(self%ds(1),vy)-stagger%ddy(self%ds(2),vx))**2)
+  w = sqrt((stagger%ddy(self%ds,vz)-stagger%ddz(self%ds,vy))**2 &
+         + (stagger%ddz(self%ds,vx)-stagger%ddx(self%ds,vz))**2 &
+         + (stagger%ddx(self%ds,vy)-stagger%ddy(self%ds,vx))**2)
   deallocate (vx, vy, vz)
   call trace%end (itimer)
 END SUBROUTINE vorticity_magnitude

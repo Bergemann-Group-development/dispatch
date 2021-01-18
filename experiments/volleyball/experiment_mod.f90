@@ -10,7 +10,12 @@ MODULE experiment_mod
   USE sphere_points_mod
   implicit none
   private
+  type, public:: orient_t
+    logical:: on
+    real(8):: theta, phi, p(3), e(3,3)
+  end type
   type, public, extends(solver_t):: experiment_t
+    type(orient_t):: orient
     type(sphere_points_t):: place
     real(8), dimension(3):: e1, e2, e3
   contains
@@ -97,7 +102,7 @@ END SUBROUTINE init
 !===============================================================================
 SUBROUTINE dnload (self, only)
   class(experiment_t):: self
-  class(link_t), pointer:: nbor
+  class(nbor_t), pointer:: nbor
   integer, optional:: only
   !-----------------------------------------------------------------------------
   call trace%begin ('experiment_t%dnload')

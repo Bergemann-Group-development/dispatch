@@ -157,6 +157,7 @@ SUBROUTINE init (self)
     do i=1,3
       print '("h:",8f5.2)', self%mesh(i)%h
     end do
+  end if
   self%unsigned(self%idx%d) = unsigned
   self%unsigned(self%idx%e) = unsigned
   self%pervolume(self%idx%px) = unsigned

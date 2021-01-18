@@ -38,7 +38,7 @@ CONTAINS
 SUBROUTINE init (self, solver, gamma)
   class(initial_t):: self
   character(len=64):: solver
-  real, optional:: gamma
+  real(8), optional:: gamma
   logical, save:: first_time=.true.
   namelist /IC_params/ type
   !----------------------------------------------------------------------------
@@ -47,8 +47,8 @@ SUBROUTINE init (self, solver, gamma)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
-    read (io%input, initial_params)
-    if (io%master) write (*, initial_params)
+    read (io%input, IC_params)
+    if (io%master) write (*, IC_params)
   end if
   call io%lock%unset
   self%solver = trim(solver)

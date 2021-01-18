@@ -74,7 +74,6 @@ SUBROUTINE init (self)
   call trace%begin ('solver_t%init')
   call self%pre_init   ! temporary hack until more changes will arrive
   call self%mhd_t%init                  ! calls self%gpatch_t%init
-  call self%mhd_t%post_init 
   call validate%init
   call trace%end ()
 END SUBROUTINE init

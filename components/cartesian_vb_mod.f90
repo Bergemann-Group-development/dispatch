@@ -61,7 +61,7 @@ SUBROUTINE init (self, label)
   namelist /cartesian_vb_params/ size, dims, mpi_dims, per_rank, origin, &
     omp_init, periodic
   character(len=120):: ids = &
-    '$Id: 5c75f45fe7c35db322ca8b3c92165766bfb26ecd $ components/cartesian_mod.f90'
+    '$Id$ components/cartesian_mod.f90'
   !-----------------------------------------------------------------------------
   call trace%begin ('cartesian_vb_t%init')
   call io%header('begin cartesian_vb_t%init: Cartesian patch arrangement')

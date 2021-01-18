@@ -54,7 +54,7 @@ SUBROUTINE init (self)
     print 1,'temperature: ',self%temp
   1 format(1x,a,1p,e11.3)
   end if
-  call units%output
+  !call units%output
 END SUBROUTINE init
 
 REAL FUNCTION m_sun (self, mass)
