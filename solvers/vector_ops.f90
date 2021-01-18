@@ -356,9 +356,9 @@ FUNCTION vector_grad_scalar (mesh, in) RESULT(out)
   real(8):: ds(3)
   !-----------------------------------------------------------------------------
   ds = mesh%d
-  out(:,:,:,1) = ddxdn (ds, in)
-  out(:,:,:,2) = ddydn (ds, in)
-  out(:,:,:,3) = ddzdn (ds, in)
+  out(:,:,:,1) = ddx (ds, in)
+  out(:,:,:,2) = ddy (ds, in)
+  out(:,:,:,3) = ddz (ds, in)
 END FUNCTION
 !===============================================================================
 FUNCTION scalar_div_vector (ds, in) RESULT (out)
@@ -366,7 +366,7 @@ FUNCTION scalar_div_vector (ds, in) RESULT (out)
   real, dimension(size(in,1),size(in,2),size(in,3)):: out
   real(8):: ds(3)
   !-----------------------------------------------------------------------------
-  out = ddxup(ds, in(:,:,:,1)) + ddyup(ds, in(:,:,:,2)) + ddzup(ds, in(:,:,:,3))
+  out = ddx(ds, in(:,:,:,1)) + ddy(ds, in(:,:,:,2)) + ddz(ds, in(:,:,:,3))
 END FUNCTION
 !===============================================================================
 FUNCTION scalar_div_dn_vector (ds, in) RESULT (out)
@@ -382,7 +382,7 @@ FUNCTION scalar_minusdiv_vector (ds, in) RESULT (out)
   real, dimension(size(in,1),size(in,2),size(in,3)):: out
   real(8):: ds(3)
   !-----------------------------------------------------------------------------
-  out = - ddxup(ds, in(:,:,:,1)) - ddyup(ds, in(:,:,:,2)) - ddzup(ds, in(:,:,:,3))
+  out = - ddx(ds, in(:,:,:,1)) - ddy(ds, in(:,:,:,2)) - ddz(ds, in(:,:,:,3))
 END FUNCTION
 !===============================================================================
 FUNCTION vector_curl_dn_vector (ds, in) RESULT (out)
