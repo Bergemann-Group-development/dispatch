@@ -123,7 +123,7 @@ SUBROUTINE test (self)
   real(precision_e):: ratio_r, min_a, max_a, m_crat, eps, Stot
   real(precision_e):: m_big, m_small
   real(precision_e), ALLOCATABLE, DIMENSION(:):: m, n, S, dn, dp, dd, a, Sp, &
-    mv, p, v, mp
+    mv, p, v, mp, Ln_k, Kn_k, Spp
   real(precision_e), ALLOCATABLE, DIMENSION(:,:):: mn, mm, ms, nn, Q, Q_frag, jj, kk, &
     ll, KC_k, LS_k, IJJ, sigma_col, ep, identity, pf, pc, du, ubm, utm, &
     Jp, Jm, IJp, pn, s1, s2
@@ -143,7 +143,7 @@ SUBROUTINE test (self)
   ALLOCATE(ll(nbin,nbin), nn(nbin,nbin), identity(nbin,nbin), js_ipiv(nbin))
   ALLOCATE(KC_k(nbin,nbin), LS_k(nbin,nbin) , IJJ(nbin,nbin))
   ALLOCATE(Jp(nbin,nbin), Jm(nbin,nbin), Sp(nbin), dp(nbin))
-  ALLOCATE(IJp(nbin,nbin))
+  ALLOCATE(IJp(nbin,nbin), Ln_k(nbin), Kn_k(nbin), Spp(nbin))
   ALLOCATE(mv(nbin), p(nbin), v(nbin), mp(nbin), pn(nbin,nbin), s1(nbin,nbin),s2(nbin,nbin))
 
   !print *,"Initializing starting conditions"
@@ -151,7 +151,7 @@ SUBROUTINE test (self)
   !print *,cgs%grav,cgs%au,cgs%k_b,cgs%m_u,cgs%m_sun
   tt = 196
   mu = 2.37
-  cs = sqrt(tt*cgs%k_b/(mu*cgs%m_u))
+  cs = sqrt(tt*cgs%k_b/(mu*1.008*cgs%m_u))
   r = 1.0*cgs%au
   msolar = 0.5*cgs%m_sun
   Omega_K = sqrt(cgs%grav*msolar)/r**1.5
@@ -161,15 +161,15 @@ SUBROUTINE test (self)
   rho_s = 1.6                                         ! g / cm**3
   micron = 1e-4
 
-  mps = 1e2
+  mps = 1e2 
   u_f = 1*mps
   trans_width = 0.001*mps
   alpha = 1e-3
   Cdt = 0.1
   xi = 1.83
 
-  dt = 0.1 * 60*60*24*365
-  t_end = 1e3 * 60*60*24*365
+  dt = 1e-1 * 60*60*24*365
+  t_end = 1e2 * 60*60*24*365
   save_time = 1*cgs%yr
   eps_time = 1.10
 
@@ -181,8 +181,6 @@ SUBROUTINE test (self)
   a(1) = min_a
   n = 0
   C = 0
-
-  print *, "bug", nbin
 
   do i=2,nbin
     a(i) = a(i-1)*ratio_r                             ! Setup of bins
@@ -201,6 +199,10 @@ SUBROUTINE test (self)
 
   print *,"Starting n, number density:"
   print *, n
+  print "(/)"
+
+  print *,"Initial velocity:"
+  print *, p
   print "(/)"
 
   ForAll(i = 1:nbin, j = 1:nbin) identity(i,j) = (i/j)*(j/i)
@@ -271,24 +273,6 @@ SUBROUTINE test (self)
   where (sigma_col == 0) ep = 0
   where (sigma_col /= 0) ep = (mn - ms) / (mn - mm)
 
-  ! print *, "ms"
-  ! do i = 1, nbin
-  !   print '(5ES20.6)', ms(i,:)
-  ! end do
-  ! print "(/)"
-
-  ! print *, "mn"
-  ! do i = 1, nbin
-  !   print '(5ES20.6)', mn(i,:)
-  ! end do
-  ! print "(/)"
-
-  ! print *, "sigma_col"
-  ! do i = 1, nbin
-  !   print '(5ES20.6)', sigma_col(i,:)
-  ! end do
-  ! print "(/)"
-
   do k=1,nbin
     where (mm == m(k) ) C(k,:,:) = ep
     where (mn == m(k) ) C(k,:,:) = 1 - ep
@@ -297,6 +281,40 @@ SUBROUTINE test (self)
 
   kk = du * sigma_col * pc
   ll = du * sigma_col * pf                              ! Checked
+
+  ! print *, "cs"
+  ! print '(10ES13.3)', cs
+  ! print "(/)"
+
+  ! print *, "st"
+  ! do i = 1, nbin
+  !   print '(5ES13.3)', st(i)
+  ! end do
+  ! print "(/)"
+
+  ! print *, "utm_ini"
+  ! do i = 1, nbin
+  !   print '(5ES13.3)', utm_ini(i)
+  ! end do
+  ! print "(/)"
+
+  ! print *, "utm"
+  ! do i = 1, nbin
+  !   print '(5ES13.3)', utm(i,:)
+  ! end do
+  ! print "(/)"
+
+  !  print *, "ubm"
+  ! do i = 1, nbin
+  !   print '(5ES13.3)', ubm(i,:)
+  ! end do
+  ! print "(/)"
+
+  ! print *, "L"
+  ! do i = 1, nbin
+  !   print '(5ES13.3)', ll(i,:)
+  ! end do
+  ! print "(/)"
 
   ! print *, "SS"
   ! do k = 1, nbin
@@ -333,28 +351,87 @@ SUBROUTINE test (self)
     Q = kk * nn
     Q_frag = ll * nn
 
-    do k=1,nbin
+
+    if (.not. do_implicit) then
+
+      do k=1,nbin
       KC_k = kk * C(k,:,:)
       LS_k = ll * SS(k,:,:)
 
-      S(k) = ( 0.5* SUM(Q*C(k,:,:)) - SUM(Q(k,:)) ) + ( 0.5 * SUM( Q_frag*SS(k,:,:)) - SUM(Q_frag(k,:)) )
-      Sp(k) = 0.5 * SUM(KC_k * pn) - SUM(kk(k,:) * n * p(k)) + 0.5 * SUM(LS_k * pn) - SUM(ll(k,:) * n * p(k))
-    end do
+      Kn_k = kk(k,:) * n
+      Ln_k = ll(k,:) * n
 
-    if (.not. do_implicit) then
+      S(k) = ( 0.5* SUM(Q*C(k,:,:)) - SUM(Q(k,:)) ) + ( 0.5 * SUM( Q_frag*SS(k,:,:)) - SUM(Q_frag(k,:)) )
+      Sp(k) = 0.5 * SUM(KC_k * pn) - SUM(Kn_k * p(k)) + 0.5 * SUM(LS_k * pn) - SUM(Ln_k * p(k))
+      end do  
+      
       dn = S * dt
       dp = Sp * dt
     else
       do k=1,nbin
+        KC_k = kk * C(k,:,:)
+        LS_k = ll * SS(k,:,:)
+
+        Kn_k = kk(k,:) * n
+        Ln_k = ll(k,:) * n
+
+        S(k) = ( 0.5* SUM(Q*C(k,:,:)) - SUM(Q(k,:)) ) + ( 0.5 * SUM( Q_frag*SS(k,:,:)) - SUM(Q_frag(k,:)) )
+        Sp(k) = 0.5 * SUM(KC_k * pn) - SUM(Kn_k * p(k)) + 0.5 * SUM(LS_k * pn) - SUM(Ln_k * p(k))
+      ! end do
+
+      ! do k=1,nbin
         s1 = KC_k * 1/ms
         s2 = LS_k * 1/ms
-        Jp(k,:) = matmul(s1, n) + matmul(s2, n) * m
-        Jp(k,k) = Jp(k,k) - (SUM(kk(k,:) * n) + SUM(ll(k,:) * n) )                            
-        Jm(k,:) = matmul(s1, p) * m + matmul(s2, p) * m - p(k) * kk(k,:) - p(k) * ll(k,:)
+        Jp(k,:) = (matmul(s1, n) + matmul(s2, n)) * m
+        Jp(k,k) = Jp(k,k) - (SUM(Kn_k) + SUM(Ln_k) )                            
+        Jm(k,:) = (matmul(s1, p*m) + matmul(s2, p*m)) - p(k) * kk(k,:) - p(k) * ll(k,:)
         JJ(k,:) = (matmul(KC_k , n) - n(k) * kk(k,:) ) + (matmul(LS_k,  n) - n(k) * ll(k,:) )
-        JJ(k,k) = JJ(k,k) - (SUM(kk(k,:) * n) + SUM(ll(k,:) * n) )                                ! Checked
+        !print *, "matmul(LS_k,  n)"
+        !print *, matmul(LS_k,  n)
+        JJ(k,k) = JJ(k,k) - (SUM(Kn_k) + SUM(Ln_k) )                                ! Checked
       end do
+    
+      ! print *, "Sp"
+      ! do i = 1, nbin
+      !   print '(5ES13.3)', Sp(i)
+      ! end do
+      ! print "(/)"
       
+      ! print *, "LS_k"
+      ! do i = 1, nbin
+      !   print '(5ES13.3)', LS_k(i,:)
+      ! end do
+      ! print "(/)"
+
+      ! print *, "S"
+      ! do i = 1, nbin
+      !   print '(5ES13.3)', S(i)
+      ! end do
+      ! print "(/)"
+
+      ! print *, "Sp"
+      ! do i = 1, nbin
+      !   print '(5ES13.3)', Sp(i)
+      ! end do
+      ! print "(/)"
+
+      ! print *, "JJ"
+      ! do i = 1, nbin
+      !   print '(5ES13.3)', JJ(i,:)
+      ! end do
+      ! print "(/)"
+
+      ! print *, "Jp"
+      ! do i = 1, nbin
+      !   print '(5ES13.3)', Jp(i,:)
+      ! end do
+      ! print "(/)"
+
+      ! print *, "Jm"
+      ! do i = 1, nbin
+      !   print '(5ES13.3)', Jm(i,:)
+      ! end do
+      ! print "(/)"
 
 
       ! print *, S
@@ -366,35 +443,31 @@ SUBROUTINE test (self)
       !SSS(:,nbin:) = Sp
       IJJ = identity - JJ
       IJp = identity - Jp
-      Sp = Sp - matmul(Jm , n)
-
+      
       ! print *,"JJ"
       ! do i = 1, nbin
       !   print '(5ES13.3)', JJ(i,:)
       ! end do
       ! print "(/)"
-
-      ! print *, "I-JJ"
-      ! do i = 1, nbin
-      !   print '(5ES13.3)', IJJ(i,:)
-      ! end do
-      ! print "(/)"
-
+      
       js_n = nbin
       js_nrhs = 1
       js_lda = nbin
       js_ldb = nbin
-
+      
       CALL DGESV( js_n, js_nrhs, IJJ, js_lda, js_ipiv, S, js_ldb, js_info )
-      CALL DGESV( js_n, js_nrhs, IJp, js_lda, js_ipiv, Sp, js_ldb, js_info )
-
-      ! print *, S
-      ! print "(/)"
-      ! print *, js_ipiv
-      ! print "(/)"
+      Spp = Sp - matmul(Jm , S)
+      CALL DGESV( js_n, js_nrhs, IJp, js_lda, js_ipiv, Spp, js_ldb, js_info )
 
       dn = S
-      dp = Sp
+      dp = Spp
+
+      ! print *,"dp"
+      ! do i = 1, nbin
+      !   print '(5ES13.3)', dp(i)
+      ! end do
+      ! print "(/)"
+
     end if
 
     n = n + dn
@@ -405,7 +478,9 @@ SUBROUTINE test (self)
       save_time = save_time * eps_time
       itime = itime + 1
       if (mod(itime,10)==0) then
-        print *,"Time left: ", (t_end-t)/(60*60*24*365), n(1:10), p(1:10)
+        print *,"Time left: ", (t_end-t)/(60*60*24*365)
+        print *, "n", n(1:10)
+        print *, "p", p(1:10)
       end if
     end if
 
@@ -413,6 +488,10 @@ SUBROUTINE test (self)
 
   print *,"Final n, number density:"
   print *, n
+  print "(/)"
+
+  print *,"Final velocity:"
+  print *, p/(n+1e-30)
   print "(/)"
 
   call trace%end ()
