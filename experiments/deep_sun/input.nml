@@ -10,7 +10,7 @@
                     model='stagger' flip_z=t force_mean=f extension=1 /
 &io_params          verbose=0 do_trace=f omp_trace=t do_output=t id_debug=0
                     restart=-1 guard_zones=t nml_version=1 /
-&out_params         end_time=0.1 out_time=0.1 print_every=30 /
+&out_params         end_time=0.05 out_time=0.05 print_every=30 /
 &aux_params         select='tt','pg','qr' /
 
 ! -- BC and physics parameters --------------------------------------------------
