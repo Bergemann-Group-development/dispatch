@@ -1079,9 +1079,9 @@ subroutine eta_table(self,eta_AD,eta_Ohm,rho,T,B)
           call comp_weight_element(rho(i,j,k),self%rhoarr               ,crho               ,rhoidx,w1)
           call comp_weight_element(T(i,j,k)  ,self%Tarr                 ,cT                 ,Tidx  ,w2)
           call comp_weight_element(B(i,j,k)  ,self%Barr                 ,cB                 ,Bidx  ,w3)
-          do iw=1,2
-            do jw=1,2
-              do kw=1,2
+          do iw=0,1
+            do jw=0,1
+              do kw=0,1
                 if (self%mhd_Ohm) then
                   eta_Ohm(i,j,k) = eta_Ohm(i,j,k) + w1(iw)*w2(jw)*w3(kw) * self%eta_Ohm_tbl(rhoidx+iw, Tidx+jw, Bidx+kw)
                 end if
@@ -1118,12 +1118,12 @@ subroutine comp_weight_element(x,xarr,cx,idx,w)
     idx  = int( log10(mult) / log10(cx) )
     ! Constrain the possible variables here such that corner cases of extreme density, 
     ! temperature or B-field in excess of the range in the table do not cause crashing of the code  
-    idx_r = real(min(idx,nxarr))
+    idx_r = real(min(idx,nxarr-1))
  
     xd = x0 * cx**idx_r
-    xu = x0 * cx**(idx_r+1.d0)
+    xu = min(x0 * cx**(idx_r+1.d0),real(nxarr))
     ! weight factors
-    w(1)  = ( x - xd ) / ( xu - xd ) 
+    w(1)  = ( min(x,xu) - xd ) / ( x0 * cx)
     w(2)  = 1. - w(1)
 
 end subroutine comp_weight_element
