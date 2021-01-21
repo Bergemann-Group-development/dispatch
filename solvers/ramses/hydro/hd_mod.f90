@@ -297,7 +297,7 @@ SUBROUTINE update (self)
   ! Deallocate
   !-----------------------------------------------------------------------------
   call self%counter_update
-  deallocate (self%q,self%qp,self%qm,self%dq,self%fl)
+  deallocate (self%qp,self%qm,self%dq,self%fl)
   call trace%end (itimer)
 END SUBROUTINE update
 
