@@ -105,7 +105,7 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
   dd_out = self%m_cgs * nd / scaling%d
   vd_out = vd / scaling%u
    
-  call trace%end ()
+  call trace%end (itimer)
 END SUBROUTINE update
 
 !===============================================================================

@@ -224,7 +224,9 @@ SUBROUTINE init (self)
   end do
   !-----------------------------------------------------------------------------
   allocate (self%dd(m(1),m(2),m(3),n_bin))
+  allocate (self%vd(m(1),m(2),m(3),n_bin,3))
   call io%bits_mem (storage_size(self%dd), product(shape(self%dd)), 'dd')
+  call io%bits_mem (storage_size(self%vd), product(shape(self%vd)), 'vd')
   !-----------------------------------------------------------------------------
   ! Allocate force array
   !-----------------------------------------------------------------------------
