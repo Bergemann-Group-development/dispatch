@@ -959,7 +959,7 @@ SUBROUTINE update_bins (self, dd, vd)
   !-----------------------------------------------------------------------------
   ! Renormalize bin densities
   !-----------------------------------------------------------------------------
-  call trace%begin ('dust_t%scatter', itimer=itimer)
+  call trace%begin ('dust_t%update_bins', itimer=itimer)
   do i4=1,n_bin
   do i3=self%lb(3),self%ub(3)
   do i2=self%lb(2),self%ub(2)
