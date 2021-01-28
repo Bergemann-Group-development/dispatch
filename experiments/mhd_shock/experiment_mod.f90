@@ -183,7 +183,7 @@ SUBROUTINE update (self)
   if ((self%llc_nat(1)+self%size(1)+self%ds(1)) .gt. (self%mesh(1)%origin + self%box(1))) then
     call pboundary%condition (self%mem(:,:,:,:,self%it,1), self%mesh, .false.)
   endif
-  call self%mhd_t%update
+  call self%solver_t%update
   call trace_end
 END SUBROUTINE update
 
