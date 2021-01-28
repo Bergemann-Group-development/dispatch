@@ -15,6 +15,7 @@ MODULE solver_mod
   USE vector_mod
   USE vector_ops
   USE validate_mod
+  USE eos_mod
   implicit none
   private
   type, public, extends(mhd_t):: solver_t
@@ -72,8 +73,9 @@ SUBROUTINE init (self)
   class(solver_t) :: self
   !.............................................................................
   call trace%begin ('solver_t%init')
-  call self%pre_init   ! temporary hack until more changes will arrive
+  call self%pre_init()
   call self%mhd_t%init                  ! calls self%gpatch_t%init
+  call self%mhd_t%post_init 
   call validate%init
   call trace%end ()
 END SUBROUTINE init
@@ -196,7 +198,7 @@ SUBROUTINE s2E_th(self, E_th, it)
   !-----------------------------------------------------------------------------
   associate(d => self%mem(:,:,:,self%idx%d,it,1), &
             s => self%mem(:,:,:,self%idx%s,it,1))
-  g1 = self%gamma-1d0
+  g1 = eos%gamma-1d0
   E_th = d**g1*exp(s*g1/d)/g1
   end associate
 END SUBROUTINE s2E_th
@@ -213,7 +215,7 @@ SUBROUTINE E_th2e (self, E_th, it)
   !-----------------------------------------------------------------------------
   associate(d => self%mem(:,:,:,self%idx%d,it,1), &
             e => self%mem(:,:,:,self%idx%e,it,1))
-  g1 = self%gamma-1d0
+  g1 = eos%gamma-1d0
   e = d*E_th
   end associate
 END SUBROUTINE E_th2e
@@ -230,7 +232,7 @@ SUBROUTINE E_th2s (self, E_th, it)
   !-----------------------------------------------------------------------------
   associate(d => self%mem(:,:,:,self%idx%d,it,1), &
             s => self%mem(:,:,:,self%idx%s,it,1))
-  g1 = self%gamma-1d0
+  g1 = eos%gamma-1d0
   s = d*log(E_th*g1/d**g1)/g1
   end associate
 END SUBROUTINE E_th2s
@@ -247,8 +249,8 @@ SUBROUTINE e2s(self, s, it)
   !-----------------------------------------------------------------------------
   associate(d => self%mem(:,:,:,self%idx%d,it,1), &
             e => self%mem(:,:,:,self%idx%e,it,1))
-  g1 = self%gamma-1d0
-  s = d*log(e*g1/d**self%gamma)/g1
+  g1 = eos%gamma-1d0
+  s = d*log(e*g1/d**eos%gamma)/g1
   end associate
 END SUBROUTINE e2s
 
@@ -264,8 +266,8 @@ SUBROUTINE e2ss(self, ss, it)
   !-----------------------------------------------------------------------------
   associate(d => self%mem(:,:,:,self%idx%d,it,1), &
             e => self%mem(:,:,:,self%idx%e,it,1))
-  g1 = self%gamma-1d0
-  ss = log(e*g1/d**self%gamma)/g1
+  g1 = eos%gamma-1d0
+  ss = log(e*g1/d**eos%gamma)/g1
   end associate
 END SUBROUTINE e2ss
 
@@ -279,16 +281,16 @@ SUBROUTINE s2e(self, s, it)
   real, dimension(:,:,:):: s
   real:: g1
   !-----------------------------------------------------------------------------
-  g1 = self%gamma-1d0
+  g1 = eos%gamma-1d0
   if (self%idx%s > 0) then
     associate(d => self%mem(:,:,:,self%idx%d,it,1), &
               e => self%mem(:,:,:,self%idx%s,it,1))
-    e = d**self%gamma*exp(s/d*g1)/g1
+    e = d**eos%gamma*exp(s/d*g1)/g1
     end associate
   else
     associate(d => self%mem(:,:,:,self%idx%d,it,1), &
               e => self%mem(:,:,:,self%idx%e,it,1))
-    e = d**self%gamma*exp(s/d*g1)/g1
+    e = d**eos%gamma*exp(s/d*g1)/g1
     end associate
   end if
 END SUBROUTINE s2e
@@ -303,16 +305,16 @@ SUBROUTINE ss2e(self, ss, it)
   real, dimension(:,:,:):: ss
   real:: g1
   !-----------------------------------------------------------------------------
-  g1 = self%gamma-1d0
+  g1 = eos%gamma-1d0
   if (self%idx%s > 0) then
     associate(d => self%mem(:,:,:,self%idx%d,it,1), &
               e => self%mem(:,:,:,self%idx%s,it,1))
-    e = d**self%gamma*exp(ss*g1)/g1
+    e = d**eos%gamma*exp(ss*g1)/g1
     end associate
   else
     associate(d => self%mem(:,:,:,self%idx%d,it,1), &
               e => self%mem(:,:,:,self%idx%e,it,1))
-    e = d**self%gamma*exp(ss*g1)/g1
+    e = d**eos%gamma*exp(ss*g1)/g1
     end associate
   end if
 END SUBROUTINE ss2e
