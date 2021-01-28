@@ -1,7 +1,7 @@
 s $Id$
 
 !--- Sink particle parameters --------------------------------------------------
-&sinks_params           verbose=1 jeans_limit=4 per_omega=0.5 /
+&sinks_params           verbose=5 jeans_limit=4 per_omega=0.5 /
 &mesa_params            verbose=2 mesa_threshhold_msun=0.5 /
 
 !--- Experiment setup ----------------------------------------------------------
@@ -9,7 +9,7 @@ s $Id$
 &patch_params           nt=5 grace=0.1 n=3*16 no_mans_land=t /
 &out_params             end_time=2 out_time=0.010 print_every=50 /
 &io_params              verbose=0 do_trace=f omp_trace=t do_output=t
-                        method='parallel' format=10 guard_zones=f time_derivs=0 /
+                        method='legacy' format=10 guard_zones=f time_derivs=0 /
 &aux_params             verbose=2 select='sink_m','sink_p','sink_v' /
 &download_params        verbose=0 check_filled=t /
 

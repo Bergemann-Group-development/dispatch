@@ -79,6 +79,7 @@ MODULE extras_mod
   USE gpatch_mod
   USE patch_mod
   USE list_mod
+  USE connect_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.  
   !-----------------------------------------------------------------------------
@@ -98,16 +99,17 @@ MODULE extras_mod
     type(forces_t):: forces                                     ! forces
     type(selfgravity_t):: selfgravity                           ! selfg
     type(cooling_t):: cooling                                   ! cool
-    class(gpatch_t), pointer:: gpatch => null()                 ! keep
+    class(gpatch_t), pointer:: patch => null()                 ! keep
   contains
+    procedure, nopass:: cast2extras
     procedure:: pre_init
     procedure:: init
-    procedure:: init_task_list
     procedure:: dealloc
     procedure:: pre_update
     procedure:: post_update
     procedure:: output
     procedure:: check_refine
+    procedure:: nbor_relations
     procedure:: courant_condition
   end type
   type(extras_t), public:: extras
@@ -118,13 +120,15 @@ CONTAINS
 !===============================================================================
 SUBROUTINE pre_init (self)
   class(extras_t), target:: self
+  class(gpatch_t), pointer:: patch
   !.............................................................................
   call trace%begin ('extras_t%pre_init')
-  self%gpatch => self
-  call self%selfgravity%pre_init(self%gpatch)                          ! selfg
-  call self%forces%pre_init(self%gpatch)                               ! forcces
-  call self%cooling%pre_init (self%gpatch)                             ! cool 
-  call mesa%pre_init (self%gpatch)                                     ! sinks
+  self%patch => self
+  call self%gpatch_t%pre_init                                           ! keep
+  call self%selfgravity%pre_init(self%patch)                          ! selfg
+  call self%forces%pre_init(self%patch)                               ! forcces
+  call self%cooling%pre_init (self%patch)                             ! cool 
+  call mesa%pre_init (self%patch)                                     ! sinks
   call trace%end()
 END SUBROUTINE pre_init
 
@@ -135,25 +139,11 @@ SUBROUTINE init (self)
   class(extras_t):: self
   !.............................................................................
   call trace%begin ('extras_t%init')
+  call self%gpatch_t%init
   call self%forces%init                                         ! forces
   call mesa%init                                                ! sinks
   call trace%end()
 END SUBROUTINE init
-
-!===============================================================================
-!> This intercept is the correct place to add calls to extras 'underlings' that
-!> need information both about the corresponding MHD patch (self), AND the task
-!> list.  The procedure is called for every task on the task list, just before
-!> task list updates start.
-!===============================================================================
-SUBROUTINE init_task_list (self, task_list)
-  class(extras_t):: self
-  class(list_t), pointer:: task_list
-  !.............................................................................
-  call trace%begin ('extras_t%init_task_list')
-  call self%gpatch_t%init_task_list (task_list)                 ! keep
-  call trace%end ()
-END SUBROUTINE init_task_list
 
 !===============================================================================
 !> Deallocate allocated arrays
@@ -162,8 +152,8 @@ SUBROUTINE dealloc (self)
   class(extras_t):: self
   !.............................................................................
   call trace%begin ('extras_t%dealloc')
-  call self%forces%dealloc                                      ! forces
-  call self%gpatch_t%dealloc
+  !call self%forces%dealloc                                      ! forces
+  !call self%gpatch_t%dealloc
   call trace%end()
 END SUBROUTINE dealloc
 
@@ -177,7 +167,7 @@ SUBROUTINE pre_update (self)
   call self%forces%pre_update                                   ! forces
   call self%selfgravity%pre_update                              ! selfg
   call self%cooling%pre_update                                  ! cool
-  call mesa%pre_update (self%gpatch)                            ! sinks
+  call mesa%pre_update (self%patch)                            ! sinks
   call trace%end()
 END SUBROUTINE pre_update
 
@@ -190,7 +180,7 @@ SUBROUTINE post_update (self)
   call trace%begin ('extras_t%post_update')
   call self%forces%post_update                                  ! forces
   call self%selfgravity%post_update                             ! elfg
-  call mesa%post_update (self%gpatch)                           ! sinks
+  call mesa%post_update (self%patch)                           ! sinks
   call trace%end ()
 END SUBROUTINE post_update
 
@@ -202,21 +192,58 @@ SUBROUTINE output (self)
   !.............................................................................
   !Has to be in this order, for out_next not be < self% time once
   call self%gpatch_t%output                                     ! keep
-  call mesa%output(self%gpatch)
+  call mesa%output(self%patch)
 END SUBROUTINE output
 
 !===============================================================================
-!> Interface to refinement.
+!> Interface to refinement
 !===============================================================================
-INTEGER FUNCTION check_refine (self, patch)
+INTEGER function check_refine (self, patch)
   class(extras_t):: self
   class(extras_t), pointer:: patch
-  class(gpatch_t), pointer:: gpatch
   !.............................................................................
-  gpatch => patch
-  call sinks%check_refine (gpatch)                              ! sinks
-  check_refine = -1                                             ! keep
+  check_refine = -1                                                    ! keep
+  !check_refine = max (check_refine, &                                  ! sinkp
+  !  sinkparticles%check_refine (gpatch))                               ! sinkp
 END FUNCTION check_refine
+
+
+!===============================================================================
+!> Cast a generic task_t to patch_t
+!===============================================================================
+FUNCTION cast2extras (task) RESULT(extras)
+  USE task_mod
+  class(task_t), pointer:: task
+  class(extras_t), pointer:: extras
+  !.............................................................................
+  select type (task)
+  class is (extras_t)
+  extras => task
+  class default
+  nullify(extras)
+  call io%abort ('extras_t%cast: failed to cast a task to extras_t')
+  end select
+END FUNCTION cast2extras
+
+!===============================================================================
+!> Set default nbor relations, and allow underlings to modify them.  This is
+!> called from list_t%init_nbors and from list_t%reset_status()
+!===============================================================================
+SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
+  USE task_mod
+  class(extras_t):: self
+  class(task_t), pointer:: another
+  logical:: needed, needs_me, download
+  !-----------------------------------------------------------------------------
+  call trace%begin ('rt_t%nbor_relations')
+  !
+  !-----------------------------------------------------------------------------
+  ! First check the main relations, then specific ones
+  !-----------------------------------------------------------------------------
+  call self%task_t%nbor_relations(another, needed, needs_me, download) ! keep
+  !
+  call trace%end()
+END SUBROUTINE nbor_relations
 
 !===============================================================================
 !> Intercept courant_condition() calls; make sure the gpatch_t call is the last
@@ -230,5 +257,7 @@ SUBROUTINE courant_condition (self, detailed_timer)
   call self%cooling%courant_condition                            ! cool
   call trace%end()
 END SUBROUTINE courant_condition
+
+
 
 END MODULE extras_mod
