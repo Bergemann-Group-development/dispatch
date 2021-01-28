@@ -442,7 +442,7 @@ END SUBROUTINE init
 !> -- the most likely properties to vary -- this can be done by changing the patch
 !> values before the call, since only properties with default (zero) values
 !> are set to the saved values.  It is possible to change other parameters, by
-!> instead of calling patch_t%init, first call patch_t%init_default, and then
+!> instead of calling patch_t%init, first call patch_t%pre_init, and then
 !> call patch_t%setup (nt=..., nv=..., ...).
 !>
 !> Values that are expected to vary from patch to patch, such as size and
@@ -451,7 +451,7 @@ END SUBROUTINE init
 !>
 !> Any experiment that should start up with non-default values of parameters
 !> given default values here (such as 'periodic'), should use the method:
-!> call init_default + set values + call setup, since otherwise it would have
+!> call pre_init + set values + call setup, since otherwise it would have
 !> to rely on the values being set correctly in the input namelist.
 !===============================================================================
 SUBROUTINE pre_init (self)
@@ -506,6 +506,9 @@ SUBROUTINE pre_init (self)
   if (any(self%ng == 0)) self%ng = ng           ! patch guard zones
   if (    self%nv == 0 ) self%nv = nv           ! number of variables
   if (    self%nt == 0 ) self%nt = nt           ! number of time slices
+  where (self%n==1)                             ! for collapsed dimensions
+    self%ng = 0                                 ! no guard zones
+  end where
   !-----------------------------------------------------------------------------
   ! Output related parameters
   !-----------------------------------------------------------------------------
