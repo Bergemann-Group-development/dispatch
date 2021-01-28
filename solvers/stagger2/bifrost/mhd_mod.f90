@@ -100,11 +100,10 @@ SUBROUTINE pre_init (self)
   class(mhd_t), target:: self
   ! ----------------------------------------------------------------------------
   real, save:: nu(6), ca_max, csound=1.0, cdtd=0.5, courant=0.2
-  real(8), save:: gamma=1.4_8
   logical, save:: first_time=.true.
   logical, save:: mhd=.true.
   character(len=16), save:: eos
-  namelist /bifrost_params/ mhd, nu, courant, gamma, csound, cdtd, hardwire, eos, &
+  namelist /bifrost_params/ mhd, nu, courant, csound, cdtd, hardwire, eos, &
     ca_max, unsigned, verbose,  loginterpolation, symmetric_e, symmetric_b, &
     max_r, smooth_r, do_temperature, &
     nu_d_w_transition, nu_d_high, nu_d_tr_loc, &
@@ -130,7 +129,6 @@ SUBROUTINE pre_init (self)
   self%eos = eos
   self%mhd = mhd
   self%nu = nu
-  self%gamma = gamma
   self%csound = csound
   self%courant = courant
   self%cdtd = cdtd
@@ -238,11 +236,11 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%pde',itimer=itimer)
   associate (i => self%idx)
-  self%d    => self%mem(:,:,:,i%d      ,self%it,1)
+  self%d    => self%mem(:,:,:,i%d      ,self%new,1)
   self%dddt => self%mem(:,:,:,i%d      ,self%it,2)
-  self%e    => self%mem(:,:,:,i%e      ,self%it,1)
+  self%e    => self%mem(:,:,:,i%e      ,self%new,1)
   self%dedt => self%mem(:,:,:,i%e      ,self%it,2)
-  self%p    => self%mem(:,:,:,i%px:i%pz,self%it,1)
+  self%p    => self%mem(:,:,:,i%px:i%pz,self%new,1)
   self%dpdt => self%mem(:,:,:,i%px:i%pz,self%it,2)
   !> ---------------------------------------------------------------------------
   d=>self%d; dddt=>self%dddt
@@ -255,7 +253,7 @@ SUBROUTINE pde (self)
   dpdt = 0.0
   !> ---------------------------------------------------------------------------
   if (self%mhd) then
-    self%B    => self%mem(:,:,:,i%bx:i%bz,self%it,1)
+    self%B    => self%mem(:,:,:,i%bx:i%bz,self%new,1)
     self%dBdt => self%mem(:,:,:,i%bx:i%bz,self%it,2)
     B=>self%B; dBdt=>self%dBdt
     Bx   =>   B(:,:,:,1);    By=>   B(:,:,:,2);    Bz=>   B(:,:,:,3)
@@ -300,7 +298,7 @@ SUBROUTINE pde (self)
   call self%gas_pressure_sub (d, self%lnd, self%ee, pg)
   self%pg => pg
   call self%aux%register ('pg', self%pg)
-  cs  = sqrt(self%gamma*pg/d)
+  cs  = sqrt(eos%gamma*pg/d)
   Sij = cs**2
   !
   if (self%mhd) then                         
@@ -787,15 +785,15 @@ SUBROUTINE pre_update (self)
   !-----------------------------------------------------------------------------
   ! Set boundary conditions on primary variables
   !-----------------------------------------------------------------------------
-  mem => self%mem(:,:,:,:,self%it,1)
+  mem => self%mem(:,:,:,:,self%new,1)
   call self%boundaries%primary(mem)
   !
   if (do_temperature .and. .not. associated(self%tt)) then
     allocate (real:: self%tt(self%gn(1),self%gn(2),self%gn(3)))
     allocate (           lnd(self%gn(1),self%gn(2),self%gn(3)))
     allocate (            ee(self%gn(1),self%gn(2),self%gn(3)))
-    d => self%mem(:,:,:,self%idx%d,self%it,1)
-    e => self%mem(:,:,:,self%idx%e,self%it,1)
+    d => self%mem(:,:,:,self%idx%d,self%new,1)
+    e => self%mem(:,:,:,self%idx%e,self%new,1)
     lnd = alog(d)
     ee = e/d
     call eos%lookup_table (shape(self%tt), lnd=lnd, ee=ee, tt=self%tt, label='mhd')
@@ -823,12 +821,12 @@ SUBROUTINE update (self)
   real(kind=KindScalarVar), pointer:: B(:,:,:,:)
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%update',itimer=itimer)
-  if (self%gamma==1d0) then
-    self%mem(:,:,:,self%idx%e,self%it,1) = &
-    self%mem(:,:,:,self%idx%d,self%it,1)*self%csound**2
+  if (eos%gamma==1d0) then
+    self%mem(:,:,:,self%idx%e,self%new,1) = &
+    self%mem(:,:,:,self%idx%d,self%new,1)*self%csound**2
   end if
   if (self%mhd) then
-    B => self%mem(:,:,:,self%idx%bx:self%idx%bz,self%it,1)
+    B => self%mem(:,:,:,self%idx%bx:self%idx%bz,self%new,1)
     call divB%clean(self%mesh,B)
   end if
   call self%pde
@@ -892,15 +890,15 @@ SUBROUTINE gas_pressure_sub (self, d, lnd, ee, pg)
   integer, save:: nprint=1
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%gas_pressure_sub')
-  d  => self%mem(:,:,:,self%idx%d ,self%it,1)
-  e  => self%mem(:,:,:,self%idx%e ,self%it,1)
+  d  => self%mem(:,:,:,self%idx%d ,self%new,1)
+  e  => self%mem(:,:,:,self%idx%e ,self%new,1)
   call allocate_scalars(self%gn,ee)
   ee = e/d
   if (trim(self%eos)=='ideal') then
-    if (self%gamma==1d0) then
+    if (eos%gamma==1d0) then
       pg = d*self%csound**2
     else
-      pg = d*ee*(self%gamma-1)
+      pg = d*ee*(eos%gamma-1)
     end if
   else
     if (do_temperature) then
@@ -930,15 +928,15 @@ FUNCTION gas_pressure (self) result(pg)
   integer, save:: nprint=1
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%gas_pressure_sub')
-  d  => self%mem(:,:,:,self%idx%d ,self%it,1)
-  e  => self%mem(:,:,:,self%idx%e ,self%it,1)
+  d  => self%mem(:,:,:,self%idx%d ,self%new,1)
+  e  => self%mem(:,:,:,self%idx%e ,self%new,1)
   call allocate_scalars(self%gn,ee)
   ee = e/d
   if (trim(self%eos)=='ideal') then
-    if (self%gamma==1d0) then
+    if (eos%gamma==1d0) then
       pg = d*self%csound**2
     else
-      pg = d*ee*(self%gamma-1)
+      pg = d*ee*(eos%gamma-1)
     end if
   else
     if (do_temperature) then
@@ -1457,10 +1455,10 @@ FUNCTION cowboy_hat_2d(a,ds) RESULT (b)
       end do
     end do
   end do
-  b(:,1)   =a(:,2)
-  b(:,n(2))=a(:,n(2)-1)
-  b(1,   :)=a(2,   :)
-  b(n(1),:)=a(n(1)-1,:)
+  b(:,1)   =b(:,2)
+  b(:,n(2))=b(:,n(2)-1)
+  b(1,   :)=b(2,   :)
+  b(n(1),:)=b(n(1)-1,:)
 END FUNCTION cowboy_hat_2d
  
 FUNCTION cowboy_hat_3d(a,ds) RESULT (b)
