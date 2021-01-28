@@ -224,7 +224,9 @@ SUBROUTINE init (self)
   end do
   !-----------------------------------------------------------------------------
   allocate (self%dd(m(1),m(2),m(3),n_bin))
+  allocate (self%vd(m(1),m(2),m(3),n_bin,3))
   call io%bits_mem (storage_size(self%dd), product(shape(self%dd)), 'dd')
+  call io%bits_mem (storage_size(self%vd), product(shape(self%vd)), 'vd')
   !-----------------------------------------------------------------------------
   ! Allocate force array
   !-----------------------------------------------------------------------------
@@ -924,7 +926,7 @@ SUBROUTINE evolve_dust (self)
   do i1=l(1),u(1)
     call self%dust_evolve%update ( &
       self%dtime, &
-           vrms(i1,i2,i3,:), &
+         vrms(i1,i2,i3,:), &
       self%dd(i1,i2,i3,:), self%vd(i1,i2,i3,:,:), &
            dd(i1,i2,i3,:),      vd(i1,i2,i3,:,:))
   end do

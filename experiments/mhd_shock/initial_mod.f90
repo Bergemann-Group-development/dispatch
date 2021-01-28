@@ -25,7 +25,7 @@ CONTAINS
 SUBROUTINE init (self, solver, gamma)
   class(initial_t):: self
   character(len=64):: solver
-  real, optional:: gamma
+  real(8), optional:: gamma
 END SUBROUTINE init
 
 SUBROUTINE condition (self, m, ff, idx)

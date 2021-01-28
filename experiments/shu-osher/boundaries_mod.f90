@@ -68,7 +68,7 @@ SUBROUTINE primary(self, mem)
       if (idx%e>0) then
         mem(i,:,:,idx%e) = self%e_l
       else if (idx%s) then
-        mem(i,:,:,idx%s) = self%s_l
+        mem(i,:,:,idx%s>0) = self%s_l
       end if
     end do  
   end if
@@ -82,7 +82,7 @@ SUBROUTINE primary(self, mem)
           
       if (idx%e>0) then
         mem(i,:,:,idx%e) = self%e_r
-      else if (idx%s) then
+      else if (idx%s>0) then
         mem(i,:,:,idx%s) = self%s_r
       end if
     end do
