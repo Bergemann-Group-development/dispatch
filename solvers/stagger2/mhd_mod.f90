@@ -160,7 +160,7 @@ SUBROUTINE init (self)
     end do
   end if
   self%unsigned(self%idx%d) = unsigned
-  self%unsigned(self%idx%e) = unsigned
+  self%unsigned(self%idx%s) = unsigned
   self%pervolume(self%idx%px) = unsigned
   self%pervolume(self%idx%py) = unsigned
   self%pervolume(self%idx%pz) = unsigned
