@@ -101,6 +101,7 @@ SUBROUTINE pre_init (self)
   !-----------------------------------------------------------------------------
   ! Now pass on these wishes to the next layers, which may modify them
   !-----------------------------------------------------------------------------
+  call self%idx%init(is=5, mhd=self%mhd)
   call self%extras_t%pre_init
   call io%lock%set ('mhd_t%pre_init')
   if (first_time) then
