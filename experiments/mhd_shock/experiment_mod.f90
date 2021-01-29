@@ -37,7 +37,7 @@ SUBROUTINE init (self)
   real(8):: x, y, z
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, vx, vy, vz, Bx, By, Bz, &
                                                         px, py, pz, e1, et, s
-  real(4), save:: P_l=1.0  , P_r=0.1, &
+  real(4), save:: P_l=1.01 , P_r=0.1, &
                   rho_l=1.0, rho_r=0.2, &
                   vx_l=0.0, vx_r=0.0, vy_l=0.0, vy_r=0.0, vz_l=0.0, vz_r=0.0, &
                   Bx_l=1.0, Bx_r=1.0, By_l=1.0, By_r=0.0, Bz_l=0.0, Bz_r=0.0, &
