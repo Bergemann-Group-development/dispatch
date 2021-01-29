@@ -35,7 +35,7 @@ SUBROUTINE init (self)
   self%nw = 2
   self%periodic = .false.
   
-  call self%idx%init (0, .false.)
+  call self%idx%init (ienergy=2, .false.)
   call self%solver_t%init()
   self%level = 1
   self%kind = 'poisson'

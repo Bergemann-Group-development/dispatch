@@ -83,7 +83,7 @@ SUBROUTINE init (self)
   self%nu = nu
   allocate(self%no_pressure(1))
   self%no_pressure = 0
-  call self%idx%init(5, self%mhd)
+  call self%idx%init(isentropy=5, self%mhd)
   if (self%mhd) then
     self%kind = 'stagger2_mhd_patch'
   else

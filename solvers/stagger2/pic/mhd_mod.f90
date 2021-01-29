@@ -107,7 +107,7 @@ SUBROUTINE pre_init (self)
     self%nv = self%nv + 5
     if (self%mhd) self%nv = self%nv + 3
   end if
-  call self%idx%init (5, self%mhd)
+  call self%idx%init (ienergy=5, self%mhd)
   call trace%end()
 END SUBROUTINE pre_init
 

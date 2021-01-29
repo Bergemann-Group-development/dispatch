@@ -129,7 +129,7 @@ SUBROUTINE pre_init (self)
   case default
     call io%abort('mhd_mod:: divb cleaner method not understood')
   end select
-  call self%idx%init (ie=5, mhd=self%mhd)
+  call self%idx%init (ienergy=5, mhd=self%mhd)
   call trace%end()
 END SUBROUTINE pre_init
 

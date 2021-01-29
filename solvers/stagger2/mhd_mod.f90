@@ -101,7 +101,7 @@ SUBROUTINE pre_init (self)
   !-----------------------------------------------------------------------------
   ! Now pass on these wishes to the next layers, which may modify them
   !-----------------------------------------------------------------------------
-  call self%idx%init(is=5, mhd=self%mhd)
+  call self%idx%init(isentropy=5, mhd=self%mhd)
   call self%extras_t%pre_init
   call io%lock%set ('mhd_t%pre_init')
   if (first_time) then
@@ -195,7 +195,7 @@ SUBROUTINE test (self)
   allocate (tmp)
   tmp%nv = self%nv
   tmp%mhd = self%mhd
-  call tmp%idx%init (is=5, mhd=tmp%mhd)
+  call tmp%idx%init (isentropy=5, mhd=tmp%mhd)
   call tmp%patch_t%init
   n0 = 2*(tmp%ncell/2)
   if (any(tmp%n /= n0)) then

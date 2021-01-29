@@ -66,7 +66,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Here we call patch_t%init directly, to initialize %mem and %mesh
   !-----------------------------------------------------------------------------
-  call self%idx%init (mhd=.false., ie=5)
+  call self%idx%init (mhd=.false., ienergy=5)
   call self%patch_t%init
   !-----------------------------------------------------------------------------
   ! Ramses-like specific things

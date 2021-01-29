@@ -289,7 +289,7 @@ PROGRAM test
 
   ! ---- Take 1: Cartesian ----
   allocate(patch_t :: patch)
-  call patch%idx%init (2, .true.)
+  call patch%idx%init (ienergy=2)
   call MeshFactory(mesh_types%cartesian, patch%mesh, n=[11,11,1], ng=[2,2,0])
   call patch%mesh(1)%print()
   call patch%mesh(2)%print()

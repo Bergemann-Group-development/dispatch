@@ -146,7 +146,7 @@ SUBROUTINE pre_init (self)
       self%nv = 5
     end if
   end if
-  call self%idx%init (ie=5, mhd=self%mhd)
+  call self%idx%init (ienergy=5, mhd=self%mhd)
   !-----------------------------------------------------------------------------
   ! Call extras pre-init
   !-----------------------------------------------------------------------------

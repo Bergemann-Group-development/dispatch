@@ -94,7 +94,7 @@ SUBROUTINE init (self)
   ! Read IC parameters, which determine if this is HD or MHD.  The IC init is
   ! called again, from extras_t%init, when gamma is known and can be passed on.
   !-----------------------------------------------------------------------------
-  call self%idx%init (5, self%mhd)
+  call self%idx%init (isentropy=5, self%mhd)
   print *,'mhd, nv =', self%mhd, self%nv
   self%initial%mhd = self%mhd
   call self%initial%init (self%kind)
@@ -119,7 +119,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Allocate memory and mesh, etc
   !-----------------------------------------------------------------------------
-  call self%idx%init (5, self%mhd)
+  call self%idx%init (isentropy=5, self%mhd)
   call self%gpatch_t%init
   self%type = 'mhd_t'
   do i=1,3
@@ -160,7 +160,7 @@ SUBROUTINE test (self)
   allocate (tmp)
   tmp%nv = self%nv
   tmp%mhd = self%mhd
-  call tmp%idx%init (5, tmp%mhd)
+  call tmp%idx%init (isentropy=5, tmp%mhd)
   call tmp%patch_t%init
   n0 = 2*(tmp%ncell/2)
   if (any(tmp%n /= n0)) then

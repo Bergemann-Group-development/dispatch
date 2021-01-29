@@ -101,7 +101,7 @@ SUBROUTINE pre_init (self)
   self%nv = 8
   !self%nv = 9
   self%kind = 'ramses_s_mhd_patch'
-  call self%idx%init (is=5, mhd=self%mhd)
+  call self%idx%init (isentropy=5, mhd=self%mhd)
   !self%idx%tt = 9
   !if (do_temperature) then
   !  call self%idx%request_index (self%idx%tt, self%nv)

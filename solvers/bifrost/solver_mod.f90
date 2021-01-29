@@ -69,7 +69,7 @@ SUBROUTINE init (self)
   self%ng = 5                                                           ! set number of guard zones
   self%nw = 1                                                           ! time derivatives allocated
   ng=5
-  call self%idx%init(5,self%mhd)                                        ! setup index_t indices
+  call self%idx%init(ienergy=5,self%mhd)                                ! setup index_t indices
   call self%patch_t%setup(nv=8, nt=5, ng=ng,nw=1)                       ! allocate memory and set size            !FIXME: hardcoded defaults for now
   call bifrost%init                                                     ! initialize the Bifrost state
   call self%bifrost_mesh%init(self%mesh)                                ! initialize the Bifrost mesh

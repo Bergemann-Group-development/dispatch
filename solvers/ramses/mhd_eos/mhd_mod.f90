@@ -103,7 +103,7 @@ SUBROUTINE pre_init (self)
   self%nv = 8
   call self%extras_t%pre_init
   self%kind = 'ramses_mhd_patch'
-  call self%idx%init (ie=5, mhd=self%mhd)
+  call self%idx%init (ienergy=5, mhd=self%mhd)
   if (do_temperature) then
     call self%idx%request_index (self%idx%tt, self%nv)
   end if

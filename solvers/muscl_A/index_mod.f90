@@ -25,12 +25,18 @@ CONTAINS
 !===============================================================================
 !> Initialize the indices to default values, possibly to be modified by solvers
 !===============================================================================
-SUBROUTINE init (self, ie, mhd)
+SUBROUTINE init (self, ienergy, mhd)
   class(index_t):: self
-  integer:: ie
+  integer, optional:: ienergy
+  integer:: ienergy_l
   logical:: mhd
   !-----------------------------------------------------------------------------
-  if (ie==2) then
+  if (present(ienergy)) then
+    ienergy_l = ienergy
+  else
+    ienergy_l = -1
+  end if
+  if (ienergy_l==2) then
     self%d  = 1
     self%e  = 2
     self%s  = 2

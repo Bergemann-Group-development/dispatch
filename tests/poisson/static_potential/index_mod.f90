@@ -25,9 +25,9 @@ CONTAINS
 !===============================================================================
 !> Initialize the indices to default values, possibly to be modified by solvers
 !===============================================================================
-SUBROUTINE init (self, ie, mhd)
+SUBROUTINE init (self, ienergy, mhd)
   class(index_t):: self
-  integer:: ie
+  integer, optional:: ienergy
   logical:: mhd
   !-----------------------------------------------------------------------------
   call trace%begin ('index_t%init')

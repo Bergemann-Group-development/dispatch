@@ -133,7 +133,7 @@ SUBROUTINE pre_init (self)
   else
     self%ng = 2
   end if
-  call self%idx%init (ie=5, mhd=self%mhd)
+  call self%idx%init (ienergy=5, mhd=self%mhd)
   !-----------------------------------------------------------------------------
   ! Call extras pre-init
   !-----------------------------------------------------------------------------
@@ -217,7 +217,7 @@ SUBROUTINE test (self)
   allocate (tmp)
   tmp%nv = self%nv
   tmp%mhd = self%mhd
-  call tmp%idx%init (ie=5, mhd=tmp%mhd)
+  call tmp%idx%init (ienergy=5, mhd=tmp%mhd)
   call tmp%patch_t%init
   n0 = 2*(tmp%ncell/2)
   if (any(tmp%n /= n0)) then

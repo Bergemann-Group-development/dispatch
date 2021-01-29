@@ -126,7 +126,7 @@ SUBROUTINE init (self)
     write (io%output,'(a,2i4,l4)') 'mhd_t%init: nv, ng, mhd =', &
       self%nv, self%ng !, self%mhd
   end if
-  call self%idx%init (mhd=.true., ie=5)
+  call self%idx%init (mhd=.true., ienergy=5)
   call self%patch_t%init
   !-----------------------------------------------------------------------------
   ! Make sure to save and use consistent gamma factors throughout
