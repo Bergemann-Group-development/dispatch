@@ -321,7 +321,7 @@ PROGRAM test
   call patch%mesh(3)%print()
 
   print*,lbound(patch%mesh),ubound(patch%mesh)," (should be 1 and 3)"
-  print*,"The following two lines should be identical (and equal to 1 and 8):"
+  print*,"The following two lines should be identical (and equal to 1 and 9):"
   l = patch%mesh%lb
   u = patch%mesh%ub
   print*,patch%mesh(3)%lb,patch%mesh(3)%ub
