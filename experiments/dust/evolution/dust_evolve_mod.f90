@@ -49,11 +49,11 @@ SUBROUTINE init (self, n_bin, m_cgs)
   integer, ALLOCATABLE, DIMENSION(:):: js_ipiv
   real(precision_e):: ratio_r, min_a, max_a, m_crat, eps, Stot
   real(precision_e):: m_big, m_small
-  real(precision_e), ALLOCATABLE, DIMENSION(:):: m, n, S, dn, dp, dd, a, Sp, &
-    mv, p, v, mp, Ln_k, Kn_k, Spp
+  real(precision_e), ALLOCATABLE, DIMENSION(:):: m, n, S, dn, dpx, dpy, dpz, dd, a, Spx, Spy, Spz, &
+    mv, px, py, pz, v, mpx, mpy, mpz, Ln_k, Kn_k, Sppx, Sppy, Sppz
   real(precision_e), ALLOCATABLE, DIMENSION(:,:):: mn, mm, ms, nn, Q, Q_frag, jj, kk, &
     ll, KC_k, LS_k, IJJ, sigma_col, ep, identity, pf, pc, du, ubm, utm, &
-    Jp, Jm, IJp, pn, s1, s2
+    Jp, Jmx, Jmy, Jmz, IJp, pnx, pny, pnz, s1, s2
   real, ALLOCATABLE, DIMENSION(:):: st, utm_ini
   real(precision_e), ALLOCATABLE, DIMENSION(:,:,:):: SS, C                                                      ! Necesarry?
   logical :: do_implicit=.true.
@@ -98,16 +98,16 @@ SUBROUTINE init (self, n_bin, m_cgs)
   ALLOCATE(jj(nbin,nbin), SS(nbin,nbin,nbin), C(nbin,nbin,nbin), kk(nbin,nbin))
   ALLOCATE(ll(nbin,nbin), nn(nbin,nbin), identity(nbin,nbin), js_ipiv(nbin))
   ALLOCATE(KC_k(nbin,nbin), LS_k(nbin,nbin) , IJJ(nbin,nbin))
-  ALLOCATE(Jp(nbin,nbin), Jm(nbin,nbin), Sp(nbin), dp(nbin))
-  ALLOCATE(IJp(nbin,nbin), Ln_k(nbin), Kn_k(nbin), Spp(nbin))
-  ALLOCATE(mv(nbin), p(nbin), v(nbin), mp(nbin), pn(nbin,nbin), s1(nbin,nbin),s2(nbin,nbin))
+  ALLOCATE(Jp(nbin,nbin), Jmx(nbin,nbin), Jmy(nbin,nbin), Jmz(nbin,nbin), Spx(nbin), Spy(nbin), Spz(nbin), dpx(nbin), dpy(nbin), dpz(nbin))
+  ALLOCATE(IJp(nbin,nbin), Ln_k(nbin), Kn_k(nbin), Sppx(nbin), Sppy(nbin), Sppz(nbin))
+  ALLOCATE(mv(nbin), px(nbin), py(nbin), pz(nbin), v(nbin), mpx(nbin), mpy(nbin), mpz(nbin), pnx(nbin,nbin), pny(nbin,nbin), pnz(nbin,nbin), s1(nbin,nbin),s2(nbin,nbin))
 
   !print *,"Initializing starting conditions"
   call cgs%init
   !print *,cgs%grav,cgs%au,cgs%k_b,cgs%m_u,cgs%m_sun
   tt = 196
   mu = 2.37
-  cs = sqrt(tt*cgs%k_b/(mu*1.008*cgs%m_u))
+  ! cs = sqrt(tt*cgs%k_b/(mu*1.008*cgs%m_u))
   r = 1.0*cgs%au
   msolar = 0.5*cgs%m_sun
   Omega_K = sqrt(cgs%grav*msolar)/r**1.5
@@ -135,31 +135,21 @@ SUBROUTINE init (self, n_bin, m_cgs)
 
   ratio_r = (max_a/min_a)**(1.0/(nbin-1))
   a(1) = min_a
-  n = 0
+  !n = 0
   C = 0
 
-  do i=2,nbin
-    a(i) = a(i-1)*ratio_r                             ! Setup of bins
-  end do
+  ! do i=2,nbin
+  !   a(i) = a(i-1)*ratio_r                             ! Setup of bins
+  ! end do
 
   st = rho_s * a * math%pi/(2*sigma_d*100)
-  utm_ini = cs * sqrt(2*alpha*st)
-  where (st > 1.0) utm_ini = cs * sqrt(2*alpha/ st)
   m = 4.0/3.0 * a**3 * rho_s * math%pi
-  n(1) = rho_d / m(1)
-  v = 1
-  p = n * v
-  mv = m * v 
+  !n(1) = rho_d / m(1)
+  !v = 1
+  !p = n * v
+  !mv = m * v 
 
   SS = 0
-
-  print *,"Starting n, number density:"
-  print *, n
-  print "(/)"
-
-  print *,"Initial velocity:"
-  print *, p
-  print "(/)"
 
   ForAll(i = 1:nbin, j = 1:nbin) identity(i,j) = (i/j)*(j/i)
   identity = identity / dt
@@ -175,9 +165,9 @@ SUBROUTINE init (self, n_bin, m_cgs)
         if ( m(kn)<ms(i,j) ) exit
       end do
 
-      ubm(i,j) = sqrt(8 * cgs%k_b* tt * (m(i) + m(j) )/(math%pi*m(i)*m(j) ))
-      utm(i,j) = max(utm_ini(i), utm_ini(j))
-      du(i,j) = ubm(i,j) + utm(i,j)
+      ! ubm(i,j) = sqrt(8 * cgs%k_b* tt * (m(i) + m(j) )/(math%pi*m(i)*m(j) ))
+      ! utm(i,j) = max(utm_ini(i), utm_ini(j))
+      ! du(i,j) = ubm(i,j) + utm(i,j)
       sigma_col(i,j) = math%pi * (a(i) + a(j))**2
 
       if (m(i)/m(j) > 10 .or. m(i)/m(j) < 0.1 ) then        !!!
@@ -213,13 +203,13 @@ SUBROUTINE init (self, n_bin, m_cgs)
         sigma_col(i,j) = 0
       end if
 
-      if (du(i,j) < u_f - trans_width) then
-        pf(i,j) = 0
-      else if (du(i,j) > u_f) then
-        pf(i,j) = 1
-      else
-        pf(i,j) = 1-(u_f-du(i,j))/trans_width
-      end if
+      ! if (du(i,j) < u_f - trans_width) then
+      !   pf(i,j) = 0
+      ! else if (du(i,j) > u_f) then
+      !   pf(i,j) = 1
+      ! else
+      !   pf(i,j) = 1-(u_f-du(i,j))/trans_width
+      ! end if
 
 
     end do
@@ -234,9 +224,6 @@ SUBROUTINE init (self, n_bin, m_cgs)
     where (mn == m(k) ) C(k,:,:) = 1 - ep
   end do
 
-
-  kk = du * sigma_col * pc
-  ll = du * sigma_col * pf                              ! Checked
 
   t = 0
   itime = 0
@@ -264,11 +251,11 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
   integer, ALLOCATABLE, DIMENSION(:):: js_ipiv
   real(precision_e):: ratio_r, min_a, max_a, m_crat, eps, Stot
   real(precision_e):: m_big, m_small
-  real(precision_e), ALLOCATABLE, DIMENSION(:):: m, n, S, dn, dp, dd, a, Sp, &
-    mv, p, v, mp, Ln_k, Kn_k, Spp
+  real(precision_e), ALLOCATABLE, DIMENSION(:):: m, n, S, dn, dpx, dpy, dpz, dd, a, Spx, Spy, Spz, &
+    mv, px, py, pz, v, mpx, mpy, mpz, Ln_k, Kn_k, Sppx, Sppy, Sppz
   real(precision_e), ALLOCATABLE, DIMENSION(:,:):: mn, mm, ms, nn, Q, Q_frag, jj, kk, &
     ll, KC_k, LS_k, IJJ, sigma_col, ep, identity, pf, pc, du, ubm, utm, &
-    Jp, Jm, IJp, pn, s1, s2
+    Jp, Jmx, Jmy, Jmz, IJp, pnx, pny, pnz, s1, s2
   real, ALLOCATABLE, DIMENSION(:):: st, utm_ini
   real(precision_e), ALLOCATABLE, DIMENSION(:,:,:):: SS, C                                                      ! Necesarry?
   logical :: do_implicit=.true.
@@ -284,6 +271,11 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
   vd = scaling%u * vd_in
   vrms = scaling%u * vrms_in
 
+  n = nd
+  px = n * vd(:,1)
+  py = n * vd(:,2)
+  pz = n * vd(:,3)
+
   ! compute velocity difference between different size bins
   ! 1) use vd for bulk difference:
   !        vdiff(i,j) = sqrt((vd(i,1) - vd(j,1))**2 + (vd(i,2) - vd(j,2))**2 + (vd(i,3) - vd(j,3))**2)
@@ -294,28 +286,64 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
   ! move forward one timestep
   ! call dust_evolve_step(tend,nd,vd,vdiff)
 
-  ! convert back to code units
-  dd_out = self%m_cgs * nd / scaling%d
-  vd_out = vd / scaling%u
+  ! du = vdiff + brown + turb bliver regnet i init
 
+  cs = sqrt(tt*cgs%k_b/(mu*1.008*cgs%m_u))
+  
+  utm_ini = cs * sqrt(2*alpha*st)                     ! Handle velocities every update
+  where (st > 1.0) utm_ini = cs * sqrt(2*alpha/ st)
+  
+
+  do i=1,nbin
+    do j=1,nbin
+      vdiff(i,j) = sqrt((vd(i,1) - vd(j,1))**2 + (vd(i,2) - vd(j,2))**2 + (vd(i,3) - vd(j,3))**2)
+      vdiff(i,j) = vdiff(i,j) + sqrt(vrms(i)**2 + vrms(j)**2)
+
+      ubm(i,j) = sqrt(8 * cgs%k_b* tt * (m(i) + m(j) )/(math%pi*m(i)*m(j) ))
+      utm(i,j) = max(utm_ini(i), utm_ini(j))
+      du(i,j) = vdiff(i,j) + ubm(i,j) + utm(i,j)
+
+      if (du(i,j) < u_f - trans_width) then
+        pf(i,j) = 0
+      else if (du(i,j) > u_f) then
+        pf(i,j) = 1
+      else
+        pf(i,j) = 1-(u_f-du(i,j))/trans_width
+      end if
+    end do
+  end do
+  
+
+  kk = du * sigma_col * pc
+  ll = du * sigma_col * pf                              
 
 
   do while (t < t_end)
     
-    mp = m * p
+    mpx = m * px
+    mpy = m * py
+    mpz = m * pz                                                  ! xyz
     do i=1,nbin
       do j=1,nbin
         nn(i,j) = n(i)*n(j)
-        pn(i,j) = (mp(i) * n(j) + n(i) * mp(j))/ms(i,j)
+        pnx(i,j) = (mpx(i) * n(j) + n(i) * mpx(j))/ms(i,j)
+        pny(i,j) = (mpy(i) * n(j) + n(i) * mpy(j))/ms(i,j)
+        pnz(i,j) = (mpz(i) * n(j) + n(i) * mpz(j))/ms(i,j)
       end do
     end do
     
     dn = 0
-    dp = 0
+    dpx = 0
+    dpy = 0
+    dpz = 0
     S = 0
-    Sp = 0
+    Spx = 0
+    Spy = 0
+    Spz = 0
     Jp = 0
-    Jm = 0
+    Jmx = 0
+    Jmy = 0
+    Jmz = 0
     
     JJ = 0
     IJJ = 0
@@ -334,11 +362,15 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
       Ln_k = ll(k,:) * n
 
       S(k) = ( 0.5* SUM(Q*C(k,:,:)) - SUM(Q(k,:)) ) + ( 0.5 * SUM( Q_frag*SS(k,:,:)) - SUM(Q_frag(k,:)) )
-      Sp(k) = 0.5 * SUM(KC_k * pn) - SUM(Kn_k * p(k)) + 0.5 * SUM(LS_k * pn) - SUM(Ln_k * p(k))
+      Spx(k) = 0.5 * SUM(KC_k * pnx) - SUM(Kn_k * px(k)) + 0.5 * SUM(LS_k * pnx) - SUM(Ln_k * px(k))
+      Spy(k) = 0.5 * SUM(KC_k * pny) - SUM(Kn_k * py(k)) + 0.5 * SUM(LS_k * pny) - SUM(Ln_k * py(k))
+      Spz(k) = 0.5 * SUM(KC_k * pnz) - SUM(Kn_k * pz(k)) + 0.5 * SUM(LS_k * pnz) - SUM(Ln_k * pz(k))
       end do  
       
       dn = S * dt
-      dp = Sp * dt
+      dpx = Spx * dt
+      dpy = Spy * dt
+      dpz = Spz * dt
     else
       do k=1,nbin
         KC_k = kk * C(k,:,:)
@@ -348,13 +380,17 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
         Ln_k = ll(k,:) * n
 
         S(k) = ( 0.5* SUM(Q*C(k,:,:)) - SUM(Q(k,:)) ) + ( 0.5 * SUM( Q_frag*SS(k,:,:)) - SUM(Q_frag(k,:)) )
-        Sp(k) = 0.5 * SUM(KC_k * pn) - SUM(Kn_k * p(k)) + 0.5 * SUM(LS_k * pn) - SUM(Ln_k * p(k))
+        Spx(k) = 0.5 * SUM(KC_k * pnx) - SUM(Kn_k * px(k)) + 0.5 * SUM(LS_k * pnx) - SUM(Ln_k * px(k))
+        Spy(k) = 0.5 * SUM(KC_k * pny) - SUM(Kn_k * py(k)) + 0.5 * SUM(LS_k * pny) - SUM(Ln_k * py(k))
+        Spz(k) = 0.5 * SUM(KC_k * pnz) - SUM(Kn_k * pz(k)) + 0.5 * SUM(LS_k * pnz) - SUM(Ln_k * pz(k))
 
         s1 = KC_k * 1/ms
         s2 = LS_k * 1/ms
         Jp(k,:) = (matmul(s1, n) + matmul(s2, n)) * m
         Jp(k,k) = Jp(k,k) - (SUM(Kn_k) + SUM(Ln_k) )                            
-        Jm(k,:) = (matmul(s1, p*m) + matmul(s2, p*m)) - p(k) * kk(k,:) - p(k) * ll(k,:)
+        Jmx(k,:) = (matmul(s1, px*m) + matmul(s2, px*m)) - px(k) * kk(k,:) - px(k) * ll(k,:)
+        Jmy(k,:) = (matmul(s1, py*m) + matmul(s2, py*m)) - py(k) * kk(k,:) - py(k) * ll(k,:)
+        Jmz(k,:) = (matmul(s1, pz*m) + matmul(s2, pz*m)) - pz(k) * kk(k,:) - pz(k) * ll(k,:)
         JJ(k,:) = (matmul(KC_k , n) - n(k) * kk(k,:) ) + (matmul(LS_k,  n) - n(k) * ll(k,:) )
         !print *, "matmul(LS_k,  n)"
         !print *, matmul(LS_k,  n)
@@ -371,16 +407,24 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
       js_ldb = nbin
       
       CALL DGESV( js_n, js_nrhs, IJJ, js_lda, js_ipiv, S, js_ldb, js_info )
-      Spp = Sp - matmul(Jm , S)
-      CALL DGESV( js_n, js_nrhs, IJp, js_lda, js_ipiv, Spp, js_ldb, js_info )
+      Sppx = Spx - matmul(Jmx , S)
+      Sppy = Spy - matmul(Jmy , S)
+      Sppz = Spz - matmul(Jmz , S)
+      CALL DGESV( js_n, js_nrhs, IJp, js_lda, js_ipiv, Sppx, js_ldb, js_info )
+      CALL DGESV( js_n, js_nrhs, IJp, js_lda, js_ipiv, Sppy, js_ldb, js_info )
+      CALL DGESV( js_n, js_nrhs, IJp, js_lda, js_ipiv, Sppz, js_ldb, js_info )
 
       dn = S
-      dp = Spp
+      dpx = Sppx
+      dpy = Sppy
+      dpz = Sppz
 
     end if
 
     n = n + dn
-    p = p + dp
+    px = px + dpx
+    py = py + dpy
+    pz = pz + dpz
     t = t + dt
 
     if (t > save_time) then
@@ -388,8 +432,8 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
       itime = itime + 1
       if (mod(itime,10)==0) then
         print *,"Time left: ", (t_end-t)/(60*60*24*365)
-        print *, "n", n(1:10)
-        print *, "p", p(1:10)
+        ! print *, "n", n(1:10)
+        ! print *, "p", p(1:10)
       end if
     end if
 
@@ -399,9 +443,18 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
   print *, n
   print "(/)"
 
-  print *,"Final velocity:"
-  print *, p/(n+1e-30)
+  print *,"Final velocity x:"
+  print *, px/(n+1e-30)
   print "(/)"
+
+  nd = n
+  vd(:,1) = px/n
+  vd(:,2) = py/n
+  vd(:,3) = pz/n
+
+  ! convert back to code units
+  dd_out = self%m_cgs * nd / scaling%d
+  vd_out = vd / scaling%u
 
   call trace%end (itimer)
 END SUBROUTINE update
