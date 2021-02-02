@@ -7,6 +7,7 @@ MODULE experiment_mod
   USE kinds_mod
   USE mesh_mod
   USE solver_mod
+  USE eos_mod
   implicit none
   private
 
@@ -78,7 +79,8 @@ SUBROUTINE initial_conditions (patch)
   real(8):: x, y, z, r2
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: f
   integer:: iostat
-  namelist / experiment_params / r0, centre, d0, p0, vx0, vy0, vz0, bx0, by0, bz0
+  integer, save:: case
+  namelist / experiment_params / r0, centre, d0, p0, vx0, vy0, vz0, bx0, by0, bz0,case
   !----------------------------------------------------------------------------
   call trace_begin('initial_t%init')
 
@@ -99,6 +101,18 @@ SUBROUTINE initial_conditions (patch)
   f => patch%mem(:,:,:,:,1,1)
   dxmax = maxval(patch%ds,mask=(patch%n>1))
   r0 = max(r0, dxmax)
+  select case(case)
+  case(2)
+    vz0=0.0
+    bz0=0.0
+  case(3)
+    vy0=0.0
+    by0=0.0
+  case(4)
+    vx0=0.0
+    bx0=0.0
+  case default
+  end select
 
   speedsq = vx0(1)**2 + vy0(1)**2 + vz0(1)**2
   bsq = bx0(1)**2 + by0(1)**2 + bz0(1)**2
@@ -119,9 +133,9 @@ SUBROUTINE initial_conditions (patch)
         f(i1,i2,i3,patch%idx%bz) = bz0(1)
 
         if (patch%idx%s>0) then
-          f(i1,i2,i3,patch%idx%s)  = log(p0(1)*d0(1)**-patch%gamma) * d0(1) / (patch%gamma - 1.0)
+          f(i1,i2,i3,patch%idx%s)  = log(p0(1)*d0(1)**-eos%gamma) * d0(1) / (eos%gamma - 1.0)
         else if (patch%idx%e>0) then
-          f(i1,i2,i3,patch%idx%e) = p0(1)/(patch%gamma-1)
+          f(i1,i2,i3,patch%idx%e) = p0(1)/(eos%gamma-1)
           if (patch%kind(1:6) == 'ramses') then
             f(i1,i2,i3,patch%idx%e) = f(i1,i2,i3,patch%idx%e) + 0.5 *d0(1)  * speedsq + 0.5 * bsq
           end if
@@ -144,7 +158,16 @@ SUBROUTINE initial_conditions (patch)
       y = m2%centre_nat + patch%mesh(2)%r(i2)
       do i1=m1%lb,m1%ub
         x = m1%centre_nat + patch%mesh(1)%r(i1)
-        r2 = (x - centre(1))**2 + (y - centre(2))**2 + (z - centre(3))**2
+        select case(case)
+        case (2)
+          r2 = (x - centre(1))**2 + (y - centre(2))**2
+        case (3)
+          r2 = (x - centre(1))**2 + (z - centre(3))**2
+        case (4)
+          r2 = (y - centre(2))**2 + (z - centre(3))**2
+        case default
+          r2 = (x - centre(1))**2 + (y - centre(2))**2 + (z - centre(3))**2
+        end select
         if (r2 .le. real(r0,kind=8)**2) then
           f(i1,i2,i3,patch%idx%d) = d0(2)
           f(i1,i2,i3,patch%idx%px) = d0(2) * vx0(2)
@@ -155,9 +178,9 @@ SUBROUTINE initial_conditions (patch)
           f(i1,i2,i3,patch%idx%bz) = bz0(2)
 
           if (patch%idx%s>0) then
-            f(i1,i2,i3,patch%idx%s)  = log(p0(2)*d0(2)**-patch%gamma) * d0(2) / (patch%gamma - 1.0)
+            f(i1,i2,i3,patch%idx%s)  = log(p0(2)*d0(2)**-eos%gamma) * d0(2) / (eos%gamma - 1.0)
           else if (patch%idx%e>0) then
-            f(i1,i2,i3,patch%idx%e) = p0(2)/(patch%gamma-1)
+            f(i1,i2,i3,patch%idx%e) = p0(2)/(eos%gamma-1)
             if (patch%kind(1:6) == 'ramses') then
               f(i1,i2,i3,patch%idx%e) = f(i1,i2,i3,patch%idx%e) + 0.5 * d0(2) * speedsq + 0.5 * bsq
             end if

@@ -6,22 +6,27 @@
  do_trace=f
  do_debug=f
  do_output=t
- guard_zones=t
+ guard_zones=f
  nml_version=1
 /
 
-! --- XY plane ---
-&cartesian_params  size=1,1,1  dims=8,8,8 mpi_dims=2,2,2 origin=0.0,0.0,0.0 periodic = t,t,t /
-&patch_params      nt=5 n=32,32,32 do_check_nan=t grace=0.05 no_mans_land=t
+! --- 3D --- case 1
+!&cartesian_params  size=1,1,1  dims=8,8,8 mpi_dims=2,2,2 origin=-0.5,-0.5,-0.5 periodic = t,t,t /
+!&patch_params      n=32,32,32 do_check_nan=t grace=0.1 no_mans_land=t
 /
 
-! --- XZ plane ---
-!&cartesian_params  size=1,1,1  dims=8,1,8 origin=-0.5,0.0,-0.5 periodic = f,t,f /
-!&patch_params       nt=5 ng=3*8 n=32,1,32 do_check_nan=t grace=0.05 no_mans_land=t /
+! --- XY plane --- case 2
+!&cartesian_params  size=1,1,0.125  dims=8,8,1 mpi_dims=2,2,1 origin=-0.5,-0.5,0 periodic = t,t,t /
+!&patch_params      n=32,32,1 do_check_nan=t grace=0.1 no_mans_land=t
+/
 
-! --- YZ plane ---
-!&cartesian_params  size=1,1,1  dims=1,8,8 origin=0.0,-0.5,-0.5 periodic = t,f,f /
-!&patch_params       nt=5 ng=3*8 n=1,32,32 do_check_nan=t grace=0.05 no_mans_land=t /
+! --- XZ plane --- case 3
+!&cartesian_params  size=1,0.125,1  dims=8,1,8 mpi_dims=2,1,2  origin=-0.5,0.0,-0.5 periodic = f,t,f /
+!&patch_params      n=32,1,32 do_check_nan=t grace=0.1 no_mans_land=t /
+
+! --- YZ plane --- case 4
+&cartesian_params  size=1,1,1  dims=1,8,8 mpi_dims=1,2,2  origin=0.0,-0.5,-0.5 periodic = t,f,f /
+&patch_params      n=1,32,32 do_check_nan=t grace=0.1 no_mans_land=t /
 
 
 &out_params
@@ -33,10 +38,11 @@
 &aux_params         select='pg'/
 
 &experiment_params
+  case=4
   r0=0.125
   d0=1.0,1.0
   p0=1.0,100.0
-  centre=0.5,0.5,0.5
+  centre=0.0,0.0,0.0
   bx0=7.0711,7.0711
   by0=7.0711,7.0711
   bz0=7.0711,7.0711
@@ -67,9 +73,8 @@
 
 &ramses_params
  !courant_factor=0.25
- slope_type=3
+ slope_type=2
  !csound=1.0
- gamma=1.6666667
  !unsigned=t
 ! do_corners=t
  riemann='hlld'
@@ -84,7 +89,6 @@
 
 
 &stagger_params
- gamma=1.666667
  courant=0.10
  do_maxwell=f
  nu=  0.10, 0.02, 1.0, 0.00, 1.0, 1.0
@@ -103,7 +107,6 @@
 &refine_params          on=f levelmax=12 levelmin=1 verbose=3 check_interval=2 /
 
 &bifrost_params             
-gamma=1.6666666666667
 loginterpolation=f
 ca_max = 3e2 
 courant=0.2
