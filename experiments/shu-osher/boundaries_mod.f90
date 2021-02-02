@@ -22,7 +22,6 @@ MODULE boundaries_mod
     real::   s_l = 10.33333
     real:: rho_l =  3.857143
     real::  px_l =  10.141852233 !2.629369 * 3.857143
-    real:: gamma=1.4
     real:: vy_l, vz_l, Bx_l, By_l, Bz_l, &
            P_r, rho_r, e1_r, px_r, py_r, pz_r, Bx_r, By_r, Bz_r, e_r, s_r
     character(32):: solver
@@ -67,8 +66,8 @@ SUBROUTINE primary(self, mem)
           
       if (idx%e>0) then
         mem(i,:,:,idx%e) = self%e_l
-      else if (idx%s) then
-        mem(i,:,:,idx%s>0) = self%s_l
+      else if (idx%s>0) then
+        mem(i,:,:,idx%s) = self%s_l
       end if
     end do  
   end if

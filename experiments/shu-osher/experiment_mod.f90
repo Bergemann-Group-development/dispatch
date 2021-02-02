@@ -36,7 +36,6 @@ SUBROUTINE init (self)
     self%time = self%initial%time
     self%t(self%it) = self%initial%time
   end if
-  self%gamma=1.4
   ! assign boundary conditions.
   m=>self%mesh
   self%boundaries%rho_l = self%mem(m(1)%lo,m(2)%li,m(3)%li,self%idx%d,1,1)
