@@ -3,11 +3,12 @@
 #OPTS = debug
 #OPTS = full_debug
 OPTS = optimized
+#OPTS=
 
 # Default target and methods
 UPD             = adams_bashforth
 SOLVER         = stagger2/bifrost
-#SOLVER          = ramses/mhd
+#SOLVER          = ramses/mhd_eos
 #STAGGER         = stagger_2nd.o
 STAGGER         = stagger_6th.o
 #STAGGER         = stagger_mod.o

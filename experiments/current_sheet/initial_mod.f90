@@ -6,11 +6,11 @@ MODULE initial_mod
   USE mesh_mod
   USE index_mod
   USE math_mod
+  USE eos_mod
   implicit none
   private
   type, public :: initial_t
     integer :: idir
-    real    :: gamma=1.66667
     logical :: mhd=.true.
     real    :: d0, beta, ampl
     character(len=16):: solver
@@ -25,7 +25,7 @@ CONTAINS
 SUBROUTINE init (self, solver, gamma)
   class(initial_t) :: self
   integer, save :: idir = 3
-  real, optional:: gamma
+  real(8), optional:: gamma
   !.............................................................................
   character(len=*):: solver
   real, save :: d0, beta, ampl
@@ -33,7 +33,6 @@ SUBROUTINE init (self, solver, gamma)
   namelist /IC_params/ d0, beta, ampl, idir
   !-----------------------------------------------------------------------------
   call trace_begin ('initial_t%init')
-  if (present(gamma)) self%gamma = gamma
 
   d0   = 1.0
   beta = 0.1
@@ -41,8 +40,8 @@ SUBROUTINE init (self, solver, gamma)
 
   call io%lock%set ('initial_t%init')
   if (first_time) then
-    rewind (io%input); read (io%input,initial_params)
-    if (io%master) write(*,initial_params)
+    rewind (io%input); read (io%input,IC_params)
+    if (io%master) write(*,IC_params)
     first_time = .false.
   end if
   call io%lock%unset ('initial_t%init')
@@ -67,14 +66,17 @@ SUBROUTINE initial_conditions (self, m, ff, idx)
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
   !.............................................................................
   integer:: ix, iy, iz                                       ! loop indices
-  real:: entropy, pg, pb, bb
+  real:: entropy, pg, pb, bb, rhov2, b2
   real(8):: xs, ys, zs, xp, yp, zp
-  real,dimension(:,:,:),allocatable :: vecpot
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   !.............................................................................
   call trace_begin ('initial_t%initial_conditions')
   
-  bb=1.0/sqrt(math%pi*4)
+  if (idx%bx > 0) then
+    bb=1.0/sqrt(math%pi*4)
+  else
+    bb=0.0
+  end if
 
 
   select case(self%idir)
@@ -101,14 +103,12 @@ SUBROUTINE initial_conditions (self, m, ff, idx)
           end if
           !pb = ff(ix,iy,iz,idx%by)**2/4/math%pi
           pg = self%beta/2.*bb
-          if (self%gamma==1.0) then
+          if (eos%gamma==1.0) then
             ff(ix,iy,iz,idx%s) = 1.0
-          else if (self%solver(1:14) == 'zeus_mhd_patch' .or. self%solver(1:10) == 'stagger2e_') then
-            ff(ix,iy,iz,idx%e) = pg / (self%gamma - 1.0)
-          else if (self%solver(1:9) == 'stagger2_') then
-            ff(ix,iy,iz,idx%s) = (log(pg)-log(self%d0)*self%gamma)/(self%gamma-1.0)*self%d0
-          else if (self%solver(1:6) == 'ramses')  then
-            ff(ix,iy,iz,idx%e) = pg / (self%gamma - 1.0)
+          else if (idx%e>0) then
+            ff(ix,iy,iz,idx%e) = pg / (eos%gamma - 1.0)
+          else if (idx%s>0) then
+            ff(ix,iy,iz,idx%s) = (log(pg)-log(self%d0)*eos%gamma)/(eos%gamma-1.0)*self%d0
           end if
         end do
       end do
@@ -137,14 +137,14 @@ SUBROUTINE initial_conditions (self, m, ff, idx)
           end if
           !pb = ff(ix,iy,iz,idx%by)**2/4/math%pi
           pg = self%beta/2.*bb
-          if (self%gamma==1.0) then
+          if (eos%gamma==1.0) then
             ff(ix,iy,iz,idx%s) = 1.0
           else if (self%solver(1:14) == 'zeus_mhd_patch' .or. self%solver(1:10) == 'stagger2e_') then
-            ff(ix,iy,iz,idx%e) = pg / (self%gamma - 1.0)
+            ff(ix,iy,iz,idx%e) = pg / (eos%gamma - 1.0)
           else if (self%solver(1:9) == 'stagger2_') then
-            ff(ix,iy,iz,idx%s) = (log(pg)-log(self%d0)*self%gamma)/(self%gamma-1.0)*self%d0
+            ff(ix,iy,iz,idx%s) = (log(pg)-log(self%d0)*eos%gamma)/(eos%gamma-1.0)*self%d0
           else if (self%solver(1:6) == 'ramses')  then
-            ff(ix,iy,iz,idx%e) = pg / (self%gamma - 1.0)
+            ff(ix,iy,iz,idx%e) = pg / (eos%gamma - 1.0)
           end if
         end do
       end do
@@ -172,18 +172,32 @@ SUBROUTINE initial_conditions (self, m, ff, idx)
           end if
           !pb = ff(ix,iy,iz,idx%by)**2/4/math%pi
           pg = self%beta/2.*bb
-          if (self%gamma==1.0) then
+          if (eos%gamma==1.0) then
             ff(ix,iy,iz,idx%s) = 1.0
-          else if (self%solver(1:14) == 'zeus_mhd_patch' .or. self%solver(1:10) == 'stagger2e_') then
-            ff(ix,iy,iz,idx%e) = pg / (self%gamma - 1.0)
-          else if (self%solver(1:9) == 'stagger2_') then
-            ff(ix,iy,iz,idx%s) = (log(pg)-log(self%d0)*self%gamma)/(self%gamma-1.0)*self%d0
-          else if (self%solver(1:6) == 'ramses')  then
-            ff(ix,iy,iz,idx%e) = pg / (self%gamma - 1.0)
+          else if (idx%s>0) then
+            ff(ix,iy,iz,idx%s) = (log(pg)-log(self%d0)*eos%gamma)/(eos%gamma-1.0)*self%d0
+          else if (idx%e>0) then
+            ff(ix,iy,iz,idx%e) = pg / (eos%gamma - 1.0)
           end if
         end do
       end do
     end do
+    
+    do iz=m(3)%lb,m(3)%ub
+      do iy=m(2)%lb,m(2)%ub
+        do ix=m(1)%lb,m(1)%ub
+          if (idx%e>0) then
+            if (self%solver(1:6)=='ramses') then 
+              rhov2 = (ff(ix,iy,iz,idx%px)**2 + &
+                       ff(ix,iy,iz,idx%py)**2 + &
+                       ff(ix,iy,iz,idx%pz)**2)/ff(ix,iy,iz,idx%d) 
+              ff(ix,iy,iz,idx%e) = ff(ix,iy,iz,idx%e) + 0.5*rhov2 + 0.5*bb*bb
+            end if
+          end if
+        end do
+      end do
+    end do
+
   end select
 
   call trace_end
