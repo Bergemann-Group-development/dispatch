@@ -30,7 +30,6 @@ SUBROUTINE init (self)
   self%mhd = .true.
   call self%solver_t%init
   !
-  self%unsigned(self%idx%d) = .true.
   call trace%end()
 END SUBROUTINE init
 
