@@ -236,11 +236,11 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%pde',itimer=itimer)
   associate (i => self%idx)
-  self%d    => self%mem(:,:,:,i%d      ,self%new,1)
+  self%d    => self%mem(:,:,:,i%d      ,self%it,1)
   self%dddt => self%mem(:,:,:,i%d      ,self%it,2)
-  self%e    => self%mem(:,:,:,i%e      ,self%new,1)
+  self%e    => self%mem(:,:,:,i%e      ,self%it,1)
   self%dedt => self%mem(:,:,:,i%e      ,self%it,2)
-  self%p    => self%mem(:,:,:,i%px:i%pz,self%new,1)
+  self%p    => self%mem(:,:,:,i%px:i%pz,self%it,1)
   self%dpdt => self%mem(:,:,:,i%px:i%pz,self%it,2)
   !> ---------------------------------------------------------------------------
   d=>self%d; dddt=>self%dddt
@@ -253,7 +253,7 @@ SUBROUTINE pde (self)
   dpdt = 0.0
   !> ---------------------------------------------------------------------------
   if (self%mhd) then
-    self%B    => self%mem(:,:,:,i%bx:i%bz,self%new,1)
+    self%B    => self%mem(:,:,:,i%bx:i%bz,self%it,1)
     self%dBdt => self%mem(:,:,:,i%bx:i%bz,self%it,2)
     B=>self%B; dBdt=>self%dBdt
     Bx   =>   B(:,:,:,1);    By=>   B(:,:,:,2);    Bz=>   B(:,:,:,3)
@@ -785,15 +785,15 @@ SUBROUTINE pre_update (self)
   !-----------------------------------------------------------------------------
   ! Set boundary conditions on primary variables
   !-----------------------------------------------------------------------------
-  mem => self%mem(:,:,:,:,self%new,1)
+  mem => self%mem(:,:,:,:,self%it,1)
   call self%boundaries%primary(mem)
   !
   if (do_temperature .and. .not. associated(self%tt)) then
     allocate (real:: self%tt(self%gn(1),self%gn(2),self%gn(3)))
     allocate (           lnd(self%gn(1),self%gn(2),self%gn(3)))
     allocate (            ee(self%gn(1),self%gn(2),self%gn(3)))
-    d => self%mem(:,:,:,self%idx%d,self%new,1)
-    e => self%mem(:,:,:,self%idx%e,self%new,1)
+    d => self%mem(:,:,:,self%idx%d,self%it,1)
+    e => self%mem(:,:,:,self%idx%e,self%it,1)
     lnd = alog(d)
     ee = e/d
     call eos%lookup_table (shape(self%tt), lnd=lnd, ee=ee, tt=self%tt, label='mhd')
@@ -822,11 +822,11 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%update',itimer=itimer)
   if (eos%gamma==1d0) then
-    self%mem(:,:,:,self%idx%e,self%new,1) = &
-    self%mem(:,:,:,self%idx%d,self%new,1)*self%csound**2
+    self%mem(:,:,:,self%idx%e,self%it,1) = &
+    self%mem(:,:,:,self%idx%d,self%it,1)*self%csound**2
   end if
   if (self%mhd) then
-    B => self%mem(:,:,:,self%idx%bx:self%idx%bz,self%new,1)
+    B => self%mem(:,:,:,self%idx%bx:self%idx%bz,self%it,1)
     call divB%clean(self%mesh,B)
   end if
   call self%pde
@@ -890,8 +890,8 @@ SUBROUTINE gas_pressure_sub (self, d, lnd, ee, pg)
   integer, save:: nprint=1
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%gas_pressure_sub')
-  d  => self%mem(:,:,:,self%idx%d ,self%new,1)
-  e  => self%mem(:,:,:,self%idx%e ,self%new,1)
+  d  => self%mem(:,:,:,self%idx%d ,self%it,1)
+  e  => self%mem(:,:,:,self%idx%e ,self%it,1)
   call allocate_scalars(self%gn,ee)
   ee = e/d
   if (trim(self%eos)=='ideal') then
@@ -928,8 +928,8 @@ FUNCTION gas_pressure (self) result(pg)
   integer, save:: nprint=1
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%gas_pressure_sub')
-  d  => self%mem(:,:,:,self%idx%d ,self%new,1)
-  e  => self%mem(:,:,:,self%idx%e ,self%new,1)
+  d  => self%mem(:,:,:,self%idx%d ,self%it,1)
+  e  => self%mem(:,:,:,self%idx%e ,self%it,1)
   call allocate_scalars(self%gn,ee)
   ee = e/d
   if (trim(self%eos)=='ideal') then
