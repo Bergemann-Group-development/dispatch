@@ -6,11 +6,11 @@ MODULE initial_mod
   USE mesh_mod
   USE index_mod
   USE math_mod
+  USE eos_mod
   implicit none
   private
   type, public :: initial_t
     integer :: idirect
-    real    :: gamma=1.66666666666670
     logical :: mhd=.true.
     real(8) :: p0, v0, b0
     character(len=64):: solver
@@ -33,8 +33,6 @@ SUBROUTINE init (self, solver, gamma)
   namelist /IC_params/ idirect, b0, p0, v0
   !-----------------------------------------------------------------------------
   call trace_begin ('initial_t%init')
-  if (present(gamma)) self%gamma = gamma
-
   call io%lock%set('initial_t%init')
   if (first_time) then
     ! default values for namelist parameters
@@ -75,20 +73,19 @@ SUBROUTINE initial_conditions (self, m, ff, idx)
   !.............................................................................
   call trace_begin ('initial_t%initial_conditions')
 
-  allocate(vecpot(m(1)%gn+2,m(2)%gn+2,m(3)%gn+2))
   if (self%solver(1:6)=='ramses') then
     allocate(emag(m(1)%gn,m(2)%gn,m(3)%gn))
     emag=0.0
   end if
 
   twopi = 2.0 * math%pi
-  d0 = self%gamma * self%p0
+  d0 = eos%gamma * self%p0
 
   ! "pre"-initialisation of all variables, independent of `idirect`.
-  if (self%gamma==1.0) then
+  if (eos%gamma==1.0) then
     entropy = 1.0
   else
-    entropy = (log(self%p0)-log(d0)*self%gamma)/(self%gamma-1.0)
+    entropy = (log(self%p0)-log(d0)*eos%gamma)/(eos%gamma-1.0)
   end if
 
 
@@ -97,7 +94,7 @@ SUBROUTINE initial_conditions (self, m, ff, idx)
       do ix=m(1)%lb,m(1)%ub
         ff(ix,iy,iz,idx%d) = d0
         if (idx%s>0) ff(ix,iy,iz,idx%s) = entropy*d0
-        if (idx%e>0) ff(ix,iy,iz,idx%e) = self%p0/(self%gamma-1.0)
+        if (idx%e>0) ff(ix,iy,iz,idx%e) = self%p0/(eos%gamma-1.0)
         ff(ix,iy,iz,idx%px) = 0.0
         ff(ix,iy,iz,idx%py) = 0.0
         ff(ix,iy,iz,idx%pz) = 0.0
@@ -114,40 +111,24 @@ SUBROUTINE initial_conditions (self, m, ff, idx)
   if (self%idirect == 3) then
 
     ! initialise vector potential
+    allocate(vecpot(m(1)%gn+1,m(2)%gn+1,m(3)%gn))
     
-    do iz=m(3)%lb,m(3)%lb+1
-      do iy=m(2)%lb,m(2)%lb+1
-        ya = m(2)%p + r2(iy) - 1.5*m(2)%d
-        do ix=m(1)%lb,m(1)%lb+1
-          xa = m(1)%p + r1(ix) - 1.5*m(1)%d
+    do iz=m(3)%lb,m(3)%ub
+      do iy=m(2)%lb,m(2)%ub
+        ya = m(2)%p + r2(iy) - 0.5*m(2)%d
+        do ix=m(1)%lb,m(1)%ub
+          xa = m(1)%p + r1(ix) - 0.5*m(1)%d
           vecpot(ix,iy,iz) = (self%b0 / twopi) * ( 0.5 * cos(2.0 * twopi * xa) + cos(twopi  * ya) )
         end do
       end do
     end do
     
-    do iz=m(3)%lb,m(3)%ub-1
-      do iy=m(2)%lb,m(2)%ub-1
-        ya = m(2)%p + r2(iy) - 0.5*m(2)%d
-        do ix=m(1)%lb,m(1)%ub-1
-          xa = m(1)%p + r1(ix) - 0.5*m(1)%d
-          vecpot(ix+1,iy+1,iz+1) = (self%b0 / twopi) * ( 0.5 * cos(2.0 * twopi * xa) + cos(twopi  * ya) )
-        end do
-      end do
-    end do
-    
     do iz=m(3)%lb,m(3)%ub
-      do iy=m(2)%lb,m(2)%ub
-        ya = m(2)%p + r2(iy) + 1.5*m(2)%d
-        do ix=m(1)%ub-1,m(1)%ub
-          xa = m(1)%p + r1(ix) + 1.5*m(1)%d
-          vecpot(ix+2,iy+2,iz+2) = (self%b0 / twopi) * ( 0.5 * cos(2.0 * twopi * xa) + cos(twopi  * ya) )
-        end do
-      end do
-      do iy=m(2)%ub-1,m(2)%ub
-        ya = m(2)%p + r2(iy) + 1.5*m(2)%d
-        do ix=m(1)%lb,m(1)%ub
-          xa = m(1)%p + r1(ix) + 1.5*m(1)%d
-          vecpot(ix+2,iy+2,iz+2) = (self%b0 / twopi) * ( 0.5 * cos(2.0 * twopi * xa) + cos(twopi  * ya) )
+      do iy=m(2)%ub,m(2)%ub+1
+        ya = m(2)%p + r2(iy-1) + 0.5*m(2)%d
+        do ix=m(1)%ub,m(1)%ub+1
+          xa = m(1)%p + r1(ix-1) + 0.5*m(1)%d
+          vecpot(ix,iy,iz) = (self%b0 / twopi) * ( 0.5 * cos(2.0 * twopi * xa) + cos(twopi  * ya) )
         end do
       end do
     end do
@@ -159,30 +140,42 @@ SUBROUTINE initial_conditions (self, m, ff, idx)
           xb = m(1)%p + r1(ix)
           ff(ix,iy,iz,idx%px) = -d0 * self%v0 * sin(twopi * yb)
           ff(ix,iy,iz,idx%py) =  d0 * self%v0 * sin(twopi * xb)
-          ff(ix,iy,iz,idx%bx) =  (vecpot(ix+1,iy+2,iz+1) - vecpot(ix+1,iy+1  ,iz+1) ) / m(2)%d
-          ff(ix,iy,iz,idx%by) = -(vecpot(ix+2,iy+1,iz+1) - vecpot(ix+1  ,iy+1,iz+1) ) / m(1)%d
+          ff(ix,iy,iz,idx%bx) =  (vecpot(ix,iy+1,iz) - vecpot(ix,iy,iz) ) / m(2)%d
+          ff(ix,iy,iz,idx%by) = -(vecpot(ix+1,iy,iz) - vecpot(ix,iy,iz) ) / m(1)%d
         end do
       end do
     end do
-  end if
+    deallocate(vecpot)
 
   ! ---- x2-x3 plane ----
-  if (self%idirect == 1) then
+  else if (self%idirect == 1) then
 
     ! initialise vector potential
+    allocate(vecpot(m(1)%gn,m(2)%gn+1,m(3)%gn+1))
+    !
     do iz=m(3)%lb,m(3)%ub
       za = m(3)%p + r3(iz) - 0.5*m(3)%d
       do iy=m(2)%lb,m(2)%ub
         ya = m(2)%p + r2(iy) - 0.5*m(2)%d
         do ix=m(1)%lb,m(1)%ub
-          vecpot(ix+1,iy+1,iz+1) = self%b0 / twopi * ( 0.5d0 * cos (2.0 * twopi * ya) + cos (twopi  * za) )
+          vecpot(ix,iy,iz) = self%b0 / twopi * ( 0.5d0 * cos (2.0 * twopi * ya) + cos (twopi  * za) )
         end do
       end do
     end do
 
-    do iz=m(3)%lb,m(3)%ub-1
+    do iz=m(3)%ub,m(3)%ub+1
+      za = m(3)%p + r3(iz-1) + 0.5*m(3)%d
+      do iy=m(2)%ub,m(2)%ub+1
+        ya = m(2)%p + r2(iy-1) + 0.5*m(2)%d
+        do ix=m(1)%lb,m(1)%ub
+          vecpot(ix,iy,iz) = self%b0 / twopi * ( 0.5d0 * cos (2.0 * twopi * ya) + cos (twopi  * za) )
+        end do
+      end do
+    end do
+
+    do iz=m(3)%lb,m(3)%ub
       zb = m(3)%p + r3(iz)
-      do iy=m(2)%lb,m(2)%ub-1
+      do iy=m(2)%lb,m(2)%ub
         yb = m(2)%p + r2(iy)
         do ix=m(1)%lb,m(1)%ub
           ff(ix,iy,iz,idx%py) = -d0 * self%v0 * sin(twopi * zb)
@@ -192,41 +185,57 @@ SUBROUTINE initial_conditions (self, m, ff, idx)
         end do
       end do
     end do
-  end if
 
+    deallocate(vecpot)
+  
   ! ---- x3-x1 plane ----
-  if (self%idirect == 2) then
+  else if (self%idirect == 2) then
 
     ! initialise vector potential
+    allocate(vecpot(m(1)%gn+1,m(2)%gn,m(3)%gn+1))
+    !
     do iz=m(3)%lb,m(3)%ub
       za = m(3)%p + r3(iz) - 0.5*m(3)%d
       do iy=m(2)%lb,m(2)%ub
         do ix=m(1)%lb,m(1)%ub
-          xa = m(1)%p + r1(iy) - 0.5*m(1)%d
+          xa = m(1)%p + r1(ix) - 0.5*m(1)%d
           vecpot(ix,iy,iz) = self%b0 / twopi * ( 0.5d0 * cos (2.0 * twopi * za) + cos (twopi  * xa) )
         end do
       end do
     end do
 
-    do iz=m(3)%lb,m(3)%ub-1
-      zb = m(3)%p + r3(iz)
+    do iz=m(3)%ub,m(3)%ub+1
+      za = m(3)%p + r3(iz-1) + 0.5*m(3)%d
       do iy=m(2)%lb,m(2)%ub
-        do ix=m(1)%lb,m(1)%ub-1
-          xb = m(1)%p + r1(ix)
-          ff(ix,iy,iz,idx%pz) = -d0 * self%v0 * sin(twopi * xb)
-          ff(ix,iy,iz,idx%px) =  d0 * self%v0 * sin(twopi * zb)
-          ff(ix,iy,iz,idx%bz) =  (vecpot(ix+1,iy,iz) - vecpot(ix+1,iy,iz) ) / m(1)%d
-          ff(ix,iy,iz,idx%bx) = -(vecpot(ix,iy,iz+1) - vecpot(ix,iy,iz+1) ) / m(3)%d
+        do ix=m(1)%ub,m(1)%ub+1
+          xa = m(1)%p + r1(ix-1) + 0.5*m(1)%d
+          vecpot(ix,iy,iz) = self%b0 / twopi * ( 0.5d0 * cos (2.0 * twopi * za) + cos (twopi  * xa) )
         end do
       end do
     end do
+
+    do iz=m(3)%lb,m(3)%ub
+      zb = m(3)%p + r3(iz)
+      do iy=m(2)%lb,m(2)%ub
+        do ix=m(1)%lb,m(1)%ub
+          xb = m(1)%p + r1(ix)
+          ff(ix,iy,iz,idx%pz) = -d0 * self%v0 * sin(twopi * xb)
+          ff(ix,iy,iz,idx%px) =  d0 * self%v0 * sin(twopi * zb)
+          ff(ix,iy,iz,idx%bz) =  (vecpot(ix+1,iy,iz) - vecpot(ix,iy,iz) ) / m(1)%d
+          ff(ix,iy,iz,idx%bx) = -(vecpot(ix,iy,iz+1) - vecpot(ix,iy,iz) ) / m(3)%d
+        end do
+      end do
+    end do
+
+    deallocate(vecpot)
+  else
+    call io%abort('initial%condition: idirect not understood.')
   end if
   
   do iz=m(3)%lb,m(3)%ub
     ff(:,:,iz,:) = ff(:,:,m(3)%li,:)
   end do
 
-  deallocate(vecpot)
   if (self%solver(1:6)=='ramses') then 
     if (idx%e>0) then
       do iz=m(3)%lb,m(3)%ub-1
