@@ -34,6 +34,7 @@ MODULE hd_mod
   !.............................................................................
   USE io_mod
   USE io_unit_mod
+  USE task_mod
   USE extras_mod
   USE link_mod
   USE parameters_mod
@@ -64,6 +65,7 @@ MODULE hd_mod
     procedure:: dealloc
     procedure:: pre_update
     procedure:: update
+    procedure:: nbor_relations
   end type
   integer, parameter:: ndim=3
   real, save:: slope_type=2.0
@@ -1365,5 +1367,27 @@ SUBROUTINE gravitational_force (self)
   deallocate (gradphi1, gradphi2, gradphi3)
   end associate
 END SUBROUTINE gravitational_force
+
+!===============================================================================
+!> Set up nbor relations between MHD tasks
+!===============================================================================
+SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
+  class(hd_t):: self
+  class(task_t), pointer:: another, task
+  logical:: needed, needs_me, download, overlaps
+  ! ----------------------------------------------------------------------------
+  integer, save:: itimer=0
+  class(hd_t),  pointer:: nb_hd
+  ! ----------------------------------------------------------------------------
+  task => another
+  call self%task_t%nbor_relations(task,needed,needs_me,download)
+  select type (another)
+  class is (hd_t)
+    ! do nothing, all is done in the base task_t layer
+  class default
+    needed=.false.; needs_me=.false.; download=.false.
+  end select
+
+END SUBROUTINE nbor_relations
 
 END MODULE
