@@ -85,7 +85,6 @@ scase=0
     emagl = half*(A*A+Bl*Bl+Cl*Cl)
     !etotl = El*rl+ecinl+emagl
     Ptotl = Pl + emagl
-    !if (ptotl/=rl**gamma*exp(sl)) print *, ptotl,rl**gamma*exp(sl)
   !  ptotl=rl**gamma*exp(sl/rl*(gamma-one))
     vdotBl= ul*A+vl*Bl+wl*cl
     !
@@ -119,7 +118,6 @@ scase=0
     cf = sqrt( d2 + sqrt(max(d2*d2-csr2*A*A/d,zero)) )
     cslowr = sqrt(max(d2 - sqrt(max(d2*d2-csr2*A*A/d,zero)),zero))
     cfastr=cf
-    !if (abs(rpsc)>1e-1) print *, rpsc, gamma/(gamma-one)*(ptotr/rr-ptotl/rl)
 !#else
 !    CALL find_speed_fast(qleft (i,:),cfastl)
 !    CALL find_speed_fast(qright(i,:),cfastr)
@@ -166,25 +164,7 @@ scase=0
 #endif
     vdotBstarl=ustar*A+vstarl*Bstarl+wstarl*Cstarl
     tgstarl = tgl*(SSL-ul)/(SSL-ustar)
-    !etotstarl=((SSL-ul)*etotl-Ptotl*ul+Ptotstar*ustar+A*(vdotBl-vdotBstarl))/(SSL-ustar)
-   ! stotstarl=((SSL-ul)*sl   +  one/tgstarl   &
-   !          *((ptotstar/rstarl - ptotl/rl) - half*(one/rstarl+one/rl)*(ptotstar-ptotl)) )/(SSL-ustar)
-    !stotstarl=((SSL-ul)*sl   +  one/tgstarl   &
-    !         *((one/rl-one/rstarl)*(ptotstar+ptotl)) )/(SSL-ustar)
-   ! stotstarl=((SSL-ul)*sl  +  one/tgstarl   &
-   !          *(ptotstar*ustar-ptotl*ul)/rcl - half*(ecinr/rr-ecinl/rl) )/(SSL-ustar)
-  !  stotstarl=((SSL-ul)*sl )/(SSL-ustar)
-    scond = (log(ptotl/ptotstar)-log(rl/rstarl)*gamma)
-    scond = scond +half*(ul*ul+vl*vl+wl*wl) - half*(ustar*ustar+vstarl*vstarl+wstarl*wstarl)
-  !  stotstarl=sl!-scond/tgstarl/rstarl!((log(ptotl/ptotstar)-log(rl/rstarl)*gamma))/tgstarl!one/tgstarl   &
-    stotstarl=sl!(SSL-ul)/(SSL-ustar)*(sl-scond/tgstarl/rstarl)!  + ((log(one+ptotl/ptotstar)-log(one+(rl/rstarl)**gamma)))*gamma/(gamma-one))!one/tgstarl   &
-   ! stotstarl=(SSL-ul)/(SSL-ustar)*sl  + scond/tgstarl!one/tgstarl   &
-             !*(gamma/(gamma-one)*(ptotstar/rstarl - ptotl/rl) - half*(one/rstarl+one/rl)*(ptotstar-ptotl))  
-
-    ! remnoved gamma/(gamma-one)* from first term
-    !print *, 's1', stotstarl
-    !stotstarl=(SSL-ul)*(sl+(Ptotl*ul-Ptotstar*ustar)*rstarl/ptotstar/(gamma-1)+A*(vdotBl-vdotBstarl))/(SSL-ustar)
-    !print *, 's2', stotstarl
+    stotstarl=sl
     sqrrstarl=sqrt(rstarl)
     calfvenl=abs(A)/sqrrstarl
     SAL=ustar-calfvenl
@@ -215,24 +195,7 @@ scase=0
     !
     vdotBstarr=ustar*A+vstarr*Bstarr+wstarr*Cstarr
     tgstarr = tgr*(SSR-ur)/(SSR-ustar)
-    !etotstarr=((SSR-ur)*etotr-Ptotr*ur+Ptotstar*ustar+A*(vdotBr-vdotBstarr))/(SSR-ustar)
-    !stotstarr=((SSR-ur)*sr -  one/tgstarr   &
-    !         *((one/rr-one/rstarr)*(ptotr+ptotstar))) /(SSR-ustar)
-   ! stotstarr=((SSR-ur)*sr -  one/tgstarr   &
-   !          *(ptotstar*ustar-ptotr*ur)/rcr - half*(ecinl/rl-ecinr/rr)) /(SSR-ustar)
-   !  stotstarr=((SSR-ur)*sr) /(SSR-ustar)
-    scond = (log(ptotr/ptotstar)-log(rr/rstarr)*gamma)
-    scond = scond -half*(ur*ur+vr*vr+wr*wr) + half*(ustar*ustar+vstarr*vstarr+wstarr*wstarr)
-  !  stotstarr=sr!+scond/tgstarr/rstarr!((log(ptotr/ptotstar)-log(rr/rstarr)*gamma))/tgstarr!+((log(ptotr/ptotstar)+log(rr/rstarr)*gamma)/tgstarr)!one/tgstarr   &
-    stotstarr=sr!(SSR-ur)/(SSR-ustar)*(sr+scond/tgstarr/rstarr)! - ((log(one+ptotr/ptotstar)-log(one+(rr/rstarr)**gamma)))*gamma/(gamma-one))!one/tgstarr   &
-    ! stotstarr=(SSR-ur)/(SSR-ustar)*sr -scond/tgstarr!one/tgstarr   &
-           !  *(gamma/(gamma-one)*(ptotr/rr-ptotstar/rstarr) - half*(one/rr+one/rstarr)*(ptotr-ptotstar))
-          !   )
-
-    ! removed gamma/(gamma-one)
-    !print *, 's1', stotstarr
-    !stotstarr=(SSR-ur)*(sr+(Ptotr*ur-Ptotstar*ustar)*rstarr/ptotstar/(gamma-1)+A*(vdotBr-vdotBstarr))/(SSr-ustar)
-    !print *, 's2', stotstarr
+    stotstarr=sr
     sqrrstarr=sqrt(rstarr)
     calfvenr=abs(A)/sqrrstarr 
     SAR=ustar+calfvenr
@@ -260,75 +223,11 @@ scase=0
        Ptoto=Ptotl
        tgo=tgl
        so=sl
-       M = uo/csl
        vdotBo=vdotBl
        emago=emagl
-      ! M = uo/csl
-      ! if (csl==cfastl) then
-         alfa_f = sqrt(max(0.0,(csl2-cslowl*cslowl)/(cfastl*cfastl-cslowl*cslowl)))
-         alfa_s = sqrt(max(0.0,(cfastl*cfastl-csl2)/(cfastl*cfastl-cslowl*cslowl)))
-         alfa_m = sqrt(max(0.0,(csl2-cfastl*cfastl)/(cfastl*cfastl-cslowl*cslowl)))
-         bp1 = sqrt(A*A+Co*Co)
-         bp1 = merge(Bo/bp1,one/sqrt(two),bp1>0.0)
-         bp2 = sqrt(A*A+Bo*Bo)
-         bp2 = merge(Co/bp2,one/sqrt(two),bp2>0.0)
-         !tt1 = half
-     !     print *, ecinl, ecinl/rl, ecinr, ecinr/rr
-         tt2 = + alfa_f*(ecinl/rl)!((uo*uo+vo*vo+wo*wo)/2-(cfastl*cfastl)/2)*ro!(ecinl-ecinr)
-         !tt2 = + alfa_f*ecinl!(uo*uo-cfastl*cfastl)*ro!(ecinl-ecinr)
-         tt3 = + (ul-SSL)*alfa_s*ro*sqrt((Co*Co+Bo*Bo)/ro)
-         tt4 = + alfa_f*Ptoto/(gamma-one)
-         tt4 = +alfa_f*csl2/(gamma-one)
-       !  tt4 = + alfa_f*csl2*ro/(gamma-one)*(ul/(ul-ssl)-ssl/csl)!*((uo/(ul-SSL))**2-one)
-         tt5 = + alfa_f*cfastl*(ul-SSL)!ssl/(ul-SSL)
-         tt6 = - alfa_s*cslowl*ro*sgnm*(vo*bp1+wo*bp2)
-         scond = log(ptoto+ro)+one/tgl *(ptoto/ro+tt2)!(tt2+tt4)!(((ptotl*ul)/rcl - tt2)+tzt3/rl+tt4/ro+tt5/ro+tt6/rl)!*sqrt(ro/ptoto)*SSL/(gamma-one)
-         tt2 = log(Ptoto)
-         tt3=(gamma+one)*M*M/((gamma-one)*M*M+two)
-         tt4= log(tt3**gamma)
-         M = ul/(ul-ssl)
-
-         scond = log(one+ptoto)-log(one+ro**gamma)+uo*ro*log(one+half*uo*uo)!+log(one+ecinl)*gamma)!(log(ptoto)-log(ro))!+half*log(ptoto/ro))!+tt2!+tt2!+alfa_f*ecinl/rl/tgo!*tt2!/tgo!+tt5/tgl/ro
-         scond=ssl*scond*(gamma+1)/(gamma-one)
-         scond=(M-1)*(log(ptoto*ro**gamma)+half*uo*uo)
-         scond=((log(ptoto)-log(ro**gamma))/(gamma-one))
-         tt1=ssl*((log(ptoto)+log(ro**gamma))+half*uo*uo)/(gamma-one)
-         scond = log(ptoto)+log(ro**gamma)+log(ro*half*(ul*ul))
-         tt1 = log(ptoto)!+log(ptoto)-log(ro)*gamma
-         scond = (M*M-one)*(log(ptoto/ro)+half*uo*uo)!+log(one+half*(ul*ul))
-         !print *, so, scond
-         !csl/(ul-ssl)*
-        ! scond = log(one+ptoto)+log(one+ro**gamma)+m/gamma*half*(uo*uo+vo*vo+wo*wo)
-       !  scond = log(one+ptoto)+log(one+ro**gamma) + half*uo*uo
-         !print *, ecinl, gamma/(gamma-one)*ptoto/ro, ecinl/ro ,(log(ptoto)-log(ro)*gamma)
-         !scond = half*ssl*(log(ptoto)-log(ro)*gamma)!(log(ptoto)-log(ro))!+half*log(ptoto/ro))!+tt2!+tt2!+alfa_f*ecinl/rl/tgo!*tt2!/tgo!+tt5/tgl/ro
-        !print *, tt1,tt2,tt1+log(tt2),-log(ptoto)+log(ro)*gamma, log(one/ptoto)+log(ro)*gamma
-        ! scond=ssl*(tt1*tt2)
-         !scond=tgo*(log(ptoto)-log(ro)*gamma)
-        ! print *, scond, ssl, log(tgo)!, (log(ptoto)+log(ro)*gamma),  (log(ptoto)+log(ro)*gamma)*tgo
-         !print *, scond, ssl, (log(ptoto)+log(ro)*gamma)
-         ! print *, M, ssl, (sqrt(M*M-one))
-         !scond=ssl*log(alfa_f*sqrt(ptoto*ro)/tgo*gamma/(gamma-one))
-         ! print *, m, sqrt(one-(gamma+one)*(m*m-one)/((two*gamma*M*M)-(gamma-one)))
-       !  print *, M, log(m), sqrt(m), m*m
-    ! print *, scond, tt3,tt5!sqrt((ul/(ul-ssl)-1)**2), ssl/sqrt((ul/(ul-ssl)-1)**2*2)!ssl, ssl/(gamma-one), gamma*ssl, ssl/ul/(gamma-one), ssl/(ul-ssl)/(gamma-one)
-         !print *, scond,log(ptoto*ro), log(ptoto), log(ro**gamma),uo*ptoto/tgo/ro
-         !print *, scond, scond*ptoto/tgo,ptoto/tgo, ptoto/tgo/ro
-        ! print *, scond, tt2, tt1, log(ptoto*ro), uo*log(ptoto)*tt2
-        ! print *, scond, uo*ro*(tt1*tt2)*Ptoto/(ro*tgo),  alfa_f*(ecinl/rl)/tgl/ro,alfa_f*csl2/(gamma-one)
-         !scond = ptoto/(ro*tgo)*(tt2+tt4)!(tt2+tt4)!(((ptotl*ul)/rcl - tt2)+tt3/rl+tt4/ro+tt5/ro+tt6/rl)!*sqrt(ro/ptoto)*SSL/(gamma-one)
-    ! print *, scond, tt2, tt3, tt4
-         ! print *, scond,ssl/csl,((uo/(ul-SSL))**2-one), ul/(ul-ssl), tt4/ro, tt4/ro*one/tgl
-         !print *, scond, sqrt(ro/ptoto)*SSL, uo/(ul-SSL), tt4, tt5, alfa_f*cfastl*rcl
-         !print *, tt5, tt4, tt2, scond,sqrt(ro/ptoto)
-        ! print *, scond, ssl
-    !     if (alfa_f>1) error stop "end"
-         ! else
-      !  scond = 0
-       !end if
-
-     !  print *, scond, (aa2-cfastl*cfastl),tt4/rr, tt5/rr
-  !     print *, 'ic1',so, scond
+       !M = ul/(ul-SSL)
+       tt1 =ssl*log(ptoto/ro)
+       scond =(ul-ssl)*(((ptoto)/(ptoto-one)))*(log(ro*uo*uo*half))
     else if(SAL>0d0)then
        icase=2
        ro=rstarl
@@ -340,21 +239,11 @@ scase=0
        Ptoto=Ptotstar
        so=stotstarl 
        tgo=tgstarl
-       scond=0
-        M = ul/(ul-ssl)
-       tt4 = sign(one,rl)
-       tt5=(csl-(ul-ssl))*ro/tgo*gamma/(gamma-one)
-       tt1 = log(ptoto)+log(ro**gamma)
-       scond=0
+      !M = ul/(ul-ssl)
        tt1=0
        vdotBo=vdotBstarl
        emago=half*(A*A+Bo*Bo+Co*Co)
-    !   print *, 'c2', so
-    !   print *, csl, ul-ssl, csl/(ul-ssl)
-       scond=0!log(ptoto)-log(ro)*gamma+half*uo*uo!log(ptoto)+log(one+ro*half*(ul*ul))
-       !scond = -M*(half*(uo*uo+vo*vo+wo*wo))
-     !  scond=merge(-(log(ptoto)+log(ro**gamma)),0.0,m>1.0)
-       !if (M>0.8) print *,  m, ul/(ul-ssl),ssl, ul, ur, (SSL-ul)/(SSL-ustar),(SSR-ur)/(SSR-ustar)
+       scond=0
     else if(ustar>0d0)then
        icase=3
        ro=rstarl
@@ -367,7 +256,6 @@ scase=0
        so=stotstarstarl
        tgo=tgstarl
        M = uo/csl
-       tt1 = log(ptoto)+log(ro**gamma)
        tt1=0
        scond=0
        vdotBo=vdotBstarstar
@@ -385,18 +273,13 @@ scase=0
        Ptoto=Ptotstar
        so=stotstarstarr
        tgo=tgstarr
-       scond=0
-       M = -uo/csr
-       tt1 = log(ptoto)+log(ro**gamma)
+       !M = -uo/csr
        tt1=0
        scond=0
        vdotBo=vdotBstarstar
        emago=half*(A*A+Bo*Bo+Co*Co)
     else if (SSR>0d0)then
        icase=5
-   !   if (abs(one/tgstarr   &
-   !          *(gamma/(gamma-one)*(ptotstar/rstarr-ptotr/rr) - half*(one/rr+one/rstarr)*(ptotstar-ptotr)))>1.0) print *, 'sr', one/tgstarr   &
-   !          *(gamma/(gamma-one)*(ptotstar/rstarr-ptotr/rr) - half*(one/rr+one/rstarr)*(ptotstar-ptotr))
        ro=rstarr
        uo=ustar
        vo=vstarr
@@ -406,31 +289,11 @@ scase=0
        Ptoto=Ptotstar
        so = stotstarr
        tgo=tgstarr
-       scond=0
-      ! scond=ecinr/tgo
-    !   scond = one/tgstarr *(gamma/(gamma-one)*((ptoto*uo - ptotr*ur)/rcr - tt2)+tt4/ro)!+tt3/ro+tt4/ro+tt5/ro+tt6/ro)
        vdotBo=vdotBstarr
        emago=half*(A*A+Bo*Bo+Co*Co)
-       M=uo/(SSR-ur)
-       tt1 = sign(one,ro)
-       tt4 = sign(one,rr)
-       tt5=(csl-(ul-ssl))*ro/tgo*gamma/(gamma-one)
-       tt1 = (log(ptotr/ptoto)+tt4*log(rr/ro))
-       tt1 = log(ptoto)+log(ro**gamma)
-       scond=0!-log(ptoto)+log(ro)*gamma-half*uo*uo!-(log(ptoto)+log(one+ro*half*(ul*ul)))
-       !scond = -M*(half*(uo*uo+vo*vo+wo*wo))
-      ! scond=merge((log(ptoto)+log(ro**gamma)),0.0,m>1.0)
+       !M=uo/(SSR-ur)
+       scond=0
        tt1=0
-     !  print *, 'ic5', -rstarr*((log(ptotr/ptotstar)+log(rr/rstarr)*gamma))
-   !  scond = -(log(ptoto+emagr)-log(ro)*gamma+log(one+ecinr))!+log(ro)*gamma))!+log(one+ssr*)*gamma)
-     !  scond = -ur*scond/(gamma-one)
-     
-       ! scond = -ptoto/tgo/ro*(tt1*log(ptoto))+log(abs(ro)**(tt1*gamma))
-    !   print *, scond, tt1
-   !    scond = ptoto/tgo/ro*(log(ptoto)+log(ro)**gamma)+alfa_f*ecinl/rl/tgo
-     !if (so /= ((SSR-ur)*sr) /(SSR-ustar) +  one/tgstarr   &
-     !        *(gamma/(gamma-one)*(ptotr/rr- ptotstar/rstarr) - half*(one/rr+one/rstarr)*(ptotr-ptotstar))) print *, 'ic5', so, ((SSR-ur)*sr) /(SSR-ustar) +  one/tgstarr   &
-     !        *(gamma/(gamma-one)*(ptotr/rr- ptotstar/rstarr) - half*(one/rr+one/rstarr)*(ptotr-ptotstar))
     else
        icase=6
        
@@ -445,42 +308,10 @@ scase=0
        Ptoto=Ptotr
        vdotBo=vdotBr
        emago=emagr
- !      if (csr==cfastr) then
-         alfa_f = sqrt(max(0.0,(csr2-cslowr*cslowr)/(cfastr*cfastr-cslowr*cslowr)))
-         alfa_s = sqrt(max(0.0,(cfastr*cfastr-csr2)/(cfastr*cfastr-cslowr*cslowr)))
-         bp1 = sqrt(A*A+Co*Co)
-         bp1 = merge(Bo/bp1,one/sqrt(two),bp1>0.0)
-         bp2 = sqrt(A*A+Bo*Bo)
-         bp2 = merge(Co/bp2,one/sqrt(two),bp2>0.0)
-         tt1 = -  sqrt(one/(half*ro*gamma))!one/(two*gamma) *  (uo-cfastr)
-         tt2 = + alfa_f*(ecinr/rr-ecinl/rl)
-         tt3 = + (SSR-ur)*alfa_s*ro*sqrt((Co*Co+Bo*Bo)/ro)
-         tt4 = + alfa_f*csr2*gamma/(gamma-one)*csr/(SSR-ur)!sqrt(ro/ptoto)*SSR!*csr/(ssr-ur)
-         tt5 = - alfa_f*cfastr*ro*SSR
-         tt6 = + alfa_s*cslowr*ro*sgnm*(vo*bp1+wo*bp2)
-         scond = SSR*one/tgr *((gamma/(gamma-one)*(ptotr*ur - ptotl*ul)/rcr - tt2)+tt3/rr+tt4/rr+tt5/rr+tt6/rr)
-         M = -uo/(SSR-ur)
-       scond = (log(ptoto)-log(ro**gamma)+half*ssr*ssr*ro/(gamma-one))!+log(ro)*gamma))!+log(one+ssr*)*gamma)
-       scond = -(M-1)*(log(ptoto*ro**gamma)+half*uo*uo)
-       scond = ((log(ptoto)-log(ro**gamma)))
-       tt1=ssr*((log(ptoto)+log(ro**gamma))+half*uo*uo)/(gamma-one)
-     !  print *, -scond
-       tt1 = ssr*(log(ptoto)-log(ro))
-     !  tt2 = merge (ptotr/(rr-rl),0.0, (rr-rl)/=0.0)
-       scond = -(M*M-one)*half*uo*uo
-      ! print *, (M*M-one), tt2, scond
-   !    scond = -(log(one+ptoto)+log(one+ro**gamma))-m/gamma*half*(uo*uo+vo*vo+wo*wo)
-     !  scond = -(log(one+ptoto)+log(one+ro**gamma) + half*uo*uo)
-       !   print *, m, (m-1), sqrt(m-1), m*m-1, (m*m-1)/gamma, m/gamma
-!1.244341      0.2443413      0.4943089      0.5483851      0.7405303  
-         !  print *, scond, sqrt(ro/ptoto)*SSR, ro/ptoto*SSR, uo/(SSR-ur)
-  !     else
-  !       scond = 0
-  !     end if
+       !M = -uo/(SSR-ur)
+       tt1 =ssr*log(ptoto/ro)
+       scond =-(ssr-ur)*(ptoto/(ptoto-one))*(log(ro*uo*uo*half))
     end if
-   ! print *, 'cf,cs,af,as,aa2', cfastl, cfastr, cslowl, cslowr,alfa_f, alfa_s, aa2
-   ! print *, 'tt', tt1, tt2, tt3, tt4, tt5, tt6
-   ! print *, 'icase', icase, scond, ro*(so*uo)/(gamma-one)
     !---------------------------------------------------------------------------
     ! Add a diffusive flux in the down grad(ln(rho)) direction, which is only
     ! nonzero when the smallest of the left/right density is within a factor 10
@@ -494,24 +325,17 @@ scase=0
     !
     ndiff = ndiff + merge(1,0,abs(ustar)>0.0)
     !
-  !  if (so/= ro*log(ptoto/ro**gamma)/(gamma-one)) print *, so, ro*log(ptoto/ro**gamma)/(gamma-one)
     ! Compute the Godunov flux
     fgdnv(i,1) = ro*uo
     !fgdnv(i,2) = so*uo + log(ptoto+ro)+one/tgo *((uo*uo+vo*vo+wo+wo)*half)!scond
     fgdnv(i,2) = uo*so+tt1!ro*log(ptoto/ro**gamma)/(gamma-one)
-   ! print *, (scond-half*((uo*uo+Ptoto)**2+uo*uo*vo*vo+uo*uo*wo*wo)*ro)/tgo
-  ! print *,icase,so*uo,so*uo+scond, log(ptoto), log(ro**gamma)
-  !  print *, sl, sr, stotstarl,stotstarr
-  !  if (scond/=0) print *, icase, scond, so*uo
     fgdnv(i,3) = ro*uo*uo+Ptoto+emago*(lim-one)-A*A*lim
     fgdnv(i,4) = zero
     fgdnv(i,5) = ro*uo*vo-A*Bo*lim
     fgdnv(i,6) = Bo*uo-A*vo
     fgdnv(i,7) = ro*uo*wo-A*Co*lim
     fgdnv(i,8) = Co*uo-A*wo
-    !+log(one+ecinl)*gamma)!(log(ptoto)-log(ro))!+half*log(ptoto/ro))!+tt2!+tt2!+alfa_f*ecinl/rl/tgo!*tt2!/tgo!+tt5/tgl/ro
-    !scond=scond*(gamma+1)/(gamma-one)
-    fgdnv(i,9) = scond!half*uo*uo!scond!(-log(ptoto/ro**gamma)+half*uo*uo)!*(gamma-one)!+half*uo*uo)/(gamma+one)
+    fgdnv(i,9) = scond
     if (abs(scond)>abs(smax)) then
       scase=icase
       smax = scond

@@ -87,7 +87,7 @@ SUBROUTINE pre_init (self)
   integer, save:: n_dump=0
   real:: csound=1.
   integer:: iostat
-  namelist /ramses_params/ gamma, riemann, slope_type, b_slope_type, &
+  namelist /ramses_params/ riemann, slope_type, b_slope_type, &
     u_slope_type, courant_factor, smallr, smallc, isothermal, csound, &
     detailed_timer, unsigned, courant_type, max_dlogd, n_dump, &
     divb_iter, do_temperature, verbose, do_corners
@@ -100,6 +100,7 @@ SUBROUTINE pre_init (self)
   self%ng = 3
   self%nv = 8
   !self%nv = 9
+  call self%extras_t%pre_init
   self%kind = 'ramses_s_mhd_patch'
   call self%idx%init (isentropy=5, mhd=self%mhd)
   !self%idx%tt = 9
@@ -114,6 +115,7 @@ SUBROUTINE pre_init (self)
     rewind (io%input)
     read (io%input, ramses_params, iostat=iostat)
     call io%namelist_warning ('ramses_params', iostat)
+    gamma = eos%gamma
     if (gamma == 1d0) isothermal = .true.
     if (isothermal)   gamma = 1d0
     write (io%output, ramses_params)
@@ -130,15 +132,6 @@ SUBROUTINE pre_init (self)
   self%csound = csound
   self%staggered = .false.
   !-----------------------------------------------------------------------------
-  call non_ideal%init  
-  !-----------------------------------------------------------------------------
-  ! Call patch_pre-init
-  !-----------------------------------------------------------------------------
-  call self%patch_t%pre_init
-  !-----------------------------------------------------------------------------
-  ! Call extras pre-init
-  !-----------------------------------------------------------------------------
-  call self%extras_t%pre_init
   call trace%end()
 END SUBROUTINE pre_init
 
@@ -161,7 +154,10 @@ SUBROUTINE init (self)
   self%pervolume(self%idx%px) = unsigned
   self%pervolume(self%idx%py) = unsigned
   self%pervolume(self%idx%pz) = unsigned
-  call self%gpatch_t%init
+  !-----------------------------------------------------------------------------
+  ! Initialize everything else, and do a sanity check
+  !-----------------------------------------------------------------------------
+  call non_ideal%init  
   call self%extras_t%init
   call self%set_solver_vars
   allocate(self%pg(self%gn(1),self%gn(2),self%gn(3)))
@@ -199,6 +195,18 @@ SUBROUTINE pre_update (self)
   ! Compute initial temperature
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%pre_update')
+  ! ----------------------------------------------------------------------------
+  ! update time slots
+  ! ----------------------------------------------------------------------------
+  call self%gpatch_t%pre_update ()
+  !-----------------------------------------------------------------------------
+  ! Primitive variables may be needed in extras courant_conditions
+  !-----------------------------------------------------------------------------
+  if (io%smallr  /= 0.0) smallr = io%smallr
+  if (io%courant /= 0.0) self%courant = io%courant
+  !call ctoprim(self)                  ! Primitive variables, sound speeds
+  !call self%extras_t%courant_condition (detailed_timer)
+  !call self%gpatch_t%courant_condition (detailed_timer)
   !-----------------------------------------------------------------------------
   ! Set boundary conditions on primary variables
   !-----------------------------------------------------------------------------
@@ -231,13 +239,14 @@ SUBROUTINE update (self)
   real, pointer, dimension(:,:,:,:):: p
   real, allocatable, dimension(:,:,:,:):: em
   real, allocatable, dimension(:,:,:,:,:):: fl
-  real, allocatable, dimension(:,:,:,:)::fluxambdiff,emfambdiff
+  real, allocatable, dimension(:,:,:,:)::fluxambdiff,emfambdiff,fluxohmdiss,emfohmdiss
   real, pointer, dimension(:,:,:):: d, s, Ux=>null(), Uy=>null(), Uz=>null()
   real, pointer:: B(:,:,:,:)
   real(dp):: dtdx, dtdy, dtdz
   integer:: n(3), nv3, i, j, k, l(3), u(3), dir, iv
   integer, parameter:: ndim=3
   integer, save:: itimer=0
+  type(lock_t), pointer:: lock
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%updateX', itimer=itimer)
   n = self%mesh%ui-self%mesh%li+1
@@ -296,8 +305,10 @@ SUBROUTINE update (self)
   if (non_ideal%is_used) then
     allocate (fluxambdiff(self%gn(1),self%gn(2),self%gn(3),3))
     allocate (emfambdiff(self%gn(1),self%gn(2),self%gn(3),3))
+     allocate (fluxohmdiss(self%gn(1),self%gn(2),self%gn(3),3))
+    allocate (emfohmdiss(self%gn(1),self%gn(2),self%gn(3),3))
     call non_ideal%non_ideal_comp(self%mesh,self%idx,self%bf,self%uin,self%q,&
-      fluxambdiff,emfambdiff,self%u_max,self%ds,self%dtime,self%gamma)
+      fluxambdiff,emfambdiff,fluxohmdiss,emfohmdiss,self%u_max,self%ds,self%dtime,self%gamma)
   end if
   call self%courant_condition                           ! compute dt
 
@@ -311,9 +322,9 @@ SUBROUTINE update (self)
   call cmpflxm(self,self%gn(2),3,4,2,7,8,6,fl(:,:,:,:,2))
   call cmpflxm(self,self%gn(3),4,2,3,8,6,7,fl(:,:,:,:,3))
 
-  call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,2,3,4,6,7,8,em(:,:,:,3),self%gn(1),self%nvar)
-  call cmp_mag_flx(self, self%qRT, self%qLT, self%qRB, self%qLB,4,2,3,8,6,7,em(:,:,:,2),self%gn(1),self%nvar)
-  call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,3,4,2,7,8,6,em(:,:,:,1),self%gn(1),self%nvar)
+  call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,2,3,4,6,7,8,em(:,:,:,3),self%gn(1)-1,self%nvar)
+  call cmp_mag_flx(self, self%qRT, self%qLT, self%qRB, self%qLB,4,2,3,8,6,7,em(:,:,:,2),self%gn(1)-1,self%nvar)
+  call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,3,4,2,7,8,6,em(:,:,:,1),self%gn(1)-1,self%nvar)
 
   dtdx = self%dtime/self%ds(1) 
   dtdy = self%dtime/self%ds(2) 
@@ -328,12 +339,12 @@ SUBROUTINE update (self)
   end if
 
   if (non_ideal%is_used) then
-    call non_ideal%flux_upd(fl,fluxambdiff,self%ds(1),self%dtime,1)
-    call non_ideal%flux_upd(fl,fluxambdiff,self%ds(2),self%dtime,2)
-    call non_ideal%flux_upd(fl,fluxambdiff,self%ds(3),self%dtime,3)
-    call non_ideal%non_ideal_emf_up(em(:,:,:,3),emfambdiff,self%ds(3),self%dtime,3)
-    call non_ideal%non_ideal_emf_up(em(:,:,:,2),emfambdiff,self%ds(2),self%dtime,2)
-    call non_ideal%non_ideal_emf_up(em(:,:,:,1),emfambdiff,self%ds(1),self%dtime,1)
+    call non_ideal%flux_upd(fl,fluxambdiff,fluxohmdiss,self%ds(1),self%dtime,1)
+    call non_ideal%flux_upd(fl,fluxambdiff,fluxohmdiss,self%ds(2),self%dtime,2)
+    call non_ideal%flux_upd(fl,fluxambdiff,fluxohmdiss,self%ds(3),self%dtime,3)
+    call non_ideal%non_ideal_emf_up(em(:,:,:,3),emfambdiff,emfohmdiss,self%ds(3),self%dtime,3)
+    call non_ideal%non_ideal_emf_up(em(:,:,:,2),emfambdiff,emfohmdiss,self%ds(2),self%dtime,2)
+    call non_ideal%non_ideal_emf_up(em(:,:,:,1),emfambdiff,emfohmdiss,self%ds(1),self%dtime,1)
   end if
   ! Compute fluxes with appropriate time step
   fl(:,:,:,:,1) = fl(:,:,:,:,1) * dtdx
@@ -354,6 +365,8 @@ SUBROUTINE update (self)
              i1=>self%mesh(1)%ui, j1=>self%mesh(2)%ui, k1=>self%mesh(3)%ui, &
              uin=>self%uin,unew=>self%unew)
 
+  lock => self%mem_lock(self%new)
+  call lock%set ('update')
   nv3 = 5
   !do iv=1,nv3
   !  if (iv/= idx%s) then
@@ -392,12 +405,12 @@ SUBROUTINE update (self)
     
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,5  ) = &
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,5  ) + &
-    (fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,9,1) - &
+    max(0.0,(fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,9,1) - &
     fl(i0+1:i1+1,j0  :j1  ,k0  :k1  ,9,1) + &
     fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,9,2) - &
     fl(i0  :i1  ,j0+1:j1+1,k0  :k1  ,9,2) + &
     fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,9,3) - &
-    fl(i0  :i1  ,j0  :j1  ,k0+1:k1+1,9,3)) / self%q(i0  :i1  ,j0  :j1  ,k0  :k1  ,9)
+    fl(i0  :i1  ,j0  :j1  ,k0+1:k1+1,9,3))) / self%q(i0  :i1  ,j0  :j1  ,k0  :k1  ,9)
 
   !!!! TO DO !!!! 
   !!! Instead of applying the update in time explicitly in mhd_mod
@@ -538,7 +551,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   call self%counter_update
   if (non_ideal%is_used) &
-    deallocate (fluxambdiff,emfambdiff)
+    deallocate (fluxambdiff,emfambdiff,fluxohmdiss,emfohmdiss)
   deallocate (fl)
   deallocate(em)
   deallocate(self%q)
@@ -557,6 +570,7 @@ SUBROUTINE update (self)
     call divB%clean(self%mesh,B)
   end if
   !.............................................................................
+  call lock%unset ('update')
   call trace%end (itimer)
   if (rieman%ndiff > 0) then
     write(io_unit%mpi,*) 'id,ndiff', self%id, rieman%ndiff, rieman%nsolu
@@ -589,7 +603,7 @@ subroutine check_small (self)
   do j=lo(2),uo(2)
   do i=lo(1),uo(1)
     if (uu(i,j,k,1) < smallr) then
-      error stop "d< smallr"
+      error stop "d < smallr"
       panic = .true.
       if (nprint>0) then
         nprint = nprint-1
@@ -1412,9 +1426,9 @@ SUBROUTINE trace3d(self)
       !    - half*(one/(s+sr0)+one/r)*((p+sp0)-p))*self%dtime
      ! if(ss0/=0) print *, 'bef', ss0, log(p/(p+sp0)*(r/(r+sr0))**gamma)*self%dtime, (log(p/(p+dpx)*(r/(r+drx))**gamma)*dtdx)+(log(p/(p+dpy)*(r/(r+dry))**gamma)*dtdy)+(log(p/(p+dpz)*(r/(r+drz))**gamma)*dtdz)
 
-      ss0 = ss0+(-u*half*log(p/(p+dpx)*(r/(r+drx)))*dtdx)
-      ss0 = ss0+(-v*half*log(p/(p+dpy)*(r/(r+dry)))*dtdy)
-      ss0 = ss0+(-w*half*log(p/(p+dpz)*(r/(r+drz)))*dtdz)
+      !ss0 = ss0+(-u*half*log(p/(p+dpx)*(r/(r+drx)))*dtdx)
+      !ss0 = ss0+(-v*half*log(p/(p+dpy)*(r/(r+dry)))*dtdy)
+      !ss0 = ss0+(-w*half*log(p/(p+dpz)*(r/(r+drz)))*dtdz)
      ! if(ss0/=0) print *, 'af',ss0, (log(p/(p-dpx)*(r/(r-drx))**gamma)*dtdx),(log(p/(p+dpy)*(r/(r+dry))**gamma)*dtdy),(log(p/(p+dpz)*(r/(r+drz))**gamma)*dtdz)
 
   !write(io_unit%log,'("pred: i,j,k,h,dex,dey,dez,se0 =",3i4,2x,1p,5e11.2)') &
