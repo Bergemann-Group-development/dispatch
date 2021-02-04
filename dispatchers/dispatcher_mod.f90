@@ -98,6 +98,7 @@ SUBROUTINE execute (self, task_list)
   !-----------------------------------------------------------------------------
   call task_list%reset_status (check=.true.)
   call task_list%init_task_list_pointers (task_list)
+  call mpi%barrier('pre-execute')
   call task_list%info
   !-----------------------------------------------------------------------------
   ! Call the selected dispatcher method
