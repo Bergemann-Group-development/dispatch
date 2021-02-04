@@ -441,10 +441,10 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   end if
   if (present(only)) then
     if (only==target%idx%d) then
-      call target%check_density (" after download")
+      if (target%is_clear(bits%no_density)) call target%check_density (" after download")
     end if
   else
-    call target%check_density (" after download")
+    if (target%is_clear(bits%no_density)) call target%check_density (" after download")
   end if
   if (self%check_filled) then
     if (all_cells_l) then
@@ -1389,6 +1389,7 @@ SUBROUTINE different (self, target, source, jt, pt, all_cells, only)
   integer                 :: ix, iy, iz, iv, jt(2), iv1, iv2, i, cells
   integer, dimension(3)   :: l, u, ii, li, ui, jj
   real(8), dimension(3)   :: pos
+  real(kind=KindScalarVar), pointer:: q1(:,:,:,:), q2(:,:,:,:)
   logical                 :: valid
   real                    :: pt(2), pp(3)
   real(kind=KindScalarVar):: qint
@@ -1443,7 +1444,8 @@ SUBROUTINE different (self, target, source, jt, pt, all_cells, only)
         source%id, (source%position-target%position)/target%size, l, u, all_cells_l
       1 format("DBG download_t%different:", i6,"  displ:",3f11.6,"  l,u:",2(3i4,2x),l3)
     flush (io_unit%log)
-    associate (q1 => source%mem(:,:,:,:,jt(1),1), q2 => source%mem(:,:,:,:,jt(2),1))
+    q1 => source%mem(:,:,:,:,jt(1),1)
+    q2 => source%mem(:,:,:,:,jt(2),1)
     do iz=l(3),u(3)
       do iy=l(2),u(2)
         do ix=l(1),u(1)
@@ -1476,7 +1478,6 @@ SUBROUTINE different (self, target, source, jt, pt, all_cells, only)
         end do
       end do
     end do
-    end associate
     if (verbose > 0 .or. target%id==id_debug) then
       if (iv == 1 .or. verbose > 2) &
         write (io_unit%log,2) target%id, target%level, source%id, source%level, &
@@ -1562,8 +1563,10 @@ SUBROUTINE different_prolong (self, target, source, jt, pt, all_cells, only)
   nperv = 0
   cells = 0
   allocate (dtmp(target%gn(1),target%gn(2),target%gn(3)))
-  d1 => source%mem(:,:,:,source%idx%d,jt(1),1)
-  d2 => source%mem(:,:,:,source%idx%d,jt(2),1)
+  if (source%is_clear(bits%no_density)) then
+    d1 => source%mem(:,:,:,source%idx%d,jt(1),1)
+    d2 => source%mem(:,:,:,source%idx%d,jt(2),1)
+  end if
   do iv=iv1,iv2
     ! -- `dphi` is part of `mem` when `time_order` = 0; do not download it.
     if (iv == target%idx%dphi) cycle
@@ -1622,9 +1625,11 @@ SUBROUTINE different_prolong (self, target, source, jt, pt, all_cells, only)
             if (source%unsigned(iv)) then
               nexp = nexp+1
               qint = exp(interpolator%four_d_log (q, jj(1), jj(2), jj(3), jt, [pp,pt(2)]))
+              if (source%is_clear(bits%no_density)) then
               if (iv==target%idx%d) &
                 dtmp(ix,iy,iz) = qint
-            else if (source%pervolume(iv)) then
+              end if
+            else if (source%pervolume(iv).and.source%is_clear(bits%no_density)) then
               nperv = nperv+1
               qint = interpolator%four_d_pv (q, d1, d2, jj(1), jj(2), jj(3), jt, [pp,pt(2)])
               qint = qint * dtmp(ix,iy,iz)
@@ -1849,6 +1854,7 @@ SUBROUTINE prolong (self, target, source, jt, pt, all_cells, only)
 contains
   subroutine mem_interp 
     real:: q1, q2, q3, q4
+    real(kind=KindScalarVar):: p1, p2, p3, p4
     integer:: j
     !print *, iv, m, target%pervolume(iv), target%unsigned(iv)
     !---------------------------------------------------------------------------
@@ -1873,7 +1879,10 @@ contains
     ! Interpolate, vectorized
     !---------------------------------------------------------------------------
     do j=1,m
-      associate (p1=>pbuf(j,1), p2=>pbuf(j,2), p3=>pbuf(j,3), p4=>pbuf(j,4))
+      p1 =pbuf(j,1)
+      p2 =pbuf(j,2)
+      p3 =pbuf(j,3)
+      p4 =pbuf(j,4)
       q1 = 1.0-p1
       q2 = 1.0-p2
       q3 = 1.0-p3
@@ -1886,7 +1895,6 @@ contains
                         p2*(q1*sbuf(j,1,2,1,2)+p1*sbuf(j,2,2,1,2)))  + &
                     p3*(q2*(q1*sbuf(j,1,1,2,2)+p1*sbuf(j,2,1,2,2))   + &
                         p2*(q1*sbuf(j,1,2,2,2)+p1*sbuf(j,2,2,2,2))))
-      end associate
     end do
     !---------------------------------------------------------------------------
     ! Take exp of unsigned variables
