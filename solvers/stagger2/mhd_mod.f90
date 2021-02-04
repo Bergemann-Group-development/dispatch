@@ -713,6 +713,12 @@ SUBROUTINE update (self)
   real(kind=KindScalarVar), pointer:: B(:,:,:,:)
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%update',itimer=itimer)
+  !-----------------------------------------------------------------------------
+  ! Output the state after guard zone downloads, selfgravity, and boundary
+  ! conditions. If another call is placed at an earlier point in the task handling
+  ! the call here will have no effect, since out_next has already been updated.
+  !-----------------------------------------------------------------------------
+  call self%output
   if (self%gamma==1d0) then
     self%mem(:,:,:,self%idx%e,self%it,1) = &
     self%mem(:,:,:,self%idx%d,self%it,1)*self%csound**2
@@ -727,12 +733,6 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   mem => self%mem(:,:,:,:,self%it,:)
   call self%boundaries%derivative(mem)
-  !-----------------------------------------------------------------------------
-  ! Output the state after guard zone downloads, selfgravity, and boundary
-  ! conditions. If another call is placed at an earlier point in the task handling
-  ! the call here will have no effect, since out_next has already been updated.
-  !-----------------------------------------------------------------------------
-  call self%output
   !-----------------------------------------------------------------------------
   ! The call to courant_condition may optionally be interscepted in extras_t
   !-----------------------------------------------------------------------------
