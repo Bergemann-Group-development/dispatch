@@ -314,6 +314,7 @@ FUNCTION refine_needed (self, tasklist, link) RESULT (refine)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   refine = 0
+  if (.not. self%on) return
   call trace%begin('refine_t%needed', itimer=itimer, detailed_timer=detailed_timer)
   !-----------------------------------------------------------------------------
   ! Refinement criteria, starting with assumed derefinement
@@ -843,7 +844,9 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   ! Initialise the new patch
   !-----------------------------------------------------------------------------
   child%level = parent%level + 1                     ! must be set before init!
+  !call child%pre_init()
   call child%init()                                  ! patch, for a new id
+  call child%init_bdries
   child%level = parent%level + 1                     ! override patch_t%init
   child%time  = parent%time                          ! same time
   child%dtime = parent%dtime/self%ratio              ! for info only
