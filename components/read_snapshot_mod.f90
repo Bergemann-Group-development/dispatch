@@ -352,7 +352,7 @@ SUBROUTINE read_bifrost_snap (task_list)
       if (do_means) then
         m => patch%mesh
         if (m(3)%lower_boundary) then
-          zpos = m(3)%r(m(3)%lo)+m(3)%p
+          zpos = m(3)%r(m(3)%li)+m(3)%p
           patch%boundaries%d_bot = lagrange%interpolate1d8(zpos,mz,real(zm,8),real(d_mean,8))
           patch%boundaries%e_bot = lagrange%interpolate1d8(zpos,mz,real(zm,8),real(e_mean,8))
         end if
@@ -624,7 +624,7 @@ SUBROUTINE read_stagger_snap (task_list)
       if (do_means) then
         m => patch%mesh
         !if (m(3)%lower_boundary) then
-          zpos = m(3)%r(m(3)%lo)+m(3)%p
+          zpos = m(3)%r(m(3)%li)+m(3)%p
           !zpos = patch%origin(3)+ 0.5*m(3)%d
           patch%boundaries%d_bot = lagrange%interpolate1d8(zpos,mz,real(zm,8),real(d_mean,8),order=1)
           patch%boundaries%e_bot = lagrange%interpolate1d8(zpos,mz,real(zm,8),real(e_mean,8),order=1)
