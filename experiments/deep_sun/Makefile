@@ -8,9 +8,9 @@ OPTS =
 # Default target and methods
 iUPD             = adams_bashforth
 RT_SOLVER       = short_characteristics
-#SOLVER          = ramses/mhd_eos
-SOLVER          = stagger2/bifrost
-STAGGER         = stagger_6th.o
+SOLVER          = ramses/mhd_eos
+#SOLVER          = stagger2/bifrost
+#STAGGER         = stagger_6th.o
 EXEC            = dispatch.x
 PARTICLE_SOLVER=
 TOP             = ../..
@@ -38,10 +38,10 @@ $(EXEC)            : cartesian_mod.o setup_mod.o eos_mod.o dispatcher_mod.o \
 
 # Other local ependencies
 extras_mod.o       : patch_mod.o gpatch_mod.o connect_mod.o gravity_mod.o \
-                     newton_mod.o rt_mod.o spitzer_mod.o
-boundaries_mod.o   : standard_boundaries_mod.o io_mod.o trace_mod.o \
-                     mpi_mod.o bits_mod.o mesh_mod.o index_mod.o \
-                     eos_mod.o vector_ops.o units_mod.o scaling_mod.o
+                     newton_mod.o rt_mod.o spitzer_mod.o pressure_node_mod.o
+boundaries_mod.o          : standard_boundaries_mod.o io_mod.o trace_mod.o \
+                            mpi_mod.o bits_mod.o mesh_mod.o index_mod.o \
+                            eos_mod.o vector_ops.o units_mod.o scaling_mod.o
 experiment_mod.o   : link_mod.o solver_mod.o download_mod.o scaling_mod.o \
                      eos_mod.o rt_solver_mod.o vector_ops.o timestep_mod.o
 scaling_mod.o      : io_mod.o trace_mod.o units_mod.o

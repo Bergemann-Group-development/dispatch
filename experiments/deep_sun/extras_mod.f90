@@ -68,6 +68,7 @@ MODULE extras_mod
   !-----------------------------------------------------------------------------
   USE rt_mod                                                           ! RT
   USE newton_mod                                                       ! Newton
+  USE pressure_node_mod                                                ! Pressure node
   !USE forces_mod                                                       ! forces
   !USE trace_particles_mod                                              ! tracep
   USE spitzer_mod                                                      ! spitzer
@@ -90,6 +91,7 @@ MODULE extras_mod
     type(gravity_t):: gravity                                          ! gravity
     class(rt_t), pointer:: rt => null()                                ! RT
     type(newton_t):: newton                                            ! Newton
+    type(pressure_node_t):: pressure_node                              ! pressure_node
     !class(trace_particles_t), pointer:: trace_particles                ! tracep
     !real, dimension(:,:,:,:), pointer:: v                              ! tracep
     !type(cooling_t):: cooling                                          ! cool
@@ -127,6 +129,7 @@ SUBROUTINE pre_init (self)
   self%rt%patch => self
   call self%rt%pre_init                                                 ! RT
   call self%newton%pre_init  (self)                                     ! Newton
+  call self%pressure_node%pre_init  (self)                              ! Pressure node
   call self%gravity%pre_init (self)                                     ! gravity
   call self%spitzer%pre_init (self)                                     ! spitzer
   !allocate (self%trace_particles)                                      ! tracep
@@ -153,11 +156,13 @@ SUBROUTINE init (self)
   class(extras_t):: self
   !.............................................................................
   call trace%begin ('extras_t%init')
+  call self%gpatch_t%init                                               ! keep
   !-----------------------------------------------------------------------------
   ! Optional inits
   !-----------------------------------------------------------------------------
   !call self%forces%init (self)                                         ! forces
   call self%newton%init                                                 ! Newton
+  call self%pressure_node%init                                          ! Pressure node
   !allocate (self%trace_particles)                                      ! tracep
   !self%connect%trace_particles => self%trace_particles                 ! tracep
   !call self%trace_particles%add (self%link%task)                       ! tracep
@@ -254,6 +259,7 @@ SUBROUTINE post_update (self)
   class(extras_t):: self
   !.............................................................................
   !call self%spitzer%post_update
+  call self%pressure_node%post_update                                   ! Pressure node
   !call self%forces%post_update                                         ! forces
   !call self%trace_particles%post_update (self)                         ! tracep
   !call self%pic%post_update()                                          ! pic

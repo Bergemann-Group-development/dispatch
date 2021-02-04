@@ -68,17 +68,15 @@ MODULE boundaries_mod
   logical, save:: deriv_bnd = .false.
   logical, save:: test = .false.
   real, save:: d_bot=0.0, e_bot=0.0, ee_top=0.0
-  real, save:: bottom_bc_rate=0.01
   real, save:: top_bc_rate=0.5
   real, save:: damp_rate=0.01
+  real, save:: bottom_bc_rate=0.01
   real, save:: r_sponge = 0.5
-  real, save:: pb_fact = 1.0
   integer, save:: divb_iter = 4
   ! --- lower_damp parameters
   real, save:: beta_lim   = 1e+2
   real, save:: spot_lower = 0.0
   real, save:: pb_spot    = 0.0
-  real, save:: t_bdry     = 3e+0
 CONTAINS
 
 !===============================================================================
@@ -92,7 +90,7 @@ SUBROUTINE init (self, patch)
   integer:: iostat
   logical, save:: first_time=.true.
   namelist /boundary_params/ d_bot, e_bot, ee_top, bottom_bc_rate, verbose, divb_iter, &
-                             scale, t_bdry, r_sponge, damp_rate, deriv_bnd, pb_fact, &
+                             scale, r_sponge, damp_rate, deriv_bnd, &
                              test, lower_bc, upper_bc
   !-----------------------------------------------------------------------------
   call trace%begin('boundaries_t%init')
@@ -162,7 +160,7 @@ SUBROUTINE primary(self, mem)
       call self%symmetric(bx,idx%bx)
       call self%symmetric(by,idx%by)
       call self%zero_gradient(bz,idx%bz)
-      call self%div_free_lower (bx, by, bz)
+  !    call self%div_free_lower (bx, by, bz)
     end if
     end if
   else
@@ -241,7 +239,7 @@ SUBROUTINE upper1 (self, mem)
     !call self%symmetric(bx,idx%bx)
     !  call self%symmetric(by,idx%by)
     !  call self%zero_gradient(bz,idx%bz)
-    call self%div_free_upper(bx,by,bz)
+    call self%div_free_upper(bx,by,bz,ui,uo)
   end if
     !---------------------------------------------------------------------------
     ! Boundary conditions need the gas pressure
@@ -353,12 +351,14 @@ SUBROUTINE upper2 (self, mem)
   integer, dimension(3):: lb, lo, li, ui, uo, ub, n, gn, ng
   real, dimension(:,:,:), pointer:: d, e, px, py, pz, eth, emag
   real, dimension(:,:,:), pointer:: bx, by, bz, ss, d1, e1, p1
-  real, dimension(:,:), pointer:: em, ep
-  real, dimension(:,:,:), allocatable:: pg
+  real, dimension(:,:,:), pointer:: bx1, by1, bz1
+  real, dimension(:,:),   allocatable:: ep
+  real, dimension(:,:,:), allocatable:: pg, em
   real(8), dimension(:), pointer:: z
   class(mesh_t), pointer:: m3
-  integer:: ix, iy, iz, iz1, i, zi, bn
-  real:: d_ratio, e_ratio, h_scale, p, ee, dlnddz, dlnedz, uz, dddt
+  logical:: e_below=.false.
+  integer:: ix, iy, iz, iz1, i, zi, bn, l(3), u(3), eiminloc(4)
+  real:: d_ratio, e_ratio, h_scale, p, ee, dlnddz, dlnedz, uz, dddt, eimin
   !-----------------------------------------------------------------------------
 
   call trace%begin('boundaries_t%bc_upper')
@@ -383,44 +383,79 @@ SUBROUTINE upper2 (self, mem)
     by => mem(:,:,:,idx%by)
     bz => mem(:,:,:,idx%bz)
     ! --------------------------------------------------------------------------
-    ! First, fix the magnetic fields, as they are needed to get thermal energy
+    ! First, fix the magnetic fields, as they are needed to get thermal energy.
+    ! This is done in several steps:
+    ! 1) allocate temporary arrays for the upper bnd, which have +1 cell in 
+    ! each direction, plus one into the active domain (so nz+2).
+    ! 2) First assume constant B-fields
+    ! 3) Do divB clean
     ! --------------------------------------------------------------------------
-    if (self%mhd) then
-      do iz=uo(3),ub(3)
-        bx(:,:,iz) = bx(:,:,bn)
-        by(:,:,iz) = by(:,:,bn)
-        bz(:,:,iz) = bz(:,:,bn)
+  !if (self%mhd) then
+    allocate(bx1(gn(1)+1,gn(2)+1,ng(3)+2))
+    allocate(by1(gn(1)+1,gn(2)+1,ng(3)+2))
+    allocate(bz1(gn(1)+1,gn(2)+1,ng(3)+2))
+    bx1=0.0
+    by1=0.0
+    bz1=0.0
+    do iz=1,ng(3)+2
+      do iy=1,gn(2)
+        do ix=1,gn(1)
+          bx1(ix,iy,iz) = bx(ix,iy,bn)
+          by1(ix,iy,iz) = by(ix,iy,bn)
+          bz1(ix,iy,iz) = bz(ix,iy,bn)
+        end do
+        bx1(gn(1)+1,iy,iz) = bx(gn(1),iy,bn)
+        by1(gn(1)+1,iy,iz) = by(gn(1),iy,bn)
+        bz1(gn(1)+1,iy,iz) = bz(gn(1),iy,bn)
       end do
-    !call self%extrapolate(bx,idx%bx)
-    !call self%extrapolate(by,idx%by)
-    !call self%zero_gradient(bz,idx%bz)
-    !call self%symmetric(bx,idx%bx)
-    !  call self%symmetric(by,idx%by)
-    !  call self%zero_gradient(bz,idx%bz)
-    call self%div_free_upper(bx,by,bz)
-  end if
+      bx1(1:gn(1),gn(2)+1,iz) = bx(:,gn(2),bn)
+      by1(1:gn(1),gn(2)+1,iz) = by(:,gn(2),bn)
+      bz1(1:gn(1),gn(2)+1,iz) = bz(:,gn(2),bn)
+      bx1(gn(1)+1,gn(2)+1,iz) = bx(gn(1),gn(2),bn)
+      by1(gn(1)+1,gn(2)+1,iz) = by(gn(1),gn(2),bn)
+      bz1(gn(1)+1,gn(2)+1,iz) = bz(gn(1),gn(2),bn)
+    end do
+    u(1)=gn(1)+1
+    u(2)=gn(2)+1
+    u(3)=ng(3)+2
+    l(:)= 1
+    call self%div_free_upper(bx1,by1,bz1,l,u)
+    !---------------------------------------------------------------------------
+    ! Put the magnetic fields back in
+    !---------------------------------------------------------------------------
+    zi=1
+    do iz=bn,gn(3)
+      do iy=1,gn(2)
+        do ix=1,gn(1)
+          bx(ix,iy,iz)=bx1(ix,iy,zi)
+          by(ix,iy,iz)=by1(ix,iy,zi)
+          bz(ix,iy,iz)=bz1(ix,iy,zi)
+        end do
+      end do
+      zi=zi+1
+    end do
+    allocate(em (gn(1),gn(2),ng(3)+1))
+    do iz=1,ng(3)+1
+      do iy=1,gn(2)
+        do ix=1,gn(1)
+          em(ix,iy,iz) = ((0.5*(bx1(ix,iy,iz)+bx1(ix+1,iy,iz)))**2 + &
+                          (0.5*(by1(ix,iy,iz)+by1(ix,iy+1,iz)))**2 + &
+                          (0.5*(bz1(ix,iy,iz)+bz1(ix,iy,iz+1)))**2)* 0.5
+        end do
+      end do
+    end do
+  !end if
     !---------------------------------------------------------------------------
     ! Boundary conditions need the gas pressure
     !---------------------------------------------------------------------------
     d1 => d(:,:,ui(3):ui(3))
     allocate(e1 (gn(1),gn(2),1))
-    allocate(em (gn(1),gn(2)))
-    do iy=1,gn(2)-1
-      do ix=1,gn(1)-1
-        em(ix,iy) = ((0.5*(bx(ix,iy,bn)+bx(ix+1,iy,bn)))**2 + &
-                     (0.5*(by(ix,iy,bn)+by(ix,iy+1,bn)))**2 + &
-                     (0.5*(bz(ix,iy,bn)+bz(ix,iy,bn+1)))**2)* 0.5
-      end do
-    end do
-    em(gn(1),:)=em(gn(1)-1,:)
-    em(:,gn(2))=em(:,gn(2)-1)
     if (self%patch%kind(1:6)/='ramses') then
       e1(:,:,1)  = e(:,:,bn)/d(:,:,bn)
       eth => e(:,:,uo(3):ub(3))
     else
       allocate(ep (gn(1),gn(2)))
       allocate(eth(gn(1),gn(2),ng(3)))
-      allocate(emag(gn(1),gn(2),ng(3)))
       do iy=1,gn(2)
         do ix=1,gn(1)
           ep(ix,iy) = 0.5* (px(ix,iy,bn)*px(ix,iy,bn) + &
@@ -430,25 +465,37 @@ SUBROUTINE upper2 (self, mem)
       end do
       do iy=1,gn(2)
         do ix=1,gn(1)
-          e1(ix,iy,1) = (e(ix,iy,bn) - em(ix,iy) - ep(ix,iy)) / d1(ix,iy,1)
+          e1(ix,iy,1) = (e(ix,iy,bn) - em(ix,iy,1) - ep(ix,iy)) / d1(ix,iy,1)
         end do
       end do     
     end if
-  !---------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   ! Boundary conditions need the gas pressure in one layer
-  !---------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   allocate (pg(size(d,1),size(d,2),1))
-!if (self%id==757) then
-if (any(e1<eos%ee_min)) then
-  print *, self%id
-  print *, minval (e1), maxval(e1),eos%ee_min, minloc(e1), self%ee_top
-  print *, em(22,17), ep(22,17), e(22,17,bn)
-  print *, 'b', bx(22,17,bn), by(22,17,bn), bz(22,17,bn)
-  print *, 'pz', pz(ix,iy,bn)
-  if (any(e1<eos%ee_min))error stop "e1 leq ee_min"
-end if
-if (self%patch%kind(1:6)=='ramses') deallocate(ep)
-  call eos%lookup_table (shape(pg), pg=pg, d=d1, ee=e1, label='upper_bnd2', id=self%id)
+  !
+  if (any(e1<eos%ee_min)) then
+    print *, self%id
+    print *, minval (e1), maxval(e1),eos%ee_min, minloc(e1), self%ee_top
+    print *, em(22,17,:), ep(22,17), e(22,17,bn)
+    print *, 'b', bx(22,17,bn), by(22,17,bn), bz(22,17,bn)
+    print *, 'pz', pz(ix,iy,bn)
+    if (any(e1<eos%ee_min))error stop "e1 leq ee_min"
+  end if
+  !
+  if (self%patch%kind(1:6)=='ramses')  deallocate(ep)
+  !-----------------------------------------------------------------------------
+  ! Lookup gas pressure
+  !-----------------------------------------------------------------------------
+  call eos%lookup_table (shape(pg), pg=pg, d=d1, ee=e1, label='upper_bnd2', id=self%patch%id, e_below=e_below)
+ !if (e_below) then
+ !  print *, 'e_below triggered', self%patch%id, self%patch%level
+ !  print *, 'e, minmax', minval(e1), maxval(e1)
+ !  print *, 'ep, minmax', minval(ep), maxval(ep)
+ !  print *, 'em, minmax', minval(em), maxval(em)
+ !  print *, 'd, minmax', minval(d1), maxval(d1)
+ !end if
+eimin=9990.0
   zi = 1
   do iz=uo(3),ub(3)
     do iy=lb(2),ub(2)
@@ -469,6 +516,15 @@ if (self%patch%kind(1:6)=='ramses') deallocate(ep)
       d(ix,iy,iz) = d(ix,iy,bn)*d_ratio
 
       eth(ix,iy,zi) = d(ix,iy,iz)*ee
+      if (ee<eimin) then
+        eimin=min(eimin,ee)
+        eiminloc=[ix,iy,iz,zi]
+      end if
+      if (ee<eos%ee_min) then 
+        print *, 'ee goes below..', ix, iy,zi
+        print *, ee, eos%ee_min, self%ee_top, e1(ix,iy,1), pz(ix,iy,bn)
+        error stop "end"
+      end if
       !-----------------------------------------------------------------------
       ! 2) The horizontal components of the momenta are assumed to taper off
       ! with density, consistent with assuming a no-shear boundary condition
@@ -501,31 +557,24 @@ if (self%patch%kind(1:6)=='ramses') deallocate(ep)
       end do
       zi = zi+1
     end do
-    zi=1
-    do iz=uo(3),ub(3)-1
-      do iy=1,gn(2)-1
-        do ix=1,gn(1)-1
-          emag(ix,iy,zi) = &
-                          ((0.5*(bx(ix,iy,iz)+bx(ix+1,iy,iz)))**2 + &
-                           (0.5*(by(ix,iy,iz)+by(iy,iy+1,iz)))**2 + &
-                           (0.5*(bz(ix,iy,iz)+bz(iz,iy,iz+1)))**2)* 0.5*1.01
-        end do
-      end do
-      zi = zi+1
-    end do
-    emag(gn(1),:,:)=emag(gn(1)-1,:,:)
-    emag(:,gn(2),:)=emag(:,gn(2)-1,:)
-    emag(:,:,ng(3))=emag(:,:,ng(3)-1)
-    zi=1
+    zi=2
     do iz=uo(3),ub(3)
       do iy=lb(2),ub(2)
         do ix=lb(1),ub(1)
-          e(ix,iy,iz) = e(ix,iy,iz) + emag(ix,iy,zi)
+          e(ix,iy,iz) = e(ix,iy,iz) + em(ix,iy,zi)
         end do
       end do
       zi = zi+1
     end do
-    deallocate(eth,emag, e1,em)
+   !if (self%patch%id==79) then
+   !  print *,'----'
+   !  print *, self%patch%id, 'eth min', eth(3,16,2), eimin, eiminloc, eth(3,16,2)/d(3,16,27), 'fin', e(3,16,27), d(3,16,27)
+   !  print *, em(3,16,2), px(3,16,27), py(3,16,27),pz(3,16,27)
+   !  print *, 'bx,bx1', bx(3,16,27), bx1(3,16,2)
+   !  print *, 'by,by1', by(3,16,27), by1(3,16,2)
+   !  print *, 'bz,bz1', bz(3,16,27), bz(3,16,28), bz1(3,16,2),bz1(3,16,3)
+   !end if
+    deallocate(eth,e1,em, bx1, by1, bz1)
   end if 
 call trace%end()
 END SUBROUTINE upper2
@@ -721,7 +770,7 @@ SUBROUTINE lower1 (self, mem)
       call self%symmetric(bx,idx%bx)
       call self%symmetric(by,idx%by)
       call self%zero_gradient(bz,idx%bz)
-      call self%div_free_lower (bx, by, bz)
+  !    call self%div_free_lower (bx, by, bz)
     end if
     deallocate (d1, e1, p1, pg,e2)
     call trace%end()
@@ -769,7 +818,7 @@ SUBROUTINE lower1 (self, mem)
       call self%symmetric(bx,idx%bx)
       call self%symmetric(by,idx%by)
       call self%zero_gradient(bz,idx%bz)
-      call self%div_free_lower (bx, by, bz)
+    !  call self%div_free_lower (bx, by, bz)
     end if
   end if
   
@@ -949,7 +998,7 @@ SUBROUTINE lower2 (self, mem)
       call self%symmetric(bx,idx%bx)
       call self%symmetric(by,idx%by)
       call self%zero_gradient(bz,idx%bz)
-      call self%div_free_lower (bx, by, bz)
+     ! call self%div_free_lower (bx, by, bz)
     end if
     !deallocate (d1, e1, p1, pg)
   else
@@ -963,7 +1012,7 @@ SUBROUTINE lower2 (self, mem)
       call self%symmetric(bx,idx%bx)
       call self%symmetric(by,idx%by)
       call self%zero_gradient(bz,idx%bz)
-     call self%div_free_lower (bx, by, bz)
+     !call self%div_free_lower (bx, by, bz)
     end if
   end if
   ! --------------------------------------------------------------------------
@@ -1005,21 +1054,26 @@ SUBROUTINE lower_trap (self, mem)
   ! ----------------------------------------------------------------------------
   integer, dimension(3):: lb, lo, li, ui, uo, ub, gn, n, ng
   real, dimension(:,:,:), pointer:: d, e, px, py, pz, bx, by, bz, ss, d1, e1, p1
-  real(kind=KindScalarVar), dimension(:,:), pointer:: ee_bnd, d_bnd, u_bnd
-  real(kind=KindScalarVar), dimension(:,:), pointer:: dlnpdlnr_E, dlnpdE_r
-  real, dimension(:,:),   pointer:: p_bot, pb
-  real(kind=KindScalarVar) :: ct, beta_z, ee_bot, d_bot_loc, e_bot_loc
+  real(kind=KindScalarVar) :: beta_z, ee_bot, d_bot_loc, e_bot_loc
   real(kind=KindScalarVar) :: F1,F2,F3,F4,F5,hh,dddt_add, dddt_b, dedt_b
-  real(kind=KindScalarVar) :: u_sm, dd, deth
-  real, dimension(:,:,:), pointer::  ux, uy, uz, eth, emag
-  real, dimension(:,:,:), allocatable:: pg
+  real(kind=KindScalarVar) :: dd, deth
+  real, dimension(:,:,:), pointer::  ux, uy, uz, eth, em
+  real, dimension(:,:,:), allocatable:: pg, bx1, by1, bz1
   !real, dimension(:,:,:,:), pointer:: dd
   real(8), dimension(:), pointer:: z
   class(mesh_t), pointer:: m3
-  integer:: ix, iy, iz, iz1
-  real:: d_ratio, e_ratio, ee_ratio, h_scale, p, ee, dlnddz, dlnedz, dlneedz, uux, uuy, uuz
+  integer:: ix, iy, iz, iz1, i1,i2, j1,j2, u(3), l(3)
+  real:: d_ratio, e_ratio, h_scale, p, ee, dlnddz, dlnedz, uux, uuy, uuz,nrm
   !-----------------------------------------------------------------------------
   call trace%begin('boundries_t%bc_lower')
+  !
+  if (self%first_lower) then
+    self%first_lower = .false.
+    if (d_bot /= 0.0) self%d_bot = d_bot
+    if (e_bot /= 0.0) self%e_bot = e_bot
+  !  print *, self%d_bot, self%e_bot
+  end if
+  !
   lb = self%mesh%lb; lo = self%mesh%lo; li = self%mesh%li
   ub = self%mesh%ub; uo = self%mesh%uo; ui = self%mesh%ui
   gn = self%mesh%gn
@@ -1034,239 +1088,146 @@ SUBROUTINE lower_trap (self, mem)
   bx => mem(:,:,:,idx%bx)
   by => mem(:,:,:,idx%by)
   bz => mem(:,:,:,idx%bz)
+
+   ! --------------------------------------------------------------------------
+    ! First, fix the magnetic fields, as they are needed to get thermal energy.
+    ! This is done in several steps:
+    ! 1) Apply symmetric BC to horizontal fields and constant to vertical
+    ! 2) allocate temporary arrays for the upper bnd, which have +1 cell in 
+    ! horizontal direction and li(3)+3 in vertical.
+    ! 3) Fill in temporary arrays
+    ! 3) Do divB clean
+    ! --------------------------------------------------------------------------
+  if (self%mhd) then
+    call self%symmetric(bx,idx%bx)
+    call self%symmetric(by,idx%by)
+    call self%zero_gradient(bz,idx%bz)
+    allocate(bx1(gn(1)+1,gn(2)+1,li(3)+3))
+    allocate(by1(gn(1)+1,gn(2)+1,li(3)+3))
+    allocate(bz1(gn(1)+1,gn(2)+1,li(3)+3))
+    do iz=1,li(3)+3
+      do iy=1,gn(2)
+        do ix=1,gn(1)
+          bx1(1:gn(1),iy,iz) = bx(:,iy,iz)
+          by1(1:gn(1),iy,iz) = by(:,iy,iz)
+          bz1(1:gn(1),iy,iz) = bz(:,iy,iz)
+        end do
+        bx1(gn(1)+1,iy,iz) = bx(gn(1),iy,iz)
+        by1(gn(1)+1,iy,iz) = by(gn(1),iy,iz)
+        bz1(gn(1)+1,iy,iz) = bz(gn(1),iy,iz)
+      end do
+      bx1(1:gn(1),gn(2)+1,iz) = bx(:,gn(2),iz)
+      by1(1:gn(1),gn(2)+1,iz) = by(:,gn(2),iz)
+      bz1(1:gn(1),gn(2)+1,iz) = bz(:,gn(2),iz)
+    end do
+    u(1)=gn(1)+1
+    u(2)=gn(2)+1
+    u(3)=li(3)
+    l(:)= 1
+    call self%div_free_lower(bx1,by1,bz1,l,u)
+    !---------------------------------------------------------------------------
+    ! Put the magnetic fields back in
+    !---------------------------------------------------------------------------
+    do iz=1,lo(3)
+      do iy=1,gn(2)
+        do ix=1,gn(1)
+          bx(ix,iy,iz)=bx1(ix,iy,iz)
+          by(ix,iy,iz)=by1(ix,iy,iz)
+          bz(ix,iy,iz)=bz1(ix,iy,iz)
+        end do
+      end do
+    end do
+    if (self%patch%kind(1:6)=='ramses') then
+      allocate(em (gn(1),gn(2),li(3)+2))
+      do iz=1,li(3)+2
+        do iy=1,gn(2)
+          do ix=1,gn(1)
+            em(ix,iy,iz) = ((0.5*(bx1(ix,iy,iz)+bx1(ix+1,iy,iz)))**2 + &
+                            (0.5*(by1(ix,iy,iz)+by1(ix,iy+1,iz)))**2 + &
+                            (0.5*(bz1(ix,iy,iz)+bz1(ix,iy,iz+1)))**2)* 0.5
+          end do
+        end do
+      end do
+    end if
+    deallocate(bx1,by1,bz1)
+  end if
   
   if (self%patch%kind(1:6)/='ramses') then
     eth => e
   else
     allocate(eth(gn(1),gn(2),li(3)+2))
-    allocate(emag(gn(1),gn(2),li(3)+2))
-    eth = e(:,:,:li(3)+2) - &
-         0.5*(px(:,:,:li(3)+2)**2 + &
-              py(:,:,:li(3)+2)**2 + &
-              pz(:,:,:li(3)+2)**2)/ d(:,:,:li(3)+2)
-    !
-    do iz=1,li(3)+2
-      do iy=1,gn(2)-1
-        do ix=1,gn(1)-1
-          emag(ix,iy,iz) = &
-                          ((bx(ix,iy,iz)+bx(ix+1,iy,iz))**2 + &
-                           (by(ix,iy,iz)+by(iy,iy+1,iz))**2 + &
-                           (bz(ix,iy,iz)+bz(iz,iy,iz+1))**2) * 0.125
+    do iz=li(3),li(3)+2
+      do iy=1,gn(2)
+        do ix=1,gn(1)
+          eth(ix,iy,iz) =  e(ix,iy,iz) - &
+                    0.5* (px(ix,iy,iz)**2 + &
+                          py(ix,iy,iz)**2 + &
+                          pz(ix,iy,iz)**2)/ &
+                           d(ix,iy,iz)
         end do
       end do
     end do
-    emag(gn(1),:,:)=emag(gn(1)-1,:,:)
-    emag(:,gn(2),:)=emag(:,gn(2)-1,:)
-    eth = eth - emag
+    !
+    do iz=li(3),li(3)+2
+      do iy=1,gn(2)
+        do ix=1,gn(1)
+          eth(ix,iy,iz) = eth(ix,iy,iz) - em(ix,iy,iz)
+        end do
+      end do
+    end do
   end if
-   !
-  if (self%first_lower) then
-    self%first_lower = .false.
-    if (d_bot /= 0.0) self%d_bot = d_bot
-    if (e_bot /= 0.0) self%e_bot = e_bot
-  !  print *, self%d_bot, self%e_bot
-  end if
+
   !-----------------------------------------------------------------------------
-  ! First, do just for lo(3)
+  ! Now that we have internal energy and fixed magnetic fields, we are ready
+  ! to work on the guard zones.
   ! ----------------------------------------------------------------------------
   do iy=lb(2),ub(2)
     do ix=lb(1),ub(1)
       dlnddz = log(d(ix,iy,li(3)+2)/d(ix,iy,li(3)))/(z(li(3))-z(li(3)+2))
       dlnedz = log(eth(ix,iy,li(3)+2)/eth(ix,iy,li(3)))/(z(li(3))-z(li(3)+2))
-      dlneedz = log((eth(ix,iy,li(3)+2)/d(ix,iy,li(3)+2)) &
-                    *d(ix,iy,li(3))/eth(ix,iy,li(3)))/(z(li(3))-z(li(3)+2))
-      !print *, 'dlnddz dlnedz', dlnddz, dlnedz, dlneedz
-      !-------------------------------------------------------------------------
-      ! We assume that the iz index of the last free values is li(3), except
-      ! for pz, for which it us li(3)+1.  Hence, if there are 2 guard zones, we
-      ! set 3 values for pz, and 2 values for the other variables
-      !-------------------------------------------------------------------------
-    !do iz=lo(3),lb(3),-1
-    iz = lo(3)
+      do iz = lo(3),lb(3),-1
         d_ratio = exp((z(li(3))-z(iz))*dlnddz)
         e_ratio = exp((z(li(3))-z(iz))*dlnedz)
-        ee_ratio = exp((z(li(3))-z(iz))*dlneedz)
-        !print *, 'd ratio', d_ratio, 1/d_ratio,  d(ix,iy,li(3))*d_ratio
-        !print *, 'e ratio', e_ratio, 1/e_ratio, e(ix,iy,li(3))*e_ratio
-        d(ix,iy,iz)  =  d(ix,iy,li(3))*d_ratio
-        
-        !ee  =  (eth(ix,iy,li(3))/d(ix,iy,li(3)))*ee_ratio*d(ix,iy,iz)
-        !
-        eth(ix,iy,iz)  =  e(ix,iy,li(3))*e_ratio
-        px(ix,iy,iz) = px(ix,iy,li(3))*d_ratio
-        py(ix,iy,iz) = py(ix,iy,li(3))*d_ratio
-        pz(ix,iy,iz) = pz(ix,iy,li(3))*d_ratio
-      !end do
-    end do
-  end do
-  ! ----------------------------------------------------------------------------
-  ! Magnetic field boundaries -- might need extra work!
-  ! ----------------------------------------------------------------------------
-  if (self%mhd) then
-    call self%symmetric(bx,idx%bx)
-    call self%symmetric(by,idx%by)
-    call self%zero_gradient(bz,idx%bz)
-    call self%div_free_lower (bx, by, bz)
-  end if
-  ! ----------------------------------------------------------------------------
-  ! Add a pressure trap at lo(3)
-  ! ----------------------------------------------------------------------------
-  n = shape(d)
-  ct = 1.0/t_bdry                                                               ! characteristic damping constant
-  !ct = bottom_bc_rate!1.0/t_bdry                                                               ! characteristic damping constant
-  
-  !  --- allocate scratch arrays ---  
-  allocate(ee_bnd    (n(1),n(2)))
-  allocate( d_bnd    (n(1),n(2)))
-  allocate( pb       (n(1),n(2)))                                               ! magnetic pressure
-  allocate(dlnpdE_r  (n(1),n(2)))
-  allocate(dlnpdlnr_E(n(1),n(2)))
-  allocate (p_bot(size(d,1),size(d,2)))
-  allocate (u_bnd(size(d,1),size(d,2)))
-
-  d_bnd  = d(:,:,lo(3))
-  ee_bnd = eth(:,:,lo(3))/d_bnd
-  !
-  ! ----------------------------------------------------------------------------
-  ! Compute the pressure pg at the bottom BC, and what we would like it to be
-  ! ----------------------------------------------------------------------------
-  allocate (d1(size(d,1),size(d,2),2))
-  allocate (e1(size(d,1),size(d,2),2))
-  allocate (p1(size(d,1),size(d,2),2))
-  d1(:,:,1) = self%d_bot                                                        ! mean constant density in the simulation box
-  d1(:,:,2) = d(:,:,lo(3))                                                      ! current density
-  e1(:,:,1) = self%e_bot                                                        ! mean constant energy density in the simulation box
-  e1(:,:,2) = eth(:,:,lo(3))                                                    ! current energy density
-
-  call eos%lookup_table (shape(p1), pg=p1, d=d1, e=e1, label='lower trap', id=self%id)
-  !
-  p_bot=bottom_bc_rate*p1(:,:,1) + (1.0-bottom_bc_rate)*p1(:,:,2)
-  deallocate (d1, e1, p1)
-  ! ----------------------------------------------------------------------------
-  ! Get gas flow patterns
-  ! ----------------------------------------------------------------------------
-  if (self%patch%kind(1:6)=='ramses') then
-    u_bnd=pz(:,:,li(3))/d(:,:,li(3))
-  else
-    u_bnd=0.5*(pz(:,:,li(3))+pz(:,:,li(3)+1))/d(:,:,li(3))
-  end if
-  ! ----------------------------------------------------------------------------
-  ! Get pressure and thermodynamic derivatives for pressure variation, scaling 
-  ! factors for the damping of pressure fluctuations.
-  ! dP/dee_r with constant density
-  ! dP/dr_ee with constant ee=e/d
-  ! ----------------------------------------------------------------------------
-  call eos%ddeos(ee=ee_bnd, d=d_bnd, dlnpdE_r=dlnpdE_r,dlnpdlnr_E=dlnpdlnr_E)
-
-  iz=lo(3)
-  do iy=1,gn(2)-1
-    do ix=1,gn(1)-1
-      pb(ix,iy) = &
-                ((bx(ix,iy,iz)+bx(ix+1,iy,iz))**2 + &
-                 (by(ix,iy,iz)+by(iy,iy+1,iz))**2 + &
-                 (bz(ix,iy,iz)+bz(iz,iy,iz+1))**2) * 0.125
-    end do
-  end do
-  pb(gn(1),:)=pb(gn(1)-1,:)
-  pb(:,gn(2))=pb(:,gn(2)-1)
-  
-  do iy=lb(2), ub(2)
-    do ix = lb(1), ub(1)
-      F1 = dlnpdlnr_E(ix,iy)                                                    ! EOS table dlnpdlnr_E
-      F2 = dlnpdE_r(ix,iy)                                                      ! EOS table dlnpdE_r
-      hh = ee_bnd(ix,iy)+p_bot(ix,iy)/d_bnd(ix,iy)                              ! E in notes
-      F5 = F1 + F2*(hh-ee_bnd(ix,iy))                                           ! H in notes
-      F3 = (F1 - F2*ee_bnd(ix,iy))/F5                                           ! denominator of F3 and F4
-      F4 = F2/F5
-      
-      !u_sm = (u_bnd(ix-1,iy-1) + u_bnd(ix,iy-1) + u_bnd(ix+1,iy-1)  + &
-      !        u_bnd(ix-1,iy  ) + u_bnd(ix,iy  ) + u_bnd(ix+1,iy+1)  + &
-      !        u_bnd(ix-1,iy+1) + u_bnd(ix,iy  ) + u_bnd(ix+1,iy+1)) / 9.0
-      u_sm = u_bnd(ix,iy)
-      ! ------------------------------------------------------------------------
-      ! For outflows
-      !-------------------------------------------------------------------------
-      if (u_sm<=0.) then
-        dddt_add = F3*((self%d_bot-d(ix,iy,lo(3)))*ct) + &
-                   F4*((self%e_bot-e(ix,iy,lo(3)))*ct)
-        d  (ix,iy,lo(3)) = d  (ix,iy,lo(3)) +  dddt_add      ! * self%patch%dtime
-        eth(ix,iy,lo(3)) = eth(ix,iy,lo(3)) + (dddt_add * hh)! * self%patch%dtime
-      ! ------------------------------------------------------------------------
-      ! For inflows
-      ! ------------------------------------------------------------------------
-      else
-        dd = (self%d_bot-d  (ix,iy,lo(3))) * ct! * self%patch%dtime
-        deth = (self%e_bot-eth(ix,iy,lo(3))) * ct !* self%patch%dtime
-        d   (ix,iy,lo(3)) = d   (ix,iy,lo(3)) + dd
-        eth (ix,iy,lo(3)) = eth (ix,iy,lo(3)) + deth
-      end if
-      ! ------------------------------------------------------------------------
-      ! Density and energy perturbations from magnetic pressure
-      ! ------------------------------------------------------------------------
-      dddt_B = -ct*d(ix,iy,lo(3))*pb_fact*pb(ix,iy)/p_bot(ix,iy)/F5
-      dedt_B =  hh*dddt_B
-      d  (ix,iy,lo(3)) = d  (ix,iy,lo(3)) + dddt_B! * self%patch%dtime
-      eth(ix,iy,lo(3)) = eth(ix,iy,lo(3)) + dedt_B! * self%patch%dtime
-    end do
-  end do
-
-  deallocate(ee_bnd, d_bnd, dlnpdE_r, dlnpdlnr_E, p_bot, u_bnd, pb)
-
-  !-----------------------------------------------------------------------------
-  ! Now, extrapolate to lb(3)
-  ! ----------------------------------------------------------------------------
-  do iy=lb(2),ub(2)
-    do ix=lb(1),ub(1)
-      dlnddz = log(d(ix,iy,lo(3)+1)/d(ix,iy,lo(3)))/(z(lo(3))-z(lo(3)+1))
-      dlnedz = log(eth(ix,iy,lo(3)+1)/eth(ix,iy,lo(3)))/(z(lo(3))-z(lo(3)+1))
-      dlneedz = log((eth(ix,iy,lo(3)+1)/d(ix,iy,lo(3)+1)) &
-                    *d(ix,iy,lo(3))/eth(ix,iy,lo(3)))/(z(lo(3))-z(lo(3)+1))
-      !-------------------------------------------------------------------------
-      ! We assume that the iz index of the last free values is li(3), except
-      ! for pz, for which it us li(3)+1.  Hence, if there are 2 guard zones, we
-      ! set 3 values for pz, and 2 values for the other variables
-      !-------------------------------------------------------------------------
-    do iz=lo(3)-1,lb(3),-1
-        d_ratio = exp((z(lo(3))-z(iz))*dlnddz)
-        e_ratio = exp((z(lo(3))-z(iz))*dlnedz)
-        ee_ratio = exp((z(lo(3))-z(iz))*dlneedz)
-        !print *, 'd ratio', d_ratio, 1/d_ratio,  d(ix,iy,li(3))*d_ratio
-        !print *, 'e ratio', e_ratio, 1/e_ratio, e(ix,iy,li(3))*e_ratio
-        d(ix,iy,iz)  =  d(ix,iy,lo(3))*d_ratio
-        
-        ee  =  (eth(ix,iy,lo(3))/d(ix,iy,lo(3)))*ee_ratio*d(ix,iy,iz)
-        !
-        eth(ix,iy,iz)  = ee! e(ix,iy,li(3))*e_ratio
-        px(ix,iy,iz) = px(ix,iy,lo(3))*d_ratio
-        py(ix,iy,iz) = py(ix,iy,lo(3))*d_ratio
-        pz(ix,iy,iz) = pz(ix,iy,lo(3))*d_ratio
+        d  (ix,iy,iz) =  d(ix,iy,li(3))*d_ratio
+        eth(ix,iy,iz) =  eth(ix,iy,li(3))*e_ratio
+        !-----------------------------------------------------------------------
+        ! For outflow, assume velocity is constant.
+        !-----------------------------------------------------------------------
+        if (pz(ix,iy,li(3))<0.0) then
+          px (ix,iy,iz) = px(ix,iy,li(3))*d_ratio
+          py (ix,iy,iz) = py(ix,iy,li(3))*d_ratio
+          pz (ix,iy,iz) = pz(ix,iy,li(3))*d_ratio
+        !-----------------------------------------------------------------------
+        ! For inflow, set the momenta constant, correspoding to velocities, that
+        ! taper off with depth
+        ! ----------------------------------------------------------------------
+        else
+          px (ix,iy,iz) = px(ix,iy,li(3))
+          py (ix,iy,iz) = py(ix,iy,li(3))
+          pz (ix,iy,iz) = pz(ix,iy,li(3))
+        end if
       end do
     end do
   end do
 
-
   ! --------------------------------------------------------------------------
-  ! For Riemann solver, convert back to total energy
+  ! For Riemann solvers, convert back to total energy
   ! --------------------------------------------------------------------------
   if (self%patch%kind(1:6)=='ramses') then
-    e(:,:,:lo(3)) = eth(:,:,:lo(3)) + &
-         0.5*(px(:,:,:lo(3))**2 + &
-              py(:,:,:lo(3))**2 + &
-              pz(:,:,:lo(3))**2)/ d(:,:,:lo(3))
     do iz=1,lo(3)
-      do iy=1,gn(2)-1
-        do ix=1,gn(1)-1
-          emag(ix,iy,iz) = &
-                          ((bx(ix,iy,iz)+bx(ix+1,iy,iz))**2 + &
-                           (by(ix,iy,iz)+by(iy,iy+1,iz))**2 + &
-                           (bz(ix,iy,iz)+bz(iz,iy,iz+1))**2) * 0.125
+      do iy=1,gn(2)
+        do ix=1,gn(1)
+          e(ix,iy,iz) = eth(ix,iy,iz)    + &
+                   0.5* (px(ix,iy,iz)**2 + &
+                         py(ix,iy,iz)**2 + &
+                         pz(ix,iy,iz)**2)/ &
+                          d(ix,iy,iz) +    &
+                         em(ix,iy,iz)
+          
         end do
       end do
     end do
-    emag(gn(1),:,:)=emag(gn(1)-1,:,:)
-    emag(:,gn(2),:)=emag(:,gn(2)-1,:)
-    e(:,:,:lo(3)) = e(:,:,:lo(3)) + emag(:,:,:lo(3))
-    deallocate(eth,emag)
+    deallocate(eth,em)
   end if 
   call trace%end()
 END SUBROUTINE lower_trap
@@ -1371,7 +1332,6 @@ SUBROUTINE lower_damp(self, mem)
   dbdty => mem(:,:,:,idx%by,2)
   !
   n = shape(d)
-  ct = 1.0/t_bdry                                                               ! characteristic damping constant
   !ct = bottom_bc_rate!1.0/t_bdry                                                               ! characteristic damping constant
   allocate(ee_bnd(n(1),n(2)))
   allocate( d_bnd(n(1),n(2)))
@@ -1544,7 +1504,7 @@ SUBROUTINE ddt_boundary_bot(self, mem)
   dbdtz => mem(:,:,:,idx%bz,2)
   !
   n = shape(d)
-  ct = 1.0/t_bdry                                                               ! characteristic damping constant
+!  ct = 1.0/t_bdry                                                               ! characteristic damping constant
   !ct = bottom_bc_rate!1.0/t_bdry                                                               ! characteristic damping constant
   
   !  --- allocate scratch arrays ---  
@@ -1624,7 +1584,7 @@ SUBROUTINE ddt_boundary_bot(self, mem)
       pb = ((0.5*(bx(ix,iy,li(3))+bx(ix+1,iy  ,li(3)  )))**2  + &
                 (0.5*(by(ix,iy,li(3))+bx(ix  ,iy+1,li(3)  )))**2  + &
                 (0.5*(bz(ix,iy,li(3))+bx(ix  ,iy  ,li(3)+1)))**2) * 0.5
-      dddt_B = -ct*d(ix,iy,li(3))*pb_fact*pb/p_bot(ix,iy)/F5
+     ! dddt_B = -ct*d(ix,iy,li(3))*pb_fact*pb/p_bot(ix,iy)/F5
       dedt_B =  hh*dddt_B
       dddt(ix,iy,li(3)) = dddt(ix,iy,li(3)) + dddt_B
       dedt(ix,iy,li(3)) = dedt(ix,iy,li(3)) + dedt_B
@@ -1946,24 +1906,18 @@ END SUBROUTINE radiation2
 !> Divergence-free boundaries. We do div_free operations for Z faces and then
 !> for X/Y parts in the boundary.
 !===============================================================================
-SUBROUTINE div_free_upper(self, b1, b2, b3)
+SUBROUTINE div_free_upper(self, b1, b2, b3, l, u)
   class(boundaries_t):: self
-  real(kind=KindScalarVar), dimension(:,:,:), pointer:: b1, b2, b3
+  real(kind=KindScalarVar), dimension(:,:,:):: b1, b2, b3
+  integer:: l(3), u(3)
   ! ----------------------------------------------------------------------------
   integer:: iter, i1, i2, i3, i
-  integer, dimension(3):: li, ui, lb, ub, lo, uo
   real(8):: ds(3)
   integer:: itimer=0
   !-----------------------------------------------------------------------------
   if (divb_iter<1) return
   call trace%begin('boundaries_t%div_free_upper', itimer=itimer)
-  li = self%mesh%li
-  ui = self%mesh%ui
-  lb = self%mesh%lb
-  ub = self%mesh%ub
-  lo = self%mesh%lo
-  uo = self%mesh%uo
-  ds = self%mesh%d
+  ds = self%patch%mesh%d
   do iter=1,divb_iter
     call iter_z
     call iter_x
@@ -1976,9 +1930,9 @@ contains
     !---------------------------------------------------------------------------
     ! Right x-face.  Initially unconstrained: b2(z) and b3(y) along edges
     !---------------------------------------------------------------------------
-    do i1=lb(1),ub(1)-1
-    do i3=uo(3),ub(3)-1
-    do i2=lb(2),ub(2)-1
+    do i1=l(1),u(1)-1
+    do i3=l(3),u(3)-1
+    do i2=l(2),u(2)-1
       b1(i1+1,i2,i3) =                           + b1(i1,i2,i3)  &
                      - (1./ds(2)*(b2(i1,i2+1,i3) - b2(i1,i2,i3)) &
                      +  1./ds(3)*(b3(i1,i2,i3+1) - b3(i1,i2,i3))) * ds(1)
@@ -1986,19 +1940,16 @@ contains
       !               - b2(i1,i2+1,i3) + b2(i1,i2,i3) &
       !               - b3(i1,i2,i3+1) + b3(i1,i2,i3)
     end do
-      b1(i1+1,ub(2),i3) = b1(i1+1,ub(2)-1,i3)
     end do
-      b1(i1+1,:,ub(3)) = b1(i1+1,:,ub(3)-1)
     end do
-    b1(ub(1),:,:)=b1(ub(1)-1,:,:)
   end subroutine iter_x
   subroutine iter_y
     !---------------------------------------------------------------------------
     ! Right y-face.
     !---------------------------------------------------------------------------
-    do i2=lb(2),ub(2)-1
-    do i3=uo(3),ub(3)-1
-    do i1=lb(1),ub(1)-1
+    do i2=l(2),u(2)-1
+    do i3=l(3),u(3)-1
+    do i1=l(1),u(1)-1
       b2(i1,i2+1,i3) =                           + b2(i1,i2,i3)  &
                      - (1./ds(3)*(b3(i1,i2,i3+1) - b3(i1,i2,i3)) &
                      +  1./ds(1)*(b1(i1+1,i2,i3) - b1(i1,i2,i3))) * ds(2)
@@ -2006,19 +1957,16 @@ contains
       !               - b3(i1,i2,i3+1) + b3(i1,i2,i3) &
       !               - b1(i1+1,i2,i3) + b1(i1,i2,i3)
     end do
-      b2(ub(1),i2+1,i3) = b2(ub(1)-1,i2+1,i3)
     end do
-      b2(:,i2+1,ub(3))  = b2(:,i2+1,ub(3)-1)
     end do
-      b2(:,ub(2),:) = b2(:,ub(2)-1,:)
   end subroutine iter_y
   subroutine iter_z
     !---------------------------------------------------------------------------
     ! Right z-face: Not known, b3(i1,i2,i3+1)
     !---------------------------------------------------------------------------
-    do i3=ui(3),ub(3)-1
-    do i2=lb(2),ub(2)-1
-    do i1=lb(1),ub(1)-1
+    do i3=l(3),u(3)-1
+    do i2=l(2),u(2)-1
+    do i1=l(1),u(1)-1
       b3(i1,i2,i3+1) =                           + b3(i1,i2,i3)  &
                      - (1./ds(1)*(b1(i1+1,i2,i3) - b1(i1,i2,i3)) &
                      +  1./ds(2)*(b2(i1,i2+1,i3) - b2(i1,i2,i3))) * ds(3)
@@ -2026,17 +1974,15 @@ contains
       !               - b1(i1+1,i2,i3) + b1(i1,i2,i3) &
       !               - b2(i1,i2+1,i3) + b2(i1,i2,i3)
     end do
-      b3(ub(1),i2,i3+1) = b3(ub(1)-1,i2,i3+1)
     end do
-      b3(:,ub(2),i3+1)  = b3(:,ub(2)-1,i3+1)
     end do
-    b3(:,:,ub(3)) = b3(:,:,ub(3)-1)
   end subroutine iter_z
 END subroutine div_free_upper
 
-SUBROUTINE div_free_lower(self, b1, b2, b3)
+SUBROUTINE div_free_lower(self, b1, b2, b3, l, u)
   class(boundaries_t):: self
-  real(kind=KindScalarVar), dimension(:,:,:), pointer:: b1, b2, b3
+  real(kind=KindScalarVar), dimension(:,:,:):: b1, b2, b3
+  integer:: l(3), u(3)
   ! ----------------------------------------------------------------------------
   integer:: iter, i1, i2, i3
   integer, dimension(3):: li, ui, lb, ub, lo, uo
@@ -2045,14 +1991,7 @@ SUBROUTINE div_free_lower(self, b1, b2, b3)
   !.............................................................................
   if (divb_iter<1) return
   call trace%begin('boundaries_t%div_free_lower', itimer=itimer)
-  li = self%mesh%li
-  li = self%mesh%li
-  ui = self%mesh%ui
-  lb = self%mesh%lb
-  ub = self%mesh%ub
-  lo = self%mesh%lo
-  uo = self%mesh%uo
-  ds = self%mesh%d
+  ds = self%patch%mesh%d
   do iter=1,divb_iter
     call iter_z
     call iter_x
@@ -2065,15 +2004,12 @@ contains
     !---------------------------------------------------------------------------
     ! Left x-face.  Initially un-constrained: b2(z) and b3(y) along edges
     !---------------------------------------------------------------------------
-    do i1=ub(1)-1,lb(1),-1
-    do i3=li(3)  ,lb(3),-1
-    do i2=lb(2)  ,ub(2)-1
-      b1(i1,i2,i3) =            b1(i1+1,i2,i3)                 &
+    do i1=u(1)-1,l(1),-1
+    do i3=u(3)-1,l(3),-1
+    do i2=l(2),u(2)-1
+      b1(i1,i2,i3) =          + b1(i1+1,i2,i3)                 &
                    + (1./ds(2)*(b2(i1,i2+1,i3) - b2(i1,i2,i3)) &
                    +  1./ds(3)*(b3(i1,i2,i3+1) - b3(i1,i2,i3))) * ds(1)
-      !b1(i1,i2,i3) =                 b1(i1+1,i2,i3)                  &
-      !             + b2(i1,i2+1,i3) - b2(i1,i2,i3) &
-      !             + b3(i1,i2,i3+1) - b3(i1,i2,i3)
     end do
     end do
     end do
@@ -2082,10 +2018,10 @@ contains
     !---------------------------------------------------------------------------
     ! Left y-face.  .  Initially unconstrained: b3(y) along edges
     !---------------------------------------------------------------------------
-    do i2=ub(2)-1,lb(2),-1
-    do i3=li(3)  ,lb(3),-1
-    do i1=lb(1)  ,ub(1)-1
-      b2(i1,i2,i3) =            b2(i1,i2+1,i3) +               &
+    do i2=u(2)-1,l(2),-1
+    do i3=u(3)-1,l(3),-1
+    do i1=l(1)  ,u(1)-1
+      b2(i1,i2,i3) =          + b2(i1,i2+1,i3) +               &
                    + (1./ds(3)*(b3(i1,i2,i3+1) - b3(i1,i2,i3)) &
                    +  1./ds(1)*(b1(i1+1,i2,i3) - b1(i1,i2,i3)))  * ds(2)
       !b2(i1,i2,i3) =                 b2(i1,i2+1,i3) +               &
@@ -2099,10 +2035,10 @@ contains
     !---------------------------------------------------------------------------
     ! Left z-face.  Not known: b3(:,:,l3)
     !---------------------------------------------------------------------------
-    do i3=li(3),lb(3),-1
-    do i2=lb(2),ub(2)-1
-    do i1=lb(1),ub(1)-1
-      b3(i1,i2,i3) =                 b3(i1,i2,i3+1)                 &
+    do i3=u(3)-1,l(3),-1
+    do i2=l(2),u(2)-1
+    do i1=l(1),u(1)-1
+      b3(i1,i2,i3) =          + b3(i1,i2,i3+1)                 &
                    + (1./ds(1)*(b1(i1+1,i2,i3) - b1(i1,i2,i3)) &
                    +  1./ds(2)*(b2(i1,i2+1,i3) - b2(i1,i2,i3))) * ds(3)
       !b3(i1,i2,i3) =                 b3(i1,i2,i3+1)                 &

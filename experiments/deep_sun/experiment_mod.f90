@@ -85,6 +85,7 @@ SUBROUTINE init (self)
   ! Send additional things to boundaries
   ! ----------------------------------------------------------------------------
   self%boundaries%gravity = self%gravity%const_grav
+  self%boundaries%mhd = self%mhd
   call trace%end()
 END SUBROUTINE init
 
@@ -117,6 +118,7 @@ SUBROUTINE clamp_ee(self)
   e => self%mem(:,:,:,self%idx%e,self%it,1)
   d => self%mem(:,:,:,self%idx%d,self%it,1)
   !
+  print *, 'clamping e...'
   do k=l(3),u(3)
     do j=l(2),u(2)
       do i=l(1),u(1)
