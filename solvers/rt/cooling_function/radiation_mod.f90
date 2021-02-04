@@ -43,13 +43,13 @@ SUBROUTINE init (self)
   associate (mx=>self%mesh(1)%gn, my=>self%mesh(2)%gn, mz=>self%mesh(3)%gn)
   !.............................................................................
   call trace%begin ('radiation_mod::init')
-  !$omp critical (radiation_cr)
+  call io%lock%set ('radiation_t%init')
   if (first_time) then
     rewind (io_unit%input); read (io_unit%input, radiation_params, iostat=void)
     !if (io_unit%master) &
       write (*, radiation_params)
   end if
-  !$omp end critical (radiation_cr)
+  call io%lock%unset ('radiation_t%init')
   self%do_radiation = do_radiation
   select case (type)
   case ("Gnedin")
