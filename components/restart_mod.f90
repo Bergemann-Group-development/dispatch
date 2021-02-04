@@ -19,7 +19,7 @@ MODULE restart_mod
   type, public:: restart_t
     integer:: verbose
     integer:: istep
-    type(task_list_t), pointer:: task_list => null()
+    class(task_list_t), pointer:: task_list => null()
     type(mpi_coords_t):: mpi
     real(8):: size(3), origin(3), velocity(3)
     integer:: dims(3)
