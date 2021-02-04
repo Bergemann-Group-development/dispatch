@@ -133,7 +133,8 @@ def _add_nml_list_to(obj,nml_list,verbose=0):
             setattr(obj,name,_param())
             subobj=getattr(obj,name)
             if type(nml_dict) is list:
-                print('WARNING: more than one',key)
+                if (verbose>0):
+                    print('WARNING: more than one',key)
                 nml_dict=nml_dict[0]
             _add_nml_to(subobj,nml_dict,verbose=verbose)
 
@@ -452,6 +453,7 @@ def _var(patch,filed,snap,verbose=0,copy=None):
             print("is_ln:",is_ln)
             print("is_vel:",is_vel)
             print("is_staggered:",is_staggered)
+        tot_e = patch.kind[0:6] == 'ramses'
         v = None
 
         # Check if the index corresponds to a cached array
@@ -528,6 +530,8 @@ def _var(patch,filed,snap,verbose=0,copy=None):
                 """ Expressions common to all other solvers """
                 if patch.ioformat==14 or patch.ioformat==15:
                     v=mem('e')
+                elif not is_staggered:
+                    v = (mem('e')-var('ekin',all=True,verbose=verbose)-var('emag',all=True,verbose=verbose))/mem('d')
                 else:
                     v=mem('e')/mem('d')
 
@@ -537,6 +541,12 @@ def _var(patch,filed,snap,verbose=0,copy=None):
                         var('ux',all=True,verbose=verbose)**2+
                         var('uy',all=True,verbose=verbose)**2+
                         var('uz',all=True,verbose=verbose)**2)
+            # magnetic energy
+            elif iv=='emag':
+                v=0.125*(
+                        xup(var('bx',all=True,verbose=verbose))**2+
+                        yup(var('by',all=True,verbose=verbose))**2+
+                        zup(var('bz',all=True,verbose=verbose))**2)
 
             # Thermal energy
             elif iv=='eth':
@@ -546,7 +556,7 @@ def _var(patch,filed,snap,verbose=0,copy=None):
                     v=mem('e')
                 else:
                     v=mem('e') \
-                     -var('ekin',all=True,verbose=verbose)
+                     -var('ekin',all=True,verbose=verbose) -var('emag',all=True,verbose=verbose)
 
             # Thermal energy
             elif iv=='Eth':
@@ -664,7 +674,7 @@ class _patch():
         self.keys['numbers']=list(snap.idx.dict.values())
         timer.add('numbers')
         self.keys['known']=['d','lnd','logd','ux','uy','uz','u1','u2','u3',
-                 'ee','E','T','eth','Eth','ekin']
+                 'ee','E','T','eth','Eth','ekin','emag']
         timer.add('known')
 
         # attach an aux filename, if one exists for this task

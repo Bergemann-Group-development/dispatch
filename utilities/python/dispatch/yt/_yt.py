@@ -18,11 +18,10 @@ def parameters(s):
                'sim_time': s.time,
       'domain_dimensions': s.cartesian.dims,
             'periodicity': p.periodic,
-            'length_unit': s.units.l,
-              'time_unit': s.units.t,
-              'mass_unit': s.units.m,
-          'magnetic_unit': s.units.b,
-          'velocity_unit': s.units.u,
+            'length_unit': s.scaling.l,
+              'time_unit': s.scaling.t,
+              'mass_unit': s.scaling.d*s.scaling.l**3,
+          'velocity_unit': s.scaling.l/s.scaling.t,
             'unit_system': 'cgs',
             #'unit_system': s.units.system,
                    'bbox': domain_bbox(s),
@@ -36,7 +35,8 @@ tr={'d':'density',
    'b1':'magnetic_field_x',
    'b2':'magnetic_field_y',
    'b3':'magnetic_field_z',
-   'tt':'temperature'}
+   'tt':'temperature',
+   'ee':'thermal_e'}
 
 """
     Only give these if also attaching units to the array data:
@@ -80,11 +80,14 @@ def patch(p,copy=False):
             print (p.kind)
         key = tr[k] if k in tr.keys() else k
         if iv >= 0:
-            dict[key]=p.var(iv,copy=copy)[l[0]:u[0],l[1]:u[1],l[2]:u[2]]
+            dict[key]=p.var(k,copy=copy)#[l[0]:u[0],l[1]:u[1],l[2]:u[2]]
     if 'aux' in p.keys:
         for k in p.keys['aux']:
             key = tr[k] if k in tr.keys() else k
             dict[key]=p.var(k,copy=copy)[l[0]:u[0],l[1]:u[1],l[2]:u[2]]
+    dict['ed']=p.var('e')/p.var('d')
+    dict['ee']=p.var('ee')
+    dict['emag']=p.var('emag')
     return dict
 
 def patches(s,copy=True):
