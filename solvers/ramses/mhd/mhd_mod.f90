@@ -53,6 +53,7 @@ MODULE mhd_mod
     procedure:: init
     procedure:: pre_update
     procedure:: update
+    procedure:: nbor_relations
   end type
   real, save:: slope_type=2.0
   real, save:: courant_factor=0.25
@@ -119,7 +120,6 @@ SUBROUTINE pre_init (self)
   self%csound = csound
   self%staggered = .false.
   !-----------------------------------------------------------------------------
-  call non_ideal%init  
   call trace%end()
 END SUBROUTINE pre_init
 
@@ -145,6 +145,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Initialize everything else, and do a sanity check
   !-----------------------------------------------------------------------------
+  call non_ideal%init  
   call self%extras_t%init
   if (minval(self%mesh%n) < 3) then
     call io%abort ('SOLVER=ramses/mhd needs at least 3 mesh points in any direction')
@@ -2184,5 +2185,32 @@ SUBROUTINE gravitational_force (self)
   deallocate (gradphi1, gradphi2, gradphi3)
   end associate
 END SUBROUTINE gravitational_force
+
+!===============================================================================
+!> Set up nbor relations between MHD tasks
+!===============================================================================
+SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
+  class(mhd_t):: self
+  class(task_t), pointer:: another, task
+  logical:: needed, needs_me, download, overlaps
+  ! ----------------------------------------------------------------------------
+  integer, save:: itimer=0
+  class(mhd_t),  pointer:: nb_mhd
+  ! ----------------------------------------------------------------------------
+  if (timer%detailed) &
+    call trace%begin ('mhd_t%nbor_relations', 2, itimer=itimer)
+  task => another
+  call self%task_t%nbor_relations(task,needed,needs_me,download)
+  select type (another)
+  class is (mhd_t)
+    ! do nothing, all is done in the base task_t layer
+  class default
+    needed=.false.; needs_me=.false.; download=.false.
+  end select
+
+  if (timer%detailed) &
+    call trace%end(itimer=itimer)
+
+END SUBROUTINE nbor_relations
 
 END MODULE
