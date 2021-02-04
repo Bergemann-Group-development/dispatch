@@ -324,12 +324,12 @@ SUBROUTINE init_cartesian(self)
   allocate(self%ray_list)
   self%n_ray_dirs = 0
 
-  !$omp critical (ray_geom_cr)
+  call io%lock%set ('ray_geometry_t%init_cartesian')
     first_time = .false.
     rewind (io%input)
     read (io%input, cartesian_ray_geometry_params)
     if (io%master) write (io%output, cartesian_ray_geometry_params)
-  !$omp end critical (ray_geom_cr)
+  call io%lock%unset ('ray_geometry_t%init_cartesian')
   self%dr(1) = dx
   self%dr(2) = dy
   self%dr(3) = dz
