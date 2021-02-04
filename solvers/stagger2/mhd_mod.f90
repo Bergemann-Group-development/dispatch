@@ -178,7 +178,7 @@ SUBROUTINE init (self)
   ! init extras
   ! ----------------------------------------------------------------------------
   call self%extras_t%init
- call trace%end()
+  call trace%end()
 END SUBROUTINE init
 
 !> =============================================================================
@@ -636,7 +636,6 @@ SUBROUTINE pde (self)
       dsdt = dsdt + Q*d/pg                                                      ! mhd: 1 1 1
     end if
     dBdt = -curl_up(ds,emf)
-    if (associated(self%emf)) self%emf=emf
   end if
   !-----------------------------------------------------------------------------
   ! External heating / cooling, if any; e.g. radiative or conductive
@@ -782,7 +781,7 @@ FUNCTION gas_pressure (self) result(pg)
   real, dimension(:,:,:), pointer:: d, s, ss
   integer, save:: nprint=1
   !-----------------------------------------------------------------------------
-  call trace%begin ('mhd_t%gas_pressure_sub')
+  call trace%begin('mhd_t%gas_pressure')
   d  => self%mem(:,:,:,self%idx%d ,self%it,1)
   s  => self%mem(:,:,:,self%idx%s ,self%it,1)
   call allocate_scalars(self%gn,ss)
@@ -798,7 +797,7 @@ FUNCTION gas_pressure (self) result(pg)
       call eos%lookup_table (shape(d),d=d, ss=ss, pg=pg, &
         tt=self%tt)
     else
-      call eos%lookup_table (shape(lnd), d=d, ss=ss, pg=pg)
+      call eos%lookup_table (shape(d), d=d, ss=ss, pg=pg)
     end if
     if (verbose > 1 .or. nprint > 0) then
       nprint = nprint-1
@@ -806,7 +805,7 @@ FUNCTION gas_pressure (self) result(pg)
       write(io%output,*) self%id, 'lookup_table:  ss =', minval(ss) , maxval(ss )
       write(io%output,*) self%id, 'lookup_table:  pg =', minval(pg) , maxval(pg)
       if (do_temperature) &
-      write(io%output,*) self%id, 'lookup_table:  tt =', minval(self%tt), maxval(self%tt)
+        write(io%output,*) self%id, 'lookup_table:  tt =', minval(self%tt), maxval(self%tt)
     end if
   end if
   call deallocate_scalars(ss)
@@ -838,7 +837,7 @@ SUBROUTINE gas_pressure_sub (self, d, lnd, ss, pg)
       write(io%output,*) self%id, 'lookup_table:  ss =', minval(ss) , maxval(ss )
       write(io%output,*) self%id, 'lookup_table:  pg =', minval(pg) , maxval(pg)
       if (do_temperature) &
-      write(io%output,*) self%id, 'lookup_table:  tt =', minval(self%tt), maxval(self%tt)
+        write(io%output,*) self%id, 'lookup_table:  tt =', minval(self%tt), maxval(self%tt)
     end if
   call trace%end()
   end if
