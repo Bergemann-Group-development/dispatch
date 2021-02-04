@@ -444,6 +444,11 @@ SUBROUTINE read_stagger_snap (task_list)
   read(io_unit%datain) dym, dymdn, (ym(iy),iy=1,my), (ymdn(iy),iy=1,my)
   read(io_unit%datain) dzm, dzmdn, (zm(iz),iz=1,mz), (zmdn(iz),iz=1,mz)
   read(io_unit%datain) dxm, dxmdn, (xm(ix),ix=1,mx), (xmdn(ix),ix=1,mx)
+  if (io%master) then
+    print *,'x extent= ',xm(1), xm(mx)
+    print *,'y extent= ',ym(1), ym(my)
+    print *,'z extent= ',zm(1), zm(mz)
+  end if
   ! periodic extensions
   if (ext>0) then
     do iext=1,ext
@@ -497,7 +502,7 @@ SUBROUTINE read_stagger_snap (task_list)
   do iv=1,min(nv,9)
     if ((iv==6).and.(patch%idx%tt<1)) then
       biv = biv+1
-      print *, 'skipping temperature', iv
+      if (io%master) print *, 'skipping temperature', iv
       !cycle
     end if
     iiv = ii(biv)
