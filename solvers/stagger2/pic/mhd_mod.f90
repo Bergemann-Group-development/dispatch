@@ -2,6 +2,7 @@
 !===============================================================================
 MODULE mhd_mod
   USE io_mod
+  USE aux_mod
   USE bits_mod
   USE omp_mod
   USE math_mod
@@ -26,10 +27,11 @@ MODULE mhd_mod
   implicit none
   private
   type, extends(extras_t), public:: mhd_t
-    real, dimension(:,:,:),   pointer:: d, dddt, e, dedt
-    real, dimension(:,:,:,:), pointer:: p, dpdt, B, dBdt
-    real, dimension(:,:,:),   pointer:: lnd, ee, pg
-    real, dimension(:,:,:), allocatable:: qrad
+    real, dimension(:,:,:),   pointer    :: d, dddt, e, dedt
+    real, dimension(:,:,:,:), pointer    :: p, dpdt, B, dBdt,emf, J
+    real, dimension(:,:,:),   pointer    :: lnd, ee, pg=>null(), tt=>null()
+    real, dimension(:,:,:),   allocatable:: qrad
+    procedure(divB_clean1),   pointer    :: divB_clean => null()
     real:: nu(6)
     real:: cdtd
     real:: maxJ=0.0
@@ -37,18 +39,21 @@ MODULE mhd_mod
     logical:: first_time=.true.
   contains
     procedure:: pre_init
+    procedure:: post_update
     procedure:: init
+    procedure:: post_init
     procedure:: pde
+    procedure:: pre_update
     procedure:: update
     procedure:: output
     procedure:: gas_pressure
-    procedure:: divB_clean => divb_clean2
+    procedure:: gas_pressure_sub
   end type
   logical, save:: unsigned=.true.
   logical, save:: do_smooth=.false.
   logical, save:: do_maxwell = .true.
+  logical, save:: do_temperature = .false.
   integer, save:: verbose=0
-  integer, save:: divb_cleaner=2
 CONTAINS
 
 !===============================================================================
@@ -56,7 +61,7 @@ CONTAINS
 !> (HD or MHD) and set the indices.
 !===============================================================================
 SUBROUTINE pre_init (self)
-  class(mhd_t) :: self
+  class(mhd_t), target:: self
   type(index_t):: idx
   integer:: i, iv
   real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], csound=1.0, cdtd=0.5, courant=0.2
@@ -65,7 +70,7 @@ SUBROUTINE pre_init (self)
   logical, save:: mhd=.false.
   character(len=16), save:: eos
   namelist /stagger_params/ nu, courant, gamma, csound, cdtd, hardwire, eos, &
-    do_smooth, unsigned, do_maxwell, verbose, divb_cleaner
+    do_smooth, unsigned, do_maxwell, do_temperature, verbose, do_test
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%pre_init')
   call io%lock%set
@@ -77,6 +82,7 @@ SUBROUTINE pre_init (self)
     read (io%input, stagger_params)
     if (io%master) write (*, stagger_params)
     call non_ideal%init
+    call divb%init
     call timestep%init
     ! fool-proofing
     if (timestep%time_order <= 0) call mpi%abort("The Stagger solvers require `time_order` > 0. Abort!")
@@ -89,6 +95,7 @@ SUBROUTINE pre_init (self)
   self%csound = csound
   self%courant = courant
   self%cdtd = cdtd
+  self%ng = 8
   !-----------------------------------------------------------------------------
   ! Read IC parameters, which determine if this is HD or MHD.  The IC init is
   ! called again, from extras_t%init, when gamma is known and can be passed on.
@@ -108,6 +115,18 @@ SUBROUTINE pre_init (self)
     if (self%mhd) self%nv = self%nv + 3
   end if
   call self%idx%init (ienergy=5, self%mhd)
+  if (self%idx%ex <1) then
+    call self%idx%request_index(self%idx%ex, self%nv)
+    call self%idx%request_index(self%idx%ey, self%nv)
+    call self%idx%request_index(self%idx%ez, self%nv)
+    call self%idx%request_index(self%idx%jx, self%nv)
+    call self%idx%request_index(self%idx%jy, self%nv)
+    call self%idx%request_index(self%idx%jz, self%nv)
+  end if
+  ! ----------------------------------------------------------------------------
+  ! Call extras pre-init
+  ! ----------------------------------------------------------------------------
+  call self%extras_t%pre_init
   call trace%end()
 END SUBROUTINE pre_init
 
@@ -135,6 +154,10 @@ SUBROUTINE init (self)
   ! Stagger offsets for (up-up) edge centered magnetic field components
   !----------------------------------------------------------------------------
   if (self%mhd) then
+    self%mesh(1)%h(self%idx%ex) = +0.5
+    self%mesh(2)%h(self%idx%ey) = +0.5
+    self%mesh(3)%h(self%idx%ez) = +0.5
+    !
     self%mesh(2)%h(self%idx%bx) = +0.5
     self%mesh(3)%h(self%idx%bx) = +0.5
     self%mesh(1)%h(self%idx%by) = +0.5
@@ -149,8 +172,31 @@ SUBROUTINE init (self)
   end if
   self%unsigned(self%idx%d)  = unsigned
   self%pervolume(self%idx%e) = unsigned
+  ! ----------------------------------------------------------------------------
+  ! init extras
+  ! ----------------------------------------------------------------------------
+  call self%extras_t%init
  call trace%end()
 END SUBROUTINE init
+
+!> =============================================================================
+!> Post init, whatever is required
+!> =============================================================================
+SUBROUTINE post_init (self)
+  class(mhd_t):: self
+  ! ----------------------------------------------------------------------------
+  ! ----------------------------------------------------------------------------
+  ! Call extras post-init
+  ! ----------------------------------------------------------------------------
+  call self%extras_t%post_init
+  !----------------------------------------------------------------------------
+  ! Boundary setup
+  !----------------------------------------------------------------------------
+  call self%init_bdries
+  self%boundaries%id  = self%id
+  self%boundaries%mhd = self%mhd
+ call trace%end()
+END SUBROUTINE post_init
 
 !===============================================================================
 SUBROUTINE pde (self)
@@ -161,27 +207,31 @@ SUBROUTINE pde (self)
   real, dimension(:,:,:),   pointer:: dpdtx, dpdty, dpdtz, dBdtx, dBdty, dBdtz
   real, dimension(:,:,:),   pointer:: Bx, By, Bz, px, py, pz, phi, qr
   real, dimension(:,:,:),   pointer:: Ux, Uy, Uz, pg
-  real, dimension(:,:,:,:), pointer:: U, p, B, dpdt, dBdt
+  real, dimension(:,:,:,:), pointer:: U, p, B, dpdt, dBdt, emf, J
   real, dimension(:,:,:),   pointer:: Ex, Ey, Ez, Jx, Jy, Jz
   real, dimension(:,:,:),   pointer:: fdx, fdy, fdz, ldx, ldy, ldz, ddx, ddy, ddz
   real, dimension(:,:,:),   pointer:: fxx, fxy
   real, dimension(:,:,:),   pointer::      fyy, fyz
   real, dimension(:,:,:),   pointer:: fzx,      fzz
   real, dimension(:,:,:),   allocatable:: du, ss, cs, pa, pp, pb, Q, uu, divU
+  real, dimension(:,:,:),   pointer    :: scr_x, scr_y, scr_z
   real, dimension(:,:,:),   allocatable, target:: ee, lnd
   real, dimension(:,:,:),   allocatable:: Txx, Txy
   real, dimension(:,:,:),   allocatable::      Tyy, Tyz
   real, dimension(:,:,:),   allocatable:: Tzx,      Tzz
-  real, dimension(:,:,:,:), allocatable, target:: emf, J
-  real, dimension(:,:,:,:), allocatable, target:: fx, fy, fz, fd, ld, dd, fm
+  real, dimension(:,:,:,:), allocatable, target:: fx, fy, fz, fd, ld, dd, fm, scr
   integer :: OMP_GET_NUM_THREADS, OMP_GET_THREAD_NUM
   logical, save:: first_time=.true.
   !.............................................................................
   real(8):: ds(3), dsmax
   real:: u_max
+  integer:: li(3), ui(3)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%pde',itimer=itimer)
+  li = self%li
+  ui = self%ui
+  !
   self%d    => self%mem(:,:,:,self%idx%d,self%it,1)
   self%dddt => self%mem(:,:,:,self%idx%d,self%it,2)
   self%e    => self%mem(:,:,:,self%idx%e,self%it,1)
@@ -193,15 +243,28 @@ SUBROUTINE pde (self)
   p=>self%p; dpdt=>self%dpdt
   px=>p(:,:,:,1); py=>p(:,:,:,2); pz=>p(:,:,:,3);
   dpdtx=>dpdt(:,:,:,1); dpdty=>dpdt(:,:,:,2); dpdtz=>dpdt(:,:,:,3);
+  !
+  call allocate_vectors_a (self%gn, ld, dd, fd, fx, fy, fz, fm)
+  call allocate_scalars_a (self%gn, lnd, pa, du, ee, cs, pp, pb, Q, uu, divU)
+  !
   if (self%mhd) then
     self%B    => self%mem(:,:,:,self%idx%bx:self%idx%bz,self%it,1)
     self%dBdt => self%mem(:,:,:,self%idx%bx:self%idx%bz,self%it,2)
     B=>self%B; dBdt=>self%dBdt
     Bx   =>   B(:,:,:,1); By   =>   B(:,:,:,2); Bz   =>   B(:,:,:,3);
     dBdtx=>dBdt(:,:,:,1); dBdty=>dBdt(:,:,:,2); dBdtz=>dBdt(:,:,:,3);
+    !
+    call allocate_vectors(self%gn, emf, J)
+    Ex=>emf(:,:,:,1); Ey=>emf(:,:,:,2); Ez=>emf(:,:,:,3)
+    Jx=>  J(:,:,:,1);   Jy=>J(:,:,:,2); Jz=>  J(:,:,:,3)
+    !if ((self%idx%ex>0).and.(.not.associated(self%emf))) then
+      !call allocate_vectors(self%gn,self%emf)
+      self%emf => self%mem(:,:,:,self%idx%ex:self%idx%ez,self%it,1)
+      self%J   => self%mem(:,:,:,self%idx%jx:self%idx%jz,self%it,1)
+    !end if
   end if
-  call allocate_vectors_a (self%gn, ld, dd, emf, J, fd, fx, fy, fz, fm)
-  call allocate_scalars_a (self%gn, lnd, pa, du, ee, cs, pp, pb, Q, uu, divU)
+  call allocate_vectors_a (self%gn, scr)
+  scr_x => scr(:,:,:,1); scr_y => scr(:,:,:,2); scr_z => scr(:,:,:,3)
   if (self%do_pebbles) then
     U => self%vgas(:,:,:,:,self%it)
     pg => self%pressure(:,:,:,self%it)
@@ -211,8 +274,6 @@ SUBROUTINE pde (self)
     call allocate_vectors (self%gn, U)
   end if
   Ux=>U(:,:,:,1); Uy=>U(:,:,:,2); Uz=>U(:,:,:,3)
-  Ex=>emf(:,:,:,1); Ey=>emf(:,:,:,2); Ez=>emf(:,:,:,3)
-  Jx=>J(:,:,:,1); Jy=>J(:,:,:,2); Jz=>J(:,:,:,3)
   fxx=>fx(:,:,:,1); fxy=>fx(:,:,:,2)
                     fyy=>fy(:,:,:,2); fyz=>fy(:,:,:,3)
   fzx=>fz(:,:,:,1);                   fzz=>fz(:,:,:,3)
@@ -233,7 +294,7 @@ SUBROUTINE pde (self)
   ee = e/d                                                                      ! ops: 0 0 1
   self%lnd => lnd
   self%ee  => ee
-  pg = self%gas_pressure ()
+  call self%gas_pressure_sub (d, self%lnd, self%ee, pg)
   self%pg => pg
   !-----------------------------------------------------------------------------
   ! Conservation of momentum -- first the diagonal part of the stress tensor
@@ -265,12 +326,12 @@ SUBROUTINE pde (self)
   uu = sqrt(fxx+fyy+fzz)
   self%u_max = 0.0
   if (self%mhd) then
-    ! Diagonal (negative) Maxwell stress (borrowing emf for scratch)
-    Ex = ydn(zdn(Bx))**2
-    Ey = zdn(xdn(By))**2
-    Ez = xdn(ydn(Bz))**2
+    ! Diagonal (negative) Maxwell stress 
+    scr_x = ydn(zdn(Bx))**2
+    scr_y = zdn(xdn(By))**2
+    scr_z = xdn(ydn(Bz))**2
     ! Magnetic pressure
-    pb = 0.5*(Ex+Ey+Ez)                                                         ! mhd: 2 1 0
+    pb = 0.5*(scr_x+scr_y+scr_z)                                                ! mhd: 2 1 0
     ! Fast mode speed + velocity
     cs = sqrt((self%gamma*pg+2.0*pb + pa)/d)                                    ! mhd: 1 1 0
     if (verbose>3) then
@@ -285,9 +346,9 @@ SUBROUTINE pde (self)
     du = (dsmax*self%nu(1))*(cs + 2.*uu)                                        ! mhd: 0 2 0
     !either use Maxwell stress tensor or Lorentz force
     if (do_maxwell) then
-      fxx = pp + d*(fxx - du*Txx) - Ex                                          ! mhd: 1 0 0
-      fyy = pp + d*(fyy - du*Tyy) - Ey                                          ! mhd: 1 0 0
-      fzz = pp + d*(fzz - du*Tzz) - Ez                                          ! mhd: 1 0 0
+      fxx = pp + d*(fxx - du*Txx) - scr_x                                       ! mhd: 1 0 0
+      fyy = pp + d*(fyy - du*Tyy) - scr_y                                       ! mhd: 1 0 0
+      fzz = pp + d*(fzz - du*Tzz) - scr_z                                       ! mhd: 1 0 0
     else
       fxx = pp + d*(fxx - du*Txx)                                               ! mhd: 1 0 0
       fyy = pp + d*(fyy - du*Tyy)                                               ! mhd: 1 0 0
@@ -426,6 +487,9 @@ SUBROUTINE pde (self)
   ! Induction equation
   !-----------------------------------------------------------------------------
   if (self%mhd) then
+! bx = yup zup; by = xup zup; bz = xup yup
+! ex = xup    ; Ey = yup    ; ez = zup
+! ux = xup    ; uy = yup    ; uz = zup
     !---------------------------------------------------------------------------
     ! Electric current, resistive electric field and magnetic dissipation
     ! emf = {Ex,Ey,Ez} is the vector with components Ex, Ey, Ez
@@ -441,22 +505,20 @@ SUBROUTINE pde (self)
     ! dpdtz(i,j,k+½) = zup(xdn(jx(i+½,j,k)))*xdn(By(i+½,j,k+½)) - jy(i,j+½,k)*Bx(i,j+½,k+½)
     !---------------------------------------------------------------------------
     if (.not.do_maxwell) then
-    !borrowing fxyz for scratch to store cell-centered J values
-      ! jx -> fxx, jy -> fyy, jz -> fzz
-      fxx = xdn(jx)
-      fyy = ydn(jy)
-      fzz = zdn(jz)
-      dpdtx = dpdtx + xup(fyy)*(ydn(Bz)) - xup(fzz)*(zdn(By))
-      dpdty = dpdty + yup(fzz)*(zdn(Bx)) - yup(fxx)*(xdn(Bz))
-      dpdtz = dpdtz + zup(fxx)*(xdn(By)) - zup(fyy)*(ydn(Bx))
+      !scr_x = xdn(jx)
+      !scr_y = ydn(jy)
+      !scr_z = zdn(jz)
+      !dpdtx = dpdtx + xup(scr_y)*(ydn(Bz)) - xup(scr_z)*(zdn(By))
+      !dpdty = dpdty + yup(scr_z)*(zdn(Bx)) - yup(scr_x)*(xdn(Bz))
+      !dpdtz = dpdtz + zup(scr_x)*(xdn(By)) - zup(scr_y)*(ydn(Bx))
+      dpdtx = dpdtx + ydn(Bz*xup(jy)) - zdn(By*xup(Jz))
+      dpdty = dpdty + zdn(Bx*yup(Jz)) - xdn(Bz*yup(Jx))
+      dpdtz = dpdtz + xdn(By*zup(Jx)) - ydn(Bx*zup(Jy))
     end if
     !---------------------------------------------------------------------------
     ! Advective electric field on cell FACES
     ! Ex(i+½,j,k) = xup(zdn(Uz(i,j+½,k)))*zdn(By(i+½,j,k+½)) - ...
     !---------------------------------------------------------------------------
-    !Ex = Ex + xUP(yDN(Uz))*zDN(By) - xUP(zDN(Uy))*yDN(Bz)                       ! mhd: 2 2 0
-    !Ey = Ey + yUP(zDN(Ux))*xDN(Bz) - yUP(xDN(Uz))*zDN(Bx)                       ! mhd: 2 2 0
-    !Ez = Ez + zUP(xDN(Uy))*yDN(Bx) - zUP(yDN(Ux))*xDN(By)                       ! mhd: 2 2 0
     Ex = Ex + xUP(zDN(Uz))*zDN(By) - xUP(yDN(Uy))*yDN(Bz)                       ! mhd: 2 2 0
     Ey = Ey + yUP(xDN(Ux))*xDN(Bz) - yUP(zDN(Uz))*zDN(Bx)                       ! mhd: 2 2 0
     Ez = Ez + zUP(yDN(Uy))*yDN(Bx) - zUP(xDN(Ux))*xDN(By)                       ! mhd: 2 2 0
@@ -482,12 +544,33 @@ SUBROUTINE pde (self)
     if (verbose>2) print 1, 'u_max(dedt)', u_max, self%u_max
   end if
   !-----------------------------------------------------------------------------
-  call deallocate_vectors_a (ld, dd, emf, J, fd, fx, fy, fz, fm)
+  print *, 'Ex after last factor', minval(emf(:,:,:,1)), maxval(emf(:,:,:,1))
+    print *, 'Ey after last factor',minval(emf(:,:,:,2)), maxval(emf(:,:,:,2))
+    print *, 'Ez after last factor',minval(emf(:,:,:,3)), maxval(emf(:,:,:,3))
+  call deallocate_vectors_a (ld, dd, fd, fx, fy, fz, fm, scr)
   call deallocate_scalars_a (lnd, pa, du, ee, cs, pp, pb, Q, uu, divU)
   if (.not.self%do_pebbles) then
     call deallocate_vectors (U)
     call deallocate_scalars (pg)
   end if
+  if (self%idx%ex>0) &
+    self%emf(li(1):ui(1),li(2):ui(2),li(3):ui(3),:) = &
+         emf(li(1):ui(1),li(2):ui(2),li(3):ui(3),:)
+  if (self%idx%jx>0) &
+    self%j(li(1):ui(1),li(2):ui(2),li(3):ui(3),:) = &
+         j(li(1):ui(1),li(2):ui(2),li(3):ui(3),:)
+  !call self%aux%register ('ex', ex)
+  !call self%aux%register ('ey', ey)
+  !call self%aux%register ('ez', ez)
+  !call self%aux%register ('jx', jx)
+  !call self%aux%register ('jy', jy)
+  !call self%aux%register ('jz', jz)
+  print *,'J in MHD'
+  print *, 'jx', jx(7:11,11,11)
+  print *, 'jy', jy(7:11,11,11)
+  print *, 'jz', jz(7:11,11,11)
+  if (associated(emf)) call deallocate_vectors(emf)
+  if (associated(J))   call deallocate_vectors(J)
   call trace%end (itimer)
   if (mpi%master .and. first_time) then
     print *, stagger%count, ' stagger calls', stagger%flops/product(real(self%n)),' flops per interior point'
@@ -498,14 +581,80 @@ SUBROUTINE pde (self)
 END SUBROUTINE pde
 
 !===============================================================================
+!> This procedure is called by solver_t%update, before it calls mhd_t%update
+!===============================================================================
+SUBROUTINE pre_update (self)
+  class(mhd_t), target:: self
+  real, dimension(:,:,:), pointer:: d, e, lnd, ee
+  integer:: iz
+  !-----------------------------------------------------------------------------
+  ! Compute initial temperature
+  !-----------------------------------------------------------------------------
+  call trace%begin('mhd_t%pre_update')
+  if (do_temperature) then
+    if (.not.associated(self%tt)) &
+    allocate (self%tt(self%gn(1),self%gn(2),self%gn(3)))
+    allocate (    lnd(self%gn(1),self%gn(2),self%gn(3)))
+    allocate (     ee(self%gn(1),self%gn(2),self%gn(3)))
+    d => self%mem(:,:,:,self%idx%d,self%it,1)
+    e => self%mem(:,:,:,self%idx%e,self%it,1)
+    lnd = alog(d)
+    ee = e/d
+    call eos%lookup_table (shape(self%tt), lnd=lnd, ee=ee, tt=self%tt)
+    deallocate (lnd, ee)
+    if (verbose > 0) &
+      write(io%output,*) self%id, 'mhd_t%pre_update:  tt =', &
+        minval(self%tt), maxval(self%tt)
+    call self%aux%register ('tt', self%tt)
+  end if
+  !-----------------------------------------------------------------------------
+  ! Now we can call the extras_t%pre_update, which may need the temperature
+  !-----------------------------------------------------------------------------
+  call self%extras_t%pre_update
+  call trace%end()
+END SUBROUTINE pre_update
+
+!===============================================================================
+!> This procedure is called by solver_t%update, after it calls mhd_t%update
+!===============================================================================
+SUBROUTINE post_update (self)
+  class(mhd_t):: self
+  real, dimension(:,:,:), pointer:: d, e, lnd, ee
+  integer:: l(3), u(3)
+  !-----------------------------------------------------------------------------
+  ! Compute initial temperature
+  !-----------------------------------------------------------------------------
+  call trace%begin('mhd_t%post_update')
+  !if ((self%idx%ex>0).and.(associated(self%emf))) then
+  !  l = self%li
+  !  u = self%ui
+  !  self%mem(:,:,:,self%idx%ex:self%idx%ez,self%new,1) = self%emf
+  !  call deallocate_vectors(self%emf)
+  !end if
+  !-----------------------------------------------------------------------------
+  ! Now we can call the extras_t%post_update
+  !-----------------------------------------------------------------------------
+  call self%extras_t%post_update
+  call trace%end
+END SUBROUTINE post_update
+
+!===============================================================================
 !> Take a complete update step.  This can be overloaded in higher levels, e.g.
 !> in experiment_mod, where boundary conditions may be inserted
 !===============================================================================
 SUBROUTINE update (self)
   class(mhd_t):: self
   integer, save:: itimer=0
+  real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: mem
+  real(kind=KindScalarVar), dimension(:,:,:,:,:), pointer:: mem2
+  real(kind=KindScalarVar), pointer:: B(:,:,:,:)
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%update',itimer=itimer)
+  !-----------------------------------------------------------------------------
+  ! Set boundary conditions on primary variables
+  !-----------------------------------------------------------------------------
+  mem => self%mem(:,:,:,:,self%it,1)
+  call self%boundaries%primary(mem)
   !-----------------------------------------------------------------------------
   ! Output the state after guard zone downloads, selfgravity, and boundary
   ! conditions. If another call is placed at an earlier point in the task handling
@@ -516,129 +665,28 @@ SUBROUTINE update (self)
     self%mem(:,:,:,self%idx%e,self%it,1) = &
     self%mem(:,:,:,self%idx%d,self%it,1)*self%csound**2
   end if
-  if (self%mhd) call self%divB_clean
+  if (self%mhd) then
+    B => self%mem(:,:,:,self%idx%bx:self%idx%bz,self%it,1)
+   ! call divB%clean(self%mesh,B)
+  end if
   call self%pde
+  !-----------------------------------------------------------------------------
+  ! Set boundary conditions on time derivatives
+  !-----------------------------------------------------------------------------
+  mem2 => self%mem(:,:,:,:,self%it,:)
+  call self%boundaries%derivative(mem2)
+  !-----------------------------------------------------------------------------
+  ! The call to courant_condition may optionally be interscepted in extras_t
+  !-----------------------------------------------------------------------------
   call self%courant_condition
   if (verbose>2) &
     call self%check_density('before timestep')
-  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
+  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh, self%lock)
   call self%check_density(' after timestep')
   !-----------------------------------------------------------------------------
   call self%counter_update
   call trace%end (itimer)
 END SUBROUTINE update
-
-!===============================================================================
-!> Perform a single iteration of a div(B) clean.  The limit of stability is
-!> eps=1./6.  This is intended to prevent build-up of layers of large div(B)
-!> between patches. An exact solution would be to solve an internal Laplace
-!> equation, with boundary conditiosn = the boundary value of div(B), and then
-!> subtract the gradient of the resulting potential.
-!>
-!> The problem can also be greatly reduced by using a higher order time
-!> interpoation scheme, thus making the electric field computed from the
-!> guard zone values of B and U a better match to the neighbors E-fields.
-!===============================================================================
-SUBROUTINE divb_clean1(self)
-  class(mhd_t):: self
-  !.............................................................................
-  real, dimension(:,:,:,:), pointer:: b
-  real, dimension(:,:,:)  , pointer:: bx, by, bz, divb
-  real, dimension(:,:,:,:)  , allocatable:: dndivb
-  real, parameter:: eps=0.11
-  !-----------------------------------------------------------------------------
-  b  => self%mem(:,:,:,self%idx%bx:self%idx%bz,self%it,1)
-  bx => b(:,:,:,1)
-  by => b(:,:,:,2)
-  bz => b(:,:,:,3)
-  call allocate_scalars (self%gn, divb)
-  call allocate_vectors_a (self%gn, dndivb)
-  divb = ddup(xdn(ydn(zdn(Bx))),1) + &
-         ddup(ydn(zdn(xdn(By))),2) + &
-         ddup(zdn(xdn(ydn(Bz))),3)
-  bx = bx + zup(yup(xup(eps*dddn(divb,1))))
-  by = by + xup(zup(yup(eps*dddn(divb,2))))
-  bz = bz + yup(xup(zup(eps*dddn(divb,3))))
-  call deallocate_vectors_a (dndivb)
-  call deallocate_scalars(divb)
-    return
-contains
-  !-----------------------------------------------------------------------------
-  function ddup(f,i) result (g)
-  real:: f(:,:,:), g(size(f,1),size(f,2),size(f,3))
-  integer:: i
-  !.............................................................................
-  g = cshift(f,1,i) - f
-  end function
-  !-----------------------------------------------------------------------------
-  function dddn(f,i) result (g)
-  real:: f(:,:,:), g(size(f,1),size(f,2),size(f,3))
-  integer:: i
-  !.............................................................................
-  g = f - cshift(f,-1,i)
-  end function
-END SUBROUTINE divb_clean1
-
-!===============================================================================
-!> Enforce div(B)=0 in the guard zones, by succesively imposing the condition,
-!> layer-by-layer, on the component perpendicular to each of the patch faces.
-!===============================================================================
-SUBROUTINE divb_clean2 (self)
-  class(mhd_t):: self
-  !.............................................................................
-  real, dimension(:,:,:), pointer:: bx, by, bz
-  real, dimension(:,:,:), allocatable:: divb
-  real, parameter:: eps=0.11
-  integer:: l(3), u(3), ix, iy, iz
-  integer:: itimer=0
-  !-----------------------------------------------------------------------------
-  call trace%begin('mhd_t%divb_clean2', itimer=itimer)
-  bx => self%mem(:,:,:,self%idx%bx,self%it,1)
-  by => self%mem(:,:,:,self%idx%by,self%it,1)
-  bz => self%mem(:,:,:,self%idx%bz,self%it,1)
-  l = self%mesh%lb
-  u = self%mesh%ub-1
-  !--- x-direction -------------------------------------------------------------
-  do ix=self%mesh(1)%lo,self%mesh(1)%lb,-1
-    bx(ix  ,l(2):u(2),l(3):u(3)) = &
-    bx(ix+1,l(2):u(2),l(3):u(3)) + ( &
-      by(ix,l(2)+1:u(2)+1,l(3)  :u(3)  ) - by(ix,l(2):u(2),l(3):u(3)) + &
-      bz(ix,l(2)  :u(2)  ,l(3)+1:u(3)+1) - bz(ix,l(2):u(2),l(3):u(3)))
-  end do
-  do ix=self%mesh(1)%ui,self%mesh(1)%ub-1
-    bx(ix+1,l(2):u(2),l(3):u(3)) = &
-    bx(ix  ,l(2):u(2),l(3):u(3)) - ( &
-      by(ix,l(2)+1:u(2)+1,l(3)  :u(3)  ) - by(ix,l(2):u(2),l(3):u(3)) + &
-      bz(ix,l(2)  :u(2)  ,l(3)+1:u(3)+1) - bz(ix,l(2):u(2),l(3):u(3)))
-  end do
-  !--- y-direction -------------------------------------------------------------
-  do iy=self%mesh(2)%lo,self%mesh(2)%lb,-1
-    by(l(1):u(1),iy  ,l(3):u(3)) = &
-    by(l(1):u(1),iy+1,l(3):u(3)) + ( &
-      bx(l(1)+1:u(1)+1,iy,l(3)  :u(3)  ) - bx(l(1):u(1),iy,l(3):u(3)) + &
-      bz(l(1)  :u(1)  ,iy,l(3)+1:u(3)+1) - bz(l(1):u(1),iy,l(3):u(3)))
-  end do
-  do iy=self%mesh(2)%ui,self%mesh(2)%ub-1
-    by(l(1):u(1),iy+1,l(3):u(3)) = &
-    by(l(1):u(1),iy  ,l(3):u(3)) - ( &
-      bx(l(1)+1:u(1)+1,iy,l(3)  :u(3)  ) - bx(l(1):u(1),iy,l(3):u(3)) + &
-      bz(l(1)  :u(1)  ,iy,l(3)+1:u(3)+1) - bz(l(1):u(1),iy,l(3):u(3)))
-  end do
-  !--- z-direction -------------------------------------------------------------
-  do iz=self%mesh(3)%lo,self%mesh(3)%lb,-1
-    bz(l(1):u(1),l(2):u(2),iz  ) = &
-    bz(l(1):u(1),l(2):u(2),iz+1) + ( &
-      bx(l(1)+1:u(1)+1,l(2)  :u(2)  ,iz) - bx(l(1):u(1),l(2):u(2),iz) + &
-      by(l(1)  :u(1)  ,l(2)+1:u(2)+1,iz) - by(l(1):u(1),l(2):u(2),iz))
-  end do
-  do iz=self%mesh(3)%ui,self%mesh(3)%ub-1
-    bz(l(1):u(1),l(2):u(2),iz+1) = &
-    bz(l(1):u(1),l(2):u(2),iz  ) - ( &
-      bx(l(1)+1:u(1)+1,l(2)  :u(2)  ,iz) - bx(l(1):u(1),l(2):u(2),iz) + &
-      by(l(1)  :u(1)  ,l(2)+1:u(2)+1,iz) - by(l(1):u(1),l(2):u(2),iz))
-  end do
-  call trace%end (itimer)
-END SUBROUTINE divb_clean2
 
 !===============================================================================
 !> Add extra, MHD-related information to the patch .txt output file
@@ -669,33 +717,74 @@ SUBROUTINE output (self)
 END SUBROUTINE output
 
 !===============================================================================
-FUNCTION gas_pressure (self) RESULT (pg)
+FUNCTION gas_pressure (self) result(pg)
   class(mhd_t):: self
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
-  real, dimension(:,:,:), pointer:: d, e, tt
+  real, dimension(:,:,:), pointer:: d, lnd, e, ee
   integer, save:: nprint=1
   !-----------------------------------------------------------------------------
-  call trace%begin ('mhd_t%gas_pressure')
+  call trace%begin ('mhd_t%gas_pressure_sub')
+  d  => self%mem(:,:,:,self%idx%d ,self%it,1)
+  e  => self%mem(:,:,:,self%idx%e ,self%it,1)
+  call allocate_scalars(self%gn,ee)
+  ee = e/d
   if (trim(self%eos)=='ideal') then
-    d => self%mem(:,:,:,self%idx%d,self%it,1)
-    e => self%mem(:,:,:,self%idx%e,self%it,1)
     if (self%gamma==1d0) then
       pg = d*self%csound**2
     else
-      pg = e*(self%gamma-1)
+      pg = d*ee*(self%gamma-1)
     end if
   else
-    tt => self%mem(:,:,:,self%idx%tt,self%it,1)
-    call eos%lookup_table (shape(self%lnd), lnd=self%lnd, ee=self%ee, pg=pg, tt=tt)
-    if (io%master .and. (verbose>1 .or. nprint>0)) then
+    if (do_temperature) then
+      call eos%lookup_table (shape(d), d=d, ee=ee, pg=pg, tt=self%tt)
+    else
+      call eos%lookup_table (shape(d), d=d, ee=ee, pg=pg)
+    end if
+    if (verbose > 1 .or. nprint > 0) then
       nprint = nprint-1
-      write(io%output,*) self%id, 'lookup_table: lnd =', minval(self%lnd), maxval(self%lnd)
-      write(io%output,*) self%id, 'lookup_table:  ee =', minval(self%ee ), maxval(self%ee )
-      write(io%output,*) self%id, 'lookup_table:  pg =', minval(pg),       maxval(pg)
-      write(io%output,*) self%id, 'lookup_table:  tt =', minval(tt),       maxval(tt)
+      write(io%output,*) self%id, 'lookup_table: lnd =', minval(lnd), maxval(lnd)
+      write(io%output,*) self%id, 'lookup_table:  ee =', minval(ee) , maxval(ee)
+      write(io%output,*) self%id, 'lookup_table:  pg =', minval(pg) , maxval(pg)
+      if (do_temperature) &
+        write(io%output,*) self%id, 'lookup_table:  tt =', minval(self%tt), &
+          maxval(self%tt)
+    end if
+  end if
+  call deallocate_scalars(ee)
+  call trace%end()
+END FUNCTION gas_pressure
+
+!===============================================================================
+SUBROUTINE gas_pressure_sub (self, d, lnd, ee, pg)
+  class(mhd_t):: self
+  real, dimension(:,:,:):: pg
+  real, dimension(:,:,:), pointer:: d, lnd, ee
+  integer, save:: nprint=1
+  !-----------------------------------------------------------------------------
+  call trace%begin ('mhd_t%gas_pressure_sub')
+  if (trim(self%eos)=='ideal') then
+    if (self%gamma==1d0) then
+      pg = d*self%csound**2
+    else
+      pg = d*ee*(self%gamma-1)
+    end if
+  else
+    if (do_temperature) then
+      call eos%lookup_table (shape(lnd), lnd=lnd, ee=ee, pg=pg, tt=self%tt)
+    else
+      call eos%lookup_table (shape(lnd), lnd=lnd, ee=ee, pg=pg)
+    end if
+    if (verbose > 1 .or. nprint > 0) then
+      nprint = nprint-1
+      write(io%output,*) self%id, 'lookup_table: lnd =', minval(lnd), maxval(lnd)
+      write(io%output,*) self%id, 'lookup_table:  ee =', minval(ee) , maxval(ee)
+      write(io%output,*) self%id, 'lookup_table:  pg =', minval(pg) , maxval(pg)
+      if (do_temperature) &
+        write(io%output,*) self%id, 'lookup_table:  tt =', minval(self%tt), &
+          maxval(self%tt)
     end if
   end if
   call trace%end()
-END FUNCTION gas_pressure
+END SUBROUTINE gas_pressure_sub
 
 END MODULE mhd_mod

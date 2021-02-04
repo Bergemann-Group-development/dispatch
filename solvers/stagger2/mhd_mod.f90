@@ -10,11 +10,13 @@
 !===============================================================================
 MODULE mhd_mod
   USE io_mod
+  USE aux_mod
   USE bits_mod
   USE omp_mod
   USE math_mod
   USE omp_timer_mod
   USE mpi_mod
+  USE mesh_mod
   USE trace_mod
   USE kinds_mod
   USE units_mod
@@ -29,7 +31,9 @@ MODULE mhd_mod
   USE eos_mod
   USE non_ideal_mod
   USE initial_mod
-  !USE divb_clean_mod
+  USE divb_clean_mod
+  USE task_mod
+  USE timer_mod
   USE scratch_mod
   implicit none
   private
@@ -37,25 +41,23 @@ MODULE mhd_mod
     real, dimension(:,:,:),   pointer:: d, dddt, s, dsdt, pg=>null(), tt=>null()
     real, dimension(:,:,:),   pointer:: lnd, ss
     real, dimension(:,:,:,:), pointer:: p, dpdt, B, dBdt
-    real, dimension(:,:,:,:), pointer:: emf => null()
-    procedure(divB_clean1),   pointer:: divB_clean => null()
     real:: nu(6)
     real:: cdtd
     logical:: mhd=.false.
     logical:: first_time=.true.
-    type(extras_t):: extras
   contains
+    procedure:: test
     procedure:: pre_init
     procedure:: init
-    procedure:: test
+    procedure:: post_init
     procedure:: pde
     procedure:: pre_update
     procedure:: update
     procedure:: output
     procedure:: gas_pressure
     procedure:: gas_pressure_sub
+    procedure :: nbor_relations
   end type
-  integer:: verbose=0
   logical, save:: flop_count=.false.
   logical, save:: unsigned=.true.
   logical, save:: do_test=.false.
@@ -63,7 +65,7 @@ MODULE mhd_mod
   logical, save:: do_smooth=.false.
   logical, save:: do_maxwell=.true.
   logical, save:: do_temperature = .false.
-  integer, save:: divb_cleaner=2
+  integer, save:: verbose=0
 CONTAINS
 
 !===============================================================================
@@ -80,8 +82,7 @@ SUBROUTINE pre_init (self)
   logical, save:: mhd=.false.
   character(len=16), save:: eos
   namelist /stagger_params/ nu, courant, gamma, csound, cdtd, hardwire, eos, &
-    do_smooth, unsigned, do_maxwell, do_temperature, verbose, divb_cleaner, &
-    do_test, do_2nd_div
+    do_smooth, unsigned, do_maxwell, do_temperature, verbose, do_test,mhd
   !----------------------------------------------------------------------------
   call trace%begin ('mhd_t%pre_init')
   !-----------------------------------------------------------------------------
@@ -113,9 +114,18 @@ SUBROUTINE pre_init (self)
     call io%namelist_warning ('stagger_params', iostat)
     write (io%namelist, stagger_params)
     call non_ideal%init
+    call divb%init
     call timestep%init
     ! fool-proofing
     if (timestep%time_order <= 0) call mpi%abort("The Stagger solvers require `time_order` > 0. Abort!")
+    !-----------------------------------------------------------------------------
+    ! Self tests, only on one thread
+    !-----------------------------------------------------------------------------
+    first_time = .false.
+    if (do_test) then
+      call stagger_test
+      call self%test
+    end if
   end if
   call io%lock%unset ('mhd_t%pre_init')
   self%eos = eos
@@ -125,17 +135,11 @@ SUBROUTINE pre_init (self)
   self%csound = csound
   self%courant = courant
   self%cdtd = cdtd
+  self%ng   = 2
   !-----------------------------------------------------------------------------
-  ! Choose div(B) cleaner
+  ! Read IC parameters, which determine if this is HD or MHD.  The IC init is
+  ! called again, from extras_t%init, when gamma is known and can be passed on.
   !-----------------------------------------------------------------------------
-  select case(divb_cleaner)
-  case(1)
-    self%divb_clean => divb_clean1
-  case(2)
-    self%divb_clean => divb_clean2
-  case default
-    call io%abort('mhd_mod:: divb cleaner method not understood')
-  end select
   call trace%end()
 END SUBROUTINE pre_init
 
@@ -145,41 +149,54 @@ END SUBROUTINE pre_init
 !===============================================================================
 SUBROUTINE init (self)
   class(mhd_t):: self
-  integer :: i
+  integer:: i
+  logical, save:: first_time=.true.
+  ! ----------------------------------------------------------------------------
+  call trace%begin('mhd_t%init')
   !-----------------------------------------------------------------------------
-  ! Set the staggering, unsigned and pervolume flags before calling the rest
-  ! of the cascade if %init(), where %gpatch_t%init may need them, in IC calls
+  ! Allocate memory and mesh, etc
   !-----------------------------------------------------------------------------
+  self%type = 'mhd_t'
+  call self%patch_t%init
   do i=1,3
     self%mesh(i)%h(self%idx%px+i-1) = -0.5
     if (self%mhd) self%mesh(i)%h(self%idx%bx+i-1) = -0.5
   end do
-  if (verbose>1 .and. self%track) then
+  self%unsigned(self%idx%d)  = unsigned
+  self%pervolume(self%idx%s) = unsigned
+  if (verbose > 1 .and. self%track) then
     do i=1,3
       print '("h:",8f5.2)', self%mesh(i)%h
     end do
   end if
-  self%unsigned(self%idx%d) = unsigned
-  self%unsigned(self%idx%s) = unsigned
-  self%pervolume(self%idx%px) = unsigned
-  self%pervolume(self%idx%py) = unsigned
-  self%pervolume(self%idx%pz) = unsigned
-  !-----------------------------------------------------------------------------
-  ! Initialize everything else, and do a sanity check
-  !-----------------------------------------------------------------------------
-  call self%extras_t%init
-  self%type = 'mhd_t'
-  !-----------------------------------------------------------------------------
-  ! Self tests, only on one thread
-  !-----------------------------------------------------------------------------
-  if (do_test) then
-    !$omp single
+  call self%gpatch_t%init
+  if (first_time.and.io%master) then
     call stagger_test
-    call self%test
-    !$omp end single
+    first_time = .false.
   end if
-  call trace%end()
+  ! ----------------------------------------------------------------------------
+  ! init extras
+  ! ----------------------------------------------------------------------------
+  call self%extras_t%init
+ call trace%end()
 END SUBROUTINE init
+
+!> =============================================================================
+!> Post init, whatever is required
+!> =============================================================================
+SUBROUTINE post_init (self)
+  class(mhd_t):: self
+  ! ----------------------------------------------------------------------------
+  ! ----------------------------------------------------------------------------
+  ! Call extras post-init
+  ! ----------------------------------------------------------------------------
+  call self%extras_t%post_init
+  !----------------------------------------------------------------------------
+  ! Boundary setup
+  !----------------------------------------------------------------------------
+  self%boundaries%mhd = self%mhd
+ call trace%end()
+END SUBROUTINE post_init
 
 !===============================================================================
 SUBROUTINE test (self)
@@ -451,7 +468,7 @@ SUBROUTINE pde (self)
   else
     ! Sound speed + velocity
     cs = sqrt((self%gamma*pg+pa)/d)                                             ! ops: 1 1 1 1 0
-    if (verbose>2) then
+    if (verbose>3) then
       u_max = self%fmaxval(cs,outer=.true.)
       self%u_max = max(self%u_max,u_max)
       print 1, self%id, 'u_max(cs)     ', u_max, self%u_max
@@ -619,6 +636,7 @@ SUBROUTINE pde (self)
       dsdt = dsdt + Q*d/pg                                                      ! mhd: 1 1 1
     end if
     dBdt = -curl_up(ds,emf)
+    if (associated(self%emf)) self%emf=emf
   end if
   !-----------------------------------------------------------------------------
   ! External heating / cooling, if any; e.g. radiative or conductive
@@ -692,15 +710,33 @@ END SUBROUTINE pre_update
 SUBROUTINE update (self)
   class(mhd_t):: self
   integer, save:: itimer=0
+  real(kind=KindScalarVar), dimension(:,:,:,:,:), pointer:: mem
+  real(kind=KindScalarVar), pointer:: B(:,:,:,:)
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%update',itimer=itimer)
+  if (self%gamma==1d0) then
+    self%mem(:,:,:,self%idx%e,self%it,1) = &
+    self%mem(:,:,:,self%idx%d,self%it,1)*self%csound**2
+  end if
+  if (self%mhd) then
+    B => self%mem(:,:,:,self%idx%bx:self%idx%bz,self%it,1)
+    call divB%clean(self%mesh,B)
+  end if
+  call self%pde
+  !-----------------------------------------------------------------------------
+  ! Set boundary conditions on time derivatives
+  !-----------------------------------------------------------------------------
+  mem => self%mem(:,:,:,:,self%it,:)
+  call self%boundaries%derivative(mem)
   !-----------------------------------------------------------------------------
   ! Output the state after guard zone downloads, selfgravity, and boundary
   ! conditions. If another call is placed at an earlier point in the task handling
   ! the call here will have no effect, since out_next has already been updated.
   !-----------------------------------------------------------------------------
   call self%output
-  call self%pde
+  !-----------------------------------------------------------------------------
+  ! The call to courant_condition may optionally be interscepted in extras_t
+  !-----------------------------------------------------------------------------
   call self%courant_condition
   if (verbose>2) &
     call self%check_density('before timestep')
@@ -710,119 +746,6 @@ SUBROUTINE update (self)
   call self%counter_update
   call trace%end (itimer)
 END SUBROUTINE update
-
-!===============================================================================
-!> Perform a single iteration of a div(B) clean.  The limit of stability is
-!> eps=1./6.  This is intended to prevent build-up of layers of large div(B)
-!> between patches. An exact solution would be to solve an internal Laplace
-!> equation, with boundary conditiosn = the boundary value of div(B), and then
-!> subtract the gradient of the resulting potential.
-!>
-!> The problem can also be greatly reduced by using a higher order time
-!> interpoation scheme, thus making the electric field computed from the
-!> guard zone values of B and U a better match to the neighbors E-fields.
-!===============================================================================
-SUBROUTINE divb_clean1(self)
-  class(mhd_t):: self
-  !.............................................................................
-  real, dimension(:,:,:,:), pointer:: b
-  real, dimension(:,:,:)  , pointer:: bx, by, bz, divb
-  real, dimension(:,:,:,:)  , allocatable:: dndivb
-  real, parameter:: eps=0.11
-  !-----------------------------------------------------------------------------
-  b  => self%mem(:,:,:,self%idx%bx:self%idx%bz,self%it,1)
-  bx => b(:,:,:,1)
-  by => b(:,:,:,2)
-  bz => b(:,:,:,3)
-  call allocate_scalars (self%gn, divb)
-  call allocate_vectors_a (self%gn, dndivb)
-  divb = ddup(bx,1) + ddup(by,2) + ddup(bz,3)
-  bx = bx + eps*dddn(divb,1)
-  by = by + eps*dddn(divb,2)
-  bz = bz + eps*dddn(divb,3)
-  call deallocate_vectors_a (dndivb)
-  call deallocate_scalars(divb)
-    return
-contains
-  !-----------------------------------------------------------------------------
-  function ddup(f,i) result (g)
-  real:: f(:,:,:), g(size(f,1),size(f,2),size(f,3))
-  integer:: i
-  !.............................................................................
-  g = cshift(f,1,i) - f
-  end function
-  !-----------------------------------------------------------------------------
-  function dddn(f,i) result (g)
-  real:: f(:,:,:), g(size(f,1),size(f,2),size(f,3))
-  integer:: i
-  !.............................................................................
-  g = f - cshift(f,-1,i)
-  end function
-END SUBROUTINE divb_clean1
-
-!===============================================================================
-!> Enforce div(B)=0 in the guard zones, by succesively imposing the condition,
-!> layer-by-layer, on the component perpendicular to each of the patch faces.
-!===============================================================================
-SUBROUTINE divb_clean2 (self)
-  class(mhd_t):: self
-  !.............................................................................
-  real, dimension(:,:,:), pointer:: bx, by, bz
-  real, dimension(:,:,:), allocatable:: divb
-  real, parameter:: eps=0.11
-  integer:: l(3), u(3), ix, iy, iz, i1, j1, k1
-  integer:: itimer=0
-  !-----------------------------------------------------------------------------
-  call trace%begin('mhd_t%divb_clean2', itimer=itimer)
-  bx => self%mem(:,:,:,self%idx%bx,self%it,1)
-  by => self%mem(:,:,:,self%idx%by,self%it,1)
-  bz => self%mem(:,:,:,self%idx%bz,self%it,1)
-  l = self%mesh%lb
-  u = self%mesh%ub-1
-  i1 = merge(1, 0, self%n(1) > 1)
-  j1 = merge(1, 0, self%n(2) > 1)
-  k1 = merge(1, 0, self%n(3) > 1)
-  !--- x-direction -------------------------------------------------------------
-  do ix=self%mesh(1)%lo,self%mesh(1)%lb,-1
-    bx(ix   ,l(2):u(2),l(3):u(3)) = &
-    bx(ix+i1,l(2):u(2),l(3):u(3)) + ( &
-      by(ix,l(2)+j1:u(2)+j1,l(3)   :u(3)   ) - by(ix,l(2):u(2),l(3):u(3)) + &
-      bz(ix,l(2)   :u(2)   ,l(3)+k1:u(3)+k1) - bz(ix,l(2):u(2),l(3):u(3)))
-  end do
-  do ix=self%mesh(1)%ui,self%mesh(1)%ub-1
-    bx(ix+i1,l(2):u(2),l(3):u(3)) = &
-    bx(ix   ,l(2):u(2),l(3):u(3)) - ( &
-      by(ix,l(2)+j1:u(2)+j1,l(3)   :u(3)   ) - by(ix,l(2):u(2),l(3):u(3)) + &
-      bz(ix,l(2)   :u(2)   ,l(3)+k1:u(3)+k1) - bz(ix,l(2):u(2),l(3):u(3)))
-  end do
-  !--- y-direction -------------------------------------------------------------
-  do iy=self%mesh(2)%lo,self%mesh(2)%lb,-1
-    by(l(1):u(1),iy   ,l(3):u(3)) = &
-    by(l(1):u(1),iy+j1,l(3):u(3)) + ( &
-      bx(l(1)+i1:u(1)+i1,iy,l(3)   :u(3)   ) - bx(l(1):u(1),iy,l(3):u(3)) + &
-      bz(l(1)   :u(1)   ,iy,l(3)+k1:u(3)+k1) - bz(l(1):u(1),iy,l(3):u(3)))
-  end do
-  do iy=self%mesh(2)%ui,self%mesh(2)%ub-1
-    by(l(1):u(1),iy+j1,l(3):u(3)) = &
-    by(l(1):u(1),iy   ,l(3):u(3)) - ( &
-      bx(l(1)+i1:u(1)+i1,iy,l(3)   :u(3)   ) - bx(l(1):u(1),iy,l(3):u(3)) + &
-      bz(l(1)   :u(1)   ,iy,l(3)+k1:u(3)+k1) - bz(l(1):u(1),iy,l(3):u(3)))
-  end do
-  !--- z-direction -------------------------------------------------------------
-  do iz=self%mesh(3)%lo,self%mesh(3)%lb,-1
-    bz(l(1):u(1),l(2):u(2),iz  ) = &
-    bz(l(1):u(1),l(2):u(2),iz+k1) + ( &
-      bx(l(1)+i1:u(1)+i1,l(2)   :u(2)   ,iz) - bx(l(1):u(1),l(2):u(2),iz) + &
-      by(l(1)   :u(1)   ,l(2)+j1:u(2)+j1,iz) - by(l(1):u(1),l(2):u(2),iz))
-  end do
-  do iz=self%mesh(3)%ui,self%mesh(3)%ub-1
-    bz(l(1):u(1),l(2):u(2),iz+k1) = &
-    bz(l(1):u(1),l(2):u(2),iz   ) - ( &
-      bx(l(1)+i1:u(1)+i1,l(2)   :u(2)   ,iz) - bx(l(1):u(1),l(2):u(2),iz) + &
-      by(l(1)   :u(1)   ,l(2)+j1:u(2)+j1,iz) - by(l(1):u(1),l(2):u(2),iz))
-  end do
-  call trace%end (itimer)
-END SUBROUTINE divb_clean2
 
 !===============================================================================
 !> Add extra, MHD-related information to the patch .txt output file
@@ -837,7 +760,7 @@ SUBROUTINE output (self)
   call trace%begin('mhd_t%output')
   call self%extras_t%output
   if (self%time >= out_next .and. io%do_output .and. io%do_legacy) then
-    !$omp critical (out_cr)
+    call io%lock%set ('mhd_t%output')
     write (filename,'(a,i4.4,"_",i4.4,".txt")') trim(io%outputname), &
       self%id, self%iout
     inquire(file=filename, exist=exists)
@@ -847,26 +770,23 @@ SUBROUTINE output (self)
       write (io%data_unit,'(8f10.4)') self%nu
       close (io%data_unit)
     end if
-  !$omp end critical (out_cr)
+    call io%lock%unset ('mhd_t%output')
   end if
   call trace%end()
 END SUBROUTINE output
 
 !===============================================================================
-!> temperature from ideal gas law, taking into account that the temperature is
-!> normalised by k_B and mu (so that specific gas constant = 1)
-!===============================================================================
-FUNCTION gas_pressure (self) RESULT (pg)
+FUNCTION gas_pressure (self) result(pg)
   class(mhd_t):: self
-  real, dimension(:,:,:), pointer:: d, s, ss, lnd
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
+  real, dimension(:,:,:), pointer:: d, s, ss
   integer, save:: nprint=1
   !-----------------------------------------------------------------------------
-  call trace%begin('mhd_t%gas_pressure')
-  d => self%mem(:,:,:,self%idx%d ,self%it,1)
-  s => self%mem(:,:,:,self%idx%s ,self%it,1)
+  call trace%begin ('mhd_t%gas_pressure_sub')
+  d  => self%mem(:,:,:,self%idx%d ,self%it,1)
+  s  => self%mem(:,:,:,self%idx%s ,self%it,1)
   call allocate_scalars(self%gn,ss)
-  ss = s / d
+  ss = s/d
   if (trim(self%eos)=='ideal') then
     if (self%gamma==1d0) then
       pg = d*self%csound**2
@@ -874,21 +794,20 @@ FUNCTION gas_pressure (self) RESULT (pg)
       pg = d**self%gamma*exp(ss*(self%gamma-1d0))
     end if
   else
-    call allocate_scalars(self%gn,lnd)
     if (do_temperature) then
-      call eos%lookup_table (shape(lnd), lnd=lnd, ss=ss, pg=pg, tt=self%tt)
+      call eos%lookup_table (shape(d),d=d, ss=ss, pg=pg, &
+        tt=self%tt)
     else
-      call eos%lookup_table (shape(lnd), lnd=lnd, ss=ss, pg=pg)
+      call eos%lookup_table (shape(lnd), d=d, ss=ss, pg=pg)
     end if
     if (verbose > 1 .or. nprint > 0) then
       nprint = nprint-1
-      write(io%output,*) self%id, 'lookup_table: lnd =', minval(lnd), maxval(lnd)
+      write(io%output,*) self%id, 'lookup_table: d =', minval(d), maxval(d)
       write(io%output,*) self%id, 'lookup_table:  ss =', minval(ss) , maxval(ss )
       write(io%output,*) self%id, 'lookup_table:  pg =', minval(pg) , maxval(pg)
       if (do_temperature) &
-        write(io%output,*) self%id, 'lookup_table:  tt =', minval(self%tt), maxval(self%tt)
+      write(io%output,*) self%id, 'lookup_table:  tt =', minval(self%tt), maxval(self%tt)
     end if
-    call deallocate_scalars(lnd)
   end if
   call deallocate_scalars(ss)
   call trace%end()
@@ -919,10 +838,37 @@ SUBROUTINE gas_pressure_sub (self, d, lnd, ss, pg)
       write(io%output,*) self%id, 'lookup_table:  ss =', minval(ss) , maxval(ss )
       write(io%output,*) self%id, 'lookup_table:  pg =', minval(pg) , maxval(pg)
       if (do_temperature) &
-        write(io%output,*) self%id, 'lookup_table:  tt =', minval(self%tt), maxval(self%tt)
+      write(io%output,*) self%id, 'lookup_table:  tt =', minval(self%tt), maxval(self%tt)
     end if
   call trace%end()
   end if
 END SUBROUTINE gas_pressure_sub
+
+!===============================================================================
+!> Set up nbor relations between MHD tasks
+!===============================================================================
+SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
+  class(mhd_t):: self
+  class(task_t), pointer:: another, task
+  logical:: needed, needs_me, download, overlaps
+  ! ----------------------------------------------------------------------------
+  integer, save:: itimer=0
+  class(mhd_t),  pointer:: nb_mhd
+  ! ----------------------------------------------------------------------------
+  if (timer%detailed) &
+    call trace%begin ('mhd_t%nbor_relations', 2, itimer=itimer)
+  task => another
+  call self%task_t%nbor_relations(task,needed,needs_me,download)
+  select type (another)
+  class is (mhd_t)
+    ! do nothing, all is done in the base task_t layer
+  class default
+    needed=.false.; needs_me=.false.; download=.false.
+  end select
+
+  if (timer%detailed) &
+    call trace%end(itimer=itimer)
+
+END SUBROUTINE nbor_relations
 
 END MODULE mhd_mod
