@@ -40,6 +40,7 @@ MODULE gpatch_mod
     procedure:: init_bdries
     procedure:: init_task_list
     procedure:: pre_update
+    procedure:: update
     procedure:: input
     procedure:: output
     procedure:: init
@@ -135,6 +136,15 @@ SUBROUTINE pre_update (self)
   call scratch%pre_update
   call trace%end ()
 END SUBROUTINE pre_update
+
+!===============================================================================
+!> Interface allowing intercept
+!===============================================================================
+SUBROUTINE update (self)
+  class(gpatch_t):: self
+  !-----------------------------------------------------------------------------
+  call self%patch_t%update
+END SUBROUTINE update
 
 !===============================================================================
 !> Interface routine to the data_io input procedure, signalling if the patch
