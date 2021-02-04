@@ -63,7 +63,7 @@ SUBROUTINE init (self)
   logical, save:: first_time=.true.
   namelist /non_ideal_params/ gamma_AD, eta_Ohm, etaMD, rho_ions, mhd_AD, mhd_Ohm, ntestDADM
   !---------------------------------------------------------------------------
-  call io%lock%set
+  call io%lock%set('non_ideal_mod%init')
   if (first_time) then
     first_time = .false.
     rewind (io_unit%input)
@@ -71,7 +71,7 @@ SUBROUTINE init (self)
     call io%namelist_warning ('non_ideal_params', iostat)
     write (io%namelist, non_ideal_params)
   end if
-  call io%lock%unset
+  call io%lock%unset('non_ideal_mod%init')
   self%mhd_Ohm  = mhd_Ohm
   self%eta_Ohm  = eta_Ohm
   self%mhd_AD   = mhd_AD
