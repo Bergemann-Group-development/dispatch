@@ -48,7 +48,7 @@ MODULE mhd_mod
     real, contiguous, pointer, dimension(:,:,:,:,:):: qLB,qRB,qLT,qRT
     real, contiguous, pointer, dimension(:,:,:,:):: uin       ! conserved
     real, contiguous, pointer, dimension(:,:,:,:):: unew      ! new conserved
-    real, contiguous, pointer, dimension(:,:,:):: Ex,Ey,Ez, pg
+    real, contiguous, pointer, dimension(:,:,:):: Ex,Ey,Ez, pg, hpv
     real, contiguous, pointer, dimension(:,:,:):: c
     !dir$ attributes align:64 :: q,bf,em,qp,qm,dq,dq2,dbf,qLB,qRB,qLT,qRT,Ex,Ey,Ez,c
   contains
@@ -131,7 +131,6 @@ SUBROUTINE pre_init (self)
   self%csound = csound
   self%staggered = .false.
   !-----------------------------------------------------------------------------
-  call non_ideal%init  
   call trace%end()
 END SUBROUTINE pre_init
 
@@ -141,7 +140,6 @@ SUBROUTINE init (self)
   integer:: i, n(3)
 !...............................................................................
   call trace%begin('mhd_mod%init')
-  call self%patch_t%init
   if (minval(self%mesh%n) < 3) then
     print *, self%mesh%n
     call io%abort ('SOLVER=ramses/mhd needs at least 3 mesh points in any direction')
@@ -158,10 +156,12 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Initialize everything else, and do a sanity check
   !-----------------------------------------------------------------------------
+  call non_ideal%init  
   call self%extras_t%init
   call self%set_solver_vars
   n = self%mesh%gn
   allocate (self%pg  (n(1),n(2),n(3)))                           ! Pg aux slot
+  allocate (self%hpv  (n(1),n(2),n(3)))                           ! heating per volume aux slot
   call trace%end()
 END SUBROUTINE init
 
@@ -192,9 +192,19 @@ SUBROUTINE pre_update (self)
   integer:: iz
   real, dimension(:,:,:,:), pointer:: mem
   !-----------------------------------------------------------------------------
-  ! Compute initial temperature
-  !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%pre_update')
+  ! ----------------------------------------------------------------------------
+  ! update time slots
+  ! ----------------------------------------------------------------------------
+  call self%gpatch_t%pre_update ()
+  !-----------------------------------------------------------------------------
+  ! Primitive variables may be needed in extras courant_conditions
+  !-----------------------------------------------------------------------------
+  if (io%smallr  /= 0.0) smallr = io%smallr
+  if (io%courant /= 0.0) self%courant = io%courant
+  !call ctoprim(self)                  ! Primitive variables, sound speeds
+  !call self%extras_t%courant_condition (detailed_timer)
+  !call self%gpatch_t%courant_condition (detailed_timer)
   !-----------------------------------------------------------------------------
   ! Set boundary conditions on primary variables
   !-----------------------------------------------------------------------------
@@ -208,7 +218,7 @@ SUBROUTINE pre_update (self)
 END SUBROUTINE pre_update
 
 !===============================================================================
-!> This procedure is called by solver_t%update, before it calls mhd_t%update
+!> This procedure is called by solver_t%update, after it calls mhd_t%update
 !===============================================================================
 SUBROUTINE post_update (self)
   class(mhd_t):: self
@@ -495,6 +505,8 @@ SUBROUTINE update (self)
       sum(sum(scratch%heating_per_unit_volume(:,:,l(3):l(3)+9),1),1)
     end if
     e = e + self%dtime*scratch%heating_per_unit_volume
+    self%hpv=self%dtime*scratch%heating_per_unit_volume
+    call self%aux%register ('hpv', self%hpv)
   end if
   ! ----------------------------------------------------------------------------
   ! do timestep%update
@@ -580,6 +592,7 @@ subroutine check_small (self)
     else
       p = (uu(i,j,k,5)-ekin-emag)*(gamma-one)
       if (p < smallr*smallc**2) then
+        print *, 'smallp', uu(i,j,k,5), ekin, emag, p
         p = smallr*smallc**2
         uu(i,j,k,5) = p/(gamma-one)+ekin+emag
         n_smallp = n_smallp+1
@@ -702,11 +715,11 @@ subroutine ctoprim(self)
  ! end if
   deallocate (ee0)
   do k=1,n(3)
-  do j=1,n(2)
-  do i=1,n(1)
-    q(i,j,k,5) = pg(i,j,k)
-  end do
-  end do
+    do j=1,n(2)
+      do i=1,n(1)
+        q(i,j,k,5) = pg(i,j,k)
+      end do
+    end do
   end do
   if (do_temperature) then 
     allocate (aux (self%gn(1),self%gn(2),self%gn(3)))
@@ -720,9 +733,6 @@ subroutine ctoprim(self)
     call self%aux%register ('tt', aux)
     deallocate(aux)
   end if
-  q(self%gn(1),:,:,5) = q(self%gn(1)-1,:,:,5)
-  q(:,self%gn(2),:,5) = q(:,self%gn(2)-1,:,5)
-  q(:,:,self%gn(3),5) = q(:,:,self%gn(3)-1,5)
   self%pg = q(:,:,:,5)
   call self%aux%register ('pg', self%pg)
   !-----------------------------------------------------------------------------
@@ -1109,6 +1119,7 @@ SUBROUTINE trace3d(self)
   real(dp), dimension(:,:,:), allocatable:: rho_t, p_t, h_t
   real(dp) :: eff_gamma, off
   real(dp) :: ff(self%gn(1),3), qq(self%gn(1))
+  real(8):: dt2
   integer:: lo(3), uo(3)
   integer, save:: itimer(4)=0
   !-----------------------------------------------------------------------------
@@ -1196,37 +1207,41 @@ SUBROUTINE trace3d(self)
   ! below accesses {i,j,k}+-1, and needs to be good in (lo,uo).  With ng=3, the
   ! loop limits are (lo-1,uo+1) = (2,gn-1)
   !-----------------------------------------------------------------------------
+  dt2 = 0.5d0*self%dtime
   lo = self%mesh%lo-1
   uo = self%mesh%uo+1
   d => self%mem(:,:,:,self%idx%d,self%new,1)
   do k=lo(3),uo(3)
   do j=lo(2),uo(2)
+  ff(:,:) = 0.0_dp
   if (associated(scratch%force_per_unit_mass)) then
     !dir$ simd
     do i=lo(1),uo(1)
-      ff(i,1) = scratch%force_per_unit_mass(i,j,k,1)
-      ff(i,2) = scratch%force_per_unit_mass(i,j,k,2)
-      ff(i,3) = scratch%force_per_unit_mass(i,j,k,3)
+      ff(i,1) = ff(i,1) + scratch%force_per_unit_mass(i,j,k,1)*dt2
+      ff(i,2) = ff(i,2) + scratch%force_per_unit_mass(i,j,k,2)*dt2
+      ff(i,3) = ff(i,3) + scratch%force_per_unit_mass(i,j,k,3)*dt2
     end do
-  else if (associated(scratch%force_per_unit_volume)) then
-    do i=lo(1),uo(1)
-      ff(i,1) = scratch%force_per_unit_volume(i,j,k,1)/d(i,j,k)
-      ff(i,2) = scratch%force_per_unit_volume(i,j,k,2)/d(i,j,k)
-      ff(i,3) = scratch%force_per_unit_volume(i,j,k,3)/d(i,j,k)
-    end do
-  else
-    ff(:,:) = 0.0_dp
   end if
+  if (associated(scratch%force_per_unit_volume)) then
+    !dir$ simd
+    do i=lo(1),uo(1)
+      ff(i,1) = ff(i,1) + scratch%force_per_unit_volume(i,j,k,1)*dt2/d(i,j,k)
+      ff(i,2) = ff(i,2) + scratch%force_per_unit_volume(i,j,k,2)*dt2/d(i,j,k)
+      ff(i,3) = ff(i,3) + scratch%force_per_unit_volume(i,j,k,3)*dt2/d(i,j,k)
+    end do
+  end if
+  qq(:) = 0.0
   if (associated(scratch%heating_per_unit_volume)) then
+    !dir$ simd
     do i=lo(1),uo(1)
-      qq(i) = scratch%heating_per_unit_volume(i,j,k)
+      qq(i) = qq(i) + scratch%heating_per_unit_volume(i,j,k)*dt2
     end do
-  else if (associated(scratch%heating_per_unit_mass)) then
+  end if
+  if (associated(scratch%heating_per_unit_mass)) then
+    !dir$ simd
     do i=lo(1),uo(1)
-      qq(i) = scratch%heating_per_unit_mass(i,j,k)*d(i,j,k)
+      qq(i) = qq(i) + scratch%heating_per_unit_mass(i,j,k)*d(i,j,k)*dt2
     end do
-  else
-      qq(:) = 0.0
   end if
   !dir$ ivdep
   !$omp simd private( &
@@ -1349,13 +1364,13 @@ SUBROUTINE trace3d(self)
 !i,j,k,h,dex,dey,dez,se0
     !
     ! Add external force
-    su0 = su0 + ff(i,1)*half*self%dtime
-    sv0 = sv0 + ff(i,2)*half*self%dtime
-    sw0 = sw0 + ff(i,3)*half*self%dtime
+    su0 = su0 + ff(i,1)
+    sv0 = sv0 + ff(i,2)
+    sw0 = sw0 + ff(i,3)
     !
     ! Add external heating
-    sp0 = sp0  + (eff_gamma-1d0)*qq(i)*half*self%dtime
-    se0 = se0  +            invr*qq(i)*half*self%dtime
+    sp0 = sp0  + (eff_gamma-1d0)*qq(i)
+    se0 = se0  +            invr*qq(i)
     !
     ! Evolve entropy instead of pressure
     !sS0 = (-u*dSx)*dtdx + (-v*dSy)*dtdy + (-w*dSz)*dtdz
