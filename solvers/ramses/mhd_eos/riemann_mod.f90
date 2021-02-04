@@ -128,7 +128,7 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
     estar =rl*(SL-ul)*(SL-ustar)-A**2
     el    =rl*(SL-ul)*(SL-ul   )-A**2
     !if (dbg) print 1,'hlld4', estar,rl,SL,ul,ustar,A'
-#define MERGE
+!define MERGE
 #ifdef MERGE
     illconditioned = abs(estar) < 1d-4*A**2
     vstarl = merge (vl, vl-A*Bl*(ustar-ul)/estar, illconditioned)
@@ -137,15 +137,15 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
     cstarl = merge (cl, Cl*el/estar             , illconditioned)
 #else
     if(abs(estar) < 1d-4*A**2)then
-       vstarl=vl
-       Bstarl=Bl
-       wstarl=wl
-       Cstarl=Cl
+      vstarl=vl
+      Bstarl=Bl
+      wstarl=wl
+      Cstarl=Cl
     else
-       vstarl=vl-A*Bl*(ustar-ul)/estar
-       Bstarl=Bl*el/estar
-       wstarl=wl-A*Cl*(ustar-ul)/estar
-       Cstarl=Cl*el/estar
+      vstarl=vl-A*Bl*(ustar-ul)/estar
+      Bstarl=Bl*el/estar
+      wstarl=wl-A*Cl*(ustar-ul)/estar
+      Cstarl=Cl*el/estar
     endif
 #endif
     vdotBstarl=ustar*A+vstarl*Bstarl+wstarl*Cstarl
