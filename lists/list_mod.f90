@@ -420,7 +420,7 @@ SUBROUTINE remove_link (self, link)
   ! IMPORTANT: Some procedures depend on knowing the size of the list!
   !-----------------------------------------------------------------------------
   call self%update_counts (link, -1)
-  call trace_end
+  call trace%end ()
 END SUBROUTINE remove_link
 
 !===============================================================================
@@ -1409,7 +1409,7 @@ SUBROUTINE init_nbors (self, link)
   class(link_t), pointer:: scan
   class(nbor_t), pointer:: nbor, new_head, new_sort, old_head, old_sort, nbors
   integer:: n_add, status
-  logical:: overlaps
+  logical:: needed, needs_me, download, nb_needed, nb_needs_me, nb_download, overlaps
   real(8):: time
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -1441,31 +1441,35 @@ SUBROUTINE init_nbors (self, link)
         overlaps = scan%task%overlaps(link%task) &
              .and. abs(scan%task%level - link%task%level) <= 2
         if (overlaps) then  ! if its task overlaps
-          allocate (nbor)
-          nbor%link => scan
-          nbor%task => scan%task
-          !---------------------------------------------------------------------
-          ! Set status bits and flags, but note that these may have to be reset
-          ! after pruning, since that may for example remove the only virtual
-          ! nbor, which means the task that the list belongs to changes from a
-          ! boundary task to an internal task.
-          !---------------------------------------------------------------------
-          call link%task%nbor_relations (nbor%task, nbor%needed, nbor%needs_me, &
-            nbor%download)
-          !---------------------------------------------------------------------
-          ! Add in rank order and increment the count of tasks need this task
-          !---------------------------------------------------------------------
-          call link%add_nbor_by_rank (new_head, nbor)
-          !$omp atomic update
-          scan%task%n_needed = scan%task%n_needed + 1
+          call link%check_nbor_relations(scan, needed, needs_me, download)
+          if (needed .or. needs_me .or. download) then
+            allocate (nbor)
+            nbor%link => scan
+            nbor%task => scan%task
+            !---------------------------------------------------------------------
+            ! Set status bits and flags, but note that these may have to be reset
+            ! after pruning, since that may for example remove the only virtual
+            ! nbor, which means the task that the list belongs to changes from a
+            ! boundary task to an internal task.
+            !---------------------------------------------------------------------
+            nbor%needed   = needed
+            nbor%needs_me = needs_me
+            nbor%download = download
+            !---------------------------------------------------------------------
+            ! Add in rank order and increment the count of tasks need this task
+            !---------------------------------------------------------------------
+            call link%add_nbor_by_rank (new_head, nbor)
+           !$omp atomic update
+             scan%task%n_needed = scan%task%n_needed + 1
+            !.....................................................................
+            n_add = n_add+1
+            if (self%verbose > 1 .or. link%task%id == io%id_debug) &
+              write (io_unit%log, '(2x,a,2i6,i4,3x,4l1)') &
+              'init_nbors: id, nbor, level, NMDV =', link%task%id, &
+              nbor%task%id, nbor%task%level, nbor%needed, nbor%needs_me, &
+              nbor%download, nbor%task%is_set(bits%virtual)
           !.....................................................................
-          n_add = n_add+1
-          if (self%verbose > 1 .or. link%task%id == io%id_debug) &
-            write (io_unit%log, '(2x,a,2i6,i4,3x,4l1)') &
-            'init_nbors: id, nbor, level, NMDV =', link%task%id, &
-            nbor%task%id, nbor%task%level, nbor%needed, nbor%needs_me, &
-            nbor%download, nbor%task%is_set(bits%virtual)
-          !.....................................................................
+          end if
         end if
       end if
     end if
@@ -2742,8 +2746,8 @@ SUBROUTINE update_status (self, link)
   nbor => link%nbor
   do while (associated(nbor))
     old%status = link%task%status
-    call link%task%nbor_relations (nbor%task, nbor%needed, nbor%needs_me, &
-                                   nbor%download)
+    call link%check_nbor_relations (nbor%link, nbor%needed,  &
+                                    nbor%needs_me, nbor%download)
     call update_count (link%task, old, bits%virtual , self%nb)
     call update_count (link%task, old, bits%boundary, self%nv)
     call update_count (link%task, old, bits%internal, self%na)
@@ -3187,19 +3191,47 @@ END SUBROUTINE find_nbors
 !===============================================================================
 !> Check consistency of the nbor lists of all tasks in the list
 !===============================================================================
-SUBROUTINE check_nbor_consistency (self, ok)
+SUBROUTINE check_nbor_consistency (self, label)
   class(list_t):: self
+  character(len=*), optional:: label
   logical:: ok
   !.............................................................................
-  class(link_t), pointer:: link
+  class(link_t), pointer:: link1, link2
+  class(nbor_t), pointer:: nbor1, nbor2
   !-----------------------------------------------------------------------------
   call trace%begin ('list_t%check_nbor_consistency')
-  link => self%head
-  do while (associated(link))
-    if (link%nbor_inconsistency()) then
-      write (stderr,*) 'ERROR: nbor list is inconsistent for task', link%task%id
-    end if
-    link => link%next
+  if (present(label)) then
+    write (stdout,*) 'list_t%check_nbor_consistency: ', label
+  end if
+  link1 => self%head
+  do while (associated(link1))
+    nbor1 => link1%nbor
+    do while (associated(nbor1))
+      !-------------------------------------------------------------------------
+      ! Find this nbor on the task list, and find the link1%task nbor
+      !-------------------------------------------------------------------------
+      link2 => self%head
+      do while (associated(link2))
+        if (link2%task%id == nbor1%task%id) then
+          nbor2 => link2%nbor
+          do while (associated(nbor2))
+            if (nbor2%task%id == link1%task%id) then
+              if ((nbor2%needed   .neqv. nbor1%needs_me) .or. &
+                  (nbor2%needs_me .neqv. nbor1%needed)) then
+                print *, 'inconsistency', &
+                  nbor1%task%id, nbor1%needed, nbor1%needs_me, &
+                  nbor2%task%id, nbor2%needed, nbor2%needs_me
+              end if
+              exit
+            end if
+            nbor2 => nbor2%next
+          end do
+        end if
+        link2 => link2%next
+      end do
+      nbor1 => nbor1%next
+    end do
+    link1 => link1%next
   end do
   call trace%end ()
 END SUBROUTINE check_nbor_consistency

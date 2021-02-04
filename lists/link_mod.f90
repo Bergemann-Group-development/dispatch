@@ -70,6 +70,7 @@ MODULE link_mod
     procedure:: copy_nbor_list
     procedure:: make_new_nbors
     procedure:: make_new_nbor
+    procedure:: check_nbor_relations
     !procedure:: update_nbors
     procedure:: log_nbors
     procedure:: print_nbors
@@ -229,8 +230,10 @@ SUBROUTINE add_nbor_by_quality (self, this)
   allocate (nbor)
   nbor%link => this
   nbor%task => this%task
-  call self%task%nbor_relations (nbor%task, nbor%needed, nbor%needs_me, &
-                                 nbor%download)
+  call self%check_nbor_relations(nbor%link,nbor%needed, &
+                                 nbor%needs_me, nbor%download)
+  !call self%task%nbor_relations (nbor%task, nbor%needed, nbor%needs_me, &
+  !                               nbor%download)
   !$omp atomic update
   this%task%n_needed = this%task%n_needed + 1   ! because linked task derefined
   if (verbose > 1) &
@@ -273,6 +276,29 @@ SUBROUTINE add_nbor_by_quality (self, this)
   call self%lock%unset ('add_nbor_by_quality')
   call trace_end
 END SUBROUTINE add_nbor_by_quality
+
+SUBROUTINE check_nbor_relations(self, nbor, needed, needs_me, download)
+  class(link_t):: self, nbor
+  logical:: needed, needs_me, download
+  !.............................................................................
+  logical:: my_needed, my_needs_me, my_download
+  logical:: nb_needed, nb_needs_me, nb_download
+  !-----------------------------------------------------------------------------
+  call trace%begin ('link_t%check_nbor_relations')
+  call self%task%nbor_relations(nbor%task,my_needed,my_needs_me,my_download)
+write (io_unit%log,'(a,2i6,2x,3l1)') &                                    !DEBUG
+'link_t%check_nbor_relations: id, other, needed, needs_me, download =', & !DEBUG
+self%task%id, nbor%task%id, my_needed, my_needs_me, my_download           !DEBUG
+  call nbor%task%nbor_relations(self%task,nb_needed,nb_needs_me,nb_download)
+  needed   = (my_needed   .or. nb_needs_me)
+  needs_me = (my_needs_me .or. nb_needed)
+  download = my_download
+write (io_unit%log,'(a,2i6,2(2x,3l1))') &                                 !DEBUG
+'link_t%check_nbor_relations: id, other, needed, needs_me, download =', & !DEBUG
+nbor%task%id, self%task%id, nb_needed, nb_needs_me, nb_download, &        !DEBUG
+needed, needs_me, download                                                !DEBUG
+  call trace%end ()
+END SUBROUTINE check_nbor_relations
 
 !===============================================================================
 !> Check the status of a link and all nbor links
@@ -924,7 +950,8 @@ SUBROUTINE reset_status (self, nbor_list, check)
     if (present(check)) then
       flags(:,1) = [nb%needed, nb%needs_me, nb%download]
     end if
-    call self%task%nbor_relations (nb%task, nb%needed, nb%needs_me, nb%download)
+    call self%check_nbor_relations(nb%link,nb%needed, nb%needs_me, nb%download)
+    !call self%task%nbor_relations (nb%task, nb%needed, nb%needs_me, nb%download)
     if (present(check)) then
       flags(:,2) = [nb%needed, nb%needs_me, nb%download]
       if (.not.all(flags(:,2) .eqv. flags(:,1))) then
@@ -958,7 +985,7 @@ LOGICAL FUNCTION needs_to_add (self, nblink)
   logical:: needed, needs_me, download, done
   !-----------------------------------------------------------------------------
   call trace%begin ('link_t%needs_to_add')
-  call self%task%nbor_relations (nblink%task, needed, needs_me, download)
+  call self%check_nbor_relations (nblink%link, needed, needs_me, download)
   if (needed .or. needs_me) then
     needs_to_add = .true.
     nbor => self%nbor
@@ -987,8 +1014,9 @@ SUBROUTINE add_nbor (self, nblink)
   allocate (nbor)
   nbor%link => nblink
   nbor%task => nblink%task
-  call self%task%nbor_relations (nbor%task, nbor%needed, nbor%needs_me, &
+  call self%check_nbor_relations (nbor%link, nbor%needed, nbor%needs_me, &
                                  nbor%download)
+  call self%add_nbor_by_rank(self%nbor, nbor)
   call trace%end ()
 END SUBROUTINE add_nbor
 

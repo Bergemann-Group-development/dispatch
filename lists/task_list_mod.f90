@@ -133,7 +133,7 @@ SUBROUTINE init_levels (self)
   class(task_list_t):: self
   type(link_t), pointer:: link
   logical:: first_time=.true.
-  integer:: levelmin, levelmax
+  integer, save:: levelmin, levelmax
   !-----------------------------------------------------------------------------
   call trace%begin ('task_list_t%init_levels')
   call refine%init                      ! refinement parameters
@@ -225,6 +225,7 @@ SUBROUTINE startup (self)
   call self%task_mesg_t%init
   call validate%init
   task_list => self
+  call self%check_nbor_consistency ('startup')
   call load_balance%init (task_list)
   !-----------------------------------------------------------------------------
   ! When restarting, the virtual tasks need to be received and unpacked before
@@ -406,6 +407,7 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
   else
     select type (task)
     class is (patch_t)
+    if (task%is_clear(bits%no_density)) &
     call validate%check (head, task%mem(:,:,:,task%idx%d,task%it,1), 'before update')
     end select
     !---------------------------------------------------------------------------
