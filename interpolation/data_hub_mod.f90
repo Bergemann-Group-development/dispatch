@@ -84,7 +84,7 @@ SUBROUTINE select_dnloader (self, link, all_cells)
   class(data_hub_t), pointer :: hub
   ! --------------------------------------------------------------------
   patch => self%target
-  nbor  => link%nbor
+  nbor  => link%nbors_by_level
   do while (associated(nbor))
     source => task2patch(nbor%task)
     if (nbor%download) then
@@ -104,7 +104,7 @@ SUBROUTINE select_dnloader (self, link, all_cells)
             end if
           end if
         end if
-      else if (trim(source%kind)=='rt_solver') then
+      else if (source%kind(1:5)=='rt_sc') then
         if (abs(source%level-patch%level) < 2) then
           call self%add_hub (patch, source, hub, all_cells)
           hub%rt_target = .true.
@@ -669,7 +669,8 @@ SUBROUTINE dnload_from_lower (self, only)
             if (.not.found) then
                 print *, iv, cl, pos
                 print *, pos2
-                call io%abort("data_hub::dnload_lower:: cell not found")    ! very unusual, but a necessary check and a stop.
+                print *, target%ng, target%level, trim(target%kind)
+                call io%abort("data_hub::dnload_lower rt:: cell not found")    ! very unusual, but a necessary check and a stop.
             end if
           else
             rt_scr(i,j,k,:) = pt2(1) * mem(cl(1),cl(2),cl(3),:, jt2(1)) + &
@@ -733,6 +734,8 @@ SUBROUTINE dnload_from_lower (self, only)
               if (.not.found) then
                   print *, iv, cl, pos
                   print *, pos2
+                  print *, target%ng, target%level, trim(target%kind)
+                  print *, target%mesh%d, target%mesh%o
                   call io%abort("data_hub::dnload_lower:: cell not found")    ! very unusual, but a necessary check and a stop.
               end if
             else
@@ -876,7 +879,7 @@ SUBROUTINE check_in_nbors (self, pos, iv, time, jt, pt, id, found, scr, rt_scr)
   logical                           :: found
   ! ....................................................................
   integer :: iv, sl(3), su(3), tl(3), tu(3), i, j, k
-  integer :: d, cl(3), ii, l(3), u(3), v
+  integer :: d, cl(3), ii, l(3), u(3), v, ic
   real    :: p(3)
   real(8) :: eps = 0.001_8
   class(mesh_t), pointer :: m
@@ -888,8 +891,10 @@ SUBROUTINE check_in_nbors (self, pos, iv, time, jt, pt, id, found, scr, rt_scr)
   source => self%source
   target => self%target
   d = source%idx%d
-  nbor => source%link%nbor
+  nbor => source%link%nbors_by_level
+  ic=0
   do while((associated(nbor)).and..not.found)
+    ic = ic+1
     if ((nbor%task%id /= source%id).and.(nbor%task%id /= target%id)) then ! source is already checked, target should not be there
       nbpatch => task2patch(nbor%task)
       if (abs(nbpatch%level-source%level)<2) then
