@@ -74,58 +74,142 @@ SUBROUTINE pre_update (self)
   class(newton_t) :: self
   !.............................................................................
   class(mesh_t), pointer:: m1, m2, m3
-  real, dimension(:,:,:), pointer:: d, e
-  real:: f, r, ee, s, ee_top
-  integer:: ix, iy, iz
+  real, dimension(:,:,:), pointer:: d, e, px, py, pz, bx, by, bz
+  real:: f, r, ee, s, ee_top, em, ek, eth, b1, b2, b3
+  integer:: ix, iy, iz, lo(3), uo(3)
   ! ----------------------------------------------------------------------------
   if (self%on) then
-    d => self%patch%mem(:,:,:,self%patch%idx%d,self%patch%it,1)
-    e => self%patch%mem(:,:,:,self%patch%idx%e,self%patch%it,1)
-    call scratch%allocate (scratch%heating_per_unit_volume, self%patch%mesh%gn)
-    if (ee0/=0.0) then
-      ee_top = ee0
-    else
-      ee_top = self%ee_top
-    end if
-    m1 => self%patch%mesh(1)
-    m2 => self%patch%mesh(2)
-    m3 => self%patch%mesh(3)
-    if      (axis==1) then
-      do iz = m3%li, m3%ui
-        do iy = m2%li, m2%ui
-          do ix = m1%li, m1%ui
-            s = position - (m1%p + m1%r(ix))
-            f = exp(-s/scale)
-            r = f/((1.0+f)*time)
-            ee = ee_top + ee1*s
-            scratch%heating_per_unit_volume(ix,iy,iz) = &
-            scratch%heating_per_unit_volume(ix,iy,iz) + &
-              (ee*d(ix,iy,iz)-e(ix,iy,iz))*r
+    if (self%patch%kind(1:6)/='ramses') then
+      d => self%patch%mem(:,:,:,self%patch%idx%d,self%patch%it,1)
+      e => self%patch%mem(:,:,:,self%patch%idx%e,self%patch%it,1)
+      call scratch%allocate (scratch%heating_per_unit_volume, self%patch%mesh%gn)
+      if (ee0/=0.0) then
+        ee_top = ee0
+      else
+        ee_top = self%ee_top
+      end if
+      m1 => self%patch%mesh(1)
+      m2 => self%patch%mesh(2)
+      m3 => self%patch%mesh(3)
+      if      (axis==1) then
+        do iz = m3%lo, m3%uo
+          do iy = m2%lo, m2%uo
+            do ix = m1%lo, m1%uo
+              s = position - (m1%p + m1%r(ix))
+              f = exp(-s/scale)
+              r = f/((1.0+f)*time)
+              ee = ee_top + ee1*s
+              scratch%heating_per_unit_volume(ix,iy,iz) = &
+              scratch%heating_per_unit_volume(ix,iy,iz) + &
+                (ee*d(ix,iy,iz)-e(ix,iy,iz))*r
+            end do
           end do
         end do
-      end do
-    else
-      do iz = m3%li, m3%ui
-        if (axis==3) then
-          s = position - (m3%p + m3%r(iz))
-          f = exp(-s/scale)/time
-          r = f/((1.0+f)*time)
-          ee = ee_top + ee1*s
-        end if
-        do iy = m2%li, m2%ui
-          if (axis==2) then
-            s = position - (m2%p + m2%r(iy))
-            f = exp(-s/scale)
+      else
+        do iz = m3%lo, m3%uo
+          if (axis==3) then
+            s = position - (m3%p + m3%r(iz))
+            f = exp(-s/scale)/time
             r = f/((1.0+f)*time)
             ee = ee_top + ee1*s
           end if
-          do ix = m1%li, m1%ui
-            scratch%heating_per_unit_volume(ix,iy,iz) = &
-            scratch%heating_per_unit_volume(ix,iy,iz) + &
-              (ee*d(ix,iy,iz)-e(ix,iy,iz))*r
+          do iy = m2%lo, m2%uo
+            if (axis==2) then
+              s = position - (m2%p + m2%r(iy))
+              f = exp(-s/scale)
+              r = f/((1.0+f)*time)
+              ee = ee_top + ee1*s
+            end if
+            do ix = m1%lo, m1%uo
+              scratch%heating_per_unit_volume(ix,iy,iz) = &
+              scratch%heating_per_unit_volume(ix,iy,iz) + &
+                (ee*d(ix,iy,iz)-e(ix,iy,iz))*r
+            end do
           end do
         end do
-      end do
+      end if
+    else
+      lo=self%patch%mesh%lo-1
+      uo=self%patch%mesh%uo+1
+      d  => self%patch%mem(:,:,:,self%patch%idx%d ,self%patch%new,1)
+      e  => self%patch%mem(:,:,:,self%patch%idx%e ,self%patch%new,1)
+      px => self%patch%mem(:,:,:,self%patch%idx%px,self%patch%new,1)
+      py => self%patch%mem(:,:,:,self%patch%idx%py,self%patch%new,1)
+      pz => self%patch%mem(:,:,:,self%patch%idx%pz,self%patch%new,1)
+      bx => self%patch%mem(:,:,:,self%patch%idx%bx,self%patch%new,1)
+      by => self%patch%mem(:,:,:,self%patch%idx%by,self%patch%new,1)
+      bz => self%patch%mem(:,:,:,self%patch%idx%bz,self%patch%new,1)
+      call scratch%allocate (scratch%heating_per_unit_volume, self%patch%mesh%gn)
+      if (ee0/=0.0) then
+        ee_top = ee0
+      else
+        ee_top = self%ee_top
+      end if
+      m1 => self%patch%mesh(1)
+      m2 => self%patch%mesh(2)
+      m3 => self%patch%mesh(3)
+      select case(axis)
+      case(1)
+        do iz = lo(3), uo(3)
+          do iy = lo(2), uo(2)
+            do ix = lo(1), uo(1)
+              s = position - (m1%p + m1%r(ix))
+              f = exp(-s/scale)
+              r = f/((1.0+f)*time)
+              ee = ee_top + ee1*s
+              b1 = 0.5*(bx(ix,iy,iz)+bx(ix+1,iy,iz))
+              b2 = 0.5*(by(ix,iy,iz)+by(ix,iy+1,iz))
+              b3 = 0.5*(bz(ix,iy,iz)+bz(ix,iy,iz+1))
+              em = 0.5*(b1**2+b2**2+b3**2)
+              ek = 0.5*(px(ix,iy,iz)**2+py(ix,iy,iz)**2+pz(ix,iy,iz)**2)/d(ix,iy,iz)
+              eth = e(ix,iy,iz)-em-ek
+              scratch%heating_per_unit_volume(ix,iy,iz) = &
+              scratch%heating_per_unit_volume(ix,iy,iz) + &
+                (ee*d(ix,iy,iz)-eth)*r
+            end do
+          end do
+        end do
+      case(2)
+        do iz = lo(3), uo(3)
+          do iy = lo(2), uo(2)
+              s = position - (m2%p + m2%r(iy))
+              f = exp(-s/scale)
+              r = f/((1.0+f)*time)
+              ee = ee_top + ee1*s
+            do ix = lo(1), uo(1)
+              b1 = 0.5*(bx(ix,iy,iz)+bx(ix+1,iy,iz))
+              b2 = 0.5*(by(ix,iy,iz)+by(ix,iy+1,iz))
+              b3 = 0.5*(bz(ix,iy,iz)+bz(ix,iy,iz+1))
+              em = 0.5*(b1**2+b2**2+b3**2)
+              ek = 0.5*(px(ix,iy,iz)**2+py(ix,iy,iz)**2+pz(ix,iy,iz)**2)/d(ix,iy,iz)
+              eth = e(ix,iy,iz)-em-ek
+              scratch%heating_per_unit_volume(ix,iy,iz) = &
+              scratch%heating_per_unit_volume(ix,iy,iz) + &
+                (ee*d(ix,iy,iz)-eth)*r
+            end do
+          end do
+        end do
+      case(3)
+        do iz = lo(3), uo(3)
+            s = position - (m3%p + m3%r(iz))
+            f = exp(-s/scale)/time
+            r = f/((1.0+f)*time)
+            ee = ee_top + ee1*s
+          do iy = lo(2), uo(2)
+            do ix = lo(1), uo(1)
+              b1 = 0.5*(bx(ix,iy,iz)+bx(ix+1,iy,iz))
+              b2 = 0.5*(by(ix,iy,iz)+by(ix,iy+1,iz))
+              b3 = 0.5*(bz(ix,iy,iz)+bz(ix,iy,iz+1))
+              em = 0.5*(b1**2+b2**2+b3**2)
+              ek = 0.5*(px(ix,iy,iz)**2+py(ix,iy,iz)**2+pz(ix,iy,iz)**2)/d(ix,iy,iz)
+              eth = e(ix,iy,iz)-em-ek
+              scratch%heating_per_unit_volume(ix,iy,iz) = &
+              scratch%heating_per_unit_volume(ix,iy,iz) + &
+                (ee*d(ix,iy,iz)-eth)*r
+            end do
+          end do
+        end do
+      end select
     end if
   end if
 END SUBROUTINE pre_update
