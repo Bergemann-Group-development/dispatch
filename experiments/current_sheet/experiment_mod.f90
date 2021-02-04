@@ -29,12 +29,6 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   self%mhd = .true.
   call self%solver_t%init
-  !
-  !if (self%kind(1:10) == 'stagger2e_') then
-  !  call self%s2e (self%mem(:,:,:,self%idx%e,self%it,1), self%it)
-  !end if
-  !
-  self%unsigned(self%idx%d) = .true.
   call trace%end()
 END SUBROUTINE init
 
