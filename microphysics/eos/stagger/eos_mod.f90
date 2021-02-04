@@ -302,6 +302,7 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne, pg, tt, ne, rk, src, &
       ntab(ix)  = mtab(np(ix))
       eek       = 1.+(ee_loc(ix,iy,iz)-eemin(np(ix)))/deetab(np(ix))
       nbelow_e  = nbelow_e + merge(1,0,eek<1.0)
+      if (ee_loc(ix,iy,iz)< eemin(np(ix))) print *, 'e below in eos..',ee_loc(ix,iy,iz), eemin(np(ix)), 'from ',label, id
       ee_loc(ix,iy,iz) = max (ee_loc(ix,iy,iz), eemin(np(ix)))
       eek       = max(eek,1.0)
       kee       = min(ntab(ix)-1,max(1,int(eek)))

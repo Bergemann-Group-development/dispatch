@@ -16,7 +16,7 @@ MODULE eos_mod
   implicit none
   private
   type, public:: eos_t
-    real:: gamma = 1.6666667                  ! in case eos%init is never called
+    real(8):: gamma = 1.6666667                  ! in case eos%init is never called
     integer :: eos_type = 0             ! 0 - ideal, x - any other
     real :: t0    = 290.
     real :: rho0 = 1.
@@ -43,7 +43,7 @@ SUBROUTINE init (self)
   class (eos_t):: self
   integer:: iostat
   logical, save:: first_time=.true.
-  real, save:: gamma=1.66666667
+  real(8), save:: gamma=1.66666667
   logical, save:: do_rt = .false.
   namelist /eos_params/ gamma, do_rt
   !-----------------------------------------------------------------------------
@@ -150,13 +150,17 @@ END SUBROUTINE lookup
 !=======================================================================
 !> General EOS lookup routine, returning values in optional arguments
 !=======================================================================
-SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne,lnee, pg, tt, ne, rk, src, scat, ross,gamma)
+SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne,lnee, pg, tt, ne, rk, &
+                         src, scat, ross,gamma, e_below, label, id)
   class (eos_t):: self
   integer:: dim(3)
   real, dimension(:,:,:)  , pointer, optional :: lnd,d,lne,lnee,e,ee,tt,ne,ross
   real, dimension(:,:,:,:)         , optional :: src,rk,scat
   real, dimension(:,:,:)           , optional :: pg
+integer, optional:: id
   real, optional:: gamma
+  logical, optional:: e_below
+  character(len=*),optional::label
   ! --------------------------------------------------------------------
   real, dimension(:,:,:), pointer    :: d_loc, e_loc
   integer,         dimension(dim(1)) :: il, jl

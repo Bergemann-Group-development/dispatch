@@ -11,7 +11,7 @@ MODULE eos_mod
   implicit none
   private
   type, public:: eos_t
-    real:: gamma = 1.4                  ! in case eos%init is never called
+    real(8):: gamma = 1.4                  ! in case eos%init is never called
     integer :: eos_type = 0             ! 0 - ideal, x - any other
     integer :: n_lambda = 1
     real :: w_lambda = 1
@@ -40,7 +40,7 @@ SUBROUTINE init (self)
   class (eos_t):: self
   integer:: iostat
   logical, save:: first_time=.true.
-  real, save:: gamma=1.4
+  real(8), save:: gamma=1.4
   real, save:: kappa=0.1
   logical, save:: do_rt = .false.
   integer, save:: itimer=0
