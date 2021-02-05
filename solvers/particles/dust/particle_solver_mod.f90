@@ -49,6 +49,7 @@ MODULE particle_solver_mod
   USE timer_mod
   USE omp_mod
   USE scratch_mod
+  USE math_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -184,7 +185,7 @@ SUBROUTINE pre_init (self, patch)
   dln_m = log(max_size_cgs/min_size_cgs)/n_bin
   do bin=1,n_bin
     self%s_cgs(bin) = exp(log(min_size_cgs) + (bin-0.5)*dln_m)
-    self%m_cgs(bin) = solid_density_cgs*self%s_cgs(bin)**3
+    self%m_cgs(bin) = 4.0/3.0 * math%pi * solid_density_cgs*self%s_cgs(bin)**3
     write(stdlog,'(a,i4,1p,2e11.2)') &
       'dust_t%init: bin, s_cgs, m_cgs =', bin, self%s_cgs(bin), self%m_cgs(bin)
   end do
@@ -259,7 +260,7 @@ SUBROUTINE init (self)
     end if
   end do
   !-----------------------------------------------------------------------------
-  call self%dust_evolve%init (n_bin, self%m_cgs)
+  call self%dust_evolve%init (n_bin, self%m_cgs, solid_density_cgs)
   call self%aux%init
   call self%random%init (seed)        ! FIXME: check seed inheritance
   do i=1,3
@@ -267,7 +268,6 @@ SUBROUTINE init (self)
     call momentum_counter(i,j)%init (0d0)
   end do
   end do
-  call dust_evolve%init (n_bin, self%m_cgs)
   call trace%end ()
 END SUBROUTINE init
 
