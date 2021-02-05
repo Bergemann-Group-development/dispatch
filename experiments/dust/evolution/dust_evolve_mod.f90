@@ -25,6 +25,7 @@ MODULE dust_evolve_mod
   logical:: on=.false.
   logical:: do_brownian=.true.
   logical:: do_in_cell_turbulence=.false.
+  real(KIND=precision_e):: tt_dust = 10
   type(dust_evolve_t), public:: dust_evolve
 CONTAINS
 
@@ -32,15 +33,16 @@ CONTAINS
 !> Read parameters and initialize -- add more parameters, if they are known
 !> in the particle solver
 !===============================================================================
-SUBROUTINE init (self, n_bin, m_cgs)
+SUBROUTINE init (self, n_bin, m_cgs, rho_s)
   class(dust_evolve_t) :: self
   integer              :: n_bin               ! number of bins
   real                 :: m_cgs(:)            ! particle masses
+  real                 :: rho_s               ! particle solid density
   !.............................................................................
   integer              :: iostat              ! missing(<0), syntax errors (>0)
   logical, save        :: first_time=.true.   ! shared memory
 
-  real:: tt, mu, cs, r, msolar, Omega_K, sigma_d, rho_d, rho_s, u_f, t
+  real:: tt, mu, cs, r, msolar, Omega_K, sigma_d, rho_d, u_f, t
   real:: trans_width, alpha, Cdt, xi, dt, t_end, save_time, eps_time, Hp
   real:: micron, mps
 
@@ -58,7 +60,7 @@ SUBROUTINE init (self, n_bin, m_cgs)
   real(precision_e), ALLOCATABLE, DIMENSION(:,:,:):: SS, C                                                      ! Necesarry?
   logical :: do_implicit=.true.
   !--- add parameters here -----------------------------------------------------
-  namelist /dust_evolve_params/ on, verbose, do_brownian, do_in_cell_turbulence
+  namelist /dust_evolve_params/ on, verbose, do_brownian, do_in_cell_turbulence, tt_dust
   !-----------------------------------------------------------------------------
   call trace%begin ('dust_evolve_t%init')
   !-----------------------------------------------------------------------------
@@ -105,16 +107,14 @@ SUBROUTINE init (self, n_bin, m_cgs)
   !print *,"Initializing starting conditions"
   call cgs%init
   !print *,cgs%grav,cgs%au,cgs%k_b,cgs%m_u,cgs%m_sun
-  tt = 196
   mu = 2.37
   ! cs = sqrt(tt*cgs%k_b/(mu*1.008*cgs%m_u))
-  r = 1.0*cgs%au
-  msolar = 0.5*cgs%m_sun
-  Omega_K = sqrt(cgs%grav*msolar)/r**1.5
-  Hp = cs / Omega_K
-  sigma_d = 0.18                                      ! g / cm**2
-  rho_d = sigma_d/(sqrt(2*math%pi)*Hp)
-  rho_s = 1.6                                         ! g / cm**3
+  ! r = 1.0*cgs%au
+  ! msolar = 0.5*cgs%m_sun
+  ! Omega_K = sqrt(cgs%grav*msolar)/r**1.5
+  ! Hp = cs / Omega_K
+  ! sigma_d = 0.18                                      ! g / cm**2
+  ! rho_d = sigma_d/(sqrt(2*math%pi)*Hp)
   micron = 1e-4
 
   mps = 1e2 
@@ -130,11 +130,11 @@ SUBROUTINE init (self, n_bin, m_cgs)
   eps_time = 1.10
 
                                                       ! Define binning
-  min_a = 1e-4
-  max_a = 1e2
+  !min_a = 1e-4
+  !max_a = 1e2
 
-  ratio_r = (max_a/min_a)**(1.0/(nbin-1))
-  a(1) = min_a
+  !ratio_r = (max_a/min_a)**(1.0/(nbin-1))
+  !a(1) = min_a
   !n = 0
   C = 0
 
@@ -143,7 +143,8 @@ SUBROUTINE init (self, n_bin, m_cgs)
   ! end do
 
   st = rho_s * a * math%pi/(2*sigma_d*100)
-  m = 4.0/3.0 * a**3 * rho_s * math%pi
+  !m = 4.0/3.0 * a**3 * rho_s * math%pi
+  a = (3.0/4.0 * 1/(rho_s * math%pi * m_cgs) )**1/3
   !n(1) = rho_d / m(1)
   !v = 1
   !p = n * v
@@ -261,17 +262,16 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
   logical :: do_implicit=.true.
 
   ! CGS units below
-  real(precision_e) :: tend, vd(self%n_bin,3), vrms(self%n_bin), nd(self%n_bin), vdiff(self%n_bin,self%n_bin)
+  real(precision_e) :: tend, vd(self%n_bin,3), vrms(self%n_bin)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('dust_evolve_t%update', itimer=itimer)
   ! convert from code units to cgs
   tend = scaling%t * dt_dispatch
-  nd = scaling%d * dd_in / self%m_cgs
+  n = scaling%d * dd_in / self%m_cgs
   vd = scaling%u * vd_in
   vrms = scaling%u * vrms_in
 
-  n = nd
   px = n * vd(:,1)
   py = n * vd(:,2)
   pz = n * vd(:,3)
@@ -288,20 +288,28 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
 
   ! du = vdiff + brown + turb bliver regnet i init
 
-  cs = sqrt(tt*cgs%k_b/(mu*1.008*cgs%m_u))
-  
-  utm_ini = cs * sqrt(2*alpha*st)                     ! Handle velocities every update
-  where (st > 1.0) utm_ini = cs * sqrt(2*alpha/ st)
-  
+  if (do_in_cell_turbulence) then
+    cs = sqrt(tt_dust*cgs%k_b/(mu*1.008*cgs%m_u))
+    
+    utm_ini = cs * sqrt(2*alpha*st)                     ! Handle velocities every update
+    where (st > 1.0) utm_ini = cs * sqrt(2*alpha/ st)
+  end if
 
   do i=1,nbin
     do j=1,nbin
-      vdiff(i,j) = sqrt((vd(i,1) - vd(j,1))**2 + (vd(i,2) - vd(j,2))**2 + (vd(i,3) - vd(j,3))**2)
-      vdiff(i,j) = vdiff(i,j) + sqrt(vrms(i)**2 + vrms(j)**2)
-
+      du(i,j) = sqrt((vd(i,1) - vd(j,1))**2 + (vd(i,2) - vd(j,2))**2 + (vd(i,3) - vd(j,3))**2)
+      du(i,j) = du(i,j) + sqrt(vrms(i)**2 + vrms(j)**2)
+      
+      if (do_brownian) then
       ubm(i,j) = sqrt(8 * cgs%k_b* tt * (m(i) + m(j) )/(math%pi*m(i)*m(j) ))
+      du(i,j) = du(i,j) + ubm(i,j)
+      end if
+
+      if (do_in_cell_turbulence) then
       utm(i,j) = max(utm_ini(i), utm_ini(j))
-      du(i,j) = vdiff(i,j) + ubm(i,j) + utm(i,j)
+      du(i,j) = du(i,j) + utm(i,j)
+      end if
+  
 
       if (du(i,j) < u_f - trans_width) then
         pf(i,j) = 0
@@ -447,13 +455,12 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
   print *, px/(n+1e-30)
   print "(/)"
 
-  nd = n
   vd(:,1) = px/n
   vd(:,2) = py/n
   vd(:,3) = pz/n
 
   ! convert back to code units
-  dd_out = self%m_cgs * nd / scaling%d
+  dd_out = self%m_cgs * n / scaling%d
   vd_out = vd / scaling%u
 
   call trace%end (itimer)
