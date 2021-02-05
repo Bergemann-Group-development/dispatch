@@ -829,18 +829,21 @@ SUBROUTINE update (self)
     B => self%mem(:,:,:,self%idx%bx:self%idx%bz,self%it,1)
     call divB%clean(self%mesh,B)
   end if
-  call self%pde
-  !-----------------------------------------------------------------------------
-  ! Set boundary conditions on time derivatives
-  !-----------------------------------------------------------------------------
-  mem => self%mem(:,:,:,:,self%it,:)
-  call self%boundaries%derivative(mem)
   !-----------------------------------------------------------------------------
   ! Output the state after guard zone downloads, selfgravity, and boundary
   ! conditions. If another call is placed at an earlier point in the task handling
   ! the call here will have no effect, since out_next has already been updated.
   !-----------------------------------------------------------------------------
   call self%output
+  ! ----------------------------------------------------------------------------
+  ! Update the state
+  ! ----------------------------------------------------------------------------
+  call self%pde
+  !-----------------------------------------------------------------------------
+  ! Set boundary conditions on time derivatives
+  !-----------------------------------------------------------------------------
+  mem => self%mem(:,:,:,:,self%it,:)
+  call self%boundaries%derivative(mem)
   !-----------------------------------------------------------------------------
   ! The call to courant_condition may optionally be interscepted in extras_t
   !-----------------------------------------------------------------------------
