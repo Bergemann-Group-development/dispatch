@@ -58,7 +58,7 @@ MODULE sinks_mod
     procedure:: post_update
     procedure:: output
   end type
-  real::     jeans_limit = 4.0        ! create at jeans_limit cells per Jean's L 
+  real::     jeans_limit = 4.0        ! create at jeans_limit cells per Jean's L
   real::       per_omega = 0.001      ! fraction of mass per radian orbital
   real:: create_fraction = 0.01       ! fraction of mass to accrete initially
   integer:: accretion_cells = 8       ! accretion radius in cells
@@ -308,7 +308,7 @@ SUBROUTINE accrete (self, patch)
     dpx = product(patch%ds)*sum(delta_d*px)
     dpy = product(patch%ds)*sum(delta_d*py)
     dpz = product(patch%ds)*sum(delta_d*pz)
-    
+
 
     !!!!HACK!!!!
     if (Mstar_init) then
@@ -478,12 +478,12 @@ SUBROUTINE sink_grav (self, patch)
   py => patch%mem(m1%lb:m1%ub,m2%lb:m2%ub,m3%lb:m3%ub,patch%idx%py,patch%new,1)
   pz => patch%mem(m1%lb:m1%ub,m2%lb:m2%ub,m3%lb:m3%ub,patch%idx%pz,patch%new,1)
 
-  
+
   dt = patch%time - self%time                          ! estimate dt
 
   do k=m3%lb,m3%ub
     z = m3%centre_nat + m3%r(k)
-    dr(3) = self%position(3) - z     
+    dr(3) = self%position(3) - z
     do j=m2%lb,m2%ub
       y = m2%centre_nat + m2%r(j)
       dr(2) = self%position(2) - y
@@ -493,13 +493,13 @@ SUBROUTINE sink_grav (self, patch)
         dr(2) = self%position(2) - y
         dr(3) = self%position(3) - z
         r2 = dr(1)**2 + dr(2)**2 + dr(3)**2
-        r  = sqrt(r2)       
-        gx   = -scaling%grav * self%mass * (x / r**3 )  
-        gy   = -scaling%grav * self%mass * (y / r**3 )  
+        r  = sqrt(r2)
+        gx   = -scaling%grav * self%mass * (x / r**3 )
+        gy   = -scaling%grav * self%mass * (y / r**3 )
         gz   = -scaling%grav * self%mass * (z / r**3 )
-      
-        px(i,j,k)   = px(i,j,k) + d(i,j,k) * gx * dt 
-        py(i,j,k)   = py(i,j,k) + d(i,j,k) * gy * dt 
+
+        px(i,j,k)   = px(i,j,k) + d(i,j,k) * gx * dt
+        py(i,j,k)   = py(i,j,k) + d(i,j,k) * gy * dt
         pz(i,j,k)   = pz(i,j,k) + d(i,j,k) * gz * dt
       end do
     end do

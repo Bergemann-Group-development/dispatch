@@ -21,7 +21,7 @@ MODULE mesa_mod
     logical :: exploded = .false.         ! This star has exploded
   contains
     procedure:: pre_init
-    procedure:: post_update 
+    procedure:: post_update
     procedure:: output
     ! private procedures:
     procedure, private :: start_mesa
@@ -80,12 +80,12 @@ SUBROUTINE post_update (self, patch)
       !!! insert criteria for when to syncronize !!!
       if (.true.) call self%eval_mesa
     end if
-  end if 
+  end if
   call trace%end (itimer)
 END SUBROUTINE post_update
 
 !===============================================================================
-!> Creates a working directory for the mesa instance, 
+!> Creates a working directory for the mesa instance,
 !> starts up an instance, and gives startup data
 !===============================================================================
 SUBROUTINE start_mesa (self)
@@ -178,14 +178,14 @@ SUBROUTINE eval_mesa (self)
     if (count == 0) &
       write (stdout,'(f12.6,2x,a)') wallclock(), 'RECEIVED REPLY'
     !...........................................................................
-    if (supernova) then 
+    if (supernova) then
       self%exploded = .true.
       self%mesa_simulated = .false.
-    end if 
+    end if
     v_esc = sqrt(2*scaling%grav*self%mass/(radius/scaling%l))
     self%v_wind = get_vink_alpha(t_eff, Zsurf) * v_esc
-    ! set mass loss rate, compensating for 
-    ! excess/lack caused by non-syncronos timestepping. If all mass has 
+    ! set mass loss rate, compensating for
+    ! excess/lack caused by non-syncronos timestepping. If all mass has
     ! been put out in surrounding, then self% dm_wind = 0
     !$omp atomic update
     self%dm_wind = self%dm_wind - dm_wind / scaling%m
@@ -260,7 +260,7 @@ SUBROUTINE output (self, patch)
 END SUBROUTINE output
 
 !===============================================================================
-!> Submits the specified data to MESA, namelist can only be defined once. 
+!> Submits the specified data to MESA, namelist can only be defined once.
 !> IN CGS, AND NOT 2 save_query IN A ROW
 !===============================================================================
 SUBROUTINE send_query (unit, save_query, time, dm_acc, filename)

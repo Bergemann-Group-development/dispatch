@@ -55,8 +55,8 @@ SUBROUTINE condition (self, m, f, idx)
   real(8):: rhobg, r0, cs, cs0, Sigma_AU, pamb, zau  &
         ,   x, y, z, rzsq, rz, rzxy, vKep, Omeg, temp, Tdisk, udisk  &
         ,   theta, vx, vy, vz, nrg, H, Sigma0, rhoeq, rho_disk, d  &
-        ,   kconst, ddec, Sigma0in, rhoeq_in, rho_disk_in 
-  real(8):: Msun_in_g=1.991e33  
+        ,   kconst, ddec, Sigma0in, rhoeq_in, rho_disk_in
+  real(8):: Msun_in_g=1.991e33
   real(8), parameter:: gammaad = 5.0 / 3.0
   real(8), parameter:: r2 = 1.0
   real(8), parameter:: G_grav = 6.6743e-8
@@ -114,7 +114,7 @@ SUBROUTINE condition (self, m, f, idx)
         rz = sqrt(rzsq) * scaling%l
         rzxy = sqrt(x**2 + y**2) * scaling%l ! zone-centred
         !
-        vKep = (G_grav * Mstar*scaling%m / rzxy)**0.5 
+        vKep = (G_grav * Mstar*scaling%m / rzxy)**0.5
         Omeg = (G_grav * Mstar*scaling%m / rzxy**3)**0.5
         !cs  = cs0 * (rzxy/au_in_cm)**(-3./8) ! in cm/s (scaling see lecture notes by Armitage p.16)
         Tdisk = 1d1
@@ -122,8 +122,8 @@ SUBROUTINE condition (self, m, f, idx)
         udisk = 1d0 / (self%gamma-1d0) * scaling%k_B / (2.3 * scaling%m_h) * temp
 
         theta = atan(y,x)
-        vx = vKep * sin(theta) 
-        vy = -vKep* cos(theta) 
+        vx = vKep * sin(theta)
+        vy = -vKep* cos(theta)
         vz = 0d0
         nrg              = pamb / self%g1 / scaling%e
         H = cs / Omeg
@@ -135,7 +135,7 @@ SUBROUTINE condition (self, m, f, idx)
           rhoeq = Sigma0/( (2d0*pi)**0.5 * H )
           rho_disk = rhoeq * exp(-z**2/ (2d0*H**2d0) )
 
-          d  = rho_disk 
+          d  = rho_disk
           !!!f(i,j,k,idx%phi) = c1 + 2.0 * pi * scaling%grav * rho0 * rzsq / 3.0
 
           if (rzxy .lt. rlim_in) then
@@ -143,19 +143,19 @@ SUBROUTINE condition (self, m, f, idx)
              Sigma0in = Sigma_AU * (rlim_in/au_in_cm)**(-alpha_Sigma)
              rhoeq_in = Sigma0in/( sqrt(2d0*pi)*H )
              rho_disk_in = rhoeq_in * exp(-z**2/ (2d0*H**2) )
-    
+
              kconst = 1d0
-             ddec = 2d0 ! decay interval: at rlim_in-ddec. au the disk falls off by a factor of 50%            
+             ddec = 2d0 ! decay interval: at rlim_in-ddec. au the disk falls off by a factor of 50%
              rho_disk = rho_disk_in + (rhobg - rho_disk_in) / (1d0 + exp(-kconst * ( (-rzxy + rlim_in)/au_in_cm - ddec)  ) )
-             d = rho_disk 
+             d = rho_disk
           endif
         else
-          d  = rhobg 
+          d  = rhobg
           !!!f(i,j,k,idx%phi) = c2 - c3 / rz + 2.0 * scaling%grav * pi * rhoamb * rzsq / 3.0
         endif
         f(i,j,k,idx%d)   = d / scaling%d
         ! set momenta for staggered solvers appropriately
-        f(i,j,k,idx%px)  = d / scaling%d * (vx / scaling%u) 
+        f(i,j,k,idx%px)  = d / scaling%d * (vx / scaling%u)
         f(i,j,k,idx%py)  = d / scaling%d * (vy / scaling%u)
         f(i,j,k,idx%pz)  = d / scaling%d * (vz / scaling%u)
         !

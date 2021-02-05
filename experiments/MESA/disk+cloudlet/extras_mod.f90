@@ -168,7 +168,7 @@ SUBROUTINE init (self)
   !self%rt%rt_boundaries%grav = self%gravity%const_grav                 ! experiment
   !call sink_patch%init (self%link)                                     ! sinkp
   !allocate (self%patch_force)                                          ! sinkp
-  !call self%patch_force%init                                           ! sinkp 
+  !call self%patch_force%init                                           ! sinkp
   call mesa%init                                         ! sinks
   call trace%end()
 END SUBROUTINE init

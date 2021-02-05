@@ -18,8 +18,8 @@ MODULE scaling_mod
     real(kind=8):: grav = 1.0
     real(kind=8):: temp = 1.0
     real(kind=8):: mu = 2.4                             ! mean molecular weight
-    real(kind=8):: m_h 
-    real(kind=8):: k_B 
+    real(kind=8):: m_h
+    real(kind=8):: k_B
   contains
     procedure:: init
   end type
