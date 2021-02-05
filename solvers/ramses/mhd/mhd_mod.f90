@@ -32,6 +32,7 @@ MODULE mhd_mod
   USE omp_timer_mod
   USE timer_mod
   USE scratch_mod
+  USE task_mod
   implicit none
   PRIVATE
   type, public, extends(extras_t):: mhd_t
@@ -2200,7 +2201,7 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   if (timer%detailed) &
     call trace%begin ('mhd_t%nbor_relations', 2, itimer=itimer)
   task => another
-  call self%task_t%nbor_relations(task,needed,needs_me,download)
+  call self%extras_t%nbor_relations(task,needed,needs_me,download)
   select type (another)
   class is (mhd_t)
     ! do nothing, all is done in the base task_t layer
