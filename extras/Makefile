@@ -6,8 +6,6 @@
 VPATH := $(TOP)/extras:$(SOLVER)/extras:$(TOP)/solvers/$(SOLVER)/extras:$(VPATH)
 include $(TOP)/extras/heat_conductivity/Makefile
 include $(TOP)/extras/cooling/Makefile
-# To include the PPcode, PPCODE should point to the PPcode top directory
-include $(TOP)/solvers/pic/Makefile
 
 # Dependencies
 extras_mod.o            : io_mod.o trace_mod.o gpatch_mod.o connect_mod.o \
