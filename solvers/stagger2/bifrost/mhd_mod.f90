@@ -81,6 +81,7 @@ MODULE mhd_mod
   logical, save:: unsigned=.true.
   logical, save:: loginterpolation = .true.
   logical, save:: do_smooth=.false.
+  logical, save:: cowboy_hat = .true.
   logical, save:: do_temperature = .false.
   integer, save:: verbose=0
   integer, save :: max_r = 3
@@ -107,7 +108,7 @@ SUBROUTINE pre_init (self)
     ca_max, unsigned, verbose,  loginterpolation, symmetric_e, symmetric_b, &
     max_r, smooth_r, do_temperature, &
     nu_d_w_transition, nu_d_high, nu_d_tr_loc, &
-    nu_e_w_transition, nu_e_high, nu_e_tr_loc, qmax
+    nu_e_w_transition, nu_e_high, nu_e_tr_loc, qmax, cowboy_hat
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%pre_init')
   call io%lock%set('mhd_t%pre_init')
@@ -346,41 +347,51 @@ SUBROUTINE pde (self)
   !print *, 'u_max(cu)', cu, self%u_max
   self%u_max = max(self%u_max,cu)
 
-  call self%difxyz_b3d(Ex, Ey, Ez, Uxc, Uyc, Uzc, scr7, Um, self%nu(6))               ! valid 4:n-4
+  if (self%mhd) then
+    call self%difxyz_b3d(Ex, Ey, Ez, Uxc, Uyc, Uzc, scr7, Um, self%nu(6))       ! valid 4:n-4
+  else
+    Um = 0.0
+  end if
   
-  Um = Um + Uv
+  Um = Um + Uv        ! Um_x = nu1*Ca + nu2*|ux| + eta3*dx*grad_perp(ux) and similar for y and z
+
+  if (cowboy_hat) then
+    call self%cowboy_hat(Um(:,:,:,1),scr4)
+    Um(:,:,:,1)=scr4
+    call self%cowboy_hat(Um(:,:,:,2),scr5)
+    Um(:,:,:,2)=scr5
+    call self%cowboy_hat(Um(:,:,:,3),scr6)
+    Um(:,:,:,3)=scr6
+  else  
+    call self%max_loc(Um(:,:,:,1),scr4)                                           ! valid 6:n-6
+    call self%max_loc(Um(:,:,:,2),scr5)
+    call self%max_loc(Um(:,:,:,3),scr6)
   
-  !call self%max_loc(Um(:,:,:,1),scr4)                                           ! valid 6:n-6
-  !call self%max_loc(Um(:,:,:,2),scr5)
-  !call self%max_loc(Um(:,:,:,3),scr6)
+    call self%smooth_loc(scr4,Um(:,:,:,1))                                        ! valid 6:n-6
+    call self%smooth_loc(scr5,Um(:,:,:,2))
+    call self%smooth_loc(scr6,Um(:,:,:,3))
+  end if
   
-  !call self%smooth_loc(scr4,Um(:,:,:,1))                                        ! valid 6:n-6
-  !call self%smooth_loc(scr5,Um(:,:,:,2))
-  !call self%smooth_loc(scr6,Um(:,:,:,3))
-  
-  call self%cowboy_hat(Um(:,:,:,1),scr4)
-  Um(:,:,:,1)=scr4
-  call self%cowboy_hat(Um(:,:,:,2),scr5)
-  Um(:,:,:,2)=scr5
-  call self%cowboy_hat(Um(:,:,:,3),scr6)
-  Um(:,:,:,3)=scr6
   !
   call self%difxyz_u3d(ds, Ux, Uy, Uz, Uv, self%nu(3))                          ! valid 4:n-2
   
-  !call self%max_loc(Uv(:,:,:,1),scr4)                                           ! valid 6:n-4
-  !call self%max_loc(Uv(:,:,:,2),scr5)
-  !call self%max_loc(Uv(:,:,:,3),scr6)
-  
-  !call self%smooth_loc(scr4,Uv(:,:,:,1))                                        ! valid 7:n-5
-  !call self%smooth_loc(scr5,Uv(:,:,:,2))
-  !call self%smooth_loc(scr6,Uv(:,:,:,3))
-  
-  call self%cowboy_hat(Uv(:,:,:,1),scr4)
-  Uv(:,:,:,1)=scr4
-  call self%cowboy_hat(Uv(:,:,:,2),scr5)
-  Uv(:,:,:,2)=scr5
-  call self%cowboy_hat(Uv(:,:,:,3),scr6)
-  Uv(:,:,:,3)=scr6
+  if (cowboy_hat) then
+    call self%cowboy_hat(Uv(:,:,:,1),scr4)
+    Uv(:,:,:,1)=scr4
+    call self%cowboy_hat(Uv(:,:,:,2),scr5)
+    Uv(:,:,:,2)=scr5
+    call self%cowboy_hat(Uv(:,:,:,3),scr6)
+    Uv(:,:,:,3)=scr6
+  else
+    call self%max_loc(Uv(:,:,:,1),scr4)                                           ! valid 6:n-4
+    call self%max_loc(Uv(:,:,:,2),scr5)
+    call self%max_loc(Uv(:,:,:,3),scr6)
+    
+    call self%smooth_loc(scr4,Uv(:,:,:,1))                                        ! valid 7:n-5
+    call self%smooth_loc(scr5,Uv(:,:,:,2))
+    call self%smooth_loc(scr6,Uv(:,:,:,3))
+  end if
+
   
   
   if (symmetric_e) then
