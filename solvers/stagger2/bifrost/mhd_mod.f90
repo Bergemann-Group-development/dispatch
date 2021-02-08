@@ -81,7 +81,7 @@ MODULE mhd_mod
   logical, save:: unsigned=.true.
   logical, save:: loginterpolation = .true.
   logical, save:: do_smooth=.false.
-  logical, save:: cowboy_hat = .true.
+  logical, save:: use_cowboy_hat = .true.
   logical, save:: do_temperature = .false.
   integer, save:: verbose=0
   integer, save :: max_r = 3
@@ -108,7 +108,7 @@ SUBROUTINE pre_init (self)
     ca_max, unsigned, verbose,  loginterpolation, symmetric_e, symmetric_b, &
     max_r, smooth_r, do_temperature, &
     nu_d_w_transition, nu_d_high, nu_d_tr_loc, &
-    nu_e_w_transition, nu_e_high, nu_e_tr_loc, qmax, cowboy_hat
+    nu_e_w_transition, nu_e_high, nu_e_tr_loc, qmax, use_cowboy_hat
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%pre_init')
   call io%lock%set('mhd_t%pre_init')
@@ -355,7 +355,7 @@ SUBROUTINE pde (self)
   
   Um = Um + Uv        ! Um_x = nu1*Ca + nu2*|ux| + eta3*dx*grad_perp(ux) and similar for y and z
 
-  if (cowboy_hat) then
+  if (use_cowboy_hat) then
     call self%cowboy_hat(Um(:,:,:,1),scr4)
     Um(:,:,:,1)=scr4
     call self%cowboy_hat(Um(:,:,:,2),scr5)
@@ -373,9 +373,10 @@ SUBROUTINE pde (self)
   end if
   
   !
-  call self%difxyz_u3d(ds, Ux, Uy, Uz, Uv, self%nu(3))                          ! valid 4:n-2
+  ! Uv_x = nu1*Ca + nu2*|ux| + nu3*dx*grad(ux) and similar for y and z
+  call self%difxyz_u3d(Ux, Uy, Uz, Uv, self%nu(3))                          ! valid 4:n-2
   
-  if (cowboy_hat) then
+  if (use_cowboy_hat) then
     call self%cowboy_hat(Uv(:,:,:,1),scr4)
     Uv(:,:,:,1)=scr4
     call self%cowboy_hat(Uv(:,:,:,2),scr5)
@@ -1114,13 +1115,12 @@ END SUBROUTINE difxyz_b3d
 !> mhd sover, for clarity. 
 !> Finite difference one zone left to one zones right along vector field bx,by,bz
 !> =============================================================================
-SUBROUTINE difxyz_u3d(self, ds, ux, uy, uz, g, cc)
+SUBROUTINE difxyz_u3d(self, ux, uy, uz, g, c)
   class(mhd_t) :: self
-  real(8) :: ds(3)
   real, dimension(:,:,:)   :: ux, uy, uz
   real, dimension(:,:,:,:) :: g
   integer:: ix, iy, iz, n(4)
-  real :: cc
+  real :: c
   ! ----------------------------------------------------------------------------
   n=shape(g)
   
@@ -1128,7 +1128,7 @@ SUBROUTINE difxyz_u3d(self, ds, ux, uy, uz, g, cc)
     do iz=1,n(3)
       do iy=1,n(2)
         do ix=1,n(1)-1
-           g(ix,iy,iz,1) = g(ix,iy,iz,1) + cc*amax1(0.,(ux(ix,iy,iz) - ux(ix+1,iy,iz)))
+           g(ix,iy,iz,1) = g(ix,iy,iz,1) + c*max(0.,(ux(ix,iy,iz) - ux(ix+1,iy,iz)))
         end do
       end do
     end do
@@ -1138,7 +1138,7 @@ SUBROUTINE difxyz_u3d(self, ds, ux, uy, uz, g, cc)
     do iz=1,n(3)
       do iy=1,n(2)-1
         do ix=1,n(1)
-           g(ix,iy,iz,2) = g(ix,iy,iz,2) + cc*amax1(0.,(uy(ix,iy,iz) - uy(ix,iy+1,iz)))
+           g(ix,iy,iz,2) = g(ix,iy,iz,2) + c*max(0.,(uy(ix,iy,iz) - uy(ix,iy+1,iz)))
         end do
       end do
     end do
@@ -1148,7 +1148,7 @@ SUBROUTINE difxyz_u3d(self, ds, ux, uy, uz, g, cc)
     do iz=1,n(3)-1
       do iy=1,n(2)
         do ix=1,n(1)
-          g(ix,iy,iz,3) = g(ix,iy,iz,3) + cc*amax1(0.,(uz(ix,iy,iz) - uz(ix,iy,iz+1)))
+          g(ix,iy,iz,3) = g(ix,iy,iz,3) + c*max(0.,(uz(ix,iy,iz) - uz(ix,iy,iz+1)))
         end do
       end do
     end do
@@ -1175,15 +1175,13 @@ subroutine quenchx (self, f, qx)
   real, intent(out), dimension(:,:,:) :: qx
   ! ----------------------------------------------------------------------------
   class (mesh_t), dimension(:), pointer :: m
-  real, dimension(:,:,:), allocatable :: d1,d2,fa,qq
+  real, dimension(:), allocatable :: qq
   integer :: i,j,k
   integer:: lb(3), li(3), ui(3), ub(3), lo(3), uo(3)
-  real:: aqmax
-  real(8)::ds(3)
+  real:: aqmax, dd
   ! ............................................................................
   m => self%mesh
   aqmax=1./self%qmax
-  ds = 1.
   if (self%qmax == 1.) then
     qx=1.
     return
@@ -1195,52 +1193,31 @@ subroutine quenchx (self, f, qx)
     li(i) = m(i)%li; ui(i) = m(i)%ui
   end do
   
-  allocate(d1(m(1)%gn,m(2)%gn,m(3)%gn))
-  allocate(d2(m(1)%gn,m(2)%gn,m(3)%gn))
-  allocate(fa(m(1)%gn,m(2)%gn,m(3)%gn))
-  allocate(qq(m(1)%gn,m(2)%gn,m(3)%gn))
+  allocate(qq(m(1)%gn))
+  qx = 0.0  
   
   if (m(1)%n>1) then 
-    fa=abs(f)
+
     do k=lb(3), ub(3)
       do j=lb(2), ub(2)
-        do i=lb(1), ub(1)-1
-          d1(i,j,k) = f(i+1,j,k) - f(i,j,k)                                     ! valid 4:n-3
-        enddo
-      end do
-    end do
-    
-    do k=lb(3), ub(3)
-      do j=lb(2), ub(2)
-        do i=2, ub(1)-1
-          d2(i,j,k)=abs(d1(i,j,k) - d1(i-1,j,k))                                ! valid 5:n-3
-        end do
-      end do
-    end do
-    d2(lb(1)   ,:,:) = 0.0
-    d2(ub(1)-1:,:,:) = 0.0    !
-    !
-    do k=lb(3), ub(3)
-      do j=lb(2), ub(2)
-        do i=lb(1), ub(1)
-          qq(i,j,k)=d2(i,j,k)/(fa(i,j,k)+aqmax*d2(i,j,k)+tiny(1.))
-        enddo
-        !
+
         do i=lb(1)+1, ub(1)-1
-          qx(i,j,k)= max(qq(i-1,j,k),qq(i,j,k),qq(i+1,j,k))
+          dd = abs(f(i+1,j,k)-2.0*f(i,j,k)+f(i-1,j,k))
+          qq(i) = dd/(abs(f(i,j,k))+aqmax*dd+tiny(1.))
         enddo
-        qx(2,j,k)= max(qq(1,j,k),qq(2,j,k))
-        qx(ub(1),j,k)= max(qq(ub(1),j,k),qq(ub(1)-1,j,k))
-        !
-        !qx(:,j,k) = cowboy_hat_1d(qq(:,j,k))
-        !
-      enddo
-    enddo
+
+        do i=lb(1)+2, ub(1)-2
+          qx(i,j,k)= max(qq(i-1),qq(i),qq(i+1))
+        end do
+
+      end do
+    end do
+
   else
     qx(:,:,:)=0.0
   endif
   !
-  deallocate(d2,fa,qq,d1)
+  deallocate(qq)
  end subroutine quenchx
  
   !===============================================================================
@@ -1251,25 +1228,22 @@ subroutine quenchy (self, f, qy)
   real, intent(out), dimension(:,:,:) :: qy
   ! ----------------------------------------------------------------------------
   class (mesh_t), dimension(:), pointer :: m
-  real, dimension(:,:,:), allocatable :: d1, d2,fa,qq
+  real, dimension(:,:), allocatable :: qq
   integer :: i,j,k
   integer:: lb(3), li(3), ui(3), ub(3), lo(3), uo(3)
-  real:: aqmax
-  real(8)::ds(3)
+  real:: aqmax, dd
   ! ............................................................................
   m => self%mesh
   aqmax=1./self%qmax
-  ds = 1.
   if (self%qmax == 1.) then
     qy=1.
     return
   end if
   
-  allocate(d1(m(1)%gn,m(2)%gn,m(3)%gn))
-  allocate(d2(m(1)%gn,m(2)%gn,m(3)%gn))
-  allocate(fa(m(1)%gn,m(2)%gn,m(3)%gn))
-  allocate(qq(m(1)%gn,m(2)%gn,m(3)%gn))
+  allocate(qq(m(1)%gn,m(2)%gn))
   
+  qy=0.0
+
   do i=1,3
     lb(i) = m(i)%lb; ub(i) = m(i)%ub
     lo(i) = m(i)%lo; uo(i) = m(i)%uo
@@ -1277,52 +1251,26 @@ subroutine quenchy (self, f, qy)
   end do
   
   if (m(2)%n>1) then 
-    fa=abs(f)
     do k=lb(3), ub(3)
-      do j=lb(2), ub(2)-1
+
+      do j=lb(2)+1, ub(2)-1
         do i=lb(1), ub(1)
-          d1(i,j,k) = f(i,j+1,k) - f(i,j,k)                                     ! valid 4:n-3
+          dd     =  abs(f(i,j+1,k)-2.0*f(i,j,k)+f(i,j-1,k))
+          qq(i,j)= dd/(abs(f(i,j,k))+aqmax*dd+tiny(1.0))                               
         enddo
       end do
-    end do
-    
-    do k=lb(3), ub(3)
-      do j=lb(2)+1, ub(2)-1
+
+      do j=lb(2)+2, ub(2)-2
         do i=lb(1), ub(1)
-          d2(i,j,k)=abs(d1(i,j,k) - d1(i,j-1,k))                                ! valid 5:n-3
-        end do
+          qy(i,j,k)=max(qq(i,j-1),qq(i,j),qq(i,j+1))
+        enddo
       end do
-    end do
-    d2(:,lb(2)   ,:) = 0.0
-    d2(:,ub(2)-1:,:) = 0.0    !
-    
-    do k=lb(3), ub(3)
-      do j=lb(2),ub(2)
-        do i=lb(1),ub(1)
-          qq(i,j,k)=d2(i,j,k)/(fa(i,j,k)+aqmax*d2(i,j,k)+tiny(1.))
-        end do
-      end do
-    end do
-    !
-    !do k = lb(3), ub(3)
-    !  do i=lb(1), ub(1)
-    !    qy(i,:,k) = cowboy_hat_1d(qq(i,:,k))
-    !  end do
-    !end do
-    
-    do k=lb(3), ub(3)
-      do j=lb(2)+1, ub(2)-1
-        do i=lb(1), ub(1)
-          qy(i,j,k)= max(qq(i,j-1,k),qq(i,j,k),qq(i,j+1,k))
-        end do
-      end do
-      qy(:,2,k)= max(qq(:,1,k),qq(:,2,k))
-      qy(:,ub(2),k)= max(qq(:,ub(2),k),qq(:,ub(2)-1,k))
+
     end do
   else
     qy(:,:,:)=0.0
   endif
-  deallocate(d1,d2,fa,qq)
+  deallocate(qq)
  end subroutine quenchy
  
   !===============================================================================
@@ -1333,19 +1281,19 @@ subroutine quenchz (self, f, qz)
   real, intent(out), dimension(:,:,:) :: qz
   ! ----------------------------------------------------------------------------
   class (mesh_t), dimension(:), pointer :: m
-  real, dimension(:,:,:), allocatable :: d1,d2,fa,qq
+  real, dimension(:,:,:), allocatable :: qq
   integer :: i,j,k
   integer:: lb(3), li(3), ui(3), ub(3), lo(3), uo(3)
-  real:: aqmax
-  real(8)::ds(3)
+  real:: aqmax, dd
   ! ............................................................................
   m => self%mesh
   aqmax=1./self%qmax
-  ds=1.
   if (self%qmax == 1.) then
     qz=1.
     return
   end if
+
+  qz=0.0
   
   do i=1,3
     lb(i) = m(i)%lb; ub(i) = m(i)%ub
@@ -1353,62 +1301,31 @@ subroutine quenchz (self, f, qz)
     li(i) = m(i)%li; ui(i) = m(i)%ui
   end do
   
-  allocate(d1(m(1)%gn,m(2)%gn,m(3)%gn))
-  allocate(d2(m(1)%gn,m(2)%gn,m(3)%gn))
-  allocate(fa(m(1)%gn,m(2)%gn,m(3)%gn))
   allocate(qq(m(1)%gn,m(2)%gn,m(3)%gn))
   
-  if (m(3)%n>1) then   
-    fa=abs(f)
-    do k=lb(3), ub(3)-1
-      do j=lb(2), ub(2)
-        do i=lb(1), ub(1)
-          d1(i,j,k) = f(i,j,k+1) - f(i,j,k)                                     ! valid 4:n-3
-        enddo
-      end do
-    end do
-    
+  if (m(3)%n>1) then  
+
     do k=lb(3)+1, ub(3)-1
       do j=lb(2), ub(2)
         do i=lb(1), ub(1)
-          d2(i,j,k)=abs(d1(i,j,k) - d1(i,j,k-1))                                ! valid 5:n-3
+          dd       = abs(f(i,j,k+1)-2.0*f(i,j,k)+f(i,j,k-1))
+          qq(i,j,k)= dd/(abs(f(i,j,k))+aqmax*dd+tiny(1.0))
         end do
       end do
     end do
-    d2(:,:,lb(3)   ) = 0.0
-    d2(:,:,ub(3)-1:) = 0.0    !
     !
-    do k=lb(3), ub(3)
-      do j=lb(2), ub(2)
-        do i=lb(1),ub(1)
-          qq(i,j,k)=d2(i,j,k)/(fa(i,j,k)+aqmax*d2(i,j,k)+tiny(1.))
-        end do
-      end do
-    end do
-   !
-
-    !do j=lb(2), ub(2)
-    !  do i=lb(1), ub(1)
-    !    qz(i,j,:) = cowboy_hat_1d(qq(i,j,:))
-    !  end do
-    !end do
-
-    do k=lb(3)+1, ub(3)-1
+    do k=lb(3)+2, ub(3)-2
       do j=lb(2), ub(2)
         do i=lb(1),ub(1)
           qz(i,j,k)=max(qq(i,j,k-1),qq(i,j,k),qq(i,j,k+1))
         end do
       end do
     end do
-    qz(:,:,2)= max(qq(:,:,1),qq(:,:,2))
-    qz(:,:,ub(2))= max(qq(:,:,ub(2)),qq(:,:,ub(2)-1))
-
-
+   !
   else
     qz(:,:,:)=0.0
   endif
-  !call self%symmetric_z(f)
-  deallocate(d2,fa,qq)
+  deallocate(qq)
  end subroutine quenchz
 
 SUBROUTINE cowboy_hat(self,f,g)
