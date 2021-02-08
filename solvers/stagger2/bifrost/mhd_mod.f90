@@ -276,9 +276,11 @@ SUBROUTINE pde (self)
   call allocate_scalars_a (self%gn, scr1, scr2, scr3, scr4, scr5, scr6, scr7)
   Ux=>U  (:,:,:,1); Uy=>U  (:,:,:,2); Uz=>U  (:,:,:,3)
   Uxc => U_center(:,:,:,1);Uyc => U_center(:,:,:,2);Uzc => U_center(:,:,:,3)
-  call allocate_vectors_a (self%gn, J, emf)
-  Ex=>emf(:,:,:,1); Ey=>emf(:,:,:,2); Ez=>emf(:,:,:,3)
-  Jx=>J(:,:,:,1); Jy=>J(:,:,:,2); Jz=>J(:,:,:,3)
+  if (self%mhd) then
+    call allocate_vectors_a (self%gn, J, emf)
+    Ex=>emf(:,:,:,1); Ey=>emf(:,:,:,2); Ez=>emf(:,:,:,3)
+    Jx=>J(:,:,:,1); Jy=>J(:,:,:,2); Jz=>J(:,:,:,3)
+  end if
   
   !-----------------------------------------------------------------------------
   ! Compute velocity U=momentum/density, leaving down shifted density and log
@@ -327,9 +329,12 @@ SUBROUTINE pde (self)
   Uv(:,:,:,2) = self%nu(1)*Ca+self%nu(2)*abs(Uyc)
   Uv(:,:,:,3) = self%nu(1)*Ca+self%nu(2)*abs(Uzc)
   
-  scr1 = abs((Ca+U_center(:,:,:,1)))!/self%courant)
-  scr2 = abs((Ca+U_center(:,:,:,2)))!/self%courant)
-  scr3 = abs((Ca+U_center(:,:,:,3)))!/self%courant)
+  ! FIXME
+  scr1 = abs((Ca+U_center(:,:,:,1)))!*self%dtime/self%ds(1))!/self%courant)
+  scr2 = abs((Ca+U_center(:,:,:,2)))!*self%dtime/self%ds(1))!/self%courant)
+  scr3 = abs((Ca+U_center(:,:,:,3)))!*self%dtime/self%ds(1))!/self%courant)
+  
+
   do iz=li(3),ui(3)
     do iy=li(2),ui(2)
       do ix=li(1),ui(1)
