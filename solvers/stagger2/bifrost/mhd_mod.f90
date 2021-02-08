@@ -99,7 +99,7 @@ CONTAINS
 SUBROUTINE pre_init (self)
   class(mhd_t), target:: self
   ! ----------------------------------------------------------------------------
-  real, save:: nu(6), ca_max, csound=1.0, cdtd=0.5, courant=0.2
+  real, save:: nu(6), ca_max, csound=1.0, cdtd=0.5, courant=0.2, qmax=8.0
   logical, save:: first_time=.true.
   logical, save:: mhd=.true.
   character(len=16), save:: eos
@@ -107,7 +107,7 @@ SUBROUTINE pre_init (self)
     ca_max, unsigned, verbose,  loginterpolation, symmetric_e, symmetric_b, &
     max_r, smooth_r, do_temperature, &
     nu_d_w_transition, nu_d_high, nu_d_tr_loc, &
-    nu_e_w_transition, nu_e_high, nu_e_tr_loc
+    nu_e_w_transition, nu_e_high, nu_e_tr_loc, qmax
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%pre_init')
   call io%lock%set('mhd_t%pre_init')
@@ -127,6 +127,7 @@ SUBROUTINE pre_init (self)
   end if
   call io%lock%unset('mhd_t%pre_init')
   self%eos = eos
+  self%qmax=qmax
   self%mhd = mhd
   self%nu = nu
   self%csound = csound
@@ -298,6 +299,9 @@ SUBROUTINE pde (self)
   call self%gas_pressure_sub (d, self%lnd, self%ee, pg)
   self%pg => pg
   call self%aux%register ('pg', self%pg)
+  !print *, 'minmax ee, d', minval(ee), maxval(ee), minval(d), maxval(d)
+  !print *, 'minloc ee, d', minloc(ee), minloc(d) 
+  !print *, self%ds
   cs  = sqrt(eos%gamma*pg/d)
   Sij = cs**2
   !
@@ -305,11 +309,12 @@ SUBROUTINE pde (self)
     ! Diagonal Reynolds stress
     ! Diagonal (negative) Maxwell stress (borrowing emf for scratch)
     emf = up(B)                                                                 ! valid 3:n-3
+    scr7 = Ex**2+Ey**2+Ez**2
     ! add magnetic pressure
-    Ca  = sqrt(Sij + (Ex**2+Ey**2+Ez**2)/d)                                     ! alfven speed
+    Ca  = sqrt(Sij + scr7/d)                                     !Fast mode speed Ca = sqrt(Cs^2 + B^2/rho)
   else
-    emf = 0.0
-    Ca  = sqrt(Sij)
+    Ca   = sqrt(Sij)
+    scr7 = 0.0
   end if
   !
   if (self%Ca_max /= 0.0) then
@@ -336,7 +341,7 @@ SUBROUTINE pde (self)
   !print *, 'u_max(cu)', cu, self%u_max
   self%u_max = max(self%u_max,cu)
 
-  call self%difxyz_b3d(ds, Ex, Ey, Ez, Uxc, Uyc, Uzc, Um, self%nu(6))           ! valid 4:n-4
+  call self%difxyz_b3d(Ex, Ey, Ez, Uxc, Uyc, Uzc, scr7, Um, self%nu(6))               ! valid 4:n-4
   
   Um = Um + Uv
   
@@ -893,10 +898,6 @@ SUBROUTINE gas_pressure_sub (self, d, lnd, ee, pg)
   integer, save:: nprint=1
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%gas_pressure_sub')
-  d  => self%mem(:,:,:,self%idx%d ,self%it,1)
-  e  => self%mem(:,:,:,self%idx%e ,self%it,1)
-  call allocate_scalars(self%gn,ee)
-  ee = e/d
   if (trim(self%eos)=='ideal') then
     if (eos%gamma==1d0) then
       pg = d*self%csound**2
@@ -919,7 +920,6 @@ SUBROUTINE gas_pressure_sub (self, d, lnd, ee, pg)
           maxval(self%tt)
     end if
   end if
-  call deallocate_scalars(ee)
   call trace%end()
 END SUBROUTINE gas_pressure_sub
 
@@ -1008,11 +1008,10 @@ END SUBROUTINE smooth_loc
 !> mhd sover, for clarity. 
 !> Finite difference one zone left to one zones right along vector field bx,by,bz
 !> =============================================================================
-SUBROUTINE difxyz_b3d(self, ds, bx, by, bz, ux, uy, uz, g, cc)
+SUBROUTINE difxyz_b3d(self, bx, by, bz, ux, uy, uz, modb, g, cc)
   class(mhd_t) :: self
-  real(8):: ds(3)
   real, dimension(:,:,:)   :: bx, by, bz
-  real, dimension(:,:,:)   :: ux, uy, uz
+  real, dimension(:,:,:)   :: ux, uy, uz, modb
   real, dimension(:,:,:,:) :: g
   real :: cc
   integer:: n(4), ix, iy, iz, gn(3)
@@ -1026,16 +1025,27 @@ SUBROUTINE difxyz_b3d(self, ds, bx, by, bz, ux, uy, uz, g, cc)
   do iz=1,n(3)
     do iy=1,n(2)
       do ix=1,n(1)
-        udotb = ux(ix,iy,iz)*bx(ix,iy,iz) + &
-                uy(ix,iy,iz)*by(ix,iy,iz) + &
-                uz(ix,iy,iz)*bz(ix,iy,iz)
-        bdotb = bx(ix,iy,iz)**2 + &
-                by(ix,iy,iz)**2 + &
-                bz(ix,iy,iz)**2 + 1e-30
-        udotb = udotb/bdotb
-        bx(ix,iy,iz) = ux(ix,iy,iz) - bx(ix,iy,iz) * udotb 
-        by(ix,iy,iz) = uy(ix,iy,iz) - by(ix,iy,iz) * udotb 
-        bz(ix,iy,iz) = uz(ix,iy,iz) - bz(ix,iy,iz) * udotb
+        g(ix,iy,iz,2) = ux(ix,iy,iz)*bx(ix,iy,iz) + &
+                        uy(ix,iy,iz)*by(ix,iy,iz) + &
+                        uz(ix,iy,iz)*bz(ix,iy,iz)
+      end do
+    end do
+  end do
+
+  do iz=1,n(3)
+    do iy=1,n(2)
+      do ix=1,n(1)
+        g(ix,iy,iz,1) = g(ix,iy,iz,2)/(modb(ix,iy,iz) + tiny(c))
+      end do
+    end do
+  end do
+
+  do iz=1,n(3)
+    do iy=1,n(2)
+      do ix=1,n(1)
+        bx(ix,iy,iz) = ux(ix,iy,iz) - bx(ix,iy,iz) * g(ix,iy,iz,1) 
+        by(ix,iy,iz) = uy(ix,iy,iz) - by(ix,iy,iz) * g(ix,iy,iz,1)
+        bz(ix,iy,iz) = uz(ix,iy,iz) - bz(ix,iy,iz) * g(ix,iy,iz,1)
       end do
     end do
   end do
@@ -1046,7 +1056,7 @@ SUBROUTINE difxyz_b3d(self, ds, bx, by, bz, ux, uy, uz, g, cc)
     do iz=1,n(3)
       do iy=1,n(2)
         do ix=2,n(1)-1
-          g(ix,iy,iz,1) = c*amax1(0.,bx(ix-1,iy,iz) - bx(ix+1,iy,iz))
+          g(ix,iy,iz,1) = c*max(0.,bx(ix-1,iy,iz) - bx(ix+1,iy,iz))
         end do
       end do
     end do
@@ -1060,7 +1070,7 @@ SUBROUTINE difxyz_b3d(self, ds, bx, by, bz, ux, uy, uz, g, cc)
     do iz=1,n(3)
       do iy=2,n(2)-1
         do ix=1,n(1)
-          g(ix,iy,iz,2) = c*amax1(0.,by(ix,iy-1,iz) - by(ix,iy+1,iz))
+          g(ix,iy,iz,2) = c*max(0.,by(ix,iy-1,iz) - by(ix,iy+1,iz))
         end do
       end do
     end do
@@ -1074,7 +1084,7 @@ SUBROUTINE difxyz_b3d(self, ds, bx, by, bz, ux, uy, uz, g, cc)
     do iz=2,n(3)-1
       do iy=1,n(2)
         do ix=1,n(1)
-          g(ix,iy,iz,3) = c*amax1(0.,bz(ix,iy,iz-1) - bz(ix,iy,iz+1))
+          g(ix,iy,iz,3) = c*max(0.,bz(ix,iy,iz-1) - bz(ix,iy,iz+1))
         end do
       end do
     end do
@@ -1200,7 +1210,13 @@ subroutine quenchx (self, f, qx)
           qq(i,j,k)=d2(i,j,k)/(fa(i,j,k)+aqmax*d2(i,j,k)+tiny(1.))
         enddo
         !
-        qx(:,j,k) = cowboy_hat_1d(qq(:,j,k))
+        do i=lb(1)+1, ub(1)-1
+          qx(i,j,k)= max(qq(i-1,j,k),qq(i,j,k),qq(i+1,j,k))
+        enddo
+        qx(2,j,k)= max(qq(1,j,k),qq(2,j,k))
+        qx(ub(1),j,k)= max(qq(ub(1),j,k),qq(ub(1)-1,j,k))
+        !
+        !qx(:,j,k) = cowboy_hat_1d(qq(:,j,k))
         !
       enddo
     enddo
@@ -1272,10 +1288,20 @@ subroutine quenchy (self, f, qy)
       end do
     end do
     !
-    do k = lb(3), ub(3)
-      do i=lb(1), ub(1)
-        qy(i,:,k) = cowboy_hat_1d(qq(i,:,k))
+    !do k = lb(3), ub(3)
+    !  do i=lb(1), ub(1)
+    !    qy(i,:,k) = cowboy_hat_1d(qq(i,:,k))
+    !  end do
+    !end do
+    
+    do k=lb(3), ub(3)
+      do j=lb(2)+1, ub(2)-1
+        do i=lb(1), ub(1)
+          qy(i,j,k)= max(qq(i,j-1,k),qq(i,j,k),qq(i,j+1,k))
+        end do
       end do
+      qy(:,2,k)= max(qq(:,1,k),qq(:,2,k))
+      qy(:,ub(2),k)= max(qq(:,ub(2),k),qq(:,ub(2)-1,k))
     end do
   else
     qy(:,:,:)=0.0
@@ -1345,11 +1371,22 @@ subroutine quenchz (self, f, qz)
     end do
    !
 
-    do j=lb(2), ub(2)
-      do i=lb(1), ub(1)
-        qz(i,j,:) = cowboy_hat_1d(qq(i,j,:))
+    !do j=lb(2), ub(2)
+    !  do i=lb(1), ub(1)
+    !    qz(i,j,:) = cowboy_hat_1d(qq(i,j,:))
+    !  end do
+    !end do
+
+    do k=lb(3)+1, ub(3)-1
+      do j=lb(2), ub(2)
+        do i=lb(1),ub(1)
+          qz(i,j,k)=max(qq(i,j,k-1),qq(i,j,k),qq(i,j,k+1))
+        end do
       end do
     end do
+    qz(:,:,2)= max(qq(:,:,1),qq(:,:,2))
+    qz(:,:,ub(2))= max(qq(:,:,ub(2)),qq(:,:,ub(2)-1))
+
 
   else
     qz(:,:,:)=0.0
