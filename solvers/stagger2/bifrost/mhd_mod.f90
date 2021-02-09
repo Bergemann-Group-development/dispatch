@@ -330,21 +330,16 @@ SUBROUTINE pde (self)
   Uv(:,:,:,2) = self%nu(1)*Ca+self%nu(2)*abs(Uyc)
   Uv(:,:,:,3) = self%nu(1)*Ca+self%nu(2)*abs(Uzc)
   
-  ! FIXME
-  scr1 = abs((Ca+U_center(:,:,:,1)))!*self%dtime/self%ds(1))!/self%courant)
-  scr2 = abs((Ca+U_center(:,:,:,2)))!*self%dtime/self%ds(1))!/self%courant)
-  scr3 = abs((Ca+U_center(:,:,:,3)))!*self%dtime/self%ds(1))!/self%courant)
-  
+  scr1 = abs((Ca+U_center(:,:,:,1)))
+  scr2 = abs((Ca+U_center(:,:,:,2)))
+  scr3 = abs((Ca+U_center(:,:,:,3)))
 
-  do iz=li(3),ui(3)
-    do iy=li(2),ui(2)
-      do ix=li(1),ui(1)
-        scr4(ix,iy,iz) = max(scr1(ix,iy,iz),scr2(ix,iy,iz),scr3(ix,iy,iz))
-      end do
-    end do
-  end do
-  cu = self%fmaxval(scr4)
-  !print *, 'u_max(cu)', cu, self%u_max
+  cu = 0.0
+  if (self%n(1)>2) cu=max(cu,self%fmaxval(scr1))
+  if (self%n(2)>2) cu=max(cu,self%fmaxval(scr2))
+  if (self%n(3)>2) cu=max(cu,self%fmaxval(scr3))
+
+  !print *, 'u_max(cu) again', cu, self%u_max
   self%u_max = max(self%u_max,cu)
 
   if (self%mhd) then
@@ -494,6 +489,7 @@ SUBROUTINE pde (self)
   dedt = dedt+xup(yup(scr3))                                                    ! valid 12:-9
   ! --    XZ    --
   scr1 = zdn(dd(:,:,:,1))
+  !
   scr2 = xdn1(Uv_dn(:,:,:,3))
   scr3 = ddzdn1(ds,Ux)
   Sij  = scr3
@@ -1052,7 +1048,7 @@ SUBROUTINE difxyz_b3d(self, bx, by, bz, ux, uy, uz, modb, g, cc)
   do iz=1,n(3)
     do iy=1,n(2)
       do ix=1,n(1)
-        g(ix,iy,iz,1) = g(ix,iy,iz,2)/(modb(ix,iy,iz) + tiny(c))
+        g(ix,iy,iz,1) = g(ix,iy,iz,2)/(modb(ix,iy,iz) + tiny(1.0))
       end do
     end do
   end do
