@@ -25,7 +25,13 @@ MODULE dust_evolve_mod
   logical:: on=.false.
   logical:: do_brownian=.true.
   logical:: do_in_cell_turbulence=.false.
-  real(KIND=precision_e):: tt_dust = 10
+  real(KIND=precision_e):: tt_dust = 10             ! Dust temperature
+  real(KIND=precision_e):: alpha = 1e-3             ! Turbulence parameter, used when do_in_cell_turbulence is true for calculation of turbulent velocities
+  real(KIND=precision_e):: sigma_d = 0.18           ! Column density of the dust, used when do_in_cell_turbulence is true for calculation of turbulent velocities
+  real(KIND=precision_e):: xi = 1.83                ! The exponent used for the distribution in the case of cratering
+  real(KIND=precision_e):: trans_width = 0.1        ! Transition width for fragmentation probability in m/s
+  real(KIND=precision_e):: u_f = 1e2                ! Fragmentation speed, free parameter, assumed value in m/s
+  real(KIND=precision_e):: dt = 1e-1 * 60*60*24*365 ! Time step in dust_evolve in years
   type(dust_evolve_t), public:: dust_evolve
 CONTAINS
 
@@ -42,8 +48,8 @@ SUBROUTINE init (self, n_bin, m_cgs, rho_s)
   integer              :: iostat              ! missing(<0), syntax errors (>0)
   logical, save        :: first_time=.true.   ! shared memory
 
-  real:: tt, mu, cs, r, msolar, Omega_K, sigma_d, rho_d, u_f, t
-  real:: trans_width, alpha, Cdt, xi, dt, t_end, save_time, eps_time, Hp
+  real:: cs, r, msolar, Omega_K, t
+  real:: save_time, eps_time, Hp
   real:: micron, mps
 
   integer:: i, j, k, l, nbin, kn, minij, maxij, itime, js_n, js_nrhs, js_lda, &
@@ -57,10 +63,10 @@ SUBROUTINE init (self, n_bin, m_cgs, rho_s)
     ll, KC_k, LS_k, IJJ, sigma_col, ep, identity, pf, pc, du, ubm, utm, &
     Jp, Jmx, Jmy, Jmz, IJp, pnx, pny, pnz, s1, s2
   real, ALLOCATABLE, DIMENSION(:):: st, utm_ini
-  real(precision_e), ALLOCATABLE, DIMENSION(:,:,:):: SS, C                                                      ! Necesarry?
+  real(precision_e), ALLOCATABLE, DIMENSION(:,:,:):: SS, C                                                      
   logical :: do_implicit=.true.
   !--- add parameters here -----------------------------------------------------
-  namelist /dust_evolve_params/ on, verbose, do_brownian, do_in_cell_turbulence, tt_dust
+  namelist /dust_evolve_params/ on, verbose, do_brownian, do_in_cell_turbulence, tt_dust, sigma_d, alpha, xi, trans_width, u_f, dt
   !-----------------------------------------------------------------------------
   call trace%begin ('dust_evolve_t%init')
   !-----------------------------------------------------------------------------
@@ -107,25 +113,25 @@ SUBROUTINE init (self, n_bin, m_cgs, rho_s)
   !print *,"Initializing starting conditions"
   call cgs%init
   !print *,cgs%grav,cgs%au,cgs%k_b,cgs%m_u,cgs%m_sun
-  mu = 2.37
-  ! cs = sqrt(tt*cgs%k_b/(mu*1.008*cgs%m_u))
+  !mu = 2.37
+  ! cs = sqrt(tt_dust*cgs%k_b/(mu*1.008*cgs%m_u))
   ! r = 1.0*cgs%au
   ! msolar = 0.5*cgs%m_sun
   ! Omega_K = sqrt(cgs%grav*msolar)/r**1.5
   ! Hp = cs / Omega_K
   ! sigma_d = 0.18                                      ! g / cm**2
   ! rho_d = sigma_d/(sqrt(2*math%pi)*Hp)
-  micron = 1e-4
+  !micron = 1e-4
 
-  mps = 1e2 
-  u_f = 1*mps
-  trans_width = 0.001*mps
-  alpha = 1e-3
-  Cdt = 0.1
-  xi = 1.83
+  !mps = 1e2 
+  !u_f = 1*mps
+  !trans_width = 0.001*mps
+  !alpha = 1e-3
+  !Cdt = 0.1
+  !xi = 1.83
 
-  dt = 1e-1 * 60*60*24*365
-  t_end = 1e2 * 60*60*24*365
+  !dt = 1e-1 * 60*60*24*365
+  !t_end = 1e2 * 60*60*24*365
   save_time = 1*cgs%yr
   eps_time = 1.10
 
@@ -136,20 +142,22 @@ SUBROUTINE init (self, n_bin, m_cgs, rho_s)
   !ratio_r = (max_a/min_a)**(1.0/(nbin-1))
   !a(1) = min_a
   !n = 0
-  C = 0
 
   ! do i=2,nbin
   !   a(i) = a(i-1)*ratio_r                             ! Setup of bins
   ! end do
 
-  st = rho_s * a * math%pi/(2*sigma_d*100)
   !m = 4.0/3.0 * a**3 * rho_s * math%pi
-  a = (3.0/4.0 * 1/(rho_s * math%pi * m_cgs) )**1/3
   !n(1) = rho_d / m(1)
   !v = 1
   !p = n * v
   !mv = m * v 
 
+  a = (3.0/4.0 * m_cgs/(rho_s * math%pi) )**(1/3)       ! Initial setup of bin distribution
+  st = rho_s * a * math%pi/(2*sigma_d*100)              ! 
+
+
+  C = 0
   SS = 0
 
   ForAll(i = 1:nbin, j = 1:nbin) identity(i,j) = (i/j)*(j/i)
@@ -225,11 +233,6 @@ SUBROUTINE init (self, n_bin, m_cgs, rho_s)
     where (mn == m(k) ) C(k,:,:) = 1 - ep
   end do
 
-
-  t = 0
-  itime = 0
-
-
   call trace%end ()
 END SUBROUTINE init
 
@@ -289,8 +292,8 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
   ! du = vdiff + brown + turb bliver regnet i init
 
   if (do_in_cell_turbulence) then
-    cs = sqrt(tt_dust*cgs%k_b/(mu*1.008*cgs%m_u))
-    
+    !cs = sqrt(tt_dust*cgs%k_b/(mu*1.008*cgs%m_u))
+    cs = sqrt(tt_dust*cgs%k_B/(cgs%m_u*scaling%mu))/scaling%u
     utm_ini = cs * sqrt(2*alpha*st)                     ! Handle velocities every update
     where (st > 1.0) utm_ini = cs * sqrt(2*alpha/ st)
   end if
@@ -325,8 +328,9 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
   kk = du * sigma_col * pc
   ll = du * sigma_col * pf                              
 
-
-  do while (t < t_end)
+  t = 0
+  itime = 0
+  do while (t < tend)
     
     mpx = m * px
     mpy = m * py
