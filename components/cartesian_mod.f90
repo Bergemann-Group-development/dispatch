@@ -281,10 +281,7 @@ recursive SUBROUTINE initial_refine(self,tlist, task,level_min, ip)
     if (on) call io%header('begin initial mesh refinement')
   end if
   if (.not.on) then
-    !call task%pre_init()
     call self%task_list%append_link (task%link)
-    !call task%add_to_task_list (tlist)
-    write (io_unit%mpi,'(3i4,3f8.3,i4,a)') i,j,k,task%position,task%rank,'i,j,k,pos,rank'
     return
   end if
   level_max = level_min+maxval(n_refine)
