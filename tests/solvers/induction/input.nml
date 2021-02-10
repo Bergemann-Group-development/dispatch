@@ -1,0 +1,18 @@
+
+! -- Run parameters ------------------------------------------------------------
+&io_params              verbose=1 do_trace=f omp_trace=t
+                        do_output=t method='legacy' guard_zones=t /
+&out_params             /
+
+! -- Experiment parameters -----------------------------------------------------
+&cartesian_params       size=3*1.0 dims=1,1,1 position=3*0.0 /
+&patch_params           n=3*5 ng=3*3 grace=0.01 /
+&force_params           /
+&IC_params              /
+
+! -- Solver parameters ---------------------------------------------------------
+                        !     cs   pa  ofd  mas  kap  eta
+&stagger_params         nu= 0.10, 1.0, 1.0, 0.1, 1.0, 1.0 gamma=1.4 /
+&timestep_params        /
+&ramses_params          slope_type=3 /
+
