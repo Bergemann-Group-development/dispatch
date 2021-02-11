@@ -52,8 +52,8 @@ SUBROUTINE condition (self, m, ff, idx)
   integer:: i, j, k
   real:: x, y, z, ds2(3), xs, ys, zs, rd
   logical:: first_time = .true.
-  real(kind=KindScalarVar), dimension(:,:,:),   pointer:: d, s
-  real(kind=KindScalarVar), dimension(:,:,:),   pointer:: e1, et
+  real(kind=KindScalarVar), dimension(:,:,:),   pointer:: d
+  real(kind=KindScalarVar), dimension(:,:,:),   pointer:: s=>null(), e1=> null(), et=>null()
   real(kind=KindScalarVar):: rhov2, pxl
   real(4), save:: P_l=10.33333  , P_r=1.0, &
                   rho_l=3.857143, &
@@ -73,7 +73,7 @@ SUBROUTINE condition (self, m, ff, idx)
   !---------------------------------------------------------------------
   ! Point amd allocate memory
   !---------------------------------------------------------------------
-    d => ff(:,:,:,idx%d)
+  d => ff(:,:,:,idx%d)
   if (trim(self%solver(1:7)) == 'stagger') s => ff(:,:,:,idx%s)
   if (self%solver(1:14) == 'zeus_mhd_patch' .or. self%solver(1:10) == 'stagger2e_') then
     e1 => ff(:,:,:,idx%e)
