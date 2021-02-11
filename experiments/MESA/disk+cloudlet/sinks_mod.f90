@@ -183,9 +183,9 @@ SUBROUTINE create (self, patch, ipos)
   m1 => patch%mesh(1)
   m2 => patch%mesh(2)
   m3 => patch%mesh(3)
-  r1 = m1%p + m1%r(ipos(1))
-  r2 = m2%p + m2%r(ipos(2))
-  r3 = m3%p + m3%r(ipos(3))
+  r1 = 0d0 !m1%p + m1%r(ipos(1))
+  r2 = 0d0 !m2%p + m2%r(ipos(2))
+  r3 = 0d0 !m3%p + m3%r(ipos(3))
   self%position = [r1,r2,r3]
   self%size = 2d0*accretion_cells*patch%ds
   self%ds = 0d0
@@ -490,17 +490,18 @@ SUBROUTINE sink_grav (self, patch)
       do i=m1%lb,m1%ub
         x = m1%centre_nat + m1%r(i)
         dr(1) = self%position(1) - x
-        dr(2) = self%position(2) - y
-        dr(3) = self%position(3) - z
         r2 = dr(1)**2 + dr(2)**2 + dr(3)**2
-        r  = sqrt(r2)
-        gx   = -scaling%grav * self%mass * (x / r**3 )
-        gy   = -scaling%grav * self%mass * (y / r**3 )
-        gz   = -scaling%grav * self%mass * (z / r**3 )
-
-        px(i,j,k)   = px(i,j,k) + d(i,j,k) * gx * dt
-        py(i,j,k)   = py(i,j,k) + d(i,j,k) * gy * dt
-        pz(i,j,k)   = pz(i,j,k) + d(i,j,k) * gz * dt
+        r  = sqrt(r2)       
+        !print*,'scaling%grav, self%mass, x, y, z, r2, r, dr = ', scaling%grav, self%mass, x, y, z, r2, r, dr 
+        if (r > 0d0) then
+          gx   = -cgs%grav * self%mass*cgs%m_sun * (dr(1)*scaling%l / (r*scaling%l)**3 )  
+          gy   = -cgs%grav * self%mass*cgs%m_sun * (dr(2)*scaling%l / (r*scaling%l)**3 )  
+          gz   = -cgs%grav * self%mass*cgs%m_sun * (dr(3)*scaling%l / (r*scaling%l)**3 )
+      
+          px(i,j,k)   = px(i,j,k) + ( d(i,j,k)*scaling%d * gx  * dt*scaling%t / (scaling%d*scaling%l/scaling%t) ) 
+          py(i,j,k)   = py(i,j,k) + ( d(i,j,k)*scaling%d * gy  * dt*scaling%t / (scaling%d*scaling%l/scaling%t) ) 
+          pz(i,j,k)   = pz(i,j,k) + ( d(i,j,k)*scaling%d * gz  * dt*scaling%t / (scaling%d*scaling%l/scaling%t) )
+        end if
       end do
     end do
   end do

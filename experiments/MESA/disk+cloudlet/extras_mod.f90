@@ -93,6 +93,7 @@ MODULE extras_mod
     !class(rt_t), pointer:: rt => null()                                ! RT
     !type(newton_t):: newton                                            ! Newton
     !type(sinkparticles_t):: sinkparticles                              ! sinkp
+    type(sinks_t):: sink                                                 ! sinkp
     !class(patch_force_t), pointer:: patch_force                        ! sinkp
     !class(trace_particles_t), pointer:: trace_particles                ! tracep
     !real, dimension(:,:,:,:), pointer:: v                              ! tracep
@@ -138,7 +139,8 @@ SUBROUTINE pre_init (self)
   !call self%pic%pre_init(self%link)                                    ! pic
   call self%selfgravity%pre_init (self%patch)                          ! selfg
   !call self%gravity%pre_init (self%patch)                          ! selfg
-  call mesa%pre_init (self%patch)                                     ! sinks
+  !call mesa%pre_init (self%patch)                                     ! sinks
+  call self%sink%pre_init (self%patch)                                     ! sinks
 END SUBROUTINE pre_init
 
 !===============================================================================
@@ -168,8 +170,9 @@ SUBROUTINE init (self)
   !self%rt%rt_boundaries%grav = self%gravity%const_grav                 ! experiment
   !call sink_patch%init (self%link)                                     ! sinkp
   !allocate (self%patch_force)                                          ! sinkp
-  !call self%patch_force%init                                           ! sinkp
-  call mesa%init                                         ! sinks
+  !call self%patch_force%init                                           ! sinkp 
+  !call mesa%init                                                       ! sinks
+  call self%sink%init                                                   ! sinks
   call trace%end()
 END SUBROUTINE init
 
@@ -205,7 +208,8 @@ SUBROUTINE pre_update (self)
   !call particle_solver%force_field (self)                              ! sinkp
   !call self%pic%pre_update()                                           ! pic
   call self%selfgravity%pre_update                                     ! selfg
-  call mesa%pre_update (self%patch)                                    ! sinks
+  !call mesa%pre_update (self%patch)                                    ! sinks
+  call self%sink%pre_update (self%patch)                                ! sinks
   call trace%end()
 END SUBROUTINE pre_update
 
@@ -221,7 +225,8 @@ SUBROUTINE post_update (self)
   !call self%forces%post_update                                         ! forces
   !call self%trace_particles%post_update (self)                         ! tracep
   !call self%pic%post_update()                                          ! pic
-  call mesa%post_update (self%patch)                                    ! sinks
+  !call mesa%post_update (self%patch)                                    ! sinks
+  call self%sink%post_update (self%patch)                               ! sinks
 END SUBROUTINE post_update
 
 !===============================================================================
@@ -232,7 +237,8 @@ SUBROUTINE output (self)
   !.............................................................................
   call self%gpatch_t%output                                            ! keep
   !call self%rt%output                                                  ! RT
-  call mesa%output(self%patch)
+  !call mesa%output(self%patch)
+  call self%sink%output(self%patch)
 END SUBROUTINE output
 
 !===============================================================================
