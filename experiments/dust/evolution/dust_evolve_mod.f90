@@ -13,57 +13,71 @@ MODULE dust_evolve_mod
   private
   type, public:: dust_evolve_t
     logical:: on=.false.
-    integer:: n_bin
-    real, allocatable :: m_cgs(:)
   contains
     procedure:: init
     procedure:: update
     procedure:: test
   end type
+  
   integer, parameter :: precision_e = selected_real_kind(15, 100)
   integer:: verbose=0
+  integer:: nbin
   logical:: on=.false.
   logical:: do_brownian=.true.
   logical:: do_in_cell_turbulence=.false.
-  real(KIND=precision_e):: tt_dust = 10             ! Dust temperature
-  real(KIND=precision_e):: alpha = 1e-3             ! Turbulence parameter, used when do_in_cell_turbulence is true for calculation of turbulent velocities
-  real(KIND=precision_e):: sigma_d = 0.18           ! Column density of the dust, used when do_in_cell_turbulence is true for calculation of turbulent velocities
-  real(KIND=precision_e):: xi = 1.83                ! The exponent used for the distribution in the case of cratering
-  real(KIND=precision_e):: trans_width = 0.1        ! Transition width for fragmentation probability in m/s
-  real(KIND=precision_e):: u_f = 1e2                ! Fragmentation speed, free parameter, assumed value in m/s
-  real(KIND=precision_e):: dt = 1e-1 * 60*60*24*365 ! Time step in dust_evolve in years
+  real(KIND=precision_e):: tt_dust = 10                     ! Dust temperature
+  real(KIND=precision_e):: alpha = 1e-3                     ! Turbulence parameter, used when do_in_cell_turbulence is true for calculation of turbulent velocities
+  real(KIND=precision_e):: sigma_d = 0.18                   ! Column density of the dust, used when do_in_cell_turbulence is true for calculation of turbulent velocities
+  real(KIND=precision_e):: xi = 1.83                        ! The exponent used for the distribution in the case of cratering
+  real(KIND=precision_e):: trans_width = 0.1                ! Transition width for fragmentation probability in m/s
+  real(KIND=precision_e):: u_f = 1e2                        ! Fragmentation speed, free parameter, assumed value in m/s
+  real(KIND=precision_e):: dt = 1e-1 * 60*60*24*365         ! Time step in dust_evolve in years
+  real(KIND=precision_e):: save_time = 1 * 60*60*24*365
+  real(KIND=precision_e):: eps_time =1.10 * 60*60*24*365
+  real(KIND=precision_e), ALLOCATABLE:: C(:,:,:) 
+  real(KIND=precision_e), ALLOCATABLE:: SS(:,:,:) 
+  real(KIND=precision_e), ALLOCATABLE:: ms(:,:) 
+  real(KIND=precision_e), ALLOCATABLE:: ep(:,:) 
+  real(KIND=precision_e), ALLOCATABLE:: pf(:,:) 
+  real(KIND=precision_e), ALLOCATABLE:: pc(:,:) 
+  real(KIND=precision_e), ALLOCATABLE:: identity(:,:) 
+  real(KIND=precision_e), ALLOCATABLE:: sigma_col(:,:) 
+  real(KIND=precision_e), ALLOCATABLE:: mn(:,:) 
+  real(KIND=precision_e), ALLOCATABLE:: mm(:,:) 
+  real(KIND=precision_e), ALLOCATABLE:: m_cgs(:)
+  real(KIND=precision_e), ALLOCATABLE:: a(:)
   type(dust_evolve_t), public:: dust_evolve
+
 CONTAINS
 
 !===============================================================================
 !> Read parameters and initialize -- add more parameters, if they are known
 !> in the particle solver
 !===============================================================================
-SUBROUTINE init (self, n_bin, m_cgs, rho_s)
+SUBROUTINE init (self, ln_bin, lm_cgs, rho_s)
   class(dust_evolve_t) :: self
-  integer              :: n_bin               ! number of bins
-  real                 :: m_cgs(:)            ! particle masses
+  integer              :: ln_bin               ! number of bins
+  real                 :: lm_cgs(:)            ! particle masses
   real                 :: rho_s               ! particle solid density
   !.............................................................................
   integer              :: iostat              ! missing(<0), syntax errors (>0)
   logical, save        :: first_time=.true.   ! shared memory
 
   real:: cs, r, msolar, Omega_K, t
-  real:: save_time, eps_time, Hp
   real:: micron, mps
 
-  integer:: i, j, k, l, nbin, kn, minij, maxij, itime, js_n, js_nrhs, js_lda, &
+  integer:: i, j, k, l, kn, minij, maxij, itime, js_n, js_nrhs, js_lda, &
     js_ldb, js_info
   integer, ALLOCATABLE, DIMENSION(:):: js_ipiv
   real(precision_e):: ratio_r, min_a, max_a, m_crat, eps, Stot
   real(precision_e):: m_big, m_small
   real(precision_e), ALLOCATABLE, DIMENSION(:):: m, n, S, dn, dpx, dpy, dpz, dd, a, Spx, Spy, Spz, &
     mv, px, py, pz, v, mpx, mpy, mpz, Ln_k, Kn_k, Sppx, Sppy, Sppz
-  real(precision_e), ALLOCATABLE, DIMENSION(:,:):: mn, mm, ms, nn, Q, Q_frag, jj, kk, &
-    ll, KC_k, LS_k, IJJ, sigma_col, ep, identity, pf, pc, du, ubm, utm, &
+  real(precision_e), ALLOCATABLE, DIMENSION(:,:):: nn, Q, Q_frag, jj, kk, &
+    ll, KC_k, LS_k, IJJ, du, ubm, utm, &
     Jp, Jmx, Jmy, Jmz, IJp, pnx, pny, pnz, s1, s2
   real, ALLOCATABLE, DIMENSION(:):: st, utm_ini
-  real(precision_e), ALLOCATABLE, DIMENSION(:,:,:):: SS, C                                                      
+  !real(precision_e), ALLOCATABLE, DIMENSION(:,:,:):: SS, C                                                      
   logical :: do_implicit=.true.
   !--- add parameters here -----------------------------------------------------
   namelist /dust_evolve_params/ on, verbose, do_brownian, do_in_cell_turbulence, tt_dust, sigma_d, alpha, xi, trans_width, u_f, dt
@@ -82,156 +96,151 @@ SUBROUTINE init (self, n_bin, m_cgs, rho_s)
     end if
     call io%namelist_warning ('dust_evolve_params', iostat)
     write (io%namelist, dust_evolve_params)    ! write to data/run/params.nml
-    self%n_bin = n_bin
-    allocate(self%m_cgs(n_bin))
-    self%m_cgs = m_cgs 
-    call self%test                             ! run a self%test once
+    
+    call cgs%init
+    nbin = ln_bin
+    ALLOCATE(SS(nbin,nbin,nbin), C(nbin,nbin,nbin), ms(nbin,nbin), ep(nbin,nbin), a(nbin), st(nbin))
+    ALLOCATE(pf(nbin,nbin), pc(nbin,nbin), identity(nbin,nbin), sigma_col(nbin,nbin), mn(nbin,nbin), mm(nbin,nbin))
+  
+    allocate(m_cgs(nbin))
+    m_cgs = lm_cgs 
+    !call self%test                             ! run a self%test once
     
     first_time = .false.
-  end if
-  call io%lock%set ('dust_evolve_t%init')
-  self%on = on                                 ! task private copy
-  self%n_bin = n_bin
-  if (.not. allocated(self%m_cgs)) allocate(self%m_cgs(n_bin))
-  self%m_cgs = m_cgs
+  
+    !class(dust_evolve_t):: self
 
+    !print *,"Initializing starting conditions"
+    !print *,cgs%grav,cgs%au,cgs%k_b,cgs%m_u,cgs%m_sun
+    !mu = 2.37
+    ! cs = sqrt(tt_dust*cgs%k_b/(mu*1.008*cgs%m_u))
+    ! r = 1.0*cgs%au
+    ! msolar = 0.5*cgs%m_sun
+    ! Omega_K = sqrt(cgs%grav*msolar)/r**1.5
+    ! Hp = cs / Omega_K
+    ! sigma_d = 0.18                                      ! g / cm**2
+    ! rho_d = sigma_d/(sqrt(2*math%pi)*Hp)
+    !micron = 1e-4
 
-  !class(dust_evolve_t):: self
+    !mps = 1e2 
+    !u_f = 1*mps
+    !trans_width = 0.001*mps
+    !alpha = 1e-3
+    !Cdt = 0.1
+    !xi = 1.83
 
-  nbin = self%n_bin
-  ALLOCATE(a(nbin), n(nbin), m(nbin), st(nbin), dn(nbin), S(nbin), ms(nbin,nbin))
-  ALLOCATE(utm_ini(nbin), sigma_col(nbin,nbin), mn(nbin,nbin), mm(nbin,nbin))
-  ALLOCATE(pf(nbin,nbin), pc(nbin,nbin), du(nbin,nbin), ep(nbin,nbin))
-  ALLOCATE(ubm(nbin,nbin), utm(nbin,nbin), Q(nbin,nbin), Q_frag(nbin,nbin))
-  ALLOCATE(jj(nbin,nbin), SS(nbin,nbin,nbin), C(nbin,nbin,nbin), kk(nbin,nbin))
-  ALLOCATE(ll(nbin,nbin), nn(nbin,nbin), identity(nbin,nbin), js_ipiv(nbin))
-  ALLOCATE(KC_k(nbin,nbin), LS_k(nbin,nbin) , IJJ(nbin,nbin))
-  ALLOCATE(Jp(nbin,nbin), Jmx(nbin,nbin), Jmy(nbin,nbin), Jmz(nbin,nbin), Spx(nbin), Spy(nbin), Spz(nbin), dpx(nbin), dpy(nbin), dpz(nbin))
-  ALLOCATE(IJp(nbin,nbin), Ln_k(nbin), Kn_k(nbin), Sppx(nbin), Sppy(nbin), Sppz(nbin))
-  ALLOCATE(mv(nbin), px(nbin), py(nbin), pz(nbin), v(nbin), mpx(nbin), mpy(nbin), mpz(nbin), pnx(nbin,nbin), pny(nbin,nbin), pnz(nbin,nbin), s1(nbin,nbin),s2(nbin,nbin))
+    !dt = 1e-1 * 60*60*24*365
+    !t_end = 1e2 * 60*60*24*365
 
-  !print *,"Initializing starting conditions"
-  call cgs%init
-  !print *,cgs%grav,cgs%au,cgs%k_b,cgs%m_u,cgs%m_sun
-  !mu = 2.37
-  ! cs = sqrt(tt_dust*cgs%k_b/(mu*1.008*cgs%m_u))
-  ! r = 1.0*cgs%au
-  ! msolar = 0.5*cgs%m_sun
-  ! Omega_K = sqrt(cgs%grav*msolar)/r**1.5
-  ! Hp = cs / Omega_K
-  ! sigma_d = 0.18                                      ! g / cm**2
-  ! rho_d = sigma_d/(sqrt(2*math%pi)*Hp)
-  !micron = 1e-4
+                                                        ! Define binning
+    !min_a = 1e-4
+    !max_a = 1e2
 
-  !mps = 1e2 
-  !u_f = 1*mps
-  !trans_width = 0.001*mps
-  !alpha = 1e-3
-  !Cdt = 0.1
-  !xi = 1.83
+    !ratio_r = (max_a/min_a)**(1.0/(nbin-1))
+    !a(1) = min_a
+    !n = 0
 
-  !dt = 1e-1 * 60*60*24*365
-  !t_end = 1e2 * 60*60*24*365
-  save_time = 1*cgs%yr
-  eps_time = 1.10
+    ! do i=2,nbin
+    !   a(i) = a(i-1)*ratio_r                             ! Setup of bins
+    ! end do
 
-                                                      ! Define binning
-  !min_a = 1e-4
-  !max_a = 1e2
+    !m = 4.0/3.0 * a**3 * rho_s * math%pi
+    !n(1) = rho_d / m(1)
+    !v = 1
+    !p = n * v
+    !mv = m * v 
+    m = m_cgs
+    a = (3.0/4.0 * m/(rho_s * math%pi) )**(1/3)       ! Initial setup of bin distribution
+    st = rho_s * a * math%pi/(2*sigma_d*100)  
+    
+    
+    C = 0
+    SS = 0
+    ms = 0
+    ep = 0
+    sigma_col = 0
+    mn = 0
+    mm = 0
+    pf = 0
+    pc = 0
 
-  !ratio_r = (max_a/min_a)**(1.0/(nbin-1))
-  !a(1) = min_a
-  !n = 0
+    ForAll(i = 1:nbin, j = 1:nbin) identity(i,j) = (i/j)*(j/i)
+    identity = identity / dt
 
-  ! do i=2,nbin
-  !   a(i) = a(i-1)*ratio_r                             ! Setup of bins
-  ! end do
+    do i=1,nbin
+      do j=1,nbin                                       ! Setup of matrices
+        minij = min(i,j)
+        maxij = max(i,j)
 
-  !m = 4.0/3.0 * a**3 * rho_s * math%pi
-  !n(1) = rho_d / m(1)
-  !v = 1
-  !p = n * v
-  !mv = m * v 
+        ms(i,j) = m(i) + m(j)
 
-  a = (3.0/4.0 * m_cgs/(rho_s * math%pi) )**(1/3)       ! Initial setup of bin distribution
-  st = rho_s * a * math%pi/(2*sigma_d*100)              ! 
-
-
-  C = 0
-  SS = 0
-
-  ForAll(i = 1:nbin, j = 1:nbin) identity(i,j) = (i/j)*(j/i)
-  identity = identity / dt
-
-  do i=1,nbin
-    do j=1,nbin                                       ! Setup of matrices
-      minij = min(i,j)
-      maxij = max(i,j)
-
-      ms(i,j) = m(i) + m(j)
-
-      do kn = nbin,1,-1
-        if ( m(kn)<ms(i,j) ) exit
-      end do
-
-      ! ubm(i,j) = sqrt(8 * cgs%k_b* tt * (m(i) + m(j) )/(math%pi*m(i)*m(j) ))
-      ! utm(i,j) = max(utm_ini(i), utm_ini(j))
-      ! du(i,j) = ubm(i,j) + utm(i,j)
-      sigma_col(i,j) = math%pi * (a(i) + a(j))**2
-
-      if (m(i)/m(j) > 10 .or. m(i)/m(j) < 0.1 ) then        !!!
-        !Cratering
-        SS(1:minij,i,j) = a(1:minij) ** (-3*xi)
-        Stot = SUM(m * SS(:,i,j) ) / (m(minij) *2)
-        SS(1:minij,i,j) = SS(1:minij,i,j) / Stot
-        m_crat =  abs(m(i)-m(j))
-        m_big = max(m(i),m(j))
-        m_small = min(m(i),m(j))
-
-        do l = nbin,1,-1
-          if (m(l)-m_big<-m_small) exit
+        do kn = nbin,1,-1
+          if ( m(kn)<ms(i,j) ) exit
         end do
 
+        ! ubm(i,j) = sqrt(8 * cgs%k_b* tt * (m(i) + m(j) )/(math%pi*m(i)*m(j) ))
+        ! utm(i,j) = max(utm_ini(i), utm_ini(j))
+        ! du(i,j) = ubm(i,j) + utm(i,j)
+        sigma_col(i,j) = math%pi * (a(i) + a(j))**2
 
-        eps = (m_crat - m(l))/(m(l+1) - m(l))
-        SS(l,i,j) = 1-eps
-        SS(l+1,i,j) = eps
+        if (m(i)/m(j) > 10 .or. m(i)/m(j) < 0.1 ) then        !!!
+          !Cratering
+          SS(1:minij,i,j) = a(1:minij) ** (-3*xi)
+          Stot = SUM(m * SS(:,i,j) ) / (m(minij) *2)
+          SS(1:minij,i,j) = SS(1:minij,i,j) / Stot
+          m_crat =  abs(m(i)-m(j))
+          m_big = max(m(i),m(j))
+          m_small = min(m(i),m(j))
 
-      else
-        !Fragmentation
-        SS(1:maxij,i,j) = a(1:maxij) ** (-3*xi)
-        Stot = SUM(m * SS(:,i,j) ) / (m(i) + m(j))
-        SS(1:maxij,i,j) = SS(1:maxij,i,j) / Stot
-      end if
-
-
-      if (kn+1 <= nbin) then
-        mm(i,j) = m(kn)
-        mn(i,j) = m(kn+1)
-      else
-        sigma_col(i,j) = 0
-      end if
-
-      ! if (du(i,j) < u_f - trans_width) then
-      !   pf(i,j) = 0
-      ! else if (du(i,j) > u_f) then
-      !   pf(i,j) = 1
-      ! else
-      !   pf(i,j) = 1-(u_f-du(i,j))/trans_width
-      ! end if
+          do l = nbin,1,-1
+            if (m(l)-m_big<-m_small) exit
+          end do
 
 
+          eps = (m_crat - m(l))/(m(l+1) - m(l))
+          SS(l,i,j) = 1-eps
+          SS(l+1,i,j) = eps
+
+        else
+          !Fragmentation
+          SS(1:maxij,i,j) = a(1:maxij) ** (-3*xi)
+          Stot = SUM(m * SS(:,i,j) ) / (m(i) + m(j))
+          SS(1:maxij,i,j) = SS(1:maxij,i,j) / Stot
+        end if
+
+
+        if (kn+1 <= nbin) then
+          mm(i,j) = m(kn)
+          mn(i,j) = m(kn+1)
+        else
+          sigma_col(i,j) = 0
+        end if
+
+        ! if (du(i,j) < u_f - trans_width) then
+        !   pf(i,j) = 0
+        ! else if (du(i,j) > u_f) then
+        !   pf(i,j) = 1
+        ! else
+        !   pf(i,j) = 1-(u_f-du(i,j))/trans_width
+        ! end if
+
+
+      end do
     end do
-  end do
 
-  pc = 1-pf
-  where (sigma_col == 0) ep = 0
-  where (sigma_col /= 0) ep = (mn - ms) / (mn - mm)
+    pc = 1-pf
+    where (sigma_col == 0) ep = 0
+    where (sigma_col /= 0) ep = (mn - ms) / (mn - mm)
 
-  do k=1,nbin
-    where (mm == m(k) ) C(k,:,:) = ep
-    where (mn == m(k) ) C(k,:,:) = 1 - ep
-  end do
+    do k=1,nbin
+      where (mm == m(k) ) C(k,:,:) = ep
+      where (mn == m(k) ) C(k,:,:) = 1 - ep
+    end do
+
+  end if
+  call io%lock%unset ('dust_evolve_t%init')
+  self%on = on                                 ! task private copy
+
 
   call trace%end ()
 END SUBROUTINE init
@@ -246,32 +255,42 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
   real,         intent(in)  :: vrms_in(:), dd_in(:), vd_in(:,:)
   real,         intent(out) :: dd_out(:), vd_out(:,:)
 
-  real:: tt, mu, cs, r, msolar, Omega_K, sigma_d, rho_d, rho_s, u_f, t
-  real:: trans_width, alpha, Cdt, xi, dt, t_end, save_time, eps_time, Hp
-  real:: micron, mps
+  real:: tt, mu, cs, r, msolar, Omega_K, rho_s, t, t_end
 
-  integer:: i, j, k, l, nbin, kn, minij, maxij, itime, js_n, js_nrhs, js_lda, &
+  integer:: i, j, k, l, kn, minij, maxij, itime, js_n, js_nrhs, js_lda, &
     js_ldb, js_info
   integer, ALLOCATABLE, DIMENSION(:):: js_ipiv
   real(precision_e):: ratio_r, min_a, max_a, m_crat, eps, Stot
   real(precision_e):: m_big, m_small
-  real(precision_e), ALLOCATABLE, DIMENSION(:):: m, n, S, dn, dpx, dpy, dpz, dd, a, Spx, Spy, Spz, &
+  real(precision_e), ALLOCATABLE, DIMENSION(:):: m, n, S, dn, dpx, dpy, dpz, dd, Spx, Spy, Spz, &
     mv, px, py, pz, v, mpx, mpy, mpz, Ln_k, Kn_k, Sppx, Sppy, Sppz
-  real(precision_e), ALLOCATABLE, DIMENSION(:,:):: mn, mm, ms, nn, Q, Q_frag, jj, kk, &
-    ll, KC_k, LS_k, IJJ, sigma_col, ep, identity, pf, pc, du, ubm, utm, &
+  real(precision_e), ALLOCATABLE, DIMENSION(:,:):: nn, Q, Q_frag, jj, kk, &
+    ll, KC_k, LS_k, IJJ, du, ubm, utm, &
     Jp, Jmx, Jmy, Jmz, IJp, pnx, pny, pnz, s1, s2
   real, ALLOCATABLE, DIMENSION(:):: st, utm_ini
-  real(precision_e), ALLOCATABLE, DIMENSION(:,:,:):: SS, C                                                      ! Necesarry?
   logical :: do_implicit=.true.
 
   ! CGS units below
-  real(precision_e) :: tend, vd(self%n_bin,3), vrms(self%n_bin)
+  real(precision_e) :: tend, vd(nbin,3), vrms(nbin)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('dust_evolve_t%update', itimer=itimer)
+  
+  ALLOCATE(n(nbin), dn(nbin), S(nbin), m(nbin))
+  ALLOCATE(utm_ini(nbin))
+  ALLOCATE(du(nbin,nbin))
+  ALLOCATE(ubm(nbin,nbin), utm(nbin,nbin), Q(nbin,nbin), Q_frag(nbin,nbin))
+  ALLOCATE(jj(nbin,nbin), kk(nbin,nbin))
+  ALLOCATE(ll(nbin,nbin), nn(nbin,nbin), js_ipiv(nbin))
+  ALLOCATE(KC_k(nbin,nbin), LS_k(nbin,nbin) , IJJ(nbin,nbin))
+  ALLOCATE(Jp(nbin,nbin), Jmx(nbin,nbin), Jmy(nbin,nbin), Jmz(nbin,nbin), Spx(nbin), Spy(nbin), Spz(nbin), dpx(nbin), dpy(nbin), dpz(nbin))
+  ALLOCATE(IJp(nbin,nbin), Ln_k(nbin), Kn_k(nbin), Sppx(nbin), Sppy(nbin), Sppz(nbin))
+  ALLOCATE(mv(nbin), px(nbin), py(nbin), pz(nbin), v(nbin), mpx(nbin), mpy(nbin), mpz(nbin), pnx(nbin,nbin), pny(nbin,nbin), pnz(nbin,nbin), s1(nbin,nbin),s2(nbin,nbin))
+
+  
   ! convert from code units to cgs
   tend = scaling%t * dt_dispatch
-  n = scaling%d * dd_in / self%m_cgs
+  n = scaling%d * dd_in / m_cgs
   vd = scaling%u * vd_in
   vrms = scaling%u * vrms_in
 
@@ -279,6 +298,8 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
   py = n * vd(:,2)
   pz = n * vd(:,3)
 
+  m = m_cgs
+  
   ! compute velocity difference between different size bins
   ! 1) use vd for bulk difference:
   !        vdiff(i,j) = sqrt((vd(i,1) - vd(j,1))**2 + (vd(i,2) - vd(j,2))**2 + (vd(i,3) - vd(j,3))**2)
@@ -304,7 +325,7 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
       du(i,j) = du(i,j) + sqrt(vrms(i)**2 + vrms(j)**2)
       
       if (do_brownian) then
-      ubm(i,j) = sqrt(8 * cgs%k_b* tt * (m(i) + m(j) )/(math%pi*m(i)*m(j) ))
+      ubm(i,j) = sqrt(8 * cgs%k_b* tt_dust * (m(i) + m(j) )/(math%pi*m(i)*m(j) ))
       du(i,j) = du(i,j) + ubm(i,j)
       end if
 
@@ -464,8 +485,10 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
   vd(:,3) = pz/n
 
   ! convert back to code units
-  dd_out = self%m_cgs * n / scaling%d
+  dd_out = m_cgs * n / scaling%d
   vd_out = vd / scaling%u
+
+  DEALLOCATE(Spx,Spy,Spz)
 
   call trace%end (itimer)
 END SUBROUTINE update
@@ -479,7 +502,7 @@ SUBROUTINE test (self)
   real:: trans_width, alpha, Cdt, xi, dt, t_end, save_time, eps_time, Hp
   real:: micron, mps
 
-  integer:: i, j, k, l, nbin, kn, minij, maxij, itime, js_n, js_nrhs, js_lda, &
+  integer:: i, j, k, l,  kn, minij, maxij, itime, js_n, js_nrhs, js_lda, &
     js_ldb, js_info
   integer, ALLOCATABLE, DIMENSION(:):: js_ipiv
   real(precision_e):: ratio_r, min_a, max_a, m_crat, eps, Stot
@@ -494,14 +517,13 @@ SUBROUTINE test (self)
   logical :: do_implicit=.true.
   !-----------------------------------------------------------------------------
   call trace%begin ('dust_evolve_t%test')
-  nbin = self%n_bin
   !nbin = 5
 
-  ALLOCATE(a(nbin), n(nbin), m(nbin), st(nbin), dn(nbin), S(nbin), ms(nbin,nbin))
-  ALLOCATE(utm_ini(nbin), sigma_col(nbin,nbin), mn(nbin,nbin), mm(nbin,nbin))
-  ALLOCATE(pf(nbin,nbin), pc(nbin,nbin), du(nbin,nbin), ep(nbin,nbin))
+  ALLOCATE(n(nbin), st(nbin), dn(nbin), S(nbin))
+  ALLOCATE(utm_ini(nbin))
+  ALLOCATE(du(nbin,nbin))
   ALLOCATE(ubm(nbin,nbin), utm(nbin,nbin), Q(nbin,nbin), Q_frag(nbin,nbin))
-  ALLOCATE(jj(nbin,nbin), SS(nbin,nbin,nbin), C(nbin,nbin,nbin), kk(nbin,nbin))
+  ALLOCATE(jj(nbin,nbin), kk(nbin,nbin))
   ALLOCATE(ll(nbin,nbin), nn(nbin,nbin), identity(nbin,nbin), js_ipiv(nbin))
   ALLOCATE(KC_k(nbin,nbin), LS_k(nbin,nbin) , IJJ(nbin,nbin))
   ALLOCATE(Jp(nbin,nbin), Jm(nbin,nbin), Sp(nbin), dp(nbin))
