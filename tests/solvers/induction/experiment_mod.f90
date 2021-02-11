@@ -27,7 +27,7 @@ SUBROUTINE init (self)
   class(experiment_t):: self
   real(var_k), dimension(:,:,:)  , pointer:: d, e, px, py, pz, bx, by, bz
   real(var_k), dimension(:,:,:,:), pointer:: p, b
-  integer:: i, j, m
+  integer:: i, j, k, m
   !-----------------------------------------------------------------------------
   ! Initialize solver and define variables
   !-----------------------------------------------------------------------------
@@ -51,8 +51,8 @@ SUBROUTINE init (self)
   self%gamma = 1.4
   self%dt_fixed = 0.01
   m = (self%gn(1)+1)/2
-  do j=0,1
-    do i=1,3
+  do i=1,3
+    do j=0,1
       print *,''
       print *,'====================== ',i,j,' ============================='
       p = 0.0
@@ -60,12 +60,48 @@ SUBROUTINE init (self)
       b = 0.0
       b(:,:,:,i) = 1.0
       !-------------------------------------------------------------------------
-      ! The update() call causes output of the ICs, the %output writes results
+      ! The update() call causes output of the ICs, the %output writes results.
+      ! The self%iit are timeslice indices, which may be used to select the
+      ! timelice used by %output().  Not calling %rotate() allows the same
+      ! indices to be reused for all tests and test substeps.
       !-------------------------------------------------------------------------
+      self%iit = 1
       self%out_next = 0d0
       call self%update
-      call self%rotate
-      self%out_next = self%dt_fixed*0.99
+      self%iit = 2
+      self%out_next = 0d0
+      call self%output
+    end do
+  end do
+  !-----------------------------------------------------------------------------
+  ! Test 2: Constant B test, with a single perturbation point and U=0
+  !-----------------------------------------------------------------------------
+  do i=1,3
+    do j=0,1
+      print *,''
+      print *,'====================== ',i,j,' ============================='
+      p = 0.0
+      b = 0.0
+      b(:,:,:,i) = 1.0
+      k = mod(i+j,3)+1
+      if (k==1) then
+        b(:,m,m,k) = 1.0
+      else if (k==2) then
+        b(m,:,m,k) = 1.0
+      else if (k==3) then
+        b(m,m,:,k) = 1.0
+      end if
+      !-------------------------------------------------------------------------
+      ! The update() call causes output of the ICs, the %output writes results.
+      ! The self%iit are timeslice indices, which may be used to select the
+      ! timelice used by %output().  Not calling %rotate() allows the same
+      ! indices to be reused for all tests and test substeps.
+      !-------------------------------------------------------------------------
+      self%iit = 1
+      self%out_next = 0d0
+      call self%update
+      self%iit = 2
+      self%out_next = 0d0
       call self%output
     end do
   end do

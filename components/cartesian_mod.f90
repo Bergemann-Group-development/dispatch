@@ -276,8 +276,10 @@ recursive SUBROUTINE initial_refine(self,tlist, task,level_min, ip)
   ! ............................................................................
   if (first_time) then
     first_time = .false.
-    rewind (io%input); read (io%input, initial_refine_params, iostat=iostat)
-    write (io%output, initial_refine_params)
+    rewind (io%input)
+    read (io%input, initial_refine_params, iostat=iostat)
+    call io%namelist_warning ('initial_refine_params', iostat)
+    write (io%namelist, initial_refine_params)
     if (on) call io%header('begin initial mesh refinement')
   end if
   if (.not.on) then

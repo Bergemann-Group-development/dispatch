@@ -1,4 +1,4 @@
-! $Id: c9d088095a5971b37f99f4a603475b0a3d103fe3 $
+! $Id$
 !
 ! This default input file defines a run that should take only a few minutes
 ! on a laptop, producing 10 snapshots in time.
