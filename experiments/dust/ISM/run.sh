@@ -7,16 +7,19 @@ time=`date +%y%m%d_%H%M%S`
 # Set queue to short by default, or 2nd argument
 q=${2:-short}
 t=${3:-48}
+x=${4:-./dispatch.x}
 
 # File names for input, log, and executable
 in=$run.nml
 log=data/$run/log_$time
-exe=./dispatch.x
+exe=$x
 
 # Make data/run directory
 mkdir -p data/$run
 cp $in data/$run/input_$time.nml
 cp $exe data/$run/dispatch_$time.x
+mv prv pprv
+mv log prv
 ln -sf $log log
 
 # Submit job script

@@ -28,10 +28,11 @@ CONTAINS
 !> Read parameters and initialize -- add more parameters, if they are known
 !> in the particle solver
 !===============================================================================
-SUBROUTINE init (self, n_bin, m_cgs)
+SUBROUTINE init (self, n_bin, m_cgs, d_solid_cgs)
   class(dust_evolve_t) :: self
   integer              :: n_bin               ! number of bins
   real                 :: m_cgs(:)            ! particle masses
+  real                 :: d_solid_cgs         ! particle solid density
   !.............................................................................
   integer              :: iostat              ! missing(<0), syntax errors (>0)
   logical, save        :: first_time=.true.   ! shared memory
@@ -46,7 +47,7 @@ SUBROUTINE init (self, n_bin, m_cgs)
   if (first_time) then
     rewind (io%input)
     read (io%input, dust_evolve_params, iostat=iostat)
-    if (iostat < 0) then                       ! if syntax errors
+    if (iostat > 0) then                       ! if syntax errors
       rewind (io%input)                        ! rewind to top of file
       read (io%input, dust_evolve_params)      ! read againg to get more info
     end if
