@@ -200,11 +200,12 @@ END SUBROUTINE pre_update
 !===============================================================================
 SUBROUTINE update (self)
   class(hd_t):: self
-  real, dimension(:,:,:), pointer, contiguous:: d, e
+  real, dimension(:,:,:), pointer, contiguous:: d, e, px, py, pz
+  real, dimension(:,:,:), allocatable:: ek
   real, dimension(:,:,:,:), pointer:: p
   real:: u0, u1
   type(lock_t), pointer:: lock
-  integer:: n(3), i, j, k, idir
+  integer:: n(3)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! The call to output below catches the state after both guard zone downloads
@@ -227,36 +228,35 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   call godunov (self)
   !-----------------------------------------------------------------------------
-  ! Add the external force per unit mass as a source term, and add the
-  ! corresponding total energy
+  ! Save the current value of the kinetic energy
   !-----------------------------------------------------------------------------
-  d => self%mem(:,:,:,self%idx%d,self%new,1)
-  e => self%mem(:,:,:,self%idx%e,self%new,1)
-  p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
+  allocate (ek(n(1),n(2),n(3)))
+  d  => self%mem(:,:,:,self%idx%d ,self%new,1)
+  e  => self%mem(:,:,:,self%idx%e ,self%new,1)
+  px => self%mem(:,:,:,self%idx%px,self%new,1)
+  py => self%mem(:,:,:,self%idx%py,self%new,1)
+  pz => self%mem(:,:,:,self%idx%pz,self%new,1)
+  ek = 0.5*(px**2+py**2+pz**2)/d
+  !-----------------------------------------------------------------------------
+  ! Add the external force per unit mass as a source term
+  !-----------------------------------------------------------------------------
                                                  lock => self%mem_lock(self%new)
                                                  call lock%set ('hd_t%update')
-  do idir=1,3
-  do k=self%li(3),self%ui(3)
-  do j=self%li(2),self%ui(2)
-    if (associated(scratch%force_per_unit_mass)) then
-      do i=self%li(1),self%ui(1)
-        u0 = p(i,j,k,idir)/d(i,j,k)
-        u1 = u0 + self%dtime*scratch%force_per_unit_mass(i,j,k,idir)
-        p(i,j,k,idir) = p(i,j,k,idir) + (u1-u0)*d(i,j,k)
-        e(i,j,k) = e(i,j,k) + 0.5*(u1**2-u0**2)*d(i,j,k)
-      end do
-    end if
-    if (associated(scratch%force_per_unit_volume)) then
-      do i=self%li(1),self%ui(1)
-        u0 = p(i,j,k,idir)/d(i,j,k)
-        u1 = u0 + self%dtime*scratch%force_per_unit_mass(i,j,k,idir)/d(i,j,k)
-        p(i,j,k,idir) = p(i,j,k,idir) + (u1-u0)*d(i,j,k)
-        e(i,j,k) = e(i,j,k) + 0.5*(u1**2-u0**2)*d(i,j,k)
-      end do
-    end if
-  end do
-  end do
-  end do
+  if (associated(scratch%force_per_unit_mass)) then
+    px = px + self%dtime*scratch%force_per_unit_mass(:,:,:,1)*d
+    py = py + self%dtime*scratch%force_per_unit_mass(:,:,:,2)*d
+    pz = pz + self%dtime*scratch%force_per_unit_mass(:,:,:,3)*d
+  end if
+  if (associated(scratch%force_per_unit_volume)) then
+    px = px + self%dtime*scratch%force_per_unit_volume(:,:,:,1)
+    py = py + self%dtime*scratch%force_per_unit_volume(:,:,:,2)
+    pz = pz + self%dtime*scratch%force_per_unit_volume(:,:,:,3)
+  end if
+  !-----------------------------------------------------------------------------
+  ! Adjust the total energy
+  !-----------------------------------------------------------------------------
+  e = e + (0.5*(px**2+py**2+pz**2)/d - ek)
+  deallocate (ek)
   call validate%check (self%link, p, 'after force')
   !-----------------------------------------------------------------------------
   ! Add the external heating per unit mass as a source term

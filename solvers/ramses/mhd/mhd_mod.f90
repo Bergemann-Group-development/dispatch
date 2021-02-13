@@ -180,7 +180,9 @@ END SUBROUTINE pre_update
 !===============================================================================
 SUBROUTINE update (self)
   class(mhd_t):: self
+  real, pointer, dimension(:,:,:):: px, py, pz
   real, pointer, dimension(:,:,:,:):: p
+  real, allocatable, dimension(:,:,:):: ek
   real, allocatable, dimension(:,:,:,:):: em
   real, pointer, contiguous, dimension(:,:,:,:,:):: fl
   real, allocatable, dimension(:,:,:,:)::fluxambdiff,emfambdiff,fluxohmdiss,emfohmdiss
@@ -354,34 +356,33 @@ SUBROUTINE update (self)
       em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,2) ))
   end associate
   !-----------------------------------------------------------------------------
-  ! Add the external force per unit mass as a source term, and add the
-  ! corresponding total energy
+  ! Save the current value of the kinetic energy
   !-----------------------------------------------------------------------------
-  d => self%mem(:,:,:,self%idx%d,self%new,1)
-  e => self%mem(:,:,:,self%idx%e,self%new,1)
-  p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
-  do idir=1,3
-  do k=self%li(3),self%ui(3)
-  do j=self%li(2),self%ui(2)
-    if (associated(scratch%force_per_unit_mass)) then
-      do i=self%li(1),self%ui(1)
-        u0 = p(i,j,k,idir)/d(i,j,k)
-        u1 = u0 + self%dtime*scratch%force_per_unit_mass(i,j,k,idir)
-        p(i,j,k,idir) = p(i,j,k,idir) + (u1-u0)*d(i,j,k)
-        e(i,j,k) = e(i,j,k) + 0.5*(u1**2-u0**2)*d(i,j,k)
-      end do
-    end if
-    if (associated(scratch%force_per_unit_volume)) then
-      do i=self%li(1),self%ui(1)
-        u0 = p(i,j,k,idir)/d(i,j,k)
-        u1 = u0 + self%dtime*scratch%force_per_unit_mass(i,j,k,idir)/d(i,j,k)
-        p(i,j,k,idir) = p(i,j,k,idir) + (u1-u0)*d(i,j,k)
-        e(i,j,k) = e(i,j,k) + 0.5*(u1**2-u0**2)*d(i,j,k)
-      end do
-    end if
-  end do
-  end do
-  end do
+  allocate (ek(self%gn(1),self%gn(2),self%gn(3)))
+  d  => self%mem(:,:,:,self%idx%d ,self%new,1)
+  e  => self%mem(:,:,:,self%idx%e ,self%new,1)
+  px => self%mem(:,:,:,self%idx%px,self%new,1)
+  py => self%mem(:,:,:,self%idx%py,self%new,1)
+  pz => self%mem(:,:,:,self%idx%pz,self%new,1)
+  ek = 0.5*(px**2+py**2+pz**2)/d
+  !-----------------------------------------------------------------------------
+  ! Add the external force per unit mass as a source term
+  !-----------------------------------------------------------------------------
+  if (associated(scratch%force_per_unit_mass)) then
+    px = px + self%dtime*scratch%force_per_unit_mass(:,:,:,1)*d
+    py = py + self%dtime*scratch%force_per_unit_mass(:,:,:,2)*d
+    pz = pz + self%dtime*scratch%force_per_unit_mass(:,:,:,3)*d
+  end if
+  if (associated(scratch%force_per_unit_volume)) then
+    px = px + self%dtime*scratch%force_per_unit_volume(:,:,:,1)
+    py = py + self%dtime*scratch%force_per_unit_volume(:,:,:,2)
+    pz = pz + self%dtime*scratch%force_per_unit_volume(:,:,:,3)
+  end if
+  !-----------------------------------------------------------------------------
+  ! Adjust the total energy
+  !-----------------------------------------------------------------------------
+  e = e + (0.5*(px**2+py**2+pz**2)/d - ek)
+  deallocate (ek)
   !-----------------------------------------------------------------------------
   ! Reset the energy variable in isothermal cases
   !-----------------------------------------------------------------------------
@@ -2137,57 +2138,6 @@ FUNCTION up(f,i) RESULT (g)
 END FUNCTION
 
 !===============================================================================
-!> Add gradient of phi gravitational force.  FIXME: This should be in extras
-!===============================================================================
-SUBROUTINE gravitational_force (self)
-  class(mhd_t):: self
-  real, dimension(:,:,:), pointer:: phi, d, et, gradphi1, gradphi2, gradphi3
-  real, dimension(:,:,:,:), pointer:: p
-  integer:: i,j,k
-  real, dimension(3):: wtp1, wtm1
-  real:: etemp
-  !.............................................................................
-  associate (l => self%li, u => self%ui)
-  wtp1 = 0.50 * 4.0 / 3.0 / self%ds
-  wtm1 = 0.25 * 1.0 / 3.0 / self%ds
-  phi => self%mem(:,:,:,self%idx%phi,self%new,1)
-  d   => self%mem(:,:,:,self%idx%d,self%new,1)
-  et  => self%mem(:,:,:,self%idx%e,self%new,1)
-  p   => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
-  allocate (gradphi1(self%gn(1),self%gn(2),self%gn(3)), &
-            gradphi2(self%gn(1),self%gn(2),self%gn(3)), &
-            gradphi3(self%gn(1),self%gn(2),self%gn(3)))
-  !
-  do k=l(3),u(3)
-    do j=l(2),u(2)
-      do i=l(1),u(1)
-        ! calculate energy minus the kinetic energy
-        etemp = et(i,j,k) - 0.5 * p(i,j,k,1)**2 / d(i,j,k) &
-                          - 0.5 * p(i,j,k,2)**2 / d(i,j,k) &
-                          - 0.5 * p(i,j,k,3)**2 / d(i,j,k)
-        ! calculate gradient of phi
-        gradphi1(i,j,k) = wtp1(1) * (phi(i+1,j,k) - phi(i-1,j,k)) &
-                 - wtm1(1) * (phi(i+2,j,k) - phi(i-2,j,k))
-        gradphi2(i,j,k) = wtp1(2) * (phi(i,j+1,k) - phi(i,j-1,k)) &
-                 - wtm1(2) * (phi(i,j+2,k) - phi(i,j-2,k))
-        gradphi3(i,j,k) = wtp1(3) * (phi(i,j,k+1) - phi(i,j,k-1)) &
-                 - wtm1(3) * (phi(i,j,k+2) - phi(i,j,k-2))
-        ! update momentum
-        p(i,j,k,1) = p(i,j,k,1) - self%dtime * d(i,j,k) * gradphi1(i,j,k)
-        p(i,j,k,2) = p(i,j,k,2) - self%dtime * d(i,j,k) * gradphi2(i,j,k)
-        p(i,j,k,3) = p(i,j,k,3) - self%dtime * d(i,j,k) * gradphi3(i,j,k)
-        ! update total energy with new momentum
-        et(i,j,k) = etemp + 0.5 * p(i,j,k,1)**2 / d(i,j,k) &
-                          + 0.5 * p(i,j,k,2)**2 / d(i,j,k) &
-                          + 0.5 * p(i,j,k,3)**2 / d(i,j,k)
-      end do
-    end do
-  end do
-  deallocate (gradphi1, gradphi2, gradphi3)
-  end associate
-END SUBROUTINE gravitational_force
-
-!===============================================================================
 !> Set up nbor relations between MHD tasks
 !===============================================================================
 SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
@@ -2208,10 +2158,8 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   class default
     needed=.false.; needs_me=.false.; download=.false.
   end select
-
   if (timer%detailed) &
     call trace%end(itimer=itimer)
-
 END SUBROUTINE nbor_relations
 
 END MODULE
