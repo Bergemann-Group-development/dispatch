@@ -35,12 +35,12 @@ END SUBROUTINE init
 SUBROUTINE dnload (self, only)
   class(experiment_t):: self
   integer, optional:: only
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   call trace%begin('experiment_t%dnload')
-  if (self%level >= shared%levelmin) then
+  if (self%level >= shared%levelroot) then
     call self%solver_t%dnload
   else if (self%is_clear (bits%frozen)) then
-    print *, 'WARNING: frozen bit not set on', self%id
+    print *, 'experiment_t%dnload WARNING: frozen bit not set on', self%id
     call self%set (bits%frozen)
   end if
   call trace%end()
@@ -65,7 +65,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   class(experiment_t):: self
   integer, optional:: nq, ntask
   character(len=64), optional:: experiment_name
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   call trace%begin('experiment_t%info')
   if (self%is_clear (bits%frozen)) then
     call self%solver_t%info (nq, ntask, experiment_name)

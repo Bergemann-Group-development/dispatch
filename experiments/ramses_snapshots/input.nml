@@ -12,35 +12,37 @@
 /
 
 !---------------------------------------------
-! For unigrid run, use the no_mans_land=t line
+! I/O parameters
 !---------------------------------------------
 &scaling_params         l_pc=40 v_kms=1 d_cgs=4e-22
 &patch_params           nt=5 nv=8 grace=0.1 n=3*16 no_mans_land=t /
 &out_params             end_time=10e-4 out_time=10e-4 print_every=100 /
 &io_params              verbose=0 do_trace=f omp_trace=t do_output=t
-                        method='legacy' id_debug=0
+                        method='amr' id_debug=0
                         guard_zones=t time_derivs=0 /
-&timer_params           sec_per_report=15 /
-&validate_params        state='write' /
+&timer_params           sec_per_report=20 /
+&validate_params        /
 
 !---------------------------------
 ! Initial condition and forces
 !---------------------------------
+&restart_params         verbose=1  model='ramses' /
 &ramses_reader_params   verbose=0
-                        path='gmc2' nout=11 levelmin=6 levelmax=8 centre_on_sink=f
-                        !path='run22d' nout=1000 levelmin=7 levelmax=29 cut_out_size=6e-8 centre_on_sink=t
+                        !path='gmc2' nout=11 levelmin=5 levelmax=8 centre_on_sink=f
+                        path='IMF_512/data' nout=250 levelmin=9 levelmax=12 centre_on_sink=f
+                        !path='run22d' nout=1000 levelmin=7 levelmax=10 cut_out_size=6e-8 centre_on_sink=t
                         direct_load=t do_evaluate=f detailed_timer=f /
 &guard_zone_params      verbose=0 method='opt' /
 &download_params        verbose=0 id_debug=0 /
 &IC_params              /
-&force_params           type='turbulence' /
+&force_params           type='void' /
 &turbulence_params      ampl_turb=2 t_turn=0.05 k1=1 k2=2 pk=0.0 seed=5 /
 &selfgravity_params     selfgravity=f /
 
 !---------------------------------
 ! Solver specific parameters
 !---------------------------------
-&ramses_params          courant_factor=0.250 isothermal=f gamma=1.4 slope_type=2 
+&ramses_params          courant_factor=0.250 isothermal=t gamma=1.0 slope_type=2 
                         smallr=1e-5 smallc=5e-1 riemann='hlld' detailed_timer=f /
 &mhd_params             isothermal=f gamma=1.01 nu=0.20,1.4,1.0,0.1,1.0,1.0 /
 &timestep_params        /
