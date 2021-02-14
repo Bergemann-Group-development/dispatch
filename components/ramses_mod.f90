@@ -1507,11 +1507,12 @@ SUBROUTINE check_support (self)
   class(task_t), pointer:: task, nbtask
   class(experiment_t), pointer:: patch
   class(*), pointer:: ptr
-  real(kind=8):: position(3), size(3)
+  real(8):: position(3), size(3)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('ramses_t%check_support', itimer=itimer)
   call io%header ('-check_support: begin', left=25)
+  call timer%tic
   do level=self%rootlvl+1,self%maxlvl
     link => self%task_list%head
     do while (associated(link))
@@ -1557,9 +1558,10 @@ SUBROUTINE check_support (self)
                 end if
               else
                 call self%cartesian_init (key, patch)
-                write (stdout,'(a,2(i6,":",i2.2),2x,4i3,2x,3i3)') &
-                  'ramses_t%check_support: id,new_nbor=', &
-                  task%id, task%level, patch%id, patch%level, key, [i1,i2,i3]
+                if (verbose > 0) &
+                  write (stdout,'(a,2(i6,":",i2.2),2x,4i3,2x,3i3)') &
+                    'ramses_t%check_support: id,new_nbor=', &
+                    task%id, task%level, patch%id, patch%level, key, [i1,i2,i3]
               end if
             end if
           end do
@@ -1572,6 +1574,7 @@ SUBROUTINE check_support (self)
   end do
   if (verbose > 0) & 
     write (stdout,'(" elapsed:",f8.1,"s")') wallclock()-start
+  call timer%toc ('time to check_support', 1)
   call io%header ('-check_support: end', left=25)
   call trace%end (itimer)
 END SUBROUTINE check_support
@@ -1600,12 +1603,12 @@ SUBROUTINE prolong (self)
   class(link_t), pointer:: link
   class(*), pointer:: patch
   real:: dmin, dmin_all
-  real(8):: size(3), time
+  real(8):: size(3)
   integer:: level, n, n0, i, key(4), l(3), u(3), n_task
   !-----------------------------------------------------------------------------
   call trace%begin('ramses_t%prolong')
   call io%header ('-prolong: begin', left=25)
-  call timer%tic (time)
+  call timer%tic
   n = 0; n0 = 0
   n_task = 0
   do level=self%minlvl+1,self%maxlvl
@@ -1648,7 +1651,7 @@ SUBROUTINE prolong (self)
   if (verbose > 0) then
     write (stdout,'(" elapsed:",f8.1,"s")') wallclock()-start
   end if
-  call timer%toc ('time to fill missing cells', 1, time)
+  call timer%toc ('time to fill missing cells', 1)
   call io%header ('-prolong: end', left=25)
   call trace%end ()
 END SUBROUTINE prolong
@@ -1659,17 +1662,16 @@ END SUBROUTINE prolong
 SUBROUTINE dnload (self)
   class(ramses_t):: self
   class(link_t), pointer:: link
-  real(8):: time
   !-----------------------------------------------------------------------------
   call trace%begin('ramses_t%dnload')
   call io%header ('-dnload: begin', left=25)
-  call timer%tic (time)
+  call timer%tic ()
   link => self%task_list%head
   do while (associated(link))
     call link%task%dnload
     link => link%next
   end do
-  call timer%toc ('time to dnload', 1, time)
+  call timer%toc ('time to dnload', 1)
   call io%header ('-dnload: end', left=25)
   call trace%end ()
 END SUBROUTINE dnload
@@ -2142,19 +2144,18 @@ END SUBROUTINE initialize
 SUBROUTINE init_all_nbors (self)
   class(ramses_t):: self
   class(link_t), pointer:: link
-  real(8):: time
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('ramses_t%init_all_nbors', itimer=itimer)
   call io%header ('-init_all_nbors: begin', left=25)
-  call timer%tic (time)
+  call timer%tic
   call self%task_list%reset_status                 ! update task bits
     link => self%task_list%head
     do while (associated(link))
       call self%init_nbors (link)
       link => link%next
     end do
-  call timer%toc ('time to initialize nbor lists', 1, time)
+  call timer%toc ('time to initialize nbor lists', 1)
   call io%header ('-init_all_nbors: end', left=25)
   call trace%end (itimer)
 END SUBROUTINE init_all_nbors
@@ -2361,13 +2362,12 @@ SUBROUTINE total_energy (self)
   real, dimension(:,:,:), allocatable:: cx, cy, cz
   real, dimension(:,:,:), pointer:: d, e, px, py, pz, bx, by, bz
   integer:: m(3)
-  real(8):: time
   real:: e_min
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('ramses_t%total_energy', itimer=itimer)
   call io%header ('-total_energy: begin', left=25)
-  call timer%tic (time)
+  call timer%tic
   e_min = huge(1.0)
   link => self%task_list%head
   do while (associated(link))
@@ -2395,8 +2395,7 @@ SUBROUTINE total_energy (self)
     end select
     link => link%next
   end do
-write (stdout,*) task%id, e_min
-  call timer%toc ('time to compute total energy', 1, time)
+  call timer%toc ('time to compute total energy', 1)
   call io%header ('-total_energy: end', left=25)
   call trace%end (itimer)
 END SUBROUTINE total_energy
