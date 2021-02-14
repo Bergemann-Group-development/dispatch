@@ -66,7 +66,6 @@ MODULE list_mod
   USE task_mod
   USE patch_mod
   USE link_mod
-  !USE load_balance_mod
   USE timer_mod
   USE running_mean_mod
   implicit none
@@ -142,6 +141,7 @@ MODULE list_mod
     procedure:: statistics
     procedure:: append_list
     procedure:: add_by_quality
+    procedure:: queue_all
     procedure:: queue_by_time
     procedure:: queue_active
     procedure:: remove_active
@@ -500,19 +500,18 @@ SUBROUTINE set_io_counts (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('list_t%set_io_counts')
   call self%count_status ('set_io_counts')
-  associate (io_ntask=>io%ntask, io_nwrite=>io%nwrite, io_ntotal=>io%ntotal)
+  associate (io_ntask=>io%ntask, io_nwrite=>io%nwrite)
   !$omp atomic write
   io_ntask = self%na
   !$omp atomic write
   io_nwrite = self%no
-  !$omp atomic write
-  io_ntotal = self%n_tasks
   end associate
   call trace%end ()
 END SUBROUTINE set_io_counts
 
 !===============================================================================
-!> Count the number of internal, boundary, virtual, frozen, and external tasks
+!> Count the number of internal, boundary, virtual, frozen, external, and
+!> output tasks
 !===============================================================================
 SUBROUTINE count_status (self, label)
   class (list_t):: self
@@ -579,13 +578,20 @@ SUBROUTINE count_status (self, label)
     end if
   end if
   self%na = n - nv - ne
-  !-----------------------------------------------------------------------------
   call self%lock%unset ('count_status')
+  !-----------------------------------------------------------------------------
+  ! Set the counters that affect I/O decisions
+  !-----------------------------------------------------------------------------
+  call io%lock%set ('count_status')
+  io%nwrite = no
+  io%ntask = self%na
+  call io%lock%unset ('count_status')
+  !-----------------------------------------------------------------------------
   call trace%end (itimer)
 END SUBROUTINE count_status
 
 !===============================================================================
-!> Clear and then set the virtual and boundary bits
+!> Clear, set, and count the status bits
 !===============================================================================
 SUBROUTINE reset_status (self, check)
   class(list_t):: self
@@ -606,8 +612,9 @@ SUBROUTINE reset_status (self, check)
   n_frozen   = 0
   call self%lock%set ('reset_status')
   !-----------------------------------------------------------------------------
-  ! Set bit
+  ! Clear and set status bits
   !-----------------------------------------------------------------------------
+  call self%lock%set ('reset_status')
   link => self%head
   do while (associated(link))
     call link%reset_status (link%nbor)
@@ -618,11 +625,10 @@ SUBROUTINE reset_status (self, check)
     n_frozen   = n_frozen   + merge(1,0,link%task%is_set(bits%frozen  ))
     link => link%next
   end do
-  self%nb = n_boundary
-  self%nv = n_virtual
-  self%ni = n_internal
+  call self%lock%unset ('reset_status')
+  call self%count_status
   !-----------------------------------------------------------------------------
-  ! Check that this does not interfere with end_time logics
+  ! Optionally, check consistency
   !-----------------------------------------------------------------------------
   self%na = n_internal+n_boundary-n_frozen
   self%n  = n_internal+n_boundary+n_virtual
@@ -1768,7 +1774,8 @@ SUBROUTINE init_all_nbors (self)
   integer, save:: itimer=0
   !.............................................................................
   call trace%begin('list_t%init_all_nbors', itimer=itimer)
-  call timer%tic (time)
+  if (self%verbose > 0) &
+    call timer%tic (time)
   call init_nonleaf (self)                              ! set non_leaf bit
   call self%reset_status                                ! update task bits
   call self%count_status                                ! update task counts
@@ -1787,7 +1794,8 @@ SUBROUTINE init_all_nbors (self)
   end do
   !$omp end parallel
   !call self%reset_status                                ! set bits and count
-  call timer%toc ('time to initialize nbor lists', 1, time)
+  if (self%verbose > 0) &
+    call timer%toc ('time to initialize nbor lists', 1, time)
   call trace%end (itimer)
 END SUBROUTINE init_all_nbors
 
@@ -1951,6 +1959,24 @@ SUBROUTINE remove_task (self, task)
     write (io%output,*) wallclock(),' thread',omp%thread,' locked tasklist(3)'
   call trace%end()
 END SUBROUTINE remove_task
+
+!===============================================================================
+!> Add all tasks to the ready queue
+!===============================================================================
+SUBROUTINE queue_all (self)
+  class(list_t):: self
+  class(link_t), pointer:: link, tail
+  !-----------------------------------------------------------------------------
+  call trace%begin ('list_t%queue_all')
+  link => self%head
+  do while (associated(link))
+    call link%task%set (bits%ready)
+    link%next_time => link%next
+    link => link%next
+  end do
+  self%queue => self%head
+  call trace%end ()
+END SUBROUTINE queue_all
 
 !===============================================================================
 !> Add a link node into the queue chain, in ascending time order.  When a link
@@ -3194,15 +3220,18 @@ END SUBROUTINE find_nbors
 SUBROUTINE check_nbor_consistency (self, label)
   class(list_t):: self
   character(len=*), optional:: label
-  logical:: ok
   !.............................................................................
-  class(link_t), pointer:: link1, link2
+  logical:: ok
+  class(link_t), pointer:: link1
   class(nbor_t), pointer:: nbor1, nbor2
+  real(8):: time
   !-----------------------------------------------------------------------------
   call trace%begin ('list_t%check_nbor_consistency')
   if (present(label)) then
     write (stdout,*) 'list_t%check_nbor_consistency: ', label
   end if
+  ok = .true.
+  call timer%tic (time)
   link1 => self%head
   do while (associated(link1))
     nbor1 => link1%nbor
@@ -3210,29 +3239,26 @@ SUBROUTINE check_nbor_consistency (self, label)
       !-------------------------------------------------------------------------
       ! Find this nbor on the task list, and find the link1%task nbor
       !-------------------------------------------------------------------------
-      link2 => self%head
-      do while (associated(link2))
-        if (link2%task%id == nbor1%task%id) then
-          nbor2 => link2%nbor
-          do while (associated(nbor2))
-            if (nbor2%task%id == link1%task%id) then
-              if ((nbor2%needed   .neqv. nbor1%needs_me) .or. &
-                  (nbor2%needs_me .neqv. nbor1%needed)) then
-                print *, 'inconsistency', &
-                  nbor1%task%id, nbor1%needed, nbor1%needs_me, &
-                  nbor2%task%id, nbor2%needed, nbor2%needs_me
-              end if
-              exit
-            end if
-            nbor2 => nbor2%next
-          end do
+      nbor2 => nbor1%link%nbor
+      do while (associated(nbor2))
+        if (nbor2%task%id == link1%task%id) then
+          if ((nbor2%needed   .neqv. nbor1%needs_me) .or. &
+              (nbor2%needs_me .neqv. nbor1%needed)) then
+            write (stdlog,'(a,2(i6,2x,2l1,3x))') &
+              'list_t%check_nbor_consistency: inconsistency btw tasks', &
+              nbor1%task%id, nbor1%needed, nbor1%needs_me, &
+              nbor2%task%id, nbor2%needed, nbor2%needs_me
+            ok = .false.
+          end if
         end if
-        link2 => link2%next
+        nbor2 => nbor2%next
       end do
       nbor1 => nbor1%next
     end do
     link1 => link1%next
   end do
+  call timer%toc ('time to run check_nbor_consistency', 1, time)
+  call io%assert (ok, 'list_t%check_nbor_consistency: not consistent')
   call trace%end ()
 END SUBROUTINE check_nbor_consistency
 

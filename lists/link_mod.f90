@@ -286,17 +286,10 @@ SUBROUTINE check_nbor_relations(self, nbor, needed, needs_me, download)
   !-----------------------------------------------------------------------------
   call trace%begin ('link_t%check_nbor_relations')
   call self%task%nbor_relations(nbor%task,my_needed,my_needs_me,my_download)
-write (io_unit%log,'(a,2i6,2x,3l1)') &                                    !DEBUG
-'link_t%check_nbor_relations: id, other, needed, needs_me, download =', & !DEBUG
-self%task%id, nbor%task%id, my_needed, my_needs_me, my_download           !DEBUG
   call nbor%task%nbor_relations(self%task,nb_needed,nb_needs_me,nb_download)
   needed   = (my_needed   .or. nb_needs_me)
   needs_me = (my_needs_me .or. nb_needed)
   download = my_download
-write (io_unit%log,'(a,2i6,2(2x,3l1))') &                                 !DEBUG
-'link_t%check_nbor_relations: id, other, needed, needs_me, download =', & !DEBUG
-nbor%task%id, self%task%id, nb_needed, nb_needs_me, nb_download, &        !DEBUG
-needed, needs_me, download                                                !DEBUG
   call trace%end ()
 END SUBROUTINE check_nbor_relations
 

@@ -68,14 +68,14 @@ MODULE task_list_mod
     procedure:: init_bdries
   end type
   real(8), save:: dead_mans_hand=60d0, first_finished=0d0
-  logical, save:: check_neighbour_consistency=.false.
+  logical, save:: check_nbor_consistency=.true.
   public:: task2patch
   type(task_list_t), target:: task_list
 CONTAINS
 
 !===============================================================================
 !> Initialize the task list, by first initializing the list tasks, then making
-!> neighbor lists, and finally checking if they are ready to execute
+!> nbor lists, and finally checking if they are ready to execute
 !===============================================================================
 SUBROUTINE init (self, name)
   class(task_list_t), target:: self
@@ -87,7 +87,7 @@ SUBROUTINE init (self, name)
   logical, save:: detailed_timer=.false.
   integer, save:: verbose=0
   namelist /task_list_params/ verbose, job_seconds, dead_mans_hand, sync_time, &
-    detailed_timer, check_neighbour_consistency
+    detailed_timer, check_nbor_consistency
   !-----------------------------------------------------------------------------
   ! An optional namelist can be used to turn debugging on
   !-----------------------------------------------------------------------------
@@ -207,7 +207,9 @@ SUBROUTINE startup (self)
   logical:: was_refined
   !-----------------------------------------------------------------------------
   call trace%begin ('task_list_t%startup', itimer=itimer)
-  if (.not.self%dispatcher) call mpi%abort ("no dispatcher is used to execute the task list. Execution is unpredictable, therefore aborting.")
+  if (.not.self%dispatcher) &
+    call mpi%abort ("no dispatcher is used to execute the task list. '// &
+      'Execution is unpredictable, therefore aborting.")
   !-----------------------------------------------------------------------------
   ! Initialize nbor lists and setting virtual and boundary bit should NOT be
   ! done here, since at this point the task list may be a splice between the
@@ -226,7 +228,8 @@ SUBROUTINE startup (self)
   call self%task_mesg_t%init
   call validate%init
   task_list => self
-  if (check_neighbour_consistency) call self%check_nbor_consistency ('startup')
+  if (check_nbor_consistency) &
+    call self%check_nbor_consistency ('startup')
   call load_balance%init (task_list)
   !-----------------------------------------------------------------------------
   ! When restarting, the virtual tasks need to be received and unpacked before
@@ -733,7 +736,7 @@ SUBROUTINE append_task_list (self, task_list)
 END SUBROUTINE append_task_list
 
 !===============================================================================
-!> Print a table with task id and all neighbors
+!> Print a table with task id and all nbors
 !===============================================================================
 SUBROUTINE print1 (self, label)
   class (task_list_t):: self
