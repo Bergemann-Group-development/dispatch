@@ -110,27 +110,28 @@ SUBROUTINE open (self, filename, mode)
     self%name = filename
   end if
   if (present(mode)) then
+    mode_l = mode
   else
-    mode = MPI_MODE_RDWR
+    mode_l = MPI_MODE_RDWR
   end if
   !call mp%barrier ('mpi_file_t%open')
   if (self%handle == 0) then
     if (mp%mode == MPI_THREAD_MULTIPLE) then
       call MPI_File_open &
-        (mp%comm, self%name, mode, MPI_INFO_NULL, self%handle, self%err)
+        (mp%comm, self%name, mode_l, MPI_INFO_NULL, self%handle, self%err)
     else
       call MPI_File_open &
-        (mp%comm, self%name, mode, MPI_INFO_NULL, self%handle, self%err)
+        (mp%comm, self%name, mode_l, MPI_INFO_NULL, self%handle, self%err)
     end if
       if (io%verbose > 0) then
         write(io_unit%mpi,'(a," status:",i4)') &
           ' MPI_File_open: file='//trim(self%name)//'  mode='// &
           trim(merge('MPI_MODE_CREATE', &
-                     '               ' ,iand(mode,MPI_MODE_CREATE) .ne. 0)) // &
+            '               ' ,iand(mode_l,MPI_MODE_CREATE) .ne. 0)) // &
           trim(merge('+MPI_MODE_RDWR' , &
-                     '              '  ,iand(mode,MPI_MODE_RDWR)   .ne. 0)) // &
+            '              '  ,iand(mode_l,MPI_MODE_RDWR)   .ne. 0)) // &
           trim(merge('MPI_MODE_RDONLY', &
-                     '               ' ,iand(mode,MPI_MODE_RDONLY) .ne. 0)), &
+            '               ' ,iand(mode_l,MPI_MODE_RDONLY) .ne. 0)), &
           self%err
       flush (io_unit%mpi)
     end if

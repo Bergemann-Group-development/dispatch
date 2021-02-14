@@ -506,6 +506,8 @@ SUBROUTINE init8 (self, n)
     end if
     !$omp end critical (mpi_cr)
   end if
+#else
+  self%i = n
 #endif
   call trace%end ()
 END SUBROUTINE init8
@@ -538,6 +540,8 @@ SUBROUTINE init8d (self, r)
     end if
     !$omp end critical (mpi_cr)
   end if
+#else
+  self%r = r
 #endif
   call trace%end ()
 END SUBROUTINE init8d
