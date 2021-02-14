@@ -457,7 +457,6 @@ SUBROUTINE read_snapshot (self, keep, load)
   end if
   self%rank = 0
   self%rootlvl = floor(log(real(self%n_cell))/log(2.0))
-  shared%levelroot = self%rootlvl
   !
   write(filebase, '(a,"/output_",i5.5,"/amr_",i5.5,".out")') trim(self%path), self%nout, self%nout
   !
