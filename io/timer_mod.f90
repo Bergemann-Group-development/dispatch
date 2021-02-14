@@ -316,6 +316,7 @@ SUBROUTINE real_print (self)
   updates = max(1.0,real(timer%n_update-n_previous))
   n_previous = timer%n_update
   musppt = sec*1d6*min(omp%nthreads,omp%ncores)/updates
+  if (musppt > 1e3) musppt = 0.0
   n_recv = max(timer%n_recv,1)
   if (shared%mpi_master) then
     call write_to (io_unit%output)

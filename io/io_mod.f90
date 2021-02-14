@@ -304,7 +304,7 @@ SUBROUTINE init (self, name)
   io_unit%top    = top
   io_unit%do_validate = do_validate
   stdout = io_unit%output
-  call io%counter%init (0)
+  call io%counter%init (mpi%size)
   call omp_lock%init ('io')
   call timer%init
 contains

@@ -204,6 +204,9 @@ SUBROUTINE output (patch, count)
   ! they are ordered (iv,id,iout).  The former is much faster to read, while the
   ! latter is faster to write.
   !-----------------------------------------------------------------------------
+  if (io%ntotal==0) then
+    io%ntotal = io%nwrite*mpi%size
+  end if
   snapshot_words = product(n)*io%nv*io%ntotal
   if (io%format==14) then
     buffer_words = product(n)

@@ -233,9 +233,6 @@ SUBROUTINE output (self, patch, experiment_name)
     if (io%ntask<=0) then
       call mpi%abort ('io%ntask, which should be the number of active tasks, is zero')
     end if
-    if (io%ntotal<=0) then
-      call mpi%abort ('io%ntotal, which should be the total number of tasks, is zero')
-    end if
     if (io%verbose > 1) &
       write (io_unit%log,*) 'io%nwrite =', io%nwrite
     !---------------------------------------------------------------------------
@@ -338,9 +335,9 @@ SUBROUTINE output (self, patch, experiment_name)
         write (io_unit%mpi,*) &
           wallclock(), 'data_io%output: io_count =', io_count
         if (mod(io_count,mpi%size) == 0) then
-          !-----------------------------------------------------------------------
+          !---------------------------------------------------------------------
           ! Write a line in the log with snapshot time info
-          !-----------------------------------------------------------------------
+          !---------------------------------------------------------------------
           if (io%out_time > 0d0) then
             prv = modulo(it-2,patch%nt) + 1
             write(io%output,'(1x,a,2x,a,i5.5,6x,a,f9.3,6x,a,1p,3g14.5)') &
@@ -354,6 +351,7 @@ SUBROUTINE output (self, patch, experiment_name)
               'snapshot '//trim(io%outputname), patch%iout-1, &
               'size(GB):', io%gb_out, 'time:', patch%time
           end if
+          call io%counter%reset (mpi%size)
           io_active = .false.
         end if
       end if
@@ -1064,7 +1062,6 @@ SUBROUTINE input_nml_v2 (patch)
     close (io_unit%nml1)
     io%mpi_odims = mpi_dims
     io%format = ioformat
-    io%ntotal = ntotal
     io%time_derivs = time_derivs
     io%guard_zones = guard_zones
   end if
@@ -1142,7 +1139,6 @@ SUBROUTINE input_nml_v3 (patch)
     close (io_unit%nml1)
     io%mpi_odims = mpi_dims
     io%format = ioformat
-    io%ntotal = ntotal
     io%time_derivs = time_derivs
     io%guard_zones = guard_zones
   end if

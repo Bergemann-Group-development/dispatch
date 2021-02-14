@@ -217,8 +217,8 @@ SUBROUTINE init (self, task_list, label)
   !-----------------------------------------------------------------------------
   call self%task_list%set_io_counts
   write (stdout,'(a,i8)') ' number of tasks in task list:', self%task_list%n
-  write (stdlog,*) 'cartesian_mod: ntask,nwrite,ntotal=', &
-    io%ntask, io%nwrite, io%ntotal
+  write (stdlog,*) 'cartesian_mod: ntask,nwrite=', &
+    io%ntask, io%nwrite
   !-----------------------------------------------------------------------------
   ! Initialize tasks
   !-----------------------------------------------------------------------------
@@ -229,8 +229,8 @@ SUBROUTINE init (self, task_list, label)
   ! Refresh the counts, now with bits%has_output set on tasks
   !-----------------------------------------------------------------------------
   call self%task_list%set_io_counts
-  write (stdlog,*) 'cartesian_mod: ntask,nwrite,ntotal=', &
-    io%ntask, io%nwrite, io%ntotal
+  write (stdlog,*) 'cartesian_mod: ntask,nwrite=', &
+    io%ntask, io%nwrite
   !-----------------------------------------------------------------------------
   ! This call is not valid until the patch mem and meshes have been allocated
   !-----------------------------------------------------------------------------
@@ -356,7 +356,8 @@ recursive SUBROUTINE initial_refine(self,tlist, task,level_min, ip)
       !call task%pre_init()
       call self%task_list%append_link (task%link)
       !call task%add_to_task_list (tlist)
-      write (io_unit%mpi,'(3i4,3f8.3,i4,a)') i,j,k,task%position,task%rank,'i,j,k,pos,rank'
+      write (io_unit%mpi,'(3i4,3f8.3,i4,a)') &
+        i,j,k,task%position,task%rank,'i,j,k,pos,rank'
     else
       link => task%link
       call link%task%dealloc()
@@ -366,7 +367,8 @@ recursive SUBROUTINE initial_refine(self,tlist, task,level_min, ip)
     call task%pre_init()
     call self%task_list%append_link (task%link)
     !call task%add_to_task_list (tlist)
-    write (io_unit%mpi,'(3i4,3f8.3,i4,a)') i,j,k,task%position,task%rank,'i,j,k,pos,rank'
+    write (io_unit%mpi,'(3i4,3f8.3,i4,a)') &
+      i,j,k,task%position,task%rank,'i,j,k,pos,rank'
   end if
 END SUBROUTINE initial_refine
 
