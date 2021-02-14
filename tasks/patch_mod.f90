@@ -165,7 +165,8 @@ MODULE patch_mod
     procedure:: periodic_grid
     procedure:: log_interpolate
     procedure:: time_interval
-    procedure:: distance => distance_curvilinear
+    procedure:: distance
+    procedure:: distance_curvilinear
     procedure:: index_stagger
     procedure:: interpolate
     procedure:: interpolate_specific
@@ -605,11 +606,6 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
     self%ng = 0                                 ! no guard zones
     self%box = 1                                ! make sure it is non-zero
   end where
-  self%llc_cart = self%position - 0.5_8*self%size
-  if (self%mesh_type == mesh_types%Cartesian) then
-    self%llc_nat = self%llc_cart
-    self%centre_nat = self%position
-  end if
   !-----------------------------------------------------------------------------
   ! Initialize and allocate the meshes, afterwards imposing the external values
   ! box size and position
@@ -623,6 +619,15 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
   self%centre_nat = [self%mesh(1)%centre_nat,self%mesh(2)%centre_nat,self%mesh(3)%centre_nat]
   self%centre_cart = CurrentToCartesian(self%mesh_type, &
                        self%centre_nat(1), self%centre_nat(2), self%centre_nat(3))
+  !-----------------------------------------------------------------------------
+  ! Make dead sure these crucial values are correct for Cartesian meshes
+  !-----------------------------------------------------------------------------
+  self%llc_cart = self%position - 0.5_8*self%size
+  if (self%mesh_type == mesh_types%Cartesian) then
+    self%llc_nat = self%llc_cart
+    self%centre_nat = self%position
+    self%mesh%p = self%position
+  end if
   !-----------------------------------------------------------------------------
   ! Hack for backwards compatibility
   !-----------------------------------------------------------------------------
@@ -1445,10 +1450,34 @@ FUNCTION overlaps (self, task)
 END FUNCTION overlaps
 
 !===============================================================================
-!> Signed distance between the centers of two tasks in the periodic box
-!> This version is adjusted to account for curvilinear coords. (the position of
-!> a curvilinear patch is set to the coordinate *origin) and requires components
-!> defined in `patch_t`.
+!> Signed distance from task%position to self%position, wrapped in the case of a
+!> periodic box. 
+!===============================================================================
+FUNCTION distance (self, task) RESULT (out)
+  class(patch_t):: self
+  class(task_t):: task
+  real(8):: out(3)
+  integer, save:: itimer=0
+  !.............................................................................
+  if (timer%detailed) &
+    call trace%begin ('patch_t%distance')
+  if (self%mesh_type == mesh_types%Cartesian) then
+    out = self%position-task%position
+  else
+    out = distance_curvilinear (self, task)
+  end if
+  !--- account for periodic wrapping ---
+  where (self%periodic .and. self%box > 0d0)
+    out = modulo (out+0.5_8*self%box, self%box) - 0.5_8*self%box
+  end where
+  if (timer%detailed) &
+    call trace%end (itimer)
+END FUNCTION distance
+
+!===============================================================================
+!> Signed distance between the centers of two task, adjusted to account for
+!> curvilinear coordnates (the position of a curvilinear patch is set to the
+!> coordinate *origin) and requires components defined in `patch_t`.
 !===============================================================================
 FUNCTION distance_curvilinear (self, task) RESULT (out)
   class(patch_t):: self
@@ -1457,7 +1486,7 @@ FUNCTION distance_curvilinear (self, task) RESULT (out)
   integer, save:: itimer=0
   !.............................................................................
   if (timer%detailed) &
-    call trace%begin ('patch_t%distance_curvilinear')
+    call trace%begin ('patch_t%distance_curvilinear', itimer=itimer))
   select type (task)
   class is (patch_t)
     out = self%centre_nat-task%centre_nat
@@ -1484,8 +1513,8 @@ END FUNCTION distance_curvilinear
 !> point with index self%mesh%lb is half a cell inside the patch guard size, so the
 !> floating point position is counted relative to that point, and is split into
 !> an integer part and a remainder.  For patches smaller than the box, the index
-!> may become both smaller than self%mesh%lb and larger than self%mesh%ub.  For the root
-!> grid patch, the index is in the range (li-1,ui) inside the interior.
+!> may become both smaller than self%mesh%lb and larger than self%mesh%ub.  For
+!> the root grid patch, the index is in the range (li-1,ui) inside the interior.
 !===============================================================================
 FUNCTION index (self, other, oindex, f)
   class(patch_t):: self, other
