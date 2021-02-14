@@ -69,6 +69,7 @@ MODULE ramses_mod
   USE omp_mod
   USE trace_mod
   USE bits_mod
+  USE timer_mod
   USE mpi_mod
   USE task_mod
   USE link_mod
@@ -90,6 +91,7 @@ MODULE ramses_mod
   USE hash_table_mod
   USE omp_timer_mod
   USE shared_mod
+  USE stagger_mod
   implicit none
   private
   integer, parameter :: dp=kind(1.0D0)                        ! double precision
@@ -171,12 +173,16 @@ MODULE ramses_mod
     procedure:: evaluate
     procedure:: cartesian_init
     procedure:: initialize
+    procedure:: init_all_nbors
+    procedure:: init_nbors
     procedure:: remove_ramses_octs
     procedure:: check_support
     procedure:: prolong
+    procedure:: dnload
     procedure:: download_link
     procedure:: check_filled
     procedure:: output
+    procedure:: total_energy
   end type
   logical, save:: make_cartesian        ! replace RAMSES patches
   logical, save:: centre_on_sink        ! centre on the last sink
@@ -185,6 +191,7 @@ MODULE ramses_mod
   logical, save:: do_memtest=.false.    ! remove B-field, for tests
   logical, save:: direct_load=.false.
   logical, save:: detailed_timer=.false.
+  logical, save:: fast_nbors=.true.
   integer, save:: oct_size=700          ! oct_t overhead (ifort)
   integer, save:: verbose=0             ! verbosity
   real(8), save:: cut_out_size=1d0      ! full size of cutout
@@ -209,7 +216,7 @@ SUBROUTINE init (self, name)
   namelist /ramses_reader_params/ nout, xmin, xmax, ymin, ymax, zmin, zmax, &
     size, n_cell, nmerged_max, levelmin, levelmax, rank_load, path, centre_on_sink, &
     make_cartesian, do_evaluate, patch_n, remove_b, cut_out_size, d_min, &
-    detailed_timer, direct_load, do_memtest, verbose
+    detailed_timer, direct_load, do_memtest, fast_nbors, verbose
   !.............................................................................
   call trace%begin('ramses_t%init')
   call io%init ('ramses snapshot reader')
@@ -286,7 +293,7 @@ SUBROUTINE init (self, name)
     if (do_evaluate) then
       call self%count_costs
     end if
-    call self%create_patches
+    !call self%create_patches
   !-----------------------------------------------------------------------------
   ! If not, read once to decide load distribution, and once again to load data
   !-----------------------------------------------------------------------------
@@ -305,19 +312,48 @@ SUBROUTINE init (self, name)
   !-----------------------------------------------------------------------------
   ! Initialize nbor lists, which as a byproduct adds tasks to the ready queue
   !-----------------------------------------------------------------------------
-  call self%task_list%init_all_nbors
-  io%ntask  = self%task_list%na         ! FIXME
-  io%nwrite = self%task_list%na         ! FIXME
-  io%ntotal = self%task_list%na         ! FIXME
+  if (fast_nbors) then
+    call self%init_all_nbors
+  else
+    call self%task_list%init_all_nbors
+  end if
+  if (verbose > 0) &
+    call log_nbor_lists
   !-----------------------------------------------------------------------------
-  ! Check that task interiors are actually filled, prolong if not and check again
+  ! Prolong to unfilled interior points, dnload guard zones and check that
+  ! everything is filled
   !-----------------------------------------------------------------------------
-  call self%check_filled
   call self%prolong
+  call self%dnload
   call self%check_filled
+  call self%total_energy
   call self%output
+  !-----------------------------------------------------------------------------
+  ! Add all tasks to the ready queue, preventing a slow default add_by_time
+  !-----------------------------------------------------------------------------
+  call self%task_list%queue_all
   call self%task_list%print_queue
   call trace%end()
+contains
+
+!===============================================================================
+subroutine log_nbor_lists
+  class(link_t), pointer:: link
+  class(nbor_t), pointer:: nbor
+  !-----------------------------------------------------------------------------
+  link => self%task_list%head
+  do while (associated(link))
+    write (stdlog,'(a,i6,":",i2.2)') 'log_nbor_lists: link=', &
+      link%task%id, link%task%level
+    nbor => link%nbor
+    do while (associated(nbor))
+      write (stdlog,'(2x,a,i6,":",i2.2)') 'log_nbor_lists: nbor=', &
+        nbor%task%id, nbor%task%level
+      nbor => nbor%next
+    end do
+    link => link%next
+  end do
+end subroutine log_nbor_lists
 END SUBROUTINE init
 
 !===============================================================================
@@ -413,14 +449,15 @@ SUBROUTINE read_snapshot (self, keep, load)
   !-----------------------------------------------------------------------------
   ! In a second sweep we alread know the number of octs
   !-----------------------------------------------------------------------------
+  hash_table_size = 2000000
   if (direct_load) then
-    hash_table_size = 2000000
     call self%u_max_table%init (hash_table_size, ndim=4)
     call self%patch_table%init (hash_table_size, ndim=4)
-    hash_table_size=self%oct_list%n/50
+    !hash_table_size=self%oct_list%n/50
   end if
   self%rank = 0
   self%rootlvl = floor(log(real(self%n_cell))/log(2.0))
+  shared%levelroot = self%rootlvl
   !
   write(filebase, '(a,"/output_",i5.5,"/amr_",i5.5,".out")') trim(self%path), self%nout, self%nout
   !
@@ -641,7 +678,8 @@ SUBROUTINE read_snapshot (self, keep, load)
     write(stdout,*) ' nlevelmin =',nlevelmin
     write(stdout,*) ' nlevelmax =',nlevelmax
     allocate (n_level(1:nlevelmax))
-    allocate (level_cost(nlevelmin:nlevelmax))
+    if (.not.allocated(level_cost)) &
+      allocate (level_cost(nlevelmin:nlevelmax))
     !
     !------ allocate arrays ------
     ! now that we have more information, we can set and allocate a few required variables.
@@ -754,7 +792,6 @@ SUBROUTINE read_snapshot (self, keep, load)
         write(stdout,*) k, trim(filename)
       end do
     end if
-    io%ntotal = 0
     u_max = 0.0
     do k=1,ncpu_read
     !do k=1,32
@@ -952,31 +989,28 @@ SUBROUTINE read_snapshot (self, keep, load)
                 write (stdlog,'(a,3f10.4,4i4)') &
                   'oct: position,key=', position, oct%key
               end if
-              if (keep) then
-                allocate (oct%var(8,nvar_mhd+1))
-                call io%bits_mem (storage_size(oct%var), product(shape(oct%var)), 'oct')
-                oct%var = var(l,:,:)
-              end if
-              if (load) then
-                if (.not. keep) then
+              if ((keep .or. load) .and. ilevel <= shared%levelmax) then
+                if (.not.allocated(oct%var)) then
                   allocate (oct%var(8,nvar_mhd+1))
+                  call io%bits_mem (&
+                    storage_size(oct%var), product(shape(oct%var)), 'oct')
                   oct%var = var(l,:,:)
+                  call self%cartesian_init (oct%key, patch)
+                  call self%add_to (patch, oct)
+                  oct%u_max = self%phase_speed (var(l,:,:))
+                  u_max = max(u_max,oct%u_max)
+                  self%u_min = min(self%u_min,oct%u_max)
+                  dll_node => oct
+                  call self%oct_list%append (dll_node)
+                  deallocate (oct%var)
                 end if
-                call self%cartesian_init (oct%key, patch)
-                call self%add_to (patch, oct)
               end if
               !-----------------------------------------------------------------
               ! Keep only octs at or below the LEVELMAX input parameter
               !-----------------------------------------------------------------
-              if (keep .and. ilevel <= shared%levelmax) then
-                oct%u_max = self%phase_speed (var(l,:,:))
-                u_max = max(u_max,oct%u_max)
-                self%u_min = min(self%u_min,oct%u_max)
-                dll_node => oct
-                call self%oct_list%append (dll_node)
-              else
-                deallocate (oct%var)
-              end if
+              !if (.not.keep .and. allocated(oct%var)) then
+                !deallocate (oct%var)
+              !end if
               !-----------------------------------------------------------------
               n_grid = n_grid + 1
             end do
@@ -1055,7 +1089,7 @@ SUBROUTINE read_snapshot (self, keep, load)
   ! If not doing direct_load, then setup the hash tables now
   !-----------------------------------------------------------------------------
   if (.not.direct_load) then
-    hash_table_size=self%oct_list%n/50
+    !hash_table_size=self%oct_list%n/50
     call self%u_max_table%init (hash_table_size, ndim=4)
     call self%patch_table%init (hash_table_size, ndim=4)
   end if
@@ -1239,11 +1273,11 @@ SUBROUTINE add_to (self, patch, oct)
     ux = oct%var(j,2)
     uy = oct%var(j,3)
     uz = oct%var(j,4)
-    bx = (oct%var(j,5) + oct%var(j,8 ))*0.5
-    by = (oct%var(j,6) + oct%var(j,9 ))*0.5
-    bz = (oct%var(j,7) + oct%var(j,10))*0.5
+    !bx = (oct%var(j,5) + oct%var(j,8 ))*0.5
+    !by = (oct%var(j,6) + oct%var(j,9 ))*0.5
+    !bz = (oct%var(j,7) + oct%var(j,10))*0.5
     e  = oct%var(j,11)*enth
-    e  = e + 0.5*(d*(ux**2+uy**2+uz**2) + bx**2 + by**2 + bz**2)
+    !e  = e + 0.5*(d*(ux**2+uy**2+uz**2) + bx**2 + by**2 + bz**2)
     patch%mem(i1+j1,i2+j2,i3+j3,patch%idx%d ,1,1) = d
     patch%mem(i1+j1,i2+j2,i3+j3,patch%idx%e ,1,1) = e
     patch%mem(i1+j1,i2+j2,i3+j3,patch%idx%px,1,1) = d*ux
@@ -1252,7 +1286,7 @@ SUBROUTINE add_to (self, patch, oct)
     patch%mem(i1+j1,i2+j2,i3+j3,patch%idx%bx,1,1) = oct%var(j,5)
     patch%mem(i1+j1,i2+j2,i3+j3,patch%idx%by,1,1) = oct%var(j,6)
     patch%mem(i1+j1,i2+j2,i3+j3,patch%idx%bz,1,1) = oct%var(j,7)
-    patch%filled(k1+j1,k2+j2,k3+j3) = level
+    patch%filled(i1+j1,i2+j2,i3+j3) = level
     if (verbose > 3) &
       write(stdlog,'("add_to:",i7,i4,2x,3i4,1p,e11.2)') &
         patch%id, patch%level, i1+j1, i2+j2, i3+j3, d
@@ -1358,6 +1392,7 @@ SUBROUTINE count_costs (self)
   !-----------------------------------------------------------------------------
   total_cost = 0d0
   allocate (n_level(self%rootlvl:self%maxlvl))
+  n_level = 0
   task => self%oct_list%head
   do while (associated(task))
     select type (task)
@@ -1462,7 +1497,9 @@ FUNCTION energy (self, vars, patch) RESULT (e)
 END FUNCTION energy
 
 !===============================================================================
-!> Check, from the top and down, that every patch has support, on all sides
+!> Check, from the bottom up that every patch has support, on all sides; i.e.,
+!> if no level L nbor exists, then a level L-1 must exist, and will be created
+!> if it doesn't
 !===============================================================================
 SUBROUTINE check_support (self)
   class(ramses_t):: self
@@ -1470,37 +1507,62 @@ SUBROUTINE check_support (self)
   class(link_t), pointer:: link, nbor
   class(task_t), pointer:: task, nbtask
   class(experiment_t), pointer:: patch
-  real(kind=8):: position(3)
+  class(*), pointer:: ptr
+  real(kind=8):: position(3), size(3)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('ramses_t%check_support', itimer=itimer)
   call io%header ('-check_support: begin', left=25)
-  do level=self%maxlvl,self%minlvl+2,-1
+  do level=self%rootlvl+1,self%maxlvl
     link => self%task_list%head
     do while (associated(link))
       if (link%task%level == level) then
         task => link%task
         select type (task)
         class is (patch_t)
+          size = task%size
           do i3=-1,1
           do i2=-1,1
           do i1=-1,1
+            if (i1==0 .and. i2==0 .and. i3==0) cycle
             !-------------------------------------------------------------------
-            ! Position of level L nbors, and key for a L-1 patches there
+            ! Check if a level L nbor exists at this point
             !-------------------------------------------------------------------
-            position = task%position + [i1,i2,i3]*task%size
-            key(1) = task%level-1
-            key(2:4) = floor(position/(2d0*task%size))
-            !-------------------------------------------------------------------
-            ! Periodic wrapping
-            !-------------------------------------------------------------------
-            n = 2**(task%level-1-self%minlvl)
-            key(2:4) = modulo(key(2:4),n)
-            !-------------------------------------------------------------------
-            ! Create a patch there if none exists; it will be prepended to the 
-            ! task list, to avoid problems with looping over the same list
-            !-------------------------------------------------------------------
-            call self%cartesian_init (key, patch)
+            position = task%position + [i1,i2,i3]*size
+            key = task_key (task%level, task%box, position, size)
+            call self%patch_table%get (key, ptr)
+            if (associated(ptr)) then
+              if (verbose > 0) then
+                select type (ptr)
+                class is (experiment_t)
+                  write (stdout,'(a,2(i6,":",i2.2),2x,4i3,2x,3i3)') &
+                    'ramses_t%check_support: id,nbor=', &
+                    task%id, task%level, ptr%id, ptr%level, key, [i1,i2,i3]
+                end select
+              end if
+            else
+              !-----------------------------------------------------------------
+              ! Check if level L-1 nbor exist that covers the place, and create
+              ! one if it does not exist
+              !-----------------------------------------------------------------
+              key = task_key (task%level-1, task%box, position, 2d0*size)
+              call self%patch_table%get (key, ptr)
+              if (associated(ptr)) then
+                if (verbose > 0) then
+                  select type (ptr)
+                  class is (experiment_t)
+                    write (stdout,'(a,2(i6,":",i2.2),2x,4i3,2x,3i3)') &
+                      'ramses_t%check_support: id,nbor=', &
+                      task%id, task%level, ptr%id, ptr%level, key, [i1,i2,i3]
+                  end select
+                end if
+              else
+                call self%cartesian_init (key, patch)
+                write (stdout,'(a,2(i6,":",i2.2),2x,4i3,2x,3i3)') &
+                  'ramses_t%check_support: id,new_nbor=', &
+                  task%id, task%level, patch%id, patch%level, key, [i1,i2,i3]
+              end if
+            end if
           end do
           end do
           end do
@@ -1516,6 +1578,21 @@ SUBROUTINE check_support (self)
 END SUBROUTINE check_support
 
 !===============================================================================
+!> Compute the hash key, given the task leve, periodic box size, position and
+!> size, with periodic wrapping
+!===============================================================================
+FUNCTION task_key (level, box, position, size) RESULT (key)
+  integer:: level
+  real(8), dimension(3):: box, position, size
+  integer:: n(3), key(4)
+  !-----------------------------------------------------------------------------
+  key(1) = level
+  key(2:4) = floor(position/size)
+  n = nint(box/size)
+  key(2:4) = modulo(key(2:4),n)
+END FUNCTION task_key
+
+!===============================================================================
 !> Starting one level about levelmin, prolong into those patches that are not
 !> properly filled by oct values
 !===============================================================================
@@ -1524,12 +1601,14 @@ SUBROUTINE prolong (self)
   class(link_t), pointer:: link
   class(*), pointer:: patch
   real:: dmin, dmin_all
-  real(8):: size(3)
-  integer:: level, n, n0, i, key(4)
+  real(8):: size(3), time
+  integer:: level, n, n0, i, key(4), l(3), u(3), n_task
   !-----------------------------------------------------------------------------
   call trace%begin('ramses_t%prolong')
   call io%header ('-prolong: begin', left=25)
+  call timer%tic (time)
   n = 0; n0 = 0
+  n_task = 0
   do level=self%minlvl+1,self%maxlvl
     dmin_all=huge(1.0)
     link => self%task_list%head
@@ -1538,7 +1617,9 @@ SUBROUTINE prolong (self)
         associate (task => link%task)
         select type (task)
         class is (patch_t)
-          if (any(task%filled == -1)) then
+          l = task%mesh%li
+          u = task%mesh%ui
+          if (any(task%filled(l(1):u(1),l(2):u(2),l(3):u(3)) == -1)) then
             n = n+1
             call self%download_link (link)
             task%filled = task%level-1
@@ -1554,16 +1635,45 @@ SUBROUTINE prolong (self)
             'prolong: id, level, dmin, dmin_all =', task%id, task%level, dmin, dmin_all
         end select
         end associate
+        n_task = n_task+1
       end if
+      !if (download%n_tot > 1e7) then
+      !  write (stdout,'(a,2i10,2p,f6.1,"%")') &
+      !    'prolong:', download%n_tot, download%n_skip, real(n_task)/self%task_list%n
+      !  download%n_tot = 0
+      !  download%n_skip = 0
+      !end if
       link => link%next
     end do
   end do
   if (verbose > 0) then
     write (stdout,'(" elapsed:",f8.1,"s")') wallclock()-start
   end if
-  call io%header ('-prolong: end', left=20)
+  call timer%toc ('time to fill missing cells', 1, time)
+  call io%header ('-prolong: end', left=25)
   call trace%end ()
 END SUBROUTINE prolong
+
+!===============================================================================
+!> Fill guard zones for all tasks
+!===============================================================================
+SUBROUTINE dnload (self)
+  class(ramses_t):: self
+  class(link_t), pointer:: link
+  real(8):: time
+  !-----------------------------------------------------------------------------
+  call trace%begin('ramses_t%dnload')
+  call io%header ('-dnload: begin', left=25)
+  call timer%tic (time)
+  link => self%task_list%head
+  do while (associated(link))
+    call link%task%dnload
+    link => link%next
+  end do
+  call timer%toc ('time to dnload', 1, time)
+  call io%header ('-dnload: end', left=25)
+  call trace%end ()
+END SUBROUTINE dnload
 
 !===============================================================================
 !> Find the patch that contains the link task and prolong from it
@@ -1581,7 +1691,7 @@ SUBROUTINE download_link (self, link)
   select type(task)
   class is (experiment_t)
     target => task
-    key = [task%key(1)-1, floor(target%position/(2d0*target%size))]
+    key = task_key (task%level-1, task%box, task%position, 2d0*task%size)
     call self%patch_table%get (key, ptr)
     ok = .false.
     if (associated(ptr)) then
@@ -1590,6 +1700,7 @@ SUBROUTINE download_link (self, link)
         source => ptr
         jt = [1,1]
         pt = [1.0,0.0]
+        download%check_filled = .true.
         call download%different (target, source, jt, pt, all_cells=.true.)
         ok = .true.
       end select
@@ -1642,14 +1753,14 @@ END SUBROUTINE download_link2
 !===============================================================================
 SUBROUTINE check_filled (self)
   class(ramses_t):: self
-  integer:: level, gap, nok
+  integer:: level, gap, nok, l(3), u(3)
   class(nbor_t), pointer:: nbor
   class(link_t), pointer:: link
   class(task_t), pointer:: task, nbtask
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('ramses_t%check_filled', itimer=itimer)
-  call io%header ('-check_filled: begin', left=20)
+  call io%header ('-check_filled: begin', left=25)
   nok = 0
   do level=self%maxlvl,self%minlvl+1,-1
     link => self%task_list%head
@@ -1658,7 +1769,9 @@ SUBROUTINE check_filled (self)
         task => link%task
         select type (task)
         class is (patch_t)
-        if (any(task%filled == -1)) then
+        l = task%mesh%li
+        u = task%mesh%ui
+        if (any(task%filled(l(1):u(1),l(2):u(2),l(3):u(3)) == -1)) then
           gap = 99
           nbor => link%nbor
           do while (associated(nbor))
@@ -1691,7 +1804,7 @@ SUBROUTINE check_filled (self)
     write(stdout,*) 'check_filled: nok =', nok
     write (stdout,'(" elapsed:",f8.1,"s")') wallclock()-start
   end if
-  call io%header ('-check_filled: end', left=20)
+  call io%header ('-check_filled: end', left=25)
   call trace%end (itimer)
 contains
   !=============================================================================
@@ -1708,11 +1821,11 @@ contains
     !---------------------------------------------------------------------------
     ! Create a task at the overlapping location on level L-1
     !---------------------------------------------------------------------------
-    key = [task%level-1, floor(task%position/(2d0*task%size))]
+    key = task_key (task%level-1, task%box, task%position, 2d0*task%size)
     call self%cartesian_init (key, new)
     nbor => new%link%nbor
     do while (associated(nbor))
-      write (stdout,'(a,i6,i4,i6,i4)') 'nbor list:', &
+      write (stdout,'(a,i6,i4,i6,i4)') 'create_support: id,lelvel,nbor,level', &
         new%link%task%id, new%link%task%level, nbor%task%id, nbor%task%level
       nbor => nbor%next
     end do
@@ -1965,22 +2078,33 @@ SUBROUTINE cartesian_init (self, key, patch)
     patch%nw = 1
     call patch%init
     patch%mhd = .true.
+    patch%periodic = .true.
     call self%initialize (patch)  
     !---------------------------------------------------------------------------
-    ! Patches below levelmin are needed for selfgravity, but for now we set the
-    ! frozen bit on them, to ignore them in dnload and update
+    ! Make sure interpolations are done optimally
     !---------------------------------------------------------------------------
-    if (patch%level < shared%levelmin) then
+    patch%unsigned(patch%idx%d) = .true.
+    patch%unsigned(patch%idx%e) = .true.
+    patch%pervolume(patch%idx%px) = .true.
+    patch%pervolume(patch%idx%py) = .true.
+    patch%pervolume(patch%idx%pz) = .true.
+    !---------------------------------------------------------------------------
+    ! Patches below levelmin are needed for selfgravity
+    !---------------------------------------------------------------------------
+    if (patch%level < self%rootlvl) then
       call patch%set (bits%frozen)
+    else
+      call patch%set (bits%has_output)
     end if
     !---------------------------------------------------------------------------
-    allocate (patch%filled(patch%n(1),patch%n(2),patch%n(3)))
+    allocate (patch%filled(patch%gn(1),patch%gn(2),patch%gn(3)))
     call io%bits_mem (storage_size(patch%filled), product(shape(patch%filled)), 'fill')
     patch%filled = -1
     !---------------------------------------------------------------------------
     ! Add the patch to the task list -- this creates the patch%link
     !---------------------------------------------------------------------------
     call self%add_to_task_list (patch)
+    ptr => patch
     if (verbose > 1) then
       write (stdlog,1) &
         'cartesian_init: new patch created: id, key =', &
@@ -2014,9 +2138,138 @@ SUBROUTINE initialize (self, patch)
 END SUBROUTINE initialize
 
 !===============================================================================
+!> Add nbor lists to all tasks
+!===============================================================================
+SUBROUTINE init_all_nbors (self)
+  class(ramses_t):: self
+  class(link_t), pointer:: link
+  real(8):: time
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin('ramses_t%init_all_nbors', itimer=itimer)
+  call io%header ('-init_all_nbors: begin', left=25)
+  call timer%tic (time)
+  call self%task_list%reset_status                 ! update task bits
+    link => self%task_list%head
+    do while (associated(link))
+      call self%init_nbors (link)
+      link => link%next
+    end do
+  call timer%toc ('time to initialize nbor lists', 1, time)
+  call io%header ('-init_all_nbors: end', left=25)
+  call trace%end (itimer)
+END SUBROUTINE init_all_nbors
+
+!===============================================================================
+!> Add nbor list to one task
+!===============================================================================
+SUBROUTINE init_nbors (self, link)
+  class(ramses_t):: self
+  class(link_t), pointer:: link
+  class(task_t), pointer:: task
+  class(nbor_t), pointer:: nbor
+  integer:: i1, i2, i3, n
+  real(8):: size(3), position(3)
+  type(hash_table_t):: nbor_table
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin('ramses_t%init_nbors', itimer=itimer)
+  call nbor_table%init (200, ndim=4)
+  n = 0
+  task => link%task
+  select type (task)
+  class is (experiment_t)
+    !---------------------------------------------------------------------------
+    ! For a level above levelmin, check all L-1 positions
+    !---------------------------------------------------------------------------
+    if (task%level > self%rootlvl) then
+      size = task%size*2d0
+      do i3=-1,1
+      do i2=-1,1
+      do i1=-1,1
+        !-------------------------------------------------------------------
+        ! Position of level L nbors, and key for a L-1 patches there
+        !-------------------------------------------------------------------
+        position = task%position + [i1,i2,i3]*size
+        call check_nbor (task%level-1, position, size)
+      end do
+      end do
+      end do
+    end if
+    !---------------------------------------------------------------------------
+    ! At the same level, check all level L positions except self
+    !---------------------------------------------------------------------------
+    size = task%size
+    do i3=-1,1
+    do i2=-1,1
+    do i1=-1,1
+      if (i1==0 .and. i2==0 .and. i3==0) cycle
+      position = task%position + [i1,i2,i3]*size
+      call check_nbor (task%level, position, size)
+    end do
+    end do
+    end do
+    !---------------------------------------------------------------------------
+    ! For a level below levelmax, check all L+1 positions
+    !---------------------------------------------------------------------------
+    if (task%level < shared%levelmax) then
+      size = task%size/2d0
+      do i3=0,3
+      do i2=0,3
+      do i1=0,3
+        position = task%position + ([i1,i2,i3]-1.5d0)*size
+        call check_nbor (task%level+1, position, size)
+      end do
+      end do
+      end do
+    end if
+  end select
+  link%nbors_by_level => link%nbor
+  if (verbose > 0) &
+    write (stdout,*) link%task%id, ' added', n, 'nbors', associated(link%nbor)
+  call nbor_table%dealloc
+  call trace%end (itimer)
+contains
+!===============================================================================
+!> Check if nbor task exists, and if it overlaps -- if so add to nbor list
+!===============================================================================
+subroutine check_nbor (level, position, size)
+  integer:: level
+  real(8):: position(3), size(3)
+  integer:: key(4)
+  class(*), pointer:: nbtask, ptr
+  integer, save, target:: c=1
+  !-----------------------------------------------------------------------------
+  ! Level and positions key, with periodic wrapping
+  !-----------------------------------------------------------------------------
+  key = task_key (level, task%box, position, size)
+  call nbor_table%get (key, ptr)
+  if (.not.associated(ptr)) then
+    call self%patch_table%get (key, nbtask)
+    if (associated(nbtask)) then
+      ptr => c
+      call nbor_table%set (key, ptr)
+      select type(nbtask)
+      class is (experiment_t)
+        if (nbtask%overlaps (task)) then
+          nbtask%quality = nbtask%level
+          if (verbose > 2) &
+            write (stdout,'(a,2(i5,":",i2.2),2x,4i3)') &
+              'ramses_t%check_nbor: task,nbor:', &
+              link%task%id, link%task%level, nbtask%id, nbtask%level, key
+          n = n+1
+          call link%add_nbor_by_quality (nbtask%link)
+        end if
+      end select
+    end if
+  end if
+end subroutine check_nbor
+END SUBROUTINE init_nbors
+
+!===============================================================================
 !> Add all patches with level <= L+1 and within a good margin of overlap
 !===============================================================================
-SUBROUTINE init_nbors (list, link)
+SUBROUTINE init_nbors2 (list, link)
   type(task_list_t), pointer:: list
   class(link_t), pointer:: link
   !.............................................................................
@@ -2047,7 +2300,7 @@ SUBROUTINE init_nbors (list, link)
   if (verbose > 1) &
     write(stdout,*) 'id, level, n, n_nbors =', &
       link%task%id, link%task%level, n, link%task%n_nbors
-END SUBROUTINE init_nbors
+END SUBROUTINE init_nbors2
 
 !===============================================================================
 !> Remove the initial RAMSES octs
@@ -2084,24 +2337,69 @@ SUBROUTINE remove_ramses_octs (self)
 END SUBROUTINE remove_ramses_octs
 
 !===============================================================================
-!> Initial output of all tasks
+!> Initial output of all tasks, in case no task updates follow
 !===============================================================================
 SUBROUTINE output (self)
   class(ramses_t):: self
   class(link_t), pointer:: link
   !-----------------------------------------------------------------------------
+  call self%task_list%reset_status
   link => self%task_list%head
   do while (associated(link))
-    associate(task => link%task)
-    select type (task)
-    class is (experiment_t)
-    if (task%is_clear(bits%frozen)) &
-      call task%output
-      task%out_next = 0d0
-    end select
-    end associate
+    call link%task%output
+    link%task%out_next = 0d0
     link => link%next
   end do
 END SUBROUTINE output
+
+!===============================================================================
+!> Convert the energy variable to total energy
+!===============================================================================
+SUBROUTINE total_energy (self)
+  class(ramses_t):: self
+  class(link_t), pointer:: link
+  class(task_t), pointer:: task
+  real, dimension(:,:,:), allocatable:: cx, cy, cz
+  real, dimension(:,:,:), pointer:: d, e, px, py, pz, bx, by, bz
+  integer:: m(3)
+  real(8):: time
+  real:: e_min
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin ('ramses_t%total_energy', itimer=itimer)
+  call io%header ('-total_energy: begin', left=25)
+  call timer%tic (time)
+  e_min = huge(1.0)
+  link => self%task_list%head
+  do while (associated(link))
+    task => link%task
+    select type (task)
+    class is (patch_t)
+      m = task%mesh%gn
+      allocate (cx(m(1),m(2),m(3)))
+      allocate (cy(m(1),m(2),m(3)))
+      allocate (cz(m(1),m(2),m(3)))
+      d  => task%mem(:,:,:,task%idx%d ,task%it,1)
+      e  => task%mem(:,:,:,task%idx%e ,task%it,1)
+      px => task%mem(:,:,:,task%idx%px,task%it,1)
+      py => task%mem(:,:,:,task%idx%py,task%it,1)
+      pz => task%mem(:,:,:,task%idx%pz,task%it,1)
+      bx => task%mem(:,:,:,task%idx%bx,task%it,1)
+      by => task%mem(:,:,:,task%idx%by,task%it,1)
+      bz => task%mem(:,:,:,task%idx%bz,task%it,1)
+      cx = stagger%xup(bx)
+      cy = stagger%yup(by)
+      cz = stagger%zup(bz)
+      e_min = min(e_min, minval(e))
+      e = e + 0.5*((px**2+py**2+pz**2)/d + (cx**2+cy**2+cz**2))
+      deallocate (cx, cy, cz)
+    end select
+    link => link%next
+  end do
+write (stdout,*) task%id, e_min
+  call timer%toc ('time to compute total energy', 1, time)
+  call io%header ('-total_energy: end', left=25)
+  call trace%end (itimer)
+END SUBROUTINE total_energy
 
 END MODULE ramses_mod
