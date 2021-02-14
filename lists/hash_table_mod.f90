@@ -138,15 +138,12 @@ SUBROUTINE reset_entire_hash (htable, resize)
 END SUBROUTINE reset_entire_hash
 
 !===============================================================================
-!> Subroutine to reset the entire hash table
+!> Subroutine to reclaim the memory used by a hash table
 !> IMPORTANT: The new size of the hash table is adapted based on the
 !> load factor before resetting the hash table.
 !===============================================================================
-SUBROUTINE dealloc (htable, resize)
+SUBROUTINE dealloc (htable)
   class(hash_table_t), intent(inout) :: htable
-  logical, intent(in)                :: resize
-  integer :: i
-  real :: load_factor
   !-----------------------------------------------------------------------------
   call io%bits_mem (-storage_size(htable%data), product(shape(htable%data)))
   call io%bits_mem (-storage_size(htable%next_free), &
