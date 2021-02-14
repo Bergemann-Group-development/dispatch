@@ -11,7 +11,7 @@ import dispatch.select as dse
 from time import time
 from dispatch._dispatch_grid import GeometricFactors
 from dispatch._aux import aux
-from dispatch._utils import read_patch_metadata
+from dispatch._utils import read_patch_metadata, read_nbor_list
 from dispatch._expr import expression_parser
 from scipy.io import FortranFile
 
@@ -882,6 +882,8 @@ class snapshot():
         files=[f for f in os.listdir(datadir) if f.endswith('_patches.nml')]
         
         # make sure to ignore left-over *_patches.nml from other runs
+        if not hasattr(self,'mpi_size'):
+            self.mpi_size=1
         patch_dict=read_patch_metadata(iout,run,data,self.mpi_size,verbose=verbose)
         if patch_dict is None:
             print('could not find patch metadata')

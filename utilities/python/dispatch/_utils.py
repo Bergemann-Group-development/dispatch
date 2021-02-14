@@ -1,6 +1,8 @@
 import os
 import time
 import numpy as np
+import f90nml
+import time
 from scipy.io import FortranFile
 
 def read_patch_metadata(io=0,run='',data='../data',n_rank=1,verbose=0):
@@ -8,7 +10,7 @@ def read_patch_metadata(io=0,run='',data='../data',n_rank=1,verbose=0):
     """
     if verbose>0:
         start=time.time()
-    
+
     rank=0
     patches={}
     while(rank < n_rank):
@@ -23,7 +25,7 @@ def read_patch_metadata(io=0,run='',data='../data',n_rank=1,verbose=0):
         if verbose>1:
             print(metadata,len(patches.keys()),'patches')
         rank+=1
-    
+
     np=len(patches.keys())
     if verbose>0:
         sec=time.time()-start
@@ -34,7 +36,7 @@ def read_patch_metadata(io=0,run='',data='../data',n_rank=1,verbose=0):
         return None
     else:
         return patches
-            
+
 def _parse_multiple (items):
     """ Figure out namelist records that may have N*xxx syntax
     """
@@ -56,34 +58,6 @@ def _parse_multiple (items):
         pos = [float(p) for p in pos]
     return np.array(pos)
 
-def read_nbor_list(snap,d):
-    if hasattr(snap,'params_list'):
-        params_list=snap.params_list
-        if 'io_params' in params_list:
-            io_params=params_list['io_params']
-            if 'nml_version' in io_params:
-                nml_version=io_params['nml_version']
-
-    # Inform about nbor_nml, if present
-    if nml_version>1:
-        patches_nml=f90nml.read(file)
-        if 'nbor_nml' in patches_nml:
-            start=time()
-            nbor_nml=patches_nml['nbor_nml']
-            nbor_info={}
-            for nb in nbor_nml:
-                id=nb['id']
-                parent_id=nb['parent_id']
-                nbor_ids=nb['nbor_ids']
-                nbor_info[id]={'parent_id':parent_id,'nbor_ids':nbor_ids}
-            if verbose:
-                print('snapshot nbor_nml info ({:.3f}s):'.format(time()-start))
-                print(nbor_nml[0].keys())
-
-        if nbor_info:
-            d['parent_id']=nbor_info[id]['parent_id']
-            d['nbor_ids']=nbor_info[id]['nbor_ids']
-
 def read_rank_namelist(file,patches,rank,verbose=0):
     """
         Optimized parsing of patch namelist entries.  Updates dictionary with
@@ -93,45 +67,92 @@ def read_rank_namelist(file,patches,rank,verbose=0):
     if verbose>1:
         start=time.time()
     with open(file,'r') as fo:
-        watch_block = False
+        nbor_block=False
+        watch_block=False
         for line in fo:
             # strip commas and equal sign from line and split
             line=line.replace('=',' ').replace(',',' ').replace('"',' ')
             items=line.split()
-            if len(items)==0:
-                pass
-            elif items[0] == "&PATCH_NML":
+
+            # Detect blocks to parse
+            if items[0] == "&PATCH_NML":
                 d={}
-                watch_block = True
-            elif items[0]=='ID':
-                id=int(items[1])
-            elif items[0]=='POSITION':
-                d['position'] = _parse_multiple(items)
-            elif items[0]=='SIZE':
-                d['size'] = _parse_multiple(items)
-            elif items[0]=='LEVEL':
-                d['level']=int(items[1])
-            elif items[0]=='DTIME':
-                d['dtime']=float(items[1])
-            elif items[0]=='TIME':
-                d['time']=float(items[1])
-            elif items[0]=='ISTEP':
-                d['istep']=int(items[1])
-            elif items[0]=='DS':
-                d['ds'] = _parse_multiple(items)
-            elif items[0]=='MESH_TYPE':
-                d['mesh_type'] = int(items[1])
-            elif items[0]=='NCELL':
-                d['ncell'] = _parse_multiple(items)
-            elif items[0]=='KIND':
-                d['kind']=items[1]
-            elif items[0]=='/' and watch_block: # the final entry of a namelist is always "/"
-                d['rank']=rank
-                patches[id]=d
-                watch_block = False
-                n+=1
-                if verbose>2:
-                    print('id',id)
+                watch_block=True
+            elif items[0] == "&NBOR_NML":
+                nbor_block=True
+                if verbose>0:
+                    print('starting nbor_block')
+
+            # Parse a block of the namelist with an nbor list
+            elif nbor_block:
+                def parse_nbors(items,nbor_ids):
+                    for item in items:
+                        if item.find('*') >=0:
+                            print('warning, multiple:',id,item)
+                            rep=item.split('*')
+                            for i in range(int(rep[0])):
+                                nbor_ids.append(int(rep[1]))
+                        else:
+                            nbor_ids.append(int(item))
+                if verbose>1:
+                    print(items)
+                if items[0] == 'ID':
+                    id = int(items[1])
+                    if verbose>0:
+                        print('nbor_block id:',id)
+                elif items[0] == 'PARENT_ID':
+                    parent_id = int(items[1])
+                    if verbose>0:
+                        print('nbor_block parent_id:',parent_id)
+                elif items[0] == "NBOR_IDS":
+                    nbor_ids=[]
+                    parse_nbors(items[1:],nbor_ids)
+                    if verbose>0:
+                        print('nbor_block nbor_ids:',nbor_ids)
+                elif items[0] == "/":
+                    nbor_ids=list(np.unique(np.sort(nbor_ids)))
+                    patches[id]['nbor_ids']=nbor_ids
+                    nbor_block=False
+                    if verbose>0:
+                        print('ending nbor_block:')
+                else:
+                    parse_nbors(items,nbor_ids)
+                    if verbose>0:
+                        print('appeded nbor_ids:',items)
+
+            # Parse a block of the namelist with patch info
+            elif watch_block:
+                if len(items)==0:
+                    pass
+                elif items[0]=='ID':
+                    id=int(items[1])
+                elif items[0]=='POSITION':
+                    d['position'] = _parse_multiple(items)
+                elif items[0]=='SIZE':
+                    d['size'] = _parse_multiple(items)
+                elif items[0]=='LEVEL':
+                    d['level']=int(items[1])
+                elif items[0]=='DTIME':
+                    d['dtime']=float(items[1])
+                elif items[0]=='TIME':
+                    d['time']=float(items[1])
+                elif items[0]=='ISTEP':
+                    d['istep']=int(items[1])
+                elif items[0]=='DS':
+                    d['ds'] = _parse_multiple(items)
+                elif items[0]=='MESH_TYPE':
+                    d['mesh_type'] = int(items[1])
+                elif items[0]=='NCELL':
+                    d['ncell'] = _parse_multiple(items)
+                elif items[0]=='KIND':
+                    d['kind']=items[1]
+                elif items[0]=='/' and watch_block: # the final entry of a namelist is always "/"
+                    d['rank']=rank
+                    patches[id]=d
+                    watch_block = False
+                    n+=1
+                    if verbose>2:
+                        print('id',id)
     if verbose>1:
         used=time.time()-start
         print('{}: {} patches, {:.2f} sec'.format(file,n,used))
