@@ -473,6 +473,7 @@ SUBROUTINE pre_init (self)
   logical, save:: first_time = .true.
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%pre_init')
+  call omp%set_stacksize (self%nv)
   !-----------------------------------------------------------------------------
   ! Read and set patch parameters; the preferred defalts may have been set by
   ! the calling code -- typically in experiment_mod.f90
@@ -532,11 +533,94 @@ SUBROUTINE pre_init (self)
   self%print_next  = print_time
   self%limit_dtime = limit_dtime
   !-----------------------------------------------------------------------------
-  ! Initialize the meshes, in order to be able to do the staggering, which
-  ! is needed in the mhd_t%init(), before the call to extras_t%init()
+  ! Everything mesh-related -- call to be moved to %init()-chain later
   !-----------------------------------------------------------------------------
-  call MeshFactory(self%mesh_type, self%mesh, n=self%n, ng=self%ng, s=self%size, &
-                   p=self%position, llc_native=self%llc_nat, nml=self%no_mans_land)
+  call mesh_init (self)
+  !-----------------------------------------------------------------------------
+  ! The unsigned and pervoleme flags should also be modified by the solver,
+  ! so they also need to be allocated here.
+  !-----------------------------------------------------------------------------
+  allocate (self%unsigned (self%nv))
+  allocate (self%pervolume(self%nv))
+  self%unsigned (:) = .false.
+  self%pervolume(:) = .false.
+  call trace%end()
+END SUBROUTINE pre_init
+
+!===============================================================================
+!> Mesh-related patch initialization.  Currently, this needs to be part of the
+!> %pre_init-chain of call, since the staggering information is needed early,
+!> but ideally this should be moved to the %init-chain, since it involves
+!> memory allocation.
+!===============================================================================
+SUBROUTINE mesh_init (self)
+  class(patch_t):: self
+  logical, save:: warn=.true.
+  integer:: i
+  !-----------------------------------------------------------------------------
+  ! Initialize the meshes, in order to be able to do the staggering, which is
+  ! needed in the mhd_t%init(), before the call to extras_t%init()
+  !-----------------------------------------------------------------------------
+  call MeshFactory(self%mesh_type, self%mesh, n=self%n, ng=self%ng, &
+    s=self%size, p=self%position, llc_native=self%llc_nat, nml=self%no_mans_land)
+  !-----------------------------------------------------------------------------
+  ! Pass on a few things to the mesh
+  !-----------------------------------------------------------------------------
+  self%mesh%id = self%id
+  self%mesh%b = self%box
+  self%mesh%llc_cart = self%llc_cart
+  !-----------------------------------------------------------------------------
+  ! Cache a few things from the mesh
+  !-----------------------------------------------------------------------------
+  self%gn = self%mesh%gn
+  self%li = self%mesh%li
+  self%ui = self%mesh%ui
+  self%ds = self%mesh%d
+  self%ncell = self%mesh%nc
+  self%centre_nat = self%mesh%centre_nat
+  self%centre_cart = CurrentToCartesian(self%mesh_type, &
+                     self%centre_nat(1), self%centre_nat(2), self%centre_nat(3))
+  !-----------------------------------------------------------------------------
+  ! Make dead sure these crucial values are correct for Cartesian meshes
+  !-----------------------------------------------------------------------------
+  self%llc_cart = self%position - 0.5_8*self%size
+  if (self%mesh_type == mesh_types%Cartesian) then
+    if (any(self%centre_nat /= self%position)) then
+      call io%lock%set ('warn')
+      if (warn) then
+        call io%warning ('patch_t%centre_nat not equal to task_t%position')
+        write (stderr,'(a,1p,3e16.6)') 'centre_nat =', self%centre_nat
+        write (stderr,'(a,1p,3e16.6)') '  position =', self%position
+        warn = .false.
+      end if
+      call io%lock%unset ('warn')
+    end if
+    self%llc_nat         = self%llc_cart
+    self%mesh%llc_cart   = self%llc_cart
+    self%mesh%llc_nat    = self%llc_cart
+    self%centre_nat      = self%position
+    self%centre_cart     = self%position
+    self%mesh%p          = self%position
+    self%mesh%centre_nat = self%position
+  end if
+  !-----------------------------------------------------------------------------
+  ! Hacks for backwards compatibility
+  !-----------------------------------------------------------------------------
+  self%gsize = self%ds*self%gn
+  self%offset = (self%mesh%lb+self%mesh%ub)/2.0 ! mid point index offset
+  if (self%id == io%id_debug) then
+    print 1,'patch_t%init: position    =', self%position
+    print 1,'patch_t%init: m%p         =', self%mesh%p
+    print 1,'patch_t%init: offset      =', self%offset
+    print 1,'patch_t%init: m%o         =', self%mesh%o
+    print 1,'patch_t%init: centre_nat  =', self%centre_nat
+    print 1,'patch_t%init: centre_cart =', self%centre_cart
+    print 1,'patch_t%init: llc_nat     =', self%llc_nat
+    print 1,'patch_t%init: m%llc_nat   =', self%mesh%llc_nat
+    print 1,'patch_t%init: llc_cart    =', self%llc_cart
+    print 1,'patch_t%init: m%llc_cart  =', self%mesh%llc_cart
+    1 format(a,1p,3e15.6)
+  end if
   !-----------------------------------------------------------------------------
   ! Intialise staggering indices; it is the responsibility of the *solver* to
   ! assign non-zero values to this variable (if any).
@@ -549,16 +633,7 @@ SUBROUTINE pre_init (self)
     if (self%kind == 'zeus_tw_mhd_patch' .and. &
         self%staggered .and. self%n(i) /= 1) self%mesh(i)%gn = self%mesh(i)%gn + 1
   end do
-  !-----------------------------------------------------------------------------
-  ! The unsigned and pervoleme flags should also be modified by the solver,
-  ! so they also need to be allocated here.
-  !-----------------------------------------------------------------------------
-  allocate (self%unsigned (self%nv))
-  allocate (self%pervolume(self%nv))
-  self%unsigned (:) = .false.
-  self%pervolume(:) = .false.
-  call trace%end()
-END SUBROUTINE pre_init
+END SUBROUTINE mesh_init
 
 !===============================================================================
 !> Setup a patch, possibly with non-standard parameters. First setup with
@@ -606,49 +681,6 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
     self%ng = 0                                 ! no guard zones
     self%box = 1                                ! make sure it is non-zero
   end where
-  !-----------------------------------------------------------------------------
-  ! Initialize and allocate the meshes, afterwards imposing the external values
-  ! box size and position
-  !-----------------------------------------------------------------------------
-  call omp%set_stacksize (self%nv)
-  self%ds = self%mesh%d
-  self%ncell = self%mesh%nc
-  self%mesh%id = self%id
-  self%mesh%b = self%box
-  self%mesh%llc_cart = self%llc_cart
-  self%centre_nat = [self%mesh(1)%centre_nat,self%mesh(2)%centre_nat,self%mesh(3)%centre_nat]
-  self%centre_cart = CurrentToCartesian(self%mesh_type, &
-                       self%centre_nat(1), self%centre_nat(2), self%centre_nat(3))
-  !-----------------------------------------------------------------------------
-  ! Make dead sure these crucial values are correct for Cartesian meshes
-  !-----------------------------------------------------------------------------
-  self%llc_cart = self%position - 0.5_8*self%size
-  if (self%mesh_type == mesh_types%Cartesian) then
-    self%llc_nat = self%llc_cart
-    self%centre_nat = self%position
-    self%mesh%p = self%position
-  end if
-  !-----------------------------------------------------------------------------
-  ! Hack for backwards compatibility
-  !-----------------------------------------------------------------------------
-  self%gn = self%mesh%gn
-  self%li = self%mesh%li
-  self%ui = self%mesh%ui
-  self%gsize = self%ds*self%gn
-  self%offset = (self%mesh%lb+self%mesh%ub)/2.0 ! mid point index offset
-  if (self%id == io%id_debug) then
-    print 1,'patch_t%init: position    =', self%position
-    print 1,'patch_t%init: m%p         =', self%mesh%p
-    print 1,'patch_t%init: offset      =', self%offset
-    print 1,'patch_t%init: m%o         =', self%mesh%o
-    print 1,'patch_t%init: centre_nat  =', self%centre_nat
-    print 1,'patch_t%init: centre_cart =', self%centre_cart
-    print 1,'patch_t%init: llc_nat     =', self%llc_nat
-    print 1,'patch_t%init: m%llc_nat   =', self%mesh%llc_nat
-    print 1,'patch_t%init: llc_cart    =', self%llc_cart
-    print 1,'patch_t%init: m%llc_cart  =', self%mesh%llc_cart
-    1 format(a,1p,3e15.6)
-  end if
   !-----------------------------------------------------------------------------
   ! Measure levels in terms of the refinement factor -- make sure this doesn't 
   ! come in conflict with levels set by e.g. rubiks_mod
@@ -1486,7 +1518,7 @@ FUNCTION distance_curvilinear (self, task) RESULT (out)
   integer, save:: itimer=0
   !.............................................................................
   if (timer%detailed) &
-    call trace%begin ('patch_t%distance_curvilinear', itimer=itimer))
+    call trace%begin ('patch_t%distance_curvilinear', itimer=itimer)
   select type (task)
   class is (patch_t)
     out = self%centre_nat-task%centre_nat
