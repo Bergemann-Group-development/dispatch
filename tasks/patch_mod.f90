@@ -2678,41 +2678,65 @@ SUBROUTINE interpolate (self, target, ii, iv, jt, pt)
     !    'interpolate: target, source, j, p =', target%id, self%id, j, p
     !call trace%begin ('patch_t%interpolate', itimer=itimer)
     if (self%unsigned(iv)) then
-      target%mem(ii(1),ii(2),ii(3),iv,target%it,1) = exp( &
-       pt(1)*(q(3)*(q(2)*(q(1)*log(self%mem(j(1)   ,j(2)   ,j(3)   ,iv,jt(1),1))    + &
-                          p(1)*log(self%mem(j(1)+i1,j(2)   ,j(3)   ,iv,jt(1),1)))   + &
-                    p(2)*(q(1)*log(self%mem(j(1)   ,j(2)+j1,j(3)   ,iv,jt(1),1))    + &
-                          p(1)*log(self%mem(j(1)+i1,j(2)+j1,j(3)   ,iv,jt(1),1))))  + &
-              p(3)*(q(2)*(q(1)*log(self%mem(j(1)   ,j(2)   ,j(3)+k1,iv,jt(1),1))    + &
-                          p(1)*log(self%mem(j(1)+i1,j(2)   ,j(3)+k1,iv,jt(1),1)))   + &
-                    p(2)*(q(1)*log(self%mem(j(1)   ,j(2)+j1,j(3)+k1,iv,jt(1),1))    + &
-                          p(1)*log(self%mem(j(1)+i1,j(2)+j1,j(3)+k1,iv,jt(1),1))))) + &
-       pt(2)*(q(3)*(q(2)*(q(1)*log(self%mem(j(1)   ,j(2)   ,j(3)   ,iv,jt(2),1))    + &
-                          p(1)*log(self%mem(j(1)+i1,j(2)   ,j(3)   ,iv,jt(2),1)))   + &
-                    p(2)*(q(1)*log(self%mem(j(1)   ,j(2)+j1,j(3)   ,iv,jt(2),1))    + &
-                          p(1)*log(self%mem(j(1)+i1,j(2)+j1,j(3)   ,iv,jt(2),1))))  + &
-              p(3)*(q(2)*(q(1)*log(self%mem(j(1)   ,j(2)   ,j(3)+k1,iv,jt(2),1))    + &
-                          p(1)*log(self%mem(j(1)+i1,j(2)   ,j(3)+k1,iv,jt(2),1)))   + &
-                    p(2)*(q(1)*log(self%mem(j(1)   ,j(2)+j1,j(3)+k1,iv,jt(2),1))    + &
-                          p(1)*log(self%mem(j(1)+i1,j(2)+j1,j(3)+k1,iv,jt(2),1))))))
+      if (pt(2) == 0.0) then
+        target%mem(ii(1),ii(2),ii(3),iv,target%it,1) = exp( &
+          q(3)*(q(2)*(q(1)*log(self%mem(j(1)   ,j(2)   ,j(3)   ,iv,jt(1),1))    + &
+                      p(1)*log(self%mem(j(1)+i1,j(2)   ,j(3)   ,iv,jt(1),1)))   + &
+                p(2)*(q(1)*log(self%mem(j(1)   ,j(2)+j1,j(3)   ,iv,jt(1),1))    + &
+                      p(1)*log(self%mem(j(1)+i1,j(2)+j1,j(3)   ,iv,jt(1),1))))  + &
+          p(3)*(q(2)*(q(1)*log(self%mem(j(1)   ,j(2)   ,j(3)+k1,iv,jt(1),1))    + &
+                      p(1)*log(self%mem(j(1)+i1,j(2)   ,j(3)+k1,iv,jt(1),1)))   + &
+                p(2)*(q(1)*log(self%mem(j(1)   ,j(2)+j1,j(3)+k1,iv,jt(1),1))    + &
+                      p(1)*log(self%mem(j(1)+i1,j(2)+j1,j(3)+k1,iv,jt(1),1)))))
+      else
+        target%mem(ii(1),ii(2),ii(3),iv,target%it,1) = exp( &
+         pt(1)*(q(3)*(q(2)*(q(1)*log(self%mem(j(1)   ,j(2)   ,j(3)   ,iv,jt(1),1))    + &
+                            p(1)*log(self%mem(j(1)+i1,j(2)   ,j(3)   ,iv,jt(1),1)))   + &
+                      p(2)*(q(1)*log(self%mem(j(1)   ,j(2)+j1,j(3)   ,iv,jt(1),1))    + &
+                            p(1)*log(self%mem(j(1)+i1,j(2)+j1,j(3)   ,iv,jt(1),1))))  + &
+                p(3)*(q(2)*(q(1)*log(self%mem(j(1)   ,j(2)   ,j(3)+k1,iv,jt(1),1))    + &
+                            p(1)*log(self%mem(j(1)+i1,j(2)   ,j(3)+k1,iv,jt(1),1)))   + &
+                      p(2)*(q(1)*log(self%mem(j(1)   ,j(2)+j1,j(3)+k1,iv,jt(1),1))    + &
+                            p(1)*log(self%mem(j(1)+i1,j(2)+j1,j(3)+k1,iv,jt(1),1))))) + &
+         pt(2)*(q(3)*(q(2)*(q(1)*log(self%mem(j(1)   ,j(2)   ,j(3)   ,iv,jt(2),1))    + &
+                            p(1)*log(self%mem(j(1)+i1,j(2)   ,j(3)   ,iv,jt(2),1)))   + &
+                      p(2)*(q(1)*log(self%mem(j(1)   ,j(2)+j1,j(3)   ,iv,jt(2),1))    + &
+                            p(1)*log(self%mem(j(1)+i1,j(2)+j1,j(3)   ,iv,jt(2),1))))  + &
+                p(3)*(q(2)*(q(1)*log(self%mem(j(1)   ,j(2)   ,j(3)+k1,iv,jt(2),1))    + &
+                            p(1)*log(self%mem(j(1)+i1,j(2)   ,j(3)+k1,iv,jt(2),1)))   + &
+                      p(2)*(q(1)*log(self%mem(j(1)   ,j(2)+j1,j(3)+k1,iv,jt(2),1))    + &
+                            p(1)*log(self%mem(j(1)+i1,j(2)+j1,j(3)+k1,iv,jt(2),1))))))
+      end if
     else
-      target%mem(ii(1),ii(2),ii(3),iv,target%it,1) = &
-       pt(1)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)   ,j(2)   ,j(3)   ,iv,jt(1),1)    + &
-                                    (    p(1))*self%mem(j(1)+i1,j(2)   ,j(3)   ,iv,jt(1),1))   + &
-                         (   p(2))*((1.0-p(1))*self%mem(j(1)   ,j(2)+j1,j(3)   ,iv,jt(1),1)    + &
-                                    (    p(1))*self%mem(j(1)+i1,j(2)+j1,j(3)   ,iv,jt(1),1)))  + &
-              (   p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)   ,j(2)   ,j(3)+k1,iv,jt(1),1)    + &
-                                    (    p(1))*self%mem(j(1)+i1,j(2)   ,j(3)+k1,iv,jt(1),1))   + &
-                         (   p(2))*((1.0-p(1))*self%mem(j(1)   ,j(2)+j1,j(3)+k1,iv,jt(1),1)    + &
-                                    (    p(1))*self%mem(j(1)+i1,j(2)+j1,j(3)+k1,iv,jt(1),1)))) + &
-       pt(2)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)   ,j(2)   ,j(3)   ,iv,jt(2),1)    + &
-                                    (    p(1))*self%mem(j(1)+i1,j(2)   ,j(3)   ,iv,jt(2),1))   + &
-                         (   p(2))*((1.0-p(1))*self%mem(j(1)   ,j(2)+j1,j(3)   ,iv,jt(2),1)    + &
-                                    (    p(1))*self%mem(j(1)+i1,j(2)+j1,j(3)   ,iv,jt(2),1)))  + &
-              (   p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)   ,j(2)   ,j(3)+k1,iv,jt(2),1)    + &
-                                    (    p(1))*self%mem(j(1)+i1,j(2)   ,j(3)+k1,iv,jt(2),1))   + &
-                         (   p(2))*((1.0-p(1))*self%mem(j(1)   ,j(2)+j1,j(3)+k1,iv,jt(2),1)    + &
-                                    (    p(1))*self%mem(j(1)+i1,j(2)+j1,j(3)+k1,iv,jt(2),1))))
+      if (pt(2) == 0.0) then
+        target%mem(ii(1),ii(2),ii(3),iv,target%it,1) = &
+          (1.-p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)   ,j(2)   ,j(3)   ,iv,jt(1),1)    + &
+                                (    p(1))*self%mem(j(1)+i1,j(2)   ,j(3)   ,iv,jt(1),1))   + &
+                     (   p(2))*((1.0-p(1))*self%mem(j(1)   ,j(2)+j1,j(3)   ,iv,jt(1),1)    + &
+                                (    p(1))*self%mem(j(1)+i1,j(2)+j1,j(3)   ,iv,jt(1),1)))  + &
+          (   p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)   ,j(2)   ,j(3)+k1,iv,jt(1),1)    + &
+                                (    p(1))*self%mem(j(1)+i1,j(2)   ,j(3)+k1,iv,jt(1),1))   + &
+                     (   p(2))*((1.0-p(1))*self%mem(j(1)   ,j(2)+j1,j(3)+k1,iv,jt(1),1)    + &
+                                (    p(1))*self%mem(j(1)+i1,j(2)+j1,j(3)+k1,iv,jt(1),1)))
+      else
+        target%mem(ii(1),ii(2),ii(3),iv,target%it,1) = &
+         pt(1)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)   ,j(2)   ,j(3)   ,iv,jt(1),1)    + &
+                                      (    p(1))*self%mem(j(1)+i1,j(2)   ,j(3)   ,iv,jt(1),1))   + &
+                           (   p(2))*((1.0-p(1))*self%mem(j(1)   ,j(2)+j1,j(3)   ,iv,jt(1),1)    + &
+                                      (    p(1))*self%mem(j(1)+i1,j(2)+j1,j(3)   ,iv,jt(1),1)))  + &
+                (   p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)   ,j(2)   ,j(3)+k1,iv,jt(1),1)    + &
+                                      (    p(1))*self%mem(j(1)+i1,j(2)   ,j(3)+k1,iv,jt(1),1))   + &
+                           (   p(2))*((1.0-p(1))*self%mem(j(1)   ,j(2)+j1,j(3)+k1,iv,jt(1),1)    + &
+                                      (    p(1))*self%mem(j(1)+i1,j(2)+j1,j(3)+k1,iv,jt(1),1)))) + &
+         pt(2)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)   ,j(2)   ,j(3)   ,iv,jt(2),1)    + &
+                                      (    p(1))*self%mem(j(1)+i1,j(2)   ,j(3)   ,iv,jt(2),1))   + &
+                           (   p(2))*((1.0-p(1))*self%mem(j(1)   ,j(2)+j1,j(3)   ,iv,jt(2),1)    + &
+                                      (    p(1))*self%mem(j(1)+i1,j(2)+j1,j(3)   ,iv,jt(2),1)))  + &
+                (   p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)   ,j(2)   ,j(3)+k1,iv,jt(2),1)    + &
+                                      (    p(1))*self%mem(j(1)+i1,j(2)   ,j(3)+k1,iv,jt(2),1))   + &
+                           (   p(2))*((1.0-p(1))*self%mem(j(1)   ,j(2)+j1,j(3)+k1,iv,jt(2),1)    + &
+                                      (    p(1))*self%mem(j(1)+i1,j(2)+j1,j(3)+k1,iv,jt(2),1))))
+      end if
     end if
   end if
   if (target%id==io%id_debug .and. io%verbose>2) &
