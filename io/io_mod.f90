@@ -25,13 +25,13 @@ MODULE io_mod
     integer:: restart=-1
     integer:: nwrite=0, ntask=0, ntotal=0
     integer:: dims(3)=0, mpi_dims(3), mpi_odims(3)=1
-    integer:: print_every=0, iprint=0           ! print cadence
-    character(len=64):: inputname               ! input namelist file (e.g. run.nml)
-    character(len=64):: datadir='data'          ! top output directory (e.g. data)
-    character(len=64):: rundir='data'           ! experiment output directory (data/run/)
-    character(len=64):: outputname              ! same as rundir, kept only for compatibily
-    character(len=64):: inputdir='data'         ! directory containing run to restart from
-    character(len=64):: top                     ! base name, allows referring to any repos file
+    integer:: print_every=0, iprint=0            ! print cadence
+    character(len=120):: inputname               ! input namelist file (e.g. run.nml)
+    character(len=120):: data_dir='data/'        ! data
+    character(len=120):: run_dir='data/'         ! data/run
+    character(len=120):: outputname              ! same as run_dir, kept only for compatibily
+    character(len=120):: inputdir='data/'        ! directory containing run to restart from
+    character(len=120):: top                     ! base name, allows referring to any repos file
     character(len=1):: sep = '/'
     character(len=72):: hl='-------------------------------------------------------------------------'
     character(len=72):: hs='*************************************************************************'
@@ -89,6 +89,7 @@ MODULE io_mod
     procedure, nopass:: header
     procedure, nopass:: line
     procedure, nopass:: print_hl
+    procedure, nopass:: check_trailing_sep
   end type
   type(io_t), public:: io
   public mch, io_unit, stderr, stdout, stdin, stdlog
@@ -113,8 +114,8 @@ SUBROUTINE init (self, name)
   class(io_t):: self
   integer, save:: verbose=0, levelmax=10
   character(len=*), optional:: name
-  character(len=64):: filename, datadir='data', inputdir='data'
-  character(len=64), save:: top='../../'
+  character(len=120):: filename, datadir='data', inputdir='data'
+  character(len=120), save:: top='../../'
   character(len=8), save:: method='legacy'
   integer, save:: id_debug=-1, restart=-9, format=0, time_derivs=0, nml_version=1
   integer, save:: log_sent=0, task_logging=0
@@ -150,21 +151,21 @@ SUBROUTINE init (self, name)
     call getarg(1,filename)                                     ! command line
     if (filename/=' '.and.trim(filename)/='input.nml') then
       self%inputname = filename                                 ! run_name.nml
-      self%rundir = trim(datadir)//self%sep// &                 ! data/run_name/
+      self%run_dir = trim(self%data_dir)//self%sep// &          ! data/run_name/
         trim(filename(1:index(filename,'.',back=.true.)-1))//self%sep
     else
       self%inputname = 'input.nml'
-      self%rundir = trim(datadir)//self%sep                     ! data/
+      self%run_dir = trim(io%data_dir)//self%sep                ! data/
     end if
     !---------------------------------------------------------------------------
     ! `mkdir -p` doesn't work from inside the code, so two `mkdir` are required
-    call os%mkdir (trim(self%datadir)//self%sep)
-    call os%mkdir (trim(self%rundir))
-    call os%copy_file (trim(self%rundir)//'params.nml', &
-                       trim(self%rundir)//'restart.nml')
-    open (io_unit%nml, file=trim(self%rundir)//'params.nml', form='formatted', &
+    call os%mkdir (trim(self%data_dir)//self%sep)
+    call os%mkdir (trim(self%run_dir))
+    call os%copy_file (trim(self%run_dir)//'params.nml', &
+                       trim(self%run_dir)//'restart.nml')
+    open (io_unit%nml, file=trim(self%run_dir)//'params.nml', form='formatted', &
           status='unknown')
-    open (io_unit%hash, file=trim(self%rundir)//'hash.log', form='formatted', &
+    open (io_unit%hash, file=trim(self%run_dir)//'hash.log', form='formatted', &
           status='unknown')
     open (self%input, file=self%inputname, form='formatted', status='old')
     if (mpi%rank > 0) then
@@ -174,7 +175,7 @@ SUBROUTINE init (self, name)
       ' This version was compiled with default real KIND =', kind(test)
     call io%header ('io_t%init:')
     !---------------------------------------------------------------------------
-    inputdir = self%rundir
+    inputdir = self%run_dir
     rewind (io%input)
     read (io%input, io_params, iostat=iostat)
     if (iostat > 0) then
@@ -192,10 +193,10 @@ SUBROUTINE init (self, name)
       write (io_unit%hash,'(a)') trim(ids)
     end if
     !---------------------------------------------------------------------------
-    call os%mkdir (trim(self%rundir))
-    open (io_unit%nml, file=trim(self%rundir)//'params.nml', form='formatted', &
+    call os%mkdir (trim(self%run_dir))
+    open (io_unit%nml, file=trim(self%run_dir)//'params.nml', form='formatted', &
           status='unknown')
-    open (io_unit%hash, file=trim(self%rundir)//'hash.log', form='formatted', &
+    open (io_unit%hash, file=trim(self%run_dir)//'hash.log', form='formatted', &
           status='unknown')
     open (self%input, file=self%inputname, form='formatted', status='old')
     !---------------------------------------------------------------------------
@@ -206,11 +207,11 @@ SUBROUTINE init (self, name)
     self%format = format
     self%nml_version = nml_version
     self%inputdir = inputdir
-    self%outputname = self%rundir                               ! compatibility
-    write (filename,'(a,i5.5,"/")') trim(self%rundir), 0
+    self%outputname = self%run_dir                               ! compatibility
+    write (filename,'(a,i5.5,"/")') trim(self%run_dir), 0
     if (io%do_output) call os%mkdir (trim(filename))
     call ensure_dirname (self%inputdir)
-    call ensure_dirname (self%rundir)
+    call ensure_dirname (self%run_dir)
     !---------------------------------------------------------------------------
     ! OMP specific setup; need to set io_unit in all threadprivate instances
     !---------------------------------------------------------------------------
@@ -223,7 +224,7 @@ SUBROUTINE init (self, name)
     end if
     io_unit%do_trace = do_trace
     io_unit%omp_trace = omp_trace
-    io_unit%rundir = self%rundir
+    io_unit%run_dir = self%run_dir
     io_unit%inputdir = self%inputdir    
     io_unit%do_validate = do_validate
     !---------------------------------------------------------------------------
@@ -256,7 +257,7 @@ SUBROUTINE init (self, name)
     end if
     stdlog = io_unit%log
     !---------------------------------------------------------------------------
-    ! For non-master MPI ranks, redirect log file output to rundir/rank_rrrrr.log
+    ! For non-master MPI ranks, redirect log file output to run_dir/rank_rrrrr.log
     !---------------------------------------------------------------------------
     if (mpi%rank > 0) then
       io_unit%output = io_unit%mpi
@@ -277,14 +278,14 @@ SUBROUTINE init (self, name)
     ! Backwards compatibility
     !---------------------------------------------------------------------------
     io%data_unit = io_unit%data
-    write(io%output,*) 'output directory: '//self%rundir
+    write(io%output,*) 'output directory: '//self%run_dir
     write(io%output,*) 'reading parameters from: '//trim(self%inputname)
     first_time=.false.
   end if
   self%guard_zones = guard_zones
   self%time_derivs = time_derivs
   self%restart   = restart
-  self%datadir   = datadir
+  self%data_dir  = datadir
   self%id_debug  = id_debug
   self%verbose   = verbose
   self%do_debug  = do_debug
@@ -322,15 +323,15 @@ SUBROUTINE open_rank_file (self, unit, ext, form, thread)
   integer:: unit
   integer, optional:: thread
   character(len=*):: ext, form
-  character(len=64):: filename
+  character(len=120):: filename
   !-----------------------------------------------------------------------------
   if (present(thread)) then
     write (io_unit%threadbase,'(a,"thread_",i5.5,"_",i3.3)') &
-      trim(self%rundir), mpi%rank, thread
+      trim(self%run_dir), mpi%rank, thread
     filename = trim(io_unit%threadbase)//ext
   else
     write (io_unit%rankbase,'(a,"rank_",i5.5)') &
-      trim(self%rundir), mpi%rank
+      trim(self%run_dir), mpi%rank
     filename = trim(io_unit%rankbase)//ext
   end if
   open (unit=unit, file=trim(filename), form=form, status='unknown')
@@ -440,7 +441,7 @@ contains
   logical:: remove
   !.............................................................................
   !$omp critical (flag_cr)
-  file = trim(io%rundir)//'flag'
+  file = trim(io%run_dir)//'flag'
   inquire (file=trim(file), exist=exists)
   if (exists) then
     !---------------------------------------------------------------------------
@@ -499,7 +500,7 @@ contains
   integer           :: iostat
   character(len=80) :: f
   !.............................................................................
-  f = trim(io%rundir)//trim(file)
+  f = trim(io%run_dir)//trim(file)
   if (remove) then
     inquire (file=trim(f), exist=exists)
     if (exists) then
@@ -699,5 +700,18 @@ SUBROUTINE print_hl
     write (io_unit%output,'(a)') trim(hl)
   end if
 END SUBROUTINE print_hl
+
+SUBROUTINE check_trailing_sep (dir)
+  character(*):: dir
+  integer:: i
+  i = index(dir,' ')
+  if (dir(i-1:i-1) == '/') then
+    if (dir(i-2:i-2) == '/') then
+      dir(i-1:i-1) = ' '
+    end if
+  else
+     dir(i:i) = '/'
+  end if
+END SUBROUTINE check_trailing_sep
 
 END MODULE io_mod
