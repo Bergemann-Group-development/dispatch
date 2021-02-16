@@ -236,6 +236,10 @@ SUBROUTINE append_task (self, task, nbor, needed, needs_me)
   allocate (link)
   call link%init
   link%task => task
+  select type (task)
+  class is (patch_t)
+    task%link => link
+  end select
   !-----------------------------------------------------------------------------
   ! Note that adding a task to more than one list requires care; the task%link
   ! must remain a pointer to the link that has the nbor list, and the nbor list

@@ -1,8 +1,8 @@
 
 # Option groups
-#OPTS = full_debug
+OPTS = full_debug
 #OPTS = debug
-OPTS =
+#OPTS =
 #OPTS = optimized
 #OPTS = optimized_diagnostics
 
@@ -12,9 +12,10 @@ EXEC            = dispatch.x
 
 # Choice of solvers
 PARTICLE_SOLVER = KDK
-SOLVER          = ramses/hydro
-#SOLVER          = ramses/mhd
+#SOLVER          = ramses/hydro
+SOLVER          = ramses/mhd
 #SOLVER          = stagger2/e
+EOS             = microphysics/eos/ideal
 
 # Tomida & Hori, with opacity
 #SOLVER          = ramses/mhd_eos

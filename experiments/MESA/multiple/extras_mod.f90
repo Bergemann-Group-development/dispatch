@@ -95,7 +95,7 @@ SUBROUTINE pre_init (self)
   self%patch => self
   call self%selfgravity%pre_init(self%patch)                   ! selfg
   call self%forces%pre_init(self%patch)                        ! forces
-  call self%sink%pre_init (self%patch)                        ! sink
+  call self%sink%pre_init; self%sink%patch => self             ! sink
   call trace%end()
 END SUBROUTINE pre_init
 

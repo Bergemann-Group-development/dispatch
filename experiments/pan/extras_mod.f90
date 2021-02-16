@@ -96,10 +96,11 @@ SUBROUTINE pre_init (self)
   call self%selfgravity%pre_init     (self%gpatch)              ! selfg
   call self%cooling%pre_init         (self%gpatch)              ! cool
   call io%lock%set ('extras_t%pre_init')
-  if (.not. associated(sinks)) then
-    allocate (sinks)
-    call sinks%pre_init              (self%gpatch)              ! sinks
-  end if
+  if (.not. associated(sinks)) then                             ! sinks
+    allocate (sinks)                                            ! sinks
+    call sinks%pre_init                                         ! sinks
+    call sinks%connect_patch         (self%gpatch)              ! sinks
+  end if                                                        ! sinks
   call io%lock%unset ('extras_t%pre_init')
   call self%SN%pre_init              (self%gpatch, sinks)       ! sinks
   !allocate (self%trace_particles)                               ! tracep

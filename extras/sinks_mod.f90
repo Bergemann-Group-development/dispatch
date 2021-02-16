@@ -17,6 +17,7 @@ MODULE sinks_mod
     class(gpatch_t), pointer:: patch => null()
   contains
     procedure:: pre_init
+    procedure:: connect_patch
     procedure:: pre_update
   end type
   integer:: verbose=0
@@ -28,8 +29,8 @@ CONTAINS
 !===============================================================================
 !> Initialize sink task
 !===============================================================================
-SUBROUTINE pre_init (self, patch)
-  class(sinks_t):: self
+SUBROUTINE pre_init (self)
+  class(sinks_t), target:: self
   class(gpatch_t), pointer:: patch
   !.............................................................................
   integer:: iostat
@@ -39,7 +40,7 @@ SUBROUTINE pre_init (self, patch)
     position
   !-----------------------------------------------------------------------------
   call trace%begin ('sinks_t%pre_init')
-  self%patch => patch
+  patch => self%patch
   if (first_time) then
     !$omp critical (sinks_cr)
     if (first_time) then
@@ -72,6 +73,18 @@ SUBROUTINE pre_init (self, patch)
 END SUBROUTINE pre_init
 
 !===============================================================================
+!> Store a pointer to the patch the sink lives in
+!===============================================================================
+SUBROUTINE connect_patch (self, patch)
+  class(sinks_t), target:: self
+  class(gpatch_t), pointer:: patch
+  !-----------------------------------------------------------------------------
+  call trace%begin ('sinks_t%connect_patch')
+  self%patch => patch
+  call trace%end ()
+END SUBROUTINE connect_patch
+
+!===============================================================================
 !> Update sink task
 !===============================================================================
 SUBROUTINE pre_update (self)
@@ -81,6 +94,7 @@ SUBROUTINE pre_update (self)
   logical:: contains_sink
   !-----------------------------------------------------------------------------
   call trace%begin ('sinks_t%pre_update')
+  call io%assert (associated(self%patch), 'sink_t%patch not associated')
   patch => self%patch
   contains_sink = patch%contains (self%position)
   if (verbose > 1) then

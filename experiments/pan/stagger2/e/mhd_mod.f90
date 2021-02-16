@@ -30,6 +30,7 @@ MODULE mhd_mod
   USE non_ideal_mod
   USE initial_mod
   USE scratch_mod
+  USE eos_mod
   implicit none
   private
   type, extends(extras_t), public:: mhd_t
@@ -69,11 +70,10 @@ SUBROUTINE pre_init (self)
   type(index_t):: idx
   integer:: i, iv, iostat
   real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], csound=1.0, cdtd=0.5, courant=0.2
-  real(8), save:: gamma=1.4_8
   logical, save:: first_time=.true.
   logical, save:: mhd=.false.
   character(len=16), save:: eos
-  namelist /stagger_params/ nu, courant, gamma, csound, cdtd, hardwire, eos, &
+  namelist /stagger_params/ nu, courant, csound, cdtd, hardwire, eos, &
     do_smooth, unsigned, do_temperature, verbose, divb_cleaner
   !----------------------------------------------------------------------------
   call trace%begin ('mhd_t%pre_init')
@@ -82,7 +82,7 @@ SUBROUTINE pre_init (self)
   ! called again, from extras_t%init, when gamma is known and can be passed on.
   !-----------------------------------------------------------------------------
   self%initial%mhd = self%mhd
-  call self%initial%init (self%kind, self%gamma)
+  call self%initial%init (self%kind)
   self%mhd = self%initial%mhd
   if (self%mhd) then
     self%kind = 'stagger2e_mhd_patch'
@@ -114,7 +114,6 @@ SUBROUTINE pre_init (self)
   self%eos = eos
   self%mhd = mhd
   self%nu = nu
-  self%gamma = gamma
   self%csound = csound
   self%courant = courant
   self%cdtd = cdtd
@@ -166,7 +165,8 @@ SUBROUTINE pde (self)
   real, dimension(:,:,:),   pointer, contiguous:: d, e, dddt, dedt
   real, dimension(:,:,:),   pointer:: dpdtx, dpdty, dpdtz, dBdtx, dBdty, dBdtz
   real, dimension(:,:,:),   pointer:: Bx, By, Bz, px, py, pz, phi
-  real, dimension(:,:,:),   pointer:: Ux, Uy, Uz, pg
+  real, dimension(:,:,:),   pointer:: Ux, Uy, Uz
+  real, dimension(:,:,:),   pointer, contiguous:: pg
   real, dimension(:,:,:,:), pointer:: U, p, B, dpdt, dBdt
   real, dimension(:,:,:),   pointer:: Ex, Ey, Ez, Jx, Jy, Jz
   real, dimension(:,:,:),   pointer:: fdx, fdy, fdz, ldx, ldy, ldz, ddx, ddy, ddz
@@ -277,7 +277,7 @@ SUBROUTINE pde (self)
     Ez = zup(Bz)**2                                                             ! mhd: 0 1 0
     ! Magnetic pressure
     pb = 0.5*(Ex+Ey+Ez)                                                         ! mhd: 2 1 0
-    cs = sqrt((self%gamma*pg+2.0*pb + pa)/d)                                    ! mhd: 1 1 0
+    cs = sqrt((eos%gamma*pg+2.0*pb + pa)/d)                                    ! mhd: 1 1 0
     if (verbose>3) then
       u_max = self%fmaxval(cs)
       self%u_max = max(self%u_max,u_max)
@@ -293,7 +293,7 @@ SUBROUTINE pde (self)
     fzz = pp + d*(fzz - du*Tzz) - Ez                                            ! mhd: 1 0 0
   else
     ! Sound speed + velocity
-    cs = sqrt((self%gamma*pg+pa)/d)                                             ! ops: 1 1 1 1 0
+    cs = sqrt((eos%gamma*pg+pa)/d)                                             ! ops: 1 1 1 1 0
     if (verbose>3) then
       u_max = self%fmaxval(cs)
       self%u_max = max(self%u_max,u_max)
@@ -318,7 +318,7 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   Q = d*du*(Txx**2 + Tyy**2 + Tzz**2)                                           ! ops: 2 5 0
   !if (verbose==1) print *, 'average(Q):', self%faver(Q), &
-    !self%faver(e-d**self%gamma/(self%gamma-1.0)), self%faver(fm(:,:,:,1))
+    !self%faver(e-d**eos%gamma/(eos%gamma-1.0)), self%faver(fm(:,:,:,1))
   !-----------------------------------------------------------------------------
   ! Conservation of mass
   !-----------------------------------------------------------------------------
@@ -444,7 +444,7 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   ! Conservation of energy; reuse the mass flux for the energy flux
   !-----------------------------------------------------------------------------
-  if (self%gamma == 1d0) then                                                   ! unless isothermal
+  if (eos%gamma == 1d0) then                                                   ! unless isothermal
     dedt = dddt*ee                                                              ! ops: 0 1 0
   else
     block
@@ -454,7 +454,7 @@ SUBROUTINE pde (self)
     dedt = -div(ds,fm) - pg*divU + Q
     if (verbose==1) print '(a,10f12.6)', 'average(Q):', &
       self%time, self%time*self%faver(Q), &
-      self%faver(e-d**self%gamma/(self%gamma-1.0)), &
+      self%faver(e-d**eos%gamma/(eos%gamma-1.0)), &
       self%faver(- pg*divU), &
       afm, self%faver(fm(:,:,:,1))
     end block
@@ -470,7 +470,7 @@ SUBROUTINE pde (self)
     J = curl_dn(ds,B)
     emf = self%nu(6)*edge(du)*J                                                 ! mhd: 0 6 0
     Q = yup(zup(Jx*Ex)) + zup(xup(Jy*Ey)) + xup(yup(Jz*Ez))                     ! mhd: 2 3 0
-    if (self%gamma/=1.0) &
+    if (eos%gamma/=1.0) &
       dedt = dedt + Q                                                           ! mhd: 1 0 0
     !---------------------------------------------------------------------------
     ! Advective electric field on cell edges
@@ -490,7 +490,7 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   ! Time step limitation for rate of change dE/dt = (de/dt-(e/d)*dddt)/d
   !-----------------------------------------------------------------------------
-  if (self%gamma /= 1d0) then
+  if (eos%gamma /= 1d0) then
     u_max = self%cdtd*dsmax*self%fmaxval(abs((dedt-ee*dddt)/d)) ! ops: 1 1 1
     self%u_max = max(self%u_max,u_max)
     if (verbose>2) print 1, 'u_max(dedt)', u_max, self%u_max
@@ -532,7 +532,7 @@ SUBROUTINE update (self)
 !print *, self%id, self%fmaxval(self%mem(:,:,:,3,1,1)), 'mhd_t%update 3'
 !print *, self%id, self%fmaxval(self%mem(:,:,:,4,1,1)), 'mhd_t%update 4'
   call self%output
-  if (self%gamma==1d0) then
+  if (eos%gamma==1d0) then
     self%mem(:,:,:,self%idx%e,self%new,1) = &
     self%mem(:,:,:,self%idx%d,self%new,1)*self%csound**2
   end if
@@ -709,10 +709,10 @@ FUNCTION gas_pressure (self) RESULT (pg)
   if (trim(self%eos)=='ideal') then
     d => self%mem(:,:,:,self%idx%d,self%new,1)
     e => self%mem(:,:,:,self%idx%e,self%new,1)
-    if (self%gamma==1d0) then
+    if (eos%gamma==1d0) then
       pg = d*self%csound**2
     else
-      pg = e*(self%gamma-1)
+      pg = e*(eos%gamma-1)
     end if
   else
     call eos%lookup (shape(self%lnd), lnd=self%lnd, ee=self%ee, pg=pg)
