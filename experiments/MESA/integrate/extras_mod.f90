@@ -124,11 +124,12 @@ SUBROUTINE pre_init (self)
   !.............................................................................
   call trace%begin ('extras_t%pre_init')
   self%patch => self
-  call self%gpatch_t%pre_init                                           ! keep
+  call self%gpatch_t%pre_init                                         ! keep
   call self%selfgravity%pre_init(self%patch)                          ! selfg
   call self%forces%pre_init(self%patch)                               ! forcces
   call self%cooling%pre_init (self%patch)                             ! cool 
-  call mesa%pre_init (self%patch)                                     ! sinks
+  call sinks%pre_init; sinks%patch => self                            ! sinks
+  call mesa%pre_init                                                  ! mesa
   call trace%end()
 END SUBROUTINE pre_init
 
@@ -192,7 +193,7 @@ SUBROUTINE output (self)
   !.............................................................................
   !Has to be in this order, for out_next not be < self% time once
   call self%gpatch_t%output                                     ! keep
-  call mesa%output(self%patch)
+  call mesa%output
 END SUBROUTINE output
 
 !===============================================================================

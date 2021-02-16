@@ -37,15 +37,13 @@ CONTAINS
 !===============================================================================
 !> Read settings from namelist
 !===============================================================================
-SUBROUTINE pre_init (self, patch)
-  class(mesa_t):: self
-  class(gpatch_t), pointer:: patch
+SUBROUTINE pre_init (self)
+  class(mesa_t), target:: self
   integer:: iostat
   real :: mesa_threshhold_msun
   namelist /mesa_params/ mesa_threshhold_msun, cadence, verbose
   !-----------------------------------------------------------------------------
   call trace%begin ('mesa_t%pre_init')
-  call self%sinks_t%pre_init(patch)
   call io%lock%set
   if (first_time) then
     rewind (io%input)
@@ -95,7 +93,7 @@ SUBROUTINE start_mesa (self)
   namelist /startup/ num_threads,age,initial_mass
   !-----------------------------------------------------------------------------
   call trace%begin ('mesa_t%start_mesa')
-  write (self%folder, "(a,i4.4,a)") trim(io%rundir)//"/star_", self%id, "/"
+  write (self%folder, "(a,i4.4,a)") trim(io%run_dir)//"/star_", self%id, "/"
   if (verbose > 0) then
     write (stdout,*) trim(self%folder)//' starting'
   end if
@@ -243,19 +241,20 @@ END FUNCTION get_vink_alpha
 !===============================================================================
 !> Output mesa task
 !===============================================================================
-SUBROUTINE output (self, patch)
+SUBROUTINE output (self)
   class(mesa_t):: self
   class(gpatch_t), pointer:: patch
   character(64):: filename
   !-----------------------------------------------------------------------------
   call trace%begin ('mesa_t%output')
+  patch => self%patch
   if (self%mesa_simulated .and. patch% contains(self%position)) then
     if (self%time + self%dtime > patch% out_next) then
       write (filename,'("../",i5.5,"/sink_",i5.5,".data")') patch%iout, self%id;
       call send_query(self%write_unit, .true., patch% out_next*scaling%t, 0d0, filename)
     end if
   end if
-  call self%sinks_t%output(patch)
+  call self%sinks_t%output
   call trace%end ()
 END SUBROUTINE output
 

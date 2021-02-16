@@ -68,7 +68,7 @@ MODULE mpi_mod
   ! Object that contains the most important MPI parameters
   !-----------------------------------------------------------------------------
   type, public:: mpi_t
-    integer:: size=1, rank=0, comm, verbose=0
+    integer:: size=1, osize=1, rank=0, comm, verbose=0
     integer:: mode
     logical:: master
     logical:: ok = .false.

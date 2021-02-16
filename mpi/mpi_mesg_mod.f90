@@ -36,6 +36,7 @@ MODULE mpi_mesg_mod
     integer:: i=0
     integer:: seq=0
     integer:: tag=2**30
+    integer(8):: offset=0
     real(8):: test_next=0d0
     real:: test_time=0.0
     logical:: anonymous=.true.

@@ -31,6 +31,8 @@ MODULE mpi_file_mod
     procedure, private:: write5
     procedure, private:: writes
     generic, public :: write => write1, write5, writes
+    procedure, private:: read1
+    generic, public :: read => read1
     procedure:: assert
   end type
 #ifndef MPI
@@ -112,16 +114,24 @@ SUBROUTINE open (self, filename, mode)
   if (present(mode)) then
     mode_l = mode
   else
-    mode_l = MPI_MODE_RDWR
+    mode_l = MPI_MODE_RDWR + MPI_MODE_CREATE
   end if
   !call mp%barrier ('mpi_file_t%open')
   if (self%handle == 0) then
     if (mp%mode == MPI_THREAD_MULTIPLE) then
       call MPI_File_open &
         (mp%comm, self%name, mode_l, MPI_INFO_NULL, self%handle, self%err)
+      if (self%err /= 0) then
+        write (stderr,*) self%err, ' error when trying to open ', trim(self%name)
+        call io%abort
+      end if
     else
       call MPI_File_open &
         (mp%comm, self%name, mode_l, MPI_INFO_NULL, self%handle, self%err)
+      if (self%err /= 0) then
+        write (stderr,*) self%err, ' error when trying to open ', trim(self%name)
+        call io%abort
+      end if
     end if
       if (io%verbose > 0) then
         write(io_unit%mpi,'(a," status:",i4)') &
@@ -233,14 +243,40 @@ SUBROUTINE write1 (self, off, size, buffer)
 #ifdef MPI
   if (mp%mode == MPI_THREAD_MULTIPLE) then
     call MPI_File_write_at (self%handle, off, buffer, size, MPI_REAL, st, err)
+    call io%assert (err==0, 'mpi_file_t%read1 non-zero status')
   else
     !$omp critical (mpi_cr)
     call MPI_File_write_at (self%handle, off, buffer, size, MPI_REAL, st, err)
+    call io%assert (err==0, 'mpi_file_t%read1 non-zero status')
     !$omp end critical (mpi_cr)
   end if
 #endif MPI
   call trace%end ()
 END SUBROUTINE write1
+
+!===============================================================================
+!> Read a buffer at a given offset into the file
+!===============================================================================
+SUBROUTINE read1 (self, off, size, buffer)
+  class(mpi_file_t):: self
+  integer(8):: off
+  integer:: size, st(MPI_STATUS_SIZE), err
+  integer:: buffer(:)
+  !-----------------------------------------------------------------------------
+  call trace%begin ('mpi_io_t%read1')
+#ifdef MPI
+  if (mp%mode == MPI_THREAD_MULTIPLE) then
+    call MPI_File_read_at (self%handle, off, buffer, size, MPI_REAL, st, err)
+    call io%assert (err==0, 'mpi_file_t%read1 non-zero status')
+  else
+    !$omp critical (mpi_cr)
+    call MPI_File_read_at (self%handle, off, buffer, size, MPI_REAL, st, err)
+    call io%assert (err==0, 'mpi_file_t%read1 non-zero status')
+    !$omp end critical (mpi_cr)
+  end if
+#endif MPI
+  call trace%end ()
+END SUBROUTINE read1
 
 !===============================================================================
 !> Write out a buffer at a given offset into the file

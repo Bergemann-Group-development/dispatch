@@ -70,16 +70,14 @@ CONTAINS
 !===============================================================================
 !> Initialize sink task patch connection
 !===============================================================================
-SUBROUTINE pre_init (self, patch)
-  class(sinks_t):: self
-  class(gpatch_t), pointer:: patch
+SUBROUTINE pre_init (self)
+  class(sinks_t), target:: self
   integer:: iostat
   namelist /sinks_params/ jeans_limit, accretion_cells, create_fraction, &
     per_omega, wind, verbose
   logical:: first_time = .true.
   !-----------------------------------------------------------------------------
   call trace%begin ('sinks_t%pre_init')
-  self%patch => patch
   call io%lock%set
   if (first_time) then
     rewind (io%input)
@@ -516,12 +514,13 @@ END SUBROUTINE post_update
 !> Prepare for output of sink data, byu copying current values to the aux
 !> pointer variables, which were registered in sink_t%create()
 !===============================================================================
-SUBROUTINE output (self, patch)
+SUBROUTINE output (self)
   class(sinks_t):: self
   class(gpatch_t), pointer:: patch
   integer, save:: iout=-1
   !-----------------------------------------------------------------------------
   call trace%begin ('sinks_t%output')
+  patch => self%patch
   if (associated(self%mass_p)) then
     self%mass_p = self%mass
   end if
