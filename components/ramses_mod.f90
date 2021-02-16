@@ -205,6 +205,7 @@ CONTAINS
 !===============================================================================
 SUBROUTINE init (self, name)
   class(ramses_t):: self
+  integer:: iostat
   character(len=*), optional:: name
   logical, save:: first_time=.true.
   integer, save:: hash_table_size=5000000, n_cell=16
@@ -244,11 +245,14 @@ SUBROUTINE init (self, name)
     do_evaluate = .true.
     remove_b = .false.
     patch_n = 16
-    ! read namelist
-    rewind (io%input); read (io%input,ramses_reader_params)
-    write(io%namelist,ramses_reader_params)
+    !--- read namelist ---
+    rewind (io%input)
+    read (io%input, ramses_reader_params, iostat=iostat)
+    call io%namelist_warning ('ramses_reader_params', iostat)
+    write(io%namelist, ramses_reader_params)
     shared%levelmin = levelmin
     shared%levelmax = levelmax
+    io%nml_version = 4
   end if
   call io%lock%unset
   !-----------------------------------------------------------------------------
@@ -1378,7 +1382,7 @@ SUBROUTINE count_costs (self)
   end do
   if (verbose > 0) & 
     write (stdout,'(" elapsed:",f8.1,"s")') wallclock()-start
-  open (io_unit%tmp, file=trim(io%rundir)//'u_bins.dat', form='unformatted', &
+  open (io_unit%tmp, file=trim(io%run_dir)//'u_bins.dat', form='unformatted', &
     status='unknown')
   write (io_unit%tmp) self%n_bins
   write (io_unit%tmp) alog10(self%u_min), alog10(self%u_max)

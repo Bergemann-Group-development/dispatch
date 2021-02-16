@@ -25,4 +25,5 @@ sphere_points_mod.o     : io_mod.o io_unit_mod.o trace_mod.o
 volleyball_layers_mod.o : sphere_points_mod.o dll_mod.o
 cartesian_vb_mod.o      : io_mod.o trace_mod.o experiment_mod.o  task_list_mod.o \
                           mpi_coords_mod.o omp_mod.o volleyball_layers_mod.o
-restart_mod.o           : task_list_mod.o bits_mod.o
+restart_mod.o           : io_mod.o trace_mod.o task_list_mod.o task_factory_mod.o \
+                          amr_io_mod.o
