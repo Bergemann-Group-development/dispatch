@@ -7,6 +7,7 @@ MODULE experiment_mod
   USE scaling_mod
   USE units_mod
   USE link_mod
+  USE eos_mod
   implicit none
   private
   type, public, extends(solver_t):: experiment_t
@@ -41,7 +42,7 @@ SUBROUTINE init (self)
   end if
   call io%lock%unset
   d = density_cgs/scaling%d
-  e = (cs_kms*cgs%kms/scaling%u)**2*d/(self%gamma*(self%gamma-1.0))
+  e = (cs_kms*cgs%kms/scaling%u)**2*d/(eos%gamma*(eos%gamma-1.0))
   self%mem(:,:,:,self%idx%d,:,1) = d
   self%mem(:,:,:,self%idx%e,:,1) = e
   self%unsigned(self%idx%d) = .true.

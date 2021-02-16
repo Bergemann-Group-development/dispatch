@@ -22,6 +22,7 @@ MODULE pic_mod
   USE scalar_mod
   USE eos_mod
   USE scaling_mod
+  USE eos_mod
   ! PIC modules
   USE species_m,       ONLY: spec, sp, field, fields, vthb, nspecies, particle !, counters, n
   USE params,          ONLY: time, dt, tend, master, mpi, mcoord, &
@@ -968,7 +969,7 @@ SUBROUTINE mhd_to_pic (self, m2p_mask)
   uy   => U_loc(l(1):u(1),l(2):u(2),l(3):u(3),2)
   uz   => U_loc(l(1):u(1),l(2):u(2),l(3):u(3),3)
   temp = mean_mass*e(l(1):u(1),l(2):u(2),l(3):u(3)) * &
-         (self%patch%gamma-1.0)/(c%kb*d_pic)
+         (eos%gamma-1.0)/(c%kb*d_pic)
   ! ----------------------------------------------------------------------------
   ! electric field
   ! ----------------------------------------------------------------------------

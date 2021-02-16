@@ -406,7 +406,7 @@ contains
     !---------------------------------------------------------------------------
     if (do_dump .and. dump_header) then
       if (dump_unit==0) then
-        open (newunit=dump_unit, file=trim(io%rundir)//'cg.dump', &
+        open (newunit=dump_unit, file=trim(io%run_dir)//'cg.dump', &
               form='unformatted', status='unknown')
       end if
       sentinel = 0
@@ -571,7 +571,7 @@ contains
     !-----------------------------------------------------------------------------
     if (do_dump) then
       if (dump_unit==0) then
-        open (newunit=dump_unit, file=trim(io%rundir)//'sor.dump', &
+        open (newunit=dump_unit, file=trim(io%run_dir)//'sor.dump', &
               form='unformatted', status='unknown')
       end if
       sentinel = 0

@@ -184,6 +184,7 @@ MODULE refine_mod
   USE data_io_mod
   USE math_mod
   USE scaling_mod
+  USE eos_mod
   implicit none
   private
   !
@@ -1012,7 +1013,7 @@ FUNCTION check_Jeans (self, patch) RESULT(refine_it)
     !-------------------------------------------------------------------------
     allocate (test(patch%gn(1),patch%gn(2),patch%gn(3)))
     ds = maxval(patch%mesh%d, mask=patch%mesh%n > 1)
-    c =  ds*sqrt(scaling%grav/(math%pi*patch%gamma))
+    c =  ds*sqrt(scaling%grav/(math%pi*eos%gamma))
     test = min_jeans*c*d/sqrt(pg)
     if (verbose > 1) then
       call patch%stats (d   , '   d', stdlog)

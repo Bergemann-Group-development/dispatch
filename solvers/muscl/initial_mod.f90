@@ -14,12 +14,10 @@ MODULE initial_mod
   private
   real(8), parameter:: pi2=8d0*atan(1d0)
   integer, parameter:: dp=8
-  real, save:: gamma=1.4
   logical, save:: isothermal=.false.
   type, public:: initial_t
     integer:: seed
     real:: d0
-    real:: gamma=1.4
     logical:: mhd
     real(8):: time=0d0
     character(len=64):: solver
@@ -35,23 +33,17 @@ CONTAINS
 !===============================================================================
 !> Setup a uniform initial state, with density=d0 and B=B0
 !===============================================================================
-SUBROUTINE init (self, solver, gamma1)
+SUBROUTINE init (self, solver)
   class(initial_t):: self
   character(len=64):: solver
   character(len=32), save:: type='void'
   integer:: iostat
-  real, optional:: gamma1
   logical, save:: first_time=.true.
-  namelist /IC_params/ type, gamma
+  namelist /IC_params/ type
   !----------------------------------------------------------------------------
   call trace_begin('initial_t%init')
   call io%lock%set
   if (first_time) then
-    if (present(gamma1)) then
-      gamma = gamma1
-    else
-      gamma = self%gamma
-    end if
     rewind (io%input)
     read (io%input, IC_params, iostat=iostat)
     if (iostat/=0) call io%namelist_warning ('ramses/hydro/initial_mod.f90: IC_params')
@@ -78,7 +70,6 @@ SUBROUTINE init (self, solver, gamma1)
   case default
     call io%abort ('UNKNOWN INITIAL CONDITION TYPE :'//trim(type)//':')
   end select
-  self%gamma = gamma
   call trace_end
 END SUBROUTINE init
 
@@ -251,7 +242,7 @@ SUBROUTINE simple_advection (self, m, ff, idx)
           ff(ix,iy,iz,idx%bz) = b0(2)*sin(ky)
         end if
         !--- total enegy at constant pressure p0
-        ff(ix,iy,iz,idx%e) = p0/(self%gamma-1d0) + 0.5*d*(u0(1)**2+u0(2)**2+u0(3)**2)
+        ff(ix,iy,iz,idx%e) = p0/(eos%gamma-1d0) + 0.5*d*(u0(1)**2+u0(2)**2+u0(3)**2)
       end do
     end do
   end do
@@ -369,7 +360,7 @@ SUBROUTINE exa256 (self, m, ff, idx)
     ff(:,:,:,iv) = ff(:,:,:,idx%d)*ff(:,:,:,iv)
   end do
   call energy (self, m, idx, ff)
-  if (io%verbose > 2) write (io_unit%log,*) 'initial dt:',dt,self%gamma,umax
+  if (io%verbose > 2) write (io_unit%log,*) 'initial dt:',dt,eos%gamma,umax
   if (io%verbose > 2) &
     write (io_unit%log,'(a,3i4,1p,2g12.3)') 'ix,iy,iz,dmin,dmax =', ix, iy, iz, &
       minval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1)), &
@@ -450,10 +441,10 @@ SUBROUTINE energy (self, m, idx, ff)
   real(dp):: fgamma
   !-----------------------------------------------------------------------------
   call trace%begin ('initial_t%energy')
-  if (isothermal .or. self%gamma==1.0_dp) then
+  if (isothermal .or. eos%gamma==1.0_dp) then
     fgamma = 1.0_dp
   else
-    fgamma = self%gamma*(self%gamma-1.0_dp)
+    fgamma = eos%gamma*(eos%gamma-1.0_dp)
   end if
   ff(:,:,:,idx%e) = 0.5*(ff(:,:,:,idx%px)**2+ &
                          ff(:,:,:,idx%py)**2+ &

@@ -11,6 +11,7 @@ MODULE experiment_mod
   USE mesh_mod
   USE index_mod
   USE solver_mod
+  USE eos_mod
   implicit none
   private
   type, public, extends(solver_t):: experiment_t
@@ -94,7 +95,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Initial conditions
   !-----------------------------------------------------------------------------
-  g1 = self%gamma-1d0
+  g1 = eos%gamma-1d0
   if (g1==0d0) then
     g1 = 1d0
     g2 = 1d0
@@ -116,7 +117,7 @@ SUBROUTINE init (self)
           case ('total')
             e1(i,j,k) = P_l*g2
           case ('entropy')
-            s (i,j,k) = (log(P_l)-log(rho_l)*self%gamma)*rho_l*g2
+            s (i,j,k) = (log(P_l)-log(rho_l)*eos%gamma)*rho_l*g2
           case default
             write (stderr,'(a)') 'unknown self%etype: '//trim(self%etype)
           end select
@@ -136,7 +137,7 @@ SUBROUTINE init (self)
           case ('total')
             e1(i,j,k) = P_r*g2
           case ('entropy')
-            s (i,j,k) = (log(P_r)-log(rho_r)*self%gamma)*rho_r*g2
+            s (i,j,k) = (log(P_r)-log(rho_r)*eos%gamma)*rho_r*g2
           case default
             write (stderr,'(a)') 'unknown self%etype: '//trim(self%etype)
           end select

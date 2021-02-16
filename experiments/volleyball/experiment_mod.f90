@@ -8,6 +8,7 @@ MODULE experiment_mod
   USE task_mod
   USE solver_mod
   USE sphere_points_mod
+  USE eos_mod
   implicit none
   private
   type, public:: orient_t
@@ -65,7 +66,7 @@ SUBROUTINE init (self)
   ! midpoint to the center of the sphere.
   !-----------------------------------------------------------------------------
   if (io%restart < 0) then
-    h = (self%gamma-1d0)*e0/(d0*g)
+    h = (eos%gamma-1d0)*e0/(d0*g)
     l = self%mesh%lb
     u = self%mesh%ub
     associate (m1=>self%mesh(1), m2=>self%mesh(2), m3=>self%mesh(3))

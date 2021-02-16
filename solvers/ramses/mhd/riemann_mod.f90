@@ -5,6 +5,7 @@ module riemann_mod
   USE mpi_mod
   USE trace_mod
   USE timer_mod
+  USE eos_mod
   implicit none
   private
   type riemann_t
@@ -54,7 +55,7 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
   if (isothermal) then
     entho = one
   else
-    entho = one/max(gamma-one,1e-6)
+    entho = one/max(eos%gamma-one,1e-6)
   end if
   !
   ndiff = 0
@@ -101,14 +102,14 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
     d=qleft(i,1); P=qleft(i,2); u=qleft(i,3); A=qleft(i,4)
     v=qleft(i,5); B=qleft(i,6); w=qleft(i,7); C=qleft(i,8)
     B2 = A*A+B*B+C*C
-    c2 = gamma*P/d
+    c2 = eos%gamma*P/d
     d2 = half*(B2/d+c2)
     cf = sqrt( d2 + sqrt(max(d2*d2-c2*A*A/d,zero)) )
     cfastl=cf
     d=qright(i,1); P=qright(i,2); u=qright(i,3); A=qright(i,4)
     v=qright(i,5); B=qright(i,6); w=qright(i,7); C=qright(i,8)
     B2 = A*A+B*B+C*C
-    c2 = gamma*P/d
+    c2 = eos%gamma*P/d
     d2 = half*(B2/d+c2)
     cf = sqrt( d2 + sqrt(max(d2*d2-c2*A*A/d,zero)) )
     cfastr=cf
@@ -341,10 +342,10 @@ SUBROUTINE hlld_vec (qleft, qright, fgdnv, n, nvar, detailed_timer)
   !-----------------------------------------------------------------------------
   if (detailed_timer) &
     call timer%begin('riemann_t%hlld_vec',  itimer=itimer)
-  if (gamma==1d0) then
+  if (eos%gamma==1d0) then
     entho=1d0
   else
-    entho = one/(gamma-one)
+    entho = one/(eos%gamma-one)
   end if
   !
   ! Enforce continuity of normal component
@@ -589,7 +590,7 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
     !
     B2 = qtmp4**2+qtmp6**2+qtmp8**2
     d1 = 1./qtmp1
-    c2 = gamma*qtmp2*d1
+    c2 = eos%gamma*qtmp2*d1
     d2 = half*(B2*d1+c2)
     cfastLLx=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp4**2*d1,zero)))
     !
@@ -599,7 +600,7 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
     !
     B2 = qtmp4**2+qtmp6**2+qtmp8**2
     d1 = 1./qtmp1
-    c2 = gamma*qtmp2*d1
+    c2 = eos%gamma*qtmp2*d1
     d2 = half*(B2*d1+c2)
     cfastLRx=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp4**2*d1,zero)))
     !
@@ -609,7 +610,7 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
     !
     B2 = qtmp4**2+qtmp6**2+qtmp8**2
     d1 = 1./qtmp1
-    c2 = gamma*qtmp2*d1
+    c2 = eos%gamma*qtmp2*d1
     d2 = half*(B2*d1+c2)
 !    print*,'qtmp4,qtmp6,qtmp8',qtmp4,qtmp6,qtmp8
     cfastRLx=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp4**2*d1,zero)))
@@ -621,7 +622,7 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
     !
     B2 = qtmp4**2+qtmp6**2+qtmp8**2
     d1 = 1./qtmp1
-    c2 = gamma*qtmp2*d1
+    c2 = eos%gamma*qtmp2*d1
     d2 = half*(B2*d1+c2)
     cfastRRx=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp4**2*d1,zero)))
     !
@@ -632,7 +633,7 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
     !
     B2 = qtmp4**2+qtmp6**2+qtmp8**2
     d1 = 1./qtmp1
-    c2 = gamma*qtmp2*d1
+    c2 = eos%gamma*qtmp2*d1
     d2 = half*(B2*d1+c2)
     cfastLLy=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp4**2*d1,zero)))
     !
@@ -642,7 +643,7 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
     !
     B2 = qtmp4**2+qtmp6**2+qtmp8**2
     d1 = 1./qtmp1
-    c2 = gamma*qtmp2*d1
+    c2 = eos%gamma*qtmp2*d1
     d2 = half*(B2*d1+c2)
     cfastLRy=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp4**2*d1,zero)))
     !
@@ -652,7 +653,7 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
     !
     B2 = qtmp4**2+qtmp6**2+qtmp8**2
     d1 = 1./qtmp1
-    c2 = gamma*qtmp2*d1
+    c2 = eos%gamma*qtmp2*d1
     d2 = half*(B2*d1+c2)
     cfastRLy=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp4**2*d1,zero)))
     !
@@ -662,7 +663,7 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
     !
     B2 = qtmp4**2+qtmp6**2+qtmp8**2
     d1 = 1./qtmp1
-    c2 = gamma*qtmp2*d1
+    c2 = eos%gamma*qtmp2*d1
     d2 = half*(B2*d1+c2)
     cfastRRy=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp4**2*d1,zero)))
     !
@@ -1094,11 +1095,11 @@ SUBROUTINE find_mhd_flux (qvar, cvar, ff)
   REAL(dp):: ecin,emag,etot,d,u,v,w,A,B,C,P,Ptot,entho
   !-----------------------------------------------------------------------------
   ! Local variables
-  entho = one/(gamma-one)
+  entho = one/(eos%gamma-one)
   if (isothermal) then
     entho = one
   else
-    entho = one/max(gamma-one,1e-6)
+    entho = one/max(eos%gamma-one,1e-6)
   end if
   d=qvar(1); P=qvar(2); u=qvar(3); A=qvar(4)
   v=qvar(5); B=qvar(6); w=qvar(7); C=qvar(8)
@@ -1145,7 +1146,7 @@ SUBROUTINE find_speed_fast(qvar,vel_info)
   d=max(d,smallr)
   P=max(P,smallr*smallc*smallc)
   B2 = A*A+B*B+C*C
-  c2 = gamma*P/d
+  c2 = eos%gamma*P/d
   d2 = half*(B2/d+c2)
   cf = sqrt( d2 + sqrt(max(d2*d2-c2*A*A/d,zero)) )
   vel_info = cf
@@ -1166,7 +1167,7 @@ SUBROUTINE find_speed_info (qvar, vel_info)
   d=qvar(1); P=qvar(2); u=qvar(3); A=qvar(4)
   v=qvar(5); B=qvar(6); w=qvar(7); C=qvar(8)
   B2 = A*A+B*B+C*C
-  c2 = gamma*P/d
+  c2 = eos%gamma*P/d
   d2 = half*(B2/d+c2)
   cf = sqrt( d2 + sqrt(d2**2-c2*A*A/d) )
   vel_info = cf+abs(u)
@@ -1189,9 +1190,9 @@ SUBROUTINE find_speed_fast_vec (qvar, vel_info, n)
   v=>qvar(:,5); B=>qvar(:,6); w=>qvar(:,7); C=>qvar(:,8)
   B2 = A*A+B*B+C*C
 #ifdef KROME
-  c2 = merge(qvar(:,ichem),gamma,chemistry)*P/d
+  c2 = merge(qvar(:,ichem),eos%gamma,chemistry)*P/d
 #else
-  c2 = gamma*P/d
+  c2 = eos%gamma*P/d
 #endif
   d2 = half*(B2/d+c2)
   cf = sqrt( d2 + sqrt(max(d2*d2-c2*A*A/d,zero)) )

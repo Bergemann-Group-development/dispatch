@@ -15,7 +15,6 @@
 !===============================================================================
 MODULE mhd_mod
   !.............................................................................
-  !USE const
   USE io_mod
   USE io_unit_mod
   USE extras_mod
@@ -35,6 +34,7 @@ MODULE mhd_mod
   USE scratch_mod
   USE task_mod
   USE divb_clean_mod
+  USE eos_mod
   implicit none
   PRIVATE
   type, public, extends(extras_t):: mhd_t
@@ -71,7 +71,6 @@ MODULE mhd_mod
   logical, save:: unsigned=.true.
   logical, save:: do_temperature=.false.
   integer, save:: verbose=0
-  integer, save:: divb_iter=4
   integer, save:: b_slope_type=0
   integer, save:: u_slope_type=0
   integer, save:: courant_type=0
@@ -89,7 +88,7 @@ SUBROUTINE pre_init (self)
   integer, save:: n_dump=0
   real:: csound=1.
   integer:: iostat
-  namelist /ramses_params/ gamma, riemann, slope_type, b_slope_type, &
+  namelist /ramses_params/ riemann, slope_type, b_slope_type, &
     u_slope_type, courant_factor, smallr, smallc, isothermal, csound, &
     detailed_timer, unsigned, courant_type, max_dlogd, n_dump, &
     do_temperature, verbose, do_corners
@@ -115,8 +114,8 @@ SUBROUTINE pre_init (self)
     rewind (io%input)
     read (io%input, ramses_params, iostat=iostat)
     call io%namelist_warning ('ramses_params', iostat)
-    if (gamma == 1d0) isothermal = .true.
-    if (isothermal)   gamma = 1d0
+    if (eos%gamma == 1d0) isothermal = .true.
+    if (isothermal) eos%gamma = 1d0
     write (io%output, ramses_params)
     write (io%namelist, ramses_params)
     first_time = .false.
@@ -127,7 +126,6 @@ SUBROUTINE pre_init (self)
   self%n_dump  = n_dump
   self%riemann = riemann
   self%courant = courant_factor
-  self%gamma = gamma
   self%csound = csound
   self%staggered = .false.
   !-----------------------------------------------------------------------------
@@ -309,7 +307,7 @@ SUBROUTINE update (self)
      allocate (fluxohmdiss(self%gn(1),self%gn(2),self%gn(3),3))
     allocate (emfohmdiss(self%gn(1),self%gn(2),self%gn(3),3))
     call non_ideal%non_ideal_comp(self%mesh,self%idx,self%bf,self%uin,self%q,&
-      fluxambdiff,emfambdiff,fluxohmdiss,emfohmdiss,self%u_max,self%ds,self%dtime,self%gamma)
+      fluxambdiff,emfambdiff,fluxohmdiss,emfohmdiss,self%u_max,self%ds,self%dtime)
   end if
   call self%courant_condition                           ! compute dt
 
@@ -590,11 +588,11 @@ subroutine check_small (self)
       p = d*self%csound**2
       uu(i,j,k,5) = p+ekin+emag
     else
-      p = (uu(i,j,k,5)-ekin-emag)*(gamma-one)
+      p = (uu(i,j,k,5)-ekin-emag)*(eos%gamma-one)
       if (p < smallr*smallc**2) then
         print *, 'smallp', uu(i,j,k,5), ekin, emag, p
         p = smallr*smallc**2
-        uu(i,j,k,5) = p/(gamma-one)+ekin+emag
+        uu(i,j,k,5) = p/(eos%gamma-one)+ekin+emag
         n_smallp = n_smallp+1
       end if
     end if
@@ -643,9 +641,9 @@ subroutine ctoprim(self)
   if (isothermal) then
     entho = one
   else
-    entho = one/max(gamma-one,1e-6)
+    entho = one/max(eos%gamma-one,1e-6)
   end if
-  smallp = smallr*smallc**2/self%gamma
+  smallp = smallr*smallc**2/eos%gamma
   n = shape(uin)-1
   !
   !self%bf => uin(:,:,:,6:8)                                                    ! Left  face centered B
@@ -745,7 +743,7 @@ subroutine ctoprim(self)
     B2 = half*(q(i,j,k,7)+q(i,j+1,k,7))
     B3 = half*(q(i,j,k,8)+q(i,j,k+1,8))
     emag = half*(B1**2 + B2**2 + B3**2)
-    c(i,j,k) = sqrt((q(i,j,k,5)*gamma + 2.0*emag)/q(i,j,k,1))
+    c(i,j,k) = sqrt((q(i,j,k,5)*eos%gamma + 2.0*emag)/q(i,j,k,1))
   end do
   end do
   end do
@@ -1164,7 +1162,7 @@ SUBROUTINE trace3d(self)
   dtdx = self%dtime/self%ds(1)
   dtdy = self%dtime/self%ds(2)
   dtdz = self%dtime/self%ds(3)
-  smallp = smallr*smallc**2/gamma
+  smallp = smallr*smallc**2/eos%gamma
   !
   ! E = - UxB = BxU
   Ex = ydn(zdn(Uy))*ydn(Bz) - zdn(ydn(Uz))*zdn(By) 
@@ -1173,7 +1171,7 @@ SUBROUTINE trace3d(self)
   !
   !call trace%end (itimer(1))
   !call trace%begin ('mhd_t%trace3d(2)', itimer=itimer(2))
-  eff_gamma = gamma
+  eff_gamma = eos%gamma
   !
   allocate (rho_t(1:self%gn(1),1:self%gn(2),1:self%gn(3)))
   allocate (  p_t(1:self%gn(1),1:self%gn(2),1:self%gn(3)))
@@ -1389,9 +1387,9 @@ SUBROUTINE trace3d(self)
 !                     xg(ind_grid(ig),1)+(i-1.5)/32.0, &
 !                     xg(ind_grid(ig),2)+(j-1.5)/32.0, &
 !                     xg(ind_grid(ig),3)+(k-1.5)/32.0, &
-!                     log(p(ig)-dpx(ig)) - gamma*log(r(ig)-drx(ig)), &
-!                     log(p(ig))-gamma*log(r(ig)), &
-!                     log(p(ig)+dpx(ig)) - gamma*log(r(ig)+drx(ig)), &
+!                     log(p(ig)-dpx(ig)) - eos%gamma*log(r(ig)-drx(ig)), &
+!                     log(p(ig))-eos%gamma*log(r(ig)), &
+!                     log(p(ig)+dpx(ig)) - eos%gamma*log(r(ig)+drx(ig)), &
 !                     q(ig,i,j,k,ip), &
 !                     dSx(ig),dSy(ig),dSz(ig), &
 !                     u(ig),v(ig),w(ig),dtdx
@@ -2186,7 +2184,7 @@ FUNCTION gas_pressure (self) RESULT (pg)
   if (isothermal) then
     pg = d*self%csound**2
   else
-    pg = (gamma-1d0)* &
+    pg = (eos%gamma-1d0)* &
       (e-0.5*(up(bx,1)**2+up(by,2)**2+up(bz,3)**2+(px**2+py**2+pz**2)/d))
   end if
   end associate

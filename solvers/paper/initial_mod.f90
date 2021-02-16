@@ -10,6 +10,7 @@ MODULE initial_mod
   USE random_mod
   USE stagger_mod
   USE index_mod
+  USE eos_mod
   implicit none
   private
   real(8), parameter:: pi2=8d0*atan(1d0)
@@ -17,7 +18,6 @@ MODULE initial_mod
     integer:: id=0
     integer:: seed
     logical:: mhd
-    real(8):: gamma=0d0
     real(8):: a(3), b(3), phi(3), d0, p0, e0
     real(8):: a0(3), k(3), b0(3), u0(3)
     real(8):: time
@@ -34,10 +34,9 @@ CONTAINS
 !===============================================================================
 !> Setup a uniform initial state, with density=d0 and B=B0
 !===============================================================================
-SUBROUTINE init (self, solver, gamma)
+SUBROUTINE init (self, solver)
    class(initial_t):: self
    character(len=64):: solver
-   real, optional:: gamma
    !............................................................................
    integer:: iostat
    integer, save:: seed=-33
@@ -47,7 +46,6 @@ SUBROUTINE init (self, solver, gamma)
    namelist /IC_params/ type, seed, k, a0, u0, b0, d0, p0, mhd
    !----------------------------------------------------------------------------
    call trace_begin('initial_t%init')
-   if (present(gamma)) self%gamma = gamma
    call io%lock%set
    if (first_time) then
      first_time = .false.
@@ -66,8 +64,8 @@ SUBROUTINE init (self, solver, gamma)
    self%u0     = u0
    self%d0     = d0
    self%p0     = p0
-   self%gamma  = max(self%gamma,1d0+1d-5)
-   self%e0     = p0/(self%gamma-1d0)
+   eos%gamma   = max(eos%gamma,1d0+1d-5)
+   self%e0     = p0/(eos%gamma-1d0)
    self%mhd    = mhd
    self%time   = 0d0
    select case (type)
@@ -138,7 +136,7 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
 
   if (self%solver(1:9) == 'stagger2_') then
     associate (e=>ff(:,:,:,idx%e), d=>ff(:,:,:,idx%d))
-    call e2s(e, d, self%gamma)
+    call e2s(e, d, eos%gamma)
     end associate
   end if
   call trace_end
@@ -183,7 +181,7 @@ SUBROUTINE single_compressive (self, m, ff, idx)
 
   if (self%solver(1:9) == 'stagger2_') then
     associate (e=>ff(:,:,:,idx%e), d=>ff(:,:,:,idx%d))
-    call e2s(e, d, self%gamma)
+    call e2s(e, d, eos%gamma)
     end associate
   end if
   call trace_end
@@ -228,7 +226,7 @@ SUBROUTINE single_advection (self, m, ff, idx)
 
   if (self%solver(1:9) == 'stagger2_') then
     associate (e=>ff(:,:,:,idx%e), d=>ff(:,:,:,idx%d))
-    call e2s(e, d, self%gamma)
+    call e2s(e, d, eos%gamma)
     end associate
   end if
   call trace_end
@@ -285,7 +283,7 @@ SUBROUTINE exa256 (self, m, ff, idx)
 
   if (self%solver(1:9) == 'stagger2_') then
     associate (e=>ff(:,:,:,idx%e), d=>ff(:,:,:,idx%d))
-    call e2s(e, d, self%gamma)
+    call e2s(e, d, eos%gamma)
     end associate
   end if
   call trace_end
@@ -348,7 +346,7 @@ SUBROUTINE raw (self, m, ff, idx)
 
   if (self%solver(1:9) == 'stagger2_') then
     associate (e=>ff(:,:,:,idx%e), d=>ff(:,:,:,idx%d))
-    call e2s(e, d, self%gamma)
+    call e2s(e, d, eos%gamma)
     end associate
   end if
   call trace_end

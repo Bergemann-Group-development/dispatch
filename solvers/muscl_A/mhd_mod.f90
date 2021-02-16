@@ -68,7 +68,7 @@ MODULE mhd_mod
   !-----------------------------------------------------------------------------
   ! Input parameters:
   !-----------------------------------------------------------------------------
-  real:: gamma=1.4, csound=1.0, courant=0.2
+  real:: csound=1.0, courant=0.2
   integer:: slope_type=2
   logical:: unsigned=.true., detailed_timer=.true.
   character(len=4):: method='hll'
@@ -81,7 +81,7 @@ CONTAINS
 SUBROUTINE init (self)
   class(mhd_t):: self
   !.............................................................................
-  namelist /muscl_params/ verbose, courant, gamma, csound, slope_type, &
+  namelist /muscl_params/ verbose, courant, csound, slope_type, &
     method, detailed_timer
   integer:: iostat, i
   logical, save:: first_time=.true.
@@ -131,14 +131,13 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Make sure to save and use consistent gamma factors throughout
   !-----------------------------------------------------------------------------
-  self%gamma = gamma
-  if (gamma == 1d0) then
+  if (eos%gamma == 1d0) then
     self%g1 = 1d0
   else
-    self%g1 = gamma-1d0
+    self%g1 = eos%gamma-1d0
   end if
-  self%g2 = self%g1*gamma
-  self%riemann%gamma = gamma
+  self%g2 = self%g1*eos%gamma
+  self%riemann%gamma = eos%gamma
   self%riemann%g1 = self%g1
   self%riemann%g2 = self%g2
   !-----------------------------------------------------------------------------
@@ -289,7 +288,7 @@ SUBROUTINE ctoprim (self)
     ss1 = s(i1,i2,i3)/d(i1,i2,i3)
     prim(i1,i2,i3,is) = ss1                                   ! per unit mass
     prim(i1,i2,i3,ip) = &
-      gamma*d(i1,i2,i3)*exp(ss(i1,i2,i3)*self%g1)             ! pressure
+      eos%gamma*d(i1,i2,i3)*exp(ss(i1,i2,i3)*self%g1)             ! pressure
     prim(i1,i2,i3,2) = self%mem(i1,i2,i3,2,self%new,1) &      ! x-velocity
                      / self%mem(i1,i2,i3,1,self%new,1)
     prim(i1,i2,i3,3) = self%mem(i1,i2,i3,3,self%new,1) &      ! y-velocity
@@ -327,7 +326,7 @@ SUBROUTINE ctoprim (self)
         b2 = prim(i1,i2,i3,self%idx%bx)**2 &
            + prim(i1,i2,i3,self%idx%by)**2 &
            + prim(i1,i2,i3,self%idx%bz)**2
-        c2 = (b2+gamma*prim(i1,i2,i3,ip))/d(i1,i2,i3)
+        c2 = (b2+eos%gamma*prim(i1,i2,i3,ip))/d(i1,i2,i3)
         u2_max = max (u2_max, u2+c2)
       end do
     else
@@ -335,7 +334,7 @@ SUBROUTINE ctoprim (self)
         u2 = prim(i1,i2,i3,self%idx%px)**2 &
            + prim(i1,i2,i3,self%idx%py)**2 &
            + prim(i1,i2,i3,self%idx%pz)**2
-        c2 = gamma*prim(i1,i2,i3,ip)/d(i1,i2,i3)
+        c2 = eos%gamma*prim(i1,i2,i3,ip)/d(i1,i2,i3)
         u2_max = max (u2_max, u2+c2)
       end do
     end if
@@ -634,19 +633,19 @@ SUBROUTINE predict (self)
         u1(i1,i2,i3)*u1_1(i1,i2,i3)*dtd1 + &
         u2(i1,i2,i3)*u1_2(i1,i2,i3)*dtd2 + &
         u3(i1,i2,i3)*u1_3(i1,i2,i3)*dtd3) - &
-        (ss_1(i1,i2,i3)*g1 + ln_1(i1,i2,i3)*gamma)*pod*dtd1 + &
+        (ss_1(i1,i2,i3)*g1 + ln_1(i1,i2,i3)*eos%gamma)*pod*dtd1 + &
         ff(i1,1)*dt2
       u2(i1,i2,i3) = u2(i1,i2,i3) - ( &
         u1(i1,i2,i3)*u2_1(i1,i2,i3)*dtd1 + &
         u2(i1,i2,i3)*u2_2(i1,i2,i3)*dtd2 + &
         u3(i1,i2,i3)*u2_3(i1,i2,i3)*dtd3) - &
-        (ss_2(i1,i2,i3)*g1 + ln_2(i1,i2,i3)*gamma)*pod*dtd2 + &
+        (ss_2(i1,i2,i3)*g1 + ln_2(i1,i2,i3)*eos%gamma)*pod*dtd2 + &
         ff(i1,2)*dt2
       u3(i1,i2,i3) = u3(i1,i2,i3) - ( &
         u1(i1,i2,i3)*u3_1(i1,i2,i3)*dtd1 + &
         u2(i1,i2,i3)*u3_2(i1,i2,i3)*dtd2 + &
         u3(i1,i2,i3)*u3_3(i1,i2,i3)*dtd3) - &
-        (ss_3(i1,i2,i3)*g1 + ln_3(i1,i2,i3)*gamma)*pod*dtd3 + &
+        (ss_3(i1,i2,i3)*g1 + ln_3(i1,i2,i3)*eos%gamma)*pod*dtd3 + &
         ff(i1,3)*dt2
       qq = 0.0
       ss(i1,i2,i3) = ss(i1,i2,i3) - ( &
@@ -789,7 +788,7 @@ SUBROUTINE sources (self)
     b2 => self%mem(:,:,:,7,self%new,1)
     b3 => self%mem(:,:,:,8,self%new,1)
   end if
-  if (self%gamma /= 1d0 .and. forcing) then
+  if (eos%gamma /= 1d0 .and. forcing) then
     if (self%mhd) then
       b1 => self%mem(:,:,:,6,self%new,1)
       b2 => self%mem(:,:,:,7,self%new,1)

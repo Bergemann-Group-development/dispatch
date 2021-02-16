@@ -11,7 +11,6 @@ MODULE experiment_mod
   USE index_mod
   implicit none
   private
-
   type, public, extends(mhd_t):: experiment_t
     integer:: ptype
     real:: pcentre(3), psize(3), pbufferfrac
@@ -21,9 +20,7 @@ MODULE experiment_mod
     procedure :: init => init_experiment
     procedure :: update => update_experiment
   end type
-
   logical, save:: first_time = .true.
-
 PUBLIC initial_conditions
 CONTAINS
 
@@ -114,7 +111,7 @@ SUBROUTINE initial_conditions (self)
 
           ! ambient
           f(i,j,k,self%idx%d ) = rho0
-          f(i,j,k,self%idx%e ) = p0 / (self%gamma - 1.0)
+          f(i,j,k,self%idx%e ) = p0 / (eos%gamma - 1.0)
           f(i,j,k,self%idx%px) = rho0 * vx0
           f(i,j,k,self%idx%py) = rho0 * vy0
           f(i,j,k,self%idx%pz) = rho0 * vz0
@@ -127,7 +124,7 @@ SUBROUTINE initial_conditions (self)
               y >= (pcentre(2)-psize(2)*0.5) .and. y <= (pcentre(2)+psize(2)*0.5) .and. &
               z >= (pcentre(3)-psize(3)*0.5) .and. z <= (pcentre(3)+psize(3)*0.5) ) then
             f(i,j,k,self%idx%d ) = rho1
-            f(i,j,k,self%idx%e ) = p1 / (self%gamma - 1.0)
+            f(i,j,k,self%idx%e ) = p1 / (eos%gamma - 1.0)
             f(i,j,k,self%idx%px) = rho1 * vx1
             f(i,j,k,self%idx%py) = rho1 * vy1
             f(i,j,k,self%idx%pz) = rho1 * vz1

@@ -90,6 +90,7 @@ MODULE eos_mod
   TYPE, PUBLIC :: eos_t
      integer :: n_lambda = n_lambda
      real    :: w_lambda(n_lambda) = 1.0
+     real(8) :: gamma=1.2d0       ! required for syntax in some solvers
      logical :: on = .false.
      logical :: do_rt = .false.
    CONTAINS

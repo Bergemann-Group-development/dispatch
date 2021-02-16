@@ -12,16 +12,14 @@ MODULE experiment_mod
   USE solver_mod
   USE pboundary_mod
   USE scalar_mod
+  USE eos_mod
   implicit none
   private
-
-  type, public, extends(solver_t):: experiment_t
     real:: pi2 = 8.0*atan(1.0)
   contains
     procedure:: init
     procedure:: update
   end type
-
 CONTAINS
 
 !===============================================================================
@@ -144,7 +142,7 @@ SUBROUTINE init (self)
     ! Multiply by Etherm to make Pg the energy density profile
     lnPg(:,:,:) = lnPg(:,:,:) + log(Etherm)
     ! Use ideal gas law to turn Pg back into pressure profile
-    lnPg(:,:,:) = log(self%gamma-1.0) + lnPg(:,:,:) !Pg is now again the thermal pressure
+    lnPg(:,:,:) = log(eos%gamma-1.0) + lnPg(:,:,:) !Pg is now again the thermal pressure
     print*, 'Rescaling done!'
   end if
   ! Reset ambient pressure values to the chosen minimum value
@@ -157,11 +155,11 @@ SUBROUTINE init (self)
   end do
   print*, 'Min and max ln(Pg):', minval(lnPg), maxval(lnPg)
   ! Calculate entropy
-  if (self%gamma .eq. 1.) then
+  if (eos%gamma .eq. 1.) then
     s  = -log(d)*d
     s2 = 0d0
   else
-    s  = (lnPg-log(d)*self%gamma)/(self%gamma-1.0) * d
+    s  = (lnPg-log(d)*eos%gamma)/(eos%gamma-1.0) * d
     s2 = 0d0
   end if
 

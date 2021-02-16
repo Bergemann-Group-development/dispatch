@@ -9,6 +9,7 @@ MODULE experiment_mod
   USE mhd_mod
   USE initial_mod
   USE timestep_mod
+  USE eos_mod
   implicit none
   private
   type, public, extends(mhd_t):: experiment_t
@@ -37,7 +38,7 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   ! Initial conditions
   !----------------------------------------------------------------------------
-  call self%initial%init (self%kind, self%gamma)
+  call self%initial%init (self%kind, eos%gamma)
   ff => self%mem(:,:,:,:,self%it,1)
   call self%initial%initial_conditions(self%mesh, ff)
   call trace_end

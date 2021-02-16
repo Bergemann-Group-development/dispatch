@@ -18,6 +18,7 @@ MODULE eos_mod
     integer:: i_pg    = 1
     integer:: i_tt    = 2
     integer:: i_ee    = 2
+    real(8):: gamma   = 1.4d0  ! required for syntax in some solvers
     real(kind=kind2):: lnd_min, lnd_max, lnd_stp
     real(kind=kind2):: lne_min, lne_max, lne_stp
     real(kind=kind2), dimension(:), pointer:: lne

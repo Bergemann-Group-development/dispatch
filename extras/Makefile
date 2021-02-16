@@ -23,5 +23,5 @@ pressure_node_mod.o     : io_unit_mod.o trace_mod.o link_mod.o gpatch_mod.o mesh
                           bits_mod.o scratch_mod.o eos_mod.o kinds_mod.o
 lagrangian_mod.o        : io_mod.o trace_mod.o gpatch_mod.o link_mod.o
 connect_mod.o           :
-SN_mod.o                : sinks_mod.o
+SN_mod.o                : sinks_mod.o eos_mod.o
 sinks_mod.o             : io_mod.o trace_mod.o gpatch_mod.o scaling_mod.o

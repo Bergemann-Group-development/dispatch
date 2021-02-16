@@ -19,6 +19,7 @@ MODULE experiment_mod
   USE lagrange_mod
   USE timestep_mod
   USE rt_boundaries_mod
+  USE eos_mod
   implicit none
   private
   type, public, extends(pebble_patch_t):: experiment_t
@@ -423,7 +424,7 @@ SUBROUTINE q_planet (self, r2, q)
   stefan_pi = scaling%stefan / cgs%pi
   i_norm = stefan_pi*atmosphere%surface%temperature**4
   s => self%mem(:,:,:,self%idx%s,self%it,1)
-  g1 = self%gamma-1.0
+  g1 = eos%gamma-1.0
   rad2 = (5.*planet%radius)**2
   u_max = 0.0
   do iz=self%mesh(3)%li,self%mesh(3)%ui
@@ -928,13 +929,13 @@ SUBROUTINE apply_sponge_boundaries (self)
           else if (iv == self%idx%e) then
             if (self%kind(1:7)=='ramses_') then
               py0 = -d * ((1.5+planet%trap)*planet%omega(3)*x - planet%v_head)
-              asymptote = p / (self%gamma - 1.0) + 0.5 * d * py0**2
+              asymptote = p / (eos%gamma - 1.0) + 0.5 * d * py0**2
             else if (self%kind(1:9)=='stagger2e') then
-              asymptote = p / (self%gamma - 1.0)
+              asymptote = p / (eos%gamma - 1.0)
             else if (self%kind(1:9)=='stagger2_') then
-              asymptote = d * (log(p) - self%gamma * log(d)) / (self%gamma - 1.0)
+              asymptote = d * (log(p) - eos%gamma * log(d)) / (eos%gamma - 1.0)
             else if (self%kind(1:6)=='zeus3d') then
-              asymptote = p / (self%gamma - 1.0)
+              asymptote = p / (eos%gamma - 1.0)
             end if
           else if (iv == self%idx%px) then
             asymptote = px0

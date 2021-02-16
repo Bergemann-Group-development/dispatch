@@ -12,6 +12,7 @@ MODULE experiment_mod
   USE link_mod
   USE list_mod
   USE scratch_mod
+  USE eos_mod
   implicit none
   private
   type, public, extends(solver_t):: experiment_t
@@ -50,16 +51,18 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call io%lock%set
   if (first_time) then
+    gamma = eos%gamma
     rewind (io%input)
     read (io%input, experiment_params, iostat=iostat)
     call io%namelist_warning ('experiment_params', iostat)
     write (io%namelist, experiment_params)
+    eos%gamma = gamma
     csound = sqrt(cgs%k_B*T_K/(cgs%m_u*scaling%mu))/scaling%u
     d0 = 1.0
     if (gamma == 1d0) then
       e0 = self%csound**2*d0
     else
-      e0 = self%csound**2*d0/(self%gamma*(self%gamma-1.0))
+      e0 = self%csound**2*d0/(eos%gamma*(eos%gamma-1.0))
     end if
     if (verbose > 0) then
       write (io%output,'(a,f6.2)') '           gas gamma:', gamma
@@ -76,7 +79,7 @@ SUBROUTINE init (self)
   ! Initialize constant density and thermal energy, and a velocity estimated
   ! from constant acceleration for a time period of t_turb.
   !-----------------------------------------------------------------------------
-  self%gamma = gamma
+  eos%gamma = gamma
   self%csound = csound
   d => self%mem(:,:,:,self%idx%d,self%it,1)
   e => self%mem(:,:,:,self%idx%e,self%it,1)

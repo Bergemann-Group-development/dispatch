@@ -9,6 +9,7 @@ MODULE experiment_mod
   USE patch_mod
   USE index_mod
   USE solver_mod
+  USE eos_mod
   implicit none
   private
   !
@@ -69,12 +70,12 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Allow isothermal case (gamma==1)
   !-----------------------------------------------------------------------------
-  if (self%gamma==1.0) then
+  if (eos%gamma==1.0) then
     gm1 = 1d0
   else
-    gm1 = self%gamma-1d0
+    gm1 = eos%gamma-1d0
   end if
-  p0 = d0*csound**2/self%gamma
+  p0 = d0*csound**2/eos%gamma
   pg = p0
   !-----------------------------------------------------------------------------
   ! Waves in the x-direction
@@ -135,7 +136,7 @@ SUBROUTINE init (self)
           cs = cs + ampl*sin((j*2-1)*k_w*(x-ds2))/(j*2-1)
         end do
         d (k,:,:)= d0*(1.+ampl*cc)
-        pg(k,:,:)= csound*d(k,:,:)/self%gamma
+        pg(k,:,:)= csound*d(k,:,:)/eos%gamma
         px(k,:,:)= ampl*d0*csound*cs
         py(k,:,:)= 0.
         pz(k,:,:)= 0.
@@ -217,7 +218,7 @@ SUBROUTINE init (self)
   else if (self%kind(1:9) == 'stagger2e') then
     e = pg/gm1
   else if (self%kind(1:8) == 'stagger2') then
-    s = (log(pg)-log(d)*self%gamma)/gm1 * d
+    s = (log(pg)-log(d)*eos%gamma)/gm1 * d
   end if
   print *,minval(d),minval(e)
   !

@@ -4,6 +4,7 @@ module riemann_mod
   USE io_mod
   USE trace_mod
   USE mpi_mod
+  USE eos_mod
   implicit none
   private
   type riemann_t
@@ -41,10 +42,10 @@ subroutine approx(qleft,qright,fgdnv,ngrid,nvar)
   integer ::i, j, n, iter, n_new
 
   ! constants
-  smallp = smallc**2/gamma
+  smallp = smallc**2/eos%gamma
   smallpp = smallr*smallp
-  gamma6 = (gamma+one)/(two*gamma)
-  entho = one/(gamma-one)
+  gamma6 = (eos%gamma+one)/(two*eos%gamma)
+  entho = one/(eos%gamma-one)
 
   ! Pressure, density and velocity
   do i=3,ngrid-1
@@ -58,8 +59,8 @@ subroutine approx(qleft,qright,fgdnv,ngrid,nvar)
 
   ! Lagrangian sound speed
   do i=3,ngrid-1
-     cl(i) = gamma*pl(i)*rl(i)
-     cr(i) = gamma*pr(i)*rr(i)
+     cl(i) = eos%gamma*pl(i)*rl(i)
+     cr(i) = eos%gamma*pr(i)*rr(i)
   end do
 
   ! First guess
@@ -151,7 +152,7 @@ subroutine approx(qleft,qright,fgdnv,ngrid,nvar)
      end if
   end do
   do i=3,ngrid-1
-     co(i) = max(smallc,sqrt(abs(gamma*po(i)/ro(i))))
+     co(i) = max(smallc,sqrt(abs(eos%gamma*po(i)/ro(i))))
   end do
 
   ! Star region density
@@ -161,7 +162,7 @@ subroutine approx(qleft,qright,fgdnv,ngrid,nvar)
         rstar(i) = ro(i)/(one+ro(i)*(po(i)-pstar(i))/wo(i)**2)
      else
         ! Rarefaction
-        rstar(i) = ro(i)*(pstar(i)/po(i))**(one/gamma)
+        rstar(i) = ro(i)*(pstar(i)/po(i))**(one/eos%gamma)
      end if
   end do
 
@@ -169,7 +170,7 @@ subroutine approx(qleft,qright,fgdnv,ngrid,nvar)
      ! Prevent vacuum formation in star region
      rstar(i) = max(rstar(i),smallr)
      ! Star region sound speed
-     cstar(i) = sqrt(abs(gamma*pstar(i)/rstar(i)))
+     cstar(i) = sqrt(abs(eos%gamma*pstar(i)/rstar(i)))
      cstar(i) = max(cstar(i),smallc)
      ! Compute rarefaction head and tail speed
      spout(i) = co   (i)-sgnm(i)*uo   (i)
@@ -199,7 +200,7 @@ subroutine approx(qleft,qright,fgdnv,ngrid,nvar)
         frac(i)=spout(i)/(spout(i)-spin(i))
         qgdnv(i,2) = frac(i)*ustar(i) + (one - frac(i))*uo(i)
         qgdnv(i,3) = frac(i)*pstar(i) + (one - frac(i))*po(i)
-        qgdnv(i,1) = ro(i)*(qgdnv(i,3)/po(i))**(one/gamma)
+        qgdnv(i,1) = ro(i)*(qgdnv(i,3)/po(i))**(one/eos%gamma)
      end if
   end do
 
@@ -251,8 +252,8 @@ subroutine acoustic(qleft,qright,fgdnv,ngrid,nvar)
   real(dp),dimension(1:ngrid)::frac
 
   ! constants
-  smallp = smallc**2/gamma
-  entho = one/(gamma-one)
+  smallp = smallc**2/eos%gamma
+  entho = one/(eos%gamma-one)
 
   ! Initial states pressure, density and velocity
   do i=3,ngrid-1
@@ -266,8 +267,8 @@ subroutine acoustic(qleft,qright,fgdnv,ngrid,nvar)
 
   ! Acoustic star state
   do i=3,ngrid-1
-     cl(i) = sqrt(gamma*pl(i)/rl(i))
-     cr(i) = sqrt(gamma*pr(i)/rr(i))
+     cl(i) = sqrt(eos%gamma*pl(i)/rl(i))
+     cr(i) = sqrt(eos%gamma*pr(i)/rr(i))
      wl(i) = cl(i)*rl(i)
      wr(i) = cr(i)*rr(i)
      pstar(i) = ((wr(i)*pl(i)+wl(i)*pr(i))+wl(i)*wr(i)*(ul(i)-ur(i))) &
@@ -303,7 +304,7 @@ subroutine acoustic(qleft,qright,fgdnv,ngrid,nvar)
   do i=3,ngrid-1
      rstar(i) = ro(i)+(pstar(i)-po(i))/co(i)**2
      rstar(i) = max(rstar(i),smallr)
-     cstar(i) = sqrt(abs(gamma*pstar(i)/rstar(i)))
+     cstar(i) = sqrt(abs(eos%gamma*pstar(i)/rstar(i)))
      cstar(i) = max(cstar(i),smallc)
   end do
 
@@ -388,8 +389,8 @@ subroutine llf(qleft,qright,fgdnv,ngrid,nvar)
   real(dp)::rr   ,ur   ,pr   ,cr
 
   ! constants
-  smallp = smallc**2/gamma
-  entho = one/(gamma-one)
+  smallp = smallc**2/eos%gamma
+  entho = one/(eos%gamma-one)
 
   ! Maximum wave speed
   do i=3,ngrid-1
@@ -399,8 +400,8 @@ subroutine llf(qleft,qright,fgdnv,ngrid,nvar)
      rr=max(qright(i,1),smallr)
      ur=    qright(i,2)
      pr=max(qright(i,3),rr*smallp)
-     cl= sqrt(gamma*pl/rl)
-     cr= sqrt(gamma*pr/rr)
+     cl= sqrt(eos%gamma*pl/rl)
+     cr= sqrt(eos%gamma*pr/rr)
      cmax(i)=max(abs(ul)+cl,abs(ur)+cr)
   end do
 
@@ -477,11 +478,11 @@ subroutine hllc (qleft,qright,fgdnv,ngrid,nvar,isothermal,error,detailed_timer)
   !
   if (detailed_timer) call trace_begin ('riemann::hllc', itimer=itimer)
   ! constants
-  smallp = smallc**2/gamma
-  if (isothermal .or. gamma==1d0) then
+  smallp = smallc**2/eos%gamma
+  if (isothermal .or. eos%gamma==1d0) then
     entho=one
   else
-    entho=one/(gamma-one)
+    entho=one/(eos%gamma-one)
   end if
   error = .false.
   !
@@ -507,8 +508,8 @@ subroutine hllc (qleft,qright,fgdnv,ngrid,nvar,isothermal,error,detailed_timer)
       Ptotr = Pr
       !
       ! Find the largest eigenvalues in the normal direction to the interface
-      cfastl=sqrt(max(gamma*Pl/rl,smallc**2))
-      cfastr=sqrt(max(gamma*Pr/rr,smallc**2))
+      cfastl=sqrt(max(eos%gamma*Pl/rl,smallc**2))
+      cfastr=sqrt(max(eos%gamma*Pr/rr,smallc**2))
       !
       ! Compute HLL wave speed
       SL=min(ul,ur)-max(cfastl,cfastr)
@@ -608,8 +609,8 @@ subroutine hllc (qleft,qright,fgdnv,ngrid,nvar,isothermal,error,detailed_timer)
       Ptotr = Pr
       !
       ! Find the largest eigenvalues in the normal direction to the interface
-      cfastl=sqrt(max(gamma*Pl/rl,smallc**2))
-      cfastr=sqrt(max(gamma*Pr/rr,smallc**2))
+      cfastl=sqrt(max(eos%gamma*Pl/rl,smallc**2))
+      cfastr=sqrt(max(eos%gamma*Pr/rr,smallc**2))
       !
       ! Compute HLL wave speed
       SL=min(ul,ur)-max(cfastl,cfastr)
@@ -722,8 +723,8 @@ subroutine hllc_a (qleft,qright,fgdnv,ngrid,nvar)
   INTEGER ::ivar, i
   !
   ! constants
-  smallp = smallc**2/gamma
-  entho = one/(gamma-one)
+  smallp = smallc**2/eos%gamma
+  entho = one/(eos%gamma-one)
   !
   do i=3,ngrid-1
      !
@@ -746,8 +747,8 @@ subroutine hllc_a (qleft,qright,fgdnv,ngrid,nvar)
      Ptotr(i) = Pr
      !
      ! Find the largest eigenvalues in the normal direction to the interface
-     cfastl=sqrt(max(gamma*Pl/rl(i),smallc**2))
-     cfastr=sqrt(max(gamma*Pr/rr(i),smallc**2))
+     cfastl=sqrt(max(eos%gamma*Pl/rl(i),smallc**2))
+     cfastr=sqrt(max(eos%gamma*Pr/rr(i),smallc**2))
      !
      ! Compute HLL wave speed
      SL(i)=min(ul(i),ur(i))-max(cfastl,cfastr)
@@ -830,8 +831,8 @@ subroutine hllc_v (qleft,qright,fgdnv,ngrid,nvar)
   INTEGER ::ivar, i
   !
   ! constants
-  smallp = smallc**2/gamma
-  entho = one/(gamma-one)
+  smallp = smallc**2/eos%gamma
+  entho = one/(eos%gamma-one)
   !
      !
      ! Left variables
@@ -853,8 +854,8 @@ subroutine hllc_v (qleft,qright,fgdnv,ngrid,nvar)
      Ptotr = Pr
      !
      ! Find the largest eigenvalues in the normal direction to the interface
-     cfastl=sqrt(max(gamma*Pl/rl,smallc**2))
-     cfastr=sqrt(max(gamma*Pr/rr,smallc**2))
+     cfastl=sqrt(max(eos%gamma*Pl/rl,smallc**2))
+     cfastr=sqrt(max(eos%gamma*Pr/rr,smallc**2))
      !
      ! Compute HLL wave speed
      SL=min(ul,ur)-max(cfastl,cfastr)
@@ -925,8 +926,8 @@ subroutine hll(qleft,qright,fgdnv,ngrid,nvar)
   real(dp)::rr   ,ur   ,pr   ,cr
 
   ! constants
-  smallp = smallc**2/gamma
-  entho = one/(gamma-one)
+  smallp = smallc**2/eos%gamma
+  entho = one/(eos%gamma-one)
 
   ! Maximum wave speed
   do i=3,ngrid-1
@@ -936,8 +937,8 @@ subroutine hll(qleft,qright,fgdnv,ngrid,nvar)
      rr=max(qright(i,1),smallr)
      ur=    qright(i,2)
      pr=max(qright(i,3),rr*smallp)
-     cl= sqrt(gamma*pl/rl)
-     cr= sqrt(gamma*pr/rr)
+     cl= sqrt(eos%gamma*pl/rl)
+     cr= sqrt(eos%gamma*pr/rr)
      SL(i)=min(min(ul,ur)-max(cl,cr),zero)
      SR(i)=max(max(ul,ur)+max(cl,cr),zero)
   end do

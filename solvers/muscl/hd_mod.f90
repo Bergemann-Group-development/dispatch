@@ -15,6 +15,7 @@ MODULE hd_mod
   USE riemann_mod
   USE extras_mod
   USE scratch_mod
+  USE eos_mod
   implicit none
   private
   type, public, extends(extras_t):: hd_t
@@ -39,7 +40,7 @@ MODULE hd_mod
   !-----------------------------------------------------------------------------
   ! Input parameters:
   !-----------------------------------------------------------------------------
-  real:: gamma=1.4, csound=1.0, courant=0.2
+  real:: csound=1.0, courant=0.2
   integer:: slope_type=2
   logical:: unsigned=.true., detailed_timer=.true.
   character(len=4):: method='hll'
@@ -52,7 +53,7 @@ CONTAINS
 SUBROUTINE init (self)
   class(hd_t):: self
   !.............................................................................
-  namelist /muscl_params/ verbose, courant, gamma, csound, slope_type, &
+  namelist /muscl_params/ verbose, courant, csound, slope_type, &
     method, detailed_timer
   integer:: iostat, i
   logical, save:: first_time=.true.
@@ -87,13 +88,12 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Make sure to save and use consistent gamma factors throughout
   !-----------------------------------------------------------------------------
-  self%gamma = gamma
-  if (gamma == 1d0) then
+  if (eos%gamma == 1d0) then
     self%g1 = 1d0
   else
-    self%g1 = gamma-1d0
+    self%g1 = eos%gamma-1d0
   end if
-  self%g2 = self%g1*gamma
+  self%g2 = self%g1*eos%gamma
   self%riemann%g1 = self%g1
   self%riemann%g2 = self%g2
   !-----------------------------------------------------------------------------
@@ -217,10 +217,10 @@ SUBROUTINE ctoprim (self)
   !-----------------------------------------------------------------------------
   ! Subtract kinetic energy per unit mass and compute self%u_max
   !-----------------------------------------------------------------------------
-  if (self%gamma == 1d0) then
+  if (eos%gamma == 1d0) then
     g2 = 1.0
   else
-    g2 = (self%gamma-1d0)*self%gamma
+    g2 = (eos%gamma-1d0)*eos%gamma
   end if
   u2_max = 0.0
   do i3=l(3),u(3)
@@ -559,7 +559,7 @@ SUBROUTINE sources (self)
   e  => self%mem(:,:,:,5,self%new,1)
   forcing = associated(scratch%force_per_unit_mass) .or. &
             associated(scratch%force_per_unit_volume)
-  if (self%gamma /= 1d0 .and. forcing) then
+  if (eos%gamma /= 1d0 .and. forcing) then
     prim(:,:,:,5) = p1**2 + p2**2 + p3**2
   end if
   !-----------------------------------------------------------------------------
@@ -578,7 +578,7 @@ SUBROUTINE sources (self)
   !-----------------------------------------------------------------------------
   ! If adjusting total energy, use saved kinetic part
   !-----------------------------------------------------------------------------
-  if (self%gamma == 1d0) then
+  if (eos%gamma == 1d0) then
     e = d*csound**2 + 0.5*(p1**2 + p2**2 + p3**2)/d
   else if (forcing) then
     e = e + 0.5*(p1**2 + p2**2 + p3**2 - prim(:,:,:,5))/d

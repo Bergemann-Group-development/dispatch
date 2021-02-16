@@ -15,6 +15,7 @@ MODULE solver_mod
   USE stagger_mod
   USE validate_mod
   USE parameters_mod
+  USE eos_mod
   implicit none
   private
   type, public, extends(hd_t):: solver_t
@@ -185,8 +186,8 @@ SUBROUTINE e2s(self, s, it)
   !-----------------------------------------------------------------------------
   associate(d => self%mem(:,:,:,self%idx%d,it,1), &
             e => self%mem(:,:,:,self%idx%s,it,1))
-  g1 = self%gamma-1.0
-  s = d*log(e*g1/d**self%gamma)/g1
+  g1 = eos%gamma-1.0
+  s = d*log(e*g1/d**eos%gamma)/g1
   end associate
 END SUBROUTINE e2s
 
@@ -202,8 +203,8 @@ SUBROUTINE e2ss(self, ss, it)
   !-----------------------------------------------------------------------------
   associate(d => self%mem(:,:,:,self%idx%d,it,1), &
             e => self%mem(:,:,:,self%idx%s,it,1))
-  g1 = self%gamma-1.0
-  ss = log(e*g1/d**self%gamma)/g1
+  g1 = eos%gamma-1.0
+  ss = log(e*g1/d**eos%gamma)/g1
   end associate
 END SUBROUTINE e2ss
 
@@ -235,7 +236,7 @@ SUBROUTINE s2E_th(self, E_th, it)
   !-----------------------------------------------------------------------------
   associate(d => self%mem(:,:,:,self%idx%d,it,1), &
             s => self%mem(:,:,:,self%idx%s,it,1))
-  g1 = self%gamma-1d0
+  g1 = eos%gamma-1d0
   E_th = d**g1*exp(s*g1/d)/g1
   end associate
 END SUBROUTINE s2E_th
@@ -252,7 +253,7 @@ SUBROUTINE E_th2e (self, E_th, it)
   !-----------------------------------------------------------------------------
   associate(d => self%mem(:,:,:,self%idx%d,it,1), &
             e => self%mem(:,:,:,self%idx%e,it,1))
-  g1 = self%gamma-1d0
+  g1 = eos%gamma-1d0
   e = d*E_th
   end associate
 END SUBROUTINE E_th2e
@@ -269,7 +270,7 @@ SUBROUTINE E_th2s (self, E_th, it)
   !-----------------------------------------------------------------------------
   associate(d => self%mem(:,:,:,self%idx%d,it,1), &
             s => self%mem(:,:,:,self%idx%s,it,1))
-  g1 = self%gamma-1d0
+  g1 = eos%gamma-1d0
   s = d*log(E_th*g1/d**g1)/g1
   end associate
 END SUBROUTINE E_th2s
@@ -284,16 +285,16 @@ SUBROUTINE s2e(self, s, it)
   real, dimension(:,:,:):: s
   real:: g1
   !-----------------------------------------------------------------------------
-  g1 = self%gamma-1d0
+  g1 = eos%gamma-1d0
   if (self%idx%s > 0) then
     associate(d => self%mem(:,:,:,self%idx%d,it,1), &
               e => self%mem(:,:,:,self%idx%s,it,1))
-    e = d**self%gamma*exp(s/d*g1)/g1
+    e = d**eos%gamma*exp(s/d*g1)/g1
     end associate
   else
     associate(d => self%mem(:,:,:,self%idx%d,it,1), &
               e => self%mem(:,:,:,self%idx%e,it,1))
-    e = d**self%gamma*exp(s/d*g1)/g1
+    e = d**eos%gamma*exp(s/d*g1)/g1
     end associate
   end if
 END SUBROUTINE s2e
@@ -308,16 +309,16 @@ SUBROUTINE ss2e(self, ss, it)
   real, dimension(:,:,:):: ss
   real:: g1
   !-----------------------------------------------------------------------------
-  g1 = self%gamma-1d0
+  g1 = eos%gamma-1d0
   if (self%idx%s > 0) then
     associate(d => self%mem(:,:,:,self%idx%d,it,1), &
               e => self%mem(:,:,:,self%idx%s,it,1))
-    e = d**self%gamma*exp(ss*g1)/g1
+    e = d**eos%gamma*exp(ss*g1)/g1
     end associate
   else
     associate(d => self%mem(:,:,:,self%idx%d,it,1), &
               e => self%mem(:,:,:,self%idx%e,it,1))
-    e = d**self%gamma*exp(ss*g1)/g1
+    e = d**eos%gamma*exp(ss*g1)/g1
     end associate
   end if
 END SUBROUTINE ss2e
@@ -346,7 +347,7 @@ FUNCTION gas_pressure (self) RESULT (pg)
   if (isothermal) then
     pg = d*self%csound**2
   else
-    pg = (gamma-1d0)*(e-0.5*((px**2+py**2+pz**2)/d))
+    pg = (eos%gamma-1d0)*(e-0.5*((px**2+py**2+pz**2)/d))
   end if
 END FUNCTION gas_pressure
 
@@ -362,10 +363,10 @@ FUNCTION gas_pressure_ngz (self) RESULT (pg)
              py => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%py,self%it,1), &
              pz => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%pz,self%it,1), &
              e  => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%e ,self%it,1))
-  if (self%gamma==1.0) then
+  if (eos%gamma==1.0) then
     pg = d(l(1):u(1),l(2):u(2),l(3):u(3))
   else
-    pg = (self%gamma-1.0) &
+    pg = (eos%gamma-1.0) &
        *(e(l(1):u(1),l(2):u(2),l(3):u(3)) -0.5*( &
            (px(l(1):u(1),l(2):u(2),l(3):u(3))**2 + &
             py(l(1):u(1),l(2):u(2),l(3):u(3))**2 + &

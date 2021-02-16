@@ -11,15 +11,14 @@ MODULE experiment_mod
   USE timestep_mod
   USE index_mod
   USE solver_mod
+  USE eos_mod
   implicit none
   private
-
   type, public, extends(solver_t):: experiment_t
   contains
     procedure:: init
     procedure:: update
   end type
-
 CONTAINS
 
 !===============================================================================
@@ -76,8 +75,8 @@ SUBROUTINE init (self)
   !dtr2 => self%mem(:,:,:,self%idx%dtr+self%nv-5          ,self%it,1)
   px2  => pp2(:,:,:,1); py2 => pp2(:,:,:,2); pz2 => pp2(:,:,:,3);
 
-  print*, 'P and rho and gamma:'  , P , rho , self%gamma
-  print*, 'P2 and rho2 and gamma:', P2, rho2, self%gamma
+  print*, 'P and rho and gamma:'  , P , rho , eos%gamma
+  print*, 'P2 and rho2 and gamma:', P2, rho2, eos%gamma
 
   do k = self%mesh(3)%lb , self%mesh(3)%ub
     do j = self%mesh(2)%lb , self%mesh(2)%ub
@@ -98,11 +97,11 @@ SUBROUTINE init (self)
         uy2 (i,j,k) = vy2
         uz2 (i,j,k) = vz2
 
-        if (self%gamma .eq. 1.) then
+        if (eos%gamma .eq. 1.) then
           s (i,j,k) = -log(d(i,j,k))*d(i,j,k)
           s2(i,j,k) = 0d0
         else
-          s (i,j,k) = (log(pg(i,j,k))-log(d(i,j,k))*self%gamma)/(self%gamma-1.0) * d(i,j,k)
+          s (i,j,k) = (log(pg(i,j,k))-log(d(i,j,k))*eos%gamma)/(eos%gamma-1.0) * d(i,j,k)
           s2(i,j,k) = 0d0
         end if
 

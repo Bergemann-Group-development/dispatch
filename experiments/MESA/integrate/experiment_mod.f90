@@ -8,6 +8,7 @@ MODULE experiment_mod
   USE scaling_mod
   USE units_mod
   USE link_mod
+  USE eos_mod
   implicit none
   private
   type, public, extends(solver_t):: experiment_t
@@ -42,10 +43,10 @@ SUBROUTINE init (self)
   call io%lock%unset
   solver%csound = cs_kms*cgs%kms/scaling%u
   d = n_H2*scaling%mu*cgs%m_u/scaling%d
-  if (self%gamma == 1d0) then
+  if (eos%gamma == 1d0) then
     e = (cs_kms*1e5/scaling%u)**2*d
   else
-    e = (cs_kms*1e5/scaling%u)**2*d/(self%gamma*(self%gamma-1.0))
+    e = (cs_kms*1e5/scaling%u)**2*d/(eos%gamma*(eos%gamma-1.0))
   end if
   self%mem(:,:,:,self%idx%d,1,1) = d
   self%mem(:,:,:,self%idx%e,1,1) = e

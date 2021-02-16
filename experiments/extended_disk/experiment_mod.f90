@@ -11,6 +11,7 @@ MODULE experiment_mod
   USE scaling_mod
   USE download_mod
   USE scratch_mod
+  USE eos_mod
   implicit none
   private
   type, public, extends(cpatch_t):: experiment_t
@@ -55,7 +56,7 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   v_k = v_kepler/sqrt(self%r)                   ! mid point Kepler speed
   self%omega = [0d0, 0d0, v_k/self%r]           ! angular velocity
-  self%gamma = 1.0                              ! isothermal
+  eos%gamma = 1.0                              ! isothermal
   self%csound = c_sound                         ! solver sound speed
   !----------------------------------------------------------------------------
   l = [self%mesh(3)%lb, self%mesh(2)%lb, self%mesh(1)%lb]
@@ -157,8 +158,8 @@ SUBROUTINE initial_condition (self, l, u)
   end do
   end do
   if (self%kind(1:7)=='ramses_' .and. &
-      self%gamma > 1.0) then
-    e = d*c_sound**2/(self%gamma*(self%gamma-1.0)) &
+      eos%gamma > 1.0) then
+    e = d*c_sound**2/(eos%gamma*(eos%gamma-1.0)) &
       + 0.5*(px**2+py**2+pz**2)/d
   end if
 END SUBROUTINE initial_condition

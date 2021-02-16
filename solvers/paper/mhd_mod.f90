@@ -29,6 +29,7 @@ MODULE mhd_mod
   USE non_ideal_mod
   USE initial_mod
   USE scratch_mod
+  USE eos_mod
   implicit none
   private
   type, extends(extras_t), public:: mhd_t
@@ -65,10 +66,9 @@ SUBROUTINE init (self)
   class(mhd_t):: self
   integer:: i, iv
   real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], csound=1.0, cdtd=0.5, courant=0.2
-  real(8), save:: gamma=1.4_8
   logical, save:: first_time=.true.
   character(len=16), save:: eos
-  namelist /stagger_params/ nu, courant, gamma, csound, cdtd, hardwire, eos, &
+  namelist /stagger_params/ nu, courant, csound, cdtd, hardwire, eos, &
     do_smooth, do_2nd_div, flop_count, verbose, do_maxwell
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
@@ -86,7 +86,6 @@ SUBROUTINE init (self)
   call io%lock%unset
   self%eos = eos
   self%nu = nu
-  self%gamma = gamma
   self%csound = csound
   self%courant = courant
   self%cdtd = cdtd
@@ -362,7 +361,7 @@ SUBROUTINE pde (self)
     Ez = zup(Bz)**2                                                             ! mhd: 0 1 0
     ! Magnetic pressure and fast mode speed
     pb = 0.5*(Ex+Ey+Ez)                                                         ! mhd: 2 1 0
-    cs = sqrt((self%gamma*pg+2.0*pb + pa)/d)                                    ! mhd: 1 1 0
+    cs = sqrt((eos%gamma*pg+2.0*pb + pa)/d)                                    ! mhd: 1 1 0
     if (verbose>2) then
       u_max = self%fmaxval(cs,outer=.true.)
       self%u_max = max(self%u_max,u_max)
@@ -389,7 +388,7 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   else
     ! Sound speed + velocity
-    cs = sqrt((self%gamma*pg+pa)/d)                                             ! ops: 1 1 1 1 0
+    cs = sqrt((eos%gamma*pg+pa)/d)                                             ! ops: 1 1 1 1 0
     if (verbose>2) then
       u_max = self%fmaxval(cs,outer=.true.)
       self%u_max = max(self%u_max,u_max)
@@ -512,7 +511,7 @@ SUBROUTINE pde (self)
   ! the diffusive entropy flux directly proportional to the diffusive mass flux,
   ! plus a contribution proportional to the gradient of specific entropy ss.
   !-----------------------------------------------------------------------------
-  if (self%gamma==1d0) then
+  if (eos%gamma==1d0) then
     dsdt = 0.0
   else
     fm = fm*down(ss) - (self%nu(5)*dd*down(du))*ddown(ds,ss)                    ! ops: 1 4 0
@@ -554,7 +553,7 @@ SUBROUTINE pde (self)
     Ey = Ey + zdn(Ux)*xdn(Bz) - xdn(Uz)*zdn(Bx)                                 ! mhd: 2 2 0
     Ez = Ez + xdn(Uy)*ydn(Bx) - ydn(Ux)*xdn(By)                                 ! mhd: 2 2 0
     call non_ideal%update (self%gn, minval(ds), d, Jx, Jy, Jz, Bx, By, Bz, Q, emf, self%u_max)
-    if (self%gamma==1d0) then
+    if (eos%gamma==1d0) then
       dsdt = 0.0
     else
       dsdt = dsdt + Q*d/pg                                                      ! mhd: 1 1 1
@@ -647,13 +646,13 @@ FUNCTION gas_pressure (self) RESULT (pg)
   if (trim(self%eos)=='ideal') then
     d => self%mem(:,:,:,self%idx%d,self%it,1)
     s => self%mem(:,:,:,self%idx%s,self%it,1)
-    if (self%gamma==1d0) then
+    if (eos%gamma==1d0) then
       s = 0.0
       pg = d*self%csound**2
     else
       s => self%mem(:,:,:,self%idx%s,self%it,1)
-      pg = d**self%gamma*exp(s/d*(self%gamma-1))
-      !pg = exp(self%gamma*log(d))*exp(ss*(self%gamma-1.0))
+      pg = d**eos%gamma*exp(s/d*(eos%gamma-1))
+      !pg = exp(eos%gamma*log(d))*exp(ss*(eos%gamma-1.0))
     end if
   else
     n=shape(d)
@@ -678,11 +677,11 @@ SUBROUTINE gas_pressure_sub (self, d, s, ss, pg)
   integer, save:: nprint=3
   !-----------------------------------------------------------------------------
   if (trim(self%eos)=='ideal') then
-    if (self%gamma==1d0) then
+    if (eos%gamma==1d0) then
       ss = 0.0
       pg = d*self%csound**2
     else
-      pg = exp(self%gamma*log(d))*exp(ss*(self%gamma-1.0))
+      pg = exp(eos%gamma*log(d))*exp(ss*(eos%gamma-1.0))
     end if
   else
     print *,'yyy'

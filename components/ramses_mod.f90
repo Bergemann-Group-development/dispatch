@@ -92,6 +92,7 @@ MODULE ramses_mod
   USE omp_timer_mod
   USE shared_mod
   USE stagger_mod
+  USE eos_mod
   implicit none
   private
   integer, parameter :: dp=kind(1.0D0)                        ! double precision
@@ -143,7 +144,6 @@ MODULE ramses_mod
     integer:: nout, minlvl, maxlvl, rootlvl
     integer:: npatch, nmerged_max
     real(kind=4):: scale_l, scale_d, scale_t
-    real(kind=8):: gamma
     real(kind=8):: rank_load
     real(kind=8):: xmin, xmax, ymin, ymax, zmin, zmax         ! corners of the cutout
     real(kind=8):: size, d_min, tt_min
@@ -864,14 +864,14 @@ SUBROUTINE read_snapshot (self, keep, load)
       read(ilun2) ! SKIP nlevelmax
       read(ilun2) ! SKIP nboundary
       read(ilun2) gamma_ramses
-      self%gamma = gamma_ramses
+      eos%gamma = gamma_ramses
       !
       if (print_once) then
         print_once = .false.
         write(stdout,*) '      nvar =', nvar_mhd
         write(stdout,*) '    boxlen =', boxlen
         write(stdout,*) '      time =', time
-        write(stdout,*) '     gamma =', self%gamma
+        write(stdout,*) '     gamma =', eos%gamma
       end if
       !
       ! loop over levels for current file
@@ -1202,7 +1202,7 @@ FUNCTION phase_speed (self, var) RESULT (umax)
     by = 0.5*(var(i,6)+var(i,9))
     bz = 0.5*(var(i,7)+var(i,10))
     pg = var(i,11)
-    cf = sqrt((bx**2+by**2+bz**2+self%gamma*pg)/d)
+    cf = sqrt((bx**2+by**2+bz**2+eos%gamma*pg)/d)
     ua = sqrt(ux**2+uy**2+uz**2)
     umax = max(umax,ua+cf)
   end do
@@ -1256,7 +1256,7 @@ SUBROUTINE add_to (self, patch, oct)
   !-----------------------------------------------------------------------------
   ! Insert oct values into patch%mem.  FIXME: HLLD solver assumed
   !-----------------------------------------------------------------------------
-  enth = 1d0/(self%gamma-1d0)
+  enth = 1d0/(eos%gamma-1d0)
   i1 = patch%li(1) + oct%ii(1)
   i2 = patch%li(2) + oct%ii(2)
   i3 = patch%li(3) + oct%ii(3) 
@@ -1479,19 +1479,19 @@ FUNCTION energy (self, vars, patch) RESULT (e)
   real(kind=8), dimension(:):: vars
   class(experiment_t), pointer:: patch
   !.............................................................................
-  if (patch%gamma==1d0) then
+  if (eos%gamma==1d0) then
     e = vars(11)
   else if (patch%kind(1:6)=='ramses') then
     bx = 0.5_8*(vars(5)+vars(8))
     by = 0.5_8*(vars(6)+vars(9))
     bz = 0.5_8*(vars(7)+vars(10))
-    e = vars(11)/(patch%gamma-1d0) &
+    e = vars(11)/(eos%gamma-1d0) &
       + 0.5d0*vars(1)*(vars(2)**2+vars(3)**2+vars(4)**2) &
       + 0.5d0        *(bx**2+by**2+bz**2)
   else if (patch%kind(1:9)=='stagger2e') then
-    e = vars(1)*(log(vars(11))-log(vars(1))*patch%gamma)/(patch%gamma-1.0)
+    e = vars(1)*(log(vars(11))-log(vars(1))*eos%gamma)/(eos%gamma-1.0)
   else
-    e = vars(11)/(patch%gamma-1d0)
+    e = vars(11)/(eos%gamma-1d0)
   end if
 END FUNCTION energy
 
@@ -1958,15 +1958,15 @@ SUBROUTINE evaluate (self, task_list)
               bz = mem(ix,iy,iz,task%idx%bz)
               if (task%kind(1:6)=='ramses') then
                 !pg = (e-0.5*d*((ux**2+uy**2+uz**2) &
-                !              +(bx**2+by**2+bz**2)))*(task%gamma-1d0)
-                pg = (e-0.5*d*((ux**2+uy**2+uz**2)))*(task%gamma-1d0)
+                !              +(bx**2+by**2+bz**2)))*(eos%gamma-1d0)
+                pg = (e-0.5*d*((ux**2+uy**2+uz**2)))*(eos%gamma-1d0)
               else if (task%kind(1:9)=='stagger2e') then
-                pg = d**task%gamma*exp(e/d*(task%gamma-1.0))
+                pg = d**eos%gamma*exp(e/d*(eos%gamma-1.0))
               else
-                pg = e*(task%gamma-1d0)
+                pg = e*(eos%gamma-1d0)
               end if
-              cs = sqrt(self%gamma*pg/d)
-              cf = sqrt((bx**2+by**2+bz**2+self%gamma*pg)/d)
+              cs = sqrt(eos%gamma*pg/d)
+              cf = sqrt((bx**2+by**2+bz**2+eos%gamma*pg)/d)
               ua = sqrt(ux**2+uy**2+uz**2)
               ux = ux-p(1)
               uy = uy-p(2)
@@ -2127,10 +2127,10 @@ SUBROUTINE initialize (self, patch)
     if      (iv==patch%idx%d) then
       patch%mem(:,:,:,iv,:,:) = self%d_min
     else if (iv==patch%idx%e) then
-      if (patch%gamma == 1d0) then
+      if (eos%gamma == 1d0) then
         patch%mem(:,:,:,iv,:,:) = self%d_min
       else
-        patch%mem(:,:,:,iv,:,:) = self%d_min*self%tt_min/(patch%gamma-1d0)
+        patch%mem(:,:,:,iv,:,:) = self%d_min*self%tt_min/(eos%gamma-1d0)
       end if
     else
       patch%mem(:,:,:,iv,:,:) = 0.0

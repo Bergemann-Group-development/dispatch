@@ -37,6 +37,7 @@ MODULE experiment_mod
   USE units_mod
   USE omp_lock_mod
   USE scratch_mod
+  USE eos_mod
   implicit none
   private
   type, public, extends(solver_t):: experiment_t
@@ -79,7 +80,7 @@ SUBROUTINE init (self)
   end if
   call io%lock%unset
   call scaling%init
-  self%gamma = scaling%gamma
+  eos%gamma = scaling%gamma
   self%csound = 1.0
   !-----------------------------------------------------------------------------
   ! Initialize the patch, allocating %mem and %mesh etc
@@ -111,10 +112,10 @@ SUBROUTINE initial_conditions (self)
   !-----------------------------------------------------------------------------
   ! Gamma factors for relating thermal energy to temperature and pressure
   !-----------------------------------------------------------------------------
-  if (self%gamma == 1d0) then
+  if (eos%gamma == 1d0) then
     g2 = 1.0
   else
-    g2 = self%gamma*(self%gamma-1.0)
+    g2 = eos%gamma*(eos%gamma-1.0)
   end if
   !-----------------------------------------------------------------------------
   ! Loop over the internal part -- the external parts are handled by the frame-

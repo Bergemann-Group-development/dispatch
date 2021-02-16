@@ -12,6 +12,7 @@ MODULE experiment_mod
   USE link_mod
   USE list_mod
   USE scratch_mod
+  USE eos_mod
   implicit none
   private
   type, public, extends(solver_t):: experiment_t
@@ -50,10 +51,12 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call io%lock%set
   if (first_time) then
+    gamma = eos%gamma
     rewind (io%input)
     read (io%input, experiment_params, iostat=iostat)
     call io%namelist_warning ('experiment_params', iostat)
     write (io%namelist, experiment_params)
+    eos%gamma = gamma
     csound = sqrt(cgs%k_B*T_K/(cgs%m_u*scaling%mu))/scaling%u
     d0 = 1.0
     if (gamma == 1d0) then

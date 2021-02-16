@@ -88,7 +88,7 @@ SUBROUTINE pre_init (self)
   character(len=10):: riemann='hllc'
   real, save:: csound=1.
   integer:: i, iv, iostat
-  namelist /ramses_params/ gamma, riemann, slope_type, courant_factor, smallr, &
+  namelist /ramses_params/ riemann, slope_type, courant_factor, smallr, &
     smallc, isothermal, csound, detailed_timer, unsigned, courant_type, debug, &
     verbose
   type(index_t):: idx
@@ -109,15 +109,14 @@ SUBROUTINE pre_init (self)
     rewind (io%input)
     read (io%input, ramses_params, iostat=iostat)
     call io%namelist_warning ('ramses_params', iostat)
-    if (gamma == 1d0) isothermal = .true.
-    if (isothermal)   gamma = 1d0
+    if (eos%gamma == 1d0) isothermal = .true.
+    if (isothermal) eos%gamma = 1d0
     write (io%namelist, ramses_params)
     first_time = .false.
   end if
   call io%lock%unset ('hd_mod%init')
   self%riemann = riemann
   self%courant = courant_factor
-  self%gamma = gamma
   self%csound = csound
   self%staggered = .false.
   call trace%end ()
@@ -391,7 +390,7 @@ SUBROUTINE e2S(self, s, it)
     k = k+p(:,:,:,i)**2
   end do
   k = 0.5*k/d
-  s = log((e-k)*(gamma-1d0)/d**gamma)/(gamma-1d0)
+  s = log((e-k)*(eos%gamma-1d0)/d**eos%gamma)/(eos%gamma-1d0)
   deallocate(k)
 END SUBROUTINE e2S
 
@@ -420,7 +419,7 @@ SUBROUTINE S2e (self, s, it)
     k = k+p(:,:,:,i)**2
   end do
   k = 0.5*k/d
-  e = d**gamma*exp(s*(gamma-1d0)) + k
+  e = d**eos%gamma*exp(s*(eos%gamma-1d0)) + k
   deallocate(k)
 END SUBROUTINE S2e
 
@@ -531,10 +530,10 @@ subroutine check_small (self, uu)
   if (detailed_timer) call trace%begin ('hd_t%check_small', itimer=itimer)
   n_smalld = 0
   n_smallp = 0
-  if (isothermal .or. self%gamma==1d0) then
+  if (isothermal .or. eos%gamma==1d0) then
     self%ee_min = smallc**2
   else
-    self%ee_min = smallc**2/(gamma-1d0)
+    self%ee_min = smallc**2/(eos%gamma-1d0)
   end if
   panic = .false.
   lo = self%mesh%lb
@@ -631,7 +630,7 @@ subroutine ctoprim (self)
   else
     call trace%begin ('hd_mod::ctoprim')
   end if
-  smallp = smallr*smallc**2/gamma
+  smallp = smallr*smallc**2/eos%gamma
   do i3=1,self%gn(3)
   do i2=1,self%gn(2)
   do i1=1,self%gn(1)
@@ -653,7 +652,7 @@ subroutine ctoprim (self)
   if (isothermal) then
     pg = d*self%csound**2
   else
-    pg = e*(gamma-1d0)
+    pg = e*(eos%gamma-1d0)
   end if
   !.............................................................................
   l = self%mesh%li
@@ -664,7 +663,7 @@ subroutine ctoprim (self)
     pg = max(pg,smallp)
   end if
   !.............................................................................
-  c(:,:,:)=sqrt(gamma*q(:,:,:,5)/q(:,:,:,1))
+  c(:,:,:)=sqrt(eos%gamma*q(:,:,:,5)/q(:,:,:,1))
   if (courant_type==1) then
     c = c + max(abs(q(:,:,:,2)), abs(q(:,:,:,3)), abs(q(:,:,:,4)))
   else
@@ -1007,7 +1006,7 @@ subroutine trace3d(self)
   dtdx = self%dtime/self%mesh(1)%d
   dtdy = self%dtime/self%mesh(2)%d
   dtdz = self%dtime/self%mesh(3)%d
-  smallp = smallr*smallc**2/gamma
+  smallp = smallr*smallc**2/eos%gamma
   !-----------------------------------------------------------------------------
   dt2 = 0.5d0*self%dtime
   lb = self%mesh%lo
@@ -1072,7 +1071,7 @@ subroutine trace3d(self)
 
         ! Source terms (including transverse derivatives)
         sr0 = -u*drx-v*dry-w*drz - (dux+dvy+dwz)*r
-        sp0 = -u*dpx-v*dpy-w*dpz - (dux+dvy+dwz)*gamma*p + (gamma-1d0)*qq(i)
+        sp0 = -u*dpx-v*dpy-w*dpz - (dux+dvy+dwz)*eos%gamma*p + (eos%gamma-1d0)*qq(i)
 
         ! Uncomment to use unconstrained pressure gradients
         !dpx = half*(q(i+1,j,k,ip)-q(i-1,j,k,ip))*half*dtdx

@@ -13,6 +13,7 @@ MODULE initial_mod
   USE index_mod
   USE io_unit_mod
   USE force_mod
+  USE eos_mod
   implicit none
   private
   real(8), parameter:: pi2=8d0*atan(1d0)
@@ -20,7 +21,6 @@ MODULE initial_mod
     integer:: seed
     real:: d0
     logical:: mhd
-    real(8):: gamma=1d0
     real(8):: time=0d0
     character(len=64):: solver
     procedure(single_solenoidal), pointer:: condition=>null()
@@ -39,7 +39,7 @@ CONTAINS
 SUBROUTINE init (self, solver, gamma)
   class(initial_t):: self
   character(len=64):: solver
-  real, optional:: gamma
+  real(8), optional:: gamma
   integer:: iostat
   character(len=32), save:: type='turbulence'
   logical, save:: first_time=.true.
@@ -55,8 +55,6 @@ SUBROUTINE init (self, solver, gamma)
     write (io%namelist, IC_params)
   end if
   call io%lock%unset
-  if (present(gamma)) &
-    self%gamma = gamma
   self%solver = trim(solver)
   select case (type)
   case ('single_solenoidal')
@@ -108,7 +106,7 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   call trace_begin('initial_t%single_solenoidal', itimer=itimer)
   call io%lock%set
   if (first_time) then
-    gamma = self%gamma
+    gamma = eos%gamma
     rewind (io%input)
     read (io%input, IC_solenoidal_params, iostat=iostat)
     mhd = mhd .and. any(b0 /= 0.0)
@@ -117,11 +115,11 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
     first_time = .false.
   end if
   call io%lock%unset
-  self%gamma = gamma
-  if (self%gamma == 1d0) then
+  eos%gamma = gamma
+  if (eos%gamma == 1d0) then
     gamma_factor = csound**2
   else
-    gamma_factor = csound**2/(self%gamma*(self%gamma-1d0))
+    gamma_factor = csound**2/(eos%gamma*(eos%gamma-1d0))
   end if
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
@@ -174,7 +172,7 @@ SUBROUTINE single_compressive (self, m, ff, idx)
   call trace_begin('initial_t%single_compressive', itimer=itimer)
   call io%lock%set
   if (first_time) then
-    gamma = self%gamma
+    gamma = eos%gamma
     rewind (io%input)
     read (io%input, IC_compressive_params, iostat=iostat)
     mhd = mhd .and. any(b0 /= 0.0)
@@ -183,11 +181,11 @@ SUBROUTINE single_compressive (self, m, ff, idx)
     first_time = .false.
   end if
   call io%lock%unset
-  self%gamma = gamma
-  if (self%gamma == 1d0) then
+  eos%gamma = gamma
+  if (eos%gamma == 1d0) then
     gamma_factor = csound**2
   else
-    gamma_factor = csound**2/(self%gamma*(self%gamma-1d0))
+    gamma_factor = csound**2/(eos%gamma*(eos%gamma-1d0))
   end if
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
@@ -228,12 +226,12 @@ SUBROUTINE compressive_shear (self, m, ff, idx)
   !.............................................................................
   type(random_t) :: random
   integer        :: ix, iy, iz
-  real(8)        :: kx, ky, kz,gamma_factor
+  real(8)        :: kx, ky, kz, gamma_factor
   integer, save  :: seed=-33
   logical, save  :: mhd=.false.
   real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0
   real, save     :: u0(0:3)=0.0, phi(3)=0.0
-  real(8), save  :: t_turn=0.1
+  real(8), save  :: t_turn=0.1d0, gamma=1.4d0
   logical, save  :: first_time=.true.
   namelist /IC_compressive_params/ seed, k, a0, u0, b0, d0, s0, mhd, gamma, &
                                    phi, t_turn, verbose
@@ -243,7 +241,7 @@ SUBROUTINE compressive_shear (self, m, ff, idx)
   if (first_time) then
     call io%lock%set
     if (first_time) then
-      gamma = self%gamma
+      gamma = eos%gamma
       rewind (io%input)
       read (io%input, IC_compressive_params)
       mhd = mhd .and. any(b0 /= 0.0)
@@ -252,11 +250,11 @@ SUBROUTINE compressive_shear (self, m, ff, idx)
     end if
     call io%lock%unset
   end if
-  self%gamma = gamma
-  if (self%gamma == 1d0) then
+  eos%gamma = gamma
+  if (eos%gamma == 1d0) then
     gamma_factor = csound**2
   else
-    gamma_factor = csound**2/(self%gamma*(self%gamma-1d0))
+    gamma_factor = csound**2/(eos%gamma*(eos%gamma-1d0))
   end if
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
@@ -321,7 +319,7 @@ SUBROUTINE single_advection (self, m, ff, idx)
   if (first_time) then
     call io%lock%set
     if (first_time) then
-      gamma = self%gamma
+      gamma = eos%gamma
       rewind (io%input)
       read (io%input, IC_advection_params, iostat=iostat)
       mhd = mhd .and. any(b0 /= 0.0)
@@ -331,11 +329,11 @@ SUBROUTINE single_advection (self, m, ff, idx)
     end if
     call io%lock%unset
   end if
-  self%gamma = gamma
-  if (self%gamma == 1d0) then
+  eos%gamma = gamma
+  if (eos%gamma == 1d0) then
     gamma_factor = csound**2
   else
-    gamma_factor = csound**2/(self%gamma*(self%gamma-1d0))
+    gamma_factor = csound**2/(eos%gamma*(eos%gamma-1d0))
   end if
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
@@ -423,7 +421,7 @@ SUBROUTINE exa256 (self, m, ff, idx)
   ff(:,:,:,5) = 0.5*ff(:,:,:,idx%d)*(ff(:,:,:,idx%px)**2+ &
                                      ff(:,:,:,idx%py)**2+ &
                                      ff(:,:,:,idx%pz)**2) &
-              + ff(:,:,:,idx%d)/(gamma-one)
+              + ff(:,:,:,idx%d)/(eos%gamma-one)
   do iv=idx%px,idx%pz
     ff(:,:,:,iv) = ff(:,:,:,idx%d)*ff(:,:,:,iv)
   end do
@@ -520,10 +518,10 @@ SUBROUTINE turbulence (self, m, ff, idx)
   call io%lock%unset
   ff(:,:,:,idx%d        ) = 1.0
   ff(:,:,:,idx%e        ) = 1.0
-  if (gamma==1.0) then
+  if (eos%gamma==1.0) then
     ff(:,:,:,idx%e        ) = 1.0 + 0.5*(b0(1)**2+b0(2)**2+b0(3)**2)
   else
-    ff(:,:,:,idx%e        ) = 1.0/(gamma-1.) + 0.5*(b0(1)**2+b0(2)**2+b0(3)**2)
+    ff(:,:,:,idx%e        ) = 1.0/(eos%gamma-1.) + 0.5*(b0(1)**2+b0(2)**2+b0(3)**2)
   end if
   ff(:,:,:,idx%px:idx%pz) = 0.0
   ff(:,:,:,idx%bx       ) = b0(1)

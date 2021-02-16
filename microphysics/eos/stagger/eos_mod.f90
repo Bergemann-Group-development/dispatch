@@ -32,7 +32,7 @@ MODULE eos_mod
     real    :: w_lambda(n_lambda) = 1.0
     real    :: lnd_min, lnd_max, lnd_stp
     real    ::  ee_min,  ee_max,  ee_stp
-    real    :: gamma
+    real(8) :: gamma=1.4d0
     real    :: kappa
     logical :: on = .false.
   contains

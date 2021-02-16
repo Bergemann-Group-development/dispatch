@@ -1,7 +1,7 @@
 !===============================================================================
 !> Simple initical condition module for tests
 !>
-!> Note that the isothermal and gamma parameters are communicated from the solver
+!> Note that the isothermal and eos%gamma parameters are communicated from the solver
 !> via the hydro_parameters module.
 !===============================================================================
 MODULE initial_mod
@@ -11,6 +11,7 @@ MODULE initial_mod
   USE parameters_mod
   USE omp_mod
   USE index_mod
+  USE eos_mod
   implicit none
   private
   real(8), parameter:: pi2=8d0*atan(1d0)
@@ -101,7 +102,7 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   real(8)        :: kx, ky, kz
   logical, save  :: mhd=.false.
   real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, e0=1.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
-  real(8), save  :: t_turn=0.1
+  real(8), save  :: t_turn=0.1d0, gamma=1.4d0
   logical, save  :: first_time=.true.
   namelist /IC_solenoidal_params/ k, a0, u0, b0, d0, e0, mhd, gamma, t_turn
   integer, save  :: itimer=0
@@ -110,11 +111,13 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   call io%lock%set
   if (first_time) then
     first_time = .false.
+    gamma = eos%gamma
     rewind (io%input)
     read (io%input, IC_solenoidal_params, iostat=iostat)
     call io%namelist_warning ('IC_solenoidal_params', iostat)
     write (io%namelist, IC_solenoidal_params)
   end if
+  eos%gamma = gamma
   call io%lock%unset
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
@@ -154,7 +157,7 @@ SUBROUTINE single_compressive (self, m, ff, idx)
   real(8)        :: kx, ky, kz
   logical, save  :: mhd=.false.
   real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, e0=1.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
-  real(8), save  :: t_turn=0.1
+  real(8), save  :: t_turn=0.1d0, gamma=1.4d0
   logical, save  :: first_time=.true.
   namelist /IC_compressive_params/ k, a0, u0, b0, d0, e0, mhd, gamma, t_turn
   integer, save  :: itimer=0
@@ -163,12 +166,14 @@ SUBROUTINE single_compressive (self, m, ff, idx)
   call io%lock%set
   if (first_time) then
     first_time = .false.
+    gamma = eos%gamma
     rewind (io%input)
     read (io%input, IC_compressive_params,iostat=iostat)
     mhd = mhd .and. any(b0 /= 0.0)
     call io%namelist_warning ('IC_compressive_params', iostat)
     write (io%namelist, IC_compressive_params)
   end if
+  eos%gamma = gamma
   call io%lock%unset
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
@@ -207,7 +212,7 @@ SUBROUTINE single_advection (self, m, ff, idx)
   real, dimension(:,:,:,:) :: ff
   !.............................................................................
   integer        :: ix, iy, iz
-  real(8)        :: kx, ky, kz
+  real(8)        :: kx, ky, kz, gamma=1.4d0
   logical, save  :: mhd=.false.
   logical, save  :: first_time=.true.
   real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, e0=1.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
@@ -218,11 +223,13 @@ SUBROUTINE single_advection (self, m, ff, idx)
   call io%lock%set
   if (first_time) then
     first_time = .false.
+    gamma = eos%gamma
     rewind (io%input)
     read (io%input, IC_advection_params)
     mhd = mhd .and. any(b0 /= 0.0)
     if (io%master) write (*, IC_advection_params)
   end if
+  eos%gamma = gamma
   call io%lock%unset
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
@@ -311,7 +318,7 @@ SUBROUTINE exa256 (self, m, ff, idx)
     ff(:,:,:,iv) = ff(:,:,:,idx%d)*ff(:,:,:,iv)
   end do
   call energy (self, m, idx, ff)
-  if (io%verbose > 2) write (io_unit%log,*) 'initial dt:',dt,gamma,umax
+  if (io%verbose > 2) write (io_unit%log,*) 'initial dt:',dt,eos%gamma,umax
   if (io%verbose > 2) &
     write (io_unit%log,'(a,3i4,1p,2g12.3)') 'ix,iy,iz,dmin,dmax =', ix, iy, iz, &
       minval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1)), &
@@ -428,10 +435,10 @@ SUBROUTINE energy (self, m, idx, ff)
   real(dp):: fgamma
   !-----------------------------------------------------------------------------
   call trace%begin ('initial_t%energy')
-  if (isothermal .or. gamma==1d0) then
+  if (isothermal .or. eos%gamma==1d0) then
     fgamma = 1d0
   else
-    fgamma = gamma*(gamma-1d0)
+    fgamma = eos%gamma*(eos%gamma-1d0)
   end if
   ff(:,:,:,idx%e) = 0.5*(ff(:,:,:,idx%px)**2+ &
                          ff(:,:,:,idx%py)**2+ &

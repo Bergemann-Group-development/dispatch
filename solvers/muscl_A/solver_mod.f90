@@ -12,6 +12,7 @@ MODULE solver_mod
   USE kinds_mod
   USE mhd_mod
   USE stagger_mod
+  USE eos_mod
   implicit none
   private
   type, public, extends(mhd_t):: solver_t
@@ -194,8 +195,8 @@ SUBROUTINE e2s(self, s, it)
   !-----------------------------------------------------------------------------
   associate(d => self%mem(:,:,:,self%idx%d,it,1), &
             e => self%mem(:,:,:,self%idx%s,it,1))
-  g1 = self%gamma-1.0
-  s = d*log(e*g1/d**self%gamma)/g1
+  g1 = eos%gamma-1.0
+  s = d*log(e*g1/d**eos%gamma)/g1
   end associate
 END SUBROUTINE e2s
 
@@ -211,8 +212,8 @@ SUBROUTINE e2ss(self, ss, it)
   !-----------------------------------------------------------------------------
   associate(d => self%mem(:,:,:,self%idx%d,it,1), &
             e => self%mem(:,:,:,self%idx%s,it,1))
-  g1 = self%gamma-1.0
-  ss = log(e*g1/d**self%gamma)/g1
+  g1 = eos%gamma-1.0
+  ss = log(e*g1/d**eos%gamma)/g1
   end associate
 END SUBROUTINE e2ss
 
@@ -228,8 +229,8 @@ SUBROUTINE s2e(self, s, it)
   !-----------------------------------------------------------------------------
   associate(d => self%mem(:,:,:,self%idx%d,it,1), &
             e => self%mem(:,:,:,self%idx%s,it,1))
-  g1 = self%gamma-1.0
-  e = d**self%gamma*exp(s/d*g1)/g1
+  g1 = eos%gamma-1.0
+  e = d**eos%gamma*exp(s/d*g1)/g1
   end associate
 END SUBROUTINE s2e
 
@@ -245,8 +246,8 @@ SUBROUTINE ss2e(self, ss, it)
   !-----------------------------------------------------------------------------
   associate(d => self%mem(:,:,:,self%idx%d,it,1), &
             e => self%mem(:,:,:,self%idx%s,it,1))
-  g1 = self%gamma-1.0
-  e = d**self%gamma*exp(ss*g1)/g1
+  g1 = eos%gamma-1.0
+  e = d**eos%gamma*exp(ss*g1)/g1
   end associate
 END SUBROUTINE ss2e
 
@@ -271,10 +272,10 @@ FUNCTION gas_pressure (self) RESULT (pg)
              py => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%py,self%it,1), &
              pz => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%pz,self%it,1), &
              e  => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%e ,self%it,1))
-  if (self%gamma==1.0) then
+  if (eos%gamma==1.0) then
     pg = d(l(1):u(1),l(2):u(2),l(3):u(3))
   else
-    pg = (self%gamma-1.0) &
+    pg = (eos%gamma-1.0) &
        *(e(l(1):u(1),l(2):u(2),l(3):u(3)) -0.5*( &
            (px(l(1):u(1),l(2):u(2),l(3):u(3))**2 + &
             py(l(1):u(1),l(2):u(2),l(3):u(3))**2 + &
@@ -296,10 +297,10 @@ FUNCTION gas_pressure_ngz (self) RESULT (pg)
              py => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%py,self%it,1), &
              pz => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%pz,self%it,1), &
              e  => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%e ,self%it,1))
-  if (self%gamma==1.0) then
+  if (eos%gamma==1.0) then
     pg = d(l(1):u(1),l(2):u(2),l(3):u(3))
   else
-    pg = (self%gamma-1.0) &
+    pg = (eos%gamma-1.0) &
        *(e(l(1):u(1),l(2):u(2),l(3):u(3)) -0.5*( &
            (px(l(1):u(1),l(2):u(2),l(3):u(3))**2 + &
             py(l(1):u(1),l(2):u(2),l(3):u(3))**2 + &

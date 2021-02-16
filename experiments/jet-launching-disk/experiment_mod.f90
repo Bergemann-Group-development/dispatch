@@ -9,16 +9,15 @@ MODULE experiment_mod
   USE pebble_patch_mod
   USE potential_mod
   USE kinds_mod
+  USE eos_mod
   implicit none
   private
-
   type, public, extends(pebble_patch_t):: experiment_t
   contains
     procedure:: init => init_experiment
     procedure:: update => update_experiment
     procedure:: density_floor => enforce_d_floor
   end type
-
 CONTAINS
 
 !===============================================================================
@@ -32,7 +31,7 @@ SUBROUTINE init_experiment (self)
 
   self%mhd = .true.
   self%initial%mhd = .true.
-  call self%initial%init(self%kind, real(self%gamma))
+  call self%initial%init(self%kind, real(eos%gamma))
   call self%solver_t%init()
   call self%pebble_patch_t%init()
   ! intialize time-independent gravitational potential of the central star

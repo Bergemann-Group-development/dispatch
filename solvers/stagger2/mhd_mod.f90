@@ -35,6 +35,7 @@ MODULE mhd_mod
   USE task_mod
   USE timer_mod
   USE scratch_mod
+  USE eos_mod
   implicit none
   private
   type, extends(extras_t), public:: mhd_t
@@ -49,7 +50,6 @@ MODULE mhd_mod
     procedure:: test
     procedure:: pre_init
     procedure:: init
-    procedure:: post_init
     procedure:: pde
     procedure:: pre_update
     procedure:: update
@@ -77,11 +77,9 @@ SUBROUTINE pre_init (self)
   type(index_t):: idx
   integer:: i, iv, iostat
   real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], csound=1.0, cdtd=0.5, courant=0.2
-  real(8), save:: gamma=1.4_8
   logical, save:: first_time=.true.
   logical, save:: mhd=.false.
-  character(len=16), save:: eos
-  namelist /stagger_params/ nu, courant, gamma, csound, cdtd, hardwire, eos, &
+  namelist /stagger_params/ nu, courant, csound, cdtd, hardwire, &
     do_smooth, unsigned, do_maxwell, do_temperature, verbose, do_test,mhd
   !----------------------------------------------------------------------------
   call trace%begin ('mhd_t%pre_init')
@@ -89,7 +87,7 @@ SUBROUTINE pre_init (self)
   ! Read IC parameters, which determine if this is HD or MHD.  The IC init is
   ! called again, from extras_t%init, when gamma is known and can be passed on.
   !-----------------------------------------------------------------------------
-  call self%initial%init (self%kind, self%gamma)
+  call self%initial%init (self%kind, eos%gamma)
   self%mhd = self%initial%mhd
   if (self%mhd) then
     self%kind = 'stagger2_mhd_patch'
@@ -107,7 +105,6 @@ SUBROUTINE pre_init (self)
   call io%lock%set ('mhd_t%pre_init')
   if (first_time) then
     first_time = .false.
-    eos = self%eos
     mhd = self%mhd
     rewind (io%input)
     read (io%input, stagger_params, iostat=iostat)
@@ -128,10 +125,8 @@ SUBROUTINE pre_init (self)
     end if
   end if
   call io%lock%unset ('mhd_t%pre_init')
-  self%eos = eos
   self%mhd = mhd
   self%nu = nu
-  self%gamma = gamma
   self%csound = csound
   self%courant = courant
   self%cdtd = cdtd
@@ -180,23 +175,6 @@ SUBROUTINE init (self)
   call self%extras_t%init
   call trace%end()
 END SUBROUTINE init
-
-!> =============================================================================
-!> Post init, whatever is required
-!> =============================================================================
-SUBROUTINE post_init (self)
-  class(mhd_t):: self
-  ! ----------------------------------------------------------------------------
-  ! ----------------------------------------------------------------------------
-  ! Call extras post-init
-  ! ----------------------------------------------------------------------------
-  call self%extras_t%post_init
-  !----------------------------------------------------------------------------
-  ! Boundary setup
-  !----------------------------------------------------------------------------
-  self%boundaries%mhd = self%mhd
- call trace%end()
-END SUBROUTINE post_init
 
 !===============================================================================
 SUBROUTINE test (self)
@@ -440,7 +418,7 @@ SUBROUTINE pde (self)
     Ez = zup(Bz)**2                                                             ! mhd: 0 1 0
     ! Magnetic pressure and fast mode speed
     pb = 0.5*(Ex+Ey+Ez)                                                         ! mhd: 2 1 0
-    cs = sqrt((self%gamma*pg+2.0*pb + pa)/d)                                    ! mhd: 1 1 0
+    cs = sqrt((eos%gamma*pg+2.0*pb + pa)/d)                                    ! mhd: 1 1 0
     if (verbose>2) then
       u_max = self%fmaxval(cs,outer=.true.)
       self%u_max = max(self%u_max,u_max)
@@ -467,7 +445,7 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   else
     ! Sound speed + velocity
-    cs = sqrt((self%gamma*pg+pa)/d)                                             ! ops: 1 1 1 1 0
+    cs = sqrt((eos%gamma*pg+pa)/d)                                             ! ops: 1 1 1 1 0
     if (verbose>3) then
       u_max = self%fmaxval(cs,outer=.true.)
       self%u_max = max(self%u_max,u_max)
@@ -588,7 +566,7 @@ SUBROUTINE pde (self)
   ! the diffusive entropy flux directly proportional to the diffusive mass flux,
   ! plus a contribution proportional to the gradient of specific entropy ss.
   !-----------------------------------------------------------------------------
-  if (self%gamma==1d0) then
+  if (eos%gamma==1d0) then
     dsdt = 0.0
   else
     fm = fm*down(ss) - (self%nu(5)*dd*down(du))*ddown(ds,ss)                    ! ops: 1 4 0
@@ -630,7 +608,7 @@ SUBROUTINE pde (self)
     Ey = Ey + zdn(Ux)*xdn(Bz) - xdn(Uz)*zdn(Bx)                                 ! mhd: 2 2 0
     Ez = Ez + xdn(Uy)*ydn(Bx) - ydn(Ux)*xdn(By)                                 ! mhd: 2 2 0
     call non_ideal%update (self%gn, minval(ds), d, Jx, Jy, Jz, Bx, By, Bz, Q, emf, self%u_max)
-    if (self%gamma==1d0) then
+    if (eos%gamma==1d0) then
       dsdt = 0.0
     else
       dsdt = dsdt + Q*d/pg                                                      ! mhd: 1 1 1
@@ -719,7 +697,7 @@ SUBROUTINE update (self)
   ! the call here will have no effect, since out_next has already been updated.
   !-----------------------------------------------------------------------------
   call self%output
-  if (self%gamma==1d0) then
+  if (eos%gamma==1d0) then
     self%mem(:,:,:,self%idx%e,self%it,1) = &
     self%mem(:,:,:,self%idx%d,self%it,1)*self%csound**2
   end if
@@ -787,10 +765,10 @@ FUNCTION gas_pressure (self) result(pg)
   call allocate_scalars(self%gn,ss)
   ss = s/d
   if (trim(self%eos)=='ideal') then
-    if (self%gamma==1d0) then
+    if (eos%gamma==1d0) then
       pg = d*self%csound**2
     else
-      pg = d**self%gamma*exp(ss*(self%gamma-1d0))
+      pg = d**eos%gamma*exp(ss*(eos%gamma-1d0))
     end if
   else
     if (do_temperature) then
@@ -820,10 +798,10 @@ SUBROUTINE gas_pressure_sub (self, d, lnd, ss, pg)
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%gas_pressure_sub')
   if (trim(self%eos)=='ideal') then
-    if (self%gamma==1d0) then
+    if (eos%gamma==1d0) then
       pg = d*self%csound**2
     else
-      pg = d**self%gamma*exp(ss*(self%gamma-1d0))
+      pg = d**eos%gamma*exp(ss*(eos%gamma-1d0))
     end if
   else
     if (do_temperature) then

@@ -63,7 +63,7 @@ MODULE eos_mod
     real:: lnd_min, lnd_max, lnd_stp
     real:: lne_min, lne_max, lne_stp, ee_min
     real:: mu_l = 0.62    
-    real:: gamma = 5.0e0/3.0e0
+    real(8):: gamma = 5.0e0/3.0e0
     real, dimension(:,:,:), pointer :: eostable,epstable
     real, dimension(:,:,:), pointer :: opatable,temtable
     real, dimension(:,:,:), pointer :: abl

@@ -15,6 +15,7 @@ MODULE solver_mod
   USE validate_mod
   USE stagger_mod
   USE parameters_mod
+  USE eos_mod
   implicit none
   private
   type, public, extends(mhd_t):: solver_t
@@ -202,8 +203,8 @@ SUBROUTINE e2s(self, s, it)
   !-----------------------------------------------------------------------------
   associate(d => self%mem(:,:,:,self%idx%d,it,1), &
             e => self%mem(:,:,:,self%idx%s,it,1))
-  g1 = self%gamma-1d0
-  s = d*log(e*g1/d**self%gamma)/g1
+  g1 = eos%gamma-1d0
+  s = d*log(e*g1/d**eos%gamma)/g1
   end associate
 END SUBROUTINE e2s
 
@@ -219,8 +220,8 @@ SUBROUTINE e2ss(self, ss, it)
   !-----------------------------------------------------------------------------
   associate(d => self%mem(:,:,:,self%idx%d,it,1), &
             e => self%mem(:,:,:,self%idx%s,it,1))
-  g1 = self%gamma-1d0
-  ss = log(e*g1/d**self%gamma)/g1
+  g1 = eos%gamma-1d0
+  ss = log(e*g1/d**eos%gamma)/g1
   end associate
 END SUBROUTINE e2ss
 
@@ -234,16 +235,16 @@ SUBROUTINE s2e(self, s, it)
   real, dimension(:,:,:):: s
   real:: g1
   !-----------------------------------------------------------------------------
-  g1 = self%gamma-1d0
+  g1 = eos%gamma-1d0
   if (self%idx%s > 0) then
     associate(d => self%mem(:,:,:,self%idx%d,it,1), &
               e => self%mem(:,:,:,self%idx%s,it,1))
-    e = d**self%gamma*exp(s/d*g1)/g1
+    e = d**eos%gamma*exp(s/d*g1)/g1
     end associate
   else
     associate(d => self%mem(:,:,:,self%idx%d,it,1), &
               e => self%mem(:,:,:,self%idx%e,it,1))
-    e = d**self%gamma*exp(s/d*g1)/g1
+    e = d**eos%gamma*exp(s/d*g1)/g1
     end associate
   end if
 END SUBROUTINE s2e
@@ -258,16 +259,16 @@ SUBROUTINE ss2e(self, ss, it)
   real, dimension(:,:,:):: ss
   real:: g1
   !-----------------------------------------------------------------------------
-  g1 = self%gamma-1d0
+  g1 = eos%gamma-1d0
   if (self%idx%s > 0) then
     associate(d => self%mem(:,:,:,self%idx%d,it,1), &
               e => self%mem(:,:,:,self%idx%s,it,1))
-    e = d**self%gamma*exp(ss*g1)/g1
+    e = d**eos%gamma*exp(ss*g1)/g1
     end associate
   else
     associate(d => self%mem(:,:,:,self%idx%d,it,1), &
               e => self%mem(:,:,:,self%idx%e,it,1))
-    e = d**self%gamma*exp(ss*g1)/g1
+    e = d**eos%gamma*exp(ss*g1)/g1
     end associate
   end if
 END SUBROUTINE ss2e
@@ -298,7 +299,7 @@ FUNCTION gas_pressure (self) RESULT (pg)
   if (isothermal) then
     pg = d*self%csound**2
   else
-    pg = (gamma-1d0)* &
+    pg = (eos%gamma-1d0)* &
       (e-0.5*(up(bx,1)**2+up(by,2)**2+up(bz,3)**2+(px**2+py**2+pz**2)/d))
   end if
   end associate
@@ -319,10 +320,10 @@ FUNCTION gas_pressure_ngz (self) RESULT (pg)
              by => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%by,self%it,1), &
              bz => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%bz,self%it,1), &
              e  => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%e ,self%it,1))
-  if (self%gamma==1.0) then
+  if (eos%gamma==1.0) then
     pg = d(l(1):u(1),l(2):u(2),l(3):u(3))
   else
-    pg = (self%gamma-1d0) &
+    pg = (eos%gamma-1d0) &
        *(e(l(1):u(1),l(2):u(2),l(3):u(3)) -0.5*( &
            (px(l(1):u(1),l(2):u(2),l(3):u(3))**2 + &
             py(l(1):u(1),l(2):u(2),l(3):u(3))**2 + &
@@ -485,9 +486,9 @@ SUBROUTINE compression_magnitude (self, w)
   vx = self%mem(:,:,:,self%idx%px,self%it,1)/self%mem(:,:,:,self%idx%d,self%it,1)
   vy = self%mem(:,:,:,self%idx%py,self%it,1)/self%mem(:,:,:,self%idx%d,self%it,1)
   vz = self%mem(:,:,:,self%idx%pz,self%it,1)/self%mem(:,:,:,self%idx%d,self%it,1)
-  w = max(- stagger%ddx(self%ds(1),vx) &
-          - stagger%ddy(self%ds(2),vy) &
-          - stagger%ddz(self%ds(3),vz), 0.0)
+  w = max(- stagger%ddx(self%ds,vx) &
+          - stagger%ddy(self%ds,vy) &
+          - stagger%ddz(self%ds,vz), 0.0)
   deallocate (vx, vy, vz)
   call trace%end (itimer)
 END SUBROUTINE compression_magnitude
@@ -509,9 +510,9 @@ SUBROUTINE vorticity_magnitude (self, w)
   vx = self%mem(:,:,:,self%idx%px,self%it,1)/self%mem(:,:,:,self%idx%d,self%it,1)
   vy = self%mem(:,:,:,self%idx%py,self%it,1)/self%mem(:,:,:,self%idx%d,self%it,1)
   vz = self%mem(:,:,:,self%idx%pz,self%it,1)/self%mem(:,:,:,self%idx%d,self%it,1)
-  w = sqrt((stagger%ddy(self%ds(2),vz)-stagger%ddz(self%ds(3),vy))**2 &
-         + (stagger%ddz(self%ds(3),vx)-stagger%ddx(self%ds(1),vz))**2 &
-         + (stagger%ddx(self%ds(1),vy)-stagger%ddy(self%ds(2),vx))**2)
+  w = sqrt((stagger%ddy(self%ds,vz)-stagger%ddz(self%ds,vy))**2 &
+         + (stagger%ddz(self%ds,vx)-stagger%ddx(self%ds,vz))**2 &
+         + (stagger%ddx(self%ds,vy)-stagger%ddy(self%ds,vx))**2)
   deallocate (vx, vy, vz)
   call trace%end (itimer)
 END SUBROUTINE vorticity_magnitude

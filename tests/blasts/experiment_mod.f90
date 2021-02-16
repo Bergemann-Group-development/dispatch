@@ -9,6 +9,7 @@ MODULE experiment_mod
   USE solver_mod
   USE stagger_mod
   USE mesh_mod
+  USE eos_mod
   implicit none
   private
   !
@@ -45,12 +46,13 @@ SUBROUTINE init (self)
   ! Mandatory namelist
   !-----------------------------------------------------------------------------
   if (first_time) then
+    gamma = eos%gamma
     rewind (io%input)
     read (io%input, experiment_params)
     if (io%master) write (*,experiment_params)
     first_time = .false.
   end if
-  self%gamma = gamma
+  eos%gamma = gamma
   !-----------------------------------------------------------------------------
   ! Variables via pointers
   !-----------------------------------------------------------------------------
@@ -64,10 +66,10 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Allow isothermal case (gamma==1)
   !-----------------------------------------------------------------------------
-  if (self%gamma==1.0) then
+  if (eos%gamma==1.0) then
     gm1 = 1d0
   else
-    gm1 = self%gamma-1d0
+    gm1 = eos%gamma-1d0
   end if
   !-----------------------------------------------------------------------------
   ! Spherical initial state
@@ -102,7 +104,7 @@ SUBROUTINE init (self)
   else if (self%kind(1:9) == 'stagger2e') then
     e = p/gm1
   else if (self%kind(1:8) == 'stagger2') then
-    s = (log(p)-log(d)*self%gamma)/gm1 * d
+    s = (log(p)-log(d)*eos%gamma)/gm1 * d
   end if
   deallocate (p)
   !-----------------------------------------------------------------------------

@@ -13,17 +13,15 @@ MODULE experiment_mod
   USE index_mod
   USE solver_mod
   USE mhd_mod
+  USE eos_mod
   implicit none
   private
-
   type, public, extends(solver_t):: experiment_t
   contains
     procedure:: init
     procedure:: update
   end type
-
   logical, save:: first_time = .true.
-
 CONTAINS
 
 !===============================================================================
@@ -104,11 +102,11 @@ SUBROUTINE init (self)
         if (x < xdisc) then
           d (i,j,k) = rho_l
           if (self%kind(1:4) == 'zeus' .or. self%kind(1:10) == 'stagger2e_') then
-            e1(i,j,k) = P_l / (self%gamma - 1.0)
+            e1(i,j,k) = P_l / (eos%gamma - 1.0)
           else if (self%kind(1:9) == 'stagger2_') then
-            s (i,j,k) = (log(P_l) - log(rho_l) * self%gamma) * rho_l / (self%gamma - 1.0)
+            s (i,j,k) = (log(P_l) - log(rho_l) * eos%gamma) * rho_l / (eos%gamma - 1.0)
           else if (self%kind(1:6) == 'ramses')  then
-            e1(i,j,k) = P_l / (self%gamma - 1.0)
+            e1(i,j,k) = P_l / (eos%gamma - 1.0)
           end if
           px(i,j,k) = vx_l * rho_l
           py(i,j,k) = vy_l * rho_l
@@ -119,11 +117,11 @@ SUBROUTINE init (self)
         else
           d (i,j,k) = rho_r
           if (self%kind(1:4) == 'zeus' .or. self%kind(1:10) == 'stagger2e_') then
-            e1(i,j,k) = P_r / (self%gamma - 1.0)
+            e1(i,j,k) = P_r / (eos%gamma - 1.0)
           else if (self%kind(1:9) == 'stagger2_') then
-            s (i,j,k) = (log(P_r) - log(rho_r) * self%gamma) * rho_r / (self%gamma - 1.0)
+            s (i,j,k) = (log(P_r) - log(rho_r) * eos%gamma) * rho_r / (eos%gamma - 1.0)
           else if (self%kind(1:6) == 'ramses')  then
-            e1(i,j,k) = P_r / (self%gamma - 1.0)
+            e1(i,j,k) = P_r / (eos%gamma - 1.0)
           end if
           px(i,j,k) = vx_r * rho_r
           py(i,j,k) = vy_r * rho_r

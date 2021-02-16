@@ -12,6 +12,7 @@ MODULE experiment_mod
 !  USE timestep_mod
   USE index_mod
   USE solver_mod
+  USE eos_mod
   implicit none
   private
 
@@ -72,12 +73,12 @@ SUBROUTINE init (self)
   px=>p(:,:,:,1); py=>p(:,:,:,2); pz=>p(:,:,:,3);
   Bx=>B(:,:,:,1); By=>B(:,:,:,2); Bz=>B(:,:,:,3);
   print*, 'gn is:', self%gn(1)
-  print*, 'P and rho and gamma:', P_l, P_r, rho_l, rho_r, self%gamma
+  print*, 'P and rho and gamma:', P_l, P_r, rho_l, rho_r, eos%gamma
 
-  if (self%gamma == 1d0) then
+  if (eos%gamma == 1d0) then
     g1 = 1.0
   else
-    g1 = self%gamma-1d0
+    g1 = eos%gamma-1d0
   end if
   do i=self%mesh(1)%lb,self%mesh(1)%ub
     x = self%mesh(1)%p + self%mesh(1)%r(i)
@@ -95,7 +96,7 @@ SUBROUTINE init (self)
           et(i,:,:)= P_l/g1 + 0.5*rho_l * (vx_l**2+vy_l**2+vz_l**2) + 0.5 * (Bx(i,:,:)**2 + By(i,:,:)**2 + Bz(i,:,:)**2)  
       end if
       if (self%kind(1:7) == 'stagger') then
-        s (i,:,:) = (log(P_l)-log(rho_l)*self%gamma)/g1 * rho_l
+        s (i,:,:) = (log(P_l)-log(rho_l)*eos%gamma)/g1 * rho_l
       end if
     else
       d (i,:,:) = rho_r
@@ -109,7 +110,7 @@ SUBROUTINE init (self)
         et(i,:,:)= P_r/g1 + 0.5*rho_r * (vx_r**2+vy_r**2+vz_r**2) + 0.5 * (Bx(i,:,:)**2 + By(i,:,:)**2 + Bz(i,:,:)**2)            
       end if
       if (self%kind(1:7) == 'stagger') then
-        s (i,:,:) = (log(P_r)-log(rho_r)*self%gamma)/g1 * rho_r
+        s (i,:,:) = (log(P_r)-log(rho_r)*eos%gamma)/g1 * rho_r
       end if
     endif
   end do
@@ -122,17 +123,17 @@ SUBROUTINE init (self)
   boundary%P_l   = P_l
   boundary%rho_l = rho_l
   if (self%kind(1:7) == 'stagger') then
-    if (self%gamma .eq. 1.) then
+    if (eos%gamma .eq. 1.) then
       boundary%s_l = -log(rho_l)*rho_l
     else
-      boundary%s_l = (log(P_l)-log(rho_l)*self%gamma)/(self%gamma-1.0) * rho_l
+      boundary%s_l = (log(P_l)-log(rho_l)*eos%gamma)/(eos%gamma-1.0) * rho_l
     end if
   end if
   if (self%kind(1:6) == 'ramses') then
-    if (self%gamma .eq. 1.) then
+    if (eos%gamma .eq. 1.) then
       boundary%e_l = P_l
     else
-      boundary%e_l = P_l/(self%gamma-1d0) + 0.5*rho_l * (vx_l**2+vy_l**2+vz_l**2) + 0.5 * (Bx_l**2 + By_l**2 + Bz_l**2)
+      boundary%e_l = P_l/(eos%gamma-1d0) + 0.5*rho_l * (vx_l**2+vy_l**2+vz_l**2) + 0.5 * (Bx_l**2 + By_l**2 + Bz_l**2)
     end if
   end if
   boundary%vx_l  = vx_l
@@ -144,17 +145,17 @@ SUBROUTINE init (self)
   boundary%P_r   = P_r
   boundary%rho_r = rho_r
   if (self%kind(1:7) == 'stagger') then
-    if (self%gamma .eq. 1.) then
+    if (eos%gamma .eq. 1.) then
       boundary%s_r = -log(rho_r)*rho_r
     else
-      boundary%s_r = (log(P_r)-log(rho_r)*self%gamma)/(self%gamma-1.0) * rho_r
+      boundary%s_r = (log(P_r)-log(rho_r)*eos%gamma)/(eos%gamma-1.0) * rho_r
     end if
   end if
   if (self%kind(1:6) == 'ramses') then
-    if (self%gamma .eq. 1.) then
+    if (eos%gamma .eq. 1.) then
       boundary%e_r = P_r
     else
-      boundary%e_r = P_r/(self%gamma-1d0) + 0.5*rho_r * (vx_r**2+vy_r**2+vz_r**2) + 0.5 * (Bx_r**2 + By_r**2 + Bz_r**2)
+      boundary%e_r = P_r/(eos%gamma-1d0) + 0.5*rho_r * (vx_r**2+vy_r**2+vz_r**2) + 0.5 * (Bx_r**2 + By_r**2 + Bz_r**2)
     end if
   end if
   boundary%vx_r  = vx_r

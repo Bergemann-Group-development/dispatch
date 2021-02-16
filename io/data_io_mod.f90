@@ -68,6 +68,7 @@ MODULE data_io_mod
   USE dll_mod
   USE time_slices_mod
   USE aux_mod
+  USE eos_mod
   implicit none
   private
   type, public:: io_kind_t
@@ -461,7 +462,7 @@ SUBROUTINE output_txt (patch, append)
   write (io_unit%data,'(a)') trim(patch%opacity)
   write (io_unit%data,'(1p,2e18.10,6(2x,3e18.10)1x,1x,2e10.3)') patch%out_next, &
         patch%dtime, patch%position, patch%ds, patch%velocity, patch%llc_nat, &
-        patch%llc_cart, patch%mesh%centre_nat, patch%quality, patch%gamma
+        patch%llc_cart, patch%mesh%centre_nat, patch%quality, eos%gamma
   write (io_unit%data,'(6(3i10.1,2x),3i2.1,1x,1i2.1,i3)') int(patch%box/patch%ds+0.5), &
         u-l+1, patch%li, patch%ui, patch%n, patch%gn, patch%ng, patch%mv, patch%level
   write (io_unit%data,'(3(1i8.1,1x),i2.1)') patch%id, patch%iout, patch%istep, patch%mesh_type
@@ -537,12 +538,12 @@ SUBROUTINE output_nml_v1 (patch, append)
   integer              :: omp_nthreads, mpi_size, mpi_dims(3)
   logical              :: guard_zones, no_mans_land, periodic(3)
   integer, save        :: last_snapshot=-1
-  character(len=16)    :: kind, eos, opacity, method
+  character(len=16)    :: kind, eos_name, opacity, method
   namelist /io_nml/ format, ntotal, out_time, guard_zones, time_derivs, method, &
     nml_version
   namelist /snapshot_nml/ ioformat, iout, time, ntotal, istep, mesh_type, &
     position, size, ds, box, velocity, level, quality, gamma, ncell, li, ui, n, &
-    ng, gn, nv, nt, nw, kind, eos, opacity, periodic, guard_zones, time_derivs, &
+    ng, gn, nv, nt, nw, kind, eos_name, opacity, periodic, guard_zones, time_derivs, &
     omp_nthreads, mpi_size, no_mans_land, mpi_dims
   namelist /patch_nml/ id, time, position, size, level, dtime
   !-----------------------------------------------------------------------------
@@ -584,7 +585,7 @@ SUBROUTINE output_nml_v1 (patch, append)
   velocity     = patch%velocity
   level        = patch%level
   quality      = patch%quality
-  gamma        = patch%gamma
+  gamma        = eos%gamma
   li           = patch%li
   ui           = patch%ui
   n            = patch%n
@@ -596,7 +597,7 @@ SUBROUTINE output_nml_v1 (patch, append)
   nt           = patch%nt
   nw           = patch%nw
   kind         = patch%kind
-  eos          = patch%eos
+  eos_name     = patch%eos
   opacity      = patch%opacity
   no_mans_land = patch%no_mans_land
   periodic     = patch%periodic
@@ -665,18 +666,19 @@ SUBROUTINE output_nml_v2 (patch, append)
   real(8)              :: time, dtime, out_next, out_time, ms
   real(8), dimension(3):: size, position, ds, box, velocity, &
                           llc_nat, llc_cart, centre_nat
-  integer              :: time_derivs
+  integer              :: time_derivs, refine_ratio
   integer              :: omp_nthreads, mpi_size, mpi_dims(3)
   logical              :: guard_zones, no_mans_land, periodic(3)
   integer, save        :: last_snapshot=-1
-  character(len=32)    :: kind, eos, opacity, method
+  character(len=32)    :: kind, eos_name, opacity, method
   namelist /io_nml/ format, ntotal, out_time, guard_zones, time_derivs, method, &
     nml_version
-  namelist /snapshot_nml/ ioformat, iout, time, ntotal, box, li, ui, ng, gn, n, &
-    nv, nt, gamma, eos, opacity, periodic, guard_zones, time_derivs, no_mans_land, &
-    omp_nthreads, mpi_size, mesh_type, mpi_dims
-  namelist /patch_nml/ id, position, size, level, dtime, istep, ds, ncell, n, nw, &
-    velocity, quality, mesh_type, kind
+  namelist /snapshot_nml/ ioformat, iout, time, ntotal, box, li, ui, ng, &
+    gn, n, nv, nt, gamma, eos_name, opacity, periodic, guard_zones, &
+    time_derivs, no_mans_land, omp_nthreads, mpi_size, mesh_type, mpi_dims, &
+    refine_ratio
+  namelist /patch_nml/ id, position, size, level, dtime, istep, ds, ncell, n, &
+    nw, velocity, quality, mesh_type, kind
   integer, allocatable :: nbor_ids(:)
   integer              :: parent_id
   namelist /nbor_nml/ id, parent_id, nbor_ids
@@ -720,7 +722,7 @@ SUBROUTINE output_nml_v2 (patch, append)
   velocity     = patch%velocity
   level        = patch%level
   quality      = patch%quality
-  gamma        = patch%gamma
+  gamma        = eos%gamma
   li           = patch%li
   ui           = patch%ui
   n            = patch%n
@@ -810,12 +812,12 @@ SUBROUTINE output_nml_v3 (patch, append)
   integer(8)           :: task_offset
   logical              :: guard_zones, no_mans_land, periodic(3)
   integer, save        :: last_snapshot=-1
-  character(len=16)    :: kind, eos, opacity, method
+  character(len=16)    :: kind, eos_name, opacity, method
   namelist /io_nml/ format, ntotal, out_time, guard_zones, time_derivs, method, &
     nml_version
   namelist /snapshot_nml/ ioformat, iout, time, ntotal, istep, mesh_type, &
     position, size, ds, box, velocity, level, quality, gamma, ncell, li, ui, n, &
-    ng, gn, nv, nt, nw, kind, eos, opacity, periodic, guard_zones, time_derivs, &
+    ng, gn, nv, nt, nw, kind, eos_name, opacity, periodic, guard_zones, time_derivs, &
     omp_nthreads, mpi_size, no_mans_land, mpi_dims
   namelist /patch_nml/ id, time, position, size, level, dtime, times, dtimes, &
     task_offset
@@ -872,7 +874,7 @@ SUBROUTINE output_nml_v3 (patch, append)
   velocity     = patch%velocity
   level        = patch%level
   quality      = patch%quality
-  gamma        = patch%gamma
+  gamma        = eos%gamma
   li           = patch%li
   ui           = patch%ui
   n            = patch%n
@@ -984,11 +986,11 @@ SUBROUTINE input_nml_v1 (patch)
                           llc_nat, llc_cart, centre_nat
   integer, save        :: time_derivs
   logical, save        :: guard_zones, no_mans_land, periodic(3)
-  character(len=16)    :: kind, eos, opacity, method
+  character(len=16)    :: kind, eos_name, opacity, method
   integer              :: omp_nthreads, mpi_size, mpi_dims(3)
   namelist /snapshot_nml/ ioformat, iout, time, ntotal, istep, mesh_type, &
     position, size, ds, box, velocity, level, quality, gamma, ncell, li, ui, n, &
-    ng, gn, nv, nt, nw, kind, eos, opacity, periodic, guard_zones, time_derivs, &
+    ng, gn, nv, nt, nw, kind, eos_name, opacity, periodic, guard_zones, time_derivs, &
     omp_nthreads, mpi_size, no_mans_land, mpi_dims
   !-----------------------------------------------------------------------------
   real(8), save        :: origin(3)
@@ -1114,10 +1116,10 @@ SUBROUTINE input_nml_v3 (patch)
                           llc_nat, llc_cart, centre_nat
   integer, save        :: time_derivs
   logical, save        :: guard_zones, no_mans_land, periodic(3)
-  character(len=32)    :: kind, eos, opacity, method
+  character(len=32)    :: kind, eos_name, opacity, method
   integer              :: iostat
   namelist /snapshot_nml/ ioformat, iout, time, ntotal, box, li, ui, ng, &
-    gn, n, nv, nt, gamma, eos, opacity, periodic, guard_zones, time_derivs, &
+    gn, n, nv, nt, gamma, eos_name, opacity, periodic, guard_zones, time_derivs, &
     no_mans_land, mpi_dims
   !-----------------------------------------------------------------------------
   real(8), save        :: origin(3)

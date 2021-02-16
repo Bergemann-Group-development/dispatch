@@ -35,6 +35,7 @@ MODULE mhd_mod
   USE task_mod
   USE timer_mod
   USE scratch_mod
+  USE eos_mod
   implicit none
   private
   type, extends(extras_t), public:: mhd_t
@@ -77,11 +78,9 @@ SUBROUTINE pre_init (self)
   type(index_t):: idx
   integer:: i, iv, iostat
   real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], csound=1.0, cdtd=0.5, courant=0.2
-  real(8), save:: gamma=1.4_8
   logical, save:: first_time=.true.
   logical, save:: mhd=.false.
-  character(len=16), save:: eos
-  namelist /stagger_params/ nu, courant, gamma, csound, cdtd, hardwire, eos, &
+  namelist /stagger_params/ nu, courant, csound, cdtd, hardwire, &
     do_smooth, unsigned, do_maxwell, do_temperature, verbose, divb_cleaner, &
     do_test
   !----------------------------------------------------------------------------
@@ -90,7 +89,7 @@ SUBROUTINE pre_init (self)
   ! Read IC parameters, which determine if this is HD or MHD.  The IC init is
   ! called again, from extras_t%init, when gamma is known and can be passed on.
   !-----------------------------------------------------------------------------
-  call self%initial%init (self%kind, self%gamma)
+  call self%initial%init (self%kind, eos%gamma)
   self%mhd = self%initial%mhd
   if (self%mhd) then
     self%kind = 'stagger2e_mhd_patch'
@@ -107,7 +106,6 @@ SUBROUTINE pre_init (self)
   call io%lock%set ('mhd_t%pre_init')
   if (first_time) then
     first_time = .false.
-    eos = self%eos
     mhd = self%mhd
     rewind (io%input)
     read (io%input, stagger_params, iostat=iostat)
@@ -119,10 +117,8 @@ SUBROUTINE pre_init (self)
     if (timestep%time_order <= 0) call mpi%abort("The Stagger solvers require `time_order` > 0. Abort!")
   end if
   call io%lock%unset ('mhd_t%pre_init')
-  self%eos = eos
   self%mhd = mhd
   self%nu = nu
-  self%gamma = gamma
   self%csound = csound
   self%courant = courant
   self%cdtd = cdtd
@@ -445,7 +441,7 @@ SUBROUTINE pde (self)
     Ez = zup(Bz)**2                                                             ! mhd: 0 1 0
     ! Magnetic pressure
     pb = 0.5*(Ex+Ey+Ez)                                                         ! mhd: 2 1 0
-    cs = sqrt((self%gamma*pg+2.0*pb + pa)/d)                                    ! mhd: 1 1 0
+    cs = sqrt((eos%gamma*pg+2.0*pb + pa)/d)                                    ! mhd: 1 1 0
     if (verbose > 3) then
       u_max = self%fmaxval(cs,outer=.true.)
       self%u_max = max(self%u_max,u_max)
@@ -468,7 +464,7 @@ SUBROUTINE pde (self)
     end if
   else
     ! Sound speed + velocity
-    cs = sqrt((self%gamma*pg+pa)/d)                                             ! ops: 1 1 1 1 0
+    cs = sqrt((eos%gamma*pg+pa)/d)                                             ! ops: 1 1 1 1 0
     if (verbose > 3) then
       u_max = self%fmaxval(cs,outer=.true.)
       self%u_max = max(self%u_max,u_max)
@@ -494,7 +490,7 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   Q = d*du*(Txx**2 + Tyy**2 + Tzz**2)                                           ! ops: 2 5 0
   !if (verbose==1) print *, 'average(Q):', self%faver(Q), &
-    !self%faver(e-d**self%gamma/(self%gamma-1.0)), self%faver(fm(:,:,:,1))
+    !self%faver(e-d**eos%gamma/(eos%gamma-1.0)), self%faver(fm(:,:,:,1))
   !-----------------------------------------------------------------------------
   ! Conservation of mass
   !-----------------------------------------------------------------------------
@@ -576,7 +572,7 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   ! Conservation of energy; reuse the mass flux for the energy flux
   !-----------------------------------------------------------------------------
-  if (self%gamma == 1d0) then                                                   ! unless isothermal
+  if (eos%gamma == 1d0) then                                                   ! unless isothermal
     dedt = dddt*ee                                                              ! ops: 0 1 0
   else
     block
@@ -586,7 +582,7 @@ SUBROUTINE pde (self)
     dedt = -div(ds,fm) - pg*divU + Q
     if (verbose == 1) print '(a,10f12.6)', 'average(Q):', &
       self%time, self%time*self%faver(Q), &
-      self%faver(e-d**self%gamma/(self%gamma-1.0)), &
+      self%faver(e-d**eos%gamma/(eos%gamma-1.0)), &
       self%faver(- pg*divU), &
       afm, self%faver(fm(:,:,:,1))
     end block
@@ -603,7 +599,7 @@ SUBROUTINE pde (self)
     self%maxJ=maxval(abs(J))
     emf = self%nu(6)*edge(du)*J                                                 ! mhd: 0 6 0
     Q = yup(zup(Jx*Ex)) + zup(xup(Jy*Ey)) + xup(yup(Jz*Ez))                     ! mhd: 2 3 0
-    if (self%gamma/=1.0) &
+    if (eos%gamma/=1.0) &
       dedt = dedt + Q                                                           ! mhd: 1 0 0
     !---------------------------------------------------------------------------
     ! Lorentz force, used instead of Maxwell stress.
@@ -644,7 +640,7 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   ! Time step limitation for rate of change dE/dt = (de/dt-(e/d)*dddt)/d
   !-----------------------------------------------------------------------------
-  if (self%gamma /= 1d0) then
+  if (eos%gamma /= 1d0) then
      u_max = self%cdtd*dsmax*self%fmaxval(abs((dedt-ee*dddt)/d),outer=.true.)   ! ops: 1 1 1
     self%u_max = max(self%u_max,u_max)
     if (verbose > 2) print 1, 'u_max(dedt)', u_max, self%u_max
@@ -722,7 +718,7 @@ SUBROUTINE update (self)
   ! the call here will have no effect, since out_next has already been updated.
   !-----------------------------------------------------------------------------
   call self%output
-  if (self%gamma==1d0) then
+  if (eos%gamma==1d0) then
     self%mem(:,:,:,self%idx%e,self%it,1) = &
     self%mem(:,:,:,self%idx%d,self%it,1)*self%csound**2
   end if
@@ -784,10 +780,10 @@ SUBROUTINE gas_pressure_sub (self, d, lnd, ee, pg)
   call allocate_scalars(self%gn,ee)
   ee = e/d
   if (trim(self%eos)=='ideal') then
-    if (self%gamma==1d0) then
+    if (eos%gamma==1d0) then
       pg = d*self%csound**2
     else
-      pg = d*ee*(self%gamma-1)
+      pg = d*ee*(eos%gamma-1)
     end if
   else
     if (do_temperature) then
@@ -822,10 +818,10 @@ FUNCTION gas_pressure (self) result(pg)
   call allocate_scalars(self%gn,ee)
   ee = e/d
   if (trim(self%eos)=='ideal') then
-    if (self%gamma==1d0) then
+    if (eos%gamma==1d0) then
       pg = d*self%csound**2
     else
-      pg = d*ee*(self%gamma-1)
+      pg = d*ee*(eos%gamma-1)
     end if
   else
     if (do_temperature) then

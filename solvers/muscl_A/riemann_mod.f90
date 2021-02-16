@@ -5,12 +5,13 @@
 MODULE riemann_mod
   USE io_mod
   USE timer_mod
+  USE eos_mod
   implicit none
   private
   integer, parameter:: sp=4, dp=8
   real, parameter:: one=1.0, half=0.5, zero=0.0
   type, public:: riemann_t
-    real(8)          :: gamma,g1, g2
+    real(8)          :: g1, g2
     character(len=4) :: method='hll'
   contains
     procedure        :: solve
@@ -87,13 +88,13 @@ SUBROUTINE hll (self, dir, l, u, left, rght, flux)
     wr = left(i1-j1,i2-j2,i3-j3,v3)
     dl = exp(ll)
     dr = exp(lr)
-    pl = exp(self%g1*sl + self%gamma*ll)
-    pr = exp(self%g1*sr + self%gamma*lr)
+    pl = exp(self%g1*sl + eos%gamma*ll)
+    pr = exp(self%g1*sr + eos%gamma*lr)
     !---------------------------------------------------------------------------
     ! Pressure and sound speed for each side of interface (l==left, r==right)
     !---------------------------------------------------------------------------
-    cl = sqrt(self%gamma*pl/dl)
-    cr = sqrt(self%gamma*pr/dr)
+    cl = sqrt(eos%gamma*pl/dl)
+    cr = sqrt(eos%gamma*pr/dr)
     cmax = max(cl,cr)
     !---------------------------------------------------------------------------
     ! Hydro fluxes
@@ -197,7 +198,7 @@ SUBROUTINE hllc (self, dir, l, u, qleft, qrght, fgdnv)
       wl = qleft(i-j1,i2-j2,i3-j3,v3)
       rl = exp(ll)
       sl = sl*rl
-      pl = exp(self%g1*sl + self%gamma*ll)
+      pl = exp(self%g1*sl + eos%gamma*ll)
       !
       ! Right variables
       lr = qrght(i,i2,i3,1)
@@ -207,11 +208,11 @@ SUBROUTINE hllc (self, dir, l, u, qleft, qrght, fgdnv)
       wr = qrght(i,i2,i3,v3)
       rr = exp(lr)
       sr = sr*rr
-      pr = exp(self%g1*sr + self%gamma*lr)
+      pr = exp(self%g1*sr + eos%gamma*lr)
       !
       ! Find the largest eigenvalues in the normal direction to the interface
-      cfastl = sqrt(self%gamma*pl/rl)
-      cfastr = sqrt(self%gamma*pr/rr)
+      cfastl = sqrt(eos%gamma*pl/rl)
+      cfastr = sqrt(eos%gamma*pr/rr)
       !
       ! Compute HLL wave speed; SL positive when positive supersonic, SR negative when negative ss
       SSL = min(ul,ur) - max(cfastl,cfastr)
@@ -372,7 +373,7 @@ SUBROUTINE hlld (self, dir, li, ui, qleft, qrght, fgdnv)
     Cl = qleft(i-j1,i2-j2,i3-j3,v3+4)
     !
     rl = exp(ll)
-    pl = exp(self%g1*sl + self%gamma*ll)
+    pl = exp(self%g1*sl + eos%gamma*ll)
     ecinl = half*(ul*ul+vl*vl+wl*wl)*rl
     emagl = half*(A*A+Bl*Bl+Cl*Cl)
     Ptotl = Pl + emagl
@@ -387,7 +388,7 @@ SUBROUTINE hlld (self, dir, li, ui, qleft, qrght, fgdnv)
     Br = qrght(i,i2,i3,v2+4)
     Cr = qrght(i,i2,i3,v3+4)
     rr = exp(lr)
-    pr = exp(self%g1*sr + self%gamma*lr)
+    pr = exp(self%g1*sr + eos%gamma*lr)
     er = pr/self%g1
     ecinr = half*(ur*ur+vr*vr+wr*wr)*rr
     emagr = half*(A*A+Br*Br+Cr*Cr)
@@ -396,11 +397,11 @@ SUBROUTINE hlld (self, dir, li, ui, qleft, qrght, fgdnv)
     !
     ! Find the largest eigenvalues in the normal direction to the interface
     B2 = A*A+Br*Br+Cr*Cr
-    c2 = self%gamma*Pr/rr
+    c2 = eos%gamma*Pr/rr
     d2 = half*(B2/rr+c2)
     cfastl = sqrt(d2 + sqrt(max(d2*d2-c2*A*A/d,zero)))
     B2 = A*A+Bl*Bl+Cl*Cl
-    c2 = self%gamma*Pl/rl
+    c2 = eos%gamma*Pl/rl
     d2 = half*(B2/rl+c2)
     cfastr = sqrt(d2 + sqrt(max(d2*d2-c2*A*A/d,zero)))
     !

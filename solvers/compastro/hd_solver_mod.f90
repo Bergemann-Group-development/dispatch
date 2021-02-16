@@ -8,6 +8,7 @@ MODULE hd_solver_mod
   USE tensor_mod
   USE patch_mod
   USE operators_mod
+  USE eos_mod
   implicit none
   private
   integer, parameter:: i_d=1, i_s=2, i_px=3, i_py=4, i_pz=5
@@ -35,7 +36,7 @@ CONTAINS
 SUBROUTINE init (self)
   class(hd_t):: self
   logical:: first_time=.true.
-  real:: nu(2)=[0.5,2.0], gamma=5./3.
+  real:: nu(2)=[0.5,2.0]
   namelist /hd_params/ gamma, nu
   !.............................................................................
   call trace_begin ('hd_mod:hd_t%init', 2)
@@ -47,7 +48,6 @@ SUBROUTINE init (self)
     read (io%input, hd_params)
     if (io%master) write (*,hd_params)
   end if
-  self%gamma = gamma
   self%nu = nu
   !-----------------------------------------------------------------------------
   ! Memory mapping; this is cheap, and may be done every time
@@ -77,7 +77,7 @@ SUBROUTINE update (self)
                    mass_diffusion
   type(tensor_t), save:: reynolds_stress, strain_tensor, viscous_stress, momentum_flux
 associate (rho=>self%d, s=>self%s, p=>self%p, dd_dt=>self%dddt, ds_dt=>self%dsdt, &
-           ds=>self%ds, dp_dt=>self%dpdt, gas_gamma=>self%gamma, nu=>self%nu)
+           ds=>self%ds, dp_dt=>self%dpdt, gas_gamma=>eos%gamma, nu=>self%nu)
   !.............................................................................
   call trace_begin ('hd_mod::hd_t%update')
   call entropy_per_mass%init    (self%gn, self%size/self%n, 'entropy')

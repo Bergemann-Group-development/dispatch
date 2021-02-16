@@ -11,6 +11,7 @@ MODULE experiment_mod
   USE mesh_mod
   USE index_mod
   USE solver_mod
+  USE eos_mod
   implicit none
   private
   type, public, extends(solver_t):: experiment_t
@@ -48,7 +49,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   d = 1.0
   e = 1.0
-  self%gamma = 1.4
+  eos%gamma = 1.4
   self%dt_fixed = 0.01
   m = (self%gn(1)+1)/2
   do i=1,3

@@ -12,6 +12,7 @@ MODULE non_ideal_mod
   USE omp_mod
   USE index_mod
   USE mesh_mod
+  USE eos_mod
   implicit none
   private
   type, public :: non_ideal_t
@@ -61,7 +62,8 @@ SUBROUTINE init (self)
   real:: gamma_AD=75., rho_ions=1.0, eta_Ohm=0.0, etaMD=0.0
   logical:: mhd_AD=.false., mhd_Ohm=.false., ntestDADM=.true.
   logical, save:: first_time=.true.
-  namelist /non_ideal_params/ gamma_AD, eta_Ohm, etaMD, rho_ions, mhd_AD, mhd_Ohm, ntestDADM
+  namelist /non_ideal_params/ gamma_AD, eta_Ohm, etaMD, rho_ions, mhd_AD, &
+    mhd_Ohm, ntestDADM
   !---------------------------------------------------------------------------
   call io%lock%set('non_ideal_mod%init')
   if (first_time) then
@@ -92,13 +94,13 @@ SUBROUTINE init (self)
 
 END SUBROUTINE init
 
-subroutine non_ideal_comp(self,mesh,idx,bf,uin,qin,fluxambdiff,emfambdiff,fluxohmdiss,emfohmdiss,u_max,ds,dt,gamma)
+subroutine non_ideal_comp(self,mesh,idx,bf,uin,qin,fluxambdiff,emfambdiff, &
+    fluxohmdiss,emfohmdiss,u_max,ds,dt)
   class (non_ideal_t):: self
   class (mesh_t):: mesh(:)
   class (index_t):: idx
   integer:: n(4), l(3), u(3)
   real :: u_max
-  real(8) :: gamma
   real(8) :: ds(3), dt
   real, dimension(:,:,:,:):: bf, uin, qin, fluxambdiff, emfambdiff, fluxohmdiss, emfohmdiss
   ! Output electromotive force
@@ -156,21 +158,24 @@ subroutine non_ideal_comp(self,mesh,idx,bf,uin,qin,fluxambdiff,emfambdiff,fluxoh
 
   if((self%mhd_AD).or.(self%mhd_Ohm)) then
   !  compute Lorentz Force with current
-     call computejb2(self,bf,qin,bemfx,bemfy,bemfz,jemfx,jemfy,jemfz,bmagij,florentzx,florentzy,florentzz,fluxmd,fluxh,fluxad,ds)
+     call computejb2(self,bf,qin,bemfx,bemfy,bemfz,jemfx,jemfy,jemfz,bmagij, &
+       florentzx,florentzy,florentzz,fluxmd,fluxh,fluxad,ds)
   endif
   
   
   ! AMBIPOLAR DIFFUSION
   
   if(self%mhd_AD) then
-     call computambip(self,uin,qin,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz,fluxad,bmagij,emfambdiff,fluxambdiff,jxbsquare,ds,dt,gamma)
+     call computambip(self,uin,qin,bemfx,bemfy,bemfz,florentzx,florentzy, &
+       florentzz,fluxad,bmagij,emfambdiff,fluxambdiff,jxbsquare,ds,dt)
      l = mesh%lo
      u = mesh%uo
      u_max = max(u_max, maxval( &
        uin(l(1):u(1),l(2):u(2),l(3):u(3),idx%bx)**2 + &
        uin(l(1):u(1),l(2):u(2),l(3):u(3),idx%by)**2 + &
        uin(l(1):u(1),l(2):u(2),l(3):u(3),idx%bz)**2 / &
-       (self%gamma_AD * self%rho_ions * uin(l(1):u(1),l(2):u(2),l(3):u(3),1) * minval(ds)) )  )
+       (self%gamma_AD * self%rho_ions * uin(l(1):u(1),l(2):u(2),l(3):u(3),1) &
+       * minval(ds)) )  )
   endif
   
   
@@ -546,7 +551,7 @@ subroutine computdifmag(self,u,q,bemfx,bemfy,bemfz,jemfx,jemfy,jemfz,bmagij,flux
      Eth = etx - 0.5 / rhox * ( uxx**2 + uyx**2 + uzx**2 ) - 0.5 * Brms2
      Brms = Brms2**0.5      
      rho  = rhox * scale_d   
-     P    = Eth * (gamma-1.) 
+     P    = Eth * (eos%gamma-1.) 
      T    = P / rhox * scale_T2 * self%mu
      B    = Brms * Bcode_to_Gauss
      call eta_table(self,eta_AD,eta_Ohm,rho,T,B)
@@ -564,7 +569,7 @@ subroutine computdifmag(self,u,q,bemfx,bemfy,bemfz,jemfx,jemfy,jemfz,bmagij,flux
      Eth = ety - 0.5 / rhoy * ( uxy*2 + uyy**2 + uzy**2 ) - 0.5 * Brms2
      Brms = Brms2**0.5      
      rho  = rhoy * scale_d   
-     P    = Eth * (gamma-1.) 
+     P    = Eth * (eos%gamma-1.) 
      T    = P / rhoy * scale_T2 * self%mu
      B    = Brms * Bcode_to_Gauss
      call eta_table(self,eta_AD,eta_Ohm,rho,T,B)
@@ -582,7 +587,7 @@ subroutine computdifmag(self,u,q,bemfx,bemfy,bemfz,jemfx,jemfy,jemfz,bmagij,flux
      Eth = etz - 0.5 / rhoz * ( uxz*2 + uyz**2 + uzz**2 ) - 0.5 * Brms2
      Brms = Brms2**0.5      
      rho  = rhoz * scale_d   
-     P    = Eth * (gamma-1.) 
+     P    = Eth * (eos%gamma-1.) 
      T    = P / rhoz * scale_T2 * self%mu
      B    = Brms * Bcode_to_Gauss
      call eta_table(self,eta_AD,eta_Ohm,rho,T,B)
@@ -630,7 +635,7 @@ subroutine computdifmag(self,u,q,bemfx,bemfy,bemfz,jemfx,jemfy,jemfz,bmagij,flux
               0.5 * Brms2
         Brms = Brms2**0.5
         rho  = rhof*scale_d 
-        P    = Eth * (gamma-1.) 
+        P    = Eth * (eos%gamma-1.) 
         T    = P / rhof * scale_T2 *self%mu
         B    = Brms * Bcode_to_Gauss
         call eta_table(self,eta_AD,eta_Ohm,rho,T,B)   
@@ -653,7 +658,8 @@ end subroutine computdifmag
 !###########################################################
 !###########################################################
 !###########################################################
-SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz,fluxad,bmagij,emfambdiff,fluxambdiff,jxbsquare,ds,dt,gamma)
+SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy, &
+    florentzz,fluxad,bmagij,emfambdiff,fluxambdiff,jxbsquare,ds,dt)
   class (non_ideal_t):: self
   
   real, dimension(:,:,:,:)::u 
@@ -690,7 +696,6 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
 
   real(8) :: ds(3)
   real(8) :: dx, dy, dz, dt, c2_4pi, mp, kB, Bcode_to_Gauss, pi, scale_v, scale_d, scale_l, scale_t, scale_T2
-  real(8) :: gamma 
 
   n = shape(u)
 
@@ -837,7 +842,7 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
           0.5 * Brms2
     Brms = Brms2**0.5      
     rho  = rhox * scale_d   
-    P    = Eth * (gamma-1.) 
+    P    = Eth * (eos%gamma-1.) 
     T    = P / rhox * scale_T2 * self%mu
     B    = Brms * Bcode_to_Gauss
     call eta_table(self,eta_AD,eta_Ohm,rho,T,B)
@@ -875,7 +880,7 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
           0.5 * Brms2
     Brms = Brms2**0.5
     rho  = rhoy*scale_d 
-    P    = Eth * (gamma-1.) 
+    P    = Eth * (eos%gamma-1.) 
     T    = P / rhoy * scale_T2 * self%mu
     B    = Brms * Bcode_to_Gauss   
     call eta_table(self,eta_AD,eta_Ohm,rho,T,B)
@@ -910,7 +915,7 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
           0.5 * Brms2
     Brms = Brms2**0.5
     rho  = rhoz*scale_d 
-    P    = Eth * (gamma-1.) 
+    P    = Eth * (eos%gamma-1.) 
     T    = P / rhoz * scale_T2 * self%mu
     B    = Brms * Bcode_to_Gauss
     call eta_table(self,eta_AD,eta_Ohm,rho,T,B)
@@ -941,7 +946,7 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
           0.5 * Brms2
     Brms = Brms2**0.5
     rho  = rhofx*scale_d 
-    P    = Eth * (gamma-1.) 
+    P    = Eth * (eos%gamma-1.) 
     T    = P / rhofx * scale_T2 *self%mu
     B    = Brms * Bcode_to_Gauss
     call eta_table(self,eta_AD,eta_Ohm,rho,T,B)
@@ -968,7 +973,7 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
           0.5 * Brms2
     Brms = Brms2**0.5
     rho  = rhofy*scale_d 
-    P    = Eth * (gamma-1.) 
+    P    = Eth * (eos%gamma-1.) 
     T    = P / rhofy * scale_T2 * self%mu
     B    = Brms * Bcode_to_Gauss
     call eta_table(self,eta_AD,eta_Ohm,rho,T,B)
@@ -995,7 +1000,7 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
           0.5 * Brms2
     Brms = Brms2**0.5
     rho  = rhofz*scale_d 
-    P    = Eth * (gamma-1.) 
+    P    = Eth * (eos%gamma-1.) 
     T    = P / rhofz * scale_T2 * self%mu
     B    = Brms * Bcode_to_Gauss
     call eta_table(self,eta_AD,eta_Ohm,rho,T,B)
@@ -1031,7 +1036,7 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
     ! Convert variables to units used in the table
     ! rho in cm^(-3) ; T in K ; B in Gauss
     rho = rhocell * scale_d
-    P   = Eth * (gamma-1.) 
+    P   = Eth * (eos%gamma-1.) 
     T   = P / rhocell * scale_T2 * self%mu
     B   = Brms * Bcode_to_Gauss
     call eta_table(self,eta_AD,eta_Ohm,rho,T,B)

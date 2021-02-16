@@ -9,6 +9,7 @@ MODULE initial_mod
   USE mesh_mod
   USE omp_mod
   USE index_mod
+  USE eos_mod
   implicit none
   private
   real(8), parameter:: pi2=8d0*atan(1d0)
@@ -25,7 +26,7 @@ MODULE initial_mod
     procedure, nopass:: cleanup
   end type
   integer, save:: verbose=0
-  real(8), save:: gamma=1.4, g1, g2
+  real(8), save:: g1, g2
   character(len=20):: type='simple_advection'
   real, save, pointer, dimension(:,:,:,:):: buffer => null()
   real, save:: csound=1.
@@ -34,31 +35,27 @@ CONTAINS
 !===============================================================================
 !> Setup a uniform initial state, with density=d0 and B=B0
 !===============================================================================
-SUBROUTINE init (self, solver, gamma1)
+SUBROUTINE init (self, solver)
   class(initial_t):: self
   character(len=64):: solver
   character(len=32), save:: type='void'
   integer:: iostat
-  real, optional:: gamma1
   logical, save:: first_time=.true.
-  namelist /IC_params/ type, gamma, verbose
+  namelist /IC_params/ type, verbose
   !----------------------------------------------------------------------------
   call trace_begin('initial_t%init')
   !$omp critical (input_cr)
   if (first_time) then
-    if (present(gamma1)) then
-      gamma = gamma1
-    end if
     rewind (io%input)
     read (io%input, IC_params, iostat=iostat)
     call io%namelist_warning ('muscl_A%initial_mod.f90: IC_params', iostat)
     write (io%output, IC_params)
-    if (gamma == 1d0) then
+    if (eos%gamma == 1d0) then
       g1 = 1d0
     else
-      g1 = (gamma-1d0)
+      g1 = (eos%gamma-1d0)
     end if
-    g2 = gamma*g1
+    g2 = eos%gamma*g1
     first_time = .false.
   end if
   !$omp end critical (input_cr)
@@ -152,7 +149,7 @@ SUBROUTINE condition (self, m, ff, idx)
           by = b0(2)*(cos(kz)-cos(kx))
           bz = b0(3)*(cos(kx)-cos(ky))
           pb = 0.5*(bx**2+by**2+bz**2)
-          ff(ix,iy,iz,idx%s ) = (log(p0-pb)-gamma*log(d))/g1
+          ff(ix,iy,iz,idx%s ) = (log(p0-pb)-eos%gamma*log(d))/g1
         case ('single_advection')
           ff(ix,iy,iz,idx%d ) = d0*(1.+a0(1)*sin(kx)+a0(2)*sin(ky)+a0(3)*sin(kz))
           ff(ix,iy,iz,idx%px) = d0*u0(1)

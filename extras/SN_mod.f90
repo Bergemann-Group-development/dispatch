@@ -29,6 +29,7 @@ MODULE SN_mod
   USE sinks_mod
   USE scaling_mod
   USE units_mod
+  USE eos_mod
   implicit none
   private
   real, parameter:: fourpi = 16.*atan(1.)
@@ -195,7 +196,7 @@ SUBROUTINE SN (self)
     write (stdout,'(1x,a,i5,i9,1p,8e11.2)') &
       'SN_t: id, n, m, dd, v, ee, T, vmax =', patch%id, n_inside, &
       sink%mass, dd, velocity, ee, &
-      ee*(patch%gamma-1.0)*scaling%temp, &
+      ee*(eos%gamma-1.0)*scaling%temp, &
       patch%fmaxval(abs(px/d)), maxval(abs(px/d))
   end if
   deallocate (inside, x, y, z, r)

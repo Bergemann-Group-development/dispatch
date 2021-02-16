@@ -22,6 +22,7 @@ MODULE eos_mod
     integer:: w_lambda = 1
     real:: lnd_min, lnd_max, lnd_stp
     real:: lne_min, lne_max, lne_stp
+    real(8):: gamma=1.4d0    ! required for syntax in some solvers
     real, dimension(:), pointer:: lnd, lne
     real, dimension(:,:,:), pointer:: table
     logical :: do_rt

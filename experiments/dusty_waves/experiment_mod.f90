@@ -11,9 +11,9 @@ MODULE experiment_mod
   USE timestep_mod
   USE index_mod
   USE solver_mod
+  USE eos_mod
   implicit none
   private
-
   type, public, extends(solver_t):: experiment_t
     real:: pi2=8.0*atan(1.0)
   contains
@@ -77,8 +77,8 @@ SUBROUTINE init (self)
   px2  => pp2(:,:,:,1); py2 => pp2(:,:,:,2); pz2 => pp2(:,:,:,3);
 
   print*, 'gn is:', self%gn(1), self%gn(2), self%gn(3)
-  print*, 'P and rho and gamma:'  , P , dP , rho , drho , self%gamma
-  print*, 'P2 and rho2 and gamma:', P2, dP2, rho2!, drho2, self%gamma
+  print*, 'P and rho and gamma:'  , P , dP , rho , drho , eos%gamma
+  print*, 'P2 and rho2 and gamma:', P2, dP2, rho2!, drho2, eos%gamma
   print*, 'box size', self%box(1)
 
   do k = self%mesh(3)%lb , self%mesh(3)%ub
@@ -104,11 +104,11 @@ SUBROUTINE init (self)
         uy2 (i,j,k) = vy2    + dvy2    * sin( self%pi2*x/self%box(1) )
         uz2 (i,j,k) = vz2    + dvz2    * sin( self%pi2*x/self%box(1) )
 
-        if (self%gamma .eq. 1.) then
+        if (eos%gamma .eq. 1.) then
           s (i,j,k) = -log(d(i,j,k))*d(i,j,k)
           s2(i,j,k) = 0d0
         else
-          s (i,j,k) = (log(pg(i,j,k))-log(d(i,j,k))*self%gamma)/(self%gamma-1.0) * d(i,j,k)
+          s (i,j,k) = (log(pg(i,j,k))-log(d(i,j,k))*eos%gamma)/(eos%gamma-1.0) * d(i,j,k)
           s2(i,j,k) = 0d0
         end if
 

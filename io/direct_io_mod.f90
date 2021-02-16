@@ -7,6 +7,7 @@ MODULE direct_io_mod
   USE trace_mod
   USE patch_mod
   USE omp_timer_mod
+  USE eos_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -102,7 +103,7 @@ SUBROUTINE output (self, patch)
     write (io%data_unit,'(a)') trim(patch%opacity)
     write (io%data_unit,'(1p,2e18.10,6(2x,3e18.10)1x,1x,2e10.3)') patch%out_next, patch%dtime, &
           self%position, patch%ds, patch%velocity, patch%llc_nat, patch%llc_cart, &
-          patch%mesh%centre_nat, patch%quality, patch%gamma
+          patch%mesh%centre_nat, patch%quality, eos%gamma
     l = 1
     u = self%dims(1:3)
     n = u-l+1
