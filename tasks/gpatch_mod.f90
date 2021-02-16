@@ -26,7 +26,6 @@ MODULE gpatch_mod
   USE task_mod
   USE scratch_mod
   USE boundaries_mod
-  USE eos_mod
   implicit none
   private
   type, public, extends(patch_t):: gpatch_t
@@ -41,7 +40,6 @@ MODULE gpatch_mod
     procedure:: init_bdries
     procedure:: init_task_list
     procedure:: pre_update
-    procedure:: update
     procedure:: input
     procedure:: output
     procedure:: init
@@ -58,6 +56,8 @@ MODULE gpatch_mod
     procedure, private :: fmaxval4sph
     generic, public :: fmaxvalsph => fmaxval4sph, fmaxval8sph
     generic, public :: fminvalsph => fminval4sph, fminval8sph
+    procedure:: output_metadata
+    procedure:: input_metadata
   end type
   real(8), save :: restart_time = 0d0
   logical, save :: detailed_timer=.false.
@@ -139,15 +139,6 @@ SUBROUTINE pre_update (self)
 END SUBROUTINE pre_update
 
 !===============================================================================
-!> Interface allowing intercept
-!===============================================================================
-SUBROUTINE update (self)
-  class(gpatch_t):: self
-  !-----------------------------------------------------------------------------
-  call self%patch_t%update
-END SUBROUTINE update
-
-!===============================================================================
 !> Interface routine to the data_io input procedure, signalling if the patch
 !> could be read, or not
 !===============================================================================
@@ -194,57 +185,7 @@ SUBROUTINE init (self)
   call trace%begin ('gpatch_t%init')
   call io_unit%print_id (id)
   call self%patch_t%init
-  call self%initial%init (self%kind, eos%gamma)
   call data_io%init (self)
-  call guard_zones%init
-  !-----------------------------------------------------------------------------
-  ! Try reading a restart snapshot.
-  !-----------------------------------------------------------------------------
-  call self%input (ok)
-  if (ok) then
-    restart_time = self%time
-    self%istep = 0
-  else 
-    !---------------------------------------------------------------------------
-    ! Make sure the default time for patches with IC values is zero, to ensure 
-    ! boundary tasks are not considered ready for updating until their virtual
-    ! task nbors have been updated, in evolved cases.
-    !---------------------------------------------------------------------------
-    restart_time = 0.0
-    self%mem = 0.0
-    ff => self%mem(:,:,:,:,1,1)
-    call self%initial%condition (self%mesh, ff, self%idx)
-    !---------------------------------------------------------------------------
-    ! Must copy the %it slot to %new
-    !---------------------------------------------------------------------------
-    call self%pre_update
-    !---------------------------------------------------------------------------
-    ! patch_t%setup sets time = -1, to prevent downloading until nbors have been
-    ! initialized, and their time has been set to 0.0 here
-    !---------------------------------------------------------------------------
-    self%time = 0.0
-    self%t = 0.0
-  end if
-  !-----------------------------------------------------------------------------
-  ! If restart succeeded for some patch, use it to set time and output cadence.
-  ! FIXME: This may fail in some corner cases when running on multiple MPI ranks,
-  ! if one rank happens to handle only patches that do not exist yet.
-  !-----------------------------------------------------------------------------
-  if (restart_time > 0d0) then
-    call self%lock%set ('gpatch_t')
-    self%time = restart_time
-    self%t(self%it) = self%time
-    self%out_next = io%out_time*(1+nint(self%time/io%out_time))
-    self%iout = self%restart+1
-    if (io%do_output) then
-      !$omp master
-      write (filename,'(a,i5.5,"/")') trim(io%outputname), self%iout
-      if (io%iodir/=self%iout) call os%mkdir (trim(filename))
-      io%iodir = self%iout
-      !$omp end master
-    end if
-    call self%lock%unset ('gpatch_t')
-  end if
   call trace%end()
 END SUBROUTINE init
 
@@ -689,5 +630,25 @@ SUBROUTINE rotate (self)
   call self%task_t%rotate
   call trace%end (itimer)
 END SUBROUTINE rotate
+
+!===============================================================================
+!===============================================================================
+SUBROUTINE output_metadata (self, unit, snapshot)
+  class(gpatch_t):: self
+  integer:: unit
+  logical, optional:: snapshot
+  !-----------------------------------------------------------------------------
+  call data_io%output_nml (self,.false., unit=unit, snapshot=snapshot)
+END SUBROUTINE output_metadata
+
+!===============================================================================
+!===============================================================================
+SUBROUTINE input_metadata (self, unit, snapshot)
+  class(gpatch_t):: self
+  integer:: unit
+  logical, optional:: snapshot
+  !-----------------------------------------------------------------------------
+  call data_io%input_nml (self, unit=unit, snapshot=snapshot)
+END SUBROUTINE input_metadata
 
 END MODULE gpatch_mod

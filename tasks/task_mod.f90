@@ -94,6 +94,7 @@ MODULE task_mod
     type(aux_t):: aux
     integer(8):: amr_offset=0_8         ! byte offset in amr_io
   contains
+    procedure:: pre_init
     procedure:: init
     procedure:: init_unique
     procedure:: dealloc
@@ -111,7 +112,6 @@ MODULE task_mod
     procedure:: is_set
     procedure:: is_clear
     procedure:: allocate => void
-    procedure:: allocate_mesg => void
     procedure:: unique_id
     procedure:: load_balance
     procedure:: has_finished
@@ -136,8 +136,10 @@ MODULE task_mod
     procedure:: statistics
     procedure:: bndries
     procedure:: courant_condition
-    procedure:: output_metadata
     procedure:: output
+    procedure:: output_metadata
+    procedure:: input_metadata
+    procedure:: allocate_mesg
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -186,7 +188,7 @@ CONTAINS
 SUBROUTINE void (self)
   class (task_t):: self
   call trace%begin ('task_t%void')
-  print*, 'ERROR: task_t%void called'
+  call io%abort('task_t%void called')
   call trace%end ()
 END SUBROUTINE void
 
@@ -198,6 +200,14 @@ SUBROUTINE dnload (self, only)
   call io%warning('task_t%dnload called')
   call trace%end ()
 END SUBROUTINE dnload
+
+!===============================================================================
+SUBROUTINE pre_init (self)
+  class (task_t), target:: self
+  call trace%begin ('task_t%pre_init')
+  call io%abort('task_t%pre_init called')
+  call trace%end ()
+END SUBROUTINE pre_init
 
 !===============================================================================
 !> Define unique task id, unless already set before entry.
@@ -243,8 +253,8 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   if (.not.associated(self%t)) then
     allocate (self%t(self%nt), self%dt(self%nt), self%iit(self%nt))
-    self%dt = -1d0                                ! mark as "not known"
-    self%t  = 0d0                                 ! initial time
+    self%dt = self%dtime                          ! in case already set
+    self%t  = self%time                           ! in case already set
     self%iit = 1                                  ! initial slots
     self%it = 1                                   ! slot for current values
     self%new = 2                                  ! slot for new values
@@ -1248,11 +1258,34 @@ END SUBROUTINE output
 !===============================================================================
 !> Template for metadata output
 !===============================================================================
-SUBROUTINE output_metadata (self)
+SUBROUTINE output_metadata (self, unit, snapshot)
   class(task_t):: self
+  integer:: unit
+  logical, optional:: snapshot
   !-----------------------------------------------------------------------------
-  call trace%begin ('task_t%write_metadata')
+  call trace%begin ('task_t%output_metadata')
+  call io%abort ('task_t%output_metadata called')
   call trace%end ()
 END SUBROUTINE output_metadata
+
+!===============================================================================
+!> Template for metadata output
+!===============================================================================
+SUBROUTINE input_metadata (self, unit, snapshot)
+  class(task_t):: self
+  integer:: unit
+  logical, optional:: snapshot
+  !-----------------------------------------------------------------------------
+  call trace%begin ('task_t%input_metadata')
+  call io%abort ('task_t%input_metadata called')
+  call trace%end ()
+END SUBROUTINE input_metadata
+
+!===============================================================================
+SUBROUTINE allocate_mesg (self)
+  class(task_t):: self
+  !-----------------------------------------------------------------------------
+  call io%abort ('task_t%allocate_mesg called')
+END SUBROUTINE allocate_mesg
 
 END MODULE task_mod
