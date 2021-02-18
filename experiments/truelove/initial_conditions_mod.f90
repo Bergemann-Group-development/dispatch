@@ -1,24 +1,26 @@
 !===============================================================================
 !> Set up initial conditions for the Truelove grav. collapse problem.
 !===============================================================================
-MODULE initial_mod
+MODULE initial_conditions_mod
   USE io_mod
   USE trace_mod
   USE kinds_mod
   USE mesh_mod
   USE index_mod
   USE patch_mod
+  USE gpatch_mod
   USE scaling_mod
   USE eos_mod
   implicit none
   private
-  type, public:: initial_t
+  type, public:: initial_conditions_t
     character(len=64):: solver
     logical:: mhd
     real(8):: gamma, g1
+    class(gpatch_t), pointer:: patch => null()
   contains
+    procedure:: pre_init
     procedure:: init
-    procedure:: condition
   end type
   real(8), parameter:: pi = asin(1.0) * 2.0
 CONTAINS
@@ -26,15 +28,17 @@ CONTAINS
 !===============================================================================
 !> Setup a uniform initial state, with density=d0 and B=B0
 !===============================================================================
-SUBROUTINE init (self)
-  class(initial_t):: self
+SUBROUTINE pre_init (self, patch)
+  class(initial_conditions_t):: self
+  class(gpatch_t), pointer:: patch
   !----------------------------------------------------------------------------
+  self%patch => patch
   if (eos%gamma == 1d0) then
     self%g1 = 1d0
   else
     self%g1 = eos%gamma-1d0
   end if
-END SUBROUTINE init
+END SUBROUTINE pre_init
 
 !===============================================================================
 !> Set up a uniform cloud configurations as described in Truelove et al. (1998,
@@ -90,11 +94,11 @@ END SUBROUTINE init
 !>    c3           matching constant for ambient potential
 !>
 !===============================================================================
-SUBROUTINE condition (self, m, f, idx)
-  class(initial_t):: self
-  real(kind=KindScalarVar), dimension(:,:,:,:):: f
+SUBROUTINE init (self)
+  class(initial_conditions_t):: self
+  real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: f
   class(mesh_t), pointer:: m(:), m1, m2, m3
-  type(index_t):: idx
+  type(index_t), pointer:: idx
   integer:: i, j, k, iostat
   integer:: pertm=2, verbose=0
   real(8):: rho0=15.27026, r0=0.25, truealpha=0.0475, truebeta=0.0, perta=0.0, &
@@ -111,15 +115,19 @@ SUBROUTINE condition (self, m, f, idx)
   namelist / experiment_params / rho0, r0, truealpha, truebeta, chipres &
                                , chirho, x0, y0, z0, perta, pertm, verbose
   !----------------------------------------------------------------------------
-  call trace%begin ('initial_t%condition')
-  call io%lock%set ('initial_t%condition')
+  call trace%begin ('initial_conditions_t%init')
+  call io%lock%set ('initial_conditions_t%initt')
+  m => self%patch%mesh
+  f => self%patch%mem(:,:,:,:,1,1)
+  idx => self%patch%idx
+  !.............................................................................
   if (first_time) then
     rewind (io%input)
     read (io%input, experiment_params, iostat=iostat)
     call io%namelist_warning ('experiment_params', iostat)
     write (io%namelist, experiment_params)
   end if
-  call io%lock%unset ('initial_t%condition')
+  call io%lock%unset ('initial_conditions_t%initt')
 
 !-----------------------------------------------------------------------
 !      Calculate uniform cloud parameters.
@@ -242,6 +250,6 @@ SUBROUTINE condition (self, m, f, idx)
   end do
 
   call trace%end()
-END SUBROUTINE condition
+END SUBROUTINE init
 
-END MODULE initial_mod
+END MODULE initial_conditions_mod

@@ -65,7 +65,8 @@ MODULE extras_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.
   !-----------------------------------------------------------------------------
-  USE selfgravity_mod
+  USE initial_conditions_mod                                           ! initial
+  USE selfgravity_mod                                                  ! selfg
   !USE rt_mod                                                           ! RT
   !USE newton_mod                                                       ! Newton
   !USE forces_mod                                                       ! forces
@@ -83,7 +84,9 @@ MODULE extras_mod
   ! states, must be accessed via a private instance in the extras_t data type
   !-----------------------------------------------------------------------------
   type, public, extends(gpatch_t):: extras_t
-    type(selfgravity_t):: selfgravity
+    class(gpatch_t), pointer:: patch => null()                         ! keep
+    type(initial_conditions_t):: initial_conditions                    ! initial
+    type(selfgravity_t):: selfgravity                                  ! selfg
     !type(forces_t):: forces                                            ! forces
     !class(pic_t), pointer:: pic                                        ! pic
     !type (spitzer_t):: spitzer                                         ! spitzer
@@ -94,7 +97,6 @@ MODULE extras_mod
     !class(patch_force_t), pointer:: patch_force                        ! sinkp
     !class(trace_particles_t), pointer:: trace_particles                ! tracep
     !real, dimension(:,:,:,:), pointer:: v                              ! tracep
-    class(gpatch_t), pointer:: patch => null()
     logical :: do_mhd = .true.
   contains
     procedure, nopass:: cast2extras
@@ -122,6 +124,7 @@ SUBROUTINE pre_init (self)
   class(gpatch_t), pointer:: patch
   self%patch => self                                                    ! keep
   call self%gpatch_t%pre_init                                           ! keep
+  call self%initial_conditions%pre_init (self%patch)                    ! initial
   !.............................................................................
   !call self%forces%init (self)                                         ! forces
   !-----------------------------------------------------------------------------
@@ -145,6 +148,7 @@ SUBROUTINE init (self)
   !.............................................................................
   call trace%begin ('extras_t%init')
   call self%gpatch_t%init                                              ! keep
+  call self%initial_conditions%init                                    ! initial
   call self%selfgravity%init                                           ! selfg
   !call self%forces%init (self)                                         ! forces
   !-----------------------------------------------------------------------------

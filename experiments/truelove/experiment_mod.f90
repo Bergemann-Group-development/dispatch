@@ -11,13 +11,11 @@ MODULE experiment_mod
   USE validate_mod
   implicit none
   private
-
   type, public, extends(solver_t):: experiment_t
   contains
     procedure :: init
     procedure :: update
   end type
-
 CONTAINS
 
 !===============================================================================
@@ -30,8 +28,6 @@ SUBROUTINE init (self)
   if (self%mem_allocated) return
   call trace%begin('experiment_t%init')
   call self%solver_t%init()
-  call self%initial%init
-  call self%initial%condition (self%mesh, self%mem(:,:,:,:,1,1), self%idx)
   call pboundaries%init(self)
   call validate%init
   call trace%end()
