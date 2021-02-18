@@ -7,7 +7,6 @@ MODULE experiment_mod
   USE omp_mod
   USE omp_timer_mod
   USE data_io_mod
-  USE initial_mod
   USE solver_mod
   !USE particle_patch_mod
   implicit none
@@ -24,15 +23,13 @@ MODULE experiment_mod
 CONTAINS
 
 !===============================================================================
-!> Setup a uniform initial state
+!> Initialize
 !===============================================================================
 SUBROUTINE init (self)
   class(experiment_t):: self
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%init')
   call self%solver_t%init
-  call self%initial%init
-  call self%initial%condition (self%mesh, self%mem(:,:,:,:,1,1), self%idx)
   call trace_end
 END SUBROUTINE init
 

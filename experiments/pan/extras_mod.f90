@@ -45,6 +45,7 @@ MODULE extras_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.  
   !-----------------------------------------------------------------------------
+  USE initial_conditions_mod                                    ! initial
   USE forces_mod                                                ! forces
   USE trace_particles_mod                                       ! tracep
   USE selfgravity_mod                                           ! selfg
@@ -60,6 +61,7 @@ MODULE extras_mod
   ! states, must be accessed via a private instance in the extras_t data type
   !-----------------------------------------------------------------------------
   type, public, extends(gpatch_t):: extras_t
+    type(initial_conditions_t):: initial_conditions             ! initial
     type(forces_t):: forces                                     ! forces
     class(trace_particles_t), pointer:: trace_particles         ! tracep
     real, dimension(:,:,:,:), pointer:: v                       ! tracep
@@ -92,16 +94,17 @@ SUBROUTINE pre_init (self)
   call trace%begin ('extras_t%pre_init')
   self%gpatch => self                                           ! keep
   call self%gpatch_t%pre_init                                   ! keep
-  call self%forces%pre_init          (self%gpatch)              ! forces
-  call self%selfgravity%pre_init     (self%gpatch)              ! selfg
-  call self%cooling%pre_init         (self%gpatch)              ! cool
+  call self%forces%pre_init             (self%gpatch)           ! forces
+  call self%initial_conditions%pre_init (self%gpatch)           ! initial
+  call self%selfgravity%pre_init        (self%gpatch)           ! selfg
+  call self%cooling%pre_init            (self%gpatch)           ! cool
   call io%lock%set ('extras_t%pre_init')
   if (.not. associated(sinks)) then                             ! sinks
     allocate (sinks)                                            ! sinks
-    call sinks%pre_init              (self%gpatch)              ! sinks
+    call sinks%pre_init                 (self%gpatch)           ! sinks
   end if                                                        ! sinks
   call io%lock%unset ('extras_t%pre_init')
-  call self%SN%pre_init              (self%gpatch, sinks)       ! sinks
+  call self%SN%pre_init                 (self%gpatch, sinks)    ! sinks
   !allocate (self%trace_particles)                               ! tracep
   !call self%trace_particles%pre_init (self%gpatch)              ! tracep
    !call self%lagrangian%pre_init     (self%gpatch)              ! lagr
@@ -116,6 +119,7 @@ SUBROUTINE init (self)
   !.............................................................................
   call trace%begin ('extras_t%init')
   call self%gpatch_t%init                                       ! keep
+  call self%initial_conditions%init                             ! initial
   call self%forces%init                                         ! forces
   call self%selfgravity%init                                    ! selfg
   call trace%end()
