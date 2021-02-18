@@ -46,7 +46,7 @@ grad_var='d' tol_grad=0.1 /
 &ramses_params
 ! courant_factor=0.5
  !csound=1.0
- riemann='hlld'
+ !riemann='hlld'
 ! slope_type=3.5
  !smallr=1e-8
  !smallc=1e-8

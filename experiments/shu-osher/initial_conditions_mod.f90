@@ -2,28 +2,31 @@
 !> This is a start on a module that could become a general turbulence forcing
 !> module, where the standard forcing we have been using in RAMSES is implemented
 !===============================================================================
-MODULE initial_mod
+MODULE initial_conditions_mod
   !USE const
   USE io_mod
   USE trace_mod
   USE mesh_mod
   USE omp_mod
   USE index_mod
+  USE patch_mod
+  USE gpatch_mod
   USE io_unit_mod
   USE math_mod
   USE kinds_mod
   USE eos_mod
   implicit none
   private
-  type, public:: initial_t
+  type, public:: initial_conditions_t
     integer:: seed
     real:: d0
     logical:: mhd=.true.
     real(8):: time=0d0
     character(len=64):: solver
+    class(gpatch_t), pointer:: patch => null()
   contains
+    procedure:: pre_init
     procedure:: init
-    procedure:: condition
   end type
   real, save:: csound=1.
 CONTAINS
@@ -31,38 +34,43 @@ CONTAINS
 !===============================================================================
 !> Setup a uniform initial state, with density=d0 and B=B0
 !===============================================================================
-SUBROUTINE init (self, solver, gamma)
-  class(initial_t):: self
-  character(len=64):: solver
-  real(8), optional:: gamma
-  !---------------------------------------------------------------------
+SUBROUTINE pre_init (self, patch)
+  class(initial_conditions_t):: self
+  class(gpatch_t), pointer:: patch
+  !-----------------------------------------------------------------------------
   call trace_begin('initial_t%init')
-  self%solver = trim(solver)
+  self%patch => patch
   self%mhd = .true.
   call trace%end()
-END subroutine init
+END subroutine pre_init
 
-
-SUBROUTINE condition (self, m, ff, idx)
-  class(initial_t) :: self
-  type(index_t):: idx
-  class(mesh_t)    :: m(3)
-  real, dimension(:,:,:,:), pointer :: ff
-  ! ....................................................................
-  integer:: i, j, k
-  real:: x, y, z, ds2(3), xs, ys, zs, rd
-  logical:: first_time = .true.
-  real(kind=KindScalarVar), dimension(:,:,:),   pointer:: d
-  real(kind=KindScalarVar), dimension(:,:,:),   pointer:: s=>null(), e1=> null(), et=>null()
-  real(kind=KindScalarVar):: rhov2, pxl
-  real(4), save:: P_l=10.33333  , P_r=1.0, &
-                  rho_l=3.857143, &
-                  vx_l=2.629369, vx_r=0.0, &
-                  a_d=0.2, f_d=5.0, x_disc = -4.0, bx=0.0
-  integer, save:: idir=1
-  namelist /IC_params/ P_l, P_r, rho_l, &
-                           vx_l, vx_r, a_d, f_d, x_disc, idir, bx
+!===============================================================================
+!===============================================================================
+SUBROUTINE init (self)
+  class(initial_conditions_t)            :: self
+  !.............................................................................
+  type(index_t),                 pointer :: idx
+  class(mesh_t),                 pointer :: m(:)
+  real, dimension(:,:,:,:),      pointer :: ff
+  integer                                :: i, j, k
+  real                                   :: x, y, z, ds2(3), xs, ys, zs, rd
+  logical,                          save :: first_time = .true.
+  real(var_k), dimension(:,:,:), pointer :: d
+  real(var_k), dimension(:,:,:), pointer :: s=>null(), e1=> null(), et=>null()
+  real(var_k)                            :: rhov2, pxl
+  real(4),                          save :: P_l=10.33333  , P_r=1.0, &
+                                            rho_l=3.857143, &
+                                            vx_l=2.629369, vx_r=0.0, &
+                                            a_d=0.2, f_d=5.0, x_disc = -4.0, bx=0.0
+  integer,                          save :: idir=1
+  namelist /IC_params/ P_l, P_r, rho_l, vx_l, vx_r, a_d, f_d, x_disc, idir, bx
+  !-----------------------------------------------------------------------------
   call io%lock%set('initial_t%condition')
+  m => self%patch%mesh
+  ff => self%patch%mem(:,:,:,:,1,1)
+  idx => self%patch%idx
+  self%solver = self%patch%kind
+  !.............................................................................
   if (first_time) then
     rewind (io%input)
     read (io%input, IC_params)
@@ -75,7 +83,8 @@ SUBROUTINE condition (self, m, ff, idx)
   !---------------------------------------------------------------------
   d => ff(:,:,:,idx%d)
   if (trim(self%solver(1:7)) == 'stagger') s => ff(:,:,:,idx%s)
-  if (self%solver(1:14) == 'zeus_mhd_patch' .or. self%solver(1:10) == 'stagger2e_') then
+  if (self%solver(1:14) == 'zeus_mhd_patch' .or. &
+      self%solver(1:10) == 'stagger2e_') then
     e1 => ff(:,:,:,idx%e)
   end if
   if (self%solver(1:9) == 'stagger2_') then
@@ -289,6 +298,6 @@ SUBROUTINE condition (self, m, ff, idx)
   end if
   nullify (d, et)
   call trace%end()
-END SUBROUTINE condition
+END SUBROUTINE init
 
-END MODULE initial_mod
+END MODULE initial_conditions_mod

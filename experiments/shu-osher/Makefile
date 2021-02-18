@@ -8,8 +8,8 @@ OPTS =
 # Default target and methods
 UPD             = adams_bashforth
 #SOLVER          = zeus3d
-#SOLVER          = ramses/hydro
-SOLVER          = stagger2/bifrost
+SOLVER          = ramses/hydro
+#SOLVER          = stagger2/bifrost
 STAGGER         = stagger_6th.o
 #SOLVER          = ramses/mhd_eos
 #SOLVER          = ramses/mhd
@@ -18,7 +18,7 @@ TOP             = ../..
 sinclude $(TOP)/config/Makefile
 
 # List the .o files the main program depends on after the colon:
-$(EXEC): cartesian_mod.o setup_mod.o dispatcher_mod.o
+$(EXEC): cartesian_mod.o setup_mod.o dispatcher_mod.o initial_conditions_mod.o
 
 # Dependencies
 experiment_mod.o	: trace_mod.o io_mod.o solver_mod.o bits_mod.o mesh_mod.o

@@ -12,15 +12,15 @@ MODULE experiment_mod
   USE mesh_mod
   implicit none
   private
-
   type, public, extends(solver_t):: experiment_t
   contains
     procedure:: init
     procedure:: update
   end type
-
 CONTAINS
 
+!===============================================================================
+!> Initialize
 !===============================================================================
 SUBROUTINE init (self)
   class(experiment_t):: self
@@ -32,10 +32,6 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   call self%solver_t%init
 
-  if (self%initial%time > 0d0) then
-    self%time = self%initial%time
-    self%t(self%it) = self%initial%time
-  end if
   ! assign boundary conditions.
   m=>self%mesh
   self%boundaries%rho_l = self%mem(m(1)%lo,m(2)%li,m(3)%li,self%idx%d,1,1)
@@ -71,10 +67,7 @@ SUBROUTINE update (self)
   logical :: first_time=.true.
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
-
-  
   call self%solver_t%update
-
   call trace_end
 END SUBROUTINE update
 !===============================================================================
