@@ -508,9 +508,6 @@ SUBROUTINE pre_init (self)
   if (any(self%ng == 0)) self%ng = ng           ! patch guard zones
   if (    self%nv == 0 ) self%nv = nv           ! number of variables
   if (    self%nt == 0 ) self%nt = nt           ! number of time slices
-  where (self%n==1)                             ! for collapsed dimensions
-    self%ng = 0                                 ! no guard zones
-  end where
   !-----------------------------------------------------------------------------
   ! Output related parameters
   !-----------------------------------------------------------------------------
@@ -678,7 +675,6 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
   ! Special handling of collapsed dimensions
   !-----------------------------------------------------------------------------
   where (self%n==1)                             ! for collapsed dimensions
-    self%ng = 0                                 ! no guard zones
     self%box = 1                                ! make sure it is non-zero
   end where
   !-----------------------------------------------------------------------------

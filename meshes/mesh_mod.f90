@@ -349,12 +349,6 @@ SUBROUTINE init_mesh (self, n, ng, s, p, llc_native)
   self%ui = self%lo + self%n
   self%uo = self%ui + 1
   self%ub = self%ui + self%ng
-  ! account for collapsed dimensions
-  if (self%n == 1) then
-    self%lo = self%li
-    self%uo = self%ui
-    self%ub = self%ui
-  end if
   self%gn = self%ub
   allocate (self%r(self%gn))
   ! initialise mesh floating point attributes
