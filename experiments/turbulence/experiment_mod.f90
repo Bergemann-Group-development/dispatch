@@ -17,7 +17,6 @@ MODULE experiment_mod
   USE bits_mod
   USE trace_mod
   USE solver_mod
-  USE initial_mod
   USE timer_mod
   USE link_mod
   !USE particle_patch_mod
@@ -39,14 +38,6 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call trace%begin('experiment_t%init')
   call self%solver_t%init
-  call self%initial%init
-  call self%initial%condition (self%mesh, self%mem(:,:,:,:,1,1), self%idx)
-  self%d0 = self%initial%d0
-  call self%set (bits%static)
-  if (self%initial%time > 0d0) then
-    self%time = self%initial%time
-    self%t(self%it) = self%initial%time
-  end if
   !call self%periodic_grid
   !call particle_patch%init
   !call particle_patch%test
@@ -63,17 +54,8 @@ END SUBROUTINE init
 SUBROUTINE update (self)
   class(experiment_t):: self
   class(link_t), pointer:: link
-  logical, save:: first_time=.true.
   !----------------------------------------------------------------------------
   call trace%begin('experiment_t%update')
-  if (first_time) then
-    call io%lock%set
-    if (first_time) then
-      call self%initial%cleanup
-      first_time = .false.
-    end if
-    call io%lock%unset
-  end if
   call self%solver_t%update
   call trace%end()
 END SUBROUTINE update

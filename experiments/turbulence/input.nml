@@ -28,7 +28,7 @@
 &guard_zone_params      verbose=0 detailed_timer=f /
 &timestep_params        /
 
-&IC_params             type='single_solenoidal' /
+&IC_params             type='turbulence' /
 &IC_solenoidal_params  k=1,1,2 a0=0.0,0.0,0.0                           /
 &IC_compressive_params k=3,3,3 a0=0.0,0.0,0.0 u0=0.1,0.2,0.3 b0=0,0,0.0 /
 &IC_advection_params   k=3,3,3 a0=0.0,0.0,0.0 u0=0.1,0.2,0.3 b0=0,0,0.0 /

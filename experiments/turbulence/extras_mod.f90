@@ -61,13 +61,13 @@ MODULE extras_mod
   USE task_mod
   USE io_mod
   USE trace_mod
-  USE connect_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.
   !-----------------------------------------------------------------------------
+  USE initial_conditions_mod                                           ! initial
+  USE forces_mod                                                       ! forces
   !USE rt_mod                                                           ! RT
   !USE newton_mod                                                       ! Newton
-  USE forces_mod                                                        ! forces
   !USE trace_particles_mod                                              ! tracep
   !USE spitzer_mod                                                      ! spitzer
   !USE gravity_mod                                                      ! gravity
@@ -82,6 +82,7 @@ MODULE extras_mod
   ! states, must be accessed via a private instance in the extras_t data type
   !-----------------------------------------------------------------------------
   type, public, extends(gpatch_t):: extras_t
+    type(initial_conditions_t):: initial_conditions                    ! initial
     type(forces_t):: forces                                            ! forces
     !class(pic_t), pointer:: pic                                        ! pic
     !type (spitzer_t):: spitzer                                         ! spitzer
@@ -120,6 +121,7 @@ SUBROUTINE pre_init (self)
   !.............................................................................
   patch => self                                                        ! keep
   call self%gpatch_t%pre_init                                          ! keep
+  call self%initial_conditions%pre_init (patch)                        ! initial
   call self%forces%pre_init (patch)                                    ! forces
   !-----------------------------------------------------------------------------
   ! Allocate a trace_particles data type, connect a pointer, and initialize
@@ -141,6 +143,7 @@ SUBROUTINE init (self)
   !.............................................................................
   call trace%begin ('extras_t%init')
   call self%gpatch_t%init                                              ! keep
+  call self%initial_conditions%init                                    ! initial
   call self%forces%init                                                ! forces
   !-----------------------------------------------------------------------------
   ! Allocate a trace_particles data type, connect a pointer, and initialize
