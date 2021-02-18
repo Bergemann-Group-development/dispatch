@@ -124,12 +124,11 @@ SUBROUTINE pre_init (self)
   !.............................................................................
   call trace%begin ('extras_t%pre_init')
   self%patch => self
-  call self%gpatch_t%pre_init                                         ! keep
-  call self%selfgravity%pre_init(self%patch)                          ! selfg
-  call self%forces%pre_init(self%patch)                               ! forcces
-  call self%cooling%pre_init (self%patch)                             ! cool 
-  call sinks%pre_init; sinks%patch => self                            ! sinks
-  call mesa%pre_init                                                  ! mesa
+  call self%gpatch_t%pre_init                                   ! keep
+  call self%selfgravity%pre_init(self%patch)                    ! selfg
+  call self%forces%pre_init(self%patch)                         ! forcces
+  call self%cooling%pre_init (self%patch)                       ! cool 
+  call mesa%pre_init (self%patch)                               ! sinks
   call trace%end()
 END SUBROUTINE pre_init
 
@@ -140,7 +139,7 @@ SUBROUTINE init (self)
   class(extras_t):: self
   !.............................................................................
   call trace%begin ('extras_t%init')
-  call self%gpatch_t%init
+  call self%gpatch_t%init                                       ! keep
   call self%forces%init                                         ! forces
   call mesa%init                                                ! sinks
   call trace%end()
@@ -193,7 +192,7 @@ SUBROUTINE output (self)
   !.............................................................................
   !Has to be in this order, for out_next not be < self% time once
   call self%gpatch_t%output                                     ! keep
-  call mesa%output
+  call mesa%output                                              ! mesa
 END SUBROUTINE output
 
 !===============================================================================

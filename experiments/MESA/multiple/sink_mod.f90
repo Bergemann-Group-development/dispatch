@@ -89,8 +89,8 @@ CONTAINS
 !===============================================================================
 !> Initialize sink task patch connection
 !===============================================================================
-SUBROUTINE pre_init (self)
-  class(sink_t), target:: self
+SUBROUTINE pre_init (self, patch)
+  class(sink_t):: self
   class(gpatch_t), pointer:: patch
   integer:: iostat
   namelist /sink_params/ jeans_limit, accretion_cells, create_fraction, &
@@ -98,7 +98,7 @@ SUBROUTINE pre_init (self)
   logical:: first_time = .true.
   !-----------------------------------------------------------------------------
   call trace%begin ('sink_t%pre_init')
-  patch => self%patch
+  self%patch => patch
   call io%lock%set
   if (first_time) then
     rewind (io%input)

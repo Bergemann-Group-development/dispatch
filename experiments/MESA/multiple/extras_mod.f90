@@ -93,9 +93,10 @@ SUBROUTINE pre_init (self)
   !.............................................................................
   call trace%begin ('extras_t%pre_init')
   self%patch => self
-  call self%selfgravity%pre_init(self%patch)                   ! selfg
-  call self%forces%pre_init(self%patch)                        ! forces
-  call self%sink%pre_init; self%sink%patch => self             ! sink
+  call self%gpatch_t%pre_init                                   ! keep
+  call self%selfgravity%pre_init(self%patch)                    ! selfg
+  call self%forces%pre_init(self%patch)                         ! forces
+  call self%sink%pre_init (self%patch)                          ! sink
   call trace%end()
 END SUBROUTINE pre_init
 
@@ -106,8 +107,9 @@ SUBROUTINE init (self)
   class(extras_t):: self
   !.............................................................................
   call trace%begin ('extras_t%init')
+  call self%gpatch_t%init                                       ! keep
   call self%forces%init                                         ! forces
-  call self%sink%init                                          ! sink
+  call self%sink%init                                           ! sink
   call trace%end()
 END SUBROUTINE init
 

@@ -37,13 +37,15 @@ CONTAINS
 !===============================================================================
 !> Read settings from namelist
 !===============================================================================
-SUBROUTINE pre_init (self)
-  class(mesa_t), target:: self
+SUBROUTINE pre_init (self, patch)
+  class(mesa_t):: self
+  class(gpatch_t), pointer:: patch
   integer:: iostat
   real :: mesa_threshhold_msun
   namelist /mesa_params/ mesa_threshhold_msun, cadence, verbose
   !-----------------------------------------------------------------------------
   call trace%begin ('mesa_t%pre_init')
+  call self%sinks_t%pre_init(patch)
   call io%lock%set
   if (first_time) then
     rewind (io%input)

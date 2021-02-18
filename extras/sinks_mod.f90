@@ -17,7 +17,6 @@ MODULE sinks_mod
     class(gpatch_t), pointer:: patch => null()
   contains
     procedure:: pre_init
-    procedure:: connect_patch
     procedure:: pre_update
   end type
   integer:: verbose=0
@@ -29,7 +28,7 @@ CONTAINS
 !===============================================================================
 !> Initialize sink task
 !===============================================================================
-SUBROUTINE pre_init (self)
+SUBROUTINE pre_init (self, patch)
   class(sinks_t), target:: self
   class(gpatch_t), pointer:: patch
   !.............................................................................
@@ -40,7 +39,7 @@ SUBROUTINE pre_init (self)
     position
   !-----------------------------------------------------------------------------
   call trace%begin ('sinks_t%pre_init')
-  patch => self%patch
+  self%patch => patch
   if (first_time) then
     !$omp critical (sinks_cr)
     if (first_time) then
@@ -71,18 +70,6 @@ SUBROUTINE pre_init (self)
   end if
   call trace%end ()
 END SUBROUTINE pre_init
-
-!===============================================================================
-!> Store a pointer to the patch the sink lives in
-!===============================================================================
-SUBROUTINE connect_patch (self, patch)
-  class(sinks_t), target:: self
-  class(gpatch_t), pointer:: patch
-  !-----------------------------------------------------------------------------
-  call trace%begin ('sinks_t%connect_patch')
-  self%patch => patch
-  call trace%end ()
-END SUBROUTINE connect_patch
 
 !===============================================================================
 !> Update sink task
