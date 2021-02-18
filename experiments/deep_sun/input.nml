@@ -4,6 +4,8 @@
 &patch_params       nt=5  grace=0.05 n=3*22 do_check_nan=f /
 
 ! -- I/O parameters ------------------------------------------------------------
+&restart_params     from_dir='../../data/stellar_atmospheres'
+                    io_format='stagger' snapshot=0 /
 &snapshot_params    verbose=0 order=-2 !b0=0.0,0.0,0.0 
                     meshfile='../../data/stellar_atmospheres/mhd63.msh'
                     snapfile='../../data/stellar_atmospheres/mhd63.dat' 

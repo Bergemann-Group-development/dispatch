@@ -1,5 +1,7 @@
 
 ! -- Parameters defining the run -----------------------------------------------
+&restart_params     from_dir='../../data/stellar_atmospheres'
+                    io_format='stagger' snapshot=0 /
 &experiment_params  verbose=0 d_bot=231.8 e_bot=2902.0 bottom_bc_rate=0.10 /
 &cartesian_params   size=6,6,3 dims=6,6,3 mpi_dims=2,1,1 origin=0,0,-0.5
                     periodic=t,t,f /
