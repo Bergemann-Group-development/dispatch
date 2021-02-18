@@ -313,28 +313,28 @@ SUBROUTINE read_stagger_snap (task_list)
         !if (m(3)%lower_boundary) then
           zpos = m(3)%r(m(3)%li)+m(3)%p
           !zpos = patch%origin(3)+ 0.5*m(3)%d
-          patch%boundaries%d_bot = lagrange%interpolate1d8(zpos,mz,real(zm,8),real(d_mean,8),order=1)
-          patch%boundaries%e_bot = lagrange%interpolate1d8(zpos,mz,real(zm,8),real(e_mean,8),order=1)
+          !patch%boundaries%d_bot = lagrange%interpolate1d8(zpos,mz,real(zm,8),real(d_mean,8),order=1)
+          !patch%boundaries%e_bot = lagrange%interpolate1d8(zpos,mz,real(zm,8),real(e_mean,8),order=1)
         !end if
         if (m(3)%upper_boundary) then
           !zpos = m(3)%r(m(3)%uo)+m(3)%p
           zpos = m(3)%r(m(3)%ui)+m(3)%p 
-          ee_top = lagrange%interpolate1d8(zpos,mz,real(zm,8),real(e_mean,8),order=1) &
-                 / lagrange%interpolate1d8(zpos,mz,real(zm,8),real(d_mean,8),order=1)
-          patch%newton%ee_top = ee_top
-          patch%boundaries%ee_top = ee_top
+          !ee_top = lagrange%interpolate1d8(zpos,mz,real(zm,8),real(e_mean,8),order=1) &
+                 !/ lagrange%interpolate1d8(zpos,mz,real(zm,8),real(d_mean,8),order=1)
+          !patch%newton%ee_top = ee_top
+          !patch%boundaries%ee_top = ee_top
         else
-          ee_top = lagrange%interpolate1d8(zpos,mz,real(zm,8),real(e_mean,8),order=1) &
-                 / lagrange%interpolate1d8(zpos,mz,real(zm,8),real(d_mean,8),order=1)
-          patch%newton%ee_top = ee_top
-          patch%boundaries%ee_top = ee_top
+          !ee_top = lagrange%interpolate1d8(zpos,mz,real(zm,8),real(e_mean,8),order=1) &
+                 !/ lagrange%interpolate1d8(zpos,mz,real(zm,8),real(d_mean,8),order=1)
+          !patch%newton%ee_top = ee_top
+          !patch%boundaries%ee_top = ee_top
         end if
       end if
       !
       if (b0(1) >= -99) patch%mem(:,:,:,patch%idx%bx,1,1) = b0(1)
       if (b0(2) >= -99) patch%mem(:,:,:,patch%idx%by,1,1) = b0(2)
       if (b0(3) >= -99) patch%mem(:,:,:,patch%idx%bz,1,1) = b0(3)
-      if (patch%kind(1:6)=='ramses') call patch%to_total_e(patch%it)
+      !if (patch%kind(1:6)=='ramses') call patch%to_total_e(patch%it)
     end select
     link => link%next
   end do
