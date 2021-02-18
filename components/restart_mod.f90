@@ -3,6 +3,7 @@ MODULE restart_mod
   USE trace_mod
   USE mpi_mod
   USE data_io_mod
+  USE kinds_mod
   USE amr_io_mod
   USE task_factory_mod
   USE task_mod
@@ -19,7 +20,7 @@ MODULE restart_mod
     procedure:: read_legacy
   end type
   character(120):: filename, from_dir='data/'
-  integer:: id, rank, unit, iostat
+  integer:: id, rank
   integer:: snapshot=-1, nml_version=4
   type(restart_t), public:: restart
 CONTAINS
@@ -30,6 +31,7 @@ CONTAINS
 SUBROUTINE init (self, task_list)
   class(restart_t)            :: self
   type(task_list_t),  pointer :: task_list
+  integer                     :: iostat
   namelist /restart_params/ from_dir, snapshot
   !.............................................................................
   call trace%begin ('restart_t%init')
@@ -80,8 +82,8 @@ SUBROUTINE read_amr (self, task_list)
   class(link_t),      pointer :: link
   character(16)               :: type
   integer(8)                  :: offset
+  integer                     :: unit, iostat
   namelist /amr_nml/ id, type, rank, offset, nml_version
-  logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
   call trace%begin ('restart_t%read_amr')
   !-----------------------------------------------------------------------------
@@ -97,14 +99,9 @@ SUBROUTINE read_amr (self, task_list)
     if (rank == mpi%rank) then
       call task_factory%allocate (type, task)
       task%id = id
-      call task%pre_init
       task%amr_offset = offset
-      io%nml_version = nml_version
-      if (first_time) then
-        call task%input_metadata (unit, snapshot=.true.)
-        first_time = .false.
-      end if
-      call task%input_metadata (unit)
+      io%nml_version = 4
+      call task%input_metadata (unit)   ! default: gpatch_t%input_metadata
       call task_list%append (task)
     end if
   end do
@@ -139,53 +136,68 @@ SUBROUTINE read_legacy (self, task_list)
   class(restart_t)        :: self
   type(task_list_t),  pointer :: task_list
   !.............................................................................
-  class(task_t),      pointer :: task
-  class(link_t),      pointer :: link
-  character(16)               :: type
-  integer(8)                  :: offset
+  class(experiment_t), pointer :: experiment
+  class(patch_t),      pointer :: patch
+  class(task_t),       pointer :: task
+  class(link_t),       pointer :: link
+  character(16)                :: type
+  integer(8)                   :: offset
+  integer                      :: unit, iostat, recl
   namelist /restart_params/ from_dir, snapshot
   namelist /amr_nml/ id, type, rank, offset, nml_version
-  logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
   call trace%begin ('restart_t%read_legacy')
   !-----------------------------------------------------------------------------
-  ! Populate task lists, so far with only light-weight tasks, based on metadata
+  ! Populate task lists, so far with only light-weight tasks, based on metadata.
+  ! Load-balancing is a separate issue; this step only assumes that there is
+  ! enough memory to read.
   !-----------------------------------------------------------------------------
-  do rank=1,mpi%size
-    write (filename,'(a,i5.5,"/rank_",i5.5,"_patches.nml")') &
-      trim(from_dir), snapshot, rank
-    open (newunit=unit, file=filename, form='formatted', status='old')
+  write (filename,'(a,i5.5,"/rank_",i5.5,"_patches.nml")') &
+    trim(from_dir), snapshot, mpi%rank
+  open (newunit=unit, file=filename, form='formatted', status='old', &
+    iostat=iostat)
+  if (iostat /= 0) then
+    write (stderr,*) 'file does not exist: '//trim(filename)
+  else
+    !---------------------------------------------------------------------------
+    ! Loop until end-of-file on the rank file
+    !---------------------------------------------------------------------------
     do while (.true.)
-      if (rank == mpi%rank) then
-        allocate (experiment_t:: task)
-        select type (task)
-        class is (patch_t)
-          call data_io%input_nml (task)
-          call task%pre_init
-        end select
-        call task_list%append (task)
+      allocate (experiment)
+      call experiment%pre_init
+      patch => experiment
+      call data_io%input_nml (patch, unit)
+      if (data_io%eof (unit)) then
+        call experiment%dealloc
+        exit
       end if
+      task => experiment
+      call task_list%append (task)
     end do
     close (unit)
-  end do
-  !-----------------------------------------------------------------------------
-  ! Read binary data for all tasks in the task list
-  !-----------------------------------------------------------------------------
-  link => task_list%head
-  do while (associated(link))
-    task => link%task
-    call task%init
-    select type (task)
-    class is (patch_t)
-      write (filename,'(a,i5.5,"/rank_",i5.5,".dat")') &
-        trim(from_dir), snapshot, rank
-      open (newunit=unit, file=filename, form='unformatted', status='old', &
-        access='direct', recl=product(shape(task%mem))/task%nw)
-      read (unit, rec=1) task%mem
-    end select
-    close (unit)
-    link => link%next
-  end do
+    !---------------------------------------------------------------------------
+    ! Read binary data for all tasks in the task list
+    !---------------------------------------------------------------------------
+    link => task_list%head
+    do while (associated(link))
+      task => link%task
+      select type (task)
+      class is (patch_t)
+        call task%init
+        write (filename,'(a,i5.5,"/",i5.5,".dat")') &
+          trim(from_dir), snapshot, task%id
+        recl=(storage_size(1.0_var_k)/8)*product(shape(task%mem(:,:,:,:,1,1)))
+        open (newunit=unit, file=filename, form='unformatted', status='old', &
+          access='direct', recl=recl)
+        !-----------------------------------------------------------------------
+        ! Initialize the task, which allocates memory, and read binary data
+        !-----------------------------------------------------------------------
+        read (unit, rec=1) task%mem(:,:,:,:,1,1)
+        close (unit)
+      end select
+      link => link%next
+    end do
+  end if
   call trace%end ()
 END SUBROUTINE read_legacy
 

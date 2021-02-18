@@ -1250,10 +1250,10 @@ END SUBROUTINE output
 !===============================================================================
 !> Template for metadata output
 !===============================================================================
-SUBROUTINE output_metadata (self, unit, snapshot)
+SUBROUTINE output_metadata (self, unit, first_time)
   class(task_t):: self
   integer:: unit
-  logical, optional:: snapshot
+  logical, optional:: first_time
   !-----------------------------------------------------------------------------
   call trace%begin ('task_t%output_metadata')
   call io%abort ('task_t%output_metadata called')
@@ -1263,10 +1263,9 @@ END SUBROUTINE output_metadata
 !===============================================================================
 !> Template for metadata output
 !===============================================================================
-SUBROUTINE input_metadata (self, unit, snapshot)
+SUBROUTINE input_metadata (self, unit)
   class(task_t):: self
   integer:: unit
-  logical, optional:: snapshot
   !-----------------------------------------------------------------------------
   call trace%begin ('task_t%input_metadata')
   call io%abort ('task_t%input_metadata called')

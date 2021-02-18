@@ -78,6 +78,7 @@ MODULE data_io_mod
   end type
   type, public:: data_io_t
     logical:: initialized=.false.
+    integer:: iostat=0
     type(dll_t):: kind_list
     type(lock_t):: lock
     type(counters_t):: counters
@@ -89,9 +90,10 @@ MODULE data_io_mod
     procedure, nopass:: output_txt
     procedure, nopass:: output_nml
     procedure:: input
-    procedure, nopass:: input_nml
+    procedure:: input_nml
     procedure, nopass:: close
     procedure:: open_and_close
+    procedure:: eof
   end type
   type(data_io_t), public:: data_io
 CONTAINS
@@ -399,16 +401,16 @@ SUBROUTINE input (self, patch, ok)
     else if (io%method=='direct') then
       call direct_io%input (patch, ok)
     else if (io%method=='legacy') then
-      call input_nml (patch)
+      call input_nml (self, patch)
       call legacy_io%input (patch, ok)
     else if (io%method=='pan') then
-      call input_nml (patch)
+      call input_nml (self, patch)
       call parallel_io%input (patch, ok)
     else if (io%method=='parallel') then
-      call input_nml (patch)
+      call input_nml (self, patch)
       call parallel_io%input (patch, ok)
     else if (io%method=='snapshot') then
-      call input_nml (patch)
+      call input_nml (self, patch)
       call parallel_io%input (patch, ok)
     else
       call mpi%abort ('unknown io%method = '//io%method)
@@ -482,20 +484,20 @@ END SUBROUTINE output_txt
 !> the text file I/O, and because snapshot%ibuf is consantly being modified by
 !> other threads (must be protected by the same critical region!).
 !===============================================================================
-SUBROUTINE output_nml (patch, append, unit, snapshot)
+SUBROUTINE output_nml (patch, append, unit, first_time)
   class(patch_t):: patch
   logical :: append
   integer, optional:: unit
-  logical, optional:: snapshot
+  logical, optional:: first_time
   !.............................................................................
   if (io%nml_version == 1) then
-    call output_nml_v1(patch, append, unit, snapshot)
+    call output_nml_v1(patch, append, unit, first_time)
   else if (io%nml_version == 2) then
-    call output_nml_v2(patch, append, unit, snapshot)
+    call output_nml_v2(patch, append, unit, first_time)
   else if (io%nml_version == 3) then
-    call output_nml_v3(patch, append, unit, snapshot)
+    call output_nml_v3(patch, append, unit, first_time)
   else if (io%nml_version == 4) then
-    call output_nml_v4(patch, append, unit, snapshot)
+    call output_nml_v4(patch, append, unit, first_time)
   else
     print*,io%nml_version
     call mpi%abort ('unknown nml_version!')
@@ -962,11 +964,11 @@ SUBROUTINE output_nml_v3 (patch, append, unit, snapshot)
   call trace%end()
 END SUBROUTINE output_nml_v3
 
-SUBROUTINE output_nml_v4 (patch, append, unit, snapshot)
+SUBROUTINE output_nml_v4 (patch, append, unit, first_time)
   class(patch_t):: patch
   logical :: append
   integer, optional:: unit
-  logical, optional:: snapshot
+  logical, optional:: first_time
   !.............................................................................
   character(len=128)   :: filename
   character(len=128), save:: filename1='', filename2=''
@@ -1052,11 +1054,10 @@ SUBROUTINE output_nml_v4 (patch, append, unit, snapshot)
   refine_ratio = patch%refine_ratio
   mpi_dims     = mpi_coords%dims
   if (present(unit)) then
-    if (present(snapshot)) then
+    if (first_time) then
       write (unit, snapshot_nml)
-    else
-      write (unit, patch_nml)
     end if
+    write (unit, patch_nml)
   else
     if (mpi%master .and. patch%iout > last_snapshot) then
       mpi_size = mpi%size
@@ -1093,6 +1094,7 @@ SUBROUTINE output_nml_v4 (patch, append, unit, snapshot)
       flush (io_unit%log)
       open  (io_unit%nml2, file=trim(filename), form='formatted', status='unknown', &
           access=trim(merge('append    ','sequential',append)))
+      write (io_unit%nml2, snapshot_nml)
       write(io_unit%log,'(a,i5,2x,2a)') &
       ' thread', omp%thread, 'opened  ', trim(filename)
       flush (io_unit%log)
@@ -1119,21 +1121,21 @@ END SUBROUTINE output_nml
 !> Read in the basic, common meta-data from the snapshot.nml file.  If the
 !> patch%time is already set, assume that the metadata has been read already.
 !===============================================================================
-SUBROUTINE input_nml (patch, unit, snapshot)
+SUBROUTINE input_nml (self, patch, unit)
+  class(data_io_t):: self
   class(patch_t):: patch
   integer, optional:: unit
-  logical, optional:: snapshot
   !.............................................................................
   call trace%begin ('data_io_t%input_nml')
   if (patch%time <= 0d0) then
     if (io%nml_version == 1) then
-      call input_nml_v1(patch, unit, snapshot)
+      call input_nml_v1(patch, unit)
     else if (io%nml_version == 2) then
-      call input_nml_v2(patch, unit, snapshot)
+      call input_nml_v2(patch, unit)
     else if (io%nml_version == 3) then
-      call input_nml_v3(patch, unit, snapshot)
+      call input_nml_v3(patch, unit)
     else if (io%nml_version == 4) then
-      call input_nml_v4(patch, unit, snapshot)
+      call input_nml_v4(self, patch, unit)
     else
       print*,io%nml_version
       call mpi%abort ('unknown nml_version!')
@@ -1145,16 +1147,15 @@ CONTAINS
 !===============================================================================
 !> Read snapshot namelists, version 1.
 !===============================================================================
-SUBROUTINE input_nml_v1 (patch, unit, snapshot)
+SUBROUTINE input_nml_v1 (patch, unit)
   USE eos_mod, only: eos_t => eos
   class(patch_t):: patch
   integer, optional:: unit
-  logical, optional:: snapshot
   !.............................................................................
   character(len=128)   :: filename
   character(len=128), save:: filename1='', filename2=''
   integer, save        :: ioformat, id, iout, istep, mesh_type, level,nv, nt, &
-                          nw, ntotal, format
+                          nw, ntotal, format, mpi_size
   integer, dimension(3):: ncell, li, ui, n, ng, gn, l, u
   real   , save        :: gamma, quality
   real(8), save        :: time, dtime, out_next, out_time, ms
@@ -1163,7 +1164,7 @@ SUBROUTINE input_nml_v1 (patch, unit, snapshot)
   integer, save        :: time_derivs
   logical, save        :: guard_zones, no_mans_land, periodic(3)
   character(len=16)    :: kind, eos, opacity, method
-  integer              :: omp_nthreads, mpi_size, mpi_dims(3)
+  integer              :: omp_nthreads, mpize, mpi_dims(3)
   namelist /snapshot_nml/ ioformat, iout, time, ntotal, istep, mesh_type, &
     position, size, ds, box, velocity, level, quality, gamma, ncell, li, ui, n, &
     ng, gn, nv, nt, nw, kind, eos, opacity, periodic, guard_zones, time_derivs, &
@@ -1201,11 +1202,10 @@ END SUBROUTINE input_nml_v1
 !===============================================================================
 !> Read snapshot namelists, version 2.
 !===============================================================================
-SUBROUTINE input_nml_v2 (patch, unit, snapshot)
+SUBROUTINE input_nml_v2 (patch, unit)
   USE eos_mod, only: eos_t => eos
   class(patch_t):: patch
   integer, optional:: unit
-  logical, optional:: snapshot
   !.............................................................................
   integer              :: iostat, unit_l
   character(len=128)   :: filename
@@ -1278,11 +1278,10 @@ END SUBROUTINE input_nml_v2
 !===============================================================================
 !> Read snapshot namelists, version 3.
 !===============================================================================
-SUBROUTINE input_nml_v3 (patch, unit, snapshot)
+SUBROUTINE input_nml_v3 (patch, unit)
   USE eos_mod, only: eos_t => eos
   class(patch_t):: patch
   integer, optional:: unit
-  logical, optional:: snapshot
   !.............................................................................
   character(len=128)   :: filename
   character(len=128), save:: filename1='', filename2=''
@@ -1355,15 +1354,15 @@ END SUBROUTINE input_nml_v3
 !===============================================================================
 !> Read snapshot namelists, version 4.
 !===============================================================================
-SUBROUTINE input_nml_v4 (patch, unit, snapshot)
+SUBROUTINE input_nml_v4 (self, patch, unit)
+  class(data_io_t):: self
   class(patch_t):: patch
   integer, optional:: unit
-  logical, optional:: snapshot
   !.............................................................................
   integer              :: iostat, unit_l
   character(len=128)   :: filename
-  character(len=128), save    :: filename1='', filename2=''
-  integer,            save    :: ioformat, id, iout, istep, mesh_type, &
+  character(len=128),    save :: filename1='', filename2=''
+  integer,               save :: ioformat, id, iout, istep, mesh_type, &
                                  level, nv, nt, nw, ntotal, format
   integer, dimension(3), save :: ncell, li, ui, n, ng, gn, l, u
   real   ,               save :: gamma, quality
@@ -1393,45 +1392,48 @@ SUBROUTINE input_nml_v4 (patch, unit, snapshot)
   ! If called with an open unit, pick up all available metadata
   !-----------------------------------------------------------------------------
   if (present(unit)) then
-    if (present(snapshot)) then
+    if (first_time) then
+      first_time = .false.
+      rewind (unit)
       read (unit, snapshot_nml)
-    else
-      read (unit, patch_nml)
-      !--- patch_nml values ---
-      patch%id           = id
-      patch%position     = position
-      patch%size         = size
-      patch%dtime        = dtime
-      patch%istep        = istep
-      patch%ds           = ds
-      patch%n            = n
-      patch%nw           = nw
-      patch%velocity     = velocity
-      patch%level        = level
-      patch%quality      = quality
-      patch%mesh_type    = mesh_type
-      patch%mesh_type    = mesh_type
-      patch%kind         = kind
-      !--- snapshot_nml values ---
-      patch%iout         = iout
-      patch%time         = time
-      patch%box          = box
-      patch%li           = li
-      patch%ui           = ui
-      patch%gn           = gn
-      patch%ng           = ng
-      patch%n            = n
-      patch%nv           = nv
-      patch%nt           = nt
-      patch%periodic     = periodic
-      patch%refine_ratio = refine_ratio
-      patch%eos          = eos_name
-      io%guard_zones     = guard_zones
-      io%time_derivs     = time_derivs
-      eos%gamma          = gamma
-      mpi%osize          = mpi_size
-      mpi_coords%odims   = mpi_dims
     end if
+    read (unit, patch_nml, iostat=iostat)
+    if (iostat /= 0) then
+      self%iostat = unit
+    end if
+    !--- patch_nml values ---
+    patch%id           = id
+    patch%position     = position
+    patch%size         = size
+    patch%dtime        = dtime
+    patch%istep        = istep
+    patch%ds           = ds
+    patch%n            = n
+    patch%nw           = nw
+    patch%velocity     = velocity
+    patch%level        = level
+    patch%quality      = quality
+    patch%mesh_type    = mesh_type
+    patch%mesh_type    = mesh_type
+    patch%kind         = kind
+    !--- snapshot_nml values ---
+    patch%iout         = iout
+    patch%time         = time
+    patch%box          = box
+    patch%li           = li
+    patch%ui           = ui
+    patch%gn           = gn
+    patch%ng           = ng
+    patch%n            = n
+    patch%nv           = nv
+    patch%nt           = nt
+    patch%periodic     = periodic
+    patch%refine_ratio = refine_ratio
+    patch%eos          = eos_name
+    io%guard_zones     = guard_zones
+    io%time_derivs     = time_derivs
+    mpi%osize          = mpi_size
+    mpi_coords%odims   = mpi_dims
   !-----------------------------------------------------------------------------
   ! Otherwise, open the file "data/run/rank_rrrrr_patches.nml" for reading
   !-----------------------------------------------------------------------------
@@ -1448,7 +1450,7 @@ SUBROUTINE input_nml_v4 (patch, unit, snapshot)
       io%guard_zones = guard_zones
     end if
     patch%time  = time
-    patch%t     = time
+    !patch%t     = time
     patch%guard_zones = guard_zones
     patch%time_derivs = time_derivs
     write (filename,'(a,i5.5,"/rank_",i5.5,"_patches.nml")') &
@@ -1517,5 +1519,20 @@ SUBROUTINE close()
   end if
   call trace%end()
 END SUBROUTINE close
+
+!===============================================================================
+!> Return true when a unit has recently reached end-of-file
+!===============================================================================
+LOGICAL FUNCTION eof (self, unit)
+  class(data_io_t):: self
+  integer:: unit
+  !-----------------------------------------------------------------------------
+  if (self%iostat == unit) then
+    self%iostat = 0
+    eof = .true.
+  else
+    eof = .false.
+  end if
+END FUNCTION eof
 
 END MODULE data_io_mod

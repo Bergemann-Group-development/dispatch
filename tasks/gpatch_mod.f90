@@ -633,22 +633,21 @@ END SUBROUTINE rotate
 
 !===============================================================================
 !===============================================================================
-SUBROUTINE output_metadata (self, unit, snapshot)
+SUBROUTINE output_metadata (self, unit, first_time)
   class(gpatch_t):: self
   integer:: unit
-  logical, optional:: snapshot
+  logical, optional:: first_time
   !-----------------------------------------------------------------------------
-  call data_io%output_nml (self,.false., unit=unit, snapshot=snapshot)
+  call data_io%output_nml (self,.false., unit=unit, first_time=first_time)
 END SUBROUTINE output_metadata
 
 !===============================================================================
 !===============================================================================
-SUBROUTINE input_metadata (self, unit, snapshot)
+SUBROUTINE input_metadata (self, unit)
   class(gpatch_t):: self
   integer:: unit
-  logical, optional:: snapshot
   !-----------------------------------------------------------------------------
-  call data_io%input_nml (self, unit=unit, snapshot=snapshot)
+  call data_io%input_nml (self, unit)
 END SUBROUTINE input_metadata
 
 END MODULE gpatch_mod

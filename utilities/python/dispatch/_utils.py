@@ -23,7 +23,7 @@ def read_patch_metadata(io=0,run='',data='../data',n_rank=1,verbose=0):
         else:
             break
         if verbose>1:
-            print(metadata,len(patches.keys()),'patches')
+            print(len(patches.keys()),'patches')
         rank+=1
 
     np=len(patches.keys())
@@ -73,6 +73,8 @@ def read_rank_namelist(file,patches,rank,verbose=0):
             # strip commas and equal sign from line and split
             line=line.replace('=',' ').replace(',',' ').replace('"',' ')
             items=line.split()
+            if len(items)==0:
+                continue
 
             # Detect blocks to parse
             if items[0] == "&PATCH_NML":
