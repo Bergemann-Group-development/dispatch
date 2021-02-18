@@ -35,10 +35,8 @@ CONTAINS
 !===============================================================================
 !> Setup a uniform initial state, with density=d0 and B=B0
 !===============================================================================
-SUBROUTINE init (self, solver, gamma)
+SUBROUTINE init (self)
   class(initial_t):: self
-  character(len=64):: solver
-  real(8), optional:: gamma
   character(len=32), save:: type='turbulence'
   integer:: iostat
   logical, save:: first_time=.true.
@@ -56,9 +54,6 @@ SUBROUTINE init (self, solver, gamma)
   end if
   eos%gamma = gamma
   call io%lock%unset
-  if (present(gamma)) &
-    eos%gamma = gamma
-  self%solver = trim(solver)
   select case (type)
   case ('single_solenoidal')
     self%condition => single_solenoidal

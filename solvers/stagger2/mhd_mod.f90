@@ -87,7 +87,7 @@ SUBROUTINE pre_init (self)
   ! Read IC parameters, which determine if this is HD or MHD.  The IC init is
   ! called again, from extras_t%init, when gamma is known and can be passed on.
   !-----------------------------------------------------------------------------
-  call self%initial%init (self%kind, eos%gamma)
+  call self%initial%init
   self%mhd = self%initial%mhd
   if (self%mhd) then
     self%kind = 'stagger2_mhd_patch'

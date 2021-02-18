@@ -12,6 +12,7 @@ MODULE initial_mod
   USE index_mod
   USE io_unit_mod
   USE force_mod
+  USE eos_mod
   implicit none
   private
   real(8), parameter:: pi2=8d0*atan(1d0)
@@ -35,10 +36,8 @@ CONTAINS
 !===============================================================================
 !> Setup a uniform initial state, with density=d0 and B=B0
 !===============================================================================
-SUBROUTINE init (self, solver, gamma)
+SUBROUTINE init (self)
   class(initial_t):: self
-  character(len=64):: solver
-  real(8), optional:: gamma
   logical, save:: first_time=.true.
   namelist /IC_params/ type
   !----------------------------------------------------------------------------
@@ -51,10 +50,6 @@ SUBROUTINE init (self, solver, gamma)
     if (io%master) write (*, IC_params)
   end if
   call io%lock%unset
-  self%solver = trim(solver)
-  if (present(gamma)) then
-    self%gamma = gamma
-  end if
   call trace_end
 END SUBROUTINE init
 
@@ -106,13 +101,13 @@ SUBROUTINE convert (self, m, ff, idx)
   real, dimension(:,:,:), pointer:: d, e, s
   !-----------------------------------------------------------------------------
   s => ff(:,:,:,idx%s)
-  if (self%gamma == 1d0) then
+  if (eos%gamma == 1d0) then
     s = 0.0
   else
     d => ff(:,:,:,idx%d)
     e => ff(:,:,:,idx%e)
-    g1 = self%gamma-1d0
-    s = d*log(e*g1/d**self%gamma)/g1
+    g1 = eos%gamma-1d0
+    s = d*log(e*g1/d**eos%gamma)/g1
   end if
   call trace_end ()
 END SUBROUTINE convert
@@ -144,8 +139,8 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   real           :: d, p
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_solenoidal', itimer=itimer)
-  gamma = self%gamma
   if (first_time) then
+    gamma = eos%gamma
     call io%lock%set
     if (first_time) then
       rewind (io%input)
@@ -156,11 +151,11 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
     end if
     call io%lock%unset
   end if
-  self%gamma = gamma
+  eos%gamma = gamma
   if (gamma==1.00) then
     gamma_factor = 1.0
   else
-    gamma_factor = 1.0/(gamma*(gamma-1))
+    gamma_factor = 1.0/(eos%gamma*(eos%gamma-1))
   end if
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
@@ -207,7 +202,7 @@ SUBROUTINE single_compressive (self, m, ff, idx)
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_compressive', itimer=itimer)
-  gamma = self%gamma
+  gamma = eos%gamma
   if (first_time) then
     call io%lock%set
     if (first_time) then
@@ -219,11 +214,11 @@ SUBROUTINE single_compressive (self, m, ff, idx)
     end if
     call io%lock%unset
   end if
-  self%gamma = gamma
-  if (gamma==1.00) then
+  eos%gamma = gamma
+  if (eos%gamma==1.00) then
     gamma_factor = 1.0
   else
-    gamma_factor = 1.0/(gamma*(gamma-1))
+    gamma_factor = 1.0/(eos%gamma*(eos%gamma-1))
   end if
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
@@ -271,7 +266,7 @@ SUBROUTINE compressive_shear (self, m, ff, idx)
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:compressive_shear', itimer=itimer)
-  gamma = self%gamma
+  gamma = eos%gamma
   if (first_time) then
     call io%lock%set
     if (first_time) then
@@ -285,11 +280,11 @@ SUBROUTINE compressive_shear (self, m, ff, idx)
     end if
     call io%lock%unset
   end if
-  self%gamma = gamma
-  if (gamma==1.00) then
+  eos%gamma = gamma
+  if (eos%gamma==1.00) then
     gamma_factor = 1.0
   else
-    gamma_factor = 1.0/(gamma*(gamma-1))
+    gamma_factor = 1.0/(eos%gamma*(eos%gamma-1))
   end if
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
@@ -334,7 +329,7 @@ SUBROUTINE single_advection (self, m, ff, idx)
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_advection', itimer=itimer)
-  gamma = self%gamma
+  gamma = eos%gamma
   if (first_time) then
     call io%lock%set
     if (first_time) then
@@ -346,11 +341,11 @@ SUBROUTINE single_advection (self, m, ff, idx)
     end if
     call io%lock%unset
   end if
-  self%gamma = gamma
-  if (gamma==1.00) then
+  eos%gamma = gamma
+  if (eos%gamma==1.00) then
     gamma_factor = 1.0
   else
-    gamma_factor = 1.0/(gamma*(gamma-1))
+    gamma_factor = 1.0/(eos%gamma*(eos%gamma-1))
   end if
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
@@ -413,11 +408,11 @@ SUBROUTINE exa256 (self, m, ff, idx)
   li = m%li
   ui = m%ui
   umax = 0.0
-  gamma = self%gamma
-  if (gamma==1.00) then
+  gamma = eos%gamma
+  if (eos%gamma==1.00) then
     gamma_factor = 1.0
   else
-    gamma_factor = 1.0/(gamma*(gamma-1))
+    gamma_factor = 1.0/(eos%gamma*(eos%gamma-1))
   end if
   do jz=li(3),ui(3)
   do jy=li(2),ui(2)
@@ -441,7 +436,7 @@ SUBROUTINE exa256 (self, m, ff, idx)
     ff(:,:,:,iv) = ff(:,:,:,idx%d)*ff(:,:,:,iv)
   end do
   dt = courant_factor*m(1)%d/umax
-  if (io%verbose > 2) write (io_unit%log,*) 'initial dt:',dt,courant_factor,self%gamma,umax
+  if (io%verbose > 2) write (io_unit%log,*) 'initial dt:',dt,courant_factor,eos%gamma,umax
   if (io%verbose > 2) &
     write (io_unit%log,'(a,3i4,1p,2g12.3)') 'ix,iy,iz,dmin,dmax =', ix, iy, iz, &
       minval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1)), &
@@ -523,10 +518,10 @@ SUBROUTINE turbulence (self, m, ff, idx)
   call trace_begin('initial_t::raw', itimer=itimer)
   d = 1.0
   ff(:,:,:,idx%d        ) = d
-  if (self%gamma==1.0) then
+  if (eos%gamma==1.0) then
     ff(:,:,:,idx%e        ) = d*csound**2
   else
-    ff(:,:,:,idx%e        ) = d*csound**2/(self%gamma-1.)
+    ff(:,:,:,idx%e        ) = d*csound**2/(eos%gamma-1.)
   end if
   ff(:,:,:,idx%px:idx%pz) = 0.0
   call trace_end (itimer)

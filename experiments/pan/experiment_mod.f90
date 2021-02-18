@@ -4,10 +4,11 @@
 MODULE experiment_mod
   USE io_mod
   USE trace_mod
-  USE solver_mod
-  USE data_io_mod
   USE omp_mod
   USE omp_timer_mod
+  USE data_io_mod
+  USE initial_mod
+  USE solver_mod
   !USE particle_patch_mod
   implicit none
   private
@@ -30,6 +31,8 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%init')
   call self%solver_t%init
+  call self%initial%init
+  call self%initial%condition (self%mesh, self%mem(:,:,:,:,1,1), self%idx)
   call trace_end
 END SUBROUTINE init
 

@@ -1,5 +1,5 @@
 
-&restart_params from_dir='../ramses_snapshots/data/' snapshot=0 /
+&restart_params from_dir='../ramses_snapshots/data/' snapshot=-1 /
 
 &cartesian_params
  omp_init=f

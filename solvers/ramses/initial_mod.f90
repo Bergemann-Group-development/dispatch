@@ -32,10 +32,8 @@ CONTAINS
 !===============================================================================
 !> Setup a uniform initial state, with density=d0 and B=B0
 !===============================================================================
-SUBROUTINE init (self, solver, gamma1)
+SUBROUTINE init (self)
   class(initial_t):: self
-  character(len=64):: solver
-  real(8), optional:: gamma1
   !.............................................................................
   character(len=32), save:: type='void'
   integer:: iostat
@@ -52,7 +50,6 @@ SUBROUTINE init (self, solver, gamma1)
     write (io%namelist, IC_params)
  end if
   call io%lock%unset
-  self%solver = trim(solver)
   select case (trim(type))
   case ('single_solenoidal')
     self%condition => single_solenoidal

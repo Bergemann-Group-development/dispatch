@@ -41,5 +41,5 @@
                        courant=0.2 eos='ideal' gamma=1.6666667
 /
 &ramses_params         detailed_timer=f courant_factor=0.25 slope_type=3.5
-                       gamma=1.4 smallr=1e-6 smallc=1e-2
+                       smallr=1e-6 smallc=1e-2
 /

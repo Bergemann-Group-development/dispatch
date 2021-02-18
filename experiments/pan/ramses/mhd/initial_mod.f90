@@ -36,10 +36,9 @@ CONTAINS
 !===============================================================================
 !> Setup a uniform initial state, with density=d0 and B=B0
 !===============================================================================
-SUBROUTINE init (self, solver, gamma)
+SUBROUTINE init (self)
   class(initial_t):: self
   character(len=64):: solver
-  real(8), optional:: gamma
   integer:: iostat
   character(len=32), save:: type='turbulence'
   logical, save:: first_time=.true.
