@@ -90,11 +90,11 @@ MODULE task_mod
     logical:: dump_it=.false.
     logical:: finished=.false.
     logical:: allow_extrapolate=.false.
+    logical:: pre_initialized=.false.
     type(random_t):: random             ! pseudo-random number generator
     type(aux_t):: aux
     integer(8):: amr_offset=0_8         ! byte offset in amr_io
   contains
-    procedure:: pre_init
     procedure:: init
     procedure:: init_unique
     procedure:: dealloc
@@ -200,14 +200,6 @@ SUBROUTINE dnload (self, only)
   call io%warning('task_t%dnload called')
   call trace%end ()
 END SUBROUTINE dnload
-
-!===============================================================================
-SUBROUTINE pre_init (self)
-  class (task_t), target:: self
-  call trace%begin ('task_t%pre_init')
-  call io%abort('task_t%pre_init called')
-  call trace%end ()
-END SUBROUTINE pre_init
 
 !===============================================================================
 !> Define unique task id, unless already set before entry.

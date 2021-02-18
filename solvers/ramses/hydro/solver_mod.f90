@@ -20,6 +20,7 @@ MODULE solver_mod
   private
   type, public, extends(hd_t):: solver_t
   contains
+    procedure:: pre_init
     procedure:: init
     procedure:: dealloc
     procedure, nopass:: cast2solver
@@ -57,12 +58,27 @@ CONTAINS
 !===============================================================================
 !> Organize calls to the extras and the hydro solver
 !===============================================================================
+SUBROUTINE pre_init (self)
+  class(solver_t), target :: self
+  !.............................................................................
+  call trace%begin ('solver_t%pre_init')
+  self%etype = 'total'
+  if (.not. self%pre_initialized) then
+    call self%mhd_t%pre_init
+    self%pre_initialized = .true.
+  end if
+  call trace%end ()
+END SUBROUTINE pre_init
+
+!===============================================================================
+!> Organize calls to the extras and the hydro solver
+!===============================================================================
 SUBROUTINE init (self)
   class(solver_t) :: self
   !.............................................................................
   call trace%begin ('solver_t%init')
   self%etype = 'total'
-  call self%hd_t%pre_init
+  call self%pre_init
   call self%hd_t%init
   call validate%init
   call trace%end ()

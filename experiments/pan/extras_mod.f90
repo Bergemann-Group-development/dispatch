@@ -98,8 +98,7 @@ SUBROUTINE pre_init (self)
   call io%lock%set ('extras_t%pre_init')
   if (.not. associated(sinks)) then                             ! sinks
     allocate (sinks)                                            ! sinks
-    call sinks%pre_init                                         ! sinks
-    call sinks%connect_patch         (self%gpatch)              ! sinks
+    call sinks%pre_init              (self%gpatch)              ! sinks
   end if                                                        ! sinks
   call io%lock%unset ('extras_t%pre_init')
   call self%SN%pre_init              (self%gpatch, sinks)       ! sinks
@@ -109,9 +108,9 @@ SUBROUTINE pre_init (self)
   call trace%end()
 END SUBROUTINE pre_init
 
- !===============================================================================
- !> Initialize the modules that need the allocated patch to initialize
- !===============================================================================
+!===============================================================================
+!> Initialize the modules that need the allocated patch to initialize
+!===============================================================================
 SUBROUTINE init (self)
   class(extras_t):: self
   !.............................................................................
