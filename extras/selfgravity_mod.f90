@@ -50,7 +50,6 @@ MODULE selfgravity_mod
   USE gpatch_mod
   USE link_mod
   USE download_mod
-  USE initial_mod
   USE kinds_mod
   USE data_hub_mod
   USE mesh_mod
@@ -71,7 +70,6 @@ MODULE selfgravity_mod
   implicit none
   private
   type, public:: selfgravity_t
-    type(initial_t)  :: initial
     type(poisson_t)  :: poisson
     logical:: selfgravity=.false.
     real(8):: fourPiG

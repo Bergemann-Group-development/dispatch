@@ -10,7 +10,6 @@ MODULE gpatch_mod
   USE mpi_mesg_mod
   USE trace_mod
   USE patch_mod
-  USE initial_mod
   USE kinds_mod
   USE mesh_mod
   USE units_mod
@@ -29,7 +28,6 @@ MODULE gpatch_mod
   implicit none
   private
   type, public, extends(patch_t):: gpatch_t
-    type(initial_t):: initial
     type(data_hub_t):: data_hub
     class(list_t), pointer:: task_list => null()
     type(boundaries_t):: boundaries

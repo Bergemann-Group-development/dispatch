@@ -65,6 +65,7 @@ MODULE extras_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.
   !-----------------------------------------------------------------------------
+  !USE initial_conditions_mod                                           ! initial
   !USE selfgravity_mod                                                  ! selfg
   !USE rt_mod                                                           ! RT
   !USE newton_mod                                                       ! Newton
@@ -84,6 +85,7 @@ MODULE extras_mod
   !-----------------------------------------------------------------------------
   type, public, extends(gpatch_t):: extras_t
     class(gpatch_t), pointer:: gpatch => null()                        ! keep
+    !type(initial_conditions_t):: initial_conditions                    ! initial
     !type(selfgravity_t):: selfgravity                                  ! selfg
     !type(forces_t):: forces                                            ! forces
     !class(pic_t), pointer:: pic                                        ! pic
@@ -123,13 +125,14 @@ SUBROUTINE pre_init (self)
   !.............................................................................
   self%gpatch => self                                                   ! keep
   call self%gpatch_t%pre_init                                           ! keep
+  !call self%initial_conditions%pre_init (self%patch)                   ! initial
   !call self%selfgravity%pre_init (self%patch)                          ! selfg
-  !allocate(self%rt)                                                     ! RT
-  !self%rt%patch => self                                                 ! RT
-  !call self%rt%pre_init                                                 ! RT
-  !call self%newton%pre_init  (self)                                     ! Newton
-  !call self%gravity%pre_init (self)                                     ! gravity
-  !call self%spitzer%pre_init (self)                                     ! spitzer
+  !allocate(self%rt)                                                    ! RT
+  !self%rt%patch => self                                                ! RT
+  !call self%rt%pre_init                                                ! RT
+  !call self%newton%pre_init  (self)                                    ! Newton
+  !call self%gravity%pre_init (self)                                    ! gravity
+  !call self%spitzer%pre_init (self)                                    ! spitzer
   !call self%forces%pre_init (self%patch)                               ! forces
   !allocate (self%trace_particles)                                      ! tracep
   !self%connect%trace_particles => self%trace_particles                 ! tracep
@@ -157,6 +160,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Optional inits
   !-----------------------------------------------------------------------------
+  !call self%initial_conditions%init                                    ! initial
   !call self%selfgravity%init                                           ! selfg
   !call self%forces%init                                                ! forces
   !call self%newton%init                                                ! Newton

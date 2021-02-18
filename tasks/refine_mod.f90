@@ -916,7 +916,7 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
     end if
   else
     ff => child%mem(:,:,:,:,child%it,1)
-    call child%initial%condition (child%mesh, ff, child%idx)
+    !call child%initial%condition               FIXME: commented out for now
     if (do_dump) then
       call child%dump (5, ad_hoc=.true.)
       call parent%dump (6, ad_hoc=.true.)
