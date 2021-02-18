@@ -15,6 +15,7 @@ MODULE scaling_mod
     real(kind=8):: p = 1.0
     real(kind=8):: f = 1.0
     real(kind=8):: u = 1.0
+    real(kind=8):: b = 1.0
     real(kind=8):: grav = 1.0
     real(kind=8):: temp = 1.0
     real(kind=8):: mu = 2.4                             ! mean molecular weight
@@ -55,19 +56,21 @@ SUBROUTINE init (self)
   self%p = self%d*self%u**2                             ! pressure = energy density
   self%e = self%m*self%u**2                             ! energy
   self%f = self%p*self%u                                ! energy flux = P u
+  self%b  = sqrt(scaling%d)*scaling%u                   ! magnetic flux density (B^2/2 ~ rho U^2)
   self%temp = self%mu*(cgs%m_u/self%m)/(cgs%k_b/self%e) ! temperature for give mu
   if (io%master) then
-    print 1,' CODE UNITS:   (to cgs):'
-    print 1,'     length: ',self%l
-    print 1,'   velocity: ',self%u
-    print 1,'       mass: ',self%m
-    print 1,'       time: ',self%t
-    print 1,'    density: ',self%d
-    print 1,'   pressure: ',self%p
-    print 1,'     energy: ',self%e
-    print 1,'energy flux: ',self%f
-    print 1,'    gravity: ',self%grav
-    print 1,'temperature: ',self%temp
+    print 1,'   CODE UNITS:   (to cgs):'
+    print 1,'       length: ',self%l
+    print 1,'     velocity: ',self%u
+    print 1,'         mass: ',self%m
+    print 1,'         time: ',self%t
+    print 1,'      density: ',self%d
+    print 1,'     pressure: ',self%p
+    print 1,'       energy: ',self%e
+    print 1,'  energy flux: ',self%f
+    print 1,'magnetic flux: ',self%b
+    print 1,'      gravity: ',self%grav
+    print 1,'  temperature: ',self%temp
   1 format(1x,a,1p,e11.3)
   end if
 END SUBROUTINE init

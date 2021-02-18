@@ -46,7 +46,7 @@ SUBROUTINE init (self)
   self%kr = 1.0/(self%d*self%l)                                         ! rosseland opacity [cm2/g]
   self%ee = self%u**2                                                   ! specific energy
   self%e  = self%m*self%u**2                                            ! energy
-  self%b  = self%l**(-0.5)*self%m**0.5*self%t**(-1)                   ! magnetic flux density
+  self%b  = sqrt(scaling%d)*scaling%u                                   ! magnetic flux density (B^2/2 ~ rho U^2)
   self%mu = 2.4
   self%temp = self%mu*(cgs%m_u/self%m)/(cgs%k_b/self%e)                 ! temperature for given mu
   self%grav = cgs%grav*(self%m/self%l**3)*self%t**2     ! constant of gravity
