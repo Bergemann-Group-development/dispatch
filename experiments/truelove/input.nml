@@ -22,6 +22,7 @@
                     perta=0.0 chipres=1.0 chirho=100.0 /
 &scaling_params     l0=3.12e16 /
 &force_params       /
+&validate_params    verbose=0 id_dbg=-1 /
 
 &refine_params      on=t check_interval=1 verbose=3
                     levelmin=5 levelmax=10
@@ -41,15 +42,16 @@
 &boundary_params    fixedbcs=t /
 &timestep_params    time_order=2 /
 
-&zeus_params        gamma=1.0001 trnvrsn=0 dtinit=1.0e-3 itote=0 qlin=0.1
+&eos_params         gamma=1.0001 /
+&zeus_params        trnvrsn=0 dtinit=1.0e-3 itote=0 qlin=0.1
                     qcon=1.0 iord=2 iords=2 istp=0 /
 
-&ramses_params      courant_factor=0.2666667 gamma=1.0001 slope_type=3.5
+&ramses_params      courant_factor=0.2666667 slope_type=3.5
                     smallr=1e-4 smallc=1e-3 isothermal=f /
 
 &stagger_params     nu=  0.20, 1.0, 1.0, 0.2, 1.0, 1.0
                     !     cs    pa  ofd  mas  kap  eta
-                    gamma=1.001 csound=1.0 ! non-rotating case
+                    csound=1.0 ! non-rotating case
                     !csound=0.08451 ! rotating case
                     !csound=0.1829 ! rotating, perturbed case
 /

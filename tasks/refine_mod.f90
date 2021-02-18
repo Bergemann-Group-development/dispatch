@@ -846,6 +846,7 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   !-----------------------------------------------------------------------------
   child%level = parent%level + 1                     ! must be set before init!
   !call child%pre_init()
+  child%pre_initialized = .false.
   call child%init()                                  ! patch, for a new id
   call child%init_bdries
   child%level = parent%level + 1                     ! override patch_t%init

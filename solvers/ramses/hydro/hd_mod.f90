@@ -256,7 +256,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   e = e + (0.5*(px**2+py**2+pz**2)/d - ek)
   deallocate (ek)
-  call validate%check (self%link, p, 'after force')
+  !call validate%check (self%link, p, 'after force')
   !-----------------------------------------------------------------------------
   ! Add the external heating per unit mass as a source term
   !-----------------------------------------------------------------------------

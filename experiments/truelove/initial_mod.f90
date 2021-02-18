@@ -9,6 +9,7 @@ MODULE initial_mod
   USE index_mod
   USE patch_mod
   USE scaling_mod
+  USE eos_mod
   implicit none
   private
   type, public:: initial_t
@@ -25,21 +26,13 @@ CONTAINS
 !===============================================================================
 !> Setup a uniform initial state, with density=d0 and B=B0
 !===============================================================================
-SUBROUTINE init (self, solver, gamma)
+SUBROUTINE init (self)
   class(initial_t):: self
-  character(len=64):: solver
-  real(8), optional:: gamma
   !----------------------------------------------------------------------------
-  self%solver = solver
-  if (present(gamma)) then
-    self%gamma = gamma
-  else
-    self%gamma = 1d0
-  end if
-  if (self%gamma == 1d0) then
+  if (eos%gamma == 1d0) then
     self%g1 = 1d0
   else
-    self%g1 = self%gamma-1d0
+    self%g1 = eos%gamma-1d0
   end if
 END SUBROUTINE init
 
@@ -99,7 +92,7 @@ END SUBROUTINE init
 !===============================================================================
 SUBROUTINE condition (self, m, f, idx)
   class(initial_t):: self
-  real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: f
+  real(kind=KindScalarVar), dimension(:,:,:,:):: f
   class(mesh_t), pointer:: m(:), m1, m2, m3
   type(index_t):: idx
   integer:: i, j, k, iostat
@@ -143,8 +136,8 @@ SUBROUTINE condition (self, m, f, idx)
 !-----------------------------------------------------------------------
 !      Calculate ambient parameters.
 !-----------------------------------------------------------------------
-  kappa  = csqiso / self%gamma / rho0**(self%gamma - 1.0)
-  pcloud = kappa * rho0**self%gamma
+  kappa  = csqiso / eos%gamma / rho0**(eos%gamma - 1.0)
+  pcloud = kappa * rho0**eos%gamma
   pamb   = pcloud / chipres
   rhoamb = rho0   / chirho
 !-----------------------------------------------------------------------
@@ -172,7 +165,7 @@ SUBROUTINE condition (self, m, f, idx)
     print "('  Initial Jeans length =',1pe10.3)", cjlen
     print "('  Initial Jeans number =',1pe10.3)", cjnum
     print "(' Initial angular speed =',1pe10.3)", omega
-    print "('             Gas gamma =',1pe10.3)", self%gamma
+    print "('             Gas gamma =',1pe10.3)", eos%gamma
   end if
   !
   m1 => m(1)
@@ -230,7 +223,7 @@ SUBROUTINE condition (self, m, f, idx)
           f(i,j,k,idx%e) = nrg
         end if
         if (idx%s > 0) then
-          f(i,j,k,idx%s) = (log(nrg*self%g1) - log(d)*self%gamma)*d/self%g1
+          f(i,j,k,idx%s) = (log(nrg*self%g1) - log(d)*eos%gamma)*d/self%g1
         end if
         ! this experiment is hydro and gravity only.
         if (idx%bx > 0) then

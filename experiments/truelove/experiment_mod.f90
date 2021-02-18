@@ -8,6 +8,7 @@ MODULE experiment_mod
   USE bits_mod
   USE solver_mod
   USE pboundary_mod
+  USE validate_mod
   implicit none
   private
 
@@ -29,7 +30,10 @@ SUBROUTINE init (self)
   if (self%mem_allocated) return
   call trace%begin('experiment_t%init')
   call self%solver_t%init()
+  call self%initial%init
+  call self%initial%condition (self%mesh, self%mem(:,:,:,:,1,1), self%idx)
   call pboundaries%init(self)
+  call validate%init
   call trace%end()
 END SUBROUTINE init
 
