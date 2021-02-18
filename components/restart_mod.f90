@@ -11,6 +11,8 @@ MODULE restart_mod
   USE experiment_mod
   USE link_mod
   USE task_list_mod
+  USE read_bifrost_mod
+  USE read_stagger_mod
   implicit none
   private
   type, public:: restart_t
@@ -19,9 +21,10 @@ MODULE restart_mod
     procedure:: read_amr
     procedure:: read_legacy
   end type
-  character(120):: filename, from_dir='data/'
-  integer:: id, rank
-  integer:: snapshot=-1, nml_version=4
+  character(120) :: from_dir    = 'data/'
+  character(16)  :: io_format   = 'amr'
+  integer        :: snapshot    = -1
+  integer        :: nml_version = 4
   type(restart_t), public:: restart
 CONTAINS
 
@@ -32,7 +35,8 @@ SUBROUTINE init (self, task_list)
   class(restart_t)            :: self
   type(task_list_t),  pointer :: task_list
   integer                     :: iostat
-  namelist /restart_params/ from_dir, snapshot
+  character(120)              :: filename
+  namelist /restart_params/ from_dir, snapshot, io_format
   !.............................................................................
   call trace%begin ('restart_t%init')
   !-----------------------------------------------------------------------------
@@ -55,11 +59,15 @@ SUBROUTINE init (self, task_list)
     ! Select method
     !-----------------------------------------------------------------------------
     allocate (task_list)
-    select case (io%method)
+    select case (io_format)
     case ('amr')
       call self%read_amr (task_list)
     case ('legacy')
       call self%read_legacy (task_list)
+    case ('bifrost')
+      call read_bifrost%init (task_list)
+    case ('stagger')
+      call read_stagger%init (task_list)
     end select
     !-----------------------------------------------------------------------------
     ! Prepare task list for execution
@@ -80,9 +88,10 @@ SUBROUTINE read_amr (self, task_list)
   !.............................................................................
   class(task_t),      pointer :: task
   class(link_t),      pointer :: link
+  character(120)              :: filename
   character(16)               :: type
   integer(8)                  :: offset
-  integer                     :: unit, iostat
+  integer                     :: unit, iostat, id, rank
   namelist /amr_nml/ id, type, rank, offset, nml_version
   !-----------------------------------------------------------------------------
   call trace%begin ('restart_t%read_amr')
@@ -140,9 +149,10 @@ SUBROUTINE read_legacy (self, task_list)
   class(patch_t),      pointer :: patch
   class(task_t),       pointer :: task
   class(link_t),       pointer :: link
+  character(120)               :: filename
   character(16)                :: type
   integer(8)                   :: offset
-  integer                      :: unit, iostat, recl
+  integer                      :: unit, iostat, recl, id, rank
   namelist /restart_params/ from_dir, snapshot
   namelist /amr_nml/ id, type, rank, offset, nml_version
   !-----------------------------------------------------------------------------

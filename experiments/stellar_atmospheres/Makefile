@@ -1,7 +1,8 @@
 
 # Option groups
-OPTS = debug
-#OPTS = full_debug
+OPTS = full_debug
+#OPTS = debug
+#OPTS =
 #OPTS = optimized
 
 # Default target and methods

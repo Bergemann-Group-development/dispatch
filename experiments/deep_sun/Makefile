@@ -33,8 +33,7 @@ sinclude $(TOP)/config/Makefile
 
 
 # List the .o files the main program depends on after the colon:
-$(EXEC)            : cartesian_mod.o setup_mod.o eos_mod.o dispatcher_mod.o \
-                     read_snapshot_mod.o
+$(EXEC)            : cartesian_mod.o setup_mod.o eos_mod.o dispatcher_mod.o
 
 # Other local ependencies
 extras_mod.o       : patch_mod.o gpatch_mod.o connect_mod.o gravity_mod.o \

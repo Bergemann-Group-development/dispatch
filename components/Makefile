@@ -26,4 +26,7 @@ volleyball_layers_mod.o : sphere_points_mod.o dll_mod.o
 cartesian_vb_mod.o      : io_mod.o trace_mod.o experiment_mod.o  task_list_mod.o \
                           mpi_coords_mod.o omp_mod.o volleyball_layers_mod.o
 restart_mod.o           : io_mod.o trace_mod.o task_list_mod.o task_factory_mod.o \
-                          amr_io_mod.o
+                          amr_io_mod.o read_stagger_mod.o read_bifrost_mod.o
+read_stagger_mod.o      : task_list_mod.o lagrange_mod.o experiment_mod.o scaling_mod.o
+read_bifrost_mod.o      : task_list_mod.o lagrange_mod.o experiment_mod.o scaling_mod.o \
+                          bifrost_scaling_mod.o
