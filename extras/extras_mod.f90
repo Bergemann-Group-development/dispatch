@@ -84,7 +84,7 @@ MODULE extras_mod
   ! states, must be accessed via a private instance in the extras_t data type
   !-----------------------------------------------------------------------------
   type, public, extends(gpatch_t):: extras_t
-    class(gpatch_t), pointer:: gpatch => null()                        ! keep
+    class(gpatch_t), pointer:: patch => null()                         ! keep
     !type(initial_conditions_t):: initial_conditions                    ! initial
     !type(selfgravity_t):: selfgravity                                  ! selfg
     !type(forces_t):: forces                                            ! forces
@@ -123,8 +123,8 @@ CONTAINS
 SUBROUTINE pre_init (self)
   class(extras_t), target:: self
   !.............................................................................
-  self%gpatch => self                                                   ! keep
-  call self%gpatch_t%pre_init                                           ! keep
+  self%patch => self                                                   ! keep
+  call self%gpatch_t%pre_init                                          ! keep
   !call self%initial_conditions%pre_init (self%patch)                   ! initial
   !call self%selfgravity%pre_init (self%patch)                          ! selfg
   !allocate(self%rt)                                                    ! RT
@@ -191,7 +191,7 @@ SUBROUTINE init_task_list (self, task_list)
   !.............................................................................
   call trace%begin ('extras_t%init_task_list')
   call self%gpatch_t%init_task_list (task_list)                        ! keep
-  !call sink_particles%ad_hoc_add                                       ! sinkp
+  !call sink_particles%ad_hoc_add                                      ! keep
   call trace%end ()
 END SUBROUTINE init_task_list
 
@@ -203,8 +203,7 @@ SUBROUTINE add_to_task_list(self, task_list)
   class(list_t), pointer:: task_list
   !-----------------------------------------------------------------------------
   call trace%begin ('extras_t%add_to_task_list')
-  !-----------------------------------------------------------------------------
-  self%task_list => task_list
+  self%task_list => task_list                                          ! keep
   ! ----------------------------------------------------------------------------
   ! Optional adds to task list
   ! ----------------------------------------------------------------------------

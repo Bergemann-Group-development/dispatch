@@ -22,12 +22,11 @@ CONTAINS
 
 !===============================================================================
 !===============================================================================
-SUBROUTINE init (self, solver, gamma)
+SUBROUTINE init (self, solver)
   class(initial_t) :: self
-  integer, save :: idirect
-  real(8), optional:: gamma
-  !.............................................................................
   character(len=*):: solver
+  integer, save :: idirect
+  !.............................................................................
   real(8), save :: p0, v0, b0
   logical, save :: first_time=.true.
   namelist /IC_params/ idirect, b0, p0, v0
@@ -40,20 +39,21 @@ SUBROUTINE init (self, solver, gamma)
     b0 = 0.5 / sqrt(math%pi)
     p0 = 5.0 / (12.0 * math%pi)
     v0 = 1.0
-    rewind (io%input); read (io%input,IC_params)
-    if (io%master) write(*,IC_params)
+    rewind (io%input)
+    read (io%input, IC_params)
+    write (io%namelist, IC_params)
     first_time = .false.
   end if
   call io%lock%unset('initial_t%init')
-
+  !
   self%idirect = idirect
   self%p0 = p0
   self%v0 = v0
   self%b0 = b0
   self%solver=solver
-
+  !
   self%condition => initial_conditions
-
+  !
   call trace_end
 END SUBROUTINE init
 

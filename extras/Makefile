@@ -10,7 +10,7 @@ include $(TOP)/extras/initial_conditions/Makefile
 
 # Dependencies
 extras_mod.o            : io_mod.o trace_mod.o gpatch_mod.o connect_mod.o \
-                          task_mod.o list_mod.o
+                          task_mod.o list_mod.o initial_conditions_mod.o
 selfgravity_mod.o       : gpatch_mod.o poisson_mod.o vector_ops.o download_mod.o \
                           timestep_mod.o scaling_mod.o math_mod.o
 gravity_mod.o           : gpatch_mod.o units_mod.o scaling_mod.o link_mod.o io_mod.o \

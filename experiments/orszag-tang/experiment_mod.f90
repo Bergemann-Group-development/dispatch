@@ -9,6 +9,7 @@ MODULE experiment_mod
   implicit none
   private
   type, public, extends(solver_t):: experiment_t
+    type(initial_t):: initial
   contains
     procedure init
     procedure update
@@ -23,13 +24,13 @@ SUBROUTINE init (self)
   class(experiment_t):: self
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%init')
-
   !----------------------------------------------------------------------------
   ! Allocate memory and set default values
   !----------------------------------------------------------------------------
   self%mhd = .true.
   call self%solver_t%init
-  !
+  call self%initial%init (self%kind)
+  call self%initial%condition (self%mesh, self%mem(:,:,:,:,1,1), self%idx)
   call trace%end()
 END SUBROUTINE init
 
