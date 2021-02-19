@@ -30,7 +30,6 @@ MODULE mhd_mod
   USE timestep_mod
   USE eos_mod
   USE non_ideal_mod
-  USE initial_mod
   USE divb_clean_mod
   USE task_mod
   USE timer_mod
@@ -170,6 +169,7 @@ SUBROUTINE init (self)
   ! Patch initialization
   !-----------------------------------------------------------------------------
   self%type = 'mhd_t'
+  where (self%n<2) self%ng=0
   call self%patch_t%init
   do i=1,3
     self%mesh(i)%h(self%idx%px+i-1) = -0.5

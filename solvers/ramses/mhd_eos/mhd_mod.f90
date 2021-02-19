@@ -138,6 +138,7 @@ SUBROUTINE init (self)
   integer:: i, n(3)
 !...............................................................................
   call trace%begin('mhd_mod%init')
+  call self%patch_t%init()
   if (minval(self%mesh%n) < 3) then
     print *, self%mesh%n
     call io%abort ('SOLVER=ramses/mhd needs at least 3 mesh points in any direction')
@@ -590,7 +591,7 @@ subroutine check_small (self)
     else
       p = (uu(i,j,k,5)-ekin-emag)*(eos%gamma-one)
       if (p < smallr*smallc**2) then
-        print *, 'smallp', uu(i,j,k,5), ekin, emag, p
+        !print *, 'smallp', uu(i,j,k,5), ekin, emag, p
         p = smallr*smallc**2
         uu(i,j,k,5) = p/(eos%gamma-one)+ekin+emag
         n_smallp = n_smallp+1

@@ -144,6 +144,7 @@ END SUBROUTINE pre_init
 SUBROUTINE init (self)
   class(mhd_t):: self
   integer :: i
+  where (self%n<2) self%ng=0
   call self%patch_t%init()
   !-----------------------------------------------------------------------------
   ! Set the staggering, unsigned and pervolume flags before calling the rest

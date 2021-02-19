@@ -505,7 +505,6 @@ SUBROUTINE pre_init (self)
   ! differ from the data type zero defaults take precedence over saved values
   !-----------------------------------------------------------------------------
   if (any(self%n  == 0)) self%n  = n            ! patch dimensions
-  if (any(self%ng == 0)) self%ng = ng           ! patch guard zones
   if (    self%nv == 0 ) self%nv = nv           ! number of variables
   if (    self%nt == 0 ) self%nt = nt           ! number of time slices
   !-----------------------------------------------------------------------------
@@ -529,10 +528,6 @@ SUBROUTINE pre_init (self)
   self%no_mans_land = no_mans_land              ! mesh centering
   self%print_next  = print_time
   self%limit_dtime = limit_dtime
-  !-----------------------------------------------------------------------------
-  ! Everything mesh-related -- call to be moved to %init()-chain later
-  !-----------------------------------------------------------------------------
-  call mesh_init (self)
   !-----------------------------------------------------------------------------
   ! The unsigned and pervoleme flags should also be modified by the solver,
   ! so they also need to be allocated here.
@@ -655,6 +650,10 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
   if (present(nt      )) self%nt       = nt
   if (present(nv      )) self%nv       = nv
   if (present(nw      )) self%nw       = nw
+  !-----------------------------------------------------------------------------
+  ! Everything mesh-related -- call to be moved to %init()-chain later
+  !-----------------------------------------------------------------------------
+  call mesh_init (self)
   !-----------------------------------------------------------------------------
   ! Pass the desired patch dimension via the shared_mod to refine_mod
   !-----------------------------------------------------------------------------
