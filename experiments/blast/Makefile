@@ -8,9 +8,9 @@ OPTS = optimized
 # Default target and methods
 UPD             = adams_bashforth
 #SOLVER          = zeus3d
-SOLVER          = stagger2/bifrost
-#SOLVER          = ramses/mhd_eos
-STAGGER         = stagger_6th.o
+#SOLVER          = stagger2/bifrost
+SOLVER          = ramses/mhd
+STAGGER         = stagger_2nd.o
 EXEC            = dispatch.x
 TOP             = ../..
 sinclude $(TOP)/config/Makefile
