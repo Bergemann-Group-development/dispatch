@@ -8,6 +8,7 @@ MODULE scaling_mod
   private
   type, public:: scaling_t
     real(kind=8):: l, t, m, d, e, ee, p, u, temp, grav, mu, rk, src
+    real(kind=8):: b
   contains
     procedure:: init
   end type
@@ -36,6 +37,7 @@ SUBROUTINE init (self)
   self%m  = self%d*self%l**3                            ! mass
   self%p  = self%d*self%u**2                            ! pressure = energy density
   self%e  = self%u**2*self%m                            ! energy
+  self%b = sqrt(self%d)*self%u                          ! magnetic flux
   self%ee = self%u**2                                   ! energy per unit mass
   self%rk = 1./self%l                                   ! opacity
   self%src= self%p*self%l/self%t                        ! source function

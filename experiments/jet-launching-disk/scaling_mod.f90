@@ -9,6 +9,7 @@ MODULE scaling_mod
   private
   type, public:: scaling_t
     real(kind=8):: l, t, m, d, e, p, u, temp, grav, mu
+    real(kind=8):: b
   contains
     procedure:: init
   end type
@@ -31,6 +32,7 @@ SUBROUTINE init (self)
   self%t = self%l/self%u
   self%p = self%d*self%u**2
   self%e = self%m*self%u**2
+  self%b = sqrt(self%d)*self%u        ! magnetic flux
   self%mu = 1.0
   self%temp = self%mu * cgs%m_u / cgs%k_b
   self%grav = cgs%grav

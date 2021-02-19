@@ -19,6 +19,7 @@ MODULE scaling_mod
     real(kind=8):: grav = 1.0
     real(kind=8):: temp = 1.0
     real(kind=8):: mu = 2.34                             ! mean molecular weight
+    real(kind=8):: b
   contains
     procedure:: init
   end type
@@ -41,6 +42,7 @@ SUBROUTINE init (self)
   self%u = self%l/self%t                                ! speed
   self%p = self%d*self%u**2                             ! pressure = energy density
   self%e = self%m*self%u**2                             ! energy
+  self%b = sqrt(self%d)*self%u                          ! magnetic flux
   self%f = self%p*self%u                                ! energy flux = P u
   self%grav = cgs%grav*(self%m/self%l**3)*self%t**2     ! constant of gravity
   self%mu   = experiment_params%mu

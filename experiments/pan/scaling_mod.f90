@@ -9,6 +9,7 @@ MODULE scaling_mod
   private
   type, public:: scaling_t
     real(kind=8):: l, t, m, d, e, ee, p, u, temp, grav, mu
+    real(kind=8):: b
   contains
     procedure:: init
     procedure:: m_sun
@@ -46,6 +47,7 @@ SUBROUTINE init (self)
   self%t = self%l/self%u                                ! time ~ 5 years
   self%p = self%d*self%u**2                             ! pressure = energy density
   self%e = self%m*self%u**2                             ! energy
+  self%b = sqrt(self%d)*self%u                          ! magnetic flux
   self%ee = self%u**2                                   ! energy per unit mass
   self%mu = mu                                          ! menan molecular weight
   self%temp = self%mu*(cgs%m_u*self%u**2)/cgs%k_b       ! temperature for given mu

@@ -9,6 +9,7 @@ MODULE scaling_mod
   private
   type, public:: scaling_t
     real(kind=8):: l, t, m, d, e, p, u, temp, grav, mu
+    real(kind=8):: b
   contains
     procedure:: init
   end type
@@ -34,6 +35,7 @@ SUBROUTINE init (self)
   self%u = self%l / self%t              ! speed
   self%p = self%d*self%u**2             ! pressure/energy density
   self%e = self%m*self%u**2             ! energy
+  self%b = sqrt(self%d)*self%u          ! magnetic flux
   self%temp = self%mu * (cgs%m_u / self%m) / (cgs%k_b / self%e) ! temperature
   self%grav = self%l**3 / (self%m * self%t**2)
   self%grav = cgs%grav / self%grav  ! gravitational constant (scaled)
