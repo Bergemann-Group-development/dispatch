@@ -66,9 +66,6 @@ SUBROUTINE init (self)
   namelist /IC_params/ P_l, P_r, rho_l, vx_l, vx_r, a_d, f_d, x_disc, idir, bx
   !-----------------------------------------------------------------------------
   call io%lock%set('initial_t%condition')
-  m => self%patch%mesh
-  ff => self%patch%mem(:,:,:,:,1,1)
-  idx => self%patch%idx
   self%solver = self%patch%kind
   !.............................................................................
   if (first_time) then
@@ -78,6 +75,9 @@ SUBROUTINE init (self)
     first_time = .false.
   end if
   call io%lock%unset('initial_t%condition')
+  m => self%patch%mesh
+  ff => self%patch%mem(:,:,:,:,1,1)
+  idx => self%patch%idx
   !---------------------------------------------------------------------
   ! Point amd allocate memory
   !---------------------------------------------------------------------
