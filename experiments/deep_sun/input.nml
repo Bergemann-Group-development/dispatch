@@ -4,8 +4,6 @@
 &patch_params       nt=5  grace=0.05 n=3*22 do_check_nan=f /
 
 ! -- I/O parameters ------------------------------------------------------------
-&restart_params     from_dir='../../data/stellar_atmospheres'
-                    io_format='stagger' snapshot=0 /
 &snapshot_params    verbose=0 order=-2 !b0=0.0,0.0,0.0 
                     meshfile='../../data/stellar_atmospheres/mhd63.msh'
                     snapfile='../../data/stellar_atmospheres/mhd63.dat' 
@@ -46,10 +44,10 @@
                     eos='tabular' loginterpolation=t ca_max=100.0 
                     courant=0.2 max_r=3 symmetric_e=f do_temperature=t /
                     !   cs    pa   ofd  mas   kap  eta
-&stagger_params     nu= 0.03, 1.0, 1.0, 0.00, 1.0, 0.9 verbose=0
+&stagger_params     nu= 0.03, 1.0, 1.0, 0.00, 1.0, 0.9 gamma=1.66666667 verbose=0
                     eos='tabular' do_maxwell=f do_temperature=t courant=0.15 /
 &timestep_params    time_order=2 /
-&ramses_params      courant_factor=0.27 csound=1.0 
+&ramses_params      courant_factor=0.27 csound=1.0
                     !smallr=1e-8 smallc=1e-8 smallr=1e-3 smallc=1e-2
                     do_temperature=f slope_type=2 unsigned=t /
 &non_ideal_params   mhd_Ohm=f eta_Ohm=0.01 mhd_AD=f /

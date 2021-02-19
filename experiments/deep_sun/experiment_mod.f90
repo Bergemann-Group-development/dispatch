@@ -31,6 +31,7 @@ MODULE experiment_mod
   USE bits_mod
   USE omp_timer_mod
   USe vector_ops
+  USE initial_mod
   implicit none
   private
   !.............................................................................
@@ -38,6 +39,7 @@ MODULE experiment_mod
     real:: d_bot  = 0.0
     real:: e_bot  = 0.0
     real:: ee_top = 0.0
+    type(initial_t):: initial
   contains
     procedure:: init
     procedure:: update
@@ -59,6 +61,7 @@ CONTAINS
 SUBROUTINE init (self)
   class(experiment_t):: self
   integer:: iostat
+  real, pointer:: ff(:,:,:,:)
   logical, save:: first_time=.true.
   namelist /experiment_params/ clamp_e
   !-----------------------------------------------------------------------------
@@ -81,6 +84,12 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   self%mhd = .true.
   call self%solver_t%init
+  ! ----------------------------------------------------------------------------
+  ! Initial conditions
+  ! ----------------------------------------------------------------------------
+  call self%initial%init (self%kind)
+  ff => self%mem(:,:,:,:,1,1)
+  call self%initial%condition (self%mesh, ff, self%idx)
   ! ----------------------------------------------------------------------------
   ! Send additional things to boundaries
   ! ----------------------------------------------------------------------------
