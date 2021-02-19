@@ -56,7 +56,7 @@ SUBROUTINE init (self)
   real                                   :: x, y, z, ds2(3), xs, ys, zs, rd
   logical,                          save :: first_time = .true.
   real(var_k), dimension(:,:,:), pointer :: d
-  real(var_k), dimension(:,:,:), pointer :: s=>null(), e1=> null(), et=>null()
+  real(var_k), dimension(:,:,:), pointer :: s, e1, et
   real(var_k)                            :: rhov2, pxl
   real(4),                          save :: P_l=10.33333  , P_r=1.0, &
                                             rho_l=3.857143, &
