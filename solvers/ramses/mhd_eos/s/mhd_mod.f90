@@ -115,9 +115,6 @@ SUBROUTINE pre_init (self)
     rewind (io%input)
     read (io%input, ramses_params, iostat=iostat)
     call io%namelist_warning ('ramses_params', iostat)
-    gamma = eos%gamma
-    if (gamma == 1d0) isothermal = .true.
-    if (isothermal)   gamma = 1d0
     write (io%output, ramses_params)
     write (io%namelist, ramses_params)
     first_time = .false.
@@ -128,7 +125,6 @@ SUBROUTINE pre_init (self)
   self%n_dump  = n_dump
   self%riemann = riemann
   self%courant = courant_factor
-  self%gamma = gamma
   self%csound = csound
   self%staggered = .false.
   !-----------------------------------------------------------------------------
@@ -294,6 +290,8 @@ SUBROUTINE update (self)
   ! (cf. RAMSES/CPH)
   !-----------------------------------------------------------------------------
   if (slope_type <= 3.0) then
+    print *, associated(self%dq2), associated(self%dq)
+    print *, shape(self%dq2), shape(self%dq)
     self%dq2=self%dq
   else
     call uslope(self,self%bf,self%q,self%dq2,self%dbf,3.0)       ! TVD slopes
@@ -308,7 +306,7 @@ SUBROUTINE update (self)
      allocate (fluxohmdiss(self%gn(1),self%gn(2),self%gn(3),3))
     allocate (emfohmdiss(self%gn(1),self%gn(2),self%gn(3),3))
     call non_ideal%non_ideal_comp(self%mesh,self%idx,self%bf,self%uin,self%q,&
-      fluxambdiff,emfambdiff,fluxohmdiss,emfohmdiss,self%u_max,self%ds,self%dtime,self%gamma)
+      fluxambdiff,emfambdiff,fluxohmdiss,emfohmdiss,self%u_max,self%ds,self%dtime)
   end if
   call self%courant_condition                           ! compute dt
 
@@ -619,14 +617,14 @@ subroutine check_small (self)
     w =  uu(i,j,k,self%idx%pz)*c
     if (isothermal) then
       p = d*self%csound**2
-      uu(i,j,k,self%idx%s) = log(p/d**gamma)* d / (gamma - one)
+      uu(i,j,k,self%idx%s) = log(p/d**eos%gamma)* d / (eos%gamma - one)
     else
-      p = d**gamma*exp(uu(i,j,k,self%idx%s)/d*(gamma-one))
+      p = d**eos%gamma*exp(uu(i,j,k,self%idx%s)/d*(eos%gamma-one))
     end if
     if (p < smallr*smallc**2) then
       p = smallr*smallc**2
       print *, 'small s swap'
-      uu(i,j,k,self%idx%s) = log(p/d**gamma) * d / (gamma - one)
+      uu(i,j,k,self%idx%s) = log(p/d**eos%gamma) * d / (eos%gamma - one)
     end if
   end do
   end do
@@ -672,9 +670,9 @@ subroutine ctoprim(self)
   if (isothermal) then
     entho = one
   else
-    entho = one/max(gamma-one,1e-6)
+    entho = one/max(eos%gamma-one,1e-6)
   end if
-  smallp = smallr*smallc**2/self%gamma
+  smallp = smallr*smallc**2/eos%gamma
   n = shape(uin)-1
   gn = self%mesh%gn
   !
@@ -719,7 +717,7 @@ subroutine ctoprim(self)
     B2 = half*(q(i,j,k,7)+q(i,j+1,k,7))
     B3 = half*(q(i,j,k,8)+q(i,j,k+1,8))
     emag = half*(B1**2 + B2**2 + B3**2)
-    c(i,j,k) = sqrt((q(i,j,k,5)*gamma + 2.0*emag)/q(i,j,k,1))
+    c(i,j,k) = sqrt((q(i,j,k,5)*eos%gamma + 2.0*emag)/q(i,j,k,1))
   end do
   end do
   end do
@@ -733,8 +731,8 @@ subroutine ctoprim(self)
       write (io%output,'("X2",f10.6,i4,1p,10e12.3)') self%time, i,   q(4:13,8,8,i)
     end do
   end if
-   !Normalize physical entropy density by (gamma - one)
-  !q(:,:,:,9) = q(:,:,:,9) * (gamma-one)
+   !Normalize physical entropy density by (eos%gamma - one)
+  !q(:,:,:,9) = q(:,:,:,9) * (eos%gamma-one)
   !-----------------------------------------------------------------------------
   ! Alternative Courant condition formulations
   !-----------------------------------------------------------------------------
@@ -1200,7 +1198,7 @@ SUBROUTINE trace3d(self)
   dtdx = self%dtime/self%ds(1)
   dtdy = self%dtime/self%ds(2)
   dtdz = self%dtime/self%ds(3)
-  smallp = smallr*smallc**2/gamma
+  smallp = smallr*smallc**2/eos%gamma
   dsmax = maxval(self%ds)
   visc_max=0d0
   !
@@ -1211,7 +1209,7 @@ SUBROUTINE trace3d(self)
   !
   !call trace%end (itimer(1))
   !call trace%begin ('mhd_t%trace3d(2)', itimer=itimer(2))
-  eff_gamma = gamma
+  eff_gamma = eos%gamma
   !
   allocate (rho_t(1:self%gn(1),1:self%gn(2),1:self%gn(3)))
   allocate (  p_t(1:self%gn(1),1:self%gn(2),1:self%gn(3)))
@@ -1421,15 +1419,15 @@ SUBROUTINE trace3d(self)
           +  (dtgz*dtdz))
       ss0 = ((-u*dsx*dtdx) &
           + (-v*dsy*dtdy) &
-          + (-w*dsz*dtdz))!+log(p/(p+sp0)*(r/(r+sr0))**gamma)*half*self%dtime! &
+          + (-w*dsz*dtdz))!+log(p/(p+sp0)*(r/(r+sr0))**eos%gamma)*half*self%dtime! &
       !    + (r/p*eff_gamma/(eff_gamma-one) *((p+sp0)/(r+sr0) - (p/r))  &
       !    - half*(one/(s+sr0)+one/r)*((p+sp0)-p))*self%dtime
-     ! if(ss0/=0) print *, 'bef', ss0, log(p/(p+sp0)*(r/(r+sr0))**gamma)*self%dtime, (log(p/(p+dpx)*(r/(r+drx))**gamma)*dtdx)+(log(p/(p+dpy)*(r/(r+dry))**gamma)*dtdy)+(log(p/(p+dpz)*(r/(r+drz))**gamma)*dtdz)
+     ! if(ss0/=0) print *, 'bef', ss0, log(p/(p+sp0)*(r/(r+sr0))**eos%gamma)*self%dtime, (log(p/(p+dpx)*(r/(r+drx))**eos%gamma)*dtdx)+(log(p/(p+dpy)*(r/(r+dry))**gamma)*dtdy)+(log(p/(p+dpz)*(r/(r+drz))**gamma)*dtdz)
 
       !ss0 = ss0+(-u*half*log(p/(p+dpx)*(r/(r+drx)))*dtdx)
       !ss0 = ss0+(-v*half*log(p/(p+dpy)*(r/(r+dry)))*dtdy)
       !ss0 = ss0+(-w*half*log(p/(p+dpz)*(r/(r+drz)))*dtdz)
-     ! if(ss0/=0) print *, 'af',ss0, (log(p/(p-dpx)*(r/(r-drx))**gamma)*dtdx),(log(p/(p+dpy)*(r/(r+dry))**gamma)*dtdy),(log(p/(p+dpz)*(r/(r+drz))**gamma)*dtdz)
+     ! if(ss0/=0) print *, 'af',ss0, (log(p/(p-dpx)*(r/(r-drx))**eos%gamma)*dtdx),(log(p/(p+dpy)*(r/(r+dry))**eos%gamma)*dtdy),(log(p/(p+dpz)*(r/(r+drz))**gamma)*dtdz)
 
   !write(io_unit%log,'("pred: i,j,k,h,dex,dey,dez,se0 =",3i4,2x,1p,5e11.2)') &
   !i,j,k,h,dex,dey,dez,se0
@@ -1442,8 +1440,8 @@ SUBROUTINE trace3d(self)
       ! Add external heating
       sp0 = sp0  + (eff_gamma-1d0)* qq(i)*self%dtime
       tg0 = tg0  + qq(i)*self%dtime
-      ss0 = ss0  +                 (qq(i) )/p*self%dtime !+(gamma-one)*r/p   &
-         !    *(gamma/(gamma-one)*((p+sp0)/(r+sr0) - p/r) -half*(one/(r+sr0)+one/r)*((p+sp0)-p)) * self%dtime
+      ss0 = ss0  +                 (qq(i) )/p*self%dtime !+(eos%gamma-one)*r/p   &
+         !    *(eos%gamma/(eos%gamma-one)*((p+sp0)/(r+sr0) - p/r) -half*(one/(r+sr0)+one/r)*((p+sp0)-p)) * self%dtime
       !
       ! Evolve entropy instead of pressure
       !sS0 = (-u*dSx)*dtdx + (-v*dSy)*dtdy + (-w*dSz)*dtdz
@@ -2290,7 +2288,7 @@ FUNCTION gas_pressure (self) RESULT (pg)
   if (isothermal) then
     pg = d*self%csound**2
   else
-    pg = (gamma-1d0)* &
+    pg = (eos%gamma-1d0)* &
       (e-0.5*(up(bx,1)**2+up(by,2)**2+up(bz,3)**2+(px**2+py**2+pz**2)/d))
   end if
   end associate

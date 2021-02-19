@@ -5,6 +5,7 @@ module riemann_mod
   USE mpi_mod
   USE trace_mod
   USE timer_mod
+  USE eos_mod
   implicit none
   private
   type riemann_t
@@ -43,7 +44,7 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
   REAL(dp)::Bo,Co,Bstarstar,Cstarstar,vdotBstarstar,vdotBo,emago
 #define INLINE
 #ifdef INLINE
-  REAL(dp)::d,P,u,v,w,B,C,B2,d2,cf
+  REAL(dp)::d,P,u,v,w,B,C,B2,d2,cf, gamma
 #endif
   INTEGER ::ivar,i,icase, ndiff
   logical:: flag, illconditioned
@@ -66,6 +67,7 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
   !$omp &  scond, tt1, tt2, tt3, tt4, tt5, tt6, aa2, alfa_s, alfa_f, bp1,bp2, &
   !$omp &  icase,ro,uo,vo,wo,Bo,Co,Ptoto,so,vdotBo,emago,ustar)
 #endif
+gamma = eos%gamma
 smax=0.0
 somax=0.0
 scase=0
@@ -376,7 +378,7 @@ subroutine roe_ec (self, qleft, qright, fgdnv, ngrid, detailed_timer)
   REAL(dp):: matR(8,8), matRT(8,8), Tdiag(8), diss(8), jump(8), inter(8,8),stab(8)
   REAL(dp)::rl,pl,sl,ul,Bl,Cl,wstarl,vl,wl
   REAL(dp)::rr,pr,sr,ur,Br,Cr,wstarr,vr,wr
-  REAL(dp)::ro,uo,so,vo,wo, Bo, Co
+  REAL(dp)::ro,uo,so,vo,wo, Bo, Co, gamma
   INTEGER ::ivar,i,icase, ndiff, im
   logical:: flag, illconditioned
   integer, save:: itimer=0
@@ -397,6 +399,7 @@ subroutine roe_ec (self, qleft, qright, fgdnv, ngrid, detailed_timer)
   !$omp &  vstarstar,wstarstar,Bstarstar,Cstarstar,vdotBstarstar,visc, &
   !$omp &  icase,ro,uo,vo,wo,Bo,Co,Ptoto,so,vdotBo,emago,ustar)
 #endif
+  gamma = eos%gamma
   do i=1,ngrid
     !print '(i3,1p,8e10.2,2x,8e10.2)',i,qleft(i,:),qright(i,:)
     !
@@ -677,13 +680,14 @@ SUBROUTINE hllc (self, qleft, qrght, fgdnv, ngrid, detailed_timer)
   !--- double precision
   REAL(dp):: cfastl,SSL,rcl
   REAL(dp):: cfastr,SSR,rcr
-  REAL(dp):: ustar
+  REAL(dp):: ustar, gamma
   !---
   INTEGER:: ngrid,i2,i3,dir,n_cheap,n_expensive
   INTEGER:: i,j1,j2,j3,v1,v2,v3
   INTEGER, SAVE:: itimer=0
   n_cheap = 0
   n_expensive = 0
+  gamma = eos%gamma
     !---------------------------------------------------------------------------
     ! Loop over 1st index
     !---------------------------------------------------------------------------
@@ -804,11 +808,12 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
   REAL(dp) :: rLL,rLR,rRL,rRR,pLL,pLR,pRL,pRR,uLL,uLR,uRL,uRR,vLL,vLR,vRL,vRR, &
                        ALL,ALR,ARL,ARR,BLL,BLR,BRL,BRR,CLL,CLR,CRL,CRR
   REAL(dp) :: qtmp1,qtmp2,qtmp3,qtmp4,qtmp5,qtmp6,qtmp7,qtmp8
-  REAL(dp) :: B2, c2, d2, d1
+  REAL(dp) :: B2, c2, d2, d1, gamma
   integer, save:: itimer=0
   !.............................................................................
   if (detailed_timer) &
     call timer%begin ('riemann_t%hlld_2d', itimer=itimer)
+  gamma = eos%gamma
   do l=l0,l1
     rLL=qLL(l,1); pLL=qLL(l,2); uLL=qLL(l,3); vLL=qLL(l,4); ALL=qLL(l,6); BLL=qLL(l,7) ; CLL=qLL(l,8)
     rLR=qLR(l,1); pLR=qLR(l,2); uLR=qLR(l,3); vLR=qLR(l,4); ALR=qLR(l,6); BLR=qLR(l,7) ; CLR=qLR(l,8)
@@ -1372,7 +1377,7 @@ SUBROUTINE find_speed_fast(qvar,vel_info)
   d=max(d,smallr)
   P=max(P,smallr*smallc*smallc)
   B2 = A*A+B*B+C*C
-  c2 = gamma*P/d
+  c2 = eos%gamma*P/d
   d2 = half*(B2/d+c2)
   cf = sqrt( d2 + sqrt(max(d2*d2-c2*A*A/d,zero)) )
   vel_info = cf
@@ -1393,7 +1398,7 @@ SUBROUTINE find_speed_info (qvar, vel_info)
   d=qvar(1); P=qvar(2); u=qvar(3); A=qvar(4)
   v=qvar(5); B=qvar(6); w=qvar(7); C=qvar(8)
   B2 = A*A+B*B+C*C
-  c2 = gamma*P/d
+  c2 = eos%gamma*P/d
   d2 = half*(B2/d+c2)
   cf = sqrt( d2 + sqrt(d2**2-c2*A*A/d) )
   vel_info = cf+abs(u)
@@ -1416,9 +1421,9 @@ SUBROUTINE find_speed_fast_vec (qvar, vel_info, n)
   v=>qvar(:,5); B=>qvar(:,6); w=>qvar(:,7); C=>qvar(:,8)
   B2 = A*A+B*B+C*C
 #ifdef KROME
-  c2 = merge(qvar(:,ichem),gamma,chemistry)*P/d
+  c2 = merge(qvar(:,ichem),eos%gamma,chemistry)*P/d
 #else
-  c2 = gamma*P/d
+  c2 = eos%gamma*P/d
 #endif
   d2 = half*(B2/d+c2)
   cf = sqrt( d2 + sqrt(max(d2*d2-c2*A*A/d,zero)) )
