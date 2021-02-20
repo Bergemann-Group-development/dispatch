@@ -111,6 +111,10 @@ SUBROUTINE pre_init (self)
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%pre_init')
   call io%lock%set('mhd_t%pre_init')
+  !-----------------------------------------------------------------------------
+  ! Call extras pre-init
+  !-----------------------------------------------------------------------------
+  call self%extras_t%pre_init
   if (first_time) then
     first_time = .false.
     eos = self%eos
@@ -134,26 +138,22 @@ SUBROUTINE pre_init (self)
   self%courant = courant
   self%cdtd = cdtd
   self%ng   = 8
+  self%nw   = 2
   !-----------------------------------------------------------------------------
   if (self%mhd) then
     self%kind = 'stagger2e_mhd_patch'
   else
     self%kind = 'stagger2e_hd_patch'
   end if
-  if (self%nv == 0) then
-    if (self%mhd) then
-      self%nv = 8
-    else
-      self%nv = 5
-    end if
+  if (self%mhd) then
+    self%nv = 8
+  else
+    self%nv = 5
   end if
-  call self%idx%init (ienergy=5, mhd=self%mhd)
-  !-----------------------------------------------------------------------------
-  ! Call extras pre-init
-  !-----------------------------------------------------------------------------
-  call self%extras_t%pre_init
+  call self%idx%init (energy=5, mhd=self%mhd)
+  where (self%n<2) self%ng=0
   call trace%end()
-END SUBROUTINE pre_init
+END SUBRO%UTINE pre_init
 
 !===============================================================================
 !> Initialize what is required for the MHD solver.
@@ -169,8 +169,7 @@ SUBROUTINE init (self)
   ! Patch initialization
   !-----------------------------------------------------------------------------
   self%type = 'mhd_t'
-  where (self%n<2) self%ng=0
-  call self%patch_t%init
+  call self%extras_t%init
   do i=1,3
     self%mesh(i)%h(self%idx%px+i-1) = -0.5
     if (self%mhd) self%mesh(i)%h(self%idx%bx+i-1) = -0.5
@@ -182,15 +181,10 @@ SUBROUTINE init (self)
       print '("h:",8f5.2)', self%mesh(i)%h
     end do
   end if
-  call self%gpatch_t%init
   if (first_time.and.io%master) then
     call stagger_test
     first_time = .false.
   end if
-  ! ----------------------------------------------------------------------------
-  ! init extras
-  ! ----------------------------------------------------------------------------
-  call self%extras_t%init
   ! ----------------------------------------------------------------------------
   ! set variable diffusion, if applicable
   ! ----------------------------------------------------------------------------
