@@ -160,14 +160,7 @@ SUBROUTINE output (self)
 END SUBROUTINE output
 
 !===============================================================================
-!> Add restart functionality to patch initialization.  This %init routine is
-!> called for both internal and virtual patches, which both can be initialized
-!> fully by the self%ininitial%condition() procedure. When instead calling the
-!> self%input() procedure, we need to make a decision:  Either we must make sure
-!> that the data_io%input() routine can handle off-rank reading, or we need to
-!> nevertheless return ok=.true., and instead rely on a negative time to force
-!> any task that relies on the patch for guard zone values to wait until data
-!> has been recieved with MPI from the owner rank.
+!> Initialize patch_t and data_io
 !===============================================================================
 SUBROUTINE init (self)
   class(gpatch_t):: self

@@ -406,71 +406,30 @@ FUNCTION task2patch (task) RESULT (patch)
 END FUNCTION task2patch
 
 !===============================================================================
-!> Initialize the patch memory and patch dimensions.  For this we need to be told the
-!> patch dimensions (which include the number of variable and the number of time
-!> slices), the patch position, and the patch size
-!===============================================================================
-SUBROUTINE init (self)
-  class(patch_t):: self
-  character(len=120):: id = &
-    '$Id$'
-  logical, save:: first_time=.true.
-  !-----------------------------------------------------------------------------
-  call trace%begin ('patch_t%init')
-  call io_unit%print_id (id)
-  call self%task_t%init
-  call self%setup
-  call io%lock%set ('patch_t%init')
-  if (first_time) then
-    write (stdout,'(a,6i4)') &
-      ' memory shape:', shape(self%mem)
-    call self%idx%print (stdout)
-    first_time = .false.
-  end if
-  call io%lock%unset ('patch_t%init')
-  call trace%end()
-END SUBROUTINE init
-
-!===============================================================================
-!> Initialize default values for the patch memory and patch dimensions. The 
-!> order of setting values is that the calling code, typically experiment_mod,
-!> may set preferred defaults that differ from the ones set here.  The input
-!> namelist then allows these to be changed.  This is done (only) once, on first
-!> call, after which the saved properties are reused on subsequent calls.
-!>
-!> However, in cases where not all patches should have identical properties it
-!> is necessary be able to override the saved default.  In the case of n and ng
-!> -- the most likely properties to vary -- this can be done by changing the patch
-!> values before the call, since only properties with default (zero) values
-!> are set to the saved values.  It is possible to change other parameters, by
-!> instead of calling patch_t%init, first call patch_t%pre_init, and then
-!> call patch_t%setup (nt=..., nv=..., ...).
-!>
-!> Values that are expected to vary from patch to patch, such as size and
-!> position, must be set before calling patch_t%init, or else must be set by
-!> instead calling patch_t%init_defult + patch_t%setup.
-!>
-!> Any experiment that should start up with non-default values of parameters
-!> given default values here (such as 'periodic'), should use the method:
-!> call pre_init + set values + call setup, since otherwise it would have
-!> to rely on the values being set correctly in the input namelist.
+!> Initialize default values for the patch memory and patch dimensions. This
+!> is the 1st stop in the cascading %pre_init() calls, where initial values
+!> are assinged to basic attributes.  These may be adjuste by higher level
+!> pre_init() calls, after the point where they made the call that ended up
+!> here.  The final verdict on all attributes are acted upon by the %init()
+!> chain of calls.
 !===============================================================================
 SUBROUTINE pre_init (self)
   class(patch_t), target:: self
   !.............................................................................
-  integer, save:: n(3)=16, ng(3)=2, nv=5, nt=5, nw, max_files=1000, print_every=0
-  logical, save:: no_mans_land=.true., use_data_hub=.false., limit_dtime=.false.
-  real, save:: u_fixed=-1.0, grace=0.0
-  real(8), save:: start_time=0d0, end_time=1.0, out_time=0.1, print_time=0.0
-  real(8):: dt_fixed=-1.0
-  real(8):: position(3), size(3)
-  integer:: iostat, i, n_alloc=0, n_ext=0
-  namelist /patch_params/ n, nv, ng, nt, u_fixed, dt_fixed, &
-    grace, no_mans_land, use_data_hub, do_check_nan, &
-    zero_order_extrap, limit_dtime, courant_ramp
+  integer       :: iostat, i, n_alloc=0, n_ext=0
+  !.............................................................................
+  integer, save :: n(3)=16, ng(3)=0, nv=1, nt=5, nw=1, max_files=1000, &
+                   print_every=0
+  logical, save :: no_mans_land=.true., use_data_hub=.false., limit_dtime=.false.
+  real,    save :: u_fixed=-1.0, grace=0.0
+  real(8), save :: start_time=0d0, end_time=1.0, out_time=0.1, print_time=0.0
+  real(8), save :: dt_fixed=-1.0
+  logical, save :: first_time = .true.
+  namelist /patch_params/ n, nv, nt, u_fixed, dt_fixed, grace, &
+                          no_mans_land, use_data_hub, do_check_nan, &
+                          zero_order_extrap, limit_dtime, courant_ramp
   namelist /out_params/ start_time, out_time, end_time, print_time, &
-    print_every, max_files
-  logical, save:: first_time = .true.
+                        print_every, max_files
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%pre_init')
   call omp%set_stacksize (self%nv)
@@ -480,33 +439,31 @@ SUBROUTINE pre_init (self)
   !-----------------------------------------------------------------------------
   call io%lock%set ('patch_t%pre_init')
   if (first_time) then
-    ! -- if values have been imposed from above, FI show them as default
-    if (any(self%n  /= 0)) n  = self%n          ! patch dimensions
-    if (any(self%ng /= 0)) ng = self%ng         ! patch guard zones
-    if (    self%nv /= 0 ) nv = self%nv         ! number of variables
-    if (    self%nt /= 0 ) nt = self%nt         ! number of time slices
-    first_time = .false.
     rewind (io%input)
     read (io%input, patch_params, iostat=iostat)
-    if (dt_fixed > 0.0) grace=max(grace,1e-6)
+    if (iostat > 0) then
+      rewind (io%input)
+      read (io%input, patch_params)
+    end if
     call io%namelist_warning ('patch_params', iostat)
+    if (dt_fixed > 0.0) grace=max(grace,1e-6)
     write (io%namelist, patch_params)
+    !...........................................................................
     rewind (io%input)
     read (io%input, out_params)
+    if (iostat > 0) then
+      rewind (io%input)
+      read (io%input, out_params)
+    end if
     call io%namelist_warning ('out_params', iostat)
     write (io%namelist, out_params)
+    !...........................................................................
     if (mpi%rank > 0) &
       self%track = .true.
     io%print_every = print_every                ! print 1st task
     io%iprint = print_every                     ! print 1st task
+    first_time = .false.
   end if
-  !-----------------------------------------------------------------------------
-  ! To allow patches to have n, ng, nv, and nt values that differ, values that
-  ! differ from the data type zero defaults take precedence over saved values
-  !-----------------------------------------------------------------------------
-  if (any(self%n  == 0)) self%n  = n            ! patch dimensions
-  if (    self%nv == 0 ) self%nv = nv           ! number of variables
-  if (    self%nt == 0 ) self%nt = nt           ! number of time slices
   !-----------------------------------------------------------------------------
   ! Output related parameters
   !-----------------------------------------------------------------------------
@@ -519,23 +476,23 @@ SUBROUTINE pre_init (self)
   io%out_time      = out_time
   io%print_time    = print_time
   call io%lock%unset ('patch_t%pre_init')
-  self%restart     = io%restart                 ! restart snapshot
-  self%grace       = grace                      ! grace fraction of dtime
-  self%dt_fixed    = dt_fixed
-  self%u_fixed     = u_fixed
-  self%max_files   = max_files                  ! prevent run-away NaN
-  self%use_data_hub = use_data_hub              ! guard zone handling
-  self%no_mans_land = no_mans_land              ! mesh centering
-  self%print_next  = print_time
-  self%limit_dtime = limit_dtime
   !-----------------------------------------------------------------------------
-  ! The unsigned and pervoleme flags should also be modified by the solver,
-  ! so they also need to be allocated here.
+  ! Multi-threading below -- only self% references allowed
   !-----------------------------------------------------------------------------
-  allocate (self%unsigned (self%nv))
-  allocate (self%pervolume(self%nv))
-  self%unsigned (:) = .false.
-  self%pervolume(:) = .false.
+  self%n            = n
+  self%ng           = ng
+  self%nt           = nt
+  self%nv           = nv
+  self%nw           = nw
+  self%restart      = io%restart                 ! restart snapshot
+  self%grace        = grace                      ! grace fraction of dtime
+  self%dt_fixed     = dt_fixed
+  self%u_fixed      = u_fixed
+  self%max_files    = max_files                  ! prevent run-away NaN
+  self%use_data_hub = use_data_hub               ! guard zone handling
+  self%no_mans_land = no_mans_land               ! mesh centering
+  self%print_next   = print_time
+  self%limit_dtime  = limit_dtime
   call trace%end()
 END SUBROUTINE pre_init
 
@@ -628,19 +585,15 @@ SUBROUTINE mesh_init (self)
 END SUBROUTINE mesh_init
 
 !===============================================================================
-!> Setup a patch, possibly with non-standard parameters. First setup with
-!> defaults, then possibly override, then do the actual setup
+!> Deprecated way to impose some key parameters from e.g. a test, coded before
+!> the introduction of %pre_init(), and kept here only for the purpose of not
+!> breaking those tests completely (FIXME: they should be rewritten in any case).
 !===============================================================================
 SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
   class(patch_t)    :: self
   real(8), optional :: position(3), size(3)
   integer, optional :: n(3), ng(3)
   integer, optional :: nt, nv, nw
-  !.............................................................................
-  type(header_t):: header
-  character(len=4) kind
-  integer:: i, gn(3)
-  class(mesh_t), pointer:: m
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%setup')
   if (present(position)) self%position = position
@@ -650,6 +603,25 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
   if (present(nt      )) self%nt       = nt
   if (present(nv      )) self%nv       = nv
   if (present(nw      )) self%nw       = nw
+END SUBROUTINE setup 
+
+!===============================================================================
+!> Initialize the patch memory and patch dimensions.  For this we need to be told the
+!> patch dimensions (which include the number of variable and the number of time
+!> slices), the patch position, and the patch size
+!===============================================================================
+SUBROUTINE init (self)
+  class(patch_t):: self
+  !.............................................................................
+  integer            :: i, gn(3)
+  type(header_t)     :: header
+  character(len=120) :: id = &
+    '$Id$'
+  logical, save:: first_time=.true.
+  !-----------------------------------------------------------------------------
+  call trace%begin ('patch_t%init')
+  call io_unit%print_id (id)
+  call self%task_t%init
   !-----------------------------------------------------------------------------
   ! Everything mesh-related -- call to be moved to %init()-chain later
   !-----------------------------------------------------------------------------
@@ -714,6 +686,19 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
     end do
     self%mem_allocated = .true.               ! mark
     call io%bits_mem (storage_size(self%mem), product(shape(self%mem)), 'mem')
+    !---------------------------------------------------------------------------
+    ! The unsigned and pervoleme flags may also be modified by the solver.  They
+    ! are allocated here, but need to be reallocated by solvers modifying nv.
+    ! Tracking the small memory use, in case deallocation is forgotten
+    !---------------------------------------------------------------------------
+    allocate (self%unsigned (self%nv))
+    allocate (self%pervolume(self%nv))
+    self%unsigned (:) = .false.
+    self%pervolume(:) = .false.
+    call io%bits_mem (storage_size(self%unsigned)  , &
+                    product(shape(self%unsigned)) , 'uns')
+    call io%bits_mem (storage_size(self%pervolume) , &
+                    product(shape(self%pervolume)), 'perv')
   end if
   self%wallclock = wallclock()                  ! starting time
   n_header = storage_size(header)/32            ! 32 bits per word
@@ -726,8 +711,20 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
     if (io%verbose > 1) write(io%output,*) 'set bits%root_grid id =', self%id
   end if
   call self%set (bits%has_output)
+  !-----------------------------------------------------------------------------
+  ! Write out the variable indices to metadata
+  !-----------------------------------------------------------------------------
+  call io%lock%set ('patch_t%init')
+  if (first_time) then
+    write (stdout,'(a,6i4)') &
+      ' memory shape:', shape(self%mem)
+    call self%idx%print (stdout)
+    first_time = .false.
+  end if
+  call io%lock%unset ('patch_t%init')
+  !-----------------------------------------------------------------------------
   call trace%end()
-END SUBROUTINE setup
+END SUBROUTINE init
 
 !===============================================================================
 !> Deallocate a patch and its allocated parts
@@ -767,6 +764,16 @@ SUBROUTINE dealloc (self)
     call io%bits_mem (-storage_size(self%irefine), &
                       product(shape(self%irefine)), '-irefine')
     deallocate (self%irefine)
+  end if
+  if (associated(self%unsigned)) then
+    call io%bits_mem (-storage_size(self%unsigned), &
+                      product(shape(self%unsigned)), '-unsigned')
+    deallocate (self%unsigned)
+  end if
+  if (associated(self%pervolume)) then
+    call io%bits_mem (-storage_size(self%pervolume), &
+                      product(shape(self%pervolume)), '-pervolume')
+    deallocate (self%pervolume)
   end if
   if (associated(self%mesg)) then
     call self%mesg%dealloc
@@ -1834,21 +1841,22 @@ FUNCTION fmaxval4 (self, f, outer) RESULT (fmaxval)
   real, dimension(:,:,:), intent(in):: f
   logical, optional:: outer
   logical:: outer_l
+  integer:: l(3), u(3)
   !-----------------------------------------------------------------------------
   if (present(outer)) then
     outer_l = outer
   else
     outer_l = .false.
   end if
+  l = self%mesh%li
+  u = self%mesh%ui
   if (outer_l) then
-    fmaxval = maxval(f(self%mesh(1)%lo:self%mesh(1)%uo, &
-                       self%mesh(2)%lo:self%mesh(2)%uo, &
-                       self%mesh(3)%lo:self%mesh(3)%uo))
-  else
-    fmaxval = maxval(f(self%mesh(1)%li:self%mesh(1)%ui, &
-                       self%mesh(2)%li:self%mesh(2)%ui, &
-                       self%mesh(3)%li:self%mesh(3)%ui))
+    where(self%n==1)
+      l = self%mesh%li
+      u = self%mesh%ui
+    end where
   end if
+  fmaxval = maxval(f(l(1):u(1),l(2):u(2),l(3):u(3)))
 END FUNCTION fmaxval4
 !===============================================================================
 FUNCTION fminval4 (self, f) RESULT(fminval)

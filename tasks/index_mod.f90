@@ -25,43 +25,43 @@ CONTAINS
 !===============================================================================
 !> Initialize the indices to default values, possibly to be modified by solvers
 !===============================================================================
-SUBROUTINE init (self, ienergy, isentropy, mhd)
+SUBROUTINE init (self, energy, entropy, mhd)
   class(index_t):: self
-  integer, optional:: ienergy, isentropy
+  integer, optional:: energy, entropy
   logical, optional:: mhd
-  integer:: ienergy_l, isentropy_l
+  integer:: energy_l, entropy_l
   logical:: mhd_l
   !-----------------------------------------------------------------------------
-  if (present(ienergy)) then
-    ienergy_l = ienergy
+  if (present(energy)) then
+    energy_l = energy
   else
-    ienergy_l = -1
+    energy_l = -1
   end if
-  if (present(isentropy)) then
-    isentropy_l = isentropy
+  if (present(entropy)) then
+    entropy_l = entropy
   else
-    isentropy_l = -1
+    entropy_l = -1
   end if
   if (present(mhd)) then
     mhd_l = mhd
   else
     mhd_l = .false.
   end if
-  if (ienergy_l==2 .or. isentropy_l==2) then
+  if (energy_l==2 .or. entropy_l==2) then
     self%d  = 1
     self%px = 3
     self%py = 4
     self%pz = 5
-  else if (ienergy_l==5 .or. isentropy_l==5) then
+  else if (energy_l==5 .or. entropy_l==5) then
     self%d  = 1
     self%px = 2
     self%py = 3
     self%pz = 4
   else
-    call io%abort ('ienergy or isentropy != 2 or 5. You are required to supply one!')
+    call io%abort ('energy or entropy != 2 or 5. You are required to supply one!')
   end if
-  self%e  = ienergy_l
-  self%s  = isentropy_l
+  self%e  = energy_l
+  self%s  = entropy_l
   if (mhd_l) then
     self%bx = 6
     self%by = 7
