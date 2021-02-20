@@ -14,6 +14,7 @@ MODULE task_mod
   USE random_mod
   USE dll_mod
   USE aux_mod
+  USE region_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -94,6 +95,8 @@ MODULE task_mod
     type(random_t):: random             ! pseudo-random number generator
     type(aux_t):: aux
     integer(8):: amr_offset=0_8         ! byte offset in amr_io
+    type(region_t):: authority                ! region of authority
+    type(region_t):: interest                 ! region of interest
   contains
     procedure:: init
     procedure:: init_unique
@@ -120,6 +123,7 @@ MODULE task_mod
     procedure:: nbor_relations
     procedure:: distance_from
     procedure:: distance
+    procedure:: distance_to => distance
     procedure:: point_distance
     procedure:: pack
     procedure:: unpack
@@ -140,6 +144,9 @@ MODULE task_mod
     procedure:: output_metadata
     procedure:: input_metadata
     procedure:: allocate_mesg
+    procedure:: roi
+    procedure:: roa
+    procedure:: hash_key
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -1278,5 +1285,55 @@ SUBROUTINE allocate_mesg (self)
   !-----------------------------------------------------------------------------
   call io%abort ('task_t%allocate_mesg called')
 END SUBROUTINE allocate_mesg
+
+!===============================================================================
+!> Return region of interest, adjusted for distance
+!===============================================================================
+FUNCTION roi (self, task) RESULT (region)
+  class(task_t)           :: self
+  class(task_t), optional :: task
+  type(region_t)          :: region
+  real(8)                 :: distance(3)
+  !-----------------------------------------------------------------------------
+  if (present(task)) then
+    distance = task%distance_to (self)
+    region%l = distance + self%interest%l
+    region%u = distance + self%interest%u
+  else
+    region%l = self%interest%l
+    region%u = self%interest%u
+  end if
+END FUNCTION roi
+
+!===============================================================================
+!> Return region of authority, adjusted for distance
+!===============================================================================
+FUNCTION roa (self, task) RESULT (region)
+  class(task_t)           :: self
+  class(task_t), optional :: task
+  type(region_t)          :: region
+  real(8)                 :: distance(3)
+  !-----------------------------------------------------------------------------
+  if (present(task)) then
+    distance = task%distance_to (self)
+    region%l = distance + self%authority%l
+    region%u = distance + self%authority%u
+  else
+    region%l = self%authority%l
+    region%u = self%authority%u
+  end if
+END FUNCTION roa
+
+!===============================================================================
+!> Return a unique hash key for the patch, encoding position and level
+!===============================================================================
+FUNCTION hash_key (self) RESULT (key)
+  class(task_t):: self
+  integer, parameter:: ndim=4
+  integer:: key(ndim)
+  !-----------------------------------------------------------------------------
+  key(1:3) = nint((self%position-self%origin)*2d0/self%size)
+  key(4) = self%level
+END FUNCTION hash_key
 
 END MODULE task_mod

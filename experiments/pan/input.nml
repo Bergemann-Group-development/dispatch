@@ -22,7 +22,7 @@
 &patch_params           nt=5 grace=0.5 n=3*16 no_mans_land=t /
 !patch_params           nt=5 grace=0.1 n=3*21 no_mans_land=f /
 &out_params             end_time=0.10 out_time=0.025 print_every=1 /
-&io_params              verbose=1 do_trace=f omp_trace=f do_output=t restart=-2
+&io_params              verbose=0 do_trace=f omp_trace=f do_output=t restart=-2
                         nml_version=4
                         method='legacy' format=11 guard_zones=f time_derivs=0 /
 &download_params        verbose=0 

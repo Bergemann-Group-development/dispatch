@@ -43,9 +43,10 @@ END SUBROUTINE init
 !===============================================================================
 !> Update the guard zones covered by this data type 
 !===============================================================================
-SUBROUTINE update (self, all)
+SUBROUTINE update (self, all, only)
   class(boundary_t):: self
   logical, optional:: all
+  integer, optional:: only
   !-----------------------------------------------------------------------------
 END SUBROUTINE update
 

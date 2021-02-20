@@ -62,6 +62,7 @@ MODULE link_mod
     procedure:: update
     procedure, nopass:: init_verbose
     procedure:: add_nbor_by_quality
+    procedure:: add_nbor_by_level
     procedure:: add_nbor_by_rank
     procedure:: remove_nbor
     procedure:: remove_from_nbors
@@ -105,8 +106,10 @@ END SUBROUTINE init_nbor
 !===============================================================================
 !> Update the part of a halo (possibly abstract) related to an nbor
 !===============================================================================
-SUBROUTINE update_nbor (self)
+SUBROUTINE update_nbor (self, all, only)
   class(nbor_t):: self
+  logical, optional:: all
+  integer, optional:: only
   !-----------------------------------------------------------------------------
   call trace%begin ('nbor_t%update')
   call trace%end ()
@@ -137,10 +140,14 @@ END SUBROUTINE init
 !===============================================================================
 !> Update a task link, as per the nbor%update procedure.
 !===============================================================================
-SUBROUTINE update (self)
-  class(link_t):: self
-  class(nbor_t), pointer:: nbor
+SUBROUTINE update (self, all, only)
+  implicit none
+  class(link_t)           :: self
+  logical, optional       :: all
+  integer, optional       :: only
   !.............................................................................
+  class(nbor_t), pointer  :: nbor
+  !-----------------------------------------------------------------------------
   call trace%begin ('link_t%update')
   nbor => self%nbor
   do while (associated(nbor))
@@ -276,6 +283,83 @@ SUBROUTINE add_nbor_by_quality (self, this)
   call self%lock%unset ('add_nbor_by_quality')
   call trace_end
 END SUBROUTINE add_nbor_by_quality
+
+!===============================================================================
+!> Add an nbor node into the nbors list of self, in increasing rank order.
+!> self must be a link whose 'nbors' points to a chain of nbors, and 'nbor'
+!> must be an nbor with both a link and task pointer set.
+!===============================================================================
+SUBROUTINE add_nbor_by_level (self, nbors, nbor, added)
+  class(link_t):: self
+  class(nbor_t), pointer:: nbors, nbor
+  class(nbor_t), pointer:: next, prev
+  integer, optional:: added
+  !.............................................................................
+  call trace_begin ('link_t%add_nbor_by_level', 1)
+  !$omp atomic update
+  nbor%task%n_needed = nbor%task%n_needed + 1   ! because linked task derefined
+  if (io%verbose > 2 .or. self%task%id == io%id_debug) &
+    write (stdlog,'(2(a,i6,i3,3x),a,2l1)') &
+      'link_t%add_nbor_by_level:  adding task', nbor%task%id, nbor%task%level, &
+      'to nbor list of', self%task%id, self%task%level, &
+      'BV=', nbor%task%is_set(bits%boundary), nbor%task%is_set(bits%virtual)
+  if (present(added)) added = 0
+  nullify (prev)
+  next => nbors
+  !-----------------------------------------------------------------------------
+  ! Check that the task is not self
+  !-----------------------------------------------------------------------------
+  if (nbor%task%id == self%task%id) then
+    write (stderr,*) self%task%id, 'ERROR: trying to add self to nbor list of', &
+      nbor%task%id
+    goto 9
+  end if
+  !-----------------------------------------------------------------------------
+  ! Add it before the next higher levelm unless it is found before then
+  !-----------------------------------------------------------------------------
+  nullify (prev)
+  next => nbors
+  do while (associated(next))
+    if (next%task%id == nbor%task%id) then
+      if (verbose > 1) then
+        write (stdlog,'(f12.6,a,2i6)') wallclock(), pad_trace(1:indent)// &
+          'INFO: nbor already on nbor list, self,nbor=', &
+          self%task%id, nbor%task%id
+      end if
+      goto 9
+    else if (next%task%level > nbor%task%level) then
+      !-------------------------------------------------------------------------
+      ! Found a task we should be ahead of, so insert here
+      !-------------------------------------------------------------------------
+      nbor%next => next
+      if (associated(prev)) then
+        prev%next => nbor
+      else
+        nbors => nbor
+      end if
+      if (present(added)) added = 1
+      self%task%n_nbors = self%task%n_nbors + 1
+      !self%task%n_needed = self%task%n_needed + 1
+      goto 9
+    end if
+    prev => next
+    next => next%next
+  end do
+  !-----------------------------------------------------------------------------
+  ! This task has the highest level, so append it's nbor link
+  !-----------------------------------------------------------------------------
+  if (associated(prev)) then
+    prev%next => nbor
+  else
+    nbors => nbor
+  end if
+  nullify (nbor%next)
+  if (present(added)) added = 1
+  self%task%n_nbors = self%task%n_nbors + 1
+  !self%task%n_needed = self%task%n_needed + 1
+9 continue
+  call trace%end ()
+END SUBROUTINE add_nbor_by_level
 
 SUBROUTINE check_nbor_relations(self, nbor, needed, needs_me, download)
   class(link_t):: self, nbor
@@ -629,9 +713,10 @@ END SUBROUTINE log_nbors
 !===============================================================================
 !> Print a list of nbors to io_unit%mpi
 !===============================================================================
-SUBROUTINE print_nbors (self, label)
+SUBROUTINE print_nbors (self, label, verbose)
   class (link_t):: self
   character(len=*), optional:: label
+  integer, optional:: verbose
   class(nbor_t) , pointer:: nbor
   integer:: idmax
   character(len=16):: fmt
@@ -1055,9 +1140,10 @@ END SUBROUTINE nbor_info
 !===============================================================================
 !> Info for all nbors
 !===============================================================================
-SUBROUTINE info (self)
+SUBROUTINE info (self, label)
   class(link_t):: self
   class(nbor_t), pointer:: nbor
+  character(*), optional:: label
   !-----------------------------------------------------------------------------
   call self%task%task_info()
   nbor => self%nbor

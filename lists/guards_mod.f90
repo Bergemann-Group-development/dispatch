@@ -99,9 +99,10 @@ END SUBROUTINE init
 !> The face update procedure organizes calls to the interpolation routines,
 !> with the target and source patch data types served in the argument list
 !===============================================================================
-SUBROUTINE update (self, all)
+SUBROUTINE update (self, all, only)
   class(guards_t)        :: self
   logical, optional      :: all
+  integer, optional      :: only
   !-----------------------------------------------------------------------------
   call trace%begin ('guards_t%update')
   call source_to_target (self, self%source, self%target, all)

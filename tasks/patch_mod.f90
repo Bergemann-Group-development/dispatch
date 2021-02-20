@@ -22,6 +22,7 @@ MODULE patch_mod
   USE index_mod
   USE shared_mod
   USE connect_mod
+  USE region_mod
   implicit none
   private
   integer, parameter:: ndim = 3
@@ -35,8 +36,11 @@ MODULE patch_mod
     ! These allocatables are intended to deposite external forces and heating in,
     ! typically used by methods called from the extras_t data type procedures.
     !---------------------------------------------------------------------------
-    integer(kind=int8)      , dimension(:,:,:),       pointer, contiguous:: filled  => null()
-    real(kind=KindScalarVar), dimension(:,:,:),       pointer, contiguous:: u_phase => null()
+    real              , pointer, contiguous:: frefine(:,:,:) => null()
+    integer(kind=int8), pointer, contiguous:: filled (:,:,:) => null()
+    integer(kind=int8), pointer, contiguous:: request(:,:,:) => null()
+    logical           , pointer, contiguous:: outside(:,:,:) => null()
+    real(var_k)       , pointer, contiguous:: u_phase(:,:,:) => null()
     !dir$ attributes align: 64 :: filled
     !--- anonymous pointer, which may be used to connect extra info to the solvers
     type(connect_t):: connect
@@ -77,10 +81,11 @@ MODULE patch_mod
     real:: safety_factor=1.0
     real:: ee_min=tiny(1.0)
     !--- used in extras ---
-    logical, pointer, contiguous:: mask(:,:,:) => null()
+    logical, contiguous, pointer :: mask(:,:,:)    => null()
     !--- used in refine ---
-    real, pointer, contiguous:: irefine(:,:,:) => null()
-    type(lock_t), pointer:: mem_lock(:) => null()
+    real,    contiguous, pointer :: irefine(:,:,:) => null()
+    type(lock_t),        pointer :: mem_lock(:)    => null()
+    type(lock_t),        pointer :: request_lock   => null()
     !---------------------------------------------------------------------------
     ! HACKs below:  FIXME
     !---------------------------------------------------------------------------
@@ -166,6 +171,7 @@ MODULE patch_mod
     procedure:: log_interpolate
     procedure:: time_interval
     procedure:: distance
+    procedure:: distance_to => distance
     procedure:: distance_curvilinear
     procedure:: index_stagger
     procedure:: interpolate
@@ -181,6 +187,9 @@ MODULE patch_mod
     procedure:: init_level
     procedure:: dump
     procedure:: cost
+    procedure:: subtask_hash_key
+    procedure:: overlap
+    procedure:: overlaps_region
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -2991,5 +3000,187 @@ REAL FUNCTION cost (self)
     cost = 0.0
   end if
 END FUNCTION cost
+
+!===============================================================================
+!> Compute the hash key of a proposed sub-task
+!===============================================================================
+FUNCTION subtask_hash_key (self, ii) RESULT (key)
+  class(patch_t)        :: self
+  integer               :: ii(3), key(4)
+  !.............................................................................
+  real(8), dimension(3) :: size, position
+  type(region_t)        :: region
+  !-----------------------------------------------------------------------------
+  size = self%size/self%refine_ratio
+  position = self%position + ii*size/2d0
+  key(1:3) = nint((position-self%origin)*2d0/size)
+  key(4) = self%level + 1
+END FUNCTION subtask_hash_key
+
+!===============================================================================
+!> Get target and source index ranges necessary for linear interpolation from
+!> source to target meshes.  If guards is true, use the full target region.
+!> If all_src is true, use the full source region.
+!===============================================================================
+SUBROUTINE overlap (self, lt, ut, srce, ls, us, all_tgt, all_src, verbose)
+  class (patch_t)        :: self, srce
+  integer, dimension(3)  :: lt, ut, ls, us
+  logical, optional      :: all_tgt, all_src
+  integer, optional      :: verbose
+  !.............................................................................
+  class(mesh_t), pointer :: tm(:), sm(:)
+  real(8), dimension(3)  :: tl, tu, sl, su, fl, fu, sm_p
+  integer                :: verbose_l
+  integer, save          :: itimer=0
+  !-----------------------------------------------------------------------------
+  if (timer%detailed) &
+    call trace%begin ('patch_t%get_overlap', itimer=itimer)
+  if (present(verbose)) then
+    verbose_l = verbose
+  else
+    verbose_l = io%verbose
+  end if
+  !-----------------------------------------------------------------------------
+  ! Self is the assumed target, patch is the assumed source
+  !-----------------------------------------------------------------------------
+  tm => self%mesh
+  sm => srce%mesh
+  !if (srce%id==84 .and. self%id==53) then
+    !print*,'debug'
+  !end if
+  !-----------------------------------------------------------------------------
+  ! Compute target and source corners
+  !-----------------------------------------------------------------------------
+  if (present(all_tgt) .and. all_tgt) then
+    tl = tm%p - tm%s*0.5d0 - tm%ng*tm%d      ! tgt lower corner
+    tu = tm%p + tm%s*0.5d0 + tm%ng*tm%d      ! tgt upper corner
+  else
+    tl = tm%p - tm%s*0.5d0                   ! tgt lower corner
+    tu = tm%p + tm%s*0.5d0                   ! tgt upper corner
+  end if
+  sm_p = tm%p + self%distance_to (srce)      ! source position relative target
+  if (present(all_src) .and. all_src) then
+    sl = sm_p - sm%s*0.5d0 - sm%ng*sm%d      ! src lower corner
+    su = sm_p + sm%s*0.5d0 + sm%ng*sm%d      ! src upper corner
+  else
+    sl = sm_p - sm%s*0.5d0                   ! src lower corner
+    su = sm_p + sm%s*0.5d0                   ! src upper corner
+  end if
+  !.............................................................................
+  if (verbose_l > 2) then
+    write (stdlog,'(a,i6,2x,3i5,5(2x,3f8.3))') &
+      'patch_t%get_overlap: src mesh id,s,p,b=', &
+      sm(1)%id, sm%n, sm%s, sm%p, sm%b
+    write (stdlog,'(a,i6,2x,3i5,5(2x,3f8.3))') &
+      'patch_t%get_overlap; tgt mesh id,s,p,b=', &
+      tm(1)%id, tm%n, tm%s, tm%p, tm%b
+  end if
+  !-----------------------------------------------------------------------------
+  ! Floating point corners of the overlap region
+  !-----------------------------------------------------------------------------
+  fl = max(tl,sl)                               ! overlap lower corner
+  fu = min(tu,su)                               ! overlap upper corner
+  if (self%level < srce%level) then
+    !-------------------------------------------------------------------------
+    ! Restrict operation:  Use indices that are strictly inside intersection
+    !-------------------------------------------------------------------------
+    ls = index_only (sm, fl, roundup=.true.)   ! src lower index
+    us = index_only (sm, fu, rounddn=.true.)   ! src upper index
+    tl = myposition (sm, ls)                   ! position of ls
+    tu = myposition (sm, us)                   ! position of us
+    lt = index_only (tm, tl, roundup=.true.)   ! target lower corner
+    ut = index_only (tm, tu, rounddn=.true.)   ! target upper corner
+  else
+    !-------------------------------------------------------------------------
+    ! Prolongation operation: Use tgt-indices that are strictly inside, and
+    ! the correspondingly necessary source indices (which may fall outside
+    ! the common intersection).
+    !-------------------------------------------------------------------------
+    lt = index_only (tm, fl, roundup=.true.)   ! target lower corner
+    ut = index_only (tm, fu, rounddn=.true.)   ! target upper corner
+    tl = myposition (tm, lt)                   ! position of lt
+    tu = myposition (tm, ut)                   ! position of ut
+    ls = index_only (sm, fl, rounddn=.true.)   ! src lower index
+    us = index_only (sm, fu, roundup=.true.)   ! src upper index
+  end if
+  if (present(all_src) .and. all_src) then
+    ls = max(ls,sm%lb)                          ! inside source halo
+    us = min(us,sm%ub)                          ! inside source halo
+  else
+    ls = max(ls,sm%li)                          ! inside source interior
+    us = min(us,sm%ui)                          ! inside source interior
+  end if
+  !-----------------------------------------------------------------------------
+  ! This should be redundant
+  !-----------------------------------------------------------------------------
+  if (any(lt < tm%lb .or. ut > tm%ub)) then
+    call io%warning ('target limits outside range')
+  end if
+  lt = max(lt,tm%lb)                            ! inside target halo
+  ut = min(ut,tm%ub)                            ! inside target halo
+  !-----------------------------------------------------------------------------
+  ! Take care of collapsed dimensions
+  !-----------------------------------------------------------------------------
+  where (self%n == 1)
+    lt = min(lt,tm%ui)
+    ut = max(ut,tm%li)
+    ls = min(ls,sm%ui)
+    us = max(us,sm%li)
+  end where
+  !.............................................................................
+  if (timer%detailed) &
+    call trace%end (itimer)
+!===============================================================================
+contains
+  function index_only (m, p, roundup, rounddn) result(i)
+    class(mesh_t)    :: m(:)
+    real(8)          :: p(3)
+    logical, optional:: roundup, rounddn
+    integer          :: i(3)
+    !---------------------------------------------------------------------------
+    if      (present(roundup)) then
+      i = ceiling((p-m%p)/m%d + m%o)
+    else if (present(rounddn)) then
+      i =   floor((p-m%p)/m%d + m%o)
+    else
+      i =    nint((p-m%p)/m%d + m%o)
+    end if
+  end function
+  !-----------------------------------------------------------------------------
+  function myposition (m, i) result(p)
+    class(mesh_t) :: m(:)
+    real(8)       :: p(3)
+    integer       :: i(3)
+    !---------------------------------------------------------------------------
+    p = m%p + m%d*(i-m%o)
+  end function
+END SUBROUTINE overlap
+
+!===============================================================================
+!> Self is the target -- check if it's ROI overlaps with the source ROA
+!===============================================================================
+FUNCTION overlaps_region (self, source) RESULT (value)
+  class(patch_t) :: self
+  class(task_t)  :: source
+  logical        :: value
+  !.............................................................................
+  type(region_t) :: source_authority
+  real(8)        :: distance(3)
+  integer, save  :: itimer=0
+  !-----------------------------------------------------------------------------
+  if (timer%detailed) &
+    call trace%begin ('patch_t%overlaps_region', itimer=itimer)
+  select type (source)
+  class is (patch_t)
+    distance = self%distance_to (source)
+    source_authority%l = distance + source%authority%l
+    source_authority%u = distance + source%authority%u
+    value = self%interest%overlaps (source_authority)
+  class default
+    value = self%task_t%overlaps (source)
+  end select
+  if (timer%detailed) &
+    call trace%end (itimer)
+END FUNCTION overlaps_region
 
 END MODULE patch_mod

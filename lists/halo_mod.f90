@@ -246,11 +246,6 @@ SUBROUTINE make_coarse (self)
   coarse%iit = 1
   coarse%time = self%task%time
   coarse%t = coarse%time
-  if (face%verbose > 1) then
-    do i=1,3
-      call coarse%mesh(i)%print (stdlog)
-    end do
-  end if
   !---------------------------------------------------------------------------
   ! Run through the child nbor list and update the clone from the nbors;
   ! taking care to only use the nbors that are valid for the child, and also
