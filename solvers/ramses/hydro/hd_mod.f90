@@ -94,10 +94,10 @@ SUBROUTINE pre_init (self)
   type(index_t):: idx
   !-----------------------------------------------------------------------------
   call trace%begin('hd_mod%pre_init')
+  call self%extras_t%pre_init
   self%nv = 5
   self%nw = 1
   self%ng = 2
-  call self%extras_t%pre_init
   self%mhd = .false.
   self%kind = 'ramses_hd_patch'
   call self%idx%init (ienergy=5, mhd=self%mhd)
@@ -133,6 +133,7 @@ SUBROUTINE init (self)
   !.............................................................................
   call trace%begin ('hd_mod%init')
   call trace%print_id (id)
+  call self%extras_t%init
   !-----------------------------------------------------------------------------
   ! Set the staggering, unsigned and pervolume flags before calling the rest
   ! of the cascade if %init(), where %gpatch_t%init may need them, in IC calls
@@ -148,7 +149,6 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Initialize everything else
   !-----------------------------------------------------------------------------
-  call self%extras_t%init
   call trace%end ()
 END SUBROUTINE init
 

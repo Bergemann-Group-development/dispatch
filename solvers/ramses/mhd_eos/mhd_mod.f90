@@ -97,12 +97,12 @@ SUBROUTINE pre_init (self)
 !...............................................................................
   call trace%begin ('mhd_mod%pre_init')
   call trace%print_id (id)
+  call self%extras_t%pre_init
   self%nw = 2
   self%ng = 3
   self%nv = 8
-  call self%extras_t%pre_init
   self%kind = 'ramses_mhd_patch'
-  call self%idx%init (ienergy=5, mhd=self%mhd)
+  call self%idx%init (energy=5, mhd=self%mhd)
   if (do_temperature) then
     call self%idx%request_index (self%idx%tt, self%nv)
   end if
@@ -138,11 +138,7 @@ SUBROUTINE init (self)
   integer:: i, n(3)
 !...............................................................................
   call trace%begin('mhd_mod%init')
-  call self%patch_t%init()
-  if (minval(self%mesh%n) < 3) then
-    print *, self%mesh%n
-    call io%abort ('SOLVER=ramses/mhd needs at least 3 mesh points in any direction')
-  end if
+  call self%extras_t%init
   do i=1,3
     self%mesh(i)%h = 0d0
     self%mesh(i)%h(self%idx%bx+i-1) = -0.5
@@ -156,7 +152,6 @@ SUBROUTINE init (self)
   ! Initialize everything else, and do a sanity check
   !-----------------------------------------------------------------------------
   call non_ideal%init  
-  call self%extras_t%init
   call self%set_solver_vars
   n = self%mesh%gn
   allocate (self%pg  (n(1),n(2),n(3)))                           ! Pg aux slot

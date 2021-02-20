@@ -91,12 +91,12 @@ SUBROUTINE pre_init (self)
 !...............................................................................
   call trace%begin ('mhd_mod%pre_init')
   call trace%print_id (id)
+  call self%extras_t%pre_init
   self%nw = 1
   self%ng = 3
   self%nv = 8
-  call self%extras_t%pre_init
   self%kind = 'ramses_mhd_patch'
-  call self%idx%init (ienergy=5, mhd=self%mhd)
+  call self%idx%init (energy=5, mhd=self%mhd)
   if (do_temperature) then
     call self%idx%request_index (self%idx%tt, self%nv)
   end if
@@ -107,6 +107,10 @@ SUBROUTINE pre_init (self)
   if (first_time) then
     rewind (io%input)
     read (io%input, ramses_params, iostat=iostat)
+    if (iostat > 0) then
+      rewind (io%input)
+      read (io%input, ramses_params)
+    end if
     call io%namelist_warning ('ramses_params', iostat)
     if (eos%gamma == 1d0) isothermal = .true.
     if (isothermal)   eos%gamma = 1d0
@@ -130,6 +134,7 @@ SUBROUTINE init (self)
   integer:: i
   !.............................................................................
   call trace%begin('mhd_mod%init')
+  call self%extras_t%init
   !-----------------------------------------------------------------------------
   ! Set the staggering, unsigned and pervolume flags before calling the rest
   ! of the cascade if %init(), where %gpatch_t%init may need them, in IC calls
@@ -147,10 +152,6 @@ SUBROUTINE init (self)
   ! Initialize everything else, and do a sanity check
   !-----------------------------------------------------------------------------
   call non_ideal%init  
-  call self%extras_t%init
-  if (minval(self%mesh%n) < 3) then
-    call io%abort ('SOLVER=ramses/mhd needs at least 3 mesh points in any direction')
-  end if
   call trace%end()
 END SUBROUTINE init
 
