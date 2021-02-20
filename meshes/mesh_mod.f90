@@ -345,9 +345,9 @@ SUBROUTINE init_mesh (self, n, ng, s, p, llc_native)
   ! initialise mesh indices
   self%lb = 1
   self%li = self%lb + self%ng
-  self%lo = self%li - 1
+  self%lo = self%li - min(1,self%ng)
   self%ui = self%lo + self%n
-  self%uo = self%ui + 1
+  self%uo = self%ui + min(1,self%ng)
   self%ub = self%ui + self%ng
   self%gn = self%ub
   allocate (self%r(self%gn))
