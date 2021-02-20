@@ -497,10 +497,8 @@ SUBROUTINE pre_init (self)
 END SUBROUTINE pre_init
 
 !===============================================================================
-!> Mesh-related patch initialization.  Currently, this needs to be part of the
-!> %pre_init-chain of call, since the staggering information is needed early,
-!> but ideally this should be moved to the %init-chain, since it involves
-!> memory allocation.
+!> Mesh-related patch initialization.  Previously part of the %pre_init-chain 
+!> of calls, but now part of the %init-chain
 !===============================================================================
 SUBROUTINE mesh_init (self)
   class(patch_t):: self
@@ -650,7 +648,7 @@ SUBROUTINE init (self)
   end where
   !-----------------------------------------------------------------------------
   ! Measure levels in terms of the refinement factor -- make sure this doesn't 
-  ! come in conflict with levels set by e.g. rubiks_mod
+  ! come in conflict with levels set by other modules
   !-----------------------------------------------------------------------------
   call self%init_level
   if (io%verbose>2) then
@@ -664,10 +662,8 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Allocate memory, if not already associated
   !-----------------------------------------------------------------------------
-  do i=1,3
-    gn(i) = self%mesh(i)%gn
-  end do
   if (.not.self%mem_allocated) then
+    self%mem_allocated = .true.
     !---------------------------------------------------------------------------
     ! extras%pre_init could increases elf%mv = the actual number of memory slots 
     !---------------------------------------------------------------------------
@@ -677,6 +673,7 @@ SUBROUTINE init (self)
       write (stderr,'(a,i3)') '     Number of mem slots mv =', self%mv
     end if
     self%mv = max (self%mv, self%nv)
+    gn = self%mesh%gn
     allocate (self%mem    (gn(1), gn(2), gn(3), self%mv, self%nt, self%nw))
     allocate (self%u_phase(gn(1), gn(2), gn(3)))
     self%u_phase = 0.0
@@ -684,12 +681,11 @@ SUBROUTINE init (self)
     do i=1,self%nt
       call self%mem_lock(i)%init ('meml')
     end do
-    self%mem_allocated = .true.               ! mark
     call io%bits_mem (storage_size(self%mem), product(shape(self%mem)), 'mem')
     !---------------------------------------------------------------------------
-    ! The unsigned and pervoleme flags may also be modified by the solver.  They
+    ! The unsigned and pervolume flags may also be modified by the solver. They
     ! are allocated here, but need to be reallocated by solvers modifying nv.
-    ! Tracking the small memory use, in case deallocation is forgotten
+    ! Tracking even the small memory use, in case deallocation is forgotten.
     !---------------------------------------------------------------------------
     allocate (self%unsigned (self%nv))
     allocate (self%pervolume(self%nv))
@@ -784,6 +780,7 @@ SUBROUTINE dealloc (self)
 END SUBROUTINE dealloc
 
 !===============================================================================
+!> Assiting refine_t%make_child_patch()
 !===============================================================================
 SUBROUTINE clone_mem_accounting (self)
   class(patch_t):: self
@@ -797,35 +794,31 @@ END SUBROUTINE clone_mem_accounting
 
 !===============================================================================
 !> This function gives the physical position of an index triple (patch point)
-!> in absolute Cartesian coords.
+!> in absolute Cartesian coords.   Note that in some cases the periodic
+!> wrapping must, as here, be done on a point-by-point basis.
 !===============================================================================
 FUNCTION myposition (self, ii, iv, pp) RESULT(out)
   class(patch_t)      :: self
   integer, intent(in) :: ii(3)
   integer, optional   :: iv
   real, optional      :: pp(3)
+  real(8)             :: out(3)
   !.............................................................................
-  real(8)             :: out(3), cellpos(3), h(3)
-  !.............................................................................
+  real(8)             :: h(3)
+  !-----------------------------------------------------------------------------
   if (present(pp)) then
-    cellpos = self%position + (real(ii)-self%offset + pp)*self%ds
+    out = self%position + (real(ii)-self%offset + pp)*self%ds
   else
-    cellpos = self%position + (real(ii)-self%offset)*self%ds
+    out = self%position + (real(ii)-self%offset)*self%ds
   end if
   if (present(iv)) then
     h = self%index_stagger(iv)
-    cellpos = cellpos + h*self%mesh%d
+    out = out + h*self%mesh%d
   end if
+  !.............................................................................
   if (self%id==io%id_debug .and. io%verbose>1) &
     write(io%output,'(a,3i4,4(3x,3f10.2))') &
-      'mypos:',ii,self%position,self%offset,self%ds,cellpos
-  ! convert to Cartesian coords.
-  if (self%mesh_type == mesh_types%cylindrical) then
-    cellpos = CylindricalToCartesian(cellpos(1), cellpos(2), cellpos(3))
-  else if (self%mesh_type == mesh_types%spherical) then
-    cellpos = SphericalToCartesian(cellpos(1), cellpos(2), cellpos(3))
-  end if
-  out = cellpos ! absolute position
+      'mypos:',ii,self%position,self%offset,self%ds,out
 END FUNCTION myposition
 
 !===============================================================================
@@ -844,7 +837,6 @@ FUNCTION myposition_staggered (self, ii, idir, h) RESULT(out)
   else
     hlocal = 0.0
   end if
-
   cellpos = (real(ii-self%li,kind=8) + merge(0.5 + hlocal,0.0,self%n(idir)>1)) &
           * self%ds + self%llc_nat ! in patch coords.
   ! convert to Cartesian coords.
@@ -854,7 +846,6 @@ FUNCTION myposition_staggered (self, ii, idir, h) RESULT(out)
     cellpos = SphericalToCartesian(cellpos(1), cellpos(2), cellpos(3))
   end if
   out = cellpos(idir)  ! absolute position
-
 END FUNCTION myposition_staggered
 
 !===============================================================================
@@ -876,11 +867,9 @@ FUNCTION myfloatindex_scalar (self, cpos, idir, h) RESULT(out)
     ppCart = cpos - self%position ! Cart. coords to centre of patch's coord. system
     pp = CartesianToCylindrical(ppCart(1), ppCart(2), ppCart(3))
   end if
-
   intermezzo = (pp(idir) - self%llc_nat(idir)) / self%ds(idir) + self%li(idir) &
              - merge(0.5d0 + h,0.0d0,self%n(idir)>1)
   out = intermezzo
-
 END FUNCTION myfloatindex_scalar
 
 !===============================================================================
@@ -1095,6 +1084,7 @@ END SUBROUTINE make_periodic8
 !> Time extrapolate guard cell values, to allow using also guard zone values to
 !> get boundary conditions for higher level patches.  This is done before time
 !> slot rotation, so the slot that has just been updated is iit(nt).
+!> FIXME: Consider removal
 !===============================================================================
 SUBROUTINE extrapolate_guards (self)
   class(patch_t)        :: self
@@ -1205,7 +1195,7 @@ SUBROUTINE extrapolate_guards (self)
 END SUBROUTINE extrapolate_guards
 
 !===============================================================================
-!> Pack patch info into a buffer, for MPI communication
+!> Allocate a message structure, for communication
 !===============================================================================
 SUBROUTINE allocate_mesg (self)
   class(patch_t):: self
@@ -1220,9 +1210,9 @@ SUBROUTINE allocate_mesg (self)
   !-----------------------------------------------------------------------------
   ! Store the standard buffer size (not valid for swap requests!)
   !-----------------------------------------------------------------------------
-  n_buf = product(self%gn)      ! 4-bytes per element; `anonymous_copy` also uses 4-bytes.
+  n_buf = product(self%gn)      ! 4-bytes; `anonymous_copy` also uses 4-bytes.
   if (kind(self%mem)==8) &
-    n_buf = n_buf * 2           ! 8-bytes per element, but `anonymous_copy` uses 4-bytes!
+    n_buf = n_buf * 2           ! 8-bytes, but `anonymous_copy` uses 4-bytes!
   mesg%nbuf = n_header + self%nv*n_buf
   if (mpi_mesg%nbuf==0) then
     !$omp critical (nbuf_cr)
@@ -1247,6 +1237,7 @@ END SUBROUTINE allocate_mesg
 
 !===============================================================================
 !> Pack patch info into a buffer, for MPI communication
+!> FIXME: Consider replacing with mpi_buffer() calls
 !===============================================================================
 SUBROUTINE pack (self)
   class(patch_t):: self
@@ -1345,6 +1336,7 @@ END FUNCTION unpack_id
 !> will thus not be scheduled until both the meta-data and the time slot data
 !> are up-to-date.  This also reduces the chance of lock contention with respect
 !> to the new time slot.
+!> FIXME: Consider replacing with mpi_buffer() calls
 !===============================================================================
 SUBROUTINE unpack (self, mesg)
   class(patch_t):: self
@@ -1402,15 +1394,6 @@ SUBROUTINE unpack (self, mesg)
       'header_to_patch WARNING: nt non-positive', header%nt
     flush (io_unit%log)
   end if
-!.............................................................................
-!write (io_unit%log,'(f12.6,i4,2x,a,i6,2i3,2x,9i3)') &
-!  wallclock(), omp%thread, &
-!  'patch_t%header_to_patch: id,it,new,iit=', &
-!  self%id, self%it, self%new, self%iit
-!write (io_unit%log,'(f12.6,i4,2x,a,i6,i3,f10.6,2x,9f10.6)') &
-!  wallclock(), omp%thread, &
-!  'patch_t%header_to_patch: id,it,time,t=', &
-!  self%id, self%it, self%time, self%t
 !.............................................................................
                                                call self%lock%unset ('unpack')
   call self%clear (bits%busy)
@@ -1644,34 +1627,23 @@ SUBROUTINE courant_condition (self, detailed_timer)
     end if
     dtime = courant*dsmin/self%u_max*self%safety_factor
   endif
+  !-----------------------------------------------------------------------------
+  !> Prevent too rapid increase of time steps
+  !-----------------------------------------------------------------------------
+  if (self%nt > 1 .and. self%istep > 5) then
+    if (dtime < 0.5*self%dt(self%iit(self%nt-1)) .and. self%dt_fixed < 0.0) then
+      self%safety_factor = 0.5
+    end if
+    self%safety_factor = self%safety_factor**0.9
+    dtime = dtime*self%safety_factor
+  end if
   !$omp atomic write
   self%dtime = dtime
-  !if (self%nt > 1 .and. self%istep > 5) then
-  !  if (dtime < 0.5*self%dt(self%iit(self%nt-1)) .and. self%dt_fixed < 0.0) then
-  !    self%safety_factor = 0.5
-  !  end if
-  !  if (self%safety_factor < 0.6 .and. save_dbg) then
-  !    !$omp critical (fort88_cr)
-  !    if (self%safety_factor == 0.5) then
-  !      write (io_unit%dbg) self%id, self%gn, self%ipos
-  !      write (io_unit%dbg) self%t(self%nt-3), self%mem(:,:,:,:,self%iit(self%nt-3),1)
-  !      write (io_unit%dbg) self%id, self%gn, self%ipos
-  !      write (io_unit%dbg) self%t(self%nt-2), self%mem(:,:,:,:,self%iit(self%nt-2),1)
-  !    end if
-  !    write (io_unit%dbg) self%id, self%gn, self%ipos
-  !    write (io_unit%dbg) self%time, self%mem(:,:,:,:,self%it,1)
-  !    flush (io_unit%dbg)
-  !    if (io%verbose>2 .or. (self%istep>5)) &
-  !      write(io%output,'(a,i6,i3,f12.6,1p,3g11.2,0p,1x,3f12.6,1x,1p,7g12.3)') &
-  !        ' courant: ', self%id, self%it, &
-  !        self%time, dtime, courant, self%u_max, self%position, self%dt(self%iit)
-  !    !$omp end critical (fort88_cr)
-  !  end if
-  !  self%safety_factor = self%safety_factor**0.9
-  !  self%get_umax_location = (self%safety_factor < 0.9)
-  !end if
   !-----------------------------------------------------------------------------
-  ! Force the time step to give exactly sync_time if within reach
+  ! Force the time step to give exactly sync_time if within reach (active only
+  ! if/when self%sync_time is being updated).  Syncing to a common time makes
+  ! creates a point in time where all tasks are "ready to update".  This may
+  ! improve performance eg when the number of tasks per core is relatively low.
   !-----------------------------------------------------------------------------
   if (self%time < self%sync_time .and. self%time+self%dtime > self%sync_time) then
     self%dtime = self%sync_time - self%time
@@ -1727,6 +1699,7 @@ END SUBROUTINE nbor_courant_conditions
 !===============================================================================
 !> Find the self index ranges that correspond to the overlap region, for
 !> self with respect to source.
+!> FIXME: Consider replacing by region_t operations
 !===============================================================================
 SUBROUTINE overlap_range (self, source, l, u)
   class(patch_t)          :: self, source
@@ -1753,6 +1726,8 @@ SUBROUTINE overlap_range (self, source, l, u)
   call trace%end()
 END SUBROUTINE overlap_range
 
+!===============================================================================
+!> Overloaded sum over internal cells only
 !===============================================================================
 FUNCTION fsum4 (self, f) RESULT (out)
   class(patch_t):: self
@@ -1791,6 +1766,8 @@ FUNCTION fsum8 (self, f) RESULT (out)
 END FUNCTION fsum8
 
 !===============================================================================
+!> Overloaded average over internal cells only
+!===============================================================================
 FUNCTION faver4 (self, f) RESULT (out)
   class(patch_t):: self
   real:: out
@@ -1818,6 +1795,8 @@ FUNCTION faveri (self, iv) RESULT (out)
       / product(u-l+1)
 END FUNCTION faveri
 
+!===============================================================================
+!> Overloaded min/max over internal cells only
 !===============================================================================
 FUNCTION fminvali (self, iv) RESULT (fminval)
   class(patch_t):: self
@@ -2280,12 +2259,10 @@ FUNCTION beyond_patch_edge (self, idir, position) result (outside)
   logical :: outside
   real(8) :: edge, curvpos(3)
   !.............................................................................
-
   if (self%n(idir) == 1) then
     outside = .false.
     return
   endif
-
   select case (self%mesh_type)
   case (1) ! Cartesian
     edge = 0.5 * self%gsize(idir)
@@ -2737,10 +2714,6 @@ SUBROUTINE interpolate (self, target, ii, iv, jt, pt)
       p = max(0.0,min(1.0,p))
     end if
     q = 1.0-p
-    !if (io%verbose > 1) &
-    !  write(io_unit%log,'(a,2i6,2x,3i4,2x,3f7.3)') &
-    !    'interpolate: target, source, j, p =', target%id, self%id, j, p
-    !call trace%begin ('patch_t%interpolate', itimer=itimer)
     if (self%unsigned(iv)) then
       if (pt(2) == 0.0) then
         target%mem(ii(1),ii(2),ii(3),iv,target%it,1) = exp( &
@@ -2855,7 +2828,7 @@ SUBROUTINE interpolate_specific (self, target, ii, iv, jt, pt)
                      (   p(2))*((1.0-p(1))*tmp(1,2,2,2)    + &
                                 (    p(1))*tmp(2,2,2,2))))
   !-----------------------------------------------------------------------------
-  ! Multiply by target denssity
+  ! Multiply by target density
   !-----------------------------------------------------------------------------
   target%mem(ii(1),ii(2),ii(3),iv,target%it,1) = &
     target%mem(ii(1),ii(2),ii(3),iv,target%it,1) * &
