@@ -21,7 +21,7 @@ CONTAINS
 !===============================================================================
 SUBROUTINE init (self, target)
   class(boundary_t):: self
-  class(task_t), pointer:: target, source
+  class(task_t), pointer:: target
   !.............................................................................
   integer:: iostat
   namelist /boundary_params/ verbose
@@ -43,8 +43,9 @@ END SUBROUTINE init
 !===============================================================================
 !> Update the guard zones covered by this data type 
 !===============================================================================
-SUBROUTINE update (self)
+SUBROUTINE update (self, all)
   class(boundary_t):: self
+  logical, optional:: all
   !-----------------------------------------------------------------------------
 END SUBROUTINE update
 
