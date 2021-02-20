@@ -16,8 +16,13 @@
 /
 
 ! --- XY plane --- case 2
-&cartesian_params  size=1,1,0.125  dims=1,1,1 mpi_dims=2,2,1 origin=-0.5,-0.5,0 periodic = t,t,t /
-&patch_params      n=256,256,1 do_check_nan=t grace=0.01 no_mans_land=t
+!&cartesian_params  size=1,1,0.125  dims=1,1,1 mpi_dims=2,2,1 origin=-0.5,-0.5,0 periodic = t,t,t /
+!&patch_params      n=256,256,1 do_check_nan=t grace=0.01 no_mans_land=t
+/
+
+! --- XY plane --- case 2a
+&cartesian_params  size=1,1,0.125 dims=8,8,1 mpi_dims=2,2,1 origin=-0.5,-0.5,0 periodic = t,t,t /
+&patch_params      n=32,32,1 do_check_nan=t grace=0.01 no_mans_land=t
 /
 
 ! --- XZ plane --- case 3

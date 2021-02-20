@@ -4,6 +4,7 @@
 MODULE stagger_mod
   USE io_mod
   USE trace_mod
+  USE omp_mod
   implicit none
   public
   integer, private:: verbose=0
@@ -1377,7 +1378,7 @@ SUBROUTINE stagger_test
     ok = ok .and. (maxval(abs(b(i,:,:)-d)) < eps)
   end do
   allok = allok .and. ok
-  if (.not.ok) print *,'ddxdn1:', ok
+  if (.not.ok) write (stderr,*) 'ddxdn1:', ok
   b = ddxup1(ds,a)
   ok = .true.
   do i=3,n(1)-3
@@ -1386,7 +1387,7 @@ SUBROUTINE stagger_test
     ok = ok .and. (maxval(abs(b(i,:,:)-d)) < eps)
   end do
   allok = allok .and. ok
-  if (.not.ok) print *,'ddxup1:', ok
+  if (.not.ok) write (stderr,*) 'ddxup1:', ok
   !-----------------------------------------------------------------------------
   ! y-operators
   !-----------------------------------------------------------------------------
@@ -1402,7 +1403,7 @@ SUBROUTINE stagger_test
     ok = ok .and. (maxval(abs(b(:,i,:)-d)) < eps)
   end do
   allok = allok .and. ok
-  if (.not.ok) print *,'ddydn1:', ok
+  if (.not.ok) write (stderr,*) 'ddydn1:', ok
   b = ddyup1(ds,a)
   ok = .true.
   do i=3,n(2)-3
@@ -1411,7 +1412,7 @@ SUBROUTINE stagger_test
     ok = ok .and. (maxval(abs(b(:,i,:)-d)) < eps)
   end do
   allok = allok .and. ok
-  if (.not.ok) print *,'ddyup1:', ok
+  if (.not.ok) write (stderr,*) 'ddyup1:', ok
   !-----------------------------------------------------------------------------
   ! z-operators
   !-----------------------------------------------------------------------------
@@ -1427,7 +1428,7 @@ SUBROUTINE stagger_test
     ok = ok .and. (maxval(abs(b(:,:,i)-d)) < eps)
   end do
   allok = allok .and. ok
-  if (.not.ok) print *,'ddzdn1:', ok
+  if (.not.ok) write (stderr,*) 'ddzdn1:', ok
   b = ddzup1(ds,a)
   ok = .true.
   do i=3,n(3)-3
@@ -1436,7 +1437,7 @@ SUBROUTINE stagger_test
     ok = ok .and. (maxval(abs(b(:,:,i)-d)) < eps)
   end do
   allok = allok .and. ok
-  if (.not.ok) print *,'ddzup1:', ok
+  if (.not.ok) write (stderr,*) 'ddzup1:', ok
   !-----------------------------------------------------------------------------
   ! x-operators
   !-----------------------------------------------------------------------------
@@ -1452,7 +1453,7 @@ SUBROUTINE stagger_test
     ok = ok .and. (maxval(abs(b(i,:,:)-d)) < eps)
   end do
   allok = allok .and. ok
-  if (.not.ok) print *,'xdn1:', ok
+  if (.not.ok) write (stderr,*) 'xdn1:', ok
   b = xup1(a)
   ok = .true.
   do i=3,n(1)-3
@@ -1461,7 +1462,7 @@ SUBROUTINE stagger_test
     ok = ok .and. (maxval(abs(b(i,:,:)-d)) < eps)
   end do
   allok = allok .and. ok
-  if (.not.ok) print *,'xup1:', ok
+  if (.not.ok) write (stderr,*) 'xup1:', ok
   !-----------------------------------------------------------------------------
   ! y-operators
   !-----------------------------------------------------------------------------
@@ -1477,7 +1478,7 @@ SUBROUTINE stagger_test
     ok = ok .and. (maxval(abs(b(:,i,:)-d)) < eps)
   end do
   allok = allok .and. ok
-  if (.not.ok) print *,'ydn1:', ok
+  if (.not.ok) write (stderr,*) 'ydn1:', ok
   b = yup1(a)
   ok = .true.
   do i=3,n(2)-3
@@ -1486,7 +1487,7 @@ SUBROUTINE stagger_test
     ok = ok .and. (maxval(abs(b(:,i,:)-d)) < eps)
   end do
   allok = allok .and. ok
-  if (.not.ok) print *,'yup1:', ok
+  if (.not.ok) write (stderr,*) 'yup1:', ok
   !-----------------------------------------------------------------------------
   ! z-operators
   !-----------------------------------------------------------------------------
@@ -1502,7 +1503,7 @@ SUBROUTINE stagger_test
     ok = ok .and. (maxval(abs(b(:,:,i)-d)) < eps)
   end do
   allok = allok .and. ok
-  if (.not.ok) print *,'zdn1:', ok
+  if (.not.ok) write (stderr,*) 'zdn1:', ok
   b = zup1(a)
   ok = .true.
   do i=3,n(3)-3
@@ -1511,7 +1512,7 @@ SUBROUTINE stagger_test
     ok = ok .and. (maxval(abs(b(:,:,i)-d)) < eps)
   end do
   allok = allok .and. ok
-  if (.not.ok) print *,'zup1:', ok
+  if (.not.ok) write (stderr,*) 'zup1:', ok
   !-----------------------------------------------------------------------------
   ! x-operators
   !-----------------------------------------------------------------------------
@@ -1527,7 +1528,7 @@ SUBROUTINE stagger_test
     ok = ok .and. (maxval(abs(b(i,:,:)-d)) < eps)
   end do
   allok = allok .and. ok
-  if (.not.ok) print *,'xdn:', ok
+  if (.not.ok) write (stderr,*) 'xdn:', ok
   b = xup(a)
   ok = .true.
   do i=3,n(1)-3
@@ -1536,7 +1537,7 @@ SUBROUTINE stagger_test
     ok = ok .and. (maxval(abs(b(i,:,:)-d)) < eps)
   end do
   allok = allok .and. ok
-  if (.not.ok) print *,'xup:', ok
+  if (.not.ok) write (stderr,*) 'xup:', ok
   !-----------------------------------------------------------------------------
   ! y-operators
   !-----------------------------------------------------------------------------
@@ -1552,7 +1553,7 @@ SUBROUTINE stagger_test
     ok = ok .and. (maxval(abs(b(:,i,:)-d)) < eps)
   end do
   allok = allok .and. ok
-  if (.not.ok) print *,'ydn:', ok
+  if (.not.ok) write (stderr,*) 'ydn:', ok
   b = yup(a)
   ok = .true.
   do i=3,n(2)-3
@@ -1561,7 +1562,7 @@ SUBROUTINE stagger_test
     ok = ok .and. (maxval(abs(b(:,i,:)-d)) < eps)
   end do
   allok = allok .and. ok
-  if (.not.ok) print *,'yup:', ok
+  if (.not.ok) write (stderr,*) 'yup:', ok
   !-----------------------------------------------------------------------------
   ! z-operators
   !-----------------------------------------------------------------------------
@@ -1577,7 +1578,7 @@ SUBROUTINE stagger_test
     ok = ok .and. (maxval(abs(b(:,:,i)-d)) < eps)
   end do
   allok = allok .and. ok
-  if (.not.ok) print *,'zdn:', ok
+  if (.not.ok) write (stderr,*) 'zdn:', ok
   b = zup(a)
   ok = .true.
   do i=3,n(3)-3
@@ -1586,7 +1587,7 @@ SUBROUTINE stagger_test
     ok = ok .and. (maxval(abs(b(:,:,i)-d)) < eps)
   end do
   allok = allok .and. ok
-  if (.not.ok) print *,'zup:', ok
+  if (.not.ok) write (stderr,*) 'zup:', ok
   !-----------------------------------------------------------------------------
   ! x-operators
   !-----------------------------------------------------------------------------
@@ -1602,7 +1603,7 @@ SUBROUTINE stagger_test
     ok = ok .and. (maxval(abs(b(i,:,:)-d)) < eps)
   end do
   allok = allok .and. ok
-  if (.not.ok) print *,'ddxdn:', ok
+  if (.not.ok) write (stderr,*) 'ddxdn:', ok
   b = ddxup(ds,a)
   ok = .true.
   do i=3,n(1)-3
@@ -1611,7 +1612,7 @@ SUBROUTINE stagger_test
     ok = ok .and. (maxval(abs(b(i,:,:)-d)) < eps)
   end do
   allok = allok .and. ok
-  if (.not.ok) print *,'ddxup:', ok
+  if (.not.ok) write (stderr,*) 'ddxup:', ok
   !-----------------------------------------------------------------------------
   ! y-operators
   !-----------------------------------------------------------------------------
@@ -1627,7 +1628,7 @@ SUBROUTINE stagger_test
     ok = ok .and. (maxval(abs(b(:,i,:)-d)) < eps)
   end do
   allok = allok .and. ok
-  if (.not.ok) print *,'ddydn:', ok
+  if (.not.ok) write (stderr,*) 'ddydn:', ok
   b = ddyup(ds,a)
   ok = .true.
   do i=3,n(2)-3
@@ -1636,7 +1637,7 @@ SUBROUTINE stagger_test
     ok = ok .and. (maxval(abs(b(:,i,:)-d)) < eps)
   end do
   allok = allok .and. ok
-  if (.not.ok) print *,'ddyup:', ok
+  if (.not.ok) write (stderr,*) 'ddyup:', ok
   !-----------------------------------------------------------------------------
   ! z-operators
   !-----------------------------------------------------------------------------
@@ -1652,7 +1653,7 @@ SUBROUTINE stagger_test
     ok = ok .and. (maxval(abs(b(:,:,i)-d)) < eps)
   end do
   allok = allok .and. ok
-  if (.not.ok) print *,'ddzdn:', ok
+  if (.not.ok) write (stderr,*) 'ddzdn:', ok
   b = ddzup(ds,a)
   ok = .true.
   do i=3,n(3)-3
@@ -1661,15 +1662,17 @@ SUBROUTINE stagger_test
     ok = ok .and. (maxval(abs(b(:,:,i)-d)) < eps)
   end do
   allok = allok .and. ok
-  if (.not.ok) print *,'ddzup:', ok
-  print *,io%hl
-  if (allok) then
-    print *,'6th/5th order stagger operator test passed'
-    print *,io%hl
-  else
-    print *,'6th/5th order stagger operator test failed!'
-    print *,io%hl
-    call mpi%abort('stagger_test')
+  if (.not.ok) write (stderr,*) 'ddzup:', ok
+  write (stderr,*) io%hl
+  if (omp%master) then
+    if (allok) then
+      write (stdout,*) '6th/5th order stagger operator test passed'
+      write (stdout,*) io%hl
+    else
+      write (stdout,*) '6th/5th order stagger operator test failed!'
+      write (stdout,*)
+      call mpi%abort('stagger_test')
+    end if
   end if
   !-----------------------------------------------------------------------------
   deallocate (a, b)
