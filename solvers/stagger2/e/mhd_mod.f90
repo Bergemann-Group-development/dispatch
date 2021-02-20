@@ -30,7 +30,6 @@ MODULE mhd_mod
   USE timestep_mod
   USE eos_mod
   USE non_ideal_mod
-  USE initial_mod
   USE divb_clean_mod
   USE task_mod
   USE timer_mod
@@ -79,30 +78,16 @@ SUBROUTINE pre_init (self)
   integer:: i, iv, iostat
   real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], csound=1.0, cdtd=0.5, courant=0.2
   logical, save:: first_time=.true.
-  logical, save:: mhd=.false.
+  logical, save:: mhd=.true.
   namelist /stagger_params/ nu, courant, csound, cdtd, hardwire, &
     do_smooth, unsigned, do_maxwell, do_temperature, verbose, divb_cleaner, &
-    do_test
+    do_test, mhd
   !----------------------------------------------------------------------------
   call trace%begin ('mhd_t%pre_init')
-  !-----------------------------------------------------------------------------
-  ! Read IC parameters, which determine if this is HD or MHD.  The IC init is
-  ! called again, from extras_t%init, when gamma is known and can be passed on.
-  !-----------------------------------------------------------------------------
-  call self%initial%init (self%kind, eos%gamma)
-  self%mhd = self%initial%mhd
-  if (self%mhd) then
-    self%kind = 'stagger2e_mhd_patch'
-    self%nv = 8
-  else
-    self%kind = 'stagger2e_hd_patch'
-    self%nv = 5
-  end if
-  self%nw = 2
+  call self%extras_t%pre_init
   !-----------------------------------------------------------------------------
   ! Now pass on these wishes to the next layers, which may modify them
   !-----------------------------------------------------------------------------
-  call self%extras_t%pre_init
   call io%lock%set ('mhd_t%pre_init')
   if (first_time) then
     first_time = .false.
@@ -117,7 +102,18 @@ SUBROUTINE pre_init (self)
     if (timestep%time_order <= 0) call mpi%abort("The Stagger solvers require `time_order` > 0. Abort!")
   end if
   call io%lock%unset ('mhd_t%pre_init')
+  !-----------------------------------------------------------------------------
+  ! Note that the experiment must set self%mhd, possibly depending on IC
+  !-----------------------------------------------------------------------------
   self%mhd = mhd
+  if (self%mhd) then
+    self%kind = 'stagger2e_mhd_patch'
+    self%nv = 8
+  else
+    self%kind = 'stagger2e_hd_patch'
+    self%nv = 5
+  end if
+  self%nw = 2
   self%nu = nu
   self%csound = csound
   self%courant = courant
@@ -129,11 +125,9 @@ SUBROUTINE pre_init (self)
   else
     self%ng = 2
   end if
-  call self%idx%init (ienergy=5, mhd=self%mhd)
-  !-----------------------------------------------------------------------------
-  ! Call extras pre-init
-  !-----------------------------------------------------------------------------
-  call self%extras_t%pre_init
+  call self%idx%init (energy=5, mhd=self%mhd)
+  where (self%n<2) self%ng=0
+  self%type = 'mhd_t'
   call trace%end()
 END SUBROUTINE pre_init
 
@@ -144,8 +138,14 @@ END SUBROUTINE pre_init
 SUBROUTINE init (self)
   class(mhd_t):: self
   integer :: i
-  where (self%n<2) self%ng=0
-  call self%patch_t%init()
+  !-----------------------------------------------------------------------------
+  call trace%begin('mhd_t%init')
+  !-----------------------------------------------------------------------------
+  ! Allocate memory and mesh, etc
+  !-----------------------------------------------------------------------------
+  call io%assert (self%nw == 2, &
+    'mhd_t%pde: memory slot for time derivatives missing')
+  call self%extras_t%init
   !-----------------------------------------------------------------------------
   ! Set the staggering, unsigned and pervolume flags before calling the rest
   ! of the cascade if %init(), where %gpatch_t%init may need them, in IC calls
@@ -167,7 +167,6 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Initialize everything else, and do a sanity check
   !-----------------------------------------------------------------------------
-  call self%extras_t%init
   self%type = 'mhd_t'
   call non_ideal%init
   call divb%init
@@ -214,7 +213,7 @@ SUBROUTINE test (self)
   allocate (tmp)
   tmp%nv = self%nv
   tmp%mhd = self%mhd
-  call tmp%idx%init (ienergy=5, mhd=tmp%mhd)
+  call tmp%idx%init (energy=5, mhd=tmp%mhd)
   call tmp%patch_t%init
   n0 = 2*(tmp%ncell/2)
   if (any(tmp%n /= n0)) then
@@ -329,8 +328,6 @@ SUBROUTINE pde (self)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%pde',itimer=itimer)
-  call io%assert (self%nw == 2, &
-    'mhd_t%pde: memory slot for time derivatives missing')
   associate (i => self%idx)
   self%d    => self%mem(:,:,:,i%d      ,self%it,1)
   self%e    => self%mem(:,:,:,i%e      ,self%it,1)
