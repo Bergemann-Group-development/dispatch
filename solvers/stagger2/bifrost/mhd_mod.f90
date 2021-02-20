@@ -153,7 +153,7 @@ SUBROUTINE pre_init (self)
   call self%idx%init (energy=5, mhd=self%mhd)
   where (self%n<2) self%ng=0
   call trace%end()
-END SUBRO%UTINE pre_init
+END SUBROUTINE pre_init
 
 !===============================================================================
 !> Initialize what is required for the MHD solver.
