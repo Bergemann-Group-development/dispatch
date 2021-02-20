@@ -30,7 +30,6 @@ MODULE mhd_mod
   USE timestep_mod
   USE eos_mod
   USE non_ideal_mod
-  USE initial_mod
   USE divb_clean_mod
   USE task_mod
   USE timer_mod
@@ -77,31 +76,17 @@ SUBROUTINE pre_init (self)
   type(index_t):: idx
   integer:: i, iv, iostat
   real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], csound=1.0, cdtd=0.5, courant=0.2
+  logical, save:: mhd=.true.
   logical, save:: first_time=.true.
-  logical, save:: mhd=.false.
   namelist /stagger_params/ nu, courant, csound, cdtd, hardwire, &
-    do_smooth, unsigned, do_maxwell, do_temperature, verbose, do_test,mhd
+    do_smooth, unsigned, do_maxwell, do_temperature, verbose, do_test, mhd
   !----------------------------------------------------------------------------
   call trace%begin ('mhd_t%pre_init')
-  !-----------------------------------------------------------------------------
-  ! Read IC parameters, which determine if this is HD or MHD.  The IC init is
-  ! called again, from extras_t%init, when gamma is known and can be passed on.
-  !-----------------------------------------------------------------------------
-  call self%initial%init
-  self%mhd = self%initial%mhd
-  if (self%mhd) then
-    self%kind = 'stagger2_mhd_patch'
-    self%nv = 8
-  else
-    self%kind = 'stagger2_hd_patch'
-    self%nv = 5
-  end if
-  self%nw = 2
+  call self%extras_t%pre_init
   !-----------------------------------------------------------------------------
   ! Now pass on these wishes to the next layers, which may modify them
   !-----------------------------------------------------------------------------
-  call self%idx%init(isentropy=5, mhd=self%mhd)
-  call self%extras_t%pre_init
+  call self%idx%init(entropy=5, mhd=self%mhd)
   call io%lock%set ('mhd_t%pre_init')
   if (first_time) then
     first_time = .false.
@@ -125,16 +110,32 @@ SUBROUTINE pre_init (self)
     end if
   end if
   call io%lock%unset ('mhd_t%pre_init')
+  !-----------------------------------------------------------------------------
+  ! Note that the experiment must set self%mhd, possibly depending on IC
+  !-----------------------------------------------------------------------------
   self%mhd = mhd
+  if (self%mhd) then
+    self%kind = 'stagger2_mhd_patch'
+    self%nv = 8
+  else
+    self%kind = 'stagger2_hd_patch'
+    self%nv = 5
+  end if
+  self%nw = 2
   self%nu = nu
   self%csound = csound
   self%courant = courant
   self%cdtd = cdtd
-  self%ng   = 2
-  !-----------------------------------------------------------------------------
-  ! Read IC parameters, which determine if this is HD or MHD.  The IC init is
-  ! called again, from extras_t%init, when gamma is known and can be passed on.
-  !-----------------------------------------------------------------------------
+  if (stagger%order==6) then
+    self%ng = 5
+  else if (stagger%order==4) then
+    self%ng = 3
+  else
+    self%ng = 2
+  end if
+  where (self%n<2) self%ng=0
+  call self%idx%init (entropy=5, mhd=self%mhd)
+  self%type = 'mhd_t'
   call trace%end()
 END SUBROUTINE pre_init
 
@@ -146,14 +147,14 @@ SUBROUTINE init (self)
   class(mhd_t):: self
   integer:: i
   logical, save:: first_time=.true.
-  ! ----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   !-----------------------------------------------------------------------------
   ! Allocate memory and mesh, etc
   !-----------------------------------------------------------------------------
-  self%type = 'mhd_t'
-  where (self%n<2) self%ng=0
-  call self%patch_t%init
+  call io%assert (self%nw == 2, &
+    'mhd_t%pde: memory slot for time derivatives missing')
+  call self%extras_t%init
   do i=1,3
     self%mesh(i)%h(self%idx%px+i-1) = -0.5
     if (self%mhd) self%mesh(i)%h(self%idx%bx+i-1) = -0.5
@@ -165,7 +166,6 @@ SUBROUTINE init (self)
       print '("h:",8f5.2)', self%mesh(i)%h
     end do
   end if
-  call self%gpatch_t%init
   if (first_time.and.io%master) then
     call stagger_test
     first_time = .false.
@@ -173,7 +173,6 @@ SUBROUTINE init (self)
   ! ----------------------------------------------------------------------------
   ! init extras
   ! ----------------------------------------------------------------------------
-  call self%extras_t%init
   call trace%end()
 END SUBROUTINE init
 
@@ -191,7 +190,7 @@ SUBROUTINE test (self)
   allocate (tmp)
   tmp%nv = self%nv
   tmp%mhd = self%mhd
-  call tmp%idx%init (isentropy=5, mhd=tmp%mhd)
+  call tmp%idx%init (entropy=5, mhd=tmp%mhd)
   call tmp%patch_t%init
   n0 = 2*(tmp%ncell/2)
   if (any(tmp%n /= n0)) then
