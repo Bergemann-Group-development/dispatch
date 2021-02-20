@@ -100,7 +100,7 @@ SUBROUTINE pre_init (self)
   self%ng = 2
   self%mhd = .false.
   self%kind = 'ramses_hd_patch'
-  call self%idx%init (ienergy=5, mhd=self%mhd)
+  call self%idx%init (energy=5, mhd=self%mhd)
   !-----------------------------------------------------------------------------
   ! Ramses specific parameters
   !-----------------------------------------------------------------------------

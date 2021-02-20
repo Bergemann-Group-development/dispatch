@@ -115,7 +115,11 @@ SUBROUTINE initial_conditions (patch)
   end select
 
   speedsq = vx0(1)**2 + vy0(1)**2 + vz0(1)**2
-  bsq = bx0(1)**2 + by0(1)**2 + bz0(1)**2
+  if (patch%idx%bx > 0) then
+    bsq = bx0(1)**2 + by0(1)**2 + bz0(1)**2
+  else
+    bsq = 0.0
+  end if
   ! set up atmosphere/ambient.
   do i3=m3%lb,m3%ub
     z = m3%centre_nat + patch%mesh(3)%r(i3)
@@ -128,9 +132,11 @@ SUBROUTINE initial_conditions (patch)
         f(i1,i2,i3,patch%idx%px) = d0(1) * vx0(1)
         f(i1,i2,i3,patch%idx%py) = d0(1) * vy0(1)
         f(i1,i2,i3,patch%idx%pz) = d0(1) * vz0(1)
-        f(i1,i2,i3,patch%idx%bx) = bx0(1)
-        f(i1,i2,i3,patch%idx%by) = by0(1)
-        f(i1,i2,i3,patch%idx%bz) = bz0(1)
+        if (patch%idx%bx > 0) then
+          f(i1,i2,i3,patch%idx%bx) = bx0(1)
+          f(i1,i2,i3,patch%idx%by) = by0(1)
+          f(i1,i2,i3,patch%idx%bz) = bz0(1)
+        end if
 
         if (patch%idx%s>0) then
           f(i1,i2,i3,patch%idx%s)  = log(p0(1)*d0(1)**-eos%gamma) * d0(1) / (eos%gamma - 1.0)
@@ -151,7 +157,11 @@ SUBROUTINE initial_conditions (patch)
 
   ! set up central region.
   speedsq = vx0(2)**2 + vy0(2)**2 + vz0(2)**2
-  bsq = bx0(2)**2 + by0(2)**2 + bz0(2)**2
+  if (patch%idx%bx > 0) then
+    bsq = bx0(2)**2 + by0(2)**2 + bz0(2)**2
+  else
+    bsq = 0.0
+  end if
   do i3=m3%lb,m3%ub
     z = m3%centre_nat + patch%mesh(3)%r(i3)
     do i2=m2%lb,m2%ub
@@ -173,9 +183,11 @@ SUBROUTINE initial_conditions (patch)
           f(i1,i2,i3,patch%idx%px) = d0(2) * vx0(2)
           f(i1,i2,i3,patch%idx%py) = d0(2) * vy0(2)
           f(i1,i2,i3,patch%idx%pz) = d0(2) * vz0(2)
-          f(i1,i2,i3,patch%idx%bx) = bx0(2)
-          f(i1,i2,i3,patch%idx%by) = by0(2)
-          f(i1,i2,i3,patch%idx%bz) = bz0(2)
+          if (patch%idx%bx > 0) then
+            f(i1,i2,i3,patch%idx%bx) = bx0(2)
+            f(i1,i2,i3,patch%idx%by) = by0(2)
+            f(i1,i2,i3,patch%idx%bz) = bz0(2)
+          end if
 
           if (patch%idx%s>0) then
             f(i1,i2,i3,patch%idx%s)  = log(p0(2)*d0(2)**-eos%gamma) * d0(2) / (eos%gamma - 1.0)
