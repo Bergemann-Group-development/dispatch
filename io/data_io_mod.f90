@@ -1054,8 +1054,10 @@ SUBROUTINE output_nml_v4 (patch, append, unit, first_time)
   refine_ratio = patch%refine_ratio
   mpi_dims     = mpi_coords%dims
   if (present(unit)) then
-    if (first_time) then
-      write (unit, snapshot_nml)
+    if (present(first_time)) then
+      if (first_time) then
+        write (unit, snapshot_nml)
+      end if
     end if
     write (unit, patch_nml)
   else

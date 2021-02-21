@@ -10,6 +10,7 @@ MODULE restart_mod
   USE patch_mod
   USE experiment_mod
   USE link_mod
+  USE halo_mod
   USE task_list_mod
   USE read_bifrost_mod
   USE read_stagger_mod
@@ -24,6 +25,7 @@ MODULE restart_mod
   character(120) :: from_dir    = 'data/'
   character(16)  :: io_format   = 'amr'
   integer        :: snapshot    = -1
+  integer        :: verbose     = 0
   integer        :: nml_version = 4
   type(restart_t), public:: restart
 CONTAINS
@@ -36,7 +38,7 @@ SUBROUTINE init (self, task_list)
   type(task_list_t),  pointer :: task_list
   integer                     :: iostat
   character(120)              :: filename
-  namelist /restart_params/ from_dir, snapshot, io_format
+  namelist /restart_params/ from_dir, snapshot, io_format, verbose
   !.............................................................................
   call trace%begin ('restart_t%init')
   !-----------------------------------------------------------------------------
@@ -44,11 +46,11 @@ SUBROUTINE init (self, task_list)
   !-----------------------------------------------------------------------------
   rewind (io%input)
   read (io%input, restart_params, iostat=iostat)
-  call io%namelist_warning ('restart_params', iostat)
   if (iostat > 0) then
     rewind (io%input)
     read (io%input, restart_params)
   end if
+  call io%namelist_warning ('restart_params', iostat)
   write (io%namelist, restart_params)
   !-----------------------------------------------------------------------------
   ! Only allocate a task list if actuall restarting (snapshot non-negative)
@@ -59,6 +61,7 @@ SUBROUTINE init (self, task_list)
     ! Select method
     !-----------------------------------------------------------------------------
     allocate (task_list)
+    call task_list%init
     select case (io_format)
     case ('amr')
       call self%read_amr (task_list)
@@ -142,8 +145,8 @@ END SUBROUTINE read_amr
 !> add them to the task list
 !===============================================================================
 SUBROUTINE read_legacy (self, task_list)
-  class(restart_t)        :: self
-  type(task_list_t),  pointer :: task_list
+  class(restart_t)             :: self
+  type(task_list_t),   pointer :: task_list
   !.............................................................................
   class(experiment_t), pointer :: experiment
   class(patch_t),      pointer :: patch
@@ -152,7 +155,8 @@ SUBROUTINE read_legacy (self, task_list)
   character(120)               :: filename
   character(16)                :: type
   integer(8)                   :: offset
-  integer                      :: unit, iostat, recl, id, rank
+  integer                      :: unit, iostat, recl, id, rank, n, l(3), u(3)
+  real(var_k)        , pointer :: d(:,:,:), p(:,:,:), mem(:,:,:,:)
   namelist /restart_params/ from_dir, snapshot
   namelist /amr_nml/ id, type, rank, offset, nml_version
   !-----------------------------------------------------------------------------
@@ -172,6 +176,7 @@ SUBROUTINE read_legacy (self, task_list)
     !---------------------------------------------------------------------------
     ! Loop until end-of-file on the rank file
     !---------------------------------------------------------------------------
+    n = 0
     do while (.true.)
       allocate (experiment)
       call experiment%pre_init
@@ -181,10 +186,15 @@ SUBROUTINE read_legacy (self, task_list)
         call experiment%dealloc
         exit
       end if
+      n = n+1
       task => experiment
       call task_list%append (task)
     end do
     close (unit)
+    if (verbose > 0) then
+      write (stdout,'(a,i4,a)') 'legacy metadata for',n,' snapshot'
+      flush (stdout)
+    end if
     !---------------------------------------------------------------------------
     ! Read binary data for all tasks in the task list
     !---------------------------------------------------------------------------
@@ -194,16 +204,27 @@ SUBROUTINE read_legacy (self, task_list)
       select type (task)
       class is (patch_t)
         call task%init
+        task%iout     = task%iout + 1
+        task%out_next = task%time + io%out_time
+        l = merge (task%mesh%lb, task%mesh%li, io%guard_zones)
+        u = merge (task%mesh%ub, task%mesh%ui, io%guard_zones)
         write (filename,'(a,i5.5,"/",i5.5,".dat")') &
           trim(from_dir), snapshot, task%id
-        recl=(storage_size(1.0_var_k)/8)*product(shape(task%mem(:,:,:,:,1,1)))
+
+        mem => task%mem(l(1):u(1),l(2):u(2),l(3):u(3),:,1,1)
+        recl=(storage_size(1.0_var_k)/8)*product(shape(mem))
         open (newunit=unit, file=filename, form='unformatted', status='old', &
           access='direct', recl=recl)
         !-----------------------------------------------------------------------
         ! Initialize the task, which allocates memory, and read binary data
         !-----------------------------------------------------------------------
-        read (unit, rec=1) task%mem(:,:,:,:,1,1)
+        read (unit, rec=1) mem
         close (unit)
+        if (verbose > 2) then
+          call task%stats ('restart')
+        else if (verbose > 1) then
+          call task%stats (task%mem(:,:,:,task%idx%d,1,1), 'restart')
+        end if
       end select
       link => link%next
     end do

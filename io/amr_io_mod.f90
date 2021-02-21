@@ -132,18 +132,22 @@ SUBROUTINE output (self, task, count)
       self%offset = 0
     end if
     !---------------------------------------------------------------------------
-    ! If the task time is at its output time, write out meta-data, and save
-    ! its output data in a message list, while reserving an offset slot
+    ! Write out meta-data, and save its output data in a message list, while
+    ! reserving an offset slot
     !---------------------------------------------------------------------------
-    if (task%time >= task%out_next) then
-      call self%output_metadata (task, unit)
-      call task%pack
-      call self%mesg_list%add (task%mesg)
-      task%mesg%offset = self%offset            ! FIXME: -> MPI
-      self%offset = self%offset + task%mesg%nbuf*4_8
-      self%size = self%size + task%mesg%nbuf
-      task%out_next = task%out_next + io%out_time
-    end if
+    call self%output_metadata (task, unit)
+    call task%pack
+    call self%mesg_list%add (task%mesg)
+    task%mesg%offset = self%offset            ! FIXME: -> MPI
+    self%offset = self%offset + task%mesg%nbuf*4_8
+    self%size = self%size + task%mesg%nbuf
+    !---------------------------------------------------------------------------
+    ! Remember in %self which snapshot to consolidate
+    !---------------------------------------------------------------------------
+    call io%lock%set ('amr_output')
+    if (self%iout < task%iout) &
+      self%iout = task%iout
+    call io%lock%unset ('amr_output')
     !---------------------------------------------------------------------------
     ! When all tasks on this rank are done, decrement the rank count
     !---------------------------------------------------------------------------

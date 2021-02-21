@@ -81,6 +81,12 @@ SUBROUTINE output (self, experiment_name)
     io%format = 2
   end if
   !-----------------------------------------------------------------------------
+  if (io%verbose > 1) then
+    call self%stats (self%mem(:,:,:,self%idx%d,self%it,1), 'legacy')
+  else if (io%verbose > 2) then
+    call self%stats ('legacy')
+  end if
+  !-----------------------------------------------------------------------------
   ! Write a binary file with the data cube.
   !-----------------------------------------------------------------------------
   if (self%id < 100000) then
