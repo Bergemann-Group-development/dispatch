@@ -43,7 +43,6 @@ SUBROUTINE init (self, task_list, label)
   type(task_list_t), optional, pointer:: task_list
   character(len=*), optional:: label
   !.............................................................................
-  class(list_t), pointer:: tlist
   class(link_t), pointer:: link, next
   class(experiment_t), pointer:: patch
   class(task_t), pointer:: task
@@ -131,8 +130,7 @@ SUBROUTINE init (self, task_list, label)
   !-----------------------------------------------------------------------------
   ! Begin on task list
   !-----------------------------------------------------------------------------
-  call self%task_list%init ('tlist')
-  tlist => self%task_list
+  call self%task_list%init ('cartesian')
   self%task_list%size = self%size
   self%task_list%dims = self%dims
   self%task_list%position = self%position
@@ -152,7 +150,8 @@ SUBROUTINE init (self, task_list, label)
     ! Allocate the patch, and let task_list_append allocate the task%link
     !---------------------------------------------------------------------------
     allocate (patch)
-    call self%task_list%append (patch)
+    task => patch
+    call self%task_list%prepare (task)
     ! --- patch 3D and 1D coordinates ---
     patch%ipos = [i,j,k]
     patch%rank = mpi_coords%coords_to_rank ([i,j,k]/patches_per_mpi)
@@ -168,10 +167,12 @@ SUBROUTINE init (self, task_list, label)
     patch%box = self%size
     patch%size = self%size / self%dims
     patch%position = ([i,j,k]+0.5d0)*patch%size + origin
-    if (any(abs(rank%distance (patch)) > 0.5*(rank%size + 1.5*rank%ds))) then
-      call self%task_list%remove (patch%link)
-      deallocate (patch)
-    else
+    !if (any(abs(rank%distance (patch)) > 0.5*(rank%size + 1.5*rank%ds))) then
+!write (stdlog,*) 'removing patch id', patch%id
+      !call self%task_list%remove (patch%link)
+      !deallocate (patch%link)
+      !deallocate (patch)
+    !else
       call patch%set (bits%virtual)
       patch%ds = patch%size*0.001
       patch%origin = origin
@@ -181,9 +182,9 @@ SUBROUTINE init (self, task_list, label)
       patch%periodic = periodic
       call patch%set(bits%static)
       if (all(self%dims==1)) call task%set(bits%root_grid)
-      ! -- initially append all tasks to the task list, to build nbor lists ------
-      call self%initial_refine(tlist, patch,patch%level,ip)
-    end if
+      ! -- initially append all tasks to the task list, to build nbor lists ----
+      call self%initial_refine(patch, patch%level, ip)
+    !end if
   end do
   end do
   end do
@@ -258,14 +259,14 @@ SUBROUTINE init (self, task_list, label)
   call trace%end ()
 END SUBROUTINE init
 
-recursive SUBROUTINE initial_refine(self,tlist, task,level_min, ip)
+recursive SUBROUTINE initial_refine(self, task,level_min, ip)
   class(cartesian_t):: self
-  class(list_t), pointer:: tlist
   class(experiment_t), pointer:: task
   integer:: level_min, ip
   ! ----------------------------------------------------------------------------
   class(link_t), pointer:: link
   class(experiment_t), pointer:: patch
+  class(task_t), pointer:: patch_task
   logical, save:: on = .false.
   real(8), save:: center(3)=0d0
   real(8), save:: extent(3)=0d0, ratio=2.0
@@ -312,7 +313,9 @@ recursive SUBROUTINE initial_refine(self,tlist, task,level_min, ip)
           !---------------------------------------------------------------------
           ! Create a refined patch here
           !---------------------------------------------------------------------
-          allocate (link, patch); link%task => patch; patch%link => link
+          allocate (patch)
+          patch_task => patch
+          call self%task_list%prepare (patch_task)
           ! --- patch 3D and 1D coordinates ---
           call patch%task_t%init_unique (same=.true.)
           patch%ipos = task%ipos
@@ -351,7 +354,7 @@ recursive SUBROUTINE initial_refine(self,tlist, task,level_min, ip)
             patch%parentid    = task%id
           end if
           !---------------------------------------------------------------------
-          call self%initial_refine(tlist, patch,level_min,ip)
+          call self%initial_refine (patch, level_min, ip)
         end do
       end do
     end do

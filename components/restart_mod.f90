@@ -10,7 +10,6 @@ MODULE restart_mod
   USE patch_mod
   USE experiment_mod
   USE link_mod
-  USE halo_mod
   USE task_list_mod
   USE read_bifrost_mod
   USE read_stagger_mod
