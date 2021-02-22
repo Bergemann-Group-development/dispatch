@@ -123,7 +123,7 @@ SUBROUTINE source_to_target (self, source, target, all_tgt, all_src, n_op, &
   integer                :: m(6), tid, sid
   integer, save          :: itimer=0
   !-----------------------------------------------------------------------------
-  !if (detailed_timer) &
+  if (detailed_timer) &
     call trace%begin ('guards_t%source_to_target', itimer=itimer)
   self%distance = source%distance (target)
   !.............................................................................
@@ -170,7 +170,7 @@ SUBROUTINE source_to_target (self, source, target, all_tgt, all_src, n_op, &
     end if
     !...........................................................................
   end select
-  !if (detailed_timer) &
+  if (detailed_timer) &
     call trace%end (itimer)
 END SUBROUTINE source_to_target
 

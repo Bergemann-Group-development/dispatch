@@ -36,6 +36,7 @@ MODULE halo_mod
   type, public, extends(link_t):: halo_t
     class(patch_t), pointer:: coarse => null()
     integer:: n_op(3)=0
+    logical:: first_time=.true.
   contains
     procedure:: init
     procedure:: update
@@ -106,8 +107,8 @@ SUBROUTINE update (self, all, only)
   logical, optional       :: all
   integer, optional       :: only
   !.............................................................................
-  class(task_t), pointer  :: target, source
-  class(patch_t), pointer :: coarse
+  class(task_t), pointer  :: target, source, task
+  class(patch_t), pointer :: coarse, patch
   class(mesh_t), pointer  :: mesh
   real(8)                 :: wc(2)
   integer                 :: i, m(6)
@@ -193,10 +194,25 @@ SUBROUTINE update (self, all, only)
     end if
   end if
   !-----------------------------------------------------------------------------
-  ! For now, overrule the guards_t%update with the legacy methods (FIXME)
+  ! With verbose>0, overrule the guards_t%update with the legacy methods (FIXME)
   !-----------------------------------------------------------------------------
-  !call self%task%dnload
-  call self%task%bndries
+  if (verbose > 0) then
+    if (self%first_time) then
+      self%first_time = .false.
+      task => self%task
+      select type (task)
+      class is (patch_t)
+      patch => task
+      end select
+      call patch%stats ('halo1')
+      call self%task%dump (1, ad_hoc=.true., it=self%task%it)
+      call self%link_t%update ()
+      call patch%stats ('halo2')
+      call self%task%dump (2, ad_hoc=.true., it=self%task%it)
+    end if
+  else
+    call self%task%bndries
+  end if
   call trace%end (itimer)
 END SUBROUTINE update
 

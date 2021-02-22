@@ -359,9 +359,8 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
     return
   end if
   !-----------------------------------------------------------------------------
-  ! Download nbor info -- this may be an experiment_t procedure, but if not,
-  !-- the call should be answered by a solver-specific procedure (which may or
-  ! may not choose to call the generic patch guard zone handler in tasks/).
+  ! Update the guard zones (or more generally get whatever information is
+  ! needed from neighbord or boundary conditions), by calling halo_t%update.
   ! Note that this needs to be done before the AMR refinement tests, for which
   ! guard zones may be needed
   !-----------------------------------------------------------------------------
