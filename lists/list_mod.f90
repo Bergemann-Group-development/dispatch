@@ -66,6 +66,7 @@ MODULE list_mod
   USE task_mod
   USE patch_mod
   USE link_mod
+  USE halo_mod
   USE timer_mod
   USE running_mean_mod
   implicit none
@@ -107,6 +108,7 @@ MODULE list_mod
     !procedure:: init_bdries
     procedure:: reset
     procedure:: append_task
+    procedure:: prepare
     procedure:: append_link
     generic:: append => append_task, append_link
     procedure:: prepend_link
@@ -223,6 +225,26 @@ SUBROUTINE reset (self)
 END SUBROUTINE reset
 
 !===============================================================================
+!> Allocate a new link, point to it, and back again
+!===============================================================================
+SUBROUTINE prepare (self, task)
+  class(list_t):: self
+  class(task_t), pointer:: task
+  !.............................................................................
+  class(link_t), pointer:: link
+  !-----------------------------------------------------------------------------
+  call trace%begin ('list_t%append_patch '//self%name)
+  allocate (halo_t:: link)
+  call link%init
+  link%task => task
+  select type (task)
+  class is (patch_t)
+    task%link => link
+  end select
+  call trace%end()
+END SUBROUTINE prepare
+
+!===============================================================================
 !> Allocate a new link and append to the list, optionally setting attributes
 !===============================================================================
 SUBROUTINE append_task (self, task, nbor, needed, needs_me)
@@ -290,7 +312,7 @@ SUBROUTINE append_link (self, link)
   nullify(link%next)
   if (associated(self%tail)) then
     link%prev => self%tail
-    link%prev%next => link
+    self%tail%next => link
     self%tail => link
   else
     self%head => link
