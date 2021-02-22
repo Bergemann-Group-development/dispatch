@@ -1340,10 +1340,11 @@ END FUNCTION hash_key
 !===============================================================================
 !> Stub
 !===============================================================================
-SUBROUTINE dump (self, tag, ad_hoc)
+SUBROUTINE dump (self, tag, ad_hoc, it)
   class(task_t):: self
   integer:: tag
   logical, optional:: ad_hoc
+  integer, optional:: it
   !-----------------------------------------------------------------------------
 END SUBROUTINE dump
 

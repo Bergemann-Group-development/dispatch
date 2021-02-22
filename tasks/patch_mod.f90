@@ -1609,10 +1609,9 @@ SUBROUTINE courant_condition (self, detailed_timer)
   logical, optional:: detailed_timer
   real(8):: dtime, ds(3), courant, dsmin
   integer:: i2
-  integer, save:: itimer=0
   logical, parameter:: save_dbg=.false.
   !.............................................................................
-  call trace%begin('patch_t%courant_condition', itimer=itimer)
+  call trace%begin('patch_t%courant_condition')
   if (io%verbose>1) &
     write (io_unit%log,*) self%id, ' courant: u_max, ds', self%u_max, minval(self%ds)
   ds(1) = self%ds(1)
@@ -1670,7 +1669,7 @@ SUBROUTINE courant_condition (self, detailed_timer)
   if (io%verbose> 3 .or. self%id == io%id_debug) &
     write(io%output,'(a,i7,f12.6,f8.4,1p,e10.2)') 'courant:', &
       self%id, self%dtime, courant, self%u_max
-  call trace%end (itimer)
+  call trace%end ()
 END SUBROUTINE courant_condition
 
 !===============================================================================
@@ -2960,16 +2959,17 @@ END SUBROUTINE init_level
 !===============================================================================
 !> Dump the patch values into data/run/rank_rrrrr,dump
 !===============================================================================
-SUBROUTINE dump (self, tag, ad_hoc)
+SUBROUTINE dump (self, tag, ad_hoc, it)
   class(patch_t):: self
   integer:: tag
   logical, optional:: ad_hoc
+  integer, optional:: it
   !.............................................................................
-  integer:: it, nt, jt
+  integer:: nt, jt
   !-----------------------------------------------------------------------------
   if (self%dump_it .or. present(ad_hoc)) then
     call io%lock%set ('dump')
-    nt = merge (self%nt, 1, present(ad_hoc))
+    nt = merge (self%nt, 1, present(ad_hoc) .and. .not.present(it))
     if (self%verbose > 0) then
       write (io_unit%log,*) 'patch_t%dump: id, time =', self%id, self%time
     end if
@@ -2980,10 +2980,13 @@ SUBROUTINE dump (self, tag, ad_hoc)
     !---------------------------------------------------------------------------
     ! Write nt time slots, in reverse order, starting from the most recent one
     !---------------------------------------------------------------------------
-    do it=1,nt
-      jt = self%iit(self%nt-it+1)
-      write (io_unit%dump) self%mem(:,:,:,:,jt,1)
-    end do
+    if (present(it)) then
+      write (io_unit%dump) self%mem(:,:,:,:,self%iit(it),1)
+    else
+      do jt=1,nt
+        write (io_unit%dump) self%mem(:,:,:,:,self%iit(self%nt-jt+1),1)
+      end do
+    end if
     call io%lock%unset ('dump')
   end if
 END SUBROUTINE dump
