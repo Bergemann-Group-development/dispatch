@@ -147,6 +147,7 @@ MODULE task_mod
     procedure:: roi
     procedure:: roa
     procedure:: hash_key
+    procedure:: dump
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -1335,5 +1336,15 @@ FUNCTION hash_key (self) RESULT (key)
   key(1:3) = nint((self%position-self%origin)*2d0/self%size)
   key(4) = self%level
 END FUNCTION hash_key
+
+!===============================================================================
+!> Stub
+!===============================================================================
+SUBROUTINE dump (self, tag, ad_hoc)
+  class(task_t):: self
+  integer:: tag
+  logical, optional:: ad_hoc
+  !-----------------------------------------------------------------------------
+END SUBROUTINE dump
 
 END MODULE task_mod
