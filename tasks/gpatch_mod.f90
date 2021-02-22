@@ -105,16 +105,19 @@ SUBROUTINE init_task_list (self, task_list)
 END SUBROUTINE init_task_list
 
 !===============================================================================
-!> Post-initialize. For all solver, copy the %it slot to the %new slot.
+!> Post-initialize. For all solvers, copy the %it slot to the %new slot.
 !===============================================================================
 SUBROUTINE pre_update (self)
   class(gpatch_t), target:: self
   integer:: i1, i2, i3, i4
   type(lock_t), pointer:: lock
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('gpatch_t%pre_update')
+  call trace%begin ('gpatch_t%pre_update', itimer=itimer)
   !-----------------------------------------------------------------------------
-  ! Ensure that the next slot is actually used, and lock it
+  ! Ensure that the next slot is not being used, and lock it, to allow writes.
+  ! Since the current thread "owns" the task, no other task could be trying to
+  ! write to the %it slot, which thus does not need lock protection.
   !-----------------------------------------------------------------------------
   self%new = 1 + mod(self%it,self%nt)
   lock => self%mem_lock(self%new)
@@ -133,7 +136,7 @@ SUBROUTINE pre_update (self)
   ! Initialize scratch arrays to zero
   !-----------------------------------------------------------------------------
   call scratch%pre_update
-  call trace%end ()
+  call trace%end (itimer)
 END SUBROUTINE pre_update
 
 !===============================================================================
