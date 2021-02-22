@@ -477,9 +477,6 @@ SUBROUTINE pre_init (self)
   ! Output related parameters
   !-----------------------------------------------------------------------------
   self%mv = max (self%mv, self%nv)
-  if (io%nv==0) then
-    io%nv = self%mv
-  end if
   io%start_time    = start_time
   io%end_time      = end_time
   io%out_time      = out_time
@@ -721,6 +718,9 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call io%lock%set ('patch_t%init')
   if (first_time) then
+    if (io%nv==0) then
+      io%nv = self%mv
+    end if
     write (stdout,'(a,6i4)') &
       ' memory shape:', shape(self%mem)
     call self%idx%print (stdout)
