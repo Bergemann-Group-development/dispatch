@@ -138,25 +138,15 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !===============================================================================
-!> Update a task link, as per the nbor%update procedure.
+!> Update the guard zone, by using task%dnload followed by task%bndries
 !===============================================================================
 SUBROUTINE update (self, all, only)
   implicit none
   class(link_t)           :: self
   logical, optional       :: all
   integer, optional       :: only
-  !.............................................................................
-  class(nbor_t), pointer  :: nbor
   !-----------------------------------------------------------------------------
   call trace%begin ('link_t%update')
-  nbor => self%nbor
-  do while (associated(nbor))
-    call nbor%update
-    nbor => nbor%next
-  end do
-  !-----------------------------------------------------------------------------
-  ! For now, overrule the nbor%update with the legacy methods (FIXME)
-  !-----------------------------------------------------------------------------
   call self%task%dnload
   call self%task%bndries
   call trace%end ()
