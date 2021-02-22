@@ -65,6 +65,7 @@ MODULE hd_mod
     procedure:: dealloc
     procedure:: pre_update
     procedure:: update
+    procedure:: post_update
     procedure:: nbor_relations
   end type
   integer, parameter:: ndim=3
@@ -180,6 +181,7 @@ SUBROUTINE pre_update (self)
   class(hd_t), target:: self
   !-----------------------------------------------------------------------------
   call trace%begin ('hd_t%pre_update')
+  call self%extras_t%pre_update ()
   !-----------------------------------------------------------------------------
   ! Primitive variables may be needed in extras courant_conditions
   !-----------------------------------------------------------------------------
@@ -191,7 +193,6 @@ SUBROUTINE pre_update (self)
   !-----------------------------------------------------------------------------
   ! Pre-update extras components
   !-----------------------------------------------------------------------------
-  call self%extras_t%pre_update
   call trace%end ()
 END SUBROUTINE pre_update
 
@@ -301,6 +302,18 @@ SUBROUTINE update (self)
   deallocate (self%qp,self%qm,self%dq,self%fl)
   call trace%end (itimer)
 END SUBROUTINE update
+
+!=======================================================================
+!> Measure time in extras_t%post_update
+!=======================================================================
+SUBROUTINE post_update (self)
+  class(hd_t):: self
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin ('hd_t%post_update', itimer=itimer)
+  call self%extras_t%post_update ()
+  call trace%end (itimer)
+END SUBROUTINE post_update
 
 !=======================================================================
 !> Get velocities from momentum
