@@ -476,7 +476,7 @@ subroutine hllc (qleft,qright,fgdnv,ngrid,nvar,isothermal,error,detailed_timer)
   LOGICAL :: isothermal,error,detailed_timer
   INTEGER, SAVE:: itimer=0
   !
-  if (detailed_timer) call trace_begin ('riemann::hllc', itimer=itimer)
+  if (detailed_timer) call trace_begin ('riemann_t%hllc', itimer=itimer)
   ! constants
   smallp = smallc**2/eos%gamma
   if (isothermal .or. eos%gamma==1d0) then

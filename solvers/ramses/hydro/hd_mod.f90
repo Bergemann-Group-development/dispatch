@@ -93,7 +93,7 @@ SUBROUTINE pre_init (self)
     verbose
   type(index_t):: idx
   !-----------------------------------------------------------------------------
-  call trace%begin('hd_mod%pre_init')
+  call trace%begin('hd_t%pre_init')
   call self%extras_t%pre_init
   self%nv = 5
   self%nw = 1
@@ -104,7 +104,7 @@ SUBROUTINE pre_init (self)
   !-----------------------------------------------------------------------------
   ! Ramses specific parameters
   !-----------------------------------------------------------------------------
-  call io%lock%set ('hd_mod%init')
+  call io%lock%set ('hd_t%pre_init')
   if (first_time) then
     rewind (io%input)
     read (io%input, ramses_params, iostat=iostat)
@@ -114,7 +114,7 @@ SUBROUTINE pre_init (self)
     write (io%namelist, ramses_params)
     first_time = .false.
   end if
-  call io%lock%unset ('hd_mod%init')
+  call io%lock%unset ('hd_t%init')
   self%riemann = riemann
   self%courant = courant_factor
   self%csound = csound
@@ -131,7 +131,7 @@ SUBROUTINE init (self)
   character(len=120):: id = &
    '$Id$'
   !.............................................................................
-  call trace%begin ('hd_mod%init')
+  call trace%begin ('hd_t%init')
   call trace%print_id (id)
   call self%extras_t%init
   !-----------------------------------------------------------------------------
@@ -449,7 +449,7 @@ SUBROUTINE E_th2e(self, E_th, it)
 END SUBROUTINE E_th2e
 
 !===============================================================================
-subroutine godunov (self)
+SUBROUTINE godunov (self)
   class(hd_t)::self
   !-----------------------------------------------------------------------------
   ! This routine accesses the conserved variables in self. It then calls
@@ -513,11 +513,11 @@ subroutine godunov (self)
   else
     call trace%end()
   end if
-end subroutine godunov
+END SUBROUTINE godunov
 
 !===============================================================================
 !===============================================================================
-subroutine check_small (self, uu)
+SUBROUTINE check_small (self, uu)
   class(hd_t):: self
   real, dimension(:,:,:,:):: uu
   integer:: i,j,k,lo(3),uo(3),n_smalld,n_smallp
@@ -588,13 +588,13 @@ subroutine check_small (self, uu)
     !$omp end critical (panic_cr)
   end if
   if (detailed_timer) call trace%end (itimer)
-end subroutine check_small
+END SUBROUTINE check_small
 
 !===============================================================================
 !>  UNSPLIT     Unsplit second order Godunov integrator for
 !>              polytropic gas dynamics using MUSCL-HANCOCK
 !===============================================================================
-subroutine unsplit(self)
+SUBROUTINE unsplit(self)
   class(hd_t):: self
   real(dp):: dtds(3)
   !-----------------------------------------------------------------------------
@@ -604,14 +604,15 @@ subroutine unsplit(self)
   call trace3d(self)                  ! predictor step
   call cmpflxm(self)                  ! Solve for 1D flux in X direction
   call trace%end()
-end subroutine unsplit
+END SUBROUTINE unsplit
 
 !===============================================================================
 !> Conservative (uin) to primitive (q) variables, stored in the order
 !> 1:d, 2:u, 3:v, 4:w, 5:p
 !===============================================================================
-subroutine ctoprim (self)
+SUBROUTINE ctoprim (self)
   class(hd_t):: self
+  !.............................................................................
   real(dp):: smallp, dtds
   integer,save:: itimer=0
   integer:: l(3), u(3), n(3), i1, i2, i3
@@ -626,9 +627,9 @@ subroutine ctoprim (self)
   unew => self%unew
   pg => q(:,:,:,5)
   if (detailed_timer) then
-    call trace%begin ('hd_mod::ctoprim', itimer=itimer)
+    call trace%begin ('hd_t%ctoprim', itimer=itimer)
   else
-    call trace%begin ('hd_mod::ctoprim')
+    call trace%begin ('hd_t%ctoprim')
   end if
   smallp = smallr*smallc**2/eos%gamma
   do i3=1,self%gn(3)
@@ -679,12 +680,12 @@ subroutine ctoprim (self)
   else
     call trace%end()
   end if
-end subroutine ctoprim
+END SUBROUTINE ctoprim
 
 !===============================================================================
 !> Slope limiters
 !===============================================================================
-subroutine uslope(self)
+SUBROUTINE uslope(self)
   class(hd_t):: self
   integer::ngrid
   integer::i, j, k, n, l(3), u(3), islope_type, nv
@@ -701,9 +702,9 @@ subroutine uslope(self)
   q  => self%q
   dq => self%dq
   if (detailed_timer) then
-    call trace%begin ('hd_mod::uslope', itimer=itimer)
+    call trace%begin ('hd_t%uslope', itimer=itimer)
   else
-    call trace%begin ('hd_mod::uslope')
+    call trace%begin ('hd_t%uslope')
   end if
   !
   islope_type = int(slope_type)
@@ -972,12 +973,12 @@ subroutine uslope(self)
   else
     call trace%end()
   end if
-end subroutine uslope
+END SUBROUTINE uslope
 
 !===============================================================================
 !> Predictor step, using primitive variables
 !===============================================================================
-subroutine trace3d(self)
+SUBROUTINE trace3d(self)
   class(hd_t):: self
   integer ::i, j, k, lb(3), ub(3)
   integer ::ir=1, iu=2, iv=3, iw=4, ip=5
@@ -999,9 +1000,9 @@ subroutine trace3d(self)
   qp => self%qp
   qm => self%qm
   if (detailed_timer) then
-    call trace%begin ('hd_mod::trace3d', itimer=itimer)
+    call trace%begin ('hd_t%trace3d', itimer=itimer)
   else
-    call trace%begin ('hd_mod::trace3d')
+    call trace%begin ('hd_t%trace3d')
   end if
   dtdx = self%dtime/self%mesh(1)%d
   dtdy = self%dtime/self%mesh(2)%d
@@ -1164,12 +1165,12 @@ subroutine trace3d(self)
   else
     call trace%end()
   end if
-end subroutine trace3d
+END SUBROUTINE trace3d
 
 !===============================================================================
 !> Compute fluxes
 !===============================================================================
-subroutine cmpflxm(self)
+SUBROUTINE cmpflxm(self)
   class(hd_t):: self
   ! local variables
   integer:: i, j, k, lb(3), ub(3)
@@ -1183,9 +1184,9 @@ subroutine cmpflxm(self)
   qm => self%qm
   fl => self%fl
   if (detailed_timer) then
-    call trace%begin ('hd_mod::cmpflxm', itimer=itimer)
+    call trace%begin ('hd_t%cmpflxm', itimer=itimer)
   else
-    call trace%begin ('hd_mod::cmpflxm')
+    call trace%begin ('hd_t%cmpflxm')
   end if
   error = .false.
   dtds = self%dtime/self%mesh%d
@@ -1284,13 +1285,13 @@ contains
     nbor => nbor%next
   end do
   call mpi%abort ('HLLC')
-  end subroutine
-end subroutine cmpflxm
+  END SUBROUTINE
+END SUBROUTINE cmpflxm
 
 !===============================================================================
 !> Selection of 1-D solvers
 !===============================================================================
-subroutine solver (self,ngrid,qleft,qright,fgdnv,error,detailed_timer)
+SUBROUTINE solver (self,ngrid,qleft,qright,fgdnv,error,detailed_timer)
   class(hd_t):: self
   integer:: ngrid
   real(dp),dimension(:,:):: qleft,qright,fgdnv
@@ -1314,7 +1315,7 @@ subroutine solver (self,ngrid,qleft,qright,fgdnv,error,detailed_timer)
     write(*,*)'unknown Riemann solver'
     stop
   end if
-end subroutine solver
+END SUBROUTINE solver
 
 !===============================================================================
 !===============================================================================
