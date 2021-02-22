@@ -22,7 +22,7 @@ MODULE restart_mod
     procedure:: read_legacy
   end type
   character(120) :: from_dir    = 'data/'
-  character(16)  :: io_format   = 'amr'
+  character(16)  :: method      = 'amr'
   integer        :: snapshot    = -1
   integer        :: verbose     = 0
   integer        :: nml_version = 4
@@ -37,7 +37,7 @@ SUBROUTINE init (self, task_list)
   type(task_list_t),  pointer :: task_list
   integer                     :: iostat
   character(120)              :: filename
-  namelist /restart_params/ from_dir, snapshot, io_format, verbose
+  namelist /restart_params/ from_dir, snapshot, method, verbose
   !.............................................................................
   call trace%begin ('restart_t%init')
   !-----------------------------------------------------------------------------
@@ -61,7 +61,7 @@ SUBROUTINE init (self, task_list)
     !-----------------------------------------------------------------------------
     allocate (task_list)
     call task_list%init
-    select case (io_format)
+    select case (method)
     case ('amr')
       call self%read_amr (task_list)
     case ('legacy')

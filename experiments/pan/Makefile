@@ -12,8 +12,8 @@ EXEC            = dispatch.x
 
 # Choice of solvers
 PARTICLE_SOLVER    = KDK
-#SOLVER             = ramses/hydro
-SOLVER             = ramses/mhd
+SOLVER             = ramses/hydro
+#SOLVER             = ramses/mhd
 #SOLVER             = stagger2/e
 INITIAL_CONDITIONS = turbulence
 EOS                = microphysics/eos/ideal
