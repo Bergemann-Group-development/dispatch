@@ -148,8 +148,8 @@ SUBROUTINE init (self, task_list, label)
   do k=0,self%dims(3)-1
   do j=0,self%dims(2)-1
   do i=0,self%dims(1)-1
-    allocate (link, patch); link%task => patch; patch%link => link
-    task => link%task
+    allocate (patch)
+    call self%task_list%append (patch)
     ! --- patch 3D and 1D coordinates ---
     patch%ipos = [i,j,k]
     patch%rank = mpi_coords%coords_to_rank ([i,j,k]/patches_per_mpi)
@@ -180,7 +180,6 @@ SUBROUTINE init (self, task_list, label)
     if (all(self%dims==1)) call task%set(bits%root_grid)
     ! -- initially append all tasks to the task list, to build nbor lists ------
     call self%initial_refine(tlist, patch,patch%level,ip)
-    !call self%task_list%append_link (link)
   end do
   end do
   end do
