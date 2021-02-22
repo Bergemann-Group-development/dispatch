@@ -148,6 +148,9 @@ SUBROUTINE init (self, task_list, label)
   do k=0,self%dims(3)-1
   do j=0,self%dims(2)-1
   do i=0,self%dims(1)-1
+    !---------------------------------------------------------------------------
+    ! Allocate the patch, and let task_list_append allocate the task%link
+    !---------------------------------------------------------------------------
     allocate (patch)
     call self%task_list%append (patch)
     ! --- patch 3D and 1D coordinates ---
@@ -165,21 +168,22 @@ SUBROUTINE init (self, task_list, label)
     patch%box = self%size
     patch%size = self%size / self%dims
     patch%position = ([i,j,k]+0.5d0)*patch%size + origin
-    !if (any(abs(rank%distance (patch)) > 0.5*(rank%size + 1.5*rank%ds))) then
-    !  deallocate (link, patch)
-    !  cycle
-    !end if
-    call patch%set (bits%virtual)
-    patch%ds = patch%size*0.001
-    patch%origin = origin
-    patch%llc_cart = patch%position - 0.5 * patch%size
-    patch%centre_nat = patch%position
-    patch%llc_nat = patch%llc_cart
-    patch%periodic = periodic
-    call patch%set(bits%static)
-    if (all(self%dims==1)) call task%set(bits%root_grid)
-    ! -- initially append all tasks to the task list, to build nbor lists ------
-    call self%initial_refine(tlist, patch,patch%level,ip)
+    if (any(abs(rank%distance (patch)) > 0.5*(rank%size + 1.5*rank%ds))) then
+      call self%task_list%remove (patch%link)
+      deallocate (patch)
+    else
+      call patch%set (bits%virtual)
+      patch%ds = patch%size*0.001
+      patch%origin = origin
+      patch%llc_cart = patch%position - 0.5 * patch%size
+      patch%centre_nat = patch%position
+      patch%llc_nat = patch%llc_cart
+      patch%periodic = periodic
+      call patch%set(bits%static)
+      if (all(self%dims==1)) call task%set(bits%root_grid)
+      ! -- initially append all tasks to the task list, to build nbor lists ------
+      call self%initial_refine(tlist, patch,patch%level,ip)
+    end if
   end do
   end do
   end do
