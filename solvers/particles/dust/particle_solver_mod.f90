@@ -50,6 +50,7 @@ MODULE particle_solver_mod
   USE omp_mod
   USE scratch_mod
   USE math_mod
+  USE eos_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -629,10 +630,10 @@ SUBROUTINE update (self)
     d = patch%mem(i1,i2,i3,patch%idx%d,patch%new,1)
     if (do_supersonic) then
       e = patch%mem(i1,i2,i3,patch%idx%e,patch%new,1)
-      if (patch%gamma==1d0) then
+      if (eos%gamma==1d0) then
         cs = sqrt(e/d)
       else
-        cs = sqrt(e*patch%gamma*(patch%gamma-1d0)/d)
+        cs = sqrt(e*eos%gamma*(eos%gamma-1d0)/d)
       end if
       cs = cs/ds
     end if
@@ -1429,12 +1430,12 @@ SUBROUTINE poutput (self)
       iout = self%iout
       close (io_unit%particle_d)
       close (io_unit%particle_i)
-      call os%mkdir (trim(io%rundir)//'particles/')
-      write (file,'(a,i5.5,a)') trim(io%rundir)//'particles/', self%iout, '.dat'
+      call os%mkdir (trim(io%run_dir)//'particles/')
+      write (file,'(a,i5.5,a)') trim(io%run_dir)//'particles/', self%iout, '.dat'
       open (unit=io_unit%particle_d, file=file, form='unformatted', &
             status='unknown')
       write (stdout,*) trim(file)//' opened'
-      write (file,'(a,i5.5,a)') trim(io%rundir)//'particles/', self%iout, '.inf'
+      write (file,'(a,i5.5,a)') trim(io%run_dir)//'particles/', self%iout, '.inf'
       open (unit=io_unit%particle_i, file=file, form='unformatted', &
             status='unknown')
     end if
