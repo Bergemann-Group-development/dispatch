@@ -24,8 +24,9 @@
 &aux_params             verbose=0 select='dust_d','dust_vrms','dust_vx','dust_vy','dust_vz' /
 
 !--- RAMSES solver parameters --------------------------------------------------
-&ramses_params          gamma=1.0 csound=0.18 courant_factor=0.25 slope_type=3 /
-&IC_params         type='void' /
+&eos_params             gamma=1d0 /
+&ramses_params          csound=0.18 courant_factor=0.25 slope_type=3 /
+&IC_params              type='void' /
 &force_params           type='turbulence' /
 &turbulence_params      ampl_turb=0.45 t_turn=0.45 k1=1 k2=2 pk=0.0 seed=5 
                         verbose=0 /
