@@ -38,7 +38,7 @@ MODULE force_mod
   real :: pk = 7./6.
   real :: t_turn = 0.1
   real :: t_turb = 0.0
-  real :: t_damp = 0.01
+  real :: t_damp = 0.03
   real :: pi=3.14159365
   logical :: do_force = .true.
   logical :: do_helmh = .true.
@@ -412,9 +412,11 @@ FUNCTION turbulence (self, time, d, p, Ux, Uy, Uz, mesh) RESULT (ff)
     !---------------------------------------------------------------------------
     c2 = product(mesh%s/mesh%b)
     momentum = global_momentum%update (c2*(new - self%momentum))
-    if (verbose > 0) then
+    if (verbose > 1) then
       write (stdlog,'(i6,2x,a,3(2x,1p,4e12.3))') self%id, &
         'momentum = ', self%momentum, new, momentum
+    else if (verbose > 0) then
+      write (stdlog,'(i6,2x,a,4f12.6)') self%id, 'momentum = ', momentum
     else if (nprint > 0) then
       nprint = nprint-1
       write (stdlog,*) 'force: verbose =', verbose

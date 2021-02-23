@@ -47,7 +47,7 @@
 &IC_params              type='turbulence' /
 &force_params           type='turbulence' /
 &turbulence_params      ampl_turb=2 t_turn=0.05 k1=1 k2=2 pk=0.0 seed=5 
-                        verbose=0 t_damp=3e-4 /
+                        verbose=1 /
 &IC_turbulence_params   b0=0.1 /
 &selfgravity_params     selfgravity=f /
 &trace_particle_params  on=f verbose=0 per_cell=1.0 /
