@@ -41,15 +41,15 @@ MODULE mhd_mod
     logical:: mhd=.true.
     integer:: idim=3, nvar=9
     character(len=10):: riemann='hlld'
-    real, pointer, dimension(:,:,:,:):: q         ! primitive
-    real, pointer, dimension(:,:,:,:):: bf, em    ! face centered B, emf
-    real, pointer, dimension(:,:,:,:,:):: qp, qm  ! face centered
-    real, pointer, dimension(:,:,:,:,:):: dq, dq2, dbf ! slopes
-    real, pointer, dimension(:,:,:,:,:):: qLB,qRB,qLT,qRT
-    real, pointer, dimension(:,:,:,:):: uin       ! conserved
-    real, pointer, dimension(:,:,:,:):: unew      ! new conserved
-    real, pointer, dimension(:,:,:):: Ex,Ey,Ez, eb, ekin, ee
-    real, pointer, dimension(:,:,:):: c, pg
+    real, contiguous, pointer, dimension(:,:,:,:):: q         ! primitive
+    real, contiguous, pointer, dimension(:,:,:,:):: bf, em    ! face centered B, emf
+    real, contiguous, pointer, dimension(:,:,:,:,:):: qp, qm  ! face centered
+    real, contiguous, pointer, dimension(:,:,:,:,:):: dq, dq2, dbf ! slopes
+    real, contiguous, pointer, dimension(:,:,:,:,:):: qLB,qRB,qLT,qRT
+    real, contiguous, pointer, dimension(:,:,:,:):: uin       ! conserved
+    real, contiguous, pointer, dimension(:,:,:,:):: unew      ! new conserved
+    real, contiguous, pointer, dimension(:,:,:):: Ex,Ey,Ez, pg, hpv
+    real, contiguous, pointer, dimension(:,:,:):: c
     !dir$ attributes align:64 :: q,bf,em,qp,qm,dq,dq2,dbf,qLB,qRB,qLT,qRT,Ex,Ey,Ez,c
   contains
     procedure:: pre_init
@@ -69,7 +69,6 @@ MODULE mhd_mod
   logical, save:: unsigned=.true.
   logical, save:: do_temperature=.false.
   integer, save:: verbose=0
-  integer, save:: divb_iter=4
   integer, save:: b_slope_type=0
   integer, save:: u_slope_type=0
   integer, save:: courant_type=0
@@ -90,23 +89,18 @@ SUBROUTINE pre_init (self)
   namelist /ramses_params/ riemann, slope_type, b_slope_type, &
     u_slope_type, courant_factor, smallr, smallc, isothermal, csound, &
     detailed_timer, unsigned, courant_type, max_dlogd, n_dump, &
-    divb_iter, do_temperature, verbose, do_corners
+    do_temperature, verbose, do_corners
   character(len=120):: id = &
    '$Id$ solvers/ramses/mhd_eos/mhd_mod.f90'
 !...............................................................................
   call trace%begin ('mhd_mod%pre_init')
   call trace%print_id (id)
-    self%nw = 2
+  call self%extras_t%pre_init
+  self%nw = 2
   self%ng = 3
   self%nv = 8
-  !self%nv = 9
-  call self%extras_t%pre_init
   self%kind = 'ramses_s_mhd_patch'
-  call self%idx%init (isentropy=5, mhd=self%mhd)
-  !self%idx%tt = 9
-  !if (do_temperature) then
-  !  call self%idx%request_index (self%idx%tt, self%nv)
-  !end if
+  call self%idx%init (entropy=5, mhd=self%mhd)
   !-----------------------------------------------------------------------------
   ! Read solver-relevant parameters and store in the task instance
   !-----------------------------------------------------------------------------
@@ -137,10 +131,7 @@ SUBROUTINE init (self)
   integer:: i
 !...............................................................................
   call trace%begin('mhd_mod%init')
-  call self%patch_t%init
-  if (minval(self%mesh%n) < 3) then
-    call io%abort ('SOLVER=ramses/mhd needs at least 3 mesh points in any direction')
-  end if
+  call self%extras_t%init
   do i=1,3
     self%mesh(i)%h = 0d0
     self%mesh(i)%h(self%idx%bx+i-1) = -0.5
@@ -154,7 +145,6 @@ SUBROUTINE init (self)
   ! Initialize everything else, and do a sanity check
   !-----------------------------------------------------------------------------
   call non_ideal%init  
-  call self%extras_t%init
   call self%set_solver_vars
   allocate(self%pg(self%gn(1),self%gn(2),self%gn(3)))
   call trace%end()
@@ -248,7 +238,10 @@ SUBROUTINE update (self)
   n = self%mesh%ui-self%mesh%li+1
   if (io%smallr > 0) smallr = io%smallr
   if (io%courant > 0) self%courant = io%courant
-  
+  !----------------------------------------------------------------------------
+  ! Checks whether to do output
+  !----------------------------------------------------------------------------
+  call self%output
   !-----------------------------------------------------------------------------
   ! Memory mapping and allocations.  All alloc and dealloc should be done here,
   ! even if it would be possible to do some of them locally, in the procedures
@@ -290,8 +283,6 @@ SUBROUTINE update (self)
   ! (cf. RAMSES/CPH)
   !-----------------------------------------------------------------------------
   if (slope_type <= 3.0) then
-    print *, associated(self%dq2), associated(self%dq)
-    print *, shape(self%dq2), shape(self%dq)
     self%dq2=self%dq
   else
     call uslope(self,self%bf,self%q,self%dq2,self%dbf,3.0)       ! TVD slopes
@@ -403,12 +394,12 @@ SUBROUTINE update (self)
     
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,5  ) = &
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,5  ) + &
-    max(0.0,(fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,9,1) - &
+   (fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,9,1) - &
     fl(i0+1:i1+1,j0  :j1  ,k0  :k1  ,9,1) + &
     fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,9,2) - &
     fl(i0  :i1  ,j0+1:j1+1,k0  :k1  ,9,2) + &
     fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,9,3) - &
-    fl(i0  :i1  ,j0  :j1  ,k0+1:k1+1,9,3))) / self%q(i0  :i1  ,j0  :j1  ,k0  :k1  ,9)
+    fl(i0  :i1  ,j0  :j1  ,k0+1:k1+1,9,3)) / self%q(i0  :i1  ,j0  :j1  ,k0  :k1  ,9)
 
   !!!! TO DO !!!! 
   !!! Instead of applying the update in time explicitly in mhd_mod
@@ -540,10 +531,6 @@ SUBROUTINE update (self)
   ! ----------------------------------------------------------------------------
   ! do timestep%update
   ! ----------------------------------------------------------------------------
-  !----------------------------------------------------------------------------
-  ! Checks whether to do output
-  !----------------------------------------------------------------------------
-  call self%output
   !-----------------------------------------------------------------------------
   ! Deallocate
   !-----------------------------------------------------------------------------
