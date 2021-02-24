@@ -204,7 +204,6 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   end if
   if (target%is_clear(bits%no_density) .and. .not.all_cells_l) &
     call target%check_density ("before download")
-  if (target%is_periodic()) call target%periodic_grid
   !-----------------------------------------------------------------------------
   ! Use an nbor list sorted by decreasing level, recording in each cell the
   ! level that supplied values, and skipping nbor contributions from lower levels.
@@ -498,6 +497,10 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
     if (verbose > 0) &
       deallocate (src)
   end if
+  ! ----------------------------------------------------------------------------
+  ! Fill in periodic grid guard zones
+  ! ----------------------------------------------------------------------------
+  if (target%is_periodic()) call target%periodic_grid
   !-----------------------------------------------------------------------------
   call guard_zones%info()
   if (target%is_clear(bits%no_density)) &

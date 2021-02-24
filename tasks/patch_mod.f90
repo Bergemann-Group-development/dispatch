@@ -649,7 +649,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Special handling of collapsed dimensions
   !-----------------------------------------------------------------------------
-  where (self%n==1)                             ! for collapsed dimensions
+  where (self%n==1.and.self%box==0)             ! for collapsed dimensions
     self%box = 1                                ! make sure it is non-zero
   end where
   !-----------------------------------------------------------------------------
