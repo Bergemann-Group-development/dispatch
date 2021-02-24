@@ -46,7 +46,7 @@ tr={'d':'density',
               'unit_system': p.units.system,
 """
 
-def patch(p,copy=False):
+def patch(p,copy=False,aux=True):
     p_void=(np.array([]),'code_length')
     if p.guard_zones:
         l=p.li-1
@@ -81,19 +81,20 @@ def patch(p,copy=False):
         key = tr[k] if k in tr.keys() else k
         if iv >= 0:
             dict[key]=p.var(k,copy=copy)#[l[0]:u[0],l[1]:u[1],l[2]:u[2]]
-    if 'aux' in p.keys:
-        for k in p.keys['aux']:
-            key = tr[k] if k in tr.keys() else k
-            dict[key]=p.var(k,copy=copy)[l[0]:u[0],l[1]:u[1],l[2]:u[2]]
+    if aux:
+        if 'aux' in p.keys:
+            for k in p.keys['aux']:
+                key = tr[k] if k in tr.keys() else k
+                dict[key]=p.var(k,copy=copy)[l[0]:u[0],l[1]:u[1],l[2]:u[2]]
     dict['ed']=p.var('e')/p.var('d')
     dict['ee']=p.var('ee')
     dict['emag']=p.var('emag')
     return dict
 
-def patches(s,copy=True):
+def patches(s,copy=True,aux=True):
     gg=[]
     for p in s.patches:
-        gg.append(patch(p,copy=copy))
+        gg.append(patch(p,copy=copy,aux=aux))
     return gg
 
 def domain_dimensions(s):
@@ -105,10 +106,10 @@ def magnetic_unit(s):
 def domain_bbox(s):
     return np.array([s.cartesian.origin,np.array(s.cartesian.origin)+np.array(s.cartesian.size)]).T
 
-def open_amr(iout=1,run='.',data='../data',verbose=0,copy=True):
-    return snapshot(iout=iout,run=run,data=data,verbose=verbose,copy=copy)
+def open_amr(iout=1,run='.',data='../data',verbose=0,copy=True, aux=True):
+    return snapshot(iout=iout,run=run,data=data,verbose=verbose,copy=copy,aux=aux)
 
-def snapshot(iout=1,run='.',data='../data',verbose=0,copy=True):
+def snapshot(iout=1,run='.',data='../data',verbose=0,copy=True,aux=True):
     """
         Open snapshot iout in directory data/run/, returning a YT data set
     """
@@ -121,7 +122,7 @@ def snapshot(iout=1,run='.',data='../data',verbose=0,copy=True):
         print('domain_dimesions:',dispatch.yt.domain_dimensions(s))
     #
     parameters=dispatch.yt.parameters(s)
-    ds = yt.load_amr_grids(dispatch.yt.patches(s,copy=copy), **parameters)
+    ds = yt.load_amr_grids(dispatch.yt.patches(s,copy=copy,aux=aux), **parameters)
     return ds
 
 def open_unigrid(iout=1,run='.',data='../data',verbose=0,copy=True):
