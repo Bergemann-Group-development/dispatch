@@ -82,7 +82,6 @@ SUBROUTINE init (self)
   ! Point amd allocate memory
   !---------------------------------------------------------------------
   d => ff(:,:,:,idx%d)
-  if (trim(self%solver(1:7)) == 'stagger') s => ff(:,:,:,idx%s)
   if (self%solver(1:14) == 'zeus_mhd_patch' .or. &
       self%solver(1:10) == 'stagger2e_') then
     e1 => ff(:,:,:,idx%e)
@@ -97,7 +96,7 @@ SUBROUTINE init (self)
     if (idx%e>0) then
       et => ff(:,:,:,idx%e)
       allocate (e1(m(1)%gn,m(2)%gn,m(3)%gn))
-    else
+    else if (idx%s>0) then
       s => ff(:,:,:,idx%s)
     end if
   end if
@@ -152,6 +151,24 @@ SUBROUTINE init (self)
       end if
     end do
 
+    ! set total energy; it needs to be done after because it uses the `i+1` values.
+    ! only applies to ZEUS and RAMSES solvers.
+    if (associated(et)) then
+    do k=m(3)%lb,m(3)%ub
+    do j=m(2)%lb,m(2)%ub
+      do i=m(1)%lb,m(1)%ub-1
+        if (self%solver(1:14) == 'zeus_mhd_patch') then
+          rhov2 = (0.25 * (ff(i,j,k,idx%px) + ff(i+1,j,k,idx%px))**2) / d(i,j,k) 
+        else if (self%solver(1:6) == 'ramses') then
+          rhov2 = (ff(i,j,k,idx%px)**2 + ff(i,j,k,idx%py)**2 + ff(i,j,k,idx%pz)**2) / d(i,j,k) 
+        end if
+        et(i,j,k) = e1(i,j,k) + 0.5 * rhov2
+      end do
+      et(m(1)%ub,j,k)=et(m(1)%ub-1,j,k)
+    end do
+    end do
+    end if
+
   case(-1)
     do i=m(1)%lb,m(1)%ub
       x = m(1)%p + m(1)%r(i)
@@ -190,6 +207,24 @@ SUBROUTINE init (self)
       end if
     end do
 
+    ! set total energy; it needs to be done after because it uses the `i+1` values.
+    ! only applies to ZEUS and RAMSES solvers.
+    if (associated(et)) then
+    do k=m(3)%lb,m(3)%ub
+    do j=m(2)%lb,m(2)%ub
+      do i=m(1)%lb,m(1)%ub-1
+        if (self%solver(1:14) == 'zeus_mhd_patch') then
+          rhov2 = (0.25 * (ff(i,j,k,idx%px) + ff(i+1,j,k,idx%px))**2) / d(i,j,k) 
+        else if (self%solver(1:6) == 'ramses') then
+          rhov2 = (ff(i,j,k,idx%px)**2 + ff(i,j,k,idx%py)**2 + ff(i,j,k,idx%pz)**2) / d(i,j,k) 
+        end if
+        et(i,j,k) = e1(i,j,k) + 0.5 * rhov2
+      end do
+      et(m(1)%ub,j,k)=et(m(1)%ub-1,j,k)
+    end do
+    end do
+    end if
+
   case(2)
     do i=m(2)%lb,m(2)%ub
       y = m(2)%p + m(2)%r(i)
@@ -225,6 +260,24 @@ SUBROUTINE init (self)
       end if
     end do
 
+    ! set total energy; it needs to be done after because it uses the `i+1` values.
+    ! only applies to ZEUS and RAMSES solvers.
+    if (associated(et)) then
+    do k=m(3)%lb,m(3)%ub
+      do j=m(2)%lb,m(2)%ub-1
+        do i=m(1)%lb,m(1)%ub
+          if (self%solver(1:14) == 'zeus_mhd_patch') then
+            rhov2 = (0.25 * (ff(i,j,k,idx%px) + ff(i+1,j,k,idx%px))**2) / d(i,j,k) 
+          else if (self%solver(1:6) == 'ramses') then
+            rhov2 = (ff(i,j,k,idx%px)**2 + ff(i,j,k,idx%py)**2 + ff(i,j,k,idx%pz)**2) / d(i,j,k) 
+          end if
+          et(i,j,k) = e1(i,j,k) + 0.5 * rhov2
+        end do
+      end do
+      et(:,m(2)%ub,k)=et(:,m(2)%ub-1,k)
+    end do
+    end if
+
   case(3)
     do i=m(3)%lb,m(3)%ub
       z = m(3)%p + m(3)%r(i)
@@ -259,28 +312,27 @@ SUBROUTINE init (self)
         end if
       end if
     end do
-  end select
-      
-  
-  ! set total energy; it needs to be done after because it uses the `i+1` values.
-  ! only applies to ZEUS and RAMSES solvers.
-  if (associated(et)) then
-  do k=m(3)%lb,m(3)%ub
-  do j=m(2)%lb,m(2)%ub
-    do i=m(1)%lb,m(1)%ub-1
-      if (self%solver(1:14) == 'zeus_mhd_patch') then
-        rhov2 = (0.25 * (ff(i,j,k,idx%px) + ff(i+1,j,k,idx%px))**2) / d(i,j,k) 
-      else if (self%solver(1:6) == 'ramses') then
-        rhov2 = (ff(i,j,k,idx%px)**2 + ff(i,j,k,idx%py)**2 + ff(i,j,k,idx%pz)**2) / d(i,j,k) 
-      end if
-      et(i,j,k) = e1(i,j,k) + 0.5 * rhov2
+
+    ! set total energy; it needs to be done after because it uses the `i+1` values.
+    ! only applies to ZEUS and RAMSES solvers.
+    if (associated(et)) then
+    do k=m(3)%lb,m(3)%ub-1
+      do j=m(2)%lb,m(2)%ub
+        do i=m(1)%lb,m(1)%ub
+          if (self%solver(1:14) == 'zeus_mhd_patch') then
+            rhov2 = (0.25 * (ff(i,j,k,idx%px) + ff(i+1,j,k,idx%px))**2) / d(i,j,k) 
+          else if (self%solver(1:6) == 'ramses') then
+            rhov2 = (ff(i,j,k,idx%px)**2 + ff(i,j,k,idx%py)**2 + ff(i,j,k,idx%pz)**2) / d(i,j,k) 
+          end if
+          et(i,j,k) = e1(i,j,k) + 0.5 * rhov2
+        end do
+      end do
     end do
-     et(m(1)%ub,j,k)=et(m(1)%ub-1,j,k)
-  end do
-  end do
-  end if
+    et(:,:,m(3)%ub)=et(:,:,m(3)%ub-1)
+    end if
 
 
+  end select
   
   if (idx%bx >0) then
   ff(:,:,:,idx%bx:idx%bz) = 0.0
