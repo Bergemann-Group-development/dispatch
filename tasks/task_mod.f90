@@ -139,6 +139,7 @@ MODULE task_mod
     procedure:: run => void
     procedure:: statistics
     procedure:: bndries
+    procedure:: periodic_grid
     procedure:: courant_condition
     procedure:: output
     procedure:: output_metadata
@@ -1219,6 +1220,13 @@ END SUBROUTINE statistics
 SUBROUTINE bndries (self)
   class(task_t):: self
 END SUBROUTINE bndries
+
+SUBROUTINE periodic_grid (self, only)
+  class(task_t):: self
+  integer, optional:: only
+  ! ----------------------------------------------------------------------------
+  call io%abort('task_t%periodic grid called')
+END SUBROUTINE periodic_grid
 
 !===============================================================================
 !> Make sure the time step is not longer than io%out_time, and set exactly
