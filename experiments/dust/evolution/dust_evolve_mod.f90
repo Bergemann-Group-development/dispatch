@@ -9,6 +9,7 @@ MODULE dust_evolve_mod
   USE io_mod
   USE scaling_mod
   USE particles_mod
+  USE omp_timer_mod
   implicit none
   private
   type, public:: dust_evolve_t
@@ -23,6 +24,7 @@ MODULE dust_evolve_mod
   integer:: verbose=0
   integer:: nbin
   logical:: on=.false.
+  logical:: do_implicit=.true.
   logical:: do_brownian=.true.
   logical:: do_in_cell_turbulence=.false.
   real(KIND=precision_e):: tt_dust = 10                     ! Dust temperature
@@ -78,9 +80,9 @@ SUBROUTINE init (self, ln_bin, lm_cgs, rho_s)
     Jp, Jmx, Jmy, Jmz, IJp, pnx, pny, pnz, s1, s2
   real, ALLOCATABLE, DIMENSION(:):: st, utm_ini
   !real(precision_e), ALLOCATABLE, DIMENSION(:,:,:):: SS, C                                                      
-  logical :: do_implicit=.true.
   !--- add parameters here -----------------------------------------------------
-  namelist /dust_evolve_params/ on, verbose, do_brownian, do_in_cell_turbulence, tt_dust, sigma_d, alpha, xi, trans_width, u_f, dt
+  namelist /dust_evolve_params/ on, verbose, do_brownian, do_in_cell_turbulence, &
+    tt_dust, sigma_d, alpha, xi, trans_width, u_f, dt, do_implicit
   !-----------------------------------------------------------------------------
   call trace%begin ('dust_evolve_t%init')
   !-----------------------------------------------------------------------------
@@ -241,7 +243,6 @@ SUBROUTINE init (self, ln_bin, lm_cgs, rho_s)
   call io%lock%unset ('dust_evolve_t%init')
   self%on = on                                 ! task private copy
 
-
   call trace%end ()
 END SUBROUTINE init
 
@@ -268,13 +269,14 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
     ll, KC_k, LS_k, IJJ, du, ubm, utm, &
     Jp, Jmx, Jmy, Jmz, IJp, pnx, pny, pnz, s1, s2
   real, ALLOCATABLE, DIMENSION(:):: st, utm_ini
-  logical :: do_implicit=.true.
 
   ! CGS units below
   real(precision_e) :: tend, vd(nbin,3), vrms(nbin)
-  integer, save:: itimer=0
+  real(8):: start, used, time(5)
+  integer, save:: itimer=0, ntimer=10
   !-----------------------------------------------------------------------------
   call trace%begin ('dust_evolve_t%update', itimer=itimer)
+  start = wallclock()
   
   ALLOCATE(n(nbin), dn(nbin), S(nbin), m(nbin))
   ALLOCATE(utm_ini(nbin))
@@ -286,7 +288,7 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
   ALLOCATE(Jp(nbin,nbin), Jmx(nbin,nbin), Jmy(nbin,nbin), Jmz(nbin,nbin), Spx(nbin), Spy(nbin), Spz(nbin), dpx(nbin), dpy(nbin), dpz(nbin))
   ALLOCATE(IJp(nbin,nbin), Ln_k(nbin), Kn_k(nbin), Sppx(nbin), Sppy(nbin), Sppz(nbin))
   ALLOCATE(mv(nbin), px(nbin), py(nbin), pz(nbin), v(nbin), mpx(nbin), mpy(nbin), mpz(nbin), pnx(nbin,nbin), pny(nbin,nbin), pnz(nbin,nbin), s1(nbin,nbin),s2(nbin,nbin))
-
+  time(1) = wallclock()-start
   
   ! convert from code units to cgs
   tend = scaling%t * dt_dispatch
@@ -318,6 +320,7 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
     utm_ini = cs * sqrt(2*alpha*st)                     ! Handle velocities every update
     where (st > 1.0) utm_ini = cs * sqrt(2*alpha/ st)
   end if
+  time(2) = wallclock()-start
 
   do i=1,nbin
     do j=1,nbin
@@ -344,6 +347,7 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
       end if
     end do
   end do
+  time(3) = wallclock()-start
   
 
   kk = du * sigma_col * pc
@@ -351,6 +355,7 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
 
   t = 0
   itime = 0
+
   do while (t < tend)
     
     mpx = m * px
@@ -405,6 +410,7 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
       dpy = Spy * dt
       dpz = Spz * dt
     else
+      dt = tend
       do k=1,nbin
         KC_k = kk * C(k,:,:)
         LS_k = ll * SS(k,:,:)
@@ -471,14 +477,17 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
     end if
 
   end do
+  time(4) = wallclock()-start
 
-  print *,"Final n, number density:"
-  print *, n
-  print "(/)"
+  if (verbose > 0) then
+    print *,"Final n, number density:"
+    print *, n
+    print "(/)"
 
-  print *,"Final velocity x:"
-  print *, px/(n+1e-30)
-  print "(/)"
+    print *,"Final velocity x:"
+    print *, px/(n+1e-30)
+    print "(/)"
+  end if
 
   vd(:,1) = px/n
   vd(:,2) = py/n
@@ -489,6 +498,13 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
   vd_out = vd / scaling%u
 
   DEALLOCATE(Spx,Spy,Spz)
+
+  if (ntimer > 0) then
+    ntimer = ntimer-1
+    time(5) = wallclock()-start
+    print '(a,6p,5f10.3)', 'times[mus]:', time/nbin
+  end if
+  used = wallclock() - start
 
   call trace%end (itimer)
 END SUBROUTINE update

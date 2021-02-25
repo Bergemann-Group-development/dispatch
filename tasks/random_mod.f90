@@ -20,6 +20,9 @@ MODULE random_mod
     procedure:: uniform_1
     procedure:: uniform_n
     generic:: uniform => uniform_1, uniform_n
+    procedure:: gaussian_1
+    procedure:: gaussian_n
+    generic:: gaussian => gaussian_1, gaussian_n
   end type
   integer, save:: id=0
 CONTAINS
@@ -121,6 +124,28 @@ FUNCTION uniform_n (self, n) RESULT (out)
   !-----------------------------------------------------------------------------
   do i=1,n
     out(i) = self%ran1()
+  end do
+END FUNCTION
+
+!===============================================================================
+!===============================================================================
+FUNCTION gaussian_1 (self) RESULT (out)
+  class(random_t):: self
+  real:: out
+  !-----------------------------------------------------------------------------
+  out = erf(self%ran1())
+END FUNCTION
+
+!===============================================================================
+!===============================================================================
+FUNCTION gaussian_n (self, n) RESULT (out)
+  class(random_t):: self
+  integer, intent(in):: n
+  real, dimension(n):: out
+  integer:: i
+  !-----------------------------------------------------------------------------
+  do i=1,n
+    out(i) = erf(self%ran1())
   end do
 END FUNCTION
 
