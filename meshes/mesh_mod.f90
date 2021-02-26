@@ -346,7 +346,7 @@ SUBROUTINE init_mesh (self, n, ng, s, p, llc_native)
   self%lb = 1
   self%li = self%lb + self%ng
   self%lo = self%li - min(1,self%ng)
-  self%ui = self%lo + self%n
+  self%ui = self%lo + merge(0,self%n,self%ng==0)
   self%uo = self%ui + min(1,self%ng)
   self%ub = self%ui + self%ng
   self%gn = self%ub
