@@ -894,7 +894,7 @@ SUBROUTINE periodic_grid (self, only)
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%periodic_grid')
   periodic = self%periodic .and. self%size+self%ds > self%box
-  if (.not.any(periodic)) call mpi%abort ('patch_t%periodic_grid')
+  if (.not.any(periodic)) return
   lb = self%mesh%lb
   ub = self%mesh%ub
   li = self%mesh%li
