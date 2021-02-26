@@ -486,9 +486,9 @@ SUBROUTINE pre_init (self)
   ! Multi-threading below -- only self% references allowed
   !-----------------------------------------------------------------------------
   self%n            = n
-  self%ng           = ng
+  self%ng           = max(ng, self%ng)
   self%nt           = nt
-  self%nv           = nv
+  self%nv           = max(nv, self%nv)
   self%nw           = nw
   self%restart      = io%restart                 ! restart snapshot
   self%grace        = grace                      ! grace fraction of dtime

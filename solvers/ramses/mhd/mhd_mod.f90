@@ -91,7 +91,6 @@ SUBROUTINE pre_init (self)
 !...............................................................................
   call trace%begin ('mhd_mod%pre_init')
   call trace%print_id (id)
-  call self%extras_t%pre_init
   self%nw = 1
   self%ng = 3
   self%nv = 8
@@ -100,6 +99,7 @@ SUBROUTINE pre_init (self)
   if (do_temperature) then
     call self%idx%request_index (self%idx%tt, self%nv)
   end if
+  call self%extras_t%pre_init
   !-----------------------------------------------------------------------------
   ! Read solver-relevant parameters and store in the task instance
   !-----------------------------------------------------------------------------

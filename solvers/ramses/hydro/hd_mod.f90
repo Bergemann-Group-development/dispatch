@@ -95,13 +95,13 @@ SUBROUTINE pre_init (self)
   type(index_t):: idx
   !-----------------------------------------------------------------------------
   call trace%begin('hd_t%pre_init')
-  call self%extras_t%pre_init
   self%nv = 5
   self%nw = 1
   self%ng = 2
   self%mhd = .false.
   self%kind = 'ramses_hd_patch'
   call self%idx%init (energy=5, mhd=self%mhd)
+  call self%extras_t%pre_init
   !-----------------------------------------------------------------------------
   ! Ramses specific parameters
   !-----------------------------------------------------------------------------
