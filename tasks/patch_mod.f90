@@ -2563,7 +2563,7 @@ FUNCTION index_only (self, pos, iv, roundup, rounddn, nowrap) RESULT (ii)
     h = self%index_stagger(iv)
   do i=1,3
     if (self%n(i) == 1) then
-      ii(i) = 1
+      ii(i) = self%li(i)
       cycle
     end if
     mesh => self%mesh(i)
