@@ -106,6 +106,7 @@ MODULE particle_solver_mod
   integer:: n_bin = 1                         ! number of size bins
   integer:: seed = 11                         ! random seed
   integer:: particles_per_bin = 10            ! particles per cell-bin
+  integer:: test_nr = 0                       ! test nr (0=off)
   integer:: output_every=1000                 ! output only that fraction
   integer:: ip_dbg = 0                        ! particle ID to debug
   integer:: id_dbg = 0                        ! patch ID to debug
@@ -119,6 +120,8 @@ MODULE particle_solver_mod
   real:: max_fraction = 1.4                   ! upper limit
   real:: drag_coeff                           ! scaled value
   real:: eps=1e-5                             ! momentum error tolerance
+  real:: v_rms = 1.0                          ! Gaussian random
+  real:: v_stream = 10                        ! Two-stream speed
   real(8):: out_time = -1.0                   ! output cadence
   logical:: particle_io = .false.             ! output particle positions?
   logical:: backreaction = .false.            ! backreaction on gas
@@ -147,7 +150,7 @@ SUBROUTINE pre_init (self, patch)
     n_bin, particles_per_bin, seed, ip_dbg, id_dbg, i_dbg, &
     min_fraction, max_fraction, max_size_cgs, min_size_cgs, &
     density_yr_cgs, solid_density_cgs, dust_to_gas, output_every, &
-    backreaction, do_supersonic, debug
+    backreaction, do_supersonic, debug, test_nr, v_rms, v_stream
   logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
   call trace%begin ('particle_solver_t%pre_init')
@@ -361,7 +364,21 @@ SUBROUTINE initial_condition (self)
           end if
           p%q = [i1,i2,i3,i4]
           p%r = self%random%uniform (3)
-          p%v = 0.0
+          !---------------------------------------------------------------------
+          ! Test velocity distributions or zero velocity (default)
+          !---------------------------------------------------------------------
+          if (test_nr > 0) then
+            p%v = v_rms*self%random%gaussian (3)
+            if (test_nr > 1) then
+              if (j <= particles_per_bin/2) then
+                p%v = p%v + [v_stream,0.0,0.0]
+              else
+                p%v = p%v - [v_stream,0.0,0.0]
+              end if
+            end if
+          else
+            p%v = 0.0
+          end if
           p%w = w
           p%t = 0
           call particles%append (p)
@@ -621,6 +638,12 @@ SUBROUTINE update (self)
   self%vmax = 0.0
   self%np = 0
   n_update = 0
+  !-----------------------------------------------------------------------------
+  ! Disable motion loop in test cases
+  !-----------------------------------------------------------------------------
+  if (test_nr > 0) then
+    u(3) = l(3)-1
+  end if
   do i3=l(3),u(3)
   do i2=l(2),u(2)
   do i1=l(1),u(1)
