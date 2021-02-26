@@ -212,6 +212,7 @@ SUBROUTINE update (self, all, only)
     end if
   else
     call self%task%bndries
+    call self%task%periodic_grid()
   end if
   call trace%end (itimer)
 END SUBROUTINE update
