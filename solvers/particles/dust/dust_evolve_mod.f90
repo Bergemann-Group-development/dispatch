@@ -56,7 +56,7 @@ SUBROUTINE init (self, n_bin, m_cgs, d_solid_cgs)
     call self%test                             ! run a self%test once
     first_time = .false.
   end if
-  call io%lock%set ('dust_evolve_t%init')
+  call io%lock%unset ('dust_evolve_t%init')
   self%on = on                                 ! task private copy
   self%n_bin = n_bin
   call trace%end ()

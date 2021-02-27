@@ -59,10 +59,10 @@ SUBROUTINE init (self, n)
                           self%window, mpi_err)
       !$omp end critical (mpi_cr)
     end if
+    call mpi%assert ('MPI_Win_create', mpi_err)
 #else
     self%a = 0d0
 #endif
-    call mpi%assert ('MPI_Win_create', mpi_err)
   end if
   call trace%end()
 END SUBROUTINE init

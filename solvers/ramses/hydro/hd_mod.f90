@@ -299,7 +299,7 @@ SUBROUTINE update (self)
   ! Deallocate
   !-----------------------------------------------------------------------------
   call self%counter_update
-  deallocate (self%qp,self%qm,self%dq,self%fl)
+  deallocate (self%qp, self%qm, self%dq, self%fl, self%q)
   call trace%end (itimer)
 END SUBROUTINE update
 
@@ -632,6 +632,9 @@ SUBROUTINE ctoprim (self)
   real:: s
   real, contiguous, dimension(:,:,:)  , pointer:: d, e, pg, c
   real, contiguous, dimension(:,:,:,:), pointer:: unew, q
+  !-----------------------------------------------------------------------------
+  ! NOTE: Do NOT move this allocate to some other place; it needs to be here
+  ! to allow the courant_condition to be evaluated in pre_update
   !-----------------------------------------------------------------------------
   n = self%mesh%gn
   allocate (self%q (n(1),n(2),n(3),self%nv))
