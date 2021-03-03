@@ -5,7 +5,6 @@ MODULE experiment_mod
   USE bits_mod
   USE trace_mod
   USE solver_mod
-  USE initial_mod
   implicit none
   private
   type, public, extends(solver_t):: experiment_t

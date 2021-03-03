@@ -1,45 +1,45 @@
 !===============================================================================
 !===============================================================================
-MODULE initial_mod
+MODULE initial_conditions_mod
   USE io_mod
   USE trace_mod
   USE mesh_mod
   USE index_mod
   USE math_mod
   USE eos_mod
+  USE gpatch_mod
   implicit none
   private
-  type, public :: initial_t
+  type, public :: initial_conditions_t
     integer :: idir
     logical :: mhd=.true.
     real    :: d0, beta, ampl
-    character(len=16):: solver
-    procedure(initial_conditions), pointer :: condition => null()
+    class(gpatch_t), pointer:: patch => null()
   contains
+    procedure :: pre_init
     procedure :: init
   end type
 CONTAINS
 
 !===============================================================================
 !===============================================================================
-SUBROUTINE init (self, solver, gamma)
-  class(initial_t) :: self
-  integer, save :: idir = 3
-  real(8), optional:: gamma
+SUBROUTINE pre_init (self, patch)
+  class(initial_conditions_t) :: self
+  class(gpatch_t), pointer:: patch
   !.............................................................................
-  character(len=*):: solver
+  integer, save :: idir = 3
   real, save :: d0, beta, ampl
   logical, save :: first_time=.true.
   namelist /IC_params/ d0, beta, ampl, idir
   !-----------------------------------------------------------------------------
   call trace_begin ('initial_t%init')
-
-  d0   = 1.0
-  beta = 0.1
-  ampl = 0.1
+  self%patch => patch
 
   call io%lock%set ('initial_t%init')
   if (first_time) then
+      d0   = 1.0
+      beta = 0.1
+      ampl = 0.1
     rewind (io%input); read (io%input,IC_params)
     if (io%master) write(*,IC_params)
     first_time = .false.
@@ -49,29 +49,30 @@ SUBROUTINE init (self, solver, gamma)
   self%d0   = d0
   self%beta = beta
   self%ampl = ampl
-  self%solver = trim(solver)
-  self%condition => initial_conditions
   self%idir = idir
 
   call trace_end
-END SUBROUTINE init
+END SUBROUTINE pre_init
 
 !===============================================================================
 !> Initial conditions, callable also from refine_mod.f90
 !===============================================================================
-SUBROUTINE initial_conditions (self, m, ff, idx)
-  class(initial_t) :: self
-  type(index_t):: idx
+SUBROUTINE init (self)
+  class(initial_conditions_t) :: self
+  ! ............................................................................
+  type(index_t), pointer:: idx
   class(mesh_t), pointer, dimension(:) :: m
-  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
+  real, dimension(:,:,:,:), pointer :: ff
   !.............................................................................
   integer:: ix, iy, iz                                       ! loop indices
   real:: entropy, pg, pb, bb, rhov2, b2
   real(8):: xs, ys, zs, xp, yp, zp
-  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   !.............................................................................
   call trace_begin ('initial_t%initial_conditions')
-  
+  m => self%patch%mesh
+  ff => self%patch%mem(:,:,:,:,1,1)
+  idx => self%patch%idx
+  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   if (idx%bx > 0) then
     bb=1.0/sqrt(math%pi*4)
   else
@@ -139,11 +140,11 @@ SUBROUTINE initial_conditions (self, m, ff, idx)
           pg = self%beta/2.*bb
           if (eos%gamma==1.0) then
             ff(ix,iy,iz,idx%s) = 1.0
-          else if (self%solver(1:14) == 'zeus_mhd_patch' .or. self%solver(1:10) == 'stagger2e_') then
+          else if (self%patch%kind(1:14) == 'zeus_mhd_patch' .or. self%patch%kind(1:10) == 'stagger2e_') then
             ff(ix,iy,iz,idx%e) = pg / (eos%gamma - 1.0)
-          else if (self%solver(1:9) == 'stagger2_') then
+          else if (self%patch%kind(1:9) == 'stagger2_') then
             ff(ix,iy,iz,idx%s) = (log(pg)-log(self%d0)*eos%gamma)/(eos%gamma-1.0)*self%d0
-          else if (self%solver(1:6) == 'ramses')  then
+          else if (self%patch%kind(1:6) == 'ramses')  then
             ff(ix,iy,iz,idx%e) = pg / (eos%gamma - 1.0)
           end if
         end do
@@ -187,7 +188,7 @@ SUBROUTINE initial_conditions (self, m, ff, idx)
       do iy=m(2)%lb,m(2)%ub
         do ix=m(1)%lb,m(1)%ub
           if (idx%e>0) then
-            if (self%solver(1:6)=='ramses') then 
+            if (self%patch%kind(1:6)=='ramses') then 
               rhov2 = (ff(ix,iy,iz,idx%px)**2 + &
                        ff(ix,iy,iz,idx%py)**2 + &
                        ff(ix,iy,iz,idx%pz)**2)/ff(ix,iy,iz,idx%d) 
@@ -202,6 +203,6 @@ SUBROUTINE initial_conditions (self, m, ff, idx)
 
   call trace_end
   end associate
-END SUBROUTINE initial_conditions
+END SUBROUTINE init
 
-END MODULE initial_mod
+END MODULE initial_conditions_mod
