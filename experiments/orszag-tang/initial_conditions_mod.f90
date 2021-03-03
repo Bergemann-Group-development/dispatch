@@ -1,38 +1,44 @@
 !===============================================================================
 !===============================================================================
-MODULE initial_mod
+MODULE initial_conditions_mod
   USE io_mod
   USE trace_mod
   USE mesh_mod
   USE index_mod
   USE math_mod
   USE eos_mod
+  USE gpatch_mod
   implicit none
   private
-  type, public :: initial_t
+  type, public :: initial_conditions_t
     integer :: idirect
     logical :: mhd=.true.
     real(8) :: p0, v0, b0
     character(len=64):: solver
-    procedure(initial_conditions), pointer :: condition => null()
+    class(gpatch_t), pointer:: patch
   contains
-    procedure :: init
+    procedure:: pre_init
+    procedure:: init
   end type
 CONTAINS
 
 !===============================================================================
+!> Pre-initialize the initial conditions.
 !===============================================================================
-SUBROUTINE init (self, solver)
-  class(initial_t) :: self
-  character(len=*):: solver
-  integer, save :: idirect
+SUBROUTINE pre_init (self, patch)
+  class(initial_conditions_t):: self
+  class(gpatch_t), pointer:: patch
   !.............................................................................
+  integer, save:: idirect
   real(8), save :: p0, v0, b0
   logical, save :: first_time=.true.
   namelist /IC_params/ idirect, b0, p0, v0
   !-----------------------------------------------------------------------------
-  call trace_begin ('initial_t%init')
-  call io%lock%set('initial_t%init')
+  call trace_begin('initial_conditions_t%pre_init')
+  self%patch => patch
+  self%solver = patch%kind
+  self%mhd = .true.
+  call io%lock%set('initial_conditions_t%pre_init')
   if (first_time) then
     ! default values for namelist parameters
     idirect = 3
@@ -44,34 +50,36 @@ SUBROUTINE init (self, solver)
     write (io%namelist, IC_params)
     first_time = .false.
   end if
-  call io%lock%unset('initial_t%init')
-  !
-  self%idirect = idirect
+  call io%lock%unset('initial_conditions_t%pre_init')
+  self%idirect=idirect
   self%p0 = p0
-  self%v0 = v0
   self%b0 = b0
-  self%solver=solver
+  self%v0 = v0
   !
-  self%condition => initial_conditions
-  !
-  call trace_end
-END SUBROUTINE init
+  call trace%end()
+END subroutine pre_init
+
 
 !===============================================================================
 !> Initial conditions, callable also from refine_mod.f90
 !===============================================================================
-SUBROUTINE initial_conditions (self, m, ff, idx)
-  class(initial_t) :: self
-  type(index_t):: idx
+SUBROUTINE init (self)
+  class(initial_conditions_t) :: self
+  ! ----------------------------------------------------------------------------
+  type(index_t), pointer:: idx
   class(mesh_t), pointer, dimension(:) :: m
-  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
+  real, dimension(:,:,:,:), pointer :: ff
   !.............................................................................
   integer:: ix, iy, iz                                       ! loop indices
   real:: entropy, twopi, xa, ya, za, xb, yb, zb, d0 , rhov2, b2         ! local variables
   real,dimension(:,:,:),allocatable :: vecpot, emag
-  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   !.............................................................................
   call trace_begin ('initial_t%initial_conditions')
+
+  m => self%patch%mesh
+  ff => self%patch%mem(:,:,:,:,1,1)
+  idx => self%patch%idx
+  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
 
   if (self%solver(1:6)=='ramses') then
     allocate(emag(m(1)%gn,m(2)%gn,m(3)%gn))
@@ -258,9 +266,8 @@ SUBROUTINE initial_conditions (self, m, ff, idx)
     end if
     deallocate(emag)
   end if
-
   call trace_end
   end associate
-END SUBROUTINE initial_conditions
+END SUBROUTINE init
 
-END MODULE initial_mod
+END MODULE initial_conditions_mod
