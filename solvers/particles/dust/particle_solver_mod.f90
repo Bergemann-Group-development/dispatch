@@ -950,7 +950,7 @@ SUBROUTINE evolve_dust (self)
   do i1=l(1),u(1)
     call self%dust_evolve%update ( &
       self%dtime, &
-         vrms(i1,i2,i3,:), &
+         vrms(i1,i2,i3,:)*self%patch%ds(1), &
       self%dd(i1,i2,i3,:), self%vd(i1,i2,i3,:,:), &
            dd(i1,i2,i3,:),      vd(i1,i2,i3,:,:))
   end do
@@ -977,7 +977,7 @@ SUBROUTINE update_bins (self, dd, vd)
   integer:: bin, it, i(3), n(3)
   type(particle_t), pointer:: pa
   type(particles_t), pointer:: particles
-  integer:: m(4), i1, i2, i3, i4
+  integer:: m(4), i1, i2, i3, i4, j
   real:: dv(3)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -990,7 +990,7 @@ SUBROUTINE update_bins (self, dd, vd)
   do i1=self%lb(1),self%ub(1)
     particles => self%particles(i1,i2,i3,i4)
     pa => particles%head%next                     ! first particle
-    do while (associated(pa%next))                ! loop over particles
+    do j=1,particles%n                            ! loop over particles
       pa%w = pa%w* &
         dd(i1,i2,i3,i4)/self%dd(i1,i2,i3,i4)      ! renormalize
       pa => pa%next                               ! next particle
@@ -1009,7 +1009,7 @@ SUBROUTINE update_bins (self, dd, vd)
     dv = vd(i1,i2,i3,i4,:) - self%vd(i1,i2,i3,i4,:)
     particles => self%particles(i1,i2,i3,i4)
     pa => particles%head%next                     ! first particle
-    do while (associated(pa%next))                ! loop over particles
+    do j=1,particles%n                            ! loop over particles
       pa%v(1) = pa%v(1) + dv(1)                   ! adjust
       pa%v(2) = pa%v(2) + dv(2)                   ! adjust
       pa%v(3) = pa%v(3) + dv(3)                   ! adjust

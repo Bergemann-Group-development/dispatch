@@ -3,7 +3,7 @@
 &experiment_params      verbose=0 gamma=1d0 T_K=10 /
 &scaling_params         l_pc=1 n_H2=1200 v_kms=1.0 /
 &cartesian_params       size=3*1.0 dims=3*1 mpi_dims=1,1,1 origin=3*-0.5 /
-&patch_params           n=3*16 grace=0.2 dt_fixed=1e-4 /
+&patch_params           n=3*16 grace=0.2 dt_fixed=1e4 /
 &selfgravity_params     selfgravity=f /
 &poisson_params         verbose=1 solver='sor' /
 
@@ -11,7 +11,7 @@
 &particle_solver_params verbose=0 n_bin=20 particles_per_bin=10
                         out_time=1e-2 output_every=80
                         test_nr=1 v_rms=0 v_stream=10
-                        min_size_cgs=3e-7 max_size_cgs=3e-4 /
+                        min_size_cgs=1e-3 max_size_cgs=1e-1 /
 &dust_params            on=f verbose=0 /
 &dust_cell_params       on=t verbose=0 n_bin=1 particles_per_bin=30
                         min_fraction=0.4 max_fraction=2
