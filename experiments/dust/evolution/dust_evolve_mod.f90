@@ -230,7 +230,7 @@ SUBROUTINE init (self, ln_bin, lm_cgs, rho_s)
       end do
     end do
 
-    pc = 1-pf
+    !pc = 1-pf
     where (sigma_col == 0) ep = 0
     where (sigma_col /= 0) ep = (mn - ms) / (mn - mm)
 
@@ -252,8 +252,8 @@ END SUBROUTINE init
 !===============================================================================
 SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
   class(dust_evolve_t):: self
-  real(kind=8), intent(in)  :: dt_dispatch
-  real,         intent(in)  :: vrms_in(:), dd_in(:), vd_in(:,:)
+  real(kind=8), intent(in)  :: dt_dispatch, vrms_in(:)
+  real,         intent(in)  :: dd_in(:), vd_in(:,:)
   real,         intent(out) :: dd_out(:), vd_out(:,:)
 
   real:: tt, mu, cs, r, msolar, Omega_K, rho_s, t, t_end
@@ -299,6 +299,14 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
   px = n * vd(:,1)
   py = n * vd(:,2)
   pz = n * vd(:,3)
+  
+  if (verbose > 0) then
+    print *, "Starting density", n
+    print *, "Starting velocity x:", vd(:,1)
+    print *, "Starting velocity y:", vd(:,2)
+    print *, "Starting velocity z:", vd(:,3)
+    print *, "Starting vrms:", vrms
+  end if
 
   m = m_cgs
   
@@ -326,6 +334,7 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
     do j=1,nbin
       du(i,j) = sqrt((vd(i,1) - vd(j,1))**2 + (vd(i,2) - vd(j,2))**2 + (vd(i,3) - vd(j,3))**2)
       du(i,j) = du(i,j) + sqrt(vrms(i)**2 + vrms(j)**2)
+
       
       if (do_brownian) then
       ubm(i,j) = sqrt(8 * cgs%k_b* tt_dust * (m(i) + m(j) )/(math%pi*m(i)*m(j) ))
@@ -349,6 +358,10 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
   end do
   time(3) = wallclock()-start
   
+  if (verbose>0) then
+    print *, pf
+  end if
+  pc = 1-pf
 
   kk = du * sigma_col * pc
   ll = du * sigma_col * pf                              
@@ -466,15 +479,15 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
     pz = pz + dpz
     t = t + dt
 
-    if (t > save_time) then
-      save_time = save_time * eps_time
-      itime = itime + 1
-      if (mod(itime,10)==0) then
-        print *,"Time left: ", (t_end-t)/(60*60*24*365)
-        ! print *, "n", n(1:10)
-        ! print *, "p", p(1:10)
-      end if
-    end if
+    ! if (t > save_time) then
+    !   save_time = save_time * eps_time
+    !   itime = itime + 1
+    !   if (mod(itime,10)==0) then
+    !     print *,"Time left: ", (t_end-t)/(60*60*24*365)
+    !     ! print *, "n", n(1:10)
+    !     ! print *, "p", p(1:10)
+    !   end if
+    ! end if
 
   end do
   time(4) = wallclock()-start
@@ -482,6 +495,10 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
   if (verbose > 0) then
     print *,"Final n, number density:"
     print *, n
+    print "(/)"
+
+    print *,"Final dn, number density:"
+    print *, dn
     print "(/)"
 
     print *,"Final velocity x:"
