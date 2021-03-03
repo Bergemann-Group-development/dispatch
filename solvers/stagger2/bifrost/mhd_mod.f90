@@ -37,9 +37,7 @@ MODULE mhd_mod
   implicit none
   private
   type, extends(extras_t), public:: mhd_t
-    real, dimension(:,:,:),   pointer    :: d, dddt, e, dedt
-    real, dimension(:,:,:,:), pointer    :: p, dpdt, B, dBdt, emf
-    real, dimension(:,:,:),   pointer    :: lnd, ee, pg, tt
+    real, dimension(:,:,:),   pointer    :: pg, tt
     real, dimension(:,:,:),   allocatable:: qrad
     real:: nu(6)
     real, pointer:: nu_e(:) => null()                                           ! Enhanced energy diffusion at some Z
@@ -232,16 +230,13 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%pde',itimer=itimer)
   associate (i => self%idx)
-  self%d    => self%mem(:,:,:,i%d      ,self%it,1)
-  self%dddt => self%mem(:,:,:,i%d      ,self%it,2)
-  self%e    => self%mem(:,:,:,i%e      ,self%it,1)
-  self%dedt => self%mem(:,:,:,i%e      ,self%it,2)
-  self%p    => self%mem(:,:,:,i%px:i%pz,self%it,1)
-  self%dpdt => self%mem(:,:,:,i%px:i%pz,self%it,2)
+  d    => self%mem(:,:,:,i%d      ,self%it,1)
+  dddt => self%mem(:,:,:,i%d      ,self%it,2)
+  e    => self%mem(:,:,:,i%e      ,self%it,1)
+  dedt => self%mem(:,:,:,i%e      ,self%it,2)
+  p    => self%mem(:,:,:,i%px:i%pz,self%it,1)
+  dpdt => self%mem(:,:,:,i%px:i%pz,self%it,2)
   !> ---------------------------------------------------------------------------
-  d=>self%d; dddt=>self%dddt
-  e=>self%e; dedt=>self%dedt
-  p=>self%p; dpdt=>self%dpdt
   px=>p(:,:,:,1); py=>p(:,:,:,2); pz=>p(:,:,:,3);
   dpdtx=>dpdt(:,:,:,1); dpdty=>dpdt(:,:,:,2); dpdtz=>dpdt(:,:,:,3);
   dddt = 0.0
@@ -249,9 +244,8 @@ SUBROUTINE pde (self)
   dpdt = 0.0
   !> ---------------------------------------------------------------------------
   if (self%mhd) then
-    self%B    => self%mem(:,:,:,i%bx:i%bz,self%it,1)
-    self%dBdt => self%mem(:,:,:,i%bx:i%bz,self%it,2)
-    B=>self%B; dBdt=>self%dBdt
+    B    => self%mem(:,:,:,i%bx:i%bz,self%it,1)
+    dBdt => self%mem(:,:,:,i%bx:i%bz,self%it,2)
     Bx   =>   B(:,:,:,1);    By=>   B(:,:,:,2);    Bz=>   B(:,:,:,3)
     dBdtx=>dBdt(:,:,:,1); dBdty=>dBdt(:,:,:,2); dBdtz=>dBdt(:,:,:,3)
     dbdt = 0.0
@@ -291,9 +285,7 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   ee  = e/d
   ! calculate speed of sound.
-  self%lnd => lnd
-  self%ee  => ee
-  call self%gas_pressure_sub (d, self%lnd, self%ee, pg)
+  call self%gas_pressure_sub (d, lnd, ee, pg)
   self%pg => pg
   call self%aux%register ('pg', self%pg)
   !print *, 'minmax ee, d', minval(ee), maxval(ee), minval(d), maxval(d)
@@ -901,7 +893,7 @@ END SUBROUTINE output
 SUBROUTINE gas_pressure_sub (self, d, lnd, ee, pg)
   class(mhd_t):: self
   real, dimension(:,:,:):: pg
-  real, dimension(:,:,:), pointer:: d, lnd, e, ee
+  real, dimension(:,:,:),target:: d, lnd, ee
   integer, save:: nprint=1
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%gas_pressure_sub')
