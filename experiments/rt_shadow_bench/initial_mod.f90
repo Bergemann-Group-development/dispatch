@@ -30,22 +30,22 @@ CONTAINS
 SUBROUTINE init (self, solver, gam)
   class(initial_t):: self
   character(len=64):: solver
-  real, optional :: gam
-  real, save:: clump_pos(3)=0.0, clump_a=0.1, clump_b=0.06, d0=1.0, t0=290.0, clump_dfact=10.0
+  real(8), optional :: gam
+  real, save:: clump_pos(3)=0.5, clump_a=0.1, clump_b=0.06, d0=1.0, t0=290.0, clump_dfact=10.0
   real, save:: gamma=1.4
   namelist /IC_params/ clump_pos, clump_a, clump_b, d0, t0, clump_dfact, gamma
   integer:: iostat
   !----------------------------------------------------------------------------
   call trace_begin('initial_t%init')
-  call io%lock%set
+  call io%lock%set('initial_t%init')
   if (first_time) then
     first_time = .false.
     rewind (io%input)
-    read (io%input, initial_params, iostat=iostat)
-    if (io%master) write (*, initial_params)
+    read (io%input, IC_params)
+    if (io%master) write (*, IC_params)
     call scaling%init()
   end if
-  call io%lock%unset
+  call io%lock%unset('initial_t%init')
   self%solver = trim(solver)
   self%clump_pos = clump_pos/scaling%l
   self%clump_a = clump_a/scaling%l
@@ -87,19 +87,20 @@ SUBROUTINE condition (self, m, mem, i)
 
         ! currently, the y and z coordinates are treated symmetrically; this
         ! leads to a cylindrically symmetric problem in 3-D.
-        q = ((x - self%clump_pos(1)) / self%clump_a)**2 &
+        q = sqrt(((x - self%clump_pos(1)) / self%clump_a)**2 &
           + ((y - self%clump_pos(2)) / self%clump_b)**2 &
-          + ((z - self%clump_pos(3)) / self%clump_b)**2
-		q = 10.0 * (q - 1.0)
+          + ((z - self%clump_pos(3)) / self%clump_b)**2)
+        !print *, q, x, y, z
+        !q = 10.0 * (q - 1.0)
         ! the if-then-else is to prevent overflow when (x,y,z) is very from zero.
-        if (q > 88.0) then
-          mem(ix,iy,iz,i%d) = self%d0
+        if (q > 1.0) then
+          d = self%d0+self%d0*sin(x)*cos(y)*cgs%pi/2
         else
-          mem(ix,iy,iz,i%d) = self%d0 + (self%clump_dfact * self%d0 - self%d0) &
-                                  / (1.0 + exp(q))
+          d = self%d0 + (self%clump_dfact * self%d0 - self%d0) &
+                                  / (1.0 + exp(10*(q-1.0)))
         end if
         ! the clump is initially in pressure equilibrium with the ambient medium
-        d = mem(ix,iy,iz,i%d)
+        mem(ix,iy,iz,i%d) = d
         if (self%solver(1:7)=='ramses_') then
           mem(ix,iy,iz,i%e) = p0/(self%gamma-1.0)!*d
         else if (self%solver(1:9)=='stagger2e') then

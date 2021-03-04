@@ -15,6 +15,7 @@ MODULE scaling_mod
     real(kind=8):: d, e, p, u, temp, grav, mu, ee, kr, b
   contains
     procedure:: init
+    procedure:: output
   end type
   type(scaling_t), public :: scaling
 CONTAINS
@@ -64,5 +65,19 @@ SUBROUTINE init (self)
   call self%output
   call trace%end()
 END SUBROUTINE init
+
+!===============================================================================
+!> Output scaling units. Do NOT call units%output from here!
+!===============================================================================
+SUBROUTINE output (self)
+  class(scaling_t):: self
+  real:: l, t, d
+  namelist /scaling_nml/ l, t, d
+  !-----------------------------------------------------------------------------
+  l = self%l
+  t = self%t
+  d = self%d
+  write (io%namelist,scaling_nml)
+END SUBROUTINE output
 
 END MODULE scaling_mod

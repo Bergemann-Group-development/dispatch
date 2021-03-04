@@ -13,7 +13,6 @@
 !> update procedure in $(TOP)/lists/task_list_mod.f90.
 !===============================================================================
 MODULE experiment_mod
-  USE rt_nbors_mod
   USE solver_mod
   USE list_mod
   USE download_mod
@@ -36,7 +35,6 @@ MODULE experiment_mod
   type, public, extends(solver_t):: experiment_t
   contains
     procedure:: init
-    procedure:: init_task_list
     procedure:: update
   end type
   !.............................................................................
@@ -55,48 +53,16 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   self%mhd = .true.
   call self%solver_t%init
-  self%unsigned = .false.
-  !----------------------------------------------------------------------------
-  ! Boundary setup
-  !----------------------------------------------------------------------------
-  call self%init_bdries
-  call self%boundaries%init (self)
-  self%boundaries%id = self%id
 END SUBROUTINE init
-
-!===============================================================================
-!> Intercept the init_task_list call to finalize RT setup
-!===============================================================================
-SUBROUTINE init_task_list (self, task_list)
-  class(experiment_t):: self
-  class(list_t), pointer:: task_list
-  !.............................................................................
-  call trace%begin ('experiment_t%init_task_list')
-  ! -- punt to the next level; picked up by extras_t ---------------------------
-  call self%solver_t%init_task_list (task_list)
-  ! -- for RT tasks, modify the nbor lists and add tasks to the task list-------
-  if (associated (self%rt)) then
-    if (self%rt%on) then
-      call rt_nbors%init (self)
-      call self%rt%add_to_task_list
-    end if
-  end if
-  call trace%end()
-END SUBROUTINE init_task_list
 
 !===============================================================================
 !> Experiment update
 !===============================================================================
 SUBROUTINE update (self)
   class(experiment_t):: self
-  real, dimension(:,:,:), pointer :: mem
-  integer:: iv
+
   !----------------------------------------------------------------------------
   call trace%begin('experiment_t%update')
-  do iv=1, self%nv
-    mem => self%mem(:,:,:,iv,self%it,1)
-    call self%boundaries%extrapolate(mem, iv)
-  end do
   call self%solver_t%update
   call trace%end()
 END SUBROUTINE update

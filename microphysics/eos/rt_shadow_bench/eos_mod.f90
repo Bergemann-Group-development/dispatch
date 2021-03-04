@@ -45,17 +45,19 @@ SUBROUTINE init (self)
   logical, save:: first_time=.true.
   real(8), save:: gamma=1.66666667
   logical, save:: do_rt = .false.
+  integer, save:: itimer=0
   namelist /eos_params/ gamma, do_rt
   !-----------------------------------------------------------------------------
-  call trace%begin ('eos_t%init')
-  call scaling%init
-  call io%lock%set
+  call trace%begin ('eos_t%init', itimer=itimer)
+  call io%header ('microphysics/eos/ideal/eos_mod:')
+  call io%lock%set ('eos_t%init')
   if (first_time) then
-  if (io%master) print *, &
-     '------------------------ ideal equation-of-state -----------------------------'
     gamma = self%gamma
-    rewind (io%input); read (io%input, eos_params, iostat=iostat)
-    if (io%master) write (io%output, eos_params)
+    do_rt = self%do_rt
+    rewind (io%input)
+    read (io%input, eos_params, iostat=iostat)
+    call io%namelist_warning ('eos_params', iostat)
+    if (io%master) write (io%namelist, eos_params)
     self%gamma = gamma
     self%t0   = 1./(290./scaling%temp)
     self%rho0 = 1./(1.  /scaling%d)
@@ -63,8 +65,8 @@ SUBROUTINE init (self)
     first_time = .false.
     self%do_rt = do_rt
   end if
-  call io%lock%unset
-  call trace%end()
+  call io%lock%unset ('eos_t%init')
+  call trace%end(itimer)
 END SUBROUTINE init
 
 !-------------------------------------------------------------------------------
@@ -147,17 +149,18 @@ SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
   call trace%end(itimer)
 END SUBROUTINE lookup
 
-!=======================================================================
+!===============================================================================
 !> General EOS lookup routine, returning values in optional arguments
-!=======================================================================
+!===============================================================================
 SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne,lnee, pg, tt, ne, rk, &
-                         src, scat, ross,gamma, e_below, label, id)
+                         ss, s, lns, src, gamma,e_below, label, id)
   class (eos_t):: self
   integer:: dim(3)
-  real, dimension(:,:,:)  , pointer, optional :: lnd,d,lne,lnee,e,ee,tt,ne,ross
-  real, dimension(:,:,:,:)         , optional :: src,rk,scat
+  real, dimension(:,:,:)  , pointer, optional :: lnd,d,lne,lnee,e,ee,tt,ne
+  real, dimension(:,:,:)  , pointer, optional :: ss, s, lns
+  real, dimension(:,:,:,:)         , optional :: src,rk
   real, dimension(:,:,:)           , optional :: pg
-integer, optional:: id
+  integer, optional:: id
   real, optional:: gamma
   logical, optional:: e_below
   character(len=*),optional::label
@@ -177,10 +180,8 @@ integer, optional:: id
     print *, 'present(pg)  =', present(pg)
     print *, 'present(src) =', present(src)
     print *, 'present(rk)  =', present(rk)
-    print *, 'present(scat)  =', present(scat)
     print *, 'present(tt)  =', present(tt)
     print *, 'present(ne)  =', present(ne)
-    print *, 'present(ross)  =', present(ross)
     print *, 'present(gamma)  =', present(gamma)
     print *, 'dim:', dim
   end if
