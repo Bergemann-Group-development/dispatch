@@ -89,7 +89,6 @@ MODULE rt_mod
     real                     :: mu, rt_phi, w                                   ! mu, phi, weights
     real                     :: rt_hat(3)                                       ! RT direction
     real                     :: epsilon =1.0                                    ! scattering coefficient
-    real                     :: rt_grace=0.01                                   ! deal with roundoff
     real                     :: rt_freq
     real(8)                  :: rt_llc(3)=0d0                                   ! lower left corner
     real(8)                  :: rt_urc(3)=0d0                                   ! upper right corner
@@ -105,6 +104,7 @@ MODULE rt_mod
     logical                  :: on=.false.                                      ! allows local turn-off
     logical                  :: vertical_propagation=.false. ! see code
     logical                  :: warmup_done=.false.
+    logical                  :: pre_initialized_rt=.false.
     logical                  :: initialized=.false.
     logical                  :: first_eos  =.true.
     real, pointer            :: q(:,:,:,:)                                      ! pointer to net radiative heating
@@ -170,14 +170,18 @@ recursive SUBROUTINE pre_init (self)
     call io%namelist_warning ('sc_rt_params', iostat)
     write (io%namelist, sc_rt_params)
   end if
+  if (self%pre_initialized_rt) call io%abort ('double rt pre_init')
+  self%pre_initialized_rt = .true.
+  if (self%pre_initialized) print *, 'pre_init issued somewhere'
   call io%lock%unset ('rt_t%pre_init')
+  call self%gpatch_t%pre_init()
   self%on = on
   self%nt = nt
   self%ng = ng
-  self%n = self%patch%n
+  self%nw = 1                                                                   ! no time derivatives
   self%n_warmup = n_warmup
   self%n_bin = n_bin
-  self%rt_grace = rt_grace
+  self%grace = rt_grace
   self%rt_llc = rt_llc
   self%rt_urc = rt_urc
   self%rt_timestep = rt_timestep
@@ -218,9 +222,6 @@ recursive SUBROUTINE pre_init (self)
     else
       self%kind    = 'rt_sc'
     end if
-    !---------------------------------------------------------------------------
-    ! Request heating per unit volume for MHD
-    !---------------------------------------------------------------------------
     !
     if (self%i_omega==0) then
       call rt_integral%init
@@ -300,12 +301,14 @@ SUBROUTINE init (self)
   class (*),        pointer :: dummy
   integer:: n_omega, i_omega, dir, i_mu, i_phi, iostat, n
   ! ----------------------------------------------------------------------------
-  if (self%initialized) call io%abort ('double rt init')
+  if (self%initialized) then
+    print *, self%id, self%i_omega
+    call io%abort ('double rt init')
+  end if 
   call trace%begin ('rt_t%init')
   self%initialized = .true.
   p => self%patch
   !
-  self%nw = 1                                                                   ! no time derivatives
   ! ----------------------------------------------------------------------------
   ! omega0 stores EOS data, plus the collected heating rates. omegaX stores just
   ! the directional heating rates.
@@ -321,15 +324,14 @@ SUBROUTINE init (self)
   else
     self%nv = self%n_bin
   end if
+  self%mv = self%nv
   !
   write (io_unit%mpi,'(3i4,3f8.3,i4,a)') p%id, self%id,self%i_omega,p%position,p%rank,'pID, sID, omega, pos, rank'
   !
   if (verbose == -1) &
     write (io_unit%log,*) 'rt_t%init: id, mhd%id i_omega =', self%id, p%id, self%i_omega
   !
-  write (io_unit%log,*) 'call self%patch_t%setup'
-  call self%patch_t%setup (position=self%position, size=self%size, n=p%n, nt=self%nt,&
-                           ng=self%ng, nv=self%nv, nw=1)
+  call self%gpatch_t%init
   self%mem = 0.0
   if (self%i_omega==0) then
     self%mem(:,:,:,self%irk(1):self%irk(2),:,:)=tiny(1.)
@@ -349,7 +351,6 @@ SUBROUTINE init (self)
   self%dt_fixed = self%rt_timestep
   self%dtime    = self%rt_timestep
   self%dt       = self%rt_timestep
-  self%grace    = self%rt_grace
   self%time     = p%time - (self%n_warmup-self%grace)*self%dtime
   self%t        = self%time
   self%qr_time  = self%time - 2.0*self%grace*self%dtime
@@ -517,10 +518,10 @@ SUBROUTINE pre_update (self)
   real, dimension(:,:,:), pointer:: qr1, qr2
   !-----------------------------------------------------------------------------
   if (.not. self%on) then
-    !if (self%patch%is_set(bits%qpv)) then
-    !  aux => scratch%heating_per_unit_volume
-    !  call self%patch%aux%register ('qr', aux)
-    !end if
+    gn = self%patch%mesh%gn
+    call scratch%allocate (scratch%heating_per_unit_volume, gn)
+    aux => scratch%heating_per_unit_volume
+    call self%patch%aux%register ('qr', aux)
     return
   end if
   call trace%begin ('rt_t%pre_update', itimer=itimer)
@@ -752,11 +753,11 @@ SUBROUTINE add_to_task_list(self, task_list)
   !-----------------------------------------------------------------------------
   self%task_list => task_list
   if (self%on) then
-    call self%task_list%append (self%link)
+    call self%task_list%append_link (self%link)
     omega => self%omega
     do while(associated(omega))
       omega%task_list => task_list
-      call self%task_list%append (omega%link)
+      call self%task_list%append_link (omega%link)
       omega => omega%next
     end do
   end if
