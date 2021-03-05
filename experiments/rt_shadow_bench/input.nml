@@ -8,7 +8,7 @@
  /
 
  & initial_refine_params
-  on = t
+  on = f
   n_refine = 0,0,2
   ratio=2.0
   center   = 0.0,0.0,0.5
@@ -61,10 +61,6 @@
 &download_params        verbose=0 /
 !&download_params        verbose=0 use_locks=t use_different=-2 sorted=t check_filled=t id_debug=0 /
 
-&eos_params
-  gamma = 1.666667
-  do_rt = t
-/
 
 
 ! ------- Radiative transfer ---------
@@ -114,10 +110,8 @@ space_diagonals=t
 &stagger_params
  nu=  0.15, 1.0, 1.0, 0.05, 1.0, 1.0
  !     cs    pa  ofd  mas  kap  eta
- gamma=1.666667
 /
 &ramses_params
- gamma=1.666667
  slope_type=2
  courant_factor=0.8
  do_isothermal=f
@@ -137,11 +131,9 @@ space_diagonals=t
  t0=290.0
  clump_a=0.06
  clump_b=0.1
- gamma=1.666667
 /
 
 &bifrost_params             
-gamma=1.6666666666667
 loginterpolation=t
 ca_max = 3e2 
 courant=0.20

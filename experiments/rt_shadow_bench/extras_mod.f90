@@ -65,6 +65,7 @@ MODULE extras_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.
   !-----------------------------------------------------------------------------
+  USE initial_conditions_mod                                           ! initial
   USE rt_mod                                                           ! RT
   !USE newton_mod                                                       ! Newton
   !USE forces_mod                                                       ! forces
@@ -83,7 +84,8 @@ MODULE extras_mod
   ! states, must be accessed via a private instance in the extras_t data type
   !-----------------------------------------------------------------------------
   type, public, extends(gpatch_t):: extras_t
-    class(gpatch_t), pointer:: gpatch => null()                        ! keep
+    class(gpatch_t), pointer:: patch => null()                        ! keep
+    type(initial_conditions_t):: initial_conditions                    ! initial
     !type(selfgravity_t):: selfgravity                                  ! selfg
     !type(forces_t):: forces                                            ! forces
     !class(pic_t), pointer:: pic                                        ! pic
@@ -122,8 +124,9 @@ SUBROUTINE pre_init (self)
   class(extras_t), target:: self
   !.............................................................................
   call trace%begin ('extras_t%pre_init')
-  self%gpatch => self                                                   ! keep
-  call self%gpatch_t%pre_init                                           ! keep
+  self%patch => self                                                   ! keep
+  call self%patch_t%pre_init                                           ! keep
+  call self%initial_conditions%pre_init (self%patch)                   ! initial
   !call self%forces%init (self)                                         ! forces
   allocate(self%rt)                                                     ! RT
   self%rt%patch => self
@@ -157,6 +160,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Optional inits
   !-----------------------------------------------------------------------------
+  call self%initial_conditions%init                                    ! initial
   !call self%newton%init (self%link)                                    ! Newton
   !allocate (self%trace_particles)                                      ! tracep
   !self%connect%trace_particles => self%trace_particles                 ! tracep
