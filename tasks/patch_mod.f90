@@ -607,6 +607,7 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
   if (present(nt      )) self%nt       = nt
   if (present(nv      )) self%nv       = nv
   if (present(nw      )) self%nw       = nw
+  call io%warning('WARNING: calling deprecated patch_t%setup!')
 END SUBROUTINE setup 
 
 !===============================================================================
