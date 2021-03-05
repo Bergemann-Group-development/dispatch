@@ -102,6 +102,7 @@ MODULE extras_mod
     procedure, nopass:: cast2extras
     procedure:: pre_init
     procedure:: init
+    procedure:: add_to_task_list
     procedure:: dealloc
     procedure:: pre_update
     procedure:: post_update
@@ -171,6 +172,22 @@ SUBROUTINE init (self)
   !call self%patch_force%init                                           ! sinkp 
   call trace%end()
 END SUBROUTINE init
+
+!===============================================================================
+!> Add the extras tasks to the task list
+!===============================================================================
+SUBROUTINE add_to_task_list(self, task_list)
+  class(extras_t):: self
+  class(list_t), pointer:: task_list
+  !-----------------------------------------------------------------------------
+  call trace%begin ('extras_t%add_to_task_list')
+  self%task_list => task_list                                          ! keep
+  ! ----------------------------------------------------------------------------
+  ! Optional adds to task list
+  ! ----------------------------------------------------------------------------
+  ! call self%rt%add_to_task_list(task_list)                            ! RT
+  call trace%end()
+END SUBROUTINE add_to_task_list
 
 !===============================================================================
 !> Deallocate associated arrays
