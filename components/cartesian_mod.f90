@@ -265,6 +265,7 @@ recursive SUBROUTINE initial_refine(self, task,level_min, ip)
   integer:: level_min, ip
   ! ----------------------------------------------------------------------------
   class(link_t), pointer:: link
+  class(list_t), pointer:: tlist
   class(experiment_t), pointer:: patch
   class(task_t), pointer:: patch_task
   logical, save:: on = .false.
@@ -286,8 +287,11 @@ recursive SUBROUTINE initial_refine(self, task,level_min, ip)
     write (io%namelist, initial_refine_params)
     if (on) call io%header('begin initial mesh refinement')
   end if
+  tlist => self%task_list
   if (.not.on) then
+    call task%pre_init()
     call self%task_list%append_link (task%link)
+    call task%add_to_task_list (tlist)
     return
   end if
   level_max = level_min+maxval(n_refine)
@@ -359,9 +363,9 @@ recursive SUBROUTINE initial_refine(self, task,level_min, ip)
       end do
     end do
     if (keep_parent) then
-      !call task%pre_init()
+      call task%pre_init()
       call self%task_list%append_link (task%link)
-      !call task%add_to_task_list (tlist)
+      call task%add_to_task_list (tlist)
       write (io_unit%mpi,'(3i4,3f8.3,i4,a)') &
         i,j,k,task%position,task%rank,'i,j,k,pos,rank'
     else
@@ -372,7 +376,7 @@ recursive SUBROUTINE initial_refine(self, task,level_min, ip)
   else
     call task%pre_init()
     call self%task_list%append_link (task%link)
-    !call task%add_to_task_list (tlist)
+    call task%add_to_task_list (tlist)
     write (io_unit%mpi,'(3i4,3f8.3,i4,a)') &
       i,j,k,task%position,task%rank,'i,j,k,pos,rank'
   end if
