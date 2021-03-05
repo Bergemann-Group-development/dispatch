@@ -389,7 +389,7 @@ SUBROUTINE init_exp (self, origin)
   !.............................................................................
   type(link_t), pointer:: link
   class(task_t), pointer:: task
-  class(experiment_t), pointer:: patch
+  class(gpatch_t), pointer:: patch
   logical:: periodic(3)
   integer:: id
   !-----------------------------------------------------------------------------
@@ -399,11 +399,11 @@ SUBROUTINE init_exp (self, origin)
     id = id+1
     if (mod(id,omp%nthreads)==omp%thread) then
       task => link%task
+      call task%init
       select type (task)
-      class is (experiment_t)
+      class is (gpatch_t)
         patch => task
         periodic = patch%periodic
-        call patch%init
         if (any(patch%periodic .neqv. periodic)) then
           write (stdlog,*) 'cartesian_t%init: id=', patch%id, patch%periodic
           call io%warning ('cartesian_t%init: experiment%init changed %periodic')
