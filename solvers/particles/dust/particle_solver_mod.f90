@@ -116,6 +116,8 @@ MODULE particle_solver_mod
   real:: dust_to_gas = 0.01                   ! dust-to-gas ratio
   real:: max_size_cgs = 1e-5                  ! max particle size
   real:: min_size_cgs = 1e-5                  ! min particle size
+  real:: init_size_cgs = 0.0                  ! single initial size
+  real:: alpha_exponent = -1.0                ! dust power law distribution
   real:: min_fraction = 0.7                   ! lower limit
   real:: max_fraction = 1.4                   ! upper limit
   real:: drag_coeff                           ! scaled value
@@ -150,7 +152,8 @@ SUBROUTINE pre_init (self, patch)
     n_bin, particles_per_bin, seed, ip_dbg, id_dbg, i_dbg, &
     min_fraction, max_fraction, max_size_cgs, min_size_cgs, &
     density_yr_cgs, solid_density_cgs, dust_to_gas, output_every, &
-    backreaction, do_supersonic, debug, test_nr, v_rms, v_stream
+    backreaction, do_supersonic, debug, test_nr, v_rms, v_stream, &
+    alpha_exponent, init_size_cgs
   logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
   call trace%begin ('particle_solver_t%pre_init')
@@ -285,7 +288,7 @@ SUBROUTINE initial_condition (self)
   type(particle_t), pointer   :: pn
   class(gpatch_t), pointer    :: patch
   integer                     :: m(3), i1, i2, i3, i4, i, j, n, nv, l, nb, id(5)
-  real                        :: d, w, vg(3), chance
+  real                        :: d, w, w1, vg(3), chance
   logical                     :: draw
   integer, save               :: itimer=0, extra_bits
   integer, save               :: lid = 0
@@ -341,6 +344,7 @@ SUBROUTINE initial_condition (self)
         particles => self%particles(i1,i2,i3,i4)
         id = [self%patch%id,i1,i2,i3,i4]
         call particles%init (id, 0)
+        w1 = w*(self%s_cgs(i4)/max_size_cgs)**(alpha_exponent+1.0)
         n = n+2
         nv = 0
         do j=1,particles_per_bin
@@ -379,7 +383,7 @@ SUBROUTINE initial_condition (self)
           else
             p%v = 0.0
           end if
-          p%w = w
+          p%w = w1
           p%t = 0
           call particles%append (p)
         end do
@@ -416,6 +420,57 @@ SUBROUTINE initial_condition (self)
   end if
   call trace%end (itimer)
 END SUBROUTINE initial_condition
+
+!===============================================================================
+!> Renormarlize the particles weightts to get the desired dust-to-gas ratio
+!===============================================================================
+SUBROUTINE normalize_weights (self)
+  class(particle_solver_t) :: self
+  !.............................................................................
+  class(particles_t), pointer:: particles
+  class(particle_t), pointer:: pa
+  integer:: i1, i2, i3, i4, j, l(3), u(3)
+  real:: f
+  real, allocatable:: dd(:,:,:)
+  real, pointer:: d(:,:,:)
+  !-----------------------------------------------------------------------------
+  call trace%begin ('particle_solver_t%normalize_weights')
+  !-----------------------------------------------------------------------------
+  ! Compute current dust mass density for each cell
+  !-----------------------------------------------------------------------------
+  l = self%lb
+  u = self%ub
+  allocate (dd(l(1):u(1),l(2):u(2),l(3):u(3)))
+  do i4=1,self%n_bin
+    do i3=l(3),u(3)
+      do i2=l(2),u(2)
+        do i1=l(1),u(1)
+          dd(i1,i2,i3) = dd(i1,i2,i3) + self%particles(i1,i2,i3,i4)%density()
+        end do
+      end do
+    end do
+  end do
+  !-----------------------------------------------------------------------------
+  ! Renormalize to the desired dust-to-gas ratio
+  !-----------------------------------------------------------------------------
+  d => self%patch%mem(:,:,:,self%patch%idx%d,self%patch%it,1)
+  do i3=l(3),u(3)
+    do i2=l(2),u(2)
+      do i1=l(1),u(1)
+        f = d(i1,i2,i3)*dust_to_gas/dd(i1,i2,i3)
+        do i4=1,self%n_bin
+          particles => self%particles(i1,i2,i3,i4)
+          pa => particles%head%next
+          do j=1,particles%n
+            pa%w = pa%w*f
+            pa => pa%next
+          end do
+        end do
+      end do
+    end do
+  end do
+  call trace%end ()
+END SUBROUTINE normalize_weights
 
 !===============================================================================
 !> Initialize particle solver, after nbor lists are created, making it possible
