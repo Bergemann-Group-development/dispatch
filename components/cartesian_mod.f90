@@ -291,7 +291,7 @@ recursive SUBROUTINE initial_refine(self, task,level_min, ip)
   if (.not.on) then
     call task%pre_init()
     call self%task_list%append_link (task%link)
-    call task%add_to_task_list (tlist)
+    call task%init_task_list (tlist)
     return
   end if
   level_max = level_min+maxval(n_refine)
@@ -354,6 +354,7 @@ recursive SUBROUTINE initial_refine(self, task,level_min, ip)
         !  end if 
           call patch%set(bits%static)
           if (keep_parent) then
+            patch%parent => task
             patch%link%parent => task%link
             patch%parentid    = task%id
           end if
@@ -365,7 +366,7 @@ recursive SUBROUTINE initial_refine(self, task,level_min, ip)
     if (keep_parent) then
       call task%pre_init()
       call self%task_list%append_link (task%link)
-      call task%add_to_task_list (tlist)
+      call task%init_task_list (tlist)
       write (io_unit%mpi,'(3i4,3f8.3,i4,a)') &
         i,j,k,task%position,task%rank,'i,j,k,pos,rank'
     else
@@ -376,7 +377,7 @@ recursive SUBROUTINE initial_refine(self, task,level_min, ip)
   else
     call task%pre_init()
     call self%task_list%append_link (task%link)
-    call task%add_to_task_list (tlist)
+    call task%init_task_list (tlist)
     write (io_unit%mpi,'(3i4,3f8.3,i4,a)') &
       i,j,k,task%position,task%rank,'i,j,k,pos,rank'
   end if
