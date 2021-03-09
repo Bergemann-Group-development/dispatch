@@ -284,6 +284,7 @@ SUBROUTINE init (self)
     if (max_compress  > 0.0) n_criteria = n_criteria+1
     if (max_vorticity > 0.0) n_criteria = n_criteria+1
     write (io%output,'(a,i4)') ' number of AMR criteria:', n_criteria
+    if (n_criteria ==0) self%on=.false.
   end if
   call io%lock%unset ('refine_params')
   self%levelmin = levelmin
