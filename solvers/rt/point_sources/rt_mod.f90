@@ -81,7 +81,7 @@
 !> task_list%init_task_pointers
 !>   experiment_t%init_task_list
 !>     rt_nbors%init
-!>     rt_t%add_to_task_list
+!>     rt_t%init_task_list
 !>
 !===============================================================================
 MODULE rt_mod
@@ -149,7 +149,7 @@ MODULE rt_mod
   contains
     procedure:: pre_init                              ! read parameters
     procedure, nopass:: init_task                     ! init RT task
-    procedure:: add_to_task_list                      ! add to task list
+    procedure:: init_task_list                      ! add to task list
     procedure:: init_omega                            ! init omega task
     procedure:: init_pt_sources                       ! init point sources
     procedure:: needs                                 ! check upstream
@@ -400,7 +400,7 @@ END SUBROUTINE init_task
 !===============================================================================
 !> Add the (1+n_omega) RT tasks to the task list
 !===============================================================================
-SUBROUTINE add_to_task_list (self)
+SUBROUTINE init_task_list (self)
   class(rt_t):: self
   class(list_t), pointer:: task_list
   !.............................................................................
@@ -413,17 +413,17 @@ SUBROUTINE add_to_task_list (self)
     call task_list%prepend_link (self%link)
     do i=1,self%n_omega
       call task_list%prepend_link (self%omega(i)%link)
-print *, 'add_to_task_list: self%id, omega%id =', &
+print *, 'init_task_list: self%id, omega%id =', &
 self%id, self%omega(i)%id
     end do
     do i=1,point_sources%n
       call task_list%prepend_link (self%pt_source(i)%link)
-print *, 'add_to_task_list: self%id, pt_source%id =', &
+print *, 'init_task_list: self%id, pt_source%id =', &
 self%id, self%pt_source(i)%id
     end do
   end if
   call trace%end()
-END SUBROUTINE add_to_task_list
+END SUBROUTINE init_task_list
 
 !===============================================================================
 !> Initialize rt sub-tasks; note that all self values are initially cloned
