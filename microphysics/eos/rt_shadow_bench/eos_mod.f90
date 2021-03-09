@@ -21,6 +21,7 @@ MODULE eos_mod
     real :: t0    = 290.
     real :: rho0 = 1.
     real :: alfa0 = 1.
+    real :: ee_min = 0.
     integer :: n_lambda = 1
     real :: w_lambda = 1.
     logical :: do_rt = .false.
