@@ -188,7 +188,7 @@ SUBROUTINE init_task_list (self, task_list)
   !.............................................................................
   call trace%begin ('extras_t%init_task_list')
   call self%gpatch_t%init_task_list (task_list)                        ! keep
-  if (associated(self%rt) call self%rt%init_task_list(task_list)       ! RT
+  if (associated(self%rt)) call self%rt%init_task_list(task_list)       ! RT
   !call sink_particles%ad_hoc_add                                       ! sinkp
   call trace%end ()
 END SUBROUTINE init_task_list
