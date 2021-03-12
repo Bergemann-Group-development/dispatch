@@ -506,9 +506,15 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
     print "(/)"
   end if
 
-  vd(:,1) = px/n
-  vd(:,2) = py/n
-  vd(:,3) = pz/n
+  where (n > 0.0) 
+    vd(:,1) = px/n
+    vd(:,2) = py/n
+    vd(:,3) = pz/n
+  else where
+    vd(:,1) = 0.0
+    vd(:,2) = 0.0
+    vd(:,3) = 0.0
+  end where
 
   ! convert back to code units
   dd_out = m_cgs * n / scaling%d

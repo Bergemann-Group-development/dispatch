@@ -526,7 +526,11 @@ FUNCTION velocity (self) RESULT (sumv)
     sumv = sumv + p%w*p%v
     p => p%next
   end do
-  sumv = sumv/sumd
+  if (sumd > 0.0) then
+    sumv = sumv/sumd
+  else
+    sumv = 0.0
+  end if
 END FUNCTION velocity
 
 !===============================================================================
@@ -534,7 +538,7 @@ END FUNCTION velocity
 !===============================================================================
 FUNCTION dispersion (self) RESULT (rms)
   class(particles_t):: self
-  real:: sum, vav(3), rms
+  real(8):: sum, vav(3), rms
   type(particle_t), pointer:: p
   integer:: j
   !-----------------------------------------------------------------------------
@@ -550,7 +554,11 @@ FUNCTION dispersion (self) RESULT (rms)
       vav = vav + p%w*p%v
       p => p%next
     end do
-    vav = vav/sum
+    if (sum > 0.0) then
+      vav = vav/sum
+    else
+      vav = 0.0
+    end if
     !---------------------------------------------------------------------------
     ! Compute RMS velocity dispersion
     !---------------------------------------------------------------------------
@@ -562,7 +570,11 @@ FUNCTION dispersion (self) RESULT (rms)
                       +(p%v(3)-vav(3))**2)
       p => p%next
     end do
-    rms = sqrt(rms/sum)
+    if (sum > 0.0) then
+      rms = sqrt(rms/sum)
+    else
+      rms = 0.0
+    end if
   else
     rms = 0.0
   end if
