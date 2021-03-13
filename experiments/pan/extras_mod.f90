@@ -215,13 +215,9 @@ SUBROUTINE courant_condition (self, detailed_timer)
   logical, optional:: detailed_timer
   !-----------------------------------------------------------------------------
   call trace%begin ('extras_t%courant_condition')
-!print *, self%u_max, self%dtime, 1
-  call self%gpatch_t%courant_condition (detailed_timer)          ! keep
-!print *, self%u_max, self%dtime, 2
   call self%cooling%courant_condition                            ! cool
-!print *, self%u_max, self%dtime, 3
   call self%SN%courant_condition                                 ! SN
-!print *, self%u_max, self%dtime, 4
+  call self%gpatch_t%courant_condition (detailed_timer)          ! keep (last!)
   call trace%end()
 END SUBROUTINE courant_condition
 
