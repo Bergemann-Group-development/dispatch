@@ -427,22 +427,22 @@ SUBROUTINE solve2 (self, k, s, qin, qout, dr, l, u, debug)
   integer:: i1, i2, ib, m(4), icase
   real(8):: dsdtau1, dsdtau2, d2sdtau1, d2sdtau2, ex0, ex1, ex2, dtaumin, dtaumax
   real(8), pointer:: z(:)
-  real(8), dimension(size(k,1)):: dtau1, dtau2
+  real(8), dimension(size(k,1)):: dtau1, dtau2, dtau3, dtau4
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trc_begin ('rt_integral_t%solve2', itimer=itimer)
   m = shape(k)
   do ib=1,m(3)
     do i2=l(2),u(2)
-      !dtau1(l(1):u(1)) = 0.5*dr*(k(l(1):u(1),i2,ib,2)+k(l(1):u(1),i2,ib,1))
-      !dtau2(l(1):u(1)) = 0.5*dr*(k(l(1):u(1),i2,ib,2)+k(l(1):u(1),i2,ib,3))
-      dtau1(l(1):u(1)) = dr* min((k(l(1):u(1),i2,ib,2)+k(l(1):u(1),i2,ib,1))*0.5, &
-                            max(2*(k(l(1):u(1),i2,ib,2)*k(l(1):u(1),i2,ib,1))/ &
-                                  (k(l(1):u(1),i2,ib,2)+k(l(1):u(1),i2,ib,1)), 1.33333/dr))
+      dtau1(l(1):u(1)) = 0.5*dr*(k(l(1):u(1),i2,ib,2)+k(l(1):u(1),i2,ib,1))
+      dtau2(l(1):u(1)) = 0.5*dr*(k(l(1):u(1),i2,ib,2)+k(l(1):u(1),i2,ib,3))
+      !dtau1(l(1):u(1)) = dr* min((k(l(1):u(1),i2,ib,2)+k(l(1):u(1),i2,ib,1))*0.5, &
+      !                      max(2*(k(l(1):u(1),i2,ib,2)*k(l(1):u(1),i2,ib,1))/ &
+      !                            (k(l(1):u(1),i2,ib,2)+k(l(1):u(1),i2,ib,1)), 1.33333/dr))
                                    
-      dtau2(l(1):u(1)) = dr* min((k(l(1):u(1),i2,ib,3)+k(l(1):u(1),i2,ib,2))*0.5, &
-                           max(2*(k(l(1):u(1),i2,ib,3)*k(l(1):u(1),i2,ib,2))/ &
-                                 (k(l(1):u(1),i2,ib,3)+k(l(1):u(1),i2,ib,2)), 1.33333/dr))
+      !dtau2(l(1):u(1)) = dr* min((k(l(1):u(1),i2,ib,3)+k(l(1):u(1),i2,ib,2))*0.5, &
+      !                     max(2*(k(l(1):u(1),i2,ib,3)*k(l(1):u(1),i2,ib,2))/ &
+      !                           (k(l(1):u(1),i2,ib,3)+k(l(1):u(1),i2,ib,2)), 1.33333/dr))
         do i1=l(1),u(1)
           ex0 = exp(-dtau1(i1))
           ex1 = 1.-ex0
