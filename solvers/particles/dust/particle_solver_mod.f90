@@ -116,7 +116,7 @@ MODULE particle_solver_mod
   real:: dust_to_gas = 0.01                   ! dust-to-gas ratio
   real:: max_size_cgs = 1e-5                  ! max particle size
   real:: min_size_cgs = 1e-5                  ! min particle size
-  real:: init_size_cgs = 0.0                  ! single initial size
+  real:: max_init_size_cgs = 0.0              ! single initial size
   real:: alpha_exponent = -1.0                ! dust power law distribution
   real:: min_fraction = 0.7                   ! lower limit
   real:: max_fraction = 1.4                   ! upper limit
@@ -153,7 +153,7 @@ SUBROUTINE pre_init (self, patch)
     min_fraction, max_fraction, max_size_cgs, min_size_cgs, &
     density_yr_cgs, solid_density_cgs, dust_to_gas, output_every, &
     backreaction, do_supersonic, debug, test_nr, v_rms, v_stream, &
-    alpha_exponent, init_size_cgs
+    alpha_exponent, max_init_size_cgs
   logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
   call trace%begin ('particle_solver_t%pre_init')
@@ -167,6 +167,8 @@ SUBROUTINE pre_init (self, patch)
   if (first_time) then
     call io%namelist_warning ('particle_solver_params', iostat)
     write (io%namelist, particle_solver_params)
+    if (max_init_size_cgs == 0.0) &
+      max_init_size_cgs = max_size_cgs
     first_time = .false.
   end if
   call io%lock%unset ('particle_solver_t%pre_init')
@@ -340,11 +342,13 @@ SUBROUTINE initial_condition (self)
       w = d*dust_to_gas/(n_bin*particles_per_bin)
       vg = patch%mem(i1,i2,i3,patch%idx%px:patch%idx%pz,patch%it,1) &
         / (patch%ds*d)
-      do i4=1,n_bin
+        do i4=1,n_bin
         particles => self%particles(i1,i2,i3,i4)
         id = [self%patch%id,i1,i2,i3,i4]
         call particles%init (id, 0)
-        w1 = w*(self%s_cgs(i4)/max_size_cgs)**(alpha_exponent+1.0)
+        w1 = w*(self%s_cgs(i4)/self%s_cgs(1))**(alpha_exponent+1.0)
+        if (self%s_cgs(i4) > max_init_size_cgs) &
+          w1 = 0.0
         n = n+2
         nv = 0
         do j=1,particles_per_bin
@@ -1033,7 +1037,7 @@ SUBROUTINE update_bins (self, dd, vd)
   type(particle_t), pointer:: pa
   type(particles_t), pointer:: particles
   integer:: m(4), i1, i2, i3, i4, j
-  real:: dv(3)
+  real:: dv(3), f
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! Renormalize bin densities
@@ -1043,11 +1047,15 @@ SUBROUTINE update_bins (self, dd, vd)
   do i3=self%lb(3),self%ub(3)
   do i2=self%lb(2),self%ub(2)
   do i1=self%lb(1),self%ub(1)
+    if (self%dd(i1,i2,i3,i4) > 0.0) then
+      f = dd(i1,i2,i3,i4)/self%dd(i1,i2,i3,i4)
+    else
+      f = 0.0
+    end if
     particles => self%particles(i1,i2,i3,i4)
     pa => particles%head%next                     ! first particle
     do j=1,particles%n                            ! loop over particles
-      pa%w = pa%w* &
-        dd(i1,i2,i3,i4)/self%dd(i1,i2,i3,i4)      ! renormalize
+      pa%w = pa%w* f                              ! renormalize
       pa => pa%next                               ! next particle
     end do
   end do
@@ -1079,7 +1087,7 @@ END SUBROUTINE update_bins
 
 !===============================================================================
 !> Top up particles per size bin.  Note that if there are no particles it is 
-!> better to do nothing than to add particles, since they would either have to
+!> betteself%dd(i1,i2,i3,i4) to do nothing than to add particles, since they would either have to
 !> have zero weight, or they would add additional dust mass.
 !===============================================================================
 SUBROUTINE add (self, particles)
