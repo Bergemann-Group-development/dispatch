@@ -36,6 +36,7 @@ tr={'d':'density',
    'b2':'magnetic_field_y',
    'b3':'magnetic_field_z',
    'tt':'temperature',
+   'qr':'heating',
    'ee':'thermal_e'}
 
 """
@@ -85,7 +86,7 @@ def patch(p,copy=False,aux=True):
         if 'aux' in p.keys:
             for k in p.keys['aux']:
                 key = tr[k] if k in tr.keys() else k
-                dict[key]=p.var(k,copy=copy)[l[0]:u[0],l[1]:u[1],l[2]:u[2]]
+                dict[key]=p.var(k,copy=copy)#[l[0]:u[0],l[1]:u[1],l[2]:u[2]]
     dict['ed']=p.var('e')/p.var('d')
     dict['ee']=p.var('ee')
     dict['emag']=p.var('emag')
