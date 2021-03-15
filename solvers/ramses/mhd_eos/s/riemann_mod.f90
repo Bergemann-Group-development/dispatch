@@ -81,7 +81,7 @@ scase=0
     qleft(i,4)=A; qright(i,4)=A
     !
     ! Left variables
-    rl=qleft(i,1); Pl=qleft(i,2); ul=qleft(i,3); sl=qleft(i,10)!/qleft(i,1)*(gamma-one)
+    rl=qleft(i,1); Pl=qleft(i,2); ul=qleft(i,3); sl=qleft(i,10)/qleft(i,1)
     vl=qleft(i,5); Bl=qleft(i,6); wl=qleft(i,7); Cl=qleft(i,8); tgl=qleft(i,9)
     ecinl = half*(ul*ul+vl*vl+wl*wl)*rl
     emagl = half*(A*A+Bl*Bl+Cl*Cl)
@@ -91,7 +91,7 @@ scase=0
     vdotBl= ul*A+vl*Bl+wl*cl
     !
     ! Right variables
-    rr=qright(i,1); Pr=qright(i,2); ur=qright(i,3); sr=qright(i,10)!/qright(i,1)*(gamma-one)
+    rr=qright(i,1); Pr=qright(i,2); ur=qright(i,3); sr=qright(i,10)/qright(i,1)
     vr=qright(i,5); Br=qright(i,6); wr=qright(i,7); Cr=qright(i,8); tgr=qright(i,9)
     ecinr = half*(ur*ur+vr*vr+wr*wr)*rr
     emagr = half*(A*A+Br*Br+Cr*Cr)
@@ -228,8 +228,13 @@ scase=0
        vdotBo=vdotBl
        emago=emagl
        !M = ul/(ul-SSL)
-       tt1 =ssl*log(ptoto/ro)
-       scond =(ul-ssl)*(((ptoto)/(ptoto-one)))*(log(ro*uo*uo*half))
+       ! This works (no temperature multiplier below):
+       ! tt1 =(ul-ssl)*log(pl/ro)
+       !scond =(ul-ssl)*log(ecinl)!(log(ro*uo*uo*half))
+       tt1 =ssl*log(pl/rl)!+(pl+pr)*half*(1/rl-1/rr)
+       scond =(ul-ssl)*(sqrt(ecinl)*(pl/(pl-one))-A*vdotBo)
+       !scond =(ul-ssl)*(((ptoto)/(ptoto-one)))*(log(ro*uo*uo))
+       !print *, tt1, scond
     else if(SAL>0d0)then
        icase=2
        ro=rstarl
@@ -311,8 +316,13 @@ scase=0
        vdotBo=vdotBr
        emago=emagr
        !M = -uo/(SSR-ur)
-       tt1 =ssr*log(ptoto/ro)
-       scond =-(ssr-ur)*(ptoto/(ptoto-one))*(log(ro*uo*uo*half))
+       !Works
+       !tt1 =-(ssr-ur)*log(pr/ro)
+       !scond =-(ssr-ur)*log(ecinr)!(log(ro*uo*uo*half))
+       !print *, tt1, scond
+       tt1 =ssr*log(pr/ro)
+       scond =-(ssr-ur)*(log(ecinr*two)*(pr/(pr-one))-A*vdotBo)
+       !scond =-(ssr-ur)*(ptoto/(ptoto-one))*(log(ro*uo*uo))
     end if
     !---------------------------------------------------------------------------
     ! Add a diffusive flux in the down grad(ln(rho)) direction, which is only
@@ -330,14 +340,14 @@ scase=0
     ! Compute the Godunov flux
     fgdnv(i,1) = ro*uo
     !fgdnv(i,2) = so*uo + log(ptoto+ro)+one/tgo *((uo*uo+vo*vo+wo+wo)*half)!scond
-    fgdnv(i,2) = uo*so+tt1!ro*log(ptoto/ro**gamma)/(gamma-one)
+    fgdnv(i,2) = uo*so*ro!+tt1!ro*log(ptoto/ro**gamma)/(gamma-one)
     fgdnv(i,3) = ro*uo*uo+Ptoto+emago*(lim-one)-A*A*lim
     fgdnv(i,4) = zero
     fgdnv(i,5) = ro*uo*vo-A*Bo*lim
     fgdnv(i,6) = Bo*uo-A*vo
     fgdnv(i,7) = ro*uo*wo-A*Co*lim
     fgdnv(i,8) = Co*uo-A*wo
-    fgdnv(i,9) = scond
+    fgdnv(i,9) = (scond+tt1)!*tgo
     if (abs(scond)>abs(smax)) then
       scase=icase
       smax = scond

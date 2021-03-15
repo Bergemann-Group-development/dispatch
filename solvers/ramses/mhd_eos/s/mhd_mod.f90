@@ -394,7 +394,7 @@ SUBROUTINE update (self)
     
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,5  ) = &
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,5  ) + &
-   (fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,9,1) - &
+   max(0.0,fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,9,1) - &
     fl(i0+1:i1+1,j0  :j1  ,k0  :k1  ,9,1) + &
     fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,9,2) - &
     fl(i0  :i1  ,j0+1:j1+1,k0  :k1  ,9,2) + &
