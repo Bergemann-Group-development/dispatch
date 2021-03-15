@@ -314,7 +314,7 @@ SUBROUTINE make_coarse (self)
   target => self%task         ! the self%task to fill guard zones in
   select type (target)
   class is (patch_t)
-    target%filled = 0
+    if (check_filled) target%filled = 0
   end select
   call face%source_to_target (source, target, all_src=.true., n_op=self%n_op)
   deallocate (coarse%mem, coarse%t, coarse%iit)
