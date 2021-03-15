@@ -356,33 +356,33 @@ def _var(patch,filed,snap,verbose=0,copy=None):
         return f
 
     def xdn(f):
-        if patch.kind[0:4] == 'zeus' or patch.kind[0:7] == 'stagger':
+        if patch.kind[0:4] == 'zeus' or patch.kind[0:7] == 'stagger' or patch.kind[0:6] == 'ramses':
             return dnup(f,1,0)
         else:
             return f
     def ydn(f):
-        if patch.kind[0:4] == 'zeus' or patch.kind[0:7] == 'stagger':
+        if patch.kind[0:4] == 'zeus' or patch.kind[0:7] == 'stagger' or patch.kind[0:6] == 'ramses':
             return dnup(f,1,1)
         else:
             return f
     def zdn(f):
-        if patch.kind[0:4] == 'zeus' or patch.kind[0:7] == 'stagger':
+        if patch.kind[0:4] == 'zeus' or patch.kind[0:7] == 'stagger' or patch.kind[0:6] == 'ramses':
             return dnup(f,1,2)
         else:
             return f
 
     def xup(f):
-        if patch.kind[0:4] == 'zeus' or patch.kind[0:7] == 'stagger':
+        if patch.kind[0:4] == 'zeus' or patch.kind[0:7] == 'stagger' or patch.kind[0:6] == 'ramses':
             return dnup(f,-1,0)
         else:
             return f
     def yup(f):
-        if patch.kind[0:4] == 'zeus' or patch.kind[0:7] == 'stagger':
+        if patch.kind[0:4] == 'zeus' or patch.kind[0:7] == 'stagger' or patch.kind[0:6] == 'ramses':
             return dnup(f,-1,1)
         else:
             return f
     def zup(f):
-        if patch.kind[0:4] == 'zeus' or patch.kind[0:7] == 'stagger':
+        if patch.kind[0:4] == 'zeus' or patch.kind[0:7] == 'stagger' or patch.kind[0:6] == 'ramses':
             return dnup(f,-1,2)
         else:
             return f
