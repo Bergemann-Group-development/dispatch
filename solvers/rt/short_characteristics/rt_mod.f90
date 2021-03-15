@@ -50,6 +50,7 @@ MODULE rt_mod
   USE boundaries_mod
   USE eos_mod
   USE list_mod
+  USE halo_mod
   USE gpatch_mod
   USE link_mod
   USE task_mod
@@ -107,6 +108,7 @@ MODULE rt_mod
     logical                  :: pre_initialized_rt=.false.
     logical                  :: initialized=.false.
     logical                  :: first_eos  =.true.
+    logical                  :: in_task_list = .false.
     real, pointer            :: q(:,:,:,:)                                      ! pointer to net radiative heating
     real, pointer            :: tt(:,:,:)                                       ! EOS temperature
     real, pointer            :: rk(:,:,:,:)                                     ! EOS rho*kappa
@@ -116,7 +118,7 @@ MODULE rt_mod
     procedure:: dealloc                               ! clean deallocate RT
     procedure:: pre_init                              ! read parameters
     procedure:: init                                  ! init RT task
-    procedure:: add_to_task_list                      ! add to task list
+    procedure:: init_task_list                        ! add to task list
     procedure:: needs                                 ! check upstream
     procedure:: is_upstream_of                        ! check upstream
     procedure:: pre_update                            ! pre MHD
@@ -144,6 +146,7 @@ recursive SUBROUTINE pre_init (self)
   class (rt_t), target:: self
   !-----------------------------------------------------------------------------
   class(rt_t), pointer:: omega
+  class(link_t), pointer::link
   integer:: dir, i_mu, i_phi, i_omega, n_omega, iostat, n
   integer, save:: n_mu=3, n_phi=4, n_bin=4, nt=1, n_warmup=3, ng(3)=1, loc(1)
   real, save   :: courant=0.5, cdtd=1.0
@@ -191,6 +194,7 @@ recursive SUBROUTINE pre_init (self)
   self%courant = courant
   self%cdtd    = cdtd
   self%rt_freq = rt_freq
+  self%in_task_list = .false.
   ! ----------------------------------------------------------------------------
   ! relevant synchronization items for cartesian setup
   ! ----------------------------------------------------------------------------
@@ -212,8 +216,6 @@ recursive SUBROUTINE pre_init (self)
   !-----------------------------------------------------------------------------
   call self%check_boundaries
   if (self%on) then 
-    allocate(self%link)
-    self%link%task => self
     call self%task_t%init_unique (same=.true.)                                  ! obtain an unique ID
     !---------------------------------------------------------------------------
     self%type    = 'rt_t'
@@ -224,6 +226,7 @@ recursive SUBROUTINE pre_init (self)
     end if
     !
     if (self%i_omega==0) then
+      self%main => self         ! convenience
       call rt_integral%init
       call self%patch%aux%init
       !-------------------------------------------------------------------------
@@ -448,7 +451,7 @@ SUBROUTINE update (self)
     ! --------------------------------------------------------------------------
     ! get the right time slices for rk, src and temperature
     ! --------------------------------------------------------------------------
-    call self%main%time_interval (self%time, jt, pt)
+    call self%main%time_interval (self%time, jt, pt, extrap=.true.)
     ! --------------------------------------------------------------------------
     ! get the right time slices for rk, src and temperature
     ! --------------------------------------------------------------------------
@@ -534,7 +537,7 @@ SUBROUTINE pre_update (self)
   allocate(rk(n(1),n(2),n(3),self%n_bin))
   allocate(qr(n(1),n(2),n(3)))
   qr=0.0
-  call self%time_interval(self%patch%time, jt, pt)
+  call self%time_interval(self%patch%time, jt, pt, extrap=.true.)
   call self%mem_lock(jt(1))%set ('rt_collect')
   if (jt(2) /= jt(1)) &
     call self%mem_lock(jt(2))%set ('rt_collect')
@@ -545,7 +548,7 @@ SUBROUTINE pre_update (self)
     call self%mem_lock(jt(2))%unset ('rt_collect')
   omega => self%omega
   do while(associated(omega))
-  call omega%time_interval(self%patch%time,jt,pt,all=.true.)
+  call omega%time_interval(self%patch%time,jt,pt, extrap=.true.)
   call omega%mem_lock(jt(1))%set ('rt_assembly')
   if (jt(2) /= jt(1)) &
       call omega%mem_lock(jt(2))%set ('rt_assembly')
@@ -610,7 +613,8 @@ SUBROUTINE rt_eos (self)
   class (rt_t):: self
   !.............................................................................
   class (gpatch_t), pointer :: patch
-  real, dimension(:,:,:), pointer:: lnd, e1,e2, pgas, fmax, lnd1, lnd2
+  real, dimension(:,:,:), pointer:: lnd, pgas
+  real, dimension(:,:,:), allocatable:: e1,e2, fmax, lnd1, lnd2
   integer:: n(3), ib, loc(3), pl(3), pu(3),l(3), u(3), it, jt(2), pgn(3)
   real:: u_max, stefan, fmaxv, pt(2), dsmin
   real, pointer:: eth(:,:,:), tt(:,:,:), rk(:,:,:,:), src(:,:,:,:)
@@ -630,14 +634,14 @@ SUBROUTINE rt_eos (self)
     l  = self%mesh%li-self%mesh%ng
     u  = self%mesh%ui+self%mesh%ng
     n  = merge(self%n+2*self%mesh%ng,self%n,self%n>1)
-    call patch%time_interval (self%time, jt, pt, all=.true.)
+    call patch%time_interval (self%time, jt, pt, extrap=.true.)
   else
     pl = patch%mesh%li
     pu = patch%mesh%ui
     l  = self%mesh%li
     u  = self%mesh%ui
     n  = self%n
-    call patch%time_interval (self%time, jt, pt, all=.true.)
+    call patch%time_interval (self%time, jt, pt, extrap=.true.)
   end if
   pgn = patch%mesh%gn
   if (dnload_mhd) call self%patch%dnload()
@@ -744,8 +748,9 @@ END SUBROUTINE solve
 !===============================================================================
 !> Add the (1+n_omega) RT tasks to the task list
 !===============================================================================
-SUBROUTINE add_to_task_list(self, task_list)
+SUBROUTINE init_task_list(self, task_list)
   class(rt_t):: self
+  class(task_t),pointer:: rt_task
   class(list_t), pointer:: task_list
   class(rt_t), pointer:: omega
   !-----------------------------------------------------------------------------
@@ -753,16 +758,22 @@ SUBROUTINE add_to_task_list(self, task_list)
   !-----------------------------------------------------------------------------
   self%task_list => task_list
   if (self%on) then
-    call self%task_list%append_link (self%link)
+    rt_task => self%main        ! point to self
+    if (.not.associated(self%link)) call self%task_list%prepare(rt_task)
+    if (.not.self%in_task_list) call self%task_list%append_link (self%link)
+    self%in_task_list = .true.
     omega => self%omega
     do while(associated(omega))
       omega%task_list => task_list
-      call self%task_list%append_link (omega%link)
+      rt_task => omega
+      if (.not.associated(omega%link)) call self%task_list%prepare(rt_task)
+      if (.not.omega%in_task_list) call self%task_list%append_link (omega%link)
+      omega%in_task_list = .true.
       omega => omega%next
     end do
   end if
   call trace%end()
-END SUBROUTINE add_to_task_list
+END SUBROUTINE init_task_list
 
 !===============================================================================
 !> Determine if a task is needed (is upstream).  
@@ -1039,6 +1050,15 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
       needed = .false.; needs_me = .false.; download = .false.
       call trace%end()
       return
+    end if
+    if ((rt_another%level<self%level) .and. (rt_another%i_omega==self%i_omega)) then
+      if (all(rt_another%size>(abs(self%position-rt_another%position)))) then
+        print *, 'found RT parent', self%i_omega, self%level, rt_another%level
+        self%parent => rt_another
+        self%link%parent => rt_another%link
+        self%parentid = rt_another%id
+        return
+      end if
     end if
     !
     if ((rt_another%i_omega == 0).and.(self%i_omega==0)) then
