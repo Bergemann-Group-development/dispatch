@@ -139,9 +139,9 @@ def values_in(p,point=[0.5,0.5,0.5],dir=0,iv=0,i4=0,var=None,verbose=0,all=0):
     ff=[]
     ii,w=indices_and_weights(p,point,iv)
     data=p.var(iv,i4=i4,all=all)
-    ione = (0,1)[p.gn[0] > 1]
-    jone = (0,1)[p.gn[1] > 1]
-    kone = (0,1)[p.gn[2] > 1]
+    ione = (0,1)[p.n[0] > 1]
+    jone = (0,1)[p.n[1] > 1]
+    kone = (0,1)[p.n[2] > 1]
 
     if verbose>1:
         print('{:3d} {}   {} {:5.1f} {:4.1f} {:4.1f}'.\
