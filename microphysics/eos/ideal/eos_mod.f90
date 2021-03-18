@@ -11,7 +11,7 @@ MODULE eos_mod
   implicit none
   private
   type, public:: eos_t
-    real(8):: gamma = 1.4                  ! in case eos%init is never called
+    real(8):: gamma = 1d0               ! in case eos%init is never called
     integer :: eos_type = 0             ! 0 - ideal, x - any other
     integer :: n_lambda = 1
     real :: w_lambda = 1
@@ -40,7 +40,7 @@ SUBROUTINE init (self)
   class (eos_t):: self
   integer:: iostat
   logical, save:: first_time=.true.
-  real(8), save:: gamma=1.4
+  real(8), save:: gamma=1d0
   real, save:: kappa=0.1
   logical, save:: do_rt = .false.
   integer, save:: itimer=0
@@ -55,9 +55,13 @@ SUBROUTINE init (self)
     kappa = self%kappa
     rewind (io%input)
     read (io%input, eos_params, iostat=iostat)
+    if (iostat > 0) then
+      rewind (io%input)
+      read (io%input, eos_params)
+    end if
     call io%namelist_warning ('eos_params', iostat)
     write (io%namelist, eos_params)
-end if
+  end if
   call io%lock%unset ('eos_t%init')
   self%gamma = gamma
   self%do_rt = do_rt
