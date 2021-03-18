@@ -4,6 +4,7 @@
 MODULE sinks_mod
   USE io_mod
   USE trace_mod
+  USE mpi_mod
   USE task_mod
   USE gpatch_mod
   USE scaling_mod
@@ -20,6 +21,7 @@ MODULE sinks_mod
     procedure:: pre_update
   end type
   integer:: verbose=0
+  logical:: on=.false.
   real:: radius=8.0
   real:: mass_msun=30
   real:: SN_time=0.1
@@ -35,7 +37,7 @@ SUBROUTINE pre_init (self, patch)
   integer:: iostat
   real:: velocity(3)=0.0, position(3)=0.5
   logical, save:: first_time=.true.
-  namelist /sinks_params/ verbose, mass_msun, radius, velocity, SN_time, &
+  namelist /sinks_params/ on, verbose, mass_msun, radius, velocity, SN_time, &
     position
   !-----------------------------------------------------------------------------
   call trace%begin ('sinks_t%pre_init')
@@ -49,21 +51,26 @@ SUBROUTINE pre_init (self, patch)
       call io%namelist_warning ('sinks_params', iostat)
       write (io%namelist, sinks_params)
       call io%lock%unset
-      self%radius = radius
-      self%velocity = velocity
-      self%SN_time = SN_time
-      if (verbose > 0) then
-        write (stdout,*) 'sinks_t%init: radius (code units)', self%radius
+      if (on) then
+        self%radius = radius
+        self%velocity = velocity
+        self%SN_time = SN_time
+        if (verbose > 0) then
+          write (stdout,*) 'sinks_t%init: radius (code units)', self%radius
+        end if
+        self%nt = 5
+        allocate (self%pos(3,self%nt))
+        self%position = self%patch%position + position
+        self%it = 1
+        self%size = 0d0
+        self%mass = mass_msun*cgs%m_sun/scaling%m
+        call self%task_t%init_unique (same=.true.)
+        self%id = 0
+        call self%task_t%init
+        write (stdlog,*) 'sink_t%init: id=', self%id
+        self%iit = 1
+        self%pos(:,1) = position
       end if
-      self%nt = 5
-      allocate (self%pos(3,self%nt))
-      self%position = position
-      self%it = 1
-      self%size = 0d0
-      self%mass = mass_msun*cgs%m_sun/scaling%m
-      call self%task_t%init
-      self%iit = 1
-      self%pos(:,1) = position
       first_time = .false.
     end if
     !$omp end critical (sinks_cr)
@@ -80,6 +87,7 @@ SUBROUTINE pre_update (self)
   class(gpatch_t), pointer:: patch
   logical:: contains_sink
   !-----------------------------------------------------------------------------
+  if (.not.on) return
   call trace%begin ('sinks_t%pre_update')
   call io%assert (associated(self%patch), 'sink_t%patch not associated')
   patch => self%patch
