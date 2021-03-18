@@ -59,13 +59,13 @@ SUBROUTINE init (self)
     eos%gamma = gamma
     csound = sqrt(cgs%k_B*T_K/(cgs%m_u*scaling%mu))/scaling%u
     d0 = 1.0
-    if (eos%gamma == 1d0) then
+    if (gamma == 1d0) then
       e0 = self%csound**2*d0
     else
       e0 = self%csound**2*d0/(eos%gamma*(eos%gamma-1.0))
     end if
     if (verbose > 0) then
-      write (io%output,'(a,f6.2)') '           gas gamma:', eos%gamma
+      write (io%output,'(a,f6.2)') '           gas gamma:', gamma
       write (io%output,'(a,f6.2)') 'density (code units):', d0
       write (io%output,'(a,f6.2)') ' energy (code units):', e0
       write (io%output,'(a,f6.2)') '     temperature (K):', T_K
@@ -79,6 +79,7 @@ SUBROUTINE init (self)
   ! Initialize constant density and thermal energy, and a velocity estimated
   ! from constant acceleration for a time period of t_turb.
   !-----------------------------------------------------------------------------
+  eos%gamma = gamma
   self%csound = csound
   d => self%mem(:,:,:,self%idx%d,self%it,1)
   e => self%mem(:,:,:,self%idx%e,self%it,1)
