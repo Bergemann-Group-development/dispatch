@@ -39,7 +39,7 @@ MODULE cooling_mod
   real(dp):: end_fraction = 0.01                   ! max fractional cooling per iteration step
   real(dp):: mu = 1.2                              ! Molecular weight used for translating from T/mu to temperature
   real(dp):: courant = 0.5                         ! Cooling Courant number 
-  integer:: niter_max = 1000                   ! Iteration limit
+  integer:: niter_max = 1000                       ! Iteration limit
   integer:: verbose=0
   logical:: on=.false., do_heat=.true., do_subcycle=.true.
   character(len=16):: type='Gnedin'
@@ -67,7 +67,7 @@ SUBROUTINE pre_init (self, patch)
     write (io%namelist, cooling_params)
     if (verbose > 0) then
       self%function => cooling_Gnedin
-      call self%test
+      if (on) call self%test
     end if
     first_time = .false.
   end if
