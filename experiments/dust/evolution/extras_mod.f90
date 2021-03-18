@@ -106,7 +106,7 @@ SUBROUTINE init (self)
   '$Id$'
   !.............................................................................
   call trace%begin ('extras_t%init')                            ! keep
-  call self%patch_t%init                                        ! keep
+  call self%gpatch_t%init                                       ! keep
   call io_unit%print_id (id)                                    ! keep
   call self%forces%init                                         ! forces
   call self%selfgravity%init                                    ! selfg

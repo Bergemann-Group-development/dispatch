@@ -94,7 +94,7 @@ SUBROUTINE init (self, ln_bin, lm_cgs, rho_s)
   if (first_time) then
     rewind (io%input)
     read (io%input, dust_evolve_params, iostat=iostat)
-    if (iostat < 0) then                       ! if syntax errors
+    if (iostat > 0) then                       ! if syntax errors
       rewind (io%input)                        ! rewind to top of file
       read (io%input, dust_evolve_params)      ! read againg to get more info
     end if
