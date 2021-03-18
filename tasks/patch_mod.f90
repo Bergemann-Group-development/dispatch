@@ -448,6 +448,9 @@ SUBROUTINE pre_init (self)
   !-----------------------------------------------------------------------------
   call io%lock%set ('patch_t%pre_init')
   if (first_time) then
+    nw = self%nw
+    nv = self%nv
+    ng = self%ng
     rewind (io%input)
     read (io%input, patch_params, iostat=iostat)
     if (iostat > 0) then
@@ -486,10 +489,19 @@ SUBROUTINE pre_init (self)
   ! Multi-threading below -- only self% references allowed
   !-----------------------------------------------------------------------------
   self%n            = n
-  self%ng           = max(ng, self%ng)
   self%nt           = nt
-  self%nv           = max(nv, self%nv)
-  self%nw           = nw
+  !-----------------------------------------------------------------------------
+  ! The solver sets the initial values of self%n{w,v,g}, and these are also set
+  ! as default values in the namelist.  It is possible to change them here,
+  ! but normally this should only be done in connection with test, and one or
+  ! more extras modules may also modify any one of them afterwards.
+  !-----------------------------------------------------------------------------
+  if (any([nw,nv,ng] /= [self%nw,self%nv,self%ng])) then
+    call io%warning ('patch_t%pre_init: One or more of n{w,v,g} were changed')
+  end if
+  self%ng           = ng                         ! cf warning
+  self%nv           = nv                         ! ditto
+  self%nw           = nw                         ! ditto
   self%restart      = io%restart                 ! restart snapshot
   self%grace        = grace                      ! grace fraction of dtime
   self%dt_fixed     = dt_fixed

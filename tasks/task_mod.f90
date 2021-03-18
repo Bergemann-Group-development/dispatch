@@ -270,7 +270,7 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !===============================================================================
-!> Define unique task id, unless already set before entry.
+!> Read task_params, allowing to tag task IDs for dumping
 !===============================================================================
 SUBROUTINE init_params (self)
   class (task_t):: self

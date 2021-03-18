@@ -94,15 +94,22 @@ SUBROUTINE pre_init (self)
     do_temperature, verbose, do_corners
   character(len=120):: id = &
    '$Id$'
-!...............................................................................
+  !-----------------------------------------------------------------------------
   call trace%begin ('mhd_mod%pre_init')
   call trace%print_id (id)
-  call self%extras_t%pre_init
+  !-----------------------------------------------------------------------------
+  ! Make sure the extras modules have the correct starting point
+  !-----------------------------------------------------------------------------
   self%nw = 2
   self%ng = 3
   self%nv = 8
   self%kind = 'ramses_mhd_patch'
   call self%idx%init (energy=5, mhd=self%mhd)
+  call self%extras_t%pre_init
+  !-----------------------------------------------------------------------------
+  ! Make sure the extras modules do not mess this up
+  !-----------------------------------------------------------------------------
+  self%kind = 'ramses_mhd_patch'
   if (do_temperature) then
     call self%idx%request_index (self%idx%tt, self%nv)
   end if
@@ -132,6 +139,8 @@ SUBROUTINE pre_init (self)
   call trace%end()
 END SUBROUTINE pre_init
 
+!===============================================================================
+!> Initialize MHD-EOS solver
 !===============================================================================
 SUBROUTINE init (self)
   class(mhd_t):: self
@@ -196,9 +205,8 @@ SUBROUTINE pre_update (self)
   !-----------------------------------------------------------------------------
   if (io%smallr  /= 0.0) smallr = io%smallr
   if (io%courant /= 0.0) self%courant = io%courant
-  !call ctoprim(self)                  ! Primitive variables, sound speeds
-  !call self%extras_t%courant_condition (detailed_timer)
-  !call self%gpatch_t%courant_condition (detailed_timer)
+  call ctoprim(self)                  ! Primitive variables, sound speeds
+  call self%extras_t%courant_condition (detailed_timer)
   !-----------------------------------------------------------------------------
   ! Set boundary conditions on primary variables
   !-----------------------------------------------------------------------------
@@ -212,18 +220,7 @@ SUBROUTINE pre_update (self)
 END SUBROUTINE pre_update
 
 !===============================================================================
-!> This procedure is called by solver_t%update, after it calls mhd_t%update
-!===============================================================================
-SUBROUTINE post_update (self)
-  class(mhd_t):: self
-  !-----------------------------------------------------------------------------
-  ! Call the extras_t%post_update, which may need the temperature
-  !-----------------------------------------------------------------------------
-  call self%extras_t%post_update
-  call trace%end
-END SUBROUTINE post_update
-
-!===============================================================================
+!> Main update step
 !===============================================================================
 SUBROUTINE update (self)
   class(mhd_t):: self
@@ -256,7 +253,6 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   self%uin  => self%mem(:,:,:,:,self%new,1)
   self%unew => self%mem(:,:,:,:,self%new,1)
-
   n = self%mesh%gn
   allocate (self%c  (n(1),n(2),n(3)))                           ! self%c   = 0_dp
   allocate (self%Ex (n(1),n(2),n(3)))                           ! self%Ex  = 0_dp
@@ -293,10 +289,8 @@ SUBROUTINE update (self)
   else
     call uslope(self,self%bf,self%q,self%dq2,self%dbf,3.0)       ! TVD slopes
   endif
-
   if (verbose>0) print *, 'uslope', self%id, minval(self%dq), maxval(self%dq)
   if (verbose>0) print *, 'uslope', self%id, minval(self%dq2), maxval(self%dq2)
-
   if (non_ideal%is_used) then
     allocate (fluxambdiff(self%gn(1),self%gn(2),self%gn(3),3))
     allocate (emfambdiff(self%gn(1),self%gn(2),self%gn(3),3))
@@ -306,9 +300,7 @@ SUBROUTINE update (self)
       fluxambdiff,emfambdiff,fluxohmdiss,emfohmdiss,self%u_max,self%ds,self%dtime)
   end if
   call self%courant_condition                           ! compute dt
-
   call trace3d(self)                                    ! predictor step
-
   allocate (fl(self%gn(1),self%gn(2),self%gn(3),self%nvar,3))
   allocate (em(self%gn(1),self%gn(2),self%gn(3),3))
   fl = 0.0d0
@@ -316,11 +308,9 @@ SUBROUTINE update (self)
   call cmpflxm(self,self%gn(1),2,3,4,6,7,8,fl(:,:,:,:,1))
   call cmpflxm(self,self%gn(2),3,4,2,7,8,6,fl(:,:,:,:,2))
   call cmpflxm(self,self%gn(3),4,2,3,8,6,7,fl(:,:,:,:,3))
-
   call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,2,3,4,6,7,8,em(:,:,:,3), self%gn(1)-1, self%nv)
   call cmp_mag_flx(self, self%qRT, self%qLT, self%qRB, self%qLB,4,2,3,8,6,7,em(:,:,:,2), self%gn(1)-1, self%nv)
   call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,3,4,2,7,8,6,em(:,:,:,1), self%gn(1)-1, self%nv)
-
   dtdx = self%dtime/self%ds(1) 
   dtdy = self%dtime/self%ds(2) 
   dtdz = self%dtime/self%ds(3) 
@@ -332,7 +322,6 @@ SUBROUTINE update (self)
     write (io%output,'("X7",f10.6,i4,1p,10e12.3)') self%time, 7, em(4:13,8,8,2)
     write (io%output,'("X8",f10.6,i4,1p,10e12.3)') self%time, 8, em(4:13,8,8,3)
   end if
-
   if (non_ideal%is_used) then
     call non_ideal%flux_upd(fl,fluxambdiff,fluxohmdiss,self%ds(1),self%dtime,1)
     call non_ideal%flux_upd(fl,fluxambdiff,fluxohmdiss,self%ds(2),self%dtime,2)
@@ -352,14 +341,12 @@ SUBROUTINE update (self)
       write (io%output,'("X5",f10.6,i4,1p,10e12.3)') self%time, i, fl(4:13,8,8,i,3)
     end do
   end if
-
   !-----------------------------------------------------------------------------
   ! Update conservative variables
   !-----------------------------------------------------------------------------
   associate (i0=>self%mesh(1)%li, j0=>self%mesh(2)%li, k0=>self%mesh(3)%li, &
              i1=>self%mesh(1)%ui, j1=>self%mesh(2)%ui, k1=>self%mesh(3)%ui, &
              uin=>self%uin,unew=>self%unew)
-
   lock => self%mem_lock(self%new)
   call lock%set ('update')
   unew = uin
@@ -372,20 +359,12 @@ SUBROUTINE update (self)
     fl(i0  :i1  ,j0+1:j1+1,k0  :k1  ,1:nv3,2) + &
     fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3,3) - &
     fl(i0  :i1  ,j0  :j1  ,k0+1:k1+1,1:nv3,3)   
-
-  !!!! TO DO !!!! 
-  !!! Instead of applying the update in time explicitly in mhd_mod
-  !!! only compute the fluxes and provide them to call timestep%update
-  !!! analogous to what is done in stagger2/mhd_mod.f90  
-
   ! Compute emf fluxes with appropriate time steps
   if (self%id == io%id_debug) then
     write (io%output,'("M1",f10.6,i4,1p,10e12.3)') self%time, i, em(4:13,8,8,1)
     write (io%output,'("M2",f10.6,i4,1p,10e12.3)') self%time, i, em(4:13,8,8,2)
     write (io%output,'("M3",f10.6,i4,1p,10e12.3)') self%time, i, em(4:13,8,8,3)
   end if
-
-
   !-----------------------------------------------------------------------------
   ! Update Bx 
   !-----------------------------------------------------------------------------
@@ -397,7 +376,6 @@ SUBROUTINE update (self)
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) =  &
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) + &
     self%mem(i0:i1, j0:j1, k0:k1, self%idx%bx, self%new, 2)
-
   !-----------------------------------------------------------------------------
   ! Update By 
   !-----------------------------------------------------------------------------
@@ -409,7 +387,6 @@ SUBROUTINE update (self)
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) = &
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) + &
     self%mem(i0:i1, j0:j1, k0:k1, self%idx%by, self%new, 2)
-
   !-----------------------------------------------------------------------------
   ! Update Bz 
   !-----------------------------------------------------------------------------
@@ -421,7 +398,6 @@ SUBROUTINE update (self)
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) = &
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) + &
     self%mem(i0:i1, j0:j1, k0:k1, self%idx%bz, self%new, 2)
-
   if (verbose>0) print *, 'unew', self%id, minval(unew), maxval(unew)
   end associate
   !-----------------------------------------------------------------------------
@@ -540,7 +516,20 @@ SUBROUTINE update (self)
   end if
 END SUBROUTINE update
 
+!=======================================================================
+!> Measure time in extras_t%post_update
+!=======================================================================
+SUBROUTINE post_update (self)
+  class(hd_t):: self
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin ('mhd_t%post_update', itimer=itimer)
+  call self%extras_t%post_update ()
+  call trace%end (itimer)
+END SUBROUTINE post_update
+
 !===============================================================================
+!> Check for small density and pressure values
 !===============================================================================
 subroutine check_small (self)
   class(mhd_t):: self

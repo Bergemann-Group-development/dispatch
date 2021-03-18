@@ -95,13 +95,21 @@ SUBROUTINE pre_init (self)
   type(index_t):: idx
   !-----------------------------------------------------------------------------
   call trace%begin('hd_t%pre_init')
-  self%nv = 5
+  !-----------------------------------------------------------------------------
+  ! Make sure the extras modules have the correct starting point
+  !-----------------------------------------------------------------------------
   self%nw = 1
+  self%nv = 5
   self%ng = 2
   self%mhd = .false.
   self%kind = 'ramses_hd_patch'
   call self%idx%init (energy=5, mhd=self%mhd)
   call self%extras_t%pre_init
+  !-----------------------------------------------------------------------------
+  ! Make sure the extras modules do not mess this up
+  !-----------------------------------------------------------------------------
+  self%mhd = .false.
+  self%kind = 'ramses_hd_patch'
   !-----------------------------------------------------------------------------
   ! Ramses specific parameters
   !-----------------------------------------------------------------------------
@@ -189,10 +197,10 @@ SUBROUTINE pre_update (self)
   if (io%courant /= 0.0) self%courant = io%courant
   call ctoprim(self)                  ! Primitive variables, sound speeds
   call self%extras_t%courant_condition (detailed_timer)
-  call self%gpatch_t%courant_condition (detailed_timer)
   !-----------------------------------------------------------------------------
   ! Pre-update extras components
   !-----------------------------------------------------------------------------
+  call self%extras_t%pre_update
   call trace%end ()
 END SUBROUTINE pre_update
 
