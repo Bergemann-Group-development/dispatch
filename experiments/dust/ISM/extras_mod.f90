@@ -88,8 +88,8 @@ SUBROUTINE pre_init (self)
   class(extras_t), target:: self
   !.............................................................................
   call trace%begin ('extras_t%pre_init')                        ! keep
-  call self%gpatch_t%pre_init                                   ! keep
   self%gpatch => self                                           ! keep
+  call self%gpatch_t%pre_init                                   ! keep
   call self%forces%pre_init (self%gpatch)                       ! forces
   call self%cooling%pre_init (self%gpatch)                      ! cool
   call self%selfgravity%pre_init (self%gpatch)                  ! selfg

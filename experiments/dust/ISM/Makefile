@@ -2,8 +2,8 @@
 # Option groups
 #OPTS = full_debug
 #OPTS = debug
-#OPTS =
-OPTS = optimized
+OPTS =
+#OPTS = optimized
 #OPTS = optimized_diagnostics
 
 # Default target and methods
@@ -12,6 +12,7 @@ UPD             = adams_bashforth
 SOLVER          = ramses/hydro
 #SOLVER          = ramses/mhd
 #SOLVER          = stagger2/e
+DUST_EVOLVE     = martin_s
 PARTICLE_SOLVER = dust
 #PARTICLE_SOLVER = dust_in_cells
 EXEC            = dispatch.x
