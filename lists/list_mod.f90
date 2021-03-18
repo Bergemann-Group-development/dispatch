@@ -1585,7 +1585,9 @@ SUBROUTINE prune_nbors (self, link, head, status)
   task => link%task
   select type (task)
   class is (patch_t)
-  allocate (irefine(task%gn(1),task%gn(2),task%gn(3)))
+    if (all(task%gn > 0)) then
+      allocate (irefine(task%gn(1),task%gn(2),task%gn(3)))
+    end if
   end select
   if (check_support (self, link, -1, irefine) <= 0) then
     nbor => head

@@ -94,7 +94,7 @@ MODULE patch_mod
     real:: csound                       ! isothermal sound speed, for tests
     real:: grav                         ! gravitational consant (code units)
     integer:: n(3)=0, ng(3)=0           ! defaults, to detect unchanged values
-    integer:: li(3), ui(3), gn(3)       ! convenience -- avoid patch%mesg%li etc
+    integer:: li(3), ui(3), gn(3)=0     ! convenience -- avoid patch%mesg%li etc
     integer:: ncell(3)                  ! number of cells per patch
     integer:: ipos(3)                   ! integer position, 3D
     real(8):: offset(3)                 ! this is used to compute indices, locations
