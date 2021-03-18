@@ -991,6 +991,7 @@ SUBROUTINE evolve_dust (self)
   !-----------------------------------------------------------------------------
   ! Save the current dust densities and velocities
   !-----------------------------------------------------------------------------
+  if (self%patch%time < self%dust_evolve%start_time) return
   call trace%begin ('particle_solver_t%evolve_dust')
   call self%density (self%dd)
   call self%velocities (self%vd)
@@ -1009,7 +1010,7 @@ SUBROUTINE evolve_dust (self)
   do i1=l(1),u(1)
     call self%dust_evolve%update ( &
       self%dtime, &
-         vrms(i1,i2,i3,:)*self%patch%ds(1), &
+        vrms(i1,i2,i3,:)*self%patch%ds(1), &
       self%dd(i1,i2,i3,:), self%vd(i1,i2,i3,:,:), &
            dd(i1,i2,i3,:),      vd(i1,i2,i3,:,:))
   end do
@@ -1208,7 +1209,7 @@ SUBROUTINE remove (self, particles)
       p%v = p%v + dm/p%w        ! p%w weighted sum = dm
       p => p%next
     end do
-  else
+  else if (verbose > 5) then
     write (stdout,'(a,i6,4i4,2i5,1p,4e11.2)') &
       'particle_solver_t%remove WARNING:', particles%id, n0, n, dd, dm
     p => particles%head%next

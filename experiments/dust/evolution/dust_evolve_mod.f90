@@ -13,6 +13,7 @@ MODULE dust_evolve_mod
   implicit none
   private
   type, public:: dust_evolve_t
+    real(KIND=8):: start_time=0d0                           ! start time
     logical:: on=.false.
   contains
     procedure:: init
@@ -27,6 +28,7 @@ MODULE dust_evolve_mod
   logical:: do_implicit=.true.
   logical:: do_brownian=.true.
   logical:: do_in_cell_turbulence=.false.
+  real(KIND=8):: start_time=0d0                             ! start time
   real(KIND=precision_e):: tt_dust = 10                     ! Dust temperature
   real(KIND=precision_e):: alpha = 1e-3                     ! Turbulence parameter, used when do_in_cell_turbulence is true for calculation of turbulent velocities
   real(KIND=precision_e):: sigma_d = 0.18                   ! Column density of the dust, used when do_in_cell_turbulence is true for calculation of turbulent velocities
@@ -82,7 +84,7 @@ SUBROUTINE init (self, ln_bin, lm_cgs, rho_s)
   !real(precision_e), ALLOCATABLE, DIMENSION(:,:,:):: SS, C                                                      
   !--- add parameters here -----------------------------------------------------
   namelist /dust_evolve_params/ on, verbose, do_brownian, do_in_cell_turbulence, &
-    tt_dust, sigma_d, alpha, xi, trans_width, u_f, dt, do_implicit
+    tt_dust, sigma_d, alpha, xi, trans_width, u_f, dt, do_implicit, start_time
   !-----------------------------------------------------------------------------
   call trace%begin ('dust_evolve_t%init')
   !-----------------------------------------------------------------------------
@@ -241,6 +243,7 @@ SUBROUTINE init (self, ln_bin, lm_cgs, rho_s)
 
   end if
   call io%lock%unset ('dust_evolve_t%init')
+  self%start_time = start_time
   self%on = on                                 ! task private copy
 
   call trace%end ()
