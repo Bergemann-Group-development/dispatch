@@ -3,8 +3,8 @@
 !-----------------------
 &cartesian_params
  origin=0,0,0 omp_init=t
- size=1,1,1 dims=3*3  mpi_dims=1,1,2   ! 32 cells  1 process    1 node      27 patches    2 cores       96x96x96  13 patches/core
-!size=1,1,1 dims=3*4  mpi_dims=1,1,2   ! 16 cells  1 process    1 node      64 patches    2 cores       64x64x64  32 patches/core
+!size=1,1,1 dims=3*3  mpi_dims=1,1,2   ! 32 cells  1 process    1 node      27 patches    2 cores       96x96x96  13 patches/core
+ size=1,1,1 dims=3*4  mpi_dims=1,1,2   ! 16 cells  1 process    1 node      64 patches    2 cores       64x64x64  32 patches/core
 !size=2,1,1 dims=3*8  mpi_dims=2,1,1   ! 16 cells  2 processes  1 node     512 patches    4 cores    128x128x128 128 patches/core
 !size=1,1,1 dims=3*8  mpi_dims=2,2,1   ! 16 cells  4 processes  1 node     512 patches    8 cores    128x128x128  64 patches/core
 !size=1,1,1 dims=3*8  mpi_dims=1,1,1   ! 32 cells  1 process    1 node     512 patches   10 cores    256x256x256  51 patches/core
