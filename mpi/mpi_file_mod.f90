@@ -319,11 +319,17 @@ SUBROUTINE writes (self, buffer, off, size)
   end if
 #ifdef MPI
   if (mp%mode == MPI_THREAD_MULTIPLE) then
+    select type (buffer)
+    type is (integer)
     call MPI_File_write_at (self%handle, off, buffer, size, MPI_REAL, st, err)
+    end select
   else
+    select type (buffer)
+    type is (integer)
     !$omp critical (mpi_cr)
     call MPI_File_write_at (self%handle, off, buffer, size, MPI_REAL, st, err)
     !$omp end critical (mpi_cr)
+    end select
   end if
 #endif MPI
   call trace%end ()
