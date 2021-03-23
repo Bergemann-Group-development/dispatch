@@ -1582,6 +1582,7 @@ SUBROUTINE prune_nbors (self, link, head, status)
   !-----------------------------------------------------------------------------
   ! If link%task has support, then remove any L-2 nbors
   !-----------------------------------------------------------------------------
+  nullify (irefine)
   task => link%task
   select type (task)
   class is (patch_t)
@@ -1645,7 +1646,9 @@ SUBROUTINE prune_nbors (self, link, head, status)
     end if
     nbor => next
   end do
-  deallocate (irefine)
+  if (associated(irefine)) then
+    deallocate (irefine)
+  end if
   if (removed) then
     !---------------------------------------------------------------------------
     ! If any task was removed, the status bits and flags need to be recomputed,
