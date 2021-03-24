@@ -19,7 +19,7 @@ MODULE dust_evolve_mod
     procedure:: update
     procedure:: test
   end type
-  
+
   integer, parameter :: precision_e = selected_real_kind(15, 100)
   integer:: verbose=0
   integer:: nbin
@@ -36,16 +36,16 @@ MODULE dust_evolve_mod
   real(KIND=precision_e):: dt = 1e-1 * 60*60*24*365         ! Time step in dust_evolve in years
   real(KIND=precision_e):: save_time = 1 * 60*60*24*365
   real(KIND=precision_e):: eps_time =1.10 * 60*60*24*365
-  real(KIND=precision_e), ALLOCATABLE:: C(:,:,:) 
-  real(KIND=precision_e), ALLOCATABLE:: SS(:,:,:) 
-  real(KIND=precision_e), ALLOCATABLE:: ms(:,:) 
-  real(KIND=precision_e), ALLOCATABLE:: ep(:,:) 
-  real(KIND=precision_e), ALLOCATABLE:: pf(:,:) 
-  real(KIND=precision_e), ALLOCATABLE:: pc(:,:) 
-  real(KIND=precision_e), ALLOCATABLE:: identity(:,:) 
-  real(KIND=precision_e), ALLOCATABLE:: sigma_col(:,:) 
-  real(KIND=precision_e), ALLOCATABLE:: mn(:,:) 
-  real(KIND=precision_e), ALLOCATABLE:: mm(:,:) 
+  real(KIND=precision_e), ALLOCATABLE:: C(:,:,:)
+  real(KIND=precision_e), ALLOCATABLE:: SS(:,:,:)
+  real(KIND=precision_e), ALLOCATABLE:: ms(:,:)
+  real(KIND=precision_e), ALLOCATABLE:: ep(:,:)
+  real(KIND=precision_e), ALLOCATABLE:: pf(:,:)
+  real(KIND=precision_e), ALLOCATABLE:: pc(:,:)
+  real(KIND=precision_e), ALLOCATABLE:: identity(:,:)
+  real(KIND=precision_e), ALLOCATABLE:: sigma_col(:,:)
+  real(KIND=precision_e), ALLOCATABLE:: mn(:,:)
+  real(KIND=precision_e), ALLOCATABLE:: mm(:,:)
   real(KIND=precision_e), ALLOCATABLE:: m_cgs(:)
   real(KIND=precision_e), ALLOCATABLE:: a(:)
   type(dust_evolve_t), public:: dust_evolve
@@ -79,7 +79,7 @@ SUBROUTINE init (self, ln_bin, lm_cgs, rho_s)
     ll, KC_k, LS_k, IJJ, du, ubm, utm, &
     Jp, Jmx, Jmy, Jmz, IJp, pnx, pny, pnz, s1, s2
   real, ALLOCATABLE, DIMENSION(:):: st, utm_ini
-  !real(precision_e), ALLOCATABLE, DIMENSION(:,:,:):: SS, C                                                      
+  !real(precision_e), ALLOCATABLE, DIMENSION(:,:,:):: SS, C
   !--- add parameters here -----------------------------------------------------
   namelist /dust_evolve_params/ on, verbose, do_brownian, do_in_cell_turbulence, &
     tt_dust, sigma_d, alpha, xi, trans_width, u_f, dt, do_implicit
@@ -98,18 +98,18 @@ SUBROUTINE init (self, ln_bin, lm_cgs, rho_s)
     end if
     call io%namelist_warning ('dust_evolve_params', iostat)
     write (io%namelist, dust_evolve_params)    ! write to data/run/params.nml
-    
+
     call cgs%init
     nbin = ln_bin
     ALLOCATE(SS(nbin,nbin,nbin), C(nbin,nbin,nbin), ms(nbin,nbin), ep(nbin,nbin), a(nbin), st(nbin))
     ALLOCATE(pf(nbin,nbin), pc(nbin,nbin), identity(nbin,nbin), sigma_col(nbin,nbin), mn(nbin,nbin), mm(nbin,nbin))
-  
+
     allocate(m_cgs(nbin))
-    m_cgs = lm_cgs 
+    m_cgs = lm_cgs
     !call self%test                             ! run a self%test once
-    
+
     first_time = .false.
-  
+
     !class(dust_evolve_t):: self
 
     !print *,"Initializing starting conditions"
@@ -124,7 +124,7 @@ SUBROUTINE init (self, ln_bin, lm_cgs, rho_s)
     ! rho_d = sigma_d/(sqrt(2*math%pi)*Hp)
     !micron = 1e-4
 
-    !mps = 1e2 
+    !mps = 1e2
     !u_f = 1*mps
     !trans_width = 0.001*mps
     !alpha = 1e-3
@@ -150,12 +150,12 @@ SUBROUTINE init (self, ln_bin, lm_cgs, rho_s)
     !n(1) = rho_d / m(1)
     !v = 1
     !p = n * v
-    !mv = m * v 
+    !mv = m * v
     m = m_cgs
     a = (3.0/4.0 * m/(rho_s * math%pi) )**(1/3)       ! Initial setup of bin distribution
-    st = rho_s * a * math%pi/(2*sigma_d*100)  
-    
-    
+    st = rho_s * a * math%pi/(2*sigma_d*100)
+
+
     C = 0
     SS = 0
     ms = 0
@@ -277,7 +277,7 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
   !-----------------------------------------------------------------------------
   call trace%begin ('dust_evolve_t%update', itimer=itimer)
   start = wallclock()
-  
+
   ALLOCATE(n(nbin), dn(nbin), S(nbin), m(nbin))
   ALLOCATE(utm_ini(nbin))
   ALLOCATE(du(nbin,nbin))
@@ -289,7 +289,7 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
   ALLOCATE(IJp(nbin,nbin), Ln_k(nbin), Kn_k(nbin), Sppx(nbin), Sppy(nbin), Sppz(nbin))
   ALLOCATE(mv(nbin), px(nbin), py(nbin), pz(nbin), v(nbin), mpx(nbin), mpy(nbin), mpz(nbin), pnx(nbin,nbin), pny(nbin,nbin), pnz(nbin,nbin), s1(nbin,nbin),s2(nbin,nbin))
   time(1) = wallclock()-start
-  
+
   ! convert from code units to cgs
   tend = scaling%t * dt_dispatch
   n = scaling%d * dd_in / m_cgs
@@ -299,7 +299,7 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
   px = n * vd(:,1)
   py = n * vd(:,2)
   pz = n * vd(:,3)
-  
+
   if (verbose > 0) then
     print *, "Starting density", n
     print *, "Starting velocity x:", vd(:,1)
@@ -309,7 +309,7 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
   end if
 
   m = m_cgs
-  
+
   ! compute velocity difference between different size bins
   ! 1) use vd for bulk difference:
   !        vdiff(i,j) = sqrt((vd(i,1) - vd(j,1))**2 + (vd(i,2) - vd(j,2))**2 + (vd(i,3) - vd(j,3))**2)
@@ -335,7 +335,7 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
       du(i,j) = sqrt((vd(i,1) - vd(j,1))**2 + (vd(i,2) - vd(j,2))**2 + (vd(i,3) - vd(j,3))**2)
       du(i,j) = du(i,j) + sqrt(vrms(i)**2 + vrms(j)**2)
 
-      
+
       if (do_brownian) then
       ubm(i,j) = sqrt(8 * cgs%k_b* tt_dust * (m(i) + m(j) )/(math%pi*m(i)*m(j) ))
       du(i,j) = du(i,j) + ubm(i,j)
@@ -345,7 +345,7 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
       utm(i,j) = max(utm_ini(i), utm_ini(j))
       du(i,j) = du(i,j) + utm(i,j)
       end if
-  
+
 
       if (du(i,j) < u_f - trans_width) then
         pf(i,j) = 0
@@ -357,20 +357,20 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
     end do
   end do
   time(3) = wallclock()-start
-  
+
   if (verbose>0) then
     print *, pf
   end if
   pc = 1-pf
 
   kk = du * sigma_col * pc
-  ll = du * sigma_col * pf                              
+  ll = du * sigma_col * pf
 
   t = 0
   itime = 0
 
   do while (t < tend)
-    
+
     mpx = m * px
     mpy = m * py
     mpz = m * pz                                                  ! xyz
@@ -382,7 +382,7 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
         pnz(i,j) = (mpz(i) * n(j) + n(i) * mpz(j))/ms(i,j)
       end do
     end do
-    
+
     dn = 0
     dpx = 0
     dpy = 0
@@ -395,7 +395,7 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
     Jmx = 0
     Jmy = 0
     Jmz = 0
-    
+
     JJ = 0
     IJJ = 0
     IJp = 0
@@ -416,8 +416,8 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
       Spx(k) = 0.5 * SUM(KC_k * pnx) - SUM(Kn_k * px(k)) + 0.5 * SUM(LS_k * pnx) - SUM(Ln_k * px(k))
       Spy(k) = 0.5 * SUM(KC_k * pny) - SUM(Kn_k * py(k)) + 0.5 * SUM(LS_k * pny) - SUM(Ln_k * py(k))
       Spz(k) = 0.5 * SUM(KC_k * pnz) - SUM(Kn_k * pz(k)) + 0.5 * SUM(LS_k * pnz) - SUM(Ln_k * pz(k))
-      end do  
-      
+      end do
+
       dn = S * dt
       dpx = Spx * dt
       dpy = Spy * dt
@@ -439,7 +439,7 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
         s1 = KC_k * 1/ms
         s2 = LS_k * 1/ms
         Jp(k,:) = (matmul(s1, n) + matmul(s2, n)) * m
-        Jp(k,k) = Jp(k,k) - (SUM(Kn_k) + SUM(Ln_k) )                            
+        Jp(k,k) = Jp(k,k) - (SUM(Kn_k) + SUM(Ln_k) )
         Jmx(k,:) = (matmul(s1, px*m) + matmul(s2, px*m)) - px(k) * kk(k,:) - px(k) * ll(k,:)
         Jmy(k,:) = (matmul(s1, py*m) + matmul(s2, py*m)) - py(k) * kk(k,:) - py(k) * ll(k,:)
         Jmz(k,:) = (matmul(s1, pz*m) + matmul(s2, pz*m)) - pz(k) * kk(k,:) - pz(k) * ll(k,:)
@@ -451,13 +451,13 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
 
       IJJ = identity - JJ
       IJp = identity - Jp
-      
-      
+
+
       js_n = nbin
       js_nrhs = 1
       js_lda = nbin
       js_ldb = nbin
-      
+
       CALL DGESV( js_n, js_nrhs, IJJ, js_lda, js_ipiv, S, js_ldb, js_info )
       Sppx = Spx - matmul(Jmx , S)
       Sppy = Spy - matmul(Jmy , S)
@@ -506,7 +506,7 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out)
     print "(/)"
   end if
 
-  where (n > 0.0) 
+  where (n > 0.0)
     vd(:,1) = px/n
     vd(:,2) = py/n
     vd(:,3) = pz/n
@@ -584,7 +584,7 @@ SUBROUTINE test (self)
   rho_s = 1.6                                         ! g / cm**3
   micron = 1e-4
 
-  mps = 1e2 
+  mps = 1e2
   u_f = 1*mps
   trans_width = 0.001*mps
   alpha = 1e-3
@@ -616,7 +616,7 @@ SUBROUTINE test (self)
   n(1) = rho_d / m(1)
   v = 1
   p = n * v
-  mv = m * v 
+  mv = m * v
 
   SS = 0
 
@@ -752,7 +752,7 @@ SUBROUTINE test (self)
   itime = 0
 
   do while (t < t_end)
-    
+
     mp = m * p
     do i=1,nbin
       do j=1,nbin
@@ -760,14 +760,14 @@ SUBROUTINE test (self)
         pn(i,j) = (mp(i) * n(j) + n(i) * mp(j))/ms(i,j)
       end do
     end do
-    
+
     dn = 0
     dp = 0
     S = 0
     Sp = 0
     Jp = 0
     Jm = 0
-    
+
     JJ = 0
     IJJ = 0
     IJp = 0
@@ -786,8 +786,8 @@ SUBROUTINE test (self)
 
       S(k) = ( 0.5* SUM(Q*C(k,:,:)) - SUM(Q(k,:)) ) + ( 0.5 * SUM( Q_frag*SS(k,:,:)) - SUM(Q_frag(k,:)) )
       Sp(k) = 0.5 * SUM(KC_k * pn) - SUM(Kn_k * p(k)) + 0.5 * SUM(LS_k * pn) - SUM(Ln_k * p(k))
-      end do  
-      
+      end do
+
       dn = S * dt
       dp = Sp * dt
     else
@@ -806,20 +806,20 @@ SUBROUTINE test (self)
         s1 = KC_k * 1/ms
         s2 = LS_k * 1/ms
         Jp(k,:) = (matmul(s1, n) + matmul(s2, n)) * m
-        Jp(k,k) = Jp(k,k) - (SUM(Kn_k) + SUM(Ln_k) )                            
+        Jp(k,k) = Jp(k,k) - (SUM(Kn_k) + SUM(Ln_k) )
         Jm(k,:) = (matmul(s1, p*m) + matmul(s2, p*m)) - p(k) * kk(k,:) - p(k) * ll(k,:)
         JJ(k,:) = (matmul(KC_k , n) - n(k) * kk(k,:) ) + (matmul(LS_k,  n) - n(k) * ll(k,:) )
         !print *, "matmul(LS_k,  n)"
         !print *, matmul(LS_k,  n)
         JJ(k,k) = JJ(k,k) - (SUM(Kn_k) + SUM(Ln_k) )                                ! Checked
       end do
-    
+
       ! print *, "Sp"
       ! do i = 1, nbin
       !   print '(5ES13.3)', Sp(i)
       ! end do
       ! print "(/)"
-      
+
       ! print *, "LS_k"
       ! do i = 1, nbin
       !   print '(5ES13.3)', LS_k(i,:)
@@ -866,18 +866,18 @@ SUBROUTINE test (self)
       !SSS(:,nbin:) = Sp
       IJJ = identity - JJ
       IJp = identity - Jp
-      
+
       ! print *,"JJ"
       ! do i = 1, nbin
       !   print '(5ES13.3)', JJ(i,:)
       ! end do
       ! print "(/)"
-      
+
       js_n = nbin
       js_nrhs = 1
       js_lda = nbin
       js_ldb = nbin
-      
+
       CALL DGESV( js_n, js_nrhs, IJJ, js_lda, js_ipiv, S, js_ldb, js_info )
       Spp = Sp - matmul(Jm , S)
       CALL DGESV( js_n, js_nrhs, IJp, js_lda, js_ipiv, Spp, js_ldb, js_info )
