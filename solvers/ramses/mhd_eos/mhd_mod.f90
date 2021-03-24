@@ -520,7 +520,7 @@ END SUBROUTINE update
 !> Measure time in extras_t%post_update
 !=======================================================================
 SUBROUTINE post_update (self)
-  class(hd_t):: self
+  class(mhd_t):: self
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%post_update', itimer=itimer)
