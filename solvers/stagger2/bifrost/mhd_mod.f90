@@ -149,7 +149,10 @@ SUBROUTINE pre_init (self)
     self%nv = 5
   end if
   call self%idx%init (energy=5, mhd=self%mhd)
+  print *, 'mhd_t::pre_init'
+  print *, 'before where n, ng', self%n, self%ng
   where (self%n<2) self%ng=0
+  print *, 'after where n, ng', self%n, self%ng
   call trace%end()
 END SUBROUTINE pre_init
 

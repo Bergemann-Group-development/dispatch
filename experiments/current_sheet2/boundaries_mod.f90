@@ -11,18 +11,19 @@ MODULE boundaries_mod
   USE timer_mod
   USE index_mod
   USE math_mod
-  USE patch_mod
   USE standard_boundaries_mod
   USE eos_mod
+  USE patch_mod
+  USE stagger_mod
   implicit none
   private
   type, extends(standard_boundaries_t), public:: boundaries_t
     ! --------------------------------------------------------------------------
     ! Experiment - specific variables
     ! --------------------------------------------------------------------------
-    real(kind=KindScalarVar)       :: gravity = -2.74
-    real(kind=KindScalarVar)       :: d_bot, e_bot, ee_top
-    real(kind=KindScalarVar), dimension(:,:,:,:), pointer::ic_copy => null()
+    real(kind=KindScalarVar)       :: t0, v0
+    real(kind=KindScalarVar), dimension(:,:,:,:),allocatable::ic_copy 
+    integer, dimension(3) :: gn
   contains
     ! --------------------------------------------------------------------------
     ! Default procedures
@@ -33,30 +34,21 @@ MODULE boundaries_mod
     ! --------------------------------------------------------------------------
     ! Experiment - specific procedures
     ! --------------------------------------------------------------------------
+    procedure:: lower_x
+    procedure:: upper_x
     procedure:: lower_y
     procedure:: upper_y
     procedure:: lower_z
     procedure:: upper_z
-    procedure:: initial_conditions_copy
+    procedure:: copy_ic
     procedure:: static_values
     procedure:: add_flow
-    procedure:: smooth_reduce
+    procedure:: vanishing
   end type
   integer, save:: verbose=1
-  logical, save:: smudge_boundary = .false.
-  logical, save:: scale = .true.
-  logical, save:: deriv_bnd = .false.
-  real, save:: d_bot=0.0, e_bot=0.0, ee_top=0.0
-  real, save:: bottom_bc_rate=0.01
-  real, save:: damp_rate=0.01
-  real, save:: r_sponge = 0.5
-  real, save:: pb_fact = 1.0
-  integer, save:: divb_iter = 4
-  ! --- lower_damp parameters
-  real, save:: beta_lim   = 1e+2
-  real, save:: spot_lower = 0.0
-  real, save:: pb_spot    = 0.0
-  real, save:: t_bdry     = 3e+0
+  ! --- add_flow parameters
+  real, save:: t0 = 100.
+  real, save:: v0 = 0.045
 CONTAINS
 
 !===============================================================================
@@ -64,31 +56,29 @@ CONTAINS
 !> a spherical boundary, or possibly is completely immersed in such a boundary.
 !===============================================================================
 SUBROUTINE init (self, patch)
-  class(boundaries_t)              :: self
+  class(boundaries_t)   :: self
   class(patch_t), target:: patch
-  integer:: id
   !.............................................................................
   integer:: iostat
+  real, save:: t0, v0
   logical, save:: first_time=.true.
-  namelist /boundary_params/ d_bot, e_bot, ee_top, bottom_bc_rate, verbose, &
-           divb_iter, scale, t_bdry, r_sponge, damp_rate, deriv_bnd, pb_fact
+  namelist /boundary_params/ verbose, t0, v0
   !-----------------------------------------------------------------------------
   call trace%begin('boundaries_t%init')
   !.............................................................................
-  !call io%lock%set('boundaries_t%init')
+  call io%lock%set('boundaries_t%init')
   if (first_time) then
     rewind (io%input)
     read (io%input, boundary_params, iostat=iostat)
     if (io%master) write (*, boundary_params)
-    !d_bot = d_bot/scaling%d
-    !e_bot = e_bot/scaling%e
     first_time = .false.
-    !self%d_bot = d_bot
   end if
-  !call io%lock%unset('boundaries_t%init')
-  call self%standard_boundaries_t%init(patch)
+  self%t0 = t0
+  self%v0 = v0
 
-  call self%initial_conditions_copy(self%patch%mesh, self%patch%idx)
+  self%gn = patch%gn
+  call io%lock%unset('boundaries_t%init')
+  call self%standard_boundaries_t%init(patch)
 END SUBROUTINE init
 
 SUBROUTINE primary(self, mem)
@@ -97,20 +87,18 @@ SUBROUTINE primary(self, mem)
   ! ----------------------------------------------------------------------------
   if (self%mesh(2)%lower_boundary) call self%lower_y(mem)
   if (self%mesh(2)%upper_boundary) call self%upper_y(mem)
+  if (self%mesh(1)%lower_boundary) call self%lower_x(mem)
+  if (self%mesh(1)%upper_boundary) call self%upper_x(mem)
   if (self%mesh(3)%lower_boundary) call self%lower_z(mem)
   if (self%mesh(3)%upper_boundary) call self%upper_z(mem)
-
 END SUBROUTINE primary
 
 SUBROUTINE derivative(self, mem)
   class(boundaries_t):: self
   real(kind=KindScalarVar), dimension(:,:,:,:,:), pointer :: mem
-  !
-  !if (self%mesh(3)%lower_boundary) call self%lower_damp(mem)
-  !if (self%mesh(3)%lower_boundary) call self%ddt_boundary_bot(mem)
 END SUBROUTINE derivative
 
-SUBROUTINE lower_y(self, mem)
+SUBROUTINE lower_x(self, mem)
   class(boundaries_t):: self
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: mem
   ! ----------------------------------------------------------------------------
@@ -126,14 +114,79 @@ SUBROUTINE lower_y(self, mem)
   by => mem(:,:,:,idx%by)
   bz => mem(:,:,:,idx%bz)
 
-  call self%symmetric(d ,idx%d , select=bits%yl)
-  call self%symmetric(e ,idx%e , select=bits%yl)
-  call self%symmetric(px,idx%px, select=bits%yl)
-  call self%symmetric(py,idx%py, select=bits%yl)
-  call self%symmetric(pz,idx%pz, select=bits%yl)
-  call self%symmetric(bx,idx%bx, select=bits%yl)
-  call self%symmetric(by,idx%by, select=bits%yl)
-  call self%symmetric(bz,idx%bz, select=bits%yl)
+  call self%antisymmetric(px,idx%px, select=bits%xl)
+  call self%antisymmetric(py,idx%py, select=bits%xl)
+  call self%antisymmetric(pz,idx%pz, select=bits%xl)
+  call self%static_values(d ,idx%d , select=bits%xl)
+  call self%static_values(e ,idx%e , select=bits%xl)
+  call self%static_values(bx,idx%bx, select=bits%xl)
+  call self%static_values(by,idx%by, select=bits%xl)
+  call self%static_values(bz,idx%bz, select=bits%xl)
+END SUBROUTINE lower_x  
+
+SUBROUTINE upper_x(self, mem)
+  class(boundaries_t):: self
+  real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: mem
+  ! ----------------------------------------------------------------------------
+  real, dimension(:,:,:), pointer:: d, e, px, py, pz
+  real, dimension(:,:,:), pointer:: bx, by, bz
+  !-----------------------------------------------------------------------------
+  d  => mem(:,:,:,idx%d )
+  e  => mem(:,:,:,idx%e )
+  px => mem(:,:,:,idx%px)
+  py => mem(:,:,:,idx%py)
+  pz => mem(:,:,:,idx%pz)
+  bx => mem(:,:,:,idx%bx)
+  by => mem(:,:,:,idx%by)
+  bz => mem(:,:,:,idx%bz)
+
+  call self%symmetric(d,idx%d, select=bits%xu)
+  call self%symmetric(e,idx%e, select=bits%xu)
+  call self%antisymmetric(px,idx%px, select=bits%xu)
+  call self%antisymmetric(py,idx%py, select=bits%xu)
+  call self%antisymmetric(pz,idx%pz, select=bits%xu)
+  call self%extrapolate(bx,idx%bx, select=bits%xu)
+  call self%extrapolate(by,idx%by, select=bits%xu)
+  call self%extrapolate(bz,idx%bz, select=bits%xu)
+  
+END SUBROUTINE upper_x
+
+SUBROUTINE lower_y(self, mem)
+  class(boundaries_t):: self
+  real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: mem
+  ! ----------------------------------------------------------------------------
+  real, dimension(:,:,:), pointer:: d, e, px, py, pz
+  real, dimension(:,:,:), pointer:: bx, by, bz
+  real, dimension(:,:,:), allocatable:: vx, vy, vz
+  real, dimension(:,:,:), allocatable:: xdnd, ydnd, zdnd
+  !-----------------------------------------------------------------------------
+
+  d  => mem(:,:,:,idx%d )
+  e  => mem(:,:,:,idx%e )
+  px => mem(:,:,:,idx%px)
+  py => mem(:,:,:,idx%py)
+  pz => mem(:,:,:,idx%pz)
+  bx => mem(:,:,:,idx%bx)
+  by => mem(:,:,:,idx%by)
+  bz => mem(:,:,:,idx%bz)
+
+  allocate(xdnd,ydnd,zdnd, mold=d)
+  xdnd=0; ydnd=0; zdnd=0
+  ! Convert to velocity
+  xdnd = xdn(d); ydnd = ydn(d); zdnd = zdn(d)
+  px = px/xdnd; py = py/ydnd; pz = pz/zdnd
+  call self%vanishing(px,idx%px, select=bits%yl)
+  call self%vanishing(py,idx%py, select=bits%yl)
+  call self%vanishing(pz,idx%pz, select=bits%yl)
+  ! Back to momentum
+  px = px*xdnd; py = py*ydnd; pz = pz*zdnd
+  call self%static_values(d ,idx%d , select=bits%yl)
+  call self%static_values(e ,idx%e , select=bits%yl)
+  call self%static_values(bx,idx%bx, select=bits%yl)
+  call self%static_values(by,idx%by, select=bits%yl)
+  call self%static_values(bz,idx%bz, select=bits%yl)
+  deallocate(xdnd,ydnd,zdnd)
+
 END SUBROUTINE lower_y
 
 SUBROUTINE upper_y(self, mem)
@@ -142,6 +195,7 @@ SUBROUTINE upper_y(self, mem)
   ! ----------------------------------------------------------------------------
   real, dimension(:,:,:), pointer:: d, e, px, py, pz
   real, dimension(:,:,:), pointer:: bx, by, bz
+  real, dimension(:,:,:), allocatable:: xdnd
   !-----------------------------------------------------------------------------
   d  => mem(:,:,:,idx%d )
   e  => mem(:,:,:,idx%e )
@@ -152,23 +206,32 @@ SUBROUTINE upper_y(self, mem)
   by => mem(:,:,:,idx%by)
   bz => mem(:,:,:,idx%bz)
 
-  call self%symmetric(d ,idx%d , select=bits%yu)
-  call self%symmetric(e ,idx%e , select=bits%yu)
-  call self%symmetric(px,idx%px, select=bits%yu)
-  call self%symmetric(py,idx%py, select=bits%yu)
-  call self%symmetric(pz,idx%pz, select=bits%yu)
+  call self%symmetric(d,idx%d, select=bits%yu)
+  call self%symmetric(e,idx%e, select=bits%yu)
+  call self%antisymmetric(px,idx%px, select=bits%yu)
+  call self%antisymmetric(py,idx%py, select=bits%yu)
+  call self%antisymmetric(pz,idx%pz, select=bits%yu)
   call self%symmetric(bx,idx%bx, select=bits%yu)
   call self%symmetric(by,idx%by, select=bits%yu)
   call self%symmetric(bz,idx%bz, select=bits%yu)
+
+  allocate(xdnd, mold=d)
+  xdnd=0
+  ! Convert to velocity
+  xdnd = xdn(d)
+  px = px/xdnd
+  call self%add_flow(px, select=bits%yu)
+  ! Back to momentum
+  px = px*xdnd
+  deallocate(xdnd)
 END SUBROUTINE upper_y
 
 SUBROUTINE lower_z(self, mem)
   class(boundaries_t):: self
-  real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: mem!, ic_copy
+  real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: mem
   ! ----------------------------------------------------------------------------
   real, dimension(:,:,:), pointer:: d, e, px, py, pz
   real, dimension(:,:,:), pointer:: bx, by, bz
-  integer                        :: lb, lo
   !-----------------------------------------------------------------------------
   d  => mem(:,:,:,idx%d )
   e  => mem(:,:,:,idx%e )
@@ -179,15 +242,11 @@ SUBROUTINE lower_z(self, mem)
   by => mem(:,:,:,idx%by)
   bz => mem(:,:,:,idx%bz)
   
-  if(self%patch%id==11) print *,'pre-bn', minval(d)
-  call self%symmetric(d,idx%d, select=bits%zl)
-  if(self%patch%id==11) print *,'post-bn', minval(d)
-  call self%symmetric(e,idx%e, select=bits%zl)
-
-  call self%symmetric(px,idx%px, select=bits%zl)
-  call self%smooth_reduce(py,idx%py, select=bits%zl)
-  call self%smooth_reduce(pz,idx%pz, select=bits%zl)
-
+  call self%antisymmetric(px,idx%px, select=bits%zl)
+  call self%antisymmetric(py,idx%py, select=bits%zl)
+  call self%antisymmetric(pz,idx%pz, select=bits%zl)
+  call self%static_values(d ,idx%d , select=bits%zl)
+  call self%static_values(e ,idx%e , select=bits%zl)
   call self%static_values(bx,idx%bx, select=bits%zl)
   call self%static_values(by,idx%by, select=bits%zl)
   call self%static_values(bz,idx%bz, select=bits%zl)
@@ -212,153 +271,146 @@ SUBROUTINE upper_z(self, mem)
 
   call self%symmetric(d,idx%d, select=bits%zu)
   call self%symmetric(e,idx%e, select=bits%zu)
-
   call self%antisymmetric(px,idx%px, select=bits%zu)
-  call self%symmetric(py,idx%py, select=bits%zu)
+  call self%antisymmetric(py,idx%py, select=bits%zu)
   call self%antisymmetric(pz,idx%pz, select=bits%zu)
-
   call self%extrapolate(bx,idx%bx, select=bits%zu)
   call self%extrapolate(by,idx%by, select=bits%zu)
   call self%extrapolate(bz,idx%bz, select=bits%zu)
 
-  call self%add_flow(py, idx%py, select=bits%zu)
-
 END SUBROUTINE upper_z
-
-SUBROUTINE initial_conditions_copy(self, m, idx)
+!===============================================================================
+!> Copies the initial conditions for use in a static boundary
+!===============================================================================
+SUBROUTINE copy_ic(self,mem)
   class(boundaries_t):: self
-  type(index_t)      :: idx
-  class(mesh_t), pointer, dimension(:):: m
+  real(kind=KindScalarVar) :: mem(:,:,:,:)
   ! ----------------------------------------------------------------------------
-  integer:: ix, iy, iz, n
-  real :: entropy, pg, pb, bb, bx_sum, d, bx, by, bz, bxp, byp, bzp
-  real(8) :: xs, ys, zs, xp, yp, zp
-  logical, save                  :: first_time_ic=.true.
-  real                           :: gamma=1.6666666667
-  character(len=20)               :: solver
-  real                           :: d0, beta, alpha, idir
-  namelist /initial_params/ d0, beta, alpha, idir
-  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
-  !-----------------------------------------------------------------------------
-
-  allocate(self%ic_copy(m(1)%gn,m(2)%gn,m(3)%gn,8))
-
-  solver='stagger2e_bifrost'
-
-  d0=1.0; beta=0.02; alpha=2.0; idir=1
-
-!  pg = 0.01
-!  bb = sqrt(2*pg/beta/4/math%pi) !mu_0 possibly
-  bb = 3.!1./sqrt(4./math%pi) !mu_0 possibly
-  d = 20.
-
-  do iz=m(3)%lb,m(3)%ub
-    zp = m(3)%p + r3(iz)
-    zs = zp - 0.5*m(3)%d
-    do iy=m(2)%lb,m(2)%ub
-      yp = m(2)%p + r2(iy)
-      ys = yp - 0.5*m(2)%d
-      do ix=m(1)%lb,m(1)%ub
-        xp = m(1)%p + r1(ix)
-        xs = xp - 0.5*m(1)%d
-!        bx_sum = 0.
-!        do n=1,25
-!          bx_sum=bx_sum+(((1-(yp**2+zp**2)/(d**2*n**2))*((8*zp)/(d**2*n**2)- &
-!                        (4*zp*(1-(yp**2+zp**2)/(d**2*n**2)))/(d**2*n**2)))/  &
-!                        (n**2*((4*zp**2)/(d**2*n**2)+(1-(yp**2+zp**2)/       &
-!                        (d**2*n**2))**2)**2))+(2*zp)/(d**2*n**4*((4*zp**2)/  &
-!                        (d**2*n**2)+(1-(yp**2+zp**2)/(d**2*n**2))**2))
-!        end do 
-        bx = 0.0 !alpha*bb*yp*(2/d)**2*bx_sum
-        by = 4*alpha*bb*ys*zp/(ys**2+zp**2)**2
-        bz = -bb*(1+2*alpha*(yp**2-zs**2)/(yp**2+zs**2)**2)
-        bxp = 0.0 !alpha*bb*yp*(2/d)**2*bx_sum
-        byp = 4*alpha*bb*yp*zp/(yp**2+zp**2)**2
-        bzp = -bb*(1+2*alpha*(yp**2-zp**2)/(yp**2+zp**2)**2)
-        self%ic_copy(ix,iy,iz,idx%d)=d0
-        self%ic_copy(ix,iy,iz,idx%px)=0.0
-        self%ic_copy(ix,iy,iz,idx%py)=0.0
-        self%ic_copy(ix,iy,iz,idx%pz)=0.0
-        self%ic_copy(ix,iy,iz,idx%bx)=bx !0.0!alpha*bb*yp*(2/d)**2*bx_sum 
-        self%ic_copy(ix,iy,iz,idx%by)=by !4*alpha*bb*ys*zp/(ys**2+zp**2)**2
-        self%ic_copy(ix,iy,iz,idx%bz)=bz !-bb*(1+2*alpha*(yp**2-zs**2)/(yp**2+zs**2)**2)
-        !pb = 0.5*(bx**2+by**2+bz**2)
-        !pb = 0.5*(bxp**2+byp**2+bzp**2)
-        pg = beta*bb
-        if (gamma==1.0) then
-          self%ic_copy(ix,iy,iz,idx%s) = 1.0
-        else if (solver(1:14) == 'zeus_mhd_patch' .or. &
-                 solver(1:10) == 'stagger2e_') then 
-          self%ic_copy(ix,iy,iz,idx%e) = pg / (gamma - 1.0)
-        else if (solver(1:9) == 'stagger2_') then
-          self%ic_copy(ix,iy,iz,idx%s) = &
-              (log(pg)-log(d0)*gamma)/(gamma-1.0)*d0
-        else if (solver(1:6) == 'ramses')  then
-          self%ic_copy(ix,iy,iz,idx%e) = pg / (gamma - 1.0)
-        end if
-      end do
-    end do
-  end do
-  end associate
-
-END SUBROUTINE initial_conditions_copy
-
+  allocate(self%ic_copy, mold=mem)
+  self%ic_copy = mem
+END SUBROUTINE copy_ic
+!===============================================================================
+!> Static boundary condition
+!===============================================================================
 SUBROUTINE static_values(self, mem, iv, select)
   class(boundaries_t)      :: self
   class(mesh_t), pointer   :: m(:)
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: mem
-  integer :: lb, lo, iv
+  integer :: lb, lo, uo, ub, iv
   integer, optional :: select
   !-----------------------------------------------------------------------------
   m => self%mesh
-  if (self%is_set(bits%zl)) then
+
+  if (self%is_set(bits%xl)) then
+    lb = m(1)%lb
+    lo = m(1)%lo
+    mem(lb:lo,:,:) = self%ic_copy(lb:lo,:,:,iv)
+  else if (self%is_set(bits%xu)) then
+    uo = m(1)%uo
+    ub = m(1)%ub
+    mem(uo:ub,:,:) = self%ic_copy(uo:ub,:,:,iv)
+  else if (self%is_set(bits%yl)) then
+    lb = m(2)%lb
+    lo = m(2)%lo
+    mem(:,lb:lo,:) = self%ic_copy(:,lb:lo,:,iv)
+  else if (self%is_set(bits%yu)) then
+    uo = m(2)%uo
+    ub = m(2)%ub
+    mem(:,uo:ub,:) = self%ic_copy(:,uo:ub,:,iv)
+  else if (self%is_set(bits%zl)) then
     lb = m(3)%lb
     lo = m(3)%lo
-    mem(:,:,lb:lo) = self%ic_copy(:,:,lb:lo, iv)
-  end if
-END SUBROUTINE static_values
-
-SUBROUTINE add_flow(self, mem, iv, select)
-  class(boundaries_t)     :: self
-  class(mesh_t), pointer  :: m(:)
-  real(kind=KindScalarVar), dimension(:,:,:), pointer :: mem
-  integer                 :: ub, uo, iv
-  real                    :: t0, v0, flow, t
-  integer, optional       :: select
-  !-----------------------------------------------------------------------------
-  t0 = 100.0
-  v0 = 0.45
-  m => self%mesh
-  t = timer%time
-
-  if (self%is_set(bits%zu)) then
+    mem(:,:,lb:lo) = self%ic_copy(:,:,lb:lo,iv)
+  else if (self%is_set(bits%zu)) then
     uo = m(3)%uo
     ub = m(3)%ub
-    if (t < t0) then
-      flow = v0/2.*(1.-cos(math%pi*t/t0)) !-v0/2.*(1.-cos(math%pi*(t-(t-1.))/t0))
-      mem(:,:,uo:ub) = flow 
-    else
-      mem(:,:,uo:ub) =  v0
-    end if
+    mem(:,:,uo:ub) = self%ic_copy(:,:,uo:ub,iv)
   end if
-
-END SUBROUTINE add_flow
-
-SUBROUTINE smooth_reduce(self, mem, iv, select)
+END SUBROUTINE static_values
+!===============================================================================
+!> Vanishing boundary condition, more gentle than antisymmetric
+!===============================================================================
+SUBROUTINE vanishing(self, mem, iv, select)
   class(boundaries_t)      :: self
   class(mesh_t), pointer   :: m(:)
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: mem
-  integer :: lb, lo, iv, z
+  integer :: lb, lo, uo, ub, iv, x, y, z
   integer, optional :: select
   !-----------------------------------------------------------------------------
   m => self%mesh
-  if (self%is_set(bits%zl)) then
+  if (self%is_set(bits%xl)) then
+    lb = m(1)%lb
+    lo = m(1)%lo
+    do x=lo,lb,-1
+      mem(x,:,:) = mem(x+1,:,:)*0.7
+    end do
+  else if (self%is_set(bits%xu)) then
+    ub = m(1)%ub
+    uo = m(1)%uo
+    do x=uo,ub
+      mem(x,:,:) = mem(x-1,:,:)*0.7
+    end do
+  else if (self%is_set(bits%yl)) then
+    lb = m(2)%lb
+    lo = m(2)%lo
+    do y=lo,lb,-1
+      mem(:,y,:) = mem(:,y+1,:)*0.7
+    end do
+  else if (self%is_set(bits%yu)) then
+    ub = m(2)%ub
+    uo = m(2)%uo
+    do y=uo,ub
+      mem(:,y,:) = mem(:,y-1,:)*0.7
+    end do
+  else if (self%is_set(bits%zl)) then
     lb = m(3)%lb
     lo = m(3)%lo
     do z=lo,lb,-1
       mem(:,:,z) = mem(:,:,z+1)*0.7
     end do
+  else if (self%is_set(bits%zu)) then
+    ub = m(3)%ub
+    uo = m(3)%uo
+    do z=uo,ub
+      mem(:,:,z) = mem(:,:,z-1)*0.7
+    end do
   end if
-END SUBROUTINE smooth_reduce
+END SUBROUTINE vanishing
+!===============================================================================
+!> Add a flow to the boundary
+!===============================================================================
+SUBROUTINE add_flow(self, mem, select)
+  class(boundaries_t)     :: self
+  class(mesh_t), pointer  :: m(:)
+  real(kind=KindScalarVar), dimension(:,:,:), pointer :: mem
+  integer                 :: ub, uo
+  real                    :: t0, v0, flow, t
+  integer, optional       :: select
+  !-----------------------------------------------------------------------------
+  m => self%mesh
+  t = timer%time
+  t0 = self%t0
+  v0 = self%v0
+
+  if (t<t0) then
+    flow = v0/2.*(1.-cos(math%pi*t/t0))
+  else
+    flow = v0
+  end if
+
+  if (self%is_set(bits%xu)) then
+    uo = m(1)%uo
+    ub = m(1)%ub
+    mem(uo:ub,:,:) = flow
+  else if (self%is_set(bits%yu)) then
+    uo = m(2)%uo
+    ub = m(2)%ub
+    mem(:,uo:ub,:) = flow
+  else if (self%is_set(bits%zu)) then
+    uo = m(3)%uo
+    ub = m(3)%ub
+    mem(:,:,uo:ub) = flow
+  end if
+END SUBROUTINE add_flow
 
 END MODULE boundaries_mod
