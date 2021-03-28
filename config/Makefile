@@ -90,11 +90,11 @@ ifeq ($(MPI),mpi)
   DEFS += -DMPI
 endif
 sinclude $(TOP)/io/Makefile
-#sinclude $(TOP)/operators/Makefile
 sinclude $(TOP)/solvers/Makefile
 sinclude $(TOP)/extras/Makefile
 sinclude $(TOP)/components/Makefile
 sinclude $(TOP)/dispatchers/Makefile
+sinclude $(TOP)/offload/Makefile
 sinclude $(TOP)/lists/Makefile
 sinclude $(TOP)/interpolation/Makefile
 sinclude $(TOP)/tasks/Makefile
