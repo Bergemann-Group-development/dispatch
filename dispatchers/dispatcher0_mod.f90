@@ -169,9 +169,9 @@ SUBROUTINE update (self, task_list, test)
   class(link_t), pointer:: head, prev
   class(task_t), pointer:: task, otask
   class(mesg_t), pointer:: mesg
-  logical:: already_busy, was_refined, was_derefined
   real(8):: wc, start, time_incr
   real(8), save:: time, otime=0d0, spin_start=0d0
+  logical:: already_busy
   integer, save:: oid=0
   integer:: i, id, nq, n_unpk
   integer:: stalled_l
@@ -391,17 +391,7 @@ SUBROUTINE update (self, task_list, test)
       call trace%end (itimer(i))
       return
     end if
-    call task_list%update (head, test, was_refined, was_derefined)
-    !---------------------------------------------------------------------------
-    ! The task should now again be checked, before it can be returned to the
-    ! queue, and its neighbors should also be checked for return to the queue.
-    ! If the task was turned into a virtual task by the load balance, its virtual
-    ! bit will prevent it being checked, but its nbors still need to be checked
-    !---------------------------------------------------------------------------
-    if (.not. was_derefined) then
-      call task%clear (bits%busy)
-      call task_list%check_nbors (head)   ! any nbors ready?
-    end if
+    call task_list%update (head, test)
     !$omp atomic update
     timer%busy_time = timer%busy_time + (wallclock()-start)
     !---------------------------------------------------------------------------

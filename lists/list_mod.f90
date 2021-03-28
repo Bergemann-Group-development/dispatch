@@ -201,8 +201,9 @@ END SUBROUTINE init
 !> Reset list, by deallocating memory used by tasks, and deallocating tasks and
 !> links
 !===============================================================================
-SUBROUTINE reset (self)
+SUBROUTINE reset (self, keep)
   class(list_t):: self
+  logical, optional:: keep
   class(link_t), pointer:: link, old
   class(task_t), pointer:: task
   !.............................................................................
@@ -210,9 +211,11 @@ SUBROUTINE reset (self)
   link => self%head
   do while (associated(link))
     task => link%task
-    if (associated(link)) then
-      call task%dealloc
-      deallocate (task)
+    if (.not.present(keep)) then
+      if (associated(task)) then
+        call task%dealloc
+        deallocate (task)
+      end if
     end if
     old => link
     link => link%next
@@ -247,21 +250,23 @@ END SUBROUTINE prepare
 !===============================================================================
 !> Allocate a new link and append to the list, optionally setting attributes
 !===============================================================================
-SUBROUTINE append_task (self, task, nbor, needed, needs_me)
+SUBROUTINE append_task (self, task, nbor, needed, needs_me, keep)
   class(list_t):: self
   class(nbor_t), pointer, optional:: nbor
-  logical, optional:: needed, needs_me
+  logical, optional:: needed, needs_me, keep
   class(task_t), pointer:: task
   class(link_t), pointer:: link
   !.............................................................................
   call trace%begin ('list_t%append_task '//self%name)
-  allocate (link)
+  allocate (halo_t:: link)
   call link%init
   link%task => task
-  select type (task)
-  class is (patch_t)
-    task%link => link
-  end select
+  if (.not.present(keep)) then
+    select type (task)
+    class is (patch_t)
+      task%link => link
+    end select
+  end if
   !-----------------------------------------------------------------------------
   ! Note that adding a task to more than one list requires care; the task%link
   ! must remain a pointer to the link that has the nbor list, and the nbor list
@@ -271,16 +276,18 @@ SUBROUTINE append_task (self, task, nbor, needed, needs_me)
   if (present(nbor))     link%nbor     => nbor
   if (present(needed))   nbor%needed   = needed
   if (present(needs_me)) nbor%needs_me = needs_me
-  call self%append_link (link)
+  call self%append_link (link, keep)
   call trace%end()
 END SUBROUTINE append_task
 
 !===============================================================================
 !> Append to the task list, counting active tasks only
 !===============================================================================
-SUBROUTINE append_link (self, link)
+SUBROUTINE append_link (self, link, keep)
   class(list_t):: self
   class(link_t), pointer:: link
+  logical, optional:: keep
+  !.............................................................................
   class(task_t), pointer:: task
   class(*), pointer:: anon
   logical, save:: first_time=.true.
@@ -296,13 +303,15 @@ SUBROUTINE append_link (self, link)
   ! Check that task%link is set on patch_t class tasks
   !-----------------------------------------------------------------------------
   if (associated(link%task)) then
-    task => link%task
-    select type (task)
-    class is (patch_t)
-    if (.not.associated(task%link)) then
-      task%link => link
+    if (.not.present(keep)) then
+      task => link%task
+      select type (task)
+      class is (patch_t)
+        if (.not.associated(task%link)) then
+          task%link => link
+        end if
+      end select
     end if
-    end select
   else
     call io%abort('append_link: no task associated')
   end if

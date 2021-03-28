@@ -45,6 +45,7 @@ MODULE task_list_mod
   USE shared_mod
   USE mesh_mod
   USE mulligan_mod
+  USE offload_mod
   implicit none
   private
   type, public, extends(task_mesg_t):: task_list_t
@@ -105,6 +106,8 @@ SUBROUTINE init (self, name)
   self%verbose = verbose
   self%detailed_timer = detailed_timer
   call mulligan%init
+  call offload%init
+  offload%task_list => self
   call trace_end
 END SUBROUTINE init
 
@@ -326,11 +329,10 @@ END SUBROUTINE execute
 !===============================================================================
 !> Common part of task list update, used by dispatchers
 !===============================================================================
-SUBROUTINE update (self, head, test, was_refined, was_derefined)
+SUBROUTINE update (self, head, test)
   class(task_list_t):: self
   class(link_t), pointer:: head
   logical:: test
-  logical, optional:: was_refined, was_derefined
   !.............................................................................
   class(task_t), pointer:: task
   class(nbor_t), pointer:: nbor
@@ -386,13 +388,6 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
     call refine%check_current(self, head, refined, derefined)
   end if
   !-----------------------------------------------------------------------------
-  if (present(was_refined)) then
-    was_refined = refined
-  end if
-  if (present(was_derefined)) then
-    was_derefined = derefined
-  end if
-  !-----------------------------------------------------------------------------
   ! If the task was derefined it does not exist, so bail out
   !-----------------------------------------------------------------------------
   if (derefined) then
@@ -421,7 +416,11 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
     io%ntask  = self%na                             ! Authoritative!
     !---------------------------------------------------------------------------
     call mulligan%update (self, head)               ! do a Mulligan?
-    call task%update                                ! update the task
+    if (offload%on) then
+      call offload%update (task)                    ! add task to offload bunch
+    else
+      call task%update                              ! update the task
+    end if
     call mulligan%check (self, head)                ! should nbors do a Mulligan?
     if (self%verbose > 1) then
       associate (unit => merge (io_unit%log, io_unit%mpi, self%verbose > 1))
@@ -545,14 +544,20 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
     self%syncing = .false.
   end if
   task%sync_time = self%sync_next
+  !$omp atomic
+  timer%levelcost(task%level) = &
+  timer%levelcost(task%level) + (wallclock() - levelstart)
   !-----------------------------------------------------------------------------
-  ! AMR level cost
+  ! The task should now again be checked, before it can be returned to the
+  ! queue, and its neighbors should also be checked for return to the queue.
+  ! If the task was turned into a virtual task by the load balance, its virtual
+  ! bit will prevent it being checked, but its nbors still need to be checked
   !-----------------------------------------------------------------------------
-  if (.not.was_derefined) then
-    !$omp atomic
-    timer%levelcost(task%level) = &
-    timer%levelcost(task%level) + (wallclock() - levelstart)
+  if (.not.offload%on) then
+    call task%clear (bits%busy)
+    call self%check_nbors (head)
   end if
+  !.............................................................................
   call trace%end (itimer)
 END SUBROUTINE update
 
