@@ -278,7 +278,7 @@ SUBROUTINE init (self, name)
     ! Backwards compatibility
     !---------------------------------------------------------------------------
     io%data_unit = io_unit%data
-    write(io%output,*) 'output directory: '//self%run_dir
+    write(io%output,*) 'output directory: '//trim(self%run_dir)
     write(io%output,*) 'reading parameters from: '//trim(self%inputname)
     first_time=.false.
   end if
@@ -314,7 +314,11 @@ contains
     character(len=*):: s
     integer:: l
     l = len(trim(s))
-    if (s(l:l) /= '/') s(l+1:l+1)='/'
+    if (s(l:l) == '/') then
+      if (s(l-1:l-1) == '/') s(l:l) = ' '
+    else
+      if (s(l:l) /= '/') s(l+1:l+1)='/'
+    end if
   end subroutine
 END SUBROUTINE init
 
