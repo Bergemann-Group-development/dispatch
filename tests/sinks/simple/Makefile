@@ -11,7 +11,7 @@ UPD             = adams_bashforth
 SOLVER          = ramses/hydro
 #SOLVER          = ramses/mhd
 COOLING         = simple
-TOP             = ../..
+TOP             = ../../..
 
 # Tomida & Hori, with opacity
 #EOS             = data/eos/Tomida+Hori_2016/e
