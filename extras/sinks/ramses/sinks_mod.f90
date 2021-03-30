@@ -14,21 +14,48 @@ MODULE sinks_mod
   private
   integer, parameter :: p8=kind(1.0D0)  ! double precision
   integer, parameter :: dp=kind(1.0D0)  ! double precision
+  !-----------------------------------------------------------------------------
+  ! Particle cache, for vectorized operations
+  !-----------------------------------------------------------------------------
+  type:: cache_t
+    real, allocatable:: p(:,:)          ! positions
+    real, allocatable:: v(:,:)          ! velocities
+    real, allocatable:: m(:)            ! masses
+  end type
+  !-----------------------------------------------------------------------------
+  ! Type holding data for all sinks
+  !-----------------------------------------------------------------------------
   type, public :: sinks_t
-    type(dll_t):: dll
-    integer:: center_star, version, nstar, szstar, sizeofstar, i, nstars, nmet, dp1
-    logical:: do_translate
-    real(4):: t, beta_create, dtold
-    real(8):: t8, tflush, r_translate(3), v_translate(3), x_refine, y_refine, z_refine
-    type(sink_t), pointer:: sink(:)
-    real(8), allocatable:: sink_p(:,:)
-    real(8), allocatable:: sink_v(:,:)
-    real(8), allocatable:: sink_m(:)
+    type(dll_t):: dll           ! doubly linked list
+    integer:: version           ! I/O version
+    integer:: center_star       ! index of center star
+    integer:: nstar             ! number of sinks
+    integer:: szstar            ! ?
+    integer:: sizeofstar        ! ?
+    integer:: i                 ! ?
+    integer:: nstars            ! ?
+    integer:: nmet              ! number of heavy elements
+    integer:: dp1               ! ?
+    logical:: do_translate      ! logical switch
+    real(4):: t                 ! single precision time
+    real(8):: t8                ! double precisions time
+    real(8):: beta_create       ! plasma beta at creation
+    real(8):: dtold             ! previous dt
+    real(8):: tflush            ! flush time
+    real(8):: r_translate(3)    ! translation position
+    real(8):: v_translate(3)    ! translation velocity
+    real(8):: x_refine          ! refinement center
+    real(8):: y_refine          ! refinement center
+    real(8):: z_refine          ! refinement center
+    type(cache_t):: cache       ! cache for vectorized operations
   contains
     procedure:: init
-    procedure:: init_nbors
     procedure:: update
+    procedure, private:: init_nbors
   end type
+  !-----------------------------------------------------------------------------
+  ! Type holding data for one RAMSES sink particle
+  !-----------------------------------------------------------------------------
   type, public, extends(dll_node_t):: sink_t
     !SEQUENCE
     real(p8):: position(3)              ! positions
@@ -50,19 +77,16 @@ MODULE sinks_mod
     integer:: ilevel                    ! level of AMR hierachy where star lives
     integer:: old_ilevel                ! level of hierachy star used to have, if changed
     integer:: owner                     ! owner thread
-    integer:: has_moved
-    real, allocatable:: nbor_p(:,:)
-    real, allocatable:: nbor_m(:)
-    type(dll_t):: nbors
+    integer:: has_moved                 ! indicator
+    type(cache_t):: cache               ! for vectorized operations
   end type
-  integer :: verbose=0                  ! verbosity
   logical :: on=.false.                 ! on/off
-  real    :: fraction=0.01              ! fraction of max force
-  real    :: a_min = 1                  ! min acceleration
+  integer :: verbose=0                  ! verbosity
+  real    :: a_min = 10                 ! min acceleration
 CONTAINS
 
 !===============================================================================
-!> Facilitate call to %read_snapshot().  All heavy lifting is done there
+!> Initialize by reading in a snapshot of sink particles
 !===============================================================================
 SUBROUTINE init (self)
   class(sinks_t):: self
@@ -71,8 +95,8 @@ SUBROUTINE init (self)
   character(len=80):: fname, path
   class(sink_t), pointer:: sink, star
   class(dll_node_t), pointer:: dll_node
-  namelist /sinks_params/ on, verbose, path, nout, fraction, a_min
-  !.............................................................................
+  namelist /sinks_params/ on, verbose, path, nout, a_min
+  !-----------------------------------------------------------------------------
   call trace%begin ('sinks_t%init')
   call io%header ('sinks_t%init:')
   rewind (io%input)
@@ -115,7 +139,6 @@ SUBROUTINE init (self)
       allocate (sink)
       allocate (sink%metal(self%nmet))
       allocate (sink%dmetal(self%nmet))
-      call sink%nbors%init
       dll_node => sink
       read (sink_unit) sink%position, sink%momentum , &
                        sink%dmom, sink%mass, &
@@ -137,14 +160,13 @@ SUBROUTINE init (self)
       end if
     enddo
     close(sink_unit)
-    if (associated(star)) then
-      write (unit,*) 'type(sink_t) :: star => center_star'
-      write (unit,'(a,"["2(f14.9,","),f14.9,"]",2x,a,1i3.1)') &
-        ' pos = ',star%position,', level = ',star%ilevel
-    end if
+    !...........................................................................
     if (verbose >= 0) &
       write (stdout,'(a,2x,a,i6)') &
         ' file: '//trim(fname),'sinks:',self%dll%n
+    !---------------------------------------------------------------------------
+    ! Construct initial nbor tables
+    !---------------------------------------------------------------------------
     call self%init_nbors
   else
     if (verbose >= 0) &
@@ -153,6 +175,9 @@ SUBROUTINE init (self)
   call trace%end ()
 END SUBROUTINE init
 
+!===============================================================================
+!> Construct tables with relevant neighbor sinks
+!===============================================================================
 SUBROUTINE init_nbors (self)
   class(sinks_t):: self
   class(dll_node_t), pointer:: sink, other, nbor
@@ -161,13 +186,12 @@ SUBROUTINE init_nbors (self)
   integer:: i, n, j, m, m_tot
   integer, allocatable:: jj(:)
   !---------------------------------------------------------------------------
-  ! Add nbor lists with most relevant other sinks
-  !---------------------------------------------------------------------------
+  call trace%begin ('sinks_t%init_nbors')
   call timer%tic (start)
   n = self%dll%n
-  allocate (self%sink_p(n,3))
-  allocate (self%sink_v(n,3))
-  allocate (self%sink_m(n))
+  allocate (self%cache%p(n,3))
+  allocate (self%cache%v(n,3))
+  allocate (self%cache%m(n))
   allocate (jj(n))
   !-----------------------------------------------------------------------------
   ! Cache positions and mass
@@ -178,14 +202,14 @@ SUBROUTINE init_nbors (self)
     select type (sink)
     class is (sink_t)
       i = i+1
-      self%sink_m(i) = sink%mass
-      self%sink_p(i,:) = sink%position
-      self%sink_v(i,:) = sink%velocity
+      self%cache%m(i) = sink%mass
+      self%cache%p(i,:) = sink%position
+      self%cache%v(i,:) = sink%velocity
     end select
     sink => sink%next
   end do
   !-----------------------------------------------------------------------------
-  ! Find the number of nbors
+  ! Find the number of nbors and their indices
   !-----------------------------------------------------------------------------
   m_tot = 0
   sink => self%dll%head
@@ -193,32 +217,36 @@ SUBROUTINE init_nbors (self)
     m = 0
     do j=1,n
       if (j==i) cycle
-      r = self%sink_p(i,:) - self%sink_p(j,:)
+      r = self%cache%p(i,:) - self%cache%p(j,:)
       r = modulo (r+0.5d0,1d0) - 0.5d0
       ri = 1./sqrt(r(1)**2 + r(2)**2 + r(3)**2)
-      a = scaling%grav*self%sink_m(j)*ri**2
+      a = scaling%grav*self%cache%m(j)*ri**2
       if (a > a_min) then
         m = m+1
         jj(m) = j
       end if
     end do
     m_tot = m_tot + m
+    !---------------------------------------------------------------------------
+    ! Allocate cache for nbors
+    !---------------------------------------------------------------------------
     select type (sink)
     class is (sink_t)
-      allocate (sink%nbor_m(m))
-      allocate (sink%nbor_p(m,3))
+      allocate (sink%cache%m(m))
+      allocate (sink%cache%p(m,3))
       do j=1,m
-        sink%nbor_m(j) = self%sink_m(jj(j))
-        sink%nbor_p(j,:) = self%sink_p(jj(j),:)
+        sink%cache%m(j) = self%cache%m(jj(j))
+        sink%cache%p(j,:) = self%cache%p(jj(j),:)
       end do
     end select
     sink => sink%next
   end do
-  print *,m_tot
+  !.............................................................................
   if (verbose > 0) then
     write (stdout,*) m_tot/self%dll%n, 'nbors per sink'
     call timer%toc ('sinks_t%init_nbors', 1, start)
   end if
+  call trace%end ()
 END SUBROUTINE init_nbors
 
 !===============================================================================
@@ -241,17 +269,17 @@ SUBROUTINE update (self)
       !-------------------------------------------------------------------------
       ! Run through all nbors
       !-------------------------------------------------------------------------
-      do j=1,size(sink%nbor_m)
-        r = sink%position - sink%nbor_p(j,:)
+      do j=1,size(sink%cache%m)
+        r = sink%position - sink%cache%p(j,:)
         r = modulo (r+0.5d0,1d0) - 0.5d0
         ri = 1./sqrt(r(1)**2 + r(2)**2 + r(3)**2)
-        f = r*scaling%grav*sink%nbor_m(j)*ri**3
-        self%sink_v(j,1) = self%sink_v(j,1) + a(1)*dt
-        self%sink_v(j,3) = self%sink_v(j,2) + a(2)*dt
-        self%sink_v(j,3) = self%sink_v(j,3) + a(3)*dt
-        self%sink_p(j,1) = self%sink_p(j,1) + self%sink_v(j,1)*dt
-        self%sink_p(j,2) = self%sink_p(j,2) + self%sink_v(j,2)*dt
-        self%sink_p(j,3) = self%sink_p(j,3) + self%sink_v(j,3)*dt
+        f = r*scaling%grav*sink%cache%m(j)*ri**3
+        self%cache%v(j,1) = self%cache%v(j,1) + a(1)*dt
+        self%cache%v(j,3) = self%cache%v(j,2) + a(2)*dt
+        self%cache%v(j,3) = self%cache%v(j,3) + a(3)*dt
+        self%cache%p(j,1) = self%cache%p(j,1) + self%cache%v(j,1)*dt
+        self%cache%p(j,2) = self%cache%p(j,2) + self%cache%v(j,2)*dt
+        self%cache%p(j,3) = self%cache%p(j,3) + self%cache%v(j,3)*dt
       end do
     end select
     sink => sink%next
