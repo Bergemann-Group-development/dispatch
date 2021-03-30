@@ -1,7 +1,7 @@
 !===============================================================================
 !> Handle sink particle in RAMSES format
 !===============================================================================
-MODULE ramses_sinks_mod
+MODULE sinks_mod
   USE io_mod
   USE trace_mod
   USE task_mod
@@ -12,7 +12,7 @@ MODULE ramses_sinks_mod
   private
   integer, parameter :: p8=kind(1.0D0)  ! double precision
   integer, parameter :: dp=kind(1.0D0)  ! double precision
-  type, public :: ramses_sinks_t
+  type, public :: sinks_t
     type(dll_t):: dll
     integer:: center_star, version, nstar, szstar, sizeofstar, i, nstars, nmet, dp1
     logical:: do_translate
@@ -53,23 +53,23 @@ CONTAINS
 !> Facilitate call to %read_snapshot().  All heavy lifting is done there
 !===============================================================================
 SUBROUTINE init (self)
-  class(ramses_sinks_t):: self
+  class(sinks_t):: self
   !.............................................................................
   integer:: sink_unit, nout, iostat, i, unit
   character(len=80):: fname, path
   class(sink_t), pointer:: sink, star
   class(dll_node_t), pointer:: dll_node
-  namelist /ramses_sinks_params/ on, verbose, path, nout
+  namelist /sinks_params/ on, verbose, path, nout
   !.............................................................................
-  call trace%begin ('read_external_t%read_sink')
-  call io%header ('ramses_sinks_t%init:')
+  call trace%begin ('sinks_t%init')
+  call io%header ('sinks_t%init:')
   rewind (io%input)
-  read (io%input, ramses_sinks_params, iostat=iostat)
+  read (io%input, sinks_params, iostat=iostat)
   if (iostat > 0) then
     rewind (io%input)
-    read (io%input, ramses_sinks_params)
+    read (io%input, sinks_params)
   end if
-  call io%namelist_warning ('ramses_sinks_params', iostat)
+  call io%namelist_warning ('sinks_params', iostat)
   !-----------------------------------------------------------------------------
   ! If on, read sinks
   !-----------------------------------------------------------------------------
@@ -129,10 +129,9 @@ SUBROUTINE init (self)
         ' file: '//trim(fname),'sinks:',self%dll%n
   else
     if (verbose >= 0) &
-      write (unit,'(a,i6)')  ' ramses_sink_t%init: sinks off'
+      write (unit,'(a,i6)')  ' sink_t%init: sinks off'
   end if
-  call io%header ('')
   call trace%end ()
 END SUBROUTINE init
 
-END MODULE ramses_sinks_mod
+END MODULE sinks_mod

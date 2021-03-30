@@ -9,6 +9,7 @@ ifneq ($(PARTICLE_SOLVER),)
   sinclude $(TOP)/solvers/particles/Makefile
 endif
 
+
 VPATH := $(VPATH):$(TOP)/solvers
 STAGGER ?= stagger_2nd.o
 

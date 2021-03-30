@@ -7,6 +7,7 @@ VPATH := $(TOP)/extras:$(SOLVER)/extras:$(TOP)/solvers/$(SOLVER)/extras:$(VPATH)
 include $(TOP)/extras/heat_conductivity/Makefile
 include $(TOP)/extras/cooling/Makefile
 include $(TOP)/extras/initial_conditions/Makefile
+sinclude $(TOP)/extras/sinks/Makefile
 
 # Dependencies
 extras_mod.o            : io_mod.o trace_mod.o gpatch_mod.o connect_mod.o \

@@ -3,8 +3,8 @@ PROGRAM test
   USE io_mod
   USE mpi_mod
   USE scaling_mod
-  USE ramses_sinks_mod
-  type(ramses_sinks_t) sinks
+  USE sinks_mod
+  type(sinks_t) sinks
   !-----------------------------------------------------------------------------
   call omp%init
   call mpi%init
