@@ -11,4 +11,5 @@ PROGRAM test
   call io%init
   call scaling%init
   call sinks%init
+  call sinks%update
 END PROGRAM test
