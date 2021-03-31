@@ -666,8 +666,12 @@ SUBROUTINE init (self)
     self%box = 1                                ! make sure it is non-zero
   end where
   !-----------------------------------------------------------------------------
-  ! Measure levels in terms of the refinement factor -- make sure this doesn't 
-  ! come in conflict with levels set by other modules
+  ! Region information, relative to the task position
+  !-----------------------------------------------------------------------------
+  self%authority%l = - self%size*0.5_8
+  self%authority%u = + self%size*0.5_8
+  self%interest%l  = self%authority%l - self%ng*self%ds
+  self%interest%u  = self%authority%u + self%ng*self%ds
   !-----------------------------------------------------------------------------
   call self%init_level
   if (io%verbose>2) then
