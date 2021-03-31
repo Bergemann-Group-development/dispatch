@@ -11,6 +11,7 @@ TOP             = ../..
 EXEC            = dispatch.x
 
 # Choice of solvers
+SINK_PARTICLES     = pan
 PARTICLE_SOLVER    = KDK
 SOLVER             = ramses/hydro
 #SOLVER             = ramses/mhd
