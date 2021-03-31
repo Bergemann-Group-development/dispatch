@@ -28,8 +28,8 @@ MODULE patch_mod
   integer, parameter:: ndim = 3
   type, extends(task_t), public:: patch_t
     real(kind=KindScalarVar), dimension(:,:,:,:,:,:), pointer, contiguous:: mem      => null()
-    real(kind=KindScalarVar), dimension(:,:,:,:,:),   pointer            :: vgas     => null()
-    real(kind=KindScalarVar), dimension(:,:,:,:),     pointer            :: density  => null()
+    real(kind=KindScalarVar), dimension(:,:,:,:,:),   pointer, contiguous:: vgas     => null()
+    real(kind=KindScalarVar), dimension(:,:,:,:),     pointer, contiguous:: density  => null()
     real(kind=KindScalarVar), dimension(:,:,:,:),     pointer, contiguous:: pressure => null()
     !dir$ attributes align: 64 :: mem, vgas, density, pressure
     !---------------------------------------------------------------------------
@@ -59,7 +59,7 @@ MODULE patch_mod
     integer:: nw=2                      ! number of work indices
     integer:: msplit=0                  ! how to split a patch when refining
     integer:: max_files                 ! prevent disk overrun when NaN happens
-    integer:: check_refine_next=0
+    integer:: check_refine_next=0       ! next step to check refinement
     integer:: time_derivs               ! for restart changes
     integer:: not_filled=0              ! guard zones not filled
     integer:: refine_ratio=2            ! may differ btw patches
@@ -73,7 +73,7 @@ MODULE patch_mod
     logical:: get_umax_location=.false.
     logical, dimension(:), pointer:: unsigned  => null()
     logical, dimension(:), pointer:: pervolume => null()
-    class(link_t), pointer:: link       ! this could be useful
+    class(link_t),         pointer:: link      => null()
     character(len=32):: eos='ideal'
     character(len=32):: opacity='none'
     integer:: file_offset(4)
@@ -81,11 +81,11 @@ MODULE patch_mod
     real:: safety_factor=1.0
     real:: ee_min=tiny(1.0)
     !--- used in extras ---
-    logical, contiguous, pointer :: mask(:,:,:)    => null()
+    logical, contiguous, pointer :: mask(:,:,:) => null()
     !--- used in refine ---
     real,    contiguous, pointer :: irefine(:,:,:) => null()
-    type(lock_t),        pointer :: mem_lock(:)    => null()
     type(lock_t),        pointer :: request_lock   => null()
+    type(lock_t),        pointer :: mem_lock(:)    => null()
     !---------------------------------------------------------------------------
     ! HACKs below:  FIXME
     !---------------------------------------------------------------------------
