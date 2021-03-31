@@ -479,7 +479,6 @@ SUBROUTINE pre_init (self)
   !-----------------------------------------------------------------------------
   ! Output related parameters
   !-----------------------------------------------------------------------------
-  self%mv = max (self%mv, self%nv)
   io%start_time    = start_time
   io%end_time      = end_time
   io%out_time      = out_time
@@ -688,7 +687,7 @@ SUBROUTINE init (self)
   if (.not.self%mem_allocated) then
     self%mem_allocated = .true.
     !---------------------------------------------------------------------------
-    ! extras%pre_init could increases elf%mv = the actual number of memory slots 
+    ! extras%pre_init could increases self%mv = the actual number of memory slots
     !---------------------------------------------------------------------------
     if (self%id == 1 .and. self%mv > self%nv) then
       write (stderr,'(a)')    'NOTE:'
@@ -735,12 +734,16 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call io%lock%set ('patch_t%init')
   if (first_time) then
-    if (io%nv==0) then
-      io%nv = self%mv
-    end if
     write (stdout,'(a,6i4)') &
       ' memory shape:', shape(self%mem)
     call self%idx%print (stdout)
+    !---------------------------------------------------------------------------
+    ! If no other context has already set io%nv -- the number of memory slots
+    ! to save in a snapshot, set it here to all memory slots
+    !---------------------------------------------------------------------------
+    if (io%nv==0) then
+      io%nv = self%mv
+    end if
     first_time = .false.
   end if
   call io%lock%unset ('patch_t%init')
