@@ -496,7 +496,9 @@ SUBROUTINE pre_init (self)
   ! more extras modules may also modify any one of them afterwards.
   !-----------------------------------------------------------------------------
   if (any([nw,nv,ng] /= [self%nw,self%nv,self%ng])) then
-    call io%warning ('patch_t%pre_init: One or more of n{w,v,g} were changed')
+    write (stdout,'(a,2(2x,2i4,1x,3i4))') &
+      'patch_t%pre_init WARNING: nw,nv,ng old/new =', &
+      nw,nv,ng, self%nw,self%nv,self%ng
   end if
   self%ng           = ng                         ! cf warning
   self%nv           = nv                         ! ditto
