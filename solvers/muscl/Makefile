@@ -1,4 +1,3 @@
-VPATH := $(VPATH):$(TOP)/solvers/$(SOLVER)
 
 hd_mod.o        : io_mod.o trace_mod.o riemann_mod.o omp_lock_mod.o extras_mod.o
 riemann_mod.o   : io_mod.o timer_mod.o

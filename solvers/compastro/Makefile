@@ -1,5 +1,3 @@
-# Append to VPATH
-VPATH := $(VPATH):$(TOP)/solvers/$(SOLVER)
 
 # Dependencies
 bits_mod.o              : io_mod.o trace_mod.o

@@ -1,5 +1,6 @@
 
 sinclude $(TOP)/solvers/$(SOLVER)/Makefile
+sinclude $(TOP)/solvers/$(SOLVER)/$(OFFLOAD)/Makefile
 sinclude $(TOP)/solvers/poisson/Makefile
 
 ifneq ($(RT_SOLVER),)
@@ -9,8 +10,8 @@ ifneq ($(PARTICLE_SOLVER),)
   sinclude $(TOP)/solvers/particles/Makefile
 endif
 
+VPATH := $(VPATH):$(TOP)/solvers/$(SOLVER):$(TOP)/solvers/$(SOLVER)/$(OFFLOAD):$(TOP)/solvers
 
-VPATH := $(VPATH):$(TOP)/solvers
 STAGGER ?= stagger_2nd.o
 
 stagger_2nd.o           : io_mod.o trace_mod.o stagger_16.o stagger_20.o stagger_24.o stagger_32.o stagger_36.o

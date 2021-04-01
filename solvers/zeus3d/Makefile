@@ -1,5 +1,3 @@
-# Append to VPATH
-VPATH := $(VPATH):$(TOP)/solvers/zeus3d
 
 PREC=DOUBLE
 

@@ -10,6 +10,7 @@ MODULE initial_mod
   USE random_mod
   USE stagger_mod
   USE index_mod
+  USE eos_mod
   implicit none
   private
   real(8), parameter:: pi2=8d0*atan(1d0)

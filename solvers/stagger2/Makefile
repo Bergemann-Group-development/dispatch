@@ -1,5 +1,3 @@
-# Append to VPATH
-VPATH := $(VPATH):$(TOP)/solvers/stagger2
 
 UPD     ?= adams_bashforth
 PDE     ?= mhd_mod.o

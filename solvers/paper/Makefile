@@ -1,6 +1,3 @@
-# Append to VPATH
-VPATH := $(VPATH):$(TOP)/solvers/paper
-
 PDE     ?= mhd_mod.o
 STAGGER ?= stagger_mod.o
 
