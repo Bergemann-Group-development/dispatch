@@ -111,7 +111,6 @@ SUBROUTINE pre_init (self)
   !-----------------------------------------------------------------------------
   ! Call extras pre-init
   !-----------------------------------------------------------------------------
-  call self%extras_t%pre_init
   if (first_time) then
     first_time = .false.
     eos = self%eos
@@ -148,10 +147,12 @@ SUBROUTINE pre_init (self)
     self%nv = 5
   end if
   call self%idx%init (energy=5, mhd=self%mhd)
-  print *, 'mhd_t::pre_init'
-  print *, 'before where n, ng', self%n, self%ng
+  call self%extras_t%pre_init
   where (self%n<2) self%ng=0
-  print *, 'after where n, ng', self%n, self%ng
+  if (any(self%n >= 2 .and. self%ng == 0)) then
+    write (stdout,'(a,2(2x,3i4))') &
+      'mhd_t%pre_init WARNING: after where n, ng', self%n, self%ng
+  end if
   call trace%end()
 END SUBROUTINE pre_init
 
