@@ -103,10 +103,10 @@ SUBROUTINE pre_init (self)
   self%type = 'mhd_t'
   self%mhd = mhd
   if (self%mhd) then
-    self%kind = 'stagger2_mhd_patch'
+    self%kind = 'stagger2e_mhd_patch'
     self%nv = 8
   else
-    self%kind = 'stagger2_hd_patch'
+    self%kind = 'stagger2e_hd_patch'
     self%nv = 5
   end if
   self%nw = 2
