@@ -30,10 +30,10 @@
 &refine_params          on=f levelmax=12 levelmin=1 verbose=3 check_interval=2 /
 
 grad_var='d' tol_grad=0.1 /
-&zeus_params            gamma=1.4 trnvrsn=0 dtinit=1.0e-5 itote=1 qlin=0.2 qcon=1.0 iord=2 iords=3 istp=2 /
-                                        !     cs   pa  ofd  mas  kap  eta
-&stagger_params             gamma=1.4 nu=  0.1, 1.0, 0.0, 0.2, 0.5, 0.5 
-                            mhd = t/
+&zeus_params            trnvrsn=0 dtinit=1.0e-5 itote=1 qlin=0.2 qcon=1.0 iord=2 iords=3 istp=2 /
+                        !     cs   pa  ofd  mas  kap  eta
+&stagger_params         nu=  0.1, 1.0, 0.0, 0.2, 0.5, 0.5 
+                        mhd = t /
 
 &force_params           /
 
