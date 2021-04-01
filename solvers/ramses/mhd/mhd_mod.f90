@@ -34,6 +34,7 @@ MODULE mhd_mod
   USE scratch_mod
   USE task_mod
   USE eos_mod
+  USE divb_clean_mod
   implicit none
   PRIVATE
   type, public, extends(extras_t):: mhd_t
@@ -65,8 +66,6 @@ MODULE mhd_mod
   logical, save:: unsigned=.true.
   logical, save:: do_temperature=.false.
   integer, save:: verbose=0
-  integer, save:: divb_cleaner=-1
-  integer, save:: divb_iter=4
   integer, save:: b_slope_type=0
   integer, save:: u_slope_type=0
   integer, save:: courant_type=0
@@ -86,7 +85,7 @@ SUBROUTINE pre_init (self)
   namelist /ramses_params/ riemann, slope_type, b_slope_type, &
     u_slope_type, courant_factor, smallr, smallc, isothermal, csound, &
     detailed_timer, unsigned, courant_type, max_dlogd, n_dump, &
-    divb_cleaner, divb_iter, do_temperature, verbose
+    do_temperature, verbose
   character(len=120):: id = &
    '$Id$'
   !-----------------------------------------------------------------------------
@@ -160,6 +159,7 @@ SUBROUTINE init (self)
   ! Initialize everything else, and do a sanity check
   !-----------------------------------------------------------------------------
   call non_ideal%init  
+  call divb%init
   call trace%end()
 END SUBROUTINE init
 
@@ -191,7 +191,7 @@ END SUBROUTINE pre_update
 SUBROUTINE update (self)
   class(mhd_t):: self
   real, pointer, dimension(:,:,:):: px, py, pz
-  real, pointer, dimension(:,:,:,:):: p
+  real, pointer, dimension(:,:,:,:):: p, b
   real, allocatable, dimension(:,:,:):: ek
   real, allocatable, dimension(:,:,:,:):: em
   real, pointer, contiguous, dimension(:,:,:,:,:):: fl
@@ -426,14 +426,8 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Use one of several methods to clean div(B) from guard zones
   !-----------------------------------------------------------------------------
-  select case (divb_cleaner)
-  case (0)
-  call divb_clean0 (self)
-  case (1)
-  call divb_clean1 (self)
-  case (2)
-  call divb_clean2 (self)
-  end select
+  b => self%mem(:,:,:,self%idx%bx:self%idx%bz,self%new,1)
+  call divb%clean (self%mesh, b)
                                                       call lock%unset ('update')
   !.............................................................................
   call trace%end (itimer)
@@ -457,225 +451,6 @@ SUBROUTINE post_update (self)
   call self%extras_t%post_update ()
   call trace%end (itimer)
 END SUBROUTINE post_update
-
-!===============================================================================
-!> Determine the guard zone values of the magnetic field components from the
-!> div(B)=0 condition.  As appreciated from the expressions below, the only
-!> external knowledge that is required are the perpendicular components of the
-!> magnetic field along cube edges, and values interpolated from nbors are used
-!> there.
-!===============================================================================
-SUBROUTINE divb_clean0 (self)
-  class(mhd_t):: self
-  !.............................................................................
-  real, dimension(:,:,:), pointer:: b1, b2, b3
-  integer:: iter, i1, i2, i3, li(3), ui(3), lb(3), ub(3)
-  integer:: itimer=0
-  !-----------------------------------------------------------------------------
-  call trace%begin('mhd_t%divb_clean0', itimer=itimer)
-  li = self%mesh%li
-  ui = self%mesh%ui
-  lb = self%mesh%lb
-  ub = self%mesh%ub
-  b1 => self%mem(:,:,:,self%idx%bx,self%new,1)
-  b2 => self%mem(:,:,:,self%idx%by,self%new,1)
-  b3 => self%mem(:,:,:,self%idx%bz,self%new,1)
-  do iter=1,divb_iter
-    call iter_x
-    call iter_y
-    call iter_z
-    call iter_y
-  end do
-  call trace%end (itimer)
-contains
-  subroutine iter_x
-    !---------------------------------------------------------------------------
-    ! Left x-face.  Initially un-constrained: b2(z) and b3(y) along edges
-    !---------------------------------------------------------------------------
-    do i1=li(1),lb(1),-1
-    do i3=lb(3),ub(3)-1
-    do i2=lb(2),ub(2)-1
-      b1(i1,i2,i3) = b1(i1+1,i2,i3)                 &
-                   + b2(i1,i2+1,i3) - b2(i1,i2,i3)  &
-                   + b3(i1,i2,i3+1) - b3(i1,i2,i3)
-    end do
-    end do
-    end do
-    !---------------------------------------------------------------------------
-    ! Right x-face.  Initially unconstrained: b2(z) and b3(y) along edges
-    !---------------------------------------------------------------------------
-    do i1=ui(1),ub(1)-1
-    do i3=lb(3),ub(3)-1
-    do i2=lb(2),ub(2)-1
-      b1(i1+1,i2,i3) =                + b1(i1,i2,i3) &
-                     - b2(i1,i2+1,i3) + b2(i1,i2,i3) &
-                     - b3(i1,i2,i3+1) + b3(i1,i2,i3)
-    end do
-    end do
-    end do
-  end subroutine iter_x
-  subroutine iter_y
-    !---------------------------------------------------------------------------
-    ! Left y-face.  .  Initially unconstrained: b3(y) along edges
-    !---------------------------------------------------------------------------
-    do i2=li(2),lb(2),-1
-    do i3=lb(3),ub(3)-1
-    do i1=lb(1),ub(1)-1
-      b2(i1,i2,i3) = b2(i1,i2+1,i3)                &
-                   + b3(i1,i2,i3+1) - b3(i1,i2,i3) &
-                   + b1(i1+1,i2,i3) - b1(i1,i2,i3)
-    end do
-    end do
-    end do
-    !---------------------------------------------------------------------------
-    ! Right y-face.
-    !---------------------------------------------------------------------------
-    do i2=ui(2),ub(2)-1
-    do i3=lb(3),ub(3)-1
-    do i1=lb(1),ub(1)-1
-      b2(i1,i2+1,i3) =                + b2(i1,i2,i3) &
-                     - b3(i1,i2,i3+1) + b3(i1,i2,i3) &
-                     - b1(i1+1,i2,i3) + b1(i1,i2,i3)
-    end do
-    end do
-    end do
-  end subroutine iter_y
-  subroutine iter_z
-    !---------------------------------------------------------------------------
-    ! Left z-face.  Not known: b3(:,:,l3)
-    !---------------------------------------------------------------------------
-    do i3=li(3),lb(3),-1
-    do i2=lb(2),ub(2)-1
-    do i1=lb(1),ub(1)-1
-      b3(i1,i2,i3) = b3(i1,i2,i3+1)                &
-                   + b1(i1+1,i2,i3) - b1(i1,i2,i3) &
-                   + b2(i1,i2+1,i3) - b2(i1,i2,i3)
-    end do
-    end do
-    end do
-    !---------------------------------------------------------------------------
-    ! Right z-face: Not known, b3(i1,i2,i3+1)
-    !---------------------------------------------------------------------------
-    do i3=ui(3),ub(3)-1
-    do i2=lb(2),ub(2)-1
-    do i1=lb(1),ub(1)-1
-      b3(i1,i2,i3+1) =                + b3(i1,i2,i3) &
-                     - b1(i1+1,i2,i3) + b1(i1,i2,i3) &
-                     - b2(i1,i2+1,i3) + b2(i1,i2,i3)
-    end do
-    end do
-    end do
-  end subroutine iter_z
-END SUBROUTINE divb_clean0
-
-!===============================================================================
-!> Perform a single iteration of a div(B) clean.  The limit of stability is
-!> eps=1./6.  This is intended to prevent build-up of layers of large div(B)
-!> between patches. An exact solution would be to solve an internal Laplace
-!> equation, with boundary conditiosn = the boundary value of div(B), and then
-!> subtract the gradient of the resulting potential.
-!>
-!> The problem can also be greatly reduced by using a higher order time
-!> interpoation scheme, thus making the electric field computed from the
-!> guard zone values of B and U a better match to the neighbors E-fields.
-!===============================================================================
-SUBROUTINE divb_clean1 (self)
-  class(mhd_t):: self
-  !.............................................................................
-  real, dimension(:,:,:), pointer:: bx, by, bz
-  real, dimension(:,:,:), allocatable:: divb
-  real, parameter:: eps=0.11
-  integer:: itimer=0
-  !-----------------------------------------------------------------------------
-  call trace%begin('mhd_t%divb_clean1', itimer=itimer)
-  bx => self%mem(:,:,:,self%idx%bx,self%new,1)
-  by => self%mem(:,:,:,self%idx%by,self%new,1)
-  bz => self%mem(:,:,:,self%idx%bz,self%new,1)
-  allocate (divb(self%mesh(1)%gn,self%mesh(2)%gn,self%mesh(3)%gn))
-  divb = ddup(bx,1) + ddup(by,2) + ddup(bz,3)
-  bx = bx + eps*dddn(divb,1)
-  by = by + eps*dddn(divb,2)
-  bz = bz + eps*dddn(divb,3)
-  deallocate (divb)
-  call trace%end (itimer)
-  return
-contains
-  !-----------------------------------------------------------------------------
-  function ddup(f,i) result (g)
-  real:: f(:,:,:), g(size(f,1),size(f,2),size(f,3))
-  integer:: i
-  !.............................................................................
-  g = cshift(f,1,i) - f
-  end function
-  !-----------------------------------------------------------------------------
-  function dddn(f,i) result (g)
-  real:: f(:,:,:), g(size(f,1),size(f,2),size(f,3))
-  integer:: i
-  !.............................................................................
-  g = f - cshift(f,-1,i)
-  end function
-END SUBROUTINE divb_clean1
-
-!===============================================================================
-!> Enforce div(B)=0 in the guard zones, by succesively imposing the condition,
-!> layer-by-layer, on the component perpendicular to each of the patch faces.
-!===============================================================================
-SUBROUTINE divb_clean2 (self)
-  class(mhd_t):: self
-  !.............................................................................
-  real, dimension(:,:,:), pointer:: bx, by, bz
-  real, dimension(:,:,:), allocatable:: divb
-  real, parameter:: eps=0.11
-  integer:: l(3), u(3), ix, iy, iz
-  integer:: itimer=0
-  !-----------------------------------------------------------------------------
-  call trace%begin('mhd_t%divb_clean2', itimer=itimer)
-  bx => self%mem(:,:,:,self%idx%bx,self%new,1)
-  by => self%mem(:,:,:,self%idx%by,self%new,1)
-  bz => self%mem(:,:,:,self%idx%bz,self%new,1)
-  l = self%mesh%lb
-  u = self%mesh%ub-1
-  !--- x-direction -------------------------------------------------------------
-  do ix=self%mesh(1)%lo,self%mesh(1)%lb,-1
-    bx(ix  ,l(2):u(2),l(3):u(3)) = &
-    bx(ix+1,l(2):u(2),l(3):u(3)) + ( &
-      by(ix,l(2)+1:u(2)+1,l(3)  :u(3)  ) - by(ix,l(2):u(2),l(3):u(3)) + &
-      bz(ix,l(2)  :u(2)  ,l(3)+1:u(3)+1) - bz(ix,l(2):u(2),l(3):u(3)))
-  end do
-  do ix=self%mesh(1)%ui,self%mesh(1)%ub-1
-    bx(ix+1,l(2):u(2),l(3):u(3)) = &
-    bx(ix  ,l(2):u(2),l(3):u(3)) - ( &
-      by(ix,l(2)+1:u(2)+1,l(3)  :u(3)  ) - by(ix,l(2):u(2),l(3):u(3)) + &
-      bz(ix,l(2)  :u(2)  ,l(3)+1:u(3)+1) - bz(ix,l(2):u(2),l(3):u(3)))
-  end do
-  !--- y-direction -------------------------------------------------------------
-  do iy=self%mesh(2)%lo,self%mesh(2)%lb,-1
-    by(l(1):u(1),iy  ,l(3):u(3)) = &
-    by(l(1):u(1),iy+1,l(3):u(3)) + ( &
-      bx(l(1)+1:u(1)+1,iy,l(3)  :u(3)  ) - bx(l(1):u(1),iy,l(3):u(3)) + &
-      bz(l(1)  :u(1)  ,iy,l(3)+1:u(3)+1) - bz(l(1):u(1),iy,l(3):u(3)))
-  end do
-  do iy=self%mesh(2)%ui,self%mesh(2)%ub-1
-    by(l(1):u(1),iy+1,l(3):u(3)) = &
-    by(l(1):u(1),iy  ,l(3):u(3)) - ( &
-      bx(l(1)+1:u(1)+1,iy,l(3)  :u(3)  ) - bx(l(1):u(1),iy,l(3):u(3)) + &
-      bz(l(1)  :u(1)  ,iy,l(3)+1:u(3)+1) - bz(l(1):u(1),iy,l(3):u(3)))
-  end do
-  !--- z-direction -------------------------------------------------------------
-  do iz=self%mesh(3)%lo,self%mesh(3)%lb,-1
-    bz(l(1):u(1),l(2):u(2),iz  ) = &
-    bz(l(1):u(1),l(2):u(2),iz+1) + ( &
-      bx(l(1)+1:u(1)+1,l(2)  :u(2)  ,iz) - bx(l(1):u(1),l(2):u(2),iz) + &
-      by(l(1)  :u(1)  ,l(2)+1:u(2)+1,iz) - by(l(1):u(1),l(2):u(2),iz))
-  end do
-  do iz=self%mesh(3)%ui,self%mesh(3)%ub-1
-    bz(l(1):u(1),l(2):u(2),iz+1) = &
-    bz(l(1):u(1),l(2):u(2),iz  ) - ( &
-      bx(l(1)+1:u(1)+1,l(2)  :u(2)  ,iz) - bx(l(1):u(1),l(2):u(2),iz) + &
-      by(l(1)  :u(1)  ,l(2)+1:u(2)+1,iz) - by(l(1):u(1),l(2):u(2),iz))
-  end do
-  call trace%end (itimer)
-END SUBROUTINE divb_clean2
 
 !===============================================================================
 !===============================================================================
@@ -2139,15 +1914,6 @@ SUBROUTINE solver_2d (self,qLL,qRL,qLR,qRR,emf,j,k,l,u,nvar,xdim,detailed_timer)
     stop
   end if
 END SUBROUTINE solver_2d
-
-!===============================================================================
-FUNCTION up(f,i) RESULT (g)
-  real, dimension(:,:,:), intent(in):: f
-  real, dimension(size(f,1),size(f,2),size(f,3)):: g
-  integer:: i
-  !.............................................................................
-  g = 0.5*(cshift(f,1,i)+f)
-END FUNCTION
 
 !===============================================================================
 !> Set up nbor relations between MHD tasks
