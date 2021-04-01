@@ -94,7 +94,6 @@ MODULE extras_mod
     procedure, nopass:: cast2extras
     procedure:: pre_init
     procedure:: init
-    procedure:: post_init
     procedure:: dealloc
     procedure:: init_task_list
     procedure:: pre_update
@@ -133,10 +132,6 @@ SUBROUTINE pre_init (self)
   call pic_particles%test
   deallocate (pic_particles)
 END SUBROUTINE pre_init
-
-SUBROUTINE post_init (self)
-  class(extras_t):: self
-END SUBROUTINE post_init
 
 !===============================================================================
 !> Initialize the modules that are to be included and used

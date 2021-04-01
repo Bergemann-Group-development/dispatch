@@ -50,7 +50,6 @@ MODULE mhd_mod
   contains
     procedure:: init
     procedure:: pre_init
-    procedure:: post_init
     procedure:: pde
     procedure:: pre_update
     procedure:: update
@@ -193,23 +192,6 @@ SUBROUTINE init (self)
   !
  call trace%end()
 END SUBROUTINE init
-
-!> =============================================================================
-!> Post init, whatever is required
-!> =============================================================================
-SUBROUTINE post_init (self)
-  class(mhd_t):: self
-  ! ----------------------------------------------------------------------------
-  ! ----------------------------------------------------------------------------
-  ! Call extras post-init
-  ! ----------------------------------------------------------------------------
-  call self%extras_t%post_init
-  !----------------------------------------------------------------------------
-  ! Boundary setup
-  !----------------------------------------------------------------------------
-  self%boundaries%mhd = self%mhd
- call trace%end()
-END SUBROUTINE post_init
 
 !> =============================================================================
 SUBROUTINE pde (self)

@@ -100,7 +100,6 @@ MODULE extras_mod
     procedure, nopass:: cast2extras
     procedure:: pre_init
     procedure:: init
-    procedure:: post_init
     procedure:: init_task_list
     procedure:: dealloc
     procedure:: pre_update
@@ -138,15 +137,6 @@ SUBROUTINE pre_init (self)
   !call self%selfgravity%pre_init (self)                                ! selfg
   call trace%end ()
 END SUBROUTINE pre_init
-
-!===============================================================================
-!> Post-initialize the modules that are to be included and used. Empty for now.
-!===============================================================================
-SUBROUTINE post_init (self)
-  class(extras_t):: self
-  !.............................................................................
-  !
-END SUBROUTINE post_init
 
 !===============================================================================
 !> Initialize the modules that are to be included and used
