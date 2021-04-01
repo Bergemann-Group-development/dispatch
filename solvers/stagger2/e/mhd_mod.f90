@@ -83,10 +83,6 @@ SUBROUTINE pre_init (self)
     do_test, mhd
   !----------------------------------------------------------------------------
   call trace%begin ('mhd_t%pre_init')
-  call self%extras_t%pre_init
-  !-----------------------------------------------------------------------------
-  ! Now pass on these wishes to the next layers, which may modify them
-  !-----------------------------------------------------------------------------
   call io%lock%set ('mhd_t%pre_init')
   if (first_time) then
     first_time = .false.
@@ -104,12 +100,13 @@ SUBROUTINE pre_init (self)
   !-----------------------------------------------------------------------------
   ! Note that the experiment must set self%mhd, possibly depending on IC
   !-----------------------------------------------------------------------------
+  self%type = 'mhd_t'
   self%mhd = mhd
   if (self%mhd) then
-    self%kind = 'stagger2e_mhd_patch'
+    self%kind = 'stagger2_mhd_patch'
     self%nv = 8
   else
-    self%kind = 'stagger2e_hd_patch'
+    self%kind = 'stagger2_hd_patch'
     self%nv = 5
   end if
   self%nw = 2
@@ -125,7 +122,15 @@ SUBROUTINE pre_init (self)
     self%ng = 2
   end if
   call self%idx%init (energy=5, mhd=self%mhd)
-  where (self%n<2) self%ng=0
+  !-----------------------------------------------------------------------------
+  ! Now pass on these wishes to the next layers, which may modify them
+  !-----------------------------------------------------------------------------
+  call self%extras_t%pre_init
+  where (self%n < 2) self%ng=0
+  if (any(self%n >= 2 .and. self%ng == 0)) then
+    write (stderr,'(a,2(2x,3i4))') &
+      'mhd_t%pre_init WARNING: n,ng =', self%n, self%ng
+  end if
   self%type = 'mhd_t'
   call trace%end()
 END SUBROUTINE pre_init

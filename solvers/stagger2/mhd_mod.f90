@@ -82,7 +82,6 @@ SUBROUTINE pre_init (self)
     do_smooth, unsigned, do_maxwell, do_temperature, verbose, do_test, mhd
   !----------------------------------------------------------------------------
   call trace%begin ('mhd_t%pre_init')
-  call self%extras_t%pre_init
   !-----------------------------------------------------------------------------
   ! Now pass on these wishes to the next layers, which may modify them
   !-----------------------------------------------------------------------------
@@ -133,8 +132,16 @@ SUBROUTINE pre_init (self)
   else
     self%ng = 2
   end if
-  where (self%n<2) self%ng=0
   call self%idx%init (entropy=5, mhd=self%mhd)
+  !-----------------------------------------------------------------------------
+  ! Allow extras modules to possibly change the nv, nw, and ng
+  !-----------------------------------------------------------------------------
+  call self%extras_t%pre_init
+  where (self%n < 2) self%ng=0
+  if (any(self%n >= 2 .and. self%ng == 0)) then
+    write (stderr,'(a,2(2x,3i4))') &
+      'mhd_t%pre_init WARNING: n,ng =', self%n, self%ng
+  end if
   self%type = 'mhd_t'
   call trace%end()
 END SUBROUTINE pre_init
@@ -698,7 +705,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   call self%output
   if (eos%gamma==1d0) then
-    self%mem(:,:,:,self%idx%e,self%it,1) = &
+    self%mem(:,:,:,self%idx%s,self%it,1) = &
     self%mem(:,:,:,self%idx%d,self%it,1)*self%csound**2
   end if
   if (self%mhd) then

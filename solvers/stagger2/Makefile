@@ -16,7 +16,7 @@ divb_clean_mod.o : io_mod.o trace_mod.o mesh_mod.o vector_mod.o scalar_mod.o \
                    vector_ops.o scratch_mod.o
 patches_mod.o    : io_mod.o trace_mod.o timestep_mod.o
 initial_mod.o    : io_mod.o trace_mod.o random_mod.o mesh_mod.o vector_mod.o \
-                   $(STAGGER) index_mod.o
+                   $(STAGGER) index_mod.o eos_mod.o
 force_mod.o      : io_mod.o trace_mod.o random_mod.o mesh_mod.o vector_mod.o \
                    $(STAGGER) scaling_mod.o
 boundary_mod.o   : io_mod.o trace_mod.o mesh_mod.o
