@@ -29,7 +29,7 @@ MODULE patch_mod
   type, extends(task_t), public:: patch_t
     real(kind=KindScalarVar), dimension(:,:,:,:,:,:), pointer, contiguous:: mem      => null()
     real(kind=KindScalarVar), dimension(:,:,:,:,:),   pointer, contiguous:: vgas     => null()
-    real(kind=KindScalarVar), dimension(:,:,:,:),     pointer, contiguous:: density  => null()
+    real(kind=KindScalarVar), dimension(:,:,:,:),     pointer            :: density  => null()
     real(kind=KindScalarVar), dimension(:,:,:,:),     pointer, contiguous:: pressure => null()
     !dir$ attributes align: 64 :: mem, vgas, density, pressure
     !---------------------------------------------------------------------------
