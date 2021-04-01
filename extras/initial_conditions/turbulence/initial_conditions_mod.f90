@@ -106,8 +106,9 @@ SUBROUTINE turbulence (self)
   end if
   call io%lock%unset
   ff(:,:,:,idx%d        ) = 1.0
-  ff(:,:,:,idx%e        ) = 1.0
   ff(:,:,:,idx%px:idx%pz) = 0.0
+  if (idx%e > 0) ff(:,:,:,idx%e) = 1.0
+  if (idx%s > 0) ff(:,:,:,idx%s) = 1.0
   if (idx%bx > 0) then
     ff(:,:,:,idx%bx       ) = b0(1)
     ff(:,:,:,idx%by       ) = b0(2)
@@ -118,37 +119,40 @@ SUBROUTINE turbulence (self)
 END SUBROUTINE turbulence
 
 !===============================================================================
-!> Calculate total energy
+!> Calculate energy variable
 !===============================================================================
 SUBROUTINE energy (self, m, idx, ff)
   class(initial_conditions_t) :: self
   class(mesh_t):: m(3)
   type(index_t):: idx
-  real, dimension(:,:,:,:):: ff
+  real, dimension(:,:,:,:), pointer:: ff
+  real, dimension(:,:,:)  , pointer:: s, d, e
   !.............................................................................
-  real(8):: fgamma
+  real(8):: g1, g2
   !-----------------------------------------------------------------------------
   call trace%begin ('initial_conditions_t%energy')
-  if (eos%gamma==1d0) then
-    fgamma = 1d0
+  if (eos%gamma == 1d0) then
+    g1 = 1d0
   else
-    fgamma = eos%gamma*(eos%gamma-1d0)
+    g1 = (eos%gamma-1d0)
   end if
-  ff(:,:,:,idx%e) = 0.5*(ff(:,:,:,idx%px)**2+ &
-                         ff(:,:,:,idx%py)**2+ &
-                         ff(:,:,:,idx%pz)**2)/ff(:,:,:,idx%d) &
-                  + ff(:,:,:,idx%e)
-  if (idx%bx > 0) then
-    ff(:,:,:,idx%e) = ff(:,:,:,idx%e) + &
-      0.5*(ff(:,:,:,idx%bx)**2 + &
-           ff(:,:,:,idx%by)**2 + &
-           ff(:,:,:,idx%bz)**2)
+  g2 = eos%gamma*g1
+  if      (self%patch%kind(1:9) == 'stagger2_') then
+    d => ff(:,:,:,idx%d)
+    s => ff(:,:,:,idx%s)
+    s = d*log(s*g1/d**eos%gamma)/g1
+  else if (self%patch%kind(1:7) == 'ramses_') then
+    d => ff(:,:,:,idx%d)
+    e => ff(:,:,:,idx%e)
+    e = e + 0.5*(ff(:,:,:,idx%px)**2+ &
+                 ff(:,:,:,idx%py)**2+ &
+                 ff(:,:,:,idx%pz)**2)/d
+    if (idx%bx > 0) then
+      e = e + 0.5*(ff(:,:,:,idx%bx)**2 + &
+                   ff(:,:,:,idx%by)**2 + &
+                   ff(:,:,:,idx%bz)**2)
+    end if
   end if
-  !print *, 'IIII', idx%e, fgamma, &
-    !minval(ff(m(1)%lb:m(1)%ub,m(2)%lb:m(2)%ub,m(3)%lb:m(3)%ub,idx%d)), &
-    !maxval(ff(m(1)%lb:m(1)%ub,m(2)%lb:m(2)%ub,m(3)%lb:m(3)%ub,idx%d)), &
-    !minval(ff(m(1)%lb:m(1)%ub,m(2)%lb:m(2)%ub,m(3)%lb:m(3)%ub,idx%e)), &
-    !maxval(ff(m(1)%lb:m(1)%ub,m(2)%lb:m(2)%ub,m(3)%lb:m(3)%ub,idx%e))
   call trace%end()
 END SUBROUTINE energy
 
