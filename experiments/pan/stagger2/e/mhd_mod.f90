@@ -28,7 +28,6 @@ MODULE mhd_mod
   USE timestep_mod
   USE eos_mod
   USE non_ideal_mod
-  USE initial_mod
   USE scratch_mod
   USE eos_mod
   implicit none
@@ -62,8 +61,7 @@ MODULE mhd_mod
 CONTAINS
 
 !===============================================================================
-!> Read the namelist parameters, store them, determine the type of the solver
-!> (HD or MHD) and set the indices.
+!> Read the namelist info and set the default parameters.
 !===============================================================================
 SUBROUTINE pre_init (self)
   class(mhd_t), target:: self
@@ -71,35 +69,19 @@ SUBROUTINE pre_init (self)
   integer:: i, iv, iostat
   real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], csound=1.0, cdtd=0.5, courant=0.2
   logical, save:: first_time=.true.
-  logical, save:: mhd=.false.
-  character(len=16), save:: eos
-  namelist /stagger_params/ nu, courant, csound, cdtd, hardwire, eos, &
-    do_smooth, unsigned, do_temperature, verbose, divb_cleaner
+  logical, save:: mhd=.true.
+  namelist /stagger_params/ nu, courant, csound, cdtd, hardwire, &
+    do_smooth, unsigned, do_temperature, verbose, divb_cleaner, &
+    mhd
   !----------------------------------------------------------------------------
   call trace%begin ('mhd_t%pre_init')
-  !-----------------------------------------------------------------------------
-  ! Read IC parameters, which determine if this is HD or MHD.  The IC init is
-  ! called again, from extras_t%init, when gamma is known and can be passed on.
-  !-----------------------------------------------------------------------------
-  self%initial%mhd = self%mhd
-  call self%initial%init (self%kind)
-  self%mhd = self%initial%mhd
-  if (self%mhd) then
-    self%kind = 'stagger2e_mhd_patch'
-    self%nv = 8
-  else
-    self%kind = 'stagger2e_hd_patch'
-    self%nv = 5
-  end if
-  self%nw = 2
-  !-----------------------------------------------------------------------------
-  ! Call extras pre-init
-  !-----------------------------------------------------------------------------
   call self%extras_t%pre_init
+  !-----------------------------------------------------------------------------
+  ! Now pass on these wishes to the next layers, which may modify them
+  !-----------------------------------------------------------------------------
   call io%lock%set ('mhd_t%pre_init')
   if (first_time) then
     first_time = .false.
-    eos = self%eos
     mhd = self%mhd
     rewind (io%input)
     read (io%input, stagger_params, iostat=iostat)
@@ -111,24 +93,32 @@ SUBROUTINE pre_init (self)
     if (timestep%time_order <= 0) call mpi%abort("The Stagger solvers require `time_order` > 0. Abort!")
   end if
   call io%lock%unset ('mhd_t%pre_init')
-  self%eos = eos
+  !-----------------------------------------------------------------------------
+  ! Note that the experiment must set self%mhd, possibly depending on IC
+  !-----------------------------------------------------------------------------
   self%mhd = mhd
+  if (self%mhd) then
+    self%kind = 'stagger2e_mhd_patch'
+    self%nv = 8
+  else
+    self%kind = 'stagger2e_hd_patch'
+    self%nv = 5
+  end if
+  self%nw = 2
   self%nu = nu
   self%csound = csound
   self%courant = courant
   self%cdtd = cdtd
-  !-----------------------------------------------------------------------------
-  ! Choose div(B) cleaner
-  !-----------------------------------------------------------------------------
-  select case(divb_cleaner)
-  case(1)
-    self%divb_clean => divb_clean1
-  case(2)
-    self%divb_clean => divb_clean2
-  case default
-    call io%abort('mhd_mod:: divb cleaner method not understood')
-  end select
-  call self%idx%init (ienergy=5, mhd=self%mhd)
+  if (stagger%order==6) then
+    self%ng = 5
+  else if (stagger%order==4) then
+    self%ng = 3
+  else
+    self%ng = 2
+  end if
+  call self%idx%init (energy=5, mhd=self%mhd)
+  where (self%n<2) self%ng=0
+  self%type = 'mhd_t'
   call trace%end()
 END SUBROUTINE pre_init
 
@@ -139,21 +129,37 @@ END SUBROUTINE pre_init
 SUBROUTINE init (self)
   class(mhd_t):: self
   integer :: i
-  ! ----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
+  !-----------------------------------------------------------------------------
+  ! Allocate memory and mesh, etc
+  !-----------------------------------------------------------------------------
+  call io%assert (self%nw == 2, &
+    'mhd_t%pde: memory slot for time derivatives missing')
   call self%extras_t%init
-  self%type = 'mhd_t'
-  self%unsigned(self%idx%d)  = unsigned
-  self%pervolume(self%idx%e) = unsigned
+  !-----------------------------------------------------------------------------
+  ! Set the staggering, unsigned and pervolume flags before calling the rest
+  ! of the cascade if %init(), where %gpatch_t%init may need them, in IC calls
+  !-----------------------------------------------------------------------------
   do i=1,3
     self%mesh(i)%h(self%idx%px+i-1) = -0.5
     if (self%mhd) self%mesh(i)%h(self%idx%bx+i-1) = -0.5
   end do
-  if (verbose > 1 .and. self%track) then
+  if (verbose>1 .and. self%track) then
     do i=1,3
       print '("h:",8f5.2)', self%mesh(i)%h
     end do
   end if
+  self%unsigned(self%idx%d) = unsigned
+  self%unsigned(self%idx%e) = unsigned
+  self%pervolume(self%idx%px) = unsigned
+  self%pervolume(self%idx%py) = unsigned
+  self%pervolume(self%idx%pz) = unsigned
+  !-----------------------------------------------------------------------------
+  ! Initialize everything else, and do a sanity check
+  !-----------------------------------------------------------------------------
+  self%type = 'mhd_t'
+  call non_ideal%init
   call trace%end()
 END SUBROUTINE init
 
