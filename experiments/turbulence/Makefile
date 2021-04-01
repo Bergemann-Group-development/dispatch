@@ -22,7 +22,7 @@ sinclude $(TOP)/config/Makefile
 
 # List the .o files the main program depends on after the colon:
 $(EXEC)                 : setup_mod.o cartesian_mod.o dispatcher_mod.o lagrange_mod.o
-experiment_mod.o        : io_mod.o io_unit_mod.o trace_mod.o omp_mod.o bits_mod.o solver_mod.o initial_mod.o \
+experiment_mod.o        : io_mod.o io_unit_mod.o trace_mod.o omp_mod.o bits_mod.o solver_mod.o \
                           timer_mod.o link_mod.o
 scaling_mod.o           : io_mod.o units_mod.o
 extras_mod.o            : forces_mod.o scratch_mod.o initial_conditions_mod.o

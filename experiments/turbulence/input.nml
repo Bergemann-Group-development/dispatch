@@ -38,7 +38,7 @@
 
                        !    cs   pa  ofd  mas  kap  eta
 &stagger_params        nu=0.10, 1.0, 1.0, 0.1, 1.0, 1.0
-                       courant=0.2 eos='ideal' gamma=1.6666667
+                       courant=0.2
 /
 &ramses_params         detailed_timer=f courant_factor=0.25 slope_type=3.5
                        smallr=1e-6 smallc=1e-2
