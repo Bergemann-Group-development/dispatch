@@ -220,6 +220,7 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne, pg, tt, ne, rk, src, &
   integer:: dim(3), id_loc=-1
   integer, optional:: id
   real, dimension(:,:,:)  , pointer, optional :: lnd,d,lne,e,ee,tt,ne,ss
+  intent(in)                                  :: lnd,d,lne,e,ee,tt,ne,ss
   real, dimension(:,:,:,:)         , optional :: src,rk
   real, dimension(:,:,:)           , optional :: pg
   real, optional:: gamma
