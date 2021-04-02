@@ -1,8 +1,13 @@
-# Append to VPATH, first specific, then general
-VPATH := $(VPATH):$(TOP)/solvers/particles/$(PARTICLE_SOLVER):$(TOP)/solvers/particles
+# default solver
+#
+PARTICLE_SOLVER ?= void
 
-# include solver Makefile
-sinclude $(TOP)/solvers/particles/$(PARTICLE_SOLVER)/Makefile
+# Append to specific solver to VPATH
+VPATH := $(VPATH):$(TOP)/solvers/particles/$(PARTICLE_SOLVER):$(TOP)/solvers/particles
+sinclude          $(TOP)/solvers/particles/$(PARTICLE_SOLVER)/Makefile
+
+# Append generic fall-back
+VPATH := $(VPATH):$(TOP)/solvers/particles
 
 # solver info
 info::

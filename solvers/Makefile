@@ -1,16 +1,18 @@
+# First set VPATH, then allow the sinclude to modify
+#
+VPATH := $(VPATH):$(TOP)/solvers/$(SOLVER)
+sinclude          $(TOP)/solvers/$(SOLVER)/Makefile
 
-sinclude $(TOP)/solvers/$(SOLVER)/Makefile
-sinclude $(TOP)/solvers/$(SOLVER)/$(OFFLOAD)/Makefile
+VPATH := $(VPATH):$(TOP)/solvers/$(SOLVER)/$(OFFLOAD)
+sinclude          $(TOP)/solvers/$(SOLVER)/$(OFFLOAD)/Makefile
+
+# These sub-solvers to the same, internally
+sinclude $(TOP)/solvers/rt/Makefile
+sinclude $(TOP)/solvers/particles/Makefile
 sinclude $(TOP)/solvers/poisson/Makefile
 
-ifneq ($(RT_SOLVER),)
-  sinclude $(TOP)/solvers/rt/Makefile
-endif
-ifneq ($(PARTICLE_SOLVER),)
-  sinclude $(TOP)/solvers/particles/Makefile
-endif
-
-VPATH := $(VPATH):$(TOP)/solvers/$(SOLVER):$(TOP)/solvers/$(SOLVER)/$(OFFLOAD):$(TOP)/solvers
+# Allow the top directory to be fall-back
+VPATH := $(VPATH):$(TOP)/solvers
 
 STAGGER ?= stagger_2nd.o
 
