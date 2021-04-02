@@ -25,6 +25,7 @@ MODULE gpatch_mod
   USE task_mod
   USE scratch_mod
   USE boundaries_mod
+  USE stagger_mod
   implicit none
   private
   type, public, extends(patch_t):: gpatch_t
@@ -45,6 +46,7 @@ MODULE gpatch_mod
     procedure:: dnload
     procedure:: courant_condition
     procedure:: to_thermal
+    procedure:: to_total_e
     procedure:: clone_mem_accounting
     procedure:: rotate
     procedure:: info                    ! print info to stdout
@@ -272,6 +274,30 @@ SUBROUTINE to_thermal (self, it, eth, kind)
   end if
   call trace%end (itimer)
 END SUBROUTINE to_thermal
+
+!===============================================================================
+!> Convert to total energy
+!===============================================================================
+SUBROUTINE to_total_e (self, it)
+  class(gpatch_t):: self
+  integer:: it
+  real, dimension(:,:,:), pointer:: d, e, px, py, pz, bx, by ,bz
+  !-----------------------------------------------------------------------------
+  if (self%kind(1:6)=='ramses') then
+    d  => self%mem(:,:,:,self%idx%d ,it,1)
+    e  => self%mem(:,:,:,self%idx%e ,it,1)
+    px => self%mem(:,:,:,self%idx%px,it,1)
+    py => self%mem(:,:,:,self%idx%py,it,1)
+    pz => self%mem(:,:,:,self%idx%pz,it,1)
+    e = e + 0.5*(px**2+py**2+pz**2)/d
+    if (self%idx%bx > 0) then
+      bx => self%mem(:,:,:,self%idx%bx,it,1)
+      by => self%mem(:,:,:,self%idx%by,it,1)
+      bz => self%mem(:,:,:,self%idx%bz,it,1)
+      e = e + 0.5*(xup(bx)**2+yup(by)**2+zup(bz)**2)
+    end if
+  end if
+END SUBROUTINE to_total_e
 
 !===============================================================================
 !> Stub -- left for compatibility only
