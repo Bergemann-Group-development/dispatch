@@ -211,7 +211,9 @@ SUBROUTINE test_values (self, i1, iv)
   character(len=32):: name
   !-----------------------------------------------------------------------------
   call trace%begin ('dependent_t%test')
+#ifdef __GFORTRAN__
   write (self%name,'(a,i1)') 'test', iv
+#endif
   self%n = 30
   do i2=lbound(self%v,2),ubound(self%v,2)
     self%v(iv,i2) = i1*100 + i2
@@ -347,7 +349,9 @@ SUBROUTINE lookup1_3d (self, iv, x1, x2, v)
   !-----------------------------------------------------------------------------
   do i3=1,n3
   do i2=1,n2
+#ifdef __GFORTRAN__
     !$omp simd
+#endif
     do i=1,n
       p1(i) = (x1(i,i2,i3)-self%scale1%min)/self%scale1%step
       p2(i) = (x2(i,i2,i3)-self%scale2%min)/self%scale2%step
@@ -359,7 +363,9 @@ SUBROUTINE lookup1_3d (self, iv, x1, x2, v)
     !---------------------------------------------------------------------------
     ! Pick up corner values in a loop with indirect addressing (slow)
     !---------------------------------------------------------------------------
+#ifdef __GFORTRAN__
     !$omp simd
+#endif
     do i=1,n
       values1 => self%values(q1(i)  )%v
       values2 => self%values(q1(i)+1)%v
@@ -371,7 +377,9 @@ SUBROUTINE lookup1_3d (self, iv, x1, x2, v)
     !---------------------------------------------------------------------------
     ! Bilinear interpolation
     !---------------------------------------------------------------------------
+#ifdef __GFORTRAN__
     !$omp simd
+#endif
     do i=1,n
       v(i,i2,i3) = (1.-p1(i))*(a(i,1)*(1.-p2(i))+a(i,2)*p2(i)) &
                      + p1(i) *(a(i,3)*(1.-p2(i))+a(i,4)*p2(i))
@@ -423,7 +431,9 @@ SUBROUTINE lookup_3d_nnv (self, x1, x2, v)
   !-----------------------------------------------------------------------------
   do i3=1,n3
   do i2=1,n2
+#ifdef __GFORTRAN__
     !$omp simd
+#endif
     do i=1,n
       p1(i) = (x1(i,i2,i3)-self%scale1%min)/self%scale1%step
       p2(i) = (x2(i,i2,i3)-self%scale2%min)/self%scale2%step
@@ -438,7 +448,9 @@ SUBROUTINE lookup_3d_nnv (self, x1, x2, v)
     do i=1,n
       values1 => self%values(q1(i)  )%v
       values2 => self%values(q1(i)+1)%v
+#ifdef __GFORTRAN__
       !$omp simd
+#endif
       do iv=1,nv
         a(i,iv,1) = values1(iv,q2(i)  )
         a(i,iv,2) = values1(iv,q2(i)+1)
@@ -450,7 +462,9 @@ SUBROUTINE lookup_3d_nnv (self, x1, x2, v)
     ! Bilinear interpolation
     !---------------------------------------------------------------------------
     do iv=1,nv
+#ifdef __GFORTRAN__
       !$omp simd
+#endif
       do i=1,n
         v(i,i2,i3,iv) = (1.-p1(i))*(a(i,iv,1)*(1.-p2(i))+a(i,iv,2)*p2(i)) &
                           + p1(i) *(a(i,iv,3)*(1.-p2(i))+a(i,iv,4)*p2(i))
@@ -489,7 +503,9 @@ SUBROUTINE lookup_3d_nvn (self, x1, x2, v)
   c2 = 1.0/self%scale2%step
   do i3=1,n3
   do i2=1,n2
+#ifdef __GFORTRAN__
     !$omp simd
+#endif
     do i=1,n
       p1(i) = (x1(i,i2,i3)-self%scale1%min)*c1
       p2(i) = (x2(i,i2,i3)-self%scale2%min)*c2
@@ -504,7 +520,9 @@ SUBROUTINE lookup_3d_nvn (self, x1, x2, v)
     do i=1,n
       values1 => self%values(q1(i)  )%v
       values2 => self%values(q1(i)+1)%v
+#ifdef __GFORTRAN__
       !$omp simd
+#endif
       do iv=1,nv
         a(iv,i,1) = values1(iv,q2(i)  )
         a(iv,i,2) = values1(iv,q2(i)+1)
@@ -516,7 +534,9 @@ SUBROUTINE lookup_3d_nvn (self, x1, x2, v)
     ! Bilinear interpolation
     !---------------------------------------------------------------------------
     do i=1,n
+#ifdef __GFORTRAN__
       !$omp simd
+#endif
       do iv=1,nv
         v(iv,i,i2,i3) = (1.-p1(i))*(a(iv,i,1)*(1.-p2(i))+a(iv,i,2)*p2(i)) &
                           + p1(i) *(a(iv,i,3)*(1.-p2(i))+a(iv,i,4)*p2(i))
