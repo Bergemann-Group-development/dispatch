@@ -1,0 +1,1 @@
+&io_params do_trace=f omp_trace=t /
