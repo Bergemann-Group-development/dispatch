@@ -2,7 +2,7 @@ import os
 import scipy
 import numpy as np
 import dispatch.EOS
-from dispatch.EOS.irregular_tables import table_c
+from dispatch.EOS.irregular_tables import itable_c
 
 def interp(x,y,x0):
     """ Interpolate in x[:] and y[:] to x-coordinat(s) x0
@@ -44,7 +44,7 @@ def open(self,case='stagger',file=None,top='~/codes/dispatch2',verbose=0):
         eos=dispatch.EOS.bifrost
     return eos(top=top,verbose=verbose) if file is None else eos(file,top=top,verbose=verbose)
 
-class eos_c(table_c):
+class eos_c(itable_c):
     """ Sub-class that inherits all table_c methods, and adds other EOS 
         specific methods.
     """

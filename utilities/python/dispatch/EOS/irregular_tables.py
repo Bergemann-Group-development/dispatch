@@ -117,7 +117,7 @@ class dependent_c(object):
         self.n=fd.read_record('i4')[0]
         self.values=fd.read_record('f8')
 
-class table_c(object):
+class itable_c(object):
     """ Template EOS object, with methods to
         1) set up a linear scale of the 1st independent variable
         2) set up 2nd linear independent variable for each 1st variable value
