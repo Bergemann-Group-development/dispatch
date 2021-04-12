@@ -283,6 +283,7 @@ SUBROUTINE init (self)
     if (min_jeans     > 0.0) n_criteria = n_criteria+1
     if (max_compress  > 0.0) n_criteria = n_criteria+1
     if (max_vorticity > 0.0) n_criteria = n_criteria+1
+    if (any(region_llc/=0) .or.any(region_urc/=0)) n_criteria = n_criteria+1
     write (io%output,'(a,i4)') ' number of AMR criteria:', n_criteria
     if (n_criteria ==0) self%on=.false.
   end if
@@ -1408,6 +1409,7 @@ FUNCTION refine_region (self, patch) RESULT (refine)
   !.............................................................................
   call trace%begin('refine_t%refine_on_box')
   refine_it = .false.
+  refine=0
   m1 => patch%mesh(1)
   m2 => patch%mesh(2)
   m3 => patch%mesh(3)
