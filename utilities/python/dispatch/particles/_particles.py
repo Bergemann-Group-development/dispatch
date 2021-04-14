@@ -27,7 +27,7 @@ class particles(object):
         ifile=[f for f in os.listdir(self.dir) if f.endswith('inf')]
         lenifile = len(ifile)
         ifile.sort()
-        self.ifile=self.dir+ifile[10]
+        self.ifile=self.dir+ifile[lenifile-1]
         with FortranFile(self.ifile) as fd:
             bins,parts,snaps=fd.read_record('i4,i4,i4')[0]
             snaps=lenifile
@@ -122,10 +122,10 @@ class particles(object):
         return tracks
 
     def select(self,condition):
-        """ Make a selection using np.where, which is used to select 
+        """ Make a selection using np.where, which is used to select
             the elements that fulfil the criterion. All mumpy arrays
             with at leas indices are assumed to have id as the first
-            index.  Arrays with 2 indices could be 3-D vectors at one 
+            index.  Arrays with 2 indices could be 3-D vectors at one
             point in time, or scalars at a number of snapshot times.
         """
         from copy import deepcopy
@@ -139,7 +139,7 @@ class particles(object):
             setattr(new,key,v)          # put attribute back in place
         new.np=len(w)                   # number selected
         return new
-        
+
 def open(run='',data='../data',file='rank_00000.pdat',verbose=0):
     """ Read all cell information in the given file, and
         concatenate the information into a single object
