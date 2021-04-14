@@ -223,7 +223,7 @@ SUBROUTINE init (self)
   ! if (.not.on) return
   call trace%begin ('particle_solver_t%init')
   m(1:3) = self%patch%mesh%gn
-  allocate (self%particles(m(1),m(2),m(3),n_bin)) 
+  allocate (self%particles(m(1),m(2),m(3),n_bin))
   call io%bits_mem (storage_size(self%particles), &
                    product(shape(self%particles)), 'particles')
   allocate (self%exports(n_bin))
@@ -595,7 +595,11 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Non-vectorized pusher
   !-----------------------------------------------------------------------------
-  ds = minval(patch%ds, mask=patch%mesh%n > 1)
+  if (all(patch%mesh%n == 1)) then
+    ds = minval(patch%ds)
+  else
+    ds = minval(patch%ds, mask=patch%mesh%n > 1)
+  end if
   n_min = particles_per_bin*min_fraction
   n_max = particles_per_bin*max_fraction
   !-----------------------------------------------------------------------------
@@ -611,7 +615,7 @@ SUBROUTINE update (self)
   times = 0d0
 #define TIMEIT(i) wc2=omp_get_wtime(); times(i)=times(i)+(wc2-wc1); wc1=wc2
 #else
-#define TIMEIT(i) 
+#define TIMEIT(i)
 #endif
   !-----------------------------------------------------------------------------
   ! After the import, the interior particles should be maximally smoothly
@@ -904,7 +908,7 @@ SUBROUTINE update (self)
   !
   ! total_momentum: momentum of entire experiment
   !   new_momentum: new momentum of this patch
-  !   old_momentum: old momentum of this patch  
+  !   old_momentum: old momentum of this patch
   !-----------------------------------------------------------------------------
   call self%update_momentum
   TIMEIT(13)
@@ -924,7 +928,7 @@ SUBROUTINE update (self)
   if (verbose > 1) then
     if (ne > 0) then
       write(stdlog,'(i6,2(2x,a,i8))') &
-        self%patch%id, 'added', ne, 'to exports with', nx 
+        self%patch%id, 'added', ne, 'to exports with', nx
     end if
   end if
   TIMEIT(14)
@@ -1087,7 +1091,7 @@ SUBROUTINE update_bins (self, dd, vd)
 END SUBROUTINE update_bins
 
 !===============================================================================
-!> Top up particles per size bin.  Note that if there are no particles it is 
+!> Top up particles per size bin.  Note that if there are no particles it is
 !> betteself%dd(i1,i2,i3,i4) to do nothing than to add particles, since they would either have to
 !> have zero weight, or they would add additional dust mass.
 !===============================================================================
@@ -1306,7 +1310,7 @@ SUBROUTINE import (self, count)
             ii(1) = self%patch%id; ii(2:4) = p%q(1:3); ii(5) = p%q(4)
           else if (verbose > 2) then
             write (stdlog,'(2i6,3f10.3,2x,a,4(2x,3i6))') &
-              self%patch%id,nbtask%id,dist,'rejected',p%q,q,self%lb,self%ub        
+              self%patch%id,nbtask%id,dist,'rejected',p%q,q,self%lb,self%ub
           end if
           p => next
         end do
@@ -1472,7 +1476,7 @@ SUBROUTINE poutput (self)
   integer, save:: iout = -99
   character(len=120):: file
   !-----------------------------------------------------------------------------
-  if (.not. particle_io) return 
+  if (.not. particle_io) return
   call trace%begin ('particle_solver_t%poutput(1)', itimer=itimer(1))
   call self%lock%set ('particle_solver_t%poutput')
   n = 0
@@ -1566,7 +1570,7 @@ subroutine harvest (copy)
   integer:: ng(4)
   real(8):: llc(3), ds(3), pos(3)
   !-----------------------------------------------------------------------------
-  llc = self%patch%position - self%patch%size/2d0 
+  llc = self%patch%position - self%patch%size/2d0
   ds = self%patch%ds
   ng(1:3) = self%patch%mesh%ng
   ng(4) = 0

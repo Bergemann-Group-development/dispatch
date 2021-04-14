@@ -516,7 +516,7 @@ SUBROUTINE pre_init (self)
 END SUBROUTINE pre_init
 
 !===============================================================================
-!> Mesh-related patch initialization.  Previously part of the %pre_init-chain 
+!> Mesh-related patch initialization.  Previously part of the %pre_init-chain
 !> of calls, but now part of the %init-chain
 !===============================================================================
 SUBROUTINE mesh_init (self)
@@ -904,7 +904,7 @@ FUNCTION myfloatindex_scalar (self, cpos, idir, h) RESULT(out)
 END FUNCTION myfloatindex_scalar
 
 !===============================================================================
-!> Periodic mapping of a grid -- typically the root grid. This is typically 
+!> Periodic mapping of a grid -- typically the root grid. This is typically
 !> only used in tests, so does not need to be efficient.
 !===============================================================================
 SUBROUTINE periodic_grid (self, only)
@@ -1288,7 +1288,7 @@ SUBROUTINE pack (self)
     allocate (self%mesg%lock)
     call self%mesg%lock%init ('smsg')
   end if
-  mesg => self%mesg 
+  mesg => self%mesg
   allocate (mesg%reqs(mpi%size))
   allocate (mesg%fail(mpi%size))
   allocate (mesg%ranks(mpi%size))
@@ -1386,7 +1386,7 @@ SUBROUTINE unpack (self, mesg)
   self%unpack_time = wallclock()
   buffer => mesg%buffer
   !--- 4-bytes per element; `anonymous_copy` also uses 4-bytes ---
-  n_buf = product(self%gn)      
+  n_buf = product(self%gn)
   !--- 8-bytes per element, but `anonymous_copy` uses 4-bytes! ---
   if (kind(self%mem)==8) n_buf = n_buf * 2
   !-----------------------------------------------------------------------------
@@ -1499,7 +1499,7 @@ END FUNCTION overlaps
 
 !===============================================================================
 !> Signed distance from task%position to self%position, wrapped in the case of a
-!> periodic box. 
+!> periodic box.
 !===============================================================================
 FUNCTION distance (self, task) RESULT (out)
   class(patch_t):: self
@@ -1644,7 +1644,11 @@ SUBROUTINE courant_condition (self, detailed_timer)
       ds(3) = min(ds(3),self%ds(3)*self%mesh(1)%h31c(i2)*abs(self%mesh(2)%h32c(i2)))
     end do
   end if
-  dsmin = minval(ds,self%n>1)
+  if (all(self%n==1)) then
+    dsmin = minval(ds)                  ! single cell tests
+  else
+    dsmin = minval(ds,self%n>1)         ! ignore n==1 dimensions
+  end if
   courant = self%courant
   if (self%dt_fixed > 0.0) then
     dtime = self%dt_fixed
@@ -2905,7 +2909,7 @@ END SUBROUTINE custom_refine
 
 !===============================================================================
 !> Check overlap and return overlap range in a patch, in terms interior region
-!> self indices.  In other words:  Get the self index range that the interior 
+!> self indices.  In other words:  Get the self index range that the interior
 !> of patch covers.  If guards==.true., then include also the guard zones of
 !> the patch.
 !===============================================================================
@@ -2941,7 +2945,7 @@ FUNCTION get_overlap (self, patch, guards, l, u) RESULT(overlap)
       ua = dist + patch%size/2d0
     end if
     !---------------------------------------------------------------------------
-    ! This works for both NML and NNML meshes: 
+    ! This works for both NML and NNML meshes:
     !---------------------------------------------------------------------------
     l =   floor(la/self%mesh%d + self%mesh%o)
     u = ceiling(ua/self%mesh%d + self%mesh%o)
@@ -2974,8 +2978,10 @@ END FUNCTION get_overlap
 SUBROUTINE init_level (self)
   class(patch_t):: self
   !-----------------------------------------------------------------------------
-  self%level = maxval(nint(log(self%box/self%ds) / &
-    log(real(self%refine_ratio))), mask=self%n > 1)
+  if (any(self%n > 1)) then
+    self%level = maxval(nint(log(self%box/self%ds) / &
+      log(real(self%refine_ratio))), mask=self%n > 1)
+  end if
 END SUBROUTINE init_level
 
 !===============================================================================

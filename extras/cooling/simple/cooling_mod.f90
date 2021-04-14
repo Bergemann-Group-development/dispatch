@@ -162,7 +162,7 @@ SUBROUTINE pre_update (self)
           eth0 = eth
           eth = eth + patch%dtime*qq
           eth = min(eth,eth_lim)
-          qq = (eth-eth0)/patch%dtime          
+          qq = (eth-eth0)/patch%dtime
         end if
       else if (patch%dt_fixed < 0d0) then
           self%dtime = min(self%dtime, courant*eth/max(crate,hrate))
@@ -212,7 +212,11 @@ SUBROUTINE courant_condition (self)
       end if
       !$omp atomic write
       patch%dtime = self%dtime
-      patch%u_max = maxval (patch%ds, mask=patch%n > 1)/patch%dtime
+      if (any(patch%n > 1)) then
+        patch%u_max = maxval (patch%ds, mask=patch%n > 1)/patch%dtime
+      else
+        patch%u_max = maxval (patch%ds)/patch%dtime
+      end if
     end if
   end if
   call trace%end ()
@@ -253,7 +257,7 @@ PURE FUNCTION heat (d, ee) RESULT (hrate)
     temp = ee*scaling%temp*mu
     nH1 = d*scaling%d/(mu*cgs%amu)
     hrate = merge(G0*nH1**2, G1*nH1, temp>T_G0)
-    hrate2 = G_MC*nH1*max(1.-temp/T_MC,0.0_dp) 
+    hrate2 = G_MC*nH1*max(1.-temp/T_MC,0.0_dp)
     onoff = exp(-nH1/N_crit)
     hrate = onoff*hrate + hrate2
     hrate = hrate/(d*scaling%d)         ! heating per unit mass in CGS
