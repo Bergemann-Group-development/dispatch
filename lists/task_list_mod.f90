@@ -23,6 +23,7 @@
 !===============================================================================
 MODULE task_list_mod
   USE io_mod
+  USE os_mod
   USE trace_mod
   USE omp_mod
   USE omp_timer_mod
@@ -251,14 +252,13 @@ SUBROUTINE startup (self)
   !-----------------------------------------------------------------------------
   call self%init_queue
   !-----------------------------------------------------------------------------
-  ! Make sure the namelist file is flushed, in case the run is interrupted  
+  ! Make sure the namelist file is flushed, in case the run is interrupted
   !-----------------------------------------------------------------------------
   flush (io%namelist)
   !-----------------------------------------------------------------------------
   ! Initialize the data I/O, and start timer
   !-----------------------------------------------------------------------------
-  if (mpi%master) &
-    print '(a,f8.3,a)', ' memory per process:', io%gb, ' GB'
+  call os%gb_print (os%gb)
   call mpi%barrier ('self%execute')
   call tic (time=sec)
 !  call timer%print()
@@ -664,14 +664,14 @@ SUBROUTINE dead_mans_hand_list (self)
   do while (associated(link))
     write (io_unit%mpi,*) 'task id, time =', link%task%id, link%task%time
     link => link%next
-  end do        
+  end do
   write (io_unit%mpi,*) 'tasks in garbage:'
   link => garbage%next
   do while (associated(link))
     write (io_unit%mpi,*) 'task id, time, n_needed =', &
       link%task%id, link%task%time, link%task%n_needed
     link => link%next
-  end do        
+  end do
 END SUBROUTINE dead_mans_hand_list
 
 !===============================================================================
@@ -831,7 +831,7 @@ END SUBROUTINE init_task_list_pointers
 
 !===============================================================================
 !> Initialize boundary bits, which may (optionally) be used to apply boundary
-!> conditions in experiment_t%update() procedures. 
+!> conditions in experiment_t%update() procedures.
 !===============================================================================
 SUBROUTINE init_bdries (self)
   implicit none

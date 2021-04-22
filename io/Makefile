@@ -3,7 +3,7 @@ VPATH := $(VPATH):$(TOP)/io
 
 # Dependencies
 io_unit_mod.o:
-os_mod.o:               io_unit_mod.o trace_mod.o mpi_mod.o omp_mod.o
+os_mod.o:               io_unit_mod.o trace_mod.o mpi_mod.o omp_mod.o kinds_mod.o
 io_mod.o:               omp_mod.o omp_timer_mod.o mpi_mod.o io_unit_mod.o timer_mod.o os_mod.o \
                         omp_lock_mod.o
 trace_mod.o:            io_unit_mod.o timer_mod.o

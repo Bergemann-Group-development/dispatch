@@ -59,7 +59,6 @@ MODULE io_mod
     real(8):: print_time=0d0
     real(8):: print_next=0d0
     real(8):: dtime=huge(1d0)   ! the shortest time step
-    real(8):: gb=0.0
     real(8):: job_seconds=1d30
     real(8):: processing=0d0
     real(8):: log_interval
@@ -80,8 +79,6 @@ MODULE io_mod
     procedure:: debug
     procedure:: check_flags
     procedure:: bits_mem
-    procedure:: gb_mem
-    procedure:: gb_print
     procedure:: namelist_warning
     procedure, nopass:: warning
     procedure, nopass:: abort
@@ -225,7 +222,7 @@ SUBROUTINE init (self, name)
     io_unit%do_trace = do_trace
     io_unit%omp_trace = omp_trace
     io_unit%run_dir = self%run_dir
-    io_unit%inputdir = self%inputdir    
+    io_unit%inputdir = self%inputdir
     io_unit%do_validate = do_validate
     !---------------------------------------------------------------------------
     ! Log-file names:
@@ -359,45 +356,8 @@ SUBROUTINE bits_mem (self, bits, count, label)
         (bits/(8.*1024.**3))*count, ' GB'
     end if
   end if
-  call self%gb_mem ((bits/(8.*1024.**3))*count)
+  call os%gb_mem (bits, count)
 END SUBROUTINE bits_mem
-
-!===============================================================================
-!> Register increase of memory, counted in gigabytes
-!===============================================================================
-SUBROUTINE gb_mem (self, gb)
-  class (io_t):: self
-  real:: gb, lgb
-  real, save:: gb_next=1.0
-  !-----------------------------------------------------------------------------
-  if (mpi%master) then
-    !$omp atomic capture
-    self%gb = self%gb + gb
-    lgb = self%gb
-    !$omp end atomic
-    if (abs(lgb - gb_next) > 1.0) then
-      !$omp critical (gb_cr)
-      if (abs(lgb - gb_next) > 1.0) then
-        do while (abs(lgb - gb_next) > 1.0)
-          call self%gb_print(lgb)
-          gb_next = gb_next + sign(1.0,lgb - gb_next)
-        end do
-      end if
-      !$omp end critical (gb_cr)
-    end if
-  end if
-END SUBROUTINE gb_mem
-
-!===============================================================================
-!> Register increase of memory, counted in gigabytes
-!===============================================================================
-SUBROUTINE gb_print (self, gb)
-  class (io_t):: self
-  real :: gb
-  !.............................................................................
-  print '(1x,a,f8.3,a)', 'process memory allocated:', gb,' GB'
-END SUBROUTINE gb_print
-
 
 !===============================================================================
 !> Check debug flag files.  To avoid having to synchronize when using MPI, we

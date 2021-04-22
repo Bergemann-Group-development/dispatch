@@ -5,13 +5,27 @@ MODULE os_mod
   USE omp_mod
   USE mpi_mod
   USE omp_timer_mod
+  USE kinds_mod
   implicit none
   private
   type, public:: os_t
+    real(8):: gb=0.0
   contains
     procedure, nopass:: mkdir
     procedure, nopass:: mkdir_next_output
     procedure, nopass:: copy_file
+    procedure:: allocate2
+    procedure:: allocate3
+    procedure:: allocate4
+    procedure:: allocate5
+    generic:: allocate => allocate2,allocate3,allocate4,allocate5
+    procedure:: deallocate2
+    procedure:: deallocate3
+    procedure:: deallocate4
+    procedure:: deallocate5
+    generic:: deallocate => deallocate2,deallocate3,deallocate4,deallocate5
+    procedure:: gb_mem
+    procedure:: gb_print
   end type
   type(os_t), public:: os
   real, parameter:: ms=100.
@@ -164,5 +178,109 @@ SUBROUTINE copy_file (file1, file2)
   end if
   call mpi%barrier ('copy_file')
 END SUBROUTINE copy_file
+
+SUBROUTINE allocate2 (self, a, m)
+  class(os_t):: self
+  real(var_k), pointer, contiguous:: a(:,:)
+  integer:: m(2)
+  !.............................................................................
+  allocate (a(m(1),m(2)))
+  call os%gb_mem (storage_size(a), product(shape(a)))
+END SUBROUTINE allocate2
+
+SUBROUTINE allocate3 (self, a, m)
+  class(os_t):: self
+  real(var_k), pointer, contiguous:: a(:,:,:)
+  integer:: m(3)
+  !.............................................................................
+  allocate (a(m(1),m(2),m(3)))
+  call os%gb_mem (storage_size(a), product(shape(a)))
+END SUBROUTINE allocate3
+
+SUBROUTINE allocate4 (self, a, m)
+  class(os_t):: self
+  real(var_k), pointer, contiguous:: a(:,:,:,:)
+  integer:: m(4)
+  !.............................................................................
+  allocate (a(m(1),m(2),m(3),m(4)))
+  call os%gb_mem (storage_size(a), product(shape(a)))
+END SUBROUTINE allocate4
+
+SUBROUTINE allocate5 (self, a, m)
+  class(os_t):: self
+  real(var_k), pointer, contiguous:: a(:,:,:,:,:)
+  integer:: m(5)
+  !.............................................................................
+  allocate (a(m(1),m(2),m(3),m(4),m(5)))
+  call os%gb_mem (storage_size(a), product(shape(a)))
+END SUBROUTINE allocate5
+
+SUBROUTINE deallocate2 (self, a)
+  class(os_t):: self
+  real(var_k), pointer, contiguous:: a(:,:)
+  !.............................................................................
+  call os%gb_mem (-storage_size(a), product(shape(a)))
+  deallocate (a)
+END SUBROUTINE deallocate2
+
+SUBROUTINE deallocate3 (self, a)
+  class(os_t):: self
+  real(var_k), pointer, contiguous:: a(:,:,:)
+  !.............................................................................
+  call os%gb_mem (-storage_size(a), product(shape(a)))
+  deallocate (a)
+END SUBROUTINE deallocate3
+
+SUBROUTINE deallocate4 (self, a)
+  class(os_t):: self
+  real(var_k), pointer, contiguous:: a(:,:,:,:)
+  !.............................................................................
+  call os%gb_mem (-storage_size(a), product(shape(a)))
+  deallocate (a)
+END SUBROUTINE deallocate4
+
+SUBROUTINE deallocate5 (self, a)
+  class(os_t):: self
+  real(var_k), pointer, contiguous:: a(:,:,:,:,:)
+  !.............................................................................
+  call os%gb_mem (-storage_size(a), product(shape(a)))
+  deallocate (a)
+END SUBROUTINE deallocate5
+
+!===============================================================================
+!> Register increase of memory, counted in gigabytes
+!===============================================================================
+SUBROUTINE gb_mem (self, bits, count)
+  class (os_t):: self
+  integer(4):: bits, count
+  real(8):: gb, lgb
+  real, save:: gb_next=1.0
+  !-----------------------------------------------------------------------------
+  gb = (bits/(8.*1024.**3))*count
+  !$omp atomic capture
+  self%gb = self%gb + gb
+  lgb = self%gb
+  !$omp end atomic
+  if (abs(lgb - gb_next) > 1.0) then
+    !$omp critical (gb_cr)
+    if (abs(lgb - gb_next) > 1.0) then
+      do while (abs(lgb - gb_next) > 1.0)
+        call self%gb_print (lgb)
+        gb_next = gb_next + sign(1d0,lgb-gb_next)
+      end do
+    end if
+    !$omp end critical (gb_cr)
+  end if
+END SUBROUTINE gb_mem
+
+!===============================================================================
+!> Print memory use, gigabytes
+!===============================================================================
+SUBROUTINE gb_print (self, gb)
+  class (os_t):: self
+  real(8):: gb
+  !.............................................................................
+  write (stdout,'(1x,a,f8.3,a)') 'process memory allocated:', gb,' GB'
+END SUBROUTINE gb_print
 
 END MODULE os_mod
