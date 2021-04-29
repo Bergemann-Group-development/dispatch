@@ -63,9 +63,13 @@ SUBROUTINE pre_update (self)
   real, dimension(:,:,:), allocatable:: d2u3u1, d2u3u2
   real, dimension(:,:,:,:), pointer, contiguous:: ff
   integer:: i1, i2, i3, m(3)
+  real::c1, c2, c3
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('viscosity_t%pre_update', itimer=itimer)
+  c1 = 1./self%patch%ds(1)
+  c1 = 1./self%patch%ds(2)
+  c1 = 1./self%patch%ds(3)
   m = self%patch%gn
   d  => self%d
   u1 => self%u1
@@ -89,33 +93,33 @@ SUBROUTINE pre_update (self)
   do i3=2,m(3)-1
   do i2=2,m(2)-1
   do i1=2,m(1)-1
-    du1(i1,i2,i3) = u1(i1,i2,i3) - u1(i1-1,i2,i3)
-    du2(i1,i2,i3) = u2(i1,i2,i3) - u1(i1,i2-1,i3)
-    du3(i1,i2,i3) = u3(i1,i2,i3) - u1(i1,i2,i3-1)
+    du1(i1,i2,i3) = (u1(i1,i2,i3) - u1(i1-1,i2,i3))*c1
+    du2(i1,i2,i3) = (u2(i1,i2,i3) - u1(i1,i2-1,i3))*c2
+    du3(i1,i2,i3) = (u3(i1,i2,i3) - u1(i1,i2,i3-1))*c3
   end do
   end do
   end do
   do i3=2,m(3)-1
   do i2=2,m(2)-1
   do i1=2,m(1)-1
-    d2u1(i1,i2,i3) =  (du1(i1+1,i2,i3) - du1(i1,i2,i3))*d(i1,i2,i3)
-    d2u2(i1,i2,i3) =  (du2(i1,i2+1,i3) - du1(i1,i2,i3))*d(i1,i2,i3)
-    d2u3(i1,i2,i3) =  (du3(i1,i2,i3+1) - du1(i1,i2,i3))*d(i1,i2,i3)
-    d1u1(i1,i2,i3) = ((du1(i1+1,i2,i3) + du1(i1,i2,i3))*d(i1,i2,i3))*0.5
-    d1u2(i1,i2,i3) = ((du1(i1,i2+1,i3) + du1(i1,i2,i3))*d(i1,i2,i3))*0.5
-    d1u3(i1,i2,i3) = ((du1(i1,i2,i3+1) + du1(i1,i2,i3))*d(i1,i2,i3))*0.5
+    d2u1(i1,i2,i3) =  (du1(i1+1,i2,i3) - du1(i1,i2,i3))*d(i1,i2,i3)*c1
+    d2u2(i1,i2,i3) =  (du2(i1,i2+1,i3) - du1(i1,i2,i3))*d(i1,i2,i3)*c2
+    d2u3(i1,i2,i3) =  (du3(i1,i2,i3+1) - du1(i1,i2,i3))*d(i1,i2,i3)*c3
+    d1u1(i1,i2,i3) = ((du1(i1+1,i2,i3) + du1(i1,i2,i3))*d(i1,i2,i3))*0.5*c1
+    d1u2(i1,i2,i3) = ((du1(i1,i2+1,i3) + du1(i1,i2,i3))*d(i1,i2,i3))*0.5*c2
+    d1u3(i1,i2,i3) = ((du1(i1,i2,i3+1) + du1(i1,i2,i3))*d(i1,i2,i3))*0.5*c3
   end do
   end do
   end do
   do i3=3,m(3)-2
   do i2=3,m(2)-2
   do i1=3,m(1)-2
-    d2u1u2(i1,i2,i3) = ((d1u1(i1,i2+1,i3) - du1(i1,i2-1,i3))*d(i1,i2,i3))*0.5
-    d2u1u3(i1,i2,i3) = ((d1u1(i1,i2,i3+1) - du1(i1,i2,i3-1))*d(i1,i2,i3))*0.5
-    d2u2u3(i1,i2,i3) = ((d1u2(i1,i2,i3+1) - du2(i1,i2,i3-1))*d(i1,i2,i3))*0.5
-    d2u2u1(i1,i2,i3) = ((d1u2(i1+1,i2,i3) - du2(i1-1,i2,i3))*d(i1,i2,i3))*0.5
-    d2u3u1(i1,i2,i3) = ((d1u3(i1+1,i2,i3) - du1(i1-1,i2,i3))*d(i1,i2,i3))*0.5
-    d2u3u2(i1,i2,i3) = ((d1u1(i1,i2+1,i3) - du1(i1,i2-1,i3))*d(i1,i2,i3))*0.5
+    d2u1u2(i1,i2,i3) = ((d1u1(i1,i2+1,i3) - du1(i1,i2-1,i3))*d(i1,i2,i3))*0.5*c2
+    d2u1u3(i1,i2,i3) = ((d1u1(i1,i2,i3+1) - du1(i1,i2,i3-1))*d(i1,i2,i3))*0.5*c3
+    d2u2u3(i1,i2,i3) = ((d1u2(i1,i2,i3+1) - du2(i1,i2,i3-1))*d(i1,i2,i3))*0.5*c3
+    d2u2u1(i1,i2,i3) = ((d1u2(i1+1,i2,i3) - du2(i1-1,i2,i3))*d(i1,i2,i3))*0.5*c1
+    d2u3u1(i1,i2,i3) = ((d1u3(i1+1,i2,i3) - du1(i1-1,i2,i3))*d(i1,i2,i3))*0.5*c1
+    d2u3u2(i1,i2,i3) = ((d1u1(i1,i2+1,i3) - du1(i1,i2-1,i3))*d(i1,i2,i3))*0.5*c2
   end do
   end do
   end do
@@ -123,18 +127,18 @@ SUBROUTINE pre_update (self)
   do i3=3,m(3)-2
   do i2=3,m(2)-2
   do i1=3,m(1)-2
-    ff(i1,i2,i3,1) =     0.5*d(i1,i2,i3)*( &
+    ff(i1,i2,i3,1) =    0.5*d(i1  ,i2,i3)*( &
                       (d2u1  (i1+1,i2,i3) - d2u1  (i1-1,i2,i3)) &
                     + (d2u1u2(i1,i2+1,i3) - d2u1u2(i1,i2-1,i3)) &
-                    + (d2u1u3(i1,i2,i3+1) - d2u1u3(i1,i2,i3-1)))
-    ff(i1,i2,i3,2) = d(i1,i2,i3)*( &
+                    + (d2u1u3(i1,i2,i3+1) - d2u1u3(i1,i2,i3-1)))*c1
+    ff(i1,i2,i3,2) =    0.5*d(i1 ,i2,i3)*( &
                       (d2u2u1(i1+1,i2,i3) - d2u1u2(i1-1,i2,i3)) &
                     + (d2u2  (i1,i2+1,i3) - d2u1  (i1,i2-1,i3)) &
-                    + (d2u2u3(i1,i2,i3+1) - d2u1u2(i1,i2,i3-1)))
-    ff(i1,i2,i3,3) = d(i1,i2,i3)*( &
+                    + (d2u2u3(i1,i2,i3+1) - d2u1u2(i1,i2,i3-1)))*c2
+    ff(i1,i2,i3,3) =    0.5*d(i1  ,i2,i3)*( &
                       (d2u3u1(i1+1,i2,i3) - d2u1u2(i1-1,i2,i3)) &
                     + (d2u3u2(i1,i2+1,i3) - d2u1u2(i1,i2-1,i3)) &
-                    + (d2u3  (i1,i2,i3+1) - d2u1  (i1,i2,i3-1)))
+                    + (d2u3  (i1,i2,i3+1) - d2u1  (i1,i2,i3-1)))*c3
   end do
   end do
   end do
