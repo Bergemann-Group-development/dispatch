@@ -349,13 +349,11 @@ FUNCTION vector_dup_vector1 (ds, in) RESULT (out)
 END FUNCTION vector_dup_vector1
 
 !===============================================================================
-FUNCTION vector_grad_scalar (mesh, in) RESULT(out)
+FUNCTION vector_grad_scalar (ds, in) RESULT(out)
   real, dimension(:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3),3):: out
-  class(mesh_t), dimension(:):: mesh
   real(8):: ds(3)
   !-----------------------------------------------------------------------------
-  ds = mesh%d
   out(:,:,:,1) = ddx (ds, in)
   out(:,:,:,2) = ddy (ds, in)
   out(:,:,:,3) = ddz (ds, in)
