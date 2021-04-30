@@ -117,7 +117,7 @@ SUBROUTINE pre_update (self)
   ui=self%patch%ui
   nn(1:3)=m
   nn(4) = 3
-  call scratch%allocate (scratch%force_per_unit_volume, nn)
+  call scratch%allocate (scratch%force_per_unit_mass, nn)
   d  => self%d
   u1 => self%u1
   u2 => self%u2
@@ -140,65 +140,65 @@ SUBROUTINE pre_update (self)
   do i3=2,m(3)
   do i2=2,m(2)
   do i1=2,m(1)
-    du1(i1,i2,i3) = u1(i1,i2,i3) - u1(i1-1,i2,i3)*c1
-    du2(i1,i2,i3) = u2(i1,i2,i3) - u2(i1,i2-1,i3)*c2
-    du3(i1,i2,i3) = u3(i1,i2,i3) - u2(i1,i2,i3-1)*c3
+    du1(i1,i2,i3) = u1(i1,i2,i3) - u1(i1-1,i2,i3)*c1 ! 1/t
+    du2(i1,i2,i3) = u2(i1,i2,i3) - u2(i1,i2-1,i3)*c2 ! 1/t
+    du3(i1,i2,i3) = u3(i1,i2,i3) - u3(i1,i2,i3-1)*c3 ! 1/t
   end do
   end do
   end do
   do i3=2,m(3)-1
   do i2=2,m(2)-1
   do i1=2,m(1)-1
-    d2u1(i1,i2,i3) =  (du1(i1+1,i2,i3) - du1(i1,i2,i3))*d(i1,i2,i3)*c1
-    d2u2(i1,i2,i3) =  (du2(i1,i2+1,i3) - du2(i1,i2,i3))*d(i1,i2,i3)*c2
-    d2u3(i1,i2,i3) =  (du3(i1,i2,i3+1) - du3(i1,i2,i3))*d(i1,i2,i3)*c3
-    d1u1(i1,i2,i3) = ((du1(i1+1,i2,i3) + du1(i1,i2,i3))*d(i1,i2,i3))*0.5*c1
-    d1u2(i1,i2,i3) = ((du2(i1,i2+1,i3) + du2(i1,i2,i3))*d(i1,i2,i3))*0.5*c2
-    d1u3(i1,i2,i3) = ((du3(i1,i2,i3+1) + du3(i1,i2,i3))*d(i1,i2,i3))*0.5*c3
+    d2u1(i1,i2,i3) = (du1(i1+1,i2,i3) - du1(i1,i2,i3))*d(i1,i2,i3)*c1 ! m/l^4t
+    d2u2(i1,i2,i3) = (du2(i1,i2+1,i3) - du2(i1,i2,i3))*d(i1,i2,i3)*c2 ! m/l^4t
+    d2u3(i1,i2,i3) = (du3(i1,i2,i3+1) - du3(i1,i2,i3))*d(i1,i2,i3)*c3 ! m/l^4t
+    d1u1(i1,i2,i3) = (du1(i1+1,i2,i3) + du1(i1,i2,i3))*0.5 ! 1/t *d(i1,i2,i3))*0.5*c1 ! m/l^4t
+    d1u2(i1,i2,i3) = (du2(i1,i2+1,i3) + du2(i1,i2,i3))*0.5 ! 1/t*d(i1,i2,i3))*0.5*c2 ! m/l^4t
+    d1u3(i1,i2,i3) = (du3(i1,i2,i3+1) + du3(i1,i2,i3))*0.5 ! 1/t*d(i1,i2,i3))*0.5*c3 ! m/l^4t
   end do
   end do
   end do
   do i3=3,m(3)-2
   do i2=3,m(2)-2
   do i1=3,m(1)-2
-    d2u1u2(i1,i2,i3) = ((d1u1(i1,i2+1,i3) - du2(i1,i2-1,i3))*d(i1,i2,i3))*0.5*c2
-    d2u1u3(i1,i2,i3) = ((d1u1(i1,i2,i3+1) - du3(i1,i2,i3-1))*d(i1,i2,i3))*0.5*c3
-    d2u2u3(i1,i2,i3) = ((d1u2(i1,i2,i3+1) - du3(i1,i2,i3-1))*d(i1,i2,i3))*0.5*c3
-    d2u2u1(i1,i2,i3) = ((d1u2(i1+1,i2,i3) - du2(i1-1,i2,i3))*d(i1,i2,i3))*0.5*c1
-    d2u3u1(i1,i2,i3) = ((d1u3(i1+1,i2,i3) - du1(i1-1,i2,i3))*d(i1,i2,i3))*0.5*c1
-    d2u3u2(i1,i2,i3) = ((d1u1(i1,i2+1,i3) - du1(i1,i2-1,i3))*d(i1,i2,i3))*0.5*c2
+    d2u1u2(i1,i2,i3) = ((d1u1(i1,i2+1,i3) - du2(i1,i2-1,i3))*d(i1,i2,i3))*0.5*c2 ! m/l^4t
+    d2u1u3(i1,i2,i3) = ((d1u1(i1,i2,i3+1) - du3(i1,i2,i3-1))*d(i1,i2,i3))*0.5*c3 ! m/l^4t
+    d2u2u3(i1,i2,i3) = ((d1u2(i1,i2,i3+1) - du3(i1,i2,i3-1))*d(i1,i2,i3))*0.5*c3 ! m/l^4t
+    d2u2u1(i1,i2,i3) = ((d1u2(i1+1,i2,i3) - du2(i1-1,i2,i3))*d(i1,i2,i3))*0.5*c1 ! m/l^4t
+    d2u3u1(i1,i2,i3) = ((d1u3(i1+1,i2,i3) - du1(i1-1,i2,i3))*d(i1,i2,i3))*0.5*c1 ! m/l^4t
+    d2u3u2(i1,i2,i3) = ((d1u1(i1,i2+1,i3) - du1(i1,i2-1,i3))*d(i1,i2,i3))*0.5*c2 ! m/l^4t
   end do
   end do
   end do
-  ff => scratch%force_per_unit_volume
+  ff => scratch%force_per_unit_mass
   do i3=li(3), ui(3)
   do i2=li(2), ui(2)
   do i1=li(1), ui(1)
-    ff(i1,i2,i3,1) =     0.5*self%mu*d(i1,i2,i3)*( &
+    ff(i1,i2,i3,1) =     0.5*self%mu/d(i1,i2,i3)*self%patch%ds(1)*( &
                       (d2u1  (i1+1,i2,i3) - d2u1  (i1-1,i2,i3)) &
                     + (d2u1u2(i1,i2+1,i3) - d2u1u2(i1,i2-1,i3)) &
-                    + (d2u1u3(i1,i2,i3+1) - d2u1u3(i1,i2,i3-1)))*c1
-    ff(i1,i2,i3,2) =     0.5*self%mu*d(i1,i2,i3)*( &
+                    + (d2u1u3(i1,i2,i3+1) - d2u1u3(i1,i2,i3-1)))
+    ff(i1,i2,i3,2) =     0.5*self%mu/d(i1,i2,i3)*self%patch%ds(2)*( &
                       (d2u2u1(i1+1,i2,i3) - d2u2u1(i1-1,i2,i3)) &
                     + (d2u2  (i1,i2+1,i3) - d2u2  (i1,i2-1,i3)) &
-                    + (d2u2u3(i1,i2,i3+1) - d2u2u3(i1,i2,i3-1)))*c2
-    ff(i1,i2,i3,3) =     0.5*self%mu*d(i1,i2,i3)*( &
+                    + (d2u2u3(i1,i2,i3+1) - d2u2u3(i1,i2,i3-1)))
+    ff(i1,i2,i3,3) =     0.5*self%mu/d(i1,i2,i3)*self%patch%ds(3)*( &
                       (d2u3u1(i1+1,i2,i3) - d2u3u1(i1-1,i2,i3)) &
                     + (d2u3u2(i1,i2+1,i3) - d2u3u2(i1,i2-1,i3)) &
-                    + (d2u3  (i1,i2,i3+1) - d2u3  (i1,i2,i3-1)))*c3
+                    + (d2u3  (i1,i2,i3+1) - d2u3  (i1,i2,i3-1)))
   end do
   end do
   end do
-  u_max = maxval(ff(li(1):ui(1),li(2):ui(2),li(3):ui(3),1))*ds(1)
-  u_max = u_max/(1.0+(self%mu*ds(1)**2))
+  u_max = maxval(ff(li(1):ui(1),li(2):ui(2),li(3):ui(3),1))!*ds(1)
+ ! u_max = u_max/(1.0+(self%mu*ds(1)**2))
   !print *, 'umax x', u_max
   self%u_max = max(self%u_max,u_max)
-  u_max = maxval(ff(li(1):ui(1),li(2):ui(2),li(3):ui(3),2))*ds(2)
-  u_max = u_max/(1.0+(self%mu*ds(2)**2))
+  u_max = maxval(ff(li(1):ui(1),li(2):ui(2),li(3):ui(3),2))!*ds(2)
+  !u_max = u_max/(1.0+(self%mu*ds(2)**2))
  ! print *, 'umax y', u_max
   self%u_max = max(self%u_max,u_max)
-  u_max = maxval(ff(li(1):ui(1),li(2):ui(2),li(3):ui(3),3))*ds(3)
-  u_max = u_max/(1.0+(self%mu*ds(3)**2))
+  u_max = maxval(ff(li(1):ui(1),li(2):ui(2),li(3):ui(3),3))!*ds(3)
+  !u_max = u_max/(1.0+(self%mu*ds(3)**2))
   !print *, 'umax z', u_max
   self%u_max = max(self%u_max,u_max)
   call self%unset_pointers()
