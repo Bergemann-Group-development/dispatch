@@ -9,8 +9,7 @@ MODULE experiment_mod
   private
   type, public, extends(solver_t):: experiment_t
   contains
-    procedure init
-    procedure update
+    procedure:: init
   end type
   logical, save:: first_time=.true.
 CONTAINS
@@ -29,18 +28,5 @@ SUBROUTINE init (self)
   call self%solver_t%init
   call trace%end()
 END SUBROUTINE init
-
-!===============================================================================
-!> Solver update; the default should be built into the solver
-!===============================================================================
-SUBROUTINE update (self)
-  class(experiment_t):: self
-  !----------------------------------------------------------------------------
-  call trace_begin('experiment_t%update')
-  !
-  call self%solver_t%update
-  !
-  call trace_end
-END SUBROUTINE update
 
 END MODULE

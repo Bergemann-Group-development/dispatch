@@ -66,18 +66,10 @@ MODULE extras_mod
   ! Optional modules start here.
   !-----------------------------------------------------------------------------
   USE initial_conditions_mod                                           ! initial
-  !USE selfgravity_mod                                                  ! selfg
-  !USE rt_mod                                                           ! RT
-  !USE newton_mod                                                       ! Newton
   !USE forces_mod                                                       ! forces
-  !USE trace_particles_mod                                              ! tracep
-  !USE spitzer_mod                                                      ! spitzer
   USE gravity_mod                                                      ! gravity
   USE viscosity_mod
   USE conduction_mod
-  !USE sink_particles_mod                                               ! sinkp
-  !USE pic_mod                                                          ! PIC
-  !USE cooling_mod                                                      ! cool
   !-----------------------------------------------------------------------------
   implicit none
   private
@@ -88,18 +80,10 @@ MODULE extras_mod
   type, public, extends(gpatch_t):: extras_t
     class(gpatch_t), pointer:: patch => null()                         ! keep
     type(initial_conditions_t):: initial_conditions                    ! initial
-    !type(selfgravity_t):: selfgravity                                  ! selfg
     !type(forces_t):: forces                                            ! forces
-    !class(pic_t), pointer:: pic                                        ! pic
-    !type (spitzer_t):: spitzer                                         ! spitzer
     type(gravity_t):: gravity                                          ! gravity
     type(viscosity_t):: viscosity                                       ! viscosity
     type(conduction_t):: conduction                                     ! viscosity
-    !class(rt_t), pointer:: rt => null()                                ! RT
-    !type(newton_t):: newton                                            ! Newton
-    !class(trace_particles_t), pointer:: trace_particles                ! tracep
-    !real, dimension(:,:,:,:), pointer:: v                              ! tracep
-    !type(cooling_t):: cooling                                          ! cool
   contains
     procedure, nopass:: cast2extras
     procedure:: pre_init
@@ -128,21 +112,10 @@ SUBROUTINE pre_init (self)
   self%patch => self                                                   ! keep
   call self%gpatch_t%pre_init                                          ! keep
   call self%initial_conditions%pre_init (self%patch)                   ! initial
-  !call self%selfgravity%pre_init (self%patch)                          ! selfg
-  !allocate(self%rt)                                                    ! RT
-  !self%rt%patch => self                                                ! RT
-  !call self%rt%pre_init                                                ! RT
-  !call self%newton%pre_init  (self)                                    ! Newton
   call self%gravity%pre_init (self)                                    ! gravity
   call self%viscosity%pre_init (self)                                    ! gravity
   call self%conduction%pre_init (self)                                    ! gravity
-  !call self%spitzer%pre_init (self)                                    ! spitzer
   !call self%forces%pre_init (self%patch)                               ! forces
-  !allocate (self%trace_particles)                                      ! tracep
-  !self%connect%trace_particles => self%trace_particles                 ! tracep
-  !allocate (self%pic)                                                  ! pic
-  !self%connect%pic_patch => self%pic                                   ! pic
-  !call self%pic%pre_init (self%patch)                                  ! pic
 END SUBROUTINE pre_init
 
 !===============================================================================
@@ -157,21 +130,8 @@ SUBROUTINE init (self)
   ! Optional inits
   !-----------------------------------------------------------------------------
   call self%initial_conditions%init                                    ! initial
-  !call self%selfgravity%init                                           ! selfg
   !call self%forces%init                                                ! forces
-  !call self%newton%init                                                ! Newton
-  !allocate (self%trace_particles)                                      ! tracep
-  !self%connect%trace_particles => self%trace_particles                 ! tracep
-  !call self%trace_particles%add (self%link%task)                       ! tracep
-  !call self%pic%init                                                   ! pic
-  !if (self%pic%on) self%do_mhd = self%pic%do_mhd                       ! pic
-  !call self%spitzer%init                                               ! spitzer
   call self%gravity%init                                               ! gravity
-  !call self%rt%init_task (self%rt)                                     ! RT
-  ! -- ensure consistency (a value is already set via rt%init)          ! experiment
-  !self%rt%rt_boundaries%grav = self%gravity%const_grav                 ! experiment
-  !call sink_particles%init                                             ! sinkp
-  !call self%cooling%init                                               ! cool
   call trace%end()
 END SUBROUTINE init
 
@@ -214,18 +174,11 @@ SUBROUTINE pre_update (self)
   class(extras_t), target:: self
   !.............................................................................
   call trace%begin ('extras_t%pre_update')                             ! keep
-  !call self%selfgravity%pre_update                                     ! selfg
-  !call self%rt%pre_update                                              ! RT
-  !call self%newton%pre_update                                          ! Newton
+  call self%gpatch_t%pre_update ()                                     ! keep
   !call self%forces%pre_update                                          ! forces
-  !call self%trace_particles%update                                     ! tracep
-  !call self%spitzer%pre_update()                                       ! spitzer
   call self%gravity%pre_update()                                       ! gravity
-  call self%viscosity%pre_update()                                      ! viscosity
-  call self%conduction%pre_update()                                      ! viscosity
-  !call sink_particles%force_field ()                                   ! sinkp
-  !call self%pic%pre_update()                                           ! pic
-  !call self%cooling%pre_update ()                                      ! cool
+  call self%viscosity%pre_update()                                     ! viscosity
+  call self%conduction%pre_update()                                    ! conduct
   call trace%end()
 END SUBROUTINE pre_update
 
