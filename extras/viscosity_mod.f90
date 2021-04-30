@@ -164,9 +164,9 @@ SUBROUTINE pre_update (self)
     d2u1u2(i1,i2,i3) = ((d1u1(i1,i2+1,i3) - du2(i1,i2-1,i3))*d(i1,i2,i3))*0.5*c2 ! m/l^4t
     d2u1u3(i1,i2,i3) = ((d1u1(i1,i2,i3+1) - du3(i1,i2,i3-1))*d(i1,i2,i3))*0.5*c3 ! m/l^4t
     d2u2u3(i1,i2,i3) = ((d1u2(i1,i2,i3+1) - du3(i1,i2,i3-1))*d(i1,i2,i3))*0.5*c3 ! m/l^4t
-    d2u2u1(i1,i2,i3) = ((d1u2(i1+1,i2,i3) - du2(i1-1,i2,i3))*d(i1,i2,i3))*0.5*c1 ! m/l^4t
+    d2u2u1(i1,i2,i3) = ((d1u2(i1+1,i2,i3) - du1(i1-1,i2,i3))*d(i1,i2,i3))*0.5*c1 ! m/l^4t
     d2u3u1(i1,i2,i3) = ((d1u3(i1+1,i2,i3) - du1(i1-1,i2,i3))*d(i1,i2,i3))*0.5*c1 ! m/l^4t
-    d2u3u2(i1,i2,i3) = ((d1u1(i1,i2+1,i3) - du1(i1,i2-1,i3))*d(i1,i2,i3))*0.5*c2 ! m/l^4t
+    d2u3u2(i1,i2,i3) = ((d1u3(i1,i2+1,i3) - du2(i1,i2-1,i3))*d(i1,i2,i3))*0.5*c2 ! m/l^4t
   end do
   end do
   end do
