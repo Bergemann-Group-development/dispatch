@@ -1,3 +1,5 @@
+&experiment_params flux_BC=t sigma=0.1 theta=10 /
+
 !----------------- I/O paramters -----------------------------------------------------
 &io_params         verbose=0 do_trace=f do_debug=f do_output=t
                    guard_zones=t nml_version=1 /
@@ -6,7 +8,6 @@
 !----------------- Initial condition parameter ---------------------------------------
 &patch_params      nt=5 n=16,16,16 do_check_nan=f grace=0.1 dt_fixed=-1e-4 /
 &cartesian_params  size=4,4,1 dims=8,8,2 mpi_dims=2,2,1 origin=3*0.0 periodic=t,t,f /
-&IC_params         theta=10.0 sigma=1.0 /
 
 !----------------- Refinemennt parameters --------------------------------------------
 &refine_params     on=f levelmax=12 levelmin=1 verbose=3 check_interval=2 /
@@ -19,8 +20,8 @@
 &ramses_params     slope_type=3.5 smallr=1e-2 smallc=0.1 /
 &non_ideal_params  mhd_Ohm=f eta_Ohm=0.1 mhd_AD=f /
 &gravity_params    on=t constant=20 axis=3 position=0.0 mass=-1 minrad=-1 /
-&viscosity_params  on=f mu=0.000 /
-&conduction_params on=f sigma=0.0 / !0.025
+&viscosity_params  on=f dynamic=t /
+&conduction_params on=f /
 
 !                     cs    pa   ofd  mas  kap  eta
 &stagger_params    nu=0.10, 1.0, 1.0, 0.0, 1.0, 1.0 courant=0.10 do_maxwell=t /

@@ -16,22 +16,42 @@ MODULE boundaries_mod
   implicit none
   private
   type, extends(standard_boundaries_t), public:: boundaries_t
-    !--------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     ! Experiment - specific variables
-    !--------------------------------------------------------------------------
-    real::   g=20.
-    real::   theta=10.0
-    real::   mpoly=1.0
+    !---------------------------------------------------------------------------
+    real:: g = 20.
+    real:: theta = 10.0
+    real:: mpoly = 1.0
+    logical:: flux_BC = .true.
   contains
-    !--------------------------------------------------------------------------
-    ! Default procedures
-    !--------------------------------------------------------------------------
     procedure:: primary
-    !--------------------------------------------------------------------------
-    ! Experiment - specific procedures
-    !--------------------------------------------------------------------------
   end type
 CONTAINS
+
+!===============================================================================
+!===============================================================================
+SUBROUTINE init (self)
+  class(boundaries_t):: self
+  integer:: iostat
+  logical:: flux_BC = .true.
+  real:: theta = 10.0
+  real:: mpoly = 1.0
+  namelist /boundaries_params/ theta, mpoly, flux_BC
+  !-----------------------------------------------------------------------------
+  call trace%begin ('boundaries_t%init')
+  call self%standard_boundaries_t%init ()
+  call io%lock%set ('boundaries_t%init')
+  rewind (io%input)
+  read (io%input, boundaries_params, iostat=iostat)
+  if (iostat > 0) then
+    rewind (io%input)
+    read (io%input, boundaries_params)
+  end if
+  call io%namelist_warning ('boundaries_params', iostat)
+  write (io%namelist,boundaries_params)
+  call io%lock%unset ('boundaries_t%init')
+  call trace%end ()
+END SUBROUTINE init
 
 !===============================================================================
 !> Boundary conditions as specified in the benchmark
@@ -46,7 +66,7 @@ SUBROUTINE primary(self, mem)
   class(mesh_t), pointer:: m(:)
   integer:: ix, iy, iz, n(3)
   real(8), pointer:: z(:)
-  real:: h, f
+  real:: h, f, tt0, tt1
   !----------------------------------------------------------------------------
   call trace_begin('boundaries_t%primary')
   patch => self%patch
@@ -95,6 +115,19 @@ SUBROUTINE primary(self, mem)
         end do
       end do
     end do
+  end if
+  if (m(3)%upper_boundary) then
+    if (self%flux_BC) then
+      do iy=m(2)%lb,m(2)%ub
+        do iz=m(3)%uo,m(3)%ub
+          do ix=m(1)%lb, m(1)%ub
+            tt0 = e(ix,iy,m(3)%ui)/d(ix,iy,m(3)%ui)*(eos%gamma-1d0)
+            tt1 = tt0 + self%theta*(z(iz)-z(m(3)%li))
+            e(ix,iy,iz) = tt1*d(ix,iy,iz)/(eos%gamma-1d0)
+          end do
+        end do
+      end do
+    end if
   end if
   !----------------------------------------------------------------------------
   ! Both top and bottom boundary are identical and are an "inpenetrable wall"

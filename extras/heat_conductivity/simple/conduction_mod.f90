@@ -16,7 +16,7 @@ MODULE conduction_mod
   implicit none
   private
   type, public:: conduction_t
-    real(kind=var_k):: sigma_sc = 0.0
+    real(kind=var_k):: kappa = 0.0
     real(kind=var_k):: u_max = 0.0
     class(gpatch_t), pointer:: patch
     logical:: on = .false.
@@ -25,9 +25,6 @@ MODULE conduction_mod
     procedure:: courant_condition
     procedure:: pre_update
   end type
-  real, save:: sigma=1e-3
-  logical, save:: on = .false.
-  logical, save:: first_time = .true.
 CONTAINS
 
 !===============================================================================
@@ -38,7 +35,10 @@ SUBROUTINE pre_init (self, gpatch)
   class (gpatch_t), target :: gpatch
   ! ----------------------------------------------------------------------------
   integer:: iostat
-  namelist /conduction_params/ on, sigma
+  real::    kappa = 0.0
+  logical:: on    = .false.
+  logical:: first_time = .true.
+  namelist /conduction_params/ on, kappa
   !.............................................................................
   call trace%begin ('conduction_t%init')
   call io%lock%set ('conduction_t%init')
@@ -51,7 +51,7 @@ SUBROUTINE pre_init (self, gpatch)
   call io%lock%unset('conduction_t%init')
   if (on) then
     self%patch => gpatch
-    self%sigma_sc = sigma * scaling%t / scaling%l**2
+    self%kappa = kappa
     self%on = on
   end if
   call trace%end ()
@@ -91,7 +91,7 @@ SUBROUTINE pre_update(self)
   call eos%lookup_table (n, d=d, e=e, tt=tg)
   tg_grad = grad (self%patch%mesh, tg)
   do i=1,3
-    tg_grad(:,:,:,i) = - tg_grad(:,:,:,i) * self%sigma_sc
+    tg_grad(:,:,:,i) = - tg_grad(:,:,:,i) * (self%kappa * (eos%gamma-1d9))
   end do
   !-----------------------------------------------------------------------------
   ! The heating per unit volume is the divergence of the negative flux
@@ -99,7 +99,7 @@ SUBROUTINE pre_update(self)
   call scratch%allocate (scratch%heating_per_unit_volume, self%patch%mesh%gn)
   scratch%heating_per_unit_volume = &
   scratch%heating_per_unit_volume - div (self%patch%ds, tg_grad)
-  self%u_max = self%sigma_sc*(1.0/ds(1)**2 + 1.0/ds(2)**2 + 1.0/ds(3)**2)
+  self%u_max = self%kappa*(1.0/ds(1)**2 + 1.0/ds(2)**2 + 1.0/ds(3)**2)
   !
   deallocate(tg,tg_grad)
   call trace%end (itimer, detailed_timer=timer%detailed )

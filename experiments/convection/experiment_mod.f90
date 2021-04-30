@@ -19,6 +19,7 @@ MODULE experiment_mod
   USE trace_mod
   USE solver_mod
   USE kinds_mod
+  USE eos_mod
   implicit none
   private
   type, public, extends(solver_t):: experiment_t
@@ -27,6 +28,11 @@ MODULE experiment_mod
     procedure:: bndries
     procedure:: update
   end type
+  real::    mu    = 0.0
+  real::    kappa = 0.07
+  real::    sigma = 0.1
+  real::    theta = 10.
+  logical:: flux_BC = .true.
   logical, save:: first_time=.true.
 CONTAINS
 
@@ -35,9 +41,32 @@ CONTAINS
 !===============================================================================
 SUBROUTINE init (self)
   class(experiment_t):: self
+  integer:: iostat
+  namelist /experiment_params/ flux_BC, sigma, theta
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%init')
   call self%solver_t%init
+  call io%lock%set ('experiment_t%init')
+    if (first_time) then
+      rewind (io%input)
+      read (io%input, experiment_params, iostat=iostat)
+      if (iostat > 0) then
+        rewind (io%input)
+        read (io%input, experiment_params)
+      end if
+      call io%namelist_warning ('experiment_params', iostat)
+      write (io%namelist, experiment_params)
+      first_time = .false.
+    end if
+    !---------------------------------------------------------------------------
+    ! Compute and set viscosity and conduction parameters
+    !---------------------------------------------------------------------------
+    mu = (eos%gamma-1d0)**2 * kappa / eos%gamma * sigma
+    self%viscosity%mu       = mu
+    self%conduction%kappa   = kappa
+    self%boundaries%flux_BC = flux_BC
+    self%boundaries%theta   = theta
+  call io%lock%unset ('experiment_t%init')
   call trace%end()
 END SUBROUTINE init
 
@@ -49,7 +78,7 @@ SUBROUTINE bndries (self)
   real(var_k), dimension(:,:,:,:), pointer, contiguous:: mem
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%bndries')
-  mem => self%mem(:,:,:,:,self%new,1)
+  mem => self%mem(:,:,:,:,self%it,1)
   call self%boundaries%primary (mem)
   call trace%end()
 END SUBROUTINE bndries

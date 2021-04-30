@@ -1,4 +1,5 @@
 !===============================================================================
+!> Initial conditions for Whole Sun convection benchmark
 !===============================================================================
 MODULE initial_conditions_mod
   USE io_mod
@@ -19,8 +20,9 @@ MODULE initial_conditions_mod
     procedure:: pre_init
     procedure:: init
   end type
-  real, save:: theta=10.0
-  real, save:: sigma=1.0
+  real:: theta     = 10.0
+  real:: mpoly     = 1.0
+  real:: amplitude = 1e-3
   type(random_t):: random
 CONTAINS
 
@@ -31,10 +33,11 @@ SUBROUTINE pre_init (self, patch)
   class(initial_conditions_t):: self
   class(gpatch_t), pointer:: patch
   !.............................................................................
+  integer:: iostat
   integer, save:: idirect
   real(8), save :: p0, v0, b0
   logical, save :: first_time=.true.
-  namelist /IC_params/ theta, sigma
+  namelist /IC_params/ theta, mpoly, amplitude
   !-----------------------------------------------------------------------------
   call trace_begin('initial_conditions_t%pre_init')
   self%patch => patch
@@ -44,7 +47,12 @@ SUBROUTINE pre_init (self, patch)
   if (first_time) then
     ! default values for namelist parameters
     rewind (io%input)
-    read (io%input, IC_params)
+    read (io%input, IC_params, iostat=iostat)
+    if (iostat > 0) then
+      rewind (io%input)
+      read (io%input, IC_params, iostat=iostat)
+    end if
+    call io%namelist_warning ('IC_params', iostat)
     write (io%namelist, IC_params)
     first_time = .false.
   end if
@@ -63,8 +71,6 @@ SUBROUTINE init (self)
   class(mesh_t), pointer, dimension(:) :: m
   real, dimension(:,:,:,:), pointer :: ff
   integer:: ix, iy, iz                                       ! loop indices
-  real:: mpoly=1.0
-  real:: amplitude=1e-3
   real:: z,zz, pg, p_pert, rhov2, B2
   real,dimension(:,:,:),allocatable :: vecpot, emag
   !-----------------------------------------------------------------------------
@@ -78,14 +84,6 @@ SUBROUTINE init (self)
     allocate(emag(m(1)%gn,m(2)%gn,m(3)%gn))
     emag=0.0
   end if
-! d0 = eos%gamma * self%p0
-! "pre"-initialisation of all variables, independent of `idirect`.
-! if (eos%gamma==1.0) then
-!   entropy = 1.0
-! else
-!   entropy = (log(self%p0)-log(d0)*eos%gamma)/(eos%gamma-1.0)
-! end if
-!
 !
   do iz=m(3)%lb,m(3)%ub
     z = max(m(3)%p + m(3)%r(iz),0.0)
