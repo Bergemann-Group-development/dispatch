@@ -25,6 +25,7 @@ MODULE standard_boundaries_mod
     logical(kind=2), pointer:: filled(:,:,:,:)
     logical:: check_filled=.false.
   contains
+    procedure:: pre_init
     procedure:: init
     procedure:: set
     procedure:: is_set
@@ -53,20 +54,31 @@ MODULE standard_boundaries_mod
 CONTAINS
 
 !===============================================================================
+!===============================================================================
+SUBROUTINE pre_init (self, patch)
+  class(standard_boundaries_t) :: self
+  class(patch_t), target       :: patch
+  call trace%begin ('standard_boundaries_t%init')
+  self%patch => patch
+  call trace%end ()
+END SUBROUTINE pre_init
+
+!===============================================================================
 !> Initialize the boundary data type, while testing also if the patch contains
 !> a spherical boundary, or possibly is completely immersed in such a boundary.
 !===============================================================================
-SUBROUTINE init (self, patch)
+SUBROUTINE init (self)
   class(standard_boundaries_t) :: self
-  class(patch_t), target               :: patch
-  integer                      :: id
   !.............................................................................
+  class(patch_t), pointer      :: patch
+  integer                      :: id
   real(8)                      :: position(3)
   real(8)                      :: size(3), p(3), limit(3)
   integer                      :: i, j, k
   logical                      :: one_inside, all_inside
   !-----------------------------------------------------------------------------
   call trace%begin ('standard_boundaries_t%init')
+  patch => self%patch
   self%id = patch%id
   self%patch => patch
   self%radius = patch%radius

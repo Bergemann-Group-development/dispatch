@@ -36,12 +36,13 @@ MODULE gpatch_mod
     character(len=8):: etype='thermal' ! or 'total', 'entropy'
   contains
     procedure, nopass:: cast2gpatch
+    procedure:: pre_init
+    procedure:: init
     procedure:: init_bdries
     procedure:: init_task_list
     procedure:: pre_update
     procedure:: input
     procedure:: output
-    procedure:: init
     procedure:: counter_update
     procedure:: dnload
     procedure:: courant_condition
@@ -86,11 +87,23 @@ END FUNCTION cast2gpatch
 !===============================================================================
 !> Initialize boundary bits
 !===============================================================================
+SUBROUTINE pre_init (self)
+  class(gpatch_t), target:: self
+  !-----------------------------------------------------------------------------
+  call trace%begin ('gpatch_t%pre_init')
+  call self%patch_t%pre_init
+  call self%boundaries%pre_init (self)
+  call trace%end()
+END SUBROUTINE pre_init
+
+!===============================================================================
+!> Initialize boundary bits
+!===============================================================================
 SUBROUTINE init_bdries (self)
   class(gpatch_t):: self
   !-----------------------------------------------------------------------------
   call trace%begin ('gpatch_t%init_bdries')
-  call self%boundaries%init (self)
+  call self%boundaries%init ()
   call trace%end()
 END SUBROUTINE init_bdries
 
@@ -181,6 +194,7 @@ SUBROUTINE init (self)
   call trace%begin ('gpatch_t%init')
   call io_unit%print_id (id)
   call self%patch_t%init
+  call self%init_bdries ()
   call data_io%init (self)
   call trace%end()
 END SUBROUTINE init
@@ -604,7 +618,7 @@ contains
       real(timer%n_update), ntask, nq, counts, &
       mpi_mesg%nq_send, mpi_mesg%nq_recv, &
       self%is_set(bits%boundary), self%is_set(bits%virtual)
-  end subroutine write_info 
+  end subroutine write_info
 END SUBROUTINE info
 
 !===============================================================================
