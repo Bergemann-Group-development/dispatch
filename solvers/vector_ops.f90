@@ -66,7 +66,8 @@ MODULE vector_ops
     module procedure vector_dup_vector1
   end interface
   interface grad
-    module procedure vector_grad_scalar
+    module procedure vector_grad_scalar_mesh
+    module procedure vector_grad_scalar_ds
   end interface
   interface div
     module procedure scalar_div_vector
@@ -349,7 +350,19 @@ FUNCTION vector_dup_vector1 (ds, in) RESULT (out)
 END FUNCTION vector_dup_vector1
 
 !===============================================================================
-FUNCTION vector_grad_scalar (ds, in) RESULT(out)
+FUNCTION vector_grad_scalar_mesh (mesh, in) RESULT(out)
+  real, dimension(:,:,:), intent(in):: in
+  real, dimension(size(in,1),size(in,2),size(in,3),3):: out
+  class(mesh_t), pointer:: mesh(:)
+  real(8):: ds(3)
+  !-----------------------------------------------------------------------------
+  ds = mesh%d
+  out(:,:,:,1) = ddx (ds, in)
+  out(:,:,:,2) = ddy (ds, in)
+  out(:,:,:,3) = ddz (ds, in)
+END FUNCTION
+!===============================================================================
+FUNCTION vector_grad_scalar_ds (ds, in) RESULT(out)
   real, dimension(:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3),3):: out
   real(8):: ds(3)
@@ -359,12 +372,15 @@ FUNCTION vector_grad_scalar (ds, in) RESULT(out)
   out(:,:,:,3) = ddz (ds, in)
 END FUNCTION
 !===============================================================================
-FUNCTION scalar_div_vector (ds, in) RESULT (out)
+FUNCTION scalar_div_vector (ds, in, l, u) RESULT (out)
   real, dimension(:,:,:,:), intent(in):: in
+  integer, optional:: l(3), u(3)
   real, dimension(size(in,1),size(in,2),size(in,3)):: out
   real(8):: ds(3)
   !-----------------------------------------------------------------------------
-  out = ddx(ds, in(:,:,:,1)) + ddy(ds, in(:,:,:,2)) + ddz(ds, in(:,:,:,3))
+  out = ddx(ds, in(:,:,:,1), l, u) &
+      + ddy(ds, in(:,:,:,2), l, u) &
+      + ddz(ds, in(:,:,:,3), l, u)
 END FUNCTION
 !===============================================================================
 FUNCTION scalar_div_dn_vector (ds, in) RESULT (out)

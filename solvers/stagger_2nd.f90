@@ -163,130 +163,166 @@ FUNCTION zup1 (a) RESULT (b)
 END FUNCTION zup1
 
 !*******************************************************************************
-FUNCTION ddx (ds, a) RESULT (b)
+FUNCTION ddx (ds, a, l, u) RESULT (b)
   real, dimension(:,:,:), intent(in):: a
+  integer, optional:: l(3), u(3)
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   real(8):: ds(3), c
-  integer :: ix, iy, iz, n(3)
+  logical:: out(3)
+  integer :: ix, iy, iz, n(3), ll(3), uu(3)
   integer, save:: itimer=0
 !...............................................................................
-  !call trace%begin ('stagger_mod::ddx', itimer=itimer)
   n = shape(a)
-!  if (hardwire) then
-!    if (all(n==[16,16,16])) then
-!      call dxdn_16 (ds,a,b)
-!    else if (all(n==[20,20,20])) then
-!      call dxdn_20 (ds,a,b)
-!    else if (all(n==[24,24,24])) then
-!      call dxdn_24 (ds,a,b)
-!    else if (all(n==[32,32,32])) then
-!      call dxdn_32 (ds,a,b)
-!    else if (all(n==[36,36,36])) then
-!      call dxdn_36 (ds,a,b)
-!    end if
-!  else if (n(1) > 1) then
-  if (n(1) > 1) then
-    b(   1,:,:) = 0.0
-    b(n(1),:,:) = 0.0
-    c = 0.5/ds(1)
-    do iz=1,n(3)
-    do iy=1,n(2)
-    !$vector always assert
-    do ix=2,n(1)-1
-      b(ix,iy,iz) = c*(a(ix+1,iy,iz) - a(ix-1,iy,iz))
-    end do
-    end do
-    end do
+  if (present(l)) then
+    ll = l
   else
-    b = 0.0
-  endif
-  !call trace%end (itimer)
+    ll = 2
+  end if
+  if (present(u)) then
+    uu = u
+  else
+    uu = n-1
+  end if
+  c = 0.5/ds(1)
+  do iz=1,n(3)
+    out(3) = iz < ll(3) .or. iz > uu(3)
+    do iy=1,n(2)
+      out(2) = iy < ll(2) .or. iy > uu(2)
+      !-------------------------------------------------------------------------
+      ! If line is outside yz, set zero values
+      !-------------------------------------------------------------------------
+      if (out(2) .or. out(3)) then
+        !$vector always assert
+        do ix=1,n(1)
+          b(ix,iy,iz) = 0.0
+        end do
+      !-------------------------------------------------------------------------
+      ! If line is inside yz, split in three parts
+      !-------------------------------------------------------------------------
+      else
+        do ix=1,ll(1)-1
+          b(ix,iy,iz) = 0.0
+        end do
+        !$vector always assert
+        do ix=ll(1),uu(1)
+          b(ix,iy,iz) = c*(a(ix+1,iy,iz) - a(ix-1,iy,iz))
+        end do
+        do ix=uu(1)+1,n(1)
+          b(ix,iy,iz) = 0.0
+        end do
+      end if
+    end do
+  end do
   stagger%flops = stagger%flops + 2*n(2)*n(3)*(n(1)-1)
   stagger%count = stagger%count + 1
 END FUNCTION ddx
 
 !*******************************************************************************
-FUNCTION ddy (ds, a) RESULT (b)
+FUNCTION ddy (ds, a, l, u) RESULT (b)
   real, dimension(:,:,:), intent(in):: a
+  integer, optional:: l(3), u(3)
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   real(8):: ds(3), c
-  integer :: ix, iy, iz, n(3)
+  logical:: out(3)
+  integer :: ix, iy, iz, n(3), ll(3), uu(3)
   integer, save:: itimer=0
 !...............................................................................
-  !call trace%begin ('stagger_mod::ddy', itimer=itimer)
   n = shape(a)
-!  if (hardwire) then
-!    if (all(n==[16,16,16])) then
-!      call dxdn_16 (ds,a,b)
-!    else if (all(n==[20,20,20])) then
-!      call dxdn_20 (ds,a,b)
-!    else if (all(n==[24,24,24])) then
-!      call dxdn_24 (ds,a,b)
-!    else if (all(n==[32,32,32])) then
-!      call dxdn_32 (ds,a,b)
-!    else if (all(n==[36,36,36])) then
-!      call dxdn_36 (ds,a,b)
-!    end if
-!  else if (n(1) > 1) then
-  if (n(2) > 1) then
-    b(:,   1,:) = 0.0
-    b(:,n(2),:) = 0.0
-    c = 0.5/ds(2)
-    do iz=1,n(3)
-    do iy=2,n(2)-1
-    !$vector always assert
-    do ix=1,n(1)
-      b(ix,iy,iz) = c*(a(ix,iy+1,iz) - a(ix,iy-1,iz))
-    end do
-    end do
-    end do
+  if (present(l)) then
+    ll = l
   else
-    b = 0.0
-  endif
-  !call trace%end (itimer)
+    ll = 2
+  end if
+  if (present(u)) then
+    uu = u
+  else
+    uu = n-1
+  end if
+  c = 0.5/ds(1)
+  do iz=1,n(3)
+    out(3) = iz < ll(3) .or. iz > uu(3)
+    do iy=1,n(2)
+      out(2) = iy < ll(2) .or. iy > uu(2)
+      !-------------------------------------------------------------------------
+      ! If line is outside yz, set zero values
+      !-------------------------------------------------------------------------
+      if (out(2) .or. out(3)) then
+        !$vector always assert
+        do ix=1,n(1)
+          b(ix,iy,iz) = 0.0
+        end do
+      !-------------------------------------------------------------------------
+      ! If line is inside yz, split in three parts
+      !-------------------------------------------------------------------------
+      else
+        do ix=1,ll(1)-1
+          b(ix,iy,iz) = 0.0
+        end do
+        !$vector always assert
+        do ix=ll(1),uu(1)
+          b(ix,iy,iz) = c*(a(ix,iy+1,iz) - a(ix,iy-1,iz))
+        end do
+        do ix=uu(1)+1,n(1)
+          b(ix,iy,iz) = 0.0
+        end do
+      end if
+    end do
+  end do
   stagger%flops = stagger%flops + 2*n(2)*n(3)*(n(1)-1)
   stagger%count = stagger%count + 1
 END FUNCTION ddy
 
 !*******************************************************************************
-FUNCTION ddz (ds, a) RESULT (b)
+FUNCTION ddz (ds, a, l, u) RESULT (b)
   real, dimension(:,:,:), intent(in):: a
+  integer, optional:: l(3), u(3)
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   real(8):: ds(3), c
-  integer :: ix, iy, iz, n(3)
+  logical:: out(3)
+  integer :: ix, iy, iz, n(3), ll(3), uu(3)
   integer, save:: itimer=0
 !...............................................................................
-  !call trace%begin ('stagger_mod::ddz', itimer=itimer)
   n = shape(a)
-!  if (hardwire) then
-!    if (all(n==[16,16,16])) then
-!      call dxdn_16 (ds,a,b)
-!    else if (all(n==[20,20,20])) then
-!      call dxdn_20 (ds,a,b)
-!    else if (all(n==[24,24,24])) then
-!      call dxdn_24 (ds,a,b)
-!    else if (all(n==[32,32,32])) then
-!      call dxdn_32 (ds,a,b)
-!    else if (all(n==[36,36,36])) then
-!      call dxdn_36 (ds,a,b)
-!    end if
-!  else if (n(1) > 1) then
-  if (n(3) > 1) then
-    b(:,:,   1) = 0.0
-    b(:,:,n(3)) = 0.0
-    c = 0.5/ds(3)
-    do iz=2,n(3)-1
-    do iy=1,n(2)
-    !$vector always assert
-    do ix=1,n(1)
-      b(ix,iy,iz) = c*(a(ix,iy,iz+1) - a(ix,iy,iz-1))
-    end do
-    end do
-    end do
+  if (present(l)) then
+    ll = l
   else
-    b = 0.0
-  endif
-  !call trace%end (itimer)
+    ll = 2
+  end if
+  if (present(u)) then
+    uu = u
+  else
+    uu = n-1
+  end if
+  c = 0.5/ds(1)
+  do iz=1,n(3)
+    out(3) = iz < ll(3) .or. iz > uu(3)
+    do iy=1,n(2)
+      out(2) = iy < ll(2) .or. iy > uu(2)
+      !-------------------------------------------------------------------------
+      ! If line is outside yz, set zero values
+      !-------------------------------------------------------------------------
+      if (out(2) .or. out(3)) then
+        !$vector always assert
+        do ix=1,n(1)
+          b(ix,iy,iz) = 0.0
+        end do
+      !-------------------------------------------------------------------------
+      ! If line is inside yz, split in three parts
+      !-------------------------------------------------------------------------
+      else
+        do ix=1,ll(1)-1
+          b(ix,iy,iz) = 0.0
+        end do
+        !$vector always assert
+        do ix=ll(1),uu(1)
+          b(ix,iy,iz) = c*(a(ix,iy,iz+1) - a(ix,iy,iz-1))
+        end do
+        do ix=uu(1)+1,n(1)
+          b(ix,iy,iz) = 0.0
+        end do
+      end if
+    end do
+  end do
   stagger%flops = stagger%flops + 2*n(2)*n(3)*(n(1)-1)
   stagger%count = stagger%count + 1
 END FUNCTION ddz
@@ -994,7 +1030,7 @@ FUNCTION ysm (a) RESULT (b)
       b(:,i,:) = (a(:,i-1,:) + a(:,i+1,:))*c +  a(:,i,:)*(1.-2.*c)
     end do
     do i=1,n,n-1
-      b(:,i,:)  = a(:,i,:) 
+      b(:,i,:)  = a(:,i,:)
     end do
   else
     b = a
