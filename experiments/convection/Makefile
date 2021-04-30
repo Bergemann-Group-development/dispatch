@@ -1,14 +1,15 @@
 
 # Option groups
-#OPTS = debug
 #OPTS = full_debug
-OPTS = optimized
-#OTS=
+#OPTS = debug
+OPTS = default
+#OPTS = optimized
 
 # Default target and methods
 UPD             = adams_bashforth
 #SOLVER         = stagger
-SOLVER          = ramses/mhd_eos
+#SOLVER          = ramses/mhd_eos
+SOLVER          = ramses/hydro
 #SOLVER          = stagger2/bifrost
 #STAGGER         = stagger_2nd.o
 STAGGER         = stagger_2nd.o

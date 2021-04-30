@@ -1,14 +1,12 @@
 !----------------- I/O paramters -----------------------------------------------------
 &io_params         verbose=0 do_trace=f do_debug=f do_output=t
                    guard_zones=t nml_version=1 /
-&out_params        end_time=100.001 out_time=0.1 print_time=0 /
+&out_params        end_time=0.1 out_time=0.1 print_every=300 /
 
 !----------------- Initial condition parameter ---------------------------------------
-&patch_params      nt=5 n=16,16,16 no_mans_land=t  do_check_nan=t grace=0.1 /
-&cartesian_params  size=4,4,1 dims=8,8,2 mpi_dims=2,2,1 origin=0,0,0.0 periodic=t,t,f/
-&IC_params         theta=10.0 sigma=1.0 !b0=0.0
-/
-
+&patch_params      nt=5 n=16,16,16 do_check_nan=f grace=0.1 dt_fixed=-1e-4 /
+&cartesian_params  size=4,4,1 dims=8,8,2 mpi_dims=2,2,1 origin=3*0.0 periodic=t,t,f /
+&IC_params         theta=10.0 sigma=1.0 /
 
 !----------------- Refinemennt parameters --------------------------------------------
 &refine_params     on=f levelmax=12 levelmin=1 verbose=3 check_interval=2 /
@@ -18,24 +16,11 @@
 &aux_params        verbose=0 select= /
 &eos_params        gamma=1.6666666666667 /
 &divb_clean_params on=f divb_iter=4 divb_cleaner=0 /
-&ramses_params     slope_type=3.5 /
+&ramses_params     slope_type=3.5 smallr=1e-2 smallc=0.1 /
 &non_ideal_params  mhd_Ohm=f eta_Ohm=0.1 mhd_AD=f /
-
-&gravity_params     on=t 
-                    constant=20 
-                    axis=3 
-                    position=0.0 
-                    mass=-1 
-                    minrad=-1 
-/
-
-&viscosity_params     on=t 
-                    mu=0.007
-/
-
-&conduction_params on=t
-                sigma=0.01!0.025
-/
+&gravity_params    on=t constant=20 axis=3 position=0.0 mass=-1 minrad=-1 /
+&viscosity_params  on=f mu=0.000 /
+&conduction_params on=f sigma=0.0 / !0.025
 
 !                     cs    pa   ofd  mas  kap  eta
 &stagger_params    nu=0.10, 1.0, 1.0, 0.0, 1.0, 1.0 courant=0.10 do_maxwell=t /
@@ -50,3 +35,4 @@
 !----------------- Framework paramters -----------------------------------------------
 &dispatcher_params /
 &timestep_params   /
+/
