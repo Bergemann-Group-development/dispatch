@@ -193,18 +193,10 @@ SUBROUTINE pre_update (self)
   class(mhd_t), target:: self
   real, dimension(:,:,:), pointer:: d, e, lnd, ee, tt
   integer:: iz
-  real, dimension(:,:,:,:), pointer:: mem
+  real, dimension(:,:,:,:), pointer, contiguous:: mem
   type(lock_t), pointer:: lock
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%pre_update')
-  !-----------------------------------------------------------------------------
-  ! Set boundary conditions on primary variables
-  !-----------------------------------------------------------------------------
-  lock => self%mem_lock(self%it)
-  call lock%set ('boundary_condition')
-  mem => self%mem(:,:,:,:,self%it,1)
-  call self%boundaries%primary(mem)
-  call lock%unset ('boundary_condition')
   ! ----------------------------------------------------------------------------
   ! update time slots
   ! ----------------------------------------------------------------------------
