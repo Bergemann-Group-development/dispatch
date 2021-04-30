@@ -201,6 +201,8 @@ SUBROUTINE pre_update (self)
   !u_max = u_max/(1.0+(self%mu*ds(3)**2))
   !print *, 'umax z', u_max
   self%u_max = max(self%u_max,u_max)
+  deallocate (du1,du2,du3,d1u1,d1u2,d1u3,d2u1,d2u2,d2u3,d2u1u2,d2u1u3)
+  deallocate (d2u2u3,d2u2u1,d2u3u1,d2u3u2)
   call self%unset_pointers()
   call trace%end (itimer)
 END SUBROUTINE pre_update
