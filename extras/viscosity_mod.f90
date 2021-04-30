@@ -15,8 +15,10 @@ MODULE viscosity_mod
     real, dimension(:,:,:), pointer, contiguous:: u1 => null()
     real, dimension(:,:,:), pointer, contiguous:: u2 => null()
     real, dimension(:,:,:), pointer, contiguous:: u3 => null()
-    real:: mu=1.0
-    real:: u_max=0.0
+    real:: mu = 1.0
+    real:: u_max = 0.0
+    logical:: on = .true.
+    logical:: dynamic = .true.
     logical:: allocated=.false.
   contains
     procedure:: courant_condition
@@ -25,9 +27,6 @@ MODULE viscosity_mod
     procedure:: set_pointers
     procedure, private:: deallocate
   end type
-  real    :: mu=1.0
-  logical :: on=.false.
-  logical :: first_time=.true.
 CONTAINS
 
 !===============================================================================
@@ -37,7 +36,11 @@ SUBROUTINE pre_init (self, patch)
   class(viscosity_t):: self
   class(gpatch_t), target:: patch
   integer:: iostat
-  namelist /viscosity_params/ on, mu
+  real    :: mu = 1.0
+  logical :: on = .false.
+  logical :: dynamic = .true.
+  logical :: first_time = .true.
+  namelist /viscosity_params/ on, dynamic, mu
   !.............................................................................
   call trace%begin ('viscosity_t%pre_init')
   self%patch => patch
@@ -49,6 +52,8 @@ SUBROUTINE pre_init (self, patch)
     call io%namelist_warning ('viscosity_params', iostat)
     write (io%namelist, viscosity_params)
   end if
+  self%on = on
+  self%dynamic = dynamic
   self%mu = mu * scaling%t / scaling%l**2
   call io%lock%unset ('viscosity_t%pre_init')
   call trace%end()
@@ -118,7 +123,7 @@ SUBROUTINE pre_update (self)
   integer:: i1, i2, i3, m(3), nn(4), li(3), ui(3)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  if (.not.on) return
+  if (.not. self%on) return
   call trace%begin ('viscosity_t%pre_update', itimer=itimer)
   call self%set_pointers()
   ds = self%patch%ds
@@ -181,17 +186,28 @@ SUBROUTINE pre_update (self)
   c = 2./3.
   do i3=li(3)-1,ui(3)+1
   do i2=li(2)-1,ui(2)+1
-  do i1=li(1)-1,ui(1)+1
-    du11(i1,i2,i3) = d(i1,i2,i3)*(du11(i1,i2,i3) - c*divu(i1,i2,i3))
-    du22(i1,i2,i3) = d(i1,i2,i3)*(du22(i1,i2,i3) - c*divu(i1,i2,i3))
-    du33(i1,i2,i3) = d(i1,i2,i3)*(du33(i1,i2,i3) - c*divu(i1,i2,i3))
-    du12(i1,i2,i3) = d(i1,i2,i3)* du12(i1,i2,i3)
-    du13(i1,i2,i3) = d(i1,i2,i3)* du13(i1,i2,i3)
-    du23(i1,i2,i3) = d(i1,i2,i3)* du23(i1,i2,i3)
+    if (self%dynamic) then
+      do i1=li(1)-1,ui(1)+1
+        du11(i1,i2,i3) = (du11(i1,i2,i3) - c*divu(i1,i2,i3))
+        du22(i1,i2,i3) = (du22(i1,i2,i3) - c*divu(i1,i2,i3))
+        du33(i1,i2,i3) = (du33(i1,i2,i3) - c*divu(i1,i2,i3))
+        du12(i1,i2,i3) =  du12(i1,i2,i3)
+        du13(i1,i2,i3) =  du13(i1,i2,i3)
+        du23(i1,i2,i3) =  du23(i1,i2,i3)
+      end do
+    else
+      do i1=li(1)-1,ui(1)+1
+        du11(i1,i2,i3) = d(i1,i2,i3)*(du11(i1,i2,i3) - c*divu(i1,i2,i3))
+        du22(i1,i2,i3) = d(i1,i2,i3)*(du22(i1,i2,i3) - c*divu(i1,i2,i3))
+        du33(i1,i2,i3) = d(i1,i2,i3)*(du33(i1,i2,i3) - c*divu(i1,i2,i3))
+        du12(i1,i2,i3) = d(i1,i2,i3)* du12(i1,i2,i3)
+        du13(i1,i2,i3) = d(i1,i2,i3)* du13(i1,i2,i3)
+        du23(i1,i2,i3) = d(i1,i2,i3)* du23(i1,i2,i3)
+      end do
+    end if
   end do
   end do
-  end do
-  !-----------------------------------------------------------------------------
+!-----------------------------------------------------------------------------
   ! Divergence of per-volume quantity, in per unit mass
   !-----------------------------------------------------------------------------
   ff => scratch%force_per_unit_mass
