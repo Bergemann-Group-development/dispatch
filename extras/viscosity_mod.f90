@@ -101,7 +101,7 @@ SUBROUTINE pre_update (self)
   real, dimension(:,:,:), allocatable:: d2u2u3, d2u2u1
   real, dimension(:,:,:), allocatable:: d2u3u1, d2u3u2
   real, dimension(:,:,:,:), pointer, contiguous:: ff
-  real(8):: ds(3), u_max
+  real(8):: ds(3), u_max, c1, c2, c3
   integer:: i1, i2, i3, m(3), nn(4), li(3), ui(3)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
