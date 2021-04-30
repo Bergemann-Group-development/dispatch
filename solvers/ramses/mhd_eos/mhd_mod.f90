@@ -194,8 +194,17 @@ SUBROUTINE pre_update (self)
   real, dimension(:,:,:), pointer:: d, e, lnd, ee, tt
   integer:: iz
   real, dimension(:,:,:,:), pointer:: mem
+  type(lock_t), pointer:: lock
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%pre_update')
+  !-----------------------------------------------------------------------------
+  ! Set boundary conditions on primary variables
+  !-----------------------------------------------------------------------------
+  lock => self%mem_lock(self%it)
+  call lock%set ('boundary_condition')
+  mem => self%mem(:,:,:,:,self%it,1)
+  call self%boundaries%primary(mem)
+  call lock%unset ('boundary_condition')
   ! ----------------------------------------------------------------------------
   ! update time slots
   ! ----------------------------------------------------------------------------
@@ -207,11 +216,6 @@ SUBROUTINE pre_update (self)
   if (io%courant /= 0.0) self%courant = io%courant
   call ctoprim(self)                  ! Primitive variables, sound speeds
   call self%extras_t%courant_condition (detailed_timer)
-  !-----------------------------------------------------------------------------
-  ! Set boundary conditions on primary variables
-  !-----------------------------------------------------------------------------
-  mem => self%mem(:,:,:,:,self%new,1)
-  call self%boundaries%primary(mem)
   !-----------------------------------------------------------------------------
   ! Now we can call the extras_t%pre_update, which may need the temperature
   !-----------------------------------------------------------------------------
@@ -254,16 +258,13 @@ SUBROUTINE update (self)
   self%uin  => self%mem(:,:,:,:,self%new,1)
   self%unew => self%mem(:,:,:,:,self%new,1)
   n = self%mesh%gn
-  allocate (self%c  (n(1),n(2),n(3)))                           ! self%c   = 0_dp
   allocate (self%Ex (n(1),n(2),n(3)))                           ! self%Ex  = 0_dp
   allocate (self%Ey (n(1),n(2),n(3)))                           ! self%Ey  = 0_dp
   allocate (self%Ez (n(1),n(2),n(3)))                           ! self%Ez  = 0_dp
-  allocate (self%q  (n(1),n(2),n(3),self%nvar))                 ! self%q   = 0_dp
   allocate (self%qp (n(1),self%nvar,ndim,n(2),n(3)))            ! self%qp  = 0_dp
   allocate (self%qm (n(1),self%nvar,ndim,n(2),n(3)))            ! self%qm  = 0_dp
   allocate (self%dq (n(1),self%nvar,ndim,n(2),n(3)))            ! self%dq  = 0_dp
   allocate (self%dq2(n(1),self%nvar,ndim,n(2),n(3)))            ! self%dq2 = 0_dp
-  allocate (self%bf (n(1),n(2),n(3),3))                         ! self%bf  = 0_dp
   allocate (self%dbf(n(1),3,2,n(2),n(3)))                       ! self%dbf = 0_dp
   allocate (self%qLB(n(1),self%nvar,ndim,n(2),n(3)))            ! self%qLB = 0_dp
   allocate (self%qLT(n(1),self%nvar,ndim,n(2),n(3)))            ! self%qLT = 0_dp
@@ -276,7 +277,7 @@ SUBROUTINE update (self)
   ! Compute update using second-order Godunov method
   !-----------------------------------------------------------------------------
   call check_small (self)                               ! Check smallr, smallp
-  call ctoprim(self)                                    ! Primitive variables
+  !call ctoprim(self)                                    ! Primitive variables
   !self%dq = 0d0 ; self%dq2 = 0d0 ; self%dbf = 0d0
   call uslope(self,self%bf,self%q,self%dq,self%dbf,slope_type)   ! TVD slopes
   if (verbose>0) print *, 'uslope', self%id, minval(self%dbf), maxval(self%dbf)
@@ -349,6 +350,7 @@ SUBROUTINE update (self)
              uin=>self%uin,unew=>self%unew)
   lock => self%mem_lock(self%new)
   call lock%set ('update')
+  self%uin  => self%mem(:,:,:,:,self%it,1)
   unew = uin
   nv3 = 5
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3  ) = &
@@ -617,12 +619,21 @@ subroutine ctoprim(self)
   real(dp):: eken, emag, etot, eint, B1, B2, B3
   integer, save:: itimer=0
   logical:: e_below
-  integer:: i, j, k, loc(3), l(3), u(3)
+  integer:: i, j, k, loc(3), l(3), u(3), m(3)
   real, pointer, dimension(:,:,:):: lnd, ee, pg, tt, aux
   real, allocatable, dimension(:,:,:):: ee0
-  associate(uin=>self%uin,q=>self%q,bf=>self%bf,dt=>self%dtime,c=>self%c)
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%ctoprim', itimer=itimer, detailed_timer=detailed_timer)
+  ! ----------------------------------------------------------------------------
+  self%uin  => self%mem(:,:,:,:,self%it,1)
+  self%unew => self%mem(:,:,:,:,self%new,1)
+  m = self%mesh%gn
+  allocate (self%c  (m(1),m(2),m(3)))
+  allocate (self%q  (m(1),m(2),m(3),self%nvar))
+  allocate (self%bf (m(1),m(2),m(3),3))
+  call check_small (self)
+  associate(uin=>self%uin,q=>self%q,bf=>self%bf,dt=>self%dtime,c=>self%c)
+  ! ----------------------------------------------------------------------------
   if (isothermal) then
     entho = one
   else
