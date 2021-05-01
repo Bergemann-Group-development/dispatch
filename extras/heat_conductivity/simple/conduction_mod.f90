@@ -16,9 +16,13 @@ MODULE conduction_mod
   implicit none
   private
   type, public:: conduction_t
-    real(kind=var_k):: kappa = 0.07
-    real(kind=var_k):: u_max = 0.0
+    real:: kappa = 0.07
+    real:: u_max = 0.0
+    real:: stencil = 1.5
+    real:: courant = 1.0
     class(gpatch_t), pointer:: patch
+    logical:: kinematic = .false.
+    logical:: order2 = .false.
     logical:: on = .false.
   contains
     procedure:: pre_init
@@ -64,7 +68,7 @@ SUBROUTINE pre_update(self)
   class (conduction_t):: self
   !.............................................................................
   real(8) :: ds(3)
-  real(var_k):: vol, area, c, del
+  real(var_k):: vol, area, c1, c2, del1, del2
   integer :: i1, i2, i3, n(3), lb(3), ub(3), i, l(3), u(3)
   real(kind=var_k), dimension(:,:,:),   pointer :: d, e
   real(kind=var_k), dimension(:,:,:),   allocatable:: tg
@@ -88,29 +92,68 @@ SUBROUTINE pre_update(self)
   allocate (tg(n(1),n(2),n(3)))
   allocate (tg_grad(n(1),n(2),n(3),3))
   call eos%lookup_table (n, d=d, e=e, tt=tg)
-  !-----------------------------------------------------------------------------
-  ! The heating per unit volume is the divergence of the negative flux
+  l = self%patch%li
+  u = self%patch%ui
+  do i3=l(3)-1,u(3)+1
+  do i2=l(2)-1,u(2)+1
+    if (self%kinematic) then
+      do i1=l(1)-1,u(1)+1
+        tg_grad(i1,i2,i3,1) = (tg(i1+1,i2,i3) - tg(i1-1,i2,i3))*d(i1,i2,i3)
+        tg_grad(i1,i2,i3,2) = (tg(i1,i2+1,i3) - tg(i1,i2-1,i3))*d(i1,i2,i3)
+        tg_grad(i1,i2,i3,3) = (tg(i1,i2,i3+1) - tg(i1,i2,i3-1))*d(i1,i2,i3)
+      end do
+    else
+      do i1=l(1)-1,u(1)+1
+        tg_grad(i1,i2,i3,1) = tg(i1+1,i2,i3) - tg(i1-1,i2,i3)
+        tg_grad(i1,i2,i3,2) = tg(i1,i2+1,i3) - tg(i1,i2-1,i3)
+        tg_grad(i1,i2,i3,3) = tg(i1,i2,i3+1) - tg(i1,i2,i3-1)
+      end do
+    end if
+  end do
+  end do
+!-----------------------------------------------------------------------------
+  ! The heating per unit volume is the negative divergence of the negative flux.
+  ! Here we linearly combine a 1 and 2 delta stencil approximations when using
+  ! per unit mass conductivity, while for now we use a purely 2 delta stencil
+  ! when using per unit volume conductivity
   !-----------------------------------------------------------------------------
   call scratch%allocate (scratch%heating_per_unit_volume, self%patch%mesh%gn)
-  c = self%kappa * (eos%gamma-1d0)
-  l = self%patch%li
-  u = self%patch%li
-  do i3=l(3),u(3)
-  do i2=l(2),u(2)
-  do i1=l(1),u(1)
-    del = tg(i1-1,i2,i3) -6.0*tg(i1,i2,i3) + tg(i1,i2,i3+1) &
-        + tg(i1,i2-1,i3)                   + tg(i1,i2+1,i3) &
-        + tg(i1,i2,i3-1)                   + tg(i1+1,i2,i3)
-    scratch%heating_per_unit_volume(i1,i2,i3) = &
-    scratch%heating_per_unit_volume(i1,i2,i3) + c*del
-  end do
-  end do
-  end do
+  c2 = self%kappa*(eos%gamma-1d0)/ds(1)**2
+  c1 = c2*0.25
+  if (self%kinematic) then
+    do i3=l(3),u(3)
+    do i2=l(2),u(2)
+    do i1=l(1),u(1)
+      del1 = tg_grad(i1+1,i2,i3,1) - tg_grad(i1-1,i2,i3,1) &
+           + tg_grad(i1,i2+1,i3,2) - tg_grad(i1,i2-1,i3,2) &
+           + tg_grad(i1,i2,i3+1,3) - tg_grad(i1,i2,i3-1,3)
+      scratch%heating_per_unit_volume(i1,i2,i3) = &
+      scratch%heating_per_unit_volume(i1,i2,i3) + c1*del1
+    end do
+    end do
+    end do
+  else
+    c1 = c1*(2.0-self%stencil)
+    c2 = c2*(self%stencil-1.0)
+    do i3=l(3),u(3)
+    do i2=l(2),u(2)
+    do i1=l(1),u(1)
+      del1 = tg_grad(i1+1,i2,i3,1) - tg_grad(i1-1,i2,i3,1) &
+           + tg_grad(i1,i2+1,i3,2) - tg_grad(i1,i2-1,i3,2) &
+           + tg_grad(i1,i2,i3+1,3) - tg_grad(i1,i2,i3-1,3)
+      del2 = tg(i1-1,i2,i3) -6.0*tg(i1,i2,i3) + tg(i1+1,i2,i3) &
+           + tg(i1,i2-1,i3)                   + tg(i1,i2+1,i3) &
+           + tg(i1,i2,i3-1)                   + tg(i1,i2,i3+1)
+      scratch%heating_per_unit_volume(i1,i2,i3) = &
+      scratch%heating_per_unit_volume(i1,i2,i3) + c1*del1 + c2*del2
+    end do
+    end do
+    end do
+  end if
   !-----------------------------------------------------------------------------
-  self%u_max = c/6.0 &
-             * (1.0/ds(1)**2 + 1.0/ds(2)**2 + 1.0/ds(3)**2)
+  self%u_max = c1/12. + c2/6.
   !
-  deallocate(tg,tg_grad)
+  deallocate (tg, tg_grad)
   call trace%end (itimer)
 END SUBROUTINE pre_update
 
@@ -120,10 +163,18 @@ END SUBROUTINE pre_update
 SUBROUTINE courant_condition (self, detailed_timer)
   class(conduction_t):: self
   logical, optional:: detailed_timer
+  logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
   if (.not.self%on) return
   call trace%begin ('conduction_t%courant_condition')
-  !print *, 'u_max(ee after spitzer)', self%patch%id, self%u_max, self%patch%u_max
+  if (first_time) then
+    call io%lock%set
+    if (first_time .and. self%u_max > 0.0) then
+      print *, 'cond u_max', self%patch%id, self%u_max, self%patch%u_max
+      first_time = .false.
+    end if
+    call io%lock%unset
+  end if
   self%patch%u_max = max (self%patch%u_max, self%u_max)
   call trace%end ()
 END SUBROUTINE courant_condition

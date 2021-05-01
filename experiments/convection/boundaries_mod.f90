@@ -18,12 +18,14 @@ MODULE boundaries_mod
   type, extends(standard_boundaries_t), public:: boundaries_t
     !---------------------------------------------------------------------------
     ! Experiment - specific variables
-    !---------------------------------------------------------------------------
+    !---------------------------------------------------------------------------.
+    real:: tt_top = 1.0
     real:: g = 20.
     real:: theta = 10.0
     real:: mpoly = 1.0
     logical:: flux_BC = .true.
   contains
+    procedure:: init
     procedure:: primary
   end type
 CONTAINS
@@ -64,40 +66,42 @@ SUBROUTINE primary(self, mem)
   real(kind=var_k), dimension(:,:,:), pointer, contiguous:: ux, uy, uz
   class(patch_t), pointer:: patch
   class(mesh_t), pointer:: m(:)
-  integer:: ix, iy, iz, n(3)
+  integer:: ix, iy, iz, n(3), id
   real(8), pointer:: z(:)
-  real:: h, f, tt0, tt1
-  real, save:: ee_top=0.0
-  !----------------------------------------------------------------------------
-  call trace_begin('boundaries_t%primary')
+  real:: h, f, tt0, tt1, dz, ds(3)
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace_begin('boundaries_t%primary', itimer=itimer)
+  id    =  self%patch%id
+  ds    =  self%patch%ds
   patch => self%patch
   m     => self%mesh
   z     => m(3)%r
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   ! Allocate scratches
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   n = m%gn
   allocate (ux(n(1),n(2),n(3)))
   allocate (uy(n(1),n(2),n(3)))
   allocate (uz(n(1),n(2),n(3)))
   allocate (e (n(1),n(2),n(3)))
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   ! Compute velocities
-  !----------------------------------------------------------------------------
-  ux = mem(:,:,:,patch%idx%px) / mem(:,:,:,patch%idx%d)
-  uy = mem(:,:,:,patch%idx%py) / mem(:,:,:,patch%idx%d)
-  uz = mem(:,:,:,patch%idx%pz) / mem(:,:,:,patch%idx%d)
+  !-----------------------------------------------------------------------------
   d => mem(:,:,:,patch%idx%d)
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   ! Get thermal energy
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   do iz=m(3)%lb,m(3)%ub
     do iy=m(2)%lb,m(2)%ub
-      do ix=m(1)%lb, m(1)%ub
-        e(ix,iy,iz) = mem(ix,iy,iz,patch%idx%e) - 0.5*d(ix,iy,iz)*( &
-                      ux(ix,iy,iz)**2 &
-                    + uy(ix,iy,iz)**2 &
-                    + uz(ix,iy,iz)**2)
+      do ix=m(1)%lb,m(1)%ub
+        ux(ix,iy,iz) = mem(ix,iy,iz,patch%idx%px)/d(ix,iy,iz)
+        uy(ix,iy,iz) = mem(ix,iy,iz,patch%idx%py)/d(ix,iy,iz)
+        uz(ix,iy,iz) = mem(ix,iy,iz,patch%idx%pz)/d(ix,iy,iz)
+        e (ix,iy,iz) = mem(ix,iy,iz,patch%idx%e) - 0.5*d(ix,iy,iz)*( &
+                        ux(ix,iy,iz)**2 &
+                      + uy(ix,iy,iz)**2 &
+                      + uz(ix,iy,iz)**2)
       end do
     end do
   end do
@@ -106,30 +110,32 @@ SUBROUTINE primary(self, mem)
   ! values of pressure and density consistent with constant temperature HSE
   !-----------------------------------------------------------------------------
   if (m(3)%lower_boundary) then
-    if (ee_top==0.0) then
-      n=m%li
-      ee_top = (e(n(1),n(2),n(3)  )/d(n(1),n(2),n(3)) &
-             +  e(n(1),n(2),n(3)-1)/d(n(1),n(2),n(3)-1))/2.0
-    end if
     do iy=m(2)%lb,m(2)%ub
       do iz=m(3)%lb,m(3)%lo
-        do ix=m(1)%lb, m(1)%ub
-          h = ee_top*(eos%gamma-1d0)/self%g
-          f = exp((z(iz)-z(m(3)%li))/h)
+        do ix=m(1)%lb,m(1)%ub
+          h = self%tt_top/self%g
+          dz = (iz-m(3)%li)*ds(3)
+          f = exp(dz/h)
           d(ix,iy,iz) = d(ix,iy,m(3)%li)*f
-          e(ix,iy,iz) = d(ix,iy,iz)*ee_top
+        end do
+      end do
+      do iz=m(3)%lb,m(3)%li
+        do ix=m(1)%lb,m(1)%ub
+          e(ix,iy,iz) = d(ix,iy,iz)*self%tt_top/(eos%gamma-1d0)
         end do
       end do
     end do
   end if
   if (m(3)%upper_boundary) then
     if (self%flux_BC) then
-      do iy=m(2)%lb,m(2)%ub
-        do iz=m(3)%uo,m(3)%ub
-          do ix=m(1)%lb, m(1)%ub
+      do iz=m(3)%uo,m(3)%ub
+        do iy=m(2)%lb,m(2)%ub
+          do ix=m(1)%lb,m(1)%ub
             tt0 = e(ix,iy,m(3)%ui)/d(ix,iy,m(3)%ui)*(eos%gamma-1d0)
-            tt1 = tt0 + self%theta*(z(iz)-z(m(3)%li))
-            e(ix,iy,iz) = tt1*d(ix,iy,iz)/(eos%gamma-1d0)
+            dz = (iz-m(3)%ui)*ds(3)
+            tt1         = tt0              + self%theta*dz
+            d(ix,iy,iz) = d(ix,iy,m(3)%ui) + self%theta*dz
+            e(ix,iy,iz) = d(ix,iy,iz)*tt1/(eos%gamma-1d0)
           end do
         end do
       end do
@@ -148,7 +154,7 @@ SUBROUTINE primary(self, mem)
   ! Put the quantities back
   !----------------------------------------------------------------------------
   if (m(3)%lower_boundary) then
-    do iz=m(3)%lb,m(3)%lo
+    do iz=m(3)%lb,m(3)%li
       do iy=m(2)%lb,m(2)%ub
         do ix=m(1)%lb,m(1)%ub
           mem(ix,iy,iz,patch%idx%px) =  d(ix,iy,iz)*ux(ix,iy,iz)
@@ -164,7 +170,7 @@ SUBROUTINE primary(self, mem)
   end if
   !
   if (m(3)%upper_boundary) then
-    do iz=m(3)%uo,m(3)%ub
+    do iz=m(3)%ui,m(3)%ub
       do iy=m(2)%lb,m(2)%ub
         do ix=m(1)%lb,m(1)%ub
           mem(ix,iy,iz,patch%idx%px) =  d(ix,iy,iz)*ux(ix,iy,iz)
@@ -173,10 +179,22 @@ SUBROUTINE primary(self, mem)
         end do
       end do
     end do
+    if (self%flux_BC) then
+      do iz=m(3)%uo,m(3)%ub
+        do iy=m(2)%lb,m(2)%ub
+          do ix=m(1)%lb,m(1)%ub
+            mem(ix,iy,iz,patch%idx%e ) = e(ix,iy,iz) + 0.5*d(ix,iy,iz)*( &
+                                        ux(ix,iy,iz)**2 &
+                                      + uy(ix,iy,iz)**2 &
+                                      + uz(ix,iy,iz)**2)
+          end do
+        end do
+      end do
+    end if
   end if
   deallocate (ux,uy,uz,e)
   !print *, self%patch%id, minval(d), maxval(d)
-  call trace%end ()
+  call trace%end (itimer)
 END SUBROUTINE primary
 
 END MODULE boundaries_mod
