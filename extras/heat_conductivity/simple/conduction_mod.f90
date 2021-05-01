@@ -72,7 +72,7 @@ SUBROUTINE pre_update(self)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not.self%on) return
-  call trace%begin ('conduction_t%pre_update', itimer)
+  call trace%begin ('conduction_t%pre_update', itimer=itimer)
   !
   lb = self%patch%mesh%lb
   ub = self%patch%mesh%ub
