@@ -78,7 +78,7 @@ SUBROUTINE bndries (self)
   real(var_k), dimension(:,:,:,:), pointer, contiguous:: mem
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%bndries')
-  mem => self%mem(:,:,:,:,self%it,1)
+  mem => self%mem(:,:,:,:,self%new,1)
   call self%boundaries%primary (mem)
   call trace%end()
 END SUBROUTINE bndries

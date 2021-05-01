@@ -9,7 +9,7 @@
 
 !----------------- Initial condition parameter ---------------------------------------
 &patch_params      nt=5 n=3*32 do_check_nan=f grace=0.1 dt_fixed=-1e-4 /
-&cartesian_params  size=4,4,1 dims=16,16,4 mpi_dims=2,2,1 origin=3*0.0 periodic=t,t,f /
+&cartesian_params  size=4,4,1 dims=16,16,4 mpi_dims=4,4,1 origin=3*0.0 periodic=t,t,f /
 
 !----------------- Refinemennt parameters --------------------------------------------
 &refine_params     on=f levelmax=12 levelmin=1 verbose=3 check_interval=2 /
