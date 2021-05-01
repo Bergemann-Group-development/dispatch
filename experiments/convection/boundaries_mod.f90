@@ -67,6 +67,7 @@ SUBROUTINE primary(self, mem)
   integer:: ix, iy, iz, n(3)
   real(8), pointer:: z(:)
   real:: h, f, tt0, tt1
+  real, save:: ee_top=0.0
   !----------------------------------------------------------------------------
   call trace_begin('boundaries_t%primary')
   patch => self%patch
@@ -105,13 +106,18 @@ SUBROUTINE primary(self, mem)
   ! values of pressure and density consistent with constant temperature HSE
   !-----------------------------------------------------------------------------
   if (m(3)%lower_boundary) then
+    if (ee_top==0.0) then
+      n=m%li
+      ee_top = (e(n(1),n(2),n(3)  )/d(n(1),n(2),n(3)) &
+             +  e(n(1),n(2),n(3)-1)/d(n(1),n(2),n(3)-1))/2.0
+    end if
     do iy=m(2)%lb,m(2)%ub
       do iz=m(3)%lb,m(3)%lo
         do ix=m(1)%lb, m(1)%ub
-          h = e(ix,iy,m(3)%li)*(eos%gamma-1d0)/(self%g*d(ix,iy,m(3)%li))
+          h = ee_top*(eos%gamma-1d0)/self%g
           f = exp((z(iz)-z(m(3)%li))/h)
           d(ix,iy,iz) = d(ix,iy,m(3)%li)*f
-          e(ix,iy,iz) = e(ix,iy,m(3)%li)*f
+          e(ix,iy,iz) = d(ix,iy,iz)*ee_top
         end do
       end do
     end do
