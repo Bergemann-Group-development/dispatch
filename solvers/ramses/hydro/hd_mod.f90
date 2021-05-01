@@ -189,7 +189,7 @@ SUBROUTINE pre_update (self)
   class(hd_t), target:: self
   !-----------------------------------------------------------------------------
   call trace%begin ('hd_t%pre_update')
-  call self%extras_t%pre_update ()
+  call self%gpatch_t%pre_update ()
   !-----------------------------------------------------------------------------
   ! Primitive variables may be needed in extras courant_conditions
   !-----------------------------------------------------------------------------
@@ -210,10 +210,10 @@ SUBROUTINE update (self)
   class(hd_t):: self
   real, dimension(:,:,:), pointer, contiguous:: d, e, px, py, pz
   real, dimension(:,:,:), allocatable:: ek
-  real, dimension(:,:,:,:), pointer:: p
+  real, dimension(:,:,:,:), allocatable:: f
   real:: u0, u1
   type(lock_t), pointer:: lock
-  integer:: n(3)
+  integer:: n(3), i1, i2, i3
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! The call to output below catches the state after both guard zone downloads
@@ -251,30 +251,66 @@ SUBROUTINE update (self)
                                                  lock => self%mem_lock(self%new)
                                                  call lock%set ('hd_t%update')
   if (associated(scratch%force_per_unit_mass)) then
-    px = px + self%dtime*scratch%force_per_unit_mass(:,:,:,1)*d
-    py = py + self%dtime*scratch%force_per_unit_mass(:,:,:,2)*d
-    pz = pz + self%dtime*scratch%force_per_unit_mass(:,:,:,3)*d
+    allocate (f(n(1),n(2),n(3),3))
+    f = self%dtime*scratch%force_per_unit_mass
+    do i3=self%li(3),self%ui(3)
+    do i2=self%li(2),self%ui(2)
+    do i1=self%li(1),self%ui(1)
+      px(i1,i2,i3) = px(i1,i2,i3) + f(i1,i2,i3,1)*d(i1,i2,i3)
+      py(i1,i2,i3) = py(i1,i2,i3) + f(i1,i2,i3,2)*d(i1,i2,i3)
+      pz(i1,i2,i3) = pz(i1,i2,i3) + f(i1,i2,i3,3)*d(i1,i2,i3)
+    end do
+    end do
+    end do
+    deallocate (f)
   end if
   if (associated(scratch%force_per_unit_volume)) then
-    px = px + self%dtime*scratch%force_per_unit_volume(:,:,:,1)
-    py = py + self%dtime*scratch%force_per_unit_volume(:,:,:,2)
-    pz = pz + self%dtime*scratch%force_per_unit_volume(:,:,:,3)
+    allocate (f(n(1),n(2),n(3),3))
+    f = self%dtime*scratch%force_per_unit_mass
+    do i3=self%li(3),self%ui(3)
+    do i2=self%li(2),self%ui(2)
+    do i1=self%li(1),self%ui(1)
+      px(i1,i2,i3) = px(i1,i2,i3) + f(i1,i2,i3,1)
+      py(i1,i2,i3) = py(i1,i2,i3) + f(i1,i2,i3,2)
+      pz(i1,i2,i3) = pz(i1,i2,i3) + f(i1,i2,i3,3)
+    end do
+    end do
+    end do
+    deallocate (f)
   end if
   !-----------------------------------------------------------------------------
   ! Adjust the total energy
   !-----------------------------------------------------------------------------
   e = e + (0.5*(px**2+py**2+pz**2)/d - ek)
-  deallocate (ek)
   !call validate%check (self%link, p, 'after force')
   !-----------------------------------------------------------------------------
   ! Add the external heating per unit mass as a source term
   !-----------------------------------------------------------------------------
   if (associated(scratch%heating_per_unit_mass)) then
-    e = e + self%dtime*scratch%heating_per_unit_mass*d
+    ek = self%dtime*scratch%heating_per_unit_mass
+    do i3=self%li(3),self%ui(3)
+    do i2=self%li(2),self%ui(2)
+    do i1=self%li(1),self%ui(1)
+      e(i1,i2,i3) = e(i1,i2,i3) + ek(i1,i2,i3)*d(i1,i2,i3)
+      e(i1,i2,i3) = e(i1,i2,i3) + ek(i1,i2,i3)*d(i1,i2,i3)
+      e(i1,i2,i3) = e(i1,i2,i3) + ek(i1,i2,i3)*d(i1,i2,i3)
+    end do
+    end do
+    end do
   end if
   if (associated(scratch%heating_per_unit_volume)) then
-    e = e + self%dtime*scratch%heating_per_unit_volume
+    ek = self%dtime*scratch%heating_per_unit_volume
+    do i3=self%li(3),self%ui(3)
+    do i2=self%li(2),self%ui(2)
+    do i1=self%li(1),self%ui(1)
+      e(i1,i2,i3) = e(i1,i2,i3) + ek(i1,i2,i3)
+      e(i1,i2,i3) = e(i1,i2,i3) + ek(i1,i2,i3)
+      e(i1,i2,i3) = e(i1,i2,i3) + ek(i1,i2,i3)
+    end do
+    end do
+    end do
   end if
+  deallocate (ek)
   !-----------------------------------------------------------------------------
   ! Reset the energy variable in isothermal cases
   !-----------------------------------------------------------------------------
@@ -688,6 +724,7 @@ SUBROUTINE ctoprim (self)
     pg = max(pg,smallp)
   end if
   !.............................................................................
+  !print *, self%id, minval(q(:,:,:,1)), minval(q(:,:,:,5)),  minloc(q(:,:,:,5))
   c(:,:,:)=sqrt(eos%gamma*q(:,:,:,5)/q(:,:,:,1))
   if (courant_type==1) then
     c = c + max(abs(q(:,:,:,2)), abs(q(:,:,:,3)), abs(q(:,:,:,4)))
@@ -959,7 +996,7 @@ SUBROUTINE uslope(self)
             ! while dfx (dff for any direction) will also be = dq, unless we keep
             ! the 'half' in front of the sqrt.  With that kept, the dlim factor
             ! will remain unity until the slopes differ with a factor of 2. Then,
-            ! if any of the 26 slopes is steeper than twice the gradient slope, 
+            ! if any of the 26 slopes is steeper than twice the gradient slope,
             ! the gradient will be diminished.
             !
             ! idff > 0, so 1/dff = idff < 0.001 * huge is equivalent to dff > 0
