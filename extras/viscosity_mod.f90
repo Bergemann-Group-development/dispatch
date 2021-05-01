@@ -153,7 +153,7 @@ SUBROUTINE pre_update (self)
   do i1=li(1)-1,ui(1)+1
     du11(i1,i2,i3) = (u1(i1+1,i2,i3) - u1(i1-1,i2,i3))*c1
     du21(i1,i2,i3) = (u2(i1+1,i2,i3) - u2(i1-1,i2,i3))*c1
-    du31(i1,i2,i3) = (u2(i1+1,i2,i3) - u3(i1-1,i2,i3))*c1
+    du31(i1,i2,i3) = (u3(i1+1,i2,i3) - u3(i1-1,i2,i3))*c1
     du12(i1,i2,i3) = (u1(i1,i2+1,i3) - u1(i1,i2-1,i3))*c2
     du22(i1,i2,i3) = (u2(i1,i2+1,i3) - u2(i1,i2-1,i3))*c2
     du32(i1,i2,i3) = (u3(i1,i2+1,i3) - u3(i1,i2-1,i3))*c2
@@ -192,9 +192,6 @@ SUBROUTINE pre_update (self)
         du11(i1,i2,i3) = (du11(i1,i2,i3) - c*divu(i1,i2,i3))
         du22(i1,i2,i3) = (du22(i1,i2,i3) - c*divu(i1,i2,i3))
         du33(i1,i2,i3) = (du33(i1,i2,i3) - c*divu(i1,i2,i3))
-        du12(i1,i2,i3) =  du12(i1,i2,i3)
-        du13(i1,i2,i3) =  du13(i1,i2,i3)
-        du23(i1,i2,i3) =  du23(i1,i2,i3)
       end do
     else
       do i1=li(1)-1,ui(1)+1
