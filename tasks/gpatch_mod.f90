@@ -31,7 +31,7 @@ MODULE gpatch_mod
   type, public, extends(patch_t):: gpatch_t
     type(data_hub_t):: data_hub
     class(list_t), pointer:: task_list => null()
-    type(boundaries_t):: boundaries
+    class(boundaries_t), pointer:: boundaries => null()
     real(8):: d0
     character(len=8):: etype='thermal' ! or 'total', 'entropy'
   contains
@@ -92,6 +92,9 @@ SUBROUTINE pre_init (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('gpatch_t%pre_init')
   call self%patch_t%pre_init
+  if (.not. associated (self%boundaries)) then
+    allocate (self%boundaries)
+  end if
   call self%boundaries%pre_init (self)
   call trace%end()
 END SUBROUTINE pre_init
