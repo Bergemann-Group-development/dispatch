@@ -22,7 +22,7 @@
 &ramses_params     slope_type=3.5 smallr=1e-2 smallc=0.1 /
 &non_ideal_params  mhd_Ohm=f eta_Ohm=0.1 mhd_AD=f /
 &gravity_params    on=t constant=20 axis=3 position=0.0 mass=-1 minrad=-1 /
-&viscosity_params  on=f dynamic=t /
+&viscosity_params  on=f /
 &conduction_params on=f /
 
 !                     cs    pa   ofd  mas  kap  eta

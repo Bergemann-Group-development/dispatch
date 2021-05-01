@@ -28,12 +28,6 @@ MODULE experiment_mod
     procedure:: bndries
     procedure:: update
   end type
-  real::    mu    = 0.0
-  real::    kappa = 0.07
-  real::    sigma = 1.0
-  real::    theta = 10.
-  logical:: flux_BC = .true.
-  logical, save:: first_time=.true.
 CONTAINS
 
 !===============================================================================
@@ -42,7 +36,19 @@ CONTAINS
 SUBROUTINE init (self)
   class(experiment_t):: self
   integer:: iostat
-  namelist /experiment_params/ flux_BC, sigma, theta
+  real:: mu    = 0.0
+  real:: kappa = 0.07
+  real:: mpoly = 1.0
+  real:: sigma = 1.0
+  real:: theta = 10.
+  real:: stencil = 1.5
+  real:: courant_v = 1.0
+  real:: courant_c = 1.0
+  logical:: kinematic = .false.
+  logical:: flux_BC = .true.
+  logical:: first_time=.true.
+  namelist /experiment_params/ &
+    flux_BC, theta, kappa, sigma, mpoly, theta, stencil, courant_v, courant_c
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%init')
   call self%solver_t%init
@@ -62,10 +68,17 @@ SUBROUTINE init (self)
     ! Compute and set viscosity and conduction parameters
     !---------------------------------------------------------------------------
     mu = (eos%gamma-1d0)**2 * kappa / eos%gamma * sigma
-    self%viscosity%mu       = mu
-    self%conduction%kappa   = kappa
-    self%boundaries%flux_BC = flux_BC
-    self%boundaries%theta   = theta
+    self%viscosity%mu             = mu
+    self%conduction%kappa         = kappa
+    self%conduction%stencil       = stencil
+    self%conduction%kinematic     = kinematic
+    self%conduction%courant       = courant_c
+    self%viscosity%kinematic      = kinematic
+    self%viscosity%courant        = courant_v
+    self%boundaries%flux_BC       = flux_BC
+    self%boundaries%theta         = theta
+    self%boundaries%mpoly         = mpoly
+    self%initial_conditions%theta = theta
   call io%lock%unset ('experiment_t%init')
   call trace%end()
 END SUBROUTINE init
@@ -78,7 +91,8 @@ SUBROUTINE bndries (self)
   real(var_k), dimension(:,:,:,:), pointer, contiguous:: mem
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%bndries')
-  mem => self%mem(:,:,:,:,self%new,1)
+  mem => self%mem(:,:,:,:,self%it,1)
+  !if (self%id==1) print *,'bndries',self%id,self%new
   call self%boundaries%primary (mem)
   call trace%end()
 END SUBROUTINE bndries
@@ -88,9 +102,12 @@ END SUBROUTINE bndries
 !===============================================================================
 SUBROUTINE update (self)
   class(experiment_t):: self
+  real(var_k), dimension(:,:,:,:), pointer, contiguous:: mem
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
   call self%solver_t%update
+  mem => self%mem(:,:,:,:,self%new,1)
+  call self%boundaries%primary (mem)
   call trace%end ()
 END SUBROUTINE update
 

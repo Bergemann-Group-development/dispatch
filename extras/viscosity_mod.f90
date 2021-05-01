@@ -18,9 +18,10 @@ MODULE viscosity_mod
     real, dimension(:,:,:), pointer, contiguous:: u3 => null()
     real:: mu = 1.0
     real:: u_max = 0.0
+    real:: courant = 1.0
     logical:: on = .true.
-    logical:: dynamic = .true.
-    logical:: allocated=.false.
+    logical:: kinematic = .false.
+    logical:: allocated = .false.
   contains
     procedure:: courant_condition
     procedure:: pre_init
@@ -39,9 +40,9 @@ SUBROUTINE pre_init (self, patch)
   integer:: iostat
   real    :: mu = 1.0
   logical :: on = .false.
-  logical :: dynamic = .true.
+  logical :: kinematic = .false.
   logical :: first_time = .true.
-  namelist /viscosity_params/ on, dynamic, mu
+  namelist /viscosity_params/ on, kinematic, mu
   !.............................................................................
   call trace%begin ('viscosity_t%pre_init')
   self%patch => patch
@@ -54,7 +55,7 @@ SUBROUTINE pre_init (self, patch)
     write (io%namelist, viscosity_params)
   end if
   self%on = on
-  self%dynamic = dynamic
+  self%kinematic = kinematic
   self%mu = mu * scaling%t / scaling%l**2
   call io%lock%unset ('viscosity_t%pre_init')
   call trace%end()
@@ -187,13 +188,7 @@ SUBROUTINE pre_update (self)
   c = 2./3.
   do i3=li(3)-1,ui(3)+1
   do i2=li(2)-1,ui(2)+1
-    if (self%dynamic) then
-      do i1=li(1)-1,ui(1)+1
-        du11(i1,i2,i3) = (du11(i1,i2,i3) - c*divu(i1,i2,i3))
-        du22(i1,i2,i3) = (du22(i1,i2,i3) - c*divu(i1,i2,i3))
-        du33(i1,i2,i3) = (du33(i1,i2,i3) - c*divu(i1,i2,i3))
-      end do
-    else
+    if (self%kinematic) then
       do i1=li(1)-1,ui(1)+1
         du11(i1,i2,i3) = d(i1,i2,i3)*(du11(i1,i2,i3) - c*divu(i1,i2,i3))
         du22(i1,i2,i3) = d(i1,i2,i3)*(du22(i1,i2,i3) - c*divu(i1,i2,i3))
@@ -201,6 +196,12 @@ SUBROUTINE pre_update (self)
         du12(i1,i2,i3) = d(i1,i2,i3)* du12(i1,i2,i3)
         du13(i1,i2,i3) = d(i1,i2,i3)* du13(i1,i2,i3)
         du23(i1,i2,i3) = d(i1,i2,i3)* du23(i1,i2,i3)
+      end do
+    else
+      do i1=li(1)-1,ui(1)+1
+        du11(i1,i2,i3) = (du11(i1,i2,i3) - c*divu(i1,i2,i3))
+        du22(i1,i2,i3) = (du22(i1,i2,i3) - c*divu(i1,i2,i3))
+        du33(i1,i2,i3) = (du33(i1,i2,i3) - c*divu(i1,i2,i3))
       end do
     end if
   end do
@@ -215,19 +216,22 @@ SUBROUTINE pre_update (self)
   do i2=li(2),ui(2)
   do i1=li(1),ui(1)
     c = 0.5*self%mu/d(i1,i2,i3)
-    ff(i1,i2,i3,1) = ((du11(i1+1,i2,i3) - du11(i1-1,i2,i3))*c1 &
+    ff(i1,i2,i3,1) = ff(i1,i2,i3,1) &
+                   + ((du11(i1+1,i2,i3) - du11(i1-1,i2,i3))*c1 &
                    +  (du12(i1,i2+1,i3) - du12(i1,i2-1,i3))*c2 &
                    +  (du13(i1,i2,i3+1) - du13(i1,i2,i3-1))*c3)*c
-    ff(i1,i2,i3,2) = ((du12(i1+1,i2,i3) - du12(i1-1,i2,i3))*c1 &
+    ff(i1,i2,i3,2) = ff(i1,i2,i3,2) &
+                   + ((du12(i1+1,i2,i3) - du12(i1-1,i2,i3))*c1 &
                    +  (du22(i1,i2+1,i3) - du22(i1,i2-1,i3))*c2 &
                    +  (du23(i1,i2,i3+1) - du23(i1,i2,i3-1))*c3)*c
-    ff(i1,i2,i3,3) = ((du13(i1+1,i2,i3) - du13(i1-1,i2,i3))*c1 &
+    ff(i1,i2,i3,3) = ff(i1,i2,i3,3) &
+                   + ((du13(i1+1,i2,i3) - du13(i1-1,i2,i3))*c1 &
                    +  (du23(i1,i2+1,i3) - du23(i1,i2-1,i3))*c2 &
                    +  (du33(i1,i2,i3+1) - du33(i1,i2,i3-1))*c3)*c
   end do
   end do
   end do
-  self%u_max = self%mu/minval(ds)**2
+  self%u_max = self%mu/(6.*minval(ds)**2)
   !-----------------------------------------------------------------------------
   deallocate (du11,du12,du13)
   deallocate (du21,du22,du23)
@@ -246,9 +250,9 @@ SUBROUTINE courant_condition(self)
   !-----------------------------------------------------------------------------
   if (first_time) then
     call io%lock%set
-    if (first_time) then
+    if (first_time .and. self%u_max > 0.0) then
       first_time = .false.
-      print *, 'visc u_max', self%u_max, self%patch%u_max
+      print *, 'visc u_max', self%patch%id, self%u_max, self%patch%u_max
     end if
     call io%lock%unset
   end if

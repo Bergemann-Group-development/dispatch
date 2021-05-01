@@ -13,16 +13,16 @@ MODULE initial_conditions_mod
   implicit none
   private
   type, public :: initial_conditions_t
-    logical :: mhd=.true.
+    real:: theta     = 10.0
+    real:: mpoly     = 1.0
+    real:: amplitude = 1e-3
+    logical :: mhd   = .false.
     character(len=64):: solver
     class(gpatch_t), pointer:: patch
   contains
     procedure:: pre_init
     procedure:: init
   end type
-  real:: theta     = 10.0
-  real:: mpoly     = 1.0
-  real:: amplitude = 1e-3
   type(random_t):: random
 CONTAINS
 
@@ -35,6 +35,9 @@ SUBROUTINE pre_init (self, patch)
   !.............................................................................
   integer:: iostat
   integer, save:: idirect
+  real:: theta     = 10.0
+  real:: mpoly     = 1.0
+  real:: amplitude = 1e-3
   real(8), save :: p0, v0, b0
   logical, save :: first_time=.true.
   namelist /IC_params/ theta, mpoly, amplitude
@@ -56,6 +59,7 @@ SUBROUTINE pre_init (self, patch)
     write (io%namelist, IC_params)
     first_time = .false.
   end if
+  self%mpoly = mpoly
   call io%lock%unset('initial_conditions_t%pre_init')
   !
   call trace%end()
@@ -90,9 +94,9 @@ SUBROUTINE init (self)
     !z=1.0-zz
     do iy=m(2)%lb,m(2)%ub
       do ix=m(1)%lb,m(1)%ub
-        p_pert = random%ran1()*amplitude
-        pg = (1.0+p_pert)*(1.0+theta*z)**(mpoly+1.0)
-        ff(ix,iy,iz,idx%d) = (1.0+theta*z)**mpoly
+        p_pert = random%ran1()*self%amplitude
+        pg = (1.0+p_pert)*(1.0+self%theta*z)**(self%mpoly+1.0)
+        ff(ix,iy,iz,idx%d) = (1.0+self%theta*z)**self%mpoly
         if (idx%e>0) ff(ix,iy,iz,idx%e) = pg/(eos%gamma-1.0)
         ff(ix,iy,iz,idx%px) = 0.0
         ff(ix,iy,iz,idx%py) = 0.0
@@ -112,8 +116,8 @@ SUBROUTINE init (self)
         do iy=m(2)%lb,m(2)%ub
           do ix=m(1)%lb,m(1)%ub
             rhov2 = (ff(ix,iy,iz,idx%px)**2 + &
-                    ff(ix,iy,iz,idx%py)**2 + &
-                    ff(ix,iy,iz,idx%pz)**2)/ff(ix,iy,iz,idx%d)
+                     ff(ix,iy,iz,idx%py)**2 + &
+                     ff(ix,iy,iz,idx%pz)**2)/ff(ix,iy,iz,idx%d)
             B2 = 0.0
             ff(ix,iy,iz,idx%e) = ff(ix,iy,iz,idx%e) + 0.5*rhov2 + 0.5*B2
           end do
@@ -123,8 +127,8 @@ SUBROUTINE init (self)
     deallocate(emag)
   end if
   !-----------------------------------------------------------------------------
-  self%patch%boundaries%theta=theta
-  self%patch%boundaries%mpoly=mpoly
+  self%patch%boundaries%theta = self%theta
+  self%patch%boundaries%mpoly = self%mpoly
   !-----------------------------------------------------------------------------
   call trace_end
   end associate

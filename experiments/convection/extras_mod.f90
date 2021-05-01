@@ -66,7 +66,6 @@ MODULE extras_mod
   ! Optional modules start here.
   !-----------------------------------------------------------------------------
   USE initial_conditions_mod                                           ! initial
-  !USE forces_mod                                                       ! forces
   USE gravity_mod                                                      ! gravity
   USE viscosity_mod
   USE conduction_mod
@@ -80,10 +79,9 @@ MODULE extras_mod
   type, public, extends(gpatch_t):: extras_t
     class(gpatch_t), pointer:: patch => null()                         ! keep
     type(initial_conditions_t):: initial_conditions                    ! initial
-    !type(forces_t):: forces                                            ! forces
     type(gravity_t):: gravity                                          ! gravity
-    type(viscosity_t):: viscosity                                       ! viscosity
-    type(conduction_t):: conduction                                     ! viscosity
+    type(viscosity_t):: viscosity                                      ! viscosity
+    type(conduction_t):: conduction                                    ! cond
   contains
     procedure, nopass:: cast2extras
     procedure:: pre_init
