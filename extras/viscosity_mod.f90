@@ -7,6 +7,7 @@ MODULE viscosity_mod
   USE scratch_mod
   USE scaling_mod
   USE kinds_mod
+  USE omp_lock_mod
   implicit none
   private
   type, public:: viscosity_t
@@ -244,8 +245,16 @@ END SUBROUTINE pre_update
 !===============================================================================
 SUBROUTINE courant_condition(self)
   class(viscosity_t):: self
+  logical:: first_time=.true.
   !-----------------------------------------------------------------------------
-  !print *, 'visc u_max', self%u_max, self%patch%u_max
+  if (first_time) then
+    call io%lock%set
+    if (first_time) then
+      first_time = .false.
+      print *, 'visc u_max', self%u_max, self%patch%u_max
+    end if
+    call io%lock%unset
+  end if
   self%patch%u_max = max (self%patch%u_max, self%u_max)
 END SUBROUTINE courant_condition
 

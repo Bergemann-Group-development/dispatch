@@ -30,7 +30,7 @@ MODULE experiment_mod
   end type
   real::    mu    = 0.0
   real::    kappa = 0.07
-  real::    sigma = 0.1
+  real::    sigma = 1.0
   real::    theta = 10.
   logical:: flux_BC = .true.
   logical, save:: first_time=.true.

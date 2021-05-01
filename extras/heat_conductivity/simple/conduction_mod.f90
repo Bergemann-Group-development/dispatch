@@ -16,7 +16,7 @@ MODULE conduction_mod
   implicit none
   private
   type, public:: conduction_t
-    real(kind=var_k):: kappa = 0.0
+    real(kind=var_k):: kappa = 0.07
     real(kind=var_k):: u_max = 0.0
     class(gpatch_t), pointer:: patch
     logical:: on = .false.
@@ -64,16 +64,15 @@ SUBROUTINE pre_update(self)
   class (conduction_t):: self
   !.............................................................................
   real(8) :: ds(3)
-  real(var_k):: vol, area
-  integer :: n(3), lb(3), ub(3), i
+  real(var_k):: vol, area, c, del
+  integer :: i1, i2, i3, n(3), lb(3), ub(3), i, l(3), u(3)
   real(kind=var_k), dimension(:,:,:),   pointer :: d, e
   real(kind=var_k), dimension(:,:,:),   allocatable:: tg
   real(kind=var_k), dimension(:,:,:,:), allocatable:: tg_grad
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not.self%on) return
-  call trace%begin ('conduction_t%pre_update', itimer, &
-    detailed_timer=timer%detailed)
+  call trace%begin ('conduction_t%pre_update', itimer)
   !
   lb = self%patch%mesh%lb
   ub = self%patch%mesh%ub
@@ -89,20 +88,30 @@ SUBROUTINE pre_update(self)
   allocate (tg(n(1),n(2),n(3)))
   allocate (tg_grad(n(1),n(2),n(3),3))
   call eos%lookup_table (n, d=d, e=e, tt=tg)
-  tg_grad = grad (self%patch%mesh, tg)
-  do i=1,3
-    tg_grad(:,:,:,i) = - tg_grad(:,:,:,i) * (self%kappa * (eos%gamma-1d9))
-  end do
   !-----------------------------------------------------------------------------
   ! The heating per unit volume is the divergence of the negative flux
   !-----------------------------------------------------------------------------
   call scratch%allocate (scratch%heating_per_unit_volume, self%patch%mesh%gn)
-  scratch%heating_per_unit_volume = &
-  scratch%heating_per_unit_volume - div (self%patch%ds, tg_grad)
-  self%u_max = self%kappa*(1.0/ds(1)**2 + 1.0/ds(2)**2 + 1.0/ds(3)**2)
+  c = self%kappa * (eos%gamma-1d0)
+  l = self%patch%li
+  u = self%patch%li
+  do i3=l(3),u(3)
+  do i2=l(2),u(2)
+  do i1=l(1),u(1)
+    del = tg(i1-1,i2,i3) -6.0*tg(i1,i2,i3) + tg(i1,i2,i3+1) &
+        + tg(i1,i2-1,i3)                   + tg(i1,i2+1,i3) &
+        + tg(i1,i2,i3-1)                   + tg(i1+1,i2,i3)
+    scratch%heating_per_unit_volume(i1,i2,i3) = &
+    scratch%heating_per_unit_volume(i1,i2,i3) + c*del
+  end do
+  end do
+  end do
+  !-----------------------------------------------------------------------------
+  self%u_max = c/6.0 &
+             * (1.0/ds(1)**2 + 1.0/ds(2)**2 + 1.0/ds(3)**2)
   !
   deallocate(tg,tg_grad)
-  call trace%end (itimer, detailed_timer=timer%detailed )
+  call trace%end (itimer)
 END SUBROUTINE pre_update
 
 !===============================================================================

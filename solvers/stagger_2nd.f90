@@ -238,7 +238,7 @@ FUNCTION ddy (ds, a, l, u) RESULT (b)
   else
     uu = n-1
   end if
-  c = 0.5/ds(1)
+  c = 0.5/ds(2)
   do iz=1,n(3)
     out(3) = iz < ll(3) .or. iz > uu(3)
     do iy=1,n(2)
@@ -293,7 +293,7 @@ FUNCTION ddz (ds, a, l, u) RESULT (b)
   else
     uu = n-1
   end if
-  c = 0.5/ds(1)
+  c = 0.5/ds(3)
   do iz=1,n(3)
     out(3) = iz < ll(3) .or. iz > uu(3)
     do iy=1,n(2)

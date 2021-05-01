@@ -664,7 +664,7 @@ SUBROUTINE ctoprim (self)
     q(i1,i2,i3,2) = unew(i1,i2,i3,self%idx%px)*s
     q(i1,i2,i3,3) = unew(i1,i2,i3,self%idx%py)*s
     q(i1,i2,i3,4) = unew(i1,i2,i3,self%idx%pz)*s
-    s = q(i1,i2,i3,2)**2+q(i1,i2,i3,3)**2+q(i1,i2,i3,4)**2
+    s = s*(q(i1,i2,i3,2)**2+q(i1,i2,i3,3)**2+q(i1,i2,i3,4)**2)
     pg(i1,i2,i3) = unew(i1,i2,i3,self%idx%e) - half*s
   end do
   end do
