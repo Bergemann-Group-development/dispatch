@@ -140,6 +140,8 @@ def read_rank_namelist(file,patches,rank,verbose=0):
                     d['time']=float(items[1])
                 elif items[0]=='ISTEP':
                     d['istep']=int(items[1])
+                elif items[0]=='RECORD':
+                    d['record']=int(items[1])
                 elif items[0]=='DS':
                     d['ds'] = _parse_multiple(items)
                 elif items[0]=='MESH_TYPE':

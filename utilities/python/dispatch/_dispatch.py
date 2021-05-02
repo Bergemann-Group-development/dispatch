@@ -304,17 +304,22 @@ def _var(patch,filed,snap,verbose=0,copy=None):
     if verbose==5:
         print('id:',patch.id)
     for iv in range(patch.nv):
-        if patch.ioformat==5:
-            offset = patch.ip + iv*patch.ntotal
-            offset += patch.iout*patch.ntotal*patch.nv
-        elif patch.ioformat>=6 and patch.ioformat<10 or patch.ioformat==15:
-            offset = iv + patch.ip*patch.nv
-            offset += patch.iout*patch.ntotal*patch.nv
-        elif patch.ioformat>=10:
-            offset = patch.ip + iv*patch.ntotal
-            offset += patch.iout*patch.ntotal*patch.nv
+        if snap.io.method.strip()=='background':
+            offset = iv + patch.record*patch.nv
+            if verbose>0:
+                print('background offset',offset)
         else:
-            offset = iv
+            if patch.ioformat==5:
+                offset = patch.ip + iv*patch.ntotal
+                offset += patch.iout*patch.ntotal*patch.nv
+            elif patch.ioformat>=6 and patch.ioformat<10 or patch.ioformat==15:
+                offset = iv + patch.ip*patch.nv
+                offset += patch.iout*patch.ntotal*patch.nv
+            elif patch.ioformat>=10:
+                offset = patch.ip + iv*patch.ntotal
+                offset += patch.iout*patch.ntotal*patch.nv
+            else:
+                offset = iv
         offset *= bytes
         patch.offset.append(offset)
         #if verbose==5:
@@ -660,6 +665,9 @@ class _patch():
         #timer.add('_patch(7))')
         if snap.io.method.strip()=='legacy':
             self.filename=snap.rundir+'/{:05d}/{:05d}.dat'.format(self.iout,self.id)
+            self.var=_var(self,self.filename,snap,verbose=verbose)
+        elif snap.io.method.strip()=='background':
+            self.filename=snap.rundir+'/{:05d}/snapshot_{:05d}.dat'.format(self.iout,self.rank)
             self.var=_var(self,self.filename,snap,verbose=verbose)
         else:
             self.var=_var(self,snap.datafiled,snap,verbose=verbose)
