@@ -23,7 +23,9 @@ MODULE io_mod
     integer:: format=0
     integer:: nml_version=0
     integer:: restart=-1
-    integer:: nwrite=0, ntask=0, ntotal=0
+    integer:: ntask=0           ! number of tasks on this rank (?)
+    integer:: nwrite=0          ! number of tasks to output on this rank
+    integer:: ntotal=0          ! number of tasks to output on all ranks
     integer:: dims(3)=0, mpi_dims(3), mpi_odims(3)=1
     integer:: print_every=0, iprint=0            ! print cadence
     character(len=120):: inputname               ! input namelist file (e.g. run.nml)
@@ -113,7 +115,7 @@ SUBROUTINE init (self, name)
   character(len=*), optional:: name
   character(len=120):: filename, datadir='data', inputdir='data'
   character(len=120), save:: top='../../'
-  character(len=8), save:: method='legacy'
+  character(len=16), save:: method='legacy'
   integer, save:: id_debug=-1, restart=-9, format=0, time_derivs=0, nml_version=1
   integer, save:: log_sent=0, task_logging=0
   logical, save:: first_time=.true., omp_trace=.false., do_validate=.false.

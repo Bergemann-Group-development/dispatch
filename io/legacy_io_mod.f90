@@ -27,18 +27,18 @@ SUBROUTINE output (self, experiment_name)
   integer:: iv, li(3)=0, ui(3)=0, l(3), u(3), no, jo, it, i
   real:: ds(3)
   logical:: first_time=.true.
-  integer:: it1, it2, n(3)
+  integer:: it1, it2, n(3), data_unit
   real:: pt, qt
   real(4), dimension(:,:,:), pointer:: buf
   real(8):: time, t1, t2
  ! integer, save:: iodir=-1
   !-----------------------------------------------------------------------------
   call trace%begin('legacy_io%output')
-  !$omp critical (output_cr)
+  !omp critical (output_cr)
   !-----------------------------------------------------------------------------
   ! Check number of patches written and issue a message when all done
   !-----------------------------------------------------------------------------
-  self%max_files = self%max_files-1
+  ! = self%max_files-1
   if (self%max_files <= 0) then
     write (io_unit%log,*) 'TOO MANY FILES'
     stop
@@ -97,8 +97,8 @@ SUBROUTINE output (self, experiment_name)
     write (filename,'(a,i5.5,"/",i7.7)') trim(io%outputname), self%iout, self%id
   end if
   n = u-l+1
-  open (io_unit%data, file=trim(filename)//'.dat', form='unformatted', access='direct', &
-    status='unknown', recl=kind(buf)*product(n))
+  open (newunit=data_unit, file=trim(filename)//'.dat', form='unformatted', &
+        access='direct', status='unknown', recl=kind(buf)*product(n))
   do jo=1,no
     do iv=1,io%nv
       allocate (buf(n(1),n(2),n(3)))
@@ -139,14 +139,14 @@ SUBROUTINE output (self, experiment_name)
       if (io%verbose>1) &
         write (io_unit%log,'(1x,a,2i5,i3,1p,3e11.3)') &
           trim(filename),iv,it1,jo,minval(buf),maxval(buf),pt
-      write (io_unit%data,rec=iv+(jo-1)*io%nv) buf
+      write (data_unit,rec=iv+(jo-1)*io%nv) buf
       if (io%verbose>1 .and. iv==self%idx%d) &
         print *,'rho minmax',minval(buf), maxval(buf)
       deallocate (buf)
     end do
   end do
-  close (io_unit%data)
-  !$omp end critical (output_cr)
+  close (data_unit)
+  !omp end critical (output_cr)
   call trace%end()
 END SUBROUTINE output
 

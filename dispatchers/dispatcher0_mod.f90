@@ -209,7 +209,7 @@ SUBROUTINE update (self, task_list, test)
   ! to avoid hammering the task list lock, delaying other threads.  Most of the
   ! time, the call to stall_handler() will come from here, but occasionally nq
   ! may be non-zero at the time of the test, but another thread picks up the
-  ! last task before the test on head below, possibly resulting in a call to 
+  ! last task before the test on head below, possibly resulting in a call to
   ! stall_handler, if n_stalled is already larger than 10,000.
   !-----------------------------------------------------------------------------
   !$omp atomic read
@@ -392,12 +392,16 @@ SUBROUTINE update (self, task_list, test)
       return
     end if
     call task_list%update (head, test)
-    !$omp atomic update
-    timer%busy_time = timer%busy_time + (wallclock()-start)
+    !---------------------------------------------------------------------------
+    ! This taskyield is to encourage I/O tasks created in the mean time to run
+    !---------------------------------------------------------------------------
+    !$omp taskyield
     !---------------------------------------------------------------------------
     ! The first update after a stall period finds stalled non-zero, and sets it
     ! to zero, to prevent the if-block from being executed repeatedly
     !---------------------------------------------------------------------------
+    !$omp atomic update
+    timer%busy_time = timer%busy_time + (wallclock()-start)
     !$omp atomic read
     stalled_l = stalled
     !...........................................................................

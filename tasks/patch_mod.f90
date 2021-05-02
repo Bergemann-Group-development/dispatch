@@ -63,6 +63,7 @@ MODULE patch_mod
     integer:: time_derivs               ! for restart changes
     integer:: not_filled=0              ! guard zones not filled
     integer:: refine_ratio=2            ! may differ btw patches
+    integer:: record=0                  ! record number in snapshot file
     logical:: guard_zones               ! for restart changes
     logical:: mem_allocated=.false.
     logical:: do_pebbles=.false.
@@ -621,7 +622,7 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
   if (present(nv      )) self%nv       = nv
   if (present(nw      )) self%nw       = nw
   call io%warning('WARNING: calling deprecated patch_t%setup!')
-END SUBROUTINE setup 
+END SUBROUTINE setup
 
 !===============================================================================
 !> Initialize the patch memory and patch dimensions.  For this we need to be told the

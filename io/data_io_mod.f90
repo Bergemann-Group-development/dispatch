@@ -60,6 +60,7 @@ MODULE data_io_mod
   USE amr_io_mod
   USE direct_io_mod
   USE legacy_io_mod
+  USE background_io_mod
   USE parallel_io_mod
   USE buffered_io_mod
   USE pdf_io_mod
@@ -212,7 +213,7 @@ SUBROUTINE output (self, patch, experiment_name)
   !.............................................................................
   integer, save:: created=-1
   integer, save:: itimer=0
-  logical:: append
+  logical:: append, use_lock
   logical, save:: io_active=.false.
   integer:: it, count, np, prv, io_count
   real(8):: t
@@ -230,8 +231,8 @@ SUBROUTINE output (self, patch, experiment_name)
   else
     call self%lock%unset ('output1')
     !---------------------------------------------------------------------------
-    ! io%nwrite is the number of task writes this process is doing per snapshot 
-    ! it is given a default value here, which may be modified elsewhere in 
+    ! io%nwrite is the number of task writes this process is doing per snapshot
+    ! it is given a default value here, which may be modified elsewhere in
     ! data_io_mod, if more than one write per task is being performed.
     !---------------------------------------------------------------------------
     if (io%ntask<=0) then
@@ -240,8 +241,12 @@ SUBROUTINE output (self, patch, experiment_name)
     if (io%verbose > 1) &
       write (io_unit%log,*) 'io%nwrite =', io%nwrite
     !---------------------------------------------------------------------------
-    if (io%method=='legacy' .or. time_slices%order <= 0) then
+    use_lock = .true.
+    if (io%method=='legacy'     .or. &
+        io%method=='background' .or. &
+        time_slices%order <= 0) then
       np = 1
+      use_lock = .false.
     else
       np = (time_slices%order+1)/2
     end if
@@ -253,14 +258,14 @@ SUBROUTINE output (self, patch, experiment_name)
       if (io%verbose > 0) &
         write (stdout,'(a,i6,3i4,2f12.6)') &
         'data_io_t%output: ', patch%id, np, it, patch%nt, t, patch%time
-      call self%lock%set ('output2')
+      call io%lock%set ('output2')
       if (io%verbose > 1) &
         write (io%output,*) wallclock(),' thread',omp%thread,' waitfor output'
       !-------------------------------------------------------------------------
       ! The data io refers to task_t%iit(:) and task_t%t(:), and either all of
       ! these places need to be protected with omp atomic read, or (simpler) the
       ! occasional visit here to do I/O need to block other accesses (mainly in
-      ! download_mod) vi the task lock.  Certain types of output (but not for 
+      ! download_mod) vi the task lock.  Certain types of output (but not for
       ! example legacy_io) may need to be protected by critical regions or a lock
       ! on data_io), but (FIXME) for now this is neglected.
       !-------------------------------------------------------------------------
@@ -273,10 +278,10 @@ SUBROUTINE output (self, patch, experiment_name)
         end if
         if (io%do_output) call os%mkdir_next_output (patch%iout)
         !-----------------------------------------------------------------------
-        count = self%counters%decrement (patch%iout+1, io%nwrite)
-        if (io%verbose > 0) &
-          write (io_unit%log,*) 'count, nwrite =', count, io%nwrite
-        append = (count < io%nwrite-1)
+        !count = self%counters%decrement (patch%iout+1, io%nwrite)
+        !if (io%verbose > 0) &
+        !  write (io_unit%log,*) 'count, nwrite =', count, io%nwrite
+        !append = (count < io%nwrite-1)
         !-----------------------------------------------------------------------
         if      (io%method=='direct') then
           call direct_io%output (patch)
@@ -284,6 +289,8 @@ SUBROUTINE output (self, patch, experiment_name)
           call amr_io%output (patch, count)
         else if (io%method=='legacy') then
           call legacy_io%output (patch)
+        else if (io%method=='background') then
+          call background_io%output (patch)
           !call output_txt (patch, append)
         else if (io%method=='buffered') then
           call buffered_io%output (patch)
@@ -303,12 +310,12 @@ SUBROUTINE output (self, patch, experiment_name)
           call mpi%abort ('unknown io%method = '//io%method)
         end if
         !-----------------------------------------------------------------------
-        if (count==0 .and. .not.io_unit%do_validate) then
-          io_count = mod(io%counter%update(1),mpi%size)
-          io_active = .true.
-        end if
+        !if (count==0 .and. .not.io_unit%do_validate) then
+        !  io_count = mod(io%counter%update(1),mpi%size)
+        !  io_active = .true.
+        !end if
         !-----------------------------------------------------------------------
-        ! Output aux file, and namelist file with metadata 
+        ! Output aux file, and namelist file with metadata
         !-----------------------------------------------------------------------
         call patch%aux%output (patch%iout, patch%id)
         call output_nml (patch, append)
@@ -316,7 +323,7 @@ SUBROUTINE output (self, patch, experiment_name)
         patch%iout = patch%iout+1
         if (io%out_time==0.0) exit
         !-----------------------------------------------------------------------
-        if (io%verbose > 1) & 
+        if (io%verbose > 1) &
           write (io%output,'(a,i6,3f12.6,3i4)') &
             'io_t%output: id, iout, time, out_next, count =', &
             patch%id, patch%time, patch%time-patch%dtime, patch%out_next, &
@@ -327,13 +334,13 @@ SUBROUTINE output (self, patch, experiment_name)
       end do
       if (io%verbose > 1) &
         write (io%output,*) wallclock(),' thread',omp%thread,' unlocked output'
-      call self%lock%unset ('output2')
+      call io%lock%unset ('output2')
     end if
     !---------------------------------------------------------------------------
     ! Detect when an I/O operation is complete on all ranks
     !---------------------------------------------------------------------------
-    if (io_active) then
-      call self%lock%set ('output3')
+    if (io_active .and. use_lock) then
+      call io%lock%set ('output3')
       if (io_active) then
         io_count = io%counter%update(0)
         write (io_unit%mpi,*) &
@@ -359,7 +366,7 @@ SUBROUTINE output (self, patch, experiment_name)
           io_active = .false.
         end if
       end if
-      call self%lock%unset ('output3')
+      call io%lock%unset ('output3')
     end if
   end if    ! (io%needs_check)
   call trace%end (itimer)
@@ -379,7 +386,7 @@ SUBROUTINE open_and_close (self)
     end if
   end if
   call trace%end ()
-END SUBROUTINE open_and_close 
+END SUBROUTINE open_and_close
 
 !===============================================================================
 !> Read snapshot from disk
@@ -490,6 +497,7 @@ SUBROUTINE output_nml (patch, append, unit, first_time)
   integer, optional:: unit
   logical, optional:: first_time
   !.............................................................................
+  call io%lock%set ('output_nml')
   if (io%nml_version == 1) then
     call output_nml_v1(patch, append, unit, first_time)
   else if (io%nml_version == 2) then
@@ -502,6 +510,7 @@ SUBROUTINE output_nml (patch, append, unit, first_time)
     print*,io%nml_version
     call mpi%abort ('unknown nml_version!')
   end if
+  call io%lock%unset ('output_nml')
 CONTAINS
 
 !===============================================================================
@@ -979,7 +988,7 @@ SUBROUTINE output_nml_v4 (patch, append, unit, first_time)
   real(8)              :: time, dtime, out_next, out_time, ms
   real(8), dimension(3):: size, position, ds, box, velocity, &
                           llc_nat, llc_cart, centre_nat
-  integer              :: time_derivs, refine_ratio
+  integer              :: time_derivs, refine_ratio, record
   integer              :: omp_nthreads, mpi_size, mpi_dims(3)
   logical              :: guard_zones, no_mans_land, periodic(3)
   integer, save        :: last_snapshot=-1
@@ -991,7 +1000,7 @@ SUBROUTINE output_nml_v4 (patch, append, unit, first_time)
     time_derivs, no_mans_land, omp_nthreads, mpi_size, mesh_type, mpi_dims, &
     refine_ratio
   namelist /patch_nml/ id, position, size, level, dtime, istep, ds, ncell, n, &
-    nw, velocity, quality, mesh_type, kind
+    nw, velocity, quality, mesh_type, kind, record
   integer, allocatable :: nbor_ids(:)
   integer              :: parent_id
   namelist /nbor_nml/ id, parent_id, nbor_ids
@@ -1014,6 +1023,7 @@ SUBROUTINE output_nml_v4 (patch, append, unit, first_time)
   time        = merge (patch%time, patch%out_next, io%out_time==0)
   dtime       = patch%dtime
   istep       = patch%istep
+  record      = patch%record
   l = merge(patch%mesh%lb,patch%mesh%li,io%guard_zones)
   u = merge(patch%mesh%ub,patch%mesh%ui,io%guard_zones)
   ncell        = u-l+1

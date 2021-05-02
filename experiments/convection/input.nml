@@ -1,10 +1,10 @@
 &experiment_params flux_BC=t sigma=0.1 theta=10 /
 
 !----------------- I/O paramters -----------------------------------------------------
-&io_params         verbose=0 do_trace=f do_debug=f do_output=t
-                   method='parallel'
+&io_params         verbose=0 do_trace=f omp_trace=t do_debug=f do_output=t
+                   method='background'
                    guard_zones=t nml_version=1 /
-&out_params        end_time=0.1 out_time=0.1 print_every=300 /
+&out_params        end_time=0.5 out_time=0.1 print_every=300 /
 
 !----------------- Initial condition parameter ---------------------------------------
 &patch_params      nt=5 n=16,16,16 do_check_nan=f grace=0.1 dt_fixed=-1e-4 /
