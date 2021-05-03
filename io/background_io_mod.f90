@@ -44,7 +44,6 @@ SUBROUTINE output (self)
   snap = snapshot
   self%record = record
   it = minloc(abs(self%t-self%out_next))
-  if (rec==io%ntask)
   call io%lock%unset ('background_t%output')
   write (stdlog,*) &
     'background_io_t%output: snapshot,record,it=', snapshot, record, it
