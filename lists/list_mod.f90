@@ -86,6 +86,7 @@ MODULE list_mod
     integer:: no=0                      ! has output
     integer:: na=0                      ! active = internal+boundary
     integer:: nac=0                     ! active tasks
+    real   :: extra_grace=0.0           ! counter stall tendency
     real(8):: lc(3) = +huge(0d0)        ! lower corner
     real(8):: uc(3) = -huge(0d0)        ! upper corner
     real(8):: llc(3) = +huge(0d0)       ! lower left corner
@@ -523,7 +524,7 @@ SUBROUTINE update_counts (self, link, delta)
     end if
   end if
   call trace%end ()
-END SUBROUTINE update_counts 
+END SUBROUTINE update_counts
 
 !===============================================================================
 !> Set the io% attributes needed to keep track of I/O progress
@@ -808,8 +809,11 @@ SUBROUTINE check_all (self, repair)
         write (io_unit%log,*) 'check_all found', link%task%id, link%task%time
         nbor => link%nbor
         do while (associated(nbor))
-          write (io_unit%log,*) 'nbor, time =', nbor%task%id, nbor%task%time, &
-            nbor%needed, nbor%needs_me, nbor%download
+          write (io_unit%log,'(a,i6,3x,3l1,2f8.3)') &
+            'nbor, time =', nbor%task%id, &
+            nbor%needed, nbor%needs_me, nbor%download, &
+            (nbor%task%time - link%task%time)/nbor%task%dtime, &
+            link%task%grace + self%extra_grace
           nbor => nbor%next
         end do
         nq = self%nq
@@ -821,7 +825,7 @@ SUBROUTINE check_all (self, repair)
   if (associated(self%queue)) then
     write (io_unit%log,*) wallclock(), 'check_all: done, nq =', &
       self%nq, associated(self%queue)
-  else
+  else if (self%extra_grace == 0.0) then
     write (io_unit%log,*) 'check_all: phase 2, clearing ready bits'
     call self%lock%set ('check_all(2)')
     link => self%head
@@ -838,7 +842,7 @@ SUBROUTINE check_all (self, repair)
     call self%lock%unset ('check_all(2)')
   end if
   write (io_unit%log,*) wallclock(), 'check_all: done, nq =', &
-    self%nq, associated(self%queue)
+    self%nq, associated(self%queue), self%extra_grace
   call trace%end (itimer)
 END SUBROUTINE check_all
 
@@ -903,7 +907,7 @@ SUBROUTINE check_oldest (self, clear)
   if (associated(oldest)) then
     write (io_unit%log,'(f12.6,2x,a,i6,f12.6," rb:",2l1)') wallclock(), &
       'the oldest active task is ', oldest%task%id , told, &
-      oldest%task%is_set(bits%ready), oldest%task%is_set(bits%busy) 
+      oldest%task%is_set(bits%ready), oldest%task%is_set(bits%busy)
   else
     write (stderr,*) 'STALLED: oldest active not found '
   end if
@@ -1070,7 +1074,7 @@ SUBROUTINE check_ready (self, link, lock, status)
           write (io_unit%log,'(f12.6,1x,a,i6,1x,a,i6,i4,f12.6)') wallclock(), &
             'list_t%check_ready:', link%task%id, &
             'skip no support id, level, time =', nbor%task%id, nbor%task%level,&
-            nbor%task%time         
+            nbor%task%time
         !.......................................................................
       else if (nbor%task%level - link%task%level > 1) then
         !.......................................................................
@@ -1082,7 +1086,7 @@ SUBROUTINE check_ready (self, link, lock, status)
       ! Check nbors that are needed, not ignored, and have support
       !-------------------------------------------------------------------------
       else if (nbor%needed .and. nbor%task%is_clear(ignore)) then
-        if (.not. nbor%task%is_ahead_of(task)) then       ! and is ahead in time
+        if (.not. nbor%task%is_ahead_of(task, extra=self%extra_grace)) then
           ok = .false.
           status_l = max(1,status_l)
         end if
@@ -1426,8 +1430,8 @@ SUBROUTINE add_new_link (self, link)
 END SUBROUTINE add_new_link
 
 !===============================================================================
-!> Initialize the nbor list of a task at level L:  
-!> 1) Initially, levels L+-2 are entered into the nbor list, and are 
+!> Initialize the nbor list of a task at level L:
+!> 1) Initially, levels L+-2 are entered into the nbor list, and are
 !>    subsequently checked by prune_nbors(), which removes nbors at L+2 that
 !>    have support at L+1, and nbors at L-2, if the current task has support
 !>    at L-1.
@@ -1475,7 +1479,7 @@ SUBROUTINE init_nbors (self, link)
       ! virtual patch, or the nbor is not a virtual patch, thus excluding
       ! adding virtual patches as nbors to virtual patches
       !-------------------------------------------------------------------------
-      if (link%task%rank == mpi%rank .or. scan%task%rank == mpi%rank) then   
+      if (link%task%rank == mpi%rank .or. scan%task%rank == mpi%rank) then
         !-----------------------------------------------------------------------
         ! Potential nbors are other patches that overlap
         !-----------------------------------------------------------------------
@@ -1530,7 +1534,7 @@ SUBROUTINE init_nbors (self, link)
   end if
   !-----------------------------------------------------------------------------
   ! The links only needs to be locked the brief moment while the nbor pointers
-  ! are changed.  
+  ! are changed.
   !-----------------------------------------------------------------------------
   nullify (new_sort)
   call link%sort_nbors_by_level (new_head, new_sort)
@@ -1616,7 +1620,7 @@ SUBROUTINE prune_nbors (self, link, head, status)
       end if
       nbor => next
     end do
-    call link%task%clear (bits%no_support)  
+    call link%task%clear (bits%no_support)
   else
     call link%task%set (bits%no_support)
   end if
@@ -1681,7 +1685,7 @@ END SUBROUTINE prune_nbors
 
 !===============================================================================
 !> Set bits%init_nbors on nbor tasks, if the task itself is new (and hence has
-!> a new nbor list, which should be matched by the nbors nbor list). 
+!> a new nbor list, which should be matched by the nbors nbor list).
 !===============================================================================
 SUBROUTINE set_init_nbors (self, link)
   class(list_t):: self
@@ -1734,7 +1738,7 @@ END SUBROUTINE set_update_status
 !> an nbor starts at nbor%link%nbor.   To prevent other threads from modifying
 !> nbor list we need to loop over, we lock the link in the meantime, and to
 !> avoid a possible deadlock caused by having more than one lock active, we use
-!> a copy of the nbor list (cf. check_nbors())  
+!> a copy of the nbor list (cf. check_nbors())
 !===============================================================================
 SUBROUTINE init_nbor_nbors (self, link)
   class(list_t):: self
@@ -2658,7 +2662,7 @@ SUBROUTINE swap (self, link, sender, rank)
   timer%levelpop (link%task%level) - one
   !-----------------------------------------------------------------------------
   ! Set the rank to the new owner on the local rank, and flip the swap_request
-  ! bit. 
+  ! bit.
   !-----------------------------------------------------------------------------
   if (sender) then
     link%task%rank = rank
@@ -2714,7 +2718,7 @@ contains
     !---------------------------------------------------------------------------
     n_task = self%na
     old_measure = self%running_mean%average
-    old_queue = n_task/old_measure - 1.0 
+    old_queue = n_task/old_measure - 1.0
     queue = old_queue + increment
     self%mpi_window%value = queue
     measure = n_task/(queue + 1.0)
@@ -2794,7 +2798,7 @@ END SUBROUTINE update_nbor_status
 !===============================================================================
 !> Update the nbor/vnbor status of a link.  If self belongs to the local rank
 !> it is either an internal or boundary rank, if not it is virtual or external,
-!> depending on what nbors it has. 
+!> depending on what nbors it has.
 !>
 !> NOTE: This routine assumes that the initial task status bits are consistent
 !> with the task list counts, before the bits were updated.  Therefore, if the
@@ -2860,7 +2864,7 @@ END SUBROUTINE update_status
 !> and might have transformed this task from a boundary task to an internal task
 !> a list_t%update_status() must be performed, to re-establish the status of
 !> the current task.
-!> 
+!>
 !> 2) During the brief time that this task is deciding who -- if anyone -- to
 !> send to, load balancing must be forbidden, via a lock on load_balance_t,
 !> which also must be applied during the handling of a swap request on the
@@ -3204,7 +3208,7 @@ FUNCTION check_support (self, link, sign, irefine) RESULT (refine)
     !call link%lock%unset ('check_support')
     !---------------------------------------------------------------------------
     ! Task%irefine is used additively, so make sure refinement happen if and
-    ! where the local irefine is still set    
+    ! where the local irefine is still set
     !---------------------------------------------------------------------------
     if (associated(task%irefine)) then
       task%irefine = task%irefine + irefine

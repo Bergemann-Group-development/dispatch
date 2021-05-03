@@ -361,8 +361,8 @@ SUBROUTINE init_unique (self, same)
   else
     id_master = mpi%id%update (1)
     do while (id_master == id_same)
-      write (stderr,*) 'task_t%init_unique ERROR: same value returned', id_same 
-      write (io_unit%mpi,*) 'task_t%init_unique ERROR: same value returned', id_same 
+      write (stderr,*) 'task_t%init_unique ERROR: same value returned', id_same
+      write (io_unit%mpi,*) 'task_t%init_unique ERROR: same value returned', id_same
       id_master = mpi%id%update (1)
     end do
     !$omp atomic write
@@ -715,10 +715,18 @@ END SUBROUTINE timeslots2
 !> period, since we want to limit the extrapolation in the nbor task to at most
 !> target%grace*self%dtime.
 !===============================================================================
-LOGICAL FUNCTION is_ahead_of (self, target)
+LOGICAL FUNCTION is_ahead_of (self, target, extra)
   class (task_t):: self, target
-  real(8):: nbtime, nbdtime, tgtime
+  real, optional:: extra
   !.............................................................................
+  real:: grace
+  real(8):: nbtime, nbdtime, tgtime
+  !-----------------------------------------------------------------------------
+  if (present(extra)) then
+    grace = self%grace + extra
+  else
+    grace = self%grace
+  end if
   if (omp_lock%tasks) then
                                             call self%lock%set ('is_ahead_of')
     nbtime = self%time
@@ -729,7 +737,7 @@ LOGICAL FUNCTION is_ahead_of (self, target)
     else if (self%istep < 3) then
       is_ahead_of = nbtime >= tgtime
     else
-      is_ahead_of = nbtime + nbdtime*self%grace > tgtime
+      is_ahead_of = nbtime + nbdtime*grace > tgtime
     end if
                                             call self%lock%unset ('is_ahead_of')
   else
@@ -750,7 +758,7 @@ LOGICAL FUNCTION is_ahead_of (self, target)
       is_ahead_of = nbtime >= tgtime
     ! -- use a grace interval that is fraction of the nbor time step
     else
-      is_ahead_of = nbtime + nbdtime*self%grace > tgtime
+      is_ahead_of = nbtime + nbdtime*grace > tgtime
     end if
   end if
   if (io_unit%verbose>1) then
