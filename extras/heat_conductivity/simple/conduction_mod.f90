@@ -70,7 +70,7 @@ SUBROUTINE pre_update(self)
   real(8) :: ds(3)
   real(var_k):: vol, area, c1, c2, del1, del2
   integer :: i1, i2, i3, n(3), lb(3), ub(3), i, l(3), u(3)
-  real(kind=var_k), dimension(:,:,:),   pointer :: d, e
+  real(kind=var_k), dimension(:,:,:),   pointer :: d, e, px, py, pz, e_th
   real(kind=var_k), dimension(:,:,:),   allocatable:: tg
   real(kind=var_k), dimension(:,:,:,:), allocatable:: tg_grad
   integer, save:: itimer=0
@@ -84,14 +84,33 @@ SUBROUTINE pre_update(self)
   vol = product(ds)
   d => self%patch%mem(:,:,:,self%patch%idx%d,self%patch%it,1)
   e => self%patch%mem(:,:,:,self%patch%idx%e,self%patch%it,1)
+  px => self%patch%mem(:,:,:,self%patch%idx%px,self%patch%it,1)
+  py => self%patch%mem(:,:,:,self%patch%idx%py,self%patch%it,1)
+  pz => self%patch%mem(:,:,:,self%patch%idx%pz,self%patch%it,1)
   n =  shape(d)
+  ! ----------------------------------------------------------------------------
+  ! get internal energy
+  ! ----------------------------------------------------------------------------
+  allocate (e_th(n(1),n(2),n(3)))
+  l = self%patch%mesh%lb
+  u = self%patch%mesh%ub
+  do i3=l(3),u(3)
+    do i2=l(2),u(2)
+      do i1=l(1),u(1)
+        e_th(i1,i2,i3) = e(i1,i2,i3) - 0.5 * (px(i1,i2,i3)**2 + &
+                                              py(i1,i2,i3)**2 + &
+                                              pz(i1,i2,i3)**2) / d(i1,i2,i3)
+      end do
+    end do
+  end do
+
   !-----------------------------------------------------------------------------
   ! The negative heat flux is proportional to the density times the gradient
   ! of the temperature
   !-----------------------------------------------------------------------------
   allocate (tg(n(1),n(2),n(3)))
   allocate (tg_grad(n(1),n(2),n(3),3))
-  call eos%lookup_table (n, d=d, e=e, tt=tg)
+  call eos%lookup_table (n, d=d, e=e_th, tt=tg)
   l = self%patch%li
   u = self%patch%ui
   do i3=l(3)-1,u(3)+1
@@ -153,7 +172,7 @@ SUBROUTINE pre_update(self)
   !-----------------------------------------------------------------------------
   self%u_max = c1/12. + c2/6.
   !
-  deallocate (tg, tg_grad)
+  deallocate (tg, tg_grad, e_th)
   call trace%end (itimer)
 END SUBROUTINE pre_update
 
