@@ -70,7 +70,7 @@ SUBROUTINE set_pointers (self, u1, u2, u3)
   integer:: m(3)
   !-----------------------------------------------------------------------------
   m = self%patch%gn
-  self%d  => self%patch%mem(:,:,:,self%patch%idx%d,self%patch%it,1)
+  self%d  => self%patch%mem(:,:,:,self%patch%idx%d,self%patch%new,1)
   if (present(u1)) then
     self%allocated = .false.
     self%u1 => u1
@@ -81,12 +81,12 @@ SUBROUTINE set_pointers (self, u1, u2, u3)
     allocate(self%u1(m(1),m(2),m(3)))
     allocate(self%u2(m(1),m(2),m(3)))
     allocate(self%u3(m(1),m(2),m(3)))
-    self%u1 = self%patch%mem(:,:,:,self%patch%idx%px,self%patch%it,1) / &
-              self%patch%mem(:,:,:,self%patch%idx%d ,self%patch%it,1)
-    self%u2 = self%patch%mem(:,:,:,self%patch%idx%py,self%patch%it,1) / &
-              self%patch%mem(:,:,:,self%patch%idx%d ,self%patch%it,1)
-    self%u3 = self%patch%mem(:,:,:,self%patch%idx%pz,self%patch%it,1) / &
-              self%patch%mem(:,:,:,self%patch%idx%d ,self%patch%it,1)
+    self%u1 = self%patch%mem(:,:,:,self%patch%idx%px,self%patch%new,1) / &
+              self%patch%mem(:,:,:,self%patch%idx%d ,self%patch%new,1)
+    self%u2 = self%patch%mem(:,:,:,self%patch%idx%py,self%patch%new,1) / &
+              self%patch%mem(:,:,:,self%patch%idx%d ,self%patch%new,1)
+    self%u3 = self%patch%mem(:,:,:,self%patch%idx%pz,self%patch%new,1) / &
+              self%patch%mem(:,:,:,self%patch%idx%d ,self%patch%new,1)
   end if
 END SUBROUTINE set_pointers
 
@@ -122,7 +122,7 @@ SUBROUTINE pre_update (self)
   real, dimension(:,:,:,:), pointer, contiguous:: ff
   real(8):: ds(3)
   real:: c1, c2, c3, c, u_max(3)
-  integer:: i1, i2, i3, m(3), nn(4), li(3), ui(3)
+  integer:: i1, i2, i3, m(3), nn(4), l(3), u(3)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not. self%on) return
@@ -147,11 +147,11 @@ SUBROUTINE pre_update (self)
   c1 = 0.5/ds(1)
   c2 = 0.5/ds(2)
   c3 = 0.5/ds(3)
-  li=self%patch%li
-  ui=self%patch%ui
-  do i3=li(3)-1,ui(3)+1
-  do i2=li(2)-1,ui(2)+1
-  do i1=li(1)-1,ui(1)+1
+  l=self%patch%mesh%lb+1
+  u=self%patch%mesh%ub-1
+  do i3=l(3),u(3)
+  do i2=l(2),u(2)
+  do i1=l(1),u(1)
     du11(i1,i2,i3) = (u1(i1+1,i2,i3) - u1(i1-1,i2,i3))*c1
     du21(i1,i2,i3) = (u2(i1+1,i2,i3) - u2(i1-1,i2,i3))*c1
     du31(i1,i2,i3) = (u3(i1+1,i2,i3) - u3(i1-1,i2,i3))*c1
@@ -167,9 +167,9 @@ SUBROUTINE pre_update (self)
   !-----------------------------------------------------------------------------
   ! Compute divu and symmetrize
   !-----------------------------------------------------------------------------
-  do i3=li(3)-1,ui(3)+1
-  do i2=li(2)-1,ui(2)+1
-  do i1=li(1)-1,ui(1)+1
+  do i3=l(3),u(3)
+  do i2=l(2),u(2)
+  do i1=l(1),u(1)
     divu(i1,i2,i3) = du11(i1,i2,i3) &
                    + du22(i1,i3,i3) &
                    + du33(i1,i2,i3)
@@ -186,10 +186,10 @@ SUBROUTINE pre_update (self)
   ! Subtract compressive part and make per-volume
   !-----------------------------------------------------------------------------
   c = 2./3.
-  do i3=li(3)-1,ui(3)+1
-  do i2=li(2)-1,ui(2)+1
+  do i3=l(3),u(3)
+  do i2=l(2),u(2)
     if (self%kinematic) then
-      do i1=li(1)-1,ui(1)+1
+      do i1=l(1),u(1)
         du11(i1,i2,i3) = d(i1,i2,i3)*(du11(i1,i2,i3) - c*divu(i1,i2,i3))
         du22(i1,i2,i3) = d(i1,i2,i3)*(du22(i1,i2,i3) - c*divu(i1,i2,i3))
         du33(i1,i2,i3) = d(i1,i2,i3)*(du33(i1,i2,i3) - c*divu(i1,i2,i3))
@@ -198,7 +198,7 @@ SUBROUTINE pre_update (self)
         du23(i1,i2,i3) = d(i1,i2,i3)* du23(i1,i2,i3)
       end do
     else
-      do i1=li(1)-1,ui(1)+1
+      do i1=l(1),u(1)
         du11(i1,i2,i3) = (du11(i1,i2,i3) - c*divu(i1,i2,i3))
         du22(i1,i2,i3) = (du22(i1,i2,i3) - c*divu(i1,i2,i3))
         du33(i1,i2,i3) = (du33(i1,i2,i3) - c*divu(i1,i2,i3))
@@ -210,11 +210,9 @@ SUBROUTINE pre_update (self)
   ! Divergence of per-volume quantity, in per unit mass
   !-----------------------------------------------------------------------------
   ff => scratch%force_per_unit_mass
-  li=self%patch%li
-  ui=self%patch%ui
-  do i3=li(3),ui(3)
-  do i2=li(2),ui(2)
-  do i1=li(1),ui(1)
+  do i3=l(3),u(3)
+  do i2=l(2),u(2)
+  do i1=l(1),u(1)
     c = 0.5*self%mu/d(i1,i2,i3)
     ff(i1,i2,i3,1) = ff(i1,i2,i3,1) &
                    + ((du11(i1+1,i2,i3) - du11(i1-1,i2,i3))*c1 &
