@@ -44,11 +44,12 @@ SUBROUTINE init (self)
   real:: stencil = 1.5
   real:: courant_v = 1.0
   real:: courant_c = 1.0
+  real:: amplitude = 1e-3
   logical:: kinematic = .false.
   logical:: flux_BC = .true.
   logical:: first_time=.true.
   namelist /experiment_params/ &
-    flux_BC, theta, kappa, sigma, mpoly, theta, stencil, courant_v, courant_c
+    flux_BC, theta, kappa, sigma, mpoly, theta, stencil, courant_v, courant_c, kinematic, amplitude
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%init')
   call self%solver_t%init
@@ -79,6 +80,7 @@ SUBROUTINE init (self)
     self%boundaries%theta         = theta
     self%boundaries%mpoly         = mpoly
     self%initial_conditions%theta = theta
+    self%initial_conditions%amplitude = amplitude
   call io%lock%unset ('experiment_t%init')
   call trace%end()
 END SUBROUTINE init
