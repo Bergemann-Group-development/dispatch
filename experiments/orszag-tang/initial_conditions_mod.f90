@@ -239,10 +239,6 @@ SUBROUTINE init (self)
   else
     call io%abort('initial%condition: idirect not understood.')
   end if
-  
-  do iz=m(3)%lb,m(3)%ub
-    ff(:,:,iz,:) = ff(:,:,m(3)%li,:)
-  end do
 
   if (self%solver(1:6)=='ramses') then 
     if (idx%e>0) then
