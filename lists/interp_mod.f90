@@ -77,7 +77,7 @@ SUBROUTINE in_t (target, source, ls, us, in, out, lt, ut, all, only, extrap)
   integer, optional               :: only
   !.............................................................................
   integer, dimension(3)           :: l, u, o
-  integer                         :: i1, i2, i3, i4, jt(2), nv, n
+  integer                         :: i1, i2, i3, i4, jt(2), nv, n, it
   real                            :: pt(2), v_min, d_min
   real(8)                         :: wc
   real(8), save                   :: wtimer
@@ -107,6 +107,7 @@ SUBROUTINE in_t (target, source, ls, us, in, out, lt, ut, all, only, extrap)
       u = us
     end if
     o = 0
+    it = source%it
     !...........................................................................
     if (verbose > 1) then
       write (stdlog,'(a,2i6,4(2x,3i4))') &
@@ -115,7 +116,7 @@ SUBROUTINE in_t (target, source, ls, us, in, out, lt, ut, all, only, extrap)
     end if
     !...........................................................................
     out(l (1):u (1),l (2):u (2),l (3):u (3),:) = &
-     in(ls(1):us(1),ls(2):us(2),ls(3):us(3),:,1,1)
+     in(ls(1):us(1),ls(2):us(2),ls(3):us(3),:,it,1)
     n = product(us-ls+1)
     !...........................................................................
     if (verbose > 1) then
