@@ -32,6 +32,12 @@ info::
 	@echo "$B  EOS         $N= $(EOS)"
 
 #############################################################################
+# Print hostinfo (relevant for hpc systems)
+hostinfo:
+	$(info $(HOSTINFO))
+	@make info
+
+#############################################################################
 # sinclude files that are likely to change $(COMPILER)
 CONFIG = $(TOP)/config
 sinclude options.mkf
