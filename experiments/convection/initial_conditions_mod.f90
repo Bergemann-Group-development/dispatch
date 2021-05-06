@@ -58,6 +58,7 @@ SUBROUTINE pre_init (self, patch)
     call io%namelist_warning ('IC_params', iostat)
     write (io%namelist, IC_params)
     first_time = .false.
+    call random%init
   end if
   self%mpoly = mpoly
   call io%lock%unset('initial_conditions_t%pre_init')
@@ -75,11 +76,10 @@ SUBROUTINE init (self)
   class(mesh_t), pointer, dimension(:) :: m
   real, dimension(:,:,:,:), pointer :: ff
   integer:: ix, iy, iz                                       ! loop indices
-  real:: z,zz, pg, p_pert, rhov2, B2
+  real:: z,x,y,zz, pg, p_pert, rhov2, B2
   real,dimension(:,:,:),allocatable :: vecpot, emag
   !-----------------------------------------------------------------------------
   call trace_begin ('initial_t%initial_conditions')
-  call random%init
   m => self%patch%mesh
   ff => self%patch%mem(:,:,:,:,1,1)
   idx => self%patch%idx
@@ -93,7 +93,10 @@ SUBROUTINE init (self)
     z = max(m(3)%p + m(3)%r(iz),0.0)
     !z=1.0-zz
     do iy=m(2)%lb,m(2)%ub
+      y = m(2)%p + m(2)%r(iy)
       do ix=m(1)%lb,m(1)%ub
+        x = m(1)%p + m(1)%r(ix)
+        !p_pert = sin(math%pi*y)*sin(math%pi*x)*self%amplitude
         p_pert = random%ran1()*self%amplitude
         pg = (1.0+p_pert)*(1.0+self%theta*z)**(self%mpoly+1.0)
         ff(ix,iy,iz,idx%d) = (1.0+self%theta*z)**self%mpoly
