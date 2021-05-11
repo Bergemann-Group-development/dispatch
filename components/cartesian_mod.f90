@@ -98,7 +98,6 @@ SUBROUTINE init (self, task_list, label)
   self%position = position
   self%dims = dims
   self%size = size
-  io%dims     = dims
   if (mpi%size==1) &
     mpi_dims = 1
   !-----------------------------------------------------------------------------
@@ -134,7 +133,6 @@ SUBROUTINE init (self, task_list, label)
   self%task_list%size = self%size
   self%task_list%dims = self%dims
   self%task_list%position = self%position
-  io%dims = self%dims
   self%task_list%n_tasks = product(self%dims)
   self%task_list%face_nbors = face_nbors
   !-----------------------------------------------------------------------------
@@ -351,7 +349,7 @@ recursive SUBROUTINE initial_refine(self, task,level_min, ip)
         !    !call patch%dealloc()
         !    deallocate (link, patch)
         !    cycle
-        !  end if 
+        !  end if
           call patch%set(bits%static)
           if (keep_parent) then
             patch%parent => task

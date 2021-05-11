@@ -75,7 +75,6 @@ SUBROUTINE init (self, label)
   per_rank = dims/mpi_dims
   self%dims = dims
   self%size = size
-  io%dims     = dims
   if (mpi%size==1) &
     mpi_dims = 1
   !-----------------------------------------------------------------------------
@@ -110,7 +109,6 @@ SUBROUTINE init (self, label)
   call self%task_list%init ('tlist')
   self%task_list%size = self%size
   self%task_list%dims = self%dims
-  io%dims = self%dims
   self%task_list%n_tasks = product(self%dims)
   !-----------------------------------------------------------------------------
   ! Generate centers and orientations of all patches, stored in vb_layers_t%list
