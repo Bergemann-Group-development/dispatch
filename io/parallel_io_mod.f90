@@ -208,10 +208,10 @@ SUBROUTINE output (patch, count)
     io%ntotal = io%nwrite*mpi%size
   end if
   snapshot_words = product(n)*io%nv*io%ntotal
-  if (io%format==14) then
-    buffer_words = product(n)
-  else if (io%format==15) then
+  if (io%format==15) then
     buffer_words = product(n)*io%nv
+  else
+    buffer_words = product(n)
   end if
   if (io%method == 'snapshot') then
     call mpi_io%use (files_out(patch%iout))
@@ -229,9 +229,9 @@ SUBROUTINE output (patch, count)
       io%ntotal, ' patches'
   end if
   if (verbose > 0) then
-    write(io%output,'(1x,a,6i6,2i12,l3)') &
-      'parallel_io_t%output: id, ip, iout, n, snapshot_words, buffer_words =', &
-      patch%id, patch%ip, patch%iout, n, snapshot_words, buffer_words, &
+    write(io%output,'(1x,a,5i6,2i12,l3)') &
+      'parallel_io_t%output: id,iout,n,snapshot_words,buffer_words=', &
+      patch%id, patch%iout, n, snapshot_words, buffer_words, &
       associated(parallel_io%buffer)
     flush (io%output)
   end if
@@ -368,7 +368,7 @@ SUBROUTINE input (patch, ok)
   !-----------------------------------------------------------------------------
   ! Choose input reader
   !-----------------------------------------------------------------------------
-  !if (io%format > 9 .and. io%format < 14) then
+  !if (io%in%format > 9 .and. io%format < 14) then
     !call input_single (patch, ok)
     !call trace%end (itimer)
     !return
@@ -387,19 +387,19 @@ SUBROUTINE input (patch, ok)
   !-----------------------------------------------------------------------------
   ! Catch reading from a snapshot with different mpi_size
   !-----------------------------------------------------------------------------
-  single_patch = any(io%mpi_odims/=io%mpi_dims)
+  single_patch = any(io%in%mpi_dims/=io%mpi_dims)
   if (single_patch) then
-    write (stderr,'(2(3i4,2x))') io%mpi_dims, io%mpi_odims
+    write (stderr,'(2(3i4,2x))') io%mpi_dims, io%in%mpi_dims
     call io%abort("changing MPI geometry not supported with method='parallel'")
   end if
   !-----------------------------------------------------------------------------
   ! Compute offset size constants for the mpi_io reader
   !-----------------------------------------------------------------------------
-  snapshot_words = product(n)*io%ntotal*io%nv*(io%time_derivs+1)
-  if (io%format==14) then
-    buffer_words = product(n)
-  else if (io%format==15) then
+  snapshot_words = product(n)*io%in%ntotal*io%nv*(io%in%time_derivs+1)
+  if (io%in%format==15) then
     buffer_words = product(n)*io%nv
+  else
+    buffer_words = product(n)
   end if
   !-----------------------------------------------------------------------------
   ! Info
@@ -417,32 +417,38 @@ SUBROUTINE input (patch, ok)
   !$omp end critical (first_cr)
   !-----------------------------------------------------------------------------
   call mpi_io%use (file_in)
-  call mpi_io%set (snapshot_words, buffer_words, io%nwrite*(io%time_derivs+1))
+  call mpi_io%set (snapshot_words, buffer_words, io%nwrite*(io%in%time_derivs+1))
   !-----------------------------------------------------------------------------
   ! Read via buffer, in case guard zones not included. FIXME: read snapshot
   ! guard zone parameter, to allow it to differ
   !-----------------------------------------------------------------------------
+  if (verbose > 0) then
+    write(io%output,'(1x,a,5i6,2i12,l3)') &
+      'parallel_io_t%input: id,iout,n,snapshot_words,buffer_words=', &
+      patch%id, patch%iout, n, snapshot_words, buffer_words
+    flush (io%output)
+  end if
+  !.............................................................................
   allocate (buffer(n(1),n(2),n(3),io%nv))
   patch%iout = io%restart
-  slot = (io%time_derivs+1)*patch%iout
-  call mpi_io%read (buffer, 1+slot, 1+(patch%id-1)*(io%time_derivs+1))
-
-  if (io%format==14) then
-    !-------------------------------------------------------------------------
-    ! Ordering with (ip,iv,ider,io)
-    !-------------------------------------------------------------------------
-    do iv=1,io%nv
-      irec = patch%id + io%ntotal*((iv-1))
-      call mpi_io%read (buffer(:,:,:,iv), 1+slot, irec)
-    end do
-  else
-    !-------------------------------------------------------------------------
+  slot = (io%in%time_derivs+1)*patch%iout
+  !-----------------------------------------------------------------------------
+  if (io%in%format==15) then
+    !---------------------------------------------------------------------------
     ! This ordering has the derivative order added to the patch%id, which is
     ! in turn causing an increment by (io%time_derivs+1), so effectively adding
     ! nv additional variables for each derivative order, making it easy to
     ! address the derivatives, while using snapshot numbers incremented by 1.
-    !-------------------------------------------------------------------------
-    call mpi_io%write (buffer, 1+slot, 1+(patch%id-1)*(io%time_derivs+1))
+    !---------------------------------------------------------------------------
+    call mpi_io%read (buffer, 1+slot, 1+(patch%id-1)*(io%in%time_derivs+1))
+  else
+    !---------------------------------------------------------------------------
+    ! Ordering with (ip,iv,ider,io)
+    !---------------------------------------------------------------------------
+    do iv=1,io%nv
+      irec = patch%id + io%in%ntotal*((iv-1))
+      call mpi_io%read (buffer(:,:,:,iv), 1+slot, irec)
+    end do
   end if
 
   if (mpi_io%err /= 0) then
@@ -457,15 +463,6 @@ SUBROUTINE input (patch, ok)
               patch%li(2):patch%ui(2), &
               patch%li(3):patch%ui(3),1:io%nv,patch%it,1) = buffer
   end if
-  if (verbose > 1) then
-    do iv=1,io%nv
-      write (io_unit%output,*) 'parallel_io_t%input: id, iv, iout, min, max =', &
-        patch%id, iv, patch%iout, patch%fminval(iv), patch%fmaxval(iv)
-    end do
-  else if (verbose > 0) then
-    write (io_unit%output,*) 'parallel_io_t%input: id, iout =', &
-      patch%id, patch%iout
-  end if
   deallocate (buffer)
   !-----------------------------------------------------------------------------
   ! Make sure all time slots have the correct time set
@@ -475,10 +472,11 @@ SUBROUTINE input (patch, ok)
   ! Signal success
   !-----------------------------------------------------------------------------
   ok = .true.
-  if (verbose==1) &
-    write(io%output,'(a,2i6,1p,2e16.6)') ' parallel_io_t%input: iout, id, time, dtime =', &
+  if (verbose == 2) &
+    write(io%output,'(a,2i6,1p,2e16.6)') &
+    ' parallel_io_t%input: iout, id, time, dtime =', &
     patch%iout, patch%id, patch%time, patch%dtime
-  if (verbose>1) &
+  if (verbose > 2) &
     write(io%output,'(a,4i6,2i7)') &
     ' parallel_io_t%input: iout, n, snapshot_words, buffer_words =', &
     patch%iout, n, snapshot_words, buffer_words

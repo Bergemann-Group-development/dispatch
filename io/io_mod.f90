@@ -12,6 +12,12 @@ MODULE io_mod
   implicit none
   private
   logical:: mpi_trace=.false.
+  type input_t
+    integer:: mpi_dims(3), mpi_size, format, ntotal, time_derivs, nml_version
+    real(8):: out_time
+    logical:: guard_zones, no_mans_land
+    character(16):: method
+  end type
   type io_t
     integer:: verbose=0, input, output=6, data_unit, namelist
     logical:: master=.true.
@@ -21,22 +27,25 @@ MODULE io_mod
     integer:: word_size=4
     integer:: iodir=-1
     integer:: format=0
-    integer:: nml_version=0
+    integer:: nml_version=4
     integer:: restart=-1
     integer:: ntask=0           ! number of tasks on this rank (?)
     integer:: nwrite=0          ! number of tasks to output on this rank
     integer:: ntotal=0          ! number of tasks to output on all ranks
-    integer:: dims(3)=0, mpi_dims(3), mpi_odims(3)=1
-    integer:: print_every=0, iprint=0            ! print cadence
-    character(len=120):: inputname               ! input namelist file (e.g. run.nml)
-    character(len=120):: data_dir='data/'        ! data
-    character(len=120):: run_dir='data/'         ! data/run
-    character(len=120):: outputname              ! same as run_dir, kept only for compatibily
-    character(len=120):: inputdir='data/'        ! directory containing run to restart from
-    character(len=120):: top                     ! base name, allows referring to any repos file
+    !integer:: dims(3)=0         ! FIXME
+    integer:: mpi_dims(3)=1     ! FIXME
+    integer:: print_every=0, iprint=0       ! print cadence
+    character(len=120):: inputname          ! input namelist file (e.g. run.nml)
+    character(len=120):: data_dir='data/'   ! data
+    character(len=120):: run_dir='data/'    ! data/run
+    character(len=120):: outputname         ! same as run_dir, for compatibily
+    character(len=120):: inputdir='data/'   ! directory to restart from
+    character(len=120):: top                ! base name
     character(len=1):: sep = '/'
-    character(len=72):: hl='-------------------------------------------------------------------------'
-    character(len=72):: hs='*************************************************************************'
+    character(len=72):: &
+    hl='-------------------------------------------------------------------------'
+    character(len=72):: &
+    hs='*************************************************************************'
     ! flag values
     logical:: do_trace=.false.
     logical:: do_output=.true.
@@ -75,6 +84,7 @@ MODULE io_mod
     real:: gb_out=0.0
     type(mpi_counter_t):: counter
     type(lock_t):: lock
+    type(input_t):: in
   contains
     procedure:: init
     procedure:: open_rank_file
@@ -116,12 +126,12 @@ SUBROUTINE init (self, name)
   character(len=120):: filename, datadir='data', inputdir='data'
   character(len=120), save:: top='../../'
   character(len=16), save:: method='legacy'
-  integer, save:: id_debug=-1, restart=-9, format=0, time_derivs=0, nml_version=1
-  integer, save:: log_sent=0, task_logging=0
+  integer, save:: id_debug=-1, restart=-9, format=0, time_derivs=0
+  integer, save:: log_sent=0, task_logging=0, nml_version=4
   logical, save:: first_time=.true., omp_trace=.false., do_validate=.false.
-  logical, save:: do_debug=.false., do_trace=.false., do_output=.false., exist, &
-    do_legacy=.false., do_flags=.false., do_direct=.false., guard_zones=.false.
-  logical ,save:: namelist_errors=.true.
+  logical, save:: do_debug=.false., do_trace=.false., do_output=.false., exist
+  logical, save:: do_legacy=.false., do_flags=.false., do_direct=.false.
+  logical ,save:: namelist_errors=.true., guard_zones=.false.
   real(8):: log_interval=5d0
   namelist /io_params/ verbose, do_debug, do_trace, do_output, do_flags, &
     do_validate, do_legacy, do_direct, levelmax, omp_trace, id_debug, &

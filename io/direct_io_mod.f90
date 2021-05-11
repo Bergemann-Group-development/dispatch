@@ -96,21 +96,25 @@ SUBROUTINE output (self, patch)
     else
       io%format = 2
     end if
-    open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
+    open (io%data_unit, file=trim(filename)//'.txt', form='formatted', &
+          status='unknown')
     write (io%data_unit,'(i2.2)') io%format
     write (io%data_unit,'(a)') trim(patch%kind)
     write (io%data_unit,'(a)') trim(patch%eos)
     write (io%data_unit,'(a)') trim(patch%opacity)
-    write (io%data_unit,'(1p,2e18.10,6(2x,3e18.10)1x,1x,2e10.3)') patch%out_next, patch%dtime, &
-          self%position, patch%ds, patch%velocity, patch%llc_nat, patch%llc_cart, &
+    write (io%data_unit,'(1p,2e18.10,6(2x,3e18.10)1x,1x,2e10.3)') &
+          patch%out_next, patch%dtime, self%position, patch%ds, &
+          patch%velocity, patch%llc_nat, patch%llc_cart, &
           patch%mesh%centre_nat, patch%quality, eos%gamma
     l = 1
     u = self%dims(1:3)
     n = u-l+1
     id = mpi%rank
-    write (io%data_unit,'(6(3i10.1,2x),3i2.1,1x,1i2.1,i3)') int(patch%box/patch%ds+0.5), &
+    write (io%data_unit,'(6(3i10.1,2x),3i2.1,1x,1i2.1,i3)') &
+          int(patch%box/patch%ds+0.5), &
           n, l, u, n, n, ng, io%nv, patch%level
-    write (io%data_unit,'(3(1i8.1,1x),i2.1)') id, patch%iout, patch%istep, patch%mesh_type
+    write (io%data_unit,'(3(1i8.1,1x),i2.1)') &
+          id, patch%iout, patch%istep, patch%mesh_type
     close (io%data_unit)
     self%filename = trim(filename)//'.dat'
   end if
@@ -156,7 +160,8 @@ SUBROUTINE input (self, patch, ok)
   inquire (file=trim(filename)//'.dat', exist=exist)
   if (exist) then
     if (self%count==0) then
-      open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='old')
+      open (io%data_unit, file=trim(filename)//'.txt', form='formatted', &
+            status='old')
       read (io%data_unit,'(i2.2)') iof
       read (io%data_unit,'(a)')
       read (io%data_unit,'(a)')
@@ -173,12 +178,16 @@ SUBROUTINE input (self, patch, ok)
     u = patch%mesh%ui
     n = u-l+1
     allocate (buf(n(1),n(2),n(3),io%nv))
+    if (all(patch%ncell == 0)) then
+      patch%ncell = patch%gn
+    end if
     !call patch%time_interval (patch%out_next, jt, pt)
     offset(1:3) = 1 + patch%ipos*patch%ncell
     call self%in (buf, offset)
     patch%mem(    :    ,    :    ,    :    ,:,patch%it,1) = 0.0
     patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),:,patch%it,1) = buf
-    if (verbose>1) print *, 'id, dmin, dmax', patch%id, minval(buf(:,:,:,1)), maxval(buf(:,:,:,1)), l, u
+    if (verbose>1) print *, 'id, dmin, dmax', patch%id,  &
+      minval(buf(:,:,:,1)), maxval(buf(:,:,:,1)), l, u
     deallocate (buf)
     ok = .true.
     if (self%count==self%nbuf) then
@@ -215,7 +224,7 @@ END SUBROUTINE out
 !===============================================================================
 SUBROUTINE out_real (self, data, offset)
   class (direct_io_t):: self
-  integer, dimension(4) :: offset, n, l, u 
+  integer, dimension(4) :: offset, n, l, u
   real, dimension(:,:,:,:) :: data
   !-----------------------------------------------------------------------------
   call trace_begin('direct_io_t%out_real')
@@ -255,7 +264,7 @@ END SUBROUTINE in
 !===============================================================================
 SUBROUTINE in_real (self, data, offset)
   class (direct_io_t):: self
-  integer, dimension(4) :: offset, n, l, u 
+  integer, dimension(4) :: offset, n, l, u
   real, dimension(:,:,:,:) :: data
   !-----------------------------------------------------------------------------
   call trace_begin('direct_io_t%in_real')
@@ -388,7 +397,8 @@ SUBROUTINE read_in (self, rec)
       end do
     end if
   end if
-  print *, 'read_in:', shape(self%buffer), minval(self%buffer), maxval(self%buffer)
+  print *, 'read_in:', shape(self%buffer), &
+    minval(self%buffer), maxval(self%buffer)
   wt = max(wallclock()-wt,1d-9)
   self%gb = 4.0*product(self%dims)/1024.**3
   self%gbs = self%gb/wt

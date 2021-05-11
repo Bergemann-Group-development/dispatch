@@ -10,16 +10,18 @@ MODULE restart_mod
   USE patch_mod
   USE experiment_mod
   USE link_mod
+  USE list_mod
   USE task_list_mod
   USE read_bifrost_mod
   USE read_stagger_mod
+  USE load_balance_mod
+  USE bits_mod
   implicit none
   private
   type, public:: restart_t
   contains
     procedure:: init
-    procedure:: read_amr
-    procedure:: read_legacy
+    procedure:: read
   end type
   character(120) :: from_dir    = 'data/'
   character(16)  :: method      = 'amr'
@@ -33,16 +35,17 @@ CONTAINS
 !> Select I/O method
 !===============================================================================
 SUBROUTINE init (self, task_list)
-  class(restart_t)            :: self
-  type(task_list_t),  pointer :: task_list
-  integer                     :: iostat
-  character(120)              :: filename
+  class(restart_t)             :: self
+  class(task_list_t),  pointer :: task_list
+  integer                      :: iostat
+  character(120)               :: filename
   namelist /restart_params/ from_dir, snapshot, method, verbose
   !.............................................................................
   call trace%begin ('restart_t%init')
   !-----------------------------------------------------------------------------
   ! Namelist
   !-----------------------------------------------------------------------------
+  from_dir = io%run_dir
   rewind (io%input)
   read (io%input, restart_params, iostat=iostat)
   if (iostat > 0) then
@@ -62,14 +65,12 @@ SUBROUTINE init (self, task_list)
     allocate (task_list)
     call task_list%init
     select case (method)
-    case ('amr')
-      call self%read_amr (task_list)
-    case ('legacy')
-      call self%read_legacy (task_list)
     case ('bifrost')
       call read_bifrost%init (task_list)
     case ('stagger')
       call read_stagger%init (task_list)
+    case default
+      call self%read (task_list)
     end select
     !-----------------------------------------------------------------------------
     ! Prepare task list for execution
@@ -82,153 +83,105 @@ SUBROUTINE init (self, task_list)
 END SUBROUTINE init
 
 !===============================================================================
-!> MPI parallel I/O based method
+!> Generic method
 !===============================================================================
-SUBROUTINE read_amr (self, task_list)
-  class(restart_t)        :: self
-  type(task_list_t),  pointer :: task_list
-  !.............................................................................
-  class(task_t),      pointer :: task
-  class(link_t),      pointer :: link
-  character(120)              :: filename
-  character(16)               :: type
-  integer(8)                  :: offset
-  integer                     :: unit, iostat, id, rank
-  namelist /amr_nml/ id, type, rank, offset, nml_version
-  !-----------------------------------------------------------------------------
-  call trace%begin ('restart_t%read_amr')
-  !-----------------------------------------------------------------------------
-  ! Populate task lists, so far with only light-weight tasks, based on metadata
-  !-----------------------------------------------------------------------------
-  write (filename,'(a,i5.5,"/amr.nml")') trim(from_dir), snapshot
-  open (newunit=unit, file=filename, form='formatted', status='old')
-  do while (.true.)
-    read (unit, amr_nml, iostat=iostat)
-    if (iostat /= 0) then
-      exit
-    end if
-    if (rank == mpi%rank) then
-      call task_factory%allocate (type, task)
-      task%id = id
-      task%amr_offset = offset
-      io%nml_version = 4
-      call task%input_metadata (unit)   ! default: gpatch_t%input_metadata
-      call task_list%append (task)
-    end if
-  end do
-  close (unit)
-  !-----------------------------------------------------------------------------
-  ! Read binary data for all tasks in the task list; this is kept separate here
-  ! to allow for adding initial load balancing
-  !-----------------------------------------------------------------------------
-  call amr_io%open_file (from_dir, snapshot)
-  link => task_list%head
-  do while (associated(link))
-    task => link%task
-    call task%init
-    call task%allocate_mesg
-    call amr_io%input (task)
-    link => link%next
-  end do
-  call amr_io%close_file
-  !-----------------------------------------------------------------------------
-  ! Prepare task list for execution
-  !-----------------------------------------------------------------------------
-  call task_list%init_all_nbors
-  call task_list%queue_all
-  call trace%end ()
-END SUBROUTINE read_amr
-
-!===============================================================================
-!> Process the data/run/SSSSS/amr.nml with task metadata, allocate tasks, and
-!> add them to the task list
-!===============================================================================
-SUBROUTINE read_legacy (self, task_list)
+SUBROUTINE read (self, task_list)
   class(restart_t)             :: self
-  type(task_list_t),   pointer :: task_list
+  class(task_list_t),  pointer :: task_list
   !.............................................................................
   class(experiment_t), pointer :: experiment
   class(patch_t),      pointer :: patch
   class(task_t),       pointer :: task
-  class(link_t),       pointer :: link
-  character(120)               :: filename
-  character(16)                :: type
-  integer(8)                   :: offset
-  integer                      :: unit, iostat, recl, id, rank, n, l(3), u(3)
-  real(var_k)        , pointer :: d(:,:,:), p(:,:,:), mem(:,:,:,:)
-  namelist /restart_params/ from_dir, snapshot
-  namelist /amr_nml/ id, type, rank, offset, nml_version
+  class(link_t),       pointer :: link, next
+  class(list_t),       pointer :: list
+  class(task_list_t),  pointer :: tlist
+  integer                      :: n, unit
+  logical                      :: ok
   !-----------------------------------------------------------------------------
-  call trace%begin ('restart_t%read_legacy')
+  call trace%begin ('restart_t%read')
   !-----------------------------------------------------------------------------
-  ! Populate task lists, so far with only light-weight tasks, based on metadata.
-  ! Load-balancing is a separate issue; this step only assumes that there is
-  ! enough memory to read.
+  ! Populate task list, so far with only light-weight tasks, based on metadata
   !-----------------------------------------------------------------------------
-  write (filename,'(a,i5.5,"/rank_",i5.5,"_patches.nml")') &
-    trim(from_dir), snapshot, mpi%rank
-  open (newunit=unit, file=filename, form='formatted', status='old', &
-    iostat=iostat)
-  if (iostat /= 0) then
-    write (stderr,*) 'file does not exist: '//trim(filename)
-  else
-    !---------------------------------------------------------------------------
-    ! Loop until end-of-file on the rank file
-    !---------------------------------------------------------------------------
-    n = 0
-    do while (.true.)
-      allocate (experiment)
-      call experiment%pre_init
-      patch => experiment
-      call data_io%input_nml (patch, unit)
-      if (data_io%eof (unit)) then
-        call experiment%dealloc
-        exit
-      end if
-      n = n+1
-      task => experiment
-      call task_list%append (task)
-    end do
-    close (unit)
-    if (verbose > 0) then
-      write (stdout,'(a,i4,a)') 'legacy metadata for',n,' snapshot'
-      flush (stdout)
+  n = 0
+  unit = 0
+  do while (.true.)
+    allocate (experiment)
+    call experiment%pre_init ()
+    patch => experiment
+    call data_io%input_nml (patch, unit)
+    if (data_io%eof (unit)) then
+      call experiment%dealloc
+      exit
     end if
-    !---------------------------------------------------------------------------
-    ! Read binary data for all tasks in the task list
-    !---------------------------------------------------------------------------
-    link => task_list%head
-    do while (associated(link))
-      task => link%task
+    task => experiment
+    call task_list%append (task)
+    n = n+1
+  end do
+  close (unit)
+  !-----------------------------------------------------------------------------
+  ! Decide which tasks to keep, and append them to a new task list
+  !-----------------------------------------------------------------------------
+  call task_list%init_all_nbors
+  call task_list%reset_status
+  list => task_list
+  call load_balance%initial (list)
+  !-----------------------------------------------------------------------------
+  ! If the task rank matches, append the task to a new task list
+  !-----------------------------------------------------------------------------
+  allocate (tlist)
+  call tlist%init
+  link => task_list%head
+  do while (associated(link))
+    task => link%task
+    if (task%rank == mpi%rank .or. task%is_set(bits%virtual)) then
+      call tlist%append (task)
+    else
       select type (task)
-      class is (patch_t)
-        call task%init
-        task%iout     = task%iout + 1
-        task%out_next = task%time + io%out_time
-        l = merge (task%mesh%lb, task%mesh%li, io%guard_zones)
-        u = merge (task%mesh%ub, task%mesh%ui, io%guard_zones)
-        write (filename,'(a,i5.5,"/",i5.5,".dat")') &
-          trim(from_dir), snapshot, task%id
-
-        mem => task%mem(l(1):u(1),l(2):u(2),l(3):u(3),:,1,1)
-        recl=(storage_size(1.0_var_k)/8)*product(shape(mem))
-        open (newunit=unit, file=filename, form='unformatted', status='old', &
-          access='direct', recl=recl)
-        !-----------------------------------------------------------------------
-        ! Initialize the task, which allocates memory, and read binary data
-        !-----------------------------------------------------------------------
-        read (unit, rec=1) mem
-        close (unit)
-        if (verbose > 2) then
-          call task%stats ('restart')
-        else if (verbose > 1) then
-          call task%stats (task%mem(:,:,:,task%idx%d,1,1), 'restart')
-        end if
+      class is (experiment_t)
+        call task%dealloc ()
       end select
-      link => link%next
-    end do
-  end if
+      deallocate (task)
+    end if
+    link => link%next
+  end do
+  !-----------------------------------------------------------------------------
+  ! Deallocate the initial task list and its links, and point it to the new list
+  !-----------------------------------------------------------------------------
+  link => task_list%head
+  do while (associated(link))
+    next => link%next
+    deallocate (link)
+    link => next
+  end do
+  deallocate (task_list)
+  task_list => tlist
+  !-----------------------------------------------------------------------------
+  ! Prepare nbors, status bits, status counts, I/O coounts
+  !-----------------------------------------------------------------------------
+  call task_list%init_all_nbors
+  call task_list%reset_status
+  call task_list%count_status
+  call task_list%set_io_counts
+  !-----------------------------------------------------------------------------
+  ! Allocate and read in remaining tasks
+  !-----------------------------------------------------------------------------
+  link => task_list%head
+  do while (associated(link))
+    task => link%task
+    select type (task)
+    class is (experiment_t)
+      call task%init ()
+      task%t = task%time
+      task%dt = 0d0
+      call task%input (ok)
+    end select
+    link => link%next
+  end do
+  !-----------------------------------------------------------------------------
+  ! Prepare task list for execution
+  !-----------------------------------------------------------------------------
+  call task_list%queue_all
   call trace%end ()
-END SUBROUTINE read_legacy
+END SUBROUTINE read
 
 END MODULE restart_mod

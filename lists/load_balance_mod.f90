@@ -356,7 +356,7 @@ SUBROUTINE initial (self, task_list)
   real(8):: total_cost, part
   integer(8):: n, n1, i, rank
   !-----------------------------------------------------------------------------
-  if (any(io%old%mpi_dims /= io%mpi_dims)) then
+  if (any(io%in%mpi_dims /= io%mpi_dims)) then
     total_cost = 0d0
     n = 0
     link => task_list%head

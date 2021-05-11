@@ -36,7 +36,6 @@ SUBROUTINE output (self)
     snapshot = self%iout
     record = 0
     write (filename,'(a,i5.5,"/snapshot_*.dat")') trim(io%run_dir), snapshot
-    write (stdout,*) trim(filename)
   end if
   io%nml_version = max(4,io%nml_version)
   record = record + 1
@@ -106,14 +105,31 @@ SUBROUTINE write_out (buffer, snap, rec)
 END SUBROUTINE write_out
 
 !===============================================================================
-!> Read snapshot from disk
+!> Read a record with a data cube from a direct access file
 !===============================================================================
 SUBROUTINE input (self, ok)
   class(patch_t):: self
   logical:: ok
+  !.............................................................................
+  character(len=64) filename
+  real, pointer:: buffer(:,:,:,:)
+  integer:: unit, l(3), u(3)
   !-----------------------------------------------------------------------------
   call trace%begin('background_io_t%input')
-  ok = .false.
+  !-----------------------------------------------------------------------------
+  write (filename,'(a,i5.5,"/snapshot_",i5.5,".dat")') &
+    trim(io%run_dir), io%restart, self%rank
+  l = merge (self%mesh%lb, self%mesh%li, io%guard_zones)
+  u = merge (self%mesh%ub, self%mesh%ui, io%guard_zones)
+  buffer => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),:,self%it,1)
+  open (newunit=unit, file=trim(filename), form='unformatted', &
+        recl=kind(buffer)*product(shape(buffer)), &
+        access='direct', status='unknown')
+  read (unit, rec=self%record) buffer
+  close (unit)
+  !-----------------------------------------------------------------------------
+  call log (self%record, 5)
+  ok = .true.
   call trace%end ()
 END SUBROUTINE input
 

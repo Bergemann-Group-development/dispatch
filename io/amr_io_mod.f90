@@ -274,9 +274,10 @@ END SUBROUTINE close_file
 !> required of the calling procedure is to call this procedure as many times
 !> as there are patches to read.
 !===============================================================================
-SUBROUTINE input (self, task)
+SUBROUTINE input (self, task, ok)
   class(amr_io_t):: self
-  class(task_t), pointer:: task
+  class(task_t):: task
+  logical:: ok
   !-----------------------------------------------------------------------------
   call trace%begin ('amr_io_t%input')
   !-----------------------------------------------------------------------------
@@ -284,6 +285,7 @@ SUBROUTINE input (self, task)
   !-----------------------------------------------------------------------------
   call self%file%read (task%amr_offset, task%mesg%nbuf, task%mesg%buffer)
   call task%unpack (task%mesg)
+  ok = .true.
   call trace%end ()
 END SUBROUTINE input
 

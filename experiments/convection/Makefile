@@ -1,9 +1,9 @@
 
 # Option groups
-#OPTS = full_debug
+OPTS = full_debug
 #OPTS = debug
 #OPTS =
-OPTS = optimized
+#OPTS = optimized
 
 # Default target and methods
 UPD             = adams_bashforth
