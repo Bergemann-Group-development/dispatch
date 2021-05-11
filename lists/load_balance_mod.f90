@@ -1,12 +1,12 @@
 !===============================================================================
 !> Keep track of neighbor ranks and their loads, and redistribute.
 !>
-!> Each rank regularly updates a local queue measure -- the detailed definition 
+!> Each rank regularly updates a local queue measure -- the detailed definition
 !> of which may vary.  Each time a boundary task updates, this module is called,
 !> and makes a decision whether to swap the ownership to one of the nbor ranks
 !> that it normally sends a copy of the task to.
 !>
-!> The load measure is stored in the an mpi_window_t data type, which is also 
+!> The load measure is stored in the an mpi_window_t data type, which is also
 !> able to retrieve the measure from other ranks.  This requires only the rank
 !> number, and results from an MPI window request to the rank in question.
 !> There is thus no need to maintain one data type instance per rank.
@@ -19,7 +19,7 @@
 !> An instantaneous queue measure is total_cost/(current_cost+average_cost),
 !> where the total_load is the update cost of all tasks in the task list,
 !> average cost is the total load divided by the number of tasks, and
-!> current_cost is the load of the tasks in the ready queue.  The actual queue 
+!> current_cost is the load of the tasks in the ready queue.  The actual queue
 !> measure is a running mean of this instantaneous measure.
 !>
 !> That queue measure, which increases dramatically as the current_cost drops
@@ -58,7 +58,7 @@
 !> send    10 boundary+swap_request   -->   recv    10 virtual+swap_request
 !>                                          update
 !> recv    11 virtual                <--    send    11 boundary
-!> 
+!>
 !>                                          update
 !> recv    12 virtual                <--    send    12 boundary
 !===============================================================================
@@ -91,6 +91,7 @@ MODULE load_balance_mod
     procedure:: measure_queue
     procedure:: check_queue
     procedure:: print
+    procedure:: initial
   end type
   !-----------------------------------------------------------------------------
   ! Static module parameters and data types
@@ -101,7 +102,8 @@ MODULE load_balance_mod
   real, save    :: q_min=5.               ! limit below which ranks get tasks
   real, save    :: q_max=50.              ! limit above which ranks loose tasks
   integer, save :: verbose=0              ! verbosity
-  type(load_balance_t), save, public  :: load_balance    ! public instance
+  character(16) :: initial_method=''      ! default method
+  type(load_balance_t), save, public :: load_balance    ! public instance
 CONTAINS
 
 !===============================================================================
@@ -117,7 +119,8 @@ SUBROUTINE init (self, task_list)
   integer       :: iostat, na
   real          :: value
   namelist /load_balance_params/ &
-    is_on, dry_run, cadence, length, duration, q_min, q_max, verbose
+    is_on, dry_run, cadence, length, duration, q_min, q_max, initial_method, &
+    verbose
   !-----------------------------------------------------------------------------
   if (mpi%size==1) &
     return
@@ -153,7 +156,7 @@ SUBROUTINE init (self, task_list)
   call task_list%lock%unset ('load_balance_t%init')
   call trace%end ()
 END SUBROUTINE init
- 
+
 !===============================================================================
 !> Turn load balancing on or off
 !===============================================================================
@@ -237,13 +240,13 @@ contains
       1 format(1x,a,2(2x,2i6,f11.6,f7.1),2x,2f5.0,l4,i5)
       write (io_unit%log,1) &
        'load_balance_t%check_queue: task, my_q, nbor, nb_q, min, max =', &
-        task%id, task%istep, task%time, my_queue, & 
+        task%id, task%istep, task%time, my_queue, &
         nbor%task%id, nbor%task%istep, nbor%task%time, nb_queue, &
         q_min, q_max, swap, task%rank_steps
     else
       write (io_unit%log,1) &
        'load_balance_t%check_queue: task, my_q, nbor, nb_q, min, max =', &
-        task%id, task%istep, task%time, my_queue, & 
+        task%id, task%istep, task%time, my_queue, &
         nbor%task%id, nbor%task%istep, nbor%task%time, nb_queue, &
         q_min, q_max, swap, task%rank_steps
     end if
@@ -289,7 +292,7 @@ FUNCTION measure_queue (self) RESULT (queue)
     if (task%is_clear (bits%virtual)) then
       select type (task)
       class is (experiment_t)
-      task_cost = task%cost()
+      task_cost = task%cost
       end select
       n_task = n_task + 1
       rank_cost = rank_cost + task_cost
@@ -306,8 +309,8 @@ FUNCTION measure_queue (self) RESULT (queue)
   end do
 !  call self%task_list%lock%unset ('measure_queue')
   !-----------------------------------------------------------------------------
-  ! Define a queue measure, which goes to N when the queue size is zero, 
-  ! and is N/(N+1) when the queue size is N, if task_cost is constant 
+  ! Define a queue measure, which goes to N when the queue size is zero,
+  ! and is N/(N+1) when the queue size is N, if task_cost is constant
   !-----------------------------------------------------------------------------
   average_cost = rank_cost/n_task
   queue = queue_cost/average_cost
@@ -339,7 +342,91 @@ FUNCTION measure_queue (self) RESULT (queue)
   end if
   call trace%end (itimer)
 END FUNCTION measure_queue
- 
+
+!===============================================================================
+!> Initial load balancing.  If the MPI distribution is the same, keep the rank
+!> assignments from metadata (if it exists)
+!===============================================================================
+SUBROUTINE initial (self, task_list)
+  class(load_balance_t) :: self
+  class(list_t), pointer:: task_list
+  class(link_t), pointer:: link
+  class(nbor_t), pointer:: nbor
+  class(task_t), pointer:: task
+  real(8):: total_cost, part
+  integer(8):: n, n1, i, rank
+  !-----------------------------------------------------------------------------
+  if (any(io%old%mpi_dims /= io%mpi_dims)) then
+    total_cost = 0d0
+    n = 0
+    link => task_list%head
+    do while (associated(link))
+      task => link%task
+      task%rank = -1
+      !-------------------------------------------------------------------------
+      ! If task%cost is not set, use an estimate based on number of cells and
+      ! the time step (estimate if it does not exist)
+      !-------------------------------------------------------------------------
+      if (task%cost <= 0.0) then
+        select type (task)
+        class is (patch_t)
+          if (task%dtime == 0d0) then
+            task%dtime = task%ds(1)
+          end if
+          task%cost = 1d-6*product(task%n)/task%dtime
+        end select
+      end if
+      total_cost = total_cost + task%cost
+      link => link%next
+      n = n + 1
+    end do
+    !---------------------------------------------------------------------------
+    ! Select intial load-balancing method
+    !---------------------------------------------------------------------------
+    select case (initial_method)
+    case ('nbors')
+      !-------------------------------------------------------------------------
+      ! The 'nbors' scheme adds task from the nbor list of the previous task
+      !-------------------------------------------------------------------------
+      part = total_cost/mpi%size
+      total_cost = 0d0
+      link => task_list%head
+      do while (associated(link))
+        task => link%task
+        rank = total_cost/part
+        if (task%rank < 0) then
+          task%rank = rank
+          total_cost = total_cost + task%cost
+        end if
+        nbor => link%nbor
+        do while (associated(nbor))
+          task => nbor%task
+          if (task%rank < 0) then
+            task%rank = rank
+            total_cost = total_cost + task%cost
+          end if
+          nbor => nbor%next
+        end do
+        link => link%next
+      end do
+    case default
+      !-------------------------------------------------------------------------
+      ! The simplest scheme just distributes according to accumulated cost
+      !-------------------------------------------------------------------------
+      part = total_cost/mpi%size
+      total_cost = 0d0
+      link => task_list%head
+      do while (associated(link))
+        task => link%task
+        task%rank = total_cost/part
+        total_cost = total_cost + task%cost
+        link => link%next
+        n = n + 1
+      end do
+    end select
+  end if
+END SUBROUTINE initial
+
 !===============================================================================
 !> Print a rank_info list
 !===============================================================================
