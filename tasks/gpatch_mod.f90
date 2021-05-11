@@ -132,6 +132,7 @@ SUBROUTINE pre_update (self)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('gpatch_t%pre_update', itimer=itimer)
+  call self%patch_t%pre_update ()
   !-----------------------------------------------------------------------------
   ! Ensure that the next slot is not being used, and lock it, to allow writes.
   ! Since the current thread "owns" the task, no other task could be trying to

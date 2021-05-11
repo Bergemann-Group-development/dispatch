@@ -15,6 +15,7 @@ MODULE task_mod
   USE dll_mod
   USE aux_mod
   USE region_mod
+  USE running_mean_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -48,6 +49,7 @@ MODULE task_mod
     integer:: logging=0                 ! level of logging
     integer:: next_lb                   ! next LB step
     integer:: rank_steps=0              ! steps on rank
+    real(8):: cost = 0d0                ! task update cost
     real(8):: time = 0d0
     real(8):: atime = 0d0               ! for active queue
     real(8):: out_next = 0d0
@@ -62,10 +64,11 @@ MODULE task_mod
     real(8):: gsize(3)                  ! convenience
     real(8):: ds(3)=0d0                 ! convenience
     real(8):: box(3)=1d0                ! the periodic wrapping size
-    real(8):: wallclock
-    real(8):: unpack_time=0d0
-    real(8):: dnload_time=-1d0          ! last dnload time
-    real(8):: mulligan_time=-1d0        ! time to rewind to
+    real(8):: wallclock = 0d0           ! wallclock time
+    real(8):: update_time = 0d0         ! update time
+    real(8):: unpack_time = 0d0         ! unpack time
+    real(8):: dnload_time = -1d0        ! last dnload time
+    real(8):: mulligan_time = -1d0      ! time to rewind to
     real(4):: quality = 0.0
     character(len=64):: kind='task'     ! solver name
     character(len=12):: type='task_t'   ! task type
@@ -93,10 +96,11 @@ MODULE task_mod
     logical:: allow_extrapolate=.false.
     logical:: pre_initialized=.false.
     type(random_t):: random             ! pseudo-random number generator
-    type(aux_t):: aux
+    type(aux_t):: aux                   ! auxiliary output
     integer(8):: amr_offset=0_8         ! byte offset in amr_io
-    type(region_t):: authority                ! region of authority
-    type(region_t):: interest                 ! region of interest
+    type(region_t):: authority          ! region of authority
+    type(region_t):: interest           ! region of interest
+    type(running_mean_t):: running_cost ! running averge update cost
   contains
     procedure:: init
     procedure:: init_unique
@@ -149,6 +153,7 @@ MODULE task_mod
     procedure:: roa
     procedure:: hash_key
     procedure:: dump
+    procedure:: pre_update
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -595,6 +600,16 @@ SUBROUTINE rotate (self)
   self%time = time                                      ! reveal new time
   self%rotated = .true.
                                                  call self%lock%unset ('rotate')
+  !-----------------------------------------------------------------------------
+  ! Compute update cost
+  !-----------------------------------------------------------------------------
+  time = wallclock()
+  self%update_time = time - self%wallclock
+  if (self%dtime > 0d0) then
+    self%cost = self%running_cost%value (real(self%update_time/self%dtime))
+  else
+    self%cost = self%running_cost%average
+  end if
   !.............................................................................
   if (io%verbose>2) then
    write (io_unit%log,*) 'task id:',self%id,'  it:',self%it,'  new:',self%new
@@ -1363,5 +1378,13 @@ SUBROUTINE dump (self, tag, ad_hoc, it)
   integer, optional:: it
   !-----------------------------------------------------------------------------
 END SUBROUTINE dump
+
+!===============================================================================
+!> For timing
+!===============================================================================
+SUBROUTINE pre_update (self)
+  class(task_t), target:: self
+  self%wallclock = wallclock()
+END SUBROUTINE pre_update
 
 END MODULE task_mod

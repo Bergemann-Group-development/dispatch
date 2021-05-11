@@ -187,7 +187,7 @@ MODULE patch_mod
     procedure:: get_overlap
     procedure:: init_level
     procedure:: dump
-    procedure:: cost
+    procedure:: cost_f
     procedure:: subtask_hash_key
     procedure:: overlap
     procedure:: overlaps_region
@@ -3023,15 +3023,15 @@ END SUBROUTINE dump
 !===============================================================================
 !> Return a measure of the update cost
 !===============================================================================
-REAL FUNCTION cost (self)
+REAL FUNCTION cost_f (self)
   class(patch_t):: self
   !.............................................................................
   if (self%dtime > 0.0) then
-    cost = product(self%n)/self%dtime
+    cost_f = 1d-6*product(self%n)/self%dtime
   else
-    cost = 0.0
+    cost_f = 0.0
   end if
-END FUNCTION cost
+END FUNCTION cost_f
 
 !===============================================================================
 !> Compute the hash key of a proposed sub-task
