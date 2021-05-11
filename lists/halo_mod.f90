@@ -120,7 +120,7 @@ SUBROUTINE update (self, all, only)
   !-----------------------------------------------------------------------------
   ! If istep is zero the task has just been created, including guard zones
   !-----------------------------------------------------------------------------
-  if (self%task%istep >= 0) then
+  if (self%task%istep > 0) then
     !---------------------------------------------------------------------------
     ! Check if a coarse update is needed, and make sure nbor%distance is set
     !---------------------------------------------------------------------------
