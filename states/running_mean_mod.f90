@@ -9,8 +9,8 @@ MODULE running_mean_mod
   type, public:: running_mean_t
     integer:: verbose=0                 ! verbosity
     integer:: current                   ! current index
-    integer:: length                    ! running length
-    real, pointer:: ring(:)             ! values
+    integer:: length = 10               ! running length
+    real, pointer:: ring(:) => null()   ! values
     real:: average                      ! value value
   contains
     procedure:: init
@@ -66,10 +66,9 @@ SUBROUTINE update (self, increment, all)
   logical, optional:: all
   !.............................................................................
   call trace%begin ('running_mean_t%update')
-  if (self%verbose > 3) &
-    write (io_unit%log, *) 'running_mean_t%init: associated', &
-      associated(self%ring)
-  if (present(all)) then
+  if (.not. associated(self%ring)) then
+     call self%init (self%length, increment)
+  else if (present(all)) then
     self%ring = increment
     if (self%verbose > 1) &
       write (io_unit%log, *) 'running_mean: update(all) value =', increment
