@@ -102,6 +102,7 @@ MODULE task_mod
     type(region_t):: interest           ! region of interest
     type(running_mean_t):: running_cost ! running averge update cost
   contains
+    procedure:: pre_init
     procedure:: init
     procedure:: init_unique
     procedure:: dealloc
@@ -216,6 +217,16 @@ SUBROUTINE dnload (self, only)
 END SUBROUTINE dnload
 
 !===============================================================================
+!> Set a few basic things, as a starting point
+!===============================================================================
+SUBROUTINE pre_init (self)
+  class (task_t), target:: self
+  !.............................................................................
+  self%out_next = io%start_time
+  self%aux%aux_next = io%start_time
+END SUBROUTINE pre_init
+
+!===============================================================================
 !> Define unique task id, unless already set before entry.
 !===============================================================================
 SUBROUTINE init (self)
@@ -300,8 +311,6 @@ SUBROUTINE init_params (self)
     write (io%namelist, task_params)
     first_time = .false.
   end if
-  self%out_next = io%start_time
-  self%aux%aux_next = io%start_time
   !-----------------------------------------------------------------------------
   ! If dumps are requested, read a list of task ids for which dumps should be on
   !-----------------------------------------------------------------------------
