@@ -21,6 +21,7 @@ MODULE read_bifrost_mod
   USE patch_mod
   USE mesh_mod
   USE link_mod
+  USE list_mod
   USE task_list_mod
   USE lagrange_mod
   USE experiment_mod
@@ -50,7 +51,7 @@ CONTAINS
 !===============================================================================
 !===============================================================================
 SUBROUTINE init (task_list)
-  type(task_list_t), pointer:: task_list
+  class(task_list_t), pointer:: task_list
   integer:: iostat
   integer, save:: extension=1
   namelist /read_bifrost_params/ verbose, meshfile, order, verbose, snapfile, &
@@ -75,7 +76,7 @@ END SUBROUTINE init
 !===============================================================================
 SUBROUTINE read_bifrost_snap (task_list)
   USE kinds_mod
-  type(task_list_t), pointer:: task_list
+  class(task_list_t), pointer:: task_list
   !.............................................................................
   class(link_t), pointer:: link
   class(task_t), pointer:: task
@@ -123,19 +124,19 @@ SUBROUTINE read_bifrost_snap (task_list)
    if (io%master) print *, 'mx',mx
   allocate( dxm(mx), dxmdn(mx), xm(mx+ext), xmdn(mx+ext))
   read(io_unit%datain, *, iostat=iostat) (xm(ix),ix=1,mx), (xmdn(ix),ix=1,mx), dxm, dxmdn
-  
+
   ! Y direction
   read(io_unit%datain, *, iostat=iostat) my
    if (io%master) print *, 'my',my
   allocate( dym(my), dymdn(my), ym(my+ext), ymdn(my+ext))
   read(io_unit%datain, *, iostat=iostat) (ym(iy),iy=1,my), (ymdn(iy),iy=1,my), dym, dymdn
-  
+
   ! Z direction
   read(io_unit%datain, *, iostat=iostat) mz
    if (io%master) print *, 'mz',mz
   allocate( dzm(mz), dzmdn(mz), zm(mz  ), zmdn(mz  ))
   read(io_unit%datain, *, iostat=iostat) (zm(iz),iz=1,mz), (zmdn(iz),iz=1,mz), dzm, dzmdn
-  
+
   if (io%master) then
     print *,'reading mesh data from ' //trim(meshfile)
     print *, 'setup dimensions =', n, nv
@@ -164,7 +165,7 @@ SUBROUTINE read_bifrost_snap (task_list)
     end do
     deallocate(fl, fldn)
   end if
-  
+
   if (verbose>1) then
     do iz=1,size(dzm)
        if (io%master) print *, 'initial_t%stagger: iz, min(dx),min(dy), dz', &
@@ -182,7 +183,7 @@ SUBROUTINE read_bifrost_snap (task_list)
     allocate (d_mean(mz))
     allocate (e_mean(mz))
   end if
-  
+
   !---------------------------------------------------------------------------
   ! Allocate a buffer for reading Bifrost legacy snapshots
   !---------------------------------------------------------------------------
@@ -211,7 +212,7 @@ SUBROUTINE read_bifrost_snap (task_list)
     iiv = ii(iv)
     if (io%master) print *, 'reading variable index iv =', iv
     read (io_unit%datain, rec=iv) rbuf(1:mx,1:my,1:mz)
-              
+
     if (flip_z) then
       do iz=1,mz
         zi = mz -iz + 1
@@ -248,11 +249,11 @@ SUBROUTINE read_bifrost_snap (task_list)
       print *, 'iv minmax location in snapshot', minloc(buffer(1:mx,1:my,1:mz)), maxloc(buffer(1:mx,1:my,1:mz))
       end if
     if (verbose == 1) &
-      print *, iv, minval(buffer(1:mx,1:my,1:mz)), & 
+      print *, iv, minval(buffer(1:mx,1:my,1:mz)), &
                    minloc(buffer(1:mx,1:my,1:mz)),'||', &
-                   maxval(buffer(1:mx,1:my,1:mz)), & 
+                   maxval(buffer(1:mx,1:my,1:mz)), &
                    maxloc(buffer(1:mx,1:my,1:mz))
-    
+
     !---------------------------------------------------------------------------
     ! Add periodic extension, if needed
     !---------------------------------------------------------------------------
@@ -350,7 +351,7 @@ SUBROUTINE read_bifrost_snap (task_list)
           !patch%boundaries%e_bot = lagrange%interpolate1d8(zpos,mz,real(zm,8),real(e_mean,8))
         end if
         if (m(3)%upper_boundary) then
-          zpos = m(3)%r(m(3)%ui)+m(3)%p 
+          zpos = m(3)%r(m(3)%ui)+m(3)%p
           !ee_top = lagrange%interpolate1d8(zpos,mz,real(zm,8),real(e_mean,8)) &
                  !/ lagrange%interpolate1d8(zpos,mz,real(zm,8),real(d_mean,8))
           !patch%newton%ee_top = ee_top

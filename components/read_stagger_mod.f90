@@ -22,6 +22,7 @@ MODULE read_stagger_mod
   USE patch_mod
   USE mesh_mod
   USE link_mod
+  USE list_mod
   USE task_list_mod
   USE lagrange_mod
   USE experiment_mod
@@ -49,7 +50,7 @@ CONTAINS
 !===============================================================================
 !===============================================================================
 SUBROUTINE init (task_list)
-  type(task_list_t), pointer:: task_list
+  class(task_list_t), pointer:: task_list
   integer:: iostat
   integer, save:: extension=1
   namelist /read_stagger_params/ verbose, meshfile, order, verbose, snapfile, &
@@ -73,7 +74,7 @@ END SUBROUTINE init
 !> Read a legacy Stagger raw data file, with auxiliary grid file
 !===============================================================================
 SUBROUTINE read_stagger_snap (task_list)
-  type(task_list_t), pointer:: task_list
+  class(task_list_t), pointer:: task_list
   !.............................................................................
   class(link_t), pointer:: link
   class(task_t), pointer:: task
@@ -318,7 +319,7 @@ SUBROUTINE read_stagger_snap (task_list)
         !end if
         if (m(3)%upper_boundary) then
           !zpos = m(3)%r(m(3)%uo)+m(3)%p
-          zpos = m(3)%r(m(3)%ui)+m(3)%p 
+          zpos = m(3)%r(m(3)%ui)+m(3)%p
           !ee_top = lagrange%interpolate1d8(zpos,mz,real(zm,8),real(e_mean,8),order=1) &
                  !/ lagrange%interpolate1d8(zpos,mz,real(zm,8),real(d_mean,8),order=1)
           !patch%newton%ee_top = ee_top
