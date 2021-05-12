@@ -40,7 +40,7 @@ CONTAINS
 !===============================================================================
 SUBROUTINE init (self, task_list, label)
   class(cartesian_t):: self
-  type(task_list_t), optional, pointer:: task_list
+  class(task_list_t), optional, pointer:: task_list
   character(len=*), optional:: label
   !.............................................................................
   class(link_t), pointer:: link, next

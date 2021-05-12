@@ -808,7 +808,7 @@ END SUBROUTINE init_levelstats
 !===============================================================================
 SUBROUTINE init_task_list_pointers (self, task_list)
   class(task_list_t):: self
-  type(task_list_t), pointer:: task_list
+  class(task_list_t), pointer:: task_list
   class(list_t), pointer:: list
   class(link_t), pointer:: link
   !-----------------------------------------------------------------------------

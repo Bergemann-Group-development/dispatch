@@ -90,7 +90,7 @@ END SUBROUTINE init
 !===============================================================================
 SUBROUTINE execute (self, task_list, test)
   class(dispatcher0_t):: self
-  type(task_list_t), pointer:: task_list
+  class(task_list_t), pointer:: task_list
   logical:: test
   !.............................................................................
   real(8):: sec
@@ -166,7 +166,7 @@ END SUBROUTINE execute
 !===============================================================================
 SUBROUTINE update (self, task_list, test)
   class(dispatcher0_t):: self
-  type(task_list_t), pointer:: task_list
+  class(task_list_t), pointer:: task_list
   logical:: test
   !.............................................................................
   class(link_t), pointer:: head, prev
@@ -605,7 +605,7 @@ END SUBROUTINE update
 SUBROUTINE no_queue (self, stalled, task_list)
   class(dispatcher0_t):: self
   integer:: stalled
-  type(task_list_t), pointer:: task_list
+  class(task_list_t), pointer:: task_list
   real:: ms
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
