@@ -93,7 +93,8 @@ SUBROUTINE pre_init (self)
   call self%forces%pre_init (self%gpatch)                       ! forces
   call self%cooling%pre_init (self%gpatch)                      ! cool
   call self%selfgravity%pre_init (self%gpatch)                  ! selfg
-  call self%particle_solver%pre_init (self%gpatch)              ! dust
+  self%particle_solver%patch => self%gpatch                     ! dust
+  call self%particle_solver%pre_init                            ! dust
   call trace%end()                                              ! keep
 END SUBROUTINE pre_init
 
@@ -122,6 +123,7 @@ SUBROUTINE init_task_list (self, task_list)
   class(list_t), pointer:: task_list
   !.............................................................................
   call trace%begin ('extras_t%init_task_list')
+  call self%gpatch_t%init_task_list (task_list)                 ! keep
   call self%particle_solver%init_task_list (task_list)
   call trace%end()
 END SUBROUTINE init_task_list
@@ -147,6 +149,7 @@ SUBROUTINE pre_update (self)
   !.............................................................................
   call trace%begin ('extras_t%pre_update')
   self%gpatch => self                                           ! keep
+  call self%gpatch_t%pre_update                                 ! keep
   call self%forces%pre_update                                   ! forces
   call self%selfgravity%pre_update                              ! selfg
   call self%cooling%pre_update                                  ! cool
@@ -196,6 +199,7 @@ SUBROUTINE courant_condition (self, detailed_timer)
   call trace%begin ('extras_t%courant_condition')
   call self%cooling%courant_condition                            ! cool
   call self%particle_solver%courant_condition                    ! dust
+  call self%gpatch_t%courant_condition
   call trace%end()
 END SUBROUTINE courant_condition
 
@@ -212,21 +216,22 @@ END SUBROUTINE statistics
 !> This is called from task_list%check_ready(), with self as the nbor and
 !> target as the task to check.
 !===============================================================================
-FUNCTION is_ahead_of (self, target)
+FUNCTION is_ahead_of (self, target, extra)
   class(extras_t):: self
   class(task_t):: target
+  real, optional:: extra
   logical:: is_ahead_of
   real:: grace
   !-----------------------------------------------------------------------------
-  grace=self%grace
-  if (target%out_next - target%time < 1.1*target%dtime) then
-    grace = self%grace
-    self%grace=0.0001
+  !grace=self%grace
+  !if (target%out_next - target%time < 1.1*target%dtime) then
+    !grace = self%grace
+    !self%grace=0.0001
+    !is_ahead_of = self%task_t%is_ahead_of (target)
+    !self%grace = grace
+  !else
     is_ahead_of = self%task_t%is_ahead_of (target)
-    self%grace = grace
-  else
-    is_ahead_of = self%task_t%is_ahead_of (target)
-  end if
+  !end if
 END FUNCTION is_ahead_of
 
 !===============================================================================
