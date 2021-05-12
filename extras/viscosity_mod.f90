@@ -29,6 +29,7 @@ MODULE viscosity_mod
     procedure:: set_pointers
     procedure, private:: deallocate
   end type
+  real, save:: mult=1.0
 CONTAINS
 
 !===============================================================================
@@ -42,7 +43,7 @@ SUBROUTINE pre_init (self, patch)
   logical :: on = .false.
   logical :: kinematic = .false.
   logical :: first_time = .true.
-  namelist /viscosity_params/ on, kinematic, mu
+  namelist /viscosity_params/ on, kinematic, mu, mult
   !.............................................................................
   call trace%begin ('viscosity_t%pre_init')
   self%patch => patch
@@ -229,7 +230,7 @@ SUBROUTINE pre_update (self)
   end do
   end do
   end do
-  self%u_max = self%mu/(6.*minval(ds)**2)
+  self%u_max = (self%mu/(6.*minval(ds)**2))*mult
   !-----------------------------------------------------------------------------
   deallocate (du11,du12,du13)
   deallocate (du21,du22,du23)

@@ -31,6 +31,7 @@ MODULE conduction_mod
   end type
   real(8), save:: start_time=0d0
   logical, save:: extrapolate=.false.
+  real,save:: mult=1.0
 CONTAINS
 
 !===============================================================================
@@ -44,7 +45,7 @@ SUBROUTINE pre_init (self, gpatch)
   real::    kappa = 0.0
   logical:: on    = .false.
   logical:: first_time = .true.
-  namelist /conduction_params/ on, kappa, start_time, extrapolate
+  namelist /conduction_params/ on, kappa, start_time, extrapolate, mult
   !.............................................................................
   call trace%begin ('conduction_t%init')
   call io%lock%set ('conduction_t%init')
@@ -206,7 +207,7 @@ SUBROUTINE pre_update(self)
     end do
   end if
   !-----------------------------------------------------------------------------
-  self%u_max = c1/12. + c2/6.
+  self%u_max = (c1/12. + c2/6.)*mult
   !
   deallocate (tg, tg_grad, e_th)
   call trace%end (itimer)
