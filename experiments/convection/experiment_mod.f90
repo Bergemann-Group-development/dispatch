@@ -36,18 +36,18 @@ CONTAINS
 SUBROUTINE init (self)
   class(experiment_t):: self
   integer:: iostat
-  real:: mu    = 0.0
-  real:: kappa = 0.07
-  real:: mpoly = 1.0
-  real:: sigma = 1.0
-  real:: theta = 10.
-  real:: stencil = 1.5
-  real:: courant_v = 1.0
-  real:: courant_c = 1.0
-  real:: amplitude = 1e-3
-  logical:: kinematic = .false.
-  logical:: flux_BC = .true.
-  logical:: first_time=.true.
+  real,save:: mu    = 0.0
+  real,save:: kappa = 0.07
+  real,save:: mpoly = 1.0
+  real,save:: sigma = 1.0
+  real,save:: theta = 10.
+  real,save:: stencil = 1.5
+  real,save:: courant_v = 1.0
+  real,save:: courant_c = 1.0
+  real,save:: amplitude = 1e-3
+  logical,save:: kinematic = .false.
+  logical,save:: flux_BC = .true.
+  logical,save:: first_time=.true.
   namelist /experiment_params/ &
     flux_BC, theta, kappa, sigma, mpoly, theta, stencil, courant_v, courant_c, kinematic, amplitude
   !----------------------------------------------------------------------------
@@ -68,7 +68,7 @@ SUBROUTINE init (self)
     !---------------------------------------------------------------------------
     ! Compute and set viscosity and conduction parameters
     !---------------------------------------------------------------------------
-    mu = (eos%gamma-1d0)**2 * kappa / eos%gamma * sigma
+    mu = (eos%gamma-1d0) * kappa / eos%gamma * sigma
     self%viscosity%mu             = mu
     self%conduction%kappa         = kappa
     self%conduction%stencil       = stencil

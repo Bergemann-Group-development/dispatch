@@ -28,6 +28,7 @@ MODULE boundaries_mod
     procedure:: init
     procedure:: primary
   end type
+  real,save:: bc_rate=0.5
 CONTAINS
 
 !===============================================================================
@@ -38,7 +39,7 @@ SUBROUTINE init (self)
   logical:: flux_BC = .true.
   real:: theta = 10.0
   real:: mpoly = 1.0
-  namelist /boundaries_params/ theta, mpoly, flux_BC
+  namelist /boundaries_params/ theta, mpoly, flux_BC, bc_rate
   !-----------------------------------------------------------------------------
   call trace%begin ('boundaries_t%init')
   call self%standard_boundaries_t%init ()
@@ -68,7 +69,8 @@ SUBROUTINE primary(self, mem)
   class(mesh_t), pointer:: m(:)
   integer:: ix, iy, iz, n(3), id
   real(8), pointer:: z(:)
-  real:: h, f, tt0, tt1, dz, ds(3)
+  real:: h, f, tt0, tt1, dz, ds(3), d0
+  real(8)::zz
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('boundaries_t%primary', itimer=itimer)
@@ -128,13 +130,15 @@ SUBROUTINE primary(self, mem)
   end if
   if (m(3)%upper_boundary) then
     if (self%flux_BC) then
+      zz=m(3)%r(m(3)%ui)+m(3)%p
+      d0= (1.0+self%theta*zz)**self%mpoly
       do iz=m(3)%uo,m(3)%ub
         do iy=m(2)%lb,m(2)%ub
           do ix=m(1)%lb,m(1)%ub
             tt0 = e(ix,iy,m(3)%ui)/d(ix,iy,m(3)%ui)*(eos%gamma-1d0)
             dz = (iz-m(3)%ui)*ds(3)
             tt1         = tt0              + self%theta*dz
-            d(ix,iy,iz) = d(ix,iy,m(3)%ui) + self%theta*dz
+            d(ix,iy,iz) = bc_rate*d(ix,iy,m(3)%ui)+(1.0-bc_rate)*d0 + self%theta*dz
             e(ix,iy,iz) = d(ix,iy,iz)*tt1/(eos%gamma-1d0)
           end do
         end do

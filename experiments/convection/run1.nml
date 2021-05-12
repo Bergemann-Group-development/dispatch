@@ -4,11 +4,12 @@
 !----------------- I/O paramters -----------------------------------------------------
 &io_params         verbose=0 do_trace=f do_debug=f do_output=t
                    guard_zones=t nml_version=1 /
+!&restart_params snapshot=50 run='bench1' /
 &out_params        end_time=100.21 out_time=0.1 print_every=900 /
 
 !----------------- Initial condition parameter ---------------------------------------
-&patch_params      nt=5 n=3*32 do_check_nan=f grace=0.1/
-&cartesian_params  size=4,4,1 dims=16,16,4 mpi_dims=4,4,1 origin=3*0.0 periodic=t,t,f /
+&patch_params      nt=5 n=3*16 do_check_nan=f grace=0.1/
+&cartesian_params  size=4,4,1 dims=32,32,8 mpi_dims=2,2,2 origin=3*0.0 periodic=t,t,f /
 
 !----------------- Refinemennt parameters --------------------------------------------
 &refine_params     on=f levelmax=12 levelmin=1 verbose=3 check_interval=2 /
