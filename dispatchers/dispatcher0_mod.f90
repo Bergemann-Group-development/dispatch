@@ -398,7 +398,7 @@ SUBROUTINE update (self, task_list, test)
     !---------------------------------------------------------------------------
     ! This taskyield is to encourage I/O tasks created in the mean time to run
     !---------------------------------------------------------------------------
-    !$omp taskyield
+    !$omp taskwait
     !---------------------------------------------------------------------------
     ! The first update after a stall period finds stalled non-zero, and sets it
     ! to zero, to prevent the if-block from being executed repeatedly
