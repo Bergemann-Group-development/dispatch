@@ -98,6 +98,10 @@ SUBROUTINE init (self, ln_bin, lm_cgs, rho_s)
     end if
     call io%namelist_warning ('dust_evolve_params', iostat)
     write (io%namelist, dust_evolve_params)    ! write to data/run/params.nml
+    if (.not.on) then
+      call trace%end ()
+      return
+    end if
 
     call cgs%init
     nbin = ln_bin
