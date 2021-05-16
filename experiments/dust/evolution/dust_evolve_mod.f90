@@ -34,6 +34,9 @@ MODULE dust_evolve_mod
   real:: max_fraction1 = 1.0
   real:: max_fraction2 = 0.1
   real(KIND=precision_e):: tt_dust = 10                     ! Dust temperature
+  real(KIND=precision_e):: A_br = 2.8e3                     ! Experimental parameter for breaking energy of particles
+  real(KIND=precision_e):: Eps_star = 3.7e10                ! reduced elasticity modulus in dyn cm^-2
+  real(KIND=precision_e):: gamma_sil = 370                  ! surface energy density of silicates, in erg/(cm^-2)
   real(KIND=precision_e):: alpha = 1e-3                     ! Turbulence parameter, used when do_in_cell_turbulence is true for calculation of turbulent velocities
   real(KIND=precision_e):: sigma_d = 0.18                   ! Column density of the dust, used when do_in_cell_turbulence is true for calculation of turbulent velocities
   real(KIND=precision_e):: xi = 1.83                        ! The exponent used for the distribution in the case of cratering
@@ -78,7 +81,7 @@ SUBROUTINE init (self, ln_bin, lm_cgs, rho_s)
   integer, ALLOCATABLE, DIMENSION(:):: js_ipiv, js_ipivx, js_ipivy, js_ipivz
   real(precision_e):: ratio_r, min_a, max_a, m_crat, eps, Stot
   real(precision_e):: m_big, m_small
-  real(precision_e), ALLOCATABLE, DIMENSION(:):: m, n, S, dn, dpx, dpy, dpz, dd, a, Spx, Spy, Spz, &
+  real(precision_e), ALLOCATABLE, DIMENSION(:):: m, n, S, dn, dpx, dpy, dpz, dd, Spx, Spy, Spz, &
     mv, px, py, pz, v, mpx, mpy, mpz, Ln_k, Kn_k, Sppx, Sppy, Sppz
   real(precision_e), ALLOCATABLE, DIMENSION(:,:):: nn, Q, Q_frag, jj, kk, &
     ll, KC_k, LS_k, IJJ, du, ubm, utm, &
@@ -116,51 +119,8 @@ SUBROUTINE init (self, ln_bin, lm_cgs, rho_s)
     !call self%test                             ! run a self%test once
 
     first_time = .false.
-
-
-    !class(dust_evolve_t):: self
-
-    !print *,"Initializing starting conditions"
-    !print *,cgs%grav,cgs%au,cgs%k_b,cgs%m_u,cgs%m_sun
-    !mu = 2.37
-    ! cs = sqrt(tt_dust*cgs%k_b/(mu*1.008*cgs%m_u))
-    ! r = 1.0*cgs%au
-    ! msolar = 0.5*cgs%m_sun
-    ! Omega_K = sqrt(cgs%grav*msolar)/r**1.5
-    ! Hp = cs / Omega_K
-    ! sigma_d = 0.18                                      ! g / cm**2
-    ! rho_d = sigma_d/(sqrt(2*math%pi)*Hp)
-    !micron = 1e-4
-
-    !mps = 1e2
-    !u_f = 1*mps
-    !trans_width = 0.001*mps
-    !alpha = 1e-3
-    !Cdt = 0.1
-    !xi = 1.83
-
-    !dt = 1e-1 * 60*60*24*365
-    !t_end = 1e2 * 60*60*24*365
-
-                                                        ! Define binning
-    !min_a = 1e-4
-    !max_a = 1e2
-
-    !ratio_r = (max_a/min_a)**(1.0/(nbin-1))
-    !a(1) = min_a
-    !n = 0
-
-    ! do i=2,nbin
-    !   a(i) = a(i-1)*ratio_r                             ! Setup of bins
-    ! end do
-
-    !m = 4.0/3.0 * a**3 * rho_s * math%pi
-    !n(1) = rho_d / m(1)
-    !v = 1
-    !p = n * v
-    !mv = m * v
     m = m_cgs
-    a = (3.0/4.0 * m/(rho_s * math%pi) )**(1/3)       ! Initial setup of bin distribution
+    a = (3.0/4.0 * m/(rho_s * math%pi) )**(1.0/3.0)       ! Initial setup of bin distribution
     st = rho_s * a * math%pi/(2*sigma_d*100)
 
 
@@ -224,15 +184,6 @@ SUBROUTINE init (self, ln_bin, lm_cgs, rho_s)
           sigma_col(i,j) = 0
         end if
 
-        ! if (du(i,j) < u_f - trans_width) then
-        !   pf(i,j) = 0
-        ! else if (du(i,j) > u_f) then
-        !   pf(i,j) = 1
-        ! else
-        !   pf(i,j) = 1-(u_f-du(i,j))/trans_width
-        ! end if
-
-
       end do
     end do
 
@@ -268,7 +219,7 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out, ds)
   integer:: i, j, k, l, kn, minij, maxij, itime, js_n, js_nrhs, js_lda, &
     js_ldb, js_info, nbin
   integer, ALLOCATABLE, DIMENSION(:):: js_ipiv, js_ipivx, js_ipivy, js_ipivz
-  real(precision_e):: ratio_r, min_a, max_a, m_crat, eps, Stot
+  real(precision_e):: ratio_r, min_a, max_a, m_crat, eps, Stot, a_mu, m_mu
   real(precision_e):: m_big, m_small
   real(precision_e), ALLOCATABLE, DIMENSION(:):: m, n, n_old , S, dn, dpx, dpy, dpz, dd, Spx, Spy, Spz, &
     mv, px, py, pz, v, mpx, mpy, mpz, Ln_k, Kn_k, Sppx, Sppy, Sppz, frac_dn, vrms
@@ -372,6 +323,9 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out, ds)
       du(i,j) = du(i,j) + utm(i,j)
       end if
 
+      a_mu = a(i)*a(j)/(a(i)+a(j))
+      m_mu = m(i)*m(j)/(m(i)+m(j))
+      u_f  = sqrt(2*A_br) * (gamma_sil**(5.0/6.0) * a_mu**(2.0/3.0)) / (m_mu**(1.0/2.0) * Eps_star**(1.0/3.0))
 
       if (du(i,j) < u_f - trans_width) then
         pf(i,j) = 0
@@ -401,7 +355,7 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out, ds)
   call explicit_step(nbin, kk, ll, C, SS, n, px, py, pz, tend, dn, dpx, dpy, dpz)
   frac_dn = 0
   where (n /= 0) frac_dn = ABS(dn/n)
-  if (do_implicit .or. ANY( frac_dn > max_fraction1 ) )  then
+  if (do_implicit .or. ANY( frac_dn > max_fraction1 ) .or. SUM(n*m_cgs)/SUM(n_old*m_cgs) - 1 > 1e-6 .or. ANY(n < 0.0) )  then
     if (verbose > 0) &
       print '(a,(1p,10e10.1))', 'implicit step:', frac_dn
     call implicit_step(nbin, identity, kk, ll, C, SS, n, px, py, pz, tend, dn, dpx, dpy, dpz)
@@ -433,7 +387,7 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out, ds)
 
   time(4) = wallclock()-start
 
-  if (verbose > 1) then
+  if (verbose > 0) then
     print *,"Final n, number density:"
     print '(5ES13.3)', n
     print "(/)"
