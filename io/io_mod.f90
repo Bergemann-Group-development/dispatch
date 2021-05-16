@@ -180,7 +180,8 @@ SUBROUTINE init (self, name)
     if (mpi%rank > 0) then
       io%output = io_unit%mpi
     end if
-    write(io%output,'(a,i2)') &
+    if (mpi%rank == 0) &
+      write(stderr,'(a,i2)') &
       ' This version was compiled with default real KIND =', kind(test)
     call io%header ('io_t%init:')
     !---------------------------------------------------------------------------

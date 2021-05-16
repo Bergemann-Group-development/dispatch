@@ -22,7 +22,7 @@
 !> call mpi%end                         ! closes MPI
 !>
 !> Too see which variables and procedures are inside mpi%, just look below!
-!>  
+!>
 !===============================================================================
 MODULE mpi_mod
   USE omp_mod
@@ -257,8 +257,8 @@ SUBROUTINE end_mpi (self, label)
     end if
   end if
 #ifdef MPI
-  write (io_unit%mpi,*) self%rank, wallclock(), 'calling MPI_Finalize'
-  flush (io_unit%mpi)
+  !write (io_unit%mpi,*) self%rank, wallclock(), 'calling MPI_Finalize'
+  !flush (io_unit%mpi)
   if (mpi%mode == MPI_THREAD_MULTIPLE) then
     call MPI_Finalize (mpi_err)
   else
@@ -266,8 +266,8 @@ SUBROUTINE end_mpi (self, label)
     call MPI_Finalize (mpi_err)
     !$omp end critical (mpi_cr)
   end if
-  write (io_unit%mpi,*) self%rank, wallclock(), 'returned from MPI_Finalize'
-  flush (io_unit%mpi)
+  !write (io_unit%mpi,*) self%rank, wallclock(), 'returned from MPI_Finalize'
+  !flush (io_unit%mpi)
 #endif
   !call exit        ! avoid "stop" which may produce one output line per process
   call trace%end ()
@@ -379,7 +379,7 @@ END SUBROUTINE assert
 
 !===============================================================================
 !> Attempt to determine the actual number of cores. If /proc/cpuinfo exists
-!> one has to count the number of sockets, but observing hom many different 
+!> one has to count the number of sockets, but observing hom many different
 !> "physical id" there are.  The number of cores per socket is in the field
 !> "cpu cores".
 !===============================================================================
