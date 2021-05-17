@@ -347,8 +347,6 @@ SUBROUTINE barrier_mpi (self, label, delay)
   if (mpi%size > 1) then
     if (present(delay)) then
       call omp%delay (1e3*delay)
-    else
-      call omp%delay (3e3)
     end if
     if (mpi%mode == MPI_THREAD_MULTIPLE) then
       call MPI_Barrier (mpi_comm_world, mpi_err)
@@ -593,10 +591,12 @@ FUNCTION update8 (self, i) RESULT (j)
   call trace%begin ('mpi_counter_t%update', 2)
   !-----------------------------------------------------------------------------
   ! Do NOT make this depend on MPI_THREAD_MULTIPLE -- this really needs a
-  ! critical region
+  ! critical region and an MPI_LOCK_SHARED window lock, otherwise it does
+  ! not work (no critical region), or locks up (MPI_LOCK_EXCLUSIVE) for large
+  ! numbers of ranks
   !-----------------------------------------------------------------------------
   !$omp critical (mpi_cr)
-  call MPI_Win_lock (MPI_LOCK_EXCLUSIVE, master, 0, self%window, mpi_err)
+  call MPI_Win_lock (MPI_LOCK_SHARED, master, 0, self%window, mpi_err)
   call mpi%assert ('MPI_Win_lock', mpi_err)
   call MPI_Get_accumulate (i, 1, MPI_INTEGER8, &
                            k, 1, MPI_INTEGER8, master, offset, &
