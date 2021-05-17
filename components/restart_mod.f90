@@ -58,6 +58,7 @@ SUBROUTINE init (self, task_list)
   ! Only allocate a task list if actuall restarting (snapshot non-negative)
   !-----------------------------------------------------------------------------
   io%restart = snapshot
+  io%inputdir = from_dir
   if (snapshot >= 0) then
     !-----------------------------------------------------------------------------
     ! Select method

@@ -1576,7 +1576,7 @@ SUBROUTINE input_nml_v4 (self, patch, unit)
   !-----------------------------------------------------------------------------
   if (unit_l == 0) then
     write (filename,'(a,i5.5,"/rank_",i5.5,"_patches.nml")') &
-      trim(io%run_dir), io%restart, rank_in
+      trim(io%inputdir), io%restart, rank_in
     open (file=filename, newunit=unit_l, form='formatted', status='unknown')
     rewind (unit_l)
   end if
