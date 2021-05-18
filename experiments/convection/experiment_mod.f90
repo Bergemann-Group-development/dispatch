@@ -68,7 +68,7 @@ SUBROUTINE init (self)
     !---------------------------------------------------------------------------
     ! Compute and set viscosity and conduction parameters
     !---------------------------------------------------------------------------
-    mu = (eos%gamma-1d0) * kappa / eos%gamma * sigma
+    mu = (eos%gamma-1d0)**2 * kappa / eos%gamma * sigma
     self%viscosity%mu             = mu
     self%conduction%kappa         = kappa
     self%conduction%stencil       = stencil
