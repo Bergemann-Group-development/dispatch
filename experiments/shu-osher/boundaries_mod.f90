@@ -42,11 +42,10 @@ CONTAINS
 !> Initialize the boundary data type, while testing also if the patch contains
 !> a spherical boundary, or possibly is completely immersed in such a boundary.
 !===============================================================================
-SUBROUTINE init (self, patch)
+SUBROUTINE init (self)
   class(boundaries_t)     :: self
-  class(patch_t),target          :: patch
   !.............................................................................
-  call self%standard_boundaries_t%init (patch)
+  call self%standard_boundaries_t%init
 END SUBROUTINE init
 
 SUBROUTINE primary(self, mem)
