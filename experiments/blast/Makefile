@@ -15,9 +15,9 @@ STAGGER         = stagger_2nd.o
 #SOLVER          = zeus3d
 #SOLVER          = stagger2
 #SOLVER          = stagger2/e
-SOLVER          = ramses/hydro
+#SOLVER          = ramses/hydro
 #SOLVER          = ramses/mhd
-#SOLVER          = ramses/mhd_eos
+SOLVER          = ramses/mhd_eos
 EXEC            = dispatch.x
 TOP             = ../..
 sinclude $(TOP)/config/Makefile
