@@ -42,9 +42,9 @@ SUBROUTINE pre_init (self, gpatch)
   class (gpatch_t), target :: gpatch
   ! ----------------------------------------------------------------------------
   integer:: iostat
-  real::    kappa = 0.0
-  logical:: on    = .false.
-  logical:: first_time = .true.
+  real,save::    kappa = 0.0
+  logical,save:: on    = .false.
+  logical,save:: first_time = .true.
   namelist /conduction_params/ on, kappa, start_time, extrapolate, mult
   !.............................................................................
   call trace%begin ('conduction_t%init')
@@ -86,7 +86,7 @@ SUBROUTINE pre_update(self)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not.self%on) return
-  if (self%patch%time<=start_time) return
+  !if (self%patch%time<=start_time) return
   call trace%begin ('conduction_t%pre_update', itimer=itimer)
   !
   lb = self%patch%mesh%lb
@@ -189,7 +189,7 @@ SUBROUTINE pre_update(self)
     end do
     end do
   else
-    c1 = c1*(2.0-self%stencil)
+    c1 = c1*(2.0-self%stencil)*0.5
     c2 = c2*(self%stencil-1.0)
     do i3=l(3),u(3)
     do i2=l(2),u(2)
