@@ -266,7 +266,7 @@ SUBROUTINE update (self)
   end if
   if (associated(scratch%force_per_unit_volume)) then
     allocate (f(n(1),n(2),n(3),3))
-    f = self%dtime*scratch%force_per_unit_mass
+    f = self%dtime*scratch%force_per_unit_volume
     do i3=self%li(3),self%ui(3)
     do i2=self%li(2),self%ui(2)
     do i1=self%li(1),self%ui(1)
