@@ -1,10 +1,11 @@
-&experiment_params flux_BC=t sigma=0.1 theta=10 /
-
+!----------------- Main experiment parameters ----------------------------------------
+&experiment_params flux_BC=t sigma=1.0 theta=10 kinematic=f amplitude=1e-3/
+&boundaries_params bc_rate=0.0/
 !----------------- I/O paramters -----------------------------------------------------
 &io_params         verbose=0 do_trace=f omp_trace=t do_debug=f do_output=t
                    method='background'
                    guard_zones=t nml_version=1 /
-&out_params        end_time=0.5 out_time=0.1 print_every=300 /
+&out_params        end_time=2.5 out_time=0.1 print_every=300 /
 
 !----------------- Initial condition parameter ---------------------------------------
 &patch_params      nt=5 n=16,16,16 do_check_nan=f grace=0.1 dt_fixed=-1e-4 /
@@ -21,8 +22,8 @@
 &ramses_params     slope_type=3.5 smallr=1e-2 smallc=0.1 /
 &non_ideal_params  mhd_Ohm=f eta_Ohm=0.1 mhd_AD=f /
 &gravity_params    on=t constant=20 axis=3 position=0.0 mass=-1 minrad=-1 /
-&viscosity_params  on=f /
-&conduction_params on=f /
+&viscosity_params  on=t mult=6./
+&conduction_params on=t extrapolate=f/
 
 !                     cs    pa   ofd  mas  kap  eta
 &stagger_params    nu=0.10, 1.0, 1.0, 0.0, 1.0, 1.0 courant=0.10 do_maxwell=t /
