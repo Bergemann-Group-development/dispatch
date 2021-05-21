@@ -1,29 +1,29 @@
-!----------------- Main experiment parameters ----------------------------------------
-&experiment_params flux_BC=t sigma=1.0 theta=10 kinematic=f amplitude=1e-3/
-&boundaries_params bc_rate=0.0/
-!----------------- I/O paramters -----------------------------------------------------
+!----------------- Main experiment parameters ----------------------------------
+&experiment_params flux_BC=t stencil=1.8 kinematic=f amplitude=1e-3 /
+&boundaries_params bc_rate=1.0 /
+&gravity_params    on=t constant=20 axis=3 position=0.0 mass=-1 minrad=-1 /
+&viscosity_params  on=t /
+&conduction_params on=t extrapolate=f /
+!----------------- I/O paramters -----------------------------------------------
 &io_params         verbose=0 do_trace=f do_debug=f do_output=t
-                   guard_zones=t nml_version=1 /
-!&restart_params snapshot=50 run='bench1' /
-&out_params        end_time=100.21 out_time=0.1 print_every=900 /
+                   method='parallel' guard_zones=t nml_version=1 /
+!&restart_params    snapshot=5 /
+&out_params        end_time=100.21 out_time=0.1 print_every=30 /
 
-!----------------- Initial condition parameter ---------------------------------------
-&patch_params      nt=5 n=3*16 do_check_nan=f grace=0.1/
-&cartesian_params  size=4,4,1 dims=32,32,8 mpi_dims=2,2,2 origin=3*0.0 periodic=t,t,f /
+!----------------- Initial condition parameter ---------------------------------
+&patch_params      nt=5 n=3*32 do_check_nan=f grace=0.2 /
+&cartesian_params  size=4,4,1 dims=8,8,2 mpi_dims=2,2,2 origin=3*0.0
+                   periodic=t,t,f /
 
-!----------------- Refinemennt parameters --------------------------------------------
+!----------------- Refinemennt parameters --------------------------------------
 &refine_params     on=f levelmax=12 levelmin=1 verbose=3 check_interval=2 /
-!&initial_refine_params on=f n_refine=0,2,0 ratio=2.0 center=0.0,0.5,0.0 extent=0.0,0.2,0.0 /
 
-!----------------- Solver paramters --------------------------------------------------
+!----------------- Solver paramters --------------------------------------------
 &aux_params        verbose=0 select= /
 &eos_params        gamma=1.6666666666667 /
 &divb_clean_params on=f divb_iter=4 divb_cleaner=0 /
 &ramses_params     slope_type=3.5 smallr=1e-2 smallc=0.1 /
 &non_ideal_params  mhd_Ohm=f eta_Ohm=0.1 mhd_AD=f /
-&gravity_params    on=t constant=20 axis=3 position=0.0 mass=-1 minrad=-1 /
-&viscosity_params  on=t /
-&conduction_params on=t extrapolate=f/
 
 !                     cs    pa   ofd  mas  kap  eta
 &stagger_params    nu=0.10, 1.0, 1.0, 0.0, 1.0, 1.0 courant=0.10 do_maxwell=t /
@@ -35,7 +35,7 @@
                   !nu=  0.03 , 0.3, 0.1, 0.00,  0.05,  1.0 /
                   !nu=  0.05 , 0.1, 0.2, 0.05,  0.05,  0.8 /
 
-!----------------- Framework paramters -----------------------------------------------
+!----------------- Framework paramters -----------------------------------------
 &dispatcher_params /
 &timestep_params   /
 /
