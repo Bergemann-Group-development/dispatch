@@ -29,7 +29,6 @@ MODULE viscosity_mod
     procedure:: set_pointers
     procedure, private:: deallocate
   end type
-  real, save:: mult=1.0
 CONTAINS
 
 !===============================================================================
@@ -43,7 +42,7 @@ SUBROUTINE pre_init (self, patch)
   logical, save :: on = .false.
   logical, save :: kinematic = .false.
   logical, save :: first_time = .true.
-  namelist /viscosity_params/ on, kinematic, mu, mult
+  namelist /viscosity_params/ on, kinematic, mu
   !.............................................................................
   call trace%begin ('viscosity_t%pre_init')
   self%patch => patch
