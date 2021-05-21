@@ -90,8 +90,7 @@ SUBROUTINE init (self)
   end if
 !
   do iz=m(3)%lb,m(3)%ub
-    z = max(m(3)%p + m(3)%r(iz),0.0)
-    !z=1.0-zz
+    z = max (m(3)%p+m(3)%r(iz)-0.5*m(3)%d, 0.0)
     do iy=m(2)%lb,m(2)%ub
       y = m(2)%p + m(2)%r(iy)
       do ix=m(1)%lb,m(1)%ub

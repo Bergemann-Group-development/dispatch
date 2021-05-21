@@ -41,7 +41,7 @@ SUBROUTINE init (self)
   real,save:: mpoly = 1.0
   real,save:: sigma = 1.0
   real,save:: theta = 10.
-  real,save:: stencil = 1.5
+  real,save:: stencil = 2.0
   real,save:: courant_v = 1.0
   real,save:: courant_c = 1.0
   real,save:: amplitude = 1e-3
