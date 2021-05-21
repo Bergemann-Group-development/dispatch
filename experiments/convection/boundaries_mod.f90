@@ -69,7 +69,7 @@ SUBROUTINE primary(self, mem)
   class(mesh_t), pointer:: m(:)
   integer:: ix, iy, iz, n(3), id
   real(8), pointer:: z(:)
-  real:: h, f, tt0, tt1, dz, ds(3), d0, dtt
+  real:: h, f, tt0, tt1, dz, ds(3), d0
   real(8)::zz
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -122,12 +122,8 @@ SUBROUTINE primary(self, mem)
         end do
       end do
       do iz=m(3)%lb,m(3)%li
-        dtt = (e(ix,iy,m(3)%li+1)/d(ix,iy,m(3)%li+1)*(eos%gamma-1d0) - &
-               e(ix,iy,m(3)%li  )/d(ix,iy,m(3)%li  )*(eos%gamma-1d0))/ds(3)
-        dz = (m(3)%li-iz)*ds(3)
         do ix=m(1)%lb,m(1)%ub
-          e(ix,iy,iz) = d(ix,iy,iz)*(self%tt_top+dtt*dz)/(eos%gamma-1d0)
-          !e(ix,iy,iz) = d(ix,iy,iz)*self%tt_top/(eos%gamma-1d0)
+          e(ix,iy,iz) = d(ix,iy,iz)*self%tt_top/(eos%gamma-1d0)
         end do
       end do
     end do
@@ -140,11 +136,8 @@ SUBROUTINE primary(self, mem)
         do iy=m(2)%lb,m(2)%ub
           do ix=m(1)%lb,m(1)%ub
             tt0 = e(ix,iy,m(3)%ui)/d(ix,iy,m(3)%ui)*(eos%gamma-1d0)
-            dtt = (e(ix,iy,m(3)%ui  )/d(ix,iy,m(3)%ui  )*(eos%gamma-1d0) - &
-                   e(ix,iy,m(3)%ui-1)/d(ix,iy,m(3)%ui-1)*(eos%gamma-1d0))/ds(3)
             dz = (iz-m(3)%ui)*ds(3)
-            tt1         = tt0              + dtt*dz
-            !tt1         = tt0              + self%theta*dz
+            tt1         = tt0              + self%theta*dz
             d(ix,iy,iz) = bc_rate*d(ix,iy,m(3)%ui)+(1.0-bc_rate)*d0 + self%theta*dz
             e(ix,iy,iz) = d(ix,iy,iz)*tt1/(eos%gamma-1d0)
           end do
