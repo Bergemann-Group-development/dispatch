@@ -39,10 +39,10 @@ SUBROUTINE pre_init (self, patch)
   class(viscosity_t):: self
   class(gpatch_t), target:: patch
   integer:: iostat
-  real    :: mu = 1.0
-  logical :: on = .false.
-  logical :: kinematic = .false.
-  logical :: first_time = .true.
+  real,save     :: mu = 1.0
+  logical, save :: on = .false.
+  logical, save :: kinematic = .false.
+  logical, save :: first_time = .true.
   namelist /viscosity_params/ on, kinematic, mu, mult
   !.............................................................................
   call trace%begin ('viscosity_t%pre_init')
@@ -211,9 +211,9 @@ SUBROUTINE pre_update (self)
   ! Divergence of per-volume quantity, in per unit mass
   !-----------------------------------------------------------------------------
   ff => scratch%force_per_unit_mass
-  do i3=l(3),u(3)
-  do i2=l(2),u(2)
-  do i1=l(1),u(1)
+  do i3=l(3)+1,u(3)-1
+  do i2=l(2)+1,u(2)-1
+  do i1=l(1)+1,u(1)-1
     c = 0.5*self%mu/d(i1,i2,i3)
     ff(i1,i2,i3,1) = ff(i1,i2,i3,1) &
                    + ((du11(i1+1,i2,i3) - du11(i1-1,i2,i3))*c1 &
