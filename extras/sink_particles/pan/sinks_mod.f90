@@ -30,7 +30,7 @@ CONTAINS
 !===============================================================================
 !> Initialize sink task
 !===============================================================================
-SUBROUTINE pre_init (self, patch)
+SUBROUTINE pre_init (self)
   class(sinks_t), target:: self
   class(gpatch_t), pointer:: patch
   !.............................................................................
@@ -41,7 +41,7 @@ SUBROUTINE pre_init (self, patch)
     position
   !-----------------------------------------------------------------------------
   call trace%begin ('sinks_t%pre_init')
-  self%patch => patch
+  patch => self%patch
   if (first_time) then
     !$omp critical (sinks_cr)
     if (first_time) then
@@ -82,7 +82,7 @@ END SUBROUTINE pre_init
 !> Update sink task
 !===============================================================================
 SUBROUTINE pre_update (self)
-  class(sinks_t):: self
+  class(sinks_t), target:: self
   !.............................................................................
   class(gpatch_t), pointer:: patch
   logical:: contains_sink
