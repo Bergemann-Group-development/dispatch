@@ -232,7 +232,7 @@ SUBROUTINE pre_update (self)
   end do
   end do
   !self%u_max = (self%mu/(6.*minval(ds)**2))*mult
-  self%u_max = self%mu*1./((ds(1)**2)+1./(ds(2)**2)+1./(ds(3)**2))
+  self%u_max = self%mu*(1./(ds(1)**2)+1./(ds(2)**2)+1./(ds(3)**2))
   !-----------------------------------------------------------------------------
   deallocate (du11,du12,du13)
   deallocate (du21,du22,du23)
