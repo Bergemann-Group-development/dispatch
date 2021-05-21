@@ -1,6 +1,6 @@
 !----------------- Main experiment parameters ----------------------------------------
 &experiment_params flux_BC=t sigma=1.0 theta=10 kinematic=f amplitude=1e-3/
-
+&boundaries_params bc_rate=0.0/
 !----------------- I/O paramters -----------------------------------------------------
 &io_params         verbose=0 do_trace=f do_debug=f do_output=t
                    guard_zones=t nml_version=1 /
