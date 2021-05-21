@@ -58,6 +58,7 @@ SUBROUTINE pre_init (self, patch)
   self%on = on
   self%kinematic = kinematic
   self%mu = mu * scaling%t / scaling%l**2
+  self%patch%ng=max(self%patch%ng,3)
   call io%lock%unset ('viscosity_t%pre_init')
   call trace%end()
 END SUBROUTINE pre_init
@@ -230,7 +231,8 @@ SUBROUTINE pre_update (self)
   end do
   end do
   end do
-  self%u_max = (self%mu/(6.*minval(ds)**2))*mult
+  !self%u_max = (self%mu/(6.*minval(ds)**2))*mult
+  self%u_max = self%mu*1./((ds(1)**2)+1./(ds(2)**2)+1./(ds(3)**2))
   !-----------------------------------------------------------------------------
   deallocate (du11,du12,du13)
   deallocate (du21,du22,du23)
@@ -250,7 +252,7 @@ SUBROUTINE courant_condition(self)
   if (first_time) then
     call io%lock%set
     if (first_time .and. self%u_max > 0.0) then
-      first_time = .false.
+     ! first_time = .false.
       print *, 'visc u_max', self%patch%id, self%u_max, self%patch%u_max
     end if
     call io%lock%unset
