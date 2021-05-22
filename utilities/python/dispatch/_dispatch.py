@@ -305,7 +305,7 @@ def _var(patch,filed,snap,verbose=0,copy=None):
         print('id:',patch.id)
     for iv in range(patch.nv):
         if snap.io.method.strip()=='background':
-            offset = iv + patch.record*patch.nv
+            offset = iv + (patch.record-1)*patch.nv
             if verbose>0:
                 print('background offset',offset)
         else:
