@@ -103,7 +103,7 @@ SUBROUTINE primary(self, mem)
       do ix=m(1)%lb,m(1)%ub
         ux(ix,iy,iz) = px(ix,iy,iz)/d(ix,iy,iz)
         uy(ix,iy,iz) = py(ix,iy,iz)/d(ix,iy,iz)
-        uz(ix,iy,iz) = px(ix,iy,iz)/d(ix,iy,iz)
+        uz(ix,iy,iz) = pz(ix,iy,iz)/d(ix,iy,iz)
         e (ix,iy,iz) = mem(ix,iy,iz,patch%idx%e) - 0.5*d(ix,iy,iz)*( &
                         ux(ix,iy,iz)**2 &
                       + uy(ix,iy,iz)**2 &
