@@ -214,7 +214,7 @@ SUBROUTINE pre_update (self)
   do i3=l(3)+1,u(3)-1
   do i2=l(2)+1,u(2)-1
   do i1=l(1)+1,u(1)-1
-    c = 0.5*self%mu/d(i1,i2,i3)
+    c = self%mu/d(i1,i2,i3)
     ff(i1,i2,i3,1) = ff(i1,i2,i3,1) &
                    + ((du11(i1+1,i2,i3) - du11(i1-1,i2,i3))*c1 &
                    +  (du12(i1,i2+1,i3) - du12(i1,i2-1,i3))*c2 &
