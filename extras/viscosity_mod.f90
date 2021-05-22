@@ -207,7 +207,7 @@ SUBROUTINE pre_update (self)
     end if
   end do
   end do
-!-----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   ! Divergence of per-volume quantity, in per unit mass
   !-----------------------------------------------------------------------------
   ff => scratch%force_per_unit_mass
@@ -230,8 +230,14 @@ SUBROUTINE pre_update (self)
   end do
   end do
   end do
+  !-----------------------------------------------------------------------------
+  ! Compute u_max for the Courant condition
+  !-----------------------------------------------------------------------------
+  l = self%patch%mesh%li
+  u = self%patch%mesh%ui
   self%u_max = self%mu*minval(ds)/self%courant &
-             * (1./ds(1)**2 + 1./ds(2)**2 + 1./ds(3)**2)
+             * (1./ds(1)**2 + 1./ds(2)**2 + 1./ds(3)**2) &
+             / minval(d(l(1):u(1),l(2):u(2),l(3):u(3)))
   !-----------------------------------------------------------------------------
   deallocate (du11,du12,du13)
   deallocate (du21,du22,du23)

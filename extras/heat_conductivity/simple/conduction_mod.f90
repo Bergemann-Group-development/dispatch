@@ -223,9 +223,12 @@ SUBROUTINE pre_update(self)
     end if
   end if
   !-----------------------------------------------------------------------------
+  l = self%patch%mesh%li
+  u = self%patch%mesh%ui
   self%u_max = self%kappa/minval(ds)/self%courant &
              * (mult(1)*12.*(2.0-self%stencil) + &
-                mult(2)*3.0*(self%stencil-1.0))
+                mult(2)*3.0*(self%stencil-1.0)) &
+             / minval(d(l(1):u(1),l(2):u(2),l(3):u(3)))
   deallocate (tg, flux)
   call trace%end (itimer)
 END SUBROUTINE pre_update
