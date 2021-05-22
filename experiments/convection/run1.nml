@@ -6,13 +6,14 @@
 &conduction_params on=t extrapolate=f /
 !----------------- I/O paramters -----------------------------------------------
 &io_params         verbose=0 do_trace=f do_debug=f do_output=t
-                   method='parallel' guard_zones=t nml_version=1 /
+                   method='background' guard_zones=t nml_version=1 /
 !&restart_params    snapshot=5 /
 &out_params        end_time=100.21 out_time=0.1 print_every=300 /
+&timer_params      sec_per_report=20 /
 
 !----------------- Initial condition parameter ---------------------------------
-&patch_params      nt=5 n=3*32 do_check_nan=f grace=0.2 /
-&cartesian_params  size=4,4,1 dims=8,8,2 mpi_dims=2,2,2 origin=3*0.0
+&patch_params      nt=5 n=3*32 do_check_nan=f grace=0.4 /
+&cartesian_params  size=4,4,1 dims=16,16,4 mpi_dims=2,2,2 origin=3*0.0
                    periodic=t,t,f /
 
 !----------------- Refinemennt parameters --------------------------------------
