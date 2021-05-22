@@ -94,11 +94,13 @@ SUBROUTINE write_out (buffer, snap, rec)
   !-----------------------------------------------------------------------------
   write (filename,'(a,i5.5,"/snapshot_",i5.5,".dat")') &
     trim(io%run_dir), snap, mpi%rank
+  call io%lock%set ('background_io_t%write_out')
   open (newunit=unit, file=trim(filename), form='unformatted', &
         recl=kind(buffer)*product(shape(buffer)), &
         access='direct', status='unknown')
   write (unit, rec=rec) buffer
   close (unit)
+  call io%lock%unset ('background_io_t%write_out')
   !-----------------------------------------------------------------------------
   call log (rec, 4)
   call trace%end()
