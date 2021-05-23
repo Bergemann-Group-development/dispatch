@@ -3,33 +3,44 @@ import time
 import numpy as np
 import f90nml
 import time
+import save_restore as sr
 from scipy.io import FortranFile
 
-def read_patch_metadata(io=0,run='',data='../data',n_rank=1,verbose=0):
+def read_patch_metadata(io=0,run='',data='../data',n_rank=0,verbose=0):
     """ Read patch metadata from Fortran unformatted file
     """
     if verbose>0:
         start=time.time()
 
-    rank=0
+    if n_rank==0:
+        dir='{}/{}/{:05d}'.format(data,run,io)
+        files=[file for file in os.listdir(dir) if file.endswith('patches.nml')]
+        n_rank=len(files)
+
     patches={}
-    while(rank < n_rank):
-        file0='{}/{}/{:05d}/rank_{:05d}_patches.dat'.format(data,run,io,rank)
-        file1='{}/{}/{:05d}/rank_{:05d}_patches.nml'.format(data,run,io,rank)
-        if os.path.exists(file0):
-            read_rank_metadata(file0,patches,rank)
-        elif os.path.exists(file1):
+
+    file0='{}/{}/{:05d}/patches.sr'.format(data,run,io)
+    file1='{}/{}/{:05d}/rank_00000_patches.nml'.format(data,run,io)
+    if os.path.exists(file0) and os.path.getctime(file0) > os.path.getctime(file1):
+        patches=sr.restore(file0)
+        if verbose>0:
+            print(file0,len(patches.keys()),'patches')
+    else:
+        if verbose >= 0:
+            print('cashing metadata to',file0)
+        rank=0
+        while(rank < n_rank):
+            file1='{}/{}/{:05d}/rank_{:05d}_patches.nml'.format(data,run,io,rank)
             read_rank_namelist(file1,patches,rank)
-        else:
-            break
-        if verbose>1:
-            print(len(patches.keys()),'patches')
-        rank+=1
+            if verbose>1:
+                print(file1,len(patches.keys()),'patches')
+            rank+=1
+        sr.save(file0,patches)
 
     np=len(patches.keys())
     if verbose>0:
         sec=time.time()-start
-        print('{} patches, {:.2f} sec'.format(np,sec))
+        print('{} ranks, {} patches, {:.2f} sec'.format(n_rank,np,sec))
 
     if np==0:
         print('no files found')

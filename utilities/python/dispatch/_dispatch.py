@@ -8,6 +8,7 @@ import f90nml
 import numpy as np
 import dispatch.graphics as dg
 import dispatch.select as dse
+import save_restore as sr
 from time import time
 from dispatch._dispatch_grid import GeometricFactors
 from dispatch._aux import aux
@@ -36,7 +37,7 @@ class _timer():
         for k,v in self.dict.items():
             l=max(l,len(k))
             s+=v
-        if s>5:
+        if s>15:
             skip=False
         if not skip or verbose:
             s='{:>XX}: {:7.3f} sec'
@@ -306,7 +307,7 @@ def _var(patch,filed,snap,verbose=0,copy=None):
     for iv in range(patch.nv):
         if snap.io.method.strip()=='background':
             offset = iv + (patch.record-1)*patch.nv
-            if verbose>0:
+            if verbose>2:
                 print('background offset',offset)
         else:
             if patch.ioformat==5:
@@ -772,6 +773,22 @@ object takes both numeric and text key values: Examples:\n\
             print('plane: i, p = {:d} {:.3f}'.format(i,p))
         return f
 
+def read_nml(file,verbose=0):
+    """ Read a cached namelist file if it exists, else create it """
+    srfile=file.replace('.nml','.sr')
+    if os.path.exists(srfile) and os.path.getctime(srfile) > os.path.getctime(file):
+        if verbose>0:
+            print('reading file',srfile)
+        nml_list=sr.restore(srfile)
+    else:
+        if verbose>0:
+            print('reading file',file)
+        nml_list=f90nml.read(file)
+        if verbose>-1:
+            print('caching metadate to',srfile)
+        sr.save(srfile,nml_list)
+    return nml_list
+
 class snapshot():
     """ Return a snapshot worth of metadata, including memory mapped variables
     """
@@ -807,21 +824,10 @@ class snapshot():
         file=_file(rundir,'params.nml')
         if verbose>2:
             print('reading file',file)
-        self.params_list=f90nml.read(file)
+        self.params_list=read_nml(file,verbose=verbose)
+        timer.add('params.nml')
+
         _add_nml_list_to(self,self.params_list,verbose=verbose)
-        if not hasattr(self.io,'method'):
-            print('\nsnap.io.method attribute missing -- this is an f90nml problem')
-            tmp='/tmp/'+os.environ['USER']+'.tmp'
-            with open(file,'r') as fin:
-                with open(tmp,'w') as fout:
-                    for line in fin:
-                        if not line.find('/') > 2:
-                            fout.write(line)
-            self.params_list=f90nml.read(tmp)
-            _add_nml_list_to(self,self.params_list,verbose=verbose)
-            if hasattr(self.io,'method'):
-                print('fixed by re-reading a filtered copy of the file')
-                os.remove(tmp)
 
         # Finding snapshot files
         if verbose>1:
@@ -833,6 +839,7 @@ class snapshot():
         if len(files)==0:
             print('directory {} has no snapshot.nml file'.format(datadir))
             return None
+        timer.add('run metadata')
 
         #
         if verbose>1:
@@ -840,9 +847,7 @@ class snapshot():
         for f in files:
             # add parameter groups from data/run/NNNNN/*snapshot.nml
             file=_file(datadir,f)
-            if verbose>2:
-                print('reading file',file)
-            nml_list=f90nml.read(file)
+            nml_list=read_nml(file,verbose=verbose)
             self.nml_list=nml_list
             #_repair(self,nml_list,verbose=verbose)
             _add_nml_list_to(self,nml_list,verbose=verbose)
@@ -896,7 +901,7 @@ class snapshot():
         if patch_dict is None:
             print('could not find patch metadata')
             return
-        timer.add('parse_patches')   # 0.7s
+        timer.add('patch metadata')   # 0.7s
         """ 
             At this point all metadata about patches is available in the
             patch_dict, with patch IDs as keys.  This makes it possible to
