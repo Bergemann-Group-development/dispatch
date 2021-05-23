@@ -37,6 +37,7 @@ SUBROUTINE pre_init (self, patch)
   call trace_begin ('initial_conditions_t%pre_init')
   self%patch => patch
   self%solver = patch%kind
+  call random%init (self%seed)
   call trace%end()
 END subroutine pre_init
 

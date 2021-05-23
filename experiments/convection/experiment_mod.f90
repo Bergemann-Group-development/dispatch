@@ -36,20 +36,22 @@ CONTAINS
 SUBROUTINE init (self)
   class(experiment_t):: self
   integer:: iostat
-  real,save:: mu    = 0.0
-  real,save:: kappa = 0.07
-  real,save:: mpoly = 1.0
-  real,save:: sigma = 1.0
-  real,save:: theta = 10.
-  real,save:: stencil = 2.0
-  real,save:: courant_v = 1.0
-  real,save:: courant_c = 1.0
-  real,save:: amplitude = 1e-3
-  logical,save:: kinematic = .false.
-  logical,save:: flux_BC = .true.
-  logical,save:: first_time=.true.
+  real, save:: mu    = 0.0
+  real, save:: kappa = 0.07
+  real, save:: mpoly = 1.0
+  real, save:: sigma = 1.0
+  real, save:: theta = 10.
+  real, save:: stencil = 2.0
+  real, save:: courant_v = 1.0
+  real, save:: courant_c = 1.0
+  real, save:: amplitude = 1e-3
+  integer, save:: seed = 11
+  logical, save:: flux_BC = .true.
+  logical, save:: kinematic = .false.
+  logical, save:: first_time=.true.
   namelist /experiment_params/ &
-    flux_BC, theta, kappa, sigma, mpoly, theta, stencil, courant_v, courant_c, kinematic, amplitude
+    flux_BC, theta, kappa, sigma, mpoly, theta, stencil, courant_v, courant_c, &
+    kinematic, amplitude, seed
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%init')
   call self%solver_t%init
@@ -79,7 +81,9 @@ SUBROUTINE init (self)
     self%boundaries%flux_BC       = flux_BC
     self%boundaries%theta         = theta
     self%boundaries%mpoly         = mpoly
+    self%initial_conditions%seed  = seed
     self%initial_conditions%theta = theta
+    self%initial_conditions%mpoly = mpoly
     self%initial_conditions%amplitude = amplitude
   call io%lock%unset ('experiment_t%init')
   call trace%end()
