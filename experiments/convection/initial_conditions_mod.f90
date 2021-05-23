@@ -16,7 +16,8 @@ MODULE initial_conditions_mod
     real:: theta     = 10.0
     real:: mpoly     = 1.0
     real:: amplitude = 1e-3
-    logical :: mhd   = .false.
+    integer:: seed   = 11
+    logical:: mhd    = .false.
     character(len=64):: solver
     class(gpatch_t), pointer:: patch
   contains
@@ -32,37 +33,10 @@ CONTAINS
 SUBROUTINE pre_init (self, patch)
   class(initial_conditions_t):: self
   class(gpatch_t), pointer:: patch
-  !.............................................................................
-  integer:: iostat
-  integer, save:: idirect
-  real:: theta     = 10.0
-  real:: mpoly     = 1.0
-  real:: amplitude = 1e-3
-  real(8), save :: p0, v0, b0
-  logical, save :: first_time=.true.
-  namelist /IC_params/ theta, mpoly, amplitude
   !-----------------------------------------------------------------------------
-  call trace_begin('initial_conditions_t%pre_init')
+  call trace_begin ('initial_conditions_t%pre_init')
   self%patch => patch
   self%solver = patch%kind
-  self%mhd = .true.
-  call io%lock%set('initial_conditions_t%pre_init')
-  if (first_time) then
-    ! default values for namelist parameters
-    rewind (io%input)
-    read (io%input, IC_params, iostat=iostat)
-    if (iostat > 0) then
-      rewind (io%input)
-      read (io%input, IC_params, iostat=iostat)
-    end if
-    call io%namelist_warning ('IC_params', iostat)
-    write (io%namelist, IC_params)
-    first_time = .false.
-    call random%init
-  end if
-  self%mpoly = mpoly
-  call io%lock%unset('initial_conditions_t%pre_init')
-  !
   call trace%end()
 END subroutine pre_init
 
