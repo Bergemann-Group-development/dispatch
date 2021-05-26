@@ -448,18 +448,23 @@ def _var(patch,filed,snap,verbose=0,copy=None):
             assert(iv in patch.keys['numbers']),'variable index unknown'
 
         # Determine data representation
-        is_ln = ((patch.ioformat-6)/2==0
-              or (patch.ioformat-10)//2==0)
-        is_vel = ((patch.ioformat-6)%2==0)
+        if snap.io.method.strip()=='background':
+            is_ln=False
+            is_vel=False
+        elif snap.io.method.strip()=='parallel':
+            is_ln = ((patch.ioformat-6)/2==0
+                  or (patch.ioformat-10)//2==0)
+            is_vel = ((patch.ioformat-6)%2==0)
+            if patch.ioformat==14:
+                is_vel = False
+                is_ln = False
         is_staggered = patch.kind[0:4] == 'zeus' or patch.kind[0:7] == 'stagger'
-        if patch.ioformat==14:
-            is_vel = False
-            is_ln = False
+        tot_e = patch.kind[0:6] == 'ramses'
         if verbose:
             print("is_ln:",is_ln)
             print("is_vel:",is_vel)
+            print("tot_e:",tot_e)
             print("is_staggered:",is_staggered)
-        tot_e = patch.kind[0:6] == 'ramses'
         v = None
 
         # Check if the index corresponds to a cached array
@@ -558,11 +563,12 @@ def _var(patch,filed,snap,verbose=0,copy=None):
             elif iv=='eth':
                 if patch.gamma==1.0:
                     v=mem('e')
-                elif patch.ioformat==14 or patch.ioformat==15 or is_staggered:
-                    v=mem('e')
+                elif tot_e:
+                    v=var('e',all=True,verbose=verbose) \
+                     -var('ekin',all=True,verbose=verbose) \
+                     -var('emag',all=True,verbose=verbose)
                 else:
-                    v=mem('e') \
-                     -var('ekin',all=True,verbose=verbose) -var('emag',all=True,verbose=verbose)
+                    v=mem('e')
 
             # Thermal energy
             elif iv=='Eth':
@@ -578,9 +584,12 @@ def _var(patch,filed,snap,verbose=0,copy=None):
         # or a letter index
         elif iv in patch.keys['letters']:
             if verbose:
-                print('iv is a letter:',iv)
+                print('iv is a string:',iv,patch.idx.dict[iv])
             iv=patch.idx.dict[iv]
-            v=mem(iv)
+            if iv >= 0:
+                v=mem(iv)
+            else:
+                v=0.0*mem(0)
 
         # if not, treat it as an expression
         else:
@@ -600,10 +609,10 @@ def _var(patch,filed,snap,verbose=0,copy=None):
     return var
 
 class _patch():
-    def __init__(self,id,patch_dict,snap,verbose=0):
+    def __init__(self,id,patch_dict,snap,memmap=1,verbose=0):
         #timer.add('_patch(0)')
         self.id=id
-        self.memmap=1
+        self.memmap=memmap
 
         # add general attributes from snapshot_nml
         for k,v in snap.dict.items():
@@ -792,7 +801,8 @@ def read_nml(file,verbose=0):
 class snapshot():
     """ Return a snapshot worth of metadata, including memory mapped variables
     """
-    def __init__(self, iout=0, run='', data='../data', datadir='', verbose=0, copy=False, timeit=False):
+    def __init__(self, iout=0, run='', data='../data', datadir='', verbose=0, 
+                 memmap=1, copy=False, timeit=False):
         # Set the max number of open files to the hard limit
         try:
             import resource
@@ -913,7 +923,7 @@ class snapshot():
             """ The _patch procedure collects all information about a patch
                 into an instancc of the _patch class, and appends it to
                 the snapshot.patches list """
-            p=_patch(id,patch_dict[id],self,verbose=verbose)
+            p=_patch(id,patch_dict[id],self,memmap=memmap,verbose=verbose)
             timer.add('snapshot(1)')
             self._add_axes(p)
             # Append to array of patch instances
