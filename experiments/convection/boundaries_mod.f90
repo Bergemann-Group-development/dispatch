@@ -59,7 +59,7 @@ END SUBROUTINE init
 !===============================================================================
 !> Boundary conditions as specified in the benchmark
 !===============================================================================
-SUBROUTINE primary(self, mem)
+SUBROUTINE primary(self, mem, cl,id)
   class(boundaries_t):: self
   real(kind=var_k), dimension(:,:,:,:), pointer, contiguous:: mem
   !.............................................................................
@@ -68,7 +68,7 @@ SUBROUTINE primary(self, mem)
   real(kind=var_k), dimension(:,:,:), pointer, contiguous:: px, py, pz
   class(patch_t), pointer:: patch
   class(mesh_t), pointer:: m(:)
-  integer:: ix, iy, iz, iz1, n(3), id
+  integer:: ix, iy, iz, iz1, n(3), id, cl, ub
   real(8), pointer:: z(:)
   real:: h, f, dz, z1, ds(3), d0, pg0, tt0, d1, pg1, tt1
   real(8)::zz
@@ -151,8 +151,10 @@ SUBROUTINE primary(self, mem)
   ! values in the T-case, and impose the given gradient in the F-case
   !-----------------------------------------------------------------------------
   if (m(3)%upper_boundary) then
+    ub=m(3)%ui
     if (self%flux_BC) then
-      do iz=m(3)%uo,m(3)%ub
+      do iz=ub,m(3)%ub
+        zz=m(3)%r(iz)+m(3)%p-0.5*m(3)%d
         do iy=m(2)%lb,m(2)%ub
           do ix=m(1)%lb,m(1)%ub
             !-------------------------------------------------------------------
@@ -166,13 +168,17 @@ SUBROUTINE primary(self, mem)
             ! temperature at the bottom boundary, but the pressure stays much
             ! more constant.
             !-------------------------------------------------------------------
-            d0  = d(ix,iy,m(3)%ui)
-            pg0 = e(ix,iy,m(3)%ui)*(eos%gamma-1d0)
+            d0  = d(ix,iy,ub-1)
+            pg0 = e(ix,iy,ub-1)*(eos%gamma-1d0)
+            !if (id==71)    print *,'pg0',cl, pg0, (1.0+self%theta*(m(3)%r(lb-1)+m(3)%p-0.5*m(3)%d))**(self%mpoly+1.0), &
+            !    pg0-(1.0+self%theta*(m(3)%r(lb-1)+m(3)%p-0.5*m(3)%d))**(self%mpoly+1.0)
             tt0 = pg0/d0                        ! T(ui)
-            dz = (iz-m(3)%ui)*ds(3)             ! depth interval
+            dz = (iz-ub+1)*ds(3)             ! depth interval
             tt1 = tt0 + self%theta*dz           ! T(iz)
             h = 0.5*(tt0+tt1)/self%g            ! average scale height
             pg1 = pg0*exp(dz/h)                 ! Pg(iz)
+            !if (id==71) print *,'pg1',cl,pg1, (1.0+self%theta*zz)**(self%mpoly+1.0), &
+            !pg1- (1.0+self%theta*zz)**(self%mpoly+1.0)
             d(ix,iy,iz) = pg1/tt1               ! d(iz)
             e(ix,iy,iz) = pg1/(eos%gamma-1d0)   ! e(iz)
           end do
@@ -185,8 +191,8 @@ SUBROUTINE primary(self, mem)
     ! line with pz(...) = 0.0
     !---------------------------------------------------------------------------
     do iy=m(2)%lb,m(2)%ub
-      do iz=m(3)%uo,m(3)%ub
-        iz1 = m(3)%ui + (m(3)%uo - iz)
+      do iz=ub,m(3)%ub
+        iz1 = ub - (iz-ub)
         do ix=m(1)%lb,m(1)%ub
           ux(ix,iy,iz) = +ux(ix,iy,iz1)
           uy(ix,iy,iz) = +uy(ix,iy,iz1)
@@ -196,7 +202,8 @@ SUBROUTINE primary(self, mem)
           pz(ix,iy,iz) = d(ix,iy,iz)*uz(ix,iy,iz)
         end do
       end do
-      !pz(:,iy,m(3)%ui) = 0.0
+      pz(:,iy,ub) = 0.0
+      uz(:,iy,ub) = 0.0
     end do
   end if
   !-----------------------------------------------------------------------------
@@ -219,17 +226,17 @@ SUBROUTINE primary(self, mem)
   end if
   !
   if (m(3)%upper_boundary) then
-    do iz=m(3)%ui,m(3)%ub
-      do iy=m(2)%lb,m(2)%ub
-        do ix=m(1)%lb,m(1)%ub
-          mem(ix,iy,iz,patch%idx%px) =  d(ix,iy,iz)*ux(ix,iy,iz)
-          mem(ix,iy,iz,patch%idx%py) =  d(ix,iy,iz)*uy(ix,iy,iz)
-          mem(ix,iy,iz,patch%idx%pz) =  d(ix,iy,iz)*uz(ix,iy,iz)
-        end do
-      end do
-    end do
+    !do iz=m(3)%ui,m(3)%ub
+    !  do iy=m(2)%lb,m(2)%ub
+    !    do ix=m(1)%lb,m(1)%ub
+    !      mem(ix,iy,iz,patch%idx%px) =  d(ix,iy,iz)*ux(ix,iy,iz)
+    !      mem(ix,iy,iz,patch%idx%py) =  d(ix,iy,iz)*uy(ix,iy,iz)
+    !      mem(ix,iy,iz,patch%idx%pz) =  d(ix,iy,iz)*uz(ix,iy,iz)
+    !    end do
+    !  end do
+    !end do
     if (self%flux_BC) then
-      do iz=m(3)%uo,m(3)%ub
+      do iz=m(3)%ui,m(3)%ub
         do iy=m(2)%lb,m(2)%ub
           do ix=m(1)%lb,m(1)%ub
             mem(ix,iy,iz,patch%idx%e ) = e(ix,iy,iz) + 0.5*d(ix,iy,iz)*( &
