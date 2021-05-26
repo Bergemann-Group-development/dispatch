@@ -68,7 +68,7 @@ SUBROUTINE primary(self, mem, cl,id)
   real(kind=var_k), dimension(:,:,:), pointer, contiguous:: px, py, pz
   class(patch_t), pointer:: patch
   class(mesh_t), pointer:: m(:)
-  integer:: ix, iy, iz, iz1, n(3), id, cl, ub
+  integer:: ix, iy, iz, iz1, n(3), id, cl, ub, lb
   real(8), pointer:: z(:)
   real:: h, f, dz, z1, ds(3), d0, pg0, tt0, d1, pg1, tt1
   real(8)::zz
@@ -122,9 +122,10 @@ SUBROUTINE primary(self, mem, cl,id)
   ! values of pressure and density consistent with constant temperature HSE
   !-----------------------------------------------------------------------------
   if (m(3)%lower_boundary) then
+    lb=m(3)%li
     do iy=m(2)%lb,m(2)%ub
       do iz=m(3)%lb,m(3)%lo
-        iz1 = m(3)%li + (m(3)%li - iz)
+        iz1 = lb - (iz-lb)
         do ix=m(1)%lb,m(1)%ub
           h = self%tt_top/self%g
           dz = (iz-m(3)%li)*ds(3)
@@ -133,13 +134,10 @@ SUBROUTINE primary(self, mem, cl,id)
           ux(ix,iy,iz) = +ux(ix,iy,iz1)
           uy(ix,iy,iz) = +uy(ix,iy,iz1)
           uz(ix,iy,iz) = -uz(ix,iy,iz1)
-          px(ix,iy,iz) = d(ix,iy,iz)*ux(ix,iy,iz)
-          py(ix,iy,iz) = d(ix,iy,iz)*uy(ix,iy,iz)
-          pz(ix,iy,iz) = d(ix,iy,iz)*uz(ix,iy,iz)
         end do
       end do
-      pz(:,iy,m(3)%li) = 0.0
-      do iz=m(3)%lb,m(3)%li
+      uz(:,iy,m(3)%li) = 0.0
+      do iz=m(3)%lb,lb
         do ix=m(1)%lb,m(1)%ub
           e(ix,iy,iz) = d(ix,iy,iz)*self%tt_top/(eos%gamma-1d0)
         end do
@@ -170,15 +168,11 @@ SUBROUTINE primary(self, mem, cl,id)
             !-------------------------------------------------------------------
             d0  = d(ix,iy,ub-1)
             pg0 = e(ix,iy,ub-1)*(eos%gamma-1d0)
-            !if (id==71)    print *,'pg0',cl, pg0, (1.0+self%theta*(m(3)%r(lb-1)+m(3)%p-0.5*m(3)%d))**(self%mpoly+1.0), &
-            !    pg0-(1.0+self%theta*(m(3)%r(lb-1)+m(3)%p-0.5*m(3)%d))**(self%mpoly+1.0)
             tt0 = pg0/d0                        ! T(ui)
             dz = (iz-ub+1)*ds(3)             ! depth interval
             tt1 = tt0 + self%theta*dz           ! T(iz)
             h = 0.5*(tt0+tt1)/self%g            ! average scale height
             pg1 = pg0*exp(dz/h)                 ! Pg(iz)
-            !if (id==71) print *,'pg1',cl,pg1, (1.0+self%theta*zz)**(self%mpoly+1.0), &
-            !pg1- (1.0+self%theta*zz)**(self%mpoly+1.0)
             d(ix,iy,iz) = pg1/tt1               ! d(iz)
             e(ix,iy,iz) = pg1/(eos%gamma-1d0)   ! e(iz)
           end do
@@ -197,12 +191,8 @@ SUBROUTINE primary(self, mem, cl,id)
           ux(ix,iy,iz) = +ux(ix,iy,iz1)
           uy(ix,iy,iz) = +uy(ix,iy,iz1)
           uz(ix,iy,iz) = -uz(ix,iy,iz1)
-          px(ix,iy,iz) = d(ix,iy,iz)*ux(ix,iy,iz)
-          py(ix,iy,iz) = d(ix,iy,iz)*uy(ix,iy,iz)
-          pz(ix,iy,iz) = d(ix,iy,iz)*uz(ix,iy,iz)
         end do
       end do
-      pz(:,iy,ub) = 0.0
       uz(:,iy,ub) = 0.0
     end do
   end if
@@ -210,7 +200,7 @@ SUBROUTINE primary(self, mem, cl,id)
   ! Put the quantities back
   !-----------------------------------------------------------------------------
   if (m(3)%lower_boundary) then
-    do iz=m(3)%lb,m(3)%li
+    do iz=lb,m(3)%li
       do iy=m(2)%lb,m(2)%ub
         do ix=m(1)%lb,m(1)%ub
           mem(ix,iy,iz,patch%idx%px) =  d(ix,iy,iz)*ux(ix,iy,iz)
@@ -226,17 +216,17 @@ SUBROUTINE primary(self, mem, cl,id)
   end if
   !
   if (m(3)%upper_boundary) then
-    !do iz=m(3)%ui,m(3)%ub
-    !  do iy=m(2)%lb,m(2)%ub
-    !    do ix=m(1)%lb,m(1)%ub
-    !      mem(ix,iy,iz,patch%idx%px) =  d(ix,iy,iz)*ux(ix,iy,iz)
-    !      mem(ix,iy,iz,patch%idx%py) =  d(ix,iy,iz)*uy(ix,iy,iz)
-    !      mem(ix,iy,iz,patch%idx%pz) =  d(ix,iy,iz)*uz(ix,iy,iz)
-    !    end do
-    !  end do
-    !end do
+    do iz=ub,m(3)%ub
+      do iy=m(2)%lb,m(2)%ub
+        do ix=m(1)%lb,m(1)%ub
+          mem(ix,iy,iz,patch%idx%px) =  d(ix,iy,iz)*ux(ix,iy,iz)
+          mem(ix,iy,iz,patch%idx%py) =  d(ix,iy,iz)*uy(ix,iy,iz)
+          mem(ix,iy,iz,patch%idx%pz) =  d(ix,iy,iz)*uz(ix,iy,iz)
+        end do
+      end do
+    end do
     if (self%flux_BC) then
-      do iz=m(3)%ui,m(3)%ub
+      do iz=ub,m(3)%ub
         do iy=m(2)%lb,m(2)%ub
           do ix=m(1)%lb,m(1)%ub
             mem(ix,iy,iz,patch%idx%e ) = e(ix,iy,iz) + 0.5*d(ix,iy,iz)*( &
@@ -249,7 +239,6 @@ SUBROUTINE primary(self, mem, cl,id)
     end if
   end if
   deallocate (ux,uy,uz,e)
-  !print *, self%patch%id, minval(d), maxval(d)
   call trace%end (itimer)
 END SUBROUTINE primary
 
