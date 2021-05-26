@@ -555,7 +555,7 @@ SUBROUTINE output_nml_v1 (patch, append, unit, snapshot)
   real                 :: gamma, quality
   real(8)              :: time, dtime, out_next, out_time, ms
   real(8), dimension(3):: size, position, ds, box, velocity, &
-                          llc_nat, llc_cart, centre_nat
+                          llc_nat, llc_cart, centre_nat, origin
   integer              :: time_derivs
   integer              :: omp_nthreads, mpi_size, mpi_dims(3)
   logical              :: guard_zones, no_mans_land, periodic(3)
@@ -566,7 +566,7 @@ SUBROUTINE output_nml_v1 (patch, append, unit, snapshot)
   namelist /snapshot_nml/ ioformat, iout, time, ntotal, istep, mesh_type, &
     position, size, ds, box, velocity, level, quality, gamma, ncell, li, ui, n, &
     ng, gn, nv, nt, nw, kind, eos, opacity, periodic, guard_zones, time_derivs, &
-    omp_nthreads, mpi_size, no_mans_land, mpi_dims
+    omp_nthreads, mpi_size, no_mans_land, mpi_dims, origin
   namelist /patch_nml/ id, time, position, size, level, dtime
   !-----------------------------------------------------------------------------
   ! Write a small text file with info
@@ -601,6 +601,7 @@ SUBROUTINE output_nml_v1 (patch, append, unit, snapshot)
   istep        = patch%istep
   mesh_type    = patch%mesh_type
   position     = patch%position
+  origin       = patch%origin
   size         = patch%size
   ds           = patch%ds
   box          = patch%box
@@ -690,7 +691,7 @@ SUBROUTINE output_nml_v2 (patch, append, unit, snapshot)
   real                 :: gamma, quality
   real(8)              :: time, dtime, out_next, out_time, ms
   real(8), dimension(3):: size, position, ds, box, velocity, &
-                          llc_nat, llc_cart, centre_nat
+                          llc_nat, llc_cart, centre_nat, origin
   integer              :: time_derivs, refine_ratio
   integer              :: omp_nthreads, mpi_size, mpi_dims(3)
   logical              :: guard_zones, no_mans_land, periodic(3)
@@ -700,7 +701,7 @@ SUBROUTINE output_nml_v2 (patch, append, unit, snapshot)
     nml_version
   namelist /snapshot_nml/ ioformat, iout, time, ntotal, box, li, ui, ng, gn, n, &
     nv, nt, gamma, eos, opacity, periodic, guard_zones, time_derivs, no_mans_land, &
-    omp_nthreads, mpi_size, mesh_type, mpi_dims
+    omp_nthreads, mpi_size, mesh_type, mpi_dims, origin
   namelist /patch_nml/ id, position, size, level, dtime, istep, ds, ncell, n, nw, &
     velocity, quality, mesh_type, kind
   integer, allocatable :: nbor_ids(:)
@@ -740,6 +741,7 @@ SUBROUTINE output_nml_v2 (patch, append, unit, snapshot)
   istep        = patch%istep
   mesh_type    = patch%mesh_type
   position     = patch%position
+  origin       = patch%origin
   size         = patch%size
   ds           = patch%ds
   box          = patch%box
@@ -833,7 +835,7 @@ SUBROUTINE output_nml_v3 (patch, append, unit, snapshot)
   real(8)              :: time, dtime, out_next, out_time, ms
   real(8)              :: times(2), dtimes(2)
   real(8), dimension(3):: size, position, ds, box, velocity, &
-                          llc_nat, llc_cart, centre_nat
+                          llc_nat, llc_cart, centre_nat, origin
   integer              :: time_derivs, now, prv
   integer              :: omp_nthreads, mpi_size, mpi_dims(3)
   integer(8)           :: task_offset
@@ -845,7 +847,7 @@ SUBROUTINE output_nml_v3 (patch, append, unit, snapshot)
   namelist /snapshot_nml/ ioformat, iout, time, ntotal, istep, mesh_type, &
     position, size, ds, box, velocity, level, quality, gamma, ncell, li, ui, n, &
     ng, gn, nv, nt, nw, kind, eos, opacity, periodic, guard_zones, time_derivs, &
-    omp_nthreads, mpi_size, no_mans_land, mpi_dims
+    omp_nthreads, mpi_size, no_mans_land, mpi_dims, origin
   namelist /patch_nml/ id, time, position, size, level, dtime, times, dtimes, &
     task_offset
   integer, allocatable :: nbor_ids(:)
@@ -895,6 +897,7 @@ SUBROUTINE output_nml_v3 (patch, append, unit, snapshot)
   istep        = patch%istep
   mesh_type    = patch%mesh_type
   position     = patch%position
+  origin       = patch%origin
   size         = patch%size
   ds           = patch%ds
   box          = patch%box
@@ -986,7 +989,7 @@ SUBROUTINE output_nml_v4 (patch, append, unit, first_time)
   real                 :: quality, cost
   real(8)              :: gamma, time, dtime, out_next, out_time, ms
   real(8), dimension(3):: size, position, ds, box, velocity, &
-                          llc_nat, llc_cart, centre_nat
+                          llc_nat, llc_cart, centre_nat, origin
   integer              :: time_derivs, refine_ratio, record, rank
   integer              :: omp_nthreads, mpi_size, mpi_dims(3)
   logical              :: guard_zones, no_mans_land, periodic(3)
@@ -997,7 +1000,7 @@ SUBROUTINE output_nml_v4 (patch, append, unit, first_time)
   namelist /snapshot_nml/ ioformat, iout, time, ntotal, box, li, ui, ng, &
     gn, n, nv, nt, gamma, eos_name, opacity, periodic, guard_zones, &
     time_derivs, no_mans_land, omp_nthreads, mpi_size, mesh_type, mpi_dims, &
-    refine_ratio
+    refine_ratio, origin
   namelist /patch_nml/ id, position, size, level, dtime, istep, ds, ncell, n, &
     nw, velocity, quality, mesh_type, kind, record, rank, cost
   integer, allocatable :: nbor_ids(:)
@@ -1038,6 +1041,7 @@ SUBROUTINE output_nml_v4 (patch, append, unit, first_time)
   istep        = patch%istep
   mesh_type    = patch%mesh_type
   position     = patch%position
+  origin       = patch%origin
   size         = patch%size
   ds           = patch%ds
   box          = patch%box
@@ -1209,27 +1213,30 @@ SUBROUTINE input_nml_v1 (patch, unit)
   class(patch_t):: patch
   integer:: unit
   !.............................................................................
-  integer              :: iostat, nml_version
-  integer, save        :: ioformat, id, iout, istep, mesh_type, level,nv, nt, &
-                          nw, ntotal, format, mpi_size
-  integer, dimension(3):: ncell, li, ui, n, ng, gn, l, u
-  real   , save        :: gamma, quality
-  real(8), save        :: time, dtime, out_next, out_time, ms
-  real(8), dimension(3):: size, position, ds, box, velocity, &
-                          llc_nat, llc_cart, centre_nat
-  integer, save        :: time_derivs
-  logical, save        :: guard_zones, no_mans_land, periodic(3)
-  character(len=16)    :: kind, eos, opacity, method
-  integer              :: omp_nthreads, mpize, mpi_dims(3)
+  integer                :: iostat
+  integer                :: ioformat, id, iout, istep, mesh_type, level, &
+                            nv, nt, nw, ntotal, format, mpi_size, nml_version
+  integer, dimension(3)  :: ncell, li, ui, n, ng, gn, l, u
+  real                   :: gamma, quality
+  real(8)                :: time, dtime, out_next, out_time, ms
+  real(8), dimension(3)  :: size, position, ds, box, velocity, &
+                            llc_nat, llc_cart, centre_nat, origin
+  integer                :: time_derivs
+  logical                :: guard_zones, no_mans_land, periodic(3)
+  character(len=16)      :: kind, eos, opacity, method
+  integer                :: omp_nthreads, mpize, mpi_dims(3)
   namelist /io_nml/ format, ntotal, out_time, guard_zones, time_derivs, method, &
     nml_version
   namelist /snapshot_nml/ ioformat, iout, time, ntotal, istep, mesh_type, &
     position, size, ds, box, velocity, level, quality, gamma, ncell, li, ui, n, &
     ng, gn, nv, nt, nw, kind, eos, opacity, periodic, guard_zones, time_derivs, &
-    omp_nthreads, mpi_size, no_mans_land, mpi_dims
+    omp_nthreads, mpi_size, no_mans_land, mpi_dims, origin
+  save                 :: ioformat, iout, time, ntotal, istep, mesh_type, &
+    position, size, ds, box, velocity, level, quality, gamma, ncell, li, ui, n, &
+    ng, gn, nv, nt, nw, kind, eos, opacity, periodic, guard_zones, time_derivs, &
+    omp_nthreads, mpi_size, no_mans_land, mpi_dims, origin
   namelist /patch_nml/ id, time, position, size, level, dtime
   !-----------------------------------------------------------------------------
-  real(8), save        :: origin(3)
   integer, save        :: dims(3)
   logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
@@ -1260,6 +1267,7 @@ SUBROUTINE input_nml_v1 (patch, unit)
   patch%istep        = istep
   patch%mesh_type    = mesh_type
   patch%position     = position
+  patch%origin       = origin
   patch%size         = size
   patch%ds           = ds
   patch%box          = box
@@ -1308,23 +1316,25 @@ SUBROUTINE input_nml_v2 (patch, unit)
   class(patch_t):: patch
   integer:: unit
   !.............................................................................
-  integer              :: iostat, unit_l
-  integer,            save    :: ioformat, id, iout, istep, mesh_type, &
-                                 level, nv, nt, nw, ntotal, format
-  integer, dimension(3), save :: ncell, li, ui, n, ng, gn, l, u
-  real   ,               save :: gamma, quality
-  real(8),               save :: time, dtime, out_next, out_time, ms
-  real(8), dimension(3), save :: size, position, ds, box, velocity, &
-                                 llc_nat, llc_cart, centre_nat
-  integer,               save :: time_derivs, refine_ratio
-  logical,               save :: guard_zones, no_mans_land, periodic(3)
-  character(len=32),     save :: kind, eos, opacity, method
-  integer,               save :: dims(3), mpi_dims(3), mpi_size
+  integer                 :: iostat, unit_l
+  integer                 :: ioformat, id, iout, istep, mesh_type, &
+                             level, nv, nt, nw, ntotal, format
+  integer, dimension(3)   :: ncell, li, ui, n, ng, gn, l, u
+  real                    :: gamma, quality
+  real(8)                 :: time, dtime, out_next, out_time, ms
+  real(8), dimension(3)   :: size, position, ds, box, velocity, &
+                             llc_nat, llc_cart, centre_nat, origin
+  integer                 :: time_derivs, refine_ratio
+  logical                 :: guard_zones, no_mans_land, periodic(3)
+  character(len=32)       :: kind, eos, opacity, method
+  integer                 :: dims(3), mpi_dims(3), mpi_size
   namelist /snapshot_nml/ ioformat, iout, time, ntotal, box, li, ui, ng, &
     gn, n, nv, nt, gamma, eos, opacity, periodic, guard_zones, time_derivs, &
-    no_mans_land, mpi_dims
+    no_mans_land, mpi_dims, origin
+  save                 :: ioformat, iout, time, ntotal, box, li, ui, ng, &
+    gn, n, nv, nt, gamma, eos, opacity, periodic, guard_zones, time_derivs, &
+    no_mans_land, mpi_dims, origin
   !-----------------------------------------------------------------------------
-  real(8), save        :: origin(3)
   namelist /patch_nml/ id, position, size, level, dtime, istep, ds, ncell, n, nw, &
     velocity, quality, mesh_type, kind
   logical, save:: first_time=.true.
@@ -1374,6 +1384,7 @@ SUBROUTINE input_nml_v2 (patch, unit)
   !   velocity, quality, mesh_type, kind
   patch%id           = id
   patch%position     = position
+  patch%origin       = origin
   patch%size         = size
   patch%level        = level
   patch%dtime        = dtime
@@ -1407,22 +1418,20 @@ SUBROUTINE input_nml_v3 (patch, unit)
   integer(8)           :: task_offset
   real                 :: quality
   real(8)              :: gamma, time, dtime, out_next, out_time, ms
-  real(8), dimension(3):: size, position, ds, box, velocity
+  real(8), dimension(3):: size, position, ds, box, velocity, origin
   real(8), dimension(3):: llc_nat, llc_cart, centre_nat
   logical              :: guard_zones, no_mans_land, periodic(3)
   character(len=32)    :: kind, eos, opacity, method
   namelist /snapshot_nml/ ioformat, iout, time, ntotal, istep, mesh_type, &
     position, size, ds, box, velocity, level, quality, gamma, ncell, li, ui, n, &
     ng, gn, nv, nt, nw, kind, eos, opacity, periodic, guard_zones, time_derivs, &
-    omp_nthreads, mpi_size, no_mans_land, mpi_dims
+    omp_nthreads, mpi_size, no_mans_land, mpi_dims, origin
   save                 :: ioformat, iout, time, ntotal, istep, mesh_type, &
     position, size, ds, box, velocity, level, quality, gamma, ncell, li, ui, n, &
     ng, gn, nv, nt, nw, kind, eos, opacity, periodic, guard_zones, time_derivs, &
-    omp_nthreads, mpi_size, no_mans_land, mpi_dims
-
+    omp_nthreads, mpi_size, no_mans_land, mpi_dims, origin
   !-----------------------------------------------------------------------------
   real(8)              :: times(2), dtimes(2)
-  real(8)              :: origin(3)
   integer              :: dims(3), mpi_dims(3)
   namelist /patch_nml/ id, time, position, size, level, dtime, times, dtimes, &
     task_offset
@@ -1480,6 +1489,7 @@ SUBROUTINE input_nml_v3 (patch, unit)
   patch%id           = id
   patch%time         = time
   patch%position     = position
+  patch%origin       = origin
   patch%size         = size
   patch%level        = level
   patch%dtime        = dtime
@@ -1502,30 +1512,29 @@ SUBROUTINE input_nml_v4 (self, patch, unit)
   class(patch_t):: patch
   integer:: unit
   !.............................................................................
-  integer, save               :: unit_l=0, rank_in=0
-  integer                     :: iostat
-  integer                     :: ioformat, id, iout, istep, mesh_type, record
-  integer                     :: level, nv, nt, nw, ntotal, format, rank
-  integer                     :: time_derivs, refine_ratio, omp_nthreads
-  integer, dimension(3)       :: ncell, li, ui, n, ng, gn, l, u
-  real                        :: gamma, quality, cost
-  real(8)                     :: time, dtime, out_next, out_time, ms
-  real(8), dimension(3)       :: size, position, ds, box, velocity, &
-                                 llc_nat, llc_cart, centre_nat
-  logical                     :: guard_zones, no_mans_land, periodic(3)
-  character(len=16)           :: kind, eos_name, opacity, method
-  character(len=128)          :: filename
-  integer                     :: dims(3), mpi_dims(3), mpi_size
+  integer, save           :: unit_l=0, rank_in=0
+  integer                 :: iostat
+  integer                 :: ioformat, id, iout, istep, mesh_type, record
+  integer                 :: level, nv, nt, nw, ntotal, format, rank
+  integer                 :: time_derivs, refine_ratio, omp_nthreads
+  integer, dimension(3)   :: ncell, li, ui, n, ng, gn, l, u
+  real                    :: gamma, quality, cost
+  real(8)                 :: time, dtime, out_next, out_time, ms
+  real(8), dimension(3)   :: size, position, ds, box, velocity, &
+                             llc_nat, llc_cart, centre_nat, origin
+  logical                 :: guard_zones, no_mans_land, periodic(3)
+  character(len=16)       :: kind, eos_name, opacity, method
+  character(len=128)      :: filename
+  integer                 :: dims(3), mpi_dims(3), mpi_size
   namelist /snapshot_nml/ ioformat, iout, time, ntotal, box, li, ui, ng, &
     gn, n, nv, nt, gamma, eos_name, opacity, periodic, guard_zones, &
     time_derivs, no_mans_land, omp_nthreads, mpi_size, mesh_type, mpi_dims, &
-    refine_ratio
+    refine_ratio, origin
   save                        :: ioformat, iout, time, ntotal, box, li, ui, ng, &
     gn, n, nv, nt, gamma, eos_name, opacity, periodic, guard_zones, &
     time_derivs, no_mans_land, omp_nthreads, mpi_size, mesh_type, mpi_dims, &
-    refine_ratio
+    refine_ratio, origin
   !-----------------------------------------------------------------------------
-  real(8), save        :: origin(3)
   namelist /patch_nml/ id, position, size, level, dtime, istep, ds, ncell, n, &
     nw, velocity, quality, mesh_type, kind, record, rank, cost
   logical, save:: first_time=.true.
@@ -1581,18 +1590,19 @@ SUBROUTINE input_nml_v4 (self, patch, unit)
     rewind (unit_l)
   end if
   read (unit_l, patch_nml, iostat=iostat)
-  if (iostat /= 0 .and. rank_in < mpi%size) then
+  if (iostat /= 0 .and. rank_in < io%in%mpi_size) then
     self%iostat = unit_l
     unit_l = 0
     rank_in = rank_in + 1
   end if
-  if (rank_in == mpi%size) then
+  if (rank_in == io%in%mpi_size) then
     self%iostat = unit
   else
 ! namelist /patch_nml/ id, position, size, level, dtime, istep, ds, ncell, n, &
 !   nw, velocity, quality, mesh_type, kind, record, rank, cost
     patch%id        = id
     patch%position  = position
+    patch%origin    = origin
     patch%size      = size
     patch%level     = level
     patch%dtime     = dtime
