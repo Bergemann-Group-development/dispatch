@@ -10,14 +10,15 @@ MODULE initial_conditions_mod
   USE eos_mod
   USE gpatch_mod
   USE random_mod
+  USE math_mod
   implicit none
   private
   type, public :: initial_conditions_t
-    real:: theta     = 10.0
-    real:: mpoly     = 1.0
-    real:: amplitude = 1e-3
-    integer:: seed   = 11
-    logical:: mhd    = .false.
+    real:: theta        = 10.0
+    real:: mpoly        = 1.0
+    real:: amplitude(2) = [1e-3, 0.0]
+    integer:: seed      = 11
+    logical:: mhd       = .false.
     character(len=64):: solver
     class(gpatch_t), pointer:: patch
   contains
@@ -71,13 +72,13 @@ SUBROUTINE init (self)
       do ix=m(1)%lb,m(1)%ub
         x = m(1)%p + m(1)%r(ix)
         !p_pert = sin(math%pi*y)*sin(math%pi*x)*self%amplitude
-        p_pert = random%ran1()*self%amplitude
+        p_pert = random%ran1()*self%amplitude(1)
         pg = (1.0+p_pert)*(1.0+self%theta*z)**(self%mpoly+1.0)
         ff(ix,iy,iz,idx%d) = (1.0+self%theta*z)**self%mpoly
         if (idx%e>0) ff(ix,iy,iz,idx%e) = pg/(eos%gamma-1.0)
         ff(ix,iy,iz,idx%px) = 0.0
         ff(ix,iy,iz,idx%py) = 0.0
-        ff(ix,iy,iz,idx%pz) = 0.0
+        ff(ix,iy,iz,idx%pz) = self%amplitude(2)*sin(math%pi*z)
         if (idx%bx > 0) then
           ff(ix,iy,iz,idx%bx) = 0.0
           ff(ix,iy,iz,idx%by) = 0.0

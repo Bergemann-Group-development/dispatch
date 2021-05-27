@@ -44,7 +44,7 @@ SUBROUTINE init (self)
   real, save:: stencil = 2.0
   real, save:: courant_v = 1.0
   real, save:: courant_c = 1.0
-  real, save:: amplitude = 1e-3
+  real, save:: amplitude(2) = [1e-3, 0.0]
   integer, save:: seed = 11
   logical, save:: flux_BC = .true.
   logical, save:: kinematic = .false.
@@ -98,7 +98,6 @@ SUBROUTINE bndries (self)
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%bndries')
   mem => self%mem(:,:,:,:,self%it,1)
-  !if (self%id==1) print *,'bndries',self%id,self%new
   call self%boundaries%primary (mem)
   call trace%end()
 END SUBROUTINE bndries
@@ -112,6 +111,9 @@ SUBROUTINE update (self)
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
   call self%solver_t%update
+  !----------------------------------------------------------------------------
+  ! This call is intentionally redundant, and is there only to check that
+  !----------------------------------------------------------------------------
   mem => self%mem(:,:,:,:,self%new,1)
   call self%boundaries%primary (mem)
   call trace%end ()
