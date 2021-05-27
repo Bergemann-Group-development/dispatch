@@ -17,8 +17,8 @@ MODULE conduction_mod
   private
   type, public:: conduction_t
     real:: kappa
-    real:: stencil
-    logical:: kinematic
+    real:: stencil = 1.8
+    logical:: kinematic = .false.
     real:: u_max = 0.0
     real:: courant = 1.0
     class(gpatch_t), pointer:: patch
@@ -28,9 +28,9 @@ MODULE conduction_mod
     procedure:: pre_update
   end type
   real,    save:: mult(2) = 1.0
+  logical, save:: extrapolate = .false.
   real(8), save:: start_time = 0d0
   logical, save:: on = .false.
-  logical, save:: extrapolate = .false.
 CONTAINS
 
 !===============================================================================
@@ -41,11 +41,9 @@ SUBROUTINE pre_init (self, gpatch)
   class (gpatch_t), target :: gpatch
   ! ----------------------------------------------------------------------------
   integer:: iostat
-  real, save:: kappa = 0.07
   real, save:: stencil = 2.0
-  logical, save:: kinematic = .false.
   logical, save:: first_time = .true.
-  namelist /conduction_params/ on, kappa, start_time, extrapolate, mult, stencil
+  namelist /conduction_params/ on, start_time, extrapolate, mult, stencil
   !.............................................................................
   call trace%begin ('conduction_t%init')
   call io%lock%set ('conduction_t%init')
@@ -60,7 +58,7 @@ SUBROUTINE pre_init (self, gpatch)
     !---------------------------------------------------------------------------
     ! The compact stencil cannot be used in the kinematic case
     !---------------------------------------------------------------------------
-    if (kinematic) then
+    if (self%kinematic) then
       stencil = 2.0
     end if
     write (io%namelist, conduction_params)
@@ -69,9 +67,7 @@ SUBROUTINE pre_init (self, gpatch)
   call io%lock%unset('conduction_t%init')
   if (on) then
     self%patch => gpatch
-    self%kappa = kappa
     self%stencil = stencil
-    self%kinematic = kinematic
     !---------------------------------------------------------------------------
     ! Conductivity needs 2 guard zones to get the good heating rates for
     ! li:ui range. However, for Riemann solvers, one innermost guard zone
@@ -144,6 +140,11 @@ SUBROUTINE pre_update(self)
         end do
       end do
     end do
+    if (self%patch%id==1) then
+      do i3=l(3),u(3)
+        print *,i3,flux(l(1),l(2),i3,3)
+      end do
+    end if
     !---------------------------------------------------------------------------
     ! Note than only the parallel direction is used in the divergence, so there
     ! is no need to extrapolate all components in all directions
@@ -177,6 +178,7 @@ SUBROUTINE pre_update(self)
       l = self%patch%mesh%lb+2
       u = self%patch%mesh%ub-2
     end if
+    c1 = 0.5/ds
     do i3=l(3),u(3)
     do i2=l(2),u(2)
     do i1=l(1),u(1)
@@ -223,11 +225,14 @@ SUBROUTINE pre_update(self)
     end if
   end if
   !-----------------------------------------------------------------------------
+  ! The expression below assumes that all ds are the same.  The factor of 3 is
+  ! for 2*ds stencils, while the factor 12 is for 1*ds stencils.
+  !-----------------------------------------------------------------------------
   l = self%patch%mesh%li
   u = self%patch%mesh%ui
-  self%u_max = self%kappa/minval(ds)/self%courant &
-             * (mult(1)*12.*(2.0-self%stencil) + &
-                mult(2)*3.0*(self%stencil-1.0)) &
+  self%u_max = self%kappa*minval(ds)/self%courant &
+             * (mult(1)*4.*(2.0-self%stencil) + mult(2)*(self%stencil-1.0)) &
+             * (1./ds(1)**2 + 1./ds(2)**2 + 1./ds(3)**2) &
              / minval(d(l(1):u(1),l(2):u(2),l(3):u(3)))
   deallocate (tg, flux)
   call trace%end (itimer)
@@ -246,7 +251,8 @@ SUBROUTINE courant_condition (self, detailed_timer)
   if (first_time) then
     call io%lock%set
     if (first_time .and. self%u_max > 0.0) then
-      print *, 'cond u_max', self%patch%id, self%u_max, self%patch%u_max
+      print *, 'cond id,kappa,u_max', &
+        self%patch%id, self%kappa, self%u_max, self%patch%u_max
       first_time = .false.
     end if
     call io%lock%unset

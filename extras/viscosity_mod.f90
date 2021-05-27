@@ -231,7 +231,9 @@ SUBROUTINE pre_update (self)
   end do
   end do
   !-----------------------------------------------------------------------------
-  ! Compute u_max for the Courant condition
+  ! Compute u_max for the Courant condition; the factors 1/ds**2 below should
+  ! be read as 4/(2*ds)**2, where 4 is the action on a checkerboard by one
+  ! direction of the operators
   !-----------------------------------------------------------------------------
   l = self%patch%mesh%li
   u = self%patch%mesh%ui
@@ -258,7 +260,8 @@ SUBROUTINE courant_condition(self)
     call io%lock%set
     if (first_time .and. self%u_max > 0.0) then
       first_time = .false.
-      print *, 'visc u_max', self%patch%id, self%u_max, self%patch%u_max
+      print *, 'visc id,mu,u_max', &
+        self%patch%id, self%mu, self%u_max, self%patch%u_max
     end if
     call io%lock%unset
   end if
