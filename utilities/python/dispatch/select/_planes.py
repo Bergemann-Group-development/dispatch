@@ -78,8 +78,16 @@ def contribution(p,dir=2,point=0.5,iv=0,i4=0,all=False,verbose=0):
         return None,0
 
 def corner_indices(sn,p,dir=-1):
-    """ Return the corder indices of patch p in snapshot sn in direction dir """
-    i=(p.position-p.size/2-sn.cartesian.origin)/p.ds
+    """ Return the corder indices of patch p in snapshot sn in direction dir.
+        If possible, avoid relying on presence of cartesian attributes, using
+        instead an origin attribute if present and else assuming origin=(0,0,0)
+    """
+    if hasattr(sn,'origin'):
+        i=(p.position-p.size/2-sn.origin)/p.ds
+    elif hasattr(sn,'cartesian'):
+        i=(p.position-p.size/2-sn.cartesian.origin)/p.ds
+    else:
+        i=(p.position-p.size/2)/p.ds
     i=[int(k+0.5) for k in i]
     n=list(p.n)
     if dir>=0 and dir<3:
@@ -105,7 +113,7 @@ def unigrid_plane(snap,iv=0,x=None,y=None,z=0.5,i4=0,
         point=z
     pp=snap.patches
     p=pp[0]
-    dim=list(snap.cartesian.dims*p.n)
+    dim=list((p.box/p.ds+0.001).astype(np.int32))
     dim.pop(dir)
     ff=np.zeros(dim)
     # List of patches that contain the plane
@@ -144,7 +152,7 @@ def unigrid_volume(snap,iv=0,i4=0,verbose=0):
     """
     pp=snap.patches
     p=pp[0]
-    dim=tuple(snap.cartesian.dims*p.n)
+    dim=tuple((p.box/p.ds+0.001).astype(np.int32))
     ff=np.zeros(dim)
     n=0
     for p in pp:
