@@ -1,6 +1,10 @@
 !===============================================================================
 !> Boundary conditions for centered variables, which have the physical boundary
 !> in-between mesh points lo and li, or/and in-between mesh points ui and uo.
+!>
+!> For velocity components boundary conditions are:
+!> 1) antisymmetric for vertical velocity
+!> 2) symmetric for horizontal velocities
 !===============================================================================
 MODULE boundaries_mod
   USE io_mod
@@ -59,7 +63,7 @@ END SUBROUTINE init
 !===============================================================================
 !> Boundary conditions as specified in the benchmark
 !===============================================================================
-SUBROUTINE primary(self, mem, cl,id)
+SUBROUTINE primary(self, mem)
   class(boundaries_t):: self
   real(kind=var_k), dimension(:,:,:,:), pointer, contiguous:: mem
   !.............................................................................
@@ -68,10 +72,9 @@ SUBROUTINE primary(self, mem, cl,id)
   real(kind=var_k), dimension(:,:,:), pointer, contiguous:: px, py, pz
   class(patch_t), pointer:: patch
   class(mesh_t), pointer:: m(:)
-  integer:: ix, iy, iz, iz1, n(3), id, cl, ub, lb
+  integer:: ix, iy, iz, iz1, n(3), id, lb, ub
   real(8), pointer:: z(:)
-  real:: h, f, dz, z1, ds(3), d0, pg0, tt0, d1, pg1, tt1
-  real(8)::zz
+  real:: h, f, dz, ds(3), d0, pg0, tt0, d1, pg1, tt1
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('boundaries_t%primary', itimer=itimer)
@@ -112,64 +115,58 @@ SUBROUTINE primary(self, mem, cl,id)
     end do
   end do
   !-----------------------------------------------------------------------------
-  ! Both top and bottom boundary are identical and are an "inpenetrable wall"
-  ! Boundary conditions should be:
-  ! 1) antisymmetric for vertical velocity
-  ! 2) symmetric for horizontal velocities
+  ! The lb and ub indices are the index limits for BC modified values.  The BCs
+  ! are placed at cell centers -- using face centered BCs does not work well
   !-----------------------------------------------------------------------------
-  ! For pressure and temperature at the top boundary:
-  ! Compute the scale heights at the boundaries and fill in the guard zone
-  ! values of pressure and density consistent with constant temperature HSE
-  !-----------------------------------------------------------------------------
+  lb = m(3)%li
   if (m(3)%lower_boundary) then
-    lb=m(3)%li
     do iy=m(2)%lb,m(2)%ub
-      do iz=m(3)%lb,m(3)%lo
-        iz1 = lb - (iz-lb)
+      do iz=m(3)%lb,lb-1
+        iz1 = lb + (lb - iz)
         do ix=m(1)%lb,m(1)%ub
+          !---------------------------------------------------------------------
+          ! Compute the scale height and fill in the guard zone with values of
+          ! pressure and density consistent with constant temperature HSE
+          !---------------------------------------------------------------------
           h = self%tt_top/self%g
           dz = (iz-m(3)%li)*ds(3)
           f = exp(dz/h)
           d(ix,iy,iz)  = d(ix,iy,m(3)%li)*f
+          e(ix,iy,iz)  = d(ix,iy,iz)*self%tt_top/(eos%gamma-1d0)
           ux(ix,iy,iz) = +ux(ix,iy,iz1)
           uy(ix,iy,iz) = +uy(ix,iy,iz1)
           uz(ix,iy,iz) = -uz(ix,iy,iz1)
+          px(ix,iy,iz) = d(ix,iy,iz)*ux(ix,iy,iz)
+          py(ix,iy,iz) = d(ix,iy,iz)*uy(ix,iy,iz)
+          pz(ix,iy,iz) = d(ix,iy,iz)*uz(ix,iy,iz)
         end do
       end do
-      uz(:,iy,m(3)%li) = 0.0
-      do iz=m(3)%lb,lb
-        do ix=m(1)%lb,m(1)%ub
-          e(ix,iy,iz) = d(ix,iy,iz)*self%tt_top/(eos%gamma-1d0)
-        end do
-      end do
+      !-------------------------------------------------------------------------
+      ! Impose constant temperature and vanishing mass flux at the boundary
+      !-------------------------------------------------------------------------
+      e (:,iy,lb) = d(:,iy,lb)*self%tt_top/(eos%gamma-1d0)
+      pz(:,iy,lb) = 0.0
     end do
   end if
   !-----------------------------------------------------------------------------
   ! For pressure and temperature at the bottom boundary:  Leave the initial
   ! values in the T-case, and impose the given gradient in the F-case
   !-----------------------------------------------------------------------------
+  ub = m(3)%ui
   if (m(3)%upper_boundary) then
-    ub=m(3)%ui
     if (self%flux_BC) then
       do iz=ub,m(3)%ub
-        zz=m(3)%r(iz)+m(3)%p-0.5*m(3)%d
         do iy=m(2)%lb,m(2)%ub
           do ix=m(1)%lb,m(1)%ub
             !-------------------------------------------------------------------
             ! Compute the pressure scale height from the temperature, and
             ! extrapolate the pressure in the guard zones from that, then get
-            ! the density from the ratio of gas pressure to temperature. This
-            ! has the important effect that a low temperature gives rise to an
-            ! increased gas pressure gradient, which compensates for a higher
-            ! density at constant pressure.  With a constant flux boundary
-            ! condition there can be substantial fluctutions in density and
-            ! temperature at the bottom boundary, but the pressure stays much
-            ! more constant.
+            ! the density from the ratio of gas pressure to temperature.
             !-------------------------------------------------------------------
             d0  = d(ix,iy,ub-1)
             pg0 = e(ix,iy,ub-1)*(eos%gamma-1d0)
             tt0 = pg0/d0                        ! T(ui)
-            dz = (iz-ub+1)*ds(3)             ! depth interval
+            dz = (iz+1-ub)*ds(3)                ! depth interval
             tt1 = tt0 + self%theta*dz           ! T(iz)
             h = 0.5*(tt0+tt1)/self%g            ! average scale height
             pg1 = pg0*exp(dz/h)                 ! Pg(iz)
@@ -180,59 +177,47 @@ SUBROUTINE primary(self, mem, cl,id)
       end do
     end if
     !---------------------------------------------------------------------------
-    ! This version implements vanishing uz at point ui+½.  To place it instead
-    ! at ui, change uo to ui in the expression for iz1, and uncommment the
-    ! line with pz(...) = 0.0
+    ! Antisymmetric vertical and symmetric horizontal velocity componentsd
     !---------------------------------------------------------------------------
     do iy=m(2)%lb,m(2)%ub
-      do iz=ub,m(3)%ub
-        iz1 = ub - (iz-ub)
+      do iz=ub+1,m(3)%ub
+        iz1 = ub - (iz - ub)
         do ix=m(1)%lb,m(1)%ub
           ux(ix,iy,iz) = +ux(ix,iy,iz1)
           uy(ix,iy,iz) = +uy(ix,iy,iz1)
           uz(ix,iy,iz) = -uz(ix,iy,iz1)
+          px(ix,iy,iz) = d(ix,iy,iz)*ux(ix,iy,iz)
+          py(ix,iy,iz) = d(ix,iy,iz)*uy(ix,iy,iz)
+          pz(ix,iy,iz) = d(ix,iy,iz)*uz(ix,iy,iz)
         end do
       end do
-      uz(:,iy,ub) = 0.0
+      pz(:,iy,ub) = 0.0
     end do
   end if
   !-----------------------------------------------------------------------------
-  ! Put the quantities back
+  ! Put the total energy back into mem
   !-----------------------------------------------------------------------------
   if (m(3)%lower_boundary) then
-    do iz=lb,m(3)%li
+    do iz=m(3)%lb,lb
       do iy=m(2)%lb,m(2)%ub
         do ix=m(1)%lb,m(1)%ub
-          mem(ix,iy,iz,patch%idx%px) =  d(ix,iy,iz)*ux(ix,iy,iz)
-          mem(ix,iy,iz,patch%idx%py) =  d(ix,iy,iz)*uy(ix,iy,iz)
-          mem(ix,iy,iz,patch%idx%pz) =  d(ix,iy,iz)*uz(ix,iy,iz)
-          mem(ix,iy,iz,patch%idx%e ) =  e(ix,iy,iz) + 0.5*d(ix,iy,iz)*( &
-                                       ux(ix,iy,iz)**2 &
-                                     + uy(ix,iy,iz)**2 &
-                                     + uz(ix,iy,iz)**2)
+          mem(ix,iy,iz,patch%idx%e) =  e(ix,iy,iz) + 0.5*d(ix,iy,iz)*( &
+                                      ux(ix,iy,iz)**2 &
+                                    + uy(ix,iy,iz)**2 &
+                                    + uz(ix,iy,iz)**2)
         end do
       end do
     end do
   end if
-  !
   if (m(3)%upper_boundary) then
-    do iz=ub,m(3)%ub
-      do iy=m(2)%lb,m(2)%ub
-        do ix=m(1)%lb,m(1)%ub
-          mem(ix,iy,iz,patch%idx%px) =  d(ix,iy,iz)*ux(ix,iy,iz)
-          mem(ix,iy,iz,patch%idx%py) =  d(ix,iy,iz)*uy(ix,iy,iz)
-          mem(ix,iy,iz,patch%idx%pz) =  d(ix,iy,iz)*uz(ix,iy,iz)
-        end do
-      end do
-    end do
     if (self%flux_BC) then
       do iz=ub,m(3)%ub
         do iy=m(2)%lb,m(2)%ub
           do ix=m(1)%lb,m(1)%ub
-            mem(ix,iy,iz,patch%idx%e ) = e(ix,iy,iz) + 0.5*d(ix,iy,iz)*( &
-                                        ux(ix,iy,iz)**2 &
-                                      + uy(ix,iy,iz)**2 &
-                                      + uz(ix,iy,iz)**2)
+            mem(ix,iy,iz,patch%idx%e) = e(ix,iy,iz) + 0.5*d(ix,iy,iz)*( &
+                                       ux(ix,iy,iz)**2 &
+                                     + uy(ix,iy,iz)**2 &
+                                     + uz(ix,iy,iz)**2)
           end do
         end do
       end do
