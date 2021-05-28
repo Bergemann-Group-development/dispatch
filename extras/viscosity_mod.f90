@@ -22,6 +22,7 @@ MODULE viscosity_mod
     logical:: on = .true.
     logical:: kinematic = .false.
     logical:: allocated = .false.
+    logical:: compressive = .false.
   contains
     procedure:: courant_condition
     procedure:: pre_init
@@ -116,10 +117,10 @@ SUBROUTINE pre_update (self)
   real, dimension(:,:,:), pointer, contiguous:: u1
   real, dimension(:,:,:), pointer, contiguous:: u2
   real, dimension(:,:,:), pointer, contiguous:: u3
-  real, dimension(:,:,:), allocatable:: du11, du12, du13
-  real, dimension(:,:,:), allocatable:: du21, du22, du23
-  real, dimension(:,:,:), allocatable:: du31, du32, du33
-  real, dimension(:,:,:), allocatable:: divu
+  real, dimension(:,:,:), pointer, contiguous:: du11, du12, du13
+  real, dimension(:,:,:), pointer, contiguous:: du21, du22, du23
+  real, dimension(:,:,:), pointer, contiguous:: du31, du32, du33
+  real, dimension(:,:,:), pointer, contiguous:: divu
   real, dimension(:,:,:,:), pointer, contiguous:: ff
   real(8):: ds(3)
   real:: c1, c2, c3, c, u_max(3)
@@ -186,7 +187,11 @@ SUBROUTINE pre_update (self)
   !-----------------------------------------------------------------------------
   ! Subtract compressive part and make per-volume
   !-----------------------------------------------------------------------------
-  c = 2./3.
+  if (self%compressive) then
+    c = 0.0
+  else
+    c = 2./3.
+  end if
   do i3=l(3),u(3)
   do i2=l(2),u(2)
     if (self%kinematic) then
@@ -215,18 +220,18 @@ SUBROUTINE pre_update (self)
   do i2=l(2)+1,u(2)-1
   do i1=l(1)+1,u(1)-1
     c = self%mu/d(i1,i2,i3)
-    ff(i1,i2,i3,1) = ff(i1,i2,i3,1) &
-                   + ((du11(i1+1,i2,i3) - du11(i1-1,i2,i3))*c1 &
-                   +  (du12(i1,i2+1,i3) - du12(i1,i2-1,i3))*c2 &
-                   +  (du13(i1,i2,i3+1) - du13(i1,i2,i3-1))*c3)*c
-    ff(i1,i2,i3,2) = ff(i1,i2,i3,2) &
-                   + ((du12(i1+1,i2,i3) - du12(i1-1,i2,i3))*c1 &
-                   +  (du22(i1,i2+1,i3) - du22(i1,i2-1,i3))*c2 &
-                   +  (du23(i1,i2,i3+1) - du23(i1,i2,i3-1))*c3)*c
-    ff(i1,i2,i3,3) = ff(i1,i2,i3,3) &
-                   + ((du13(i1+1,i2,i3) - du13(i1-1,i2,i3))*c1 &
-                   +  (du23(i1,i2+1,i3) - du23(i1,i2-1,i3))*c2 &
-                   +  (du33(i1,i2,i3+1) - du33(i1,i2,i3-1))*c3)*c
+    ff(i1,i2,i3,1) =     ff(i1,  i2,  i3 ,1) &
+                   + ((du11(i1+1,i2  ,i3  ) - du11(i1-1,i2  ,i3  ))*c1 &
+                   +  (du12(i1  ,i2+1,i3  ) - du12(i1  ,i2-1,i3  ))*c2 &
+                   +  (du13(i1  ,i2  ,i3+1) - du13(i1  ,i2  ,i3-1))*c3)*c
+    ff(i1,i2,i3,2) =     ff(i1  ,i2,  i3  ,2) &
+                   + ((du12(i1+1,i2  ,i3  ) - du12(i1-1,i2  ,i3  ))*c1 &
+                   +  (du22(i1  ,i2+1,i3  ) - du22(i1  ,i2-1,i3  ))*c2 &
+                   +  (du23(i1  ,i2  ,i3+1) - du23(i1  ,i2  ,i3-1))*c3)*c
+    ff(i1,i2,i3,3) =     ff(i1  ,i2  ,i3  ,3) &
+                   + ((du13(i1+1,i2  ,i3  ) - du13(i1-1,i2  ,i3  ))*c1 &
+                   +  (du23(i1  ,i2+1,i3  ) - du23(i1  ,i2-1,i3  ))*c2 &
+                   +  (du33(i1  ,i2  ,i3+1) - du33(i1  ,i2  ,i3-1))*c3)*c
   end do
   end do
   end do
@@ -244,6 +249,7 @@ SUBROUTINE pre_update (self)
   deallocate (du11,du12,du13)
   deallocate (du21,du22,du23)
   deallocate (du31,du32,du33)
+  deallocate (divu)
   if (self%allocated) then
     call self%deallocate ()
   end if

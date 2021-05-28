@@ -1,9 +1,10 @@
 !----------------- Main experiment parameters ----------------------------------
-&experiment_params flux_BC=t stencil=1.8 kinematic=f amplitude=1e-3 /
-&boundaries_params bc_rate=1.0 /
+&experiment_params flux_BC=t stencil=1.8 kinematic=f amplitude=1e-3,0.0
+                   courant_c=1.7 courant_v=1.7 /
+&boundaries_params /
 &gravity_params    on=t constant=20 axis=3 position=0.0 mass=-1 minrad=-1 /
 &viscosity_params  on=t /
-&conduction_params on=t extrapolate=f /
+&conduction_params on=t /
 !----------------- I/O paramters -----------------------------------------------
 &io_params         verbose=0 do_trace=f do_debug=f do_output=t
                    method='background' guard_zones=t nml_version=1 /
@@ -12,7 +13,7 @@
 &timer_params      sec_per_report=20 /
 
 !----------------- Initial condition parameter ---------------------------------
-&patch_params      nt=5 n=3*16 do_check_nan=f grace=0.1/
+&patch_params      nt=5 n=3*32 do_check_nan=f grace=0.3 /
 &cartesian_params  size=4,4,1 dims=8,8,2 mpi_dims=2,2,1 origin=3*0.0
                    periodic=t,t,f /
 

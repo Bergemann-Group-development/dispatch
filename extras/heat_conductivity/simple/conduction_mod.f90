@@ -29,7 +29,7 @@ MODULE conduction_mod
   end type
   real,    save:: mult(2) = 1.0
   logical, save:: extrapolate = .false.
-  real(8), save:: start_time = 0d0
+  logical, save:: debug = .false.
   logical, save:: on = .false.
 CONTAINS
 
@@ -43,7 +43,7 @@ SUBROUTINE pre_init (self, gpatch)
   integer:: iostat
   real, save:: stencil = 2.0
   logical, save:: first_time = .true.
-  namelist /conduction_params/ on, start_time, extrapolate, mult, stencil
+  namelist /conduction_params/ on, extrapolate, mult, stencil
   !.............................................................................
   call trace%begin ('conduction_t%init')
   call io%lock%set ('conduction_t%init')
@@ -140,11 +140,6 @@ SUBROUTINE pre_update(self)
         end do
       end do
     end do
-    if (self%patch%id==1) then
-      do i3=l(3),u(3)
-        print *,i3,flux(l(1),l(2),i3,3)
-      end do
-    end if
     !---------------------------------------------------------------------------
     ! Note than only the parallel direction is used in the divergence, so there
     ! is no need to extrapolate all components in all directions
@@ -223,6 +218,14 @@ SUBROUTINE pre_update(self)
       end do
       end do
     end if
+  end if
+  if (debug .and. self%patch%id==1) then
+    i1 = self%patch%mesh(1)%li
+    i2 = self%patch%mesh(2)%li
+    do i3=l(3),u(3)
+      print *, i3, flux(i1,i2,i3,3), tg(i1,i2,i3), &
+        scratch%heating_per_unit_volume(i1,i2,i3)
+    end do
   end if
   !-----------------------------------------------------------------------------
   ! The expression below assumes that all ds are the same.  The factor of 3 is

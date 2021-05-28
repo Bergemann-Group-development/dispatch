@@ -71,14 +71,14 @@ SUBROUTINE init (self)
       y = m(2)%p + m(2)%r(iy)
       do ix=m(1)%lb,m(1)%ub
         x = m(1)%p + m(1)%r(ix)
-        !p_pert = sin(math%pi*y)*sin(math%pi*x)*self%amplitude
         p_pert = random%ran1()*self%amplitude(1)
         pg = (1.0+p_pert)*(1.0+self%theta*z)**(self%mpoly+1.0)
         ff(ix,iy,iz,idx%d) = (1.0+self%theta*z)**self%mpoly
         if (idx%e>0) ff(ix,iy,iz,idx%e) = pg/(eos%gamma-1.0)
         ff(ix,iy,iz,idx%px) = 0.0
         ff(ix,iy,iz,idx%py) = 0.0
-        ff(ix,iy,iz,idx%pz) = self%amplitude(2)*sin(math%pi*z)
+        ff(ix,iy,iz,idx%pz) = ff(ix,iy,iz,idx%d)*self%amplitude(2) &
+                            * sin(math%pi*x/2)
         if (idx%bx > 0) then
           ff(ix,iy,iz,idx%bx) = 0.0
           ff(ix,iy,iz,idx%by) = 0.0

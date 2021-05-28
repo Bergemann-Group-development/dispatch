@@ -37,6 +37,7 @@ SUBROUTINE init (self)
   class(experiment_t):: self
   integer:: iostat
   real, save:: mu    = 0.0
+  real, save:: grav  = 20
   real, save:: kappa = 0.07
   real, save:: mpoly = 1.0
   real, save:: sigma = 1.0
@@ -48,43 +49,47 @@ SUBROUTINE init (self)
   integer, save:: seed = 11
   logical, save:: flux_BC = .true.
   logical, save:: kinematic = .false.
+  logical, save:: compressive = .false.
   logical, save:: first_time=.true.
   namelist /experiment_params/ &
     flux_BC, theta, kappa, sigma, mpoly, theta, stencil, courant_v, courant_c, &
-    kinematic, amplitude, seed
+    kinematic, amplitude, grav, compressive, seed
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%init')
-  call self%solver_t%init
   call io%lock%set ('experiment_t%init')
-    if (first_time) then
+  if (first_time) then
+    rewind (io%input)
+    read (io%input, experiment_params, iostat=iostat)
+    if (iostat > 0) then
       rewind (io%input)
-      read (io%input, experiment_params, iostat=iostat)
-      if (iostat > 0) then
-        rewind (io%input)
-        read (io%input, experiment_params)
-      end if
-      call io%namelist_warning ('experiment_params', iostat)
-      write (io%namelist, experiment_params)
-      first_time = .false.
+      read (io%input, experiment_params)
     end if
-    !---------------------------------------------------------------------------
-    ! Compute and set viscosity and conduction parameters
-    !---------------------------------------------------------------------------
-    mu = (eos%gamma-1d0) * kappa / eos%gamma * sigma
-    self%viscosity%mu             = mu
-    self%conduction%kappa         = kappa
-    self%conduction%stencil       = stencil
-    self%conduction%kinematic     = kinematic
-    self%conduction%courant       = courant_c
-    self%viscosity%kinematic      = kinematic
-    self%viscosity%courant        = courant_v
-    self%boundaries%flux_BC       = flux_BC
-    self%boundaries%theta         = theta
-    self%boundaries%mpoly         = mpoly
-    self%initial_conditions%seed  = seed
-    self%initial_conditions%theta = theta
-    self%initial_conditions%mpoly = mpoly
-    self%initial_conditions%amplitude = amplitude
+    call io%namelist_warning ('experiment_params', iostat)
+    write (io%namelist, experiment_params)
+    first_time = .false.
+  end if
+  !---------------------------------------------------------------------------
+  ! Compute and set viscosity and conduction parameters
+  !---------------------------------------------------------------------------
+  mu = (eos%gamma-1d0) * kappa / eos%gamma * sigma
+  self%viscosity%mu             = mu
+  self%conduction%kappa         = kappa
+  self%conduction%stencil       = stencil
+  self%conduction%kinematic     = kinematic
+  self%conduction%courant       = courant_c
+  self%viscosity%kinematic      = kinematic
+  self%viscosity%compressive    = compressive
+  self%viscosity%courant        = courant_v
+  self%boundaries%flux_BC       = flux_BC
+  self%boundaries%theta         = theta
+  self%boundaries%mpoly         = mpoly
+  self%boundaries%g             = grav
+  self%gravity%const_grav       = grav
+  self%initial_conditions%seed  = seed
+  self%initial_conditions%theta = theta
+  self%initial_conditions%mpoly = mpoly
+  self%initial_conditions%amplitude = amplitude
+  call self%solver_t%init
   call io%lock%unset ('experiment_t%init')
   call trace%end()
 END SUBROUTINE init

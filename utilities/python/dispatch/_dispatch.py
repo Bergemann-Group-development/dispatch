@@ -306,10 +306,9 @@ def _var(patch,filed,snap,verbose=0,copy=None):
             assert(iv in patch.keys['numbers']),'variable index unknown'
 
         # Determine data representation
-        if snap.io.method.strip()=='background':
-            is_ln=False
-            is_vel=False
-        elif snap.io.method.strip()=='parallel':
+        is_ln=False
+        is_vel=False
+        if snap.io.method.strip()=='parallel':
             is_ln = ((patch.ioformat-6)/2==0
                   or (patch.ioformat-10)//2==0)
             is_vel = ((patch.ioformat-6)%2==0)

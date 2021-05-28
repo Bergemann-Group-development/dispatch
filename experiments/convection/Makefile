@@ -10,6 +10,7 @@ UPD             = adams_bashforth
 #SOLVER         = stagger
 #SOLVER          = ramses/mhd_eos
 SOLVER          = ramses/hydro
+#SOLVER          = ramses/mhd
 #SOLVER          = stagger2/bifrost
 #STAGGER         = stagger_2nd.o
 STAGGER         = stagger_2nd.o

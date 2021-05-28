@@ -155,7 +155,7 @@ SUBROUTINE primary(self, mem)
   ub = m(3)%ui
   if (m(3)%upper_boundary) then
     if (self%flux_BC) then
-      do iz=ub,m(3)%ub
+      do iz=ub+1,m(3)%ub
         do iy=m(2)%lb,m(2)%ub
           do ix=m(1)%lb,m(1)%ub
             !-------------------------------------------------------------------
@@ -166,7 +166,7 @@ SUBROUTINE primary(self, mem)
             d0  = d(ix,iy,ub-1)
             pg0 = e(ix,iy,ub-1)*(eos%gamma-1d0)
             tt0 = pg0/d0                        ! T(ui)
-            dz = (iz+1-ub)*ds(3)                ! depth interval
+            dz = (iz-(ub-1))*ds(3)              ! depth interval
             tt1 = tt0 + self%theta*dz           ! T(iz)
             h = 0.5*(tt0+tt1)/self%g            ! average scale height
             pg1 = pg0*exp(dz/h)                 ! Pg(iz)
@@ -181,7 +181,7 @@ SUBROUTINE primary(self, mem)
     !---------------------------------------------------------------------------
     do iy=m(2)%lb,m(2)%ub
       do iz=ub+1,m(3)%ub
-        iz1 = ub - (iz - ub)
+        iz1 = ub - (iz-ub)
         do ix=m(1)%lb,m(1)%ub
           ux(ix,iy,iz) = +ux(ix,iy,iz1)
           uy(ix,iy,iz) = +uy(ix,iy,iz1)
@@ -211,7 +211,7 @@ SUBROUTINE primary(self, mem)
   end if
   if (m(3)%upper_boundary) then
     if (self%flux_BC) then
-      do iz=ub,m(3)%ub
+      do iz=ub+1,m(3)%ub
         do iy=m(2)%lb,m(2)%ub
           do ix=m(1)%lb,m(1)%ub
             mem(ix,iy,iz,patch%idx%e) = e(ix,iy,iz) + 0.5*d(ix,iy,iz)*( &
