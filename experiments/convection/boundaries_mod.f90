@@ -74,7 +74,7 @@ SUBROUTINE primary(self, mem)
   class(mesh_t), pointer:: m(:)
   integer:: ix, iy, iz, iz1, n(3), id, lb, ub
   real(8), pointer:: z(:)
-  real:: h, f, dz, ds(3), d0, pg0, tt0, d1, pg1, tt1
+  real:: h, f, dz, ds(3), d0, pg0, tt0, d1, pg1, tt1, dtt
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('boundaries_t%primary', itimer=itimer)
@@ -146,6 +146,7 @@ SUBROUTINE primary(self, mem)
       !-------------------------------------------------------------------------
       e (:,iy,lb) = d(:,iy,lb)*self%tt_top/(eos%gamma-1d0)
       pz(:,iy,lb) = 0.0
+      uz(:,iy,lb) = 0.0
     end do
   end if
   !-----------------------------------------------------------------------------
@@ -167,6 +168,9 @@ SUBROUTINE primary(self, mem)
             pg0 = e(ix,iy,ub-1)*(eos%gamma-1d0)
             tt0 = pg0/d0                        ! T(ui)
             dz = (iz-(ub-1))*ds(3)              ! depth interval
+            !tt1 = e(ix,iy,ub-2)*(eos%gamma-1d0)/d(ix,iy,ub-1)
+            !dtt=(tt0-tt1)/ds(3)
+            !tt1 = tt0+dtt*dz
             tt1 = tt0 + self%theta*dz           ! T(iz)
             h = 0.5*(tt0+tt1)/self%g            ! average scale height
             pg1 = pg0*exp(dz/h)                 ! Pg(iz)
@@ -192,6 +196,7 @@ SUBROUTINE primary(self, mem)
         end do
       end do
       pz(:,iy,ub) = 0.0
+      uz(:,iy,ub) = 0.0
     end do
   end if
   !-----------------------------------------------------------------------------
@@ -211,7 +216,7 @@ SUBROUTINE primary(self, mem)
   end if
   if (m(3)%upper_boundary) then
     if (self%flux_BC) then
-      do iz=ub+1,m(3)%ub
+      do iz=ub,m(3)%ub
         do iy=m(2)%lb,m(2)%ub
           do ix=m(1)%lb,m(1)%ub
             mem(ix,iy,iz,patch%idx%e) = e(ix,iy,iz) + 0.5*d(ix,iy,iz)*( &
