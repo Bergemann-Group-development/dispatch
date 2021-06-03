@@ -72,7 +72,7 @@ class Expressions(object):
         self.known.append(lhs)
         return True
         
-    def evaluate(self):
+    def evaluate(self,all=False):
         """ After all expressions registered, evaluate """
         if self.verbose:
             print('EVALUATE:')
@@ -83,9 +83,13 @@ class Expressions(object):
             for word in self.split(rhs):
                 if not (word in self.known or word in ll):
                     if word in self.pvars:
-                        cmd="p.var('{}')".format(word)
+                        cmd="p.var('{}',all={})".format(word,all)
+                        if self.verbose>0:
+                            print(cmd)
                         try:
                                 ll[word]=eval(cmd)
+                                if self.verbose>1:
+                                    print(ll[word].shape)
                         except:
                             print('ERROR: {}'.format(cmd))
                             return False
@@ -100,7 +104,7 @@ class Expressions(object):
             self.known.append(lhs)
         return results
 
-def expression_parser(task,iv='d',verbose=0):
+def expression_parser(task,iv='d',all=False,verbose=0):
     """ The expression parser takes an object that has a dictionary with
         categories of known variables (attributes), registers an expression
         of the type 'iv=expression', and then returns the value of the LHS
@@ -111,5 +115,7 @@ def expression_parser(task,iv='d',verbose=0):
     """
     E=Expressions(task)
     E.register('iv='+iv)
-    results=E.evaluate()
+    results=E.evaluate(all=all)
+    if verbose:
+        print('result',results['iv'].shape)
     return results['iv']

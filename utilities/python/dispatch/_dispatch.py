@@ -432,6 +432,12 @@ def _var(patch,filed,snap,verbose=0,copy=None):
                 v=var('eth',all=True,verbose=verbose) \
                  /var('d',all=True,verbose=verbose)
 
+            # Specific entropy
+            elif iv=='S':
+                v=np.log(var('eth',all=True,verbose=verbose) \
+                 / var('d',all=True,verbose=verbose)**snap.gamma) \
+                 / (snap.gamma-1)
+
             # Temperature
             elif iv=='tt' or iv=='T':
                 v=var('Eth',all=True,verbose=verbose)
@@ -451,8 +457,10 @@ def _var(patch,filed,snap,verbose=0,copy=None):
         # if not, treat it as an expression
         else:
             if verbose:
-                print('unknown expression',iv)
-            v=expression_parser(patch,iv)
+                print('expression',iv)
+            v=expression_parser(patch,iv,all=True)
+            if verbose:
+                print('shape:',v.shape)
 
         # Success or failure
         if not v is None:
@@ -549,7 +557,7 @@ class _patch():
         self.keys['numbers']=list(snap.idx.dict.values())
         timer.add('numbers')
         self.keys['known']=['d','lnd','logd','ux','uy','uz','u1','u2','u3',
-                 'ee','E','T','eth','Eth','ekin','emag']
+                 'ee','E','T','eth','Eth','ekin','emag','S']
         timer.add('known')
 
         # attach an aux filename, if one exists for this task
