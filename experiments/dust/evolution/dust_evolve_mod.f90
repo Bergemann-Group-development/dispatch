@@ -29,19 +29,24 @@ MODULE dust_evolve_mod
   logical:: do_implicit=.true.
   logical:: do_brownian=.false.
   logical:: do_in_cell_turbulence=.false.
+  logical:: do_set_frag_vel =.false.
   logical:: detailed_timer=.false.
   real(KIND=8):: start_time=0d0                             ! start time
   real:: max_fraction1 = 1.0
   real:: max_fraction2 = 0.1
+  real:: size_monomer  = 1e-7                               ! Size of monomer used for determining when we have monomer-monomer collision in context of fragmentation probability
+  real:: monomer_frag  = 1e5                                ! When monomer-monomer collision causes fragmentation set very high 1km/s
+  real:: size_aggregate = 1e4                               ! Aggregate size used for determining aggregate-aggregate collision in context of fragmentation
+  real:: aggregate_frag = 1e3                               ! Aggregate-Aggregate collision fragmentation velocity set low 10 m/s
   real(KIND=precision_e):: tt_dust = 10                     ! Dust temperature
   real(KIND=precision_e):: A_br = 2.8e3                     ! Experimental parameter for breaking energy of particles
   real(KIND=precision_e):: Eps_star = 3.7e10                ! reduced elasticity modulus in dyn cm^-2
-  real(KIND=precision_e):: gamma_sil = 370                  ! surface energy density of silicates, in erg/(cm^-2)
+  real(KIND=precision_e):: gamma_sil = 25                   ! surface energy density of silicates, in erg/(cm^-2)
   real(KIND=precision_e):: alpha = 1e-3                     ! Turbulence parameter, used when do_in_cell_turbulence is true for calculation of turbulent velocities
   real(KIND=precision_e):: sigma_d = 0.18                   ! Column density of the dust, used when do_in_cell_turbulence is true for calculation of turbulent velocities
   real(KIND=precision_e):: xi = 1.83                        ! The exponent used for the distribution in the case of cratering
   real(KIND=precision_e):: trans_width = 0.1                ! Transition width for fragmentation probability in m/s
-  real(KIND=precision_e):: u_f = 1e2                        ! Fragmentation speed, free parameter, assumed value in m/s
+  real(KIND=precision_e):: set_frag_vel = 1e2               ! If do_set_frag_vel then this is the set fragmentation velocity for all particles.
   real(KIND=precision_e):: dt = 1e-3 * 60*60*24*365         ! Time step in dust_evolve in years
   real(KIND=precision_e):: save_time = 1 * 60*60*24*365
   real(KIND=precision_e):: eps_time =1.10 * 60*60*24*365
@@ -300,7 +305,6 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out, ds)
   ! du = vdiff + brown + turb bliver regnet i init
 
   if (do_in_cell_turbulence) then
-    !cs = sqrt(tt_dust*cgs%k_b/(mu*1.008*cgs%m_u))
     cs = sqrt(tt_dust*cgs%k_B/(cgs%m_u*scaling%mu))
     utm_ini = cs * sqrt(2*alpha*st)                     ! Handle velocities every update
     where (st > 1.0) utm_ini = cs * sqrt(2*alpha/ st)
@@ -309,6 +313,7 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out, ds)
 
   do i=1,nbin
     do j=1,nbin
+      ! Velocity differences for all possible collision
       du(i,j) = sqrt((vd(i,1) - vd(j,1))**2 + (vd(i,2) - vd(j,2))**2 + (vd(i,3) - vd(j,3))**2)
       du(i,j) = du(i,j) + sqrt(vrms(i)**2 + vrms(j)**2)
 
@@ -323,10 +328,27 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out, ds)
       du(i,j) = du(i,j) + utm(i,j)
       end if
 
+
+      ! Fragmentation velocity u_f is calculated based on given parameters
+      ! the parameters are set in input file to decide fragmentation velocities for different sizes
       a_mu = a(i)*a(j)/(a(i)+a(j))
       m_mu = m(i)*m(j)/(m(i)+m(j))
-      u_f  = sqrt(2*A_br) * (gamma_sil**(5.0/6.0) * a_mu**(2.0/3.0)) / (m_mu**(1.0/2.0) * Eps_star**(1.0/3.0))
 
+      if (do_set_frag_vel) then
+        u_f = set_frag_vel
+      else
+        if ((a(i) < size_monomer ) .and. (a(j) < size_monomer )) then
+          u_f = monomer_frag
+        else if ((a(i) > size_aggregate ) .and. (a(j) > size_aggregate )) then
+          u_f = aggregate_frag
+        else
+          u_f  = sqrt(2*A_br) * (gamma_sil**(5.0/6.0) * a_mu**(2.0/3.0)) / (m_mu**(1.0/2.0) * Eps_star**(1.0/3.0))
+        end if
+      end if  
+
+
+      ! Decide by the fragmentation velocity is the probability of fragmentation p_f
+      ! and by extension the probability for coagulation p_c
       if (du(i,j) < u_f - trans_width) then
         pf(i,j) = 0
       else if (du(i,j) > u_f) then
@@ -347,11 +369,17 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out, ds)
   end if
   pc = 1-pf
 
+  ! Coagulation kernel and fragmentation kernel for Smoluchowski equation
   kk = du * sigma_col * pc
   ll = du * sigma_col * pf
 
+  ! define an identity matrix
   ForAll(i = 1:nbin, j = 1:nbin) identity(i,j) = (i/j)*(j/i)
 
+
+  ! Do a explicit step and compare the change in n if too large a change is detected
+  ! or the mass is not conserved then do a implicit step instead
+  ! if the change is only above the second fraction set then do several explicit steps in smaller time steps.
   call explicit_step(nbin, kk, ll, C, SS, n, px, py, pz, tend, dn, dpx, dpy, dpz)
   frac_dn = 0
   where (n /= 0) frac_dn = ABS(dn/n)
@@ -378,6 +406,9 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out, ds)
     if (verbose > 0) &
       print '(a,(1p,10e10.1))', 'explicit step:', frac_dn
     ! Keep explicit step
+
+
+    ! Update the number density and the momentum in each direction
     n = n + dn
     px = px + dpx
     py = py + dpy
@@ -598,6 +629,7 @@ subroutine implicit_step (nbin, identity, kk,ll,C,SS,n,px,py,pz, dt, dn, &
   js_lda = nbin
   js_ldb = nbin
 
+  ! Solve the inverse matrix
   CALL DGESV( js_n, js_nrhs, IJJ, js_lda, js_ipiv, S, js_ldb, js_info )
   Sppx = Spx - matmul(Jmx , S)
   Sppy = Spy - matmul(Jmy , S)
@@ -606,6 +638,7 @@ subroutine implicit_step (nbin, identity, kk,ll,C,SS,n,px,py,pz, dt, dn, &
   CALL DGESV( js_n, js_nrhs, IJpy, js_lda, js_ipivy, Sppy, js_ldb, js_info )
   CALL DGESV( js_n, js_nrhs, IJpz, js_lda, js_ipivz, Sppz, js_ldb, js_info )
 
+  ! Update the parameters 
   dn = S
   dpx = Sppx
   dpy = Sppy
