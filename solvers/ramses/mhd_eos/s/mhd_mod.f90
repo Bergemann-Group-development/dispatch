@@ -95,12 +95,13 @@ SUBROUTINE pre_init (self)
 !...............................................................................
   call trace%begin ('mhd_mod%pre_init')
   call trace%print_id (id)
-  call self%extras_t%pre_init
   self%nw = 2
   self%ng = 3
   self%nv = 8
   self%kind = 'ramses_s_mhd_patch'
   call self%idx%init (entropy=5, mhd=self%mhd)
+  call self%extras_t%pre_init
+  self%kind = 'ramses_s_mhd_patch'
   !-----------------------------------------------------------------------------
   ! Read solver-relevant parameters and store in the task instance
   !-----------------------------------------------------------------------------
@@ -473,19 +474,19 @@ SUBROUTINE update (self)
         do i=l(1),u(1)
           do dir=1,3
             p(i,j,k,dir) = p(i,j,k,dir) &
-                      +  self%dtime*self%force_per_unit_mass(i,j,k,dir)*d(i,j,k)
+                      +  self%dtime*scratch%force_per_unit_mass(i,j,k,dir)*d(i,j,k)
           end do
         end do
       end do
     end do
   end if
-  if (associated(self%force_per_unit_volume)) then
+  if (associated(scratch%force_per_unit_volume)) then
     do k=l(3),u(3)
       do j=l(2),u(2)
         do i=l(1),u(1)
           do dir=1,3
             p(i,j,k,dir) = p(i,j,k,dir) &
-                      +  self%dtime*self%force_per_unit_volume(i,j,k,dir)
+                      +  self%dtime*scratch%force_per_unit_volume(i,j,k,dir)
           end do
         end do
       end do
@@ -506,13 +507,13 @@ SUBROUTINE update (self)
     do k=l(3),u(3)
       do j = l(2),u(2)
         do i=l(1),u(1)
-          s(i,j,k) = s(i,j,k) + d(i,j,k) * q_heat(i,j,k)/pg(i,j,k)
+          s(i,j,k) = s(i,j,k) + d(i,j,k) * q_heat(i,j,k)/pg(i,j,k)*self%dtime
         end do
       end do
     end do
   end if
   if (associated(scratch%heating_per_unit_volume)) then
-    q_heat => scratch%heating_per_unit_mass
+    q_heat => scratch%heating_per_unit_volume
     s  => self%mem(:,:,:,self%idx%s,self%new,1)
     pg => self%q(:,:,:,1)
     l = self%mesh%li
@@ -521,7 +522,7 @@ SUBROUTINE update (self)
     do k=l(3),u(3)
       do j = l(2),u(2)
         do i=l(1),u(1)
-          s(i,j,k) = s(i,j,k) + q_heat(i,j,k)/pg(i,j,k)
+          s(i,j,k) = s(i,j,k) + q_heat(i,j,k)/pg(i,j,k)*self%dtime
         end do
       end do
     end do
