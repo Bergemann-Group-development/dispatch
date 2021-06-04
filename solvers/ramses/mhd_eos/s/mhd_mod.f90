@@ -462,60 +462,35 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Add external force as source term
   !-----------------------------------------------------------------------------
-  !l = self%mesh%li
-  !u = self%mesh%ui
-  !allocate (d2ekin(l(1):u(1)))
-  !e => self%mem(:,:,:,self%idx%e,self%new,1)
-  !p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
-  !if (associated(scratch%force_per_unit_mass)) then
-!    do k=l(3),u(3)
-!    do j=l(2),u(2)
-!      !-------------------------------------------------------------------------
-!      ! Compute the increment in kinetic energy from the forcing
-!      !-------------------------------------------------------------------------
-!      d2ekin(:) = 0
-!      do dir=1,3
-!      do i=l(1),u(1)
-!        d2ekin(i) = d2ekin(i) - p(i,j,k,dir)**2/d(i,j,k)
-!        p(i,j,k,dir) = p(i,j,k,dir) &
-!                   +  self%dtime*self%force_per_unit_mass(i,j,k,dir)*d(i,j,k)
-!        d2ekin(i) = d2ekin(i) + p(i,j,k,dir)**2/d(i,j,k)
-!      end do
-!      end do
-!      !-------------------------------------------------------------------------
-!      ! Add increment in kinetic energy from the forcing
-!      !-------------------------------------------------------------------------
-!      do i=l(1),u(1)
-!        e(i,j,k) = e(i,j,k) + 0.5*d2ekin(i) 
-!      end do
-!    end do
-!    end do
-!  end if
-!  if (associated(self%force_per_unit_volume)) then
-!    do k=l(3),u(3)
-!    do j=l(2),u(2)
-!      !-------------------------------------------------------------------------
-!      ! Compute the increment in kinetic energy from the forcing
-!      !-------------------------------------------------------------------------
-!      d2ekin(:) = 0
-!      do dir=1,3
-!      do i=l(1),u(1)
-!        d2ekin(i) = d2ekin(i) - p(i,j,k,dir)**2/d(i,j,k)
-!        p(i,j,k,dir) = p(i,j,k,dir) &
-!                   +  self%dtime*scratch%force_per_unit_volume(i,j,k,dir)
-!        d2ekin(i) = d2ekin(i) + p(i,j,k,dir)**2/d(i,j,k)
-!      end do
-!      end do
-!      !-------------------------------------------------------------------------
-!      ! Add increment in kinetic energy from the forcing
-!      !-------------------------------------------------------------------------
-!      do i=l(1),u(1)
-!        e(i,j,k) = e(i,j,k) + 0.5*d2ekin(i)
-!      end do
-!    end do
-!    end do
-!  end if
-!  deallocate (d2ekin)
+  l = self%mesh%li
+  u = self%mesh%ui
+  allocate (d2ekin(l(1):u(1)))
+  d => self%mem(:,:,:,self%idx%d,self%new,1)
+  p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
+  if (associated(scratch%force_per_unit_mass)) then
+    do k=l(3),u(3)
+      do j=l(2),u(2)
+        do i=l(1),u(1)
+          do dir=1,3
+            p(i,j,k,dir) = p(i,j,k,dir) &
+                      +  self%dtime*self%force_per_unit_mass(i,j,k,dir)*d(i,j,k)
+          end do
+        end do
+      end do
+    end do
+  end if
+  if (associated(self%force_per_unit_volume)) then
+    do k=l(3),u(3)
+      do j=l(2),u(2)
+        do i=l(1),u(1)
+          do dir=1,3
+            p(i,j,k,dir) = p(i,j,k,dir) &
+                      +  self%dtime*self%force_per_unit_volume(i,j,k,dir)
+          end do
+        end do
+      end do
+    end do
+  end if
   !-----------------------------------------------------------------------------
   ! External heating / cooling, if any; e.g. radiative or conductive
   ! This needs EOS lookup.
@@ -1260,21 +1235,22 @@ SUBROUTINE trace3d(self)
   d => self%mem(:,:,:,self%idx%d,self%new,1)
   do k=lo(3),uo(3)
   do j=lo(2),uo(2)
+    ff(:,:) = 0.0_dp
     if (associated(scratch%force_per_unit_mass)) then
       !dir$ simd
       do i=lo(1),uo(1)
-        ff(i,1) = scratch%force_per_unit_mass(i,j,k,1)
-        ff(i,2) = scratch%force_per_unit_mass(i,j,k,2)
-        ff(i,3) = scratch%force_per_unit_mass(i,j,k,3)
+        ff(i,1) = ff(i,1) + scratch%force_per_unit_mass(i,j,k,1)*dt2
+        ff(i,2) = ff(i,2) + scratch%force_per_unit_mass(i,j,k,2)*dt2
+        ff(i,3) = ff(i,3) + scratch%force_per_unit_mass(i,j,k,3)*dt2
       end do
-    else if (associated(scratch%force_per_unit_volume)) then
+    end if
+    if (associated(scratch%force_per_unit_volume)) then
+      !dir$ simd
       do i=lo(1),uo(1)
-        ff(i,1) = scratch%force_per_unit_volume(i,j,k,1)/d(i,j,k)
-        ff(i,2) = scratch%force_per_unit_volume(i,j,k,2)/d(i,j,k)
-        ff(i,3) = scratch%force_per_unit_volume(i,j,k,3)/d(i,j,k)
+        ff(i,1) = ff(i,1) + scratch%force_per_unit_mass(i,j,k,1)*dt2/d(i,j,k)
+        ff(i,2) = ff(i,2) + scratch%force_per_unit_mass(i,j,k,2)*dt2/d(i,j,k)
+        ff(i,3) = ff(i,3) + scratch%force_per_unit_mass(i,j,k,3)*dt2/d(i,j,k)
       end do
-    else
-      ff(:,:) = 0.0_dp
     end if
 
     qq(:) = 0.0
