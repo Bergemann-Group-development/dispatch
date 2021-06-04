@@ -52,7 +52,7 @@ SUBROUTINE init (self)
   class(mesh_t), pointer, dimension(:) :: m
   real, dimension(:,:,:,:), pointer :: ff
   integer:: ix, iy, iz                                       ! loop indices
-  real:: z,x,y,zz, pg, p_pert, rhov2, B2
+  real:: z,x,y,zz, pg, p_pert, rhov2, B2, d
   real,dimension(:,:,:),allocatable :: vecpot, emag
   !-----------------------------------------------------------------------------
   call trace_begin ('initial_t%initial_conditions')
@@ -73,11 +73,14 @@ SUBROUTINE init (self)
         x = m(1)%p + m(1)%r(ix)
         p_pert = random%ran1()*self%amplitude(1)
         pg = (1.0+p_pert)*(1.0+self%theta*z)**(self%mpoly+1.0)
-        ff(ix,iy,iz,idx%d) = (1.0+self%theta*z)**self%mpoly
+        d = (1.0+self%theta*z)**self%mpoly
+        ff(ix,iy,iz,idx%d) = d
+        if (idx%s>0) ff(ix,iy,iz,idx%s) = &
+        log(pg*d**-eos%gamma)*d / (eos%gamma-1d0)
         if (idx%e>0) ff(ix,iy,iz,idx%e) = pg/(eos%gamma-1.0)
         ff(ix,iy,iz,idx%px) = 0.0
         ff(ix,iy,iz,idx%py) = 0.0
-        ff(ix,iy,iz,idx%pz) = ff(ix,iy,iz,idx%d)*self%amplitude(2) &
+        ff(ix,iy,iz,idx%pz) = d*self%amplitude(2) &
                             * sin(math%pi*x/2)
         if (idx%bx > 0) then
           ff(ix,iy,iz,idx%bx) = 0.0
@@ -104,6 +107,11 @@ SUBROUTINE init (self)
     end if
     deallocate(emag)
   end if
+  !if (idx%s>0) then
+  !do iz=m(3)%lb,m(3)%ub
+  !  print *, iz, ff(12,12,iz,idx%d), ff(12,12,iz,idx%s)
+  !end do
+  !end if
   !-----------------------------------------------------------------------------
   self%patch%boundaries%theta = self%theta
   self%patch%boundaries%mpoly = self%mpoly
