@@ -979,7 +979,7 @@ SUBROUTINE init_bdries(self)
       self%mesh(i)%upper_boundary = .true.
     end if
   end do
-  call self%boundaries%init(self)
+  call self%boundaries%init ()
 END SUBROUTINE init_bdries
 
 !===============================================================================

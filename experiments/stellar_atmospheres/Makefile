@@ -20,6 +20,7 @@ TOP             = ../..
 # Legacy stagger code
 EOS             = microphysics/eos/stagger
 OPACITY         = stub
+CONDUCTIVITY    = spitzer
 # Tomida & Hori, with opacity
 #EOS             = data/eos/Tomida+Hori_2016/e
 #OPACITY         = Tomida+Hori_2016
@@ -29,6 +30,8 @@ sinclude $(TOP)/config/Makefile
 #PPCODE          = $(TOP)/solvers/pic/PPcode
 #sinclude $(PPCODE)/Experiments/DISPATCH/Makefile
 
+#sinclude NICOLE/Makefile
+#sinclude M3D/include.mkf
 
 # List the .o files the main program depends on after the colon:
 $(EXEC)            : cartesian_mod.o setup_mod.o eos_mod.o dispatcher_mod.o \
