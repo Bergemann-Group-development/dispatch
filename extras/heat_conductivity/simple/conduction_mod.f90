@@ -88,7 +88,7 @@ SUBROUTINE pre_update(self)
   real(8) :: ds(3)
   real(var_k):: vol, area, del1, del2, c1(3), c2(3)
   integer :: i1, i2, i3, n(3), lb(3), ub(3), i, l(3), u(3)
-  real(kind=var_k), dimension(:,:,:),   pointer :: d, e, px, py, pz
+  real(kind=var_k), dimension(:,:,:),   pointer :: d, e, s, px, py, pz
   real(kind=var_k), dimension(:,:,:),   pointer:: tg
   real(kind=var_k), dimension(:,:,:,:), pointer:: flux
   integer, save:: itimer=0
@@ -101,27 +101,41 @@ SUBROUTINE pre_update(self)
   ds = self%patch%mesh%d
   vol = product(ds)
   d => self%patch%mem(:,:,:,self%patch%idx%d,self%patch%it,1)
-  e => self%patch%mem(:,:,:,self%patch%idx%e,self%patch%it,1)
+  if (self%patch%idx%e>0) e => self%patch%mem(:,:,:,self%patch%idx%e,self%patch%it,1)
+  if (self%patch%idx%s>0) s => self%patch%mem(:,:,:,self%patch%idx%s,self%patch%it,1)
   px => self%patch%mem(:,:,:,self%patch%idx%px,self%patch%it,1)
   py => self%patch%mem(:,:,:,self%patch%idx%py,self%patch%it,1)
   pz => self%patch%mem(:,:,:,self%patch%idx%pz,self%patch%it,1)
   n =  shape(d)
   ! ----------------------------------------------------------------------------
-  ! get internal energy
+  ! get temperature
   ! ----------------------------------------------------------------------------
   allocate (tg(n(1),n(2),n(3)))
   l = self%patch%mesh%lb
   u = self%patch%mesh%ub
-  do i3=l(3),u(3)
-    do i2=l(2),u(2)
-      do i1=l(1),u(1)
-        tg(i1,i2,i3) = (e(i1,i2,i3) - 0.5*(px(i1,i2,i3)**2 + &
-                                           py(i1,i2,i3)**2 + &
-                                           pz(i1,i2,i3)**2)) &
-                     * (eos%gamma-1d0) / d(i1,i2,i3)
+  if (self%patch%idx%e>0) then
+    do i3=l(3),u(3)
+      do i2=l(2),u(2)
+        do i1=l(1),u(1)
+          tg(i1,i2,i3) = (e(i1,i2,i3) - 0.5*(px(i1,i2,i3)**2 + &
+                                            py(i1,i2,i3)**2 + &
+                                            pz(i1,i2,i3)**2)/d(i1,i2,i3)) &
+                      * (eos%gamma-1d0) / d(i1,i2,i3)
+        end do
       end do
     end do
-  end do
+  end if
+  if (self%patch%idx%s>0) then
+    do i3=l(3),u(3)
+      do i2=l(2),u(2)
+        do i1=l(1),u(1)
+          tg(i1,i2,i3) = d(i1,i2,i3)**eos%gamma*&
+                   exp(s(i1,i2,i3)/d(i1,i2,i3)*(eos%gamma-1d0))/d(i1,i2,i3)
+        end do
+      end do
+    end do
+  end if
+
   !-----------------------------------------------------------------------------
   ! The negative heat flux is proportional to (the density times) the gradient
   ! of the temperature, for dynamic (kinematic) formulations
