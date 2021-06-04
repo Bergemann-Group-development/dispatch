@@ -95,7 +95,8 @@ SUBROUTINE init (self, ln_bin, lm_cgs, rho_s)
   !real(precision_e), ALLOCATABLE, DIMENSION(:,:,:):: SS, C
   !--- add parameters here -----------------------------------------------------
   namelist /dust_evolve_params/ on, verbose, do_brownian, do_in_cell_turbulence, &
-    tt_dust, sigma_d, alpha, xi, trans_width, u_f, dt, do_implicit, start_time, &
+    tt_dust, sigma_d, alpha, xi, trans_width, set_frag_vel, Eps_star, do_set_frag_vel, &
+    dt, do_implicit, start_time, gamma_sil, size_monomer, monomer_frag,size_aggregate, aggregate_frag,    &
     max_fraction1, max_fraction2, n_sub, detailed_timer
   !-----------------------------------------------------------------------------
   call trace%begin ('dust_evolve_t%init')
@@ -224,7 +225,7 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out, ds)
   integer:: i, j, k, l, kn, minij, maxij, itime, js_n, js_nrhs, js_lda, &
     js_ldb, js_info, nbin
   integer, ALLOCATABLE, DIMENSION(:):: js_ipiv, js_ipivx, js_ipivy, js_ipivz
-  real(precision_e):: ratio_r, min_a, max_a, m_crat, eps, Stot, a_mu, m_mu
+  real(precision_e):: ratio_r, min_a, max_a, m_crat, eps, Stot, a_mu, m_mu, u_f
   real(precision_e):: m_big, m_small
   real(precision_e), ALLOCATABLE, DIMENSION(:):: m, n, n_old , S, dn, dpx, dpy, dpz, dd, Spx, Spy, Spz, &
     mv, px, py, pz, v, mpx, mpy, mpz, Ln_k, Kn_k, Sppx, Sppy, Sppz, frac_dn, vrms
