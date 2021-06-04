@@ -226,7 +226,7 @@ SUBROUTINE update (self)
   real, allocatable, dimension(:,:,:,:):: em
   real, allocatable, dimension(:,:,:,:,:):: fl
   real, allocatable, dimension(:,:,:,:)::fluxambdiff,emfambdiff,fluxohmdiss,emfohmdiss
-  real, pointer, dimension(:,:,:):: d, s, Ux=>null(), Uy=>null(), Uz=>null()
+  real, pointer, dimension(:,:,:):: d, pg, q_heat, s, Ux=>null(), Uy=>null(), Uz=>null()
   real, pointer:: B(:,:,:,:)
   real(dp):: dtdx, dtdy, dtdz
   integer:: n(3), nv3, i, j, k, l(3), u(3), dir, iv
@@ -458,6 +458,7 @@ SUBROUTINE update (self)
   if (isothermal) &
     self%mem(:,:,:,self%idx%s,self%new,1) = &
     self%mem(:,:,:,self%idx%s,self%it,1)
+
   !-----------------------------------------------------------------------------
   ! Add external force as source term
   !-----------------------------------------------------------------------------
@@ -516,18 +517,40 @@ SUBROUTINE update (self)
 !  end if
 !  deallocate (d2ekin)
   !-----------------------------------------------------------------------------
-  ! Add external heating as source term
+  ! External heating / cooling, if any; e.g. radiative or conductive
+  ! This needs EOS lookup.
   !-----------------------------------------------------------------------------
-  !if (associated(self%heating_per_unit_mass)) then
-  !  e = e + self%dtime*self%heating_per_unit_mass*d
-  !end if
-  !if (associated(self%heating_per_unit_volume)) then
-  !  if (verbose > 1) then
-  !    write (io_unit%log,'(i6," heating:",1p,10e11.2)') self%id, &
-  !    sum(sum(self%heating_per_unit_volume(:,:,l(3):l(3)+9),1),1)
-  !  end if
-  !  e = e + self%dtime*self%heating_per_unit_volume
-  !end if
+  if (associated(scratch%heating_per_unit_mass)) then
+    q_heat => scratch%heating_per_unit_mass
+    d  => self%mem(:,:,:,self%idx%d,self%new,1)
+    s  => self%mem(:,:,:,self%idx%s,self%new,1)
+    pg => self%q(:,:,:,1)
+    l = self%mesh%li
+    u = self%mesh%ui
+    ! S = S + d*q_heat/pg
+    do k=l(3),u(3)
+      do j = l(2),u(2)
+        do i=l(1),u(1)
+          s(i,j,k) = s(i,j,k) + d(i,j,k) * q_heat(i,j,k)/pg(i,j,k)
+        end do
+      end do
+    end do
+  end if
+  if (associated(scratch%heating_per_unit_volume)) then
+    q_heat => scratch%heating_per_unit_mass
+    s  => self%mem(:,:,:,self%idx%s,self%new,1)
+    pg => self%q(:,:,:,1)
+    l = self%mesh%li
+    u = self%mesh%ui
+    ! S = S + q_heat/pg
+    do k=l(3),u(3)
+      do j = l(2),u(2)
+        do i=l(1),u(1)
+          s(i,j,k) = s(i,j,k) + q_heat(i,j,k)/pg(i,j,k)
+        end do
+      end do
+    end do
+  end if
   ! ----------------------------------------------------------------------------
   ! do timestep%update
   ! ----------------------------------------------------------------------------
@@ -1141,6 +1164,7 @@ SUBROUTINE trace3d(self)
   real(dp), dimension(:,:,:), allocatable:: rho_t, p_t, s_t, tg_t
   real(dp) :: eff_gamma, off
   real(dp) :: ff(self%gn(1),3), qq(self%gn(1))
+  real(8) :: dt2
   integer:: lo(3), uo(3)
   integer, save:: itimer(4)=0
   !-----------------------------------------------------------------------------
@@ -1230,6 +1254,7 @@ SUBROUTINE trace3d(self)
   ! below accesses {i,j,k}+-1, and needs to be good in (lo,uo).  With ng=3, the
   ! loop limits are (lo-1,uo+1) = (2,gn-1)
   !-----------------------------------------------------------------------------
+  dt2 = 0.5d0*self%dtime
   lo = self%mesh%lo-1
   uo = self%mesh%uo+1
   d => self%mem(:,:,:,self%idx%d,self%new,1)
@@ -1251,16 +1276,21 @@ SUBROUTINE trace3d(self)
     else
       ff(:,:) = 0.0_dp
     end if
+
+    qq(:) = 0.0
     if (associated(scratch%heating_per_unit_volume)) then
+      !dir$ simd
       do i=lo(1),uo(1)
-        qq(i) = scratch%heating_per_unit_volume(i,j,k)
+        qq(i) = qq(i) + q(i,j,k,ir) * &
+        scratch%heating_per_unit_volume(i,j,k) * dt2
       end do
-    else if (associated(scratch%heating_per_unit_mass)) then
+    end if
+    if (associated(scratch%heating_per_unit_mass)) then
+      !dir$ simd
       do i=lo(1),uo(1)
-        qq(i) = scratch%heating_per_unit_mass(i,j,k)*d(i,j,k)
+        qq(i) = qq(i) + q(i,j,k,ir) * &
+        scratch%heating_per_unit_volume(i,j,k) * dt2
       end do
-    else
-        qq(:) = 0.0
     end if
     !dir$ ivdep
     !$omp simd private( &
@@ -1420,14 +1450,14 @@ SUBROUTINE trace3d(self)
   !i,j,k,h,dex,dey,dez,se0
       !
       ! Add external force
-      su0 = su0 + ff(i,1)*half*self%dtime
-      sv0 = sv0 + ff(i,2)*half*self%dtime
-      sw0 = sw0 + ff(i,3)*half*self%dtime
+      su0 = su0 + ff(i,1)
+      sv0 = sv0 + ff(i,2)
+      sw0 = sw0 + ff(i,3)
       !
       ! Add external heating
-      sp0 = sp0  + (eff_gamma-1d0)* qq(i)*self%dtime
-      tg0 = tg0  + qq(i)*self%dtime
-      ss0 = ss0  +                 (qq(i) )/p*self%dtime !+(eos%gamma-one)*r/p   &
+      sp0 = sp0  + (eff_gamma-1d0)* qq(i)
+      tg0 = tg0  + qq(i)
+      ss0 = ss0  +                 (qq(i) )/p !+(eos%gamma-one)*r/p   &
          !    *(eos%gamma/(eos%gamma-one)*((p+sp0)/(r+sr0) - p/r) -half*(one/(r+sr0)+one/r)*((p+sp0)-p)) * self%dtime
       !
       ! Evolve entropy instead of pressure
