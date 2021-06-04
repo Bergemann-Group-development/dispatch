@@ -21,11 +21,11 @@ class aux():
   def __init__(self,id=1,io=0,run='',data='../data',file=None,verbose=0):
     self.verbose=verbose
     self.vars={}
-    if os.path.isfile(file):
+    if file:
         self.filename=file
     else:
         self.filename=data+'/'+run+'/{:05d}/{:05d}.aux'.format(io,id)
-    if os.path.isfile(file):
+    if os.path.isfile(self.filename):
         self._read()
 
   def _read(self):
@@ -54,12 +54,15 @@ class aux():
           if self.verbose>2:
             print(' type:',tpe)
           if tpe[0]=='r':
+            if self.verbose>1:
+                print('reading f4',shp)
             v=ff.read_reals('<f4')                       # value
           elif tpe[0]=='d':
             v=ff.read_reals('<f8')
           else:
             v=ff.read_ints('<i4')
-          v=v.reshape(shp[-1::-1]).transpose()
+          v=v.reshape(shp,order='F')
+          print('shape:',v.shape)
           if self.verbose>3:
             print('  min: {}\n  max: {}'.format(v.min(),v.max()))
           vars[name]={'type':tpe,'name':name,'rank':rank,'shape':shp,'v':v}
