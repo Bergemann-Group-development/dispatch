@@ -85,10 +85,10 @@ CONTAINS
 !> Initialize the boundary data type, while testing also if the patch contains
 !> a spherical boundary, or possibly is completely immersed in such a boundary.
 !===============================================================================
-SUBROUTINE init (self, patch)
+SUBROUTINE init (self)
   class(boundaries_t) :: self
-  class(patch_t), target:: patch
-  ! ----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
+  class(patch_t), pointer:: patch
   integer:: iostat
   logical, save:: first_time=.true.
   namelist /boundary_params/ d_bot, e_bot, ee_top, bottom_bc_rate, verbose, divb_iter, &
@@ -96,6 +96,7 @@ SUBROUTINE init (self, patch)
                              test, lower_bc, upper_bc
   !-----------------------------------------------------------------------------
   call trace%begin('boundaries_t%init')
+  patch => self%patch
   !.............................................................................
   call io%lock%set('boundaries_t%init')
   if (first_time) then
@@ -134,7 +135,7 @@ SUBROUTINE init (self, patch)
   self%gravity = -scaling%grav*(cgs%m_sun/scaling%m)/(cgs%r_sun/scaling%l)**2
 
 
-  call self%standard_boundaries_t%init(patch)
+  call self%standard_boundaries_t%init ()
 END SUBROUTINE init
 
 SUBROUTINE primary(self, mem)

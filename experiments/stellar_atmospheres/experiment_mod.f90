@@ -88,7 +88,7 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   self%periodic(3) = .false.                     ! non-periodic vertically
   call self%init_bdries
-  call self%boundaries%init (self)
+  call self%boundaries%init ()
   if (verbose > 0) then
     if (self%mesh(3)%lower_boundary) write(io_unit%log,*) self%id, 'at lower B'
     if (self%mesh(3)%upper_boundary) write(io_unit%log,*) self%id, 'at upper B'
