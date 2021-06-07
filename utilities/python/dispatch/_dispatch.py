@@ -308,6 +308,7 @@ def _var(patch,filed,snap,verbose=0,copy=None):
         # Determine data representation
         is_ln=False
         is_vel=False
+        is_hlls=False
         if snap.io.method.strip()=='parallel':
             is_ln = ((patch.ioformat-6)/2==0
                   or (patch.ioformat-10)//2==0)
@@ -317,6 +318,7 @@ def _var(patch,filed,snap,verbose=0,copy=None):
                 is_ln = False
         is_staggered = patch.kind[0:4] == 'zeus' or patch.kind[0:7] == 'stagger'
         tot_e = patch.kind[0:6] == 'ramses'
+        is_hlls = patch.kind[0:8] == 'ramses_s'
         if verbose:
             print("is_ln:",is_ln)
             print("is_vel:",is_vel)
@@ -418,7 +420,12 @@ def _var(patch,filed,snap,verbose=0,copy=None):
 
             # Thermal energy
             elif iv=='eth':
-                if patch.gamma==1.0:
+                if is_hlls:
+                    g1=(snap.gamma-1.0)
+                    v = var('d',all=True,verbose=verbose)**snap.gamma \
+                    * np.exp(var('s',all=True,verbose=verbose)/var('d',all=True,verbose=verbose)*g1) \
+                    / g1
+                elif patch.gamma==1.0:
                     v=mem('e')
                 elif tot_e:
                     v=var('e',all=True,verbose=verbose) \
@@ -440,9 +447,15 @@ def _var(patch,filed,snap,verbose=0,copy=None):
 
             # Temperature
             elif iv=='tt' or iv=='T':
-                v=var('Eth',all=True,verbose=verbose)
-                if hasattr(snap,'scaling'):
-                    v=v*snap.scaling.temp
+                if is_hlls:
+                    g1=snap.gamma-1.0
+                    v = var('d',all=True,verbose=verbose)**snap.gamma \
+                    * np.exp(var('s',all=True,verbose=verbose)/var('d',all=True,verbose=verbose)*g1) \
+                    / var('d',all=True,verbose=verbose)
+                else:
+                    v=var('Eth',all=True,verbose=verbose)
+               # if hasattr(snap,'scaling'):
+               #     v=v*snap.scaling.temp
 
         # or a letter index
         elif iv in patch.keys['letters']:
