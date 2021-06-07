@@ -35,7 +35,10 @@ def read_patch_metadata(io=0,run='',data='../data',n_rank=0,verbose=0):
             if verbose>1:
                 print(file1,len(patches.keys()),'patches')
             rank+=1
-        sr.save(file0,patches)
+        try:
+            sr.save(file0,patches)
+        except:
+            pass
 
     np=len(patches.keys())
     if verbose>0:

@@ -673,7 +673,10 @@ def read_nml(file,verbose=0):
         nml_list=f90nml.read(file)
         if verbose>-1:
             print('caching metadate to',srfile)
-        sr.save(srfile,nml_list)
+        try:
+            sr.save(srfile,nml_list)
+        except:
+            pass
     return nml_list
 
 class snapshot():
