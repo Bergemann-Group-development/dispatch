@@ -227,7 +227,7 @@ SUBROUTINE update (self)
   real, allocatable, dimension(:,:,:,:):: em
   real, allocatable, dimension(:,:,:,:,:):: fl
   real, allocatable, dimension(:,:,:,:)::fluxambdiff,emfambdiff,fluxohmdiss,emfohmdiss
-  real, pointer, dimension(:,:,:):: d, pg, q_heat, s, Ux=>null(), Uy=>null(), Uz=>null()
+  real, pointer, dimension(:,:,:):: d, tg, q_heat, s, Ux=>null(), Uy=>null(), Uz=>null()
   real, pointer:: B(:,:,:,:)
   real(dp):: dtdx, dtdy, dtdz
   integer:: n(3), nv3, i, j, k, l(3), u(3), dir, iv
@@ -500,14 +500,14 @@ SUBROUTINE update (self)
     q_heat => scratch%heating_per_unit_mass
     d  => self%mem(:,:,:,self%idx%d,self%new,1)
     s  => self%mem(:,:,:,self%idx%s,self%new,1)
-    pg => self%q(:,:,:,1)
+    tg => self%q(:,:,:,9)
     l = self%mesh%li
     u = self%mesh%ui
     ! S = S + d*q_heat/pg
     do k=l(3),u(3)
       do j = l(2),u(2)
         do i=l(1),u(1)
-          s(i,j,k) = s(i,j,k) + d(i,j,k) * q_heat(i,j,k)/pg(i,j,k)*self%dtime
+          s(i,j,k) = s(i,j,k) + d(i,j,k) * q_heat(i,j,k)/tg(i,j,k)*self%dtime
         end do
       end do
     end do
@@ -515,14 +515,14 @@ SUBROUTINE update (self)
   if (associated(scratch%heating_per_unit_volume)) then
     q_heat => scratch%heating_per_unit_volume
     s  => self%mem(:,:,:,self%idx%s,self%new,1)
-    pg => self%q(:,:,:,1)
+    tg => self%q(:,:,:,9)
     l = self%mesh%li
     u = self%mesh%ui
     ! S = S + q_heat/pg
     do k=l(3),u(3)
       do j = l(2),u(2)
         do i=l(1),u(1)
-          s(i,j,k) = s(i,j,k) + q_heat(i,j,k)/pg(i,j,k)*self%dtime
+          s(i,j,k) = s(i,j,k) + q_heat(i,j,k)/tg(i,j,k)*self%dtime
         end do
       end do
     end do
@@ -1434,7 +1434,7 @@ SUBROUTINE trace3d(self)
       ! Add external heating
       sp0 = sp0  + (eff_gamma-1d0)* qq(i)
       tg0 = tg0  + qq(i)
-      ss0 = ss0  +                 (qq(i) )/p !+(eos%gamma-one)*r/p   &
+      ss0 = ss0  +                 (qq(i) )/tg !+(eos%gamma-one)*r/p   &
          !    *(eos%gamma/(eos%gamma-one)*((p+sp0)/(r+sr0) - p/r) -half*(one/(r+sr0)+one/r)*((p+sp0)-p)) * self%dtime
       !
       ! Evolve entropy instead of pressure
