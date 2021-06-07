@@ -153,11 +153,11 @@ SUBROUTINE primary(self, mem)
           if (patch%idx%e>0) then
             ! Constant temperature BC
             !e(ix,iy,iz)  = d(ix,iy,iz)*tt0/(eos%gamma-1d0)
-            tt1 =  self%tt_top+self%theta*(z(iz)+m(3)%p)
+            tt1 =  self%tt_top+max(0.0,self%theta*(z(iz)+m(3)%p))
             e(ix,iy,iz) = tt1*d(ix,iy,iz)/(eos%gamma-1d0)
           end if
           if (patch%idx%s>0) then
-            tt1 =  self%tt_top+self%theta*(z(iz)+m(3)%p)
+            tt1 =  self%tt_top+max(0.0,self%theta*(z(iz)+m(3)%p))
             pg1 = tt1*d(ix,iy,iz)
             s(ix,iy,iz) = log(pg1*d(ix,iy,iz)**-eos%gamma) &
                         * d(ix,iy,iz) / (eos%gamma-1d0)
