@@ -205,7 +205,7 @@ CONTAINS
 !===============================================================================
 SUBROUTINE init (self, task_list, name)
   class(read_external_t):: self
-  type(task_list_t), pointer:: task_list
+  class(task_list_t), pointer:: task_list
   integer:: iostat
   character(len=*), optional:: name
   logical, save:: first_time=.true.
