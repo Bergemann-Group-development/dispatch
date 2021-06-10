@@ -41,6 +41,7 @@ MODULE dust_evolve_mod
   real(KIND=precision_e):: tt_dust = 10                     ! Dust temperature
   real(KIND=precision_e):: A_br = 2.8e3                     ! Experimental parameter for breaking energy of particles
   real(KIND=precision_e):: Eps_star = 3.7e10                ! reduced elasticity modulus in dyn cm^-2
+  real(KIND=precision_e):: zeta_crit = 2e-7                 ! Critical roll in cm
   real(KIND=precision_e):: gamma_sil = 25                   ! surface energy density of silicates, in erg/(cm^-2)
   real(KIND=precision_e):: alpha = 1e-3                     ! Turbulence parameter, used when do_in_cell_turbulence is true for calculation of turbulent velocities
   real(KIND=precision_e):: sigma_d = 0.18                   ! Column density of the dust, used when do_in_cell_turbulence is true for calculation of turbulent velocities
@@ -343,7 +344,9 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out, ds)
         else if ((a(i) > size_aggregate ) .and. (a(j) > size_aggregate )) then
           u_f = aggregate_frag
         else
-          u_f  = sqrt(2*A_br) * (gamma_sil**(5.0/6.0) * a_mu**(2.0/3.0)) / (m_mu**(1.0/2.0) * Eps_star**(1.0/3.0))
+          !u_f  = sqrt(2*A_br) * (gamma_sil**(5.0/6.0) * a_mu**(2.0/3.0)) / (m_mu**(1.0/2.0) * Eps_star**(1.0/3.0))             ! Monomer
+          u_f  = sqrt(60 * math%pi**2 * zeta_crit * gamma_sil * a_mu /m_mu )                                                    ! aggregates 5E_roll
+          
         end if
       end if  
 
