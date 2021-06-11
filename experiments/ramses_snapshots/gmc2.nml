@@ -48,10 +48,10 @@
 ! Solver specific parameters
 !---------------------------------
 &ramses_params          courant_factor=0.250
-                        isothermal=f gamma=1.4 slope_type=2 
-                        !isothermal=t gamma=1.0 slope_type=2 
+                        isothermal=f slope_type=2 
+                        !isothermal=t slope_type=2 
                         smallr=1e-5 smallc=5e-1 riemann='hlld' detailed_timer=f /
-&mhd_params             isothermal=f gamma=1.01 nu=0.20,1.4,1.0,0.1,1.0,1.0 /
+&mhd_params             isothermal=f nu=0.20,1.4,1.0,0.1,1.0,1.0 /
 &timestep_params        /
 &refine_params          on=f check_interval=2 /
 &sinkparticles_params   do_sink=f rho_limit=1.2 max_sinks=1 verbose=0 /
