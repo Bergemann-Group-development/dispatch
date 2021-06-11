@@ -154,7 +154,7 @@ MODULE ramses_mod
     character(len=128):: path
     integer n_cell                      ! number of cells per direction
     type(oct_list_t), pointer:: oct_list
-    type(task_list_t), pointer:: task_list
+    class(task_list_t), pointer:: task_list
     type(task_list_t), pointer:: dispatch_task_list
     type(sink_t), dimension(:), pointer:: sink
     type(hash_table_t):: u_max_table
@@ -509,7 +509,24 @@ SUBROUTINE read_snapshot (self, keep, load)
 #else
     open(unit=ilun,file=filename,status='old',form='unformatted')
 #endif
-    !
+    !---------------------------------------------------------------------------
+    ! Establish if the file has quad precision Hilbert keys, assuming "new" fmt
+    !---------------------------------------------------------------------------
+    do i=1,25
+      read(ilun) j
+    end do
+    read(ilun) overload, ndomain
+    backspace(ilun)
+    allocate (bound_key(0:ndomain), bound_key_dp(0:ndomain), &
+              isub_domain(1:ndomain), cpu_domain(1:ndomain), &
+              map_domain(1:overload,1:ncpu))
+    read(ilun,iostat=ioerr) &
+      overload, ndomain, bound_key, isub_domain, cpu_domain, map_domain
+    self%quad_precision = ioerr==0
+    !---------------------------------------------------------------------------
+    ! Rewind and read, without iostat
+    !---------------------------------------------------------------------------
+    rewind (ilun)
     read(ilun) ncpu
     read(ilun) ndims
     if (ndims < 3) then
@@ -560,7 +577,8 @@ SUBROUTINE read_snapshot (self, keep, load)
     !
     ! boundary linked lists
     if (nboundary > 0) then
-      allocate(head_bndy(1:nboundary,1:nlevelmax), tail_bndy(1:nboundary,1:nlevelmax), &
+      allocate(head_bndy(1:nboundary,1:nlevelmax), &
+               tail_bndy(1:nboundary,1:nlevelmax), &
                numb_bndy(1:nboundary,1:nlevelmax))
       read(ilun) head_bndy
       read(ilun) tail_bndy
@@ -570,103 +588,22 @@ SUBROUTINE read_snapshot (self, keep, load)
     read(ilun) ! SKIP headf, tailf, numbf, used_mem, used_mem_tot
     read(ilun) ordering
     if (ordering == 'bisection') then
-      call mpi%abort('Only Peano-Hilbert ordered RAMSES data can be read at this time.')
+      call mpi%abort('Only Peano-Hilbert ordered RAMSES data can be read')
       close(ilun)
       stop
     endif
-    read(ilun) overload, ndomain
-    backspace(ilun) ! rewind one entry (why?)
     !
-    ! ------ read (double or quad precision) Peano-Hilbert keys ------
-    ! includes precision and endianness checking.
-    if (ndomain /= ncpu * overload .or. ndomain == 0 .or. overload == 0) then
-      ! "old" format
-      overload = 1
-      ndomain = ncpu
-      allocate(bound_key(0:ndomain), bound_key_dp(0:ndomain), isub_domain(1:ndomain), &
-             cpu_domain(1:ndomain), map_domain(1:overload,1:ncpu))
-      read(ilun, iostat=ioerr) bound_key
-      if (ioerr /= 0) then
-        ! the keys were stored at double precision
-        backspace(ilun)
-        read(ilun,iostat=ioerr) bound_key_dp
-        bound_key = bound_key_dp ! put the key into a quad precision variable.
-        self%quad_precision = .false.
-      else
-        backspace(ilun)
-        self%quad_precision = .true.
-        allocate(bound_key_dpx2(2,0:ndomain))
-        read(ilun,iostat=ioerr) bound_key_dpx2
-        if (any( (abs( real(bound_key_dpx2(1,:),kind=16) + real(bound_key_dpx2(2,:),kind=16) - bound_key) &
-               / (abs(bound_key) + 1e-45_16)) > 1e-15_16) ) then
-#ifdef __xlc__
-          ! We are on BlueGene/Q and using the XLF90 compiler. These two numbers should be identical.
-          ! Therefore we are trying to read little endian data, but will never have any luck doing that,
-          ! since the little-endian quad-precision format is not supported with XLF.
-          call mpi%abort('We are on an IBM big-endian platform trying to read little endian quad-precision data. This is not possible. Giving up.')
-          close(ilun)
-          stop
-#endif
-#if __INTEL_COMPILER || defined(__GFORTRAN__)
-          ! We should test if we are byteswapping or not. If we are reading big-endian, we should use
-          ! the double-double format (because then the data comes from JUQUEEN), else we should use
-          ! quad-precision data, because it comes from a x86 run.
-          inquire(unit=ilun,convert=conv)
-          if (conv=='BIG_ENDIAN') then
-            bound_key = real(bound_key_dpx2(1,:),kind=16) + real(bound_key_dpx2(2,:),kind=16)
-            print *, 'Data is from a BIG-ENDIAN platform. Assuming from Blue-Gene.'
-          endif
-#endif
-        endif
-        deallocate(bound_key_dpx2)
-      endif
-      isub_domain = 1
-      do i=1,ndomain
-        cpu_domain(i) = i
-        map_domain(1,i)= i
-      enddo
-      print *,'Using old format for key storage.'
+    if (self%quad_precision) then
+      if (mpi%master) print*, 'Reading quad precision Hilbert keys'
+      read(ilun) &
+        overload, ndomain, bound_key, isub_domain, cpu_domain, map_domain
     else
-      ! "new" format
-      allocate(bound_key(0:ndomain), bound_key_dp(0:ndomain), isub_domain(1:ndomain), &
-               cpu_domain(1:ndomain), map_domain(1:overload,1:ncpu))
-      read(ilun,iostat=ioerr) overload, ndomain, bound_key, isub_domain, cpu_domain, map_domain
-      if (ioerr /= 0) then
-        ! the keys were stored at double precision
-        backspace(ilun)
-        read(ilun,iostat=ioerr) overload, ndomain, bound_key_dp, isub_domain, cpu_domain, map_domain
-        bound_key = bound_key_dp ! put the key into a quad precision variable.
-        self%quad_precision = .false.
-      else
-        backspace(ilun)
-        self%quad_precision = .true.
-        allocate(bound_key_dpx2(2,0:ndomain))
-        read(ilun,iostat=ioerr) overload, ndomain, bound_key_dpx2, isub_domain, cpu_domain, map_domain
-        if (any( (abs( real(bound_key_dpx2(1,:),kind=16) + real(bound_key_dpx2(2,:),kind=16) - bound_key) &
-               / (abs(bound_key) + 1e-45_16)) > 1e-15_16) ) then
-#ifdef __xlc__
-          ! We are on BlueGene/Q and using the XLF90 compiler. These two numbers should be identical.
-          ! Therefore we are trying to read little endian data, but will never have any luck doing that,
-          ! since the little-endian quad-precision format is not supported with XLF.
-          call mpi%abort('We are on an IBM big-endian platform trying to read little endian quad-precision data. This is not possible. Giving up.')
-          close(ilun)
-          stop
-#endif
-#if __INTEL_COMPILER || defined(__GFORTRAN__)
-          ! We should test if we are byteswapping or not. If we are reading big-endian, we should use
-          ! the double-double format (because then the data comes from JUQUEEN), else we should use
-          ! quad-precision data, because it comes from a x86 run.
-          inquire(unit=ilun,convert=conv)
-          if (conv=='BIG_ENDIAN') then
-            bound_key = real(bound_key_dpx2(1,:),kind=16) + real(bound_key_dpx2(2,:),kind=16)
-            print *, 'Data is from a BIG-ENDIAN platform. Assuming from Blue-Gene.'
-          endif
-#endif
-        endif
-        deallocate(bound_key_dpx2)
-      endif
-      print *,'Using new format for key storage.'
+      if (mpi%master) print*, 'Reading double precision Hilbert keys'
+      read(ilun) &
+        overload, ndomain, bound_key_dp, isub_domain, cpu_domain, map_domain
+      bound_key = bound_key_dp ! put the key into a quad precision variable.
     endif
+    if (mpi%master) print*,'Using new format for key storage.'
     deallocate (bound_key_dp, isub_domain, map_domain)
     ! ------ finished reading Peano-Hilbert keys ------
     !
