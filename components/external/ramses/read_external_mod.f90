@@ -19,20 +19,20 @@
 !> B) Coverage up to that level within a cube of size cut_out_size
 !> C) Successively larger support levels doen to a frozen level=minlvl
 !>
-!>                                                                       cell level  RAMSES
-!>                         ........|........              32k              24          21   
-!>                         ........|........                .               .
-!>                         ........|........               64               .
-!>                         ........|........                8              20
-!>                         ........|........                1              19          16
-!>                .................|....................                   18          15
-!> ................................|....................................   17          14
+!>                                                        cell level  RAMSES
+!>                   ......|......              32k              24          21
+!>                   ......|......                .               .
+!>                   ......|......               64               .
+!>                   ......|......                8              20
+!>                   ......|......                1              19          16
+!>            .............|...............                      18          15
+!> ........................|...............................      17          14
 !>
-!> If, for example, we want full coverage of the innermost 120 AU, which 
+!> If, for example, we want full coverage of the innermost 120 AU, which
 !> corresponds to a level 16 RAMSES cell, then that level must contain at least
 !> one DISPATCH 16x16x16 patch, which means a DISPATCH level 20 patch is needed.
 !> Level 28 would then contain up to 256 patches, which is fine for laptop work.
-!> 
+!>
 !> To include structures up to 1000 AU, we should have a single DISPATCH patch
 !> at levels 19 (240 AU), 18 (480 UA), and 17 (960 AU).  We could conveniently
 !> go to level 16 DISPATCH, at 2000 AU, and freeze that one patch.  The size of
@@ -44,7 +44,7 @@
 !> 14:                              14                  1 cell
 !> 17:                              17                  2 cells
 !> 20:                              20                 16 cells = 1 patch
-!> 24                               24                256 cells = 
+!> 24                               24                256 cells =
 !>
 !> minlvl=17 input should mean the frozen cells are at level 17, and there are 16
 !> of them, corresponding to one level 13 cell (= 1000 AU).  To ensure support,
@@ -154,7 +154,7 @@ MODULE read_external_mod
     character(len=128):: path
     integer n_cell                      ! number of cells per direction
     type(oct_list_t), pointer:: oct_list
-    type(task_list_t), pointer:: task_list
+    class(task_list_t), pointer:: task_list
     type(task_list_t), pointer:: dispatch_task_list
     type(sink_t), dimension(:), pointer:: sink
     type(hash_table_t):: u_max_table
@@ -379,12 +379,12 @@ SUBROUTINE mem_test
   type(experiment_t), allocatable:: experiment(:)
   !-----------------------------------------------------------------------------
   print*,'MEMORY TEST: Top GB gives kB per instance'  ; call omp%delay (ms)
-  print*,'oct'    ; allocate (oct(n))        ; call omp%delay(ms); deallocate(oct)
-  print*,'task'   ; allocate (task(n))       ; call omp%delay(ms); deallocate(task)
-  print*,'patch'  ; allocate (patch(n))      ; call omp%delay(ms); deallocate(patch)
-  print*,'extras' ; allocate (extras(n))     ; call omp%delay(ms); deallocate(extras)
-  print*,'mhd'    ; allocate (mhd(n))        ; call omp%delay(ms); deallocate(mhd)
-  print*,'solver' ; allocate (solver(n))     ; call omp%delay(ms); deallocate(solver)
+  print*,'oct'    ; allocate (oct(n))    ; call omp%delay(ms); deallocate(oct)
+  print*,'task'   ; allocate (task(n))   ; call omp%delay(ms); deallocate(task)
+  print*,'patch'  ; allocate (patch(n))  ; call omp%delay(ms); deallocate(patch)
+  print*,'extras' ; allocate (extras(n)) ; call omp%delay(ms); deallocate(extras)
+  print*,'mhd'    ; allocate (mhd(n))    ; call omp%delay(ms); deallocate(mhd)
+  print*,'solver' ; allocate (solver(n)) ; call omp%delay(ms); deallocate(solver)
 END SUBROUTINE mem_test
 
 !===============================================================================
@@ -512,7 +512,24 @@ SUBROUTINE read_snapshot (self, keep, load)
 #else
     open(unit=ilun,file=filename,status='old',form='unformatted')
 #endif
-    !
+    !---------------------------------------------------------------------------
+    ! Establish if the file has quad precision Hilbert keys, assuming "new" fmt
+    !---------------------------------------------------------------------------
+    do i=1,25
+      read(ilun)
+    end do
+    read(ilun) overload, ndomain
+    backspace(ilun)
+    allocate (bound_key(0:ndomain), bound_key_dp(0:ndomain), &
+              isub_domain(1:ndomain), cpu_domain(1:ndomain), &
+              map_domain(1:overload,1:ncpu))
+    read(ilun,iostat=ioerr) &
+      overload, ndomain, bound_key, isub_domain, cpu_domain, map_domain
+    self%quad_precision = ioerr==0
+    !---------------------------------------------------------------------------
+    ! Rewind and read, without iostat
+    !---------------------------------------------------------------------------
+    rewind (ilun)
     read(ilun) ncpu
     read(ilun) ndims
     if (ndims < 3) then
@@ -563,7 +580,8 @@ SUBROUTINE read_snapshot (self, keep, load)
     !
     ! boundary linked lists
     if (nboundary > 0) then
-      allocate(head_bndy(1:nboundary,1:nlevelmax), tail_bndy(1:nboundary,1:nlevelmax), &
+      allocate(head_bndy(1:nboundary,1:nlevelmax), &
+               tail_bndy(1:nboundary,1:nlevelmax), &
                numb_bndy(1:nboundary,1:nlevelmax))
       read(ilun) head_bndy
       read(ilun) tail_bndy
@@ -573,103 +591,22 @@ SUBROUTINE read_snapshot (self, keep, load)
     read(ilun) ! SKIP headf, tailf, numbf, used_mem, used_mem_tot
     read(ilun) ordering
     if (ordering == 'bisection') then
-      call mpi%abort('Only Peano-Hilbert ordered RAMSES data can be read at this time.')
+      call mpi%abort('Only Peano-Hilbert ordered RAMSES data can be read')
       close(ilun)
       stop
     endif
-    read(ilun) overload, ndomain
-    backspace(ilun) ! rewind one entry (why?)
     !
-    ! ------ read (double or quad precision) Peano-Hilbert keys ------
-    ! includes precision and endianness checking.
-    if (ndomain /= ncpu * overload .or. ndomain == 0 .or. overload == 0) then
-      ! "old" format
-      overload = 1
-      ndomain = ncpu
-      allocate(bound_key(0:ndomain), bound_key_dp(0:ndomain), isub_domain(1:ndomain), &
-             cpu_domain(1:ndomain), map_domain(1:overload,1:ncpu))
-      read(ilun, iostat=ioerr) bound_key
-      if (ioerr /= 0) then
-        ! the keys were stored at double precision
-        backspace(ilun)
-        read(ilun,iostat=ioerr) bound_key_dp
-        bound_key = bound_key_dp ! put the key into a quad precision variable.
-        self%quad_precision = .false.
-      else
-        backspace(ilun)
-        self%quad_precision = .true.
-        allocate(bound_key_dpx2(2,0:ndomain))
-        read(ilun,iostat=ioerr) bound_key_dpx2
-        if (any( (abs( real(bound_key_dpx2(1,:),kind=16) + real(bound_key_dpx2(2,:),kind=16) - bound_key) &
-               / (abs(bound_key) + 1e-45_16)) > 1e-15_16) ) then
-#ifdef __xlc__
-          ! We are on BlueGene/Q and using the XLF90 compiler. These two numbers should be identical.
-          ! Therefore we are trying to read little endian data, but will never have any luck doing that,
-          ! since the little-endian quad-precision format is not supported with XLF.
-          call mpi%abort('We are on an IBM big-endian platform trying to read little endian quad-precision data. This is not possible. Giving up.')
-          close(ilun)
-          stop
-#endif
-#if __INTEL_COMPILER || defined(__GFORTRAN__)
-          ! We should test if we are byteswapping or not. If we are reading big-endian, we should use
-          ! the double-double format (because then the data comes from JUQUEEN), else we should use
-          ! quad-precision data, because it comes from a x86 run.
-          inquire(unit=ilun,convert=conv)
-          if (conv=='BIG_ENDIAN') then
-            bound_key = real(bound_key_dpx2(1,:),kind=16) + real(bound_key_dpx2(2,:),kind=16)
-            print *, 'Data is from a BIG-ENDIAN platform. Assuming from Blue-Gene.'
-          endif
-#endif
-        endif
-        deallocate(bound_key_dpx2)
-      endif
-      isub_domain = 1
-      do i=1,ndomain
-        cpu_domain(i) = i
-        map_domain(1,i)= i
-      enddo
-      print *,'Using old format for key storage.'
+    if (self%quad_precision) then
+      if (mpi%master) print*, 'Reading quad precision Hilbert keys'
+      read(ilun) &
+        overload, ndomain, bound_key, isub_domain, cpu_domain, map_domain
     else
-      ! "new" format
-      allocate(bound_key(0:ndomain), bound_key_dp(0:ndomain), isub_domain(1:ndomain), &
-               cpu_domain(1:ndomain), map_domain(1:overload,1:ncpu))
-      read(ilun,iostat=ioerr) overload, ndomain, bound_key, isub_domain, cpu_domain, map_domain
-      if (ioerr /= 0) then
-        ! the keys were stored at double precision
-        backspace(ilun)
-        read(ilun,iostat=ioerr) overload, ndomain, bound_key_dp, isub_domain, cpu_domain, map_domain
-        bound_key = bound_key_dp ! put the key into a quad precision variable.
-        self%quad_precision = .false.
-      else
-        backspace(ilun)
-        self%quad_precision = .true.
-        allocate(bound_key_dpx2(2,0:ndomain))
-        read(ilun,iostat=ioerr) overload, ndomain, bound_key_dpx2, isub_domain, cpu_domain, map_domain
-        if (any( (abs( real(bound_key_dpx2(1,:),kind=16) + real(bound_key_dpx2(2,:),kind=16) - bound_key) &
-               / (abs(bound_key) + 1e-45_16)) > 1e-15_16) ) then
-#ifdef __xlc__
-          ! We are on BlueGene/Q and using the XLF90 compiler. These two numbers should be identical.
-          ! Therefore we are trying to read little endian data, but will never have any luck doing that,
-          ! since the little-endian quad-precision format is not supported with XLF.
-          call mpi%abort('We are on an IBM big-endian platform trying to read little endian quad-precision data. This is not possible. Giving up.')
-          close(ilun)
-          stop
-#endif
-#if __INTEL_COMPILER || defined(__GFORTRAN__)
-          ! We should test if we are byteswapping or not. If we are reading big-endian, we should use
-          ! the double-double format (because then the data comes from JUQUEEN), else we should use
-          ! quad-precision data, because it comes from a x86 run.
-          inquire(unit=ilun,convert=conv)
-          if (conv=='BIG_ENDIAN') then
-            bound_key = real(bound_key_dpx2(1,:),kind=16) + real(bound_key_dpx2(2,:),kind=16)
-            print *, 'Data is from a BIG-ENDIAN platform. Assuming from Blue-Gene.'
-          endif
-#endif
-        endif
-        deallocate(bound_key_dpx2)
-      endif
-      print *,'Using new format for key storage.'
+      if (mpi%master) print*, 'Reading double precision Hilbert keys'
+      read(ilun) &
+        overload, ndomain, bound_key_dp, isub_domain, cpu_domain, map_domain
+      bound_key = bound_key_dp ! put the key into a quad precision variable.
     endif
+    if (mpi%master) print*,'Using new format for key storage.'
     deallocate (bound_key_dp, isub_domain, map_domain)
     ! ------ finished reading Peano-Hilbert keys ------
     !
@@ -1033,7 +970,7 @@ SUBROUTINE read_snapshot (self, keep, load)
           'n_oct, rank(in), u_max:',self%npatch, k, u_max
       close(ilun)  ! close `amr_` file
       close(ilun2) ! close `hydro_` file
-      if (verbose > 2) & 
+      if (verbose > 2) &
         write (stdlog,'(4(a,i8,3x),a,1p,e9.2)') &
         ' n_active:',n_active,'n_passive:',n_passive,'n_onrank:',n_onrank, &
         ' n_offrank:',n_offrank
@@ -1058,7 +995,7 @@ SUBROUTINE read_snapshot (self, keep, load)
   do ilevel=nlevelmin,self%maxlvl
     fill(ilevel)=sum(ncellsum(ilevel,:))/2.0**(3*(ilevel-1))
   enddo
-  if (verbose > 0) & 
+  if (verbose > 0) &
     write (stdout,'(" elapsed:",f8.1,"s")') wallclock()-start
   write (*,'(a)') ' =================================================='
   !-----------------------------------------------------------------------------
@@ -1151,8 +1088,8 @@ SUBROUTINE hilbert3d(x,y,z,order,bit_length,npoint)
                             & (/8 ,2, 12 /) )
   !.............................................................................
   if(bit_length > bit_size(bit_length)) then
-     print *,'Maximum bit length = ', bit_size(bit_length)
-     print *,'ERROR in hilbert3d'
+     if (mpi%master) print*,'Maximum bit length = ', bit_size(bit_length)
+     if (mpi%master) print*,'ERROR in hilbert3d'
      stop
   endif
   do ip=1,npoint
@@ -1266,10 +1203,10 @@ SUBROUTINE add_to (self, patch, oct)
   enth = 1d0/(eos%gamma-1d0)
   i1 = patch%li(1) + oct%ii(1)
   i2 = patch%li(2) + oct%ii(2)
-  i3 = patch%li(3) + oct%ii(3) 
+  i3 = patch%li(3) + oct%ii(3)
   k1 =           1 + oct%ii(1)
   k2 =           1 + oct%ii(2)
-  k3 =           1 + oct%ii(3) 
+  k3 =           1 + oct%ii(3)
   level = oct%key(1)
   j = 1
   do j3=0,1
@@ -1383,7 +1320,7 @@ SUBROUTINE count_costs (self)
     end select
     task => task%next
   end do
-  if (verbose > 0) & 
+  if (verbose > 0) &
     write (stdout,'(" elapsed:",f8.1,"s")') wallclock()-start
   open (io_unit%tmp, file=trim(io%run_dir)//'u_bins.dat', form='unformatted', &
     status='unknown')
@@ -1421,7 +1358,7 @@ SUBROUTINE count_costs (self)
     task => task%next
   end do
   ratio = max_cost/total_cost
-  if (verbose > 0) & 
+  if (verbose > 0) &
     write (stdout,'(" elapsed:",f8.1,"s")') wallclock()-start
   !-----------------------------------------------------------------------------
   ! Print a table with level costs for octs, and for patches
@@ -1579,7 +1516,7 @@ SUBROUTINE check_support (self)
       link => link%next
     end do
   end do
-  if (verbose > 0) & 
+  if (verbose > 0) &
     write (stdout,'(" elapsed:",f8.1,"s")') wallclock()-start
   call timer%toc ('time to check_support', 1)
   call io%header ('-check_support: end', left=25)
@@ -1918,8 +1855,8 @@ SUBROUTINE evaluate (self, task_list)
   do while (associated(link))
     task => link%task
     i = i+1
-    if (mod(i,100000)==0) &
-      print *, i
+    if (mod(i,100000)==0 .and. mpi%master) &
+      print*, i
     select type (task)
     class is (experiment_t)
       call self%u_max_table_get (task%key, cost)
@@ -1992,7 +1929,7 @@ SUBROUTINE evaluate (self, task_list)
           end do
         end do
         if (nskip > 0) then
-          print *,'SKIPPING PATCH', task%id, nskip, product(u-l+1)
+          if (mpi%master) print*,'SKIPPING PATCH', task%id, nskip, product(u-l+1)
         else
           cost  = cost  + cost1_l*product(u-l+1)
           cost1 = cost1 + cost1_l*product(u-l+1)
@@ -2106,7 +2043,8 @@ SUBROUTINE cartesian_init (self, key, patch)
     end if
     !---------------------------------------------------------------------------
     allocate (patch%filled(patch%gn(1),patch%gn(2),patch%gn(3)))
-    call io%bits_mem (storage_size(patch%filled), product(shape(patch%filled)), 'fill')
+    call io%bits_mem (storage_size(patch%filled), &
+                     product(shape(patch%filled)), 'fill')
     patch%filled = -1
     !---------------------------------------------------------------------------
     ! Add the patch to the task list -- this creates the patch%link
