@@ -12,7 +12,7 @@
 &patch_params           nt=5 nv=8 grace=0.1 n=3*16 do_check_nan=t /
 &out_params             end_time=8e-3 out_time=8e-4 print_every=1 /
 &io_params              verbose=0 do_trace=f omp_trace=t do_output=t
-                        method='amr' id_debug=-49 nml_version=3
+                        method='background' id_debug=-49 nml_version=3
                         guard_zones=t time_derivs=0 /
 &timer_params           sec_per_report=10 /
 &validate_params        /
