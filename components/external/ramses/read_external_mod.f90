@@ -223,6 +223,7 @@ SUBROUTINE init (self, task_list, name)
   if (associated(task_list)) return
   call trace%begin('read_external_t%init')
   call io%init ('ramses snapshot reader')
+  call io%header ('ramses snapshot reader:')
   !-----------------------------------------------------------------------------
   ! The first thread reads the namelist parameters and saves them
   !-----------------------------------------------------------------------------
@@ -597,16 +598,16 @@ SUBROUTINE read_snapshot (self, keep, load)
     endif
     !
     if (self%quad_precision) then
-      if (mpi%master) print*, 'Reading quad precision Hilbert keys'
+      write (stdout,*)  'Reading quad precision Hilbert keys'
       read(ilun) &
         overload, ndomain, bound_key, isub_domain, cpu_domain, map_domain
     else
-      if (mpi%master) print*, 'Reading double precision Hilbert keys'
+      write (stdout,*)  'Reading double precision Hilbert keys'
       read(ilun) &
         overload, ndomain, bound_key_dp, isub_domain, cpu_domain, map_domain
       bound_key = bound_key_dp ! put the key into a quad precision variable.
     endif
-    if (mpi%master) print*,'Using new format for key storage.'
+    write (stdout,*) 'Using new format for key storage'
     deallocate (bound_key_dp, isub_domain, map_domain)
     ! ------ finished reading Peano-Hilbert keys ------
     !
@@ -977,11 +978,12 @@ SUBROUTINE read_snapshot (self, keep, load)
       !
       call mpi%barrier ('ncpu loop')
     enddo ! end loop k=1,ncpu_read
-    write (*,'(a)') ' =================================================='
-    write (*,'(a,1p,e12.3)')   ' u_max =', u_max
-    !write (*,'(a,2(i6.1,1x))') ' n_d_min, n_tt_min =',n_d_min,n_tt_min
-    !write (*,'(a,i11.1)')      ' n_frozen = ', n_frozen
-    write (*,'(a,i11.1)')      ' n_oct = ',self%npatch
+    write (stdout,'(1x,a,1p,e12.3)')   'u_max =', u_max
+    write (stdout,'(1x,a,i12.1)')      'n_oct =', self%npatch
+    if (verbose > 1) then
+      write (stdout,'(a,2(i6.1,1x))') ' n_d_min, n_tt_min =',n_d_min,n_tt_min
+      write (stdout,'(a,i11.1)')      ' n_frozen = ', n_frozen
+    end if
   !$omp end master
   !$omp barrier
   !
@@ -995,9 +997,9 @@ SUBROUTINE read_snapshot (self, keep, load)
   do ilevel=nlevelmin,self%maxlvl
     fill(ilevel)=sum(ncellsum(ilevel,:))/2.0**(3*(ilevel-1))
   enddo
-  if (verbose > 0) &
+  if (verbose > 0) then
     write (stdout,'(" elapsed:",f8.1,"s")') wallclock()-start
-  write (*,'(a)') ' =================================================='
+  end if
   !-----------------------------------------------------------------------------
   total_cost=0.0
   self%minlvl = nlevelmin
@@ -1013,7 +1015,8 @@ SUBROUTINE read_snapshot (self, keep, load)
     ds = 0.5_8**ilevel
     weight = 8./ds
     patch_cost = n_level(ilevel)*weight
-    write(stdout,'(i7,i9,f9.2)') ilevel, n_level(ilevel), patch_cost*100./total_cost
+    write(stdout,'(i7,i9,f9.2)') &
+      ilevel, n_level(ilevel), patch_cost*100./total_cost
   end do
   !-----------------------------------------------------------------------------
   if (verbose > 1) then
@@ -1088,8 +1091,8 @@ SUBROUTINE hilbert3d(x,y,z,order,bit_length,npoint)
                             & (/8 ,2, 12 /) )
   !.............................................................................
   if(bit_length > bit_size(bit_length)) then
-     if (mpi%master) print*,'Maximum bit length = ', bit_size(bit_length)
-     if (mpi%master) print*,'ERROR in hilbert3d'
+     write (stdout,*) 'Maximum bit length = ', bit_size(bit_length)
+     write (stdout,*) 'ERROR in hilbert3d'
      stop
   endif
   do ip=1,npoint
@@ -1328,7 +1331,8 @@ SUBROUTINE count_costs (self)
   write (io_unit%tmp) alog10(self%u_min), alog10(self%u_max)
   write (io_unit%tmp) self%u_bins
   close (io_unit%tmp)
-  write (stdout,*) 'read_external_t%count_costs: n, n(1)/n(2) =', n, n(1)/n(2)
+  write (stdout,*) &
+    'read_external_t%count_costs: n, n(1)/n(2) =', n, n(1)/n(2)
   max_cost = u_max*total_weight
   !-----------------------------------------------------------------------------
   ! Second loop over octs, to sum up total patch costs
@@ -1479,7 +1483,8 @@ SUBROUTINE check_support (self)
               if (verbose > 0) then
                 select type (ptr)
                 class is (experiment_t)
-                  write (stdout,'(a,2(i6,":",i2.2),2x,4i3,2x,3i3)') &
+                  if (verbose > 0) &
+                    write (stdlog,'(a,2(i6,":",i2.2),2x,4i3,2x,3i3)') &
                     'read_external_t%check_support: id,nbor=', &
                     task%id, task%level, ptr%id, ptr%level, key, [i1,i2,i3]
                 end select
@@ -1495,15 +1500,16 @@ SUBROUTINE check_support (self)
                 if (verbose > 0) then
                   select type (ptr)
                   class is (experiment_t)
-                    write (stdout,'(a,2(i6,":",i2.2),2x,4i3,2x,3i3)') &
+                    if (verbose > 0) &
+                      write (stdlog,'(a,2(i6,":",i2.2),2x,4i3,2x,3i3)') &
                       'read_external_t%check_support: id,nbor=', &
                       task%id, task%level, ptr%id, ptr%level, key, [i1,i2,i3]
                   end select
                 end if
               else
                 call self%cartesian_init (key, patch)
-                if (verbose > 0) &
-                  write (stdout,'(a,2(i6,":",i2.2),2x,4i3,2x,3i3)') &
+                if (verbose > 1) &
+                  write (stdlog,'(a,2(i6,":",i2.2),2x,4i3,2x,3i3)') &
                     'read_external_t%check_support: id,new_nbor=', &
                     task%id, task%level, patch%id, patch%level, key, [i1,i2,i3]
               end if
@@ -1769,11 +1775,13 @@ contains
     key = task_key (task%level-1, task%box, task%position, 2d0*task%size)
     call self%cartesian_init (key, new)
     nbor => new%link%nbor
-    do while (associated(nbor))
-      write (stdout,'(a,i6,i4,i6,i4)') 'create_support: id,lelvel,nbor,level', &
-        new%link%task%id, new%link%task%level, nbor%task%id, nbor%task%level
-      nbor => nbor%next
-    end do
+    if (verbose > 1) then
+      do while (associated(nbor))
+        write (stdout,'(a,i6,i4,i6,i4)') 'create_support: id,lelvel,nbor,level', &
+          new%link%task%id, new%link%task%level, nbor%task%id, nbor%task%level
+        nbor => nbor%next
+      end do
+    end if
     call download%download_link (new%link, all_cells=.true.)
     new%filled = new%level-1
     call trace%end (itimer)
@@ -1855,8 +1863,8 @@ SUBROUTINE evaluate (self, task_list)
   do while (associated(link))
     task => link%task
     i = i+1
-    if (mod(i,100000)==0 .and. mpi%master) &
-      print*, i
+    if (mod(i,100000)==0) &
+      write (stdout,*) i
     select type (task)
     class is (experiment_t)
       call self%u_max_table_get (task%key, cost)
@@ -1929,7 +1937,7 @@ SUBROUTINE evaluate (self, task_list)
           end do
         end do
         if (nskip > 0) then
-          if (mpi%master) print*,'SKIPPING PATCH', task%id, nskip, product(u-l+1)
+          write (stdout,*) 'SKIPPING PATCH', task%id, nskip, product(u-l+1)
         else
           cost  = cost  + cost1_l*product(u-l+1)
           cost1 = cost1 + cost1_l*product(u-l+1)
@@ -1942,7 +1950,8 @@ SUBROUTINE evaluate (self, task_list)
   cost3 = cost3*umax
   write(stdout,'(a,i4,1p,e12.4,i8)') ' level, umax:', level, umax
   write(stdout,'(a,1p,3e12.4)') ' costs:', cost1, cost2, cost3
-  write(stdout,'(a,1p,3e12.4)') ' costs ratios:     ', cost3/max(tiny(1e0),cost1), cost3/max(tiny(1e0),cost2)
+  write(stdout,'(a,1p,3e12.4)') ' costs ratios:     ', &
+    cost3/max(tiny(1e0),cost1), cost3/max(tiny(1e0),cost2)
   !-----------------------------------------------------------------------------
   ! Sum up the cost over the larger, 16x16x16 DISPATCH patches by running threw
   ! the task list, making sure to count each cost only once
@@ -2170,7 +2179,7 @@ SUBROUTINE init_nbors (self, link)
     end if
   end select
   link%nbors_by_level => link%nbor
-  if (verbose > 0) &
+  if (verbose > 1) &
     write (stdout,*) link%task%id, ' added', n, 'nbors', associated(link%nbor)
   call nbor_table%dealloc
   call trace%end (itimer)

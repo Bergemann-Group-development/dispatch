@@ -665,7 +665,7 @@ SUBROUTINE line (s, left)
       buf(i:i) = c
     end if
   end do
-  print '(a)', buf
+  print '(1x,a)', buf
 END SUBROUTINE line
 
 !===============================================================================
