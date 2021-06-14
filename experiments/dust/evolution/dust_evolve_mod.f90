@@ -118,7 +118,7 @@ SUBROUTINE init (self, ln_bin, lm_cgs, rho_s)
     call cgs%init
     nbin = ln_bin
     self%nbin = nbin
-    ALLOCATE(SS(nbin,nbin,nbin), C(nbin,nbin,nbin), ms(nbin,nbin), ep(nbin,nbin), a(nbin), st(nbin))
+    ALLOCATE(SS(nbin,nbin,nbin), C(nbin,nbin,nbin), ms(nbin,nbin), ep(nbin,nbin), a(nbin), st(nbin), m(nbin))
     ALLOCATE(pf(nbin,nbin), pc(nbin,nbin), identity(nbin,nbin), sigma_col(nbin,nbin), mn(nbin,nbin), mm(nbin,nbin))
 
     allocate(m_cgs(nbin))
