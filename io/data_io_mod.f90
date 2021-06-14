@@ -626,6 +626,7 @@ SUBROUTINE output_nml_v1 (patch, append, unit, snapshot)
   periodic     = patch%periodic
   mpi_dims     = mpi_coords%dims
   if (mpi%master .and. patch%iout > last_snapshot) then
+    print *, patch%id, patch%iout, patch%time, patch%out_next, 'snapshot.nml'
     last_snapshot = patch%iout
     mpi_size = mpi%size
     omp_nthreads = omp%nthreads

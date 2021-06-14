@@ -232,7 +232,7 @@ SUBROUTINE end (self, itimer)
   if (present(itimer)) then
     if (itimer /= otimer) then
       write (stdout,'(i6,2(3x,a,i4))') &
-        omp%thread, 'WARNING: itimer =',itimer, & 
+        omp%thread, 'WARNING: itimer =',itimer, &
         ' not equal to expected value =', otimer
     end if
   end if

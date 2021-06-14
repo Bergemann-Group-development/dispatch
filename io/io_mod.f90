@@ -36,10 +36,11 @@ MODULE io_mod
     integer:: mpi_dims(3)=1     ! FIXME
     integer:: print_every=0, iprint=0       ! print cadence
     character(len=120):: inputname          ! input namelist file (e.g. run.nml)
+    character(len=120):: inputdir='data/'   ! input directory (restart_mod)
+    character(len=120):: run_name=''        ! run part of input file
     character(len=120):: data_dir='data/'   ! data
     character(len=120):: run_dir='data/'    ! data/run
     character(len=120):: outputname         ! same as run_dir, for compatibily
-    character(len=120):: inputdir='data/'   ! directory to restart from
     character(len=120):: top                ! base name
     character(len=1):: sep = '/'
     character(len=72):: &
@@ -98,7 +99,7 @@ MODULE io_mod
     procedure, nopass:: header
     procedure, nopass:: line
     procedure, nopass:: print_hl
-    procedure, nopass:: check_trailing_sep
+    procedure, nopass:: ensure_dirname
   end type
   type(io_t), public:: io
   public mch, io_unit, stderr, stdout, stdin, stdlog
@@ -123,7 +124,7 @@ SUBROUTINE init (self, name)
   class(io_t):: self
   integer, save:: verbose=0, levelmax=10
   character(len=*), optional:: name
-  character(len=120):: filename, datadir='data', inputdir='data'
+  character(len=120):: filename, datadir='data'
   character(len=120), save:: top='../../'
   character(len=16), save:: method='legacy'
   integer, save:: id_debug=-1, restart=-9, format=0, time_derivs=0
@@ -136,9 +137,9 @@ SUBROUTINE init (self, name)
   namelist /io_params/ verbose, do_debug, do_trace, do_output, do_flags, &
     do_validate, do_legacy, do_direct, levelmax, omp_trace, id_debug, &
     method, restart, format, guard_zones, time_derivs, log_sent, task_logging, &
-    namelist_errors, nml_version, log_interval, top, datadir, inputdir
+    namelist_errors, nml_version, log_interval, top, datadir
   real:: test
-  integer:: iostat
+  integer:: i, iostat
   character(len=120):: ids = &
   '$Id$'
   !.............................................................................
@@ -159,16 +160,19 @@ SUBROUTINE init (self, name)
     !---------------------------------------------------------------------------
     call getarg(1,filename)                                     ! command line
     if (filename/=' '.and.trim(filename)/='input.nml') then
-      self%inputname = filename                                 ! run_name.nml
-      self%run_dir = trim(self%data_dir)//self%sep// &          ! data/run_name/
-        trim(filename(1:index(filename,'.',back=.true.)-1))//self%sep
+      self%inputname = filename                                 ! run.nml
+      i = index(filename,'.',back=.true.) - 1                   ! last char
+      self%run_name = filename(1:i)                             ! run
     else
       self%inputname = 'input.nml'
-      self%run_dir = trim(io%data_dir)//self%sep                ! data/
+      self%run_name = ''
     end if
+    call ensure_dirname (self%data_dir)
+    self%run_dir = trim(self%data_dir)//trim(self%run_name)
+    call ensure_dirname (self%run_dir)
     !---------------------------------------------------------------------------
     ! `mkdir -p` doesn't work from inside the code, so two `mkdir` are required
-    call os%mkdir (trim(self%data_dir)//self%sep)
+    call os%mkdir (trim(self%data_dir))
     call os%mkdir (trim(self%run_dir))
     call os%copy_file (trim(self%run_dir)//'params.nml', &
                        trim(self%run_dir)//'restart.nml')
@@ -185,7 +189,6 @@ SUBROUTINE init (self, name)
       ' This version was compiled with default real KIND =', kind(test)
     call io%header ('io_t%init:')
     !---------------------------------------------------------------------------
-    inputdir = self%run_dir
     rewind (io%input)
     read (io%input, io_params, iostat=iostat)
     if (iostat > 0) then
@@ -216,12 +219,9 @@ SUBROUTINE init (self, name)
     self%log_interval = log_interval
     self%format = format
     self%nml_version = nml_version
-    self%inputdir = inputdir
     self%outputname = self%run_dir                               ! compatibility
     write (filename,'(a,i5.5,"/")') trim(self%run_dir), 0
     if (io%do_output) call os%mkdir (trim(filename))
-    call ensure_dirname (self%inputdir)
-    call ensure_dirname (self%run_dir)
     !---------------------------------------------------------------------------
     ! OMP specific setup; need to set io_unit in all threadprivate instances
     !---------------------------------------------------------------------------
@@ -235,7 +235,6 @@ SUBROUTINE init (self, name)
     io_unit%do_trace = do_trace
     io_unit%omp_trace = omp_trace
     io_unit%run_dir = self%run_dir
-    io_unit%inputdir = self%inputdir
     io_unit%do_validate = do_validate
     !---------------------------------------------------------------------------
     ! Log-file names:
@@ -318,19 +317,21 @@ SUBROUTINE init (self, name)
   call io%counter%init (mpi%size)
   call omp_lock%init ('io')
   call timer%init
-contains
-  !-----------------------------------------------------------------------------
-  subroutine ensure_dirname (s)
-    character(len=*):: s
-    integer:: l
-    l = len(trim(s))
-    if (s(l:l) == '/') then
-      if (s(l-1:l-1) == '/') s(l:l) = ' '
-    else
-      if (s(l:l) /= '/') s(l+1:l+1)='/'
-    end if
-  end subroutine
 END SUBROUTINE init
+
+!===============================================================================
+!> Make sure directory name ends with exactly one slash
+!===============================================================================
+SUBROUTINE ensure_dirname (s)
+  character(len=*):: s
+  integer:: l
+  l = len(trim(s))
+  if (s(l:l) == '/') then
+    if (s(l-1:l-1) == '/') s(l:l) = ' '
+  else
+    if (s(l:l) /= '/') s(l+1:l+1)='/'
+  end if
+END SUBROUTINE
 
 SUBROUTINE open_rank_file (self, unit, ext, form, thread)
   class(io_t):: self
@@ -677,18 +678,5 @@ SUBROUTINE print_hl
     write (io_unit%output,'(a)') trim(hl)
   end if
 END SUBROUTINE print_hl
-
-SUBROUTINE check_trailing_sep (dir)
-  character(*):: dir
-  integer:: i
-  i = index(dir,' ')
-  if (dir(i-1:i-1) == '/') then
-    if (dir(i-2:i-2) == '/') then
-      dir(i-1:i-1) = ' '
-    end if
-  else
-     dir(i:i) = '/'
-  end if
-END SUBROUTINE check_trailing_sep
 
 END MODULE io_mod

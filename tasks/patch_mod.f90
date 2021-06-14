@@ -442,7 +442,6 @@ SUBROUTINE pre_init (self)
                         print_every, max_files
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%pre_init')
-  call self%task_t%pre_init ()
   call omp%set_stacksize (self%nv)
   !-----------------------------------------------------------------------------
   ! Read and set patch parameters; the preferred defalts may have been set by
@@ -485,6 +484,7 @@ SUBROUTINE pre_init (self)
   io%end_time      = end_time
   io%out_time      = out_time
   io%print_time    = print_time
+  call self%task_t%pre_init ()
   call io%lock%unset ('patch_t%pre_init')
   !-----------------------------------------------------------------------------
   ! Multi-threading below -- only self% references allowed
