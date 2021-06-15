@@ -115,6 +115,13 @@ SUBROUTINE init (self, ln_bin, lm_cgs, rho_s)
     call io%namelist_warning ('dust_evolve_params', iostat)
     write (io%namelist, dust_evolve_params)    ! write to data/run/params.nml
 
+    first_time = .false.
+    if (.not.on) then
+      call io%lock%unset ('dust_evolve_t%init')
+      call trace%end ()
+      return
+    end if
+
     call cgs%init
     nbin = ln_bin
     self%nbin = nbin
@@ -125,7 +132,6 @@ SUBROUTINE init (self, ln_bin, lm_cgs, rho_s)
     m_cgs = lm_cgs
     !call self%test                             ! run a self%test once
 
-    first_time = .false.
     m = m_cgs
     a = (3.0/4.0 * m/(rho_s * math%pi) )**(1.0/3.0)       ! Initial setup of bin distribution
     st = rho_s * a * math%pi/(2*sigma_d*100)
@@ -140,7 +146,6 @@ SUBROUTINE init (self, ln_bin, lm_cgs, rho_s)
     mm = 0
     pf = 0
     pc = 0
-
 
     do i=1,nbin
       do j=1,nbin                                       ! Setup of matrices
@@ -346,9 +351,9 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out, ds)
         else
           !u_f  = sqrt(2*A_br) * (gamma_sil**(5.0/6.0) * a_mu**(2.0/3.0)) / (m_mu**(1.0/2.0) * Eps_star**(1.0/3.0))             ! Monomer
           u_f  = sqrt(60 * math%pi**2 * zeta_crit * gamma_sil * a_mu /m_mu )                                                    ! aggregates 5E_roll
-          
+
         end if
-      end if  
+      end if
 
 
       ! Decide by the fragmentation velocity is the probability of fragmentation p_f
@@ -642,7 +647,7 @@ subroutine implicit_step (nbin, identity, kk,ll,C,SS,n,px,py,pz, dt, dn, &
   CALL DGESV( js_n, js_nrhs, IJpy, js_lda, js_ipivy, Sppy, js_ldb, js_info )
   CALL DGESV( js_n, js_nrhs, IJpz, js_lda, js_ipivz, Sppz, js_ldb, js_info )
 
-  ! Update the parameters 
+  ! Update the parameters
   dn = S
   dpx = Sppx
   dpy = Sppy
