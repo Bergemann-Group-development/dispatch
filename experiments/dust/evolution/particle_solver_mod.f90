@@ -940,7 +940,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Do dust evolution after move, since we need the particle timestep values
   !-----------------------------------------------------------------------------
-  if (self%dust_evolve%on) then
+  if (self%dust_evolve%on .and. self%time > self%dust_evolve%start_time) then
     call evolve_dust (self)
   end if
   !-----------------------------------------------------------------------------
