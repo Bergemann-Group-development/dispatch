@@ -692,11 +692,14 @@ SUBROUTINE update (self)
     do i4=1,n_bin
       !-------------------------------------------------------------------------
       ! If a cell has zero density, don't move the (zero weight) particles
-      !if (self%dd(i1,i2,i3,i4) == 0.0 .and. self%dust_evolve%on) then
-      !  cycle
-      !end if
       !-------------------------------------------------------------------------
       particles => self%particles(i1,i2,i3,i4)
+      self%dd(i1,i2,i3,i4) = particles%density()
+      if (verbose > 1) &
+        print *,i1,i2,i3,i4,self%dd(i1,i2,i3,i4)
+      if (self%dd(i1,i2,i3,i4) == 0.0) then
+        cycle
+      end if
       nu = nu + particles%n
       os = drag_coeff/self%s_cgs(i4)
       n_update = n_update + particles%n
@@ -994,6 +997,14 @@ SUBROUTINE evolve_dust (self)
       print*,'warning(0), negative density', dd1
     end if
     vrms1 = vrms(i1,i2,i3,:)
+    if (verbose > 0) then
+      print *, i1,i2,i3,self%dtime
+      print *, dd1
+      print *, vd1(:,1)
+      print *, vd1(:,2)
+      print *, vd1(:,3)
+      print *, vrms1
+    end if
     call self%dust_evolve%update ( &
       self%dtime, &
         vrms1(:)*self%patch%ds(1), &
