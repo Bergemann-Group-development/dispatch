@@ -15,4 +15,4 @@ dust_mod.o              : gpatch_mod.o particles_mod.o random_mod.o \
                           scaling_mod.o scratch_mod.o
 dust_evolve_mod.o       : trace_mod.o io_mod.o math_mod.o scaling_mod.o \
                           units_mod.o particles_mod.o
-
+p_arrays_mod.o          : trace_mod.o
