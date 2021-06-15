@@ -47,7 +47,7 @@ MODULE dispatcher0_mod
   logical, save:: debug=.false.
   logical, save:: do_delay=.true.
   logical, save:: track_active=.false.
-  logical, save:: omp_pick=.false.
+  logical, save:: omp_pick=.true.
   logical, save:: detailed_timer=.false.
   type(dispatcher0_t), save:: virtual_list
   !$omp threadprivate (virtual_list)
@@ -69,7 +69,7 @@ SUBROUTINE init (self, name)
   !-----------------------------------------------------------------------------
   namelist /dispatcher0_params/ verbose, max_stalled, retry_stalled, do_delay, &
     delay_ms, mpi_only_master, debug, detailed_timer, nstall1, nstall2, &
-    extra_grace
+    extra_grace, omp_pick
   character(len=120):: ids = &
   '$Id$'
   !-----------------------------------------------------------------------------
@@ -252,15 +252,11 @@ SUBROUTINE update (self, task_list, test)
         task => head%task
         if (task%mem_thread==-1) exit
         if (omp%thread == task%mem_thread) then
-          !$omp atomic update
-          timer%mem_hit = timer%mem_hit+1
           exit
         end if
         prev => head
         head => head%next_time
       end do
-      !$omp atomic update
-      timer%mem_test = timer%mem_test+1
       !-------------------------------------------------------------------------
       ! If not found, fall back on first task in queue
       !-------------------------------------------------------------------------
@@ -272,6 +268,12 @@ SUBROUTINE update (self, task_list, test)
     else
       task => head%task
     end if
+    if (omp%thread == task%mem_thread) then
+      !$omp atomic update
+      timer%mem_hit = timer%mem_hit+1
+    end if
+    !$omp atomic update
+    timer%mem_test = timer%mem_test+1
     call task%log ('dispatcher')
     !...........................................................................
     task%atime = task%time

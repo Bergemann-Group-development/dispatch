@@ -37,7 +37,7 @@ MODULE timer_mod
     integer(8):: n_update=0
     integer(8):: n_recv=0_8
     integer(8):: mpi_test=0_8, mpi_hit=0_8
-    integer(8):: mem_test=0_8, mem_hit=0_8
+    integer(8):: mem_test=1_8, mem_hit=0_8
     real(8):: busy_time=0d0, spin_time=0d0
     integer:: nq_send_max=0
     integer:: nq_recv_max=0
@@ -411,6 +411,10 @@ contains
       timer%mem_hit/real(max(1,timer%mem_test)), &
       timer%busy_time/max(timer%spin_time + timer%busy_time,1d-30), &
       timer%n_cheap/real(timer%n_cheap+timer%n_expensive+1)
+    !$omp atomic write
+    timer%mem_hit = 0
+    !$omp atomic write
+    timer%mem_test = 1
     if (timer%n_particles > 0d0) then
       write (unit,'(" particles:",9p,f10.1," core-ns/p-upd")') &
         timer%t_particles/timer%n_particles
