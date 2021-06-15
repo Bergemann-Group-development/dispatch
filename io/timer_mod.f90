@@ -412,7 +412,7 @@ contains
       timer%busy_time/max(timer%spin_time + timer%busy_time,1d-30), &
       timer%n_cheap/real(timer%n_cheap+timer%n_expensive+1)
     if (timer%n_particles > 0d0) then
-      write (unit,'(" particles:",9p,f6.1," core-ns/p-upd")') &
+      write (unit,'(" particles:",9p,f10.1," core-ns/p-upd")') &
         timer%t_particles/timer%n_particles
     end if
     flush (unit)
