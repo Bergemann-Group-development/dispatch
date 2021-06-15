@@ -25,6 +25,7 @@ MODULE dust_evolve_mod
   integer, parameter :: precision_e = selected_real_kind(15, 100)
   integer:: verbose=0
   integer:: n_sub = 10
+  integer:: nbin = 1
   logical:: on=.false.
   logical:: do_implicit=.true.
   logical:: do_brownian=.false.
@@ -83,7 +84,7 @@ SUBROUTINE init (self, ln_bin, lm_cgs, rho_s)
   real:: micron, mps
 
   integer:: i, j, k, l, kn, minij, maxij, itime, js_n, js_nrhs, js_lda, &
-    js_ldb, js_info, nbin
+    js_ldb, js_info
   integer, ALLOCATABLE, DIMENSION(:):: js_ipiv, js_ipivx, js_ipivy, js_ipivz
   real(precision_e):: ratio_r, min_a, max_a, m_crat, eps, Stot
   real(precision_e):: m_big, m_small
@@ -124,7 +125,6 @@ SUBROUTINE init (self, ln_bin, lm_cgs, rho_s)
 
     call cgs%init
     nbin = ln_bin
-    self%nbin = nbin
     ALLOCATE(SS(nbin,nbin,nbin), C(nbin,nbin,nbin), ms(nbin,nbin), ep(nbin,nbin), a(nbin), st(nbin), m(nbin))
     ALLOCATE(pf(nbin,nbin), pc(nbin,nbin), identity(nbin,nbin), sigma_col(nbin,nbin), mn(nbin,nbin), mm(nbin,nbin))
 
@@ -210,6 +210,8 @@ SUBROUTINE init (self, ln_bin, lm_cgs, rho_s)
 
   end if
   call io%lock%unset ('dust_evolve_t%init')
+
+  self%nbin = nbin
   self%start_time = start_time
   self%on = on                                 ! task private copy
 
@@ -249,6 +251,8 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out, ds)
   start = wallclock()
 
   nbin = self%nbin
+  if (verbose > 0) &
+    print *, 'nbin', nbin
   ALLOCATE(n(nbin), dn(nbin), S(nbin), m(nbin), n_old(nbin), frac_dn(nbin))
   ALLOCATE(vd(nbin,3), vrms(nbin))
   ALLOCATE(utm_ini(nbin))
