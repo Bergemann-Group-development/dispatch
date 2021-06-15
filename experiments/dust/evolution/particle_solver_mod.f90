@@ -692,9 +692,9 @@ SUBROUTINE update (self)
     do i4=1,n_bin
       !-------------------------------------------------------------------------
       ! If a cell has zero density, don't move the (zero weight) particles
-      if (self%dd(i1,i2,i3,i4) == 0.0 .and. self%dust_evolve%on) then
-        cycle
-      end if
+      !if (self%dd(i1,i2,i3,i4) == 0.0 .and. self%dust_evolve%on) then
+      !  cycle
+      !end if
       !-------------------------------------------------------------------------
       particles => self%particles(i1,i2,i3,i4)
       nu = nu + particles%n
