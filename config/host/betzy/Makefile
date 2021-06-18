@@ -1,11 +1,11 @@
-COMPILER = ifort
+COMPILER=intel
 
 define HOSTINFO
 
-  Best to use this modules: (last update 30.04.2021)
+  Best to use intel (hiden) modules: (last update 10.05.2021)
 
     module restore
-    module load iompi/2020a
+    module --ignore-cache load intel/2020b
 
   SLURM script example: `betzy.run`
 
@@ -16,16 +16,10 @@ define HOSTINFO
     #SBATCH --account=nn2834k
     #SBATCH --comment="Dispatch/Bifrost Stellar Atmosphere"
 
-    ## for pure mpi, one task per core:
-    ## set nodes only. In example: -np 16384 = 128x128
+    ## for best performance there is a fixed number of 8 MPI process
+    ## per node, thus set nodes only. In example 4*8=32 == -np 32
 
     #SBATCH --nodes=4
-
-    ## Set one mpi process per socket/cpu
-    #SBATCH --ntasks-per-node=2
-
-	 ## Set 64 threads per MPI rank     
-    #SBATCH --cores-per-socket=64
 
     #SBATCH --output="%x_%u_%j.out"
     #SBATCH --error="%x_%u_%j.err"
@@ -41,7 +35,7 @@ define HOSTINFO
     ##SBATCH --qos=normal  # max time one week
 
     module -q restore
-    module load iompi/2020a
+    module --ignore-cache load intel/2020b
 
     ## Recommended safety settings:
     set -o errexit # Make bash exit on any error
@@ -52,13 +46,18 @@ define HOSTINFO
     now=`date '+%Y-%m-%d_%H:%M:%S'`
     log_file="$$(basename $$(pwd))_$$now.log"
 
-    # Optional setup to increase stack 
+    ## Optional setup to increase stack
     ulimit -s unlimited
-	 export OMP_STACKSIZE=512M
+	  export OMP_STACKSIZE=256M
+
+    ## MPI & OMP processes pinning
+    export I_MPI_PIN_DOMAIN=numa
+    export OMP_PLACES=cores
+    export OMP_PROC_BIND=spread
+
+    mpirun -genv OMP_NUM_THREADS=8 -ppn 8 ./dispatch.x test.nml | tee $$log_file
 
     cat $$0 | tee $$log_file
-    time srun --mpi=pmix ./dispatch.x test.nml | tee -a $$log_file
-
     exit 0
 
   Submit with:

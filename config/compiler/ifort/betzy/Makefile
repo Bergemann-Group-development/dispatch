@@ -1,11 +1,22 @@
-OPT     = -O3
-HW      = -xavx2 -qopt-prefetch -align array64byte -qopt-assume-safe-padding -fma -fp-model source -qopenmp
-DEBUG   = -traceback
-LDFLAGS = -qopenmp
+HW      = -align array64byte -qopt-assume-safe-padding -fp-model source
+PAR     = -qopenmp
+LDFLAGS = 
 
-# Depending on MPI use mpif90 or not
-ifeq ($(strip $(MPI)),mpi)
-  FC  = mpif90
+ifeq ($(strip $(COMPILER)),intel)
+	# Use intel MPI :: mpiifort
+	ifeq ($(strip $(MPI)),mpi)
+  	FC  = mpiifort 
+	else
+  	FC  = ifort
+	endif
 else
-  FC  = ifort
+	# Use mpif90 if MPI is set 
+	ifeq ($(strip $(MPI)),mpi)
+  	FC  = mpif90
+	else
+  	FC  = ifort
+	endif
 endif
+
+F90 = $(FC) -cpp -module $(BUILD)
+LD = $(FC) -module $(BUILD) $(PAR)
