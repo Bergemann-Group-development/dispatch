@@ -9,15 +9,15 @@ PROGRAM dispatch
   USE dispatcher_mod
   USE cartesian_mod
   USE task_list_mod
-  type (cartesian_t):: cartesian                ! Use Cartesian patch arrangement
-  type (task_list_t), pointer:: task_list => null()
+  type(cartesian_t):: cartesian                 ! Use Cartesian patch arrangement
+  class(task_list_t), pointer:: task_list => null()
   !.............................................................................
   call setup%init                               ! Generic setup (MPI, I/O, ...)
   call dispatcher%init                          ! Initialize the dispatcher
   call read_external%init (task_list)           ! Possibly initialize task_list
   call restart%init (task_list)                 ! Possibly initialize task_list
-  call cartesian%init (task_list)               ! .. or else here ...
-  call dispatcher%execute (task_list)           ! Run dispatcher on the task_list
+  !call cartesian%init (task_list)               ! .. or else here ...
+  !call dispatcher%execute (task_list)           ! Run dispatcher on the task_list
   call setup%end                                ! End setup
 !===============================================================================
 END PROGRAM dispatch

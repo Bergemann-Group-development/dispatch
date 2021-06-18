@@ -359,7 +359,7 @@ SUBROUTINE input (patch, ok)
   !-----------------------------------------------------------------------------
   if (io%method == 'snapshot') then
     write (filename,'(a,"/",i5.5,"/snapshot.dat")') &
-      trim(io%outputname), io%restart
+      trim(io%inputdir), io%restart
   else
     filename=trim(io%inputdir)//'snapshots.dat'
   end if

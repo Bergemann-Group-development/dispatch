@@ -120,7 +120,7 @@ SUBROUTINE input (self, ok)
   call trace%begin('background_io_t%input')
   !-----------------------------------------------------------------------------
   write (filename,'(a,i5.5,"/snapshot_",i5.5,".dat")') &
-    trim(io%run_dir), io%restart, self%rank
+    trim(io%inputdir), io%restart, self%rank
   l = merge (self%mesh%lb, self%mesh%li, io%guard_zones)
   u = merge (self%mesh%ub, self%mesh%ui, io%guard_zones)
   buffer => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),:,self%it,1)

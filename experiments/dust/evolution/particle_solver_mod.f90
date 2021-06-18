@@ -126,6 +126,7 @@ MODULE particle_solver_mod
   real:: v_rms = 1.0                          ! Gaussian random
   real:: v_stream = 10                        ! Two-stream speed
   real(8):: out_time = -1.0                   ! output cadence
+  real(8):: start_time = 0.0                  ! output start
   logical:: particle_io = .false.             ! output particle positions?
   logical:: backreaction = .false.            ! backreaction on gas
   logical:: detailed_timer = .false.          ! precision timing
@@ -149,7 +150,7 @@ SUBROUTINE pre_init (self)
   integer                           :: bin, iostat
   real                              :: solid_density, dln_m
   namelist /particle_solver_params/ &
-    on, verbose, detailed_timer, particle_io, out_time, &
+    on, verbose, detailed_timer, particle_io, out_time, start_time, &
     n_bin, particles_per_bin, seed, ip_dbg, id_dbg, i_dbg, &
     min_fraction, max_fraction, max_size_cgs, min_size_cgs, &
     density_yr_cgs, solid_density_cgs, dust_to_gas, output_every, &
@@ -176,7 +177,6 @@ SUBROUTINE pre_init (self)
   !-----------------------------------------------------------------------------
   self%n_bin = n_bin
   self%dust_to_gas = dust_to_gas
-  self%out_next = 0d0
   !self%dust%detailed_timer = detailed_timer
   !self%dust%ip_dbg = ip_dbg
   !self%dust%i_dbg = i_dbg
@@ -223,6 +223,10 @@ SUBROUTINE init (self)
   if (.not.on) return
   call trace%print_id (id)
   call trace%begin ('particle_solver_t%init')
+  self%time = self%patch%time
+  self%out_next = (int(self%time/out_time + 1.01))*out_time
+  self%out_next = max(self%out_next,start_time)
+!print *, self%patch%id, self%time, self%out_next
   m(1:3) = self%patch%mesh%gn
   allocate (self%particles(m(1),m(2),m(3),n_bin))
   call io%bits_mem (storage_size(self%particles), &
@@ -381,6 +385,7 @@ SUBROUTINE initial_condition (self)
      'particle_solver_t%init: id, pos, box, lower, upper, n =', &
       patch%id, patch%position, patch%box, self%lower, self%upper, real(self%np)
   end if
+!print *, self%patch%id, self%np
   call trace%end (itimer)
 END SUBROUTINE initial_condition
 
@@ -638,7 +643,7 @@ SUBROUTINE update (self)
     !---------------------------------------------------------------------------
   end do
   !-----------------------------------------------------------------------------
-  ! Do output, if arrived at self%out_time
+  ! Do output, if arrived at self%out_next
   !-----------------------------------------------------------------------------
   self%time = patch%time
   call self%output
@@ -687,10 +692,14 @@ SUBROUTINE update (self)
     do i4=1,n_bin
       !-------------------------------------------------------------------------
       ! If a cell has zero density, don't move the (zero weight) particles
-      if (self%dd(i1,i2,i3,i4) == 0.0) &
-        cycle
       !-------------------------------------------------------------------------
       particles => self%particles(i1,i2,i3,i4)
+      self%dd(i1,i2,i3,i4) = particles%density()
+      if (verbose > 1) &
+        print *,i1,i2,i3,i4,self%dd(i1,i2,i3,i4)
+      if (self%dd(i1,i2,i3,i4) == 0.0) then
+        cycle
+      end if
       nu = nu + particles%n
       os = drag_coeff/self%s_cgs(i4)
       n_update = n_update + particles%n
@@ -934,7 +943,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Do dust evolution after move, since we need the particle timestep values
   !-----------------------------------------------------------------------------
-  if (self%dust_evolve%on) then
+  if (self%dust_evolve%on .and. self%time > self%dust_evolve%start_time) then
     call evolve_dust (self)
   end if
   !-----------------------------------------------------------------------------
@@ -988,6 +997,14 @@ SUBROUTINE evolve_dust (self)
       print*,'warning(0), negative density', dd1
     end if
     vrms1 = vrms(i1,i2,i3,:)
+    if (verbose > 0) then
+      print *, i1,i2,i3,self%dtime
+      print *, dd1
+      print *, vd1(:,1)
+      print *, vd1(:,2)
+      print *, vd1(:,3)
+      print *, vrms1
+    end if
     call self%dust_evolve%update ( &
       self%dtime, &
         vrms1(:)*self%patch%ds(1), &
@@ -1425,8 +1442,8 @@ SUBROUTINE output (self)
   ! High-cadence output of v_particle_t particles
   !-----------------------------------------------------------------------------
   if (out_time > 0d0 .and. self%time >= self%out_next &
-                     .and. self%time >= io%start_time) then
-    self%out_next = max(self%out_next,io%start_time)
+                     .and. self%time >= start_time) then
+    self%out_next = max(self%out_next,start_time)
     n_out = 0
     do while (self%time >= self%out_next)
       if (n_print > 0) then
@@ -1518,6 +1535,7 @@ SUBROUTINE poutput (self)
   !-----------------------------------------------------------------------------
   ! Only do I/O if there are particles to write
   !-----------------------------------------------------------------------------
+!print *,self%patch%id, n, ' poutput'
   if (n > 0) then
     m = n
     allocate (q(m,4), r(m,3), v(m,3), vg(m,3), dg(m), dd(m), w(m), t(m), id(m))

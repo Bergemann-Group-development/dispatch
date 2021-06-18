@@ -218,7 +218,7 @@ SUBROUTINE consolidate_metadata (self)
   if (mpi%master) then
     call io%lock%set ('amr_io_t%consolidate_metadata')
     !---------------------------------------------------------------------------
-    call io%check_trailing_sep (io%run_dir)
+    call io%ensure_dirname (io%run_dir)
     write (filename,'(a,i5.5,"/amr.nml")') trim(io%run_dir), self%iout
 print *,filename
     open (newunit=unit_out, file=filename, form='formatted', status='unknown')
@@ -255,7 +255,7 @@ SUBROUTINE open_file (self, dir, snap)
   character(120):: dir, filename
   integer:: snap
   !-----------------------------------------------------------------------------
-  call io%check_trailing_sep (dir)
+  call io%ensure_dirname (dir)
   write (filename,'(a,i5.5,"/amr.dat")') trim(dir), snap
 print *, filename  ! DEBUG
   call self%file%open (filename)

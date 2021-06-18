@@ -25,6 +25,7 @@ MODULE dust_evolve_mod
   integer, parameter :: precision_e = selected_real_kind(15, 100)
   integer:: verbose=0
   integer:: n_sub = 10
+  integer:: nbin = 1
   logical:: on=.false.
   logical:: do_implicit=.true.
   logical:: do_brownian=.false.
@@ -41,6 +42,7 @@ MODULE dust_evolve_mod
   real(KIND=precision_e):: tt_dust = 10                     ! Dust temperature
   real(KIND=precision_e):: A_br = 2.8e3                     ! Experimental parameter for breaking energy of particles
   real(KIND=precision_e):: Eps_star = 3.7e10                ! reduced elasticity modulus in dyn cm^-2
+  real(KIND=precision_e):: zeta_crit = 2e-7                 ! Critical roll in cm
   real(KIND=precision_e):: gamma_sil = 25                   ! surface energy density of silicates, in erg/(cm^-2)
   real(KIND=precision_e):: alpha = 1e-3                     ! Turbulence parameter, used when do_in_cell_turbulence is true for calculation of turbulent velocities
   real(KIND=precision_e):: sigma_d = 0.18                   ! Column density of the dust, used when do_in_cell_turbulence is true for calculation of turbulent velocities
@@ -82,7 +84,7 @@ SUBROUTINE init (self, ln_bin, lm_cgs, rho_s)
   real:: micron, mps
 
   integer:: i, j, k, l, kn, minij, maxij, itime, js_n, js_nrhs, js_lda, &
-    js_ldb, js_info, nbin
+    js_ldb, js_info
   integer, ALLOCATABLE, DIMENSION(:):: js_ipiv, js_ipivx, js_ipivy, js_ipivz
   real(precision_e):: ratio_r, min_a, max_a, m_crat, eps, Stot
   real(precision_e):: m_big, m_small
@@ -114,17 +116,22 @@ SUBROUTINE init (self, ln_bin, lm_cgs, rho_s)
     call io%namelist_warning ('dust_evolve_params', iostat)
     write (io%namelist, dust_evolve_params)    ! write to data/run/params.nml
 
+    first_time = .false.
+    if (.not.on) then
+      call io%lock%unset ('dust_evolve_t%init')
+      call trace%end ()
+      return
+    end if
+
     call cgs%init
     nbin = ln_bin
-    self%nbin = nbin
-    ALLOCATE(SS(nbin,nbin,nbin), C(nbin,nbin,nbin), ms(nbin,nbin), ep(nbin,nbin), a(nbin), st(nbin))
+    ALLOCATE(SS(nbin,nbin,nbin), C(nbin,nbin,nbin), ms(nbin,nbin), ep(nbin,nbin), a(nbin), st(nbin), m(nbin))
     ALLOCATE(pf(nbin,nbin), pc(nbin,nbin), identity(nbin,nbin), sigma_col(nbin,nbin), mn(nbin,nbin), mm(nbin,nbin))
 
     allocate(m_cgs(nbin))
     m_cgs = lm_cgs
     !call self%test                             ! run a self%test once
 
-    first_time = .false.
     m = m_cgs
     a = (3.0/4.0 * m/(rho_s * math%pi) )**(1.0/3.0)       ! Initial setup of bin distribution
     st = rho_s * a * math%pi/(2*sigma_d*100)
@@ -139,7 +146,6 @@ SUBROUTINE init (self, ln_bin, lm_cgs, rho_s)
     mm = 0
     pf = 0
     pc = 0
-
 
     do i=1,nbin
       do j=1,nbin                                       ! Setup of matrices
@@ -204,6 +210,8 @@ SUBROUTINE init (self, ln_bin, lm_cgs, rho_s)
 
   end if
   call io%lock%unset ('dust_evolve_t%init')
+
+  self%nbin = nbin
   self%start_time = start_time
   self%on = on                                 ! task private copy
 
@@ -243,6 +251,8 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out, ds)
   start = wallclock()
 
   nbin = self%nbin
+  if (verbose > 0) &
+    print *, 'nbin', nbin
   ALLOCATE(n(nbin), dn(nbin), S(nbin), m(nbin), n_old(nbin), frac_dn(nbin))
   ALLOCATE(vd(nbin,3), vrms(nbin))
   ALLOCATE(utm_ini(nbin))
@@ -343,9 +353,11 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out, ds)
         else if ((a(i) > size_aggregate ) .and. (a(j) > size_aggregate )) then
           u_f = aggregate_frag
         else
-          u_f  = sqrt(2*A_br) * (gamma_sil**(5.0/6.0) * a_mu**(2.0/3.0)) / (m_mu**(1.0/2.0) * Eps_star**(1.0/3.0))
+          !u_f  = sqrt(2*A_br) * (gamma_sil**(5.0/6.0) * a_mu**(2.0/3.0)) / (m_mu**(1.0/2.0) * Eps_star**(1.0/3.0))             ! Monomer
+          u_f  = sqrt(60 * math%pi**2 * zeta_crit * gamma_sil * a_mu /m_mu )                                                    ! aggregates 5E_roll
+
         end if
-      end if  
+      end if
 
 
       ! Decide by the fragmentation velocity is the probability of fragmentation p_f
@@ -639,7 +651,7 @@ subroutine implicit_step (nbin, identity, kk,ll,C,SS,n,px,py,pz, dt, dn, &
   CALL DGESV( js_n, js_nrhs, IJpy, js_lda, js_ipivy, Sppy, js_ldb, js_info )
   CALL DGESV( js_n, js_nrhs, IJpz, js_lda, js_ipivz, Sppz, js_ldb, js_info )
 
-  ! Update the parameters 
+  ! Update the parameters
   dn = S
   dpx = Sppx
   dpy = Sppy

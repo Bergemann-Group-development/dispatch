@@ -23,7 +23,8 @@ MODULE restart_mod
     procedure:: init
     procedure:: read
   end type
-  character(120) :: from_dir    = 'data/'
+  character(120) :: data        = 'data/'
+  character(120) :: run         = ''
   character(16)  :: method      = 'amr'
   integer        :: snapshot    = -1
   integer        :: verbose     = 0
@@ -39,13 +40,14 @@ SUBROUTINE init (self, task_list)
   class(task_list_t),  pointer :: task_list
   integer                      :: iostat
   character(120)               :: filename
-  namelist /restart_params/ from_dir, snapshot, method, verbose
+  namelist /restart_params/ snapshot, run, data, method, verbose
   !.............................................................................
   call trace%begin ('restart_t%init')
   !-----------------------------------------------------------------------------
   ! Namelist
   !-----------------------------------------------------------------------------
-  from_dir = io%run_dir
+  run = io%run_name
+  data = io%data_dir
   rewind (io%input)
   read (io%input, restart_params, iostat=iostat)
   if (iostat > 0) then
@@ -53,12 +55,14 @@ SUBROUTINE init (self, task_list)
     read (io%input, restart_params)
   end if
   call io%namelist_warning ('restart_params', iostat)
+  call io%ensure_dirname (data)
   write (io%namelist, restart_params)
   !-----------------------------------------------------------------------------
   ! Only allocate a task list if actuall restarting (snapshot non-negative)
   !-----------------------------------------------------------------------------
   io%restart = snapshot
-  io%inputdir = from_dir
+  io%inputdir = trim(data)//trim(run)
+  call io%ensure_dirname (io%inputdir)
   if (snapshot >= 0) then
     !-----------------------------------------------------------------------------
     ! Select method
@@ -110,6 +114,7 @@ SUBROUTINE read (self, task_list)
     call experiment%pre_init ()
     patch => experiment
     call data_io%input_nml (patch, unit)
+    io%start_time = max(io%start_time, task%time)
     if (data_io%eof (unit)) then
       call experiment%dealloc
       exit
