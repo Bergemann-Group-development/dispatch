@@ -1,0 +1,6 @@
+# Good compromise btw compile speed and executions speed
+OPT = -O0
+
+# NOTE: Do NOT add bounds check here; that should be used only in full_debug (slows execution down a lot!)
+#DEBUG = -g -traceback -ftrapuv -fp-model strict -check pointers,uninit -DCHECK_NAN
+DEBUG = -g -traceback
