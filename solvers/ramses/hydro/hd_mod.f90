@@ -685,7 +685,6 @@ SUBROUTINE ctoprim (self)
   q    => self%q
   c    => self%u_phase
   unew => self%unew
-  pg => q(:,:,:,5)
   if (detailed_timer) then
     call trace%begin ('hd_t%ctoprim', itimer=itimer)
   else
@@ -700,16 +699,17 @@ SUBROUTINE ctoprim (self)
     q(i1,i2,i3,2) = unew(i1,i2,i3,self%idx%px)*s
     q(i1,i2,i3,3) = unew(i1,i2,i3,self%idx%py)*s
     q(i1,i2,i3,4) = unew(i1,i2,i3,self%idx%pz)*s
-    s = s*(q(i1,i2,i3,2)**2+q(i1,i2,i3,3)**2+q(i1,i2,i3,4)**2)
-    pg(i1,i2,i3) = unew(i1,i2,i3,self%idx%e) - half*s
+    q(i1,i2,i3,5) = unew(i1,i2,i3,self%idx%e) - &
+      half*q(i1,i2,i3,1)*(q(i1,i2,i3,2)**2+q(i1,i2,i3,3)**2+q(i1,i2,i3,4)**2)
   end do
   end do
   end do
   !-----------------------------------------------------------------------------
   ! Equation-of-state: s is the internal energy, and pg is the gas pressure
   !-----------------------------------------------------------------------------
-  d => q(:,:,:,1)
-  e => pg
+  d  => q(:,:,:,1)
+  e  => q(:,:,:,5)
+  pg => q(:,:,:,5)
   if (isothermal) then
     pg = d*self%csound**2
   else
