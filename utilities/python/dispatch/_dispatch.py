@@ -687,7 +687,7 @@ object takes both numeric and text key values: Examples:\n\
 def read_nml(file,verbose=0):
     """ Read a cached namelist file if it exists, else create it """
     srfile=file.replace('.nml','.sr')
-    if os.path.exists(srfile) and os.path.getctime(srfile) > os.path.getctime(file):
+    if os.path.exists(srfile) and os.path.getmtime(srfile) > os.path.getmtime(file):
         if verbose>0:
             print('reading file',srfile)
         nml_list=sr.restore(srfile)

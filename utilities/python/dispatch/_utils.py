@@ -21,7 +21,7 @@ def read_patch_metadata(io=0,run='',data='../data',n_rank=0,verbose=0):
 
     file0='{}/{}/{:05d}/patches.sr'.format(data,run,io)
     file1='{}/{}/{:05d}/rank_00000_patches.nml'.format(data,run,io)
-    if os.path.exists(file0) and os.path.getctime(file0) > os.path.getctime(file1):
+    if os.path.exists(file0) and os.path.getmtime(file0) > os.path.getmtime(file1):
         patches=sr.restore(file0)
         if verbose>0:
             print(file0,len(patches.keys()),'patches')
