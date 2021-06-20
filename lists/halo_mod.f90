@@ -205,10 +205,8 @@ SUBROUTINE update (self, all, only)
       patch => task
       end select
       call patch%stats ('halo1')
-      call self%task%dump (1, ad_hoc=.true., it=self%task%it)
       call self%link_t%update ()
       call patch%stats ('halo2')
-      call self%task%dump (2, ad_hoc=.true., it=self%task%it)
     end if
   else
     call self%task%bndries
