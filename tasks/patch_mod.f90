@@ -186,7 +186,9 @@ MODULE patch_mod
     procedure:: update_position
     procedure:: get_overlap
     procedure:: init_level
-    procedure:: dump
+    procedure:: dumpm
+    procedure:: dumpa
+    generic, public:: dump => dumpm, dumpa
     procedure:: cost_f
     procedure:: subtask_hash_key
     procedure:: overlap
@@ -1992,7 +1994,8 @@ SUBROUTINE check_nan (self, panic, label, always)
   do iz=1,self%gn(3)
   do iy=1,self%gn(2)
   do ix=1,self%gn(1)
-    if (isinf(self%mem(ix,iy,iz,iv,self%it,1))) then
+    if (isinf(self%mem(ix,iy,iz,iv,self%it,1)) .or. &
+        isnan(self%mem(ix,iy,iz,iv,self%it,1))) then
       if (io%verbose>0) then
         if (present(label)) then
           write(io%output,1) trim(label)//' ERROR: NaN id,ix,iy,iz,iv:', &
@@ -2987,9 +2990,9 @@ SUBROUTINE init_level (self)
 END SUBROUTINE init_level
 
 !===============================================================================
-!> Dump the patch values into data/run/rank_rrrrr,dump
+!> Dump the patch values into data/run/rank_rrrrr.dump
 !===============================================================================
-SUBROUTINE dump (self, tag, ad_hoc, it)
+SUBROUTINE dumpm (self, tag, ad_hoc, it)
   class(patch_t):: self
   integer:: tag
   logical, optional:: ad_hoc
@@ -3019,7 +3022,31 @@ SUBROUTINE dump (self, tag, ad_hoc, it)
     end if
     call io%lock%unset ('dump')
   end if
-END SUBROUTINE dump
+END SUBROUTINE dumpm
+
+!===============================================================================
+!> Dump an array into data/run/rank_rrrrr.dump
+!===============================================================================
+SUBROUTINE dumpa (self, tag, a)
+  class(patch_t):: self
+  integer:: tag
+  real:: a(:,:,:)
+  !.............................................................................
+  integer:: nt, nv
+  !-----------------------------------------------------------------------------
+  call io%lock%set ('dump')
+  nt = 1
+  nv = 1
+  if (self%verbose > 0) then
+    write (io_unit%log,*) 'patch_t%dumpa: id, time =', self%id, self%time
+  end if
+  write (io_unit%dump) tag, self%id, self%level, nv, nt, nt, &
+                       self%nw, self%istep, self%it, self%gn, self%n
+  write (io_unit%dump) self%time, self%dtime, self%position, self%size, &
+                       self%t(self%it), self%dt(self%it), self%iit(self%it)
+  write (io_unit%dump) a
+  call io%lock%unset ('dump')
+END SUBROUTINE dumpa
 
 !===============================================================================
 !> Return a measure of the update cost
