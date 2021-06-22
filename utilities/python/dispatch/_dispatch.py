@@ -423,23 +423,23 @@ def _var(patch,filed,snap,verbose=0,copy=None):
             elif iv=='eth':
                 if is_hlls:
                     g1=(snap.gamma-1.0)
-                    v = var('d',all=True,verbose=verbose)**snap.gamma \
-                    * np.exp(var('s',all=True,verbose=verbose)/var('d',all=True,verbose=verbose)*g1) \
-                    / g1
+                    d = var('d',all=True,verbose=verbose)
+                    s = var('s',all=True,verbose=verbose)
+                    v = d**snap.gamma*np.exp(s/d*g1)/g1
                 elif patch.gamma==1.0:
-                    v=mem('e')
+                    v = mem('e')
                 elif tot_e:
-                    v=var('e',all=True,verbose=verbose) \
-                     -var('ekin',all=True,verbose=verbose) \
-                     -var('emag',all=True,verbose=verbose)
+                    v = var('e',all=True,verbose=verbose) \
+                      - var('ekin',all=True,verbose=verbose) \
+                      - var('emag',all=True,verbose=verbose)
                 else:
                     v=mem('e')
                     
             # Total energy
             elif iv=='e_tot':
                 if is_hlls:
-                    
-                    v = var('eth',all=True,verbose=verbose)+var('ekin',all=True,verbose=verbose) \
+                    v = var('eth',all=True,verbose=verbose) \
+                      + var('ekin',all=True,verbose=verbose) \
                       + var('emag',all=True,verbose=verbose)
                 elif patch.gamma==1.0:
                     v=mem('e')
@@ -449,37 +449,34 @@ def _var(patch,filed,snap,verbose=0,copy=None):
                     v=mem('e')+var('ekin',all=True,verbose=verbose) \
                      + var('emag',all=True,verbose=verbose)
 
+            # Gas pressure
+            elif iv=='P' or iv=='pg' or iv=='pgas':
+                v = var('eth',all=True,verbose=verbose)*(snap.gamma-1.0)
+
             # Thermal energy
             elif iv=='Eth':
-                v=var('eth',all=True,verbose=verbose) \
-                 /var('d',all=True,verbose=verbose)
-
-            # Specific entropy
-            elif iv=='S':
-                v=np.log(var('eth',all=True,verbose=verbose) \
-                 / var('d',all=True,verbose=verbose)**snap.gamma) \
-                 / (snap.gamma-1)
+                v = var('eth',all=True,verbose=verbose) \
+                  / var('d',all=True,verbose=verbose)
 
             # Temperature
             elif iv=='tt' or iv=='T':
+                v=var('Eth',all=True,verbose=verbose)*(snap.gamma-1.0)
+                # if hasattr(snap,'scaling'):
+                #     v=v*snap.scaling.temp
+
+            # Specific entropy
+            elif iv=='s':
                 if is_hlls:
-                    g1=snap.gamma-1.0
-                    v = var('d',all=True,verbose=verbose)**snap.gamma \
-                    * np.exp(var('s',all=True,verbose=verbose)/var('d',all=True,verbose=verbose)*g1) \
-                    / var('d',all=True,verbose=verbose)
+                    v = mem('s')
                 else:
-                    v=var('Eth',all=True,verbose=verbose)*(snap.gamma-1.0)
-               # if hasattr(snap,'scaling'):
-               #     v=v*snap.scaling.temp
-                
-            # Gas pressure
-            elif iv=='pgas' or iv=='P':
-                if is_hlls:
-                    g1=snap.gamma-1.0
-                    v = var('d',all=True,verbose=verbose)**snap.gamma \
-                    * np.exp(var('s',all=True,verbose=verbose)/var('d',all=True,verbose=verbose)*g1) 
-                else:
-                    v=var('eth',all=True,verbose=verbose)*(snap.gamma-1.0)
+                    d = var('d',all=True,verbose=verbose)
+                    P = var('P',all=True,verbose=verbose)
+                    v = np.log(P/d**snap.gamma)*d/(snap.gamma-1)
+
+            # Specific entropy
+            elif iv=='S':
+                v = var('s',all=True,verbose=verbose) \
+                  / var('d',all=True,verbose=verbose)
 
         # or a letter index
         elif iv in patch.keys['letters']:
@@ -594,7 +591,7 @@ class _patch():
         self.keys['numbers']=list(snap.idx.dict.values())
         timer.add('numbers')
         self.keys['known']=['d','lnd','logd','ux','uy','uz','u1','u2','u3',
-                 'ee','E','T','eth','Eth','ekin','emag','S', 'e_tot','pgas','P']
+                 'ee','E','T','eth','Eth','ekin','emag','e_tot','s','S','P','pg','pgas']
         timer.add('known')
 
         # attach an aux filename, if one exists for this task
