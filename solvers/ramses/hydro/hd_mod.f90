@@ -213,7 +213,7 @@ SUBROUTINE update (self)
   real, dimension(:,:,:,:), allocatable:: f
   real:: u0, u1
   type(lock_t), pointer:: lock
-  integer:: n(3), i1, i2, i3
+  integer:: n(3), i1, i2, i3, id
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! The call to output below catches the state after both guard zone downloads
@@ -222,6 +222,7 @@ SUBROUTINE update (self)
   ! effect, since out_next has already been updated.
   !-----------------------------------------------------------------------------
   call trace_begin ('hd_t%update', itimer=itimer)
+  id = self%id
   call self%output
   !-----------------------------------------------------------------------------
   ! Memory allocations
@@ -672,7 +673,7 @@ SUBROUTINE ctoprim (self)
   !.............................................................................
   real(dp):: smallp, dtds
   integer,save:: itimer=0
-  integer:: l(3), u(3), n(3), i1, i2, i3
+  integer:: l(3), u(3), n(3), i1, i2, i3, iv
   real:: s
   real, contiguous, dimension(:,:,:)  , pointer:: d, e, pg, c
   real, contiguous, dimension(:,:,:,:), pointer:: unew, q
@@ -704,6 +705,11 @@ SUBROUTINE ctoprim (self)
   end do
   end do
   end do
+  if (self%id==io%id_debug) then
+    do iv=1,size(q,4)
+      call self%dump (iv, q(:,:,:,iv))
+    end do
+  end if
   !-----------------------------------------------------------------------------
   ! Equation-of-state: s is the internal energy, and pg is the gas pressure
   !-----------------------------------------------------------------------------
@@ -1029,6 +1035,13 @@ SUBROUTINE uslope(self)
     write(*,*)'Unknown slope type'
     stop
   endif
+  if (self%id==io%id_debug) then
+    do n=1,size(dq,2)
+      call self%dump (n, dq(:,n,1,:,:))
+      call self%dump (n, dq(:,n,2,:,:))
+      call self%dump (n, dq(:,n,3,:,:))
+    end do
+  end if
   if (detailed_timer) then
     call trace%end (itimer)
   else
@@ -1306,6 +1319,21 @@ SUBROUTINE cmpflxm(self)
       end do
     end do
   end do
+  if (self%id==io%id_debug) then
+    do i=1,size(qm,2)
+      call self%dump (i, qm(:,i,1,:,:))
+      call self%dump (i, qp(:,i,1,:,:))
+      call self%dump (i, qm(:,i,2,:,:))
+      call self%dump (i, qp(:,i,2,:,:))
+      call self%dump (i, qm(:,i,3,:,:))
+      call self%dump (i, qp(:,i,3,:,:))
+    end do
+    do i=1,size(fl,4)
+      call self%dump (i, fl(:,:,:,i,1))
+      call self%dump (i, fl(:,:,:,i,2))
+      call self%dump (i, fl(:,:,:,i,3))
+    end do
+  end if
   if (detailed_timer) then
     call trace%end (itimer)
   else
