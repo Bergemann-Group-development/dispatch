@@ -424,11 +424,23 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out, ds)
   end if
 
   if (ANY(n_old>0)) then
+    block
+    real:: error
+    error = SUM(n*m_cgs)/SUM(n_old*m_cgs) - 1
     if (verbose > 0) then
-      print *,"Mass conservation:", SUM(n*m_cgs)/SUM(n_old*m_cgs) - 1
-    else if (abs(SUM(n*m_cgs)/SUM(n_old*m_cgs) - 1) > 1e-6) then
-      print *,"Mass conservation:", SUM(n*m_cgs)/SUM(n_old*m_cgs) - 1
+      print *,"Mass conservation:", error
+    else if (abs(error) > 1e-3) then
+      print *,"Mass conservation critical:", error
+      print *,dd_in
+      print *,vd_in
+      print *,vrms_in
+      print *,frac_dn
+      print *,max_fraction1,max_fraction2
+      if (abs(error) > 1e-2) error stop
+    else if (abs(error) > 1e-5) then
+      print *,"Mass conservation:", error
     end if
+    end block
   end if
 
   if (verbose>1) then
