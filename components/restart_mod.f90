@@ -114,7 +114,7 @@ SUBROUTINE read (self, task_list)
     call experiment%pre_init ()
     patch => experiment
     call data_io%input_nml (patch, unit)
-    io%start_time = max(io%start_time, task%time)
+    io%start_time = max(io%start_time, patch%time)
     if (data_io%eof (unit)) then
       call experiment%dealloc
       exit
