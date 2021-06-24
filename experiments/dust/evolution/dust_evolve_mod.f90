@@ -51,19 +51,17 @@ MODULE dust_evolve_mod
   real(KIND=precision_e):: set_frag_vel = 1e2               ! If do_set_frag_vel then this is the set fragmentation velocity for all particles.
   real(KIND=precision_e):: dt = 1e-3 * 60*60*24*365         ! Time step in dust_evolve in years
   real(KIND=precision_e):: save_time = 1 * 60*60*24*365
-  real(KIND=precision_e):: eps_time =1.10 * 60*60*24*365
+  real(KIND=precision_e):: eps_time = 1.10 * 60*60*24*365
   real(KIND=precision_e), ALLOCATABLE:: C(:,:,:)
   real(KIND=precision_e), ALLOCATABLE:: SS(:,:,:)
   real(KIND=precision_e), ALLOCATABLE:: ms(:,:)
   real(KIND=precision_e), ALLOCATABLE:: ep(:,:)
-  real(KIND=precision_e), ALLOCATABLE:: pf(:,:)
-  real(KIND=precision_e), ALLOCATABLE:: pc(:,:)
-  real(KIND=precision_e), ALLOCATABLE:: identity(:,:)
   real(KIND=precision_e), ALLOCATABLE:: sigma_col(:,:)
   real(KIND=precision_e), ALLOCATABLE:: mn(:,:)
   real(KIND=precision_e), ALLOCATABLE:: mm(:,:)
   real(KIND=precision_e), ALLOCATABLE:: m_cgs(:)
   real(KIND=precision_e), ALLOCATABLE:: a(:)
+  real, ALLOCATABLE:: st(:)
   type(dust_evolve_t), public:: dust_evolve
 CONTAINS
 
@@ -80,20 +78,12 @@ SUBROUTINE init (self, ln_bin, lm_cgs, rho_s)
   integer              :: iostat              ! missing(<0), syntax errors (>0)
   logical, save        :: first_time=.true.   ! shared memory
 
-  real:: cs, r, msolar, Omega_K, t
-  real:: micron, mps
 
-  integer:: i, j, k, l, kn, minij, maxij, itime, js_n, js_nrhs, js_lda, &
-    js_ldb, js_info
-  integer, ALLOCATABLE, DIMENSION(:):: js_ipiv, js_ipivx, js_ipivy, js_ipivz
+  integer:: i, j, k, l, kn, minij, maxij
   real(precision_e):: ratio_r, min_a, max_a, m_crat, eps, Stot
   real(precision_e):: m_big, m_small
-  real(precision_e), ALLOCATABLE, DIMENSION(:):: m, n, S, dn, dpx, dpy, dpz, dd, Spx, Spy, Spz, &
-    mv, px, py, pz, v, mpx, mpy, mpz, Ln_k, Kn_k, Sppx, Sppy, Sppz
-  real(precision_e), ALLOCATABLE, DIMENSION(:,:):: nn, Q, Q_frag, jj, kk, &
-    ll, KC_k, LS_k, IJJ, du, ubm, utm, &
-    Jp, Jmx, Jmy, Jmz, IJpx, IJpy, IJpz, pnx, pny, pnz, s1, s2
-  real, ALLOCATABLE, DIMENSION(:):: st, utm_ini
+  real(precision_e), ALLOCATABLE, DIMENSION(:):: m
+ 
   !real(precision_e), ALLOCATABLE, DIMENSION(:,:,:):: SS, C
   !--- add parameters here -----------------------------------------------------
   namelist /dust_evolve_params/ on, verbose, do_brownian, do_in_cell_turbulence, &
@@ -126,7 +116,7 @@ SUBROUTINE init (self, ln_bin, lm_cgs, rho_s)
     call cgs%init
     nbin = ln_bin
     ALLOCATE(SS(nbin,nbin,nbin), C(nbin,nbin,nbin), ms(nbin,nbin), ep(nbin,nbin), a(nbin), st(nbin), m(nbin))
-    ALLOCATE(pf(nbin,nbin), pc(nbin,nbin), identity(nbin,nbin), sigma_col(nbin,nbin), mn(nbin,nbin), mm(nbin,nbin))
+    ALLOCATE(sigma_col(nbin,nbin), mn(nbin,nbin), mm(nbin,nbin))
 
     allocate(m_cgs(nbin))
     m_cgs = lm_cgs
@@ -144,9 +134,6 @@ SUBROUTINE init (self, ln_bin, lm_cgs, rho_s)
     sigma_col = 0
     mn = 0
     mm = 0
-    pf = 0
-    pc = 0
-
     do i=1,nbin
       do j=1,nbin                                       ! Setup of matrices
         minij = min(i,j)
@@ -199,6 +186,7 @@ SUBROUTINE init (self, ln_bin, lm_cgs, rho_s)
       end do
     end do
 
+    
     !pc = 1-pf
     where (sigma_col == 0) ep = 0
     where (sigma_col /= 0) ep = (mn - ms) / (mn - mm)
@@ -230,17 +218,14 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out, ds)
 
   real:: tt, mu, cs, r, msolar, Omega_K, rho_s, t, t_end
 
-  integer:: i, j, k, l, kn, minij, maxij, itime, js_n, js_nrhs, js_lda, &
-    js_ldb, js_info, nbin
-  integer, ALLOCATABLE, DIMENSION(:):: js_ipiv, js_ipivx, js_ipivy, js_ipivz
+  integer:: i, j, k, l, kn, itime
   real(precision_e):: ratio_r, min_a, max_a, m_crat, eps, Stot, a_mu, m_mu, u_f
   real(precision_e):: m_big, m_small
-  real(precision_e), ALLOCATABLE, DIMENSION(:):: m, n, n_old , S, dn, dpx, dpy, dpz, dd, Spx, Spy, Spz, &
-    mv, px, py, pz, v, mpx, mpy, mpz, Ln_k, Kn_k, Sppx, Sppy, Sppz, frac_dn, vrms
-  real(precision_e), ALLOCATABLE, DIMENSION(:,:):: nn, Q, Q_frag, jj, kk, &
-    ll, KC_k, LS_k, IJJ, du, ubm, utm, vd, &
-    Jp, Jmx, Jmy, Jmz, IJpx, IJpy, IJpz, pnx, pny, pnz, s1, s2
-  real, ALLOCATABLE, DIMENSION(:):: st, utm_ini
+  real(precision_e), ALLOCATABLE, DIMENSION(:):: n, n_old, dn, dpx, dpy, dpz, dd, &
+    mv, px, py, pz, v, Sppx, Sppy, Sppz, frac_dn, vrms
+  real(precision_e), ALLOCATABLE, DIMENSION(:,:):: nn, kk, &
+    ll, du, ubm, utm, vd, pc, pf, identity
+  real, ALLOCATABLE, DIMENSION(:):: utm_ini
 
   ! CGS units below
   real(precision_e) :: tend
@@ -253,17 +238,15 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out, ds)
   nbin = self%nbin
   if (verbose > 0) &
     print *, 'nbin', nbin
-  ALLOCATE(n(nbin), dn(nbin), S(nbin), m(nbin), n_old(nbin), frac_dn(nbin))
+  ALLOCATE(n(nbin), dn(nbin), n_old(nbin), frac_dn(nbin))
   ALLOCATE(vd(nbin,3), vrms(nbin))
   ALLOCATE(utm_ini(nbin))
-  ALLOCATE(du(nbin,nbin))
-  ALLOCATE(ubm(nbin,nbin), utm(nbin,nbin), Q(nbin,nbin), Q_frag(nbin,nbin))
-  ALLOCATE(jj(nbin,nbin), kk(nbin,nbin))
-  ALLOCATE(ll(nbin,nbin), nn(nbin,nbin), js_ipiv(nbin), js_ipivx(nbin), js_ipivy(nbin), js_ipivz(nbin))
-  ALLOCATE(KC_k(nbin,nbin), LS_k(nbin,nbin) , IJJ(nbin,nbin))
-  ALLOCATE(Jp(nbin,nbin), Jmx(nbin,nbin), Jmy(nbin,nbin), Jmz(nbin,nbin), Spx(nbin), Spy(nbin), Spz(nbin), dpx(nbin), dpy(nbin), dpz(nbin))
-  ALLOCATE(IJpx(nbin,nbin), IJpy(nbin,nbin), IJpz(nbin,nbin), Ln_k(nbin), Kn_k(nbin), Sppx(nbin), Sppy(nbin), Sppz(nbin))
-  ALLOCATE(mv(nbin), px(nbin), py(nbin), pz(nbin), v(nbin), mpx(nbin), mpy(nbin), mpz(nbin), pnx(nbin,nbin), pny(nbin,nbin), pnz(nbin,nbin), s1(nbin,nbin),s2(nbin,nbin))
+  ALLOCATE(du(nbin,nbin), pc(nbin,nbin), pf(nbin,nbin), identity(nbin,nbin))
+  ALLOCATE(ubm(nbin,nbin), utm(nbin,nbin))
+  ALLOCATE(kk(nbin,nbin))
+  ALLOCATE(ll(nbin,nbin), nn(nbin,nbin))
+  ALLOCATE(dpx(nbin), dpy(nbin), dpz(nbin))
+  ALLOCATE(mv(nbin), px(nbin), py(nbin), pz(nbin), v(nbin))
   time(1) = wallclock()-start
 
   ! convert from code units to cgs
@@ -273,6 +256,9 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out, ds)
   vrms = scaling%u * vrms_in * ds
 
   n_old = n
+
+  ! define an identity matrix
+  ForAll(i = 1:nbin, j = 1:nbin) identity(i,j) = (i/j)*(j/i)
 
   px = n * vd(:,1)
   py = n * vd(:,2)
@@ -301,7 +287,6 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out, ds)
   end if
 
 
-  m = m_cgs
 
   ! compute velocity difference between different size bins
   ! 1) use vd for bulk difference:
@@ -330,20 +315,20 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out, ds)
 
 
       if (do_brownian) then
-      ubm(i,j) = sqrt(8 * cgs%k_b* tt_dust * (m(i) + m(j) )/(math%pi*m(i)*m(j) ))
-      du(i,j) = du(i,j) + ubm(i,j)
+        ubm(i,j) = sqrt(8 * cgs%k_b* tt_dust * (m_cgs(i) + m_cgs(j) )/(math%pi*m_cgs(i)*m_cgs(j) ))
+        du(i,j) = du(i,j) + ubm(i,j)
       end if
 
       if (do_in_cell_turbulence) then
-      utm(i,j) = max(utm_ini(i), utm_ini(j))
-      du(i,j) = du(i,j) + utm(i,j)
+        utm(i,j) = max(utm_ini(i), utm_ini(j))
+        du(i,j) = du(i,j) + utm(i,j)
       end if
 
 
       ! Fragmentation velocity u_f is calculated based on given parameters
       ! the parameters are set in input file to decide fragmentation velocities for different sizes
       a_mu = a(i)*a(j)/(a(i)+a(j))
-      m_mu = m(i)*m(j)/(m(i)+m(j))
+      m_mu = m_cgs(i)*m_cgs(j)/(m_cgs(i)+m_cgs(j))
 
       if (do_set_frag_vel) then
         u_f = set_frag_vel
@@ -374,7 +359,6 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out, ds)
   end do
   time(3) = wallclock()-start
 
-  pf = 0.0
   if (verbose>2) then
     print *, "pf"
     print '(5ES13.1)', pf
@@ -386,10 +370,7 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out, ds)
   kk = du * sigma_col * pc
   ll = du * sigma_col * pf
 
-  ! define an identity matrix
-  ForAll(i = 1:nbin, j = 1:nbin) identity(i,j) = (i/j)*(j/i)
-
-
+ 
   ! Do a explicit step and compare the change in n if too large a change is detected
   ! or the mass is not conserved then do a implicit step instead
   ! if the change is only above the second fraction set then do several explicit steps in smaller time steps.
@@ -474,8 +455,6 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out, ds)
   dd_out = m_cgs * n / scaling%d
   vd_out = vd / (scaling%u * ds)
 
-  DEALLOCATE(dpx,dpy,dpz,dn,Spx,Spy,Spz,Sppx,Sppy,Sppz,KC_k,LS_k,Kn_k,Ln_k)
-  DEALLOCATE(Jp,Jmx,Jmy,Jmz,JJ,IJJ,IJpx,IJpy,IJpz,s1,s2,S)
 
   if (ntimer > 0) then
     ntimer = ntimer-1
@@ -489,24 +468,27 @@ contains
 
 subroutine explicit_step (nbin, kk, ll, C, SS, n, px, py, pz, dt, dn, &
                           dpx, dpy, dpz)
-  implicit none
   integer, INTENT(IN)                                      :: nbin
   real(precision_e), INTENT(IN)                            :: dt
   real(precision_e), INTENT(IN), DIMENSION(nbin)           :: n, px, py, pz
   real(precision_e), INTENT(IN), DIMENSION(nbin,nbin)      :: kk, ll
   real(precision_e), INTENT(IN), DIMENSION(nbin,nbin,nbin) :: C, SS
 
-  real(precision_e), intent(out), DIMENSION(nbin)          :: dn, dpx, dpy, dpz
-
-  real(precision_e), DIMENSION(nbin)           :: S, Spx, Spy, Spz, Kn_k, Ln_k, mpx, mpy, mpz
-  real(precision_e), DIMENSION(nbin,nbin)      :: KC_k, LS_k, Q, Q_frag, pnx, pny, pnz
-  integer:: i, j, k
+  real(precision_e), intent(out), DIMENSION(:)             :: dn, dpx, dpy, dpz
+  
+  real(precision_e), ALLOCATABLE, DIMENSION(:)             :: S, Spx, Spy, Spz, Kn_k, Ln_k, mpx, mpy, mpz
+  real(precision_e), ALLOCATABLE, DIMENSION(:,:)           :: KC_k, LS_k, Q, Q_frag, pnx, pny, pnz
   integer, save:: itimer=0
 
+
+  ALLOCATE(mpx(nbin), mpy(nbin), mpz(nbin), pnx(nbin,nbin), pny(nbin,nbin), pnz(nbin,nbin))
+  ALLOCATE(S(nbin), Spx(nbin), Spy(nbin), Spz(nbin), Kn_k(nbin), Ln_k(nbin) )
+  ALLOCATE(KC_k(nbin,nbin), LS_k(nbin,nbin), Q(nbin,nbin), Q_frag(nbin,nbin))
+
   if (detailed_timer) call trace%begin ('explicit_step', itimer=itimer)
-  mpx = m * px
-  mpy = m * py
-  mpz = m * pz                                                  ! xyz
+  mpx = m_cgs * px
+  mpy = m_cgs * py
+  mpz = m_cgs * pz                                                  ! xyz
   do i=1,nbin
     do j=1,nbin
       nn(i,j) = n(i)*n(j)
@@ -559,18 +541,24 @@ subroutine implicit_step (nbin, identity, kk,ll,C,SS,n,px,py,pz, dt, dn, &
 
   real(precision_e), intent(out), DIMENSION(nbin)          :: dn, dpx, dpy, dpz
 
-  INTEGER                                      :: js_n, js_nrhs, js_lda, js_ldb
-  real(precision_e), DIMENSION(nbin)           :: S, Spx, Spy, Spz, Kn_k, Ln_k
-  real(precision_e), DIMENSION(nbin,nbin)      :: KC_k, LS_k, s1, s2, Jp, Jmx, Jmy, Jmz , I_dt
-  real(precision_e), DIMENSION(nbin,nbin)      :: JJ, IJJ, IJpx, IJpy, IJpz, Q, Q_frag, pnx, pny, pnz
-  integer:: i, j, k
+  INTEGER                                                  :: js_n, js_nrhs, js_lda, js_ldb
+  real(precision_e), ALLOCATABLE, DIMENSION(:)             :: S, Spx, Spy, Spz, Kn_k, Ln_k, js_ipiv, js_ipivx, js_ipivy, js_ipivz, js_info, mpx, mpy, mpz
+  real(precision_e), ALLOCATABLE, DIMENSION(:,:)           :: KC_k, LS_k, s1, s2, Jp, Jmx, Jmy, Jmz , I_dt
+  real(precision_e), ALLOCATABLE, DIMENSION(:,:)           :: JJ, IJJ, IJpx, IJpy, IJpz, Q, Q_frag, pnx, pny, pnz
   integer, save:: itimer=0
 
+  ALLOCATE(mpx(nbin), mpy(nbin), mpz(nbin), pnx(nbin,nbin), pny(nbin,nbin), pnz(nbin,nbin), I_dt(nbin,nbin))
+  ALLOCATE(S(nbin), Spx(nbin), Spy(nbin), Spz(nbin), Kn_k(nbin), Ln_k(nbin) )
+  ALLOCATE(KC_k(nbin,nbin), LS_k(nbin,nbin), Q(nbin,nbin), Q_frag(nbin,nbin))
+
+  ALLOCATE(s1(nbin,nbin), s2(nbin,nbin), Jp(nbin,nbin), Jmx(nbin,nbin), Jmy(nbin,nbin), Jmz(nbin,nbin) )
+  ALLOCATE( JJ(nbin,nbin), IJJ(nbin,nbin), IJpx(nbin,nbin), IJpy(nbin,nbin), IJpz(nbin,nbin))
+  ALLOCATE(js_ipiv(nbin), js_ipivx(nbin), js_ipivy(nbin), js_ipivz(nbin))
   if (detailed_timer) call trace%begin ('implicit_step', itimer=itimer)
 
-  mpx = m * px
-  mpy = m * py
-  mpz = m * pz                                                  ! xyz
+  mpx = m_cgs * px
+  mpy = m_cgs * py
+  mpz = m_cgs * pz                                                  ! xyz
   do i=1,nbin
     do j=1,nbin
       nn(i,j) = n(i)*n(j)
@@ -608,25 +596,25 @@ subroutine implicit_step (nbin, identity, kk,ll,C,SS,n,px,py,pz, dt, dn, &
     Kn_k = kk(k,:) * n
     Ln_k = ll(k,:) * n
 
-    S(k) = ( 0.5* SUM(Q*C(k,:,:)) - SUM(Q(k,:)) ) + ( 0.5 * SUM( Q_frag*SS(k,:,:)) - SUM(Q_frag(k,:)) )
+    S(k) = ( 0.5 * SUM(Q*C(k,:,:)) - SUM(Q(k,:)) ) + ( 0.5 * SUM( Q_frag*SS(k,:,:)) - SUM(Q_frag(k,:)) )
     Spx(k) = 0.5 * SUM(KC_k * pnx) - SUM(Kn_k * px(k)) + 0.5 * SUM(LS_k * pnx) - SUM(Ln_k * px(k))
     Spy(k) = 0.5 * SUM(KC_k * pny) - SUM(Kn_k * py(k)) + 0.5 * SUM(LS_k * pny) - SUM(Ln_k * py(k))
     Spz(k) = 0.5 * SUM(KC_k * pnz) - SUM(Kn_k * pz(k)) + 0.5 * SUM(LS_k * pnz) - SUM(Ln_k * pz(k))
 
     s1 = KC_k * 1/ms
     s2 = LS_k * 1/ms
-    Jp(k,:) = (matmul(s1, n) + matmul(s2, n)) * m
+    Jp(k,:) = (matmul(s1, n) + matmul(s2, n)) * m_cgs
     Jp(k,k) = Jp(k,k) - (SUM(Kn_k) + SUM(Ln_k) )
-    Jmx(k,:) = (matmul(s1, px*m) + matmul(s2, px*m)) - px(k) * kk(k,:) - px(k) * ll(k,:)
-    Jmy(k,:) = (matmul(s1, py*m) + matmul(s2, py*m)) - py(k) * kk(k,:) - py(k) * ll(k,:)
-    Jmz(k,:) = (matmul(s1, pz*m) + matmul(s2, pz*m)) - pz(k) * kk(k,:) - pz(k) * ll(k,:)
+    Jmx(k,:) = (matmul(s1, px*m_cgs) + matmul(s2, px*m_cgs)) - px(k) * kk(k,:) - px(k) * ll(k,:)
+    Jmy(k,:) = (matmul(s1, py*m_cgs) + matmul(s2, py*m_cgs)) - py(k) * kk(k,:) - py(k) * ll(k,:)
+    Jmz(k,:) = (matmul(s1, pz*m_cgs) + matmul(s2, pz*m_cgs)) - pz(k) * kk(k,:) - pz(k) * ll(k,:)
     JJ(k,:) = (matmul(KC_k , n) - n(k) * kk(k,:) ) + (matmul(LS_k,  n) - n(k) * ll(k,:) )
     JJ(k,k) = JJ(k,k) - (SUM(Kn_k) + SUM(Ln_k) )
   end do
 
   do i=1,nbin
     JJ(i,i)=0.0
-    JJ(i,i) = JJ(i,i) - SUM(m*JJ(:,i))/m(i)
+    JJ(i,i) = JJ(i,i) - SUM(m_cgs*JJ(:,i))/m_cgs(i)
   end do
 
   I_dt = identity / dt
