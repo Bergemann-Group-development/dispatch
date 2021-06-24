@@ -247,6 +247,7 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out, ds)
   ALLOCATE(ll(nbin,nbin), nn(nbin,nbin))
   ALLOCATE(dpx(nbin), dpy(nbin), dpz(nbin))
   ALLOCATE(mv(nbin), px(nbin), py(nbin), pz(nbin), v(nbin))
+  ALLOCATE(Sppx(nbin), Sppy(nbin), Sppz(nbin))
   time(1) = wallclock()-start
 
   ! convert from code units to cgs
@@ -552,8 +553,8 @@ subroutine implicit_step (nbin, identity, kk,ll,C,SS,n,px,py,pz, dt, dn, &
   ALLOCATE(KC_k(nbin,nbin), LS_k(nbin,nbin), Q(nbin,nbin), Q_frag(nbin,nbin))
 
   ALLOCATE(s1(nbin,nbin), s2(nbin,nbin), Jp(nbin,nbin), Jmx(nbin,nbin), Jmy(nbin,nbin), Jmz(nbin,nbin) )
-  ALLOCATE( JJ(nbin,nbin), IJJ(nbin,nbin), IJpx(nbin,nbin), IJpy(nbin,nbin), IJpz(nbin,nbin))
-  ALLOCATE(js_ipiv(nbin), js_ipivx(nbin), js_ipivy(nbin), js_ipivz(nbin))
+  ALLOCATE(JJ(nbin,nbin), IJJ(nbin,nbin), IJpx(nbin,nbin), IJpy(nbin,nbin), IJpz(nbin,nbin))
+  ALLOCATE(js_ipiv(nbin), js_ipivx(nbin), js_ipivy(nbin), js_ipivz(nbin), js_info(nbin))
   if (detailed_timer) call trace%begin ('implicit_step', itimer=itimer)
 
   mpx = m_cgs * px

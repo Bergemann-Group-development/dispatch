@@ -93,7 +93,7 @@ SUBROUTINE pre_init (self)
   call self%forces%pre_init (self%gpatch)                       ! forces
   call self%cooling%pre_init (self%gpatch)                      ! cool
   call self%selfgravity%pre_init (self%gpatch)                  ! selfg
-  call self%particle_solver%pre_init (self%gpatch)              ! dust
+  call self%particle_solver%pre_init                            ! dust
   call trace%end()                                              ! keep
 END SUBROUTINE pre_init
 
@@ -212,9 +212,10 @@ END SUBROUTINE statistics
 !> This is called from task_list%check_ready(), with self as the nbor and
 !> target as the task to check.
 !===============================================================================
-FUNCTION is_ahead_of (self, target)
+FUNCTION is_ahead_of (self, target, extra)
   class(extras_t):: self
   class(task_t):: target
+  real, optional:: extra
   logical:: is_ahead_of
   real:: grace
   !-----------------------------------------------------------------------------

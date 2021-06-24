@@ -17,7 +17,7 @@
                         start_time=1.0 out_time=0.05 output_every=100
                         dust_to_gas=1e-2
                         min_size_cgs=1e-5 max_size_cgs=1e0 max_init_size_cgs=1e-2 /
-&dust_evolve_params     on=f verbose=0 do_implicit=t detailed_timer=t
+&dust_evolve_params     on=t verbose=0 do_implicit=t detailed_timer=t
                         start_time=1.0
                         max_fraction1=0.5 max_fraction2=0.05 /
 
