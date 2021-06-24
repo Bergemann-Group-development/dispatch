@@ -963,8 +963,8 @@ END SUBROUTINE update
 !===============================================================================
 SUBROUTINE evolve_dust (self)
   class(particle_solver_t):: self
-  real, pointer:: dd(:,:,:,:), vd(:,:,:,:,:), vrms(:,:,:,:)
-  real, pointer:: dd1(:), vd1(:,:), dd2(:), vd2(:,:), vrms1(:)
+  real, allocatable:: dd(:,:,:,:), vd(:,:,:,:,:), vrms(:,:,:,:)
+  real, allocatable:: dd1(:), vd1(:,:), dd2(:), vd2(:,:), vrms1(:)
   integer:: i1, i2, i3, i4, l(3), u(3), m(5)
   !-----------------------------------------------------------------------------
   ! Save the current dust densities and velocities
@@ -1005,11 +1005,8 @@ SUBROUTINE evolve_dust (self)
       print *, vd1(:,3)
       print *, vrms1
     end if
-    call self%dust_evolve%update ( &
-      self%dtime, &
-        vrms1(:)*self%patch%ds(1), &
-           dd1(:), vd1(:,:), &
-           dd2(:), vd2(:,:), self%patch%ds(1))
+    call self%dust_evolve%update (self%dtime, &
+        vrms1*self%patch%ds(1), dd1, vd1, dd2, vd2, self%patch%ds(1))
     if (minval(dd2) < 0.0) then
       print*,'warning(1), negative density', dd2
     end if
