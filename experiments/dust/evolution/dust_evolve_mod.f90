@@ -212,9 +212,9 @@ END SUBROUTINE init
 !===============================================================================
 SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out, ds)
   class(dust_evolve_t):: self
-  real(kind=8), intent(in)  :: dt_dispatch, ds, vrms_in(:)
-  real,         intent(in)  :: dd_in(:), vd_in(:,:)
-  real,         intent(out) :: dd_out(:), vd_out(:,:)
+  real(kind=8):: dt_dispatch, ds, vrms_in(:)
+  real        :: dd_in(:), vd_in(:,:)
+  real        :: dd_out(:), vd_out(:,:)
 
   real:: tt, mu, cs, r, msolar, Omega_K, rho_s, t, t_end
 
@@ -224,7 +224,8 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out, ds)
   real(precision_e), DIMENSION(nbin):: n, n_old, dn, dpx, dpy, dpz, dd, &
     mv, px, py, pz, v, Sppx, Sppy, Sppz, frac_dn, vrms
   real(precision_e), DIMENSION(nbin,nbin):: nn, kk, &
-    ll, du, ubm, utm, vd, pc, pf, identity
+    ll, du, ubm, utm, pc, pf, identity
+  real(precision_e), DIMENSION(nbin,3):: vd
   real, DIMENSION(nbin):: utm_ini
 
   ! CGS units below
@@ -644,13 +645,19 @@ subroutine implicit_step (nbin, identity, kk,ll,C,SS,n,px,py,pz, dt, dn, &
   js_ldb = nbin
 
   ! Solve the inverse matrix
-  CALL DGESV( js_n, js_nrhs, IJJ, js_lda, js_ipiv, S, js_ldb, js_info )
+  call lineq (nbin, IJJ, S)
   Sppx = Spx - matmul(Jmx , S)
   Sppy = Spy - matmul(Jmy , S)
   Sppz = Spz - matmul(Jmz , S)
-  CALL DGESV( js_n, js_nrhs, IJpx, js_lda, js_ipivx, Sppx, js_ldb, js_info )
-  CALL DGESV( js_n, js_nrhs, IJpy, js_lda, js_ipivy, Sppy, js_ldb, js_info )
-  CALL DGESV( js_n, js_nrhs, IJpz, js_lda, js_ipivz, Sppz, js_ldb, js_info )
+  call lineq (nbin, IJpx, Sppx)
+  call lineq (nbin, IJpy, Sppy)
+  call lineq (nbin, IJpz, Sppz)
+  ! CALL DGESV( js_n, js_nrhs, IJpx, js_lda, js_ipivx, Sppx, js_ldb, js_info )
+  ! CALL DGESV( js_n, js_nrhs, IJpy, js_lda, js_ipivy, Sppy, js_ldb, js_info )
+  ! CALL DGESV( js_n, js_nrhs, IJpz, js_lda, js_ipivz, Sppz, js_ldb, js_info )
+  call lineq (nbin, IJpx, Sppx)
+  call lineq (nbin, IJpy, Sppy)
+  call lineq (nbin, IJpz, Sppz)
 
   ! Update the parameters
   dn = S
@@ -659,8 +666,34 @@ subroutine implicit_step (nbin, identity, kk,ll,C,SS,n,px,py,pz, dt, dn, &
   dpz = Sppz
   if (detailed_timer) call trace%end (itimer)
 end subroutine implicit_step
-
 END SUBROUTINE update
+
+SUBROUTINE lineq (n, a, b)
+  real(8):: a(n,n), b(n)
+  integer :: i, j, k, n
+  do k=1,n-1
+    do i=k+1,n
+      a(i,k) = a(i,k)/a(k,k)
+    end do
+    do j=k+1,n
+      do i=k+1,n
+        a(i,j) = a(i,j) - a(i,k)*a(k,j)
+      end do
+    end do
+  end do
+  do i=1,n
+    do j=1,i-1
+      b(i) = b(i) - a(i,j)*b(j)
+    end do
+  end do
+  do i=n,1,-1
+    do j=i+1,n
+      b(i) = b(i) - a(i,j)*b(j)
+    end do
+    b(i) = b(i)/a(i,i)
+  end do
+  !print *, b
+END SUBROUTINE lineq
 
 !===============================================================================
 !> Self test
@@ -869,7 +902,7 @@ SUBROUTINE test (self)
   js_lda = nbin
   js_ldb = nbin
   m_tot = SUM(S*m)
-  CALL DGESV( js_n, js_nrhs, IJJ, js_lda, js_ipiv, S, js_ldb, js_info )
+  call lineq (nbin, IJJ, S)
   dn = S
   !-----------------------------------------------------------------------------
   ! Index notation:
@@ -907,7 +940,7 @@ SUBROUTINE test (self)
   js_lda = nbin
   js_ldb = nbin
   m_tot = SUM(S*m)
-  CALL DGESV( js_n, js_nrhs, IJJ, js_lda, js_ipiv, S, js_ldb, js_info )
+  call lineq (nbin, IJJ, S)
   dn = S
   !=============================================================================
   !=============================================================================
@@ -993,9 +1026,9 @@ SUBROUTINE test (self)
       js_lda = nbin
       js_ldb = nbin
 
-      CALL DGESV( js_n, js_nrhs, IJJ, js_lda, js_ipiv, S, js_ldb, js_info )
+      call lineq (nbin, IJJ, S)
       Spp = Sp - matmul(Jm , S)
-      CALL DGESV( js_n, js_nrhs, IJp, js_lda, js_ipiv, Spp, js_ldb, js_info )
+      call lineq (nbin, IJp, Spp)
 
       dn = S
       dp = Spp
