@@ -221,11 +221,11 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out, ds)
   integer:: i, j, k, l, kn, itime
   real(precision_e):: ratio_r, min_a, max_a, m_crat, eps, Stot, a_mu, m_mu, u_f
   real(precision_e):: m_big, m_small
-  real(precision_e), ALLOCATABLE, DIMENSION(:):: n, n_old, dn, dpx, dpy, dpz, dd, &
+  real(precision_e), DIMENSION(nbin):: n, n_old, dn, dpx, dpy, dpz, dd, &
     mv, px, py, pz, v, Sppx, Sppy, Sppz, frac_dn, vrms
-  real(precision_e), ALLOCATABLE, DIMENSION(:,:):: nn, kk, &
+  real(precision_e), DIMENSION(nbin,nbin):: nn, kk, &
     ll, du, ubm, utm, vd, pc, pf, identity
-  real, ALLOCATABLE, DIMENSION(:):: utm_ini
+  real, DIMENSION(nbin):: utm_ini
 
   ! CGS units below
   real(precision_e) :: tend
@@ -238,16 +238,16 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out, ds)
   nbin = self%nbin
   if (verbose > 0) &
     print *, 'nbin', nbin
-  ALLOCATE(n(nbin), dn(nbin), n_old(nbin), frac_dn(nbin))
-  ALLOCATE(vd(nbin,3), vrms(nbin))
-  ALLOCATE(utm_ini(nbin))
-  ALLOCATE(du(nbin,nbin), pc(nbin,nbin), pf(nbin,nbin), identity(nbin,nbin))
-  ALLOCATE(ubm(nbin,nbin), utm(nbin,nbin))
-  ALLOCATE(kk(nbin,nbin))
-  ALLOCATE(ll(nbin,nbin), nn(nbin,nbin))
-  ALLOCATE(dpx(nbin), dpy(nbin), dpz(nbin))
-  ALLOCATE(mv(nbin), px(nbin), py(nbin), pz(nbin), v(nbin))
-  ALLOCATE(Sppx(nbin), Sppy(nbin), Sppz(nbin))
+  ! ALLOCATE(n(nbin), dn(nbin), n_old(nbin), frac_dn(nbin))
+  ! ALLOCATE(vd(nbin,3), vrms(nbin))
+  ! ALLOCATE(utm_ini(nbin))
+  ! ALLOCATE(du(nbin,nbin), pc(nbin,nbin), pf(nbin,nbin), identity(nbin,nbin))
+  ! ALLOCATE(ubm(nbin,nbin), utm(nbin,nbin))
+  ! ALLOCATE(kk(nbin,nbin))
+  ! ALLOCATE(ll(nbin,nbin), nn(nbin,nbin))
+  ! ALLOCATE(dpx(nbin), dpy(nbin), dpz(nbin))
+  ! ALLOCATE(mv(nbin), px(nbin), py(nbin), pz(nbin), v(nbin))
+  ! ALLOCATE(Sppx(nbin), Sppy(nbin), Sppz(nbin))
   time(1) = wallclock()-start
 
   ! convert from code units to cgs
@@ -487,16 +487,16 @@ subroutine explicit_step (nbin, kk, ll, C, SS, n, px, py, pz, dt, dn, &
   real(precision_e), INTENT(IN), DIMENSION(nbin,nbin)      :: kk, ll
   real(precision_e), INTENT(IN), DIMENSION(nbin,nbin,nbin) :: C, SS
 
-  real(precision_e), intent(out), DIMENSION(:)             :: dn, dpx, dpy, dpz
+  real(precision_e), intent(out), DIMENSION(nbin)          :: dn, dpx, dpy, dpz
   
-  real(precision_e), ALLOCATABLE, DIMENSION(:)             :: S, Spx, Spy, Spz, Kn_k, Ln_k, mpx, mpy, mpz
-  real(precision_e), ALLOCATABLE, DIMENSION(:,:)           :: KC_k, LS_k, Q, Q_frag, pnx, pny, pnz
+  real(precision_e), DIMENSION(nbin)          :: S, Spx, Spy, Spz, Kn_k, Ln_k, mpx, mpy, mpz
+  real(precision_e) , DIMENSION(nbin,nbin)     :: KC_k, LS_k, Q, Q_frag, pnx, pny, pnz
   integer, save:: itimer=0
 
 
-  ALLOCATE(mpx(nbin), mpy(nbin), mpz(nbin), pnx(nbin,nbin), pny(nbin,nbin), pnz(nbin,nbin))
-  ALLOCATE(S(nbin), Spx(nbin), Spy(nbin), Spz(nbin), Kn_k(nbin), Ln_k(nbin) )
-  ALLOCATE(KC_k(nbin,nbin), LS_k(nbin,nbin), Q(nbin,nbin), Q_frag(nbin,nbin))
+  ! ALLOCATE(mpx(nbin), mpy(nbin), mpz(nbin), pnx(nbin,nbin), pny(nbin,nbin), pnz(nbin,nbin))
+  ! ALLOCATE(S(nbin), Spx(nbin), Spy(nbin), Spz(nbin), Kn_k(nbin), Ln_k(nbin) )
+  ! ALLOCATE(KC_k(nbin,nbin), LS_k(nbin,nbin), Q(nbin,nbin), Q_frag(nbin,nbin))
 
   if (detailed_timer) call trace%begin ('explicit_step', itimer=itimer)
   mpx = m_cgs * px
@@ -555,18 +555,18 @@ subroutine implicit_step (nbin, identity, kk,ll,C,SS,n,px,py,pz, dt, dn, &
   real(precision_e), intent(out), DIMENSION(nbin)          :: dn, dpx, dpy, dpz
 
   INTEGER                                                  :: js_n, js_nrhs, js_lda, js_ldb
-  real(precision_e), ALLOCATABLE, DIMENSION(:)             :: S, Spx, Spy, Spz, Kn_k, Ln_k, js_ipiv, js_ipivx, js_ipivy, js_ipivz, js_info, mpx, mpy, mpz
-  real(precision_e), ALLOCATABLE, DIMENSION(:,:)           :: KC_k, LS_k, s1, s2, Jp, Jmx, Jmy, Jmz , I_dt
-  real(precision_e), ALLOCATABLE, DIMENSION(:,:)           :: JJ, IJJ, IJpx, IJpy, IJpz, Q, Q_frag, pnx, pny, pnz
+  real(precision_e), DIMENSION(nbin)       :: S, Spx, Spy, Spz, Kn_k, Ln_k, js_ipiv, js_ipivx, js_ipivy, js_ipivz, js_info, mpx, mpy, mpz
+  real(precision_e), DIMENSION(nbin,nbin)  :: KC_k, LS_k, s1, s2, Jp, Jmx, Jmy, Jmz , I_dt
+  real(precision_e), DIMENSION(nbin,nbin)  :: JJ, IJJ, IJpx, IJpy, IJpz, Q, Q_frag, pnx, pny, pnz
   integer, save:: itimer=0
 
-  ALLOCATE(mpx(nbin), mpy(nbin), mpz(nbin), pnx(nbin,nbin), pny(nbin,nbin), pnz(nbin,nbin), I_dt(nbin,nbin))
-  ALLOCATE(S(nbin), Spx(nbin), Spy(nbin), Spz(nbin), Kn_k(nbin), Ln_k(nbin) )
-  ALLOCATE(KC_k(nbin,nbin), LS_k(nbin,nbin), Q(nbin,nbin), Q_frag(nbin,nbin))
+  ! ALLOCATE(mpx(nbin), mpy(nbin), mpz(nbin), pnx(nbin,nbin), pny(nbin,nbin), pnz(nbin,nbin), I_dt(nbin,nbin))
+  ! ALLOCATE(S(nbin), Spx(nbin), Spy(nbin), Spz(nbin), Kn_k(nbin), Ln_k(nbin) )
+  ! ALLOCATE(KC_k(nbin,nbin), LS_k(nbin,nbin), Q(nbin,nbin), Q_frag(nbin,nbin))
 
-  ALLOCATE(s1(nbin,nbin), s2(nbin,nbin), Jp(nbin,nbin), Jmx(nbin,nbin), Jmy(nbin,nbin), Jmz(nbin,nbin) )
-  ALLOCATE(JJ(nbin,nbin), IJJ(nbin,nbin), IJpx(nbin,nbin), IJpy(nbin,nbin), IJpz(nbin,nbin))
-  ALLOCATE(js_ipiv(nbin), js_ipivx(nbin), js_ipivy(nbin), js_ipivz(nbin), js_info(nbin))
+  ! ALLOCATE(s1(nbin,nbin), s2(nbin,nbin), Jp(nbin,nbin), Jmx(nbin,nbin), Jmy(nbin,nbin), Jmz(nbin,nbin) )
+  ! ALLOCATE(JJ(nbin,nbin), IJJ(nbin,nbin), IJpx(nbin,nbin), IJpy(nbin,nbin), IJpz(nbin,nbin))
+  ! ALLOCATE(js_ipiv(nbin), js_ipivx(nbin), js_ipivy(nbin), js_ipivz(nbin), js_info(nbin))
   if (detailed_timer) call trace%begin ('implicit_step', itimer=itimer)
 
   mpx = m_cgs * px
