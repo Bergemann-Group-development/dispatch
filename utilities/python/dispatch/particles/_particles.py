@@ -22,7 +22,7 @@ class particles(object):
     """ Create object holding array information on particles,
         dimensioned [np,3,nt] and [np,nt].
     """
-    def __init__(self,run='',data='../data',file='rank_00000.pdat',slots=False,verbose=0):
+    def __init__(self,run='',data='../data',slots=False,verbose=0):
         self.dir=data+'/'+run+'/particles/'
         ifile=[f for f in os.listdir(self.dir) if f.endswith('inf')]
         lenifile = len(ifile)
@@ -33,20 +33,31 @@ class particles(object):
             snaps=lenifile
             self.bins=bins
             self.snaps=snaps
-            if verbose>1:
-                print('bins: {} particles: {} snapshots: {}'.format(bins,parts,snaps))
-            if verbose>2:
-                print(snaps,parts)
-            parts=parts*bins
-            self.parts=parts
-            self.p =np.zeros((parts,3,snaps),dtype=np.float32)
-            self.v =np.zeros((parts,3,snaps),dtype=np.float32)
-            self.vg=np.zeros((parts,3,snaps),dtype=np.float32)
-            self.w =np.zeros((parts,snaps),dtype=np.float32)
-            self.dg=np.zeros((parts,snaps),dtype=np.float32)
-            self.dd=np.zeros((parts,snaps),dtype=np.float32)
-            self.t =np.zeros((parts,snaps),dtype=np.float64)
-            self.bin=np.zeros(parts,dtype=np.int16)
+
+        # Find out how many particles there are:
+        iout=0
+        self.dfile=self.dir+'{:05d}'.format(iout)+'.dat'
+        with FortranFile(self.dfile) as fd:
+            key=fd.read_ints()[0]
+            parts=0
+            while(key==3):
+                ii=fd.read_ints()
+                parts += ii[1]
+                f=fd.read_reals()
+                key=fd.read_ints()[0]
+        if verbose>1:
+            print('bins: {} particles: {} snapshots: {}'.format(bins,parts,snaps))
+
+        # Allocate data space for reading
+        self.parts=parts
+        self.p =np.zeros((parts,3,snaps),dtype=np.float32)
+        self.v =np.zeros((parts,3,snaps),dtype=np.float32)
+        self.vg=np.zeros((parts,3,snaps),dtype=np.float32)
+        self.w =np.zeros((parts,snaps),dtype=np.float32)
+        self.dg=np.zeros((parts,snaps),dtype=np.float32)
+        self.dd=np.zeros((parts,snaps),dtype=np.float32)
+        self.t =np.zeros((parts,snaps),dtype=np.float64)
+        self.bin=np.zeros(parts,dtype=np.int16)
         self.insert(slots,verbose=verbose)
 
     def insert(self,slots=0,verbose=0):
@@ -140,8 +151,8 @@ class particles(object):
         new.np=len(w)                   # number selected
         return new
 
-def open(run='',data='../data',file='rank_00000.pdat',verbose=0):
+def open(run='',data='../data',slots=False,verbose=0):
     """ Read all cell information in the given file, and
         concatenate the information into a single object
     """
-    return particles(run,data,file,verbose)
+    return particles(run,data,slots,verbose)
