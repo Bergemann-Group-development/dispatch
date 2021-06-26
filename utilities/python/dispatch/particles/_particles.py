@@ -35,7 +35,7 @@ class particles(object):
             self.snaps=snaps
 
         # Find out how many particles there are:
-        iout=0
+        iout=snaps-1
         self.dfile=self.dir+'{:05d}'.format(iout)+'.dat'
         with FortranFile(self.dfile) as fd:
             key=fd.read_ints()[0]
@@ -84,6 +84,7 @@ class particles(object):
                     print('{} format={}'.format(file,fmt))
                 m=0
                 m0=0
+                ntot=0
                 ioutp=-1
                 while fmt==3:
                     iout,n,id,t,position,size=fd.read_record('i4,i4,i4,f8,(3)f8,(3)f8')[0]
@@ -99,16 +100,20 @@ class particles(object):
                             print(s)
                         (q,p,v,vg,w,dg,dd,t,i)=fd.read_record(s)[0]
                         bin=q[3,:]
+                        nmax=len(self.bin)
+                        l=ntot
+                        u=min(ntot+n,nmax)
                         if iout < self.p.shape[2]:
                             for dir in range(3):
-                                self.p [i,dir,iout]=(p[dir,:]+q[dir,:])*size[dir]+pos[dir]
-                                self.v [i,dir,iout]= v[dir,:]
-                                self.vg[i,dir,iout]=vg[dir,:]
-                            self.w [i,iout]=w
-                            self.dg[i,iout]=dg
-                            self.dd[i,iout]=dd
-                            self.t [i,iout]=t
-                        self.bin[i]=bin
+                                self.p [l:u,dir,iout]=(p[dir,0:u-l]+q[dir,0:u-l])*size[dir]+pos[dir]
+                                self.v [l:u,dir,iout]= v[dir,0:u-l]
+                                self.vg[l:u,dir,iout]=vg[dir,0:u-l]
+                            self.w [l:u,iout]=w[0:u-l]
+                            self.dg[l:u,iout]=dg[0:u-l]
+                            self.dd[l:u,iout]=dd[0:u-l]
+                            self.t [l:u,iout]=t[0:u-l]
+                        self.bin[l:u]=bin[0:u-l]
+                        ntot += n
                     else:
                         void=fd.read_ints()
                         print('zero particles',type(void),len(void))
