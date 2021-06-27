@@ -416,8 +416,12 @@ contains
     !$omp atomic write
     timer%mem_test = 1
     if (timer%n_particles > 0d0) then
-      write (unit,'(" particles:",9p,f10.1," core-ns/p-upd")') &
-        timer%t_particles/timer%n_particles
+      write (unit,'(" particles:",9p,f10.1," core-ns/p-upd",1p,e11.2)') &
+        timer%t_particles/timer%n_particles, timer%n_particles
+      !$omp atomic write
+      timer%t_particles = 0d0
+      !$omp atomic write
+      timer%n_particles = 0d0
     end if
     flush (unit)
   end subroutine write_to
