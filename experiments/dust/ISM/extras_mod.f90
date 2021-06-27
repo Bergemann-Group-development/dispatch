@@ -93,7 +93,8 @@ SUBROUTINE pre_init (self)
   call self%forces%pre_init (self%gpatch)                       ! forces
   call self%cooling%pre_init (self%gpatch)                      ! cool
   call self%selfgravity%pre_init (self%gpatch)                  ! selfg
-  call self%particle_solver%pre_init                            ! dust
+  call self%particle_solver%connect (self%gpatch)               ! dust
+  call self%particle_solver%pre_init ()                         ! dust
   call trace%end()                                              ! keep
 END SUBROUTINE pre_init
 
@@ -143,15 +144,15 @@ END SUBROUTINE dealloc
 !===============================================================================
 SUBROUTINE pre_update (self)
   class(extras_t), target:: self
-  integer:: n(2,3)
+  integer, save:: itimer=0
   !.............................................................................
-  call trace%begin ('extras_t%pre_update')
+  call trace%begin ('extras_t%pre_update', itimer=itimer)
   self%gpatch => self                                           ! keep
   call self%forces%pre_update                                   ! forces
   call self%selfgravity%pre_update                              ! selfg
   call self%cooling%pre_update                                  ! cool
   call self%particle_solver%update                              ! dust
-  call trace%end()
+  call trace%end (itimer)
 END SUBROUTINE pre_update
 
 !===============================================================================
@@ -159,10 +160,11 @@ END SUBROUTINE pre_update
 !===============================================================================
 SUBROUTINE post_update (self)
   class(extras_t):: self
+  integer, save:: itimer=0
   !.............................................................................
-  call trace%begin ('extras_t%post_update')
+  call trace%begin ('extras_t%post_update', itimer=itimer)
   call self%selfgravity%post_update                             ! selfg
-  call trace%end ()
+  call trace%end (itimer)
 END SUBROUTINE post_update
 
 !===============================================================================
@@ -192,11 +194,13 @@ END FUNCTION check_refine
 SUBROUTINE courant_condition (self, detailed_timer)
   class(extras_t):: self
   logical, optional:: detailed_timer
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('extras_t%courant_condition')
+  call trace%begin ('extras_t%courant_condition', itimer=itimer)
   call self%cooling%courant_condition                            ! cool
-  call self%particle_solver%courant_condition                    ! dust
-  call trace%end()
+  !call self%particle_solver%courant_condition                    ! dust
+  call self%gpatch_t%courant_condition                           ! keep
+  call trace%end (itimer)
 END SUBROUTINE courant_condition
 
 !===============================================================================
