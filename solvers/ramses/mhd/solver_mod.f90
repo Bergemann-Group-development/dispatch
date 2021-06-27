@@ -89,10 +89,11 @@ END SUBROUTINE init
 SUBROUTINE update (self)
   class(solver_t) :: self
   type(lock_t), pointer:: lock
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! Make sure %new refers to the next timeslot, and assign pointers
   !-----------------------------------------------------------------------------
-  call trace%begin ('solver_t%update')
+  call trace%begin ('solver_t%update', itimer=itimer)
   self%new = 1 + mod(self%it,self%nt)
   self%uin  => self%mem(:,:,:,:,self%it ,1)
   self%unew => self%mem(:,:,:,:,self%new,1)
@@ -104,7 +105,7 @@ SUBROUTINE update (self)
   call self%mhd_t%update
   call self%mhd_t%post_update
   !-----------------------------------------------------------------------------
-  call trace%end ()
+  call trace%end (itimer)
 END SUBROUTINE update
 
 !===============================================================================

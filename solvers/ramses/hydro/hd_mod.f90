@@ -187,8 +187,9 @@ END SUBROUTINE dealloc
 !===============================================================================
 SUBROUTINE pre_update (self)
   class(hd_t), target:: self
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('hd_t%pre_update')
+  call trace%begin ('hd_t%pre_update', itimer=itimer)
   call self%gpatch_t%pre_update ()
   !-----------------------------------------------------------------------------
   ! Primitive variables may be needed in extras courant_conditions
@@ -201,7 +202,7 @@ SUBROUTINE pre_update (self)
   ! Pre-update extras components
   !-----------------------------------------------------------------------------
   call self%extras_t%pre_update
-  call trace%end ()
+  call trace%end (itimer)
 END SUBROUTINE pre_update
 
 !===============================================================================
