@@ -1,3 +1,3 @@
-OPT = -O0
+OPT = -Og
 PAR = -fopenmp
-DEBUG = -g -fbacktrace -ftrapv -ffpe-trap=invalid,zero,overflow
+DEBUG = -g -fbacktrace -ffpe-trap=invalid,zero,overflow

@@ -1,4 +1,4 @@
 DEBUG = -fbacktrace
-OPT = -O3
+OPT = -Ofast
 HW =
 #LDFLAGS = $(OPT) $(PAR) $(HW)
