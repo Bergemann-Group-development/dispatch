@@ -18,6 +18,7 @@ MODULE particle_solver_mod
   USE omp_lib
   USE io_mod
   USE trace_mod
+  USE timer_mod
   USE random_mod
   USE task_mod
   USE gpatch_mod
@@ -29,30 +30,35 @@ MODULE particle_solver_mod
   USE omp_timer_mod
   USE particles_mod
   USE mesh_mod
-  USE timer_mod
+  USE eos_mod
   implicit none
   private
   type, public, extends(task_t):: particle_solver_t
     integer                    :: n=32, n_bin=5, mp=60, me, np, lb(3), ub(3)
-    real, pointer, contiguous  :: s_cgs(:), m_cgs(:)
-    real, pointer, contiguous  :: a(:,:,:,:), v(:,:,:,:)
-    real, pointer, contiguous  :: d(:,:,:), dd(:,:,:,:)
-    type(particles_t), pointer :: particles(:,:,:,:)
-    type(particles_t), pointer :: previous(:,:,:,:)
-    type(particles_t), pointer :: exports(:) => null()
-    class(gpatch_t), pointer   :: patch
-    class(list_t), pointer     :: task_list
-    class(nbor_t), pointer     :: nbor
+    real, pointer, contiguous  :: s_cgs(:)            => null()
+    real, pointer, contiguous  :: m_cgs(:)            => null()
+    real, pointer, contiguous  :: a(:,:,:,:)          => null()
+    real, pointer, contiguous  :: v(:,:,:,:)          => null()
+    real, pointer, contiguous  :: d(:,:,:)            => null()
+    real, pointer, contiguous  :: dd(:,:,:,:)         => null()
+    type(particles_t), pointer :: particles(:,:,:,:)  => null()
+    type(particles_t), pointer :: previous(:,:,:,:)   => null()
+    type(particles_t), pointer :: exports(:)          => null()
+    class(gpatch_t), pointer   :: patch               => null()
+    class(list_t), pointer     :: task_list           => null()
+    class(nbor_t), pointer     :: nbor                => null()
   contains
-    procedure:: pre_init
+    procedure:: connect
     procedure:: init
     procedure:: init_task_list
     procedure:: initial_condition
     procedure:: update
     procedure, private:: setup
+    procedure, private:: copy
     procedure:: pack
     procedure, private:: import
     procedure, private:: kdk
+    procedure, private:: count
     procedure, private:: trade
     procedure, private:: sumup
     procedure, private:: renorm
@@ -60,6 +66,8 @@ MODULE particle_solver_mod
   end type
   logical:: on = .true.
   logical:: particle_io = .false.
+  logical:: count_all = .false.
+  logical:: backreaction = .false.
   integer:: verbose = 0
   integer:: n_bin = 1
   integer:: particles_per_bin = 30
@@ -72,19 +80,21 @@ MODULE particle_solver_mod
   real:: max_size_cgs = 3000e-4               ! 3000 micron = 3 mm
   real:: solid_density_cgs = 2.0              ! g/cm**3
   real:: density_yr_cgs = 3e-12               ! volume density giving 1 yr stop
+  real(8):: out_time = 0.1                    ! output cadence
+  real(8):: start_time = 0.0                  ! output start
 CONTAINS
 
 !===============================================================================
 !> Initialize patch link
 !===============================================================================
-SUBROUTINE pre_init (self, patch)
+SUBROUTINE connect (self, patch)
   class(particle_solver_t):: self
   class(gpatch_t), pointer:: patch
   !-----------------------------------------------------------------------------
   call trace%begin ('particle_solver_t%init')
   self%patch => patch
   call trace%end ()
-END SUBROUTINE pre_init
+END SUBROUTINE connect
 
 !===============================================================================
 !> Initialize dust parameters
@@ -94,7 +104,8 @@ SUBROUTINE init (self)
   integer:: iostat
   namelist /particle_solver_params/ on, verbose, particles_per_bin, n_bin, seed, &
     dust_to_gas, min_size_cgs, max_size_cgs, min_fraction, max_fraction, &
-    solid_density_cgs, density_yr_cgs, particle_io
+    solid_density_cgs, density_yr_cgs, particle_io, out_time, start_time, &
+    output_every, backreaction
   logical:: first_time = .true.
   !-----------------------------------------------------------------------------
   call trace%begin ('particle_solver_t%init')
@@ -103,6 +114,10 @@ SUBROUTINE init (self)
   if (first_time) then
     rewind (io%input)
     read (io%input, particle_solver_params, iostat=iostat)
+    if (iostat > 0) then
+      rewind (io%input)
+      read (io%input, particle_solver_params)
+    end if
     call io%namelist_warning ('particle_solver_params', iostat)
     write (io%namelist, particle_solver_params)
     first_time = .false.
@@ -150,14 +165,14 @@ SUBROUTINE initial_condition (self)
     self%s_cgs(ib) = exp(log(min_size_cgs) &
                      + (ib-0.5)*log(max_size_cgs/min_size_cgs)/n_bin)
     self%m_cgs(ib) = solid_density_cgs*self%s_cgs(ib)**3
-    write(io_unit%log,'(a,i4,1p,2e11.2)') &
+    write(stdlog,'(a,i4,1p,2e11.2)') &
       'dust_t%init: bin, s_cgs, m_cgs =', ib, self%s_cgs(ib), self%m_cgs(ib)
     allocate (self%exports(ib)%lock)
     call self%exports(ib)%lock%init ('exp')
     p => self%exports(ib)
-    call p%lock%set ('inii')
+    call p%lock%set ('init')
     call p%init (self%me, verbose)
-    call p%lock%unset ('inii')
+    call p%lock%unset ('init')
     do i3=1,m(3)
     do i2=1,m(2)
     do i1=1,m(1)
@@ -166,20 +181,19 @@ SUBROUTINE initial_condition (self)
       self%v(:,i1,i2,i3) = 0.0              ! cell velocity
       p => self%particles(i1,i2,i3,ib)
       call p%init (self%mp, verbose)
-      if (verbose > 0) then
+      if (verbose > 1) then
         o => self%previous(i1,i2,i3,ib)
         call o%init (self%mp, verbose)
       end if
       p%id = [self%patch%id,i1,i2,i3,ib]
-      p%np = particles_per_bin
-      p%lp = p%np
-      w = self%dd(i1,i2,i3,ib)/(n_bin*p%np)
-      do j=1,p%np
+      p%n = particles_per_bin
+      p%lp = p%n
+      w = self%dd(i1,i2,i3,ib)/(n_bin*p%n)
+      do j=1,p%n
         p%r(j,:) = self%random%uniform(3)
         p%v(j,:) = 0.0
         p%q(j,:) = [i1,i2,i3]
         p%w(j) = w
-        p%t(j) = 0d0
         p%flag(j) = 0
       end do
     end do
@@ -219,7 +233,9 @@ SUBROUTINE update (self)
     wc = wallclock()
     call self%output
     call self%setup               ! set up cell properties
+    !call self%copy                ! copy particles
     call self%kdk                 ! move particles
+    !call self%count
     call self%trade               ! trade btw cells and export
     call self%import              ! import particles from nbors
     call self%pack                ! remove array holes
@@ -231,16 +247,6 @@ SUBROUTINE update (self)
     end associate
     call trace%end ()
   end if
-contains
-subroutine ppp
-  integer:: j
-  if (dbg) then
-    do j=1,p%lp
-      print 3,j,p%r(j,:),p%w(j)
-      3 format(i4,3f7.3,1p,e10.2)
-    end do
-  end if
-end subroutine
 END SUBROUTINE update
 
 !===============================================================================
@@ -282,40 +288,107 @@ SUBROUTINE setup (self)
     self%a(3,i1,i2,i3) = 0.0
     do ib=1,n_bin
       p => self%particles(i1,i2,i3,ib)
-      np = np + p%np
+      np = np + p%n
     end do
   end do
   end do
   end do
-  self%np = np
+  self%n = np
+  associate (n_particles => timer%n_particles)
+  !$omp atomic update
+  n_particles = n_particles + np
+  end associate
   wc = omp_get_wtime() - wc
-  if (verbose > 0) then
-    write (io_unit%log,'(f6.3," s",6p,f8.3," mus/p",i6,i10,a10,i6)') &
+  if (verbose > 1) then
+    write (stdlog,'(f6.3," s",6p,f8.3," mus/p",i6,i10,a10,i6)') &
       wc, wc/np, self%patch%id, np, 'setup', self%patch%id
   end if
   call trace%end (itimer)
 END SUBROUTINE setup
 
 !===============================================================================
+!> Initialize cell data
+!===============================================================================
+SUBROUTINE copy (self)
+  class(particle_solver_t)   :: self
+  !.............................................................................
+  integer                    :: i1, i2, i3, i4, j, k, m(4), q(3), np, np_new
+  type(particles_t), pointer :: p1, p2, p3, new(:,:,:,:)
+  real(8)                    :: wc
+  integer, save              :: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin ('particle_solver_t%copy', itimer=itimer)
+  wc = wallclock()
+  m = shape(self%particles)
+  allocate (new(m(1),m(2),m(3),m(4)))
+  do i4=1,m(4)
+  do i3=self%lb(3),self%ub(3)
+  do i2=self%lb(2),self%ub(2)
+  do i1=self%lb(1),self%ub(1)
+    p1 => self%particles(i1,i2,i3,i4)
+    p2 => new(i1,i2,i3,i4)
+    call p2%init (p1%np_new, self%verbose)
+    p2%n = p1%np_new
+  end do
+  end do
+  end do
+  end do
+  print '(6p,f10.3," mus/cell-alloc")', (wallclock()-wc)/product(m(1:3))
+  wc = wallclock()
+  do i4=1,m(4)
+  do i3=self%lb(3),self%ub(3)
+  do i2=self%lb(2),self%ub(2)
+  do i1=self%lb(1),self%ub(1)
+    p1 => self%particles(i1,i2,i3,i4)
+    np = p1%n
+    do j=1,np
+      q = p1%q(j,1:3)
+      p2 => new(q(1),q(2),q(3),i4)
+      k = p2%n + 1
+      p2%r(k,1) = p1%r(j,1)
+      p2%r(k,2) = p1%r(j,2)
+      p2%r(k,3) = p1%r(j,3)
+      p2%v(k,1) = p1%v(j,1)
+      p2%v(k,2) = p1%v(j,2)
+      p2%v(k,3) = p1%v(j,3)
+      p2%q(k,1) = p1%q(j,1)
+      p2%q(k,2) = p1%q(j,2)
+      p2%q(k,3) = p1%q(j,3)
+      p2%w(k)   = p1%w(j)
+      p2%n = k
+    end do
+    call p1%dealloc
+  end do
+  end do
+  end do
+  end do
+  deallocate (self%particles)
+  self%particles => new
+  print '(6p,f10.3," mus/cell-copy")', (wallclock()-wc)/product(m(1:3))
+  call trace%end (itimer)
+END SUBROUTINE copy
+
+!===============================================================================
 !> Kick-drift-kick update, with no hole in any cells
 !===============================================================================
 SUBROUTINE kdk (self)
   class(particle_solver_t)   :: self
-  integer                    :: i1, i2, i3, ib, i, j, q, np
-  real                       :: dt, drag_c, cs, c, a, v, vmin, vmax, cmin, cmax
+  integer                    :: i1, i2, i3, ib, i, j, q(3), np
+  real                       :: dt, drag_c, cs, c, vmin, vmax, cmin, cmax
+  real                       :: d, e, pc, pwd, ds, cf
+  real, dimension(3)         :: a, v, dv, pd
   real(8)                    :: wc
+  class(gpatch_t), pointer   :: patch
   type(particles_t), pointer :: p, o
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('particle_solver_t%kdk', itimer=itimer)
   wc = omp_get_wtime()
   !-----------------------------------------------------------------------------
+  patch => self%patch
+  ds = patch%ds(1)
   dt = self%dtime*0.5d0
   drag_c = scaling%d/(density_yr_cgs*cgs%yr/scaling%t)
-  if (verbose==2) then
-    write (io_unit%log,'("kdk:",i6)') self%patch%id
-    flush (io_unit%log)
-  end if
   !-----------------------------------------------------------------------------
   vmin = 0.0
   vmax = 0.0
@@ -324,93 +397,160 @@ SUBROUTINE kdk (self)
   do i3=self%lb(3),self%ub(3)
   do i2=self%lb(2),self%ub(2)
   do i1=self%lb(1),self%ub(1)
-    !if (verbose==3) then
-    !  write (io_unit%log,'("kdk:",i6,3i4)') self%patch%id, i1, i2, i3
-    !end if
-    cs = drag_c*self%d(i1,i2,i3)
+    d = patch%mem(i1,i2,i3,patch%idx%d,patch%it,1)
+    e = patch%mem(i1,i2,i3,patch%idx%e,patch%it,1)
+    if (eos%gamma == 1d0) then
+      cs = sqrt(e/d)/ds
+    else
+      cs = sqrt(e*eos%gamma*(eos%gamma-1d0)/d)/ds
+    end if
     do ib=1,n_bin
-      if (verbose==4) then
-        write (io_unit%log,'("kdk:",i6,4i4)') self%patch%id, i1, i2, i3, ib
-      end if
-      c = cs/self%s_cgs(ib)
-      !if (self%patch%id==1.and.i3==self%lb(3).and.i2==self%lb(2).and.i1==self%lb(1)) then
-      !  write (stdout,*) 'ib,c:', ib,c
-      !end if
       p => self%particles(i1,i2,i3,ib)
-      associate (n_particles => timer%n_particles)
-      !$omp atomic update
-      n_particles = n_particles + p%np
-      end associate
-      if (verbose > 0) then
-        o => self%previous(i1,i2,i3,ib)
-        o%lp = p%lp
-        o%np = p%np
-        do j=1,p%lp
-          dt = self%dtime*0.5d0
-          cmin = min(c*dt,cmin)
-          cmax = max(c*dt,cmax)
-          o%t(j) = p%t(j)
-          o%w(j) = p%w(j)
-          do i=1,3
-            o%r(j,i) = p%r(j,i)
-            o%v(j,i) = p%v(j,i)
-            o%q(j,i) = p%q(j,i)
-          end do
+      np = p%n
+      c = drag_c*d/self%s_cgs(ib)
+      a = self%a(:,i1,i2,i3)
+      v = self%v(:,i1,i2,i3)
+      dt = self%dtime
+      !-------------------------------------------------------------------------
+      ! With gas backtreaction
+      !-------------------------------------------------------------------------
+      if (backreaction) then
+        do j=1,np
+          dv(1) = v(1)-p%v(j,1)                           ! speed difference
+          dv(2) = v(2)-p%v(j,2)                           ! speed difference
+          dv(3) = v(3)-p%v(j,3)                           ! speed difference
+          pc = c*sqrt(1.0 &
+              + (dv(1)**2+dv(2)**2+dv(3)**2)/cs**2)       ! supersonic Epstein
+          pd(1) = pc*dv(1)                                ! drag force
+          pd(2) = pc*dv(2)                                ! drag force
+          pd(3) = pc*dv(3)                                ! drag force
+          pwd = p%w(j)/d                                  ! density ratio
+          cf = 1./(1.+pc*dt*(1.+pwd))                     ! common factor
+          dv(1) = dt*(a(1)+pd(1))*cf                      ! velocity delta
+          dv(2) = dt*(a(2)+pd(2))*cf                      ! velocity delta
+          dv(3) = dt*(a(3)+pd(3))*cf                      ! velocity delta
+          p%v(j,1) = p%v(j,1) + dv(1)                     ! particle update
+          p%v(j,2) = p%v(j,2) + dv(2)                     ! particle update
+          p%v(j,3) = p%v(j,3) + dv(3)                     ! particle update
+          v(1) = v(1) - dv(1)*pwd                         ! gas update
+          v(2) = v(2) - dv(2)*pwd                         ! gas update
+          v(3) = v(3) - dv(3)*pwd                         ! gas update
+          p%r(j,1) = p%r(j,1) + 2.*dt*p%v(j,1)            ! forward two dr
+          p%r(j,2) = p%r(j,2) + 2.*dt*p%v(j,2)            ! forward two dr
+          p%r(j,3) = p%r(j,3) + 2.*dt*p%v(j,3)            ! forward two dr
+          pd(1) = pc*(v(1)-p%v(j,1))                      ! drag force
+          pd(2) = pc*(v(2)-p%v(j,2))                      ! drag force
+          pd(3) = pc*(v(3)-p%v(j,3))                      ! drag force
+          dv(1) = dt*(a(1)+pd(1))*cf                      ! velocity delta
+          dv(2) = dt*(a(2)+pd(2))*cf                      ! velocity delta
+          dv(3) = dt*(a(3)+pd(3))*cf                      ! velocity delta
+          p%v(j,1) = p%v(j,1) + dv(1)                     ! particle update
+          p%v(j,2) = p%v(j,2) + dv(2)                     ! particle update
+          p%v(j,3) = p%v(j,3) + dv(3)                     ! particle update
+          v(1) = v(1) - dv(1)*pwd                         ! gas update
+          v(2) = v(2) - dv(2)*pwd                         ! gas update
+          v(3) = v(3) - dv(3)*pwd                         ! gas update
+        end do
+      !-------------------------------------------------------------------------
+      ! No gas backtreaction
+      !-------------------------------------------------------------------------
+      else
+        do j=1,np
+          dv(1) = v(1)-p%v(j,1)                           ! speed difference
+          dv(2) = v(2)-p%v(j,2)                           ! speed difference
+          dv(3) = v(3)-p%v(j,3)                           ! speed difference
+          pc = c*sqrt(1.0 &
+              + (dv(1)**2+dv(2)**2+dv(3)**2)/cs**2)       ! supersonic Epstein
+          dv(1) = dt*(a(1)+pc*dv(1))/(1.+pc*dt)           ! velocity delta
+          dv(2) = dt*(a(2)+pc*dv(2))/(1.+pc*dt)           ! velocity delta
+          dv(3) = dt*(a(3)+pc*dv(3))/(1.+pc*dt)           ! velocity delta
+          p%v(j,1) = p%v(j,1) + dv(1)                     ! particle update
+          p%v(j,2) = p%v(j,2) + dv(2)                     ! particle update
+          p%v(j,3) = p%v(j,3) + dv(3)                     ! particle update
+          p%r(j,1) = p%r(j,1) + 2.*dt*p%v(j,1)            ! forward two dr
+          p%r(j,2) = p%r(j,2) + 2.*dt*p%v(j,2)            ! forward two dr
+          p%r(j,3) = p%r(j,3) + 2.*dt*p%v(j,3)            ! forward two dr
+          dv(1) = dt*(a(1)+pc*dv(1))/(1.+pc*dt)           ! velocity delta
+          dv(2) = dt*(a(2)+pc*dv(2))/(1.+pc*dt)           ! velocity delta
+          dv(3) = dt*(a(3)+pc*dv(3))/(1.+pc*dt)           ! velocity delta
+          p%v(j,1) = p%v(j,1) + dv(1)                     ! particle update
+          p%v(j,2) = p%v(j,2) + dv(2)                     ! particle update
+          p%v(j,3) = p%v(j,3) + dv(3)                     ! particle update
         end do
       end if
-      np = p%np
-      if (verbose==5) then
-        write (io_unit%log,'("kdk:",i6,4i4,1p,2(3e10.2,2x))') &
-          self%patch%id, i1, i2, i3, ib, self%v(:,i1,i2,i3), self%a(:,i1,i2,i3)
-      end if
-      do i=1,3
-        a = self%a(i,i1,i2,i3)
-        v = self%v(i,i1,i2,i3)
-        if (verbose==6) then
-          do j=1,np
-            dt = max(0.0,0.5*(self%time - p%t(j)))
-            p%v(j,i) = p%v(j,i) + dt*(a+c*(v-p%v(j,i)))/(1.+c*dt)
-            p%r(j,i) = p%r(j,i) + dt*p%v(j,i)*2.0
-            p%v(j,i) = p%v(j,i) + dt*(a+c*(v-p%v(j,i)))/(1.+c*dt)
-            q = floor(p%r(j,i))
-            p%r(j,i) = p%r(j,i) - q
-            p%q(j,i) = p%q(j,i) + q
-!            vmin = min(vmin,p%v(j,i))
-!            vmax = max(vmax,p%v(j,i))
-            write (io_unit%log,'("kdk:",i6,8i4,1p,3e10.2)') self%patch%id, &
-              i1, i2, i3, ib, j, i, q, p%q(j,i), p%r(j,i), p%v(j,i)
-          end do
-        else
-          !$omp simd
-          do j=1,np
-            dt = max(0.0,0.5*(self%time - p%t(j)))
-            p%v(j,i) = p%v(j,i) + dt*(a+c*(v-p%v(j,i)))/(1.+c*dt)
-            p%r(j,i) = p%r(j,i) + dt*p%v(j,i)*2.0
-            p%v(j,i) = p%v(j,i) + dt*(a+c*(v-p%v(j,i)))/(1.+c*dt)
-            q = floor(p%r(j,i))
-            p%r(j,i) = p%r(j,i) - q
-            p%q(j,i) = p%q(j,i) + q
-!            vmin = min(vmin,p%v(j,i))
-!            vmax = max(vmax,p%v(j,i))
-          end do
-        end if
-      end do
+      !-------------------------------------------------------------------------
+      ! Update cell address and save a flag indicating motion
+      !-------------------------------------------------------------------------
       do j=1,np
-        p%t(j) = self%time
+        q(1) = int(1.+p%r(j,1))-1
+        q(2) = int(1.+p%r(j,2))-1
+        q(3) = int(1.+p%r(j,3))-1
+        p%r(j,1) = p%r(j,1) - q(1)
+        p%r(j,2) = p%r(j,2) - q(2)
+        p%r(j,3) = p%r(j,3) - q(3)
+        p%q(j,1) = p%q(j,1) + q(1)
+        p%q(j,2) = p%q(j,2) + q(3)
+        p%q(j,3) = p%q(j,3) + q(2)
+        p%flag(j) = abs(q(1)) + abs(q(2)) + abs(q(3))
       end do
     end do
   end do
   end do
   end do
-  !................................................-+.............................
+  !.............................................................................
   wc = omp_get_wtime() - wc
   if (verbose > 0) then
-    write (io_unit%log,'(f6.3," s",6p,f8.3," mus/p",i6,i10,a10,1p,4e9.1)') &
-      wc, wc/self%np, self%patch%id, self%np, 'KDK', &
-      vmin, vmax, cmin, cmax
+    write (stdlog,'("KDK",6p,f8.3,i6,i10,1p,4e9.1)') &
+      wc/self%n, self%patch%id, self%n
   end if
   call trace%end (itimer)
 END SUBROUTINE kdk
+
+!===============================================================================
+!> Count new particle numbers, either directly, or differentially
+!===============================================================================
+SUBROUTINE count (self)
+  class(particle_solver_t):: self
+  integer:: i1, i2, i3, i4, j, ii(3), qq(3)
+  type(particles_t), pointer :: p
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin ('particle_solver_t%count1', itimer=itimer)
+  do i3=self%lb(3),self%ub(3)
+  do i2=self%lb(2),self%ub(2)
+  do i1=self%lb(1),self%ub(1)
+    if (count_all) then
+      do i4=1,self%n_bin
+        p => self%particles(i1,i2,i3,i4)
+        do j=1,p%n
+          ii = p%q(j,1:3)
+          self%particles(ii(1),ii(2),ii(3),i4)%np_new = &
+          self%particles(ii(1),ii(2),ii(3),i4)%np_new + 1
+        end do
+      end do
+    else
+      !-------------------------------------------------------------------------
+      ! Differential counts
+      !-------------------------------------------------------------------------
+      ii = [i1,i2,i3]
+      do i4=1,self%n_bin
+        p => self%particles(i1,i2,i3,i4)
+        do j=1,p%n
+          qq = p%q(j,1:3)
+          if (any(qq /= ii)) then
+            self%particles(ii(1),ii(2),ii(3),i4)%np_new = &
+            self%particles(ii(1),ii(2),ii(3),i4)%np_new - 1
+            self%particles(qq(1),qq(2),qq(3),i4)%np_new = &
+            self%particles(qq(1),qq(2),qq(3),i4)%np_new + 1
+          end if
+        end do
+      end do
+    end if
+  end do
+  end do
+  end do
+  call trace%end (itimer)
+END SUBROUTINE count
 
 !===============================================================================
 !> Re-assign particles to other cells.  New particles will be added at the
@@ -421,7 +561,7 @@ SUBROUTINE trade (self)
   integer                                     :: i1, i2, i3, ip, ib, i, j, ii(3)
   integer                                     :: q1, q2, q3, pq(3)
   integer                                     :: j2, ne, nm, ne1, nm1
-  integer                                     :: n1, n2, n3, n4, n5, me, mp
+  integer                                     :: n3, n4, n5, me, mp
   real(8)                                     :: wc
   real                                        :: dt
   type(particles_t), pointer                  :: p, pn, pe, o
@@ -433,8 +573,6 @@ SUBROUTINE trade (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('particle_solver_t%trade', itimer=itimer)
   wc = omp_get_wtime()
-  n1 = 0
-  n2 = 0
   n3 = 0
   n4 = 0
   n5 = 0
@@ -443,31 +581,28 @@ SUBROUTINE trade (self)
   do ib=1,n_bin
     pe => self%exports(ib)
     call pe%lock%set ('exp')
-    if (verbose > 1) then
-      write (io_unit%log,'(i6,2x,a,3i10)') &
-      self%patch%id, 'exports before:', pe%np, pe%lp, pe%mp
+    if (verbose > 2) then
+      write (stdlog,'(i6,2x,a,3i10)') &
+      self%patch%id, 'exports before:', pe%n, pe%lp, pe%mp
     end if
     do i3=self%lb(3),self%ub(3)
     do i2=self%lb(2),self%ub(2)
     do i1=self%lb(1),self%ub(1)
       ii = [i1,i2,i3]
       p => self%particles(i1,i2,i3,ib)
-      if (verbose > 0) then
-        o => self%previous(i1,i2,i3,ib)
-      end if
-      if (verbose > 1) then
+      if (verbose > 2) then
         call  p%validate ('p  before')
         call pe%validate ('pe before')
       end if
-      if (p%np == 0) write(io_unit%log,'(a,6i5)') '0p bef trade', p%id, p%lp
+      if (p%n == 0) write(stdlog,'(a,6i5)') '0p bef trade', p%id, p%lp
       ne1 = 0
       nm1 = 0
-      if (verbose > 2) then
-        write (io_unit%log,'(a,i6,4i4,6i6)') 'trade: id,i1,i2,i3,ib,nm,ne,nlp,nle=', &
-        self%patch%id,i1,i2,i3,ib,nm1,ne1,p%np,p%lp,pe%np,pe%lp
+      if (verbose > 3) then
+        write (stdlog,'(a,i6,4i4,6i6)') 'trade: id,i1,i2,i3,ib,nm,ne,nlp,nle=', &
+        self%patch%id,i1,i2,i3,ib,nm1,ne1,p%n,p%lp,pe%n,pe%lp
       end if
       do j=1,p%lp
-        if (p%w(j) > 0.0) then
+        if (p%w(j) > 0.0 .and. p%flag(j) /= 0) then
           !---------------------------------------------------------------------
           ! If the position index is outside, move the particle to exports
           !---------------------------------------------------------------------
@@ -491,13 +626,13 @@ SUBROUTINE trade (self)
               me = 1.2*pe%mp
               call pe%resize(me)
               self%me = me
-              if (verbose > 0) then
-                write (io_unit%log,*) &
+              if (verbose > 2) then
+                write (stdlog,*) &
                   'export resize: mo, mp =', me, self%me
               end if
               n3 = n3+1
             end if
-            pe%np = pe%np + 1           ! increment export count
+            pe%n = pe%n + 1           ! increment export count
             pe%lp = pe%lp + 1           ! increment export length
             j2 = pe%lp
             do i=1,3
@@ -506,18 +641,17 @@ SUBROUTINE trade (self)
               pe%q(j2,i) = p%q(j,i)
             end do
             pe%w(j2) = p%w(j)
-            pe%t(j2) = p%t(j)
             p%w(j) = 0.0                ! mark position empty
-            p%np = p%np - 1             ! decrement actual count
+            p%n = p%n - 1             ! decrement actual count
             if (j == p%lp) then         ! if last slot
               p%lp = p%lp - 1           ! also decrement length
             end if
-            if (verbose > 1) then
+            if (verbose > 2) then
               call  p%validate ('p0 after ')
               call pe%validate ('pe after ')
-              if (verbose > 2) then
-                write (io_unit%log,'(i6,":",3i4,2i6,2x,a,i6,3i4,2i6,1p,e10.2)') &
-                j, i1, i2, i3, p%np, p%lp, 'export', j2, pq, pe%np, pe%lp, pe%w(j2)
+              if (verbose > 3) then
+                write (stdlog,'(i6,":",3i4,2i6,2x,a,i6,3i4,2i6,1p,e10.2)') &
+                j, i1, i2, i3, p%n, p%lp, 'export', j2, pq, pe%n, pe%lp, pe%w(j2)
               end if
             end if
             !-------------------------------------------------------------------
@@ -530,81 +664,64 @@ SUBROUTINE trade (self)
             !q2 = pq(2)
             !q3 = pq(3)
             pn => self%particles(pq(1),pq(2),pq(3),ib)
-            if (pn%lp >= p%mp) then
+            pn%lp = pn%lp + 1
+            j2 = pn%lp
+            !--- j2 is now the index of the cell to fill ---
+            if (j2 >= p%mp) then
               mp = 1.2*pn%mp
               call pn%resize(mp)
               pn%mp = mp
-              if (verbose > 0) then
-                write (io_unit%log,*) &
+              if (verbose > 2) then
+                write (stdlog,*) &
                   'particles resize: mo, mp =', mp, self%mp
               end if
               n4 = n4+1
             end if
-            if (pn%lp < pn%mp) then
-              pn%np = pn%np + 1           ! increment target count
-              j2 = pn%lp + 1
-              pn%lp = j2                  ! increment target length
+            if (j2 < pn%mp) then
+              pn%n = pn%n + 1             ! increment target count
               do i=1,3
                 pn%r(j2,i) = p%r(j,i)
                 pn%v(j2,i) = p%v(j,i)
                 pn%q(j2,i) = p%q(j,i)
               end do
               pn%flag(j2) = p%flag(j)
-              pn%t(j2) = p%t(j)
               pn%w(j2) = p%w(j)
               p%w(j) = 0.0                ! mark position empty
-              p%np = p%np - 1             ! decrement source count
-              !if (j == p%lp) then         ! if last slot
-              !  p%lp = p%lp - 1           ! also decrement length
-              !end if
+              p%n = p%n - 1               ! decrement source count
+              if (j == p%lp) then         ! if last slot
+                p%lp = p%lp - 1           ! also decrement length
+              end if
             else
               call io%abort ('should not happen')
             end if
-            if (verbose > 1) then
+            if (verbose > 2) then
               call  p%validate ('p1 after ')
               call pn%validate ('pn after ')
             end if
           end if
         end if
       end do
-      if (p%np <= 0.5*min_fraction*particles_per_bin) then
+      if (p%n <= 0.5*min_fraction*particles_per_bin) then
         n5 = n5+1
       end if
       ne = ne + ne1
       nm = nm + nm1
-      if (p%np == 0) then
-        if (verbose > 0) then
-          write(io_unit%log,'(a,i6,4i4,3f6.1)') &
-            '0p after trade', p%id, self%v(:,i1,i2,i3)*self%dtime
-          do j=1,o%np
-            dt = p%t(j) - o%t(j)
-            write (io_unit%log,'(a,1p,3e10.2,0p,2(3i3,1x,3f6.2,1x,3f6.2))') &
-              '0p', dt, o%w(j), p%w(j), &
-              o%q(j,:), o%r(j,:), o%v(j,:)*dt, &
-              p%q(j,:), p%r(j,:), p%v(j,:)*dt
-          end do
-        end if
-      end if
       if (verbose > 2) then
-        write (io_unit%log,'(a,i6,4i4,6i6)') 'trade: id,i1,i2,i3,ib,nm,ne,nlp.nle=', &
-        self%patch%id,i1,i2,i3,ib,nm1,ne1,p%np,p%lp,pe%np,pe%lp
-      end if
-      if (verbose > 1) then
         call pe%validate ('pe')
       end if
     end do
     end do
     end do
-    if (verbose > 1) then
-      write (io_unit%log,'(i6,2x,a,3i10)') &
-      self%patch%id, 'exports  after:', pe%np, pe%lp, pe%mp
+    if (verbose > 2) then
+      write (stdlog,'(i6,2x,a,3i10)') &
+      self%patch%id, 'exports  after:', pe%n, pe%lp, pe%mp
     end if
     call pe%lock%unset ('exp')
   end do
   wc = omp_get_wtime() - wc
   if (verbose > 0) then
-    write (io_unit%log,'(f6.3," s",6p,f8.3," mus/p",i6,i10,a10,7i10)') &
-      wc, wc/self%np, self%patch%id, self%np, 'trade', nm, ne, n1, n2, n3, n4, n5
+    write (stdlog,'("TRADE",6p,f8.3,i6,8i10)') &
+      wc/self%n, self%patch%id, self%n, nm, ne, n3, n4, n5
   end if
   call trace%end (itimer)
 END SUBROUTINE trade
@@ -624,15 +741,15 @@ SUBROUTINE import (self)
   integer, save              :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('particle_solver_t%import' ,itimer=itimer)
-  if (verbose > 1) then
+  if (verbose > 2) then
     do i3=self%lb(3),self%ub(3)
     do i2=self%lb(2),self%ub(2)
     do i1=self%lb(1),self%ub(1)
       do ib=1,n_bin
         p => self%particles(i1,i2,i3,ib)
-        write(io_unit%log,'(a,i6,4i4,3i6)') &
+        write(stdlog,'(a,i6,4i4,3i6)') &
         'after import: i1,i2,i3,ib,np,lp,mp0', &
-        self%patch%id,i1,i2,i3,ib,p%np,p%lp,p%mp
+        self%patch%id,i1,i2,i3,ib,p%n,p%lp,p%mp
         call pe%validate ('before import')
       end do
     end do
@@ -664,7 +781,7 @@ SUBROUTINE import (self)
               p => self%particles(q(1),q(2),q(3),ib)
               if (p%lp >= p%mp) then
                 call p%pack (np)
-                if (verbose > 1) call p%validate ('p forced')
+                if (verbose > 2) call p%validate ('p forced')
               end if
               if (p%lp < p%mp) then
                 n = n  + 1
@@ -675,11 +792,10 @@ SUBROUTINE import (self)
                   p%q(jp,i) = q(i)
                 end do
                 p%w(jp) = pe%w(j)
-                p%t(jp) = pe%t(j)
                 p%lp = jp
-                p%np = p%np+1
+                p%n = p%n+1
                 pe%w(j) = 0.0
-                pe%np = pe%np - 1
+                pe%n = pe%n - 1
               else
                 ne = ne + 1
               end if
@@ -694,24 +810,24 @@ SUBROUTINE import (self)
     nbor => nbor%next
   end do
   wc = omp_get_wtime() - wc
-  if (verbose > 1) then
+  if (verbose > 2) then
     do i3=self%lb(3),self%ub(3)
     do i2=self%lb(2),self%ub(2)
     do i1=self%lb(1),self%ub(1)
       do ib=1,n_bin
         p => self%particles(i1,i2,i3,ib)
-        write(io_unit%log,'(a,i6,4i4,3i6)') &
+        write(stdlog,'(a,i6,4i4,3i6)') &
         'after import: i1,i2,i3,ib,np,lp,mp0', &
-        self%patch%id,i1,i2,i3,ib,p%np,p%lp,p%mp
+        self%patch%id,i1,i2,i3,ib,p%n,p%lp,p%mp
         call p%validate ('after import')
       end do
     end do
     end do
     end do
   end if
-  if (verbose > 0) then
-    write (io_unit%log,'(f6.3," s",6p,f8.3," mus/p",i6,i10,a10,2i10)') &
-      wc, wc/self%np, self%patch%id, self%np, 'import', ni, ne
+  if (verbose > 1) then
+    write (stdlog,'(f6.3," s",6p,f8.3," mus/p",i6,i10,a10,2i10)') &
+      wc, wc/self%n, self%patch%id, self%n, 'import', ni, ne
   end if
   call trace%end (itimer)
 END SUBROUTINE import
@@ -743,14 +859,14 @@ SUBROUTINE pack (self)
     do ib=1,n_bin
       p => self%particles(i1,i2,i3,ib)
       p%id = [self%patch%id,i1,i2,i3,ib]
-      np(1) = max(np(1),p%np)
+      np(1) = max(np(1),p%n)
       lp(1) = max(lp(1),p%lp)
-      if (p%np == 0) write(io_unit%log,'(a,7i5,3f6.1)') &
-        '0p bef pack ',p%id,p%np,p%lp, self%v(:,i1,i2,i3)
+      if (p%n == 0) write(stdlog,'(a,7i5,3f6.1)') &
+        '0p bef pack ',p%id,p%n,p%lp, self%v(:,i1,i2,i3)
       call p%pack (n)
-      !if (p%np == 0) write(io_unit%log,'(a,7i5,3f6.1)') &
-        !'0p aft pack ',p%id,p%np,p%lp, self%v(:,i1,i2,i3)
-      if (verbose > 1) call p%validate ('normal p')
+      !if (p%n == 0) write(stdlog,'(a,7i5,3f6.1)') &
+        !'0p aft pack ',p%id,p%n,p%lp, self%v(:,i1,i2,i3)
+      if (verbose > 2) call p%validate ('normal p')
     end do
   end do
   end do
@@ -763,18 +879,17 @@ SUBROUTINE pack (self)
     p => self%exports(ib)
     call p%lock%set ('pack')
     p%id = [self%patch%id,0,0,0,ib]
-    np(2) = max(np(2),p%np)
+    np(2) = max(np(2),p%n)
     lp(2) = max(lp(2),p%lp)
     call p%pack (n)
     call p%lock%unset ('pack')
-    if (verbose > 1) call p%validate ('normal pe')
+    if (verbose > 2) call p%validate ('normal pe')
   end do
   mp(2) = p%mp
   wc = omp_get_wtime() - wc
   if (verbose > 0) then
-    write (io_unit%log,'(f6.3," s",6p,f8.3," mus/p",i6,i10,a10,7i10)') &
-      wc, wc/self%np, self%patch%id, self%np, 'pack', n, np, lp, mp
-    flush (io_unit%log)
+    write (stdlog,'("PACK",6p,f8.3,i6,8i10)') &
+      wc/self%n, self%patch%id, self%n, n, np, lp, mp
   end if
   call trace%end (itimer)
 END SUBROUTINE pack
@@ -805,18 +920,18 @@ SUBROUTINE sumup (self)
       end do
       self%dd(i1,i2,i3,ib) = dd
       if (dd == 0.0) then
-        write (io_unit%log,'(a,i6,4i4,2i6,1p,4e10.2)') &
+        write (stdlog,'(a,i6,4i4,2i6,1p,4e10.2)') &
         'sumup 0d: id,np,lp,v=', &
-        p%id, p%np, p%lp, self%v(:,i1,i2,i3)*self%dtime
+        p%id, p%n, p%lp, self%v(:,i1,i2,i3)*self%dtime
       end if
     end do
   end do
   end do
   end do
   wc = omp_get_wtime() - wc
-  if (verbose > 0) then
-    write (io_unit%log,'(f6.3," s",6p,f8.3," mus/p",i6,i10,a10,i10)') &
-      wc, wc/self%np, self%patch%id, self%np, 'density', nmax
+  if (verbose > 1) then
+    write (stdlog,'(f6.3," s",6p,f8.3," mus/p",i6,i10,a10,i10)') &
+      wc, wc/self%n, self%patch%id, self%n, 'density', nmax
   end if
   call trace%end (itimer)
 END SUBROUTINE sumup
@@ -844,82 +959,82 @@ END SUBROUTINE sumup
     do ib=1,n_bin
       p => self%particles(i1,i2,i3,ib)
       9 format(3f8.3,i4)
-      call io%assert (p%np==p%lp, 'The state must be packed before renorm')
+      call io%assert (p%n==p%lp, 'The state must be packed before renorm')
       if (self%dd(i1,i2,i3,ib) <= 0.0) then
-        write (io_unit%log,'(a,i6,4i3,2i4,1p,5e9.1,i10)') &
+        write (stdlog,'(a,i6,4i3,2i4,1p,5e9.1,i10)') &
         'zero density warning: id,np,lp,v=', &
-        p%id,p%np,p%lp, self%v(:,i1,i2,i3), self%d(i1,i2,i3), &
+        p%id,p%n,p%lp, self%v(:,i1,i2,i3), self%d(i1,i2,i3), &
         self%patch%time, self%patch%istep
         cycle
       end if
       !-------------------------------------------------------------------------
       ! If too few particles, add new ones and set new weights to all
       !-------------------------------------------------------------------------
-      if (p%np < n_min) then
+      if (p%n < n_min) then
+        if (verbose > 1) &
+          write (stdlog,'(a,i6,4i4,2x,i4,f6.1)') &
+            'add', self%patch%id, i1, i2, i3, ib, p%n, n_min
         w = self%dd(i1,i2,i3,ib)/particles_per_bin
+        t = self%time
         !call p%pack (n)
-        t = 0d0
-        do j=1,p%np
-          p%w(j) = w
-          t = t + p%t(j)
-        end do
-        t = t/p%np
-        do j=p%np+1,particles_per_bin
+        do j=p%n+1,particles_per_bin
           do i=1,3
             p%r(j,i) = self%random%ran1()
             p%v(j,i) = self%v(i,i1,i2,i3)
           end do
           p%q(j,:) = [i1,i2,i3]
           p%w(j) = w
-          p%t(j) = t
         end do
-        na = na + particles_per_bin - p%np
-        p%np = particles_per_bin
+        na = na + particles_per_bin - p%n
+        p%n = particles_per_bin
         p%lp = particles_per_bin
-        if (verbose > 1) call p%validate ('renorm add')
+        if (verbose > 2) call p%validate ('renorm add')
       !-------------------------------------------------------------------------
       ! If too many, renormalize and remove extraneous
       !-------------------------------------------------------------------------
-      else if (p%np > n_max) then
-        nr = nr + (p%np - particles_per_bin)
+      else if (p%n > n_max) then
+        if (verbose > 1) &
+          write (stdlog,'(a,i6,4i4,2x,i4,f6.1)') &
+            'rem', self%patch%id, i1, i2, i3, ib, p%n, n_max
+        nr = nr + (p%n - particles_per_bin)
         j = p%lp
-        np = p%np
+        np = p%n
         lp = p%lp
-        do while (p%np > particles_per_bin)
+        do while (p%n > particles_per_bin)
           if (j <= 0) then
-            write (io_unit%log,'(a,i6,4i4,2x,4i4)') &
-              'error:', self%patch%id, i1, i2, i3, ib, np, lp, p%np, p%lp
+            write (stdlog,'(a,i6,4i4,2x,4i4)') &
+              'error:', self%patch%id, i1, i2, i3, ib, np, lp, p%n, p%lp
             write (stderr,*) 'ERROR'
             stop
           end if
-          if (verbose > 2) then
-            write (io_unit%log,'("rem:",3i4,1p,e10.2 )') j, p%np, p%lp, p%w(j)
+          if (verbose > 3) then
+            write (stdlog,'("rem:",3i4,1p,e10.2 )') j, p%n, p%lp, p%w(j)
           end if
           if (p%w(j) == 0.0) then                   ! if a hole
             p%lp = p%lp - 1                         ! shorten length
           else                                      ! if a particle
-            p%np = p%np - 1                         ! decrement count
+            p%n = p%n - 1                         ! decrement count
             p%lp = p%lp - 1                         ! shorten length
           end if
           j = j-1
         end do
         w = self%dd(i1,i2,i3,ib)/particles_per_bin  ! new weight
         !call p%pack (n)                             ! pack and set weight
-        do j=1,p%np                                 ! assumes packed state!
+        do j=1,p%n                                 ! assumes packed state!
           p%w(j) = w
         end do
-        p%np = particles_per_bin
+        p%n = particles_per_bin
         p%lp = particles_per_bin
-        if (verbose > 1) call p%validate ('renorm rem')
+        if (verbose > 2) call p%validate ('renorm rem')
       end if
     end do
   end do
   end do
   end do
   wc = omp_get_wtime() - wc
-  if (verbose > 0) then
-    write (io_unit%log,'(f6.3," s",6p,f8.3," mus/p",i6,i10,a10,2i10)') &
-      wc, wc/self%np, self%patch%id, self%np, 'renorm', na, nr
+  if (verbose > 1) then
+    write (stdlog,'(f6.3," s",6p,f8.3," mus/p",i6,i10,a10,2i10)') &
+      wc, wc/self%n, self%patch%id, self%n, 'renorm', na, nr
   end if
   call trace%end (itimer)
 END SUBROUTINE renorm
@@ -937,17 +1052,17 @@ SUBROUTINE output (self)
   integer:: i, j, n, i1, i2, i3, ib
   !-----------------------------------------------------------------------------
   call trace%begin ('dust_t%output')
-  if (verbose > 1) then
-    write (io_unit%log, '(a,i6,2f8.4)') &
+  if (verbose > 2) then
+    write (stdlog, '(a,i6,2f8.4)') &
       'dust_t%output: id, time, aux_next =', &
       self%patch%id, self%time, self%aux%aux_next
   end if
   if (self%time >= self%aux%aux_next) then
     call self%aux%register ('dust_d', self%dd)
     !...........................................................................
-    if (verbose > 1) then
+    if (verbose > 2) then
       do i=1,n_bin
-        write (io_unit%log, '(a,i6, i3,2x,1p,10e11.2)') &
+        write (stdlog, '(a,i6, i3,2x,1p,10e11.2)') &
           'dust_t%output: id, bin, n =', self%patch%id, i, self%dd(3,3,1:10,i)
       end do
     end if
@@ -960,14 +1075,14 @@ SUBROUTINE output (self)
         do ib=1,n_bin
           n = 0
           p => self%particles(i1,i2,i3,ib)
-          do j=1,p%np
+          do j=1,p%n
             if (p%flag(j) > 0) then
              n = n+1
             end if
           end do
           allocate (tmp_r(5,n))
           i = 0
-          do j=1,p%np
+          do j=1,p%n
             if (p%flag(j) > 0) then
               i = i+1
               tmp_r(1:3,i) = mesh%p + (p%q(j,:) + p%r(j,:) - mesh%o)*mesh%d
@@ -981,8 +1096,8 @@ SUBROUTINE output (self)
       end do
       call self%aux%register ('dust_p' , tmp_r)
       call self%aux%output_sequence (self%patch%id, self%time)
-      if (verbose > 0) then
-        write (io_unit%log, '(a,i6,f8.4,i3,2i8)') &
+      if (verbose > 1) then
+        write (stdlog, '(a,i6,f8.4,i3,2i8)') &
          'dust_t%output: id, particle array =', &
           self%patch%id, self%time, shape(tmp_r), i
       end if
@@ -990,8 +1105,8 @@ SUBROUTINE output (self)
     else
       call self%aux%output_sequence (self%patch%id, self%time)
     end if
-    if (verbose > 1) then
-      write (io_unit%log, '(a,i6,1p,10e11.2)') &
+    if (verbose > 2) then
+      write (stdlog, '(a,i6,1p,10e11.2)') &
        'dust_t%output: self%aux%aux_next =', &
         self%patch%id, self%aux%aux_next
     end if

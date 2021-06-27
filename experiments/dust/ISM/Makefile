@@ -2,7 +2,8 @@
 # Option groups
 #OPTS = full_debug
 #OPTS = debug
-OPTS =
+OPTS = vscode
+#OPTS =
 #OPTS = optimized
 #OPTS = optimized_diagnostics
 
@@ -13,8 +14,8 @@ SOLVER          = ramses/hydro
 #SOLVER          = ramses/mhd
 #SOLVER          = stagger2/e
 DUST_EVOLVE     = martin_s
-PARTICLE_SOLVER = dust
-#PARTICLE_SOLVER = dust_in_cells
+#PARTICLE_SOLVER = dust
+PARTICLE_SOLVER = dust_in_cells
 EXEC            = dispatch.x
 TOP             = ../../..
 
