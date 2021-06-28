@@ -26,6 +26,7 @@ MODULE particle_solver_mod
   USE units_mod
   USE list_mod
   USE link_mod
+  USE dll_mod
   USE omp_lock_mod
   USE omp_timer_mod
   USE particles_mod
@@ -43,10 +44,10 @@ MODULE particle_solver_mod
     real, pointer, contiguous  :: dd(:,:,:,:)         => null()
     type(particles_t), pointer :: particles(:,:,:,:)  => null()
     type(particles_t), pointer :: previous(:,:,:,:)   => null()
-    type(particles_t), pointer :: exports(:)          => null()
     class(gpatch_t), pointer   :: patch               => null()
     class(list_t), pointer     :: task_list           => null()
     class(nbor_t), pointer     :: nbor                => null()
+    type(export_list_t)        :: export_list
   contains
     procedure:: connect
     procedure:: init
@@ -129,6 +130,7 @@ SUBROUTINE init (self)
   self%me = particles_per_bin*self%patch%n(1)*self%patch%n(2)
   call self%random%init (seed)
   call self%aux%init
+  call self%export_list%init
   call trace%end ()
 END SUBROUTINE init
 
@@ -145,14 +147,12 @@ SUBROUTINE initial_condition (self)
   if (.not.on) return
   call trace%begin ('particle_solver_t%initial_condition')
   m = self%patch%gn
-  allocate (self%exports(n_bin))
   allocate (self%particles(m(1),m(2),m(3),n_bin))
   allocate (self%previous (m(1),m(2),m(3),n_bin))
   allocate (self%v(      3,m(1),m(2),m(3)))
   allocate (self%a(      3,m(1),m(2),m(3)))
   allocate (self%dd(       m(1),m(2),m(3),n_bin))
   allocate (self%s_cgs(n_bin), self%m_cgs(n_bin))
-  call io%bits_mem (storage_size(self%exports), n_bin, 'mem')
   call io%bits_mem (storage_size(self%particles), &
     product(shape(self%particles)), 'mem')
   call io%bits_mem (storage_size(self%previous), &
@@ -167,12 +167,12 @@ SUBROUTINE initial_condition (self)
     self%m_cgs(ib) = solid_density_cgs*self%s_cgs(ib)**3
     write(stdlog,'(a,i4,1p,2e11.2)') &
       'dust_t%init: bin, s_cgs, m_cgs =', ib, self%s_cgs(ib), self%m_cgs(ib)
-    allocate (self%exports(ib)%lock)
-    call self%exports(ib)%lock%init ('exp')
-    p => self%exports(ib)
-    call p%lock%set ('init')
-    call p%init (self%me, verbose)
-    call p%lock%unset ('init')
+    ! allocate (self%exports(ib)%lock)
+    ! call self%exports(ib)%lock%init ('exp')
+    ! p => self%exports(ib)
+    ! call p%lock%set ('init')
+    ! call p%init (self%me, verbose)
+    ! call p%lock%unset ('init')
     do i3=1,m(3)
     do i2=1,m(2)
     do i1=1,m(1)
@@ -190,10 +190,11 @@ SUBROUTINE initial_condition (self)
       p%lp = p%n
       w = self%dd(i1,i2,i3,ib)/(n_bin*p%n)
       do j=1,p%n
+        p%w(j) = w
+        p%t(j) = self%patch%time
         p%r(j,:) = self%random%uniform(3)
         p%v(j,:) = 0.0
         p%q(j,:) = [i1,i2,i3]
-        p%w(j) = w
         p%flag(j) = 0
       end do
     end do
@@ -355,6 +356,7 @@ SUBROUTINE copy (self)
       p2%q(k,2) = p1%q(j,2)
       p2%q(k,3) = p1%q(j,3)
       p2%w(k)   = p1%w(j)
+      p2%t(k)   = p1%t(j)
       p2%n = k
     end do
     call p1%dealloc
@@ -416,6 +418,7 @@ SUBROUTINE kdk (self)
       !-------------------------------------------------------------------------
       if (backreaction) then
         do j=1,np
+          dt = 0.5*(self%time - p%t(j))                   ! particle step
           dv(1) = v(1)-p%v(j,1)                           ! speed difference
           dv(2) = v(2)-p%v(j,2)                           ! speed difference
           dv(3) = v(3)-p%v(j,3)                           ! speed difference
@@ -564,7 +567,9 @@ SUBROUTINE trade (self)
   integer                                     :: n3, n4, n5, me, mp
   real(8)                                     :: wc
   real                                        :: dt
-  type(particles_t), pointer                  :: p, pn, pe, o
+  type(item_t), pointer                       :: item
+  class(dll_node_t), pointer                  :: this, next
+  type(particles_t), pointer                  :: p, pn, pe, o, exports(:)
   real, pointer, contiguous, dimension(:,:)   :: pv, pr
   real, pointer, contiguous, dimension(:,:,:) :: p1, p2, p3
   logical                                     :: export, move
@@ -573,14 +578,18 @@ SUBROUTINE trade (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('particle_solver_t%trade', itimer=itimer)
   wc = omp_get_wtime()
+  !-----------------------------------------------------------------------------
+  ! Allocate a new array of exports particle lists and loop over cells
+  !-----------------------------------------------------------------------------
+  allocate (item, exports(self%n_bin))
   n3 = 0
   n4 = 0
   n5 = 0
   nm = 0
   ne = 0
   do ib=1,n_bin
-    pe => self%exports(ib)
-    call pe%lock%set ('exp')
+    pe => exports(ib)
+    call pe%init (self%mp, self%verbose)
     if (verbose > 2) then
       write (stdlog,'(i6,2x,a,3i10)') &
       self%patch%id, 'exports before:', pe%n, pe%lp, pe%mp
@@ -641,6 +650,7 @@ SUBROUTINE trade (self)
               pe%q(j2,i) = p%q(j,i)
             end do
             pe%w(j2) = p%w(j)
+            pe%t(j2) = p%t(j)
             p%w(j) = 0.0                ! mark position empty
             p%n = p%n - 1             ! decrement actual count
             if (j == p%lp) then         ! if last slot
@@ -686,6 +696,7 @@ SUBROUTINE trade (self)
               end do
               pn%flag(j2) = p%flag(j)
               pn%w(j2) = p%w(j)
+              pn%t(j2) = p%t(j)
               p%w(j) = 0.0                ! mark position empty
               p%n = p%n - 1               ! decrement source count
               if (j == p%lp) then         ! if last slot
@@ -716,8 +727,50 @@ SUBROUTINE trade (self)
       write (stdlog,'(i6,2x,a,3i10)') &
       self%patch%id, 'exports  after:', pe%n, pe%lp, pe%mp
     end if
-    call pe%lock%unset ('exp')
   end do
+  !-----------------------------------------------------------------------------
+  ! Append the new exports particle list to the export list, under lock
+  !-----------------------------------------------------------------------------
+  call self%export_list%lock%set ('trade')
+  item%exports => exports
+  this => item
+  call self%export_list%append (this)
+  !-----------------------------------------------------------------------------
+  ! Prune any empty members and unlock
+  !-----------------------------------------------------------------------------
+  this => self%export_list%head
+  do while (associated(this))
+    block
+      logical:: ok
+      next => this%next
+      select type (this)
+      class is (item_t)
+        exports => item%exports
+        ok = .true.
+        do ib=1,self%n_bin
+          pe => exports(ib)
+          if (pe%n > 0) then
+            ok = .false.
+            exit
+          end if
+        end do
+      end select
+      if (ok) then
+        print *, self%patch%id, 'removing empty exports'
+        do ib=1,self%n_bin
+          call exports(ib)%dealloc
+        end do
+        deallocate (exports)
+        call self%export_list%remove (this)
+        deallocate (this)
+      end if
+    end block
+    this => next
+  end do
+  call self%export_list%lock%unset ('trade')
+  !-----------------------------------------------------------------------------
+  ! Finish
+  !-----------------------------------------------------------------------------
   wc = omp_get_wtime() - wc
   if (verbose > 0) then
     write (stdlog,'("TRADE",6p,f8.3,i6,8i10)') &
@@ -735,6 +788,8 @@ SUBROUTINE import (self)
   class(nbor_t)    , pointer :: nbor
   class(task_t)    , pointer :: nbtask
   class(particles_t), pointer:: pe, p
+  class(dll_node_t), pointer :: this
+  class(dll_t), pointer      :: export_list
   real(8)                    :: wc, r(3), dist(3)
   integer                    :: ni, ne, ib, n, j, jp, i, q(3), np
   integer                    :: i1, i2, i3
@@ -764,48 +819,65 @@ SUBROUTINE import (self)
     nbtask => nbor%task
     select type (nbtask)
     class is (particle_solver_t)
+      !-------------------------------------------------------------------------
+      ! Obtain a pointer to the exports list, under a brief lock
+      !-------------------------------------------------------------------------
+      call nbtask%export_list%lock%unset
+      export_list => nbtask%export_list
+      call nbtask%export_list%lock%unset
+      !-------------------------------------------------------------------------
+      ! Loop over the list
+      !-------------------------------------------------------------------------
       dist = nbtask%patch%task_t%distance(self%patch)/nbtask%patch%ds
-      !-------------------------------------------------------------------------
-      ! Loop over particles in export list and grab those that belong here
-      !-------------------------------------------------------------------------
-      n = 0
-      do ib=1,n_bin
-        pe => nbtask%exports(ib)
-        call pe%lock%set ('import')
-        j = 1
-        do while (j < pe%lp)
-          if (pe%w(j) > 0.0) then
-            r = dist + (pe%r(j,:)+pe%q(j,:))
-            q = floor(r)
-            if (all(q >= self%lb .and. q <= self%ub)) then
-              p => self%particles(q(1),q(2),q(3),ib)
-              if (p%lp >= p%mp) then
-                call p%pack (np)
-                if (verbose > 2) call p%validate ('p forced')
+      this => export_list%head
+      do while (associated(this))
+        select type (this)
+        class is (item_t)
+          !---------------------------------------------------------------------
+          ! Loop over particles in export list and grab those that belong here
+          !---------------------------------------------------------------------
+          n = 0
+          do ib=1,self%n_bin
+            pe => this%exports(ib)
+            ! call pe%lock%set ('import')
+            j = 1
+            do while (j < pe%lp)
+              if (pe%w(j) > 0.0) then
+                r = dist + (pe%r(j,:)+pe%q(j,:))
+                q = floor(r)
+                if (all(q >= self%lb .and. q <= self%ub)) then
+                  p => self%particles(q(1),q(2),q(3),ib)
+                  if (p%lp >= p%mp) then
+                    call p%pack (np)
+                    if (verbose > 2) call p%validate ('p forced')
+                  end if
+                  if (p%lp < p%mp) then
+                    n = n  + 1
+                    jp = p%lp + 1
+                    do i=1,3
+                      p%r(jp,i) = pe%r(j,i)
+                      p%v(jp,i) = pe%v(j,i)
+                      p%q(jp,i) = q(i)
+                    end do
+                    p%w(jp) = pe%w(j)
+                    p%t(jp) = pe%t(j)
+                    p%lp = jp
+                    p%n = p%n+1
+                    pe%w(j) = 0.0
+                    pe%n = pe%n - 1
+                  else
+                    ne = ne + 1
+                  end if
+                end if
               end if
-              if (p%lp < p%mp) then
-                n = n  + 1
-                jp = p%lp + 1
-                do i=1,3
-                  p%r(jp,i) = pe%r(j,i)
-                  p%v(jp,i) = pe%v(j,i)
-                  p%q(jp,i) = q(i)
-                end do
-                p%w(jp) = pe%w(j)
-                p%lp = jp
-                p%n = p%n+1
-                pe%w(j) = 0.0
-                pe%n = pe%n - 1
-              else
-                ne = ne + 1
-              end if
-            end if
-          end if
-          j = j + 1
-        end do
-        call pe%lock%unset ('import')
+              j = j + 1
+            end do
+            ! call pe%lock%unset ('import')
+          end do
+          ni = ni + n
+        end select
+        this => this%next
       end do
-      ni = ni + n
     end select
     nbor => nbor%next
   end do
@@ -840,6 +912,7 @@ SUBROUTINE pack (self)
   integer                    :: i1, i2, i3, ib, n, lp(2), np(2), mp(2)
   real(8)                    :: wc
   type(particles_t), pointer :: p
+  class(dll_node_t), pointer :: this
   integer, save              :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('particle_solver_t%pack', itimer=itimer)
@@ -875,15 +948,22 @@ SUBROUTINE pack (self)
   !-----------------------------------------------------------------------------
   ! Pack exports
   !-----------------------------------------------------------------------------
-  do ib=1,n_bin
-    p => self%exports(ib)
-    call p%lock%set ('pack')
-    p%id = [self%patch%id,0,0,0,ib]
-    np(2) = max(np(2),p%n)
-    lp(2) = max(lp(2),p%lp)
-    call p%pack (n)
-    call p%lock%unset ('pack')
-    if (verbose > 2) call p%validate ('normal pe')
+  this => self%export_list%head
+  do while (associated(this))
+    select type (this)
+    class is (item_t)
+      do ib=1,n_bin
+        p => this%exports(ib)
+        call p%lock%set ('pack')
+        p%id = [self%patch%id,0,0,0,ib]
+        np(2) = max(np(2),p%n)
+        lp(2) = max(lp(2),p%lp)
+        call p%pack (n)
+        call p%lock%unset ('pack')
+        if (verbose > 2) call p%validate ('normal pe')
+      end do
+    end select
+    this => this%next
   end do
   mp(2) = p%mp
   wc = omp_get_wtime() - wc
@@ -984,6 +1064,7 @@ END SUBROUTINE sumup
           end do
           p%q(j,:) = [i1,i2,i3]
           p%w(j) = w
+          p%t(j) = t
         end do
         na = na + particles_per_bin - p%n
         p%n = particles_per_bin
@@ -1013,14 +1094,14 @@ END SUBROUTINE sumup
           if (p%w(j) == 0.0) then                   ! if a hole
             p%lp = p%lp - 1                         ! shorten length
           else                                      ! if a particle
-            p%n = p%n - 1                         ! decrement count
+            p%n = p%n - 1                           ! decrement count
             p%lp = p%lp - 1                         ! shorten length
           end if
           j = j-1
         end do
         w = self%dd(i1,i2,i3,ib)/particles_per_bin  ! new weight
         !call p%pack (n)                             ! pack and set weight
-        do j=1,p%n                                 ! assumes packed state!
+        do j=1,p%n                                  ! assumes packed state!
           p%w(j) = w
         end do
         p%n = particles_per_bin

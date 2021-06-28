@@ -17,6 +17,7 @@ MODULE particles_mod
   USE io_mod
   USE trace_mod
   USE omp_lock_mod
+  USE dll_mod
   implicit none
   private
   integer, parameter:: n_words = 2*3 + 2 + 1 + 1
@@ -24,9 +25,10 @@ MODULE particles_mod
     real      , pointer, contiguous :: r(:,:)  => null()    ! 12 bytes
     real      , pointer, contiguous :: v(:,:)  => null()    ! 12 bytes
     real      , pointer, contiguous :: w(:)    => null()    !  4 bytes
-    integer(2), pointer, contiguous :: q(:,:)  => null()    !  8 bytes
+    integer(2), pointer, contiguous :: q(:,:)  => null()    !  6 bytes
     integer(2), pointer, contiguous :: flag(:) => null()    !  2 bytes
-    !.......................................................! 38 bytes/particle
+    real(8)   , pointer, contiguous :: t(:)    => null()    !  8 bytes
+    !.......................................................! 44 bytes/particle
     type(lock_t), pointer           :: lock    => null()
     integer                         :: verbose = 0
     integer                         :: id(5) = 0
@@ -41,6 +43,26 @@ MODULE particles_mod
     procedure:: validate
     procedure:: resize
   end type
+  !-----------------------------------------------------------------------------
+  ! Since a patch may need to export particles multiple times before the nbors
+  ! have picked up all particles from previous exports, we use a list of
+  ! exported particles to handle this.  Once an list of particles have been
+  ! added to the list of exports, it will not be touched / modified by the
+  ! particle solver owning it until it is ready to be deleted, when it contains
+  ! no more particles.  At that time no neighbor task has any reason to access
+  ! it either, except for reading the %n attribute, which contains zero.
+  !-----------------------------------------------------------------------------
+  type, public, extends(dll_t):: export_list_t
+  end type
+  !-----------------------------------------------------------------------------
+  ! To be able to add an export particle list to the list of exports, we let it
+  ! be an extenstion of the basic doubly-linked list (dll_t) data type.  We can
+  ! then add utility procedures that make it simpler to maintain the list of
+  ! exports, and the export particle lists themselves.
+  !-----------------------------------------------------------------------------
+  type, public, extends(dll_node_t):: item_t
+    class(particles_t), pointer:: exports(:)
+  end type
 CONTAINS
 
 !===============================================================================
@@ -50,7 +72,7 @@ SUBROUTINE init (self, mp, verbose)
   class(particles_t):: self
   integer:: mp, verbose
   !-----------------------------------------------------------------------------
-  allocate (self%r(mp,3), self%v(mp,3), self%q(mp,3), self%w(mp), &
+  allocate (self%r(mp,3), self%v(mp,3), self%q(mp,3), self%w(mp), self%t(mp), &
             self%flag(mp))
   call io%bits_mem (storage_size(self%w), mp*n_words, 'p')
   allocate (self%lock)
@@ -68,7 +90,7 @@ SUBROUTINE dealloc (self)
   class(particles_t):: self
   !-----------------------------------------------------------------------------
   call io%bits_mem (storage_size(self%w), -self%mp**n_words, 'p')
-  deallocate (self%r, self%v, self%q, self%w, self%flag)
+  deallocate (self%r, self%v, self%q, self%w, self%t, self%flag)
   call self%lock%destroy
   deallocate (self%lock)
 END SUBROUTINE dealloc
@@ -80,6 +102,7 @@ SUBROUTINE resize (self, mp)
   class(particles_t):: self
   integer:: mp, mo
   real, pointer:: r2(:,:), r1(:)
+  real(8), pointer:: d1(:)
   integer(kind=2), pointer:: i2(:,:)
   !-----------------------------------------------------------------------------
   mo = self%mp
@@ -89,6 +112,7 @@ SUBROUTINE resize (self, mp)
   r2 => self%v; allocate (self%v(mp,3)); self%v(1:mo,:) = r2(:,:)
   i2 => self%q; allocate (self%q(mp,3)); self%q(1:mo,:) = i2(:,:)
   r1 => self%w; allocate (self%w(mp  )); self%w(1:mo  ) = r1(:)
+  d1 => self%t; allocate (self%t(mp  )); self%t(1:mo  ) = d1(:)
   self%mp = mp
 END SUBROUTINE resize
 
@@ -140,6 +164,7 @@ SUBROUTINE pack (self, n)
             self%v(j1,i) = self%v(j2,i)
           end do
           self%w(j1) = self%w(j2)
+          self%t(j1) = self%t(j2)
           j2 = j2-1                                   ! previous end slot
         end if
         self%lp = j2

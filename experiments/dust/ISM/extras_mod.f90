@@ -76,7 +76,6 @@ MODULE extras_mod
     procedure:: courant_condition
     procedure:: statistics
     procedure:: is_ahead_of
-    procedure:: total_particles
   end type
   type(extras_t), public:: extras
 CONTAINS
@@ -233,37 +232,5 @@ FUNCTION is_ahead_of (self, target, extra)
     is_ahead_of = self%task_t%is_ahead_of (target)
   end if
 END FUNCTION is_ahead_of
-
-!===============================================================================
-!> Sum up number of particles in export bins (for debugging)
-!===============================================================================
-FUNCTION total_particles (self, details) RESULT (n)
-  class(extras_t):: self
-  logical, optional:: details
-  class(link_t), pointer:: link
-  class(task_t), pointer:: task
-  integer:: bin, n(2), np
-  !.............................................................................
-  n = 0
-  do bin=1,self%particle_solver%n_bin
-    n(1) = n(1) + self%particle_solver%exports(bin)%n
-  end do
-  link => self%task_list%head
-  do while (associated(link))
-    task => link%task
-    select type (task)
-    class is (extras_t)
-      do bin=1,task%particle_solver%n_bin
-        np = task%particle_solver%exports(bin)%n
-        n(2) = n(2) + np
-        if (np > 0 .and. present(details)) then
-          write (stdlog,'(a,i6,i3,i6)') &
-          'total_particles: id, bin, np', task%id, bin, np
-        end if
-      end do
-    end select
-    link => link%next
-  end do
-END FUNCTION total_particles
 
 END MODULE extras_mod
