@@ -301,7 +301,7 @@ SUBROUTINE initial_condition (self)
   class(particle_t), pointer  :: p
   type(particle_t), pointer   :: pn
   class(gpatch_t), pointer    :: patch
-  integer                     :: m(3), i1, i2, i3, i4, i, j, n, nv, l, nb, id(5)
+  integer                     :: m(3), i1, i2, i3, i4, i, j, n, l, nb, id(5)
   real                        :: d, w, w1, vg(3), chance
   logical                     :: draw
   integer, save               :: itimer=0, extra_bits
@@ -362,7 +362,6 @@ SUBROUTINE initial_condition (self)
         if (self%s_cgs(i4) > max_init_size_cgs) &
           w1 = 0.0
         n = n+2
-        nv = 0
         do j=1,particles_per_bin
           n = n+1
           if (particle_io .and. output_every > 0) then
@@ -374,8 +373,8 @@ SUBROUTINE initial_condition (self)
             allocate(pn)
             p => pn
             call p%init_vparticle
-            p%cell%id = 1 + omp%thread_global + (lid+nv)*omp%nthreads_global
-            nv = nv+1
+            p%cell%id = 1 + omp%thread_global + lid*omp%nthreads_global
+            lid = lid+1
             p%cell%dg = d
             p%cell%vg = vg
           else
@@ -406,7 +405,6 @@ SUBROUTINE initial_condition (self)
         self%np = self%np + particles%n
       end do
       l = l+particles_per_bin
-      lid = lid+nv
     end do
     call io%bits_mem (storage_size(p)+extra_bits, n, 'p')
   end do
