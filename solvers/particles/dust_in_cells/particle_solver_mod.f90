@@ -55,11 +55,9 @@ MODULE particle_solver_mod
     procedure:: initial_condition
     procedure:: update
     procedure, private:: setup
-    procedure, private:: copy
     procedure:: pack
     procedure, private:: import
     procedure, private:: kdk
-    procedure, private:: count
     procedure, private:: trade
     procedure, private:: sumup
     procedure, private:: renorm
@@ -234,9 +232,7 @@ SUBROUTINE update (self)
     wc = wallclock()
     call self%output
     call self%setup               ! set up cell properties
-    !call self%copy                ! copy particles
     call self%kdk                 ! move particles
-    !call self%count
     call self%trade               ! trade btw cells and export
     call self%import              ! import particles from nbors
     call self%pack                ! remove array holes
@@ -306,69 +302,6 @@ SUBROUTINE setup (self)
   end if
   call trace%end (itimer)
 END SUBROUTINE setup
-
-!===============================================================================
-!> Initialize cell data
-!===============================================================================
-SUBROUTINE copy (self)
-  class(particle_solver_t)   :: self
-  !.............................................................................
-  integer                    :: i1, i2, i3, i4, j, k, m(4), q(3), np, np_new
-  type(particles_t), pointer :: p1, p2, p3, new(:,:,:,:)
-  real(8)                    :: wc
-  integer, save              :: itimer=0
-  !-----------------------------------------------------------------------------
-  call trace%begin ('particle_solver_t%copy', itimer=itimer)
-  wc = wallclock()
-  m = shape(self%particles)
-  allocate (new(m(1),m(2),m(3),m(4)))
-  do i4=1,m(4)
-  do i3=self%lb(3),self%ub(3)
-  do i2=self%lb(2),self%ub(2)
-  do i1=self%lb(1),self%ub(1)
-    p1 => self%particles(i1,i2,i3,i4)
-    p2 => new(i1,i2,i3,i4)
-    call p2%init (p1%np_new, self%verbose)
-    p2%n = p1%np_new
-  end do
-  end do
-  end do
-  end do
-  print '(6p,f10.3," mus/cell-alloc")', (wallclock()-wc)/product(m(1:3))
-  wc = wallclock()
-  do i4=1,m(4)
-  do i3=self%lb(3),self%ub(3)
-  do i2=self%lb(2),self%ub(2)
-  do i1=self%lb(1),self%ub(1)
-    p1 => self%particles(i1,i2,i3,i4)
-    np = p1%n
-    do j=1,np
-      q = p1%q(j,1:3)
-      p2 => new(q(1),q(2),q(3),i4)
-      k = p2%n + 1
-      p2%r(k,1) = p1%r(j,1)
-      p2%r(k,2) = p1%r(j,2)
-      p2%r(k,3) = p1%r(j,3)
-      p2%v(k,1) = p1%v(j,1)
-      p2%v(k,2) = p1%v(j,2)
-      p2%v(k,3) = p1%v(j,3)
-      p2%q(k,1) = p1%q(j,1)
-      p2%q(k,2) = p1%q(j,2)
-      p2%q(k,3) = p1%q(j,3)
-      p2%w(k)   = p1%w(j)
-      p2%t(k)   = p1%t(j)
-      p2%n = k
-    end do
-    call p1%dealloc
-  end do
-  end do
-  end do
-  end do
-  deallocate (self%particles)
-  self%particles => new
-  print '(6p,f10.3," mus/cell-copy")', (wallclock()-wc)/product(m(1:3))
-  call trace%end (itimer)
-END SUBROUTINE copy
 
 !===============================================================================
 !> Kick-drift-kick update, with no hole in any cells
@@ -510,52 +443,6 @@ SUBROUTINE kdk (self)
 END SUBROUTINE kdk
 
 !===============================================================================
-!> Count new particle numbers, either directly, or differentially
-!===============================================================================
-SUBROUTINE count (self)
-  class(particle_solver_t):: self
-  integer:: i1, i2, i3, i4, j, ii(3), qq(3)
-  type(particles_t), pointer :: p
-  integer, save:: itimer=0
-  !-----------------------------------------------------------------------------
-  call trace%begin ('particle_solver_t%count1', itimer=itimer)
-  do i3=self%lb(3),self%ub(3)
-  do i2=self%lb(2),self%ub(2)
-  do i1=self%lb(1),self%ub(1)
-    if (count_all) then
-      do i4=1,self%n_bin
-        p => self%particles(i1,i2,i3,i4)
-        do j=1,p%n
-          ii = p%q(j,1:3)
-          self%particles(ii(1),ii(2),ii(3),i4)%np_new = &
-          self%particles(ii(1),ii(2),ii(3),i4)%np_new + 1
-        end do
-      end do
-    else
-      !-------------------------------------------------------------------------
-      ! Differential counts
-      !-------------------------------------------------------------------------
-      ii = [i1,i2,i3]
-      do i4=1,self%n_bin
-        p => self%particles(i1,i2,i3,i4)
-        do j=1,p%n
-          qq = p%q(j,1:3)
-          if (any(qq /= ii)) then
-            self%particles(ii(1),ii(2),ii(3),i4)%np_new = &
-            self%particles(ii(1),ii(2),ii(3),i4)%np_new - 1
-            self%particles(qq(1),qq(2),qq(3),i4)%np_new = &
-            self%particles(qq(1),qq(2),qq(3),i4)%np_new + 1
-          end if
-        end do
-      end do
-    end if
-  end do
-  end do
-  end do
-  call trace%end (itimer)
-END SUBROUTINE count
-
-!===============================================================================
 !> Re-assign particles to other cells.  New particles will be added at the
 !> end, and holes will only appear for indices up to the initial array lenght
 !===============================================================================
@@ -569,7 +456,7 @@ SUBROUTINE trade (self)
   real                                        :: dt
   type(item_t), pointer                       :: item
   class(dll_node_t), pointer                  :: this, next
-  type(particles_t), pointer                  :: p, pn, pe, o, exports(:)
+  type(particles_t), pointer                  :: p, pn, pe, o
   real, pointer, contiguous, dimension(:,:)   :: pv, pr
   real, pointer, contiguous, dimension(:,:,:) :: p1, p2, p3
   logical                                     :: export, move
@@ -581,14 +468,15 @@ SUBROUTINE trade (self)
   !-----------------------------------------------------------------------------
   ! Allocate a new array of exports particle lists and loop over cells
   !-----------------------------------------------------------------------------
-  allocate (item, exports(self%n_bin))
+  allocate (item)
+  call item%init (self%n_bin)
   n3 = 0
   n4 = 0
   n5 = 0
   nm = 0
   ne = 0
   do ib=1,n_bin
-    pe => exports(ib)
+    pe => item%exports(ib)
     call pe%init (self%mp, self%verbose)
     if (verbose > 2) then
       write (stdlog,'(i6,2x,a,3i10)') &
@@ -641,7 +529,7 @@ SUBROUTINE trade (self)
               end if
               n3 = n3+1
             end if
-            pe%n = pe%n + 1           ! increment export count
+            pe%n = pe%n + 1             ! increment export count
             pe%lp = pe%lp + 1           ! increment export length
             j2 = pe%lp
             do i=1,3
@@ -652,7 +540,7 @@ SUBROUTINE trade (self)
             pe%w(j2) = p%w(j)
             pe%t(j2) = p%t(j)
             p%w(j) = 0.0                ! mark position empty
-            p%n = p%n - 1             ! decrement actual count
+            p%n = p%n - 1               ! decrement actual count
             if (j == p%lp) then         ! if last slot
               p%lp = p%lp - 1           ! also decrement length
             end if
@@ -664,11 +552,12 @@ SUBROUTINE trade (self)
                 j, i1, i2, i3, p%n, p%lp, 'export', j2, pq, pe%n, pe%lp, pe%w(j2)
               end if
             end if
+          else if (move) then
             !-------------------------------------------------------------------
             ! If the position index has changed, add to the target cell and
-            ! remove from the source cell
+            ! remove from the source cell.  Note that no other thread ever
+            ! accesses the cell arrays, so there is no need to use omp atomic
             !-------------------------------------------------------------------
-          else if (move) then
             nm1 = nm1 + 1
             !q1 = pq(1)
             !q2 = pq(2)
@@ -731,42 +620,13 @@ SUBROUTINE trade (self)
   !-----------------------------------------------------------------------------
   ! Append the new exports particle list to the export list, under lock
   !-----------------------------------------------------------------------------
-  call self%export_list%lock%set ('trade')
-  item%exports => exports
   this => item
+  call self%export_list%lock%set ('trade')
   call self%export_list%append (this)
   !-----------------------------------------------------------------------------
   ! Prune any empty members and unlock
   !-----------------------------------------------------------------------------
-  this => self%export_list%head
-  do while (associated(this))
-    block
-      logical:: ok
-      next => this%next
-      select type (this)
-      class is (item_t)
-        exports => item%exports
-        ok = .true.
-        do ib=1,self%n_bin
-          pe => exports(ib)
-          if (pe%n > 0) then
-            ok = .false.
-            exit
-          end if
-        end do
-      end select
-      if (ok) then
-        print *, self%patch%id, 'removing empty exports'
-        do ib=1,self%n_bin
-          call exports(ib)%dealloc
-        end do
-        deallocate (exports)
-        call self%export_list%remove (this)
-        deallocate (this)
-      end if
-    end block
-    this => next
-  end do
+  call self%export_list%prune ()
   call self%export_list%lock%unset ('trade')
   !-----------------------------------------------------------------------------
   ! Finish
@@ -834,7 +694,10 @@ SUBROUTINE import (self)
         select type (this)
         class is (item_t)
           !---------------------------------------------------------------------
-          ! Loop over particles in export list and grab those that belong here
+          ! Loop over particles in export list and grab those that belong here.
+          ! Note that no other thread will try to claim the exact same particle,
+          ! so there is not need to do atomic updates, except on the number of
+          ! cells in the list
           !---------------------------------------------------------------------
           n = 0
           do ib=1,self%n_bin
@@ -863,7 +726,12 @@ SUBROUTINE import (self)
                     p%t(jp) = pe%t(j)
                     p%lp = jp
                     p%n = p%n+1
+                    !-----------------------------------------------------------
+                    ! Other threads will not claim this particle, but will
+                    ! access and update the number of particles in the cell
+                    !-----------------------------------------------------------
                     pe%w(j) = 0.0
+                    !$omp atomic update
                     pe%n = pe%n - 1
                   else
                     ne = ne + 1

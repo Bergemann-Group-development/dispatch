@@ -53,6 +53,8 @@ MODULE particles_mod
   ! it either, except for reading the %n attribute, which contains zero.
   !-----------------------------------------------------------------------------
   type, public, extends(dll_t):: export_list_t
+  contains
+    procedure:: prune
   end type
   !-----------------------------------------------------------------------------
   ! To be able to add an export particle list to the list of exports, we let it
@@ -61,7 +63,12 @@ MODULE particles_mod
   ! exports, and the export particle lists themselves.
   !-----------------------------------------------------------------------------
   type, public, extends(dll_node_t):: item_t
-    class(particles_t), pointer:: exports(:)
+    integer:: n
+    class(particles_t), pointer:: exports(:) => null()
+  contains
+    procedure:: init => init_exports
+    procedure:: dealloc => dealloc_exports
+    procedure:: is_empty
   end type
 CONTAINS
 
@@ -84,7 +91,7 @@ SUBROUTINE init (self, mp, verbose)
 END SUBROUTINE init
 
 !===============================================================================
-!> Initialize particle arrays
+!> Deallocate particle arrays
 !===============================================================================
 SUBROUTINE dealloc (self)
   class(particles_t):: self
@@ -96,7 +103,7 @@ SUBROUTINE dealloc (self)
 END SUBROUTINE dealloc
 
 !===============================================================================
-!> Resize
+!> Resize particle arrays
 !===============================================================================
 SUBROUTINE resize (self, mp)
   class(particles_t):: self
@@ -180,7 +187,7 @@ SUBROUTINE pack (self, n)
 END SUBROUTINE pack
 
 !===============================================================================
-!> Remove holes in particle arrays
+!> Validate particle arrays
 !===============================================================================
 SUBROUTINE validate (self, label)
   class(particles_t):: self
@@ -199,5 +206,82 @@ SUBROUTINE validate (self, label)
     call io%abort ('particles_t%validate')
   end if
 END SUBROUTINE validate
+
+!===============================================================================
+!> Prune empty members from a list of exports
+!===============================================================================
+SUBROUTINE prune (self)
+  class(export_list_t)       :: self
+  class(item_t)    , pointer :: item
+  class(dll_node_t), pointer :: this, next
+  type(particles_t), pointer :: pe, exports(:)
+  logical                    :: empty
+  integer                    :: i, ib, n_bin
+  !-----------------------------------------------------------------------------
+  i = 0
+  this => self%head
+  do while (associated(this))
+    next => this%next
+    i = i+1
+    empty = .false.
+    select type (this)
+    class is (item_t)
+      item => this
+    end select
+    empty = item%is_empty()
+    if (empty) then
+      write (stdout,*) 'particles_t%prune: removing list', i
+      call item%dealloc ()
+      call self%remove (this)
+      deallocate (this)
+    end if
+    this => next
+  end do
+END SUBROUTINE prune
+
+!===============================================================================
+!> Deallocate an item
+!===============================================================================
+SUBROUTINE init_exports (self, n)
+  class(item_t) :: self
+  integer       :: n
+  !-----------------------------------------------------------------------------
+  self%n = n
+  allocate (self%exports(n))
+END SUBROUTINE init_exports
+
+!===============================================================================
+!> Check if an item is empty6
+!===============================================================================
+FUNCTION is_empty (self) RESULT (yes)
+  class(item_t) :: self
+  logical       :: yes
+  integer       :: ib
+  !-----------------------------------------------------------------------------
+  yes = .true.
+  if (associated(self%exports)) then
+    do ib=1,size(self%exports)
+      if (self%exports(ib)%n > 0) then
+        yes = .false.
+        exit
+      end if
+    end do
+  end if
+END FUNCTION is_empty
+
+!===============================================================================
+!> Deallocate an item
+!===============================================================================
+SUBROUTINE dealloc_exports (self)
+  class(item_t) :: self
+  integer       :: ib
+  !-----------------------------------------------------------------------------
+  if (associated(self%exports)) then
+    do ib=1,size(self%exports)
+      call self%exports(ib)%dealloc
+    end do
+    deallocate (self%exports)
+  end if
+END SUBROUTINE dealloc_exports
 
 END MODULE particles_mod
