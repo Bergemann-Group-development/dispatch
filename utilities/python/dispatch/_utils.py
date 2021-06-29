@@ -26,7 +26,7 @@ def read_patch_metadata(io=0,run='',data='../data',n_rank=0,verbose=0):
         if verbose>0:
             print(file0,len(patches.keys()),'patches')
     else:
-        if verbose >= 0:
+        if verbose > 0:
             print('cashing metadata to',file0)
         rank=0
         while(rank < n_rank):

@@ -232,7 +232,7 @@ def _cmap(v,cmap):
             cmap='coolwarm'
     return cmap
 
-def unigrid_plane(sn,iv='d',z=0.5,x=None,y=None,title=None,cmap=None,**kw):
+def unigrid_plane(sn,iv='d',z=0.5,x=None,y=None,title=None,cmap=None,i4=0,**kw):
     """
     keywords passed on to dispatch.select.unigrid_plane(),
     and to dispatch.graphics.imshow()
@@ -241,7 +241,7 @@ def unigrid_plane(sn,iv='d',z=0.5,x=None,y=None,title=None,cmap=None,**kw):
     if not hasattr(sn,'patches'):
         print('snapshot has no patches')
         return
-    ff,pp=dse.unigrid_plane(sn,patches=True,iv=iv,x=x,y=y,z=z,**kw)
+    ff,pp=dse.unigrid_plane(sn,patches=True,iv=iv,x=x,y=y,z=z,i4=i4,**kw)
     cmap=_cmap(ff,cmap)
     imshow(ff,cmap=cmap,**kw)  
     _title(sn,x,y,z,iv,title)
