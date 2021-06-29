@@ -226,7 +226,6 @@ SUBROUTINE init (self)
   self%time = self%patch%time
   self%out_next = (int(self%time/out_time + 1.01))*out_time
   self%out_next = max(self%out_next,start_time)
-!print *, self%patch%id, self%time, self%out_next
   m(1:3) = self%patch%mesh%gn
   allocate (self%particles(m(1),m(2),m(3),n_bin))
   call io%bits_mem (storage_size(self%particles), &
@@ -327,6 +326,9 @@ SUBROUTINE initial_condition (self)
       *product(self%patch%mesh%b/self%patch%mesh%d), ' GB'
     call pool%append (p)
   end if
+  if (verbose > 0) &
+    write (stdlog,'(i6,2x,"ICthreads:",3i5)') &
+      self%patch%id, omp%thread, omp%thread_global, omp%nthreads_global
   !-----------------------------------------------------------------------------
   ! Initialize dust.  At boundaries, add particles also in guard zones
   !-----------------------------------------------------------------------------
@@ -1807,6 +1809,7 @@ SUBROUTINE make_new_bin (self, dd, vd, dg, vg, t, i1, i2, i3, i4, nv)
   real                        :: d, w, w1, chance
   logical                     :: draw
   integer, save               :: lid = 0
+  !$omp threadprivate (lid)
   !-----------------------------------------------------------------------------
   if (output_every > 0) then
     chance = 1.0/output_every
@@ -1828,7 +1831,8 @@ SUBROUTINE make_new_bin (self, dd, vd, dg, vg, t, i1, i2, i3, i4, nv)
       allocate(pn)
       p => pn
       call p%init_vparticle
-      p%cell%id = 1 + omp%thread_global + (lid+nv)*omp%nthreads_global
+      p%cell%id = 1 + omp%thread_global + lid*omp%nthreads_global
+      lid = lid+1
       p%cell%dg = dg
       p%cell%vg = vg
       nv = nv + 1

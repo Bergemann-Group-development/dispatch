@@ -155,7 +155,6 @@ SUBROUTINE init (self, mpi_dims, dims)
   !$omp parallel
   omp%nthreads_global = mpi%size*omp%nthreads
   omp%thread_global = omp%thread + mpi%rank*omp%nthreads
-  write (stdlog,*) 'omp%thread_global:', omp%thread_global, omp%nthreads_global
   !$omp end parallel
   !-----------------------------------------------------------------------------
   ! Make sure output from startup is finished
