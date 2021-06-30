@@ -152,9 +152,9 @@ SUBROUTINE init (self, ln_bin, lm_cgs, rho_s)
 
         if (m(i)/m(j) > 10 .or. m(i)/m(j) < 0.1 ) then        !!!
           !Cratering
-          SS(1:minij,i,j) = a(1:minij) ** (-3*xi)
-          Stot = SUM(m * SS(:,i,j) ) / (m(minij) *2)
-          SS(1:minij,i,j) = SS(1:minij,i,j) / Stot
+          SS(i,j,1:minij) = a(1:minij) ** (-3*xi)
+          Stot = SUM(m * SS(i,j,:) ) / (m(minij) *2)
+          SS(i,j,1:minij) = SS(i,j,1:minij) / Stot
           m_crat =  abs(m(i)-m(j))
           m_big = max(m(i),m(j))
           m_small = min(m(i),m(j))
@@ -165,14 +165,14 @@ SUBROUTINE init (self, ln_bin, lm_cgs, rho_s)
 
 
           eps = (m_crat - m(l))/(m(l+1) - m(l))
-          SS(l,i,j) = 1-eps
-          SS(l+1,i,j) = eps
+          SS(i,j,l) = 1-eps
+          SS(i,j,l+1) = eps
 
         else
           !Fragmentation
-          SS(1:maxij,i,j) = a(1:maxij) ** (-3*xi)
-          Stot = SUM(m * SS(:,i,j) ) / (m(i) + m(j))
-          SS(1:maxij,i,j) = SS(1:maxij,i,j) / Stot
+          SS(i,j,1:maxij) = a(1:maxij) ** (-3*xi)
+          Stot = SUM(m * SS(i,j,:) ) / (m(i) + m(j))
+          SS(i,j,1:maxij) = SS(i,j,1:maxij) / Stot
         end if
 
 
@@ -192,8 +192,8 @@ SUBROUTINE init (self, ln_bin, lm_cgs, rho_s)
     where (sigma_col /= 0) ep = (mn - ms) / (mn - mm)
 
     do k=1,nbin
-      where (mm == m(k) ) C(k,:,:) = ep
-      where (mn == m(k) ) C(k,:,:) = 1 - ep
+      where (mm == m(k) ) C(:,:,k) = ep
+      where (mn == m(k) ) C(:,:,k) = 1 - ep
     end do
 
   end if
@@ -230,10 +230,10 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out, ds)
 
   ! CGS units below
   real(precision_e) :: tend
-  real(8):: start, used, time(5)
-  integer, save:: itimer=0, ntimer=10
+  real(8):: start, used, times(9), wc1, wc2
+  integer, save:: itimer=0, ntimer=1000
   !-----------------------------------------------------------------------------
-  call trace%begin ('dust_evolve_t%update', itimer=itimer)
+  if (detailed_timer) call trace%begin ('dust_evolve_t%update', itimer=itimer)
   start = wallclock()
 
   nbin = self%nbin
@@ -249,7 +249,14 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out, ds)
   ! ALLOCATE(dpx(nbin), dpy(nbin), dpz(nbin))
   ! ALLOCATE(mv(nbin), px(nbin), py(nbin), pz(nbin), v(nbin))
   ! ALLOCATE(Sppx(nbin), Sppy(nbin), Sppz(nbin))
-  time(1) = wallclock()-start
+!define TIMER
+#ifdef TIMER
+  wc1=omp_get_wtime()
+  times = 0d0
+#define TIMEIT(i) wc2=omp_get_wtime(); times(i)=times(i)+(wc2-wc1); wc1=wc2
+#else
+#define TIMEIT(i)
+#endif
 
   ! convert from code units to cgs
   tend = scaling%t * dt_dispatch
@@ -307,7 +314,7 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out, ds)
     utm_ini = cs * sqrt(2*alpha*st)                     ! Handle velocities every update
     where (st > 1.0) utm_ini = cs * sqrt(2*alpha/ st)
   end if
-  time(2) = wallclock()-start
+  TIMEIT(1)
 
   do i=1,nbin
     do j=1,nbin
@@ -359,7 +366,6 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out, ds)
 
     end do
   end do
-  time(3) = wallclock()-start
 
   if (verbose>2) then
     print *, "pf"
@@ -376,12 +382,14 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out, ds)
   ! Do a explicit step and compare the change in n if too large a change is detected
   ! or the mass is not conserved then do a implicit step instead
   ! if the change is only above the second fraction set then do several explicit steps in smaller time steps.
+  TIMEIT(2)
   call explicit_step(nbin, kk, ll, C, SS, n, px, py, pz, tend, dn, dpx, dpy, dpz)
   frac_dn = 0
   where (n /= 0) frac_dn = ABS(dn/n)
   if (do_implicit .or. ANY( frac_dn > max_fraction1 ) .or. SUM(n*m_cgs)/SUM(n_old*m_cgs) - 1 > 1e-6 .or. ANY(n < 0.0) )  then
     if (verbose > 0) &
       print '(a,(1p,10e10.1))', 'implicit step:', frac_dn
+    TIMEIT(3)
     call implicit_step(nbin, identity, kk, ll, C, SS, n, px, py, pz, tend, dn, dpx, dpy, dpz)
     n = n + dn
     px = px + dpx
@@ -410,9 +418,6 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out, ds)
     py = py + dpy
     pz = pz + dpz
   end if
-
-
-  time(4) = wallclock()-start
 
   if (verbose > 0) then
     print *,"Final n, number density:"
@@ -470,14 +475,16 @@ SUBROUTINE update (self, dt_dispatch, vrms_in, dd_in, vd_in, dd_out, vd_out, ds)
   vd_out = vd / (scaling%u * ds)
 
 
+  TIMEIT(9)
+#ifdef TIMER
   if (ntimer > 0) then
     ntimer = ntimer-1
-    time(5) = wallclock()-start
-    print '(a,6p,5f10.3)', 'times[mus]:', time/nbin
+    print '(a,6p,9f10.3,i5)', 'times[mus]:', times
   end if
+#endif
   used = wallclock() - start
 
-  call trace%end (itimer)
+  if (detailed_timer) call trace%end (itimer)
 contains
 
 subroutine explicit_step (nbin, kk, ll, C, SS, n, px, py, pz, dt, dn, &
@@ -491,7 +498,7 @@ subroutine explicit_step (nbin, kk, ll, C, SS, n, px, py, pz, dt, dn, &
   real(precision_e), intent(out), DIMENSION(nbin)          :: dn, dpx, dpy, dpz
   
   real(precision_e), DIMENSION(nbin)          :: S, Spx, Spy, Spz, Kn_k, Ln_k, mpx, mpy, mpz
-  real(precision_e) , DIMENSION(nbin,nbin)     :: KC_k, LS_k, Q, Q_frag, pnx, pny, pnz
+  real(precision_e), DIMENSION(nbin,nbin)     :: KC_k, LS_k, Q, Q_frag, pnx, pny, pnz
   integer, save:: itimer=0
 
 
@@ -525,13 +532,13 @@ subroutine explicit_step (nbin, kk, ll, C, SS, n, px, py, pz, dt, dn, &
   Q_frag = ll * nn
 
   do k=1,nbin
-    KC_k = kk * C(k,:,:)
-    LS_k = ll * SS(k,:,:)
+    KC_k = kk * C(:,:,k)
+    LS_k = ll * SS(:,:,k)
 
     Kn_k = kk(k,:) * n
     Ln_k = ll(k,:) * n
 
-    S(k) = ( 0.5 * SUM(Q*C(k,:,:)) - SUM(Q(k,:)) ) + ( 0.5 * SUM( Q_frag*SS(k,:,:)) - SUM(Q_frag(k,:)) )
+    S(k) = ( 0.5 * SUM(Q*C(:,:,k)) - SUM(Q(k,:)) ) + ( 0.5 * SUM( Q_frag*SS(:,:,k)) - SUM(Q_frag(k,:)) )
     Spx(k) = 0.5 * SUM(KC_k * pnx) - SUM(Kn_k * px(k)) + 0.5 * SUM(LS_k * pnx) - SUM(Ln_k * px(k))
     Spy(k) = 0.5 * SUM(KC_k * pny) - SUM(Kn_k * py(k)) + 0.5 * SUM(LS_k * pny) - SUM(Ln_k * py(k))
     Spz(k) = 0.5 * SUM(KC_k * pnz) - SUM(Kn_k * pz(k)) + 0.5 * SUM(LS_k * pnz) - SUM(Ln_k * pz(k))
@@ -604,13 +611,13 @@ subroutine implicit_step (nbin, identity, kk,ll,C,SS,n,px,py,pz, dt, dn, &
   Q_frag = ll * nn
 
   do k=1,nbin
-    KC_k = kk * C(k,:,:)
-    LS_k = ll * SS(k,:,:)
+    KC_k = kk * C(:,:,k)
+    LS_k = ll * SS(:,:,k)
 
     Kn_k = kk(k,:) * n
     Ln_k = ll(k,:) * n
 
-    S(k) = ( 0.5 * SUM(Q*C(k,:,:)) - SUM(Q(k,:)) ) + ( 0.5 * SUM( Q_frag*SS(k,:,:)) - SUM(Q_frag(k,:)) )
+    S(k) = ( 0.5 * SUM(Q*C(:,:,k)) - SUM(Q(k,:)) ) + ( 0.5 * SUM( Q_frag*SS(:,:,k)) - SUM(Q_frag(k,:)) )
     Spx(k) = 0.5 * SUM(KC_k * pnx) - SUM(Kn_k * px(k)) + 0.5 * SUM(LS_k * pnx) - SUM(Ln_k * px(k))
     Spy(k) = 0.5 * SUM(KC_k * pny) - SUM(Kn_k * py(k)) + 0.5 * SUM(LS_k * pny) - SUM(Ln_k * py(k))
     Spz(k) = 0.5 * SUM(KC_k * pnz) - SUM(Kn_k * pz(k)) + 0.5 * SUM(LS_k * pnz) - SUM(Ln_k * pz(k))
@@ -625,6 +632,7 @@ subroutine implicit_step (nbin, identity, kk,ll,C,SS,n,px,py,pz, dt, dn, &
     JJ(k,:) = (matmul(KC_k , n) - n(k) * kk(k,:) ) + (matmul(LS_k,  n) - n(k) * ll(k,:) )
     JJ(k,k) = JJ(k,k) - (SUM(Kn_k) + SUM(Ln_k) )
   end do
+  TIMEIT(6)
 
   do i=1,nbin
     JJ(i,i)=0.0
@@ -645,6 +653,7 @@ subroutine implicit_step (nbin, identity, kk,ll,C,SS,n,px,py,pz, dt, dn, &
   js_ldb = nbin
 
   ! Solve the inverse matrix
+  TIMEIT(7)
   call lineq (nbin, IJJ, S)
   Sppx = Spx - matmul(Jmx , S)
   Sppy = Spy - matmul(Jmy , S)
@@ -661,6 +670,7 @@ subroutine implicit_step (nbin, identity, kk,ll,C,SS,n,px,py,pz, dt, dn, &
   dpx = Sppx
   dpy = Sppy
   dpz = Sppz
+  TIMEIT(8)
   if (detailed_timer) call trace%end (itimer)
 end subroutine implicit_step
 END SUBROUTINE update
@@ -814,9 +824,9 @@ SUBROUTINE test (self)
 
       if (m(i)/m(j) > 10 .or. m(i)/m(j) < 0.1 ) then        !!!
         !Cratering
-        SS(1:minij,i,j) = a(1:minij) ** (-3*xi)
-        Stot = SUM(m * SS(:,i,j) ) / (m(minij) *2)
-        SS(1:minij,i,j) = SS(1:minij,i,j) / Stot
+        SS(i,j,1:minij) = a(1:minij) ** (-3*xi)
+        Stot = SUM(m * SS(i,j,:) ) / (m(minij) *2)
+        SS(i,j,1:minij) = SS(i,j,1:minij) / Stot
         m_crat =  abs(m(i)-m(j))
         m_big = max(m(i),m(j))
         m_small = min(m(i),m(j))
@@ -832,7 +842,7 @@ SUBROUTINE test (self)
       else
         !Fragmentation
         SS(1:maxij,i,j) = a(1:maxij) ** (-3*xi)
-        Stot = SUM(m * SS(:,i,j) ) / (m(i) + m(j))
+        Stot = SUM(m * SS(i,j,:) ) / (m(i) + m(j))
         SS(1:maxij,i,j) = SS(1:maxij,i,j) / Stot
       end if
 
@@ -862,8 +872,8 @@ SUBROUTINE test (self)
   where (sigma_col /= 0) ep = (mn - ms) / (mn - mm)
 
   do k=1,nbin
-    where (mm == m(k) ) C(k,:,:) = ep
-    where (mn == m(k) ) C(k,:,:) = 1 - ep
+    where (mm == m(k) ) C(:,:,k) = ep
+    where (mn == m(k) ) C(:,:,k) = 1 - ep
   end do
 
 
@@ -885,8 +895,8 @@ SUBROUTINE test (self)
     nn(i,:) = n(i)*n
   end do
   do k=1,nbin
-    S(k)    = 0.5*SUM(kk*C(k,:,:)*nn) -  SUM(kk(k,:)*nn(k,:))
-    JJ(k,:) = matmul (kk*C(k,:,:), n) - n(k)*kk(k,:)
+    S(k)    = 0.5*SUM(kk*C(:,:,k)*nn) -  SUM(kk(k,:)*nn(k,:))
+    JJ(k,:) = matmul (kk*C(:,:,k), n) - n(k)*kk(k,:)
     JJ(k,k) = JJ(k,k) - SUM(kk(k,:)*n)
   end do
   !call print_2 (JJ, 'JJ')
@@ -969,13 +979,13 @@ SUBROUTINE test (self)
     if (.not. do_implicit) then
 
       do k=1,nbin
-      KC_k = kk * C(k,:,:)
-      LS_k = ll * SS(k,:,:)
+      KC_k = kk * C(:,:,k)
+      LS_k = ll * SS(:,:,k)
 
       Kn_k = kk(k,:) * n
       Ln_k = ll(k,:) * n
 
-      S(k) = ( 0.5* SUM(Q*C(k,:,:)) - SUM(Q(k,:)) ) + ( 0.5 * SUM( Q_frag*SS(k,:,:)) - SUM(Q_frag(k,:)) )
+      S(k) = ( 0.5* SUM(Q*C(:,:,k)) - SUM(Q(k,:)) ) + ( 0.5 * SUM( Q_frag*SS(:,:,k)) - SUM(Q_frag(k,:)) )
       Sp(k) = 0.5 * SUM(KC_k * pn) - SUM(Kn_k * p(k)) + 0.5 * SUM(LS_k * pn) - SUM(Ln_k * p(k))
       end do
 
@@ -983,13 +993,13 @@ SUBROUTINE test (self)
       dp = Sp * dt
     else
       do k=1,nbin
-        KC_k = kk * C(k,:,:)
-        LS_k = ll * SS(k,:,:)
+        KC_k = kk * C(:,:,k)
+        LS_k = ll * SS(:,:,k)
 
         Kn_k = kk(k,:) * n
         Ln_k = ll(k,:) * n
 
-        S(k) = ( 0.5* SUM(Q*C(k,:,:)) - SUM(Q(k,:)) ) + ( 0.5 * SUM( Q_frag*SS(k,:,:)) - SUM(Q_frag(k,:)) )
+        S(k) = ( 0.5* SUM(Q*C(:,:,k)) - SUM(Q(k,:)) ) + ( 0.5 * SUM( Q_frag*SS(:,:,k)) - SUM(Q_frag(k,:)) )
         Sp(k) = 0.5 * SUM(KC_k * pn) - SUM(Kn_k * p(k)) + 0.5 * SUM(LS_k * pn) - SUM(Ln_k * p(k))
       ! end do
 
