@@ -62,7 +62,6 @@ class aux():
           else:
             v=ff.read_ints('<i4')
           v=v.reshape(shp,order='F')
-          print('shape:',v.shape)
           if self.verbose>3:
             print('  min: {}\n  max: {}'.format(v.min(),v.max()))
           vars[name]={'type':tpe,'name':name,'rank':rank,'shape':shp,'v':v}
