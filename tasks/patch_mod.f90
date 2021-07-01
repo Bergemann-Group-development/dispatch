@@ -187,8 +187,12 @@ MODULE patch_mod
     procedure:: get_overlap
     procedure:: init_level
     procedure:: dumpm
-    procedure:: dumpa
-    generic, public:: dump => dumpm, dumpa
+    procedure:: dump1d
+    procedure:: dump2r
+    procedure:: dump2d
+    procedure:: dump3r
+    procedure:: dump3d
+    generic, public:: dump => dumpm, dump1d, dump2r, dump2d, dump3r, dump3d
     procedure:: cost_f
     procedure:: subtask_hash_key
     procedure:: overlap
@@ -3027,7 +3031,33 @@ END SUBROUTINE dumpm
 !===============================================================================
 !> Dump an array into data/run/rank_rrrrr.dump
 !===============================================================================
-SUBROUTINE dumpa (self, tag, a)
+SUBROUTINE dump2r (self, tag, a)
+  class(patch_t):: self
+  integer:: tag
+  real:: a(:,:)
+  !.............................................................................
+  integer:: nt, nv
+  !-----------------------------------------------------------------------------
+  call io%lock%set ('dump')
+  nt = 1
+  nv = 1
+  if (self%verbose > 0) then
+    write (io_unit%log,*) 'patch_t%dumpa: id, time =', self%id, self%time
+  end if
+  write (io_unit%dump) tag, self%id, self%level, nv, nt, nt, &
+                       self%nw, self%istep, self%it, self%gn, self%n
+  write (io_unit%dump) self%time, self%dtime, self%position, self%size, &
+                       self%t(self%it), self%dt(self%it), self%iit(self%it)
+  write (io_unit%dump) kind(a), size(shape(a))
+  write (io_unit%dump) shape(a)
+  write (io_unit%dump) a
+  call io%lock%unset ('dump')
+END SUBROUTINE dump2r
+
+!===============================================================================
+!> Dump an array into data/run/rank_rrrrr.dump
+!===============================================================================
+SUBROUTINE dump3r (self, tag, a)
   class(patch_t):: self
   integer:: tag
   real:: a(:,:,:)
@@ -3044,9 +3074,89 @@ SUBROUTINE dumpa (self, tag, a)
                        self%nw, self%istep, self%it, self%gn, self%n
   write (io_unit%dump) self%time, self%dtime, self%position, self%size, &
                        self%t(self%it), self%dt(self%it), self%iit(self%it)
+  write (io_unit%dump) kind(a), size(shape(a))
+  write (io_unit%dump) shape(a)
   write (io_unit%dump) a
   call io%lock%unset ('dump')
-END SUBROUTINE dumpa
+END SUBROUTINE dump3r
+
+!===============================================================================
+!> Dump an array into data/run/rank_rrrrr.dump
+!===============================================================================
+SUBROUTINE dump1d (self, tag, a)
+  class(patch_t):: self
+  integer:: tag
+  real(8):: a(:)
+  !.............................................................................
+  integer:: nt, nv
+  !-----------------------------------------------------------------------------
+  call io%lock%set ('dump')
+  nt = 1
+  nv = 1
+  if (self%verbose > 0) then
+    write (io_unit%log,*) 'patch_t%dumpa: id, time =', self%id, self%time
+  end if
+  write (io_unit%dump) tag, self%id, self%level, nv, nt, nt, &
+                       self%nw, self%istep, self%it, self%gn, self%n
+  write (io_unit%dump) self%time, self%dtime, self%position, self%size, &
+                       self%t(self%it), self%dt(self%it), self%iit(self%it)
+  write (io_unit%dump) kind(a), size(shape(a))
+  write (io_unit%dump) shape(a)
+  write (io_unit%dump) a
+  call io%lock%unset ('dump')
+END SUBROUTINE dump1d
+
+!===============================================================================
+!> Dump an array into data/run/rank_rrrrr.dump
+!===============================================================================
+SUBROUTINE dump2d (self, tag, a)
+  class(patch_t):: self
+  integer:: tag
+  real(8):: a(:,:)
+  !.............................................................................
+  integer:: nt, nv
+  !-----------------------------------------------------------------------------
+  call io%lock%set ('dump')
+  nt = 1
+  nv = 1
+  if (self%verbose > 0) then
+    write (io_unit%log,*) 'patch_t%dumpa: id, time =', self%id, self%time
+  end if
+  write (io_unit%dump) tag, self%id, self%level, nv, nt, nt, &
+                       self%nw, self%istep, self%it, self%gn, self%n
+  write (io_unit%dump) self%time, self%dtime, self%position, self%size, &
+                       self%t(self%it), self%dt(self%it), self%iit(self%it)
+  write (io_unit%dump) kind(a), size(shape(a))
+  write (io_unit%dump) shape(a)
+  write (io_unit%dump) a
+  call io%lock%unset ('dump')
+END SUBROUTINE dump2d
+
+!===============================================================================
+!> Dump an array into data/run/rank_rrrrr.dump
+!===============================================================================
+SUBROUTINE dump3d (self, tag, a)
+  class(patch_t):: self
+  integer:: tag
+  real(8):: a(:,:,:)
+  !.............................................................................
+  integer:: nt, nv
+  !-----------------------------------------------------------------------------
+  call io%lock%set ('dump')
+  nt = 1
+  nv = 1
+  if (self%verbose > 0) then
+    write (io_unit%log,*) 'patch_t%dumpa: id, time =', self%id, self%time
+  end if
+  write (io_unit%dump) tag, self%id, self%level, nv, nt, nt, &
+                       self%nw, self%istep, self%it, self%gn, self%n
+  write (io_unit%dump) self%time, self%dtime, self%position, self%size, &
+                       self%t(self%it), self%dt(self%it), self%iit(self%it)
+  write (io_unit%dump) kind(a), size(shape(a))
+  write (io_unit%dump) shape(a)
+  write (io_unit%dump) a
+  call io%lock%unset ('dump')
+END SUBROUTINE dump3d
 
 !===============================================================================
 !> Return a measure of the update cost
