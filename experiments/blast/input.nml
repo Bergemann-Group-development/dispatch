@@ -55,6 +55,7 @@
 
 &eos_params
   gamma=1.6666666666667
+  s0=10.
 /
 
 &zeus_params

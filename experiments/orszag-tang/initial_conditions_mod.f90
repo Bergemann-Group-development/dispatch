@@ -91,9 +91,9 @@ SUBROUTINE init (self)
 
   ! "pre"-initialisation of all variables, independent of `idirect`.
   if (eos%gamma==1.0) then
-    entropy = 1.0
+    entropy = 1.0+eos%s0
   else
-    entropy = (log(self%p0)-log(d0)*eos%gamma)/(eos%gamma-1.0)
+    entropy = (log(self%p0)-log(d0)*eos%gamma+eos%s0)/(eos%gamma-1.0)
   end if
 
 
@@ -122,24 +122,23 @@ SUBROUTINE init (self)
     allocate(vecpot(m(1)%gn+1,m(2)%gn+1,m(3)%gn))
     
     do iz=m(3)%lb,m(3)%ub
-      do iy=m(2)%lb,m(2)%ub
-        ya = m(2)%p + r2(iy) - 0.5*m(2)%d
-        do ix=m(1)%lb,m(1)%ub
-          xa = m(1)%p + r1(ix) - 0.5*m(1)%d
+      do iy=m(2)%lb,m(2)%ub+1
+        if (iy>m(2)%ub) then
+          ya = m(2)%p + r2(iy-1) + 0.5*m(2)%d
+        else
+          ya = m(2)%p + r2(iy) - 0.5*m(2)%d
+        end if
+        do ix=m(1)%lb,m(1)%ub+1
+          if (ix>m(1)%ub) then
+            xa = m(1)%p + r1(ix-1) + 0.5*m(1)%d
+          else
+            xa = m(1)%p + r1(ix) - 0.5*m(1)%d
+          end if
           vecpot(ix,iy,iz) = (self%b0 / twopi) * ( 0.5 * cos(2.0 * twopi * xa) + cos(twopi  * ya) )
         end do
       end do
     end do
     
-    do iz=m(3)%lb,m(3)%ub
-      do iy=m(2)%ub,m(2)%ub+1
-        ya = m(2)%p + r2(iy-1) + 0.5*m(2)%d
-        do ix=m(1)%ub,m(1)%ub+1
-          xa = m(1)%p + r1(ix-1) + 0.5*m(1)%d
-          vecpot(ix,iy,iz) = (self%b0 / twopi) * ( 0.5 * cos(2.0 * twopi * xa) + cos(twopi  * ya) )
-        end do
-      end do
-    end do
 
     do iz=m(3)%lb,m(3)%ub
       do iy=m(2)%lb,m(2)%ub

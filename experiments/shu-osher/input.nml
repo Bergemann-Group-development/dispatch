@@ -3,7 +3,7 @@
 
 ! in X
 &cartesian_params       size=9,0.03,0.03 dims=10,1,1 mpi_dims=2,1,1 origin=-4.5,0.0,0.0 periodic = f,t,t /
-&patch_params           n=250,1,1  nt=5 no_mans_land=t grace=0.1 do_check_nan=t /
+&patch_params           n=150,1,1  nt=5 no_mans_land=t grace=0.1 do_check_nan=t /
 ! in Y
 !&cartesian_params       size=0.003,9,0.003 dims=1,10,1 origin=0.0,-4.5,0.0 periodic = t,f,t /
 !&patch_params           n=1,250,1 nt=5 no_mans_land=t grace=0.1 do_check_nan=t/
@@ -39,6 +39,7 @@ grad_var='d' tol_grad=0.1 /
 
 &eos_params
   gamma=1.4
+  s0=10.
  ! gamma=1.66667
 /
 
@@ -47,7 +48,7 @@ grad_var='d' tol_grad=0.1 /
 ! courant_factor=0.5
  !csound=1.0
  !riemann='hlld'
-! slope_type=3.5
+ slope_type=3.5
  !smallr=1e-8
  !smallc=1e-8
  !smallr=1e-10

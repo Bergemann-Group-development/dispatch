@@ -8,10 +8,10 @@ OPTS =
 # Default target and methods
 UPD             = adams_bashforth
 #SOLVER          = zeus3d
-SOLVER          = ramses/hydro
+#SOLVER          = ramses/hydro
 #SOLVER          = stagger2/bifrost
 STAGGER         = stagger_2nd.o
-#SOLVER          = ramses/mhd_eos
+SOLVER          = ramses/mhd_eos/s
 #SOLVER          = ramses/mhd
 EXEC            = dispatch.x
 TOP             = ../..
