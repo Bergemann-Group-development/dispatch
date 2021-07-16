@@ -7,7 +7,7 @@
 &timer_params           /
 
 ! -- Experiment parameters -----------------------------------------------------
-&cartesian_params       size=1,0.13,0.13 dims=8,1,1 origin=-0.5,0.0,0.0, periodic=t,t,t /
+&cartesian_params       size=1,0.004,0.004 dims=8,1,1 origin=-0.5,0.0,0.0, periodic=t,t,t /
 &patch_params           n=32,1,1 nt=5 no_mans_land=t grace=0.1 /
 &experiment_params      vx_l=0.001 vx_r=0.001 /
 &force_params           /
@@ -22,8 +22,8 @@
 
 &zeustw_params          iohmic=0 ihall=0 with_ad_1f=f withchem=f gamma=1.6666667 qlin=0.2 qcon=1.0 /
 
-&ramses_params          courant_factor=0.25
-                        slope_type=3 
+&ramses_params          !courant_factor=0.25
+                        slope_type=3.5
                        ! do_corners=t
                         /
 &bifrost_params             
@@ -36,7 +36,10 @@ symmetric_e=f
 !     nu1   nu2  nu3  nu_d  nu_ee  eta3
 nu=  0.03 , 0.3,  0.2,  0.0,  0.05, 0.8 /
 
-&eos_params gamma = 1.666667
+&eos_params
+ gamma = 1.666667
+ s0=10.
+ /
 
                                         !     cs   pa  ofd  mas  kap  eta
 &stagger_params         gamma=1.666667 nu=  0.10, 1.0, 1.0, 0.1, 1.0, 1.0 /

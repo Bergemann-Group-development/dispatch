@@ -114,7 +114,7 @@ SUBROUTINE init (self)
         if (x < x_disc) then
           d (i,j,k) = rho_l
           if (self%idx%s>0) then 
-            s (i,j,k) = (log(P_l)-log(rho_l)*eos%gamma)*rho_l*g2
+            s (i,j,k) = (eos%s0+log(P_l)-log(rho_l)*eos%gamma)*rho_l*g2
           else
             e1(i,j,k) = P_l*g2
           end if
@@ -129,7 +129,7 @@ SUBROUTINE init (self)
         else
           d (i,j,k) = rho_r
           if (self%idx%s>0) then 
-            s (i,j,k) = (log(P_r)-log(rho_r)*eos%gamma)*rho_r*g2
+            s (i,j,k) = (eos%s0+log(P_r)-log(rho_r)*eos%gamma)*rho_r*g2
           else
             e1(i,j,k) = P_r*g2
           end if
@@ -176,16 +176,18 @@ SUBROUTINE init (self)
     else
       nullify (e1)
     end if
-end if
+  else
+    print *, 'min max s', minval(s), maxval(s)
+  end if
 
 ! assign boundary conditions.
-  m=>self%mesh
-  self%boundaries%rho_l = self%mem(m(1)%lo,m(2)%li,m(3)%li,self%idx%d,1,1)
-  if (self%idx%e>0) &
-  self%boundaries%e_l   = self%mem(m(1)%lo,m(2)%li,m(3)%li,self%idx%e,1,1)
-  if (self%idx%s>0) &
-  self%boundaries%s_l   = self%mem(m(1)%lo,m(2)%li,m(3)%li,self%idx%s,1,1)
-  self%boundaries%px_l  = self%mem(m(1)%lo,m(2)%li,m(3)%li,self%idx%px,1,1)
+!  m=>self%mesh
+!  self%boundaries%rho_l = self%mem(m(1)%lo,m(2)%li,m(3)%li,self%idx%d,1,1)
+!  if (self%idx%e>0) &
+!  self%boundaries%e_l   = self%mem(m(1)%lo,m(2)%li,m(3)%li,self%idx%e,1,1)
+!  if (self%idx%s>0) &
+!  self%boundaries%s_l   = self%mem(m(1)%lo,m(2)%li,m(3)%li,self%idx%s,1,1)
+!  self%boundaries%px_l  = self%mem(m(1)%lo,m(2)%li,m(3)%li,self%idx%px,1,1)
 
   nullify (d, et, px, py, pz, Bx, By, Bz)
   call trace_end ()
