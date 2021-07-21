@@ -30,7 +30,7 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
   integer:: ngrid, scase
   real(dp),dimension(:,:)::qleft,qright,fgdnv
   LOGICAL:: detailed_timer
-  REAL(dp)::SSL,SSR
+  REAL(dp)::SSL,SSR, c_v
   REAL(dp)::re,le,lim, tgl, tgr, tgstarl, tgstarr
   REAL(dp)::rl,pl,sl,ul,ecinl,stotl,ptotl,Bl,Cl,wstarl,vtotBl,emagl,SAL,sqrrstarl,vl,wl
   REAL(dp)::rr,pr,sr,ur,ecinr,stotr,ptotr,Br,Cr,wstarr,vtotBr,emagr,SAR,sqrrstarr,vr,wr
@@ -38,10 +38,10 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
   REAL(dp)::cfastr,rcr,rstarr,er,vdotBstarr,vstarr,stotstarstarr,stotstarr,vdotBr
   REAL(dp)::ustar,ptotstar,estar,vstarstar,wstarstar
   REAL(dp)::ro,uo,ptoto,so,vo,wo,visc, scond, smax, temp, M
-  REAL(dp)::A,sgnm, somax, csl2, csr2, csl, csr, tgo
+  REAL(dp)::A,sgnm, somax, csl2, csr2, csl, csr, tgo,aa2
   REAL(dp)::alfa_s, alfa_f, alfa_m,tt1,tt2,tt3, tt4, tt5, tt6, bp1, bp2
   REAL(dp)::Bstarl,Bstarr,Cstarl,Cstarr,calfvenl,calfvenr,cslowl, cslowr
-  REAL(dp)::Bo,Co,Bstarstar,Cstarstar,vdotBstarstar,vdotBo,emago
+  REAL(dp)::Bo,Co,Bstarstar,Cstarstar,vdotBstarstar,vdotBo,emago,msl,msr, mso,mss, mmax
 #define INLINE
 #ifdef INLINE
   REAL(dp)::d,P,u,v,w,B,C,B2,d2,cf, gamma
@@ -71,6 +71,12 @@ gamma = eos%gamma
 smax=0.0
 somax=0.0
 scase=0
+msl=0.
+msr=0.
+mso=0.
+mss=0.
+mmax=0.
+fgdnv(:,9) =0.0
   do i=1,ngrid
     !print '(i3,1p,8e10.2,2x,8e10.2)',i,qleft(i,:),qright(i,:)
     !
@@ -81,7 +87,7 @@ scase=0
     qleft(i,4)=A; qright(i,4)=A
     !
     ! Left variables
-    rl=qleft(i,1); Pl=qleft(i,2); ul=qleft(i,3); sl=qleft(i,10)/qleft(i,1)
+    rl=qleft(i,1); Pl=qleft(i,2); ul=qleft(i,3); sl=qleft(i,10)
     vl=qleft(i,5); Bl=qleft(i,6); wl=qleft(i,7); Cl=qleft(i,8); tgl=qleft(i,9)
     ecinl = half*(ul*ul+vl*vl+wl*wl)*rl
     emagl = half*(A*A+Bl*Bl+Cl*Cl)
@@ -91,7 +97,7 @@ scase=0
     vdotBl= ul*A+vl*Bl+wl*cl
     !
     ! Right variables
-    rr=qright(i,1); Pr=qright(i,2); ur=qright(i,3); sr=qright(i,10)/qright(i,1)
+    rr=qright(i,1); Pr=qright(i,2); ur=qright(i,3); sr=qright(i,10)
     vr=qright(i,5); Br=qright(i,6); wr=qright(i,7); Cr=qright(i,8); tgr=qright(i,9)
     ecinr = half*(ur*ur+vr*vr+wr*wr)*rr
     emagr = half*(A*A+Br*Br+Cr*Cr)
@@ -167,6 +173,9 @@ scase=0
     vdotBstarl=ustar*A+vstarl*Bstarl+wstarl*Cstarl
     tgstarl = tgl*(SSL-ul)/(SSL-ustar)
     stotstarl=sl
+    c_v=one/(eos%gamma-one)
+    !stotstarl=((sl-eos%s0)/rl*rstarl)*(SSL-ul)/(SSL-ustar)+eos%s0
+    !sl = sl + c_v*log(ptotl) + c_v*eos%gamma*log(rl)
     sqrrstarl=sqrt(rstarl)
     calfvenl=abs(A)/sqrrstarl
     SAL=ustar-calfvenl
@@ -198,6 +207,8 @@ scase=0
     vdotBstarr=ustar*A+vstarr*Bstarr+wstarr*Cstarr
     tgstarr = tgr*(SSR-ur)/(SSR-ustar)
     stotstarr=sr
+    !sr = sr + c_v*log(ptotr) + c_v*eos%gamma*log(rr)
+    !stotstarr = ((sr-eos%s0)/rr*rstarr)*(SSR-ur)/(SSR-ustar)+eos%s0
     sqrrstarr=sqrt(rstarr)
     calfvenr=abs(A)/sqrrstarr 
     SAR=ustar+calfvenr
@@ -214,6 +225,9 @@ scase=0
     stotstarstarr=stotstarr!+sgnm*sqrrstarr*(vdotBstarr-vdotBstarstar)
     !
     ! Sample the solution at x/t=0
+    tt3=0
+    tt4=0
+    tt2=0
     if(SSL>=0d0)then
        icase=1
        ro=rl
@@ -227,12 +241,51 @@ scase=0
        so=sl
        vdotBo=vdotBl
        emago=emagl
-       !M = ul/(ul-SSL)
+       M = (ul/csl)-(ur/csr)
        ! This works (no temperature multiplier below):
        ! tt1 =(ul-ssl)*log(pl/ro)
        !scond =(ul-ssl)*log(ecinl)!(log(ro*uo*uo*half))
-       tt1 =ssl*log(pl/rl)!+(pl+pr)*half*(1/rl-1/rr)
-       scond =(ul-ssl)*(sqrt(ecinl)*(pl/(pl-one))-A*vdotBo)
+       !works shu-osher
+       !scond=ssl*log(pl/ro)*uo
+       tt1=ssl*ssl*half*ro*uo!(ecinl-ecinr)
+       !scond = ptoto/ro
+       scond=0.
+       !print *, ptotl, ptotr, rl, rr
+       if (M>=1.0) then
+      !  call io%abort('case 1 sonic boom')
+       ! estimate P2
+       tt1=ptoto*(one+ two*eos%gamma/(eos%gamma+one)*(M*M-one))
+       ! estimate rho2
+       tt2=ro*((eos%gamma+one)*M*M/((eos%gamma-one)*M*M+two))
+       tt3=c_v*log(tt1) - c_v*log(ptotl) + c_v*eos%gamma*log(tt2) - c_v*eos%gamma*log(rl)
+       tt3=tt3
+       !tt3=(M*gamma)/(gamma+one)
+       ! Other option
+       tt1=(two*gamma*(M*M-one)+(gamma+one)) &
+          /(gamma+one)
+       tt2=(two*gamma*(M*M-one)+(gamma+one))*((gamma-one)*(M*M-one)+(gamma+one)) &
+          /((gamma+one)*(gamma+one)*(M*M-one)+(gamma+one)*(gamma+one))
+       !   tt2=(tt2*tgo-tgo)**2/3
+       
+       !tt3=log(ptotl)-gamma*log(rl)
+       !tt4=(gamma+1)*csl*csl/12.*((ul-ur)/ul)**3/tgl
+       end if
+       tt3=gamma/(gamma-one)*log(tgl/tgr)+log(ptotl/ptotr)
+       tt3=tt3*abs(ul-ur)
+       if (M>=1.0) then
+         tt1=abs(ul-ur)
+         tt2=(ur-tt1)
+         tt5=(uo-tt1)
+         tt4=(gamma+1)*csr*csr/12.*((tt5-tt2)/tt1)**3/tgl
+         
+       !  print *, 'sc1 tt4', tt3, tt4, tt1, tt2, tt5
+       end if
+       !tt3=log(ptotl/ptotr)-gamma*log(rl/rr)
+       
+       !print *, 'stress',ul, ssl, pl+rl*csl*ul
+       !print *,'RIEMANN: left state'
+       !tt1 =ssl*log(pl/rl)!+(pl+pr)*half*(1/rl-1/rr)
+       !scond =(ul-ssl)*(sqrt(uo*uo*ro*half)*(pl/(pl-one))-A*vdotBo)
        !scond =(ul-ssl)*(((ptoto)/(ptoto-one)))*(log(ro*uo*uo))
        !print *, tt1, scond
     else if(SAL>0d0)then
@@ -246,11 +299,46 @@ scase=0
        Ptoto=Ptotstar
        so=stotstarl 
        tgo=tgstarl
-      !M = ul/(ul-ssl)
+      M = (uo/csl)-(ur/csr)
        tt1=0
        vdotBo=vdotBstarl
        emago=half*(A*A+Bo*Bo+Co*Co)
        scond=0
+       !if (M>=1.0) then
+       tt3=c_v*log(ptoto) - c_v*log(ptotl) + c_v*eos%gamma*log(ro) - c_v*eos%gamma*log(rl)
+       ! estimate P2
+       tt1=ptoto*(one+ two*eos%gamma/(eos%gamma+one)*(M*M-one))
+       ! estimate rho2
+       tt2=ro*((eos%gamma+one)*M*M/((eos%gamma-one)*M*M+two))
+       tt3=c_v*log(tt1) - c_v*log(ptotl) + c_v*eos%gamma*log(tt2) - c_v*eos%gamma*log(rl)
+       !tt3=(M*gamma)/(gamma+one)
+       !tt2=(tt2*tgo-tgl)**2/3
+       tt1=(two*gamma*(M*M-one)+(gamma+one)) &
+          /(gamma+one)
+       tt2=(two*gamma*(M*M-one)+(gamma+one))*((gamma-one)*(M*M-one)+(gamma+one)) &
+          /((gamma+one)*(gamma+one)*(M*M-one)+(gamma+one)*(gamma+one))
+       
+      ! print *, ptotl, ptotr, rr, rl
+      ! tt3=gamma/(gamma-one)*log(tgo/tgl)-log(ptoto/ptotl)
+        !print *, 'newcond2', uo,csl,M, tt1, tt2, tt3
+       !tt3=tt3
+       !tt3=tt3+ecinl-(uo*uo+vo*vo+wo*wo)*ro*half/tgl
+     !  tt4=(gamma+1)*csl*csl/12.*((ul-ustar)/ul)**3/tgl
+       tt3=0
+      ! print *, '2nd', tt3, tt4, tt2
+       if (M>=1.0) then
+         tt1=abs(ul-ur)
+         tt2=(ur-tt1)
+         tt5=(uo-tt1)
+         tt4=(gamma+1)*csr*csr/12.*((tt5-tt2)/tt1)**3/tgl
+         
+       !  tt3=log(ptotl/ptotr)-gamma*log(rl/rr)
+       end if
+       tt3=gamma/(gamma-one)*log(tgo/tgr)+log(ptoto/ptotr)
+       tt3=tt3*abs(uo-ur)
+       !tt3=log(ptotl/ptotr)-gamma*log(rl/rr)
+       !end if
+       
     else if(ustar>0d0)then
        icase=3
        ro=rstarl
@@ -262,11 +350,22 @@ scase=0
        Ptoto=Ptotstar
        so=stotstarstarl
        tgo=tgstarl
-       M = uo/csl
+       M = (uo-ur)/csl
        tt1=0
        scond=0
+       if (M>=1.0) then
+       tt3=c_v*log(ptoto) - c_v*log(ptotl) + c_v*eos%gamma*log(ro) - c_v*eos%gamma*log(rl)
+       tt3=tt3
+       end if
+       tt3=log(ptotl/ptotr)-gamma*log(rl/rr)
+       tt3=0
        vdotBo=vdotBstarstar
        emago=half*(A*A+Bo*Bo+Co*Co)
+       tt3=gamma/(gamma-one)*log(tgo/tgr)+log((ptoto+emago)/pr)
+       tt3=tt3*abs(uo-ur)!-sgnm*sqrrstarl*(vdotBstarl-vdotBstarstar)/tgo
+
+      !print *, 'ic3', so, tt3, -sgnm*sqrrstarl*(vdotBstarl-vdotBstarstar)/tgo
+      ! print *, 'ic3',so, tt3, , (gamma/(gamma-one)*log(tgo/tgr)+log((ptoto+emago)/pr))*abs(uo-ur)
        !print *, 'ic3'
     else if(SAR>0d0)then
        icase=4
@@ -280,11 +379,19 @@ scase=0
        Ptoto=Ptotstar
        so=stotstarstarr
        tgo=tgstarr
-       !M = -uo/csr
-       tt1=0
-       scond=0
        vdotBo=vdotBstarstar
        emago=half*(A*A+Bo*Bo+Co*Co)
+       M = (ul/csl)-(ur/csr)
+       tt1=0
+       scond=0
+       if (M>=1.0) then
+       tt3=c_v*log(ptoto) - c_v*log(ptotr) + c_v*eos%gamma*log(ro) - c_v*eos%gamma*log(rr)
+       tt3=tt3
+       end if
+       tt3=log(ptotl/ptotr)-gamma*log(rl/rr)
+       tt3=0
+       tt3=gamma/(gamma-one)*log(tgl/tgo)+log(pl/(ptoto+emago))
+       tt3=tt3*abs(ul-uo)!+sgnm*sqrrstarl*(vdotBstarl-vdotBstarstar)/tgo
     else if (SSR>0d0)then
        icase=5
        ro=rstarr
@@ -298,12 +405,45 @@ scase=0
        tgo=tgstarr
        vdotBo=vdotBstarr
        emago=half*(A*A+Bo*Bo+Co*Co)
-       !M=uo/(SSR-ur)
+       M=(ul/csl)-(uo/csr)
        scond=0
        tt1=0
+       !print *, 'fifth', M, uo, ul, ur,ssr,csr, ssr-ur
+       !if (M>=1.0) then
+       tt3=c_v*log(ptoto) - c_v*log(ptotr) + c_v*eos%gamma*log(ro) - c_v*eos%gamma*log(rr)
+       tt3=uo*tt3
+       ! estimate P2
+       tt1=ptoto*(one+ two*eos%gamma/(eos%gamma+one)*(M*M-one))
+       ! estimate rho2
+       tt2=ro*((eos%gamma+one)*M*M/((eos%gamma-one)*M*M+two))
+       tt3=tt3
+       tt3=(c_v*log(tt1) - c_v*log(ptoto) + c_v*eos%gamma*log(tt2) - c_v*eos%gamma*log(rr))
+      ! tt3=(2*gamma)/(gamma+one)
+     ! tt4=(gamma+1)*csr*csr/12.*((ur-ustar)/ur)**3/tgr
+     ! tt1=(two*gamma*(M*M-one)+(gamma+one)) &
+     !    /(gamma+one)
+     ! tt2=(two*gamma*(M*M-one)+(gamma+one))*((gamma-one)*(M*M-one)+(gamma+one)) &
+     !    /((gamma+one)*(gamma+one)*(M*M-one)+(gamma+one)*(gamma+one))
+     ! tt3=gamma/(gamma-one)*log(tt2)+log(tt1)
+ !     print *, ptotl, ptotr, rr, rl
+      tt3=0
+      if (M>=1.0) then
+         tt1=abs(ur-ul)
+         tt2=(ul-tt1)
+         tt5=(uo-tt1)
+         tt4=(gamma+1)*csr*csr/12.*((tt5-tt2)/tt1)**3/tgl
+         !print *, 'ic5 tt4', tt3, tt4, tt1, tt2, tt5
+         tt3=(log(ptoto)-gamma*log(ro))
+         tt3=log(ptotl/ptotr)-gamma*log(rl/rr)
+       
+       end if
+       tt3=gamma/(gamma-one)*log(tgl/tgo)+log(ptotl/ptoto)
+       tt3=tt3*abs(ul-uo)
+       !   tt3=(M*M*gamma)/(gamma+one)
+      ! tt2=(tt2*tgo-tgl)**2/3
+      ! end if
     else
        icase=6
-       
        ro=rr
        uo=ur
        vo=vr
@@ -315,15 +455,36 @@ scase=0
        Ptoto=Ptotr
        vdotBo=vdotBr
        emago=emagr
-       !M = -uo/(SSR-ur)
+       M = (ul/csl)-(ur/csr)
        !Works
        !tt1 =-(ssr-ur)*log(pr/ro)
        !scond =-(ssr-ur)*log(ecinr)!(log(ro*uo*uo*half))
+       !scond=ssr*ptoto/ro
+       !print *,'RIEMANN: right state'
+       scond=0.
+       tt1=ssr*ssr*half*ro*uo
+       if (M>=1.0 .or. M<=-1.0) then
+       ! estimate P2
+       tt1=ptoto*(one+ two*eos%gamma/(eos%gamma+one)*(M*M-one))
+       ! estimate rho2
+       tt2=ro*((eos%gamma+one)*M*M/((eos%gamma-one)*M*M+two))
+       tt3=(c_v*log(tt1) - c_v*log(ptoto) + c_v*eos%gamma*log(tt2) - c_v*eos%gamma*log(rr))
+       tt3=tt3
+       tt3=(log(ptoto)-gamma*log(ro))
+       tt4=(gamma+1)*csr*csr/12.*((ur-ul)/ur)**3/tgr
+       end if
+       tt3=log(ptotl/ptotr)-gamma*log(rl/rr)
+       tt3=gamma/(gamma-one)*log(tgl/tgr)+log(ptotl/ptotr)
+       tt3=tt3*abs(ul-ur)
+       !tt3=(M*gamma)/(gamma+one)
+       
+       !tt2=(tt2*tgo-tgr)**2/3
        !print *, tt1, scond
-       tt1 =ssr*log(pr/ro)
-       scond =-(ssr-ur)*(log(ecinr*two)*(pr/(pr-one))-A*vdotBo)
+       !tt1 =ssr*log(pr/ro)
+       !scond =-(ssr-ur)*(sqrt(uo*uo*ro*half)*(pr/(pr-one))-A*vdotBo)
        !scond =-(ssr-ur)*(ptoto/(ptoto-one))*(log(ro*uo*uo))
     end if
+   !if (i<25)  print *, i,icase, uo*ro*so, uo, tt3, tt4, ptoto
     !---------------------------------------------------------------------------
     ! Add a diffusive flux in the down grad(ln(rho)) direction, which is only
     ! nonzero when the smallest of the left/right density is within a factor 10
@@ -333,6 +494,13 @@ scase=0
     ustar = alog(rl/rr)*max(0.0, alog10((10.*smallr)/min(rl,rr)))
     ustar = 0.25*max(cfastr,cfastl)*min(1.0, max(-1.0, ustar))
     uo = uo + ustar
+
+    msl=max(msl,sl)
+    msr=max(msr,sr)
+    mso=max(mso,so)
+    mss=max(mss,M*ro/(eos%gamma-1d0)*(tt3+tt4))
+    mmax=max(mmax,M)
+   ! print *, icase, uo, ssl, ul-ur, tt3, M, tt4
     if (abs(so*uo)>abs(somax)) somax=so*uo
     !
     ndiff = ndiff + merge(1,0,abs(ustar)>0.0)
@@ -340,20 +508,27 @@ scase=0
     ! Compute the Godunov flux
     fgdnv(i,1) = ro*uo
     !fgdnv(i,2) = so*uo + log(ptoto+ro)+one/tgo *((uo*uo+vo*vo+wo+wo)*half)!scond
-    fgdnv(i,2) = uo*so*ro!+tt1!ro*log(ptoto/ro**gamma)/(gamma-one)
+    fgdnv(i,2) = uo*ro*(so)!+tt1!ro*log(ptoto/ro**gamma)/(gamma-one)
     fgdnv(i,3) = ro*uo*uo+Ptoto+emago*(lim-one)-A*A*lim
     fgdnv(i,4) = zero
     fgdnv(i,5) = ro*uo*vo-A*Bo*lim
     fgdnv(i,6) = Bo*uo-A*vo
     fgdnv(i,7) = ro*uo*wo-A*Co*lim
     fgdnv(i,8) = Co*uo-A*wo
-    fgdnv(i,9) = (scond+tt1)!*tgo
+    fgdnv(i,9) = (tt3)!(abs(tt3)+abs(tt4))!(tt4+tt3)!+tt4!ro*tt3!tt3!tt3!(tt1)!*tgo
+   ! print *, i, icase, so, tt3,tt4, uo, ul-ur, M, M*M!,tt4, ro/(eos%gamma-1d0)*(tt3+tt4), ptotl, ptotr, rl, rr, log(ptotl/ptotr),log(rl/rr)
+   
     if (abs(scond)>abs(smax)) then
       scase=icase
       smax = scond
     end if
-    !print *, so, scond, ro, uo, ro*(so*uo)/(gamma-one)+0.5*scond
+  !  if (M*ro/(eos%gamma-1d0)*(tt3+tt4)<0) then
+  !    print *, 'tt3 leq 0', M*ro/(eos%gamma-1d0)*(tt3+tt4)
+  !    error stop "end"
+  !  end if
+  !  print *, icase, so, uo, tt3+tt4, uo*ro/(eos%gamma-1d0)*(tt3+tt4),ro/(eos%gamma-1d0)*(tt3+tt4)
   end do
+  !print *, msl, msr, mso, mss, mmax
  ! error stop "end"
 !#define ATOMIC
 #ifdef ATOMIC
