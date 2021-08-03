@@ -31,7 +31,8 @@
  id_debug=0
  restart=-1  
  guard_zones=f
- nml_version=1
+ method='legacy'
+ namelist_errors=t
 /
 
 &patch_params

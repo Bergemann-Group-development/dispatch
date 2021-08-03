@@ -5,7 +5,7 @@ include $(TOP)/solvers/ramses/Makefile
 
 # Dependencies
 
-riemann_mod.o           : parameters_mod.o io_mod.o trace_mod.o timer_mod.o
+riemann_mod.o           : parameters_mod.o io_mod.o trace_mod.o timer_mod.o eos_mod.o
 mhd_mod.o               : parameters_mod.o io_unit_mod.o trace_mod.o mpi_mod.o omp_mod.o \
                           patch_mod.o riemann_mod.o link_mod.o download_mod.o extras_mod.o \
 			  index_mod.o non_ideal_mod.o flux_mod.o timer_mod.o eos_mod.o task_mod.o \
