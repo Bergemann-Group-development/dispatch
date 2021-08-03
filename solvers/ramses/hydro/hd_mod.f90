@@ -74,6 +74,7 @@ MODULE hd_mod
   integer, save:: verbose=0
   integer, save:: courant_type=1
   logical, save:: debug=.false.
+  logical, save:: do_dump=.false.
   logical, save:: first_time=.true.
   logical, save:: detailed_timer=.false.
   logical, save:: unsigned=.true.
@@ -91,7 +92,7 @@ SUBROUTINE pre_init (self)
   integer:: i, iv, iostat
   namelist /ramses_params/ riemann, slope_type, courant_factor, smallr, &
     smallc, isothermal, csound, detailed_timer, unsigned, courant_type, debug, &
-    verbose
+    do_dump, verbose
   type(index_t):: idx
   !-----------------------------------------------------------------------------
   call trace%begin('hd_t%pre_init')
@@ -658,7 +659,11 @@ SUBROUTINE unsplit(self)
   real(dp):: dtds(3)
   !-----------------------------------------------------------------------------
   call trace%begin ('hd_t%unsplit')
-  call self%dump (1)                  ! dump, now that dtime is known
+  if (do_dump .and. self%id == io%id_debug) then
+    call self%dump (1)                ! dump, now that dtime is known
+    call self%dump (0, self%q(:,:,1,1))  ! 2-D test
+    call self%dump (0, self%q(:,1,1,1))  ! 1-D test
+  end if
   call uslope(self)                   ! TVD slopes
   call trace3d(self)                  ! predictor step
   call cmpflxm(self)                  ! Solve for 1D flux in X direction
@@ -706,7 +711,7 @@ SUBROUTINE ctoprim (self)
   end do
   end do
   end do
-  if (self%id==io%id_debug) then
+  if (do_dump .and. self%id==io%id_debug) then
     do iv=1,size(q,4)
       call self%dump (iv, q(:,:,:,iv))
     end do
@@ -1036,7 +1041,7 @@ SUBROUTINE uslope(self)
     write(*,*)'Unknown slope type'
     stop
   endif
-  if (self%id==io%id_debug) then
+  if (do_dump .and. self%id==io%id_debug) then
     do n=1,size(dq,2)
       call self%dump (n, dq(:,n,1,:,:))
       call self%dump (n, dq(:,n,2,:,:))
@@ -1320,7 +1325,7 @@ SUBROUTINE cmpflxm(self)
       end do
     end do
   end do
-  if (self%id==io%id_debug) then
+  if (do_dump .and. self%id==io%id_debug) then
     do i=1,size(qm,2)
       call self%dump (i, qm(:,i,1,:,:))
       call self%dump (i, qp(:,i,1,:,:))
@@ -1470,7 +1475,7 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   class(hd_t),  pointer:: nb_hd
   ! ----------------------------------------------------------------------------
   task => another
-  call self%task_t%nbor_relations(task,needed,needs_me,download)
+  call self%task_t%nbor_relations (task, needed, needs_me, download)
   select type (another)
   class is (hd_t)
     ! do nothing, all is done in the base task_t layer

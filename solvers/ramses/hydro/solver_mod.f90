@@ -39,6 +39,7 @@ MODULE solver_mod
     procedure:: log_density => void
     procedure:: log_pressure => void
     procedure:: gas_pressure
+    procedure:: gas_pressure_sub
     procedure:: gas_pressure_ngz
     procedure:: gas_temperature
     procedure:: gas_temperature_ngz
@@ -366,6 +367,39 @@ FUNCTION gas_pressure (self) RESULT (pg)
     pg = (eos%gamma-1d0)*(e-0.5*((px**2+py**2+pz**2)/d))
   end if
 END FUNCTION gas_pressure
+
+!===============================================================================
+!===============================================================================
+SUBROUTINE gas_pressure_sub (self, pg)
+  class(solver_t):: self
+  real, dimension(:,:,:):: pg
+  real, dimension(:,:,:), pointer, contiguous:: d, px, py, pz, e
+  integer:: i1, i2, i3
+  !-----------------------------------------------------------------------------
+  d  => self%mem(:,:,:,self%idx%d ,self%it,1)
+  px => self%mem(:,:,:,self%idx%px,self%it,1)
+  py => self%mem(:,:,:,self%idx%py,self%it,1)
+  pz => self%mem(:,:,:,self%idx%pz,self%it,1)
+  e  => self%mem(:,:,:,self%idx%e ,self%it,1)
+  if (isothermal) then
+    pg = d*self%csound**2
+  else
+    do i3=1,self%gn(3)
+    do i2=1,self%gn(2)
+    do i1=1,self%gn(1)
+      if (d(i1,i2,i3) > 0.0) then
+        pg(i1,i2,i3) = (eos%gamma-1d0)* &
+        (e(i1,i2,i3)-0.5*((px(i1,i2,i3)**2 &
+                          +py(i1,i2,i3)**2 &
+                          +pz(i1,i2,i3)**2)/d(i1,i2,i3)))
+      else
+        pg(i1,i2,i3) = (eos%gamma-1d0)*e(i1,i2,i3)
+      end if
+    end do
+    end do
+    end do
+  end if
+END SUBROUTINE gas_pressure_sub
 
 !===============================================================================
 FUNCTION gas_pressure_ngz (self) RESULT (pg)
