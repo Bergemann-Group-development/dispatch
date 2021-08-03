@@ -21,6 +21,7 @@ MODULE setup_mod
   USE eos_mod
   USE opacity_mod
   USE download_mod
+  USE refine_mod
   implicit none
   private
   type, public:: setup_t
@@ -50,6 +51,7 @@ SUBROUTINE init (self)
   call eos%init                         ! Equation-of-state
   call opacity%init                     ! Opacity
   call download%init                    ! Downloading and interpolation parameters
+  call refine%init                      ! adaptive mesh refinement
   call trace%end ()
 END SUBROUTINE init
  

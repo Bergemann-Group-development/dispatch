@@ -141,7 +141,6 @@ SUBROUTINE init_levels (self)
   integer, save:: levelmin, levelmax
   !-----------------------------------------------------------------------------
   call trace%begin ('task_list_t%init_levels')
-  call refine%init                      ! refinement parameters
   !-----------------------------------------------------------------------------
   ! Active task_list locking is needed only when AMR is on
   !-----------------------------------------------------------------------------

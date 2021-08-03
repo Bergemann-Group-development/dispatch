@@ -19,8 +19,10 @@ MODULE shared_mod
     integer:: n_queue       = 0
     integer:: mpi_size      = 0
     integer:: mpi_rank      = 0
+    integer:: benchmark     = 0
     logical:: mpi_master    = .true.
     logical:: refine_on     = .false.
+    real:: refine_ratio     = 2.0
     real:: f_zoom(3)        = 1.0
     real(8):: mean_density  = 0d0
   contains
