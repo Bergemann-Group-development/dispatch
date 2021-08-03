@@ -187,12 +187,13 @@ MODULE patch_mod
     procedure:: get_overlap
     procedure:: init_level
     procedure:: dumpm
-    procedure:: dump1d
-    procedure:: dump2r
-    procedure:: dump2d
-    procedure:: dump3r
-    procedure:: dump3d
-    generic, public:: dump => dumpm, dump1d, dump2r, dump2d, dump3r, dump3d
+    procedure, private:: dump1r
+    procedure, private:: dump1d
+    procedure, private:: dump2r
+    procedure, private:: dump2d
+    procedure, private:: dump3r
+    procedure, private:: dump3d
+    generic, public:: dump => dumpm, dump1r, dump1d, dump2r, dump2d, dump3r, dump3d
     procedure:: cost_f
     procedure:: subtask_hash_key
     procedure:: overlap
@@ -3010,15 +3011,18 @@ SUBROUTINE dumpm (self, tag, ad_hoc, it)
     if (self%verbose > 0) then
       write (io_unit%log,*) 'patch_t%dump: id, time =', self%id, self%time
     end if
-    write (io_unit%dump) tag, self%id, self%level, self%nv, self%nt, nt, &
-                         self%nw, self%istep, self%it, self%gn, self%n
+    write (io_unit%dump) 0, kind(self%mem), tag, self%id, self%level, self%mv, &
+                         self%nt, nt, self%nw, self%istep, self%it, self%gn, &
+                         self%n
     write (io_unit%dump) self%time, self%dtime, self%position, self%size, &
                          self%t, self%dt, self%iit
+    write (io_unit%dump) kind(self%mem), size(shape(self%mem(:,:,:,:,1,1)))
+    write (io_unit%dump) shape(self%mem(:,:,:,:,1,1))
     !---------------------------------------------------------------------------
     ! Write nt time slots, in reverse order, starting from the most recent one
     !---------------------------------------------------------------------------
     if (present(it)) then
-      write (io_unit%dump) self%mem(:,:,:,:,self%iit(it),1)
+      write (io_unit%dump) self%mem(:,:,:,:,it,1)
     else
       do jt=1,nt
         write (io_unit%dump) self%mem(:,:,:,:,self%iit(self%nt-jt+1),1)
@@ -3031,25 +3035,55 @@ END SUBROUTINE dumpm
 !===============================================================================
 !> Dump an array into data/run/rank_rrrrr.dump
 !===============================================================================
+SUBROUTINE dump1r (self, tag, a)
+  class(patch_t):: self
+  integer:: tag
+  real:: a(:)
+  !.............................................................................
+  integer:: nt, nv, gn(3), n(3)
+  !-----------------------------------------------------------------------------
+  call io%lock%set ('dump')
+  nt = 1
+  nv = 1
+  n  = 1
+  gn = 1
+  n(1) = size(a)
+  gn(1) = size(a)
+  if (self%verbose > 0) then
+    write (io_unit%log,*) 'patch_t%dumpa: id, time =', self%id, self%time
+  end if
+  write (io_unit%dump) 1, kind(a), tag, self%id, self%level, nv, nt, nt, &
+                       self%nw, self%istep, self%it, gn, n
+  write (io_unit%dump) self%time, self%dtime, self%position, self%size, &
+                       self%t(self%it), self%dt(self%it), self%iit(self%it)
+  write (io_unit%dump) a
+  call io%lock%unset ('dump')
+END SUBROUTINE dump1r
+
+!===============================================================================
+!> Dump an array into data/run/rank_rrrrr.dump
+!===============================================================================
 SUBROUTINE dump2r (self, tag, a)
   class(patch_t):: self
   integer:: tag
   real:: a(:,:)
   !.............................................................................
-  integer:: nt, nv
+  integer:: nt, nv, n(3), gn(3)
   !-----------------------------------------------------------------------------
   call io%lock%set ('dump')
   nt = 1
   nv = 1
+  n  = 1
+  gn = 1
+  n(1:2) = shape(a)
+  gn(1:2) = shape(a)
   if (self%verbose > 0) then
     write (io_unit%log,*) 'patch_t%dumpa: id, time =', self%id, self%time
   end if
-  write (io_unit%dump) tag, self%id, self%level, nv, nt, nt, &
-                       self%nw, self%istep, self%it, self%gn, self%n
+  write (io_unit%dump) 2, kind(a), tag, self%id, self%level, nv, nt, nt, &
+                       self%nw, self%istep, self%it, gn, n
   write (io_unit%dump) self%time, self%dtime, self%position, self%size, &
                        self%t(self%it), self%dt(self%it), self%iit(self%it)
-  write (io_unit%dump) kind(a), size(shape(a))
-  write (io_unit%dump) shape(a)
   write (io_unit%dump) a
   call io%lock%unset ('dump')
 END SUBROUTINE dump2r
@@ -3070,12 +3104,10 @@ SUBROUTINE dump3r (self, tag, a)
   if (self%verbose > 0) then
     write (io_unit%log,*) 'patch_t%dumpa: id, time =', self%id, self%time
   end if
-  write (io_unit%dump) tag, self%id, self%level, nv, nt, nt, &
+  write (io_unit%dump) 3, kind(a), tag, self%id, self%level, nv, nt, nt, &
                        self%nw, self%istep, self%it, self%gn, self%n
   write (io_unit%dump) self%time, self%dtime, self%position, self%size, &
                        self%t(self%it), self%dt(self%it), self%iit(self%it)
-  write (io_unit%dump) kind(a), size(shape(a))
-  write (io_unit%dump) shape(a)
   write (io_unit%dump) a
   call io%lock%unset ('dump')
 END SUBROUTINE dump3r
@@ -3088,20 +3120,22 @@ SUBROUTINE dump1d (self, tag, a)
   integer:: tag
   real(8):: a(:)
   !.............................................................................
-  integer:: nt, nv
+  integer:: nt, nv, n(3), gn(3)
   !-----------------------------------------------------------------------------
   call io%lock%set ('dump')
   nt = 1
   nv = 1
+  n  = 1
+  gn = 1
+  n(1) = size(a)
+  gn(1) = size(a)
   if (self%verbose > 0) then
     write (io_unit%log,*) 'patch_t%dumpa: id, time =', self%id, self%time
   end if
-  write (io_unit%dump) tag, self%id, self%level, nv, nt, nt, &
-                       self%nw, self%istep, self%it, self%gn, self%n
+  write (io_unit%dump) 1, kind(a), tag, self%id, self%level, nv, nt, nt, &
+                       self%nw, self%istep, self%it, gn, n
   write (io_unit%dump) self%time, self%dtime, self%position, self%size, &
                        self%t(self%it), self%dt(self%it), self%iit(self%it)
-  write (io_unit%dump) kind(a), size(shape(a))
-  write (io_unit%dump) shape(a)
   write (io_unit%dump) a
   call io%lock%unset ('dump')
 END SUBROUTINE dump1d
@@ -3114,20 +3148,22 @@ SUBROUTINE dump2d (self, tag, a)
   integer:: tag
   real(8):: a(:,:)
   !.............................................................................
-  integer:: nt, nv
+  integer:: nt, nv, n(3), gn(3)
   !-----------------------------------------------------------------------------
   call io%lock%set ('dump')
   nt = 1
   nv = 1
+  n  = 1
+  gn = 1
+  n(1:2) = shape(a)
+  gn(1:2) = shape(a)
   if (self%verbose > 0) then
     write (io_unit%log,*) 'patch_t%dumpa: id, time =', self%id, self%time
   end if
-  write (io_unit%dump) tag, self%id, self%level, nv, nt, nt, &
-                       self%nw, self%istep, self%it, self%gn, self%n
+  write (io_unit%dump) 2, kind(a), tag, self%id, self%level, nv, nt, nt, &
+                       self%nw, self%istep, self%it, gn, n
   write (io_unit%dump) self%time, self%dtime, self%position, self%size, &
                        self%t(self%it), self%dt(self%it), self%iit(self%it)
-  write (io_unit%dump) kind(a), size(shape(a))
-  write (io_unit%dump) shape(a)
   write (io_unit%dump) a
   call io%lock%unset ('dump')
 END SUBROUTINE dump2d
@@ -3148,12 +3184,10 @@ SUBROUTINE dump3d (self, tag, a)
   if (self%verbose > 0) then
     write (io_unit%log,*) 'patch_t%dumpa: id, time =', self%id, self%time
   end if
-  write (io_unit%dump) tag, self%id, self%level, nv, nt, nt, &
+  write (io_unit%dump) 3, kind(a) ,tag, self%id, self%level, nv, nt, nt, &
                        self%nw, self%istep, self%it, self%gn, self%n
   write (io_unit%dump) self%time, self%dtime, self%position, self%size, &
                        self%t(self%it), self%dt(self%it), self%iit(self%it)
-  write (io_unit%dump) kind(a), size(shape(a))
-  write (io_unit%dump) shape(a)
   write (io_unit%dump) a
   call io%lock%unset ('dump')
 END SUBROUTINE dump3d
