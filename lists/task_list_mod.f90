@@ -42,7 +42,6 @@ MODULE task_list_mod
   USE task_mesg_mod
   USE timer_mod
   USE validate_mod
-  USE download_mod
   USE shared_mod
   USE mesh_mod
   USE mulligan_mod
@@ -182,15 +181,18 @@ SUBROUTINE init_levels (self)
     refine%levelmin = levelmin
     refine%levelmax = levelmax
   end if
-  write (io%output,'(1x,a,2i4)') &
-    'AMR levels:  min, max = ', refine%levelmin, refine%levelmax
   !-----------------------------------------------------------------------------
   ! If more than one level is active, for check that guard zones are filled
   !-----------------------------------------------------------------------------
-  if (refine%levelmax > refine%levelmin) &
-    download%check_filled = .true.
   call self%init_levelstats
-  shared%levelmax = levelmax
+  !-----------------------------------------------------------------------------
+  self%first(levelmin)%pointer => self%head
+  shared%levelmin = refine%levelmin
+  shared%levelmax = refine%levelmax
+  !.............................................................................
+  write (io%output,'(1x,a,2i4)') &
+    'AMR levels:  min, max = ', refine%levelmin, refine%levelmax
+  call self%init_levelstats
   call trace%end()
 END SUBROUTINE init_levels
 
@@ -381,10 +383,10 @@ SUBROUTINE update (self, head, test)
   !-----------------------------------------------------------------------------
   if (load_balance%is_on) then
     call load_balance%lock%set ('refine')
-    call refine%check_current(self, head, refined, derefined)
+    call refine%check (self, head, refined, derefined)
     call load_balance%lock%unset ('refine')
   else
-    call refine%check_current(self, head, refined, derefined)
+    call refine%check (self, head, refined, derefined)
   end if
   !-----------------------------------------------------------------------------
   ! If the task was derefined it does not exist, so bail out
@@ -534,9 +536,7 @@ SUBROUTINE update (self, head, test)
   if (self%syncing) then
     write (io_unit%mpi,*) task%id,omp%thread, &
       ' is waiting on a sync at t =', self%sync_next
-    !call trace%end; call trace%begin ('mpi%barrier', itimer=itimer)
     call mpi%barrier ('sync')
-    !call trace%end (itimer); call trace%begin('dispatcher0_t%update')
     write (io_unit%mpi,*) task%id,omp%thread, &
       ' finished wating on a sync at t =', self%sync_next
     self%sync_next = self%sync_next + self%sync_time
@@ -558,6 +558,7 @@ SUBROUTINE update (self, head, test)
   end if
   !.............................................................................
   call trace%end (itimer)
+  return
 END SUBROUTINE update
 
 !===============================================================================
