@@ -137,20 +137,22 @@ SUBROUTINE set_stacksize (nv)
     first_time = .false.
   endif
 #else
-  call getenv ('KMP_STACKSIZE', envvar)
-  if (envvar /= '' .and. io_unit%master .and. first_time) then
-    if (.not.printed) print '(1x,a)', &
-      '*************************************************************************************'
-    print '(1x,a)', &
-      '* WARNING: environment variable KMP_STACKSIZE is set, this assumes Intel MPI'
-    printed = .true.
-  end if
   call getenv ('OMP_STACKSIZE', envvar)
   if (envvar == '' .and. io_unit%master .and. first_time) then
-    print '(/,1x,a,/,1x,a,i9)', &
+    print '(/,2(1x,a,/),1x,a,i9)', &
     '*************************************************************************************', &
+    '* omp_mod.f90:', &
     '* WARNING: environment variable OMP_STACKSIZE not set, recommended value =',recommended
     printed = .true.
+    call getenv ('KMP_STACKSIZE', envvar)
+    if (envvar /= '' .and. io_unit%master .and. first_time) then
+      if (.not.printed) print *, &
+        '*************************************************************************************'
+      print '(2(1x,a,/),1x,a)', &
+        '* omp_mod.f90:', &
+        '* WARNING: environment variable KMP_STACKSIZE is set, this assumes Intel MPI'
+      printed = .true.
+    end if
   end if
 #endif
 #endif
