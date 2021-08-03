@@ -57,12 +57,12 @@ def count_inside(p,point=[0.5,0.5,0.5],verbose=0):
             count+=1
     return count
 
-def patches_along(pp,point=[0.5,0.5,0.5],dir=0,verbose=0):
+def patches_along(pp,pt=[0.5,0.5,0.5],dir=0,verbose=0):
     ''' Get the patches along a given direction through a point
     '''
     if hasattr(pp,'patches'):
         pp=pp.patches
-    pt=np.copy(point)
+    pt=np.copy(pt)
     if verbose>0:
         np.set_printoptions(formatter={'float_kind': '{:6.3f}'.format})
 

@@ -367,7 +367,7 @@ def amr_plane(sn,iv='d',z=0.5,x=None,y=None,log=False,
             outline(p.extent[axis])
         if ident:
             x0,x1,y0,y1=p.extent[axis]
-            if x0>=xmn and x1<=xmx and y0>=ymn and y1<=ymx:
+            if x0>=xmn and x0<=xmx and y0>=ymn and y0<=ymx:
                 pl.text(x0,y0,'{}'.format(p.id),bbox=bbox)
     pl.xlim(xmn,xmx)
     pl.ylim(ymn,ymx)
