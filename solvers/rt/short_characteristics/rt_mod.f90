@@ -177,6 +177,15 @@ recursive SUBROUTINE pre_init (self)
   self%pre_initialized_rt = .true.
   if (self%pre_initialized) print *, 'pre_init issued somewhere'
   call io%lock%unset ('rt_t%pre_init')
+  ! ----------------------------------------------------------------------------
+  ! Mute a warning about bad nw, nv, and ng - these are set later.
+  ! nw and ng - just below,
+  ! nv - in the init procedure, where we will know, how many RT directions there
+  ! will be. 
+  ! ----------------------------------------------------------------------------
+  self%nw = self%patch%nw
+  self%nv = self%patch%nv
+  self%ng = self%patch%ng
   call self%gpatch_t%pre_init()
   self%on = on
   self%nt = nt
