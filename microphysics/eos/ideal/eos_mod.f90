@@ -193,6 +193,7 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne,lnee, pg, tt, ne, rk, &
   end if
   d_alloc = .false.
   e_alloc = .false.
+  s_alloc = .false.
    !-----------------------------------------------------------------------------
   if (present(d)) then
     d_loc => d
