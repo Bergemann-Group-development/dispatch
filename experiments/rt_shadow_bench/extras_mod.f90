@@ -123,7 +123,7 @@ SUBROUTINE pre_init (self)
   !.............................................................................
   call trace%begin ('extras_t%pre_init')
   self%patch => self                                                   ! keep
-  call self%patch_t%pre_init                                           ! keep
+  call self%gpatch_t%pre_init                                           ! keep
   call self%initial_conditions%pre_init (self%patch)                   ! initial
   !call self%forces%init (self)                                         ! forces
   allocate(self%rt)                                                     ! RT
