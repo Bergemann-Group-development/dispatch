@@ -8,9 +8,11 @@
 !===============================================================================
 MODULE hash_table_mod
   USE iso_c_binding, only: c_loc, c_ptr
-  USE mpi_mod
   USE trace_mod
   USE io_mod
+  USE timer_mod
+  USE task_mod
+  USE link_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -31,7 +33,7 @@ MODULE hash_table_mod
   !-----------------------------------------------------------------------------
   type, public:: hash_table_t
     type(bucket_t), allocatable, dimension(:)  :: data
-    integer         :: ndim=2
+    integer         :: ndim=4
     integer         :: key_length
     integer         :: total_size, head_free, nfree_chain, nfree
     integer(kind=8) :: size
@@ -41,12 +43,29 @@ MODULE hash_table_mod
     procedure:: init
     procedure:: reset_entire_hash
     procedure:: dealloc
-    procedure:: set
-    procedure:: get
+    procedure:: set_int4s
+    procedure:: set_int4
+    procedure:: set_int8
+    procedure:: set_real4
+    procedure:: set_task
+    procedure:: set_link
+    procedure:: set_ptr
+    generic:: set => set_int4s, set_int4, set_int8, set_real4, set_task, set_link
+    generic:: add => set_int4s, set_int4, set_int8, set_real4, set_task, set_link
+    procedure:: get_int4
+    procedure:: get_task
+    procedure:: get_link
+    procedure:: get_ptr
+    generic:: get => get_int4, get_task, get_link
+    procedure:: existsn
+    procedure:: exists1
+    generic:: exists => existsn, exists1
     procedure:: free
     procedure:: stats
     procedure:: same_keys
     procedure:: reset_bucket
+    procedure, nopass:: test
+    procedure:: remove => free
   end type
   type(hash_table_t), public:: hash_table
 CONTAINS
@@ -56,22 +75,32 @@ CONTAINS
 !> Chose size (excluding the chaining space) as the smallest
 !> power of two >= the required_size.
 !===============================================================================
-SUBROUTINE init (self, req_size, ndim)
+SUBROUTINE init (self, size, ndim)
   class(hash_table_t), intent(inout) :: self
-  integer            , intent(in)    :: req_size
+  integer, optional  , intent(in)    :: size
   integer, optional  , intent(in)    :: ndim
+  !.............................................................................
+  integer                            :: req_size
+  integer, save                      :: itimer=0
   !-----------------------------------------------------------------------------
-  self%size = 2
+  call trace%begin ('hash_table_t%init', itimer=itimer)
+  if (present(size)) then
+    req_size = size
+  else
+    req_size = 2**13-1
+  end if
   if (present(ndim)) then
     self%ndim = ndim
   else
-    self%ndim = 2
+    self%ndim = 4
   end if
+  self%size = 2
   self%key_length = self%ndim*8
-  do while (self%size < req_size*2)
+  do while (self%size < req_size*4)
      self%size = self%size * 2
   end do
   call reset_entire_hash (self, .false.)
+  call trace%end (itimer)
 END SUBROUTINE init
 
 !===============================================================================
@@ -91,9 +120,11 @@ END FUNCTION hash_func
 SUBROUTINE reset_entire_hash (htable, resize)
   class(hash_table_t), intent(inout) :: htable
   logical, intent(in)                :: resize
-  integer :: i
-  real :: load_factor
+  integer                            :: i
+  real                               :: load_factor
+  integer, save                      :: itimer=0
   !-----------------------------------------------------------------------------
+  call trace%begin ('hash_table_t%reset', itimer=itimer)
   if (resize) then
      load_factor = real(htable%size - htable%nfree,kind=4) / real(htable%size,kind=4)
      if (load_factor > 0.6) then
@@ -135,15 +166,16 @@ SUBROUTINE reset_entire_hash (htable, resize)
      htable%next_free(i) = i + 1
   end do
   htable%next_free(htable%total_size) = 0
+  call trace%end (itimer)
 END SUBROUTINE reset_entire_hash
 
 !===============================================================================
-!> Subroutine to reclaim the memory used by a hash table
-!> IMPORTANT: The new size of the hash table is adapted based on the
-!> load factor before resetting the hash table.
+!> Deallocate the hash table
 !===============================================================================
 SUBROUTINE dealloc (htable)
   class(hash_table_t), intent(inout) :: htable
+  integer :: i
+  real :: load_factor
   !-----------------------------------------------------------------------------
   call io%bits_mem (-storage_size(htable%data), product(shape(htable%data)))
   call io%bits_mem (-storage_size(htable%next_free), &
@@ -166,11 +198,92 @@ SUBROUTINE reset_bucket (self, buck)
   buck%key = 0
 END SUBROUTINE reset_bucket
 
+SUBROUTINE set_int4s (self, key1, value)
+  class(hash_table_t),   intent(inout) :: self
+  integer,               intent(in)    :: key1
+  integer, target,       intent(in)    :: value
+  !.............................................................................
+  class(*),              pointer       :: p
+  integer, dimension(1)                :: key
+  integer, save                        :: itimer=0
+  !-----------------------------------------------------------------------------
+  if (timer%detailed) call trace%begin ('hash_table_t%int4s', itimer=itimer)
+  key(1) = key1
+  call set_int4 (self, key, value)
+  if (timer%detailed) call trace%end (itimer)
+END SUBROUTINE set_int4s
+
+SUBROUTINE set_int4 (self, key, value)
+  class(hash_table_t),   intent(inout) :: self
+  integer, dimension(:), intent(in)    :: key
+  integer, target,       intent(in)    :: value
+  class(*),              pointer       :: p
+  !-----------------------------------------------------------------------------
+  allocate (integer:: p)
+  select type (p)
+  type is (integer)
+  p = value
+  end select
+  call set_ptr (self, key, p)
+END SUBROUTINE set_int4
+
+SUBROUTINE set_int8 (self, key, value)
+  class(hash_table_t),   intent(inout) :: self
+  integer, dimension(:), intent(in)    :: key
+  integer(8), target,    intent(in)    :: value
+  class(*),              pointer       :: p
+  !-----------------------------------------------------------------------------
+  allocate (integer(8):: p)
+  select type (p)
+  type is (integer(8))
+  p = value
+  end select
+  call set_ptr (self, key, p)
+END SUBROUTINE set_int8
+
+SUBROUTINE set_real4 (self, key, value)
+  class(hash_table_t),   intent(inout) :: self
+  integer, dimension(:), intent(in)    :: key
+  real(4),  target,      intent(in)    :: value
+  class(*),              pointer       :: p
+  !-----------------------------------------------------------------------------
+  allocate (real:: p)
+  select type (p)
+  type is (real)
+  p = value
+  end select
+  call set_ptr (self, key, p)
+END SUBROUTINE set_real4
+
+SUBROUTINE set_task (self, key, value)
+  class(hash_table_t),   intent(inout) :: self
+  integer, dimension(:), intent(in)    :: key
+  class(task_t),         pointer       :: value
+  class(*),              pointer       :: p
+  !-----------------------------------------------------------------------------
+  if (.not. self%exists(key)) then
+    p => value
+    call set_ptr (self, key, p)
+  end if
+END SUBROUTINE set_task
+
+SUBROUTINE set_link (self, key, value)
+  class(hash_table_t),   intent(inout) :: self
+  integer, dimension(:), intent(in)    :: key
+  class(link_t),         pointer       :: value
+  class(*),              pointer       :: p
+  !-----------------------------------------------------------------------------
+  if (.not. self%exists(key)) then
+    p => value
+    call set_ptr (self, key, p)
+  end if
+END SUBROUTINE set_link
+
 !===============================================================================
 !> Add a key/value pair to the hash table. If there is already a key/value
 !> pair stored for this key, return an error message.
 !===============================================================================
-SUBROUTINE set (htable, key, val)
+SUBROUTINE set_ptr (htable, key, val)
   class(hash_table_t),         intent(inout) :: htable
   integer, dimension(:)     ,  intent(in)    :: key
   class(*), pointer,           intent(in)    :: val
@@ -197,7 +310,7 @@ SUBROUTINE set (htable, key, val)
         ! Check if key already exists - abort if so
         if (htable%same_keys(htable%data(ibucket)%key,key)) then
           write(*,*) "hash_taable: trying to insert already existing key: ", key
-          call mpi%abort ('hash_table: double insert')
+          call io%abort ('hash_table: double insert')
         end if
         ibucket = htable%data(ibucket)%next_ibucket
      end do
@@ -206,7 +319,7 @@ SUBROUTINE set (htable, key, val)
      !--------------------------------------------------------------------------
      if (htable%same_keys(htable%data(ibucket)%key,key))then
         write(*,*) "trying to insert already existing key: ",key
-        stop
+        call io%abort ('hash_table: double insert')
      end if
      !--------------------------------------------------------------------------
      ! Have reached end of chain, val not present yet -> add
@@ -226,13 +339,64 @@ SUBROUTINE set (htable, key, val)
      stop
   end if
   !call trace%end (itimer)
-END SUBROUTINE set
+END SUBROUTINE set_ptr
+
+SUBROUTINE get_int4 (self, key, value)
+  class(hash_table_t),   intent(inout) :: self
+  integer, dimension(:), intent(in)    :: key
+  integer, target,       intent(out)   :: value
+  class(*),              pointer       :: p
+  !-----------------------------------------------------------------------------
+  call get_ptr (self, key, p)
+  if (associated(p)) then
+    select type (p)
+    type is (integer)
+    value = p
+    end select
+  else
+    value = -999
+  endif
+END SUBROUTINE get_int4
+
+SUBROUTINE get_task (self, key, value)
+  class(hash_table_t),   intent(inout) :: self
+  integer, dimension(:), intent(in)    :: key
+  class(task_t),         pointer       :: value
+  class(*),              pointer       :: p
+  !-----------------------------------------------------------------------------
+  call get_ptr (self, key, p)
+  if (associated(p)) then
+    select type (p)
+    class is (task_t)
+    value => p
+    end select
+  else
+    nullify(value)
+  endif
+END SUBROUTINE get_task
+
+SUBROUTINE get_link (self, key, value)
+  class(hash_table_t),   intent(inout) :: self
+  integer, dimension(:), intent(in)    :: key
+  class(link_t),         pointer       :: value
+  class(*),              pointer       :: p
+  !-----------------------------------------------------------------------------
+  call get_ptr (self, key, p)
+  if (associated(p)) then
+    select type (p)
+    class is (link_t)
+    value => p
+    end select
+  else
+    nullify(value)
+  endif
+END SUBROUTINE get_link
 
 !===============================================================================
 !> Function (not subroutine, could also be changed...? ) which retrieves the 
 !> hash table value for a given key. If no entry exists, return 0
 !===============================================================================
-SUBROUTINE get (htable, key, value)
+SUBROUTINE get_ptr (htable, key, value)
   class(hash_table_t),            intent(in) :: htable
   integer    , dimension(:)     , intent(in) :: key
   class(*), pointer                          :: value
@@ -263,12 +427,48 @@ SUBROUTINE get (htable, key, value)
   !-----------------------------------------------------------------------------
   nullify(value)
   !call trace%end (itimer)
-END SUBROUTINE get
+END SUBROUTINE get_ptr
+
+!===============================================================================
+!> Determine if a key entry exists
+!===============================================================================
+LOGICAL FUNCTION existsn (self, key)
+  class(hash_table_t)               :: self
+  integer, dimension(:), intent(in) :: key
+  class(*), pointer                 :: value
+  !-----------------------------------------------------------------------------
+  call self%get_ptr (key, value)
+  existsn = associated(value)
+END FUNCTION existsn
+
+LOGICAL FUNCTION exists1 (self, key1)
+  class(hash_table_t) :: self
+  integer, intent(in) :: key1
+  !.............................................................................
+  class(*), pointer   :: value
+  integer             :: key(1)
+  !-----------------------------------------------------------------------------
+  key(1) = key1
+  call self%get_ptr (key, value)
+  exists1 = associated(value)
+END FUNCTION exists1
+
+!===============================================================================
+!> Remove the hash table entry for a given key, after checking
+!===============================================================================
+SUBROUTINE free (self, key)
+  class(hash_table_t),         intent(inout) :: self
+  integer , dimension(:)     , intent(in)    :: key
+  !-----------------------------------------------------------------------------
+  if (self%exists(key)) then
+    call real_free (self, key)
+  end if
+END SUBROUTINE free
 
 !===============================================================================
 !> Remove the hash table entry for a given key 
 !===============================================================================
-SUBROUTINE free (htable, key)
+SUBROUTINE real_free (htable, key)
   class(hash_table_t),         intent(inout) :: htable
   integer , dimension(:)     , intent(in)    :: key
   integer(kind=8) :: ibucket, previous_ibucket=0, full_hash
@@ -299,7 +499,7 @@ SUBROUTINE free (htable, key)
      htable%head_free = int(ibucket,kind=4)
      htable%nfree_chain = htable%nfree_chain + 1
   end if
-END SUBROUTINE free
+END SUBROUTINE real_free
 
 !===============================================================================
 !> Check if keys are equivalent
@@ -323,7 +523,7 @@ END FUNCTION same_keys
 SUBROUTINE stats (htable)
   class(hash_table_t)::htable
   !-----------------------------------------------------------------------------
-  if (mpi%master) then 
+  if (io%master) then 
     write(*,*)"Total values stored in hash table: "&
          ,htable%total_size - htable%nfree - htable%nfree_chain
     write(*,*)"Size of hash table (without chaning space): "&
@@ -345,5 +545,53 @@ SUBROUTINE stats (htable)
          * 1.D0 / (htable%total_size - htable%size + tiny(0.D0))
   endif
 END SUBROUTINE stats
+
+!===============================================================================
+!> Self test
+!===============================================================================
+SUBROUTINE test ()
+  type(hash_table_t), allocatable:: htable
+  integer:: size, ndim, i
+  integer, allocatable:: key(:)
+  class(*), pointer:: value
+  logical:: ok  
+  !-----------------------------------------------------------------------------
+  size = 30
+  ndim = 4
+  allocate (key(ndim))
+  !-----------------------------------------------------------------------------
+  ! Initialize and set 1-D values
+  !-----------------------------------------------------------------------------
+  allocate (htable)
+  call htable%init (size, ndim)
+  do i=1,size
+    allocate (real:: value)
+    select type (value)
+    type is (real)
+      value = i
+    end select
+    key = i*13
+    call htable%set_ptr (key, value)
+  end do
+  !-----------------------------------------------------------------------------
+  ! Retrieve 1-D values and deallocate
+  !-----------------------------------------------------------------------------
+  ok = .true.
+  do i=1,size
+    key = i*13
+    call htable%get_ptr (key, value)
+    select type (value)
+    type is (real)
+      if (nint(value) /= i) ok = .false.
+    end select
+    deallocate (value)
+  end do
+  call htable%dealloc ()
+  if (ok) then
+    write (stdout,*) 'hash_table%test passed'
+  else
+    write (stdout,*) 'hash_table%test failed'
+  end if
+END SUBROUTINE test
 
 END MODULE hash_table_mod
