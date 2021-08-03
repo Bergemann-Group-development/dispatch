@@ -103,9 +103,9 @@ SUBROUTINE update (self, patch)
   call trace%begin ('pdf_io_t%update')
   if (patch%time > patch%pdf_next) then
     call patch%time_interval (patch%pdf_next, jt, pt)
-    deallocated = .not.associated(patch%irefine)
+    deallocated = .not.associated(patch%frefine)
     if (deallocated) &
-      allocate (patch%irefine(patch%gn(1),patch%gn(2),patch%gn(3)))
+      allocate (patch%frefine(patch%gn(1),patch%gn(2),patch%gn(3)))
     call make_irefine (patch)
     dv = product(patch%mesh%d)
     d_tot  = 0.0
@@ -119,7 +119,7 @@ SUBROUTINE update (self, patch)
     do iz=l(3),u(3)
     do iy=l(2),u(2)
     do ix=l(1),u(1)
-      if (patch%irefine(ix,iy,iz) == 0) then
+      if (patch%frefine(ix,iy,iz) == 0) then
         d =  patch%mem(ix,iy,iz,patch%idx%d ,jt(1),1)*pt(1) &
            + patch%mem(ix,iy,iz,patch%idx%d ,jt(2),1)*pt(2)
         px = patch%mem(ix,iy,iz,patch%idx%px,jt(1),1)*pt(1) &
@@ -152,7 +152,7 @@ SUBROUTINE update (self, patch)
       self%rms(i) = self%rms(i) + rms(i)
     end do
     if (deallocated) &
-      deallocate (patch%irefine)
+      deallocate (patch%frefine)
     !---------------------------------------------------------------------------
     ! Decrement the count of tasks still remaining to be accumulated.  iout is
     ! the output index (0 at time=0.0) and the counter index, which needs to be
@@ -227,7 +227,7 @@ SUBROUTINE make_irefine (patch)
   integer:: l(3), u(3)
   real(8):: dist(3)
   !-----------------------------------------------------------------------------
-  patch%irefine = 0
+  patch%frefine = 0
   nbor => patch%link%nbor
   do while (associated(nbor))
     nbpatch => nbor%task
@@ -243,7 +243,7 @@ SUBROUTINE make_irefine (patch)
           if (verbose > 1) &
             write(stdout,*) 'irefine: nbpatch =', &
               nbpatch%id, nbpatch%level, l, u, product(u-l+1)
-          patch%irefine(l(1):u(1),l(2):u(2),l(3):u(3)) = 1
+          patch%frefine(l(1):u(1),l(2):u(2),l(3):u(3)) = 1
         end if
       end select
     end if
@@ -253,7 +253,7 @@ SUBROUTINE make_irefine (patch)
     l = patch%li
     u = patch%ui
     write(stdout,*) 'make_irefine: unrefined =', &
-      sum(1-patch%irefine(l(1):u(1),l(2):u(2),l(3):u(3))), product(u-l+1)
+      sum(1-patch%frefine(l(1):u(1),l(2):u(2),l(3):u(3))), product(u-l+1)
   end if
 END SUBROUTINE make_irefine
 

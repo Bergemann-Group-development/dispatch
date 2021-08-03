@@ -87,7 +87,7 @@ SUBROUTINE write_out (buffer, snap, rec)
   character(len=64) filename
   integer:: unit
   !-----------------------------------------------------------------------------
-  !call trace%begin('background_io%write_out')
+  call trace%begin('background_io%write_out')
   call log (rec, 3)
   !-----------------------------------------------------------------------------
   ! Write a record with the data cube to a direct access file

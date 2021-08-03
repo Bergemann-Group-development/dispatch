@@ -69,6 +69,7 @@ MODULE data_io_mod
   USE aux_mod
   USE eos_mod
   USE bits_mod
+  USE shared_mod
   implicit none
   private
   type, public:: io_kind_t
@@ -524,7 +525,9 @@ SUBROUTINE get_ids (nbor_ids, parent_id)
     n = n+1
     nbor => nbor%next
   end do
+  n = max(1,n)
   allocate (nbor_ids(n))
+  nbor_ids = 0
   n = 0
   nbor => patch%link%nbor
   do while (associated(nbor))
@@ -1065,7 +1068,7 @@ SUBROUTINE output_nml_v4 (patch, append, unit, first_time)
   opacity      = patch%opacity
   no_mans_land = patch%no_mans_land
   periodic     = patch%periodic
-  refine_ratio = patch%refine_ratio
+  refine_ratio = shared%refine_ratio
   rank         = patch%rank
   cost         = patch%cost
   mpi_dims     = mpi_coords%dims
@@ -1580,7 +1583,7 @@ SUBROUTINE input_nml_v4 (self, patch, unit)
   patch%time_derivs  = time_derivs
   patch%no_mans_land = no_mans_land
   patch%mesh_type    = mesh_type
-  patch%refine_ratio = refine_ratio
+  shared%refine_ratio = refine_ratio
   !-----------------------------------------------------------------------------
   ! Read patch-specific values
   !-----------------------------------------------------------------------------
