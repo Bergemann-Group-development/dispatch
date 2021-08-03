@@ -19,6 +19,7 @@ MODULE guards_mod
   USE boundary_mod
   USE interp_mod
   USE mesh_mod
+  USE conserve_mod
   implicit none
   private
   type, public, extends(nbor_t):: guards_t
@@ -38,7 +39,7 @@ MODULE guards_mod
   end type
   integer:: verbose=0
   logical:: detailed_timer = .false.
-  type(guards_t), public:: face
+  type(guards_t), public:: guards
 CONTAINS
 
 !===============================================================================
@@ -120,22 +121,27 @@ SUBROUTINE source_to_target (self, source, target, all_tgt, all_src, n_op, &
   integer, optional      :: only
   !.............................................................................
   character(len=8)       :: type
-  integer                :: m(6), tid, sid
+  integer                :: m(6), tid, sid, unit
   integer, save          :: itimer=0
   !-----------------------------------------------------------------------------
   if (detailed_timer) &
     call trace%begin ('guards_t%source_to_target', itimer=itimer)
   self%distance = source%distance (target)
+  tid = target%id
+  sid = source%id
   !.............................................................................
+  if (verbose > 2 .or. target%id == io%id_debug &
+                  .or. source%id == io%id_debug) then
+    unit = stdout
+  else
+    unit = stdlog
+  end if
   if (verbose > 1) then
-    write (stdlog,'(f12.6,a,2(i6,i3),3f7.3)') &
-      wallclock(),pad_trace(1:indent)// &
+    write (unit,'(a,2(i6,":",i2.2),3f7.3)') &
       'guards_t%source_to_target: src,lvl,tgt,lvl,dist=', &
       source%id, source%level, target%id, target%level, &
       self%distance/target%size
   end if
-  tid = target%id
-  sid = source%id
   !.............................................................................
   select type (target)
   class is (patch_t)
@@ -148,22 +154,42 @@ SUBROUTINE source_to_target (self, source, target, all_tgt, all_src, n_op, &
       self%distance = source%distance (target)
       if (source%level == target%level) then
         type = 'same'
-        call self%same (target, source)
+        call self%same (target, source, all_tgt, all_src, only)
         n_op  (1) = n_op(1) + 1
       else if (source%level == target%level-1) then
         type = 'prolong'
-        call self%prolong (target, source, all_tgt, all_src)
+        call self%prolong (target, source, all_tgt, all_src, only)
         n_op(2) = n_op(2) + 1
-      else if (source%level == target%level+1 .and. &
-               source%parent%id == target%id) then
+      else if (source%level == target%level+1) then
         type = 'restrict'
-        call self%restrict (target, source, all_tgt, all_src)
+        !-----------------------------------------------------------------------
+        ! FIXME: For now, the conserve%restrict() can only handle interior cells
+        !-----------------------------------------------------------------------
+        if (source%parent%id == target%id .and. &
+            .not. present(all_tgt) .and. .not. present(all_src)) then
+          call conserve%restrict (target, source, all_tgt, all_src, only)
+        else
+          if (source%parent%id == target%id) then
+            write (stderr,'(a,2(i6,":",i2.2,2x,2l1))') &
+              'guards_t%source_to_target: warning, source,target,all=', &
+              source%id, source%level, target%id, target%level, &
+              present(all_tgt), present(all_src)
+          end if
+          call self%restrict (target, source, all_tgt, all_src, only)
+        end if
         n_op(3) = n_op(3) + 1
+      end if
+      if (verbose > 0 .or. target%id == io%id_debug &
+                      .or. source%id == io%id_debug) then
+        write (unit,'(a8,2x,2(a,i6,":",i2.2,1x,4i3,3x),2x,3l1)') type, &
+          'tgt:', tid, target%level, target%key, &
+          'src:', sid, source%level, source%key, &
+          present(all_tgt), present(all_src), present(only)
       end if
     end select
     !...........................................................................
     if (verbose > 1) then
-      write (stdlog,'(a,2x,i6,i3,f12.6,2x,i6,i3,2x,3f8.3,2x,a)') &
+      write (unit,'(a,2x,i6,";",i2.2,f12.6,2x,i6,":",i2.2,2x,3f8.3,2x,a)') &
         'guards_t%source_to_target: tgt,time,src,dist,type=', &
         target%id, target%level, target%time, source%id, source%level, &
         self%distance/target%size, type
@@ -197,7 +223,7 @@ SUBROUTINE same (self, tgt, src, all_tgt, all_src, only)
   !-----------------------------------------------------------------------------
   if (detailed_timer) &
     call trace%begin ('guards_t%same', itimer=itimer)
-  call self%info ('same', tgt, src)
+  call self%info ('same', tgt, src, all_tgt, all_src, only)
   tm => tgt%mesh                             ! tgt mesh
   sm => src%mesh                             ! src mesh
   do i=1,3
@@ -245,7 +271,7 @@ SUBROUTINE prolong (self, tgt, src, all_tgt, all_src, only)
   !-----------------------------------------------------------------------------
   if (detailed_timer) &
     call trace%begin ('guards_t%prolong', itimer=itimer)
-  call self%info ('prolong', tgt, src, all_tgt, all_src)
+  call self%info ('prolong', tgt, src, all_tgt, all_src, only)
   call self%differ (tgt, src, all_tgt, all_src, only)
   if (detailed_timer) &
     call trace%end (itimer)
@@ -261,7 +287,7 @@ SUBROUTINE restrict (self, tgt, src, all_tgt, all_src, only)
   !-----------------------------------------------------------------------------
   if (detailed_timer) &
     call trace%begin ('guards_t%restrict',  itimer=itimer)
-  call self%info ('restrict', tgt, src, all_tgt, all_src)
+  call self%info ('restrict', tgt, src, all_tgt, all_src, only)
   call self%differ (tgt, src, all_tgt, all_src, only)
   if (detailed_timer) &
     call trace%end (itimer)
@@ -269,20 +295,27 @@ END SUBROUTINE restrict
 
 !===============================================================================
 !===============================================================================
-SUBROUTINE info (self, label, target, source, all_tgt, all_src)
+SUBROUTINE info (self, label, target, source, all_tgt, all_src, only)
   class(guards_t)   :: self
   class(patch_t)    :: target, source
   character(len=*)  :: label
   logical, optional :: all_tgt, all_src
+  integer, optional :: only
+  integer           :: o
   !.............................................................................
   if (verbose > 0) then
-    write (stdlog,'(2(f12.6,a,2x,i6,":",i2.2),2(2x,3f7.3),2x,2l1)') &
+    if (present(only)) then
+      o = only
+    else
+      o = 0
+    end if
+    write (stdlog,'(2(f12.6,a,2x,i6,":",i2.2),2(2x,3f7.3),2x,2l1,i3)') &
       wallclock(), pad_trace(1:indent)//'guards_t%'// &
       trim(label)//': tgt,time,src,dist,all_tgt,all_src=', &
       target%id, target%level, &
       target%time, '  src:', source%id, source%level, &
       self%distance/target%size, source%distance(target)/target%size, &
-      present(all_tgt), present(all_src)
+      present(all_tgt), present(all_src), o
   end if
   !.............................................................................
 END SUBROUTINE info
@@ -305,25 +338,37 @@ SUBROUTINE differ (self, tgt, src, all_tgt, all_src, only)
   real, dimension(:,:,:,:), pointer    :: tgt0, tgt1, tgt2, mem
   !contiguous                           :: tgt0, tgt1, tgt2, mem
   logical                              :: src_all, tgt_int
-  integer                              :: i, m(5)
+  integer                              :: i, m(5), unit, sid, tid
+  integer, save                        :: itimer=0
   !-----------------------------------------------------------------------------
   ! Use all source cells if the all_src is present, or the rarget (child) is
   ! taking the first step.
   !-----------------------------------------------------------------------------
-  call trace%begin ('guards_t%differ')
-  src_all = present(all_src) .or. tgt%istep==0  ! use full source region
-  src_all = src_all .or. tgt%istep==0           ! first child update
+  call trace%begin ('guards_t%differ', itimer=itimer)
+  tid = tgt%id
+  sid = src%id
+  unit = merge (stdout, stdlog, verbose > 2 .or. tgt%id==io%id_debug)
+  src_all = present(all_src) !.or. tgt%istep==0  ! use full source region
+ !src_all = src_all .or. tgt%istep==0            ! first child update
   !-----------------------------------------------------------------------------
-  ! Produce values allso in internal cells if specifically ordered to, or if
+  ! Produce values also in internal cells if specifically ordered to, or if
   ! the source is at a higher level, or if a child is taking the first step.
   !-----------------------------------------------------------------------------
   tgt_int = present(all_tgt)                    ! produce full target
   tgt_int = tgt_int .or. tgt%istep==0           ! first child update
   tgt_int = tgt_int .or. src%level > tgt%level  ! restrict
+  tgt_int = tgt_int .and. tgt%time > 0.0        ! FIXME: restarts!
   !.............................................................................
   if (verbose > 1) then
-    write (stdlog,'(f12.6,a,2(i6,":",i2.2,2x),4l1)') &
+    write (unit,'(f12.6,a,2(i6,":",i2.2,2x),4l1)') &
       wallclock(), pad_trace(1:indent)// &
+      'guards_t%differ: src,tgt,all_tgt,all_src,tgt_int,src_all=', &
+      src%id, src%level, tgt%id, tgt%level, &
+      present(all_tgt), present(all_src), tgt_int, src_all
+  end if
+  if (unit == stdout) then
+    write (unit,'(f12.6,2x,a,2(i6,":",i2.2,2x),4l1)') &
+      wallclock(), &
       'guards_t%differ: src,tgt,all_tgt,all_src,tgt_int,src_all=', &
       src%id, src%level, tgt%id, tgt%level, &
       present(all_tgt), present(all_src), tgt_int, src_all
@@ -348,11 +393,11 @@ SUBROUTINE differ (self, tgt, src, all_tgt, all_src, only)
     sl = sm_p - sm%s*0.5d0                      ! src lower corner
     su = sm_p + sm%s*0.5d0                      ! src upper corner
   end if
-  if (verbose > 2) then
-    write (stdlog,'(a,i6,2x,3i5,5(2x,3f8.3))') &
+  if (verbose > 2 .or. unit==stdout) then
+    write (unit,'(a,i6,2x,3i5,5(2x,3f8.3))') &
       'guards_t%differ src mesh: id,s,p,b=', &
       sm(1)%id, sm%n, sm%s, sm%p, sm%b
-    write (stdlog,'(a,i6,2x,3i5,5(2x,3f8.3))') &
+    write (unit,'(a,i6,2x,3i5,5(2x,3f8.3))') &
       'guards_t%differ tgt mesh: id,s,p,b=', &
       tm(1)%id, tm%n, tm%s, tm%p, tm%b
   end if
@@ -411,6 +456,13 @@ SUBROUTINE differ (self, tgt, src, all_tgt, all_src, only)
       src%id, src%level, tgt%id, tgt%level, ls, us, lt, ut,  &
       below, above, tgt_int, src_all
   end if
+  if (unit == stdout) then
+    write (unit,'(f12.6,2x,a,2(i6,":",i2.2,1x),2(1x,2(1x,3i4)),3(2x,3l1))') &
+      wallclock(), &
+      'guards_t%differ: src,tgt,ls,us,lt,ut,bel,abv=', &
+      src%id, src%level, tgt%id, tgt%level, ls, us, lt, ut,  &
+      below, above, tgt_int, src_all
+  end if
   !-----------------------------------------------------------------------------
   ! Allocate temporary arrays with common size
   !-----------------------------------------------------------------------------
@@ -420,7 +472,7 @@ SUBROUTINE differ (self, tgt, src, all_tgt, all_src, only)
   allocate (tgt1(m(1),m(2),m(3),m(4)))
   allocate (tgt2(m(1),m(2),m(3),m(4)))
   ! Interpolate in time, unless already done
-  call interp%in_t (src, src, ls,us, src%mem, tgt0, only=only, &
+  call interp%in_t (tgt, src, ls, us, src%mem, tgt0, only=only, &
                     extrap=tgt%allow_extrapolate)
   !-----------------------------------------------------------------------------
   ! The choice of interpolation order is for optimization only; the results
@@ -456,7 +508,7 @@ SUBROUTINE differ (self, tgt, src, all_tgt, all_src, only)
   !-----------------------------------------------------------------------------
   if (associated(tgt%filled)) &
     tgt%filled (lt(1):ut(1),lt(2):ut(2),lt(3):ut(3)) = max(src%level, tgt%level)
-  call trace%end ()
+  call trace%end (itimer)
 END SUBROUTINE differ
 
 END MODULE guards_mod
