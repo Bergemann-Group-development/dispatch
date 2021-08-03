@@ -2883,7 +2883,8 @@ SUBROUTINE send_to_vnbors (self, link)
   class(task_t), pointer:: task, nbtask
   class(mesg_t), pointer:: mesg
   character(len=24):: label
-  integer:: ierr, rank, tag
+  integer:: ierr, rank, tag, i, n_ranks
+  integer, allocatable:: nbor_ranks(:)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   task => link%task
@@ -2941,45 +2942,63 @@ SUBROUTINE send_to_vnbors (self, link)
   rank = -1                                                     ! previous rank
   call link%lock%set ('send_to_vnbors')
   nbor => link%nbor                                             ! first nbor
-  if (self%verbose > 1) &
+  if (self%verbose > 1) then
     write (io_unit%log,*) link%task%id, 'associated', associated(nbor)
-  do while (associated(nbor))                                   ! until end
-    nbtask => nbor%task
-    if (self%verbose > 1) &
-      write (io_unit%log,*) nbtask%id, 'ranks', mpi%rank, nbtask%rank, rank
-    if (nbtask%rank/=mpi%rank .and. nbtask%rank/=rank) then     ! new rank?
-      rank = nbtask%rank                                        ! current rank
-      if (mpi_mesg%uniq_mesg .and. mpi_mesg%tag_type == 2) then
-        !$omp atomic capture
-        sequence(rank) = sequence(rank)+1
-        mesg%seq = sequence(rank)
-        !$omp end atomic
-        tag = mod(mesg%seq,100)
-      end if
-      mesg%tag = tag
-      if (io%task_logging > 1) then
-        write (label,'(a,i4,i8)') 'send   ', rank, mod(tag,100)
-        call task%log (label)
-      end if
-      call mesg%send (rank, tag=tag)                            ! send it
-      if (self%verbose > 0 .or. task%id == io%id_debug) then
-        write (io_unit%log,'(f12.6,1x,a,i9,1p,e18.6,i9,2x,a,i5,2x,5l1)') &
-          wallclock(), 'send_to_vnbors: id, time, tag =', &
-          mesg%id, task%time, tag, 'to', rank, &
-          task%is_set (bits%internal), &
-          task%is_set (bits%boundary), &
-          task%is_set (bits%virtual), &
-          task%is_set (bits%external), &
-          task%is_set (bits%swap_request)
-        flush (io_unit%mpi)
-      end if
-      if (self%verbose > 1) then
-        write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,i6)') &
-          wallclock(), omp%thread, 'sent', task%id, task%time, rank
-      end if
+  end if
+  !-----------------------------------------------------------------------------
+  ! Collect unique nbor_ranks
+  !-----------------------------------------------------------------------------
+  n_ranks = 0
+  allocate (nbor_ranks(task%n_nbors))
+  nbor_ranks = -1
+  nbor => link%nbor
+  do while (associated(nbor))
+    if (nbor%task%rank /= mpi%rank) then
+      do i=1,task%n_nbors
+        if (nbor_ranks(i) == -1) then
+          exit
+        end if
+      end do
+      nbor_ranks(i) = nbor%task%rank
+      n_ranks = i
     end if
-    nbor => nbor%next                                           ! next nbor
+    nbor => nbor%next
   end do
+  !-----------------------------------------------------------------------------
+  ! Send the task to the unique nbor_ranks
+  !-----------------------------------------------------------------------------
+  do i=1,n_ranks
+    rank = nbor_ranks(i)
+    if (mpi_mesg%uniq_mesg .and. mpi_mesg%tag_type == 2) then
+      !$omp atomic capture
+      sequence(rank) = sequence(rank)+1
+      mesg%seq = sequence(rank)
+      !$omp end atomic
+      tag = mod(mesg%seq,100)
+    end if
+    mesg%tag = tag
+    if (io%task_logging > 1) then
+      write (label,'(a,i4,i8)') 'send   ', rank, mod(tag,100)
+      call task%log (label)
+    end if
+    call mesg%send (rank, tag=tag)                            ! send it
+    if (self%verbose > 0 .or. task%id == io%id_debug) then
+      write (io_unit%log,'(f12.6,1x,a,i9,1p,e18.6,i9,2x,a,i5,2x,5l1)') &
+        wallclock(), 'send_to_vnbors: id, time, tag =', &
+        mesg%id, task%time, tag, 'to', rank, &
+        task%is_set (bits%internal), &
+        task%is_set (bits%boundary), &
+        task%is_set (bits%virtual), &
+        task%is_set (bits%external), &
+        task%is_set (bits%swap_request)
+      flush (io_unit%mpi)
+    end if
+    if (self%verbose > 1) then
+      write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,i6)') &
+        wallclock(), omp%thread, 'sent', task%id, task%time, rank
+    end if
+  end do
+  deallocate (nbor_ranks)
   call link%lock%unset ('send_to_vnbors')
   !-----------------------------------------------------------------------------
   ! Add the message to mesg%sent_list, if it was sent, and clear the swap bit
