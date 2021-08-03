@@ -106,6 +106,10 @@ SUBROUTINE init_bdries (self)
   class(gpatch_t):: self
   !-----------------------------------------------------------------------------
   call trace%begin ('gpatch_t%init_bdries')
+  if (.not.associated(self%boundaries)) then
+    write (stdout,'(a)') &
+      'gpatch_t%init_bdries ERROR: boundaries not associated. Check pre_init sequences!'
+  end if
   call self%boundaries%init ()
   call trace%end()
 END SUBROUTINE init_bdries
