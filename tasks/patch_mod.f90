@@ -112,6 +112,7 @@ MODULE patch_mod
     procedure:: init
     procedure:: pre_init
     procedure:: setup
+    procedure:: reset
     procedure:: dealloc
     procedure:: clone_mem_accounting
     procedure:: allocate_mesg           ! allocate a mesg buffer
@@ -633,9 +634,43 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
 END SUBROUTINE setup
 
 !===============================================================================
-!> Initialize the patch memory and patch dimensions.  For this we need to be told the
-!> patch dimensions (which include the number of variable and the number of time
-!> slices), the patch position, and the patch size
+!> Make sure pointers are nullified (FIXME: make this redundant)
+!===============================================================================
+SUBROUTINE reset (self)
+  class (patch_t):: self
+  !.............................................................................
+  self%mem_allocated = .false.                      ! make sure to get ..
+  !--- task pointers ---
+  nullify (self%lock)                               ! .. new lock
+  nullify (self%t)                                  ! .. new t
+  nullify (self%dt)                                 ! .. new dt
+  nullify (self%iit)                                ! .. new iit
+  nullify (self%mesg)                               ! .. new message
+  nullify (self%sent_list)                          ! .. new message list
+  !--- patch pointers ---
+  nullify (self%mem)                                ! .. new mem
+  nullify (self%mem_lock)                           ! .. new mem_lock
+  nullify (self%mesh)                               ! .. new mesh
+  nullify (self%density)                            ! gas density
+  nullify (self%pressure)                           ! gas pressure
+  nullify (self%vgas)                               ! gas velocity
+  nullify (self%u_phase)                            ! phase speed
+  nullify (self%frefine)                            ! refine condition
+  nullify (self%request)                            ! refine support
+  nullify (self%mask)                               ! used in extras
+  nullify (self%filled)                             ! guard zone check
+  nullify (self%outside)                            ! FIXME: needed??
+  self%id = 0                                       ! ensure a new ID
+  self%seq = -1                                     ! triggers tag=0 in send
+  self%n_needed = 1                                 ! reset to initial
+  self%istep = 0                                    ! for diagnostics
+  self%rotated = .false.                            ! force rotate
+END SUBROUTINE reset
+
+!===============================================================================
+!> Initialize the patch memory and patch dimensions.  For this we need to be
+!> told the patch dimensions (which include the number of variable and the
+!> number of time slices), the patch position, and the patch size
 !===============================================================================
 SUBROUTINE init (self)
   class(patch_t):: self

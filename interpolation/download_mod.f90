@@ -98,6 +98,9 @@ SUBROUTINE init (self)
     rewind (io%input)
     read (io%input, download_params, iostat=iostat)
     call io%namelist_warning ('download_params', iostat)
+    if (shared%refine_on) then
+      check_filled = .true.
+    end if
     write (io%namelist, download_params)
     call guard_zones%init
     call remesh%init

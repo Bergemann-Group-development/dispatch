@@ -2,7 +2,7 @@
 !> This module handles checking various refinement criteria.  Call hierarchy:
 !>
 !> task_list_t%update
-!>   check_current
+!>   check
 !>     refine_needed
 !>     selective_refine
 !>       if ... refine
@@ -26,8 +26,8 @@
 !> A patch should be able to load guard zone values from nbors differing at
 !> most by one AMR-level, to avoid too abrupt changes of resolution at patch
 !> boundaries.  The criterion to test must be formulated as a criterion on
-!> the patch that should potentially be created, and not as a criterion on
-!> the that needs the support (to avoid having to find a sub-region of the 
+!> the patch that should potentially be created, and not as a criterion on the
+!> one that needs the support (to avoid having to find a sub-region of the
 !> parent of the parent -- and thus have to maintain parent relationships)
 !>
 !> On the other hand, the criterion needs to be checked at the point in time
@@ -196,8 +196,8 @@ MODULE refine_mod
     real:: safe_ratio=2.1                     ! safe derefine ratio
   contains
     procedure:: init
+    procedure:: check
     procedure:: refine_needed
-    procedure:: check_current
     procedure:: need_to_support
     procedure:: check_cubical
     procedure:: check_jeans
@@ -274,15 +274,17 @@ SUBROUTINE init (self)
     !---------------------------------------------------------------------------
     if (on) then
       omp_lock%links = .true.
-      download%check_filled = .true.
     else
       omp_lock%links = .false.
     end if
-    shared%f_zoom = 1.0/ratio
     shared%refine_on = on
+    shared%f_zoom = 1.0/ratio
+    shared%refine_ratio = ratio
     if (min_jeans     > 0.0) n_criteria = n_criteria+1
     if (max_compress  > 0.0) n_criteria = n_criteria+1
     if (max_vorticity > 0.0) n_criteria = n_criteria+1
+    if (max_shock     > 0.0) n_criteria = n_criteria+1
+    if (max_contact   > 0.0) n_criteria = n_criteria+1
     if (any(region_llc/=0) .or.any(region_urc/=0)) n_criteria = n_criteria+1
     write (io%output,'(a,i4)') ' number of AMR criteria:', n_criteria
     if (n_criteria ==0) self%on=.false.
