@@ -3,6 +3,8 @@
 !> Status bits for tasks
 !===============================================================================
 MODULE bits_mod
+  implicit none
+  private
   integer, parameter::       static_bit=1
   integer, parameter::         leaf_bit=2
   integer, parameter::        ready_bit=2**2
@@ -72,6 +74,29 @@ MODULE bits_mod
     integer:: symmetric    = 2**8
     integer:: antisymmetric= 2**9
     integer:: extrapolate  = 2**10
+  contains
+    procedure, nopass:: print
   end type
-  type(bits_t):: bits
+  type(bits_t), public:: bits
+CONTAINS
+
+SUBROUTINE print (unit, label, status)
+  character(*)  :: label
+  integer       :: status, unit
+  !.............................................................................
+  character(32) :: cstatus
+  integer       :: i
+  !-----------------------------------------------------------------------------
+  do i=1,32
+    cstatus(i:i) = merge ('1', '0', iand(status,2**(i-1)) /= 0)
+  end do
+  write (unit,'(a,1x,a32)') label//'status', cstatus
+  do i=17,32
+    cstatus(i:i) = merge ('|', '.', mod(i-1,10)==0)
+  end do
+  cstatus( 1:16) = 'slRIBVEwSg*pdarRt'
+  cstatus(22:22) = 'o'
+  write (unit,'(a,1x,a32)') label//'  bits', cstatus 
+END SUBROUTINE print
+
 END MODULE bits_mod
