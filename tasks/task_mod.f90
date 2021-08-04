@@ -16,6 +16,7 @@ MODULE task_mod
   USE aux_mod
   USE region_mod
   USE running_mean_mod
+  USE shared_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -50,6 +51,7 @@ MODULE task_mod
     integer:: next_lb                   ! next LB step
     integer:: rank_steps=0              ! steps on rank
     real(8):: cost = 0d0                ! task update cost
+    integer:: key(4)=0                  ! hash key
     real(8):: time = 0d0
     real(8):: atime = 0d0               ! for active queue
     real(8):: out_next = 0d0
@@ -190,6 +192,7 @@ MODULE task_mod
     integer, dimension(8):: iit
     integer:: n(3)=16                   ! convenience
     integer:: ng(3)=2                   ! convenience
+    integer:: key(4)                    ! task hash key
   end type
   logical:: first_time=.true.
   integer:: track_id=0
@@ -216,13 +219,15 @@ SUBROUTINE dnload (self, only)
 END SUBROUTINE dnload
 
 !===============================================================================
-!> Set a few basic things, as a starting point
+!> When restarting the global shared%rank_id must be set to a value larger
+!> than or equal to the previously largest value
 !===============================================================================
 SUBROUTINE pre_init (self)
   class (task_t), target:: self
   !.............................................................................
   self%out_next = io%start_time
   self%aux%aux_next = io%start_time
+  self%key = self%hash_key ()                     ! cache the hash key
 END SUBROUTINE pre_init
 
 !===============================================================================
@@ -243,17 +248,11 @@ SUBROUTINE init (self)
     ! If a task already has an id, update the MPI counter if its value is less.
     ! The id of a virtual copy of a new AMR task should NOT trigger this.
     !---------------------------------------------------------------------------
-    id_master = mpi%id%update(0)
-    if (verbose > 0) &
-      write (io_unit%log,*) 'task_t%init: id, id_master =', self%id, id_master
-    if (id_master < self%id) then
-      write (io_unit%log,*) 'task_t%init: updating master id', self%id, id_master
-      id_master = mpi%id%update (self%id-id_master)
-    end if
   end if
   !-----------------------------------------------------------------------------
   ! Locks, random numbers, etc
   !-----------------------------------------------------------------------------
+  call io%lock%set
   if (.not.associated(self%lock)) then
     allocate (self%lock, self%mulligan_lock)
     call self%lock%init (self%kind(1:4))
@@ -280,6 +279,8 @@ SUBROUTINE init (self)
   if (self%id == track_id) then
     self%track = .true.
   end if
+  self%key = self%hash_key ()                     ! cache the hash key
+  call io%lock%unset
   call self%log ('init', 2)
   call trace%end ()
 END SUBROUTINE init
@@ -310,6 +311,8 @@ SUBROUTINE init_params (self)
     write (io%namelist, task_params)
     first_time = .false.
   end if
+  self%out_next = io%start_time
+  self%aux%aux_next = io%start_time
   !-----------------------------------------------------------------------------
   ! If dumps are requested, read a list of task ids for which dumps should be on
   !-----------------------------------------------------------------------------
@@ -338,7 +341,10 @@ SUBROUTINE init_params (self)
 END SUBROUTINE init_params
 
 !===============================================================================
-!> Define unique patch ids.  A critical region is OK; this is only done once.
+!> Provide a unique task ID, and call init_params.  The optinal "same" parameter
+!> results in the same IDs being assigned on all ranks.  This may only be used
+!> initially, since it would collide with the normal, unique set of IDs if used
+!> after those have started to be used.
 !===============================================================================
 SUBROUTINE init_unique (self, same)
   class (task_t):: self
@@ -1364,24 +1370,64 @@ FUNCTION roa (self, task) RESULT (region)
   end if
 END FUNCTION roa
 
+SUBROUTINE update_position (self)
+  class(task_t):: self
+  !-----------------------------------------------------------------------------
+  call io%abort ("task_t%update_position")
+END SUBROUTINE update_position
+
+!===============================================================================
+!> Return the velocity shift from source to target
+!===============================================================================
+FUNCTION velocity_shift (self, source) RESULT (v)
+  class(task_t):: self, source
+  real(8), dimension(3):: v
+  !-----------------------------------------------------------------------------
+  v = 0d0
+  call io%abort ('task_t%velocity_shift')
+END FUNCTION velocity_shift
+
 !===============================================================================
 !> Return a unique hash key for the patch, encoding position and level
 !===============================================================================
-FUNCTION hash_key (self) RESULT (key)
+FUNCTION hash_key (self, position, origin, size, box, level) RESULT (key)
   class(task_t):: self
-  integer, parameter:: ndim=4
-  integer:: key(ndim)
+  real(8), dimension(3), optional:: position, origin, size, box
+  integer, optional:: level
+  real(8), dimension(3):: p, o, s, b
+  integer:: key(4), n(3), l
   !-----------------------------------------------------------------------------
-  key(1:3) = nint((self%position-self%origin)*2d0/self%size)
-  key(4) = self%level
+  if (present(position)) then
+    p = position
+  else
+    p = self%position
+  end if
+  if (present(origin)) then
+    o = origin
+  else
+    o = self%origin
+  end if
+  if (present(size)) then
+    s = size
+  else
+    s = self%size
+  end if
+  if (present(box)) then
+    b = box
+  else
+    b = self%box
+  end if
+  if (present(level)) then
+    l = level
+  else
+    l = self%level
+  end if
+  n = nint(b/s)
+  key(1) = l
+  key(2:4) = floor(p/s)
+  where (self%periodic)
+    key(2:4) = modulo(key(2:4),n)
+  end where
 END FUNCTION hash_key
-
-!===============================================================================
-!> For timing
-!===============================================================================
-SUBROUTINE pre_update (self)
-  class(task_t), target:: self
-  self%wallclock = wallclock()
-END SUBROUTINE pre_update
 
 END MODULE task_mod
