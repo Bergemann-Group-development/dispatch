@@ -574,7 +574,6 @@ subroutine stall_handler
                                     call task_list%qlock%unset ('stall_handler')
     else if (do_delay) then
       call self%no_queue (stalled, task_list)
-      call trace%end (itimer)
       return
     end if
 end subroutine stall_handler
