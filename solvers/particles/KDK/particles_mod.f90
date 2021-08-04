@@ -246,7 +246,7 @@ SUBROUTINE force_field (self, patch)
     ip = ip+1
     select type (p)
     class is (particle_t)
-      call hash_table%get ([p%id, patch%id], ptr)
+      call hash_table%get_ptr ([p%id, patch%id], ptr)
       select type (ptr)
       class is (patch_force_t)
         f(ip,:) = f(ip,:)*scaling%grav
