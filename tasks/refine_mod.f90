@@ -643,27 +643,40 @@ SUBROUTINE selective_refine (self, tasklist, patch, refine, was_refined, &
           end do
         end do
       end do
+      !-------------------------------------------------------------------------
+      ! The new tasks in the child_list need to be 
+      ! 1) added to the task list (done above)
+      ! 2) have new nbor lists, which include the new siblings
+      ! 3) have bits%no_support set on or off
+      ! 4) be added to the queue if ready to update
+      ! Since 4) depends on all new tasks having done 2) and 3) it should not be
+      ! done inside add_new_link, or should at least be repeated here
+      !-------------------------------------------------------------------------
       if (associated(child_list%head)) then
         !-----------------------------------------------------------------------
-        ! Generate nbor lists for the child tasks, and delete the child_list.
-        ! Note the use of task%link, which in this case differs from link.
+        ! Generate nbor lists for the child tasks. Note the use of task%link, 
+        ! which in this case differs from link.
         !-----------------------------------------------------------------------
         link => child_list%head
         do while (associated(link))
           task => link%task
           select type (task)
           class is (patch_t)
-            if (verbose > 1) then
-              write (stdout,*) 'refine_mod: child_list init nbors', task%id
-            end if
-            call tasklist%init_nbors (task%link)
-            call tasklist%set_init_nbors (task%link)
-          end select
+            !-------------------------------------------------------------------
+            ! Do the standard set of actions after adding new tasks
+            !-------------------------------------------------------------------
+            call tasklist%add_new_link (task%link)
+            !if (verbose > 1) then
+            write (stdout,'(a,i6,":",i2.2,3i3,l3)') &
+              'refine_mod: add_new_link', task%id, task%key, &
+              task%is_clear (bits%no_support)
+        !end if
+      end select
           link => link%next
         end do
         !-----------------------------------------------------------------------
-        ! Deallocate and delete the child list, after first attempting to schedule
-        ! each child task -- most of them should again be ready to update.
+        ! Deallocate and delete the child list, after first attempting to 
+        ! schedule each child task -- most of them should be ready to update
         !-----------------------------------------------------------------------
         link => child_list%head
         do while (associated(link))
@@ -945,7 +958,6 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   ! Increment I/O write counter, to avoid repeated writing of metadata
   !-----------------------------------------------------------------------------
   call data_io%update_counters (child, +1)
-  call child%log ('created')
   !-----------------------------------------------------------------------------
   ! Download values from parent and neighbors, except at time = 0, to allow
   ! recursive refinement there. If time = 0, patch should have been filled
@@ -976,17 +988,14 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
       call parent%dump (6, ad_hoc=.true.)
     end if
   end if
-  !-----------------------------------------------------------------------------
-  ! Update the child task immediately, since it has guard zones
-  !-----------------------------------------------------------------------------
-  ! call child%update ()
-  ! call child%rotate ()
-  ! call child%info (tlist%nq, tlist%na)
-  !-----------------------------------------------------------------------------
-  ! Add it to the task list, including giving it an nbor list etc.
-  !-----------------------------------------------------------------------------
   deallocate (child%link%nbor)
-  call tlist%add_new_link (child%link)
+  !-----------------------------------------------------------------------------
+  ! Add the task to the task list, locking the queue briefly, to avoid that the
+  ! task is discovered and testet, before the no_support and ready bits are set
+  !-----------------------------------------------------------------------------
+  call tlist%qlock%set ('add_by_level')
+  call tlist%add_by_level (child%link, count=.true.)
+  call tlist%qlock%unset ('add_by_level')
   !-----------------------------------------------------------------------------
   if (verbose > 1 .or. child%id == io%id_debug) then
     if (child%id == io%id_debug) &
@@ -1019,7 +1028,6 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
       wallclock(), omp%thread, 'created', child%id, child%time, parent%id
   end if
   !-----------------------------------------------------------------------------
-  call child%log ('refine', 2)
   call trace%end (itimer, detailed_timer=detailed_timer)
 END SUBROUTINE make_child_patch
 
