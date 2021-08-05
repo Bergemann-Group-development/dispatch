@@ -565,6 +565,7 @@ SUBROUTINE selective_refine (self, tasklist, patch, refine, was_refined, &
   link => patch%link
   call link%lock%set ('selective_refine')
   nbor => patch%link%nbor
+  call link%lock%unset ('selective_refine')
   ratio_per_dim = merge(self%ratio, 1, patch%n>1)
   !-----------------------------------------------------------------------------
   ! First, consider if any part should be refined
@@ -665,12 +666,12 @@ SUBROUTINE selective_refine (self, tasklist, patch, refine, was_refined, &
             ! Do the standard set of actions after adding new tasks
             !-------------------------------------------------------------------
             call tasklist%add_new_link (task%link)
-            !if (verbose > 1) then
-            write (stdout,'(a,i6,":",i2.2,3i3,l3)') &
-              'refine_mod: add_new_link', task%id, task%key, &
-              task%is_clear (bits%no_support)
-        !end if
-      end select
+            if (verbose > 1) then
+              write (stdout,'(a,i6,":",i2.2,3i3,l3)') &
+                'refine_mod: add_new_link', task%id, task%key, &
+                task%is_clear (bits%no_support)
+            end if
+          end select
           link => link%next
         end do
         !-----------------------------------------------------------------------
