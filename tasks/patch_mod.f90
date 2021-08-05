@@ -121,7 +121,7 @@ MODULE patch_mod
     procedure:: pack                    ! pack patch into buffer
     procedure, nopass:: unpack_id       ! unpack patch id
     procedure:: unpack                  ! unpack buffer into patch
-    procedure:: overlaps                ! patch overlaps test
+    !procedure:: overlaps                ! patch overlaps test
     procedure:: index                   ! compute the index for a single point
     procedure:: nearest                 ! the nearest index that maps to patch point
     procedure:: lowest                  ! the lowest index that maps to patch point
@@ -1611,10 +1611,10 @@ END SUBROUTINE unpack
 !> neighbor relations.  This function overloads task_t%overlaps, in order to
 !> force use of the patch_t%distance function.
 !===============================================================================
-FUNCTION overlaps (self, task)
+FUNCTION overlaps_old (self, task)
   class(patch_t):: self
   class(task_t):: task
-  logical:: overlaps
+  logical:: overlaps_old
   real(8):: distance, box, limit
   integer:: i
   integer, save:: itimer=0
@@ -1623,7 +1623,7 @@ FUNCTION overlaps (self, task)
     call trace%begin ('patch_t%overlaps', itimer)
   select type (task)
   class is (patch_t)
-    overlaps = .true.
+    overlaps_old = .true.
     do i=1,3
       distance = self%centre_nat(i) - task%centre_nat(i)
       box = self%box(i)
@@ -1632,16 +1632,16 @@ FUNCTION overlaps (self, task)
       end if
       limit = 0.5_8*(self%size(i)+task%size(i)+self%ds(i)+task%ds(i))
       if (abs(distance) > limit) then
-        overlaps = .false.
+        overlaps_old = .false.
         exit
       end if
     end do
   class default
-    overlaps = self%task_t%overlaps(task)
+    overlaps_old = self%task_t%overlaps(task)
   end select
   if (timer%detailed) &
     call trace%end (itimer)
-END FUNCTION overlaps
+END FUNCTION overlaps_old
 
 !===============================================================================
 !> Signed distance from task%position to self%position, wrapped in the case of a

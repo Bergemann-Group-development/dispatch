@@ -86,7 +86,6 @@ MODULE link_mod
     procedure:: info
     procedure:: check_support
     procedure:: has_support
-    procedure:: set_support
   end type
   type(link_t), target, public:: garbage
   integer:: garbage_n=0, verbose=0
@@ -1156,23 +1155,5 @@ LOGICAL FUNCTION has_support (self)
   !-----------------------------------------------------------------------------
   call io%abort ('link_t%has_support')
 END FUNCTION has_support
-
-!===============================================================================
-!> Set bits%no_support on all nbors; the has_support() should be overloaded
-!===============================================================================
-SUBROUTINE set_support (self)
-  class(link_t):: self
-  class(nbor_t), pointer:: nbor
-  !-----------------------------------------------------------------------------
-  nbor => self%nbor
-  do while (associated(nbor))
-    if (nbor%link%has_support()) then
-      call self%task%clear (bits%no_support)
-    else
-      call self%task%set (bits%no_support)
-    end if
-    nbor => nbor%next
-  end do
-END SUBROUTINE set_support
 
 END MODULE link_mod

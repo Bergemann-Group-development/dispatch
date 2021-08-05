@@ -206,7 +206,6 @@ MODULE refine_mod
     procedure:: refine_region
     procedure:: gradient_detector
     procedure:: check_derefine_support
-    procedure, private:: check_support
   end type
   !
   integer:: check_interval=10                 ! Number of steps betwen checks
@@ -1379,32 +1378,6 @@ FUNCTION gradient_detector (self, patch) RESULT (refine)
   deallocate (dq1, dq2, dq3, q)
   call trace%end()
 END FUNCTION gradient_detector
-
-!===============================================================================
-!> Refine on support criteria, interfacing to list_t%check_support
-!===============================================================================
-FUNCTION check_support (self, tasklist, patch) RESULT(refine_it)
-  class(refine_t):: self
-  class(list_t):: tasklist
-  class(solver_t), pointer:: patch
-  integer:: refine_it
-  !.............................................................................
-  real, dimension(:,:,:), pointer, contiguous:: test
-  integer, save:: itimer=0
-  !-----------------------------------------------------------------------------
-  call trace%begin ('refine_t%check_support', itimer=itimer, detailed_timer=detailed_timer)
-  !---------------------------------------------------------------------------
-  ! Compute support bitmap
-  !---------------------------------------------------------------------------
-  allocate (test(patch%gn(1),patch%gn(2),patch%gn(3)))
-  refine_it = tasklist%check_support (patch%link, +1, test)
-  !---------------------------------------------------------------------------
-  ! Combine with previous tests and evaluate
-  !---------------------------------------------------------------------------
-  call self%evaluate ('support', patch, test, refine_it)
-  deallocate (test)
-  call trace%end (itimer, detailed_timer=detailed_timer)
-END FUNCTION check_support
 
 !===============================================================================
 !> Add test and evaluate, renormalizing with (by default) a factor 2.5,

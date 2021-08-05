@@ -139,10 +139,7 @@ MODULE list_mod
     procedure:: check_oldest
     procedure:: check_queue
     procedure:: add_new_link
-    procedure:: init_nbors => init_nbors2
-    procedure:: init_nbors1
-    procedure:: init_nbors2
-    procedure:: prune_nbors
+    procedure:: init_nbors
     procedure:: set_init_nbors
     procedure:: set_update_status
     procedure:: init_nbor_nbors
@@ -175,7 +172,6 @@ MODULE list_mod
     procedure:: send_to_vnbors
     procedure:: test_nbor_status
     procedure:: info
-    procedure:: check_support
     procedure:: find_nbors
     procedure:: check_nbor_consistency
   end type
@@ -787,10 +783,6 @@ SUBROUTINE check_nbors (self, link)
       if (nbor%task%is_set (bits%no_support)) then
         call self%init_nbors (nbor%link)
         call nbor%link%check_support ()
-        !select type (nblink)
-        !class is (halo_t)
-        !call nblink%check_support ()
-        !end select
       end if
       if (nbor%task%is_clear (bits%no_support)) then
         call self%check_ready (nbor%link, lock=.true., status=status)
@@ -1583,10 +1575,6 @@ SUBROUTINE init_nbors1 (self, link)
     scan => scan%next                               ! continue search
   end do
   times(1) = wallclock() - times(1)
-  times(2) = wallclock()
-  call self%prune_nbors (link, new_head, status)
-  times(2) = wallclock() - times(2)
-  !call self%lock%unset ('init_nbors')
   !.............................................................................
   if (self%verbose > 0 .or. link%task%id == io%id_debug) then
     write(io_unit%log,'(f12.6,1x,a,i6,i4,3x,3l1,2i4)') wallclock(), &
@@ -1637,138 +1625,18 @@ SUBROUTINE init_nbors1 (self, link)
 END SUBROUTINE init_nbors1
 
 !===============================================================================
-!> Remove nbors at level L+2 that have support, and remove nbors at level L-2
-!> if the link task has support.
-!===============================================================================
-SUBROUTINE prune_nbors (self, link, head, status)
-  class(list_t):: self
-  class(link_t), pointer:: link
-  class(nbor_t), pointer:: head
-  integer, optional:: status
-  !.............................................................................
-  class(nbor_t), pointer:: nbor, next, nbor2
-  class(task_t), pointer:: task
-  real, pointer, contiguous:: irefine(:,:,:)
-  logical:: removed
-  integer:: n(2)
-  !-----------------------------------------------------------------------------
-  if (link%task%nt == 0) return
-  call trace%begin ('list_t%prune_nbors')
-  removed = .false.
-  n = 0
-  !-----------------------------------------------------------------------------
-  ! If link%task has support, then remove any L-2 nbors
-  !-----------------------------------------------------------------------------
-  nullify (irefine)
-  task => link%task
-  select type (task)
-  class is (patch_t)
-    if (all(task%gn > 0)) then
-      allocate (irefine(task%gn(1),task%gn(2),task%gn(3)))
-    end if
-  end select
-  !-----------------------------------------------------------------------------
-  ! Check if the link task at level L has support from level L-1
-  !-----------------------------------------------------------------------------
-  if (check_support (self, link, -1, irefine) <= 0) then
-    nbor => head
-    do while (associated(nbor))
-      next => nbor%next
-      if (nbor%task%level == link%task%level-2) then
-        !-------------------------------------------------------------------------
-        if (self%verbose > 1) then
-          write (io_unit%log,'(f12.6,1x,a,i6,i4)') wallclock(), &
-            'list_t%prune_nbors: L-2 task id, level =', &
-            nbor%task%id, nbor%task%level
-          flush (io_unit%log)
-        end if
-        call link%remove_nbor (nbor%task, head)
-        removed = .true.
-      end if
-      nbor => next
-    end do
-    if (link%task%is_set (bits%no_support)) then
-      call link%task%clear (bits%no_support)
-      print *, link%task%id, 'prune_nbors clears no_support'
-    end if
-  else
-    if (link%task%is_clear (bits%no_support)) then
-      call link%task%set (bits%no_support)
-      print *, link%task%id, 'prune_nbors sets no_support'
-    end if
-  end if
-  !-----------------------------------------------------------------------------
-  ! If the task has L+2 nbors, check if those tasks have support, and remove
-  ! them if they do
-  !-----------------------------------------------------------------------------
-  nbor => head
-  do while (associated(nbor))
-    next => nbor%next
-    if (nbor%task%level == link%task%level+2) then
-      !.........................................................................
-      if (self%verbose > 1) then
-        write (io_unit%log,'(f12.6,1x,a,i6,i4)') wallclock(), &
-          'list_t%prune_nbors: L+2 task id, level =', &
-          nbor%task%id, nbor%task%level
-        flush (io_unit%log)
-      end if
-      !-------------------------------------------------------------------------
-      ! Prune any level L+2 task from nbor list, if it has support
-      !-------------------------------------------------------------------------
-      n(2) = n(2)+1
-      if (self%check_support (nbor%link, -1, irefine) <= 0) then
-        !.......................................................................
-        if (self%verbose > 1) then
-          write (io_unit%log,'(f12.6,1x,a,i6,i4)') wallclock(), &
-            'list_t%prune_nbors: removing L+2 id, level =', &
-            nbor%task%id, nbor%task%level
-          flush (io_unit%log)
-        end if
-        !.......................................................................
-        call link%remove_nbor (nbor%task, head)
-        n(2) = n(2)-1
-        removed = .true.
-      end if
-    end if
-    nbor => next
-  end do
-  if (associated(irefine)) then
-    deallocate (irefine)
-  end if
-  if (removed) then
-    !---------------------------------------------------------------------------
-    ! If any task was removed, the status bits and flags need to be recomputed,
-    ! and the task list counts need to be updated.
-    !---------------------------------------------------------------------------
-    call self%update_status (link)
-  end if
-  if (present(status)) then
-    status = n(1)
-  end if
-  !.............................................................................
-  if (self%verbose > 0) then
-    write (io_unit%log,'(f12.6,1x,a,i6,3i4)') wallclock(), &
-      'list_t%prune_nbors: id, level, n =', &
-      link%task%id, link%task%level, n
-    flush (io_unit%log)
-  !.............................................................................
-  end if
-  call trace%end ()
-END SUBROUTINE prune_nbors
-
-!===============================================================================
 !> Use the fast hash table method to find +-1 level nbors, and expand to +-2
 !> level nbors by searching for overlap among nbors of nbors. Then connect the
 !> new nbor list under a brief lock and deallocate the previous one.
 !===============================================================================
-SUBROUTINE init_nbors2 (self, link)
+SUBROUTINE init_nbors (self, link)
   class(list_t):: self
   class(link_t), pointer:: link
   !.............................................................................
   class(nbor_t), pointer:: new_nbors, old_nbors
   integer, save:: itimer=0, n_max=1000
   !-----------------------------------------------------------------------------
-  call trace%begin('list_t%init_nbors2', itimer=itimer)
+  call trace%begin('list_t%init_nbors', itimer=itimer)
   call link%task%log ('init_nbors')
   nullify (new_nbors)
   !-----------------------------------------------------------------------------
@@ -1785,14 +1653,14 @@ SUBROUTINE init_nbors2 (self, link)
   !-----------------------------------------------------------------------------
   ! Swap the link%nbor pointer under lock
   !-----------------------------------------------------------------------------
-  call link%lock%set ('init_nbors2')
+  call link%lock%set ('init_nbors')
   old_nbors => link%nbor
   link%nbor => new_nbors
   !-----------------------------------------------------------------------------
   ! Update the status bits based on the new nbor list
   !-----------------------------------------------------------------------------
   call self%update_status (link)
-  call link%lock%unset ('init_nbors2')
+  call link%lock%unset ('init_nbors')
   !-----------------------------------------------------------------------------
   ! Prune +-2 nbors that have or give support (must be done after nbor swap)
   !-----------------------------------------------------------------------------
@@ -1811,13 +1679,13 @@ SUBROUTINE init_nbors2 (self, link)
   if (link%task%is_clear (bits%boundary)) &
     call link%task%clear (bits%init_nbors)
   call trace%end (itimer)
-END SUBROUTINE init_nbors2
+END SUBROUTINE init_nbors
 
 !===============================================================================
 !> Update the nbor list of task, by searching among all tasks within +-1 of
 !> link%task%level
 !>
-!> With gfortran, this is about twice as fast as init_nbors2, which searches
+!> With gfortran, this is about twice as fast as init_nbors, which searches
 !> nbors of nbors, using a hash table to avoid trying the same repeatedly.
 !> The balance of cost could change if there are many more tasks per level
 !> per core.
@@ -2002,7 +1870,7 @@ SUBROUTINE init_nbors_hash (self, link, nbors)
   if (self%verbose > 1) &
     write (stdout,*) link%task%id, ' added', n, 'nbors', associated(nbors)
   call trace%end (itimer)
-  !write (stderr,'(a,1p,4e11.3)') 'init_nbors2: times=', times
+  !write (stderr,'(a,1p,4e11.3)') 'init_nbors: times=', times
 contains
 !===============================================================================
 !> Check if nbor task exists, and if it overlaps -- if so add to nbor list
@@ -3597,202 +3465,6 @@ SUBROUTINE info (self, label)
 END SUBROUTINE info
 
 !===============================================================================
-!> Check refinement support.  When sign is +1 it checks if an overlapping level
-!> L+2 task requires the level L link task to split to provide support.  When
-!> sign is -1 it checks if the level L link task needs the L-2 task to refine,
-!> to provide support at level L-1.
-!>
-!> Note that the exchance of the roles of target and source patches guarantees
-!> that the answer is consistent; a level L patch is determined to have support
-!> without the need to refine a level L-2 patch if and only if that same patch,
-!> now considered as level L, is determined to not need to be split because
-!> of the same particular level L+2 patch (although it may have to be split
-!> becausse of other L+2 patches lacking support)
-!>
-!> The use of a bitmap to reveal if a task lacks support is general; it does not
-!> require stationary patches, or exact Cartesian overlap.  It only requires
-!> that the source index regions computed are correct, so the bitmap is correct.
-!===============================================================================
-FUNCTION check_support (self, link, sign, irefine) RESULT (refine)
-  class(list_t):: self
-  class(link_t), pointer:: link
-  integer, intent(in):: sign
-  real, pointer:: irefine(:,:,:)
-  integer:: refine
-  !-----------------------------------------------------------------------------
-  class(nbor_t), pointer:: nbor
-  class(task_t), pointer:: task, nbtask
-  logical:: guards, check, alloc
-  integer:: l(3), u(3), n(3)
-  integer, save:: itimer=0
-  !-----------------------------------------------------------------------------
-  call trace%begin ('list_t%check_support', itimer=itimer)
-  task => link%task
-  refine = 0
-  !.............................................................................
-  select type (task)
-  class is (patch_t)
-    !---------------------------------------------------------------------------
-    ! If patch memory has not been allocated yet, return with refine=0
-    !---------------------------------------------------------------------------
-    if (.not. task%mem_allocated) then
-      call trace%end (itimer)
-      return
-    end if
-    !---------------------------------------------------------------------------
-    ! Use an external test array when called from refine_t, and a local one
-    ! when called stand-alone
-    !---------------------------------------------------------------------------
-    if (.not. associated(irefine)) then
-      allocate (irefine(task%gn(1),task%gn(2),task%gn(3)))
-      alloc = .true.
-    else
-      alloc = .false.
-    end if
-    irefine = 0.0
-    !---------------------------------------------------------------------------
-    ! Find L+-2 tasks, and check for overlap of their guard zones
-    !---------------------------------------------------------------------------
-    check = .false.
-    !call link%lock%set ('check_support', itimer)
-    nbor => link%nbor
-    do while (associated(nbor))
-      if (nbor%task%level == link%task%level+sign*2) then
-        nbtask => nbor%task
-        select type (nbtask)
-        class is (patch_t)
-          guards = .true.
-          if (sign > 0) then
-            !-------------------------------------------------------------------
-            ! For L+2 nbors, find the guard zone range that the level L task
-            ! would provide, and set bitmap(:,:,:)=1 there.  In this part,
-            ! task is the source and nbtask is the target, and we do not rely
-            ! on the source guard zones
-            !-------------------------------------------------------------------
-            if (task%get_overlap (nbtask, guards, l, u)) then
-              if (self%verbose > 1) then
-                write (io_unit%log,'(f12.6,2(1x,a,i6,i4),2(2x,3i4))') &
-                  wallclock(), &
-                  'list_t%check_support: task, level =', &
-                  task%id, task%level, &
-                  'nbtask, level, needs  l, u =', &
-                  nbtask%id, nbtask%level, l, u
-              end if
-              irefine(l(1):u(1),l(2):u(2),l(3):u(3)) = 2.0
-              check = .true.
-            end if
-          else
-            !-------------------------------------------------------------------
-            ! Find the index range in the L task that would be needed from the
-            ! the level L-2 task, not counting guard zones.  In this part,
-            ! nbtask is the source and task is the target, and we do not rely
-            ! on the source guard zones
-            !-------------------------------------------------------------------
-            guards = .false.
-            if (nbtask%get_overlap (task, guards, l, u)) then
-              if (self%verbose > 1) then
-                write (io_unit%log,'(f12.6,2(1x,a,i6,i4),2(2x,3i4))') &
-                  wallclock(), &
-                  'list_t%check_support: task, level =', &
-                  task%id, task%level, &
-                  'nbtask, level, needs  l, u =', &
-                  nbtask%id, nbtask%level, l, u
-              end if
-              irefine(l(1):u(1),l(2):u(2),l(3):u(3)) = 2.0
-              check = .true.
-            end if
-          end if
-        end select
-      end if
-      nbor => nbor%next
-    end do
-    !---------------------------------------------------------------------------
-    ! If any candidates for missing support were found, run through L+-1 nbors,
-    ! check for overlap of their interiors, and clear the refine flags in those
-    ! cells; this cancels the flags possibly set above, if those L+-2 patches
-    ! have or provide support at L+-1
-    !---------------------------------------------------------------------------
-    if (check) then
-      nbor => link%nbor
-      do while (associated(nbor))
-        if (nbor%task%level == link%task%level+sign*1) then
-          nbtask => nbor%task
-          select type (nbtask)
-          class is (patch_t)
-            guards = .false.
-            if (sign > 0) then
-              if (task%get_overlap (nbtask, guards, l, u)) then
-                irefine(l(1):u(1),l(2):u(2),l(3):u(3)) = 0.0
-                if (self%verbose > 1) then
-                  write (io_unit%log,'(f12.6,2(1x,a,i6,i4),2(2x,3i4),f5.1)') &
-                    wallclock(), &
-                    'list_t%check_support: task, level =', &
-                    task%id, task%level, &
-                    'nbtask, level, covers l, u, max =', &
-                    nbtask%id, nbtask%level, l, u, &
-                    maxval(irefine)
-                end if
-              end if
-            else
-              if (nbtask%get_overlap (task, guards, l, u)) then
-                irefine(l(1):u(1),l(2):u(2),l(3):u(3)) = 0.0
-                if (self%verbose > 1) then
-                  write (io_unit%log,'(f12.6,2(1x,a,i6,i4),2(2x,3i4),f5.1)') &
-                    wallclock(), &
-                    'list_t%check_support: task, level =', &
-                    task%id, task%level, &
-                    'nbtask, level, covers l, u, max =', &
-                    nbtask%id, nbtask%level, l, u, &
-                    maxval(irefine)
-                end if
-              end if
-            end if
-          end select
-        end if
-        nbor => nbor%next
-      end do
-      l = task%mesh%lb
-      u = task%mesh%ub
-      refine = maxval(irefine(l(1):u(1),l(2):u(2),l(3):u(3)))
-    end if
-    !call link%lock%unset ('check_support')
-    !---------------------------------------------------------------------------
-    ! Task%frefine is used additively, so make sure refinement happen if and
-    ! where the local irefine is still set
-    !---------------------------------------------------------------------------
-    if (associated(task%frefine)) then
-      task%frefine = task%frefine + irefine
-    end if
-  end select
-  !-----------------------------------------------------------------------------
-  ! If sign is negative then the task lack support if refine > 0 and otherwise
-  ! has support.  The bits%no_support is set accordingly
-  !-----------------------------------------------------------------------------
-  if (sign < 0) then
-    if (refine > 0) then
-      if (task%is_clear (bits%no_support)) then
-        call task%set (bits%no_support)
-        print *, task%id, 'check_support sets no_support'
-      end if
-    else
-      if (task%is_set (bits%no_support)) then
-        call task%clear (bits%no_support)
-        print *, task%id, 'check_ready clears no_support'
-      end if
-    end if
-  end if
-  !.............................................................................
-  if (self%verbose > 0) then
-    write (io_unit%log,'(f12.6,1x,a,i6,3i4)') wallclock(), &
-     'list_t%check_support: task, level, sign, support', &
-     task%id, task%level, sign, refine
-  end if
-  !.............................................................................
-  if (alloc) deallocate (irefine)
-  call trace%end (itimer)
-END FUNCTION check_support
-
-!===============================================================================
 !> Find nbors to task with the given link, and add this task and the nbor task
 !> to each others nbor lists, if they have a dependence.
 !===============================================================================
@@ -3862,151 +3534,5 @@ SUBROUTINE check_nbor_consistency (self, label)
   call io%assert (ok, 'list_t%check_nbor_consistency: not consistent')
   call trace%end ()
 END SUBROUTINE check_nbor_consistency
-
-!===============================================================================
-!> To check if a patch at level L needs a level L-2 patch in the nborhood to
-!> refine, it is enough
-
-!> 1) use the parent nbor list to find all L-2 tasks that overlap with the
-!>    level L task
-!> 2) for each such L-2 task, generate the 8 regions of authority that it could
-!>    split into, skip the ones that already exist (hask_key test), and check if
-!>    any remaining L-1 patch overlaps with the level L region of interest
-!>
-!> FIXME: This procedure is currently not used.  If may be used to decide if
-!> the no_support bit shold be set on a new child patch, requiring only that
-!> the parent nbor list is known to be complete.  When used, it also sets the
-!> request array values in the tasks -- if any -- that need to be refined.
-!===============================================================================
-SUBROUTINE check_support2 (self, link)
-  class(list_t)          :: self
-  class(link_t), pointer :: link
-  !.............................................................................
-  class(link_t), pointer :: old_link
-  class(nbor_t), pointer :: nbor
-  class(task_t), pointer :: patch, nbpatch
-  type(region_t)         :: region, ROI
-  real(8), dimension(3)  :: size, relative, pos, fl, fu
-  integer, dimension(3)  :: il, iu
-  integer                :: i1, i2, i3, key(4), n, id1, id2, &
-                            level0, level1, level2, level3, n_sub
-  logical                :: support
-  integer, save          :: itimer=0
-  !-----------------------------------------------------------------------------
-  if (link%task%level <= shared%levelmin+1) &
-    return
-  call trace%begin('list_t%check_support2', itimer=itimer, &
-                    detailed_timer=timer%detailed)
-  n = 0
-  patch => link%task
-  id1 = patch%id
-  level1 = patch%level
-  level0 = shared%levelmin + 1
-  if (level1 > level0) then
-    select type(patch)
-    class is (patch_t)
-    !---------------------------------------------------------------------------
-    support = .true.
-    nbor => link%parent%nbor
-    do while (associated(nbor))
-      nbpatch => nbor%task
-      id2 = nbpatch%id
-      level2 = nbpatch%level
-      if (level2 == level1-2) then
-        select type (nbpatch)
-        class is (patch_t)
-        ROI = patch%roi (nbpatch)               ! ROI in nbpatch coordinates
-        if (ROI%overlaps (nbpatch%authority, nbor%distance)) then
-          !.....................................................................
-          if (self%verbose > 0) then
-            write (stdlog,'(f12.6,a,i6,":",i2.2,2x,4i3,1p,2(2x,3e11.2))') &
-            wallclock(), &
-            pad_trace(1:indent)//'list_t%check_support: id,nb,pos,sz=', &
-            id1, level1, patch%hash_key(), nbpatch%position, nbpatch%size
-          end if
-          !.....................................................................
-          n_sub = nint(shared%refine_ratio)
-          do i3=1,n_sub
-            do i2=1,n_sub
-              do i1=1,n_sub
-                !---------------------------------------------------------------
-                ! Position of the assumed sub-patch.
-                !---------------------------------------------------------------
-                size = nbpatch%size/shared%refine_ratio
-                relative = ([i1,i2,i3]-(1+n_sub)/2d0)*size
-                region%l = relative - size/2d0
-                region%u = relative + size/2d0
-                if (ROI%overlaps (region, nbor%distance)) then
-                  n = n+1
-                  !-------------------------------------------------------------
-                  ! Check if the hash_key of a patch located here exists
-                  !-------------------------------------------------------------
-                  level3 = level2 + 1
-                  pos = nbpatch%position + relative
-                  key = nbpatch%hash_key (level=level3, size=size, position=pos)
-                  call self%hash_table%get (key, old_link)
-                  if (.not.associated(old_link)) then
-                    !-----------------------------------------------------------
-                    ! If not set the no_support bit and trigger refinement
-                    !-----------------------------------------------------------
-                    support = .false.
-                    fl = relative - size/2d0
-                    fu = relative + size/2d0
-                    il = ceiling(fl/nbpatch%ds + nbpatch%offset)
-                    iu = floor  (fu/nbpatch%ds + nbpatch%offset)
-                    il = max(il,nbpatch%li)
-                    iu = min(iu,nbpatch%ui)
-                    nbpatch%request (il(1):iu(1),il(2):iu(2),il(3):iu(3)) = 2
-                    !...........................................................
-                    if (self%verbose > 1) then
-                      write (stdlog,'(f12.6,a,i6,":",i2.2,2x,4i3,2(2x,3i3))') &
-                      wallclock(), &
-                      pad_trace(1:indent)//'list_t%check_support: id,req=', &
-                      id2, level2, nbpatch%hash_key(), &
-                      il, iu
-                    end if
-                    !...........................................................
-                  end if
-                end if
-              end do
-            end do
-          end do
-        end if
-        end select
-      end if
-      nbor => nbor%next
-    end do
-    !---------------------------------------------------------------------------
-    ! Set or clear the no_support bit
-    !---------------------------------------------------------------------------
-    if (support) then
-      if (patch%is_set (bits%no_support)) then
-        call patch%clear (bits%no_support)
-        print *, patch%id, 'check_support2 clears no_support'
-      end if
-      !.........................................................................
-      if (self%verbose > 0) then
-        write (stdlog,'(f12.6,a,i6,":",i2.2,2x,4i3,i5)') wallclock(), &
-        pad_trace(1:indent)//'list_t%check_support: clear no_support id,key=', &
-        id1, level1, patch%hash_key(), n
-      end if
-      !.........................................................................
-    else
-      if (patch%is_clear (bits%no_support)) then
-        call patch%set   (bits%no_support)
-        print *, patch%id, 'check_support2 sets no_support'
-      end if
-      !.........................................................................
-      if (self%verbose > 0) then
-        write (stdlog,'(f12.6,a,i6,":",i2.2,2x,4i3,i5)') wallclock(), &
-        pad_trace(1:indent)//'list_t%check_support: set no_support id,key=', &
-        id1, level1, patch%hash_key(), n
-      end if
-      !.........................................................................
-    end if
-    end select
-  end if
-  call trace%end (itimer, detailed_timer=timer%detailed)
-END SUBROUTINE check_support2
 
 END MODULE list_mod
