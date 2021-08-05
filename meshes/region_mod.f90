@@ -1,16 +1,16 @@
 !===============================================================================
-!> Regions are defined by their lower (fl) and upper (fu) floating point
-!> coordinates in Cartesian coordinates. Important examples of regions:
+!> sources are defined by their lower (fl) and upper (fu) floating point
+!> coordinates in Cartesian coordinates. Important examples of sources:
 !>
-!> * The internal region of a patch
+!> * The internal source of a patch
 !> * The guard zone that covers one face of a patch
 !> * The guard zone that touches an edge of a patch
 !> * The guard zone that touches a corner of a patch
-!> * The intersection of the internal region of a source patch and a target
+!> * The intersection of the internal source of a source patch and a target
 !>   guard zone
 !>
 !> A neighbor patch needs to be in the nbor list of a patch if one of its
-!> guard zones is covered by the internal region of the neighbor patch.
+!> guard zones is covered by the internal source of the neighbor patch.
 !> Conversely, the neighbor patch needs to have the patch in its nbor list,
 !> with the nbor%needs_me flag set.
 !===============================================================================
@@ -26,66 +26,80 @@ MODULE region_mod
     procedure:: intersection
     procedure:: covers
     procedure:: overlaps
+    procedure:: contains
   end type region_t
   real(8), public, save:: region_margin = 1d-10
 CONTAINS
 
 !===============================================================================
-!> Return the common region of self and other
+!> Return the intersection of source of target
 !===============================================================================
-FUNCTION intersection (self, other) RESULT (c)
-  class(region_t) :: self, other
+FUNCTION intersection (target, source, distance) RESULT (c)
+  class(region_t) :: target, source
+  real(8)         :: distance(3)
   type(region_t)  :: c
   !-----------------------------------------------------------------------------
-  c%l = max(self%l,other%l)
-  c%u = min(self%u,other%u)
+  c%l = max(target%l,source%l+distance)
+  c%u = min(target%u,source%u+distance)
 END FUNCTION intersection
 
 !===============================================================================
-!> Check if two regions overlap; i.e. if the volume of the intersection is
+!> Check if two sources overlap; i.e. if the volume of the intersection is
 !> positive
 !===============================================================================
-FUNCTION overlaps (self, region)
-  class(region_t) :: self, region
+FUNCTION overlaps (target, source, distance)
+  class(region_t) :: target, source
+  real(8)         :: distance(3), vi, vs
   logical         :: overlaps
   type(region_t)  :: tmp
   !-----------------------------------------------------------------------------
-!tmp = intersection(self,region)
-!write(stdlog,'(a,3(1x,2(1x,3f8.4)),1p,2e11.2)') 'overlaps:', &
-!self%l, self%u, region%l, region%u, tmp%l, tmp%u, &
-!volume(intersection(self,region)), volume(region)
-  overlaps =  volume(intersection(self,region)) > volume(region)*region_margin
+  vi = volume (intersection (target, source, distance))
+  vs = volume (source)
+  overlaps =  vi  >  vs*region_margin
 END FUNCTION overlaps
 
 !===============================================================================
-!> Check if self covers region; i.e. if the region is completely immersed
+!> Check if target covers source; i.e. if the source is completely immersed
 !===============================================================================
-FUNCTION covers (self, region)
-  class(region_t) :: self, region
+FUNCTION covers (target, source, distance)
+  class(region_t) :: target, source
+  real(8)         :: distance(3), vi, vs
   logical         :: covers
   !-----------------------------------------------------------------------------
-  covers = abs(volume(intersection(self,region))/volume(region) - 1d0) &
-         < region_margin 
+  vi = volume (intersection (target, source, distance))
+  vs = volume (source)
+  covers = abs(vi-vs) < vs*region_margin 
 END FUNCTION covers
 
 !===============================================================================
-!> Return the volume of a region
+!> Return the volume of a source
 !===============================================================================
-FUNCTION volume (self) RESULT (v)
-  class(region_t) :: self
+FUNCTION volume (target) RESULT (v)
+  class(region_t) :: target
   real(8)         :: v
   !-----------------------------------------------------------------------------
-  v = product(max(self%u-self%l,0d0))
+  v = product (max (target%u-target%l, 0d0))
 END FUNCTION volume
 
 !===============================================================================
-!> Return the volume of a region
+!> Return the volume of a source
 !===============================================================================
-FUNCTION empty_relative_to (self, compare) RESULT (y)
-  class(region_t) :: self, compare
+FUNCTION empty_relative_to (target, compare) RESULT (y)
+  class(region_t) :: target, compare
   logical         :: y
   !-----------------------------------------------------------------------------
-  y = self%volume() < compare%volume()*region_margin
+  y = target%volume() < compare%volume()*region_margin
 END FUNCTION empty_relative_to
+
+!===============================================================================
+!> Return true if region contains point
+!===============================================================================
+FUNCTION contains (self, point)
+  class(region_t) :: self
+  real(8)         :: point(3)
+  logical         :: contains
+  !-----------------------------------------------------------------------------
+  contains = all(point >= self%l .and. point <= self%u)
+END FUNCTION contains
 
 END MODULE region_mod

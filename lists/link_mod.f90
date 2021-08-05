@@ -30,10 +30,10 @@ MODULE link_mod
     ! in check_ready(), and nbor%needs_me in check_nbors().
     !---------------------------------------------------------------------------
     logical:: needed   = .true.     ! marks nbors included in check_nbors()
-    logical:: needs_me  = .true.    ! marks nbors included in check_ready()
+    logical:: needs_me = .true.     ! marks nbors included in check_ready()
     logical:: download = .true.     ! marks nbors included in download_link()
     real:: u_max
-    real(8):: distance(3)
+    real(8):: distance(3) = 0d0
     class(task_t), pointer:: target => null()
     class(task_t), pointer:: source => null()
   contains
@@ -85,6 +85,8 @@ MODULE link_mod
     procedure:: nbor_inconsistency
     procedure:: info
     procedure:: check_support
+    procedure:: has_support
+    procedure:: set_support
   end type
   type(link_t), target, public:: garbage
   integer:: garbage_n=0, verbose=0
@@ -1144,5 +1146,33 @@ SUBROUTINE check_support (self)
   class(link_t)          :: self
   call io%abort ('link_t%check_support called')
 END SUBROUTINE check_support
+
+!===============================================================================
+!> Decide if a link has support.  This uses the %filled(:,:,:) array, which
+!> means that this call must not overlap with actual guard zone filling.
+!===============================================================================
+LOGICAL FUNCTION has_support (self)
+  class(link_t):: self
+  !-----------------------------------------------------------------------------
+  call io%abort ('link_t%has_support')
+END FUNCTION has_support
+
+!===============================================================================
+!> Set bits%no_support on all nbors; the has_support() should be overloaded
+!===============================================================================
+SUBROUTINE set_support (self)
+  class(link_t):: self
+  class(nbor_t), pointer:: nbor
+  !-----------------------------------------------------------------------------
+  nbor => self%nbor
+  do while (associated(nbor))
+    if (nbor%link%has_support()) then
+      call self%task%clear (bits%no_support)
+    else
+      call self%task%set (bits%no_support)
+    end if
+    nbor => nbor%next
+  end do
+END SUBROUTINE set_support
 
 END MODULE link_mod

@@ -199,7 +199,7 @@ MODULE patch_mod
     generic, public:: dump => dumpm, dump1r, dump1d, dump2r, dump2d, dump3r, dump3d
     procedure:: cost_f
     procedure:: overlap
-    procedure:: overlaps_region
+    procedure:: cover
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -2733,11 +2733,12 @@ END SUBROUTINE index_space_of
 !> not informed about the target grid spacing it must be adjusted for staggering
 !> before the call.
 !===============================================================================
-FUNCTION index_only (self, pos, iv, roundup, rounddn, nowrap, local) RESULT (ii)
+FUNCTION index_only (self, pos, iv, roundup, rounddn, nearest, nowrap, local) &
+    RESULT (ii)
   class(patch_t)      :: self
   real(8), intent(in) :: pos(3)
   integer, optional   :: iv
-  logical, optional   :: roundup, rounddn, nowrap, local
+  logical, optional   :: roundup, rounddn, nearest, nowrap, local
   integer             :: ii(3)
   !.............................................................................
   integer             :: i
@@ -2769,6 +2770,8 @@ FUNCTION index_only (self, pos, iv, roundup, rounddn, nowrap, local) RESULT (ii)
       ii(i) = ceiling(p(i))                                     ! round up
     else if (present(rounddn)) then
       ii(i) = floor(p(i))                                       ! round dn
+    else if (present(nearest)) then
+      ii(i) = nint(p (i))                                       ! round nearest
     else
       ii(i) = floor(p(i) + 0.0001)                              ! floor w margin
     end if
@@ -3495,30 +3498,21 @@ contains
 END SUBROUTINE overlap
 
 !===============================================================================
-!> Self is the target -- check if it's ROI overlaps with the source ROA
+!> Mark bits where a source ROA ovelaps with a self ROI
 !===============================================================================
-FUNCTION overlaps_region (self, source) RESULT (value)
-  class(patch_t) :: self
-  class(task_t)  :: source
-  logical        :: value
-  !.............................................................................
-  type(region_t) :: source_authority
-  real(8)        :: distance(3)
-  integer, save  :: itimer=0
+SUBROUTINE cover (self, source, distance, bits)
+  class(patch_t):: self, source
+  real(8), dimension(3):: distance, fl, fu
+  integer(int8):: bits(:,:,:)
+  integer:: l(3), u(3)
   !-----------------------------------------------------------------------------
-  if (timer%detailed) &
-    call trace%begin ('patch_t%overlaps_region', itimer=itimer)
-  select type (source)
-  class is (patch_t)
-    distance = self%distance_to (source)
-    source_authority%l = distance + source%authority%l
-    source_authority%u = distance + source%authority%u
-    value = self%interest%overlaps (source_authority)
-  class default
-    value = self%task_t%overlaps (source)
-  end select
-  if (timer%detailed) &
-    call trace%end (itimer)
-END FUNCTION overlaps_region
+  fl = max (self%interest%l, source%authority%l + distance)
+  fu = min (self%interest%u, source%authority%u + distance)
+  l = ceiling (fl/self%mesh%d + self%mesh%o)
+  u =   floor (fu/self%mesh%d + self%mesh%o)
+  l = max (l, self%mesh%lb)
+  u = min (u, self%mesh%ub)
+  bits(l(1):u(1),l(2):u(2),l(3):u(3)) = 0
+END SUBROUTINE cover
 
 END MODULE patch_mod

@@ -485,6 +485,7 @@ SUBROUTINE conditionally_add_nbor (self, nblink, nbors, added)
   class(nbor_t), pointer :: nbor
   class(task_t), pointer :: task, nbtask, patch
   integer                :: n(4)
+  real(8)                :: distance(3)
   integer, save          :: itimer=0
   !-----------------------------------------------------------------------------
   if (detailed_timer) &
@@ -502,8 +503,9 @@ SUBROUTINE conditionally_add_nbor (self, nblink, nbors, added)
         !--- make sure it is not pending remove ---
         if (nbtask%is_clear(bits%remove)) then
           !--- does it have a chance to overlap? ---
+          distance = nbtask%position - task%position  ! FIXME: periodicity!
           n(2) = n(2) + 1
-          if (patch%overlaps_region (nbtask)) then
+          if (patch%interest%overlaps (nbtask%authority, distance)) then
             n(3) = n(3) + 1
             if (nbtask%id == io%id_debug) write (stdlog,*) nbtask%id, 'overlaps_r'
             !--- if yes, allocate nbor associated with task, and add it ---
@@ -517,6 +519,7 @@ SUBROUTINE conditionally_add_nbor (self, nblink, nbors, added)
               write (stderr,*) 'halo_t%conditionally_add_nbor: WARNING'
               call nbor%init (task)
             end select
+            nbor%distance = distance
             if (verbose > 0) then
               write (stdlog,'(f12.6,a,2i6,":",i2.2,2(1x,3f7.3),2(1x,4i4))') &
                 wallclock(), pad_trace(1:indent)// &
@@ -775,7 +778,7 @@ END FUNCTION not_filled
 !> (using the parent nbor list), and checking if any of the L-1 nbors covers
 !> the overlap region.  If lack of support is found, trigger refinement.
 !===============================================================================
-SUBROUTINE check_support (self)
+SUBROUTINE check_support_old (self)
   class(halo_t)          :: self
   class(nbor_t), pointer :: nbors
   !.............................................................................
@@ -807,7 +810,7 @@ SUBROUTINE check_support (self)
         select type (nb2task)
         class is (patch_t)
         task_interest = task%ROI (nb2task)
-        overlaps2 = nb2task%authority%overlaps (task_interest)
+        !overlaps2 = nb2task%authority%overlaps (task_interest)
         !-----------------------------------------------------------------------
         ! Select nbor with overlapping regions
         !-----------------------------------------------------------------------
@@ -819,7 +822,7 @@ SUBROUTINE check_support (self)
         end if
         !.......................................................................
         if (overlaps2) then
-          region2 = nbor2%task%authority%intersection (task_interest)
+          !region2 = nbor2%task%authority%intersection (task_interest)
           request_refine = .true.
           allocate(request(nb2task%gn(1),nb2task%gn(3),nb2task%gn(3)))
           request = 0
@@ -842,11 +845,11 @@ SUBROUTINE check_support (self)
             select type (nb1task)
             class is (patch_t)
             if (nb1task%level == task%level-1) then
-              region1 = nbor1%task%authority%intersection (task_interest)
+              !region1 = nbor1%task%authority%intersection (task_interest)
               !-----------------------------------------------------------------
               ! If there is some overlap, then chip away at the region
               !-----------------------------------------------------------------
-              overlaps1 = region1%overlaps(region2)
+              !overlaps1 = region1%overlaps(region2)
               if (overlaps1) then
                 !---------------------------------------------------------------
                 ! These are the points the L-1 nbor can contribute
@@ -934,6 +937,131 @@ SUBROUTINE check_support (self)
     end if
   end if
   call trace%end (itimer)
+END SUBROUTINE check_support_old
+
+!===============================================================================
+!> Decide if a link has support.  This uses the %filled(:,:,:) array, which
+!> means that this call must not overlap with actual guard zone filling.
+!===============================================================================
+SUBROUTINE check_support (self)
+  class(halo_t):: self
+  class(task_t), pointer:: target, source
+  class(nbor_t), pointer:: nbor
+  real(8):: distance(3)
+  logical:: has_support
+  !-----------------------------------------------------------------------------
+  target => self%task
+  has_support = .true.
+  if (target%level > shared%levelmin+1) then
+    select type (target)
+    class is (patch_t)
+      if (.not. associated(target%filled)) then
+        allocate (target%filled  (target%gn(1),target%gn(3),target%gn(3)))
+        allocate (target%outside (target%gn(1),target%gn(2),target%gn(3)))
+      end if
+      target%filled(:,:,:) = 1
+      distance = 0d0
+      call target%cover (target, distance, target%filled)
+      nbor => self%nbor
+      do while (associated(nbor))
+        source => nbor%task
+        if (verbose > 0) &
+          print '("has_support",2(i6,":",i2.2,3i3))', &
+          target%id, target%key, source%id, source%key
+        select type (source)
+        class is (patch_t)
+          call target%cover (source, nbor%distance, target%filled)
+        end select
+        nbor => nbor%next
+      end do
+      has_support = all(target%filled==0)
+      !-------------------------------------------------------------------------
+      ! If the task now has support, clear the no_support bit
+      !-------------------------------------------------------------------------
+      if (has_support) then
+        if (target%is_set (bits%no_support)) then
+          !print *, target%id, 'halo clears no_support'
+          call target%clear (bits%no_support)
+          if (verbose > 0) then
+            write (stdlog,'(f12.6,a,i6,":",i2.2)') &
+              wallclock(), pad_trace(1:indent)//&
+              'halo_t%check_support: clear no_support id=', &
+              target%id, target%level
+          end if
+        end if
+      else if (target%is_clear (bits%no_support)) then
+        !print *, target%id, 'halo sets no_support'
+        call target%set (bits%no_support)
+        if (verbose > 0) then
+          write (stdlog,'(f12.6,a,i6,":",i2.2)') &
+            wallclock(), pad_trace(1:indent)//&
+            'halo_t%check_support: set no_support id=', &
+            target%id, target%level
+        end if
+      else
+        !print *, target%id, 'halo confirms no_support'
+        call target%set (bits%no_support)
+        if (verbose > 0) then
+          write (stdlog,'(f12.6,a,i6,":",i2.2)') &
+            wallclock(), pad_trace(1:indent)//&
+            'halo_t%check_support:  confirms no_support id=', &
+            target%id, target%level
+        end if
+      end if
+      !-------------------------------------------------------------------------
+      ! If no support, request support
+      !-------------------------------------------------------------------------
+      if (.not.has_support) then
+        nbor => target%link%parent%nbor
+        do while (associated(nbor))
+          if (nbor%task%level == target%level-2) then
+            call request_support (self, target, nbor%task)
+          end if
+          nbor => nbor%next
+        end do
+      end if
+    end select
+  end if
 END SUBROUTINE check_support
+
+!===============================================================================
+!> Find the task at level L-2 that should be refined to provide support, and
+!> mark the corresponging cells in its patch_t%request(:,:,:) array.  The
+!> task must be among the level L-2 nbors of the target parent
+!===============================================================================
+SUBROUTINE request_support (self, target, task)
+  class(halo_t):: self
+  class(patch_t):: target
+  integer:: i1, i2, i3, key(4), ii(3), n
+  real(8):: point(3)
+  class(task_t), pointer:: task
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin ('halo_t%request_support', itimer=itimer)
+  select type (task)
+  class is (patch_t)
+    n = 0
+    do i3=1,target%gn(3)
+    do i2=1,target%gn(2)
+    do i1=1,target%gn(1)
+      if (target%filled(i1,i2,i3) == 1) then
+        !-----------------------------------------------------------------------
+        ! If the task contains the point, mark it, and clear the cell
+        !-----------------------------------------------------------------------
+        point = target%myposition ([i1,i2,i3])
+        if (task%authority%contains (point)) then
+          ii = task%index_only (point, nearest=.true.)
+          task%request (ii(1),ii(2),ii(3)) = 2.0
+          target%filled(i1,i2,i3) = 0
+          n = n+1
+        end if
+      end if
+    end do
+    end do
+    end do
+    !print *, 'cleared', task%id, target%id, n, all(target%filled==0)
+  end select
+  call trace%end (itimer)
+END SUBROUTINE request_support
 
 END MODULE halo_mod
