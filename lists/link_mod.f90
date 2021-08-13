@@ -71,7 +71,6 @@ MODULE link_mod
     procedure:: make_new_nbors
     procedure:: make_new_nbor
     procedure:: check_nbor_relations
-    !procedure:: update_nbors
     procedure:: log_nbors
     procedure:: print_nbors
     procedure:: check_level_sort
@@ -84,8 +83,9 @@ MODULE link_mod
     procedure:: add_nbor
     procedure:: nbor_inconsistency
     procedure:: info
-    procedure:: check_support
+    procedure:: request_support
     procedure:: has_support
+    procedure:: check_support
   end type
   type(link_t), target, public:: garbage
   integer:: garbage_n=0, verbose=0
@@ -379,10 +379,10 @@ SUBROUTINE check_level_sort (self)
   level = -1
   do while (associated(nbor))
     if (nbor%task%level < level) then
-       print *, self%task%id, 'WARNING: nbors not sorted by level'
+! print *, self%task%id, 'WARNING: nbors not sorted by level'
        nbor => self%nbor
        do while (associated(nbor))
-         print *, 'nbor, level =', nbor%task%id, nbor%task%level
+! print *, 'nbor, level =', nbor%task%id, nbor%task%level
          nbor => nbor%next
        end do
        return
@@ -723,8 +723,7 @@ SUBROUTINE print_nbors (self, label, verbose)
     write (io_unit%output,fmt) nbor%task%id, nbor%download, &
       nbor%task%is_ahead_of(self%task)
     if (.not.associated(nbor%link)) &
-      print *, 'link_t%print_nbors: WARNING, nbor%link not associated for task', &
-        nbor%task%id
+! print *, 'link_t%print_nbors: WARNING, nbor%link not associated for task', nbor%task%id
     nbor => nbor%next
   end do
   write (io_unit%output,*) ''
@@ -1139,21 +1138,23 @@ SUBROUTINE info (self, label)
 END SUBROUTINE info
 
 !===============================================================================
-!> Stub
-!===============================================================================
-SUBROUTINE check_support (self)
-  class(link_t)          :: self
-  call io%abort ('link_t%check_support called')
-END SUBROUTINE check_support
-
-!===============================================================================
-!> Decide if a link has support.  This uses the %filled(:,:,:) array, which
-!> means that this call must not overlap with actual guard zone filling.
+!> Stubs
 !===============================================================================
 LOGICAL FUNCTION has_support (self)
   class(link_t):: self
   !-----------------------------------------------------------------------------
   call io%abort ('link_t%has_support')
 END FUNCTION has_support
+!===============================================================================
+SUBROUTINE request_support (self, source)
+  class(link_t)          :: self
+  class(task_t), pointer :: source
+  call io%abort ('link_t%request_support called' )
+END SUBROUTINE request_support
+!===============================================================================
+SUBROUTINE check_support (self)
+  class(link_t)          :: self
+  call io%abort ('link_t%check_support called')
+END SUBROUTINE check_support
 
 END MODULE link_mod
