@@ -2580,20 +2580,23 @@ SUBROUTINE time_interval (self, time, jt, pt, all, id, extrap)
     else
       pt(2) = (time-t(j))/dt
       if (pt(2) > 1.01d0 + self%grace .and. .not.present(extrap)) then
-        write (stderr,'(2a,i6,":",i2.2,f12.6,f7.2,9f12.6)') &
-          'patch_t%time_interval: excessive extrapolation prevented, ', &
-          'id,time,pt,t=', self%id, self%level, time, pt(2), t
         pt(1) = 1.-pt(2)
         if (present(id)) then
+          write (stderr,'(2a,2i6,":",i2.2,f12.6,f7.2,9f12.6)') &
+            'patch_t%time_interval: excessive extrapolation prevented, ', &
+            'id,src,time,pt,t=', id, self%id, self%level, time, pt(2), t
           write (io_unit%mpi,'(f8.3,i4,2x,a,2i6,1p,4e11.2)') &
             wallclock(), omp%thread, &
             'patch_t%time_interval: excessive id,id,t,tm,t,f =', &
             self%id, id, time, time-t(j), t(j+1)-t(j), (time-t(j))/dt
-          write (io_unit%mpi,'(f8.3,i4,2x,a,2i2,2f5.2,1p,10e11.3)') &
+          write (io_unit%mpi,'(f8.3,i4,2x,a,2i2,2f5.2,1p,11e11.3)') &
             wallclock(), omp%thread, &
             'patch_t%time_interval: jt,pt,tm,t(:) =', &
             jt, pt, time, self%t-time
         else
+          write (stderr,'(2a,i6,":",i2.2,f12.6,f7.2,9f12.6)') &
+            'patch_t%time_interval: excessive extrapolation prevented, ', &
+            'id,time,pt,t=', self%id, self%level, time, pt(2), t
           write (io_unit%mpi,'(i4,2x,a,i6,1p,6e11.2)') omp%thread, &
             'patch_t%time_interval: excessive id,t,tm,t,f =', &
             self%id, time, t(j+1), time-t(j), t(j+1)-t(j), (time-t(j))/dt
