@@ -32,4 +32,3 @@ boundary_mod.o      : trace_mod.o io_mod.o task_mod.o link_mod.o
 guards_mod.o        : trace_mod.o io_mod.o patch_mod.o lagrange_mod.o \
                       interp_mod.o conserve_mod.o
 halo_mod.o          : link_mod.o boundary_mod.o guards_mod.o region_mod.o
-interp_mod.o        : trace_mod.o io_mod.o patch_mod.o omp_lock_mod.o
