@@ -102,7 +102,7 @@ SUBROUTINE cg (self, patch, source, phi1, d, lb, ub)
   class(poisson_t)  :: self
   class(patch_t)    :: patch
   real(var_k), dimension(:,:,:)             :: phi1
-  real(var_k), dimension(:,:,:), intent(in) :: source
+  real(var_k), dimension(:,:,:), pointer, contiguous :: source
   real(var_k), dimension(:,:,:), intent(in) :: d
   integer, optional :: lb(3), ub(3)
   !.............................................................................
@@ -430,7 +430,7 @@ SUBROUTINE sor (self, patch, source, phi1, d, lb, ub)
   class(poisson_t)  :: self
   class(patch_t)    :: patch
   real(var_k), dimension(:,:,:)             :: phi1
-  real(var_k), dimension(:,:,:), intent(in) :: source
+  real(var_k), dimension(:,:,:), pointer, contiguous :: source
   real(var_k), dimension(:,:,:), intent(in) :: d
   integer, optional:: lb(3), ub(3)
   !.............................................................................
@@ -440,7 +440,7 @@ SUBROUTINE sor (self, patch, source, phi1, d, lb, ub)
   real                   :: error, error0
   real(8)                :: a, b, b1, b2, b3, res, numer, denom, wc, usppt
   integer, save          :: itimer=0
-  real(8), dimension(:,:,:), allocatable:: phi
+  real(8), dimension(:,:,:), pointer, contiguous:: phi
   !
   !-----------------------------------------------------------------------------
   call trace%begin ('poisson_t%sor', itimer=itimer)
