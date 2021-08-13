@@ -13,6 +13,7 @@ MODULE omp_mod
     integer:: ncores=1
     integer:: nthreads=1
     integer:: nsockets=1
+    integer:: thread_task=-1
     logical:: trace=.false.
     logical:: master=.true.
   contains
