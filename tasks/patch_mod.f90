@@ -200,6 +200,7 @@ MODULE patch_mod
     procedure:: cost_f
     procedure:: overlap
     procedure:: cover
+    procedure:: support_arrays
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -3502,5 +3503,44 @@ SUBROUTINE cover (self, source, distance, bits)
   u = min (u, self%mesh%ub)
   bits(l(1):u(1),l(2):u(2),l(3):u(3)) = 0
 END SUBROUTINE cover
+
+!===============================================================================
+!> Check that %frefine is allocated, and allocate under lock if not
+!===============================================================================
+SUBROUTINE support_arrays (self)
+  class(patch_t):: self
+  !-----------------------------------------------------------------------------
+  select type (self)
+  class is (patch_t)
+  if (.not.associated(self%frefine)) then
+    call self%lock%set ('patch_t%support_arrays')
+    if (.not.associated(self%frefine)) then
+      allocate (self%frefine(self%gn(1),self%gn(2),self%gn(3)))
+    end if
+    call self%lock%unset ('patch_t%support_arrays')
+  end if
+  if (.not.associated(self%filled)) then
+    call self%lock%set ('patch_t%support_arrays 2')
+    if (.not.associated(self%filled)) then
+      allocate (self%filled(self%gn(1),self%gn(2),self%gn(3)))
+    end if
+    call self%lock%unset ('patch_t%support_arrays 2')
+  end if
+  if (.not.associated(self%request)) then
+    call self%lock%set ('patch_t%support_arrays 2')
+    if (.not.associated(self%request)) then
+      allocate (self%request(self%gn(1),self%gn(2),self%gn(3)))
+    end if
+    call self%lock%unset ('patch_t%support_arrays 2')
+  end if
+  if (.not.associated(self%outside)) then
+    call self%lock%set ('patch_t%support_arrays 3')
+    if (.not.associated(self%outside)) then
+      allocate (self%outside(self%gn(1),self%gn(2),self%gn(3)))
+    end if
+    call self%lock%unset ('patch_t%support_arrays 3')
+  end if
+end select
+END SUBROUTINE support_arrays
 
 END MODULE patch_mod
