@@ -164,18 +164,22 @@ SUBROUTINE source_to_target (self, source, target, all_tgt, all_src, n_op, &
         type = 'restrict'
         !-----------------------------------------------------------------------
         ! FIXME: For now, the conserve%restrict() can only handle interior cells
+        ! Note: Restrict operations are either done only in guard zones, or if
+        ! the source is contained in the target then all cells should be used,
+        ! so there is no need to test on all_tgt here:
         !-----------------------------------------------------------------------
         if (source%parent%id == target%id .and. &
-            .not. present(all_tgt) .and. .not. present(all_src)) then
+            .not. present(all_src)) then
           call conserve%restrict (target, source, all_tgt, all_src, only)
         else
           if (source%parent%id == target%id) then
-            write (stderr,'(a,2(i6,":",i2.2,2x,2l1))') &
-              'guards_t%source_to_target: warning, source,target,all=', &
+            write (stdlog,'(a,2(i6,":",i2.2,2x),2l1)') &
+              'guards_t%restrict: warning, source,target,all=', &
               source%id, source%level, target%id, target%level, &
               present(all_tgt), present(all_src)
           end if
           call self%restrict (target, source, all_tgt, all_src, only)
+          !call conserve%restrict (target, source, all_tgt, all_src, only)
         end if
         n_op(3) = n_op(3) + 1
       end if
