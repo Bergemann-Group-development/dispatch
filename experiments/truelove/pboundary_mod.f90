@@ -68,13 +68,15 @@ SUBROUTINE conditions (self, patch, it)
   mx => patch%mesh(1)
   my => patch%mesh(2)
   mz => patch%mesh(3)
-
+  !-----------------------------------------------------------------------------
   ! x-boundaries
+  !-----------------------------------------------------------------------------
   if (patch%n(1) > 1) then
     ! lower x
     if (patch%mesh(1)%lower_boundary) then
       do ix=mx%lb,mx%lo
-        patch%mem(ix,my%lb:my%ub,mz%lb:mz%ub,:,it,1) = patch%mem(mx%li+1,my%lb:my%ub,mz%lb:mz%ub,:,it,1)
+        patch%mem(ix     ,my%lb:my%ub,mz%lb:mz%ub,1:patch%nv,it,1) = &
+        patch%mem(mx%li+1,my%lb:my%ub,mz%lb:mz%ub,1:patch%nv,it,1)
       end do
       if (patch%idx%phi > 0) then
         do ix=mx%lb,mx%lo
@@ -84,10 +86,11 @@ SUBROUTINE conditions (self, patch, it)
       if (associated(patch%filled)) &
         patch%filled(1:mx%lo,my%lb:my%ub,mz%lb:mz%ub) = patch%level
     end if
-  ! upper x
+    ! upper x
     if (patch%mesh(1)%upper_boundary) then
       do ix=mx%uo,mx%ub
-        patch%mem(ix,my%lb:my%ub,mz%lb:mz%ub,:,it,1) = patch%mem(mx%ui-1,my%lb:my%ub,mz%lb:mz%ub,:,it,1)
+        patch%mem(ix     ,my%lb:my%ub,mz%lb:mz%ub,1:patch%nv,it,1) = &
+        patch%mem(mx%ui-1,my%lb:my%ub,mz%lb:mz%ub,1:patch%nv,it,1)
       end do
       if (patch%idx%phi > 0) then
         do ix=mx%uo,mx%ub
@@ -98,13 +101,15 @@ SUBROUTINE conditions (self, patch, it)
         patch%filled(mx%uo:mx%ub,my%lb:my%ub,mz%lb:mz%ub) = patch%level
     end if
   end if
-
+  !-----------------------------------------------------------------------------
   ! y-boundaries
+  !-----------------------------------------------------------------------------
   if (patch%n(2) > 1) then
     ! lower y
     if (patch%mesh(2)%lower_boundary) then
       do iy=my%lb,my%lo
-        patch%mem(mx%lb:mx%ub,iy,mz%lb:mz%ub,:,it,1) = patch%mem(mx%lb:mx%ub,my%li+1,mz%lb:mz%ub,:,it,1)
+        patch%mem(mx%lb:mx%ub,iy     ,mz%lb:mz%ub,1:patch%nv,it,1) = &
+        patch%mem(mx%lb:mx%ub,my%li+1,mz%lb:mz%ub,1:patch%nv,it,1)
       end do
       if (patch%idx%phi > 0) then
         do iy=my%lb,my%lo
@@ -114,10 +119,11 @@ SUBROUTINE conditions (self, patch, it)
       if (associated(patch%filled)) &
         patch%filled(mx%lb:mx%ub,1:my%lo,mz%lb:mz%ub) = patch%level
     end if
-  ! upper y
+    ! upper y
     if (patch%mesh(2)%upper_boundary) then
       do iy=my%uo,my%ub
-        patch%mem(mx%lb:mx%ub,iy,mz%lb:mz%ub,:,it,1) = patch%mem(mx%lb:mx%ub,my%ui-1,mz%lb:mz%ub,:,it,1)
+        patch%mem(mx%lb:mx%ub,iy     ,mz%lb:mz%ub,1:patch%nv,it,1) = &
+        patch%mem(mx%lb:mx%ub,my%ui-1,mz%lb:mz%ub,1:patch%nv,it,1)
       end do
       if (patch%idx%phi > 0) then
         do iy=my%uo,my%ub
@@ -128,13 +134,15 @@ SUBROUTINE conditions (self, patch, it)
         patch%filled(mx%lb:mx%ub,my%uo:my%ub,mz%lb:mz%ub) = patch%level
     end if
   end if
-
+  !-----------------------------------------------------------------------------
   ! z-boundaries
+  !-----------------------------------------------------------------------------
   if (patch%n(3) > 1) then
     ! lower z
     if (patch%mesh(3)%lower_boundary) then
       do iz=mz%lb,mz%lo
-        patch%mem(mx%lb:mx%ub,my%lb:my%ub,iz,:,it,1) = patch%mem(mx%lb:mx%ub,my%lb:my%ub,mz%li+1,:,it,1)
+        patch%mem(mx%lb:mx%ub,my%lb:my%ub,iz     ,1:patch%nv,it,1) = &
+        patch%mem(mx%lb:mx%ub,my%lb:my%ub,mz%li+1,1:patch%nv,it,1)
       end do
       if (patch%idx%phi > 0) then
         do iz=mz%lb,mz%lo
@@ -142,12 +150,13 @@ SUBROUTINE conditions (self, patch, it)
         end do
       end if
       if (associated(patch%filled)) &
-        patch%filled(mx%lb:mx%ub,my%lb:my%ub,1:mz%lo) = patch%level
+        patch%filled(mx%lb:mx%ub,my%lb:my%ub,mz%lb:mz%lo) = patch%level
     end if
     ! upper z
     if (patch%mesh(3)%upper_boundary) then
       do iz=mz%uo,mz%ub
-        patch%mem(mx%lb:mx%ub,my%lb:my%ub,iz,:,it,1) = patch%mem(mx%lb:mx%ub,my%lb:my%ub,mz%ui-1,:,it,1)
+        patch%mem(mx%lb:mx%ub,my%lb:my%ub,iz     ,1:patch%nv,it,1) = &
+        patch%mem(mx%lb:mx%ub,my%lb:my%ub,mz%ui-1,1:patch%nv,it,1)
       end do
       if (patch%idx%phi > 0) then
         do iz=mz%uo,mz%ub
