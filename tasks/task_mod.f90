@@ -938,33 +938,16 @@ class(task_t):: self
 END SUBROUTINE load_balance
 
 !===============================================================================
-!> Check if there is overlap, using the size plus an extra cell margin. The
-!> definition of overlap MUST be symmetric, since it is being used to define
-!> neighbor relations.
-!>
-!> NOTE 1: This function was in the past NOT used by e.g. list_t%init_nbors, which
-!> was instead using list_t%overlaps, based on the same criterion as below.
-!>
-!> NOTE 2: Since overlap and nbors can have a generalized definition it makes
-!> sense that is valid for the whole task_t class.  If needed, the definition
-!> can be overloaded with alternative definitions for particular tasks.
+!> Check if there is overlap. The definition of overlap MUST be symmetric, since
+!> it is being used to define neighbor relations.
 !===============================================================================
 FUNCTION overlaps (self, task)
   class(task_t):: self
   class(task_t):: task
   logical:: overlaps
-  real(8):: dr(3)
-  integer:: itimer=0
-  !.............................................................................
-  if (timer%detailed) then
-    call trace%begin ('task_t%overlaps', itimer=itimer)
-    dr = distance (self, task)
-    overlaps = all(abs(dr) <= 0.5_8*(self%size+task%size+self%ds+task%ds))
-    call trace%end (itimer)
-  else
-    overlaps = all(abs(distance (self, task)) <= &
-                   0.5_8*(self%size+task%size+self%ds+task%ds))
-  end if
+  !-----------------------------------------------------------------------------
+  overlaps = self%interest%overlaps (task%interest, self%distance_to (task)) &
+        .or. task%interest%overlaps (self%interest, task%distance_to (self))
 END FUNCTION overlaps
 
 !===============================================================================
