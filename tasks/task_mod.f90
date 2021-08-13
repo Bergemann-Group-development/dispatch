@@ -785,8 +785,12 @@ LOGICAL FUNCTION is_ahead_of (self, target, extra)
   end if
   if (omp_lock%tasks) then
                                             call self%lock%set ('is_ahead_of')
+    !---------------------------------------------------------------------------
+    ! dt(self%dt) is always consistent with t(:), while dtime changes in
+    ! courant_condition(), before other attributes change in rotate()
+    !---------------------------------------------------------------------------
     nbtime = self%time
-    nbdtime = self%dtime
+    nbdtime = self%dt(self%it)
     tgtime = target%time
     if (self%is_set(bits%frozen)) then
       is_ahead_of = .true.
@@ -822,7 +826,7 @@ LOGICAL FUNCTION is_ahead_of (self, target, extra)
     print'(i6,i4,2x,a,i6,3f9.5,l3)', self%id, omp_mythread, 'mk is_ahead_of: ', &
     target%id, self%time, self%dtime*target%grace, target%time, is_ahead_of
   end if
-END FUNCTION
+END FUNCTION is_ahead_of
 
 SUBROUTINE print (self)
   class (task_t):: self
