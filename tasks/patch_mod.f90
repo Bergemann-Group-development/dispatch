@@ -121,13 +121,13 @@ MODULE patch_mod
     procedure:: pack                    ! pack patch into buffer
     procedure, nopass:: unpack_id       ! unpack patch id
     procedure:: unpack                  ! unpack buffer into patch
-    !procedure:: overlaps                ! patch overlaps test
     procedure:: index                   ! compute the index for a single point
     procedure:: nearest                 ! the nearest index that maps to patch point
     procedure:: lowest                  ! the lowest index that maps to patch point
     procedure:: highest                 ! the highest index that maps to patch point
     procedure:: myposition
     procedure:: myposition_staggered
+    procedure:: local_position
     procedure:: extrapolate_guards
     procedure:: time_extrapolate
     procedure:: is_periodic
@@ -994,6 +994,24 @@ FUNCTION myposition_staggered (self, ii, idir, h) RESULT(out)
 END FUNCTION myposition_staggered
 
 !===============================================================================
+!> Return position of cell index, relative to the local patch
+!===============================================================================
+FUNCTION local_position (self, ii, iv) RESULT(out)
+  class(patch_t)      :: self
+  integer, intent(in) :: ii(3)
+  integer, optional   :: iv
+  real(8)             :: out(3)
+  !.............................................................................
+  real(8)             :: h(3)
+  !-----------------------------------------------------------------------------
+  out = (real(ii)-self%offset)*self%ds
+  if (present(iv)) then
+    h = self%index_stagger(iv)
+    out = out + h*self%mesh%d
+  end if
+END FUNCTION local_position
+
+!===============================================================================
 FUNCTION myfloatindex_scalar (self, cpos, idir, h) RESULT(out)
   class(patch_t) :: self
   real(8), intent(in) :: cpos(3)
@@ -1612,44 +1630,6 @@ SUBROUTINE unpack (self, mesg)
   !-----------------------------------------------------------------------------
     call trace%end (itimer)
 END SUBROUTINE unpack
-
-!===============================================================================
-!> Check if there is overlap, using the size plus an extra cell margin. The
-!> definition of overlap MUST be symmetric, since it is being used to define
-!> neighbor relations.  This function overloads task_t%overlaps, in order to
-!> force use of the patch_t%distance function.
-!===============================================================================
-FUNCTION overlaps_old (self, task)
-  class(patch_t):: self
-  class(task_t):: task
-  logical:: overlaps_old
-  real(8):: distance, box, limit
-  integer:: i
-  integer, save:: itimer=0
-  !.............................................................................
-  if (timer%detailed) &
-    call trace%begin ('patch_t%overlaps', itimer)
-  select type (task)
-  class is (patch_t)
-    overlaps_old = .true.
-    do i=1,3
-      distance = self%centre_nat(i) - task%centre_nat(i)
-      box = self%box(i)
-      if (self%periodic(i)) then
-        distance = modulo (distance+0.5_8*box, box) - 0.5_8*box
-      end if
-      limit = 0.5_8*(self%size(i)+task%size(i)+self%ds(i)+task%ds(i))
-      if (abs(distance) > limit) then
-        overlaps_old = .false.
-        exit
-      end if
-    end do
-  class default
-    overlaps_old = self%task_t%overlaps(task)
-  end select
-  if (timer%detailed) &
-    call trace%end (itimer)
-END FUNCTION overlaps_old
 
 !===============================================================================
 !> Signed distance from task%position to self%position, wrapped in the case of a
