@@ -35,14 +35,15 @@ MODULE dispatcher0_mod
     procedure:: no_queue
   end type
   real(8):: stall_start=0d0, max_stalled=600d0, retry_stalled=30d0
-  real:: delay_ms=0.0
-  real:: extra_grace=0.3
+  real:: delay_ms=0.0               ! wait time in no_queue()
+  real:: extra_grace=0.3            ! extra grace max, at nstall2
   integer, save:: mpi_only_master=100
   integer, save:: verbose=0
   integer, save:: stalled=0
   integer, save:: n_spin=0
   integer, save:: n_update=0
-  integer, save:: nstall1=1000, nstall2=10000
+  integer, save:: nstall1=3000      ! after nstall1*delay_ms, increase grace
+  integer, save:: nstall2=10000     ! after nstall2*delay_ms, call stall_handler
   integer, save:: min_nq=2**30
   logical, save:: debug=.false.
   logical, save:: do_delay=.true.
@@ -433,12 +434,12 @@ SUBROUTINE update (self, task_list, test)
     spin_start = wallclock()
     !$omp atomic update
     n_stalled = n_stalled + 1
-  else if (n_stalled >= nstall1) then
+  else if (n_stalled > nstall1) then
     task_list%extra_grace = (n_stalled-nstall1)*extra_grace/(nstall2-nstall1)
     write (io_unit%mpi,'(f12.6,2x,a,f10.3)') wallclock(), &
       'dispatcher0_t%update: extra_grace=', task_list%extra_grace
     call task_list%check_all
-  else if (n_stalled >= nstall2) then
+  else if (n_stalled > nstall2) then
     call stall_handler
     time_incr = wallclock()-spin_start
     !$omp atomic update
@@ -460,6 +461,9 @@ contains
 !-------------------------------------------------------------------------------
 subroutine stall_handler
     real(8):: now
+    integer, save:: itimer=0
+    !---------------------------------------------------------------------------
+    call trace%begin ('dispatcher0_t%stall_handler', itimer=itimer)
     !$omp atomic update
     n_spin = n_spin+1
     !---------------------------------------------------------------------------
@@ -574,8 +578,8 @@ subroutine stall_handler
                                     call task_list%qlock%unset ('stall_handler')
     else if (do_delay) then
       call self%no_queue (stalled, task_list)
-      return
     end if
+    call trace%end (itimer)
 end subroutine stall_handler
 END SUBROUTINE update
 
@@ -596,12 +600,8 @@ SUBROUTINE no_queue (self, stalled, task_list)
     ms = delay_ms
   else
     ms = task_list%update_time*1e3
-  end if
-  if (mpi%size == 1) then
-    if (verbose > 0) then
+    if (mpi%size == 1) then
       ms = ms*0.1
-    else
-      ms = 0.001
     end if
   end if
   if (verbose > 0) then
