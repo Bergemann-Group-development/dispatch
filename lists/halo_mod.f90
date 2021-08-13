@@ -44,14 +44,15 @@ MODULE halo_mod
     procedure:: download
     procedure:: make_coarse
     !procedure:: init_child_nbors
-    procedure:: purge_nbors
     procedure:: conditionally_add_nbor
-    procedure:: no_child_supports
     procedure:: info
     procedure:: set_filled
     procedure:: get_filled
     procedure:: not_filled
+    procedure:: has_support
+    procedure:: request_support
     procedure:: check_support
+    procedure:: find_support
   end type
   logical, save:: check_filled = .false.
   logical, save:: detailed_timer=.false.
@@ -94,10 +95,6 @@ SUBROUTINE init (self)
   end if
   call io%lock%unset ('halo_t%init')
   call guards%pre_init
-  nbor => self%nbor
-  do while (associated(nbor))
-    nbor => nbor%next
-  end do
   call trace%end ()
 END SUBROUTINE init
 
@@ -114,6 +111,7 @@ SUBROUTINE update (self, all_tgt, all_src, only)
   integer, optional       :: only
   !.............................................................................
   class(task_t), pointer  :: target, task
+  class(nbor_t), pointer  :: nbors
   integer                 :: unit
   integer, save           :: itimer=0
   !-----------------------------------------------------------------------------
@@ -125,7 +123,11 @@ SUBROUTINE update (self, all_tgt, all_src, only)
   !-----------------------------------------------------------------------------
   target => self%task
   if (target%time > target%dnload_time) then
-    call self%download (self%nbor, only, all_tgt, all_src)
+    ! call self%lock%set ('halo_t%update')
+    call self%copy_nbor_list (self%nbor, nbors)
+    ! call self%lock%unset ('halo_t%update')
+    call self%download (nbors, only, all_tgt, all_src)
+    call self%remove_nbor_list (nbors)
     if (verbose > 0) then
       write (unit,'(a,i6,2e15.6)') &
         'halo done', target%id, target%time, target%dnload_time
@@ -146,7 +148,6 @@ SUBROUTINE update (self, all_tgt, all_src, only)
       call task%stats ('after halo', stdout)
     end select
   end if
-  !.............................................................................
   call trace%end (itimer)
 END SUBROUTINE update
 
@@ -163,26 +164,44 @@ SUBROUTINE download (self, nbors, only, all_tgt, all_src)
   logical                :: use_coarse
   class(nbor_t), pointer :: nbor
   class(task_t), pointer :: target, source
+  integer, save           :: itimer=0
   !-----------------------------------------------------------------------------
   ! Decide whether to use a coarse clone or not
   !-----------------------------------------------------------------------------
-  call trace%begin ('halo_t%download')
+  call trace%begin ('halo_t%download', itimer=itimer)
   unit = merge (stdlog, stdout, verbose > 2)
   use_coarse = .false.
   target => self%task
-  nbor => nbors
+  !-----------------------------------------------------------------------------
+  ! If the task does not yet have support it will soon have it, and until then
+  ! we make sure to fill all guard zones with values from the parent task, which
+  ! has at least time-extrapolated guard zone values, and possibly already
+  ! authoritative guard zone values
+  !-----------------------------------------------------------------------------
   call self%set_filled (target)
+  call self%check_support ()
+  if (self%task%is_set (bits%no_support)) then
+    source => self%parent%task
+    call guards%source_to_target (source, target, n_op=self%n_op, only=only, &
+                                  all_src=.true., all_tgt=all_tgt)  
+  end if
+  !-----------------------------------------------------------------------------
+  ! Proceed with the normal guard zone loading
+  !-----------------------------------------------------------------------------
+  nbor => nbors
   do while (associated(nbor))
-    source => nbor%task
-    if (verbose > 0) then
-      print '(a8,2x,2(a,i6,":",i2.2,1x,4i3,3x))', 'halo', &
-        'tgt:', self%task%id, target%level, target%key, &
-        'src:', source%id, source%level, source%key
-    end if
-    !...........................................................................
-    if (source%level < target%level) then
-      if (source%id /= target%parent%id) then
-        use_coarse = .true.
+    if (nbor%download) then
+      source => nbor%task
+      if (verbose > 0) then
+        print '(a8,2x,2(a,i6,":",i2.2,1x,4i3,3x))', 'halo', &
+          'tgt:', self%task%id, target%level, target%key, &
+          'src:', source%id, source%level, source%key
+      end if
+      !...........................................................................
+      if (source%level < target%level) then
+        if (source%id /= target%parent%id) then
+          use_coarse = .true.
+        end if
       end if
     end if
     nbor => nbor%next
@@ -195,20 +214,39 @@ SUBROUTINE download (self, nbors, only, all_tgt, all_src)
   else
     nbor => nbors
     do while (associated(nbor))
-      source => nbor%task
       if (nbor%download) then
-        call guards%source_to_target (source, target, n_op=self%n_op, &
-           only=only, all_src=all_src, all_tgt=all_tgt)
+        ! if (nbor%task%is_clear (bits%no_support)) then
+          source => nbor%task
+          call guards%source_to_target (source, target, n_op=self%n_op, &
+          only=only, all_src=all_src, all_tgt=all_tgt)
+        ! else
+        !   print *, target%id, 'skipping', nbor%task%id
+        ! end if
       end if
       nbor => nbor%next
     end do
   end if
+  !-----------------------------------------------------------------------------
+  ! Boundary conditions
+  !-----------------------------------------------------------------------------
+  call self%task%bndries
+  call self%task%periodic_grid()
   !-----------------------------------------------------------------------------
   ! Emergency procedure: If some cells are not filled; redo the guard zone
   ! loading, using full source patches, while printing warnings
   !-----------------------------------------------------------------------------
   if (self%not_filled (target)) then
     write (stderr,*) 'halo_t%not_filled: target%id=', target%id
+    nbor => nbors
+    do while (associated(nbor))
+      source => nbor%task
+      select type (source)
+      class is (patch_t)
+        print '(i6,":",i2.2,3i3,3x,l1,2(2x,3l1))', source%id, source%key, &
+          nbor%download, source%mesh%lower_boundary, source%mesh%upper_boundary
+      end select
+      nbor => nbor%next
+    end do
     nbor => nbors
     do while (associated(nbor))
       if (nbor%download) then
@@ -236,12 +274,7 @@ SUBROUTINE download (self, nbors, only, all_tgt, all_src)
       'halo_t%download: n_same,prolong,restrict=', self%n_op
     self%n_op = 0
   end if
-!-----------------------------------------------------------------------------
-  ! Boundary conditions
-  !-----------------------------------------------------------------------------
-  call self%task%bndries
-  call self%task%periodic_grid()
-call trace%end ()
+call trace%end (itimer)
 END SUBROUTINE download
 
 !===============================================================================
@@ -265,7 +298,7 @@ SUBROUTINE make_coarse (self, nbors, only)
   logical                 :: use_coarse
   integer, save           :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('halo_t%makemake_coarse', itimer=itimer)
+  call trace%begin ('halo_t%make_coarse', itimer=itimer)
   unit = merge (stdlog, stdout, verbose > 2)
   if (verbose > 0) &
     print *, self%task%id, 'make coarse'
@@ -398,80 +431,6 @@ SUBROUTINE init_child_nbors (self, child_link)
 END SUBROUTINE init_child_nbors
 
 !===============================================================================
-!> Set guards%download to false on nbors that are not needed, but keep them for
-!> other purposes.
-!===============================================================================
-SUBROUTINE purge_nbors (self)
-  class(halo_t)          :: self
-  class(nbor_t), pointer :: nbor
-  class(task_t), pointer :: task, nbtask
-  integer, allocatable   :: filled(:,:,:)
-  integer, dimension(3)  :: l, u, ls, us, m
-  integer                :: n(2)
-  integer, save          :: itimer=0
-  !-----------------------------------------------------------------------------
-  ! We use the preliminary nbor list, sorted by level, to add values in filled
-  !-----------------------------------------------------------------------------
-  call trace%begin ('halo_t%purge_nbors', itimer=itimer)
-  task => self%task
-  select type (task)
-  class is (patch_t)
-  m = task%gn
-  allocate (filled(m(1),m(2),m(3)))
-  filled = task%level
-  nbor => self%nbor
-  do while (associated(nbor))
-    nbtask => nbor%task
-    select type (nbtask)
-    class is (patch_t)
-    call task%overlap (l, u, nbtask, ls, us, all_tgt=.true.)
-    end select
-    filled(l(1):u(1),l(2):u(2),l(3):u(3)) = nbtask%level
-    select type (nbor)
-    class is (guards_t)
-    nbor%lt = l
-    nbor%ut = u
-    end select
-    nbor => nbor%next
-  end do
-  end select
-  !-----------------------------------------------------------------------------
-  ! Run through again, and disable download from tasks that do not match filled
-  !-----------------------------------------------------------------------------
-  n = 0
-  nbor => self%nbor
-  do while (associated(nbor))
-    select type (nbor)
-    class is (guards_t)
-    l = nbor%lt
-    u = nbor%ut
-    end select
-    if (all(filled(l(1):u(1),l(2):u(2),l(3):u(3)) /= nbor%task%level)) then
-      nbor%download = .false.
-      nbor%needed = .false.
-      n(1) = n(1) + 1
-      !.........................................................................
-      if (verbose > 1) then
-        write (stdlog,'(f12.6,a,i6,":",i2.2)') wallclock(), &
-          pad_trace(1:indent)//'update_nbors: disabled', nbtask%id, nbtask%level
-      end if
-      !.........................................................................
-    else
-      n(2) = n(2) + 1
-    end if
-    nbor => nbor%next
-  end do
-  deallocate (filled)
-  !.............................................................................
-  if (verbose > 0) then
-    write (stdlog,'(f12.6,a,i6,":",i2.2)') wallclock(), &
-      pad_trace(1:indent)//'update_nbors: disabled', nbtask%id, nbtask%level
-  end if
-  !.............................................................................
-  call trace%end (itimer)
-END SUBROUTINE purge_nbors
-
-!===============================================================================
 !> Check if the nbor should actually be on the nbor list, and if so try to add
 !> it, in increasing level order.  If the task is already on the nbor list, the
 !> attempt will be quietly ignored.
@@ -520,6 +479,7 @@ SUBROUTINE conditionally_add_nbor (self, nblink, nbors, added)
               call nbor%init (task)
             end select
             nbor%distance = distance
+!            nbor%status = nbor%task%status
             if (verbose > 0) then
               write (stdlog,'(f12.6,a,2i6,":",i2.2,2(1x,3f7.3),2(1x,4i4))') &
                 wallclock(), pad_trace(1:indent)// &
@@ -528,6 +488,10 @@ SUBROUTINE conditionally_add_nbor (self, nblink, nbors, added)
                 nbor%distance/task%size, &
                 nbtask%distance(patch)/task%size, &
                 patch%hash_key(), nbtask%hash_key()
+            end if
+            if (abs(self%task%level-nblink%task%level) > 1) then
+              nbor%needed = .false.
+              nbor%needs_me = .false.
             end if
             call self%add_nbor_by_level (nbors, nbor, added)
           end if
@@ -539,30 +503,6 @@ SUBROUTINE conditionally_add_nbor (self, nblink, nbors, added)
   if (detailed_timer) &
     call trace%end (itimer)
 END SUBROUTINE conditionally_add_nbor
-
-!===============================================================================
-!> Check if any of my children provides support to this nbor
-!===============================================================================
-FUNCTION no_child_supports (self, this) RESULT (ok)
-  class(halo_t):: self, this
-  class(nbor_t), pointer:: nbor
-  class(task_t), pointer:: task, nbtask
-  logical:: ok
-  !-----------------------------------------------------------------------------
-  call trace%begin ('halo_t%no_child_supports')
-  nbor => self%nbor
-  ok = .true.
-  do while (associated(nbor))
-    if (nbor%task%level == this%task%level+1) then
-      if (nbor%task%overlaps (this%task)) then
-        ok = .false.
-        exit
-      end if
-    end if
-    nbor => nbor%next
-  end do
-  call trace%end ()
-END FUNCTION no_child_supports
 
 !===============================================================================
 !> Initialize the link, and possibly the nbor nodes
@@ -621,10 +561,7 @@ SUBROUTINE set_filled (self, task)
   ! Se logical mask 'outside' true in guard zones, false inside.
   !-----------------------------------------------------------------------------
   call trace%begin ('halo_t%set_filled', itimer=itimer)
-  if (.not. associated(target%filled)) then
-    allocate(target%filled (target%gn(1),target%gn(2),target%gn(3)))
-    allocate(target%outside(target%gn(1),target%gn(2),target%gn(3)))
-  end if
+  call target%support_arrays ()
   !-----------------------------------------------------------------------------
   ! Test different methods to initialize; bell whether of optimization
   !-----------------------------------------------------------------------------
@@ -741,8 +678,10 @@ SUBROUTINE get_filled (self, target)
         call io%abort ('guards_t%check_filled: some target not filled')
         flush(stdlog)
       end if
+      call target%lock%set ('halo_t%get_filled')
       deallocate (target%filled, target%outside)
       nullify    (target%filled, target%outside)
+      call target%lock%unset ('halo_t%get_filled')
     end if
   end select
   call trace%end (itimer)
@@ -776,126 +715,177 @@ END FUNCTION not_filled
 !===============================================================================
 !> Decide if a link has support.  This uses the %filled(:,:,:) array, which
 !> means that this call must not overlap with actual guard zone filling.
+!>
+!> When this procedure discovers a task that lacks support it is run by the
+!> thread that created the task, so no link locking is needed.  Later, when
+!> it revisits the task and finds that it has support, if it is run by
+!> the same thread that updates it, again no link locking is needed, but if
+!> it is run by a thread that is not updating it, link locking is needed.
 !===============================================================================
-SUBROUTINE check_support (self)
+FUNCTION has_support (self)
   class(halo_t):: self
-  class(task_t), pointer:: target, source
-  class(nbor_t), pointer:: nbor
-  real(8):: distance(3)
   logical:: has_support
+  !.............................................................................
+  class(task_t), pointer:: target, source
+  class(nbor_t), pointer:: nbor, nbors
+  real(8):: distance(3)
   !-----------------------------------------------------------------------------
+  call self%lock%set ('download_link')
+  call self%copy_nbor_list (self%nbor, nbors)
+  call self%lock%unset ('download_link')
   target => self%task
+  if (target%id /= omp%thread_task) then
+    write (stderr,*) 'has_support WARNING: target%id,thread_task=', &
+      target%id, omp%thread_task
+  end if
   has_support = .true.
   if (target%level > shared%levelmin+1) then
     select type (target)
     class is (patch_t)
-      if (.not. associated(target%filled)) then
-        allocate (target%filled  (target%gn(1),target%gn(3),target%gn(3)))
-        allocate (target%outside (target%gn(1),target%gn(2),target%gn(3)))
-      end if
+      call target%support_arrays ()
       target%filled(:,:,:) = 1
       distance = 0d0
       call target%cover (target, distance, target%filled)
-      nbor => self%nbor
+      nbor => nbors
       do while (associated(nbor))
-        source => nbor%task
-        if (verbose > 0) &
-          print '("has_support",2(i6,":",i2.2,3i3))', &
-          target%id, target%key, source%id, source%key
-        select type (source)
-        class is (patch_t)
-          call target%cover (source, nbor%distance, target%filled)
-        end select
+        !-----------------------------------------------------------------------
+        ! In case L-2 tasks are included in the nbor list, skip them, since
+        ! they are not to be used for downloads
+        !-----------------------------------------------------------------------
+        if (nbor%task%level >= target%level-1) then
+          if (nbor%download) then
+            source => nbor%task
+            if (verbose > 0) &
+            print '("has_support",2(i6,":",i2.2,3i3))', &
+            target%id, target%key, source%id, source%key
+            select type (source)
+            class is (patch_t)
+              call target%cover (source, nbor%distance, target%filled)
+            end select
+          end if
+        end if
         nbor => nbor%next
       end do
       has_support = all(target%filled==0)
-      !-------------------------------------------------------------------------
-      ! If the task now has support, clear the no_support bit
-      !-------------------------------------------------------------------------
-      if (has_support) then
-        if (target%is_set (bits%no_support)) then
-          !print *, target%id, 'halo clears no_support'
-          call target%clear (bits%no_support)
-          if (verbose > 0) then
-            write (stdlog,'(f12.6,a,i6,":",i2.2)') &
-              wallclock(), pad_trace(1:indent)//&
-              'halo_t%check_support: clear no_support id=', &
-              target%id, target%level
-          end if
-        end if
-      else if (target%is_clear (bits%no_support)) then
-        !print *, target%id, 'halo sets no_support'
-        call target%set (bits%no_support)
-        if (verbose > 0) then
-          write (stdlog,'(f12.6,a,i6,":",i2.2)') &
-            wallclock(), pad_trace(1:indent)//&
-            'halo_t%check_support: set no_support id=', &
-            target%id, target%level
-        end if
-      else
-        !print *, target%id, 'halo confirms no_support'
-        call target%set (bits%no_support)
-        if (verbose > 0) then
-          write (stdlog,'(f12.6,a,i6,":",i2.2)') &
-            wallclock(), pad_trace(1:indent)//&
-            'halo_t%check_support:  confirms no_support id=', &
-            target%id, target%level
-        end if
-      end if
-      !-------------------------------------------------------------------------
-      ! If no support, request support
-      !-------------------------------------------------------------------------
-      if (.not.has_support) then
-        nbor => target%link%parent%nbor
-        do while (associated(nbor))
-          if (nbor%task%level == target%level-2) then
-            call request_support (self, target, nbor%task)
-          end if
-          nbor => nbor%next
-        end do
-      end if
     end select
   end if
-END SUBROUTINE check_support
+  call self%remove_nbor_list (nbors)
+END FUNCTION has_support
 
 !===============================================================================
 !> Find the task at level L-2 that should be refined to provide support, and
 !> mark the corresponging cells in its patch_t%request(:,:,:) array.  The
 !> task must be among the level L-2 nbors of the target parent
 !===============================================================================
-SUBROUTINE request_support (self, target, task)
+SUBROUTINE request_support (self, source)
   class(halo_t):: self
-  class(patch_t):: target
+  class(task_t), pointer:: source
+  !.............................................................................
+  class(task_t), pointer:: target
   integer:: i1, i2, i3, key(4), ii(3), n
-  real(8):: point(3)
-  class(task_t), pointer:: task
+  real(8):: point(3), distance(3)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('halo_t%request_support', itimer=itimer)
-  select type (task)
+  target => self%task
+  select type (target)
   class is (patch_t)
-    n = 0
-    do i3=1,target%gn(3)
-    do i2=1,target%gn(2)
-    do i1=1,target%gn(1)
-      if (target%filled(i1,i2,i3) == 1) then
-        !-----------------------------------------------------------------------
-        ! If the task contains the point, mark it, and clear the cell
-        !-----------------------------------------------------------------------
-        point = target%myposition ([i1,i2,i3])
-        if (task%authority%contains (point)) then
-          ii = task%index_only (point, nearest=.true.)
-          task%request (ii(1),ii(2),ii(3)) = 2.0
-          target%filled(i1,i2,i3) = 0
-          n = n+1
+    call target%support_arrays ()
+    select type (source)
+    class is (patch_t)
+      call source%request_lock%set ('halo_t%request_support')
+      n = 0
+      do i3=1,target%gn(3)
+      do i2=1,target%gn(2)
+      do i1=1,target%gn(1)
+        if (target%filled(i1,i2,i3) == 1) then
+          !---------------------------------------------------------------------
+          ! If the source contains the point, mark it, and clear the cell
+          !---------------------------------------------------------------------
+          point = target%local_position ([i1,i2,i3]) &
+                + source%distance_to (target)
+          if (source%authority%contains (point)) then
+            ii = source%index_only (point, nearest=.true.)
+            source%request(ii(1),ii(2),ii(3)) = 2.0
+            target%filled(i1,i2,i3) = 0
+            n = n+1
+          end if
         end if
-      end if
-    end do
-    end do
-    end do
-    !print *, 'cleared', task%id, target%id, n, all(target%filled==0)
+      end do
+      end do
+      end do
+      call source%request_lock%unset ('halo_t%request_support')
+      !print *, 'cleared', source%id, target%id, n, all(target%filled==0)
+    end select
   end select
   call trace%end (itimer)
 END SUBROUTINE request_support
+
+!===============================================================================
+!> Check if a link task has support, and set status accordingly
+!===============================================================================
+SUBROUTINE check_support (self)
+  class(halo_t):: self
+  class(task_t), pointer:: source
+  class(nbor_t), pointer:: nbor
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin ('halo_t%check_support', itimer=itimer)
+  if (self%has_support()) then
+    if (self%task%is_set (bits%no_support)) then
+      !.........................................................................
+!print *, self%task%id, 'clear no_support', omp%thread
+      !.........................................................................
+      call self%task%clear (bits%no_support)
+    end if
+  else
+    if (self%task%is_clear (bits%no_support)) then
+      !.........................................................................
+!print *, self%task%id, 'set no_support', omp%thread
+      !.........................................................................
+      call self%task%set (bits%no_support)
+      call self%find_support (source)
+      if (associated(source)) then
+        call self%request_support (source)
+!print *, self%task%id, 'request support from', source%id
+      else
+        write (stderr,*) 'halo_t%check_support WARNING: did not find support', &
+          self%task%id, omp%thread, associated(self%nbor)
+        nbor => self%nbor
+        do while (associated(nbor))
+          print *, nbor%task%id, nbor%task%level, nbor%distance/nbor%task%size
+          nbor => nbor%next
+        end do
+      end if
+    end if
+  end if
+  call trace%end (itimer)
+END SUBROUTINE check_support
+
+!===============================================================================
+!> Find a level L-2 task that overlaps
+!===============================================================================
+SUBROUTINE find_support (self, source)
+  class(halo_t):: self
+  class(task_t), pointer:: source, target
+  class(nbor_t), pointer:: nbor
+  !-----------------------------------------------------------------------------
+  call trace%begin ('halo_t%find_support')
+  target => self%task
+  nbor => self%nbor
+  do while (associated(nbor))
+    source => nbor%task
+    if (source%level == self%task%level-2) then
+      nbor%distance = target%distance_to (source)
+      if (source%authority%overlaps (target%interest, nbor%distance)) then
+        call trace%end ()
+        return
+      end if
+    end if
+    nbor => nbor%next
+  end do
+  nullify (source)
+  call trace%end ()
+END SUBROUTINE find_support
 
 END MODULE halo_mod
