@@ -17,7 +17,7 @@ MODULE timer_mod
   USE omp_lib
   implicit none
   private
-  integer, parameter:: maxproc=100, maxdepth=20
+  integer, parameter:: maxproc=100, maxdepth=50
   integer, save:: ntimer=0
   type:: latency_t
     real:: max=0.0
@@ -106,8 +106,8 @@ SUBROUTINE init (self)
       call self%lock%init ('timr')
       first_time = .false.
     end if
-    !$omp end critical (timer_cr)
     ntimer = 0
+    !$omp end critical (timer_cr)
     do i=0,omp%nthreads-1
       timers(i)%calls(:) = 0
       timers(i)%start(:) = 0d0
@@ -149,11 +149,12 @@ SUBROUTINE begin (self, name, itimer)
   character(len=*):: name
   integer:: itimer
   !.............................................................................
-  integer:: thread, i, otimer, istack
+  integer:: thread, i, otimer, istack, unit
   logical:: ok
-  real(8):: wc
+  real(8):: wc, used
   !-----------------------------------------------------------------------------
   if (io_unit%do_validate) return
+  unit = merge (stdout, stdlog, verbose > 1)
   thread = omp_get_thread_num()
   if (itimer==0) then
     !$omp critical (timer_cr)
@@ -184,19 +185,28 @@ SUBROUTINE begin (self, name, itimer)
   wc = wallclock()
   if (istack>0) then
     otimer = timers(thread)%stack(istack)
-    timers(thread)%total(otimer) = timers(thread)%total(otimer) &
-                                 + (wc - timers(thread)%start(otimer))
+    used = wc - timers(thread)%start(otimer)
+    timers(thread)%total(otimer) = timers(thread)%total(otimer) + used
+    !...........................................................................
+    if (verbose > 0) then
+      write (unit,'(80x,a,2i5,f10.6,3x,a)') &
+        '   timer%end: istack,itimer,used,name =', &
+        istack, otimer, used, trim(names(otimer))
+    end if
   end if
   !-----------------------------------------------------------------------------
-  ! Start the new timer, and record it on the stack
+  ! Start the new timer, and push it on the stack
   !-----------------------------------------------------------------------------
   timers(thread)%start(itimer) = wc
   istack = istack+1
   if (istack>maxdepth) call shared%abort ('too many timer levels;'//trim(name))
   timers(thread)%stack(istack) = itimer
   timers(thread)%istack = istack
+  !.............................................................................
   if (verbose > 0) then
-    print '(a,2i5,3x,a)', 'timer%begin: istack, itimer, name =', istack, itimer, trim(name)
+    write (unit,'(80x,a,2i5,10x,3x,a)') &
+      ' timer%begin: istack,itimer,used,name =', &
+      istack, itimer, trim(name)
   end if
 END SUBROUTINE begin
 
@@ -207,10 +217,11 @@ END SUBROUTINE begin
 SUBROUTINE end (self, itimer)
   class(timer_t):: self
   integer, optional:: itimer
-  integer::thread, istack, otimer
-  real(8):: wc, next_report
+  integer::thread, istack, otimer, unit
+  real(8):: wc, next_report, used
   !.............................................................................
   if (io_unit%do_validate) return
+  unit = merge (stdout, stdlog, verbose > 1)
   !-----------------------------------------------------------------------------
   ! Find the active timer for this thread
   !-----------------------------------------------------------------------------
@@ -222,13 +233,9 @@ SUBROUTINE end (self, itimer)
     return
   end if
   otimer = timers(thread)%stack(istack)
-  if (verbose > 0) then
-    print '(a,2i5,3x,a)', 'timer%end:   istack, otimer, name =', istack, otimer, trim(names(otimer))
-  end if
   !-----------------------------------------------------------------------------
-  ! Increment call counter and total time used
+  ! Check consistency
   !-----------------------------------------------------------------------------
-  wc = wallclock()
   if (present(itimer)) then
     if (itimer /= otimer) then
       write (stdout,'(i6,2(3x,a,i4))') &
@@ -236,9 +243,19 @@ SUBROUTINE end (self, itimer)
         ' not equal to expected value =', otimer
     end if
   end if
+  !-----------------------------------------------------------------------------
+  ! Increment call counter and total time used
+  !-----------------------------------------------------------------------------
+  wc = wallclock()
   timers(thread)%calls(otimer) = timers(thread)%calls(otimer) + 1
-  timers(thread)%total(otimer) = timers(thread)%total(otimer) + &
-                                 wc - timers(thread)%start(otimer)
+  used = wc - timers(thread)%start(otimer)
+  timers(thread)%total(otimer) = timers(thread)%total(otimer) + used
+  !.............................................................................
+  if (verbose > 0) then
+    write (unit,'(80x,a,2i5,f10.6,3x,a)') &
+      '   timer%end: istack,itimer,used,name =', &
+      istack, otimer, used, trim(names(otimer))
+  end if
   !-----------------------------------------------------------------------------
   ! Check if there is a suspended timer present, and if so restart it
   !-----------------------------------------------------------------------------
@@ -246,6 +263,13 @@ SUBROUTINE end (self, itimer)
   if (istack>0) then
     otimer = timers(thread)%stack(istack)
     timers(thread)%start(otimer) = wc
+    !...........................................................................
+    if (verbose > 0) then
+      write (unit,'(80x,a,2i5,10x,3x,a)') &
+        'timer%resume: istack,itimer,used,name =', &
+        istack, otimer, trim(names(otimer))
+    end if
+    !...........................................................................
   else if (istack<0) then
     print *,'WARNNING: too many timer%end calls'
     istack = 0
@@ -335,7 +359,7 @@ SUBROUTINE real_print (self)
   timer%latency%n    = 0
   timer%mpi_test = 0_8
   timer%mpi_hit = 0_8
-  do i=1,ntimer
+  do i=1,lntimer
     timers(:)%total(i) = 0d0
     timers(:)%calls(i) = 0
   end do
@@ -363,7 +387,7 @@ contains
     end if
     if (total > 0.0) then
       mesg = .false.
-      do i=1,ntimer
+      do i=1,lntimer
         if (proc(i)/total > min_fraction) then
           per_call = proc(i)/max(ncalls(i),1d0)
           warn = per_call < 0.5e-6

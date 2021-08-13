@@ -53,15 +53,6 @@ SUBROUTINE trace_begin (id, set_verbose, itimer, detailed_timer)
   integer:: verbose
   real(8):: wc
   !-----------------------------------------------------------------------------
-  if (present(itimer)) then
-    if (present(detailed_timer)) then
-      if (detailed_timer) then
-        call timer%begin (id, itimer)
-      end if
-    else
-      call timer%begin (id, itimer)
-    end if
-  end if
   tracing(level) = trim(id)
   if (present(set_verbose)) then
     verbosity(level) = set_verbose
@@ -73,19 +64,31 @@ SUBROUTINE trace_begin (id, set_verbose, itimer, detailed_timer)
     level = level+1
     indent = indent+2
   end if
-  if (.not.io_unit%do_trace) return
-  write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.6,',indent,'x,a,i5)'
-  if (io_unit%verbose>=verbose) then
-    wc = wallclock()
-    if (io_unit%do_validate) wc = 0d0
-    if (io_unit%omp_trace) then
-      call print_out (io_unit%log)
-    else
-      !$omp critical (trace_cr)
-      call print_out (io_unit%output)
-      !$omp end critical (trace_cr)
+  if (io_unit%do_trace) then
+    write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.6,',indent,'x,a,i5)'
+    if (io_unit%verbose >= verbose) then
+      wc = wallclock()
+      if (io_unit%do_validate) wc = 0d0
+      if (io_unit%omp_trace) then
+        call print_out (io_unit%log)
+      else
+        !$omp critical (trace_cr)
+        call print_out (io_unit%output)
+        !$omp end critical (trace_cr)
+      end if
     end if
   end if
+  !-----------------------------------------------------------------------------
+  if (present(itimer)) then
+    if (present(detailed_timer)) then
+      if (detailed_timer) then
+        call timer%begin (id, itimer)
+      end if
+    else
+      call timer%begin (id, itimer)
+    end if
+  end if
+  !-----------------------------------------------------------------------------
 contains
 !===============================================================================
 subroutine print_out (unit)
