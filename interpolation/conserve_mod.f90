@@ -32,6 +32,7 @@ SUBROUTINE restrict (self, target, source, all_tgt, all_src, only)
   !.............................................................................
   real, allocatable:: src(:,:,:,:)
   integer:: i, i1, i2, i3, iv, iv0, iv1, j1, j2, j3, tid
+  integer:: j1m, j2m, j3m, j1p, j2p, j3p
   integer, dimension(3):: j, l, u, ls, us
   real:: c
   integer, save:: itimer=0
@@ -53,8 +54,15 @@ SUBROUTINE restrict (self, target, source, all_tgt, all_src, only)
     ! that corresponds to the first internal point of the fine source mesh
     !---------------------------------------------------------------------------
     m => source%mesh(i)
-    l(i) = index (target%mesh(i), m%p + m%r(m%li))
-    u(i) = index (target%mesh(i), m%p + m%r(m%ui))
+    if (present(all_src)) then
+      l(i) = index (target%mesh(i), m%p + m%r(m%lb))
+      u(i) = index (target%mesh(i), m%p + m%r(m%ub))
+    else
+      l(i) = index (target%mesh(i), m%p + m%r(m%li))
+      u(i) = index (target%mesh(i), m%p + m%r(m%ui))
+    end if
+    l(i) = max(l(i),m%lb)
+    u(i) = min(u(i),m%ub)
     !---------------------------------------------------------------------------
     ! j(:) is the first mid-point in the source, which corresponds in position
     ! to the first point in the coarse (target) mesh
@@ -104,37 +112,77 @@ SUBROUTINE restrict (self, target, source, all_tgt, all_src, only)
         j2 = j(2)
         do i2=l(2),u(2)
           j1 = j(1)
-          do i1=l(1),u(1)
-            target%mem(i1,i2,i3,iv,target%it,1) = &
-             (src(j1-1,j2-1,j3-1,iv) + &
-              src(j1  ,j2-1,j3-1,iv) + &
-              src(j1+1,j2-1,j3-1,iv) + &
-              src(j1-1,j2  ,j3-1,iv) + &
-              src(j1  ,j2  ,j3-1,iv) + &
-              src(j1+1,j2  ,j3-1,iv) + &
-              src(j1-1,j2+1,j3-1,iv) + &
-              src(j1  ,j2+1,j3-1,iv) + &
-              src(j1+1,j2+1,j3-1,iv) + &
-              src(j1-1,j2-1,j3  ,iv) + &
-              src(j1  ,j2-1,j3  ,iv) + &
-              src(j1+1,j2-1,j3  ,iv) + &
-              src(j1-1,j2  ,j3  ,iv) + &
-              src(j1  ,j2  ,j3  ,iv) + &
-              src(j1+1,j2  ,j3  ,iv) + &
-              src(j1-1,j2+1,j3  ,iv) + &
-              src(j1  ,j2+1,j3  ,iv) + &
-              src(j1+1,j2+1,j3  ,iv) + &
-              src(j1-1,j2-1,j3+1,iv) + &
-              src(j1  ,j2-1,j3+1,iv) + &
-              src(j1+1,j2-1,j3+1,iv) + &
-              src(j1-1,j2  ,j3+1,iv) + &
-              src(j1  ,j2  ,j3+1,iv) + &
-              src(j1+1,j2  ,j3+1,iv) + &
-              src(j1-1,j2+1,j3+1,iv) + &
-              src(j1  ,j2+1,j3+1,iv) + &
-              src(j1+1,j2+1,j3+1,iv))*c
+          if (j(1) > 1) then
+            do i1=l(1),u(1)
+              target%mem(i1,i2,i3,iv,target%it,1) = &
+               (src(j1-1,j2-1,j3-1,iv) + &
+                src(j1  ,j2-1,j3-1,iv) + &
+                src(j1+1,j2-1,j3-1,iv) + &
+                src(j1-1,j2  ,j3-1,iv) + &
+                src(j1  ,j2  ,j3-1,iv) + &
+                src(j1+1,j2  ,j3-1,iv) + &
+                src(j1-1,j2+1,j3-1,iv) + &
+                src(j1  ,j2+1,j3-1,iv) + &
+                src(j1+1,j2+1,j3-1,iv) + &
+                src(j1-1,j2-1,j3  ,iv) + &
+                src(j1  ,j2-1,j3  ,iv) + &
+                src(j1+1,j2-1,j3  ,iv) + &
+                src(j1-1,j2  ,j3  ,iv) + &
+                src(j1  ,j2  ,j3  ,iv) + &
+                src(j1+1,j2  ,j3  ,iv) + &
+                src(j1-1,j2+1,j3  ,iv) + &
+                src(j1  ,j2+1,j3  ,iv) + &
+                src(j1+1,j2+1,j3  ,iv) + &
+                src(j1-1,j2-1,j3+1,iv) + &
+                src(j1  ,j2-1,j3+1,iv) + &
+                src(j1+1,j2-1,j3+1,iv) + &
+                src(j1-1,j2  ,j3+1,iv) + &
+                src(j1  ,j2  ,j3+1,iv) + &
+                src(j1+1,j2  ,j3+1,iv) + &
+                src(j1-1,j2+1,j3+1,iv) + &
+                src(j1  ,j2+1,j3+1,iv) + &
+                src(j1+1,j2+1,j3+1,iv))*c
               j1 = j1 + 3
-          end do
+            end do
+          else
+            do i1=l(1),u(1)
+              j1m = max(j1-1,1)
+              j2m = max(j2-1,1)
+              j3m = max(j3-1,1)
+              j1p = min(j1+1,source%gn(1))
+              j2p = min(j2+1,source%gn(2))
+              j3p = min(j3+1,source%gn(3))
+              target%mem(i1,i2,i3,iv,target%it,1) = &
+               (src(j1m,j2m,j3m,iv) + &
+                src(j1 ,j2m,j3m,iv) + &
+                src(j1p,j2m,j3m,iv) + &
+                src(j1m,j2 ,j3m,iv) + &
+                src(j1 ,j2 ,j3m,iv) + &
+                src(j1p,j2 ,j3m,iv) + &
+                src(j1m,j2p,j3m,iv) + &
+                src(j1 ,j2p,j3m,iv) + &
+                src(j1p,j2p,j3m,iv) + &
+                src(j1m,j2m,j3 ,iv) + &
+                src(j1 ,j2m,j3 ,iv) + &
+                src(j1p,j2m,j3 ,iv) + &
+                src(j1m,j2 ,j3 ,iv) + &
+                src(j1 ,j2 ,j3 ,iv) + &
+                src(j1p,j2 ,j3 ,iv) + &
+                src(j1m,j2p,j3 ,iv) + &
+                src(j1 ,j2p,j3 ,iv) + &
+                src(j1p,j2p,j3 ,iv) + &
+                src(j1m,j2m,j3p,iv) + &
+                src(j1 ,j2m,j3p,iv) + &
+                src(j1p,j2m,j3p,iv) + &
+                src(j1m,j2 ,j3p,iv) + &
+                src(j1 ,j2 ,j3p,iv) + &
+                src(j1p,j2 ,j3p,iv) + &
+                src(j1m,j2p,j3p,iv) + &
+                src(j1 ,j2p,j3p,iv) + &
+                src(j1p,j2p,j3p,iv))*c
+              j1 = j1 + 3
+            end do
+          end if
           j2 = j2 + 3
         end do
         j3 = j3 + 3
