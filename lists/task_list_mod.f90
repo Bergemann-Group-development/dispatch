@@ -361,6 +361,7 @@ SUBROUTINE update (self, head, test)
     call trace%end (itimer)
     return
   end if
+  omp%thread_task = task%id
   !-----------------------------------------------------------------------------
   ! Update the guard zones (or more generally get whatever information is
   ! needed from neighbord or boundary conditions), by calling halo_t%update.
@@ -392,6 +393,7 @@ SUBROUTINE update (self, head, test)
   ! If the task was derefined it does not exist, so bail out
   !-----------------------------------------------------------------------------
   if (derefined) then
+    omp%thread_task = -1
     call trace%end (itimer)
     return
   end if
@@ -557,6 +559,7 @@ SUBROUTINE update (self, head, test)
     call self%check_nbors (head)
   end if
   !.............................................................................
+  omp%thread_task = -1
   call trace%end (itimer)
   return
 END SUBROUTINE update
