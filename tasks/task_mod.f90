@@ -1309,7 +1309,7 @@ SUBROUTINE courant_condition (self, detailed_timer)
   if (io%do_output .and. io%out_time > 0.0 .and. self%time > start_time) then
     self%dtime = min (self%dtime, io%out_time)
     if (self%time < self%out_next) then
-      if (self%time + self%dtime*(1.+self%grace) > self%out_next) then
+      if (self%time + self%dtime > self%out_next) then
         self%dtime = self%out_next - self%time
         do while (self%time + self%dtime*(1.+self%grace) < self%out_next)
           self%dtime = self%dtime*1.00001d0
