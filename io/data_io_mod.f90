@@ -383,8 +383,9 @@ END SUBROUTINE output
 !===============================================================================
 SUBROUTINE open_and_close (self)
   class(data_io_t):: self
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('data_io_t%open_and_close')
+  call trace%begin ('data_io_t%open_and_close', itimer=itimer)
   if (io%method == 'snapshot') then
     call parallel_io%open_and_close ()
   else if (io%method == 'amr') then
@@ -393,7 +394,7 @@ SUBROUTINE open_and_close (self)
       call self%lock%unset ('halt')
     end if
   end if
-  call trace%end ()
+  call trace%end (itimer)
 END SUBROUTINE open_and_close
 
 !===============================================================================
