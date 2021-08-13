@@ -528,6 +528,14 @@ SUBROUTINE pre_init (self)
   self%print_next   = print_time
   self%limit_dtime  = limit_dtime
   !-----------------------------------------------------------------------------
+  ! Preliminary region information, relative to the task position.  This may
+  ! change in patch_t%init, but the settings below allow overlap() calls to work
+  !-----------------------------------------------------------------------------
+  self%authority%l = - self%size*0.5_8
+  self%authority%u = + self%size*0.5_8
+  self%interest%l  = self%authority%l - self%ng*self%size/self%n
+  self%interest%u  = self%authority%u + self%ng*self%size/self%n
+  !-----------------------------------------------------------------------------
   allocate (self%request_lock)                   ! allocate lock for frefine
   call self%request_lock%init                    ! initialize lock
   !-----------------------------------------------------------------------------
