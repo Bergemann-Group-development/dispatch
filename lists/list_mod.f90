@@ -848,8 +848,8 @@ SUBROUTINE check_all (self, repair)
           write (io_unit%log,'(a,i6,3x,3l1,2f8.3)') &
             'nbor, time =', nbor%task%id, &
             nbor%needed, nbor%needs_me, nbor%download, &
-            (nbor%task%time - link%task%time)/max(tiny(1.),nbor%task%dtime), &
-            link%task%grace + shared%extra_grace
+            (nbor%task%time - link%task%time)/max(tiny(1d0),nbor%task%dtime), &
+            link%task%grace + self%extra_grace
           nbor => nbor%next
         end do
         nq = self%nq

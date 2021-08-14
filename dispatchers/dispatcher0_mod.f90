@@ -36,15 +36,15 @@ MODULE dispatcher0_mod
     procedure:: no_queue
   end type
   real(8):: stall_start=0d0, max_stalled=600d0, retry_stalled=30d0
-  real:: delay_ms=0.0               ! wait time in no_queue()
+  real:: delay_ms=1.0
   real:: extra_grace=0.0            ! extra grace max, at nstall2
   integer, save:: mpi_only_master=100
   integer, save:: verbose=0
   integer, save:: stalled=0
   integer, save:: n_spin=0
   integer, save:: n_update=0
-  integer, save:: nstall1=3000      ! after nstall1*delay_ms, increase grace
-  integer, save:: nstall2=10000     ! after nstall2*delay_ms, call stall_handler
+  integer, save:: nstall1=10000     ! after nstall1*delay_ms, increase grace
+  integer, save:: nstall2=30000     ! after nstall2*delay_ms, call stall_handler
   integer, save:: min_nq=2**30
   logical, save:: debug=.false.
   logical, save:: do_delay=.true.
