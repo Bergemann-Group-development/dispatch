@@ -10,8 +10,8 @@ include $(TOP)/extras/initial_conditions/Makefile
 sinclude $(TOP)/extras/sink_particles/Makefile
 
 # Dependencies
-extras_mod.o            : io_mod.o trace_mod.o gpatch_mod.o connect_mod.o \
-                          task_mod.o list_mod.o initial_conditions_mod.o
+extras_mod.o            : io_mod.o trace_mod.o gpatch_mod.o task_mod.o \
+                          list_mod.o initial_conditions_mod.o
 selfgravity_mod.o       : io_mod.o gpatch_mod.o poisson_mod.o vector_ops.o \
                           guards_mod.o timestep_mod.o scaling_mod.o math_mod.o \
                           halo_mod.o

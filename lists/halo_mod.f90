@@ -734,7 +734,7 @@ FUNCTION has_support (self)
   call self%copy_nbor_list (self%nbor, nbors)
   call self%lock%unset ('download_link')
   target => self%task
-  if (target%id /= omp%thread_task) then
+  if (omp%thread_task > 0 .and. target%id /= omp%thread_task) then
     write (stderr,*) 'has_support WARNING: target%id,thread_task=', &
       target%id, omp%thread_task
   end if

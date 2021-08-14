@@ -348,6 +348,7 @@ SUBROUTINE update (self, head, test)
   !-----------------------------------------------------------------------------
   levelstart = wallclock()
   task => head%task
+  omp%thread_task = task%id
   call io%check_flags
   if (task%id==io%id_track) then
     task%track =  .not.task%track

@@ -21,7 +21,6 @@ MODULE patch_mod
   USE mesh_mod
   USE index_mod
   USE shared_mod
-  USE connect_mod
   USE region_mod
   USE lagrange_mod
   implicit none
@@ -43,14 +42,11 @@ MODULE patch_mod
     logical           , pointer, contiguous:: outside(:,:,:) => null()
     real(var_k)       , pointer, contiguous:: u_phase(:,:,:) => null()
     !dir$ attributes align: 64 :: filled
-    !--- anonymous pointer, which may be used to connect extra info to the solvers
-    type(connect_t):: connect
     class(mesh_t), dimension(:), pointer:: mesh => null()
     real:: courant                      ! courant number
     real(8):: pdf_next=0.0              ! next PDF output time
-    !real(8):: gamma=1.4                 ! gas gamma
     real(8):: dt_fixed                  ! for fixed time step Courant condition
-    real(8):: omega(3)=0d0              ! generic angular velocity
+    !real(8):: omega(3)=0d0              ! generic angular velocity
     real(8):: radius=0d0                ! generic radius
     real(8), pointer:: e(:,:) => null() ! local unit vectors
     real(8), pointer:: einv(:,:) => null() ! local unit vectors

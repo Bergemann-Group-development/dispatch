@@ -463,7 +463,8 @@ FUNCTION refine_needed (self, link) RESULT (refine)
   ! Extras refinement
   !-----------------------------------------------------------------------------
   extras => task
-  refine = max(refine, extras%check_refine (extras))
+  end select
+  refine = max(refine, extras%check_refine (task))
   if (verbose > 1) write (stdlog,1) &
     wallclock(), pad_trace(1:indent), id, level, refine, &
     minval(patch%frefine), maxval(patch%frefine), 'extras'
@@ -520,7 +521,6 @@ FUNCTION refine_needed (self, link) RESULT (refine)
   if (verbose > 1) write (stdlog,1) &
     wallclock(), pad_trace(1:indent), id, level, refine, &
     minval(patch%frefine), maxval(patch%frefine), 'derefine support'
-  end select
   call trace%end (itimer, detailed_timer=detailed_timer)
 END FUNCTION refine_needed
 
@@ -941,7 +941,6 @@ SUBROUTINE make_child_patch (self, parent, pos, child_size, &
       call parent%dump (4, ad_hoc=.true.)
     end if
   else
-    call child%initial_conditions%init ()
     if (do_dump) then
       call child%dump (5, ad_hoc=.true.)
       call parent%dump (6, ad_hoc=.true.)
@@ -1012,7 +1011,8 @@ FUNCTION check_Jeans (self, patch) RESULT(refine_it)
   dmin = minval(d)
   call io%assert (associated(patch), '%patch not associated in check_Jeans')
   allocate(pg(patch%gn(1),patch%gn(2),patch%gn(3)))
-  call patch%gas_pressure_sub (pg)
+  !call patch%gas_pressure_sub (pg)
+  pg = patch%gas_pressure()
   pgmin = minval(pg)
   if (pgmin <= 0.0) then
     imin = minloc(pg)

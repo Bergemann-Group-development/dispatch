@@ -160,6 +160,7 @@ MODULE task_mod
     procedure:: update_position
     procedure:: velocity_shift
     procedure:: hash_key
+    procedure:: check_refine
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -217,7 +218,6 @@ END SUBROUTINE pre_update
 SUBROUTINE post_update (self)
   class (task_t):: self
   call trace%begin ('task_t%post_update')
-  call io%abort('task_t%post_update called')
   call trace%end ()
 END SUBROUTINE post_update
 
@@ -1456,5 +1456,15 @@ FUNCTION hash_key (self, position, origin, size, box, level) RESULT (key)
     key(2:4) = modulo(key(2:4),n)
   end where
 END FUNCTION hash_key
+
+!===============================================================================
+!> Interface to refinement
+!===============================================================================
+INTEGER function check_refine (self, task)
+  class(task_t):: self
+  class(task_t), pointer:: task
+  !.............................................................................
+  check_refine = -1                                                    ! keep
+END FUNCTION check_refine
 
 END MODULE task_mod
