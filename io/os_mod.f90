@@ -49,11 +49,14 @@ SUBROUTINE mkdir (dir)
 #else
       inquire (file=dir, exist=exists)
 #endif
-      if (exists) exit
+      if (exists) then
+        write (stdout,*) 'os%mkdir: rank,wait=', mpi%rank, wallclock()-start
+        exit
+      end if
       call omp%delay (ms=ms)
     end do
     if (.not.exists) then
-      write (io_unit%output,*) 'WARNING: rank',mpi%rank,' cannot see',dir
+      write (stderr,*) 'WARNING: rank',mpi%rank,' cannot see ',dir
     end if
   end if
 END SUBROUTINE mkdir
@@ -78,51 +81,65 @@ SUBROUTINE mkdir_real (dir)
 #endif
   character(len=*):: dir
   logical:: exists
-  !.............................................................................
+  !-----------------------------------------------------------------------------
+  ! Note that the calling code makes sure only one thread executes this
+  !-----------------------------------------------------------------------------
 #ifdef __INTEL_COMPILER
   inquire (directory=dir, exist=exists)
   if (exists) return
   if (.not.io_unit%do_validate) then
     exists = MakeDirQQ (dir)
     if (exists) then
-      write(stderr,*) ' Intel created directory '//dir
+      write(stderr,*) 'Intel created directory '//dir
     else
       write(stderr,'(2(a,i5,2x),a)') 'rank:', mpi%rank, 'thread:', omp%thread, &
         ' WARNING: Intel failed to create directory '//dir
     end if
   end if
 #else
-  !$omp critical (system_cr)
   inquire (file=dir, exist=exists)
   if (.not.exists) then
+    !---------------------------------------------------------------------------
+    ! First try the C-binding, wating up to 1s for a result
+    !---------------------------------------------------------------------------
+    i = fmkdir(dir, int(o'772',c_int16_t))
     do iter=1,10
+      inquire (file=dir, exist=exists)
+      if (exists) then
+        if (.not.io_unit%do_validate) &
+          write(stderr,*) 'C-binding call created directory '//dir, iter
+        exit
+      end if
       i = fmkdir(dir, int(o'772',c_int16_t))
       call omp%delay (ms=ms)
-      inquire (file=dir, exist=exists)
-      if (exists) then
-        if (.not.io_unit%do_validate) &
-          write(stderr,*) ' C-binding call created directory '//dir
-        exit
-      else
-        if (.not.io_unit%do_validate) &
-          write(stderr,'(2(a,i5,2x),a)') 'rank:', mpi%rank, 'thread:', omp%thread, &
-            ' WARNING: C-binding call failed to create directory '//dir
+    end do
+    inquire (file=dir, exist=exists)
+    if (.not. exists) then
+      if (.not.io_unit%do_validate) then
+        write(stderr,'(2(a,i5,2x),a)') 'rank:', mpi%rank, 'thread:', omp%thread, &
+          ' WARNING: C-binding call failed to create directory '//dir
       end if
+      !-------------------------------------------------------------------------
+      ! If the dir does not exist, fall back to a system call
+      !-------------------------------------------------------------------------
       call system ('mkdir -p '//dir)
-      call omp%delay (ms=ms)
-      inquire (file=dir, exist=exists)
-      if (exists) then
-        if (.not.io_unit%do_validate) &
-          write(stderr,*) ' system call created directory '//dir
-        exit
-      else
+      do iter=1,10
+        inquire (file=dir, exist=exists)
+        if (exists) then
+          if (.not.io_unit%do_validate) &
+            write(stderr,*) 'system call created directory '//dir, iter
+          exit
+        end if
+        call system ('mkdir -p '//dir)
+        call omp%delay (ms=ms)
+      end do
+      if (.not. exists) then
         if (.not.io_unit%do_validate) &
           write(stderr,'(2(a,i5,2x),a)') 'rank:', mpi%rank, 'thread:', omp%thread, &
           ' WARNING: system call failed to create directory '//dir
       end if
-    end do
+    end if
   end if
-  !$omp end critical (system_cr)
 #endif
 END SUBROUTINE mkdir_real
 
