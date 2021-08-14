@@ -80,8 +80,9 @@ MODULE data_io_mod
   type, public:: data_io_t
     logical:: initialized=.false.
     integer:: iostat=0
+    integer:: iout=0, created=-1
     type(dll_t):: kind_list
-    type(lock_t):: lock
+    type(lock_t):: lock, dirlock
     type(counters_t):: counters
   contains
     procedure:: init
@@ -134,6 +135,7 @@ SUBROUTINE init (self, task)
       end if
       call aux%init
       call self%lock%init ('data_io')
+      call self%dirlock%init ('data_io')
       call self%kind_list%init
       self%initialized = .true.
       first_time = .false.
@@ -258,7 +260,6 @@ SUBROUTINE output (self, patch, experiment_name)
       if (io%verbose > 0) &
         write (stdout,'(a,i6,3i4,2f12.6)') &
         'data_io_t%output: ', patch%id, np, it, patch%nt, t, patch%time
-      call io%lock%set ('output2')
       if (io%verbose > 1) &
         write (io%output,*) wallclock(),' thread',omp%thread,' waitfor output'
       !-------------------------------------------------------------------------
@@ -272,11 +273,8 @@ SUBROUTINE output (self, patch, experiment_name)
       if (io%verbose > 1) &
         write (io%output,*) wallclock(),' thread',omp%thread,' locked output'
       do while (patch%t(it) >= patch%out_next)
-        if (created < patch%iout) then
-          created = patch%iout
-          if (io%do_output) call os%mkdir (trim(io%outputname))
-        end if
-        if (io%do_output) call os%mkdir_next_output (patch%iout)
+        !-----------------------------------------------------------------------
+        call io%lock%set ('output2')
         !-----------------------------------------------------------------------
         count = self%counters%decrement (patch%iout+1, io%nwrite)
         if (io%verbose > 0) &
@@ -301,10 +299,10 @@ SUBROUTINE output (self, patch, experiment_name)
         case default
           call mpi%abort ('unknown output method = '//io%method)
         end select
-        !-----------------------------------------------------------------------
+        !.......................................................................
         if (count==0 .and. .not.io_unit%do_validate) then
-        !  io_count = mod(io%counter%update(1),mpi%size)
-        !  io_active = .true.
+          !  io_count = mod(io%counter%update(1),mpi%size)
+          !  io_active = .true.
           !---------------------------------------------------------------------
           ! Write a line in the log with snapshot time info
           !---------------------------------------------------------------------
@@ -328,7 +326,12 @@ SUBROUTINE output (self, patch, experiment_name)
         call patch%aux%output (patch%iout, patch%id)
         call output_nml (patch, append)
         !-----------------------------------------------------------------------
+        ! Increment output counter and unlock
+        !-----------------------------------------------------------------------
         patch%iout = patch%iout+1
+        self%iout = max(self%iout, patch%iout)
+        call io%lock%unset ('output2')
+        !-----------------------------------------------------------------------
         if (io%out_time==0.0) exit
         !-----------------------------------------------------------------------
         if (io%verbose > 1) &
@@ -338,14 +341,13 @@ SUBROUTINE output (self, patch, experiment_name)
             patch%iout, io%nwrite, count
         !-----------------------------------------------------------------------
         patch%out_next = patch%out_next + io%out_time
-        if (io%do_output) call os%mkdir_next_output (patch%iout)
       end do
       if (io%verbose > 1) &
         write (io%output,*) wallclock(),' thread',omp%thread,' unlocked output'
-      call io%lock%unset ('output2')
     end if
     !---------------------------------------------------------------------------
     ! Detect when an I/O operation is complete on all ranks
+    ! FIXME: This part is temporarily disabled
     !---------------------------------------------------------------------------
     if (io_active .and. use_lock) then
       call io%lock%set ('output3')
@@ -381,11 +383,54 @@ SUBROUTINE output (self, patch, experiment_name)
 END SUBROUTINE output
 
 !===============================================================================
+!> This procedure is called outside of the task update part of task_list%update,
+!> and hence if a thread has to wait here for a long time it does not affect
+!> the work of other threads.
+!===============================================================================
 SUBROUTINE open_and_close (self)
   class(data_io_t):: self
+  logical:: im_the_one
+  logical, save:: first_time=.true.
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('data_io_t%open_and_close', itimer=itimer)
+  !-----------------------------------------------------------------------------
+  ! Create directories ahead of time, without blocking progress. The attribute
+  ! self%iout, set elsewhere, is the snapshot number to do mkdir for.  It is
+  ! initially zero, which makes sure that a directory for snapshot 0 exists.
+  !-----------------------------------------------------------------------------
+  im_the_one = .false.
+  if (self%created < self%iout .or. first_time) then
+    !---------------------------------------------------------------------------
+    ! The first thread that reaches this point creates a lock, increments the
+    ! count of directories, and releases the lock before continuing to create
+    ! the directory
+    !---------------------------------------------------------------------------
+    call self%dirlock%set ('mkdir')
+    if (self%created < self%iout) then
+      !-------------------------------------------------------------------------
+      ! Only one thread succeeds to come here
+      !-------------------------------------------------------------------------
+      self%created = self%iout
+      im_the_one = io%do_output
+    end if
+    !---------------------------------------------------------------------------
+    ! The first time all threads that enter are caught by the lock, and must
+    ! wait until the first thread has succeeded
+    !---------------------------------------------------------------------------
+    first_time = .false.
+    call self%dirlock%unset ('mkdir')
+    !---------------------------------------------------------------------------
+    ! The lucky thread can now spend the time it takes to make a directory
+    !---------------------------------------------------------------------------
+    if (im_the_one) then
+      call os%mkdir (trim(io%outputname))
+      call os%mkdir_next_output (self%iout)
+    end if
+  end if
+  !-----------------------------------------------------------------------------
+  !> Some methods require opening and closing files collectively
+  !-----------------------------------------------------------------------------
   if (io%method == 'snapshot') then
     call parallel_io%open_and_close ()
   else if (io%method == 'amr') then
