@@ -86,6 +86,7 @@ CONTAINS
 SUBROUTINE init (self)
   class(boundaries_t) :: self
   ! ----------------------------------------------------------------------------
+  class(patch_t), pointer:: patch
   integer:: iostat
   logical, save:: first_time=.true.
   namelist /boundary_params/ d_bot, e_bot, ee_top, bottom_bc_rate, verbose, divb_iter, &
@@ -95,6 +96,7 @@ SUBROUTINE init (self)
   call trace%begin('boundaries_t%init')
   !.............................................................................
   call io%lock%set('boundaries_t%init')
+  patch => self%patch
   if (first_time) then
     rewind (io%input)
     read (io%input, boundary_params, iostat=iostat)
@@ -130,8 +132,7 @@ SUBROUTINE init (self)
 
   self%gravity = -scaling%grav*(cgs%m_sun/scaling%m)/(cgs%r_sun/scaling%l)**2
 
-
-  call self%standard_boundaries_t%init()
+  call self%standard_boundaries_t%init ()
 END SUBROUTINE init
 
 SUBROUTINE primary(self, mem)

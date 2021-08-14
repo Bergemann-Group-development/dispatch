@@ -62,6 +62,7 @@ MODULE extras_mod
   USE io_mod
   USE trace_mod
   USE connect_mod
+  USE initial_conditions_mod
   !USE selfgravity_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.
@@ -85,6 +86,7 @@ MODULE extras_mod
   !-----------------------------------------------------------------------------
   type, public, extends(gpatch_t):: extras_t
     class(gpatch_t), pointer:: gpatch => null()                         ! keep
+    type(initial_conditions_t):: initial_conditions                     ! keep
     !type(forces_t):: forces                                            ! forces
     !class(pic_t), pointer:: pic                                        ! pic
     type (spitzer_t):: spitzer                                         ! spitzer
@@ -146,6 +148,7 @@ SUBROUTINE init (self)
   !.............................................................................
   call trace%begin ('extras_t%init')
   call self%gpatch_t%init                                               ! keep
+  call self%initial_conditions%init                                     ! keep
   !-----------------------------------------------------------------------------
   ! Optional inits
   !-----------------------------------------------------------------------------
@@ -253,9 +256,9 @@ END SUBROUTINE output
 !===============================================================================
 !> Interface to refinement
 !===============================================================================
-INTEGER function check_refine (self, patch)
+INTEGER function check_refine (self, task)
   class(extras_t):: self
-  class(extras_t), pointer:: patch
+  class(task_t), pointer:: task
   !.............................................................................
   check_refine = -1                                                    ! keep
   !check_refine = max (check_refine, &                                  ! sinkp
