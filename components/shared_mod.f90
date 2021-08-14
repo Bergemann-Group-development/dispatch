@@ -24,6 +24,7 @@ MODULE shared_mod
     logical:: refine_on     = .false.
     real:: refine_ratio     = 2.0
     real:: f_zoom(3)        = 1.0
+    real:: extra_grace      = 0.0
     real(8):: mean_density  = 0d0
   contains
     procedure, nopass:: abort

@@ -22,6 +22,7 @@ MODULE dispatcher0_mod
   USE omp_lock_mod
   USE validate_mod
   USE refine_mod
+  USE shared_mod
   implicit none
   private
   type, public:: dispatcher0_t
@@ -36,7 +37,7 @@ MODULE dispatcher0_mod
   end type
   real(8):: stall_start=0d0, max_stalled=600d0, retry_stalled=30d0
   real:: delay_ms=0.0               ! wait time in no_queue()
-  real:: extra_grace=0.3            ! extra grace max, at nstall2
+  real:: extra_grace=0.0            ! extra grace max, at nstall2
   integer, save:: mpi_only_master=100
   integer, save:: verbose=0
   integer, save:: stalled=0
@@ -435,9 +436,10 @@ SUBROUTINE update (self, task_list, test)
     !$omp atomic update
     n_stalled = n_stalled + 1
   else if (n_stalled > nstall1) then
-    task_list%extra_grace = (n_stalled-nstall1)*extra_grace/(nstall2-nstall1)
+    !$omp atomic write
+    shared%extra_grace = (n_stalled-nstall1)*extra_grace/(nstall2-nstall1)
     write (io_unit%mpi,'(f12.6,2x,a,f10.3)') wallclock(), &
-      'dispatcher0_t%update: extra_grace=', task_list%extra_grace
+      'dispatcher0_t%update: extra_grace=', shared%extra_grace
     call task_list%check_all
   else if (n_stalled > nstall2) then
     call stall_handler

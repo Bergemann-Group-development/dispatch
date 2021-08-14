@@ -2534,9 +2534,11 @@ SUBROUTINE time_interval (self, time, jt, pt, all, id, extrap)
   !.............................................................................
   integer                         :: i, j, n, iit(self%nt-1)
   real(8)                         :: t(self%nt-1), dt
+  real                            :: grace
   integer, save                   :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%time_interval', 2, itimer=itimer)
+  grace = self%grace + shared%extra_grace
   if (self%nt==1) then
     jt = 1
     pt(2) = 0.0
@@ -2579,7 +2581,7 @@ SUBROUTINE time_interval (self, time, jt, pt, all, id, extrap)
       pt(2) = 0.0
     else
       pt(2) = (time-t(j))/dt
-      if (pt(2) > 1.01d0 + self%grace .and. .not.present(extrap)) then
+      if (pt(2) > 1.01d0 + grace .and. .not.present(extrap)) then
         pt(1) = 1.-pt(2)
         if (present(id)) then
           write (stderr,'(2a,2i6,":",i2.2,f12.6,f7.2,9f12.6)') &
@@ -2607,7 +2609,7 @@ SUBROUTINE time_interval (self, time, jt, pt, all, id, extrap)
           write (stdlog,'(a,9i4            )') '     self%iit:', self%iit
           write (stdlog,'(a,9i4            )') '          iit:', iit
           write (stdlog,'(a,f12.6,2x,9f12.6)') '  time, times:', time, self%time
-          write (stdlog,'(a,f12.6,2x,9f12.6)') '     grace, t:', self%grace, t
+          write (stdlog,'(a,f12.6,2x,9f12.6)') '     grace, t:', grace, t
           flush (stdlog)
         end if
         if (io%task_logging > 2) then
@@ -2618,7 +2620,7 @@ SUBROUTINE time_interval (self, time, jt, pt, all, id, extrap)
           end block
         end if
       end if
-      pt(2) = max(0d0-self%grace, min(1d0+self%grace, pt(2)))
+      pt(2) = max(0d0-grace, min(1d0+grace, pt(2)))
     end if
   end if
   pt(1) = 1.-pt(2)

@@ -771,18 +771,13 @@ END SUBROUTINE timeslots2
 !> period, since we want to limit the extrapolation in the nbor task to at most
 !> target%grace*self%dtime.
 !===============================================================================
-LOGICAL FUNCTION is_ahead_of (self, target, extra)
+LOGICAL FUNCTION is_ahead_of (self, target)
   class (task_t):: self, target
-  real, optional:: extra
   !.............................................................................
   real:: grace
   real(8):: nbtime, nbdtime, tgtime
   !-----------------------------------------------------------------------------
-  if (present(extra)) then
-    grace = self%grace + extra
-  else
-    grace = self%grace
-  end if
+  grace = self%grace + shared%extra_grace
   if (omp_lock%tasks) then
                                             call self%lock%set ('is_ahead_of')
     !---------------------------------------------------------------------------

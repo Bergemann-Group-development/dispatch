@@ -94,7 +94,6 @@ MODULE list_mod
     integer:: no=0                      ! has output
     integer:: na=0                      ! active = internal+boundary
     integer:: nac=0                     ! active tasks
-    real   :: extra_grace=0.0           ! counter stall tendency
     real(8):: lc(3) = +huge(0d0)        ! lower corner
     real(8):: uc(3) = -huge(0d0)        ! upper corner
     real(8):: llc(3) = +huge(0d0)       ! lower left corner
@@ -850,7 +849,7 @@ SUBROUTINE check_all (self, repair)
             'nbor, time =', nbor%task%id, &
             nbor%needed, nbor%needs_me, nbor%download, &
             (nbor%task%time - link%task%time)/max(tiny(1.),nbor%task%dtime), &
-            link%task%grace + self%extra_grace
+            link%task%grace + shared%extra_grace
           nbor => nbor%next
         end do
         nq = self%nq
@@ -862,7 +861,7 @@ SUBROUTINE check_all (self, repair)
   if (associated(self%queue)) then
     write (io_unit%log,*) wallclock(), 'check_all: done, nq =', &
       self%nq, associated(self%queue)
-  else if (self%extra_grace == 0.0) then
+  else if (shared%extra_grace == 0.0) then
     write (stderr,*) 'WARNING: check_all phase 2, clearing ready bits'
     write (io_unit%log,*) 'check_all: phase 2, clearing ready bits'
     call self%lock%set ('check_all(2)')
@@ -880,7 +879,7 @@ SUBROUTINE check_all (self, repair)
     call self%lock%unset ('check_all(2)')
   end if
   write (io_unit%log,*) wallclock(), 'check_all: done, nq =', &
-    self%nq, associated(self%queue), self%extra_grace
+    self%nq, associated(self%queue), shared%extra_grace
   call trace%end (itimer)
 END SUBROUTINE check_all
 
@@ -1091,7 +1090,7 @@ SUBROUTINE check_ready (self, link, lock, status)
       ! Check nbors that are needed, not ignored, and have support
       !-------------------------------------------------------------------------
       if (nbor%needed .and. nbor%task%is_clear(ignore)) then
-        if (.not. nbor%task%is_ahead_of(task, extra=self%extra_grace)) then
+        if (.not. nbor%task%is_ahead_of (task)) then
           ok = .false.
           status_l = max(1,status_l)
         end if
