@@ -468,7 +468,6 @@ SUBROUTINE pre_init (self)
                         print_every, max_files
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%pre_init')
-  call omp%set_stacksize (self%nv)
   !-----------------------------------------------------------------------------
   ! Read and set patch parameters; the preferred defalts may have been set by
   ! the calling code -- typically in experiment_mod.f90
@@ -557,6 +556,7 @@ SUBROUTINE pre_init (self)
       'patch_t%pre_init WARNING: nw,nv,ng old/new =', &
       nw,nv,ng, self%nw,self%nv,self%ng
   end if
+  call omp%set_stacksize (self%nv)
   call trace%end()
 END SUBROUTINE pre_init
 

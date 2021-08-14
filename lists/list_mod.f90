@@ -849,7 +849,7 @@ SUBROUTINE check_all (self, repair)
             'nbor, time =', nbor%task%id, &
             nbor%needed, nbor%needs_me, nbor%download, &
             (nbor%task%time - link%task%time)/max(tiny(1d0),nbor%task%dtime), &
-            link%task%grace + self%extra_grace
+            link%task%grace + shared%extra_grace
           nbor => nbor%next
         end do
         nq = self%nq

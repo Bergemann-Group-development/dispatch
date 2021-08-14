@@ -165,15 +165,16 @@ SUBROUTINE init (self)
 !-----------------------------------------------------------------------
   if (first_time) then
     first_time = .false.
-    print "('Gravitational constant =',1pe10.3)", scaling%grav
-    print "('            Cloud mass =',1pe10.3)", mass
-    print "('  Cloud free-fall time =',1pe10.3)", tff
-    print "(' Cloud free-fall speed =',1pe10.3)", vff
-    print "('Isothermal sound speed =',1pe10.3)", sqrt(csqiso)
-    print "('  Initial Jeans length =',1pe10.3)", cjlen
-    print "('  Initial Jeans number =',1pe10.3)", cjnum
-    print "(' Initial angular speed =',1pe10.3)", omega
-    print "('             Gas gamma =',1pe10.3)", eos%gamma
+    call io%header ('initial_conditions:')
+    print "(' Gravitational constant =',1pe10.3)", scaling%grav
+    print "('             Cloud mass =',1pe10.3)", mass
+    print "('   Cloud free-fall time =',1pe10.3)", tff
+    print "('  Cloud free-fall speed =',1pe10.3)", vff
+    print "(' Isothermal sound speed =',1pe10.3)", sqrt(csqiso)
+    print "('   Initial Jeans length =',1pe10.3)", cjlen
+    print "('   Initial Jeans number =',1pe10.3)", cjnum
+    print "('  Initial angular speed =',1pe10.3)", omega
+    print "('              Gas gamma =',1pe10.3)", eos%gamma
   end if
   !
   m1 => m(1)

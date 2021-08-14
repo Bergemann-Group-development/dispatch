@@ -220,6 +220,9 @@ SUBROUTINE init (self, name)
     self%format = format
     self%nml_version = nml_version
     self%outputname = self%run_dir                               ! compatibility
+    !...........................................................................
+    write(io%output,*) 'reading parameters from: '//trim(self%inputname)
+    write(io%output,*) 'output directory: '//trim(self%run_dir)
     write (filename,'(a,i5.5,"/")') trim(self%run_dir), 0
     if (io%do_output) call os%mkdir (trim(filename))
     !---------------------------------------------------------------------------
@@ -287,8 +290,6 @@ SUBROUTINE init (self, name)
     ! Backwards compatibility
     !---------------------------------------------------------------------------
     io%data_unit = io_unit%data
-    write(io%output,*) 'output directory: '//trim(self%run_dir)
-    write(io%output,*) 'reading parameters from: '//trim(self%inputname)
     first_time=.false.
   end if
   self%guard_zones = guard_zones

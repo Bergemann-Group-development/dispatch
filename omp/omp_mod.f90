@@ -13,7 +13,7 @@ MODULE omp_mod
     integer:: ncores=1
     integer:: nthreads=1
     integer:: nsockets=1
-    integer:: thread_task=-1
+    integer:: thread_task=1
     logical:: trace=.false.
     logical:: master=.true.
   contains
@@ -106,18 +106,24 @@ SUBROUTINE set_stacksize (nv)
 #endif
   integer:: nv, recommended
   character(len=16):: envvar
+  logical:: kmp, omp
   logical, save:: first_time=.true., printed=.false.
   !-----------------------------------------------------------------------------
   if (io_unit%do_validate) return
   recommended = (4*1024**2*nv) / 8
 #ifdef _OPENMP
 #ifdef __INTEL_COMPILER
+  call getenv ('KMP_STACKSIZE', envvar)
+  kmp = envvar /= ''
   call getenv ('OMP_STACKSIZE', envvar)
-  if (envvar /= '' .and. io_unit%master .and. first_time) then
-    if (.not.printed) print '(1x,a)', &
-      '*************************************************************************************'
-    print '(1x,a)', &
-      '* WARNING: environment variable OMP_STACKSIZE is set, this assumes non-Intel MPI'
+  omp = envvar /= ''
+  if (omp .and. .not.kmp .and. io_unit%master .and. first_time) then
+    if (.not.printed) print '(/2x,a)', &
+      '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
+    print '(2x,a)', &
+      '! WARNING: Use KMP_STACKSIZE rather than OMP_STACKSIZE with Intel-MPI!   !'
+    print '(2x,a,/)', &
+      '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
     printed = .true.
   end if
   stacksize = kmp_get_stacksize_s()
@@ -134,7 +140,9 @@ SUBROUTINE set_stacksize (nv)
       printed = .true.
     end if
   else if (first_time.and.io_unit%master) then
-    print '(1x,a,f5.1,a)', 'OpenMP stacksize default:', stacksize/1024.**2, ' MB'
+    print '(1x,a,f5.1,a,i3,a)', 'OpenMP stacksize default:', stacksize/1024.**2, ' MB for', &
+      nv, ' variables'
+
     first_time = .false.
   endif
 #else

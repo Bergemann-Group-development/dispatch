@@ -47,6 +47,7 @@ SUBROUTINE init (self)
   call timer%init                       ! needs locks
   call mpi_mesg%init                    ! needs locks
   call trace%begin ('setup_t%init')     ! needs timer
+  call io%header ('scaling_t%init:')
   call scaling%init                     ! Scaling to code units
   call eos%init                         ! Equation-of-state
   call opacity%init                     ! Opacity
