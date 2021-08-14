@@ -678,10 +678,10 @@ SUBROUTINE get_filled (self, target)
         call io%abort ('guards_t%check_filled: some target not filled')
         flush(stdlog)
       end if
-      call target%lock%set ('halo_t%get_filled')
-      deallocate (target%filled, target%outside)
-      nullify    (target%filled, target%outside)
-      call target%lock%unset ('halo_t%get_filled')
+      !call target%lock%set ('halo_t%get_filled')
+      !deallocate (target%filled, target%outside)
+      !nullify    (target%filled, target%outside)
+      !call target%lock%unset ('halo_t%get_filled')
     end if
   end select
   call trace%end (itimer)
