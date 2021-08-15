@@ -136,11 +136,11 @@ SUBROUTINE pre_update (self)
       !-------------------------------------------------------------------------
       ! Subtract kinetic energy and convert to temperature
       !-------------------------------------------------------------------------
-      d  = patch%mem(i1,i2,i3,patch%idx%d ,patch%new,1)
-      e  = patch%mem(i1,i2,i3,patch%idx%e ,patch%new,1)
-      px = patch%mem(i1,i2,i3,patch%idx%px,patch%new,1)
-      py = patch%mem(i1,i2,i3,patch%idx%py,patch%new,1)
-      pz = patch%mem(i1,i2,i3,patch%idx%pz,patch%new,1)
+      d  = patch%mem(i1,i2,i3,patch%idx%d ,patch%it,1)
+      e  = patch%mem(i1,i2,i3,patch%idx%e ,patch%it,1)
+      px = patch%mem(i1,i2,i3,patch%idx%px,patch%it,1)
+      py = patch%mem(i1,i2,i3,patch%idx%py,patch%it,1)
+      pz = patch%mem(i1,i2,i3,patch%idx%pz,patch%it,1)
       v  = 1./d
       ekin = 0.5*(px**2+py**2+pz**2)*v
       eth = (e-ekin)*v

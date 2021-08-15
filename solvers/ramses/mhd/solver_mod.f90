@@ -94,9 +94,6 @@ SUBROUTINE update (self)
   ! Make sure %new refers to the next timeslot, and assign pointers
   !-----------------------------------------------------------------------------
   call trace%begin ('solver_t%update', itimer=itimer)
-  self%new = 1 + mod(self%it,self%nt)
-  self%uin  => self%mem(:,:,:,:,self%it ,1)
-  self%unew => self%mem(:,:,:,:,self%new,1)
   !-----------------------------------------------------------------------------
   ! Proceed, referring everywhere to the %new time slot
   !-----------------------------------------------------------------------------

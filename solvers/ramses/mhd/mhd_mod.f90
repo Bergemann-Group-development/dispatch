@@ -46,8 +46,6 @@ MODULE mhd_mod
     real, contiguous, pointer, dimension(:,:,:,:,:):: qp, qm  ! face centered
     real, contiguous, pointer, dimension(:,:,:,:,:):: dq, dq2, dbf ! slopes
     real, contiguous, pointer, dimension(:,:,:,:,:):: qLB,qRB,qLT,qRT
-    real, contiguous, pointer, dimension(:,:,:,:):: uin       ! conserved
-    real, contiguous, pointer, dimension(:,:,:,:):: unew      ! new conserved
     real, contiguous, pointer, dimension(:,:,:):: Ex,Ey,Ez
     real, contiguous, pointer, dimension(:,:,:):: c
     !dir$ attributes align:64 :: q,bf,em,qp,qm,dq,dq2,dbf,qLB,qRB,qLT,qRT,Ex,Ey,Ez,c
@@ -195,6 +193,7 @@ SUBROUTINE update (self)
   real, pointer, dimension(:,:,:,:):: p, b
   real, allocatable, dimension(:,:,:):: ek
   real, allocatable, dimension(:,:,:,:):: em
+  real, pointer, contiguous, dimension(:,:,:,:):: uin, unew
   real, pointer, contiguous, dimension(:,:,:,:,:):: fl
   real, allocatable, dimension(:,:,:,:)::fluxambdiff,emfambdiff,fluxohmdiss,emfohmdiss
   real, pointer, dimension(:,:,:):: d, e, Ux=>null(), Uy=>null(), Uz=>null()
@@ -232,9 +231,11 @@ SUBROUTINE update (self)
   allocate (self%qLT(n(1),self%nv,ndim,n(2),n(3)))              ! self%qLT = 0_dp
   allocate (self%qRB(n(1),self%nv,ndim,n(2),n(3)))              ! self%qRB = 0_dp
   allocate (self%qRT(n(1),self%nv,ndim,n(2),n(3)))              ! self%qRT = 0_dp
-  d => self%mem(:,:,:,          self%idx%d ,self%new,1)
-  e => self%mem(:,:,:,          self%idx%e ,self%new,1)
-  p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
+  uin  => self%mem(:,:,:,:,self%it ,1)
+  unew => self%mem(:,:,:,:,self%new,1)
+  d => self%mem(:,:,:,            self%idx%d ,self%it,1)
+  e => self%mem(:,:,:,            self%idx%e ,self%it,1)
+  p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
   !-----------------------------------------------------------------------------
   ! Compute update using second-order Godunov method
   !-----------------------------------------------------------------------------
@@ -261,7 +262,7 @@ SUBROUTINE update (self)
     allocate (fluxohmdiss(self%gn(1),self%gn(2),self%gn(3),3))
     allocate (emfohmdiss(self%gn(1),self%gn(2),self%gn(3),3))
     fluxambdiff = 0d0; emfambdiff = 0d0; fluxohmdiss = 0d0; emfohmdiss = 0d0;   
-    call non_ideal%non_ideal_comp(self%mesh,self%idx,self%bf,self%uin,self%q,&
+    call non_ideal%non_ideal_comp(self%mesh,self%idx,self%bf,uin,self%q,&
       fluxambdiff,emfambdiff,fluxohmdiss,emfohmdiss,self%u_max,self%ds,self%dtime)
   end if
   call self%courant_condition                           ! compute dt
@@ -310,13 +311,19 @@ SUBROUTINE update (self)
   ! Update conservative variables
   !-----------------------------------------------------------------------------
   associate (i0=>self%mesh(1)%li, j0=>self%mesh(2)%li, k0=>self%mesh(3)%li, &
-             i1=>self%mesh(1)%ui, j1=>self%mesh(2)%ui, k1=>self%mesh(3)%ui, &
-             uin=>self%uin,unew=>self%unew)
+             i1=>self%mesh(1)%ui, j1=>self%mesh(2)%ui, k1=>self%mesh(3)%ui)
   lock => self%mem_lock(self%new)
                                                         call lock%set ('update')
+  !-----------------------------------------------------------------------------
+  ! First copy everything, to fill guard zones
+  !-----------------------------------------------------------------------------
+  unew = uin
   nv3 = 5
+  !-----------------------------------------------------------------------------
+  ! Divergence updates
+  !-----------------------------------------------------------------------------
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3  ) = &
-  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3  ) + &
+   uin(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3  ) + &
     fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3,1) - &
     fl(i0+1:i1+1,j0  :j1  ,k0  :k1  ,1:nv3,1) + &
     fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3,2) - &
@@ -332,7 +339,7 @@ SUBROUTINE update (self)
   ! Update Bx 
   !-----------------------------------------------------------------------------
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) =  &
-  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) + &
+   uin(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) + &
    (( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,2)   - &
       em(i0  :i1  ,j0  :j1  ,k0+1:k1+1,2) ) - &
     ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,3)   - &
@@ -341,7 +348,7 @@ SUBROUTINE update (self)
   ! Update By 
   !-----------------------------------------------------------------------------
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) = &
-  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) + &
+   uin(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) + &
    (( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,3)   - &
       em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,3) ) - &
     ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,1)   - &
@@ -350,7 +357,7 @@ SUBROUTINE update (self)
   ! Update Bz 
   !-----------------------------------------------------------------------------
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) = &
-  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) + &
+   uin(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) + &
    (( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,1)   - &
       em(i0  :i1  ,j0+1:j1+1,k0  :k1  ,1) ) - &
     ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,2)   - &
@@ -455,17 +462,23 @@ END SUBROUTINE post_update
 
 !===============================================================================
 !===============================================================================
-subroutine check_small (self)
+subroutine check_small (self, it)
   class(mhd_t):: self
+  integer, optional:: it
   integer:: i,j,k,lo(3),uo(3),n_smalld,n_smallp
   real(dp):: c,d,u,v,w,p,ekin,B1,B2,B3,emag
   integer, save:: nprint=10
   integer, save:: itimer=0
-  integer:: it, jt, iw
+  integer:: jt, kt, iw
   logical:: panic
-  associate(uu=>self%uin)
+  real, pointer, contiguous:: uu(:,:,:,:)
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%check_small', itimer=itimer, detailed_timer=detailed_timer)
+  if (present(it)) then
+    uu => self%mem(:,:,:,:,it,1)
+  else
+    uu => self%mem(:,:,:,:,self%it,1)
+  end if
   n_smalld = 0
   n_smallp = 0
   panic = .false.
@@ -507,7 +520,6 @@ subroutine check_small (self)
   end do
   end do
   end do
-  end associate
   !.............................................................................
   if (n_smalld+n_smallp > 0) then
     write (stdlog,*) 'small: id,nr,np', &
@@ -520,8 +532,8 @@ subroutine check_small (self)
     write (io_unit%dump) self%id, self%gn, self%nv, self%nt, self%nw, self%istep
     write (io_unit%dump) self%time, self%dtime
     do iw=1,self%nw
-    do it=1,self%nt
-      jt = self%iit(it)
+    do kt=1,self%nt
+      jt = self%iit(kt)
       write (io_unit%dump) self%mem(:,:,:,:,jt,iw)
     end do
     end do
@@ -544,17 +556,18 @@ subroutine ctoprim(self)
   integer, save:: itimer=0
   integer:: i, j, k, loc(3), l(3), u(3), m(3)
   real, dimension(:,:,:), pointer, contiguous:: d, pg
+  real, dimension(:,:,:,:), pointer, contiguous:: uin, unew
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%ctoprim', itimer=itimer, detailed_timer=detailed_timer)
   !-----------------------------------------------------------------------------
-  self%uin  => self%mem(:,:,:,:,self%new,1)
-  self%unew => self%mem(:,:,:,:,self%new,1)
+  uin  => self%mem(:,:,:,:,self%it ,1)
+  unew => self%mem(:,:,:,:,self%new,1)
   m = self%mesh%gn
   allocate (self%c  (m(1),m(2),m(3)))
   allocate (self%q  (m(1),m(2),m(3),self%nv))
   allocate (self%bf (m(1),m(2),m(3),3))
   call check_small (self)
-  associate(uin=>self%uin,q=>self%q,bf=>self%bf,dt=>self%dtime,c=>self%c)
+  associate(q=>self%q,bf=>self%bf,dt=>self%dtime,c=>self%c)
   !-----------------------------------------------------------------------------
   if (isothermal) then
     entho = one
@@ -1011,8 +1024,8 @@ SUBROUTINE trace3d(self)
   !  Ux=>self%q(:,:,:,2),Uy=>self%q(:,:,:,3),Uz=>self%q(:,:,:,4), &
   !  Ex=>self%Ex,Ey=>self%Ey,Ez=>self%Ez)
   !-----------------------------------------------------------------------------
-  uin => self%uin
-  unew=> self%unew
+  uin  => self%mem(:,:,:,:,self%it ,1)
+  unew => self%mem(:,:,:,:,self%new,1)
   q   => self%q
   bf  => self%bf
   dq  => self%dq
@@ -1079,7 +1092,7 @@ SUBROUTINE trace3d(self)
   dt2 = 0.5d0*self%dtime
   lo = self%mesh%lo-1
   uo = self%mesh%uo+1
-  d => self%mem(:,:,:,self%idx%d,self%new,1)
+  d => self%mem(:,:,:,self%idx%d,self%it,1)
   do k=lo(3),uo(3)
   do j=lo(2),uo(2)
   ff(:,:) = 0.0_dp
