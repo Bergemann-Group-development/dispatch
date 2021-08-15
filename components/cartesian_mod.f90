@@ -189,6 +189,8 @@ SUBROUTINE init (self, task_list, label)
   !-----------------------------------------------------------------------------
   ! Generate nbor lists and set status bits for all tasks
   !-----------------------------------------------------------------------------
+  if (verbose > 0) write(stdout,*) 'cartesian_t%init: init_levels'
+  call self%task_list%init_levels
   if (verbose > 0) write(stdout,*) 'cartesian_t%init: init_all_nbors'
   call self%task_list%init_all_nbors
   if (verbose > 0) write(stdout,*) 'cartesian_t%init: reset_status'
