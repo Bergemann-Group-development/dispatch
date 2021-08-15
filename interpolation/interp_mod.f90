@@ -99,9 +99,21 @@ SUBROUTINE in_t (target, source, ls, us, in, out, lt, ut, all, only, extrap)
   end if
   !-----------------------------------------------------------------------------
   ! If the src is at the same time and level, just copy
+  ! FIXME: This is vulnerable to the source task changing source%it, but is only
+  ! likely to be used during tests and with fixed time steps.
   !-----------------------------------------------------------------------------
   if (source%time==target%time .and. source%level==target%level) then
-    if (present(lt))   then
+    it = source%it
+    !...........................................................................
+    if (target%id == io%id_debug) then
+      print '("debug:",2(i6,":",i2.2,i3),2(f10.6,i3,f10.6))', &
+        target%id, target%level, target%istep, &
+        source%id, source%istep, source%level, &
+        target%time, target%it, target%t(target%it), &
+        source%time, source%it, source%t(source%it)
+    end if
+    !...........................................................................
+    if (present(lt)) then
       l = lt
       u = ut
     else
@@ -109,7 +121,6 @@ SUBROUTINE in_t (target, source, ls, us, in, out, lt, ut, all, only, extrap)
       u = us
     end if
     o = 0
-    it = source%it
     !...........................................................................
     if (verbose > 1) then
       write (stdlog,'(a,2i6,4(2x,3i4))') &
@@ -135,7 +146,16 @@ SUBROUTINE in_t (target, source, ls, us, in, out, lt, ut, all, only, extrap)
   ! Interpolate in time
   !-----------------------------------------------------------------------------
   else
-    call source%time_interval (target%time, jt, pt, id=target%id,extrap=extrap)
+    call source%time_interval (target%time, jt, pt, id=target%id, extrap=extrap)
+    !...........................................................................
+    if (target%id == io%id_debug) then
+      print '("debug:",2(i6,":",i2.2,i3),f10.6,2(i4,f10.6,f7.3))', &
+        target%id, target%level, target%istep, &
+        source%id, source%istep, source%level, &
+        target%time, &
+        jt(1), source%t(jt(1)), pt(1), &
+        jt(2), source%t(jt(2)), pt(2)
+    end if
     !...........................................................................
     if (verbose > 1) then
       write (stdlog,'(a,6i3,3x,4i3)') &
