@@ -171,6 +171,7 @@ SUBROUTINE pre_update (self)
   integer:: n(3)
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%pre_update')
+  call self%gpatch_t%pre_update ()
   !-----------------------------------------------------------------------------
   ! Primitive variables may be needed in extras courant_conditions
   !-----------------------------------------------------------------------------
@@ -538,11 +539,11 @@ end subroutine check_small
 subroutine ctoprim(self)
   class(mhd_t):: self
   integer::n(4)
-  real(dp):: smallp, c, entho
+  real(dp):: smallp, c, entho, g1
   real(dp):: eken, emag, etot, eint, B1, B2, B3
   integer, save:: itimer=0
   integer:: i, j, k, loc(3), l(3), u(3), m(3)
-  real, pointer:: pg(:,:,:)
+  real, dimension(:,:,:), pointer, contiguous:: d, pg
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%ctoprim', itimer=itimer, detailed_timer=detailed_timer)
   !-----------------------------------------------------------------------------
@@ -580,52 +581,71 @@ subroutine ctoprim(self)
     write (stdlog,*) 'ctoprim:rh', self%id, minval(q(:,:,:,1)), maxval(q(:,:,:,1))
     write (stdlog,*) 'ctoprim:bf', self%id, minval(bf), maxval(bf)
   end if
-  !
-  do k=1,self%gn(3)-1
-  do j=1,self%gn(2)-1
-  do i=1,self%gn(1)-1
-    eken = half*(q(i,j,k,2)**2 + q(i,j,k,3)**2 + q(i,j,k,4)**2)*q(i,j,k,1)
-    B1 = half*(q(i,j,k,6)+q(i+1,j,k,6))
-    B2 = half*(q(i,j,k,7)+q(i,j+1,k,7))
-    B3 = half*(q(i,j,k,8)+q(i,j,k+1,8))
-    emag = half*(B1**2 + B2**2 + B3**2)
-    q(i,j,k,5) = (uin(i,j,k,5) - emag - eken)*(eos%gamma-1d0)
-  end do
-  end do
-  end do
-  !.............................................................................
+  !-----------------------------------------------------------------------------
+  ! Compute gas pressure and fast mode speed
+  !-----------------------------------------------------------------------------
+  d  => q(:,:,:,1)
   pg => q(:,:,:,5)
+  g1 = eos%gamma-1d9
+  if (isothermal) then
+    do k=1,self%gn(3)-1
+    do j=1,self%gn(2)-1
+    do i=1,self%gn(1)-1
+      B1 = half*(q(i,j,k,6)+q(i+1,j,k,6))
+      B2 = half*(q(i,j,k,7)+q(i,j+1,k,7))
+      B3 = half*(q(i,j,k,8)+q(i,j,k+1,8))
+      emag = half*(B1**2 + B2**2 + B3**2)
+      pg(i,j,k) = d(i,j,k)*self%csound**2
+      c(i,j,k) = sqrt((pg(i,j,k)*eos%gamma + 2.0*emag)/d(i,j,k))
+    end do
+    end do
+    end do
+  else
+    do k=1,self%gn(3)-1
+    do j=1,self%gn(2)-1
+    do i=1,self%gn(1)-1
+      B1 = half*(q(i,j,k,6)+q(i+1,j,k,6))
+      B2 = half*(q(i,j,k,7)+q(i,j+1,k,7))
+      B3 = half*(q(i,j,k,8)+q(i,j,k+1,8))
+      emag = half*(B1**2 + B2**2 + B3**2)
+      eken = half*(q(i,j,k,2)**2 + q(i,j,k,3)**2 + q(i,j,k,4)**2)*q(i,j,k,1)
+      pg(i,j,k) = (uin(i,j,k,5) - emag - eken)*g1
+      c(i,j,k) = sqrt((pg(i,j,k)*eos%gamma + 2.0*emag)/q(i,j,k,1))
+    end do
+    end do
+    end do
+  end if
   l = self%mesh%li
   u = self%mesh%ui
   if (any(pg(l(1):u(1),l(2):u(2),l(3):u(3)) < 0.0) .or. verbose > 0) then
     write (stdlog,'(a,i6,1p,2e11.2,3i4)') 'ctoprim: max(pg),min(pg),loc=', &
       self%id, self%fmaxval(pg), self%fminval(pg), self%fminloc(pg)
   end if
-  !.............................................................................
-  do k=1,self%gn(3)-1
-  do j=1,self%gn(2)-1
-  do i=1,self%gn(1)-1
-    q(i,j,k,5) = merge(q(i,j,k,1)*self%csound**2, max(q(i,j,k,5),smallp), isothermal)
-    c(i,j,k) = sqrt((q(i,j,k,5)*eos%gamma + 2.0*emag)/q(i,j,k,1))
-  end do
-  end do
-  end do
-  if (self%id == io%id_debug) then
-    do i=1,8
-      write (io%output,'("X1",f10.6,i4,1p,10e12.3)') self%time, i, uin(4:13,8,8,i)
-      write (io%output,'("X2",f10.6,i4,1p,10e12.3)') self%time, i,   q(4:13,8,8,i)
-    end do
-  end if
   !-----------------------------------------------------------------------------
-  ! Alternative Courant condition formulations
+  ! Alternative Courant condition formulations, adding to the fast mode speed
+  ! either 1) the max absolute velocity or 2) the mean absolute velocity 
   !-----------------------------------------------------------------------------
-  if (courant_type==1) then
-    c(:,:,:) = c(:,:,:) + max(abs(q(:,:,:,2)),  abs(q(:,:,:,3)),  abs(q(:,:,:,4)))
-  else
-    c(:,:,:) = c(:,:,:) +    (abs(q(:,:,:,2)) + abs(q(:,:,:,3)) + abs(q(:,:,:,4)))/3.0
-  end if
   l = self%mesh%lo
   u = self%mesh%uo
+  if (courant_type==1) then
+    do k=l(3),u(3)
+    do j=l(2),u(2)
+    do i=l(1),u(1)
+      c(i,j,k) = &
+      c(i,j,k) + max(abs(q(i,j,k,2)), abs(q(i,j,k,3)), abs(q(i,j,k,4)))
+    end do
+    end do
+    end do
+  else
+    do k=l(3),u(3)
+    do j=l(2),u(2)
+    do i=l(1),u(1)
+      c(i,j,k) = &
+      c(i,j,k) + (abs(q(i,j,k,2)) + abs(q(i,j,k,3)) + abs(q(i,j,k,4)))/3.0
+    end do
+    end do
+    end do
+  end if
   if (any(l < 0 .or. u > self%gn)) then
     write (stderr,*) 'ERROR: lo, uo =', self%id, l, u
     call io%abort ('ctoprim: lo or uo inconsistent')
