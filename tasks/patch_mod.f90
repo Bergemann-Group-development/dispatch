@@ -1296,6 +1296,8 @@ SUBROUTINE extrapolate_guards (self)
       !-------------------------------------------------------------------------
       ! ZX-layers (Y varies the least)
       !-------------------------------------------------------------------------
+      li(3) = self%mesh(3)%li
+      ui(3) = self%mesh(3)%ui
       if (self%gn(2) > 1) then
             self%mem(lb(1):ub(1),lb(2):lo(2),li(3):ui(3),iv,it0,1) = exp(  &
         log(self%mem(lb(1):ub(1),lb(2):lo(2),li(3):ui(3),iv,it1,1))*2. - &
@@ -1307,6 +1309,8 @@ SUBROUTINE extrapolate_guards (self)
       !-------------------------------------------------------------------------
       ! YZ-layers (X varies the least)
       !-------------------------------------------------------------------------
+      li(2) = self%mesh(2)%li
+      ui(2) = self%mesh(2)%ui
       if (self%gn(1) > 1) then
             self%mem(lb(1):lo(1),li(2):ui(2),li(3):ui(3),iv,it0,1) = exp(  &
         log(self%mem(lb(1):lo(1),li(2):ui(2),li(3):ui(3),iv,it1,1))*2. - &
@@ -1330,6 +1334,8 @@ SUBROUTINE extrapolate_guards (self)
       !-------------------------------------------------------------------------
       ! ZX-layers (Y varies the least)
       !-------------------------------------------------------------------------
+      li(3) = self%mesh(3)%li
+      ui(3) = self%mesh(3)%ui
       if (self%gn(2) > 1) then
         self%mem(lb(1):ub(1),lb(2):lo(2),li(3):ui(3),iv,it0,1) =   &
         self%mem(lb(1):ub(1),lb(2):lo(2),li(3):ui(3),iv,it1,1)*2. - &
@@ -1341,6 +1347,8 @@ SUBROUTINE extrapolate_guards (self)
       !-------------------------------------------------------------------------
       ! YZ-layers (X varies the least)
       !-------------------------------------------------------------------------
+      li(2) = self%mesh(2)%li
+      ui(2) = self%mesh(2)%ui
       if (self%gn(1) > 1) then
         self%mem(lb(1):lo(1),li(2):ui(2),li(3):ui(3),iv,it0,1) =   &
         self%mem(lb(1):lo(1),li(2):ui(2),li(3):ui(3),iv,it1,1)*2. - &
