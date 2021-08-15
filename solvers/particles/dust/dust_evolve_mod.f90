@@ -12,6 +12,7 @@ MODULE dust_evolve_mod
   implicit none
   private
   type, public:: dust_evolve_t
+    real(8):: start_time=0d0
     logical:: on=.false.
     integer:: n_bin
   contains

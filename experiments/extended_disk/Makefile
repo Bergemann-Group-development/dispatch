@@ -10,6 +10,7 @@ SOLVER          = ramses/hydro
 #SOLVER          = ramses/mhd
 #SOLVER          = stagger2/e
 PARTICLE_SOLVER = dust
+DUST_EVOLVE     = martin_s
 COOLING         = simple
 EXEC            = dispatch.x
 TOP             = ../..

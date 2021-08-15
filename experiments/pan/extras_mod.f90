@@ -199,7 +199,6 @@ END SUBROUTINE output
 INTEGER FUNCTION check_refine (self)
   class(extras_t), target:: self
   !.............................................................................
-  gpatch => patch
   check_refine = -1
   !check_refine = max (check_refine, &                            ! sinkp
   !  sink_particles%check_refine ())                              ! sinkp

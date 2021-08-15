@@ -183,7 +183,6 @@ END SUBROUTINE output
 INTEGER FUNCTION check_refine (self)
   class(extras_t), target:: self
   !.............................................................................
-  gpatch => patch
   check_refine = -1
 END FUNCTION check_refine
 
@@ -214,10 +213,9 @@ END SUBROUTINE statistics
 !> This is called from task_list%check_ready(), with self as the nbor and
 !> target as the task to check.
 !===============================================================================
-FUNCTION is_ahead_of (self, target, extra)
+FUNCTION is_ahead_of (self, target)
   class(extras_t):: self
   class(task_t):: target
-  real, optional:: extra
   logical:: is_ahead_of
   real:: grace
   !-----------------------------------------------------------------------------

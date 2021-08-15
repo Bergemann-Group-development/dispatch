@@ -135,7 +135,7 @@ END FUNCTION
 FUNCTION temperature (self, d, e) RESULT (tt)
   class (eos_t):: self
   real, dimension(:,:,:), pointer:: d, e
-  real, dimension(size(d,1),size(d,2),size(d,3)):: tt
+  real, dimension(size(d,1),size(d,2),size(d,3)), target:: tt
   integer:: dim(3)
   !-----------------------------------------------------------------------------
   dim = shape(d)
@@ -226,10 +226,10 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne, pg, tt, ne, rk, src, &
   class (eos_t):: self
   integer:: dim(3), id_loc=-1
   integer, optional:: id
-  real, dimension(:,:,:)  , pointer, optional :: lnd,d,lne,e,ee,tt,ne,ss
-  intent(in)                                  :: lnd,d,lne,e,ee,tt,ne,ss
+  real, dimension(:,:,:)  , pointer, optional :: lnd,d,lne,e,ee,ne,ss
+  intent(in)                                  :: lnd,d,lne,e,ee,ne,ss
   real, dimension(:,:,:,:)         , optional :: src,rk
-  real, dimension(:,:,:)           , optional :: pg
+  real, dimension(:,:,:)           , optional :: pg,tt
   real, optional:: gamma
   logical, optional:: e_below
   character(len=*),optional::label

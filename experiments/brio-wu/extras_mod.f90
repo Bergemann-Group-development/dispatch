@@ -61,7 +61,6 @@ MODULE extras_mod
   USE task_mod
   USE io_mod
   USE trace_mod
-  USE connect_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.
   !-----------------------------------------------------------------------------
@@ -134,9 +133,7 @@ SUBROUTINE pre_init (self)
   !call self%spitzer%pre_init (self)                                    ! spitzer
   !call self%forces%pre_init (self%patch)                               ! forces
   !allocate (self%trace_particles)                                      ! tracep
-  !self%connect%trace_particles => self%trace_particles                 ! tracep
   !allocate (self%pic)                                                  ! pic
-  !self%connect%pic_patch => self%pic                                   ! pic
   !call self%pic%pre_init (self%patch)                                  ! pic
 END SUBROUTINE pre_init
 
@@ -164,7 +161,6 @@ SUBROUTINE init (self)
   !call self%forces%init                                                ! forces
   !call self%newton%init                                                ! Newton
   !allocate (self%trace_particles)                                      ! tracep
-  !self%connect%trace_particles => self%trace_particles                 ! tracep
   !call self%trace_particles%add (self%link%task)                       ! tracep
   !call self%pic%init                                                   ! pic
   !if (self%pic%on) self%do_mhd = self%pic%do_mhd                       ! pic

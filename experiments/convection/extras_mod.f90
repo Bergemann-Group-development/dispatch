@@ -61,7 +61,6 @@ MODULE extras_mod
   USE task_mod
   USE io_mod
   USE trace_mod
-  USE connect_mod
   USE eos_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.

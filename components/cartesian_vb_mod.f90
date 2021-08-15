@@ -36,11 +36,12 @@ CONTAINS
 !===============================================================================
 !> Distribute patches in a volley ball arrangement
 !===============================================================================
-SUBROUTINE init (self, label)
+SUBROUTINE init (self, task_list, label)
   class(cartesian_vb_t):: self
+  class(task_list_t), optional, pointer:: task_list
   character(len=*), optional:: label
   !.............................................................................
-  type(task_list_t), pointer:: patch_list
+  class(task_list_t), pointer:: patch_list
   class(link_t), pointer:: link, next
   class(experiment_t), pointer:: patch
   class(task_t), pointer:: task

@@ -157,10 +157,10 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne,lnee, pg, tt, ne, rk, &
                          ss, s, lns, src, gamma,e_below, label, id)
   class (eos_t):: self
   integer:: dim(3)
-  real, dimension(:,:,:)  , pointer, optional :: lnd,d,lne,lnee,e,ee,tt,ne
+  real, dimension(:,:,:)  , pointer, optional :: lnd,d,lne,lnee,e,ee,ne
   real, dimension(:,:,:)  , pointer, optional :: ss, s, lns
-  real, dimension(:,:,:,:)         , optional :: src,rk
-  real, dimension(:,:,:)           , optional :: pg
+  real, dimension(:,:,:,:)         , optional :: src, rk
+  real, dimension(:,:,:)           , optional :: pg, tt
   integer, optional:: id
   real, optional:: gamma
   logical, optional:: e_below

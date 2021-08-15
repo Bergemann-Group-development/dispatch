@@ -449,7 +449,7 @@ SUBROUTINE post_update (self)
       nbtask => nbor%task
       select type (nbtask)
       class is (gpatch_t)
-        nbpart => nbtask%connect%trace_particles
+        !FIXME: nbpart => nbtask%connect%trace_particles
         select type (nbpart)
         class is (trace_particles_t)
           nbpart%offset = nint((mod(patch%position-nbtask%position  + &

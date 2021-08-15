@@ -85,6 +85,7 @@ MODULE particle_solver_mod
     real(8)                    :: old_momentum(3,2)=0. ! old patch momentum
     procedure(pforce), pointer, nopass :: pforce => null() ! point force
   contains
+    procedure:: pre_init2
     procedure:: pre_init
     procedure:: connect
     procedure:: init
@@ -143,6 +144,13 @@ CONTAINS
 !===============================================================================
 !> Initialize particle solver, reading parameters and adding task link
 !===============================================================================
+SUBROUTINE pre_init2 (self, patch)
+  class(particle_solver_t), target  :: self
+  class(gpatch_t), pointer:: patch
+  !-----------------------------------------------------------------------------
+  self%patch => patch
+  call self%pre_init ()
+END SUBROUTINE pre_init2
 SUBROUTINE pre_init (self)
   class(particle_solver_t), target  :: self
   integer                           :: bin, iostat

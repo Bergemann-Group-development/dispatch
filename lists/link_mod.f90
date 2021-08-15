@@ -44,6 +44,7 @@ MODULE link_mod
   type, public:: link_t
     class(task_t), pointer :: task => null()          ! task
     class(nbor_t), pointer :: nbor => null()          ! next nbor; wouldn't `nbor_head` be a better name?
+    class(nbor_t), pointer :: nbors_by_level => null()! FIXME: obsolete
     class(link_t), pointer :: link => null()          ! pointer from nbor link to task list link (can be useful)
     class(link_t), pointer :: next => null()          ! next link in task list
     class(link_t), pointer :: prev => null()          ! previous link in task list

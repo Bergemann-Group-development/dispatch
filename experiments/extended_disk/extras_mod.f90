@@ -93,7 +93,7 @@ SUBROUTINE pre_init (self)
   call self%forces%pre_init (self%gpatch)                       ! forces
   call self%cooling%pre_init (self%gpatch)                      ! cool
   call self%selfgravity%pre_init (self%gpatch)                  ! selfg
-  call self%particle_solver%pre_init (self%gpatch)              ! dust
+  call self%particle_solver%pre_init2 (self%gpatch)             ! dust
   call trace%end()
 END SUBROUTINE pre_init
 
@@ -189,7 +189,6 @@ END SUBROUTINE output
 INTEGER FUNCTION check_refine (self)
   class(extras_t), target:: self
   !.............................................................................
-  gpatch => patch
   check_refine = -1
 END FUNCTION check_refine
 
