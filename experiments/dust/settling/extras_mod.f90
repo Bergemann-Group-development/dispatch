@@ -82,9 +82,8 @@ END SUBROUTINE post_update
 !===============================================================================
 !> Interface to refinement
 !===============================================================================
-INTEGER function check_refine (self, patch)
-  class(extras_t):: self
-  class(extras_t), pointer:: patch
+INTEGER FUNCTION check_refine (self)
+  class(extras_t), target:: self
   !.............................................................................
   call trace%begin ('extras_t%check_refine')                           ! keep
   check_refine = -1                                                    ! keep

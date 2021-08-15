@@ -1460,9 +1460,8 @@ END FUNCTION hash_key
 !===============================================================================
 !> Interface to refinement
 !===============================================================================
-INTEGER function check_refine (self, task)
-  class(task_t):: self
-  class(task_t), pointer:: task
+INTEGER function check_refine (self)
+  class(task_t), target:: self
   !.............................................................................
   check_refine = -1                                                    ! keep
 END FUNCTION check_refine

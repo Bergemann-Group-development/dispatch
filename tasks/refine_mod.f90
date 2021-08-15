@@ -464,7 +464,7 @@ FUNCTION refine_needed (self, link) RESULT (refine)
   !-----------------------------------------------------------------------------
   extras => task
   end select
-  refine = max(refine, extras%check_refine (task))
+  refine = max(refine, extras%check_refine ())
   if (verbose > 1) write (stdlog,1) &
     wallclock(), pad_trace(1:indent), id, level, refine, &
     minval(patch%frefine), maxval(patch%frefine), 'extras'
@@ -480,10 +480,10 @@ FUNCTION refine_needed (self, link) RESULT (refine)
   !-----------------------------------------------------------------------------
   if (max_shock > 0.0 .or. max_contact > 0.0) &
     refine = max (refine, self%shock_and_cd_detector(patch))
-  if (verbose > 1) write (stdlog,1) &
+    if (verbose > 1) write (stdlog,1) &
     wallclock(), pad_trace(1:indent), id, level, refine, &
     minval(patch%frefine), maxval(patch%frefine), 'shock'
-  !-----------------------------------------------------------------------------
+    !-----------------------------------------------------------------------------
   ! compression detector
   !-----------------------------------------------------------------------------
   if (max_compress > 0.0) &

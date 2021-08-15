@@ -153,15 +153,13 @@ END SUBROUTINE output
 !> Interface to refinement. This uses the static instance of sink_patch, where
 !> the check_refine may cause creation of dynamic sink_patch_t instances.
 !===============================================================================
-INTEGER function check_refine (self, patch)
-  class(extras_t):: self
-  class(extras_t), pointer:: patch
-  class(gpatch_t), pointer:: gpatch
+INTEGER FUNCTION check_refine (self)
+  class(extras_t), target:: self
   !.............................................................................
   gpatch => patch
   check_refine = -1
   !check_refine = max (check_refine, &
-    !sink_patch%check_refine (gpatch))                            ! sinkp
+    !sink_task%check_refine ())                                  ! sinkp
 END FUNCTION check_refine
 
 END MODULE extras_mod

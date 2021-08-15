@@ -182,10 +182,8 @@ END SUBROUTINE output
 !===============================================================================
 !> Interface to refinement.
 !===============================================================================
-INTEGER FUNCTION check_refine (self, patch)
-  class(extras_t):: self
-  class(extras_t), pointer:: patch
-  class(gpatch_t), pointer:: gpatch
+INTEGER FUNCTION check_refine (self)
+  class(extras_t), target:: self
   !.............................................................................
   gpatch => patch
   check_refine = -1                                             ! keep

@@ -146,9 +146,8 @@ END SUBROUTINE courant_condition
 !===============================================================================
 !> Interface to refinement
 !===============================================================================
-INTEGER function check_refine (self, patch)
-  class(extras_t):: self
-  class(extras_t), pointer:: patch
+INTEGER FUNCTION check_refine (self)
+  class(extras_t), target:: self
   !.............................................................................
   check_refine = -1                                                     ! keep
 END FUNCTION check_refine

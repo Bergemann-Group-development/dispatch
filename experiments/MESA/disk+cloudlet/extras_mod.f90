@@ -244,17 +244,15 @@ END SUBROUTINE output
 !===============================================================================
 !> Interface to refinement
 !===============================================================================
-INTEGER function check_refine (self, patch)
-  class(extras_t):: self
-  class(extras_t), pointer:: patch
-  class(gpatch_t), pointer:: gpatch
+INTEGER FUNCTION check_refine (self)
+  class(extras_t), target:: self
    !.............................................................................
   gpatch => patch
   !call sinks%check_refine (gpatch)                              ! sinks
   !.............................................................................
   check_refine = -1                                                    ! keep
   !check_refine = max (check_refine, &                                  ! sinkp
-  !  sinkparticles%check_refine (gpatch))                               ! sinkp
+  !  sinkparticles%check_refine ())                                     ! sinkp
 END FUNCTION check_refine
 
 !===============================================================================
