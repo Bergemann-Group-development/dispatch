@@ -123,11 +123,7 @@ SUBROUTINE update (self, all_tgt, all_src, only)
   !-----------------------------------------------------------------------------
   target => self%task
   if (target%time > target%dnload_time) then
-    ! call self%lock%set ('halo_t%update')
-    call self%copy_nbor_list (self%nbor, nbors)
-    ! call self%lock%unset ('halo_t%update')
-    call self%download (nbors, only, all_tgt, all_src)
-    call self%remove_nbor_list (nbors)
+    call self%download (self%nbor, only, all_tgt, all_src)
     if (verbose > 0) then
       write (unit,'(a,i6,2e15.6)') &
         'halo done', target%id, target%time, target%dnload_time
