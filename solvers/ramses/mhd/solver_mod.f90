@@ -286,27 +286,40 @@ FUNCTION up(f,i) RESULT (g)
 END FUNCTION
 
 !===============================================================================
+!> Interface to solver-independent gas pressure function
+!===============================================================================
 FUNCTION gas_pressure (self) RESULT (pg)
   class(solver_t):: self
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
-  integer :: l(3), u(3)
   !-----------------------------------------------------------------------------
-  associate (d  => self%mem(:,:,:,self%idx%d ,self%it,1), &
-             px => self%mem(:,:,:,self%idx%px,self%it,1), &
-             py => self%mem(:,:,:,self%idx%py,self%it,1), &
-             pz => self%mem(:,:,:,self%idx%pz,self%it,1), &
-             bx => self%mem(:,:,:,self%idx%bx,self%it,1), &
-             by => self%mem(:,:,:,self%idx%by,self%it,1), &
-             bz => self%mem(:,:,:,self%idx%bz,self%it,1), &
-             e  => self%mem(:,:,:,self%idx%e ,self%it,1))
+  call gas_pressure_sub (self, pg)
+END FUNCTION gas_pressure
+
+!===============================================================================
+!> Subroutine interface to solver-independent gas pressure function
+!===============================================================================
+SUBROUTINE gas_pressure_sub (self, pg)
+  class(solver_t):: self
+  real, dimension(:,:,:):: pg
+  real, dimension(:,:,:), pointer, contiguous:: d, px, py, pz, e, eth
+  real, dimension(:,:,:), pointer, contiguous:: bx, by, bz
+  integer:: m(3)
+  !-----------------------------------------------------------------------------
+  d  => self%mem(:,:,:,self%idx%d ,self%it,1)
+  px => self%mem(:,:,:,self%idx%px,self%it,1)
+  py => self%mem(:,:,:,self%idx%py,self%it,1)
+  pz => self%mem(:,:,:,self%idx%pz,self%it,1)
+  e  => self%mem(:,:,:,self%idx%e ,self%it,1)
   if (isothermal) then
     pg = d*self%csound**2
   else
-    pg = (eos%gamma-1d0)* &
-      (e-0.5*(up(bx,1)**2+up(by,2)**2+up(bz,3)**2+(px**2+py**2+pz**2)/d))
+    m = shape(d)
+    allocate (eth(m(1),m(2),m(3)))
+    eth = e-0.5*(up(bx,1)**2+up(by,2)**2+up(bz,3)**2+(px**2+py**2+pz**2)/d)
+    call eos%lookup_table (m, d=d, e=eth, pg=pg)
+    deallocate (eth)
   end if
-  end associate
-END FUNCTION gas_pressure
+END SUBROUTINE gas_pressure_sub
 
 !===============================================================================
 FUNCTION gas_pressure_ngz (self) RESULT (pg)
@@ -340,23 +353,40 @@ FUNCTION gas_pressure_ngz (self) RESULT (pg)
 END FUNCTION gas_pressure_ngz
 
 !===============================================================================
-!> temperature from ideal gas law, taking into account that the temperature is
-!> normalised by k_B and mu (so that specific gas constant = 1)
+!> Interface to solver-independent gas pressure function
 !===============================================================================
-FUNCTION gas_temperature (self, lnd, ss) RESULT (tmp)
+FUNCTION gas_temperature (self) RESULT (tt)
   class(solver_t):: self
-  real, dimension(:,:,:), pointer:: lnd, ss
-  real, dimension(self%gn(1),self%gn(2),self%gn(3)):: tmp
+  real, dimension(self%gn(1),self%gn(2),self%gn(3)):: tt
   !-----------------------------------------------------------------------------
-  associate (d => self%mem(:,:,:,  1,self%it,1))
-  tmp = self%gas_pressure()/d
-  if (io%verbose > 2) then
-    if (any(tmp<0)) then
-      error stop "solver_t%gas_temperature: T<0"
-    end if
-  end if
-  end associate
+  call gas_temperature_sub (self, tt)
 END FUNCTION gas_temperature
+
+!===============================================================================
+!> Subroutine interface to solver-independent gas pressure function
+!===============================================================================
+SUBROUTINE gas_temperature_sub (self, tt)
+  class(solver_t):: self
+  real, dimension(:,:,:):: tt
+  real, dimension(:,:,:), pointer, contiguous:: d, px, py, pz, e, eth
+  real, dimension(:,:,:), pointer, contiguous:: bx, by, bz
+  integer:: m(3)
+  !-----------------------------------------------------------------------------
+  d  => self%mem(:,:,:,self%idx%d ,self%it,1)
+  px => self%mem(:,:,:,self%idx%px,self%it,1)
+  py => self%mem(:,:,:,self%idx%py,self%it,1)
+  pz => self%mem(:,:,:,self%idx%pz,self%it,1)
+  e  => self%mem(:,:,:,self%idx%e ,self%it,1)
+  if (isothermal) then
+    tt = d*self%csound**2
+  else
+    m = shape(d)
+    allocate (eth(m(1),m(2),m(3)))
+    eth = e-0.5*(up(bx,1)**2+up(by,2)**2+up(bz,3)**2+(px**2+py**2+pz**2)/d)
+    call eos%lookup_table (m, d=d, e=eth, tt=tt)
+    deallocate (eth)
+  end if
+END SUBROUTINE gas_temperature_sub
 
 !===============================================================================
 FUNCTION gas_temperature_ngz (self) RESULT (tmp)

@@ -350,31 +350,23 @@ FUNCTION up(f,i) RESULT (g)
 END FUNCTION
 
 !===============================================================================
+!> Interface to solver-independent gas pressure function
 !===============================================================================
 FUNCTION gas_pressure (self) RESULT (pg)
   class(solver_t):: self
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
-  real, dimension(:,:,:), pointer, contiguous:: d, px, py, pz, e
   !-----------------------------------------------------------------------------
-  d  => self%mem(:,:,:,self%idx%d ,self%it,1)
-  px => self%mem(:,:,:,self%idx%px,self%it,1)
-  py => self%mem(:,:,:,self%idx%py,self%it,1)
-  pz => self%mem(:,:,:,self%idx%pz,self%it,1)
-  e  => self%mem(:,:,:,self%idx%e ,self%it,1)
-  if (isothermal) then
-    pg = d*self%csound**2
-  else
-    pg = (eos%gamma-1d0)*(e-0.5*((px**2+py**2+pz**2)/d))
-  end if
+  call gas_pressure_sub (self, pg)
 END FUNCTION gas_pressure
 
 !===============================================================================
+!> Subroutine interface to solver-independent gas pressure function
 !===============================================================================
 SUBROUTINE gas_pressure_sub (self, pg)
   class(solver_t):: self
   real, dimension(:,:,:):: pg
-  real, dimension(:,:,:), pointer, contiguous:: d, px, py, pz, e
-  integer:: i1, i2, i3
+  real, dimension(:,:,:), pointer, contiguous:: d, px, py, pz, e, eth
+  integer:: m(3)
   !-----------------------------------------------------------------------------
   d  => self%mem(:,:,:,self%idx%d ,self%it,1)
   px => self%mem(:,:,:,self%idx%px,self%it,1)
@@ -384,20 +376,11 @@ SUBROUTINE gas_pressure_sub (self, pg)
   if (isothermal) then
     pg = d*self%csound**2
   else
-    do i3=1,self%gn(3)
-    do i2=1,self%gn(2)
-    do i1=1,self%gn(1)
-      if (d(i1,i2,i3) > 0.0) then
-        pg(i1,i2,i3) = (eos%gamma-1d0)* &
-        (e(i1,i2,i3)-0.5*((px(i1,i2,i3)**2 &
-                          +py(i1,i2,i3)**2 &
-                          +pz(i1,i2,i3)**2)/d(i1,i2,i3)))
-      else
-        pg(i1,i2,i3) = (eos%gamma-1d0)*e(i1,i2,i3)
-      end if
-    end do
-    end do
-    end do
+    m = shape(d)
+    allocate (eth(m(1),m(2),m(3)))
+    eth = e-0.5*((px**2+py**2+pz**2)/d)
+    call eos%lookup_table (m, d=d, e=eth, pg=pg)
+    deallocate (eth)
   end if
 END SUBROUTINE gas_pressure_sub
 
