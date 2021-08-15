@@ -408,7 +408,7 @@ FUNCTION turbulence (self, time, d, p, Ux, Uy, Uz, mesh) RESULT (ff)
     end do
     end do
     !---------------------------------------------------------------------------
-    ! Add and subtract the local contribution, weighted with the siz/box volume
+    ! Add and subtract the local contribution, weighted with the size/box volume
     !---------------------------------------------------------------------------
     c2 = product(mesh%s/mesh%b)
     momentum = global_momentum%update (c2*(new - self%momentum))
@@ -438,8 +438,9 @@ FUNCTION turbulence (self, time, d, p, Ux, Uy, Uz, mesh) RESULT (ff)
     !---------------------------------------------------------------------------
     ! Friction force per unit mass, with t_damp in units of t_turn, which
     ! damps out bulk net momentum (momentum(4) is the average density)
+    ! Delay until some momentum has built up, to avoid visible patterns.
     !---------------------------------------------------------------------------
-    if (t_damp > 0.0 .and. time > 0d0) then
+    if (t_damp > 0.0 .and. time > t_turn) then
       accel = -momentum(i)/momentum(4)/(t_damp*t_turn)
     else
       accel = 0.0
