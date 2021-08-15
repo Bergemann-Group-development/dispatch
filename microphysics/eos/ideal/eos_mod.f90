@@ -1,5 +1,5 @@
 !===============================================================================
-!> Equation of state module for any sort of tables, provided by a reader
+!> Ideal equation of state module
 !===============================================================================
 MODULE eos_mod
   USE io_mod
@@ -100,10 +100,12 @@ SUBROUTINE lookup (self, dim, lnd, ee, lnx, x, lny, y, pg, tt, ss, rk, src, &
   integer:: dim(3)
   real, optional:: gamma
   logical, optional:: e_below
-  real, dimension(:,:,:), intent(in), pointer, contiguous,optional :: lnx, x, lny, y, lnd, ee
+  real, dimension(:,:,:), pointer, contiguous, optional :: lnx, x, lny, y, lnd, ee
+  intent(in)                                            :: lnx, x, lny, y, lnd, ee
   real, dimension(:,:,:),                      optional :: pg, tt, ss
   real, dimension(:,:,:,:),                    optional :: src, rk
   real, dimension(:,:,:), pointer, contiguous :: x_loc, y_loc
+  !.............................................................................
   integer:: i
   integer, save:: itimer=0
   real:: stefan
@@ -360,4 +362,3 @@ SUBROUTINE lookup_table_s (self, dim, ss, d, pg, tt, ne, rk, &
 END SUBROUTINE lookup_table_s
 
 END MODULE eos_mod
-

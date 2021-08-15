@@ -117,27 +117,34 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !-------------------------------------------------------------------------------
+!> Simple pressure function interface
 !-------------------------------------------------------------------------------
 FUNCTION pressure (self, d, e) RESULT (pg)
   class (eos_t):: self
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, e
   real(kind=KindScalarVar), dimension(size(d,1),size(d,2),size(d,3)):: pg
+  integer:: dim(3)
   !-----------------------------------------------------------------------------
-  pg = (self%gamma-1.0)*d*e
+  dim = shape(d)
+  call self%lookup_table (dim, d=d, e=e, pg=pg)
 END FUNCTION
 
 !-------------------------------------------------------------------------------
+!> Simple temperature function interface
 !-------------------------------------------------------------------------------
 FUNCTION temperature (self, d, e) RESULT (tt)
   class (eos_t):: self
   real, dimension(:,:,:), pointer:: d, e
   real, dimension(size(d,1),size(d,2),size(d,3)):: tt
+  integer:: dim(3)
   !-----------------------------------------------------------------------------
-  tt = (self%gamma-1.0)*e
+  dim = shape(d)
+  call self%lookup_table (dim, d=d, e=e, tt=tt)
 END FUNCTION
 
 !===============================================================================
-!> General EOS lookup routine, returning values in optional arguments
+!> Interface to call with ideal equation of state fall-back
+!> FIXME: Check if this is actually used, and replace with generic call
 !===============================================================================
 SUBROUTINE lookup (self, dim, lnd, ee, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
   class (eos_t):: self
@@ -321,32 +328,32 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne, pg, tt, ne, rk, src, &
     ! Separate loop for weights, vectorizes well
     !---------------------------------------------------------------------------
     do ix=1,mx
-! +5 = 20 flops
+      ! +5 = 20 flops
       qx   = 1. - px(ix)
       pxqx = px(ix) * qx
       pxpx = px(ix) * px(ix)
       qxqx = qx * qx
-! +4 = 24 flops
+      ! +4 = 24 flops
       qy   = 1. - py(ix)
       pyqy = py(ix) * qy
       pypy = py(ix) * py(ix)
       qyqy = qy     * qy
-! +4 = 28 flops
+      ! +4 = 28 flops
       pxqy = px(ix) * qy
       pxpy = px(ix) * py(ix)
       qxqy = qx     * qy
       qxpy = qx     * py(ix)
-! +5 = 33 flops
+      ! +5 = 33 flops
       f00(ix) = qxqy * (1. + pxqx - pxpx + pyqy - pypy)
       f01(ix) = qxpy * (1. + pxqx - pxpx + pyqy - qyqy)
       f10(ix) = pxqy * (1. - qxqx + pxqx + pyqy - pypy)
       f11(ix) = pxpy * (1. - qxqx + pxqx + pyqy - qyqy)
-! +4 = 37 flops
+      ! +4 = 37 flops
       fx00(ix) =    qxqy * pxqx
       fx01(ix) =    qxpy * pxqx
       fx10(ix) =  - pxqy * pxqx
       fx11(ix) =  - pxpy * pxqx
-! +4 = 41 flops
+      ! +4 = 41 flops
       fy00(ix) =    qxqy * pyqy
       fy01(ix) =  - qxpy * pyqy
       fy10(ix) =    pxqy * pyqy
@@ -481,38 +488,39 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne, pg, tt, ne, rk, src, &
 END SUBROUTINE lookup_table
 
 !===============================================================================
-!> Thermodynamic derivatives of the gas pressure
+!> Thermodynamic derivatives of the equation-of-state
 !===============================================================================
 SUBROUTINE ddeos(self,ee,d,dlnpdE_r,dlnpdlnr_E)
   class(eos_t):: self
   real(kind=KindScalarVar), dimension(:,:), pointer:: ee, d
   real(kind=KindScalarVar), dimension(:,:), pointer:: dlnpdE_r, dlnpdlnr_E
-! ------------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   integer:: n(2), ix, iy, kee, kee1
   integer,      dimension(:), allocatable:: np,np1,ik,ntab,ik1,ntab1
   real(kind=8), dimension(:), allocatable:: px,py,py1
   real(kind=8) rhm1,rhm2,drhm,algrk,eek,eek1
-  ! ----------------------------------------------------------------------------
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin ('eos_t%ddeos', itimer=itimer)
   n = shape(ee)
   rhm1 = self%lnd_min
   rhm2 = self%lnd_max
   drhm = self%lnd_stp
   allocate(np(n(1)),ntab(n(1)), ik(n(1)), ik1(n(1)), ntab1(n(1)))
   allocate(px(n(1)),py(n(1)),py1(n(1)))
-
   do iy=1,n(2)
     do ix=1,n(1)
-!
-!  Density index
-!  6 flops
-!
+      !-------------------------------------------------------------------------
+      !  Density index
+      !  6 flops
+      !-------------------------------------------------------------------------
       algrk=1d0+(log(d(ix,iy))-rhm1)/drhm
       np(ix)=max0(1,min0(md-1,int(algrk)))
       px(ix)=algrk-np(ix)
-      !
-!  Internal energy index.  This loop has indirect referencing.
-!
-! +6 = 12 flops
+      !-------------------------------------------------------------------------
+      !  Internal energy index.  This loop has indirect referencing.
+      ! +6 = 12 flops
+      !-------------------------------------------------------------------------
       ntab(ix)  = mtab(np(ix))
       eek       = 1.+(ee(ix,iy)-eemin(np(ix)))/deetab(np(ix))
       eek       = max(eek,1.0)                          ! FIXME
@@ -520,22 +528,22 @@ SUBROUTINE ddeos(self,ee,d,dlnpdE_r,dlnpdlnr_E)
       py(ix)    = eek-kee
       ik(ix)    = itab(np(ix))+kee-1
       ntab1(ix) = mtab(np(ix)+1)
-! +3 = 15 flops
+      ! +3 = 15 flops
        kee1      = kee - nint((eemin(np(ix)+1)-eemin(np(ix))) &
                                             /deetab(np(ix)))
       kee1      = min0(ntab1(ix)-1,max0(1,kee1))
       ik1(ix)   = itab(np(ix)+1)+kee1-1
-!
-!  These three lines may be commented out when we are satisfied it never panics
-!
+      !-------------------------------------------------------------------------
+      !  These lines may be commented out when we are satisfied it never panics
+      !-------------------------------------------------------------------------
       eek1      = 1.+(ee(ix,iy)-eemin(np(ix)+1))/deetab(np(ix)+1)
       eek1      = max(eek1,real(kee1))                  ! FIXME
       py1(ix)   = eek1-kee1
     end do
-!
-!  Loop over table entries, nvar = 4.  Would this be more efficent
-!  if split into one gather loop and one calculation loop?
-!
+    !---------------------------------------------------------------------------
+    !  Loop over table entries, nvar = 4.  Would this be more efficent
+    !  if split into one gather loop and one calculation loop?
+    !---------------------------------------------------------------------------
     do ix=1,n(1)
       dlnpdE_r(ix,iy) = ( &
         (1.-px(ix)) * (1.-py(ix)) * tab(ik(ix)  + ntab(ix)     ) &
@@ -548,11 +556,13 @@ SUBROUTINE ddeos(self,ee,d,dlnpdE_r,dlnpdlnr_E)
     +    px(ix)     * (1.-py(ix)) * tab(ik1(ix) + 2*ntab1(ix)    ) &
     +    px(ix)     *  py(ix)     * tab(ik1(ix) + 2*ntab1(ix) + 1) )/drhm
     end do
-! End outer loops
+    !---------------------------------------------------------------------------
+    ! End outer loops
+    !---------------------------------------------------------------------------
   end do
-deallocate(np,ntab, ik, ik1)
-deallocate(px,py,py1)
-
+  deallocate(np,ntab, ik, ik1)
+  deallocate(px,py,py1)
+  call trace%end (itimer)
 END SUBROUTINE ddeos
 
 END MODULE eos_mod
