@@ -381,13 +381,12 @@ SUBROUTINE pde (self)
   dd = exp(ld)                                                                  ! ops: 0 0 0 0 3
   U = p/dd                                                                      ! ops: 0 0 3
   !-----------------------------------------------------------------------------
-  ! Gas pressure. The 2nd table variable is entropy per unit mass, effectively
-  ! a log variable, from the table point of view.
+  ! Gas pressure. The 2nd table variable is energy per unit mass
   !-----------------------------------------------------------------------------
   ee = e/d                                                                      ! ops: 0 0 1
   self%lnd => lnd
   self%ee  => ee
-  call self%gas_pressure_sub (d, self%lnd, self%ee, pg)
+  call self%gas_pressure_sub (pg, lnd=self%lnd, ee=self%ee)
   self%pg => pg
   !-----------------------------------------------------------------------------
   ! Conservation of momentum -- first the diagonal part of the stress tensor
@@ -753,40 +752,47 @@ SUBROUTINE output (self)
 END SUBROUTINE output
 
 !===============================================================================
-SUBROUTINE gas_pressure_sub (self, d, lnd, ee, pg)
+SUBROUTINE gas_pressure_sub (self, pg, lnd, ee)
   class(mhd_t):: self
   real, dimension(:,:,:):: pg
-  real, dimension(:,:,:), pointer:: d, lnd, e, ee
+  real, dimension(:,:,:), pointer, optional:: lnd, ee
+  !.............................................................................
+  real, dimension(:,:,:), pointer:: d, e
   integer, save:: nprint=1
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%gas_pressure_sub')
-  d  => self%mem(:,:,:,self%idx%d ,self%it,1)
-  e  => self%mem(:,:,:,self%idx%e ,self%it,1)
-  call allocate_scalars(self%gn,ee)
-  ee = e/d
+  d  => self%mem(:,:,:,self%idx%d,self%it,1)
+  e  => self%mem(:,:,:,self%idx%e,self%it,1)
   if (trim(self%eos)=='ideal') then
     if (eos%gamma==1d0) then
       pg = d*self%csound**2
     else
-      pg = d*ee*(eos%gamma-1)
+      pg = e*(eos%gamma-1)
     end if
   else
     if (do_temperature) then
-      call eos%lookup_table (shape(d), d=d, ee=ee, pg=pg, tt=self%tt, label='mhd_gp_sub')
+      if (present(lnd) .and. present(ee)) then
+        call eos%lookup_table (shape(d), lnd=lnd, ee=ee, pg=pg, tt=self%tt)
+      else
+        call eos%lookup_table (shape(d), d=d, e=e, pg=pg, tt=self%tt)
+      end if
     else
-      call eos%lookup_table (shape(d), d=d, ee=ee, pg=pg, label='mhd_gp_sub2')
+      if (present(lnd) .and. present(ee)) then
+        call eos%lookup_table (shape(d), lnd=lnd, ee=ee, pg=pg)
+      else
+        call eos%lookup_table (shape(d), d=d, e=e, pg=pg)
+      end if
     end if
     if (verbose > 1 .or. nprint > 0) then
       nprint = nprint-1
-      write(io%output,*) self%id, 'lookup_table: d =', minval(d), maxval(d)
-      write(io%output,*) self%id, 'lookup_table:  ee =', minval(ee) , maxval(ee)
-      write(io%output,*) self%id, 'lookup_table:  pg =', minval(pg) , maxval(pg)
+      write(io%output,*) self%id, 'lookup_table:  d =', minval(d) , maxval(d)
+      write(io%output,*) self%id, 'lookup_table: ee =', minval(ee), maxval(ee)
+      write(io%output,*) self%id, 'lookup_table: pg =', minval(pg), maxval(pg)
       if (do_temperature) &
-        write(io%output,*) self%id, 'lookup_table:  tt =', minval(self%tt), &
+        write(io%output,*) self%id, 'lookup_table: tt =', minval(self%tt), &
           maxval(self%tt)
     end if
   end if
-  call deallocate_scalars(ee)
   call trace%end()
 END SUBROUTINE gas_pressure_sub
 
@@ -794,38 +800,10 @@ END SUBROUTINE gas_pressure_sub
 FUNCTION gas_pressure (self) result(pg)
   class(mhd_t):: self
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
-  real, dimension(:,:,:), pointer:: d, lnd, e, ee
-  integer, save:: nprint=1
   !-----------------------------------------------------------------------------
-  call trace%begin ('mhd_t%gas_pressure_sub')
-  d  => self%mem(:,:,:,self%idx%d ,self%it,1)
-  e  => self%mem(:,:,:,self%idx%e ,self%it,1)
-  call allocate_scalars(self%gn,ee)
-  ee = e/d
-  if (trim(self%eos)=='ideal') then
-    if (eos%gamma==1d0) then
-      pg = d*self%csound**2
-    else
-      pg = d*ee*(eos%gamma-1)
-    end if
-  else
-    if (do_temperature) then
-      call eos%lookup_table (shape(d), d=d, ee=ee, pg=pg, tt=self%tt, label='mhd_gp')
-    else
-      call eos%lookup_table (shape(d), d=d, ee=ee, pg=pg, label='mhd_gp2')
-    end if
-    if (verbose > 1 .or. nprint > 0) then
-      nprint = nprint-1
-      write(io%output,*) self%id, 'lookup_table: lnd =', minval(d), maxval(d)
-      write(io%output,*) self%id, 'lookup_table:  ee =', minval(ee) , maxval(ee)
-      write(io%output,*) self%id, 'lookup_table:  pg =', minval(pg) , maxval(pg)
-      if (do_temperature) &
-        write(io%output,*) self%id, 'lookup_table:  tt =', minval(self%tt), &
-          maxval(self%tt)
-    end if
-  end if
-  call deallocate_scalars(ee)
-  call trace%end()
+  call trace%begin ('mhd_t%gas_pressure')
+  call self%gas_pressure_sub (pg)
+  call trace%end ()
 END FUNCTION gas_pressure
 
 !===============================================================================

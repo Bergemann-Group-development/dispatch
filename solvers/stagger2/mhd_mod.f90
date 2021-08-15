@@ -384,7 +384,7 @@ SUBROUTINE pde (self)
   ss = s/d                                                                      ! ops: 0 0 1
   self%ss => ss
   self%lnd => lnd
-  call self%gas_pressure_sub (d, self%lnd, self%ss, pg)
+  call self%gas_pressure_sub (pg, lnd=self%lnd, ss=self%ss)
   self%pg => pg
   !-----------------------------------------------------------------------------
   ! Conservation of momentum -- first the diagonal part of the stress tensor
@@ -760,73 +760,59 @@ SUBROUTINE output (self)
 END SUBROUTINE output
 
 !===============================================================================
-FUNCTION gas_pressure (self) result(pg)
-  class(mhd_t):: self
-  real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
-  real, dimension(:,:,:), pointer:: d, s, ss
-  integer, save:: nprint=1
-  !-----------------------------------------------------------------------------
-  call trace%begin('mhd_t%gas_pressure')
-  d  => self%mem(:,:,:,self%idx%d ,self%it,1)
-  s  => self%mem(:,:,:,self%idx%s ,self%it,1)
-  call allocate_scalars(self%gn,ss)
-  ss = s/d
-  if (trim(self%eos)=='ideal') then
-    if (eos%gamma==1d0) then
-      pg = d*self%csound**2
-    else
-      pg = d**eos%gamma*exp(ss*(eos%gamma-1d0))
-    end if
-  else
-    if (do_temperature) then
-      call eos%lookup_table (shape(d),d=d, ss=ss, pg=pg, &
-        tt=self%tt)
-    else
-      call eos%lookup_table (shape(d), d=d, ss=ss, pg=pg)
-    end if
-    if (verbose > 1 .or. nprint > 0) then
-      nprint = nprint-1
-      write(io%output,*) self%id, 'lookup_table: d =', minval(d), maxval(d)
-      write(io%output,*) self%id, 'lookup_table:  ss =', minval(ss) , maxval(ss )
-      write(io%output,*) self%id, 'lookup_table:  pg =', minval(pg) , maxval(pg)
-      if (do_temperature) &
-        write(io%output,*) self%id, 'lookup_table:  tt =', minval(self%tt), maxval(self%tt)
-    end if
-  end if
-  call deallocate_scalars(ss)
-  call trace%end()
-END FUNCTION gas_pressure
-!===============================================================================
-SUBROUTINE gas_pressure_sub (self, d, lnd, ss, pg)
+SUBROUTINE gas_pressure_sub (self, pg, lnd, ss)
   class(mhd_t):: self
   real, dimension(:,:,:):: pg
-  real, dimension(:,:,:), pointer:: d, lnd, ss
+  real, dimension(:,:,:), pointer, optional:: lnd, ss
+  !.............................................................................
+  real, dimension(:,:,:), pointer:: d, s
   integer, save:: nprint=1
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%gas_pressure_sub')
+  d  => self%mem(:,:,:,self%idx%d,self%it,1)
+  s  => self%mem(:,:,:,self%idx%s,self%it,1)
   if (trim(self%eos)=='ideal') then
     if (eos%gamma==1d0) then
       pg = d*self%csound**2
     else
-      pg = d**eos%gamma*exp(ss*(eos%gamma-1d0))
+      pg = d**eos%gamma*exp(s/d*(eos%gamma-1d0))
     end if
   else
     if (do_temperature) then
-      call eos%lookup_table (shape(lnd), lnd=lnd, ss=ss, pg=pg, tt=self%tt)
+      if (present(lnd) .and. present(ss)) then
+        call eos%lookup_table (shape(d), lnd=lnd, ss=ss, pg=pg, tt=self%tt)
+      else
+        call eos%lookup_table (shape(d), d=d, s=s, pg=pg, tt=self%tt)
+      end if
     else
-      call eos%lookup_table (shape(lnd), lnd=lnd, ss=ss, pg=pg)
+      if (present(lnd) .and. present(ss)) then
+        call eos%lookup_table (shape(d), lnd=lnd, ss=ss, pg=pg)
+      else
+        call eos%lookup_table (shape(d), d=d, s=s, pg=pg)
+      end if
     end if
     if (verbose > 1 .or. nprint > 0) then
       nprint = nprint-1
       write(io%output,*) self%id, 'lookup_table: lnd =', minval(lnd), maxval(lnd)
-      write(io%output,*) self%id, 'lookup_table:  ss =', minval(ss) , maxval(ss )
+      write(io%output,*) self%id, 'lookup_table:  ss =', minval(ss) , maxval(ss)
       write(io%output,*) self%id, 'lookup_table:  pg =', minval(pg) , maxval(pg)
       if (do_temperature) &
-        write(io%output,*) self%id, 'lookup_table:  tt =', minval(self%tt), maxval(self%tt)
+        write(io%output,*) self%id, 'lookup_table:  tt =', minval(self%tt), &
+          maxval(self%tt)
     end if
   call trace%end()
   end if
 END SUBROUTINE gas_pressure_sub
+
+!===============================================================================
+FUNCTION gas_pressure (self) result(pg)
+  class(mhd_t):: self
+  real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
+  !-----------------------------------------------------------------------------
+  call trace%begin ('mhd_t%gas_pressure')
+  call self%gas_pressure_sub (pg)
+  call trace%end ()
+END FUNCTION gas_pressure
 
 !===============================================================================
 !> Set up nbor relations between MHD tasks
