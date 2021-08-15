@@ -48,7 +48,7 @@ MODULE patch_mod
     real(8):: dt_fixed                  ! for fixed time step Courant condition
     !real(8):: omega(3)=0d0              ! generic angular velocity
     real(8):: radius=0d0                ! generic radius
-    real(8), pointer:: e(:,:) => null() ! local unit vectors
+    real(8), pointer:: erot(:,:) => null() ! local unit vectors
     real(8), pointer:: einv(:,:) => null() ! local unit vectors
     real:: u_max=0.0                    ! for Courant condition
     real:: u_fixed                      ! for fixed time step Courant condition
@@ -807,10 +807,10 @@ SUBROUTINE init (self)
     ! are allocated here, but need to be reallocated by solvers modifying nv.
     ! Tracking even the small memory use, in case deallocation is forgotten.
     !---------------------------------------------------------------------------
-    allocate (self%e(3,3), self%einv(3,3))
-    self%e = 0.0
+    allocate (self%erot(3,3), self%einv(3,3))
+    self%erot = 0.0
     do i=1,3
-      self%e(i,i) = 1.0
+      self%erot(i,i) = 1.0
       self%einv(i,i) = 1.0
     end do
     !---------------------------------------------------------------------------
