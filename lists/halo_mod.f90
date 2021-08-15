@@ -458,7 +458,7 @@ SUBROUTINE conditionally_add_nbor (self, nblink, nbors, added)
         !--- make sure it is not pending remove ---
         if (nbtask%is_clear(bits%remove)) then
           !--- does it have a chance to overlap? ---
-          distance = nbtask%position - task%position  ! FIXME: periodicity!
+          distance = task%distance_to (nbtask)
           n(2) = n(2) + 1
           if (patch%interest%overlaps (nbtask%authority, distance)) then
             n(3) = n(3) + 1
@@ -826,6 +826,8 @@ SUBROUTINE check_support (self)
   class(nbor_t), pointer:: nbor
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
+  if (.not. shared%refine_on) &
+    return
   call trace%begin ('halo_t%check_support', itimer=itimer)
   if (self%has_support()) then
     if (self%task%is_set (bits%no_support)) then
