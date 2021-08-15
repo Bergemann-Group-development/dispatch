@@ -22,10 +22,9 @@
 !-----------------------
 !&restart_params        from_dir='../ramses_snapshots/data/' snapshot=3 /
 !&restart_params         verbose=1 snapshot=1 from_dir='data/' method='legacy' /
-&out_params             end_time=0.10 out_time=0.02 print_every=50 /
-&io_params              verbose=0 do_trace=f omp_trace=t do_output=t restart=-2
-                        nml_version=4
-                        method='legacy' format=11 guard_zones=t time_derivs=0 /
+&out_params             end_time=0.11 out_time=0.02 print_every=50 /
+&io_params              verbose=0 do_trace=f omp_trace=t
+                        do_output=t method='background' guard_zones=t /
 &timer_params           sec_per_report=10 min_fraction=0.001 /
 
 !-----------------------
@@ -81,7 +80,7 @@
 &task_mesg_params       verbose=0 /
 &task_list_params       verbose=0 dead_mans_hand=15 /
 &mpi_mesg_params        verbose=0 /
-&lock_params            verbose=0 alternate_time=60 /
+&lock_params            verbose=1 alternate_time=60 /
 &validate_params        /
 &load_balance_params    /
 
