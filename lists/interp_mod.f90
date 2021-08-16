@@ -78,6 +78,7 @@ SUBROUTINE in_t (target, source, ls, us, in, out, lt, ut, all, only, extrap)
   !.............................................................................
   integer, dimension(3)           :: l, u, o
   integer                         :: i1, i2, i3, i4, jt(2), nv, n, it
+  integer                         :: unit, iv0, iv1
   real                            :: pt(2), v_min, d_min
   real(8)                         :: wc
   real(8), save                   :: wtimer
@@ -85,6 +86,7 @@ SUBROUTINE in_t (target, source, ls, us, in, out, lt, ut, all, only, extrap)
   integer, save                   :: itimer=0, ntimer=0
   !-----------------------------------------------------------------------------
   if (detailed_timer) call trace%begin ('interp_t%in_t', itimer=itimer)
+  unit = merge (stdout, stdlog, verbose > 2 .or. target%id==io%id_debug)
   if (verbose > 1) then
     wc = wallclock()
     if (ntimer == 0) then
@@ -159,6 +161,14 @@ SUBROUTINE in_t (target, source, ls, us, in, out, lt, ut, all, only, extrap)
           target%id, source%id, jt, pt, ls, us, lt, ut, &
           source%unsigned
       end if
+      if (unit == stdout) then
+        write (unit,'(a,2(i6,":",i2.2,f10.6),1x,2i3,2f7.3,2(1x,2(1x,3i3)),1x,8l1)') &
+          'interp_t%in_t(1): tgt,src,jt,pt,ls,us,lt,ut,usg=', &
+          target%id, target%level, target%time, &
+          source%id, source%level, source%time, &
+          jt, pt, ls, us, lt, ut, &
+          source%unsigned
+      end if
       !.........................................................................
       if (verbose > 2) then
         write (stdlog,'(a,1p,4(2x,2e11.2))') &
@@ -175,9 +185,14 @@ SUBROUTINE in_t (target, source, ls, us, in, out, lt, ut, all, only, extrap)
       end if
       !.........................................................................
       o = lt-ls
-      do i4=1,target%nv
-        if (skip(i4,only)) &
-          cycle
+      if (present(only)) then
+        iv0 = only
+        iv1 = only
+      else
+        iv0 = 1
+        iv1 = target%nv
+      end if
+      do i4=iv0,iv1                                         ! loop over variables
         do i3=ls(3),us(3)
           !---------------------------------------------------------------------
           ! Use log interpolation only when needed
@@ -219,10 +234,23 @@ SUBROUTINE in_t (target, source, ls, us, in, out, lt, ut, all, only, extrap)
           target%id, source%id, jt, pt, ls, us, &
           source%unsigned
       end if
+      if (unit == stdout) then
+        write (unit,'(a,2(i6,":",i2.2,f10.6),1x,2i3,2f7.3,2(1x,3i3),1x,8l1)') &
+          'interp_t%in_t(2): tgt,src,jt,pt,ls,us,lt,ut,usg=', &
+          target%id, target%level, target%time, &
+          source%id, source%level, source%time, &
+          jt, pt, ls, us, &
+          source%unsigned
+      end if
       !.........................................................................
-      do i4=1,target%nv
-        if (skip(i4,only)) &
-          cycle
+      if (present(only)) then
+        iv0 = only
+        iv1 = only
+      else
+        iv0 = 1
+        iv1 = target%nv
+      end if
+      do i4=iv0,iv1                                         ! loop over variables
         v_min = huge(1.)
         do i3=ls(3),us(3)
           if (source%unsigned(i4)) then
@@ -233,17 +261,18 @@ SUBROUTINE in_t (target, source, ls, us, in, out, lt, ut, all, only, extrap)
                   exp(log(in(i1,i2,i3,i4,jt(1),1))*pt(1) &
                     + log(in(i1,i2,i3,i4,jt(2),1))*pt(2))
                 v_min = min(v_min,out(i1,i2,i3,i4))
-                !...............................................................
-                write (stdlog,'(a,1(2x,3i3),2x,2i3,2f7.3,2x,1p,3e11.2)') &
-                  'in_t(2):', i1, i2, i3, jt, pt, &
-                  in(i1,i2,i3,i4,jt(1),1), in(i1,i2,i3,i4,jt(2),1), &
-                  out(i1,i2,i3,i4)
-                !...............................................................
+                ! !...............................................................
+                ! write (stdlog,'(a,1(2x,3i3),2x,2i3,2f7.3,2x,1p,3e11.2)') &
+                !   'in_t(2):', i1, i2, i3, jt, pt, &
+                !   in(i1,i2,i3,i4,jt(1),1), in(i1,i2,i3,i4,jt(2),1), &
+                !   out(i1,i2,i3,i4)
+                ! !...............................................................
               end do
             end do
           else
             do i2=ls(2),us(2)
               !$omp simd
+  
               do i1=ls(1),us(1)
                 out(i1,i2,i3,i4) = in(i1,i2,i3,i4,jt(1),1)*pt(1) &
                                 + in(i1,i2,i3,i4,jt(2),1)*pt(2)
@@ -301,15 +330,15 @@ SUBROUTINE in_x (tgt, lt, ut, src, ls, us, om, in, out, all, only)
   real, dimension(:,:,:,:) :: in, out
   pointer                  :: in, out
   logical                  :: all
+  integer, optional        :: only
   !.............................................................................
-  integer                  :: j, i1, i2, i3, i4, nv, n, sh(4), nf(2)
+  integer                  :: j, i1, i2, i3, i4, nv, n, sh(4), nf(2), iv0, iv1
   integer, dimension(3)    :: l, u, si, st, li, ui
   real                     :: p, q, v_min, d_min
   real(8)                  :: x, wc, wtimer, sm_p, d(3)
   class(mesh_t), pointer   :: tm, sm
   logical, dimension(3)    :: outside
   integer, save            :: itimer=0, ntimer=0
-  integer, optional        :: only
   !-----------------------------------------------------------------------------
   if (detailed_timer)  call trace%begin ('interp_t%in_x', itimer=itimer)
   !.............................................................................
@@ -341,7 +370,7 @@ SUBROUTINE in_x (tgt, lt, ut, src, ls, us, om, in, out, all, only)
   om(1)%p => tgt%mesh(1)                                ! interpolation mesh
   tm => tgt%mesh(1)                                     ! target mesh
   sm => src%mesh(1)                                     ! source mesh
-  d = tgt%distance_to (src)
+  d = tgt%distance_to (src)                             ! src%pos - tgt%pos
   sm_p = tm%p + d(1)
   !.............................................................................
   if (verbose > 1) then
@@ -357,9 +386,14 @@ SUBROUTINE in_x (tgt, lt, ut, src, ls, us, om, in, out, all, only)
     flush (stdlog)
   end if
   !.............................................................................
-  do i4=1,tgt%nv                                        ! loop over variables
-    if (skip(i4,only)) &
-      cycle
+  if (present(only)) then
+    iv0 = only
+    iv1 = only
+  else
+    iv0 = 1
+    iv1 = tgt%nv
+  end if
+  do i4=iv0,iv1                                         ! loop over variables
     !---------------------------------------------------------------------------
     ! Using the full valid range
     !---------------------------------------------------------------------------
@@ -369,13 +403,15 @@ SUBROUTINE in_x (tgt, lt, ut, src, ls, us, om, in, out, all, only)
         x = tm%p + tm%r(i1)                             ! x-position
         p = (x-sm_p)/sm%d + sm%o                        ! float source index
         j = floor(p)                                    ! integer source index
+        j = min(max(j,ls(1)),us(1)-1)                   ! make sure inside src
         p = p - j                                       ! 2nd fraction
+        p = min(max(p,0.0),1.0)                         ! no extrapolation
         q = 1.0 - p                                     ! 1st fraction
         !.......................................................................
         do i3=l(3),u(3)
           do i2=l(2),u(2)
             out(i1,i2,i3,i4) = in(j  ,i2,i3,i4)*q &
-                              + in(j+1,i2,i3,i4)*p
+                             + in(j+1,i2,i3,i4)*p
           end do
         end do
         !.......................................................................
@@ -409,7 +445,9 @@ SUBROUTINE in_x (tgt, lt, ut, src, ls, us, om, in, out, all, only)
         x = tm%p + tm%r(i1)                             ! x-position
         p = (x-sm_p)/sm%d + sm%o                        ! float source index
         j = floor(p)                                    ! integer source index
+        j = min(max(j,ls(1)),us(1)-1)                   ! make sure inside src
         p = p - j                                       ! 2nd fraction
+        p = min(max(p,0.0),1.0)                         ! no extrapolation
         q = 1.0 - p                                     ! 1st fraction
         !.......................................................................
         if (verbose > 2) &
@@ -490,15 +528,15 @@ SUBROUTINE in_y (tgt, lt, ut, src, ls, us, om, in, out, all, only)
   real, dimension(:,:,:,:) :: in, out
   pointer                  :: in, out
   logical                  :: all
+  integer, optional        :: only
   !.............................................................................
-  integer                  :: j, i1, i2, i3, i4, nv, n, sh(4)
+  integer                  :: j, i1, i2, i3, i4, nv, n, sh(4), iv0, iv1
   integer, dimension(3)    :: l, u, si, st, li, ui
   real                     :: p, q, v_min, d_min
   real(8)                  :: y, wc, wtimer, sm_p, d(3)
   class(mesh_t), pointer   :: tm, sm
   logical, dimension(3)    :: outside
   integer, save            :: itimer=0, ntimer=0
-  integer, optional        :: only
   !-----------------------------------------------------------------------------
   if (detailed_timer)  call trace%begin ('interp_t%in_y', itimer=itimer)
   !.............................................................................
@@ -526,7 +564,7 @@ SUBROUTINE in_y (tgt, lt, ut, src, ls, us, om, in, out, all, only)
   om(2)%p => tgt%mesh(2)                                ! interpolation mesh
   tm => tgt%mesh(2)                                     ! target mesh
   sm => src%mesh(2)                                     ! source mesh
-  d = tgt%distance_to (src)
+  d = tgt%distance_to (src)                             ! src%pos - tgt%pos
   sm_p = tm%p + d(2)
   !.............................................................................
   if (verbose > 1) then
@@ -542,9 +580,14 @@ SUBROUTINE in_y (tgt, lt, ut, src, ls, us, om, in, out, all, only)
     flush (stdlog)
   end if
   !.............................................................................
-  do i4=1,tgt%nv                                        ! loop over variables
-    if (skip(i4,only)) &
-      cycle
+  if (present(only)) then
+    iv0 = only
+    iv1 = only
+  else
+    iv0 = 1
+    iv1 = tgt%nv
+  end if
+  do i4=iv0,iv1                                         ! loop over variables
 !---------------------------------------------------------------------------
     ! Using the full valid range
     !---------------------------------------------------------------------------
@@ -553,7 +596,9 @@ SUBROUTINE in_y (tgt, lt, ut, src, ls, us, om, in, out, all, only)
         y = tm%p + tm%r(i2)                             ! x-position
         p = (y-sm_p)/sm%d + sm%o                        ! float source index
         j = floor(p)                                    ! integer source index
+        j = min(max(j,ls(2)),us(2)-1)                   ! make sure inside src
         p = p - j                                       ! 2nd fraction
+        p = min(max(p,0.0),1.0)                         ! no extrapolation
         q = 1.0 - p                                     ! 1st fraction
         !.......................................................................
         do i3=l(3),u(3)
@@ -590,7 +635,9 @@ SUBROUTINE in_y (tgt, lt, ut, src, ls, us, om, in, out, all, only)
         y = tm%p + tm%r(i2)                             ! x-position
         p = (y-sm_p)/sm%d + sm%o                        ! float source index
         j = floor(p)                                    ! integer source index
+        j = min(max(j,ls(2)),us(2)-1)                   ! make sure inside src
         p = p - j                                       ! 2nd fraction
+        p = min(max(p,0.0),1.0)                         ! no extrapolation
         q = 1.0 - p                                     ! 1st fraction
         !.......................................................................
         v_min = huge(1.0)
@@ -685,15 +732,15 @@ SUBROUTINE in_z (tgt, lt, ut, src, ls, us, om, in, out, all, only)
   real, dimension(:,:,:,:) :: in, out
   pointer                  :: in, out
   logical                  :: all
+  integer, optional        :: only
   !.............................................................................
-  integer                  :: j, i1, i2, i3, i4, nv, n
+  integer                  :: j, i1, i2, i3, i4, nv, n, iv0, iv1
   integer, dimension(3)    :: l, u, si, st, li, ui
   real                     :: p, q, v_min, d_min
   real(8)                  :: z, wc, wtimer, sm_p, d(3)
   class(mesh_t), pointer   :: tm, sm
   logical, dimension(3)    :: outside
   integer, save            :: itimer=0, ntimer=0
-  integer, optional        :: only
   !-----------------------------------------------------------------------------
   if (detailed_timer)  call trace%begin ('interp_t%in_z', itimer=itimer)
   !.............................................................................
@@ -720,7 +767,7 @@ SUBROUTINE in_z (tgt, lt, ut, src, ls, us, om, in, out, all, only)
   !-----------------------------------------------------------------------------
   tm => tgt%mesh(3)                                     ! target mesh
   sm => src%mesh(3)                                     ! source mesh
-  d = tgt%distance_to (src)
+  d = tgt%distance_to (src)                             ! src%p - tgt%p
   sm_p = tm%p + d(3)
   !.............................................................................
   if (verbose > 1) then
@@ -736,9 +783,14 @@ SUBROUTINE in_z (tgt, lt, ut, src, ls, us, om, in, out, all, only)
     flush (stdlog)
   end if
   !.............................................................................
-  do i4=1,tgt%nv                                        ! loop over variables
-    if (skip(i4,only)) &
-      cycle
+  if (present(only)) then
+    iv0 = only
+    iv1 = only
+  else
+    iv0 = 1
+    iv1 = tgt%nv
+  end if
+  do i4=iv0,iv1                                         ! loop over variables
     !---------------------------------------------------------------------------
     ! Using the full valid range, not excluding the interior
     !---------------------------------------------------------------------------
@@ -747,7 +799,9 @@ SUBROUTINE in_z (tgt, lt, ut, src, ls, us, om, in, out, all, only)
         z = tm%p + tm%r(i3)                             ! x-position
         p = (z-sm_p)/sm%d + sm%o                        ! float src index
         j = floor(p)                                    ! integer src index
+        j = min(max(j,ls(3)),us(3)-1)                   ! make sure inside src
         p = p - j                                       ! 2nd fraction
+        p = min(max(p,0.0),1.0)                         ! no extrapolation
         q = 1.0 - p                                     ! 1st fraction
         do i2=l(2),u(2)
           do i1=l(1),u(1)
@@ -796,7 +850,9 @@ SUBROUTINE in_z (tgt, lt, ut, src, ls, us, om, in, out, all, only)
         z = tm%p + tm%r(i3)                             ! x-position
         p = (z-sm_p)/sm%d + sm%o                        ! float src index
         j = floor(p)                                    ! integer src index
+        j = min(max(j,ls(3)),us(3)-1)                   ! make sure inside src
         p = p - j                                       ! 2nd fraction
+        p = min(max(p,0.0),1.0)                         ! no extrapolation
         q = 1.0 - p                                     ! 1st fraction
         !.......................................................................
         v_min = huge(1.0)
