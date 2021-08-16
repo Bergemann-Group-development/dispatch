@@ -13,8 +13,9 @@ MODULE experiment_mod
   private
   type, public, extends(solver_t):: experiment_t
   contains
-    procedure :: init
-    procedure :: update
+    procedure:: init
+    procedure:: update
+    procedure:: bndries
   end type
 CONTAINS
 
@@ -39,13 +40,28 @@ END SUBROUTINE init
 !===============================================================================
 SUBROUTINE update (self)
   class(experiment_t):: self
-  integer:: m
+  integer:: m, it
   !----------------------------------------------------------------------------
   call trace%begin('experiment_t%update')
-  call pboundaries%conditions(self, self%it)
+  ! call self%stats ('before upd', stdout)
   call self%solver_t%update()
-  call pboundaries%conditions(self, self%new)
+  it = self%it
+  self%it = self%new
+  ! call self%stats ('after  upd', stdout)
+  self%it = it
   call trace%end()
 END SUBROUTINE update
+
+!===============================================================================
+!> Hook that catches the halo_t%update call to task%bndries
+!===============================================================================
+SUBROUTINE bndries (self)
+  class(experiment_t):: self
+  integer:: m
+  !----------------------------------------------------------------------------
+  call trace%begin('experiment_t%bndries')
+  call pboundaries%conditions(self, self%it)
+  call trace%end()
+END SUBROUTINE bndries
 
 END MODULE experiment_mod

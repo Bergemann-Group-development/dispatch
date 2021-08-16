@@ -98,18 +98,19 @@ END SUBROUTINE init
 !> or http://ieeexplore.ieee.org/document/5452414/
 !> See also the CG method in RAMSES: `ramses/poisson/phi_fine_cg.f90`.
 !===============================================================================
-SUBROUTINE cg (self, patch, source, phi1, d)
+SUBROUTINE cg (self, patch, source, phi1, d, lb, ub)
   class(poisson_t)  :: self
   class(patch_t)    :: patch
   real(var_k), dimension(:,:,:)             :: phi1
   real(var_k), dimension(:,:,:), intent(in) :: source
   real(var_k), dimension(:,:,:), intent(in) :: d
+  integer, optional :: lb(3), ub(3)
   !.............................................................................
   logical                :: dump_header
   integer                :: niter
   real                   :: error, error0, usppt
   real(8)                :: pap, ru, ru2, alpha, beta, ds(3), wc
-  integer                :: iter, m(3), ione, jone, kone
+  integer                :: iter, m(3), ione, jone, kone, unit
   integer, save          :: itimer=0
   real(8), dimension(:,:,:), allocatable:: phi, r, p, s, u
   !-----------------------------------------------------------------------------
@@ -161,6 +162,12 @@ SUBROUTINE cg (self, patch, source, phi1, d)
       patch%id, 0, error0
   end if
   !.............................................................................
+  if (verbose > 1) then
+    unit = stdout
+  else
+    unit = stdlog
+  end if
+  !.............................................................................
   call precond (r, u)
   ru = patch%fsum(r*u)
   !-----------------------------------------------------------------------------
@@ -181,22 +188,22 @@ SUBROUTINE cg (self, patch, source, phi1, d)
     p = u + beta*p
     ru = ru2
     !...........................................................................
-    if (verbose > 1) then
-      write (stdlog,"(f12.6,a,i6,2x,' iter = ',i4.1,3x,'error =',1p,g12.4)") &
+    if (verbose > 2) then
+      write (unit,"(f12.6,a,i6,2x,' iter = ',i4.1,3x,'error =',1p,g12.4)") &
         wallclock(), pad_trace(1:indent)//'poission_t%cg:', &
         patch%id, iter, error
     end if
   end do
   if (iter==max_iter+1) then
     !...........................................................................
-    write (stdout,'(a,i6,i5,1p,2e11.2)') &
+    write (unit,'(a,i6,i5,1p,2e11.2)') &
       'poisson_t%cg: no convergence, id,niter,error0,error=', &
       patch%id, max_iter, error0, error
     !...........................................................................
   else if (verbose > 0) then
     usppt = 1e6*(wallclock()-wc)/product(shape(phi))
     !...........................................................................
-    write (stdlog,'(f12.6,a,i7,i5,3x,2e12.3,f8.2)') &
+    write (unit,'(f12.6,a,i7,i5,3x,2e12.3,f8.2)') &
       wallclock(), pad_trace(1:indent)// &
      'poisson_t%cg: id, niter, initial/final error, us/pt =', &
       patch%id, iter, error0, error, usppt
@@ -419,15 +426,17 @@ END SUBROUTINE cg
 !===============================================================================
 !> 2nd order successive over relaxation with red-black ordering
 !===============================================================================
-SUBROUTINE sor (self, patch, source, phi1, d)
+SUBROUTINE sor (self, patch, source, phi1, d, lb, ub)
   class(poisson_t)  :: self
   class(patch_t)    :: patch
   real(var_k), dimension(:,:,:)             :: phi1
   real(var_k), dimension(:,:,:), intent(in) :: source
   real(var_k), dimension(:,:,:), intent(in) :: d
+  integer, optional:: lb(3), ub(3)
   !.............................................................................
   integer                :: i, j, k, sweep, ss, ione, jone, kone, m(3), iter, &
-                            niter
+                            niter, unit
+  integer, dimension(3)  :: l, u
   real                   :: error, error0
   real(8)                :: a, b, b1, b2, b3, res, numer, denom, wc, usppt
   integer, save          :: itimer=0
@@ -435,9 +444,16 @@ SUBROUTINE sor (self, patch, source, phi1, d)
   !
   !-----------------------------------------------------------------------------
   call trace%begin ('poisson_t%sor', itimer=itimer)
-  !
-  associate(n=>patch%n, ds=>patch%ds, l=>patch%li, u=>patch%ui, gn=>patch%gn)
+  unit = merge (stdout, stdlog, verbose > 1)
+  associate(n=>patch%n, ds=>patch%ds, gn=>patch%gn)
   allocate (phi(gn(1),gn(2),gn(3)))
+  if (present(lb)) then
+    l = lb
+    u = ub
+  else
+    l = patch%li
+    u = patch%ui
+  end if
   !
   !-----------------------------------------------------------------------------
   ! Calculate optimal guess for the SOR prefactor depending on
@@ -469,7 +485,7 @@ SUBROUTINE sor (self, patch, source, phi1, d)
   end if
   !
   wc = wallclock()
-  phi = 0.0
+  phi = phi1
   !-----------------------------------------------------------------------------
   ! If the root grid patch is periodic the mean density MUST be zerom and
   ! the guard zones values must be consistent with the periodicity. Refined
@@ -491,7 +507,7 @@ SUBROUTINE sor (self, patch, source, phi1, d)
   b1 = a / ds(1)**2 * ione
   b2 = a / ds(2)**2 * jone
   b3 = a / ds(3)**2 * kone
-  call self%zero_boundaries (patch, source)
+  !call self%zero_boundaries (patch, source)
   !.............................................................................
   call dump_init (gn(1:3), l, u, a, b1, b2, b3)
   call self%dump (source, 0)
@@ -533,8 +549,8 @@ SUBROUTINE sor (self, patch, source, phi1, d)
     error = error / (a*fourPiG)
     if (iter==1) error0 = error
     !...........................................................................
-    if (verbose > 1) then
-      write (stdlog,'(f12.6,a,i6,f12.6)') &
+    if (verbose > 2) then
+      write (unit,'(f12.6,a,i6,f12.6)') &
         wallclock(), pad_trace(1:indent)// &
         'poisson_t%sor: iter, error =', &
         iter, error
@@ -551,7 +567,7 @@ SUBROUTINE sor (self, patch, source, phi1, d)
   else if (verbose > 0) then
     usppt = 1e6 * (wallclock() - wc) / product(shape(phi))
     !...........................................................................
-    write (stdlog,'(f12.6,a,i7,i5,3x,2e12.3,f8.2,1p,g12.2)') &
+    write (unit,'(f12.6,a,i7,i5,3x,2e12.3,f8.2,1p,g12.2)') &
       wallclock(), pad_trace(1:indent)// &
       'poisson_t%sor: id, niter, initial/final error, us/pt, 4piG=', &
       patch%id, iter, error0, error, usppt, fourPiG
