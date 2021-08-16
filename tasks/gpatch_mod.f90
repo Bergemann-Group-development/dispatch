@@ -127,7 +127,7 @@ SUBROUTINE init_task_list (self, task_list)
 END SUBROUTINE init_task_list
 
 !===============================================================================
-!> Post-initialize.
+!> Post-initialize. For all solvers, copy the %it slot to the %new slot.
 !===============================================================================
 SUBROUTINE pre_update (self)
   class(gpatch_t), target:: self
@@ -137,6 +137,24 @@ SUBROUTINE pre_update (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('gpatch_t%pre_update', itimer=itimer)
   call self%patch_t%pre_update ()
+  !-----------------------------------------------------------------------------
+  ! Ensure that the next slot is not being used, and lock it, to allow writes.
+  ! Since the current thread "owns" the task, no other task could be trying to
+  ! write to the %it slot, which thus does not need lock protection.
+  !-----------------------------------------------------------------------------
+  self%new = 1 + mod(self%it,self%nt)
+  lock => self%mem_lock(self%new)
+                                         call lock%set ('gpatch_t%pre_update')
+  do i4=1,self%nv
+  do i3=1,self%gn(3)
+  do i2=1,self%gn(2)
+  do i1=1,self%gn(1)
+    self%mem(i1,i2,i3,i4,self%new,1) = self%mem(i1,i2,i3,i4,self%it,1)
+  end do
+  end do
+  end do
+  end do
+                                         call lock%unset ('gpatch_t%pre_update')
   !-----------------------------------------------------------------------------
   ! Initialize scratch arrays to zero
   !-----------------------------------------------------------------------------
@@ -640,8 +658,8 @@ SUBROUTINE rotate (self)
       self%id, self%it, self%new, self%dtime, self%time, 'minmax:', &
       minval(self%mem(:,:,:,1,self%it ,self%nw)), &
       maxval(self%mem(:,:,:,1,self%it ,self%nw)), &
-      minval(self%mem(:,:,:,1,self%it,1)), &
-      maxval(self%mem(:,:,:,1,self%it,1))
+      minval(self%mem(:,:,:,1,self%new,1)), &
+      maxval(self%mem(:,:,:,1,self%new,1))
   end if
   !-----------------------------------------------------------------------------
   ! Update patch position for non-zero patch velocities;
