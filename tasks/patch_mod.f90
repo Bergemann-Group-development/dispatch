@@ -1249,18 +1249,19 @@ END SUBROUTINE make_periodic8
 SUBROUTINE extrapolate_guards (self)
   class(patch_t)        :: self
   !.............................................................................
-  integer               :: it0, it1, it2, nt, iit(self%nt-1)
+  integer               :: it0, it1, it2, nt
   integer, dimension(3) :: lb, lo, li, ub, uo, ui, i
   integer               :: iv
+  type(lock_t), pointer :: lock
   integer, save         :: itimer=0
-  real(8)               :: t(self%nt-1)
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%extrapolate_guards', 3, itimer=itimer)
   nt = self%nt
-  call self%timeslots (iit, t)
-  it0 = iit(nt-1)                                       ! current time slot
-  it1 = iit(nt-2)                                       ! previous time slot
-  it2 = iit(nt-3)                                       ! the one before that
+  call self%lock%set ('patch_t%extrapolate_guards')
+  it0 = self%iit(nt  )                                    ! new time slot
+  it1 = self%iit(nt-1)                                    ! current time slot
+  it2 = self%iit(nt-2)                                    ! previsous time slot
+  call self%lock%unset ('patch_t%extrapolate_guards')
   !-----------------------------------------------------------------------------
   ! Before someone asks: Associate on the non-changing 6 doesn't please gfort
   !-----------------------------------------------------------------------------
@@ -1280,6 +1281,8 @@ SUBROUTINE extrapolate_guards (self)
     write(io%output,'(i5,2x,a,6i7)') self%id, &
       'MK extrapolating guard zone values', it2, it1, it0, self%it, self%new
   end if
+  lock => self%mem_lock(it0)
+  call self%lock%set ('patch_t%extrapolate_guards')
   do iv=1,self%mv
     if (self%unsigned(iv)) then
       !-------------------------------------------------------------------------
@@ -1359,6 +1362,7 @@ SUBROUTINE extrapolate_guards (self)
       end if
     end if
   end do
+  call self%lock%unset ('patch_t%extrapolate_guards')
   call trace%end (itimer)
 END SUBROUTINE extrapolate_guards
 
