@@ -162,7 +162,13 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !===============================================================================
-!> Pre-update, some extras module may need the time step size
+!> Pre-update.  Some extras module may need the time step size, which for this
+!> solver requires calling ctoprim() before calling the courant condtions (of
+!> which self%patch_t%courant_condition() sets the timestep).  The gpatch_t
+!> pre_update resets the forces and cooling scratch variables to zero -- it
+!> should normally be called from extras_t%pre_update(), but another call is
+!> added here for safety.  The self%pre_updated logic makes sure it only acts
+!> once.
 !===============================================================================
 SUBROUTINE pre_update (self)
   class(mhd_t), target:: self
@@ -175,12 +181,12 @@ SUBROUTINE pre_update (self)
   !-----------------------------------------------------------------------------
   if (io%smallr  /= 0.0) smallr = io%smallr
   if (io%courant /= 0.0) self%courant = io%courant
-  call ctoprim(self)                  ! Primitive variables, sound speeds
+  call ctoprim (self)                  ! Primitive variables, sound speeds
   call self%extras_t%courant_condition (detailed_timer)
   !-----------------------------------------------------------------------------
   ! Pre-update extras components
   !-----------------------------------------------------------------------------
-  call self%extras_t%pre_update
+  call self%extras_t%pre_update ()
   call trace%end ()
 END SUBROUTINE pre_update
 
@@ -599,7 +605,7 @@ subroutine ctoprim(self)
   !-----------------------------------------------------------------------------
   d  => q(:,:,:,1)
   pg => q(:,:,:,5)
-  g1 = eos%gamma-1d9
+  g1 = eos%gamma-1d0
   if (isothermal) then
     do k=1,self%gn(3)-1
     do j=1,self%gn(2)-1

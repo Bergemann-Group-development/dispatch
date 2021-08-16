@@ -53,8 +53,6 @@ MODULE hd_mod
   type, public, extends(extras_t):: hd_t
     logical:: mhd=.false.
     character(len=10):: riemann='hllc'
-    real, pointer, contiguous, dimension(:,:,:,:):: uin       ! conserved
-    real, pointer, contiguous, dimension(:,:,:,:):: unew      ! new conserved
     real, pointer, contiguous, dimension(:,:,:,:):: q         ! primitive
     real, pointer, contiguous, dimension(:,:,:,:,:):: qp, qm  ! face centered
     real, pointer, contiguous, dimension(:,:,:,:,:):: dq      ! slopes
@@ -174,17 +172,13 @@ SUBROUTINE dealloc (self)
 END SUBROUTINE dealloc
 
 !===============================================================================
-! Preparation steps, of which calling extras_t%pre_update is mandatory.
-! First, primitive variables, which include u_max, are computed and made
-! available to the pre_update step of extras_t procedures, which may need to,
-! or choose to, make use of the information to call their courant_conditions.
-! The pre_update step of extras_t procedures may also need to know the final
-! timestep, so it isn't called until after the final courant_condition call,
-! via self%gpatch_t, has actually set self%dtime.
-!
-! Note that extras_t components that need to call their own courant_conditions
-! only as part of their pre_update are free to do do, by not placing their
-! calls inside the extras_t%courant_condition.
+!> Pre-update.  Some extras module may need the time step size, which for this
+!> solver requires calling ctoprim() before calling the courant condtions (of
+!> which self%patch_t%courant_condition() sets the timestep).  The gpatch_t
+!> pre_update resets the forces and cooling scratch variables to zero -- it
+!> should normally be called from extras_t%pre_update(), but another call is
+!> added here for safety.  The self%pre_updated logic makes sure it only acts
+!> once.
 !===============================================================================
 SUBROUTINE pre_update (self)
   class(hd_t), target:: self
@@ -197,12 +191,12 @@ SUBROUTINE pre_update (self)
   !-----------------------------------------------------------------------------
   if (io%smallr  /= 0.0) smallr = io%smallr
   if (io%courant /= 0.0) self%courant = io%courant
-  call ctoprim(self)                  ! Primitive variables, sound speeds
+  call ctoprim (self)                  ! Primitive variables, sound speeds
   call self%extras_t%courant_condition (detailed_timer)
   !-----------------------------------------------------------------------------
   ! Pre-update extras components
   !-----------------------------------------------------------------------------
-  call self%extras_t%pre_update
+  call self%extras_t%pre_update ()
   call trace%end (itimer)
 END SUBROUTINE pre_update
 
@@ -521,12 +515,12 @@ SUBROUTINE godunov (self)
   !-----------------------------------------------------------------------------
   integer::i0,j0,k0,i,j,k,idim,ivar,li(3),ui(3)
   integer,save:: itimer=0
-  real, contiguous, dimension(:,:,:,:)  , pointer:: unew
+  real, contiguous, dimension(:,:,:,:)  , pointer:: uin, unew
   real, contiguous, dimension(:,:,:,:,:), pointer:: fl
   !-----------------------------------------------------------------------------
   ! Compute flux using second-order Godunov method
   !-----------------------------------------------------------------------------
-  unew => self%unew
+  unew => self%mem(:,:,:,:,self%new,1)
   fl   => self%fl
   if (.not.detailed_timer) call trace%begin ('hd_t%godunov')
   li = self%mesh%li
@@ -540,6 +534,11 @@ SUBROUTINE godunov (self)
   do ivar=1,self%nv
     if (ivar /= self%idx%phi .and. ivar /= self%idx%dphi) then
       do idim=1,ndim
+        if (idim==1) then
+          uin  => self%mem(:,:,:,:,self%it ,1)
+        else
+          uin  => self%mem(:,:,:,:,self%new,1)
+        end if
         i0 = merge(1,0,idim==1)
         j0 = merge(1,0,idim==2)
         k0 = merge(1,0,idim==3)
@@ -547,7 +546,7 @@ SUBROUTINE godunov (self)
         do j=li(2),ui(2)
         do i=li(1),ui(1)
           ! Update conservative variables
-          unew(i,j,k,ivar) = unew(i,j,k,ivar)+ &
+          unew(i,j,k,ivar) = uin(i,j,k,ivar)+ &
             & (fl(i   ,j   ,k   ,ivar,idim) &
             & -fl(i+i0,j+j0,k+k0,ivar,idim))
         end do
@@ -567,6 +566,10 @@ SUBROUTINE godunov (self)
       end do
     end if
   end do
+  !-----------------------------------------------------------------------------
+  ! Update guard zone values by extrapolating from previous values
+  !-----------------------------------------------------------------------------
+  call self%extrapolate_guards ()
   call check_small (self, unew)
   if (detailed_timer) then
     call trace%end (itimer)
@@ -682,7 +685,7 @@ SUBROUTINE ctoprim (self)
   integer:: l(3), u(3), n(3), i1, i2, i3, iv
   real:: s
   real, contiguous, dimension(:,:,:)  , pointer:: d, e, pg, c
-  real, contiguous, dimension(:,:,:,:), pointer:: unew, q
+  real, contiguous, dimension(:,:,:,:), pointer:: uin, q
   !-----------------------------------------------------------------------------
   ! NOTE: Do NOT move this allocate to some other place; it needs to be here
   ! to allow the courant_condition to be evaluated in pre_update
@@ -691,7 +694,7 @@ SUBROUTINE ctoprim (self)
   allocate (self%q (n(1),n(2),n(3),self%nv))
   q    => self%q
   c    => self%u_phase
-  unew => self%unew
+  uin  => self%mem(:,:,:,:,self%it,1)
   if (detailed_timer) then
     call trace%begin ('hd_t%ctoprim', itimer=itimer)
   else
@@ -701,12 +704,12 @@ SUBROUTINE ctoprim (self)
   do i3=1,self%gn(3)
   do i2=1,self%gn(2)
   do i1=1,self%gn(1)
-    q(i1,i2,i3,1) = max(unew(i1,i2,i3,self%idx%d),smallr)
+    q(i1,i2,i3,1) = max(uin(i1,i2,i3,self%idx%d),smallr)
     s = 1.0/q(i1,i2,i3,1)
-    q(i1,i2,i3,2) = unew(i1,i2,i3,self%idx%px)*s
-    q(i1,i2,i3,3) = unew(i1,i2,i3,self%idx%py)*s
-    q(i1,i2,i3,4) = unew(i1,i2,i3,self%idx%pz)*s
-    q(i1,i2,i3,5) = unew(i1,i2,i3,self%idx%e) - &
+    q(i1,i2,i3,2) = uin(i1,i2,i3,self%idx%px)*s
+    q(i1,i2,i3,3) = uin(i1,i2,i3,self%idx%py)*s
+    q(i1,i2,i3,4) = uin(i1,i2,i3,self%idx%pz)*s
+    q(i1,i2,i3,5) = uin(i1,i2,i3,self%idx%e) - &
       half*q(i1,i2,i3,1)*(q(i1,i2,i3,2)**2+q(i1,i2,i3,3)**2+q(i1,i2,i3,4)**2)
   end do
   end do
@@ -1094,7 +1097,7 @@ SUBROUTINE trace3d(self)
   ub = self%mesh%uo
   do k = lb(3),ub(3)
     do j = lb(2),ub(2)
-      d => self%mem(:,:,:,self%idx%d,self%new,1)
+      d => self%mem(:,:,:,self%idx%d,self%it,1)
       ff(:,:) = 0.0_dp
       if (associated(scratch%force_per_unit_mass)) then
         do i=lb(1),ub(1)
@@ -1425,10 +1428,10 @@ SUBROUTINE gravitational_force (self)
   associate (l => self%li, u => self%ui)
   wtp1 = 0.50 * 4.0 / 3.0 / self%ds
   wtm1 = 0.25 * 1.0 / 3.0 / self%ds
-  phi => self%mem(:,:,:,self%idx%phi,self%new,1)
-  d   => self%mem(:,:,:,self%idx%d  ,self%new,1)
-  et  => self%mem(:,:,:,self%idx%e  ,self%new,1)
-  p   => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
+  phi => self%mem(:,:,:,self%idx%phi,self%it,1)
+  d   => self%mem(:,:,:,self%idx%d  ,self%it,1)
+  et  => self%mem(:,:,:,self%idx%e  ,self%it,1)
+  p   => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
   allocate (gradphi1(self%gn(1),self%gn(2),self%gn(3)), &
             gradphi2(self%gn(1),self%gn(2),self%gn(3)), &
             gradphi3(self%gn(1),self%gn(2),self%gn(3)))

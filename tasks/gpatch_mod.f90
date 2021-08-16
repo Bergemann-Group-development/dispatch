@@ -33,6 +33,7 @@ MODULE gpatch_mod
     class(list_t), pointer:: task_list => null()
     class(boundaries_t), pointer:: boundaries => null()
     real(8):: d0
+    logical:: pre_updated=.false.
     character(len=8):: etype='thermal' ! or 'total', 'entropy'
   contains
     procedure, nopass:: cast2gpatch
@@ -135,6 +136,8 @@ SUBROUTINE pre_update (self)
   type(lock_t), pointer:: lock
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
+  if (self%pre_updated) &
+    return
   call trace%begin ('gpatch_t%pre_update', itimer=itimer)
   call self%patch_t%pre_update ()
   !-----------------------------------------------------------------------------
@@ -144,23 +147,34 @@ SUBROUTINE pre_update (self)
   !-----------------------------------------------------------------------------
   self%new = 1 + mod(self%it,self%nt)
   lock => self%mem_lock(self%new)
-                                         call lock%set ('gpatch_t%pre_update')
-  do i4=1,self%nv
-  do i3=1,self%gn(3)
-  do i2=1,self%gn(2)
-  do i1=1,self%gn(1)
-    self%mem(i1,i2,i3,i4,self%new,1) = self%mem(i1,i2,i3,i4,self%it,1)
-  end do
-  end do
-  end do
-  end do
-                                         call lock%unset ('gpatch_t%pre_update')
+  !                                        call lock%set ('gpatch_t%pre_update')
+  ! do i4=1,self%nv
+  ! do i3=1,self%gn(3)
+  ! do i2=1,self%gn(2)
+  ! do i1=1,self%gn(1)
+  !   self%mem(i1,i2,i3,i4,self%new,1) = self%mem(i1,i2,i3,i4,self%it,1)
+  ! end do
+  ! end do
+  ! end do
+  ! end do
+  !                                        call lock%unset ('gpatch_t%pre_update')
   !-----------------------------------------------------------------------------
   ! Initialize scratch arrays to zero
   !-----------------------------------------------------------------------------
   call scratch%pre_update
+  !-----------------------------------------------------------------------------
+  ! Mark task pre_updated (cleared in post_update)
+  !-----------------------------------------------------------------------------
+  self%pre_updated = .true.
   call trace%end (itimer)
 END SUBROUTINE pre_update
+
+!===============================================================================
+SUBROUTINE post_update (self)
+  class(gpatch_t), target:: self
+  !-----------------------------------------------------------------------------
+  self%pre_updated = .false.
+END SUBROUTINE post_update
 
 !===============================================================================
 !> Interface routine to the data_io input procedure, signalling if the patch
@@ -644,7 +658,7 @@ SUBROUTINE rotate (self)
   ! Periodic wrapping, time extrapolation
   !-----------------------------------------------------------------------------
   if (self%rotated) return
-  call trace%begin ('patch_t%rotate', itimer=itimer)
+  call trace%begin ('gpatch_t%rotate', itimer=itimer)
   if (self%is_periodic()) then
     call self%periodic_grid                     ! periodic root grid
   else if (extrapolate_gz) then

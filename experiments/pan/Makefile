@@ -1,9 +1,9 @@
 
 # Option groups
 #OPTS = full_debug
-#OPTS = vscode
+OPTS = vscode
 #OPTS = debug
-OPTS =
+#OPTS =
 #OPTS = optimized
 #OPTS = optimized_diagnostics
 
@@ -14,8 +14,8 @@ EXEC            = dispatch.x
 # Choice of solvers
 SINK_PARTICLES     = pan
 PARTICLE_SOLVER    = KDK
-#SOLVER             = ramses/hydro
-SOLVER             = ramses/mhd
+SOLVER             = ramses/hydro
+#SOLVER             = ramses/mhd
 #SOLVER             = ramses/mhd_eos
 #SOLVER             = stagger2
 #SOLVER             = stagger2/e

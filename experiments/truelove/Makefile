@@ -2,14 +2,14 @@
 #COMPILER = ifort
 
 # Option groups
-OPTS = full_debug
-#OPTS = vscode
+#OPTS = full_debug
+OPTS = vscode
 #OPTS = debug
 #OPTS =
 #OPTS = optimized
 
 # Default target and methods
-UPD             = adams_bashforth
+#UPD             = adams_bashforth
 #SOLVER          = zeus3d
 SOLVER          = ramses/hydro
 #SOLVER          = stagger2/e
