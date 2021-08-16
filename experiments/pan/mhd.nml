@@ -1,0 +1,92 @@
+!-----------------------
+! Experiment setup params
+!-----------------------
+&cartesian_params
+ origin=0,0,0 omp_init=t
+!size=1,1,1 dims=3*3  mpi_dims=1,1,2   ! 32 cells  1 process    1 node      27 patches    2 cores       96x96x96  13 patches/core
+ size=1,1,1 dims=3*4  mpi_dims=1,1,2   ! 16 cells  1 process    1 node      64 patches    2 cores       64x64x64  32 patches/core
+!size=2,1,1 dims=3*8  mpi_dims=2,1,1   ! 16 cells  2 processes  1 node     512 patches    4 cores    128x128x128 128 patches/core
+!size=1,1,1 dims=3*8  mpi_dims=2,2,1   ! 16 cells  4 processes  1 node     512 patches    8 cores    128x128x128  64 patches/core
+!size=1,1,1 dims=3*8  mpi_dims=1,1,1   ! 32 cells  1 process    1 node     512 patches   10 cores    256x256x256  51 patches/core
+!size=1,1,1 dims=3*10 mpi_dims=1,1,1   ! 32 cells  1 process    1 node    1000 patches   20 cores    320x320x320  50 patches/core
+!size=1,1,1 dims=3*16 mpi_dims=1,1,1   ! 32 cells  2 process    1 node    4096 patches   10 cores    512x512x512 200 patches/core
+!size=1,1,1 dims=3*20 mpi_dims=2,2,2   ! 32 cells  8 processes  4 nodes   8000 patches   80 cores    640x640x640 100 patches/core
+!size=1,1,1 dims=3*40 mpi_dims=4,4,4   ! 32 cells 64 processes 64 nodes  64000 patches 1280 cores 1280x1280x1280  50 patches/core
+!size=1,1,1 dims=3*80 mpi_dims=4,4,4   ! 32 cells 64 processes 64 nodes 512000 patches 1280 cores 2560x2560x2560 400 patches/core
+/
+&patch_params           nt=5 grace=0.3 n=3*32 dt_fixed=-3e-4 /
+!&patch_params           nt=5 grace=0.3 n=3*16 /
+
+!-----------------------
+! I/O parameters
+!-----------------------
+!&restart_params        from_dir='../ramses_snapshots/data/' snapshot=3 /
+!&restart_params         verbose=1 snapshot=1 from_dir='data/' method='legacy' /
+&out_params             end_time=0.21 out_time=0.02 print_every=100 /
+&io_params              verbose=0 do_trace=f omp_trace=t
+                       !id_debug=26
+                        do_output=t method='background' guard_zones=t /
+&timer_params           sec_per_report=10 min_fraction=0.001 /
+
+!-----------------------
+! Guard zone params
+!-----------------------
+&halo_params            verbose=0 /
+&guards_params          verbose=0 detailed_timer=f /
+&interp_params          verbose=0 detailed_timer=f /
+&time_slices_params     order=1 /
+
+!-----------------------
+! Obsolete guard zone params
+!-----------------------
+&download_params        verbose=0 
+                        use_prolong='different_prolong'
+                        use_restrict='different'
+                        check_filled=t /
+&guard_zone_params      verbose=0 method='simple' /
+
+!-----------------------
+! Initial condition and forces
+!-----------------------
+&IC_params              type='turbulence' /
+&force_params           type='turbulence' /
+&turbulence_params      ampl_turb=2 t_turn=0.05 k1=1 k2=2 pk=0.0 seed=5 
+                        verbose=0 /
+&IC_turbulence_params   b0=0.1 /
+&selfgravity_params     selfgravity=f /
+&trace_particle_params  on=f verbose=0 per_cell=1.0 /
+
+!-----------------------
+! Solver specific parameters
+!-----------------------
+&scaling_params         l_pc=40. d_cgs=50e-24, v_kms=1.0 mu=2.4 /
+&cooling_params         on=f verbose=1 type=0 /
+&flux_params            on=f verbose=0 /
+&ramses_params          courant_factor=0.250 isothermal=t slope_type=3.5
+                        detailed_timer=f
+                       !riemann='hlld_vec'
+                        smallr=1e-3 smallc=1 /
+&stagger_params         nu=0.30,0.0,1.0,0.1,1.0,1.0 /
+&eos_params             gamma=1d0 /
+&timestep_params        /
+&refine_params          on=f check_interval=2 /
+
+!-----------------------
+! Sink particle parameters
+!-----------------------
+&sink_patch_params      on=f n_ad_hoc=2 /
+&sink_params            x=0.52 y=0.52 z=0.52 vx=0.1 mass=1 /
+&sink_params            x=0.48 y=0.48 z=0.48 vx=0.2 mass=1 /
+&particle_params        verbose=2 /
+
+!-----------------------
+! Framework params
+!-----------------------
+&dispatcher_params      method=0 /
+&task_mesg_params       verbose=0 /
+&task_list_params       verbose=0 dead_mans_hand=15 /
+&mpi_mesg_params        verbose=0 /
+&lock_params            verbose=1 alternate_time=60 /
+&validate_params        /
+&load_balance_params    /
+
