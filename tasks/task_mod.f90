@@ -105,8 +105,11 @@ MODULE task_mod
     type(running_mean_t):: running_cost ! running averge update cost
   contains
     procedure:: pre_init
+    procedure:: pre_update
+    procedure:: post_update
     procedure:: init
     procedure:: init_unique
+    procedure:: init_level
     procedure:: dealloc
     procedure:: dnload
     procedure:: update => void
@@ -128,9 +131,9 @@ MODULE task_mod
     procedure:: overlaps
     procedure:: overlaps_point
     procedure:: nbor_relations
+    procedure:: distance_to
     procedure:: distance_from
     procedure:: distance
-    procedure:: distance_to => distance
     procedure:: point_distance
     procedure:: pack
     procedure:: unpack
@@ -154,8 +157,9 @@ MODULE task_mod
     procedure:: allocate_mesg
     procedure:: roi
     procedure:: roa
+    procedure:: update_position
+    procedure:: velocity_shift
     procedure:: hash_key
-    procedure:: pre_update
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -200,6 +204,22 @@ MODULE task_mod
   integer, dimension(:), pointer, save:: id => null()
   type(dll_t), pointer:: deleted_list
 CONTAINS
+
+!===============================================================================
+!> For timing
+!===============================================================================
+SUBROUTINE pre_update (self)
+  class(task_t), target:: self
+  self%wallclock = wallclock()
+END SUBROUTINE pre_update
+
+!===============================================================================
+SUBROUTINE post_update (self)
+  class (task_t):: self
+  call trace%begin ('task_t%post_update')
+  call io%abort('task_t%post_update called')
+  call trace%end ()
+END SUBROUTINE post_update
 
 !===============================================================================
 SUBROUTINE void (self)
@@ -396,6 +416,13 @@ SUBROUTINE init_unique (self, same)
 END SUBROUTINE init_unique
 
 !===============================================================================
+SUBROUTINE init_level (self)
+  class(task_t):: self
+  !-----------------------------------------------------------------------------
+  call io%abort ('task_t%init_level called')
+END SUBROUTINE init_level
+
+!===============================================================================
 !> Deallocate permanent arrays
 !===============================================================================
 SUBROUTINE dealloc (self)
@@ -571,6 +598,7 @@ SUBROUTINE rotate (self)
   !-----------------------------------------------------------------------------
   ! Implement setting of per-patch parameters here
   !-----------------------------------------------------------------------------
+  if (shared%benchmark > 0) return
   if (io%processing > 0d0) then
     if (io%out_next > 0.0) self%out_next = io%out_next
     if (io%grace    > 0.0) self%grace    = io%grace
@@ -634,7 +662,6 @@ SUBROUTINE rotate (self)
   end if
   call self%log ('rotate', 3)
   call trace%end (itimer)
-
 END SUBROUTINE rotate
 
 !===============================================================================
@@ -1055,6 +1082,22 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
 END SUBROUTINE nbor_relations
 
 !===============================================================================
+!> Disambiguation: distance from self to task -- applies (only) to Cartesian
+!> meshes
+!===============================================================================
+FUNCTION distance_to (self, task) RESULT (d)
+  class(task_t):: self
+  class(task_t):: task
+  real(8):: d(3), p(3)
+  !-----------------------------------------------------------------------------
+  d = task%position - self%position
+  p = self%box
+  where (self%periodic)
+    d = modulo (d + 0.5_8*p, p) - 0.5_8*p
+  end where
+END FUNCTION distance_to
+
+!===============================================================================
 !> Disambiguation
 !===============================================================================
 FUNCTION distance_from (self, task)
@@ -1272,9 +1315,11 @@ END SUBROUTINE periodic_grid
 SUBROUTINE courant_condition (self, detailed_timer)
   class(task_t):: self
   logical, optional:: detailed_timer
+  real(8):: start_time
   !-----------------------------------------------------------------------------
+  start_time = io%start_time - io%out_time
   call trace%begin ('task_t%courant_condition')
-  if (io%do_output .and. io%out_time > 0.0) then
+  if (io%do_output .and. io%out_time > 0.0 .and. self%time > start_time) then
     self%dtime = min (self%dtime, io%out_time)
     if (self%time < self%out_next) then
       if (self%time + self%dtime*(1.+self%grace) > self%out_next) then
