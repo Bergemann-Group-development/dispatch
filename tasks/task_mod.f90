@@ -792,7 +792,7 @@ LOGICAL FUNCTION is_ahead_of (self, target)
     else if (self%istep < 3) then
       is_ahead_of = nbtime >= tgtime
     else
-      is_ahead_of = nbtime + nbdtime*grace > tgtime
+      is_ahead_of = nbtime + nbdtime*grace >= tgtime
     end if
                                             call self%lock%unset ('is_ahead_of')
   else
@@ -813,14 +813,15 @@ LOGICAL FUNCTION is_ahead_of (self, target)
       is_ahead_of = nbtime >= tgtime
     ! -- use a grace interval that is fraction of the nbor time step
     else
-      is_ahead_of = nbtime + nbdtime*grace > tgtime
+      is_ahead_of = nbtime + nbdtime*grace >= tgtime
     end if
   end if
-  if (io_unit%verbose>1) then
-    if (target%id==io%id_debug.or.io_unit%verbose>4) &
-    print'(i6,i4,2x,a,i6,3f9.5,l3)', self%id, omp_mythread, 'mk is_ahead_of: ', &
-    target%id, self%time, self%dtime*target%grace, target%time, is_ahead_of
-  end if
+  !if (io_unit%verbose>1) then
+    !if (target%id==io%id_debug.or.io_unit%verbose>4) &
+    ! write (stdlog,'(i6,":",i2.2,2f9.5,2x,a,i6,":",i2.2,f9.5,l3)') &
+    ! self%id, self%level, nbtime, nbdtime*grace, 'is_ahead_of: ', &
+    ! target%id, target%level, tgtime, is_ahead_of
+  !end if
 END FUNCTION is_ahead_of
 
 SUBROUTINE print (self)
@@ -1048,8 +1049,8 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   ! in check_nbors() and check_ready(), but may be needed exceptionally
   !-----------------------------------------------------------------------------
   if (abs(another%level-self%level) > 1) then
-  !  needed = .false.
-  !  needs_me = .false.
+    needed = .false.      ! Do NOT comment this out -- check_ready fails!
+    needs_me = .false.    ! Do NOT comment this out -- check_ready fails!
     download = .false.
   end if
   if (self%verbose > 2) &
@@ -1306,7 +1307,7 @@ SUBROUTINE courant_condition (self, detailed_timer)
     if (self%time < self%out_next) then
       if (self%time + self%dtime > self%out_next) then
         self%dtime = self%out_next - self%time
-        do while (self%time + self%dtime*(1.+self%grace) < self%out_next)
+        do while (self%time + self%dtime < self%out_next)
           self%dtime = self%dtime*1.00001d0
           write (stdlog,'(a,i6,1p,e115.6)') &
             'task_t%courant_condition: iterating, dtime =', self%id, self%dtime

@@ -7,7 +7,7 @@
                    !end_time=.010 start_time=0.0 out_time=.001
                    !end_time=0.10 start_time=0.0 out_time=0.20
                    !end_time=0.481 start_time=0.0 out_time=0.01
-                    end_time=0.491 start_time=0.42 out_time=0.001
+                    end_time=0.491 start_time=0.42 out_time=0.002
                    !end_time=0.491 start_time=0.3 out_time=0.01
                    !start_time=0.3 out_time=0.01
                     print_every=1 /

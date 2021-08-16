@@ -1041,8 +1041,8 @@ SUBROUTINE check_ready (self, link, lock, status)
   logical, optional:: lock
   integer, optional:: status
   !.............................................................................
-  logical:: ok
-  class(task_t), pointer:: task
+  logical:: ok, is
+  class(task_t), pointer:: task, nbtask
   class(link_t), pointer:: oldest
   class(nbor_t), pointer:: nbor
   real(8):: t_oldest
@@ -1086,22 +1086,31 @@ SUBROUTINE check_ready (self, link, lock, status)
     nbor => link%nbor                                   ! use original nbor list
     t_oldest = huge(1d0)
     do while (associated (nbor))                        ! keep going until end
+      nbtask => nbor%task
       !-------------------------------------------------------------------------
       ! Check nbors that are needed, not ignored, and have support
       !-------------------------------------------------------------------------
       if (nbor%needed .and. nbor%task%is_clear(ignore)) then
-        if (.not. nbor%task%is_ahead_of (task)) then
-          ok = .false.
-          status_l = max(1,status_l)
+        !-----------------------------------------------------------------------
+        ! This extra test is only needed if task_t%nbor_relations does not
+        ! set nbor%needed to .false.
+        !-----------------------------------------------------------------------
+        if (abs(task%level-nbtask%level) <= 1) then
+          if (.not. nbor%task%is_ahead_of (task)) then
+            ok = .false.
+            status_l = max(1,status_l)
+          end if
         end if
         !.......................................................................
-        if (self%verbose > 1) &
-          write (io_unit%log,'(f12.6,1x,a,i6,1x,a,i6,i4,1p,e12.3,l2)') &
+        if (self%verbose > 1) then
+          is = nbor%task%is_ahead_of(task)
+          write (stdlog,'(f12.6,1x,2(a,i6,":",i2.2,f10.6,2x),f7.3,2x,3l1)') &
             wallclock(), &
-            'list_t%check_ready:', link%task%id, &
-            'nbor, level, delta_t, ahead =', nbor%task%id, nbor%task%level, &
-            (nbor%task%time-task%time)/max(nbor%task%dtime,tiny(1d0)), &
-            nbor%task%is_ahead_of(task)
+            'list_t%check_ready: task,t=', task%id, task%level, task%time, &
+            'nbtask,t,delta,ahead =', nbtask%id, nbtask%level, nbtask%time, &
+            (nbtask%time-task%time)/max(nbtask%dt(nbtask%it),tiny(1d0)), &
+            is, nbor%needed, nbor%needs_me
+        end if
         !.......................................................................
       else
         !.......................................................................
@@ -1137,8 +1146,8 @@ SUBROUTINE check_ready (self, link, lock, status)
       !$omp atomic write
       task%n_failed = 0
       !.........................................................................
-      if (self%verbose > 0) &
-        write (io_unit%log,'(f12.6,1x,a,i6,f12.6)') wallclock(), &
+      !if (self%verbose > 0) &
+        write (stdlog,'(f12.6,1x,a,i6,f12.6)') wallclock(), &
         'list_t%check_ready: queue_by_time', task%id, task%time
       !.........................................................................
       call self%queue_by_time (link)                      ! add task to queue

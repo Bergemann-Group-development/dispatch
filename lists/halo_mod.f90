@@ -485,10 +485,6 @@ SUBROUTINE conditionally_add_nbor (self, nblink, nbors, added)
                 nbtask%distance(patch)/task%size, &
                 patch%hash_key(), nbtask%hash_key()
             end if
-            if (abs(self%task%level-nblink%task%level) > 1) then
-              nbor%needed = .false.
-              nbor%needs_me = .false.
-            end if
             call self%add_nbor_by_level (nbors, nbor, added)
           end if
         end if
