@@ -84,7 +84,7 @@ SUBROUTINE select_dnloader (self, link, all_cells)
   class(data_hub_t), pointer :: hub
   ! --------------------------------------------------------------------
   patch => self%target
-  nbor  => link%nbors_by_level
+  nbor  => link%nbor
   do while (associated(nbor))
     source => task2patch(nbor%task)
     if (nbor%download) then
@@ -891,7 +891,7 @@ SUBROUTINE check_in_nbors (self, pos, iv, time, jt, pt, id, found, scr, rt_scr)
   source => self%source
   target => self%target
   d = source%idx%d
-  nbor => source%link%nbors_by_level
+  nbor => source%link%nbor
   ic=0
   do while((associated(nbor)).and..not.found)
     ic = ic+1
