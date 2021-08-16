@@ -50,7 +50,7 @@ CONTAINS
 !===============================================================================
 !===============================================================================
 SUBROUTINE init (task_list)
-  type(task_list_t), pointer:: task_list
+  class(task_list_t), pointer:: task_list
   integer:: iostat
   integer, save:: extension=1
   namelist /snapshot_params/ verbose, meshfile, order, verbose, snapfile, &
@@ -82,7 +82,7 @@ END SUBROUTINE init
 !===============================================================================
 SUBROUTINE read_bifrost_snap (task_list)
   USE kinds_mod
-  type(task_list_t), pointer:: task_list
+  class(task_list_t), pointer:: task_list
   !.............................................................................
   class(link_t), pointer:: link
   class(task_t), pointer:: task
@@ -386,7 +386,7 @@ END SUBROUTINE read_bifrost_snap
 !> Read a legacy Stagger raw data file, with auxiliary grid file
 !===============================================================================
 SUBROUTINE read_stagger_snap (task_list)
-  type(task_list_t), pointer:: task_list
+  class(task_list_t), pointer:: task_list
   !.............................................................................
   class(link_t), pointer:: link
   class(task_t), pointer:: task

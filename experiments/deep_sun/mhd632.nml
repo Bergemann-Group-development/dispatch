@@ -69,7 +69,7 @@
 &rt_setup_params    on=t verbose=0 /
 &rt_integral_params verbose=0 dtau_min=1e-3 dtau_dif=1e3 dtau_max=1e4 
                     solver=2 order=1 /
-&sc_rt_params       on =f verbose=0 nt=5 n_mu=2 n_phi=4 n_bin=4
+&sc_rt_params       on =t verbose=0 nt=5 n_mu=2 n_phi=4 n_bin=4
                     rt_grace=0.05 rt_llc=0,0,-1.4 rt_urc=6,6,0.45
                     dnload_mhd=f
                     n_warmup=6 vertical_propagation=f cdtd=0.05 rt_freq=1.0/
@@ -97,7 +97,7 @@ eos='tabular'
 &task_mesg_params   verbose=0 /
 &mpi_mesg_params    verbose=0 debug=f /
 /
-&refine_params          on=t verbose=2 levelmin=8 levelmax=10
+&refine_params          on=f verbose=2 levelmin=8 levelmax=10
                         max_vorticity=2.0 !min_vorticity=2.0
                         max_compress=5 !min_compress =4.0
                         max_shock=2.0
@@ -105,18 +105,7 @@ eos='tabular'
                         /
 !&download_params order_interpolator=1 /
 &ramses_params
- !courant_factor=0.5
- !csound=1.0
- gamma=1.6666667
- !do_temperature=t
- slope_type=2
- !smallr=1e-8
- !smallc=1e-8
- !smallr=1e-3
- ! smallc=1e-2
- !divb_iter=0
- unsigned=t
- !convert_e=f
+ slope_type=3.5
 /
 &non_ideal_params
  mhd_Ohm=f

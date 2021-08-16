@@ -14,7 +14,7 @@ SOLVER          = ramses/mhd_eos
 EXEC            = dispatch.x
 PARTICLE_SOLVER=
 TOP             = ../..
-#conductivity    = extras/heat_conductivity/spitzer
+conductivity    = extras/heat_conductivity/spitzer
 
 # Ideal or tabular EOS
 #EOS             = microphysics/eos/ideal
