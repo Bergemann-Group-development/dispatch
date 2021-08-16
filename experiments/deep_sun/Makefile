@@ -2,17 +2,16 @@
 # Option groups
 #OPTS = debug
 #OPTS = full_debug
-OPTS =
-#OPTS = optimized
+#OPTS =
+OPTS = optimized
 
 # Default target and methods
-iUPD             = adams_bashforth
+UPD             = adams_bashforth
 RT_SOLVER       = short_characteristics
 SOLVER          = ramses/mhd_eos
 #SOLVER          = stagger2/bifrost
 #STAGGER         = stagger_6th.o
 EXEC            = dispatch.x
-PARTICLE_SOLVER=
 TOP             = ../..
 conductivity    = extras/heat_conductivity/spitzer
 
@@ -33,7 +32,7 @@ sinclude $(TOP)/config/Makefile
 
 
 # List the .o files the main program depends on after the colon:
-$(EXEC)            : cartesian_mod.o setup_mod.o eos_mod.o dispatcher_mod.o \
+$(EXEC)            : restart_mod.o cartesian_mod.o setup_mod.o dispatcher_mod.o \
                      read_snapshot_mod.o
 
 # Other local ependencies
