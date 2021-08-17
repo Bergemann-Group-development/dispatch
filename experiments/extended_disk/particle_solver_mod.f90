@@ -166,7 +166,7 @@ SUBROUTINE pre_init (self)
   logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
   call trace%begin ('particle_solver_t%pre_init')
-  self%patch => patch                           ! make the patch known
+  patch => self%patch                           ! make the patch known
   self%id = patch%id                            ! for now, inherit
   !self%dust%patch => self%patch                 ! make the patch known
   !-----------------------------------------------------------------------------

@@ -48,7 +48,7 @@ MODULE extras_mod
   ! Optional modules start here.
   !-----------------------------------------------------------------------------
   USE selfgravity_mod                                           ! selfg
-  USE disk_particles_mod                                        ! dust
+  USE particle_solver_mod                                       ! dust
   !-----------------------------------------------------------------------------
   implicit none
   private
@@ -57,9 +57,9 @@ MODULE extras_mod
   ! states, must be accessed via a private instance in the extras_t data type
   !-----------------------------------------------------------------------------
   type, public, extends(gpatch_t):: extras_t
-    type(selfgravity_t):: selfgravity                      ! selfg
     class(gpatch_t), pointer:: gpatch => null()                 ! keep
-    type(disk_particles_t):: particle_solver                    ! dust
+    type(selfgravity_t), pointer:: selfgravity                  ! selfg
+    class(particle_solver_t), pointer:: particle_solver         ! dust
     real(8):: omega(3)
     real(8), dimension(:,:,:,:),   contiguous, pointer:: r       => null()
     real(8), dimension(:,:,:,:,:), contiguous, pointer:: r_hat   => null()
@@ -92,7 +92,7 @@ SUBROUTINE pre_init (self)
   call trace%begin ('extras_t%pre_init')
   self%gpatch => self                                             ! keep
   call self%selfgravity%pre_init (self%gpatch)                    ! selfg
-  !FIXME: call self%particle_solver%pre_init (self%gpatch)                ! dust
+  call self%particle_solver%pre_init ()                           ! dust
   call trace%end()
 END SUBROUTINE pre_init
 

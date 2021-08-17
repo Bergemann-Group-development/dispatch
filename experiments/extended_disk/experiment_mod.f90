@@ -14,6 +14,7 @@ MODULE experiment_mod
   USE units_mod
   USE vector_mod, only: cross
   USE disk_model_mod
+  USE disk_particles_mod
   USE task_mod
   USE validate_mod
   USE omp_lock_mod
@@ -52,6 +53,7 @@ SUBROUTINE init (self)
   real, dimension(:,:,:), pointer:: d, e, px, py, pz
   !----------------------------------------------------------------------------
   call trace%begin ('experiment_t%init')
+  allocate (disk_particles_t:: self%particle_solver)
   call self%solver_t%init
   !----------------------------------------------------------------------------
   call io%lock%set
