@@ -230,7 +230,7 @@ END SUBROUTINE to_per_unit_mass
 !===============================================================================
 !> Vectorized transformation from target index space to source index space.
 !> The r(m,m,m,1:3) array holds the floating index distances from the patch
-!> position, in units of cells.  The patch%e(j,k) array holds the absolute
+!> position, in units of cells.  The patch%erot(j,k) array holds the absolute
 !> Cartesian displacement in the j-direction for one cell along the local
 !> unit vector in the k-direction.
 !===============================================================================
@@ -273,8 +273,8 @@ SUBROUTINE indices (self, tgt, lt, ut, src, ps)
   !-----------------------------------------------------------------------------
   do j=1,3
   do k=1,3
-    tc(j,k) = tgt%e(j,k)*tgt%ds(k)
-    sc(j,k) = src%e(j,k)/src%ds(k)
+    tc(j,k) = tgt%erot(j,k)*tgt%ds(k)
+    sc(j,k) = src%erot(j,k)/src%ds(k)
   end do
   end do
   allocate (pt(size(ps,1),3))
@@ -286,7 +286,7 @@ SUBROUTINE indices (self, tgt, lt, ut, src, ps)
       ! pt(:,j) is the displacement in the common Cartesian coordinate
       ! j-direction for each index triplet (i1,i2,i3) in the target index space,
       ! where the three indices give the location in the local unit vector
-      ! coordinates. self%r(i1,i2,i3) is in units of cells, and tgt%e(j,k) is
+      ! coordinates. self%r(i1,i2,i3) is in units of cells, and tgt%erot(j,k) is
       ! in code units, and hence p(:,j) is in code units.
       !-------------------------------------------------------------------------
       do j=1,3
@@ -320,12 +320,12 @@ SUBROUTINE indices (self, tgt, lt, ut, src, ps)
           real(8),dimension(3):: pos, p, p2
           integer:: i
           pos = tgt%position - src%position + &
-                (i1-tgt%mesh(1)%o)*tgt%ds(1)*tgt%e(:,1) + &
-                (i2-tgt%mesh(2)%o)*tgt%ds(2)*tgt%e(:,2) + &
-                (i3-tgt%mesh(3)%o)*tgt%ds(3)*tgt%e(:,3)
-          p(1) = sum(pos*src%e(:,1))/src%ds(1) + src%mesh(1)%o
-          p(2) = sum(pos*src%e(:,2))/src%ds(2) + src%mesh(2)%o
-          p(3) = sum(pos*src%e(:,3))/src%ds(3) + src%mesh(3)%o
+                (i1-tgt%mesh(1)%o)*tgt%ds(1)*tgt%erot(:,1) + &
+                (i2-tgt%mesh(2)%o)*tgt%ds(2)*tgt%erot(:,2) + &
+                (i3-tgt%mesh(3)%o)*tgt%ds(3)*tgt%erot(:,3)
+          p(1) = sum(pos*src%erot(:,1))/src%ds(1) + src%mesh(1)%o
+          p(2) = sum(pos*src%erot(:,2))/src%ds(2) + src%mesh(2)%o
+          p(3) = sum(pos*src%erot(:,3))/src%ds(3) + src%mesh(3)%o
           if (any(abs(p-ps(i1,i2,i3,:)) > 0.001)) then
             write(stdlog,1) pt(i1,:), 'pnt src position in tgt coords'
             write(stdlog,1) src%position, 'src position'
@@ -393,11 +393,11 @@ SUBROUTINE in_t (target, source, ls, us, in, out, lt, ut, all, only, extrap)
   if (.false.) then
     allocate(p(target%n(1)))
     ui = source%mesh(1)%ui
-    write (stdout,'(a,3(/,3f12.6))') 'in_t: source%e =', source%e
-    write (stdout,'(a,3(/,3f12.6))') 'in_t: target%e =', target%e
-    e = matmul (target%e, source%einv)
+    write (stdout,'(a,3(/,3f12.6))') 'in_t: source%erot =', source%erot
+    write (stdout,'(a,3(/,3f12.6))') 'in_t: target%erot =', target%erot
+    e = matmul (target%erot, source%einv)
     write (stdout,'(a,3(/,3f12.6))') 'in_t:        e =', e
-    e = matmul (source%einv, target%e)
+    e = matmul (source%einv, target%erot)
     write (stdout,'(a,3(/,3f12.6))') 'in_t:        e =', e
     !--- radial coordinates in
     p = (target%mesh(1)%r - target%mesh(1)%r(ui))
@@ -407,9 +407,9 @@ SUBROUTINE in_t (target, source, ls, us, in, out, lt, ut, all, only, extrap)
     !--- target distance along 1-vector
     p = (target%mesh(1)%r - target%mesh(1)%r(ui))
     !--- target 1-vector projection onto source 2-vector
-    print *, e(1,2), sum(target%e(:,1)*source%e(2,:))
+    print *, e(1,2), sum(target%erot(:,1)*source%erot(2,:))
     !--- displcement along source 2-vector, in units of source cells
-    c12 = sum(target%e(:,1)*source%e(2,:))/source%ds(2)
+    c12 = sum(target%erot(:,1)*source%erot(2,:))/source%ds(2)
     p = p*c12
     write (stdout,'(a,/,16f8.4)')    'in_t:        p =', p
   end if
