@@ -47,7 +47,7 @@ MODULE extras_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.
   !-----------------------------------------------------------------------------
-  USE disk_selfgravity_mod                                      ! selfg
+  USE selfgravity_mod                                           ! selfg
   USE disk_particles_mod                                        ! dust
   !-----------------------------------------------------------------------------
   implicit none
@@ -57,9 +57,10 @@ MODULE extras_mod
   ! states, must be accessed via a private instance in the extras_t data type
   !-----------------------------------------------------------------------------
   type, public, extends(gpatch_t):: extras_t
-    type(disk_selfgravity_t):: selfgravity                      ! selfg
+    type(selfgravity_t):: selfgravity                      ! selfg
     class(gpatch_t), pointer:: gpatch => null()                 ! keep
     type(disk_particles_t):: particle_solver                    ! dust
+    real(8):: omega(3)
     real(8), dimension(:,:,:,:),   contiguous, pointer:: r       => null()
     real(8), dimension(:,:,:,:,:), contiguous, pointer:: r_hat   => null()
     real(8), dimension(:,:,:,:),   contiguous, pointer:: phi_hat => null()
@@ -91,7 +92,7 @@ SUBROUTINE pre_init (self)
   call trace%begin ('extras_t%pre_init')
   self%gpatch => self                                             ! keep
   call self%selfgravity%pre_init (self%gpatch)                    ! selfg
-  call self%particle_solver%pre_init (self%gpatch)                ! dust
+  !FIXME: call self%particle_solver%pre_init (self%gpatch)                ! dust
   call trace%end()
 END SUBROUTINE pre_init
 
@@ -150,7 +151,7 @@ SUBROUTINE pre_update (self)
       !---------------------------------------------------------------------------
       dg(:,:,:) = dg(:,:,:) - sum (dd(:,:,:,:),dim=4)
       deallocate(dd)
-      self%particle_solver%grad_phi => self%selfgravity%grad_phi
+      !FIXME: self%particle_solver%grad_phi => self%selfgravity%grad_phi
     end if
     if (self%time + self%dtime >= self%out_next) &
       call self%particle_solver%exports_info
@@ -202,13 +203,10 @@ END SUBROUTINE output
 !===============================================================================
 !> Interface to refinement.
 !===============================================================================
-INTEGER function check_refine (self, patch)
-  class(extras_t):: self
-  class(extras_t), pointer:: patch
-  class(gpatch_t), pointer:: gpatch
+INTEGER function check_refine (self)
+  class(extras_t), target:: self
   !.............................................................................
-  gpatch => patch
-  check_refine = self%particle_solver%refine_Flash ()
+  !FIXME: check_refine = self%particle_solver%refine_Flash ()
 END FUNCTION check_refine
 
 !===============================================================================

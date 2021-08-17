@@ -44,7 +44,7 @@ SUBROUTINE set_attributes (self)
   class(disk_particles_t):: self
   !.............................................................................
   self%m_star = disk_model%m_star
-  self%omega = self%patch%omega(3)
+  !FIXME: self%omega = self%patch%omega(3)
   self%gm = scaling%grav*self%m_star
 END SUBROUTINE set_attributes
 
@@ -268,8 +268,8 @@ SUBROUTINE import (self, count)
           next => p%next
           where (p%r==1d0) p%r=0.9999d0
           ! Transform particle coordinates from nbor to self
-          pt = matmul (matmul (nbtask%patch%e, &
-            real(p%r,kind=8)+real(p%q(1:3),kind=8)), self%patch%e)
+          pt = matmul (matmul (nbtask%patch%erot, &
+            real(p%r,kind=8)+real(p%q(1:3),kind=8)), self%patch%erot)
           r = dist + pt
           q = floor(r)
           if (all(q >= self%lb .and. q <= self%ub)) then
@@ -281,7 +281,7 @@ SUBROUTINE import (self, count)
             call nbtask%exports(bin)%remove (p)
             particles => self%particles(p%q(1),p%q(2),p%q(3),p%q(4))
             ! Transform particle velocity from nbor to self
-            p%v = matmul (matmul (nbtask%patch%e, p%v), self%patch%e) - &
+            p%v = matmul (matmul (nbtask%patch%erot, p%v), self%patch%erot) - &
                self%patch%velocity_shift (nbtask)
             call particles%append (p)
             ni = ni + 1
@@ -361,19 +361,19 @@ FUNCTION refine_Flash (self) RESULT(refine)
           (2d0*math%pi*r*scaling%m)
         mass = sum (self%dd(ix,iy,iz,:))*mesh(1)%d*mesh(2)%d*mesh(3)%d
         if (mass >= 10d0 * mass_thres) then
-          patch%irefine(ix,iy,iz) = 1.
+          !FIXME patch%irefine(ix,iy,iz) = 1.
         else if (mass < mass_thres) then
-          patch%irefine(ix,iy,iz) = -1.
+          !FIXME patch%irefine(ix,iy,iz) = -1.
         end if
       end do
     end do
   end do
   refine = 0
-  if (maxval(patch%irefine(l(1):u(1),l(2):u(2),l(3):u(3))) == 1.) then
-    refine = 1
-  else if (any(patch%irefine(l(1):u(1),l(2):u(2),l(3):u(3)) == -1.)) then
-    refine = -1
-  end if
+  !FIXME: if (maxval(patch%irefine(l(1):u(1),l(2):u(2),l(3):u(3))) == 1.) then
+    !FIXME: refine = 1
+  !FIXME: else if (any(patch%irefine(l(1):u(1),l(2):u(2),l(3):u(3)) == -1.)) then
+    !FIXME: refine = -1
+  !FIXME: end if
   call trace%end ()
 END FUNCTION refine_Flash
 

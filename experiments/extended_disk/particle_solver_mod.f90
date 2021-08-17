@@ -151,7 +151,7 @@ CONTAINS
 !===============================================================================
 !> Initialize particle solver, reading parameters and adding task link
 !===============================================================================
-SUBROUTINE pre_init (self, patch)
+SUBROUTINE pre_init (self)
   class(particle_solver_t), target  :: self
   class(gpatch_t), pointer          :: patch
   integer                           :: bin, iostat
@@ -764,7 +764,7 @@ SUBROUTINE update (self)
       particles => self%particles(i1,i2,i3,i4)
       nu = nu + particles%n
       if (stokes) then
-        pc0 = patch%omega(3)/self%s_cgs(i4)
+        !FIXME: pc0 = patch%omega(3)/self%s_cgs(i4)
       else
         pc0 = drag_coeff*d/self%s_cgs(i4)
       end if
@@ -783,7 +783,7 @@ SUBROUTINE update (self)
           pq(1) = (p%q(1) + p%r(1) - patch%mesh(1)%o)*ds
           pq(2) = (p%q(2) + p%r(2) - patch%mesh(2)%o)*ds
           pq(3) = (p%q(3) + p%r(3) - patch%mesh(3)%o)*ds
-          pa = self%particle_force (pq, vp, grad_phi, p%v)! for overloading
+          !FIXME: pa = self%particle_force (pq, vp, grad_phi, p%v)! for overloading
           if (do_supersonic) then
             dv(1) = v(1)-p%v(1)                           ! speed difference
             dv(2) = v(2)-p%v(2)                           ! speed difference
@@ -1711,7 +1711,7 @@ SUBROUTINE density (self, dd)
   integer:: i1, i2, i3, i4
   !-----------------------------------------------------------------------------
   if (on) then
-    call self%patch%zero_boundaries (dd)
+    !FIXME: call self%patch%zero_boundaries (dd)
     call self%import
     do i4=1,self%n_bin
       do i3=self%lb(3),self%ub(3)
@@ -1737,7 +1737,7 @@ SUBROUTINE velocities (self, vd)
   integer:: l(3),u(3), i1, i2, i3, i4
   !-----------------------------------------------------------------
   if (on) then
-    call self%patch%zero_boundaries (vd)
+    !FIXME: call self%patch%zero_boundaries (vd)
     call self%import
     l = self%lb
     u = self%ub
@@ -1767,7 +1767,7 @@ SUBROUTINE dispersion (self, vd)
   integer:: i1, i2, i3, i4
   !-----------------------------------------------------------------------------
   if (on) then
-    call self%patch%zero_boundaries (vd)
+    !FIXME: call self%patch%zero_boundaries (vd)
     ds = self%patch%ds(1)
     do i4=1,self%n_bin
       do i3=self%lb(3),self%ub(3)
@@ -1836,7 +1836,7 @@ FUNCTION refine_Roche (self, num_Roche, level) RESULT(refine)
       do iy = mesh(2)%lb, mesh(2)%ub
         do ix = mesh(1)%lb, mesh(1)%ub
           r = mesh(1)%r(ix)
-          omega = patch%omega(3)*(patch%radius/(patch%radius+r))**1.5
+          !FIXME: omega = patch%omega(3)*(patch%radius/(patch%radius+r))**1.5
           dens_Roche = 9d0*omega*omega/4d0/math%pi/scaling%grav
           dens = sum (self%dd(:,ix,iy,iz)) * scaling%m
           if (dens >= num_Roche*dens_Roche) then
