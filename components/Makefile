@@ -21,7 +21,7 @@ process_mod.o           : trace_mod.o link_mod.o task_list_mod.o mpi_comm_mod.o
 ramses_mod.o            : io_mod.o trace_mod.o scaling_mod.o mhd_mod.o force_mod.o initial_mod.o units_mod.o \
                           experiment_mod.o star_mod.o task_list_mod.o index_mod.o dll_mod.o \
 			  hash_table_mod.o omp_timer_mod.o shared_mod.o
-cylinder_mod.o          : io_mod.o io_unit_mod.o trace_mod.o task_list_mod.o solver_mod.o cpatch_mod.o
+cylinder_mod.o          : io_mod.o io_unit_mod.o trace_mod.o task_list_mod.o solver_mod.o
 sphere_points_mod.o     : io_mod.o io_unit_mod.o trace_mod.o
 volleyball_layers_mod.o : sphere_points_mod.o dll_mod.o
 cartesian_vb_mod.o      : io_mod.o trace_mod.o experiment_mod.o  task_list_mod.o \

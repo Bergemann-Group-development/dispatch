@@ -68,8 +68,7 @@ MODULE cylinder_mod
     integer                    :: n_r               ! number of cylinders
     real(8)                    :: lnr_min, dlnr     ! radial spaching
     type(cylinder_t),  pointer :: cylinder(:) => null()
-    type(task_list_t), pointer :: task_list   => null()
-    type(hash_table_t)         :: hash_table        ! keep track of tasks
+    class(task_list_t), pointer:: task_list   => null()
   contains
     procedure:: init => init_cylinders
     procedure:: init_nbors
@@ -323,13 +322,13 @@ SUBROUTINE init_cylinder (self, i_r, r_out, size, hash_table)
       !-------------------------------------------------------------------------
       ! Unit vectors and inverse of unit vector matrix
       !-------------------------------------------------------------------------
-      allocate (cpatch%e(3,3), cpatch%einv(3,3))
-      cpatch%e(:,1) = [ cos(phi), sin(phi), 0d0]
-      cpatch%e(:,2) = [-sin(phi), cos(phi), 0d0]
-      cpatch%e(:,3) = [0d0, 0d0, 1d0]
-      cpatch%einv = cpatch%e
-      cpatch%einv(1,2) = -cpatch%e(1,2)
-      cpatch%einv(2,1) = -cpatch%e(2,1)
+      allocate (cpatch%erot(3,3), cpatch%einv(3,3))
+      cpatch%erot(:,1) = [ cos(phi), sin(phi), 0d0]
+      cpatch%erot(:,2) = [-sin(phi), cos(phi), 0d0]
+      cpatch%erot(:,3) = [0d0, 0d0, 1d0]
+      cpatch%einv = cpatch%erot
+      cpatch%einv(1,2) = -cpatch%erot(1,2)
+      cpatch%einv(2,1) = -cpatch%erot(2,1)
       cpatch%omega(3) = self%omega
       !-----------------------------------------------------------------------
       ! Global Cartesian coordinate system
@@ -368,7 +367,7 @@ SUBROUTINE init_cylinder (self, i_r, r_out, size, hash_table)
       call self%task_list%append (cpatch%link)
       ptr => cpatch
       cpatch%key = [i_r, i_phi-1, i_z, cpatch%level]
-      call hash_table%set (cpatch%key, ptr)
+      call hash_table%set_ptr (cpatch%key, ptr)
       !if (verbose > 0) &
         !write(unit,'(a,i6,2x,4i3,l3)') &
          !'cylinder_t%init: id, key', cpatch%id, cpatch%key, associated(ptr)
@@ -479,7 +478,7 @@ SUBROUTINE init_nbors (self, link)
           if (i1==0 .and. i2==0 .and. i3==0) cycle
           key = task%key + [i1,j2,i3,0]
           key(2) = modulo(key(2),n_phi)           ! wrap around
-          call self%hash_table%get (key, ptr)
+          call self%hash_table%get_ptr (key, ptr)
           if (associated(ptr)) then
             select type (ptr)
             class is (patch_t)
@@ -520,7 +519,7 @@ logical function overlaps_l (source, target)
   d = target%distance_to (source)
   authority%l = source%authority%l + d
   authority%u = source%authority%u + d
-  overlaps_l = authority%overlaps (target%interest)
+  !FIXME: overlaps_l = authority%overlaps (target%interest)
   if (timer%detailed) call trace%end (itimer)
 end function overlaps_l
 
