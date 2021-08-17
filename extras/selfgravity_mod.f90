@@ -69,7 +69,8 @@ MODULE selfgravity_mod
   private
   type, public:: selfgravity_t
     type(poisson_t)  :: poisson
-    logical:: selfgravity=.false.
+    logical:: on=.false.
+    !logical:: selfgravity=.false.
     real(8):: fourPiG
     real(8):: d0
     real(8):: poisson_time=-1.0
@@ -87,7 +88,7 @@ MODULE selfgravity_mod
   end type
   real(8), save :: total_mass=0d0, total_volume=0d0
   real(8), save :: restart_time = 0d0
-  logical, save :: selfgravity=.false., prediction=.true.
+  logical, save :: on=.false., prediction=.true.
   integer, save :: verbose=0
   integer, save :: order=1
 CONTAINS
@@ -105,7 +106,7 @@ SUBROUTINE pre_init (self, patch)
   logical, save                     :: first_time=.true., first_poisson=.true.
   real, save                        :: d0=-1.0
   real(kind=KindScalarVar), pointer :: d(:,:,:)
-  namelist /selfgravity_params/ selfgravity, prediction, order, d0, verbose
+  namelist /selfgravity_params/ on, prediction, order, d0, verbose
   !-----------------------------------------------------------------------------
   call trace%begin ('selfgravity_t%pre_init')
   self%patch => patch
@@ -125,8 +126,8 @@ SUBROUTINE pre_init (self, patch)
   call io%lock%unset ('selfgravity_t%pre_init')
   !.............................................................................
   self%d0 = d0
-  if (selfgravity) then
-    self%selfgravity = selfgravity
+  if (on) then
+    self%on = on
     patch%idx%phi = 0
     if (verbose > 0) &
       write (stderr,*) 'id,nv,mv=', patch%id,patch%nv,patch%mv
@@ -166,7 +167,7 @@ SUBROUTINE init (self)
     first_poisson = .false.
   end if
   !$omp end critical (poisson_cr)
-  if (selfgravity) then
+  if (on) then
     !---------------------------------------------------------------------------
     ! Sum up the total mass and total volume, to get the average density d0.
     ! FIXME: This needs to be modified for MPI
@@ -206,7 +207,7 @@ SUBROUTINE pre_update (self)
   integer, dimension(3):: l, u
   integer:: iy, iz
  !------------------------------------------------------------------------------
-  if (.not. selfgravity) return
+  if (.not. on) return
   call trace%begin ('selfgravity_t%pre_update')
   patch => self%patch
   self%d   => patch%mem(:,:,:,patch%idx%d  ,patch%it,1)
@@ -316,7 +317,7 @@ SUBROUTINE post_update (self)
   real(8):: time
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  if (.not. selfgravity) return
+  if (.not. on) return
   call trace%begin ('selfgravity_t%post_update', itimer=itimer)
   patch => self%patch
   !-----------------------------------------------------------------------------
