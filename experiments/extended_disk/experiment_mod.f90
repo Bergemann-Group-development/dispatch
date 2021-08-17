@@ -4,29 +4,38 @@
 MODULE experiment_mod
   USE io_mod
   USE trace_mod
-  USE cpatch_mod
+  USE solver_mod
   USE bits_mod
   USE boundaries_mod
   USE mesh_mod
   USE scaling_mod
-  USE download_mod
   USE scratch_mod
   USE eos_mod
+  USE units_mod
+  USE vector_mod, only: cross
+  USE disk_model_mod
+  USE task_mod
+  USE validate_mod
+  USE omp_lock_mod
+  USE mpi_mod
   implicit none
   private
-  type, public, extends(cpatch_t):: experiment_t
+  type, public, extends(solver_t):: experiment_t
     real:: mass=1.0
-    !real:: radius=1.0          ! FIXME
   contains
     procedure:: init
+    procedure:: initial_condition
     procedure:: update
-    procedure:: dnload
-  end type
-  real    :: c_sound     =  0.01
-  real    :: v_kepler    =  1.
-  real    :: d_mid       =  1.0
-  real    :: p_mid       = -1.0
-  logical :: with_planet = .false.
+    procedure:: post_update
+    procedure:: force
+    procedure:: bndries
+    procedure:: boundary
+    procedure:: update_position
+    procedure:: velocity_shift
+  end type                                       ! profile
+  integer      :: verbose     = 0
+  real         :: f_outflow   = 0.01
+  logical      :: with_planet = .false.
 CONTAINS
 
 !===============================================================================
@@ -36,163 +45,363 @@ SUBROUTINE init (self)
   class(experiment_t):: self
   !.............................................................................
   logical, save:: first_time=.true.
-  namelist /experiment_params/ c_sound, v_kepler, d_mid, p_mid, with_planet
+  namelist /experiment_params/ verbose, f_outflow, with_planet
   !.............................................................................
-  integer:: l(3), u(3)
-  real(8):: v_k
+  integer:: l(3), u(3), iostat
+  real(8):: r, z, v_k, v_phi
   real, dimension(:,:,:), pointer:: d, e, px, py, pz
   !----------------------------------------------------------------------------
-  call trace_begin('experiment_t%init')
-  call self%cpatch_t%init
+  call trace%begin ('experiment_t%init')
+  call self%solver_t%init
   !----------------------------------------------------------------------------
   call io%lock%set
   if (first_time) then
     first_time = .false.
-    rewind (io_unit%input)
-    read (io_unit%input, experiment_params)
-    write (io_unit%output, experiment_params)
+    rewind (io%input)
+    read (io%input, experiment_params, iostat=iostat)
+    if (iostat > 0) then
+      rewind (io%input)
+      read (io%input, experiment_params)
+    end if
+    call io%namelist_warning ('experiment_params', iostat)
+    write (io%namelist, experiment_params)
   end if
+  call self%lock%init
   call io%lock%unset
+  !-----------------------------------------------------------------------------
+  r = self%radius                                        ! radius in code units
+  r = max(r,0.1)  ! FIXME
+  z = self%position(3)                                   ! height
+  v_k = disk_model%v_kepler (r)                          ! Kepler speed
+  self%omega = [0d0, 0d0, v_k/r]                         ! angular velocity
+  v_phi = v_k+disk_model%v_head(r,z)                     ! azimuthal speed
+  self%velocity = [0d0, v_phi, 0d0]                      ! initial velocity
+  self%csound = disk_model%c_sound(r)/sqrt(eos%gamma)    ! isothermal sound
+                                                         ! speed
+  eos%csound = self%csound                               ! important!
   !----------------------------------------------------------------------------
-  v_k = v_kepler/sqrt(self%r)                   ! mid point Kepler speed
-  self%omega = [0d0, 0d0, v_k/self%r]           ! angular velocity
-  eos%gamma = 1.0                              ! isothermal
-  self%csound = c_sound                         ! solver sound speed
-  !----------------------------------------------------------------------------
-  l = [self%mesh(3)%lb, self%mesh(2)%lb, self%mesh(1)%lb]
-  u = [self%mesh(3)%ub, self%mesh(2)%ub, self%mesh(1)%ub]
-  call initial_condition (self, l, u)
-  l = [self%mesh(3)%li, self%mesh(2)%li, self%mesh(1)%li]
-  u = [self%mesh(3)%ui, self%mesh(2)%ui, self%mesh(1)%ui]
-  d  => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%d ,self%it,1)
-  e  => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%e ,self%it,1)
-  px => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%px,self%it,1)
-  py => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%py,self%it,1)
-  pz => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%pz,self%it,1)
-  print '(i6,1p,4g12.3)', self%id, minval(d), maxval(d), maxval(abs(px/d)), maxval(abs(py/d))
-  call trace_end
+  if (verbose > 1) then
+    l = self%mesh%li
+    u = self%mesh%ui
+    d  => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%d ,self%it,1)
+    e  => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%e ,self%it,1)
+    px => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%px,self%it,1)
+    py => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%py,self%it,1)
+    pz => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%pz,self%it,1)
+     print '(i6,1p,4g12.3)', self%id, minval(d), maxval(d), maxval(abs(px/d)), &
+     maxval(abs(py/d))
+  end if
+  call trace%end ()
 END SUBROUTINE init
 
+SUBROUTINE post_update (self)
+  class(experiment_t):: self
+  call trace%begin ('experiment_t%post_update')
+  call self%solver_t%post_update ()
+  call trace%end ()
+END SUBROUTINE post_update
+
 !===============================================================================
+!> Note, the force should be moved to pre_update
 !===============================================================================
 SUBROUTINE update (self)
   class(experiment_t):: self
-  !----------------------------------------------------------------------------
-  call trace_begin('experiment_t%update')
-  call boundary (self)
-  call force (self)
-  call self%cpatch_t%update
-  call trace_end
+  integer:: id
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin('experiment_t%update', itimer=itimer)
+  id = self%id
+  !-----------------------------------------------------------------------------
+  ! Allocate (first time) and reset the force per unit mass -- extras may add
+  ! through the call to solver_t%pre_update()
+  !-----------------------------------------------------------------------------
+  call scratch%allocate (scratch%force_per_unit_mass, [self%gn,3])
+  scratch%force_per_unit_mass = 0.0
+  self%particle_solver%v_patch => self%v_patch
+!  call self%solver_t%pre_update ()
+  if (self%id==1) &
+    call validate%check (self, self%mem(:,:,:,:,self%it,1), 'upd1')
+  !-----------------------------------------------------------------------------
+  call self%force ()
+  if (self%id==1) &
+    call validate%check (self, scratch%force_per_unit_mass(:,:,:,:), 'ff')
+  call self%solver_t%update ()
+  if (self%id==1) &
+    call validate%check (self, self%mem(:,:,:,:,self%it,1), 'upd2')
+  !-----------------------------------------------------------------------------
+  ! Time slots have been rotated in the solver_t%update()
+  !-----------------------------------------------------------------------------
+  call self%boundary (self%it)
+  if (self%id==1) &
+    call validate%check (self, self%mem(:,:,:,:,self%it,1), 'bdr2')
+  call self%update_position ()
+  call trace%end (itimer)
 END SUBROUTINE update
 
 !===============================================================================
+!> Disk with power-law mid-plane density and temperature profiles
 !===============================================================================
-SUBROUTINE dnload (self, only)
+SUBROUTINE initial_condition (self, l, u, it)
   class(experiment_t):: self
-  integer, optional:: only
-  !-----------------------------------------------------------------------------
-  call trace%begin ('experiment_t%dnload')
-  if (self%use_data_hub) then
-    call self%data_hub%update (self%link, only=only)
-  else
-    call download%download_link (self%link, only=only)
-  end if
-  call trace%end()
-END SUBROUTINE dnload
-
-!===============================================================================
-!> Power law isothermal disk conditions
-!===============================================================================
-SUBROUTINE initial_condition (self, l, u)
-  class(experiment_t):: self
-  integer:: l(3), u(3)
+  integer            :: l(3), u(3)
+  integer, optional  :: it
   !.............................................................................
-  integer:: ix, iy, iz
-  real(8):: x, xs, y, ys, z, r, phi, v_k, h, ds2
+  integer:: i1, i2, i3
+  real(8):: r, z, csound, h, dmid, v_k, v_phi, v1, v2, p(3)
   real, dimension(:,:,:), pointer:: d, e, px, py, pz
-  !----------------------------------------------------------------------------
-  ds2 = 0d0
-  if (self%kind(1:7)=='stagger' .or. &
-      self%kind(1:6)=='zeus3d') then
-    ds2 = -self%ds(1)/2d0
+  logical, save :: first_time = .true.
+  !-----------------------------------------------------------------------------
+  if (present(it)) then
+    d  => self%mem(:,:,:,self%idx%d ,it,1)
+    e  => self%mem(:,:,:,self%idx%e ,it,1)
+    px => self%mem(:,:,:,self%idx%px,it,1)
+    py => self%mem(:,:,:,self%idx%py,it,1)
+    pz => self%mem(:,:,:,self%idx%pz,it,1)
+  else
+    d  => self%mem(:,:,:,self%idx%d ,self%it,1)
+    e  => self%mem(:,:,:,self%idx%e ,self%it,1)
+    px => self%mem(:,:,:,self%idx%px,self%it,1)
+    py => self%mem(:,:,:,self%idx%py,self%it,1)
+    pz => self%mem(:,:,:,self%idx%pz,self%it,1)
   end if
-  d  => self%mem(:,:,:,self%idx%d ,self%it,1)
-  e  => self%mem(:,:,:,self%idx%e ,self%it,1)
-  px => self%mem(:,:,:,self%idx%px,self%it,1)
-  py => self%mem(:,:,:,self%idx%py,self%it,1)
-  pz => self%mem(:,:,:,self%idx%pz,self%it,1)
-  do iz=l(3),u(3)
-  do iy=l(2),u(2)
-  do ix=l(1),u(1)
-    x = self%r + self%mesh(1)%r(ix)
-    y =        + self%mesh(2)%r(iy)
-    z = self%z + self%mesh(3)%r(iz)
-    xs = x + ds2                                        ! staggered
-    ys = y + ds2                                        ! staggered
+  v_k = disk_model%v_kepler (self%radius)
+  do i3=l(3),u(3)
+  do i2=l(2),u(2)
+  !!omp parallel do default(none) private(i1,p,r,z,csound,h,dmid,e,d,v_phi) &
+  !!omp private(v1,v2) shared(i2,i3,disk_model,eos,self,px,py,pz,v_k,l,u)
+  do i1=l(1),u(1)
+    p(1) = self%mesh(1)%r(i1) + self%radius
+    p(2) = self%mesh(2)%r(i2)
+    p(3) = self%mesh(3)%r(i3) + self%position(3)
     !---------------------------------------------------------------------------
-    phi = atan2(xs,y)                                   ! local angle
-    r = sqrt(xs**2 + y**2)                              ! local radius
-    v_k = v_kepler/sqrt(r)                              ! Kepler speed
-    h = r*c_sound/v_k                                   ! scale height
-    v_k = v_k - self%r*self%omega(3)                    ! net Kepler speed
-    d (ix,iy,iz) = d_mid*r**p_mid*exp(-(z/h)**2)        ! Gaussian profile
-    px(ix,iy,iz) = - v_k*sin(phi)*d(ix,iy,iz)           ! radial momentum
+    ! Gas density and thermal energy
     !---------------------------------------------------------------------------
-    phi = atan2(x,ys)                                   ! local angle
-    r = sqrt(x**2 + ys**2)                              ! local radius
-    v_k = v_kepler/sqrt(r)                              ! Kepler speed
-    h = r*c_sound/v_k                                   ! scale height
-    v_k = v_k - self%r*self%omega(3)                    ! net Kepler speed
-    d (ix,iy,iz) = d_mid*r**p_mid*exp(-(z/h)**2)        ! Gaussian profile
-    py(ix,iy,iz) = + v_k*cos(phi)*d(ix,iy,iz)           ! azimuthal momentum
-    pz(ix,iy,iz) = 0.0                                  ! vertical momentum
+    r = sqrt(p(1)**2 + p(2)**2)                       ! local radius
+    z = p(3)                                          ! height
+    csound = disk_model%c_sound(r)                    ! sound speed
+    h = disk_model%h_scale (r)                        ! scale height
+    dmid = disk_model%d_midplane (r)                  ! mid-plane density
+    d (i1,i2,i3) = dmid*exp(-(z/h)**2/2d0)            ! Gaussian profile
+    e (i1,i2,i3) = d(i1,i2,i3)*csound**2 / &          ! adiabatic
+      (eos%gamma*(eos%gamma-1.0))
     !---------------------------------------------------------------------------
-    phi  = atan2(x ,y)                                  ! local angle
-    r  = sqrt(x**2 + y**2)                              ! local radius
-    v_k = v_kepler/sqrt(r)                              ! Kepler speed
-    h = r*c_sound/v_k                                   ! scale height
-    v_k = v_k - self%r*self%omega(3)                    ! net Kepler speed
-    d (ix,iy,iz) = d_mid*r**p_mid*exp(-(z/h)**2)        ! Gaussian profile
-    e (ix,iy,iz) = d(ix,iy,iz)*c_sound**2               ! isothermal
+    ! Initial head wind, relative to the patch
+    !---------------------------------------------------------------------------
+    v_phi = disk_model%v_head(r,z)                        ! azimuthal speed
+    v1 = v_phi*self%phi_hat(i1,i2,i3,1)                   ! local x1
+    v2 = v_phi*self%phi_hat(i1,i2,i3,2)                   ! local x2
+    v1 = v1 + self%v_patch(i1,i2,i3,1)
+    v2 = v2 + self%v_patch(i1,i2,i3,2) - v_k
+    px(i1,i2,i3) = v1*d(i1,i2,i3)                         ! radial momentum
+    py(i1,i2,i3) = v2*d(i1,i2,i3)                         ! azimuthal momentum
+    pz(i1,i2,i3) = 0.0                                    ! vertical momentum
   end do
   end do
   end do
-  if (self%kind(1:7)=='ramses_' .and. &
-      eos%gamma > 1.0) then
-    e = d*c_sound**2/(eos%gamma*(eos%gamma-1.0)) &
-      + 0.5*(px**2+py**2+pz**2)/d
+  if (self%kind(1:7)=='ramses_' .and. eos%gamma > 1.0) then
+    e = e + 0.5*(px**2+py**2+pz**2)/d
   end if
+  call self%particle_solver%initial_condition
 END SUBROUTINE initial_condition
 
 !===============================================================================
+!> Boundary condition call from halo_t%update
 !===============================================================================
-SUBROUTINE boundary (self)
+SUBROUTINE bndries (self)
   class(experiment_t):: self
-  integer:: l(3), u(3)
-  !----------------------------------------------------------------------------
-  call trace_begin('experiment_t%boundary')
+  !.............................................................................
+  call boundary (self, self%it)
+END SUBROUTINE bndries
+
+!===============================================================================
+!> Boundary conditions
+!===============================================================================
+SUBROUTINE boundary (self, it)
+  class(experiment_t):: self
+  integer :: it
+  real, dimension(:,:,:), contiguous, pointer :: d, e, px, py, pz, ui
+  integer:: l(3), u(3), i1, i2, i3
+  real(8):: p(3), r, z, v_phi
+  type(lock_t), pointer:: lock
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin ('experiment_t%boundary', itimer=itimer)
+  lock => self%mem_lock(self%it)
+  call lock%set ('experiment_t%boundary')
+  !-----------------------------------------------------------------------------
+  ! Inner radial boundary
+  !-----------------------------------------------------------------------------
+  d  => self%mem(:,:,:,self%idx%d ,it,1)
+  px => self%mem(:,:,:,self%idx%px,it,1)
+  py => self%mem(:,:,:,self%idx%py,it,1)
+  pz => self%mem(:,:,:,self%idx%pz,it,1)
+  allocate (ui(size(d,1),size(d,2),size(d,3)))
+  allocate (e (size(d,1),size(d,2),size(d,3)))
   if (self%boundaries%is_set (bits%xl)) then
-    l = [self%mesh(3)%lb, self%mesh(2)%lb, self%mesh(1)%lb]
-    u = [self%mesh(3)%lo, self%mesh(2)%lb, self%mesh(1)%lb]
-    call initial_condition (self, l, u)
+    call self%e2E_th (e,it)
+    !---------------------------------------------------------------------------
+    ! Apply zero gradient conditions to all variables
+    !---------------------------------------------------------------------------
+    call self%boundaries%zero_gradient (d, self%idx%d)
+    call self%boundaries%zero_gradient (e, self%idx%e)
+    call self%boundaries%zero_gradient (px, self%idx%px)
+    call self%boundaries%zero_gradient (py, self%idx%py)
+    call self%boundaries%zero_gradient (pz, self%idx%pz)
+    !---------------------------------------------------------------------------
+    ! Subtract headwind velocity at innermost non-guard cell from radial and
+    ! azimuthal velocity because of lacking pressure gradient in zero gradient
+    ! conditions
+    !---------------------------------------------------------------------------
+    l = [self%mesh(1)%lb, self%mesh(2)%lb, self%mesh(3)%lb]
+    u = [self%mesh(1)%lo, self%mesh(2)%ub, self%mesh(3)%ub]
+    call cache_v_head (self)
+    do i3=l(3),u(3)
+      do i2=l(2),u(2)
+        do i1=l(1),u(1)
+          p(1) = self%mesh(1)%r(self%mesh(1)%li) + self%radius
+          p(2) = self%mesh(2)%r(i2)
+          p(3) = self%mesh(3)%r(i3) + self%position(3)
+          r = sqrt(p(1)**2 + p(2)**2)
+          z = p(3)
+          v_phi = self%v_head(i1,i2,i3)
+          px(i1,i2,i3) = px(i1,i2,i3) - &
+            v_phi*self%phi_hat(i1,i2,i3,1)*d(i1,i2,i3)
+          py(i1,i2,i3) = py(i1,i2,i3) - &
+            v_phi*self%phi_hat(i1,i2,i3,2)*d(i1,i2,i3)
+        end do
+      end do
+    end do
+    call self%E_th2e (e,it)
   end if
+  !-----------------------------------------------------------------------------
+  ! Outer radial boundary
+  !-----------------------------------------------------------------------------
   if (self%boundaries%is_set (bits%xu)) then
-    l = [self%mesh(3)%uo, self%mesh(2)%lb, self%mesh(1)%lb]
-    u = [self%mesh(3)%ub, self%mesh(2)%lb, self%mesh(1)%lb]
-    call initial_condition (self, l, u)
+    !---------------------------------------------------------------------------
+    ! Apply initial conditions to all variables
+    !---------------------------------------------------------------------------
+    l = [self%mesh(1)%uo, self%mesh(2)%lb, self%mesh(3)%lb]
+    u = [self%mesh(1)%ub, self%mesh(2)%ub, self%mesh(3)%ub]
+    call initial_condition (self, l, u, it)
   end if
+  !-----------------------------------------------------------------------------
+  ! Lower vertical boundary
+  !-----------------------------------------------------------------------------
   if (self%boundaries%is_set (bits%zl)) then
-    l = [self%mesh(3)%lb, self%mesh(2)%lb, self%mesh(1)%lb]
-    u = [self%mesh(3)%ub, self%mesh(2)%lb, self%mesh(1)%lo]
-    call initial_condition (self, l, u)
+    call vertical_boundary (self, self%mesh(3)%lo, it)
   end if
+  !-----------------------------------------------------------------------------
+  ! Upper vertical boundary
+  !-----------------------------------------------------------------------------
   if (self%boundaries%is_set (bits%zu)) then
-    l = [self%mesh(3)%lb, self%mesh(2)%lb, self%mesh(1)%uo]
-    u = [self%mesh(3)%ub, self%mesh(2)%lb, self%mesh(1)%ub]
-    call initial_condition (self, l, u)
+    call vertical_boundary (self, self%mesh(3)%uo, it)
   end if
-  call trace_end
+  !-----------------------------------------------------------------------------
+  ! Restore total energy
+  !-----------------------------------------------------------------------------
+  if (self%boundaries%is_set (bits%zl+bits%zu)) then
+    call self%e2E_th (e,it)
+    call self%boundaries%zero_gradient (e, self%idx%e)
+    call self%E_th2e (e,it)
+  end if
+  deallocate (ui,e)
+  call lock%unset ('experiment_t%boundary')
+  call trace%end (itimer)
 END SUBROUTINE boundary
+
+!===============================================================================
+!===============================================================================
+SUBROUTINE cache_v_head (self)
+  class(experiment_t):: self
+  integer:: i1, i2, i3
+  real(8):: r, z, p(3)
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  ! Cache expensive calculation
+  !-----------------------------------------------------------------------------
+  call trace%begin ('experiment_t%cache_v_head', itimer=itimer)
+  if (.not.associated(self%v_head)) then
+    call self%lock%set ('cache_v_head')
+    if (.not.associated(self%v_head)) then
+      allocate (self%v_head(self%gn(1),self%gn(2),self%gn(3)))
+      do i3=self%mesh(3)%lb,self%mesh(3)%ub
+        do i2=self%mesh(2)%lb,self%mesh(2)%ub
+          do i1=self%mesh(1)%lb,self%mesh(1)%ub
+            p(1) = self%mesh(1)%r(i1) + self%radius
+            p(2) = self%mesh(2)%r(i2)
+            p(3) = self%mesh(3)%r(i3) + self%position(3)
+            r = sqrt(p(1)**2 + p(2)**2)
+            z = p(3)
+            self%v_head(i1,i2,i3) = disk_model%v_head(r,z)
+          end do
+        end do
+      end do
+    end if
+    call self%lock%unset ('cache_v_head')
+  end if
+  call trace%end (itimer)
+END SUBROUTINE cache_v_head
+
+!===============================================================================
+!> Vertical boundary conditions
+!===============================================================================
+SUBROUTINE vertical_boundary (self, o, it)
+  class(experiment_t):: self
+  real, dimension(:,:,:), pointer :: d, e, px, py, pz
+  integer:: o, it, b, i, step, i1, i2, i3
+  real(8):: sign, zi, p(3), r, z, h, d_ratio, dv_phi, v, v_h, v_k
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin ('experiment_t%vertical_boundary', itimer=itimer)
+  d  => self%mem(:,:,:,self%idx%d ,it,1)
+  e  => self%mem(:,:,:,self%idx%e ,it,1)
+  px => self%mem(:,:,:,self%idx%px,it,1)
+  py => self%mem(:,:,:,self%idx%py,it,1)
+  pz => self%mem(:,:,:,self%idx%pz,it,1)
+  if (o == self%mesh(3)%lo) then
+    sign = -1.0
+    step = -1
+    b = self%mesh(3)%lb
+    i = self%mesh(3)%li
+  else
+    sign = +1.0
+    step = 1
+    b = self%mesh(3)%ub
+    i = self%mesh(3)%ui
+  end if
+  v_k = disk_model%v_kepler (self%radius)
+  zi = self%mesh(3)%r(i) + self%position(3)
+  !-----------------------------------------------------------------------------
+  call cache_v_head (self)
+  do i3=o,b,step
+    do i2=self%mesh(2)%lb,self%mesh(2)%ub
+      do i1=self%mesh(1)%lb,self%mesh(1)%ub
+        p(1) = self%mesh(1)%r(i1) + self%radius
+        p(2) = self%mesh(2)%r(i2)
+        p(3) = self%mesh(3)%r(i3) + self%position(3)
+        r = sqrt(p(1)**2 + p(2)**2)
+        z = p(3)
+        !-----------------------------------------------------------------------
+        ! Correct for difference in Gaussian density profile
+        !-----------------------------------------------------------------------
+        h = disk_model%h_scale (r)
+        d_ratio = exp(-(z**2-zi**2)/(2.0*h**2))
+        d(i1,i2,i3) = d(i1,i2,i) * d_ratio
+        e(i1,i2,i3) = e(i1,i2,i) * d_ratio
+        !-----------------------------------------------------------------------
+        ! Outflow conditions that pull angular momentum (and mass) out
+        !-----------------------------------------------------------------------
+        px(i1,i2,i3) = px(i1,i2,i) * d_ratio
+        v = f_outflow*self%v_patch(i1,i2,i3,2)
+        v_h = self%v_head(i1,i2,i3)
+        v_h = v_h + self%v_patch(i1,i2,i3,2) - v_k
+        py(i1,i2,i3) = d(i1,i2,i3)*(- v + v_h)
+        pz(i1,i2,i3) = d(i1,i2,i3)*(+ v*sign)
+      end do
+    end do
+  end do
+  call trace%end (itimer)
+END SUBROUTINE vertical_boundary
 
 !===============================================================================
 !> Classical Coriolis force and similar force terms
@@ -200,190 +409,99 @@ END SUBROUTINE boundary
 SUBROUTINE force (self)
   class(experiment_t):: self
   !.............................................................................
-  real(8):: time
-  real, dimension(:,:,:), pointer:: Ux, Uy, Uz, d
-  real, dimension(:,:,:,:), pointer:: p, ff, UU
-  integer:: ix, iy, iz, iv
-  real(8):: rp, newton
-  real(8):: x, y, z, xs, ys, zs, xp, yp, zp, ds2(3), uxx, uyy
-  class(mesh_t), pointer, dimension(:):: m
-  integer:: l(3), u(3)
+  integer:: i1, i2, i3, iz, j, m, n(3), l(3), u(3)
+  real(8):: v_phi
+  real:: u1, u2
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin('experiment_t%force')
-  m => self%mesh
-  if (self%kind(1:7)=='ramses_') then
-    ds2 = 0.
-  else if (self%kind(1:7)=='stagger') then
-    ds2 = 0.5*m(1)%d
-  else if (self%kind(1:6)=='zeus3d') then
-    ds2 = 0.5*m(1)%d
-  else
-    error stop 'force'
+  call trace%begin ('experiment_t%force', itimer=itimer)
+  m = self%mesh(1)%gn
+  l = self%mesh(:)%li
+  u = self%mesh(:)%ui
+  iz = self%key(3)
+  if (self%kind(1:7) /= 'ramses_') then
+    call io%abort('experiment_t%force')
   end if
-  allocate (scratch%force_per_unit_mass(m(1)%gn,m(2)%gn,m(3)%gn,3))
-  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r, ff => scratch%force_per_unit_mass)
-  if (with_planet) then
-    newton = self%mass*scaling%grav
-  else
-    newton = 0.0
-  end if
-  ff = 0.0
-  do iz=m(3)%lb,m(3)%ub
-    z = r3(iz)
-    zs = z - ds2(3)
-    do iy=m(2)%lb,m(2)%ub
-      y = r2(iy)
-      ys = y - ds2(2)
-      do ix=m(1)%lb,m(1)%ub
-        x = r1(ix)
-        xs = x - ds2(1)
-        !---------------------------------------------------------------
-        ! The force from the planet is included explicitly, and is oriented
-        ! away from the planet, which is at the center of the local coordinates.
-        ! The L1 and L2 Lagrange points are the result of net centrifugal
-        ! forces that point in the opposite direction to the force of gravity,
-        ! cancelling at a distance where $\Omega^2 r$ is equal to $GM/r^2$
-        !---------------------------------------------------------------
-        !rp = sqrt(xs**2+yp**2+zp**2)
-        !rp = max(rp,self%radius*0.1)
-        !ff(ix,iy,iz,1) = -newton*xs/rp**3
-        !rp = sqrt(xp**2+ys**2+zp**2)
-        !rp = max(rp,self%radius*0.1)
-        !ff(ix,iy,iz,2) = -newton*ys/rp**3
-        !rp = sqrt(xp**2+yp**2+zs**2)
-        !rp = max(rp,self%radius*0.1)
-        !ff(ix,iy,iz,3) = -newton*zs/rp**3
-        !---------------------------------------------------------------
-        ! Add the vertical and radial rotating coordinate frame accelerations.
-        ! The net force in the radial direction increases with increasing x,
-        ! giving that x now points in the radial direction.  It has two
-        ! contributions:  The centripetal force \Omega^2 x, and the reduction
-        ! of the force of gravity from the central star, which contributes a
-        ! factor of 2 more, for a total factor of 3.  Vertically, there
-        ! is a net force that comes from the projection of the force of
-        ! gravity onto the z-axis, and has the same scaling constant as the
-        ! radial force, but the opposite sign.
-        !---------------------------------------------------------------
-        ff(ix,iy,iz,1) = ff(ix,iy,iz,1) + 3.0*self%omega(3)**2*xs
-        ff(ix,iy,iz,3) = ff(ix,iy,iz,3) -     self%omega(3)**2*zs
-      end do
+  call scratch%allocate (scratch%force_per_unit_mass, [m,m,m,3])
+  !-----------------------------------------------------------------------------
+  ! Compute the centripetal force and add to the force of gravity.  If the
+  ! local velocity field is zero v_cart becomes equal to the self%v_patch
+  ! velocity field, which is parallel to phi_hat, with velocity v_phi = r*omega
+  !-----------------------------------------------------------------------------
+  do i3=l(3),u(3)
+  do i2=l(2),u(2)
+    !$omp simd
+    do i1=l(1),u(1)
+      u1 =               self%mem(i1,i2,i3,self%idx%px,self%it,1) / &
+                         self%mem(i1,i2,i3,self%idx%d ,self%it,1)
+      u2 =               self%mem(i1,i2,i3,self%idx%py,self%it,1) / &
+                         self%mem(i1,i2,i3,self%idx%d ,self%it,1)
+      v_phi =        self%phi_hat(i1,i2,i3,1)*(self%v_patch(i1,i2,i3,1) + u1) &
+                   + self%phi_hat(i1,i2,i3,2)*(self%v_patch(i1,i2,i3,2) + u2)
+      scratch%force_per_unit_mass(i1,i2,i3,1)    = &
+                      self%f_grav(i1,i2,i3,1,iz) + &
+              v_phi**2*self%r_inv(i1,i2,i3,1,iz) + 2.*self%omega(3)*u2
+      scratch%force_per_unit_mass(i1,i2,i3,2)    = &
+                      self%f_grav(i1,i2,i3,2,iz) + &
+              v_phi**2*self%r_inv(i1,i2,i3,2,iz) - 2.*self%omega(3)*u1
+      scratch%force_per_unit_mass(i1,i2,i3,3)    = &
+                      self%f_grav(i1,i2,i3,3,iz)
     end do
   end do
-  !---------------------------------------------------------------------
-  ! Add the classical Coriolis force term: -2*(\Omega x U). A positive omega(3)
-  ! corresponds to rotation in the y-direction, if x points radially outwards.
-  ! Hence, a positive velocity in the y-direction increases the centripetal force,
-  ! and leads to acceleration in the positive x-direction -- vice versa for
-  ! motion in the x-direction; a motion inwards (-x) leads to acceleration in
-  ! the forward (+y) direction
-  !---------------------------------------------------------------------
-  if (self%kind(1:6)=='ramses') then
-    d => self%mem(:,:,:,self%idx%d,self%it,1)
-    p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
-    ff(:,:,:,1) = ff(:,:,:,1) - 2.*(self%omega(2)*p(:,:,:,3)-self%omega(3)*p(:,:,:,2))/d
-    ff(:,:,:,2) = ff(:,:,:,2) - 2.*(self%omega(3)*p(:,:,:,1)-self%omega(1)*p(:,:,:,3))/d
-    ff(:,:,:,3) = ff(:,:,:,3) - 2.*(self%omega(1)*p(:,:,:,2)-self%omega(2)*p(:,:,:,1))/d
-  else if (self%kind(1:6)=='stagge'.or.self%kind(1:6)=='zeus3d') then
-    allocate (UU(self%gn(1),self%gn(2),self%gn(3),3))
-    Ux => UU(:,:,:,1)
-    Uy => UU(:,:,:,2)
-    Uz => UU(:,:,:,3)
-    call self%p2U (UU, self%it)
-    ff(:,:,:,1) = ff(:,:,:,1) - 2.*(self%omega(2)*st_dn(st_up(Uz,3),1) - self%omega(3)*st_dn(st_up(Uy,2),1))
-    ff(:,:,:,2) = ff(:,:,:,2) - 2.*(self%omega(3)*st_dn(st_up(Ux,1),2) - self%omega(1)*st_dn(st_up(Uz,3),2))
-    ff(:,:,:,3) = ff(:,:,:,3) - 2.*(self%omega(1)*st_dn(st_up(Uy,2),3) - self%omega(2)*st_dn(st_up(Ux,1),3))
-    deallocate (UU)
-  else
-    print *, trim(self%kind)
-    error stop "force_mod(2) :: unknown solver"
-  end if
-  l = [self%mesh(3)%li, self%mesh(2)%li, self%mesh(1)%li]
-  u = [self%mesh(3)%ui, self%mesh(2)%ui, self%mesh(1)%ui]
-  !print '(i6,1p,4g13.3)', self%id, &
-    !minval(abs(ff(l(1):u(1),l(2):u(2),l(3):u(3),1))), &
-    !maxval(abs(ff(l(1):u(1),l(2):u(2),l(3):u(3),1))), &
-    !minval(abs(ff(l(1):u(1),l(2):u(2),l(3):u(3),2))), &
-    !maxval(abs(ff(l(1):u(1),l(2):u(2),l(3):u(3),2)))
-  end associate
-  call trace_end
+  end do
+  call trace%end (itimer)
 END SUBROUTINE force
 
-FUNCTION st_up (a, i) result (b)
-  real, dimension(:,:,:) :: a
-  real, dimension(size(a,1), size(a,2), size(a,3)):: b
-  real    :: c
-  integer :: ix, iy, iz, i, n(3)
-!...............................................................................
-  c = 0.5
-  n = shape(a)
-  select case(i)
-  case(1)
-    b(n(1),:,:) = a(n(1),:,:)
-    do iz=1,n(3)
-      do iy=1,n(2)
-        do ix=1,n(1)-1
-          b(ix,iy,iz) = c*(a(ix+1,iy,iz) + a(ix,iy,iz))
-        end do
-      end do
-    end do
-  case(2)
-    b(:,n(2),:) = a(:,n(2),:)
-    do iz=1,n(3)
-      do iy=1,n(2)-1
-        do ix=1,n(1)
-          b(ix,iy,iz) = c*(a(ix,iy+1,iz) + a(ix,iy,iz))
-        end do
-      end do
-    end do
-  case(3)
-    b(:,:,n(3)) = a(:,:,n(3))
-    do iz=1,n(3)-1
-      do iy=1,n(2)
-        do ix=1,n(1)
-          b(ix,iy,iz) = c*(a(ix,iy,iz+1) + a(ix,iy,iz))
-        end do
-      end do
-    end do
-  end select
-END FUNCTION st_up
+!===============================================================================
+!> Update the position, velocity, and unit vectors.  Each update moves the
+!> patch a courant_factor fraction of a cell forward.  The motion relative
+!> to the next or previous cylinder is a fraction 'dlnr' of that.  Hence a
+!> cylinder needs to move 1/dlnr full cells (= 1 radian), before a difference
+!> of one cell has developed.
+!===============================================================================
+SUBROUTINE update_position (self)
+  class(experiment_t):: self
+  real(8):: sinphi, cosphi
+  !-----------------------------------------------------------------------------
+  call trace%begin ('experiment_t%update_position')
+  self%centre_nat(2) = self%centre_nat(2) + self%dtime*self%omega(3)
+  cosphi = cos(self%centre_nat(2))
+  sinphi = sin(self%centre_nat(2))
+  self%position = [+self%radius*cosphi, &
+                   +self%radius*sinphi, 0d0]
+  self%velocity = [-self%radius*sinphi*self%omega(3), &
+                   +self%radius*cosphi*self%omega(3), 0d0]
+  self%e(:,1) = [ cosphi, sinphi, 0d0]
+  self%e(:,2) = [-sinphi, cosphi, 0d0]
+  self%e(:,3) = [    0d0,    0d0, 1d0]
+  if (verbose > 0) then
+    write (stdlog, '(a,i6,f10.2)') &
+      'experiment_t%update_position: id,cells=', &
+      self%id, self%omega(3)*self%time/self%ds(2)
+  end if
+  call trace%end()
+END SUBROUTINE update_position
 
-FUNCTION st_dn (a, i) result (b)
-  real, dimension(:,:,:) :: a
-  real, dimension(size(a,1), size(a,2), size(a,3)):: b
-  real    :: c
-  integer :: ix, iy, iz, i, n(3)
-!...............................................................................
-  c = 0.5
-  n = shape(a)
-  select case(i)
-  case(1)
-    b(1,:,:) = a(1,:,:)
-    do iz=1,n(3)
-      do iy=1,n(2)
-        do ix=2,n(1)
-          b(ix,iy,iz) = c*(a(ix,iy,iz) + a(ix-1,iy,iz))
-        end do
-      end do
-    end do
-  case(2)
-    b(:,1,:) = a(:,1,:)
-    do iz=1,n(3)
-      do iy=2,n(2)
-        do ix=1,n(1)
-          b(ix,iy,iz) = c*(a(ix,iy,iz) + a(ix,iy-1,iz))
-        end do
-      end do
-    end do
-  case(3)
-    b(:,:,1) = a(:,:,1)
-    do iz=2,n(3)
-      do iy=1,n(2)
-        do ix=1,n(1)
-          b(ix,iy,iz) = c*(a(ix,iy,iz) + a(ix,iy,iz-1))
-        end do
-      end do
-    end do
+!===============================================================================
+!> Return the velocity shift from source to target, expressed in the local
+!> coordinate system.
+!===============================================================================
+FUNCTION velocity_shift (self, source) RESULT (v)
+  class(experiment_t):: self
+  class(task_t):: source
+  real(8), dimension(3):: v, v_src, v_tgt
+  !-----------------------------------------------------------------------------
+  ! Velocities in the local coordinate syhstems
+  !-----------------------------------------------------------------------------
+  select type (source)
+  class is (experiment_t)
+  v_src = [0d0, disk_model%v_kepler(source%radius), 0d0]
+  v_tgt = [0d0, disk_model%v_kepler(  self%radius), 0d0]
+  !-----------------------------------------------------------------------------
+  ! Transform to the target system
+  !-----------------------------------------------------------------------------
+  v = matmul (matmul (source%e, v_src), self%e) - v_tgt
   end select
-END FUNCTION st_dn
+END FUNCTION velocity_shift
 
 END MODULE experiment_mod

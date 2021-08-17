@@ -10,8 +10,7 @@ SOLVER          = ramses/hydro
 #SOLVER          = ramses/mhd
 #SOLVER          = stagger2/e
 PARTICLE_SOLVER = dust
-DUST_EVOLVE     = martin_s
-COOLING         = simple
+#COOLING         = simple
 EXEC            = dispatch.x
 TOP             = ../..
 
@@ -27,10 +26,13 @@ sinclude $(SOLVER)/Makefile
 
 # List the .o files the main program depends on after the colon:
 $(EXEC)                 : setup_mod.o cylinder_mod.o dispatcher_mod.o io_unit_mod.o
-experiment_mod.o        : io_mod.o trace_mod.o cpatch_mod.o mesh_mod.o boundaries_mod.o \
-                          download_mod.o
+experiment_mod.o        : io_mod.o trace_mod.o solver_mod.o mesh_mod.o boundaries_mod.o \
+                          vector_mod.o disk_model_mod.o omp_lock_mod.o
+disk_model_mod.o        : scaling_mod.o units_mod.o math_mod.o eos_mod.o
 scaling_mod.o           : io_mod.o units_mod.o
-extras_mod.o            : io_mod.o trace_mod.o patch_mod.o gpatch_mod.o list_mod.o forces_mod.o \
-                          selfgravity_mod.o particle_solver_mod.o cooling_mod.o
-download_mod.o          : io_mod.o trace_mod.o task_mod.o patch_mod.o link_mod.o interpolate_mod.o \
-                          kinds_mod.o lagrange_mod.o validate_mod.o
+extras_mod.o            : io_mod.o trace_mod.o patch_mod.o gpatch_mod.o list_mod.o \
+                          disk_selfgravity_mod.o disk_particles_mod.o
+#                          forces_mod.o cooling_mod.o
+disk_particles_mod.o    : particle_solver_mod.o disk_model_mod.o
+disk_selfgravity_mod.o  : selfgravity_mod.o
+
