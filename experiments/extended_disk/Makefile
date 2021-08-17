@@ -32,9 +32,10 @@ $(EXEC)                 : setup_mod.o cylinder_mod.o dispatcher_mod.o io_unit_mo
 experiment_mod.o        : io_mod.o trace_mod.o solver_mod.o mesh_mod.o boundaries_mod.o \
                           vector_mod.o disk_model_mod.o omp_lock_mod.o
 disk_model_mod.o        : scaling_mod.o units_mod.o math_mod.o eos_mod.o
+disk_particles_mod.o    : disk_model_mod.o vector_ops.o
 scaling_mod.o           : io_mod.o units_mod.o
 extras_mod.o            : io_mod.o trace_mod.o patch_mod.o gpatch_mod.o list_mod.o \
-                          disk_selfgravity_mod.o disk_particles_mod.o
+                          selfgravity_mod.o disk_particles_mod.o
 #                          forces_mod.o cooling_mod.o
 disk_particles_mod.o    : particle_solver_mod.o disk_model_mod.o
 disk_selfgravity_mod.o  : selfgravity_mod.o
