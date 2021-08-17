@@ -471,9 +471,9 @@ SUBROUTINE update_position (self)
                    +self%radius*sinphi, 0d0]
   self%velocity = [-self%radius*sinphi*self%omega(3), &
                    +self%radius*cosphi*self%omega(3), 0d0]
-  self%e(:,1) = [ cosphi, sinphi, 0d0]
-  self%e(:,2) = [-sinphi, cosphi, 0d0]
-  self%e(:,3) = [    0d0,    0d0, 1d0]
+  self%erot(:,1) = [ cosphi, sinphi, 0d0]
+  self%erot(:,2) = [-sinphi, cosphi, 0d0]
+  self%erot(:,3) = [    0d0,    0d0, 1d0]
   if (verbose > 0) then
     write (stdlog, '(a,i6,f10.2)') &
       'experiment_t%update_position: id,cells=', &
@@ -500,7 +500,7 @@ FUNCTION velocity_shift (self, source) RESULT (v)
   !-----------------------------------------------------------------------------
   ! Transform to the target system
   !-----------------------------------------------------------------------------
-  v = matmul (matmul (source%e, v_src), self%e) - v_tgt
+  v = matmul (matmul (source%erot, v_src), self%erot) - v_tgt
   end select
 END FUNCTION velocity_shift
 
