@@ -361,19 +361,19 @@ FUNCTION refine_Flash (self) RESULT(refine)
           (2d0*math%pi*r*scaling%m)
         mass = sum (self%dd(ix,iy,iz,:))*mesh(1)%d*mesh(2)%d*mesh(3)%d
         if (mass >= 10d0 * mass_thres) then
-          !FIXME patch%irefine(ix,iy,iz) = 1.
+          patch%frefine(ix,iy,iz) = 1.
         else if (mass < mass_thres) then
-          !FIXME patch%irefine(ix,iy,iz) = -1.
+          patch%frefine(ix,iy,iz) = -1.
         end if
       end do
     end do
   end do
   refine = 0
-  !FIXME: if (maxval(patch%irefine(l(1):u(1),l(2):u(2),l(3):u(3))) == 1.) then
-    !FIXME: refine = 1
-  !FIXME: else if (any(patch%irefine(l(1):u(1),l(2):u(2),l(3):u(3)) == -1.)) then
-    !FIXME: refine = -1
-  !FIXME: end if
+  if (maxval(patch%frefine(l(1):u(1),l(2):u(2),l(3):u(3))) == 1.) then
+    refine = 1
+  else if (any(patch%frefine(l(1):u(1),l(2):u(2),l(3):u(3)) == -1.)) then
+    refine = -1
+  end if
   call trace%end ()
 END FUNCTION refine_Flash
 
