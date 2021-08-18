@@ -47,6 +47,7 @@ MODULE extras_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.
   !-----------------------------------------------------------------------------
+!  USE boundaries_mod
   USE selfgravity_mod                                           ! selfg
   USE particle_solver_mod                                       ! dust
   !-----------------------------------------------------------------------------
@@ -58,7 +59,7 @@ MODULE extras_mod
   !-----------------------------------------------------------------------------
   type, public, extends(gpatch_t):: extras_t
     class(gpatch_t), pointer:: gpatch => null()                 ! keep
-    type(selfgravity_t), pointer:: selfgravity                  ! selfg
+    class(selfgravity_t), pointer:: selfgravity                 ! selfg
     class(particle_solver_t), pointer:: particle_solver         ! dust
     real(8):: omega(3)
     real(8), dimension(:,:,:,:),   contiguous, pointer:: r       => null()
@@ -91,7 +92,10 @@ SUBROUTINE pre_init (self)
   !.............................................................................
   call trace%begin ('extras_t%pre_init')
   self%gpatch => self                                             ! keep
+  call self%gpatch_t%pre_init ()                                  ! keep
+  allocate (self%selfgravity)                                     ! selfg
   call self%selfgravity%pre_init (self%gpatch)                    ! selfg
+  self%particle_solver%patch => self                              ! dust
   call self%particle_solver%pre_init ()                           ! dust
   call trace%end()
 END SUBROUTINE pre_init
@@ -103,6 +107,7 @@ SUBROUTINE init (self)
   class(extras_t):: self
   !.............................................................................
   call trace%begin ('extras_t%init')
+  call self%gpatch_t%init                                         ! keep
   call self%selfgravity%init                                      ! selfg
   call self%particle_solver%init                                  ! dust
   call trace%end()
@@ -135,6 +140,7 @@ SUBROUTINE pre_update (self)
   !.............................................................................
   call trace%begin ('extras_t%pre_update', itimer=itimer)
   self%gpatch => self                                              ! keep
+  call self%gpatch_t%pre_update ()                                 ! keep
   if (self%particle_solver%on) then
     if (self%selfgravity%on) then
       !---------------------------------------------------------------------------
@@ -172,6 +178,7 @@ SUBROUTINE post_update (self)
   integer, save:: itimer=0
   !.............................................................................
   call trace%begin ('extras_t%post_update', itimer=itimer)
+  call self%gpatch_t%post_update ()                                ! keep
   !-----------------------------------------------------------------------------
   ! Add dust to gas density before computation of self-gravity
   !-----------------------------------------------------------------------------
@@ -206,6 +213,7 @@ END SUBROUTINE output
 INTEGER function check_refine (self)
   class(extras_t), target:: self
   !.............................................................................
+  check_refine = -1
   !FIXME: check_refine = self%particle_solver%refine_Flash ()
 END FUNCTION check_refine
 
@@ -217,6 +225,7 @@ SUBROUTINE courant_condition (self, detailed_timer)
   logical, optional:: detailed_timer
   !-----------------------------------------------------------------------------
   call trace%begin ('extras_t%courant_condition')
+  call self%gpatch_t%courant_condition ()                          ! keep
   call self%particle_solver%courant_condition                      ! dust
   call trace%end()
 END SUBROUTINE courant_condition
