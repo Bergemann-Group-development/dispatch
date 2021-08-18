@@ -107,7 +107,7 @@ SUBROUTINE init_cylinders (self, name)
   end if
   call io%namelist_warning ('cylinder_params', iostat)
   write (io%namelist, cylinder_params)
-  call self%hash_table%init (100000)
+  !call self%hash_table%init ()
   call disk_model%init ()
   call io%lock%unset ('cylinders_t%init')
   self%n_r   = n_r
@@ -160,7 +160,7 @@ SUBROUTINE init_cylinders (self, name)
   !-----------------------------------------------------------------------------
   ! Remove external tasks
   !-----------------------------------------------------------------------------
-  call  remove_external (self)
+  !FIXME: call  remove_external (self)
   !-----------------------------------------------------------------------------
   ! Initialize the nbor lists again, after tasks have been removed
   !-----------------------------------------------------------------------------
@@ -243,7 +243,7 @@ SUBROUTINE finalize_tasks (self)
   !.............................................................................
   class(link_t), pointer :: link
   class(task_t), pointer:: task
-  integer:: n, l(3), u(3)
+  integer:: n, l(3), u(3), key(4)
   real(8):: time
   !-----------------------------------------------------------------------------
   ! Allocate tasks that remain, making sure to spread allocation over threads
@@ -257,7 +257,9 @@ SUBROUTINE finalize_tasks (self)
       task => link%task
       select type (task)
       class is (experiment_t)
+        key = task%key              ! FIXME
         call task%init ()
+        task%key = key              ! FIXME
         task%mesh%d = task%ds
         task%mesh%p = task%position
         task%mesh%llc_cart = task%llc_cart
@@ -364,10 +366,9 @@ SUBROUTINE init_cylinder (self, i_r, r_out, size, hash_table)
       !-------------------------------------------------------------------------
       cpatch%link => halo
       cpatch%link%task => cpatch
-      call self%task_list%append (cpatch%link)
       ptr => cpatch
-      cpatch%key = [i_r, i_phi-1, i_z, cpatch%level]
-      call hash_table%set_ptr (cpatch%key, ptr)
+      cpatch%key = [cpatch%level, i_r, i_phi-1, i_z]
+      call self%task_list%append (cpatch%link)
       !if (verbose > 0) &
         !write(unit,'(a,i6,2x,4i3,l3)') &
          !'cylinder_t%init: id, key', cpatch%id, cpatch%key, associated(ptr)
@@ -436,7 +437,7 @@ SUBROUTINE init_nbors (self, link)
   class(cylinder_t), pointer :: my_cylinder, cylinder
   class(link_t),     pointer :: nblink
   class(task_t),     pointer :: task
-  class(patch_t),    pointer :: nbtask
+  class(task_t),     pointer :: nbtask
   class(*),          pointer :: ptr
   integer                    :: i_r, i1, i2, i3, j2, key(4), unit
   integer,              save :: itimer=0
@@ -453,7 +454,7 @@ SUBROUTINE init_nbors (self, link)
   task => link%task
   select type (task)
   class is (patch_t)
-  i_r = task%key(1)
+  i_r = task%key(2)
   if (verbose > 0) &
     write (unit,'(a,i6,2x,4i3,a)') 'cylinder_t%init_nbors:', &
     task%id, task%key,' self'
@@ -476,13 +477,13 @@ SUBROUTINE init_nbors (self, link)
           (cylinder%omega - my_cylinder%omega)*task%time/dphi
         do i3=-2,2
           if (i1==0 .and. i2==0 .and. i3==0) cycle
-          key = task%key + [i1,j2,i3,0]
-          key(2) = modulo(key(2),n_phi)           ! wrap around
-          call self%hash_table%get_ptr (key, ptr)
-          if (associated(ptr)) then
-            select type (ptr)
-            class is (patch_t)
-              nbtask => ptr
+          key = task%key + [0,i1,j2,i3]
+          key(3) = modulo(key(3),n_phi)           ! wrap around
+          call self%hash_table%get (key, nblink)
+          if (associated(nblink)) then
+          nbtask => nblink%task
+            select type (nbtask)
+              class is (patch_t)
               if (nbtask%id > 0) then
                 if (overlaps_l (nbtask, task)) then
                   nblink => nbtask%link

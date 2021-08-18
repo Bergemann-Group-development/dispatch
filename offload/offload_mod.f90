@@ -61,8 +61,10 @@ SUBROUTINE init(self)
     first_time = .false.
   end if
   self%on = on
-  call self%bunch_list%init
   call io%lock%unset ('offload_t%init')
+  if (on) then
+    call self%bunch_list%init
+  end if
 END SUBROUTINE init
 
 !===============================================================================
