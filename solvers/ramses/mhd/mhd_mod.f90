@@ -1113,22 +1113,22 @@ SUBROUTINE trace3d(self)
   if (associated(scratch%force_per_unit_volume)) then
     !dir$ simd
     do i=lo(1),uo(1)
-      ff(i,1) = ff(i,1) + scratch%force_per_unit_mass(i,j,k,1)*dt2/d(i,j,k)
-      ff(i,2) = ff(i,2) + scratch%force_per_unit_mass(i,j,k,2)*dt2/d(i,j,k)
-      ff(i,3) = ff(i,3) + scratch%force_per_unit_mass(i,j,k,3)*dt2/d(i,j,k)
+      ff(i,1) = ff(i,1) + scratch%force_per_unit_volume(i,j,k,1)*dt2/d(i,j,k)
+      ff(i,2) = ff(i,2) + scratch%force_per_unit_volume(i,j,k,2)*dt2/d(i,j,k)
+      ff(i,3) = ff(i,3) + scratch%force_per_unit_volume(i,j,k,3)*dt2/d(i,j,k)
     end do
   end if
   qq(:) = 0.0
   if (associated(scratch%heating_per_unit_volume)) then
     !dir$ simd
     do i=lo(1),uo(1)
-      qq(i) = qq(i) + scratch%heating_per_unit_volume(i,j,k)
+      qq(i) = qq(i) + scratch%heating_per_unit_volume(i,j,k)*dt2
     end do
   end if
   if (associated(scratch%heating_per_unit_mass)) then
     !dir$ simd
     do i=lo(1),uo(1)
-      qq(i) = qq(i) + scratch%heating_per_unit_mass(i,j,k)*d(i,j,k)
+      qq(i) = qq(i) + scratch%heating_per_unit_mass(i,j,k)*d(i,j,k)*dt2
     end do
   end if
   !dir$ ivdep
@@ -1247,7 +1247,7 @@ SUBROUTINE trace3d(self)
     sw0 = sw0 + ff(i,3)
     !
     ! Add external heating
-    sp0 = sp0  + (eff_gamma-1d0)*qq(i)*half*self%dtime
+    sp0 = sp0  + (eff_gamma-1d0)*qq(i)
     !
     ! Evolve entropy instead of pressure
     !sS0 = (-u*dSx)*dtdx + (-v*dSy)*dtdy + (-w*dSz)*dtdz
