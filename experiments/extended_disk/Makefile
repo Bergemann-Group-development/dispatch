@@ -1,7 +1,7 @@
 
 # Option groups
-#OPTS = full_debug
-PTS = vscode
+OPTS = full_debug
+#PTS = vscode
 #OPTS = debug
 #OPTS =
 #OPTS = optimized
@@ -39,4 +39,3 @@ extras_mod.o            : io_mod.o trace_mod.o patch_mod.o gpatch_mod.o list_mod
 #                          forces_mod.o cooling_mod.o
 disk_particles_mod.o    : particle_solver_mod.o disk_model_mod.o
 disk_selfgravity_mod.o  : selfgravity_mod.o
-

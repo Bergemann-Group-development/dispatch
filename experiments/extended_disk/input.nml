@@ -9,7 +9,7 @@
 &poisson_params         verbose=1 solver='sor' /
 
 !--- Dust and particle solver parameters ---------------------------------------
-&particle_solver_params on=t verbose=1
+&particle_solver_params on=f verbose=1
                         n_bin=1 particles_per_bin=10
                         particle_io=f out_time=1e-4 output_every=1000
                         backreaction=t stokes=t do_supersonic=f /
@@ -21,7 +21,7 @@
                         !do_trace=t omp_trace=f
                         do_output=f method='background' format=10
                         guard_zones=t time_derivs=0 nml_version=5 /
-&out_params             end_time=1e-3 out_time=1e-4 print_every=500 /
+&out_params             end_time=1e-3 out_time=1e-4 print_every=1 /
 &timer_params           sec_per_report=5 min_fraction=0.005 detailed=f /
 &aux_params             verbose=0 select='dust_d' /
 &validate_params        mode='write' /
