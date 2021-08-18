@@ -24,6 +24,7 @@ MODULE experiment_mod
   type, public, extends(solver_t):: experiment_t
     real:: mass=1.0
   contains
+    procedure:: pre_init
     procedure:: init
     procedure:: initial_condition
     procedure:: update
@@ -40,6 +41,17 @@ MODULE experiment_mod
 CONTAINS
 
 !===============================================================================
+!> Pre-allocate extras
+!===============================================================================
+SUBROUTINE pre_init (self)
+  class(experiment_t), target:: self
+  !-----------------------------------------------------------------------------
+  allocate (disk_particles_t:: self%particle_solver)
+  call self%solver_t%pre_init ()
+  self%gn = self%n + 2*self%ng
+END SUBROUTINE pre_init
+
+!===============================================================================
 !> Read parameters and set up initial state
 !===============================================================================
 SUBROUTINE init (self)
@@ -53,7 +65,6 @@ SUBROUTINE init (self)
   real, dimension(:,:,:), pointer:: d, e, px, py, pz
   !----------------------------------------------------------------------------
   call trace%begin ('experiment_t%init')
-  allocate (disk_particles_t:: self%particle_solver)
   call self%solver_t%init
   !----------------------------------------------------------------------------
   call io%lock%set
@@ -420,7 +431,7 @@ SUBROUTINE force (self)
   m = self%mesh(1)%gn
   l = self%mesh(:)%li
   u = self%mesh(:)%ui
-  iz = self%key(3)
+  iz = self%key(4)
   if (self%kind(1:7) /= 'ramses_') then
     call io%abort('experiment_t%force')
   end if
