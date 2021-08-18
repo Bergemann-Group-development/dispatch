@@ -166,19 +166,21 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
     wstarr = merge (wr, wr-A*Cr*(ustar-ur)/estar, illconditioned)
     cstarr = merge (cr, Cr*er/estar             , illconditioned)
 #else
-    if(abs(estar) < 1d-4*A**2)then
-       vstarr=vr
-       Bstarr=Br
-       wstarr=wr
-       Cstarr=Cr
-    else
-       vstarr=vr-A*Br*(ustar-ur)/estar
-       Bstarr=Br*er/estar
-       wstarr=wr-A*Cr*(ustar-ur)/estar
-       Cstarr=Cr*er/estar
-    endif
+  if(abs(estar) < 1d-4*A**2)then
+      vstarr=vr
+      Bstarr=Br
+      wstarr=wr
+      Cstarr=Cr
+  else
+      vstarr=vr-A*Br*(ustar-ur)/estar
+      Bstarr=Br*er/estar
+      wstarr=wr-A*Cr*(ustar-ur)/estar
+      Cstarr=Cr*er/estar
+  endif
 #endif
     !
+
+
     vdotBstarr=ustar*A+vstarr*Bstarr+wstarr*Cstarr
     etotstarr=((SR-ur)*etotr-Ptotr*ur+Ptotstar*ustar+A*(vdotBr-vdotBstarr))/(SR-ustar)
     sqrrstarr=sqrt(rstarr)
