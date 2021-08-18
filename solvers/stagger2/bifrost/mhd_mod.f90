@@ -148,6 +148,7 @@ SUBROUTINE pre_init (self)
   end if
   call self%idx%init (energy=5, mhd=self%mhd)
   call self%extras_t%pre_init
+  self%staggered=.true.
   where (self%n<2) self%ng=0
   if (any(self%n >= 2 .and. self%ng == 0)) then
     write (stdout,'(a,2(2x,3i4))') &
@@ -198,7 +199,7 @@ END SUBROUTINE init
 SUBROUTINE pde (self)
   class(mhd_t):: self
   !.............................................................................
-  real, dimension(:,:,:),   pointer:: d, e, dddt, dedt
+  real, dimension(:,:,:),   pointer:: d, e, dddt, dedt, lnd_p, d_p, ee_p
   real, dimension(:,:,:),   pointer:: dpdtx, dpdty, dpdtz, dBdtx, dBdty, dBdtz
   real, dimension(:,:,:),   pointer:: Bx, By, Bz, px, py, pz, phi, qr
   real, dimension(:,:,:),   pointer:: Ux, Uy, Uz, Uxc, Uyc, Uzc, pg
@@ -271,7 +272,9 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   ee  = e/d
   ! calculate speed of sound.
-  call self%gas_pressure_sub (d, lnd, ee, pg)
+  lnd_p => lnd; d_p=>d; ee_p => ee
+  call self%gas_pressure_sub (d_p, lnd_p, ee_p, pg)
+
   self%pg => pg
   call self%aux%register ('pg', self%pg)
   !print *, 'minmax ee, d', minval(ee), maxval(ee), minval(d), maxval(d)
@@ -772,11 +775,7 @@ SUBROUTINE pre_update (self)
   ! Compute initial temperature
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%pre_update')
-  !-----------------------------------------------------------------------------
-  ! Set boundary conditions on primary variables
-  !-----------------------------------------------------------------------------
-  mem => self%mem(:,:,:,:,self%it,1)
-  call self%boundaries%primary(mem)
+  call self%gpatch_t%pre_update ()
   !
   if (do_temperature .and. .not. associated(self%tt)) then
     allocate (real:: self%tt(self%gn(1),self%gn(2),self%gn(3)))
@@ -879,7 +878,7 @@ END SUBROUTINE output
 SUBROUTINE gas_pressure_sub (self, d, lnd, ee, pg)
   class(mhd_t):: self
   real, dimension(:,:,:):: pg
-  real, dimension(:,:,:),target:: d, lnd, ee
+  real, dimension(:,:,:),pointer:: d, lnd, ee
   integer, save:: nprint=1
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%gas_pressure_sub')
