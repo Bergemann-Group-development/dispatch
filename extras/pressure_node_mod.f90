@@ -84,7 +84,8 @@ SUBROUTINE post_update (self)
   real(var_k), dimension(:,:,:), pointer:: d, e, px, py, pz, bx, by, bz                ! it memory
   real(var_k), dimension(:,:,:), pointer:: nd, ne, npx, npy, npz, nbx, nby, nbz        ! new memory
   real(var_k), dimension(:,:), allocatable:: u_bnd, p_bot
-  real(var_k), dimension(:,:), allocatable:: em, nem, eth,neth
+  real(var_k), dimension(:,:), allocatable:: em, nem
+  real(var_k), dimension(:,:), pointer:: eth,neth
   real(var_k), dimension(:,:,:), allocatable:: pg, bx1, by1, bz1
   real(var_k), dimension(:,:,:), pointer:: d1, p1, e1, p_loc, d_loc, e_loc
   real(var_k), dimension(:,:), pointer:: ee_bnd, d_bnd
@@ -132,6 +133,7 @@ SUBROUTINE post_update (self)
   allocate(bx1(gn(1),gn(2),3))
   allocate(by1(gn(1),gn(2),3))
   allocate(bz1(gn(1),gn(2),3))
+
   allocate(em (gn(1),gn(2)))
   allocate(nem(gn(1),gn(2)))
   !
@@ -163,9 +165,6 @@ SUBROUTINE post_update (self)
   by1(:,uo(2),:)    =by1(:,ui(2),:)
   bz1(uo(1),:,:)    =bz1(ui(1),:,:)
   bz1(:,uo(2),:)    =bz1(:,ui(2),:)
-  !print *, 'before minmax bx', minval(bx1(:,:,:2)),maxval(bx1(:,:,:2))
-  !print *, 'before minmax by', minval(by1(:,:,:2)),maxval(by1(:,:,:2))
-  !print *, 'before minmax bz', minval(bz1(:,:,:2)),maxval(bz1(:,:,:2))
   ! Now fix those upper X and Y zones
   do iter=1,4
     iy = ui(2)
@@ -186,9 +185,6 @@ SUBROUTINE post_update (self)
     end do
   end do
   ! Compute %new magnetic energy
-  !print *, 'minmax bx', minval(bx1(:,:,:2)),maxval(bx1(:,:,:2))
-  !print *, 'minmax by', minval(by1(:,:,:2)),maxval(by1(:,:,:2))
-  !print *, 'minmax bz', minval(bz1(:,:,:2)),maxval(bz1(:,:,:2))
   do iy=li(2),ui(2)
     do ix=li(1),ui(1)
       nem(ix,iy) = ((0.5*(bx1(ix,iy,1)+bx1(ix+1,iy,2)))**2 + &
@@ -202,35 +198,40 @@ SUBROUTINE post_update (self)
   ! ----------------------------------------------------------------------------
   allocate(eth (gn(1),gn(2)))
   allocate(neth(gn(1),gn(2)))
-  do iy=1,gn(2)
-    do ix=1,gn(1)
-      eth(ix,iy) =  e(ix,iy,li(3)) - &
-             0.5* (px(ix,iy,li(3))**2 + &
-                   py(ix,iy,li(3))**2 + &
-                   pz(ix,iy,li(3))**2)/ &
-                    d(ix,iy,li(3))
+  if (p%kind(1:6)=='ramses') then
+    do iy=1,gn(2)
+      do ix=1,gn(1)
+        eth(ix,iy) =  e(ix,iy,li(3)) - &
+              0.5* (px(ix,iy,li(3))**2 + &
+                    py(ix,iy,li(3))**2 + &
+                    pz(ix,iy,li(3))**2)/ &
+                      d(ix,iy,li(3))
+      end do
     end do
-  end do
-  do iy=1,gn(2)
-    do ix=1,gn(1)
-      eth(ix,iy) = eth(ix,iy) - em(ix,iy)
+    do iy=1,gn(2)
+      do ix=1,gn(1)
+        eth(ix,iy) = eth(ix,iy) - em(ix,iy)
+      end do
     end do
-  end do
-  !
-  do iy=1,gn(2)
-    do ix=1,gn(1)
-      neth(ix,iy) =  ne(ix,iy,li(3)) - &
-               0.5*(npx(ix,iy,li(3))**2 + &
-                    npy(ix,iy,li(3))**2 + &
-                    npz(ix,iy,li(3))**2)/ &
-                     nd(ix,iy,li(3))
+    !
+    do iy=1,gn(2)
+      do ix=1,gn(1)
+        neth(ix,iy) =  ne(ix,iy,li(3)) - &
+                0.5*(npx(ix,iy,li(3))**2 + &
+                      npy(ix,iy,li(3))**2 + &
+                      npz(ix,iy,li(3))**2)/ &
+                      nd(ix,iy,li(3))
+      end do
     end do
-  end do
-  do iy=1,gn(2)
-    do ix=1,gn(1)
-      neth(ix,iy) = neth(ix,iy) - nem(ix,iy)
+    do iy=1,gn(2)
+      do ix=1,gn(1)
+        neth(ix,iy) = neth(ix,iy) - nem(ix,iy)
+      end do
     end do
-  end do
+  else
+     eth =>  e(:,:,li(3))
+    neth => ne(:,:,li(3))
+  end if
   
   ct = 0.5/t_bdry                                                               ! characteristic damping constant
   !ct = bottom_bc_rate!1.0/t_bdry                                                               ! characteristic damping constant
@@ -242,6 +243,7 @@ SUBROUTINE post_update (self)
   allocate(dlnpdlnr_E(size(d,1),size(d,2)))
   allocate (p_bot(size(d,1),size(d,2)))
   allocate (u_bnd(size(d,1),size(d,2)))
+
 
   d_bnd  = nd(:,:,li(3))
   ee_bnd = neth(:,:)/d_bnd
@@ -267,11 +269,11 @@ SUBROUTINE post_update (self)
   ! ----------------------------------------------------------------------------
   ! Get gas flow patterns
   ! ----------------------------------------------------------------------------
-  !if (self%patch%kind(1:6)=='ramses') then
+  if (p%kind(1:6)=='ramses') then
     u_bnd=npz(:,:,li(3))/d(:,:,li(3))
-  !else
-  !  u_bnd=0.5*(pz(:,:,li(3))+pz(:,:,li(3)+1))/d(:,:,li(3))
-  !end if
+  else
+    u_bnd=0.5*(pz(:,:,li(3))+pz(:,:,li(3)+1))/d(:,:,li(3))
+  end if
   ! ----------------------------------------------------------------------------
   ! Get pressure and thermodynamic derivatives for pressure variation, scaling 
   ! factors for the damping of pressure fluctuations.
@@ -346,13 +348,18 @@ SUBROUTINE post_update (self)
       ! ------------------------------------------------------------------------
       ! Put internal energy back to total energy 
       ! ------------------------------------------------------------------------
-      ne(ix,iy,li(3)) = neth(ix,iy) + nem(ix,iy) + &
-                        0.5*(ux**2 + uy**2 + uz**2)*nd(ix,iy,li(3))
+      if (p%kind(1:6)=='ramses') then
+        ne(ix,iy,li(3)) = neth(ix,iy) + nem(ix,iy) + &
+                          0.5*(ux**2 + uy**2 + uz**2)*nd(ix,iy,li(3))
+      end if
     end do
   end do
+  if (p%kind(1:6)=='ramses') then
+    deallocate (eth, neth)
+  end if
 
   deallocate(ee_bnd, d_bnd, dlnpdE_r, dlnpdlnr_E, p_bot, u_bnd)
-  deallocate(em,nem,eth,neth)
+  deallocate(em,nem)
     
 call trace%end (itimer)
 END SUBROUTINE post_update
