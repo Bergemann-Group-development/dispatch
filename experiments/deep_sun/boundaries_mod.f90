@@ -91,7 +91,7 @@ SUBROUTINE init (self)
   logical, save:: first_time=.true.
   namelist /boundary_params/ d_bot, e_bot, ee_top, bottom_bc_rate, verbose, divb_iter, &
                              scale, r_sponge, damp_rate, deriv_bnd, &
-                             test, lower_bc, upper_bc
+                             test, lower_bc, upper_bc, top_bc_rate
   !-----------------------------------------------------------------------------
   call trace%begin('boundaries_t%init')
   !.............................................................................
@@ -100,6 +100,7 @@ SUBROUTINE init (self)
   if (first_time) then
     rewind (io%input)
     read (io%input, boundary_params, iostat=iostat)
+    call io%namelist_warning ('boundary_params', iostat)
     if (io%master) write (*, boundary_params)
     !d_bot = d_bot/scaling%d
     !e_bot = e_bot/scaling%e
@@ -400,20 +401,25 @@ SUBROUTINE upper2 (self, mem)
     do iz=1,ng(3)+2
       do iy=1,gn(2)
         do ix=1,gn(1)
-          bx1(ix,iy,iz) = bx(ix,iy,bn)
-          by1(ix,iy,iz) = by(ix,iy,bn)
-          bz1(ix,iy,iz) = bz(ix,iy,bn)
+          bx1(ix,iy,iz) = bx(ix,iy,bn+iz-1)
+          by1(ix,iy,iz) = by(ix,iy,bn+iz-1)
+          bz1(ix,iy,iz) = bz(ix,iy,bn+iz-1)
         end do
-        bx1(gn(1)+1,iy,iz) = bx(gn(1),iy,bn)
-        by1(gn(1)+1,iy,iz) = by(gn(1),iy,bn)
-        bz1(gn(1)+1,iy,iz) = bz(gn(1),iy,bn)
+        bx1(gn(1)+1,iy,iz) = bx(gn(1),iy,bn+iz-1)
+        by1(gn(1)+1,iy,iz) = by(gn(1),iy,bn+iz-1)
+        bz1(gn(1)+1,iy,iz) = bz(gn(1),iy,bn+iz-1)
       end do
-      bx1(1:gn(1),gn(2)+1,iz) = bx(:,gn(2),bn)
-      by1(1:gn(1),gn(2)+1,iz) = by(:,gn(2),bn)
-      bz1(1:gn(1),gn(2)+1,iz) = bz(:,gn(2),bn)
-      bx1(gn(1)+1,gn(2)+1,iz) = bx(gn(1),gn(2),bn)
-      by1(gn(1)+1,gn(2)+1,iz) = by(gn(1),gn(2),bn)
-      bz1(gn(1)+1,gn(2)+1,iz) = bz(gn(1),gn(2),bn)
+      bx1(1:gn(1),gn(2)+1,iz) = bx(:,gn(2),bn+iz-1)
+      by1(1:gn(1),gn(2)+1,iz) = by(:,gn(2),bn+iz-1)
+      bz1(1:gn(1),gn(2)+1,iz) = bz(:,gn(2),bn+iz-1)
+      bx1(gn(1)+1,gn(2)+1,iz) = bx(gn(1),gn(2),bn+iz-1)
+      by1(gn(1)+1,gn(2)+1,iz) = by(gn(1),gn(2),bn+iz-1)
+      bz1(gn(1)+1,gn(2)+1,iz) = bz(gn(1),gn(2),bn+iz-1)
+    end do
+    do iz=1,2
+      bx1(:,:,ng(3)+iz)=bx1(:,:,ng(3))
+      by1(:,:,ng(3)+iz)=by1(:,:,ng(3))
+      bz1(:,:,ng(3)+iz)=bz1(:,:,ng(3))
     end do
     u(1)=gn(1)+1
     u(2)=gn(2)+1
@@ -574,8 +580,9 @@ eimin=9990.0
    !  print *, 'by,by1', by(3,16,27), by1(3,16,2)
    !  print *, 'bz,bz1', bz(3,16,27), bz(3,16,28), bz1(3,16,2),bz1(3,16,3)
    !end if
-    deallocate(eth,e1,em, bx1, by1, bz1)
+    deallocate(eth)
   end if 
+  deallocate(e1,em, bx1, by1, bz1)
 call trace%end()
 END SUBROUTINE upper2
 

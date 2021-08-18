@@ -43,6 +43,7 @@ MODULE experiment_mod
   contains
     procedure:: init
     procedure:: update
+    procedure:: bndries
     procedure:: clamp_ee
     procedure, nopass:: cast2experiment
   end type
@@ -107,11 +108,30 @@ SUBROUTINE update (self)
   call trace%begin('experiment_t%update')
   
   call self%solver_t%update
+  call self%bndries(self%new)
     
   if (clamp_e) call self%clamp_ee
 
   call trace%end()
 END SUBROUTINE update
+
+!===============================================================================
+!> Setup initial states in the patches
+!===============================================================================
+SUBROUTINE bndries (self,it)
+  class(experiment_t):: self
+  integer, optional:: it
+  real(var_k), dimension(:,:,:,:), pointer, contiguous:: mem
+  !----------------------------------------------------------------------------
+  call trace_begin('experiment_t%bndries')
+  if (present(it)) then
+    mem => self%mem(:,:,:,:,it,1)
+  else
+    mem => self%mem(:,:,:,:,self%it,1)
+  end if
+  call self%boundaries%primary (mem)
+  call trace%end()
+END SUBROUTINE bndries
 
 !===============================================================================
 !> Clamp e/d to a minimum table value
