@@ -18,8 +18,12 @@ MODULE interp_mod
   type, public:: interp_t
     class(task_t), pointer:: source => null()    ! source patch
     class(task_t), pointer:: target => null()    ! target patch
+    real, allocatable:: r(:,:,:,:)
+    type(lock_t):: lock
   contains
     procedure:: init
+    procedure:: from_source
+    procedure:: indices
     procedure, nopass:: in_t
     procedure, nopass:: in_x
     procedure, nopass:: in_y
@@ -57,10 +61,297 @@ SUBROUTINE init (self, nbtask)
     write (io%namelist, interp_params)
     first_time = .false.
   end if
+  call self%lock%init
   call io%lock%unset ('interp_t%init')
   !-----------------------------------------------------------------------------
   call trace%end ()
 END SUBROUTINE init
+
+!===============================================================================
+!> Interpolate in 3-D index space
+!===============================================================================
+SUBROUTINE from_source (self, tgt, lt, ut, src)
+  class(interp_t)           :: self
+  class(patch_t)            :: tgt, src
+  integer, dimension(3)     :: lt, ut
+  !.............................................................................
+  real, allocatable         :: p(:,:,:,:)
+  real, pointer, contiguous :: tm(:,:,:,:), sm(:,:,:,:)
+  real, allocatable         :: sp(:,:,:,:), tp(:,:,:,:)
+  real                      :: pt(2)
+  real(8)                   :: p1, p2, q1, q2, v_shift(3)
+  logical                   :: outside(3)
+  integer                   :: i1, i2, i3, j1 ,j2, iv, j, it(2)
+  integer, dimension(3)     :: l, u, m(4)
+  integer, save             :: itimer=0
+  !-----------------------------------------------------------------------------
+  if (detailed_timer) call trace%begin ('interp_t%from_source', itimer=itimer)
+  !-----------------------------------------------------------------------------
+  ! Interpolate in time, in per unit mass variables
+  !-----------------------------------------------------------------------------
+  tm => tgt%mem(:,:,:,:,tgt%it,1)
+  sm => src%mem(:,:,:,:,src%it,1)
+  m = shape(sm)
+  allocate (tp(m(1),m(2),m(3),m(4)))
+  allocate (sp(m(1),m(2),m(3),m(4)))
+  call src%time_interval (tgt%time, it, pt)
+  call to_per_unit_mass (src, sp, it, pt)
+  !-----------------------------------------------------------------------------
+  ! Interpolation coordinates
+  !-----------------------------------------------------------------------------
+  allocate (p(src%gn(1),src%gn(3),src%gn(3),3))
+  call interp%indices (tgt, lt, ut, src, p)
+  !-----------------------------------------------------------------------------
+  ! Bi-linear interpolation in per-unit-mass variables
+  !-----------------------------------------------------------------------------
+  v_shift = tgt%velocity_shift (src)
+  l = src%mesh%li
+  u = src%mesh%ui
+  do iv=1,tgt%nv
+    do i3=lt(3),ut(3)
+      do i2=lt(2),ut(2)
+        do i1=lt(1),ut(1)
+          !---------------------------------------------------------------------
+          ! Skip interior points
+          !---------------------------------------------------------------------
+          j1 = p(i1,i2,i3,1)
+          j2 = p(i1,i2,i3,2)
+          j1 = min(max(j1,l(1)),u(1)-1)
+          j2 = min(max(j2,l(2)),u(2)-1)
+          p1 = p(i1,i2,i3,1) - j1
+          p2 = p(i1,i2,i3,2) - j2
+          q1 = 1.0 - p1
+          q2 = 1.0 - p2
+          !...................................................................
+          tp(i1,i2,i3,iv) = &
+            q2*(q1*sp(j1,j2  ,i3  ,iv) + p1*sp(j1+1,j2  ,i3  ,iv)) + &
+            p2*(q1*sp(j1,j2+1,i3  ,iv) + p1*sp(j1+1,j2+1,i3  ,iv))
+        end do
+      end do
+    end do
+  end do
+  l = src%mesh%li
+  u = src%mesh%ui
+  do i3=lt(3),ut(3)
+    outside(3) = i3 < tgt%mesh(3)%li .or. i3 > tgt%mesh(3)%ui
+    do i2=lt(2),ut(2)
+      outside(2) = i2 < tgt%mesh(2)%li .or. i2 > tgt%mesh(2)%ui
+      do i1=lt(1),ut(1)
+        outside(1) = i1 < tgt%mesh(1)%li .or. i1 > tgt%mesh(1)%ui
+        !-----------------------------------------------------------------------
+        ! Skip interior points
+        !-----------------------------------------------------------------------
+        if (any(outside)) then
+          tm(i1,i2,i3,tgt%idx%px) = (tp(i1,i2,i3,tgt%idx%d))
+          !tm(i1,i2,i3,tgt%idx%px) = exp(tp(i1,i2,i3,tgt%idx%d))
+          !---------------------------------------------------------------------
+          ! Add velocity shift
+          !---------------------------------------------------------------------
+          tp(i1,i2,i3,tgt%idx%px) = tp(i1,i2,i3,tgt%idx%px) + v_shift(1)
+          tp(i1,i2,i3,tgt%idx%py) = tp(i1,i2,i3,tgt%idx%py) + v_shift(2)
+          tp(i1,i2,i3,tgt%idx%pz) = tp(i1,i2,i3,tgt%idx%pz) + v_shift(3)
+          !---------------------------------------------------------------------
+          ! Linear momenta
+          !---------------------------------------------------------------------
+          tm(i1,i2,i3,tgt%idx%px) = &
+          tp(i1,i2,i3,tgt%idx%px) * tm(i1,i2,i3,tgt%idx%d)
+          tm(i1,i2,i3,tgt%idx%py) = &
+          tp(i1,i2,i3,tgt%idx%py) * tm(i1,i2,i3,tgt%idx%d)
+          tm(i1,i2,i3,tgt%idx%pz) = &
+          tp(i1,i2,i3,tgt%idx%pz) * tm(i1,i2,i3,tgt%idx%d)
+          !---------------------------------------------------------------------
+          ! Total energy
+          !---------------------------------------------------------------------
+          tm(i1,i2,i3,tgt%idx%e ) = &
+          tp(i1,i2,i3,tgt%idx%e ) + ( &
+          tp(i1,i2,i3,tgt%idx%px)**2 + &
+          tp(i1,i2,i3,tgt%idx%py)**2 + &
+          tp(i1,i2,i3,tgt%idx%pz)**2) * 0.5*tm(i1,i2,i3,tgt%idx%d)
+        end if
+      end do
+    end do
+  end do
+  deallocate (tp, sp)
+  if (detailed_timer) call trace%end (itimer)
+END SUBROUTINE from_source
+
+SUBROUTINE to_per_unit_mass (src, sp, it, pt)
+  class(patch_t):: src
+  real:: sp(:,:,:,:)
+  integer:: it(2)
+  real:: pt(2)
+  !.............................................................................
+  real, dimension(:,:,:), contiguous, pointer:: d1, e1, px1, py1, pz1
+  real, dimension(:,:,:), contiguous, pointer:: d2, e2, px2, py2, pz2
+  real:: di1, di2
+  integer:: i1, i2, i3
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  if (detailed_timer) call trace%begin ('interp_t%to_per_unit_mass', itimer=itimer)
+  d1  => src%mem(:,:,:,src%idx%d ,it(1),1)
+  e1  => src%mem(:,:,:,src%idx%e ,it(1),1)
+  px1 => src%mem(:,:,:,src%idx%px,it(1),1)
+  py1 => src%mem(:,:,:,src%idx%py,it(1),1)
+  pz1 => src%mem(:,:,:,src%idx%pz,it(1),1)
+  !.............................................................................
+  d2  => src%mem(:,:,:,src%idx%d ,it(2),1)
+  e2  => src%mem(:,:,:,src%idx%e ,it(2),1)
+  px2 => src%mem(:,:,:,src%idx%px,it(2),1)
+  py2 => src%mem(:,:,:,src%idx%py,it(2),1)
+  pz2 => src%mem(:,:,:,src%idx%pz,it(2),1)
+  do i3=1,src%gn(3)
+  do i2=1,src%gn(2)
+    !$omp simd
+    do i1=1,src%gn(1)
+      di1 = 1.0/d1(i1,i2,i3)
+      di2 = 1.0/d2(i1,i2,i3)
+      sp(i1,i2,i3,src%idx%d ) = pt(1)*d1(i1,i2,i3) &
+                              + pt(2)*d2(i1,i2,i3)
+      sp(i1,i2,i3,src%idx%px) = pt(1)*px1(i1,i2,i3)*di1 &
+                              + pt(2)*px2(i1,i2,i3)*di2
+      sp(i1,i2,i3,src%idx%py) = pt(1)*py1(i1,i2,i3)*di1 &
+                              + pt(2)*py2(i1,i2,i3)*di2
+      sp(i1,i2,i3,src%idx%pz) = pt(1)*pz1(i1,i2,i3)*di1 &
+                              + pt(2)*pz2(i1,i2,i3)*di2
+      sp(i1,i2,i3,src%idx%e ) = pt(1)*(e1(i1,i2,i3) - ( &
+                                      px1(i1,i2,i3)**2 + &
+                                      py1(i1,i2,i3)**2 + &
+                                      pz1(i1,i2,i3)**2)*0.5*di1)*di1 &
+                              + pt(2)*(e2(i1,i2,i3) - ( &
+                                      px2(i1,i2,i3)**2 + &
+                                      py2(i1,i2,i3)**2 + &
+                                      pz2(i1,i2,i3)**2)*0.5*di2)*di2
+    end do
+  end do
+  end do
+  if (detailed_timer) call trace%end (itimer)
+END SUBROUTINE to_per_unit_mass
+
+!===============================================================================
+!> Vectorized transformation from target index space to source index space.
+!> The r(m,m,m,1:3) array holds the floating index distances from the patch
+!> position, in units of cells.  The patch%erot(j,k) array holds the absolute
+!> Cartesian displacement in the j-direction for one cell along the local
+!> unit vector in the k-direction.
+!===============================================================================
+SUBROUTINE indices (self, tgt, lt, ut, src, ps)
+  class(interp_t):: self
+  class(patch_t):: tgt, src
+  integer, dimension(3):: lt, ut, ls, us
+  real, contiguous:: ps(:,:,:,:)
+  !.............................................................................
+  real, allocatable:: pt(:,:)
+  real(8):: t2s(3,3), tc(3,3), sc(3,3)
+  integer:: i1, i2, i3, i, j, k
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  if (detailed_timer) call trace%begin ('interp_t%indices', itimer=itimer)
+  !-----------------------------------------------------------------------------
+  ! Cache the index space cell coordinates -- common to all patches
+  !-----------------------------------------------------------------------------
+  call self%lock%set ('indices')
+  if (allocated(self%r)) then
+    if (any(shape(self%r) /= [tgt%gn(1),tgt%gn(2),tgt%gn(3),3])) then
+      deallocate (self%r)
+    end if
+  end if
+  if (.not. allocated(self%r)) then
+    allocate (self%r(tgt%gn(1),tgt%gn(2),tgt%gn(3),3))
+    do i3=1,tgt%gn(3)
+    do i2=1,tgt%gn(2)
+    do i1=1,tgt%gn(1)
+      self%r(i1,i2,i3,1) = (i1-tgt%mesh(1)%o)
+      self%r(i1,i2,i3,2) = (i2-tgt%mesh(2)%o)
+      self%r(i1,i2,i3,3) = (i3-tgt%mesh(3)%o)
+    end do
+    end do
+    end do
+  end if
+  call self%lock%unset ('indices')
+  !-----------------------------------------------------------------------------
+  ! Cache target and source coefficient
+  !-----------------------------------------------------------------------------
+  do j=1,3
+  do k=1,3
+    tc(j,k) = tgt%erot(j,k)*tgt%ds(k)
+    sc(j,k) = src%erot(j,k)/src%ds(k)
+  end do
+  end do
+  allocate (pt(size(ps,1),3))
+  ls = src%mesh%li
+  us = src%mesh%ui
+  do i3=lt(3),ut(3)
+    do i2=lt(2),ut(2)
+      !-------------------------------------------------------------------------
+      ! pt(:,j) is the displacement in the common Cartesian coordinate
+      ! j-direction for each index triplet (i1,i2,i3) in the target index space,
+      ! where the three indices give the location in the local unit vector
+      ! coordinates. self%r(i1,i2,i3) is in units of cells, and tgt%erot(j,k) is
+      ! in code units, and hence p(:,j) is in code units.
+      !-------------------------------------------------------------------------
+      do j=1,3
+        do i1=lt(1),ut(1)
+          pt(i1,j) = tgt%position(j) &
+                   - src%position(j) &
+                   + self%r(i1,i2,i3,1)*tc(j,1) &
+                   + self%r(i1,i2,i3,2)*tc(j,2) &
+                   + self%r(i1,i2,i3,3)*tc(j,3)
+        end do
+      end do
+      !-------------------------------------------------------------------------
+      ! ps(:,:,:,j) are the final index space coordinates in the local source
+      ! coordinate system, with a center at the src%position, and with the
+      ! t2s(i,j) matrix transforming from the local target to the local source
+      ! coordinates.
+      !-------------------------------------------------------------------------
+!define DEBUG
+#ifdef DEBUG
+      do i1=lt(1),ut(1)
+        do j=1,3
+          ps(i1,i2,i3,j) = src%mesh(j)%o &
+                         + pt(i1,1)*sc(j,1) &
+                         + pt(i1,2)*sc(j,2) &
+                         + pt(i1,3)*sc(j,3)
+        end do
+        write(stdlog,'(a,2(i6,1x,4i3),1x,4i3,3f8.3)') &
+          'interp_t%indices: tgt,src,ii,p=', &
+          tgt%id, tgt%key, src%id, src%key, i1,i2,i3,j, ps(i1,i2,i3,:)
+        block
+          real(8),dimension(3):: pos, p, p2
+          integer:: i
+          pos = tgt%position - src%position + &
+                (i1-tgt%mesh(1)%o)*tgt%ds(1)*tgt%erot(:,1) + &
+                (i2-tgt%mesh(2)%o)*tgt%ds(2)*tgt%erot(:,2) + &
+                (i3-tgt%mesh(3)%o)*tgt%ds(3)*tgt%erot(:,3)
+          p(1) = sum(pos*src%erot(:,1))/src%ds(1) + src%mesh(1)%o
+          p(2) = sum(pos*src%erot(:,2))/src%ds(2) + src%mesh(2)%o
+          p(3) = sum(pos*src%erot(:,3))/src%ds(3) + src%mesh(3)%o
+          if (any(abs(p-ps(i1,i2,i3,:)) > 0.001)) then
+            write(stdlog,1) pt(i1,:), 'pnt src position in tgt coords'
+            write(stdlog,1) src%position, 'src position'
+            write(stdlog,1) tgt%position, 'tgt position'
+            write(stdlog,1) pos, 'pnt distance from src%pos'
+            write(stdlog,1) p, 'pnt src indices'
+            write(stdlog,1) ps(i1,i2,i3,:), ' ps src indices'
+          1 format(3f10.6,2x,a)
+            flush (stdlog)
+          end if
+        end block
+      end do
+#else
+      do j=1,3
+        do i1=lt(1),ut(1)
+          ps(i1,i2,i3,j) = src%mesh(j)%o &
+                         + pt(i1,1)*sc(j,1) &
+                         + pt(i1,2)*sc(j,2) &
+                         + pt(i1,3)*sc(j,3)
+        end do
+      end do
+#endif
+    end do
+  end do
+  if (detailed_timer) call trace%end (itimer)
+END SUBROUTINE indices
 
 !===============================================================================
 !> Interpolate in time over the relevant source region
