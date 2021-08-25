@@ -102,8 +102,8 @@ SUBROUTINE init (self)
     px => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%px,self%it,1)
     py => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%py,self%it,1)
     pz => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%pz,self%it,1)
-     print '(i6,1p,4g12.3)', self%id, minval(d), maxval(d), maxval(abs(px/d)), &
-     maxval(abs(py/d))
+    print '(i6,1p,4g12.3)', self%id, minval(d), maxval(d), maxval(abs(px/d)), &
+      maxval(abs(py/d))
   end if
   call trace%end ()
 END SUBROUTINE init
@@ -132,7 +132,6 @@ SUBROUTINE update (self)
   call scratch%allocate (scratch%force_per_unit_mass, [self%gn,3])
   scratch%force_per_unit_mass = 0.0
   self%particle_solver%v_patch => self%v_patch
-!  call self%solver_t%pre_update ()
   if (self%id==1) &
     call validate%check (self, self%mem(:,:,:,:,self%it,1), 'upd1')
   !-----------------------------------------------------------------------------
@@ -148,7 +147,6 @@ SUBROUTINE update (self)
   call self%boundary (self%it)
   if (self%id==1) &
     call validate%check (self, self%mem(:,:,:,:,self%it,1), 'bdr2')
-  call self%update_position ()
   call trace%end (itimer)
 END SUBROUTINE update
 
@@ -283,6 +281,11 @@ SUBROUTINE boundary (self, it)
           py(i1,i2,i3) = py(i1,i2,i3) - &
             v_phi*self%phi_hat(i1,i2,i3,2)*d(i1,i2,i3)
         end do
+        if (associated(self%filled)) then
+          do i1=l(1),u(1)
+            self%filled(i1,i2,i3) = self%level
+          end do
+        end if
       end do
     end do
     call self%E_th2e (e,it)
@@ -297,6 +300,9 @@ SUBROUTINE boundary (self, it)
     l = [self%mesh(1)%uo, self%mesh(2)%lb, self%mesh(3)%lb]
     u = [self%mesh(1)%ub, self%mesh(2)%ub, self%mesh(3)%ub]
     call initial_condition (self, l, u, it)
+    if (associated(self%filled)) then
+      self%filled(l(1):u(1),l(2):u(2),l(3):u(3)) = self%level
+    end if
   end if
   !-----------------------------------------------------------------------------
   ! Lower vertical boundary
@@ -362,7 +368,7 @@ END SUBROUTINE cache_v_head
 SUBROUTINE vertical_boundary (self, o, it)
   class(experiment_t):: self
   real, dimension(:,:,:), pointer :: d, e, px, py, pz
-  integer:: o, it, b, i, step, i1, i2, i3
+  integer:: o, it, b, i, step, i1, i2, i3, l(3), u(3)
   real(8):: sign, zi, p(3), r, z, h, d_ratio, dv_phi, v, v_h, v_k
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -372,24 +378,26 @@ SUBROUTINE vertical_boundary (self, o, it)
   px => self%mem(:,:,:,self%idx%px,it,1)
   py => self%mem(:,:,:,self%idx%py,it,1)
   pz => self%mem(:,:,:,self%idx%pz,it,1)
+  l = self%mesh%lb
+  u = self%mesh%ub
   if (o == self%mesh(3)%lo) then
     sign = -1.0
-    step = -1
-    b = self%mesh(3)%lb
+    l(3) = self%mesh(3)%lb
+    u(3) = self%mesh(3)%lo
     i = self%mesh(3)%li
   else
     sign = +1.0
-    step = 1
-    b = self%mesh(3)%ub
+    l(3) = self%mesh(3)%uo
+    u(3) = self%mesh(3)%ub
     i = self%mesh(3)%ui
   end if
   v_k = disk_model%v_kepler (self%radius)
   zi = self%mesh(3)%r(i) + self%position(3)
   !-----------------------------------------------------------------------------
   call cache_v_head (self)
-  do i3=o,b,step
-    do i2=self%mesh(2)%lb,self%mesh(2)%ub
-      do i1=self%mesh(1)%lb,self%mesh(1)%ub
+  do i3=l(3),u(3)
+    do i2=l(2),u(2)
+      do i1=l(1),u(1)
         p(1) = self%mesh(1)%r(i1) + self%radius
         p(2) = self%mesh(2)%r(i2)
         p(3) = self%mesh(3)%r(i3) + self%position(3)
@@ -412,9 +420,18 @@ SUBROUTINE vertical_boundary (self, o, it)
         py(i1,i2,i3) = d(i1,i2,i3)*(- v + v_h)
         pz(i1,i2,i3) = d(i1,i2,i3)*(+ v*sign)
       end do
+      if (associated(self%filled)) then
+        do i1=l(1),u(1)
+          self%filled(i1,i2,i3) = self%level
+        end do
+      end if
     end do
   end do
-  call trace%end (itimer)
+  if (verbose > 0) then
+    write (stdout,'(a,i6,":",i2.2,3i4,2(2x,3i4))') &
+      'boundary: target,l,u=', self%id, self%key, l, u
+  end if
+call trace%end (itimer)
 END SUBROUTINE vertical_boundary
 
 !===============================================================================
@@ -478,7 +495,8 @@ SUBROUTINE update_position (self)
   real(8):: sinphi, cosphi
   !-----------------------------------------------------------------------------
   call trace%begin ('experiment_t%update_position')
-  self%centre_nat(2) = self%centre_nat(2) + self%dtime*self%omega(3)
+  self%centre_nat(2) = &
+  self%centre_nat(2) + self%dtime*self%omega(3)
   cosphi = cos(self%centre_nat(2))
   sinphi = sin(self%centre_nat(2))
   self%position = [+self%radius*cosphi, &
@@ -511,10 +529,6 @@ SUBROUTINE get_position (self, source, p, v, e)
   class is (experiment_t)
   phi_src = source%centre_nat(2) + (self%time-source%time)*source%omega(3)
   phi_tgt =   self%centre_nat(2)
-  ! print '("get:",7f10.6)', &
-  !   source%centre_nat(2), self%time-source%time, source%omega(3), &
-  !   source%dtime*self%omega(3), (self%time-source%time)*source%omega(3), &
-  !   self%time, source%time
   !-----------------------------------------------------------------------------
   ! Relative position and velocity in absolute coordinates
   !-----------------------------------------------------------------------------
