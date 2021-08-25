@@ -54,7 +54,7 @@ MODULE halo_mod
     procedure:: check_support
     procedure:: find_support
   end type
-  logical, save:: check_filled = .false.
+  logical, save:: check_filled=.true.
   logical, save:: detailed_timer=.false.
   integer, save:: verbose=0
   integer, save:: method=3
@@ -160,7 +160,7 @@ SUBROUTINE download (self, nbors, only, all_tgt, all_src)
   logical                :: use_coarse
   class(nbor_t), pointer :: nbor
   class(task_t), pointer :: target, source
-  integer, save           :: itimer=0
+  integer, save          :: itimer=0
   !-----------------------------------------------------------------------------
   ! Decide whether to use a coarse clone or not
   !-----------------------------------------------------------------------------
@@ -189,9 +189,9 @@ SUBROUTINE download (self, nbors, only, all_tgt, all_src)
     if (nbor%download) then
       source => nbor%task
       if (verbose > 0) then
-        print '(a8,2x,2(a,i6,":",i2.2,1x,4i3,3x))', 'halo', &
-          'tgt:', self%task%id, target%level, target%key, &
-          'src:', source%id, source%level, source%key
+        write (stdout,'(a8,2x,2(a,i6,":",i2.2,1x,3i4,3x))') 'halo', &
+          'tgt:', target%id, target%key, &
+          'src:', source%id, source%key
       end if
       !...........................................................................
       if (source%level < target%level) then
@@ -214,7 +214,7 @@ SUBROUTINE download (self, nbors, only, all_tgt, all_src)
         ! if (nbor%task%is_clear (bits%no_support)) then
           source => nbor%task
           call guards%source_to_target (source, target, n_op=self%n_op, &
-          only=only, all_src=all_src, all_tgt=all_tgt)
+            only=only, all_src=all_src, all_tgt=all_tgt)
         ! else
         !   print *, target%id, 'skipping', nbor%task%id
         ! end if
@@ -232,13 +232,14 @@ SUBROUTINE download (self, nbors, only, all_tgt, all_src)
   ! loading, using full source patches, while printing warnings
   !-----------------------------------------------------------------------------
   if (self%not_filled (target)) then
-    write (stderr,*) 'halo_t%not_filled: target%id=', target%id
+    write (stderr,'(a,i6,":",i2.2,3i4)') &
+      ' halo_t%not_filled: target=', target%id, target%key
     nbor => nbors
     do while (associated(nbor))
       source => nbor%task
       select type (source)
       class is (patch_t)
-        print '(i6,":",i2.2,3i3,3x,l1,2(2x,3l1))', source%id, source%key, &
+      write (stderr,'(i6,":",i2.2,3i4,3x,l1,2(2x,3l1))') source%id, source%key, &
           nbor%download, source%mesh%lower_boundary, source%mesh%upper_boundary
       end select
       nbor => nbor%next
@@ -541,22 +542,21 @@ SUBROUTINE set_filled (self, task)
   logical                 :: outside(3)
   integer, save           :: itimer=0
   !-----------------------------------------------------------------------------
-  ! Cast to patch and check if applicable
+  if (.not. check_filled) return
+  call trace%begin ('halo_t%set_filled', itimer=itimer)
+  !-----------------------------------------------------------------------------
+  ! Cast to patch_t
   !-----------------------------------------------------------------------------
   select type (task)
   class is (patch_t)
   target => task
   end select
-  if (.not. check_filled .or. .not.associated(target%filled)) return
   !-----------------------------------------------------------------------------
   ! Clear target%filled and initialize internal points to target%level.
   ! Se logical mask 'outside' true in guard zones, false inside.
-  !-----------------------------------------------------------------------------
-  call trace%begin ('halo_t%set_filled', itimer=itimer)
-  call target%support_arrays ()
-  !-----------------------------------------------------------------------------
   ! Test different methods to initialize; bell whether of optimization
   !-----------------------------------------------------------------------------
+  call target%support_arrays ()
   if (guards%verbose > 0) wc(1) = wallclock()
   if (method == 1) then
     target%filled = 0
@@ -644,7 +644,7 @@ SUBROUTINE get_filled (self, target)
   class(halo_t)          :: self
   class(task_t), pointer :: target
   integer                :: i1, i2, i3
-  integer, save          :: n_max=50, itimer=0
+  integer, save          :: itimer=0
   !-----------------------------------------------------------------------------
   if (.not. check_filled .or. target%is_set(bits%root_grid)) return
   call trace%begin ('halo_t%get_filled', itimer=itimer)
@@ -652,23 +652,7 @@ SUBROUTINE get_filled (self, target)
   class is (patch_t)
     if (associated(target%filled)) then
       if (any(target%filled == 0)) then
-        write (stdlog,'(a,i6)') &
-          'guards_t%check_filled: target not filled =', target%id
-        do i3=1,target%gn(3)
-        do i2=1,target%gn(2)
-        do i1=1,target%gn(1)
-          if (n_max==0) exit
-          if (target%filled(i1,i2,i3)==0) then
-            write (stdlog,'(a,i6,2x,3i3)') &
-              'guards_t%check_filled: id,ii=', target%id, i1, i2, i3
-            !$omp atomic update
-            n_max = n_max-1
-          end if
-        end do
-        end do
-        end do
-        call io%abort ('guards_t%check_filled: some target not filled')
-        flush(stdlog)
+         call print_filled (target)
       end if
       !call target%lock%set ('halo_t%get_filled')
       !deallocate (target%filled, target%outside)
@@ -678,6 +662,32 @@ SUBROUTINE get_filled (self, target)
   end select
   call trace%end (itimer)
 END SUBROUTINE get_filled
+
+!===============================================================================
+!> Check that target is filled
+!===============================================================================
+SUBROUTINE print_filled (target)
+  class(patch_t) :: target
+  integer        :: i1, i2, i3
+  integer, save  :: n_max=500
+  !-----------------------------------------------------------------------------
+  write (stdlog,'(a,i6)') &
+    'guards_t%check_filled: target not filled =', target%id
+  do i3=1,target%gn(3)
+  do i2=1,target%gn(2)
+  do i1=1,target%gn(1)
+    if (n_max<=0) &
+      return
+    if (target%filled(i1,i2,i3)==0) then
+      write (stdlog,'(a,i6,2x,3i3)') &
+        'guards_t%print_filled: id,ii=', target%id, i1, i2, i3
+      !$omp atomic update
+      n_max = n_max-1
+    end if
+  end do
+  end do
+  end do
+END SUBROUTINE print_filled
 
 !===============================================================================
 !> Check that target is filled
@@ -696,6 +706,9 @@ FUNCTION not_filled (self, target)
     class is (patch_t)
       if (associated(target%filled)) then
         not_filled = any(target%filled == 0)
+        if (not_filled .and. verbose > 0) then
+          call print_filled (target)
+        end if
       else
         not_filled = .false.
       end if
