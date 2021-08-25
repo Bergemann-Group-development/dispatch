@@ -158,6 +158,7 @@ MODULE task_mod
     procedure:: roi
     procedure:: roa
     procedure:: update_position
+    procedure:: get_position
     procedure:: velocity_shift
     procedure:: hash_key
     procedure:: check_refine
@@ -1403,6 +1404,13 @@ SUBROUTINE update_position (self)
   !-----------------------------------------------------------------------------
   call io%abort ("task_t%update_position")
 END SUBROUTINE update_position
+
+SUBROUTINE get_position (self, source, p, v, e)
+  class(task_t):: self, source
+  real(8):: time, p(3), v(3), e(3,3)
+  !-----------------------------------------------------------------------------
+  call io%abort ("task_t%get_position_at")
+END SUBROUTINE get_position
 
 !===============================================================================
 !> Return the velocity shift from source to target

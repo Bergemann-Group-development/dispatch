@@ -183,6 +183,7 @@ MODULE patch_mod
     procedure:: index_only2
     procedure:: count_edges
     procedure:: update_position
+    procedure:: get_position
     procedure:: get_overlap
     procedure:: init_level
     procedure:: dumpm
@@ -3067,6 +3068,20 @@ SUBROUTINE update_position (self)
   end where
   call trace%end()
 END SUBROUTINE update_position
+
+!===============================================================================
+!> Generic procedure returning relative position and velocity of a source patch
+!===============================================================================
+SUBROUTINE get_position (self, source, p, v, e)
+  class(patch_t):: self
+  class(task_t):: source
+  real(8):: time, p(3), v(3), e(3,3)
+  !-----------------------------------------------------------------------------
+  call trace%begin ('patch_t%get_position')
+  p = self%distance_to (source)
+  v = source%velocity - self%velocity
+  call trace%end()
+END SUBROUTINE get_position
 
 !===============================================================================
 SUBROUTINE custom_refine (self)
