@@ -33,7 +33,7 @@
 
 !--- framework parameters ------------------------------------------------------
 &dispatcher0_params     verbose=0 detailed_timer=t /
-&halo_params            verbose=0 /
-&guards_params          verbose=0 /
-&interp_params          detailed_timer=t /
+&halo_params            verbose=1 /
+&guards_params          verbose=1 /
+&interp_params          verbose=2 detailed_timer=t /
 
