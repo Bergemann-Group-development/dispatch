@@ -86,39 +86,46 @@ SUBROUTINE init (self)
   self%position = patch%position
   !-----------------------------------------------------------------------------
   ! If at edge, set boundary bits
+  ! FIXME: Consider position and origin and box definitions
   !-----------------------------------------------------------------------------
-  position = patch%position - patch%origin - 0.5d0 * patch%box
+  ! position = patch%position - patch%origin - 0.5d0 * patch%box
+  position = patch%position
   limit = 0.5d0 * (patch%box - patch%size - patch%ds)
   if (.not.patch%periodic(1)) then
     if (position(1)  <= -limit(1)) then
       call self%set (bits%xl)
-      self%mesh(1)%lower_boundary = .true.
     end if
     if (position(1) >= +limit(1)) then
       call self%set (bits%xu)
-      self%mesh(1)%upper_boundary = .true.
     end if
   end if
   if (.not.patch%periodic(2)) then
     if (position(2)  <= -limit(2)) then
       call self%set (bits%yl)
-      self%mesh(2)%lower_boundary = .true.
     end if
     if (position(2) >= +limit(2)) then
       call self%set (bits%yu)
-      self%mesh(2)%upper_boundary = .true.
     end if
   end if
   if (.not.patch%periodic(3)) then
     if (position(3)  <= -limit(3)) then
       call self%set (bits%zl)
-      self%mesh(3)%lower_boundary = .true.
     end if
     if (position(3) >= +limit(3)) then
       call self%set (bits%zu)
-      self%mesh(3)%upper_boundary = .true.
     end if
   end if
+  !-----------------------------------------------------------------------------
+  ! In case boundary bits are set elsewhere, make sure mesh flags are consistent
+  ! (mesh flags can only be set after meshes have been allocated, while bits may
+  ! be set already in the pre_init step).
+  !-----------------------------------------------------------------------------
+  self%mesh(1)%lower_boundary = self%is_set (bits%xl)
+  self%mesh(1)%upper_boundary = self%is_set (bits%xu)
+  self%mesh(2)%lower_boundary = self%is_set (bits%yl)
+  self%mesh(2)%upper_boundary = self%is_set (bits%yu)
+  self%mesh(3)%lower_boundary = self%is_set (bits%zl)
+  self%mesh(3)%upper_boundary = self%is_set (bits%zu)
   !-----------------------------------------------------------------------------
   ! Spherical boundary flag
   !-----------------------------------------------------------------------------
