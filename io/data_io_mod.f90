@@ -1137,7 +1137,7 @@ SUBROUTINE output_nml_v4 (patch, append, unit, first_time)
         flush (io_unit%log)
         ! make sure folder exists before trying to write to it
         do while (data_io%done_created < patch%iout)
-          call sleep(1) ! FIXME: can sleep be less than 1 second? 
+          call omp%delay(10.0)
         enddo
         open  (io_unit%nml1, file=trim(filename), form='formatted', status='unknown')
         write(io_unit%log,'(a,i5,2x,2a)') &
