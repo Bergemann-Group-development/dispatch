@@ -20,6 +20,8 @@ MODULE guards_mod
   USE interp_mod
   USE mesh_mod
   USE conserve_mod
+  USE validate_mod
+  USE math_mod
   implicit none
   private
   type, public, extends(nbor_t):: guards_t
@@ -36,6 +38,7 @@ MODULE guards_mod
     procedure:: restrict
     procedure:: info
     procedure:: differ
+    procedure:: tilted
   end type
   integer:: verbose=0
   logical:: detailed_timer = .false.
@@ -121,6 +124,7 @@ SUBROUTINE source_to_target (self, source, target, all_tgt, all_src, n_op, &
   integer, optional      :: only
   !.............................................................................
   character(len=8)       :: type
+  logical                :: tilted
   integer                :: m(6), tid, sid, unit
   integer, save          :: itimer=0
   !-----------------------------------------------------------------------------
@@ -151,8 +155,12 @@ SUBROUTINE source_to_target (self, source, target, all_tgt, all_src, n_op, &
       !-------------------------------------------------------------------------
       ! Initialize local test if not done
       !-------------------------------------------------------------------------
-      self%distance = source%distance (target)
-      if (source%level == target%level) then
+      self%distance = target%distance_to (source)
+      tilted = associated (source%erot)
+      if (tilted) then
+        type = 'tilted'
+        call self%tilted (target, source, all_tgt, all_src, only)
+      else if (source%level == target%level) then
         type = 'same'
         call self%same (target, source, all_tgt, all_src, only)
         n_op  (1) = n_op(1) + 1
@@ -514,5 +522,146 @@ SUBROUTINE differ (self, tgt, src, all_tgt, all_src, only)
     tgt%filled (lt(1):ut(1),lt(2):ut(2),lt(3):ut(3)) = max(src%level, tgt%level)
   call trace%end (itimer)
 END SUBROUTINE differ
+
+!===============================================================================
+!> Interpolte btw patches of different size
+!===============================================================================
+SUBROUTINE tilted (self, tgt, src, all_tgt, all_src, only)
+  class(guards_t)                      :: self
+  class(patch_t)                       :: tgt, src
+  logical, optional                    :: all_tgt, all_src
+  integer, optional                    :: only
+  !.............................................................................
+  class(mesh_t), pointer, dimension(:) :: tm, sm
+  type(meshp_t)                        :: om(3)
+  real(8), dimension(3)                :: tl, tu, sl, su, fl, fu, pl, pu, sm_p
+  logical, dimension(3)                :: below, above
+  integer, dimension(3)                :: ls, us, lt, ut
+  real, dimension(:,:,:,:), pointer    :: tgt0, tgt1, tgt2, mem
+  !contiguous                           :: tgt0, tgt1, tgt2, mem
+  logical                              :: src_all, tgt_int
+  integer                              :: i, m(5), tid, sid
+  real(8)                              :: src_p(3), src_v(3), src_e(3,3), e(3,3)
+  integer, save                        :: itimer=0
+  real(8), parameter                   :: eps=1d-6
+  !-----------------------------------------------------------------------------
+  ! Use all source cells if the all_src is present, or the rarget (child) is
+  ! taking the first step.
+  !-----------------------------------------------------------------------------
+  call trace%begin ('guards_t%tilted', itimer=itimer)
+  src_all = present(all_src) !.or. tgt%istep==0  ! use full source region
+  src_all = src_all !.or. tgt%istep==0           ! first child update¨
+  tid = tgt%id
+  sid = src%id
+  !-----------------------------------------------------------------------------
+  ! Produce values allso in internal cells if specifically ordered to, or if
+  ! the source is at a higher level, or if a child is taking the first step.
+  !-----------------------------------------------------------------------------
+  tgt_int = present(all_tgt)                    ! produce full target
+  tgt_int = tgt_int !.or. tgt%istep==0           ! first child update
+  tgt_int = tgt_int .or. src%level > tgt%level  ! restrict
+  !.............................................................................
+  if (verbose > 2) then
+    write (stdlog,'(f12.6,a,2(i6,":",i2.2,2x),4l1)') &
+      wallclock(), pad_trace(1:indent)// &
+      'guards_t%tilted: src,tgt,all_tgt,all_src,tgt_int,src_all=', &
+      sid, src%level, tid, tgt%level, &
+      present(all_tgt), present(all_src), tgt_int, src_all
+  end if
+  !.............................................................................
+  tm => tgt%mesh                                ! target mesh
+  sm => src%mesh                                ! source mesh
+  do i=1,3
+    om(i)%p => src%mesh(i)                      ! output mesh
+  end do
+  !-----------------------------------------------------------------------------
+  ! Positions are in the target local coordinate system.  mulmat(p,tgt%erot)
+  ! tranforms from Cartesian to local, matmul(src%erot,p) from local to Cartesian
+  !-----------------------------------------------------------------------------
+  tl = - tm%s*0.5d0 - tm%ng*tm%d                ! tgt lower corner
+  tu = + tm%s*0.5d0 + tm%ng*tm%d                ! tgt upper corner
+  !-----------------------------------------------------------------------------
+  ! Get src position, velocity, and orientation, in target coordinates
+  !-----------------------------------------------------------------------------
+  call tgt%get_position (src, src_p, src_v, src_e)
+  !-----------------------------------------------------------------------------
+  ! Get src corners in src local coordinates
+  !-----------------------------------------------------------------------------
+  if (src_all) then                             ! new child
+    sl = - sm%s*0.5d0 - sm%ng*sm%d              ! src lower corner
+    su = + sm%s*0.5d0 + sm%ng*sm%d              ! src upper corner
+  else
+    sl = - sm%s*0.5d0                           ! src lower corner
+    su = + sm%s*0.5d0                           ! src upper corner
+  end if
+  !.............................................................................
+  if (verbose > 0) then
+    write (stdlog,*) sl, 'sl src'
+    write (stdlog,*) su, 'su src'
+  end if
+  !-----------------------------------------------------------------------------
+  ! Rotate src corners to tgt coordinates
+  !-----------------------------------------------------------------------------
+  sl = matmul (src_e, sl)                       ! tgt local
+  su = matmul (src_e, su)                       ! tgt local
+  !.............................................................................
+  if (verbose > 0) then
+    write (stdlog,*) sl, 'sl tgt'
+    write (stdlog,*) su, 'su tgt'
+  end if
+  !-----------------------------------------------------------------------------
+  ! Add relative position to corner values
+  !-----------------------------------------------------------------------------
+  sl = sl + src_p
+  su = su + src_p
+  !.............................................................................
+  if (verbose > 1) then
+    write (stdlog,'(a,2(2(1x,3f6.2)))') &
+      'guards_t%tilted: tl,tu,sl,su=', &
+      tl/tm%d, tu/tm%d, sl/tm%d, su/tm%d
+  end if
+  !-----------------------------------------------------------------------------
+  ! Use the whole target range?  Not that this should be redundant, since if we
+  ! are to use the whole target range it must be included in the source range in
+  ! any case
+  !-----------------------------------------------------------------------------
+  fl = max(tl,sl) - eps                         ! overlap lower corner
+  fu = min(tu,su) + eps                         ! overlap upper corner
+  ! lt = tgt%index_only (fl, roundup=.true.)      ! target lower corner
+  ! ut = tgt%index_only (fu, rounddn=.true.)      ! target upper corner
+  lt = ceiling(fl/tm%d + tm%o)                  ! integet tgt lower index
+  ut =   floor(fu/tm%d + tm%o)                  ! integer tgt upper index
+  ! lt = max(lt,tm%lb)
+  ! ut = min(ut,tm%ub)
+  if (any(lt < tm%lb .or. ut > tm%ub)) then
+    call io%warning ('target limits outside range')
+  end if
+  lt = max(lt,tm%lb)                            ! inside target halo
+  ut = min(ut,tm%ub)                            ! inside target halo
+  if (verbose > 0) &
+    write (stdout,'(a,2(i6,":",i2.2,3i3),2(2x,3i3),5(2x,3f10.6))') &
+      'guards_t%tilted: tgt,key,src,key,lt,ut=', &
+      tgt%id, tgt%key, src%id, src%key, lt, ut, &
+      src_p, src_v, src_e(:,1:2), md(tgt%centre_nat(2)), md(src%centre_nat(2))
+  !.............................................................................
+  if (tgt%id == 1) then
+    call validate%check (tgt, src%id, 'source ID')
+    call validate%check (tgt, lt, 'lt')
+    call validate%check (tgt, ut, 'ut')
+    call validate%check (tgt, tgt%mem(:,:,:,:,tgt%it,1), 'before from_source')
+  end if
+  call interp%from_source (tgt, lt, ut, src)
+  if (tgt%id == 1) &
+    call validate%check (tgt, tgt%mem(:,:,:,:,tgt%it,1), 'after from_source')
+  !.............................................................................
+  if (associated(tgt%filled)) &
+    tgt%filled (lt(1):ut(1),lt(2):ut(2),lt(3):ut(3)) = max(src%level, tgt%level)
+  call trace%end (itimer)
+contains
+  FUNCTION md(r)
+    real(8):: r, md
+    md = modulo(r+math%pi,math%pi*2d0) - math%pi
+  END FUNCTION md
+END SUBROUTINE tilted
 
 END MODULE guards_mod
