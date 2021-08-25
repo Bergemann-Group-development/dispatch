@@ -244,7 +244,7 @@ SUBROUTINE finalize_tasks (self)
   class(link_t), pointer :: link
   class(task_t), pointer:: task
   integer:: n, l(3), u(3), key(4)
-  real(8):: time
+  real(8):: time, centre_nat(3), phi
   !-----------------------------------------------------------------------------
   ! Allocate tasks that remain, making sure to spread allocation over threads
   !-----------------------------------------------------------------------------
@@ -258,11 +258,26 @@ SUBROUTINE finalize_tasks (self)
       select type (task)
       class is (experiment_t)
         key = task%key              ! FIXME
+        centre_nat = task%centre_nat
         call task%init ()
+        task%centre_nat = centre_nat
         task%key = key              ! FIXME
         task%mesh%d = task%ds
         task%mesh%p = task%position
         task%mesh%llc_cart = task%llc_cart
+        !-----------------------------------------------------------------------
+        ! Unit vector matrix and inverse
+        !-----------------------------------------------------------------------
+        phi = centre_nat(2)
+        task%erot(:,1) = [ cos(phi), sin(phi), 0d0]
+        task%erot(:,2) = [-sin(phi), cos(phi), 0d0]
+        task%erot(:,3) = [0d0, 0d0, 1d0]
+        task%einv = task%erot
+        task%einv(1,2) = -task%erot(1,2)
+        task%einv(2,1) = -task%erot(2,1)
+        !-----------------------------------------------------------------------
+        ! Boundaries and initial conditions
+        !-----------------------------------------------------------------------
         call task%init_bdries ()
         l = 1
         u = task%gn
@@ -347,6 +362,7 @@ SUBROUTINE init_cylinder (self, i_r, r_out, size, hash_table)
       !-----------------------------------------------------------------------
       cpatch%position = [cpatch%radius*cos(phi), cpatch%radius*sin(phi), z]
       cpatch%velocity = [0d0, self%omega*cpatch%radius, 0d0]
+      cpatch%periodic = [.false., .true., .false.]
       cpatch%size = size
       cpatch%ds = size/cpatch%n
       cpatch%centre_nat = [cpatch%radius, phi, z]
@@ -518,9 +534,7 @@ logical function overlaps_l (source, target)
   !-----------------------------------------------------------------------------
   if (timer%detailed) call trace%begin ('cylinder_t%overlaps_l', itimer=itimer)
   d = target%distance_to (source)
-  authority%l = source%authority%l + d
-  authority%u = source%authority%u + d
-  !FIXME: overlaps_l = authority%overlaps (target%interest)
+  overlaps_l = source%authority%overlaps (target%interest, d)
   if (timer%detailed) call trace%end (itimer)
 end function overlaps_l
 
