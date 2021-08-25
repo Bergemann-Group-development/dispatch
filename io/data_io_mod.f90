@@ -80,7 +80,7 @@ MODULE data_io_mod
   type, public:: data_io_t
     logical:: initialized=.false.
     integer:: iostat=0
-    integer:: iout=0, created=-1
+    integer:: iout=0, created=-1, done_created=-1
     type(dll_t):: kind_list
     type(lock_t):: lock, dirlock
     type(counters_t):: counters
@@ -213,7 +213,6 @@ SUBROUTINE output (self, patch, experiment_name)
   character(len=64) filename, logname, experiment_name
   optional:: experiment_name
   !.............................................................................
-  integer, save:: created=-1
   integer, save:: itimer=0
   logical:: append, use_lock
   logical, save:: io_active=.false.
@@ -426,6 +425,7 @@ SUBROUTINE open_and_close (self)
     if (im_the_one) then
       call os%mkdir (trim(io%outputname))
       call os%mkdir_next_output (self%iout)
+      self%done_created = self%iout
     end if
   end if
   !-----------------------------------------------------------------------------
@@ -1135,6 +1135,10 @@ SUBROUTINE output_nml_v4 (patch, append, unit, first_time)
         write(io_unit%log,'(a,i5,2x,2a)') &
         ' thread', omp%thread, 'opening ', trim(filename)
         flush (io_unit%log)
+        ! make sure folder exists before trying to write to it
+        do while (data_io%done_created < patch%iout)
+          call sleep(1) ! FIXME: can sleep be less than 1 second? 
+        enddo
         open  (io_unit%nml1, file=trim(filename), form='formatted', status='unknown')
         write(io_unit%log,'(a,i5,2x,2a)') &
         ' thread', omp%thread, 'opened  ', trim(filename)
