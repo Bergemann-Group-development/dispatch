@@ -1050,7 +1050,7 @@ SUBROUTINE output_nml_v4 (patch, append, unit, first_time)
   namelist /snapshot_nml/ ioformat, iout, time, ntotal, box, li, ui, ng, &
     gn, n, nv, nt, gamma, eos_name, opacity, periodic, guard_zones, &
     time_derivs, no_mans_land, omp_nthreads, mpi_size, mesh_type, mpi_dims, &
-    refine_ratio, origin
+    refine_ratio, origin, centre_nat
   namelist /patch_nml/ id, position, size, level, dtime, istep, ds, ncell, n, &
     nw, velocity, quality, mesh_type, kind, record, rank, cost
   integer, allocatable :: nbor_ids(:)
@@ -1091,6 +1091,7 @@ SUBROUTINE output_nml_v4 (patch, append, unit, first_time)
   istep        = patch%istep
   mesh_type    = patch%mesh_type
   position     = patch%position
+  centre_nat   = patch%centre_nat
   origin       = patch%origin
   size         = patch%size
   ds           = patch%ds
