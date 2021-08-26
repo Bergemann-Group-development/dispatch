@@ -521,39 +521,41 @@ END SUBROUTINE update_position
 SUBROUTINE get_position (self, source, p, v, e)
   class(experiment_t):: self
   class(task_t):: source
-  real(8):: time, p(3), v(3), e(3,3), pt(3), ps(3)
-  real(8):: phi_src, phi_tgt, v_src, v_tgt
+  real(8):: time, p(3), v(3), e(3,3)
+  real(8):: r_src, r_tgt, phi_src, phi_tgt, v_src, v_tgt, z_src, z_tgt
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('experiment_t%get_position')
+  call trace%begin ('experiment_t%get_position', itimer=itimer)
   select type (source)
   class is (experiment_t)
-  phi_src = source%centre_nat(2) + (self%time-source%time)*source%omega(3)
-  phi_tgt =   self%centre_nat(2)
-  !-----------------------------------------------------------------------------
-  ! Relative position and velocity in absolute coordinates
-  !-----------------------------------------------------------------------------
-  ps = [source%radius*cos(phi_src), source%radius*sin(phi_src), 0d0]
-  pt = [  self%radius*cos(phi_tgt),   self%radius*sin(phi_tgt), 0d0]
-  p = ps - pt
-  v_src = source%radius*source%omega(3)
-  v_tgt =   self%radius*  self%omega(3)
-  v = [-v_src*sin(phi_src), v_src*cos(phi_src), 0d0] &
-    - [-v_tgt*sin(phi_tgt), v_tgt*cos(phi_tgt), 0d0]
-  !-----------------------------------------------------------------------------
-  ! Transform from abolute coordinates to local target coordinates
-  !-----------------------------------------------------------------------------
-  pt = matmul (pt, self%erot)
-  ps = matmul (ps, self%erot)
-  p  = matmul (p , self%erot)
-  v = matmul (v, self%erot)
-  !-----------------------------------------------------------------------------
-  ! Return the relative rotation matrix, at the given target time
-  !-----------------------------------------------------------------------------
-  e(:,1) = [ cos(phi_src-phi_tgt), sin(phi_src-phi_tgt), 0d0]
-  e(:,2) = [-sin(phi_src-phi_tgt), cos(phi_src-phi_tgt), 0d0]
-  e(:,3) = [                  0d0,                  0d0, 1d0]
+    r_src   = source%centre_nat(1)
+    r_tgt   =   self%centre_nat(1)
+    phi_src = source%centre_nat(2) + (self%time-source%time)*source%omega(3)
+    phi_tgt =   self%centre_nat(2)
+    z_src   = source%centre_nat(3)
+    z_tgt   =   self%centre_nat(3)
+    v_src   = r_src*source%omega(3)
+    v_tgt   = r_tgt*  self%omega(3)
+    !---------------------------------------------------------------------------
+    ! Relative position and velocity in absolute coordinates
+    !---------------------------------------------------------------------------
+    p = [ r_src*cos(phi_src), r_src*sin(phi_src), z_src] &
+      - [ r_tgt*cos(phi_tgt), r_tgt*sin(phi_tgt), z_tgt]
+    v = [-v_src*sin(phi_src), v_src*cos(phi_src), 0d0] &
+      - [-v_tgt*sin(phi_tgt), v_tgt*cos(phi_tgt), 0d0]
+    !---------------------------------------------------------------------------
+    ! Transform from abolute coordinates to local target coordinates
+    !---------------------------------------------------------------------------
+    p = matmul (p , self%erot)
+    v = matmul (v, self%erot)
+    !---------------------------------------------------------------------------
+    ! Return the relative rotation matrix, at the given target time
+    !---------------------------------------------------------------------------
+    e(:,1) = [ cos(phi_src-phi_tgt), sin(phi_src-phi_tgt), 0d0]
+    e(:,2) = [-sin(phi_src-phi_tgt), cos(phi_src-phi_tgt), 0d0]
+    e(:,3) = [                  0d0,                  0d0, 1d0]
   end select
-  call trace%end()
+  call trace%end (itimer)
 END SUBROUTINE get_position
 
 !===============================================================================
