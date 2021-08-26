@@ -455,7 +455,7 @@ SUBROUTINE init_nbors (self, link)
   class(task_t),     pointer :: task
   class(task_t),     pointer :: nbtask
   class(*),          pointer :: ptr
-  integer                    :: i_r, i1, i2, i3, j2, key(4), unit
+  integer                    :: i_r, i1, i2, i3, j2, key(4), unit, tid
   integer,              save :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('cylinders_t%init_nbors', itimer=itimer)
@@ -468,12 +468,13 @@ SUBROUTINE init_nbors (self, link)
   end if
   !FIXME: call link%nbor%init ()
   task => link%task
+  tid = task%id
   select type (task)
   class is (patch_t)
   i_r = task%key(2)
   if (verbose > 0) &
-    write (unit,'(a,i6,2x,4i3,a)') 'cylinder_t%init_nbors:', &
-    task%id, task%key,' self'
+    write (unit,'(a,i6,":",i2.2,3i4)') 'cylinder_t%init_nbors: target=', &
+    tid, task%key
   my_cylinder => self%cylinder(i_r)
   do i1=-1,1
     select case (i1)
@@ -503,14 +504,14 @@ SUBROUTINE init_nbors (self, link)
               if (nbtask%id > 0) then
                 if (overlaps_l (nbtask, task)) then
                   nblink => nbtask%link
-                  if (verbose > 2) &
-                    write (unit,'(i6,2x,4i3,a)') nbtask%id, key,' added as nbor'
+                  if (verbose > 2) write (unit,'(i6,":",i2.2,3i4,a)') &
+                    nbtask%id, key,' added as nbor'
                   call link%add_nbor (nblink)
                   !$omp atomic update
                   n_nbors = n_nbors + 1
                 else
-                  if (verbose > 3) &
-                    write (unit,'(i6,2x,4i3,a)') nbtask%id, key,' not added'
+                  if (verbose > 3) write (unit,'(i6,":",i2.2,3i4,a)') &
+                    nbtask%id, key,' not added'
                 end if
               end if
             end select
@@ -534,6 +535,7 @@ logical function overlaps_l (source, target)
   !-----------------------------------------------------------------------------
   if (timer%detailed) call trace%begin ('cylinder_t%overlaps_l', itimer=itimer)
   d = target%distance_to (source)
+  d = matmul (d, target%erot)
   overlaps_l = source%authority%overlaps (target%interest, d)
   if (timer%detailed) call trace%end (itimer)
 end function overlaps_l
