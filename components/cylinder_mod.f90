@@ -611,7 +611,7 @@ SUBROUTINE static_arrays (self, cpatch)
   class(cylinder_t):: self
   class(experiment_t):: cpatch
   integer:: m, i1, i2, i3, iz, j
-  real(8):: x(3), phi_hat(3), p, r, rc, ri, g_times_mass, o
+  real(8):: x(3), phi_hat(3), p, r, rc, ri, g_times_mass, o, omega
   !-----------------------------------------------------------------------------
   call trace%begin ('cylinder_t%static_arrays')
   call io%lock%set ('static_arrays')
@@ -631,6 +631,7 @@ SUBROUTINE static_arrays (self, cpatch)
       x(1) = (i1-o)*cpatch%ds(1) + self%radius
       x(2) = (i2-o)*cpatch%ds(2)
       rc = sqrt(x(1)**2 + x(2)**2)
+      omega = self%omega*(cpatch%centre_nat(1)/rc)**1.5
       phi_hat(1) = -x(2)/rc
       phi_hat(2) = +x(1)/rc
       phi_hat(3) = 0d0
@@ -639,7 +640,7 @@ SUBROUTINE static_arrays (self, cpatch)
       !-------------------------------------------------------------------------
       do j=1,3
         self%phi_hat(i1,i2,i3,j) = phi_hat(j)
-        self%v_patch(i1,i2,i3,j) = phi_hat(j)*self%omega*rc
+        self%v_patch(i1,i2,i3,j) = phi_hat(j)*omega*rc
       end do
       do iz=1,self%n_z
         x(3) =  (i3-o)*cpatch%ds(3) + (iz-(1+self%n_z)*0.5d0)*cpatch%size(3)
