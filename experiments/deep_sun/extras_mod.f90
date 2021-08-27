@@ -125,7 +125,7 @@ SUBROUTINE pre_init (self)
   self%gpatch => self                                                   ! keep
   call self%gpatch_t%pre_init                                           ! keep
   !call self%forces%init (self)                                         ! forces
-  allocate(self%rt)                                                     ! RT
+  if (.not.associated(self%rt)) allocate(self%rt)                                                     ! RT
   self%rt%patch => self
   call self%rt%pre_init                                                 ! RT
   call self%newton%pre_init  (self)                                     ! Newton

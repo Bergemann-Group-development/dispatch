@@ -13,6 +13,13 @@
                     pb_fact=1.0
                     t_bdry=3.0
 /
+
+&pressure_node_params
+                    on=f
+                    t_bdry=3.0
+                    bottom_bc_rate=0.01
+                    pb_fact=1.0
+                    /
 &cartesian_params   size=6,6,3 
                     dims=6,6,3 
                     mpi_dims=2,2,1 
@@ -21,7 +28,7 @@
                     periodic=t,t,f
 /
 & initial_refine_params
-  on = t
+  on = f
   n_refine = 0,0,1
   center   = 0.0,0.0,0.0
   extent   = 0.0,0.0,0.5
@@ -43,7 +50,7 @@
                     force_mean=f
                     extension=1
                     order=2
-                    b0=0.0,0.0,0.0 
+                    !b0=0.0,0.0,0.0 
                     /
 &gravity_params     on=t 
                     constant=-27500 

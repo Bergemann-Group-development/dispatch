@@ -62,7 +62,10 @@ SUBROUTINE pre_init (self)
   class(solver_t), target :: self
   !.............................................................................
   call trace%begin ('solver_t%pre_init')
-  call self%mhd_t%pre_init              ! calls self%mhd_t%pre_init
+  if (.not. self%pre_initialized) then
+    call self%mhd_t%pre_init
+    self%pre_initialized = .true.
+  end if
   call trace%end ()
 END SUBROUTINE pre_init
 
