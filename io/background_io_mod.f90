@@ -15,6 +15,7 @@ MODULE background_io_mod
   end type
   integer, save:: snapshot = -1
   integer, save:: record = 0
+  integer, save:: verbose = 0
   type(background_io_t), public:: background_io
 CONTAINS
 
@@ -27,10 +28,11 @@ SUBROUTINE output (self)
   integer:: m(6), l(3), u(3), snap, rec, it(1)
   real(var_k), pointer:: buffer(:,:,:,:)
   character(len=64) filename
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! In brief critical region, check if starting a new snapshot
   !-----------------------------------------------------------------------------
-  call trace%begin ('background_t%output')
+  call trace%begin ('background_t%output', itimer=itimer)
   call io%lock%set ('background_t%output')
   if (snapshot < self%iout) then
     snapshot = self%iout
@@ -44,8 +46,10 @@ SUBROUTINE output (self)
   self%record = record
   it = minloc(abs(self%t-self%out_next))
   call io%lock%unset ('background_t%output')
-  write (stdlog,*) &
-    'background_io_t%output: snapshot,record,it=', snapshot, record, it
+  !.............................................................................
+  if (verbose > 0) &
+    write (stdlog,*) &
+      'background_io_t%output: snapshot,record,it=', snapshot, record, it
   !-----------------------------------------------------------------------------
   ! Take a copy of the output data, and start a background task that writes it
   !-----------------------------------------------------------------------------
@@ -65,14 +69,16 @@ SUBROUTINE output (self)
     deallocate (buffer)
   !$omp end task
   call log (rec, 2)
-  call trace%end ()
+  call trace%end (itimer)
 END SUBROUTINE output
 
 !===============================================================================
 SUBROUTINE log (rec, step)
   integer:: step, rec
-  write (io_unit%mpi,'(a,2i5,5x,"time(",i1,"):",f12.6)') &
-    'output:', snapshot, rec, step, wallclock()
+  if (verbose > 0) then
+    write (io_unit%mpi,'(a,2i5,5x,"time(",i1,"):",f12.6)') &
+      'output:', snapshot, rec, step, wallclock()
+  end if
 END SUBROUTINE log
 
 !===============================================================================
@@ -86,8 +92,9 @@ SUBROUTINE write_out (buffer, snap, rec)
   !.............................................................................
   character(len=64) filename
   integer:: unit
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('background_io%write_out')
+  call trace%begin('background_io%write_out', itimer=itimer)
   call log (rec, 3)
   !-----------------------------------------------------------------------------
   ! Write a record with the data cube to a direct access file
@@ -103,7 +110,7 @@ SUBROUTINE write_out (buffer, snap, rec)
   call io%lock%unset ('background_io_t%write_out')
   !-----------------------------------------------------------------------------
   call log (rec, 4)
-  call trace%end()
+  call trace%end (itimer)
 END SUBROUTINE write_out
 
 !===============================================================================
