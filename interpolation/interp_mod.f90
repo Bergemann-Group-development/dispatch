@@ -147,8 +147,10 @@ SUBROUTINE from_source (self, tgt, lt, ut, src)
         ! Skip interior points
         !-----------------------------------------------------------------------
         if (any(outside)) then
-          tm(i1,i2,i3,tgt%idx%px) = (tp(i1,i2,i3,tgt%idx%d))
-          !tm(i1,i2,i3,tgt%idx%px) = exp(tp(i1,i2,i3,tgt%idx%d))
+          !---------------------------------------------------------------------
+          ! Mass density
+          !---------------------------------------------------------------------
+          tm(i1,i2,i3,tgt%idx%d) = tp(i1,i2,i3,tgt%idx%d)
           !---------------------------------------------------------------------
           ! Add velocity shift
           !---------------------------------------------------------------------
@@ -156,7 +158,7 @@ SUBROUTINE from_source (self, tgt, lt, ut, src)
           tp(i1,i2,i3,tgt%idx%py) = tp(i1,i2,i3,tgt%idx%py) + v_shift(2)
           tp(i1,i2,i3,tgt%idx%pz) = tp(i1,i2,i3,tgt%idx%pz) + v_shift(3)
           !---------------------------------------------------------------------
-          ! Linear momenta
+          ! Convert to linear momenta
           !---------------------------------------------------------------------
           tm(i1,i2,i3,tgt%idx%px) = &
           tp(i1,i2,i3,tgt%idx%px) * tm(i1,i2,i3,tgt%idx%d)
@@ -352,9 +354,9 @@ SUBROUTINE indices (self, tgt, lt, ut, src, ps)
       do j=1,3
         do i1=lt(1),ut(1)
           ps(i1,i2,i3,j) = src%mesh(j)%o &
-                         + pt(i1,1)*sc(j,1) &
-                         + pt(i1,2)*sc(j,2) &
-                         + pt(i1,3)*sc(j,3)
+                         + pt(i1,1)*sc(1,j) &
+                         + pt(i1,2)*sc(2,j) &
+                         + pt(i1,3)*sc(3,j)
         end do
       end do
 #endif
