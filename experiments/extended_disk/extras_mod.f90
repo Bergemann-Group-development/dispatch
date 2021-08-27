@@ -122,6 +122,7 @@ SUBROUTINE init_task_list (self, task_list)
   class(list_t), pointer:: task_list
   !.............................................................................
   call trace%begin ('extras_t%init_task_list')
+  call self%gpatch_t%init_task_list (task_list)
   call self%particle_solver%init_task_list (task_list)
   call trace%end()
 END SUBROUTINE init_task_list
@@ -195,6 +196,10 @@ SUBROUTINE post_update (self)
     dg(:,:,:) = dg(:,:,:) - sum (dd(:,:,:,:),dim=4)
     deallocate(dd)
   end if
+  !-----------------------------------------------------------------------------
+  ! Generate new nbor lists when patches have moved enough (FIXME)
+  !-----------------------------------------------------------------------------
+  !call self%task_list%init_nbors (self%link)
   call trace%end (itimer)
 END SUBROUTINE post_update
 
