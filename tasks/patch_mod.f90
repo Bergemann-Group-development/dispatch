@@ -49,7 +49,6 @@ MODULE patch_mod
     !real(8):: omega(3)=0d0              ! generic angular velocity
     real(8):: radius=0d0                ! generic radius
     real(8), pointer:: erot(:,:) => null() ! local unit vectors
-    real(8), pointer:: einv(:,:) => null() ! local unit vectors
     real:: u_max=0.0                    ! for Courant condition
     real:: u_fixed                      ! for fixed time step Courant condition
     real:: d_min, d_max                 ! for info
@@ -808,13 +807,6 @@ SUBROUTINE init (self)
     ! The unsigned and pervolume flags may also be modified by the solver. They
     ! are allocated here, but need to be reallocated by solvers modifying nv.
     ! Tracking even the small memory use, in case deallocation is forgotten.
-    !---------------------------------------------------------------------------
-    allocate (self%erot(3,3), self%einv(3,3))
-    self%erot = 0.0
-    do i=1,3
-      self%erot(i,i) = 1.0
-      self%einv(i,i) = 1.0
-    end do
     !---------------------------------------------------------------------------
     allocate (self%unsigned (self%mv))
     allocate (self%pervolume(self%mv))

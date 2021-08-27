@@ -287,9 +287,6 @@ SUBROUTINE finalize_tasks (self)
         task%erot(:,1) = [ cos(phi), sin(phi), 0d0]
         task%erot(:,2) = [-sin(phi), cos(phi), 0d0]
         task%erot(:,3) = [0d0, 0d0, 1d0]
-        task%einv = task%erot
-        task%einv(1,2) = -task%erot(1,2)
-        task%einv(2,1) = -task%erot(2,1)
         !-----------------------------------------------------------------------
         ! Boundaries and initial conditions
         !-----------------------------------------------------------------------
@@ -354,13 +351,10 @@ SUBROUTINE init_cylinder (self, i_r, r_out, size, hash_table)
       !-------------------------------------------------------------------------
       ! Unit vectors and inverse of unit vector matrix
       !-------------------------------------------------------------------------
-      allocate (cpatch%erot(3,3), cpatch%einv(3,3))
+      allocate (cpatch%erot(3,3))
       cpatch%erot(:,1) = [ cos(phi), sin(phi), 0d0]
       cpatch%erot(:,2) = [-sin(phi), cos(phi), 0d0]
       cpatch%erot(:,3) = [0d0, 0d0, 1d0]
-      cpatch%einv = cpatch%erot
-      cpatch%einv(1,2) = -cpatch%erot(1,2)
-      cpatch%einv(2,1) = -cpatch%erot(2,1)
       cpatch%omega(3) = self%omega
       !-----------------------------------------------------------------------
       ! Global Cartesian coordinate system
