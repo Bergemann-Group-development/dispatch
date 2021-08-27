@@ -161,7 +161,7 @@ SUBROUTINE initial_condition (self, l, u, it)
   integer, optional  :: it
   !.............................................................................
   integer:: i1, i2, i3
-  real(8):: r, z, csound, h, dmid, v_k, v_phi, v1, v2, p(3)
+  real(8):: r, z, csound, h, dmid, v_k, v_phi, v1, v2, p(3), g1
   real, dimension(:,:,:), pointer:: d, e, px, py, pz
   logical, save :: first_time = .true.
   !-----------------------------------------------------------------------------
@@ -179,6 +179,7 @@ SUBROUTINE initial_condition (self, l, u, it)
     pz => self%mem(:,:,:,self%idx%pz,self%it,1)
   end if
   v_k = disk_model%v_kepler (self%radius)
+  g1 = merge (1d0, eos%gamma-1d0, eos%gamma==1d0)
   do i3=l(3),u(3)
   do i2=l(2),u(2)
   !!omp parallel do default(none) private(i1,p,r,z,csound,h,dmid,e,d,v_phi) &
@@ -197,7 +198,7 @@ SUBROUTINE initial_condition (self, l, u, it)
     dmid = disk_model%d_midplane (r)                  ! mid-plane density
     d (i1,i2,i3) = dmid*exp(-(z/h)**2/2d0)            ! Gaussian profile
     e (i1,i2,i3) = d(i1,i2,i3)*csound**2 / &          ! adiabatic
-      (eos%gamma*(eos%gamma-1.0))
+      (eos%gamma*g1)
     !---------------------------------------------------------------------------
     ! Initial head wind, relative to the patch
     !---------------------------------------------------------------------------
