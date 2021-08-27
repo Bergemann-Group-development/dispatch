@@ -162,6 +162,7 @@ MODULE task_mod
     procedure:: velocity_shift
     procedure:: hash_key
     procedure:: check_refine
+    procedure:: write_nml
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -1474,5 +1475,42 @@ INTEGER function check_refine (self)
   !.............................................................................
   check_refine = -1                                                    ! keep
 END FUNCTION check_refine
+
+!===============================================================================
+!> Write metadata namelist
+!===============================================================================
+SUBROUTINE write_nml (self, unit)
+  class(task_t):: self
+  integer:: unit
+  namelist /task_nml/ istep, position, size, ds, velocity, dtime, &
+    level, quality, rank, cost, kind
+  integer:: id, id1, level, istep, rank
+  real(8):: position(3), size(3), dtime, ds(3), velocity(3), cost
+  real:: quality
+  character(len=16):: kind
+  !-----------------------------------------------------------------------------
+  call trace%begin ('task_t%write_nml')
+  id        = self%id
+  istep     = self%istep
+  position  = self%position
+  size      = self%size
+  ds        = self%ds
+  velocity  = self%velocity
+  level     = self%level
+  quality   = self%quality
+  dtime     = self%dtime
+  rank      = self%rank
+  cost      = self%cost
+  kind      = self%kind
+  !-----------------------------------------------------------------------------
+  ! Work-aound, to fix a problem with gfortran namelist output giving ID=0
+  !-----------------------------------------------------------------------------
+  write (unit,'(a)') '&TASK_NML'
+  write (unit,'(" ID=",i6,",")') self%id
+  write (unit,'(a)') '/'
+  write (unit, task_nml)
+  flush (unit)
+  call trace%end ()
+END SUBROUTINE write_nml
 
 END MODULE task_mod

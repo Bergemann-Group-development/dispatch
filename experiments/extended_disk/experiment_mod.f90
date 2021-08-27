@@ -35,6 +35,7 @@ MODULE experiment_mod
     procedure:: update_position
     procedure:: get_position
     procedure:: velocity_shift
+    procedure:: write_nml
   end type                                       ! profile
   integer      :: verbose     = 0
   real         :: f_outflow   = 0.01
@@ -79,6 +80,7 @@ SUBROUTINE init (self)
     end if
     call io%namelist_warning ('experiment_params', iostat)
     write (io%namelist, experiment_params)
+    io%nml_version = 5
   end if
   call self%lock%init
   call io%lock%unset
@@ -579,5 +581,22 @@ FUNCTION velocity_shift (self, source) RESULT (v)
   v = matmul (matmul (source%erot, v_src), self%erot) - v_tgt
   end select
 END FUNCTION velocity_shift
+
+!===============================================================================
+!> Write metadata namelist
+!===============================================================================
+SUBROUTINE write_nml (self, unit)
+  class(experiment_t):: self
+  integer:: unit
+  namelist /experiment_nml/ omega, centre_nat
+  real(8):: omega(3), centre_nat(3)
+  !-----------------------------------------------------------------------------
+  call trace%begin ('experiment_t%write_nml')
+  call self%solver_t%write_nml (unit)
+  omega      = self%omega
+  centre_nat = self%centre_nat
+  write (unit, experiment_nml)
+  call trace%end ()
+END SUBROUTINE write_nml
 
 END MODULE experiment_mod

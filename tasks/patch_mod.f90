@@ -198,6 +198,7 @@ MODULE patch_mod
     procedure:: overlap
     procedure:: cover
     procedure:: support_arrays
+    procedure:: write_nml
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -593,7 +594,7 @@ SUBROUTINE mesh_init (self)
   !-----------------------------------------------------------------------------
   self%llc_cart = self%position - 0.5_8*self%size
   if (self%mesh_type == mesh_types%Cartesian) then
-    if (any(self%centre_nat /= self%position)) then
+    if (any(self%centre_nat /= self%position) .and. io%verbose > 0) then
       call io%lock%set ('warn')
       if (warn) then
         call io%warning ('patch_t%centre_nat not equal to task_t%position')
@@ -1652,7 +1653,7 @@ FUNCTION distance (self, task) RESULT (out)
   integer, save:: itimer=0
   !.............................................................................
   if (timer%detailed) &
-    call trace%begin ('patch_t%distance')
+    call trace%begin ('patch_t%distance', itimer=itimer)
   if (self%mesh_type == mesh_types%Cartesian) then
     out = self%position-task%position
   else
@@ -3570,5 +3571,28 @@ SUBROUTINE support_arrays (self)
   end if
 end select
 END SUBROUTINE support_arrays
+
+!===============================================================================
+!> Write metadata namelist
+!===============================================================================
+SUBROUTINE write_nml (self, unit)
+  class(patch_t):: self
+  integer:: unit
+  namelist /patch_nml/ ncell, n, nw, mesh_type, record
+  integer:: ncell(3), n(3), nw, mesh_type, record, parent_id
+  !-----------------------------------------------------------------------------
+  call trace%begin ('patch_t%write_nml')
+  !-----------------------------------------------------------------------------
+  ! Write generic task metadata and add patch specific metadata
+  !-----------------------------------------------------------------------------
+  call self%task_t%write_nml (unit)
+  ncell     = self%ncell
+  n         = self%n
+  nw        = self%nw
+  mesh_type = self%mesh_type
+  record    = self%record
+  write (unit, patch_nml)
+  call trace%end ()
+END SUBROUTINE write_nml
 
 END MODULE patch_mod
