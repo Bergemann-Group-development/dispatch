@@ -89,10 +89,11 @@ SUBROUTINE init_cylinders (self, name)
   class(cylinders_t), target:: self
   character(len=*), optional:: name
   namelist /cylinder_params/ verbose, n_r, n_h, dlnr, r_min
-  !.............................................................................¨
+  !.............................................................................
   class(task_list_t), pointer:: task_list
-  integer:: i_r, iostat, n
-  real(8):: r_in, r_out, size, radius, cos2, sin2
+  class(task_t), pointer:: task
+  integer:: i_r, iostat, n, gn
+  real(8):: r_in, r_out, size, radius, cos2, sin2, v_phi
   class(cylinder_t), pointer:: cylinder, prev, next
   !-----------------------------------------------------------------------------
   ! Parameters
@@ -150,7 +151,21 @@ SUBROUTINE init_cylinders (self, name)
       cylinder%prev => prev
     prev => cylinder
   end do
-  write (stdout,'(a,3i5,2i9)') 'n_r,n_phi,n_z,n_task =', n_r, n_phi, n_z, n_task
+  !-----------------------------------------------------------------------------
+  ! The angle opening needs to be smaller than 1 cell, so we need n*dphi < 1
+  !-----------------------------------------------------------------------------
+  task => self%task_list%head%task
+  select type (task)
+  class is (patch_t)
+    n  = task%n(1)
+    gn = task%gn(1)
+    v_phi = task%velocity(2)
+  end select
+  write (stdout,'(1x,a,3i5,2i9)') 'n_r,n_phi,n_z,n_task=', n_r,n_phi,n_z,n_task
+  write (stdout,'(4(1x,a,f6.3,3x))') &
+    'dlnr:', dlnr, 'dphi:', dphi, 'n*dphi:', n*dphi, 'gn*dphi:', gn*dphi
+  write (stdout,'(1x,a,f5.1,4x,a,f6.2))') &
+    'v_phi:', v_phi, 'dv_r:', v_phi*dlnr/2.0
   !-----------------------------------------------------------------------------
   ! Initialize  nbor lists
   !-----------------------------------------------------------------------------
