@@ -181,9 +181,10 @@ SUBROUTINE update (self, task_list, test)
   integer:: i, id, nq, n_unpk
   integer:: stalled_l
   integer, save:: n_stalled=0
-  integer, save:: itimer=0
+  integer, save:: itimer(5)=0
   !.............................................................................
-  call trace%begin('dispatcher0_t%update', itimer=itimer)
+  i = 1
+  call trace%begin('dispatcher0_t%update(1)', itimer=itimer(i))
   start = wallclock()
   !$omp atomic update
   n_update = n_update+1
@@ -193,7 +194,7 @@ SUBROUTINE update (self, task_list, test)
   call task_list%check_mpi (n_unpk)                     ! check incoming MPI
   call mpi_io%iwrite_list%check                         ! I/O check
   if (omp%nthreads >= mpi_only_master .and. omp%master) then
-    call trace%end (itimer)
+    call trace%end (itimer(i))
     return
   end if
   !-----------------------------------------------------------------------------
@@ -203,6 +204,11 @@ SUBROUTINE update (self, task_list, test)
   call data_io%open_and_close ()
   if (task_list%verbose > 3) &
     write (io%output,*) wallclock(),' thread',omp%thread,' waiting for tasklist(1)'
+  if (detailed_timer) then
+    call trace%end (itimer(i))
+    i = i+1
+    call trace%begin('dispatcher0_t%update(2)', itimer=itimer(i))
+  end if
   !-----------------------------------------------------------------------------
   ! Check atomically if the ready queue is empty and return w/o locking if so,
   ! to avoid hammering the task list lock, delaying other threads.  Most of the
@@ -221,7 +227,7 @@ SUBROUTINE update (self, task_list, test)
     !$omp atomic update
     n_stalled = n_stalled + 1
     call stall_handler
-    call trace%end(itimer)
+    call trace%end(itimer(i))
     return
   end if
   !-----------------------------------------------------------------------------
@@ -229,6 +235,11 @@ SUBROUTINE update (self, task_list, test)
   !-----------------------------------------------------------------------------
                                call task_list%qlock%set ('dispatch0_t%update 1')
   head => task_list%queue                                    ! queue start
+  if (detailed_timer) then
+    call trace%end (itimer(i))
+    i = i+1
+    call trace%begin('dispatcher0_t%update(3)', itimer=itimer(i))
+  end if
   nullify (prev)
   if (associated(head) .and. .not.task_list%syncing) then
     if (verbose > 0) &
@@ -371,6 +382,11 @@ SUBROUTINE update (self, task_list, test)
   !-----------------------------------------------------------------------------
   if (associated(head)) then
     nullify (head%next_time)
+    if (detailed_timer) then
+      call trace%end (itimer(i))
+      i = i+1
+      call trace%begin('dispatcher0_t%update(4)', itimer=itimer(i))
+    end if
     if (already_busy) then
       !$omp critical (stderr_cr)
       write (stdlog,*) mpi%rank,' WARNING: thread', omp%thread, &
@@ -379,7 +395,7 @@ SUBROUTINE update (self, task_list, test)
         wallclock(), mpi%rank,' WARNING: thread', omp%thread, &
         'tried to update busy task', task%id
       !$omp end critical (stderr_cr)
-      call trace%end (itimer)
+      call trace%end (itimer(i))
       return
     end if
     call task_list%update (head, test)
@@ -435,13 +451,13 @@ SUBROUTINE update (self, task_list, test)
     spin_start = wallclock()
     !$omp atomic update
     n_stalled = n_stalled + 1
-  else if (n_stalled > nstall1) then
+  else if (n_stalled >= nstall1) then
     !$omp atomic write
     shared%extra_grace = (n_stalled-nstall1)*extra_grace/(nstall2-nstall1)
     write (io_unit%mpi,'(f12.6,2x,a,f10.3)') wallclock(), &
       'dispatcher0_t%update: extra_grace=', shared%extra_grace
     call task_list%check_all
-  else if (n_stalled > nstall2) then
+  else if (n_stalled >= nstall2) then
     call stall_handler
     time_incr = wallclock()-spin_start
     !$omp atomic update
@@ -455,7 +471,7 @@ SUBROUTINE update (self, task_list, test)
     !$omp atomic update
     n_stalled = n_stalled+1
   end if
-  call trace%end (itimer)
+  call trace%end (itimer(i))
   return
 contains
 !-------------------------------------------------------------------------------
