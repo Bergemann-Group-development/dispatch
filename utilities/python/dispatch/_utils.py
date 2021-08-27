@@ -6,7 +6,7 @@ import time
 import save_restore as sr
 from scipy.io import FortranFile
 
-def read_patch_metadata(io=0,run='',data='../data',n_rank=0,verbose=0):
+def read_patch_metadata(io=0,run='',data='../data',n_rank=0,nml=4,cache=True,verbose=0):
     """ Read patch metadata from Fortran unformatted file
     """
     if verbose>0:
@@ -19,24 +19,25 @@ def read_patch_metadata(io=0,run='',data='../data',n_rank=0,verbose=0):
 
     patches={}
 
-    file0='{}/{}/{:05d}/patches.sr'.format(data,run,io)
-    file1='{}/{}/{:05d}/rank_00000_patches.nml'.format(data,run,io)
+    file0='{}{}/{:05d}/patches.sr'.format(data,run,io)
+    file1='{}{}/{:05d}/rank_00000_patches.nml'.format(data,run,io)
     if os.path.exists(file0) and os.path.getmtime(file0) > os.path.getmtime(file1):
         patches=sr.restore(file0)
         if verbose>0:
-            print(file0,len(patches.keys()),'patches')
+            print('restored',file0,len(patches.keys()),'patches')
     else:
-        if verbose > 0:
-            print('cashing metadata to',file0)
         rank=0
         while(rank < n_rank):
             file1='{}/{}/{:05d}/rank_{:05d}_patches.nml'.format(data,run,io,rank)
-            read_rank_namelist(file1,patches,rank)
+            read_rank_namelist(file1,patches,rank,nml,verbose=verbose)
             if verbose>1:
-                print(file1,len(patches.keys()),'patches')
+                print('created',file1,len(patches.keys()),'patches')
             rank+=1
         try:
-            sr.save(file0,patches)
+            if cache:
+                if verbose > 0:
+                    print('cashing metadata to',file0)
+                sr.save(file0,patches)
         except:
             pass
 
@@ -72,12 +73,16 @@ def _parse_multiple (items):
         pos = [float(p) for p in pos]
     return np.array(pos)
 
-def read_rank_namelist(file,patches,rank,verbose=0):
+def read_rank_namelist(file,patches,rank,nml,verbose=0):
     """
         Optimized parsing of patch namelist entries.  Updates dictionary with
         patch ID as key and a dictionary with multi propereties as the value.
     """
+    if verbose>0:
+        print('nml_version:',nml)
     n=0
+    d=None
+    id=-1
     if verbose>1:
         start=time.time()
     with open(file,'r') as fo:
@@ -91,12 +96,20 @@ def read_rank_namelist(file,patches,rank,verbose=0):
                 continue
 
             # Detect blocks to parse
-            if items[0] == "&PATCH_NML":
+            if items[0] == "&TASK_NML":
                 d={}
                 watch_block=True
+            elif items[0] == "&PATCH_NML":
+                if nml <= 4:
+                    d={}
+                watch_block=True
+            elif items[0] == "&EXPERIMENT_NML":
+                watch_block=True
             elif items[0] == "&NBOR_NML":
+                if verbose>2:
+                    print(items[0],id,verbose)
                 nbor_block=True
-                if verbose>0:
+                if verbose>2:
                     print('starting nbor_block')
 
             # Parse a block of the namelist with an nbor list
@@ -110,30 +123,32 @@ def read_rank_namelist(file,patches,rank,verbose=0):
                                 nbor_ids.append(int(rep[1]))
                         else:
                             nbor_ids.append(int(item))
-                if verbose>1:
+                if verbose>2:
                     print(items)
                 if items[0] == 'ID':
                     id = int(items[1])
-                    if verbose>0:
+                    if verbose>2:
                         print('nbor_block id:',id)
                 elif items[0] == 'PARENT_ID':
                     parent_id = int(items[1])
-                    if verbose>0:
+                    if verbose>2:
                         print('nbor_block parent_id:',parent_id)
                 elif items[0] == "NBOR_IDS":
                     nbor_ids=[]
                     parse_nbors(items[1:],nbor_ids)
-                    if verbose>0:
+                    if verbose>3:
                         print('nbor_block nbor_ids:',nbor_ids)
                 elif items[0] == "/":
                     nbor_ids=list(np.unique(np.sort(nbor_ids)))
+                    if verbose>2:
+                        print("nbor key",id)
                     patches[id]['nbor_ids']=nbor_ids
                     nbor_block=False
-                    if verbose>0:
+                    if verbose>2:
                         print('ending nbor_block:')
                 else:
                     parse_nbors(items,nbor_ids)
-                    if verbose>0:
+                    if verbose>2:
                         print('appeded nbor_ids:',items)
 
             # Parse a block of the namelist with patch info
@@ -142,8 +157,17 @@ def read_rank_namelist(file,patches,rank,verbose=0):
                     pass
                 elif items[0]=='ID':
                     id=int(items[1])
+                    n+=1
+                    if verbose>2:
+                        print("id",id)
                 elif items[0]=='POSITION':
                     d['position'] = _parse_multiple(items)
+                elif items[0]=='CENTRE_NAT':
+                    d['centre_nat'] = _parse_multiple(items)
+                elif items[0]=='VELOCITY':
+                    d['velocity'] = _parse_multiple(items)
+                elif items[0]=='OMEGA':
+                    d['omega'] = _parse_multiple(items)
                 elif items[0]=='SIZE':
                     d['size'] = _parse_multiple(items)
                 elif items[0]=='LEVEL':
@@ -164,13 +188,13 @@ def read_rank_namelist(file,patches,rank,verbose=0):
                     d['ncell'] = _parse_multiple(items)
                 elif items[0]=='KIND':
                     d['kind']=items[1]
-                elif items[0]=='/' and watch_block: # the final entry of a namelist is always "/"
+                elif items[0]=='RANK':
                     d['rank']=rank
+                elif items[0]=='/' and watch_block:
+                    if verbose>2:
+                        print('key id',id)
                     patches[id]=d
                     watch_block = False
-                    n+=1
-                    if verbose>2:
-                        print('id',id)
     if verbose>1:
         used=time.time()-start
         print('{}: {} patches, {:.2f} sec'.format(file,n,used))

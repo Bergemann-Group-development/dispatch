@@ -145,12 +145,13 @@ def _var(patch,filed,snap,verbose=0,copy=None):
         returns a memmap.  The function takes numeric or alphabetic arguments,
         so patch.data(0) and patch.data('d') is typically the density.
     """
-    if _p2():
-        bytes=long(4*np.product(patch.ncell))
+    if snap.guard_zones:
+        shape=tuple(patch.gn)
     else:
-        bytes=np.longlong(4*np.product(patch.ncell))
-        #print('bytes:',bytes)
-    shape=tuple(patch.ncell)
+        shape=tuple(patch.n)
+    bytes=np.longlong(4*np.product(shape))
+    if verbose==3:
+        print('shape,bytes:',shape,bytes)
     patch.offset=[]
     # p.ip is the offset in the file; ranging from 0 to ntotal-1
     if hasattr('snap','cartesian'):
@@ -165,8 +166,8 @@ def _var(patch,filed,snap,verbose=0,copy=None):
     for iv in range(patch.nv):
         if snap.io.method.strip()=='background':
             offset = iv + (patch.record-1)*patch.nv
-            if verbose>2:
-                print('background offset',offset)
+            if verbose==3:
+                print(patch.id,'background record,offset=',patch.record,offset,bytes)
         else:
             if patch.ioformat==5:
                 offset = patch.ip + iv*patch.ntotal
@@ -681,21 +682,22 @@ object takes both numeric and text key values: Examples:\n\
             print('plane: i, p = {:d} {:.3f}'.format(i,p))
         return f
 
-def read_nml(file,verbose=0):
+def read_nml(file,cache=True,verbose=0):
     """ Read a cached namelist file if it exists, else create it """
     srfile=file.replace('.nml','.sr')
     if os.path.exists(srfile) and os.path.getmtime(srfile) > os.path.getmtime(file):
         if verbose>0:
-            print('reading file',srfile)
+            print('reading',srfile)
         nml_list=sr.restore(srfile)
     else:
         if verbose>0:
-            print('reading file',file)
+            print('reading',file)
         nml_list=f90nml.read(file)
-        if verbose>0:
-            print('caching metadate to',srfile)
         try:
-            sr.save(srfile,nml_list)
+            if cache:
+                if verbose>0:
+                    print('caching metadate to',srfile)
+                sr.save(srfile,nml_list)
         except:
             pass
     return nml_list
@@ -704,7 +706,7 @@ class snapshot():
     """ Return a snapshot worth of metadata, including memory mapped variables
     """
     def __init__(self, iout=0, run='', data='../data', datadir='', verbose=0, 
-                 memmap=1, copy=False, timeit=False):
+                 memmap=1, copy=False, cache=True, timeit=False):
         # Set the max number of open files to the hard limit
         try:
             import resource
@@ -736,7 +738,7 @@ class snapshot():
         file=_file(rundir,'params.nml')
         if verbose>2:
             print('reading file',file)
-        self.params_list=read_nml(file,verbose=verbose)
+        self.params_list=read_nml(file,cache=cache,verbose=verbose)
         timer.add('params.nml')
 
         _add_nml_list_to(self,self.params_list,verbose=verbose)
@@ -759,7 +761,7 @@ class snapshot():
         for f in files:
             # add parameter groups from data/run/NNNNN/*snapshot.nml
             file=_file(datadir,f)
-            nml_list=read_nml(file,verbose=verbose)
+            nml_list=read_nml(file,cache=cache,verbose=verbose)
             self.nml_list=nml_list
             #_repair(self,nml_list,verbose=verbose)
             _add_nml_list_to(self,nml_list,verbose=verbose)
@@ -809,7 +811,9 @@ class snapshot():
         # make sure to ignore left-over *_patches.nml from other runs
         if not hasattr(self,'mpi_size'):
             self.mpi_size=1
-        patch_dict=read_patch_metadata(iout,run,data,self.mpi_size,verbose=verbose)
+        nml=self.io.nml_version
+        patch_dict=read_patch_metadata(iout,run,data,self.mpi_size,cache=cache,
+                                       nml=nml,verbose=verbose)
         if patch_dict is None:
             print('could not find patch metadata')
             return
