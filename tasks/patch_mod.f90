@@ -697,6 +697,7 @@ SUBROUTINE reset (self)
   self%n_needed = 1                                 ! reset to initial
   self%istep = 0                                    ! for diagnostics
   self%rotated = .false.                            ! force rotate
+  self%pre_initialized = .false.                    ! allow pre_init
 END SUBROUTINE reset
 
 !===============================================================================
