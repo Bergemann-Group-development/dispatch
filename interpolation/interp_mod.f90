@@ -75,9 +75,9 @@ SUBROUTINE from_source (self, tgt, lt, ut, src)
   class(patch_t)            :: tgt, src
   integer, dimension(3)     :: lt, ut
   !.............................................................................
-  real, allocatable         :: p(:,:,:,:)
+  real, pointer, contiguous :: p(:,:,:,:)
   real, pointer, contiguous :: tm(:,:,:,:), sm(:,:,:,:)
-  real, allocatable         :: sp(:,:,:,:), tp(:,:,:,:)
+  real, pointer, contiguous :: sp(:,:,:,:), tp(:,:,:,:)
   real                      :: pt(2)
   real(8)                   :: p1, p2, q1, q2, v_shift(3)
   logical                   :: outside(3)
@@ -87,7 +87,8 @@ SUBROUTINE from_source (self, tgt, lt, ut, src)
   !-----------------------------------------------------------------------------
   if (detailed_timer) call trace%begin ('interp_t%from_source', itimer=itimer)
   !-----------------------------------------------------------------------------
-  ! Interpolate in time, in per unit mass variables
+  ! Interpolate in time, in per unit mass variables, leaving source values in
+  ! sp(:,:,:,:)
   !-----------------------------------------------------------------------------
   tm => tgt%mem(:,:,:,:,tgt%it,1)
   sm => src%mem(:,:,:,:,src%it,1)
@@ -97,7 +98,7 @@ SUBROUTINE from_source (self, tgt, lt, ut, src)
   call src%time_interval (tgt%time, it, pt)
   call to_per_unit_mass (src, sp, it, pt)
   !-----------------------------------------------------------------------------
-  ! Interpolation coordinates
+  ! Interpolation coordinates and weights p(:,:,:,1:3)
   !-----------------------------------------------------------------------------
   allocate (p(src%gn(1),src%gn(3),src%gn(3),3))
   call interp%indices (tgt, lt, ut, src, p)
@@ -122,7 +123,7 @@ SUBROUTINE from_source (self, tgt, lt, ut, src)
           p2 = p(i1,i2,i3,2) - j2
           q1 = 1.0 - p1
           q2 = 1.0 - p2
-          !...................................................................
+          !.....................................................................
           tp(i1,i2,i3,iv) = &
             q2*(q1*sp(j1,j2  ,i3  ,iv) + p1*sp(j1+1,j2  ,i3  ,iv)) + &
             p2*(q1*sp(j1,j2+1,i3  ,iv) + p1*sp(j1+1,j2+1,i3  ,iv))
@@ -130,6 +131,10 @@ SUBROUTINE from_source (self, tgt, lt, ut, src)
       end do
     end do
   end do
+  !-----------------------------------------------------------------------------
+  ! Deposit interpolated values in target mem, taking into account that the
+  ! tp values are "per unit mass"
+  !-----------------------------------------------------------------------------
   l = src%mesh%li
   u = src%mesh%ui
   do i3=lt(3),ut(3)
@@ -171,14 +176,17 @@ SUBROUTINE from_source (self, tgt, lt, ut, src)
       end do
     end do
   end do
-  deallocate (tp, sp)
+  deallocate (p, tp, sp)
   if (detailed_timer) call trace%end (itimer)
 END SUBROUTINE from_source
 
+!===============================================================================
+!> Interpolate in time and convert to velocity and internal energy per mass
+!===============================================================================
 SUBROUTINE to_per_unit_mass (src, sp, it, pt)
   class(patch_t):: src
   real:: sp(:,:,:,:)
-  integer:: it(2)
+  integer:: it(2), l(3), u(3)
   real:: pt(2)
   !.............................................................................
   real, dimension(:,:,:), contiguous, pointer:: d1, e1, px1, py1, pz1
@@ -199,10 +207,12 @@ SUBROUTINE to_per_unit_mass (src, sp, it, pt)
   px2 => src%mem(:,:,:,src%idx%px,it(2),1)
   py2 => src%mem(:,:,:,src%idx%py,it(2),1)
   pz2 => src%mem(:,:,:,src%idx%pz,it(2),1)
-  do i3=1,src%gn(3)
-  do i2=1,src%gn(2)
+  l = src%mesh%li
+  u = src%mesh%ui
+  do i3=l(3),u(3)
+  do i2=l(2),u(2)
     !$omp simd
-    do i1=1,src%gn(1)
+    do i1=l(1),u(1)
       di1 = 1.0/d1(i1,i2,i3)
       di2 = 1.0/d2(i1,i2,i3)
       sp(i1,i2,i3,src%idx%d ) = pt(1)*d1(i1,i2,i3) &
@@ -350,6 +360,7 @@ SUBROUTINE indices (self, tgt, lt, ut, src, ps)
 #endif
     end do
   end do
+  deallocate (pt)
   if (detailed_timer) call trace%end (itimer)
 END SUBROUTINE indices
 
