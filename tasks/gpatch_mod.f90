@@ -688,13 +688,14 @@ SUBROUTINE rotate (self)
 END SUBROUTINE rotate
 
 !===============================================================================
+!> Class interface to output of metadata
 !===============================================================================
 SUBROUTINE output_metadata (self, unit, first_time)
   class(gpatch_t):: self
   integer:: unit
   logical, optional:: first_time
   !-----------------------------------------------------------------------------
-  call data_io%output_nml (self,.false., unit=unit, first_time=first_time)
+  call data_io%output_nml (self)
 END SUBROUTINE output_metadata
 
 !===============================================================================
