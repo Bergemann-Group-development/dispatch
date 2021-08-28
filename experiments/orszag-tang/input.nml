@@ -25,10 +25,14 @@
 &refine_params     on=f levelmax=12 levelmin=1 verbose=3 check_interval=2 /
 !&initial_refine_params on=f n_refine=0,2,0 ratio=2.0 center=0.0,0.5,0.0 extent=0.0,0.2,0.0 /
 
+! -- Framework parameters ------------------------------------------------------
+&halo_params       check_filled=f /
+&guards_params     /
+
 !----------------- Solver paramters --------------------------------------------------
 &aux_params        verbose=0 select='tt','pg','rkap','src','qout' /
 &eos_params        gamma=1.6666666666667 
-                   s0=10.
+                   !s0=10.
 /
 &divb_clean_params on=f divb_iter=4 divb_cleaner=0 /
 &ramses_params     slope_type=3.5 /

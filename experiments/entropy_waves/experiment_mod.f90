@@ -114,7 +114,7 @@ SUBROUTINE init (self)
         if (x < x_disc) then
           d (i,j,k) = rho_l
           if (self%idx%s>0) then 
-            s (i,j,k) = (eos%s0+log(P_l)-log(rho_l)*eos%gamma)*rho_l*g2
+            s (i,j,k) = (log(P_l)-log(rho_l)*eos%gamma)*rho_l*g2
           else
             e1(i,j,k) = P_l*g2
           end if
@@ -129,7 +129,7 @@ SUBROUTINE init (self)
         else
           d (i,j,k) = rho_r
           if (self%idx%s>0) then 
-            s (i,j,k) = (eos%s0+log(P_r)-log(rho_r)*eos%gamma)*rho_r*g2
+            s (i,j,k) = (log(P_r)-log(rho_r)*eos%gamma)*rho_r*g2
           else
             e1(i,j,k) = P_r*g2
           end if

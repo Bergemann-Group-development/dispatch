@@ -123,7 +123,7 @@ SUBROUTINE init (self)
         else if (idx%s>0) then
           !s (i,:,:) = (log(P_l) - log(rho_l) * eos%gamma) * rho_l / (eos%gamma - 1.0)
           !s (i,:,:) = log(P_l/rho_l**eos%gamma)  * rho_l / (eos%gamma - 1.0)
-          s (i,:,:) = (eos%s0 + log(p_l)-log(rho_l)*eos%gamma)  * rho_l / (eos%gamma - 1.0)
+          s (i,:,:) = (log(p_l)-log(rho_l)*eos%gamma)  * rho_l / (eos%gamma - 1.0)
         else 
           error stop "inital_mod: neither energy nor entropy in mem indices"
         end if
@@ -139,7 +139,7 @@ SUBROUTINE init (self)
           e1(i,:,:) = p_r/(eos%gamma-1)
         else if (idx%s>0) then
           !s (i,:,:) = (log(P_r) - log(d(i,:,:)) * eos%gamma) * d(i,:,:) / (eos%gamma - 1.0)
-          s (i,:,:) = (eos%s0 + log(p_r)-log(rho_r)*eos%gamma)  * rho_r / (eos%gamma - 1.0)
+          s (i,:,:) = (log(p_r)-log(rho_r)*eos%gamma)  * rho_r / (eos%gamma - 1.0)
         else 
           error stop "inital_mod: neither energy nor entropy in mem indices"
         end if
@@ -175,7 +175,7 @@ SUBROUTINE init (self)
           !s (i,:,:) = (log(P_l) - log(rho_l) * self%gamma) * rho_l /
           !(self%gamma - 1.0)
           !s (i,:,:) = log(P_l/rho_l**self%gamma)  * rho_l / (self%gamma - 1.0)
-          s (:,i,:) = (eos%s0 + log(p_l)-log(rho_l)*eos%gamma)  * rho_l / (eos%gamma -1.0)
+          s (:,i,:) = (log(p_l)-log(rho_l)*eos%gamma)  * rho_l / (eos%gamma -1.0)
         else 
           error stop "inital_mod: neither energy nor entropy in mem indices"
         end if
@@ -192,7 +192,7 @@ SUBROUTINE init (self)
         else if (idx%s>0) then
           !s (i,:,:) = (log(P_r) - log(d(i,:,:)) * self%gamma) * d(i,:,:) /
           !(self%gamma - 1.0)
-          s (:,i,:) = (eos%s0 + log(p_r)-log(rho_r)*eos%gamma)  * rho_r / (eos%gamma -1.0)
+          s (:,i,:) = (log(p_r)-log(rho_r)*eos%gamma)  * rho_r / (eos%gamma -1.0)
         else 
           error stop "inital_mod: neither energy nor entropy in mem indices"
         end if
@@ -228,7 +228,7 @@ SUBROUTINE init (self)
           !s (i,:,:) = (log(P_l) - log(rho_l) * self%gamma) * rho_l /
           !(self%gamma - 1.0)
           !s (i,:,:) = log(P_l/rho_l**self%gamma)  * rho_l / (self%gamma - 1.0)
-          s (:,:,i) = (eos%s0 + log(p_l)-log(rho_l)*eos%gamma)  * rho_l / (eos%gamma -1.0)
+          s (:,:,i) = (log(p_l)-log(rho_l)*eos%gamma)  * rho_l / (eos%gamma -1.0)
         else 
           error stop "inital_mod: neither energy nor entropy in mem indices"
         end if
@@ -245,7 +245,7 @@ SUBROUTINE init (self)
         else if (idx%s>0) then
           !s (i,:,:) = (log(P_r) - log(d(i,:,:)) * self%gamma) * d(i,:,:) /
           !(self%gamma - 1.0)
-          s (:,:,i) = (eos%s0 + log(p_r)-log(rho_r)*eos%gamma)  * rho_r / (eos%gamma -1.0)
+          s (:,:,i) = (log(p_r)-log(rho_r)*eos%gamma)  * rho_r / (eos%gamma -1.0)
         else 
           error stop "inital_mod: neither energy nor entropy in mem indices"
         end if

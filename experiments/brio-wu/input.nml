@@ -42,7 +42,7 @@ grad_var='d' tol_grad=0.1 /
 
 &eos_params
   gamma=2.0
-  s0=10.
+  !s0=10.
 /
                                         
 &bifrost_params             
@@ -66,3 +66,7 @@ nu=  0.01 , 0.3,  0.1,  0.5,  0.5, 0.9 /
  divb_iter=4
  divb_cleaner=0
  /
+
+! -- Framework parameters ------------------------------------------------------
+&halo_params            check_filled=f /
+&guards_params          /

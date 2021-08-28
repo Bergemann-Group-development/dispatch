@@ -91,9 +91,9 @@ SUBROUTINE init (self)
 
   ! "pre"-initialisation of all variables, independent of `idirect`.
   if (eos%gamma==1.0) then
-    entropy = 1.0+eos%s0
+    entropy = 1.0
   else
-    entropy = (log(self%p0)-log(d0)*eos%gamma+eos%s0)/(eos%gamma-1.0)
+    entropy = (log(self%p0)-log(d0)*eos%gamma)/(eos%gamma-1.0)
   end if
 
 
