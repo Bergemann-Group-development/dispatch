@@ -74,15 +74,6 @@ MODULE task_mod
     real(4):: quality = 0.0
     character(len=64):: kind='task'     ! solver name
     character(len=12):: type='task_t'   ! task type
-    character(len=64),     pointer:: name      => null()
-    class(task_t),         pointer:: parent    => null()
-    class(mesg_t),         pointer:: mesg      => null()
-    class(mesg_list_t),    pointer:: sent_list => null()
-    integer, dimension(:), pointer:: iit       => null()
-    real(8), dimension(:), pointer:: t         => null()
-    real(8), dimension(:), pointer:: dt        => null()
-    type(lock_t),          pointer:: lock      => null()
-    type(lock_t),          pointer:: mulligan_lock => null()
     real:: latency=0.0                  ! MPI message latency
     real(8):: wc_last=0.0_8
     real(8):: sync_time=0d0
@@ -103,6 +94,19 @@ MODULE task_mod
     type(region_t):: authority          ! region of authority
     type(region_t):: interest           ! region of interest
     type(running_mean_t):: running_cost ! running averge update cost
+    !---------------------------------------------------------------------------
+    ! Pointer attributes -- make sure to add to task_t%reset when adding, to
+    ! avoid that cloned instances inadvertenly refer to parent pointers
+    !---------------------------------------------------------------------------
+    character(len=64),     pointer:: name      => null()
+    class(task_t),         pointer:: parent    => null()
+    class(mesg_t),         pointer:: mesg      => null()
+    class(mesg_list_t),    pointer:: sent_list => null()
+    integer, dimension(:), pointer:: iit       => null()
+    real(8), dimension(:), pointer:: t         => null()
+    real(8), dimension(:), pointer:: dt        => null()
+    type(lock_t),          pointer:: lock      => null()
+    type(lock_t),          pointer:: mulligan_lock => null()
   contains
     procedure:: pre_init
     procedure:: pre_update
@@ -163,6 +167,7 @@ MODULE task_mod
     procedure:: hash_key
     procedure:: check_refine
     procedure:: write_nml
+    procedure:: reset
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -1512,5 +1517,23 @@ SUBROUTINE write_nml (self, unit)
   flush (unit)
   call trace%end ()
 END SUBROUTINE write_nml
+
+!===============================================================================
+!> Reset all pointers (except %name) in cloned task_t instances
+!===============================================================================
+SUBROUTINE reset (self)
+  class(task_t):: self
+  !-----------------------------------------------------------------------------
+  call trace%begin ('task_t%reset')
+  nullify (self%parent)
+  nullify (self%mesg)
+  nullify (self%sent_list)
+  nullify (self%iit)
+  nullify (self%t)
+  nullify (self%dt)
+  nullify (self%lock)
+  nullify (self%mulligan_lock)
+  call trace%end ()
+END SUBROUTINE reset
 
 END MODULE task_mod

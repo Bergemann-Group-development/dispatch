@@ -30,11 +30,11 @@ MODULE gpatch_mod
   private
   type, public, extends(patch_t):: gpatch_t
     type(data_hub_t):: data_hub
-    class(list_t), pointer:: task_list => null()
-    class(boundaries_t), pointer:: boundaries => null()
-    real(8):: d0
+    real(8):: d0=0d0
     logical:: pre_updated=.false.
     character(len=8):: etype='thermal' ! or 'total', 'entropy'
+    class(list_t),       pointer:: task_list => null()
+    class(boundaries_t), pointer:: boundaries => null()
   contains
     procedure, nopass:: cast2gpatch
     procedure:: pre_init
@@ -60,6 +60,7 @@ MODULE gpatch_mod
     generic, public :: fminvalsph => fminval4sph, fminval8sph
     procedure:: output_metadata
     procedure:: input_metadata
+    procedure:: reset
   end type
   real(8), save :: restart_time = 0d0
   logical, save :: detailed_timer=.false.
@@ -706,5 +707,20 @@ SUBROUTINE input_metadata (self, unit)
   !-----------------------------------------------------------------------------
   call data_io%input_nml (self, unit)
 END SUBROUTINE input_metadata
+
+!===============================================================================
+!> Make sure pointers are nullified
+!===============================================================================
+SUBROUTINE reset (self)
+  class (gpatch_t):: self
+  !.............................................................................
+  call trace%begin ('gpatch_t%reset')
+  call self%patch_t%reset ()
+  nullify (self%task_list)
+  nullify (self%boundaries)
+  self%d0 = 0.0
+  self%pre_updated = .false.
+  call trace%end ()
+END SUBROUTINE reset
 
 END MODULE gpatch_mod

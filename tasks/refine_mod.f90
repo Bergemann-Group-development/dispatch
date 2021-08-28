@@ -860,7 +860,6 @@ SUBROUTINE make_child_patch (self, parent, pos, child_size, &
   if (verbose > 1) then
     call bits%print (stdlog, pad_trace(1:indent)//'refine', child%status)
   end if
-  child%boundaries%bits = 0
   !-----------------------------------------------------------------------------
   ! Append links to the new patch in the patch list, sorted by quality
   ! Neighbor lists are constructed at the end of `split_patch`.
@@ -876,6 +875,7 @@ SUBROUTINE make_child_patch (self, parent, pos, child_size, &
   child%pre_initialized = .false.                    ! force pre_init
   call child%init()                                  ! patch, for a new id
   call child%init_bdries                             ! BCs
+  child%boundaries%bits = 0                          ! reset bdry bits
   child%level = parent%level + 1                     ! override patch_t%init
   child%time  = parent%time                          ! same time
   child%dtime = parent%dtime/self%ratio              ! for info only

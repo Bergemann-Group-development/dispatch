@@ -16,7 +16,7 @@ MODULE standard_boundaries_mod
   type, public:: standard_boundaries_t
     integer:: id = 0
     integer:: bits = 0
-    logical:: unset = .true.
+    logical:: unset1 = .true., unset2 = .true.
     logical :: mhd = .false.
     class(mesh_t), pointer:: mesh(:)
     class(patch_t), pointer:: patch
@@ -60,6 +60,7 @@ SUBROUTINE pre_init (self, patch)
   class(patch_t), target       :: patch
   call trace%begin ('standard_boundaries_t%init')
   self%patch => patch
+  self%unset1 = .false.
   call trace%end ()
 END SUBROUTINE pre_init
 
@@ -78,6 +79,9 @@ SUBROUTINE init (self)
   logical                      :: one_inside, all_inside
   !-----------------------------------------------------------------------------
   call trace%begin ('standard_boundaries_t%init')
+  if (self%unset1) then
+    call io%abort ('standard_boundaries_t%pre_init has not been called')
+  end if
   patch => self%patch
   self%id = patch%id
   self%patch => patch
@@ -120,12 +124,16 @@ SUBROUTINE init (self)
   ! (mesh flags can only be set after meshes have been allocated, while bits may
   ! be set already in the pre_init step).
   !-----------------------------------------------------------------------------
-  self%mesh(1)%lower_boundary = self%is_set (bits%xl)
-  self%mesh(1)%upper_boundary = self%is_set (bits%xu)
-  self%mesh(2)%lower_boundary = self%is_set (bits%yl)
-  self%mesh(2)%upper_boundary = self%is_set (bits%yu)
-  self%mesh(3)%lower_boundary = self%is_set (bits%zl)
-  self%mesh(3)%upper_boundary = self%is_set (bits%zu)
+  if (associated(self%mesh)) then
+    self%mesh(1)%lower_boundary = self%is_set (bits%xl)
+    self%mesh(1)%upper_boundary = self%is_set (bits%xu)
+    self%mesh(2)%lower_boundary = self%is_set (bits%yl)
+    self%mesh(2)%upper_boundary = self%is_set (bits%yu)
+    self%mesh(3)%lower_boundary = self%is_set (bits%zl)
+    self%mesh(3)%upper_boundary = self%is_set (bits%zu)
+  else
+    call io%warning ('standard_boundaries_t%init: self%mesh not associated')
+  end if
   !-----------------------------------------------------------------------------
   ! Spherical boundary flag
   !-----------------------------------------------------------------------------
@@ -144,7 +152,7 @@ SUBROUTINE init (self)
   end do; end do; end do
   if (one_inside) call self%set (bits%spherical)
   !-----------------------------------------------------------------------------
-  self%unset = .false.
+  self%unset2 = .false.
   call trace%end()
 END SUBROUTINE init
 
@@ -227,7 +235,7 @@ SUBROUTINE condition (self, f, iv, operator, value, select)
   integer:: i, saved_status
   !-----------------------------------------------------------------------------
   call trace%begin ('standard_boundaries_t%condition')
-  if (self%unset) then
+  if (self%unset2) then
     call io%abort ('standard_boundaries_t%init has not been called')
   end if
   m => self%mesh

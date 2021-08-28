@@ -27,28 +27,16 @@ MODULE patch_mod
   private
   integer, parameter:: ndim = 3
   type, extends(task_t), public:: patch_t
-    real(kind=KindScalarVar), dimension(:,:,:,:,:,:), pointer, contiguous:: mem      => null()
-    real(kind=KindScalarVar), dimension(:,:,:,:,:),   pointer, contiguous:: vgas     => null()
-    real(kind=KindScalarVar), dimension(:,:,:,:),     pointer            :: density  => null()
-    real(kind=KindScalarVar), dimension(:,:,:,:),     pointer, contiguous:: pressure => null()
-    !dir$ attributes align: 64 :: mem, vgas, density, pressure
     !---------------------------------------------------------------------------
     ! These allocatables are intended to deposite external forces and heating in,
     ! typically used by methods called from the extras_t data type procedures.
     !---------------------------------------------------------------------------
-    real              , pointer, contiguous:: frefine(:,:,:) => null()
-    integer(kind=int8), pointer, contiguous:: filled (:,:,:) => null()
-    integer(kind=int8), pointer, contiguous:: request(:,:,:) => null()
-    logical           , pointer, contiguous:: outside(:,:,:) => null()
-    real(var_k)       , pointer, contiguous:: u_phase(:,:,:) => null()
     !dir$ attributes align: 64 :: filled
     class(mesh_t), dimension(:), pointer:: mesh => null()
     real:: courant                      ! courant number
     real(8):: pdf_next=0.0              ! next PDF output time
     real(8):: dt_fixed                  ! for fixed time step Courant condition
-    !real(8):: omega(3)=0d0              ! generic angular velocity
     real(8):: radius=0d0                ! generic radius
-    real(8), pointer:: erot(:,:) => null() ! local unit vectors
     real:: u_max=0.0                    ! for Courant condition
     real:: u_fixed                      ! for fixed time step Courant condition
     real:: d_min, d_max                 ! for info
@@ -66,23 +54,16 @@ MODULE patch_mod
     logical:: mem_allocated=.false.
     logical:: do_pebbles=.false.
     logical:: staggered=.true.
+    !logical:: no_mans_land=.true.
     logical:: use_data_hub=.false.
     logical:: manual_refine=.false.
     logical:: get_umax_location=.false.
-    logical, dimension(:), pointer:: unsigned  => null()
-    logical, dimension(:), pointer:: pervolume => null()
-    class(link_t),         pointer:: link      => null()
     character(len=32):: eos='ideal'
     character(len=32):: opacity='none'
     integer:: file_offset(4)
     type(index_t):: idx
     real:: safety_factor=1.0
     real:: ee_min=tiny(1.0)
-    !--- used in extras ---
-    logical, contiguous, pointer :: mask(:,:,:) => null()
-    !--- used in refine ---
-    type(lock_t),        pointer :: request_lock   => null()
-    type(lock_t),        pointer :: mem_lock(:)    => null()
     !---------------------------------------------------------------------------
     ! HACKs below:  FIXME
     !---------------------------------------------------------------------------
@@ -103,6 +84,29 @@ MODULE patch_mod
     real(8):: grid_vel(3) = 0d0         ! velocity of the patch in its native coords. and
                                         ! units (e.g. rad/s for the phi coord.); for
                                         ! Cartesian coords., equal to `velocity`.
+    !---------------------------------------------------------------------------
+    ! Pointer attributes -- make sure to add to task_t%reset when adding, to
+    ! avoid that cloned instances inadvertenly refer to parent pointers
+    !---------------------------------------------------------------------------
+    real(kind=KindScalarVar), dimension(:,:,:,:,:,:), pointer, contiguous:: mem      => null()
+    real(kind=KindScalarVar), dimension(:,:,:,:,:),   pointer, contiguous:: vgas     => null()
+    real(kind=KindScalarVar), dimension(:,:,:,:),     pointer            :: density  => null()
+    real(kind=KindScalarVar), dimension(:,:,:,:),     pointer, contiguous:: pressure => null()
+    !dir$ attributes align: 64 :: mem, vgas, density, pressure
+    real                 , pointer, contiguous:: frefine(:,:,:) => null()
+    integer(kind=int8)   , pointer, contiguous:: filled (:,:,:) => null()
+    integer(kind=int8)   , pointer, contiguous:: request(:,:,:) => null()
+    logical              , pointer, contiguous:: outside(:,:,:) => null()
+    real(var_k)          , pointer, contiguous:: u_phase(:,:,:) => null()
+    logical, dimension(:), pointer:: unsigned                   => null()
+    logical, dimension(:), pointer:: pervolume                  => null()
+    class(link_t)        , pointer:: link                       => null()
+    real(8)              , pointer:: erot(:,:)                  => null()
+    !--- used in extras ---
+    logical, contiguous  , pointer:: mask(:,:,:)                => null()
+    !--- used in refine ---
+    type(lock_t)         , pointer:: request_lock               => null()
+    type(lock_t)         , pointer:: mem_lock(:)                => null()
   contains
     procedure, nopass:: cast2patch
     procedure:: init
@@ -670,33 +674,33 @@ END SUBROUTINE setup
 SUBROUTINE reset (self)
   class (patch_t):: self
   !.............................................................................
-  self%mem_allocated = .false.                      ! make sure to get ..
-  !--- task pointers ---
-  nullify (self%lock)                               ! .. new lock
-  nullify (self%t)                                  ! .. new t
-  nullify (self%dt)                                 ! .. new dt
-  nullify (self%iit)                                ! .. new iit
-  nullify (self%mesg)                               ! .. new message
-  nullify (self%sent_list)                          ! .. new message list
-  !--- patch pointers ---
+  call trace%begin ('patch_t%reset')
+  call self%task_t%reset ()                         ! pass the stick
   nullify (self%mem)                                ! .. new mem
-  nullify (self%mem_lock)                           ! .. new mem_lock
-  nullify (self%mesh)                               ! .. new mesh
   nullify (self%density)                            ! gas density
   nullify (self%pressure)                           ! gas pressure
   nullify (self%vgas)                               ! gas velocity
-  nullify (self%u_phase)                            ! phase speed
   nullify (self%frefine)                            ! refine condition
-  nullify (self%request)                            ! refine support
-  nullify (self%mask)                               ! used in extras
   nullify (self%filled)                             ! guard zone check
+  nullify (self%request)                            ! refine support
   nullify (self%outside)                            ! FIXME: needed??
+  nullify (self%u_phase)                            ! phase speed
+  nullify (self%mem_lock)                           ! .. new mem_lock
+  nullify (self%mesh)                               ! .. new mesh
+  nullify (self%unsigned)                           ! usigned vars
+  nullify (self%pervolume)                          ! per-unit-volume vars
+  nullify (self%link)                               ! task link
+  nullify (self%mask)                               ! used in extras
+  nullify (self%request_lock)                       ! refine support
+  nullify (self%erot)                               ! rotation matrix
   self%id = 0                                       ! ensure a new ID
   self%seq = -1                                     ! triggers tag=0 in send
-  self%n_needed = 1                                 ! reset to initial
   self%istep = 0                                    ! for diagnostics
+  self%n_needed = 1                                 ! reset to initial
   self%rotated = .false.                            ! force rotate
+  self%mem_allocated = .false.                      ! make sure to get ..
   self%pre_initialized = .false.                    ! allow pre_init
+  call trace%end ()
 END SUBROUTINE reset
 
 !===============================================================================
