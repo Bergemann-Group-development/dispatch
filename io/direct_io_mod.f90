@@ -58,11 +58,7 @@ SUBROUTINE init (self, patch, filename)
   ! Cartesian dimensions of patch arrangement and unigrid dimensions self%dims
   !----------------------------------------------------------------------------
   mpatch = nint(patch%mesh%b/patch%mesh%s)
-  if (patch%no_mans_land) then
-    self%dims(1:3) = mpatch*patch%mesh%n
-  else
-    self%dims(1:3) = mpatch*(patch%mesh%n-1)+1
-  end if
+  self%dims(1:3) = mpatch*patch%mesh%n
   self%id = patch%id
   self%dims(4) = io%nv
   self%nbuf = product(mpatch)
@@ -91,11 +87,7 @@ SUBROUTINE output (self, patch)
   !-----------------------------------------------------------------------------
   if (self%count==self%nbuf-1) then
     write (filename,'(a,i5.5,"/",i5.5)') trim(io%outputname), patch%iout, id
-    if (patch%no_mans_land) then
-      io%format = 1
-    else
-      io%format = 2
-    end if
+    io%format = 1
     open (io%data_unit, file=trim(filename)//'.txt', form='formatted', &
           status='unknown')
     write (io%data_unit,'(i2.2)') io%format

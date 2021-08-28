@@ -66,7 +66,6 @@ MODULE patch_mod
     logical:: mem_allocated=.false.
     logical:: do_pebbles=.false.
     logical:: staggered=.true.
-    logical:: no_mans_land=.true.
     logical:: use_data_hub=.false.
     logical:: manual_refine=.false.
     logical:: get_umax_location=.false.
@@ -87,10 +86,10 @@ MODULE patch_mod
     !---------------------------------------------------------------------------
     ! HACKs below:  FIXME
     !---------------------------------------------------------------------------
-    real(8):: theta=0d0                 ! latitude
-    real(8):: phi=0d0                   ! longitude at t=0.0
+    !real(8):: theta=0d0                 ! latitude
+    !real(8):: phi=0d0                   ! longitude at t=0.0
     real:: csound                       ! isothermal sound speed, for tests
-    real:: grav                         ! gravitational consant (code units)
+    !real:: grav                         ! gravitational consant (code units)
     integer:: n(3)=0, ng(3)=0           ! defaults, to detect unchanged values
     integer:: li(3), ui(3), gn(3)=0     ! convenience -- avoid patch%mesg%li etc
     integer:: ncell(3)=0                ! number of cells per patch
@@ -521,7 +520,7 @@ SUBROUTINE pre_init (self)
   self%u_fixed      = u_fixed
   self%max_files    = max_files                  ! prevent run-away NaN
   self%use_data_hub = use_data_hub               ! guard zone handling
-  self%no_mans_land = no_mans_land               ! mesh centering
+  !self%no_mans_land = no_mans_land               ! mesh centering
   self%print_next   = print_time
   self%limit_dtime  = limit_dtime
   !-----------------------------------------------------------------------------
@@ -570,7 +569,7 @@ SUBROUTINE mesh_init (self)
   ! needed in the mhd_t%init(), before the call to extras_t%init()
   !-----------------------------------------------------------------------------
   call MeshFactory(self%mesh_type, self%mesh, n=self%n, ng=self%ng, &
-    s=self%size, p=self%position, llc_native=self%llc_nat, nml=self%no_mans_land)
+    s=self%size, p=self%position, llc_native=self%llc_nat)
   !-----------------------------------------------------------------------------
   ! Pass on a few things to the mesh
   !-----------------------------------------------------------------------------
@@ -584,7 +583,7 @@ SUBROUTINE mesh_init (self)
   self%li = self%mesh%li
   self%ui = self%mesh%ui
   self%ds = self%mesh%d
-  self%ncell = self%mesh%nc
+  self%ncell = self%n
   self%centre_nat = self%mesh%centre_nat
   self%centre_cart = CurrentToCartesian(self%mesh_type, &
                      self%centre_nat(1), self%centre_nat(2), self%centre_nat(3))
@@ -1051,7 +1050,7 @@ SUBROUTINE periodic_grid (self, only)
   where (self%mesh%upper_boundary)
     ui = self%mesh%ub
   end where
-  n = self%ncell
+  n = self%n
   do iz=lb(3),ub(3)
   do iy=lb(2),ub(2)
   do ix=lb(1),ub(1)
@@ -1115,7 +1114,7 @@ SUBROUTINE make_periodic4 (patch, f)
   !-----------------------------------------------------------------------------
   periodic = patch%periodic .and. patch%size+patch%ds > patch%box
   m => patch%mesh
-  n = patch%ncell
+  n = patch%n
   !-----------------------------------------------------------------------------
   ! x periodicity; make periodic inside the yz patch limits
   !-----------------------------------------------------------------------------
@@ -1181,7 +1180,7 @@ SUBROUTINE make_periodic8 (patch, f)
   !-----------------------------------------------------------------------------
   periodic = patch%periodic .and. patch%size+patch%ds > patch%box
   m => patch%mesh
-  n = patch%ncell
+  n = patch%n
   !-----------------------------------------------------------------------------
   ! x periodicity; make periodic inside the yz patch limits
   !-----------------------------------------------------------------------------
@@ -1908,7 +1907,7 @@ FUNCTION fsum4 (self, f) RESULT (out)
   integer:: n(3)
   !-----------------------------------------------------------------------------
   if (self%is_periodic()) then
-    n = self%ncell-1
+    n = self%n-1
     out = sum(real(f(self%mesh(1)%li:self%mesh(1)%li+n(1), &
                      self%mesh(2)%li:self%mesh(2)%li+n(2), &
                      self%mesh(3)%li:self%mesh(3)%li+n(3)),kind=8))
@@ -1926,7 +1925,7 @@ FUNCTION fsum8 (self, f) RESULT (out)
   integer:: n(3)
   !-----------------------------------------------------------------------------
   if (self%is_periodic()) then
-    n = self%ncell-1
+    n = self%n-1
     out = sum(real(f(self%mesh(1)%li:self%mesh(1)%li+n(1), &
                      self%mesh(2)%li:self%mesh(2)%li+n(2), &
                      self%mesh(3)%li:self%mesh(3)%li+n(3)),kind=8))
@@ -1945,7 +1944,7 @@ FUNCTION faver4 (self, f) RESULT (out)
   real:: out
   real, dimension(:,:,:), intent(in):: f
   !-----------------------------------------------------------------------------
-  out = self%fsum4(f)/product(self%ncell)
+  out = self%fsum4(f)/product(self%n)
 END FUNCTION faver4
 !===============================================================================
 FUNCTION faver8 (self, f) RESULT (out)
@@ -1953,7 +1952,7 @@ FUNCTION faver8 (self, f) RESULT (out)
   real(8):: out
   real(8), dimension(:,:,:), intent(in):: f
   !-----------------------------------------------------------------------------
-  out = self%fsum8(f)/product(self%ncell)
+  out = self%fsum8(f)/product(self%n)
 END FUNCTION faver8
 !===============================================================================
 FUNCTION faveri (self, iv) RESULT (out)

@@ -75,11 +75,7 @@ SUBROUTINE output (self, experiment_name)
   !-----------------------------------------------------------------------------
   ! Set io%format
   !-----------------------------------------------------------------------------
-  if (self%no_mans_land) then
-    io%format = 1
-  else
-    io%format = 2
-  end if
+  io%format = 1
   !-----------------------------------------------------------------------------
   if (io%verbose > 1) then
     call self%stats (self%mem(:,:,:,self%idx%d,self%it,1), 'legacy')

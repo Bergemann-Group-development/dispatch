@@ -430,42 +430,18 @@ SUBROUTINE bndry_indices (m, iv, lo, li, ui, uo)
   ! staggered: x---x---o---o-- ... --o---o---x---x
   !               lo       li           ui       uo
   !-----------------------------------------------------------------------------
-  if (m%no_mans_land) then
-    ! --- staggered variables ---
-    if (m%h(iv) < 0.0) then
-      lo = m%lo
-      li = lo+2
-      uo = m%uo+1
-      ui = uo-2
-    ! --- centered variables ---
-    else
-      lo = m%lo
-      li = lo+1
-      uo = m%uo
-      ui = uo-1
-    end if
-  !-----------------------------------------------------------------------------
-  ! no-no-mans-land mesh, with centered points at patch boundaries
-  !                      |                     |
-  !  centered:   x---x---o---o-- ... --o---o---o---x---x
-  !                 lo       li           ui       uo
-  ! staggered: x---x---o-|-o-- ... --o---o---o-|-x---x
-  !                   lo   li               ui   uo
-  !-----------------------------------------------------------------------------
+  ! --- staggered variables ---
+  if (m%h(iv) < 0.0) then
+    lo = m%lo
+    li = lo+2
+    uo = m%uo+1
+    ui = uo-2
+  ! --- centered variables ---
   else
-    ! --- staggered variables ---
-    if (m%h(iv) < 0.0) then
-      lo = m%li
-      li = lo+1
-      uo = m%uo
-      ui = uo-1
-    ! --- centered variables ---
-    else
-      lo = m%lo
-      li = lo+2
-      uo = m%uo
-      ui = uo-2
-    end if
+    lo = m%lo
+    li = lo+1
+    uo = m%uo
+    ui = uo-1
   end if
 END SUBROUTINE bndry_indices
 

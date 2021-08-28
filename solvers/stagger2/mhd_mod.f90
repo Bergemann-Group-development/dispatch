@@ -202,7 +202,6 @@ SUBROUTINE test (self)
   n0 = 2*(tmp%ncell/2)
   if (any(tmp%n /= n0)) then
     print *,io%hs
-    print *, 'mhd_t%test not possible with n, no_mans_land =', tmp%n, tmp%no_mans_land
     print *,io%hs
     call tmp%dealloc
     call trace%end()

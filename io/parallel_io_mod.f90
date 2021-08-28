@@ -194,10 +194,8 @@ SUBROUTINE output (patch, count)
   !-----------------------------------------------------------------------------
   if (io%guard_zones) then
     n = patch%gn
-  else if (patch%no_mans_land) then
-    n = patch%n
   else
-    n = patch%n-1
+    n = patch%n
   end if
   !-----------------------------------------------------------------------------
   ! io%format=14 then slots in the file are ordered (id,iv,iout), while for 15

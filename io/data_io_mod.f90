@@ -628,7 +628,7 @@ SUBROUTINE open_nml_files (patch)
       eos_name     = patch%eos
       opacity      = patch%opacity
       periodic     = patch%periodic
-      no_mans_land = patch%no_mans_land
+      no_mans_land = .true.
       omp_nthreads = omp%nthreads
       mpi_size     = mpi%size
       mpi_dims     = mpi_coords%dims
@@ -935,7 +935,6 @@ SUBROUTINE input_nml_v1 (patch, unit)
     io%in%ntotal       = ntotal
     io%in%guard_zones  = guard_zones
     io%in%time_derivs  = time_derivs
-    io%in%no_mans_land = no_mans_land
     io%in%mpi_dims     = mpi_dims
   end if
   patch%iout         = iout
@@ -1030,7 +1029,6 @@ SUBROUTINE input_nml_v2 (patch, unit)
     io%in%ntotal       = ntotal
     io%in%guard_zones  = guard_zones
     io%in%time_derivs  = time_derivs
-    io%in%no_mans_land = no_mans_land
     io%in%mpi_dims     = mpi_dims
   end if
   ! namelist /snapshot_nml/ ioformat, iout, time, ntotal, box, li, ui, ng, &
@@ -1128,7 +1126,6 @@ SUBROUTINE input_nml_v3 (patch, unit)
     io%in%ntotal       = ntotal
     io%in%guard_zones  = guard_zones
     io%in%time_derivs  = time_derivs
-    io%in%no_mans_land = no_mans_land
     io%in%mpi_dims     = mpi_dims
   end if
   ! namelist /snapshot_nml/ ioformat, iout, time, ntotal, istep, mesh_type, &
@@ -1234,7 +1231,6 @@ SUBROUTINE input_nml_v4 (self, patch, unit)
     io%in%ntotal       = ntotal
     io%in%guard_zones  = guard_zones
     io%in%time_derivs  = time_derivs
-    io%in%no_mans_land = no_mans_land
     io%in%mpi_size     = mpi_size
     io%in%mpi_dims     = mpi_dims
   end if
@@ -1253,7 +1249,6 @@ SUBROUTINE input_nml_v4 (self, patch, unit)
   patch%periodic     = periodic
   patch%guard_zones  = guard_zones
   patch%time_derivs  = time_derivs
-  patch%no_mans_land = no_mans_land
   patch%mesh_type    = mesh_type
   shared%refine_ratio = refine_ratio
   !-----------------------------------------------------------------------------

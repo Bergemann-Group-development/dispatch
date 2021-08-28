@@ -36,7 +36,6 @@ MODULE mesh_mod
     integer :: id=0          ! copy of task id, for info
     integer :: n = 16        ! number of "active" zones
     integer :: ng = 2        ! number of ghost zones
-    integer :: nc            ! number of cells
     integer :: lb            ! lower boundary of mesh incl. ghost zones
     integer :: li            ! lower boundary of mesh excl. ghost zones
     integer :: lo
@@ -91,7 +90,6 @@ MODULE mesh_mod
     !---------------------------------------------------------------------------
     logical:: lower_boundary = .false.
     logical:: upper_boundary = .false.
-    logical:: no_mans_land = .false.
 
     procedure (), pointer, nopass :: CurrentToCartesian => null()
     ! geometric factors as procedure pointers
@@ -282,9 +280,6 @@ SUBROUTINE MeshFactory (meshtype, collection, n, ng, s, p, llc_native, nml)
   else
     call mpi%abort("Invalid mesh type. Abort!")
   end if
-  if (present(nml)) then
-    collection%no_mans_land = nml
-  end if
 
   do i=1,3
     ! initialise the mesh
@@ -356,21 +351,17 @@ SUBROUTINE init_mesh (self, n, ng, s, p, llc_native)
 
   ! calculate the volume centroid of the current mesh
   self%centre_nat = VolumeCentroid(self)
-  ! cell-centred coordinate relative to the patch *centre*; the absolute position
-  ! of a cell can be recovered using `self%centre_nat + self%r(i)` in the coord. system
-  ! of the patch, and `self%p + self%centre_nat + self%r(i)`.
-  ! in Cartesian coords., self%centre_nat = self%p
-  if (self%no_mans_land) then
-    h = 0.5_8
-    if (self%n == 1) h = 1.0_8 ! account for collapsed dimensions (otherwise `r` ends up non-zero).
-    self%nc = self%ui - self%li + 1
-  else
-    h = 1.0_8
-    self%nc = max(1, self%ui - self%li)
-  end if
-  self%d = self%s/max(1,self%nc)
+  !-----------------------------------------------------------------------------
+  ! Cell-centred coordinate relative to the patch *centre*; the absolute position
+  ! of a cell can be recovered using `self%centre_nat + self%r(i)` in the coord.
+  ! system of the patch, and `self%p + self%centre_nat + self%r(i)`. in
+  ! Cartesian coords., self%centre_nat = self%p
+  !-----------------------------------------------------------------------------
+  ! account for collapsed dimensions (otherwise `r` ends up non-zero).
+  h = merge (1.0_8, 0.5_8, self%n==1)
+  self%d = self%s/self%n
   do i=1,self%gn
-    self%r(i) = real(i - h - self%ng,kind=8) * self%d + self%llc_nat - self%centre_nat
+    self%r(i) = real(i-h-self%ng,kind=8)*self%d + self%llc_nat - self%centre_nat
   end do
   self%lf = -self%s*0.5_8
   self%uf = +self%s*0.5_8

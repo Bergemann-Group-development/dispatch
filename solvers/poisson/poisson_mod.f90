@@ -241,7 +241,7 @@ contains
     real(8)                   :: a, c(3)
     !---------------------------------------------------------------------------
     c  = 1d0/ds**2
-    n  = patch%mesh%nc
+    n  = patch%n
     where (n == 1)
       c = 0.0
     end where
@@ -310,7 +310,7 @@ contains
     real(8)                   :: c(3), h2ci, h31ci, h32ci
     !---------------------------------------------------------------------------
     c  = 1d0/ds**2
-    where (patch%mesh%nc == 1)
+    where (patch%n == 1)
       c = 0.0
     end where
     m1 => patch%mesh(1)
@@ -358,7 +358,7 @@ contains
     real(8)                   :: a, b(3)
     !---------------------------------------------------------------------------
     if (precondition) then
-      n  = patch%mesh%nc
+      n  = patch%n
       ndim = sum(merge(1,0,n > 1))
       b = 0.5d0 / ndim
       a = 1d0 + 0.25d0 / ndim
