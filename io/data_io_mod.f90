@@ -685,18 +685,6 @@ SUBROUTINE output_nml_v2 (patch, unit)
     nw, velocity, quality, mesh_type, kind
   !-----------------------------------------------------------------------------
   call trace%begin ('data_io_t%output_nml')
-  !-----------------------------------------------------------------------------
-  ! Special consideration for ZEUS solvers because they include one extra cell
-  !-----------------------------------------------------------------------------
-  l = merge(patch%mesh%lb,patch%mesh%li,io%guard_zones)
-  u = merge(patch%mesh%ub,patch%mesh%ui,io%guard_zones)
-  ncell        = u-l+1
-  if (patch%kind(1:4) == 'zeus') then
-    where (patch%n > 1)
-      ncell = ncell + 1
-    end where
-  endif
-  !-----------------------------------------------------------------------------
   id           = patch%id
   position     = patch%position
   size         = patch%size
@@ -704,6 +692,7 @@ SUBROUTINE output_nml_v2 (patch, unit)
   dtime        = patch%dtime
   istep        = patch%istep
   ds           = patch%ds
+  ncell        = patch%ncell
   n            = patch%n
   nw           = patch%nw
   velocity     = patch%velocity
@@ -720,12 +709,13 @@ SUBROUTINE output_nml_v3 (patch, unit)
   integer:: unit
   !.............................................................................
   integer:: id, level, task_offset
-  real(8):: time, dtime, position(3), size(3), times(2), dtimes(2)
+  real(8):: time, dtime, position(3), size(3), times(2), dtimes(2), ncell(3)
   namelist /patch_nml/ id, time, position, size, level, dtime, times, dtimes, &
-    task_offset
+    ncell, task_offset
   !-----------------------------------------------------------------------------
   call trace%begin ('data_io_t%output_nml_v3')
   id          = patch%id
+  ncell       = patch%ncell
   time        = patch%time
   position    = patch%position
   size        = patch%size
@@ -950,7 +940,6 @@ SUBROUTINE input_nml_v1 (patch, unit)
   patch%level        = level
   patch%quality      = quality
   eos_t%gamma        = gamma
-  patch%ncell        = ncell
   patch%li           = li
   patch%ui           = ui
   patch%n            = n
@@ -1064,7 +1053,6 @@ SUBROUTINE input_nml_v2 (patch, unit)
   patch%dtime        = dtime
   patch%istep        = istep
   patch%ds           = ds
-  patch%ncell        = ncell
   patch%n            = n
   patch%nw           = nw
   patch%velocity     = velocity
@@ -1137,7 +1125,6 @@ SUBROUTINE input_nml_v3 (patch, unit)
   patch%velocity     = velocity            ! FIXME
   patch%istep        = istep               ! FIXME
   patch%mesh_type    = mesh_type
-  patch%ncell        = ncell
   patch%li           = li
   patch%ui           = ui
   patch%n            = n
@@ -1279,7 +1266,6 @@ SUBROUTINE input_nml_v4 (self, patch, unit)
     patch%dtime     = dtime
     patch%istep     = istep
     patch%ds        = ds
-    patch%ncell     = ncell
     patch%n         = n
     patch%nw        = nw
     patch%velocity  = velocity

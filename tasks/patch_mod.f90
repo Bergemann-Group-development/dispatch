@@ -587,7 +587,7 @@ SUBROUTINE mesh_init (self)
   self%li = self%mesh%li
   self%ui = self%mesh%ui
   self%ds = self%mesh%d
-  self%ncell = self%n
+  self%ncell = merge (self%gn, self%n, io%guard_zones)
   self%centre_nat = self%mesh%centre_nat
   self%centre_cart = CurrentToCartesian(self%mesh_type, &
                      self%centre_nat(1), self%centre_nat(2), self%centre_nat(3))

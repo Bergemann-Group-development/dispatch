@@ -199,7 +199,7 @@ SUBROUTINE test (self)
   tmp%mhd = self%mhd
   call tmp%idx%init (entropy=5, mhd=tmp%mhd)
   call tmp%patch_t%init
-  n0 = 2*(tmp%ncell/2)
+  n0 = 2*(tmp%n/2)
   if (any(tmp%n /= n0)) then
     print *,io%hs
     print *,io%hs

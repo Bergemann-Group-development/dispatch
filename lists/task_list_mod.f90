@@ -711,7 +711,7 @@ FUNCTION average (self, idx, time)
     task => link%task
     select type (task)
     class is (patch_t)
-      m = task%ncell
+      m = task%n
       l = task%li
       u = l + m - 1
       call task%time_interval (time, jt, pt)

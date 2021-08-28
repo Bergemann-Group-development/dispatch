@@ -86,9 +86,9 @@ FUNCTION get_upstream_coord_same(self, ray) result(coords)
  end select
  do i=1,3
    if (coords(i) > patch%ui(i)) then
-     coords(i) = coords(i) - patch%ncell(i)
+     coords(i) = coords(i) - patch%n(i)
    else if (coords(i) < patch%li(i)) then
-     coords(i) = coords(i) + patch%ncell(i)
+     coords(i) = coords(i) + patch%n(i)
    end if
  end do
 END FUNCTION get_upstream_coord_same
