@@ -228,6 +228,7 @@ END SUBROUTINE pre_update
 SUBROUTINE post_update (self)
   class(extras_t):: self
   !.............................................................................
+  call self%gpatch_t%post_update ()                                ! keep
   !call self%selfgravity%post_update                                    ! selfg
   !call self%rt%post_update                                             ! RT
   !call self%forces%post_update                                         ! forces

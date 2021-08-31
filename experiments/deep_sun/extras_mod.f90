@@ -234,6 +234,7 @@ END SUBROUTINE pre_update
 SUBROUTINE post_update (self)
   class(extras_t):: self
   !.............................................................................
+  call self%gpatch_t%post_update ()                                ! keep
   !call self%spitzer%post_update
   call self%pressure_node%post_update                                   ! Pressure node
   !call self%forces%post_update                                         ! forces
