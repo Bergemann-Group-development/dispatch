@@ -42,6 +42,7 @@ MODULE gpatch_mod
     procedure:: init_bdries
     procedure:: init_task_list
     procedure:: pre_update
+    procedure:: post_update
     procedure:: input
     procedure:: output
     procedure:: counter_update
@@ -172,7 +173,7 @@ END SUBROUTINE pre_update
 
 !===============================================================================
 SUBROUTINE post_update (self)
-  class(gpatch_t), target:: self
+  class(gpatch_t):: self
   !-----------------------------------------------------------------------------
   self%pre_updated = .false.
 END SUBROUTINE post_update
