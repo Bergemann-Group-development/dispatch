@@ -72,7 +72,11 @@ SUBROUTINE primary(self, mem)
       else if (idx%s > 0) then
         mem(i,:,:,idx%s) = self%s_l
       end if
+      if (associated(self%patch%filled)) then
+        self%patch%filled(i,:,:) = 1
+      end if
     end do  
+    
   end if
   !
   if (self%mesh(1)%upper_boundary) then
@@ -90,9 +94,13 @@ SUBROUTINE primary(self, mem)
       else if (idx%s > 0) then
         mem(i,:,:,idx%s) = self%s_r
       end if
+      if (associated(self%patch%filled)) then
+        self%patch%filled(i,:,:) = 1
+      end if
     end do
   end if
   end associate
+  
   call trace%end()
 END SUBROUTINE primary
 

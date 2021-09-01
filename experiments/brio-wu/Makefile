@@ -9,10 +9,10 @@ OPTS =
 UPD             = adams_bashforth
 #SOLVER          = zeus3d
 #SOLVER          = ramses/hydro
-#SOLVER          = stagger2/bifrost
-#STAGGER         = stagger_2nd.o
+SOLVER          = stagger2/bifrost
+STAGGER         = stagger_6th.o
 #SOLVER          = ramses/mhd_eos
-SOLVER          = ramses/mhd
+#SOLVER          = ramses/mhd
 EXEC            = dispatch.x
 TOP             = ../..
 sinclude $(TOP)/config/Makefile
