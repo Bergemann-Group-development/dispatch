@@ -464,7 +464,9 @@ SUBROUTINE init_nbors (self, link)
   class(link_t),     pointer :: nblink
   class(task_t),     pointer :: task
   class(task_t),     pointer :: nbtask
-  class(*),          pointer :: ptr
+  type(hash_table_t)         :: hash_table
+  logical                    :: added
+  logical,              save :: use_hash = .false.
   integer                    :: i_r, i1, i2, i3, j2, key(4), unit, tid
   integer,              save :: itimer=0
   !-----------------------------------------------------------------------------
@@ -476,15 +478,20 @@ SUBROUTINE init_nbors (self, link)
   else
     unit = stdlog
   end if
-  !FIXME: call link%nbor%init ()
+  call link%remove_nbor_list (link%nbor)
   task => link%task
   tid = task%id
   select type (task)
   class is (patch_t)
   i_r = task%key(2)
-  if (verbose > 0) &
+  if (verbose > 1) &
     write (unit,'(a,i6,":",i2.2,3i4)') 'cylinder_t%init_nbors: target=', &
-    tid, task%key
+      tid, task%key
+  !-----------------------------------------------------------------------------
+  ! Initialize a hash table to protect agains double add
+  !-----------------------------------------------------------------------------
+  if (use_hash) call hash_table%init (100)
+  n_nbors = 0
   my_cylinder => self%cylinder(i_r)
   do i1=-1,1
     select case (i1)
