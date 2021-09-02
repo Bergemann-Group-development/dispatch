@@ -137,6 +137,9 @@ SUBROUTINE update (self)
   if (self%id==1) &
     call validate%check (self, self%mem(:,:,:,:,self%it,1), 'upd1')
   !-----------------------------------------------------------------------------
+  ! When computing forces already here, we need to do the force reset here also
+  !-----------------------------------------------------------------------------
+  call self%gpatch_t%pre_update ()
   call self%force ()
   if (self%id==1) &
     call validate%check (self, scratch%force_per_unit_mass(:,:,:,:), 'ff')

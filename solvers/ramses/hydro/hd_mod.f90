@@ -185,7 +185,6 @@ SUBROUTINE pre_update (self)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('hd_t%pre_update', itimer=itimer)
-  call self%gpatch_t%pre_update ()
   !-----------------------------------------------------------------------------
   ! Primitive variables may be needed in extras courant_conditions
   !-----------------------------------------------------------------------------
