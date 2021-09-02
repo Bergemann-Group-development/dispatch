@@ -79,7 +79,8 @@ SUBROUTINE from_source (self, tgt, lt, ut, src)
   real, pointer, contiguous :: tm(:,:,:,:), sm(:,:,:,:)
   real, pointer, contiguous :: sp(:,:,:,:), tp(:,:,:,:)
   real                      :: pt(2), r1, r2, r
-  real(8)                   :: p1, p2, q1, q2, v(3), v_shift(3), d_omega, e(3,3)
+  real(8)                   :: p1, p2, q1, q2, v(3), v_shift(3), d_omega
+  real(8)                   :: d(3), e(3,3)
   logical                   :: outside(3)
   integer                   :: i1, i2, i3, j1 ,j2, iv, j, it(2)
   integer, dimension(3)     :: l, u, m(4)
@@ -98,10 +99,14 @@ SUBROUTINE from_source (self, tgt, lt, ut, src)
   call src%time_interval (tgt%time, it, pt)
   call to_per_unit_mass (src, sp, it, pt)
   !-----------------------------------------------------------------------------
+  ! Get the distance and rotation matrix from src to tgt
+  !-----------------------------------------------------------------------------
+  call tgt%get_position (src, p=d, e=e)
+  !-----------------------------------------------------------------------------
   ! Interpolation coordinates and weights p(:,:,:,1:3)
   !-----------------------------------------------------------------------------
   allocate (p(src%gn(1),src%gn(3),src%gn(3),3))
-  call interp%indices (tgt, lt, ut, src, p)
+  call interp%indices (tgt, lt, ut, src, p, d, e)
   !-----------------------------------------------------------------------------
   ! Bi-linear interpolation in per-unit-mass variables
   !-----------------------------------------------------------------------------
@@ -130,10 +135,6 @@ SUBROUTINE from_source (self, tgt, lt, ut, src)
       end do
     end do
   end do
-  !-----------------------------------------------------------------------------
-  ! Get the rotation matrix from src to tgt
-  !-----------------------------------------------------------------------------
-  call tgt%get_position (src, e=e)
   !-----------------------------------------------------------------------------
   ! Deposit interpolated values in target mem, taking into account that the
   ! tp values are "per unit mass"
@@ -189,18 +190,18 @@ SUBROUTINE from_source (self, tgt, lt, ut, src)
           ! Add velocity shift, which is already in the tgt system
           !---------------------------------------------------------------------
           v = v + v_shift
-          tp(i1,i2,i3,tgt%idx%px) = v(1)
-          tp(i1,i2,i3,tgt%idx%py) = v(2)
-          tp(i1,i2,i3,tgt%idx%pz) = v(3)
+          tm(i1,i2,i3,tgt%idx%px) = v(1)
+          tm(i1,i2,i3,tgt%idx%py) = v(2)
+          tm(i1,i2,i3,tgt%idx%pz) = v(3)
           !---------------------------------------------------------------------
           ! Convert to linear momenta
           !---------------------------------------------------------------------
           tm(i1,i2,i3,tgt%idx%px) = &
-          tp(i1,i2,i3,tgt%idx%px) * tm(i1,i2,i3,tgt%idx%d)
+          tm(i1,i2,i3,tgt%idx%px) * tm(i1,i2,i3,tgt%idx%d)
           tm(i1,i2,i3,tgt%idx%py) = &
-          tp(i1,i2,i3,tgt%idx%py) * tm(i1,i2,i3,tgt%idx%d)
+          tm(i1,i2,i3,tgt%idx%py) * tm(i1,i2,i3,tgt%idx%d)
           tm(i1,i2,i3,tgt%idx%pz) = &
-          tp(i1,i2,i3,tgt%idx%pz) * tm(i1,i2,i3,tgt%idx%d)
+          tm(i1,i2,i3,tgt%idx%pz) * tm(i1,i2,i3,tgt%idx%d)
           !---------------------------------------------------------------------
           ! Total energy
           !---------------------------------------------------------------------
@@ -281,14 +282,14 @@ END SUBROUTINE to_per_unit_mass
 !> Cartesian displacement in the j-direction for one cell along the local
 !> unit vector in the k-direction.
 !===============================================================================
-SUBROUTINE indices (self, tgt, lt, ut, src, ps)
+SUBROUTINE indices (self, tgt, lt, ut, src, ps, d, e)
   class(interp_t):: self
   class(patch_t):: tgt, src
   integer, dimension(3):: lt, ut, ls, us
+  real(8):: d(3), e(3,3), c, o
   real, contiguous:: ps(:,:,:,:)
   !.............................................................................
   real, allocatable:: pt(:,:)
-  real(8):: t2s(3,3), tc(3,3), sc(3,3)
   integer:: i1, i2, i3, i, j, k
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -315,86 +316,35 @@ SUBROUTINE indices (self, tgt, lt, ut, src, ps)
     end do
   end if
   call self%lock%unset ('indices')
-  !-----------------------------------------------------------------------------
-  ! Cache target and source coefficient
-  !-----------------------------------------------------------------------------
-  do j=1,3
-  do k=1,3
-    tc(j,k) = tgt%erot(j,k)*tgt%ds(k)
-    sc(j,k) = src%erot(j,k)/src%ds(k)
-  end do
-  end do
   allocate (pt(size(ps,1),3))
   ls = src%mesh%li
   us = src%mesh%ui
   do i3=lt(3),ut(3)
     do i2=lt(2),ut(2)
       !-------------------------------------------------------------------------
-      ! pt(:,j) is the displacement in the common Cartesian coordinate
-      ! j-direction for each index triplet (i1,i2,i3) in the target index space,
-      ! where the three indices give the location in the local unit vector
-      ! coordinates. self%r(i1,i2,i3) is in units of cells, and tgt%erot(j,k) is
-      ! in code units, and hence p(:,j) is in code units.
+      ! pt(:,j) is the displacement in the target index space for each index
+      ! triplet (i1,i2,i3), and we get the corresponding points in the source
+      ! by adding the distance to source, still in target coordinate system.
       !-------------------------------------------------------------------------
       do j=1,3
         do i1=lt(1),ut(1)
-          pt(i1,j) = tgt%position(j) &
-                   - src%position(j) &
-                   + self%r(i1,i2,i3,1)*tc(j,1) &
-                   + self%r(i1,i2,i3,2)*tc(j,2) &
-                   + self%r(i1,i2,i3,3)*tc(j,3)
+          pt(i1,j) = self%r(i1,i2,i3,j)*tgt%ds(j) - d(j)
         end do
       end do
       !-------------------------------------------------------------------------
-      ! ps(:,:,:,j) are the final index space coordinates in the local source
-      ! coordinate system, with a center at the src%position, and with the
-      ! t2s(i,j) matrix transforming from the local target to the local source
-      ! coordinates.
+      ! ps(:,:,:,j) are the integer index space coordinates in the local source
+      ! coordinate system.  We get this by rotating the target points into the
+      ! source coordinate system, and rescaling them to integer index space
       !-------------------------------------------------------------------------
-!define DEBUG
-#ifdef DEBUG
-      do i1=lt(1),ut(1)
-        do j=1,3
-          ps(i1,i2,i3,j) = src%mesh(j)%o &
-                         + pt(i1,1)*sc(j,1) &
-                         + pt(i1,2)*sc(j,2) &
-                         + pt(i1,3)*sc(j,3)
-        end do
-        write(stdlog,'(a,2(i6,1x,4i3),1x,4i3,3f8.3)') &
-          'interp_t%indices: tgt,src,ii,p=', &
-          tgt%id, tgt%key, src%id, src%key, i1,i2,i3,j, ps(i1,i2,i3,:)
-        block
-          real(8),dimension(3):: pos, p, p2
-          integer:: i
-          pos = tgt%position - src%position + &
-                (i1-tgt%mesh(1)%o)*tgt%ds(1)*tgt%erot(:,1) + &
-                (i2-tgt%mesh(2)%o)*tgt%ds(2)*tgt%erot(:,2) + &
-                (i3-tgt%mesh(3)%o)*tgt%ds(3)*tgt%erot(:,3)
-          p(1) = sum(pos*src%erot(:,1))/src%ds(1) + src%mesh(1)%o
-          p(2) = sum(pos*src%erot(:,2))/src%ds(2) + src%mesh(2)%o
-          p(3) = sum(pos*src%erot(:,3))/src%ds(3) + src%mesh(3)%o
-          if (any(abs(p-ps(i1,i2,i3,:)) > 0.001)) then
-            write(stdlog,1) pt(i1,:), 'pnt src position in tgt coords'
-            write(stdlog,1) src%position, 'src position'
-            write(stdlog,1) tgt%position, 'tgt position'
-            write(stdlog,1) pos, 'pnt distance from src%pos'
-            write(stdlog,1) p, 'pnt src indices'
-            write(stdlog,1) ps(i1,i2,i3,:), ' ps src indices'
-          1 format(3f10.6,2x,a)
-            flush (stdlog)
-          end if
-        end block
-      end do
-#else
       do j=1,3
+        c = 1d0/src%mesh(j)%d
+        o = src%mesh(j)%o
         do i1=lt(1),ut(1)
-          ps(i1,i2,i3,j) = src%mesh(j)%o &
-                         + pt(i1,1)*sc(1,j) &
-                         + pt(i1,2)*sc(2,j) &
-                         + pt(i1,3)*sc(3,j)
+          ps(i1,i2,i3,j) = (pt(i1,1)*e(1,j) &
+                          + pt(i1,2)*e(2,j) &
+                          + pt(i1,3)*e(3,j))*c + o
         end do
       end do
-#endif
     end do
   end do
   deallocate (pt)
