@@ -36,6 +36,8 @@ MODULE experiment_mod
     procedure:: get_position
     procedure:: velocity_shift
     procedure:: write_nml
+    procedure:: e2E_th
+    procedure:: E_th2e
   end type                                       ! profile
   integer      :: verbose     = 0
   real         :: f_outflow   = 0.0
@@ -93,8 +95,7 @@ SUBROUTINE init (self)
   self%omega = [0d0, 0d0, v_k/r]                         ! angular velocity
   v_phi = v_k+disk_model%v_head(r,z)                     ! azimuthal speed
   self%velocity = [0d0, v_phi, 0d0]                      ! initial velocity
-  self%csound = disk_model%c_sound(r)/sqrt(eos%gamma)    ! isothermal sound
-                                                         ! speed
+  self%csound = disk_model%c_sound(r)                    ! sound speed
   eos%csound = self%csound                               ! important!
   !----------------------------------------------------------------------------
   if (verbose > 1) then
@@ -331,11 +332,11 @@ SUBROUTINE boundary (self, it)
   !-----------------------------------------------------------------------------
   ! Restore total energy
   !-----------------------------------------------------------------------------
-  if (self%boundaries%is_set (bits%zl+bits%zu)) then
-    call self%e2E_th (e,it)
-    call self%boundaries%zero_gradient (e, self%idx%e)
-    call self%E_th2e (e,it)
-  end if
+  !if (self%boundaries%is_set (bits%zl+bits%zu)) then
+  !  call self%e2E_th (e,it)
+  !  call self%boundaries%zero_gradient (e, self%idx%e)
+  !  call self%E_th2e (e,it)
+  !end if
   deallocate (ui,e)
   call lock%unset ('experiment_t%boundary')
   call trace%end (itimer)
@@ -386,10 +387,12 @@ SUBROUTINE vertical_boundary (self, o, it)
   !-----------------------------------------------------------------------------
   call trace%begin ('experiment_t%vertical_boundary', itimer=itimer)
   d  => self%mem(:,:,:,self%idx%d ,it,1)
-  e  => self%mem(:,:,:,self%idx%e ,it,1)
+  !e  => self%mem(:,:,:,self%idx%e ,it,1)
   px => self%mem(:,:,:,self%idx%px,it,1)
   py => self%mem(:,:,:,self%idx%py,it,1)
   pz => self%mem(:,:,:,self%idx%pz,it,1)
+  allocate (e (size(d,1),size(d,2),size(d,3)))
+  call self%e2E_th (e,it)
   l = self%mesh%lb
   u = self%mesh%ub
   if (o == self%mesh(3)%lo) then
@@ -444,6 +447,8 @@ SUBROUTINE vertical_boundary (self, o, it)
       end if
     end do
   end do
+  call self%E_th2e (e,it)
+  deallocate(e)
   if (verbose > 0) then
     write (stdout,'(a,i6,":",i2.2,3i4,2(2x,3i4))') &
       'boundary: target,l,u=', self%id, self%key, l, u
@@ -618,5 +623,55 @@ SUBROUTINE write_nml (self, unit)
   flush (unit)
   call trace%end ()
 END SUBROUTINE write_nml
+
+!=======================================================================
+!> Get thermal energy from total/specific energy
+!=======================================================================
+SUBROUTINE e2E_th(self, E_th, it)
+  class(experiment_t) :: self
+  real, contiguous, dimension(:,:,:), pointer:: E_th
+  integer:: it
+  !.....................................................................
+  integer :: i
+  real, contiguous, dimension(:,:,:), pointer:: k, d, e
+  real, dimension(:,:,:,:), pointer:: p
+  !---------------------------------------------------------------------
+  d => self%mem(:,:,:,self%idx%d             ,it,1)
+  e => self%mem(:,:,:,self%idx%e             ,it,1)
+  p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1)
+  allocate(k(size(d,1),size(d,2),size(d,3)))
+  k = 0.0
+  do i=1,size(p,4)
+    k = k+p(:,:,:,i)**2
+  end do
+  k = 0.5*k/d
+  E_th = e-k
+  deallocate(k)
+END SUBROUTINE e2E_th
+
+!=======================================================================
+!> Put thermal energy to total/specific energy
+!=======================================================================
+SUBROUTINE E_th2e(self, E_th, it)
+  class(experiment_t) :: self
+  integer:: it
+  real, contiguous, dimension(:,:,:), pointer:: E_th
+  !.....................................................................
+  integer :: i
+  real, contiguous, dimension(:,:,:), pointer:: k, d, e
+  real, dimension(:,:,:,:), pointer:: p
+  !---------------------------------------------------------------------
+  d => self%mem(:,:,:,self%idx%d             ,it,1)
+  e => self%mem(:,:,:,self%idx%e             ,it,1)
+  p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1)
+  allocate(k(size(d,1),size(d,2),size(d,3)))
+  k = 0.0
+  do i=1,size(p,4)
+    k = k+p(:,:,:,i)**2
+  end do
+  k = 0.5*k/d
+  e = E_th+k
+  deallocate(k)
+END SUBROUTINE E_th2e
 
 END MODULE experiment_mod
