@@ -681,16 +681,16 @@ SUBROUTINE static_arrays (self, cpatch)
       x(1) = (i1-o)*cpatch%ds(1) + self%radius
       x(2) = (i2-o)*cpatch%ds(2)
       rc = sqrt(x(1)**2 + x(2)**2)
-      omega = self%omega*(cpatch%centre_nat(1)/rc)**1.5
       phi_hat(1) = -x(2)/rc
       phi_hat(2) = +x(1)/rc
       phi_hat(3) = 0d0
       !-------------------------------------------------------------------------
-      ! Compute static parts of forces in thin-disk approximation
+      ! Compute static arrays in thin-disk approximation
+      ! v_patch = the speed -- in the Eulerioan frame -- of the patch cells
       !-------------------------------------------------------------------------
       do j=1,3
         self%phi_hat(i1,i2,i3,j) = phi_hat(j)
-        self%v_patch(i1,i2,i3,j) = phi_hat(j)*omega*rc
+        self%v_patch(i1,i2,i3,j) = phi_hat(j)*self%omega*rc
       end do
       do iz=1,self%n_z
         x(3) =  (i3-o)*cpatch%ds(3) + (iz-(1+self%n_z)*0.5d0)*cpatch%size(3)
