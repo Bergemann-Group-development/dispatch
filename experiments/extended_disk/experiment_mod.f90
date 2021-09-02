@@ -487,8 +487,8 @@ SUBROUTINE force (self)
                          self%mem(i1,i2,i3,self%idx%d ,self%it,1)
       u2 =               self%mem(i1,i2,i3,self%idx%py,self%it,1) / &
                          self%mem(i1,i2,i3,self%idx%d ,self%it,1)
-      v_phi =        self%phi_hat(i1,i2,i3,1)*(self%v_patch(i1,i2,i3,1) + u1) &
-                   + self%phi_hat(i1,i2,i3,2)*(self%v_patch(i1,i2,i3,2) + u2)
+      v_phi =        self%phi_hat(i1,i2,i3,1)*(self%v_patch(i1,i2,i3,1)) &
+                   + self%phi_hat(i1,i2,i3,2)*(self%v_patch(i1,i2,i3,2))
       scratch%force_per_unit_mass(i1,i2,i3,1)    = &
                       self%f_grav(i1,i2,i3,1,iz) + &
               v_phi**2*self%r_inv(i1,i2,i3,1,iz) + 2.*self%omega(3)*u2

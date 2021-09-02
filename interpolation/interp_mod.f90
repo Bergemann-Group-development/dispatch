@@ -185,7 +185,6 @@ SUBROUTINE from_source (self, tgt, lt, ut, src)
           ! so this should be fine:
           !---------------------------------------------------------------------
           v = matmul (e, v)
-          !v = matmul (v, e)
           !---------------------------------------------------------------------
           ! Add velocity shift, which is already in the tgt system
           !---------------------------------------------------------------------
