@@ -38,7 +38,7 @@ MODULE experiment_mod
     procedure:: write_nml
   end type                                       ! profile
   integer      :: verbose     = 0
-  real         :: f_outflow   = 0.01
+  real         :: f_outflow   = 0.0
   logical      :: with_planet = .false.
 CONTAINS
 
@@ -65,8 +65,9 @@ SUBROUTINE init (self)
   integer:: l(3), u(3), iostat
   real(8):: r, z, v_k, v_phi
   real, dimension(:,:,:), pointer:: d, e, px, py, pz
+  integer, save:: itimer=0
   !----------------------------------------------------------------------------
-  call trace%begin ('experiment_t%init')
+  call trace%begin ('experiment_t%init', itimer=itimer)
   call self%solver_t%init
   !----------------------------------------------------------------------------
   call io%lock%set
@@ -107,7 +108,7 @@ SUBROUTINE init (self)
     print '(i6,1p,4g12.3)', self%id, minval(d), maxval(d), maxval(abs(px/d)), &
       maxval(abs(py/d))
   end if
-  call trace%end ()
+  call trace%end (itimer)
 END SUBROUTINE init
 
 SUBROUTINE post_update (self)
@@ -164,10 +165,12 @@ SUBROUTINE initial_condition (self, l, u, it)
   integer, optional  :: it
   !.............................................................................
   integer:: i1, i2, i3
-  real(8):: r, z, csound, h, dmid, v_k, v_phi, v1, v2, p(3), g1
+  real(8):: r, z, csound, h, dmid, v_h, v_l, v_k, v_phi, v1, v2, p(3), g1
   real, dimension(:,:,:), pointer:: d, e, px, py, pz
-  logical, save :: first_time = .true.
+  logical, save:: first_time = .true.
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
+  call trace%begin('experiment_t%initial_conditions', itimer=itimer)
   if (present(it)) then
     d  => self%mem(:,:,:,self%idx%d ,it,1)
     e  => self%mem(:,:,:,self%idx%e ,it,1)
@@ -203,16 +206,18 @@ SUBROUTINE initial_condition (self, l, u, it)
     e (i1,i2,i3) = d(i1,i2,i3)*csound**2 / &          ! adiabatic
       (eos%gamma*g1)
     !---------------------------------------------------------------------------
-    ! Initial head wind, relative to the patch
+    ! Initial velocity relative to the patch coordinate system = head wind +
+    ! local Kepler speed - coordinate system speed (fixed omega rotation)
     !---------------------------------------------------------------------------
-    v_phi = disk_model%v_head(r,z)                        ! azimuthal speed
-    v1 = v_phi*self%phi_hat(i1,i2,i3,1)                   ! local x1
-    v2 = v_phi*self%phi_hat(i1,i2,i3,2)                   ! local x2
-    v1 = v1 + self%v_patch(i1,i2,i3,1)
-    v2 = v2 + self%v_patch(i1,i2,i3,2) - v_k
-    px(i1,i2,i3) = v1*d(i1,i2,i3)                         ! radial momentum
-    py(i1,i2,i3) = v2*d(i1,i2,i3)                         ! azimuthal momentum
-    pz(i1,i2,i3) = 0.0                                    ! vertical momentum
+    v_h = disk_model%v_head(r,z)                      ! head wind (negative)
+    v_k = disk_model%v_kepler (r)                     ! local Kepler speed
+    v_l = self%omega(3)*r                             ! local coordinate speed
+    v_phi = v_h + v_k - v_l                           ! v_phi in local coords
+    v1 = v_phi*self%phi_hat(i1,i2,i3,1)               ! local x1
+    v2 = v_phi*self%phi_hat(i1,i2,i3,2)               ! local x2
+    px(i1,i2,i3) = v1*d(i1,i2,i3)                     ! radial momentum
+    py(i1,i2,i3) = v2*d(i1,i2,i3)                     ! azimuthal momentum
+    pz(i1,i2,i3) = 0.0                                ! vertical momentum
   end do
   end do
   end do
@@ -220,6 +225,7 @@ SUBROUTINE initial_condition (self, l, u, it)
     e = e + 0.5*(px**2+py**2+pz**2)/d
   end if
   call self%particle_solver%initial_condition
+  call trace%end (itimer)
 END SUBROUTINE initial_condition
 
 !===============================================================================
@@ -375,7 +381,7 @@ SUBROUTINE vertical_boundary (self, o, it)
   class(experiment_t):: self
   real, dimension(:,:,:), contiguous, pointer :: d, e, px, py, pz
   integer:: o, it, b, i, step, i1, i2, i3, l(3), u(3)
-  real(8):: sign, zi, p(3), r, z, h, d_ratio, dv_phi, v, v_h, v_k
+  real(8):: sign, zi, p(3), r, z, h, d_ratio, dv_phi, v_h, v_k, v_a, v_o
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('experiment_t%vertical_boundary', itimer=itimer)
@@ -390,14 +396,13 @@ SUBROUTINE vertical_boundary (self, o, it)
     sign = -1.0
     l(3) = self%mesh(3)%lb
     u(3) = self%mesh(3)%lo
-    i = self%mesh(3)%li
+    i    = self%mesh(3)%li
   else
     sign = +1.0
     l(3) = self%mesh(3)%uo
     u(3) = self%mesh(3)%ub
-    i = self%mesh(3)%ui
+    i    = self%mesh(3)%ui
   end if
-  v_k = disk_model%v_kepler (self%radius)
   zi = self%mesh(3)%r(i) + self%position(3)
   !-----------------------------------------------------------------------------
   call cache_v_head (self)
@@ -414,17 +419,23 @@ SUBROUTINE vertical_boundary (self, o, it)
         !-----------------------------------------------------------------------
         h = disk_model%h_scale (r)
         d_ratio = exp(-(z**2-zi**2)/(2.0*h**2))
-        d(i1,i2,i3) = d(i1,i2,i) * d_ratio
-        e(i1,i2,i3) = e(i1,i2,i) * d_ratio
+        d (i1,i2,i3) = d (i1,i2,i)*d_ratio
+        e (i1,i2,i3) = e (i1,i2,i)*d_ratio
+        px(i1,i2,i3) = px(i1,i2,i)*d_ratio
         !-----------------------------------------------------------------------
-        ! Outflow conditions that pull angular momentum (and mass) out
+        ! The azimuthal velocity IC is the head wind + the Kepler speed - the
+        ! coordinate system speed 
         !-----------------------------------------------------------------------
-        px(i1,i2,i3) = px(i1,i2,i) * d_ratio
-        v = f_outflow*self%v_patch(i1,i2,i3,2)
         v_h = self%v_head(i1,i2,i3)
-        v_h = v_h + self%v_patch(i1,i2,i3,2) - v_k
-        py(i1,i2,i3) = d(i1,i2,i3)*(- v + v_h)
-        pz(i1,i2,i3) = d(i1,i2,i3)*(+ v*sign)
+        v_k = disk_model%v_kepler (r)
+        v_a = v_h + v_k - self%v_patch(i1,i2,i3,2)
+        !-----------------------------------------------------------------------
+        ! We assume an outflow speed = a fraction of the local Kepler speed,
+        ! and we slow down the azimuthal speed by the same amount.
+        !-----------------------------------------------------------------------
+        v_o = f_outflow*v_k
+        py(i1,i2,i3) = d(i1,i2,i3)*(v_a-v_o)
+        pz(i1,i2,i3) = d(i1,i2,i3)*(v_o*sign)
       end do
       if (associated(self%filled)) then
         do i1=l(1),u(1)
@@ -544,23 +555,26 @@ SUBROUTINE get_position (self, source, p, v, e)
     v_src   = r_src*source%omega(3)
     v_tgt   = r_tgt*  self%omega(3)
     !---------------------------------------------------------------------------
-    ! Relative position and velocity in absolute coordinates
+    ! Relative position and velocity in target coordinates
     !---------------------------------------------------------------------------
-    p = [ r_src*cos(phi_src), r_src*sin(phi_src), z_src] &
-      - [ r_tgt*cos(phi_tgt), r_tgt*sin(phi_tgt), z_tgt]
-    v = [-v_src*sin(phi_src), v_src*cos(phi_src), 0d0] &
-      - [-v_tgt*sin(phi_tgt), v_tgt*cos(phi_tgt), 0d0]
-    !---------------------------------------------------------------------------
-    ! Transform from abolute coordinates to local target coordinates
-    !---------------------------------------------------------------------------
-    p = matmul (p , self%erot)
-    v = matmul (v, self%erot)
+    if (present(p)) then
+      p = [ r_src*cos(phi_src), r_src*sin(phi_src), z_src] &
+        - [ r_tgt*cos(phi_tgt), r_tgt*sin(phi_tgt), z_tgt]
+      p = matmul (p , self%erot)
+    end if
+    if (present(v)) then
+      v = [-v_src*sin(phi_src), v_src*cos(phi_src), 0d0] &
+        - [-v_tgt*sin(phi_tgt), v_tgt*cos(phi_tgt), 0d0]
+      v = matmul (v, self%erot)
+    end if
     !---------------------------------------------------------------------------
     ! Return the relative rotation matrix, at the given target time
     !---------------------------------------------------------------------------
-    e(:,1) = [ cos(phi_src-phi_tgt), sin(phi_src-phi_tgt), 0d0]
-    e(:,2) = [-sin(phi_src-phi_tgt), cos(phi_src-phi_tgt), 0d0]
-    e(:,3) = [                  0d0,                  0d0, 1d0]
+    if (present(e)) then
+      e(:,1) = [ cos(phi_src-phi_tgt), sin(phi_src-phi_tgt), 0d0]
+      e(:,2) = [-sin(phi_src-phi_tgt), cos(phi_src-phi_tgt), 0d0]
+      e(:,3) = [                  0d0,                  0d0, 1d0]
+    end if
   end select
   call trace%end (itimer)
 END SUBROUTINE get_position
@@ -593,14 +607,15 @@ END FUNCTION velocity_shift
 SUBROUTINE write_nml (self, unit)
   class(experiment_t):: self
   integer:: unit
-  namelist /experiment_nml/ omega, centre_nat
-  real(8):: omega(3), centre_nat(3)
+  namelist /experiment_nml/ omega, centre_nat, dphi
+  real(8):: omega(3), centre_nat(3), dphi
   !-----------------------------------------------------------------------------
   call trace%begin ('experiment_t%write_nml')
   call self%solver_t%write_nml (unit)
   omega      = self%omega
   centre_nat = self%centre_nat
   write (unit, experiment_nml)
+  flush (unit)
   call trace%end ()
 END SUBROUTINE write_nml
 
