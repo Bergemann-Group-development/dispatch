@@ -51,7 +51,7 @@ SUBROUTINE init (self)
     p = d*u**2                                       ! pressure = energy density
     e = m*u**2                                       ! energy
     ee = u**2                                        ! energy per unit mass
-    temp = (cgs%m_u*u**2)/cgs%k_b                    ! temperature for mu=1
+    temp = (mu*cgs%m_u*u**2)/cgs%k_b                 ! temperature
     grav = cgs%grav*(m/l**3)*t**2                    ! constant of gravity
     write (io_unit%nml, scaling_nml)
     first_time = .false.
