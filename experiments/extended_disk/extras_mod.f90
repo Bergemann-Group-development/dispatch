@@ -199,7 +199,7 @@ SUBROUTINE post_update (self)
   !-----------------------------------------------------------------------------
   ! Generate new nbor lists when patches have moved enough (FIXME)
   !-----------------------------------------------------------------------------
-  !call self%set (bits%init_nbors)
+  call self%set (bits%init_nbors)
   call trace%end (itimer)
 END SUBROUTINE post_update
 
