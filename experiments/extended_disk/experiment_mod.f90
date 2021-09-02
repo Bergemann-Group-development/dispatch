@@ -528,6 +528,7 @@ SUBROUTINE get_position (self, source, p, v, e)
   class(experiment_t):: self
   class(task_t):: source
   real(8):: time, p(3), v(3), e(3,3)
+  optional:: p, v, e
   real(8):: r_src, r_tgt, phi_src, phi_tgt, v_src, v_tgt, z_src, z_tgt
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------

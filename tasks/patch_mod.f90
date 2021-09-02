@@ -3078,6 +3078,7 @@ SUBROUTINE get_position (self, source, p, v, e)
   class(patch_t):: self
   class(task_t):: source
   real(8):: time, p(3), v(3), e(3,3)
+  optional:: p, v, e
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%get_position')
   p = self%distance_to (source)

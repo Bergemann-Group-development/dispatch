@@ -1414,6 +1414,7 @@ END SUBROUTINE update_position
 SUBROUTINE get_position (self, source, p, v, e)
   class(task_t):: self, source
   real(8):: time, p(3), v(3), e(3,3)
+  optional:: p, v, e
   !-----------------------------------------------------------------------------
   call io%abort ("task_t%get_position_at")
 END SUBROUTINE get_position
