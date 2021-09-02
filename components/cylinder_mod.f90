@@ -123,6 +123,10 @@ SUBROUTINE init_cylinders (self, name)
   cos2 = cos(dphi/2d0)
   sin2 = sin(dphi/2d0)
   dlnr = log(cos2/(1d0-2d0*sin2/cos2))
+  !-----------------------------------------------------------------------------
+  ! Increase patch size by 1%, to avoid corner cases with missing guard cell
+  !-----------------------------------------------------------------------------
+  dlnr = dlnr*1.01
   self%dlnr = dlnr
   !-----------------------------------------------------------------------------
   ! Create the cylinders
