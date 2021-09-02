@@ -19,6 +19,7 @@ MODULE experiment_mod
   USE validate_mod
   USE omp_lock_mod
   USE mpi_mod
+  USE math_mod
   implicit none
   private
   type, public, extends(solver_t):: experiment_t
@@ -187,42 +188,48 @@ SUBROUTINE initial_condition (self, l, u, it)
   g1 = merge (1d0, eos%gamma-1d0, eos%gamma==1d0)
   do i3=l(3),u(3)
   do i2=l(2),u(2)
-  !!omp parallel do default(none) private(i1,p,r,z,csound,h,dmid,e,d,v_phi) &
-  !!omp private(v1,v2) shared(i2,i3,disk_model,eos,self,px,py,pz,v_k,l,u)
-  do i1=l(1),u(1)
-    p(1) = self%mesh(1)%r(i1) + self%radius
-    p(2) = self%mesh(2)%r(i2)
-    p(3) = self%mesh(3)%r(i3) + self%position(3)
-    !---------------------------------------------------------------------------
-    ! Gas density and thermal energy
-    !---------------------------------------------------------------------------
-    r = sqrt(p(1)**2 + p(2)**2)                       ! local radius
-    z = p(3)                                          ! height
-    csound = disk_model%c_sound(r)                    ! sound speed
-    h = disk_model%h_scale (r)                        ! scale height
-    dmid = disk_model%d_midplane (r)                  ! mid-plane density
-    d (i1,i2,i3) = dmid*exp(-(z/h)**2/2d0)            ! Gaussian profile
-    e (i1,i2,i3) = d(i1,i2,i3)*csound**2 / &          ! adiabatic
-      (eos%gamma*g1)
-    !---------------------------------------------------------------------------
-    ! Initial velocity relative to the patch coordinate system = head wind +
-    ! local Kepler speed - coordinate system speed (fixed omega rotation)
-    !---------------------------------------------------------------------------
-    v_h = disk_model%v_head(r,z)                      ! head wind (negative)
-    v_k = disk_model%v_kepler (r)                     ! local Kepler speed
-    v_l = self%omega(3)*r                             ! local coordinate speed
-    v_phi = v_h + v_k - v_l                           ! v_phi in local coords
-    v1 = v_phi*self%phi_hat(i1,i2,i3,1)               ! local x1
-    v2 = v_phi*self%phi_hat(i1,i2,i3,2)               ! local x2
-    px(i1,i2,i3) = v1*d(i1,i2,i3)                     ! radial momentum
-    py(i1,i2,i3) = v2*d(i1,i2,i3)                     ! azimuthal momentum
-    pz(i1,i2,i3) = 0.0                                ! vertical momentum
+    !!omp parallel do default(none) private(i1,p,r,z,csound,h,dmid,e,d,v_phi) &
+    !!omp private(v1,v2) shared(i2,i3,disk_model,eos,self,px,py,pz,v_k,l,u)
+    do i1=l(1),u(1)
+      p(1) = self%mesh(1)%r(i1) + self%radius
+      p(2) = self%mesh(2)%r(i2)
+      p(3) = self%mesh(3)%r(i3) + self%position(3)
+      !-------------------------------------------------------------------------
+      ! Gas density and thermal energy
+      !-------------------------------------------------------------------------
+      r = sqrt(p(1)**2 + p(2)**2)                       ! local radius
+      z = p(3)                                          ! height
+      csound = disk_model%c_sound(r)                    ! sound speed
+      h = disk_model%h_scale (r)                        ! scale height
+      dmid = disk_model%d_midplane (r)                  ! mid-plane density
+      d (i1,i2,i3) = dmid*exp(-(z/h)**2/2d0)            ! Gaussian profile
+      e (i1,i2,i3) = d(i1,i2,i3)*csound**2 / &          ! adiabatic
+        (eos%gamma*g1)
+      !-------------------------------------------------------------------------
+      ! Initial velocity relative to the patch coordinate system = head wind +
+      ! local Kepler speed - coordinate system speed (fixed omega rotation)
+      !-------------------------------------------------------------------------
+      v_h = disk_model%v_head(r,z)                      ! head wind (negative)
+      v_k = disk_model%v_kepler (r)                     ! local Kepler speed
+      v_l = self%omega(3)*r                             ! local coordinate speed
+      v_phi = v_h + v_k - v_l                           ! v_phi in local coords
+      v1 = v_phi*self%phi_hat(i1,i2,i3,1)               ! local x1
+      v2 = v_phi*self%phi_hat(i1,i2,i3,2)               ! local x2
+      px(i1,i2,i3) = v1*d(i1,i2,i3)                     ! radial momentum
+      py(i1,i2,i3) = v2*d(i1,i2,i3)                     ! azimuthal momentum
+      pz(i1,i2,i3) = 0.0                                ! vertical momentum
+    end do
+    if (self%kind(1:7)=='ramses_' .and. eos%gamma > 1.0) then
+      do i1=l(1),u(1)
+        e(i1,i2,i3) = e(i1,i2,i3) &
+          + 0.5*(px(i1,i2,i3)**2+py(i1,i2,i3)**2+pz(i1,i2,i3)**2)/d(i1,i2,i3)
+      end do
+    end if
   end do
   end do
-  end do
-  if (self%kind(1:7)=='ramses_' .and. eos%gamma > 1.0) then
-    e = e + 0.5*(px**2+py**2+pz**2)/d
-  end if
+  !-----------------------------------------------------------------------------
+  ! FIXME: The particle initial condition should also be limited to bdry zones
+  !-----------------------------------------------------------------------------
   call self%particle_solver%initial_condition
   call trace%end (itimer)
 END SUBROUTINE initial_condition
