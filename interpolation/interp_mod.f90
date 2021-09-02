@@ -78,8 +78,8 @@ SUBROUTINE from_source (self, tgt, lt, ut, src)
   real, pointer, contiguous :: p(:,:,:,:)
   real, pointer, contiguous :: tm(:,:,:,:), sm(:,:,:,:)
   real, pointer, contiguous :: sp(:,:,:,:), tp(:,:,:,:)
-  real                      :: pt(2)
-  real(8)                   :: p1, p2, q1, q2, v_shift(3)
+  real                      :: pt(2), r1, r2, r
+  real(8)                   :: p1, p2, q1, q2, v(3), v_shift(3), d_omega, e(3,3)
   logical                   :: outside(3)
   integer                   :: i1, i2, i3, j1 ,j2, iv, j, it(2)
   integer, dimension(3)     :: l, u, m(4)
@@ -105,7 +105,6 @@ SUBROUTINE from_source (self, tgt, lt, ut, src)
   !-----------------------------------------------------------------------------
   ! Bi-linear interpolation in per-unit-mass variables
   !-----------------------------------------------------------------------------
-  v_shift = tgt%velocity_shift (src)
   l = src%mesh%li
   u = src%mesh%ui
   do iv=1,tgt%nv
@@ -132,6 +131,10 @@ SUBROUTINE from_source (self, tgt, lt, ut, src)
     end do
   end do
   !-----------------------------------------------------------------------------
+  ! Get the rotation matrix from src to tgt
+  !-----------------------------------------------------------------------------
+  call tgt%get_position (src, e=e)
+  !-----------------------------------------------------------------------------
   ! Deposit interpolated values in target mem, taking into account that the
   ! tp values are "per unit mass"
   !-----------------------------------------------------------------------------
@@ -152,11 +155,44 @@ SUBROUTINE from_source (self, tgt, lt, ut, src)
           !---------------------------------------------------------------------
           tm(i1,i2,i3,tgt%idx%d) = tp(i1,i2,i3,tgt%idx%d)
           !---------------------------------------------------------------------
-          ! Add velocity shift
+          ! The coordinate velocity of each cell in a patch is omega*r, where
+          ! r is the local radius, and the velocity shift to add from source
+          ! to target is the difference from target to source.  The direction
+          ! of that velocity is along phi_hat
           !---------------------------------------------------------------------
-          tp(i1,i2,i3,tgt%idx%px) = tp(i1,i2,i3,tgt%idx%px) + v_shift(1)
-          tp(i1,i2,i3,tgt%idx%py) = tp(i1,i2,i3,tgt%idx%py) + v_shift(2)
-          tp(i1,i2,i3,tgt%idx%pz) = tp(i1,i2,i3,tgt%idx%pz) + v_shift(3)
+          r1 = self%r(i1,i2,i3,1)*tgt%ds(1) + tgt%centre_nat(1)
+          r2 = self%r(i1,i2,i3,2)*tgt%ds(2)
+          r = sqrt(r1**2+r2**2)
+          d_omega = (src%omega(3)-tgt%omega(3))
+          v_shift = d_omega*[-r2,+r1,0.0]
+          !v_shift = d_omega*[r2,+r1,0.0]
+          !---------------------------------------------------------------------
+          ! Get the src velocity interpolated to the tgt points
+          !---------------------------------------------------------------------
+          v(1) = tp(i1,i2,i3,tgt%idx%px)
+          v(2) = tp(i1,i2,i3,tgt%idx%py)
+          v(3) = tp(i1,i2,i3,tgt%idx%pz)
+          !---------------------------------------------------------------------
+          ! Transform the velocity components to the tgt system.  Since e is
+          ! essentially the rotation matrix of src (minus that of tgt), the
+          ! matmul() operatin to go from src to tgt should be matmul(e,v):
+          ! The full operation, via Eulerian, would be:
+          !   1) get the local src velocity
+          !   2) transform components to the Eulerian
+          !   3) add the velocity difference btw patches in the E-frame
+          !   4) transform to tgt coordinates
+          ! But the velocity difference is already expressed in the tgt system,
+          ! so this should be fine:
+          !---------------------------------------------------------------------
+          v = matmul (e, v)
+          !v = matmul (v, e)
+          !---------------------------------------------------------------------
+          ! Add velocity shift, which is already in the tgt system
+          !---------------------------------------------------------------------
+          v = v + v_shift
+          tp(i1,i2,i3,tgt%idx%px) = v(1)
+          tp(i1,i2,i3,tgt%idx%py) = v(2)
+          tp(i1,i2,i3,tgt%idx%pz) = v(3)
           !---------------------------------------------------------------------
           ! Convert to linear momenta
           !---------------------------------------------------------------------
@@ -170,10 +206,10 @@ SUBROUTINE from_source (self, tgt, lt, ut, src)
           ! Total energy
           !---------------------------------------------------------------------
           tm(i1,i2,i3,tgt%idx%e ) = &
-          tp(i1,i2,i3,tgt%idx%e ) + ( &
-          tp(i1,i2,i3,tgt%idx%px)**2 + &
-          tp(i1,i2,i3,tgt%idx%py)**2 + &
-          tp(i1,i2,i3,tgt%idx%pz)**2) * 0.5*tm(i1,i2,i3,tgt%idx%d)
+          (tp(i1,i2,i3,tgt%idx%e ) + 0.5*( &
+           tp(i1,i2,i3,tgt%idx%px)**2 + &
+           tp(i1,i2,i3,tgt%idx%py)**2 + &
+           tp(i1,i2,i3,tgt%idx%pz)**2))   *tm(i1,i2,i3,tgt%idx%d)
         end if
       end do
     end do
