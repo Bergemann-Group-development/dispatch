@@ -39,6 +39,7 @@ MODULE cylinder_mod
   USE bits_mod
   USE units_mod
   USE disk_model_mod
+  USE shared_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -495,46 +496,77 @@ SUBROUTINE init_nbors (self, link)
       cylinder => my_cylinder%next
     end select
     if (associated(cylinder)) then
+      if (shared%debug) &
+        print *, 'checking cylinder:', i1, i1+key(2)
       do i2=-2,2
         !-----------------------------------------------------------------------
         ! Estimate how much further the nbor cylinder has rotated
         !-----------------------------------------------------------------------
         j2 = i2 + &
-          (cylinder%omega - my_cylinder%omega)*task%time/dphi
+          nint((cylinder%omega - my_cylinder%omega)*task%time/dphi)
+          ! (cylinder%omega - my_cylinder%omega)*task%time/dphi
         do i3=-2,2
-          if (i1==0 .and. i2==0 .and. i3==0) cycle
+          if (i1==0 .and. j2==0 .and. i3==0) cycle
+          ! print *, '     checking height:', i3, i3+key(4)
           key = task%key + [0,i1,j2,i3]
           key(3) = modulo(key(3),n_phi)           ! wrap around
           call self%hash_table%get (key, nblink)
+          added = .false.
           if (associated(nblink)) then
-          nbtask => nblink%task
-            select type (nbtask)
-              class is (patch_t)
-              if (nbtask%id > 0) then
-                if (overlaps_l (nbtask, task)) then
-                  nblink => nbtask%link
-                  if (verbose > 2) write (unit,'(i6,":",i2.2,3i4,a)') &
-                    nbtask%id, key,' added as nbor'
-                  call link%add_nbor (nblink)
-                  !$omp atomic update
-                  n_nbors = n_nbors + 1
+            !-------------------------------------------------------------------
+            ! Check if the task is already added
+            !-------------------------------------------------------------------
+            if (use_hash) then
+              call hash_table%get (key, nbtask)
+            else
+              nullify (nbtask)
+            end if
+            if (.not. associated(nbtask)) then
+              nbtask => nblink%task
+              !-----------------------------------------------------------------
+              ! If not, add it, and add it to local hash table
+              !-----------------------------------------------------------------
+              if (use_hash) call hash_table%set (key, nbtask)
+              select type (nbtask)
+                class is (patch_t)
+                if (nbtask%id > 0) then
+                  if (overlaps_l (nbtask, task)) then
+                    nblink => nbtask%link
+                    if (verbose > 1) write (unit,'(i6,":",i2.2,3i4,a)') &
+                      nbtask%id, key,' added as nbor'
+                    call link%add_nbor (nblink)
+                    !$omp atomic update
+                    n_nbors = n_nbors + 1
+                  else
+                    added = .false.
+                    if (verbose > 3) write (unit,'(i6,":",i2.2,3i4,a)') &
+                      nbtask%id, key,' not added'
+                  end if
                 else
-                  if (verbose > 3) write (unit,'(i6,":",i2.2,3i4,a)') &
-                    nbtask%id, key,' not added'
+                  write (stderr,*) 'nbtask with non-positive ID:', nbtask%id
                 end if
-              end if
-            end select
+              end select
+            else
+              print *, 'skipping existing', nbtask%id
+            end if
+            if (shared%debug) &
+              print *, '  azimuth:', i2, j2, key(3), nbtask%id, added, &
+                merge('  ','no',added)//' overlap'
           end if
         end do
       end do
     end if
   end do
+  if (use_hash) call hash_table%dealloc ()
   end select
+  if (shared%debug) &
+    print *, task%id, ' found', n_nbors
   call trace%end (itimer)
 contains
 
 !===============================================================================
-!> Local definition, to ensure full control
+!> Local definition, to ensure full control; the distance to the source must
+!> be computed at the target%time, and hence cannot be used with distance_to()
 !===============================================================================
 logical function overlaps_l (source, target)
   class(patch_t):: source, target
@@ -543,9 +575,11 @@ logical function overlaps_l (source, target)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (timer%detailed) call trace%begin ('cylinder_t%overlaps_l', itimer=itimer)
-  d = target%distance_to (source)
-  d = matmul (d, target%erot)
-  overlaps_l = source%authority%overlaps (target%interest, d)
+  select type (target)
+  class is (experiment_t)
+    call target%get_position (source, d)
+  end select
+  overlaps_l = target%interest%overlaps (source%authority, d)
   if (timer%detailed) call trace%end (itimer)
 end function overlaps_l
 
