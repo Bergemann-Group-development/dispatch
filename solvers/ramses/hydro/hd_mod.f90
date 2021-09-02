@@ -470,11 +470,12 @@ SUBROUTINE godunov (self)
   ! Compute flux using second-order Godunov method
   !-----------------------------------------------------------------------------
   unew => self%mem(:,:,:,:,self%new,1)
+  uin  => self%mem(:,:,:,:,self%it ,1)
   fl   => self%fl
   if (.not.detailed_timer) call trace%begin ('hd_t%godunov')
   li = self%mesh%li
   ui = self%mesh%ui
-  call check_small (self, unew)
+  call check_small (self, uin)
   call unsplit (self)
   !-----------------------------------------------------------------------------
   ! Conservative update, looping over internal cells only
