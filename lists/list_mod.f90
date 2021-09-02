@@ -1146,7 +1146,7 @@ SUBROUTINE check_ready (self, link, lock, status)
       !$omp atomic write
       task%n_failed = 0
       !.........................................................................
-      !if (self%verbose > 0) &
+      if (self%verbose > 0) &
         write (stdlog,'(f12.6,1x,a,i6,f12.6)') wallclock(), &
         'list_t%check_ready: queue_by_time', task%id, task%time
       !.........................................................................
@@ -1159,12 +1159,18 @@ SUBROUTINE check_ready (self, link, lock, status)
       ! while at verbose=2 we get a line for ever fail, and line on stderr for
       ! every 10000 failures
       !-------------------------------------------------------------------------
-      if (self%verbose > 1  ) then
-        write (io_unit%log,'(f12.6,i6,l3,f12.6,1x,a,i6,f12.6,i5,l3)') &
-          wallclock(), task%id, task%is_set(bits%boundary), task%time, &
-          'list_t%check_ready: failed with id, time, rank, V =', &
-          oldest%task%id, t_oldest, oldest%task%rank, &
-          oldest%task%is_set(bits%virtual)
+      if (self%verbose > 1) then
+        if (associated(oldest)) then
+          write (io_unit%log,'(f12.6,i6,l3,f12.6,1x,a,i6,f12.6,i5,l3)') &
+            wallclock(), task%id, task%is_set(bits%boundary), task%time, &
+            'list_t%check_ready: failed with id, time, rank, V =', &
+            oldest%task%id, t_oldest, oldest%task%rank, &
+            oldest%task%is_set(bits%virtual)
+        else
+          write (io_unit%log,'(f12.6,i6,l3,f12.6,1x,a,i6,f12.6,i5,l3)') &
+            wallclock(), task%id, task%is_set(bits%boundary), task%time, &
+            'list_t%check_ready: failed with id, time, rank, V ='
+        end if
       end if
       !.........................................................................
       if (task%n_failed > 10000) then
