@@ -36,8 +36,6 @@ MODULE experiment_mod
     procedure:: get_position
     procedure:: velocity_shift
     procedure:: write_nml
-    procedure:: e2E_th
-    procedure:: E_th2e
   end type                                       ! profile
   integer      :: verbose     = 0
   real         :: f_outflow   = 0.0
@@ -623,55 +621,5 @@ SUBROUTINE write_nml (self, unit)
   flush (unit)
   call trace%end ()
 END SUBROUTINE write_nml
-
-!=======================================================================
-!> Get thermal energy from total/specific energy
-!=======================================================================
-SUBROUTINE e2E_th(self, E_th, it)
-  class(experiment_t) :: self
-  real, contiguous, dimension(:,:,:), pointer:: E_th
-  integer:: it
-  !.....................................................................
-  integer :: i
-  real, contiguous, dimension(:,:,:), pointer:: k, d, e
-  real, dimension(:,:,:,:), pointer:: p
-  !---------------------------------------------------------------------
-  d => self%mem(:,:,:,self%idx%d             ,it,1)
-  e => self%mem(:,:,:,self%idx%e             ,it,1)
-  p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1)
-  allocate(k(size(d,1),size(d,2),size(d,3)))
-  k = 0.0
-  do i=1,size(p,4)
-    k = k+p(:,:,:,i)**2
-  end do
-  k = 0.5*k/d
-  E_th = e-k
-  deallocate(k)
-END SUBROUTINE e2E_th
-
-!=======================================================================
-!> Put thermal energy to total/specific energy
-!=======================================================================
-SUBROUTINE E_th2e(self, E_th, it)
-  class(experiment_t) :: self
-  integer:: it
-  real, contiguous, dimension(:,:,:), pointer:: E_th
-  !.....................................................................
-  integer :: i
-  real, contiguous, dimension(:,:,:), pointer:: k, d, e
-  real, dimension(:,:,:,:), pointer:: p
-  !---------------------------------------------------------------------
-  d => self%mem(:,:,:,self%idx%d             ,it,1)
-  e => self%mem(:,:,:,self%idx%e             ,it,1)
-  p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1)
-  allocate(k(size(d,1),size(d,2),size(d,3)))
-  k = 0.0
-  do i=1,size(p,4)
-    k = k+p(:,:,:,i)**2
-  end do
-  k = 0.5*k/d
-  e = E_th+k
-  deallocate(k)
-END SUBROUTINE E_th2e
 
 END MODULE experiment_mod
