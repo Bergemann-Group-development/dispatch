@@ -22,6 +22,7 @@ MODULE shared_mod
     integer:: benchmark     = 0
     logical:: mpi_master    = .true.
     logical:: refine_on     = .false.
+    logical:: debug         = .false.
     real:: refine_ratio     = 2.0
     real:: f_zoom(3)        = 1.0
     real:: extra_grace      = 0.0
