@@ -394,31 +394,6 @@ SUBROUTINE U2p(self, U, it)
 END SUBROUTINE U2p
 
 !=======================================================================
-!> Get thermal energy from total/specific energy
-!=======================================================================
-SUBROUTINE e2E_th(self, E_th, it)
-  class(hd_t) :: self
-  real, contiguous, dimension(:,:,:), pointer:: E_th
-  integer:: it
-  !.....................................................................
-  integer :: i
-  real, contiguous, dimension(:,:,:), pointer:: k, d, e
-  real, dimension(:,:,:,:), pointer:: p
-  !---------------------------------------------------------------------
-  d => self%mem(:,:,:,self%idx%d             ,it,1)
-  e => self%mem(:,:,:,self%idx%e             ,it,1)
-  p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1)
-  allocate(k(size(d,1),size(d,2),size(d,3)))
-  k = 0.0
-  do i=1,size(p,4)
-    k = k+p(:,:,:,i)**2
-  end do
-  k = 0.5*k/d
-  E_th = (e-k)/d
-  deallocate(k)
-END SUBROUTINE e2E_th
-
-!=======================================================================
 !> Get etropy per unit mass from total energy
 !=======================================================================
 SUBROUTINE e2S(self, s, it)
@@ -475,31 +450,6 @@ SUBROUTINE S2e (self, s, it)
   e = d**eos%gamma*exp(s*(eos%gamma-1d0)) + k
   deallocate(k)
 END SUBROUTINE S2e
-
-!=======================================================================
-!> Put thermal energy to total/specific energy
-!=======================================================================
-SUBROUTINE E_th2e(self, E_th, it)
-  class(hd_t) :: self
-  integer:: it
-  real, contiguous, dimension(:,:,:), pointer:: E_th
-  !.....................................................................
-  integer :: i
-  real, contiguous, dimension(:,:,:), pointer:: k, d, e
-  real, dimension(:,:,:,:), pointer:: p
-  !---------------------------------------------------------------------
-  d => self%mem(:,:,:,self%idx%d             ,it,1)
-  e => self%mem(:,:,:,self%idx%e             ,it,1)
-  p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1)
-  allocate(k(size(d,1),size(d,2),size(d,3)))
-  k = 0.0
-  do i=1,size(p,4)
-    k = k+p(:,:,:,i)**2
-  end do
-  k = 0.5*k/d
-  e = E_th*d+k
-  deallocate(k)
-END SUBROUTINE E_th2e
 
 !===============================================================================
 SUBROUTINE godunov (self)

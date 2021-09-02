@@ -373,7 +373,7 @@ END SUBROUTINE cache_v_head
 !===============================================================================
 SUBROUTINE vertical_boundary (self, o, it)
   class(experiment_t):: self
-  real, dimension(:,:,:), pointer :: d, e, px, py, pz
+  real, dimension(:,:,:), contiguous, pointer :: d, e, px, py, pz
   integer:: o, it, b, i, step, i1, i2, i3, l(3), u(3)
   real(8):: sign, zi, p(3), r, z, h, d_ratio, dv_phi, v, v_h, v_k
   integer, save:: itimer=0
