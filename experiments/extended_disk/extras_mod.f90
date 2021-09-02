@@ -44,6 +44,7 @@ MODULE extras_mod
   USE task_mod
   USE list_mod
   USE link_mod
+  USE bits_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.
   !-----------------------------------------------------------------------------
@@ -61,7 +62,6 @@ MODULE extras_mod
     class(gpatch_t), pointer:: gpatch => null()                 ! keep
     class(selfgravity_t), pointer:: selfgravity                 ! selfg
     class(particle_solver_t), pointer:: particle_solver         ! dust
-    real(8):: omega(3)
     real(8), dimension(:,:,:,:),   contiguous, pointer:: r       => null()
     real(8), dimension(:,:,:,:,:), contiguous, pointer:: r_hat   => null()
     real(8), dimension(:,:,:,:),   contiguous, pointer:: phi_hat => null()
@@ -199,7 +199,7 @@ SUBROUTINE post_update (self)
   !-----------------------------------------------------------------------------
   ! Generate new nbor lists when patches have moved enough (FIXME)
   !-----------------------------------------------------------------------------
-  !call self%task_list%init_nbors (self%link)
+  !call self%set (bits%init_nbors)
   call trace%end (itimer)
 END SUBROUTINE post_update
 

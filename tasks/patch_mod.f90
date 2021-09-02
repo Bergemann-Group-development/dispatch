@@ -37,6 +37,7 @@ MODULE patch_mod
     real(8):: pdf_next=0.0              ! next PDF output time
     real(8):: dt_fixed                  ! for fixed time step Courant condition
     real(8):: radius=0d0                ! generic radius
+    real(8):: omega(3)=0d0              ! generic rotation speed
     real:: u_max=0.0                    ! for Courant condition
     real:: u_fixed                      ! for fixed time step Courant condition
     real:: d_min, d_max                 ! for info
@@ -80,7 +81,7 @@ MODULE patch_mod
     real(8):: llc_nat(3)=0d0            ! the lower left corner of the patch in its *own* coords.
     real(8):: centre_cart(3)=0d0        ! the geometric centre of the patch in *Cartesian* coords.
     real(8):: centre_nat(3)=0d0         ! the geometric centre of the patch in its *own* coords.
-    integer :: mesh_type = 1            ! default: Cartesian mesh; FIXME (there must be a better way)
+    integer:: mesh_type = 1             ! default: Cartesian mesh; FIXME (there must be a better way)
     real(8):: grid_vel(3) = 0d0         ! velocity of the patch in its native coords. and
                                         ! units (e.g. rad/s for the phi coord.); for
                                         ! Cartesian coords., equal to `velocity`.
