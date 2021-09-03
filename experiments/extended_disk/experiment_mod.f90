@@ -385,17 +385,16 @@ END SUBROUTINE cache_v_head
 !===============================================================================
 SUBROUTINE vertical_boundary (self, o, it)
   class(experiment_t):: self
-  real, dimension(:,:,:), contiguous, pointer :: d, e, px, py, pz
+  real, dimension(:,:,:), contiguous, pointer :: d, e, ux, uy, uz
   integer:: o, it, b, i, step, i1, i2, i3, l(3), u(3)
-  real(8):: sign, zi, p(3), r, z, h, d_ratio, dv_phi, v_h, v_k, v_a, v_o
+  real(8):: sign, zi, p(3), r, z, h, d_ratio, dv_phi, v_h, v_k, v_a, v_o, e_th
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('experiment_t%vertical_boundary', itimer=itimer)
   d  => self%mem(:,:,:,self%idx%d ,it,1)
-  !e  => self%mem(:,:,:,self%idx%e ,it,1)
-  px => self%mem(:,:,:,self%idx%px,it,1)
-  py => self%mem(:,:,:,self%idx%py,it,1)
-  pz => self%mem(:,:,:,self%idx%pz,it,1)
+  ux => self%mem(:,:,:,self%idx%px,it,1)
+  uy => self%mem(:,:,:,self%idx%py,it,1)
+  uz => self%mem(:,:,:,self%idx%pz,it,1)
   allocate (e (size(d,1),size(d,2),size(d,3)))
   call self%e2E_th (e,it)
   l = self%mesh%lb
@@ -428,22 +427,26 @@ SUBROUTINE vertical_boundary (self, o, it)
         h = disk_model%h_scale (r)
         d_ratio = exp(-(z**2-zi**2)/(2.0*h**2))
         d (i1,i2,i3) = d (i1,i2,i)*d_ratio
-        e (i1,i2,i3) = e (i1,i2,i)*d_ratio
-        px(i1,i2,i3) = px(i1,i2,i)*d_ratio
-        !-----------------------------------------------------------------------
-        ! The azimuthal velocity IC is the head wind + the Kepler speed - the
-        ! coordinate system speed 
-        !-----------------------------------------------------------------------
-        v_h = self%v_head(i1,i2,i3)
-        v_k = disk_model%v_kepler (r)
-        v_a = v_h + v_k - self%v_patch(i1,i2,i3,2)
-        !-----------------------------------------------------------------------
-        ! We assume an outflow speed = a fraction of the local Kepler speed,
-        ! and we slow down the azimuthal speed by the same amount.
-        !-----------------------------------------------------------------------
-        v_o = f_outflow*v_k
-        py(i1,i2,i3) = d(i1,i2,i3)*(v_a-v_o)
-        pz(i1,i2,i3) = d(i1,i2,i3)*(v_o*sign)
+        ux(i1,i2,i3) = ux(i1,i2,i)
+        uy(i1,i2,i3) = uy(i1,i2,i)
+        uz(i1,i2,i3) = uz(i1,i2,i)
+        e (i1,i2,i3) = e (i1,i2,i)
+        if (f_outflow > 0.0) then
+          !---------------------------------------------------------------------
+          ! The azimuthal velocity IC is the head wind + the Kepler speed - the
+          ! coordinate system speed 
+          !---------------------------------------------------------------------
+          v_h = self%v_head(i1,i2,i3)
+          v_k = disk_model%v_kepler (r)
+          v_a = v_h + v_k - self%v_patch(i1,i2,i3,2)
+          !---------------------------------------------------------------------
+          ! We assume an outflow speed = a fraction of the local Kepler speed,
+          ! and we slow down the azimuthal speed by the same amount.
+          !---------------------------------------------------------------------
+          v_o = f_outflow*v_k
+          uy(i1,i2,i3) = (v_a-v_o)
+          uz(i1,i2,i3) = (v_o*sign)
+        end if
       end do
       if (associated(self%filled)) then
         do i1=l(1),u(1)
