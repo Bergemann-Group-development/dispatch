@@ -98,8 +98,14 @@ SUBROUTINE update (self)
   ! Proceed, referring everywhere to the %new time slot
   !-----------------------------------------------------------------------------
   lock => self%mem_lock(self%new)
+  !-----------------------------------------------------------------------------
+  ! Pre- and post-update procedures: as a precaution against missing calls,
+  ! extra calls to self%gpatch_t%pre_update and post_update are added here
+  !-----------------------------------------------------------------------------
+  call self%gpatch_t%pre_update ()
   call self%mhd_t%pre_update
   call self%mhd_t%update
+  call self%gpatch_t%post_update ()
   call self%mhd_t%post_update
   !-----------------------------------------------------------------------------
   call trace%end (itimer)

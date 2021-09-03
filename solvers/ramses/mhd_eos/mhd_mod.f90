@@ -53,7 +53,6 @@ MODULE mhd_mod
     procedure:: init
     procedure:: pre_update
     procedure:: update
-    procedure:: post_update
     procedure:: gas_pressure
     procedure:: to_thermal_e
     procedure:: to_total_e
@@ -196,7 +195,6 @@ SUBROUTINE pre_update (self)
   integer:: n(3)
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%pre_update')
-  call self%gpatch_t%pre_update ()
   !-----------------------------------------------------------------------------
   ! Primitive variables may be needed in extras courant_conditions
   !-----------------------------------------------------------------------------
@@ -205,8 +203,10 @@ SUBROUTINE pre_update (self)
   call ctoprim(self)                  ! Primitive variables, sound speeds
   call self%extras_t%courant_condition (detailed_timer)
   !-----------------------------------------------------------------------------
-  ! Pre-update extras components
+  ! Pre-update extras components; as a precaution against missing calls, an
+  ! extra call to self%gpatch_t%pre_update() is done here
   !-----------------------------------------------------------------------------
+  call self%gpatch_t%pre_update ()
   call self%extras_t%pre_update
   call trace%end ()
 END SUBROUTINE pre_update
@@ -498,18 +498,6 @@ SUBROUTINE update (self)
     rieman%nsolu = 0
   end if
 END SUBROUTINE update
-
-!=======================================================================
-!> Measure time in extras_t%post_update
-!=======================================================================
-SUBROUTINE post_update (self)
-  class(mhd_t):: self
-  integer, save:: itimer=0
-  !-----------------------------------------------------------------------------
-  call trace%begin ('mhd_t%post_update', itimer=itimer)
-  call self%extras_t%post_update ()
-  call trace%end (itimer)
-END SUBROUTINE post_update
 
 !===============================================================================
 !> Check for small density and pressure values

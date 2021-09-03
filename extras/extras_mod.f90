@@ -25,16 +25,16 @@
 !>                      /    \         |
 !>                     /      \        |
 !>              extras_1_t extras_2_t  |
-!>                 |     \    /        |
-!>                 |     gpatch_t      |
-!>                 |       |     \     |
-!>                 |       |      list_t
-!>                 |       |     /  |
-!>                 |      patch_t   |
-!>                 |      /   \     |
-!>                 |     /     link_t
-!>                 |    /       |
-!>                connect_t   task_t
+!>                       \    /        |
+!>                       gpatch_t      |
+!>                         |     \     |
+!>                         |      list_t
+!>                         |     /  |
+!>                        patch_t   |
+!>                            \     |
+!>                             link_t
+!>                              |
+!>                            task_t
 !>
 !> The extra modules needed in an experiment should be chosen and coordinated
 !> in this module, and the ones that are "below" (USEd by) this module should
@@ -49,6 +49,12 @@
 !> This module should generally NOT use the h5_mod (HDF5) module itself. h5_mod
 !> should instead be USEd from the actual extra modules that wish to use it to
 !> save ad hoc results in a standardized format.
+!===============================================================================
+
+!===============================================================================
+!> IMPORTANT: All class procedures that exist here must start by calling the
+!> correspondingly overloaded procedure from the next level (gpatch_t), to
+!> ensure that default actions are carried out.
 !===============================================================================
 
 MODULE extras_mod
@@ -142,7 +148,7 @@ END SUBROUTINE pre_init
 SUBROUTINE init (self)
   class(extras_t):: self
   !.............................................................................
-  call trace%begin ('extras_t%init')
+  call trace%begin ('extras_t%init')                                   ! keep
   call self%gpatch_t%init                                              ! keep
   !-----------------------------------------------------------------------------
   ! Optional inits
@@ -162,7 +168,7 @@ SUBROUTINE init (self)
   !self%rt%rt_boundaries%grav = self%gravity%const_grav                 ! experiment
   !call sink_particles%init                                             ! sinkp
   !call self%cooling%init                                               ! cool
-  call trace%end()
+  call trace%end()                                                     ! keep
 END SUBROUTINE init
 
 !===============================================================================
@@ -175,14 +181,14 @@ SUBROUTINE init_task_list (self, task_list)
   class(extras_t):: self
   class(list_t), pointer:: task_list
   !.............................................................................
-  call trace%begin ('extras_t%init_task_list')
+  call trace%begin ('extras_t%init_task_list')                         ! keep
   call self%gpatch_t%init_task_list (task_list)                        ! keep
   ! ----------------------------------------------------------------------------
   ! Optional adds to task list
   ! ----------------------------------------------------------------------------
-  ! call self%rt%init_task_list(task_list)                             ! RT
-  !call sink_particles%ad_hoc_add                                      ! keep
-  call trace%end ()
+  !call self%rt%init_task_list(task_list)                               ! RT
+  !call sink_particles%ad_hoc_add                                       ! sink
+  call trace%end ()                                                    ! keep
 END SUBROUTINE init_task_list
 
 !===============================================================================
@@ -191,11 +197,12 @@ END SUBROUTINE init_task_list
 SUBROUTINE dealloc (self)
   class(extras_t):: self
   !.............................................................................
-  call trace%begin ('extras_t%dealloc')
+  call trace%begin ('extras_t%dealloc')                                ! keep
+  call self%gpatch_t%dealloc ()                                        ! keep
   !call self%forces%dealloc                                             ! forces
   !call sink_particles%dealloc                                          ! sinkp
   !deallocate (self%trace_particles)                                    ! tracep
-  call trace%end()
+  call trace%end ()                                                    ! keep
 END SUBROUTINE dealloc
 
 !===============================================================================
@@ -208,6 +215,7 @@ SUBROUTINE pre_update (self)
   class(extras_t), target:: self
   !.............................................................................
   call trace%begin ('extras_t%pre_update')                             ! keep
+  call self%gpatch_t%pre_update ()                                     ! keep
   !call self%selfgravity%pre_update                                     ! selfg
   !call self%rt%pre_update                                              ! RT
   !call self%newton%pre_update                                          ! Newton
@@ -218,7 +226,7 @@ SUBROUTINE pre_update (self)
   !call sink_particles%force_field ()                                   ! sinkp
   !call self%pic%pre_update()                                           ! pic
   !call self%cooling%pre_update ()                                      ! cool
-  call trace%end()
+  call trace%end ()                                                    ! keep
 END SUBROUTINE pre_update
 
 !===============================================================================
@@ -228,7 +236,7 @@ END SUBROUTINE pre_update
 SUBROUTINE post_update (self)
   class(extras_t):: self
   !.............................................................................
-  call self%gpatch_t%post_update ()                                ! keep
+  call self%gpatch_t%post_update ()                                    ! keep
   !call self%selfgravity%post_update                                    ! selfg
   !call self%rt%post_update                                             ! RT
   !call self%forces%post_update                                         ! forces
