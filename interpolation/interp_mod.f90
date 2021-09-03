@@ -219,7 +219,18 @@ SUBROUTINE from_source (self, tgt, lt, ut, src, filled)
           tm(i1,i2,i3,tgt%idx%py) = v(2)
           tm(i1,i2,i3,tgt%idx%pz) = v(3)
           !---------------------------------------------------------------------
-          ! Convert to linear momenta
+          ! Total energy in the target coordinate system.  The tp(...idx%e) is
+          ! the thermal energy per unit mass, interpolated to the target point,
+          ! to which needs to be added the kinetic energy in the target frame,
+          ! keeping in mind that the tm(...%px) values are still velocities
+          !---------------------------------------------------------------------
+          tm(i1,i2,i3,tgt%idx%e ) = tm(i1,i2,i3,tgt%idx%d)*( &
+          tp(i1,i2,i3,tgt%idx%e ) + 0.5*( &
+          tm(i1,i2,i3,tgt%idx%px)**2 + &
+          tm(i1,i2,i3,tgt%idx%py)**2 + &
+          tm(i1,i2,i3,tgt%idx%pz)**2))
+          !---------------------------------------------------------------------
+          ! Convert from velocities to linear momenta
           !---------------------------------------------------------------------
           tm(i1,i2,i3,tgt%idx%px) = &
           tm(i1,i2,i3,tgt%idx%px) * tm(i1,i2,i3,tgt%idx%d)
@@ -227,14 +238,6 @@ SUBROUTINE from_source (self, tgt, lt, ut, src, filled)
           tm(i1,i2,i3,tgt%idx%py) * tm(i1,i2,i3,tgt%idx%d)
           tm(i1,i2,i3,tgt%idx%pz) = &
           tm(i1,i2,i3,tgt%idx%pz) * tm(i1,i2,i3,tgt%idx%d)
-          !---------------------------------------------------------------------
-          ! Total energy
-          !---------------------------------------------------------------------
-          tm(i1,i2,i3,tgt%idx%e ) = &
-          (tp(i1,i2,i3,tgt%idx%e ) + 0.5*( &
-           tp(i1,i2,i3,tgt%idx%px)**2 + &
-           tp(i1,i2,i3,tgt%idx%py)**2 + &
-           tp(i1,i2,i3,tgt%idx%pz)**2))   *tm(i1,i2,i3,tgt%idx%d)
         end if
       end do
     end do
