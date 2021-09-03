@@ -3,6 +3,7 @@
 !> services guards_mod, and is replaceable via the makefile macro INTERP.
 !===============================================================================
 MODULE interp_mod
+  USE iso_fortran_env, only: int8
   USE trace_mod
   USE io_mod
   USE omp_lock_mod
@@ -70,10 +71,12 @@ END SUBROUTINE init
 !===============================================================================
 !> Interpolate in 3-D index space
 !===============================================================================
-SUBROUTINE from_source (self, tgt, lt, ut, src)
+SUBROUTINE from_source (self, tgt, lt, ut, src, filled)
   class(interp_t)           :: self
   class(patch_t)            :: tgt, src
   integer, dimension(3)     :: lt, ut
+  integer(kind=int8)        :: filled(:,:,:)
+  optional                  :: filled
   !.............................................................................
   real, pointer, contiguous :: p(:,:,:,:)
   real, pointer, contiguous :: tm(:,:,:,:), sm(:,:,:,:)
@@ -115,23 +118,45 @@ SUBROUTINE from_source (self, tgt, lt, ut, src)
   do iv=1,tgt%nv
     do i3=lt(3),ut(3)
       do i2=lt(2),ut(2)
-        do i1=lt(1),ut(1)
-          !---------------------------------------------------------------------
-          ! Skip interior points
-          !---------------------------------------------------------------------
-          j1 = p(i1,i2,i3,1)
-          j2 = p(i1,i2,i3,2)
-          j1 = min(max(j1,l(1)),u(1)-1)
-          j2 = min(max(j2,l(2)),u(2)-1)
-          p1 = p(i1,i2,i3,1) - j1
-          p2 = p(i1,i2,i3,2) - j2
-          q1 = 1.0 - p1
-          q2 = 1.0 - p2
-          !.....................................................................
-          tp(i1,i2,i3,iv) = &
-            q2*(q1*sp(j1,j2  ,i3  ,iv) + p1*sp(j1+1,j2  ,i3  ,iv)) + &
-            p2*(q1*sp(j1,j2+1,i3  ,iv) + p1*sp(j1+1,j2+1,i3  ,iv))
-        end do
+        if (present(filled)) then
+          do i1=lt(1),ut(1)
+            !-------------------------------------------------------------------
+            ! Skip interior points
+            !-------------------------------------------------------------------
+            j1 = p(i1,i2,i3,1)
+            j2 = p(i1,i2,i3,2)
+            j1 = min(max(j1,l(1)),u(1)-1)
+            j2 = min(max(j2,l(2)),u(2)-1)
+            p1 = p(i1,i2,i3,1) - j1
+            p2 = p(i1,i2,i3,2) - j2
+            q1 = 1.0 - p1
+            q2 = 1.0 - p2
+            !...................................................................
+            if (filled(i1,i2,i3)==0) then
+              tp(i1,i2,i3,iv) = &
+                q2*(q1*sp(j1,j2  ,i3  ,iv) + p1*sp(j1+1,j2  ,i3  ,iv)) + &
+                p2*(q1*sp(j1,j2+1,i3  ,iv) + p1*sp(j1+1,j2+1,i3  ,iv))
+            end if
+          end do
+        else
+          do i1=lt(1),ut(1)
+            !-------------------------------------------------------------------
+            ! Skip interior points
+            !-------------------------------------------------------------------
+            j1 = p(i1,i2,i3,1)
+            j2 = p(i1,i2,i3,2)
+            j1 = min(max(j1,l(1)),u(1)-1)
+            j2 = min(max(j2,l(2)),u(2)-1)
+            p1 = p(i1,i2,i3,1) - j1
+            p2 = p(i1,i2,i3,2) - j2
+            q1 = 1.0 - p1
+            q2 = 1.0 - p2
+            !...................................................................
+            tp(i1,i2,i3,iv) = &
+              q2*(q1*sp(j1,j2  ,i3  ,iv) + p1*sp(j1+1,j2  ,i3  ,iv)) + &
+              p2*(q1*sp(j1,j2+1,i3  ,iv) + p1*sp(j1+1,j2+1,i3  ,iv))
+          end do
+        end if
       end do
     end do
   end do

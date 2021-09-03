@@ -536,15 +536,14 @@ SUBROUTINE tilted (self, tgt, src, all_tgt, all_src, only)
   logical                              :: src_all, tgt_int
   integer                              :: i, m(5), tid, sid
   real(8)                              :: src_p(3), src_v(3), src_e(3,3), e(3,3)
-  integer, save                        :: itimer=0
-  real(8), parameter                   :: eps=1d-6
+  integer, save                        :: itimer=0, nprint=10
+  real(8), parameter                   :: eps=1e-6
   !-----------------------------------------------------------------------------
   ! Use all source cells if the all_src is present, or the rarget (child) is
   ! taking the first step.
   !-----------------------------------------------------------------------------
   call trace%begin ('guards_t%tilted', itimer=itimer)
   src_all = present(all_src) !.or. tgt%istep==0  ! use full source region
-  src_all = src_all !.or. tgt%istep==0           ! first child update¨
   tid = tgt%id
   sid = src%id
   !-----------------------------------------------------------------------------
@@ -621,14 +620,14 @@ SUBROUTINE tilted (self, tgt, src, all_tgt, all_src, only)
   !-----------------------------------------------------------------------------
   fl = max(tl,sl) - eps                         ! overlap lower corner
   fu = min(tu,su) + eps                         ! overlap upper corner
-  ! lt = tgt%index_only (fl, roundup=.true.)      ! target lower corner
-  ! ut = tgt%index_only (fu, rounddn=.true.)      ! target upper corner
   lt = ceiling(fl/tm%d + tm%o)                  ! integet tgt lower index
   ut =   floor(fu/tm%d + tm%o)                  ! integer tgt upper index
-  ! lt = max(lt,tm%lb)
-  ! ut = min(ut,tm%ub)
   if (any(lt < tm%lb .or. ut > tm%ub)) then
-    call io%warning ('target limits outside range')
+    if (nprint > 0) then
+      call io%warning ('target limits outside range')
+      !$omp atomic update
+      nprint = nprint-1
+    end if
   end if
   lt = max(lt,tm%lb)                            ! inside target halo
   ut = min(ut,tm%ub)                            ! inside target halo
@@ -644,7 +643,11 @@ SUBROUTINE tilted (self, tgt, src, all_tgt, all_src, only)
     call validate%check (tgt, ut, 'ut')
     call validate%check (tgt, tgt%mem(:,:,:,:,tgt%it,1), 'before from_source')
   end if
-  call interp%from_source (tgt, lt, ut, src)
+  if (present(all_src)) then
+    call interp%from_source (tgt, lt, ut, src, filled=tgt%filled)
+  else
+    call interp%from_source (tgt, lt, ut, src)
+  end if
   if (tgt%id == 1) &
     call validate%check (tgt, tgt%mem(:,:,:,:,tgt%it,1), 'after from_source')
   !.............................................................................
