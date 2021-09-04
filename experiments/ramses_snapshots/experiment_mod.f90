@@ -10,7 +10,6 @@ MODULE experiment_mod
   implicit none
   private
   type, public, extends(solver_t):: experiment_t
-    integer:: key(4)
   contains
     procedure init
     procedure dnload
