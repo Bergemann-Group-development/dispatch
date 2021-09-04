@@ -115,6 +115,10 @@ SUBROUTINE pre_init (self)
   if (first_time) then
     rewind (io%input)
     read (io%input, ramses_params, iostat=iostat)
+    if (iostat > 0) then
+      rewind (io%input)
+      read (io%input, ramses_params)
+    end if
     call io%namelist_warning ('ramses_params', iostat)
     if (eos%gamma == 1d0) isothermal = .true.
     if (isothermal) eos%gamma = 1d0

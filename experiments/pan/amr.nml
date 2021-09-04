@@ -14,7 +14,7 @@
 &out_params             end_time=0.10 out_time=0.010 print_every=100 /
 &io_params              verbose=0 do_trace=f omp_trace=t do_output=t restart=-2
                         task_logging=2 log_interval=20 guard_zones=t time_derivs=0
-                        method='legacy' format=10 nml_version=3 /
+                        method='background' format=10 nml_version=3 /
 &time_slices_params     order=3 /
 &amr_io_params          verbose=0 nt=2 /
 &pdf_io_params          on=f verbose=0 out_time=0.02 nbins=201 bin_min=-12. bin_max=8. /
@@ -38,11 +38,12 @@
 &force_params           type='turbulence' /
 &turbulence_params      ampl_turb=8 t_turn=0.10 k1=1 k2=2 pk=0.0 seed=5 /
 &IC_turbulence_params   b0=0.1 /
-&selfgravity_params     selfgravity=f /
+&selfgravity_params     on=f /
 &trace_particle_params  on=f verbose=0 per_cell=1.0 /
 
 ! --- Solver specific parameters -----------------------------------------------
-&ramses_params          courant_factor=0.250 isothermal=t gamma=1.0 slope_type=3.5 smallr=1e-5 smallc=1
+&eos_params             gamma=1 /
+&ramses_params          courant_factor=0.250 slope_type=3.5 smallr=1e-5 smallc=1
                         unsigned=t detailed_timer=f /
 &stagger_params         gamma=1.0 nu=0.30,0.0,1.0,0.1,1.0,1.0 /
 &timestep_params        /

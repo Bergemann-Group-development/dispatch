@@ -79,6 +79,10 @@ SUBROUTINE init (self, name)
   call trace%begin('dispatcher0_t%init')
   rewind (io%input)
   read(io%input, dispatcher0_params, iostat=iostat)
+  if (iostat > 0) then
+    rewind (io%input)
+    read(io%input, dispatcher0_params)
+  end if
   call io%namelist_warning ('dispatcher0_params', iostat)
   write (io%namelist, dispatcher0_params)
   allocate (self%lock)

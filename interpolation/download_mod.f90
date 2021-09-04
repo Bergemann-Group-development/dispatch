@@ -97,6 +97,10 @@ SUBROUTINE init (self)
     first_time = .false.
     rewind (io%input)
     read (io%input, download_params, iostat=iostat)
+    if (iostat > 0) then
+      rewind (io%input)
+      read (io%input, download_params)
+    end if
     call io%namelist_warning ('download_params', iostat)
     if (shared%refine_on) then
       check_filled = .true.

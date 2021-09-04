@@ -1717,8 +1717,9 @@ subroutine check_nbor (level, position, size)
         !$omp atomic update
         task%n_nbors = task%n_nbors + 1
         nbtask => nblink%task
-        write (stderr,'(a,2(i6,":",i2.2))') &
-        'init_nbors_hash:', task%id, task%level, nbtask%id, nbtask%level
+        if (self%verbose > 0) &
+          write (stderr,'(a,2(i6,":",i2.2))') &
+          'init_nbors_hash:', task%id, task%level, nbtask%id, nbtask%level
       end if
     end select
   end if
