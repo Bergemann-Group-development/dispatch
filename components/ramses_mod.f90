@@ -1391,11 +1391,11 @@ SUBROUTINE u_max_table_get (self, key, value, new)
   class(*), pointer:: ptr
   logical, optional:: new
   !-----------------------------------------------------------------------------
-  call self%u_max_table%get (key, ptr)
+  call self%u_max_table%get_ptr (key, ptr)
   if (.not. associated(ptr)) then
     allocate (value)
     ptr => value
-    call self%u_max_table%set (key, ptr)
+    call self%u_max_table%set_ptr (key, ptr)
     value = 0d0
     if (present(new)) then
       new = .true.
@@ -1471,7 +1471,7 @@ SUBROUTINE check_support (self)
             !-------------------------------------------------------------------
             position = task%position + [i1,i2,i3]*size
             key = task_key (task%level, task%box, position, size)
-            call self%patch_table%get (key, ptr)
+            call self%patch_table%get_ptr (key, ptr)
             if (associated(ptr)) then
               if (verbose > 0) then
                 select type (ptr)
@@ -1487,7 +1487,7 @@ SUBROUTINE check_support (self)
               ! one if it does not exist
               !-----------------------------------------------------------------
               key = task_key (task%level-1, task%box, position, 2d0*size)
-              call self%patch_table%get (key, ptr)
+              call self%patch_table%get_ptr (key, ptr)
               if (associated(ptr)) then
                 if (verbose > 0) then
                   select type (ptr)
@@ -1634,7 +1634,7 @@ SUBROUTINE download_link (self, link)
   class is (experiment_t)
     target => task
     key = task_key (task%level-1, task%box, task%position, 2d0*task%size)
-    call self%patch_table%get (key, ptr)
+    call self%patch_table%get_ptr (key, ptr)
     ok = .false.
     if (associated(ptr)) then
       select type(ptr)
@@ -1987,7 +1987,7 @@ SUBROUTINE cartesian_init (self, key, patch)
   !-----------------------------------------------------------------------------
   ! Check if a patch already exists at the key
   !-----------------------------------------------------------------------------
-  call self%patch_table%get (key, ptr)
+  call self%patch_table%get_ptr (key, ptr)
   if (associated(ptr)) then
     select type (ptr)
     class is (experiment_t)
@@ -2001,7 +2001,7 @@ SUBROUTINE cartesian_init (self, key, patch)
   else
     allocate (patch)
     ptr => patch
-    call self%patch_table%set (key, ptr)
+    call self%patch_table%set_ptr (key, ptr)
     level = key(1)
     ix = key(2)
     iy = key(3)
@@ -2184,12 +2184,12 @@ subroutine check_nbor (level, position, size)
   ! Level and positions key, with periodic wrapping
   !-----------------------------------------------------------------------------
   key = task_key (level, task%box, position, size)
-  call nbor_table%get (key, ptr)
+  call nbor_table%get_ptr (key, ptr)
   if (.not.associated(ptr)) then
-    call self%patch_table%get (key, nbtask)
+    call self%patch_table%get_ptr (key, nbtask)
     if (associated(nbtask)) then
       ptr => c
-      call nbor_table%set (key, ptr)
+      call nbor_table%set_ptr (key, ptr)
       select type(nbtask)
       class is (experiment_t)
         if (nbtask%overlaps (task)) then
