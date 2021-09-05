@@ -371,6 +371,7 @@ SUBROUTINE update (self)
     ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,2)   - &
       em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,2) ))
   end associate
+  call self%check_density ('rames/mhd_t%update')
   !-----------------------------------------------------------------------------
   ! Save the current value of the kinetic energy
   !-----------------------------------------------------------------------------
