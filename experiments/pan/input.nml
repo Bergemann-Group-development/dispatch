@@ -63,7 +63,7 @@
 &stagger_params         nu=0.30,0.0,1.0,0.1,1.0,1.0 /
 &eos_params             gamma=1d0 /
 &timestep_params        /
-&refine_params          on=f check_interval=2 /
+&refine_params          on=f check_interval=1 /
 
 !-----------------------
 ! Sink particle parameters

@@ -21,7 +21,7 @@
 !&lock_params            verbose=0 alternate_time=5 verbose_time=00 tasks=t /
 &lock_params            verbose=0 log='log' tasks=t /
 &remesh_params          verbose=0 order=0 /
-&refine_params          on=t verbose=0 levelmin=9 levelmax=11 check_interval=5
+&refine_params          on=t verbose=0 levelmin=9 levelmax=11 check_interval=1
                         !min_jeans=4
                         !max_vorticity=8
                         max_vorticity=12

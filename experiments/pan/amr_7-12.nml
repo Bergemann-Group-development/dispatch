@@ -28,7 +28,7 @@ size=1,1,1 dims=04,04,04 mpi_dims=2,2,1                !  1 process    1 node   
                         min_jeans=4
                         max_vorticity=5
                         max_compress=10
-                        check_interval=5
+                        check_interval=1
                         /
 
 !---------------------------------

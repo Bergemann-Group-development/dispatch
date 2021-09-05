@@ -26,7 +26,7 @@
                         !min_jeans=16
                         max_vorticity=3
                         max_compress=3 max_compress_level=8
-                        check_interval=10 /
+                        check_interval=1 /
 &download_params        verbose=0 sorted=t check_filled=t /
 &prolong_params         verbose=0 fix_nml=f /
 &guard_zone_params      verbose=0 method='simple' /

@@ -6,7 +6,7 @@
                        !dims=3*16 mpi_dims=2,2,4   !    16     8    2048   160  256^3         12
                        !dims=3*32 mpi_dims=4,4,4   !    32    16     16k  3200  512^3          5
                         size=1,1,1 origin=0,0,0 /
-&patch_params           nt=5 grace=0.3 n=3*16 no_mans_land=t
+&patch_params           nt=5 grace=0.3 n=3*16 do_check_nan=f
                         zero_order_extrap=t /
 &task_params            verbose=0 /
 
@@ -26,7 +26,7 @@
                         min_jeans=16
                         max_vorticity=6
                         max_compress=8 max_compress_level=7
-                        check_interval=20 /
+                        check_interval=1 /
 &download_params        verbose=0 sorted=t check_filled=t /
 &prolong_params         verbose=0 fix_nml=f /
 &guard_zone_params      verbose=0 method='simple' /

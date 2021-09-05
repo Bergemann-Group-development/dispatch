@@ -211,7 +211,7 @@ MODULE refine_mod
     procedure:: check_support
   end type
   !
-  integer:: check_interval=10                 ! Number of steps betwen checks
+  integer:: check_interval=1                  ! Number of steps betwen checks
   real:: min_dx=0.0, max_dx=1e32              ! Min and max grid size
   real:: refine_from_t=0.0                    ! Time limits for occurence of refinement
   real:: refine_until_t=1e30                  ! Time limits for occurence of refinement
