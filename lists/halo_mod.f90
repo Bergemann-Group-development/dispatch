@@ -175,12 +175,6 @@ SUBROUTINE download (self, nbors, only, all_tgt, all_src)
   ! authoritative guard zone values
   !-----------------------------------------------------------------------------
   call self%set_filled (target)
-  call self%check_support ()
-  if (self%task%is_set (bits%no_support)) then
-    source => self%parent%task
-    call guards%source_to_target (source, target, n_op=self%n_op, only=only, &
-                                  all_src=.true., all_tgt=all_tgt)  
-  end if
   !-----------------------------------------------------------------------------
   ! Proceed with the normal guard zone loading
   !-----------------------------------------------------------------------------
@@ -739,9 +733,11 @@ FUNCTION has_support (self)
   call self%copy_nbor_list (self%nbor, nbors)
   call self%lock%unset ('download_link')
   target => self%task
-  if (omp%thread_task > 0 .and. target%id /= omp%thread_task) then
-    write (stderr,*) 'has_support WARNING: target%id,thread_task=', &
-      target%id, omp%thread_task
+  if (verbose > 0) then
+    if (omp%thread_task > 0 .and. target%id /= omp%thread_task) then
+      write (stderr,*) 'has_support WARNING: target%id,thread_task=', &
+        target%id, omp%thread_task
+    end if
   end if
   has_support = .true.
   if (target%level > shared%levelmin+1) then
@@ -760,9 +756,10 @@ FUNCTION has_support (self)
         if (nbor%task%level >= target%level-1) then
           if (nbor%download) then
             source => nbor%task
+            nbor%distance = target%distance_to (source)
             if (verbose > 0) &
-            print '("has_support",2(i6,":",i2.2,3i3))', &
-            target%id, target%key, source%id, source%key
+              print '("has_support",2(i6,":",i2.2,3i3))', &
+              target%id, target%key, source%id, source%key
             select type (source)
             class is (patch_t)
               call target%cover (source, nbor%distance, target%filled)
@@ -810,9 +807,14 @@ SUBROUTINE request_support (self, source)
           point = target%local_position ([i1,i2,i3]) &
                 + source%distance_to (target)
           if (source%authority%contains (point)) then
-            ii = source%index_only (point, nearest=.true.)
-            source%request(ii(1),ii(2),ii(3)) = 2.0
-            target%filled(i1,i2,i3) = 0
+            ii = nint(point/source%ds + source%offset)
+            if (verbose > 0) then
+              if (any(ii < 1 .or. ii > source%gn)) then
+                write (stderr,'()') &
+                  'halo_t%request_support: index=', ii
+                call io%abort ('index out-of-range')
+              end if
+            end if
             n = n+1
           end if
         end if
@@ -820,7 +822,6 @@ SUBROUTINE request_support (self, source)
       end do
       end do
       call source%request_lock%unset ('halo_t%request_support')
-      !print *, 'cleared', source%id, target%id, n, all(target%filled==0)
     end select
   end select
   call trace%end (itimer)
@@ -831,7 +832,6 @@ END SUBROUTINE request_support
 !===============================================================================
 SUBROUTINE check_support (self)
   class(halo_t):: self
-  class(task_t), pointer:: source
   class(nbor_t), pointer:: nbor
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -839,32 +839,18 @@ SUBROUTINE check_support (self)
     return
   call trace%begin ('halo_t%check_support', itimer=itimer)
   if (self%has_support()) then
+    call self%task%log ('has', 3)
     if (self%task%is_set (bits%no_support)) then
-      !.........................................................................
-!print *, self%task%id, 'clear no_support', omp%thread
-      !.........................................................................
       call self%task%clear (bits%no_support)
+      call self%task%log ('support', 3)
     end if
   else
+    call self%task%log ('hasnot', 3)
     if (self%task%is_clear (bits%no_support)) then
-      !.........................................................................
-!print *, self%task%id, 'set no_support', omp%thread
-      !.........................................................................
       call self%task%set (bits%no_support)
-      call self%find_support (source)
-      if (associated(source)) then
-        call self%request_support (source)
-!print *, self%task%id, 'request support from', source%id
-      else
-        write (stderr,*) 'halo_t%check_support WARNING: did not find support', &
-          self%task%id, omp%thread, associated(self%nbor)
-        nbor => self%nbor
-        do while (associated(nbor))
-          print *, nbor%task%id, nbor%task%level, nbor%distance/nbor%task%size
-          nbor => nbor%next
-        end do
-      end if
-    end if
+      call self%task%log ('no_support', 3)
+      call self%find_support ()
+   end if
   end if
   call trace%end (itimer)
 END SUBROUTINE check_support
@@ -872,26 +858,39 @@ END SUBROUTINE check_support
 !===============================================================================
 !> Find a level L-2 task that overlaps
 !===============================================================================
-SUBROUTINE find_support (self, source)
+SUBROUTINE find_support (self)
   class(halo_t):: self
   class(task_t), pointer:: source, target
   class(nbor_t), pointer:: nbor
+  logical:: found
+  integer:: id
   !-----------------------------------------------------------------------------
   call trace%begin ('halo_t%find_support')
+  found = .false.
   target => self%task
+  id = target%id
   nbor => self%nbor
   do while (associated(nbor))
     source => nbor%task
     if (source%level == self%task%level-2) then
       nbor%distance = target%distance_to (source)
-      if (source%authority%overlaps (target%interest, nbor%distance)) then
-        call trace%end ()
-        return
+      if (target%interest%overlaps (source%authority, nbor%distance)) then
+        call self%request_support (source)
+        call source%log ('got_request', 3)
+        found = .true.
       end if
     end if
     nbor => nbor%next
   end do
-  nullify (source)
+  if (.not.found) then
+    write (stderr,*) 'halo_t%check_support WARNING: did not find support', &
+      self%task%id, omp%thread, associated(self%nbor)
+    nbor => self%nbor
+    do while (associated(nbor))
+      print *, nbor%task%id, nbor%task%level, nbor%distance/nbor%task%size
+      nbor => nbor%next
+    end do
+  end if
   call trace%end ()
 END SUBROUTINE find_support
 
