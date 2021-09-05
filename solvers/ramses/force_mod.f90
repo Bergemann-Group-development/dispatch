@@ -423,8 +423,9 @@ FUNCTION turbulence (self, time, d, p, Ux, Uy, Uz, mesh) RESULT (ff)
     end if
     self%momentum = new
     if (any(isnan(new))) then
-      print '(a,1p,5e12.3,2(2x,3i4))', 'NaN error:', new, c1, l, u
-      !call io%abort ('NaN in force')
+      write (stderr,'(a,1p,5e12.3,2(2x,3i4))') &
+        'force_t%turbulence NaN error:', new, c1, l, u
+      call io%abort ('NaN in force_t%turbulence')
     end if
   end block
   !-----------------------------------------------------------------------------
