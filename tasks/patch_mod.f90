@@ -2133,16 +2133,14 @@ SUBROUTINE check_nan (self, panic, label, always)
   do ix=1,self%gn(1)
     if (isinf(self%mem(ix,iy,iz,iv,self%it,1)) .or. &
         isnan(self%mem(ix,iy,iz,iv,self%it,1))) then
-      if (io%verbose>0) then
-        if (present(label)) then
-          write(io%output,1) trim(label)//' ERROR: NaN id,ix,iy,iz,iv:', &
-          self%id,ix,iy,iz,iv
-          1 format(a,i6,3i4,i5)
-        else
-          write(io%output,1) 'ERROR: NaN ix,iy,iz,iv:', ix,iy,iz,iv
-        end if
-        flush (io%output)
+      if (present(label)) then
+        write(stdout,1) trim(label)//' ERROR: NaN id,ix,iy,iz,iv:', &
+        self%id,ix,iy,iz,iv
+        1 format(a,i6,3i4,i5)
+      else
+        write(stdout,1) 'ERROR: NaN ix,iy,iz,iv:', ix,iy,iz,iv
       end if
+      flush (stdout)
       ii = [ix,iy,iz]
       nan = .true.
     end if
@@ -2151,19 +2149,19 @@ SUBROUTINE check_nan (self, panic, label, always)
   end do
   end do
   if (nan) then
-    flush (io%output)
+    flush (stdout)
     panic = .true.
     if (present(label)) then
-      write(io%output,*) self%id, trim(label)//' ERROR NaN, min(d), max(d):', &
+      write(stdout,*) self%id, trim(label)//' ERROR NaN, min(d), max(d):', &
         minval(self%mem(:,:,:,self%idx%d,self%it,1)), &
         maxval(self%mem(:,:,:,self%idx%d,self%it,1)), ii
     else
-      write(io%output,*) self%id, ' ERROR NaN, min(d), max(d):', &
+      write(stdout,*) self%id, ' ERROR NaN, min(d), max(d):', &
         minval(self%mem(:,:,:,self%idx%d,self%it,1)), &
         maxval(self%mem(:,:,:,self%idx%d,self%it,1)), ii
     end if
-    write(io%output,*) self%unsigned
-    flush (io%output)
+    write (stdout,*) 'unsigned:', self%unsigned
+    flush (stdout)
     call io%abort ('found NaN -- check rank & thread logs!')
   end if
   call timer%end (itimer)
@@ -2176,13 +2174,13 @@ LOGICAL FUNCTION isinf(a)
 END FUNCTION isinf
 
 !===============================================================================
-!> Check if the density is negative somewhere, counting points in the interior
-!> and guard zones separately.  Attempt to patch the guard zones, if applicable.
+!> Check if the density pr energy is negative somewhere, counting points in the
+!> interior and guard zones separately
 !===============================================================================
 SUBROUTINE check_density (self, label)
   class(patch_t):: self
   character(len=*), optional:: label
-  real(kind=KindScalarVar):: mind, posd
+  real(kind=KindScalarVar):: mind, posd, mine
   real:: tiny = 1.0e-32
   integer:: ix, iy, iz, iv, ii(3), ntot, nins, l(3), u(3), it, jt, iw
   logical:: inside, nan, panic
@@ -2200,57 +2198,17 @@ SUBROUTINE check_density (self, label)
   l = self%mesh%lb
   u = self%mesh%ub
   mind = minval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%d,self%it,1))
-  if (present(label) .and. io%verbose>1) write (io_unit%log,*) label, self%id, mind
+  if (present(label) .and. io%verbose>1) &
+    write (io_unit%log,*) label, self%id, mind
   panic = .false.
   if (mind <= 0.0) then
-    panic = .true.
-    call self%dump (2, .true.)
-    !---------------------------------------------------------------------------
-    ! Negative densities appear to develop at a few points in the guard zones,
-    ! so this tries to patch up, sampling densitites in the guard zone.
-    !---------------------------------------------------------------------------
-    posd = tiny
-    ntot = 0
-    nins = 0
-    do iz=1,self%gn(3)
-    do iy=1,self%gn(2)
-    do ix=1,self%gn(1)
-      ii = [ix,iy,iz]
-      inside = all(ii>self%mesh%lo .and. ii<self%mesh%uo)
-      posd = merge (posd, max(posd,self%mem(ix,iy,iz,self%idx%d,self%it,1)), inside)
-      ntot = ntot + merge(1,0,self%mem(ix,iy,iz,self%idx%d,self%it,1)<=0.0)
-      nins = nins + merge(1,0,self%mem(ix,iy,iz,self%idx%d,self%it,1)<=0.0 .and. inside)
-      !-------------------------------------------------------------------------
-      ! Pick the sampled positive value if a negative one is found in the
-      ! guard zone
-      !-------------------------------------------------------------------------
-      !self%mem(ix,iy,iz,1,self%it,1) = merge (self%mem(ix,iy,iz,1,self%it,1), &
-      !  posd, self%mem(ix,iy,iz,1,self%it,1) > 0.0 .or. inside)
-    end do
-    end do
-    end do
-    1 format(a,i8,3x,a,i8,a,i8,a)
-    if (present(label)) then
-      if (nins > 0) then
-        write (io_unit%output,1) 'ID ',self%id, &
-         'ERROR: density non-positive in',ntot,' points,',nins,' inside, '// &
-         trim(label)
-      else if (io%verbose>0) then
-          write (io_unit%output,1) 'ID ',self%id, &
-           'WARNING: density non-positive in',ntot,' points,',nins,' inside, '// &
-           trim(label)
-      end if
-    else
-      if (nins > 0) then
-        write (io_unit%output,1) 'ID ',self%id, &
-         'WARNING: density non-positive in',ntot,' points,',nins,' inside'
-      else if (io%verbose>0) then
-        write (io_unit%output,1) 'ID ',self%id, &
-         'WARNING: density non-positive in',ntot,' points,',nins,' inside'
-      end if
+    call check_var (self%idx%d)
+  end if
+  if (self%idx%e > 0) then
+    mine = minval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%e,self%it,1))
+    if (mine <= 0.0) then
+      call check_var (self%idx%e)
     end if
-    if (nins > 0) &
-      panic = .true.
   end if
   call self%check_nan (panic, label)
   !-----------------------------------------------------------------------------
@@ -2270,6 +2228,53 @@ SUBROUTINE check_density (self, label)
     end if
   end if
   call timer%end (itimer)
+contains
+  !=============================================================================
+  subroutine check_var (iv)
+    integer:: iv
+    !...........................................................................
+    panic = .true.
+    call self%dump (2, .true.)
+    !---------------------------------------------------------------------------
+    ! Negative densities appear to develop at a few points in the guard zones,
+    ! so this tries to patch up, sampling densitites in the guard zone.
+    !---------------------------------------------------------------------------
+    posd = tiny
+    ntot = 0
+    nins = 0
+    do iz=1,self%gn(3)
+    do iy=1,self%gn(2)
+    do ix=1,self%gn(1)
+      ii = [ix,iy,iz]
+      inside = all(ii>self%mesh%lo .and. ii<self%mesh%uo)
+      posd = merge (posd, max(posd,self%mem(ix,iy,iz,iv,self%it,1)), inside)
+      ntot = ntot + merge(1,0,self%mem(ix,iy,iz,iv,self%it,1)<=0.0)
+      nins = nins + merge(1,0,self%mem(ix,iy,iz,iv,self%it,1)<=0.0 .and. inside)
+    end do
+    end do
+    end do
+    if (present(label)) then
+      call print_var (label)
+    else
+      call print_var ('')
+    end if
+    if (nins > 0) &
+      panic = .true.
+  end subroutine check_var
+  !=============================================================================
+  subroutine print_var (l)
+    character(*):: l
+    if (nins > 0) then
+      write (stdout,1) 'ID ',self%id, iv, &
+        'ERROR: non-positive in',ntot,' points,',nins,' inside, '// &
+        trim(l)
+    1 format(a,i8,i3,3x,a,i8,a,i8,a)
+    else if (io%verbose>0) then
+        write (stdout,1) 'ID ',self%id, iv, &
+          'WARNING: non-positive in',ntot,' points,',nins,' inside, '// &
+          trim(l)
+    end if
+  end subroutine print_var
 END SUBROUTINE check_density
 
 !===============================================================================
@@ -2378,7 +2383,7 @@ SUBROUTINE stats_vector (self, var, label, unit)
   do iv=1,size(var,4)
     call scalar_stats (var(:,:,:,iv), self%mesh%li, self%mesh%ui, si)
     call scalar_stats (var(:,:,:,iv), self%mesh%lb, self%mesh%ub, sb)
-    write (io_unit%output,'(i7,2x,a,i3,1p,2(3x,4g12.4))') &
+    write (stdout,'(i7,2x,a,i3,1p,2(3x,4g12.4))') &
       self%id, trim(label)//' stats: iv, min, aver, rms, max =', iv, si, sb
   end do
   flush (unit_l)
@@ -3514,10 +3519,10 @@ END SUBROUTINE overlap
 !===============================================================================
 !> Mark bits where a source ROA ovelaps with a self ROI
 !===============================================================================
-SUBROUTINE cover (self, source, distance, bits)
+SUBROUTINE cover (self, source, distance, cells)
   class(patch_t):: self, source
   real(8), dimension(3):: distance, fl, fu
-  integer(int8):: bits(:,:,:)
+  integer(int8):: cells(:,:,:)
   integer:: l(3), u(3)
   !-----------------------------------------------------------------------------
   fl = max (self%interest%l, source%authority%l + distance)
@@ -3526,7 +3531,7 @@ SUBROUTINE cover (self, source, distance, bits)
   u =   floor (fu/self%mesh%d + self%mesh%o)
   l = max (l, self%mesh%lb)
   u = min (u, self%mesh%ub)
-  bits(l(1):u(1),l(2):u(2),l(3):u(3)) = 0
+  cells(l(1):u(1),l(2):u(2),l(3):u(3)) = 0
 END SUBROUTINE cover
 
 !===============================================================================
