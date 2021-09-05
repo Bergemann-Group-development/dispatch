@@ -448,6 +448,7 @@ FUNCTION refine_needed (self, link) RESULT (refine)
   patch%frefine = -derefine_limit
   call patch%request_lock%set ('refine_needed')
   patch%frefine = patch%frefine + patch%request
+  patch%request = 0
   call patch%request_lock%unset ('refine_needed')
   !-----------------------------------------------------------------------------
   ! Check if we need to refine to provide support
@@ -607,7 +608,9 @@ SUBROUTINE selective_refine (self, patch, child_list, refine, &
             !-------------------------------------------------------------------
             if (associated(old_link)) then
               if (verbose > 1) &
-                write (stdlog,*) 'existed:', old_link%task%id
+                write (stdlog,'(a,i6,3(1x,i2,":",i2.2))') &
+                  'selective_refine: existed=', &
+                  old_link%task%id, l(1),u(1), l(2),u(2), l(3),u(3)
               refined = .true.
             else
               if (refine_it > 0) then
@@ -720,8 +723,8 @@ SUBROUTINE post_process (self, patch, child_list)
         call self%task_list%add_new_link (task%link)
         !.......................................................................
         if (verbose > 1) then
-          write (stdout,'(a,i6,":",i2.2,3i3,l3)') &
-            'refine_mod: add_new_link', task%id, task%key, &
+          write (stdout,'(a,i6,a,i6,":",i2.2,3i3,l3)') &
+            'refine_mod:',patch%id,' add_new_link', task%id, task%key, &
             task%is_clear (bits%no_support)
         end if
         !.......................................................................
@@ -817,6 +820,7 @@ SUBROUTINE make_child_patch (self, parent, pos, child_size, &
     print *, 'make_child_patch: mpi%rank, parent%rank =', mpi%rank, parent%rank
     call io%abort ('make_child_patch: wrong MPI rank')
   end if
+  call parent%log ('refine', 3)
   !-----------------------------------------------------------------------------
   ! Allocate a new task, 1/nsplit the size of original one, and adjust its
   ! position in each direction with "pos", in units of the new size.
@@ -1373,7 +1377,7 @@ SUBROUTINE evaluate (self, label, patch, test, refine_it)
   if (verbose > 2 .or. &
      (verbose > 1 .and. patch%level < self%levelmax .and. refine_it > 0) .or. &
      (verbose > 1 .and. patch%level > self%levelmin .and. refine_it < 0)) then
-    unit = merge (stdout, stdlog, verbose>2)
+    unit = merge (stdout, stdlog, verbose > 2)
     write (unit,'(a22,3x,a,f12.6,i6,2f7.3,i4,2x,a1)') &
       label//' criterion: ', 'time, id, max_test, max_crit, refine', &
       patch%time, patch%id, max_test, max_crit, refine_it, merge ('R',' ',refine_it==1)
@@ -1484,6 +1488,7 @@ FUNCTION check_support (self, link)
                 call nbpatch%support_arrays ()
               end select
               call nbor%link%request_support (link%task)
+              call nbor%task%log ('request', 3)
 !print *, nbor%link%task%id, 'request support from', link%task%id
             end if
           end if
