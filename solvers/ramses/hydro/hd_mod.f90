@@ -231,6 +231,7 @@ SUBROUTINE update (self)
   ! Godunov solver
   !-----------------------------------------------------------------------------
   call godunov (self)
+  call self%check_density ('ramses/hd_t%update')
   !-----------------------------------------------------------------------------
   ! Save the current value of the kinetic energy
   !-----------------------------------------------------------------------------
