@@ -2186,9 +2186,7 @@ SUBROUTINE queue_by_time (self, this)
   end if
   if (self%verbose > 3) &
     write (io%output,*) wallclock(),' thread',omp%thread,' locked tasklist(4)'
-  call self%qlock%set ('queue_by_time')
   call real_queue_by_time (self, this, error)
-  call self%qlock%unset ('queue_by_time')
   if (io%task_logging > 2) then
     call this%task%log ('queue')
   end if
@@ -2244,17 +2242,20 @@ SUBROUTINE real_queue_by_time (self, this, error)
     !---------------------------------------------------------------------------
     ! Briefly lock the task, inc case two threads arrive at the same time
     !---------------------------------------------------------------------------
-    call task%lock%set ('check_ready')
+    call task%lock%set ('real_que')
     if (task%is_set (bits%ready)) then
+      call task%lock%unset ('real_que')
       write (stdlog,*) 'INFO: 2nd thread tried to queue task', task%id
       return
     end if
     call task%set(bits%ready)
-    call task%lock%unset ('check_ready')
+    call task%lock%unset ('real_que')
+    !...........................................................................
     if (self%verbose > 1) &
       write (io_unit%log,'(f12.6,i5,1x,a,i9,a,f12.6,2x,a,i5)') wallclock(), omp%thread, &
         'list_t%queue_by_time: adding task', task%id, ' at time', task%time, &
         'nq', self%nq
+                                           call self%qlock%set ('queue_by_time')
     nullify (prev)
     next => self%queue
     nit = 0
@@ -2263,6 +2264,7 @@ SUBROUTINE real_queue_by_time (self, this, error)
       if (nit > self%nq) then
         print *,'ERROR: hang in queue_by_time, nit =', nit
         error = .true.
+                                         call self%qlock%unset ('queue_by_time')
         return
       end if
       if (associated(next%task, task)) then
@@ -2317,6 +2319,7 @@ SUBROUTINE real_queue_by_time (self, this, error)
       task%istep, self%nq
     end if
   9 continue
+                                         call self%qlock%unset ('queue_by_time')
     call self%remove_active (this)                    ! remove from active_queue
   !-----------------------------------------------------------------------------
   ! Since we clear the ready bit in task_list%update, outside of any critical
