@@ -257,7 +257,10 @@ SUBROUTINE update (self, task_list, test)
       do while (associated(head))
         task => head%task
         if (task%mem_thread==-1) exit
-        if (omp%thread == task%mem_thread) then
+        !-----------------------------------------------------------------------
+        ! Skip otherwise good tasks that have bits%busy set -- see below
+        !-----------------------------------------------------------------------
+        if (omp%thread == task%mem_thread .and. task%is_clear(bits%busy)) then
           exit
         end if
         prev => head
@@ -272,7 +275,20 @@ SUBROUTINE update (self, task_list, test)
         task => head%task                                   ! head task
       end if
     else
-      task => head%task
+      !-------------------------------------------------------------------------
+      ! Skip tasks with bits%busy set. This will generally be tasks that were
+      ! found to be ready to update again by the same thread that did the update
+      ! -- such tasks will have bits%ready set while they still have unfinished
+      ! work, the end of which is signalled by clearing bits%busy
+      !-------------------------------------------------------------------------
+      do while (associated(head))
+        task => head%task
+        if (task%is_clear(bits%busy)) then
+          exit
+        else
+          head => head%next_time
+        end if
+      end do
     end if
     if (omp%thread == task%mem_thread) then
       !$omp atomic update

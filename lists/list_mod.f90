@@ -778,7 +778,7 @@ SUBROUTINE check_nbors (self, link)
         nbor%task%level, nbor%task%time, nbor%needs_me, &
         nbor%task%is_clear(bits%busy)
     end if
-    if (nbor%needs_me .and. nbor%task%is_clear(bits%busy)) then
+    if (nbor%needs_me) then
       call self%check_ready (nbor%link, lock=.true., status=status)
       if (self%verbose > 1) &
         write (io_unit%log,'(f12.6,i6,1x,a,i6,2i4)') wallclock(), task%id, &
@@ -1056,7 +1056,13 @@ SUBROUTINE check_ready (self, link, lock, status)
     call trace%begin ('list_t%check_ready', itimer=itimer)
   status_l = -1
   task => link%task
-  ignore = bits%ready+bits%remove+bits%virtual+bits%frozen
+  !-----------------------------------------------------------------------------
+  ! Ignore tasks with bits set that indicate they are not candidates for
+  ! scheduling.  A task with bits%busy set is OK only if is is being updated by
+  ! this thread
+  !-----------------------------------------------------------------------------
+  ignore = bits%ready + bits%remove + bits%virtual + bits%frozen + &
+    merge (0, bits%busy, task%id == omp%thread_task)
   if (task%is_clear (ignore)) then
     !...........................................................................
     if (self%verbose > 2) then
@@ -2238,9 +2244,15 @@ SUBROUTINE real_queue_by_time (self, this, error)
   ! ready queue (or executing -- the bit is cleared only after updating).
   ! Double check that no other thread has set the ready bit on this task.
   !-----------------------------------------------------------------------------
-  if (task%is_clear (bits%ready+bits%busy)) then
+  if (task%is_clear (bits%ready+bits%busy) .or. task%id == omp%thread_task) then
+    if (task%id == omp%thread_task) then
+      write (stderr,'(a,i6,":",i2.2)') 'queue_by_time: self-schedule task', &
+        task%id, task%level
+    end if
     !---------------------------------------------------------------------------
-    ! Briefly lock the task, inc case two threads arrive at the same time
+    ! Briefly lock the task, in ½case two threads arrivehere at the same time.
+    ! Setting bits%ready on a task must be done before the task is put back
+    ! onto the ready-queue, to ensure a consistent state there.
     !---------------------------------------------------------------------------
     call task%lock%set ('real_que')
     if (task%is_set (bits%ready)) then
@@ -2252,9 +2264,13 @@ SUBROUTINE real_queue_by_time (self, this, error)
     call task%lock%unset ('real_que')
     !...........................................................................
     if (self%verbose > 1) &
-      write (io_unit%log,'(f12.6,i5,1x,a,i9,a,f12.6,2x,a,i5)') wallclock(), omp%thread, &
-        'list_t%queue_by_time: adding task', task%id, ' at time', task%time, &
-        'nq', self%nq
+      write (io_unit%log,'(f12.6,i5,1x,a,i9,a,f12.6,2x,a,i5)') wallclock(), &
+        omp%thread, 'list_t%queue_by_time: adding task', task%id, ' at time', &
+        task%time, 'nq', self%nq
+    !---------------------------------------------------------------------------
+    ! The actual manipulation of the ready-queue must be done under %qlock, and
+    ! must not overlap with the brief task locking above
+    !---------------------------------------------------------------------------
                                            call self%qlock%set ('queue_by_time')
     nullify (prev)
     next => self%queue
