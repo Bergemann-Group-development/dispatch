@@ -125,21 +125,17 @@ SUBROUTINE init_nbor_pair (link1, needed, link2, needs_me, download)
   class(nbor_t), pointer:: nbor1, nbor2
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_t%init_nbor_pairs')
+  call link1%add_nbor_by_rank (link2, nbor1)
+  call link2%add_nbor_by_rank (link1, nbor2)
   !-----------------------------------------------------------------------------
   ! Add the 2nd linked task as an nbor to the 1st linked task
   !-----------------------------------------------------------------------------
-  allocate (nbor1)
-  nbor1%link => link2
-  nbor1%task => nbor1%link%task
   nbor1%needed = needed
   nbor1%needs_me = needs_me
   nbor1%download = download
   !-----------------------------------------------------------------------------
   ! Add the 1st linked task as an nbor to the 2nd linked task
   !-----------------------------------------------------------------------------
-  allocate (nbor2)
-  nbor2%link => link1
-  nbor2%task => nbor2%link%task
   nbor2%needed = needs_me
   nbor2%needs_me = needed
   nbor2%download = .false.
@@ -173,17 +169,6 @@ SUBROUTINE init_nbor_pair (link1, needed, link2, needs_me, download)
       return
     end if
   end if
-  !-----------------------------------------------------------------------------
-  ! Add the two tasks, which now are guaranteed to have matching flags
-  !-----------------------------------------------------------------------------
-  call link1%add_nbor_by_rank (link1%nbors_by_level, nbor1)
-  call link2%add_nbor_by_rank (link2%nbors_by_level, nbor2)
-  call link1%add_nbor_by_rank (link1%nbor, nbor1)
-  call link2%add_nbor_by_rank (link2%nbor, nbor2)
-  if (.not.associated(link1%nbor)) &
-    write(stderr,*) 'rt_nbors_mod WARNING: link1 has no nbor', link1%task%id
-  if (.not.associated(link2%nbor)) &
-    write(stderr,*) 'rt_nbors_mod WARNING: link2 has no nbor', link2%task%id
   call trace%end()
 END SUBROUTINE init_nbor_pair
 
