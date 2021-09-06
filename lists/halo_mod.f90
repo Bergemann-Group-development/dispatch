@@ -175,11 +175,19 @@ SUBROUTINE download (self, nbors, only, all_tgt, all_src)
   ! authoritative guard zone values
   !-----------------------------------------------------------------------------
   call self%set_filled (target)
-  call self%check_support ()
   if (self%task%is_set (bits%no_support)) then
-    source => self%parent%task
-    call guards%source_to_target (source, target, n_op=self%n_op, only=only, &
-                                  all_src=.true., all_tgt=all_tgt)  
+    !---------------------------------------------------------------------------
+    ! This is where initially unsupported tasks discover support.  If it still
+    ! has not appeared, then rely on the parent tasks guard zone values.
+    !---------------------------------------------------------------------------
+    call self%check_support ()
+    if (self%task%is_set (bits%no_support)) then
+      source => self%parent%task
+      call guards%source_to_target (source, target, n_op=self%n_op, only=only, &
+                                    all_src=.true., all_tgt=all_tgt)
+    else
+      write (stdout,*) self%task%id, 'now supported in download'
+    end if
   end if
   !-----------------------------------------------------------------------------
   ! Proceed with the normal guard zone loading
@@ -739,9 +747,11 @@ FUNCTION has_support (self)
   call self%copy_nbor_list (self%nbor, nbors)
   call self%lock%unset ('download_link')
   target => self%task
-  if (omp%thread_task > 0 .and. target%id /= omp%thread_task) then
-    write (stderr,*) 'has_support WARNING: target%id,thread_task=', &
-      target%id, omp%thread_task
+  if (verbose > 0) then
+    if (omp%thread_task > 0 .and. target%id /= omp%thread_task) then
+      write (stderr,*) 'has_support WARNING: target%id,thread_task=', &
+        target%id, omp%thread_task
+    end if
   end if
   has_support = .true.
   if (target%level > shared%levelmin+1) then
@@ -760,9 +770,10 @@ FUNCTION has_support (self)
         if (nbor%task%level >= target%level-1) then
           if (nbor%download) then
             source => nbor%task
+            nbor%distance = target%distance_to (source)
             if (verbose > 0) &
-            print '("has_support",2(i6,":",i2.2,3i3))', &
-            target%id, target%key, source%id, source%key
+              print '("has_support",2(i6,":",i2.2,3i3))', &
+              target%id, target%key, source%id, source%key
             select type (source)
             class is (patch_t)
               call target%cover (source, nbor%distance, target%filled)
@@ -810,17 +821,26 @@ SUBROUTINE request_support (self, source)
           point = target%local_position ([i1,i2,i3]) &
                 + source%distance_to (target)
           if (source%authority%contains (point)) then
-            ii = source%index_only (point, nearest=.true.)
-            source%request(ii(1),ii(2),ii(3)) = 2.0
+            ii = nint(point/source%ds + source%offset)
+            if (verbose > 0) then
+              if (any(ii < 1 .or. ii > source%gn)) then
+                write (stderr,'()') &
+                  'halo_t%request_support: index=', ii
+                call io%abort ('index out-of-range')
+              end if
+            end if
+            source%request(ii(1),ii(2),ii(3)) = 2
             target%filled(i1,i2,i3) = 0
             n = n+1
+            write (stdlog,'(a,2(i6,":",i2.2,3i4))') 'request:', &
+            target%id, target%level, i1,i2,i3, &
+            source%id, source%level, ii
           end if
         end if
       end do
       end do
       end do
       call source%request_lock%unset ('halo_t%request_support')
-      !print *, 'cleared', source%id, target%id, n, all(target%filled==0)
     end select
   end select
   call trace%end (itimer)
