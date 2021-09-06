@@ -53,6 +53,7 @@ MODULE halo_mod
     procedure:: request_support
     procedure:: check_support
     procedure:: find_support
+    procedure:: alloc_nbor
   end type
   logical, save:: check_filled=.true.
   logical, save:: detailed_timer=.false.
@@ -415,27 +416,6 @@ SUBROUTINE dbg (target, label)
 END SUBROUTINE
 
 !===============================================================================
-!> Initialize the nbor list of a new child task, by adding just the parent
-!> task as the only nbor.  Self is the child link
-!===============================================================================
-SUBROUTINE init_child_nbors (self, child_link)
-  class(halo_t):: self
-  class(halo_t), pointer:: child_link
-  class(nbor_t), pointer:: nbor
-  !-----------------------------------------------------------------------------
-  ! Add the parent as an nbor to child
-  !-----------------------------------------------------------------------------
-  call trace%begin ('halo_t%init_child_nbors')
-  allocate (guards_t:: nbor)
-  nbor%link => self%parent
-  nbor%task => self%parent%task
-  call nbor%init (self%task)
-  call self%add_nbor_by_level (self%nbor, nbor)
-  self%task%n_needed = self%task%n_needed + 1
-  call trace%end ()
-END SUBROUTINE init_child_nbors
-
-!===============================================================================
 !> Check if the nbor should actually be on the nbor list, and if so try to add
 !> it, in increasing level order.  If the task is already on the nbor list, the
 !> attempt will be quietly ignored.
@@ -471,20 +451,10 @@ SUBROUTINE conditionally_add_nbor (self, nblink, nbors, added)
           n(2) = n(2) + 1
           if (patch%interest%overlaps (nbtask%authority, distance)) then
             n(3) = n(3) + 1
-            if (nbtask%id == io%id_debug) write (stdlog,*) nbtask%id, 'overlaps_r'
-            !--- if yes, allocate nbor associated with task, and add it ---
-            allocate (guards_t:: nbor)
-            select type(nbor)
-            class is (guards_t)
-              nbor%link => nblink
-              nbor%task => nbtask
-              call nbor%init (task)
-            class default
-              write (stderr,*) 'halo_t%conditionally_add_nbor: WARNING'
-              call nbor%init (task)
-            end select
+            call self%add_nbor (nblink, nbors, nbor)
             nbor%distance = distance
-!            nbor%status = nbor%task%status
+            !...................................................................
+            if (nbtask%id == io%id_debug) write (stdlog,*) nbtask%id, 'overlaps_r'
             if (verbose > 0) then
               write (stdlog,'(f12.6,a,2i6,":",i2.2,2(1x,3f7.3),2(1x,4i4))') &
                 wallclock(), pad_trace(1:indent)// &
@@ -494,7 +464,7 @@ SUBROUTINE conditionally_add_nbor (self, nblink, nbors, added)
                 nbtask%distance(patch)/task%size, &
                 patch%hash_key(), nbtask%hash_key()
             end if
-            call self%add_nbor_by_level (nbors, nbor, added)
+            !...................................................................
           end if
         end if
       end select
@@ -675,17 +645,22 @@ END SUBROUTINE get_filled
 !> Check that target is filled
 !===============================================================================
 SUBROUTINE print_filled (target)
-  class(patch_t) :: target
-  integer        :: i1, i2, i3
-  integer, save  :: n_max=500
+  class(patch_t)     :: target
+  integer            :: i1, i2, i3
+  integer, parameter :: m_max=500
+  integer, save      :: n_max=m_max
   !-----------------------------------------------------------------------------
   write (stdlog,'(a,i6)') &
     'guards_t%check_filled: target not filled =', target%id
   do i3=1,target%gn(3)
   do i2=1,target%gn(2)
   do i1=1,target%gn(1)
-    if (n_max<=0) &
+    if (n_max <= 0) then
+      if (n_max == 0) &
+        write (stdlog,*) 'print_filled reached m_max=', m_max
+      n_max = -1
       return
+    end if
     if (target%filled(i1,i2,i3)==0) then
       write (stdlog,'(a,i6,2x,3i3)') &
         'guards_t%print_filled: id,ii=', target%id, i1, i2, i3
@@ -912,5 +887,18 @@ SUBROUTINE find_support (self)
   end if
   call trace%end ()
 END SUBROUTINE find_support
+
+!===============================================================================
+!> Overloaded procedure
+!===============================================================================
+SUBROUTINE alloc_nbor (self, nbor)
+  class(halo_t), target:: self
+  class(nbor_t), pointer:: nbor
+  !-----------------------------------------------------------------------------
+  allocate (guards_t:: nbor)
+  call nbor%init (self%task)
+  nbor%link => self
+  nbor%task => self%task
+END SUBROUTINE alloc_nbor
 
 END MODULE halo_mod

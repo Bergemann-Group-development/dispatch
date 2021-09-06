@@ -61,9 +61,7 @@ MODULE link_mod
     procedure:: update
     procedure:: download
     procedure, nopass:: init_verbose
-    procedure:: add_nbor_by_quality
-    procedure:: add_nbor_by_level
-    procedure:: add_nbor_by_rank
+    procedure:: alloc_nbor
     procedure:: remove_nbor
     procedure:: remove_from_nbors
     procedure:: remove_nbor_list
@@ -100,8 +98,11 @@ CONTAINS
 SUBROUTINE init_nbor (self, target)
   class(nbor_t):: self
   class(task_t), pointer:: target
+  !.............................................................................
   call trace%begin ('nbor_t%init')
   self%distance = self%task%distance (target)
+  call target%nbor_relations (self%task, self%needed, self%needs_me, &
+                              self%download)
   call trace%end ()
 END SUBROUTINE init_nbor
 
@@ -220,138 +221,144 @@ SUBROUTINE make_new_nbor (self, selfp, that)
   !> ...........................................................................
   call trace_begin('list_t%make_new_nbor', 1)
   write (stderr,*) 'list_t%make_new_nbor is deprecated - interferes with other tasks!'
-  call self%add_nbor_by_quality (that)
-  call that%add_nbor_by_quality (selfp)
+  call self%add_nbor (that)
+  call that%add_nbor (selfp)
   call trace_end
 END SUBROUTINE make_new_nbor
 
 !===============================================================================
-!> Add a link node into the nbors list of self, in increasing quality order.
-!> self must be a link whose 'nbors' points to a chain of nbors
+!> Add a link node into the nbors list of self, by default in increasing level
+!> order and optionally in quality or rank order.  Optionally return the nbor
+!> link, and/or a flag indicating whether or the task was added (is rejected
+!> if it is already on the list)
 !===============================================================================
-SUBROUTINE add_nbor_by_quality (self, this)
+SUBROUTINE add_nbor (self, link, nbors, nbor, added, by_quality, by_rank)
   class(link_t):: self
-  class(link_t), pointer:: this
-  class(nbor_t), pointer:: next, prev
-  class(nbor_t), pointer:: nbor
+  class(link_t), pointer:: link
+  class(nbor_t), pointer, optional:: nbors
+  class(nbor_t), pointer, optional:: nbor
+  logical,                optional:: added
+  logical,                optional:: by_quality, by_rank
+  !.............................................................................
+  logical:: ok
+  class(nbor_t), pointer:: next, prev, nbor_l
+  character(8):: kind
   integer, save:: itimer=0
   !.............................................................................
-  call trace%begin ('list_t%add_nbor_by_quality', itimer=itimer)
-  call self%lock%set ('add_nbor_by_quality')
-  allocate (nbor)
-  nbor%link => this
-  nbor%task => this%task
-  call self%check_nbor_relations(nbor%link,nbor%needed, &
-                                 nbor%needs_me, nbor%download)
-  !call self%task%nbor_relations (nbor%task, nbor%needed, nbor%needs_me, &
-  !                               nbor%download)
+  if (present(by_quality)) then
+    call trace%begin ('list_t%add_nbor_by_quality', itimer=itimer)
+    kind = 'quality'
+  else if (present(by_rank)) then
+    call trace%begin ('list_t%add_nbor_by_rank', itimer=itimer)
+    kind = 'rank'
+  else
+    call trace%begin ('list_t%add_nbor_by_level', itimer=itimer)
+    kind = 'level'
+  end if
+  call link%lock%set ('add_nbor')
+  !-----------------------------------------------------------------------------
+  ! Use a class method to overload the allocation
+  !-----------------------------------------------------------------------------
+  call link%alloc_nbor (nbor_l)
+  !-----------------------------------------------------------------------------
+  ! FIXME: Consider this carefully!
+  !-----------------------------------------------------------------------------
+  call link%task%nbor_relations (nbor_l%task, nbor_l%needed, nbor_l%needs_me, &
+                                 nbor_l%download)
+  !.............................................................................
   if (verbose > 1) &
     write (io_unit%mpi,'(f12.6,i4,i6,2x,a,i4,2x,a)') wallclock(), omp%thread, &
-    this%task%id, 'needed by', this%task%n_needed, 'add_by_q'
-  flush (io_unit%mpi)
-  nullify (prev)
-  next => self%nbor
-  do while (associated(next))
-    if (associated(next%task,this%task)) then
-      !-------------------------------------------------------------------------
-      ! Return if this task is already in the nbor list
-      !-------------------------------------------------------------------------
-      goto 9
-    else if (next%task%level > this%task%level) then
-      !-------------------------------------------------------------------------
-      ! Found a task we should be ahead of, so insert here
-      !-------------------------------------------------------------------------
-      nbor%next => next
-      exit
-    end if
-    prev => next
-    next => next%next
-  end do
-  !-----------------------------------------------------------------------------
-  ! This task has the highest quality, so append it
-  !-----------------------------------------------------------------------------
-  if (associated(prev)) then
-    prev%next => nbor
-    nullify (nbor%next)
-  else
-    self%nbor => nbor
-  end if
-  self%task%n_nbors = self%task%n_nbors+1
-  !$omp atomic update
-  this%task%n_needed = this%task%n_needed + 1   ! because linked task derefined
-9 continue
-  call self%lock%unset ('add_nbor_by_quality')
-  call trace%end (itimer)
-END SUBROUTINE add_nbor_by_quality
-
-!===============================================================================
-!> Add an nbor node into the nbors list of self, in increasing rank order.
-!> self must be a link whose 'nbors' points to a chain of nbors, and 'nbor'
-!> must be an nbor with both a link and task pointer set.
-!===============================================================================
-SUBROUTINE add_nbor_by_level (self, nbors, nbor, added)
-  class(link_t):: self
-  class(nbor_t), pointer:: nbors, nbor
-  class(nbor_t), pointer:: next, prev
-  logical, optional:: added
+    link%task%id, 'needed by', link%task%n_needed, 'add_by_'//trim(kind)
   !.............................................................................
-  call trace_begin ('link_t%add_nbor_by_level', 1)
-  if (io%verbose > 2 .or. self%task%id == io%id_debug) &
-    write (stdlog,'(2(a,i6,i3,3x),a,2l1)') &
-      'link_t%add_nbor_by_level:  adding task', nbor%task%id, nbor%task%level, &
-      'to nbor list of', self%task%id, self%task%level, &
-      'BV=', nbor%task%is_set(bits%boundary), nbor%task%is_set(bits%virtual)
-  if (present(added)) added = 0
+  ok = .true.
   nullify (prev)
-  next => nbors
-  !-----------------------------------------------------------------------------
-  ! Check that the task is not self
-  !-----------------------------------------------------------------------------
-  if (nbor%task%id == self%task%id) then
-    write (stderr,*) self%task%id, 'ERROR: trying to add self to nbor list of', &
-      nbor%task%id
-    goto 9
+  if (present(nbors)) then
+    next => nbors
+  else
+    next => self%nbor
   end if
-  !-----------------------------------------------------------------------------
-  ! Add it before the next higher levelm unless it is found before then
-  !-----------------------------------------------------------------------------
-  nullify (prev)
-  next => nbors
   do while (associated(next))
-    if (next%task%id == nbor%task%id) then
-      if (verbose > 1) then
-        write (stdlog,'(f12.6,a,2i6)') wallclock(), pad_trace(1:indent)// &
-          'INFO: nbor already on nbor list, self,nbor=', &
-          self%task%id, nbor%task%id
-      end if
-      goto 9
-    else if (next%task%level > nbor%task%level) then
+    if (next%task%id == link%task%id) then
       !-------------------------------------------------------------------------
-      ! Found a task we should be ahead of, so insert here
+      ! Return if link task is already in the nbor list
       !-------------------------------------------------------------------------
-      nbor%next => next
+      ok = .false.
       exit
+    else if (present(by_quality)) then
+      if (next%task%quality > link%task%quality) then
+        !-----------------------------------------------------------------------
+        ! Found a task we should be ahead of, so insert here
+        !-----------------------------------------------------------------------
+        nbor_l%next => next
+        exit
+      end if
+    else if (present(by_rank)) then
+      if (next%task%rank > link%task%rank) then
+        !-----------------------------------------------------------------------
+        ! Found a task we should be ahead of, so insert here
+        !-----------------------------------------------------------------------
+        nbor_l%next => next
+        exit
+      end if
+    else
+      if (next%task%level > link%task%level) then
+        !-----------------------------------------------------------------------
+        ! Found a task we should be ahead of, so insert here
+        !-----------------------------------------------------------------------
+        nbor_l%next => next
+        exit
+      end if
     end if
     prev => next
     next => next%next
   end do
-  !-----------------------------------------------------------------------------
-  ! This task has the highest level, so append it's nbor link
-  !-----------------------------------------------------------------------------
-  if (associated(prev)) then
-    prev%next => nbor
+  if (ok) then
+    !---------------------------------------------------------------------------
+    ! This task has the highest quality / level, so append it
+    !---------------------------------------------------------------------------
+    if (associated(prev)) then
+      prev%next => nbor_l
+      nullify (nbor_l%next)
+    else
+      !-------------------------------------------------------------------------
+      ! If prev is not associated, this is the first nbor
+      !-------------------------------------------------------------------------
+      if (present(nbors)) then
+        nbors => nbor_l
+      else
+        self%nbor => nbor_l
+      end if
+    end if
+    if (present(added)) added = .true.
+    link%task%n_nbors = link%task%n_nbors + 1
+    !$omp atomic update
+    link%task%n_needed = link%task%n_needed + 1
   else
-    nbors => nbor
+    if (present(added)) added = .false.
+    write (stderr,*) 'WARNING: trying to add existing nbor', next%task%id
   end if
-  nullify (nbor%next)
-  if (present(added)) added = .true.
-  self%task%n_nbors = self%task%n_nbors + 1
-  !$omp atomic update
-  nbor%task%n_needed = nbor%task%n_needed + 1   ! because linked task derefined
-9 continue
-  call trace%end ()
-END SUBROUTINE add_nbor_by_level
+  if (present(nbor)) then
+    nbor => nbor_l
+  end if
+  call link%lock%unset ('add_nbor')
+  call trace%end (itimer)
+END SUBROUTINE add_nbor
 
+!===============================================================================
+!> Overloaded procedure
+!===============================================================================
+SUBROUTINE alloc_nbor (self, nbor)
+  class(link_t), target:: self
+  class(nbor_t), pointer:: nbor
+  !-----------------------------------------------------------------------------
+  allocate (nbor)
+  call nbor%init (self%task)
+  nbor%link => self
+  nbor%task => self%task
+END SUBROUTINE alloc_nbor
+
+!===============================================================================
+!===============================================================================
 SUBROUTINE check_nbor_relations(self, nbor, needed, needs_me, download)
   class(link_t):: self, nbor
   logical:: needed, needs_me, download
@@ -392,79 +399,6 @@ SUBROUTINE check_level_sort (self)
     nbor => nbor%next
   end do
 END SUBROUTINE check_level_sort
-
-!===============================================================================
-!> Add a link node into the nbors list of self, in increasing rank order.
-!> self must be a link whose 'nbors' points to a chain of nbors, and 'nbor'
-!> must be an nbor with both a link and task pointer set.
-!===============================================================================
-SUBROUTINE add_nbor_by_rank (self, nbors, nbor)
-  class(link_t):: self
-  class(nbor_t), pointer:: nbors, nbor
-  class(nbor_t), pointer:: next, prev
-  !.............................................................................
-  call trace_begin ('list_t%add_nbor_by_rank', 1)
-  if (verbose > 1) &
-    write (io_unit%mpi,'(f12.6,i4,i6,2x,a,i4,2x,a)') wallclock(), omp%thread, &
-    nbor%task%id, 'needed by', nbor%task%n_needed, 'add_by_rank'
-  flush (io_unit%mpi)
-  if (io%verbose>2) &
-  write (io_unit%log,*) '  adding task', nbor%task%id, &
-    nbor%task%is_set(bits%boundary), nbor%task%is_set(bits%virtual), &
-    ' to nbor list of', self%task%id
-  nullify (prev)
-  next => nbors
-  !-------------------------------------------------------------------------
-  ! Check that the task is not self
-  !-------------------------------------------------------------------------
-  if (nbor%task%id == self%task%id) then
-    write (stderr,*) self%task%id, 'ERROR: trying to add self to nbor list of', &
-      nbor%task%id
-    goto 9
-  end if
-  !-------------------------------------------------------------------------
-  ! Check that the new task is not already in the list
-  !-------------------------------------------------------------------------
-  next => nbors
-  do while (associated(next))
-    if (next%task%id == nbor%task%id) then
-      write (io_unit%log,*) self%task%id, &
-        'WARNING: trying to add existing nbor', nbor%task%id
-      goto 9
-    end if
-    next => next%next
-  end do
-  !-------------------------------------------------------------------------
-  ! If not, find the right place to add it
-  !-------------------------------------------------------------------------
-  nullify (prev)
-  next => nbors
-  do while (associated(next))
-    if (next%task%rank >= nbor%task%rank) then
-      !-------------------------------------------------------------------------
-      ! Found a task we should be ahead of, so insert here
-      !-------------------------------------------------------------------------
-      nbor%next => next
-      exit
-    end if
-    prev => next
-    next => next%next
-  end do
-  !-----------------------------------------------------------------------------
-  ! This task has the highest rank, so append it's nbor link
-  !-----------------------------------------------------------------------------
-  if (associated(prev)) then
-    prev%next => nbor
-    nullify (nbor%next)
-  else
-    nbors => nbor
-  end if
-  self%task%n_nbors = self%task%n_nbors+1
-  !$omp atomic update
-  nbor%task%n_needed = nbor%task%n_needed + 1   ! because linked task derefined
-9 continue
-  call trace%end ()
-END SUBROUTINE add_nbor_by_rank
 
 !===============================================================================
 !> Remove the this task from links nbor list 
@@ -648,25 +582,6 @@ SUBROUTINE copy_nbor_list (self, old_head, new_head)
   !-----------------------------------------------------------------------------
   call trace%end (itimer)
 END SUBROUTINE copy_nbor_list
-
-!===============================================================================
-!> Update the nbor list of self, adding self to the each nbor's nbor list
-!===============================================================================
-! SUBROUTINE update_nbors (self)
-  ! class(link_t):: self
-  ! class(link_t), pointer:: nbor, new
-  ! !.............................................................................
-  ! call trace_begin('link_t%update_nbors')
-  ! nbor => self%nbor                                     ! start checking nbors
-  ! do while (associated(nbor))                           ! loop over nbor list
-    ! allocate (new)                                      ! new link for nbor's nbor list
-    ! new%task => self%task                               ! its task is the link task
-    ! new%link => self%task%link                          ! add also the link pointer
-    ! call nbor%add_nbor_by_rank (self%nbor, new)         ! add a new nbor link
-    ! nbor => nbor%next                                   ! continue on nbor list
-  ! end do
-  ! call trace_end
-! END SUBROUTINE update_nbors
 
 !===============================================================================
 !> Print a list of nbors to the rank-thread log file
@@ -1062,26 +977,6 @@ LOGICAL FUNCTION needs_to_add (self, nblink)
   end if
   call trace%end ()
 END FUNCTION needs_to_add
-
-!===============================================================================
-!> One-sided nbor relations, where the decisions about details are taken inside
-!> the overloaded task%nbor_relations() procedure, which recognizes the proper
-!> attributes of the relation.
-!===============================================================================
-SUBROUTINE add_nbor (self, nblink)
-  class(link_t):: self
-  class(link_t), pointer:: nblink
-  class(nbor_t), pointer:: nbor
-  !-----------------------------------------------------------------------------
-  call trace%begin ('link_t%add_nbor')
-  allocate (nbor)
-  nbor%link => nblink
-  nbor%task => nblink%task
-  call self%check_nbor_relations (nbor%link, nbor%needed, nbor%needs_me, &
-                                 nbor%download)
-  call self%add_nbor_by_rank(self%nbor, nbor)
-  call trace%end ()
-END SUBROUTINE add_nbor
 
 !===============================================================================
 !> Check that nbor relations are cross-symmetric

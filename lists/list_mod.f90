@@ -1618,17 +1618,7 @@ SUBROUTINE init_nbors_direct (self, link, nbors)
         overlaps = scan%task%overlaps(link%task) &
              .and. abs(scan%task%level - link%task%level) <= 2
         if (overlaps) then
-          allocate (guards_t:: nbor)
-          nbor%link => scan
-          nbor%task => scan%task
-          select type(nbor)
-          class is (guards_t)
-            call nbor%init (link%task)
-          class default
-            write (stderr,*) 'init_nbors_direct: WARNING'
-            call nbor%init (link%task)
-          end select
-          call link%add_nbor_by_level (nbors, nbor)
+          call link%add_nbor (scan, nbors, nbor)
         end if
       end if
     end if
@@ -2959,8 +2949,6 @@ SUBROUTINE update_nbor_status (self, link)
       nbor%task%is_set(bits%boundary), nbor%task%is_set(bits%virtual)
     status = nbor%task%status                           ! current status
     call io%abort ('disabled for now')
-    !call link%remove_nbor (nbor%task, link%nbor)        ! remove out-of-order
-    !call nbor%link%add_nbor_by_rank (link%nbor, link)   ! add in rank order
     call self%update_status (nbor%link)                 ! new status
     if (nbor%task%is_set (bits%boundary).and.iand(status,bits%boundary)==0) then
       if (io%verbose>0) &
@@ -2974,7 +2962,6 @@ SUBROUTINE update_nbor_status (self, link)
       call self%send_to_vnbors (nbor%link)
       call nbor%link%task%clear (bits%swap_request + &  ! sometimes set -- make
                                  bits%init_nbors)       ! sure clear after send
-!print *,nbor%link%task%id,'send clear init_nbors'
     end if
     nbor => nbor%next                                   ! check next nbor
   end do
