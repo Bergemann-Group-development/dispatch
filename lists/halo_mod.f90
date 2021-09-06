@@ -851,7 +851,6 @@ END SUBROUTINE request_support
 !===============================================================================
 SUBROUTINE check_support (self)
   class(halo_t):: self
-  class(task_t), pointer:: source
   class(nbor_t), pointer:: nbor
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -859,32 +858,18 @@ SUBROUTINE check_support (self)
     return
   call trace%begin ('halo_t%check_support', itimer=itimer)
   if (self%has_support()) then
+    call self%task%log ('has', 3)
     if (self%task%is_set (bits%no_support)) then
-      !.........................................................................
-!print *, self%task%id, 'clear no_support', omp%thread
-      !.........................................................................
       call self%task%clear (bits%no_support)
+      call self%task%log ('support', 3)
     end if
   else
+    call self%task%log ('hasnot', 3)
     if (self%task%is_clear (bits%no_support)) then
-      !.........................................................................
-!print *, self%task%id, 'set no_support', omp%thread
-      !.........................................................................
       call self%task%set (bits%no_support)
-      call self%find_support (source)
-      if (associated(source)) then
-        call self%request_support (source)
-!print *, self%task%id, 'request support from', source%id
-      else
-        write (stderr,*) 'halo_t%check_support WARNING: did not find support', &
-          self%task%id, omp%thread, associated(self%nbor)
-        nbor => self%nbor
-        do while (associated(nbor))
-          print *, nbor%task%id, nbor%task%level, nbor%distance/nbor%task%size
-          nbor => nbor%next
-        end do
-      end if
-    end if
+      call self%task%log ('no_support', 3)
+      call self%find_support ()
+   end if
   end if
   call trace%end (itimer)
 END SUBROUTINE check_support
@@ -892,26 +877,39 @@ END SUBROUTINE check_support
 !===============================================================================
 !> Find a level L-2 task that overlaps
 !===============================================================================
-SUBROUTINE find_support (self, source)
+SUBROUTINE find_support (self)
   class(halo_t):: self
   class(task_t), pointer:: source, target
   class(nbor_t), pointer:: nbor
+  logical:: found
+  integer:: id
   !-----------------------------------------------------------------------------
   call trace%begin ('halo_t%find_support')
+  found = .false.
   target => self%task
+  id = target%id
   nbor => self%nbor
   do while (associated(nbor))
     source => nbor%task
     if (source%level == self%task%level-2) then
       nbor%distance = target%distance_to (source)
-      if (source%authority%overlaps (target%interest, nbor%distance)) then
-        call trace%end ()
-        return
+      if (target%interest%overlaps (source%authority, nbor%distance)) then
+        call self%request_support (source)
+        call source%log ('got_request', 3)
+        found = .true.
       end if
     end if
     nbor => nbor%next
   end do
-  nullify (source)
+  if (.not.found) then
+    write (stderr,*) 'halo_t%check_support WARNING: did not find support', &
+      self%task%id, omp%thread, associated(self%nbor)
+    nbor => self%nbor
+    do while (associated(nbor))
+      print *, nbor%task%id, nbor%task%level, nbor%distance/nbor%task%size
+      nbor => nbor%next
+    end do
+  end if
   call trace%end ()
 END SUBROUTINE find_support
 
