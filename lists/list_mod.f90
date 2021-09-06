@@ -924,8 +924,8 @@ SUBROUTINE check_oldest (self, clear)
   nullify (oldestnb)
   call self%lock%set ('check_oldest')
   link => self%head
-  do while (associated (link))
-    if (link%task%is_clear (bits%frozen+bits%no_support)) then
+  do while (associated (link))                        ! keep going until end
+    if (link%task%is_clear (bits%frozen)) then
       if (link%task%is_set(bits%virtual)) then
         if (link%task%time < toldv) then
           toldv = link%task%time
@@ -972,7 +972,6 @@ SUBROUTINE check_oldest (self, clear)
     end do
     if (present(clear)) then
       call oldest%task%clear (bits%ready+bits%busy)
-      call oldest%task%log ('oldest', 3)
       call self%queue_by_time (oldest)                  ! add task to queue
       write (io_unit%log,*) 'task queued'
       flush (io_unit%log)
@@ -1057,10 +1056,7 @@ SUBROUTINE check_ready (self, link, lock, status)
     call trace%begin ('list_t%check_ready', itimer=itimer)
   status_l = -1
   task => link%task
-  ignore = bits%ready+bits%remove+bits%virtual+bits%frozen+bits%no_support
-  if (task%is_set (bits%no_support)) then
-    call task%log ('ignore', 3)
-  end if
+  ignore = bits%ready+bits%remove+bits%virtual+bits%frozen
   if (task%is_clear (ignore)) then
     !...........................................................................
     if (self%verbose > 2) then
@@ -1084,7 +1080,7 @@ SUBROUTINE check_ready (self, link, lock, status)
     !---------------------------------------------------------------------------
     ! Tasks that are frozen or removed should not be used in the loop
     !---------------------------------------------------------------------------
-    ignore = bits%frozen + bits%remove + bits%no_support
+    ignore = bits%frozen + bits%remove
     ok = .true.
     status_l = 0
     nbor => link%nbor                                   ! use original nbor list
@@ -1434,22 +1430,7 @@ SUBROUTINE add_new_link (self, link)
   !-----------------------------------------------------------------------------
   ! Generate a new nbor list -- also checks support
   !-----------------------------------------------------------------------------
-  call self%init_nbors (link)
-  !-----------------------------------------------------------------------------
-  ! Check if any of the nbors acquired support because of the new task
-  !-----------------------------------------------------------------------------
-  nbor => link%nbor
-  do while (associated(nbor))
-    if (nbor%task%level == task%level+1) then
-      if (nbor%task%is_set (bits%no_support)) then
-        call nbor%link%lock%set ('add_new_link')
-        call self%init_nbors (nbor%link)
-        call nbor%link%check_support ()
-        call nbor%link%lock%unset ('add_new_link')
-      end if
-    end if
-    nbor => nbor%next
-  end do
+  call self%init_nbors (link)                                           ! RULE B
   !-----------------------------------------------------------------------------
   ! If it is a boundary task, send it to rank nbors
   !-----------------------------------------------------------------------------
