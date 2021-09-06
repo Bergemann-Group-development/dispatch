@@ -402,30 +402,25 @@ SUBROUTINE init_patch (self, patch, sink_position)
     !-----------------------------------------------------------------------------
     ! Add the sink task as an nbor to the MHD task
     !-----------------------------------------------------------------------------
-    allocate (nbor)
-    nbor%link => self%link
-    nbor%task => nbor%link%task
+    call patch%link%add_nbor (self%link, nbor=nbor)
     nbor%needed = .true.
     nbor%needs_me = .true.
     nbor%download = .true.
-    call patch%link%add_nbor_by_rank (patch%link%nbor, nbor)
     if (verbose > 0) &
       write (stdout,*) &
       'added sink task',nbor%task%id,' as nbor of',patch%link%task%id
     !-----------------------------------------------------------------------------
     ! Add the MHD task as an nbor to the sink task
     !-----------------------------------------------------------------------------
-    allocate (nbor)
-    nbor%link => patch%link
-    nbor%task => nbor%link%task
+    call self%link%add_nbor (patch%link, nbor=nbor)
     nbor%needed = .true.
     nbor%needs_me = .true.
     nbor%download = .true.
-    call self%link%add_nbor_by_rank (self%link%nbor, nbor)
-  if (verbose > 0) &
+    call self%link%add_nbor (self%link%nbor, nbor)
+    if (verbose > 0) &
       write (stdout,*) &
       'added sink task',patch%link%task%id,' as nbor of',nbor%task%id
-  end if
+    end if
   !---------------------------------------------------------------------------
   ! Add the new task as an nbor to all previous sink task, and add all of
   ! those tasks to the nbor list of the new task
@@ -433,22 +428,16 @@ SUBROUTINE init_patch (self, patch, sink_position)
   link => sink_task_list%head
   do while (associated(link))
     if (.not.associated(link,self%link)) then
-      allocate (nbor)
-      nbor%link => link
-      nbor%task => nbor%link%task
+      call self%link%add_nbor (link, nbor=nbor)
       nbor%needed   = .true.      ! the sink_particles_t nbor is needed ...
       nbor%needs_me = .true.      ! .. and it needs me ...
       nbor%download = .false.     ! but should not be downloaded
-      call self%link%add_nbor_by_rank (self%link%nbor, nbor)
       if (verbose > 0) &
         write (stdout,*)'added',link%task%id,' as nbor of',self%id
-      allocate (nbor)
-      nbor%link => self%link
-      nbor%task => nbor%link%task
+      call link%add_nbor (self%link)
       nbor%needed   = .true.      ! the sink_particles_t nbor is needed ...
       nbor%needs_me = .true.      ! .. and it needs me ...
       nbor%download = .false.     ! but should not be downloaded
-      call link%add_nbor_by_rank (link%nbor, nbor)
       if (verbose > 0) &
         write (stdout,*)'added',self%id,' as nbor of',link%task%id
     end if
