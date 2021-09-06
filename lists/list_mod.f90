@@ -1455,7 +1455,7 @@ SUBROUTINE init_nbors (self, link)
   class(link_t), pointer:: link
   !.............................................................................
   class(nbor_t), pointer:: new_nbors, old_nbors
-  integer, save:: itimer=0, n_max=1000
+  integer, save:: itimer=0, n_max=10000
   !-----------------------------------------------------------------------------
   call trace%begin('list_t%init_nbors', itimer=itimer)
   call link%task%log ('init_nbors')
@@ -1481,7 +1481,19 @@ SUBROUTINE init_nbors (self, link)
   ! Update the status bits based on the new nbor list
   !-----------------------------------------------------------------------------
   call self%update_status (link)
-  call link%check_support ()
+  if (link%task%is_set(bits%no_support)) then
+    call link%check_support ()
+    if (link%task%is_set(bits%no_support)) then
+      write (stdout,*) link%task%id, 'still unsupported'
+    else
+      write (stdout,*) link%task%id, 'now supported'
+    end if
+  else
+    call link%check_support ()
+    if (link%task%is_set(bits%no_support)) then
+      write (stdout,*) link%task%id, 'new unsupported'
+    end if
+  end if
   !-----------------------------------------------------------------------------
   ! Remove the released nbor list, to recover the memory
   !-----------------------------------------------------------------------------
@@ -2311,9 +2323,8 @@ SUBROUTINE real_queue_by_time (self, this, error)
   ! region, it is perfectly normal that several threads compete about putting
   ! a given task onto the queue, so there is no reason to print a warning here
   !-----------------------------------------------------------------------------
-  else if (self%verbose > 0) then
-    if (self%verbose > 1) &
-      print '(i6,a,i5,a,i6,1p,e15.6)', mpi%rank,' INFO: thread',omp%thread, &
+  else if (self%verbose > 2) then
+    print '(i6,a,i5,a,i6,1p,e15.6)', mpi%rank,' INFO: thread',omp%thread, &
       ' found ready bit in queue_by_time for task', task%id, task%time
     write (io_unit%log,*) wallclock(),' INFO: thread',omp%thread, &
       ' found ready bit in queue_by_time for task', task%id, task%time

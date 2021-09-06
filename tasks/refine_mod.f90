@@ -722,7 +722,7 @@ SUBROUTINE post_process (self, patch, child_list)
         omp%thread_task = task%link%task%id
         call self%task_list%add_new_link (task%link)
         !.......................................................................
-        if (verbose > 1) then
+        if (verbose > 2) then
           write (stdout,'(a,i6,a,i6,":",i2.2,3i3,l3)') &
             'refine_mod:',patch%id,' add_new_link', task%id, task%key, &
             task%is_clear (bits%no_support)
