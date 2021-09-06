@@ -2212,7 +2212,7 @@ subroutine check_nbor (level, position, size)
               'read_external_t%check_nbor: task,nbor:', &
               link%task%id, link%task%level, nbtask%id, nbtask%level, key
           n = n+1
-          call link%add_nbor_by_quality (nbtask%link)
+          call link%add_nbor (nbtask%link)
         end if
       end select
     end if
@@ -2243,10 +2243,7 @@ SUBROUTINE init_nbors2 (list, link)
       n = n+1
       dist = abs(scan%task%position-link%task%position)
       if (all(dist <= 0.5*(scan%task%size + link%task%size))) then
-        allocate (nbor)
-        nbor%link => scan
-        nbor%task => scan%task
-        call link%add_nbor_by_quality (nbor)
+        call link%add_nbor (scan)
       end if
     end if
     scan => scan%next
