@@ -179,12 +179,12 @@ MODULE refine_mod
   USE solver_mod
   USE extras_mod
   USE shared_mod
-  !USE download_mod
   USE timer_mod
   USE data_io_mod
   USE math_mod
   USE scaling_mod
   USE eos_mod
+  USE region_mod
   implicit none
   private
   !
@@ -211,7 +211,7 @@ MODULE refine_mod
     procedure:: check_support
   end type
   !
-  integer:: check_interval=1                  ! Number of steps betwen checks
+  integer:: check_interval=3                  ! Number of steps betwen checks
   real:: min_dx=0.0, max_dx=1e32              ! Min and max grid size
   real:: refine_from_t=0.0                    ! Time limits for occurence of refinement
   real:: refine_until_t=1e30                  ! Time limits for occurence of refinement
@@ -374,8 +374,7 @@ SUBROUTINE check (self, tasklist, link, was_refined, was_derefined)
       dxmin >  min_dx               .and. &
       dxmax <= max_dx               .and. &
       patch%time >= refine_from_t   .and. &
-      patch%time <  refine_until_t  .and. &
-      patch%istep >= patch%check_refine_next) then
+      patch%time <  refine_until_t) then
     if (verbose > 3) &
       self%task_list%verbose = verbose
     !---------------------------------------------------------------------------
@@ -397,10 +396,6 @@ SUBROUTINE check (self, tasklist, link, was_refined, was_derefined)
       call child_list%dealloc ()
       deallocate (child_list)
     end if
-    !---------------------------------------------------------------------------
-    ! Update next refinement step counter and deallocate local irefine
-    !---------------------------------------------------------------------------
-    patch%check_refine_next = patch%istep + check_interval
     if (verbose > 2) &
       write (io_unit%log,*) 'deallocated irefine in refine', mpi%rank, id
     !---------------------------------------------------------------------------
@@ -439,27 +434,26 @@ FUNCTION refine_needed (self, link) RESULT (refine)
   patch => task
   refine = -1
   !-----------------------------------------------------------------------------
-  ! Before testing any criteria, add -derefine_limit, where the value should
-  ! be less than 1.0, to give some hysteresis to refinement/derefinement.
-  ! Other tasks may have imposed values on patch%request in the mean time.
-  ! By briefly locking access here, and when doing requests, the request
-  ! operation becomes atomic.
+  ! Support refinement
   !-----------------------------------------------------------------------------
-  patch%frefine = -derefine_limit
-  call patch%request_lock%set ('refine_needed')
-  patch%frefine = patch%frefine + patch%request
-  patch%request = 0
-  call patch%request_lock%unset ('refine_needed')
-  !-----------------------------------------------------------------------------
-  ! Check if we need to refine to provide support
-  !-----------------------------------------------------------------------------
-  lrefine = maxval(patch%frefine)
-  refine = max(refine, lrefine)
+  refine = max(refine, self%check_support (link))
   if (verbose > 1) write (stdlog,1) &
-      wallclock(), pad_trace(1:indent), id, level, refine, &
-      minval(patch%frefine), maxval(patch%frefine), 'requests'
+    wallclock(), pad_trace(1:indent), id, level, refine, 0., 0., 'support'
     1 format(f12.6,a,"refine_needed: id,refine,min,max,type=", &
             i6,":",i2.2,i3,1p,2e11.2,2x,a)
+  !-----------------------------------------------------------------------------
+  ! Check the rest of the criteria less often, but allow derefine only when
+  ! all criteria are used
+  !-----------------------------------------------------------------------------
+  if (patch%istep < patch%check_refine_next) then
+    refine = max(0,refine)
+    call trace%end (itimer, detailed_timer=detailed_timer)
+    return
+  end if
+  !-----------------------------------------------------------------------------
+  patch%check_refine_next = patch%istep + check_interval
+  call patch%support_arrays ()
+  patch%frefine = -derefine_limit
   !-----------------------------------------------------------------------------
   ! Extras refinement
   !-----------------------------------------------------------------------------
@@ -481,10 +475,10 @@ FUNCTION refine_needed (self, link) RESULT (refine)
   !-----------------------------------------------------------------------------
   if (max_shock > 0.0 .or. max_contact > 0.0) &
     refine = max (refine, self%shock_and_cd_detector(patch))
-    if (verbose > 1) write (stdlog,1) &
+  if (verbose > 1) write (stdlog,1) &
     wallclock(), pad_trace(1:indent), id, level, refine, &
     minval(patch%frefine), maxval(patch%frefine), 'shock'
-    !-----------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
   ! compression detector
   !-----------------------------------------------------------------------------
   if (max_compress > 0.0) &
@@ -503,7 +497,8 @@ FUNCTION refine_needed (self, link) RESULT (refine)
   !-----------------------------------------------------------------------------
   ! gradient detector
   !-----------------------------------------------------------------------------
-  if (any(max_grad > 0.0)) refine = max (refine, self%gradient_detector(patch))
+  if (any(max_grad > 0.0)) &
+    refine = max (refine, self%gradient_detector(patch))
   if (verbose > 1) write (stdlog,1) &
     wallclock(), pad_trace(1:indent), id, level, refine, &
     minval(patch%frefine), maxval(patch%frefine), 'gradient'
@@ -515,13 +510,13 @@ FUNCTION refine_needed (self, link) RESULT (refine)
   if (verbose > 1) write (stdlog,1) &
     wallclock(), pad_trace(1:indent), id, level, refine, &
     minval(patch%frefine), maxval(patch%frefine), 'user'
-  !-----------------------------------------------------------------------------
-  ! Check if support constraints allow derefinement
-  !-----------------------------------------------------------------------------
-  refine = max (refine, self%check_derefine_support (link))
-  if (verbose > 1) write (stdlog,1) &
-    wallclock(), pad_trace(1:indent), id, level, refine, &
-    minval(patch%frefine), maxval(patch%frefine), 'derefine support'
+  ! !-----------------------------------------------------------------------------
+  ! ! Check if support constraints allow derefinement
+  ! !-----------------------------------------------------------------------------
+  ! refine = max (refine, self%check_derefine_support (link))
+  ! if (verbose > 1) write (stdlog,1) &
+  !   wallclock(), pad_trace(1:indent), id, level, refine, &
+  !   minval(patch%frefine), maxval(patch%frefine), 'derefine support'
   call trace%end (itimer, detailed_timer=detailed_timer)
 END FUNCTION refine_needed
 
@@ -1008,7 +1003,7 @@ FUNCTION check_Jeans (self, patch) RESULT(refine_it)
   logical:: masked
   !-----------------------------------------------------------------------------
   call trace%begin ('refine_t%check_jeans')
-  refine_it = 0
+  refine_it = -1
   l = 1
   u = patch%gn
   d => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,patch%it,1)
@@ -1450,58 +1445,111 @@ FUNCTION refine_region (self, patch) RESULT (refine)
 END FUNCTION refine_region
 
 !===============================================================================
-!> Check if refinement is needed to support some level L+2 task that overlap.
-!> This procedure is obsolote if support requests are made directly, and if lack
-!> of support is ignored.  To work, it would need level L+2 tasks that lack
-!> support to be included in all nbor lists.
+!> Check if refinement may be needed for this level L patch to support 
+!> overlapping level L+2 patches.  If there are any level L+2 nbors, check
+!> if the level L+1 patches needed for support already exist.
 !===============================================================================
-FUNCTION check_support (self, link)
+FUNCTION check_support (self, link) RESULT (refine)
   class(refine_t):: self
   class(link_t), pointer:: link
-  integer:: check_support
+  integer:: refine
   !.............................................................................
   class(task_t), pointer:: patch, nbpatch
-  class(nbor_t), pointer:: nbor, nbors
-  integer:: l(3), u(3)
+  class(nbor_t), pointer:: nbor
+  integer:: i1, i2, i3, ratio(3)
   !-----------------------------------------------------------------------------
   call trace%begin ('refine_t%check_support')
-  call link%lock%set ('download_link')
-  call link%copy_nbor_list (link%nbor, nbors)
-  call link%lock%unset ('download_link')
+  call link%lock%set ('check_support')
   patch => link%task
   select type (patch)
   class is (patch_t)
-    call patch%support_arrays ()
-    call patch%lock%set ('refine_t%check_support')
-    patch%frefine = -derefine_limit
-    call patch%lock%unset ('refine_t%check_support')
-    nbor => nbors
+    ratio = merge(self%ratio, 1, patch%n>1)
+    refine = -1
+    !---------------------------------------------------------------------------
+    ! Loop over nbor tasks and investigate level L+2 cases
+    !---------------------------------------------------------------------------
+    nbor => link%nbor
     do while (associated(nbor))
-      if (nbor%task%level == link%task%level+2) then
-        call nbor%link%lock%set ('refine_t%check_support')
-        if (nbor%task%is_set (bits%no_support)) then
-          if (nbor%task%overlaps (link%task)) then
-            if (.not. nbor%link%has_support()) then
-              nbpatch => nbor%task
-              select type (nbpatch)
-              class is (patch_t)
-                call nbpatch%support_arrays ()
-              end select
-              call nbor%link%request_support (link%task)
-              call nbor%task%log ('request', 3)
-!print *, nbor%link%task%id, 'request support from', link%task%id
-            end if
-          end if
-        end if
+      nbpatch => nbor%task
+      if (nbpatch%level == patch%level+2) then
+        !-----------------------------------------------------------------------
+        ! The mere existence of a level L+2 task prevents derefinement
+        !-----------------------------------------------------------------------
+        refine = max(0,refine)
+        !-----------------------------------------------------------------------
+        ! Tests of the possible sub-patch positions return 0 if there already
+        ! exists one or more sub-patches, and +1 if a new one is needed
+        !-----------------------------------------------------------------------
+        do i3=1,ratio(3)
+        do i2=1,ratio(2)
+        do i1=1,ratio(1)
+          refine = max (refine, check_support2 (self, patch, [i1,i2,i3]))
+        end do
+        end do
+        end do
       end if
       nbor => nbor%next
     end do
-    l = patch%mesh%lo
-    u = patch%mesh%uo
-    check_support = maxval(patch%request(l(1):u(1),l(2):u(2),l(3):u(3)))
   end select
-  call link%remove_nbor_list (nbors)
+  call link%lock%unset ('check_support')
   call trace%end ()
 END FUNCTION check_support
+
+!===============================================================================
+!> Check if refinement is needed to support some level L+2 task that overlaps
+!> with index position ii(3) relative to the level L link task
+!===============================================================================
+FUNCTION check_support2 (self, patch, ii) RESULT (refine)
+  class(refine_t):: self
+  class(patch_t), pointer:: patch
+  integer:: ii(3), refine
+  !.............................................................................
+  class(task_t), pointer:: nbpatch
+  class(link_t), pointer:: nblink
+  class(nbor_t), pointer:: nbor
+  integer:: ratio(3), key(4)
+  real(8), dimension(3):: size, position, distance
+  type(region_t):: roa
+  !-----------------------------------------------------------------------------
+  call trace%begin ('refine_t%check_support2')
+  ratio = merge(self%ratio, 1, patch%n>1)
+  size = patch%size/ratio
+  !-----------------------------------------------------------------------------
+  ! Assume until disproven that based on support the patch allows derefinement
+  !-----------------------------------------------------------------------------
+  refine = -1
+  nbor => patch%link%nbor
+  do while (associated(nbor))
+    nbpatch => nbor%task
+    if (nbpatch%level == patch%level+2) then
+      select type (nbpatch)
+      class is (patch_t)
+        !---------------------------------------------------------------------
+        ! Compoute region-of-authority for the sub-patch and check overlap
+        !---------------------------------------------------------------------
+        position = patch%position + (ii-(1+ratio)/2.0)*size
+        roa%l = position - size/2d0
+        roa%u = position + size/2d0
+        distance = nbpatch%distance_to (patch)
+        if (nbpatch%interest%overlaps (roa, distance)) then
+          !-------------------------------------------------------------------
+          ! There is overlap, so check if a patch already exists, and
+          ! signal that one is neeeded if not
+          !-------------------------------------------------------------------
+          key = patch%hash_key (position, size, patch%level+1)
+          call self%task_list%hash_table%get (key, nblink)
+          if (associated(nblink)) then
+            refine = 0
+          else
+            refine = 1
+            exit
+          end if
+        end if
+      end select
+    end if
+    nbor => nbor%next
+  end do
+  call trace%end ()
+END FUNCTION check_support2
 
 END MODULE refine_mod

@@ -95,14 +95,10 @@ CONTAINS
 !> For now, we set the distance from known task positions.
 !> FIXME: The nbor%distance should ultimately be the only position information
 !===============================================================================
-SUBROUTINE init_nbor (self, target)
+SUBROUTINE init_nbor (self)
   class(nbor_t):: self
-  class(task_t), pointer:: target
   !.............................................................................
   call trace%begin ('nbor_t%init')
-  self%distance = self%task%distance (target)
-  call target%nbor_relations (self%task, self%needed, self%needs_me, &
-                              self%download)
   call trace%end ()
 END SUBROUTINE init_nbor
 
@@ -263,7 +259,7 @@ SUBROUTINE add_nbor (self, link, nbors, nbor, added, by_quality, by_rank)
   !-----------------------------------------------------------------------------
   ! FIXME: Consider this carefully!
   !-----------------------------------------------------------------------------
-  call link%task%nbor_relations (nbor_l%task, nbor_l%needed, nbor_l%needs_me, &
+  call self%task%nbor_relations (nbor_l%task, nbor_l%needed, nbor_l%needs_me, &
                                  nbor_l%download)
   !.............................................................................
   if (verbose > 1) &
@@ -352,7 +348,7 @@ SUBROUTINE alloc_nbor (self, nbor)
   class(nbor_t), pointer:: nbor
   !-----------------------------------------------------------------------------
   allocate (nbor)
-  call nbor%init (self%task)
+  call nbor%init ()
   nbor%link => self
   nbor%task => self%task
 END SUBROUTINE alloc_nbor

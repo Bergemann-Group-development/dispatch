@@ -82,20 +82,14 @@ END SUBROUTINE pre_init
 !===============================================================================
 !> Initialize the nbor node
 !===============================================================================
-SUBROUTINE init (self, target)
-  class(guards_t)        :: self
-  class(task_t), pointer :: target
+SUBROUTINE init (self)
+  class(guards_t):: self
   !-----------------------------------------------------------------------------
   ! Setup nbor distance and relations, in case these differ for patch_t
   !-----------------------------------------------------------------------------
   call trace%begin ('guards_t%init')
-  call self%nbor_t%init (target)
-  call self%pre_init
-  select type (target)
-  class is (patch_t)
-  self%distance = self%task%distance (target)
-  call target%nbor_relations(self%task, self%needed, self%needs_me, self%download)
-  end select
+  call self%pre_init ()
+  call self%nbor_t%init ()
   call trace%end ()
 END SUBROUTINE init
 

@@ -896,7 +896,7 @@ SUBROUTINE alloc_nbor (self, nbor)
   class(nbor_t), pointer:: nbor
   !-----------------------------------------------------------------------------
   allocate (guards_t:: nbor)
-  call nbor%init (self%task)
+  call nbor%init ()
   nbor%link => self
   nbor%task => self%task
 END SUBROUTINE alloc_nbor

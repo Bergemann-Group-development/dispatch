@@ -19,9 +19,8 @@ CONTAINS
 !===============================================================================
 !> Register the source and target, and initialize the range
 !===============================================================================
-SUBROUTINE init (self, target)
+SUBROUTINE init (self)
   class(boundary_t):: self
-  class(task_t), pointer:: target
   !.............................................................................
   integer:: iostat
   namelist /boundary_params/ verbose
