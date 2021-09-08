@@ -46,7 +46,7 @@ MODULE mhd_mod
     real, contiguous, pointer, dimension(:,:,:,:,:):: qp, qm  ! face centered
     real, contiguous, pointer, dimension(:,:,:,:,:):: dq, dq2, dbf ! slopes
     real, contiguous, pointer, dimension(:,:,:,:,:):: qLB,qRB,qLT,qRT
-    real, contiguous, pointer, dimension(:,:,:):: Ex,Ey,Ez
+    real, contiguous, pointer, dimension(:,:,:):: Ex,Ey,Ez, Etot
     real, contiguous, pointer, dimension(:,:,:):: c
     !dir$ attributes align:64 :: q,bf,em,qp,qm,dq,dq2,dbf,qLB,qRB,qLT,qRT,Ex,Ey,Ez,c
   contains
@@ -94,7 +94,7 @@ SUBROUTINE pre_init (self)
   self%nw = 1
   self%ng = 3
   self%nv = 8
-  self%kind = 'ramses_mhd_patch'
+  self%kind = 'hlld_mhd_patch'
   call self%idx%init (energy=5, mhd=self%mhd)
   if (do_temperature) then
     call self%idx%request_index (self%idx%tt, self%nv)
@@ -103,7 +103,7 @@ SUBROUTINE pre_init (self)
   !-----------------------------------------------------------------------------
   ! Make sure the extras modules do not mess this up
   !-----------------------------------------------------------------------------
-  self%kind = 'ramses_mhd_patch'
+  self%kind = 'hlld_mhd_patch'
   !-----------------------------------------------------------------------------
   ! Read solver-relevant parameters and store in the task instance
   !-----------------------------------------------------------------------------
@@ -204,7 +204,7 @@ SUBROUTINE update (self)
   real, allocatable, dimension(:,:,:,:)::fluxambdiff,emfambdiff,fluxohmdiss,emfohmdiss
   real, pointer, dimension(:,:,:):: d, e, Ux=>null(), Uy=>null(), Uz=>null()
   real(dp):: dtdx, dtdy, dtdz
-  real:: u0, u1
+  real:: u0, u1, ekin, emag
   integer:: n(3), nv3, i, j, k, idir
   type(lock_t), pointer:: lock
   integer, parameter:: ndim=3
@@ -324,7 +324,7 @@ SUBROUTINE update (self)
   ! First copy everything, to fill guard zones
   !-----------------------------------------------------------------------------
   call self%extrapolate_guards ()
-  nv3 = 5
+  nv3 = 4
   !-----------------------------------------------------------------------------
   ! Divergence updates
   !-----------------------------------------------------------------------------
@@ -335,7 +335,45 @@ SUBROUTINE update (self)
     fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3,2) - &
     fl(i0  :i1  ,j0+1:j1+1,k0  :k1  ,1:nv3,2) + &
     fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3,3) - &
-    fl(i0  :i1  ,j0  :j1  ,k0+1:k1+1,1:nv3,3)   
+    fl(i0  :i1  ,j0  :j1  ,k0+1:k1+1,1:nv3,3)
+  ! ----------------------------------------------------------------------------
+  ! update total energy
+  ! ----------------------------------------------------------------------------
+  self%etot(i0  :i1  ,j0  :j1  ,k0  :k1      ) = &
+  self%etot(i0  :i1  ,j0  :j1  ,k0  :k1      ) + &
+         fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,5,1) - &
+         fl(i0+1:i1+1,j0  :j1  ,k0  :k1  ,5,1) + &
+         fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,5,2) - &
+         fl(i0  :i1  ,j0+1:j1+1,k0  :k1  ,5,2) + &
+         fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,5,3) - &
+         fl(i0  :i1  ,j0  :j1  ,k0+1:k1+1,5,3)
+  ! ----------------------------------------------------------------------------
+  ! Update HLLD magnetic fields
+  ! ----------------------------------------------------------------------------   
+  self%q(i0  :i1  ,j0  :j1  ,k0  :k1  ,6:8  ) = &
+  self%q(i0  :i1  ,j0  :j1  ,k0  :k1  ,6:8  ) + &
+      fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,6:8,1) - &
+      fl(i0+1:i1+1,j0  :j1  ,k0  :k1  ,6:8,1) + &
+      fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,6:8,2) - &
+      fl(i0  :i1  ,j0+1:j1+1,k0  :k1  ,6:8,2) + &
+      fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,6:8,3) - &
+      fl(i0  :i1  ,j0  :j1  ,k0+1:k1+1,6:8,3) 
+  ! ----------------------------------------------------------------------------
+  !  Update internal energy
+  ! ----------------------------------------------------------------------------
+  do k=k0,k1
+    do j=j0,j1
+      do i=i0,i1
+        emag = (self%q(i,j,k,6)*self%q(i,j,k,6) + &
+                self%q(i,j,k,7)*self%q(i,j,k,7) + &
+                self%q(i,j,k,8)*self%q(i,j,k,8)) * half
+        ekin =  (unew(i,j,k,2)*unew(i,j,k,2) + &
+                 unew(i,j,k,3)*unew(i,j,k,3) + &
+                 unew(i,j,k,4)*unew(i,j,k,4)) * half / unew(i,j,k,1)
+        unew(i,j,k,5) = self%etot(i,j,k) - emag - ekin
+      end do
+    end do
+  end do   
   if (self%id == io%id_debug) then
     write (io%output,'("M1",f10.6,i4,1p,10e12.3)') self%time, i, em(4:13,8,8,1)
     write (io%output,'("M2",f10.6,i4,1p,10e12.3)') self%time, i, em(4:13,8,8,2)
@@ -372,13 +410,11 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Save the current value of the kinetic energy
   !-----------------------------------------------------------------------------
-  allocate (ek(self%gn(1),self%gn(2),self%gn(3)))
   d  => self%mem(:,:,:,self%idx%d ,self%new,1)
   e  => self%mem(:,:,:,self%idx%e ,self%new,1)
   px => self%mem(:,:,:,self%idx%px,self%new,1)
   py => self%mem(:,:,:,self%idx%py,self%new,1)
   pz => self%mem(:,:,:,self%idx%pz,self%new,1)
-  ek = 0.5*(px**2+py**2+pz**2)/d
   !-----------------------------------------------------------------------------
   ! Add the external force per unit mass as a source term
   !-----------------------------------------------------------------------------
@@ -392,11 +428,6 @@ SUBROUTINE update (self)
     py = py + self%dtime*scratch%force_per_unit_volume(:,:,:,2)
     pz = pz + self%dtime*scratch%force_per_unit_volume(:,:,:,3)
   end if
-  !-----------------------------------------------------------------------------
-  ! Adjust the total energy
-  !-----------------------------------------------------------------------------
-  e = e + (0.5*(px**2+py**2+pz**2)/d - ek)
-  deallocate (ek)
   !-----------------------------------------------------------------------------
   ! Reset the energy variable in isothermal cases
   !-----------------------------------------------------------------------------
@@ -491,23 +522,14 @@ subroutine check_small (self, it)
       uu(i,j,k,1) = smallr
     end if
     d =  uu(i,j,k,1)
-    c = 1./d
-    u =  uu(i,j,k,2)*c
-    v =  uu(i,j,k,3)*c
-    w =  uu(i,j,k,4)*c
-    ekin = 0.5*d*(u**2+v**2+w**2)
-    B1 = 0.5*(uu(i,j,k,6)+uu(i+1,j,k,6))
-    B2 = 0.5*(uu(i,j,k,7)+uu(i,j+1,k,7))
-    B3 = 0.5*(uu(i,j,k,8)+uu(i,j,k+1,8))
-    emag = 0.5*(B1**2+B2**2+B3**2)
     if (isothermal) then
       p = d*self%csound**2
-      uu(i,j,k,5) = p+ekin+emag
+      uu(i,j,k,5) = p
     else
-      p = (uu(i,j,k,5)-ekin)*(eos%gamma-one)
+      p = uu(i,j,k,5)*(eos%gamma-one)
       if (p < smallr*smallc**2) then
         p = smallr*smallc**2
-        uu(i,j,k,5) = p/(eos%gamma-one)+ekin+emag
+        uu(i,j,k,5) = p/(eos%gamma-one)
         n_smallp = n_smallp+1
       end if
     end if
@@ -560,6 +582,7 @@ subroutine ctoprim(self)
   allocate (self%c  (m(1),m(2),m(3)))
   allocate (self%q  (m(1),m(2),m(3),self%nv))
   allocate (self%bf (m(1),m(2),m(3),3))
+  allocate (self%Etot (m(1),m(2),m(3)))     
   call check_small (self)
   associate(q=>self%q,bf=>self%bf,dt=>self%dtime,c=>self%c)
   !-----------------------------------------------------------------------------
@@ -598,11 +621,16 @@ subroutine ctoprim(self)
     do k=1,self%gn(3)-1
     do j=1,self%gn(2)-1
     do i=1,self%gn(1)-1
-      B1 = half*(q(i,j,k,6)+q(i+1,j,k,6))
-      B2 = half*(q(i,j,k,7)+q(i,j+1,k,7))
-      B3 = half*(q(i,j,k,8)+q(i,j,k+1,8))
+      B1 = half*(uin(i,j,k,6)+uin(i+1,j,k,6))
+      B2 = half*(uin(i,j,k,7)+uin(i,j+1,k,7))
+      B3 = half*(uin(i,j,k,8)+uin(i,j,k+1,8))
+      q(i,j,k,6) = B1                                     ! Bx
+      q(i,j,k,7) = B2                                     ! By
+      q(i,j,k,8) = B3                                     ! Bz
       emag = half*(B1**2 + B2**2 + B3**2)
+      eken = half*(q(i,j,k,2)**2 + q(i,j,k,3)**2 + q(i,j,k,4)**2)*q(i,j,k,1)
       pg(i,j,k) = d(i,j,k)*self%csound**2
+      self%etot(i,j,k)  = (uin(i,j,k,5) + emag + eken)                          ! Total energy
       c(i,j,k) = sqrt((pg(i,j,k)*eos%gamma + 2.0*emag)/d(i,j,k))
     end do
     end do
@@ -611,12 +639,16 @@ subroutine ctoprim(self)
     do k=1,self%gn(3)-1
     do j=1,self%gn(2)-1
     do i=1,self%gn(1)-1
-      B1 = half*(q(i,j,k,6)+q(i+1,j,k,6))
-      B2 = half*(q(i,j,k,7)+q(i,j+1,k,7))
-      B3 = half*(q(i,j,k,8)+q(i,j,k+1,8))
+      B1 = half*(uin(i,j,k,6)+uin(i+1,j,k,6))
+      B2 = half*(uin(i,j,k,7)+uin(i,j+1,k,7))
+      B3 = half*(uin(i,j,k,8)+uin(i,j,k+1,8))
+      q(i,j,k,6) = B1                                     ! Bx
+      q(i,j,k,7) = B2                                     ! By
+      q(i,j,k,8) = B3                                     ! Bz
       emag = half*(B1**2 + B2**2 + B3**2)
       eken = half*(q(i,j,k,2)**2 + q(i,j,k,3)**2 + q(i,j,k,4)**2)*q(i,j,k,1)
-      pg(i,j,k) = (uin(i,j,k,5) - emag - eken)*g1
+      self%etot(i,j,k)  = (uin(i,j,k,5) + emag + eken)                          ! Total energy
+      pg(i,j,k) = uin(i,j,k,5)*g1
       c(i,j,k) = sqrt((pg(i,j,k)*eos%gamma + 2.0*emag)/q(i,j,k,1))
     end do
     end do
