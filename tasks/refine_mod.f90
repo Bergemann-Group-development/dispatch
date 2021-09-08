@@ -578,6 +578,7 @@ SUBROUTINE selective_refine (self, patch, child_list, refine, &
       do k=1,ratio_per_dim(3)
         do j=1,ratio_per_dim(2)
           do i=1,ratio_per_dim(1)
+            refine = max (refine, check_support2 (self, patch, [i,j,k]))
             !-------------------------------------------------------------------
             ! Lower and upper index in parent patch
             !-------------------------------------------------------------------
@@ -621,6 +622,7 @@ SUBROUTINE selective_refine (self, patch, child_list, refine, &
                     patch%fmaxval(patch%mem(:,:,:,patch%idx%d,patch%it,1)), &
                     maxval(patch%mem(l(1):u(1),l(2):u(2),l(3):u(3), patch%idx%d, &
                     patch%it,1)), l(1),u(1),l(2),u(2),l(3),u(3)
+                call patch%log ('refine', 2)
                 call make_child_patch (self, patch, pos, size, child)
                 !---------------------------------------------------------------
                 ! Allocate a tempory task link and append it to the child list,
@@ -676,6 +678,9 @@ SUBROUTINE selective_refine (self, patch, child_list, refine, &
       ! includes calling set_init_nbors(), queueing all nbors for immediate
       ! update of their nbor lists.
       !-------------------------------------------------------------------------
+      write (stderr,'(a,i6,":",i2.2,f12.6)') 'derefine:', &
+        patch%id, patch%level, patch%time
+      call patch%log ('derefine', 2)
       call data_io%update_counters (patch, -1)
       call self%task_list%remove_and_reset (link)
       was_derefined = .true.
@@ -684,7 +689,7 @@ SUBROUTINE selective_refine (self, patch, child_list, refine, &
   call trace%end (itimer, detailed_timer=detailed_timer)
 END SUBROUTINE selective_refine
 
-!===============================================================================
+!============================================ ===================================
 !> Post process the list of child tasks created by refine%check()
 !===============================================================================
 SUBROUTINE post_process (self, patch, child_list)
@@ -717,7 +722,7 @@ SUBROUTINE post_process (self, patch, child_list)
         omp%thread_task = task%link%task%id
         call self%task_list%add_new_link (task%link)
         !.......................................................................
-        if (verbose > 2) then
+        if (verbose > 1) then
           write (stdout,'(a,i6,a,i6,":",i2.2,3i3,l3)') &
             'refine_mod:',patch%id,' add_new_link', task%id, task%key, &
             task%is_clear (bits%no_support)
@@ -1462,7 +1467,7 @@ FUNCTION check_support (self, link) RESULT (refine)
   call link%lock%set ('check_support')
   patch => link%task
   select type (patch)
-  class is (patch_t)
+  class is (solver_t)
     ratio = merge(self%ratio, 1, patch%n>1)
     refine = -1
     !---------------------------------------------------------------------------
@@ -1501,7 +1506,7 @@ END FUNCTION check_support
 !===============================================================================
 FUNCTION check_support2 (self, patch, ii) RESULT (refine)
   class(refine_t):: self
-  class(patch_t), pointer:: patch
+  class(solver_t), pointer:: patch
   integer:: ii(3), refine
   !.............................................................................
   class(task_t), pointer:: nbpatch

@@ -1266,9 +1266,9 @@ SUBROUTINE log (self, label, level)
       end if
       last = now
     end if
-    write (io_unit%task,'(f12.6,i5,i4,i6,":",i2.2,f12.6,1p,e11.2,l2,2x,a)') &
+    write (io_unit%task,'(f12.6,i5,i4,i6,":",i2.2,f12.6,1p,e11.2,4x,a)') &
       wallclock(), mpi%rank, omp%thread, self%id, self%level, &
-      self%time, self%dtime, self%is_set(bits%frozen), trim(label)
+      self%time, self%dtime, trim(label)
     flush (io_unit%task)
     !$omp end critical (tasklog_cr)
   end if

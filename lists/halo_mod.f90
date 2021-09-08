@@ -220,13 +220,13 @@ SUBROUTINE download (self, nbors, only, all_tgt, all_src)
     nbor => nbors
     do while (associated(nbor))
       if (nbor%download) then
-        ! if (nbor%task%is_clear (bits%no_support)) then
+        if (nbor%task%is_clear (bits%remove+bits%frozen)) then
           source => nbor%task
           call guards%source_to_target (source, target, n_op=self%n_op, &
             only=only, all_src=all_src, all_tgt=all_tgt)
         ! else
         !   print *, target%id, 'skipping', nbor%task%id
-        ! end if
+        end if
       end if
       nbor => nbor%next
     end do

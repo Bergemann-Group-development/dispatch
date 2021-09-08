@@ -1565,7 +1565,7 @@ SUBROUTINE init_nbors_by_level (self, link, nbors)
   !.............................................................................
   if (task%level > 0) then
     levelmin = max(task%level-2, shared%levelmin)
-    levelmax = min(task%level+1, shared%levelmax)
+    levelmax = min(task%level+2, shared%levelmax)
   else
     levelmin = shared%levelmin
     levelmax = shared%levelmax
@@ -2235,7 +2235,7 @@ SUBROUTINE real_queue_by_time (self, this, error)
   ! Double check that no other thread has set the ready bit on this task.
   !-----------------------------------------------------------------------------
   if (task%is_clear (bits%ready+bits%busy) .or. task%id == omp%thread_task) then
-    if (self%verbose > 0 .and. task%id == omp%thread_task) then
+    if (self%verbose > 1 .and. task%id == omp%thread_task) then
       write (stderr,'(a,i6,":",i2.2)') 'queue_by_time: self-schedule task', &
         task%id, task%level
     end if
