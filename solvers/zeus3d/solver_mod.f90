@@ -80,8 +80,12 @@ END SUBROUTINE init
 SUBROUTINE update (self)
   class(solver_t) :: self
   type(lock_t), pointer:: lock
-  !.....................................................................
+  !.............................................................................
   call trace%begin ('solver_t%update')
+  !-----------------------------------------------------------------------------
+  ! As an extra precautioin against extras_mod that lack calls to gpatch_t,
+  ! extra calls are added here -- flags protect against double execution
+  !-----------------------------------------------------------------------------
   call self%gpatch_t%pre_update
   call self%extras_t%pre_update
   call validate%check (self, d, 'before update')
@@ -90,6 +94,7 @@ SUBROUTINE update (self)
   call self%mhd_t%update
                                                       call lock%unset ('update')
   call validate%check (self, d, ' after update')
+  call self%gpatch_t%post_update
   call self%extras_t%post_update
   call trace%end ()
 END SUBROUTINE update

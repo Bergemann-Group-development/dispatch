@@ -137,6 +137,9 @@ SUBROUTINE update (self)
   if (self%id==1) &
     call validate%check (self, self%mem(:,:,:,:,self%it,1), 'upd1')
   !-----------------------------------------------------------------------------
+  ! When computing forces already here, we need to do the force reset here also
+  !-----------------------------------------------------------------------------
+  call self%gpatch_t%pre_update ()
   call self%force ()
   if (self%id==1) &
     call validate%check (self, scratch%force_per_unit_mass(:,:,:,:), 'ff')
@@ -370,7 +373,7 @@ END SUBROUTINE cache_v_head
 !===============================================================================
 SUBROUTINE vertical_boundary (self, o, it)
   class(experiment_t):: self
-  real, dimension(:,:,:), pointer :: d, e, px, py, pz
+  real, dimension(:,:,:), contiguous, pointer :: d, e, px, py, pz
   integer:: o, it, b, i, step, i1, i2, i3, l(3), u(3)
   real(8):: sign, zi, p(3), r, z, h, d_ratio, dv_phi, v, v_h, v_k
   integer, save:: itimer=0

@@ -63,7 +63,6 @@ MODULE hd_mod
     procedure:: dealloc
     procedure:: pre_update
     procedure:: update
-    procedure:: post_update
     procedure:: nbor_relations
   end type
   integer, parameter:: ndim=3
@@ -185,7 +184,6 @@ SUBROUTINE pre_update (self)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('hd_t%pre_update', itimer=itimer)
-  call self%gpatch_t%pre_update ()
   !-----------------------------------------------------------------------------
   ! Primitive variables may be needed in extras courant_conditions
   !-----------------------------------------------------------------------------
@@ -193,9 +191,6 @@ SUBROUTINE pre_update (self)
   if (io%courant /= 0.0) self%courant = io%courant
   call ctoprim (self)                  ! Primitive variables, sound speeds
   call self%extras_t%courant_condition (detailed_timer)
-  !-----------------------------------------------------------------------------
-  ! Pre-update extras components
-  !-----------------------------------------------------------------------------
   call self%extras_t%pre_update ()
   call trace%end (itimer)
 END SUBROUTINE pre_update
@@ -345,18 +340,6 @@ SUBROUTINE update (self)
 END SUBROUTINE update
 
 !=======================================================================
-!> Measure time in extras_t%post_update
-!=======================================================================
-SUBROUTINE post_update (self)
-  class(hd_t):: self
-  integer, save:: itimer=0
-  !-----------------------------------------------------------------------------
-  call trace%begin ('hd_t%post_update', itimer=itimer)
-  call self%extras_t%post_update ()
-  call trace%end (itimer)
-END SUBROUTINE post_update
-
-!=======================================================================
 !> Get velocities from momentum
 !=======================================================================
 SUBROUTINE p2U(self, U, it)
@@ -393,31 +376,6 @@ SUBROUTINE U2p(self, U, it)
   p(:,:,:,i)= U(:,:,:,i)*d
   end do
 END SUBROUTINE U2p
-
-!=======================================================================
-!> Get thermal energy from total/specific energy
-!=======================================================================
-SUBROUTINE e2E_th(self, E_th, it)
-  class(hd_t) :: self
-  real, contiguous, dimension(:,:,:), pointer:: E_th
-  integer:: it
-  !.....................................................................
-  integer :: i
-  real, contiguous, dimension(:,:,:), pointer:: k, d, e
-  real, dimension(:,:,:,:), pointer:: p
-  !---------------------------------------------------------------------
-  d => self%mem(:,:,:,self%idx%d             ,it,1)
-  e => self%mem(:,:,:,self%idx%e             ,it,1)
-  p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1)
-  allocate(k(size(d,1),size(d,2),size(d,3)))
-  k = 0.0
-  do i=1,size(p,4)
-    k = k+p(:,:,:,i)**2
-  end do
-  k = 0.5*k/d
-  E_th = (e-k)/d
-  deallocate(k)
-END SUBROUTINE e2E_th
 
 !=======================================================================
 !> Get etropy per unit mass from total energy
@@ -477,31 +435,6 @@ SUBROUTINE S2e (self, s, it)
   deallocate(k)
 END SUBROUTINE S2e
 
-!=======================================================================
-!> Put thermal energy to total/specific energy
-!=======================================================================
-SUBROUTINE E_th2e(self, E_th, it)
-  class(hd_t) :: self
-  integer:: it
-  real, contiguous, dimension(:,:,:), pointer:: E_th
-  !.....................................................................
-  integer :: i
-  real, contiguous, dimension(:,:,:), pointer:: k, d, e
-  real, dimension(:,:,:,:), pointer:: p
-  !---------------------------------------------------------------------
-  d => self%mem(:,:,:,self%idx%d             ,it,1)
-  e => self%mem(:,:,:,self%idx%e             ,it,1)
-  p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1)
-  allocate(k(size(d,1),size(d,2),size(d,3)))
-  k = 0.0
-  do i=1,size(p,4)
-    k = k+p(:,:,:,i)**2
-  end do
-  k = 0.5*k/d
-  e = E_th*d+k
-  deallocate(k)
-END SUBROUTINE E_th2e
-
 !===============================================================================
 SUBROUTINE godunov (self)
   class(hd_t)::self
@@ -521,11 +454,12 @@ SUBROUTINE godunov (self)
   ! Compute flux using second-order Godunov method
   !-----------------------------------------------------------------------------
   unew => self%mem(:,:,:,:,self%new,1)
+  uin  => self%mem(:,:,:,:,self%it ,1)
   fl   => self%fl
   if (.not.detailed_timer) call trace%begin ('hd_t%godunov')
   li = self%mesh%li
   ui = self%mesh%ui
-  call check_small (self, unew)
+  call check_small (self, uin)
   call unsplit (self)
   !-----------------------------------------------------------------------------
   ! Conservative update, looping over internal cells only

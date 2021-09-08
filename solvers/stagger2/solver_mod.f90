@@ -113,6 +113,10 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   self%new = 1 + mod(self%it,self%nt)
   lock => self%mem_lock(self%new)
+  !-----------------------------------------------------------------------------
+  ! As an extra precautioin against extras_mod that lack calls to gpatch_t,
+  ! extra calls are added here -- flags protect against double execution
+  !-----------------------------------------------------------------------------
   call self%gpatch_t%pre_update
   call self%mhd_t%pre_update
   associate (d => self%mem(:,:,:,self%idx%d,self%new,1))
@@ -120,6 +124,7 @@ SUBROUTINE update (self)
   call self%mhd_t%update
   call validate%check (self, d, ' after update')
   end associate
+  call self%gpatch_t%post_update
   call self%mhd_t%post_update
   call trace%end()
 END SUBROUTINE update

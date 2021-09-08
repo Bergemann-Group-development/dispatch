@@ -131,8 +131,14 @@ SUBROUTINE update (self)
   ! Proceed, referring everywhere to the %new time slot
   !-----------------------------------------------------------------------------
   lock => self%mem_lock(self%new)
+  !-----------------------------------------------------------------------------
+  ! Pre- and Post-update components; as a precaution against missing calls,
+  ! extra calls to self%gpatch_t%pre_update and post_update are added here
+  !-----------------------------------------------------------------------------
+  call self%gpatch_t%pre_update
   call self%hd_t%pre_update
   call self%hd_t%update
+  call self%gpatch_t%post_update
   call self%hd_t%post_update
   !-----------------------------------------------------------------------------
   call trace%end (itimer)
@@ -222,20 +228,29 @@ SUBROUTINE e2ss(self, ss, it)
   end associate
 END SUBROUTINE e2ss
 
-!===============================================================================
-!> Get thermal energy per unit mass from entropy
-!===============================================================================
+!=======================================================================
+!> Get thermal energy from total/specific energy
+!=======================================================================
 SUBROUTINE e2E_th(self, E_th, it)
   class(solver_t) :: self
+  real, contiguous, dimension(:,:,:), pointer:: E_th
   integer:: it
-  !.............................................................................
-  real, dimension(:,:,:), pointer:: E_th
-  real:: g1
-  !-----------------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%idx%d,it,1), &
-            e => self%mem(:,:,:,self%idx%e,it,1))
-  E_th = e/d
-  end associate
+  !.....................................................................
+  integer :: i
+  real, contiguous, dimension(:,:,:), pointer:: k, d, e
+  real, dimension(:,:,:,:), pointer:: p
+  !---------------------------------------------------------------------
+  d => self%mem(:,:,:,self%idx%d             ,it,1)
+  e => self%mem(:,:,:,self%idx%e             ,it,1)
+  p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1)
+  allocate(k(size(d,1),size(d,2),size(d,3)))
+  k = 0.0
+  do i=1,size(p,4)
+    k = k+p(:,:,:,i)**2
+  end do
+  k = 0.5*k/d
+  E_th = (e-k)/d
+  deallocate(k)
 END SUBROUTINE e2E_th
 
 !===============================================================================
@@ -255,21 +270,29 @@ SUBROUTINE s2E_th(self, E_th, it)
   end associate
 END SUBROUTINE s2E_th
 
-!===============================================================================
-!> Put thermal energy to entropy per unit volume
-!===============================================================================
-SUBROUTINE E_th2e (self, E_th, it)
+!=======================================================================
+!> Put thermal energy to total/specific energy
+!=======================================================================
+SUBROUTINE E_th2e(self, E_th, it)
   class(solver_t) :: self
   integer:: it
-  !.............................................................................
-  real, dimension(:,:,:), pointer:: E_th
-  real:: g1
-  !-----------------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%idx%d,it,1), &
-            e => self%mem(:,:,:,self%idx%e,it,1))
-  g1 = eos%gamma-1d0
-  e = d*E_th
-  end associate
+  real, contiguous, dimension(:,:,:), pointer:: E_th
+  !.....................................................................
+  integer :: i
+  real, contiguous, dimension(:,:,:), pointer:: k, d, e
+  real, dimension(:,:,:,:), pointer:: p
+  !---------------------------------------------------------------------
+  d => self%mem(:,:,:,self%idx%d             ,it,1)
+  e => self%mem(:,:,:,self%idx%e             ,it,1)
+  p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1)
+  allocate(k(size(d,1),size(d,2),size(d,3)))
+  k = 0.0
+  do i=1,size(p,4)
+    k = k+p(:,:,:,i)**2
+  end do
+  k = 0.5*k/d
+  e = E_th*d+k
+  deallocate(k)
 END SUBROUTINE E_th2e
 
 !===============================================================================
