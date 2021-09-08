@@ -8,7 +8,7 @@ load_balance_mod.o  : io_mod.o trace_mod.o mpi_mesg_mod.o omp_timer_mod.o patch_
 link_mod.o          : io_mod.o trace_mod.o task_mod.o mpi_mesg_mod.o io_unit_mod.o\
                       timer_mod.o
 list_mod.o          : io_mod.o trace_mod.o task_mod.o mpi_window_mod.o running_mean_mod.o \
-                      patch_mod.o halo_mod.o hash_table_mod.o
+                      patch_mod.o halo_mod.o hash_table_mod.o validate_mod.o
 ist_mod2.o          : io_mod.o trace_mod.o task_mod.o gpatch_mod.o link_mod.o omp_lock_mod.o \
                       download_mod.o counters_mod.o mpi_window_mod.o running_mean_mod.o
 task_mesg_mod.o     : io_mod.o trace_mod.o omp_timer_mod.o mpi_mod.o list_mod.o task_mod.o \
@@ -30,5 +30,5 @@ mulligan_mod.o      : io_mod.o trace_mod.o list_mod.o task_mod.o
 
 boundary_mod.o      : trace_mod.o io_mod.o task_mod.o link_mod.o
 guards_mod.o        : trace_mod.o io_mod.o patch_mod.o lagrange_mod.o \
-                      interp_mod.o conserve_mod.o
+                      interp_mod.o conserve_mod.o validate_mod.o
 halo_mod.o          : link_mod.o boundary_mod.o guards_mod.o region_mod.o

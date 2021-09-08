@@ -51,8 +51,8 @@ MODULE extras_mod
   USE selfgravity_mod                                           ! selfg
   USE cooling_mod                                               ! cool
   USE lagrangian_mod                                            ! move
-  USE sinks_mod                                                 ! sinks
-  USE SN_mod                                                    ! SN
+  USE sinkparticles_mod                                         ! sinks
+  USE SNe_mod                                                   ! SN
   !-----------------------------------------------------------------------------
   implicit none
   private
@@ -81,7 +81,7 @@ MODULE extras_mod
     procedure:: check_refine
     procedure:: courant_condition
   end type
-  class(sinks_t), pointer:: sinks => null()                     ! sinks
+  class(sinkparticles_t), pointer:: sinks => null()              ! sinks
   type(extras_t), public:: extras
 CONTAINS
 
@@ -104,7 +104,7 @@ SUBROUTINE pre_init (self)
     call sinks%pre_init                                         ! sinks
   end if                                                        ! sinks
   call io%lock%unset ('extras_t%pre_init')
-  call self%SN%pre_init                 (self%gpatch, sinks)    ! sinks
+  !call self%SN%pre_init                 (self%gpatch, sinks)    ! sinks
   !allocate (self%trace_particles)                               ! tracep
   !call self%trace_particles%pre_init (self%gpatch)              ! tracep
    !call self%lagrangian%pre_init     (self%gpatch)              ! lagr
@@ -168,7 +168,7 @@ SUBROUTINE pre_update (self)
   !call self%trace_particles%update                              ! tracep
   call self%selfgravity%pre_update                              ! selfg
   call self%cooling%pre_update                                  ! cool
-  call self%SN%pre_update                                       ! SN
+  !call self%SN%pre_update                                       ! SN
   call trace%end ()
 END SUBROUTINE pre_update
 
@@ -214,7 +214,7 @@ SUBROUTINE courant_condition (self, detailed_timer)
   !-----------------------------------------------------------------------------
   call trace%begin ('extras_t%courant_condition')
   call self%cooling%courant_condition                            ! cool
-  call self%SN%courant_condition                                 ! SN
+  !call self%SNe%courant_condition                                 ! SN
   call self%gpatch_t%courant_condition (detailed_timer)          ! keep (last!)
   call trace%end()
 END SUBROUTINE courant_condition
