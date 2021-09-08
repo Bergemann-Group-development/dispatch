@@ -37,9 +37,16 @@ MODULE patch_mod
   USE params_mod
   implicit none
   private
+  ! Mesh variables.
+  !    ghost         interior    ghost
+  !   |+++++|+++++++++++++++++++|+++++|
+  !    |   | |                 | |   |
+  !   lb  lo li               ui uo  ub
+  !   Total grid size == gn = 2xghost-zone + interior = 2 ng + n
+  !
   type, public:: patch_t
     integer, dimension(ndim) :: lb, ub, li, ui, n, gn, lo, uo
-    integer :: nc, id
+    integer :: id
     real(kind=realkind), dimension(ndim) :: s, ds
     real(kind=8),        dimension(ndim) :: p
     logical :: is_periodic
@@ -151,11 +158,10 @@ MODULE poisson_mod
     integer:: id=0
     real(8):: omega_sor ! Overrelaxation parameter
     real(8):: rjac2     ! Jacobi spectral radius squared
-    procedure(cg), pointer:: update => null()
+    procedure(sor), pointer:: update => null()
   contains
     procedure:: init
     procedure:: sor
-    procedure, nopass:: laplace_2nd
     procedure, nopass:: dump
     procedure, nopass:: zero_boundaries
   end type
@@ -185,7 +191,7 @@ SUBROUTINE init (self)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
-    read (poisson_params)
+    read (io%input,poisson_params)
     write (*, poisson_params)
   end if
   select case(trim(solver))
@@ -405,40 +411,6 @@ SUBROUTINE dump (f, iter)
     write (dump_unit) real(f,kind=4)
   end if
 END SUBROUTINE dump
-
-!===============================================================================
-!> 2nd order Laplace operator
-!===============================================================================
-SUBROUTINE laplace_2nd (ds, phi, source, res)
-  real(8)                   :: ds(3)
-  real, dimension(:,:,:)    :: phi, source, res
-  !.............................................................................
-  integer                   :: ix, iy, iz, m(3), ione, jone, kone
-  real(8)                   :: c(3)
-  !-----------------------------------------------------------------------------
-  ione = 1
-  jone = 1
-  kone = 1
-  if (size(phi,1) <= 1) ione = 0
-  if (size(phi,2) <= 1) jone = 0
-  if (size(phi,3) <= 1) kone = 0
-
-  c = 1d0/ds**2
-  m = shape(phi)
-  where (m == 1)
-    c = 0.0d0
-  end where
-  do iz=2,m(3)-kone
-  do iy=2,m(2)-jone
-  do ix=2,m(1)-ione
-    res(ix,iy,iz) = source(ix,iy,iz) - &
-      (c(1)*(phi(ix+ione,iy,iz)+phi(ix-ione,iy,iz)-2d0*phi(ix,iy,iz)) &
-     + c(2)*(phi(ix,iy+jone,iz)+phi(ix,iy-jone,iz)-2d0*phi(ix,iy,iz)) &
-     + c(3)*(phi(ix,iy,iz+kone)+phi(ix,iy,iz-kone)-2d0*phi(ix,iy,iz)))
-  end do
-  end do
-  end do
-END SUBROUTINE laplace_2nd
 
 END MODULE poisson_mod
 
