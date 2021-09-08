@@ -439,48 +439,24 @@ SUBROUTINE update (self)
   if (associated(scratch%force_per_unit_mass)) then
     do k=l(3),u(3)
     do j=l(2),u(2)
-      !-------------------------------------------------------------------------
-      ! Compute the increment in kinetic energy from the forcing
-      !-------------------------------------------------------------------------
-     ! d2ekin(:) = 0
       do dir=1,3
       do i=l(1),u(1)
-        !d2ekin(i) = d2ekin(i) - p(i,j,k,dir)**2/d(i,j,k)
         p(i,j,k,dir) = p(i,j,k,dir) &
                    +  self%dtime*scratch%force_per_unit_mass(i,j,k,dir)*d(i,j,k)
-        !d2ekin(i) = d2ekin(i) + p(i,j,k,dir)**2/d(i,j,k)
       end do
       end do
-      !-------------------------------------------------------------------------
-      ! Add increment in kinetic energy from the forcing
-      !-------------------------------------------------------------------------
-      !do i=l(1),u(1)
-      !  e(i,j,k) = e(i,j,k) + 0.5*d2ekin(i) 
-      !end do
     end do
     end do
   end if
   if (associated(scratch%force_per_unit_volume)) then
     do k=l(3),u(3)
     do j=l(2),u(2)
-      !-------------------------------------------------------------------------
-      ! Compute the increment in kinetic energy from the forcing
-      !-------------------------------------------------------------------------
-      !d2ekin(:) = 0
       do dir=1,3
       do i=l(1),u(1)
-        !d2ekin(i) = d2ekin(i) - p(i,j,k,dir)**2/d(i,j,k)
         p(i,j,k,dir) = p(i,j,k,dir) &
                    +  self%dtime*scratch%force_per_unit_volume(i,j,k,dir)
-        !d2ekin(i) = d2ekin(i) + p(i,j,k,dir)**2/d(i,j,k)
       end do
       end do
-      !-------------------------------------------------------------------------
-      ! Add increment in kinetic energy from the forcing
-      !-------------------------------------------------------------------------
-      !do i=l(1),u(1)
-      !  e(i,j,k) = e(i,j,k) + 0.5*d2ekin(i)
-      !end do
     end do
     end do
   end if
@@ -604,7 +580,6 @@ subroutine check_small (self, it)
     else
       p = (uu(i,j,k,5))*(eos%gamma-one)
       if (p < smallr*smallc**2) then
-        !print *, 'smallp', uu(i,j,k,5), ekin, emag, p
         p = smallr*smallc**2
         uu(i,j,k,5) = p/(eos%gamma-one)
         n_smallp = n_smallp+1
@@ -757,12 +732,11 @@ subroutine ctoprim(self)
     do k=1,n(3)
     do j=1,n(2)
     do i=1,n(1)
-      B1 = half*(q(i,j,k,6)+q(i+1,j,k,6))
-      B2 = half*(q(i,j,k,7)+q(i,j+1,k,7))
-      B3 = half*(q(i,j,k,8)+q(i,j,k+1,8))
+      B1 = q(i,j,k,6)
+      B2 = q(i,j,k,7)
+      B3 = q(i,j,k,8)
       emag = half*(B1**2 + B2**2 + B3**2)
-      pg(i,j,k) = d(i,j,k)*self%csound**2
-      c(i,j,k) = sqrt((pg(i,j,k)*eos%gamma + 2.0*emag)/d(i,j,k))
+      c(i,j,k) = sqrt((q(i,j,k,5)*eos%gamma + 2.0*emag)/d(i,j,k))
     end do
     end do
     end do
@@ -770,12 +744,10 @@ subroutine ctoprim(self)
     do k=1,self%gn(3)-1
     do j=1,self%gn(2)-1
     do i=1,self%gn(1)-1
-      B1 = half*(q(i,j,k,6)+q(i+1,j,k,6))
-      B2 = half*(q(i,j,k,7)+q(i,j+1,k,7))
-      B3 = half*(q(i,j,k,8)+q(i,j,k+1,8))
+      B1 = q(i,j,k,6)
+      B2 = q(i,j,k,7)
+      B3 = q(i,j,k,8)
       emag = half*(B1**2 + B2**2 + B3**2)
-      !eken = half*(q(i,j,k,2)**2 + q(i,j,k,3)**2 + q(i,j,k,4)**2)*q(i,j,k,1)
-      !pg(i,j,k) = (uin(i,j,k,5) - emag - eken)*g1
       c(i,j,k) = sqrt((pg(i,j,k)*eos%gamma + 2.0*emag)/q(i,j,k,1))
     end do
     end do
