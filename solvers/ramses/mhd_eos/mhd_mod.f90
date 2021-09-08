@@ -216,12 +216,12 @@ END SUBROUTINE pre_update
 !===============================================================================
 SUBROUTINE update (self)
   class(mhd_t):: self
-  real, allocatable, dimension(:):: d2ekin
+  real, pointer, contiguous, dimension(:):: d2ekin
   real, pointer, dimension(:,:,:,:):: p, b
-  real, allocatable, dimension(:,:,:,:):: em
+  real, pointer, contiguous, dimension(:,:,:,:):: em
   real, pointer, contiguous, dimension(:,:,:,:):: uin, unew
   real, pointer, contiguous, dimension(:,:,:,:,:):: fl
-  real, allocatable, dimension(:,:,:,:)::fluxambdiff,emfambdiff,fluxohmdiss,emfohmdiss
+  real, pointer, contiguous, dimension(:,:,:,:)::fluxambdiff,emfambdiff,fluxohmdiss,emfohmdiss
   real, pointer, dimension(:,:,:):: d, e, Ux=>null(), Uy=>null(), Uz=>null()
   real(dp):: dtdx, dtdy, dtdz
   integer:: n(3), nv3, i, j, k, l(3), u(3), dir
@@ -610,7 +610,7 @@ subroutine ctoprim(self)
   logical:: e_below
   integer:: i, j, k, loc(3), l(3), u(3), m(3)
   real, pointer, dimension(:,:,:):: lnd, ee, pg, tt, aux, d
-  real, allocatable, dimension(:,:,:):: ee0
+  real, pointer, contiguous, dimension(:,:,:):: ee0
   real, dimension(:,:,:,:), pointer, contiguous:: uin, unew
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%ctoprim', itimer=itimer, detailed_timer=detailed_timer)
@@ -659,9 +659,12 @@ subroutine ctoprim(self)
   do j=1,n(2)
   do i=1,n(1)
     eken = half*(q(i,j,k,2)**2 + q(i,j,k,3)**2 + q(i,j,k,4)**2)*q(i,j,k,1)
-    B1 = half*(q(i,j,k,6)+q(i+1,j,k,6))
-    B2 = half*(q(i,j,k,7)+q(i,j+1,k,7))
-    B3 = half*(q(i,j,k,8)+q(i,j,k+1,8))
+    B1 = half*(uin(i,j,k,6)+uin(i+1,j,k,6))
+    B2 = half*(uin(i,j,k,7)+uin(i,j+1,k,7))
+    B3 = half*(uin(i,j,k,8)+uin(i,j,k+1,8))
+    q(i,j,k,6) = B1                                     ! Bx
+    q(i,j,k,7) = B2                                     ! By
+    q(i,j,k,8) = B3                                     ! Bz
     emag = half*(B1**2 + B2**2 + B3**2)
     lnd(i,j,k) = log(q(i,j,k,1))
     q(i,j,k,9) = (uin(i,j,k,5) - emag - eken)/q(i,j,k,1)                        ! specific energy
@@ -1113,7 +1116,7 @@ SUBROUTINE trace3d(self)
   real(dp) :: dBLx, dBRx, dBLz, dBRz
   real(dp) :: dCLx, dCRx, dCLy, dCRy
   real(dp) :: sAL0, sAR0, sBL0, sBR0, sCL0, sCR0
-  real(dp), dimension(:,:,:), allocatable:: rho_t, p_t, h_t
+  real(dp), dimension(:,:,:), pointer, contiguous:: rho_t, p_t, h_t
   real(dp) :: eff_gamma, off
   real(dp) :: ff(self%gn(1),3), qq(self%gn(1))
   real(8):: dt2
@@ -1622,8 +1625,8 @@ SUBROUTINE trace3d(self)
   ! in cmp_mag_flux uses {i,j,k}-1
   !-----------------------------------------------------------------------------
   if (do_corners) then
-  lo = self%mesh%lo-1
-  uo = self%mesh%uo+1
+  lo = self%mesh%lo
+  uo = self%mesh%uo
   do k=lo(3),uo(3)
   do j=lo(2),uo(2)
   !dir$ ivdep
@@ -1820,7 +1823,7 @@ SUBROUTINE cmpflxm (self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
   integer:: nx, ln, lt1, lt2, bn, bt1, bt2
   ! local variables
   integer:: i, j, k, lb(3), ub(3), xdim, l(3), idim
-  real(dp), dimension(:,:), allocatable:: qleft, qright, fgdnv
+  real(dp), dimension(:,:), pointer, contiguous:: qleft, qright, fgdnv
   real(dp):: dtds(3)
   integer, save:: itimer=0
   integer:: n, nvar, i0, i1
