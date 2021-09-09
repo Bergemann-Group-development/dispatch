@@ -83,7 +83,8 @@ SUBROUTINE init (self)
   !---------------------------------------------------------------------
   d => ff(:,:,:,idx%d)
   if (self%solver(1:14) == 'zeus_mhd_patch' .or. &
-      self%solver(1:10) == 'stagger2e_') then
+      self%solver(1:10) == 'stagger2e_' .or. &
+      self%solver(1:4)  == 'hlld') then
     e1 => ff(:,:,:,idx%e)
   end if
   if (self%solver(1:9) == 'stagger2_') then
