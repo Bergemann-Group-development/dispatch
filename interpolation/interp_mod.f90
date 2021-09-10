@@ -478,14 +478,14 @@ SUBROUTINE in_t (target, source, ls, us, in, out, lt, ut, all, only, extrap)
     !---------------------------------------------------------------------------
     if (present(lt)) then
       if (verbose > 0) then
-        write (stdlog,'(f12.6,a,2i6,1x,2i3,2f7.3,2(1x,2(1x,3i3)),1x,8l1)') &
+        write (stdlog,'(f12.6,a,2i6,1x,2i3,2f7.3,2(1x,2(1x,3i3)),1x,9l1)') &
           wallclock(), pad_trace(1:indent)// &
           'interp_t%in_t: tgt,src,jt,pt,ls,us,lt,ut,usg=', &
           target%id, source%id, jt, pt, ls, us, lt, ut, &
           source%unsigned
       end if
       if (unit == stdout) then
-        write (unit,'(a,2(i6,":",i2.2,f10.6),1x,2i3,2f7.3,2(1x,2(1x,3i3)),1x,8l1)') &
+        write (unit,'(a,2(i6,":",i2.2,f10.6),1x,2i3,2f7.3,2(1x,2(1x,3i3)),1x,9l1)') &
           'interp_t%in_t(1): tgt,src,jt,pt,ls,us,lt,ut,usg=', &
           target%id, target%level, target%time, &
           source%id, source%level, source%time, &
@@ -546,14 +546,14 @@ SUBROUTINE in_t (target, source, ls, us, in, out, lt, ut, all, only, extrap)
       o = 0
       !.........................................................................
       if (verbose > 0) then
-        write (stdlog,'(f12.6,a,2i6,1x,2i3,2f7.3,2(1x,3i3),1x,8l1)') &
+        write (stdlog,'(f12.6,a,2i6,1x,2i3,2f7.3,2(1x,3i3),1x,9l1)') &
           wallclock(), &
           pad_trace(1:indent)//'interp_t%in_t: tgt,src,jt,pt,ls,us,usg=', &
           target%id, source%id, jt, pt, ls, us, &
           source%unsigned
       end if
       if (unit == stdout) then
-        write (unit,'(a,2(i6,":",i2.2,f10.6),1x,2i3,2f7.3,2(1x,3i3),1x,8l1)') &
+        write (unit,'(a,2(i6,":",i2.2,f10.6),1x,2i3,2f7.3,2(1x,3i3),1x,9l1)') &
           'interp_t%in_t(2): tgt,src,jt,pt,ls,us,lt,ut,usg=', &
           target%id, target%level, target%time, &
           source%id, source%level, source%time, &
