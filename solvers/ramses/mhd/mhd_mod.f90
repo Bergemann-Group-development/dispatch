@@ -58,6 +58,8 @@ MODULE mhd_mod
   end type
   real, save:: slope_type=2.0
   real, save:: courant_factor=0.25
+  logical, save:: debug=.false.
+  logical, save:: do_dump=.false.
   logical, save:: first_time=.true.
   logical, save:: detailed_timer=.false.
   logical, save:: unsigned=.true.
@@ -82,7 +84,7 @@ SUBROUTINE pre_init (self)
   namelist /ramses_params/ riemann, slope_type, b_slope_type, &
     u_slope_type, courant_factor, smallr, smallc, isothermal, csound, &
     detailed_timer, unsigned, courant_type, max_dlogd, n_dump, &
-    do_temperature, verbose
+    do_temperature, do_dump, verbose
   character(len=120):: id = &
    '$Id$'
   !-----------------------------------------------------------------------------
@@ -548,7 +550,7 @@ subroutine ctoprim(self)
   real(dp):: smallp, c, entho, g1
   real(dp):: eken, emag, etot, eint, B1, B2, B3
   integer, save:: itimer=0
-  integer:: i, j, k, loc(3), l(3), u(3), m(3)
+  integer:: i, j, k, loc(3), l(3), u(3), m(3), iv
   real, dimension(:,:,:), pointer, contiguous:: d, pg
   real, dimension(:,:,:,:), pointer, contiguous:: uin, unew
   !-----------------------------------------------------------------------------
@@ -622,6 +624,12 @@ subroutine ctoprim(self)
     end do
     end do
   end if
+  if (do_dump .and. self%id==io%id_debug) then
+    do iv=1,size(q,4)
+      call self%dump (iv, q(:,:,:,iv))
+    end do
+  end if
+
   l = self%mesh%li
   u = self%mesh%ui
   if (any(pg(l(1):u(1),l(2):u(2),l(3):u(3)) < 0.0) .or. verbose > 0) then
@@ -971,6 +979,14 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
      write(*,*)'Unknown slope type'
      stop
   endif
+  if (do_dump .and. self%id==io%id_debug) then
+    do n=1,size(dq,2)
+      call self%dump (n, dq(:,n,1,:,:))
+      call self%dump (n, dq(:,n,2,:,:))
+      call self%dump (n, dq(:,n,3,:,:))
+    end do
+  end if
+
   call trace%end (itimer, detailed_timer=detailed_timer)
 end subroutine uslope
 
@@ -1792,6 +1808,20 @@ SUBROUTINE cmpflxm (self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
     deallocate (qleft, qright, fgdnv)
   endif
   !
+  if (do_dump .and. self%id==io%id_debug) then
+    do i=1,size(qm,2)
+      call self%dump (i, qm(:,i,1,:,:))
+      call self%dump (i, qp(:,i,1,:,:))
+      call self%dump (i, qm(:,i,2,:,:))
+      call self%dump (i, qp(:,i,2,:,:))
+      call self%dump (i, qm(:,i,3,:,:))
+      call self%dump (i, qp(:,i,3,:,:))
+    end do
+    do i=1,size(fl,4)
+      call self%dump (i, fl(:,:,:,i))
+    end do
+  end if
+
   end associate
   call trace%end (itimer, detailed_timer=detailed_timer)
 END SUBROUTINE cmpflxm
