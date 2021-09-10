@@ -18,7 +18,7 @@
 &download_params    use_prolong='different' use_restrict='guard_zones' /
 !&download_params    use_prolong='different' use_restrict='different_restrict' /
 
-&selfgravity_params selfgravity=t verbose=0
+&selfgravity_params on=t verbose=0
                     !prediction=f order=2 /
                     prediction=t order=2 /
 &poisson_params     floor=1e-4 tolerance=1e-4 max_iter=200
