@@ -466,12 +466,11 @@ SUBROUTINE init_nbors (self, link)
   class(link_t),     pointer :: link
   class(cylinder_t), pointer :: my_cylinder, cylinder
   class(link_t),     pointer :: nblink
-  class(task_t),     pointer :: task
-  class(task_t),     pointer :: nbtask
+  class(task_t),     pointer :: task, nbtask
   type(hash_table_t)         :: hash_table
   logical                    :: added
   logical,              save :: use_hash = .false.
-  integer                    :: i_r, i1, i2, i3, j2, key(4), unit, tid
+  integer                    :: i_r, i1, i2, i3, j2, j2p, key(4), unit, tid, n
   integer,              save :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('cylinders_t%init_nbors', itimer=itimer)
@@ -495,7 +494,7 @@ SUBROUTINE init_nbors (self, link)
   ! Initialize a hash table to protect agains double add
   !-----------------------------------------------------------------------------
   if (use_hash) call hash_table%init (100)
-  n_nbors = 0
+  n = 0
   my_cylinder => self%cylinder(i_r)
   do i1=-1,1
     select case (i1)
@@ -509,11 +508,13 @@ SUBROUTINE init_nbors (self, link)
     if (associated(cylinder)) then
       if (shared%debug) &
         print *, 'checking cylinder:', i1, i1+key(2)
+      j2p = 99
       do i2=-2,2
         !-----------------------------------------------------------------------
         ! Estimate how much further the nbor cylinder has rotated
         !-----------------------------------------------------------------------
         j2 = i2 + nint((my_cylinder%omega - cylinder%omega)*task%time/dphi)
+        if (j2 /= j2p) then
          do i3=-2,2
           if (i1==0 .and. j2==0 .and. i3==0) cycle
           ! print *, '     checking height:', i3, i3+key(4)
@@ -544,8 +545,8 @@ SUBROUTINE init_nbors (self, link)
                     if (verbose > 1) write (unit,'(i6,":",i2.2,3i4,a)') &
                       nbtask%id, key,' added as nbor'
                     call link%add_nbor (nblink)
-                    !$omp atomic update
-                    n_nbors = n_nbors + 1
+                    j2p = j2
+                    n = n + 1
                   else
                     added = .false.
                     if (verbose > 3) write (unit,'(i6,":",i2.2,3i4,a)') &
@@ -562,7 +563,8 @@ SUBROUTINE init_nbors (self, link)
               print *, '  azimuth:', i2, j2, key(3), nbtask%id, added, &
                 merge('  ','no',added)//' overlap'
           end if
-        end do
+         end do
+        end if
       end do
     end if
   end do
