@@ -513,10 +513,8 @@ SUBROUTINE init_nbors (self, link)
         !-----------------------------------------------------------------------
         ! Estimate how much further the nbor cylinder has rotated
         !-----------------------------------------------------------------------
-        j2 = i2 + &
-          nint((cylinder%omega - my_cylinder%omega)*task%time/dphi)
-          ! (cylinder%omega - my_cylinder%omega)*task%time/dphi
-        do i3=-2,2
+        j2 = i2 + nint((my_cylinder%omega - cylinder%omega)*task%time/dphi)
+         do i3=-2,2
           if (i1==0 .and. j2==0 .and. i3==0) cycle
           ! print *, '     checking height:', i3, i3+key(4)
           key = task%key + [0,i1,j2,i3]
