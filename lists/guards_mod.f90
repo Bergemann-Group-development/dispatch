@@ -557,8 +557,8 @@ SUBROUTINE tilted (self, tgt, src, all_tgt, all_src, only)
   if (verbose > 2) then
     write (stdlog,'(f12.6,a,2(i6,":",i2.2,2x),4l1)') &
       wallclock(), pad_trace(1:indent)// &
-      'guards_t%tilted: src,tgt,all_tgt,all_src,tgt_int,src_all=', &
-      sid, src%level, tid, tgt%level, &
+      'guards_t%tilted: tgt,src,all_tgt,all_src,tgt_int,src_all=', &
+      tid, tgt%level, sid, src%level, &
       present(all_tgt), present(all_src), tgt_int, src_all
   end if
   !.............................................................................

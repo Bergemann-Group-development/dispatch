@@ -2535,13 +2535,13 @@ END SUBROUTINE log_interpolate
 !> Search for a time interval to interpolate in, and return the time
 !> slot indices and weight factors
 !===============================================================================
-SUBROUTINE time_interval (self, time, jt, pt, all, id, extrap)
+SUBROUTINE time_interval (self, time, jt, pt, all, id, extrap, it)
   class (patch_t)                 :: self
   real(8)                         :: time
   integer                         :: jt(2)
   real                            :: pt(2)
   logical, optional               :: all
-  integer, optional               :: id
+  integer, optional               :: id, it
   logical, optional               :: extrap
   !.............................................................................
   integer                         :: i, j, n, iit(self%nt-1)
@@ -2589,6 +2589,7 @@ SUBROUTINE time_interval (self, time, jt, pt, all, id, extrap)
     end do
     jt = iit(j:j+1)
     dt = t(j+1)-t(j)
+    if (present(it)) it=j
     if (dt==0.0) then
       pt(2) = 0.0
     else
