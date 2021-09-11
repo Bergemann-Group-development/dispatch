@@ -663,11 +663,13 @@ SUBROUTINE rotate (self)
   ! Update patch position for non-zero patch velocities;
   ! This happens *before* `rotate` because `dtime` stores the time step just taken.
   !-----------------------------------------------------------------------------
+  call self%lock%set ('position')
   call self%update_position
   !-----------------------------------------------------------------------------
   ! Task time slot rotation
   !-----------------------------------------------------------------------------
   call self%task_t%rotate
+  call self%lock%unset ('position')
   call trace%end (itimer)
 END SUBROUTINE rotate
 

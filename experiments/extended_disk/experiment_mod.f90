@@ -52,6 +52,10 @@ SUBROUTINE pre_init (self)
   allocate (disk_particles_t:: self%particle_solver)
   call self%solver_t%pre_init ()
   self%gn = self%n + 2*self%ng
+  if (.not.associated(self%lock)) then
+    allocate (self%lock)
+    call self%lock%init ('exper')
+  end if
 END SUBROUTINE pre_init
 
 !===============================================================================
@@ -84,7 +88,6 @@ SUBROUTINE init (self)
     write (io%namelist, experiment_params)
     io%nml_version = 5
   end if
-  call self%lock%init
   call io%lock%unset
   !-----------------------------------------------------------------------------
   r = self%radius                                        ! radius in code units
@@ -559,11 +562,13 @@ SUBROUTINE get_position (self, source, p, v, e)
   call trace%begin ('experiment_t%get_position', itimer=itimer)
   select type (source)
   class is (experiment_t)
+    call source%lock%set ('get_pos')
     r_src   = source%centre_nat(1)
-    r_tgt   =   self%centre_nat(1)
     phi_src = source%centre_nat(2) + (self%time-source%time)*source%omega(3)
-    phi_tgt =   self%centre_nat(2)
     z_src   = source%centre_nat(3)
+    call source%lock%unset ('get_pos')
+    r_tgt   =   self%centre_nat(1)
+    phi_tgt =   self%centre_nat(2)
     z_tgt   =   self%centre_nat(3)
     v_src   = r_src*source%omega(3)
     v_tgt   = r_tgt*  self%omega(3)
