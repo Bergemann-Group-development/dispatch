@@ -17,7 +17,7 @@ MODULE boundary_mod
 CONTAINS
 
 !===============================================================================
-!> Register the source and target, and initialize the range
+!> Initialize
 !===============================================================================
 SUBROUTINE init (self)
   class(boundary_t):: self
