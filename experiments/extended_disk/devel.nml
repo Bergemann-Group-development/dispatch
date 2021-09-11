@@ -1,0 +1,39 @@
+!---  Setup parameters ---------------------------------------------------------
+&experiment_params      verbose=0 f_outflow=0 /
+&disk_model_params      h_ratio=0.5 /
+&eos_params             gamma=1.4 /
+&scaling_params         v_kms=1 l_au=1 d_cgs=1e-9 /
+&cylinder_params        verbose=1 n_r=5 n_h=0.1 dlnr=0.020 r_min=1 /
+&patch_params           n=3*16 grace=0.2 dt_fixed=-1e-4 /
+&selfgravity_params     on=f /
+&poisson_params         verbose=1 solver='sor' /
+
+!--- Dust and particle solver parameters ---------------------------------------
+&particle_solver_params on=f verbose=1
+                        n_bin=1 particles_per_bin=10
+                        particle_io=f out_time=1e-4 output_every=1000
+                        backreaction=t stokes=t do_supersonic=f /
+&dust_params            on=f verbose=0 /
+
+!--- Input/Output parameters ---------------------------------------------------
+&io_params              verbose=0
+                        do_trace=f omp_trace=t
+                        !do_trace=t omp_trace=t
+                        do_output=t method='background'
+                        guard_zones=t time_derivs=0 /
+&out_params             end_time=0.2 out_time=0.02 print_every=100 /
+&timer_params           sec_per_report=20 min_fraction=0.005 detailed=f /
+&lock_params            verbose=1 /
+&aux_params             verbose=0 select='dust_d' /
+&validate_params        /
+
+!--- RAMSES solver parameters --------------------------------------------------
+&ramses_params          csound=1.66666667 courant_factor=0.25 slope_type=2
+                        isothermal=f smallr=1e-6 smallc=0.1 /
+&IC_params              type='void' /
+
+!--- framework parameters ------------------------------------------------------
+&dispatcher0_params     verbose=0 detailed_timer=t /
+&halo_params            verbose=0 /
+&guards_params          verbose=0 /
+&interp_params          verbose=0 detailed_timer=t /
