@@ -2269,8 +2269,10 @@ SUBROUTINE real_queue_by_time (self, this, error)
     do while (associated(next))
       nit = nit+1
       if (nit > self%nq) then
-        print *,'ERROR: hang in queue_by_time, nit =', nit
-        error = .true.
+        print *,'ERROR: hang in queue_by_time, nit,nq=', nit, self%nq
+        if (.not.task%finished) then
+          error = .true.
+        end if
                                          call self%qlock%unset ('queue_by_time')
         return
       end if

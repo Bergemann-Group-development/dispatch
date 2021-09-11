@@ -2628,8 +2628,10 @@ SUBROUTINE time_interval (self, time, jt, pt, all, id, extrap, it)
         if (io%task_logging > 2) then
           block
           character(len=24):: label
-          write (label,'(a,i6,f10.5)') 'excess ', id, time
+          call io%lock%set ('excess')
+          write (label,'(a,i6,f10.5)') 'excess ', self%id, time
           call self%log (label)
+          call io%lock%unset ('excess')
           end block
         end if
       end if

@@ -587,12 +587,24 @@ SUBROUTINE end_game (self, task)
   io_count = io%counter%update(0)
   !.............................................................................
   if (task%finished) then
-    self%verbose = 2
+    call task%log ('finished')
+    !---------------------------------------------------------------------------
+    ! If verbose is non-zero, turn on more
+    !---------------------------------------------------------------------------
+    if (self%verbose > 0) then
+      if (io%verbose /= 2) then
+        call io%lock%set
+        self%verbose = 2
+        io%verbose = 2
+        call io%lock%unset
+      end if
+    end if
     !---------------------------------------------------------------------------
     ! Count tasks that have gone past io%end_time with both task%time and
     ! task%out_next, and increment mpi%end_counter until done
     !---------------------------------------------------------------------------
     if (task%out_next > io%end_time .or. .not.io%do_output) then
+      !$omp atomic update
       count = count+1                                 ! count finished tasks
       if (count == self%na) then
         end_count = mpi%end_counter%update(+1)
