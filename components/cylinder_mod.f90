@@ -466,6 +466,7 @@ SUBROUTINE init_nbors (self, link)
   class(link_t),     pointer :: link
   class(cylinder_t), pointer :: my_cylinder, cylinder
   class(link_t),     pointer :: nblink
+  class(nbor_t),     pointer :: nbors, old_nbors
   class(task_t),     pointer :: task, nbtask
   type(hash_table_t)         :: hash_table
   logical                    :: added
@@ -481,7 +482,8 @@ SUBROUTINE init_nbors (self, link)
   else
     unit = stdlog
   end if
-  call link%remove_nbor_list (link%nbor)
+  old_nbors => link%nbor
+  nullify (nbors)
   task => link%task
   tid = task%id
   select type (task)
@@ -544,7 +546,7 @@ SUBROUTINE init_nbors (self, link)
                     nblink => nbtask%link
                     if (verbose > 1) write (unit,'(i6,":",i2.2,3i4,a)') &
                       nbtask%id, key,' added as nbor'
-                    call link%add_nbor (nblink)
+                    call link%add_nbor (nblink, nbors=nbors)
                     j2p = j2
                     n = n + 1
                   else
@@ -571,7 +573,12 @@ SUBROUTINE init_nbors (self, link)
   if (use_hash) call hash_table%dealloc ()
   end select
   if (shared%debug) &
-    print *, task%id, ' found', n_nbors
+    print *, task%id, ' found', n
+  !-----------------------------------------------------------------------------
+  ! Switch in the new nbor list and remove the old one
+  !-----------------------------------------------------------------------------
+  link%nbor => nbors
+  call link%remove_nbor_list (old_nbors)
   call trace%end (itimer)
 contains
 
