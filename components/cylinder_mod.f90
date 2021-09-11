@@ -164,7 +164,7 @@ SUBROUTINE init_cylinders (self, name)
   write (stdout,'(1x,a,3i5,2i9)') 'n_r,n_phi,n_z,n_task=', n_r,n_phi,n_z,n_task
   write (stdout,'(4(1x,a,f6.3,3x))') &
     'dlnr:', dlnr, 'dphi:', dphi, 'n*dphi:', n*dphi, 'gn*dphi:', gn*dphi
-  write (stdout,'(1x,a,f5.1,4x,a,f6.2))') &
+  write (stdout,'(1x,a,f5.1,4x,a,f6.2)') &
     'v_phi:', v_phi, 'dv_r:', v_phi*dlnr/2.0
   !-----------------------------------------------------------------------------
   ! Initialize  nbor lists

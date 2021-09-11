@@ -1506,7 +1506,7 @@ END FUNCTION check_support
 !===============================================================================
 FUNCTION check_support2 (self, patch, ii) RESULT (refine)
   class(refine_t):: self
-  class(solver_t), pointer:: patch
+  class(solver_t):: patch
   integer:: ii(3), refine
   !.............................................................................
   class(task_t), pointer:: nbpatch
