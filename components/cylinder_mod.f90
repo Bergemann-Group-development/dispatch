@@ -470,7 +470,6 @@ SUBROUTINE init_nbors (self, link)
   class(task_t),     pointer :: task, nbtask
   type(hash_table_t)         :: hash_table
   logical                    :: added
-  logical,              save :: use_hash = .false.
   integer                    :: i_r, i1, i2, i3, j2, j2p, key(4), unit, tid, n
   integer,              save :: itimer=0
   !-----------------------------------------------------------------------------
@@ -495,7 +494,6 @@ SUBROUTINE init_nbors (self, link)
   !-----------------------------------------------------------------------------
   ! Initialize a hash table to protect agains double add
   !-----------------------------------------------------------------------------
-  if (use_hash) call hash_table%init (100)
   n = 0
   my_cylinder => self%cylinder(i_r)
   do i1=-1,1
@@ -517,60 +515,37 @@ SUBROUTINE init_nbors (self, link)
         !-----------------------------------------------------------------------
         j2 = i2 + nint((my_cylinder%omega - cylinder%omega)*task%time/dphi)
         if (j2 /= j2p) then
-         do i3=-2,2
-          if (i1==0 .and. j2==0 .and. i3==0) cycle
-          ! print *, '     checking height:', i3, i3+key(4)
-          key = task%key + [0,i1,j2,i3]
-          key(3) = modulo(key(3),n_phi)           ! wrap around
-          call self%hash_table%get (key, nblink)
-          added = .false.
-          if (associated(nblink)) then
-            !-------------------------------------------------------------------
-            ! Check if the task is already added
-            !-------------------------------------------------------------------
-            if (use_hash) then
-              call hash_table%get (key, nbtask)
-            else
-              nullify (nbtask)
-            end if
-            if (.not. associated(nbtask)) then
+          do i3=-2,2
+            if (i1==0 .and. j2==0 .and. i3==0) cycle
+            key = task%key + [0,i1,j2,i3]
+            key(3) = modulo(key(3),n_phi)           ! wrap around
+            call self%hash_table%get (key, nblink)
+            added = .false.
+            if (associated(nblink)) then
+              !-------------------------------------------------------------------
+              ! Check if the task is already added
+              !-------------------------------------------------------------------
               nbtask => nblink%task
               !-----------------------------------------------------------------
               ! If not, add it, and add it to local hash table
               !-----------------------------------------------------------------
-              if (use_hash) call hash_table%set (key, nbtask)
               select type (nbtask)
-                class is (patch_t)
-                if (nbtask%id > 0) then
-                  if (overlaps_l (nbtask, task)) then
-                    nblink => nbtask%link
-                    if (verbose > 1) write (unit,'(i6,":",i2.2,3i4,a)') &
-                      nbtask%id, key,' added as nbor'
-                    call link%add_nbor (nblink, nbors=nbors)
-                    j2p = j2
-                    n = n + 1
-                  else
-                    added = .false.
-                    if (verbose > 3) write (unit,'(i6,":",i2.2,3i4,a)') &
-                      nbtask%id, key,' not added'
-                  end if
-                else
-                  write (stderr,*) 'nbtask with non-positive ID:', nbtask%id
+              class is (patch_t)
+                if (overlaps_l (nbtask, task)) then
+                  nblink => nbtask%link
+                  if (verbose > 1) write (unit,'(i6,":",i2.2,3i4,a)') &
+                    nbtask%id, key,' added as nbor'
+                  call link%add_nbor (nblink, nbors=nbors, added=added)
+                  j2p = j2
+                  if (added) n = n + 1
                 end if
               end select
-            else
-              print *, 'skipping existing', nbtask%id
             end if
-            if (shared%debug) &
-              print *, '  azimuth:', i2, j2, key(3), nbtask%id, added, &
-                merge('  ','no',added)//' overlap'
-          end if
-         end do
+          end do
         end if
       end do
     end if
   end do
-  if (use_hash) call hash_table%dealloc ()
   end select
   if (shared%debug) &
     print *, task%id, ' found', n

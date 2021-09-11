@@ -566,7 +566,6 @@ SUBROUTINE set_filled (self, task)
         ! Simple logics, easy to read
         !-----------------------------------------------------------------------
         if (method == 3) then
-          !$omp simd
           do i1=1,target%gn(1)
             mesh => target%mesh(1)
             outside(1) = (i1 < mesh%li .or. i1 > mesh%ui)
