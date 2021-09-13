@@ -48,6 +48,7 @@
 &stagger_params         gamma=1.0 nu=0.30,0.0,1.0,0.1,1.0,1.0 /
 &timestep_params        /
 &sinkparticles_params   on=f rho_limit=1.2 max_sinks=1 verbose=0 /
+&kdk_params             on=f /
 
 ! --- Framerwork parameters ----------------------------------------------------
 &lock_params            verbose=0 verbose_time=0 log='queue' tasks=t /

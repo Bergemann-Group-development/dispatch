@@ -68,10 +68,16 @@
 !-----------------------
 ! Sink particle parameters
 !-----------------------
+&sinkparticles_params   on=f
 &sink_patch_params      on=f n_ad_hoc=2 /
 &sink_params            x=0.52 y=0.52 z=0.52 vx=0.1 mass=1 /
 &sink_params            x=0.48 y=0.48 z=0.48 vx=0.2 mass=1 /
 &particle_params        verbose=2 /
+
+!-----------------------
+! Dust parameters
+!-----------------------
+&particle_solver_params on=f /
 
 !-----------------------
 ! Framework params

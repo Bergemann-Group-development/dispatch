@@ -12,6 +12,7 @@
 !> 7. Take a 2nd kick (K) stop, updating the velocity by half the time step
 !===============================================================================
 MODULE particle_solver_mod
+  USE io_mod
   USE io_unit_mod
   USE trace_mod
   USE particle_mod
@@ -24,6 +25,7 @@ MODULE particle_solver_mod
     procedure:: init
     procedure:: update
   end type
+  logical, save:: on=.false.
   integer, save:: verbose=0
   real(8), save:: courant=0.5
   type(particle_solver_t), target, public:: particle_solver
@@ -37,7 +39,7 @@ SUBROUTINE init (self, name)
   character(len=*), optional:: name
   logical, save:: first_time=.true.
   integer:: iostat
-  namelist /kdk_params/ verbose, courant
+  namelist /kdk_params/ on, verbose, courant
   !-----------------------------------------------------------------------------
   call self%particles_t%init
   if (first_time) then
@@ -45,7 +47,12 @@ SUBROUTINE init (self, name)
     if (first_time) then
       rewind (io_unit%input)
       read (io_unit%input, kdk_params, iostat=iostat)
-      write (io_unit%output, kdk_params)
+      if (iostat > 0) then
+        rewind (io_unit%input)
+        read (io_unit%input, kdk_params)
+      end if
+      call io%namelist_warning ('kdk_params', iostat)
+      write (io%namelist, kdk_params)
       call particles%init ('solv')
       particle_solver%verbose = verbose
       particles%verbose = verbose
@@ -69,6 +76,7 @@ SUBROUTINE update (self, p)
   real(8), pointer:: tnew
   integer:: prv, now, new, nt, i
   !-----------------------------------------------------------------------------
+  if (.not.on) return
   call trace%begin ('particle_solver_t%update')
   !$omp atomic read
   now = p%it

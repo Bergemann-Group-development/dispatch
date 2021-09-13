@@ -139,10 +139,11 @@ MODULE sinkparticles_mod
     class(particle_solver_t), pointer:: particle_solver => null()
     class(particle_t), pointer:: particle => null()
     class(gpatch_t), pointer:: patch => null()
-    logical:: on
+    logical:: on = .false.
     type(io_t):: io
     type(sn_t), pointer:: sn => null()
   contains
+    procedure:: pre_init
     procedure:: init
     procedure, private:: init_patch
     procedure:: init_patch_forces
@@ -198,8 +199,8 @@ CONTAINS
 !> Initialize a static instance of the sinkparticles_t data type, with parameters
 !> for sink creation read from a sinkparticles_params namelist.
 !===============================================================================
-SUBROUTINE init (self)
-  class(sinkparticles_t)   :: self
+SUBROUTINE pre_init (self)
+  class(sinkparticles_t), target:: self
   !.............................................................................
   logical, save:: first_time=.true.
   integer:: iostat
@@ -210,7 +211,7 @@ SUBROUTINE init (self)
     rho_limit_factor, rho_cut, max_sinks, softening_length, out_time, &
     only_high_levels, force_refine, file, n_ad_hoc
   !-----------------------------------------------------------------------------
-  call trace%begin ('sinkparticles_t%init')
+  call trace%begin ('sinkparticles_t%pre_init')
   call io%lock%set
   if (first_time) then
     first_time = .false.
@@ -225,12 +226,22 @@ SUBROUTINE init (self)
     allocate (sink_particles%task_list)
   endif
   call io%lock%unset
-  call sink_particles%task_list%init ('snkp')
-  call sink_task_list%init ('sink')
   self%on = on
   self%out_next = out_time
   self%particle_solver => particle_solver
-  call SNe%init ()
+  call trace%end()
+END SUBROUTINE pre_init
+
+!===============================================================================
+!> Initialize a static instance of the sinkparticles_t data type, with parameters
+!> for sink creation read from a sinkparticles_params namelist.
+!===============================================================================
+SUBROUTINE init (self)
+  class(sinkparticles_t):: self
+  !.............................................................................
+  call trace%begin ('sinkparticles_t%init')
+  call sink_particles%task_list%init ('snkp')
+  call sink_task_list%init ('sink')
   call trace%end()
 END SUBROUTINE init
 
@@ -299,6 +310,7 @@ SUBROUTINE init_patch (self, patch, sink_position)
   integer:: i, l(3), u(3), m(3), ix, iy, iz
   real:: r2, dmin
   !-----------------------------------------------------------------------------
+  if (.not.self%on) return
   call trace%begin ('sinkparticles_t%init_patch')
   self%patch => patch
   allocate (self%p(3,self%nt))
@@ -617,6 +629,7 @@ END SUBROUTINE ad_hoc_add
 SUBROUTINE dealloc (self)
   class(sinkparticles_t):: self
   !-----------------------------------------------------------------------------
+  if (.not.self%on) return
   call trace%begin ('sinkparticles_t%dealloc')
   ! if (associated(self%r)) then
   !   call io%bits_mem (-storage_size(self%r), product(shape(self%r)), '-sink%r')
@@ -752,6 +765,7 @@ END SUBROUTINE output
 SUBROUTINE pre_update (self)
   class(sinkparticles_t), target:: self
   !.............................................................................
+  if (.not.self%on) return
   call trace%begin ('sinkparticles_t%pre_update')
   call SNe%pre_update ()
   if (self%on .and. do_force_field) then
@@ -768,6 +782,7 @@ SUBROUTINE update (self)
   class(task_t), pointer:: task
   integer, save:: itimer=0
   !.............................................................................
+  if (.not.self%on) return
   call trace%begin ('sinkparticles_t%update', itimer=itimer)
   if (self%on) then
     call self%output
