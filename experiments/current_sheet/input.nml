@@ -4,7 +4,7 @@
  do_debug=f
  do_output=t
  guard_zones=f
- nml_version=1
+ method='background'
 /
 
 ! --- XY plane ---
@@ -30,6 +30,11 @@ gamma=1.6666666666667
  print_time=0
  max_files=2000
 /
+
+&halo_params
+ check_filled=f
+/
+
 &stagger_params
  courant=0.10
 
@@ -50,7 +55,7 @@ gamma=1.6666666666667
 &ramses_params
  !courant_factor=0.5
  !csound=1.0
- slope_type=2
+ slope_type=3.5
  do_corners=t
 /
 
