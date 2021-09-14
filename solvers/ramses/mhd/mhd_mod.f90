@@ -247,7 +247,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Compute update using second-order Godunov method
   !-----------------------------------------------------------------------------
-  !self%dq = 0d0 ; self%dq2 = 0d0 ; self%dbf = 0d0
+  self%dq = 0d0 ; self%dq2 = 0d0 ; self%dbf = 0d0
   call uslope(self,self%bf,self%q,self%dq,self%dbf,slope_type)   ! TVD slopes
   if (verbose > 2) write (stdlog,*) &
    'uslope', self%id, minval(self%dbf), maxval(self%dbf)

@@ -13,6 +13,7 @@ MODULE non_ideal_mod
   USE index_mod
   USE mesh_mod
   USE eos_mod
+  USE scaling_mod
   implicit none
   private
   type, public :: non_ideal_t
@@ -37,6 +38,7 @@ MODULE non_ideal_mod
     real,pointer,dimension(:,:,:,:,:) :: flux
     logical:: mhd_AD, mhd_Ohm, ntestDADM
     logical:: is_used
+    integer:: verbose
   contains
     procedure:: init
     procedure:: non_ideal_comp
@@ -62,8 +64,9 @@ SUBROUTINE init (self)
   real:: gamma_AD=75., rho_ions=1.0, eta_Ohm=0.0, etaMD=0.0
   logical:: mhd_AD=.false., mhd_Ohm=.false., ntestDADM=.true.
   logical, save:: first_time=.true.
+  integer:: verbose=0
   namelist /non_ideal_params/ gamma_AD, eta_Ohm, etaMD, rho_ions, mhd_AD, &
-    mhd_Ohm, ntestDADM
+    mhd_Ohm, ntestDADM, verbose
   !---------------------------------------------------------------------------
   call io%lock%set('non_ideal_mod%init')
   if (first_time) then
@@ -170,7 +173,7 @@ subroutine non_ideal_comp(self,mesh,idx,bf,uin,qin,fluxambdiff,emfambdiff, &
        florentzz,fluxad,bmagij,emfambdiff,fluxambdiff,jxbsquare,ds,dt)
      l = mesh%lo
      u = mesh%uo
-     u_max = max(u_max, maxval( &
+     u_max = max(u_max, maxval( 10.* &
        uin(l(1):u(1),l(2):u(2),l(3):u(3),idx%bx)**2 + &
        uin(l(1):u(1),l(2):u(2),l(3):u(3),idx%by)**2 + &
        uin(l(1):u(1),l(2):u(2),l(3):u(3),idx%bz)**2 / &
@@ -783,9 +786,9 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy, &
   dx = ds(1) ; dy = ds(2) ; dz = ds(3)
 
   if ( self%ntestDADM .eqv. .false. ) then
-    scale_v = 1e6
-    scale_d = 1e-17
-    scale_l = 5e15
+    scale_v = scaling%u !1e6
+    scale_d = scaling%d !1e-17
+    scale_l = scaling%l !5e15
     scale_t = scale_l/scale_v
     scale_T2 = (scale_v)**2 * self%mp / self%kB
     pi = 4.*atan(1.d0)
@@ -840,11 +843,17 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy, &
     Brms2 = bemfx(2:n(1)-1,2:n(2)-1,2:n(3)-1,1)**2 + bemfx(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)**2 + bemfx(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)**2 
     Eth = etx - 0.5 / rhox * ( uxx**2 + uyx**2 + uzx**2 ) - &
           0.5 * Brms2
+!    print *, etx(10,1,1), rhox(10,1,1), uxx(10,1,1), uyx(10,1,1), uzx(10,1,1), Brms2(10,1,1)
     Brms = Brms2**0.5      
     rho  = rhox * scale_d   
     P    = Eth * (eos%gamma-1.) 
     T    = P / rhox * scale_T2 * self%mu
     B    = Brms * Bcode_to_Gauss
+    if (self%verbose > 1) then
+      print*,'minval(rho),minval(T),minval(B)',minval(rho),minval(T),minval(B)
+      print*,'maxval(rho),maxval(T),maxval(B)',maxval(rho),maxval(T),maxval(B)
+    endif
+    !    print *, T(10,1,1), P(10,1,1), rhox(10,1,1), Eth(10,1,1)
     call eta_table(self,eta_AD,eta_Ohm,rho,T,B)
     ! Convert back to code units. Reminder: eta_Masson = c^2/(4*pi) * eta_Marchand
     ! from seconds to code time
@@ -854,6 +863,9 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy, &
     ! Indirectly account for time step constraint (for more details see technical guide)
     !eta_AD = min(eta_AD, 0.1 * dx**2/dt)
     betaad2 = eta_AD / Brms2  
+    if (self%verbose > 0) then
+      print*, 'minval(betaad2),maxval(betaad2)', minval(betaad2),maxval(betaad2)
+    endif
   endif
 
   emfambdiff(2:n(1)-1,2:n(2)-1,2:n(3)-1,1)=emfambdiff(2:n(1)-1,2:n(2)-1,2:n(3)-1,1)*betaad2 
@@ -883,6 +895,10 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy, &
     P    = Eth * (eos%gamma-1.) 
     T    = P / rhoy * scale_T2 * self%mu
     B    = Brms * Bcode_to_Gauss   
+    if (self%verbose > 1) then
+      print*,'minval(rho),minval(T),minval(B)',minval(rho),minval(T),minval(B)
+      print*,'maxval(rho),maxval(T),maxval(B)',maxval(rho),maxval(T),maxval(B)
+    endif
     call eta_table(self,eta_AD,eta_Ohm,rho,T,B)
     ! Convert back to code units. Reminder: eta_Masson = c^2/(4*pi) * eta_Marchand
     ! from seconds to code time
@@ -891,6 +907,9 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy, &
     ! Indirectly account for time step constraint (for more details see technical guide)
     !eta_AD = min(eta_AD, 0.1 * dx**2/dt)
     betaad2 = eta_AD / Brms2
+    if (self%verbose > 0) then
+      print*, 'minval(betaad2),maxval(betaad2)', minval(betaad2),maxval(betaad2)
+    endif
   endif
   emfambdiff(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)=emfambdiff(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)*betaad2            
                     
@@ -918,6 +937,10 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy, &
     P    = Eth * (eos%gamma-1.) 
     T    = P / rhoz * scale_T2 * self%mu
     B    = Brms * Bcode_to_Gauss
+    if (self%verbose > 1) then
+      print*,'minval(rho),minval(T),minval(B)',minval(rho),minval(T),minval(B)
+      print*,'maxval(rho),maxval(T),maxval(B)',maxval(rho),maxval(T),maxval(B)
+    endif
     call eta_table(self,eta_AD,eta_Ohm,rho,T,B)
     ! Convert back to code units. Reminder: eta_Masson = c^2/(4*pi) * eta_Marchand
     ! from seconds to code time
@@ -926,6 +949,9 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy, &
     ! Indirectly account for time step constraint (for more details see technical guide)
     !eta_AD = min(eta_AD, 0.1 * dx**2/dt)
     betaad2 = eta_AD / Brms2
+    if (self%verbose > 0) then
+      print*, 'minval(betaad2),maxval(betaad2)', minval(betaad2),maxval(betaad2)
+    endif
   endif
 
   emfambdiff(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)=emfambdiff(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)*betaad2
@@ -949,6 +975,10 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy, &
     P    = Eth * (eos%gamma-1.) 
     T    = P / rhofx * scale_T2 *self%mu
     B    = Brms * Bcode_to_Gauss
+    if (self%verbose > 1) then
+      print*,'minval(rho),minval(T),minval(B)',minval(rho),minval(T),minval(B)
+      print*,'maxval(rho),maxval(T),maxval(B)',maxval(rho),maxval(T),maxval(B)
+    endif
     call eta_table(self,eta_AD,eta_Ohm,rho,T,B)
     ! Convert back to code units. Reminder: eta_Masson = c^2/(4*pi) * eta_Marchand
     ! from seconds to code time
@@ -957,6 +987,9 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy, &
     ! Indirectly account for time step constraint (for more details see technical guide)
     !eta_AD = min(eta_AD, 0.1 * dx**2/dt)
     betaad2 = eta_AD / Brms2  
+    if (self%verbose > 0) then
+      print*, 'minval(betaad2),maxval(betaad2)', minval(betaad2),maxval(betaad2)
+    endif
   endif
   fluxambdiff(2:n(1)-1,2:n(2)-1,2:n(3)-1,1)=-betaad2*fluxad(2:n(1)-1,2:n(2)-1,2:n(3)-1,1)
  
@@ -976,6 +1009,10 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy, &
     P    = Eth * (eos%gamma-1.) 
     T    = P / rhofy * scale_T2 * self%mu
     B    = Brms * Bcode_to_Gauss
+    if (self%verbose > 1) then
+      print*,'minval(rho),minval(T),minval(B)',minval(rho),minval(T),minval(B)
+      print*,'maxval(rho),maxval(T),maxval(B)',maxval(rho),maxval(T),maxval(B)
+    endif
     call eta_table(self,eta_AD,eta_Ohm,rho,T,B)
     ! Convert back to code units. Reminder: eta_Masson = c^2/(4*pi) * eta_Marchand
     ! from seconds to code time
@@ -984,6 +1021,9 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy, &
     ! Indirectly account for time step constraint (for more details see technical guide)
     !eta_AD = min(eta_AD, 0.1 * dx**2/dt)
     betaad2 = eta_AD / Brms2 
+    if (self%verbose > 0) then
+      print*, 'minval(betaad2),maxval(betaad2)', minval(betaad2),maxval(betaad2)
+    endif
   endif
   fluxambdiff(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)=-betaad2*fluxad(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)
  
@@ -1003,6 +1043,10 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy, &
     P    = Eth * (eos%gamma-1.) 
     T    = P / rhofz * scale_T2 * self%mu
     B    = Brms * Bcode_to_Gauss
+    if (self%verbose > 1) then
+      print*,'minval(rho),minval(T),minval(B)',minval(rho),minval(T),minval(B)
+      print*,'maxval(rho),maxval(T),maxval(B)',maxval(rho),maxval(T),maxval(B)
+    endif
     call eta_table(self,eta_AD,eta_Ohm,rho,T,B)
     ! Convert back to code units. Reminder: eta_Masson = c^2/(4*pi) * eta_Marchand
     ! from seconds to code time
@@ -1011,6 +1055,9 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy, &
     ! Indirectly account for time step constraint (for more details see technical guide)
     !eta_AD = min(eta_AD, 0.1 * dx**2/dt)
     betaad2 = eta_AD / Brms2 
+    if (self%verbose > 0) then
+      print*, 'minval(betaad2),maxval(betaad2)', minval(betaad2),maxval(betaad2)
+    endif
   endif
   fluxambdiff(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)=-betaad2*fluxad(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)
  
@@ -1039,6 +1086,10 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy, &
     P   = Eth * (eos%gamma-1.) 
     T   = P / rhocell * scale_T2 * self%mu
     B   = Brms * Bcode_to_Gauss
+    if (self%verbose > 1) then
+      print*,'minval(rho),minval(T),minval(B)',minval(rho),minval(T),minval(B)
+      print*,'maxval(rho),maxval(T),maxval(B)',maxval(rho),maxval(T),maxval(B)
+    endif
     call eta_table(self,eta_AD,eta_Ohm,rho,T,B)
     ! Convert back to code units. Reminder: eta_Masson = c^2/(4*pi) * eta_Marchand
     ! from seconds to code time
@@ -1047,6 +1098,10 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy, &
     ! Indirectly account for time step constraint (for more details see technical guide)
     !eta_AD = min(eta_AD, 0.1 * dx**2/dt)
     betaad = eta_AD / Brms2
+    if (self%verbose > 0) then
+      print*, 'minval(betaad),maxval(betaad)', minval(betaad),maxval(betaad)
+    endif
+
   endif
   jxbsquare(2:n(1)-1,2:n(2)-1,2:n(3)-1)=(jxb(2:n(1)-1,2:n(2)-1,2:n(3)-1,1)*jxb(2:n(1)-1,2:n(2)-1,2:n(3)-1,1) +&
                                  & jxb(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)*jxb(2:n(1)-1,2:n(2)-1,2:n(3)-1,2) +&
@@ -1077,18 +1132,18 @@ subroutine eta_table(self,eta_AD,eta_Ohm,rho,T,B)
 
     crho = self%crho ; cT = self%cT ; cB = self%cB    
 
-    eta_Ohm = 0.d0 ; eta_AD = 0.d0
     do i=1,n(1)
       do j=1,n(2)
         do k=1,n(3)
+          eta_Ohm(i,j,k) = 0d0 ; eta_AD(i,j,k) = 0d0
           call comp_weight_element(rho(i,j,k),self%rhoarr               ,crho               ,rhoidx,w1)
-          call comp_weight_element(T(i,j,k)  ,self%Tarr                 ,cT                 ,Tidx  ,w2)
+          call comp_weight_element(max(T(i,j,k), 10d0)  ,self%Tarr                 ,cT                 ,Tidx  ,w2)
           call comp_weight_element(B(i,j,k)  ,self%Barr                 ,cB                 ,Bidx  ,w3)
-          do iw=0,1
-            do jw=0,1
-              do kw=0,1
+          do iw=1,2
+            do jw=1,2
+              do kw=1,2
                 if (self%mhd_Ohm) then
-                  eta_Ohm(i,j,k) = eta_Ohm(i,j,k) + w1(iw)*w2(jw)*w3(kw) * self%eta_Ohm_tbl(rhoidx+iw, Tidx+jw, Bidx+kw)
+                  eta_Ohm(i,j,k) = eta_Ohm(i,j,k) + w1(iw)*w2(jw)*w3(kw) * self%eta_Ohm_tbl(rhoidx+iw-1, Tidx+jw-1, Bidx+kw-1)
                 end if
                 if (self%mhd_AD) then
                   eta_AD(i,j,k)  = eta_AD(i,j,k)  + w1(iw)*w2(jw)*w3(kw) * self%eta_AD_tbl (rhoidx+iw, Tidx+jw, Bidx+kw)
@@ -1118,7 +1173,8 @@ subroutine comp_weight_element(x,xarr,cx,idx,w)
     xd = 0.d0
     xu = 0.d0
     x0 = xarr(1)
-    mult = x / x0 
+    x  = max(x,x0)  
+    mult = abs(x) / x0 
     ! log rule: log_b(x) = log_d(x)/log_d(b)
     idx  = int( log10(mult) / log10(cx) )
     ! Constrain the possible variables here such that corner cases of extreme density, 
@@ -1128,9 +1184,8 @@ subroutine comp_weight_element(x,xarr,cx,idx,w)
     xd = x0 * cx**idx_r
     xu = min(x0 * cx**(idx_r+1.d0),real(nxarr))
     ! weight factors
-    w(1)  = ( min(x,xu) - xd ) / ( x0 * cx)
-    w(2)  = 1. - w(1)
-
+    w(2)  = ( min(x,xu) - xd ) / ( xu - xd )
+    w(1)  = 1. - w(2)
 end subroutine comp_weight_element
 
 subroutine comp_weight(x,xarr,cx,idx,w)
@@ -1189,6 +1244,7 @@ subroutine eta_table_init(self,eta_ohm_tbl,eta_ad_tbl)
     mu = self%mu             ! mean molecular weight
     mp = self%mp             ! Proton mass  
     NA = self%NA             ! Avogadro constant
+
 
     nrho = 200. ; nT = 60. ; nE = nT ; nB = 150.
     rho0 = 300. * mu * mp ; rhoend = 1.7688710202180409e25 * mu * mp
