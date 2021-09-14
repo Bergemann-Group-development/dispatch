@@ -186,12 +186,12 @@ SUBROUTINE update (self)
 
   if (self%llc_nat(1)-self%ds(1) .lt. self%mesh(1)%origin) then 
     do iv=1,self%nv
-      call boundary%condition (iv, self%mem(:,:,:,iv,self%it,1), self%mesh, .true.,1,self%no_mans_land)
+      call boundary%condition (iv, self%mem(:,:,:,iv,self%it,1), self%mesh, .true.,1,.false.)!,self%no_mans_land)
     end do 
   endif
   if (self%llc_nat(1)+self%size(1)+self%ds(1) .gt. self%mesh(1)%origin + self%box(1)) then 
     do iv=1,self%nv
-      call boundary%condition (iv, self%mem(:,:,:,iv,self%it,1), self%mesh, .false.,1,self%no_mans_land)
+      call boundary%condition (iv, self%mem(:,:,:,iv,self%it,1), self%mesh, .false.,1,.false.)!,self%no_mans_land)
     end do 
   endif
 
