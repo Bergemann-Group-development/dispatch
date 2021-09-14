@@ -10,8 +10,6 @@
                     damp_rate=0.2
                     r_sponge = 0.5
                     deriv_bnd=f
-                    pb_fact=1.0
-                    t_bdry=3.0
 /
 &cartesian_params   size=6,6,3 
                     dims=6,6,3 
@@ -61,7 +59,7 @@
                     time=0.2 
 /
 &eos_params         /
-&lock_params verbose=2 alternate_time =30 /
+&lock_params verbose=1 alternate_time =30 /
 &spitzer_conductivity_params
  on=f
 /
@@ -97,7 +95,7 @@ eos='tabular'
 &task_mesg_params   verbose=0 /
 &mpi_mesg_params    verbose=0 debug=f /
 /
-&refine_params          on=f verbose=2 levelmin=8 levelmax=10
+&refine_params          on=f verbose=1 levelmin=8 levelmax=10
                         max_vorticity=2.0 !min_vorticity=2.0
                         max_compress=5 !min_compress =4.0
                         max_shock=2.0
@@ -113,8 +111,9 @@ eos='tabular'
  mhd_AD=f
 /
 
+&eos_params gamma=1.2 /
+
 &bifrost_params             
-gamma=1.6666667
 loginterpolation=t
 ca_max = 100.0 
 courant=0.2

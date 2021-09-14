@@ -102,6 +102,10 @@ SUBROUTINE init (self)
   if (first_time) then
     rewind (io%input)
     read (io%input, boundary_params, iostat=iostat)
+    if (iostat > 0) then
+      rewind (io%input)
+      read (io%input, boundary_params)
+    end if
     call io%namelist_warning ('boundary_params', iostat)
     if (io%master) write (*, boundary_params)
     !d_bot = d_bot/scaling%d

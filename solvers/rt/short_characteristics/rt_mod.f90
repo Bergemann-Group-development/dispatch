@@ -81,7 +81,7 @@ MODULE rt_mod
     integer                  :: i_omega=0                                       ! space-angle index
     integer                  :: axis=0                                          ! neares axis
     real, pointer            :: w_bin(:)                                        ! frequency weight
-    type(rt_t), pointer      :: omega => null()                                 ! different RT directions
+    type(rt_t), pointer      :: omeg  => null()                                 ! different RT directions
     type(rt_t), pointer      :: main  => null()                                 ! point to main RT task
     type(rt_t), pointer      :: next  => null()                                 ! point to next omega task
     type(rt_t), pointer      :: prev  => null()                                 ! point to prev omega task
@@ -264,12 +264,12 @@ recursive SUBROUTINE pre_init (self)
               allocate(omega)
               omega%main => self
               omega%master_id = self%id
-              if (associated(self%omega)) then
+              if (associated(self%omeg)) then
                 omega%prev => self%tail
                 omega%prev%next => omega
                 self%tail => omega
               else
-                self%omega => omega
+                self%omeg => omega
                 self%tail => omega
               end if
               omega%mu      = dir*mu(i_mu)
@@ -555,7 +555,7 @@ SUBROUTINE pre_update (self)
   call self%mem_lock(jt(1))%unset ('rt_collect')
   if (jt(2) /= jt(1)) &
     call self%mem_lock(jt(2))%unset ('rt_collect')
-  omega => self%omega
+  omega => self%omeg
   do while(associated(omega))
   call omega%time_interval(self%patch%time,jt,pt, extrap=.true.)
   call omega%mem_lock(jt(1))%set ('rt_assembly')
@@ -771,7 +771,7 @@ SUBROUTINE init_task_list(self, task_list)
     if (.not.associated(self%link)) call self%task_list%prepare(rt_task)
     if (.not.self%in_task_list) call self%task_list%append_link (self%link)
     self%in_task_list = .true.
-    omega => self%omega
+    omega => self%omeg
     do while(associated(omega))
       omega%task_list => task_list
       rt_task => omega
@@ -1173,7 +1173,7 @@ recursive SUBROUTINE dealloc(self)
   ! ............................................................................
   if (self%i_omega==0) then
     if (associated(self%w_bin)) deallocate (self%w_bin)
-    omega => self%omega
+    omega => self%omeg
     do while(associated(omega))
       next => omega%next
       call omega%dealloc()

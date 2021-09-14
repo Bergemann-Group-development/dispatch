@@ -478,14 +478,14 @@ SUBROUTINE in_t (target, source, ls, us, in, out, lt, ut, all, only, extrap)
     !---------------------------------------------------------------------------
     if (present(lt)) then
       if (verbose > 0) then
-        write (stdlog,'(f12.6,a,2i6,1x,2i3,2f7.3,2(1x,2(1x,3i3)),1x,8l1)') &
+        write (stdlog,'(f12.6,a,2i6,1x,2i3,2f7.3,2(1x,2(1x,3i3)),1x,9l1)') &
           wallclock(), pad_trace(1:indent)// &
           'interp_t%in_t: tgt,src,jt,pt,ls,us,lt,ut,usg=', &
           target%id, source%id, jt, pt, ls, us, lt, ut, &
           source%unsigned
       end if
       if (unit == stdout) then
-        write (unit,'(a,2(i6,":",i2.2,f10.6),1x,2i3,2f7.3,2(1x,2(1x,3i3)),1x,8l1)') &
+        write (unit,'(a,2(i6,":",i2.2,f10.6),1x,2i3,2f7.3,2(1x,2(1x,3i3)),1x,9l1)') &
           'interp_t%in_t(1): tgt,src,jt,pt,ls,us,lt,ut,usg=', &
           target%id, target%level, target%time, &
           source%id, source%level, source%time, &
@@ -546,14 +546,14 @@ SUBROUTINE in_t (target, source, ls, us, in, out, lt, ut, all, only, extrap)
       o = 0
       !.........................................................................
       if (verbose > 0) then
-        write (stdlog,'(f12.6,a,2i6,1x,2i3,2f7.3,2(1x,3i3),1x,8l1)') &
+        write (stdlog,'(f12.6,a,2i6,1x,2i3,2f7.3,2(1x,3i3),1x,9l1)') &
           wallclock(), &
           pad_trace(1:indent)//'interp_t%in_t: tgt,src,jt,pt,ls,us,usg=', &
           target%id, source%id, jt, pt, ls, us, &
           source%unsigned
       end if
       if (unit == stdout) then
-        write (unit,'(a,2(i6,":",i2.2,f10.6),1x,2i3,2f7.3,2(1x,3i3),1x,8l1)') &
+        write (unit,'(a,2(i6,":",i2.2,f10.6),1x,2i3,2f7.3,2(1x,3i3),1x,9l1)') &
           'interp_t%in_t(2): tgt,src,jt,pt,ls,us,lt,ut,usg=', &
           target%id, target%level, target%time, &
           source%id, source%level, source%time, &
@@ -568,19 +568,40 @@ SUBROUTINE in_t (target, source, ls, us, in, out, lt, ut, all, only, extrap)
         do i3=ls(3),us(3)
           if (source%unsigned(i4)) then
             do i2=ls(2),us(2)
-              !$omp simd
-              do i1=ls(1),us(1)
-                out(i1,i2,i3,i4) = &
-                  exp(log(in(i1,i2,i3,i4,jt(1),1))*pt(1) &
-                    + log(in(i1,i2,i3,i4,jt(2),1))*pt(2))
-                v_min = min(v_min,out(i1,i2,i3,i4))
-                !...............................................................
-                !write (stdlog,'(a,1(2x,3i3),2x,2i3,2f7.3,2x,1p,3e11.2)') &
-                !  'in_t(2):', i1, i2, i3, jt, pt, &
-                !  in(i1,i2,i3,i4,jt(1),1), in(i1,i2,i3,i4,jt(2),1), &
-                !  out(i1,i2,i3,i4)
-                !...............................................................
-              end do
+              if (verbose > 0) then
+                do i1=ls(1),us(1)
+                  if (in(i1,i2,i3,i4,jt(1),1) <= 0.0 .or. &
+                      in(i1,i2,i3,i4,jt(2),1) <= 0.0) then
+                    write (stdlog,'(a,2(i6,":",i2.2,3i4))') &
+                      'interp_t%in_t: tgt,src=', &
+                      target%id, target%key, source%id, source%key
+                  end if
+                  out(i1,i2,i3,i4) = &
+                    exp(log(in(i1,i2,i3,i4,jt(1),1))*pt(1) &
+                      + log(in(i1,i2,i3,i4,jt(2),1))*pt(2))
+                  v_min = min(v_min,out(i1,i2,i3,i4))
+                  !...............................................................
+                  !write (stdlog,'(a,1(2x,3i3),2x,2i3,2f7.3,2x,1p,3e11.2)') &
+                  !  'in_t(2):', i1, i2, i3, jt, pt, &
+                  !  in(i1,i2,i3,i4,jt(1),1), in(i1,i2,i3,i4,jt(2),1), &
+                  !  out(i1,i2,i3,i4)
+                  !...............................................................
+                end do
+              else
+                !$omp simd
+                do i1=ls(1),us(1)
+                  out(i1,i2,i3,i4) = &
+                    exp(log(in(i1,i2,i3,i4,jt(1),1))*pt(1) &
+                      + log(in(i1,i2,i3,i4,jt(2),1))*pt(2))
+                  v_min = min(v_min,out(i1,i2,i3,i4))
+                  !...............................................................
+                  !write (stdlog,'(a,1(2x,3i3),2x,2i3,2f7.3,2x,1p,3e11.2)') &
+                  !  'in_t(2):', i1, i2, i3, jt, pt, &
+                  !  in(i1,i2,i3,i4,jt(1),1), in(i1,i2,i3,i4,jt(2),1), &
+                  !  out(i1,i2,i3,i4)
+                  !...............................................................
+                end do
+              end if
             end do
           else
             do i2=ls(2),us(2)
@@ -602,10 +623,10 @@ SUBROUTINE in_t (target, source, ls, us, in, out, lt, ut, all, only, extrap)
       !call lock1%unset ('interp_t%in_t')
     end if
     !...........................................................................
-    if (verbose > 1) then
+    if (verbose > 1 .and. present(lt)) then
       wc = wallclock()-wc
       n = product(us-ls+1)
-      lt = ls+o
+      !lt = ls+o
       write (stdlog,'(a,f6.3,1p,6(2x,3e11.2))') &
       'interp_t%in_t(2): mus/p,min,max,min,max=', wc/n, &
       minval( in(ls(1):us(1),ls(2):us(2),ls(3):us(3),1,jt(1),1)), &
@@ -811,7 +832,7 @@ SUBROUTINE in_x (tgt, lt, ut, src, ls, us, om, in, out, all, only)
     end if
   end do
   !.............................................................................
-  if (verbose > 1) then
+  if (verbose > 1 .and. i4==1) then
     wc = wallclock()-wc
     write (stdlog,'(a,3pf7.3,6p,f6.2,1p,2x,e11.2,2i5)') &
       'in_x: ms,mus/pt,min,max,nf=', wc, wc/n, d_min, nf
@@ -1014,7 +1035,7 @@ SUBROUTINE in_y (tgt, lt, ut, src, ls, us, om, in, out, all, only)
     end if
   end do
   !............................................................................
-  if (verbose > 1) then
+  if (verbose > 1 .and. i4==1) then
     wc = wallclock()-wc
     write (stdlog,'(a,3pf7.3,6p,f6.2,1p,2x,2e11.2)') &
       'in_y: ms,mus/pt,min,max=', wc, wc/n, d_min
@@ -1201,11 +1222,15 @@ SUBROUTINE in_z (tgt, lt, ut, src, ls, us, om, in, out, all, only)
         end if ! verbose > 1 .and. i4 == 1
         !.......................................................................
       end do ! i3
-      if (i4 == 1) d_min = v_min
+      if (i4 == 1) then 
+        d_min = v_min 
+      else 
+        d_min = minval(d)
+      end if 
     end if ! .not. all  => no interior
   end do ! i4
   !.............................................................................
-  if (verbose > 1) then
+  if (verbose > 1 .and. i4==1) then
     wc = wallclock()-wc
     write (stdlog,'(a,3pf7.3,6p,f6.2,1p,2x,2e11.2)') &
       'in_z: ms,mus/pt,min=', wc, wc/n, d_min

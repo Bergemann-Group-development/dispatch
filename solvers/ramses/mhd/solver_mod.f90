@@ -313,6 +313,9 @@ SUBROUTINE gas_pressure_sub (self, pg)
   py => self%mem(:,:,:,self%idx%py,self%it,1)
   pz => self%mem(:,:,:,self%idx%pz,self%it,1)
   e  => self%mem(:,:,:,self%idx%e ,self%it,1)
+  bx  => self%mem(:,:,:,self%idx%bx ,self%it,1)
+  by  => self%mem(:,:,:,self%idx%by ,self%it,1)
+  bz  => self%mem(:,:,:,self%idx%bz ,self%it,1)
   if (isothermal) then
     pg = d*self%csound**2
   else
