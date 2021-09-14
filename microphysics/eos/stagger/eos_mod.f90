@@ -467,7 +467,7 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne, pg, tt, ne, rk, src, &
   if (nbelow_d+nbelow_e > 0) then
     if (present(id)) id_loc=id
     write(io%output,*) &
-      'WARNING: number of points below table d & e:', nbelow_d, nbelow_e, 'for ',trim(label), id_loc
+      'WARNING: number of points below table d & e:', nbelow_d, nbelow_e, 'for ',trim(label), id_loc, minval(lnd_loc), minval(ee_loc)
   end if
   if (present(e_below)) then
     if (nbelow_e > 0) then
@@ -496,8 +496,8 @@ SUBROUTINE ddeos(self,ee,d,dlnpdE_r,dlnpdlnr_E)
   real(kind=KindScalarVar), dimension(:,:), pointer:: dlnpdE_r, dlnpdlnr_E
   !-----------------------------------------------------------------------------
   integer:: n(2), ix, iy, kee, kee1
-  integer,      dimension(:), allocatable:: np,np1,ik,ntab,ik1,ntab1
-  real(kind=8), dimension(:), allocatable:: px,py,py1
+  integer,      dimension(:), contiguous, pointer:: np,np1,ik,ntab,ik1,ntab1
+  real(kind=8), dimension(:), contiguous, pointer:: px,py,py1
   real(kind=8) rhm1,rhm2,drhm,algrk,eek,eek1
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------

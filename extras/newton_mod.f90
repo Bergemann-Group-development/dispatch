@@ -14,6 +14,7 @@ MODULE newton_mod
   private
   type, public:: newton_t
     real:: ee_top = 0.0
+    real:: position=0.5
     logical:: on=.false.
     class(gpatch_t), pointer:: patch
   contains
@@ -21,9 +22,9 @@ MODULE newton_mod
     procedure:: init
     procedure:: pre_update
   end type
-  integer:: verbose=0, axis=3
+  integer, save:: verbose=0, axis=3
   ! -- the default values are reasonable for the solar photosphere
-  real:: position=0.5, scale=0.1, ee0=0.0, ee1=0.5, time=0.1
+  real, save:: position=-99., scale=0.1, ee0=0.0, ee1=0.5, time=0.1
 CONTAINS
 
 !===============================================================================
@@ -51,6 +52,7 @@ SUBROUTINE pre_init (self, patch)
   end if
   call io%lock%unset ('newton_t%pre_init')
   self%on = on
+  self%position=position
   call trace%end()
 END SUBROUTINE pre_init
 

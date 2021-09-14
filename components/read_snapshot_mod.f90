@@ -92,8 +92,8 @@ SUBROUTINE read_bifrost_snap (task_list)
   integer:: zi, iext
   integer:: mx, my, mz, nx, ny, nz, nv, ii(8)
   real:: sb(8), sd(8), sc_u, sc_b, minv, maxv
-  real(8):: zpos
-  real:: ee_top
+  real(8):: zpos_bot, zpos_top
+  real:: ee_top, d_top, d_bot, e_bot, newton_ee
   real, dimension(:), allocatable, target:: dxm, dxmdn, xm, xmdn
   real, dimension(:), allocatable, target:: dym, dymdn, ym, ymdn
   real, dimension(:), allocatable, target:: dzm, dzmdn, zm, zmdn, fl, fldn
@@ -101,6 +101,7 @@ SUBROUTINE read_bifrost_snap (task_list)
   integer, save:: itimer=0
   integer:: iostat
   logical:: searching
+  logical:: top_set, bot_set
   !-----------------------------------------------------------------------------
   call trace%begin('read_bifrost_snap', itimer=itimer)
   call io%header('begin ic_mod%read_snapshot: Reading Bifrost legacy data')
@@ -117,7 +118,9 @@ SUBROUTINE read_bifrost_snap (task_list)
       patch => task
       searching=.false.
     end select
+    link => link%next
   end do
+  
   m => patch%mesh
   nv = 8
   n = nint(m%b/m%d)
@@ -339,6 +342,39 @@ SUBROUTINE read_bifrost_snap (task_list)
   if (allocated(rbuf))call io%bits_mem (-storage_size (rbuf), mx*my*mz)
   if (allocated(rbuf)) deallocate(rbuf)
   !-----------------------------------------------------------------------------
+  ! Collect mean values at boundaries
+  !-----------------------------------------------------------------------------
+  bot_set=.false.
+  top_set=.false.
+  link => task_list%head
+  do while (associated(link))
+    task => link%task
+    select type(task)
+    class is(experiment_t)
+      patch => task
+      if (do_means) then
+        m => patch%mesh
+        if (m(3)%lower_boundary.and. .not.bot_set) then
+          zpos_bot = m(3)%r(m(3)%li)+m(3)%p
+          d_bot = lagrange%interpolate1d8(zpos_bot,mz,real(zm,8),real(d_mean,8),order=order)
+          e_bot = lagrange%interpolate1d8(zpos_bot,mz,real(zm,8),real(e_mean,8),order=order)
+          bot_set=.true.
+        end if
+        if (m(3)%upper_boundary.and. .not.top_set) then
+          zpos_top = patch%newton%position
+          newton_ee = lagrange%interpolate1d8(zpos_top,mz,real(zm,8),real(e_mean,8),order=order) &
+                    / lagrange%interpolate1d8(zpos_top,mz,real(zm,8),real(d_mean,8),order=order)
+          zpos_top = m(3)%r(m(3)%ui)+m(3)%p 
+          d_top  = lagrange%interpolate1d8(zpos_top,mz,real(zm,8),real(d_mean,8),order=order)
+          ee_top = lagrange%interpolate1d8(zpos_top,mz,real(zm,8),real(e_mean,8),order=order) &
+                 / d_top
+          top_set=.true.
+        end if
+      end if
+    end select
+    link => link%next
+  end do
+  !-----------------------------------------------------------------------------
   ! Finalize snapshots. If needed, do the following:
   ! 1) Store mean values of a given layer
   ! 2) Reset the vertical magnetic field
@@ -352,20 +388,16 @@ SUBROUTINE read_bifrost_snap (task_list)
       if (do_means) then
         m => patch%mesh
         if (m(3)%lower_boundary) then
-          zpos = m(3)%r(m(3)%li)+m(3)%p
-          patch%boundaries%d_bot = lagrange%interpolate1d8(zpos,mz,real(zm,8),real(d_mean,8))
-          patch%boundaries%e_bot = lagrange%interpolate1d8(zpos,mz,real(zm,8),real(e_mean,8))
+          patch%boundaries%d_bot = d_bot
+          patch%boundaries%e_bot = e_bot
         end if
         if (m(3)%upper_boundary) then
-          zpos = m(3)%r(m(3)%ui)+m(3)%p 
-          ee_top = lagrange%interpolate1d8(zpos,mz,real(zm,8),real(e_mean,8)) &
-                 / lagrange%interpolate1d8(zpos,mz,real(zm,8),real(d_mean,8))
-          patch%newton%ee_top = ee_top
+          patch%newton%ee_top = newton_ee
+          patch%newton%position = zpos_top
           patch%boundaries%ee_top = ee_top
+          patch%boundaries%d_top  = d_top
         else
-          ee_top = lagrange%interpolate1d8(zpos,mz,real(zm,8),real(e_mean,8)) &
-                 / lagrange%interpolate1d8(zpos,mz,real(zm,8),real(d_mean,8))
-          patch%newton%ee_top = ee_top
+          patch%newton%ee_top = newton_ee
           patch%boundaries%ee_top = ee_top
         end if
       end if
@@ -395,13 +427,14 @@ SUBROUTINE read_stagger_snap (task_list)
   integer:: n(3), iv, iiv, recl, ix, iy, iz
   integer:: zi, iext
   integer:: mx, my, mz, nx, ny, nz, nv, ii(9), biv
-  real(8):: zpos
-  real   :: ee_top
+  real(8):: zpos_top, zpos_bot
+  real   :: ee_top, e_bot, d_top, d_bot, newton_ee
   real, dimension(:), allocatable, target:: dxm, dxmdn, xm, xmdn
   real, dimension(:), allocatable, target:: dym, dymdn, ym, ymdn
   real, dimension(:), allocatable, target:: dzm, dzmdn, zm, zmdn, fl, fldn
   real, dimension(:,:,:), allocatable:: rbuf, buffer
   logical:: searching
+  logical:: top_set, bot_set
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('read_stagger_snap', itimer=itimer)
@@ -418,6 +451,7 @@ SUBROUTINE read_stagger_snap (task_list)
       patch => task
       searching=.false.
     end select
+    link => link%next
   end do
   m => patch%mesh
   nv = patch%nv
@@ -611,6 +645,39 @@ SUBROUTINE read_stagger_snap (task_list)
     deallocate(rbuf)
   end if
   !-----------------------------------------------------------------------------
+  ! Collect mean values at boundaries
+  !-----------------------------------------------------------------------------
+  bot_set=.false.
+  top_set=.false.
+  link => task_list%head
+  do while (associated(link))
+    task => link%task
+    select type(task)
+    class is(experiment_t)
+      patch => task
+      if (do_means) then
+        m => patch%mesh
+        if (m(3)%lower_boundary.and. .not.(bot_set)) then
+          zpos_bot = m(3)%r(m(3)%li)+m(3)%p
+          d_bot = lagrange%interpolate1d8(zpos_bot,mz,real(zm,8),real(d_mean,8),order=order)
+          e_bot = lagrange%interpolate1d8(zpos_bot,mz,real(zm,8),real(e_mean,8),order=order)
+          bot_set=.true.
+        end if
+        if (m(3)%upper_boundary.and. .not.top_set) then
+          zpos_top = patch%newton%position
+          newton_ee = lagrange%interpolate1d8(zpos_top,mz,real(zm,8),real(e_mean,8),order=order) &
+                    / lagrange%interpolate1d8(zpos_top,mz,real(zm,8),real(d_mean,8),order=order)
+          zpos_top = m(3)%r(m(3)%ui)+m(3)%p 
+          d_top  = lagrange%interpolate1d8(zpos_top,mz,real(zm,8),real(d_mean,8),order=order)
+          ee_top = lagrange%interpolate1d8(zpos_top,mz,real(zm,8),real(e_mean,8),order=order) &
+                 / d_top
+          top_set=.true.
+        end if
+      end if
+    end select
+    link => link%next
+  end do
+  !-----------------------------------------------------------------------------
   ! Finalize snapshots. If needed, do the following:
   ! 1) Store mean values of a given layer
   ! 2) Reset the vertical magnetic field
@@ -623,23 +690,16 @@ SUBROUTINE read_stagger_snap (task_list)
       patch => task
       if (do_means) then
         m => patch%mesh
-        !if (m(3)%lower_boundary) then
-          zpos = m(3)%r(m(3)%li)+m(3)%p
-          !zpos = patch%origin(3)+ 0.5*m(3)%d
-          patch%boundaries%d_bot = lagrange%interpolate1d8(zpos,mz,real(zm,8),real(d_mean,8),order=1)
-          patch%boundaries%e_bot = lagrange%interpolate1d8(zpos,mz,real(zm,8),real(e_mean,8),order=1)
-        !end if
+        if (m(3)%lower_boundary) then
+          patch%boundaries%d_bot = d_bot
+          patch%boundaries%e_bot = e_bot
+        end if
         if (m(3)%upper_boundary) then
-          !zpos = m(3)%r(m(3)%uo)+m(3)%p
-          zpos = m(3)%r(m(3)%ui)+m(3)%p 
-          ee_top = lagrange%interpolate1d8(zpos,mz,real(zm,8),real(e_mean,8),order=1) &
-                 / lagrange%interpolate1d8(zpos,mz,real(zm,8),real(d_mean,8),order=1)
-          patch%newton%ee_top = ee_top
+          patch%newton%ee_top = newton_ee
           patch%boundaries%ee_top = ee_top
+          patch%boundaries%d_top = d_top
         else
-          ee_top = lagrange%interpolate1d8(zpos,mz,real(zm,8),real(e_mean,8),order=1) &
-                 / lagrange%interpolate1d8(zpos,mz,real(zm,8),real(d_mean,8),order=1)
-          patch%newton%ee_top = ee_top
+          patch%newton%ee_top = newton_ee
           patch%boundaries%ee_top = ee_top
         end if
       end if
@@ -764,7 +824,7 @@ SUBROUTINE interpolate_mean (iv, patch, buffer, mx, my, mz, xm, ym, zm, xmdn, ym
     end do
     do iz = 1, nz
       zpos = m3%r(iz)+m3%p + m3%h(iv)*m3%d
-      ff(:,:,iz) = lagrange%interpolate1d8(zpos,mz,real(zi,8),real(mean_buff,8))
+      ff(:,:,iz) = lagrange%interpolate1d8(zpos,mz,real(zi,8),real(mean_buff,8),order=2)
     end do
   end if
   deallocate (xo, yo, zo, mean_buff)

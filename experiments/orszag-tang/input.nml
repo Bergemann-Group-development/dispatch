@@ -1,12 +1,12 @@
 !----------------- I/O paramters -----------------------------------------------------
 &io_params         verbose=0 do_trace=f do_debug=f do_output=t
-                   guard_zones=f nml_version=1 /
+                   guard_zones=f method='background' /
 &out_params        end_time=1.001 out_time=0.005 print_time=0 /
 
 !----------------- Initial condition parameter ---------------------------------------
 ! --- XY plane ---
 &patch_params      nt=5 n=32,32,1 no_mans_land=t  do_check_nan=t grace=0.1 /
-&cartesian_params  size=1,1,0.005 dims=6,6,1 mpi_dims=2,2,1 origin=0,0,0 periodic=t,t,t/
+&cartesian_params  size=1,1,0.005 dims=12,12,1 mpi_dims=2,2,1 origin=0,0,0 periodic=t,t,t/
 &IC_params         idirect=3 !b0=0.0
 /
 

@@ -275,7 +275,7 @@ recursive SUBROUTINE initial_refine(self, task,level_min, ip)
   logical, save:: first_time=.true.
   logical, save:: keep_parent=.true.
   real(8), dimension(3):: size, pos
-  integer:: refine=-1, iostat
+  integer:: refine(3)=-1, iostat
   integer:: level_max, i, j, k
   namelist /initial_refine_params/ on, n_refine, center, extent, ratio, keep_parent
   ! ............................................................................
@@ -297,15 +297,18 @@ recursive SUBROUTINE initial_refine(self, task,level_min, ip)
   level_max = level_min+maxval(n_refine)
   ! check X
   refine=-1
-  refine = max(refine,nint(level_min+(level_max-level_min)* &
+  refine(1) = max(refine(1),nint(level_min+(level_max-level_min)* &
            exp(-abs(task%position(1)-center(1))/(extent(1)+1e-20))) - task%level)
   ! check Y
-  refine = max(refine,nint(level_min+(level_max-level_min)* &
+  refine(2) = max(refine(2),nint(level_min+(level_max-level_min)* &
            exp(-abs(task%position(2)-center(2))/(extent(2)+1e-20))) - task%level)
   ! check Z
-  refine = max(refine,nint(level_min+(level_max-level_min)* &
+  refine(3) = max(refine(3),nint(level_min+(level_max-level_min)* &
            exp(-abs(task%position(3)-center(3))/(extent(3)+1e-20))) - task%level)
-  if (refine>0 .and. task%level<level_max) then
+  if (all(refine>0) .and. task%level<level_max) then
+    call task%pre_init()
+    call self%task_list%add_by_level (task%link)
+    call task%init_task_list (tlist)
     do k=1,ratio
       do j=1,ratio
         do i=1,ratio
@@ -364,9 +367,6 @@ recursive SUBROUTINE initial_refine(self, task,level_min, ip)
       end do
     end do
     if (keep_parent) then
-      call task%pre_init()
-      call self%task_list%append_link (task%link)
-      call task%init_task_list (tlist)
       write (io_unit%mpi,'(3i4,3f8.3,i4,a)') &
         i,j,k,task%position,task%rank,'i,j,k,pos,rank'
     else
@@ -376,7 +376,7 @@ recursive SUBROUTINE initial_refine(self, task,level_min, ip)
     end if
   else
     call task%pre_init()
-    call self%task_list%append_link (task%link)
+    call self%task_list%add_by_level (task%link)
     call task%init_task_list (tlist)
     write (io_unit%mpi,'(3i4,3f8.3,i4,a)') &
       i,j,k,task%position,task%rank,'i,j,k,pos,rank'

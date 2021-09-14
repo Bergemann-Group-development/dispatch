@@ -35,6 +35,7 @@ MODULE standard_boundaries_mod
     procedure:: symmetric
     procedure:: antisymmetric
     procedure:: extrapolate
+    procedure:: extrapolate_constrained
     procedure:: log_extrapolate
     procedure:: constant
     procedure:: zero_gradient
@@ -92,8 +93,8 @@ SUBROUTINE init (self)
   ! If at edge, set boundary bits
   ! FIXME: Consider position and origin and box definitions
   !-----------------------------------------------------------------------------
-  ! position = patch%position - patch%origin - 0.5d0 * patch%box
-  position = patch%position
+   position = patch%position - patch%origin - 0.5d0 * patch%box
+  !position = patch%position
   limit = 0.5d0 * (patch%box - patch%size - patch%ds)
   if (.not.patch%periodic(1)) then
     if (position(1)  <= -limit(1)) then
@@ -374,6 +375,24 @@ END SUBROUTINE extrapolate
 !===============================================================================
 !> Apply extrapolating boundary conditions
 !===============================================================================
+SUBROUTINE extrapolate_constrained (self, mem, iv, select)
+  class(standard_boundaries_t)                :: self
+  real(kind=KindScalarVar), pointer  :: mem(:,:,:)
+  integer                            :: iv
+  integer, optional                  :: select
+  procedure(make_symmetric), pointer :: operator
+  !-----------------------------------------------------------------------------
+  operator => make_extrapolated_constrained
+  call trace%begin ('standard_boundaries_t%extrapolate_constrained')
+  if (self%id==io%id_debug) &
+    print *, self%id, 'EXTRAP', iv, self%is_set(bits%yl), self%is_set(bits%yu)
+  call self%condition (mem, iv, operator, select=select)
+  call trace%end()
+END SUBROUTINE extrapolate_constrained
+
+!===============================================================================
+!> Apply extrapolating boundary conditions
+!===============================================================================
 SUBROUTINE log_extrapolate (self, mem, iv, select)
   class(standard_boundaries_t)                :: self
   real(kind=KindScalarVar), pointer  :: mem(:,:,:)
@@ -588,6 +607,57 @@ SUBROUTINE make_extrapolated (self, f, m1, m2, iv, lower, upper, transpose, valu
     end if
   end if
 END SUBROUTINE make_extrapolated
+
+!===============================================================================
+!> Make an extrapolated boundary condition, possibly transposing for vector
+!> speedup
+!===============================================================================
+SUBROUTINE make_extrapolated_constrained (self, f, m1, m2, iv, lower, upper, transpose, value)
+  class(standard_boundaries_t)                      :: self
+  real(kind=KindScalarVar), dimension(:,:) :: f
+  class(mesh_t), pointer                   :: m1, m2
+  integer                                  :: iv
+  logical                                  :: lower, upper, transpose
+  real, optional                           :: value
+  integer                                  :: i, j, lo, li, ui, uo
+  real                                     :: p
+  !-----------------------------------------------------------------------------
+  call bndry_indices (m2, iv, lo, li, ui, uo)
+  if (lower) then
+    if (transpose) then
+      do j=1,lo
+        p = 1.-((lo+1-j)/(lo+1.-3.))**2
+        do i=m1%lb,m1%ub
+          f(j,i) = p*(f(lo+1,i)-f(lo+2+(lo-j),i)) + f(lo+1,i)
+        end do
+      end do
+    else
+      do j=1,lo
+        p = 1.-((lo+1-j)/(lo+1.-3.))**2
+        do i=m1%lb,m1%ub
+          f(i,j) = p*(f(i,lo+1) - f(i,lo+2+(lo-j))) + f(i,lo+1)
+        end do
+      end do
+    end if
+  end if
+  if (upper) then
+    if (transpose) then
+      do j=uo,m2%ub
+        p = 1.-((uo-1.-j)/real(m2%ub-uo-1.-2.))**2
+        do i=m1%lb,m1%ub
+          f(j,i) = p*(f(uo-1,i) - f(uo-2-(j-uo),i)) + f(uo-1,i)
+        end do
+      end do
+    else
+      do j=uo,m2%ub
+        p = 1.-((uo-1.-j)/real(m2%ub-uo-1.-2.))**2
+        do i=m1%lb,m1%ub
+          f(i,j) = p*(f(i,uo-1) - f(i,uo-2-(j-uo))) + f(i,uo-1)
+        end do
+      end do
+    end if
+  end if
+END SUBROUTINE make_extrapolated_constrained
 
 !===============================================================================
 !> Make an extrapolated boundary condition, possibly transposing for vector

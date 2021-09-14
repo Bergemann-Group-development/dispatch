@@ -8,8 +8,8 @@ OTS=
 # Default target and methods
 UPD             = adams_bashforth
 #SOLVER         = stagger
-SOLVER          = ramses/mhd
-#SOLVER          = ramses/mhd_eos
+#SOLVER          = ramses/mhd
+SOLVER          = ramses/hlld_eos
 #SOLVER          = stagger2/bifrost
 #STAGGER         = stagger_2nd.o
 #STAGGER         = stagger_6th.o

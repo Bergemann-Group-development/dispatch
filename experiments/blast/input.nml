@@ -7,7 +7,7 @@
  do_debug=f
  do_output=t
  guard_zones=f
- nml_version=1
+ method='background'
 /
 
 ! --- 3D --- case 1

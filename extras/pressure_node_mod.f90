@@ -1,5 +1,5 @@
 !===============================================================================
-!> Add Newton cooling to any solver
+!> Add a pressure node to any solver
 !===============================================================================
 MODULE pressure_node_mod
   USE io_mod
@@ -33,7 +33,7 @@ MODULE pressure_node_mod
 CONTAINS
 
 !===============================================================================
-!> Initialize Newton cooling
+!> Initialize pressure node
 !===============================================================================
 SUBROUTINE pre_init (self, patch)
   class(pressure_node_t):: self
@@ -81,15 +81,16 @@ SUBROUTINE post_update (self)
   !.............................................................................
   class(mesh_t), pointer:: m1, m2, m3
   class(gpatch_t), pointer:: p
-  real(var_k), dimension(:,:,:), pointer:: d, e, px, py, pz, bx, by, bz                ! it memory
-  real(var_k), dimension(:,:,:), pointer:: nd, ne, npx, npy, npz, nbx, nby, nbz        ! new memory
-  real(var_k), dimension(:,:), allocatable:: u_bnd, p_bot
-  real(var_k), dimension(:,:), allocatable:: em, nem
-  real(var_k), dimension(:,:), pointer:: eth,neth
-  real(var_k), dimension(:,:,:), allocatable:: pg, bx1, by1, bz1
-  real(var_k), dimension(:,:,:), pointer:: d1, p1, e1, p_loc, d_loc, e_loc
-  real(var_k), dimension(:,:), pointer:: ee_bnd, d_bnd
-  real(var_k), dimension(:,:), pointer:: dlnpdlnr_E, dlnpdE_r
+  real(var_k), dimension(:,:,:), contiguous, pointer:: d, e, px, py, pz, bx, by, bz                ! it memory
+  real(var_k), dimension(:,:,:), contiguous, pointer:: nd, ne, npx, npy, npz, nbx, nby, nbz        ! new memory
+  real(var_k), dimension(:,:),   contiguous, pointer:: u_bnd, p_bot
+  real(var_k), dimension(:,:),   contiguous, pointer:: em, nem
+  real(var_k), dimension(:,:),   contiguous, pointer:: eth,neth
+  real(var_k), dimension(:,:,:), contiguous, pointer:: pg, bx1, by1, bz1
+  real(var_k), dimension(:,:,:), contiguous, pointer:: d1, p1, e1
+  real(var_k), dimension(:,:,:),             pointer:: p_loc, d_loc, e_loc
+  real(var_k), dimension(:,:),   contiguous, pointer:: ee_bnd, d_bnd
+  real(var_k), dimension(:,:),   contiguous, pointer:: dlnpdlnr_E, dlnpdE_r
   real(var_k) :: F1,F2,F3,F4,F5,hh,dddt_add, dddt_b, dedt_b, dddt, dedt, ekin
   real(var_k) :: ux, uy, uz
   real:: ct, u_sm, nrm
@@ -269,7 +270,7 @@ SUBROUTINE post_update (self)
   ! ----------------------------------------------------------------------------
   ! Get gas flow patterns
   ! ----------------------------------------------------------------------------
-  if (p%kind(1:6)=='ramses') then
+  if (p%kind(1:6)=='ramses'.or.p%kind(1:4)=='hlld') then
     u_bnd=npz(:,:,li(3))/d(:,:,li(3))
   else
     u_bnd=0.5*(pz(:,:,li(3))+pz(:,:,li(3)+1))/d(:,:,li(3))

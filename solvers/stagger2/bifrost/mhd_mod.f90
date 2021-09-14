@@ -52,6 +52,7 @@ MODULE mhd_mod
     procedure:: pre_init
     procedure:: pde
     procedure:: pre_update
+    procedure:: post_update
     procedure:: update
     procedure:: output
     procedure:: set_nu
@@ -177,6 +178,7 @@ SUBROUTINE init (self)
     if (self%mhd) self%mesh(i)%h(self%idx%bx+i-1) = -0.5
   end do
   self%unsigned(self%idx%d)  = unsigned
+  self%unsigned(self%idx%e)  = unsigned
   self%pervolume(self%idx%e) = unsigned
   if (verbose > 1 .and. self%track) then
     do i=1,3
@@ -799,6 +801,18 @@ SUBROUTINE pre_update (self)
   call trace%end
 END SUBROUTINE pre_update
 
+!=======================================================================
+!> Measure time in extras_t%post_update
+!=======================================================================
+SUBROUTINE post_update (self)
+  class(mhd_t):: self
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin ('mhd_t%post_update', itimer=itimer)
+  call self%extras_t%post_update ()
+  call trace%end (itimer)
+END SUBROUTINE post_update
+
 !===============================================================================
 !> Take a complete update step.  This can be overloaded in higher levels, e.g.
 !> in experiment_mod, where boundary conditions may be inserted
@@ -831,8 +845,8 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Set boundary conditions on time derivatives
   !-----------------------------------------------------------------------------
-  mem => self%mem(:,:,:,:,self%it,:)
-  call self%boundaries%derivative(mem)
+  !mem => self%mem(:,:,:,:,self%it,:)
+  !call self%boundaries%derivative(mem)
   !-----------------------------------------------------------------------------
   ! The call to courant_condition may optionally be interscepted in extras_t
   !-----------------------------------------------------------------------------
@@ -890,7 +904,7 @@ SUBROUTINE gas_pressure_sub (self, d, lnd, ee, pg)
     end if
   else
     if (do_temperature) then
-      call eos%lookup_table (shape(d), d=d, ee=ee, pg=pg, tt=self%tt, label='mhd_gp_sub')
+      call eos%lookup_table (shape(d), d=d, ee=ee, pg=pg, tt=self%tt, label='mhd_gp_sub', id=self%id)
     else
       call eos%lookup_table (shape(d), d=d, ee=ee, pg=pg, label='mhd_gp_sub2')
     end if

@@ -273,9 +273,9 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne,lnee, pg, tt, ne, rk, src
   class (eos_t):: self
   integer:: dim(3)
   integer, optional:: id
-  real, dimension(:,:,:)  , pointer, optional :: lnd,d,lne,lnee,e,ee,tt,ne,ross
+  real, dimension(:,:,:)  , pointer, optional :: lnd,d,lne,lnee,e,ee,ne,ross
   real, dimension(:,:,:,:)         , optional :: src,rk,scat
-  real, dimension(:,:,:)           , optional :: pg
+  real, dimension(:,:,:)           , optional :: pg,tt
   real, optional:: gamma
   logical, optional:: e_below
   character(len=*),optional::label

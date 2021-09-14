@@ -48,11 +48,12 @@ grad_var='d' tol_grad=0.1 /
 &bifrost_params             
 loginterpolation=t
 ca_max = 3e2 
-courant=0.2
+courant=0.3
 symmetric_e=f
 !     Ca    U    Uv   d     e      E
 !     nu1   nu2  nu3  nu_d  nu_ee  eta3
-nu=  0.01 , 0.3,  0.1,  0.5,  0.5, 0.9 /
+!nu=  0.01 , 0.3,  0.1,  0.5,  0.5, 0.9 /
+nu=  0.06 , 0.15,  0.5,  0.05,  0.3, 0.3 /
 
 &ramses_params
   slope_type=2
