@@ -62,7 +62,8 @@
                     verbose=0 do_dump=f
                     unsigned=t
                     smallr=1e-4 smallc=1e-3 isothermal=f /
-
+&non_ideal_params   mhd_AD=.false. mhd_Ohm=.false. ntestDADM=.false. 
+                    etaMD=0.0 gamma_AD=75. rho_ions=1. /
 &stagger_params     nu=  0.20, 1.0, 1.0, 0.2, 1.0, 1.0
                     !     cs    pa  ofd  mas  kap  eta
                     csound=1.0 ! non-rotating case
