@@ -252,9 +252,6 @@ END SUBROUTINE bndries
 SUBROUTINE boundary (self, it)
   class(experiment_t):: self
   integer :: it
-  real, dimension(:,:,:), contiguous, pointer :: d, e, px, py, pz, ui
-  integer:: l(3), u(3), i1, i2, i3
-  real(8):: p(3), r, z, v_phi
   type(lock_t), pointer:: lock
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -264,66 +261,14 @@ SUBROUTINE boundary (self, it)
   !-----------------------------------------------------------------------------
   ! Inner radial boundary
   !-----------------------------------------------------------------------------
-  d  => self%mem(:,:,:,self%idx%d ,it,1)
-  px => self%mem(:,:,:,self%idx%px,it,1)
-  py => self%mem(:,:,:,self%idx%py,it,1)
-  pz => self%mem(:,:,:,self%idx%pz,it,1)
-  allocate (ui(size(d,1),size(d,2),size(d,3)))
-  allocate (e (size(d,1),size(d,2),size(d,3)))
   if (self%boundaries%is_set (bits%xl)) then
-    call self%e2E_th (e,it)
-    !---------------------------------------------------------------------------
-    ! Apply zero gradient conditions to all variables
-    !---------------------------------------------------------------------------
-    call self%boundaries%zero_gradient (d, self%idx%d)
-    call self%boundaries%zero_gradient (e, self%idx%e)
-    call self%boundaries%zero_gradient (px, self%idx%px)
-    call self%boundaries%zero_gradient (py, self%idx%py)
-    call self%boundaries%zero_gradient (pz, self%idx%pz)
-    !---------------------------------------------------------------------------
-    ! Subtract headwind velocity at innermost non-guard cell from radial and
-    ! azimuthal velocity because of lacking pressure gradient in zero gradient
-    ! conditions
-    !---------------------------------------------------------------------------
-    l = [self%mesh(1)%lb, self%mesh(2)%lb, self%mesh(3)%lb]
-    u = [self%mesh(1)%lo, self%mesh(2)%ub, self%mesh(3)%ub]
-    call cache_v_head (self)
-    do i3=l(3),u(3)
-      do i2=l(2),u(2)
-        do i1=l(1),u(1)
-          p(1) = self%mesh(1)%r(self%mesh(1)%li) + self%radius
-          p(2) = self%mesh(2)%r(i2)
-          p(3) = self%mesh(3)%r(i3) + self%position(3)
-          r = sqrt(p(1)**2 + p(2)**2)
-          z = p(3)
-          v_phi = self%v_head(i1,i2,i3)
-          px(i1,i2,i3) = px(i1,i2,i3) - &
-            v_phi*self%phi_hat(i1,i2,i3,1)*d(i1,i2,i3)
-          py(i1,i2,i3) = py(i1,i2,i3) - &
-            v_phi*self%phi_hat(i1,i2,i3,2)*d(i1,i2,i3)
-        end do
-        if (associated(self%filled)) then
-          do i1=l(1),u(1)
-            self%filled(i1,i2,i3) = self%level
-          end do
-        end if
-      end do
-    end do
-    call self%E_th2e (e,it)
+    call radial_boundary (self, self%mesh(1)%lo, it)
   end if
   !-----------------------------------------------------------------------------
   ! Outer radial boundary
   !-----------------------------------------------------------------------------
   if (self%boundaries%is_set (bits%xu)) then
-    !---------------------------------------------------------------------------
-    ! Apply initial conditions to all variables
-    !---------------------------------------------------------------------------
-    l = [self%mesh(1)%uo, self%mesh(2)%lb, self%mesh(3)%lb]
-    u = [self%mesh(1)%ub, self%mesh(2)%ub, self%mesh(3)%ub]
-    call initial_condition (self, l, u, it)
-    if (associated(self%filled)) then
-      self%filled(l(1):u(1),l(2):u(2),l(3):u(3)) = self%level
-    end if
+    call radial_boundary (self, self%mesh(1)%uo, it)
   end if
   !-----------------------------------------------------------------------------
   ! Lower vertical boundary
@@ -337,20 +282,12 @@ SUBROUTINE boundary (self, it)
   if (self%boundaries%is_set (bits%zu)) then
     call vertical_boundary (self, self%mesh(3)%uo, it)
   end if
-  !-----------------------------------------------------------------------------
-  ! Restore total energy
-  !-----------------------------------------------------------------------------
-  !if (self%boundaries%is_set (bits%zl+bits%zu)) then
-  !  call self%e2E_th (e,it)
-  !  call self%boundaries%zero_gradient (e, self%idx%e)
-  !  call self%E_th2e (e,it)
-  !end if
-  deallocate (ui,e)
   call lock%unset ('experiment_t%boundary')
   call trace%end (itimer)
 END SUBROUTINE boundary
 
 !===============================================================================
+! Cache headwind velocity
 !===============================================================================
 SUBROUTINE cache_v_head (self)
   class(experiment_t):: self
@@ -382,6 +319,107 @@ SUBROUTINE cache_v_head (self)
   end if
   call trace%end (itimer)
 END SUBROUTINE cache_v_head
+
+!===============================================================================
+! Cache Kepler velocity
+!===============================================================================
+SUBROUTINE cache_v_kepler (self)
+  class(experiment_t):: self
+  integer:: i1, i2, i3
+  real(8):: p(3), r
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  ! Cache expensive calculation
+  !-----------------------------------------------------------------------------
+  call trace%begin ('experiment_t%cache_v_kepler', itimer=itimer)
+  if (.not.associated(self%v_kepler)) then
+    call self%lock%set ('cache_v_kepler')
+    if (.not.associated(self%v_kepler)) then
+      allocate (self%v_kepler(self%gn(1),self%gn(2),self%gn(3)))
+      do i3=self%mesh(3)%lb,self%mesh(3)%ub
+        do i2=self%mesh(2)%lb,self%mesh(2)%ub
+          do i1=self%mesh(1)%lb,self%mesh(1)%ub
+            p(1) = self%mesh(1)%r(i1) + self%radius
+            p(2) = self%mesh(2)%r(i2)
+            r = sqrt(p(1)**2 + p(2)**2)
+            self%v_kepler(i1,i2,i3) = disk_model%v_kepler(r)
+          end do
+        end do
+      end do
+    end if
+    call self%lock%unset ('cache_v_kepler')
+  end if
+  call trace%end (itimer)
+END SUBROUTINE cache_v_kepler
+
+!===============================================================================
+!> Radial boundary conditions
+!===============================================================================
+SUBROUTINE radial_boundary (self, o, it)
+  class(experiment_t):: self
+  real, dimension(:,:,:), contiguous, pointer :: d, e, px, py, pz
+  integer:: o, it, i1, i2, i3, l(3), u(3)
+  real(8):: p(3), r
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin ('experiment_t%radial_boundary', itimer=itimer)
+  d  => self%mem(:,:,:,self%idx%d ,it,1)
+  px => self%mem(:,:,:,self%idx%px,it,1)
+  py => self%mem(:,:,:,self%idx%py,it,1)
+  pz => self%mem(:,:,:,self%idx%pz,it,1)
+  allocate (e (size(d,1),size(d,2),size(d,3)))
+  call self%e2E_th (e,it)
+  !---------------------------------------------------------------------------
+  ! Apply zero gradient conditions to all variables
+  !---------------------------------------------------------------------------
+  call self%boundaries%zero_gradient (d, self%idx%d)
+  call self%boundaries%zero_gradient (e, self%idx%e)
+  call self%boundaries%zero_gradient (px, self%idx%px)
+  call self%boundaries%zero_gradient (py, self%idx%py)
+  call self%boundaries%zero_gradient (pz, self%idx%pz)
+  l = self%mesh%lb
+  u = self%mesh%ub
+  if (o == self%mesh(1)%lo) then
+    l(1) = self%mesh(1)%lb
+    u(1) = self%mesh(1)%lo
+  else
+    l(1) = self%mesh(1)%uo
+    u(1) = self%mesh(1)%ub
+  end if
+  !-----------------------------------------------------------------------------
+  call cache_v_kepler (self)
+  do i3=l(3),u(3)
+    do i2=l(2),u(2)
+      do i1=l(1),u(1)
+        p(1) = self%mesh(1)%r(i1) + self%radius
+        p(2) = self%mesh(2)%r(i2)
+        r = sqrt(p(1)**2 + p(2)**2)
+        !-----------------------------------------------------------------------
+        ! Set radial velocity to zero and azimuthal velocity to Kepler speed -
+        ! coordinate system speed because there is no pressure gradient in zero
+        ! gradient conditions
+        !-----------------------------------------------------------------------
+        px(i1,i2,i3) = (self%v_kepler(i1,i2,i3)*self%phi_hat(i1,i2,i3,1) - &
+          self%v_patch(i1,i2,i3,1))*d(i1,i2,i3)
+        py(i1,i2,i3) = (self%v_kepler(i1,i2,i3)*self%phi_hat(i1,i2,i3,2) - &
+          self%v_patch(i1,i2,i3,2))*d(i1,i2,i3)
+      end do
+      if (associated(self%filled)) then
+        do i1=l(1),u(1)
+          self%filled(i1,i2,i3) = self%level
+        end do
+      end if
+    end do
+  end do
+  call self%E_th2e (e,it)
+  deallocate(e)
+  if (verbose > 0) then
+    write (stdout,'(a,i6,":",i2.2,3i4,2(2x,3i4))') &
+      'boundary: target,l,u=', self%id, self%key, l, u
+  end if
+call trace%end (itimer)
+
+END SUBROUTINE radial_boundary
 
 !===============================================================================
 !> Vertical boundary conditions
