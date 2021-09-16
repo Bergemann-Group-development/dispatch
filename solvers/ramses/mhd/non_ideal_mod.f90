@@ -85,6 +85,7 @@ SUBROUTINE init (self)
   self%etaMD    = etaMD
   self%is_used  = mhd_Ohm .or. mhd_AD
   self%ntestDADM=ntestDADM
+  self%verbose = verbose
   if ( (self%is_used .eqv. .true.) .and. (self%ntestDADM .eqv. .false.) ) then
     self%eta_Ohm_tbl = 0.d0
     self%eta_AD_tbl  = 0.d0
@@ -173,7 +174,7 @@ subroutine non_ideal_comp(self,mesh,idx,bf,uin,qin,fluxambdiff,emfambdiff, &
        florentzz,fluxad,bmagij,emfambdiff,fluxambdiff,jxbsquare,ds,dt)
      l = mesh%lo
      u = mesh%uo
-     u_max = max(u_max, maxval( 10.* &
+     u_max = max(u_max, maxval( 1.* &
        uin(l(1):u(1),l(2):u(2),l(3):u(3),idx%bx)**2 + &
        uin(l(1):u(1),l(2):u(2),l(3):u(3),idx%by)**2 + &
        uin(l(1):u(1),l(2):u(2),l(3):u(3),idx%bz)**2 / &
@@ -789,11 +790,12 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy, &
     scale_v = scaling%u !1e6
     scale_d = scaling%d !1e-17
     scale_l = scaling%l !5e15
-    scale_t = scale_l/scale_v
-    scale_T2 = (scale_v)**2 * self%mp / self%kB
+    scale_t = scaling%t !scale_l/scale_v
+    scale_T2 = scaling%temp !(scale_v)**2 * self%mp / self%kB
     pi = 4.*atan(1.d0)
     c2_4pi = 7.152426325648638e+19
-    Bcode_to_Gauss = (4.d0*pi*scale_d)**0.5*scale_v
+    Bcode_to_Gauss = scaling%b !(4.d0*pi*scale_d)**0.5*scale_v
+    print*, 'scale_v,scale_d,scale_l,scale_t,scale_T2,Bcode_to_Gauss',scale_v,scale_d,scale_l,scale_t,scale_T2,Bcode_to_Gauss
   endif
 
   !dt est deja dtnew, qui a été choisi comme le dt normal (avec la condition de courant) ou le dt normal seuillé si le dtAD est trop faible(bricolo)
@@ -847,9 +849,9 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy, &
     Brms = Brms2**0.5      
     rho  = rhox * scale_d   
     P    = Eth * (eos%gamma-1.) 
-    T    = P / rhox * scale_T2 * self%mu
+    T    = P / rhox * scale_T2 * self%mu   
     B    = Brms * Bcode_to_Gauss
-    if (self%verbose > 1) then
+    if (self%verbose .gt. 1) then
       print*,'minval(rho),minval(T),minval(B)',minval(rho),minval(T),minval(B)
       print*,'maxval(rho),maxval(T),maxval(B)',maxval(rho),maxval(T),maxval(B)
     endif
@@ -863,7 +865,7 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy, &
     ! Indirectly account for time step constraint (for more details see technical guide)
     !eta_AD = min(eta_AD, 0.1 * dx**2/dt)
     betaad2 = eta_AD / Brms2  
-    if (self%verbose > 0) then
+    if (self%verbose .gt. 0) then
       print*, 'minval(betaad2),maxval(betaad2)', minval(betaad2),maxval(betaad2)
     endif
   endif
@@ -895,7 +897,7 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy, &
     P    = Eth * (eos%gamma-1.) 
     T    = P / rhoy * scale_T2 * self%mu
     B    = Brms * Bcode_to_Gauss   
-    if (self%verbose > 1) then
+    if (self%verbose .gt. 1) then
       print*,'minval(rho),minval(T),minval(B)',minval(rho),minval(T),minval(B)
       print*,'maxval(rho),maxval(T),maxval(B)',maxval(rho),maxval(T),maxval(B)
     endif
@@ -907,7 +909,7 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy, &
     ! Indirectly account for time step constraint (for more details see technical guide)
     !eta_AD = min(eta_AD, 0.1 * dx**2/dt)
     betaad2 = eta_AD / Brms2
-    if (self%verbose > 0) then
+    if (self%verbose .gt. 0) then
       print*, 'minval(betaad2),maxval(betaad2)', minval(betaad2),maxval(betaad2)
     endif
   endif
@@ -937,7 +939,7 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy, &
     P    = Eth * (eos%gamma-1.) 
     T    = P / rhoz * scale_T2 * self%mu
     B    = Brms * Bcode_to_Gauss
-    if (self%verbose > 1) then
+    if (self%verbose .gt. 1) then
       print*,'minval(rho),minval(T),minval(B)',minval(rho),minval(T),minval(B)
       print*,'maxval(rho),maxval(T),maxval(B)',maxval(rho),maxval(T),maxval(B)
     endif
@@ -949,7 +951,7 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy, &
     ! Indirectly account for time step constraint (for more details see technical guide)
     !eta_AD = min(eta_AD, 0.1 * dx**2/dt)
     betaad2 = eta_AD / Brms2
-    if (self%verbose > 0) then
+    if (self%verbose .gt. 0) then
       print*, 'minval(betaad2),maxval(betaad2)', minval(betaad2),maxval(betaad2)
     endif
   endif
@@ -975,7 +977,7 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy, &
     P    = Eth * (eos%gamma-1.) 
     T    = P / rhofx * scale_T2 *self%mu
     B    = Brms * Bcode_to_Gauss
-    if (self%verbose > 1) then
+    if (self%verbose .gt. 1) then
       print*,'minval(rho),minval(T),minval(B)',minval(rho),minval(T),minval(B)
       print*,'maxval(rho),maxval(T),maxval(B)',maxval(rho),maxval(T),maxval(B)
     endif
@@ -987,7 +989,7 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy, &
     ! Indirectly account for time step constraint (for more details see technical guide)
     !eta_AD = min(eta_AD, 0.1 * dx**2/dt)
     betaad2 = eta_AD / Brms2  
-    if (self%verbose > 0) then
+    if (self%verbose .gt. 0) then
       print*, 'minval(betaad2),maxval(betaad2)', minval(betaad2),maxval(betaad2)
     endif
   endif
@@ -1009,7 +1011,7 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy, &
     P    = Eth * (eos%gamma-1.) 
     T    = P / rhofy * scale_T2 * self%mu
     B    = Brms * Bcode_to_Gauss
-    if (self%verbose > 1) then
+    if (self%verbose .gt. 1) then
       print*,'minval(rho),minval(T),minval(B)',minval(rho),minval(T),minval(B)
       print*,'maxval(rho),maxval(T),maxval(B)',maxval(rho),maxval(T),maxval(B)
     endif
@@ -1021,7 +1023,7 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy, &
     ! Indirectly account for time step constraint (for more details see technical guide)
     !eta_AD = min(eta_AD, 0.1 * dx**2/dt)
     betaad2 = eta_AD / Brms2 
-    if (self%verbose > 0) then
+    if (self%verbose .gt. 0) then
       print*, 'minval(betaad2),maxval(betaad2)', minval(betaad2),maxval(betaad2)
     endif
   endif
@@ -1043,7 +1045,7 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy, &
     P    = Eth * (eos%gamma-1.) 
     T    = P / rhofz * scale_T2 * self%mu
     B    = Brms * Bcode_to_Gauss
-    if (self%verbose > 1) then
+    if (self%verbose .gt. 1) then
       print*,'minval(rho),minval(T),minval(B)',minval(rho),minval(T),minval(B)
       print*,'maxval(rho),maxval(T),maxval(B)',maxval(rho),maxval(T),maxval(B)
     endif
@@ -1055,7 +1057,7 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy, &
     ! Indirectly account for time step constraint (for more details see technical guide)
     !eta_AD = min(eta_AD, 0.1 * dx**2/dt)
     betaad2 = eta_AD / Brms2 
-    if (self%verbose > 0) then
+    if (self%verbose .gt. 0) then
       print*, 'minval(betaad2),maxval(betaad2)', minval(betaad2),maxval(betaad2)
     endif
   endif
@@ -1086,7 +1088,7 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy, &
     P   = Eth * (eos%gamma-1.) 
     T   = P / rhocell * scale_T2 * self%mu
     B   = Brms * Bcode_to_Gauss
-    if (self%verbose > 1) then
+    if (self%verbose .gt. 1) then
       print*,'minval(rho),minval(T),minval(B)',minval(rho),minval(T),minval(B)
       print*,'maxval(rho),maxval(T),maxval(B)',maxval(rho),maxval(T),maxval(B)
     endif
@@ -1098,7 +1100,7 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy, &
     ! Indirectly account for time step constraint (for more details see technical guide)
     !eta_AD = min(eta_AD, 0.1 * dx**2/dt)
     betaad = eta_AD / Brms2
-    if (self%verbose > 0) then
+    if (self%verbose .gt. 0) then
       print*, 'minval(betaad),maxval(betaad)', minval(betaad),maxval(betaad)
     endif
 
