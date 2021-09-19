@@ -82,10 +82,10 @@ SUBROUTINE from_source (self, tgt, lt, ut, src, filled)
   real, pointer, contiguous :: tm(:,:,:,:), sm(:,:,:,:)
   real, pointer, contiguous :: sp(:,:,:,:), tp(:,:,:,:)
   real                      :: pt(2), r1, r2, r
-  real(8)                   :: p1, p2, q1, q2, v(3), v_shift(3), d_omega
+  real(8)                   :: p1, p2, q1, q2, p3, q3, v(3), v_shift(3), d_omega
   real(8)                   :: d(3), e(3,3)
   logical                   :: outside(3)
-  integer                   :: i1, i2, i3, j1 ,j2, iv, j, it(2)
+  integer                   :: i1, i2, i3, j1 ,j2, j3, iv, j, it(2)
   integer, dimension(3)     :: l, u, m(4)
   integer, save             :: itimer=0
   !-----------------------------------------------------------------------------
@@ -125,17 +125,23 @@ SUBROUTINE from_source (self, tgt, lt, ut, src, filled)
             !-------------------------------------------------------------------
             j1 = p(i1,i2,i3,1)
             j2 = p(i1,i2,i3,2)
+            j3 = p(i1,i2,i3,3)
             j1 = min(max(j1,l(1)),u(1)-1)
             j2 = min(max(j2,l(2)),u(2)-1)
+            j3 = min(max(j3,l(3)),u(3)-1)
             p1 = p(i1,i2,i3,1) - j1
             p2 = p(i1,i2,i3,2) - j2
+            p3 = p(i1,i2,i3,3) - j3
             q1 = 1.0 - p1
             q2 = 1.0 - p2
+            q3 = 1.0 - p3
             !...................................................................
             if (filled(i1,i2,i3)==0) then
               tp(i1,i2,i3,iv) = &
-                q2*(q1*sp(j1,j2  ,i3  ,iv) + p1*sp(j1+1,j2  ,i3  ,iv)) + &
-                p2*(q1*sp(j1,j2+1,i3  ,iv) + p1*sp(j1+1,j2+1,i3  ,iv))
+                q3*(q2*(q1*sp(j1,j2  ,j3  ,iv) + p1*sp(j1+1,j2  ,j3  ,iv)) + &
+                    p2*(q1*sp(j1,j2+1,j3  ,iv) + p1*sp(j1+1,j2+1,j3  ,iv))) + &
+                p3*(q2*(q1*sp(j1,j2  ,j3+1,iv) + p1*sp(j1+1,j2  ,j3+1,iv)) + &
+                    p2*(q1*sp(j1,j2+1,j3+1,iv) + p1*sp(j1+1,j2+1,j3+1,iv)))
             end if
           end do
         else
@@ -145,16 +151,22 @@ SUBROUTINE from_source (self, tgt, lt, ut, src, filled)
             !-------------------------------------------------------------------
             j1 = p(i1,i2,i3,1)
             j2 = p(i1,i2,i3,2)
+            j3 = p(i1,i2,i3,3)
             j1 = min(max(j1,l(1)),u(1)-1)
             j2 = min(max(j2,l(2)),u(2)-1)
+            j3 = min(max(j3,l(3)),u(3)-1)
             p1 = p(i1,i2,i3,1) - j1
             p2 = p(i1,i2,i3,2) - j2
+            p3 = p(i1,i2,i3,3) - j3
             q1 = 1.0 - p1
             q2 = 1.0 - p2
+            q3 = 1.0 - p3
             !...................................................................
             tp(i1,i2,i3,iv) = &
-              q2*(q1*sp(j1,j2  ,i3  ,iv) + p1*sp(j1+1,j2  ,i3  ,iv)) + &
-              p2*(q1*sp(j1,j2+1,i3  ,iv) + p1*sp(j1+1,j2+1,i3  ,iv))
+                q3*(q2*(q1*sp(j1,j2  ,j3  ,iv) + p1*sp(j1+1,j2  ,j3  ,iv)) + &
+                    p2*(q1*sp(j1,j2+1,j3  ,iv) + p1*sp(j1+1,j2+1,j3  ,iv))) + &
+                p3*(q2*(q1*sp(j1,j2  ,j3+1,iv) + p1*sp(j1+1,j2  ,j3+1,iv)) + &
+                    p2*(q1*sp(j1,j2+1,j3+1,iv) + p1*sp(j1+1,j2+1,j3+1,iv)))
           end do
         end if
       end do
