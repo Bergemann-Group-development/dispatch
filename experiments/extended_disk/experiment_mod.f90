@@ -29,7 +29,6 @@ MODULE experiment_mod
     procedure:: init
     procedure:: initial_condition
     procedure:: update
-    procedure:: post_update
     procedure:: force
     procedure:: bndries
     procedure:: boundary
@@ -113,13 +112,6 @@ SUBROUTINE init (self)
   end if
   call trace%end (itimer)
 END SUBROUTINE init
-
-SUBROUTINE post_update (self)
-  class(experiment_t):: self
-  call trace%begin ('experiment_t%post_update')
-  call self%solver_t%post_update ()
-  call trace%end ()
-END SUBROUTINE post_update
 
 !===============================================================================
 !> Note, the force should be moved to pre_update
@@ -368,26 +360,40 @@ SUBROUTINE radial_boundary (self, o, it)
   py => self%mem(:,:,:,self%idx%py,it,1)
   pz => self%mem(:,:,:,self%idx%pz,it,1)
   allocate (e (size(d,1),size(d,2),size(d,3)))
-  call self%e2E_th (e,it)
-  !---------------------------------------------------------------------------
+  l = self%mesh%lb
+  u = self%mesh%ub
+  if (o == self%mesh(1)%lo) then
+    l(1) = self%mesh(1)%lb
+    u(1) = self%mesh(1)%li
+  else
+    l(1) = self%mesh(1)%ui
+    u(1) = self%mesh(1)%ub
+  end if
+  !-----------------------------------------------------------------------------
+  ! Exclude the lower or upper boundaries
+  !-----------------------------------------------------------------------------
+  if (self%boundaries%is_set (bits%zl)) then
+    l(3) = self%mesh(3)%li
+  end if
+  if (self%boundaries%is_set (bits%zu)) then
+    u(3) = self%mesh(3)%ui
+  end if
+  call self%e2E_th (e, it, lb=l, ub=u)
+  !-----------------------------------------------------------------------------
   ! Apply zero gradient conditions to all variables
-  !---------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   call self%boundaries%zero_gradient (d, self%idx%d)
   call self%boundaries%zero_gradient (e, self%idx%e)
   call self%boundaries%zero_gradient (px, self%idx%px)
   call self%boundaries%zero_gradient (py, self%idx%py)
   call self%boundaries%zero_gradient (pz, self%idx%pz)
-  l = self%mesh%lb
-  u = self%mesh%ub
+  !-----------------------------------------------------------------------------
+  call cache_v_kepler (self)
   if (o == self%mesh(1)%lo) then
-    l(1) = self%mesh(1)%lb
     u(1) = self%mesh(1)%lo
   else
     l(1) = self%mesh(1)%uo
-    u(1) = self%mesh(1)%ub
   end if
-  !-----------------------------------------------------------------------------
-  call cache_v_kepler (self)
   do i3=l(3),u(3)
     do i2=l(2),u(2)
       do i1=l(1),u(1)
@@ -411,7 +417,7 @@ SUBROUTINE radial_boundary (self, o, it)
       end if
     end do
   end do
-  call self%E_th2e (e,it)
+  call self%E_th2e (e, it, lb=l, ub=u)
   deallocate(e)
   if (verbose > 0) then
     write (stdout,'(a,i6,":",i2.2,3i4,2(2x,3i4))') &
@@ -427,7 +433,7 @@ END SUBROUTINE radial_boundary
 SUBROUTINE vertical_boundary (self, o, it)
   class(experiment_t):: self
   real, dimension(:,:,:), contiguous, pointer :: d, e, ux, uy, uz
-  integer:: o, it, b, i, step, i1, i2, i3, l(3), u(3)
+  integer:: o, it, b, i, step, i1, i2, i3, l(3), u(3), lb(3), ub(3)
   real(8):: sign, zi, p(3), r, z, h, d_ratio, dv_phi, v_h, v_k, v_a, v_o, e_th
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -437,20 +443,24 @@ SUBROUTINE vertical_boundary (self, o, it)
   uy => self%mem(:,:,:,self%idx%py,it,1)
   uz => self%mem(:,:,:,self%idx%pz,it,1)
   allocate (e (size(d,1),size(d,2),size(d,3)))
-  call self%e2E_th (e,it)
   l = self%mesh%lb
   u = self%mesh%ub
+  lb = l
+  ub = u
   if (o == self%mesh(3)%lo) then
     sign = -1.0
     l(3) = self%mesh(3)%lb
     u(3) = self%mesh(3)%lo
     i    = self%mesh(3)%li
+    ub(3) = i
   else
     sign = +1.0
     l(3) = self%mesh(3)%uo
     u(3) = self%mesh(3)%ub
     i    = self%mesh(3)%ui
+    lb(3) = i
   end if
+  call self%e2E_th (e, it, lb=lb, ub=ub)
   zi = self%mesh(3)%r(i) + self%position(3)
   !-----------------------------------------------------------------------------
   call cache_v_head (self)
@@ -496,7 +506,7 @@ SUBROUTINE vertical_boundary (self, o, it)
       end if
     end do
   end do
-  call self%E_th2e (e,it)
+  call self%E_th2e (e, it, lb=lb, ub=ub)
   deallocate(e)
   if (verbose > 0) then
     write (stdout,'(a,i6,":",i2.2,3i4,2(2x,3i4))') &
@@ -570,8 +580,8 @@ SUBROUTINE update_position (self)
   self%centre_nat(2) + self%dtime*self%omega(3)
   cosphi = cos(self%centre_nat(2))
   sinphi = sin(self%centre_nat(2))
-  self%position = [+self%radius*cosphi, &
-                   +self%radius*sinphi, 0d0]
+  self%position(1:2) = [+self%radius*cosphi, &
+                        +self%radius*sinphi]
   self%velocity = [-self%radius*sinphi*self%omega(3), &
                    +self%radius*cosphi*self%omega(3), 0d0]
   self%erot(:,1) = [ cosphi, sinphi, 0d0]

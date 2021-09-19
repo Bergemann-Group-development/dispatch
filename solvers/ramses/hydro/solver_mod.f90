@@ -228,28 +228,46 @@ SUBROUTINE e2ss(self, ss, it)
   end associate
 END SUBROUTINE e2ss
 
-!=======================================================================
+!===============================================================================
 !> Get thermal energy from total/specific energy
-!=======================================================================
-SUBROUTINE e2E_th(self, E_th, it)
+!===============================================================================
+SUBROUTINE e2E_th(self, E_th, it, lb, ub)
   class(solver_t) :: self
   real, contiguous, dimension(:,:,:), pointer:: E_th
   integer:: it
-  !.....................................................................
-  integer :: i
+  integer, optional:: lb(3), ub(3)
+  !.............................................................................
+  integer :: i, l(3), u(3)
   real, contiguous, dimension(:,:,:), pointer:: k, d, e
   real, dimension(:,:,:,:), pointer:: p
-  !---------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   d => self%mem(:,:,:,self%idx%d             ,it,1)
   e => self%mem(:,:,:,self%idx%e             ,it,1)
   p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1)
   allocate(k(size(d,1),size(d,2),size(d,3)))
-  k = 0.0
+  if (present(lb)) then
+    l = lb
+  else
+    l = self%mesh%lb
+  end if
+  if (present(ub)) then
+    u = ub
+  else
+    u = self%mesh%ub
+  end if
+  k(l(1):u(1),l(2):u(2),l(3):u(3)) = 0.0
   do i=1,size(p,4)
-    k = k+p(:,:,:,i)**2
+    k(l(1):u(1),l(2):u(2),l(3):u(3)) = &
+    k(l(1):u(1),l(2):u(2),l(3):u(3)) + &
+    p(l(1):u(1),l(2):u(2),l(3):u(3),i)**2
   end do
-  k = 0.5*k/d
-  E_th = (e-k)/d
+  k(l(1):u(1),l(2):u(2),l(3):u(3)) = &
+    0.5*k(l(1):u(1),l(2):u(2),l(3):u(3)) &
+       /d(l(1):u(1),l(2):u(2),l(3):u(3))
+  E_th(l(1):u(1),l(2):u(2),l(3):u(3)) = &
+    (e(l(1):u(1),l(2):u(2),l(3):u(3)) - &
+     k(l(1):u(1),l(2):u(2),l(3):u(3))) &
+    /d(l(1):u(1),l(2):u(2),l(3):u(3))
   deallocate(k)
 END SUBROUTINE e2E_th
 
@@ -273,12 +291,13 @@ END SUBROUTINE s2E_th
 !=======================================================================
 !> Put thermal energy to total/specific energy
 !=======================================================================
-SUBROUTINE E_th2e(self, E_th, it)
+SUBROUTINE E_th2e(self, E_th, it, lb, ub)
   class(solver_t) :: self
   integer:: it
   real, contiguous, dimension(:,:,:), pointer:: E_th
+  integer, optional:: lb(3), ub(3)
   !.....................................................................
-  integer :: i
+  integer :: i, l(3), u(3)
   real, contiguous, dimension(:,:,:), pointer:: k, d, e
   real, dimension(:,:,:,:), pointer:: p
   !---------------------------------------------------------------------
@@ -286,12 +305,29 @@ SUBROUTINE E_th2e(self, E_th, it)
   e => self%mem(:,:,:,self%idx%e             ,it,1)
   p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1)
   allocate(k(size(d,1),size(d,2),size(d,3)))
+  if (present(lb)) then
+    l = lb
+  else
+    l = self%mesh%lb
+  end if
+  if (present(ub)) then
+    u = ub
+  else
+    u = self%mesh%ub
+  end if
   k = 0.0
   do i=1,size(p,4)
-    k = k+p(:,:,:,i)**2
+    k(l(1):u(1),l(2):u(2),l(3):u(3)) = &
+    k(l(1):u(1),l(2):u(2),l(3):u(3)) + &
+    p(l(1):u(1),l(2):u(2),l(3):u(3),i)**2
   end do
-  k = 0.5*k/d
-  e = E_th*d+k
+  k(l(1):u(1),l(2):u(2),l(3):u(3)) = &
+    0.5*k(l(1):u(1),l(2):u(2),l(3):u(3)) &
+       /d(l(1):u(1),l(2):u(2),l(3):u(3))
+  e(l(1):u(1),l(2):u(2),l(3):u(3)) = &
+    E_th(l(1):u(1),l(2):u(2),l(3):u(3)) &
+      *d(l(1):u(1),l(2):u(2),l(3):u(3)) &
+      +k(l(1):u(1),l(2):u(2),l(3):u(3))
   deallocate(k)
 END SUBROUTINE E_th2e
 
