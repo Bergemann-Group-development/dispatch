@@ -528,8 +528,8 @@ SUBROUTINE force (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('experiment_t%force', itimer=itimer)
   m = self%mesh(1)%gn
-  l = self%mesh(:)%li
-  u = self%mesh(:)%ui
+  l = self%mesh(:)%lo
+  u = self%mesh(:)%uo
   iz = self%key(4)
   if (self%kind(1:7) /= 'ramses_') then
     call io%abort('experiment_t%force')
