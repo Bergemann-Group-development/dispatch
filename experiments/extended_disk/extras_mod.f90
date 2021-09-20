@@ -55,19 +55,19 @@ MODULE extras_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
-  ! Note that modules that contain patch-private data, such as random number
-  ! states, must be accessed via a private instance in the extras_t data type
+  ! Note that these multi-dimenstional array pointers are not allocated, but
+  ! point to arrays that are common to all patches in a cylinder
   !-----------------------------------------------------------------------------
   type, public, extends(gpatch_t):: extras_t
     class(gpatch_t), pointer:: gpatch => null()                 ! keep
     class(selfgravity_t), pointer:: selfgravity                 ! selfg
     class(particle_solver_t), pointer:: particle_solver         ! dust
-    real(8), dimension(:,:,:,:),   contiguous, pointer:: r       => null()
-    real(8), dimension(:,:,:,:,:), contiguous, pointer:: r_hat   => null()
+    real(8), dimension(:,:,:,:),   contiguous, pointer:: r_hat   => null()
     real(8), dimension(:,:,:,:),   contiguous, pointer:: phi_hat => null()
     real(8), dimension(:,:,:,:),   contiguous, pointer:: v_patch => null()
-    real(8), dimension(:,:,:,:,:), contiguous, pointer:: f_grav  => null()
-    real(8), dimension(:,:,:,:,:), contiguous, pointer:: r_inv   => null()
+    real(8), dimension(:,:,:,:),   contiguous, pointer:: f_grav  => null()
+    real(8), dimension(:,:,:,:),   contiguous, pointer:: r_inv   => null()
+    real(8), dimension(:,:,:),     contiguous, pointer:: r       => null()
     real(8), dimension(:,:,:),     contiguous, pointer:: v_head  => null()
     real(8), dimension(:,:,:),     contiguous, pointer:: v_kepler=> null()
   contains

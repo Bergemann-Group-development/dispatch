@@ -280,72 +280,6 @@ SUBROUTINE boundary (self, it)
 END SUBROUTINE boundary
 
 !===============================================================================
-! Cache headwind velocity
-!===============================================================================
-SUBROUTINE cache_v_head (self)
-  class(experiment_t):: self
-  integer:: i1, i2, i3
-  real(8):: r, z, p(3)
-  integer, save:: itimer=0
-  !-----------------------------------------------------------------------------
-  ! Cache expensive calculation
-  !-----------------------------------------------------------------------------
-  call trace%begin ('experiment_t%cache_v_head', itimer=itimer)
-  if (.not.associated(self%v_head)) then
-    call self%lock%set ('cache_v_head')
-    if (.not.associated(self%v_head)) then
-      allocate (self%v_head(self%gn(1),self%gn(2),self%gn(3)))
-      do i3=self%mesh(3)%lb,self%mesh(3)%ub
-        do i2=self%mesh(2)%lb,self%mesh(2)%ub
-          do i1=self%mesh(1)%lb,self%mesh(1)%ub
-            p(1) = self%mesh(1)%r(i1) + self%radius
-            p(2) = self%mesh(2)%r(i2)
-            p(3) = self%mesh(3)%r(i3) + self%position(3)
-            r = sqrt(p(1)**2 + p(2)**2)
-            z = p(3)
-            self%v_head(i1,i2,i3) = disk_model%v_head(r,z)
-          end do
-        end do
-      end do
-    end if
-    call self%lock%unset ('cache_v_head')
-  end if
-  call trace%end (itimer)
-END SUBROUTINE cache_v_head
-
-!===============================================================================
-! Cache Kepler velocity
-!===============================================================================
-SUBROUTINE cache_v_kepler (self)
-  class(experiment_t):: self
-  integer:: i1, i2, i3
-  real(8):: p(3), r
-  integer, save:: itimer=0
-  !-----------------------------------------------------------------------------
-  ! Cache expensive calculation
-  !-----------------------------------------------------------------------------
-  call trace%begin ('experiment_t%cache_v_kepler', itimer=itimer)
-  if (.not.associated(self%v_kepler)) then
-    call self%lock%set ('cache_v_kepler')
-    if (.not.associated(self%v_kepler)) then
-      allocate (self%v_kepler(self%gn(1),self%gn(2),self%gn(3)))
-      do i3=self%mesh(3)%lb,self%mesh(3)%ub
-        do i2=self%mesh(2)%lb,self%mesh(2)%ub
-          do i1=self%mesh(1)%lb,self%mesh(1)%ub
-            p(1) = self%mesh(1)%r(i1) + self%radius
-            p(2) = self%mesh(2)%r(i2)
-            r = sqrt(p(1)**2 + p(2)**2)
-            self%v_kepler(i1,i2,i3) = disk_model%v_kepler(r)
-          end do
-        end do
-      end do
-    end if
-    call self%lock%unset ('cache_v_kepler')
-  end if
-  call trace%end (itimer)
-END SUBROUTINE cache_v_kepler
-
-!===============================================================================
 !> Radial boundary conditions
 !===============================================================================
 SUBROUTINE radial_boundary (self, o, it)
@@ -389,7 +323,6 @@ SUBROUTINE radial_boundary (self, o, it)
   call self%boundaries%zero_gradient (py, self%idx%py)
   call self%boundaries%zero_gradient (pz, self%idx%pz)
   !-----------------------------------------------------------------------------
-  call cache_v_kepler (self)
   if (o == self%mesh(1)%lo) then
     u(1) = self%mesh(1)%lo
   else
@@ -464,8 +397,6 @@ SUBROUTINE vertical_boundary (self, o, it)
   call self%e2E_th (e, it, lb=lb, ub=ub)
   zi = self%mesh(3)%r(i) + self%position(3)
   !-----------------------------------------------------------------------------
-  call cache_v_head (self)
-  call cache_v_kepler (self)
   do i3=l(3),u(3)
     do i2=l(2),u(2)
       do i1=l(1),u(1)
@@ -549,14 +480,14 @@ SUBROUTINE force (self)
                          self%mem(i1,i2,i3,self%idx%d ,self%it,1)
       v_phi =        self%phi_hat(i1,i2,i3,1)*(self%v_patch(i1,i2,i3,1)) &
                    + self%phi_hat(i1,i2,i3,2)*(self%v_patch(i1,i2,i3,2))
-      scratch%force_per_unit_mass(i1,i2,i3,1)    = &
-                      self%f_grav(i1,i2,i3,1,iz) + &
-              v_phi**2*self%r_inv(i1,i2,i3,1,iz) + 2.*self%omega(3)*u2
-      scratch%force_per_unit_mass(i1,i2,i3,2)    = &
-                      self%f_grav(i1,i2,i3,2,iz) + &
-              v_phi**2*self%r_inv(i1,i2,i3,2,iz) - 2.*self%omega(3)*u1
-      scratch%force_per_unit_mass(i1,i2,i3,3)    = &
-                      self%f_grav(i1,i2,i3,3,iz)
+      scratch%force_per_unit_mass(i1,i2,i3,1) = &
+                      self%f_grav(i1,i2,i3,1) + &
+              v_phi**2*self%r_inv(i1,i2,i3,1) + 2.*self%omega(3)*u2
+      scratch%force_per_unit_mass(i1,i2,i3,2) = &
+                      self%f_grav(i1,i2,i3,2) + &
+              v_phi**2*self%r_inv(i1,i2,i3,2) - 2.*self%omega(3)*u1
+      scratch%force_per_unit_mass(i1,i2,i3,3) = &
+                      self%f_grav(i1,i2,i3,3)
     end do
   end do
   end do
