@@ -32,6 +32,7 @@ MODULE particle_solver_mod
   USE particles_mod
   USE mesh_mod
   USE eos_mod
+  USE math_mod
   implicit none
   private
   type, public, extends(task_t):: particle_solver_t
@@ -48,6 +49,7 @@ MODULE particle_solver_mod
     class(list_t), pointer     :: task_list           => null()
     class(nbor_t), pointer     :: nbor                => null()
     type(export_list_t)        :: export_list
+    logical                    :: on=.false.
   contains
     procedure:: connect
     procedure:: init
@@ -62,6 +64,9 @@ MODULE particle_solver_mod
     procedure, private:: sumup
     procedure, private:: renorm
     procedure:: output
+    procedure:: density
+    procedure:: exports_info
+    procedure:: refine
   end type
   logical:: on = .true.
   logical:: particle_io = .false.
@@ -1092,5 +1097,29 @@ SUBROUTINE output (self)
   end if
   call trace%end ()
 END SUBROUTINE output
+
+!===============================================================================
+!> Compute dust density
+!===============================================================================
+SUBROUTINE density (self, dd)
+  class(particle_solver_t):: self
+  real:: dd(:,:,:,:)
+END SUBROUTINE density
+
+!===============================================================================
+!> Compute dust density
+!===============================================================================
+SUBROUTINE exports_info (self)
+  class(particle_solver_t):: self
+END SUBROUTINE exports_info
+
+!===============================================================================
+!===============================================================================
+FUNCTION refine (self)
+  class(particle_solver_t)              :: self
+  integer                               :: refine
+  !.............................................................................
+  refine = -1
+END FUNCTION refine
 
 END MODULE particle_solver_mod
