@@ -106,14 +106,14 @@ SUBROUTINE init (self)
   real(8):: phi0    , q1      , kappa   , c1      , c2      , c3       &
           , pcloud  , vol     , mass    , momi    , omega   , gammad   &
           , egrav   , etherm  , erot    , pamb    , rhoamb  , rz       &
-          , rzsq    , tff     , cjlen   , cjnum   , csqiso  , vff      &
+          , rzsq    , tff     , cjlen   , cjnum   , ciso  , vff      &
           , nrg     , x       , y       , z       , rzxy    , rzxm1    &
           , rzym1   , d
   real(8), parameter:: gammaad = 5.0 / 3.0
   real(8), parameter:: r2 = 1.0
   logical, save:: first_time=.true.
   namelist / experiment_params / rho0, r0, truealpha, truebeta, chipres &
-                               , chirho, x0, y0, z0, perta, pertm, csqiso, B0, verbose
+                               , chirho, x0, y0, z0, perta, pertm, ciso, B0, verbose
   !----------------------------------------------------------------------------
   call trace%begin ('initial_conditions_t%init')
   call io%lock%set ('initial_conditions_t%initt')
@@ -133,23 +133,23 @@ SUBROUTINE init (self)
 !      Set up sphere with uniform density following Zhao et al. 2021 
 !      https://ui.adsabs.harvard.edu/abs/2021MNRAS.505.5142Z/abstract  
 !-----------------------------------------------------------------------
-  rho0 = 0.239819 ! 4.77e-19/scaling_d   g cm^-3
-  r0 = 1d0 ! 
-  omega_rot0 = 0.27446 ! 1e-13 * scaling%t s^-1
+  rho0 = 4.77e-19/scaling%d !0.239819  g cm^-3
+  r0 = 5d-1 ! 
+  omega_rot0 =  1e-13 * scaling%t ! 0.27446s^-1
   !vphi0 = 2e4 ! cm s^-1 ! Li et al. 2014
   !vphi = vphi0 * (exp(2*R/R_rot0) - 1d0) / (exp(2*R/R_rot0) + 1d0) ! vphi=vphi0*tanh(R/R0) ! Li et al. 2014
-  B0 = 0.20628526774 ! 10.6e-6 / scaling%B  microG
+  B0 = 10.6e-6 / scaling%B  ! 0.20628526774 microG
 !-----------------------------------------------------------------------
 !      Calculate ambient parameters.
 !-----------------------------------------------------------------------
-  pcloud = csqiso**2 * rho0*eos%gamma
+  pcloud = ciso**2 * rho0*eos%gamma
   pamb   = pcloud / chipres
   rhoamb = rho0   / chirho
 !-----------------------------------------------------------------------
 !      Calculate Jeans-related parameters
 !-----------------------------------------------------------------------
   tff    = sqrt( 3.0 * pi / ( 32.0 * scaling%grav * rho0) )
-  cjlen  = tff * sqrt( 32.0 * csqiso / 3.0 )
+  cjlen  = tff * sqrt( 32.0 * ciso / 3.0 )
   cjnum  = maxval(m%d) / cjlen
 !-----------------------------------------------------------------------
 !      Calculate analytical gravitational potential variables
@@ -167,7 +167,7 @@ SUBROUTINE init (self)
     !print "('             Cloud mass =',1pe10.3)", mass
     print "('   Cloud free-fall time =',1pe10.3)", tff
     !print "('  Cloud free-fall speed =',1pe10.3)", vff
-    print "(' Isothermal sound speed =',1pe10.3)", sqrt(csqiso)
+    print "(' Isothermal sound speed =',1pe10.3)", ciso
     print "('   Initial Jeans length =',1pe10.3)", cjlen
     print "('   Initial Jeans number =',1pe10.3)", cjnum
     !print "('  Initial angular speed =',1pe10.3)", omega
@@ -207,8 +207,8 @@ SUBROUTINE init (self)
         f(i,j,k,idx%py)  = 0.0
         f(i,j,k,idx%pz)  = 0.0
         if (rz < r0) then
-          f(i,j,k,idx%px)  =-omega_rot0 * rzxy * sin(phi0) * f(i,j,k,idx%d)
-          f(i,j,k,idx%py)  = omega_rot0 * rzxy * cos(phi0) * f(i,j,k,idx%d)
+          f(i,j,k,idx%px)  = -omega_rot0 * rzxy * sin(phi0) * f(i,j,k,idx%d)
+          f(i,j,k,idx%py)  =  omega_rot0 * rzxy * cos(phi0) * f(i,j,k,idx%d)
         end if
         !
         nrg = nrg + 0.5 * (f(i,j,k,idx%px)**2 + f(i,j,k,idx%py)**2)/d
