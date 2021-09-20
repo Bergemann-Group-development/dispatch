@@ -217,7 +217,12 @@ SUBROUTINE pre_init (self)
     first_time = .false.
     rewind (io_unit%input)
     read (io_unit%input, sinkparticles_params, iostat=iostat)
-    if (io_unit%master) write (io_unit%output, sinkparticles_params)
+    if (iostat > 0) then
+      rewind (io_unit%input)
+      read (io_unit%input, sinkparticles_params)
+    end if
+    call io%namelist_warning ('sinkparticles_params', iostat)
+    write (io%namelist, sinkparticles_params)
     n_sinks = n_ad_hoc
     sink_particles%on = on
     sink_particles%particle_solver => particle_solver
