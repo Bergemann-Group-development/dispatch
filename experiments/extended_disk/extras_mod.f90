@@ -68,6 +68,7 @@ MODULE extras_mod
     real(8), dimension(:,:,:,:),   contiguous, pointer:: f_grav  => null()
     real(8), dimension(:,:,:,:),   contiguous, pointer:: r_inv   => null()
     real(8), dimension(:,:,:),     contiguous, pointer:: r       => null()
+    real(8), dimension(:,:,:),     contiguous, pointer:: h_scale => null()
     real(8), dimension(:,:,:),     contiguous, pointer:: v_head  => null()
     real(8), dimension(:,:,:),     contiguous, pointer:: v_kepler=> null()
   contains

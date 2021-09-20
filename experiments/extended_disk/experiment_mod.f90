@@ -406,7 +406,7 @@ SUBROUTINE vertical_boundary (self, o, it)
         !-----------------------------------------------------------------------
         ! Correct for difference in Gaussian density profile
         !-----------------------------------------------------------------------
-        h = disk_model%h_scale (r)
+        h = self%h_scale(i1,i2,i3)
         d_ratio = exp(-(z**2-zi**2)/(2.0*h**2))
         d (i1,i2,i3) = d (i1,i2,i)*d_ratio
         e (i1,i2,i3) = e (i1,i2,i)

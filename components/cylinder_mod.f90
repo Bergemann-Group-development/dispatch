@@ -59,7 +59,7 @@ MODULE cylinder_mod
     real(8), pointer, contiguous, dimension(:,:,:,:)   :: r=>null(), v_head
     real(8), pointer, contiguous, dimension(:,:,:,:,:) :: r_hat, f_grav, r_inv
     real(8), pointer, contiguous, dimension(:,:,:,:)   :: phi_hat, v_patch
-    real(8), pointer, contiguous, dimension(:,:,:)     :: v_kepler
+    real(8), pointer, contiguous, dimension(:,:,:)     :: v_kepler, h_scale
   contains
     procedure:: init => init_cylinder
   end type
@@ -667,6 +667,7 @@ SUBROUTINE static_arrays (self, cpatch, i_z)
     allocate (self%phi_hat (m,m,m,3))
     allocate (self%v_patch (m,m,m,3))
     allocate (self%v_kepler(m,m,m))
+    allocate (self%h_scale (m,m,m))
     o = (1+m)/2.0
     do i3=1,m
     do i2=1,m
@@ -686,6 +687,7 @@ SUBROUTINE static_arrays (self, cpatch, i_z)
         self%v_patch(i1,i2,i3,j) = phi_hat(j)*self%omega*rc
       end do
       self%v_kepler(i1,i2,i3) = disk_model%v_kepler(rc)
+      self%h_scale (i1,i2,i3) = disk_model%h_scale (rc)
       do iz=1,self%n_z
         x(3) =  (i3-o)*cpatch%ds(3) + (iz-(1+self%n_z)*0.5d0)*cpatch%size(3)
         self%v_head(i1,i2,i3,iz) = disk_model%v_head(rc,x(3))
@@ -706,6 +708,7 @@ SUBROUTINE static_arrays (self, cpatch, i_z)
   cpatch%phi_hat  => self%phi_hat
   cpatch%v_patch  => self%v_patch
   cpatch%v_kepler => self%v_kepler
+  cpatch%h_scale  => self%h_scale
   cpatch%r        => self%r     (:,:,:,i_z)
   cpatch%v_head   => self%v_head(:,:,:,i_z)
   cpatch%r_hat    => self%r_hat (:,:,:,:,i_z)
