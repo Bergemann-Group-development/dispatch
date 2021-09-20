@@ -4,6 +4,7 @@
 MODULE experiment_mod
   USE io_mod
   USE trace_mod
+  USE timer_mod
   USE solver_mod
   USE bits_mod
   USE boundaries_mod
@@ -607,7 +608,8 @@ SUBROUTINE get_position (self, source, p, v, e)
   real(8):: r_src, r_tgt, phi_src, phi_tgt, v_src, v_tgt, z_src, z_tgt
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('experiment_t%get_position', itimer=itimer)
+  if (timer%detailed) &
+    call trace%begin ('experiment_t%get_position', itimer=itimer)
   select type (source)
   class is (experiment_t)
     call source%lock%set ('get_pos')
@@ -642,7 +644,8 @@ SUBROUTINE get_position (self, source, p, v, e)
       e(:,3) = [                  0d0,                  0d0, 1d0]
     end if
   end select
-  call trace%end (itimer)
+  if (timer%detailed) &
+    call trace%end (itimer)
 END SUBROUTINE get_position
 
 !===============================================================================
