@@ -22,7 +22,7 @@
 !-----------------------
 !&restart_params        from_dir='../ramses_snapshots/data/' snapshot=3 /
 !&restart_params         verbose=1 snapshot=1 from_dir='data/' method='legacy' /
-&out_params             end_time=0.11 out_time=0.02 print_every=50 /
+&out_params             end_time=0.1 out_time=0.02 print_every=50 /
 &io_params              verbose=0 do_trace=f omp_trace=t
                         do_output=t method='background' guard_zones=t /
 &timer_params           sec_per_report=10 min_fraction=0.001 /
@@ -68,7 +68,7 @@
 !-----------------------
 ! Sink particle parameters
 !-----------------------
-&sinkparticles_params   on=f
+&sinkparticles_params   on=f /
 &sink_patch_params      on=f n_ad_hoc=2 /
 &sink_params            x=0.52 y=0.52 z=0.52 vx=0.1 mass=1 /
 &sink_params            x=0.48 y=0.48 z=0.48 vx=0.2 mass=1 /

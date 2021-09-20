@@ -43,8 +43,8 @@ MODULE dispatcher0_mod
   integer, save:: stalled=0
   integer, save:: n_spin=0
   integer, save:: n_update=0
-  integer, save:: nstall1=10000     ! after nstall1*delay_ms, increase grace
-  integer, save:: nstall2=30000     ! after nstall2*delay_ms, call stall_handler
+  integer, save:: nstall1=1000      ! after nstall1*delay_ms, increase grace
+  integer, save:: nstall2=3000      ! after nstall2*delay_ms, call stall_handler
   integer, save:: min_nq=2**30
   logical, save:: debug=.false.
   logical, save:: do_delay=.true.
@@ -472,12 +472,21 @@ SUBROUTINE update (self, task_list, test)
     !$omp atomic update
     n_stalled = n_stalled + 1
   else if (n_stalled >= nstall1) then
+    !---------------------------------------------------------------------------
+    ! If the queue was found empty more than nstall1 times, gradually increase
+    ! grace by ramping up shared%extra_grace
+    !---------------------------------------------------------------------------
     !$omp atomic write
     shared%extra_grace = (n_stalled-nstall1)*extra_grace/(nstall2-nstall1)
-    write (io_unit%mpi,'(f12.6,2x,a,f10.3)') wallclock(), &
-      'dispatcher0_t%update: extra_grace=', shared%extra_grace
-    call task_list%check_all
+    call self%no_queue (stalled, task_list)
+    if (verbose > 0) &
+      write (io_unit%mpi,'(f12.6,2x,a,f10.3)') wallclock(), &
+        'dispatcher0_t%update: extra_grace=', shared%extra_grace
   else if (n_stalled >= nstall2) then
+    !---------------------------------------------------------------------------
+    ! If the queue was found empty more than nstall2 times, call the stall
+    ! handler
+    !---------------------------------------------------------------------------
     call stall_handler
     time_incr = wallclock()-spin_start
     !$omp atomic update
@@ -486,10 +495,13 @@ SUBROUTINE update (self, task_list, test)
     n_stalled = 0
   else
     !---------------------------------------------------------------------------
-    ! Continuing empty streak
+    ! Continuing empty streak, after registering a brief delay
     !---------------------------------------------------------------------------
     !$omp atomic update
     n_stalled = n_stalled+1
+    if (do_delay) then
+      call self%no_queue (stalled, task_list)
+    end if
   end if
   call trace%end (itimer(i))
   return
