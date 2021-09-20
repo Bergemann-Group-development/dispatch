@@ -319,9 +319,6 @@ SUBROUTINE radial_boundary (self, o, it)
   !-----------------------------------------------------------------------------
   call self%boundaries%zero_gradient (d, self%idx%d)
   call self%boundaries%zero_gradient (e, self%idx%e)
-  call self%boundaries%zero_gradient (px, self%idx%px)
-  call self%boundaries%zero_gradient (py, self%idx%py)
-  call self%boundaries%zero_gradient (pz, self%idx%pz)
   !-----------------------------------------------------------------------------
   if (o == self%mesh(1)%lo) then
     u(1) = self%mesh(1)%lo
@@ -343,6 +340,7 @@ SUBROUTINE radial_boundary (self, o, it)
           self%v_patch(i1,i2,i3,1))*d(i1,i2,i3)
         py(i1,i2,i3) = (self%v_kepler(i1,i2,i3)*self%phi_hat(i1,i2,i3,2) - &
           self%v_patch(i1,i2,i3,2))*d(i1,i2,i3)
+        pz(i1,i2,i3) = 0.
       end do
       if (associated(self%filled)) then
         do i1=l(1),u(1)
