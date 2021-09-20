@@ -69,6 +69,7 @@ MODULE particle_solver_mod
     real, pointer, contiguous  :: dd(:,:,:,:) => null()! number density per bin
     real, pointer, contiguous  :: s_cgs(:)             ! particle size
     real, pointer, contiguous  :: m_cgs(:)             ! particle size
+    logical                    :: on = .false.         ! external on/off
     logical                    :: forced = .false.     ! external force
     logical, dimension(3)      :: lower                ! has lower boundary
     logical, dimension(3)      :: upper                ! has upper boundary
@@ -77,9 +78,12 @@ MODULE particle_solver_mod
     integer                    :: ni = 0               ! particles imported
     integer                    :: ne = 0               ! particles outside
     integer                    :: n_bin                ! number of bins
-    real                       :: dust_to_gas          ! dust:gas ratio
+    integer                    :: particles_per_bin    ! particles per cell-bin
+    integer                    :: output_every=1000    ! output only that fraction
+    real                       :: dust_to_gas=0.01     ! dust:gas ratio
     real                       :: vmax                 ! max particle speed
     real                       :: v_min, v_max         ! min/max u_phase
+    real                       :: alpha_exponent=-1.0  ! dust power law distribution
     class(list_t), pointer     :: task_list            ! task list
     real(8)                    :: new_momentum(3,2)=0. ! new patch momentum
     real(8)                    :: old_momentum(3,2)=0. ! old patch momentum
@@ -142,7 +146,7 @@ CONTAINS
 !===============================================================================
 !> Initialize particle solver, reading parameters and adding task link
 !===============================================================================
-SUBROUTINE pre_init (self, patch)
+SUBROUTINE pre_init (self)
   class(particle_solver_t), target  :: self
   class(gpatch_t), pointer          :: patch
   integer                           :: bin, iostat
