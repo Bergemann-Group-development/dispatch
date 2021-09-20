@@ -2,37 +2,48 @@
 ! -- Parameters defining the run -----------------------------------------------
 &experiment_params  verbose=0 /
 
-&snapshot_params    order=-2
+&snapshot_params    order=1
                     verbose=0 
                     meshfile='input_data/qs006023/qs006023_t007.mesh'
                     snapfile='input_data/qs006023/qs006023_t007_600.snap' 
                     model='bifrost'
                     flip_z=t 
+                    force_mean=f
+                    extension=1
                     verbose=0
-                    b0=0.0,0.0,0.0 
+                    !b0=0.0,0.0,1.0 
                     /
 
 &boundary_params    verbose=0
                     !d_bot=231.
                     !e_bot=2896.484
-                    bottom_bc_rate=0.9
+                    bottom_bc_rate=0.01
+                    top_bc_rate=0.01
                     scale=t 
                     divb_iter=4
                     damp_rate=0.2
                     r_sponge = 0.5
-                    deriv_bnd=t
-                    pb_fact=1.0
-                    t_bdry=3.0
+                    deriv_bnd=f
+                    upper_bc=2
+                    !ee_top=5.213596
+/
 
-&cartesian_params   size=6,6,4 
-                    dims=6,6,4 
+
+&pressure_node_params
+                    on=t
+                    t_bdry=3.0
+                    bottom_bc_rate=0.01
+                    pb_fact=1.0
+/
+
+&cartesian_params   size=6,6,10 
+                    dims=6,6,10 
                     mpi_dims=3,3,1 
-                    origin=0,0,-2.0
+                    origin=0,0,-2.5
                     omp_init=f 
                     periodic=t,t,f
 /
 &patch_params       nt=5 
-                    ng=8,8,8 
                     grace=0.05 
                     n=3*32 
                     no_mans_land=t 
@@ -45,18 +56,20 @@
                     constant=-27400 
 /
 &newton_params      on=f
-                    position=3.5 scale=0.1 
+                    position=0.5 scale=0.1 
                     !ee0=61.72
-                    ee1=1.2 
+                    ee1=0.5
                     time=0.2 
 /
 &eos_params
- !table_loc = 'input_data/qs006023'
+ table_loc = 'input_data/qs006023'
  !table_loc = '../../data/eos/square_gas'
+ gamma=1.15
    /
 
 &spitzer_conductivity_params
- on=t
+ on=f
+ method='wave'
 /
 
 ! -- RT parameters -------------------------------------------------------------
@@ -79,19 +92,12 @@
 &hybrid_rt_params   /
 
 ! -- I/O parameters ------------------------------------------------------------
-&io_params          verbose=0 
-                    do_trace=f 
-                    omp_trace=f 
-                    do_output=t 
-                    id_debug=0
-                    restart=-1  
-                    guard_zones=t 
-                    nml_version=1 
-                    /
+&io_params          verbose=0 do_trace=f omp_trace=f do_output=t id_debug=0
+                    restart=15  guard_zones=t method='background' /
 &out_params         end_time=100.101 
-                    out_time=0.001 
+                    out_time=0.1 
                     print_time=0 
-                    /
+/
 
 
 &aux_params         select=qr','rkap','src', 'qspitz' /
@@ -105,36 +111,59 @@ eos='tabular'
 &non_ideal_params   mhd_Ohm=f eta_Ohm=0.01 mhd_AD=f /
 
 & initial_refine_params
-                    on = t
+                    on = f
                     n_refine = 0,0,1
                     center   = 0.0,0.0,1.5
                     extent   = 0.0,0.0,1.0
-                    keep_parents=f
+                    keep_parent=t
 /
 &refine_params      on=f 
                     
 /
 
+&ramses_params
+ slope_type=3.5
+ do_corners=t
+/
+
+&halo_params
+ check_filled=f
+/
 
 &bifrost_params             
-gamma=1.6666667
 loginterpolation=t
 ca_max = 100.0 
-courant=0.15
+courant=0.2
 max_r=3
 symmetric_e=f
 do_temperature=t
 eos='tabular'
-nu_d_high = 0.2
-nu_e_high = 0.2
-nu_d_tr_loc = 0.5
-nu_e_tr_loc = 0.5
 !     nu1   nu2  nu3  nu_d  nu_ee  eta3
 !nu=  0.6, 0.6, 0.6, 0.6, 0.6, 0.3 /
 !nu=  0.3, 0.2, 0.3, 0.0, 0.3, 0.3 /
 !nu=  0.03 , 0.3,  0.1,  0.05,  0.05, 0.8 /
-nu=  0.05 , 0.1,  0.5,  0.05,  0.1, 0.2 /
-!nu=  0.01, 0.03, 0.1, 0.05, 0.05, 0.3 /
+!nu=  0.1 , 0.1,  0.5,  0.1,  0.1, 0.2 /
+nu=  0.05 , 0.2,  0.4,  0.07,  0.03, 0.3 /
+
+
+!&bifrost_params             
+!loginterpolation=t
+!ca_max = 100.0 
+!courant=0.15
+!max_r=3
+!symmetric_e=f
+!do_temperature=t
+!eos='tabular'
+!nu_d_high = 0.2
+!nu_e_high = 0.2
+!nu_d_tr_loc = 0.5
+!nu_e_tr_loc = 0.5
+!!     nu1   nu2  nu3  nu_d  nu_ee  eta3
+!!nu=  0.6, 0.6, 0.6, 0.6, 0.6, 0.3 /
+!!nu=  0.3, 0.2, 0.3, 0.0, 0.3, 0.3 /
+!!nu=  0.03 , 0.3,  0.1,  0.05,  0.05, 0.8 /
+!nu=  0.05 , 0.1,  0.5,  0.05,  0.1, 0.2 /
+!!nu=  0.01, 0.03, 0.1, 0.05, 0.05, 0.3 /
 
 &divb_clean_params  on=f
                     divb_iter=4

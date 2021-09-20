@@ -53,9 +53,9 @@ CONTAINS
 SUBROUTINE init (self)
   class (eos_t):: self
   real, dimension(:,:,:), pointer:: d, ee, pg
-  real, save :: kappa = 1.0
+  real, save :: kappa = 1.0, gamma=1.4d0
   integer:: ir, iostat
-  namelist /eos_params/ do_eos, top, tablefile, kappa, verbose
+  namelist /eos_params/ do_eos, top, tablefile, kappa, verbose, gamma
   !-----------------------------------------------------------------------------
   call trace%begin ('eos_t%init')
   !----------------------------------------------------------------------------
@@ -103,7 +103,7 @@ SUBROUTINE init (self)
       end if
     end if
   end if
-
+  self%gamma = gamma
   self%ee_min = minval(eemin)
   self%ee_max = maxval(eemax)
   self%ee_stp = deetab(1)
@@ -234,7 +234,7 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne, pg, tt, ne, rk, src, &
   logical, optional:: e_below
   character(len=*),optional::label
   !.............................................................................
-  real, dimension(:,:,:), pointer    :: lnd_loc, ee_loc
+  real, dimension(:,:,:), pointer, contiguous    :: lnd_loc, ee_loc
   integer,         dimension(dim(1)) :: np,np1,ik,ntab,ik1,ntab1
   real(kind=4),    dimension(dim(1)) :: px,py,f00,f01,f10,f11, &
                                         fx00,fx01,fx10,fx11,fy00,fy01,fy10,fy11
@@ -297,12 +297,16 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne, pg, tt, ne, rk, src, &
     !---------------------------------------------------------------------------
     ! Density index (6 lops)
     !---------------------------------------------------------------------------
+    !dir$ ivdep
+    !$omp simd private (algrk)
     do ix=1,mx
       algrk=1.+(lnd_loc(ix,iy,iz)-rhm1)/drhm
       nbelow_d = nbelow_d + merge(1,0,lnd_loc(ix,iy,iz)<rhm1)
       np(ix)=max0(1,min0(md-1,int(algrk)))
       px(ix)=algrk-np(ix)
     end do
+    !dir$ ivdep
+    !$omp simd private (eek, kee, kee1)
     do ix=1,mx
       !-------------------------------------------------------------------------
       ! Internal energy index -- this loop has indirect referencing (9 flops)
@@ -327,6 +331,9 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne, pg, tt, ne, rk, src, &
     !---------------------------------------------------------------------------
     ! Separate loop for weights, vectorizes well
     !---------------------------------------------------------------------------
+    !dir$ ivdep
+    !$omp simd private (qx, pxqx, pxpx, qxqx, qy, pyqy, pypy, qyqy, &
+    !$omp    & pxqy, pxpy, qxqy, qxpy)
     do ix=1,mx
       ! +5 = 20 flops
       qx   = 1. - px(ix)
@@ -509,6 +516,8 @@ SUBROUTINE ddeos(self,ee,d,dlnpdE_r,dlnpdlnr_E)
   allocate(np(n(1)),ntab(n(1)), ik(n(1)), ik1(n(1)), ntab1(n(1)))
   allocate(px(n(1)),py(n(1)),py1(n(1)))
   do iy=1,n(2)
+    !dir$ ivdep
+    !$omp simd private (algrk, eek, kee, kee1, eek1)
     do ix=1,n(1)
       !-------------------------------------------------------------------------
       !  Density index

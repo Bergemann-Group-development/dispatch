@@ -93,10 +93,12 @@ SUBROUTINE pre_update (self)
       m1 => self%patch%mesh(1)
       m2 => self%patch%mesh(2)
       m3 => self%patch%mesh(3)
+      lo=self%patch%mesh%lb
+      uo=self%patch%mesh%ub
       if      (axis==1) then
-        do iz = m3%lo, m3%uo
-          do iy = m2%lo, m2%uo
-            do ix = m1%lo, m1%uo
+        do iz = lo(3), uo(3)
+          do iy = lo(2), uo(2)
+            do ix = lo(1), uo(1)
               s = position - (m1%p + m1%r(ix))
               f = exp(-s/scale)
               r = f/((1.0+f)*time)
@@ -108,21 +110,21 @@ SUBROUTINE pre_update (self)
           end do
         end do
       else
-        do iz = m3%lo, m3%uo
+        do iz = lo(3), uo(3)
           if (axis==3) then
             s = position - (m3%p + m3%r(iz))
             f = exp(-s/scale)/time
             r = f/((1.0+f)*time)
             ee = ee_top + ee1*s
           end if
-          do iy = m2%lo, m2%uo
+          do iy = lo(2), uo(2)
             if (axis==2) then
               s = position - (m2%p + m2%r(iy))
               f = exp(-s/scale)
               r = f/((1.0+f)*time)
               ee = ee_top + ee1*s
             end if
-            do ix = m1%lo, m1%uo
+            do ix = lo(1), uo(1)
               scratch%heating_per_unit_volume(ix,iy,iz) = &
               scratch%heating_per_unit_volume(ix,iy,iz) + &
                 (ee*d(ix,iy,iz)-e(ix,iy,iz))*r
