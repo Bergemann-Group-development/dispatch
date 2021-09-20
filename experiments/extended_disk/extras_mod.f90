@@ -50,7 +50,7 @@ MODULE extras_mod
   !-----------------------------------------------------------------------------
 !  USE boundaries_mod
   USE selfgravity_mod                                           ! selfg
-  USE particle_solver_mod                                       ! dust
+  USE disk_particles_mod                                        ! dust
   !-----------------------------------------------------------------------------
   implicit none
   private
@@ -61,7 +61,7 @@ MODULE extras_mod
   type, public, extends(gpatch_t):: extras_t
     class(gpatch_t), pointer:: gpatch => null()                 ! keep
     class(selfgravity_t), pointer:: selfgravity                 ! selfg
-    class(particle_solver_t), pointer:: particle_solver         ! dust
+    class(disk_particles_t), pointer:: particle_solver          ! dust
     real(8), dimension(:,:,:,:),   contiguous, pointer:: r_hat   => null()
     real(8), dimension(:,:,:,:),   contiguous, pointer:: phi_hat => null()
     real(8), dimension(:,:,:,:),   contiguous, pointer:: v_patch => null()

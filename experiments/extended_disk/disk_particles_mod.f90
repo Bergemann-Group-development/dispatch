@@ -16,6 +16,7 @@ MODULE disk_particles_mod
     real :: omega
     real :: gm
     logical :: ICs_done = .false.
+    real(8), pointer, contiguous:: v_patch(:,:,:,:) => null()
   contains
     procedure:: init
     procedure:: initial_condition
@@ -97,8 +98,8 @@ SUBROUTINE initial_condition (self)
 #ifdef __GFORTRAN__
   !$omp critical (alloc_cr)
 #endif
-  if (output_every > 0) then
-    chance = 1.0/output_every
+  if (self%output_every > 0) then
+    chance = 1.0/self%output_every
   else
     chance = 0.0
   end if
@@ -125,12 +126,12 @@ SUBROUTINE initial_condition (self)
         particles => self%particles(i1,i2,i3,i4)
         id = [self%patch%id,i1,i2,i3,i4]
         call particles%init (id, 0)
-        w1 = w*(self%s_cgs(i4)/self%s_cgs(1))**(alpha_exponent+1.0)
+        w1 = w*(self%s_cgs(i4)/self%s_cgs(1))**(self%alpha_exponent+1.0)
         n = n+2
         nv = 0
         do j=1,self%particles_per_bin
           n = n+1
-          if (output_every > 0) then
+          if (self%output_every > 0) then
             draw = self%random%ran1() < chance
           else
             draw = .false.
@@ -165,8 +166,8 @@ SUBROUTINE initial_condition (self)
   !$omp end critical (alloc_cr)
 #endif
   !.............................................................................
-  if (verbose > 0) then
-    if (verbose > 1) then
+  if (self%verbose > 0) then
+    if (self%verbose > 1) then
       write (io%output,1) &
         'init: id, box, pos, size, lower, upper, n =', &
         patch%id, patch%box, patch%position, patch%size, &
@@ -275,7 +276,7 @@ SUBROUTINE import (self, count)
           if (all(q >= self%lb .and. q <= self%ub)) then
             p%r = r-q
             p%q(1:3) = q
-            if (verbose > 2) then
+            if (self%verbose > 2) then
               write(stdlog,*) 'import: q=', self%patch%id, p%q
             end if
             call nbtask%exports(bin)%remove (p)
@@ -285,7 +286,7 @@ SUBROUTINE import (self, count)
                self%patch%velocity_shift (nbtask)
             call particles%append (p)
             ni = ni + 1
-          else if (verbose > 2) then
+          else if (self%verbose > 2) then
             write (stdlog,'(2i6,3f10.3,2x,a,4(2x,3i6))') &
               self%patch%id,nbtask%id,dist,'rejected',p%q,q,self%lb,self%ub
           end if
@@ -295,13 +296,13 @@ SUBROUTINE import (self, count)
         self%np = self%np + ni
         n(2) = nbtask%exports(bin)%n
         n(4) = self%np
-        if (verbose > 1) then
+        if (self%verbose > 1) then
           if (ni > 0) then
             write(stdlog,'(2(i6,2x,a),i6,4i8)') &
               self%patch%id, 'picked up', ni, 'from', nbtask%id, n
           end if
         end if
-        if ((ni > 0 .and. verbose > 1) .or. verbose > 3) then
+        if ((ni > 0 .and. self%verbose > 1) .or. self%verbose > 3) then
           write (stdlog,'(a,2i6,2i10,2x,3i4)') 'imported: id, nbor, ni, offset =', &
             self%patch%id, nbtask%patch%id, nbtask%exports(bin)%n, ni, &
             nint(dist)
@@ -313,7 +314,7 @@ SUBROUTINE import (self, count)
     nbor => nbor%next
   end do
   self%np = self%np + self%ni
-  if ((self%ni > 0 .and. verbose > 1) .or. verbose > 3  ) then
+  if ((self%ni > 0 .and. self%verbose > 1) .or. self%verbose > 3  ) then
     write (stdlog,'(a,i6,i10)') 'imported: id, self%ni =', &
       self%patch%id, self%ni
     flush (stdlog)
