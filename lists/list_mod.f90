@@ -1058,8 +1058,8 @@ SUBROUTINE check_ready (self, link, lock, status)
   task => link%task
   !-----------------------------------------------------------------------------
   ! Ignore tasks with bits set that indicate they are not candidates for
-  ! scheduling.  A task with bits%busy set is OK only if is is being updated by
-  ! this thread
+  ! scheduling.  A task with bits%busy set is OK only if it is being updated by
+  ! this thread.
   !-----------------------------------------------------------------------------
   ignore = bits%ready + bits%remove + bits%virtual + bits%frozen + &
     merge (0, bits%busy, task%id == omp%thread_task)
@@ -2250,13 +2250,14 @@ SUBROUTINE real_queue_by_time (self, this, error)
       write (stdlog,*) 'INFO: 2nd thread tried to queue task', task%id
       return
     end if
-    call task%set(bits%ready)
-    call task%lock%unset ('real_que')
     !...........................................................................
     if (self%verbose > 1) &
       write (io_unit%log,'(f12.6,i5,1x,a,i9,a,f12.6,2x,a,i5)') wallclock(), &
         omp%thread, 'list_t%queue_by_time: adding task', task%id, ' at time', &
         task%time, 'nq', self%nq
+    !...........................................................................
+    call task%set(bits%ready)
+    call task%lock%unset ('real_que')
     !---------------------------------------------------------------------------
     ! The actual manipulation of the ready-queue must be done under %qlock, and
     ! must not overlap with the brief task locking above

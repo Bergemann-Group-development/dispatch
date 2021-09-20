@@ -553,11 +553,13 @@ SUBROUTINE update (self, head, test)
   ! The task should now again be checked, before it can be returned to the
   ! queue, and its neighbors should also be checked for return to the queue.
   ! If the task was turned into a virtual task by the load balance, its virtual
-  ! bit will prevent it being checked, but its nbors still need to be checked
+  ! bit will prevent it being checked, but its nbors still need to be checked.
+  ! The busy bit should not be cleared until after check_nbors, in case the
+  ! task itself will be rescheduled
   !-----------------------------------------------------------------------------
   if (.not.offload%on) then
-    call task%clear (bits%busy)
     call self%check_nbors (head)
+    call task%clear (bits%busy)
   end if
   !.............................................................................
   omp%thread_task = -1
