@@ -20,6 +20,7 @@ MODULE eos_mod
     real:: ee_min = 0.0
     logical :: do_rt = .false.
     real :: kappa
+    real:: s0=10.
   contains
     procedure:: init
     procedure:: pressure
@@ -41,11 +42,11 @@ SUBROUTINE init (self)
   class (eos_t):: self
   integer:: iostat
   logical, save:: first_time=.true.
-  real(8), save:: gamma=1d0
+  real(8), save:: gamma=1d0, s0=0.
   real, save:: kappa=0.1, mu=2.33
   logical, save:: do_rt = .false.
   integer, save:: itimer=0
-  namelist /eos_params/ gamma, mu, do_rt, kappa
+  namelist /eos_params/ gamma, mu, do_rt, kappa, s0
   !-----------------------------------------------------------------------------
   call trace%begin ('eos_t%init', itimer=itimer)
   call io%header ('microphysics/eos/ideal/eos_mod:')
@@ -64,10 +65,11 @@ SUBROUTINE init (self)
     call io%namelist_warning ('eos_params', iostat)
     write (io%namelist, eos_params)
   end if
-  self%mu = mu
   self%gamma = gamma
   self%do_rt = do_rt
   self%kappa = kappa * scaling%m/scaling%l**2
+  self%mu = mu
+  self%s0=s0
   call io%lock%unset ('eos_t%init')
   call trace%end(itimer)
 END SUBROUTINE init
@@ -183,11 +185,11 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne,lnee, pg, tt, ne, rk, &
   real, dimension(:,:,:,:),                    optional :: src, rk
   logical, optional:: e_below
   character(len=*),optional::label
-  real, dimension(:,:,:), pointer :: d_loc, ee_loc
+  real, dimension(:,:,:), pointer :: d_loc, ee_loc, ss_loc
   integer:: i
   integer, save:: itimer=0
   real:: stefan
-  logical:: d_alloc, e_alloc
+  logical:: d_alloc, e_alloc, s_alloc
   !-----------------------------------------------------------------------------
   call trace%begin ('eos_t%lookup', itimer=itimer)
   nullify (d_loc, ee_loc)
@@ -196,6 +198,7 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne,lnee, pg, tt, ne, rk, &
   end if
   d_alloc = .false.
   e_alloc = .false.
+  s_alloc = .false.
    !-----------------------------------------------------------------------------
   if (present(d)) then
     d_loc => d
@@ -225,25 +228,28 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne,lnee, pg, tt, ne, rk, &
                            src=src, gamma=gamma,e_below=e_below, label=label, id=id)
   else if (present(ss) .or. present(s) .or. present(lns)) then
     if (present(ss)) then
-      ee_loc => ss
+      allocate (ss_loc(dim(1),dim(2),dim(3)))
+      s_alloc = .true.
+      ss_loc = (ss*(self%gamma-1d0))-self%s0
     else if (present(lns)) then
-      allocate (ee_loc(dim(1),dim(2),dim(3)))
-      e_alloc = .true.
-      ee_loc = exp(lns)/d_loc
+      allocate (ss_loc(dim(1),dim(2),dim(3)))
+      s_alloc = .true.
+      ss_loc = exp(lns)-self%s0
     else if (present(s)) then
-      allocate (ee_loc(dim(1),dim(2),dim(3)))
-      e_alloc = .true.
-      ee_loc = s/d_loc
+      allocate (ss_loc(dim(1),dim(2),dim(3)))
+      s_alloc = .true.
+      ss_loc = s-self%s0
     else
       call mpi%abort ('eos_t: missing 2nd argument')
     end if
-    call self%lookup_table_s(dim, ss=ee_loc, d=d_loc, pg=pg, tt=tt, ne=ne, rk=rk, &
+    call self%lookup_table_s(dim, ss=ss_loc, d=d_loc, pg=pg, tt=tt, ne=ne, rk=rk, &
                            src=src, gamma=gamma,e_below=e_below, label=label, id=id)
   end if
   !-----------------------------------------------------------------------------
   if (present(e_below)) e_below=.false.
   if (d_alloc) deallocate(d_loc)
   if (e_alloc) deallocate(ee_loc)
+  if (s_alloc) deallocate(ss_loc)
   call trace%end(itimer)
 END SUBROUTINE lookup_table
 
@@ -330,21 +336,21 @@ SUBROUTINE lookup_table_s (self, dim, ss, d, pg, tt, ne, rk, &
   !-----------------------------------------------------------------------------
   if (present(tt)) then
     g1 = self%gamma-1.0
-    tt = d_loc**self%gamma*exp(ss_loc*g1)/d_loc
+    tt = d_loc**self%gamma*exp(ss_loc)/d_loc
   end if
 
   if (present(src)) then
     stefan = cgs%stefan/(scaling%p*scaling%u)*scaling%temp**4
     g1 = self%gamma-1.0
     do i=1,size(src,4)
-      src(:,:,:,i) = stefan*real((d_loc**self%gamma*exp(ss_loc*g1)/d_loc),kind=8)**4
+      src(:,:,:,i) = stefan*real((d_loc**self%gamma*exp(ss_loc)/d_loc),kind=8)**4
     end do
   end if
   if (present(pg)) then
     if (self%gamma==1d0) then
       pg = d_loc*self%csound**2
     else
-      pg = d_loc**self%gamma*exp(ss_loc*(self%gamma-1d0))
+      pg = d_loc**self%gamma*exp(ss_loc)
     end if
   end if
   if (present(rk)) then
