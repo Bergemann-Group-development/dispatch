@@ -104,11 +104,16 @@ END SUBROUTINE init
 !===============================================================================
 SUBROUTINE update (self)
   class(experiment_t):: self
+  class(mesh_t), pointer:: m(:)
+  real, pointer:: e(:,:,:), d(:,:,:)
+  real, pointer:: e1(:,:,:), d1(:,:,:)
+  real:: ee1, ee
+  integer:: mlee(3)
   !----------------------------------------------------------------------------
   call trace%begin('experiment_t%update')
-  
+  m => self%mesh
   call self%solver_t%update
-    
+
   if (clamp_e) call self%clamp_ee
 
   call trace%end()
@@ -141,7 +146,6 @@ SUBROUTINE clamp_ee(self)
   e => self%mem(:,:,:,self%idx%e,self%it,1)
   d => self%mem(:,:,:,self%idx%d,self%it,1)
   !
-  print *, 'clamping e...'
   do k=l(3),u(3)
     do j=l(2),u(2)
       do i=l(1),u(1)

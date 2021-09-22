@@ -554,7 +554,7 @@ SUBROUTINE upper2 (self, mem)
   real(8), dimension(:), pointer:: z
   class(mesh_t), pointer:: m3
   logical:: e_below=.false.
-  integer:: ix, iy, iz, iz1, i, zi, bn, bng, l(3), u(3), eiminloc(4)
+  integer:: ix, iy, iz, iz1, i, zi, bn, bng, l(3), u(3), eiminloc(4), mnl(3)
   real:: d_ratio, e_ratio, h_scale, p, ee, dlnddz, dlnedz, uz, dddt, eimin, d_mean
   !-----------------------------------------------------------------------------
 
@@ -603,28 +603,28 @@ SUBROUTINE upper2 (self, mem)
   call self%extrapolate_constrained(by,idx%by)
   !call self%symmetric(bx,idx%bx)
   !call self%symmetric(by,idx%by)
-  do iz=bn+1,ub(3)
+  do iz=uo(3),ub(3)
     do iy=lb(2),ub(2)
       do ix=lb(1),ub(1)
-        bz(ix,iy,iz)=bz(ix,iy,bn)
+        bz(ix,iy,iz)=bz(ix,iy,ui(3))
       end do
     end do
   end do 
   ! ----------------------------------------------------------------------------
   ! We need to extend the magnetic fields by one zone and take in bn-1
   ! ----------------------------------------------------------------------------
-  allocate(bx1(gn(1)+1,gn(2)+1,bng+2))
-  allocate(by1(gn(1)+1,gn(2)+1,bng+2))
-  allocate(bz1(gn(1)+1,gn(2)+1,bng+2))
+  allocate(bx1(gn(1)+1,gn(2)+1,ng(3)+2))
+  allocate(by1(gn(1)+1,gn(2)+1,ng(3)+2))
+  allocate(bz1(gn(1)+1,gn(2)+1,ng(3)+2))
    bx1=0.0
    by1=0.0
    bz1=0.0
-   do iz=1,bng+1
+   do iz=1,ng(3)+1
      do iy=1,gn(2)
        do ix=1,gn(1)
-         bx1(ix,iy,iz) = bx(ix,iy,bn+iz-2)
-         by1(ix,iy,iz) = by(ix,iy,bn+iz-2)
-         bz1(ix,iy,iz) = bz(ix,iy,bn+iz-2)
+         bx1(ix,iy,iz) = bx(ix,iy,bn+iz-1)
+         by1(ix,iy,iz) = by(ix,iy,bn+iz-1)
+         bz1(ix,iy,iz) = bz(ix,iy,bn+iz-1)
        end do
        bx1(gn(1)+1,iy,iz) = bx1(gn(1),iy,iz)
        by1(gn(1)+1,iy,iz) = by1(gn(1),iy,iz)
@@ -635,13 +635,13 @@ SUBROUTINE upper2 (self, mem)
      bz1(:,gn(2)+1,iz) = bz1(:,gn(2),iz)
    end do
    
-   bx1(:,:,bng+2)=bx1(:,:,bng+1)
-   by1(:,:,bng+2)=by1(:,:,bng+1)
-   bz1(:,:,bng+2)=bz1(:,:,bng+1)
+   bx1(:,:,ng(3)+2)=bx1(:,:,ng(3)+1)
+   by1(:,:,ng(3)+2)=by1(:,:,ng(3)+1)
+   bz1(:,:,ng(3)+2)=bz1(:,:,ng(3)+1)
    
    u(1)=gn(1)+1
    u(2)=gn(2)+1
-   u(3)=bng+2
+   u(3)=ng(3)+2
    l(:)= 1
    !l(3)= 5
    !call self%div_free_upper(bx1,by1,bz1,l,u)
@@ -653,8 +653,8 @@ SUBROUTINE upper2 (self, mem)
     !---------------------------------------------------------------------------
     ! Put the magnetic fields back in. We did div free only for the Z component.
     !---------------------------------------------------------------------------
-    zi=1
-    do iz=bn-1,gn(3)
+    zi=2
+    do iz=uo(3),gn(3)
       do iy=1,gn(2)
         do ix=1,gn(1)
           bz(ix,iy,iz)=bz1(ix,iy,zi)
@@ -666,10 +666,10 @@ SUBROUTINE upper2 (self, mem)
     ! We need magnetic energy in ui(3):gn(3)
     ! --------------------------------------------------------------------------
     allocate(em (gn(1),gn(2),ng(3)+1))
-    do iz=2,bng+1
+    do iz=1,ng(3)+1
       do iy=1,gn(2)
         do ix=1,gn(1)
-          em(ix,iy,iz-1) = ((0.5*(bx1(ix,iy,iz)+bx1(ix+1,iy,iz)))**2 + &
+          em(ix,iy,iz) = ((0.5*(bx1(ix,iy,iz)+bx1(ix+1,iy,iz)))**2 + &
                           (0.5*(by1(ix,iy,iz)+by1(ix,iy+1,iz)))**2 + &
                           (0.5*(bz1(ix,iy,iz)+bz1(ix,iy,iz+1)))**2)* 0.5
         end do
@@ -681,15 +681,13 @@ SUBROUTINE upper2 (self, mem)
     ! we need to subtract kinetic and magnetic energy from the total energy
     !---------------------------------------------------------------------------
     
-    allocate(e1 (gn(1),gn(2),2))
-    allocate(d1 (gn(1),gn(2),2))
+    allocate(e1 (gn(1),gn(2),1))
+    allocate(d1 (gn(1),gn(2),1))
     d1(:,:,1) = d(:,:,ui(3))
-    d1(:,:,2) = self%d_top
-    e1(:,:,2) = self%ee_top
     if (self%patch%kind(1:6)/='ramses') then
       e1(:,:,1)  = e(:,:,bn)/d(:,:,bn)
       eth => e(:,:,uo(3):ub(3))
-     ! e1(:,:,1) = max(eos%ee_min, e1(:,:,1))
+      e1(:,:,1) = max(eos%ee_min, e1(:,:,1))
     else
       allocate(ep (gn(1),gn(2)))
       allocate(eth(gn(1),gn(2),ng(3)))
@@ -703,19 +701,21 @@ SUBROUTINE upper2 (self, mem)
       do iy=1,gn(2)
         do ix=1,gn(1)
           e1(ix,iy,1) = (e(ix,iy,bn) - em(ix,iy,1) - ep(ix,iy)) / d1(ix,iy,1)
-         ! e1(ix,iy,1) = max(eos%ee_min, e1(ix,iy,1))
+          e1(ix,iy,1) = max(eos%ee_min, e1(ix,iy,1))
         end do
       end do     
     end if
   !-----------------------------------------------------------------------------
   ! Boundary conditions need the gas pressure in one layer
   !-----------------------------------------------------------------------------
-  allocate (pg(size(d,1),size(d,2),2))
+  allocate (pg(size(d,1),size(d,2),1))
   !
   if (any(e1<eos%ee_min)) then
     print *, self%id
-    print *, minval (e1), maxval(e1),eos%ee_min, minloc(e1), self%ee_top
-    !print *, em(22,17,:), ep(22,17), e(22,17,bn)
+    mnl=minloc(e1)
+    print *, minval (e1), maxval(e1),eos%ee_min, minloc(e1), mnl, self%ee_top
+    print *, 'values', e1(mnl(1),mnl(2),mnl(3)), e(mnl(1),mnl(2),bn), d(mnl(1),mnl(2),bn)
+    print *, 'values', e1(mnl(1)-1:mnl(1)+1,mnl(2)-1:mnl(2)+1,mnl(3))
     print *, 'b', bx(22,17,bn), by(22,17,bn), bz(22,17,bn)
     print *, 'pz', pz(ix,iy,bn)
     if (any(e1<eos%ee_min))error stop "e1 leq ee_min"
@@ -736,22 +736,15 @@ SUBROUTINE upper2 (self, mem)
       ! lowest order proportional to temperature.
       !-----------------------------------------------------------------------
       h_scale = (pg(ix,iy,1))/(d(ix,iy,bn)*self%gravity)
-      !h_scale = pg(ix,iy,1)/(d_mean*self%gravity)
       d_ratio = exp((z(iz)-z(bn))/h_scale)
-      if (pz(ix,iy,bn) < 0.0) then
+      if (pz(ix,iy,bn) <= 0.0) then
         ee = top_bc_rate*self%ee_top + (1.0-top_bc_rate)*e1(ix,iy,1)
       else
         ee = e1(ix,iy,1)
       end if
       d(ix,iy,iz) = d(ix,iy,bn)*d_ratio
-      
       ee=max(eos%ee_min,ee)
       eth(ix,iy,zi) = d(ix,iy,iz)*ee
-      if (ee<eos%ee_min) then 
-        print *, 'ee goes below..', ix, iy,zi
-        print *, ee, eos%ee_min, self%ee_top, e1(ix,iy,1), pz(ix,iy,bn)
-        error stop "end"
-      end if
       !-----------------------------------------------------------------------
       ! 2) The horizontal components of the momenta are assumed to taper off
       ! with density, consistent with assuming a no-shear boundary condition
@@ -793,17 +786,17 @@ SUBROUTINE upper2 (self, mem)
       end do
       zi = zi+1
     end do
-   !if (self%patch%id==79) then
-   !  print *,'----'
-   !  print *, self%patch%id, 'eth min', eth(3,16,2), eimin, eiminloc, eth(3,16,2)/d(3,16,27), 'fin', e(3,16,27), d(3,16,27)
-   !  print *, em(3,16,2), px(3,16,27), py(3,16,27),pz(3,16,27)
-   !  print *, 'bx,bx1', bx(3,16,27), bx1(3,16,2)
-   !  print *, 'by,by1', by(3,16,27), by1(3,16,2)
-   !  print *, 'bz,bz1', bz(3,16,27), bz(3,16,28), bz1(3,16,2),bz1(3,16,3)
-   !end if
     deallocate(eth)
   end if 
   deallocate(e1,em, bx1, by1, bz1)
+  if (any(e<=0.0)) then
+    print *, self%patch%id, minval(e), minloc(e), minval(d), minloc(d), maxval(d), maxloc(d)
+    do i=lb(3), ub(3)
+      print *, e(15,15,i), e(15,15,i)/d(15,15,i)
+    end do
+    call io%abort ("after bnd e leq 0")
+  end if
+  
   !
   if (associated(self%patch%filled)) then
     self%patch%filled(lb(1):ub(1),lb(2):ub(2),uo(3):ub(3)) = 1

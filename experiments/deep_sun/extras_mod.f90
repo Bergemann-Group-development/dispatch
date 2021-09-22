@@ -127,7 +127,8 @@ SUBROUTINE pre_init (self)
   !call self%forces%init (self)                                         ! forces
   if (.not.associated(self%rt)) allocate(self%rt)                                                     ! RT
   self%rt%patch => self
-  call self%rt%pre_init                                                 ! RT
+  call self%rt%pre_init
+  if (.not.self%rt%on) deallocate(self%rt)                              ! RT
   call self%newton%pre_init  (self)                                     ! Newton
   call self%pressure_node%pre_init  (self)                              ! Pressure node
   call self%gravity%pre_init (self)                                     ! gravity
