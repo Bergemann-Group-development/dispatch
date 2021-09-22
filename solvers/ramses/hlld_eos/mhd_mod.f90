@@ -45,9 +45,9 @@ MODULE mhd_mod
     real, contiguous, pointer, dimension(:,:,:,:,:):: qp, qm  ! face centered
     real, contiguous, pointer, dimension(:,:,:,:,:):: dq, dq2, dbf ! slopes
     real, contiguous, pointer, dimension(:,:,:,:,:):: qLB,qRB,qLT,qRT
-    real, contiguous, pointer, dimension(:,:,:):: Ex,Ey,Ez, Etot
+    real(dp), contiguous, pointer, dimension(:,:,:):: Ex,Ey,Ez, Etot
     real, contiguous, pointer, dimension(:,:,:):: c
-    !dir$ attributes align:64 :: q,bf,em,qp,qm,dq,dq2,dbf,qLB,qRB,qLT,qRT,Ex,Ey,Ez,c
+    !dir$ attributes align:64 :: q,bf,em,qp,qm,dq,dq2,dbf,qLB,qRB,qLT,qRT,Ex,Ey,Ez,c, Etot
   contains
     procedure:: pre_init
     procedure:: init
@@ -225,13 +225,12 @@ SUBROUTINE update (self)
   real, pointer, dimension(:,:,:):: d, e, Ux=>null(), Uy=>null(), Uz=>null()
   real(dp):: dtdx, dtdy, dtdz
   real:: ekin, emag
-  integer:: n(3), nv3, i, j, k, l(3), u(3), dir
+  integer:: n(3), nv3, i, j, k, l(3), u(3), dir, minpos(3)
   integer, parameter:: ndim=3
   integer, save:: itimer=0
   type(lock_t), pointer:: lock
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%update', itimer=itimer)
-  n = self%mesh%ui-self%mesh%li+1
   if (io%smallr > 0) smallr = io%smallr
   if (io%courant > 0) self%courant = io%courant
   !----------------------------------------------------------------------------
@@ -300,9 +299,9 @@ SUBROUTINE update (self)
   call cmpflxm(self,self%gn(1),2,3,4,6,7,8,fl(:,:,:,:,1))
   call cmpflxm(self,self%gn(2),3,4,2,7,8,6,fl(:,:,:,:,2))
   call cmpflxm(self,self%gn(3),4,2,3,8,6,7,fl(:,:,:,:,3))
-  call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,2,3,4,6,7,8,em(:,:,:,3), self%gn(1), self%nv)
-  call cmp_mag_flx(self, self%qRT, self%qLT, self%qRB, self%qLB,4,2,3,8,6,7,em(:,:,:,2), self%gn(1), self%nv)
-  call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,3,4,2,7,8,6,em(:,:,:,1), self%gn(1), self%nv)
+  call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,2,3,4,6,7,8,em(:,:,:,3), self%gn(1), self%nvar)
+  call cmp_mag_flx(self, self%qRT, self%qLT, self%qRB, self%qLB,4,2,3,8,6,7,em(:,:,:,2), self%gn(1), self%nvar)
+  call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,3,4,2,7,8,6,em(:,:,:,1), self%gn(1), self%nvar)
   dtdx = self%dtime/self%ds(1) 
   dtdy = self%dtime/self%ds(2) 
   dtdz = self%dtime/self%ds(3) 
@@ -384,16 +383,39 @@ SUBROUTINE update (self)
   do k=k0,k1
     do j=j0,j1
       do i=i0,i1
-        emag = (self%q(i,j,k,6)*self%q(i,j,k,6) + &
-                self%q(i,j,k,7)*self%q(i,j,k,7) + &
-                self%q(i,j,k,8)*self%q(i,j,k,8)) * half
-        ekin =  (unew(i,j,k,2)*unew(i,j,k,2) + &
-                 unew(i,j,k,3)*unew(i,j,k,3) + &
-                 unew(i,j,k,4)*unew(i,j,k,4)) * half / unew(i,j,k,1)
-        unew(i,j,k,5) = self%etot(i,j,k) - emag - ekin
+        unew(i,j,k,5) = self%etot(i,j,k) - &
+                        ((self%q(i,j,k,6)*self%q(i,j,k,6) + &
+                         self%q(i,j,k,7)*self%q(i,j,k,7) + &
+                         self%q(i,j,k,8)*self%q(i,j,k,8))* half + &
+                         (unew(i,j,k,2)*unew(i,j,k,2) + &
+                          unew(i,j,k,3)*unew(i,j,k,3) + &
+                          unew(i,j,k,4)*unew(i,j,k,4)) * half / unew(i,j,k,1))
       end do
     end do
   end do
+  !if (any(unew(i0:i1,j0:j1,k0:k1,5)<=0) ) then
+  !  minpos = minloc (unew(i0:i1,j0:j1,k0:k1,5))
+  !  i=minpos(1)+i0-1
+  !  j=minpos(2)+j0-1
+  !  k=minpos(3)+k0-1
+  !  emag = (self%q(i,j,k,6)*self%q(i,j,k,6) + &
+  !              self%q(i,j,k,7)*self%q(i,j,k,7) + &
+  !              self%q(i,j,k,8)*self%q(i,j,k,8)) * half
+  !  print *, self%id, self%position(1)+self%mesh(1)%r(i), &
+  !                    self%position(2)+self%mesh(2)%r(j), &
+  !                    self%position(3)+self%mesh(3)%r(k)
+  !  print *, 'd, ee, emag, etot', unew(i,j,k,1), unew(i,j,k,5), emag, self%etot(i,j,k)
+  !  print *, unew(i,j,k,2), unew(i,j,k,3), unew(i,j,k,4), unew(i,j,k,1)
+  !  print *, 'ekin', half*(unew(i,j,k,2)**2+ unew(i,j,k,3)**2+ unew(i,j,k,4)**2)/unew(i,j,k,1)
+  !  print *, 'minpos',minpos
+  !  print *, 'old' , uin(i-1:i+1,j-1:j+1,k-1:k+1,5)
+  !  print *, 'new' , unew(i-1:i+1,j-1:j+1,k-1:k+1,5)
+  !  print *, 'etot flux1', fl(i-1:i+1,j-1:j+1,k-1:k+1,5,1)
+  !  print *, 'etot flux2', fl(i-1:i+1,j-1:j+1,k-1:k+1,5,2)
+  !  print *, 'etot flux3', fl(i-1:i+1,j-1:j+1,k-1:k+1,5,3)
+  !  print *, minval (unew(i0:i1,j0:j1,k0:k1,5))
+  !  call io%abort ('eint becomes leq 0..')
+  !end if
 
   if (self%id == io%id_debug) then
     write (io%output,'("M1",f10.6,i4,1p,10e12.3)') self%time, i, em(4:13,8,8,1)
@@ -427,13 +449,14 @@ SUBROUTINE update (self)
       em(i0  :i1  ,j0+1:j1+1,k0  :k1  ,1) ) - &
     ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,2)   - &
       em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,2) ))
+      
   end associate
   !-----------------------------------------------------------------------------
   ! Add the external force per unit mass as a source term
   !-----------------------------------------------------------------------------
   l = self%mesh%li
   u = self%mesh%ui
-  allocate (d2ekin(l(1):u(1)))
+  d => self%mem(:,:,:,self%idx%d,self%new,1)
   e => self%mem(:,:,:,self%idx%e,self%new,1)
   p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
   if (associated(scratch%force_per_unit_mass)) then
@@ -460,7 +483,6 @@ SUBROUTINE update (self)
     end do
     end do
   end if
-  deallocate (d2ekin)
   !-----------------------------------------------------------------------------
   ! Add external heating as source term
   !-----------------------------------------------------------------------------
@@ -557,32 +579,26 @@ subroutine check_small (self, it)
   do i=lo(1),uo(1)
     if (uu(i,j,k,1) < smallr) then
       panic = .true.
-      if (nprint>0) then
-        nprint = nprint-1
-        write (stdlog,'(i7,3i5,1p,2e12.3)') self%id,i,j,k,uu(i,j,k,1),smallr
-      end if
+      !if (nprint>0) then
+      !  nprint = nprint-1
+      !  write (stdlog,'(i7,3i5,1p,2e12.3)') self%id,i,j,k,uu(i,j,k,1),smallr
+      !end if
       n_smalld = n_smalld+1
       uu(i,j,k,1) = smallr
     end if
     d =  uu(i,j,k,1)
-    c = 1./d
-    u =  uu(i,j,k,2)*c
-    v =  uu(i,j,k,3)*c
-    w =  uu(i,j,k,4)*c
-    ekin = 0.5*d*(u**2+v**2+w**2)
-    B1 = 0.5*(uu(i,j,k,6)+uu(i+1,j,k,6))
-    B2 = 0.5*(uu(i,j,k,7)+uu(i,j+1,k,7))
-    B3 = 0.5*(uu(i,j,k,8)+uu(i,j,k+1,8))
-    emag = 0.5*(B1**2+B2**2+B3**2)
     if (isothermal) then
       p = d*self%csound**2
       uu(i,j,k,5) = p
     else
-      p = (uu(i,j,k,5))*(eos%gamma-one)
+      p = uu(i,j,k,5)*(eos%gamma-one)
       if (p < smallr*smallc**2) then
-        p = smallr*smallc**2
+        print *, self%id, self%position, 'smallp', uu(i,j,k,5), p, smallr*smallc**2
+        print *, i,j,k
+        p = smallr*smallc**2  
         uu(i,j,k,5) = p/(eos%gamma-one)
         n_smallp = n_smallp+1
+        call io%abort ('smallp')
       end if
     end if
   end do
@@ -619,7 +635,7 @@ end subroutine check_small
 subroutine ctoprim(self)
   class(mhd_t):: self
   integer::n(4)
-  real(dp):: smallp, c, entho, g1
+  real(dp):: smallp, c, entho, g1, gam
   real(dp):: eken, emag, etot, eint, B1, B2, B3
   integer, save:: itimer=0
   logical:: e_below
@@ -637,9 +653,10 @@ subroutine ctoprim(self)
   allocate (self%q  (m(1),m(2),m(3),self%nvar))
   allocate (self%bf (m(1),m(2),m(3),3))
   allocate (self%Etot (m(1),m(2),m(3)))                
-  call check_small (self, self%new)
+  call check_small (self, self%it)
   associate(q=>self%q,bf=>self%bf,dt=>self%dtime,c=>self%c)
     q=0.0 ! clean
+    self%etot=0.
   !-----------------------------------------------------------------------------
   if (isothermal) then
     entho = one
@@ -651,61 +668,83 @@ subroutine ctoprim(self)
   !
   !self%bf => uin(:,:,:,6:8)                                     ! Left  face centered B
   uin(:,:,:,1) = max(uin(:,:,:,1),smallr)                       ! Density
-  q(:,:,:,1) = uin(:,:,:,1)                                     ! Density
-  q(:,:,:,2) = uin(:,:,:,2)/q(:,:,:,1)                          ! vx
-  q(:,:,:,3) = uin(:,:,:,3)/q(:,:,:,1)                          ! vy
-  q(:,:,:,4) = uin(:,:,:,4)/q(:,:,:,1)                          ! vz
-  q(:,:,:,5) = 0.0                                              ! p_t; initialised for safety
-  q(:,:,:,6) = uin(:,:,:,6)                                     ! Bx
-  q(:,:,:,7) = uin(:,:,:,7)                                     ! By
-  q(:,:,:,8) = uin(:,:,:,8)                                     ! Bz
-  q(:,:,:,9) = uin(:,:,:,5)/q(:,:,:,1)                          ! specific energy
-  bf(:,:,:,1) = uin(:,:,:,6)
-  bf(:,:,:,2) = uin(:,:,:,7)
-  bf(:,:,:,3) = uin(:,:,:,8)
+  self%q(:,:,:,1) = uin(:,:,:,1)                                     ! Density
+  self%q(:,:,:,2) = uin(:,:,:,2)/q(:,:,:,1)                          ! vx
+  self%q(:,:,:,3) = uin(:,:,:,3)/q(:,:,:,1)                          ! vy
+  self%q(:,:,:,4) = uin(:,:,:,4)/q(:,:,:,1)                          ! vz
+  self%q(:,:,:,5) = 0.0                                              ! p_t; initialised for safety
+  self%q(:,:,:,6) = uin(:,:,:,6)                                     ! Bx
+  self%q(:,:,:,7) = uin(:,:,:,7)                                     ! By
+  self%q(:,:,:,8) = uin(:,:,:,8)                                     ! Bz
+  self%q(:,:,:,9) = uin(:,:,:,5)/q(:,:,:,1)                          ! specific energy
+  self%bf(:,:,:,1) = uin(:,:,:,6)
+  self%bf(:,:,:,2) = uin(:,:,:,7)
+  self%bf(:,:,:,3) = uin(:,:,:,8)
   !-----------------------------------------------------------------------------
   ! Arrays for EOS
   !-----------------------------------------------------------------------------
   allocate (ee (n(1),n(2),n(3)))
   allocate (pg (n(1),n(2),n(3)))
-  allocate (tt (n(1),n(2),n(3)))
   allocate (lnd(n(1),n(2),n(3)))
+  if (do_temperature) allocate (tt (n(1),n(2),n(3)))
+  ! ----------------------------------------------------------------------------
+  ! Cell-centred magnetic fields
+  ! ----------------------------------------------------------------------------
+  do k=1,n(3)
+  do j=1,n(2)
+  do i=1,n(1)
+    self%q(i,j,k,6) = half*(uin(i,j,k,6)+uin(i+1,j,k,6))                             ! Bx
+    self%q(i,j,k,7) = half*(uin(i,j,k,7)+uin(i,j+1,k,7))                             ! By
+    self%q(i,j,k,8) = half*(uin(i,j,k,8)+uin(i,j,k+1,8))                             ! Bz
+  end do
+  end do
+  end do
   !-----------------------------------------------------------------------------
   ! Total energy
   !-----------------------------------------------------------------------------
   do k=1,n(3)
   do j=1,n(2)
+  !dir$ ivdep
+  !$omp simd
   do i=1,n(1)
-    eken = half*(q(i,j,k,2)**2 + q(i,j,k,3)**2 + q(i,j,k,4)**2)*q(i,j,k,1)
-    B1 = half*(uin(i,j,k,6)+uin(i+1,j,k,6))
-    B2 = half*(uin(i,j,k,7)+uin(i,j+1,k,7))
-    B3 = half*(uin(i,j,k,8)+uin(i,j,k+1,8))
-    q(i,j,k,6) = B1                                     ! Bx
-    q(i,j,k,7) = B2                                     ! By
-    q(i,j,k,8) = B3                                     ! Bz
-    emag = half*(B1**2 + B2**2 + B3**2)
-    lnd(i,j,k) = log(q(i,j,k,1))
-    self%etot(i,j,k)  = (uin(i,j,k,5) + emag + eken)                        ! Total energy
-    ee(i,j,k)  = q(i,j,k,9)
+    self%etot(i,j,k)  = uin(i,j,k,5) + &
+                    half * (self%q(i,j,k,6)*self%q(i,j,k,6) + &
+                            self%q(i,j,k,7)*self%q(i,j,k,7) + &
+                            self%q(i,j,k,8)*self%q(i,j,k,8))+ &
+                    half * (self%q(i,j,k,2)*self%q(i,j,k,2) + &
+                            self%q(i,j,k,3)*self%q(i,j,k,3) + &
+                            self%q(i,j,k,4)*self%q(i,j,k,4))*self%q(i,j,k,1)
+    ee(i,j,k)  = self%q(i,j,k,9)
+    lnd(i,j,k) = log(self%q(i,j,k,1))
   end do
   end do
   end do
+  l=self%li
+  u=self%ui
+  !if (self%id==86) then
+  !  emag = sum(half * (self%q(l(1):u(1),l(2):u(2),u(3),6)*self%q(l(1):u(1),l(2):u(2),u(3),6) + &
+  !                     self%q(l(1):u(1),l(2):u(2),u(3),7)*self%q(l(1):u(1),l(2):u(2),u(3),7) + &
+  !                     self%q(l(1):u(1),l(2):u(2),u(3),8)*self%q(l(1):u(1),l(2):u(2),u(3),8)))
+  !  print *, 'adding', emag, 'etot', sum(self%etot(l(1):u(1),l(2):u(2),u(3))), &
+  !  'eint', sum(uin(l(1):u(1),l(2):u(2),u(3),5)),'d', sum(uin(l(1):u(1),l(2):u(2),u(3),1)), 'ee', sum(uin(l(1):u(1),l(2):u(2),u(3),5)/uin(l(1):u(1),l(2):u(2),u(3),1))
+  !end if
   !-----------------------------------------------------------------------------
   ! Pressure
   !-----------------------------------------------------------------------------
-  allocate (ee0(n(1),n(2),n(3)))
-  ee0 = ee
   !if (any(ee(1:n(1),1:n(2),1:n(3))<eos%ee_min)) print *, 'before lookup, ee<eemin', eos%ee_min, maxval(ee), minval(ee), minloc(ee), smallr*smallc**2
-  call eos%lookup_table (shape(ee), lnd=lnd, ee=ee, pg=pg, tt=tt, e_below=e_below, label='mhd', id=self%id)
+  if (do_temperature) then
+    call eos%lookup_table (shape(ee), lnd=lnd, ee=ee, pg=pg, tt=tt, e_below=e_below, label='mhd', id=self%id)
+  else
+    call eos%lookup_table (shape(ee), lnd=lnd, ee=ee, pg=pg, e_below=e_below, label='mhd', id=self%id)
+  end if
   if (verbose > 1) then
     write (stdlog,*) 'ctoprim:rh', self%id, minval(q(:,:,:,1)), maxval(q(:,:,:,1))
     write (stdlog,*) 'ctoprim:bf', self%id, minval(bf), maxval(bf)
   end if
-  deallocate (ee0)
   do k=1,n(3)
     do j=1,n(2)
       do i=1,n(1)
-        q(i,j,k,5) = pg(i,j,k)
+        self%q(i,j,k,5) = pg(i,j,k)
       end do
     end do
   end do
@@ -719,36 +758,40 @@ subroutine ctoprim(self)
       end do
     end do
     call self%aux%register ('tt', aux)
-    deallocate(aux)
+    deallocate(aux, tt)
   end if
-  deallocate (ee,pg,tt,lnd)
+  deallocate (ee,pg,lnd)
   !-----------------------------------------------------------------------------
   ! Compute gas pressure and fast mode speed
   !-----------------------------------------------------------------------------
-  d  => q(:,:,:,1)
-  pg => q(:,:,:,5)
+  d  => self%q(:,:,:,1)
+  pg => self%q(:,:,:,5)
   g1 = eos%gamma-1d0
   if (isothermal) then
     do k=1,n(3)
     do j=1,n(2)
+    !dir$ ivdep
+    !$omp simd private(emag, gam)
     do i=1,n(1)
-      B1 = q(i,j,k,6)
-      B2 = q(i,j,k,7)
-      B3 = q(i,j,k,8)
-      emag = half*(B1**2 + B2**2 + B3**2)
-      c(i,j,k) = sqrt((q(i,j,k,5)*eos%gamma + 2.0*emag)/d(i,j,k))
+      gam = pg(i,j,k)/self%q(i,i,k,5)+1d0
+      emag = half*(self%q(i,j,k,6)**2 + &
+                   self%q(i,j,k,7)**2 + &
+                   self%q(i,j,k,8)**2)
+      c(i,j,k) = sqrt((self%q(i,j,k,5)*g1 + 2.0*emag)/d(i,j,k))
     end do
     end do
     end do
   else
-    do k=1,self%gn(3)-1
-    do j=1,self%gn(2)-1
-    do i=1,self%gn(1)-1
-      B1 = q(i,j,k,6)
-      B2 = q(i,j,k,7)
-      B3 = q(i,j,k,8)
-      emag = half*(B1**2 + B2**2 + B3**2)
-      c(i,j,k) = sqrt((pg(i,j,k)*eos%gamma + 2.0*emag)/q(i,j,k,1))
+    do k=1,n(3)
+    do j=1,n(2)
+    !dir$ ivdep
+    !$omp simd private(emag, gam)
+    do i=1,n(1)
+      gam = pg(i,j,k)/self%q(i,i,k,5)+1d0
+      emag = half*(self%q(i,j,k,6)**2 + &
+                   self%q(i,j,k,7)**2 + &
+                   self%q(i,j,k,8)**2)
+      c(i,j,k) = sqrt((pg(i,j,k)*g1 + 2.0*emag)/d(i,j,k))
     end do
     end do
     end do
@@ -1132,7 +1175,7 @@ SUBROUTINE trace3d(self)
   real(dp) :: dCLx, dCRx, dCLy, dCRy
   real(dp) :: sAL0, sAR0, sBL0, sBR0, sCL0, sCR0
   real(dp), dimension(:,:,:), pointer, contiguous:: rho_t, p_t, h_t
-  real(dp) :: eff_gamma, off
+  real(dp) :: eff_gamma, off, gam
   real(dp) :: ff(self%gn(1),3), qq(self%gn(1))
   real(8):: dt2
   integer:: lo(3), uo(3)
@@ -1190,9 +1233,9 @@ SUBROUTINE trace3d(self)
   !call trace%begin ('mhd_t%trace3d(2)', itimer=itimer(2))
   eff_gamma = eos%gamma
   !
-  allocate (rho_t(1:self%gn(1),1:self%gn(2),1:self%gn(3)))
-  allocate (  p_t(1:self%gn(1),1:self%gn(2),1:self%gn(3)))
-  allocate (  h_t(1:self%gn(1),1:self%gn(2),1:self%gn(3)))
+  allocate (rho_t(self%gn(1),self%gn(2),self%gn(3)))
+  allocate (  p_t(self%gn(1),self%gn(2),self%gn(3)))
+  allocate (  h_t(self%gn(1),self%gn(2),self%gn(3)))
   !
   ! Fill rho-t & p_t with non-zero values at guard zone edges,
   ! to ! avoid arithmetic errors (internal values are set in loop)
@@ -1225,7 +1268,7 @@ SUBROUTINE trace3d(self)
   dt2 = 0.5d0*self%dtime
   lo = self%mesh%lo-1
   uo = self%mesh%uo+1
-  d => self%mem(:,:,:,self%idx%d,self%new,1)
+  d => q(:,:,:,ir)
   do k=lo(3),uo(3)
   do j=lo(2),uo(2)
   ff(:,:) = 0.0_dp
@@ -1264,7 +1307,7 @@ SUBROUTINE trace3d(self)
   !$omp & dALy,dALz,dARy,dARz,dAy,dAz,dBLx,dBLz,dBRx,dBRz,dBx,dBz,dCLx,dCLy,dCRx, &
   !$omp & dCRy,dCx,dCy,dpx,dpx2,dpy,dpy2,dpz,dpz2,drx,drx2,dry,dry2,drz,drz2,dux, &
   !$omp & duy,duz,dvx,dvy,dvz,dwx,dwy,dwz,invr,p,r,sAL0,sAR0,sBL0,sBR0,sCL0,sCR0, &
-  !$omp & sp0,sr0,su0,sv0,sw0,u,v,w, &
+  !$omp & sp0,sr0,su0,sv0,sw0,u,v,w,h, &
   !$omp & dex,dey,dez,se0)
   do i=lo(1),uo(1)
     r=q(i,j,k,ir)
@@ -1645,7 +1688,7 @@ SUBROUTINE trace3d(self)
   do k=lo(3),uo(3)
   do j=lo(2),uo(2)
   !dir$ ivdep
-  !$omp simd private(drx,dry,drz,dpx,dpy,dpz,dex,dey,dez)
+  !$omp simd private(drx,dry,drz,dpx,dpy,dpz,dex,dey,dez,r,p,h)
   do i=lo(1),uo(1)
     r = rho_t(i,j,k)
     p = p_t(i,j,k)
@@ -2103,6 +2146,10 @@ SUBROUTINE cmp_mag_flx (self, qRT, qRB, qLT, qLB, lp1 ,lp2 ,lor ,bp1 , bp2, bor,
       qRL (i,2) = max(qLT(i-iLT,  5, xdim, j-jLT, k-kLT), smallp)
       qLR (i,2) = max(qRB(i-iRB,  5, xdim, j-jRB, k-kRB), smallp)
       qRR (i,2) = max(qLB(i-iLB,  5, xdim, j-jLB, k-kLB), smallp)
+      qLL (i,9) = qRT(i-iRT,  9, xdim, j-jRT, k-kRT)
+      qRL (i,9) = qLT(i-iLT,  9, xdim, j-jLT, k-kLT)
+      qLR (i,9) = qRB(i-iRB,  9, xdim, j-jRB, k-kRB)
+      qRR (i,9) = qLB(i-iLB,  9, xdim, j-jLB, k-kLB)
       qLL (i,3) = qRT(i-iRT,  lp1, xdim, j-jRT, k-kRT)
       qRL (i,3) = qLT(i-iLT,  lp1, xdim, j-jLT, k-kLT)
       qLR (i,3) = qRB(i-iRB,  lp1, xdim, j-jRB, k-kRB)
@@ -2202,8 +2249,7 @@ FUNCTION gas_pressure (self) RESULT (pg)
   if (isothermal) then
     pg = d*self%csound**2
   else
-    pg = (eos%gamma-1d0)* &
-      (e-0.5*(up(bx,1)**2+up(by,2)**2+up(bz,3)**2+(px**2+py**2+pz**2)/d))
+    pg = (eos%gamma-1d0)* e
   end if
   end associate
     contains
@@ -2226,14 +2272,12 @@ SUBROUTINE gravitational_force (self)
   real, dimension(:,:,:,:), pointer:: p
   integer:: i,j,k
   real, dimension(3):: wtp1, wtm1
-  real:: etemp
   !.............................................................................
   associate (l => self%li, u => self%ui)
   wtp1 = 0.50 * 4.0 / 3.0 / self%ds
   wtm1 = 0.25 * 1.0 / 3.0 / self%ds
   phi => self%mem(:,:,:,self%idx%phi,self%new,1)
   d   => self%mem(:,:,:,self%idx%d,self%new,1)
-  et  => self%mem(:,:,:,self%idx%e,self%new,1)
   p   => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
   allocate (gradphi1(self%gn(1),self%gn(2),self%gn(3)), &
             gradphi2(self%gn(1),self%gn(2),self%gn(3)), &
@@ -2242,10 +2286,6 @@ SUBROUTINE gravitational_force (self)
   do k=l(3),u(3)
     do j=l(2),u(2)
       do i=l(1),u(1)
-        ! calculate energy minus the kinetic energy
-        etemp = et(i,j,k) - 0.5 * p(i,j,k,1)**2 / d(i,j,k) &
-                          - 0.5 * p(i,j,k,2)**2 / d(i,j,k) &
-                          - 0.5 * p(i,j,k,3)**2 / d(i,j,k)
         ! calculate gradient of phi
         gradphi1(i,j,k) = wtp1(1) * (phi(i+1,j,k) - phi(i-1,j,k)) &
                  - wtm1(1) * (phi(i+2,j,k) - phi(i-2,j,k))
@@ -2257,10 +2297,6 @@ SUBROUTINE gravitational_force (self)
         p(i,j,k,1) = p(i,j,k,1) - self%dtime * d(i,j,k) * gradphi1(i,j,k)
         p(i,j,k,2) = p(i,j,k,2) - self%dtime * d(i,j,k) * gradphi2(i,j,k)
         p(i,j,k,3) = p(i,j,k,3) - self%dtime * d(i,j,k) * gradphi3(i,j,k)
-        ! update total energy with new momentum
-        et(i,j,k) = etemp + 0.5 * p(i,j,k,1)**2 / d(i,j,k) &
-                          + 0.5 * p(i,j,k,2)**2 / d(i,j,k) &
-                          + 0.5 * p(i,j,k,3)**2 / d(i,j,k)
       end do
     end do
   end do
