@@ -1233,8 +1233,8 @@ END FUNCTION debug
 SUBROUTINE task_info (self)
   class(task_t):: self
   !-----------------------------------------------------------------------------
-  write(io_unit%mpi,'(1x,a,40x,i6,2i4,2x,5x,2l1,2x,3f9.3)') &
-    'patch_t%task_info: id, BV, pos =', self%id, self%rank, self%level, &
+  write(io_unit%mpi,'(1x,a,40x,i6,":",i2.2,i4,2x,5x,2l1,2x,3f9.3)') &
+    'patch_t%task_info: id, BV, pos =', self%id, self%level, self%rank, &
     self%is_set(bits%boundary), self%is_set(bits%virtual), self%position
 END SUBROUTINE task_info
 
@@ -1245,7 +1245,7 @@ SUBROUTINE log (self, label, level)
   integer, optional:: level
   real(8):: now
   real(8), save:: last=0d0
-  integer, save:: ilog=0
+  integer, save:: ilog=1
   !-----------------------------------------------------------------------------
   if (io%task_logging > 0) then
     if (present(level)) then

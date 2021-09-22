@@ -1005,9 +1005,9 @@ SUBROUTINE nbor_info (self, task)
   real(8):: distance(3)
   !-----------------------------------------------------------------------------
   distance = self%task%distance(task)
-  write(io_unit%mpi,'(3x,a,i6,2i4,2x,3l1,2x,2l1,3x,3f9.3)') &
+  write(io_unit%mpi,'(3x,a,i6,":",i2.2,i4,2x,3l1,2x,2l1,3x,3f9.3)') &
     'pa_t%nbor_info: id, rank, level, needed, needs_me, download, BV, pos =', &
-    self%task%id, self%task%rank, self%task%level, self%needed, self%needs_me, &
+    self%task%id, self%task%level, self%task%rank, self%needed, self%needs_me, &
     self%download, self%task%is_set(bits%boundary), &
     self%task%is_set(bits%virtual), distance/ &
     (0.5d0*(task%size+self%task%size))

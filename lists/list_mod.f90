@@ -1154,6 +1154,7 @@ SUBROUTINE check_ready (self, link, lock, status)
     if (ok) then
       !$omp atomic write
       task%n_failed = 0
+      call task%log ('ready', 3)
       !.........................................................................
       if (self%verbose > 0) &
         write (stdlog,'(f12.6,1x,a,i6,f12.6)') wallclock(), &
@@ -1168,14 +1169,28 @@ SUBROUTINE check_ready (self, link, lock, status)
       ! while at verbose=2 we get a line for ever fail, and line on stderr for
       ! every 10000 failures
       !-------------------------------------------------------------------------
-      if (self%verbose > 1) then
+      if (self%verbose > 0) then
         if (associated(oldest)) then
+          if (io%task_logging > 2) then
+            write (io_unit%task, &
+              '(f12.6,i5,i4,i6,":",i2.2,f12.6,1p,e11.2,4x,a,i6,":",i2.2)') &
+              wallclock(), mpi%rank, omp%thread, task%id, task%level, &
+              task%time, task%dtime, 'failed', oldest%task%id, oldest%task%level
+            flush (io_unit%task)
+          end if
           write (io_unit%log,'(f12.6,i6,l3,f12.6,1x,a,i6,f12.6,i5,l3)') &
             wallclock(), task%id, task%is_set(bits%boundary), task%time, &
             'list_t%check_ready: failed with id, time, rank, V =', &
             oldest%task%id, t_oldest, oldest%task%rank, &
             oldest%task%is_set(bits%virtual)
         else
+          if (io%task_logging > 2) then
+            write (io_unit%task, &
+              '(f12.6,i5,i4,i6,":",i2.2,f12.6,1p,e11.2,4x,a)') &
+              wallclock(), mpi%rank, omp%thread, task%id, task%level, &
+              task%time, task%dtime, 'failed'
+            flush (io_unit%task)
+          end if
           write (io_unit%log,'(f12.6,i6,l3,f12.6,1x,a,i6,f12.6,i5,l3)') &
             wallclock(), task%id, task%is_set(bits%boundary), task%time, &
             'list_t%check_ready: failed with id, time, rank, V ='
@@ -1440,6 +1455,7 @@ SUBROUTINE add_new_link (self, link)
   ! Generate a new nbor list -- also checks support
   !-----------------------------------------------------------------------------
   call self%init_nbors (link)                                           ! RULE B
+  call link%info ('add_new_link')
   !-----------------------------------------------------------------------------
   ! If it is a boundary task, send it to rank nbors
   !-----------------------------------------------------------------------------

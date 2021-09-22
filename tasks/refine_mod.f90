@@ -663,8 +663,8 @@ SUBROUTINE selective_refine (self, patch, child_list, refine, &
     if (maxval(patch%frefine(l(1):u(1),l(2):u(2),l(3):u(3))) < 0.0) then
       !-----------------------------------------------------------------------
       if (verbose > 1) then
-        write (io_unit%log,'(1x,a,i6,":",i2,2x,"B:",l1,3x,a,i6,3x,a,f12.6)') &
-          'derefining!:', id, level, patch%is_set (bits%boundary), &
+        write (io_unit%log,'(1x,a,i6,":",i2.2,2x,"B:",l1,3x,a,i6,3x,a,f12.6)') &
+          'derefining:', id, level, patch%is_set (bits%boundary), &
           'istep:', patch%istep, 'time:', patch%time
         flush (io_unit%log)
       else if (verbose > 0) then
