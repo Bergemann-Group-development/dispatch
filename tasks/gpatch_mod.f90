@@ -65,7 +65,7 @@ MODULE gpatch_mod
   end type
   real(8), save :: restart_time = 0d0
   logical, save :: detailed_timer=.false.
-  logical, save :: extrapolate_gz=.false.            ! extrapolate guard zones?
+  logical, save :: extrapolate_gz=.true.            ! extrapolate guard zones?
   integer, save :: verbose=0
   integer, save :: order=1
   type(gpatch_t), public:: gpatch

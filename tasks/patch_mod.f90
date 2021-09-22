@@ -1243,7 +1243,6 @@ END SUBROUTINE make_periodic8
 !> Time extrapolate guard cell values, to allow using also guard zone values to
 !> get boundary conditions for higher level patches.  This is done before time
 !> slot rotation, so the slot that has just been updated is iit(nt).
-!> FIXME: Consider removal
 !===============================================================================
 SUBROUTINE extrapolate_guards (self)
   class(patch_t)        :: self
@@ -1251,6 +1250,8 @@ SUBROUTINE extrapolate_guards (self)
   integer               :: it0, it1, it2, nt
   integer, dimension(3) :: lb, lo, li, ub, uo, ui, i
   integer               :: iv
+  real                  :: dmin
+  real, pointer         :: d(:,:,:)
   type(lock_t), pointer :: lock
   integer, save         :: itimer=0
   !-----------------------------------------------------------------------------
@@ -1282,6 +1283,7 @@ SUBROUTINE extrapolate_guards (self)
   end if
   lock => self%mem_lock(it0)
   call self%lock%set ('patch_t%extrapolate_guards')
+  dmin = huge(1.)
   do iv=1,self%mv
     if (self%unsigned(iv)) then
       !-------------------------------------------------------------------------
@@ -1361,6 +1363,15 @@ SUBROUTINE extrapolate_guards (self)
       end if
     end if
   end do
+  d => self%mem(:,:,:,self%idx%d,it0,1)
+  dmin = min(dmin,minval(d(lb(1):ub(1),lb(2):ub(2),lb(3):lo(3))), &
+                  minval(d(lb(1):ub(1),lb(2):ub(2),uo(3):ub(3))), &
+                  minval(d(lb(1):ub(1),lb(2):lo(2),li(3):ui(3))), &
+                  minval(d(lb(1):ub(1),uo(2):ub(2),li(3):ui(3))), &
+                  minval(d(lb(1):lo(1),li(2):ui(2),li(3):ui(3))), &
+                  minval(d(uo(1):ub(1),li(2):ui(2),li(3):ui(3))))
+  write (stdlog,'(a,i6,1pe12.3)') &
+    'extrapolate_guards: id,dmin=', self%id, dmin
   call self%lock%unset ('patch_t%extrapolate_guards')
   call trace%end (itimer)
 END SUBROUTINE extrapolate_guards

@@ -208,7 +208,7 @@ SUBROUTINE update (self)
   real, dimension(:,:,:,:), allocatable:: f
   real:: u0, u1
   type(lock_t), pointer:: lock
-  integer:: n(3), i1, i2, i3, id
+  integer:: n(3), i1, i2, i3, id, l(3), u(3)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! The call to output below catches the state after both guard zone downloads
@@ -241,7 +241,16 @@ SUBROUTINE update (self)
   px => self%mem(:,:,:,self%idx%px,self%new,1)
   py => self%mem(:,:,:,self%idx%py,self%new,1)
   pz => self%mem(:,:,:,self%idx%pz,self%new,1)
-  ek = 0.5*(px**2+py**2+pz**2)/d
+  l = self%li
+  u = self%ui
+  do i3=l(3),u(3)
+  do i2=l(2),u(2)
+  do i1=l(1),u(1)
+    ek(i1,i2,i3) = 0.5*(px(i1,i2,i3)**2+py(i1,i2,i3)**2+pz(i1,i2,i3)**2) &
+                 / d(i1,i2,i3)
+  end do
+  end do
+  end do
   !-----------------------------------------------------------------------------
   ! Add the external force per unit mass as a source term
   !-----------------------------------------------------------------------------
@@ -250,9 +259,9 @@ SUBROUTINE update (self)
   if (associated(scratch%force_per_unit_mass)) then
     allocate (f(n(1),n(2),n(3),3))
     f = self%dtime*scratch%force_per_unit_mass
-    do i3=self%li(3),self%ui(3)
-    do i2=self%li(2),self%ui(2)
-    do i1=self%li(1),self%ui(1)
+    do i3=l(3),u(3)
+    do i2=l(2),u(2)
+    do i1=l(1),u(1)
       px(i1,i2,i3) = px(i1,i2,i3) + f(i1,i2,i3,1)*d(i1,i2,i3)
       py(i1,i2,i3) = py(i1,i2,i3) + f(i1,i2,i3,2)*d(i1,i2,i3)
       pz(i1,i2,i3) = pz(i1,i2,i3) + f(i1,i2,i3,3)*d(i1,i2,i3)
@@ -264,9 +273,9 @@ SUBROUTINE update (self)
   if (associated(scratch%force_per_unit_volume)) then
     allocate (f(n(1),n(2),n(3),3))
     f = self%dtime*scratch%force_per_unit_volume
-    do i3=self%li(3),self%ui(3)
-    do i2=self%li(2),self%ui(2)
-    do i1=self%li(1),self%ui(1)
+    do i3=l(3),u(3)
+    do i2=l(2),u(2)
+    do i1=l(1),u(1)
       px(i1,i2,i3) = px(i1,i2,i3) + f(i1,i2,i3,1)
       py(i1,i2,i3) = py(i1,i2,i3) + f(i1,i2,i3,2)
       pz(i1,i2,i3) = pz(i1,i2,i3) + f(i1,i2,i3,3)
@@ -278,16 +287,24 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Adjust the total energy
   !-----------------------------------------------------------------------------
-  e = e + (0.5*(px**2+py**2+pz**2)/d - ek)
+  do i3=l(3),u(3)
+  do i2=l(2),u(2)
+  do i1=l(1),u(1)
+    e(i1,i2,i3) = &
+    e(i1,i2,i3) + (0.5*(px(i1,i2,i3)**2+py(i1,i2,i3)**2+pz(i1,i2,i3)**2) &
+                / d(i1,i2,i3) - ek(i1,i2,i3))
+  end do
+  end do
+  end do
   !call validate%check (self%link, p, 'after force')
   !-----------------------------------------------------------------------------
   ! Add the external heating per unit mass as a source term
   !-----------------------------------------------------------------------------
   if (associated(scratch%heating_per_unit_mass)) then
     ek = self%dtime*scratch%heating_per_unit_mass
-    do i3=self%li(3),self%ui(3)
-    do i2=self%li(2),self%ui(2)
-    do i1=self%li(1),self%ui(1)
+    do i3=l(3),u(3)
+    do i2=l(2),u(2)
+    do i1=l(1),u(1)
       e(i1,i2,i3) = e(i1,i2,i3) + ek(i1,i2,i3)*d(i1,i2,i3)
       e(i1,i2,i3) = e(i1,i2,i3) + ek(i1,i2,i3)*d(i1,i2,i3)
       e(i1,i2,i3) = e(i1,i2,i3) + ek(i1,i2,i3)*d(i1,i2,i3)
@@ -505,11 +522,6 @@ SUBROUTINE godunov (self)
       end do
     end if
   end do
-  !-----------------------------------------------------------------------------
-  ! Update guard zone values by extrapolating from previous values
-  !-----------------------------------------------------------------------------
-  call self%extrapolate_guards ()
-  call check_small (self, unew)
   if (detailed_timer) then
     call trace%end (itimer)
   else
