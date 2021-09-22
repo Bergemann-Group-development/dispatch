@@ -221,36 +221,19 @@ def _var(patch,filed,snap,verbose=0,copy=None):
         return f
 
     def xdn(f):
-        if patch.kind[0:4] == 'zeus' or patch.kind[0:7] == 'stagger' or patch.kind[0:6] == 'ramses':
-            return dnup(f,1,0)
-        else:
-            return f
+        return dnup(f,1,0)
     def ydn(f):
-        if patch.kind[0:4] == 'zeus' or patch.kind[0:7] == 'stagger' or patch.kind[0:6] == 'ramses':
-            return dnup(f,1,1)
-        else:
-            return f
+        return dnup(f,1,1)
     def zdn(f):
-        if patch.kind[0:4] == 'zeus' or patch.kind[0:7] == 'stagger' or patch.kind[0:6] == 'ramses':
-            return dnup(f,1,2)
-        else:
-            return f
+        return dnup(f,1,2)
 
     def xup(f):
-        if patch.kind[0:4] == 'zeus' or patch.kind[0:7] == 'stagger' or patch.kind[0:6] == 'ramses':
-            return dnup(f,-1,0)
-        else:
-            return f
+        return dnup(f,-1,0)
     def yup(f):
-        if patch.kind[0:4] == 'zeus' or patch.kind[0:7] == 'stagger' or patch.kind[0:6] == 'ramses':
-            return dnup(f,-1,1)
-        else:
-            return f
+        return dnup(f,-1,1)
     def zup(f):
-        if patch.kind[0:4] == 'zeus' or patch.kind[0:7] == 'stagger' or patch.kind[0:6] == 'ramses':
-            return dnup(f,-1,2)
-        else:
-            return f
+        return dnup(f,-1,2)
+
 
     def internal(v,all=False):
         if all or len(v.shape) < 3 or min(v.shape) <= 4:
@@ -310,6 +293,7 @@ def _var(patch,filed,snap,verbose=0,copy=None):
         is_ln=False
         is_vel=False
         is_hlls=False
+        is_hlld=False
         if snap.io.method.strip()=='parallel':
             is_ln = ((patch.ioformat-6)/2==0
                   or (patch.ioformat-10)//2==0)
@@ -320,6 +304,7 @@ def _var(patch,filed,snap,verbose=0,copy=None):
         is_staggered = patch.kind[0:4] == 'zeus' or patch.kind[0:7] == 'stagger'
         tot_e = patch.kind[0:6] == 'ramses'
         is_hlls = patch.kind[0:8] == 'ramses_s'
+        is_hlld = patch.kind[0:4] == 'hlld'
         if verbose:
             print("is_ln:",is_ln)
             print("is_vel:",is_vel)
@@ -401,6 +386,8 @@ def _var(patch,filed,snap,verbose=0,copy=None):
                 """ Expressions common to all other solvers """
                 if patch.ioformat==14 or patch.ioformat==15:
                     v=mem('e')
+                elif is_hlld:
+                    v=mem('e')/mem('d')
                 elif not is_staggered:
                     v = (mem('e')-var('ekin',all=True,verbose=verbose)-var('emag',all=True,verbose=verbose))/mem('d')
                 else:
@@ -415,7 +402,7 @@ def _var(patch,filed,snap,verbose=0,copy=None):
                         var('uz',all=True,verbose=verbose)**2)
             # magnetic energy
             elif iv=='emag':
-                v=0.125*(
+                v=0.5*(
                         xup(var('bx',all=True,verbose=verbose))**2+
                         yup(var('by',all=True,verbose=verbose))**2+
                         zup(var('bz',all=True,verbose=verbose))**2)
