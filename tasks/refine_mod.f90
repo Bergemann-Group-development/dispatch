@@ -578,7 +578,6 @@ SUBROUTINE selective_refine (self, patch, child_list, refine, &
       do k=1,ratio_per_dim(3)
         do j=1,ratio_per_dim(2)
           do i=1,ratio_per_dim(1)
-            refine = max (refine, check_support2 (self, patch, [i,j,k]))
             !-------------------------------------------------------------------
             ! Lower and upper index in parent patch
             !-------------------------------------------------------------------
@@ -1456,105 +1455,76 @@ END FUNCTION refine_region
 !===============================================================================
 FUNCTION check_support (self, link) RESULT (refine)
   class(refine_t):: self
-  class(link_t), pointer:: link
+  class(link_t), pointer:: link, nblink
   integer:: refine
   !.............................................................................
   class(task_t), pointer:: patch, nbpatch
   class(nbor_t), pointer:: nbor
-  integer:: i1, i2, i3, ratio(3)
+  type(region_t):: roa
+  real(8), dimension(3):: size, position, distance
+  integer:: i1, i2, i3, ii(3), ratio(3), key(4), l(3), n(3)
   !-----------------------------------------------------------------------------
   call trace%begin ('refine_t%check_support')
   call link%lock%set ('check_support')
   patch => link%task
+  refine = -1
   select type (patch)
   class is (solver_t)
     ratio = merge(self%ratio, 1, patch%n>1)
-    refine = -1
     !---------------------------------------------------------------------------
-    ! Loop over nbor tasks and investigate level L+2 cases
+    ! Tests of the possible sub-patch positions return 0 if there already
+    ! exists one or more sub-patches, and +1 if a new one is needed
     !---------------------------------------------------------------------------
-    nbor => link%nbor
-    do while (associated(nbor))
-      nbpatch => nbor%task
-      if (nbpatch%level == patch%level+2) then
+    size = patch%size/ratio
+    do i3=1,ratio(3)
+    do i2=1,ratio(2)
+    do i1=1,ratio(1)
+      ii = [i1,i2,i3]
+      position = patch%position + (ii-(1+ratio)/2.0)*size
+      key = patch%hash_key (position, size, patch%level+1)
+      call self%task_list%hash_table%get (key, nblink)
+      if (associated(nblink)) then
         !-----------------------------------------------------------------------
-        ! The mere existence of a level L+2 task prevents derefinement
+        ! If a patch exists, prevent derefine
         !-----------------------------------------------------------------------
         refine = max(0,refine)
+      else
         !-----------------------------------------------------------------------
-        ! Tests of the possible sub-patch positions return 0 if there already
-        ! exists one or more sub-patches, and +1 if a new one is needed
+        ! If no patch exists there, check if an L+2 nbor's ROI overlaps with
+        ! the ROA of the non-existing L+1 patch
         !-----------------------------------------------------------------------
-        do i3=1,ratio(3)
-        do i2=1,ratio(2)
-        do i1=1,ratio(1)
-          refine = max (refine, check_support2 (self, patch, [i1,i2,i3]))
-        end do
-        end do
+        position = ([i1,i2,i3]-(1+ratio)/2.0)*size
+        roa%l = position - size/2d0
+        roa%u = position + size/2d0
+        nbor => patch%link%nbor
+        do while (associated(nbor))
+          nbpatch => nbor%task
+          if (nbpatch%level == patch%level+2) then
+            select type (nbpatch)
+            class is (solver_t)
+              distance = nbpatch%distance_to (patch)
+              if (nbpatch%interest%overlaps (roa, distance)) then
+                refine = max(1,refine)
+                n = patch%n/ratio
+                l = patch%li + n/2 + n*(ii-1)
+                patch%frefine(l(1),l(2),l(3)) = 1.0
+              end if
+            end select
+          end if
+          if (nbpatch%id==129) then
+            write (stdlog,'(a,2(i6,":",i2.2),3i3,i4)') &
+              'check_support2: id,nb,refine=', &
+              patch%id, patch%level, nbpatch%id, nbpatch%level, ii, refine
+          end if
+          nbor => nbor%next
         end do
       end if
-      nbor => nbor%next
+    end do
+    end do
     end do
   end select
   call link%lock%unset ('check_support')
   call trace%end ()
 END FUNCTION check_support
-
-!===============================================================================
-!> Check if refinement is needed to support some level L+2 task that overlaps
-!> with index position ii(3) relative to the level L link task
-!===============================================================================
-FUNCTION check_support2 (self, patch, ii) RESULT (refine)
-  class(refine_t):: self
-  class(solver_t):: patch
-  integer:: ii(3), refine
-  !.............................................................................
-  class(task_t), pointer:: nbpatch
-  class(link_t), pointer:: nblink
-  class(nbor_t), pointer:: nbor
-  integer:: ratio(3), key(4)
-  real(8), dimension(3):: size, position, distance
-  type(region_t):: roa
-  !-----------------------------------------------------------------------------
-  call trace%begin ('refine_t%check_support2')
-  ratio = merge(self%ratio, 1, patch%n>1)
-  size = patch%size/ratio
-  !-----------------------------------------------------------------------------
-  ! Assume until disproven that based on support the patch allows derefinement
-  !-----------------------------------------------------------------------------
-  refine = -1
-  nbor => patch%link%nbor
-  do while (associated(nbor))
-    nbpatch => nbor%task
-    if (nbpatch%level == patch%level+2) then
-      select type (nbpatch)
-      class is (patch_t)
-        !---------------------------------------------------------------------
-        ! Compoute region-of-authority for the sub-patch and check overlap
-        !---------------------------------------------------------------------
-        position = patch%position + (ii-(1+ratio)/2.0)*size
-        roa%l = position - size/2d0
-        roa%u = position + size/2d0
-        distance = nbpatch%distance_to (patch)
-        if (nbpatch%interest%overlaps (roa, distance)) then
-          !-------------------------------------------------------------------
-          ! There is overlap, so check if a patch already exists, and
-          ! signal that one is neeeded if not
-          !-------------------------------------------------------------------
-          key = patch%hash_key (position, size, patch%level+1)
-          call self%task_list%hash_table%get (key, nblink)
-          if (associated(nblink)) then
-            refine = 0
-          else
-            refine = 1
-            exit
-          end if
-        end if
-      end select
-    end if
-    nbor => nbor%next
-  end do
-  call trace%end ()
-END FUNCTION check_support2
 
 END MODULE refine_mod
