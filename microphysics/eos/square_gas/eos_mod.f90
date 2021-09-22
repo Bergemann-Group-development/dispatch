@@ -123,6 +123,7 @@ SUBROUTINE init (self)
   real, save:: EiMin  = 2.00466172E+12
   real, save:: EiMax  = 2.42065997E+15
   real, save:: mu_l = 0.62
+  real,save:: gamma=5.0e0/3.0e0
   character(len=2), dimension(30), save:: cel = ''
   real, dimension(3), save:: abund   = 0.0
   real, dimension(3), save:: aweight = 0.0
@@ -137,7 +138,7 @@ SUBROUTINE init (self)
   real:: mudens, muntot, lneir
   real, dimension(:),pointer:: lnei
   !.....................................................................
-  namelist /eos_params/ table_loc, tabparam
+  namelist /eos_params/ table_loc, tabparam, gamma
   namelist /tabpar/     EOSTableFile, RhoEiRadTableFile, NeTgRadTableFile, &
                         nRhoBin, RhoMin, RhoMax, nEiBin, EiMin, EiMax, nRadBins
   !-----------------------------------------------------------------------------
@@ -158,6 +159,7 @@ SUBROUTINE init (self)
     if (io%master) write (*,tabpar)
     close(io_unit%nml1)
     !
+    self%gamma = gamma
     self%nd = nrhobin
     self%ne = neibin
     self%n_lambda = nradbins
