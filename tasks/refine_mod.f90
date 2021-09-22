@@ -221,7 +221,7 @@ MODULE refine_mod
   real:: max_compress=0.0                     ! Tolerance value for compression (negative divergence)
   integer:: max_compress_level=-1             ! Max refinement level on compression
   real:: max_vorticity=0.0                    ! Tolerance value for vorticity
-  real:: derefine_limit=0.8                   ! Fraction of criterion to allow derefinement
+  real:: derefine_limit=0.4                   ! Fraction of criterion to allow derefinement
   integer, parameter:: ngradvar=10            ! Number of gradient variables
   real, dimension(3):: region_llc=0.0         ! Sometimes you want to refine a region (manually)
   real, dimension(3):: region_urc=0.0         ! upper-right-corner of region
@@ -433,6 +433,8 @@ FUNCTION refine_needed (self, link) RESULT (refine)
   class is (solver_t)
   patch => task
   refine = -1
+  call patch%support_arrays ()
+  patch%frefine = -derefine_limit
   !-----------------------------------------------------------------------------
   ! Support refinement
   !-----------------------------------------------------------------------------
@@ -452,8 +454,6 @@ FUNCTION refine_needed (self, link) RESULT (refine)
   end if
   !-----------------------------------------------------------------------------
   patch%check_refine_next = patch%istep + check_interval
-  call patch%support_arrays ()
-  patch%frefine = -derefine_limit
   !-----------------------------------------------------------------------------
   ! Extras refinement
   !-----------------------------------------------------------------------------
