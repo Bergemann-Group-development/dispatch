@@ -77,6 +77,10 @@ def patch(p,copy=False,aux=True):
             k = 'ux' if k=='p1' else k
             k = 'uy' if k=='p2' else k
             k = 'uz' if k=='p3' else k
+        elif p.kind[0:4]=='hlld':
+            k = 'ux' if k=='p1' else k
+            k = 'uy' if k=='p2' else k
+            k = 'uz' if k=='p3' else k
         else: 
             print (p.kind)
         key = tr[k] if k in tr.keys() else k
