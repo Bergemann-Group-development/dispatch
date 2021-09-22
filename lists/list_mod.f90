@@ -427,6 +427,7 @@ SUBROUTINE remove_and_reset (self, link)
   ! considered in check_ready() calls, and also that the task is no longer
   ! counted in check_ready() calls to nbors of it.
   !-----------------------------------------------------------------------------
+                                        call self%qlock%set ('remove_and_reset')
   call link%task%set (bits%remove)            ! cf. check_ready() and unpack()
   !-----------------------------------------------------------------------------
   ! Send a suicide note to virtual nbors, if this is a boundary patch
@@ -446,9 +447,11 @@ SUBROUTINE remove_and_reset (self, link)
   call self%lock%set ('remove_and_reset')  ! lock task list while changing
   call self%remove_link (link)             ! remove link from task list
   call self%lock%unset ('remove_and_reset')! release the task list
+  call self%init_nbors (link)              ! make a fresh nbor list
   call self%check_nbors (link)             ! check nbors, now link is removed
   call self%set_init_nbors (link)          ! trigger new nbor lists on nbors
   call link%garbage_collect (link)         ! add to garbage bin
+                                      call self%qlock%unset ('remove_and_reset')
   call trace%end()
 END SUBROUTINE remove_and_reset
 
@@ -839,7 +842,7 @@ SUBROUTINE check_all (self, repair)
   call self%qlock%set ('check_all')
   link => self%head
   do while (associated (link))                          ! keep going until end
-    if (link%task%is_clear (bits%virtual+bits%external)) then
+    if (link%task%is_clear (bits%virtual+bits%external+bits%remove)) then
       call self%check_ready (link)                      ! link ready?
       if (self%nq > nq) then
         write (io_unit%log,*) 'check_all found', link%task%id, link%task%time
@@ -1259,7 +1262,7 @@ SUBROUTINE qconsistency (self, ident)
   if (io%verbose>2) then
     link => self%head
     do while (associated(link))
-      print *,'task list: id, time =', link%task%id, link%task%time
+      print *,'task list: id,time=', link%task%id, link%task%time
       link => link%next
     end do
     print *,'nq:', self%nq
@@ -1272,12 +1275,12 @@ SUBROUTINE qconsistency (self, ident)
     task => link%task
     time = task%time
     if (io%verbose>2) then
-      print *,'queue: n, id, time =', n, link%task%id, link%task%time, &
+      print *,'queue: n,id,time,rb=', n, link%task%id, link%task%time, &
         link%task%is_set (bits%ready), link%task%is_set (bits%busy)
     end if
     if (task%time < time) then
       write (io_unit%log,'(a,i4,2(i9,1p,g15.6,3x))') &
-        'ERROR: queue out of order ident, prev%id, time, task%id', &
+        'ERROR: queue out of order ident,prev%id,time,task%id=', &
         ident, prev%id, time, task%id, task%time
     end if
     prev => task
@@ -1285,7 +1288,7 @@ SUBROUTINE qconsistency (self, ident)
   end do
   if (n /= self%nq) then
     write (io_unit%log,*) &
-      'ERROR: qconsistency ident, n, nq, ident =', ident, n, self%nq
+      'ERROR: qconsistency ident,n,nq,ident=', ident, n, self%nq
     n = 0
     link => self%queue
     do while (associated(link))
@@ -2190,9 +2193,11 @@ SUBROUTINE queue_by_time (self, this)
     io%do_trace = .true.
     verbose = io%verbose
     io%verbose = 4
+                                             call self%qlock%set ('queue error')
     call self%qconsistency (999)
     call self%check_all (repair=.true.)
     call real_queue_by_time (self, this, error)
+                                           call self%qlock%unset ('queue error')
     if (error) then
       print *,'ERROR: queue repair failed'
       call io%abort('queue_by_time: repair failed')
@@ -2217,13 +2222,15 @@ SUBROUTINE real_queue_by_time (self, this, error)
   !-----------------------------------------------------------------------------
   error=.false.
   task => this%task
-  if (task%is_set (bits%virtual + bits%frozen)) then
+  if (task%is_set (bits%virtual + bits%frozen + bits%remove)) then
     write(stderr,*) mpi%rank, omp%thread, &
-      'ERROR: tried to queue virtual or frozen task, VF =', &
-      task%is_set(bits%virtual), task%is_set(bits%frozen)
+      'ERROR: tried to queue virtual, frozen or removed task, VFR =', &
+      task%is_set(bits%virtual), task%is_set(bits%frozen), &
+      task%is_set(bits%remove)
     write(io_unit%log,*) mpi%rank, omp%thread, &
-      'ERROR: tried to queue virtual or frozen task, VF =', &
-      task%is_set(bits%virtual), task%is_set(bits%frozen)
+      'ERROR: tried to queue virtual, frozen or removed task, VFR =', &
+      task%is_set(bits%virtual), task%is_set(bits%frozen), &
+      task%is_set(bits%remove)
     return
   end if
   !-----------------------------------------------------------------------------
@@ -2267,7 +2274,8 @@ SUBROUTINE real_queue_by_time (self, this, error)
     next => self%queue
     nit = 0
     do while (associated(next))
-      nit = nit+1
+      if (next%task%is_clear (bits%remove)) &
+        nit = nit+1
       if (nit > self%nq) then
         print *,'ERROR: hang in queue_by_time, nit,nq=', nit, self%nq
         if (.not.task%finished) then
@@ -2296,7 +2304,6 @@ SUBROUTINE real_queue_by_time (self, this, error)
             write (io_unit%log,*) 'task',task%id,' at ready queue head',self%nq
           end if
         end if
-!print *, this%task%id, 'queued(1)', omp%thread
         !$omp atomic
         self%nq = self%nq+1
         go to 9
@@ -2304,7 +2311,7 @@ SUBROUTINE real_queue_by_time (self, this, error)
       prev => next
       next => next%next_time
     end do
-!print *, this%task%id, 'queued(2)', omp%thread
+    !$omp atomic
     self%nq = self%nq+1
     if (associated(prev)) then
       if (self%verbose > 0) then
