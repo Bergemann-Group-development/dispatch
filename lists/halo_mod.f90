@@ -193,11 +193,14 @@ SUBROUTINE download (self, nbors, only, all_tgt, all_src)
   !-----------------------------------------------------------------------------
   ! Check if we need to use a coarse level clone.
   ! FIXME: Cases where all level L-1 nbors are covered by level L nbors need
-  ! not use a coarse clone. The case with 26 same level nbors is a special case.
+  ! not use a coarse clone. The case with 26 same level nbors is a special case,
+  ! but there are additional ones to discover.
   !-----------------------------------------------------------------------------
   n_same = 0
   nbor => nbors
   do while (associated(nbor))
+    if (nbor%task%is_set (bits%remove)) &
+      nbor%download = .false.
     if (nbor%download) then
       source => nbor%task
       if (verbose > 1) then
