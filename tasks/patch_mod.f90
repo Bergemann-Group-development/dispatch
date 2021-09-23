@@ -1244,16 +1244,17 @@ END SUBROUTINE make_periodic8
 !> get boundary conditions for higher level patches.  This is done before time
 !> slot rotation, so the slot that has just been updated is iit(nt).
 !===============================================================================
-SUBROUTINE extrapolate_guards (self)
-  class(patch_t)        :: self
+SUBROUTINE extrapolate_guards (self, target_mem)
+  class(patch_t):: self
+  real(var_k), pointer, optional:: target_mem(:,:,:,:)
   !.............................................................................
-  integer               :: it0, it1, it2, nt
-  integer, dimension(3) :: lb, lo, li, ub, uo, ui, i
-  integer               :: iv
-  real                  :: dmin
-  real, pointer         :: d(:,:,:)
-  type(lock_t), pointer :: lock
-  integer, save         :: itimer=0
+  real(var_k), pointer:: targ_mem(:,:,:,:)
+  type(lock_t), pointer:: lock
+  integer, dimension(3):: lb, lo, li, ub, uo, ui, i
+  integer:: it0, it1, it2, nt, iv
+  real, pointer:: d(:,:,:)
+  real:: dmin
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%extrapolate_guards', 3, itimer=itimer)
   nt = self%nt
@@ -1284,16 +1285,21 @@ SUBROUTINE extrapolate_guards (self)
   lock => self%mem_lock(it0)
   call self%lock%set ('patch_t%extrapolate_guards')
   dmin = huge(1.)
+  if (present(target_mem)) then
+    targ_mem => target_mem
+  else
+    targ_mem => self%mem(:,:,:,:,it0,1)
+  end if
   do iv=1,self%mv
     if (self%unsigned(iv)) then
       !-------------------------------------------------------------------------
       ! XY-layers (Z varies the least)
       !-------------------------------------------------------------------------
       if (self%gn(3) > 1) then
-            self%mem(lb(1):ub(1),lb(2):ub(2),lb(3):lo(3),iv,it0,1) = exp(  &
+            targ_mem(lb(1):ub(1),lb(2):ub(2),lb(3):lo(3),iv      ) = exp(  &
         log(self%mem(lb(1):ub(1),lb(2):ub(2),lb(3):lo(3),iv,it1,1))*2. - &
         log(self%mem(lb(1):ub(1),lb(2):ub(2),lb(3):lo(3),iv,it2,1)) )
-            self%mem(lb(1):ub(1),lb(2):ub(2),uo(3):ub(3),iv,it0,1) = exp(  &
+            targ_mem(lb(1):ub(1),lb(2):ub(2),uo(3):ub(3),iv      ) = exp(  &
         log(self%mem(lb(1):ub(1),lb(2):ub(2),uo(3):ub(3),iv,it1,1))*2. - &
         log(self%mem(lb(1):ub(1),lb(2):ub(2),uo(3):ub(3),iv,it2,1)) )
       end if
@@ -1303,10 +1309,10 @@ SUBROUTINE extrapolate_guards (self)
       li(3) = self%mesh(3)%li
       ui(3) = self%mesh(3)%ui
       if (self%gn(2) > 1) then
-            self%mem(lb(1):ub(1),lb(2):lo(2),li(3):ui(3),iv,it0,1) = exp(  &
+            targ_mem(lb(1):ub(1),lb(2):lo(2),li(3):ui(3),iv      ) = exp(  &
         log(self%mem(lb(1):ub(1),lb(2):lo(2),li(3):ui(3),iv,it1,1))*2. - &
         log(self%mem(lb(1):ub(1),lb(2):lo(2),li(3):ui(3),iv,it2,1)) )
-            self%mem(lb(1):ub(1),uo(2):ub(2),li(3):ui(3),iv,it0,1) = exp(  &
+            targ_mem(lb(1):ub(1),uo(2):ub(2),li(3):ui(3),iv      ) = exp(  &
         log(self%mem(lb(1):ub(1),uo(2):ub(2),li(3):ui(3),iv,it1,1))*2. - &
         log(self%mem(lb(1):ub(1),uo(2):ub(2),li(3):ui(3),iv,it2,1)) )
       end if
@@ -1316,10 +1322,10 @@ SUBROUTINE extrapolate_guards (self)
       li(2) = self%mesh(2)%li
       ui(2) = self%mesh(2)%ui
       if (self%gn(1) > 1) then
-            self%mem(lb(1):lo(1),li(2):ui(2),li(3):ui(3),iv,it0,1) = exp(  &
+            targ_mem(lb(1):lo(1),li(2):ui(2),li(3):ui(3),iv      ) = exp(  &
         log(self%mem(lb(1):lo(1),li(2):ui(2),li(3):ui(3),iv,it1,1))*2. - &
         log(self%mem(lb(1):lo(1),li(2):ui(2),li(3):ui(3),iv,it2,1)) )
-            self%mem(uo(1):ub(1),li(2):ui(2),li(3):ui(3),iv,it0,1) = exp(  &
+            targ_mem(uo(1):ub(1),li(2):ui(2),li(3):ui(3),iv      ) = exp(  &
         log(self%mem(uo(1):ub(1),li(2):ui(2),li(3):ui(3),iv,it1,1))*2. - &
         log(self%mem(uo(1):ub(1),li(2):ui(2),li(3):ui(3),iv,it2,1)) )
       end if
@@ -1328,10 +1334,10 @@ SUBROUTINE extrapolate_guards (self)
       ! XY-layers (Z varies the least)
       !-------------------------------------------------------------------------
       if (self%gn(3) > 1) then
-        self%mem(lb(1):ub(1),lb(2):ub(2),lb(3):lo(3),iv,it0,1) =   &
+        targ_mem(lb(1):ub(1),lb(2):ub(2),lb(3):lo(3),iv      ) =   &
         self%mem(lb(1):ub(1),lb(2):ub(2),lb(3):lo(3),iv,it1,1)*2. - &
         self%mem(lb(1):ub(1),lb(2):ub(2),lb(3):lo(3),iv,it2,1)
-        self%mem(lb(1):ub(1),lb(2):ub(2),uo(3):ub(3),iv,it0,1) =   &
+        targ_mem(lb(1):ub(1),lb(2):ub(2),uo(3):ub(3),iv      ) =   &
         self%mem(lb(1):ub(1),lb(2):ub(2),uo(3):ub(3),iv,it1,1)*2. - &
         self%mem(lb(1):ub(1),lb(2):ub(2),uo(3):ub(3),iv,it2,1)
       end if
@@ -1341,10 +1347,10 @@ SUBROUTINE extrapolate_guards (self)
       li(3) = self%mesh(3)%li
       ui(3) = self%mesh(3)%ui
       if (self%gn(2) > 1) then
-        self%mem(lb(1):ub(1),lb(2):lo(2),li(3):ui(3),iv,it0,1) =   &
+        targ_mem(lb(1):ub(1),lb(2):lo(2),li(3):ui(3),iv      ) =   &
         self%mem(lb(1):ub(1),lb(2):lo(2),li(3):ui(3),iv,it1,1)*2. - &
         self%mem(lb(1):ub(1),lb(2):lo(2),li(3):ui(3),iv,it2,1)
-        self%mem(lb(1):ub(1),uo(2):ub(2),li(3):ui(3),iv,it0,1) =   &
+        targ_mem(lb(1):ub(1),uo(2):ub(2),li(3):ui(3),iv      ) =   &
         self%mem(lb(1):ub(1),uo(2):ub(2),li(3):ui(3),iv,it1,1)*2. - &
         self%mem(lb(1):ub(1),uo(2):ub(2),li(3):ui(3),iv,it2,1)
       end if
@@ -1354,25 +1360,27 @@ SUBROUTINE extrapolate_guards (self)
       li(2) = self%mesh(2)%li
       ui(2) = self%mesh(2)%ui
       if (self%gn(1) > 1) then
-        self%mem(lb(1):lo(1),li(2):ui(2),li(3):ui(3),iv,it0,1) =   &
+        targ_mem(lb(1):lo(1),li(2):ui(2),li(3):ui(3),iv      ) =   &
         self%mem(lb(1):lo(1),li(2):ui(2),li(3):ui(3),iv,it1,1)*2. - &
         self%mem(lb(1):lo(1),li(2):ui(2),li(3):ui(3),iv,it2,1)
-        self%mem(uo(1):ub(1),li(2):ui(2),li(3):ui(3),iv,it0,1) =   &
+        targ_mem(uo(1):ub(1),li(2):ui(2),li(3):ui(3),iv      ) =   &
         self%mem(uo(1):ub(1),li(2):ui(2),li(3):ui(3),iv,it1,1)*2. - &
         self%mem(uo(1):ub(1),li(2):ui(2),li(3):ui(3),iv,it2,1)
       end if
     end if
   end do
-  d => self%mem(:,:,:,self%idx%d,it0,1)
+  d => targ_mem(:,:,:,self%idx%d)
   dmin = min(dmin,minval(d(lb(1):ub(1),lb(2):ub(2),lb(3):lo(3))), &
                   minval(d(lb(1):ub(1),lb(2):ub(2),uo(3):ub(3))), &
                   minval(d(lb(1):ub(1),lb(2):lo(2),li(3):ui(3))), &
                   minval(d(lb(1):ub(1),uo(2):ub(2),li(3):ui(3))), &
                   minval(d(lb(1):lo(1),li(2):ui(2),li(3):ui(3))), &
                   minval(d(uo(1):ub(1),li(2):ui(2),li(3):ui(3))))
-  write (stdlog,'(a,i6,1pe12.3)') &
-    'extrapolate_guards: id,dmin=', self%id, dmin
   call self%lock%unset ('patch_t%extrapolate_guards')
+  !.............................................................................
+  if (io%verbose > 1) &
+    write (stdlog,'(a,i6,1pe12.3)') &
+      'extrapolate_guards: id,dmin=', self%id, dmin
   call trace%end (itimer)
 END SUBROUTINE extrapolate_guards
 

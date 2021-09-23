@@ -347,6 +347,21 @@ SUBROUTINE make_coarse (self, nbors, only)
   coarse%time = self%task%time
   coarse%t = coarse%time
   !-----------------------------------------------------------------------------
+  ! If the child lacks support; i.e., if not all level L-1 nbors are present,
+  ! then time extrapolate from the parent patch to the coarse patch:
+  !-----------------------------------------------------------------------------
+  if (target%is_set (bits%no_support)) then
+    source => self%task%parent
+    write (unit,'(a,2(i6,":",i2.2))') &
+      'halo_t%make_coarse: target,source=', &
+      coarse%id, coarse%level, source%id, source%level
+    target_mem => coarse%mem(:,:,:,:,1,1)
+    select type (source)
+    class is (patch_t)
+    call source%extrapolate_guards (target_mem)
+    end select
+  end if
+  !-----------------------------------------------------------------------------
   ! Run through the child nbor list and update the clone from the nbors;
   ! taking care to only use the nbors that are valid for the child, and also
   ! taking care not to use any other higher level nbors.  One of the child
@@ -419,9 +434,33 @@ SUBROUTINE make_coarse (self, nbors, only)
   call dbg (self%task, ' after s2t')
   deallocate (coarse%mem, coarse%t, coarse%iit)
   deallocate (coarse)
+  !-----------------------------------------------------------------------------
+  ! Now add / overwrite the guard zones covered by level L and L+1 nbors
+  !-----------------------------------------------------------------------------
+  target => self%task         ! the self%task to fill guard zones in
+  if (present(nbors)) then
+    nbor => nbors
+  else
+    nbor => self%nbor
+  end if
+  do while (associated(nbor))
+    if (nbor%task%level >= target%level .and. nbor%download) then
+      !.........................................................................
+      if (verbose > 0 .or. target%id == io%id_debug) then
+        write (unit,'(a,2(i6,":",i2.2))') &
+          'halo_t%make_coarse: target,nbor  =', &
+          target%id, target%level, nbor%task%id, nbor%task%level
+        flush (unit)
+      end if
+      !.........................................................................
+      call guards%source_to_target (nbor%task, target, only=only)
+    end if
+    nbor => nbor%next
+  end do
   call trace%end (itimer)
 END SUBROUTINE make_coarse
 
+!===============================================================================
 SUBROUTINE dbg (target, label)
   class(task_t):: target
   character(*):: label

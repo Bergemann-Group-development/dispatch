@@ -157,11 +157,11 @@ SUBROUTINE source_to_target (self, source, target, all_tgt, all_src, n_op, &
       else if (source%level == target%level) then
         type = 'same'
         call self%same (target, source, all_tgt, all_src, only)
-        n_op  (1) = n_op(1) + 1
+        if (present(n_op)) n_op  (1) = n_op(1) + 1
       else if (source%level == target%level-1) then
         type = 'prolong'
         call self%prolong (target, source, all_tgt, all_src, only)
-        n_op(2) = n_op(2) + 1
+        if (present(n_op)) n_op(2) = n_op(2) + 1
       else if (source%level == target%level+1) then
         type = 'restrict'
         !-----------------------------------------------------------------------
@@ -183,7 +183,7 @@ SUBROUTINE source_to_target (self, source, target, all_tgt, all_src, n_op, &
           call self%restrict (target, source, all_tgt, all_src, only)
           !call conserve%restrict (target, source, all_tgt, all_src, only)
         end if
-        n_op(3) = n_op(3) + 1
+        if (present(n_op)) n_op(3) = n_op(3) + 1
       end if
       if (verbose > 0 .or. target%id == io%id_debug &
                       .or. source%id == io%id_debug) then
