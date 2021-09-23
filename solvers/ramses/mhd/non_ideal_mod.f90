@@ -30,6 +30,7 @@ MODULE non_ideal_mod
     real:: mp
     real:: kB
     real:: NA  
+    real:: u_factor  
     real,dimension(200) :: rhoarr
     real,dimension(60)  :: Tarr
     real,dimension(150) :: Barr
@@ -61,12 +62,12 @@ CONTAINS
 SUBROUTINE init (self)
   class (non_ideal_t):: self
   integer:: iostat
-  real:: gamma_AD=75., rho_ions=1.0, eta_Ohm=0.0, etaMD=0.0
+  real:: gamma_AD=75., rho_ions=1.0, eta_Ohm=0.0, etaMD=0.0, u_factor=10.
   logical:: mhd_AD=.false., mhd_Ohm=.false., ntestDADM=.true.
   logical, save:: first_time=.true.
   integer:: verbose=0
   namelist /non_ideal_params/ gamma_AD, eta_Ohm, etaMD, rho_ions, mhd_AD, &
-    mhd_Ohm, ntestDADM, verbose
+    mhd_Ohm, ntestDADM, verbose, u_factor
   !---------------------------------------------------------------------------
   call io%lock%set('non_ideal_mod%init')
   if (first_time) then
@@ -86,6 +87,7 @@ SUBROUTINE init (self)
   self%is_used  = mhd_Ohm .or. mhd_AD
   self%ntestDADM=ntestDADM
   self%verbose = verbose
+  self%u_factor = u_factor
   if ( (self%is_used .eqv. .true.) .and. (self%ntestDADM .eqv. .false.) ) then
     self%eta_Ohm_tbl = 0.d0
     self%eta_AD_tbl  = 0.d0
@@ -174,7 +176,7 @@ subroutine non_ideal_comp(self,mesh,idx,bf,uin,qin,fluxambdiff,emfambdiff, &
        florentzz,fluxad,bmagij,emfambdiff,fluxambdiff,jxbsquare,ds,dt)
      l = mesh%lo
      u = mesh%uo
-     u_max = max(u_max, maxval( 1.* &
+     u_max = max(u_max, maxval( self%u_factor * &
        uin(l(1):u(1),l(2):u(2),l(3):u(3),idx%bx)**2 + &
        uin(l(1):u(1),l(2):u(2),l(3):u(3),idx%by)**2 + &
        uin(l(1):u(1),l(2):u(2),l(3):u(3),idx%bz)**2 / &
@@ -795,7 +797,6 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy, &
     pi = 4.*atan(1.d0)
     c2_4pi = 7.152426325648638e+19
     Bcode_to_Gauss = scaling%b !(4.d0*pi*scale_d)**0.5*scale_v
-    print*, 'scale_v,scale_d,scale_l,scale_t,scale_T2,Bcode_to_Gauss',scale_v,scale_d,scale_l,scale_t,scale_T2,Bcode_to_Gauss
   endif
 
   !dt est deja dtnew, qui a été choisi comme le dt normal (avec la condition de courant) ou le dt normal seuillé si le dtAD est trop faible(bricolo)

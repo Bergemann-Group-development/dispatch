@@ -47,12 +47,12 @@ SUBROUTINE init (self)
   first_time = .false.
 
   call cgs%init
-  self%l = 1d17                                           ! length; cm
-  self%m = 1.989e33                                     ! mass; g
+  self%l = 2d17                                         ! length; 2 * the cloud length in cm
+  self%m = 1.989e33                                     ! 1 solar mass in g
   self%d = self%m/self%l**3                             ! mass density; g cm**-3
-  self%grav = cgs%grav                            ! gravitational constant
-  self%t = sqrt(1d0 / (self%d * cgs%grav) )          ! time; s
+  self%t = 1e13                                         ! time; s
   self%u = self%l/self%t                                ! speed
+  self%grav = cgs%grav *scaling%d * scaling%t**2        ! gravitational constant
   self%p = self%d*self%u**2                             ! pressure = energy density
   self%e = self%m*self%u**2                             ! energy
   self%f = self%p*self%u                                ! energy flux = P u
