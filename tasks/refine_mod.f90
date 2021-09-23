@@ -552,7 +552,7 @@ SUBROUTINE selective_refine (self, patch, child_list, refine, &
   integer, dimension(3)    :: l, u, n
   real(8), dimension(3)    :: size, pos
   logical                  :: already_refined, refined
-  integer                  :: refine_it, ratio_per_dim(3), key(4)
+  integer                  :: refine_it, ratio_per_dim(3), key(4), n_sub
   integer                  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('refine_t%selective_refine', itimer=itimer, &
@@ -607,6 +607,7 @@ SUBROUTINE selective_refine (self, patch, child_list, refine, &
                   'selective_refine: existed=', &
                   old_link%task%id, l(1),u(1), l(2),u(2), l(3),u(3)
               refined = .true.
+              refine = max(0,refine)
             else
               if (refine_it > 0) then
                 was_refined = .true.
@@ -615,13 +616,13 @@ SUBROUTINE selective_refine (self, patch, child_list, refine, &
                 ! Create a refined patch here
                 !---------------------------------------------------------------
                 if (verbose > 1) &
-                  write (io_unit%log,'(f12.6,a,i6,1p2g16.5,2x,3(i4,":",i2.2))') &
+                  write (stdlog,'(f12.6,a,i6,1p2g16.5,2x,3(i4,":",i2.2))') &
                     wallclock(), pad_trace(1:indent)// &
                     'refine', patch%id, &
                     patch%fmaxval(patch%mem(:,:,:,patch%idx%d,patch%it,1)), &
                     maxval(patch%mem(l(1):u(1),l(2):u(2),l(3):u(3), patch%idx%d, &
                     patch%it,1)), l(1),u(1),l(2),u(2),l(3),u(3)
-                call patch%log ('refine', 2)
+                call patch%log ('refine', 1)
                 call make_child_patch (self, patch, pos, size, child)
                 !---------------------------------------------------------------
                 ! Allocate a tempory task link and append it to the child list,
@@ -632,13 +633,13 @@ SUBROUTINE selective_refine (self, patch, child_list, refine, &
                 call child_list%append (link, keep=.true.)
                 !---------------------------------------------------------------
                 if (verbose > 0) &
-                  write (io_unit%log,'(f12.6,2(a,i6,":",i2.2,2x),a,2l1,1p,e14.5)')  &
+                  write (stdlog,'(f12.6,2(a,i6,":",i2.2,2x),a,2l1,1p,e14.5)')  &
                     wallclock(), pad_trace(1:indent)// &
                     'refine:'   ,  id, level, &
                     'to'        ,  child%id, child%level, &
                     'BV:', child%is_set(bits%boundary), child%is_set(bits%virtual), &
                     child%time
-                flush (io_unit%log)
+                flush (stdlog)
                 !---------------------------------------------------------------
               end if
             end if
@@ -649,46 +650,63 @@ SUBROUTINE selective_refine (self, patch, child_list, refine, &
   end if
   !-----------------------------------------------------------------------------
   ! Then, consider if the whole patch should be derefined.  This requires that
-  ! it has no higher level patch inside (would trigger patch%refine > 0 there),
-  ! and secondly that frefine(:,:,:) indicates that derefine would be OK
+  ! it has no higher level patch inside (would trigger patch%refine >= 0 there),
+  ! and secondly that frefine(:,:,:) indicates that derefine would be OK.
+  ! Also check the nbor list for level L+1 nbors
   !-----------------------------------------------------------------------------
   if (refine == -1                .and. &               ! derefine possible
       patch%level > self%levelmin .and. &               ! relevant?
       patch%check_refine_next > 0 .and. &               ! not immediately!
       patch%istep >= 4            .and. &               ! must take 4 steps
+      patch%is_clear (bits%init_nbors) .and. &          ! no pending init_nbors
       .not.refined) then                                ! not if refined!
     l = patch%mesh%li
     u = patch%mesh%ui
     if (maxval(patch%frefine(l(1):u(1),l(2):u(2),l(3):u(3))) < 0.0) then
-      !-----------------------------------------------------------------------
-      if (verbose > 1) then
-        write (io_unit%log,'(1x,a,i6,":",i2.2,2x,"B:",l1,3x,a,i6,3x,a,f12.6)') &
-          'derefining:', id, level, patch%is_set (bits%boundary), &
-          'istep:', patch%istep, 'time:', patch%time
-        flush (io_unit%log)
-      else if (verbose > 0) then
-        write (io_unit%log,'(f12.6,a,i6,":",i2.2,16x,a,2l1,1p,e14.5)') &
-          wallclock(), pad_trace(1:indent)// &
-          'derefine:' ,  id, level, 'BV:', &
-          patch%is_set(bits%boundary), patch%is_set(bits%virtual), patch%time
-      end if
       !-------------------------------------------------------------------------
-      ! If task is to be removed, call the comprehensive remove procedure, which
+      ! Check if there are any level L+1 nbors; these would be outside this
+      ! patch, and hence not detected by the conditions above
+      !-------------------------------------------------------------------------
+      n_sub = 0
+      nbor => patch%link%nbor
+      do while (associated(nbor))
+        if (nbor%task%level == patch%level+1) then
+          n_sub = n_sub+1
+        end if
+        nbor => nbor%next
+      end do
+      !-------------------------------------------------------------------------
+      ! If task is to be removed, call a comprehensive remove procedure, which
       ! includes calling set_init_nbors(), queueing all nbors for immediate
       ! update of their nbor lists.
       !-------------------------------------------------------------------------
-      write (stderr,'(a,i6,":",i2.2,f12.6)') 'derefine:', &
-        patch%id, patch%level, patch%time
-      call patch%log ('derefine', 2)
-      call data_io%update_counters (patch, -1)
-      call self%task_list%remove_and_reset (link)
-      was_derefined = .true.
+      if (n_sub == 0) then
+        !.......................................................................
+        if (verbose > 1) then
+          write (stdlog,'(1x,a,i6,":",i2.2,2x,"B:",l1,3x,a,i6,3x,a,f12.6)') &
+            'derefining:', id, level, patch%is_set (bits%boundary), &
+            'istep:', patch%istep, 'time:', patch%time
+        else if (verbose > 0) then
+          write (stdlog,'(f12.6,a,i6,":",i2.2,16x,a,2l1,1p,e14.5)') &
+            wallclock(), pad_trace(1:indent)// &
+            'derefine:' ,  id, level, 'BV:', &
+            patch%is_set(bits%boundary), patch%is_set(bits%virtual), patch%time
+        end if
+        !.......................................................................
+        write (stderr,'(a,i6,":",i2.2,f12.6)') 'derefine:', &
+          patch%id, patch%level, patch%time
+        !.......................................................................
+        call patch%log ('derefine', 1)
+        call data_io%update_counters (patch, -1)
+        call self%task_list%remove_and_reset (link)
+        was_derefined = .true.
+      end if
     end if
   end if
   call trace%end (itimer, detailed_timer=detailed_timer)
 END SUBROUTINE selective_refine
 
-!============================================ ===================================
+!============================================ ==================================
 !> Post process the list of child tasks created by refine%check()
 !===============================================================================
 SUBROUTINE post_process (self, patch, child_list)
