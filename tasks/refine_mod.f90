@@ -693,9 +693,6 @@ SUBROUTINE selective_refine (self, patch, child_list, refine, &
             patch%is_set(bits%boundary), patch%is_set(bits%virtual), patch%time
         end if
         !.......................................................................
-        write (stderr,'(a,i6,":",i2.2,f12.6)') 'derefine:', &
-          patch%id, patch%level, patch%time
-        !.......................................................................
         call patch%log ('derefine', 1)
         call data_io%update_counters (patch, -1)
         call self%task_list%remove_and_reset (link)

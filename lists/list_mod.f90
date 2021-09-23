@@ -600,7 +600,8 @@ SUBROUTINE count_status (self, label)
   integer, save:: itimer=0
   !.............................................................................
   call trace%begin ('list_t%count_status', itimer=itimer)
-  call self%lock%set ('count_status', itimer)
+  call self%lock%set  ('count_status', itimer)
+  call self%qlock%set ('count_status', itimer)
   nb=0; ni=0; nv=0; ne=0; nf=0; n = 0; no = 0; nq = 0
   link => self%head
   do while (associated(link))
@@ -655,7 +656,8 @@ SUBROUTINE count_status (self, label)
     end if
   end if
   self%na = n - nv - ne
-  call self%lock%unset ('count_status')
+  call self%qlock%unset ('count_status')
+  call self%lock%unset  ('count_status')
   !-----------------------------------------------------------------------------
   ! Set the counters that affect I/O decisions
   !-----------------------------------------------------------------------------
@@ -2239,7 +2241,7 @@ SUBROUTINE real_queue_by_time (self, this, error)
   logical:: error
   class(link_t), pointer:: next, prev, link
   class(task_t), pointer:: task
-  integer:: nit, i, j
+  integer:: n, i, j, nq
   !-----------------------------------------------------------------------------
   ! Refuse to queue virtual tasks
   !-----------------------------------------------------------------------------
@@ -2295,18 +2297,15 @@ SUBROUTINE real_queue_by_time (self, this, error)
                                            call self%qlock%set ('queue_by_time')
     nullify (prev)
     next => self%queue
-    nit = 0
+    n = 0
+    !$omp atomic read
+    nq = self%nq
     do while (associated(next))
-      if (next%task%is_clear (bits%remove)) &
-        nit = nit+1
-      if (nit > self%nq) then
-        print *,'ERROR: hang in queue_by_time, nit,nq=', nit, self%nq
-        if (.not.task%finished) then
-          error = .true.
-        end if
-                                         call self%qlock%unset ('queue_by_time')
-        return
+      if (n > nq) then
+        write (io_unit%task,*) 'WARNING:  queue_by_time, nq,n=', self%nq, n
       end if
+      if (next%task%is_clear (bits%remove)) &
+        n = n+1
       if (associated(next%task, task)) then
         write (io_unit%log,*) omp_mythread, ' WARNING: task', task%id, &
           ' is already in ready queue'

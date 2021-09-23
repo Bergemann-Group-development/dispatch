@@ -645,7 +645,6 @@ SUBROUTINE end_game (self, task)
     !$omp critical (finish_cr)
     task%finished = .true.
     na = self%na
-    call self%count_status                          ! make sure counts are OK
     if (self%na /= na) &
       write (io_unit%mpi,*) 'task_list_t%end_game: na revised', na, self%na
     if (first_finished == 0.0) then
