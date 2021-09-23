@@ -6,31 +6,49 @@ MODULE params_mod
                                             stdout=>output_unit, &
                                             stderr=>error_unit
   implicit none
-  integer, parameter, public :: realkind=8 ! = 4 (8) for  single (double) precision calculation
+
+  integer, parameter :: realkind=8 ! = 4 (8) for  single (double) precision calculation
   integer :: stdlog = stdout
   type :: io_t
     integer :: input=23
+    character(len=200) :: inputname='input.nml'
     character(len=200) :: run_dir='./'
+  contains
+    procedure :: init
   end type
-  type(io_t), public :: io
+  type(io_t) :: io
   !
-  integer, parameter, public :: ndim = 3
+  integer, parameter :: ndim = 3
   integer, dimension(ndim) :: n=16  ! number of interior points in a patch
   integer, dimension(ndim) :: ng=2  ! number of cells in a ghostzone of a patch
   !
-  real(kind=realkind), parameter:: pi = asin(1.0) * 2.0
-  real(kind=realkind) :: Gnewton=1.0_realkind ! G for gravity
+  real(kind=realkind), parameter :: pi = asin(1.0) * 2.0
+  !
+  private :: init
 CONTAINS
+!===============================================================================
+! Basic init of the model
+!===============================================================================
+SUBROUTINE init(self)
+  class(io_t) :: self
+  character(len=200) :: filename
+  !
+  call getarg(1,filename)                                     ! command line argument
+  if (trim(filename)/='') then                                ! set namelist name
+    self%inputname = trim(filename)
+  end if
+  open (self%input, file=self%inputname, form='formatted', status='old') ! open input file
+END SUBROUTINE init
 !===============================================================================
 ! Function to do simple timing
 !===============================================================================
 FUNCTION wallclock() result (time)
   real(kind=8)           :: time
-  real(kind=8), save     :: offset
+  real(kind=8), save     :: offset = 0.0_8
   real(kind=8), external :: omp_get_wtime
   !.............................................................................
   time = omp_get_wtime()
-  if (offset == 0d0) then
+  if (offset == 0.0_8) then
     offset=time
   end if
   time = time-offset
@@ -182,7 +200,7 @@ MODULE poisson_mod
     procedure, nopass:: zero_boundaries
   end type
   real,    save:: floor=1e-2, tolerance=1e-4
-  real(kind=realkind), save :: fourPiG=4.0_realkind*acos(-1.0_realkind)
+  real(kind=realkind), save :: fourPiG=4.0_realkind*acos(-1.0_realkind) ! = 4 pi
   integer, save:: verbose=0
   integer, save:: max_iter=500
   integer, save:: dump_unit=0
@@ -203,12 +221,11 @@ SUBROUTINE init (self)
   !.............................................................................
   character(len=12), save :: solver='sor'
   logical,           save :: first_time = .true.
-  namelist /poisson_params/ tolerance, floor, max_iter, fourPiG, &
+  namelist /poisson_params/ tolerance, floor, max_iter, &
                             verbose, solver, chebyshev, do_dump
   !-----------------------------------------------------------------------------
   if (first_time) then
     first_time = .false.
-    fourPiG = fourPiG * Gnewton ! compute 4 * pi * G based on global unit 
     rewind (unit=io%input)
     read (io%input,poisson_params)
     write (*, poisson_params)
@@ -246,7 +263,7 @@ END SUBROUTINE calc_source
 !===============================================================================
 SUBROUTINE sor (self, patch, phi1, d, lb, ub)
   class(poisson_t)  :: self
-  class(patch_t)    :: patch
+  type(patch_t)    :: patch
   real(kind=realkind), dimension(:,:,:)             :: phi1
   real(kind=realkind), dimension(:,:,:), intent(in) :: d
   integer, optional:: lb(3), ub(3)
@@ -382,9 +399,9 @@ SUBROUTINE sor (self, patch, phi1, d, lb, ub)
   else if (verbose > 0) then
     usppt = 1e6 * (wallclock() - wc) / product(shape(phi))
     !...........................................................................
-    write (unit,'(f12.6,a,i7,i5,3x,2e12.3,f8.2,1p,g12.2)') &
+    write (unit,'(f12.6,a,i7,i5,3x,2e12.3,f8.2,1p,g12.3)') &
       wallclock(), &
-      'poisson_t%sor: id, niter, initial/final error, us/pt, 4piG=', &
+      ' poisson_t%sor: id, niter, initial/final error, us/pt, 4piG=', &
       patch%id, iter, error0, error, usppt, fourPiG
     !...........................................................................
   end if
@@ -462,7 +479,8 @@ MODULE experiment_mod
     procedure:: init
   end type
   type(experiment_t), public :: experiment
-  real(kind=realkind) :: amplitude, width, global_center(ndim)
+  real(kind=realkind) :: amplitude = 1.0, width = 0.2
+  real(kind=8)        :: global_center(ndim)
 CONTAINS
 !===============================================================================
 !> Setup initial conditions 
@@ -476,21 +494,25 @@ SUBROUTINE init(self)
   integer :: i,j,k
   integer,             dimension(ndim) :: dims
   real(kind=realkind), dimension(ndim) :: patch_size
-  real(kind=8),        dimension(ndim) :: position
+  real(kind=8),        dimension(ndim) :: position, size
   type(link_t), pointer :: l
  
-  namelist /cartesian_params/ n, ng, level  
+  namelist /cartesian_params/ level, size
+  namelist /patch_params/ n, ng
   namelist /experiment_params/ amplitude,width,global_center
   !-----------------------------------------------------------------------------
   if (first_time) then
     first_time = .false.
+    size = 1.0_8
     rewind (io%input)
     read (io%input, cartesian_params)
     write (stdout, cartesian_params)
 
-    global_center = 0.5_realkind
-    amplitude = 1.0
-    width = 0.1    
+    rewind (io%input)
+    read (io%input, patch_params)
+    write (stdout, patch_params)
+
+    global_center = 0.5_8*size
     rewind (io%input)
     read (io%input, experiment_params)
     write (stdout, experiment_params)
@@ -499,7 +521,7 @@ SUBROUTINE init(self)
   !-----------------------------------------------------------------------------
   ! Allocate patch data and compute initial condition
   !-----------------------------------------------------------------------------
-  patch_size = 1.0_realkind / real(dims, kind=realkind)
+  patch_size = size / real(dims, kind=realkind)
   allocate(patch_mesh(dims(1),dims(2),dims(3)))
   do k=1,dims(3)
   do j=1,dims(2)
@@ -517,6 +539,7 @@ SUBROUTINE init(self)
       tail => l
     else
       head => l
+      tail => l
       nullify(l%prev)
     endif
     patch_mesh(i,j,k)%l => l
@@ -533,19 +556,18 @@ SUBROUTINE initial_conditions(p)
   implicit none
   class(patch_t) :: p
   integer :: i,j,k
-  real(kind=8), dimension(ndim) :: pos,center, ids
+  real(kind=8), dimension(ndim) :: pos,center
   !
   if (.not. associated(p%density)) then
     allocate(p%density(p%gn(1),p%gn(2),p%gn(3)))
     allocate(p%phi(p%gn(1),p%gn(2),p%gn(3)))
   endif
   p%phi = 0.                                ! zero potential
-  ids = 1.0_8 / p%ds                        ! inverse of cell size
-  center = p%p - (p%n / 2 + p%ng + 0.5)*ids ! offset to compute cell center position
+  center = p%p - (p%n / 2 + p%ng + 0.5)*p%ds ! offset to compute cell center position
   do k=p%lb(3),p%ub(3)  ! FIXME, we compute values in ghostzones. Ideally, they should be communicated across patches
-  do j=p%lb(2),p%ub(2) 
-  do i=p%lb(1),p%ub(1) 
-    pos = (/i, j, k/)*ids + center 
+  do j=p%lb(2),p%ub(2)
+  do i=p%lb(1),p%ub(1)
+    pos = (/i, j, k/)*p%ds + center 
     ! make density distribution a Gaussian
     p%density(i,j,k) =  amplitude / sqrt(2.0_realkind * pi * width) * &
                           exp( - sum((pos - global_center)**2) / (2.0_realkind * width**2) )
@@ -569,6 +591,7 @@ PROGRAM poisson_mockup
   real(kind=realkind), dimension(:,:,:), pointer :: d, phi
 
   ! setup phase
+  call io%init()         ! basic init of code
   call poisson%init()    ! set up poisson solver
   call experiment%init() ! set up patches with initial density distribution 
 
@@ -577,13 +600,13 @@ PROGRAM poisson_mockup
   !$omp master
   l => head
   do while (associated(l))
-    l => l%next
     !$omp task firstprivate(l)
     call poisson%calc_source(l%patch)
     d => l%patch%density
     phi => l%patch%phi
     call poisson%update(l%patch, phi, d)
     !$omp end task
+    l => l%next
   enddo
   !$omp taskwait
   !$omp end master

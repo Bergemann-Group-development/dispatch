@@ -1,0 +1,16 @@
+&cartesian_params   size=3*1.0 level=2 /
+
+&patch_params       n=3*28 ng=2 /
+
+&poisson_params     floor=1e-4 tolerance=1e-4 max_iter=200
+                    verbose=1 solver='sor' /
+
+&experiment_params  amplitude=1.0 width=0.2 global_center=3*0.5 /
+
+! Not used currently
+!&io_params          verbose=0 do_trace=f omp_trace=t do_output=t
+!                    method='background'
+!                    id_debug=-4
+!                    task_logging=0 namelist_errors=t guard_zones=t /
+!&out_params         end_time=0.491 start_time=0.42 out_time=0.01
+!                    print_every=1 /

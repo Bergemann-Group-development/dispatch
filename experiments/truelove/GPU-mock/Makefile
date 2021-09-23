@@ -16,13 +16,15 @@ SOLVER          = ramses/hydro
 #SOLVER          = stagger2
 EXEC            = dispatch.x
 TOP             = ../../..
+
+poisson_mock.x: poisson_mock.f90
+	$(F90) $(FFLAGS) poisson_mock.f90 -o poisson_mock.x
+
 sinclude $(TOP)/config/Makefile
 VPATH := ../:$(VPATH)
 
 # List the .o files the main program depends on after the colon:
 $(EXEC): setup_mod.o cartesian_mod.o dispatcher_mod.o initial_conditions_mod.o
-
-poisson_mock.x:
 
 # Dependencies
 experiment_mod.o        : io_mod.o trace_mod.o kinds_mod.o bits_mod.o solver_mod.o pboundary_mod.o
