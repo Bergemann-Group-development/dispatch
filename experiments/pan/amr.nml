@@ -11,10 +11,10 @@
 &task_params            verbose=0 /
 
 ! --- I/O parameters -----------------------------------------------------------
-&out_params             end_time=0.10 out_time=0.010 print_every=100 /
+&out_params             end_time=0.10 out_time=0.020 print_every=500 /
 &io_params              verbose=0 do_trace=f omp_trace=t do_output=t restart=-2
-                        task_logging=3 log_interval=20 guard_zones=t time_derivs=0
-                        method='background' format=10 nml_version=3 /
+                        task_logging=0 log_interval=300 guard_zones=t time_derivs=0
+                        method='background' /
 &time_slices_params     order=3 /
 &amr_io_params          verbose=0 nt=2 /
 &pdf_io_params          on=f verbose=0 out_time=0.02 nbins=201 bin_min=-12. bin_max=8. /
@@ -22,15 +22,14 @@
 &validate_params        mode='' /
 
 ! --- Refinement and guard zone parameters -------------------------------------
-&refine_params          on=t verbose=2 levelmin=6 levelmax=8
+&refine_params          on=t verbose=0 levelmin=6 levelmax=9
                         min_jeans=16
                         max_vorticity=6
                         max_compress=8 max_compress_level=7
                         check_interval=1 /
-&download_params        verbose=0 sorted=t check_filled=t /
-&prolong_params         verbose=0 fix_nml=f /
-&guard_zone_params      verbose=0 method='simple' /
-&remesh_params          verbose=0 order=0 /
+&halo_params            verbose=0 /
+&guards_params          verbose=0 /
+&intrp_params           verbose=0 /
 
 ! --- Initial conditions and forces --------------------------------------------
 &cooling_params         on=f /
@@ -55,7 +54,7 @@
 !lock_params            verbose=0 alternate_time=15 verbose_time=0 tasks=t /
 &counters_params        verbose=0 /
 &dispatcher_params      verbose=0 method=0 /
-&dispatcher0_params     verbose=0 retry_stalled=10 /
+&dispatcher0_params     verbose=0 retry_stalled=10 max_stalled=20 /
 &task_list_params       verbose=0 detailed_timer=f dead_mans_hand=60 /
 &task_mesg_params       verbose=0 /
 &mpi_mesg_params        verbose=0 /
