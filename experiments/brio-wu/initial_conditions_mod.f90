@@ -303,7 +303,7 @@ SUBROUTINE init (self)
   ! Set boundary values
   ! -------------------------------------------------------------------
   !
-  if (associated(et)) then
+  if (associated(e1)) then
     deallocate (e1)
   else
     nullify (e1)
