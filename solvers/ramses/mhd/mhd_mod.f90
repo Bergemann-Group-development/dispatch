@@ -323,13 +323,9 @@ SUBROUTINE update (self)
   lock => self%mem_lock(self%new)
                                                         call lock%set ('update')
   !-----------------------------------------------------------------------------
-  ! First copy everything, to fill guard zones
-  !-----------------------------------------------------------------------------
-  call self%extrapolate_guards ()
-  nv3 = 5
-  !-----------------------------------------------------------------------------
   ! Divergence updates
   !-----------------------------------------------------------------------------
+  nv3 = 5
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3  ) = &
    uin(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3  ) + &
     fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3,1) - &
@@ -370,7 +366,6 @@ SUBROUTINE update (self)
       em(i0  :i1  ,j0+1:j1+1,k0  :k1  ,1) ) - &
     ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,2)   - &
       em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,2) ))
-  end associate
   call self%check_density ('rames/mhd_t%update')
   !-----------------------------------------------------------------------------
   ! Save the current value of the kinetic energy
@@ -381,7 +376,10 @@ SUBROUTINE update (self)
   px => self%mem(:,:,:,self%idx%px,self%new,1)
   py => self%mem(:,:,:,self%idx%py,self%new,1)
   pz => self%mem(:,:,:,self%idx%pz,self%new,1)
-  ek = 0.5*(px**2+py**2+pz**2)/d
+  ek(i0:i1,j0:j1,k0:k1) = 0.5*( &
+  px(i0:i1,j0:j1,k0:k1)**2 + &
+  py(i0:i1,j0:j1,k0:k1)**2 + &
+  pz(i0:i1,j0:j1,k0:k1)**2)/d(i0:i1,j0:j1,k0:k1)
   !-----------------------------------------------------------------------------
   ! Add the external force per unit mass as a source term
   !-----------------------------------------------------------------------------
@@ -398,7 +396,13 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Adjust the total energy
   !-----------------------------------------------------------------------------
-  e = e + (0.5*(px**2+py**2+pz**2)/d - ek)
+  e(i0:i1,j0:j1,k0:k1) = &
+     e(i0:i1,j0:j1,k0:k1) + (0.5*( &
+    px(i0:i1,j0:j1,k0:k1)**2 + &
+    py(i0:i1,j0:j1,k0:k1)**2 + &
+    pz(i0:i1,j0:j1,k0:k1)**2)/d(i0:i1,j0:j1,k0:k1) - &
+    ek(i0:i1,j0:j1,k0:k1))
+  end associate
   deallocate (ek)
   !-----------------------------------------------------------------------------
   ! Reset the energy variable in isothermal cases
