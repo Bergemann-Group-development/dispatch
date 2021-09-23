@@ -341,7 +341,7 @@ SUBROUTINE check (self, tasklist, link, was_refined, was_derefined)
   end if
   if (verbose > 2) then
     if (link%task%is_set (bits%init_nbors)) &
-      write(io_unit%log,'(i6,f12.6,4x,a,3x,2l1)') &
+      write(stdlog,'(i6,f12.6,4x,a,3x,2l1)') &
         link%task%id, link%task%time, 'has bits%init_nbors', &
         link%task%is_set (bits%boundary), &
         link%task%is_set (bits%virtual)
@@ -361,7 +361,7 @@ SUBROUTINE check (self, tasklist, link, was_refined, was_derefined)
   dxmin = minval(patch%ds)
   dxmax = maxval(patch%ds)
   if (verbose > 1) then
-    write (io_unit%log,'(f12.6,a,i6,":",i2.2,i6,2i4,l3,1p,2(2x,2e11.2))') &
+    write (stdlog,'(f12.6,a,i6,":",i2.2,i6,2i4,l3,1p,2(2x,2e11.2))') &
       wallclock(), pad_trace(1:indent)// &
       'refine_t%check: id,id0,istep,next,V,dx_min,dx_max =', &
       id, level, id0, patch%istep, patch%check_refine_next, &
@@ -397,7 +397,7 @@ SUBROUTINE check (self, tasklist, link, was_refined, was_derefined)
       deallocate (child_list)
     end if
     if (verbose > 2) &
-      write (io_unit%log,*) 'deallocated irefine in refine', mpi%rank, id
+      write (stdlog,*) 'deallocated irefine in refine', mpi%rank, id
     !---------------------------------------------------------------------------
   end if
   !-----------------------------------------------------------------------------
@@ -819,7 +819,7 @@ SUBROUTINE make_child_patch (self, parent, pos, child_size, &
     print *, 'make_child_patch: mpi%rank, parent%rank =', mpi%rank, parent%rank
     call io%abort ('make_child_patch: wrong MPI rank')
   end if
-  call parent%log ('refine', 3)
+  call parent%log ('make_child', 3)
   !-----------------------------------------------------------------------------
   ! Allocate a new task, 1/nsplit the size of original one, and adjust its
   ! position in each direction with "pos", in units of the new size.
@@ -1206,9 +1206,9 @@ FUNCTION shock_and_cd_detector (self, patch) RESULT (refine)
   if (patch%level == self%levelmin) refine = max(refine,0)
   if (verbose > 1) then
     if (refine > 0) then
-      write (io_unit%log,*) 'shock_and_cd_detector: refine', patch%id, patch%level, self%levelmax
+      write (stdlog,*) 'shock_and_cd_detector: refine', patch%id, patch%level, self%levelmax
     else if (refine < 0) then
-      write (io_unit%log,*) 'shock_and_cd_detector: derefine', patch%id, patch%level, self%levelmin
+      write (stdlog,*) 'shock_and_cd_detector: derefine', patch%id, patch%level, self%levelmin
     end if
   end if
   !
@@ -1323,9 +1323,9 @@ FUNCTION gradient_detector (self, patch) RESULT (refine)
     end do
     if (verbose > 1) then
       if (refine > 0) then
-        write (io_unit%log,*) 'gradient_detector: refine ', grad_var(n), patch%id
+        write (stdlog,*) 'gradient_detector: refine ', grad_var(n), patch%id
       else if (refine < 0) then
-        write (io_unit%log,*) 'gradient_detector: derefine ', grad_var(n), patch%id
+        write (stdlog,*) 'gradient_detector: derefine ', grad_var(n), patch%id
       end if
     end if
   end do
@@ -1503,18 +1503,22 @@ FUNCTION check_support (self, link) RESULT (refine)
             select type (nbpatch)
             class is (solver_t)
               distance = nbpatch%distance_to (patch)
+              !-----------------------------------------------------------------
+              ! If the regions overlap, signal refinement and mark center
+              !-----------------------------------------------------------------
               if (nbpatch%interest%overlaps (roa, distance)) then
                 refine = max(1,refine)
                 n = patch%n/ratio
                 l = patch%li + n/2 + n*(ii-1)
                 patch%frefine(l(1),l(2),l(3)) = 1.0
+                !...............................................................
+                if (verbose > 2) &
+                  write (stdlog,'(a,2(i6,":",i2.2),3i3)') &
+                    'refine_t%check_support: patch,nbpatch,ipos=', &
+                    patch%id, patch%level, nbpatch%id, nbpatch%level, ii
+                !...............................................................
               end if
             end select
-          end if
-          if (nbpatch%id==129) then
-            write (stdlog,'(a,2(i6,":",i2.2),3i3,i4)') &
-              'check_support2: id,nb,refine=', &
-              patch%id, patch%level, nbpatch%id, nbpatch%level, ii, refine
           end if
           nbor => nbor%next
         end do

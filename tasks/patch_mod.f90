@@ -1784,6 +1784,7 @@ SUBROUTINE courant_condition (self, detailed_timer)
   logical, optional:: detailed_timer
   real(8):: dtime, ds(3), courant, dsmin
   integer:: i2
+  integer, save:: nprint=10
   logical, parameter:: save_dbg=.false.
   !.............................................................................
   call trace%begin('patch_t%courant_condition')
@@ -1826,6 +1827,14 @@ SUBROUTINE courant_condition (self, detailed_timer)
   end if
   !$omp atomic write
   self%dtime = dtime
+  if (dtime < 1e-7) then
+    if (nprint > 0) then
+      print *,'WARNING: id,dtime=', self%id, self%dtime
+      nprint = nprint-1
+    else
+      call io%abort ('patch_t: courant_condition dmin')
+    end if
+  end if
   !-----------------------------------------------------------------------------
   ! Force the time step to give exactly sync_time if within reach (active only
   ! if/when self%sync_time is being updated).  Syncing to a common time makes
@@ -2560,7 +2569,8 @@ SUBROUTINE time_interval (self, time, jt, pt, all, id, extrap, it)
   real                            :: grace
   integer, save                   :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('patch_t%time_interval', 2, itimer=itimer)
+  if (timer%detailed) &
+    call trace%begin ('patch_t%time_interval', 2, itimer=itimer)
   grace = self%grace + shared%extra_grace
   if (self%nt==1) then
     jt = 1
@@ -2658,7 +2668,8 @@ SUBROUTINE time_interval (self, time, jt, pt, all, id, extrap, it)
       write(io%output,'(a,9f10.4)') 'time_interval:   t =', t
     end if
   end if
-  call trace%end (itimer)
+  if (timer%detailed) &
+    call trace%end (itimer)
 END SUBROUTINE time_interval
 
 !===============================================================================

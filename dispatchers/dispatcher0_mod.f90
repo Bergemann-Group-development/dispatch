@@ -296,7 +296,7 @@ SUBROUTINE update (self, task_list, test)
     end if
     !$omp atomic update
     timer%mem_test = timer%mem_test+1
-    call task%log ('dispatcher')
+    call task%log ('dispatch')
     !...........................................................................
     task%atime = task%time
     if (verbose > 1) then

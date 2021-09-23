@@ -192,6 +192,12 @@ SUBROUTINE source_to_target (self, source, target, all_tgt, all_src, n_op, &
           'src:', sid, source%level, source%key, &
           present(all_tgt), present(all_src), present(only)
       end if
+      if (target%id == io%id_debug) then
+        write (unit,'(a8,2x,2(a,i6,":",i2.2,3x),a,1p,e12.2)') type, &
+          'tgt:', tid, target%level, &
+          'src:', sid, source%level, &
+          'dmin:', minval(target%mem(:,:,:,target%idx%d,target%it,1))
+      end if
     end select
     !...........................................................................
     if (verbose > 1) then

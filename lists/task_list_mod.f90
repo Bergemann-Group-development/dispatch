@@ -466,9 +466,9 @@ SUBROUTINE update (self, head, test)
     call task%rotate
   end if
   if (self%verbose > 0) then
-    write (io_unit%log,'(f12.6,1x,a,i6,f12.6,l4)') &
-      wallclock(), 'task_list_t%update: id, time, B =', &
-      task%id, task%time, task%is_set(bits%boundary)
+    write (io_unit%log,'(f12.6,1x,a,i6,2f12.6,l4)') &
+      wallclock(), 'task_list_t%update: id,time,dtime,B =', &
+      task%id, task%time, task%dtime, task%is_set(bits%boundary)
   end if
   select type (task)
   class is (experiment_t)

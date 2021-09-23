@@ -190,11 +190,13 @@ SUBROUTINE init (self, name)
   call trace%begin ('list_t%init')
   if (present(name)) then
     self%name = name
-    write (io_unit%log,*)'init_list: ', name
+    if (self%verbose > 2) &
+      write (stdlog,*) 'list_t%init: ', name
     call self%lock%init (name(1:4))
     call self%qlock%init (name(1:4))
   else
-    write (io_unit%log,*)'init_list: list_t'
+    if (self%verbose > 2) &
+      write (stdlog,*) 'list_t%init'
     call self%lock%init ('list')
     call self%qlock%init ('list')
   end if
@@ -1454,8 +1456,9 @@ SUBROUTINE add_new_link (self, link)
   !-----------------------------------------------------------------------------
   ! Generate a new nbor list -- also checks support
   !-----------------------------------------------------------------------------
-  call self%init_nbors (link)                                           ! RULE B
-  call link%info ('add_new_link')
+  call self%init_nbors (link)
+  if (self%verbose > 0) &
+    call link%info ('add_new_link')
   !-----------------------------------------------------------------------------
   ! If it is a boundary task, send it to rank nbors
   !-----------------------------------------------------------------------------
@@ -1508,15 +1511,19 @@ SUBROUTINE init_nbors (self, link)
   call self%update_status (link)
   if (link%task%is_set(bits%no_support)) then
     call link%check_support ()
-    if (link%task%is_set(bits%no_support)) then
-      write (stdout,*) link%task%id, 'still unsupported'
-    else
-      write (stdout,*) link%task%id, 'now supported'
+    if (self%verbose > 0) then
+      if (link%task%is_set(bits%no_support)) then
+        write (stdlog,*) link%task%id, 'still unsupported'
+      else
+        write (stdlog,*) link%task%id, 'now supported'
+      end if
     end if
   else
     call link%check_support ()
-    if (link%task%is_set(bits%no_support)) then
-      write (stdout,*) link%task%id, 'new unsupported'
+    if (self%verbose > 0) then
+      if (link%task%is_set(bits%no_support)) then
+        write (stdlog,*) link%task%id, 'new unsupported'
+      end if
     end if
   end if
   !-----------------------------------------------------------------------------
@@ -2259,7 +2266,7 @@ SUBROUTINE real_queue_by_time (self, this, error)
   !-----------------------------------------------------------------------------
   if (task%is_clear (bits%ready+bits%busy) .or. task%id == omp%thread_task) then
     if (self%verbose > 1 .and. task%id == omp%thread_task) then
-      write (stderr,'(a,i6,":",i2.2)') 'queue_by_time: self-schedule task', &
+      write (stdlog,'(a,i6,":",i2.2)') 'queue_by_time: self-schedule task', &
         task%id, task%level
     end if
     !---------------------------------------------------------------------------
