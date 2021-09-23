@@ -91,7 +91,7 @@ eos='tabular'
 &timer_params       sec_per_report=20 verbose=0 /
 &task_list_params   job_seconds=1e6 /
 &dispatcher_params  method=0 test=f /recv_active=f recv_priv=t retry_stalled=30 /
-&dispatcher0_params 
+&dispatcher0_params /
 &task_mesg_params   verbose=0 /
 &mpi_mesg_params    verbose=0 debug=f /
 /
