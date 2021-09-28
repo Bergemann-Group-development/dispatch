@@ -1,0 +1,74 @@
+&io_params
+ verbose=0
+ do_trace=f
+ do_debug=f
+ do_output=t
+ guard_zones=f
+ method='background'
+/
+
+! --- XY plane ---
+&patch_params nt=5 n=32,16,1 no_mans_land=t  do_check_nan=t grace=0.05 /
+&cartesian_params size=2,1,0.0625 dims=4,4,1 mpi_dims=1,1,1 origin=-1.0,-0.5,0.0 periodic = t,t,t /
+&IC_params idirect=3 ux=2.0 uy=1.0
+/
+
+!&aux_params  verbose=0 select='tt','qr','rkap','src','qout' /
+
+
+&eos_params
+gamma=1.6666666666667
+/
+
+&out_params
+ end_time=1.0
+ out_time=0.2
+ print_time=0
+/
+
+&refine_params
+  on=f
+/
+
+
+&non_ideal_params
+ mhd_Ohm=f
+ eta_Ohm=0.01
+ mhd_AD=f
+/
+
+
+&refine_params          on=f levelmax=12 levelmin=1 verbose=3 check_interval=2 /
+
+&bifrost_params             
+loginterpolation=t
+ca_max = 3e2 
+courant=0.2
+max_r=3
+symmetric_e=f
+!eos='tabular'
+!     Ca    U    Uv   d     e      E
+!     nu1   nu2  nu3  nu_d  nu_ee  eta3
+!nu=  0.03 , 0.3,  0.1,  0.0,  0.05, 1.0 /
+nu=  0.05 , 0.1,  0.2,  0.05,  0.05, 0.5 /
+!nu=  0.03 , 0.3,  0.1,  0.05,  0.05, 0.9 /
+
+&ramses_params     slope_type=3.5 /
+
+&timestep_params
+/
+
+
+&divb_clean_params
+ on=f
+ divb_iter=4
+ divb_cleaner=0
+/
+
+&initial_refine_params
+  on = f
+  n_refine = 0,0,2
+  center   = 0.0,0.0,0.0
+  extent   = 0.0,0.0,0.5
+/
+
