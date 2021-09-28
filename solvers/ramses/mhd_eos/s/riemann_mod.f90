@@ -37,7 +37,7 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
   REAL(dp)::cfastl,rcl,rstarl,el,vdotBstarl,vstarl,stotstarstarl,stotstarl,vdotBl
   REAL(dp)::cfastr,rcr,rstarr,er,vdotBstarr,vstarr,stotstarstarr,stotstarr,vdotBr
   REAL(dp)::ustar,ptotstar,estar,vstarstar,wstarstar
-  REAL(dp)::sadl,sadr,sadlstar,sadrstar,sadlstarstar,sadrstarstar, sadd
+  REAL(dp)::s_gen
   REAL(dp)::ro,uo,ptoto,so,vo,wo,visc, scond, smax, temp, M
   REAL(dp)::A,sgnm, somax, csl2, csr2, csl, csr,aa2
   REAL(dp)::alfa_sl, alfa_fl, alfa_sr, alfa_fr, alfa_m,tt1,tt2,tt3, tt4, tt5, tt6, bp1, bp2
@@ -66,36 +66,30 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
   !$omp &  vdotBstarr,stotstarr,sqrrstarr,calfvenr,SAL,&
   !$omp &  vstarstar,wstarstar,Bstarstar,Cstarstar,vdotBstarstar,visc, &
   !$omp &  scond, tt1, tt2, tt3, tt4, tt5, tt6, aa2, alfa_sl, alfa_fr, alfa_sr, alfa_fr, bp1,bp2, &
-  !$omp &  sadl,sadr,sadlstar,sadrstar,sadlstarstar,sadrstarstar,sadd &
+  !$omp &  s_gen, &
   !$omp &  icase,ro,uo,vo,wo,Bo,Co,Ptoto,so,vdotBo,emago,ustar)
 #endif
 gamma = eos%gamma
-fgdnv(:,9) =0.0
   do i=1,ngrid
     ! Enforce continuity of normal component
     A=half*(qleft(i,4)+qright(i,4))
     sgnm=sign(one,A)
-    scond=0.0
     qleft(i,4)=A; qright(i,4)=A
     !
     ! Left variables
-    rl=qleft(i,1); Pl=qleft(i,2); ul=qleft(i,3); sl=qleft(i,10)
+    rl=qleft(i,1); Pl=qleft(i,2); ul=qleft(i,3); sl=qleft(i,9)
     vl=qleft(i,5); Bl=qleft(i,6); wl=qleft(i,7); Cl=qleft(i,8)
     ecinl = half*(ul*ul+vl*vl+wl*wl)*rl
     emagl = half*(A*A+Bl*Bl+Cl*Cl)
-    !etotl = El*rl+ecinl+emagl
     Ptotl = Pl + emagl
-  !  ptotl=rl**gamma*exp(sl/rl*(gamma-one))
     vdotBl= ul*A+vl*Bl+wl*cl
     !
     ! Right variables
-    rr=qright(i,1); Pr=qright(i,2); ur=qright(i,3); sr=qright(i,10)
+    rr=qright(i,1); Pr=qright(i,2); ur=qright(i,3); sr=qright(i,9)
     vr=qright(i,5); Br=qright(i,6); wr=qright(i,7); Cr=qright(i,8)
     ecinr = half*(ur*ur+vr*vr+wr*wr)*rr
     emagr = half*(A*A+Br*Br+Cr*Cr)
-    !etotr = Er*rr+ecinr+emagr
     Ptotr = Pr + emagr
-   ! ptotr=rr**gamma*exp(sr/rr*(gamma-one))
     vdotBr= ur*A+vr*Br+wr*Cr
     !
     ! Find the largest eigenvalues in the normal direction to the interface
@@ -169,18 +163,10 @@ fgdnv(:,9) =0.0
       Cstarl=Cl*el/estar
     endif
 #endif
-    sadl     = (log(ptotl/ptotr)+gamma*log(rl/rr))*(ul-ur)
-    sadr     = (log(ptotl/ptotr)+gamma*log(rl/rr))*(ul-ur)
-    !sadlstar = (log(ptotl/ptotstar)+gamma*log(rl/rstarl))*(ul-ustar)
-    !sadrstar = (log(ptotstar/ptotr)+gamma*log(rstarr/rr))*(ustar-ur)
-
 
     vdotBstarl=ustar*A+vstarl*Bstarl+wstarl*Cstarl
     stotstarl=sl
-    c_v=one/(eos%gamma-one)
     !stotstarl=(((sl-eos%s0)*rl/rstarl)*(SSL-ul))/(SSL-ustar)+eos%s0
-   
-    !sl = sl + c_v*log(ptotl) + c_v*eos%gamma*log(rl)
     sqrrstarl=sqrt(rstarl)
     calfvenl=abs(A)/sqrrstarl
     SAL=ustar-calfvenl
@@ -211,7 +197,6 @@ fgdnv(:,9) =0.0
     !
     vdotBstarr=ustar*A+vstarr*Bstarr+wstarr*Cstarr
     stotstarr=sr
-    !sr = sr + c_v*log(ptotr) + c_v*eos%gamma*log(rr)
     !stotstarr = (((sr-eos%s0)*rr/rstarr)*(SSR-ur))/(SSR-ustar)+eos%s0
     sqrrstarr=sqrt(rstarr)
     calfvenr=abs(A)/sqrrstarr 
@@ -223,14 +208,10 @@ fgdnv(:,9) =0.0
     Bstarstar=(sqrrstarl*Bstarr+sqrrstarr*Bstarl+sgnm*sqrrstarl*sqrrstarr*(vstarr-vstarl))/(sqrrstarl+sqrrstarr)
     Cstarstar=(sqrrstarl*Cstarr+sqrrstarr*Cstarl+sgnm*sqrrstarl*sqrrstarr*(wstarr-wstarl))/(sqrrstarl+sqrrstarr)
     vdotBstarstar=ustar*A+vstarstar*Bstarstar+wstarstar*Cstarstar
-    stotstarstarl=stotstarl!-sgnm*sqrrstarl*(vdotBstarl-vdotBstarstar)
-    stotstarstarr=stotstarr!+sgnm*sqrrstarr*(vdotBstarr-vdotBstarstar)
+    stotstarstarl=stotstarl
+    stotstarstarr=stotstarr
     !
     ! Sample the solution at x/t=0
-    tt3=0
-    tt4=0
-    tt2=0
-   ! print *, ul, cslowl, csl, cfastl, calfvenl
     if(SSL>=0d0)then
        icase=1
        ro=rl
@@ -243,14 +224,8 @@ fgdnv(:,9) =0.0
        so=sl
        vdotBo=vdotBl
        emago=emagl
-       tt3=gamma*log(rl/rr)+log(ptotl/ptotr)
-       tt3=0!tt3*abs(ul-ur)
-       tt1=gamma*log(rl/rr)
-       tt2=log(ptotl/ptotr)
-       tt3=alfa_fr*(ur-ul)*(log(ptotr/ptotl)-gamma*log(rr/rl))
-       tt3=log(ptoto/ptotr)+gamma*log(ro/rr)
-       tt3=tt3*(ul-ur)
-     !  sadd=sadl
+       tt1=log(ptotl/ptotr)+gamma*log(rl/rr)
+       s_gen = tt1*(ul-ur)
     else if(SAL>0d0)then
        icase=2
        ro=rstarl
@@ -263,9 +238,8 @@ fgdnv(:,9) =0.0
        so=stotstarl 
        vdotBo=vdotBstarl
        emago=half*(A*A+Bo*Bo+Co*Co)
-       tt3=log(ptoto/ptotr)+gamma*log(ro/rr)
-       tt3=tt3*(ul-ur)
-     !  sadd=sadlstar
+       tt1=log(ptoto/ptotr)+gamma*log(ro/rr)
+       s_gen=tt1*(ul-ur)
     else if(ustar>0d0)then
        icase=3
        ro=rstarl
@@ -276,19 +250,13 @@ fgdnv(:,9) =0.0
        Co=Cstarstar
        Ptoto=Ptotstar
        so=stotstarstarl
-       M = (uo-ur)/csl
        vdotBo=vdotBstarstar
        emago=half*(A*A+Bo*Bo+Co*Co)
-     !  print *, stotstarl, tstarl, tt3
+       tt1=log(ptoto/ptotr)+gamma*log(ro/rr)
        tt2=cslowl*alfa_sl*(gamma*half)
-       !tt2=merge(tt2,0.0,Bl*BR<0 .or.Cl*Cr<0)
-       tt3=log(ptoto/ptotr)+gamma*log(ro/rr)
-       tt3=tt3*(ul-ur)-sign(one,ul-ustar)*tt2*(log(pl/pr))!+cslowl*alfa_sl)!+(cslowl)*(log(pl/pstar))*alfa_sl
-       !print *, 'ic3',i,tt3, tt2, ul, ur, ustar,cslowl, alfa_sl,bl,br,cl,cr
-     !  sadd=0
+       s_gen=tt1*(ul-ur)-sign(one,ul-ustar)*tt2*(log(pl/pr))
     else if(SAR>0d0)then
        icase=4
-       !print *, 'c4'
        ro=rstarr
        uo=ustar
        vo=vstarstar
@@ -299,13 +267,9 @@ fgdnv(:,9) =0.0
        so=stotstarstarr
        vdotBo=vdotBstarstar
        emago=half*(A*A+Bo*Bo+Co*Co)
+       tt1=log(ptotl/ptoto)+gamma*log(rl/ro)
        tt2=cslowr*alfa_sr*(gamma*half)
-       !tt2=merge(tt2,0.0,Bl*BR<0 .or.Cl*Cr<0)
-       tt3=log(ptotl/ptoto)+gamma*log(rl/ro)!+alfa_sr*log(pr/emago)
-       tt3=tt3*(ul-ur)+sign(one,ur-ustar)*tt2*(log(pl/pr))!-tt2)!+(cslowr)*(log(pr/pstar))*alfa_sr
-     ! sadd=0
-       !print *, 'ic4',i,tt3, tt2, ul, ur, ustar,cslowr, alfa_sr, bl,br,cl,cr
-      ! print *, sgnm*sqrrstarl*(vdotBstarl-vdotBstarstar)
+       s_gen = tt1*(ul-ur)+sign(one,ur-ustar)*tt2*(log(pl/pr))
     else if (SSR>0d0)then
        icase=5
        ro=rstarr
@@ -318,10 +282,8 @@ fgdnv(:,9) =0.0
        so = stotstarr
        vdotBo=vdotBstarr
        emago=half*(A*A+Bo*Bo+Co*Co)
-       if (abs(ul-ur)>=csl) tt3=log(ptotl/ptoto)-gamma*(rl/ro)
-       tt3=log(ptotl/ptoto)+gamma*log(rl/ro)
-       tt3=tt3*(ul-ur)
-    !   sadd=sadrstar
+       tt1=log(ptotl/ptoto)+gamma*log(rl/ro)
+       s_gen=tt1*(ul-ur)
     else
        icase=6
        ro=rr
@@ -334,16 +296,9 @@ fgdnv(:,9) =0.0
        Ptoto=Ptotr
        vdotBo=vdotBr
        emago=emagr
-       tt3=gamma*log(rl/rr)+log(ptotl/ptotr)
-       tt3=0!tt3*abs(ul-ur)
-       tt1=gamma*log(rl/rr)
-       tt2=log(ptotl/ptotr)
-       tt3=alfa_fr*(uo-ul)*(log(ptotl/ptoto)-gamma*(rl/ro))
-       tt3=log(ptotl/ptotr)+gamma*log(rl/rr)
-       tt3=tt3*(ul-ur) 
-     !  sadd=sadr
+       tt1=log(ptotl/ptotr)+gamma*log(rl/rr)
+       s_gen = tt1*(ul-ur)
     end if
-   !if (i<25)  print *, i,icase, uo*ro*so, uo, tt3, tt4, ptoto
     !---------------------------------------------------------------------------
     ! Add a diffusive flux in the down grad(ln(rho)) direction, which is only
     ! nonzero when the smallest of the left/right density is within a factor 10
@@ -354,42 +309,26 @@ fgdnv(:,9) =0.0
     ustar = 0.25*max(cfastr,cfastl)*min(1.0, max(-1.0, ustar))
     uo = uo + ustar
 
-    !msl=max(msl,sl)
-    !msr=max(msr,sr)
-    !mso=max(mso,so)
-    !mss=max(mss,M*ro/(eos%gamma-1d0)*(tt3+tt4))
-    !mmax=max(mmax,M)
-   ! print *, icase, uo, ssl, ul-ur, tt3, M, tt4
     if (abs(so*uo)>abs(somax)) somax=so*uo
     !
     ndiff = ndiff + merge(1,0,abs(ustar)>0.0)
     !
     ! Compute the Godunov flux
     fgdnv(i,1) = ro*uo
-    !fgdnv(i,2) = so*uo + log(ptoto+ro)+one/tgo *((uo*uo+vo*vo+wo+wo)*half)!scond
-    fgdnv(i,2) = uo*ro*(so)!+tt1!ro*log(ptoto/ro**gamma)/(gamma-one)
+    fgdnv(i,2) = uo*ro*(so)
     fgdnv(i,3) = ro*uo*uo+Ptoto+emago*(lim-one)-A*A*lim
     fgdnv(i,4) = zero
     fgdnv(i,5) = ro*uo*vo-A*Bo*lim
     fgdnv(i,6) = Bo*uo-A*vo
     fgdnv(i,7) = ro*uo*wo-A*Co*lim
     fgdnv(i,8) = Co*uo-A*wo
-    fgdnv(i,9) = (tt3)!(abs(tt3)+abs(tt4))!(tt4+tt3)!+tt4!ro*tt3!tt3!tt3!(tt1)!*tgo
-  !  if (mod(i,10)==1) print *, 'i, icase, so, tt3, ul, uo, ur, ptotl, ptotr, ptoto, rl, ro, rr'
-  !  print *, i,icase, so, tt3, ul, uo, ur, ptotl, ptotr, ptoto, rl, ro, rr
+    fgdnv(i,9) = s_gen
    
     if (abs(scond)>abs(smax)) then
       scase=icase
       smax = scond
     end if
-  !  if (M*ro/(eos%gamma-1d0)*(tt3+tt4)<0) then
-  !    print *, 'tt3 leq 0', M*ro/(eos%gamma-1d0)*(tt3+tt4)
-  !    error stop "end"
-  !  end if
-  !  print *, icase, so, tt3, ul, uo, ur, ptotl, ptotr, ptoto, rl, ro, rr
   end do
-  !print *, msl, msr, mso, mss, mmax
-  !error stop "end"
 !#define ATOMIC
 #ifdef ATOMIC
   !$omp atomic
