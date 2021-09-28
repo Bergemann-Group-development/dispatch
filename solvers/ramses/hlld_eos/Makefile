@@ -1,5 +1,5 @@
 # Vpath
-VPATH := $(VPATH):$(TOP)/solvers/../mhd:$(TOP)/solvers/$(SOLVER)/..
+VPATH := $(VPATH):$(TOP)/solvers/$(SOLVER)/../mhd:$(TOP)/solvers/$(SOLVER)/..
 
 include $(TOP)/solvers/ramses/Makefile
 
