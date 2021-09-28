@@ -109,7 +109,22 @@ SUBROUTINE init (self)
           else if (idx%e>0) then
             ff(ix,iy,iz,idx%e) = pg / (eos%gamma - 1.0)
           else if (idx%s>0) then
-            ff(ix,iy,iz,idx%s) = (log(pg)-log(self%d0)*eos%gamma)/(eos%gamma-1.0)*self%d0
+            ff(ix,iy,iz,idx%s) = (eos%s0+ log(pg)-log(self%d0)*eos%gamma)/(eos%gamma-1.0)*self%d0
+          end if
+        end do
+      end do
+    end do
+
+    do iz=m(3)%lb,m(3)%ub
+      do iy=m(2)%lb,m(2)%ub
+        do ix=m(1)%lb,m(1)%ub
+          if (idx%e>0) then
+            if (self%patch%kind(1:6)=='ramses') then 
+              rhov2 = (ff(ix,iy,iz,idx%px)**2 + &
+                       ff(ix,iy,iz,idx%py)**2 + &
+                       ff(ix,iy,iz,idx%pz)**2)/ff(ix,iy,iz,idx%d) 
+              ff(ix,iy,iz,idx%e) = ff(ix,iy,iz,idx%e) + 0.5*rhov2 + 0.5*bb*bb
+            end if
           end if
         end do
       end do
@@ -140,16 +155,30 @@ SUBROUTINE init (self)
           pg = self%beta/2.*bb
           if (eos%gamma==1.0) then
             ff(ix,iy,iz,idx%s) = 1.0
-          else if (self%patch%kind(1:14) == 'zeus_mhd_patch' .or. self%patch%kind(1:10) == 'stagger2e_') then
-            ff(ix,iy,iz,idx%e) = pg / (eos%gamma - 1.0)
-          else if (self%patch%kind(1:9) == 'stagger2_') then
-            ff(ix,iy,iz,idx%s) = (log(pg)-log(self%d0)*eos%gamma)/(eos%gamma-1.0)*self%d0
-          else if (self%patch%kind(1:6) == 'ramses')  then
+          else if (idx%s>0) then
+            ff(ix,iy,iz,idx%s) = (eos%s0+log(pg)-log(self%d0)*eos%gamma)/(eos%gamma-1.0)*self%d0
+          else if (idx%e>0) then
             ff(ix,iy,iz,idx%e) = pg / (eos%gamma - 1.0)
           end if
         end do
       end do
     end do
+
+    do iz=m(3)%lb,m(3)%ub
+      do iy=m(2)%lb,m(2)%ub
+        do ix=m(1)%lb,m(1)%ub
+          if (idx%e>0) then
+            if (self%patch%kind(1:6)=='ramses') then 
+              rhov2 = (ff(ix,iy,iz,idx%px)**2 + &
+                       ff(ix,iy,iz,idx%py)**2 + &
+                       ff(ix,iy,iz,idx%pz)**2)/ff(ix,iy,iz,idx%d) 
+              ff(ix,iy,iz,idx%e) = ff(ix,iy,iz,idx%e) + 0.5*rhov2 + 0.5*bb*bb
+            end if
+          end if
+        end do
+      end do
+    end do
+
   case(3) !XY
     do iz=m(3)%lb,m(3)%ub
       zp = m(3)%p + r3(iz)
@@ -176,7 +205,7 @@ SUBROUTINE init (self)
           if (eos%gamma==1.0) then
             ff(ix,iy,iz,idx%s) = 1.0
           else if (idx%s>0) then
-            ff(ix,iy,iz,idx%s) = (log(pg)-log(self%d0)*eos%gamma)/(eos%gamma-1.0)*self%d0
+            ff(ix,iy,iz,idx%s) = (eos%s0+log(pg)-log(self%d0)*eos%gamma)/(eos%gamma-1.0)*self%d0
           else if (idx%e>0) then
             ff(ix,iy,iz,idx%e) = pg / (eos%gamma - 1.0)
           end if

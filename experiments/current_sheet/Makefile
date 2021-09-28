@@ -8,8 +8,8 @@ OPTS = optimized
 # Default target and methods
 UPD             = adams_bashforth
 #SOLVER         = stagger2/bifrost
-SOLVER          = ramses/mhd_eos
-STAGGER         = stagger_2nd.o
+SOLVER          = ramses/mhd_eos/s
+#STAGGER         = stagger_2nd.o
 #STAGGER         = stagger_6th.o
 #STAGGER         = stagger_mod.o
 EXEC            = dispatch.x

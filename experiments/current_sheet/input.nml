@@ -8,17 +8,17 @@
 /
 
 ! --- XY plane ---
-&cartesian_params size=1,1,0.031 dims=8,8,1 mpi_dims=2,2,1 origin=-0.5,-0.5,0 periodic=t,t,t /
+&cartesian_params size=1,1,0.0031 dims=8,8,1 mpi_dims=2,2,1 origin=-0.5,-0.5,0 periodic=t,t,t /
 &IC_params   d0=1.0 beta=0.1 ampl=0.1 idir=3 /
 &patch_params     nt=5  n=32,32,1 do_check_nan=t grace=0.1/
 ! --- XZ plane ---
-!&cartesian_params size=1,0.001,1 dims=6,1,6 origin=-0.5,0,-0.5 periodic=t,t,t/
+!&cartesian_params size=1,0.0031,1 dims=8,1,8 origin=-0.5,0,-0.5 periodic=t,t,t/
 !&IC_params   d0=1.0 beta=0.1 ampl=0.1 idir=2 /
 !&patch_params     nt=5 n=32,1,32 do_check_nan=t grace=0.1 /
 ! --- YZ plane ---
-!&cartesian_params size=0.001,1,1 dims=1,5,5 origin=0,-0.5,-0.5 periodic=t,t,t/
+!&cartesian_params size=0.0031,1,1 dims=1,8,8 origin=0,-0.5,-0.5 periodic=t,t,t/
 !&IC_params   d0=1.0 beta=0.1 ampl=0.1 idir=1 /
-!&patch_params     nt=5 ng=3*8 n=1,32,32 do_check_nan=t grace=0.01 /
+!&patch_params     nt=5 n=1,32,32 do_check_nan=t grace=0.1 /
 
 &eos_params
 gamma=1.6666666666667
