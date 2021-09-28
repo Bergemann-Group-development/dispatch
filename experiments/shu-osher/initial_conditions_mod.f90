@@ -82,27 +82,21 @@ SUBROUTINE init (self)
   ! Point amd allocate memory
   !---------------------------------------------------------------------
   d => ff(:,:,:,idx%d)
-  if (self%solver(1:14) == 'zeus_mhd_patch' .or. &
-      self%solver(1:10) == 'stagger2e_' .or. &
-      self%solver(1:4)  == 'hlld') then
+  if (self%solver(1:6) == 'ramses') then
+    if (idx%e>0) then
+      et => ff(:,:,:,idx%e)
+      allocate (e1(m(1)%gn,m(2)%gn,m(3)%gn))
+    end if
+  else
     e1 => ff(:,:,:,idx%e)
   end if
-  if (self%solver(1:9) == 'stagger2_') then
+  if (idx%s>0) then
     s => ff(:,:,:,idx%s)
   end if
   if (self%solver(1:14) == 'zeus_mhd_patch') then
     et => ff(:,:,:,idx%et)
   end if
-  if (self%solver(1:6) == 'ramses') then
-    if (idx%e>0) then
-      et => ff(:,:,:,idx%e)
-      allocate (e1(m(1)%gn,m(2)%gn,m(3)%gn))
-    else if (idx%s>0) then
-      s => ff(:,:,:,idx%s)
-    end if
-  end if
-  ff(:,:,:,idx%py) = 0.0
-  ff(:,:,:,idx%pz) = 0.0
+
   if (self%solver(1:7)=='stagger') then
     ds2 = 0.5*m%d
   else if (self%solver(1:6)=='zeus3d') then
@@ -110,6 +104,7 @@ SUBROUTINE init (self)
   else
     ds2 = 0.0
   endif
+  ff(:,:,:,idx%px:idx%pz) = 0.0
   ! --------------------------------------------------------------------
   ! Set initial conditions
   ! --------------------------------------------------------------------
@@ -123,9 +118,7 @@ SUBROUTINE init (self)
         if (idx%e>0) then
           e1(i,:,:) = P_l / (eos%gamma - 1.0)
         else if (idx%s>0) then
-          !s (i,:,:) = (log(P_l) - log(rho_l) * self%gamma) * rho_l / (self%gamma - 1.0)
-          !s (i,:,:) = log(P_l/rho_l**self%gamma)  * rho_l / (self%gamma - 1.0)
-          s (i,:,:) = ((log(P_l)-log(rho_l)*eos%gamma))  * rho_l / (eos%gamma - 1.0)
+          s (i,:,:) = (eos%s0+(log(P_l)-log(rho_l)*eos%gamma))  * rho_l / (eos%gamma - 1.0)
         else 
           error stop "inital_mod: neither energy nor entropy in mem indices"
         end if
@@ -135,8 +128,7 @@ SUBROUTINE init (self)
         if (idx%e>0) then
           e1(i,:,:) = P_r / (eos%gamma - 1.0)
         else if (idx%s>0) then
-          !s (i,:,:) = (log(P_r) - log(d(i,:,:)) * self%gamma) * d(i,:,:) / (self%gamma - 1.0)
-          s (i,:,:) = ((log(P_r)-log(d(i,:,:))*eos%gamma)) * d(i,:,:) / (eos%gamma - 1.0)
+          s (i,:,:) = (eos%s0+(log(P_r)-log(d(i,:,:))*eos%gamma)) * d(i,:,:) / (eos%gamma - 1.0)
         else 
           error stop "inital_mod: neither energy nor entropy in mem indices"
         end if
@@ -174,14 +166,12 @@ SUBROUTINE init (self)
     do i=m(1)%lb,m(1)%ub
       x = m(1)%p + m(1)%r(i)
       xs = x - ds2(1)
-      if (x > x_disc) then
+      if (x > -x_disc) then
         d (i,:,:)= rho_l
         if (idx%e>0) then
           e1(i,:,:) = P_l / (eos%gamma - 1.0)
         else if (idx%s>0) then
-          !s (i,:,:) = (log(P_l) - log(rho_l) * self%gamma) * rho_l / (self%gamma - 1.0)
-          !s (i,:,:) = log(P_l/rho_l**self%gamma)  * rho_l / (self%gamma - 1.0)
-          s (i,:,:) = (log(P_l)-log(rho_l)*eos%gamma)  * rho_l / (eos%gamma - 1.0)
+          s (i,:,:) = (eos%s0+log(P_l)-log(rho_l)*eos%gamma)  * rho_l / (eos%gamma - 1.0)
           
         else 
           error stop "inital_mod: neither energy nor entropy in mem indices"
@@ -192,8 +182,7 @@ SUBROUTINE init (self)
         if (idx%e>0) then
           e1(i,:,:) = P_r / (eos%gamma - 1.0)
         else if (idx%s>0) then
-          !s (i,:,:) = (log(P_r) - log(d(i,:,:)) * self%gamma) * d(i,:,:) / (self%gamma - 1.0)
-          s (i,:,:) = (log(P_r)-log(d(i,:,:))*eos%gamma) * d(i,:,:) / (eos%gamma - 1.0)
+          s (i,:,:) = (eos%s0+log(P_r)-log(d(i,:,:))*eos%gamma) * d(i,:,:) / (eos%gamma - 1.0)
         else 
           error stop "inital_mod: neither energy nor entropy in mem indices"
         end if
