@@ -58,7 +58,7 @@
 
 &eos_params
   gamma=1.6666666666667
-  !s0=10.
+  s0=0.
 /
 
 &zeus_params
@@ -81,7 +81,7 @@
 
 &ramses_params
  !courant_factor=0.25
- slope_type=3.5
+ slope_type=3.0
  !csound=1.0
  !unsigned=t
 ! do_corners=t

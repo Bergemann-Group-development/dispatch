@@ -139,7 +139,7 @@ SUBROUTINE initial_conditions (patch)
         end if
 
         if (patch%idx%s>0) then
-          f(i1,i2,i3,patch%idx%s)  = (log(p0(1)*d0(1)**-eos%gamma)) * d0(1) / (eos%gamma - 1.0)
+          f(i1,i2,i3,patch%idx%s)  = (eos%s0+log(p0(1)*d0(1)**-eos%gamma)) * d0(1) / (eos%gamma - 1.0)
         else if (patch%idx%e>0) then
           f(i1,i2,i3,patch%idx%e) = p0(1)/(eos%gamma-1)
           if (patch%kind(1:6) == 'ramses') then
@@ -190,7 +190,7 @@ SUBROUTINE initial_conditions (patch)
           end if
 
           if (patch%idx%s>0) then
-            f(i1,i2,i3,patch%idx%s)  = (log(p0(2)*d0(2)**-eos%gamma)) * d0(2) / (eos%gamma - 1.0)
+            f(i1,i2,i3,patch%idx%s)  = (eos%s0+log(p0(2)*d0(2)**-eos%gamma)) * d0(2) / (eos%gamma - 1.0)
           else if (patch%idx%e>0) then
             f(i1,i2,i3,patch%idx%e) = p0(2)/(eos%gamma-1)
             if (patch%kind(1:6) == 'ramses') then
