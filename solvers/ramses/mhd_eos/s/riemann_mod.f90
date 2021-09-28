@@ -37,10 +37,11 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
   REAL(dp)::cfastl,rcl,rstarl,el,vdotBstarl,vstarl,stotstarstarl,stotstarl,vdotBl
   REAL(dp)::cfastr,rcr,rstarr,er,vdotBstarr,vstarr,stotstarstarr,stotstarr,vdotBr
   REAL(dp)::ustar,ptotstar,estar,vstarstar,wstarstar
+  REAL(dp)::sadl,sadr,sadlstar,sadrstar,sadlstarstar,sadrstarstar, sadd
   REAL(dp)::ro,uo,ptoto,so,vo,wo,visc, scond, smax, temp, M
   REAL(dp)::A,sgnm, somax, csl2, csr2, csl, csr, tgo,aa2
-  REAL(dp)::alfa_s, alfa_f, alfa_m,tt1,tt2,tt3, tt4, tt5, tt6, bp1, bp2
-  REAL(dp)::Bstarl,Bstarr,Cstarl,Cstarr,calfvenl,calfvenr,cslowl, cslowr
+  REAL(dp)::alfa_sl, alfa_fl, alfa_sr, alfa_fr, alfa_m,tt1,tt2,tt3, tt4, tt5, tt6, bp1, bp2
+  REAL(dp)::Bstarl,Bstarr,Cstarl,Cstarr,calfvenl,calfvenr,cslowl, cslowr, pstar
   REAL(dp)::Bo,Co,Bstarstar,Cstarstar,vdotBstarstar,vdotBo,emago,msl,msr, mso,mss, mmax
 #define INLINE
 #ifdef INLINE
@@ -62,9 +63,10 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
   !$omp &  rcl,rstarl,el,Bstarl,Cstarl,vstarl,wstarl, tgl, tgr, tgo &
   !$omp &  rcr,rstarr,er,Bstarr,Cstarr,vstarr,wstarr, M,&
   !$omp &  vdotBstarl,stotstarl,sqrrstarl,calfvenl,SAR, c2l, c2r, cl, cr&
-  !$omp &  vdotBstarr,stotstarr,sqrrstarr,calfvenr,SAL, &
+  !$omp &  vdotBstarr,stotstarr,sqrrstarr,calfvenr,SAL, tstarl,tstarr,&
   !$omp &  vstarstar,wstarstar,Bstarstar,Cstarstar,vdotBstarstar,visc, &
-  !$omp &  scond, tt1, tt2, tt3, tt4, tt5, tt6, aa2, alfa_s, alfa_f, bp1,bp2, &
+  !$omp &  scond, tt1, tt2, tt3, tt4, tt5, tt6, aa2, alfa_sl, alfa_fr, alfa_sr, alfa_fr, bp1,bp2, &
+  !$omp &  sadl,sadr,sadlstar,sadrstar,sadlstarstar,sadrstarstar,sadd &
   !$omp &  icase,ro,uo,vo,wo,Bo,Co,Ptoto,so,vdotBo,emago,ustar)
 #endif
 gamma = eos%gamma
@@ -117,6 +119,9 @@ fgdnv(:,9) =0.0
     cf = sqrt( d2 + sqrt(max(d2*d2-csl2*A*A/d,zero)) )
     cslowl = sqrt(max(d2 - sqrt(max(d2*d2-csl2*A*A/d,zero)),zero))
     cfastl=cf
+    cf = cfastl*cfastl-cslowl*cslowl
+    alfa_sl=merge((cfastl*cfastl-csl2)/cf,0.0,cf/=0.0)
+    alfa_fl=merge((csl2-cslowl*cslowl)/cf,1.0,cf/=0.0)
     d=qright(i,1); P=qright(i,2); u=qright(i,3); A=qright(i,4)
     v=qright(i,5); B=qright(i,6); w=qright(i,7); C=qright(i,8)
     B2 = A*A+B*B+C*C
@@ -126,6 +131,9 @@ fgdnv(:,9) =0.0
     cf = sqrt( d2 + sqrt(max(d2*d2-csr2*A*A/d,zero)) )
     cslowr = sqrt(max(d2 - sqrt(max(d2*d2-csr2*A*A/d,zero)),zero))
     cfastr=cf
+    cf = cfastr*cfastr-cslowr*cslowr
+    alfa_sr=merge((cfastr*cfastr-csr2)/cf,0.0,cf/=0.0)
+    alfa_fr=merge((csr2-cslowr*cslowr)/cf,1.0,cf/=0.0)
 !#else
 !    CALL find_speed_fast(qleft (i,:),cfastl)
 !    CALL find_speed_fast(qright(i,:),cfastr)
@@ -144,6 +152,7 @@ fgdnv(:,9) =0.0
     ! Compute acoustic star state
     ustar   =(rcr*ur   +rcl*ul   +  (Ptotl-Ptotr))/(rcr+rcl)
     Ptotstar=(rcr*Ptotl+rcl*Ptotr+rcl*rcr*(ul-ur))/(rcr+rcl)
+    Pstar=(rcr*Pl+rcl*Pr+rcl*rcr*(ul-ur))/(rcr+rcl)
     !
     ! Left star region variables
     rstarl=rl*(SSL-ul)/(SSL-ustar)
@@ -170,11 +179,19 @@ fgdnv(:,9) =0.0
       Cstarl=Cl*el/estar
     endif
 #endif
+    sadl     = (log(ptotl/ptotr)+gamma*log(rl/rr))*(ul-ur)
+    sadr     = (log(ptotl/ptotr)+gamma*log(rl/rr))*(ul-ur)
+    !sadlstar = (log(ptotl/ptotstar)+gamma*log(rl/rstarl))*(ul-ustar)
+    !sadrstar = (log(ptotstar/ptotr)+gamma*log(rstarr/rr))*(ustar-ur)
+
+
     vdotBstarl=ustar*A+vstarl*Bstarl+wstarl*Cstarl
     tgstarl = tgl*(SSL-ul)/(SSL-ustar)
     stotstarl=sl
     c_v=one/(eos%gamma-one)
-    !stotstarl=((sl-eos%s0)/rl*rstarl)*(SSL-ul)/(SSL-ustar)+eos%s0
+    !stotstarl=(((sl-eos%s0)*rl/rstarl)*(SSL-ul))/(SSL-ustar)+eos%s0
+   
+    tgstarl  = (gamma*log(rstarl/rl)+log(ptotstar/ptotl))*(ul-ustar)
     !sl = sl + c_v*log(ptotl) + c_v*eos%gamma*log(rl)
     sqrrstarl=sqrt(rstarl)
     calfvenl=abs(A)/sqrrstarl
@@ -208,7 +225,8 @@ fgdnv(:,9) =0.0
     tgstarr = tgr*(SSR-ur)/(SSR-ustar)
     stotstarr=sr
     !sr = sr + c_v*log(ptotr) + c_v*eos%gamma*log(rr)
-    !stotstarr = ((sr-eos%s0)/rr*rstarr)*(SSR-ur)/(SSR-ustar)+eos%s0
+    !stotstarr = (((sr-eos%s0)*rr/rstarr)*(SSR-ur))/(SSR-ustar)+eos%s0
+    tgstarr  = (gamma*log(rr/rstarr)+log(ptotr/ptotstar))*(ustar-ur)
     sqrrstarr=sqrt(rstarr)
     calfvenr=abs(A)/sqrrstarr 
     SAR=ustar+calfvenr
@@ -219,8 +237,6 @@ fgdnv(:,9) =0.0
     Bstarstar=(sqrrstarl*Bstarr+sqrrstarr*Bstarl+sgnm*sqrrstarl*sqrrstarr*(vstarr-vstarl))/(sqrrstarl+sqrrstarr)
     Cstarstar=(sqrrstarl*Cstarr+sqrrstarr*Cstarl+sgnm*sqrrstarl*sqrrstarr*(wstarr-wstarl))/(sqrrstarl+sqrrstarr)
     vdotBstarstar=ustar*A+vstarstar*Bstarstar+wstarstar*Cstarstar
-    !etotstarstarl=etotstarl-sgnm*sqrrstarl*(vdotBstarl-vdotBstarstar)
-    !etotstarstarr=etotstarr+sgnm*sqrrstarr*(vdotBstarr-vdotBstarstar)
     stotstarstarl=stotstarl!-sgnm*sqrrstarl*(vdotBstarl-vdotBstarstar)
     stotstarstarr=stotstarr!+sgnm*sqrrstarr*(vdotBstarr-vdotBstarstar)
     !
@@ -228,6 +244,7 @@ fgdnv(:,9) =0.0
     tt3=0
     tt4=0
     tt2=0
+   ! print *, ul, cslowl, csl, cfastl, calfvenl
     if(SSL>=0d0)then
        icase=1
        ro=rl
@@ -241,53 +258,14 @@ fgdnv(:,9) =0.0
        so=sl
        vdotBo=vdotBl
        emago=emagl
-       M = (ul/csl)-(ur/csr)
-       ! This works (no temperature multiplier below):
-       ! tt1 =(ul-ssl)*log(pl/ro)
-       !scond =(ul-ssl)*log(ecinl)!(log(ro*uo*uo*half))
-       !works shu-osher
-       !scond=ssl*log(pl/ro)*uo
-       tt1=ssl*ssl*half*ro*uo!(ecinl-ecinr)
-       !scond = ptoto/ro
-       scond=0.
-       !print *, ptotl, ptotr, rl, rr
-       if (M>=1.0) then
-      !  call io%abort('case 1 sonic boom')
-       ! estimate P2
-       tt1=ptoto*(one+ two*eos%gamma/(eos%gamma+one)*(M*M-one))
-       ! estimate rho2
-       tt2=ro*((eos%gamma+one)*M*M/((eos%gamma-one)*M*M+two))
-       tt3=c_v*log(tt1) - c_v*log(ptotl) + c_v*eos%gamma*log(tt2) - c_v*eos%gamma*log(rl)
-       tt3=tt3
-       !tt3=(M*gamma)/(gamma+one)
-       ! Other option
-       tt1=(two*gamma*(M*M-one)+(gamma+one)) &
-          /(gamma+one)
-       tt2=(two*gamma*(M*M-one)+(gamma+one))*((gamma-one)*(M*M-one)+(gamma+one)) &
-          /((gamma+one)*(gamma+one)*(M*M-one)+(gamma+one)*(gamma+one))
-       !   tt2=(tt2*tgo-tgo)**2/3
-       
-       !tt3=log(ptotl)-gamma*log(rl)
-       !tt4=(gamma+1)*csl*csl/12.*((ul-ur)/ul)**3/tgl
-       end if
-       tt3=gamma/(gamma-one)*log(tgl/tgr)+log(ptotl/ptotr)
-       tt3=tt3*abs(ul-ur)
-       if (M>=1.0) then
-         tt1=abs(ul-ur)
-         tt2=(ur-tt1)
-         tt5=(uo-tt1)
-         tt4=(gamma+1)*csr*csr/12.*((tt5-tt2)/tt1)**3/tgl
-         
-       !  print *, 'sc1 tt4', tt3, tt4, tt1, tt2, tt5
-       end if
-       !tt3=log(ptotl/ptotr)-gamma*log(rl/rr)
-       
-       !print *, 'stress',ul, ssl, pl+rl*csl*ul
-       !print *,'RIEMANN: left state'
-       !tt1 =ssl*log(pl/rl)!+(pl+pr)*half*(1/rl-1/rr)
-       !scond =(ul-ssl)*(sqrt(uo*uo*ro*half)*(pl/(pl-one))-A*vdotBo)
-       !scond =(ul-ssl)*(((ptoto)/(ptoto-one)))*(log(ro*uo*uo))
-       !print *, tt1, scond
+       tt3=gamma*log(rl/rr)+log(ptotl/ptotr)
+       tt3=0!tt3*abs(ul-ur)
+       tt1=gamma*log(rl/rr)
+       tt2=log(ptotl/ptotr)
+       tt3=alfa_fr*(ur-ul)*(log(ptotr/ptotl)-gamma*log(rr/rl))
+       tt3=log(ptoto/ptotr)+gamma*log(ro/rr)
+       tt3=tt3*(ul-ur)
+     !  sadd=sadl
     else if(SAL>0d0)then
        icase=2
        ro=rstarl
@@ -299,46 +277,11 @@ fgdnv(:,9) =0.0
        Ptoto=Ptotstar
        so=stotstarl 
        tgo=tgstarl
-      M = (uo/csl)-(ur/csr)
-       tt1=0
        vdotBo=vdotBstarl
        emago=half*(A*A+Bo*Bo+Co*Co)
-       scond=0
-       !if (M>=1.0) then
-       tt3=c_v*log(ptoto) - c_v*log(ptotl) + c_v*eos%gamma*log(ro) - c_v*eos%gamma*log(rl)
-       ! estimate P2
-       tt1=ptoto*(one+ two*eos%gamma/(eos%gamma+one)*(M*M-one))
-       ! estimate rho2
-       tt2=ro*((eos%gamma+one)*M*M/((eos%gamma-one)*M*M+two))
-       tt3=c_v*log(tt1) - c_v*log(ptotl) + c_v*eos%gamma*log(tt2) - c_v*eos%gamma*log(rl)
-       !tt3=(M*gamma)/(gamma+one)
-       !tt2=(tt2*tgo-tgl)**2/3
-       tt1=(two*gamma*(M*M-one)+(gamma+one)) &
-          /(gamma+one)
-       tt2=(two*gamma*(M*M-one)+(gamma+one))*((gamma-one)*(M*M-one)+(gamma+one)) &
-          /((gamma+one)*(gamma+one)*(M*M-one)+(gamma+one)*(gamma+one))
-       
-      ! print *, ptotl, ptotr, rr, rl
-      ! tt3=gamma/(gamma-one)*log(tgo/tgl)-log(ptoto/ptotl)
-        !print *, 'newcond2', uo,csl,M, tt1, tt2, tt3
-       !tt3=tt3
-       !tt3=tt3+ecinl-(uo*uo+vo*vo+wo*wo)*ro*half/tgl
-     !  tt4=(gamma+1)*csl*csl/12.*((ul-ustar)/ul)**3/tgl
-       tt3=0
-      ! print *, '2nd', tt3, tt4, tt2
-       if (M>=1.0) then
-         tt1=abs(ul-ur)
-         tt2=(ur-tt1)
-         tt5=(uo-tt1)
-         tt4=(gamma+1)*csr*csr/12.*((tt5-tt2)/tt1)**3/tgl
-         
-       !  tt3=log(ptotl/ptotr)-gamma*log(rl/rr)
-       end if
-       tt3=gamma/(gamma-one)*log(tgo/tgr)+log(ptoto/ptotr)
-       tt3=tt3*abs(uo-ur)
-       !tt3=log(ptotl/ptotr)-gamma*log(rl/rr)
-       !end if
-       
+       tt3=log(ptoto/ptotr)+gamma*log(ro/rr)
+       tt3=tt3*(ul-ur)
+     !  sadd=sadlstar
     else if(ustar>0d0)then
        icase=3
        ro=rstarl
@@ -351,22 +294,15 @@ fgdnv(:,9) =0.0
        so=stotstarstarl
        tgo=tgstarl
        M = (uo-ur)/csl
-       tt1=0
-       scond=0
-       if (M>=1.0) then
-       tt3=c_v*log(ptoto) - c_v*log(ptotl) + c_v*eos%gamma*log(ro) - c_v*eos%gamma*log(rl)
-       tt3=tt3
-       end if
-       tt3=log(ptotl/ptotr)-gamma*log(rl/rr)
-       tt3=0
        vdotBo=vdotBstarstar
        emago=half*(A*A+Bo*Bo+Co*Co)
-       tt3=gamma/(gamma-one)*log(tgo/tgr)+log((ptoto+emago)/pr)
-       tt3=tt3*abs(uo-ur)!-sgnm*sqrrstarl*(vdotBstarl-vdotBstarstar)/tgo
-
-      !print *, 'ic3', so, tt3, -sgnm*sqrrstarl*(vdotBstarl-vdotBstarstar)/tgo
-      ! print *, 'ic3',so, tt3, , (gamma/(gamma-one)*log(tgo/tgr)+log((ptoto+emago)/pr))*abs(uo-ur)
-       !print *, 'ic3'
+     !  print *, stotstarl, tstarl, tt3
+       tt2=cslowl*alfa_sl*(gamma*half)
+       !tt2=merge(tt2,0.0,Bl*BR<0 .or.Cl*Cr<0)
+       tt3=log(ptoto/ptotr)+gamma*log(ro/rr)
+       tt3=tt3*(ul-ur)-sign(one,ul-ustar)*tt2*(log(pl/pr))!+cslowl*alfa_sl)!+(cslowl)*(log(pl/pstar))*alfa_sl
+       !print *, 'ic3',i,tt3, tt2, ul, ur, ustar,cslowl, alfa_sl,bl,br,cl,cr
+     !  sadd=0
     else if(SAR>0d0)then
        icase=4
        !print *, 'c4'
@@ -381,17 +317,13 @@ fgdnv(:,9) =0.0
        tgo=tgstarr
        vdotBo=vdotBstarstar
        emago=half*(A*A+Bo*Bo+Co*Co)
-       M = (ul/csl)-(ur/csr)
-       tt1=0
-       scond=0
-       if (M>=1.0) then
-       tt3=c_v*log(ptoto) - c_v*log(ptotr) + c_v*eos%gamma*log(ro) - c_v*eos%gamma*log(rr)
-       tt3=tt3
-       end if
-       tt3=log(ptotl/ptotr)-gamma*log(rl/rr)
-       tt3=0
-       tt3=gamma/(gamma-one)*log(tgl/tgo)+log(pl/(ptoto+emago))
-       tt3=tt3*abs(ul-uo)!+sgnm*sqrrstarl*(vdotBstarl-vdotBstarstar)/tgo
+       tt2=cslowr*alfa_sr*(gamma*half)
+       !tt2=merge(tt2,0.0,Bl*BR<0 .or.Cl*Cr<0)
+       tt3=log(ptotl/ptoto)+gamma*log(rl/ro)!+alfa_sr*log(pr/emago)
+       tt3=tt3*(ul-ur)+sign(one,ur-ustar)*tt2*(log(pl/pr))!-tt2)!+(cslowr)*(log(pr/pstar))*alfa_sr
+     ! sadd=0
+       !print *, 'ic4',i,tt3, tt2, ul, ur, ustar,cslowr, alfa_sr, bl,br,cl,cr
+      ! print *, sgnm*sqrrstarl*(vdotBstarl-vdotBstarstar)
     else if (SSR>0d0)then
        icase=5
        ro=rstarr
@@ -405,43 +337,10 @@ fgdnv(:,9) =0.0
        tgo=tgstarr
        vdotBo=vdotBstarr
        emago=half*(A*A+Bo*Bo+Co*Co)
-       M=(ul/csl)-(uo/csr)
-       scond=0
-       tt1=0
-       !print *, 'fifth', M, uo, ul, ur,ssr,csr, ssr-ur
-       !if (M>=1.0) then
-       tt3=c_v*log(ptoto) - c_v*log(ptotr) + c_v*eos%gamma*log(ro) - c_v*eos%gamma*log(rr)
-       tt3=uo*tt3
-       ! estimate P2
-       tt1=ptoto*(one+ two*eos%gamma/(eos%gamma+one)*(M*M-one))
-       ! estimate rho2
-       tt2=ro*((eos%gamma+one)*M*M/((eos%gamma-one)*M*M+two))
-       tt3=tt3
-       tt3=(c_v*log(tt1) - c_v*log(ptoto) + c_v*eos%gamma*log(tt2) - c_v*eos%gamma*log(rr))
-      ! tt3=(2*gamma)/(gamma+one)
-     ! tt4=(gamma+1)*csr*csr/12.*((ur-ustar)/ur)**3/tgr
-     ! tt1=(two*gamma*(M*M-one)+(gamma+one)) &
-     !    /(gamma+one)
-     ! tt2=(two*gamma*(M*M-one)+(gamma+one))*((gamma-one)*(M*M-one)+(gamma+one)) &
-     !    /((gamma+one)*(gamma+one)*(M*M-one)+(gamma+one)*(gamma+one))
-     ! tt3=gamma/(gamma-one)*log(tt2)+log(tt1)
- !     print *, ptotl, ptotr, rr, rl
-      tt3=0
-      if (M>=1.0) then
-         tt1=abs(ur-ul)
-         tt2=(ul-tt1)
-         tt5=(uo-tt1)
-         tt4=(gamma+1)*csr*csr/12.*((tt5-tt2)/tt1)**3/tgl
-         !print *, 'ic5 tt4', tt3, tt4, tt1, tt2, tt5
-         tt3=(log(ptoto)-gamma*log(ro))
-         tt3=log(ptotl/ptotr)-gamma*log(rl/rr)
-       
-       end if
-       tt3=gamma/(gamma-one)*log(tgl/tgo)+log(ptotl/ptoto)
-       tt3=tt3*abs(ul-uo)
-       !   tt3=(M*M*gamma)/(gamma+one)
-      ! tt2=(tt2*tgo-tgl)**2/3
-      ! end if
+       if (abs(ul-ur)>=csl) tt3=log(ptotl/ptoto)-gamma*(rl/ro)
+       tt3=log(ptotl/ptoto)+gamma*log(rl/ro)
+       tt3=tt3*(ul-ur)
+    !   sadd=sadrstar
     else
        icase=6
        ro=rr
@@ -455,34 +354,14 @@ fgdnv(:,9) =0.0
        Ptoto=Ptotr
        vdotBo=vdotBr
        emago=emagr
-       M = (ul/csl)-(ur/csr)
-       !Works
-       !tt1 =-(ssr-ur)*log(pr/ro)
-       !scond =-(ssr-ur)*log(ecinr)!(log(ro*uo*uo*half))
-       !scond=ssr*ptoto/ro
-       !print *,'RIEMANN: right state'
-       scond=0.
-       tt1=ssr*ssr*half*ro*uo
-       if (M>=1.0 .or. M<=-1.0) then
-       ! estimate P2
-       tt1=ptoto*(one+ two*eos%gamma/(eos%gamma+one)*(M*M-one))
-       ! estimate rho2
-       tt2=ro*((eos%gamma+one)*M*M/((eos%gamma-one)*M*M+two))
-       tt3=(c_v*log(tt1) - c_v*log(ptoto) + c_v*eos%gamma*log(tt2) - c_v*eos%gamma*log(rr))
-       tt3=tt3
-       tt3=(log(ptoto)-gamma*log(ro))
-       tt4=(gamma+1)*csr*csr/12.*((ur-ul)/ur)**3/tgr
-       end if
-       tt3=log(ptotl/ptotr)-gamma*log(rl/rr)
-       tt3=gamma/(gamma-one)*log(tgl/tgr)+log(ptotl/ptotr)
-       tt3=tt3*abs(ul-ur)
-       !tt3=(M*gamma)/(gamma+one)
-       
-       !tt2=(tt2*tgo-tgr)**2/3
-       !print *, tt1, scond
-       !tt1 =ssr*log(pr/ro)
-       !scond =-(ssr-ur)*(sqrt(uo*uo*ro*half)*(pr/(pr-one))-A*vdotBo)
-       !scond =-(ssr-ur)*(ptoto/(ptoto-one))*(log(ro*uo*uo))
+       tt3=gamma*log(rl/rr)+log(ptotl/ptotr)
+       tt3=0!tt3*abs(ul-ur)
+       tt1=gamma*log(rl/rr)
+       tt2=log(ptotl/ptotr)
+       tt3=alfa_fr*(uo-ul)*(log(ptotl/ptoto)-gamma*(rl/ro))
+       tt3=log(ptotl/ptotr)+gamma*log(rl/rr)
+       tt3=tt3*(ul-ur) 
+     !  sadd=sadr
     end if
    !if (i<25)  print *, i,icase, uo*ro*so, uo, tt3, tt4, ptoto
     !---------------------------------------------------------------------------
@@ -495,11 +374,11 @@ fgdnv(:,9) =0.0
     ustar = 0.25*max(cfastr,cfastl)*min(1.0, max(-1.0, ustar))
     uo = uo + ustar
 
-    msl=max(msl,sl)
-    msr=max(msr,sr)
-    mso=max(mso,so)
-    mss=max(mss,M*ro/(eos%gamma-1d0)*(tt3+tt4))
-    mmax=max(mmax,M)
+    !msl=max(msl,sl)
+    !msr=max(msr,sr)
+    !mso=max(mso,so)
+    !mss=max(mss,M*ro/(eos%gamma-1d0)*(tt3+tt4))
+    !mmax=max(mmax,M)
    ! print *, icase, uo, ssl, ul-ur, tt3, M, tt4
     if (abs(so*uo)>abs(somax)) somax=so*uo
     !
@@ -516,7 +395,8 @@ fgdnv(:,9) =0.0
     fgdnv(i,7) = ro*uo*wo-A*Co*lim
     fgdnv(i,8) = Co*uo-A*wo
     fgdnv(i,9) = (tt3)!(abs(tt3)+abs(tt4))!(tt4+tt3)!+tt4!ro*tt3!tt3!tt3!(tt1)!*tgo
-   ! print *, i, icase, so, tt3,tt4, uo, ul-ur, M, M*M!,tt4, ro/(eos%gamma-1d0)*(tt3+tt4), ptotl, ptotr, rl, rr, log(ptotl/ptotr),log(rl/rr)
+  !  if (mod(i,10)==1) print *, 'i, icase, so, tt3, ul, uo, ur, ptotl, ptotr, ptoto, rl, ro, rr'
+  !  print *, i,icase, so, tt3, ul, uo, ur, ptotl, ptotr, ptoto, rl, ro, rr
    
     if (abs(scond)>abs(smax)) then
       scase=icase
@@ -526,10 +406,10 @@ fgdnv(:,9) =0.0
   !    print *, 'tt3 leq 0', M*ro/(eos%gamma-1d0)*(tt3+tt4)
   !    error stop "end"
   !  end if
-  !  print *, icase, so, uo, tt3+tt4, uo*ro/(eos%gamma-1d0)*(tt3+tt4),ro/(eos%gamma-1d0)*(tt3+tt4)
+  !  print *, icase, so, tt3, ul, uo, ur, ptotl, ptotr, ptoto, rl, ro, rr
   end do
   !print *, msl, msr, mso, mss, mmax
- ! error stop "end"
+  !error stop "end"
 !#define ATOMIC
 #ifdef ATOMIC
   !$omp atomic
