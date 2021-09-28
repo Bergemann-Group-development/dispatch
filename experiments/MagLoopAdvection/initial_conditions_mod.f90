@@ -93,7 +93,7 @@ SUBROUTINE init (self)
   if (eos%gamma==1.0) then
     entropy = 1.0
   else
-    entropy = (log(p0)-log(d0)*eos%gamma)/(eos%gamma-1.0)
+    entropy = (eos%s0+log(p0)-log(d0)*eos%gamma)/(eos%gamma-1.0)
   end if
 
 
