@@ -1,21 +1,26 @@
 
 # Option groups
 #OPTS = debug
-OPTS = full_debug
-#OPTS = optimized
+#OPTS = full_debug
+OPTS = optimized
+#OTS=
 
 # Default target and methods
 UPD             = adams_bashforth
-SOLVER          = zeus3d
+#SOLVER         = stagger
+SOLVER          = ramses/mhd_eos/s
+#SOLVER          = stagger2/bifrost
+#STAGGER         = stagger_2nd.o
+#STAGGER         = stagger_6th.o
+#STAGGER         = stagger_mod.o
 EXEC            = dispatch.x
 TOP             = ../..
 sinclude $(TOP)/config/Makefile
 
 # List the .o files the main program depends on after the colon:
-$(EXEC): setup_mod.o cartesian_mod.o
+$(EXEC): restart_mod.o cartesian_mod.o setup_mod.o dispatcher_mod.o initial_conditions_mod.o
 
 # Dependencies
-experiment_mod.o	: io_mod.o trace_mod.o kinds_mod.o mesh_mod.o mhd_mod.o pboundary_mod.o bits_mod.o
-pboundary_mod.o		: io_mod.o trace_mod.o patch_mod.o mesh_mod.o bits_mod.o
-initial_mod.o		: io_mod.o trace_mod.o kinds_mod.o mesh_mod.o patch_mod.o index_mod.o
-force_mod.o			: io_mod.o trace_mod.o mesh_mod.o kinds_mod.o
+experiment_mod.o        : io_mod.o bits_mod.o solver_mod.o trace_mod.o
+initial_condition_mod.o	: io_mod.o trace_mod.o kinds_mod.o mesh_mod.o patch_mod.o index_mod.o units_mod.o
+extras_mod.o            : patch_mod.o scratch_mod.o gravity_mod.o initial_conditions_mod.o
