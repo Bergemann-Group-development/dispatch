@@ -15,9 +15,9 @@
 !===============================================================================
 MODULE mhd_mod
   !.............................................................................
-  !USE const
   USE io_mod
   USE io_unit_mod
+  USE omp_lock_mod
   USE extras_mod
   USE link_mod
   USE riemann_mod
@@ -25,15 +25,14 @@ MODULE mhd_mod
   USE trace_mod
   USE mpi_mod
   USE omp_mod
-  USE omp_lock_mod
   USE index_mod
   USE non_ideal_mod
   USE flux_mod
   USE omp_timer_mod
   USE timer_mod
-  USE eos_mod
-  USE task_mod
   USE scratch_mod
+  USE task_mod
+  USE eos_mod
   USE divb_clean_mod
   implicit none
   PRIVATE
@@ -46,8 +45,6 @@ MODULE mhd_mod
     real, contiguous, pointer, dimension(:,:,:,:,:):: qp, qm  ! face centered
     real, contiguous, pointer, dimension(:,:,:,:,:):: dq, dq2, dbf ! slopes
     real, contiguous, pointer, dimension(:,:,:,:,:):: qLB,qRB,qLT,qRT
-    real, contiguous, pointer, dimension(:,:,:,:):: uin       ! conserved
-    real, contiguous, pointer, dimension(:,:,:,:):: unew      ! new conserved
     real, contiguous, pointer, dimension(:,:,:):: Ex,Ey,Ez, pg, hpv
     real, contiguous, pointer, dimension(:,:,:):: c
     !dir$ attributes align:64 :: q,bf,em,qp,qm,dq,dq2,dbf,qLB,qRB,qLT,qRT,Ex,Ey,Ez,c
@@ -91,11 +88,14 @@ SUBROUTINE pre_init (self)
     detailed_timer, unsigned, courant_type, max_dlogd, n_dump, &
     do_temperature, verbose, do_corners
   character(len=120):: id = &
-   '$Id$ solvers/ramses/mhd_eos/mhd_mod.f90'
-!...............................................................................
+   '$Id$'
+  !-----------------------------------------------------------------------------
   call trace%begin ('mhd_mod%pre_init')
   call trace%print_id (id)
-  self%nw = 2
+  !-----------------------------------------------------------------------------
+  ! Make sure the extras modules have the correct starting point
+  !-----------------------------------------------------------------------------
+  self%nw = 1
   self%ng = 3
   self%nv = 8
   self%kind = 'ramses_s_mhd_patch'
@@ -109,11 +109,14 @@ SUBROUTINE pre_init (self)
   if (first_time) then
     rewind (io%input)
     read (io%input, ramses_params, iostat=iostat)
+    if (iostat > 0) then
+      rewind (io%input)
+      read (io%input, ramses_params)
+    end if
     call io%namelist_warning ('ramses_params', iostat)
     write (io%output, ramses_params)
     write (io%namelist, ramses_params)
     first_time = .false.
-    call divb%init
   end if
   call io%lock%unset ('mhd_mod%pre_init')
   rieman%max_dlogd = max_dlogd
@@ -145,9 +148,9 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Initialize everything else, and do a sanity check
   !-----------------------------------------------------------------------------
-  call non_ideal%init  
+  call non_ideal%init
+  call divb%init
   call self%set_solver_vars
-  allocate(self%pg(self%gn(1),self%gn(2),self%gn(3)))
   call trace%end()
 END SUBROUTINE init
 
@@ -179,31 +182,20 @@ SUBROUTINE pre_update (self)
   integer:: iz
   real, dimension(:,:,:,:), pointer:: mem
   !-----------------------------------------------------------------------------
-  ! Compute initial temperature
-  !-----------------------------------------------------------------------------
-  call trace%begin('mhd_t%pre_update')
-  ! ----------------------------------------------------------------------------
-  ! update time slots
-  ! ----------------------------------------------------------------------------
+  call trace%begin ('mhd_t%pre_update')
   call self%gpatch_t%pre_update ()
   !-----------------------------------------------------------------------------
   ! Primitive variables may be needed in extras courant_conditions
   !-----------------------------------------------------------------------------
   if (io%smallr  /= 0.0) smallr = io%smallr
   if (io%courant /= 0.0) self%courant = io%courant
-  !call ctoprim(self)                  ! Primitive variables, sound speeds
-  !call self%extras_t%courant_condition (detailed_timer)
-  !call self%gpatch_t%courant_condition (detailed_timer)
+  call ctoprim(self)                  ! Primitive variables, sound speeds
+  call self%extras_t%courant_condition (detailed_timer)
   !-----------------------------------------------------------------------------
-  ! Set boundary conditions on primary variables
-  !-----------------------------------------------------------------------------
-  mem => self%mem(:,:,:,:,self%new,1)
-  call self%boundaries%primary(mem)
-  !-----------------------------------------------------------------------------
-  ! Now we can call the extras_t%pre_update, which may need the temperature
+  ! Pre-update extras components
   !-----------------------------------------------------------------------------
   call self%extras_t%pre_update
-  call trace%end
+  call trace%end ()
 END SUBROUTINE pre_update
 
 !===============================================================================
@@ -219,15 +211,16 @@ SUBROUTINE post_update (self)
 END SUBROUTINE post_update
 
 !===============================================================================
+!> Main update step
 !===============================================================================
 SUBROUTINE update (self)
   class(mhd_t):: self
-  real, allocatable, dimension(:):: d2ekin
   real, pointer, dimension(:,:,:,:):: p
-  real, allocatable, dimension(:,:,:,:):: em
-  real, allocatable, dimension(:,:,:,:,:):: fl
-  real, allocatable, dimension(:,:,:,:)::fluxambdiff,emfambdiff,fluxohmdiss,emfohmdiss
-  real, pointer, dimension(:,:,:):: d, tg, q_heat, s, Ux=>null(), Uy=>null(), Uz=>null()
+  real, pointer, contiguous, dimension(:,:,:,:):: em
+  real, pointer, contiguous, dimension(:,:,:,:):: uin, unew
+  real, pointer, contiguous, dimension(:,:,:,:,:):: fl
+  real, pointer, contiguous, dimension(:,:,:,:)::fluxambdiff,emfambdiff,fluxohmdiss,emfohmdiss
+  real, pointer, dimension(:,:,:):: d, tg, q_heat, s
   real, pointer:: B(:,:,:,:)
   real(dp):: dtdx, dtdy, dtdz
   integer:: n(3), nv3, i, j, k, l(3), u(3), dir, iv
@@ -236,7 +229,6 @@ SUBROUTINE update (self)
   type(lock_t), pointer:: lock
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%updateX', itimer=itimer)
-  n = self%mesh%ui-self%mesh%li+1
   if (io%smallr > 0) smallr = io%smallr
   if (io%courant > 0) self%courant = io%courant
   !----------------------------------------------------------------------------
@@ -249,36 +241,31 @@ SUBROUTINE update (self)
   ! being called.  Set all values to zero initially, in case some loop extends
   ! beyond defined values.
   !-----------------------------------------------------------------------------
-  self%uin  => self%mem(:,:,:,:,self%new,1)
-  self%unew => self%mem(:,:,:,:,self%new,1)
-
   n = self%mesh%gn
-  allocate (self%c  (n(1),n(2),n(3)))                           ! self%c   = 0_dp
   allocate (self%Ex (n(1),n(2),n(3)))                           ! self%Ex  = 0_dp
   allocate (self%Ey (n(1),n(2),n(3)))                           ! self%Ey  = 0_dp
   allocate (self%Ez (n(1),n(2),n(3)))                           ! self%Ez  = 0_dp
-  allocate (self%q  (n(1),n(2),n(3),self%nvar))                 ! self%q   = 0_dp
   allocate (self%qp (n(1),self%nvar,ndim,n(2),n(3)))            ! self%qp  = 0_dp
   allocate (self%qm (n(1),self%nvar,ndim,n(2),n(3)))            ! self%qm  = 0_dp
   allocate (self%dq (n(1),self%nvar,ndim,n(2),n(3)))            ! self%dq  = 0_dp
   allocate (self%dq2(n(1),self%nvar,ndim,n(2),n(3)))            ! self%dq2 = 0_dp
-  allocate (self%bf (n(1),n(2),n(3),3))                         ! self%bf  = 0_dp
   allocate (self%dbf(n(1),3,2,n(2),n(3)))                       ! self%dbf = 0_dp
   allocate (self%qLB(n(1),self%nvar,ndim,n(2),n(3)))            ! self%qLB = 0_dp
   allocate (self%qLT(n(1),self%nvar,ndim,n(2),n(3)))            ! self%qLT = 0_dp
   allocate (self%qRB(n(1),self%nvar,ndim,n(2),n(3)))            ! self%qRB = 0_dp
   allocate (self%qRT(n(1),self%nvar,ndim,n(2),n(3)))            ! self%qRT = 0_dp
-  d => self%mem(:,:,:,          self%idx%d ,self%new,1)
-  s => self%mem(:,:,:,          self%idx%s ,self%new,1)
-  p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
+  uin  => self%mem(:,:,:,:,self%it ,1)
+  unew => self%mem(:,:,:,:,self%new,1)
+  d => self%mem(:,:,:,          self%idx%d ,self%it,1)
+  s => self%mem(:,:,:,          self%idx%s ,self%it,1)
+  p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
   !-----------------------------------------------------------------------------
   ! Compute update using second-order Godunov method
   !-----------------------------------------------------------------------------
-  call check_small (self)                               ! Check smallr, smallp
-  call ctoprim(self)                                    ! Primitive variables
   !self%dq = 0d0 ; self%dq2 = 0d0 ; self%dbf = 0d0
   call uslope(self,self%bf,self%q,self%dq,self%dbf,slope_type)   ! TVD slopes
-  if (verbose>0) print *, 'uslope', self%id, minval(self%dbf), maxval(self%dbf)
+  if (verbose > 2) write (stdlog,*) &
+   'uslope', self%id, minval(self%dbf), maxval(self%dbf)
   !-----------------------------------------------------------------------------
   ! For slope types in the interval 3-4, use the conservative 3.0 for corners
   ! (cf. RAMSES/CPH)
@@ -288,22 +275,21 @@ SUBROUTINE update (self)
   else
     call uslope(self,self%bf,self%q,self%dq2,self%dbf,3.0)       ! TVD slopes
   endif
-
-  if (verbose>0) print *, 'uslope', self%id, minval(self%dq), maxval(self%dq)
-  if (verbose>0) print *, 'uslope', self%id, minval(self%dq2), maxval(self%dq2)
-
+  if (verbose > 2) then
+    write (stdlog,*) 'uslope', self%id, minval(self%dq), maxval(self%dq)
+    write (stdlog,*) 'uslope', self%id, minval(self%dq2), maxval(self%dq2)
+  end if
   if (non_ideal%is_used) then
     allocate (fluxambdiff(self%gn(1),self%gn(2),self%gn(3),3))
     allocate (emfambdiff(self%gn(1),self%gn(2),self%gn(3),3))
-     allocate (fluxohmdiss(self%gn(1),self%gn(2),self%gn(3),3))
+    allocate (fluxohmdiss(self%gn(1),self%gn(2),self%gn(3),3))
     allocate (emfohmdiss(self%gn(1),self%gn(2),self%gn(3),3))
-    call non_ideal%non_ideal_comp(self%mesh,self%idx,self%bf,self%uin,self%q,&
+    fluxambdiff = 0d0; emfambdiff = 0d0; fluxohmdiss = 0d0; emfohmdiss = 0d0;   
+    call non_ideal%non_ideal_comp(self%mesh,self%idx,self%bf,uin,self%q,&
       fluxambdiff,emfambdiff,fluxohmdiss,emfohmdiss,self%u_max,self%ds,self%dtime)
   end if
   call self%courant_condition                           ! compute dt
-
   call trace3d(self)                                    ! predictor step
-
   allocate (fl(self%gn(1),self%gn(2),self%gn(3),self%nvar,3))
   allocate (em(self%gn(1),self%gn(2),self%gn(3),3))
   fl = 0.0d0
@@ -311,14 +297,13 @@ SUBROUTINE update (self)
   call cmpflxm(self,self%gn(1),2,3,4,6,7,8,fl(:,:,:,:,1))
   call cmpflxm(self,self%gn(2),3,4,2,7,8,6,fl(:,:,:,:,2))
   call cmpflxm(self,self%gn(3),4,2,3,8,6,7,fl(:,:,:,:,3))
-
-  call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,2,3,4,6,7,8,em(:,:,:,3),self%gn(1)-1,self%nvar)
-  call cmp_mag_flx(self, self%qRT, self%qLT, self%qRB, self%qLB,4,2,3,8,6,7,em(:,:,:,2),self%gn(1)-1,self%nvar)
-  call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,3,4,2,7,8,6,em(:,:,:,1),self%gn(1)-1,self%nvar)
-
   dtdx = self%dtime/self%ds(1) 
   dtdy = self%dtime/self%ds(2) 
   dtdz = self%dtime/self%ds(3) 
+ if (self%mhd) then
+  call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,2,3,4,6,7,8,em(:,:,:,3), self%gn(1), self%nv)
+  call cmp_mag_flx(self, self%qRT, self%qLT, self%qRB, self%qLB,4,2,3,8,6,7,em(:,:,:,2), self%gn(1), self%nv)
+  call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,3,4,2,7,8,6,em(:,:,:,1), self%gn(1), self%nv)
   em(:,:,:,1) = em(:,:,:,1)*dtdy
   em(:,:,:,2) = em(:,:,:,2)*dtdz
   em(:,:,:,3) = em(:,:,:,3)*dtdx
@@ -327,7 +312,6 @@ SUBROUTINE update (self)
     write (io%output,'("X7",f10.6,i4,1p,10e12.3)') self%time, 7, em(4:13,8,8,2)
     write (io%output,'("X8",f10.6,i4,1p,10e12.3)') self%time, 8, em(4:13,8,8,3)
   end if
-
   if (non_ideal%is_used) then
     call non_ideal%flux_upd(fl,fluxambdiff,fluxohmdiss,self%ds(1),self%dtime,1)
     call non_ideal%flux_upd(fl,fluxambdiff,fluxohmdiss,self%ds(2),self%dtime,2)
@@ -336,6 +320,7 @@ SUBROUTINE update (self)
     call non_ideal%non_ideal_emf_up(em(:,:,:,2),emfambdiff,emfohmdiss,self%ds(2),self%dtime,2)
     call non_ideal%non_ideal_emf_up(em(:,:,:,1),emfambdiff,emfohmdiss,self%ds(1),self%dtime,1)
   end if
+ end if
   ! Compute fluxes with appropriate time step
   fl(:,:,:,:,1) = fl(:,:,:,:,1) * dtdx
   fl(:,:,:,:,2) = fl(:,:,:,:,2) * dtdy
@@ -347,16 +332,17 @@ SUBROUTINE update (self)
       write (io%output,'("X5",f10.6,i4,1p,10e12.3)') self%time, i, fl(4:13,8,8,i,3)
     end do
   end if
-
   !-----------------------------------------------------------------------------
   ! Update conservative variables
   !-----------------------------------------------------------------------------
   associate (i0=>self%mesh(1)%li, j0=>self%mesh(2)%li, k0=>self%mesh(3)%li, &
-             i1=>self%mesh(1)%ui, j1=>self%mesh(2)%ui, k1=>self%mesh(3)%ui, &
-             uin=>self%uin,unew=>self%unew)
-
+             i1=>self%mesh(1)%ui, j1=>self%mesh(2)%ui, k1=>self%mesh(3)%ui)
   lock => self%mem_lock(self%new)
   call lock%set ('update')
+  !-----------------------------------------------------------------------------
+  ! First copy everything, to fill guard zones
+  !-----------------------------------------------------------------------------
+  call self%extrapolate_guards ()
   nv3 = 5
   !do iv=1,nv3
   !  if (iv/= idx%s) then
@@ -385,73 +371,85 @@ SUBROUTINE update (self)
   !end do
 
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3  ) = &
-  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3  ) + &
+   uin(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3  ) + &
     fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3,1) - &
     fl(i0+1:i1+1,j0  :j1  ,k0  :k1  ,1:nv3,1) + &
     fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3,2) - &
     fl(i0  :i1  ,j0+1:j1+1,k0  :k1  ,1:nv3,2) + &
     fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3,3) - &
-    fl(i0  :i1  ,j0  :j1  ,k0+1:k1+1,1:nv3,3)  
-    
-  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,5  ) = &
-  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,5  ) + &
+    fl(i0  :i1  ,j0  :j1  ,k0+1:k1+1,1:nv3,3)
+
+  !unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,5  ) = &
+  !unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,5  ) + &
+  ! (max(0.0,fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,9,1)) - &
+  ! min(0.0,fl(i0+1:i1+1,j0  :j1  ,k0  :k1  ,9,1)) + &
+  ! max(0.0,fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,9,2)) - &
+  ! min(0.0,fl(i0  :i1  ,j0+1:j1+1,k0  :k1  ,9,2)) + &
+  ! max(0.0,fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,9,3)) - &
+  ! min(0.0,fl(i0  :i1  ,j0  :j1  ,k0+1:k1+1,9,3)))!* &
+  !!unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,1  )  / (eos%gamma-1d0) 
+
+ unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,5  ) = &
+ unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,5  ) + &
    max(0.0,fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,9,1) - &
-    fl(i0+1:i1+1,j0  :j1  ,k0  :k1  ,9,1) + &
-    fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,9,2) - &
-    fl(i0  :i1  ,j0+1:j1+1,k0  :k1  ,9,2) + &
-    fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,9,3) - &
-    fl(i0  :i1  ,j0  :j1  ,k0+1:k1+1,9,3)) / self%q(i0  :i1  ,j0  :j1  ,k0  :k1  ,9)
+           fl(i0+1:i1+1,j0  :j1  ,k0  :k1  ,9,1) + &
+           fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,9,2) - &
+           fl(i0  :i1  ,j0+1:j1+1,k0  :k1  ,9,2) + &
+           fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,9,3) - &
+           fl(i0  :i1  ,j0  :j1  ,k0+1:k1+1,9,3)) * &
+  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,1  )  / (eos%gamma-1d0) 
 
-  !!!! TO DO !!!! 
-  !!! Instead of applying the update in time explicitly in mhd_mod
-  !!! only compute the fluxes and provide them to call timestep%update
-  !!! analogous to what is done in stagger2/mhd_mod.f90  
 
-  ! Compute emf fluxes with appropriate time steps
+! unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,5  ) = &
+! unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,5  ) + &
+!   half*(fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,9,1) + &
+!   fl(i0+1:i1+1,j0  :j1  ,k0  :k1  ,9,1)) + &
+!   half*(fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,9,2) + &
+!   fl(i0  :i1  ,j0+1:j1+1,k0  :k1  ,9,2)) + &
+!   half*(fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,9,3) - &
+!   fl(i0  :i1  ,j0  :j1  ,k0+1:k1+1,9,3))! / self%q(i0  :i1  ,j0  :j1  ,k0  :k1  ,9)
+
+ ! unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,5  ) = &
+ ! unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,5  ) + &
+ !   (fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,9,1) + &
+ !   fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,9,2) + &
+ !   fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,9,3)) * &
+ ! unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,1  )  / (eos%gamma-1d0) 
+
+ if (self%mhd) then
   if (self%id == io%id_debug) then
     write (io%output,'("M1",f10.6,i4,1p,10e12.3)') self%time, i, em(4:13,8,8,1)
     write (io%output,'("M2",f10.6,i4,1p,10e12.3)') self%time, i, em(4:13,8,8,2)
     write (io%output,'("M3",f10.6,i4,1p,10e12.3)') self%time, i, em(4:13,8,8,3)
   end if
-
-
   !-----------------------------------------------------------------------------
   ! Update Bx 
   !-----------------------------------------------------------------------------
-  self%mem(i0:i1, j0:j1, k0:k1, self%idx%bx, self%new, 2) = &
-    ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,2)   - &
+  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) =  &
+   uin(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) + &
+   (( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,2)   - &
       em(i0  :i1  ,j0  :j1  ,k0+1:k1+1,2) ) - &
     ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,3)   - &
-      em(i0  :i1  ,j0+1:j1+1,k0  :k1  ,3) )
-  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) =  &
-  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) + &
-    self%mem(i0:i1, j0:j1, k0:k1, self%idx%bx, self%new, 2)
-
+      em(i0  :i1  ,j0+1:j1+1,k0  :k1  ,3) ))
   !-----------------------------------------------------------------------------
   ! Update By 
   !-----------------------------------------------------------------------------
-  self%mem(i0:i1, j0:j1, k0:k1, self%idx%by, self%new, 2) = &
-    ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,3)   - &
+  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) = &
+   uin(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) + &
+   (( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,3)   - &
       em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,3) ) - &
     ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,1)   - &
-      em(i0  :i1  ,j0  :j1  ,k0+1:k1+1,1) )
-  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) = &
-  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) + &
-    self%mem(i0:i1, j0:j1, k0:k1, self%idx%by, self%new, 2)
-
+      em(i0  :i1  ,j0  :j1  ,k0+1:k1+1,1) ))
   !-----------------------------------------------------------------------------
   ! Update Bz 
   !-----------------------------------------------------------------------------
-  self%mem(i0:i1, j0:j1, k0:k1, self%idx%bz, self%new, 2) = &
-    ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,1)   - &
+  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) = &
+   uin(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) + &
+   (( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,1)   - &
       em(i0  :i1  ,j0+1:j1+1,k0  :k1  ,1) ) - &
     ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,2)   - &
-      em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,2) )
-  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) = &
-  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) + &
-    self%mem(i0:i1, j0:j1, k0:k1, self%idx%bz, self%new, 2)
-
-  if (verbose>0) print *, 'unew', self%id, minval(unew), maxval(unew)
+      em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,2) ))
+ end if
   end associate
   !-----------------------------------------------------------------------------
   ! Reset the entropy variable in isothermal cases
@@ -459,20 +457,18 @@ SUBROUTINE update (self)
   if (isothermal) &
     self%mem(:,:,:,self%idx%s,self%new,1) = &
     self%mem(:,:,:,self%idx%s,self%it,1)
-
   !-----------------------------------------------------------------------------
   ! Add external force as source term
   !-----------------------------------------------------------------------------
   l = self%mesh%li
   u = self%mesh%ui
-  allocate (d2ekin(l(1):u(1)))
   d => self%mem(:,:,:,self%idx%d,self%new,1)
   p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
   if (associated(scratch%force_per_unit_mass)) then
     do k=l(3),u(3)
       do j=l(2),u(2)
-        do i=l(1),u(1)
-          do dir=1,3
+        do dir=1,3
+          do i=l(1),u(1)
             p(i,j,k,dir) = p(i,j,k,dir) &
                       +  self%dtime*scratch%force_per_unit_mass(i,j,k,dir)*d(i,j,k)
           end do
@@ -483,8 +479,8 @@ SUBROUTINE update (self)
   if (associated(scratch%force_per_unit_volume)) then
     do k=l(3),u(3)
       do j=l(2),u(2)
-        do i=l(1),u(1)
-          do dir=1,3
+        do dir=1,3
+          do i=l(1),u(1)
             p(i,j,k,dir) = p(i,j,k,dir) &
                       +  self%dtime*scratch%force_per_unit_volume(i,j,k,dir)
           end do
@@ -493,8 +489,7 @@ SUBROUTINE update (self)
     end do
   end if
   !-----------------------------------------------------------------------------
-  ! External heating / cooling, if any; e.g. radiative or conductive
-  ! This needs EOS lookup.
+  ! Add external heating as source term
   !-----------------------------------------------------------------------------
   if (associated(scratch%heating_per_unit_mass)) then
     q_heat => scratch%heating_per_unit_mass
@@ -503,7 +498,7 @@ SUBROUTINE update (self)
     tg => self%q(:,:,:,9)
     l = self%mesh%li
     u = self%mesh%ui
-    ! S = S + d*q_heat/pg
+    ! S = S + d*q_heat/tg
     do k=l(3),u(3)
       do j = l(2),u(2)
         do i=l(1),u(1)
@@ -518,7 +513,7 @@ SUBROUTINE update (self)
     tg => self%q(:,:,:,9)
     l = self%mesh%li
     u = self%mesh%ui
-    ! S = S + q_heat/pg
+    ! S = S + q_heat/tg
     do k=l(3),u(3)
       do j = l(2),u(2)
         do i=l(1),u(1)
@@ -566,18 +561,25 @@ SUBROUTINE update (self)
 END SUBROUTINE update
 
 !===============================================================================
+!> Check for small density and pressure values
 !===============================================================================
-subroutine check_small (self)
+subroutine check_small (self, it)
   class(mhd_t):: self
+  integer, optional:: it
   integer:: i,j,k,lo(3),uo(3),n_smalld,n_smallp
   real(dp):: c,d,u,v,w,p,ekin,B1,B2,B3,emag
   integer, save:: nprint=10
   integer, save:: itimer=0
-  integer:: it, jt, iw
+  integer:: jt, kt, iw
   logical:: panic
-  associate(uu=>self%uin)
+  real, pointer, contiguous:: uu(:,:,:,:)
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%check_small', itimer=itimer, detailed_timer=detailed_timer)
+  if (present(it)) then
+    uu => self%mem(:,:,:,:,it,1)
+  else
+    uu => self%mem(:,:,:,:,self%it,1)
+  end if
   n_smalld = 0
   n_smallp = 0
   panic = .false.
@@ -587,53 +589,52 @@ subroutine check_small (self)
   do j=lo(2),uo(2)
   do i=lo(1),uo(1)
     if (uu(i,j,k,1) < smallr) then
+      print *, i, j, k, uu(i,j,k,1), uu(i,j,k,5), uu(i,j,k,1)**eos%gamma*exp(uu(i,j,k,self%idx%s)/uu(i,j,k,1)*(eos%gamma-one)-eos%s0)
       error stop "d < smallr"
       panic = .true.
-      if (nprint>0) then
-        nprint = nprint-1
-        write (io_unit%log,'(i7,3i5,1p,2e12.3)') self%id,i,j,k,uu(i,j,k,1),smallr
-      end if
+      !if (nprint>0) then
+      !  nprint = nprint-1
+      !  write (stdlog,'(i7,3i5,1p,2e12.3)') self%id,i,j,k,uu(i,j,k,1),smallr
+      !end if
       n_smalld = n_smalld+1
       uu(i,j,k,1) = smallr
     end if
-    d =  uu(i,j,k,self%idx%d)
-    c = 1./d
-    u =  uu(i,j,k,self%idx%px)*c
-    v =  uu(i,j,k,self%idx%py)*c
-    w =  uu(i,j,k,self%idx%pz)*c
+    d =  uu(i,j,k,1)
     if (isothermal) then
       p = d*self%csound**2
-      uu(i,j,k,self%idx%s) = log(p/d**eos%gamma)* d / (eos%gamma - one)
+      uu(i,j,k,self%idx%s) = (eos%s0+log(p/d**eos%gamma))* d / (eos%gamma - one)
     else
-      p = d**eos%gamma*exp(uu(i,j,k,self%idx%s)/d*(eos%gamma-one))
+      p = d**eos%gamma*exp(uu(i,j,k,self%idx%s)/d*(eos%gamma-one)-eos%s0)
     end if
     if (p < smallr*smallc**2) then
       p = smallr*smallc**2
       print *, 'small s swap'
-      uu(i,j,k,self%idx%s) = log(p/d**eos%gamma) * d / (eos%gamma - one)
+      uu(i,j,k,self%idx%s) = (eos%s0+log(p/d**eos%gamma)) * d / (eos%gamma - one)
     end if
   end do
   end do
   end do
+  !.............................................................................
   if (n_smalld+n_smallp > 0) then
-    write (io_unit%log,*) 'small: id,nr,np', &
+    write (stdlog,*) 'small: id,nr,np', &
       wallclock(),self%id,self%time,n_smalld,n_smallp
   end if
-  end associate
+  !.............................................................................
   if (panic .and. self%n_dump > 0) then
     !$omp critical (panic_cr)
     self%n_dump = self%n_dump-1
     write (io_unit%dump) self%id, self%gn, self%nv, self%nt, self%nw, self%istep
     write (io_unit%dump) self%time, self%dtime
     do iw=1,self%nw
-    do it=1,self%nt
-      jt = self%iit(it)
+    do kt=1,self%nt
+      jt = self%iit(kt)
       write (io_unit%dump) self%mem(:,:,:,:,jt,iw)
     end do
     end do
     write (io_unit%mpi,*) 'density < SMALLR, dumped', self%id, self%time
     !$omp end critical (panic_cr)
   end if
+  !.............................................................................
   call trace%end (itimer, detailed_timer=detailed_timer)
 end subroutine check_small
 
@@ -648,11 +649,21 @@ subroutine ctoprim(self)
   real(dp):: s, B1, B2, B3
   integer, save:: itimer=0
   logical:: e_below
-  integer:: i, j, k, loc(3), l(3), u(3)
+  integer:: i, j, k, loc(3), l(3), u(3), m(3)
   real, pointer, dimension(:,:,:):: lnd, tt,ss
-  associate(uin=>self%uin,q=>self%q,bf=>self%bf,dt=>self%dtime,c=>self%c)
+  real, dimension(:,:,:,:), pointer, contiguous:: uin, unew
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%ctoprim', itimer=itimer, detailed_timer=detailed_timer)
+  !-----------------------------------------------------------------------------
+  uin  => self%mem(:,:,:,:,self%it ,1)
+  unew => self%mem(:,:,:,:,self%new,1)
+  m = self%mesh%gn
+  allocate (self%c  (m(1),m(2),m(3)))
+  allocate (self%q  (m(1),m(2),m(3),self%nvar))
+  allocate (self%bf (m(1),m(2),m(3),3))
+  call check_small (self, self%it)
+  associate(q=>self%q,bf=>self%bf,dt=>self%dtime,c=>self%c)
+  !-----------------------------------------------------------------------------
   if (isothermal) then
     entho = one
   else
@@ -673,26 +684,22 @@ subroutine ctoprim(self)
   q(:,:,:,6) = uin(:,:,:,6)                                                     ! Bx
   q(:,:,:,7) = uin(:,:,:,7)                                                     ! By
   q(:,:,:,8) = uin(:,:,:,8)                                                     ! Bz
-  q(:,:,:,10) = uin(:,:,:,5)! / uin(:,:,:,1)                                      ! entropy / mass
+  q(:,:,:,10) = uin(:,:,:,5)/q(:,:,:,1)                                         ! entropy / mass
   bf(:,:,:,1) = uin(:,:,:,6)
   bf(:,:,:,2) = uin(:,:,:,7)
   bf(:,:,:,3) = uin(:,:,:,8)
-  if (verbose>0) print *,  'ctoprim:rh', self%id, minval(q(:,:,:,1)), maxval(q(:,:,:,1))
-  if (verbose>0) print *,  'ctoprim:bf', self%id, minval(bf), maxval(bf)
+  
   !-----------------------------------------------------------------------------
   ! Arrays for EOS
   !-----------------------------------------------------------------------------
   allocate (lnd(gn(1),gn(2),gn(3)))
   allocate (ss(gn(1),gn(2),gn(3)))
   lnd = log(q(:,:,:,1))
-  ss = q(:,:,:,10)/q(:,:,:,1)
-  ! ss => q(:,:,:,9)
+  ss = q(:,:,:,10)
   !-----------------------------------------------------------------------------
   ! Pressure
   !-----------------------------------------------------------------------------
   call eos%lookup_table (shape(lnd), lnd=lnd, ss=ss, pg=q(:,:,:,5), tt=q(:,:,:,9),label='mhd', id=self%id)
-  self%pg = q(:,:,:,5)
-  call self%aux%register ('pg', self%pg)
   !-----------------------------------------------------------------------------
   ! Fast mode speed
   !-----------------------------------------------------------------------------
@@ -702,13 +709,14 @@ subroutine ctoprim(self)
     B1 = half*(q(i,j,k,6)+q(i+1,j,k,6))
     B2 = half*(q(i,j,k,7)+q(i,j+1,k,7))
     B3 = half*(q(i,j,k,8)+q(i,j,k+1,8))
+    q(i,j,k,6)=B1
+    q(i,j,k,7)=B2
+    q(i,j,k,8)=B3
     emag = half*(B1**2 + B2**2 + B3**2)
     c(i,j,k) = sqrt((q(i,j,k,5)*eos%gamma + 2.0*emag)/q(i,j,k,1))
   end do
   end do
   end do
-!print '(i6,1x,a,i4,1p,2(2x,2e11.2))', self%id, 'idx%tt, min, max =', self%idx%tt, &
-!minval(tt), maxval(tt), minval(c(1:n(1),1:n(2),1:n(3))), maxval(c(1:n(1),1:n(2),1:n(3)))
   deallocate (lnd)
   deallocate (ss)
   if (self%id == io%id_debug) then
@@ -722,15 +730,27 @@ subroutine ctoprim(self)
   !-----------------------------------------------------------------------------
   ! Alternative Courant condition formulations
   !-----------------------------------------------------------------------------
-  if (courant_type==1) then
-    c(:,:,:) = c(:,:,:) + max(abs(q(:,:,:,2)),  abs(q(:,:,:,3)),  abs(q(:,:,:,4)))
-  else
-    c(:,:,:) = c(:,:,:) +    (abs(q(:,:,:,2)) + abs(q(:,:,:,3)) + abs(q(:,:,:,4)))/3.0
-  end if
-  ! Gravity predictor step
-  !q(:,:,:,2:4) = q(:,:,:,idim+1) + Grho*gravin(:,:,:,1:3)*dt*half
   l = self%mesh%lo
   u = self%mesh%uo
+  if (courant_type==1) then
+    do k=l(3),u(3)
+    do j=l(2),u(2)
+    do i=l(1),u(1)
+      c(i,j,k) = &
+      c(i,j,k) + max(abs(q(i,j,k,2)), abs(q(i,j,k,3)), abs(q(i,j,k,4)))
+    end do
+    end do
+    end do
+  else
+    do k=l(3),u(3)
+    do j=l(2),u(2)
+    do i=l(1),u(1)
+      c(i,j,k) = &
+      c(i,j,k) + (abs(q(i,j,k,2)) + abs(q(i,j,k,3)) + abs(q(i,j,k,4)))/3.0
+    end do
+    end do
+    end do
+  end if
   if (any(l < 0 .or. u > self%gn)) then
     write (stderr,*) 'ERROR: lo, uo =', self%id, l, u
     call io%abort ('ctoprim: lo or uo inconsistent')
@@ -738,14 +758,14 @@ subroutine ctoprim(self)
   self%u_max = maxval(c(l(1):u(1),l(2):u(2),l(3):u(3)))
   if (self%get_umax_location) then
     loc = maxloc(c(l(1):u(1),l(2):u(2),l(3):u(3))) + l-1
-    write (io_unit%log,'(a,i6,f12.6,2(1x,3i4),3f9.4,2(1x,a,1p,4g10.2))') 'u_max:', &
+    write (stdlog,'(a,i6,f12.6,2(1x,3i4),3f9.4,2(1x,a,1p,4g10.2))') 'u_max:', &
       self%id, self%time, self%ipos, loc, &
       (self%mesh(1)%p + self%mesh(1)%r(loc(1))-self%mesh(2)%llc_cart)/self%mesh(1)%b, &
       (self%mesh(2)%p + self%mesh(2)%r(loc(2))-self%mesh(2)%llc_cart)/self%mesh(2)%b, &
       (self%mesh(3)%p + self%mesh(3)%r(loc(3))-self%mesh(2)%llc_cart)/self%mesh(3)%b, &
       'P,B:', q(loc(1),loc(2),loc(3),5:8), &
       'D,U:', q(loc(1),loc(2),loc(3),1:4)
-    flush (io_unit%log)
+    flush (stdlog)
   end if
   end associate
   call trace%end (itimer, detailed_timer=detailed_timer)
@@ -847,7 +867,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
    ! end do
   else if (islope_type==2) then ! moncen
     xslope_type= 2 !MIN(slope_type,2)
-    do n = 1, nv
+    do n = 1, nv-1
       do k = l(3),u(3)
         do j = l(2),u(2)
           !dir$ ivdep
@@ -859,14 +879,14 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
             dcen = half*(dlft+drgt)                       ! = dq
             dsgn = sign(one, dcen)                        ! sign(slope)
             slop = xslope_type*min(abs(dlft),abs(drgt))   ! slope_type=1: slope=dq, slope_type=2: slope=2*dq 
-            slop = merge(slop,zero,(dlft*drgt)>zero)      ! if both are non-zero, use the smaller one, or times 2
+            slop = merge(slop,zero,(sign(one,dlft)*sign(one,drgt))>zero)      ! if both are non-zero, use the smaller one, or times 2
             dq(i,n,1,j,k) = dsgn*min(slop,abs(dcen))      ! the smaller of the twice the smaller slope, and the central one            ! slopes in second coordinate direction
             dlft = (q(i,j  ,k,n) - q(i,j-1,k,n))
             drgt = (q(i,j+1,k,n) - q(i,j  ,k,n))
             dcen = half*(dlft+drgt)
             dsgn = sign(one, dcen)
             slop = xslope_type*min(abs(dlft),abs(drgt))
-            slop = merge(slop,zero,(dlft*drgt)>zero)
+            slop = merge(slop,zero,(sign(one,dlft)*sign(one,drgt))>zero)
             dq(i,n,2,j,k) = dsgn*min(slop,abs(dcen))
             ! slopes in third coordinate direction
             dlft = (q(i,j,k  ,n) - q(i,j,k-1,n))
@@ -874,44 +894,44 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
             dcen = half*(dlft+drgt)
             dsgn = sign(one, dcen)
             slop = xslope_type*min(abs(dlft),abs(drgt))
-            slop = merge(slop,zero,(dlft*drgt)>zero)
+            slop = merge(slop,zero,(sign(one,dlft)*sign(one,drgt))>zero)
             dq(i,n,3,j,k) = dsgn*min(slop,abs(dcen))
           end do
         end do
       end do
     end do
-  !  n = 10
-  !  do k = l(3),u(3)
-  !    do j = l(2),u(2)
-  !      !dir$ ivdep
-  !      !$omp simd private(dlft,drgt,dcen,dsgn,slop)
-  !      do i = l(1),u(1)
-  !        ! slopes in first coordinate direction
-  !        dlft = (q(i  ,j,k,n) - q(i-1,j,k,n))          ! = dq
-  !        drgt = (q(i+1,j,k,n) - q(i  ,j,k,n))          ! = dq
-  !        dcen = half*(dlft+drgt)                       ! = dq
-  !        dsgn = sign(one, dcen)                        ! sign(slope)
-  !        slop = xslope_type*min(abs(dlft),abs(drgt))   ! slope_type=1: slope=dq, slope_type=2: slope=2*dq 
-  !        !slop = merge(slop,zero,(dlft*drgt)>zero)      ! if both are non-zero, use the smaller one, or times 2
-  !        dq(i,n,1,j,k) = dsgn*min(slop,abs(dcen))      ! the smaller of the twice the smaller slope, and the central one            ! slopes in second coordinate direction
-  !        dlft = (q(i,j  ,k,n) - q(i,j-1,k,n))
-  !        drgt = (q(i,j+1,k,n) - q(i,j  ,k,n))
-  !        dcen = half*(dlft+drgt)
-  !        dsgn = sign(one, dcen)
-  !        slop = xslope_type*min(abs(dlft),abs(drgt))
-  !        !slop = merge(slop,zero,(dlft*drgt)>zero)
-  !        dq(i,n,2,j,k) = dsgn*min(slop,abs(dcen))
-  !        ! slopes in third coordinate direction
-  !        dlft = (q(i,j,k  ,n) - q(i,j,k-1,n))
-  !        drgt = (q(i,j,k+1,n) - q(i,j,k  ,n))
-  !        dcen = half*(dlft+drgt)
-  !        dsgn = sign(one, dcen)
-  !        slop = xslope_type*min(abs(dlft),abs(drgt))
-  !        !slop = merge(slop,zero,(dlft*drgt)>zero)
-  !        dq(i,n,3,j,k) = dsgn*min(slop,abs(dcen))
-  !      end do
-  !    end do
-  !  end do
+    n = 10
+    do k = l(3),u(3)
+      do j = l(2),u(2)
+        !dir$ ivdep
+        !$omp simd private(dlft,drgt,dcen,dsgn,slop)
+        do i = l(1),u(1)
+          ! slopes in first coordinate direction
+          dlft = (q(i  ,j,k,n) - q(i-1,j,k,n))          ! = dq
+          drgt = (q(i+1,j,k,n) - q(i  ,j,k,n))          ! = dq
+          dcen = half*(dlft+drgt)                       ! = dq
+          dsgn = sign(one, dcen)                        ! sign(slope)
+          slop = xslope_type*min(abs(dlft),abs(drgt))   ! slope_type=1: slope=dq, slope_type=2: slope=2*dq
+          !slop = merge(slop,zero,(dlft*drgt)>zero)      ! if both are non-zero, use the smaller one, or times 2
+          dq(i,n,1,j,k) = dsgn*min(slop,abs(dcen))      ! the smaller of the twice the smaller slope, and the central one            ! slopes in second coordinate direction
+          dlft = (q(i,j  ,k,n) - q(i,j-1,k,n))
+          drgt = (q(i,j+1,k,n) - q(i,j  ,k,n))
+          dcen = half*(dlft+drgt)
+          dsgn = sign(one, dcen)
+          slop = xslope_type*min(abs(dlft),abs(drgt))
+          !slop = merge(slop,zero,(dlft*drgt)>zero)
+          dq(i,n,2,j,k) = dsgn*min(slop,abs(dcen))
+          ! slopes in third coordinate direction
+          dlft = (q(i,j,k  ,n) - q(i,j,k-1,n))
+          drgt = (q(i,j,k+1,n) - q(i,j,k  ,n))
+          dcen = half*(dlft+drgt)
+          dsgn = sign(one, dcen)
+          slop = xslope_type*min(abs(dlft),abs(drgt))
+          !slop = merge(slop,zero,(dlft*drgt)>zero)
+          dq(i,n,3,j,k) = dsgn*min(slop,abs(dcen))
+        end do
+      end do
+    end do
 
     do k = l(3),u(3)
       do j = l(2),u(2)
@@ -925,7 +945,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
           dcen = half*(dlft+drgt)
           dsgn = sign(one, dcen)
           slop = xslope_type*min(abs(dlft),abs(drgt))
-          slop = merge(slop,zero,(dlft*drgt)>zero)
+          slop = merge(slop,zero,(sign(one,dlft)*sign(one,drgt))>zero)
           dbf(i,1,1,j,k) = dsgn*min(slop,abs(dcen))
           ! slopes in second coordinate direction
           dlft = (bf(i,j,k  ,1) - bf(i,j,k-1,1))
@@ -933,7 +953,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
           dcen = half*(dlft+drgt)
           dsgn = sign(one, dcen)
           slop = xslope_type*min(abs(dlft),abs(drgt))
-          slop = merge(slop,zero,(dlft*drgt)>zero)
+          slop = merge(slop,zero,(sign(one,dlft)*sign(one,drgt))>zero)
           dbf(i,1,2,j,k) = dsgn*min(slop,abs(dcen))
           ! By
           ! slopes in first coordinate direction
@@ -942,7 +962,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
           dcen = half*(dlft+drgt)
           dsgn = sign(one, dcen)
           slop = xslope_type*min(abs(dlft),abs(drgt))
-          slop = merge(slop,zero,(dlft*drgt)>zero)
+          slop = merge(slop,zero,(sign(one,dlft)*sign(one,drgt))>zero)
           dbf(i,2,1,j,k) = dsgn*min(slop,abs(dcen))
           ! slopes in second coordinate direction
           dlft = (bf(i,j,k  ,2) - bf(i,j,k-1,2))
@@ -950,7 +970,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
           dcen = half*(dlft+drgt)
           dsgn = sign(one, dcen)
           slop = xslope_type*min(abs(dlft),abs(drgt))
-          slop = merge(slop,zero,(dlft*drgt)>zero)
+          slop = merge(slop,zero,(sign(one,dlft)*sign(one,drgt))>zero)
           dbf(i,2,2,j,k) = dsgn*min(slop,abs(dcen))
           ! Bz
           ! slopes in first coordinate direction
@@ -959,7 +979,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
           dcen = half*(dlft+drgt)
           dsgn = sign(one, dcen)
           slop = xslope_type*min(abs(dlft),abs(drgt))
-          slop = merge(slop,zero,(dlft*drgt)>zero)
+          slop = merge(slop,zero,(sign(one,dlft)*sign(one,drgt))>zero)
           dbf(i,3,1,j,k) = dsgn*min(slop,abs(dcen))
           ! slopes in second coordinate direction
           dlft = (bf(i,j  ,k,3) - bf(i,j-1,k,3))
@@ -967,7 +987,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
           dcen = half*(dlft+drgt)
           dsgn = sign(one, dcen)
           slop = xslope_type*min(abs(dlft),abs(drgt))
-          slop = merge(slop,zero,(dlft*drgt)>zero)
+          slop = merge(slop,zero,(sign(one,dlft)*sign(one,drgt))>zero)
           dbf(i,3,2,j,k) = dsgn*min(slop,abs(dcen))
         end do
       end do
@@ -976,6 +996,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
   else if (islope_type==3) then ! positivity preserving 3d unsplit slope
     xslope_type = real(slope_type - 2_dp,kind=dp)
     do n = 1, nv
+      if (n==self%idx%phi .or. n==self%idx%dphi) cycle
       do k = l(3),u(3)
         do j = l(2),u(2)
           !dir$ vector aligned
@@ -1045,6 +1066,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
         end do
       end do
     end do
+    if (self%mhd) then
       do k = l(3),u(3)
         do j = l(2),u(2)
           !dir$ ivdep
@@ -1056,7 +1078,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
             dcen = half*(dlft+drgt)
             dsgn = sign(one, dcen)
             slop = xslope_type*min(abs(dlft),abs(drgt))
-            slop = merge(slop,zero,(dlft*drgt)>zero)
+            slop = merge(slop,zero,(sign(one,dlft)*sign(one,drgt))>zero)
             dbf(i,1,1,j,k) = dsgn*min(slop,abs(dcen))
             ! slopes in second coordinate direction
             dlft = (bf(i,j,k  ,1) - bf(i,j,k-1,1))
@@ -1064,7 +1086,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
             dcen = half*(dlft+drgt)
             dsgn = sign(one, dcen)
             slop = xslope_type*min(abs(dlft),abs(drgt))
-            slop = merge(slop,zero,(dlft*drgt)>zero)
+            slop = merge(slop,zero,(sign(one,dlft)*sign(one,drgt))>zero)
             dbf(i,1,2,j,k) = dsgn*min(slop,abs(dcen))
             !By
             ! slopes in first coordinate direction
@@ -1073,7 +1095,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
             dcen = half*(dlft+drgt)
             dsgn = sign(one, dcen)
             slop = xslope_type*min(abs(dlft),abs(drgt))
-            slop = merge(slop,zero,(dlft*drgt)>zero)
+            slop = merge(slop,zero,(sign(one,dlft)*sign(one,drgt))>zero)
             dbf(i,2,1,j,k) = dsgn*min(slop,abs(dcen))
             ! slopes in second coordinate direction
             dlft = (bf(i,j,k  ,2) - bf(i,j,k-1,2))
@@ -1081,7 +1103,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
             dcen = half*(dlft+drgt)
             dsgn = sign(one, dcen)
             slop = xslope_type*min(abs(dlft),abs(drgt))
-            slop = merge(slop,zero,(dlft*drgt)>zero)
+            slop = merge(slop,zero,(sign(one,dlft)*sign(one,drgt))>zero)
             dbf(i,2,2,j,k) = dsgn*min(slop,abs(dcen))
             ! Bz
             ! slopes in first coordinate direction
@@ -1090,7 +1112,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
             dcen = half*(dlft+drgt)
             dsgn = sign(one, dcen)
             slop = xslope_type*min(abs(dlft),abs(drgt))
-            slop = merge(slop,zero,(dlft*drgt)>zero)
+            slop = merge(slop,zero,(sign(one,dlft)*sign(one,drgt))>zero)
             dbf(i,3,1,j,k) = dsgn*min(slop,abs(dcen))
             ! slopes in second coordinate direction
             dlft = (bf(i,j  ,k,3) - bf(i,j-1,k,3))
@@ -1098,12 +1120,14 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
             dcen = half*(dlft+drgt)
             dsgn = sign(one, dcen)
             slop = xslope_type*min(abs(dlft),abs(drgt))
-            slop = merge(slop,zero,(dlft*drgt)>zero)
+            slop = merge(slop,zero,(sign(one,dlft)*sign(one,drgt))>zero)
             dbf(i,3,2,j,k) = dsgn*min(slop,abs(dcen))
           end do
         end do
-     end do
-
+      end do
+    else
+      dbf = 0.0
+    end if
   else
      write(*,*)'Unknown slope type'
      stop
@@ -1137,9 +1161,9 @@ SUBROUTINE trace3d(self)
   real(dp) :: dBLx, dBRx, dBLz, dBRz
   real(dp) :: dCLx, dCRx, dCLy, dCRy
   real(dp) :: sAL0, sAR0, sBL0, sBR0, sCL0, sCR0
-  real(dp), dimension(:,:,:), allocatable:: rho_t, p_t, s_t, tg_t
-  real(dp) :: eff_gamma, off
-  real(dp) :: ff(self%gn(1),3), qq(self%gn(1))
+  real(dp), dimension(:,:,:), pointer, contiguous:: rho_t, p_t, s_t, tg_t
+  real(dp) :: eff_gamma, off, Mx, MxL, MxR, My, Mz, P_mach, T_mach, s_mach, gamma, c_v
+  real(dp) :: ff(self%gn(1),3), qq(self%gn(1)), s_mach_max
   real(8) :: dt2
   integer:: lo(3), uo(3)
   integer, save:: itimer(4)=0
@@ -1156,8 +1180,8 @@ SUBROUTINE trace3d(self)
   !  Ux=>self%q(:,:,:,2),Uy=>self%q(:,:,:,3),Uz=>self%q(:,:,:,4), &
   !  Ex=>self%Ex,Ey=>self%Ey,Ez=>self%Ez)
   !-----------------------------------------------------------------------------
-  uin => self%uin
-  unew=> self%unew
+  uin  => self%mem(:,:,:,:,self%it ,1)
+  unew => self%mem(:,:,:,:,self%new,1)
   q   => self%q
   bf  => self%bf
   dq  => self%dq
@@ -1233,628 +1257,606 @@ SUBROUTINE trace3d(self)
   dt2 = 0.5d0*self%dtime
   lo = self%mesh%lo-1
   uo = self%mesh%uo+1
-  d => self%mem(:,:,:,self%idx%d,self%new,1)
+  d => q(:,:,:,ir)
+  s_mach_max=0.
   do k=lo(3),uo(3)
   do j=lo(2),uo(2)
-    ff(:,:) = 0.0_dp
-    if (associated(scratch%force_per_unit_mass)) then
-      !dir$ simd
-      do i=lo(1),uo(1)
-        ff(i,1) = ff(i,1) + scratch%force_per_unit_mass(i,j,k,1)*dt2
-        ff(i,2) = ff(i,2) + scratch%force_per_unit_mass(i,j,k,2)*dt2
-        ff(i,3) = ff(i,3) + scratch%force_per_unit_mass(i,j,k,3)*dt2
-      end do
-    end if
-    if (associated(scratch%force_per_unit_volume)) then
-      !dir$ simd
-      do i=lo(1),uo(1)
-        ff(i,1) = ff(i,1) + scratch%force_per_unit_mass(i,j,k,1)*dt2/d(i,j,k)
-        ff(i,2) = ff(i,2) + scratch%force_per_unit_mass(i,j,k,2)*dt2/d(i,j,k)
-        ff(i,3) = ff(i,3) + scratch%force_per_unit_mass(i,j,k,3)*dt2/d(i,j,k)
-      end do
-    end if
-
-    qq(:) = 0.0
-    if (associated(scratch%heating_per_unit_volume)) then
-      !dir$ simd
-      do i=lo(1),uo(1)
-        qq(i) = qq(i) + q(i,j,k,ir) * &
-        scratch%heating_per_unit_volume(i,j,k) * dt2
-      end do
-    end if
-    if (associated(scratch%heating_per_unit_mass)) then
-      !dir$ simd
-      do i=lo(1),uo(1)
-        qq(i) = qq(i) + q(i,j,k,ir) * &
-        scratch%heating_per_unit_volume(i,j,k) * dt2
-      end do
-    end if
-    !dir$ ivdep
-    !$omp simd private( &
-    !$omp & A,AL,AR,B,BL,BR,C,CL,CR,ELL,ELR,ERL,ERR,FLL,FLR,FRL,FRR,GLL,GLR,GRL,GRR, &
-    !$omp & dALy,dALz,dARy,dARz,dAy,dAz,dBLx,dBLz,dBRx,dBRz,dBx,dBz,dCLx,dCLy,dCRx, &
-    !$omp & dCRy,dCx,dCy,dpx,dpx2,dpy,dpy2,dpz,dpz2,drx,drx2,dry,dry2,drz,drz2,dux, &
-    !$omp & duy,duz,dvx,dvy,dvz,dwx,dwy,dwz,invr,p,r,sAL0,sAR0,sBL0,sBR0,sCL0,sCR0, &
-    !$omp & sp0,sr0,su0,sv0,sw0,u,v,w, &
-    !$omp & dsx,dsy,dsz,ss0, pmag, cs, du, q_visc)
+  ff(:,:) = 0.0_dp
+  if (associated(scratch%force_per_unit_mass)) then
+    !dir$ simd
     do i=lo(1),uo(1)
-      r=q(i,j,k,ir)
-      u=q(i,j,k,iu)
-      v=q(i,j,k,iv)
-      w=q(i,j,k,iw)
-      p=q(i,j,k,ip)
-      s=q(i,j,k,is)
-      tg=q(i,j,k,itg)
-      A=q(i,j,k,iA)
-      B=q(i,j,k,iB)
-      C=q(i,j,k,iC)
-      ! Face centered variables
-      AL = bf(i,j,k,1)
-      BL = bf(i,j,k,2)
-      CL = bf(i,j,k,3)
-      AR = bf(i+1,j  ,k  ,1)
-      BR = bf(i  ,j+1,k  ,2)
-      CR = bf(i  ,j  ,k+1,3)
-      ! Edge centered electric field in X, Y and Z directions
-      ELL = Ex(i,j  ,k  )
-      ELR = Ex(i,j  ,k+1)
-      ERL = Ex(i,j+1,k  )
-      ERR = Ex(i,j+1,k+1)
-      FLL = Ey(i  ,j,k  )
-      FLR = Ey(i  ,j,k+1)
-      FRL = Ey(i+1,j,k  )
-      FRR = Ey(i+1,j,k+1)
-      GLL = Ez(i  ,j  ,k)
-      GLR = Ez(i  ,j+1,k)
-      GRL = Ez(i+1,j  ,k)
-      GRR = Ez(i+1,j+1,k)
-      !
-      ! Cell centered TVD slopes in X, Y and Z directions
-      drx = half * dq(i,ir,1,j,k)
-      drx2= half *dq2(i,ir,1,j,k)
-      dux = half * dq(i,iu,1,j,k)
-      dvx = half * dq(i,iv,1,j,k)
-      dwx = half * dq(i,iw,1,j,k)
-      dpx = half * dq(i,ip,1,j,k)
-      dsx = half * dq(i,is,1,j,k)
-      dtgx= half * dq(i,itg,1,j,k)
-      dpx2= half *dq2(i,ip,1,j,k)
-      dBx = half * dq(i,iB,1,j,k)
-      dCx = half * dq(i,iC,1,j,k)
-      !
-      dry = half * dq(i,ir,2,j,k)
-      dry2= half *dq2(i,ir,2,j,k)
-      duy = half * dq(i,iu,2,j,k)
-      dvy = half * dq(i,iv,2,j,k)
-      dwy = half * dq(i,iw,2,j,k)
-      dpy = half * dq(i,ip,2,j,k)
-      dsy = half * dq(i,is,2,j,k)
-      dtgy= half * dq(i,itg,2,j,k)
-      dpy2= half *dq2(i,ip,2,j,k)
-      duy = half * dq(i,iu,2,j,k)
-      dAy = half * dq(i,iA,2,j,k)
-      dCy = half * dq(i,iC,2,j,k)
-      !
-      drz = half * dq(i,ir,3,j,k)
-      drz2= half *dq2(i,ir,3,j,k)
-      duz = half * dq(i,iu,3,j,k)
-      dvz = half * dq(i,iv,3,j,k)
-      dwz = half * dq(i,iw,3,j,k)
-      dpz = half * dq(i,ip,3,j,k)
-      dsz = half * dq(i,is,3,j,k)
-      dtgz= half * dq(i,itg,3,j,k)
-      dpz2= half *dq2(i,ip,3,j,k)
-      dAz = half * dq(i,iA,3,j,k)
-      dBz = half * dq(i,iB,3,j,k)
-      !
-      ! Face centered TVD slopes in transverse directions
-      dALy = half * dbf(i  ,1,1,j  ,k  )
-      dARy = half * dbf(i+1,1,1,j  ,k  )
-      dALz = half * dbf(i  ,1,2,j  ,k  )
-      dARz = half * dbf(i+1,1,2,j  ,k  )
-      !
-      dBLx = half * dbf(i  ,2,1,j  ,k  )
-      dBRx = half * dbf(i  ,2,1,j+1,k  )
-      dBLz = half * dbf(i  ,2,2,j  ,k  )
-      dBRz = half * dbf(i  ,2,2,j+1,k  )
-      !
-      dCLx = half * dbf(i  ,3,1,j  ,k  )
-      dCRx = half * dbf(i  ,3,1,j  ,k+1)
-      dCLy = half * dbf(i  ,3,2,j  ,k  )
-      dCRy = half * dbf(i  ,3,2,j  ,k+1)
-      !
-      pmag=half*(half*(AL+AR)*half*(AL+AR)+ &
-                 half*(BL+BR)*half*(BL+BR)+ &
-                 half*(CL+CR)*half*(CL+CR))
-      cs = sqrt((eff_gamma*p+2d0*pmag)/r)
-      du = dsmax*(cs+2d0*sqrt(u*u+v*v+w*w))
-
-
-      !
-      ! Face-centered predicted states
-      sAL0 = +(GLR-GLL)*dtdy*half -(FLR-FLL)*dtdz*half
-      sAR0 = +(GRR-GRL)*dtdy*half -(FRR-FRL)*dtdz*half
-      sBL0 = -(GRL-GLL)*dtdx*half +(ELR-ELL)*dtdz*half
-      sBR0 = -(GRR-GLR)*dtdx*half +(ERR-ERL)*dtdz*half
-      sCL0 = +(FRL-FLL)*dtdx*half -(ERL-ELL)*dtdy*half
-      sCR0 = +(FRR-FLR)*dtdx*half -(ERR-ELR)*dtdy*half
-      !
-      AL = AL + sAL0
-      AR = AR + sAR0
-      BL = BL + sBL0
-      BR = BR + sBR0
-      CL = CL + sCL0
-      CR = CR + sCR0
-      !
-      ! Source terms (including transverse derivatives)
-
-      ! The negative divergence of the sum of the fluxes of kinetic
-      ! and magnetic energy, PLUS the work done by the sum of the 
-      ! pressure gradient and the Lorents force, MINUS the partial 
-      !derivative with respect to time of the sum of kinetic and 
-      !magnetic energy
-      invr = one / r
-      !ekin = half*(u*u+v*v+w*w)*r
-     ! q_visc = r*du*((dux*dux + dvy*dvy + dwz*dwz) + 0.25_dp * &
-     !               ((dux + dvy)*(dux + dvy) + &
-     !                (dwz + dvy)*(dwz + dvy) + &
-     !                (dux + dwz)*(dux + dwz))) 
-     ! q_visc = max(0d0, q_visc)
-     ! visc_max=max(visc_max,q_visc)
-      sr0 = (-u*drx-dux*r)*dtdx + (-v*dry-dvy*r)*dtdy + (-w*drz-dwz*r)*dtdz
-      su0 = (-u*dux-(dpx+B*dBx+C*dCx)*invr)*dtdx + (-v*duy+B*dAy*invr)*dtdy + (-w*duz+C*dAz*invr)*dtdz
-      sv0 = (-u*dvx+A*dBx*invr)*dtdx + (-v*dvy-(dpy+A*dAy+C*dCy)*invr)*dtdy + (-w*dvz+C*dBz*invr)*dtdz
-      sw0 = (-u*dwx+A*dCx*invr)*dtdx + (-v*dwy+B*dCy*invr)*dtdy + (-w*dwz-(dpz+A*dAz+B*dBz)*invr)*dtdz
-      sp0 = (-u*dpx-dux*eff_gamma*p)*dtdx &
-          + (-v*dpy-dvy*eff_gamma*p)*dtdy &
-          + (-w*dpz-dwz*eff_gamma*p)*dtdz
-      tg0 = ((dtgx*dtdx) &
-          +  (dtgy*dtdy) &
-          +  (dtgz*dtdz))
-      ss0 = ((-u*dsx*dtdx) &
-          + (-v*dsy*dtdy) &
-          + (-w*dsz*dtdz))!+log(p/(p+sp0)*(r/(r+sr0))**eos%gamma)*half*self%dtime! &
-      !    + (r/p*eff_gamma/(eff_gamma-one) *((p+sp0)/(r+sr0) - (p/r))  &
-      !    - half*(one/(s+sr0)+one/r)*((p+sp0)-p))*self%dtime
-     ! if(ss0/=0) print *, 'bef', ss0, log(p/(p+sp0)*(r/(r+sr0))**eos%gamma)*self%dtime, (log(p/(p+dpx)*(r/(r+drx))**eos%gamma)*dtdx)+(log(p/(p+dpy)*(r/(r+dry))**gamma)*dtdy)+(log(p/(p+dpz)*(r/(r+drz))**gamma)*dtdz)
-
-      !ss0 = ss0+(-u*half*log(p/(p+dpx)*(r/(r+drx)))*dtdx)
-      !ss0 = ss0+(-v*half*log(p/(p+dpy)*(r/(r+dry)))*dtdy)
-      !ss0 = ss0+(-w*half*log(p/(p+dpz)*(r/(r+drz)))*dtdz)
-     ! if(ss0/=0) print *, 'af',ss0, (log(p/(p-dpx)*(r/(r-drx))**eos%gamma)*dtdx),(log(p/(p+dpy)*(r/(r+dry))**eos%gamma)*dtdy),(log(p/(p+dpz)*(r/(r+drz))**gamma)*dtdz)
-
-  !write(io_unit%log,'("pred: i,j,k,h,dex,dey,dez,se0 =",3i4,2x,1p,5e11.2)') &
-  !i,j,k,h,dex,dey,dez,se0
-      !
-      ! Add external force
-      su0 = su0 + ff(i,1)
-      sv0 = sv0 + ff(i,2)
-      sw0 = sw0 + ff(i,3)
-      !
-      ! Add external heating
-      sp0 = sp0  + (eff_gamma-1d0)* qq(i)
-      tg0 = tg0  + qq(i)
-      ss0 = ss0  +                 (qq(i) )/tg !+(eos%gamma-one)*r/p   &
-         !    *(eos%gamma/(eos%gamma-one)*((p+sp0)/(r+sr0) - p/r) -half*(one/(r+sr0)+one/r)*((p+sp0)-p)) * self%dtime
-      !
-      ! Evolve entropy instead of pressure
-      !sS0 = (-u*dSx)*dtdx + (-v*dSy)*dtdy + (-w*dSz)*dtdz
-      !
-  !    ! Save predicted cell-centered pseudo-entropy; we are borrowing space in q(:,:,:,:,ip),
-  !    ! which is not used below this point.  In the calling routine this is again copied over
-  !    ! into uin, and is thus made available to godfine1, through that array.
-  !    if (entropy_fix) then
-  !       if ((i==1.or.i==2).and.(j==1.or.j==2).and.(k==1.or.k==2)) then
-  !          q(:,i,j,k,ip) = S + 2.0*sS0
-  !          if (verbose>0) then
-  !             do ig=1,ngrid
-  !                if (in_debug_region(ind_grid(ig))) then
-  !                   print'(3hMKE,i8,i3,3f10.6,1p,12e11.3)', &
-  !                     ind_grid(ig),(i-1)+(j-1)*2+(k-1)*4, &
-  !                     xg(ind_grid(ig),1)+(i-1.5)/32.0, &
-  !                     xg(ind_grid(ig),2)+(j-1.5)/32.0, &
-  !                     xg(ind_grid(ig),3)+(k-1.5)/32.0, &
-  !                     log(p(ig)-dpx(ig)) - gamma*log(r(ig)-drx(ig)), &
-  !                     log(p(ig))-gamma*log(r(ig)), &
-  !                     log(p(ig)+dpx(ig)) - gamma*log(r(ig)+drx(ig)), &
-  !                     q(ig,i,j,k,ip), &
-  !                     dSx(ig),dSy(ig),dSz(ig), &
-  !                     u(ig),v(ig),w(ig),dtdx
-  !                end if
-  !             end do
-  !          end if
-  !       end if
-  !    end if
-      !
-      ! Cell-centered predicted states
-      r = r + sr0
-      r = max(r,smallr)
-      rho_t(i,j,k) = r
-      u = u + su0
-      v = v + sv0
-      w = w + sw0
-      p = p + sp0
-      s = s + ss0
-      tg= tg+ tg0
-      p = max(p,smallp)
-      p_t(i,j,k) = p
-      s_t(i,j,k) = s
-      A = half*(AL+AR)
-      B = half*(BL+BR)
-      C = half*(CL+CR)
-      !
-      ! Face averaged right state at left interface
-      qp(i,ir,1,j,k) = r - drx
-      qp(i,iu,1,j,k) = u - dux
-      qp(i,iv,1,j,k) = v - dvx
-      qp(i,iw,1,j,k) = w - dwx
-      qp(i,ip,1,j,k) = p - dpx
-      qp(i,is,1,j,k) = s - dsx
-      qp(i,itg,1,j,k) = tg - dtgx
-      qp(i,iA,1,j,k) = AL
-      qp(i,iB,1,j,k) = B - dBx
-      qp(i,iC,1,j,k) = C - dCx
-      !
-      ! Face averaged left state at right interface
-      qm(i,ir,1,j,k) = r + drx
-      qm(i,iu,1,j,k) = u + dux
-      qm(i,iv,1,j,k) = v + dvx
-      qm(i,iw,1,j,k) = w + dwx
-      qm(i,ip,1,j,k) = p + dpx
-      qm(i,is,1,j,k) = s + dsx
-      qm(i,itg,1,j,k) = tg + dtgx
-      qm(i,iA,1,j,k) = AR
-      qm(i,iB,1,j,k) = B + dBx
-      qm(i,iC,1,j,k) = C + dCx
-      !
-      ! Face averaged top state at bottom interface
-      qp(i,ir,2,j,k) = r - dry
-      qp(i,iu,2,j,k) = u - duy
-      qp(i,iv,2,j,k) = v - dvy
-      qp(i,iw,2,j,k) = w - dwy
-      qp(i,ip,2,j,k) = p - dpy
-      qp(i,is,2,j,k) = s - dsy
-      qp(i,itg,2,j,k) = tg - dtgy
-      qp(i,iA,2,j,k) = A - dAy
-      qp(i,iB,2,j,k) = BL
-      qp(i,iC,2,j,k) = C - dCy
-      !
-      ! Face averaged bottom state at top interface
-      qm(i,ir,2,j,k) = r + dry
-      qm(i,iu,2,j,k) = u + duy
-      qm(i,iv,2,j,k) = v + dvy
-      qm(i,iw,2,j,k) = w + dwy
-      qm(i,ip,2,j,k) = p + dpy
-      qm(i,is,2,j,k) = s + dsy
-      qm(i,itg,2,j,k) = tg + dtgy
-      qm(i,iA,2,j,k) = A + dAy
-      qm(i,iB,2,j,k) = BR
-      qm(i,iC,2,j,k) = C + dCy
-      !
-      ! Face averaged front state at back interface
-      qp(i,ir,3,j,k) = r - drz
-      qp(i,iu,3,j,k) = u - duz
-      qp(i,iv,3,j,k) = v - dvz
-      qp(i,iw,3,j,k) = w - dwz
-      qp(i,ip,3,j,k) = p - dpz
-      qp(i,is,3,j,k) = s - dsz
-      qp(i,itg,3,j,k) = tg - dtgz
-      qp(i,iA,3,j,k) = A - dAz
-      qp(i,iB,3,j,k) = B - dBz
-      qp(i,iC,3,j,k) = CL
-      !
-      ! Face averaged back state at front interface
-      qm(i,ir,3,j,k) = r + drz
-      qm(i,iu,3,j,k) = u + duz
-      qm(i,iv,3,j,k) = v + dvz
-      qm(i,iw,3,j,k) = w + dwz
-      qm(i,ip,3,j,k) = p + dpz
-      qm(i,is,3,j,k) = s + dsz
-      qm(i,itg,3,j,k) = tg + dtgz
-      qm(i,iA,3,j,k) = A + dAz
-      qm(i,iB,3,j,k) = B + dBz
-      qm(i,iC,3,j,k) = CR
-      !
-      ! X-edge averaged right-top corner state (RT->LL)
-      qRT(i,ir,1,j,k) = r + (+dry2+drz2)
-      qRT(i,iu,1,j,k) = u + (+duy+duz)
-      qRT(i,iv,1,j,k) = v + (+dvy+dvz)
-      qRT(i,iw,1,j,k) = w + (+dwy+dwz)
-      qRT(i,ip,1,j,k) = p + (+dpy2+dpz2)
-      qRT(i,is,1,j,k) = s + (+dsy+dsz)
-      qRT(i,itg,1,j,k) = tg + (+dtgy+dtgz)
-      qRT(i,iA,1,j,k) = A + (+dAy+dAz)
-      qRT(i,iB,1,j,k) = BR+ (   +dBRz)
-      qRT(i,iC,1,j,k) = CR+ (+dCRy   )
-      !
-      ! X-edge averaged right-bottom corner state (RB->LR)
-      qRB(i,ir,1,j,k) = r + (+dry2-drz2)
-      qRB(i,iu,1,j,k) = u + (+duy-duz)
-      qRB(i,iv,1,j,k) = v + (+dvy-dvz)
-      qRB(i,iw,1,j,k) = w + (+dwy-dwz)
-      qRB(i,ip,1,j,k) = p + (+dpy2-dpz2)
-      qRB(i,is,1,j,k) = s + (+dsy-dsz)
-      qRB(i,itg,1,j,k) = tg + (+dtgy-dtgz)
-      qRB(i,iA,1,j,k) = A + (+dAy-dAz)
-      qRB(i,iB,1,j,k) = BR+ (   -dBRz)
-      qRB(i,iC,1,j,k) = CL+ (+dCLy   )
-      !
-      ! X-edge averaged left-top corner state (LT->RL)
-      qLT(i,ir,1,j,k) = r + (-dry2+drz2)
-      qLT(i,iu,1,j,k) = u + (-duy+duz)
-      qLT(i,iv,1,j,k) = v + (-dvy+dvz)
-      qLT(i,iw,1,j,k) = w + (-dwy+dwz)
-      qLT(i,ip,1,j,k) = p + (-dpy2+dpz2)
-      qLT(i,is,1,j,k) = s + (-dsy+dsz)
-      qLT(i,itg,1,j,k) = tg + (-dtgy+dtgz)
-      qLT(i,iA,1,j,k) = A + (-dAy+dAz)
-      qLT(i,iB,1,j,k) = BL+ (   +dBLz)
-      qLT(i,iC,1,j,k) = CR+ (-dCRy   )
-      !
-      ! X-edge averaged left-bottom corner state (LB->RR)
-      qLB(i,ir,1,j,k) = r + (-dry2-drz2)
-      qLB(i,iu,1,j,k) = u + (-duy-duz)
-      qLB(i,iv,1,j,k) = v + (-dvy-dvz)
-      qLB(i,iw,1,j,k) = w + (-dwy-dwz)
-      qLB(i,ip,1,j,k) = p + (-dpy2-dpz2)
-      qLB(i,is,1,j,k) = s + (-dsy-dsz)
-      qLB(i,itg,1,j,k) = tg + (-dtgy-dtgz)
-      qLB(i,iA,1,j,k) = A + (-dAy-dAz)
-      qLB(i,iB,1,j,k) = BL+ (   -dBLz)
-      qLB(i,iC,1,j,k) = CL+ (-dCLy   )
-      !
-      ! Y-edge averaged right-top corner state (RT->LL)
-      qRT(i,ir,2,j,k) = r + (+drx2+drz2)
-      qRT(i,iu,2,j,k) = u + (+dux+duz)
-      qRT(i,iv,2,j,k) = v + (+dvx+dvz)
-      qRT(i,iw,2,j,k) = w + (+dwx+dwz)
-      qRT(i,ip,2,j,k) = p + (+dpx2+dpz2)
-      qRT(i,is,2,j,k) = s + (+dsx+dsz)
-      qRT(i,itg,2,j,k) = tg + (+dtgx+dtgz)
-      qRT(i,iA,2,j,k) = AR+ (   +dARz)
-      qRT(i,iB,2,j,k) = B + (+dBx+dBz)
-      qRT(i,iC,2,j,k) = CR+ (+dCRx   )
-      !
-      ! Y-edge averaged right-bottom corner state (RB->LR)
-      qRB(i,ir,2,j,k) = r + (+drx2-drz2)
-      qRB(i,iu,2,j,k) = u + (+dux-duz)
-      qRB(i,iv,2,j,k) = v + (+dvx-dvz)
-      qRB(i,iw,2,j,k) = w + (+dwx-dwz)
-      qRB(i,ip,2,j,k) = p + (+dpx2-dpz2)
-      qRB(i,is,2,j,k) = s + (+dsx-dsz)
-      qRB(i,itg,2,j,k) = tg + (+dtgx-dtgz)
-      qRB(i,iA,2,j,k) = AR+ (   -dARz)
-      qRB(i,iB,2,j,k) = B + (+dBx-dBz)
-      qRB(i,iC,2,j,k) = CL+ (+dCLx   )
-      !
-      ! Y-edge averaged left-top corner state (LT->RL)
-      qLT(i,ir,2,j,k) = r + (-drx2+drz2)
-      qLT(i,iu,2,j,k) = u + (-dux+duz)
-      qLT(i,iv,2,j,k) = v + (-dvx+dvz)
-      qLT(i,iw,2,j,k) = w + (-dwx+dwz)
-      qLT(i,ip,2,j,k) = p + (-dpx2+dpz2)
-      qLT(i,is,2,j,k) = s + (-dsx+dsz)
-      qLT(i,itg,2,j,k) = tg + (-dtgx+dtgz)
-      qLT(i,iA,2,j,k) = AL+ (   +dALz)
-      qLT(i,iB,2,j,k) = B + (-dBx+dBz)
-      qLT(i,iC,2,j,k) = CR+ (-dCRx   )
-      !
-      ! Y-edge averaged left-bottom corner state (LB->RR)
-      qLB(i,ir,2,j,k) = r + (-drx2-drz2)
-      qLB(i,iu,2,j,k) = u + (-dux-duz)
-      qLB(i,iv,2,j,k) = v + (-dvx-dvz)
-      qLB(i,iw,2,j,k) = w + (-dwx-dwz)
-      qLB(i,ip,2,j,k) = p + (-dpx2-dpz2)
-      qLB(i,is,2,j,k) = s + (-dsx-dsz)
-      qLB(i,itg,2,j,k) = s + (-dtgx-dtgz)
-      qLB(i,iA,2,j,k) = AL+ (   -dALz)
-      qLB(i,iB,2,j,k) = B + (-dBx-dBz)
-      qLB(i,iC,2,j,k) = CL+ (-dCLx   )
-      !
-      ! Z-edge averaged right-top corner state (RT->LL)
-      qRT(i,ir,3,j,k) = r + (+drx2+dry2)
-      qRT(i,iu,3,j,k) = u + (+dux+duy)
-      qRT(i,iv,3,j,k) = v + (+dvx+dvy)
-      qRT(i,iw,3,j,k) = w + (+dwx+dwy)
-      qRT(i,ip,3,j,k) = p + (+dpx2+dpy2)
-      qRT(i,is,3,j,k) = s + (+dsx+dsy)
-      qRT(i,itg,3,j,k) = tg + (+dtgx+dtgy)
-      qRT(i,iA,3,j,k) = AR+ (   +dARy)
-      qRT(i,iB,3,j,k) = BR+ (+dBRx   )
-      qRT(i,iC,3,j,k) = C + (+dCx+dCy)
-      !
-      ! Z-edge averaged right-bottom corner state (RB->LR)
-      qRB(i,ir,3,j,k) = r + (+drx2-dry2)
-      qRB(i,iu,3,j,k) = u + (+dux-duy)
-      qRB(i,iv,3,j,k) = v + (+dvx-dvy)
-      qRB(i,iw,3,j,k) = w + (+dwx-dwy)
-      qRB(i,ip,3,j,k) = p + (+dpx2-dpy2)
-      qRB(i,is,3,j,k) = s + (+dsx-dsy)
-      qRB(i,itg,3,j,k) = tg + (+dtgx-dtgy)
-      qRB(i,iA,3,j,k) = AR+ (   -dARy)
-      qRB(i,iB,3,j,k) = BL+ (+dBLx   )
-      qRB(i,iC,3,j,k) = C + (+dCx-dCy)
-      !
-      ! Z-edge averaged left-top corner state (LT->RL)
-      qLT(i,ir,3,j,k) = r + (-drx2+dry2)
-      qLT(i,iu,3,j,k) = u + (-dux+duy)
-      qLT(i,iv,3,j,k) = v + (-dvx+dvy)
-      qLT(i,iw,3,j,k) = w + (-dwx+dwy)
-      qLT(i,ip,3,j,k) = p + (-dpx2+dpy2)
-      qLT(i,is,3,j,k) = s + (-dsx+dsy)
-      qLT(i,itg,3,j,k) = tg + (-dtgx+dtgy)
-      qLT(i,iA,3,j,k) = AL+ (   +dALy)
-      qLT(i,iB,3,j,k) = BR+ (-dBRx   )
-      qLT(i,iC,3,j,k) = C + (-dCx+dCy)
-      !
-      ! Z-edge averaged left-bottom corner state (LB->RR)
-      qLB(i,ir,3,j,k) = r + (-drx2-dry2)
-      qLB(i,iu,3,j,k) = u + (-dux-duy)
-      qLB(i,iv,3,j,k) = v + (-dvx-dvy)
-      qLB(i,iw,3,j,k) = w + (-dwx-dwy)
-      qLB(i,ip,3,j,k) = p + (-dpx2-dpy2)
-      qLB(i,is,3,j,k) = s + (-dsx-dsy)
-      qLB(i,itg,3,j,k) = tg + (-dtgx-dtgy)
-      qLB(i,iA,3,j,k) = AL+ (   -dALy)
-      qLB(i,iB,3,j,k) = BL+ (-dBLx   )
-      qLB(i,iC,3,j,k) = C + (-dCx-dCy)
+      ff(i,1) = ff(i,1) + scratch%force_per_unit_mass(i,j,k,1)*dt2
+      ff(i,2) = ff(i,2) + scratch%force_per_unit_mass(i,j,k,2)*dt2
+      ff(i,3) = ff(i,3) + scratch%force_per_unit_mass(i,j,k,3)*dt2
     end do
+  end if
+  if (associated(scratch%force_per_unit_volume)) then
+    !dir$ simd
+    do i=lo(1),uo(1)
+      ff(i,1) = ff(i,1) + scratch%force_per_unit_volume(i,j,k,1)*dt2/d(i,j,k)
+      ff(i,2) = ff(i,2) + scratch%force_per_unit_volume(i,j,k,2)*dt2/d(i,j,k)
+      ff(i,3) = ff(i,3) + scratch%force_per_unit_volume(i,j,k,3)*dt2/d(i,j,k)
+    end do
+  end if
+  qq(:) = 0.0
+  if (associated(scratch%heating_per_unit_volume)) then
+    !dir$ simd
+    do i=lo(1),uo(1)
+      qq(i) = qq(i) + scratch%heating_per_unit_volume(i,j,k)*dt2
+    end do
+  end if
+  if (associated(scratch%heating_per_unit_mass)) then
+    !dir$ simd
+    do i=lo(1),uo(1)
+      qq(i) = qq(i) + scratch%heating_per_unit_mass(i,j,k)*d(i,j,k)*dt2
+    end do
+  end if
+  !dir$ ivdep
+  !$omp simd private( &
+  !$omp & A,AL,AR,B,BL,BR,C,CL,CR,ELL,ELR,ERL,ERR,FLL,FLR,FRL,FRR,GLL,GLR,GRL,GRR, &
+  !$omp & dALy,dALz,dARy,dARz,dAy,dAz,dBLx,dBLz,dBRx,dBRz,dBx,dBz,dCLx,dCLy,dCRx, &
+  !$omp & dCRy,dCx,dCy,dpx,dpx2,dpy,dpy2,dpz,dpz2,drx,drx2,dry,dry2,drz,drz2,dux, &
+  !$omp & duy,duz,dvx,dvy,dvz,dwx,dwy,dwz,invr,p,r,sAL0,sAR0,sBL0,sBR0,sCL0,sCR0, &
+  !$omp & sp0,sr0,su0,sv0,sw0,u,v,w, &
+  !$omp & dsx,dsy,dsz,ss0,pmag,cs,du,s,tg, dtgx,dtgy,dtgz)
+  do i=lo(1),uo(1)
+    r=q(i,j,k,ir)
+    u=q(i,j,k,iu)
+    v=q(i,j,k,iv)
+    w=q(i,j,k,iw)
+    p=q(i,j,k,ip)
+    s=q(i,j,k,is)
+    tg=q(i,j,k,itg)
+    A=q(i,j,k,iA)
+    B=q(i,j,k,iB)
+    C=q(i,j,k,iC)
+    ! Face centered variables
+    AL = bf(i,j,k,1)
+    BL = bf(i,j,k,2)
+    CL = bf(i,j,k,3)
+    AR = bf(i+1,j  ,k  ,1)
+    BR = bf(i  ,j+1,k  ,2)
+    CR = bf(i  ,j  ,k+1,3)
+    ! Edge centered electric field in X, Y and Z directions
+    ELL = Ex(i,j  ,k  )
+    ELR = Ex(i,j  ,k+1)
+    ERL = Ex(i,j+1,k  )
+    ERR = Ex(i,j+1,k+1)
+    FLL = Ey(i  ,j,k  )
+    FLR = Ey(i  ,j,k+1)
+    FRL = Ey(i+1,j,k  )
+    FRR = Ey(i+1,j,k+1)
+    GLL = Ez(i  ,j  ,k)
+    GLR = Ez(i  ,j+1,k)
+    GRL = Ez(i+1,j  ,k)
+    GRR = Ez(i+1,j+1,k)
+    !
+    ! Cell centered TVD slopes in X, Y and Z directions
+    drx = half * dq(i,ir,1,j,k)
+    drx2= half *dq2(i,ir,1,j,k)
+    dux = half * dq(i,iu,1,j,k)
+    dvx = half * dq(i,iv,1,j,k)
+    dwx = half * dq(i,iw,1,j,k)
+    dpx = half * dq(i,ip,1,j,k)
+    dsx = half * dq(i,is,1,j,k)
+    dtgx= half * dq(i,itg,1,j,k)
+    dpx2= half *dq2(i,ip,1,j,k)
+    dBx = half * dq(i,iB,1,j,k)
+    dCx = half * dq(i,iC,1,j,k)
+    !
+    dry = half * dq(i,ir,2,j,k)
+    dry2= half *dq2(i,ir,2,j,k)
+    duy = half * dq(i,iu,2,j,k)
+    dvy = half * dq(i,iv,2,j,k)
+    dwy = half * dq(i,iw,2,j,k)
+    dpy = half * dq(i,ip,2,j,k)
+    dsy = half * dq(i,is,2,j,k)
+    dtgy= half * dq(i,itg,2,j,k)
+    dpy2= half *dq2(i,ip,2,j,k)
+    duy = half * dq(i,iu,2,j,k)
+    dAy = half * dq(i,iA,2,j,k)
+    dCy = half * dq(i,iC,2,j,k)
+    !
+    drz = half * dq(i,ir,3,j,k)
+    drz2= half *dq2(i,ir,3,j,k)
+    duz = half * dq(i,iu,3,j,k)
+    dvz = half * dq(i,iv,3,j,k)
+    dwz = half * dq(i,iw,3,j,k)
+    dpz = half * dq(i,ip,3,j,k)
+    dsz = half * dq(i,is,3,j,k)
+    dtgz= half * dq(i,itg,3,j,k)
+    dpz2= half *dq2(i,ip,3,j,k)
+    dAz = half * dq(i,iA,3,j,k)
+    dBz = half * dq(i,iB,3,j,k)
+    !
+    ! Face centered TVD slopes in transverse directions
+    dALy = half * dbf(i  ,1,1,j  ,k  )
+    dARy = half * dbf(i+1,1,1,j  ,k  )
+    dALz = half * dbf(i  ,1,2,j  ,k  )
+    dARz = half * dbf(i+1,1,2,j  ,k  )
+    !
+    dBLx = half * dbf(i  ,2,1,j  ,k  )
+    dBRx = half * dbf(i  ,2,1,j+1,k  )
+    dBLz = half * dbf(i  ,2,2,j  ,k  )
+    dBRz = half * dbf(i  ,2,2,j+1,k  )
+    !
+    dCLx = half * dbf(i  ,3,1,j  ,k  )
+    dCRx = half * dbf(i  ,3,1,j  ,k+1)
+    dCLy = half * dbf(i  ,3,2,j  ,k  )
+    dCRy = half * dbf(i  ,3,2,j  ,k+1)
+    !
+    ! Face-centered predicted states
+    sAL0 = +(GLR-GLL)*dtdy*half -(FLR-FLL)*dtdz*half
+    sAR0 = +(GRR-GRL)*dtdy*half -(FRR-FRL)*dtdz*half
+    sBL0 = -(GRL-GLL)*dtdx*half +(ELR-ELL)*dtdz*half
+    sBR0 = -(GRR-GLR)*dtdx*half +(ERR-ERL)*dtdz*half
+    sCL0 = +(FRL-FLL)*dtdx*half -(ERL-ELL)*dtdy*half
+    sCR0 = +(FRR-FLR)*dtdx*half -(ERR-ELR)*dtdy*half
+    !
+    AL = AL + sAL0
+    AR = AR + sAR0
+    BL = BL + sBL0
+    BR = BR + sBR0
+    CL = CL + sCL0
+    CR = CR + sCR0
+    !
+    ! Source terms (including transverse derivatives)
+    ! The negative divergence of the sum of the fluxes of kinetic
+    ! and magnetic energy, PLUS the work done by the sum of the
+    ! pressure gradient and the Lorents force, MINUS the partial
+    !derivative with respect to time of the sum of kinetic and
+    !magnetic energy
+    ! invr = one / r
+    !ekin = half*(u*u+v*v+w*w)*r
+    ! q_visc = r*du*((dux*dux + dvy*dvy + dwz*dwz) + 0.25_dp * &
+    !               ((dux + dvy)*(dux + dvy) + &
+    !                (dwz + dvy)*(dwz + dvy) + &
+    !                (dux + dwz)*(dux + dwz)))
+    ! q_visc = max(0d0, q_visc)
+    ! visc_max=max(visc_max,q_visc)
+    invr = one / r
+    sr0 = (-u*drx-dux*r)*dtdx + (-v*dry-dvy*r)*dtdy + (-w*drz-dwz*r)*dtdz
+    su0 = (-u*dux-(dpx+B*dBx+C*dCx)*invr)*dtdx + (-v*duy+B*dAy*invr)*dtdy + (-w*duz+C*dAz*invr)*dtdz
+    sv0 = (-u*dvx+A*dBx*invr)*dtdx + (-v*dvy-(dpy+A*dAy+C*dCy)*invr)*dtdy + (-w*dvz+C*dBz*invr)*dtdz
+    sw0 = (-u*dwx+A*dCx*invr)*dtdx + (-v*dwy+B*dCy*invr)*dtdy + (-w*dwz-(dpz+A*dAz+B*dBz)*invr)*dtdz
+    sp0 = (-u*dpx-dux*eff_gamma*p)*dtdx &
+        + (-v*dpy-dvy*eff_gamma*p)*dtdy &
+        + (-w*dpz-dwz*eff_gamma*p)*dtdz
+     ss0 = ((-u*dsx*dtdx) &
+         +  (-v*dsy*dtdy) &
+         +  (-w*dsz*dtdz))
+
+!write(io_unit%log,'("pred: i,j,k,h,dex,dey,dez,se0 =",3i4,2x,1p,5e11.2)') &
+!i,j,k,h,dex,dey,dez,se0
+    !
+    ! Add external force
+    su0 = su0 + ff(i,1)
+    sv0 = sv0 + ff(i,2)
+    sw0 = sw0 + ff(i,3)
+    !
+    ! Add external heating
+    sp0 = sp0  + (eff_gamma-1d0)*qq(i)*r
+    ss0 = ss0  + qq(i)/r/tg
+    !
+    ! Evolve entropy instead of pressure
+    !sS0 = (-u*dSx)*dtdx + (-v*dSy)*dtdy + (-w*dSz)*dtdz
+    !
+!    ! Save predicted cell-centered pseudo-entropy; we are borrowing space in q(:,:,:,:,ip),
+!    ! which is not used below this point.  In the calling routine this is again copied over
+!    ! into uin, and is thus made available to godfine1, through that array.
+!    if (entropy_fix) then
+!       if ((i==1.or.i==2).and.(j==1.or.j==2).and.(k==1.or.k==2)) then
+!          q(:,i,j,k,ip) = S + 2.0*sS0
+!          if (verbose>0) then
+!             do ig=1,ngrid
+!                if (in_debug_region(ind_grid(ig))) then
+!                   print'(3hMKE,i8,i3,3f10.6,1p,12e11.3)', &
+!                     ind_grid(ig),(i-1)+(j-1)*2+(k-1)*4, &
+!                     xg(ind_grid(ig),1)+(i-1.5)/32.0, &
+!                     xg(ind_grid(ig),2)+(j-1.5)/32.0, &
+!                     xg(ind_grid(ig),3)+(k-1.5)/32.0, &
+!                     log(p(ig)-dpx(ig)) - gamma*log(r(ig)-drx(ig)), &
+!                     log(p(ig))-gamma*log(r(ig)), &
+!                     log(p(ig)+dpx(ig)) - gamma*log(r(ig)+drx(ig)), &
+!                     q(ig,i,j,k,ip), &
+!                     dSx(ig),dSy(ig),dSz(ig), &
+!                     u(ig),v(ig),w(ig),dtdx
+!                end if
+!             end do
+!          end if
+!       end if
+!    end if
+    !
+    ! Cell-centered predicted states
+    tg= tg*(1.+sp0/p)/(1+sr0/r)
+    r = r + sr0
+    r = max(r,smallr)
+    rho_t(i,j,k) = r
+    u = u + su0
+    v = v + sv0
+    w = w + sw0
+    p = p + sp0
+    s = s + ss0
+    p = max(p,smallp)
+    p_t(i,j,k) = p
+    s_t(i,j,k) = s
+    A = half*(AL+AR)
+    B = half*(BL+BR)
+    C = half*(CL+CR)
+
+    !
+    ! Face averaged right state at left interface
+    qp(i,ir,1,j,k) = r - drx
+    qp(i,iu,1,j,k) = u - dux
+    qp(i,iv,1,j,k) = v - dvx
+    qp(i,iw,1,j,k) = w - dwx
+    qp(i,ip,1,j,k) = p - dpx
+    qp(i,is,1,j,k) = s - dsx
+    qp(i,itg,1,j,k) = tg - dtgx
+    qp(i,iA,1,j,k) = AL
+    qp(i,iB,1,j,k) = B - dBx
+    qp(i,iC,1,j,k) = C - dCx
+    !
+    ! Face averaged left state at right interface
+    qm(i,ir,1,j,k) = r + drx
+    qm(i,iu,1,j,k) = u + dux
+    qm(i,iv,1,j,k) = v + dvx
+    qm(i,iw,1,j,k) = w + dwx
+    qm(i,ip,1,j,k) = p + dpx
+    qm(i,is,1,j,k) = s + dsx
+    qm(i,itg,1,j,k) = tg + dtgx
+    qm(i,iA,1,j,k) = AR
+    qm(i,iB,1,j,k) = B + dBx
+    qm(i,iC,1,j,k) = C + dCx
+    !
+    ! Face averaged top state at bottom interface
+    qp(i,ir,2,j,k) = r - dry
+    qp(i,iu,2,j,k) = u - duy
+    qp(i,iv,2,j,k) = v - dvy
+    qp(i,iw,2,j,k) = w - dwy
+    qp(i,ip,2,j,k) = p - dpy
+    qp(i,is,2,j,k) = s - dsy
+    qp(i,itg,2,j,k) = tg - dtgy
+    qp(i,iA,2,j,k) = A - dAy
+    qp(i,iB,2,j,k) = BL
+    qp(i,iC,2,j,k) = C - dCy
+    !
+    ! Face averaged bottom state at top interface
+    qm(i,ir,2,j,k) = r + dry
+    qm(i,iu,2,j,k) = u + duy
+    qm(i,iv,2,j,k) = v + dvy
+    qm(i,iw,2,j,k) = w + dwy
+    qm(i,ip,2,j,k) = p + dpy
+    qm(i,is,2,j,k) = s + dsy
+    qm(i,itg,2,j,k) = tg + dtgy
+    qm(i,iA,2,j,k) = A + dAy
+    qm(i,iB,2,j,k) = BR
+    qm(i,iC,2,j,k) = C + dCy
+    !
+    ! Face averaged front state at back interface
+    qp(i,ir,3,j,k) = r - drz
+    qp(i,iu,3,j,k) = u - duz
+    qp(i,iv,3,j,k) = v - dvz
+    qp(i,iw,3,j,k) = w - dwz
+    qp(i,ip,3,j,k) = p - dpz
+    qp(i,is,3,j,k) = s - dsz
+    qp(i,itg,3,j,k) = tg - dtgz
+    qp(i,iA,3,j,k) = A - dAz
+    qp(i,iB,3,j,k) = B - dBz
+    qp(i,iC,3,j,k) = CL
+    !
+    ! Face averaged back state at front interface
+    qm(i,ir,3,j,k) = r + drz
+    qm(i,iu,3,j,k) = u + duz
+    qm(i,iv,3,j,k) = v + dvz
+    qm(i,iw,3,j,k) = w + dwz
+    qm(i,ip,3,j,k) = p + dpz
+    qm(i,is,3,j,k) = s + dsz
+    qm(i,itg,3,j,k) = tg + dtgz
+    qm(i,iA,3,j,k) = A + dAz
+    qm(i,iB,3,j,k) = B + dBz
+    qm(i,iC,3,j,k) = CR
+    !
+    ! X-edge averaged right-top corner state (RT->LL)
+    qRT(i,ir,1,j,k) = r + (+dry2+drz2)
+    qRT(i,iu,1,j,k) = u + (+duy+duz)
+    qRT(i,iv,1,j,k) = v + (+dvy+dvz)
+    qRT(i,iw,1,j,k) = w + (+dwy+dwz)
+    qRT(i,ip,1,j,k) = p + (+dpy2+dpz2)
+    qRT(i,is,1,j,k) = s + (+dsy+dsz)
+    qRT(i,itg,1,j,k) = tg + (+dtgy+dtgz)
+    qRT(i,iA,1,j,k) = A + (+dAy+dAz)
+    qRT(i,iB,1,j,k) = BR+ (   +dBRz)
+    qRT(i,iC,1,j,k) = CR+ (+dCRy   )
+    !
+    ! X-edge averaged right-bottom corner state (RB->LR)
+    qRB(i,ir,1,j,k) = r + (+dry2-drz2)
+    qRB(i,iu,1,j,k) = u + (+duy-duz)
+    qRB(i,iv,1,j,k) = v + (+dvy-dvz)
+    qRB(i,iw,1,j,k) = w + (+dwy-dwz)
+    qRB(i,ip,1,j,k) = p + (+dpy2-dpz2)
+    qRB(i,is,1,j,k) = s + (+dsy-dsz)
+    qRB(i,itg,1,j,k) = tg + (+dtgy-dtgz)
+    qRB(i,iA,1,j,k) = A + (+dAy-dAz)
+    qRB(i,iB,1,j,k) = BR+ (   -dBRz)
+    qRB(i,iC,1,j,k) = CL+ (+dCLy   )
+    !
+    ! X-edge averaged left-top corner state (LT->RL)
+    qLT(i,ir,1,j,k) = r + (-dry2+drz2)
+    qLT(i,iu,1,j,k) = u + (-duy+duz)
+    qLT(i,iv,1,j,k) = v + (-dvy+dvz)
+    qLT(i,iw,1,j,k) = w + (-dwy+dwz)
+    qLT(i,ip,1,j,k) = p + (-dpy2+dpz2)
+    qLT(i,is,1,j,k) = s + (-dsy+dsz)
+    qLT(i,itg,1,j,k) = tg + (-dtgy+dtgz)
+    qLT(i,iA,1,j,k) = A + (-dAy+dAz)
+    qLT(i,iB,1,j,k) = BL+ (   +dBLz)
+    qLT(i,iC,1,j,k) = CR+ (-dCRy   )
+    !
+    ! X-edge averaged left-bottom corner state (LB->RR)
+    qLB(i,ir,1,j,k) = r + (-dry2-drz2)
+    qLB(i,iu,1,j,k) = u + (-duy-duz)
+    qLB(i,iv,1,j,k) = v + (-dvy-dvz)
+    qLB(i,iw,1,j,k) = w + (-dwy-dwz)
+    qLB(i,ip,1,j,k) = p + (-dpy2-dpz2)
+    qLB(i,is,1,j,k) = s + (-dsy-dsz)
+    qLB(i,itg,1,j,k) = tg + (-dtgy-dtgz)
+    qLB(i,iA,1,j,k) = A + (-dAy-dAz)
+    qLB(i,iB,1,j,k) = BL+ (   -dBLz)
+    qLB(i,iC,1,j,k) = CL+ (-dCLy   )
+    !
+    ! Y-edge averaged right-top corner state (RT->LL)
+    qRT(i,ir,2,j,k) = r + (+drx2+drz2)
+    qRT(i,iu,2,j,k) = u + (+dux+duz)
+    qRT(i,iv,2,j,k) = v + (+dvx+dvz)
+    qRT(i,iw,2,j,k) = w + (+dwx+dwz)
+    qRT(i,ip,2,j,k) = p + (+dpx2+dpz2)
+    qRT(i,is,2,j,k) = s + (+dsx+dsz)
+    qRT(i,itg,2,j,k) = tg + (+dtgx+dtgz)
+    qRT(i,iA,2,j,k) = AR+ (   +dARz)
+    qRT(i,iB,2,j,k) = B + (+dBx+dBz)
+    qRT(i,iC,2,j,k) = CR+ (+dCRx   )
+    !
+    ! Y-edge averaged right-bottom corner state (RB->LR)
+    qRB(i,ir,2,j,k) = r + (+drx2-drz2)
+    qRB(i,iu,2,j,k) = u + (+dux-duz)
+    qRB(i,iv,2,j,k) = v + (+dvx-dvz)
+    qRB(i,iw,2,j,k) = w + (+dwx-dwz)
+    qRB(i,ip,2,j,k) = p + (+dpx2-dpz2)
+    qRB(i,is,2,j,k) = s + (+dsx-dsz)
+    qRB(i,itg,2,j,k) = tg + (+dtgx-dtgz)
+    qRB(i,iA,2,j,k) = AR+ (   -dARz)
+    qRB(i,iB,2,j,k) = B + (+dBx-dBz)
+    qRB(i,iC,2,j,k) = CL+ (+dCLx   )
+    !
+    ! Y-edge averaged left-top corner state (LT->RL)
+    qLT(i,ir,2,j,k) = r + (-drx2+drz2)
+    qLT(i,iu,2,j,k) = u + (-dux+duz)
+    qLT(i,iv,2,j,k) = v + (-dvx+dvz)
+    qLT(i,iw,2,j,k) = w + (-dwx+dwz)
+    qLT(i,ip,2,j,k) = p + (-dpx2+dpz2)
+    qLT(i,is,2,j,k) = s + (-dsx+dsz)
+    qLT(i,itg,2,j,k) = tg + (-dtgx+dtgz)
+    qLT(i,iA,2,j,k) = AL+ (   +dALz)
+    qLT(i,iB,2,j,k) = B + (-dBx+dBz)
+    qLT(i,iC,2,j,k) = CR+ (-dCRx   )
+    !
+    ! Y-edge averaged left-bottom corner state (LB->RR)
+    qLB(i,ir,2,j,k) = r + (-drx2-drz2)
+    qLB(i,iu,2,j,k) = u + (-dux-duz)
+    qLB(i,iv,2,j,k) = v + (-dvx-dvz)
+    qLB(i,iw,2,j,k) = w + (-dwx-dwz)
+    qLB(i,ip,2,j,k) = p + (-dpx2-dpz2)
+    qLB(i,is,2,j,k) = s + (-dsx-dsz)
+    qLB(i,itg,2,j,k) = s + (-dtgx-dtgz)
+    qLB(i,iA,2,j,k) = AL+ (   -dALz)
+    qLB(i,iB,2,j,k) = B + (-dBx-dBz)
+    qLB(i,iC,2,j,k) = CL+ (-dCLx   )
+    !
+    ! Z-edge averaged right-top corner state (RT->LL)
+    qRT(i,ir,3,j,k) = r + (+drx2+dry2)
+    qRT(i,iu,3,j,k) = u + (+dux+duy)
+    qRT(i,iv,3,j,k) = v + (+dvx+dvy)
+    qRT(i,iw,3,j,k) = w + (+dwx+dwy)
+    qRT(i,ip,3,j,k) = p + (+dpx2+dpy2)
+    qRT(i,is,3,j,k) = s + (+dsx+dsy)
+    qRT(i,itg,3,j,k) = tg + (+dtgx+dtgy)
+    qRT(i,iA,3,j,k) = AR+ (   +dARy)
+    qRT(i,iB,3,j,k) = BR+ (+dBRx   )
+    qRT(i,iC,3,j,k) = C + (+dCx+dCy)
+    !
+    ! Z-edge averaged right-bottom corner state (RB->LR)
+    qRB(i,ir,3,j,k) = r + (+drx2-dry2)
+    qRB(i,iu,3,j,k) = u + (+dux-duy)
+    qRB(i,iv,3,j,k) = v + (+dvx-dvy)
+    qRB(i,iw,3,j,k) = w + (+dwx-dwy)
+    qRB(i,ip,3,j,k) = p + (+dpx2-dpy2)
+    qRB(i,is,3,j,k) = s + (+dsx-dsy)
+    qRB(i,itg,3,j,k) = tg + (+dtgx-dtgy)
+    qRB(i,iA,3,j,k) = AR+ (   -dARy)
+    qRB(i,iB,3,j,k) = BL+ (+dBLx   )
+    qRB(i,iC,3,j,k) = C + (+dCx-dCy)
+    !
+    ! Z-edge averaged left-top corner state (LT->RL)
+    qLT(i,ir,3,j,k) = r + (-drx2+dry2)
+    qLT(i,iu,3,j,k) = u + (-dux+duy)
+    qLT(i,iv,3,j,k) = v + (-dvx+dvy)
+    qLT(i,iw,3,j,k) = w + (-dwx+dwy)
+    qLT(i,ip,3,j,k) = p + (-dpx2+dpy2)
+    qLT(i,is,3,j,k) = s + (-dsx+dsy)
+    qLT(i,itg,3,j,k) = tg + (-dtgx+dtgy)
+    qLT(i,iA,3,j,k) = AL+ (   +dALy)
+    qLT(i,iB,3,j,k) = BR+ (-dBRx   )
+    qLT(i,iC,3,j,k) = C + (-dCx+dCy)
+    !
+    ! Z-edge averaged left-bottom corner state (LB->RR)
+    qLB(i,ir,3,j,k) = r + (-drx2-dry2)
+    qLB(i,iu,3,j,k) = u + (-dux-duy)
+    qLB(i,iv,3,j,k) = v + (-dvx-dvy)
+    qLB(i,iw,3,j,k) = w + (-dwx-dwy)
+    qLB(i,ip,3,j,k) = p + (-dpx2-dpy2)
+    qLB(i,is,3,j,k) = s + (-dsx-dsy)
+    qLB(i,itg,3,j,k) = tg + (-dtgx-dtgy)
+    qLB(i,iA,3,j,k) = AL+ (   -dALy)
+    qLB(i,iB,3,j,k) = BL+ (-dBLx   )
+    qLB(i,iC,3,j,k) = C + (-dCx-dCy)
+  end do
   end do
   end do
   !
   !call trace%end (itimer(2))
-!call trace%begin ('mhd_t%trace3d(3)', itimer=itimer(3))
+  !call trace%begin ('mhd_t%trace3d(3)', itimer=itimer(3))
   !-----------------------------------------------------------------------------
   ! This loop needs to produce data in the interval (lo,uo), since the loop
   ! in cmp_mag_flux uses {i,j,k}-1
   !-----------------------------------------------------------------------------
   if (do_corners) then
-    lo = self%mesh%lo
-    uo = self%mesh%uo
-    do k=lo(3),uo(3)
-    do j=lo(2),uo(2)
-    !!!!!!!$omp simd private(drx,dry,drz,dpx,dpy,dpz,dex,dey,dez)
-    !!!!!!dir$ ivdep
-    do i=lo(1),uo(1)
-      r = rho_t(i,j,k)
-      p = p_t(i,j,k)
-      s = s_t(i,j,k)
-      !
-      ! X-edge averaged right-top corner state (RT->LL)
-      !qRT(i,ir,1,j,k) = r + (+dry+drz)
-      drx = sqrt(sqrt(r*rho_t(i,j+1,k)*rho_t(i,j,k+1)*rho_t(i,j+1,k+1))) - r
-      dpx = sqrt(sqrt(p*  p_t(i,j+1,k)*  p_t(i,j,k+1)*  p_t(i,j+1,k+1))) - p
-      !dsx = sqrt(sqrt(s*  s_t(i,j+1,k)*  s_t(i,j,k+1)*  s_t(i,j+1,k+1))) - s
-      dry = qRT(i,ir,1,j,k) - r
-      dpy = qRT(i,ip,1,j,k) - p
-      !dsy = qRT(i,is,1,j,k) - s
-      qRT(i,ir,1,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
-      qRT(i,ip,1,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
-      !qRT(i,is,1,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
-      ! X-edge averaged right-bottom corner state (RB->LR)
-      !qRB(i,ir,1,j,k) = r + (+dry-drz)
-      drx = sqrt(sqrt(r*rho_t(i,j+1,k)*rho_t(i,j,k-1)*rho_t(i,j+1,k-1))) - r
-      dpx = sqrt(sqrt(p*  p_t(i,j+1,k)*  p_t(i,j,k-1)*  p_t(i,j+1,k-1))) - p
-      !dsx = sqrt(sqrt(s*  s_t(i,j+1,k)*  s_t(i,j,k-1)*  s_t(i,j+1,k-1))) - s
-      dry = qRB(i,ir,1,j,k) - r
-      dpy = qRB(i,ip,1,j,k) - p
-      !dsy = qRB(i,is,1,j,k) - s
-      qRB(i,ir,1,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
-      qRB(i,ip,1,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
-      !qRB(i,is,1,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
-      ! X-edge averaged left-top corner state (LT->RL)
-      !qLT(i,ir,1,j,k) = r + (-dry+drz)
-      drx = sqrt(sqrt(r*rho_t(i,j-1,k)*rho_t(i,j,k+1)*rho_t(i,j-1,k+1))) - r
-      dpx = sqrt(sqrt(p*  p_t(i,j-1,k)*  p_t(i,j,k+1)*  p_t(i,j-1,k+1))) - p
-      !dsx = sqrt(sqrt(s*  s_t(i,j-1,k)*  s_t(i,j,k+1)*  s_t(i,j-1,k+1))) - s
-      dry = qLT(i,ir,1,j,k) - r
-      dpy = qLT(i,ip,1,j,k) - p
-      !dsy = qLT(i,is,1,j,k) - s
-      qLT(i,ir,1,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
-      qLT(i,ip,1,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
-      !qLT(i,is,1,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
-      ! X-edge averaged left-bottom corner state (LB->RR)
-      !qLB(i,ir,1,j,k) = r + (-dry-drz)
-      drx = sqrt(sqrt(r*rho_t(i,j-1,k)*rho_t(i,j,k-1)*rho_t(i,j-1,k-1))) - r
-      dpx = sqrt(sqrt(p*  p_t(i,j-1,k)*  p_t(i,j,k-1)*  p_t(i,j-1,k-1))) - p
-      !dsx = sqrt(sqrt(s*  s_t(i,j-1,k)*  s_t(i,j,k-1)*  s_t(i,j-1,k-1))) - s
-      dry = qLB(i,ir,1,j,k) - r
-      dpy = qLB(i,ip,1,j,k) - p
-      !dsy = qLB(i,is,1,j,k) - s
-      qLB(i,ir,1,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
-      qLB(i,ip,1,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
-      !qLB(i,is,1,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
-      ! Y-edge averaged right-top corner state (RT->LL)
-      !qRT(i,ir,2,j,k) = r + (+drx+drz)
-      drx = sqrt(sqrt(r*rho_t(i+1,j,k)*rho_t(i,j,k+1)*rho_t(i+1,j,k+1))) - r
-      dpx = sqrt(sqrt(p*  p_t(i+1,j,k)*  p_t(i,j,k+1)*  p_t(i+1,j,k+1))) - p
-      !dsx = sqrt(sqrt(s*  s_t(i+1,j,k)*  s_t(i,j,k+1)*  s_t(i+1,j,k+1))) - s
-      dry = qRT(i,ir,2,j,k) - r
-      dpy = qRT(i,ip,2,j,k) - p
-      !dsy = qRT(i,is,2,j,k) - s
-      qRT(i,ir,2,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
-      qRT(i,ip,2,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
-      !qRT(i,is,2,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
-      ! Y-edge averaged right-bottom corner state (RB->LR)
-      !qRB(i,ir,2,j,k) = r + (+drx-drz)
-      drx = sqrt(sqrt(r*rho_t(i+1,j,k)*rho_t(i,j,k-1)*rho_t(i+1,j,k-1))) - r
-      dpx = sqrt(sqrt(p*  p_t(i+1,j,k)*  p_t(i,j,k-1)*  p_t(i+1,j,k-1))) - p
-      !dsx = sqrt(sqrt(s*  s_t(i+1,j,k)*  s_t(i,j,k-1)*  s_t(i+1,j,k-1))) - s
-      dry = qRB(i,ir,2,j,k) - r
-      dpy = qRB(i,ip,2,j,k) - p
-      !dsy = qRB(i,is,2,j,k) - s
-      qRB(i,ir,2,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
-      qRB(i,ip,2,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
-      !qRB(i,is,2,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
-      ! Y-edge averaged left-top corner state (LT->RL)
-      !qLT(i,ir,2,j,k) = r + (-drx+drz)
-      drx = sqrt(sqrt(r*rho_t(i-1,j,k)*rho_t(i,j,k+1)*rho_t(i-1,j,k+1))) - r
-      dpx = sqrt(sqrt(p*  p_t(i-1,j,k)*  p_t(i,j,k+1)*  p_t(i-1,j,k+1))) - p
-      !dsx = sqrt(sqrt(s*  s_t(i-1,j,k)*  s_t(i,j,k+1)*  s_t(i-1,j,k+1))) - s
-      dry = qLT(i,ir,2,j,k) - r
-      dpy = qLT(i,ip,2,j,k) - p
-      !dsy = qLT(i,is,2,j,k) - s
-      qLT(i,ir,2,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
-      qLT(i,ip,2,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
-      !qLT(i,is,2,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
-      ! Y-edge averaged left-bottom corner state (LB->RR)
-      !qLB(i,ir,2,j,k) = r + (-drx-drz)
-      drx = sqrt(sqrt(r*rho_t(i-1,j,k)*rho_t(i,j,k-1)*rho_t(i-1,j,k-1))) - r
-      dpx = sqrt(sqrt(p*  p_t(i-1,j,k)*  p_t(i,j,k-1)*  p_t(i-1,j,k-1))) - p
-      !dsx = sqrt(sqrt(s*  s_t(i-1,j,k)*  s_t(i,j,k-1)*  s_t(i-1,j,k-1))) - s
-      dry = qLB(i,ir,2,j,k) - r
-      dpy = qLB(i,ip,2,j,k) - p
-      !dsy = qLB(i,is,2,j,k) - s
-      qLB(i,ir,2,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
-      qLB(i,ip,2,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
-      !qLB(i,is,2,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
-      ! Z-edge averaged right-top corner state (RT->LL)
-      !qRT(i,ir,3,j,k) = r + (+drx+dry)
-      drx = sqrt(sqrt(r*rho_t(i+1,j,k)*rho_t(i,j+1,k)*rho_t(i+1,j+1,k))) - r
-      dpx = sqrt(sqrt(p*  p_t(i+1,j,k)*  p_t(i,j+1,k)*  p_t(i+1,j+1,k))) - p
-      !dsx = sqrt(sqrt(s*  s_t(i+1,j,k)*  s_t(i,j+1,k)*  s_t(i+1,j+1,k))) - s
-      dry = qRT(i,ir,3,j,k) - r
-      dpy = qRT(i,ip,3,j,k) - p
-      !dsy = qRT(i,is,3,j,k) - s
-      qRT(i,ir,3,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
-      qRT(i,ip,3,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
-      !qRT(i,is,3,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
-      ! Z-edge averaged right-bottom corner state (RB->LR)
-      !qRB(i,ir,3,j,k) = r + (+drx-dry)
-      drx = sqrt(sqrt(r*rho_t(i+1,j,k)*rho_t(i,j-1,k)*rho_t(i+1,j-1,k))) - r
-      dpx = sqrt(sqrt(p*  p_t(i+1,j,k)*  p_t(i,j-1,k)*  p_t(i+1,j-1,k))) - p
-      !dsx = sqrt(sqrt(s*  s_t(i+1,j,k)*  s_t(i,j-1,k)*  s_t(i+1,j-1,k))) - s
-      dry = qRB(i,ir,3,j,k) - r
-      dpy = qRB(i,ip,3,j,k) - p
-      !dsy = qRB(i,is,3,j,k) - s
-      qRB(i,ir,3,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
-      qRB(i,ip,3,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
-      !qRB(i,is,3,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
-      ! Z-edge averaged left-top corner state (LT->RL)
-      !qLT(i,ir,3,j,k) = r + (-drx+dry)
-      drx = sqrt(sqrt(r*rho_t(i-1,j,k)*rho_t(i,j+1,k)*rho_t(i-1,j+1,k))) - r
-      dpx = sqrt(sqrt(p*  p_t(i-1,j,k)*  p_t(i,j+1,k)*  p_t(i-1,j+1,k))) - p
-      !dsx = sqrt(sqrt(s*  s_t(i-1,j,k)*  s_t(i,j+1,k)*  s_t(i-1,j+1,k))) - s
-      dry = qLT(i,ir,3,j,k) - r
-      dpy = qLT(i,ip,3,j,k) - p
-      !dsy = qLT(i,is,3,j,k) - s
-      qLT(i,ir,3,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
-      qLT(i,ip,3,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
-      !qLT(i,is,3,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
-      ! Z-edge averaged left-bottom corner state (LB->RR)
-      !qLB(i,ir,3,j,k) = r + (-drx-dry)
-      drx = sqrt(sqrt(r*rho_t(i-1,j,k)*rho_t(i,j-1,k)*rho_t(i-1,j-1,k))) - r
-      dpx = sqrt(sqrt(p*  p_t(i-1,j,k)*  p_t(i,j-1,k)*  p_t(i-1,j-1,k))) - p
-      !dsx = sqrt(sqrt(s*  s_t(i-1,j,k)*  s_t(i,j-1,k)*  s_t(i-1,j-1,k))) - s
-      dry = qLB(i,ir,3,j,k) - r
-      dpy = qLB(i,ip,3,j,k) - p
-      !dsy = qLB(i,is,3,j,k) - s
-      qLB(i,ir,3,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
-      qLB(i,ip,3,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
-      !qLB(i,is,3,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
-    end do
-    end do
-    end do
+  lo = self%mesh%lo
+  uo = self%mesh%uo
+  do k=lo(3),uo(3)
+  do j=lo(2),uo(2)
+  !dir$ ivdep
+  !$omp simd private(r,p,s,drx,dry,drz,dpx,dpy,dpz)
+  do i=lo(1),uo(1)
+    r = rho_t(i,j,k)
+    p = p_t(i,j,k)
+    s = s_t(i,j,k)
+    !
+    ! X-edge averaged right-top corner state (RT->LL)
+    !qRT(i,ir,1,j,k) = r + (+dry+drz)
+    drx = sqrt(sqrt(r*rho_t(i,j+1,k)*rho_t(i,j,k+1)*rho_t(i,j+1,k+1))) - r
+    dpx = sqrt(sqrt(p*  p_t(i,j+1,k)*  p_t(i,j,k+1)*  p_t(i,j+1,k+1))) - p
+    !dsx = sqrt(sqrt(s*  s_t(i,j+1,k)*  s_t(i,j,k+1)*  s_t(i,j+1,k+1))) - s
+    dry = qRT(i,ir,1,j,k) - r
+    dpy = qRT(i,ip,1,j,k) - p
+    !dsy = qRT(i,is,1,j,k) - s
+    qRT(i,ir,1,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
+    qRT(i,ip,1,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
+    !qRT(i,is,1,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
+    ! X-edge averaged right-bottom corner state (RB->LR)
+    !qRB(i,ir,1,j,k) = r + (+dry-drz)
+    drx = sqrt(sqrt(r*rho_t(i,j+1,k)*rho_t(i,j,k-1)*rho_t(i,j+1,k-1))) - r
+    dpx = sqrt(sqrt(p*  p_t(i,j+1,k)*  p_t(i,j,k-1)*  p_t(i,j+1,k-1))) - p
+    !dsx = sqrt(sqrt(s*  s_t(i,j+1,k)*  s_t(i,j,k-1)*  s_t(i,j+1,k-1))) - s
+    dry = qRB(i,ir,1,j,k) - r
+    dpy = qRB(i,ip,1,j,k) - p
+    !dsy = qRB(i,is,1,j,k) - s
+    qRB(i,ir,1,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
+    qRB(i,ip,1,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
+    !qRB(i,is,1,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
+    ! X-edge averaged left-top corner state (LT->RL)
+    !qLT(i,ir,1,j,k) = r + (-dry+drz)
+    drx = sqrt(sqrt(r*rho_t(i,j-1,k)*rho_t(i,j,k+1)*rho_t(i,j-1,k+1))) - r
+    dpx = sqrt(sqrt(p*  p_t(i,j-1,k)*  p_t(i,j,k+1)*  p_t(i,j-1,k+1))) - p
+    !dsx = sqrt(sqrt(s*  s_t(i,j-1,k)*  s_t(i,j,k+1)*  s_t(i,j-1,k+1))) - s
+    dry = qLT(i,ir,1,j,k) - r
+    dpy = qLT(i,ip,1,j,k) - p
+    !dsy = qLT(i,is,1,j,k) - s
+    qLT(i,ir,1,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
+    qLT(i,ip,1,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
+    !qLT(i,is,1,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
+    ! X-edge averaged left-bottom corner state (LB->RR)
+    !qLB(i,ir,1,j,k) = r + (-dry-drz)
+    drx = sqrt(sqrt(r*rho_t(i,j-1,k)*rho_t(i,j,k-1)*rho_t(i,j-1,k-1))) - r
+    dpx = sqrt(sqrt(p*  p_t(i,j-1,k)*  p_t(i,j,k-1)*  p_t(i,j-1,k-1))) - p
+    !dsx = sqrt(sqrt(s*  s_t(i,j-1,k)*  s_t(i,j,k-1)*  s_t(i,j-1,k-1))) - s
+    dry = qLB(i,ir,1,j,k) - r
+    dpy = qLB(i,ip,1,j,k) - p
+    !dsy = qLB(i,is,1,j,k) - s
+    qLB(i,ir,1,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
+    qLB(i,ip,1,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
+    !qLB(i,is,1,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
+    ! Y-edge averaged right-top corner state (RT->LL)
+    !qRT(i,ir,2,j,k) = r + (+drx+drz)
+    drx = sqrt(sqrt(r*rho_t(i+1,j,k)*rho_t(i,j,k+1)*rho_t(i+1,j,k+1))) - r
+    dpx = sqrt(sqrt(p*  p_t(i+1,j,k)*  p_t(i,j,k+1)*  p_t(i+1,j,k+1))) - p
+    !dsx = sqrt(sqrt(s*  s_t(i+1,j,k)*  s_t(i,j,k+1)*  s_t(i+1,j,k+1))) - s
+    dry = qRT(i,ir,2,j,k) - r
+    dpy = qRT(i,ip,2,j,k) - p
+    !dsy = qRT(i,is,2,j,k) - s
+    qRT(i,ir,2,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
+    qRT(i,ip,2,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
+    !qRT(i,is,2,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
+    ! Y-edge averaged right-bottom corner state (RB->LR)
+    !qRB(i,ir,2,j,k) = r + (+drx-drz)
+    drx = sqrt(sqrt(r*rho_t(i+1,j,k)*rho_t(i,j,k-1)*rho_t(i+1,j,k-1))) - r
+    dpx = sqrt(sqrt(p*  p_t(i+1,j,k)*  p_t(i,j,k-1)*  p_t(i+1,j,k-1))) - p
+    !dsx = sqrt(sqrt(s*  s_t(i+1,j,k)*  s_t(i,j,k-1)*  s_t(i+1,j,k-1))) - s
+    dry = qRB(i,ir,2,j,k) - r
+    dpy = qRB(i,ip,2,j,k) - p
+    !dsy = qRB(i,is,2,j,k) - s
+    qRB(i,ir,2,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
+    qRB(i,ip,2,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
+    !qRB(i,is,2,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
+    ! Y-edge averaged left-top corner state (LT->RL)
+    !qLT(i,ir,2,j,k) = r + (-drx+drz)
+    drx = sqrt(sqrt(r*rho_t(i-1,j,k)*rho_t(i,j,k+1)*rho_t(i-1,j,k+1))) - r
+    dpx = sqrt(sqrt(p*  p_t(i-1,j,k)*  p_t(i,j,k+1)*  p_t(i-1,j,k+1))) - p
+    !dsx = sqrt(sqrt(s*  s_t(i-1,j,k)*  s_t(i,j,k+1)*  s_t(i-1,j,k+1))) - s
+    dry = qLT(i,ir,2,j,k) - r
+    dpy = qLT(i,ip,2,j,k) - p
+    !dsy = qLT(i,is,2,j,k) - s
+    qLT(i,ir,2,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
+    qLT(i,ip,2,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
+    !qLT(i,is,2,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
+    ! Y-edge averaged left-bottom corner state (LB->RR)
+    !qLB(i,ir,2,j,k) = r + (-drx-drz)
+    drx = sqrt(sqrt(r*rho_t(i-1,j,k)*rho_t(i,j,k-1)*rho_t(i-1,j,k-1))) - r
+    dpx = sqrt(sqrt(p*  p_t(i-1,j,k)*  p_t(i,j,k-1)*  p_t(i-1,j,k-1))) - p
+    !dsx = sqrt(sqrt(s*  s_t(i-1,j,k)*  s_t(i,j,k-1)*  s_t(i-1,j,k-1))) - s
+    dry = qLB(i,ir,2,j,k) - r
+    dpy = qLB(i,ip,2,j,k) - p
+    !dsy = qLB(i,is,2,j,k) - s
+    qLB(i,ir,2,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
+    qLB(i,ip,2,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
+    !qLB(i,is,2,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
+    ! Z-edge averaged right-top corner state (RT->LL)
+    !qRT(i,ir,3,j,k) = r + (+drx+dry)
+    drx = sqrt(sqrt(r*rho_t(i+1,j,k)*rho_t(i,j+1,k)*rho_t(i+1,j+1,k))) - r
+    dpx = sqrt(sqrt(p*  p_t(i+1,j,k)*  p_t(i,j+1,k)*  p_t(i+1,j+1,k))) - p
+    !dsx = sqrt(sqrt(s*  s_t(i+1,j,k)*  s_t(i,j+1,k)*  s_t(i+1,j+1,k))) - s
+    dry = qRT(i,ir,3,j,k) - r
+    dpy = qRT(i,ip,3,j,k) - p
+    !dsy = qRT(i,is,3,j,k) - s
+    qRT(i,ir,3,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
+    qRT(i,ip,3,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
+    !qRT(i,is,3,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
+    ! Z-edge averaged right-bottom corner state (RB->LR)
+    !qRB(i,ir,3,j,k) = r + (+drx-dry)
+    drx = sqrt(sqrt(r*rho_t(i+1,j,k)*rho_t(i,j-1,k)*rho_t(i+1,j-1,k))) - r
+    dpx = sqrt(sqrt(p*  p_t(i+1,j,k)*  p_t(i,j-1,k)*  p_t(i+1,j-1,k))) - p
+    !dsx = sqrt(sqrt(s*  s_t(i+1,j,k)*  s_t(i,j-1,k)*  s_t(i+1,j-1,k))) - s
+    dry = qRB(i,ir,3,j,k) - r
+    dpy = qRB(i,ip,3,j,k) - p
+    !dsy = qRB(i,is,3,j,k) - s
+    qRB(i,ir,3,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
+    qRB(i,ip,3,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
+    !qRB(i,is,3,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
+    ! Z-edge averaged left-top corner state (LT->RL)
+    !qLT(i,ir,3,j,k) = r + (-drx+dry)
+    drx = sqrt(sqrt(r*rho_t(i-1,j,k)*rho_t(i,j+1,k)*rho_t(i-1,j+1,k))) - r
+    dpx = sqrt(sqrt(p*  p_t(i-1,j,k)*  p_t(i,j+1,k)*  p_t(i-1,j+1,k))) - p
+    !dsx = sqrt(sqrt(s*  s_t(i-1,j,k)*  s_t(i,j+1,k)*  s_t(i-1,j+1,k))) - s
+    dry = qLT(i,ir,3,j,k) - r
+    dpy = qLT(i,ip,3,j,k) - p
+    !dsy = qLT(i,is,3,j,k) - s
+    qLT(i,ir,3,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
+    qLT(i,ip,3,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
+    !qLT(i,is,3,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
+    ! Z-edge averaged left-bottom corner state (LB->RR)
+    !qLB(i,ir,3,j,k) = r + (-drx-dry)
+    drx = sqrt(sqrt(r*rho_t(i-1,j,k)*rho_t(i,j-1,k)*rho_t(i-1,j-1,k))) - r
+    dpx = sqrt(sqrt(p*  p_t(i-1,j,k)*  p_t(i,j-1,k)*  p_t(i-1,j-1,k))) - p
+    !dsx = sqrt(sqrt(s*  s_t(i-1,j,k)*  s_t(i,j-1,k)*  s_t(i-1,j-1,k))) - s
+    dry = qLB(i,ir,3,j,k) - r
+    dpy = qLB(i,ip,3,j,k) - p
+    !dsy = qLB(i,is,3,j,k) - s
+    qLB(i,ir,3,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
+    qLB(i,ip,3,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
+    !qLB(i,is,3,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
+  end do
+  end do
+  end do
   end if
   !call trace%end (itimer(3))
   deallocate (rho_t, p_t, s_t)
@@ -1907,7 +1909,7 @@ SUBROUTINE cmpflxm (self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
   integer:: nx, ln, lt1, lt2, bn, bt1, bt2
   ! local variables
   integer:: i, j, k, lb(3), ub(3), xdim, l(3), idim
-  real(dp), dimension(:,:), allocatable:: qleft, qright, fgdnv
+  real(dp), dimension(:,:), pointer, contiguous:: qleft, qright, fgdnv
   real(dp):: dtds(3)
   integer, save:: itimer=0
   integer:: n, nvar, i0, i1
@@ -1918,7 +1920,8 @@ SUBROUTINE cmpflxm (self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
   ub = self%mesh%uo
   nvar = self%nvar
   xdim = ln-1
-  if (verbose>0) print '(a,2(2x,3i4))', 'mhd_t%cmpflxm: lb, ub=', lb, ub
+  if (verbose > 2) write (stdlog,'(a,2(2x,3i4))') &
+   'mhd_t%cmpflxm: lb, ub=', lb, ub
   !
   ! Avoid using spurious values from allocated, but non-defined entries
   !
@@ -2230,8 +2233,6 @@ SUBROUTINE solver (self, qleft, qright, fgdnv, n, nvar)
   n1 = size(qleft,1)
   if (self%riemann == 'hlld') then
     call rieman%hlld (qleft, qright, fgdnv, n1, detailed_timer)
-  else if (self%riemann == 'hllc') then
-    call rieman%hllc (qleft, qright, fgdnv, n1, detailed_timer)
   else if (self%riemann == 'llf')then
     call rieman%llf (qleft, qright, fgdnv, n1, detailed_timer)
   else if (self%riemann == 'roe_ec')then
@@ -2265,6 +2266,8 @@ SUBROUTINE solver_2d (self,qLL,qRL,qLR,qRR,emf,j,k,l,u,nvar,xdim,detailed_timer)
   end if
 END SUBROUTINE solver_2d
 
+
+
 !===============================================================================
 FUNCTION gas_pressure (self) RESULT (pg)
   class(mhd_t):: self
@@ -2286,15 +2289,15 @@ FUNCTION gas_pressure (self) RESULT (pg)
       (e-0.5*(up(bx,1)**2+up(by,2)**2+up(bz,3)**2+(px**2+py**2+pz**2)/d))
   end if
   end associate
-  contains
-    !===========================================================================
-    FUNCTION up(f,i) RESULT (g)
-      real, dimension(:,:,:), intent(in):: f
-      real, dimension(size(f,1),size(f,2),size(f,3)):: g
-      integer:: i
-      !.........................................................................
-      g = 0.5*(cshift(f,1,i)+f)
-    END FUNCTION
+    contains
+  !===============================================================================
+  FUNCTION up(f,i) RESULT (g)
+    real, dimension(:,:,:), intent(in):: f
+    real, dimension(size(f,1),size(f,2),size(f,3)):: g
+    integer:: i
+    !.............................................................................
+    g = 0.5*(cshift(f,1,i)+f)
+  END FUNCTION
 END FUNCTION gas_pressure
 
 !===============================================================================
@@ -2306,14 +2309,12 @@ SUBROUTINE gravitational_force (self)
   real, dimension(:,:,:,:), pointer:: p
   integer:: i,j,k
   real, dimension(3):: wtp1, wtm1
-  real:: etemp
   !.............................................................................
   associate (l => self%li, u => self%ui)
   wtp1 = 0.50 * 4.0 / 3.0 / self%ds
   wtm1 = 0.25 * 1.0 / 3.0 / self%ds
   phi => self%mem(:,:,:,self%idx%phi,self%new,1)
   d   => self%mem(:,:,:,self%idx%d,self%new,1)
-  et  => self%mem(:,:,:,self%idx%e,self%new,1)
   p   => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
   allocate (gradphi1(self%gn(1),self%gn(2),self%gn(3)), &
             gradphi2(self%gn(1),self%gn(2),self%gn(3)), &
@@ -2322,10 +2323,6 @@ SUBROUTINE gravitational_force (self)
   do k=l(3),u(3)
     do j=l(2),u(2)
       do i=l(1),u(1)
-        ! calculate energy minus the kinetic energy
-        etemp = et(i,j,k) - 0.5 * p(i,j,k,1)**2 / d(i,j,k) &
-                          - 0.5 * p(i,j,k,2)**2 / d(i,j,k) &
-                          - 0.5 * p(i,j,k,3)**2 / d(i,j,k)
         ! calculate gradient of phi
         gradphi1(i,j,k) = wtp1(1) * (phi(i+1,j,k) - phi(i-1,j,k)) &
                  - wtm1(1) * (phi(i+2,j,k) - phi(i-2,j,k))
@@ -2337,10 +2334,6 @@ SUBROUTINE gravitational_force (self)
         p(i,j,k,1) = p(i,j,k,1) - self%dtime * d(i,j,k) * gradphi1(i,j,k)
         p(i,j,k,2) = p(i,j,k,2) - self%dtime * d(i,j,k) * gradphi2(i,j,k)
         p(i,j,k,3) = p(i,j,k,3) - self%dtime * d(i,j,k) * gradphi3(i,j,k)
-        ! update total energy with new momentum
-        et(i,j,k) = etemp + 0.5 * p(i,j,k,1)**2 / d(i,j,k) &
-                          + 0.5 * p(i,j,k,2)**2 / d(i,j,k) &
-                          + 0.5 * p(i,j,k,3)**2 / d(i,j,k)
       end do
     end do
   end do
@@ -2390,8 +2383,8 @@ SUBROUTINE emag(self, bx, by, bz, e_mag)
     call iter_y
     call iter_z
     call iter_y
-  end do  
-  
+  end do
+
   do iz=1,gn(3)
     do iy=1,gn(2)
       do ix=1,gn(1)
