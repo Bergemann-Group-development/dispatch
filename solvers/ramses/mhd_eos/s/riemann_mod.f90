@@ -31,7 +31,7 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
   real(dp),dimension(:,:)::qleft,qright,fgdnv
   LOGICAL:: detailed_timer
   REAL(dp)::SSL,SSR, c_v
-  REAL(dp)::re,le,lim, tgl, tgr, tgstarl, tgstarr
+  REAL(dp)::re,le,lim
   REAL(dp)::rl,pl,sl,ul,ecinl,stotl,ptotl,Bl,Cl,wstarl,vtotBl,emagl,SAL,sqrrstarl,vl,wl
   REAL(dp)::rr,pr,sr,ur,ecinr,stotr,ptotr,Br,Cr,wstarr,vtotBr,emagr,SAR,sqrrstarr,vr,wr
   REAL(dp)::cfastl,rcl,rstarl,el,vdotBstarl,vstarl,stotstarstarl,stotstarl,vdotBl
@@ -39,7 +39,7 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
   REAL(dp)::ustar,ptotstar,estar,vstarstar,wstarstar
   REAL(dp)::sadl,sadr,sadlstar,sadrstar,sadlstarstar,sadrstarstar, sadd
   REAL(dp)::ro,uo,ptoto,so,vo,wo,visc, scond, smax, temp, M
-  REAL(dp)::A,sgnm, somax, csl2, csr2, csl, csr, tgo,aa2
+  REAL(dp)::A,sgnm, somax, csl2, csr2, csl, csr,aa2
   REAL(dp)::alfa_sl, alfa_fl, alfa_sr, alfa_fr, alfa_m,tt1,tt2,tt3, tt4, tt5, tt6, bp1, bp2
   REAL(dp)::Bstarl,Bstarr,Cstarl,Cstarr,calfvenl,calfvenr,cslowl, cslowr, pstar
   REAL(dp)::Bo,Co,Bstarstar,Cstarstar,vdotBstarstar,vdotBo,emago,msl,msr, mso,mss, mmax
@@ -63,25 +63,15 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
   !$omp &  rcl,rstarl,el,Bstarl,Cstarl,vstarl,wstarl, tgl, tgr, tgo &
   !$omp &  rcr,rstarr,er,Bstarr,Cstarr,vstarr,wstarr, M,&
   !$omp &  vdotBstarl,stotstarl,sqrrstarl,calfvenl,SAR, c2l, c2r, cl, cr&
-  !$omp &  vdotBstarr,stotstarr,sqrrstarr,calfvenr,SAL, tstarl,tstarr,&
+  !$omp &  vdotBstarr,stotstarr,sqrrstarr,calfvenr,SAL,&
   !$omp &  vstarstar,wstarstar,Bstarstar,Cstarstar,vdotBstarstar,visc, &
   !$omp &  scond, tt1, tt2, tt3, tt4, tt5, tt6, aa2, alfa_sl, alfa_fr, alfa_sr, alfa_fr, bp1,bp2, &
   !$omp &  sadl,sadr,sadlstar,sadrstar,sadlstarstar,sadrstarstar,sadd &
   !$omp &  icase,ro,uo,vo,wo,Bo,Co,Ptoto,so,vdotBo,emago,ustar)
 #endif
 gamma = eos%gamma
-smax=0.0
-somax=0.0
-scase=0
-msl=0.
-msr=0.
-mso=0.
-mss=0.
-mmax=0.
 fgdnv(:,9) =0.0
   do i=1,ngrid
-    !print '(i3,1p,8e10.2,2x,8e10.2)',i,qleft(i,:),qright(i,:)
-    !
     ! Enforce continuity of normal component
     A=half*(qleft(i,4)+qright(i,4))
     sgnm=sign(one,A)
@@ -90,7 +80,7 @@ fgdnv(:,9) =0.0
     !
     ! Left variables
     rl=qleft(i,1); Pl=qleft(i,2); ul=qleft(i,3); sl=qleft(i,10)
-    vl=qleft(i,5); Bl=qleft(i,6); wl=qleft(i,7); Cl=qleft(i,8); tgl=qleft(i,9)
+    vl=qleft(i,5); Bl=qleft(i,6); wl=qleft(i,7); Cl=qleft(i,8)
     ecinl = half*(ul*ul+vl*vl+wl*wl)*rl
     emagl = half*(A*A+Bl*Bl+Cl*Cl)
     !etotl = El*rl+ecinl+emagl
@@ -100,7 +90,7 @@ fgdnv(:,9) =0.0
     !
     ! Right variables
     rr=qright(i,1); Pr=qright(i,2); ur=qright(i,3); sr=qright(i,10)
-    vr=qright(i,5); Br=qright(i,6); wr=qright(i,7); Cr=qright(i,8); tgr=qright(i,9)
+    vr=qright(i,5); Br=qright(i,6); wr=qright(i,7); Cr=qright(i,8)
     ecinr = half*(ur*ur+vr*vr+wr*wr)*rr
     emagr = half*(A*A+Br*Br+Cr*Cr)
     !etotr = Er*rr+ecinr+emagr
@@ -186,12 +176,10 @@ fgdnv(:,9) =0.0
 
 
     vdotBstarl=ustar*A+vstarl*Bstarl+wstarl*Cstarl
-    tgstarl = tgl*(SSL-ul)/(SSL-ustar)
     stotstarl=sl
     c_v=one/(eos%gamma-one)
     !stotstarl=(((sl-eos%s0)*rl/rstarl)*(SSL-ul))/(SSL-ustar)+eos%s0
    
-    tgstarl  = (gamma*log(rstarl/rl)+log(ptotstar/ptotl))*(ul-ustar)
     !sl = sl + c_v*log(ptotl) + c_v*eos%gamma*log(rl)
     sqrrstarl=sqrt(rstarl)
     calfvenl=abs(A)/sqrrstarl
@@ -222,11 +210,9 @@ fgdnv(:,9) =0.0
 #endif
     !
     vdotBstarr=ustar*A+vstarr*Bstarr+wstarr*Cstarr
-    tgstarr = tgr*(SSR-ur)/(SSR-ustar)
     stotstarr=sr
     !sr = sr + c_v*log(ptotr) + c_v*eos%gamma*log(rr)
     !stotstarr = (((sr-eos%s0)*rr/rstarr)*(SSR-ur))/(SSR-ustar)+eos%s0
-    tgstarr  = (gamma*log(rr/rstarr)+log(ptotr/ptotstar))*(ustar-ur)
     sqrrstarr=sqrt(rstarr)
     calfvenr=abs(A)/sqrrstarr 
     SAR=ustar+calfvenr
@@ -254,7 +240,6 @@ fgdnv(:,9) =0.0
        Bo=Bl
        Co=Cl
        Ptoto=Ptotl
-       tgo=tgl
        so=sl
        vdotBo=vdotBl
        emago=emagl
@@ -276,7 +261,6 @@ fgdnv(:,9) =0.0
        Co=Cstarl
        Ptoto=Ptotstar
        so=stotstarl 
-       tgo=tgstarl
        vdotBo=vdotBstarl
        emago=half*(A*A+Bo*Bo+Co*Co)
        tt3=log(ptoto/ptotr)+gamma*log(ro/rr)
@@ -292,7 +276,6 @@ fgdnv(:,9) =0.0
        Co=Cstarstar
        Ptoto=Ptotstar
        so=stotstarstarl
-       tgo=tgstarl
        M = (uo-ur)/csl
        vdotBo=vdotBstarstar
        emago=half*(A*A+Bo*Bo+Co*Co)
@@ -314,7 +297,6 @@ fgdnv(:,9) =0.0
        Co=Cstarstar
        Ptoto=Ptotstar
        so=stotstarstarr
-       tgo=tgstarr
        vdotBo=vdotBstarstar
        emago=half*(A*A+Bo*Bo+Co*Co)
        tt2=cslowr*alfa_sr*(gamma*half)
@@ -334,7 +316,6 @@ fgdnv(:,9) =0.0
        Co=Cstarr
        Ptoto=Ptotstar
        so = stotstarr
-       tgo=tgstarr
        vdotBo=vdotBstarr
        emago=half*(A*A+Bo*Bo+Co*Co)
        if (abs(ul-ur)>=csl) tt3=log(ptotl/ptoto)-gamma*(rl/ro)
@@ -350,7 +331,6 @@ fgdnv(:,9) =0.0
        Bo=Br
        Co=Cr
        so=sr 
-       tgo=tgr
        Ptoto=Ptotr
        vdotBo=vdotBr
        emago=emagr

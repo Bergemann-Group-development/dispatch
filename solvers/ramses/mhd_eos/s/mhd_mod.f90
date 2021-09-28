@@ -245,15 +245,15 @@ SUBROUTINE update (self)
   allocate (self%Ex (n(1),n(2),n(3)))                           ! self%Ex  = 0_dp
   allocate (self%Ey (n(1),n(2),n(3)))                           ! self%Ey  = 0_dp
   allocate (self%Ez (n(1),n(2),n(3)))                           ! self%Ez  = 0_dp
-  allocate (self%qp (n(1),self%nvar,ndim,n(2),n(3)))            ! self%qp  = 0_dp
-  allocate (self%qm (n(1),self%nvar,ndim,n(2),n(3)))            ! self%qm  = 0_dp
-  allocate (self%dq (n(1),self%nvar,ndim,n(2),n(3)))            ! self%dq  = 0_dp
-  allocate (self%dq2(n(1),self%nvar,ndim,n(2),n(3)))            ! self%dq2 = 0_dp
+  allocate (self%qp (n(1),self%nvar-1,ndim,n(2),n(3)))            ! self%qp  = 0_dp
+  allocate (self%qm (n(1),self%nvar-1,ndim,n(2),n(3)))            ! self%qm  = 0_dp
+  allocate (self%dq (n(1),self%nvar-1,ndim,n(2),n(3)))            ! self%dq  = 0_dp
+  allocate (self%dq2(n(1),self%nvar-1,ndim,n(2),n(3)))            ! self%dq2 = 0_dp
   allocate (self%dbf(n(1),3,2,n(2),n(3)))                       ! self%dbf = 0_dp
-  allocate (self%qLB(n(1),self%nvar,ndim,n(2),n(3)))            ! self%qLB = 0_dp
-  allocate (self%qLT(n(1),self%nvar,ndim,n(2),n(3)))            ! self%qLT = 0_dp
-  allocate (self%qRB(n(1),self%nvar,ndim,n(2),n(3)))            ! self%qRB = 0_dp
-  allocate (self%qRT(n(1),self%nvar,ndim,n(2),n(3)))            ! self%qRT = 0_dp
+  allocate (self%qLB(n(1),self%nvar-1,ndim,n(2),n(3)))            ! self%qLB = 0_dp
+  allocate (self%qLT(n(1),self%nvar-1,ndim,n(2),n(3)))            ! self%qLT = 0_dp
+  allocate (self%qRB(n(1),self%nvar-1,ndim,n(2),n(3)))            ! self%qRB = 0_dp
+  allocate (self%qRT(n(1),self%nvar-1,ndim,n(2),n(3)))            ! self%qRT = 0_dp
   uin  => self%mem(:,:,:,:,self%it ,1)
   unew => self%mem(:,:,:,:,self%new,1)
   d => self%mem(:,:,:,          self%idx%d ,self%it,1)
@@ -290,7 +290,7 @@ SUBROUTINE update (self)
   end if
   call self%courant_condition                           ! compute dt
   call trace3d(self)                                    ! predictor step
-  allocate (fl(self%gn(1),self%gn(2),self%gn(3),self%nvar,3))
+  allocate (fl(self%gn(1),self%gn(2),self%gn(3),self%nvar-1,3))
   allocate (em(self%gn(1),self%gn(2),self%gn(3),3))
   fl = 0.0d0
   em = 0.0d0
@@ -674,17 +674,17 @@ subroutine ctoprim(self)
   gn = self%mesh%gn
   !
   !self%bf => uin(:,:,:,6:8)                                                    ! Left  face centered B
-  uin(:,:,:,1) = max(uin(:,:,:,1),smallr)                                       ! Density
-  q(:,:,:,1)   = uin(:,:,:,1)                                                   ! Density
+  uin(:,:,:,1)= max(uin(:,:,:,1),smallr)                                        ! Density
+  q(:,:,:,1)  = uin(:,:,:,1)                                                    ! Density
   q(:,:,:,2)  = uin(:,:,:,2)/q(:,:,:,1)                                         ! vx
   q(:,:,:,3)  = uin(:,:,:,3)/q(:,:,:,1)                                         ! vy
   q(:,:,:,4)  = uin(:,:,:,4)/q(:,:,:,1)                                         ! vz
-  q(:,:,:,5) = 0.0                                                              ! p_t; initialised for safety
-  q(:,:,:,9) = 0.0                                                              ! t_gas; initialised for safety
-  q(:,:,:,6) = uin(:,:,:,6)                                                     ! Bx
-  q(:,:,:,7) = uin(:,:,:,7)                                                     ! By
-  q(:,:,:,8) = uin(:,:,:,8)                                                     ! Bz
-  q(:,:,:,10) = uin(:,:,:,5)/q(:,:,:,1)                                         ! entropy / mass
+  q(:,:,:,5)  = 0.0                                                             ! p_t; initialised for safety
+  q(:,:,:,10) = 0.0                                                             ! t_gas; initialised for safety
+  q(:,:,:,6)  = uin(:,:,:,6)                                                    ! Bx
+  q(:,:,:,7)  = uin(:,:,:,7)                                                    ! By
+  q(:,:,:,8)  = uin(:,:,:,8)                                                    ! Bz
+  q(:,:,:,9)  = uin(:,:,:,5)/q(:,:,:,1)                                         ! entropy / mass
   bf(:,:,:,1) = uin(:,:,:,6)
   bf(:,:,:,2) = uin(:,:,:,7)
   bf(:,:,:,3) = uin(:,:,:,8)
@@ -695,11 +695,12 @@ subroutine ctoprim(self)
   allocate (lnd(gn(1),gn(2),gn(3)))
   allocate (ss(gn(1),gn(2),gn(3)))
   lnd = log(q(:,:,:,1))
-  ss = q(:,:,:,10)
+  ss = q(:,:,:,9)
   !-----------------------------------------------------------------------------
   ! Pressure
   !-----------------------------------------------------------------------------
-  call eos%lookup_table (shape(lnd), lnd=lnd, ss=ss, pg=q(:,:,:,5), tt=q(:,:,:,9),label='mhd', id=self%id)
+  call eos%lookup_table (shape(lnd), lnd=lnd, ss=ss, pg=q(:,:,:,5), &
+                         tt=q(:,:,:,10),label='mhd', id=self%id)
   !-----------------------------------------------------------------------------
   ! Fast mode speed
   !-----------------------------------------------------------------------------
@@ -900,7 +901,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
         end do
       end do
     end do
-    n = 10
+    n = 9
     do k = l(3),u(3)
       do j = l(2),u(2)
         !dir$ ivdep
@@ -1143,7 +1144,7 @@ SUBROUTINE trace3d(self)
   class(mhd_t):: self
   real(dp):: dx, dy, dz, dt, dsmax
   integer :: i, j, k, n
-  integer, parameter ::ir=1, iu=2, iv=3, iw=4, ip=5, ia=6, ib=7, ic=8, is=10, itg=9
+  integer, parameter ::ir=1, iu=2, iv=3, iw=4, ip=5, ia=6, ib=7, ic=8, is=9, itg=10
   real(dp)::dtdx, dtdy, dtdz, smallp
   real(dp) :: invr, q_visc, ekin, emag, pmag, cs, du, visc_max
   real(dp) :: r, u, v, w, p,s, A, B, C, s0, tg
@@ -1151,11 +1152,11 @@ SUBROUTINE trace3d(self)
   real(dp) :: ELL, ELR, ERL, ERR
   real(dp) :: FLL, FLR, FRL, FRR
   real(dp) :: GLL, GLR, GRL, GRR
-  real(dp) :: drx, dux, dvx, dwx, dpx, dsx, dAx, dBx, dCx, dtgx
-  real(dp) :: dry, duy, dvy, dwy, dpy, dsy, dAy, dbY, dCy, dtgy
-  real(dp) :: drz, duz, dvz, dwz, dpz, dsz, dAz, dBz, dCz, dtgz
+  real(dp) :: drx, dux, dvx, dwx, dpx, dsx, dAx, dBx, dCx
+  real(dp) :: dry, duy, dvy, dwy, dpy, dsy, dAy, dbY, dCy
+  real(dp) :: drz, duz, dvz, dwz, dpz, dsz, dAz, dBz, dCz
   real(dp) :: drx2,dpx2,dry2,dpy2,drz2,dpz2
-  real(dp) :: sr0, su0, sv0, sw0, sp0, ss0, sA0, sB0, sC0, tg0
+  real(dp) :: sr0, su0, sv0, sw0, sp0, ss0, sA0, sB0, sC0
   real(dp) :: AL, AR, BL, BR, CL, CR
   real(dp) :: dALy, dARy, dALz, dARz
   real(dp) :: dBLx, dBRx, dBLz, dBRz
@@ -1298,7 +1299,7 @@ SUBROUTINE trace3d(self)
   !$omp & dCRy,dCx,dCy,dpx,dpx2,dpy,dpy2,dpz,dpz2,drx,drx2,dry,dry2,drz,drz2,dux, &
   !$omp & duy,duz,dvx,dvy,dvz,dwx,dwy,dwz,invr,p,r,sAL0,sAR0,sBL0,sBR0,sCL0,sCR0, &
   !$omp & sp0,sr0,su0,sv0,sw0,u,v,w, &
-  !$omp & dsx,dsy,dsz,ss0,pmag,cs,du,s,tg, dtgx,dtgy,dtgz)
+  !$omp & dsx,dsy,dsz,ss0,pmag,cs,du,s,tg)
   do i=lo(1),uo(1)
     r=q(i,j,k,ir)
     u=q(i,j,k,iu)
@@ -1339,7 +1340,6 @@ SUBROUTINE trace3d(self)
     dwx = half * dq(i,iw,1,j,k)
     dpx = half * dq(i,ip,1,j,k)
     dsx = half * dq(i,is,1,j,k)
-    dtgx= half * dq(i,itg,1,j,k)
     dpx2= half *dq2(i,ip,1,j,k)
     dBx = half * dq(i,iB,1,j,k)
     dCx = half * dq(i,iC,1,j,k)
@@ -1351,7 +1351,6 @@ SUBROUTINE trace3d(self)
     dwy = half * dq(i,iw,2,j,k)
     dpy = half * dq(i,ip,2,j,k)
     dsy = half * dq(i,is,2,j,k)
-    dtgy= half * dq(i,itg,2,j,k)
     dpy2= half *dq2(i,ip,2,j,k)
     duy = half * dq(i,iu,2,j,k)
     dAy = half * dq(i,iA,2,j,k)
@@ -1364,7 +1363,6 @@ SUBROUTINE trace3d(self)
     dwz = half * dq(i,iw,3,j,k)
     dpz = half * dq(i,ip,3,j,k)
     dsz = half * dq(i,is,3,j,k)
-    dtgz= half * dq(i,itg,3,j,k)
     dpz2= half *dq2(i,ip,3,j,k)
     dAz = half * dq(i,iA,3,j,k)
     dBz = half * dq(i,iB,3,j,k)
@@ -1468,7 +1466,6 @@ SUBROUTINE trace3d(self)
 !    end if
     !
     ! Cell-centered predicted states
-    tg= tg*(1.+sp0/p)/(1+sr0/r)
     r = r + sr0
     r = max(r,smallr)
     rho_t(i,j,k) = r
@@ -1492,7 +1489,6 @@ SUBROUTINE trace3d(self)
     qp(i,iw,1,j,k) = w - dwx
     qp(i,ip,1,j,k) = p - dpx
     qp(i,is,1,j,k) = s - dsx
-    qp(i,itg,1,j,k) = tg - dtgx
     qp(i,iA,1,j,k) = AL
     qp(i,iB,1,j,k) = B - dBx
     qp(i,iC,1,j,k) = C - dCx
@@ -1504,7 +1500,6 @@ SUBROUTINE trace3d(self)
     qm(i,iw,1,j,k) = w + dwx
     qm(i,ip,1,j,k) = p + dpx
     qm(i,is,1,j,k) = s + dsx
-    qm(i,itg,1,j,k) = tg + dtgx
     qm(i,iA,1,j,k) = AR
     qm(i,iB,1,j,k) = B + dBx
     qm(i,iC,1,j,k) = C + dCx
@@ -1516,7 +1511,6 @@ SUBROUTINE trace3d(self)
     qp(i,iw,2,j,k) = w - dwy
     qp(i,ip,2,j,k) = p - dpy
     qp(i,is,2,j,k) = s - dsy
-    qp(i,itg,2,j,k) = tg - dtgy
     qp(i,iA,2,j,k) = A - dAy
     qp(i,iB,2,j,k) = BL
     qp(i,iC,2,j,k) = C - dCy
@@ -1528,7 +1522,6 @@ SUBROUTINE trace3d(self)
     qm(i,iw,2,j,k) = w + dwy
     qm(i,ip,2,j,k) = p + dpy
     qm(i,is,2,j,k) = s + dsy
-    qm(i,itg,2,j,k) = tg + dtgy
     qm(i,iA,2,j,k) = A + dAy
     qm(i,iB,2,j,k) = BR
     qm(i,iC,2,j,k) = C + dCy
@@ -1540,7 +1533,6 @@ SUBROUTINE trace3d(self)
     qp(i,iw,3,j,k) = w - dwz
     qp(i,ip,3,j,k) = p - dpz
     qp(i,is,3,j,k) = s - dsz
-    qp(i,itg,3,j,k) = tg - dtgz
     qp(i,iA,3,j,k) = A - dAz
     qp(i,iB,3,j,k) = B - dBz
     qp(i,iC,3,j,k) = CL
@@ -1552,7 +1544,6 @@ SUBROUTINE trace3d(self)
     qm(i,iw,3,j,k) = w + dwz
     qm(i,ip,3,j,k) = p + dpz
     qm(i,is,3,j,k) = s + dsz
-    qm(i,itg,3,j,k) = tg + dtgz
     qm(i,iA,3,j,k) = A + dAz
     qm(i,iB,3,j,k) = B + dBz
     qm(i,iC,3,j,k) = CR
@@ -1564,7 +1555,6 @@ SUBROUTINE trace3d(self)
     qRT(i,iw,1,j,k) = w + (+dwy+dwz)
     qRT(i,ip,1,j,k) = p + (+dpy2+dpz2)
     qRT(i,is,1,j,k) = s + (+dsy+dsz)
-    qRT(i,itg,1,j,k) = tg + (+dtgy+dtgz)
     qRT(i,iA,1,j,k) = A + (+dAy+dAz)
     qRT(i,iB,1,j,k) = BR+ (   +dBRz)
     qRT(i,iC,1,j,k) = CR+ (+dCRy   )
@@ -1576,7 +1566,6 @@ SUBROUTINE trace3d(self)
     qRB(i,iw,1,j,k) = w + (+dwy-dwz)
     qRB(i,ip,1,j,k) = p + (+dpy2-dpz2)
     qRB(i,is,1,j,k) = s + (+dsy-dsz)
-    qRB(i,itg,1,j,k) = tg + (+dtgy-dtgz)
     qRB(i,iA,1,j,k) = A + (+dAy-dAz)
     qRB(i,iB,1,j,k) = BR+ (   -dBRz)
     qRB(i,iC,1,j,k) = CL+ (+dCLy   )
@@ -1588,7 +1577,6 @@ SUBROUTINE trace3d(self)
     qLT(i,iw,1,j,k) = w + (-dwy+dwz)
     qLT(i,ip,1,j,k) = p + (-dpy2+dpz2)
     qLT(i,is,1,j,k) = s + (-dsy+dsz)
-    qLT(i,itg,1,j,k) = tg + (-dtgy+dtgz)
     qLT(i,iA,1,j,k) = A + (-dAy+dAz)
     qLT(i,iB,1,j,k) = BL+ (   +dBLz)
     qLT(i,iC,1,j,k) = CR+ (-dCRy   )
@@ -1600,7 +1588,6 @@ SUBROUTINE trace3d(self)
     qLB(i,iw,1,j,k) = w + (-dwy-dwz)
     qLB(i,ip,1,j,k) = p + (-dpy2-dpz2)
     qLB(i,is,1,j,k) = s + (-dsy-dsz)
-    qLB(i,itg,1,j,k) = tg + (-dtgy-dtgz)
     qLB(i,iA,1,j,k) = A + (-dAy-dAz)
     qLB(i,iB,1,j,k) = BL+ (   -dBLz)
     qLB(i,iC,1,j,k) = CL+ (-dCLy   )
@@ -1612,7 +1599,6 @@ SUBROUTINE trace3d(self)
     qRT(i,iw,2,j,k) = w + (+dwx+dwz)
     qRT(i,ip,2,j,k) = p + (+dpx2+dpz2)
     qRT(i,is,2,j,k) = s + (+dsx+dsz)
-    qRT(i,itg,2,j,k) = tg + (+dtgx+dtgz)
     qRT(i,iA,2,j,k) = AR+ (   +dARz)
     qRT(i,iB,2,j,k) = B + (+dBx+dBz)
     qRT(i,iC,2,j,k) = CR+ (+dCRx   )
@@ -1624,7 +1610,6 @@ SUBROUTINE trace3d(self)
     qRB(i,iw,2,j,k) = w + (+dwx-dwz)
     qRB(i,ip,2,j,k) = p + (+dpx2-dpz2)
     qRB(i,is,2,j,k) = s + (+dsx-dsz)
-    qRB(i,itg,2,j,k) = tg + (+dtgx-dtgz)
     qRB(i,iA,2,j,k) = AR+ (   -dARz)
     qRB(i,iB,2,j,k) = B + (+dBx-dBz)
     qRB(i,iC,2,j,k) = CL+ (+dCLx   )
@@ -1636,7 +1621,6 @@ SUBROUTINE trace3d(self)
     qLT(i,iw,2,j,k) = w + (-dwx+dwz)
     qLT(i,ip,2,j,k) = p + (-dpx2+dpz2)
     qLT(i,is,2,j,k) = s + (-dsx+dsz)
-    qLT(i,itg,2,j,k) = tg + (-dtgx+dtgz)
     qLT(i,iA,2,j,k) = AL+ (   +dALz)
     qLT(i,iB,2,j,k) = B + (-dBx+dBz)
     qLT(i,iC,2,j,k) = CR+ (-dCRx   )
@@ -1648,7 +1632,6 @@ SUBROUTINE trace3d(self)
     qLB(i,iw,2,j,k) = w + (-dwx-dwz)
     qLB(i,ip,2,j,k) = p + (-dpx2-dpz2)
     qLB(i,is,2,j,k) = s + (-dsx-dsz)
-    qLB(i,itg,2,j,k) = s + (-dtgx-dtgz)
     qLB(i,iA,2,j,k) = AL+ (   -dALz)
     qLB(i,iB,2,j,k) = B + (-dBx-dBz)
     qLB(i,iC,2,j,k) = CL+ (-dCLx   )
@@ -1660,7 +1643,6 @@ SUBROUTINE trace3d(self)
     qRT(i,iw,3,j,k) = w + (+dwx+dwy)
     qRT(i,ip,3,j,k) = p + (+dpx2+dpy2)
     qRT(i,is,3,j,k) = s + (+dsx+dsy)
-    qRT(i,itg,3,j,k) = tg + (+dtgx+dtgy)
     qRT(i,iA,3,j,k) = AR+ (   +dARy)
     qRT(i,iB,3,j,k) = BR+ (+dBRx   )
     qRT(i,iC,3,j,k) = C + (+dCx+dCy)
@@ -1672,7 +1654,6 @@ SUBROUTINE trace3d(self)
     qRB(i,iw,3,j,k) = w + (+dwx-dwy)
     qRB(i,ip,3,j,k) = p + (+dpx2-dpy2)
     qRB(i,is,3,j,k) = s + (+dsx-dsy)
-    qRB(i,itg,3,j,k) = tg + (+dtgx-dtgy)
     qRB(i,iA,3,j,k) = AR+ (   -dARy)
     qRB(i,iB,3,j,k) = BL+ (+dBLx   )
     qRB(i,iC,3,j,k) = C + (+dCx-dCy)
@@ -1684,7 +1665,6 @@ SUBROUTINE trace3d(self)
     qLT(i,iw,3,j,k) = w + (-dwx+dwy)
     qLT(i,ip,3,j,k) = p + (-dpx2+dpy2)
     qLT(i,is,3,j,k) = s + (-dsx+dsy)
-    qLT(i,itg,3,j,k) = tg + (-dtgx+dtgy)
     qLT(i,iA,3,j,k) = AL+ (   +dALy)
     qLT(i,iB,3,j,k) = BR+ (-dBRx   )
     qLT(i,iC,3,j,k) = C + (-dCx+dCy)
@@ -1696,7 +1676,6 @@ SUBROUTINE trace3d(self)
     qLB(i,iw,3,j,k) = w + (-dwx-dwy)
     qLB(i,ip,3,j,k) = p + (-dpx2-dpy2)
     qLB(i,is,3,j,k) = s + (-dsx-dsy)
-    qLB(i,itg,3,j,k) = tg + (-dtgx-dtgy)
     qLB(i,iA,3,j,k) = AL+ (   -dALy)
     qLB(i,iB,3,j,k) = BL+ (-dBLx   )
     qLB(i,iC,3,j,k) = C + (-dCx-dCy)
@@ -1947,8 +1926,7 @@ SUBROUTINE cmpflxm (self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
           qleft (i,6) = qm(i0+i,bt1,xdim,j,k) ! Tangential magnetic field 1
           qleft (i,7) = qm(i0+i,lt2,xdim,j,k) ! Tangential velocity 2
           qleft (i,8) = qm(i0+i,bt2,xdim,j,k) ! Tangential magnetic field 2
-          qleft (i,9) = qm(i0+i,9  ,xdim,j,k) ! Temperature
-          qleft (i,10) = qm(i0+i,10  ,xdim,j,k) ! Entropy
+          qleft (i,9) = qm(i0+i,9  ,xdim,j,k) ! Entropy
           ! Right state
           qright(i,1) = qp(i1+i,1  ,xdim,j,k) ! Mass density
           qright(i,2) = qp(i1+i,5  ,xdim,j,k) ! Pressure
@@ -1958,8 +1936,7 @@ SUBROUTINE cmpflxm (self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
           qright(i,6) = qp(i1+i,bt1,xdim,j,k) ! Tangential magnetic field 1
           qright(i,7) = qp(i1+i,lt2,xdim,j,k) ! Tangential velocity 2
           qright(i,8) = qp(i1+i,bt2,xdim,j,k) ! Tangential magnetic field 2
-          qright(i,9) = qp(i1+i,9  ,xdim,j,k) ! Temperature
-          qright(i,10) = qp(i1+i,10  ,xdim,j,k) ! Entropy
+          qright(i,9) = qp(i1+i,9  ,xdim,j,k) ! Entropy
         end do
 if (self%id==io%id_debug .and. j==8 .and. k==8) then
   do i=1,nvar
@@ -2006,8 +1983,7 @@ end if
           qleft (i,6) = qm(i+i1,bt1,xdim,j-1,k) ! Tangential magnetic field 1
           qleft (i,7) = qm(i+i1,lt2,xdim,j-1,k) ! Tangential velocity 2
           qleft (i,8) = qm(i+i1,bt2,xdim,j-1,k) ! Tangential magnetic field 2
-          qleft (i,9) = qm(i+i1,9  ,xdim,j-1,k) ! Temperature
-          qleft (i,10) = qm(i+i1,10  ,xdim,j-1,k) ! Entropy
+          qleft (i,9) = qm(i+i1,9  ,xdim,j-1,k) ! Entropy
           ! Right state
           qright(i,1) = qp(i+i1,1  ,xdim,j  ,k) ! Mass density
           qright(i,2) = qp(i+i1,5  ,xdim,j  ,k) ! Pressure
@@ -2017,8 +1993,7 @@ end if
           qright(i,6) = qp(i+i1,bt1,xdim,j  ,k) ! Tangential magnetic field 1
           qright(i,7) = qp(i+i1,lt2,xdim,j  ,k) ! Tangential velocity 2
           qright(i,8) = qp(i+i1,bt2,xdim,j  ,k) ! Tangential magnetic field 2
-          qright(i,9) = qp(i+i1,9  ,xdim,j  ,k) ! Temperature
-          qright(i,10) = qp(i+i1,10  ,xdim,j  ,k) ! Entropy
+          qright(i,9) = qp(i+i1,9  ,xdim,j  ,k) ! Entropy
         end do
 if (self%id==io%id_debug .and. j==8 .and. k==8) then
   do i=1,nvar
@@ -2067,8 +2042,7 @@ write(io_unit%log,'(a,i6,3x,a,f8.3)') &
           qleft (i,6) = qm(i+i1,bt1,xdim,j,k-1) ! Tangential magnetic field 1
           qleft (i,7) = qm(i+i1,lt2,xdim,j,k-1) ! Tangential velocity 2
           qleft (i,8) = qm(i+i1,bt2,xdim,j,k-1) ! Tangential magnetic field 2
-          qleft (i,9) = qm(i+i1,9  ,xdim,j,k-1) ! Temperature
-          qleft (i,10) = qm(i+i1,10  ,xdim,j,k-1) ! Entropy
+          qleft (i,9) = qm(i+i1,9  ,xdim,j,k-1) ! Entropy
           ! Right state
           qright(i,1) = qp(i+i1,1  ,xdim,j,k  ) ! Mass density
           qright(i,2) = qp(i+i1,5  ,xdim,j,k  ) ! Pressure
@@ -2078,8 +2052,7 @@ write(io_unit%log,'(a,i6,3x,a,f8.3)') &
           qright(i,6) = qp(i+i1,bt1,xdim,j,k  ) ! Tangential magnetic field 1
           qright(i,7) = qp(i+i1,lt2,xdim,j,k  ) ! Tangential velocity 2
           qright(i,8) = qp(i+i1,bt2,xdim,j,k  ) ! Tangential magnetic field 2
-          qright(i,9) = qp(i+i1,9  ,xdim,j,k  ) ! Temperature
-          qright(i,10) = qp(i+i1,10  ,xdim,j,k  ) ! Ebntropy
+          qright(i,9) = qp(i+i1,9  ,xdim,j,k  ) ! Ebntropy
         end do
 if (self%id==io%id_debug .and. j==8 .and. k==8) then
   do i=1,nvar
