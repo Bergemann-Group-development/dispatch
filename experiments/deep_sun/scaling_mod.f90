@@ -29,8 +29,6 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   if (.not.first_time) return
   call trace%begin ('scaling_t%init')
-  if (io%master) print *, &
- '-------------------------------- scaling_mod ---------------------------------'
   first_time = .false.
   call cgs%init
   !--------------------------- defining quantities -----------------------------

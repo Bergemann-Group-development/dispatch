@@ -146,12 +146,12 @@ SUBROUTINE read_bifrost_snap (task_list)
   allocate( dzm(mz), dzmdn(mz), zm(mz  ), zmdn(mz  ))
   read(io_unit%datain, *, iostat=iostat) (zm(iz),iz=1,mz), (zmdn(iz),iz=1,mz), dzm, dzmdn
   
-  if (io%master) then
+  if (io%master .and. verbose > 0) then
     print *,'reading mesh data from ' //trim(meshfile)
-    print *, 'setup dimensions =', n, nv
     print *, ' file dims =', mx, my, mz
     print *, ' mesh dims =', m%n, m%gn
-    print *, 'setup dims =', nint(m%b/m%d), m%b
+    print *, 'setup dims =', nint(m%b/m%d), nv
+    print *, '  box dims =', m%b
   end if
 
   ! periodic extensions
@@ -201,7 +201,7 @@ SUBROUTINE read_bifrost_snap (task_list)
   allocate (buffer(mx+ext,my+ext,mz))
   call io%bits_mem (storage_size (buffer), product(shape(buffer)), 'buffer')
   recl = kind(1.0)*mx*my*mz
-  if (io%master) &
+  if (io%master .and. verbose > 0) &
     print *,'reading MHD data from ',trim(snapfile)
   open (io_unit%datain, file=trim(snapfile), form='unformatted', access='direct', recl=recl)
   ! Indices
@@ -219,7 +219,7 @@ SUBROUTINE read_bifrost_snap (task_list)
   !-----------------------------------------------------------------------------
   do iv=1,min(nv,8)
     iiv = ii(iv)
-    if (io%master) print *, 'reading variable index iv =', iv
+    if (io%master .and. verbose > 0) print *, 'reading variable index iv =', iv
     read (io_unit%datain, rec=iv) rbuf(1:mx,1:my,1:mz)
               
     if (flip_z) then
@@ -233,7 +233,7 @@ SUBROUTINE read_bifrost_snap (task_list)
       end do
       if ((iiv==patch%idx%pz).or.(iiv==patch%idx%py).or. &
         (iiv==patch%idx%bz).or.(iiv==patch%idx%by)) then
-        if (io%master) print  *, 'flipping buffer..'
+        if (io%master .and. verbose > 0) print  *, 'flipping buffer..'
         do iz=1,mz
           do iy=1,my
             do ix=1,mx
@@ -249,7 +249,7 @@ SUBROUTINE read_bifrost_snap (task_list)
     end if
       minv = minval(buffer(1:mx,1:my,1:mz))
       maxv = maxval(buffer(1:mx,1:my,1:mz))
-       if (io%master) then
+       if (io%master .and. verbose > 0) then
       if ((minv>0.0).and.(maxv>0.0)) then
         print *, 'iv minmax log minmax in snapshot', minv, maxv, log(minv), log(maxv)
       else
@@ -409,7 +409,7 @@ SUBROUTINE read_bifrost_snap (task_list)
     link => link%next
   end do
   deallocate (xm,ym,zm,xmdn,ymdn,zmdn)
-  if (io%master) &
+  if (io%master .and. verbose > 0) &
     print *,'read_bifrost_snap finished'
   call trace%end(itimer)
 END SUBROUTINE read_bifrost_snap
@@ -438,7 +438,7 @@ SUBROUTINE read_stagger_snap (task_list)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('read_stagger_snap', itimer=itimer)
-  call io%header('begin ic_mod%read_stagger: Reading legacy Stagger Code data')
+  call io%header('read_snapshot_mod: Reading Stagger Code data:')
   !-----------------------------------------------------------------------------
   ! Pick up patch info from task_list
   !-----------------------------------------------------------------------------
@@ -461,7 +461,7 @@ SUBROUTINE read_stagger_snap (task_list)
   !---------------------------------------------------------------------------
   open (io_unit%datain, file=trim(meshfile), form='unformatted')
   read(io_unit%datain) my, mz, mx
-  if (io%master) then
+  if (io%master .and. verbose > 0) then
     print *,'reading mesh data from ',trim(meshfile)
     print *, 'setup dimensions =', n, nv
     print *, ' file dims =', mx, my, mz
@@ -478,7 +478,7 @@ SUBROUTINE read_stagger_snap (task_list)
   read(io_unit%datain) dym, dymdn, (ym(iy),iy=1,my), (ymdn(iy),iy=1,my)
   read(io_unit%datain) dzm, dzmdn, (zm(iz),iz=1,mz), (zmdn(iz),iz=1,mz)
   read(io_unit%datain) dxm, dxmdn, (xm(ix),ix=1,mx), (xmdn(ix),ix=1,mx)
-  if (io%master) then
+  if (io%master .and. verbose > 0) then
     print *,'x extent= ',xm(1), xm(mx)
     print *,'y extent= ',ym(1), ym(my)
     print *,'z extent= ',zm(1), zm(mz)
@@ -511,7 +511,7 @@ SUBROUTINE read_stagger_snap (task_list)
         iz, zm(iz), zmdn(iz),minval(dxm), minval(dym), dzm(iz)
     end do
   end if
-  if (io%master) then
+  if (io%master .and. verbose > 0) then
     print *, 'min(dx),min(dy),min(dz)', minval(dxm), minval(dym), minval(dzm)
     print *, 'nz for max res:', int((zm(1)-zm(mz))/minval(dzm))+1
   end if
@@ -536,11 +536,11 @@ SUBROUTINE read_stagger_snap (task_list)
   do iv=1,min(nv,9)
     if ((iv==6).and.(patch%idx%tt<1)) then
       biv = biv+1
-      if (io%master) print *, 'skipping temperature', iv
+      if (io%master .and. verbose > 0) print *, 'skipping temperature', iv
       !cycle
     end if
     iiv = ii(biv)
-    if (io%master) &
+    if (io%master .and. verbose > 0) &
       print *, 'reading variable index iv =', biv,'stored in', ii(biv)
     read (io_unit%datain, rec=biv) rbuf
     ! --------------------------------------------------------------------------
@@ -554,7 +554,7 @@ SUBROUTINE read_stagger_snap (task_list)
       if ((iiv==patch%idx%pz).or.(iiv==patch%idx%py).or. &
         (iiv==patch%idx%bz).or.(iiv==patch%idx%by)) then
         !do iz=1,mz; do iy=1,my; do ix=1,mx
-        if (io%master) print  *, 'flipping buffer..'
+        if (io%master .and. verbose > 0) print  *, 'flipping buffer..'
         buffer = -buffer
         !end do; end do; end do
       end if
@@ -712,7 +712,7 @@ SUBROUTINE read_stagger_snap (task_list)
     link => link%next
   end do
   deallocate (xm,ym,zm,xmdn,ymdn,zmdn, fl, fldn)
-  if (io%master) &
+  if (io%master .and. verbose > 0) &
     print *,'read_stagger_snap finished'
   call trace%end(itimer)
 END SUBROUTINE read_stagger_snap
