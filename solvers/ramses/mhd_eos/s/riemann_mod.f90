@@ -225,7 +225,9 @@ gamma = eos%gamma
        vdotBo=vdotBl
        emago=emagl
        tt1=log(ptotl/ptotr)+gamma*log(rl/rr)
-       s_gen = tt1*(ul-ur)
+       !s_gen = tt1*(ul-ur)
+       tt2=cfastl*alfa_fl*(gamma*half)
+       s_gen=tt1*(ul-ur)+tt2*(log(pl/pr)-log(rl/rr))
     else if(SAL>0d0)then
        icase=2
        ro=rstarl
@@ -238,8 +240,11 @@ gamma = eos%gamma
        so=stotstarl 
        vdotBo=vdotBstarl
        emago=half*(A*A+Bo*Bo+Co*Co)
+       !tt1=log(ptoto/ptotr)+gamma*log(ro/rr)
+       !s_gen=tt1*(ul-ur)
        tt1=log(ptoto/ptotr)+gamma*log(ro/rr)
-       s_gen=tt1*(ul-ur)
+       tt2=cfastl*alfa_fl*(gamma*half)
+       s_gen=tt1*(ul-ur)+tt2*(log(pl/pr)-log(rl/rr))
     else if(ustar>0d0)then
        icase=3
        ro=rstarl
@@ -282,8 +287,11 @@ gamma = eos%gamma
        so = stotstarr
        vdotBo=vdotBstarr
        emago=half*(A*A+Bo*Bo+Co*Co)
+       !tt1=log(ptotl/ptoto)+gamma*log(rl/ro)
+       !s_gen=tt1*(ul-ur)
        tt1=log(ptotl/ptoto)+gamma*log(rl/ro)
-       s_gen=tt1*(ul-ur)
+       tt2=cfastr*alfa_fr*(gamma*half)
+       s_gen = tt1*(ul-ur)+tt2*(log(pl/pr)-log(rl/rr))
     else
        icase=6
        ro=rr
@@ -297,7 +305,9 @@ gamma = eos%gamma
        vdotBo=vdotBr
        emago=emagr
        tt1=log(ptotl/ptotr)+gamma*log(rl/rr)
-       s_gen = tt1*(ul-ur)
+       !s_gen = tt1*(ul-ur)
+       tt2=cfastr*alfa_fr*(gamma*half)
+       s_gen = tt1*(ul-ur)+tt2*(log(pl/pr)-log(rl/rr))
     end if
     !---------------------------------------------------------------------------
     ! Add a diffusive flux in the down grad(ln(rho)) direction, which is only
