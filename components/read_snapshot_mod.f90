@@ -58,13 +58,13 @@ SUBROUTINE init (task_list)
   !-----------------------------------------------------------------------------
   rewind (io%input)
   read (io%input, snapshot_params, iostat=iostat)
-  if (io%master) then
-    call io%namelist_warning ('snapshot_params', iostat)
-    write (io%namelist, snapshot_params)
-    ext=extension
-  else
-    verbose = 0
+  if (iostat > 0) then
+    rewind (io%input)
+    read (io%input, snapshot_params)
   end if
+  call io%namelist_warning ('snapshot_params', iostat)
+  write (io%namelist, snapshot_params)
+  ext=extension
   if (io%restart < 0) then 
     select case(trim(model))
       case('bifrost')

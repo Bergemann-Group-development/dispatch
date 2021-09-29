@@ -69,8 +69,12 @@ SUBROUTINE pre_init (self, gpatch)
   call io%lock%set ('spitzer_t%init')
   if (first_time) then
     rewind (io_unit%input)
-    read (io_unit%input, spitzer_conductivity_params,iostat=iostat)
-    if (io%master) write (*, spitzer_conductivity_params)
+    read (io_unit%input, spitzer_conductivity_params, iostat=iostat)
+    if (iostat > 0) then
+      rewind (io_unit%input)
+      read (io_unit%input, spitzer_conductivity_params)
+    end if
+    write (io%namelist, spitzer_conductivity_params)
     first_time = .false.
   end if
   call io%lock%unset('spitzer_t%init')

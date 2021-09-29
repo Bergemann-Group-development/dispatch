@@ -50,8 +50,11 @@ SUBROUTINE pre_init (self, patch)
   if (first_time) then
     rewind (io_unit%input)
     read (io%input, pressure_node_params, iostat=iostat)
+    if (iostat > 0) then
+      rewind (io_unit%input)
+      read (io%input, pressure_node_params)
+    end if
     call io%namelist_warning ('pressure_node_params', iostat)
-    write (io%output, pressure_node_params)
     write (io%namelist, pressure_node_params)
     first_time = .false.
   end if

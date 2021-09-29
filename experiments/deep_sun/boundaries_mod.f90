@@ -107,7 +107,7 @@ SUBROUTINE init (self)
       read (io%input, boundary_params)
     end if
     call io%namelist_warning ('boundary_params', iostat)
-    if (io%master) write (*, boundary_params)
+    write (io%namelist, boundary_params)
     !d_bot = d_bot/scaling%d
     !e_bot = e_bot/scaling%e
     first_time = .false.

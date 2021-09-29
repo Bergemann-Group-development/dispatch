@@ -45,8 +45,11 @@ SUBROUTINE pre_init (self, patch)
   if (first_time) then
     rewind (io_unit%input)
     read (io%input, newton_params, iostat=iostat)
+    if (iostat > 0) then
+      rewind (io_unit%input)
+      read (io%input, newton_params)
+    end if
     call io%namelist_warning ('newton_params', iostat)
-    write (io%output, newton_params)
     write (io%namelist, newton_params)
     first_time = .false.
   end if
