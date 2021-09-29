@@ -3,8 +3,8 @@
 #OPTS = full_debug
 #OPTS = vscode
 #OPTS = debug
-#OPTS =
-OPTS = optimized
+OPTS =
+#OPTS = optimized
 
 # Default target and methods
 UPD             = adams_bashforth
