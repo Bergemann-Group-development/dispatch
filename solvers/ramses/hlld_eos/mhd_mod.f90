@@ -733,9 +733,11 @@ subroutine ctoprim(self)
   !-----------------------------------------------------------------------------
   !if (any(ee(1:n(1),1:n(2),1:n(3))<eos%ee_min)) print *, 'before lookup, ee<eemin', eos%ee_min, maxval(ee), minval(ee), minloc(ee), smallr*smallc**2
   if (do_temperature) then
-    call eos%lookup_table (shape(ee), lnd=lnd, ee=ee, pg=pg, tt=tt, e_below=e_below, label='mhd', id=self%id)
+    call eos%lookup_table (shape(ee), lnd=lnd, ee=ee, pg=pg, tt=tt, &
+      e_below=e_below, label='mhd', id=self%id)
   else
-    call eos%lookup_table (shape(ee), lnd=lnd, ee=ee, pg=pg, e_below=e_below, label='mhd', id=self%id)
+    call eos%lookup_table (shape(ee), lnd=lnd, ee=ee, pg=pg, e_below=e_below, &
+      label='mhd', id=self%id)
   end if
   if (verbose > 1) then
     write (stdlog,*) 'ctoprim:rh', self%id, minval(q(:,:,:,1)), maxval(q(:,:,:,1))
@@ -2015,8 +2017,6 @@ end if
     allocate (qleft (n,nvar))
     allocate (qright(n,nvar))
     allocate (fgdnv (n,nvar))
-write(io_unit%log,'(a,i6,3x,a,f8.3)') &
-'z-flux for patch', self%id, ' at z =', self%position(3)
     do k = lb(3),ub(3)
       do j = lb(2),ub(2)
         ! Enforce continuity for normal magnetic field
