@@ -495,7 +495,7 @@ SUBROUTINE update (self)
     q_heat => scratch%heating_per_unit_mass
     d  => self%mem(:,:,:,self%idx%d,self%new,1)
     s  => self%mem(:,:,:,self%idx%s,self%new,1)
-    tg => self%q(:,:,:,9)
+    tg => self%q(:,:,:,10)
     l = self%mesh%li
     u = self%mesh%ui
     ! S = S + d*q_heat/tg
@@ -510,7 +510,7 @@ SUBROUTINE update (self)
   if (associated(scratch%heating_per_unit_volume)) then
     q_heat => scratch%heating_per_unit_volume
     s  => self%mem(:,:,:,self%idx%s,self%new,1)
-    tg => self%q(:,:,:,9)
+    tg => self%q(:,:,:,10)
     l = self%mesh%li
     u = self%mesh%ui
     ! S = S + q_heat/tg
@@ -797,7 +797,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
   islope_type = int(rslope_type)
   l = self%mesh%lb+1
   u = self%mesh%ub-1
-  nv=self%nvar
+  nv=self%nvar-1
   if(slope_type==-1)then
     do n = 1, nv
       do k = l(3),u(3)
@@ -1705,134 +1705,134 @@ SUBROUTINE trace3d(self)
     !qRT(i,ir,1,j,k) = r + (+dry+drz)
     drx = sqrt(sqrt(r*rho_t(i,j+1,k)*rho_t(i,j,k+1)*rho_t(i,j+1,k+1))) - r
     dpx = sqrt(sqrt(p*  p_t(i,j+1,k)*  p_t(i,j,k+1)*  p_t(i,j+1,k+1))) - p
-    !dsx = sqrt(sqrt(s*  s_t(i,j+1,k)*  s_t(i,j,k+1)*  s_t(i,j+1,k+1))) - s
+    dsx = sqrt(sqrt(s*  s_t(i,j+1,k)*  s_t(i,j,k+1)*  s_t(i,j+1,k+1))) - s
     dry = qRT(i,ir,1,j,k) - r
     dpy = qRT(i,ip,1,j,k) - p
     !dsy = qRT(i,is,1,j,k) - s
     qRT(i,ir,1,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
     qRT(i,ip,1,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
-    !qRT(i,is,1,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
+    qRT(i,is,1,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
     ! X-edge averaged right-bottom corner state (RB->LR)
     !qRB(i,ir,1,j,k) = r + (+dry-drz)
     drx = sqrt(sqrt(r*rho_t(i,j+1,k)*rho_t(i,j,k-1)*rho_t(i,j+1,k-1))) - r
     dpx = sqrt(sqrt(p*  p_t(i,j+1,k)*  p_t(i,j,k-1)*  p_t(i,j+1,k-1))) - p
-    !dsx = sqrt(sqrt(s*  s_t(i,j+1,k)*  s_t(i,j,k-1)*  s_t(i,j+1,k-1))) - s
+    dsx = sqrt(sqrt(s*  s_t(i,j+1,k)*  s_t(i,j,k-1)*  s_t(i,j+1,k-1))) - s
     dry = qRB(i,ir,1,j,k) - r
     dpy = qRB(i,ip,1,j,k) - p
-    !dsy = qRB(i,is,1,j,k) - s
+    dsy = qRB(i,is,1,j,k) - s
     qRB(i,ir,1,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
     qRB(i,ip,1,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
-    !qRB(i,is,1,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
+    qRB(i,is,1,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
     ! X-edge averaged left-top corner state (LT->RL)
     !qLT(i,ir,1,j,k) = r + (-dry+drz)
     drx = sqrt(sqrt(r*rho_t(i,j-1,k)*rho_t(i,j,k+1)*rho_t(i,j-1,k+1))) - r
     dpx = sqrt(sqrt(p*  p_t(i,j-1,k)*  p_t(i,j,k+1)*  p_t(i,j-1,k+1))) - p
-    !dsx = sqrt(sqrt(s*  s_t(i,j-1,k)*  s_t(i,j,k+1)*  s_t(i,j-1,k+1))) - s
+    dsx = sqrt(sqrt(s*  s_t(i,j-1,k)*  s_t(i,j,k+1)*  s_t(i,j-1,k+1))) - s
     dry = qLT(i,ir,1,j,k) - r
     dpy = qLT(i,ip,1,j,k) - p
-    !dsy = qLT(i,is,1,j,k) - s
+    dsy = qLT(i,is,1,j,k) - s
     qLT(i,ir,1,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
     qLT(i,ip,1,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
-    !qLT(i,is,1,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
+    qLT(i,is,1,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
     ! X-edge averaged left-bottom corner state (LB->RR)
     !qLB(i,ir,1,j,k) = r + (-dry-drz)
     drx = sqrt(sqrt(r*rho_t(i,j-1,k)*rho_t(i,j,k-1)*rho_t(i,j-1,k-1))) - r
     dpx = sqrt(sqrt(p*  p_t(i,j-1,k)*  p_t(i,j,k-1)*  p_t(i,j-1,k-1))) - p
-    !dsx = sqrt(sqrt(s*  s_t(i,j-1,k)*  s_t(i,j,k-1)*  s_t(i,j-1,k-1))) - s
+    dsx = sqrt(sqrt(s*  s_t(i,j-1,k)*  s_t(i,j,k-1)*  s_t(i,j-1,k-1))) - s
     dry = qLB(i,ir,1,j,k) - r
     dpy = qLB(i,ip,1,j,k) - p
-    !dsy = qLB(i,is,1,j,k) - s
+    dsy = qLB(i,is,1,j,k) - s
     qLB(i,ir,1,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
     qLB(i,ip,1,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
-    !qLB(i,is,1,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
+    qLB(i,is,1,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
     ! Y-edge averaged right-top corner state (RT->LL)
     !qRT(i,ir,2,j,k) = r + (+drx+drz)
     drx = sqrt(sqrt(r*rho_t(i+1,j,k)*rho_t(i,j,k+1)*rho_t(i+1,j,k+1))) - r
     dpx = sqrt(sqrt(p*  p_t(i+1,j,k)*  p_t(i,j,k+1)*  p_t(i+1,j,k+1))) - p
-    !dsx = sqrt(sqrt(s*  s_t(i+1,j,k)*  s_t(i,j,k+1)*  s_t(i+1,j,k+1))) - s
+    dsx = sqrt(sqrt(s*  s_t(i+1,j,k)*  s_t(i,j,k+1)*  s_t(i+1,j,k+1))) - s
     dry = qRT(i,ir,2,j,k) - r
     dpy = qRT(i,ip,2,j,k) - p
-    !dsy = qRT(i,is,2,j,k) - s
+    dsy = qRT(i,is,2,j,k) - s
     qRT(i,ir,2,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
     qRT(i,ip,2,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
-    !qRT(i,is,2,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
+    qRT(i,is,2,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
     ! Y-edge averaged right-bottom corner state (RB->LR)
     !qRB(i,ir,2,j,k) = r + (+drx-drz)
     drx = sqrt(sqrt(r*rho_t(i+1,j,k)*rho_t(i,j,k-1)*rho_t(i+1,j,k-1))) - r
     dpx = sqrt(sqrt(p*  p_t(i+1,j,k)*  p_t(i,j,k-1)*  p_t(i+1,j,k-1))) - p
-    !dsx = sqrt(sqrt(s*  s_t(i+1,j,k)*  s_t(i,j,k-1)*  s_t(i+1,j,k-1))) - s
+    dsx = sqrt(sqrt(s*  s_t(i+1,j,k)*  s_t(i,j,k-1)*  s_t(i+1,j,k-1))) - s
     dry = qRB(i,ir,2,j,k) - r
     dpy = qRB(i,ip,2,j,k) - p
-    !dsy = qRB(i,is,2,j,k) - s
+    dsy = qRB(i,is,2,j,k) - s
     qRB(i,ir,2,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
     qRB(i,ip,2,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
-    !qRB(i,is,2,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
+    qRB(i,is,2,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
     ! Y-edge averaged left-top corner state (LT->RL)
     !qLT(i,ir,2,j,k) = r + (-drx+drz)
     drx = sqrt(sqrt(r*rho_t(i-1,j,k)*rho_t(i,j,k+1)*rho_t(i-1,j,k+1))) - r
     dpx = sqrt(sqrt(p*  p_t(i-1,j,k)*  p_t(i,j,k+1)*  p_t(i-1,j,k+1))) - p
-    !dsx = sqrt(sqrt(s*  s_t(i-1,j,k)*  s_t(i,j,k+1)*  s_t(i-1,j,k+1))) - s
+    dsx = sqrt(sqrt(s*  s_t(i-1,j,k)*  s_t(i,j,k+1)*  s_t(i-1,j,k+1))) - s
     dry = qLT(i,ir,2,j,k) - r
     dpy = qLT(i,ip,2,j,k) - p
-    !dsy = qLT(i,is,2,j,k) - s
+    dsy = qLT(i,is,2,j,k) - s
     qLT(i,ir,2,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
     qLT(i,ip,2,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
-    !qLT(i,is,2,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
+    qLT(i,is,2,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
     ! Y-edge averaged left-bottom corner state (LB->RR)
     !qLB(i,ir,2,j,k) = r + (-drx-drz)
     drx = sqrt(sqrt(r*rho_t(i-1,j,k)*rho_t(i,j,k-1)*rho_t(i-1,j,k-1))) - r
     dpx = sqrt(sqrt(p*  p_t(i-1,j,k)*  p_t(i,j,k-1)*  p_t(i-1,j,k-1))) - p
-    !dsx = sqrt(sqrt(s*  s_t(i-1,j,k)*  s_t(i,j,k-1)*  s_t(i-1,j,k-1))) - s
+    dsx = sqrt(sqrt(s*  s_t(i-1,j,k)*  s_t(i,j,k-1)*  s_t(i-1,j,k-1))) - s
     dry = qLB(i,ir,2,j,k) - r
     dpy = qLB(i,ip,2,j,k) - p
-    !dsy = qLB(i,is,2,j,k) - s
+    dsy = qLB(i,is,2,j,k) - s
     qLB(i,ir,2,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
     qLB(i,ip,2,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
-    !qLB(i,is,2,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
+    qLB(i,is,2,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
     ! Z-edge averaged right-top corner state (RT->LL)
     !qRT(i,ir,3,j,k) = r + (+drx+dry)
     drx = sqrt(sqrt(r*rho_t(i+1,j,k)*rho_t(i,j+1,k)*rho_t(i+1,j+1,k))) - r
     dpx = sqrt(sqrt(p*  p_t(i+1,j,k)*  p_t(i,j+1,k)*  p_t(i+1,j+1,k))) - p
-    !dsx = sqrt(sqrt(s*  s_t(i+1,j,k)*  s_t(i,j+1,k)*  s_t(i+1,j+1,k))) - s
+    dsx = sqrt(sqrt(s*  s_t(i+1,j,k)*  s_t(i,j+1,k)*  s_t(i+1,j+1,k))) - s
     dry = qRT(i,ir,3,j,k) - r
     dpy = qRT(i,ip,3,j,k) - p
-    !dsy = qRT(i,is,3,j,k) - s
+    dsy = qRT(i,is,3,j,k) - s
     qRT(i,ir,3,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
     qRT(i,ip,3,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
-    !qRT(i,is,3,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
+    qRT(i,is,3,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
     ! Z-edge averaged right-bottom corner state (RB->LR)
     !qRB(i,ir,3,j,k) = r + (+drx-dry)
     drx = sqrt(sqrt(r*rho_t(i+1,j,k)*rho_t(i,j-1,k)*rho_t(i+1,j-1,k))) - r
     dpx = sqrt(sqrt(p*  p_t(i+1,j,k)*  p_t(i,j-1,k)*  p_t(i+1,j-1,k))) - p
-    !dsx = sqrt(sqrt(s*  s_t(i+1,j,k)*  s_t(i,j-1,k)*  s_t(i+1,j-1,k))) - s
+    dsx = sqrt(sqrt(s*  s_t(i+1,j,k)*  s_t(i,j-1,k)*  s_t(i+1,j-1,k))) - s
     dry = qRB(i,ir,3,j,k) - r
     dpy = qRB(i,ip,3,j,k) - p
-    !dsy = qRB(i,is,3,j,k) - s
+    dsy = qRB(i,is,3,j,k) - s
     qRB(i,ir,3,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
     qRB(i,ip,3,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
-    !qRB(i,is,3,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
+    qRB(i,is,3,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
     ! Z-edge averaged left-top corner state (LT->RL)
     !qLT(i,ir,3,j,k) = r + (-drx+dry)
     drx = sqrt(sqrt(r*rho_t(i-1,j,k)*rho_t(i,j+1,k)*rho_t(i-1,j+1,k))) - r
     dpx = sqrt(sqrt(p*  p_t(i-1,j,k)*  p_t(i,j+1,k)*  p_t(i-1,j+1,k))) - p
-    !dsx = sqrt(sqrt(s*  s_t(i-1,j,k)*  s_t(i,j+1,k)*  s_t(i-1,j+1,k))) - s
+    dsx = sqrt(sqrt(s*  s_t(i-1,j,k)*  s_t(i,j+1,k)*  s_t(i-1,j+1,k))) - s
     dry = qLT(i,ir,3,j,k) - r
     dpy = qLT(i,ip,3,j,k) - p
-    !dsy = qLT(i,is,3,j,k) - s
+    dsy = qLT(i,is,3,j,k) - s
     qLT(i,ir,3,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
     qLT(i,ip,3,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
-    !qLT(i,is,3,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
+    qLT(i,is,3,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
     ! Z-edge averaged left-bottom corner state (LB->RR)
     !qLB(i,ir,3,j,k) = r + (-drx-dry)
     drx = sqrt(sqrt(r*rho_t(i-1,j,k)*rho_t(i,j-1,k)*rho_t(i-1,j-1,k))) - r
     dpx = sqrt(sqrt(p*  p_t(i-1,j,k)*  p_t(i,j-1,k)*  p_t(i-1,j-1,k))) - p
-    !dsx = sqrt(sqrt(s*  s_t(i-1,j,k)*  s_t(i,j-1,k)*  s_t(i-1,j-1,k))) - s
+    dsx = sqrt(sqrt(s*  s_t(i-1,j,k)*  s_t(i,j-1,k)*  s_t(i-1,j-1,k))) - s
     dry = qLB(i,ir,3,j,k) - r
     dpy = qLB(i,ip,3,j,k) - p
-    !dsy = qLB(i,is,3,j,k) - s
+    dsy = qLB(i,is,3,j,k) - s
     qLB(i,ir,3,j,k) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
     qLB(i,ip,3,j,k) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
-    !qLB(i,is,3,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
+    qLB(i,is,3,j,k) = merge(dsx, dsy, abs(dsx) <= abs(dsy) .or. dsy+s<=0.) + s
   end do
   end do
   end do
@@ -1897,7 +1897,7 @@ SUBROUTINE cmpflxm (self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
   call trace%begin ('mhd_t%cmpflxm', itimer=itimer, detailed_timer=detailed_timer)
   lb = self%mesh%li
   ub = self%mesh%uo
-  nvar = self%nvar
+  nvar = self%nvar-1
   xdim = ln-1
   if (verbose > 2) write (stdlog,'(a,2(2x,3i4))') &
    'mhd_t%cmpflxm: lb, ub=', lb, ub
