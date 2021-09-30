@@ -2,9 +2,9 @@
 &snapshot_params
  verbose=0                              ! noise level
  flip_z=t                               ! t: z=up, f: z=down
- force_mean=f                           ! ?
- extension=1                            ! ?
- order=2                                ! ?
+ force_mean=f                           ! use a horizontal average of a quantity -- to start from scratch
+ extension=1                            ! extend the snapshot for interpolation
+ order=2                                ! interpolation order
  b0=0.0,0.0,0.0                         ! initial B-field
  model='stagger'                        ! model type
  meshfile='input_data/mhd63.msh'        ! mesh file
@@ -30,19 +30,17 @@
  verbose=0                              ! noise level
  bottom_bc_rate=0.01                    ! rate of change of bottom BC
  top_bc_rate=0.01                       ! rate of change of top BC
- scale=t                                ! ?
  divb_iter=4                            ! number of divB cleaner iterations
  damp_rate=0.2                          ! damping rate
  r_sponge=0.5                           ! sponge size at boundary
- deriv_bnd=f                            ! ?
 /
 &gravity_params
  on=t                                   ! on/off
  axis=3                                 ! z-axis
  position=0.0                           ! origin
- constant=-27500                        ! acceleration of gravity
- mass=-1                                ! ?
- minrad=-1                              ! ?
+ constant=-27500                        ! acceleration of gravity, constant everywhere
+ mass=-1                                ! mass of gravitating body, distance-dependent grav. force
+ minrad=-1                              ! minimal radius at which variable gravity is still applied
 /
 &newton_params
  on=t                                   ! on/off
@@ -77,10 +75,9 @@
  rt_grace=0.05                          ! allowed time-extrapolation
  rt_llc=0,0,-1.4                        ! lower corner of RT
  rt_urc=6,6,0.45                        ! upper corner of RT
- dnload_mhd=f                           ! ?
+ dnload_mhd=f                           ! force parent MHD patch to download guard zones
  n_warmup=6                             ! initial warmup iterations
- vertical_propagation=f                 ! ?
- cdtd=0.05                              ! ?
+ cdtd=0.05                              ! radiative diffusion speed for u_max, smaller cdtd=smaller timestep
  rt_freq=1.0                            ! RT solution cadence
 /
 
@@ -108,11 +105,10 @@
  gamma=1.2                              ! approximate gamma for Riemann solver
 /
 &bifrost_params
- loginterpolation=t                     ! ?
+ loginterpolation=t                     ! do stagger operations in log-space
  ca_max=100.0                           ! max fast mode speed
  courant=0.2                            ! Courant number
- max_r=3                                ! ?
- symmetric_e=f                          ! ?
+ symmetric_e=f                          ! uniform u_alfven+cs in all directions
  do_temperature=t                       ! compute temperature
  eos='tabular'                          ! type of EOS handler
  !     nu1  nu2  nu3  nu_d  nu_ee  eta3
