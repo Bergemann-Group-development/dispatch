@@ -52,14 +52,23 @@ class bifrost(eos_c):
             vars=['ln(P)','ln(Ne)','ln(E)','ln(rkap)']
         y_step=(y_max-y_min)/(n_y-1)
         data=np.memmap(path+file,mode='r',order='F',shape=(n_y,n_x,4),dtype='<f4')
-
+        
+        Ttab=data[:,:,1]
+        print(Ttab.min(),Ttab.max())
+        
         nvar=len(vars)
 
         self.set_independent0(n_x,x_min,x_step,'ln(rho)')
+        reorder=[1,0,3,2]
         for i0 in range(n_x):
             self.set_independent1(i0,n_y,y_min,y_step,'ln(E)')
-            for iv in range(nvar):
-                self.set_dependent(i0,iv,data[:,i0,iv],vars[iv])
+            for jv in range(nvar):
+                iv=reorder[jv]
+                if iv==1:
+                    vars[iv]='log(T)'
+                    self.set_dependent(i0,iv,np.log(data[:,i0,iv]),vars[iv])
+                else:
+                    self.set_dependent(i0,iv,data[:,i0,iv],vars[iv])
 
         self.set_info({'units':'CGS'})
         self.show(verbose)
