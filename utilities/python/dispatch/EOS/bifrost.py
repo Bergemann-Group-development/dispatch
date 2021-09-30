@@ -64,9 +64,12 @@ class bifrost(eos_c):
             self.set_independent1(i0,n_y,y_min,y_step,'ln(E)')
             for jv in range(nvar):
                 iv=reorder[jv]
-                if iv==1:
-                    vars[iv]='log(T)'
-                    self.set_dependent(i0,iv,np.log(data[:,i0,iv]),vars[iv])
+                if vars[iv]=='ln(P)':
+                    self.set_dependent(i0,iv,np.exp(data[:,i0,iv]),'P')
+                elif vars[iv]=='ln(rkap)':
+                    self.set_dependent(i0,iv,np.exp(data[:,i0,iv]),'rkap')
+                elif vars[iv]=='ln(Ne)':
+                    self.set_dependent(i0,iv,np.exp(data[:,i0,iv]),'Ne')
                 else:
                     self.set_dependent(i0,iv,data[:,i0,iv],vars[iv])
 

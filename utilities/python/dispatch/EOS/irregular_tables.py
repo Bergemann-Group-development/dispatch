@@ -237,7 +237,6 @@ class itable_c(object):
                 for iv in self.tables[id].keys():
                     if type(iv) is int:
                         nv+=1
-                fd.write_record(nv)
                 if verbose>1:
                     print(id,nv)
                 for iv,table in self.tables[id].items():

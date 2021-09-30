@@ -83,13 +83,23 @@ class stagger(eos_c):
             i=itab[id]-1
             n=ntab[id]
             self.set_independent1(id,n,ymin[id],dy[id],'E')
+            jv=0
             for iv in range(nvar):
                 if vars[iv]=='ln(P)':
                     var='P'
-                    self.set_dependent(id,iv,np.exp(tab[i:i+n]),var)        
+                    self.set_dependent(id,jv,np.exp(tab[i:i+n]),var)        
+                elif vars[iv]=='rkap':
+                    for k in range(4):
+                        var='K{}'.format(k+1)
+                        self.set_dependent(id,jv,np.exp(tab[i:i+n])*10**k,var)
+                        jv+=1
+                    jv-=1
+                elif vars[iv].startswith('S'):
+                    self.set_dependent(id,jv,np.exp(tab[i:i+n]),vars[iv])        
                 else:
-                    self.set_dependent(id,iv,tab[i:i+n],vars[iv])        
+                    self.set_dependent(id,jv,tab[i:i+n],vars[iv])        
                 i+=3*n
+                jv+=1
 
         self.show(verbose)
         
