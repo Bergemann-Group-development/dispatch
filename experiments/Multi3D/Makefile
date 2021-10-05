@@ -16,10 +16,9 @@ MULTI3D         = $(TOP)/../multi-3d/src
 sinclude $(MULTI3D)/dispatch.mkf
 
 # List the .o files the main program depends on after the colon:
-$(EXEC): cartesian_mod.o $(PICOBJ)
+$(EXEC): cartesian_mod.o
 
 # Dependencies
 experiment_mod.o        : multi3d_mod.o trace_mod.o io_mod.o solver_mod.o
 dispatch.o              : io_mod.o mpi_mod.o cartesian_mod.o
-initial_mod.o		: io_mod.o
 
