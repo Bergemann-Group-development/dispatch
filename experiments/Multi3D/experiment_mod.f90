@@ -1,4 +1,6 @@
 !===============================================================================
+!> Top level MHD task definition -- can either rely entirely on lower levels,
+!> including extras_t%initial_conditions, or can optionally do such things here
 !===============================================================================
 MODULE experiment_mod
   USE io_mod
@@ -28,12 +30,13 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !===============================================================================
+!> This update only concerns the MHD task; the RT tasks are called directly
 !===============================================================================
 SUBROUTINE update (self)
   class(experiment_t):: self
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
-  call multi3d%update
+  call self%solver_t%update
   call trace_end
 END SUBROUTINE update
 

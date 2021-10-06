@@ -25,16 +25,16 @@
 !>                      /    \         |
 !>                     /      \        |
 !>              extras_1_t extras_2_t  |
-!>                 |     \    /        |
-!>                 |     gpatch_t      |
-!>                 |       |     \     |
-!>                 |       |      list_t
-!>                 |       |     /  |
-!>                 |      patch_t   |
-!>                 |      /   \     |
-!>                 |     /     link_t
-!>                 |    /       |
-!>                connect_t   task_t
+!>                       \    /        |
+!>                       gpatch_t      |
+!>                         |     \     |
+!>                         |      list_t
+!>                         |     /  |
+!>                        patch_t   |
+!>                            \     |
+!>                             link_t
+!>                              |
+!>                            task_t
 !>
 !> The extra modules needed in an experiment should be chosen and coordinated
 !> in this module, and the ones that are "below" (USEd by) this module should
@@ -62,7 +62,6 @@ MODULE extras_mod
   USE io_mod
   USE trace_mod
   USE initial_conditions_mod
-  !USE selfgravity_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.
   !-----------------------------------------------------------------------------
@@ -72,7 +71,6 @@ MODULE extras_mod
   !USE forces_mod                                                       ! forces
   !USE trace_particles_mod                                              ! tracep
   !USE spitzer_mod                                                      ! spitzer
-  !USE sink_particles_mod                                               ! sinkp
   !USE pic_mod                                                          ! PIC
   !USE cooling_mod                                                      ! PIC
   !-----------------------------------------------------------------------------
@@ -91,7 +89,6 @@ MODULE extras_mod
     !type(forces_t):: forces                                            ! forces
     !class(pic_t), pointer:: pic                                        ! pic
     !type (spitzer_t):: spitzer                                         ! spitzer
-    !class(trace_particles_t), pointer:: trace_particles                ! tracep
     !real, dimension(:,:,:,:), pointer:: v                              ! tracep
     !type(cooling_t):: cooling                                          ! cool
   contains
@@ -125,14 +122,11 @@ SUBROUTINE pre_init (self)
   self%rt%patch => self
   call self%rt%pre_init                                                 ! RT
   call self%newton%pre_init  (self)                                     ! Newton
-  call self%gravity%pre_init (self)                                     ! gravity
-  !call self%forces%init (self)                                         ! forces
+  call self%gravity%pre_init (self)                                      ! gravity
+  !call self%forces%init (self)                                          ! forces
   !call self%spitzer%pre_init (self)                                     ! spitzer
-  !allocate (self%trace_particles)                                      ! tracep
-  !self%connect%trace_particles => self%trace_particles                 ! tracep
-  !allocate (self%pic)                                                  ! pic
-  !call self%pic%pre_init (self%link)                                   ! pic
-  !call self%selfgravity%pre_init (self)                                ! selfg
+  !allocate (self%pic)                                                   ! pic
+  !call self%pic%pre_init (self%link)                                    ! pic
 END SUBROUTINE pre_init
 
 !===============================================================================
@@ -150,8 +144,6 @@ SUBROUTINE init (self)
   call self%gravity%init                                                ! gravity
   call self%rt%init                                                     ! RT
   !call self%forces%init (self)                                         ! forces
-  !allocate (self%trace_particles)                                      ! tracep
-  !call self%trace_particles%add (self%link%task)                       ! tracep
   !call self%pic%init                                                   ! pic
   !if (self%pic%on) self%do_mhd = self%pic%do_mhd                       ! pic
   !call self%spitzer%init                                                ! spitzer
@@ -174,8 +166,7 @@ SUBROUTINE init_task_list (self, task_list)
   !.............................................................................
   call trace%begin ('extras_t%init_task_list')
   call self%gpatch_t%init_task_list (task_list)                        ! keep
-  call self%rt%init_task_list(task_list)                               ! RT
-  !call sink_particles%ad_hoc_add (self%link)                           ! sinkp
+  call self%rt%init_task_list (task_list)                              ! RT
   call trace%end ()
 END SUBROUTINE init_task_list
 
@@ -191,8 +182,6 @@ SUBROUTINE dealloc (self)
   !  deallocate(self%rt)
   !end if
   !call self%forces%dealloc                                             ! forces
-  !call sink_particles%dealloc                                          ! sinkp
-  !deallocate (self%trace_particles)                                    ! tracep
   call trace%end()
 END SUBROUTINE dealloc
 
@@ -209,9 +198,7 @@ SUBROUTINE pre_update (self)
   call self%newton%pre_update()                                        ! Newton
   call self%gravity%pre_update()                                       ! gravity
   !call self%forces%pre_update                                          ! forces
-  !call self%trace_particles%update                                     ! tracep
   !call self%spitzer%pre_update()                                       ! spitzer
-  !call sink_particles%force_field (self)                               ! sinkp
   !call self%pic%pre_update()                                           ! pic
   !call self%selfgravity%post_update (self)                             ! selfg
   !call self%cooling%pre_update (self)                                  ! cool
@@ -227,7 +214,6 @@ SUBROUTINE post_update (self)
   !.............................................................................
   !call self%spitzer%post_update
   !call self%forces%post_update                                         ! forces
-  !call self%trace_particles%post_update (self)                         ! tracep
   !call self%pic%post_update()                                          ! pic
   !call self%selfgravity%post_update (self)                             ! selfg
 END SUBROUTINE post_update
@@ -241,7 +227,6 @@ SUBROUTINE output (self)
   call self%gpatch_t%output                                            ! keep
   call self%rt%output()                                                ! RT
   !call self%rt%output                                                  ! RT
-  !call sink_particles%output                                           ! sinkp
 END SUBROUTINE output
 
 !===============================================================================
@@ -251,14 +236,12 @@ INTEGER FUNCTION check_refine (self)
   class(extras_t), target:: self
   !.............................................................................
   check_refine = -1                                                    ! keep
-  !check_refine = max (check_refine, &                                  ! sinkp
-  !  sinkparticles%check_refine (task))                                ! sinkp
 END FUNCTION check_refine
 
 !===============================================================================
-!> Cast a generic task_t to patch_t
+!> Cast a generic task_t to extras_t
 !===============================================================================
-FUNCTION cast2extras (task) RESULT(extras)
+FUNCTION cast2extras (task) RESULT (extras)
   USE task_mod
   class(task_t), pointer:: task
   class(extras_t), pointer:: extras
@@ -292,7 +275,6 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   class default
     needed=.false.; needs_me=.false.; download=.false.
   end select
-  !
   call trace%end()
 END SUBROUTINE nbor_relations
 
