@@ -66,9 +66,9 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('m3d_rt_t%update')
   call self%rt_t%update
-  call multi3d%pre_update ! (... aregument list ...)
+  call multi3d%pre_update ! (... argument list ...)
   call multi3d%update
-  call multi3d%post_update ! (... aregument list ...)
+  call multi3d%post_update ! (... argument list ...)
   call trace%end ()
 END SUBROUTINE update
 

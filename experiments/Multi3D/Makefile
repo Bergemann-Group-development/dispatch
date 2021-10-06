@@ -27,3 +27,4 @@ experiment_mod.o        : multi3d_mod.o trace_mod.o io_mod.o solver_mod.o
 dispatch.o              : io_mod.o mpi_mod.o cartesian_mod.o
 extras_mod.o            : m3d_rt_mod.o newton_mod.o gravity_mod.o
 m3d_rt_mod.o            : trace_mod.o rt_mod.o multi3d_mod.o
+boundaries_mod.o        : vector_ops.o
