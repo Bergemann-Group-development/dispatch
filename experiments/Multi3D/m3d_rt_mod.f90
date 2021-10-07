@@ -17,7 +17,8 @@ MODULE m3d_rt_mod
     !---------------------------------------------------------------------------
     ! Add arrays here to store population numbers are whatever else
     !---------------------------------------------------------------------------
-    real, pointer, contiguous:: array(:,:,:,:) => null()
+    real, pointer, contiguous:: Jint(:,:,:,:) => null()
+    real, pointer, contiguous:: Npop(:,:,:,:) => null()
   contains
     procedure:: pre_init
     procedure:: init
@@ -35,6 +36,7 @@ SUBROUTINE pre_init (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('m3d_rt_t%pre_init')
   call self%rt_t%pre_init
+  call multi3d%pre_init_multi3d (self%n_nu, self%n_pop)
   call trace%end ()
 END SUBROUTINE pre_init
 
@@ -47,11 +49,13 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('m3d_rt_t%update')
   call self%rt_t%init
+  call multi3d%init
   m = shape(self%q)
-  m(4) = self%n_pop
-  if (.not. associated(self%array)) then
-    allocate (self%array(m(1),m(2),m(3),m(4)))
-    !allocate (...)
+  if (.not. associated(self%Jint)) then
+    m(4) = self%n_nu
+    allocate (self%Jint(m(1),m(2),m(3),m(4)))
+    m(4) = self%n_pop
+    allocate (self%Npop(m(1),m(2),m(3),m(4)))
   end if
   call trace%end ()
 END SUBROUTINE init
