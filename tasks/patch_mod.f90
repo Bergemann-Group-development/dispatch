@@ -871,8 +871,10 @@ SUBROUTINE dealloc (self)
   call trace%begin ('patch_t%dealloc')
   if (associated(self%mesh)) &
     call MeshRecycler (self%mesh)
-  call io%bits_mem (-storage_size(self%mem), product(shape(self%mem)),'-mem')
-  if (associated(self%mem)) deallocate (self%mem)
+  if (associated(self%mem)) then
+    call io%bits_mem (-storage_size(self%mem), product(shape(self%mem)),'-mem')
+    deallocate (self%mem)
+  end if
   nullify (self%mem)
   self%mem_allocated = .false.
   if (associated(self%vgas)) then

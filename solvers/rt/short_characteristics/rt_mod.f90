@@ -768,15 +768,19 @@ SUBROUTINE init_task_list(self, task_list)
   self%task_list => task_list
   if (self%on) then
     rt_task => self%main        ! point to self
-    if (.not.associated(self%link)) call self%task_list%prepare(rt_task)
-    if (.not.self%in_task_list) call self%task_list%append_link (self%link)
+    if (.not.associated(self%link)) &
+      call self%task_list%prepare(rt_task)
+    if (.not.self%in_task_list) &
+      call self%task_list%append_link (self%link)
     self%in_task_list = .true.
     omega => self%omeg
     do while(associated(omega))
       omega%task_list => task_list
       rt_task => omega
-      if (.not.associated(omega%link)) call self%task_list%prepare(rt_task)
-      if (.not.omega%in_task_list) call self%task_list%append_link (omega%link)
+      if (.not.associated(omega%link)) &
+        call self%task_list%prepare(rt_task)
+      if (.not.omega%in_task_list) &
+        call self%task_list%append_link (omega%link)
       omega%in_task_list = .true.
       omega => omega%next
     end do
@@ -1165,6 +1169,8 @@ SUBROUTINE output (self)
   !-----------------------------------------------------------------------------
 END SUBROUTINE output
 
+!===============================================================================
+!===============================================================================
 recursive SUBROUTINE dealloc(self)
   class(rt_t):: self
   class(rt_t), pointer:: omega, next
@@ -1182,8 +1188,11 @@ recursive SUBROUTINE dealloc(self)
   else
   !
   end if
-  if (associated(self%link)) call self%link%remove_nbor_list2 (self%link%nbor)
-  if (associated(self%task_list)) call self%task_list%remove (self%link)
+  if (associated(self%link)) then
+    call self%link%remove_nbor_list2 (self%link%nbor)
+    if (associated(self%task_list)) &
+      call self%task_list%remove (self%link)
+  end if
   call self%patch_t%dealloc()
 END SUBROUTINE dealloc
 
