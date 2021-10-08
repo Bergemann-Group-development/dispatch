@@ -2,6 +2,7 @@
 !> Extension of short charadcteristis RT module with Multi3D specifics
 !===============================================================================
 MODULE m3d_rt_mod
+  USE io_mod
   USE trace_mod
   USE rt_mod
   USE multi3d_mod
@@ -33,8 +34,25 @@ CONTAINS
 !===============================================================================
 SUBROUTINE pre_init (self)
   class(m3d_rt_t), target:: self
+  integer:: iostat
+  namelist /multi3d_params/ dir
+  character(128), save:: dir='input_multi3d'
+  logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
   call trace%begin ('m3d_rt_t%pre_init')
+  if (first_time) then
+    call io%lock%set ('multi3d_t')
+    rewind (io%input)
+    read (io%input, multi3d_params, iostat=iostat)
+    if (iostat > 0) then
+      rewind (io%input)
+      read (io%input, multi3d_params)
+    end if
+    call io%namelist_warning ('multi3d_params', iostat)
+    multi3d%dir = dir
+    first_time = .false.
+    call io%lock%unset ('multi3d_t')
+  end if
   call self%rt_t%pre_init
   call multi3d%pre_init_multi3d (self%n_nu, self%n_pop)
   call trace%end ()
@@ -45,17 +63,20 @@ END SUBROUTINE pre_init
 !===============================================================================
 SUBROUTINE init (self)
   class(m3d_rt_t):: self
-  integer:: m(4)
+  integer:: m(4), ng(3)
   !-----------------------------------------------------------------------------
   call trace%begin ('m3d_rt_t%update')
   call self%rt_t%init
-  call multi3d%init
-  m = shape(self%q)
-  if (.not. associated(self%Jint)) then
-    m(4) = self%n_nu
-    allocate (self%Jint(m(1),m(2),m(3),m(4)))
-    m(4) = self%n_pop
-    allocate (self%Npop(m(1),m(2),m(3),m(4)))
+  if (self%on) then
+    ng = (self%gn-self%n)/2
+    call multi3d%init (self%n, ng, self%ds)
+    m = shape(self%q)
+    ! if (.not. associated(self%Jint)) then
+    !   m(4) = self%n_nu
+    !   allocate (self%Jint(m(1),m(2),m(3),m(4)))
+    !   m(4) = self%n_pop
+    !   allocate (self%Npop(m(1),m(2),m(3),m(4)))
+    ! end if
   end if
   call trace%end ()
 END SUBROUTINE init

@@ -15,7 +15,6 @@ MODULE experiment_mod
     procedure init
     procedure update
   end type
-  logical, save:: first_time=.true.
 CONTAINS
 
 !===============================================================================
@@ -26,6 +25,7 @@ SUBROUTINE init (self)
   integer, save:: itimer=0
   !----------------------------------------------------------------------------
   call trace_begin('experiment_mod::init', itimer=itimer)
+  call self%solver_t%init
   call trace_end (itimer=itimer)
 END SUBROUTINE init
 
