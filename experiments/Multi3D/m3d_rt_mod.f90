@@ -13,7 +13,6 @@ MODULE m3d_rt_mod
     ! Before adding things here, check of the variable already exists in rt_t,
     ! and consider if it should be shared, or Multi3D specific (new name)
     !---------------------------------------------------------------------------
-    integer:: n_nu, n_pop  ! ...
     real:: task_variable
     !---------------------------------------------------------------------------
     ! Add arrays here to store population numbers are whatever else
@@ -54,7 +53,11 @@ SUBROUTINE pre_init (self)
     call io%lock%unset ('multi3d_t')
   end if
   call self%rt_t%pre_init
-  call multi3d%pre_init_multi3d (self%n_nu, self%n_pop)
+  if (self%i_omega==0) then
+    multi3d%nmu = self%n_omega
+    multi3d%nfint = 1 !one for now, should have more later
+    call multi3d%pre_init
+  endif
   call trace%end ()
 END SUBROUTINE pre_init
 
@@ -64,12 +67,15 @@ END SUBROUTINE pre_init
 SUBROUTINE init (self)
   class(m3d_rt_t):: self
   integer:: m(4), ng(3)
+  real(8):: hat(3), mu_wg
   !-----------------------------------------------------------------------------
   call trace%begin ('m3d_rt_t%update')
   call self%rt_t%init
   if (self%on) then
     ng = (self%gn-self%n)/2
-    call multi3d%init (self%n, ng, self%ds)
+    hat = dble(self%rt_hat)
+    mu_wg = dble(self%w)
+    call multi3d%init (self%n, ng, self%ds, hat, mu_wg, self%i_omega)
     m = shape(self%q)
     ! if (.not. associated(self%Jint)) then
     !   m(4) = self%n_nu
