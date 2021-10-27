@@ -52,12 +52,8 @@ SUBROUTINE pre_init (self)
     first_time = .false.
     call io%lock%unset ('multi3d_t')
   end if
-  call self%rt_t%pre_init
-  if (self%i_omega==0) then
-    multi3d%nmu = self%n_omega
-    multi3d%nfint = 1 !one for now, should have more later
-    call multi3d%pre_init
-  endif
+  !call self%rt_t%pre_init
+  !call multi3d%pre_init
   call trace%end ()
 END SUBROUTINE pre_init
 
@@ -75,14 +71,16 @@ SUBROUTINE init (self)
     ng = (self%gn-self%n)/2
     hat = dble(self%rt_hat)
     mu_wg = dble(self%w)
-    call multi3d%init (self%n, ng, self%ds, hat, mu_wg, self%i_omega)
+    !call multi3d%init (self%n, ng, self%ds, hat, mu_wg, self%i_omega)
     m = shape(self%q)
+
     ! if (.not. associated(self%Jint)) then
     !   m(4) = self%n_nu
     !   allocate (self%Jint(m(1),m(2),m(3),m(4)))
     !   m(4) = self%n_pop
     !   allocate (self%Npop(m(1),m(2),m(3),m(4)))
     ! end if
+    
   end if
   call trace%end ()
 END SUBROUTINE init
@@ -96,10 +94,10 @@ SUBROUTINE update (self)
   class(m3d_rt_t):: self
   !-----------------------------------------------------------------------------
   call trace%begin ('m3d_rt_t%update')
-  call self%rt_t%update
-  call multi3d%pre_update ! (... argument list ...)
-  call multi3d%update
-  call multi3d%post_update ! (... argument list ...)
+  !call self%rt_t%update
+  !call multi3d%pre_update ! (... argument list ...)
+  !call multi3d%update
+  !call multi3d%post_update ! (... argument list ...)
   call trace%end ()
 END SUBROUTINE update
 

@@ -14,6 +14,7 @@ MODULE experiment_mod
   contains
     procedure init
     procedure update
+    procedure read_txt_atmos
   end type
 CONTAINS
 
@@ -25,7 +26,8 @@ SUBROUTINE init (self)
   integer, save:: itimer=0
   !----------------------------------------------------------------------------
   call trace_begin('experiment_mod::init', itimer=itimer)
-  call self%solver_t%init
+  call self%read_txt_atmos()
+  !call self%solver_t%init
   call trace_end (itimer=itimer)
 END SUBROUTINE init
 
@@ -36,8 +38,53 @@ SUBROUTINE update (self)
   class(experiment_t):: self
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
-  call self%solver_t%update
+  !call self%solver_t%update
   call trace_end
 END SUBROUTINE update
+
+!===============================================================================
+!> Reads a tabulated model atmosphere from a text file
+!===============================================================================
+SUBROUTINE read_txt_atmos(self)
+  use m3io_mod, only: NextEntry
+
+  class(experiment_t) :: self
+  character(len=126) :: atmos_file, atmos_name
+  integer :: lunit, nx, ny, nz, i
+  real(8), dimension(:), allocatable :: zi, temp_1d, pe_1d, rho_1d, vturb_1d
+  real(8), dimension(:,:,:), allocatable :: temp, pe, rho, vturb
+  namelist /input_params/ atmos_file
+  !----------------------------------------------------------------------------
+  open(file='atmos_input.nml', newunit=lunit)
+  read(unit=lunit, nml=input_params) ! reads atmos_file
+  close(lunit)
+
+  open(file=atmos_file, newunit=lunit)
+
+  nx = 5
+  ny = 5
+
+  call nextentry(lunit)
+  read(lunit, *) atmos_name
+  call nextentry(lunit)
+  read(lunit, *) nz
+
+  print *, 'Reading atmosphere ' // atmos_name
+
+  allocate(zi(nz))
+  allocate(temp_1d, pe_1d, rho_1d, vturb_1d, mold=zi)
+  allocate(temp(nx,ny,nz))
+  allocate(pe, rho, vturb, mold=temp)
+
+  do i=1, nz
+    call nextentry(lunit)
+    read(lunit, *) zi(i), temp_1d(i), pe_1d(i), rho_1d(i), vturb_1d(i)
+    
+    temp(:,:,i)  = temp_1d(i)
+    pe(:,:,i)    = pe_1d(i)
+    rho(:,:,i)   = rho_1d(i)
+    vturb(:,:,i) = vturb_1d(i)
+  end do
+END SUBROUTINE
 
 END MODULE

@@ -1,0 +1,251 @@
+; multi3d.input
+;
+; Read at start by Multi3D
+;
+; ******************************************************************************
+; Model atmosphere/atom IO
+; ******************************************************************************
+; (character(max length=72)) model name, defaults to 'dat'
+; so that the default atmosphere and mesh files are 'atm3d.dat' and 'mesh.dat'
+;atmosid = 'falc.5x5x82'
+;atmosid = 'sun.mod.5x5x80'
+;atmosid = 'atmos.sun_56'
+
+; (integer) set which model type to use as input
+;usebifrost = 0
+;usestagger = 0
+;use_1d_atmosphere = 0
+
+; (character(len=120)) optional path for model location
+;directory = '../input/atmos/'
+
+; (character(len=72)) stagger snapshot name (only used when usestagger = 1)
+;stagger_snap = 't5777g44m0005'
+
+; (integer) stagger snapshot number (only used when usestagger = 1)
+;stagger_snapnum = 20
+
+; (character(len=72)) which atom file to use, defaults to 'atom'
+atomfile = './atoms/atom.ba06'
+
+; (integer) write the various outputfiles or not
+; 1: yes
+; 0: no
+;wrtbc = 0 ! write background thermal emission, scattering and opacities
+;wrtjn = 0 ; write J_nu
+;wrtst = 0 ; write total source function
+;wrtxt = 0 ; write total opacity
+;wrtcf = 0 ; contribution function information
+;wrtqr = 0 ; write thermal heating rate for each transition
+
+; (integer) output in single or double prescision
+; 1: single precision
+; 0: double precision
+spoutput = 1
+
+;(integer) input (atmos3d file) in single or double precision
+; 1: single precision
+; 0: double precision
+spinput = 1
+
+; (integer) transitions for which detailed output is desired
+;  0: supress output
+; >0: select transition number kr
+; <0: request ALL frequencies
+;lin1  =  -1
+;lin2  =  0
+;lin3  =  0
+;lin4  =  0
+;cont1 =  0
+;cont2 =  0
+;cont3 =  0
+;cont4 =  0
+
+; ******************************************************************************
+; Model atmosphere settings
+; ******************************************************************************
+; (integer) grid sampling
+; Multi3D model: used as check with Mesh file
+; Stagger model: used to linearly interpolate input model to requested size
+;nx = 5
+;ny = 5
+;nz = 82
+
+; (integer) use velocities from atmos file,
+; 0: do not use velocities
+; 1: use velocities
+vfield = 1
+
+; (integer) read hydrogen populations from atmos files
+; 0: no
+; 1: yes
+readnh = 0
+
+; (integer) read microturbulence from atmos files
+; 0: no
+; 1: yes
+readvturb = 0
+
+; lower and upper (coordinate space) boundary condition on the radiation field
+; currently (Aug  1 2008) only 'zero', 'thermalized' or (use feautrier_1D only) 'reflective'
+uboundary = 'zero'
+lboundary = 'thermalized'
+
+; (character) interpolation method of source function in formal solution
+; 'hermite'
+; 'linear'
+; 'bezier'
+sinterpol = 'linear'
+
+; ******************************************************************************
+; Model atom settings
+; ******************************************************************************
+; (integer) use input abundance rather than atom abundance in header
+useiabu = 0
+
+; (real) input abundance (only used when useiabu = 1)
+iabund = 0.00
+
+; (integer) Frequency parallelisation (NCPU / ndimf MUST be an integer!)
+ndimf = 1
+
+; (real) typical doppler velocity [km/s]
+qnorm = 10
+
+;init_pops= 'zero_radiation'
+init_pops= 'lte_pops'
+
+; (integer) which solver to use
+; 2: shortchar_3D
+; 3: direct_1D
+solver = 2
+
+; (integer) number of iterations before accelerating
+start_acc = 2
+
+; (real) maximum change before stopping iteration
+convlim = 1.e-3
+
+; (integer) sets collisional radiative switching
+; icrsw<0 : switching parameter SWITCH is kept constant
+; icrsw=0 : no collisional radiative switching, SWITCH is set to one.
+; icrsw>0 : number of steps per decade in decrease of SWITCH
+;           increase this number if a solutions fails to converge
+icrsw=0
+
+; (real) starting value for crsw parameter
+cswitch = 1.0
+
+; (integer) regulates Ng acceleration, cannot be used together with orthomin
+; 0 - disable Ng acceleration
+; 2 - 2nd order Ng
+; 3 - 3rd order Ng acceleration
+nng = 2
+
+;(integer) regulates orthomin acceleration, cannot be used together with Ng
+; >0 - number of residuals, Auer says 2 or 4 is fine
+;  0 - disable ORTHOMIN acceleration
+north = 0
+
+; ******************************************************************************
+; Settings for restarting Multi3D
+; ******************************************************************************
+; To restart Multi3D use the following settings:
+; ilambd = 0, useoldn = 1.
+; To run LTE set maxiter = 0
+; Code will not compute intensities if maxiter > 0 and atom is not converged
+; (integer) maximum number of iterations
+maxiter = 10
+
+; (integer) number of lambda iterations on starting populations
+ilambd = 3
+
+; (integer) use the old populations?
+; 1: yes
+; 0: no
+useoldn = 0
+
+; ******************************************************************************
+; Computer size/memory information
+; ******************************************************************************
+; (integer) cluster architecture
+; 1: running on a cluster
+; 0: not running on a cluster. This limits the size of STAGGER input models
+clust_arch = 1
+
+; (integer) write output to one large file
+; 1: yes
+; 0: no
+largefiles = 1
+
+; ******************************************************************************
+; Angle quadrature information
+; ******************************************************************************
+; (character(len=6)) ray angle quadrature, set to one of the following:
+; 'set_a2','set_a4','set_a6','set_a8','set_b4','set_b6','set_b8'
+anglequad = 'set_a4'
+
+; (character(len=21)) angle quadrature scheme for output profiles
+; custom:  uses standard mu quadrature scheme defined by the user
+;          muzout must be present.
+;          muxout and muyout should also be included if more than just the
+;          disk-centre intensity is required.
+; lobatto: computes mu quadratures for a set number of theta and phi angles
+;          ntheta and nphi is needed if more than just the disk-centre
+;          intensity is required.
+quad_scheme = 'custom'
+
+muxout = '0.0'
+muyout = '0.0'
+muzout = '1.0'
+
+;nphi=4
+;ntheta=3
+
+; ******************************************************************************
+; Misc information
+; ******************************************************************************
+timing = 0 ; print timing information (0/1)
+
+debug=0 ; run debug mode (0/1)
+
+; (integer) run Thomson redistribution?
+; NB if ndimf > 1, then line_thomson needs to be switched off otherwise
+; the code will fail due to memory issues.
+; 1: yes
+; 0: no
+line_thomson = 0
+
+; ******************************************************************************
+; Partial redistribution settings (NOT FULLY IMPLEMENTED)
+; ******************************************************************************
+; PRD control parameters
+prdmoving  = 0
+prdmaxiter = 3
+useoldrho  = 1
+savegii    = 0
+iprdsw     = 0
+prdsw      = 1.0
+
+; ******************************************************************************
+;  Persist data settings. NOT RECOMMENDED FOR USE
+; ******************************************************************************
+write_persist = 0
+
+; (integer) use the old opacity files?
+; set to zero when computing a new model, can be set to 1 if
+; restarting with the same atmosphere, same atom and same number of processes
+; will read the files 'storage/[chi_c/scatt/therm]_###'
+; 1: yes
+; 0: no
+useoldopac = 0
+
+; (integer) use the average radiation field?
+; set to zero when computing a new model, can be set to 1 if
+; restarting with the same atmosphere,same atom and same number of processes,
+; will read the files 'storage/J_###'
+; if using the 3D solver also the files 'storage/ib_###'
+; 1: yes
+; 0: no
+useoldrad = 0
+;

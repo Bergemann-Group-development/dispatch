@@ -1,0 +1,42 @@
+ ______________________________________________________________________________
+ .                                                                            .
+ .                                  GREETINGS                                 .
+ .                you are using the Multi3D library multi3d_mod               .
+ .                                                                            .
+ .                                                                            .
+ .              Below are the input parameters from multi3d.input             .
+ .              adjusted by the input parameters received by the              .
+ .              multi3d_mod library.                                          .
+ .                                                                            .
+ ==============================================================================
+  
+                      atom =                                './atoms/atom.ba06'
+                 Sinterpol =                                           'linear'
+                     qnorm =  1.000E+01
+                   useiabu =  F
+                clust_arch =  T
+                useoldopac =  F
+                   useoldn =  F
+                 useoldrad =  F
+                 init_pops =                                         'lte_pops'
+                    solver =                                nothing but full-3D
+                 anglequad =                              adopted from DISPATCH
+                    vfield =  T
+                    readnh =  F
+                   readnhe =  F
+                 readvturb =  F
+                 prdmoving =  F
+                 useoldrho =  T
+                   savegii =  F
+                 uboundary =                          to be taken from DISPATCH
+                 lboundary =                          to be taken from DISPATCH
+                    nmuout =            multi3d_mod works with single rays only
+                largefiles =  T
+                    iopacl =    0
+                    timing =  F
+                     debug =  F
+             write_persist =  F
+include_coronal_emissivity =  F
+   write_anisotropy_tensor =  F
+ ______________________________________________________________________________
+  
