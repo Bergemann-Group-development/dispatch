@@ -15,6 +15,7 @@ MODULE experiment_mod
     procedure init
     procedure update
     procedure init_level
+    procedure bndries
   end type
 CONTAINS
 
@@ -27,9 +28,21 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   call trace_begin('experiment_mod::init', itimer=itimer)
   call self%solver_t%init
-  !call self%read_txt_atmos()
   call trace_end (itimer=itimer)
 END SUBROUTINE init
+
+!===============================================================================
+!> Setup initial states in the patches
+!===============================================================================
+SUBROUTINE bndries (self)
+  class(experiment_t):: self
+  real(4), dimension(:,:,:,:), pointer, contiguous:: mem
+  !----------------------------------------------------------------------------
+  call trace_begin('experiment_t%bndries')
+  mem => self%mem(:,:,:,:,self%it,1)
+  call self%boundaries%primary (mem)
+  call trace%end()
+END SUBROUTINE bndries
 
 !===============================================================================
 !> This update only concerns the MHD task; the RT tasks are called directly

@@ -3,6 +3,7 @@
 !===============================================================================
 MODULE read_external_mod
   USE io_mod
+  USE timer_mod
   USE units_mod
   USE scaling_mod
   USE trace_mod
@@ -13,24 +14,25 @@ MODULE read_external_mod
   USE halo_mod
   USE task_list_mod
   USE experiment_mod
+  USE patch_mod
+  USE download_mod
 
   type, public:: read_external_t
     character(len=126) :: atmos_file
     class(task_list_t), pointer:: task_list
-    integer :: nz
+    integer :: nz, npatches(3), n(3), ng(3), verbose
     real(8), dimension(:), allocatable :: zi, temp, pe, rho, vturb
-    real(8) :: size
+    real(8) :: size, ds
     character(len=126) :: atmos_name
   contains
     procedure:: init
     procedure:: read_snapshot
-    procedure:: create_patches
-    procedure:: load_variables_to
-    procedure:: log_nbor_lists
+    procedure:: create_patch
+    procedure:: load_authority
+    procedure:: fill_guard_zones
   end type read_external_t
 
   type(read_external_t), public:: read_external
-  integer :: verbose = 1
 
 CONTAINS
 
@@ -45,9 +47,9 @@ SUBROUTINE init(self, task_list, name)
   class(link_t), pointer:: link
   logical, save:: first_time=.true.
   logical :: searching
-  integer :: iostat, npatches, patch_nz, iz, i
+  integer :: iostat, npatches, iz, i, ng(3), verbose
   character(len=126) :: atmos_file
-  namelist /atmos_params/ atmos_file, npatches
+  namelist /atmos_params/ atmos_file, npatches, ng, verbose
   !-----------------------------------------------------------------------------
   if (associated(task_list)) return
   call trace%begin('read_external_t%init')
@@ -60,7 +62,10 @@ SUBROUTINE init(self, task_list, name)
   if (first_time) then
     ! default values
     atmos_file = './input_multi3d/atmos/atmos.sun_MARCS'
-
+    npatches = 1
+    ng = [4,4,1]
+    verbose = 1
+    
     rewind (io%input)
     read (io%input, nml=atmos_params, iostat=iostat)
     if (iostat > 0) then
@@ -71,6 +76,11 @@ SUBROUTINE init(self, task_list, name)
     write (io%namelist, atmos_params)
 
     self%atmos_file = atmos_file
+    self%npatches(1) = 1
+    self%npatches(2) = 1
+    self%npatches(3) = npatches
+    self%ng = ng
+    self%verbose = verbose
   endif
   call io%lock%unset
 
@@ -83,18 +93,22 @@ SUBROUTINE init(self, task_list, name)
 
   self%size = self%zi(self%nz) - self%zi(1)
 
-  patch_nz = self%nz / npatches
+  if (mod(self%nz, npatches) /= 0) then
+    write(stdout,*) 'read_external_t%init: Error: npatches must be a factor of the atmosphere size!'
+    write(stdout,*) 'npatches = ', self%npatches(3), 'nz = ', self%nz
+    write(stdout,*) 'Stopping.'
+    stop
+  endif
 
   do i=1, npatches
-    iz = (i - 1) * patch_nz + 1
+    call self%create_patch(i, patch) ! patch is allocated here
+    call self%load_authority(patch, i)
 
-    if (i==npatches) patch_nz = self%nz - iz + 1
-
-    call self%create_patches(patch,iz,patch_nz) ! patch is allocated here
-    call self%load_variables_to(patch, iz)
-
-    if (i==1) write(stdout,'(I2, A28)') npatches, ' subdomains in z-direction:'
-    write(stdout,'(I4, I6,A3,I4)') i, iz, ' - ', iz + patch_nz - 1
+    if (verbose > 0) then 
+      iz = (i-1)*patch%n(3) + 1
+      if (i==1) write(stdout,'(I2, A28)') npatches, ' subdomains in z-direction:'
+      write(stdout,'(I4, I6,A3,I4)') i, iz, ' - ', iz + patch%n(3) - 1
+    endif
   end do
 
   !-----------------------------------------------------------------------------
@@ -114,66 +128,25 @@ SUBROUTINE init(self, task_list, name)
   call self%task_list%reset_status
 
   call task_list%info
-  !call self%log_nbor_lists
 
-  i = 1
-  link => self%task_list%head
-  do while (associated(link))
-    !print *, 'info on task number ', i
-    !print '(A15, 3F12.6, A4)', 'postition = ', link%task%position, 'Mm'
-    !print '(A15, 3F12.6, A4)', 'size = ', link%task%size, 'Mm'
-    !print '(A15, 3F12.6, A4)', 'lower = ', link%task%position + link%task%authority%l, 'Mm'
-    !print '(A15, 3F12.6, A4)', 'upper = ', link%task%position + link%task%authority%u, 'Mm'
-
-    !print *, link%task%mesh%lower_boundary
-    !print '(A15, 3F12.6, A4)', 'box = ', link%task%box, 'Mm'
-    link => link%next
-    i = i + 1
-  end do
-
-  !print *, shape(patch%mem)
-  !print *, 'density', patch%mem(3,3,:,patch%idx%d,1,1)
-  !print *, 'temperature', patch%mem(3,3,:,patch%idx%e,1,1)
-  !print *, 'pressure', patch%mem(3,3,:,6,1,1)
+  call self%fill_guard_zones
 
   call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
-subroutine log_nbor_lists(self)
-  !-----------------------------------------------------------------------------
-  class(read_external_t):: self
-  class(link_t), pointer:: link
-  class(nbor_t), pointer:: nbor
-  !-----------------------------------------------------------------------------
-  link => self%task_list%head
-  do while (associated(link))
-    write (stdlog,'(a,i6,":",i2.2)') 'log_nbor_lists: link=', &
-      link%task%id, link%task%level
-    nbor => link%nbor
-    do while (associated(nbor))
-      write (stdlog,'(2x,a,i6,":",i2.2)') 'log_nbor_lists: nbor=', &
-        nbor%task%id, nbor%task%level
-      nbor => nbor%next
-    end do
-    link => link%next
-  end do
-end subroutine log_nbor_lists
-
-!===============================================================================
 !> Initialize a minimum amount of patch information in a Cartesian arrangement
-!> This assumes that positions lie btw 0.0 and self%size
 !===============================================================================
-SUBROUTINE create_patches (self, patch, iz, patch_nz)
+SUBROUTINE create_patch (self, i, patch)
   class (read_external_t):: self
-  class (experiment_t), pointer:: patch
+  class (experiment_t), intent(out), pointer:: patch
   class(link_t), pointer:: link
   !.............................................................................
-  integer :: iz, patch_nz
+  integer :: i
   class (task_t), pointer:: task
   class(*), pointer:: ptr
   !-----------------------------------------------------------------------------
-  call trace%begin ('read_external_t%create_patches')
+  call trace%begin ('read_external_t%create_patch')
   allocate (patch)
 
   patch%mhd = .false.
@@ -182,37 +155,28 @@ SUBROUTINE create_patches (self, patch, iz, patch_nz)
   call patch%extras_t%pre_init
   patch%pre_initialized = .true.
 
-  patch%n = [1, 1, patch_nz]
-  patch%ng = [5,5,1]
+  patch%n = self%n / self%npatches
+  patch%ng = self%ng
   patch%nv = 6
   patch%nt = 1
   patch%nw = 1
 
-  call patch%init
+  patch%box(1) = self%ds * 1
+  patch%box(2) = self%ds * 1
+  patch%box(3) = self%ds * self%nz
+
+  patch%ds = self%ds
+
+  patch%size = patch%ds * patch%n
   patch%periodic = [.true., .true., .false.]
-
-  patch%level  = 1
-  patch%box(1) = 1.0d0
-  patch%box(2) = 1.0d0
-  patch%box(3) = self%size
-
-  patch%size(1) = patch%box(1)
-  patch%size(2) = patch%box(2)
-  patch%size(3) = self%zi(iz + patch_nz - 1) - self%zi(iz)
-
-  if (iz > 1) then
-    patch%size(3) = patch%size(3) + 0.5d0*(self%zi(iz) - self%zi(iz-1))
-  endif
-
-  if ((iz + patch_nz) < self%nz) then
-    patch%size(3) = patch%size(3) + 0.5d0*(self%zi(iz + patch_nz) - self%zi(iz + patch_nz - 1))
-  endif
-
-  patch%ds = patch%size / (patch_nz - 1)
 
   patch%position(1) = 0.5d0*patch%size(1)
   patch%position(2) = 0.5d0*patch%size(2)
-  patch%position(3) = self%zi(iz) + 0.5d0*patch%size(3)
+  patch%position(3) = (i-0.5d0)*patch%size(3)
+
+  call patch%init
+
+  patch%level  = 1
 
   !---------------------------------------------------------------------------
   ! Make sure interpolations are done optimally
@@ -237,7 +201,7 @@ SUBROUTINE create_patches (self, patch, iz, patch_nz)
   patch%link => link
   call self%task_list%prepend_link (link)
   call trace%end ()
-END SUBROUTINE create_patches
+END SUBROUTINE create_patch
 
 
 !===============================================================================
@@ -258,10 +222,12 @@ SUBROUTINE read_snapshot(self)
   call nextentry(lunit)
   read(lunit, *) self%nz
 
-  allocate(self%zi(self%nz))
+  self%nz = self%nz - 2*self%ng(3)
+
+  allocate(self%zi(1-self%ng(3):self%nz+self%ng(3)))
   allocate(self%temp, self%pe, self%rho, self%vturb, mold=self%zi)
 
-  do i=1, self%nz
+  do i=lbound(self%zi,1), ubound(self%zi,1)
     call nextentry(lunit)
     read(lunit, *) self%zi(i), self%temp(i), self%pe(i), self%rho(i), self%vturb(i)
   end do
@@ -269,12 +235,20 @@ SUBROUTINE read_snapshot(self)
   self%zi  = self%zi  / scaling%l
   self%rho = self%rho / scaling%d
   self%pe  = self%pe  / scaling%p
+
+  self%n = 1
+  self%n(3) = self%nz
+  self%ds = self%zi(2) - self%zi(1)
+
+  if (self%ds /= self%zi(self%nz) - self%zi(self%nz-1)) then
+    write(stdout,*) 'read_external_t%read_snapshot: Warning: Non-equidistant atmosphere grid!'
+  endif
 END SUBROUTINE read_snapshot
 
 !===============================================================================
 !> Takes variables read from text file and loads them into patch memory
 !===============================================================================
-SUBROUTINE load_variables_to(self, patch, iz)
+SUBROUTINE load_authority(self, patch, ii)
   !-----------------------------------------------------------------------------
   class (read_external_t):: self
   class (experiment_t), pointer:: patch
@@ -282,30 +256,59 @@ SUBROUTINE load_variables_to(self, patch, iz)
 
   it = 1 ! time index, it=1 is the initial condition
 
-  do k=1, patch%gn(3)
-    ii = iz + (k - patch%li(3))
+  do k=patch%li(3), patch%ui(3)
+    ! flipping z-axis, so that the first patch is the bottom of the atmosphere
+    iz = self%nz - ((ii-1)*patch%n(3) + k - patch%li(3))
 
-    if (ii < 1) ii = 1
-    if (ii > self%nz) ii = self%nz
-
-    do j=1, patch%gn(2)
-      do i=1, patch%gn(1)
-        patch%mem(i,j,k,patch%idx%d ,it,1) = self%rho(ii)
+    do j=patch%li(2), patch%ui(2)
+      do i=patch%li(1), patch%ui(1)
+        patch%mem(i,j,k,patch%idx%d ,it,1) = self%rho(iz)
         patch%mem(i,j,k,patch%idx%px,it,1) = 0
         patch%mem(i,j,k,patch%idx%py,it,1) = 0
         patch%mem(i,j,k,patch%idx%pz,it,1) = 0
-        patch%mem(i,j,k,patch%idx%e ,it,1) = self%temp(ii)
-        patch%mem(i,j,k,          6 ,it,1) = self%pe(ii)
+        patch%mem(i,j,k,patch%idx%e ,it,1) = self%temp(iz)
+        patch%mem(i,j,k,          6 ,it,1) = self%pe(iz)
+        patch%filled(i,j,k) = patch%level
       end do
     end do
   end do
 
-  patch%vgas = 0
-
-  !-----------------------------------------------------------------------------
-  ! Convert variables into solver's preference
-  !-----------------------------------------------------------------------------
-  !call patch%from_generic()
+  if (ii == 1) then
+    patch%mesh%lower_boundary = .true.
+    patch%boundaries%d_bot = self%rho(ubound(self%zi,1))
+    patch%boundaries%e_bot = self%temp(ubound(self%zi,1))
+    patch%boundaries%p_bot = self%pe(ubound(self%zi,1))
+  elseif (ii == self%npatches(3)) then
+    patch%mesh%upper_boundary = .true.
+    patch%boundaries%d_top  = self%rho(lbound(self%zi,1))
+    patch%boundaries%ee_top = self%temp(lbound(self%zi,1))
+    patch%boundaries%p_top = self%pe(lbound(self%zi,1))
+  endif
 END SUBROUTINE
+
+!===============================================================================
+!> Download guard zones from neighbouring patches and boundary conditions
+!===============================================================================
+SUBROUTINE fill_guard_zones (self)
+  class(read_external_t):: self
+  class(link_t), pointer:: link
+  class(patch_t), pointer:: ptch
+  !-----------------------------------------------------------------------------
+  call trace%begin('read_external_t%dnload')
+  call io%header ('-dnload: begin', left=25)
+  call timer%tic ()
+  link => self%task_list%head
+  do while (associated(link))
+    call link%task%dnload
+    call link%task%bndries
+    !ptch => download%cast2patch (link%task)
+    !print *, ptch%id
+    !print *, ptch%mem(2,2,:,5,1,1)
+    link => link%next
+  end do
+  call timer%toc ('time to dnload', 1)
+  call io%header ('-dnload: end', left=25)
+  call trace%end ()
+END SUBROUTINE fill_guard_zones
 
 END MODULE
