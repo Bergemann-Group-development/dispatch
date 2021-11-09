@@ -81,11 +81,11 @@ MODULE rt_mod
     integer                  :: i_omega=0                                       ! space-angle index
     integer                  :: axis=0                                          ! neares axis
     real, pointer            :: w_bin(:)                                        ! frequency weight
-    type(rt_t), pointer      :: omeg  => null()                                 ! different RT directions
-    type(rt_t), pointer      :: main  => null()                                 ! point to main RT task
-    type(rt_t), pointer      :: next  => null()                                 ! point to next omega task
-    type(rt_t), pointer      :: prev  => null()                                 ! point to prev omega task
-    type(rt_t), pointer      :: tail  => null()                                 ! point to prev omega task
+    class(rt_t), pointer     :: omeg  => null()                                 ! different RT directions
+    class(rt_t), pointer     :: main  => null()                                 ! point to main RT task
+    class(rt_t), pointer     :: next  => null()                                 ! point to next omega task
+    class(rt_t), pointer     :: prev  => null()                                 ! point to prev omega task
+    class(rt_t), pointer     :: tail  => null()                                 ! point to prev omega task
     real                     :: cdtd  = 1.0
     real                     :: mu, rt_phi, w                                   ! mu, phi, weights
     real                     :: rt_hat(3)                                       ! RT direction

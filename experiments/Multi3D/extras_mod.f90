@@ -103,6 +103,7 @@ MODULE extras_mod
     procedure:: check_refine
     procedure:: nbor_relations
     procedure:: courant_condition
+    procedure:: log_nbor_lists
   end type
   type(extras_t), public:: extras
 CONTAINS
@@ -148,7 +149,7 @@ SUBROUTINE init (self)
   !call self%spitzer%init                                                ! spitzer
   ! -- ensure consistency (a value is already set via rt%init)         ! experiment
   !if (associated(self%rt)) then
-  !  if (self%rt%on) self%rt%boundaries%gravity = self%gravity%const_grav                 ! experiment
+    !if (self%rt%on) call self%rt%init
   !end if
   call trace%end()
 END SUBROUTINE init
@@ -166,6 +167,7 @@ SUBROUTINE init_task_list (self, task_list)
   call trace%begin ('extras_t%init_task_list')
   call self%gpatch_t%init_task_list (task_list)                        ! keep
   call self%rt%init_task_list (task_list)                              ! RT
+  !call self%log_nbor_lists ()
   call trace%end ()
 END SUBROUTINE init_task_list
 
@@ -267,11 +269,16 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   !-----------------------------------------------------------------------------
   ! First check the main relations, then specific ones
   !-----------------------------------------------------------------------------
-  call self%task_t%nbor_relations(another, needed, needs_me, download) ! keep
+  !call self%task_t%nbor_relations(another, needed, needs_me, download) ! keep
+  
+  ! assign the nbor relations from m3d_rt_t
+  call self%rt%nbor_relations(another, needed, needs_me, download) 
+
   select type (another)
   class is (extras_t)
     ! do nothing, all is done in the base task_t layer
   class default
+    print *, 'warning: default nbor relations.'
     needed=.false.; needs_me=.false.; download=.false.
   end select
   call trace%end()
@@ -292,5 +299,37 @@ SUBROUTINE courant_condition (self, detailed_timer)
   call self%gpatch_t%courant_condition (detailed_timer)                ! keep
   call trace%end()
 END SUBROUTINE courant_condition
+
+subroutine log_nbor_lists(self)
+  use link_mod, only: nbor_t,link_t
+  class(extras_t):: self
+  class(link_t), pointer:: link
+  class(nbor_t), pointer:: nbor
+ 
+  link => self%task_list%head
+  do while (associated(link))
+    
+    select type(lt => link%task) 
+    class is (m3d_rt_t)
+      write (stdlog,'(a,i6,":",i2.2,i5.5)') 'log_nbor_lists: link=', &
+        lt%id, lt%level, lt%i_omega
+      nbor => link%nbor
+      do while (associated(nbor))
+        
+        select type (nb => nbor%task)
+        class is (m3d_rt_t)
+          write (stdlog,'(2x,a,i6,":",i2.2,i5.5)') 'log_nbor_lists: nbor=', &
+            nb%id, nb%level ,nb%i_omega
+        end select
+        
+        nbor => nbor%next
+      end do
+    class default
+      write (stdlog,*) 'non-m3d_rt patch.'
+    end select
+    link => link%next
+  end do
+end subroutine log_nbor_lists
+
 
 END MODULE extras_mod

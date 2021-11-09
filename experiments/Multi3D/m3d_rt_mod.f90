@@ -3,16 +3,19 @@
 !===============================================================================
 MODULE m3d_rt_mod
   USE io_mod
+  use omp_lib
   USE trace_mod
   USE rt_mod
   USE rt_integral_mod
   USE multi3d_mod
   USE radau_mod
+  use mpi_mod
   USE boundaries_mod
   USE math_mod
   USE bits_mod
   USE gpatch_mod
   USE scs_mod, only: dis_package_t
+  use task_mod
   implicit none
   private
   type, public, extends(rt_t):: m3d_rt_t
@@ -26,19 +29,19 @@ MODULE m3d_rt_mod
     !---------------------------------------------------------------------------
     !real, pointer, contiguous:: Jint(:,:,:,:) => null()
     !real, pointer, contiguous:: Npop(:,:,:,:) => null()
-    integer:: fbin
-    type(m3d_rt_t), pointer:: sheep  => null()        ! different RT directions
-    type(m3d_rt_t), pointer:: shepherd => null()      ! point to main RT task
-    type(m3d_rt_t), pointer:: next_sh  => null()      ! point to next omega task
-    type(m3d_rt_t), pointer:: prev_sh  => null()      ! point to prev omega task
-    type(m3d_rt_t), pointer:: tail_sh  => null()      ! point to prev omega task
-    type(dis_package_t) :: dispackage
+    integer:: fbin                                     ! Frequency bin
+    integer,dimension(:,:),allocatable :: nu_regions   ! Frequency index limits
+    integer :: nu_s,nu_e
+    type(dis_package_t)  :: dispackage    ! Dispatch <-> Multi communicator
+    integer :: i_n(2),i_ne                ! Index range of pops and ne in mem arr
+    integer :: i_chi,i_snu,i_inu,n_nu     ! Index range of chi, snu and inu 
   contains
     procedure:: pre_init
     procedure:: init
     procedure:: init_bdries
     procedure:: update
     procedure:: output
+    procedure:: get_nu_regions
   end type
   integer, save:: verbose=0                           ! verbosity
   real,    save:: rt_freq=0                           ! how often RT should be updated WRT MHD -- 0=unlimited
@@ -87,11 +90,18 @@ recursive SUBROUTINE pre_init (self)
     ! Starting up the Multi3D Module
     ! ----------------------------------------------------------------------------
     multi3d%dir = folder
-    call multi3d%pre_init(self%dispackage)
+    call multi3d%pre_init()
 
     first_time = .false.
     call io%lock%unset ('multi3d_t')
   end if
+
+  ! Multi3D pre init is ran only once per OMP thread
+  ! This means that another dispackages of the same thread can not be filled 
+  ! within the same routine. Fill them here with thread global variables
+  self%dispackage%ggpgh         = multi3d%ggpgh
+  self%dispackage%ref_atom     => multi3d%ref_atom
+  self%dispackage%ref_spectrum => multi3d%ref_spectrum
 
   if (self%pre_initialized_rt) call io%abort ('double rt pre_init')
   self%pre_initialized_rt = .true.
@@ -155,13 +165,13 @@ recursive SUBROUTINE pre_init (self)
     !---------------------------------------------------------------------------
     self%type    = 'm3d_rt_t'
     if (self%i_omega==0) then
-      self%kind    = 'm3d_rt_shepherd'
+      self%kind    = 'm3d_rt_sc0'
     else
-      self%kind    = 'm3d_rt_sheep'
+      self%kind    = 'm3d_rt_sc'
     end if
     !
     if (self%i_omega==0) then
-      self%shepherd => self         ! convenience
+      self%main => self         ! convenience
       call rt_integral%init
       call self%patch%aux%init
       !-------------------------------------------------------------------------
@@ -169,6 +179,9 @@ recursive SUBROUTINE pre_init (self)
       !-------------------------------------------------------------------------
       n_omega = merge (1+self%n_phi*(self%n_mu-1), 0, self%n_mu > 0)
       self%n_omega = 2*n_omega*n_bin
+
+      call self%get_nu_regions(n_bin)            ! Get frequency domains for all tasks
+      
       !-------------------------------------------------------------------------
       ! Assign angles and integration weight and allocate the required RT 
       ! solvers for all angles
@@ -188,21 +201,25 @@ recursive SUBROUTINE pre_init (self)
               do fbin=1, n_bin
                 i_omega = i_omega+1
                 allocate(omega)
-                omega%shepherd => self
+                omega%main => self
                 omega%master_id = self%id
                 if (associated(self%omeg)) then
-                  omega%prev_sh => self%tail_sh
-                  omega%prev_sh%next_sh => omega
-                  self%tail_sh => omega
+                  omega%prev => self%tail
+                  omega%prev%next => omega
+                  self%tail => omega
                 else
-                  self%sheep => omega
-                  self%tail_sh => omega
+                  self%omeg => omega
+                  self%tail => omega
                 end if
                 omega%mu      = dir*mu(i_mu)
                 omega%w       = w_mu(i_mu)*math%pi4/n/2.
                 omega%patch   => self%patch
                 omega%i_omega = i_omega
+
                 omega%fbin    = fbin
+                omega%nu_s    = self%nu_regions(fbin,1)  ! Starting frequency index in spectrum freq. grid
+                omega%nu_e    = self%nu_regions(fbin,2)  ! Ending frequency index in spectrum freq. grid
+
                 omega%rt_phi = math%pi*(modulo(real(2*(i_phi-1))/self%n_phi + &
                   (dir+1)/2.0, 2.0) - 1.0)
                 if (i_mu == self%n_mu) omega%rt_phi = 0.0
@@ -212,6 +229,16 @@ recursive SUBROUTINE pre_init (self)
           end do
         end do
       end if
+      self%dispackage%geometry%nx = self%n(1)
+      self%dispackage%geometry%ny = self%n(2)
+      self%dispackage%geometry%nz = self%n(3)
+      self%dispackage%fbin  = self%fbin
+      self%dispackage%nu_s  = 1
+      self%dispackage%nu_e  = self%dispackage%ref_spectrum%nnu
+      self%dispackage%nfint = 0
+      self%dispackage%wm    = dble(self%w)
+      self%dispackage%ds    = dble(self%ds)
+      call multi3d%init(self%dispackage,skip_ray_in=.true.)
     else
       ! ------------------------------------------------------------------------
       ! Determine closest axis direction for omega/=0
@@ -229,16 +256,38 @@ recursive SUBROUTINE pre_init (self)
       self%dispackage%muy   = dble(self%rt_hat(2))
       self%dispackage%muz   = dble(self%rt_hat(3))
       self%dispackage%fbin  = self%fbin
+      self%dispackage%nu_s  = self%nu_s
+      self%dispackage%nu_e  = self%nu_e
       self%dispackage%nfint = self%n_bin
       self%dispackage%wm    = dble(self%w)
       self%dispackage%ds    = dble(self%ds)
-
       call multi3d%init(self%dispackage)
     end if
   end if
-  
+  call self%init ()
   call trace%end ()
 END SUBROUTINE pre_init
+
+
+! PE: obtain frequency splitted regions
+subroutine get_nu_regions(self,n_splits) 
+    class(m3d_rt_t),intent(inout):: self
+    integer,intent(in) :: n_splits
+    integer :: i,nu_bin_size
+
+    ! Simple approach, can be adjusted in the future if needed (based on active lines etc.)
+    if (allocated(self%nu_regions)) deallocate(self%nu_regions)
+    allocate(self%nu_regions(n_splits,2))
+
+    nu_bin_size =  floor(self%dispackage%ref_spectrum%nnu / real(n_splits))
+    self%nu_regions(1,1)        = 1                         ! Starpoint
+    self%nu_regions(1,2)        = nu_bin_size               ! Starpoint
+    do i = 2, n_splits
+        self%nu_regions(i,1) = self%nu_regions(i-1,2) + 1
+        self%nu_regions(i,2) = self%nu_regions(i,1) + nu_bin_size - 1
+    enddo
+    self%nu_regions(n_splits,2) = self%dispackage%ref_spectrum%nnu  ! Endpoint
+end subroutine get_nu_regions
 
 !===============================================================================
 !> Initialize the rt_t data types.  To setup for n_warmup initial solutions, we
@@ -250,6 +299,7 @@ SUBROUTINE init (self)
   class (m3d_rt_t):: self
   ! ............................................................................
   class (gpatch_t), pointer :: p
+  integer :: idiff
   ! ----------------------------------------------------------------------------
   if (self%initialized) then
     print *, self%id, self%i_omega
@@ -258,21 +308,41 @@ SUBROUTINE init (self)
   call trace%begin ('rt_t%init')
   self%initialized = .true.
   p => self%patch
+  
+  !======================================================================================
+  ! Omega0: > Collects the transition rates from omegaX tasks
+  !         > Stores population numbers + rates 
   !
-  ! ----------------------------------------------------------------------------
-  ! omega0 stores EOS data, plus the collected heating rates. omegaX stores just
-  ! the directional heating rates.
-  ! ----------------------------------------------------------------------------
+  ! OmegaX: > Computes radiative transfer
+  !         > Stores chi, snu and inu in its frequency range
+  !
+  ! The storage that needs to be communicated between the tasks is chi,snu and inu !!!
+  ! The angle tasks do not need to know the population numbers in the ghost zones
+  ! if the opacity is passed!
+  !=====================================================================================
   if (self%i_omega==0) then
-    self%nv = self%n_bin*2+2 ! nbin*[rk,src]+tt+qr
-    self%irk(1)  = 1
-    self%irk(2)  = self%irk(1) +self%n_bin-1
-    self%isrc(1) = self%irk(2) +1
-    self%isrc(2) = self%isrc(1)+self%n_bin-1
-    self%itt     = self%isrc(2)+1
-    self%iqr     = self%itt+1
+    self%nv   =  self%dispackage%ref_atom%nlevel   ! population numbers (+ heating)
+    self%i_n(1) = 1
+    self%i_n(2) = self%dispackage%ref_atom%nlevel
+    !self%itt    = self%i_n(2) + 1
+    !self%i_ne   = self%itt + 1
+    !self%iqr    = self%i_ne + 1
+
+    !self%nv = self%n_bin*2+2 ! nbin*[rk,src]+tt+qr
+    !self%irk(1)  = 1
+    !self%irk(2)  = self%irk(1) +self%n_bin-1
+    !self%isrc(1) = self%irk(2) +1
+    !self%isrc(2) = self%isrc(1)+self%n_bin-1
+    !self%itt     = self%isrc(2)+1
+    !self%iqr     = self%itt+1
   else
-    self%nv = 1
+    idiff = self%dispackage%nu_e-self%dispackage%nu_s + 1
+    self%n_nu = idiff
+    self%nv = 3
+    self%nw = idiff  ! chi, snu and inu (for every nu in this patch)
+    self%i_chi = 1
+    self%i_snu = 2
+    self%i_inu = 3
   end if
   self%mv = self%nv
   !
@@ -284,11 +354,13 @@ SUBROUTINE init (self)
   call self%gpatch_t%init
   self%mem = 0.0
   if (self%i_omega==0) then
-    self%mem(:,:,:,self%irk(1):self%irk(2),:,:)=tiny(1.)
-    self%mem(:,:,:,self%isrc(1):self%isrc(2),:,:)=tiny(1.)
+    !self%mem(:,:,:,self%irk(1):self%irk(2),:,:)=tiny(1.)
+    !self%mem(:,:,:,self%isrc(1):self%isrc(2),:,:)=tiny(1.)
     self%mem(:,:,:,self%itt,:,:)=tiny(1.)
   end if
   write (io_unit%log,*) 'call self%patch_t%setup'
+
+  !print *, 'IOMEGA, FBIN, SHAPE(MEM) ',self%i_omega, self%fbin, shape(self%mem)
   !-----------------------------------------------------------------------------
   ! Synchronize with MHD patch
   ! ----------------------------------------------------------------------------
@@ -328,8 +400,8 @@ SUBROUTINE init (self)
   if (self%i_omega==0) then
     self%unsigned  = .false.
     self%unsigned(self%nv) = .false.
-    self%pervolume(self%irk(1):self%irk(2))   = .true.
-    self%pervolume(self%isrc(1):self%isrc(2)) = .true.
+    !self%pervolume(self%irk(1):self%irk(2))   = .true.
+    !self%pervolume(self%isrc(1):self%isrc(2)) = .true.
     self%pervolume(self%itt)   = .true.
   else
     self%unsigned  = .false.
@@ -352,6 +424,9 @@ SUBROUTINE init (self)
     call self%dealloc()
     self%n_omega = 0
   end if
+
+  if (self%i_omega .eq. 0) call self%rt_t%init_task_list (self%patch%task_list)
+
   call trace%end()
 END SUBROUTINE init
 
@@ -362,7 +437,7 @@ END SUBROUTINE init
 !===============================================================================
 SUBROUTINE update (self)
   class(m3d_rt_t) :: self
-  real, dimension(:,:,:), pointer :: temp, rho, pe, vx, vy, vz
+  real, dimension(:,:,:),contiguous, pointer :: temp, rho, pe, vx, vy, vz
   integer :: it
   !-----------------------------------------------------------------------------
   call trace%begin ('m3d_rt_t%update')
@@ -430,5 +505,128 @@ SUBROUTINE init_bdries(self)
   end do
   call self%boundaries%init ()
 END SUBROUTINE init_bdries
+
+!===============================================================================
+!> The nbor relations among the omega
+!
+! The omega0 task has a different role than in the default setup!
+! It will be called AFTER the omegaX tasks have solved the radiative transfer,
+! because it will collect the rates and sets + solves the stat. eq. equations.
+!
+!===============================================================================
+subroutine nbor_relations(self, another, needed, needs_me, download)
+  class(m3d_rt_t)       :: self            ! current M3d rt task
+  class(task_t),pointer :: another         ! another task in the list
+  logical :: needed, needs_me, download    ! Is the other task: needed, 
+                                           !    does it need me, should I download?
+  class(m3d_rt_t),pointer :: rt_another
+  class(task_t),pointer   :: other
+  
+
+  call trace%begin ('rt_t%nbor_relations')
+
+  ! If this RT task has no RT on, it should have no nbor relations
+  if (.not.(self%on)) then
+    needed = .false.; needs_me = .false.; download = .false.
+    call trace%end()
+    return
+  end if
+
+  ! First check the main relations, based on location and level of refinement
+  call self%task_t%nbor_relations(another, needed, needs_me, download)
+
+  ! Now, if another is RT, add it appropriately, if it is MHD, it has to overlap
+  ! and have different kind of relations
+  select type (another)
+  class is (m3d_rt_t)
+
+    rt_another => another
+    if (.not.(rt_another%on)) then
+      ! if nbor RT is not on, we don't need any relations to it.
+      needed = .false.; needs_me = .false.; download = .false.
+      call trace%end()
+      return
+    end if
+
+    if ((rt_another%level<self%level) .and. (rt_another%i_omega==self%i_omega)) then
+      if (all(rt_another%size>(abs(self%position-rt_another%position)))) then
+        print *, 'found RT parent', self%i_omega, self%level, rt_another%level
+        self%parent => rt_another
+        self%link%parent => rt_another%link
+        self%parentid = rt_another%id
+        return
+      end if
+    end if
+    
+    if ((rt_another%i_omega == 0).and.(self%i_omega==0)) then                   ! Both are omega0
+      ! omega0 need all the relations with another omega0, thus defaut setting
+      if (dnload_mhd) download = .false.
+      call trace%end()
+      return
+    else if ((rt_another%i_omega == 0).and.self%i_omega/=0) then                ! Self: X, other: 0
+      if (self%main%id == rt_another%id) then
+        ! non-omega0 doesnt need the master omega0
+        needed   = .false.
+        needs_me = .true.
+        download = .false. 
+      else 
+        ! non-omega0 doesn't need to know about non-overlapping nbor omega0 
+        needed = .false.; needs_me = .false.; download = .false.
+      end if
+    else if (self%i_omega==0) then                                              ! Self: 0, other: X
+      if (self%id==rt_another%main%id) then
+        ! omega0 needs other omegax tasks
+        needed   = .true.
+        needs_me = .false.
+        download = .false. 
+      else 
+        ! non-omega0 doesn't need to know about non-overlapping nbor omega0 
+        needed = .false.; needs_me = .false.; download = .false.
+      end if
+  
+    else if (self%needs(rt_another)) then                                       ! rt_another is upstream
+      
+      ! The omega task needs the upstream task,
+      ! but the upstream task does not need the downstream omega task.
+      if ((self%rank==mpi%rank).and.(rt_another%rank/=mpi%rank)) needed=.true.
+      needs_me=.false.
+    
+    else if (rt_another%needs(self)) then
+      ! Downstream RT task will need me, but it is not needed and I should not
+      ! download data from it.
+      if ((self%rank==mpi%rank).and.(rt_another%rank/=mpi%rank)) needs_me=.true.
+      needed = .false.
+      download = .false.
+    else
+      needed = .false.; needs_me = .false.; download = .false.
+    end if
+    
+    if ((self%i_omega >0).and.(rt_another%i_omega>0)) then
+      if (self%i_omega /= rt_another%i_omega) then
+      download = .false.; needed = .false.; needs_me=.false.
+      end if
+    end if
+    
+  class is (gpatch_t)
+    other => another
+    if (all(self%position==other%position)) then
+      ! Check if this is the "master" MHD patch. It might not be associated yet, i.e.
+      ! after moving to another MPI rank or changing level of refinement. in that 
+      ! case, associate it.
+      needed   = .true.
+      needs_me = .false.
+      download = .false.
+      if (self%i_omega .eq. 0) needs_me = .true.   ! For returning the heating rate
+      if (.not.(associated(self%patch))) self%patch => gpatch%cast2gpatch(other)
+    else
+      needed = .false.; needs_me = .false.; download = .false.
+    end if 
+  class default
+    needed = .false.; needs_me = .false.; download = .false.
+  end select
+
+  call trace%end()
+end subroutine nbor_relations
+
 
 END MODULE m3d_rt_mod

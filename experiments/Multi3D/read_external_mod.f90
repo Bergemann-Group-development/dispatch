@@ -106,6 +106,7 @@ SUBROUTINE init(self, task_list, name)
   !-----------------------------------------------------------------------------
   ! Generate nbor lists and set status bits for all tasks
   !-----------------------------------------------------------------------------
+
   if (verbose > 0) write(stdout,*) 'read_external_t%init: init_levels'
   call self%task_list%init_levels
   if (verbose > 0) write(stdout,*) 'read_external_t%init: init_all_nbors'
@@ -114,7 +115,7 @@ SUBROUTINE init(self, task_list, name)
   call self%task_list%reset_status
 
   call task_list%info
-  !call self%log_nbor_lists
+  call self%log_nbor_lists ()
 
   i = 1
   link => self%task_list%head
@@ -141,6 +142,7 @@ END SUBROUTINE init
 
 !===============================================================================
 subroutine log_nbor_lists(self)
+  use m3d_rt_mod, only: m3d_rt_t
   !-----------------------------------------------------------------------------
   class(read_external_t):: self
   class(link_t), pointer:: link
@@ -148,16 +150,30 @@ subroutine log_nbor_lists(self)
   !-----------------------------------------------------------------------------
   link => self%task_list%head
   do while (associated(link))
-    write (stdlog,'(a,i6,":",i2.2)') 'log_nbor_lists: link=', &
-      link%task%id, link%task%level
-    nbor => link%nbor
-    do while (associated(nbor))
-      write (stdlog,'(2x,a,i6,":",i2.2)') 'log_nbor_lists: nbor=', &
-        nbor%task%id, nbor%task%level
-      nbor => nbor%next
-    end do
+    
+    select type(lt => link%task) 
+    class is (m3d_rt_t)
+      write (stdlog,'(a,i6,":",i2.2,i5.5)') 'log_nbor_lists: link=', &
+        lt%id, lt%level, lt%i_omega
+      nbor => link%nbor
+      do while (associated(nbor))
+        
+        select type (nb => nbor%task)
+        class is (m3d_rt_t)
+          write (stdlog,'(2x,a,i6,":",i2.2,i5.5)') 'log_nbor_lists: nbor=', &
+            nb%id, nb%level ,nb%i_omega
+        end select
+        
+        nbor => nbor%next
+      end do
+    class default
+      write (stdlog,*) 'non-m3d_rt patch.',link%task%id,link%task%kind
+
+    end select
     link => link%next
-  end do
+
+end do
+
 end subroutine log_nbor_lists
 
 !===============================================================================
@@ -175,6 +191,8 @@ SUBROUTINE create_patches (self, patch, iz, patch_nz)
   !-----------------------------------------------------------------------------
   call trace%begin ('read_external_t%create_patches')
   allocate (patch)
+
+  patch%task_list => self%task_list
 
   patch%mhd = .false.
   patch%kind = 'hlld_mhd_patch'
