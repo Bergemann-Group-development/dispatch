@@ -12,10 +12,12 @@ MODULE read_external_mod
   USE mesh_mod
   USE bits_mod
   USE halo_mod
+  USE list_mod
   USE task_list_mod
   USE experiment_mod
   USE patch_mod
   USE download_mod
+  USE m3d_rt_mod
 
   type, public:: read_external_t
     character(len=126) :: atmos_file
@@ -115,7 +117,7 @@ SUBROUTINE init(self, task_list, name)
   ! Add all tasks to the ready queue, preventing a slow default add_by_time
   !-----------------------------------------------------------------------------
   call self%task_list%queue_all
-  call self%task_list%print_queue
+  !call self%task_list%print_queue
 
   !-----------------------------------------------------------------------------
   ! Generate nbor lists and set status bits for all tasks
@@ -127,73 +129,15 @@ SUBROUTINE init(self, task_list, name)
   call self%task_list%init_all_nbors
   if (verbose > 0) write(stdout,*) 'read_external_t%init: reset_status'
   call self%task_list%reset_status
-
+  if (verbose > 0) write(stdout,*) 'read_external_t%init: info'
   call task_list%info
-<<<<<<< HEAD
-  call self%log_nbor_lists ()
-
-  i = 1
-  link => self%task_list%head
-  do while (associated(link))
-    !print *, 'info on task number ', i
-    !print '(A15, 3F12.6, A4)', 'postition = ', link%task%position, 'Mm'
-    !print '(A15, 3F12.6, A4)', 'size = ', link%task%size, 'Mm'
-    !print '(A15, 3F12.6, A4)', 'lower = ', link%task%position + link%task%authority%l, 'Mm'
-    !print '(A15, 3F12.6, A4)', 'upper = ', link%task%position + link%task%authority%u, 'Mm'
-
-    !print *, link%task%mesh%lower_boundary
-    !print '(A15, 3F12.6, A4)', 'box = ', link%task%box, 'Mm'
-    link => link%next
-    i = i + 1
-  end do
-=======
->>>>>>> 8bbb53134c674d3bb6b8fbf802e793a88fd8b1d1
-
+  if (verbose > 0) write(stdout,*) 'read_external_t%init: fill_guard_zones'
   call self%fill_guard_zones
 
   call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
-<<<<<<< HEAD
-subroutine log_nbor_lists(self)
-  use m3d_rt_mod, only: m3d_rt_t
-  !-----------------------------------------------------------------------------
-  class(read_external_t):: self
-  class(link_t), pointer:: link
-  class(nbor_t), pointer:: nbor
-  !-----------------------------------------------------------------------------
-  link => self%task_list%head
-  do while (associated(link))
-    
-    select type(lt => link%task) 
-    class is (m3d_rt_t)
-      write (stdlog,'(a,i6,":",i2.2,i5.5)') 'log_nbor_lists: link=', &
-        lt%id, lt%level, lt%i_omega
-      nbor => link%nbor
-      do while (associated(nbor))
-        
-        select type (nb => nbor%task)
-        class is (m3d_rt_t)
-          write (stdlog,'(2x,a,i6,":",i2.2,i5.5)') 'log_nbor_lists: nbor=', &
-            nb%id, nb%level ,nb%i_omega
-        end select
-        
-        nbor => nbor%next
-      end do
-    class default
-      write (stdlog,*) 'non-m3d_rt patch.',link%task%id,link%task%kind
-
-    end select
-    link => link%next
-
-end do
-
-end subroutine log_nbor_lists
-
-!===============================================================================
-=======
->>>>>>> 8bbb53134c674d3bb6b8fbf802e793a88fd8b1d1
 !> Initialize a minimum amount of patch information in a Cartesian arrangement
 !===============================================================================
 SUBROUTINE create_patch (self, i, patch)
@@ -207,6 +151,8 @@ SUBROUTINE create_patch (self, i, patch)
   !-----------------------------------------------------------------------------
   call trace%begin ('read_external_t%create_patch')
   allocate (patch)
+
+  call patch%init_unique (same=.true.) ! obtain an unique ID
 
   patch%task_list => self%task_list
 
@@ -237,7 +183,7 @@ SUBROUTINE create_patch (self, i, patch)
 
   call patch%init
 
-  patch%level  = 1
+  patch%level  = 1 ! this is set manually
 
   !---------------------------------------------------------------------------
   ! Make sure interpolations are done optimally
@@ -257,7 +203,7 @@ SUBROUTINE create_patch (self, i, patch)
   !---------------------------------------------------------------------------
   ! Add the patch to the task list -- this creates the patch%link
   !---------------------------------------------------------------------------
-  allocate (halo_t:: link)
+  allocate (halo_m3d_t:: link)
   link%task => patch
   patch%link => link
   call self%task_list%prepend_link (link)
