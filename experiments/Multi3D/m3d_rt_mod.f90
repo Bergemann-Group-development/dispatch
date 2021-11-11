@@ -33,7 +33,7 @@ MODULE m3d_rt_mod
     integer,dimension(:,:),allocatable :: nu_regions   ! Frequency index limits
     integer :: nu_s,nu_e
     type(dis_package_t)  :: dispackage    ! Dispatch <-> Multi communicator
-    integer :: i_n(2),i_ne                ! Index range of pops and ne in mem arr
+    integer :: i_n,i_n_lte,i_ne           ! Index range of pops and ne in mem arr
     integer :: i_chi,i_snu,i_inu,n_nu     ! Index range of chi, snu and inu 
   contains
     procedure:: pre_init
@@ -42,6 +42,8 @@ MODULE m3d_rt_mod
     procedure:: update
     procedure:: output
     procedure:: get_nu_regions
+    procedure:: reduce_omegaX
+    procedure:: link_dispackage
   end type
   integer, save:: verbose=0                           ! verbosity
   real,    save:: rt_freq=0                           ! how often RT should be updated WRT MHD -- 0=unlimited
@@ -321,9 +323,10 @@ SUBROUTINE init (self)
   ! if the opacity is passed!
   !=====================================================================================
   if (self%i_omega==0) then
-    self%nv   =  self%dispackage%ref_atom%nlevel   ! population numbers (+ heating)
-    self%i_n(1) = 1
-    self%i_n(2) = self%dispackage%ref_atom%nlevel
+    self%nv      = 2   ! population numbers (+ heating)
+    self%i_n     = 1
+    self%i_n_lte = 2
+    self%nw      = self%dispackage%ref_atom%nlevel
     !self%itt    = self%i_n(2) + 1
     !self%i_ne   = self%itt + 1
     !self%iqr    = self%i_ne + 1
@@ -343,6 +346,7 @@ SUBROUTINE init (self)
     self%i_chi = 1
     self%i_snu = 2
     self%i_inu = 3
+
   end if
   self%mv = self%nv
   !
@@ -356,7 +360,12 @@ SUBROUTINE init (self)
   if (self%i_omega==0) then
     !self%mem(:,:,:,self%irk(1):self%irk(2),:,:)=tiny(1.)
     !self%mem(:,:,:,self%isrc(1):self%isrc(2),:,:)=tiny(1.)
-    self%mem(:,:,:,self%itt,:,:)=tiny(1.)
+    !self%mem(:,:,:,self%itt,:,:)=tiny(1.)
+    
+    ! Initialize the populations to -1 so that their absense can be caught in m3d
+    self%mem(:,:,:,self%i_n,:,:)     = -1   
+    self%mem(:,:,:,self%i_n_lte,:,:) = -1   
+
   end if
   write (io_unit%log,*) 'call self%patch_t%setup'
 
@@ -377,10 +386,10 @@ SUBROUTINE init (self)
   self%t        = self%time
   self%qr_time  = self%time - 2.0*self%grace*self%dtime
   ! ----------------------------------------------------------------------------
-  ! Set omegaX time to be marginally after omega0, so EOS would be done before
+  ! Set omegaX time to be marginally before omega0, so omega0 would be done after
   ! omegaX
   ! ----------------------------------------------------------------------------
-  if (self%i_omega/=0) then
+  if (self%i_omega==0) then
     self%time     = self%time + 2.0*self%grace*self%dtime
   end if
   self%iout     = self%restart+1
@@ -452,13 +461,77 @@ SUBROUTINE update (self)
   vy   => self%patch%vgas(:,:,:,2,it)
   vz   => self%patch%vgas(:,:,:,3,it)
 
-  call multi3d%pre_update(self%dispackage, temp, rho, pe, vx, vy, vz)
+  if (self%i_omega .gt. 0) then
+    call self%link_dispackage(i_omega = self%i_omega, it = it)                                    ! Establish links to the dispackage
+    call multi3d%pre_update (self%dispackage, temp, rho, pe, vx, vy, vz, skip_ray_in = .false.)
+    call multi3d%update (self%dispackage, solver = 'rad')                                         ! call rad. transfer solver
+                                                                                                  ! The solver will compute the radiative transfer for one angle.
+                                                                                                  ! it will assume that the upwind tasks are already done and 
+                                                                                                  ! that the mem object is downloaded! (So Chi,Inu and Snu are available in the ghost zones)
+                                                                                                  ! The boundary contidion needs to be filled in the bottom ghost zone (chi, snu and inu need to be present!)
+  else
+    call self%link_dispackage(i_omega = self%i_omega, it = it)                                    ! Establish links to the dispackage
+    call multi3d%pre_update (self%dispackage, temp, rho, pe, vx, vy, vz, skip_ray_in = .true.)
+    call self%reduce_omegaX ()                                                                    ! Reduce the rates etc. obtained from angle tasks
+    call multi3d%update (self%dispackage, solver = 'pop')                                         ! call stat. eq. solver
+  endif
 
-  !call self%rt_t%update
-  !call multi3d%update
   !call multi3d%post_update ! (... argument list ...)
+
+
   call trace%end ()
 END SUBROUTINE update
+
+subroutine reduce_omegaX(self)
+  class(m3d_rt_t),target :: self
+  class(rt_t),pointer:: omeg
+  ! Loop through all the angle tasks and save the rates etc.
+  omeg => self%main%omeg
+  do while (associated(omeg))
+    if ((omeg%master_id.ne.self%master_id).or.(omeg%i_omega.eq.0)) cycle ! This is not a task for this master
+    
+    ! Add the neighbor quants to the quants of this task
+    select type (o=>omeg)
+    class is (m3d_rt_t)
+      self%dispackage%atom_rad%gamma_ij   = self%dispackage%atom_rad%gamma_ij   + o%dispackage%atom_rad%gamma_ij
+      self%dispackage%atom_rad%gamma_ji   = self%dispackage%atom_rad%gamma_ji   + o%dispackage%atom_rad%gamma_ji
+      self%dispackage%atom_rad%gamma_ij_c = self%dispackage%atom_rad%gamma_ij_c + o%dispackage%atom_rad%gamma_ij_c
+      self%dispackage%atom_rad%gamma_ji_c = self%dispackage%atom_rad%gamma_ji_c + o%dispackage%atom_rad%gamma_ji_c
+
+      self%dispackage%atom_rad%Rij   = self%dispackage%atom_rad%Rij   + o%dispackage%atom_rad%Rij
+      self%dispackage%atom_rad%Rji   = self%dispackage%atom_rad%Rji   + o%dispackage%atom_rad%Rji
+      self%dispackage%atom_rad%Rij_c = self%dispackage%atom_rad%Rij_c + o%dispackage%atom_rad%Rij_c
+      self%dispackage%atom_rad%Rji_c = self%dispackage%atom_rad%Rji_c + o%dispackage%atom_rad%Rji_c
+
+      self%dispackage%atom_rad%qrad    = self%dispackage%atom_rad%qrad   + o%dispackage%atom_rad%qrad
+      self%dispackage%atom_rad%qrad_c  = self%dispackage%atom_rad%qrad_c + o%dispackage%atom_rad%qrad_c 
+    end select  
+  enddo
+
+end subroutine reduce_omegaX
+
+subroutine link_dispackage(self,i_omega,it)
+  class(m3d_rt_t),intent(inout) :: self
+  integer, optional :: i_omega,it
+  integer :: i_omega_l,it_l
+
+  ! Defaults
+  i_omega_l = 0
+  it_l      = 1
+  if (present(i_omega)) i_omega_l = i_omega
+  if (present(it)) it_l = it
+
+  ! Link
+  if (i_omega_l.eq.0) then  
+    self%dispackage%n     => self%mem(:,:,:,self%i_n,it_l,:)
+    self%dispackage%nstar => self%mem(:,:,:,self%i_n_lte,it_l,:)
+  else
+    self%dispackage%chi_disp => self%mem(:,:,:,self%i_chi,it_l,:)
+    self%dispackage%snu_disp => self%mem(:,:,:,self%i_snu,it_l,:)
+    self%dispackage%inu_disp => self%mem(:,:,:,self%i_inu,it_l,:)
+  endif
+
+end subroutine link_dispackage
 
 !===============================================================================
 !> Do Multi3D specific output
