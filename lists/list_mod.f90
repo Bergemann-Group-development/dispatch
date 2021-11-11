@@ -3033,21 +3033,28 @@ END SUBROUTINE update_nbor_status
 SUBROUTINE update_status (self, link)
   class(list_t):: self
   class(link_t), pointer:: link
-  class(nbor_t), pointer:: nbor
+  class(nbor_t), pointer:: nbor, next
   type (task_t):: old
   integer:: n
   !-----------------------------------------------------------------------------
   call trace%begin ('list_t%update_status')
   !call link%lock%set ('update_status')
+  nullify (next)
   nbor => link%nbor
   do while (associated(nbor))
     old%status = link%task%status
     call link%check_nbor_relations (nbor%link, nbor%needed,  &
                                     nbor%needs_me, nbor%download)
+    if (.not. (nbor%needed .or. nbor%needs_me)) then
+      next => nbor%next
+      call link%remove_nbor (nbor%task, link%nbor)
+      nbor => next
+    else
+      nbor => nbor%next
+    end if
     call update_count (link%task, old, bits%virtual , self%nb)
     call update_count (link%task, old, bits%boundary, self%nv)
     call update_count (link%task, old, bits%internal, self%na)
-    nbor => nbor%next
   end do
   n = self%na + self%nv
   !$omp atomic write

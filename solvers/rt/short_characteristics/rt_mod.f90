@@ -808,6 +808,12 @@ FUNCTION needs (self, omega)
     needs=.false.
     return
   end if
+  !
+  if (self%i_omega /= omega%i_omega) then
+    needs=.false.
+    return
+  end if
+  !
   call trace%begin ('rt_t%needs')
   !-----------------------------------------------------------------------------
   ! If the task does not have RT it is not needed
@@ -833,7 +839,7 @@ FUNCTION needs (self, omega)
     if (ds1(i)         < -eps) is1(i)=-1
     if (self%rt_hat(i) < -eps) is2(i)=-1
   end do
-  if (all(is1*is1 < 0)) needs = .false.
+  if (all(is1*is2 <= 0)) needs = .false.
   ! ----------------------------------------------------------------------------
   ! If the nbor lies outside the boundaries it is not needed
   ! ----------------------------------------------------------------------------

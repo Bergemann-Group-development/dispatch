@@ -143,6 +143,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call self%newton%init                                                 ! Newton
   call self%gravity%init                                                ! gravity
+  call self%rt%init                                                 ! RT
   !call self%forces%init (self)                                         ! forces
   !call self%pic%init                                                   ! pic
   !if (self%pic%on) self%do_mhd = self%pic%do_mhd                       ! pic

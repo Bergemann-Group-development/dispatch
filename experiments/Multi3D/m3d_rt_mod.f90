@@ -15,7 +15,10 @@ MODULE m3d_rt_mod
   USE bits_mod
   USE gpatch_mod
   USE scs_mod, only: dis_package_t
-  use task_mod
+  USE task_mod
+  USE list_mod
+  USE link_mod
+  USE halo_mod
   implicit none
   private
   type, public, extends(rt_t):: m3d_rt_t
@@ -44,7 +47,17 @@ MODULE m3d_rt_mod
     procedure:: get_nu_regions
     procedure:: reduce_omegaX
     procedure:: link_dispackage
+    procedure:: nbor_relations
+    procedure:: init_level
+    procedure:: task_info
   end type
+
+  type, public, extends(halo_t):: halo_m3d_t
+  contains
+    procedure:: info
+  end type
+
+
   integer, save:: verbose=0                           ! verbosity
   real,    save:: rt_freq=0                           ! how often RT should be updated WRT MHD -- 0=unlimited
   logical,save:: dnload_mhd=.true.
@@ -60,7 +73,7 @@ recursive SUBROUTINE pre_init (self)
   class(m3d_rt_t), pointer:: omega
   character(128), save:: folder='input_multi3d'
   integer:: dir, i_mu, i_phi, i_omega, n_omega, iostat, n, fbin
-  integer, save:: n_mu=3, n_phi=4, n_bin=4, nt=1, n_warmup=3, ng(3)=[2,2,1], loc(1)
+  integer, save:: n_mu=1, n_phi=1, n_bin=2, nt=1, n_warmup=3, ng(3)=[2,2,1], loc(1)
   real, save   :: courant=0.5, cdtd=1.0
   real, dimension(:), allocatable:: mu, w_mu
   real,    save:: rt_grace=0.01
@@ -141,22 +154,6 @@ recursive SUBROUTINE pre_init (self)
   self%cdtd    = cdtd
   self%rt_freq = rt_freq
   self%in_task_list = .false.
-  ! ----------------------------------------------------------------------------
-  ! relevant synchronization items for cartesian setup
-  ! ----------------------------------------------------------------------------
-  self%ipos       = self%patch%ipos
-  self%rank       = self%patch%rank
-  self%box        = self%patch%box
-  self%size       = self%patch%size
-  self%position   = self%patch%position
-  self%ds         = self%patch%ds
-  self%origin     = self%patch%origin
-  self%llc_cart   = self%patch%llc_cart
-  self%centre_nat = self%patch%centre_nat
-  self%llc_nat    = self%patch%llc_nat
-  self%status     = self%patch%status
-  self%periodic   = self%patch%periodic
-  self%on = on
   !-----------------------------------------------------------------------------
   ! Check if this MHD patch needs RT
   !-----------------------------------------------------------------------------
@@ -172,6 +169,17 @@ recursive SUBROUTINE pre_init (self)
       self%kind    = 'm3d_rt_sc'
     end if
     !
+    !======================================================================================
+    ! Omega0: > Collects the transition rates from omegaX tasks
+    !         > Stores population numbers + rates 
+    !
+    ! OmegaX: > Computes radiative transfer
+    !         > Stores chi, snu and inu in its frequency range
+    !
+    ! The storage that needs to be communicated between the tasks is chi,snu and inu !!!
+    ! The angle tasks do not need to know the population numbers in the ghost zones
+    ! if the opacity is passed!
+    !=====================================================================================
     if (self%i_omega==0) then
       self%main => self         ! convenience
       call rt_integral%init
@@ -241,6 +249,11 @@ recursive SUBROUTINE pre_init (self)
       self%dispackage%wm    = dble(self%w)
       self%dispackage%ds    = dble(self%ds)
       call multi3d%init(self%dispackage,skip_ray_in=.true.)
+
+      self%nv      = 2   ! population numbers (+ heating)
+      self%i_n     = 1
+      self%i_n_lte = 2
+      self%nw      = self%dispackage%ref_atom%nlevel
     else
       ! ------------------------------------------------------------------------
       ! Determine closest axis direction for omega/=0
@@ -264,9 +277,16 @@ recursive SUBROUTINE pre_init (self)
       self%dispackage%wm    = dble(self%w)
       self%dispackage%ds    = dble(self%ds)
       call multi3d%init(self%dispackage)
+
+      self%n_nu = self%dispackage%nu_e-self%dispackage%nu_s + 1
+      self%nv = 3
+      self%nw = self%n_nu  ! chi, snu and inu (for every nu in this patch)
+      self%i_chi = 1
+      self%i_snu = 2
+      self%i_inu = 3
     end if
+    self%mv = self%nv
   end if
-  call self%init ()
   call trace%end ()
 END SUBROUTINE pre_init
 
@@ -301,7 +321,9 @@ SUBROUTINE init (self)
   class (m3d_rt_t):: self
   ! ............................................................................
   class (gpatch_t), pointer :: p
-  integer :: idiff
+  class (rt_t), pointer:: omega
+  class(link_t), pointer:: link
+  integer :: i
   ! ----------------------------------------------------------------------------
   if (self%initialized) then
     print *, self%id, self%i_omega
@@ -310,132 +332,102 @@ SUBROUTINE init (self)
   call trace%begin ('rt_t%init')
   self%initialized = .true.
   p => self%patch
-  
-  !======================================================================================
-  ! Omega0: > Collects the transition rates from omegaX tasks
-  !         > Stores population numbers + rates 
-  !
-  ! OmegaX: > Computes radiative transfer
-  !         > Stores chi, snu and inu in its frequency range
-  !
-  ! The storage that needs to be communicated between the tasks is chi,snu and inu !!!
-  ! The angle tasks do not need to know the population numbers in the ghost zones
-  ! if the opacity is passed!
-  !=====================================================================================
-  if (self%i_omega==0) then
-    self%nv      = 2   ! population numbers (+ heating)
-    self%i_n     = 1
-    self%i_n_lte = 2
-    self%nw      = self%dispackage%ref_atom%nlevel
-    !self%itt    = self%i_n(2) + 1
-    !self%i_ne   = self%itt + 1
-    !self%iqr    = self%i_ne + 1
-
-    !self%nv = self%n_bin*2+2 ! nbin*[rk,src]+tt+qr
-    !self%irk(1)  = 1
-    !self%irk(2)  = self%irk(1) +self%n_bin-1
-    !self%isrc(1) = self%irk(2) +1
-    !self%isrc(2) = self%isrc(1)+self%n_bin-1
-    !self%itt     = self%isrc(2)+1
-    !self%iqr     = self%itt+1
-  else
-    idiff = self%dispackage%nu_e-self%dispackage%nu_s + 1
-    self%n_nu = idiff
-    self%nv = 3
-    self%nw = idiff  ! chi, snu and inu (for every nu in this patch)
-    self%i_chi = 1
-    self%i_snu = 2
-    self%i_inu = 3
-
-  end if
-  self%mv = self%nv
-  !
-  write (io_unit%mpi,'(3i4,3f8.3,i4,a)') p%id, self%id,self%i_omega,p%position,p%rank,'pID, sID, omega, pos, rank'
-  !
-  if (verbose == -1) &
-    write (io_unit%log,*) 'rt_t%init: id, mhd%id i_omega =', self%id, p%id, self%i_omega
-  !
-  call self%gpatch_t%init
-  self%mem = 0.0
-  if (self%i_omega==0) then
-    !self%mem(:,:,:,self%irk(1):self%irk(2),:,:)=tiny(1.)
-    !self%mem(:,:,:,self%isrc(1):self%isrc(2),:,:)=tiny(1.)
-    !self%mem(:,:,:,self%itt,:,:)=tiny(1.)
-    
-    ! Initialize the populations to -1 so that their absense can be caught in m3d
-    self%mem(:,:,:,self%i_n,:,:)     = -1   
-    self%mem(:,:,:,self%i_n_lte,:,:) = -1   
-
-  end if
-  write (io_unit%log,*) 'call self%patch_t%setup'
-
-  !print *, 'IOMEGA, FBIN, SHAPE(MEM) ',self%i_omega, self%fbin, shape(self%mem)
-  !-----------------------------------------------------------------------------
-  ! Synchronize with MHD patch
-  ! ----------------------------------------------------------------------------
-  self%level      = p%level
-  self%restart    = p%restart
-  self%warmup_end_time = p%time
-  self%t(self%it) = self%time
-  ! -- add an `eps` to avoid round-off errors
-  self%out_next = (int(self%time/io%out_time+1.0e-4)+1)*io%out_time
-  self%dt_fixed = self%rt_timestep
-  self%dtime    = self%rt_timestep
-  self%dt       = self%rt_timestep
-  self%time     = p%time - (self%n_warmup-self%grace)*self%dtime
-  self%t        = self%time
-  self%qr_time  = self%time - 2.0*self%grace*self%dtime
-  ! ----------------------------------------------------------------------------
-  ! Set omegaX time to be marginally before omega0, so omega0 would be done after
-  ! omegaX
-  ! ----------------------------------------------------------------------------
-  if (self%i_omega==0) then
-    self%time     = self%time + 2.0*self%grace*self%dtime
-  end if
-  self%iout     = self%restart+1
-  self%verbose  = verbose
-  ! ----------------------------------------------------------------------------
-  ! Do not check density or validate with it. This is rather important to be set
-  ! ----------------------------------------------------------------------------
-  call self%set (bits%no_density)
-  ! ----------------------------------------------------------------------------
-  ! Allocate and set unsigned and pervolume. qr, src and tt are definite
-  ! positive, whereas Qr can be positive or negative. omegaX stores just Qr.
-  ! Although quantities are generally per volume, but density is not stored
-  ! locally, thus this flag must not be set.
-  ! ----------------------------------------------------------------------------
-  allocate (self%unsigned(self%nv), self%pervolume(self%nv))
-  self%pervolume = .false.
-  if (self%i_omega==0) then
-    self%unsigned  = .false.
-    self%unsigned(self%nv) = .false.
-    !self%pervolume(self%irk(1):self%irk(2))   = .true.
-    !self%pervolume(self%isrc(1):self%isrc(2)) = .true.
-    self%pervolume(self%itt)   = .true.
-  else
-    self%unsigned  = .false.
-  end if
-  ! ----------------------------------------------------------------------------
-  ! Init boundary conditions
-  ! ----------------------------------------------------------------------------  
-  call self%init_bdries
-  !
   if (self%on) then
-    !---------------------------------------------------------------------------
-    ! Integration weights (w_bin is baked into the source function in this case)
-    !---------------------------------------------------------------------------
-    !allocate (self%w_bin (self%n_bin))
-    !self%w_bin = 1.0
-  else
-    !---------------------------------------------------------------------------
-    ! Deallocate the self%mem for this task, but keep the task, for simplicity
-    !---------------------------------------------------------------------------
-    call self%dealloc()
-    self%n_omega = 0
+    do i=0, self%n_omega
+      if (i==0) omega => self%main
+      if (i==1) omega => self%omeg
+      if (i>=2) omega => omega%next
+      ! ----------------------------------------------------------------------------
+      ! relevant synchronization items for cartesian setup
+      ! ----------------------------------------------------------------------------
+      omega%ipos       = p%ipos
+      omega%rank       = p%rank
+      omega%box        = p%box
+      omega%size       = p%size
+      omega%position   = p%position
+      omega%ds         = p%ds
+      omega%origin     = p%origin
+      omega%llc_cart   = p%llc_cart
+      omega%centre_nat = p%centre_nat
+      omega%llc_nat    = p%llc_nat
+      omega%status     = p%status
+      omega%periodic   = p%periodic
+
+      if (verbose > 0) &
+        write (io_unit%mpi,'(3i4,3f8.3,i4,a)') p%id, self%id, self%i_omega, p%position, p%rank,'pID, sID, omega, pos, rank'
+
+      if (verbose == -1) &
+        write (io_unit%log,*) 'rt_t%init: id, mhd%id i_omega =', self%id, p%id, self%i_omega
+
+      call omega%gpatch_t%init
+      omega%mem = tiny(1.)
+
+      if (verbose > 0) write (io_unit%log,*) 'call self%patch_t%setup'
+
+      !-----------------------------------------------------------------------------
+      ! Synchronize with MHD patch
+      ! ----------------------------------------------------------------------------
+      omega%level      = 1 ! p%level
+      omega%restart    = p%restart
+      omega%warmup_end_time = p%time
+      omega%t(omega%it) = omega%time
+      ! -- add an `eps` to avoid round-off errors
+      omega%out_next = (int(omega%time/io%out_time+1.0e-4)+1)*io%out_time
+      omega%dt_fixed = omega%rt_timestep
+      omega%dtime    = omega%rt_timestep
+      omega%dt       = omega%rt_timestep
+      omega%time     = p%time - (omega%n_warmup-omega%grace)*omega%dtime
+      omega%t        = omega%time
+      omega%qr_time  = omega%time - 2.0*omega%grace*omega%dtime
+
+      ! ----------------------------------------------------------------------------
+      ! Set omega0 time to be marginally after omegaX, so radiative rates are
+      ! computed first and populations are updated after
+      ! ----------------------------------------------------------------------------
+      if (i == 0) then
+        omega%time  = omega%time + 2.0*omega%grace*omega%dtime
+      end if
+      omega%iout    = omega%restart+1
+      omega%verbose = verbose
+
+      ! ----------------------------------------------------------------------------
+      ! Do not check density or validate with it. This is rather important to be set
+      ! ----------------------------------------------------------------------------
+      call self%set (bits%no_density)
+      
+      ! ----------------------------------------------------------------------------
+      ! Allocate and set unsigned and pervolume. Opacity, source function,
+      ! intensity and populations are all positive definite
+      ! Although quantities are generally per volume, but density is not stored
+      ! locally, thus this flag must not be set.
+      ! ----------------------------------------------------------------------------
+      allocate (omega%unsigned(self%nv), omega%pervolume(self%nv))
+      omega%pervolume = .false.
+      omega%unsigned  = .true.
+
+      ! ----------------------------------------------------------------------------
+      ! Init boundary conditions
+      ! ----------------------------------------------------------------------------  
+      call omega%init_bdries
+
+      if (.not. omega%on) then
+        !---------------------------------------------------------------------------
+        ! Deallocate the self%mem for this task, but keep the task, for simplicity
+        !---------------------------------------------------------------------------
+        call omega%dealloc()
+        omega%n_omega = 0
+      end if
+
+      !---------------------------------------------------------------------------
+      ! Add the patch to the task list -- this creates the patch%link
+      !---------------------------------------------------------------------------
+      allocate (halo_m3d_t:: link)
+      link%task => omega
+      omega%link => link
+      call omega%patch%task_list%prepend_link (link)
+      call trace%end ()
+    end do
   end if
-
-  if (self%i_omega .eq. 0) call self%rt_t%init_task_list (self%patch%task_list)
-
   call trace%end()
 END SUBROUTINE init
 
@@ -585,7 +577,6 @@ END SUBROUTINE init_bdries
 ! The omega0 task has a different role than in the default setup!
 ! It will be called AFTER the omegaX tasks have solved the radiative transfer,
 ! because it will collect the rates and sets + solves the stat. eq. equations.
-!
 !===============================================================================
 subroutine nbor_relations(self, another, needed, needs_me, download)
   class(m3d_rt_t)       :: self            ! current M3d rt task
@@ -638,8 +629,8 @@ subroutine nbor_relations(self, another, needed, needs_me, download)
       return
     else if ((rt_another%i_omega == 0).and.self%i_omega/=0) then                ! Self: X, other: 0
       if (self%main%id == rt_another%id) then
-        ! non-omega0 doesnt need the master omega0
-        needed   = .false.
+        ! non-omega0 needs the master omega0 for its level populations
+        needed   = .true.
         needs_me = .true.
         download = .false. 
       else 
@@ -650,20 +641,18 @@ subroutine nbor_relations(self, another, needed, needs_me, download)
       if (self%id==rt_another%main%id) then
         ! omega0 needs other omegax tasks
         needed   = .true.
-        needs_me = .false.
+        needs_me = .true.
         download = .false. 
       else 
         ! non-omega0 doesn't need to know about non-overlapping nbor omega0 
         needed = .false.; needs_me = .false.; download = .false.
       end if
   
-    else if (self%needs(rt_another)) then                                       ! rt_another is upstream
-      
+    else if (self%needs(rt_another)) then              
       ! The omega task needs the upstream task,
       ! but the upstream task does not need the downstream omega task.
       if ((self%rank==mpi%rank).and.(rt_another%rank/=mpi%rank)) needed=.true.
       needs_me=.false.
-    
     else if (rt_another%needs(self)) then
       ! Downstream RT task will need me, but it is not needed and I should not
       ! download data from it.
@@ -672,12 +661,6 @@ subroutine nbor_relations(self, another, needed, needs_me, download)
       download = .false.
     else
       needed = .false.; needs_me = .false.; download = .false.
-    end if
-    
-    if ((self%i_omega >0).and.(rt_another%i_omega>0)) then
-      if (self%i_omega /= rt_another%i_omega) then
-      download = .false.; needed = .false.; needs_me=.false.
-      end if
     end if
     
   class is (gpatch_t)
@@ -700,6 +683,71 @@ subroutine nbor_relations(self, another, needed, needs_me, download)
 
   call trace%end()
 end subroutine nbor_relations
+
+
+!===============================================================================
+SUBROUTINE init_level (self)
+  class(m3d_rt_t):: self
+  !-----------------------------------------------------------------------------
+  if (any(self%n > 1)) then
+    ! The level does not depend on the patch size in non-regular grids
+    self%level = 1
+  end if
+END SUBROUTINE init_level
+
+
+!===============================================================================
+!> For diagnostic output of tasks and nbor lists to data/run/rank_RRRRR.log
+!===============================================================================
+SUBROUTINE task_info (self)
+  class(m3d_rt_t):: self
+  !-----------------------------------------------------------------------------
+  write(io_unit%mpi,'(1x,a,12x,i6,2i4,7x,2l1,2x,3f9.3,i4,2f7.3,i4)') &
+    'rt_t%task_info: id, rank, level, BV, pos, i_omega, mu, phi, i_omega =', &
+    self%id, self%rank, self%level, &
+    self%is_set(bits%boundary), self%is_set(bits%virtual), self%position, &
+    self%i_omega, self%mu, self%rt_phi, self%i_omega
+END SUBROUTINE task_info
+
+
+!===============================================================================
+!> Initialize the link, and possibly the nbor nodes
+!===============================================================================
+SUBROUTINE info (self, label)
+  class(halo_m3d_t):: self
+  character(*), optional:: label
+  class(nbor_t), pointer:: nbor
+  real(8):: distance(3)
+  !-----------------------------------------------------------------------------
+  call trace%begin ('halo_t%info')
+  if (verbose < 2) then
+    call self%task%task_info()
+    nbor => self%nbor
+    do while (associated(nbor))
+      distance = nbor%task%distance(self%task)
+      select type(nt => nbor%task)
+      class is(m3d_rt_t)        
+        write(io_unit%mpi,'(3x,a16,a,i6,":",i2.2,i4,2x,3l1,2x,2l1,3x,3f9.3, a10, i4)') &
+          nt%kind, ' nbor_info: id, rank, level, needed, needs_me, download, BV, pos =', &
+          nt%id, nt%level, nt%rank, nbor%needed, nbor%needs_me, &
+          nbor%download, nt%is_set(bits%boundary), &
+          nt%is_set(bits%virtual), distance/ &
+          (0.5d0*(self%task%size+nt%size)), ' i_omega: ', nt%i_omega
+      class default
+        write(io_unit%mpi,'(3x,a16,a,i6,":",i2.2,i4,2x,3l1,2x,2l1,3x,3f9.3)') &
+          nt%kind, ' nbor_info: id, rank, level, needed, needs_me, download, BV, pos =', &
+          nt%id, nt%level, nt%rank, nbor%needed, nbor%needs_me, &
+          nbor%download, nt%is_set(bits%boundary), &
+          nt%is_set(bits%virtual), distance/ &
+          (0.5d0*(self%task%size+nt%size))
+      end select
+      nbor => nbor%next
+    end do
+  else
+    call self%halo_t%info(label)
+  end if
+  call trace%end ()
+END SUBROUTINE info
 
 
 END MODULE m3d_rt_mod
