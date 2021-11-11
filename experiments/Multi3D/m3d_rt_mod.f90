@@ -47,6 +47,7 @@ MODULE m3d_rt_mod
     procedure:: get_nu_regions
     procedure:: reduce_omegaX
     procedure:: link_dispackage
+    procedure:: initialize_omegaX
     procedure:: nbor_relations
     procedure:: init_level
     procedure:: task_info
@@ -455,7 +456,12 @@ SUBROUTINE update (self)
 
   if (self%i_omega .gt. 0) then
     call self%link_dispackage(i_omega = self%i_omega, it = it)                                    ! Establish links to the dispackage
+    
     call multi3d%pre_update (self%dispackage, temp, rho, pe, vx, vy, vz, skip_ray_in = .false.)
+
+    call self%initialize_omegaX ()
+    call self%dnload ()
+
     call multi3d%update (self%dispackage, solver = 'rad')                                         ! call rad. transfer solver
                                                                                                   ! The solver will compute the radiative transfer for one angle.
                                                                                                   ! it will assume that the upwind tasks are already done and 
@@ -524,6 +530,36 @@ subroutine link_dispackage(self,i_omega,it)
   endif
 
 end subroutine link_dispackage
+
+subroutine initialize_omegaX (self)
+  class(m3d_rt_t),intent(inout) :: self
+  integer :: i
+
+  ! The omegaX patch gets filled with source function and opacity for the first time
+  call self%dispackage%update_source_function () ! Compute the source function for every height coordinate
+  
+  ! For testing: assume thermal intensity
+  self%dispackage%inu_disp = self%dispackage%snu_disp
+
+  ! Now the boundary zones have to be filled (TO BE UPDATED)
+  if (self%patch%mesh(3)%lower_boundary) then
+    do i = 1, self%patch%li(3)-1
+      self%dispackage%chi_disp(:,:,i,:) = self%dispackage%chi_disp(:,:,self%patch%li(3),:)
+      self%dispackage%snu_disp(:,:,i,:) = self%dispackage%snu_disp(:,:,self%patch%li(3),:)
+      self%dispackage%inu_disp(:,:,i,:) = self%dispackage%inu_disp(:,:,self%patch%li(3),:)
+    enddo
+  endif
+
+  if (self%patch%mesh(3)%upper_boundary) then
+    do i = self%patch%ui(3)+1, self%patch%ui(3) + self%ng(3)
+      self%dispackage%chi_disp(:,:,i,:) = self%dispackage%chi_disp(:,:,self%patch%ui(3),:)
+      self%dispackage%snu_disp(:,:,i,:) = self%dispackage%snu_disp(:,:,self%patch%ui(3),:)
+      self%dispackage%inu_disp(:,:,i,:) = self%dispackage%inu_disp(:,:,self%patch%ui(3),:)
+    enddo
+  endif
+
+
+end subroutine initialize_omegaX
 
 !===============================================================================
 !> Do Multi3D specific output
