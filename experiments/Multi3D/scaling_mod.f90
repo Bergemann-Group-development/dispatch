@@ -17,7 +17,7 @@ MODULE scaling_mod
       procedure:: init
       procedure:: output
     end type
-    type(scaling_t), public :: scaling
+    type(scaling_t), public, target :: scaling
   CONTAINS
   
   !===============================================================================

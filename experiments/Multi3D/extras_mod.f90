@@ -118,7 +118,9 @@ SUBROUTINE pre_init (self)
   class(extras_t), target:: self
   !.............................................................................
   self%gpatch => self                                                   ! keep
-  call self%gpatch_t%pre_init                                           ! keep
+  
+  !call self%gpatch_t%pre_init                                           ! keep
+
   allocate(self%rt)                                                     ! RT
   self%rt%patch => self
   call self%rt%pre_init                                                 ! RT

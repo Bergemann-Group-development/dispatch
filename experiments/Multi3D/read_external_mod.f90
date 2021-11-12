@@ -147,7 +147,6 @@ SUBROUTINE create_patch (self, i, patch)
   !.............................................................................
   integer :: i
   class (task_t), pointer:: task
-  class(*), pointer:: ptr
   !-----------------------------------------------------------------------------
   call trace%begin ('read_external_t%create_patch')
   allocate (patch)
@@ -158,14 +157,13 @@ SUBROUTINE create_patch (self, i, patch)
 
   patch%mhd = .false.
   patch%kind = 'hlld_mhd_patch'
-  call patch%idx%init (energy=5, mhd=patch%mhd)
-  call patch%extras_t%pre_init
-  patch%pre_initialized = .true.
+
+  call patch%gpatch_t%pre_init ()
 
   patch%n = self%n / self%npatches
   patch%ng = self%ng
   patch%nv = 6
-  patch%nt = 1
+  patch%nt = 2
   patch%nw = 1
 
   patch%box(1) = self%ds * 1
@@ -180,6 +178,10 @@ SUBROUTINE create_patch (self, i, patch)
   patch%position(1) = 0.5d0*patch%size(1)
   patch%position(2) = 0.5d0*patch%size(2)
   patch%position(3) = (i-0.5d0)*patch%size(3)
+
+  call patch%idx%init (energy=5, mhd=patch%mhd)
+  call patch%extras_t%pre_init ()
+  patch%pre_initialized = .true.
 
   call patch%init
 
@@ -291,6 +293,8 @@ SUBROUTINE load_authority(self, patch, ii)
     patch%boundaries%ee_top = self%temp(lbound(self%zi,1))
     patch%boundaries%p_top = self%pe(lbound(self%zi,1))
   endif
+
+  call patch%rt%load_initial_conditions ()
 END SUBROUTINE
 
 !===============================================================================
@@ -306,6 +310,7 @@ SUBROUTINE fill_guard_zones (self)
   call timer%tic ()
   link => self%task_list%head
   do while (associated(link))
+    print *, 'task id: ' , link%task%id
     call link%task%dnload
     call link%task%bndries
     !ptch => download%cast2patch (link%task)

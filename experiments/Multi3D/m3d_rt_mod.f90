@@ -12,9 +12,11 @@ MODULE m3d_rt_mod
   use mpi_mod
   USE boundaries_mod
   USE math_mod
+  USE units_mod, only: cgs
   USE bits_mod
   USE gpatch_mod
   USE scs_mod, only: dis_package_t
+  use scaling_mod, only: scaling
   USE task_mod
   USE list_mod
   USE link_mod
@@ -38,6 +40,13 @@ MODULE m3d_rt_mod
     type(dis_package_t)  :: dispackage    ! Dispatch <-> Multi communicator
     integer :: i_n,i_n_lte,i_ne           ! Index range of pops and ne in mem arr
     integer :: i_chi,i_snu,i_inu,n_nu     ! Index range of chi, snu and inu 
+    real(8),dimension(:,:,:),pointer :: temp8 => null()  ! Input atmosphere (double prec.cast)
+    real(8),dimension(:,:,:),pointer :: rho8  => null()
+    real(8),dimension(:,:,:),pointer :: ne8   => null()
+    real(8),dimension(:,:,:),pointer :: vx8   => null()
+    real(8),dimension(:,:,:),pointer :: vy8   => null()
+    real(8),dimension(:,:,:),pointer :: vz8   => null()
+    logical :: is_linked = .false.
   contains
     procedure:: pre_init
     procedure:: init
@@ -51,6 +60,7 @@ MODULE m3d_rt_mod
     procedure:: nbor_relations
     procedure:: init_level
     procedure:: task_info
+    procedure:: load_initial_conditions
   end type
 
   type, public, extends(halo_t):: halo_m3d_t
@@ -74,7 +84,7 @@ recursive SUBROUTINE pre_init (self)
   class(m3d_rt_t), pointer:: omega
   character(128), save:: folder='input_multi3d'
   integer:: dir, i_mu, i_phi, i_omega, n_omega, iostat, n, fbin
-  integer, save:: n_mu=1, n_phi=1, n_bin=2, nt=1, n_warmup=3, ng(3)=[2,2,1], loc(1)
+  integer, save:: n_mu=1, n_phi=1, n_bin=2, nt=2, n_warmup=3, ng(3)=[4,4,1], loc(1)
   real, save   :: courant=0.5, cdtd=1.0
   real, dimension(:), allocatable:: mu, w_mu
   real,    save:: rt_grace=0.01
@@ -93,6 +103,7 @@ recursive SUBROUTINE pre_init (self)
   call trace%begin ('m3d_rt_t%pre_init')
 
   if (first_time) then
+    first_time = .false.
     call io%lock%set ('multi3d_t')
     rewind (io%input)
     read (io%input, multi3d_params, iostat=iostat)
@@ -101,14 +112,10 @@ recursive SUBROUTINE pre_init (self)
       read (io%input, multi3d_params)
     end if
     call io%namelist_warning ('multi3d_params', iostat)
-    
-    ! ----------------------------------------------------------------------------
-    ! Starting up the Multi3D Module
-    ! ----------------------------------------------------------------------------
+ 
     multi3d%dir = folder
     call multi3d%pre_init()
-
-    first_time = .false.
+      
     call io%lock%unset ('multi3d_t')
   end if
 
@@ -118,6 +125,15 @@ recursive SUBROUTINE pre_init (self)
   self%dispackage%ggpgh         = multi3d%ggpgh
   self%dispackage%ref_atom     => multi3d%ref_atom
   self%dispackage%ref_spectrum => multi3d%ref_spectrum
+  ! Set the scaling pointer in the dispackage
+  self%dispackage%rho_scale => scaling%d
+  self%dispackage%p_scale   => scaling%p
+  self%dispackage%vel_scale => scaling%u
+
+  self%dispackage%ng           = self%patch%ng
+  self%dispackage%geometry%nx  = self%patch%n(1)
+  self%dispackage%geometry%ny  = self%patch%n(2)
+  self%dispackage%geometry%nz  = self%patch%n(3)
 
   if (self%pre_initialized_rt) call io%abort ('double rt pre_init')
   self%pre_initialized_rt = .true.
@@ -140,8 +156,9 @@ recursive SUBROUTINE pre_init (self)
   ! ----------------------------------------------------------------------------
   self%on = on
   self%nt = nt
-  self%ng = ng
-  self%nw = 1                                                                   ! no time derivatives
+  self%ng = self%patch%ng
+  self%nw = 1                                                                  ! no time derivatives
+  self%n  = self%patch%n
   self%n_warmup = n_warmup
   self%n_bin = n_bin
   self%grace = rt_grace
@@ -240,16 +257,11 @@ recursive SUBROUTINE pre_init (self)
           end do
         end do
       end if
-      self%dispackage%geometry%nx = self%n(1)
-      self%dispackage%geometry%ny = self%n(2)
-      self%dispackage%geometry%nz = self%n(3)
+      
       self%dispackage%fbin  = self%fbin
       self%dispackage%nu_s  = 1
       self%dispackage%nu_e  = self%dispackage%ref_spectrum%nnu
       self%dispackage%nfint = 0
-      self%dispackage%wm    = dble(self%w)
-      self%dispackage%ds    = dble(self%ds)
-      call multi3d%init(self%dispackage,skip_ray_in=.true.)
 
       self%nv      = 2   ! population numbers (+ heating)
       self%i_n     = 1
@@ -265,9 +277,6 @@ recursive SUBROUTINE pre_init (self)
       loc = maxloc(abs(self%rt_hat))
       self%axis = loc(1)                                          ! direction of max propagation
 
-      self%dispackage%geometry%nx = self%n(1)
-      self%dispackage%geometry%ny = self%n(2)
-      self%dispackage%geometry%nz = self%n(3)
       self%dispackage%mux   = dble(self%rt_hat(1))
       self%dispackage%muy   = dble(self%rt_hat(2))
       self%dispackage%muz   = dble(self%rt_hat(3))
@@ -275,9 +284,6 @@ recursive SUBROUTINE pre_init (self)
       self%dispackage%nu_s  = self%nu_s
       self%dispackage%nu_e  = self%nu_e
       self%dispackage%nfint = self%n_bin
-      self%dispackage%wm    = dble(self%w)
-      self%dispackage%ds    = dble(self%ds)
-      call multi3d%init(self%dispackage)
 
       self%n_nu = self%dispackage%nu_e-self%dispackage%nu_s + 1
       self%nv = 3
@@ -324,7 +330,8 @@ SUBROUTINE init (self)
   class (gpatch_t), pointer :: p
   class (rt_t), pointer:: omega
   class(link_t), pointer:: link
-  integer :: i
+  integer :: i, shape_patch(6)
+  logical, save :: first_time = .true.
   ! ----------------------------------------------------------------------------
   if (self%initialized) then
     print *, self%id, self%i_omega
@@ -353,6 +360,8 @@ SUBROUTINE init (self)
       omega%llc_nat    = p%llc_nat
       omega%status     = p%status
       omega%periodic   = p%periodic
+      omega%ng         = p%ng
+      omega%n          = p%n
 
       if (verbose > 0) &
         write (io_unit%mpi,'(3i4,3f8.3,i4,a)') p%id, self%id, self%i_omega, p%position, p%rank,'pID, sID, omega, pos, rank'
@@ -360,6 +369,7 @@ SUBROUTINE init (self)
       if (verbose == -1) &
         write (io_unit%log,*) 'rt_t%init: id, mhd%id i_omega =', self%id, p%id, self%i_omega
 
+      
       call omega%gpatch_t%init
       omega%mem = tiny(1.)
 
@@ -409,7 +419,51 @@ SUBROUTINE init (self)
       ! ----------------------------------------------------------------------------
       ! Init boundary conditions
       ! ----------------------------------------------------------------------------  
-      call omega%init_bdries
+      !call omega%init_bdries
+
+      select type (o=>omega)
+      class is (m3d_rt_t)
+        ! Init the real8 cast for atmos
+        if (o%i_omega.eq.0) then
+          shape_patch = shape(o%patch%mem)
+          ! Allocate the arrays
+          if (.not.associated(o%temp8)) allocate(o%temp8(shape_patch(1),shape_patch(2),shape_patch(3)))
+          if (.not.associated(o%rho8))  allocate(o%rho8(shape_patch(1),shape_patch(2),shape_patch(3)))
+          if (.not.associated(o%ne8))   allocate(o%ne8(shape_patch(1),shape_patch(2),shape_patch(3)))
+          if (.not.associated(o%vx8))   allocate(o%vx8(shape_patch(1),shape_patch(2),shape_patch(3)))
+          if (.not.associated(o%vy8))   allocate(o%vy8(shape_patch(1),shape_patch(2),shape_patch(3)))
+          if (.not.associated(o%vz8))   allocate(o%vz8(shape_patch(1),shape_patch(2),shape_patch(3)))
+        else
+          select type (om=>o%main)
+          class is (m3d_rt_t)
+            o%temp8 => om%temp8
+            o%rho8  => om%rho8
+            o%ne8   => om%ne8
+            o%vx8   => om%vx8
+            o%vy8   => om%vy8
+            o%vz8   => om%vz8
+
+            o%dispackage%n     => om%dispackage%n
+            o%dispackage%nstar => om%dispackage%nstar
+          end select
+        endif
+        o%dispackage%temp => o%temp8
+        o%dispackage%rho  => o%rho8
+        o%dispackage%ne   => o%ne8
+        o%dispackage%vx   => o%vx8
+        o%dispackage%vy   => o%vy8
+        o%dispackage%vz   => o%vz8
+        
+        o%dispackage%geometry%nx = o%n(1)
+        o%dispackage%geometry%ny = o%n(2)
+        o%dispackage%geometry%nz = o%n(3)
+        o%dispackage%ng          = o%ng
+
+        o%dispackage%wm    = dble(o%w)
+        o%dispackage%ds    = dble(o%ds)
+
+        call multi3d%init(o%dispackage,skip_ray_in=.true.)
+      end select
 
       if (.not. omega%on) then
         !---------------------------------------------------------------------------
@@ -433,50 +487,54 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !===============================================================================
+SUBROUTINE load_initial_conditions(self)
+  class(m3d_rt_t):: self
+
+  self%temp8 = dble(self%patch%mem(:,:,:,self%patch%idx%e,  1, 1))
+  self%rho8  = dble(self%patch%mem(:,:,:,self%patch%idx%d,  1, 1)) * scaling%d
+  self%ne8   = dble(self%patch%mem(:,:,:,6                , 1, 1)) * scaling%p / (cgs%k_b * self%temp8)
+  self%vx8   = dble(self%patch%mem(:,:,:,self%patch%idx%px, 1, 1)) / self%rho8 *scaling%d*scaling%u
+  self%vy8   = dble(self%patch%mem(:,:,:,self%patch%idx%py, 1, 1)) / self%rho8 *scaling%d*scaling%u
+  self%vz8   = dble(self%patch%mem(:,:,:,self%patch%idx%pz, 1, 1)) / self%rho8 *scaling%d*scaling%u
+
+  call self%link_dispackage ()
+  call multi3d%pre_update (self%dispackage, skip_ray_in = .true.)
+
+  call self%dispackage%update_populations_lte ()  ! compute lte populations
+
+  self%dispackage%n = self%dispackage%nstar
+
+END SUBROUTINE
+
+!===============================================================================
 !> Update the population numbers and other dynamic task data.  Consider spliting
 !> this into three steps; put data to Multi3D in pre_update, update, and get
 !> data back from Mulit3D in post_update.
 !===============================================================================
 SUBROUTINE update (self)
   class(m3d_rt_t) :: self
-  real, dimension(:,:,:),contiguous, pointer :: temp, rho, pe, vx, vy, vz
   integer :: it
+  logical, save :: first_time = .true.
   !-----------------------------------------------------------------------------
   call trace%begin ('m3d_rt_t%update')
 
-  it = 1
-
-  temp => self%patch%mem(:,:,:,self%patch%idx%e, it, 1)
-  rho  => self%patch%mem(:,:,:,self%patch%idx%d, it, 1)
-  pe   => self%patch%mem(:,:,:,6               , it, 1)
-
-  vx   => self%patch%vgas(:,:,:,1,it)
-  vy   => self%patch%vgas(:,:,:,2,it)
-  vz   => self%patch%vgas(:,:,:,3,it)
+  self%it = 1
 
   if (self%i_omega .gt. 0) then
-    call self%link_dispackage(i_omega = self%i_omega, it = it)                                    ! Establish links to the dispackage
-    
-    call multi3d%pre_update (self%dispackage, temp, rho, pe, vx, vy, vz, skip_ray_in = .false.)
-
-    call self%initialize_omegaX ()
-    call self%dnload ()
-
-    call multi3d%update (self%dispackage, solver = 'rad')                                         ! call rad. transfer solver
-                                                                                                  ! The solver will compute the radiative transfer for one angle.
-                                                                                                  ! it will assume that the upwind tasks are already done and 
-                                                                                                  ! that the mem object is downloaded! (So Chi,Inu and Snu are available in the ghost zones)
-                                                                                                  ! The boundary contidion needs to be filled in the bottom ghost zone (chi, snu and inu need to be present!)
+    call self%link_dispackage()  ! Link the dispackage
+    call multi3d%pre_update (self%dispackage, skip_ray_in = .false.)   ! call rad. transfer solver
+    call self%initialize_omegaX ()                                                                ! The solver will compute the radiative transfer for one angle.
+    call self%dnload ()                                                                           ! it will assume that the upwind tasks are already done and 
+    call multi3d%update (self%dispackage, solver = 'rad')                                         ! that the mem object is downloaded! (So Chi,Inu and Snu are available in the ghost zones)
+                                                                                            
   else
-    call self%link_dispackage(i_omega = self%i_omega, it = it)                                    ! Establish links to the dispackage
-    call multi3d%pre_update (self%dispackage, temp, rho, pe, vx, vy, vz, skip_ray_in = .true.)
+    call multi3d%pre_update (self%dispackage, skip_ray_in = .true.)
+    call self%dispackage%update_populations_lte ()                                                ! Compute new LTE populations
     call self%reduce_omegaX ()                                                                    ! Reduce the rates etc. obtained from angle tasks
     call multi3d%update (self%dispackage, solver = 'pop')                                         ! call stat. eq. solver
   endif
 
   !call multi3d%post_update ! (... argument list ...)
-
-
   call trace%end ()
 END SUBROUTINE update
 
@@ -508,26 +566,12 @@ subroutine reduce_omegaX(self)
 
 end subroutine reduce_omegaX
 
-subroutine link_dispackage(self,i_omega,it)
+subroutine link_dispackage(self)
   class(m3d_rt_t),intent(inout) :: self
-  integer, optional :: i_omega,it
-  integer :: i_omega_l,it_l
 
-  ! Defaults
-  i_omega_l = 0
-  it_l      = 1
-  if (present(i_omega)) i_omega_l = i_omega
-  if (present(it)) it_l = it
-
-  ! Link
-  if (i_omega_l.eq.0) then  
-    self%dispackage%n     => self%mem(:,:,:,self%i_n,it_l,:)
-    self%dispackage%nstar => self%mem(:,:,:,self%i_n_lte,it_l,:)
-  else
-    self%dispackage%chi_disp => self%mem(:,:,:,self%i_chi,it_l,:)
-    self%dispackage%snu_disp => self%mem(:,:,:,self%i_snu,it_l,:)
-    self%dispackage%inu_disp => self%mem(:,:,:,self%i_inu,it_l,:)
-  endif
+  self%dispackage%chi_disp => self%mem(:,:,:,self%i_chi,self%it,:)
+  self%dispackage%snu_disp => self%mem(:,:,:,self%i_snu,self%it,:)
+  self%dispackage%inu_disp => self%mem(:,:,:,self%i_inu,self%it,:)
 
 end subroutine link_dispackage
 
