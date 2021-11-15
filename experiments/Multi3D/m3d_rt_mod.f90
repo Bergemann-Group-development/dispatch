@@ -433,6 +433,8 @@ SUBROUTINE init (self)
           if (.not.associated(o%vx8))   allocate(o%vx8(shape_patch(1),shape_patch(2),shape_patch(3)))
           if (.not.associated(o%vy8))   allocate(o%vy8(shape_patch(1),shape_patch(2),shape_patch(3)))
           if (.not.associated(o%vz8))   allocate(o%vz8(shape_patch(1),shape_patch(2),shape_patch(3)))
+          o%dispackage%nstar => o%mem(:,:,:,o%i_n_lte,o%it,:)
+          o%dispackage%n     => o%mem(:,:,:,o%i_n    ,o%it,:)
         else
           select type (om=>o%main)
           class is (m3d_rt_t)
@@ -513,7 +515,6 @@ END SUBROUTINE
 !===============================================================================
 SUBROUTINE update (self)
   class(m3d_rt_t) :: self
-  integer :: it
   logical, save :: first_time = .true.
   !-----------------------------------------------------------------------------
   call trace%begin ('m3d_rt_t%update')
