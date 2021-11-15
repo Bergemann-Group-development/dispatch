@@ -499,12 +499,10 @@ SUBROUTINE load_initial_conditions(self)
   self%vy8   = dble(self%patch%mem(:,:,:,self%patch%idx%py, 1, 1)) / self%rho8 *scaling%d*scaling%u
   self%vz8   = dble(self%patch%mem(:,:,:,self%patch%idx%pz, 1, 1)) / self%rho8 *scaling%d*scaling%u
 
-  call self%link_dispackage ()
   call multi3d%pre_update (self%dispackage, skip_ray_in = .true.)
-
+  
   call self%dispackage%update_populations_lte ()  ! compute lte populations
-
-  self%dispackage%n = self%dispackage%nstar
+  self%dispackage%n = self%dispackage%nstar       ! Set the initial population to LTE
 
 END SUBROUTINE
 
@@ -521,18 +519,18 @@ SUBROUTINE update (self)
 
   self%it = 1
 
-  if (self%i_omega .gt. 0) then
-    call self%link_dispackage()  ! Link the dispackage
-    call multi3d%pre_update (self%dispackage, skip_ray_in = .false.)   ! call rad. transfer solver
-    call self%initialize_omegaX ()                                                                ! The solver will compute the radiative transfer for one angle.
-    call self%dnload ()                                                                           ! it will assume that the upwind tasks are already done and 
-    call multi3d%update (self%dispackage, solver = 'rad')                                         ! that the mem object is downloaded! (So Chi,Inu and Snu are available in the ghost zones)
+  if (self%i_omega .gt. 0) then                                            ! rad. transfer solver
+    call self%link_dispackage()                                            ! Link the dispackage
+    call multi3d%pre_update (self%dispackage, skip_ray_in = .false.)  
+    call self%initialize_omegaX ()                                         ! The solver will compute the radiative transfer for one angle.
+    call self%dnload ()                                                    ! it will assume that the upwind tasks are already done and 
+    call multi3d%update (self%dispackage, solver = 'rad')                  ! that the mem object is downloaded! (So Chi,Inu and Snu are available in the ghost zones)
                                                                                             
   else
     call multi3d%pre_update (self%dispackage, skip_ray_in = .true.)
-    call self%dispackage%update_populations_lte ()                                                ! Compute new LTE populations
-    call self%reduce_omegaX ()                                                                    ! Reduce the rates etc. obtained from angle tasks
-    call multi3d%update (self%dispackage, solver = 'pop')                                         ! call stat. eq. solver
+    call self%dispackage%update_populations_lte ()                         ! Compute new LTE populations
+    call self%reduce_omegaX ()                                             ! Reduce the rates etc. obtained from angle tasks
+    call multi3d%update (self%dispackage, solver = 'pop')                  ! call stat. eq. solver
   endif
 
   !call multi3d%post_update ! (... argument list ...)
@@ -562,6 +560,9 @@ subroutine reduce_omegaX(self)
 
       self%dispackage%atom_rad%qrad    = self%dispackage%atom_rad%qrad   + o%dispackage%atom_rad%qrad
       self%dispackage%atom_rad%qrad_c  = self%dispackage%atom_rad%qrad_c + o%dispackage%atom_rad%qrad_c 
+
+      self%dispackage%j(:,:,:,o%dispackage%nu_s:self%dispackage%nu_e) = &
+                                  self%dispackage%j(:,:,:,o%dispackage%nu_s:o%dispackage%nu_e) + o%dispackage%j
     end select  
   enddo
 
