@@ -52,6 +52,7 @@ MODULE m3d_rt_mod
     procedure:: init
     procedure:: init_bdries
     procedure:: update
+    procedure:: after_update
     procedure:: output
     procedure:: get_nu_regions
     procedure:: reduce_omegaX
@@ -146,8 +147,8 @@ recursive SUBROUTINE pre_init (self)
   ! nv - in the init procedure, where we will know, how many RT directions there
   ! will be. 
   ! ----------------------------------------------------------------------------
-  self%nw = self%patch%nw
-  self%nv = self%patch%nv
+  !self%nw = self%patch%nw
+  !self%nv = self%patch%nv
   self%ng = self%patch%ng
   call self%gpatch_t%pre_init()
 
@@ -261,6 +262,7 @@ recursive SUBROUTINE pre_init (self)
       self%dispackage%fbin  = self%fbin
       self%dispackage%nu_s  = 1
       self%dispackage%nu_e  = self%dispackage%ref_spectrum%nnu
+      self%n_nu             = self%dispackage%nu_e-self%dispackage%nu_s + 1
       self%dispackage%nfint = 0
 
       self%nv      = 2   ! population numbers (+ heating)
@@ -288,11 +290,15 @@ recursive SUBROUTINE pre_init (self)
       self%n_nu = self%dispackage%nu_e-self%dispackage%nu_s + 1
       self%nv = 3
       self%nw = self%n_nu  ! chi, snu and inu (for every nu in this patch)
+      self%mv = self%nv
+      self%nt = 1
+      !self%mw = self%nw
       self%i_chi = 1
       self%i_snu = 2
       self%i_inu = 3
     end if
     self%mv = self%nv
+    self%nt = 1
   end if
   call trace%end ()
 END SUBROUTINE pre_init
@@ -423,18 +429,19 @@ SUBROUTINE init (self)
 
       select type (o=>omega)
       class is (m3d_rt_t)
-        ! Init the real8 cast for atmos
+        shape_patch = shape(o%patch%mem)
         if (o%i_omega.eq.0) then
-          shape_patch = shape(o%patch%mem)
-          ! Allocate the arrays
+          ! Init the real8 cast for atmos
           if (.not.associated(o%temp8)) allocate(o%temp8(shape_patch(1),shape_patch(2),shape_patch(3)))
           if (.not.associated(o%rho8))  allocate(o%rho8(shape_patch(1),shape_patch(2),shape_patch(3)))
           if (.not.associated(o%ne8))   allocate(o%ne8(shape_patch(1),shape_patch(2),shape_patch(3)))
           if (.not.associated(o%vx8))   allocate(o%vx8(shape_patch(1),shape_patch(2),shape_patch(3)))
           if (.not.associated(o%vy8))   allocate(o%vy8(shape_patch(1),shape_patch(2),shape_patch(3)))
           if (.not.associated(o%vz8))   allocate(o%vz8(shape_patch(1),shape_patch(2),shape_patch(3)))
+
           o%dispackage%nstar => o%mem(:,:,:,o%i_n_lte,o%it,:)
           o%dispackage%n     => o%mem(:,:,:,o%i_n    ,o%it,:)
+          o%dispackage%jold  => o%dispackage%j
         else
           select type (om=>o%main)
           class is (m3d_rt_t)
@@ -447,8 +454,13 @@ SUBROUTINE init (self)
 
             o%dispackage%n     => om%dispackage%n
             o%dispackage%nstar => om%dispackage%nstar
+            o%dispackage%jold(1:,1:,1:,o%dispackage%nu_s:) => &
+                          om%dispackage%j(:,:,:,o%dispackage%nu_s:o%dispackage%nu_e)    ! The omegax task refers to its master J as Jold           
           end select
         endif
+
+        if (.not.allocated(o%dispackage%j)) allocate(o%dispackage%j(shape_patch(1),shape_patch(2),shape_patch(3),&
+                                                          o%dispackage%nu_s:o%dispackage%nu_e))
         o%dispackage%temp => o%temp8
         o%dispackage%rho  => o%rho8
         o%dispackage%ne   => o%ne8
@@ -464,7 +476,7 @@ SUBROUTINE init (self)
         o%dispackage%wm    = dble(o%w)
         o%dispackage%ds    = dble(o%ds)
 
-        call multi3d%init(o%dispackage,skip_ray_in=.true.)
+        call multi3d%init(o%dispackage,skip_ray_in=(o%i_omega.eq.0))
       end select
 
       if (.not. omega%on) then
@@ -482,6 +494,7 @@ SUBROUTINE init (self)
       link%task => omega
       omega%link => link
       call omega%patch%task_list%prepend_link (link)
+      omega%in_task_list = .true.
       call trace%end ()
     end do
   end if
@@ -490,20 +503,39 @@ END SUBROUTINE init
 
 !===============================================================================
 SUBROUTINE load_initial_conditions(self)
-  class(m3d_rt_t):: self
+    class(m3d_rt_t):: self
+    class(rt_t),pointer :: omega_ptr
 
-  self%temp8 = dble(self%patch%mem(:,:,:,self%patch%idx%e,  1, 1))
-  self%rho8  = dble(self%patch%mem(:,:,:,self%patch%idx%d,  1, 1)) * scaling%d
-  self%ne8   = dble(self%patch%mem(:,:,:,6                , 1, 1)) * scaling%p / (cgs%k_b * self%temp8)
-  self%vx8   = dble(self%patch%mem(:,:,:,self%patch%idx%px, 1, 1)) / self%rho8 *scaling%d*scaling%u
-  self%vy8   = dble(self%patch%mem(:,:,:,self%patch%idx%py, 1, 1)) / self%rho8 *scaling%d*scaling%u
-  self%vz8   = dble(self%patch%mem(:,:,:,self%patch%idx%pz, 1, 1)) / self%rho8 *scaling%d*scaling%u
+    self%temp8 = dble(self%patch%mem(:,:,:,self%patch%idx%e,  1, 1))
+    self%rho8  = dble(self%patch%mem(:,:,:,self%patch%idx%d,  1, 1)) * scaling%d
+    self%ne8   = dble(self%patch%mem(:,:,:,6                , 1, 1)) * scaling%p / (cgs%k_b * self%temp8)
+    self%vx8   = dble(self%patch%mem(:,:,:,self%patch%idx%px, 1, 1)) / self%rho8 *scaling%d*scaling%u
+    self%vy8   = dble(self%patch%mem(:,:,:,self%patch%idx%py, 1, 1)) / self%rho8 *scaling%d*scaling%u
+    self%vz8   = dble(self%patch%mem(:,:,:,self%patch%idx%pz, 1, 1)) / self%rho8 *scaling%d*scaling%u
 
-  call multi3d%pre_update (self%dispackage, skip_ray_in = .true.)
-  
-  call self%dispackage%update_populations_lte ()  ! compute lte populations
-  self%dispackage%n = self%dispackage%nstar       ! Set the initial population to LTE
+    call multi3d%pre_update (self%dispackage, skip_ray_in = .true.)
+    
+    call self%dispackage%update_populations_lte ()                              ! compute lte populations
+    self%dispackage%n = self%dispackage%nstar                                   ! Set the initial population to LTE
 
+    self%dispackage%j = 0.0d0                                                   ! Set the initial Jnu to 0. This is only relevant for scattering
+                                                                                ! The omega0 task does not need a jold. 
+                                                                                ! Jold from the sub-task point to the right spot in j
+
+    omega_ptr => self%omeg                                                      ! Loop over all sub tasks and initialize the boiundary conditions
+    do while (associated(omega_ptr))
+        if (omega_ptr%i_omega .eq. 0) then
+            omega_ptr => omega_ptr%next
+            cycle
+        endif
+        select type (om=>omega_ptr)
+        class is (m3d_rt_t)                                                     ! If this is a m3d_rt_t omegaX, initialize the source function
+            call om%link_dispackage   ()                                        ! Link the dispackage source function to the current slice
+            call multi3d%pre_update   (om%dispackage, skip_ray_in = .false.)    ! Sync dispackage and set up MULTI arrays 
+            call om%initialize_omegaX ()                                        ! The solver will compute the radiative transfer for one angle.
+        end select
+        omega_ptr => omega_ptr%next
+    enddo
 END SUBROUTINE
 
 !===============================================================================
@@ -519,10 +551,12 @@ SUBROUTINE update (self)
 
   self%it = 1
 
+  print *, '====================================================='
+  print *, 'Start updating task', self%task_t%id
+
   if (self%i_omega .gt. 0) then                                            ! rad. transfer solver
-    call self%link_dispackage()                                            ! Link the dispackage
-    call multi3d%pre_update (self%dispackage, skip_ray_in = .false.)  
-    call self%initialize_omegaX ()                                         ! The solver will compute the radiative transfer for one angle.
+    call self%link_dispackage ()                                           ! Link the dispackage source function to the current slice
+    call multi3d%pre_update (self%dispackage, skip_ray_in = .false.)       ! Sync dispackage and set up MULTI arrays 
     call self%dnload ()                                                    ! it will assume that the upwind tasks are already done and 
     call multi3d%update (self%dispackage, solver = 'rad')                  ! that the mem object is downloaded! (So Chi,Inu and Snu are available in the ghost zones)
                                                                                             
@@ -531,15 +565,40 @@ SUBROUTINE update (self)
     call self%dispackage%update_populations_lte ()                         ! Compute new LTE populations
     call self%reduce_omegaX ()                                             ! Reduce the rates etc. obtained from angle tasks
     call multi3d%update (self%dispackage, solver = 'pop')                  ! call stat. eq. solver
+    !call self%after_update ()                                              ! Shift the populations
   endif
+
+  print *, '                  ...task', self%task_t%id, 'updated.'
+  print *, '====================================================='
 
   !call multi3d%post_update ! (... argument list ...)
   call trace%end ()
 END SUBROUTINE update
 
+subroutine after_update(self) ! Can this safely be called post_update?
+  class(m3d_rt_t),intent(inout) :: self
+  integer :: it_l,in_l,in_lte_l
+
+  if (self%i_omega.eq.0) then
+    ! Shift the arrays one time slice ahead
+    it_l     = self%it
+    in_l     = self%i_n
+    in_lte_l = self%i_n_lte
+  
+    self%mem(:,:,:,in_l,    it_l + 1,:) = self%dispackage%n
+    self%mem(:,:,:,in_lte_l,it_l + 1,:) = self%dispackage%nstar
+    self%dispackage%n     => self%mem(:,:,:,in_l,    it_l + 1,:)
+    self%dispackage%nstar => self%mem(:,:,:,in_lte_l,it_l + 1,:)
+  endif
+
+end subroutine after_update
+
 subroutine reduce_omegaX(self)
   class(m3d_rt_t),target :: self
   class(rt_t),pointer:: omeg
+
+  self%dispackage%j = 0.0d0  ! Zero the old radiation field
+
   ! Loop through all the angle tasks and save the rates etc.
   omeg => self%main%omeg
   do while (associated(omeg))
@@ -571,9 +630,9 @@ end subroutine reduce_omegaX
 subroutine link_dispackage(self)
   class(m3d_rt_t),intent(inout) :: self
 
-  self%dispackage%chi_disp => self%mem(:,:,:,self%i_chi,self%it,:)
-  self%dispackage%snu_disp => self%mem(:,:,:,self%i_snu,self%it,:)
-  self%dispackage%inu_disp => self%mem(:,:,:,self%i_inu,self%it,:)
+  self%dispackage%chi_disp(1:,1:,1:,self%nu_s:) => self%mem(:,:,:,self%i_chi,self%it,1:self%n_nu)
+  self%dispackage%snu_disp(1:,1:,1:,self%nu_s:) => self%mem(:,:,:,self%i_snu,self%it,1:self%n_nu)
+  self%dispackage%inu_disp(1:,1:,1:,self%nu_s:) => self%mem(:,:,:,self%i_inu,self%it,1:self%n_nu)
 
 end subroutine link_dispackage
 
@@ -583,12 +642,13 @@ subroutine initialize_omegaX (self)
 
   ! The omegaX patch gets filled with source function and opacity for the first time
   call self%dispackage%update_source_function () ! Compute the source function for every height coordinate
-  
+
   ! For testing: assume thermal intensity
-  self%dispackage%inu_disp = self%dispackage%snu_disp
+  self%dispackage%inu_disp = self%dispackage%chi_disp
 
   ! Now the boundary zones have to be filled (TO BE UPDATED)
   if (self%patch%mesh(3)%lower_boundary) then
+    print *, 'Setting lower boundary in task ',self%task_t%id
     do i = 1, self%patch%li(3)-1
       self%dispackage%chi_disp(:,:,i,:) = self%dispackage%chi_disp(:,:,self%patch%li(3),:)
       self%dispackage%snu_disp(:,:,i,:) = self%dispackage%snu_disp(:,:,self%patch%li(3),:)
@@ -597,13 +657,13 @@ subroutine initialize_omegaX (self)
   endif
 
   if (self%patch%mesh(3)%upper_boundary) then
+    print *, 'Setting upper boundary in task ',self%task_t%id
     do i = self%patch%ui(3)+1, self%patch%ui(3) + self%ng(3)
       self%dispackage%chi_disp(:,:,i,:) = self%dispackage%chi_disp(:,:,self%patch%ui(3),:)
       self%dispackage%snu_disp(:,:,i,:) = self%dispackage%snu_disp(:,:,self%patch%ui(3),:)
       self%dispackage%inu_disp(:,:,i,:) = self%dispackage%inu_disp(:,:,self%patch%ui(3),:)
     enddo
   endif
-
 
 end subroutine initialize_omegaX
 

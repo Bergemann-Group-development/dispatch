@@ -54,23 +54,14 @@ SUBROUTINE update (self)
   integer :: it_l, in_l, in_lte_l
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
-  call self%solver_t%update
+  !call self%solver_t%update
 
-  it_l     = self%rt%it
-  in_l     = self%rt%i_n
-  in_lte_l = self%rt%i_n_lte
- 
-  self%rt%mem(:,:,:,in_l,    it_l + 1,:) = self%rt%dispackage%n
-  self%rt%mem(:,:,:,in_lte_l,it_l + 1,:) = self%rt%dispackage%nstar
-  self%rt%dispackage%n     => self%rt%mem(:,:,:,in_l,    it_l + 1,:)
-  self%rt%dispackage%nstar => self%rt%mem(:,:,:,in_lte_l,it_l + 1,:)
-
-  self%rt%temp8 = dble(self%mem(:,:,:,self%idx%e, self%it, 1))
-  self%rt%rho8  = dble(self%mem(:,:,:,self%idx%d, self%it, 1)) * scaling%d
-  self%rt%ne8   = dble(self%mem(:,:,:,6         , self%it, 1)) * scaling%p / (cgs%k_b * self%rt%temp8)
-  self%rt%vx8   = dble(self%mem(:,:,:,self%idx%px, self%it, 1)) / self%rt%rho8 *scaling%d*scaling%u
-  self%rt%vy8   = dble(self%mem(:,:,:,self%idx%py, self%it, 1)) / self%rt%rho8 *scaling%d*scaling%u
-  self%rt%vz8   = dble(self%mem(:,:,:,self%idx%pz, self%it, 1)) / self%rt%rho8 *scaling%d*scaling%u
+  !self%rt%temp8 = dble(self%mem(:,:,:,self%idx%e,  self%it, 1))
+  !self%rt%rho8  = dble(self%mem(:,:,:,self%idx%d,  self%it, 1)) * scaling%d
+  !self%rt%ne8   = dble(self%mem(:,:,:,6         ,  self%it, 1)) * scaling%p / (cgs%k_b * self%rt%temp8)
+  !self%rt%vx8   = dble(self%mem(:,:,:,self%idx%px, self%it, 1)) / self%rt%rho8 *scaling%d*scaling%u
+  !self%rt%vy8   = dble(self%mem(:,:,:,self%idx%py, self%it, 1)) / self%rt%rho8 *scaling%d*scaling%u
+  !self%rt%vz8   = dble(self%mem(:,:,:,self%idx%pz, self%it, 1)) / self%rt%rho8 *scaling%d*scaling%u
 
   call trace_end
 END SUBROUTINE update

@@ -49,7 +49,7 @@ SUBROUTINE init(self, task_list, name)
   class(link_t), pointer:: link
   logical, save:: first_time=.true.
   logical :: searching
-  integer :: iostat, npatches, iz, i, ng(3), verbose
+  integer :: iostat, npatches, iz, i, ng(3), verbose, itaskl
   character(len=126) :: atmos_file
   namelist /atmos_params/ atmos_file, npatches, ng, verbose
   !-----------------------------------------------------------------------------
@@ -116,7 +116,17 @@ SUBROUTINE init(self, task_list, name)
   !-----------------------------------------------------------------------------
   ! Add all tasks to the ready queue, preventing a slow default add_by_time
   !-----------------------------------------------------------------------------
+  itaskl = 0
+  link => self%task_list%head
+  do while(associated(link))
+    itaskl = itaskl + 1
+    link => link%next
+  enddo
+  
+  self%task_list%n_tasks = itaskl
+
   call self%task_list%queue_all
+  print *, self%task_list%n_tasks
   !call self%task_list%print_queue
 
   !-----------------------------------------------------------------------------
