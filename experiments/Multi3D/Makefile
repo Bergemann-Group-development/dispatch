@@ -38,6 +38,6 @@ extras_mod.o            : m3d_rt_mod.o newton_mod.o gravity_mod.o
 m3d_rt_mod.o            : trace_mod.o rt_mod.o multi3d_mod.o rt_integral_mod.o radau_mod.o math_mod.o \
 						  bits_mod.o gpatch_mod.o scs_mod.o list_mod.o link_mod.o halo_mod.o kinds_mod.o
 boundaries_mod.o        : standard_boundaries_mod.o io_mod.o trace_mod.o background_mod.o \
-                          mpi_mod.o bits_mod.o mesh_mod.o index_mod.o units_mod.o matom.o \
+                          mpi_mod.o bits_mod.o mesh_mod.o index_mod.o units_mod.o matom.o scs_mod.o \
                           eos_mod.o vector_ops.o units_mod.o scaling_mod.o
 guards_mod.o			: math_mod.o
