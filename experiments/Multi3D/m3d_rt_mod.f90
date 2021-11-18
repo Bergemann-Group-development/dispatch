@@ -21,6 +21,7 @@ MODULE m3d_rt_mod
   USE list_mod
   USE link_mod
   USE halo_mod
+  USE kinds_mod
   implicit none
   private
   type, public, extends(rt_t):: m3d_rt_t
@@ -51,6 +52,7 @@ MODULE m3d_rt_mod
     procedure:: pre_init
     procedure:: init
     procedure:: init_bdries
+    procedure:: bndries
     procedure:: update
     procedure:: output
     procedure:: get_nu_regions
@@ -504,6 +506,16 @@ SUBROUTINE load_initial_conditions(self)
   call self%dispackage%update_populations_lte ()  ! compute lte populations
   self%dispackage%n = self%dispackage%nstar       ! Set the initial population to LTE
 
+  self%mesh%lower_boundary = self%patch%mesh%lower_boundary
+  self%mesh%upper_boundary = self%patch%mesh%upper_boundary
+  self%boundaries%bottop = self%patch%boundaries%bottop
+  self%boundaries%temp = self%patch%boundaries%temp
+  self%boundaries%rho  = self%patch%boundaries%rho
+  self%boundaries%pe   = self%patch%boundaries%pe
+
+
+  !call self%init_bdries
+
 END SUBROUTINE
 
 !===============================================================================
@@ -706,7 +718,7 @@ subroutine nbor_relations(self, another, needed, needs_me, download)
     
     if ((rt_another%i_omega == 0).and.(self%i_omega==0)) then                   ! Both are omega0
       ! omega0 need all the relations with another omega0, thus defaut setting
-      if (dnload_mhd) download = .false.
+      !if (dnload_mhd) download = .false.
       call trace%end()
       return
     else if ((rt_another%i_omega == 0).and.self%i_omega/=0) then                ! Self: X, other: 0
@@ -765,6 +777,19 @@ subroutine nbor_relations(self, another, needed, needs_me, download)
 
   call trace%end()
 end subroutine nbor_relations
+
+!===============================================================================
+!> Setup initial states in the patches
+!===============================================================================
+SUBROUTINE bndries (self)
+  class(m3d_rt_t):: self
+  real(var_k), dimension(:,:,:,:,:), pointer :: mem
+  !----------------------------------------------------------------------------
+  call trace_begin('m3d_rt_t%bndries')
+  mem => self%mem(:,:,:,:,self%it,:)
+  if (any(self%boundaries%bottop)) call self%boundaries%boundary(mem)
+  call trace%end()
+END SUBROUTINE bndries
 
 
 !===============================================================================

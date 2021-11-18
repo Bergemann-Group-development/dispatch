@@ -10,6 +10,7 @@ MODULE experiment_mod
   USE multi3d_mod
   use units_mod, only: cgs
   use scaling_mod, only: scaling
+  USE kinds_mod
   implicit none
   private
   type, public, extends(solver_t):: experiment_t
@@ -38,11 +39,11 @@ END SUBROUTINE init
 !===============================================================================
 SUBROUTINE bndries (self)
   class(experiment_t):: self
-  real(4), dimension(:,:,:,:), pointer, contiguous:: mem
+  real(var_k), dimension(:,:,:,:,:), pointer :: mem
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%bndries')
-  mem => self%mem(:,:,:,:,self%it,1)
-  call self%boundaries%primary (mem)
+  mem => self%mem(:,:,:,:,self%it,:)
+  if (any(self%boundaries%bottop)) call self%boundaries%boundary(mem)
   call trace%end()
 END SUBROUTINE bndries
 

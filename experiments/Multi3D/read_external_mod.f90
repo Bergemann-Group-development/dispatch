@@ -283,18 +283,20 @@ SUBROUTINE load_authority(self, patch, ii)
   end do
 
   if (ii == 1) then
-    patch%mesh%lower_boundary = .true.
-    patch%boundaries%d_bot = self%rho(ubound(self%zi,1))
-    patch%boundaries%e_bot = self%temp(ubound(self%zi,1))
-    patch%boundaries%p_bot = self%pe(ubound(self%zi,1))
+    patch%mesh(3)%lower_boundary = .true.
+    patch%boundaries%bottop(1) = .true.
+    patch%boundaries%rho (1) = self%rho (ubound(self%zi,1))
+    patch%boundaries%temp(1) = self%temp(ubound(self%zi,1))
+    patch%boundaries%pe  (1) = self%pe  (ubound(self%zi,1))
   elseif (ii == self%npatches(3)) then
-    patch%mesh%upper_boundary = .true.
-    patch%boundaries%d_top  = self%rho(lbound(self%zi,1))
-    patch%boundaries%ee_top = self%temp(lbound(self%zi,1))
-    patch%boundaries%p_top = self%pe(lbound(self%zi,1))
+    patch%mesh(3)%upper_boundary = .true.
+    patch%boundaries%bottop(2) = .true.
+    patch%boundaries%rho (2) = self%rho (lbound(self%zi,1))
+    patch%boundaries%temp(2) = self%temp(lbound(self%zi,1))
+    patch%boundaries%pe  (2) = self%pe  (lbound(self%zi,1))
   endif
 
-  call patch%rt%load_initial_conditions ()
+  call patch%rt%load_initial_conditions()
 END SUBROUTINE
 
 !===============================================================================
@@ -303,19 +305,14 @@ END SUBROUTINE
 SUBROUTINE fill_guard_zones (self)
   class(read_external_t):: self
   class(link_t), pointer:: link
-  class(patch_t), pointer:: ptch
   !-----------------------------------------------------------------------------
   call trace%begin('read_external_t%dnload')
   call io%header ('-dnload: begin', left=25)
   call timer%tic ()
   link => self%task_list%head
   do while (associated(link))
-    print *, 'task id: ' , link%task%id
     call link%task%dnload
     call link%task%bndries
-    !ptch => download%cast2patch (link%task)
-    !print *, ptch%id
-    !print *, ptch%mem(2,2,:,5,1,1)
     link => link%next
   end do
   call timer%toc ('time to dnload', 1)
