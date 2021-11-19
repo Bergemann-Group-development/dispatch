@@ -40,7 +40,7 @@ PROGRAM dispatch
   call read_external%init (task_list)           ! Possibly initialize task_list
   !call restart%init (task_list)                 ! Possibly initialize task_list
   !call cartesian%init (task_list)               ! .. or else here ...
-  !call dispatcher%execute (task_list)           ! Run dispatcher on the task_list
+  call dispatcher%execute (task_list)           ! Run dispatcher on the task_list
   call setup%end                                ! End setup
 !===============================================================================
 END PROGRAM dispatch

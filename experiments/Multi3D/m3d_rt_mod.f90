@@ -571,18 +571,22 @@ SUBROUTINE update (self)
   print *, '====================================================='
   print *, 'Start updating task', self%task_t%id
 
-  if (self%i_omega .gt. 0) then                                            ! rad. transfer solver
-    call self%link_dispackage ()                                           ! Link the dispackage source function to the current slice
-    call multi3d%pre_update (self%dispackage, skip_ray_in = .false.)       ! Sync dispackage and set up MULTI arrays 
-    call self%dnload ()                                                    ! it will assume that the upwind tasks are already done and 
-    call multi3d%update (self%dispackage, solver = 'rad')                  ! that the mem object is downloaded! (So Chi,Inu and Snu are available in the ghost zones)
+  if (self%i_omega .gt. 0) then                                                             ! rad. transfer solver
+    call self%link_dispackage ()                                                            ! Link the dispackage source function to the current slice
+    call multi3d%pre_update (self%dispackage, skip_ray_in = .false.)                        ! Sync dispackage and set up MULTI arrays 
+    call self%dnload ()                                                                     ! it will assume that the upwind tasks are already done and 
+    call multi3d%update (self%dispackage, solver = 'rad')                                   ! that the mem object is downloaded! (So Chi,Inu and Snu are available in the ghost zones)
                                                                                             
   else
     call multi3d%pre_update (self%dispackage, skip_ray_in = .true.)
-    call self%dispackage%update_populations_lte ()                         ! Compute new LTE populations
-    call self%reduce_omegaX ()                                             ! Reduce the rates etc. obtained from angle tasks
-    call multi3d%update (self%dispackage, solver = 'pop')                  ! call stat. eq. solver
-    !call self%after_update ()                                              ! Shift the populations
+    call self%dispackage%update_populations_lte ()                                          ! Compute new LTE populations
+    call self%reduce_omegaX ()                                                              ! Reduce the rates etc. obtained from angle tasks
+   
+    print *, 'old population numbers (idx 3): ', self%dispackage%n(5,5,:,3)
+    call multi3d%update (self%dispackage, solver = 'pop')                                   ! call stat. eq. solver
+    !call self%after_update ()                                                              ! Shift the populations
+    print *, 'new population numbers (idx 3): ', self%dispackage%n(5,5,:,3)
+    stop 
   endif
 
   print *, '                  ...task', self%task_t%id, 'updated.'
@@ -614,12 +618,17 @@ subroutine reduce_omegaX(self)
   class(m3d_rt_t),target :: self
   class(rt_t),pointer:: omeg
 
+  print *, 'shape: ',shape(self%dispackage%j)
+
+  print *, 'bounds: ',lbound(self%dispackage%j),ubound(self%dispackage%j)
+
+
   self%dispackage%j = 0.0d0  ! Zero the old radiation field
 
   ! Loop through all the angle tasks and save the rates etc.
   omeg => self%main%omeg
   do while (associated(omeg))
-    if ((omeg%master_id.ne.self%master_id).or.(omeg%i_omega.eq.0)) then
+    if ((omeg%master_id.ne.self%id).or.(omeg%i_omega.eq.0)) then
       omeg => omeg%next
       cycle ! This is not a task for this master
     endif
