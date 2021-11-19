@@ -462,16 +462,12 @@ SUBROUTINE init (self)
             o%dispackage%n     => om%dispackage%n
             o%dispackage%nstar => om%dispackage%nstar
             o%dispackage%jold(1:,1:,1:,o%dispackage%nu_s:) => &
-<<<<<<< HEAD
-                          om%dispackage%j(:,:,:,o%dispackage%nu_s:o%dispackage%nu_e)    ! The omegax task refers to its master J as Jold 
-=======
                           om%dispackage%j(:,:,:,o%dispackage%nu_s:o%dispackage%nu_e)    ! The omegax task refers to its master J as Jold    
                           
             o%boundaries%bottop => om%boundaries%bottop
             o%boundaries%temp   => om%boundaries%temp
             o%boundaries%rho    => om%boundaries%rho
             o%boundaries%pe     => om%boundaries%pe
->>>>>>> d50c44135cffd127224c8969cc4e28044cf5058c
           end select
         endif
 
@@ -531,37 +527,22 @@ SUBROUTINE load_initial_conditions(self)
 
     self%mesh%lower_boundary = self%patch%mesh%lower_boundary
     self%mesh%upper_boundary = self%patch%mesh%upper_boundary
-<<<<<<< HEAD
     self%boundaries%bottop   = self%patch%boundaries%bottop
     self%boundaries%temp     = self%patch%boundaries%temp
     self%boundaries%rho      = self%patch%boundaries%rho
     self%boundaries%pe       = self%patch%boundaries%pe
 
     self%dispackage%atom_rad%wphi => self%dispackage%atom_rad%wphi_contribution          
-=======
->>>>>>> d50c44135cffd127224c8969cc4e28044cf5058c
 
     !call self%init_bdries
 
     call multi3d%pre_update (self%dispackage, skip_ray_in = .true.)
-<<<<<<< HEAD
     call self%dispackage%update_populations_lte ()                                     ! compute lte populations
     self%dispackage%n = self%dispackage%nstar                                          ! Set the initial population to LTE
     self%dispackage%j = 0.0d0                                                          ! Set the initial Jnu to 0. This is only relevant for scattering
                                                                                        ! The omega0 task does not need a jold. 
                                                                                        ! Jold from the sub-task point to the right spot in j
     omega_ptr => self%omeg                                                             ! Loop over all sub tasks and initialize
-=======
-    
-    call self%dispackage%update_populations_lte ()                              ! compute lte populations
-    self%dispackage%n = self%dispackage%nstar                                   ! Set the initial population to LTE
-
-    self%dispackage%j = 0.0d0                                                   ! Set the initial Jnu to 0. This is only relevant for scattering
-                                                                                ! The omega0 task does not need a jold. 
-                                                                                ! Jold from the sub-task point to the right spot in j
-
-    omega_ptr => self%omeg                                                      ! Loop over all sub tasks and initialize the boundary conditions
->>>>>>> d50c44135cffd127224c8969cc4e28044cf5058c
     do while (associated(omega_ptr))
         if (omega_ptr%i_omega .eq. 0) then
             omega_ptr => omega_ptr%next
