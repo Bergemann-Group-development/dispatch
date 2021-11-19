@@ -64,6 +64,7 @@ MODULE m3d_rt_mod
     procedure:: init_level
     procedure:: task_info
     procedure:: load_initial_conditions
+    procedure:: reduce_angle_quadrature
   end type
 
   type, public, extends(halo_t):: halo_m3d_t
@@ -212,7 +213,6 @@ recursive SUBROUTINE pre_init (self)
       self%n_omega = 2*n_omega*n_bin
 
       call self%get_nu_regions(n_bin)            ! Get frequency domains for all tasks
-      
       !-------------------------------------------------------------------------
       ! Assign angles and integration weight and allocate the required RT 
       ! solvers for all angles
@@ -457,7 +457,7 @@ SUBROUTINE init (self)
             o%dispackage%n     => om%dispackage%n
             o%dispackage%nstar => om%dispackage%nstar
             o%dispackage%jold(1:,1:,1:,o%dispackage%nu_s:) => &
-                          om%dispackage%j(:,:,:,o%dispackage%nu_s:o%dispackage%nu_e)    ! The omegax task refers to its master J as Jold           
+                          om%dispackage%j(:,:,:,o%dispackage%nu_s:o%dispackage%nu_e)    ! The omegax task refers to its master J as Jold 
           end select
         endif
 
@@ -505,8 +505,8 @@ END SUBROUTINE init
 
 !===============================================================================
 SUBROUTINE load_initial_conditions(self)
-    class(m3d_rt_t):: self
-    class(rt_t),pointer :: omega_ptr
+    class(m3d_rt_t),target :: self
+    class(rt_t),pointer    :: omega_ptr
 
     self%temp8 = dble(self%patch%mem(:,:,:,self%patch%idx%e,  1, 1))
     self%rho8  = dble(self%patch%mem(:,:,:,self%patch%idx%d,  1, 1)) * scaling%d
@@ -517,38 +517,64 @@ SUBROUTINE load_initial_conditions(self)
 
     self%mesh%lower_boundary = self%patch%mesh%lower_boundary
     self%mesh%upper_boundary = self%patch%mesh%upper_boundary
-    self%boundaries%bottop = self%patch%boundaries%bottop
-    self%boundaries%temp = self%patch%boundaries%temp
-    self%boundaries%rho  = self%patch%boundaries%rho
-    self%boundaries%pe   = self%patch%boundaries%pe
+    self%boundaries%bottop   = self%patch%boundaries%bottop
+    self%boundaries%temp     = self%patch%boundaries%temp
+    self%boundaries%rho      = self%patch%boundaries%rho
+    self%boundaries%pe       = self%patch%boundaries%pe
 
+    self%dispackage%atom_rad%wphi => self%dispackage%atom_rad%wphi_contribution          
 
     !call self%init_bdries
 
     call multi3d%pre_update (self%dispackage, skip_ray_in = .true.)
-    
-    call self%dispackage%update_populations_lte ()                              ! compute lte populations
-    self%dispackage%n = self%dispackage%nstar                                   ! Set the initial population to LTE
-
-    self%dispackage%j = 0.0d0                                                   ! Set the initial Jnu to 0. This is only relevant for scattering
-                                                                                ! The omega0 task does not need a jold. 
-                                                                                ! Jold from the sub-task point to the right spot in j
-
-    omega_ptr => self%omeg                                                      ! Loop over all sub tasks and initialize the boiundary conditions
+    call self%dispackage%update_populations_lte ()                                     ! compute lte populations
+    self%dispackage%n = self%dispackage%nstar                                          ! Set the initial population to LTE
+    self%dispackage%j = 0.0d0                                                          ! Set the initial Jnu to 0. This is only relevant for scattering
+                                                                                       ! The omega0 task does not need a jold. 
+                                                                                       ! Jold from the sub-task point to the right spot in j
+    omega_ptr => self%omeg                                                             ! Loop over all sub tasks and initialize
     do while (associated(omega_ptr))
         if (omega_ptr%i_omega .eq. 0) then
             omega_ptr => omega_ptr%next
             cycle
         endif
+
         select type (om=>omega_ptr)
-        class is (m3d_rt_t)                                                     ! If this is a m3d_rt_t omegaX, initialize the source function
-            call om%link_dispackage   ()                                        ! Link the dispackage source function to the current slice
-            call multi3d%pre_update   (om%dispackage, skip_ray_in = .false.)    ! Sync dispackage and set up MULTI arrays 
-            call om%initialize_omegaX ()                                        ! The solver will compute the radiative transfer for one angle.
+        class is (m3d_rt_t)                                                             ! If this is a m3d_rt_t omegaX, initialize the source function
+            call om%link_dispackage   ()                                                ! Link the dispackage source function to the current slice    
+            call multi3d%pre_update   (om%dispackage, skip_ray_in = .false.)            ! Sync dispackage and set up MULTI arrays 
+            om%dispackage%atom_rad%wphi => self%dispackage%atom_rad%wphi_contribution   ! Set the pointer to the quadrature array of the master
+            call om%initialize_omegaX ()                                                ! The solver will compute the radiative transfer for one angle up to the source function.
         end select
+        
         omega_ptr => omega_ptr%next
     enddo
+    call self%reduce_angle_quadrature ()                                                ! collect the angle quadrature
+   
 END SUBROUTINE
+
+subroutine reduce_angle_quadrature(self)
+  class(m3d_rt_t),intent(inout) :: self
+  class(rt_t),pointer :: omega
+
+  ! Collect the wphi arrays from all omegaX tasks
+  self%dispackage%atom_rad%wphi = 0.0d0
+  omega => self%main%omeg
+  do while (associated(omega))
+    if ((omega%master_id.ne.self%id).or.(omega%i_omega.eq.0)) then
+      omega => omega%next
+      cycle                                         
+    endif
+    
+    select type (o=>omega)                            
+    class is (m3d_rt_t)
+      self%dispackage%atom_rad%wphi = self%dispackage%atom_rad%wphi + o%dispackage%atom_rad%wphi_contribution
+    end select
+
+    omega => omega%next
+  enddo
+  self%dispackage%atom_rad%wphi= 4.0d0 * cgs%pi / self%dispackage%atom_rad%wphi  ! wphi contains the sum of wphi from each angle
+end subroutine reduce_angle_quadrature
 
 !===============================================================================
 !> Update the population numbers and other dynamic task data.  Consider spliting
@@ -566,13 +592,14 @@ SUBROUTINE update (self)
   print *, '====================================================='
   print *, 'Start updating task', self%task_t%id
 
-  if (self%i_omega .gt. 0) then                                                             ! rad. transfer solver
+  if (self%i_omega .gt. 0) then                                                          ! rad. transfer solver
     call self%link_dispackage ()                                                            ! Link the dispackage source function to the current slice
     call multi3d%pre_update (self%dispackage, skip_ray_in = .false.)                        ! Sync dispackage and set up MULTI arrays 
     call self%dnload ()                                                                     ! it will assume that the upwind tasks are already done and 
     call multi3d%update (self%dispackage, solver = 'rad')                                   ! that the mem object is downloaded! (So Chi,Inu and Snu are available in the ghost zones)
                                                                                             
   else
+    call self%reduce_angle_quadrature ()                                                    ! collect the angle quadrature
     call multi3d%pre_update (self%dispackage, skip_ray_in = .true.)
     call self%dispackage%update_populations_lte ()                                          ! Compute new LTE populations
     call self%reduce_omegaX ()                                                              ! Reduce the rates etc. obtained from angle tasks
@@ -611,25 +638,25 @@ end subroutine after_update
 
 subroutine reduce_omegaX(self)
   class(m3d_rt_t),target :: self
-  class(rt_t),pointer:: omeg
+  class(rt_t),pointer    :: omeg
+  integer,dimension(:,:),pointer :: ir
 
-  print *, 'shape: ',shape(self%dispackage%j)
+  ! Index range of the patch (no ghost zones)
+  ir => self%dispackage%irp
 
-  print *, 'bounds: ',lbound(self%dispackage%j),ubound(self%dispackage%j)
+  self%dispackage%j = 0.0d0                           ! Zero the old radiation field
+  call self%dispackage%atom_rad%zero_rates_rad ()     ! Zero atomic radiation specific fields
+  call self%dispackage%atom_rad%zero_qrad_rad  ()     ! also for the omega0 task (done for omegaX in solver)
+  call self%dispackage%atom_rad%zero_gamma_rad ()
 
-
-  self%dispackage%j = 0.0d0  ! Zero the old radiation field
-
-  ! Loop through all the angle tasks and save the rates etc.
   omeg => self%main%omeg
-  do while (associated(omeg))
+  do while (associated(omeg))                         ! Loop through all the angle tasks and save the rates etc.
     if ((omeg%master_id.ne.self%id).or.(omeg%i_omega.eq.0)) then
       omeg => omeg%next
-      cycle ! This is not a task for this master
+      cycle                                           ! This is not a task for this master
     endif
     
-    ! Add the neighbor quants to the quants of this task
-    select type (o=>omeg)
+    select type (o=>omeg)                             ! Add the neighbor quants to the quants of this task
     class is (m3d_rt_t)
       self%dispackage%atom_rad%gamma_ij   = self%dispackage%atom_rad%gamma_ij   + o%dispackage%atom_rad%gamma_ij
       self%dispackage%atom_rad%gamma_ji   = self%dispackage%atom_rad%gamma_ji   + o%dispackage%atom_rad%gamma_ji
@@ -644,11 +671,17 @@ subroutine reduce_omegaX(self)
       self%dispackage%atom_rad%qrad    = self%dispackage%atom_rad%qrad   + o%dispackage%atom_rad%qrad
       self%dispackage%atom_rad%qrad_c  = self%dispackage%atom_rad%qrad_c + o%dispackage%atom_rad%qrad_c 
 
-      self%dispackage%j(:,:,:,o%dispackage%nu_s:self%dispackage%nu_e) = &
-                                  self%dispackage%j(:,:,:,o%dispackage%nu_s:o%dispackage%nu_e) + o%dispackage%j
+      ! Only sum the contribution from the patch itself
+      self%dispackage%j(ir(1,1):ir(1,2),ir(2,1):ir(2,2),ir(3,1):ir(3,2),o%dispackage%nu_s:self%dispackage%nu_e) = &
+                        self%dispackage%j(ir(1,1):ir(1,2),ir(2,1):ir(2,2),ir(3,1):ir(3,2),o%dispackage%nu_s:o%dispackage%nu_e) + o%dispackage%j
     end select  
     omeg => omeg%next
   enddo
+
+  self%dispackage%atom_rad%gamma_ij =  self%dispackage%atom_rad%gamma_ij * self%dispackage%atom_rad%wphi
+  self%dispackage%atom_rad%gamma_ji =  self%dispackage%atom_rad%gamma_ji * self%dispackage%atom_rad%wphi
+  self%dispackage%atom_rad%rij      =  self%dispackage%atom_rad%rij      * self%dispackage%atom_rad%wphi
+  self%dispackage%atom_rad%rji      =  self%dispackage%atom_rad%rji      * self%dispackage%atom_rad%wphi
 
 end subroutine reduce_omegaX
 
