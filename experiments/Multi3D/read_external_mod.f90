@@ -295,14 +295,14 @@ SUBROUTINE load_authority(self, patch, ii)
   if (ii == 1) then
     patch%mesh(3)%lower_boundary = .true.
     patch%boundaries%bottop(1) = .true.
-    patch%boundaries%rho (1) = self%rho (ubound(self%zi,1))
     patch%boundaries%temp(1) = self%temp(ubound(self%zi,1))
+    patch%boundaries%rho (1) = self%rho (ubound(self%zi,1))
     patch%boundaries%pe  (1) = self%pe  (ubound(self%zi,1))
   elseif (ii == self%npatches(3)) then
     patch%mesh(3)%upper_boundary = .true.
     patch%boundaries%bottop(2) = .true.
-    patch%boundaries%rho (2) = self%rho (lbound(self%zi,1))
     patch%boundaries%temp(2) = self%temp(lbound(self%zi,1))
+    patch%boundaries%rho (2) = self%rho (lbound(self%zi,1))
     patch%boundaries%pe  (2) = self%pe  (lbound(self%zi,1))
   endif
 

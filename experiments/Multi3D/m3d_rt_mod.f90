@@ -51,7 +51,6 @@ MODULE m3d_rt_mod
   contains
     procedure:: pre_init
     procedure:: init
-    procedure:: init_bdries
     procedure:: bndries
     procedure:: update
     procedure:: after_update
@@ -444,6 +443,12 @@ SUBROUTINE init (self)
           o%dispackage%nstar => o%mem(:,:,:,o%i_n_lte,o%it,:)
           o%dispackage%n     => o%mem(:,:,:,o%i_n    ,o%it,:)
           o%dispackage%jold  => o%dispackage%j
+    
+          o%boundaries%bottop => o%patch%boundaries%bottop
+          o%boundaries%temp   => o%patch%boundaries%temp
+          o%boundaries%rho    => o%patch%boundaries%rho
+          o%boundaries%pe     => o%patch%boundaries%pe
+
         else
           select type (om=>o%main)
           class is (m3d_rt_t)
@@ -457,7 +462,16 @@ SUBROUTINE init (self)
             o%dispackage%n     => om%dispackage%n
             o%dispackage%nstar => om%dispackage%nstar
             o%dispackage%jold(1:,1:,1:,o%dispackage%nu_s:) => &
+<<<<<<< HEAD
                           om%dispackage%j(:,:,:,o%dispackage%nu_s:o%dispackage%nu_e)    ! The omegax task refers to its master J as Jold 
+=======
+                          om%dispackage%j(:,:,:,o%dispackage%nu_s:o%dispackage%nu_e)    ! The omegax task refers to its master J as Jold    
+                          
+            o%boundaries%bottop => om%boundaries%bottop
+            o%boundaries%temp   => om%boundaries%temp
+            o%boundaries%rho    => om%boundaries%rho
+            o%boundaries%pe     => om%boundaries%pe
+>>>>>>> d50c44135cffd127224c8969cc4e28044cf5058c
           end select
         endif
 
@@ -517,22 +531,37 @@ SUBROUTINE load_initial_conditions(self)
 
     self%mesh%lower_boundary = self%patch%mesh%lower_boundary
     self%mesh%upper_boundary = self%patch%mesh%upper_boundary
+<<<<<<< HEAD
     self%boundaries%bottop   = self%patch%boundaries%bottop
     self%boundaries%temp     = self%patch%boundaries%temp
     self%boundaries%rho      = self%patch%boundaries%rho
     self%boundaries%pe       = self%patch%boundaries%pe
 
     self%dispackage%atom_rad%wphi => self%dispackage%atom_rad%wphi_contribution          
+=======
+>>>>>>> d50c44135cffd127224c8969cc4e28044cf5058c
 
     !call self%init_bdries
 
     call multi3d%pre_update (self%dispackage, skip_ray_in = .true.)
+<<<<<<< HEAD
     call self%dispackage%update_populations_lte ()                                     ! compute lte populations
     self%dispackage%n = self%dispackage%nstar                                          ! Set the initial population to LTE
     self%dispackage%j = 0.0d0                                                          ! Set the initial Jnu to 0. This is only relevant for scattering
                                                                                        ! The omega0 task does not need a jold. 
                                                                                        ! Jold from the sub-task point to the right spot in j
     omega_ptr => self%omeg                                                             ! Loop over all sub tasks and initialize
+=======
+    
+    call self%dispackage%update_populations_lte ()                              ! compute lte populations
+    self%dispackage%n = self%dispackage%nstar                                   ! Set the initial population to LTE
+
+    self%dispackage%j = 0.0d0                                                   ! Set the initial Jnu to 0. This is only relevant for scattering
+                                                                                ! The omega0 task does not need a jold. 
+                                                                                ! Jold from the sub-task point to the right spot in j
+
+    omega_ptr => self%omeg                                                      ! Loop over all sub tasks and initialize the boundary conditions
+>>>>>>> d50c44135cffd127224c8969cc4e28044cf5058c
     do while (associated(omega_ptr))
         if (omega_ptr%i_omega .eq. 0) then
             omega_ptr => omega_ptr%next
@@ -702,26 +731,7 @@ subroutine initialize_omegaX (self)
   call self%dispackage%update_source_function () ! Compute the source function for every height coordinate
 
   ! For testing: assume thermal intensity
-  self%dispackage%inu_disp = self%dispackage%chi_disp
-
-  ! Now the boundary zones have to be filled (TO BE UPDATED)
-  if (self%patch%mesh(3)%lower_boundary) then
-    print *, 'Setting lower boundary in task ',self%task_t%id
-    do i = 1, self%patch%li(3)-1
-      self%dispackage%chi_disp(:,:,i,:) = self%dispackage%chi_disp(:,:,self%patch%li(3),:)
-      self%dispackage%snu_disp(:,:,i,:) = self%dispackage%snu_disp(:,:,self%patch%li(3),:)
-      self%dispackage%inu_disp(:,:,i,:) = self%dispackage%inu_disp(:,:,self%patch%li(3),:)
-    enddo
-  endif
-
-  if (self%patch%mesh(3)%upper_boundary) then
-    print *, 'Setting upper boundary in task ',self%task_t%id
-    do i = self%patch%ui(3)+1, self%patch%ui(3) + self%ng(3)
-      self%dispackage%chi_disp(:,:,i,:) = self%dispackage%chi_disp(:,:,self%patch%ui(3),:)
-      self%dispackage%snu_disp(:,:,i,:) = self%dispackage%snu_disp(:,:,self%patch%ui(3),:)
-      self%dispackage%inu_disp(:,:,i,:) = self%dispackage%inu_disp(:,:,self%patch%ui(3),:)
-    enddo
-  endif
+  self%dispackage%inu_disp = self%dispackage%snu_disp
 
 end subroutine initialize_omegaX
 
@@ -735,41 +745,6 @@ SUBROUTINE output (self)
   !call multi3d%output
   call trace%end ()
 END SUBROUTINE output
-
-!===============================================================================
-!> Override the init_bndries, residing in patch_t
-!===============================================================================
-SUBROUTINE init_bdries(self)
-  class(m3d_rt_t):: self
-  ! ----------------------------------------------------------------------------
-  real(8) :: llc(3), urc(3)
-  integer :: lbit(3), ubit(3), i
-  ! ............................................................................
-  llc = self%position-0.5_8*self%size
-  urc = self%position+0.5_8*self%size
-  !
-  lbit = [bits%xl, bits%yl, bits%zl]        ! lower boundary bits -- convenience
-  ubit = [bits%xu, bits%yu, bits%zu]        ! upper boundary bits -- convenience
-  !
-  do i = 1,3
-    if ((urc(i) < self%rt_llc(i))) then
-      call self%patch%set(bits%no_rt)
-      self%on = .false.
-    else if (llc(i) <= self%rt_llc(i).and. .not.self%periodic(i)) then
-      call self%boundaries%set (lbit(i))
-      self%mesh(i)%lower_boundary = .true.
-    end if
-    !
-    if ((llc(i) > self%rt_urc(i))) then
-      call self%patch%set(bits%no_rt)
-      self%on = .false.
-    else if (urc(i) >= self%rt_urc(i).and. .not.self%periodic(i)) then
-      call self%boundaries%set (ubit(i))
-      self%mesh(i)%upper_boundary = .true.
-    end if
-  end do
-  call self%boundaries%init ()
-END SUBROUTINE init_bdries
 
 !===============================================================================
 !> The nbor relations among the omega
@@ -893,7 +868,10 @@ SUBROUTINE bndries (self)
   !----------------------------------------------------------------------------
   call trace_begin('m3d_rt_t%bndries')
   mem => self%mem(:,:,:,:,self%it,:)
-  if (any(self%boundaries%bottop)) call self%boundaries%boundary(mem)
+  if (any(self%boundaries%bottop)) then
+    call self%dispackage%sync () ! needed to set global "fs" correctly
+    call self%boundaries%boundary(mem)
+  endif
   call trace%end()
 END SUBROUTINE bndries
 

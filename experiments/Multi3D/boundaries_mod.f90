@@ -26,8 +26,8 @@ MODULE boundaries_mod
     ! --------------------------------------------------------------------------
     ! Experiment - specific variables
     ! --------------------------------------------------------------------------
-    logical,     dimension(2) :: bottop = .false.
-    real(var_k), dimension(2) :: rho, temp, pe
+    logical,     dimension(:), pointer, contiguous :: bottop
+    real(var_k), dimension(:), pointer, contiguous :: temp, rho, pe
     procedure(boundary_mhd), pointer     :: boundary
   contains
     ! --------------------------------------------------------------------------
@@ -39,6 +39,7 @@ MODULE boundaries_mod
     ! --------------------------------------------------------------------------
     procedure:: boundary_mhd
     procedure:: boundary_sc0
+    procedure:: boundary_scX
     procedure:: radiation
   end type
   integer, save:: verbose=1
@@ -75,10 +76,13 @@ SUBROUTINE init (self)
 
   select case(patch%kind)
   case ('hlld_mhd_patch')
+    allocate(self%bottop(2), self%rho(2), self%temp(2), self%pe(2))
+    self%bottop = .false. ! default value
     self%boundary => boundary_mhd
   case ('m3d_rt_sc0')
     self%boundary => boundary_sc0
   case ('m3d_rt_sc')
+    self%boundary => boundary_scX
   case default
   end select
 
@@ -109,7 +113,7 @@ END SUBROUTINE boundary_mhd
 
 
 SUBROUTINE boundary_sc0(self, mem)
-  use background_mod
+  use background_mod, only: uppsala_get_totn
   use scs_mod, only: lte_pop, partition_function
   class(boundaries_t):: self
   real(var_k), dimension(:,:,:,:,:), pointer :: mem
@@ -146,6 +150,47 @@ SUBROUTINE boundary_sc0(self, mem)
     endif
   end do
 END SUBROUTINE boundary_sc0
+
+
+SUBROUTINE boundary_scX(self, mem)
+  use background_mod, only: uppsala_background_opac
+  use parallel_mod, only: fs
+  class(boundaries_t):: self
+  real(var_k), dimension(:,:,:,:,:), pointer :: mem
+  ! ----------------------------------------------------------------------------
+  real(8), dimension(:,:,:), allocatable :: temp, rho, ne, chi_c, eta_c, Jnu
+  integer :: i, b, nx, ny, f, nfreq
+
+  nx = size(mem,1)
+  ny = size(mem,2)
+  nfreq = size(mem,5)
+
+  allocate(temp (nx, ny, 1))
+  allocate(rho, ne, chi_c, eta_c, Jnu, mold=temp)
+
+  Jnu = 0
+
+  do i=1,2 ! loop over bottom - top
+    if (self%bottop(i)) then
+      if (i == 1) b = lbound(mem,3)
+      if (i == 2) b = ubound(mem,3)
+
+      temp = dble(self%temp(i))
+      rho  = dble(self%rho(i) * scaling%d)
+      ne   = dble(self%pe(i) * scaling%p / (cgs%k_b * temp))
+
+      do f=1,nfreq
+        call uppsala_background_opac(f+fs-1, temp, rho, ne, Jnu, chi_c, eta_c)
+
+        mem(:,:,b,1,f) = chi_c(:,:,1)
+        mem(:,:,b,2,f) = eta_c(:,:,1) / chi_c(:,:,1)
+
+        if (i == 1) mem(:,:,b,3,f) = mem(:,:,b,2,f) ! lower boundary
+        if (i == 2) mem(:,:,b,3,f) = 0              ! upper boundary
+      end do
+    endif
+  end do
+END SUBROUTINE boundary_scX
 
 
 SUBROUTINE radiation (self, mem, src, rk, tt, dir, mu)
