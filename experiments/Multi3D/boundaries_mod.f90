@@ -40,6 +40,8 @@ MODULE boundaries_mod
     procedure:: boundary_mhd
     procedure:: boundary_sc0
     procedure:: boundary_scX
+    procedure:: mirror
+    procedure:: print_mem
     procedure:: radiation
   end type
   integer, save:: verbose=1
@@ -52,9 +54,9 @@ SUBROUTINE init (self)
   class(boundaries_t) :: self
   ! ----------------------------------------------------------------------------
   class(patch_t), pointer:: patch
-  integer:: iostat
+  integer:: iostat, condition=-1
   logical, save:: first_time=.true.
-  namelist /boundary_params/ verbose
+  namelist /boundary_params/ verbose, condition
   !-----------------------------------------------------------------------------
   call trace%begin('boundaries_t%init')
   !.............................................................................
@@ -75,15 +77,24 @@ SUBROUTINE init (self)
   if (.not. io%master) verbose=0
 
   select case(patch%kind)
-  case ('hlld_mhd_patch')
-    allocate(self%bottop(2), self%rho(2), self%temp(2), self%pe(2))
-    self%bottop = .false. ! default value
-    self%boundary => boundary_mhd
-  case ('m3d_rt_sc0')
-    self%boundary => boundary_sc0
-  case ('m3d_rt_sc')
-    self%boundary => boundary_scX
-  case default
+    case ('hlld_mhd_patch')
+      allocate(self%bottop(2), self%rho(2), self%temp(2), self%pe(2))
+      self%bottop = .false. ! default value
+  end select
+
+  select case (condition)
+  case(1)
+    select case(patch%kind)
+      case ('hlld_mhd_patch')
+        self%boundary => boundary_mhd
+      case ('m3d_rt_sc0')
+        self%boundary => boundary_sc0
+      case ('m3d_rt_sc')
+        self%boundary => boundary_scX
+      case default
+    end select
+  case(-1)
+    self%boundary => mirror
   end select
 
   call self%standard_boundaries_t%init ()
@@ -109,6 +120,7 @@ SUBROUTINE boundary_mhd(self, mem)
       mem(:,:,b,idx%pz,1) = 0
     endif
   end do
+  if (verbose > 1) call self%print_mem(mem)
 END SUBROUTINE boundary_mhd
 
 
@@ -149,6 +161,7 @@ SUBROUTINE boundary_sc0(self, mem)
       end do
     endif
   end do
+  if (verbose > 1) call self%print_mem(mem)
 END SUBROUTINE boundary_sc0
 
 
@@ -190,7 +203,40 @@ SUBROUTINE boundary_scX(self, mem)
       end do
     endif
   end do
+  if (verbose > 1) call self%print_mem(mem)
 END SUBROUTINE boundary_scX
+
+
+SUBROUTINE mirror(self, mem)
+  class(boundaries_t):: self
+  real(var_k), dimension(:,:,:,:,:), pointer :: mem
+  ! ----------------------------------------------------------------------------
+  integer :: i, b
+
+    if (self%bottop(1)) then
+        b = lbound(mem,3)
+        mem(:,:,b,:,:) = mem(:,:,b+1,:,:)
+    endif
+
+    if (self%bottop(2)) then
+        b = ubound(mem,3)
+        mem(:,:,b,:,:) = mem(:,:,b-1,:,:)
+    endif
+
+    if (verbose > 1) call self%print_mem(mem)
+END SUBROUTINE
+
+SUBROUTINE print_mem(self, mem)
+  class(boundaries_t):: self
+  real(var_k), dimension(:,:,:,:,:), pointer :: mem
+  ! ----------------------------------------------------------------------------
+  print *, self%patch%kind
+  if (self%patch%kind == 'hlld_mhd_patch') then
+    print *, mem(2,2,:,5,1)
+  else
+    print *, mem(2,2,:,1,1)
+  endif
+END SUBROUTINE print_mem
 
 
 SUBROUTINE radiation (self, mem, src, rk, tt, dir, mu)

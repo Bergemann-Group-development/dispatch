@@ -43,7 +43,7 @@ SUBROUTINE bndries (self)
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%bndries')
   mem => self%mem(:,:,:,:,self%it,:)
-  if (any(self%boundaries%bottop)) call self%boundaries%boundary(mem)
+  call self%boundaries%boundary(mem)
   call trace%end()
 END SUBROUTINE bndries
 

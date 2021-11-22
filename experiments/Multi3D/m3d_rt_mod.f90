@@ -58,7 +58,6 @@ MODULE m3d_rt_mod
     procedure:: get_nu_regions
     procedure:: reduce_omegaX
     procedure:: link_dispackage
-    procedure:: initialize_omegaX
     procedure:: nbor_relations
     procedure:: init_level
     procedure:: task_info
@@ -291,8 +290,6 @@ recursive SUBROUTINE pre_init (self)
       self%n_nu = self%dispackage%nu_e-self%dispackage%nu_s + 1
       self%nv = 3
       self%nw = self%n_nu  ! chi, snu and inu (for every nu in this patch)
-      self%mv = self%nv
-      self%nt = 1
       !self%mw = self%nw
       self%i_chi = 1
       self%i_snu = 2
@@ -551,10 +548,11 @@ SUBROUTINE load_initial_conditions(self)
 
         select type (om=>omega_ptr)
         class is (m3d_rt_t)                                                             ! If this is a m3d_rt_t omegaX, initialize the source function
-            call om%link_dispackage   ()                                                ! Link the dispackage source function to the current slice    
+            call om%link_dispackage   ()                                                ! Link the dispackage source function to the current slice
             call multi3d%pre_update   (om%dispackage, skip_ray_in = .false.)            ! Sync dispackage and set up MULTI arrays 
-            om%dispackage%atom_rad%wphi => self%dispackage%atom_rad%wphi                ! Set the pointer to the quadrature array of the master
-            call om%initialize_omegaX ()                                                ! The solver will compute the radiative transfer for one angle up to the source function.
+            om%dispackage%atom_rad%wphi => self%dispackage%atom_rad%wphi_contribution   ! Set the pointer to the quadrature array of the master
+            call om%dispackage%update_source_function ()                                ! Compute the source function for every height coordinate
+            om%dispackage%inu_disp = om%dispackage%Snu_disp                             ! Set the initial intensity equal to the source function
         end select
         
         omega_ptr => omega_ptr%next
@@ -704,18 +702,6 @@ subroutine link_dispackage(self)
   self%dispackage%inu_disp(1:,1:,1:,self%nu_s:) => self%mem(:,:,:,self%i_inu,self%it,1:self%n_nu)
 
 end subroutine link_dispackage
-
-subroutine initialize_omegaX (self)
-  class(m3d_rt_t),intent(inout) :: self
-  integer :: i
-
-  ! The omegaX patch gets filled with source function and opacity for the first time
-  call self%dispackage%update_source_function () ! Compute the source function for every height coordinate
-
-  ! For testing: assume thermal intensity
-  self%dispackage%inu_disp = self%dispackage%snu_disp
-
-end subroutine initialize_omegaX
 
 !===============================================================================
 !> Do Multi3D specific output
