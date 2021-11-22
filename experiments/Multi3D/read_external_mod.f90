@@ -173,7 +173,7 @@ SUBROUTINE create_patch (self, i, patch)
   patch%n = self%n / self%npatches
   patch%ng = self%ng
   patch%nv = 6
-  patch%nt = 2
+  patch%nt = 3 ! Download returns wrong stuff if nt <= 2
   patch%nw = 1
 
   patch%box(1) = self%ds * 1
