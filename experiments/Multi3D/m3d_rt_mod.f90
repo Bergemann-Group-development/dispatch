@@ -682,7 +682,8 @@ subroutine reduce_omegaX(self)
 
       ! Only sum the contribution from the patch itself
       self%dispackage%j(ir(1,1):ir(1,2),ir(2,1):ir(2,2),ir(3,1):ir(3,2),o%dispackage%nu_s:self%dispackage%nu_e) = &
-                        self%dispackage%j(ir(1,1):ir(1,2),ir(2,1):ir(2,2),ir(3,1):ir(3,2),o%dispackage%nu_s:o%dispackage%nu_e) + o%dispackage%j
+                        self%dispackage%j(ir(1,1):ir(1,2),ir(2,1):ir(2,2),ir(3,1):ir(3,2),o%dispackage%nu_s:o%dispackage%nu_e) &
+                        + o%dispackage%j(ir(1,1):ir(1,2),ir(2,1):ir(2,2),ir(3,1):ir(3,2),:)
     end select  
     omeg => omeg%next
   enddo
