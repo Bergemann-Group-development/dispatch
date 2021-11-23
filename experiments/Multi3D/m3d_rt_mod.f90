@@ -428,6 +428,8 @@ SUBROUTINE init (self)
       select type (o=>omega)
       class is (m3d_rt_t)
         shape_patch = shape(o%patch%mem)
+        if (.not.allocated(o%dispackage%j)) allocate(o%dispackage%j(shape_patch(1),shape_patch(2),shape_patch(3),&
+                                                          o%dispackage%nu_s:o%dispackage%nu_e))
         if (o%i_omega.eq.0) then
           ! Init the real8 cast for atmos
           if (.not.associated(o%temp8)) allocate(o%temp8(shape_patch(1),shape_patch(2),shape_patch(3)))
@@ -468,8 +470,6 @@ SUBROUTINE init (self)
           end select
         endif
 
-        if (.not.allocated(o%dispackage%j)) allocate(o%dispackage%j(shape_patch(1),shape_patch(2),shape_patch(3),&
-                                                          o%dispackage%nu_s:o%dispackage%nu_e))
         o%dispackage%temp => o%temp8
         o%dispackage%rho  => o%rho8
         o%dispackage%ne   => o%ne8
@@ -600,7 +600,7 @@ SUBROUTINE update (self)
   print *, '====================================================='
   print *, 'Start updating task', self%task_t%id
 
-  if (self%i_omega .gt. 0) then                                                          ! rad. transfer solver
+  if (self%i_omega .gt. 0) then                                                             ! rad. transfer solver
     call self%link_dispackage ()                                                            ! Link the dispackage source function to the current slice
     call multi3d%pre_update (self%dispackage, skip_ray_in = .false.)                        ! Sync dispackage and set up MULTI arrays 
     call self%dnload ()                                                                     ! it will assume that the upwind tasks are already done and 
@@ -666,6 +666,7 @@ subroutine reduce_omegaX(self)
     
     select type (o=>omeg)                             ! Add the neighbor quants to the quants of this task
     class is (m3d_rt_t)
+      !print *,o%id, o%dispackage%atom_rad%Rij(5,5,2,:)
       self%dispackage%atom_rad%gamma_ij   = self%dispackage%atom_rad%gamma_ij   + o%dispackage%atom_rad%gamma_ij
       self%dispackage%atom_rad%gamma_ji   = self%dispackage%atom_rad%gamma_ji   + o%dispackage%atom_rad%gamma_ji
       self%dispackage%atom_rad%gamma_ij_c = self%dispackage%atom_rad%gamma_ij_c + o%dispackage%atom_rad%gamma_ij_c
@@ -686,10 +687,10 @@ subroutine reduce_omegaX(self)
     omeg => omeg%next
   enddo
 
-  self%dispackage%atom_rad%gamma_ij =  self%dispackage%atom_rad%gamma_ij * self%dispackage%atom_rad%wphi
-  self%dispackage%atom_rad%gamma_ji =  self%dispackage%atom_rad%gamma_ji * self%dispackage%atom_rad%wphi
-  self%dispackage%atom_rad%rij      =  self%dispackage%atom_rad%rij      * self%dispackage%atom_rad%wphi
-  self%dispackage%atom_rad%rji      =  self%dispackage%atom_rad%rji      * self%dispackage%atom_rad%wphi
+  self%dispackage%atom_rad%gamma_ij =  self%dispackage%atom_rad%gamma_ij * self%dispackage%atom_rad%wphi(ir(1,1):ir(1,2),ir(2,1):ir(2,2),ir(3,1):ir(3,2),:)
+  self%dispackage%atom_rad%gamma_ji =  self%dispackage%atom_rad%gamma_ji * self%dispackage%atom_rad%wphi(ir(1,1):ir(1,2),ir(2,1):ir(2,2),ir(3,1):ir(3,2),:)
+  self%dispackage%atom_rad%rij      =  self%dispackage%atom_rad%rij      * self%dispackage%atom_rad%wphi(ir(1,1):ir(1,2),ir(2,1):ir(2,2),ir(3,1):ir(3,2),:)
+  self%dispackage%atom_rad%rji      =  self%dispackage%atom_rad%rji      * self%dispackage%atom_rad%wphi(ir(1,1):ir(1,2),ir(2,1):ir(2,2),ir(3,1):ir(3,2),:)
 
 end subroutine reduce_omegaX
 
