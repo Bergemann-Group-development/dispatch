@@ -24,7 +24,7 @@ MODULE read_external_mod
     class(task_list_t), pointer:: task_list
     integer :: nz, npatches(3), n(3), ng(3), verbose
     real(8), dimension(:), allocatable :: zi, temp, pe, rho, vturb
-    real(8) :: size, ds
+    real(8) :: size, ds(3)
     character(len=126) :: atmos_name
   contains
     procedure:: init
@@ -176,9 +176,9 @@ SUBROUTINE create_patch (self, i, patch)
   patch%nt = 4 ! Download returns wrong stuff if nt <= 2
   patch%nw = 1
 
-  patch%box(1) = self%ds * 1
-  patch%box(2) = self%ds * 1
-  patch%box(3) = self%ds * self%nz
+  patch%box(1) = self%ds(1) * 1
+  patch%box(2) = self%ds(2) * 1
+  patch%box(3) = self%ds(3) * self%nz
 
   patch%ds = self%ds
 
@@ -257,9 +257,11 @@ SUBROUTINE read_snapshot(self)
 
   self%n = 1
   self%n(3) = self%nz
-  self%ds = self%zi(2) - self%zi(1)
+  self%ds(1) = 1e-2 ! 10km spacing as for 1d atmospheres in Multi
+  self%ds(2) = 1e-2
+  self%ds(3) = self%zi(2) - self%zi(1)
 
-  if (self%ds /= self%zi(self%nz) - self%zi(self%nz-1)) then
+  if (self%ds(3) /= self%zi(self%nz) - self%zi(self%nz-1)) then
     write(stdout,*) 'read_external_t%read_snapshot: Warning: Non-equidistant atmosphere grid!'
   endif
 END SUBROUTINE read_snapshot
