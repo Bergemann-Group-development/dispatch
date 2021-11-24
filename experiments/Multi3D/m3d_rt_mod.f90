@@ -217,7 +217,10 @@ recursive SUBROUTINE pre_init (self)
       !-------------------------------------------------------------------------
       if (self%n_mu > 0) then
         allocate (mu(self%n_mu),w_mu(self%n_mu))
-        call radau%init (self%n_mu, mu, w_mu)
+        !call radau%init (self%n_mu, mu, w_mu)
+        mu = [0.04691, 0.23077, 0.5, 0.76923, 0.95309]
+        w_mu = [0.74433, 1.50366, 1.78722, 1.50366, 0.74433]
+        w_mu = w_mu / (math%pi4/2)
         !-----------------------------------------------------------------------
         ! Assign angles and initialize clones
         !-----------------------------------------------------------------------
@@ -483,7 +486,7 @@ SUBROUTINE init (self)
         o%dispackage%ng          = o%ng
 
         o%dispackage%wm    = dble(o%w)
-        o%dispackage%ds    = dble(o%ds)
+        o%dispackage%ds    = dble(o%ds * scaling%l)
 
         call multi3d%init(o%dispackage,skip_ray_in=(o%i_omega.eq.0))
       end select
@@ -576,7 +579,7 @@ subroutine reduce_angle_quadrature(self)
     
     select type (o=>omega)                            
     class is (m3d_rt_t)
-      self%dispackage%atom_rad%wphi = self%dispackage%atom_rad%wphi + o%dispackage%atom_rad%wphi_contribution
+      self%dispackage%atom_rad%wphi = self%dispackage%atom_rad%wphi + o%dispackage%wm * o%dispackage%atom_rad%wphi_contribution
     end select
 
     omega => omega%next
@@ -592,15 +595,18 @@ end subroutine reduce_angle_quadrature
 SUBROUTINE update (self)
   class(m3d_rt_t) :: self
   logical, save :: first_time = .true.
+  real(var_k), dimension(:,:,:,:,:), pointer :: mem
+  integer :: lvl
   !-----------------------------------------------------------------------------
   call trace%begin ('m3d_rt_t%update')
 
   self%it = 1
+  lvl = 3
 
   !print *, '====================================================='
   !print *, 'Start updating task', self%task_t%id
 
-  if (self%i_omega .gt. 0) then                                                             ! rad. transfer solver
+  if (self%i_omega /= 0) then                                                             ! rad. transfer solver
     call self%link_dispackage ()                                                            ! Link the dispackage source function to the current slice
     call multi3d%pre_update (self%dispackage, skip_ray_in = .false.)                        ! Sync dispackage and set up MULTI arrays 
     call self%dnload ()                                                                     ! it will assume that the upwind tasks are already done and 
@@ -608,14 +614,14 @@ SUBROUTINE update (self)
                                                                                             
   else
     call self%reduce_angle_quadrature ()                                                    ! collect the angle quadrature
-    call multi3d%pre_update (self%dispackage, skip_ray_in = .true.)
-    call self%dispackage%update_populations_lte ()                                          ! Compute new LTE populations
     call self%reduce_omegaX ()                                                              ! Reduce the rates etc. obtained from angle tasks
    
-    print *, 'old population numbers (idx 3): ', self%dispackage%n(5,5,:,3)
+    print *, 'old population sum: ', sum(self%dispackage%n(5,5,:,:))
+    print *, 'old population numbers (level ',lvl,'): ', self%dispackage%n(5,5,:,lvl)
     call multi3d%update (self%dispackage, solver = 'pop')                                   ! call stat. eq. solver
     !call self%after_update ()                                                              ! Shift the populations
-    print *, 'new population numbers (idx 3): ', self%dispackage%n(5,5,:,3)
+    print *, 'new population sum: ', sum(self%dispackage%n(5,5,:,:))
+    print *, 'new population numbers (level ',lvl,'): ', self%dispackage%n(5,5,:,lvl)
     stop 
   endif
 
@@ -648,6 +654,7 @@ subroutine reduce_omegaX(self)
   class(m3d_rt_t),target :: self
   class(rt_t),pointer    :: omeg
   integer,dimension(:,:),pointer :: ir
+  real(8), dimension(:,:,:,:), pointer :: wphi
 
   ! Index range of the patch (no ghost zones)
   ir => self%dispackage%irp
@@ -666,7 +673,9 @@ subroutine reduce_omegaX(self)
     
     select type (o=>omeg)                             ! Add the neighbor quants to the quants of this task
     class is (m3d_rt_t)
-      !print *,o%id, o%dispackage%atom_rad%Rij(5,5,2,:)
+      !print *, o%id, o%dispackage%dk, o%dispackage%wm
+      !print *, o%dispackage%atom_rad%Rij(5,5,ir(3,2):ir(3,1):-1,1) ! 127.904419883840        134.628426994655        141.480726219302
+
       self%dispackage%atom_rad%gamma_ij   = self%dispackage%atom_rad%gamma_ij   + o%dispackage%atom_rad%gamma_ij
       self%dispackage%atom_rad%gamma_ji   = self%dispackage%atom_rad%gamma_ji   + o%dispackage%atom_rad%gamma_ji
       self%dispackage%atom_rad%gamma_ij_c = self%dispackage%atom_rad%gamma_ij_c + o%dispackage%atom_rad%gamma_ij_c
@@ -688,20 +697,24 @@ subroutine reduce_omegaX(self)
     omeg => omeg%next
   enddo
 
-  self%dispackage%atom_rad%gamma_ij =  self%dispackage%atom_rad%gamma_ij * self%dispackage%atom_rad%wphi(ir(1,1):ir(1,2),ir(2,1):ir(2,2),ir(3,1):ir(3,2),:)
-  self%dispackage%atom_rad%gamma_ji =  self%dispackage%atom_rad%gamma_ji * self%dispackage%atom_rad%wphi(ir(1,1):ir(1,2),ir(2,1):ir(2,2),ir(3,1):ir(3,2),:)
-  self%dispackage%atom_rad%rij      =  self%dispackage%atom_rad%rij      * self%dispackage%atom_rad%wphi(ir(1,1):ir(1,2),ir(2,1):ir(2,2),ir(3,1):ir(3,2),:)
-  self%dispackage%atom_rad%rji      =  self%dispackage%atom_rad%rji      * self%dispackage%atom_rad%wphi(ir(1,1):ir(1,2),ir(2,1):ir(2,2),ir(3,1):ir(3,2),:)
-  self%dispackage%atom_rad%qrad     =  self%dispackage%atom_rad%qrad     * self%dispackage%atom_rad%wphi(ir(1,1):ir(1,2),ir(2,1):ir(2,2),ir(3,1):ir(3,2),:)
+  wphi => self%dispackage%atom_rad%wphi(ir(1,1):ir(1,2),ir(2,1):ir(2,2),ir(3,1):ir(3,2),:)
+
+  self%dispackage%atom_rad%gamma_ij =  self%dispackage%atom_rad%gamma_ij * wphi
+  self%dispackage%atom_rad%gamma_ji =  self%dispackage%atom_rad%gamma_ji * wphi
+  self%dispackage%atom_rad%rij      =  self%dispackage%atom_rad%rij      * wphi
+  self%dispackage%atom_rad%rji      =  self%dispackage%atom_rad%rji      * wphi
+  self%dispackage%atom_rad%qrad     =  self%dispackage%atom_rad%qrad     * wphi
 
 end subroutine reduce_omegaX
 
 subroutine link_dispackage(self)
-  class(m3d_rt_t),intent(inout) :: self
+  class(m3d_rt_t), intent(inout) :: self
 
   self%dispackage%chi_disp(1:,1:,1:,self%nu_s:) => self%mem(:,:,:,self%i_chi,self%it,1:self%n_nu)
   self%dispackage%snu_disp(1:,1:,1:,self%nu_s:) => self%mem(:,:,:,self%i_snu,self%it,1:self%n_nu)
   self%dispackage%inu_disp(1:,1:,1:,self%nu_s:) => self%mem(:,:,:,self%i_inu,self%it,1:self%n_nu)
+
+  call self%dispackage%sync ()
 
 end subroutine link_dispackage
 
