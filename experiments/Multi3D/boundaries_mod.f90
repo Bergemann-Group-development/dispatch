@@ -26,7 +26,7 @@ MODULE boundaries_mod
     ! --------------------------------------------------------------------------
     ! Experiment - specific variables
     ! --------------------------------------------------------------------------
-    logical,     dimension(:), pointer, contiguous :: bottop
+    logical,     dimension(:), pointer, contiguous :: topbot
     real(var_k), dimension(:), pointer, contiguous :: temp, rho, pe
     procedure(boundary_mhd), pointer     :: boundary
   contains
@@ -78,17 +78,17 @@ SUBROUTINE init (self)
 
   select case(patch%kind)
     case ('hlld_mhd_patch')
-      allocate(self%bottop(2), self%rho(2), self%temp(2), self%pe(2))
-      self%bottop = .false. ! default value
+      allocate(self%topbot(2), self%rho(2), self%temp(2), self%pe(2))
+      self%topbot = .false. ! default value
   end select
 
   select case (condition)
   case(1)
     select case(patch%kind)
       case ('hlld_mhd_patch')
-        self%boundary => boundary_mhd
+        self%boundary => mirror !boundary_mhd
       case ('m3d_rt_sc0')
-        self%boundary => boundary_sc0
+        self%boundary => mirror !boundary_sc0
       case ('m3d_rt_sc')
         self%boundary => boundary_scX
       case default
@@ -108,7 +108,7 @@ SUBROUTINE boundary_mhd(self, mem)
   integer :: i, b
 
   do i=1,2 ! loop over bottom - top
-    if (self%bottop(i)) then
+    if (self%topbot(i)) then
       if (i == 1) b = lbound(mem,3)
       if (i == 2) b = ubound(mem,3)
 
@@ -144,7 +144,7 @@ SUBROUTINE boundary_sc0(self, mem)
   allocate(rho, totn, partition, mold=temp)
 
   do i=1,2 ! loop over bottom - top
-    if (self%bottop(i)) then
+    if (self%topbot(i)) then
       if (i == 1) b = lbound(mem,3)
       if (i == 2) b = ubound(mem,3)
 
@@ -174,35 +174,42 @@ SUBROUTINE boundary_scX(self, mem)
   real(8), dimension(:,:,:), allocatable :: temp, rho, ne, chi_c, eta_c, Jnu
   integer :: i, b, nx, ny, f, nfreq
 
-  nx = size(mem,1)
-  ny = size(mem,2)
-  nfreq = size(mem,5)
+  call self%mirror(mem) ! in order to mirror chi and snu
 
-  allocate(temp (nx, ny, 1))
-  allocate(rho, ne, chi_c, eta_c, Jnu, mold=temp)
+  if (self%topbot(2)) then
+    b = ubound(mem,3)
+    mem(:,:,b,3,:) = mem(:,:,b-1,2,:) ! Inu = Snu at bottom of atmosphere
+  endif
 
-  Jnu = 0
-
-  do i=1,2 ! loop over bottom - top
-    if (self%bottop(i)) then
-      if (i == 1) b = lbound(mem,3)
-      if (i == 2) b = ubound(mem,3)
-
-      temp = dble(self%temp(i))
-      rho  = dble(self%rho(i) * scaling%d)
-      ne   = dble(self%pe(i) * scaling%p / (cgs%k_b * temp))
-
-      do f=1,nfreq
-        call uppsala_background_opac(f+fs-1, temp, rho, ne, Jnu, chi_c, eta_c)
-
-        mem(:,:,b,1,f) = chi_c(:,:,1)
-        mem(:,:,b,2,f) = eta_c(:,:,1) / chi_c(:,:,1)
-
-        if (i == 1) mem(:,:,b,3,f) = mem(:,:,b,2,f) ! lower boundary
-        if (i == 2) mem(:,:,b,3,f) = 0              ! upper boundary
-      end do
-    endif
-  end do
+!  nx = size(mem,1)
+!  ny = size(mem,2)
+!  nfreq = size(mem,5)
+!
+!  allocate(temp (nx, ny, 1))
+!  allocate(rho, ne, chi_c, eta_c, Jnu, mold=temp)
+!
+!  Jnu = 0
+!
+!  do i=1,2 ! loop over bottom - top
+!    if (self%topbot(i)) then
+!      if (i == 1) b = lbound(mem,3)
+!      if (i == 2) b = ubound(mem,3)
+!
+!      temp = dble(self%temp(i))
+!      rho  = dble(self%rho(i) * scaling%d)
+!      ne   = dble(self%pe(i) * scaling%p / (cgs%k_b * temp))
+!
+!      do f=1,nfreq
+!        call uppsala_background_opac(f+fs-1, temp, rho, ne, Jnu, chi_c, eta_c)
+!
+!        mem(:,:,b,1,f) = chi_c(:,:,1)
+!        mem(:,:,b,2,f) = eta_c(:,:,1) / chi_c(:,:,1)
+!
+!        if (i == 1) mem(:,:,b,3,f) = mem(:,:,b,2,f) ! lower boundary
+!        if (i == 2) mem(:,:,b,3,f) = 0              ! upper boundary
+!      end do
+!    endif
+!  end do
   if (verbose > 1) call self%print_mem(mem)
 END SUBROUTINE boundary_scX
 
@@ -213,12 +220,12 @@ SUBROUTINE mirror(self, mem)
   ! ----------------------------------------------------------------------------
   integer :: i, b
 
-    if (self%bottop(1)) then
+    if (self%topbot(1)) then
         b = lbound(mem,3)
         mem(:,:,b,:,:) = mem(:,:,b+1,:,:)
     endif
 
-    if (self%bottop(2)) then
+    if (self%topbot(2)) then
         b = ubound(mem,3)
         mem(:,:,b,:,:) = mem(:,:,b-1,:,:)
     endif
@@ -227,14 +234,18 @@ SUBROUTINE mirror(self, mem)
 END SUBROUTINE
 
 SUBROUTINE print_mem(self, mem)
+  use parallel_mod, only: xs,xe,ys,ye,zs,ze,fs,fe
   class(boundaries_t):: self
   real(var_k), dimension(:,:,:,:,:), pointer :: mem
   ! ----------------------------------------------------------------------------
-  print *, self%patch%kind
+  print *, self%patch%kind, self%topbot
   if (self%patch%kind == 'hlld_mhd_patch') then
-    print *, mem(2,2,:,5,1)
-  else
-    print *, mem(2,2,:,1,1)
+    print *, mem(2,2,:,5,1) ! print temp
+  elseif (self%patch%kind == 'm3d_rt_sc') then
+    print *, 'Snu = ', mem(:,:,1,2,fe) ! print Snu
+    print *, 'Inu = ', mem(:,:,1,3,fe) ! print Inu
+  elseif (self%patch%kind == 'm3d_rt_sc0') then
+    print *, mem(2,2,:,1,1) ! print N(1)
   endif
 END SUBROUTINE print_mem
 
