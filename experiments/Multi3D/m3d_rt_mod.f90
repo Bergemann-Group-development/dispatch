@@ -63,6 +63,7 @@ MODULE m3d_rt_mod
     procedure:: task_info
     procedure:: load_initial_conditions
     procedure:: reduce_angle_quadrature
+    procedure:: diagnose
   end type
 
   type, public, extends(halo_t):: halo_m3d_t
@@ -116,8 +117,7 @@ recursive SUBROUTINE pre_init (self)
     call io%namelist_warning ('multi3d_params', iostat)
  
     multi3d%dir = folder
-    call multi3d%pre_init()
-      
+    call multi3d%pre_init()                                                  ! Pre-init m3d
     call io%lock%unset ('multi3d_t')
   end if
 
@@ -127,6 +127,10 @@ recursive SUBROUTINE pre_init (self)
   self%dispackage%ggpgh         = multi3d%ggpgh
   self%dispackage%ref_atom     => multi3d%ref_atom
   self%dispackage%ref_spectrum => multi3d%ref_spectrum
+  self%dispackage%ups          => multi3d%ref_ups   ! Because of memory reasons, all patches point to the same ref_ups
+                                                    ! If needed, every patch can have it's own copy of the ups package,
+                                                    ! just allocate the pointer once for omega0, the other tasks will point to this task automatically
+
   ! Set the scaling pointer in the dispackage
   self%dispackage%rho_scale => scaling%d
   self%dispackage%p_scale   => scaling%p
@@ -470,6 +474,8 @@ SUBROUTINE init (self)
             o%boundaries%temp   => om%boundaries%temp
             o%boundaries%rho    => om%boundaries%rho
             o%boundaries%pe     => om%boundaries%pe
+
+            o%dispackage%ups    => om%dispackage%ups
           end select
         endif
 
@@ -489,6 +495,7 @@ SUBROUTINE init (self)
         o%dispackage%ds    = dble(o%ds * scaling%l)
 
         call multi3d%init(o%dispackage,skip_ray_in=(o%i_omega.eq.0))
+        o%dispackage%task_id = o%task_t%id                                            ! Save the task id as the id of the dispackage for cross referencing
       end select
 
       if (.not. omega%on) then
@@ -604,21 +611,22 @@ SUBROUTINE update (self)
   lvl = 3
 
   !print *, '====================================================='
-  !print *, 'Start updating task', self%task_t%id
+  print *, 'Start updating task', self%task_t%id
 
-  if (self%i_omega /= 0) then                                                             ! rad. transfer solver
-    call self%link_dispackage ()                                                            ! Link the dispackage source function to the current slice
-    call multi3d%pre_update (self%dispackage, skip_ray_in = .false.)                        ! Sync dispackage and set up MULTI arrays 
-    call self%dnload ()                                                                     ! it will assume that the upwind tasks are already done and 
-    call multi3d%update (self%dispackage, solver = 'rad')                                   ! that the mem object is downloaded! (So Chi,Inu and Snu are available in the ghost zones)
+  if (self%i_omega /= 0) then                                                          ! rad. transfer solver
+    call self%link_dispackage ()                                                       ! Link the dispackage source function to the current slice
+    call multi3d%pre_update   (self%dispackage, skip_ray_in = .false.)                 ! Sync dispackage and set up MULTI arrays 
+    !call self%diagnose        ()
+    call self%dnload          ()                                                       ! it will assume that the upwind tasks are already done and 
+    call multi3d%update       (self%dispackage, solver = 'rad')                        ! that the mem object is downloaded! (So Chi,Inu and Snu are available in the ghost zones)
                                                                                             
   else
     call self%reduce_angle_quadrature ()                                                    ! collect the angle quadrature
-    call self%reduce_omegaX ()                                                              ! Reduce the rates etc. obtained from angle tasks
+    call self%reduce_omegaX           ()                                                    ! Reduce the rates etc. obtained from angle tasks
    
     print *, 'old population sum: ', sum(self%dispackage%n(5,5,:,:))
     print *, 'old population numbers (level ',lvl,'): ', self%dispackage%n(5,5,:,lvl)
-    call multi3d%update (self%dispackage, solver = 'pop')                                   ! call stat. eq. solver
+    call multi3d%update               (self%dispackage, solver = 'pop')                     ! call stat. eq. solver
     !call self%after_update ()                                                              ! Shift the populations
     print *, 'new population sum: ', sum(self%dispackage%n(5,5,:,:))
     print *, 'new population numbers (level ',lvl,'): ', self%dispackage%n(5,5,:,lvl)
@@ -631,6 +639,27 @@ SUBROUTINE update (self)
   !call multi3d%post_update ! (... argument list ...)
   call trace%end ()
 END SUBROUTINE update
+
+subroutine diagnose(self)
+  class(m3d_rt_t),intent(in),target  :: self
+  integer,dimension(:),      pointer :: is,ie
+
+  is => self%dispackage%irp(:,1)
+  ie => self%dispackage%irp(:,2)
+
+  !$omp critical
+
+  print *, ''
+  print *, 'Task with id', self%task_t%id, 'has pre-updated.'
+  print *, 'The dispackage in question is assigned to the task',self%dispackage%task_id
+  print *, 'dim. parameters are (is,ie)', self%dispackage%irp
+  print *, 'atmos parameters are (t,ne,r)', self%dispackage%temp(is(1),is(2),is(3)),&
+                                            self%dispackage%ne(is(1),is(2),is(3)),&
+                                            self%dispackage%rho(is(1),is(2),is(3))
+  print *, ''
+
+  !$omp end critical
+end subroutine diagnose
 
 subroutine after_update(self) ! Can this safely be called post_update?
   class(m3d_rt_t),intent(inout) :: self
