@@ -620,8 +620,8 @@ SUBROUTINE update (self)
   self%it = 1
   lvl = 3
 
-  print *, '====================================================='
-  print *, 'Start updating task', self%task_t%id
+  !print *, '====================================================='
+  !print *, 'Start updating task', self%task_t%id
 
   if (self%i_omega /= 0) then                                                             ! rad. transfer solver
     call self%link_dispackage ()                                                            ! Link the dispackage source function to the current slice
@@ -645,11 +645,7 @@ SUBROUTINE update (self)
   endif
 
   print *, '                  ...task', self%task_t%id, 'updated.'
-
-  !mem => self%mem(:,:,:,:,self%it,:)
-  !call self%boundaries%print_mem(mem)
-
-  print *, '====================================================='
+  !print *, '====================================================='
 
   !call multi3d%post_update ! (... argument list ...)
   call trace%end ()
@@ -715,7 +711,7 @@ subroutine reduce_omegaX(self)
       ! Only sum the contribution from the patch itself
       self%dispackage%j(ir(1,1):ir(1,2),ir(2,1):ir(2,2),ir(3,1):ir(3,2),o%dispackage%nu_s:self%dispackage%nu_e) = &
                         self%dispackage%j(ir(1,1):ir(1,2),ir(2,1):ir(2,2),ir(3,1):ir(3,2),o%dispackage%nu_s:o%dispackage%nu_e) &
-                        + o%dispackage%j(ir(1,1):ir(1,2),ir(2,1):ir(2,2),ir(3,1):ir(3,2),:)
+                        + o%dispackage%j(ir(1,1):ir(1,2),ir(2,1):ir(2,2),ir(3,1):ir(3,2),o%dispackage%nu_s:o%dispackage%nu_e)
     end select  
     omeg => omeg%next
   enddo
@@ -726,6 +722,7 @@ subroutine reduce_omegaX(self)
   self%dispackage%atom_rad%gamma_ji =  self%dispackage%atom_rad%gamma_ji * wphi
   self%dispackage%atom_rad%rij      =  self%dispackage%atom_rad%rij      * wphi
   self%dispackage%atom_rad%rji      =  self%dispackage%atom_rad%rji      * wphi
+  self%dispackage%atom_rad%qrad     =  self%dispackage%atom_rad%qrad     * wphi
 
 end subroutine reduce_omegaX
 
