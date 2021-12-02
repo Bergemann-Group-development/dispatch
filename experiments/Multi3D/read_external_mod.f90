@@ -333,6 +333,18 @@ SUBROUTINE fill_guard_zones (self)
     call link%task%bndries
     link => link%next
   end do
+
+  link => self%task_list%head
+  do while (associated(link))
+    select type(patch=>link%task)
+    class is(experiment_t)
+      call patch%rt%convert_mhd_variables()
+      !print *, patch%rt%temp8(5,5,:)
+    class is(m3d_rt_t)
+      if (patch%kind == 'm3d_rt_sc') print *, patch%rt_hat
+    end select
+    link => link%next
+  end do
   call timer%toc ('time to dnload', 1)
   call io%header ('-dnload: end', left=25)
   call trace%end ()
