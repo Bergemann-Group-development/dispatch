@@ -63,7 +63,7 @@ SUBROUTINE init(self, task_list, name)
   call io%lock%set
   if (first_time) then
     ! default values
-    atmos_file = './input_multi3d/atmos/atmos.sun_MARCS'
+    atmos_file = './input_multi3d/atmos/atmos.sun_MARCS_50'
     npatches = 1
     ng = [4,4,1]
     verbose = 1
@@ -279,7 +279,9 @@ SUBROUTINE load_authority(self, patch, ii)
 
   do k=patch%li(3), patch%ui(3)
     ! flipping z-axis, so that the first patch is the bottom of the atmosphere
-    iz = self%nz - ((ii-1)*patch%n(3) + k - patch%li(3))
+    !iz = self%nz - ((ii-1)*patch%n(3) + k - patch%li(3)) ! better not
+    
+    iz = 1 + (ii-1)*patch%n(3) + k - patch%li(3)
 
     do j=patch%li(2), patch%ui(2)
       do i=patch%li(1), patch%ui(1)
@@ -294,18 +296,22 @@ SUBROUTINE load_authority(self, patch, ii)
     end do
   end do
 
+  ! Top of the atmosphere is bottom of index space!!!
+  
   if (ii == 1) then
-    patch%mesh(3)%lower_boundary = .true.
-    patch%boundaries%bottop(1) = .true.
-    patch%boundaries%temp(1) = self%temp(ubound(self%zi,1))
-    patch%boundaries%rho (1) = self%rho (ubound(self%zi,1))
-    patch%boundaries%pe  (1) = self%pe  (ubound(self%zi,1))
-  elseif (ii == self%npatches(3)) then
     patch%mesh(3)%upper_boundary = .true.
-    patch%boundaries%bottop(2) = .true.
-    patch%boundaries%temp(2) = self%temp(lbound(self%zi,1))
-    patch%boundaries%rho (2) = self%rho (lbound(self%zi,1))
-    patch%boundaries%pe  (2) = self%pe  (lbound(self%zi,1))
+    patch%boundaries%topbot(1) = .true.
+    patch%boundaries%temp(1) = self%temp(lbound(self%zi,1))
+    patch%boundaries%rho (1) = self%rho (lbound(self%zi,1))
+    patch%boundaries%pe  (1) = self%pe  (lbound(self%zi,1))
+  endif
+
+  if (ii == self%npatches(3)) then
+    patch%mesh(3)%lower_boundary = .true.
+    patch%boundaries%topbot(2) = .true.
+    patch%boundaries%temp(2) = self%temp(ubound(self%zi,1))
+    patch%boundaries%rho (2) = self%rho (ubound(self%zi,1))
+    patch%boundaries%pe  (2) = self%pe  (ubound(self%zi,1))
   endif
 
   call patch%rt%load_initial_conditions()
@@ -325,6 +331,18 @@ SUBROUTINE fill_guard_zones (self)
   do while (associated(link))
     call link%task%dnload
     call link%task%bndries
+    link => link%next
+  end do
+
+  link => self%task_list%head
+  do while (associated(link))
+    select type(patch=>link%task)
+    class is(experiment_t)
+      call patch%rt%convert_mhd_variables()
+      !print *, patch%rt%temp8(5,5,:)
+    class is(m3d_rt_t)
+      if (patch%kind == 'm3d_rt_sc') print *, patch%rt_hat
+    end select
     link => link%next
   end do
   call timer%toc ('time to dnload', 1)

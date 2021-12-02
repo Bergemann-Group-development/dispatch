@@ -64,6 +64,7 @@ MODULE m3d_rt_mod
     procedure:: load_initial_conditions
     procedure:: reduce_angle_quadrature
     procedure:: diagnose
+    procedure:: convert_mhd_variables
   end type
 
   type, public, extends(halo_t):: halo_m3d_t
@@ -89,7 +90,7 @@ recursive SUBROUTINE pre_init (self)
   integer:: dir, i_mu, i_phi, i_omega, n_omega, iostat, n, fbin
   integer, save:: n_mu=1, n_phi=1, n_bin=2, nt=2, n_warmup=3, ng(3)=[4,4,1], loc(1)
   real, save   :: courant=0.5, cdtd=1.0
-  real, dimension(:), allocatable:: mu, w_mu
+  real, dimension(:), allocatable:: mu, w_mu, mux, muy, muz
   real,    save:: rt_grace=0.01
   real(8), save:: rt_llc(3)=-huge(1d0)
   real(8), save:: rt_urc(3)=+huge(1d0)
@@ -211,7 +212,8 @@ recursive SUBROUTINE pre_init (self)
       !-------------------------------------------------------------------------
       ! Number of ray directions
       !-------------------------------------------------------------------------
-      n_omega = merge (1+self%n_phi*(self%n_mu-1), 0, self%n_mu > 0)
+      !n_omega = merge (1+self%n_phi*(self%n_mu-1), 0, self%n_mu > 0)
+      n_omega = self%n_phi*self%n_mu ! only for comparison with 'set_a2'
       self%n_omega = 2*n_omega*n_bin
 
       call self%get_nu_regions(n_bin)            ! Get frequency domains for all tasks
@@ -221,19 +223,20 @@ recursive SUBROUTINE pre_init (self)
       !-------------------------------------------------------------------------
       if (self%n_mu > 0) then
         allocate (mu(self%n_mu),w_mu(self%n_mu))
-        !call radau%init (self%n_mu, mu, w_mu)
-        mu = [0.04691, 0.23077, 0.5, 0.76923, 0.95309]
-        w_mu = [0.74433, 1.50366, 1.78722, 1.50366, 0.74433]
-        w_mu = w_mu / (math%pi4/2)
+        call radau%init (self%n_mu, mu, w_mu)
+        mu = [0.57735026] ! only for comparison with 'set_a2'
+        mux = [-0.57735026,  0.57735026,  0.57735026, -0.57735026]
+        muy = [ 0.57735026,  0.57735026, -0.57735026, -0.57735026]
+        w_mu = 1
         !-----------------------------------------------------------------------
         ! Assign angles and initialize clones
         !-----------------------------------------------------------------------
         i_omega = 0
-        do i_mu=1,self%n_mu
-          n = self%n_phi
-          if (i_mu == self%n_mu) n = 1
-          do i_phi=1,n
-            do dir=-1,1,2
+        do dir=-1,1,2
+          do i_mu=1,self%n_mu
+            n = self%n_phi
+            !if (i_mu == self%n_mu) n = 1
+            do i_phi=1,n
               do fbin=1, n_bin
                 i_omega = i_omega+1
                 allocate(omega)
@@ -247,7 +250,11 @@ recursive SUBROUTINE pre_init (self)
                   self%omeg => omega
                   self%tail => omega
                 end if
-                omega%mu      = dir*mu(i_mu)
+                !omega%mu      = dir*mu(i_mu)
+                omega%mu      = -dir*mu(i_mu)
+                omega%rt_hat(1) = mux(i_phi)
+                omega%rt_hat(2) = muy(i_phi)
+                omega%rt_hat(3) = omega%mu
                 omega%w       = w_mu(i_mu)*math%pi4/n/2.
                 omega%patch   => self%patch
                 omega%i_omega = i_omega
@@ -256,9 +263,10 @@ recursive SUBROUTINE pre_init (self)
                 omega%nu_s    = self%nu_regions(fbin,1)  ! Starting frequency index in spectrum freq. grid
                 omega%nu_e    = self%nu_regions(fbin,2)  ! Ending frequency index in spectrum freq. grid
 
-                omega%rt_phi = math%pi*(modulo(real(2*(i_phi-1))/self%n_phi + &
-                  (dir+1)/2.0, 2.0) - 1.0)
-                if (i_mu == self%n_mu) omega%rt_phi = 0.0
+                !omega%rt_phi = math%pi*(modulo(real(2*(i_phi-1))/self%n_phi + &
+                !  (dir+1)/2.0, 2.0) - 1.0)
+                !if (i_mu == self%n_mu) omega%rt_phi = 0.0
+                omega%rt_phi = mux(i_phi) ! only for comparison with 'set_a2'
                 call omega%pre_init
               end do
             end do
@@ -280,9 +288,10 @@ recursive SUBROUTINE pre_init (self)
       ! ------------------------------------------------------------------------
       ! Determine closest axis direction for omega/=0
       ! ------------------------------------------------------------------------
-      self%rt_hat(1) = sin(acos(self%mu))*cos(self%rt_phi)   ! sin(theta)*cos(phi), dx
-      self%rt_hat(2) = sin(acos(self%mu))*sin(self%rt_phi)   ! sin(theta)*sin(phi), dy
-      self%rt_hat(3) = self%mu                               ! cos(theta), dz
+      !self%rt_hat(1) = sin(acos(self%mu))*cos(self%rt_phi)   ! sin(theta)*cos(phi), dx
+      !self%rt_hat(2) = sin(acos(self%mu))*sin(self%rt_phi)   ! sin(theta)*sin(phi), dy
+      !self%rt_hat(3) = self%mu                               ! cos(theta), dz
+      print *, self%rt_hat
       loc = maxloc(abs(self%rt_hat))
       self%axis = loc(1)                                          ! direction of max propagation
 
@@ -450,7 +459,7 @@ SUBROUTINE init (self)
           o%dispackage%n     => o%mem(:,:,:,o%i_n    ,o%it,:)
           o%dispackage%jold  => o%dispackage%j
     
-          o%boundaries%bottop => o%patch%boundaries%bottop
+          o%boundaries%topbot => o%patch%boundaries%topbot
           o%boundaries%temp   => o%patch%boundaries%temp
           o%boundaries%rho    => o%patch%boundaries%rho
           o%boundaries%pe     => o%patch%boundaries%pe
@@ -470,7 +479,7 @@ SUBROUTINE init (self)
             o%dispackage%jold(1:,1:,1:,o%dispackage%nu_s:) => &
                           om%dispackage%j(:,:,:,o%dispackage%nu_s:o%dispackage%nu_e)    ! The omegax task refers to its master J as Jold    
                           
-            o%boundaries%bottop => om%boundaries%bottop
+            o%boundaries%topbot => om%boundaries%topbot
             o%boundaries%temp   => om%boundaries%temp
             o%boundaries%rho    => om%boundaries%rho
             o%boundaries%pe     => om%boundaries%pe
@@ -521,20 +530,28 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !===============================================================================
+SUBROUTINE convert_mhd_variables(self)
+  class(m3d_rt_t),target :: self
+
+  self%temp8 = dble(self%patch%mem(:,:,:,self%patch%idx%e,  1, 1))
+  self%rho8  = dble(self%patch%mem(:,:,:,self%patch%idx%d,  1, 1)) * scaling%d
+  self%ne8   = dble(self%patch%mem(:,:,:,6                , 1, 1)) * scaling%p / (cgs%k_b * self%temp8)
+  self%vx8   = dble(self%patch%mem(:,:,:,self%patch%idx%px, 1, 1)) / self%rho8 *scaling%d*scaling%u
+  self%vy8   = dble(self%patch%mem(:,:,:,self%patch%idx%py, 1, 1)) / self%rho8 *scaling%d*scaling%u
+  self%vz8   = dble(self%patch%mem(:,:,:,self%patch%idx%pz, 1, 1)) / self%rho8 *scaling%d*scaling%u
+END subroutine convert_mhd_variables
+!===============================================================================
+
+!===============================================================================
 SUBROUTINE load_initial_conditions(self)
     class(m3d_rt_t),target :: self
     class(rt_t),pointer    :: omega_ptr
 
-    self%temp8 = dble(self%patch%mem(:,:,:,self%patch%idx%e,  1, 1))
-    self%rho8  = dble(self%patch%mem(:,:,:,self%patch%idx%d,  1, 1)) * scaling%d
-    self%ne8   = dble(self%patch%mem(:,:,:,6                , 1, 1)) * scaling%p / (cgs%k_b * self%temp8)
-    self%vx8   = dble(self%patch%mem(:,:,:,self%patch%idx%px, 1, 1)) / self%rho8 *scaling%d*scaling%u
-    self%vy8   = dble(self%patch%mem(:,:,:,self%patch%idx%py, 1, 1)) / self%rho8 *scaling%d*scaling%u
-    self%vz8   = dble(self%patch%mem(:,:,:,self%patch%idx%pz, 1, 1)) / self%rho8 *scaling%d*scaling%u
+    call self%convert_mhd_variables()
 
     self%mesh%lower_boundary = self%patch%mesh%lower_boundary
     self%mesh%upper_boundary = self%patch%mesh%upper_boundary
-    self%boundaries%bottop   = self%patch%boundaries%bottop
+    self%boundaries%topbot   = self%patch%boundaries%topbot
     self%boundaries%temp     = self%patch%boundaries%temp
     self%boundaries%rho      = self%patch%boundaries%rho
     self%boundaries%pe       = self%patch%boundaries%pe
@@ -562,13 +579,13 @@ SUBROUTINE load_initial_conditions(self)
             call multi3d%pre_update   (om%dispackage, skip_ray_in = .false.)            ! Sync dispackage and set up MULTI arrays 
             om%dispackage%atom_rad%wphi => self%dispackage%atom_rad%wphi_contribution   ! Set the pointer to the quadrature array of the master
             call om%dispackage%update_source_function ()                                ! Compute the source function for every height coordinate
-            om%dispackage%inu_disp = om%dispackage%Snu_disp                             ! Set the initial intensity equal to the source function
+            om%dispackage%inu_mem = 0 !!!om%dispackage%snu_mem                        ! Set the initial intensity equal to the source function
+
         end select
         
         omega_ptr => omega_ptr%next
     enddo
     call self%reduce_angle_quadrature ()                                                ! collect the angle quadrature
-   
 END SUBROUTINE
 
 subroutine reduce_angle_quadrature(self)
@@ -603,7 +620,7 @@ SUBROUTINE update (self)
   class(m3d_rt_t) :: self
   logical, save :: first_time = .true.
   real(var_k), dimension(:,:,:,:,:), pointer :: mem
-  integer :: lvl
+  integer :: lvl, nz
   !-----------------------------------------------------------------------------
   call trace%begin ('m3d_rt_t%update')
 
@@ -624,13 +641,15 @@ SUBROUTINE update (self)
     call self%reduce_angle_quadrature ()                                                    ! collect the angle quadrature
     call self%reduce_omegaX           ()                                                    ! Reduce the rates etc. obtained from angle tasks
    
+    nz = size(self%dispackage%n, 3)
+
     print *, 'old population sum: ', sum(self%dispackage%n(5,5,:,:))
-    print *, 'old population numbers (level ',lvl,'): ', self%dispackage%n(5,5,:,lvl)
-    call multi3d%update               (self%dispackage, solver = 'pop')                     ! call stat. eq. solver
+    print *, 'old population numbers (level ',lvl,'): ', self%dispackage%n(5,5,2:nz-1,lvl)
+    call multi3d%update (self%dispackage, solver = 'pop')                                   ! call stat. eq. solver
     !call self%after_update ()                                                              ! Shift the populations
     print *, 'new population sum: ', sum(self%dispackage%n(5,5,:,:))
-    print *, 'new population numbers (level ',lvl,'): ', self%dispackage%n(5,5,:,lvl)
-    stop 
+    print *, 'new population numbers (level ',lvl,'): ', self%dispackage%n(5,5,2:nz-1,lvl)
+    !stop 
   endif
 
   print *, '                  ...task', self%task_t%id, 'updated.'
@@ -739,9 +758,9 @@ end subroutine reduce_omegaX
 subroutine link_dispackage(self)
   class(m3d_rt_t), intent(inout) :: self
 
-  self%dispackage%chi_disp(1:,1:,1:,self%nu_s:) => self%mem(:,:,:,self%i_chi,self%it,1:self%n_nu)
-  self%dispackage%snu_disp(1:,1:,1:,self%nu_s:) => self%mem(:,:,:,self%i_snu,self%it,1:self%n_nu)
-  self%dispackage%inu_disp(1:,1:,1:,self%nu_s:) => self%mem(:,:,:,self%i_inu,self%it,1:self%n_nu)
+  self%dispackage%chi_mem(1:,1:,1:,self%nu_s:) => self%mem(:,:,:,self%i_chi,self%it,1:self%n_nu)
+  self%dispackage%snu_mem(1:,1:,1:,self%nu_s:) => self%mem(:,:,:,self%i_snu,self%it,1:self%n_nu)
+  self%dispackage%inu_mem(1:,1:,1:,self%nu_s:) => self%mem(:,:,:,self%i_inu,self%it,1:self%n_nu)
 
   call self%dispackage%sync ()
 
@@ -880,7 +899,7 @@ SUBROUTINE bndries (self)
   !----------------------------------------------------------------------------
   call trace_begin('m3d_rt_t%bndries')
   mem => self%mem(:,:,:,:,self%it,:)
-  if (any(self%boundaries%bottop)) then
+  if (any(self%boundaries%topbot)) then
     call self%dispackage%sync () ! needed to set global "fs" correctly
     call self%boundaries%boundary(mem)
   endif
