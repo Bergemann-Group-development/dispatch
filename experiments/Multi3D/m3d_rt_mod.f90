@@ -291,7 +291,6 @@ recursive SUBROUTINE pre_init (self)
       !self%rt_hat(1) = sin(acos(self%mu))*cos(self%rt_phi)   ! sin(theta)*cos(phi), dx
       !self%rt_hat(2) = sin(acos(self%mu))*sin(self%rt_phi)   ! sin(theta)*sin(phi), dy
       !self%rt_hat(3) = self%mu                               ! cos(theta), dz
-      !print *, self%rt_hat
       loc = maxloc(abs(self%rt_hat))
       self%axis = loc(1)                                          ! direction of max propagation
 
@@ -636,7 +635,7 @@ SUBROUTINE update (self)
     !call self%diagnose        ()
     call self%dnload          ()                                                       ! it will assume that the upwind tasks are already done and 
     call multi3d%update       (self%dispackage, solver = 'rad')                        ! that the mem object is downloaded! (So Chi,Inu and Snu are available in the ghost zones)
-                                                                                            
+    call self%output()
   else
     call self%reduce_angle_quadrature ()                                                    ! collect the angle quadrature
     call self%reduce_omegaX           ()                                                    ! Reduce the rates etc. obtained from angle tasks
@@ -770,11 +769,31 @@ end subroutine link_dispackage
 !> Do Multi3D specific output
 !===============================================================================
 SUBROUTINE output (self)
+  use spectrum_var
+  use parallel_mod
+  use mconst
   class(m3d_rt_t):: self
+  character(len=64) :: ray_name
+  integer :: lunit
   !-----------------------------------------------------------------------------
-  call trace%begin ('m3d_rt_t%output')
+  !call trace%begin ('m3d_rt_t%output')
+
+  ! if at top-boundary
+  if (self%patch%boundaries%topbot(1) .and. self%mu > 0) then
+    write(ray_name,'(A1,I3.3,SP,3(A1,F11.8))') '_', self%fbin, '_', self%rt_hat(1), '_', self%rt_hat(2), '_', self%rt_hat(3)
+    write(*,*) 'Writing output for angle ', ray_name
+
+    open(newunit=lunit, file='./output/lam' // trim(ray_name) // '.bin', access='stream')
+    write(lunit) 1e8 * cc / sp%nu(fs:fe)
+    close(lunit)
+
+    open(newunit=lunit, file='./output/ie' // trim(ray_name) // '.bin', access='stream')
+    write(lunit) self%mem(:,:,self%li(3),self%i_inu,self%it,1:self%n_nu) ! needs to be upper index instead of lower index
+    close(lunit)
+  endif
+
   !call multi3d%output
-  call trace%end ()
+  !call trace%end ()
 END SUBROUTINE output
 
 !===============================================================================

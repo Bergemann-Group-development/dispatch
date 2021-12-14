@@ -126,7 +126,7 @@ SUBROUTINE init(self, task_list, name)
   self%task_list%n_tasks = itaskl
 
   call self%task_list%queue_all
-  print *, self%task_list%n_tasks
+  !print *, self%task_list%n_tasks
   !call self%task_list%print_queue
 
   !-----------------------------------------------------------------------------
