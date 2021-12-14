@@ -1,0 +1,408 @@
+module op_math_mod
+   use prec_mod
+   implicit none
+
+   interface poly1d
+       module procedure poly3, poly4, poly5, poly6
+   end interface poly1d
+    
+contains
+
+   function interp1d(xx,yy,newx, order, sorted) result(newy)
+         real(dp), dimension(:), intent(in) :: xx, yy, newx
+         real(dp), dimension(:), allocatable :: newy
+         integer, value, optional :: order
+         logical, value, optional :: sorted
+         integer :: i, j, nx, ny
+         procedure(interp1d_linear), pointer :: interp
+
+         nx = size(xx)
+         ny = size(yy)
+
+         if (nx /= ny) then
+            print *, 'X array is of length', nx
+            print *, 'but Y array is of lenght', ny
+            stop
+         endif
+
+         interp => interp1d_linear
+
+         if (.not. present(sorted)) sorted = .false.
+         if (.not. present(order))  order  = 1
+
+         if (order == 2) then
+            if (nx < 3) then
+               print *, 'too few points for quadratic interpolation'
+               stop
+            else
+               interp => interp1d_quadratic
+            endif
+         elseif (order > 2) then
+            print *, 'only linear and quadratic are supported'
+            stop
+         endif
+
+         allocate(newy, mold=newx)
+
+         if (sorted) then
+            j = 1
+            i = 1
+
+            do while (i <= size(newy))
+               if (j >= nx) then
+                  newy(i) = yy(ny)
+
+               elseif (xx(j+1) < newx(i)) then
+                  j = j+1
+                  cycle
+
+               elseif (xx(j) < newx(i)) then
+                  newy(i) = interp(j,xx,yy,newx(i))
+               else
+                  newy(i) = yy(j)
+               endif
+
+               i = i+1
+            end do
+         else
+            do i=1, size(newy)
+               ! xx and yy are still sorted
+               j = searchsorted(xx, newx(i))
+               newy(i) = interp(j,xx,yy,newx(i))
+            end do
+         endif
+
+   end function interp1d
+
+   pure function interp1d_linear(j,xx,yy,newx) result(newy)
+      real(dp), dimension(:), intent(in) :: xx, yy
+      real(dp), intent(in) :: newx
+      integer, intent(in) :: j
+      real(dp) :: m, newy
+
+      m = (yy(j+1) - yy(j)) / (xx(j+1) - xx(j))
+      newy = m * (newx - xx(j)) + yy(j)
+   end function interp1d_linear
+
+   pure function interp1d_quadratic(j,xx,yy,newx) result(newy)
+      real(dp), dimension(:), intent(in) :: xx, yy
+      real(dp), intent(in) :: newx
+      integer, intent(in) :: j
+      real(dp) :: newy, w(3)
+      integer :: j1, j2, j3
+
+      if (size(xx) - j > 1) then
+         j1 = j
+         j2 = j+1
+         j3 = j+2
+      else
+         j1 = j-1
+         j2 = j
+         j3 = j+1
+      endif
+
+      w(1) = (newx-xx(j2)) * (newx-xx(j3)) / ((xx(j1)-xx(j2)) * (xx(j1)-xx(j3)))
+      w(2) = (newx-xx(j1)) * (newx-xx(j3)) / ((xx(j2)-xx(j1)) * (xx(j2)-xx(j3)))
+      w(3) = (newx-xx(j1)) * (newx-xx(j2)) / ((xx(j3)-xx(j1)) * (xx(j3)-xx(j2)))
+
+      newy = sum(yy(j1:j3)*w(1:3))
+
+   end function interp1d_quadratic
+
+   ! Finds index where after which element should be inserted to maintain order.
+   pure function searchsorted(arr, value) result(i)
+      real(8), intent(in) :: arr(:), value
+      integer :: i
+
+      if (value < arr(1) .or. value > arr(size(arr))) then
+         i = -1
+
+      else
+         i = BinarySearch(arr, 1, size(arr), value)
+      
+      endif
+   end function searchsorted
+
+   pure recursive function BinarySearch(arr, l, r, x) result(idx)
+      real(8), intent(in) :: arr(:)
+      real(8), intent(in) :: x
+      integer, intent(in) :: l, r
+      integer :: idx, mid
+
+      if (r - l > 1) then
+          mid = l + (r - l) / 2
+
+          if(arr(mid) >= x) then
+              idx = BinarySearch(arr, l, mid, x)
+
+          elseif(arr(mid) < x) then
+              idx = BinarySearch(arr, mid, r, x)
+
+          endif
+      else
+          idx = l
+      endif
+
+   end function BinarySearch
+
+
+   elemental real(dp) function poly3(x, a, b, c) result(poly)
+      real(dp), intent(in) :: x, a, b, c
+      poly = a*x*x + b*x + c
+   end function poly3
+
+   elemental real(dp) function poly4(x, a, b, c, d) result(poly)
+      real(dp), intent(in) :: x, a, b, c, d
+      poly = x*poly3(x, a, b, c) + d
+   end function poly4
+
+   elemental real(dp) function poly5(x, a, b, c, d, e) result(poly)
+      real(dp), intent(in) :: x, a, b, c, d, e
+      poly = x*poly4(x, a, b, c, d) + e
+   end function poly5
+
+   elemental real(dp) function poly6(x, a, b, c, d, e, f) result(poly)
+      real(dp), intent(in) :: x, a, b, c, d, e, f
+      poly = x*poly5(x, a, b, c, d, e) + f
+   end function poly6
+
+
+   elemental real(dp) function solve_quadratic(p, q, avoid_negative) result(x)
+      real(dp), intent(in) :: p, q
+      logical, intent(in), optional :: avoid_negative
+      real(dp) :: cam, root
+
+      cam = - 0.5*p
+      root = sqrt(abs(0.25*p*p - q))
+
+      x = cam + root
+
+      if (present(avoid_negative)) then
+         if (avoid_negative .and. x<0) x = cam - root
+      endif
+   end function solve_quadratic
+    
+   !---------------------------------------------------------------------
+   subroutine lineq(a,b,n)
+      !***********************************************************************
+      !
+      !  finds solution of system of linear equations
+      !  with gaussian elimination with pivoting
+      !
+      !: lineq  90-06-05  new routine: (martin j stift)
+      !:
+      !***********************************************************************
+      !
+      implicit none
+      !
+      ! declaration of the supplied variables
+      !
+      integer :: n
+      real(dp), dimension(n,n) :: a
+      real(dp), dimension(n)   :: b
+
+      real(dp), dimension(n)  :: c
+      integer, dimension(n) :: icol
+      integer :: i, ibeg, jbeg, ima, jma, j, it, n1, jmin, i1, imin
+      real(dp)  :: ama, temp, quot
+
+      ! initialize column count and starting points
+
+      do i = 1,n
+         icol(i) = i
+      end do
+
+      ibeg = 1
+      jbeg = 1
+
+      ! determine pivot
+      do while (ibeg.lt.n)
+         ama = abs(a(ibeg,jbeg))
+         ima = ibeg
+         jma = jbeg
+         do i = ibeg,n
+            do j = jbeg,n
+               if(abs(a(i,j)).le.ama) cycle
+               ama = abs(a(i,j))
+               ima = i
+               jma = j
+            end do
+         end do
+
+         ! order matrix depending on pivot
+
+         do i = 1,n
+            temp = a(i,jma)
+            a(i,jma) = a(i,jbeg)
+            a(i,jbeg) = temp
+         end do
+
+         do j = jbeg,n
+            temp = a(ima,j)
+            a(ima,j) = a(ibeg,j)
+            a(ibeg,j) = temp
+         end do
+
+         temp = b(ima)
+         b(ima) = b(ibeg)
+         b(ibeg) = temp
+         it = icol(jbeg)
+         icol(jbeg) = icol(jma)
+         icol(jma)= it
+         ibeg = ibeg + 1
+         jbeg = jbeg + 1
+
+         ! eliminate
+
+         imin = ibeg - 1
+         jmin = jbeg - 1
+         do i = ibeg,n
+            quot = a(i,jmin) / a(imin,jmin)
+            do j = jbeg,n
+               a(i,j) = a(i,j) - quot * a(imin,j)
+            end do
+            b(i) = b(i) - quot * b(imin)
+         end do
+      end do
+      !if (ibeg.lt.n) goto 20
+
+      ! determine coefficients
+
+      b(n) = b(n) / a(n,n)
+      n1 = n - 1
+      do i = n1,1,-1
+         i1 = i + 1
+         do j = n,i1,-1
+            b(i) = b(i) - a(i,j) * b(j)
+         end do
+         b(i) = b(i) / a(i,i)
+      end do
+
+      ! reorder coefficients
+
+      do i = 1,n
+         c(icol(i))=b(i)
+      end do
+
+      do i = 1,n
+         b(i) = c(i)
+      end do
+
+   end subroutine lineq
+   !---------------------------------------------------------------------
+
+
+   ! **************************************************************************
+   SUBROUTINE AINV2(A,M)
+      implicit none
+      integer :: M
+      real(8), dimension(M,M) :: A
+      integer, dimension(M) :: IND
+      real(8), dimension(M) :: C
+      real(8) :: AMAX,STO,W1,W
+      integer :: I, I4, MM, J, ISTO, K, J1, I1, J2, I2
+      !***** THIS SUBROUTINE EVALUATES THE INVERSE OF A
+      !***** SQUARE M*M MATRIX A
+      !***** THE DIMENSIONS OF THE ARRAYS MAY BE INTEGER VARIABLES WHEN USED*********
+      !***** ON THE IBM 7094,BUT THEY MUST BE INTEGER CONSTANTS ON THE IBM 1130******
+      
+      AMAX=0.0
+
+      do I=1,M
+         IND(I)=I
+         if(abs(A(I,1))-AMAX > 0) then
+            AMAX=abs(A(I,1))
+            I4=I
+         endif
+      end do
+
+      MM=M-1
+
+      do J=1,MM
+         if(I4-J > 0) then
+            ISTO=IND(J)
+            IND(J)=IND(I4)
+            IND(I4)=ISTO
+            do K=1,M
+               STO=A(I4,K)
+               A(I4,K)=A(J,K)
+               A(J,K)=STO
+            end do
+         endif
+         AMAX=0.0
+         J1=J+1
+         do I=J1,M
+            A(I,J)=A(I,J)/A(J,J)
+            do K=J1,M
+               A(I,K)=A(I,K)-A(I,J)*A(J,K)
+               IF (K-J1 <= 0) then
+                  IF(abs(A(I,K))-AMAX > 0) then
+                     AMAX=abs(A(I,K))
+                     I4=I
+                  endif
+               endif
+            end do
+         end do
+      end do
+
+      do I1=1,MM
+         I=M+1-I1
+         I2=I-1
+         do J1=1,I2
+            J=I2+1-J1
+            J2=J+1
+            W1=-A(I,J)
+            IF(I2-J2 >= 0) then
+               do K=J2,I2
+                  W1=W1-A(K,J)*C(K)
+               end do
+            endif
+            C(J)=W1
+         end do
+         do K=1,I2
+            A(I,K)=C(K)
+         end do
+      end do
+
+      do I1=1,M
+         I=M+1-I1
+         I2=I+1
+         W=A(I,I)
+         do J=1,M
+            if (I-J < 0) then
+               W1=0.0
+            elseif(I-J == 0) then
+               W1=1.0
+            else
+               W1=A(I,J)
+            endif
+            if (I1-1 > 0) then
+               do K=I2,M
+                  W1=W1-A(I,K)*A(K,J)
+               end do
+            endif
+            C(J)=W1
+         end do
+         do J=1,M
+            A(I,J)=C(J)/W
+         end do
+      end do
+
+      do I=1,M
+         do while (IND(I)-I /=0)
+            J=IND(I)
+            do K=1,M
+               STO=A(K,I)
+               A(K,I)=A(K,J)
+               A(K,J)=STO
+            end do
+            ISTO=IND(J)
+            IND(J)=J
+            IND(I)=ISTO
+         end do
+      end do
+      return
+   END SUBROUTINE
+   ! **************************************************************************
+
+end module op_math_mod

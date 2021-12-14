@@ -287,7 +287,7 @@ recursive SUBROUTINE pre_init (self)
       !self%rt_hat(1) = sin(acos(self%mu))*cos(self%rt_phi)   ! sin(theta)*cos(phi), dx
       !self%rt_hat(2) = sin(acos(self%mu))*sin(self%rt_phi)   ! sin(theta)*sin(phi), dy
       !self%rt_hat(3) = self%mu                               ! cos(theta), dz
-      print *, self%rt_hat
+      !print *, self%rt_hat
       loc = maxloc(abs(self%rt_hat))
       self%axis = loc(1)                                          ! direction of max propagation
 
@@ -641,7 +641,7 @@ SUBROUTINE update (self)
     !call self%after_update ()                                                              ! Shift the populations
     print *, 'new population sum: ', sum(self%dispackage%n(5,5,:,:))
     print *, 'new population numbers (level ',lvl,'): ', self%dispackage%n(5,5,2:nz-1,lvl)
-    !stop 
+    stop 
   endif
 
   print *, '                  ...task', self%task_t%id, 'updated.'

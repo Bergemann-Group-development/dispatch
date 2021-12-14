@@ -1,0 +1,10 @@
+# make search path
+VPATH := $(VPATH):$(HOP):$(BUILD)
+
+# dependencies
+composition_mod.o 	: prec_mod.o op_math_mod.o element_mod.o ion_mod.o level_mod.o transition_mod.o
+element_mod.o		: prec_mod.o op_math_mod.o ion_mod.o
+ion_mod.o			: prec_mod.o level_mod.o
+level_mod.o			: prec_mod.o
+transition_mod.o	: prec_mod.o op_math_mod.o level_mod.o ion_mod.o element_mod.o
+op_math_mod.o		: prec_mod.o
