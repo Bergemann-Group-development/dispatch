@@ -383,9 +383,6 @@ SUBROUTINE fill_guard_zones (self)
     select type(patch=>link%task)
     class is(experiment_t)
       call patch%rt%convert_mhd_variables()
-      !print *, patch%rt%temp8(5,5,:)
-    class is(m3d_rt_t)
-      if (patch%kind == 'm3d_rt_sc') print *, patch%rt_hat
     end select
     link => link%next
   end do
