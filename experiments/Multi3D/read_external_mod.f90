@@ -125,7 +125,7 @@ SUBROUTINE init(self, task_list, name)
   
   self%task_list%n_tasks = itaskl
 
-  call self%task_list%queue_all
+  call queue_initial (self%task_list)  ! Queue the initial tasks
   !print *, self%task_list%n_tasks
   !call self%task_list%print_queue
 
@@ -146,6 +146,49 @@ SUBROUTINE init(self, task_list, name)
 
   call trace%end()
 END SUBROUTINE init
+
+! Add the bottom up and top down patches to the ready queue
+subroutine queue_initial (task_list)
+  class(list_t)        :: task_list
+  class(link_t),pointer:: lnk, prev, head
+  logical :: first
+  
+  call trace%begin ('list_t%queue_all')
+  
+  first = .true.
+  lnk  => task_list%head
+  head => task_list%head
+  prev => null()
+  do while (associated(lnk))
+
+    select type (task=>lnk%task)
+    class is (m3d_rt_t)
+      if (((task%patch%boundaries%topbot(1)).and.(task%dispackage%dk.lt.0)).or.&
+          ((task%patch%boundaries%topbot(2)).and.(task%dispackage%dk.gt.0))) then
+        call task%set  (bits%ready)                                   ! Queue the top down/bottom up tasks
+        call link_prev (prev,lnk,head,first)                          ! Link the queue entry to the previous one
+        print *, 'Task ',task%id, 'added to ready queue, topbot:',task%patch%boundaries%topbot,'dk:',task%dispackage%dk
+    endif
+    end select
+    lnk => lnk%next
+
+  enddo
+
+  task_list%queue => head
+  call trace%end ()
+end subroutine queue_initial
+
+subroutine link_prev(prev,current,head,first)
+  class(link_t),pointer,intent(inout) :: prev, current, head
+  logical,              intent(inout) :: first
+  if (first) then
+    first = .false.
+    head => current
+  else
+    prev%next_time => current
+  endif
+  prev => current
+end subroutine link_prev
 
 !===============================================================================
 !> Initialize a minimum amount of patch information in a Cartesian arrangement
@@ -187,7 +230,7 @@ SUBROUTINE create_patch (self, i, patch)
 
   patch%position(1) = 0.5d0*patch%size(1)
   patch%position(2) = 0.5d0*patch%size(2)
-  patch%position(3) = (i-0.5d0)*patch%size(3)
+  patch%position(3) = (i - 0.5d0)*patch%size(3)!(self%npatches(3)-i + 0.5d0)*patch%size(3)
 
   call patch%idx%init (energy=5, mhd=patch%mhd)
   call patch%extras_t%pre_init ()
@@ -279,9 +322,9 @@ SUBROUTINE load_authority(self, patch, ii)
 
   do k=patch%li(3), patch%ui(3)
     ! flipping z-axis, so that the first patch is the bottom of the atmosphere
-    !iz = self%nz - ((ii-1)*patch%n(3) + k - patch%li(3)) ! better not
+    iz = self%nz - ((ii-1)*patch%n(3) + k - patch%li(3)) ! better not
     
-    iz = 1 + (ii-1)*patch%n(3) + k - patch%li(3)
+    !iz = 1 + (ii-1)*patch%n(3) + k - patch%li(3)
 
     do j=patch%li(2), patch%ui(2)
       do i=patch%li(1), patch%ui(1)
@@ -296,9 +339,10 @@ SUBROUTINE load_authority(self, patch, ii)
     end do
   end do
 
+  !print *, 'temp',patch%mem(5,5,:,patch%idx%e,1,1)
   ! Top of the atmosphere is bottom of index space!!!
-  
-  if (ii == 1) then
+  !    -> Top of atmosphere is top in index space (swiched if conditions)
+  if (ii == self%npatches(3)) then
     patch%mesh(3)%upper_boundary = .true.
     patch%boundaries%topbot(1) = .true.
     patch%boundaries%temp(1) = self%temp(lbound(self%zi,1))
@@ -306,7 +350,7 @@ SUBROUTINE load_authority(self, patch, ii)
     patch%boundaries%pe  (1) = self%pe  (lbound(self%zi,1))
   endif
 
-  if (ii == self%npatches(3)) then
+  if (ii == 1) then
     patch%mesh(3)%lower_boundary = .true.
     patch%boundaries%topbot(2) = .true.
     patch%boundaries%temp(2) = self%temp(ubound(self%zi,1))
