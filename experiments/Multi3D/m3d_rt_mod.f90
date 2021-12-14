@@ -646,9 +646,9 @@ SUBROUTINE update (self)
     call multi3d%pre_update   (self%dispackage, skip_ray_in = .false.)                 ! Sync dispackage and set up MULTI arrays 
     call multi3d%update       (self%dispackage, solver = 'rad')                  
     
-    if (self%i_omega .eq. 1) then
-      print *,'bottom?',(self%boundaries%topbot(2)),'dk',(self%dispackage%dk),'inu (z)', self%dispackage%inu_mem(5,5,1:nz,1)
-    endif
+    !if (self%i_omega .eq. 1) then
+    !  print *,'bottom?',(self%boundaries%topbot(2)),'dk',(self%dispackage%dk),'inu (z)', self%dispackage%inu_mem(5,5,1:nz,1)
+    !endif
       
   else
     call self%dispackage%sync         ()
@@ -663,7 +663,8 @@ SUBROUTINE update (self)
     !call self%after_update ()                                                              ! Shift the populations
     print *, 'new population sum: ', sum(self%dispackage%n(5,5,:,:))
     print *, 'new population numbers (level ',lvl,'): ', self%dispackage%n(5,5,2:nz-1,lvl)
-    stop 
+    print *, ""
+    !stop 
   endif
 
   print *, '                  ...task', self%task_t%id, 'updated.'
