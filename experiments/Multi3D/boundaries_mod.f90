@@ -109,8 +109,8 @@ SUBROUTINE boundary_mhd(self, mem)
 
   do i=1,2 ! loop over bottom - top
     if (self%topbot(i)) then
-      if (i == 1) b = lbound(mem,3)
-      if (i == 2) b = ubound(mem,3)
+      if (i == 2) b = lbound(mem,3)
+      if (i == 1) b = ubound(mem,3)
 
       mem(:,:,b,idx%d ,1) = self%rho(i)
       mem(:,:,b,idx%e ,1) = self%temp(i)
@@ -145,8 +145,8 @@ SUBROUTINE boundary_sc0(self, mem)
 
   do i=1,2 ! loop over bottom - top
     if (self%topbot(i)) then
-      if (i == 1) b = lbound(mem,3)
-      if (i == 2) b = ubound(mem,3)
+      if (i == 2) b = lbound(mem,3)
+      if (i == 1) b = ubound(mem,3)
 
       temp = dble(self%temp(i))
       rho  = dble(self%rho(i) * scaling%d)
@@ -177,8 +177,8 @@ SUBROUTINE boundary_scX(self, mem)
   call self%mirror(mem) ! in order to mirror chi and snu
 
   if (self%topbot(2)) then
-    b = ubound(mem,3)
-    mem(:,:,b,3,:) = mem(:,:,b-1,2,:) ! Inu = Snu at bottom of atmosphere
+    b = lbound(mem,3)
+    mem(:,:,b,3,:) = mem(:,:,b+1,2,:) ! Inu = Snu at bottom of atmosphere
   endif
 
 !  nx = size(mem,1)
@@ -221,13 +221,13 @@ SUBROUTINE mirror(self, mem)
   integer :: i, b
 
     if (self%topbot(1)) then
-        b = lbound(mem,3)
-        mem(:,:,b,:,:) = mem(:,:,b+1,:,:)
+        b = ubound(mem,3)
+        mem(:,:,b,:,:) = mem(:,:,b-1,:,:)
     endif
 
     if (self%topbot(2)) then
-        b = ubound(mem,3)
-        mem(:,:,b,:,:) = mem(:,:,b-1,:,:)
+        b = lbound(mem,3)
+        mem(:,:,b,:,:) = mem(:,:,b+1,:,:)
     endif
 
     if (verbose > 1) call self%print_mem(mem)

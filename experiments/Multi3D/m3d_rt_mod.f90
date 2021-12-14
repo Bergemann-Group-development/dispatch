@@ -128,7 +128,7 @@ recursive SUBROUTINE pre_init (self)
   self%dispackage%ggpgh         = multi3d%ggpgh
   self%dispackage%ref_atom     => multi3d%ref_atom
   self%dispackage%ref_spectrum => multi3d%ref_spectrum
-  self%dispackage%ups          => multi3d%ref_ups   ! Because of memory reasons, all patches point to the same ref_ups
+  !self%dispackage%ups          => multi3d%ref_ups   ! Because of memory reasons, all patches point to the same ref_ups
                                                     ! If needed, every patch can have it's own copy of the ups package,
                                                     ! just allocate the pointer once for omega0, the other tasks will point to this task automatically
 
@@ -484,7 +484,9 @@ SUBROUTINE init (self)
             o%boundaries%rho    => om%boundaries%rho
             o%boundaries%pe     => om%boundaries%pe
 
-            o%dispackage%ups    => om%dispackage%ups
+            !allocate(o%dispackage%ups)
+            !o%dispackage%ups = om%dispackage%ups
+            !o%dispackage%ups => om%dispackage%ups
           end select
         endif
 
@@ -532,6 +534,10 @@ END SUBROUTINE init
 !===============================================================================
 SUBROUTINE convert_mhd_variables(self)
   class(m3d_rt_t),target :: self
+
+  !print *, 'temp',self%patch%mem(5,5,:,self%patch%idx%e,  1, 1)
+  !print *, 'shape',shape(self%patch%mem(:,:,:,self%patch%idx%e,  1, 1)),shape(self%temp8)
+  !print *, 'assoc',associated(self%temp8)
 
   self%temp8 = dble(self%patch%mem(:,:,:,self%patch%idx%e,  1, 1))
   self%rho8  = dble(self%patch%mem(:,:,:,self%patch%idx%d,  1, 1)) * scaling%d
@@ -626,36 +632,46 @@ SUBROUTINE update (self)
 
   self%it = 1
   lvl = 3
+  nz = size(self%dispackage%n, 3)
 
   !print *, '====================================================='
   print *, 'Start updating task', self%task_t%id
 
   if (self%i_omega /= 0) then                                                          ! rad. transfer solver
+    self%dispackage%position = self%patch%position
+    self%dnload_time         = self%time - 2.0 * self%grace * self%dtime               ! Force download at the beginning of this omega-nu task
+    call self%dnload          ()                                                       ! it will assume that the upwind tasks are already done and 
+                                                                                       ! that the mem object is downloaded! (So Chi,Inu and Snu are available in the ghost zones)
     call self%link_dispackage ()                                                       ! Link the dispackage source function to the current slice
     call multi3d%pre_update   (self%dispackage, skip_ray_in = .false.)                 ! Sync dispackage and set up MULTI arrays 
-    !call self%diagnose        ()
-    call self%dnload          ()                                                       ! it will assume that the upwind tasks are already done and 
-    call multi3d%update       (self%dispackage, solver = 'rad')                        ! that the mem object is downloaded! (So Chi,Inu and Snu are available in the ghost zones)
-                                                                                            
+    call multi3d%update       (self%dispackage, solver = 'rad')                  
+    
+    if (self%i_omega .eq. 1) then
+      print *,'bottom?',(self%boundaries%topbot(2)),'dk',(self%dispackage%dk),'inu (z)', self%dispackage%inu_mem(5,5,1:nz,1)
+    endif
+      
   else
+    call self%dispackage%sync         ()
     call self%reduce_angle_quadrature ()                                                    ! collect the angle quadrature
     call self%reduce_omegaX           ()                                                    ! Reduce the rates etc. obtained from angle tasks
-   
-    nz = size(self%dispackage%n, 3)
+
+    !print *,'bottom?',(self%dispackage%position(3)<0.5),'down?',(self%dispackage%dk<0),'gamma (z)', self%dispackage%atom_rad%gamma_ij(5,5,:,1)
 
     print *, 'old population sum: ', sum(self%dispackage%n(5,5,:,:))
     print *, 'old population numbers (level ',lvl,'): ', self%dispackage%n(5,5,2:nz-1,lvl)
     call multi3d%update (self%dispackage, solver = 'pop')                                   ! call stat. eq. solver
     !call self%after_update ()                                                              ! Shift the populations
     print *, 'new population sum: ', sum(self%dispackage%n(5,5,:,:))
-    print *, 'new population numbers (level ',lvl,'): ', self%dispackage%n(5,5,2:nz-1,lvl)
-    !stop 
+    print *, 'new population numbers (level ',lvl,'): ', self%dispackage%n(5,5,2:nz-1,lvl) 
+    print *, 'patch done.'
   endif
 
   print *, '                  ...task', self%task_t%id, 'updated.'
   !print *, '====================================================='
 
   !call multi3d%post_update ! (... argument list ...)
+  !self%dnload_time = self%time - 2.0 * self%grace * self%dtime
+
   call trace%end ()
 END SUBROUTINE update
 
@@ -757,12 +773,33 @@ end subroutine reduce_omegaX
 
 subroutine link_dispackage(self)
   class(m3d_rt_t), intent(inout) :: self
+  class(rt_t),pointer            :: omeg
 
   self%dispackage%chi_mem(1:,1:,1:,self%nu_s:) => self%mem(:,:,:,self%i_chi,self%it,1:self%n_nu)
   self%dispackage%snu_mem(1:,1:,1:,self%nu_s:) => self%mem(:,:,:,self%i_snu,self%it,1:self%n_nu)
   self%dispackage%inu_mem(1:,1:,1:,self%nu_s:) => self%mem(:,:,:,self%i_inu,self%it,1:self%n_nu)
 
   call self%dispackage%sync ()
+  
+  !if ((self%i_omega .eq. 1 ).and. (self%id == 13)) then
+  !  omeg => self%main%omeg
+  !  do while (associated(omeg))                         
+  !   
+  !    if ((omeg%i_omega.ne.3)) then
+  !      omeg => omeg%next
+  !      cycle    
+  !    
+  !    else
+  !      select type (o=>omeg)
+  !      class is (m3d_rt_t)
+  !        self%dispackage%ups = o%dispackage%ups
+  !      end select 
+  !      exit   
+  !    
+  !    endif
+  !  enddo
+  !endif
+
 
 end subroutine link_dispackage
 
