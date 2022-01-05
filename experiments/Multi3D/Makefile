@@ -44,3 +44,4 @@ boundaries_mod.o        : standard_boundaries_mod.o io_mod.o trace_mod.o backgro
                           eos_mod.o vector_ops.o units_mod.o scaling_mod.o
 guards_mod.o			: math_mod.o
 scs_mod.o 				: composition_mod.o
+atom_var.o				: spectrum_var.o
