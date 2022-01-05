@@ -1,6 +1,6 @@
 # Option groups
-#OPTS = full_debug
-OPTS = vscode
+OPTS = full_debug
+#OPTS = vscode
 #OPTS = debug
 #OPTS =
 #OPTS = optimized

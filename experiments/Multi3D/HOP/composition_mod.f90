@@ -377,7 +377,10 @@ contains
                 if (iteta > 0) then
                     trans%teta = trans%temp
                     trans%temp = temp_to_theta / trans%teta(ntt:1:-1)
+                    trans%tt = trans%teta
                     !trans%tdisk = cshift(trans%tdisk(ntt:1:-1), -1)
+                else
+                    trans%tt = trans%temp
                 endif
 
                 trans%mint = trans%temp(1)

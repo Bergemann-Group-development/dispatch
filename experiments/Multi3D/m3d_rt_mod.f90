@@ -37,7 +37,7 @@ MODULE m3d_rt_mod
     !real, pointer, contiguous:: Npop(:,:,:,:) => null()
     integer:: fbin                                     ! Frequency bin
     integer,dimension(:,:),allocatable :: nu_regions   ! Frequency index limits
-    integer :: nu_s,nu_e
+    integer :: nu_s,nu_e, n_updates
     type(dis_package_t)  :: dispackage    ! Dispatch <-> Multi communicator
     integer :: i_n,i_n_lte,i_ne           ! Index range of pops and ne in mem arr
     integer :: i_chi,i_snu,i_inu,n_nu     ! Index range of chi, snu and inu 
@@ -47,7 +47,11 @@ MODULE m3d_rt_mod
     real(8),dimension(:,:,:),pointer :: vx8   => null()
     real(8),dimension(:,:,:),pointer :: vy8   => null()
     real(8),dimension(:,:,:),pointer :: vz8   => null()
+
+    class(rt_t), pointer :: opac  => null()  ! pointer to head of opac sheep list, similarly to omeg
+
     logical :: is_linked = .false.
+    character(len=64) :: meta_file, ray_name
   contains
     procedure:: pre_init
     procedure:: init
@@ -60,11 +64,16 @@ MODULE m3d_rt_mod
     procedure:: link_dispackage
     procedure:: nbor_relations
     procedure:: init_level
+    procedure:: init_task_list
     procedure:: task_info
     procedure:: load_initial_conditions
     procedure:: reduce_angle_quadrature
     procedure:: diagnose
     procedure:: convert_mhd_variables
+    procedure:: save_meta4
+    procedure:: save_meta8
+    procedure:: setup_metafile
+    procedure:: pre_init_sheep_list
   end type
 
   type, public, extends(halo_t):: halo_m3d_t
@@ -75,7 +84,10 @@ MODULE m3d_rt_mod
 
   integer, save:: verbose=0                           ! verbosity
   real,    save:: rt_freq=0                           ! how often RT should be updated WRT MHD -- 0=unlimited
-  logical,save:: dnload_mhd=.true.
+  logical, save:: dnload_mhd=.true.
+  logical, save:: save_output=.true.
+  integer, save:: maxiter=1
+  character(len=64), save:: out_folder = './out/'
 CONTAINS
 
 !===============================================================================
@@ -87,20 +99,15 @@ recursive SUBROUTINE pre_init (self)
   !-----------------------------------------------------------------------------
   class(m3d_rt_t), pointer:: omega
   character(128), save:: folder='input_multi3d'
-  integer:: dir, i_mu, i_phi, i_omega, n_omega, iostat, n, fbin
-  integer, save:: n_mu=1, n_phi=1, n_bin=2, nt=2, n_warmup=3, ng(3)=[4,4,1], loc(1)
-  real, save   :: courant=0.5, cdtd=1.0
-  real, dimension(:), allocatable:: mu, w_mu, mux, muy, muz
+  integer:: n_omega, iostat
+  integer, save:: n_mu=1, n_phi=1, n_bin=2, nt=2, n_warmup=3, ng(3)=[4,4,1]
   real,    save:: rt_grace=0.01
-  real(8), save:: rt_llc(3)=-huge(1d0)
-  real(8), save:: rt_urc(3)=+huge(1d0)
   real(8), save:: rt_timestep=0.01_8
-  logical, save:: vertical_propagation=.false.
   logical, save:: first_time=.true.
   logical, save:: on=.true.
   !-----------------------------------------------------------------------------
-  namelist /multi3d_params/ folder, on, verbose, nt, ng, rt_llc, rt_urc, rt_timestep, &
-  n_mu, n_phi, n_bin, rt_grace, vertical_propagation, n_warmup, courant, cdtd, rt_freq, dnload_mhd
+  namelist /multi3d_params/ folder, on, verbose, n_mu, n_phi, n_bin, save_output, &
+    out_folder, maxiter, rt_grace, rt_timestep
   !-----------------------------------------------------------------------------
   ! Read parameters
   !-----------------------------------------------------------------------------
@@ -125,12 +132,8 @@ recursive SUBROUTINE pre_init (self)
   ! Multi3D pre init is ran only once per OMP thread
   ! This means that another dispackages of the same thread can not be filled 
   ! within the same routine. Fill them here with thread global variables
-  self%dispackage%ggpgh         = multi3d%ggpgh
   self%dispackage%ref_atom     => multi3d%ref_atom
   self%dispackage%ref_spectrum => multi3d%ref_spectrum
-  !self%dispackage%ups          => multi3d%ref_ups   ! Because of memory reasons, all patches point to the same ref_ups
-                                                    ! If needed, every patch can have it's own copy of the ups package,
-                                                    ! just allocate the pointer once for omega0, the other tasks will point to this task automatically
 
   ! Set the scaling pointer in the dispackage
   self%dispackage%rho_scale => scaling%d
@@ -169,31 +172,14 @@ recursive SUBROUTINE pre_init (self)
   self%n_warmup = n_warmup
   self%n_bin = n_bin
   self%grace = rt_grace
-  self%rt_llc = rt_llc
-  self%rt_urc = rt_urc
   self%rt_timestep = rt_timestep
-  self%vertical_propagation = vertical_propagation
   self%n_mu  = n_mu
   self%n_phi = n_phi
-  self%courant = courant
-  self%cdtd    = cdtd
-  self%rt_freq = rt_freq
   self%in_task_list = .false.
-  !-----------------------------------------------------------------------------
-  ! Check if this MHD patch needs RT
-  !-----------------------------------------------------------------------------
-  call self%check_boundaries
 
   if (self%on) then 
-    call self%task_t%init_unique (same=.true.)                                  ! obtain an unique ID
-    !---------------------------------------------------------------------------
+    call self%task_t%init_unique (same=.true.) ! obtain an unique ID
     self%type    = 'm3d_rt_t'
-    if (self%i_omega==0) then
-      self%kind    = 'm3d_rt_sc0'
-    else
-      self%kind    = 'm3d_rt_sc'
-    end if
-    !
     !======================================================================================
     ! Omega0: > Collects the transition rates from omegaX tasks
     !         > Stores population numbers + rates 
@@ -205,116 +191,159 @@ recursive SUBROUTINE pre_init (self)
     ! The angle tasks do not need to know the population numbers in the ghost zones
     ! if the opacity is passed!
     !=====================================================================================
-    if (self%i_omega==0) then
+    if (self%i_omega==0) then ! i_omega is set to zero by default in rt_mod
+      self%kind    = 'm3d_rt_sc0'
       self%main => self         ! convenience
-      call rt_integral%init
-      call self%patch%aux%init
-      !-------------------------------------------------------------------------
-      ! Number of ray directions
-      !-------------------------------------------------------------------------
-      !n_omega = merge (1+self%n_phi*(self%n_mu-1), 0, self%n_mu > 0)
-      n_omega = self%n_phi*self%n_mu ! only for comparison with 'set_a2'
-      self%n_omega = 2*n_omega*n_bin
-
-      call self%get_nu_regions(n_bin)            ! Get frequency domains for all tasks
-      !-------------------------------------------------------------------------
-      ! Assign angles and integration weight and allocate the required RT 
-      ! solvers for all angles
-      !-------------------------------------------------------------------------
       if (self%n_mu > 0) then
-        allocate (mu(self%n_mu),w_mu(self%n_mu))
-        call radau%init (self%n_mu, mu, w_mu)
-        mu = [0.57735026] ! only for comparison with 'set_a2'
-        mux = [-0.57735026,  0.57735026,  0.57735026, -0.57735026]
-        muy = [ 0.57735026,  0.57735026, -0.57735026, -0.57735026]
-        w_mu = 1
-        !-----------------------------------------------------------------------
-        ! Assign angles and initialize clones
-        !-----------------------------------------------------------------------
-        i_omega = 0
-        do dir=-1,1,2
-          do i_mu=1,self%n_mu
-            n = self%n_phi
-            !if (i_mu == self%n_mu) n = 1
-            do i_phi=1,n
-              do fbin=1, n_bin
-                i_omega = i_omega+1
-                allocate(omega)
-                omega%main => self
-                omega%master_id = self%id
-                if (associated(self%omeg)) then
-                  omega%prev => self%tail
-                  omega%prev%next => omega
-                  self%tail => omega
-                else
-                  self%omeg => omega
-                  self%tail => omega
-                end if
-                !omega%mu      = dir*mu(i_mu)
-                omega%mu      = -dir*mu(i_mu)
-                omega%rt_hat(1) = mux(i_phi)
-                omega%rt_hat(2) = muy(i_phi)
-                omega%rt_hat(3) = omega%mu
-                omega%w       = w_mu(i_mu)*math%pi4/n/2.
-                omega%patch   => self%patch
-                omega%i_omega = i_omega
-
-                omega%fbin    = fbin
-                omega%nu_s    = self%nu_regions(fbin,1)  ! Starting frequency index in spectrum freq. grid
-                omega%nu_e    = self%nu_regions(fbin,2)  ! Ending frequency index in spectrum freq. grid
-
-                !omega%rt_phi = math%pi*(modulo(real(2*(i_phi-1))/self%n_phi + &
-                !  (dir+1)/2.0, 2.0) - 1.0)
-                !if (i_mu == self%n_mu) omega%rt_phi = 0.0
-                omega%rt_phi = mux(i_phi) ! only for comparison with 'set_a2'
-                call omega%pre_init
-              end do
-            end do
-          end do
-        end do
+        !-------------------------------------------------------------------------
+        ! Number of ray directions
+        !-------------------------------------------------------------------------
+        !n_omega = merge (1+self%n_phi*(self%n_mu-1), 0, self%n_mu > 0)
+        n_omega = self%n_phi*self%n_mu ! only for comparison with 'set_a2'
+        self%n_omega = 2*n_omega*n_bin
+        call self%pre_init_sheep_list(self%omeg, 'omeg_sheep') ! this calls self%pre_init recursively
+        !call self%pre_init_sheep_list(self%opac, 'opac_sheep') ! this calls self%pre_init recursively
       end if
       
-      self%dispackage%fbin  = self%fbin
+      self%n_nu = self%dispackage%ref_spectrum%nnu
       self%dispackage%nu_s  = 1
-      self%dispackage%nu_e  = self%dispackage%ref_spectrum%nnu
-      self%n_nu             = self%dispackage%nu_e-self%dispackage%nu_s + 1
-      self%dispackage%nfint = 0
+      self%dispackage%nu_e  = self%n_nu
 
       self%nv      = 2   ! population numbers (+ heating)
       self%i_n     = 1
       self%i_n_lte = 2
       self%nw      = self%dispackage%ref_atom%nlevel
-    else
-      ! ------------------------------------------------------------------------
-      ! Determine closest axis direction for omega/=0
-      ! ------------------------------------------------------------------------
-      !self%rt_hat(1) = sin(acos(self%mu))*cos(self%rt_phi)   ! sin(theta)*cos(phi), dx
-      !self%rt_hat(2) = sin(acos(self%mu))*sin(self%rt_phi)   ! sin(theta)*sin(phi), dy
-      !self%rt_hat(3) = self%mu                               ! cos(theta), dz
-      loc = maxloc(abs(self%rt_hat))
-      self%axis = loc(1)                                          ! direction of max propagation
-
-      self%dispackage%mux   = dble(self%rt_hat(1))
-      self%dispackage%muy   = dble(self%rt_hat(2))
-      self%dispackage%muz   = dble(self%rt_hat(3))
-      self%dispackage%fbin  = self%fbin
-      self%dispackage%nu_s  = self%nu_s
-      self%dispackage%nu_e  = self%nu_e
-      self%dispackage%nfint = self%n_bin
-
-      self%n_nu = self%dispackage%nu_e-self%dispackage%nu_s + 1
+    elseif(self%kind == 'omeg_sheep') then
       self%nv = 3
       self%nw = self%n_nu  ! chi, snu and inu (for every nu in this patch)
-      !self%mw = self%nw
       self%i_chi = 1
       self%i_snu = 2
       self%i_inu = 3
     end if
     self%mv = self%nv
     self%nt = 1
+    self%n_updates = 0
+    if (save_output) call self%setup_metafile()
   end if
   call trace%end ()
 END SUBROUTINE pre_init
+
+SUBROUTINE pre_init_sheep_list(self, first_sheep, kind)
+  class(m3d_rt_t), target :: self
+  class(rt_t), pointer :: first_sheep
+  character(len=*), intent(in) :: kind
+  class(m3d_rt_t), pointer :: sheep
+  real, dimension(:), allocatable:: mu, w_mu, mux, muy, muz
+  integer :: i_omega, dir, i_mu, i_phi, n, fbin
+
+  call self%get_nu_regions(self%n_bin)            ! Get frequency domains for all tasks
+  
+  !-------------------------------------------------------------------------
+  ! Assign angles and integration weights
+  !-------------------------------------------------------------------------
+  allocate (mu  (self%n_mu))
+  allocate (w_mu(self%n_mu))
+  !call radau%init (self%n_mu, mu, w_mu)
+  mu = [0.57735026] ! only for comparison with 'set_a2'
+  mux = [-0.57735026,  0.57735026,  0.57735026, -0.57735026]
+  muy = [ 0.57735026,  0.57735026, -0.57735026, -0.57735026]
+  w_mu = 1
+  !-----------------------------------------------------------------------
+  ! Assign angles and initialize clones
+  !-----------------------------------------------------------------------
+  i_omega = 0
+  do dir=-1,1,2
+    do i_mu=1,self%n_mu
+      n = self%n_phi
+      !if (i_mu == self%n_mu) n = 1
+      do i_phi=1,n
+        do fbin=1, self%n_bin
+          allocate(sheep)
+          sheep%main => self
+          sheep%master_id = self%id
+          if (associated(first_sheep)) then
+            sheep%prev => self%tail
+            sheep%prev%next => sheep
+            self%tail => sheep
+          else
+            first_sheep => sheep
+            self%tail => sheep
+          end if
+
+          i_omega = i_omega+1
+          sheep%i_omega = i_omega
+          sheep%kind = kind
+
+          !sheep%mu = dir*mu(i_mu)
+          sheep%mu = -dir*mu(i_mu)
+
+          !sheep%rt_phi = math%pi*(modulo(real(2*(i_phi-1))/self%n_phi + &
+          !  (dir+1)/2.0, 2.0) - 1.0)
+          !if (i_mu == self%n_mu) sheep%rt_phi = 0.0
+          sheep%rt_phi = mux(i_phi) ! only for comparison with 'set_a2'
+
+          ! ------------------------------------------------------------------------
+          ! Determine closest axis direction for omega/=0
+          ! ------------------------------------------------------------------------
+          !sheep%rt_hat(1) = sin(acos(sheep%mu))*cos(sheep%rt_phi)   ! sin(theta)*cos(phi), dx
+          !sheep%rt_hat(2) = sin(acos(sheep%mu))*sin(sheep%rt_phi)   ! sin(theta)*sin(phi), dy
+          !sheep%rt_hat(3) = sheep%mu                               ! cos(theta), dz
+
+          sheep%rt_hat(1) = mux(i_phi)
+          sheep%rt_hat(2) = muy(i_phi)
+          sheep%rt_hat(3) = sheep%mu
+          sheep%axis = maxloc(abs(sheep%rt_hat), 1) ! direction of max propagation
+
+          sheep%dispackage%mux   = dble(sheep%rt_hat(1))
+          sheep%dispackage%muy   = dble(sheep%rt_hat(2))
+          sheep%dispackage%muz   = dble(sheep%rt_hat(3))
+
+          sheep%w       = w_mu(i_mu)*math%pi4/n/2.
+          sheep%patch   => self%patch
+
+          sheep%fbin    = fbin
+          sheep%nu_s    = self%nu_regions(fbin,1)  ! Starting frequency index in spectrum freq. grid
+          sheep%nu_e    = self%nu_regions(fbin,2)  ! Ending frequency index in spectrum freq. grid
+
+          sheep%dispackage%fbin = sheep%fbin
+          sheep%dispackage%nu_s = sheep%nu_s
+          sheep%dispackage%nu_e = sheep%nu_e
+          sheep%dispackage%nfint = self%n_bin
+          sheep%n_nu = sheep%nu_e-sheep%nu_s + 1
+
+          call sheep%pre_init
+        end do
+      end do
+    end do
+  end do
+END SUBROUTINE pre_init_sheep_list
+
+SUBROUTINE setup_metafile(self)
+  class(m3d_rt_t),intent(inout):: self
+  integer :: meta_unit
+
+  if (self%i_omega == 0) then
+    write(self%ray_name,'(A1, I3.3, A9)') 'p', self%patch%id, '_shepherd'
+  else
+    write(self%ray_name,'(A1, I3.3, A6, I3.3)') 'p', self%patch%id, '_sheep', self%i_omega
+  endif
+
+  self%meta_file = trim(out_folder) // trim(self%ray_name) // '_meta.txt'
+  open(newunit=meta_unit, file=self%meta_file, form='formatted')
+
+  write(meta_unit, '(A8, 1X, SP, 3(F12.8))') 'position', self%patch%position
+
+  if (self%i_omega == 0) then
+    write(meta_unit, '(A8, 1X, I4)') 'nmu',   self%n_mu
+    write(meta_unit, '(A8, 1X, I4)') 'nphi',  self%n_phi
+    write(meta_unit, '(A8, 1X, I4)') 'nfbin', self%n_bin
+  else
+    write(meta_unit, '(A8, 1X, SP, 3(F12.8))') 'rt_hat', self%rt_hat
+    write(meta_unit, '(A8, 1X, I4)') 'fbin', self%fbin
+  endif
+
+  close(meta_unit)
+END SUBROUTINE
 
 
 ! PE: obtain frequency splitted regions
@@ -348,7 +377,6 @@ SUBROUTINE init (self)
   ! ............................................................................
   class (gpatch_t), pointer :: p
   class (rt_t), pointer:: omega
-  class(link_t), pointer:: link
   integer :: i, shape_patch(6)
   logical, save :: first_time = .true.
   ! ----------------------------------------------------------------------------
@@ -391,6 +419,8 @@ SUBROUTINE init (self)
       
       call omega%gpatch_t%init
       omega%mem = tiny(1.)
+      omega%it = 1
+      omega%new = omega%it
 
       if (verbose > 0) write (io_unit%log,*) 'call self%patch_t%setup'
 
@@ -423,7 +453,8 @@ SUBROUTINE init (self)
       ! ----------------------------------------------------------------------------
       ! Do not check density or validate with it. This is rather important to be set
       ! ----------------------------------------------------------------------------
-      call self%set (bits%no_density)
+      call omega%set (bits%no_density)
+      call omega%set (bits%internal)
       
       ! ----------------------------------------------------------------------------
       ! Allocate and set unsigned and pervolume. Opacity, source function,
@@ -515,16 +546,6 @@ SUBROUTINE init (self)
         call omega%dealloc()
         omega%n_omega = 0
       end if
-
-      !---------------------------------------------------------------------------
-      ! Add the patch to the task list -- this creates the patch%link
-      !---------------------------------------------------------------------------
-      allocate (halo_m3d_t:: link)
-      link%task => omega
-      omega%link => link
-      call omega%patch%task_list%prepend_link (link)
-      omega%in_task_list = .true.
-      call trace%end ()
     end do
   end if
   call trace%end()
@@ -540,10 +561,12 @@ SUBROUTINE convert_mhd_variables(self)
 
   self%temp8 = dble(self%patch%mem(:,:,:,self%patch%idx%e,  1, 1))
   self%rho8  = dble(self%patch%mem(:,:,:,self%patch%idx%d,  1, 1)) * scaling%d
-  self%ne8   = dble(self%patch%mem(:,:,:,6                , 1, 1)) * scaling%p / (cgs%k_b * self%temp8)
-  self%vx8   = dble(self%patch%mem(:,:,:,self%patch%idx%px, 1, 1)) / self%rho8 *scaling%d*scaling%u
-  self%vy8   = dble(self%patch%mem(:,:,:,self%patch%idx%py, 1, 1)) / self%rho8 *scaling%d*scaling%u
-  self%vz8   = dble(self%patch%mem(:,:,:,self%patch%idx%pz, 1, 1)) / self%rho8 *scaling%d*scaling%u
+  where (self%temp8 > 0) 
+    self%ne8 = dble(self%patch%mem(:,:,:,6,                 1, 1)) * scaling%p / (cgs%k_b * self%temp8)
+    self%vx8 = dble(self%patch%mem(:,:,:,self%patch%idx%px, 1, 1)) / self%rho8 *scaling%d*scaling%u
+    self%vy8 = dble(self%patch%mem(:,:,:,self%patch%idx%py, 1, 1)) / self%rho8 *scaling%d*scaling%u
+    self%vz8 = dble(self%patch%mem(:,:,:,self%patch%idx%pz, 1, 1)) / self%rho8 *scaling%d*scaling%u
+  end where
 END subroutine convert_mhd_variables
 !===============================================================================
 
@@ -613,7 +636,7 @@ subroutine reduce_angle_quadrature(self)
 
     omega => omega%next
   enddo
-  self%dispackage%atom_rad%wphi= 4.0d0 * cgs%pi / self%dispackage%atom_rad%wphi  ! wphi contains the sum of wphi from each angle
+  self%dispackage%atom_rad%wphi = 4.0d0 * cgs%pi / self%dispackage%atom_rad%wphi  ! wphi contains the sum of wphi from each angle
 end subroutine reduce_angle_quadrature
 
 !===============================================================================
@@ -622,51 +645,59 @@ end subroutine reduce_angle_quadrature
 !> data back from Mulit3D in post_update.
 !===============================================================================
 SUBROUTINE update (self)
+  use timer_mod
   class(m3d_rt_t) :: self
   logical, save :: first_time = .true.
   real(var_k), dimension(:,:,:,:,:), pointer :: mem
   integer :: lvl, nz
+  character(len=3) :: solver
+  character(len=48) :: text
   !-----------------------------------------------------------------------------
   call trace%begin ('m3d_rt_t%update')
 
   self%it = 1
   lvl = 3
   nz = size(self%dispackage%n, 3)
+  self%n_updates = self%n_updates+1
+  self%dispackage%topbot = self%patch%boundaries%topbot
 
-  !print *, '====================================================='
-  print *, 'Start updating task', self%task_t%id
+  if (self%n_updates > maxiter) then
+    print *, 'Iteration: ', self%n_updates
+    stop
+  endif
+
+  call timer%tic ()
 
   if (self%i_omega /= 0) then                                                          ! rad. transfer solver
+    solver = 'rad'
     self%dispackage%position = self%patch%position
     self%dnload_time         = self%time - 2.0 * self%grace * self%dtime               ! Force download at the beginning of this omega-nu task
     call self%dnload          ()                                                       ! it will assume that the upwind tasks are already done and 
                                                                                        ! that the mem object is downloaded! (So Chi,Inu and Snu are available in the ghost zones)
     call self%link_dispackage ()                                                       ! Link the dispackage source function to the current slice
     call multi3d%pre_update   (self%dispackage, skip_ray_in = .false.)                 ! Sync dispackage and set up MULTI arrays 
-    call multi3d%update       (self%dispackage, solver = 'rad')                  
-    call self%output()
-    !if (self%i_omega .eq. 1) then
-    !  print *,'bottom?',(self%boundaries%topbot(2)),'dk',(self%dispackage%dk),'inu (z)', self%dispackage%inu_mem(5,5,1:nz,1)
-    !endif
+    call self%dispackage%update_radiation()                
+    if (save_output) call self%output()
       
   else
+    solver = 'pop'
     call self%dispackage%sync         ()
     call self%reduce_angle_quadrature ()                                                    ! collect the angle quadrature
     call self%reduce_omegaX           ()                                                    ! Reduce the rates etc. obtained from angle tasks
 
-    !print *,'bottom?',(self%dispackage%position(3)<0.5),'down?',(self%dispackage%dk<0),'gamma (z)', self%dispackage%atom_rad%gamma_ij(5,5,:,1)
-
-    print *, 'old population sum: ', sum(self%dispackage%n(5,5,:,:))
-    print *, 'old population numbers (level ',lvl,'): ', self%dispackage%n(5,5,2:nz-1,lvl)
-    call multi3d%update (self%dispackage, solver = 'pop')                                   ! call stat. eq. solver
+    !print *, 'old population sum: ', sum(self%dispackage%n(5,5,:,:))
+    !print *, 'old population numbers (level ',lvl,'): ', self%dispackage%n(5,5,2:nz-1,lvl)
+    call self%dispackage%update_populations()
     !call self%after_update ()                                                              ! Shift the populations
-    print *, 'new population sum: ', sum(self%dispackage%n(5,5,:,:))
+    !print *, 'new population sum: ', sum(self%dispackage%n(5,5,:,:))
     print *, 'new population numbers (level ',lvl,'): ', self%dispackage%n(5,5,2:nz-1,lvl)
     print *, ""
-    !stop 
   endif
 
-  print *, '                  ...task', self%task_t%id, 'updated.'
+  write(text, *), 'time to solve ' // solver // ' task ', self%task_t%id
+  call timer%toc (text, 1)
+
+  !print *, '                  ...task', self%task_t%id, 'updated.'
   !print *, '====================================================='
 
   !call multi3d%post_update ! (... argument list ...)
@@ -718,15 +749,17 @@ subroutine reduce_omegaX(self)
   class(m3d_rt_t),target :: self
   class(rt_t),pointer    :: omeg
   integer,dimension(:,:),pointer :: ir
-  real(8), dimension(:,:,:,:), pointer :: wphi
+  real(8), dimension(:,:,:,:), pointer :: wphi, Jnu
+  real(4), dimension(:,:,:,:), pointer :: Inu
+  real(8) :: wmu_4pi
+  integer :: nu_s, nu_e
 
   ! Index range of the patch (no ghost zones)
   ir => self%dispackage%irp
 
   self%dispackage%j = 0.0d0                           ! Zero the old radiation field
-  call self%dispackage%atom_rad%zero_rates_rad ()     ! Zero atomic radiation specific fields
-  call self%dispackage%atom_rad%zero_qrad_rad  ()     ! also for the omega0 task (done for omegaX in solver)
-  call self%dispackage%atom_rad%zero_gamma_rad ()
+  self%dispackage%atom_rad%gamma_ij = 0.0d0
+  self%dispackage%atom_rad%gamma_ji = 0.0d0
 
   omeg => self%main%omeg
   do while (associated(omeg))                         ! Loop through all the angle tasks and save the rates etc.
@@ -737,38 +770,25 @@ subroutine reduce_omegaX(self)
     
     select type (o=>omeg)                             ! Add the neighbor quants to the quants of this task
     class is (m3d_rt_t)
-      !print *, o%id, o%dispackage%dk, o%dispackage%wm
-      !print *, o%dispackage%atom_rad%Rij(5,5,ir(3,2):ir(3,1):-1,1) ! 127.904419883840        134.628426994655        141.480726219302
 
       self%dispackage%atom_rad%gamma_ij   = self%dispackage%atom_rad%gamma_ij   + o%dispackage%atom_rad%gamma_ij
       self%dispackage%atom_rad%gamma_ji   = self%dispackage%atom_rad%gamma_ji   + o%dispackage%atom_rad%gamma_ji
-      self%dispackage%atom_rad%gamma_ij_c = self%dispackage%atom_rad%gamma_ij_c + o%dispackage%atom_rad%gamma_ij_c
-      self%dispackage%atom_rad%gamma_ji_c = self%dispackage%atom_rad%gamma_ji_c + o%dispackage%atom_rad%gamma_ji_c
+      
+      wmu_4pi= o%dispackage%wm / (4.0d0*cgs%pi)
+      nu_s = o%dispackage%nu_s
+      nu_e = o%dispackage%nu_e
+      Jnu => self%dispackage%j   (ir(1,1):ir(1,2),ir(2,1):ir(2,2),ir(3,1):ir(3,2),nu_s:nu_e)
+      Inu => o%dispackage%inu_mem(ir(1,1):ir(1,2),ir(2,1):ir(2,2),ir(3,1):ir(3,2),nu_s:nu_e)
 
-      self%dispackage%atom_rad%Rij   = self%dispackage%atom_rad%Rij   + o%dispackage%atom_rad%Rij
-      self%dispackage%atom_rad%Rji   = self%dispackage%atom_rad%Rji   + o%dispackage%atom_rad%Rji
-      self%dispackage%atom_rad%Rij_c = self%dispackage%atom_rad%Rij_c + o%dispackage%atom_rad%Rij_c
-      self%dispackage%atom_rad%Rji_c = self%dispackage%atom_rad%Rji_c + o%dispackage%atom_rad%Rji_c
-
-      self%dispackage%atom_rad%qrad    = self%dispackage%atom_rad%qrad   + o%dispackage%atom_rad%qrad
-      self%dispackage%atom_rad%qrad_c  = self%dispackage%atom_rad%qrad_c + o%dispackage%atom_rad%qrad_c 
-
-      ! Only sum the contribution from the patch itself
-      self%dispackage%j(ir(1,1):ir(1,2),ir(2,1):ir(2,2),ir(3,1):ir(3,2),o%dispackage%nu_s:self%dispackage%nu_e) = &
-                        self%dispackage%j(ir(1,1):ir(1,2),ir(2,1):ir(2,2),ir(3,1):ir(3,2),o%dispackage%nu_s:o%dispackage%nu_e) &
-                        + o%dispackage%j(ir(1,1):ir(1,2),ir(2,1):ir(2,2),ir(3,1):ir(3,2),o%dispackage%nu_s:o%dispackage%nu_e)
+      Jnu = Jnu + wmu_4pi * dble(Inu)
     end select  
     omeg => omeg%next
   enddo
 
   wphi => self%dispackage%atom_rad%wphi(ir(1,1):ir(1,2),ir(2,1):ir(2,2),ir(3,1):ir(3,2),:)
 
-  self%dispackage%atom_rad%gamma_ij =  self%dispackage%atom_rad%gamma_ij * wphi
-  self%dispackage%atom_rad%gamma_ji =  self%dispackage%atom_rad%gamma_ji * wphi
-  self%dispackage%atom_rad%rij      =  self%dispackage%atom_rad%rij      * wphi
-  self%dispackage%atom_rad%rji      =  self%dispackage%atom_rad%rji      * wphi
-  self%dispackage%atom_rad%qrad     =  self%dispackage%atom_rad%qrad     * wphi
-
+  self%dispackage%atom_rad%gamma_ij(:,:,:,1:size(wphi,4)) =  self%dispackage%atom_rad%gamma_ij(:,:,:,1:size(wphi,4)) * wphi
+  self%dispackage%atom_rad%gamma_ji(:,:,:,1:size(wphi,4)) =  self%dispackage%atom_rad%gamma_ji(:,:,:,1:size(wphi,4)) * wphi
 end subroutine reduce_omegaX
 
 subroutine link_dispackage(self)
@@ -811,22 +831,25 @@ SUBROUTINE output (self)
   use parallel_mod
   use mconst
   class(m3d_rt_t):: self
-  character(len=64) :: ray_name
+  character(len=64) :: filename
   integer :: lunit
   !-----------------------------------------------------------------------------
   !call trace%begin ('m3d_rt_t%output')
 
   ! if at top-boundary
   if (self%patch%boundaries%topbot(1) .and. self%mu > 0) then
-    write(ray_name,'(A1,I3.3,SP,3(A1,F11.8))') '_', self%fbin, '_', self%rt_hat(1), '_', self%rt_hat(2), '_', self%rt_hat(3)
-    write(*,*) 'Writing output for angle ', ray_name
+    write(*,*) 'Writing output for angle ', self%ray_name
 
-    open(newunit=lunit, file='./output/lam' // trim(ray_name) // '.bin', access='stream')
+    filename = trim(out_folder) // trim(self%ray_name) // '_lam.bin'
+    open(newunit=lunit, file=filename, access='stream')
     write(lunit) 1e8 * cc / sp%nu(fs:fe)
+    call self%save_meta8(filename, sp%nu)
     close(lunit)
 
-    open(newunit=lunit, file='./output/ie' // trim(ray_name) // '.bin', access='stream')
-    write(lunit) self%mem(:,:,self%li(3),self%i_inu,self%it,1:self%n_nu) ! needs to be upper index instead of lower index
+    filename = trim(out_folder) // trim(self%ray_name) // '_inu.bin'
+    open(newunit=lunit, file=filename, access='stream')
+    write(lunit) self%mem(:,:,self%ui(3),self%i_inu,self%it,:)
+    call self%save_meta4(filename, self%mem(:,:,self%ui(3),self%i_inu,self%it,:))
     close(lunit)
   endif
 
@@ -956,7 +979,9 @@ SUBROUTINE bndries (self)
   !----------------------------------------------------------------------------
   call trace_begin('m3d_rt_t%bndries')
   mem => self%mem(:,:,:,:,self%it,:)
-  if (any(self%boundaries%topbot)) then
+  if (size(self%boundaries%topbot) /= 2) then
+    print *, 'boundary conditions not initialised for task ', self%id 
+  elseif (any(self%boundaries%topbot)) then
     call self%dispackage%sync () ! needed to set global "fs" correctly
     call self%boundaries%boundary(mem)
   endif
@@ -974,6 +999,48 @@ SUBROUTINE init_level (self)
   end if
 END SUBROUTINE init_level
 
+!===============================================================================
+!> Add the (1+n_omega) RT tasks to the task list
+!===============================================================================
+SUBROUTINE init_task_list(self, task_list)
+  class(m3d_rt_t) :: self
+  class(task_t), pointer:: rt_task
+  class(list_t), pointer:: task_list
+  class(rt_t),   pointer:: omega
+  class(link_t), pointer:: link
+  !-----------------------------------------------------------------------------
+  call trace%begin ('rt_t%add_tasks_to')
+  !-----------------------------------------------------------------------------
+  if (self%on) then
+    call append_link(self, task_list)
+    omega => self%omeg
+    do while(associated(omega))
+      call append_link(omega, task_list)
+      omega => omega%next
+    end do
+  end if
+  call trace%end()
+END SUBROUTINE init_task_list
+
+!===============================================================================
+!> Append RT tasks to the task list
+!===============================================================================
+SUBROUTINE append_link(patch, task_list)
+  class(rt_t),   target :: patch
+  class(link_t), pointer:: link
+  class(list_t), pointer:: task_list
+
+  patch%task_list => task_list
+  if (.not.associated(patch%link)) then
+    allocate (halo_m3d_t:: link)
+    link%task => patch
+    patch%link => link
+  endif
+  if (.not.patch%in_task_list) then
+    call task_list%append (patch%link)
+  endif
+  patch%in_task_list = .true.
+END SUBROUTINE append_link
 
 !===============================================================================
 !> For diagnostic output of tasks and nbor lists to data/run/rank_RRRRR.log
@@ -1028,5 +1095,26 @@ SUBROUTINE info (self, label)
   call trace%end ()
 END SUBROUTINE info
 
+SUBROUTINE save_meta8(self, filename, arr)
+  class(m3d_rt_t):: self
+  character(len=*), intent(in) :: filename
+  real(8), intent(in) :: arr(..)
+  integer :: meta_unit
+
+  open(newunit=meta_unit, file=self%meta_file, form='formatted', access='append')
+  write(meta_unit, '(A64, I4, 8(I5))') filename, storage_size(arr), shape(arr)
+  close(meta_unit)
+END SUBROUTINE save_meta8
+
+SUBROUTINE save_meta4(self, filename, arr)
+  class(m3d_rt_t):: self
+  character(len=*), intent(in) :: filename
+  real(4), intent(in) :: arr(..)
+  integer :: meta_unit
+
+  open(newunit=meta_unit, file=self%meta_file, form='formatted', access='append')
+  write(meta_unit, '(A64, I4, 8(I5))') filename, storage_size(arr), shape(arr)
+  close(meta_unit)
+END SUBROUTINE save_meta4
 
 END MODULE m3d_rt_mod

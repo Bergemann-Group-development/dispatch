@@ -107,23 +107,23 @@ SUBROUTINE init(self, task_list, name)
     call self%load_authority(patch, i)
 
     if (verbose > 0) then 
-      iz = (i-1)*patch%n(3) + 1
+      iz = (i-1)*self%n(3)/npatches + 1
       if (i==1) write(stdout,'(I2, A28)') npatches, ' subdomains in z-direction:'
-      write(stdout,'(I4, I6,A3,I4)') i, iz, ' - ', iz + patch%n(3) - 1
+      write(stdout,'(I4, I6,A3,I4)') i, iz, ' - ', iz + self%n(3)/npatches - 1
     endif
   end do
 
   !-----------------------------------------------------------------------------
   ! Add all tasks to the ready queue, preventing a slow default add_by_time
   !-----------------------------------------------------------------------------
-  itaskl = 0
-  link => self%task_list%head
-  do while(associated(link))
-    itaskl = itaskl + 1
-    link => link%next
-  enddo
-  
-  self%task_list%n_tasks = itaskl
+  !itaskl = 0
+  !link => self%task_list%head
+  !do while(associated(link))
+  !  itaskl = itaskl + 1
+  !  link => link%next
+  !enddo
+  !
+  !self%task_list%n_tasks = itaskl
 
   call queue_initial (self%task_list)  ! Queue the initial tasks
   !print *, self%task_list%n_tasks
@@ -206,8 +206,6 @@ SUBROUTINE create_patch (self, i, patch)
 
   call patch%init_unique (same=.true.) ! obtain an unique ID
 
-  patch%task_list => self%task_list
-
   patch%mhd = .false.
   patch%kind = 'hlld_mhd_patch'
 
@@ -255,13 +253,19 @@ SUBROUTINE create_patch (self, i, patch)
   call io%bits_mem (storage_size(patch%filled), &
                     product(shape(patch%filled)), 'fill')
   patch%filled = -1
+
+
+
   !---------------------------------------------------------------------------
   ! Add the patch to the task list -- this creates the patch%link
   !---------------------------------------------------------------------------
+  patch%task_list => self%task_list
+  call patch%init_task_list(patch%task_list)
   allocate (halo_m3d_t:: link)
   link%task => patch
   patch%link => link
-  call self%task_list%prepend_link (link)
+  call self%task_list%append (link)
+
   call trace%end ()
 END SUBROUTINE create_patch
 

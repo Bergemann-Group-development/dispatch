@@ -153,7 +153,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   do i=1,3
     self%mesh(i)%h = 0d0
-    self%mesh(i)%h(self%idx%bx+i-1) = -0.5
+    if (self%idx%bx > 0) self%mesh(i)%h(self%idx%bx+i-1) = -0.5
   end do
   self%unsigned(self%idx%d) = unsigned
   self%unsigned(self%idx%e) = unsigned

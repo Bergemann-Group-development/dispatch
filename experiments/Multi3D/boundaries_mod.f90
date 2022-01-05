@@ -89,7 +89,7 @@ SUBROUTINE init (self)
         self%boundary => mirror !boundary_mhd
       case ('m3d_rt_sc0')
         self%boundary => mirror !boundary_sc0
-      case ('m3d_rt_sc')
+      case ('omeg_sheep')
         self%boundary => boundary_scX
       case default
     end select
@@ -176,40 +176,16 @@ SUBROUTINE boundary_scX(self, mem)
 
   call self%mirror(mem) ! in order to mirror chi and snu
 
-  if (self%topbot(2)) then
-    b = lbound(mem,3)
-    mem(:,:,b,3,:) = mem(:,:,b+1,2,:) ! Inu = Snu at bottom of atmosphere
-  endif
+  !if (self%topbot(1)) then
+  !  b = ubound(mem,3)
+  !  mem(:,:,b,3,:) = 0 ! Inu = 0 at top of atmosphere
+  !endif
+  !
+  !if (self%topbot(2)) then
+  !  b = lbound(mem,3)
+  !  mem(:,:,b,3,:) = mem(:,:,b+1,2,:) ! Inu = Snu at bottom of atmosphere
+  !endif
 
-!  nx = size(mem,1)
-!  ny = size(mem,2)
-!  nfreq = size(mem,5)
-!
-!  allocate(temp (nx, ny, 1))
-!  allocate(rho, ne, chi_c, eta_c, Jnu, mold=temp)
-!
-!  Jnu = 0
-!
-!  do i=1,2 ! loop over bottom - top
-!    if (self%topbot(i)) then
-!      if (i == 1) b = lbound(mem,3)
-!      if (i == 2) b = ubound(mem,3)
-!
-!      temp = dble(self%temp(i))
-!      rho  = dble(self%rho(i) * scaling%d)
-!      ne   = dble(self%pe(i) * scaling%p / (cgs%k_b * temp))
-!
-!      do f=1,nfreq
-!        call uppsala_background_opac(f+fs-1, temp, rho, ne, Jnu, chi_c, eta_c)
-!
-!        mem(:,:,b,1,f) = chi_c(:,:,1)
-!        mem(:,:,b,2,f) = eta_c(:,:,1) / chi_c(:,:,1)
-!
-!        if (i == 1) mem(:,:,b,3,f) = mem(:,:,b,2,f) ! lower boundary
-!        if (i == 2) mem(:,:,b,3,f) = 0              ! upper boundary
-!      end do
-!    endif
-!  end do
   if (verbose > 1) call self%print_mem(mem)
 END SUBROUTINE boundary_scX
 
@@ -241,7 +217,7 @@ SUBROUTINE print_mem(self, mem)
   print *, self%patch%kind, self%topbot
   if (self%patch%kind == 'hlld_mhd_patch') then
     print *, mem(2,2,:,5,1) ! print temp
-  elseif (self%patch%kind == 'm3d_rt_sc') then
+  elseif (self%patch%kind == 'omeg_sheep') then
     print *, 'Snu = ', mem(:,:,1,2,fe) ! print Snu
     print *, 'Inu = ', mem(:,:,1,3,fe) ! print Inu
   elseif (self%patch%kind == 'm3d_rt_sc0') then

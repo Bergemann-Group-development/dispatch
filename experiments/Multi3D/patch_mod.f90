@@ -1088,10 +1088,14 @@ SUBROUTINE periodic_grid (self, only)
     end where
     if (present(only)) then
       self%mem(ix,iy,iz,only,self%it ,:) = self%mem(j(1),j(2),j(3),only,self%it ,:)
-      self%mem(ix,iy,iz,only,self%new,:) = self%mem(j(1),j(2),j(3),only,self%new,:)
+      if (self%new /= self%it) then
+        self%mem(ix,iy,iz,only,self%new,:) = self%mem(j(1),j(2),j(3),only,self%new,:)
+      endif
     else
       self%mem(ix,iy,iz,:,self%it ,:) = self%mem(j(1),j(2),j(3),:,self%it ,:)
-      self%mem(ix,iy,iz,:,self%new,:) = self%mem(j(1),j(2),j(3),:,self%new,:)
+      if (self%new /= self%it) then
+        self%mem(ix,iy,iz,:,self%new,:) = self%mem(j(1),j(2),j(3),:,self%new,:)
+      endif
     end if
   end do
   end do

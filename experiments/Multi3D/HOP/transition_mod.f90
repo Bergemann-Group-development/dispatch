@@ -14,8 +14,8 @@ module transition_mod
         logical :: ilogl, kvadl, minex, maxex
         logical :: ilogt, kvadt, minet, maxet, iteta
         integer, dimension(:), allocatable :: iw
-        real(dp), dimension(:), allocatable :: lam, temp, teta
-        real(dp), dimension(:,:), allocatable :: xkap
+        real(dp), dimension(:), allocatable :: lam, temp, teta, tt
+        real(dp), dimension(:,:), allocatable :: xkap, yy2d
         real(dp), dimension(:,:), allocatable :: log_xkap
         real(dp), dimension(:,:), allocatable :: lagrange
         logical, dimension(:), allocatable :: quad, ldisk!, tdisk
@@ -23,14 +23,19 @@ module transition_mod
         character(len=5) :: key
 
     contains
+        procedure :: get_temp_index
         procedure :: interp_xkap
+        procedure :: interp_xkap2
         procedure :: check_temp_quadratic
         procedure :: check_lam_quadratic
         procedure :: boltzmann_weight => trans_boltzmann_weight
         procedure :: absorption_factor
-        procedure :: add_absorption
+        procedure :: add_absorption => add_absorption2
+        !procedure :: add_absorption2
         procedure :: set_xweight
         procedure :: load_lam_interp_weights
+        procedure :: interp_temp_quadratic
+        procedure :: interp_temp_linear
     end type
 
 contains
@@ -159,6 +164,169 @@ contains
         w(2) = (newx - xx(1)) / (xx(2) - xx(1))
     end function linear_weight
 
+    subroutine interp_xkap2(self, abslte, lam, temp, teta, fakt)
+        class(transition_type) :: self
+        real(dp), dimension(:), intent(in) :: lam
+        real(dp), dimension(:,:,:,:), intent(inout) :: abslte
+        real(dp), intent(in), dimension(:,:,:), target :: temp, teta
+        real(dp), intent(in), dimension(:,:,:) :: fakt
+        real(dp), dimension(:,:,:), pointer :: newt
+        real(dp), dimension(:,:,:,:), allocatable :: yyt
+        real(dp), dimension(:,:,:), allocatable :: ab, yt
+        real(dp) :: ab1
+        real(dp), dimension(self%nnu) :: yy
+        real(dp), dimension(self%ntt) :: tt
+        real(dp), dimension(:,:), allocatable :: yy2d, dum
+        integer :: i, fs, fe, f, di, nx, ny, nz, nf, iw
+        integer, dimension(:,:,:), allocatable :: it
+        logical, dimension(:,:,:), allocatable :: quadratic, in_bounds
+
+        fs = self%fs
+        fe = self%fe
+        di = self%di
+
+        nx = size(temp, 1)
+        ny = size(temp, 2)
+        nz = size(temp, 3)
+        nf = size(lam)
+        
+        if (self%ntt > 1) then
+            allocate(yyt(nx,ny,nz,self%nnu))
+            allocate(quadratic(nx,ny,nz))
+            allocate(in_bounds(nx,ny,nz))
+            allocate(it(nx,ny,nz))
+
+            in_bounds = .true.
+
+            if (.not. self%minet) then
+                where (temp < self%mint)
+                    in_bounds = .false.
+                end where
+            endif
+
+            if (.not. self%maxet) then
+                where (temp > self%maxt)
+                    in_bounds = .false.
+                end where
+            endif
+
+            if (.not. all(in_bounds)) then
+                print *, 'temperature out of bounds in continuum ', self%key
+                print *, 'this could be a problem, please check'
+            endif
+
+            if (self%ilogt) then
+                self%yy2d = self%log_xkap
+            else
+                self%yy2d = self%xkap
+            endif
+
+            if (self%iteta) then
+                newt => teta
+            else
+                newt => temp
+            endif
+
+            call self%get_temp_index(newt, it, quadratic)
+
+            where (quadratic) 
+                quadratic = self%check_temp_quadratic(it)
+            end where
+
+            do f=1, self%nnu
+                where (quadratic .and. in_bounds)
+                    yt = self%interp_temp_quadratic(f, it, newt)
+                elsewhere (in_bounds)
+                    yt = self%interp_temp_linear(f, it, newt)
+                elsewhere
+                    yt = 0
+                end where
+
+                if (self%ilogt .and. .not. self%ilogl) then
+                    where (in_bounds) yt = exp(yt)
+                elseif(self%ilogl .and. .not. self%ilogt) then
+                    where (in_bounds) yt = log(yt)
+                endif
+
+                yyt(:,:,:,f) = yt
+            end do
+
+            do f=fs,fe,di
+                iw = self%iw(f)
+                if (self%quad(f)) then
+                    where (in_bounds)
+                        ab = yyt(:,:,:,iw)   * self%lagrange(1,f) + &
+                             yyt(:,:,:,iw+1) * self%lagrange(2,f) + &
+                             yyt(:,:,:,iw+2) * self%lagrange(3,f)
+                    end where
+                else
+                    where (in_bounds)
+                        ab = yyt(:,:,:,iw)   * self%lagrange(1,f) + & 
+                             yyt(:,:,:,iw+1) * self%lagrange(2,f)
+                    end where
+                endif
+
+                if (self%ilogl) where (in_bounds) ab = exp(ab)
+
+                where (in_bounds)
+                    abslte(:,:,:,f) = abslte(:,:,:,f) + fakt*ab
+                end where
+            end do
+        else
+            if(self%ilogl) then
+                yy = self%log_xkap(:,1)
+            else
+                yy = self%xkap(:,1)
+            endif
+
+            do f=fs,fe,di
+                iw = self%iw(f)
+                if (self%quad(f)) then
+                    ab1 = sum(yy(iw:iw+2) * self%lagrange(1:3,f))
+                else
+                    ab1 = sum(yy(iw:iw+1) * self%lagrange(1:2,f))
+                endif
+
+                if (self%ilogl) ab1 = exp(ab1)
+                abslte(:,:,:,f) = abslte(:,:,:,f) + fakt*ab1
+            end do
+        endif
+    end subroutine interp_xkap2
+
+    elemental function interp_temp_quadratic(self, f, it, newt) result(newy)
+        class(transition_type), intent(in) :: self
+        real(dp), intent(in) :: newt
+        integer, intent(in) :: f, it
+        real(dp) :: newy, w(3)
+        integer :: j1, j2, j3
+  
+        if (self%ntt - it > 1) then
+           j1 = it
+           j2 = it+1
+           j3 = it+2
+        else
+           j1 = it-1
+           j2 = it
+           j3 = it+1
+        endif
+  
+        w(1) = (newt-self%tt(j2)) * (newt-self%tt(j3)) / ((self%tt(j1)-self%tt(j2)) * (self%tt(j1)-self%tt(j3)))
+        w(2) = (newt-self%tt(j1)) * (newt-self%tt(j3)) / ((self%tt(j2)-self%tt(j1)) * (self%tt(j2)-self%tt(j3)))
+        w(3) = (newt-self%tt(j1)) * (newt-self%tt(j2)) / ((self%tt(j3)-self%tt(j1)) * (self%tt(j3)-self%tt(j2)))
+  
+        newy = sum(self%yy2d(f,j1:j3) * w(1:3))
+    end function interp_temp_quadratic 
+    
+    elemental function interp_temp_linear(self, f, it, newt) result(newy)
+        class(transition_type), intent(in) :: self
+        real(dp), intent(in) :: newt
+        integer, intent(in) :: f, it
+        real(dp) :: m, newy
+
+        m = (self%yy2d(f,it+1) - self%yy2d(f,it)) / (self%tt(it+1) - self%tt(it))
+        newy = m * (newt - self%tt(it)) + self%yy2d(f,it)
+    end function interp_temp_linear
+
     pure function interp_xkap(self, lam, temp) result(xkap)
         class(transition_type), intent(in) :: self
         real(dp), dimension(:), intent(in) :: lam
@@ -167,7 +335,7 @@ contains
         real(dp), dimension(size(lam)) :: xkap
         real(dp), dimension(self%nnu) :: yy
         real(dp), dimension(self%ntt) :: tt
-        real(dp), dimension(:,:), allocatable :: yy2d
+        real(dp), dimension(:,:), allocatable :: yy2d, dum
         integer :: i, it, iw, fs, fe, f, di
         logical :: no_extrap, quadratic
 
@@ -188,14 +356,12 @@ contains
             endif
 
             if (self%iteta) then
-                tt = self%teta
                 newt = temp_to_theta/temp
             else
-                tt = self%temp
                 newt = temp
             endif
 
-            call get_interp_index(tt, newt, it, no_extrap)
+            call self%get_temp_index(newt, it, no_extrap)
 
             quadratic = .false.
 
@@ -203,14 +369,14 @@ contains
                 quadratic = self%check_temp_quadratic(it)
                 if (quadratic) then
                     do i=1, self%nnu
-                        yy(i) = interp1d_quadratic(it, tt, yy2d(i,:), newt)
+                        yy(i) = interp1d_quadratic(it, self%tt, yy2d(i,:), newt)
                     end do
                 endif
             endif
 
             if (.not. quadratic) then
                 do i=1, self%nnu
-                    yy(i) = interp1d_linear(it, tt, yy2d(i,:), newt)
+                    yy(i) = interp1d_linear(it, self%tt, yy2d(i,:), newt)
                 end do
             endif
 
@@ -231,6 +397,14 @@ contains
         fe = self%fe
         di = self%di
 
+        !allocate(dum(3,size(lam)))
+        !
+        !do f=fs,fe,di
+        !    dum(:, f) = yy(self%iw(f):self%iw(f)+2)
+        !end do
+        !
+        !xkap(fs:fe:di) = sum(dum(:,fs:fe:di) * self%lagrange(:,fs:fe:di), 1)
+
         do f=fs,fe,di
             iw = self%iw(f)
             if (self%quad(f)) then
@@ -243,7 +417,7 @@ contains
         if (self%ilogl) xkap(fs:fe:di) = exp(xkap(fs:fe:di))
     end function interp_xkap
 
-    pure function check_lam_quadratic(self, iw) result(quadratic)
+    elemental function check_lam_quadratic(self, iw) result(quadratic)
         class(transition_type), intent(in) :: self
         integer, intent(in) :: iw
         logical :: quadratic
@@ -259,7 +433,7 @@ contains
         endif
     end function check_lam_quadratic
 
-    pure function check_temp_quadratic(self, it) result(quadratic)
+    elemental function check_temp_quadratic(self, it) result(quadratic)
         class(transition_type), intent(in) :: self
         integer, intent(in) :: it
         logical :: quadratic
@@ -275,25 +449,23 @@ contains
         endif
     end function check_temp_quadratic
 
-    pure subroutine get_interp_index(xx, newx, idx, no_extrap)
-        real(dp), dimension(:), intent(in) :: xx
-        real(dp), intent(in) :: newx
+    elemental subroutine get_temp_index(self, newt, idx, no_extrap)
+        class(transition_type), intent(in) :: self
+        real(dp), intent(in) :: newt
         integer,  intent(out) :: idx
         logical,  intent(out) :: no_extrap
-        integer :: nx
 
-        nx = size(xx)
         no_extrap = .false.
 
-        if (newx < xx(1)) then
+        if (newt < self%tt(1)) then
             idx = 1
-        elseif (newx > xx(nx)) then
-            idx = nx - 1
+        elseif (newt > self%tt(self%ntt)) then
+            idx = self%ntt - 1
         else
-            idx = BinarySearch(xx, 1, nx, newx)
+            idx = BinarySearch(self%tt, 1, self%ntt, newt)
             no_extrap = .true.
         endif
-    end subroutine get_interp_index
+    end subroutine get_temp_index
 
     pure function trans_boltzmann_weight(self, EK_over_temp) result(frac)
         class(transition_type), intent(in) :: self
@@ -371,6 +543,8 @@ contains
         allocate(self%iw(nf))
         allocate(self%lagrange(3,nf))
 
+        self%lagrange = 0
+
         call self%load_lam_interp_weights(lam)
 
         if (self%active) then
@@ -388,8 +562,39 @@ contains
             end do
         endif
 
+        print *, self%key, abslte(1,1,1,1)
+
         deallocate(self%quad)
         deallocate(self%iw)
         deallocate(self%lagrange)
     end subroutine add_absorption
+
+    subroutine add_absorption2(self, abslte, lam, temp, EK_over_temp, teta, pe, rho, dxi, xfakh)
+        use timer_mod
+        class(transition_type) :: self
+        real(dp), dimension(:,:,:,:), intent(inout) :: abslte
+        real(dp), dimension(:,:,:), intent(in) :: temp, EK_over_temp, teta, pe, rho, dxi, xfakh
+        real(dp), dimension(:), intent(in) :: lam
+        real(dp), dimension(:), allocatable :: ab, abkof
+        real(dp), dimension(:,:,:), allocatable :: fakt
+        integer :: i,j,k,nf
+
+        fakt = self%absorption_factor(EK_over_temp, teta, pe, rho, dxi, xfakh)
+
+        nf = size(lam)
+        allocate(self%quad(nf))
+        allocate(self%iw(nf))
+        allocate(self%lagrange(3,nf))
+
+        self%lagrange = 0
+
+        call self%load_lam_interp_weights(lam)
+
+        if (self%active) call self%interp_xkap2(abslte, lam, temp, teta, fakt)
+        !print *, self%key, abslte(1,1,1,1)
+
+        deallocate(self%quad)
+        deallocate(self%iw)
+        deallocate(self%lagrange)
+    end subroutine add_absorption2
 end module
