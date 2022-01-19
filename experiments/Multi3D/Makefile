@@ -1,6 +1,6 @@
 # Option groups
-OPTS = full_debug
-#OPTS = vscode
+#OPTS = full_debug
+OPTS = vscode
 #OPTS = debug
 #OPTS =
 #OPTS = optimized
@@ -28,20 +28,27 @@ sinclude $(HOP)/dispatch.mkf
 sinclude $(MULTI3D)/dispatch.mkf
 
 # List the .o files the main program depends on after the colon:
-$(EXEC): cartesian_mod.o read_external_mod.o
+$(EXEC): read_external_mod.o
 
 # Dependencies
 read_external_mod.o     : io_mod.o m3io_mod.o mesh_mod.o task_list_mod.o experiment_mod.o \
 						  trace_mod.o task_mod.o link_mod.o bits_mod.o halo_mod.o scaling_mod.o \
-						  units_mod.o timer_mod.o patch_mod.o download_mod.o m3d_rt_mod.o list_mod.o
-experiment_mod.o        : multi3d_mod.o trace_mod.o io_mod.o solver_mod.o kinds_mod.o
-dispatch.o              : io_mod.o mpi_mod.o cartesian_mod.o 
-extras_mod.o            : m3d_rt_mod.o newton_mod.o gravity_mod.o
-m3d_rt_mod.o            : trace_mod.o rt_mod.o multi3d_mod.o rt_integral_mod.o radau_mod.o math_mod.o \
-						  bits_mod.o gpatch_mod.o scs_mod.o list_mod.o link_mod.o halo_mod.o kinds_mod.o
-boundaries_mod.o        : standard_boundaries_mod.o io_mod.o trace_mod.o background_mod.o \
-                          mpi_mod.o bits_mod.o mesh_mod.o index_mod.o units_mod.o matom.o scs_mod.o \
+						  units_mod.o timer_mod.o patch_mod.o download_mod.o list_mod.o \
+						  m3d_patch_mod.o
+experiment_mod.o        : trace_mod.o io_mod.o solver_mod.o kinds_mod.o atom_var.o spectrum_mod.o \
+						  m3d_patch_mod.o opac_patch_mod.o rad_patch_mod.o atom_task_mod.o rate_patch_mod.o
+dispatch.o              : io_mod.o mpi_mod.o
+boundaries_mod.o        : standard_boundaries_mod.o io_mod.o trace_mod.o \
+                          mpi_mod.o bits_mod.o mesh_mod.o index_mod.o units_mod.o \
                           eos_mod.o vector_ops.o units_mod.o scaling_mod.o
+extras_mod.o            : newton_mod.o gravity_mod.o
 guards_mod.o			: math_mod.o
-scs_mod.o 				: composition_mod.o
-atom_var.o				: spectrum_var.o
+coll_var.o				: coll_mod.o
+coll_mod.o              : mmath.o 
+atom_var.o				: m3io_mod.o spectrum_mod.o trans_mod.o coll_mod.o
+spectrum_mod.o			: mmath.o trans_mod.o
+m3d_patch_mod.o         : gpatch_mod.o composition_mod.o
+opac_patch_mod.o 		: m3d_patch_mod.o
+rad_patch_mod.o         : geometry_var.o mgeometry.o
+atom_task_mod.o         : rate_patch_mod.o
+mmath.o                 : search_mod.o

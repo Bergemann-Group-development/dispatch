@@ -1,0 +1,379 @@
+module m3d_patch_mod
+
+  !USE rt_integral_mod
+  !USE radau_mod
+  !USE boundaries_mod
+  !USE eos_mod
+  !USE list_mod
+  USE halo_mod
+  USE gpatch_mod
+  USE solver_mod
+  USE link_mod
+  USE task_mod
+  !USE index_mod
+  !USE mesh_mod
+  USE io_mod
+  !USE aux_mod
+  !USE timer_mod
+  !USE scaling_mod
+  USE trace_mod
+  !USE mpi_mod
+  !USE omp_mod
+  !USE omp_timer_mod
+  !USE math_mod
+  USE bits_mod
+  !USE units_mod
+  !USE scratch_mod
+  USE atom_var, only: atom_type
+  USE composition_mod, only:composition_type
+  USE spectrum_mod, only: spectrum_type
+  implicit none
+  private
+
+  !-----------------------------------------------------------------------------
+
+  type, public, extends(gpatch_t) :: m3d_t
+    class(gpatch_t), pointer :: patch            ! pointer to MHD patch
+    integer                  :: master_id
+    logical                  :: on=.false.       ! allows local turn-off
+    logical                  :: in_task_list = .false.
+
+    class(spectrum_type), pointer :: sp => null()
+
+    real(8), dimension(:,:,:), pointer :: temp => null()
+    real(8), dimension(:,:,:), pointer :: rho  => null()
+    real(8), dimension(:,:,:), pointer :: ne   => null()
+    real(4), dimension(:,:,:,:,:), pointer :: authority_mem => null()
+    real(8) :: vec(3), wmu, mu, phi, t_offset
+    integer :: i_nu=0, i_phi=0, i_mu=0, dir=0, i_omega=0, fs, fe, iter, maxiter
+  contains
+    procedure :: pre_init => m3d_pre_init
+    procedure :: init => m3d_init
+    procedure :: nbor_relations => m3d_nbor_relations
+    procedure :: bndries
+    procedure :: init_level
+    procedure :: task_info
+    procedure :: set_freq_indices
+    procedure :: append_to_task_list
+    procedure :: is_upstream => m3d_is_upstream
+  end type m3d_t
+
+  !-----------------------------------------------------------------------------
+
+  type, public, extends(halo_t):: halo_m3d_t
+  contains
+    procedure:: info
+  end type
+
+  !-----------------------------------------------------------------------------
+  integer, save:: verbose=0                           ! verbosity
+    
+contains
+
+!===============================================================================
+SUBROUTINE m3d_pre_init (self)
+  class(m3d_t), target:: self
+  !-----------------------------------------------------------------------------
+  logical, save :: first_time=.true.
+  logical, save :: on=.true.
+  integer :: iostat
+  !-----------------------------------------------------------------------------
+  namelist /m3d_params/ on, verbose
+
+  !-----------------------------------------------------------------------------
+  ! Read parameters
+  !-----------------------------------------------------------------------------
+  call trace%begin ('m3d_t%pre_init')
+
+  if (first_time) then
+    first_time = .false.
+    rewind (io%input)
+    read (io%input, m3d_params, iostat=iostat)
+    if (iostat > 0) then
+      rewind (io%input)
+      read (io%input, m3d_params)
+    end if
+    call io%namelist_warning ('m3d_params', iostat)
+  end if
+
+  if (self%pre_initialized) print *, 'pre_init issued somewhere'
+  call io%lock%unset ('m3d_t%pre_init')
+
+  call self%gpatch_t%pre_init()
+
+  ! ----------------------------------------------------------------------------
+  ! Fill namelist variables
+  ! ----------------------------------------------------------------------------
+  self%on = on
+  self%in_task_list = .false.
+
+  ! ----------------------------------------------------------------------------
+  ! relevant synchronization items for cartesian setup
+  ! ----------------------------------------------------------------------------
+  self%n          = self%patch%n
+  self%ng         = 0 !self%patch%ng
+  self%ipos       = self%patch%ipos
+  self%rank       = self%patch%rank
+  self%box        = self%patch%box
+  self%size       = self%patch%size
+  self%position   = self%patch%position
+  self%ds         = self%patch%ds
+  self%origin     = self%patch%origin
+  self%llc_cart   = self%patch%llc_cart
+  self%centre_nat = self%patch%centre_nat
+  self%llc_nat    = self%patch%llc_nat
+  self%status     = self%patch%status
+  self%periodic   = self%patch%periodic
+
+  ! ----------------------------------------------------------------------------
+  ! Do not check density or validate with it. This is rather important to be set
+  ! ----------------------------------------------------------------------------
+  call self%set (bits%no_density)
+  call self%set (bits%internal)
+
+  if (self%on) then 
+    call self%task_t%init_unique (same=.true.) ! obtain an unique ID
+  end if
+  call trace%end ()
+END SUBROUTINE m3d_pre_init
+
+!===============================================================================
+SUBROUTINE m3d_init (self)
+  class(m3d_t) :: self
+  integer, save:: n_warmup=1
+  ! ----------------------------------------------------------------------------
+  call self%gpatch_t%init()
+  self%mem = tiny(1.)
+  self%it = 1
+  self%new = self%it
+  self%authority_mem => self%mem(self%li(1):self%ui(1),self%li(2):self%ui(2),self%li(3):self%ui(3),:,self%it,:)
+  !-----------------------------------------------------------------------------
+  ! Synchronize with MHD patch
+  ! ----------------------------------------------------------------------------
+  self%dt_fixed = self%patch%dtime
+  self%dtime    = self%patch%dtime
+  self%dt       = self%patch%dtime
+
+  ! ----------------------------------------------------------------------------
+  ! Do not check density or validate with it. This is rather important to be set
+  ! ----------------------------------------------------------------------------
+  call self%set (bits%no_density)
+  call self%set (bits%internal)
+  
+  ! ----------------------------------------------------------------------------
+  ! Allocate and set unsigned and pervolume. Opacity, source function,
+  ! intensity and populations are all positive definite
+  ! Although quantities are generally per volume, but density is not stored
+  ! locally, thus this flag must not be set.
+  ! ----------------------------------------------------------------------------
+  allocate (self%unsigned(self%nv), self%pervolume(self%nv))
+  self%pervolume = .false.
+  self%unsigned  = .true.
+END SUBROUTINE m3d_init
+
+!===============================================================================
+SUBROUTINE set_freq_indices (self, n, nnu, n_nu)
+  class(m3d_t) :: self
+  integer, intent(in) :: n    ! index  of frequency bin
+  integer, intent(in) :: nnu  ! number of total frequencies
+  integer, intent(in) :: n_nu ! number of frequency bins
+  !-----------------------------------------------------------------------------
+  self%i_nu = n
+  self%nw = nnu / n_nu
+  self%fs = (self%i_nu-1) * self%nw + 1
+
+  if (self%i_nu == n_nu) self%nw = self%nw + mod(nnu, n_nu)
+
+  self%fe = self%fs + self%nw - 1
+END SUBROUTINE set_freq_indices
+
+!===============================================================================
+SUBROUTINE m3d_nbor_relations(self, another, needed, needs_me, download)
+  class(m3d_t) :: self
+  class(task_t), pointer :: another         ! another task in the list
+  logical :: needed, needs_me, download    ! Is the other task: needed, 
+                                           !    does it need me, should I download?
+  class(task_t), pointer :: other
+  
+  call trace%begin ('radiation_t%nbor_relations')
+
+  ! If this RT task has no RT on, it should have no nbor relations
+  if (.not.(self%on)) then
+    needed = .false.; needs_me = .false.; download = .false.
+    call trace%end()
+    return
+  end if
+
+  if (another%id == self%patch%id) then
+    needed = .true. ; needs_me = .false.; download = .false.
+  else
+    needed = .false.; needs_me = .false.; download = .false.
+  endif
+
+  call trace%end()
+END SUBROUTINE m3d_nbor_relations
+
+!===============================================================================
+SUBROUTINE append_to_task_list(self)
+  class (m3d_t), target :: self
+  class(link_t),  pointer :: link
+  class (task_t), pointer :: task
+  !-----------------------------------------------------------------------------
+  allocate (halo_m3d_t:: link)
+  link%task => self
+  self%link => link
+  call self%patch%task_list%append (link)
+END SUBROUTINE append_to_task_list
+
+!===============================================================================
+SUBROUTINE info (self, label)
+  class(halo_m3d_t):: self
+  character(*), optional:: label
+  class(nbor_t), pointer:: nbor
+  real(8):: distance(3)
+  !-----------------------------------------------------------------------------
+  call trace%begin ('halo_t%info')
+  if (verbose < 2) then
+    call self%task%task_info()
+    nbor => self%nbor
+    do while (associated(nbor))
+      distance = nbor%task%distance(self%task)
+      select type(nt => nbor%task)
+      class is(m3d_t)        
+        write(io_unit%mpi,'(3x,a16,a,i6,":",i2.2,i4,2x,3l1,2x,2l1,3x,3f9.3, a10, i4)') &
+          nt%kind, ' nbor_info: id, rank, level, needed, needs_me, download, BV, pos =', &
+          nt%id, nt%level, nt%rank, nbor%needed, nbor%needs_me, &
+          nbor%download, nt%is_set(bits%boundary), &
+          nt%is_set(bits%virtual), distance/ &
+          (0.5d0*(self%task%size+nt%size)), ' i_omega: ', nt%i_omega
+      class default
+        write(io_unit%mpi,'(3x,a16,a,i6,":",i2.2,i4,2x,3l1,2x,2l1,3x,3f9.3)') &
+          nt%kind, ' nbor_info: id, rank, level, needed, needs_me, download, BV, pos =', &
+          nt%id, nt%level, nt%rank, nbor%needed, nbor%needs_me, &
+          nbor%download, nt%is_set(bits%boundary), &
+          nt%is_set(bits%virtual), distance/ &
+          (0.5d0*(self%task%size+nt%size))
+      end select
+      nbor => nbor%next
+    end do
+  else
+    call self%halo_t%info(label)
+  end if
+  call trace%end ()
+END SUBROUTINE info
+
+!===============================================================================
+!> For diagnostic output of tasks and nbor lists to data/run/rank_RRRRR.log
+!===============================================================================
+SUBROUTINE task_info (self)
+  class(m3d_t):: self
+  !-----------------------------------------------------------------------------
+  write(io_unit%mpi,'(1x,a,2x,a10,i6,2i4,7x,2l1,2x,3f9.3,i4,i4,i4)') &
+    'm3d_t%task_info: kind, id, rank, level, BV, pos, i_omega, i_mu, i_phi =', &
+    self%kind, self%id, self%rank, self%level, &
+    self%is_set(bits%boundary), self%is_set(bits%virtual), self%position, &
+    self%i_omega, self%i_mu, self%i_phi
+END SUBROUTINE task_info
+
+!===============================================================================
+!> Determine if a task is is upstream.  
+!===============================================================================
+logical FUNCTION m3d_is_upstream (self, other) result(is_upstream)
+  class(m3d_t):: self, other
+  real(8):: ds1(3), ds2(3)
+  real:: sinth
+  real, parameter:: eps=1e-4
+  integer:: is1(3), is2(3), is3(3), is4(3), i, lbit(3), ubit(3)
+  logical:: lower, upper, upstream
+  !-----------------------------------------------------------------------------
+  ! If self is at a boundary and other points inward, or the task has no RT,
+  ! then the task is outside and is not needed
+  !-----------------------------------------------------------------------------
+  if (.not.self%on) then
+    is_upstream=.false.
+    return
+  end if
+  !
+  if (self%i_omega /= other%i_omega) then
+    is_upstream=.false.
+    return
+  end if
+  !
+  call trace%begin ('rt_t%is_upstream')
+  !-----------------------------------------------------------------------------
+  ! If the task does not have RT it is not needed
+  !-----------------------------------------------------------------------------
+  if (.not.other%on) then
+    is_upstream = .false.
+    call trace%end ()
+    return
+  end if
+  !
+  is_upstream=.true.
+  ds1 = self%position-other%position
+  where (self%periodic)
+    ds1 = modulo(ds1 + 0.5_8*self%box, self%box) - 0.5_8*self%box
+  end where
+  ds1 = ds1/self%box                                                            ! relative task offsets
+  sinth = merge(0.0, sqrt(1.0-self%mu**2), abs(self%mu)==1.0)
+  ds2 = [sinth*cos(self%phi),sinth*sin(other%phi),self%mu]
+  is1 = 0; is2=0
+  do i=1,3
+    if (ds1(i)      > +eps) is1(i)=1
+    if (self%vec(i) > +eps) is2(i)=1
+    if (ds1(i)      < -eps) is1(i)=-1
+    if (self%vec(i) < -eps) is2(i)=-1
+  end do
+  if (all(is1*is2 <= 0)) is_upstream = .false.
+  ! ----------------------------------------------------------------------------
+  ! If the nbor lies outside the boundaries it is not needed
+  ! ----------------------------------------------------------------------------
+  lbit = [bits%xl, bits%yl, bits%zl]
+  ubit = [bits%xu, bits%yu, bits%zu]
+  do i=1,3
+    lower = self%boundaries%is_set(lbit(i))
+    upper = self%boundaries%is_set(ubit(i))
+    if (upper .and. ds1(i)==1) then
+      is_upstream = .false.
+    end if
+    if (lower .and. ds1(i)==-1) then
+      is_upstream = .false.
+    end if
+  end do
+  !-----------------------------------------------------------------------------
+  ! If the task does not have RT it is not needed
+  !-----------------------------------------------------------------------------
+  if (.not.other%on) then
+    is_upstream = .false.
+    call trace%end ()
+    return
+  end if
+  call trace%end ()
+END FUNCTION m3d_is_upstream
+
+!===============================================================================
+SUBROUTINE init_level (self)
+  class(m3d_t):: self
+  !-----------------------------------------------------------------------------
+  if (any(self%n > 1)) then
+    ! The level does not depend on the patch size in non-regular grids
+    self%level = 1
+  end if
+END SUBROUTINE init_level
+
+!===============================================================================
+SUBROUTINE bndries (self)
+  class(m3d_t):: self
+  real(4), dimension(:,:,:,:,:), pointer :: mem
+  !----------------------------------------------------------------------------
+  call trace_begin('m3d_rt_t%bndries')
+  mem => self%mem(:,:,:,:,self%it,:)
+  if (size(self%boundaries%topbot) /= 2) then
+    print *, 'boundary conditions not initialised for task ', self%id 
+  elseif (any(self%boundaries%topbot)) then
+    call self%boundaries%boundary(mem)
+  endif
+  call trace%end()
+END SUBROUTINE bndries
+    
+end module m3d_patch_mod

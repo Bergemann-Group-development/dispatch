@@ -704,14 +704,14 @@ contains
     end subroutine load_state_variables
 
     subroutine absorption(self, nu, Jnu, chi, eta)
-        use phys_mod, only:planck
+        !use phys_mod, only:planck
         class(composition_type), target :: self
         type(transition_type), pointer :: trans
         type(element_type), pointer :: H
         type(molec_type), pointer :: H2
         type(ion_type), pointer :: H0
         real(dp), dimension(:),     intent(in) :: nu
-        real(dp), dimension(:,:,:,:), intent(in) :: Jnu
+        real(4), dimension(:,:,:,:), intent(in) :: Jnu
         real(4), dimension(:,:,:,:), intent(inout) :: chi, eta
         real(dp), dimension(:,:,:), allocatable :: fakt, abso, hrest, abfakray, ab
         real(dp), dimension(:,:,:), allocatable :: fakray, h2ray, els, rayh, rayh2
@@ -728,7 +728,7 @@ contains
             stop
         endif
 
-        allocate(abslte, sumsca, mold=Jnu)
+        allocate(abslte, sumsca, mold=dble(Jnu))
         abslte = 0
 
         do i=1, size(self%trans)
@@ -820,7 +820,7 @@ contains
         class(composition_type), target :: self
         character(len=*), intent(in) :: id
         real(dp), intent(in) :: abund
-        real(dp), dimension(:,:,:), intent(out) :: totn
+        real(dp), dimension(:,:,:), allocatable :: totn
         type(element_type), pointer :: element
 
         call self%element_by_id(id, element)
@@ -1094,5 +1094,33 @@ contains
         print *, 'transition key = ', id, ' not found. Stopping...'
         stop
     end subroutine trans_by_id
+
+
+    !---------------------------------------------------------------------
+    ! PE: 22-09-21: Convert to elemental function
+    real(8) elemental function planck(nu,t) result(bnu)
+        !---------------------------------------------------------------------
+        !
+        !  calculates planck function bnu at frequency nu, temp t
+        !
+        !---------------------------------------------------------------------
+        use mconst
+        implicit none
+        real(8), intent(in)  :: nu
+        real(8), intent(in)  :: t
+        real(8) :: x, c1,c2
+
+        c1=2.0*hh*nu**3/cc**2
+        c2=hh*nu/bk
+
+        x=c2/t
+
+        if(x.lt.80.) then
+            bnu=c1/(exp(x)-1.0)
+        else
+            bnu=c1*exp(-x)
+        endif
+    end function planck
+    !---------------------------------------------------------------------
 
 end module composition_mod
