@@ -1,0 +1,34 @@
+!===============================================================================
+! Call Hierarchy ... start in dispatch.f90
+!-------------------------------------------------------------------------------
+! PROGRAM dispatch
+!   call read_external
+!     call create_patches
+!       call task%init -> experiment_mod:init
+!           call solver_t%init -> solver_mod:init
+!               call mhd_t%init -> mhd_mod:init
+!                   call extras%init -> extras_mod:init
+!                       call gpatch_t%init -> gpatch_mod:init
+!                           call patch_t%init -> patch_mod:init
+!                               call task_t%init -> task_mod:init
+!                               call mesh_init
+!                                   call MeshFactory -> mesh_mod:MeshFactory
+!                           call boundaries%init -> boundaries_mod:init
+!                               read namelist: boundary_params
+!                               call standard_boundaries%init -> standard_boundaries_mod:init
+!         
+!       
+! 
+! 
+!===============================================================================
+
+! -- Parameters defining the run -----------------------------------------------
+&atmos_params       verbose=1 atmos_file='./input_multi3d/atmos/atmos.sun_MARCS' npatches=1 ng=4,4,1 /
+&boundary_params    verbose=0 condition=1 /
+&download_params    check_filled=T verbose=0 /
+&atom_params        atom_file='./input_multi3d/atoms/atom.ba06' qnorm=10.0 maxiter=22
+&radiation_params   save_output=T
+&experiment_params  n_nu=1 maxiter=22
+&timer_params       sec_per_report = 1000 /
+&task_list_params   verbose = 0 /
+&task_params        verbose = 0 /
