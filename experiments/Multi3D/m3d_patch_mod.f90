@@ -315,7 +315,7 @@ logical FUNCTION m3d_is_upstream (self, other) result(is_upstream)
     ds1 = modulo(ds1 + 0.5_8*self%box, self%box) - 0.5_8*self%box
   end where
   ds1 = ds1/self%box                                                            ! relative task offsets
-  sinth = merge(0.0, sqrt(1.0-self%mu**2), abs(self%mu)==1.0)
+  sinth = merge(0d0, sqrt(1.0-self%mu**2), abs(self%mu)==1.0)
   ds2 = [sinth*cos(self%phi),sinth*sin(other%phi),self%mu]
   is1 = 0; is2=0
   do i=1,3
