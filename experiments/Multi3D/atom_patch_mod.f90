@@ -291,8 +291,8 @@ module atom_patch_mod
   SUBROUTINE sum_rates (self, gamma_ij, gamma_ji)
     class(atom_patch_t), target :: self
     class(rate_patch_t), pointer :: rate
-    integer :: i, i_omega, i_nu
-    real(8), dimension(:,:,:,:) :: gamma_ij, gamma_ji
+    integer :: i, i_omega, i_nu, m(4)
+    real(8), dimension(:,:,:,:), allocatable:: gamma_ij, gamma_ji
     ! ----------------------------------------------------------------------------
     gamma_ij = 0.0d0
     gamma_ji = 0.0d0
@@ -301,9 +301,16 @@ module atom_patch_mod
     do i_nu=1, size(self%rate, 2)
       do i_omega=1, size(self%rate, 1)
         rate => self%rate(i_omega, i_nu)
-        PRINT *, shape(gamma_ij)
-        PRINT *, shape(gamma_ji)
-        PRINT *, shape(rate%mem(:,:,:,:,rate%it,rate%i_Gij))
+        m = shape(rate%mem(:,:,:,:,rate%it,rate%i_Gij))
+        if (any(shape(gamma_ij) /= m)) then
+          PRINT *, 'atom_patch_mod::sum_rates ERROR: wrong shapes; reallocating'
+          PRINT *, shape(gamma_ij)
+          PRINT *, shape(gamma_ji)
+          PRINT *, shape(rate%mem(:,:,:,:,rate%it,rate%i_Gij))
+          deallocate (gamma_ij, gamma_ji)
+          allocate (gamma_ij(m(1),m(2),m(3),m(4)))
+          allocate (gamma_ji(m(1),m(2),m(3),m(4)))
+        end if
         gamma_ij = gamma_ij + rate%wmu * rate%mem(:,:,:,:,rate%it,rate%i_Gij)
         gamma_ji = gamma_ji + rate%wmu * rate%mem(:,:,:,:,rate%it,rate%i_Gji)
       end do
