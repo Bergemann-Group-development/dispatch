@@ -141,10 +141,10 @@ SUBROUTINE opacity_update (self)
 
   if (self%verbose > 1) then
     select case (self%dir)
-    case(0, 1)
-      write(*,'(A10, 2(I4), 3(ES18.7))'), trim(self%kind), self%i_omega, self%i_nu, chi(1,1,1,1), eta(1,1,1,1)
-    case(-1)
-      write(*,'(A10, 2(I4), 3(ES18.7))'), trim(self%kind), self%i_omega, self%i_nu, chi(1,1,self%n(3),1), eta(1,1,self%n(3),1)
+    case(0, -1)
+      write(*,'(A10, 3(I4), 3(ES18.7))'), trim(self%kind), self%patch%id, self%i_omega, self%i_nu, chi(1,1,1,1), eta(1,1,1,1)
+    case(1)
+      write(*,'(A10, 3(I4), 3(ES18.7))'), trim(self%kind), self%patch%id, self%i_omega, self%i_nu, chi(1,1,self%n(3),1), eta(1,1,self%n(3),1)
     end select
   endif
 END SUBROUTINE opacity_update

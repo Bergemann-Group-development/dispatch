@@ -243,12 +243,13 @@ SUBROUTINE Inu_update (self)
   self%Psi = self%Psi / chi
 
   if (self%verbose > 1) then
-    select case (self%dir)
-    case(1)
-      write(*,'(A10, 2(I4), 3(ES18.7))'), trim(self%kind), self%i_omega, self%i_nu, Inu(1,1,1,1)
-    case(-1)
-      write(*,'(A10, 2(I4), 3(ES18.7))'), trim(self%kind), self%i_omega, self%i_nu, Inu(1,1,self%n(3),1)
-    end select
+    if (self%dir > 0) then
+      write(*,'(A10, 3(I4), 3(ES18.7))'), trim(self%kind), self%patch%id, self%i_omega, self%i_nu, &
+      self%mem(5,5,1,1,1,1), self%mem(5,5,self%ui(3),1,1,1)
+    else
+      write(*,'(A10, 3(I4), 3(ES18.7))'), trim(self%kind), self%patch%id, self%i_omega, self%i_nu, &
+      self%mem(5,5,self%li(3),1,1,1), self%mem(5,5,self%gn(3),1,1,1)
+    endif
   endif
   call trace%end()
 END SUBROUTINE Inu_update
@@ -267,14 +268,13 @@ SUBROUTINE Jnu_update (self)
   Jnu = 0
 
   do i=1, size(self%sheep)
-    sheep => self%sheep(i)
-    Jnu = Jnu + sheep%wmu * sheep%authority_mem(:,:,:,:, sheep%it, self%i_inu)
+    Jnu = Jnu + self%sheep(i)%wmu * self%sheep(i)%authority_mem(:,:,:,:, self%sheep(i)%it, self%i_inu)
   end do
 
   Jnu = Jnu / math%pi4
 
   if (self%verbose > 1) then
-    write(*,'(A10, 2(I4), 3(ES18.7))'), trim(self%kind), self%i_omega, self%i_nu, Jnu(1,1,1,1), Jnu(1,1,self%n(3),1)
+    write(*,'(A10, 3(I4), 3(ES18.7))'), trim(self%kind), self%patch%id, self%i_omega, self%i_nu, Jnu(1,1,1,1), Jnu(1,1,self%n(3),1)
   endif
   call trace%end()
 END SUBROUTINE Jnu_update

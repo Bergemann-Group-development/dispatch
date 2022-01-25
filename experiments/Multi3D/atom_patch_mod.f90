@@ -210,8 +210,8 @@ module atom_patch_mod
       stop
     endif
 
-    write(*,'(A,I4,F16.2)') trim(self%kind), self%id, self%atom%n(1,1,1,3)
-    write(*,'(A,I4,F16.2)') trim(self%kind), self%id, self%atom%n(1,1,self%n(3),3)
+    write(*,'(A10, 1(I4), 3(ES18.7))'), trim(self%kind), self%patch%id, self%atom%n(1,1,1,3)
+    write(*,'(A10, 1(I4), 3(ES18.7))'), trim(self%kind), self%patch%id, self%atom%n(1,1,self%n(3),3)
   
     self%iter = self%iter + 1
   

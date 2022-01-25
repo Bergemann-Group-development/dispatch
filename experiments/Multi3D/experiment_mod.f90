@@ -245,14 +245,14 @@ SUBROUTINE init_sub_patches(self)
   endif
 
   do n=1, n_nu
-      back_opac(n)%kind = 'back_opac'
-      call self%link_and_init(back_opac(n), n, n_nu)
+      rt_patches(0,n)%kind = 'mean_rad'
+      call self%link_and_init(rt_patches(0,n), n, n_nu)
 
       atom_task%opac(0,n)%kind = 'cont_opac'
       call self%link_and_init(atom_task%opac(0,n), n, n_nu)
 
-      rt_patches(0,n)%kind = 'mean_rad'
-      call self%link_and_init(rt_patches(0,n), n, n_nu)
+      back_opac(n)%kind = 'back_opac'
+      call self%link_and_init(back_opac(n), n, n_nu)
   end do
 
   do p=1,4 ! do this for line_opac, angle_rad, sum_opac, line_rate
@@ -261,18 +261,18 @@ SUBROUTINE init_sub_patches(self)
       do i_mu=1, n_mu
         do dir=-1,1,2
           do n=1, n_nu
-            if (p==1) then
+            if (p==4) then
               patch => atom_task%opac(i,n)
               patch%kind = 'line_opac'
-            elseif (p==2) then
-              patch => atom_task%rate(i,n)
-              patch%kind = 'rad_rate'
             elseif (p==3) then
               patch => sum_opac(i,n)
               patch%kind = 'sum_opac'
-            elseif (p==4) then
+            elseif (p==2) then
               patch => rt_patches(i,n)
               patch%kind = 'angle_rad'
+            elseif (p==1) then
+              patch => atom_task%rate(i,n)
+              patch%kind = 'rad_rate'
             endif
 
             patch%i_omega = i
@@ -364,8 +364,7 @@ SUBROUTINE link_and_init (self, m3d, n, n_nu)
   call m3d%init()
   call m3d%append_to_task_list()
 
-  m3d%boundaries%topbot = self%boundaries%topbot
-
+  !m3d%boundaries%topbot = self%boundaries%topbot
 END SUBROUTINE link_and_init
 
 !===============================================================================

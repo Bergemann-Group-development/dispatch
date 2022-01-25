@@ -19,6 +19,8 @@ module m3d_patch_mod
   USE trace_mod
   !USE mpi_mod
   !USE omp_mod
+  USE omp_lock_mod
+  USE shared_mod
   !USE omp_timer_mod
   !USE math_mod
   USE bits_mod
@@ -57,6 +59,8 @@ module m3d_patch_mod
     procedure :: set_freq_indices
     procedure :: append_to_task_list
     procedure :: extrapolate_guards
+    procedure :: check_topbot
+    procedure :: is_ahead_of
     procedure :: is_upstream => m3d_is_upstream
     procedure :: periodic_grid => m3d_periodic_grid
   end type m3d_t
@@ -141,6 +145,7 @@ SUBROUTINE m3d_init (self)
   integer, save:: n_warmup=1
   ! ----------------------------------------------------------------------------
   call self%gpatch_t%init()
+  call self%check_topbot()
   self%mem = tiny(1.)
   self%it = 1
   self%new = self%it
@@ -432,5 +437,70 @@ SUBROUTINE extrapolate_guards (self, target_mem)
   !.............................................................................
   ! do nothing
 END SUBROUTINE
+
+!===============================================================================
+SUBROUTINE check_topbot (self)
+  class(m3d_t):: self
+  !.............................................................................
+  if (self%patch%boundaries%topbot(1) .and. self%dir < 0) then
+    self%boundaries%topbot(1) = .true.
+  elseif (self%patch%boundaries%topbot(2) .and. self%dir > 0) then
+    self%boundaries%topbot(2) = .true.
+  endif
+END SUBROUTINE
+
+!===============================================================================
+!> Check if self (which is an nbor task) is ahead of target (which is the one to
+!> possibly move to the ready queue), using self%dtime*target%grace as the grace
+!> period, since we want to limit the extrapolation in the nbor task to at most
+!> target%grace*self%dtime.
+!===============================================================================
+LOGICAL FUNCTION is_ahead_of (self, target)
+  class (m3d_t):: self
+  class (task_t):: target
+  !.............................................................................
+  real:: grace
+  real(8):: nbtime, nbdtime, tgtime
+  !-----------------------------------------------------------------------------
+  grace = self%grace + shared%extra_grace
+  if (omp_lock%tasks) then
+                                            call self%lock%set ('is_ahead_of')
+    !---------------------------------------------------------------------------
+    ! dt(self%dt) is always consistent with t(:), while dtime changes in
+    ! courant_condition(), before other attributes change in rotate()
+    !---------------------------------------------------------------------------
+    nbtime = self%time
+    nbdtime = self%dt(self%it)
+    tgtime = target%time
+    if (self%is_set(bits%frozen)) then
+      is_ahead_of = .true.
+    else if (self%istep < 3) then
+      is_ahead_of = nbtime > tgtime
+    else
+      is_ahead_of = nbtime + nbdtime*grace > tgtime
+    end if
+                                            call self%lock%unset ('is_ahead_of')
+  else
+    !$omp atomic read
+    nbtime = self%time
+    !$omp atomic read
+    nbdtime = self%dtime
+    !$omp atomic read
+    tgtime = target%time
+    ! -- if a task is frozen (in time) assume it is forever ahead of other tasks
+    if (self%is_set(bits%frozen)) then
+      is_ahead_of = .true.
+    ! -- a negative nbor time signals an invalid (e.g. initial RT) state
+  !  else if (nbtime < 0.0) then
+  !    is_ahead_of = .false.
+    ! -- do not use a grace interval for the first few steps
+    else if (self%istep < 3) then
+      is_ahead_of = nbtime > tgtime
+    ! -- use a grace interval that is fraction of the nbor time step
+    else
+      is_ahead_of = nbtime + nbdtime*grace > tgtime
+    end if
+  end if
+END FUNCTION is_ahead_of
     
 end module m3d_patch_mod
