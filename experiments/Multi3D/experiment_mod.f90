@@ -94,11 +94,12 @@ END SUBROUTINE init
 SUBROUTINE bndries (self)
   class(experiment_t):: self
   real(var_k), dimension(:,:,:,:,:), pointer :: mem
+  integer, save:: itimer=0
   !----------------------------------------------------------------------------
-  call trace%begin('experiment_t%bndries')
+  call trace%begin('experiment_t%bndries', itimer=itimer)
   mem => self%mem(:,:,:,:,self%it,:)
   if (any(self%boundaries%topbot)) call self%boundaries%boundary(mem)
-  call trace%end()
+  call trace%end (itimer)
 END SUBROUTINE bndries
 
 !===============================================================================
@@ -107,8 +108,9 @@ END SUBROUTINE bndries
 SUBROUTINE update (self)
   class(experiment_t):: self
   integer :: it_l, in_l, in_lte_l
+  integer, save:: itimer=0
   !----------------------------------------------------------------------------
-  call trace%begin('experiment_t%update')
+  call trace%begin('experiment_t%update', itimer=itimer)
   !call self%solver_t%update
 
   if (self%iter == 0) then
@@ -117,7 +119,7 @@ SUBROUTINE update (self)
   endif
 
   self%iter = self%iter + 1
-  call trace%end()
+  call trace%end (itimer)
 END SUBROUTINE update
 
 !===============================================================================
