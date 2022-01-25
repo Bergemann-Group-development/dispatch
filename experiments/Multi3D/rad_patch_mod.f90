@@ -171,8 +171,6 @@ END SUBROUTINE radiation_init
 SUBROUTINE radiation_update (self)
   class(radiation_t) :: self
   ! ----------------------------------------------------------------------------
-  if (self%verbose > 0) call timer%tic ()
-
   select case (self%kind)
   case ('angle_rad')
     call self%Inu_update()
@@ -183,8 +181,6 @@ SUBROUTINE radiation_update (self)
   end select
 
   self%iter = self%iter + 1
-
-  if (self%verbose > 0) call timer%toc (self%m3d_name() // ' update took ', 1)
 END SUBROUTINE radiation_update
 
 !===============================================================================

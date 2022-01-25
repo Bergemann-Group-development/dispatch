@@ -91,7 +91,6 @@ module rate_patch_mod
     real(4), dimension(:,:,:,:), allocatable :: Ieff!, eta
     integer :: fs, fe
     ! ----------------------------------------------------------------------------
-    if (self%verbose > 0) call timer%tic ()
     call trace_begin('rate_patch_t%update')
 
     fs = self%fs
@@ -128,7 +127,6 @@ module rate_patch_mod
     endif
   
     call trace%end()
-    if (self%verbose > 0) call timer%toc (self%m3d_name() // ' update took ', 1)
   END SUBROUTINE rate_patch_update
   
   !===============================================================================

@@ -181,7 +181,6 @@ module atom_patch_mod
     character(len=64) :: text
     real(8), save :: time=0
     ! ----------------------------------------------------------------------------
-    if (self%verbose > 0) call timer%tic ()
     call trace_begin('atom_patch_t%update')
 
     if (self%iter == 0) then
@@ -217,7 +216,6 @@ module atom_patch_mod
     self%iter = self%iter + 1
   
     call trace%end()
-    if (self%verbose > 0) call timer%toc (trim(self%kind) // ' update took ', 1)
   END SUBROUTINE atom_task_update
 
   !===============================================================================

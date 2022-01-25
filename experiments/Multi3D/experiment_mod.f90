@@ -108,7 +108,6 @@ SUBROUTINE update (self)
   class(experiment_t):: self
   integer :: it_l, in_l, in_lte_l
   !----------------------------------------------------------------------------
-  if (self%verbose > 0) call timer%tic ()
   call trace_begin('experiment_t%update')
   !call self%solver_t%update
 
@@ -119,7 +118,6 @@ SUBROUTINE update (self)
 
   self%iter = self%iter + 1
   call trace_end()
-  if (self%verbose > 0) call timer%toc (trim(self%kind) // ' update took ', 1)
 END SUBROUTINE update
 
 !===============================================================================

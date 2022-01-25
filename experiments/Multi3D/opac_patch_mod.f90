@@ -121,8 +121,6 @@ SUBROUTINE opacity_update (self)
   class(opacity_t) :: self
   real(4), dimension(:,:,:,:), pointer :: chi, eta
   ! ----------------------------------------------------------------------------
-  if (self%verbose > 0) call timer%tic ()
-
   chi => self%authority_mem(:,:,:,:, self%it, self%i_chi)
   eta => self%authority_mem(:,:,:,:, self%it, self%i_eta)
   chi = 0
@@ -149,8 +147,6 @@ SUBROUTINE opacity_update (self)
       write(*,'(A10, 2(I4), 3(ES18.7))'), trim(self%kind), self%i_omega, self%i_nu, chi(1,1,self%n(3),1), eta(1,1,self%n(3),1)
     end select
   endif
-
-  if (self%verbose > 0) call timer%toc (self%m3d_name() // ' update took ', 1)
 END SUBROUTINE opacity_update
 
 !===============================================================================
