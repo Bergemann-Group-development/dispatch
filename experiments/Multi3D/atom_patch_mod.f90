@@ -297,7 +297,7 @@ module atom_patch_mod
     gamma_ij = 0.0d0
     gamma_ji = 0.0d0
 
-    print *,'************************************************************************************'
+    PRINT *,'================== atom_patch_mod::sum_rates ===================='
     do i_nu=1, size(self%rate, 2)
       do i_omega=1, size(self%rate, 1)
         rate => self%rate(i_omega, i_nu)
