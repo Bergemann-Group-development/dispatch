@@ -36,6 +36,7 @@ c *                                                                    *
 c * send in by e.v.d.zalm, utrecht, sterrewacht, march 24th 1981       *
 c **********************************************************************
       implicit real(8) (A-H,O-Z)
+      implicit integer (I-N)
       dimension arr(ib)
 c
       one=1.0

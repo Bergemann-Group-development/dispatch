@@ -39,19 +39,19 @@ MODULE experiment_mod
     real(8), allocatable, dimension(:,:,:,:) :: nh
     integer :: idx_pe=6, n_mu, n_phi, n_nu, iter=0, maxiter=1
   contains
-    procedure pre_init
-    procedure init
-    procedure update
-    procedure init_level
-    procedure bndries
-    procedure pre_init_composition
-    procedure init_composition
-    procedure append_to
-    procedure link_sub_task
-    procedure link_and_init
-    procedure init_sub_patches
-    procedure freeze_mhd
-    procedure nbor_relations => experiment_nbor_relations
+    procedure:: pre_init
+    procedure:: init
+    procedure:: update
+    procedure:: init_level
+    procedure:: bndries
+    procedure:: pre_init_composition
+    procedure:: init_composition
+    procedure:: append_to
+    procedure:: link_sub_task
+    procedure:: link_and_init
+    procedure:: init_sub_patches
+    procedure:: freeze_mhd
+    procedure:: nbor_relations => experiment_nbor_relations
   end type
 CONTAINS
 
