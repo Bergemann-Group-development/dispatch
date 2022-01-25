@@ -198,7 +198,7 @@ SUBROUTINE m3d_nbor_relations(self, another, needed, needs_me, download)
                                            !    does it need me, should I download?
   class(task_t), pointer :: other
   
-  call trace%begin ('radiation_t%nbor_relations')
+  call trace%begin ('m3d_t%m3d_nbor_relations')
 
   ! If this RT task has no RT on, it should have no nbor relations
   if (.not.(self%on)) then
@@ -235,7 +235,7 @@ SUBROUTINE info (self, label)
   class(nbor_t), pointer:: nbor
   real(8):: distance(3)
   !-----------------------------------------------------------------------------
-  call trace%begin ('halo_t%info')
+  call trace%begin ('m3d_t%info')
   if (verbose < 2) then
     call self%task%task_info()
     nbor => self%nbor
@@ -302,7 +302,7 @@ logical FUNCTION m3d_is_upstream (self, other) result(is_upstream)
     return
   end if
   !
-  call trace%begin ('rt_t%is_upstream')
+  call trace%begin ('m3d_t%m3d_is_upstream')
   !-----------------------------------------------------------------------------
   ! If the task does not have RT it is not needed
   !-----------------------------------------------------------------------------
@@ -369,7 +369,7 @@ SUBROUTINE bndries (self)
   class(m3d_t):: self
   real(4), dimension(:,:,:,:,:), pointer :: mem
   !----------------------------------------------------------------------------
-  call trace_begin('m3d_rt_t%bndries')
+  call trace_begin('m3d_t%bndries')
   mem => self%mem(:,:,:,:,self%it,:)
   if (size(self%boundaries%topbot) /= 2) then
     print *, 'boundary conditions not initialised for task ', self%id 
