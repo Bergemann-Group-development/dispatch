@@ -1,0 +1,3 @@
+OPT = -O3 -ipo
+HW = -xHost
+DEBUG = -traceback
