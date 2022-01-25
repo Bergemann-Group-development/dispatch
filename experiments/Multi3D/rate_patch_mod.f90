@@ -35,8 +35,9 @@ module rate_patch_mod
       integer :: i_Gij=1, i_Gji=2
       class(atom_type), pointer :: atom => null()
       real(8), dimension(:,:,:), allocatable :: vproj
-      class(radiation_t), pointer :: rad
-      class(opacity_t), pointer :: cont_opac, line_opac
+      class(radiation_t), pointer :: rad => null()
+      class(opacity_t), pointer :: cont_opac => null()
+      class(opacity_t), pointer :: line_opac => null()
       contains
         procedure :: pre_init => rate_patch_pre_init
         procedure :: init => rate_patch_init
@@ -54,10 +55,9 @@ module rate_patch_mod
     ! ----------------------------------------------------------------------------
     call self%m3d_t%pre_init()
 
-    self%nv = 2
-
+    self%nw = 2
+    self%nv = self%atom%nrad
     self%mv = self%nv
-    self%nw = self%atom%nrad
     self%nt = 1
     self%it = 1
     self%new = self%it
@@ -87,38 +87,48 @@ module rate_patch_mod
   !===============================================================================
   SUBROUTINE rate_patch_update (self)
     class(rate_patch_t) :: self
-    real(4), dimension(:,:,:,:), pointer :: Inu, gamma_ij, gamma_ji
-    real(4), dimension(:,:,:,:), allocatable :: Ieff, eta
+    real(4), dimension(:,:,:,:), pointer :: Inu, gamma_ij, gamma_ji, chi_l, chi_c, eta_l, eta_c
+    real(4), dimension(:,:,:,:), allocatable :: Ieff!, eta
     integer :: fs, fe
     ! ----------------------------------------------------------------------------
-    !call timer%tic ()
+    if (self%verbose > 0) call timer%tic ()
+    call trace_begin('rate_patch_t%update')
 
     fs = self%fs
     fe = self%fe
 
-    Inu => self%rad%authority_mem(:,:,:,self%rad%i_inu,:)
+    Inu => self%rad%authority_mem(:,:,:,:,self%rad%it,self%rad%i_inu)
 
-    eta = self%cont_opac%mem(:,:,:,self%cont_opac%i_eta,self%it,:)
-    eta = self%line_opac%mem(:,:,:,self%line_opac%i_eta,self%it,:) + eta
+    chi_c => self%cont_opac%mem(:,:,:,:,self%it,self%cont_opac%i_chi)
+    eta_c => self%cont_opac%mem(:,:,:,:,self%it,self%cont_opac%i_eta)
 
-    Ieff = Inu - self%rad%Psi * eta
+    chi_l => self%line_opac%mem(:,:,:,:,self%it,self%line_opac%i_chi)
+    eta_l => self%line_opac%mem(:,:,:,:,self%it,self%line_opac%i_eta)
 
-    gamma_ij => self%mem(:,:,:, self%i_Gij, self%it, :)
-    gamma_ji => self%mem(:,:,:, self%i_Gji, self%it, :)
+    !eta = self%cont_opac%mem(:,:,:,:,self%it,self%cont_opac%i_eta)
+    !eta = self%line_opac%mem(:,:,:,:,self%it,self%line_opac%i_eta) + eta
 
-    call self%atom%add_all_gammas4(fs, fe, self%temp, self%vproj, &
-    Ieff, self%rad%Psi, gamma_ij, gamma_ji)
+    Ieff = Inu - self%rad%Psi * (eta_c + eta_l)
+
+    gamma_ij => self%mem(:,:,:,:, self%it, self%i_Gij)
+    gamma_ji => self%mem(:,:,:,:, self%it, self%i_Gji)
+
+    call self%atom%add_all_gammas(fs, fe, self%temp, self%vproj, Ieff, self%rad%Psi, &
+                                  chi_l, chi_c, eta_l, eta_c, gamma_ij, gamma_ji)
   
     self%iter = self%iter + 1
 
-    !select case (self%dir)
-    !case(1)
-    !  write(*,'(A10, 2(I4), 3(ES18.7))'), trim(self%kind), self%i_omega, self%i_nu, gamma_ij(1,1,1,4), gamma_ji(1,1,1,4)
-    !case(-1)
-    !  write(*,'(A10, 2(I4), 3(ES18.7))'), trim(self%kind), self%i_omega, self%i_nu, gamma_ij(1,1,self%n(3),4), gamma_ji(1,1,self%n(3),4)
-    !end select
+    if (self%verbose > 1) then
+      select case (self%dir)
+      case(1)
+        write(*,'(A10, 2(I4), 3(ES18.7))'), trim(self%kind), self%i_omega, self%i_nu, gamma_ij(1,1,1,1), gamma_ji(1,1,1,1)
+      case(-1)
+        write(*,'(A10, 2(I4), 3(ES18.7))'), trim(self%kind), self%i_omega, self%i_nu, gamma_ij(1,1,self%n(3),1), gamma_ji(1,1,self%n(3),1)
+      end select
+    endif
   
-    !call timer%toc ('update took ', 1)
+    call trace%end()
+    if (self%verbose > 0) call timer%toc (self%m3d_name() // ' update took ', 1)
   END SUBROUTINE rate_patch_update
   
   !===============================================================================
@@ -136,20 +146,17 @@ module rate_patch_mod
       call trace%end()
       return
     end if
-  
-    ! First check the main relations, based on location and level of refinement
-    call self%m3d_t%nbor_relations(another, needed, needs_me, download)
+
+    needed = .false.; needs_me = .false.; download = .false.
 
     if (another%id == self%rad%id) then
       needed = .true.; needs_me = .false.; download = .false.
     endif
 
-    if (another%id == self%cont_opac%id) then
-      needed = .true.; needs_me = .false.; download = .false.
-    endif
-
-    if (another%id == self%line_opac%id) then
-      needed = .true.; needs_me = .false.; download = .false.
+    if (all(another%position == self%position)) then
+      if (another%kind == trim(self%atom%id) // '_patch') then
+        needed = .false.; needs_me = .true.; download = .false.
+      endif
     endif
   
     call trace%end()

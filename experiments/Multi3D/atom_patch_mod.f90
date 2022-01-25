@@ -1,4 +1,4 @@
-module atom_task_mod
+module atom_patch_mod
     !USE rt_integral_mod
     !USE radau_mod
     !USE boundaries_mod
@@ -9,6 +9,7 @@ module atom_task_mod
     USE solver_mod
     USE link_mod
     USE task_mod
+    USE omp_timer_mod
     !USE index_mod
     !USE mesh_mod
     USE io_mod
@@ -35,7 +36,7 @@ module atom_task_mod
   
     !-----------------------------------------------------------------------------
   
-    type, public, extends(gpatch_t) :: atom_task_t
+    type, public, extends(gpatch_t) :: atom_patch_t
       class(gpatch_t), pointer :: patch            ! pointer to MHD patch
       type(atom_type) :: atom
       type(spectrum_type) :: sp
@@ -62,7 +63,7 @@ module atom_task_mod
       procedure sum_rates
       procedure update_populations
       procedure freeze_atom
-    end type atom_task_t
+    end type atom_patch_t
 
     !-----------------------------------------------------------------------------
   
@@ -70,7 +71,7 @@ module atom_task_mod
     
   !===============================================================================
   SUBROUTINE atom_task_pre_init (self)
-    class(atom_task_t), target:: self
+    class(atom_patch_t), target:: self
     ! ----------------------------------------------------------------------------
     call self%gpatch_t%pre_init()
     call self%pre_init_atom()
@@ -97,12 +98,12 @@ module atom_task_mod
   
   !===============================================================================
   SUBROUTINE atom_task_init (self)
-    class(atom_task_t) :: self
+    class(atom_patch_t) :: self
     !real(8) :: grace
     integer :: i
     ! ----------------------------------------------------------------------------
     call self%gpatch_t%init()
-    self%kind = 'atom_task'
+    self%kind = trim(self%atom%id) // '_patch'
     self%nv = 0
     !-----------------------------------------------------------------------------
     ! Synchronize with MHD patch
@@ -110,6 +111,12 @@ module atom_task_mod
     self%dt_fixed = self%patch%dtime
     self%dtime    = self%patch%dtime
     self%dt       = self%patch%dtime
+
+    ! ----------------------------------------------------------------------------
+    ! Do not check density or validate with it. This is rather important to be set
+    ! ----------------------------------------------------------------------------
+    call self%set (bits%no_density)
+    call self%set (bits%internal)
   
     !grace = 0.1d0
   
@@ -118,7 +125,7 @@ module atom_task_mod
 
   !===============================================================================
   SUBROUTINE pre_init_atom (self)
-    class(atom_task_t) :: self
+    class(atom_patch_t) :: self
     type(atom_type), save :: atom
     type(spectrum_type), save :: sp
     logical, save :: first_time=.true.
@@ -157,7 +164,7 @@ module atom_task_mod
 
   !===============================================================================
   SUBROUTINE init_atom (self)
-    class(atom_task_t), target :: self
+    class(atom_patch_t), target :: self
     class(atom_type), pointer :: atom
     !-----------------------------------------------------------------------------
     atom => self%atom
@@ -169,14 +176,16 @@ module atom_task_mod
 
   !===============================================================================
   SUBROUTINE atom_task_update (self)
-    class(atom_task_t) :: self
+    class(atom_patch_t) :: self
     real(8), dimension(:,:,:,:), allocatable :: gamma_ij, gamma_ji
     character(len=64) :: text
+    real(8), save :: time=0
     ! ----------------------------------------------------------------------------
-    !call timer%tic ()
+    if (self%verbose > 0) call timer%tic ()
+    call trace_begin('atom_patch_t%update')
 
     if (self%iter == 0) then
-      call timer%tic ()
+      time = wallclock()
       call self%init_atom()
     elseif (self%iter == 1) then
       call self%normalize_phi()
@@ -190,10 +199,6 @@ module atom_task_mod
       call self%update_populations(gamma_ij, gamma_ji)
     endif
 
-    !write(*,'(A,I4,F16.2)') trim(self%kind), self%id!, self%atom%n(1,1,1,3)
-    !print *, self%atom%n(1,1,:,3)
-    !write(*,'(A,I4,F16.2)') trim(self%kind), self%id, self%atom%n(1,1,self%n(3),3)
-
     if (self%iter < self%maxiter) then
       write(text,'(A,I2,A,I2,A)') 'Iteration ', self%iter, '/', self%maxiter-1, '.'
       call io%header (text)
@@ -202,18 +207,22 @@ module atom_task_mod
       write(text,'(A,I2,A,A)') 'End of iteration ', self%iter-1, '.'
       call io%header (text)
       call self%freeze_atom()
-      call timer%toc ('Dispatch took ', 1)
+      print *, 'Dispatch finished after ', wallclock() - time, ' seconds'
       stop
     endif
+
+    write(*,'(A,I4,F16.2)') trim(self%kind), self%id, self%atom%n(1,1,1,3)
+    write(*,'(A,I4,F16.2)') trim(self%kind), self%id, self%atom%n(1,1,self%n(3),3)
   
     self%iter = self%iter + 1
   
-    !call timer%toc ('update took ', 1)
+    call trace%end()
+    if (self%verbose > 0) call timer%toc (trim(self%kind) // ' update took ', 1)
   END SUBROUTINE atom_task_update
 
   !===============================================================================
   SUBROUTINE update_populations (self, gamma_ij, gamma_ji)
-    class(atom_task_t), target :: self
+    class(atom_patch_t), target :: self
     class(atom_type), pointer :: atom
     integer, dimension(3, self%atom%nlevel) :: pos3
     integer, dimension(self%atom%nlevel) :: maxerr
@@ -258,7 +267,7 @@ module atom_task_mod
 
   !===============================================================================
   SUBROUTINE normalize_phi (self)
-    class(atom_task_t), target :: self
+    class(atom_patch_t), target :: self
     class(line_type), pointer :: line
     class(opacity_t), pointer :: opac
     integer :: i, i_omega, i_nu
@@ -281,7 +290,7 @@ module atom_task_mod
 
   !===============================================================================
   SUBROUTINE sum_rates (self, gamma_ij, gamma_ji)
-    class(atom_task_t), target :: self
+    class(atom_patch_t), target :: self
     class(rate_patch_t), pointer :: rate
     integer :: i, i_omega, i_nu
     real(8), dimension(:,:,:,:) :: gamma_ij, gamma_ji
@@ -292,8 +301,8 @@ module atom_task_mod
     do i_nu=1, size(self%rate, 2)
       do i_omega=1, size(self%rate, 1)
         rate => self%rate(i_omega, i_nu)
-        gamma_ij = gamma_ij + rate%wmu * rate%mem(:,:,:,rate%i_Gij,rate%it,:)
-        gamma_ji = gamma_ji + rate%wmu * rate%mem(:,:,:,rate%i_Gji,rate%it,:)
+        gamma_ij = gamma_ij + rate%wmu * rate%mem(:,:,:,:,rate%it,rate%i_Gij)
+        gamma_ji = gamma_ji + rate%wmu * rate%mem(:,:,:,:,rate%it,rate%i_Gji)
       end do
     end do
 
@@ -305,12 +314,14 @@ module atom_task_mod
   
   !===============================================================================
   SUBROUTINE atom_task_nbor_relations(self, another, needed, needs_me, download)
-    class(atom_task_t) :: self
+    class(atom_patch_t) :: self
     class(task_t), pointer :: another         ! another task in the list
     logical :: needed, needs_me, download    ! Is the other task: needed, 
                                              !    does it need me, should I download?
     
-    call trace%begin ('atom_task_t%nbor_relations')
+    call trace%begin ('atom_patch_t%nbor_relations')
+
+    needed = .false.; needs_me = .false.; download = .false.
   
     if (another%id == self%patch%id) then
       needed = .true.; needs_me = .false.; download = .false.
@@ -325,7 +336,7 @@ module atom_task_mod
       class is (rate_patch_t)
         if (associated(another%atom)) then
           if (another%atom%id == self%atom%id) then
-            needed = .true.; needs_me = .true.; download = .false.
+            needed = .true.; needs_me = .false.; download = .false.
           endif
         endif
       end select
@@ -336,7 +347,7 @@ module atom_task_mod
 
   !===============================================================================
   SUBROUTINE append_to_task_list(self, task_list)
-    class (atom_task_t), target :: self
+    class (atom_patch_t), target :: self
     class (list_t) :: task_list
     class(link_t),  pointer :: link
     class (task_t), pointer :: task
@@ -351,17 +362,17 @@ module atom_task_mod
   !> For diagnostic output of tasks and nbor lists to data/run/rank_RRRRR.log
   !===============================================================================
   SUBROUTINE task_info (self)
-    class(atom_task_t):: self
+    class(atom_patch_t):: self
     !-----------------------------------------------------------------------------
     write(io_unit%mpi,'(1x,a,2x,a10,i6,2i4,7x,2l1,2x,3f9.3,i4,i4,i4)') &
-      'atom_task_t%task_info: kind, id, rank, level, BV, pos =', &
+      'atom_patch_t%task_info: kind, id, rank, level, BV, pos =', &
       self%kind, self%id, self%rank, self%level, &
       self%is_set(bits%boundary), self%is_set(bits%virtual), self%position
   END SUBROUTINE task_info
 
   !===============================================================================
   SUBROUTINE init_level (self)
-    class(atom_task_t):: self
+    class(atom_patch_t):: self
     !-----------------------------------------------------------------------------
     if (any(self%n > 1)) then
       ! The level does not depend on the patch size in non-regular grids
@@ -371,7 +382,7 @@ module atom_task_mod
 
   !===============================================================================
   SUBROUTINE freeze_atom (self)
-    class(atom_task_t):: self
+    class(atom_patch_t):: self
     integer :: i_nu, i_omega
     !-----------------------------------------------------------------------------
     call self%set(bits%frozen)

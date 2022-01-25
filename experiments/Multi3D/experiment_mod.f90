@@ -17,7 +17,7 @@ MODULE experiment_mod
   USE m3d_patch_mod, only: m3d_t, halo_m3d_t
   USE opac_patch_mod, only: opacity_t
   USE rad_patch_mod, only: radiation_t
-  USE atom_task_mod, only: atom_task_t
+  USE atom_patch_mod, only: atom_patch_t
   USE rate_patch_mod, only: rate_patch_t
   USE list_mod
   USE link_mod
@@ -32,8 +32,9 @@ MODULE experiment_mod
     type(geometry_type) :: geometry
     class(opacity_t), pointer, dimension(:) :: back_opac
     class(opacity_t), pointer, dimension(:,:) :: opac
+    class(radiation_t), pointer, dimension(:) :: out_rad
     class(radiation_t), pointer, dimension(:,:) :: rt_patches
-    class(atom_task_t), pointer :: atom_task
+    class(atom_patch_t), pointer :: atom_task
     real(8), allocatable, dimension(:,:,:) :: ne, temp, rho, vx, vy, vz
     real(8), allocatable, dimension(:,:,:,:) :: nh
     integer :: idx_pe=6, n_mu, n_phi, n_nu, iter=0, maxiter=1
@@ -50,6 +51,7 @@ MODULE experiment_mod
     procedure link_and_init
     procedure init_sub_patches
     procedure freeze_mhd
+    procedure nbor_relations => experiment_nbor_relations
   end type
 CONTAINS
 
@@ -106,8 +108,8 @@ SUBROUTINE update (self)
   class(experiment_t):: self
   integer :: it_l, in_l, in_lte_l
   !----------------------------------------------------------------------------
-  !call timer%tic ()
-  !call trace_begin('experiment_t%update')
+  if (self%verbose > 0) call timer%tic ()
+  call trace_begin('experiment_t%update')
   !call self%solver_t%update
 
   if (self%iter == 0) then
@@ -116,8 +118,8 @@ SUBROUTINE update (self)
   endif
 
   self%iter = self%iter + 1
-  !call trace_end
-  !call timer%toc ('update took ', 1)
+  call trace_end()
+  if (self%verbose > 0) call timer%toc (trim(self%kind) // ' update took ', 1)
 END SUBROUTINE update
 
 !===============================================================================
@@ -182,15 +184,16 @@ SUBROUTINE init_sub_patches(self)
   class (experiment_t), target :: self
   logical, save :: first_time=.true.
   class(m3d_t), pointer :: patch
-  class(atom_task_t), pointer :: atom_task
+  class(atom_patch_t), pointer :: atom_task
   class(opacity_t), pointer, dimension(:) :: back_opac
   class(opacity_t), pointer, dimension(:,:) :: sum_opac
+  class(radiation_t), pointer, dimension(:) :: out_rad
   class(radiation_t), pointer, dimension(:,:) :: rt_patches
   integer :: iostat, n_omega, n
   real, dimension(:), allocatable:: mu, w_mu, mux, muy, muz
-  integer, save :: n_nu=1, n_mu=1, n_phi=4
-  integer :: i, dir, i_phi, i_mu, p, maxiter
-  namelist /experiment_params/ n_nu, n_mu, n_phi, maxiter
+  integer, save :: n_nu=1, n_mu=1, n_phi=4, verbose=0, maxiter=1
+  integer :: i, dir, i_phi, i_mu, p
+  namelist /experiment_params/ n_nu, n_mu, n_phi, maxiter, verbose
   !-----------------------------------------------------------------------------
   if (first_time) then
     rewind (io%input)
@@ -200,9 +203,11 @@ SUBROUTINE init_sub_patches(self)
       read (io%input, experiment_params)
     end if
     call io%namelist_warning ('experiment_params', iostat)
-    self%maxiter = maxiter
     first_time = .false.
   endif
+  
+  self%maxiter = maxiter
+  self%verbose = verbose
 
   !-------------------------------------------------------------------------
   ! Assign angles and integration weights
@@ -236,6 +241,11 @@ SUBROUTINE init_sub_patches(self)
   allocate(rt_patches(0:n_omega, n_nu))
   self%rt_patches => rt_patches
 
+  if (self%boundaries%topbot(1)) then
+    allocate(out_rad(n_omega/2))
+    self%out_rad => out_rad
+  endif
+
   do n=1, n_nu
       back_opac(n)%kind = 'back_opac'
       call self%link_and_init(back_opac(n), n, n_nu)
@@ -245,7 +255,6 @@ SUBROUTINE init_sub_patches(self)
 
       rt_patches(0,n)%kind = 'mean_rad'
       call self%link_and_init(rt_patches(0,n), n, n_nu)
-
   end do
 
   do p=1,4 ! do this for line_opac, angle_rad, sum_opac, line_rate
@@ -271,6 +280,7 @@ SUBROUTINE init_sub_patches(self)
             patch%i_omega = i
             patch%i_phi = i_phi
             patch%i_mu = i_mu
+            patch%i_nu = n
             patch%dir = dir
 
             patch%wmu = w_mu(i) * math%pi4 / (2*n_phi)
@@ -289,6 +299,14 @@ SUBROUTINE init_sub_patches(self)
       end do
     end do
   end do
+
+  if (associated(self%out_rad)) then
+    do i=1, n_omega/2 ! only use dir=1
+      out_rad(i)%kind = 'out_rad'
+      out_rad(i)%i_omega = i*2
+      call self%link_and_init(out_rad(i), 1, 1)
+    end do
+  endif
 END SUBROUTINE init_sub_patches
 
 !===============================================================================
@@ -316,6 +334,7 @@ SUBROUTINE link_and_init (self, m3d, n, n_nu)
         m3d%back_opac => self%back_opac(n)
         m3d%cont_opac => self%atom_task%opac(0,n)
         m3d%line_opac => self%atom_task%opac(m3d%i_omega,n)
+        m3d%rad => self%rt_patches(m3d%i_omega,n)
       end select
 
     class is (rate_patch_t)
@@ -329,8 +348,16 @@ SUBROUTINE link_and_init (self, m3d, n, n_nu)
       select case(m3d%kind)
       case ('mean_rad')
         m3d%sheep => self%rt_patches(1:, n)
+      case ('out_rad')
+        m3d%sheep => self%rt_patches(m3d%i_omega, :)
+        m3d%vec = m3d%sheep(1)%vec
       case ('angle_rad')
         m3d%opac => self%opac(m3d%i_omega,n)
+        m3d%mean_rad => self%rt_patches(0, n)
+
+        if (m3d%dir > 0 .and. associated(self%out_rad)) then
+          m3d%out_rad  => self%out_rad(m3d%i_omega/2)
+        endif
       end select
   end select
 
@@ -351,12 +378,12 @@ SUBROUTINE link_sub_task (self, task)
   select type (task)
   class is (m3d_t)
     task%patch => self
-    task%temp  => self%temp
-    task%rho   => self%rho 
-    task%ne    => self%ne
-    task%sp    => self%sp
+    task%temp    = self%temp
+    task%rho     = self%rho 
+    task%ne      = self%ne
+    task%sp      = self%sp
     task%maxiter = self%maxiter
-  class is (atom_task_t)
+  class is (atom_patch_t)
     task%patch => self
     task%temp  => self%temp
     task%rho   => self%rho 
@@ -364,6 +391,8 @@ SUBROUTINE link_sub_task (self, task)
     task%nh =>  self%nh
     task%composition => self%composition
   end select
+
+  task%verbose = self%verbose
 END SUBROUTINE link_sub_task
 
 !===============================================================================
@@ -379,5 +408,38 @@ SUBROUTINE freeze_mhd (self)
   !  self%back_opac(i)%time = huge(1.0)
   !end do
 END SUBROUTINE
+
+!===============================================================================
+SUBROUTINE experiment_nbor_relations(self, another, needed, needs_me, download)
+  class(experiment_t) :: self
+  class(task_t), pointer :: another         ! another task in the list
+  logical :: needed, needs_me, download    ! Is the other task: needed, 
+                                           !    does it need me, should I download?
+  
+  call trace%begin ('atom_patch_t%nbor_relations')
+  needed = .false.; needs_me = .false.; download = .false.
+
+  if (another%kind == self%kind) then
+    ! First check the main relations, based on location and level of refinement
+    call self%gpatch_t%nbor_relations(another, needed, needs_me, download)
+  endif
+
+  select type(another)
+  class is (solver_t)
+    ! use default
+  class is (atom_patch_t)
+    if (another%patch%id == self%id) then
+      needed = .false.; needs_me = .true.;  download = .false.
+    endif
+  class is (opacity_t)
+    if (another%kind == 'back_opac' .and. another%patch%id == self%id) then
+      needed = .false.; needs_me = .true.;  download = .false.
+    endif
+  class default
+    needed = .false.; needs_me = .false.; download = .false.
+  end select
+
+  call trace%end()
+END SUBROUTINE experiment_nbor_relations
 
 END MODULE

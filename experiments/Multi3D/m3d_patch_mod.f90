@@ -38,12 +38,12 @@ module m3d_patch_mod
     logical                  :: on=.false.       ! allows local turn-off
     logical                  :: in_task_list = .false.
 
-    class(spectrum_type), pointer :: sp => null()
+    type(spectrum_type) :: sp
 
-    real(8), dimension(:,:,:), pointer :: temp => null()
-    real(8), dimension(:,:,:), pointer :: rho  => null()
-    real(8), dimension(:,:,:), pointer :: ne   => null()
-    real(4), dimension(:,:,:,:,:), pointer :: authority_mem => null()
+    real(8), dimension(:,:,:), allocatable :: temp
+    real(8), dimension(:,:,:), allocatable :: rho 
+    real(8), dimension(:,:,:), allocatable :: ne  
+    real(4), dimension(:,:,:,:,:,:), pointer :: authority_mem => null()
     real(8) :: vec(3), wmu, mu, phi, t_offset
     integer :: i_nu=0, i_phi=0, i_mu=0, dir=0, i_omega=0, fs, fe, iter, maxiter
   contains
@@ -51,11 +51,14 @@ module m3d_patch_mod
     procedure :: init => m3d_init
     procedure :: nbor_relations => m3d_nbor_relations
     procedure :: bndries
+    procedure :: m3d_name
     procedure :: init_level
     procedure :: task_info
     procedure :: set_freq_indices
     procedure :: append_to_task_list
+    procedure :: extrapolate_guards
     procedure :: is_upstream => m3d_is_upstream
+    procedure :: periodic_grid => m3d_periodic_grid
   end type m3d_t
 
   !-----------------------------------------------------------------------------
@@ -124,12 +127,7 @@ SUBROUTINE m3d_pre_init (self)
   self%llc_nat    = self%patch%llc_nat
   self%status     = self%patch%status
   self%periodic   = self%patch%periodic
-
-  ! ----------------------------------------------------------------------------
-  ! Do not check density or validate with it. This is rather important to be set
-  ! ----------------------------------------------------------------------------
-  call self%set (bits%no_density)
-  call self%set (bits%internal)
+  self%level      = 1
 
   if (self%on) then 
     call self%task_t%init_unique (same=.true.) ! obtain an unique ID
@@ -146,7 +144,7 @@ SUBROUTINE m3d_init (self)
   self%mem = tiny(1.)
   self%it = 1
   self%new = self%it
-  self%authority_mem => self%mem(self%li(1):self%ui(1),self%li(2):self%ui(2),self%li(3):self%ui(3),:,self%it,:)
+  self%authority_mem => self%mem(self%li(1):self%ui(1),self%li(2):self%ui(2),self%li(3):self%ui(3),:,:,:)
   !-----------------------------------------------------------------------------
   ! Synchronize with MHD patch
   ! ----------------------------------------------------------------------------
@@ -179,12 +177,12 @@ SUBROUTINE set_freq_indices (self, n, nnu, n_nu)
   integer, intent(in) :: n_nu ! number of frequency bins
   !-----------------------------------------------------------------------------
   self%i_nu = n
-  self%nw = nnu / n_nu
-  self%fs = (self%i_nu-1) * self%nw + 1
+  self%nv = nnu / n_nu
+  self%fs = (self%i_nu-1) * self%nv + 1
 
-  if (self%i_nu == n_nu) self%nw = self%nw + mod(nnu, n_nu)
+  if (self%i_nu == n_nu) self%nv = self%nv + mod(nnu, n_nu)
 
-  self%fe = self%fs + self%nw - 1
+  self%fe = self%fs + self%nv - 1
 END SUBROUTINE set_freq_indices
 
 !===============================================================================
@@ -375,5 +373,64 @@ SUBROUTINE bndries (self)
   endif
   call trace%end()
 END SUBROUTINE bndries
+
+!===============================================================================
+SUBROUTINE m3d_periodic_grid (self, only)
+  class(m3d_t):: self
+  integer, optional:: only
+  integer, dimension(3) :: li, ui, lb, ub
+  real(4), dimension(:,:,:,:,:), pointer :: mem
+  integer :: z, dir, off, is, ie, v, w
+  !----------------------------------------------------------------------------
+  if (any(self%ng(:2) > 0)) then
+    li = self%mesh%li; ui = self%mesh%ui
+    lb = self%mesh%lb; ub = self%mesh%ub
+
+    mem => self%mem(:,:,:,:,self%it,:)
+
+    if (all(self%n(:2) == 1)) then
+      do w=1, self%nw
+        do v=1, self%nv
+          do z=1, self%gn(3)
+            mem(:,:,z,v,w) = mem(li(1),li(2),z,v,w)
+          end do
+        end do 
+      end do
+    else
+      do dir=-1,1,2
+        is = dir*max(dir*li(1), dir*ui(1))
+        ie = dir*min(dir*li(1), dir*ui(1))
+
+        do off=dir, dir*self%ng(1), dir
+          mem(is+off,li(2):ui(2),:,:,:) = mem(ie-dir+off,li(2):ui(2),:,:,:)
+        end do
+      end do
+
+      do dir=-1,1,2
+        is = dir*max(dir*li(2), dir*ui(2))
+        ie = dir*min(dir*li(2), dir*ui(2))
+
+        do off=dir, dir*self%ng(2), dir
+          mem(:,is+off,:,:,:) = mem(:,ie-dir+off,:,:,:)
+        end do
+      end do
+    endif
+  endif
+END SUBROUTINE m3d_periodic_grid
+
+!===============================================================================
+character(len=17) FUNCTION m3d_name (self)
+  class(m3d_t):: self
+  !----------------------------------------------------------------------------
+  write(m3d_name, '(A12,I5)') trim(self%kind), self%id
+END FUNCTION
+
+!===============================================================================
+SUBROUTINE extrapolate_guards (self, target_mem)
+  class(m3d_t):: self
+  real(4), pointer, optional:: target_mem(:,:,:,:)
+  !.............................................................................
+  ! do nothing
+END SUBROUTINE
     
 end module m3d_patch_mod

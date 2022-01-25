@@ -37,8 +37,7 @@ MODULE boundaries_mod
     ! Experiment - specific procedures
     ! --------------------------------------------------------------------------
     procedure:: mirror
-    procedure:: mirror_bot_zero_top
-    procedure:: radiation
+    procedure:: no_boundary
   end type
   integer, save:: verbose=1
 CONTAINS
@@ -75,16 +74,11 @@ SUBROUTINE init (self)
   allocate(self%topbot(2))
   self%topbot = .false. ! default value
 
-  select case (condition)
-  case(1)
-    select case(patch%kind)
-      case ('angle_rad')
-        self%boundary => mirror_bot_zero_top
-      case default
-        self%boundary => mirror 
-    end select
-  case(-1)
-    self%boundary => mirror
+  select case(patch%kind)
+    case ('hlld_mhd_patch')
+      self%boundary => mirror
+    case default
+      self%boundary => no_boundary
   end select
 
   call self%standard_boundaries_t%init ()
@@ -109,32 +103,11 @@ SUBROUTINE mirror(self, mem)
 END SUBROUTINE
 
 !===============================================================================
-SUBROUTINE mirror_bot_zero_top(self, mem)
+SUBROUTINE no_boundary(self, mem)
   class(boundaries_t):: self
   real(var_k), dimension(:,:,:,:,:), pointer :: mem
   ! ----------------------------------------------------------------------------
-  integer :: i, b
-
-    if (self%topbot(1)) then
-        b = ubound(mem,3)
-        mem(:,:,b,:,:) = 0
-    endif
-
-    if (self%topbot(2)) then
-        b = lbound(mem,3)
-        mem(:,:,b,:,:) = mem(:,:,b+1,:,:)
-    endif
+  ! do nothing
 END SUBROUTINE
-
-
-SUBROUTINE radiation (self, mem, src, rk, tt, dir, mu)
-  class(boundaries_t) :: self
-  real, dimension(:,:,:,:), pointer:: mem, src, rk
-  real, dimension(:,:,:), pointer:: tt,mem2
-  real   :: mu(3)
-  integer:: dir
-  !.....................................................................
-  ! keep this just for rt_mod to compile
-END SUBROUTINE radiation
 
 END MODULE boundaries_mod

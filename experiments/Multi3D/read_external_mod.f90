@@ -48,8 +48,9 @@ SUBROUTINE init(self, task_list, name)
   class(link_t), pointer:: link
   logical, save:: first_time=.true.
   logical :: searching
-  integer :: iostat, npatches, iz, i, ng(3), verbose, itaskl
-  character(len=126) :: atmos_file
+  integer :: iostat, iz, i
+  integer, save :: npatches=1, ng(3)=1, verbose=1
+  character(len=126) :: atmos_file='./input_multi3d/atmos/atmos.sun_MARCS_50'
   namelist /atmos_params/ atmos_file, npatches, ng, verbose
   !-----------------------------------------------------------------------------
   if (associated(task_list)) return
@@ -61,12 +62,6 @@ SUBROUTINE init(self, task_list, name)
   !-----------------------------------------------------------------------------
   call io%lock%set
   if (first_time) then
-    ! default values
-    atmos_file = './input_multi3d/atmos/atmos.sun_MARCS_50'
-    npatches = 1
-    ng = [4,4,1]
-    verbose = 1
-    
     rewind (io%input)
     read (io%input, nml=atmos_params, iostat=iostat)
     if (iostat > 0) then
@@ -127,18 +122,6 @@ SUBROUTINE init(self, task_list, name)
   call trace%end()
 END SUBROUTINE init
 
-subroutine link_prev(prev,current,head,first)
-  class(link_t),pointer,intent(inout) :: prev, current, head
-  logical,              intent(inout) :: first
-  if (first) then
-    first = .false.
-    head => current
-  else
-    prev%next_time => current
-  endif
-  prev => current
-end subroutine link_prev
-
 !===============================================================================
 !> Initialize a minimum amount of patch information in a Cartesian arrangement
 !===============================================================================
@@ -176,11 +159,7 @@ SUBROUTINE create_patch (self, i, patch)
 
   patch%position(1) = 0.5d0*patch%size(1)
   patch%position(2) = 0.5d0*patch%size(2)
-  patch%position(3) = (i - 0.5d0)*patch%size(3)!(self%npatches(3)-i + 0.5d0)*patch%size(3)
-
-  !allocate(patch%rt)                                                     ! RT
-  !patch%rt%patch => patch
-  !call patch%rt%pre_init                                                 ! RT
+  patch%position(3) = (i - 0.5d0)*patch%size(3)
 
   call patch%init()
   call patch%idx%init (energy=5, mhd=patch%mhd)
@@ -193,10 +172,6 @@ SUBROUTINE create_patch (self, i, patch)
   call patch%append_to(patch%task_list)
 
   call patch%init_sub_patches()
-
-  !call patch%rt%load_initial_conditions()
-
-  !call patch%rt%init_task_list (patch%task_list)
 
   call trace%end ()
 END SUBROUTINE create_patch
@@ -295,6 +270,10 @@ SUBROUTINE load_authority(self, patch, ii)
     patch%mesh(3)%lower_boundary = .true.
     patch%boundaries%topbot(2) = .true.
   endif
+
+  allocate(patch%filled(patch%gn(1), patch%gn(2), patch%gn(3)))
+  patch%filled = -1
+
 END SUBROUTINE
 
 END MODULE

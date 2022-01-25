@@ -33,8 +33,10 @@ module rad_patch_mod
 
   type, public, extends(m3d_t) :: radiation_t
     integer :: i_Inu=1
-    class(opacity_t), pointer :: opac
-    class(radiation_t), pointer :: sheep(:)
+    class(opacity_t), pointer :: opac => null()
+    class(radiation_t), pointer :: sheep(:) => null()
+    class(radiation_t), pointer :: mean_rad => null()
+    class(radiation_t), pointer :: out_rad => null()
     type(geometry_type) :: geometry
     type(ray_type) :: rays(1)
     type(ray_type) :: ray
@@ -48,15 +50,18 @@ module rad_patch_mod
     procedure :: nbor_relations => radiation_nbor_relations
     procedure :: Inu_update
     procedure :: Jnu_update
+    procedure :: bndries
     procedure :: set_ray_ang
     procedure :: interp_z_up_plane
     procedure :: interp_xy_up_plane
+    procedure :: interp_xx_ss_up
+    procedure :: interp_Inuup_plane
     procedure :: interp_xy_up_long_plane
     procedure :: solveLong_plane
     procedure :: linear_formsolv
     procedure :: setup_metafile
     procedure :: save_meta4
-    procedure :: output
+    procedure :: save_radiation_output
   end type radiation_t
 
   !-----------------------------------------------------------------------------
@@ -88,11 +93,14 @@ SUBROUTINE radiation_pre_init (self)
 
   if (self%kind == 'angle_rad') then
     self%ng = [4,4,1]
+  elseif (self%kind == 'out_rad') then
+    self%n(3) = 1
+    self%nv = self%sp%nnu
   endif
 
-  self%nv = 1
+  self%nw = 1
   self%mv = self%nv
-  !self%nw is assigned in experiment_mod : init_opacity_patches
+  !self%nv is assigned in experiment_mod : init_sub_patches
   self%nt = 1
   self%it = 1
   self%new = self%it
@@ -107,7 +115,7 @@ SUBROUTINE radiation_pre_init (self)
   self%pervolume = .false.
   self%unsigned  = .true.
 
-  if (save_output .and. self%patch%boundaries%topbot(1)) call self%setup_metafile()
+  if (save_output .and. self%kind=='out_rad') call self%setup_metafile()
 END SUBROUTINE radiation_pre_init
 
 !===============================================================================
@@ -118,9 +126,10 @@ SUBROUTINE radiation_init (self)
   ! ----------------------------------------------------------------------------
   call self%m3d_t%init()
 
-  if (self%kind == 'angle_rad') then
-    allocate(self%Psi(self%n(1),  self%n(2),  self%n(3),  self%nw))
-    allocate(self%Inu(self%gn(1), self%gn(2), self%gn(3), self%nw))
+  select case (self%kind)
+  case ('angle_rad')
+    allocate(self%Psi(self%n(1),  self%n(2),  self%n(3),  self%nv))
+    allocate(self%Inu(self%gn(1), self%gn(2), self%gn(3), self%nv))
     allocate(self%chi, self%Snu, mold=self%Inu)
 
     self%geometry%n_angles = 1
@@ -147,61 +156,52 @@ SUBROUTINE radiation_init (self)
     self%ray = self%rays(1)
 
     self%t_offset = 0.6d0
-  elseif (self%kind == 'mean_rad') then
+  case ('mean_rad', 'out_rad')
     self%t_offset = 0.8d0
-  endif
+  end select
 
   self%time = self%patch%time + self%t_offset*self%dtime
+
+  if (self%kind == 'out_rad') then
+    self%time = self%time + self%maxiter * self%dtime
+  endif
 END SUBROUTINE radiation_init
 
 !===============================================================================
 SUBROUTINE radiation_update (self)
   class(radiation_t) :: self
   ! ----------------------------------------------------------------------------
-  !call timer%tic ()
+  if (self%verbose > 0) call timer%tic ()
 
   select case (self%kind)
   case ('angle_rad')
     call self%Inu_update()
   case ('mean_rad')
     call self%Jnu_update()
+  case ('out_rad')
+    if (save_output) call self%save_radiation_output()
   end select
-
-  if (self%iter == self%maxiter) then
-    call self%output()
-  endif
 
   self%iter = self%iter + 1
 
-  !call timer%toc ('update took ', 1)
+  if (self%verbose > 0) call timer%toc (self%m3d_name() // ' update took ', 1)
 END SUBROUTINE radiation_update
 
 !===============================================================================
 SUBROUTINE Inu_update (self)
   class(radiation_t), target :: self
-  real(4), dimension(:,:,:,:), allocatable :: xx, ss
-  real(4), dimension(:,:,:), allocatable :: Inuup
+  real(4), dimension(:,:,:,:), allocatable :: xxup, ssup
+  real(4), dimension(:,:), allocatable :: Inuup
   real(4), dimension(:,:,:,:), pointer :: Inu, chi
   integer :: k1, k2, f, k, z, i, j
   ! ----------------------------------------------------------------------------
-  allocate(Inuup(self%n(1), self%n(2),    self%nw))
-  allocate(xx   (self%n(1), self%n(2), 2, self%nw))
-  allocate(ss   (self%n(1), self%n(2), 2, self%nw))
+  call trace_begin('radiation_t%Inu_update')
 
-  self%Inu => self%mem(:,:,:,self%i_inu, self%it, :)
-  self%chi => self%opac%mem(:,:,:,self%opac%i_chi, self%it, :)
-  self%Snu => self%opac%mem(:,:,:,self%opac%i_snu, self%it, :)
+  Inu => self%authority_mem(:,:,:,:,self%it,self%i_inu)
+  chi => self%opac%authority_mem(:,:,:,:,self%opac%it,self%opac%i_chi)
 
-  Inu => self%authority_mem(:,:,:,self%i_inu,:)
-  chi => self%opac%authority_mem(:,:,:,self%opac%i_chi,:)
-
-  if (self%boundaries%topbot(1)) then
-    self%Inu(:,:,self%gn(3),:) = 0
-  endif
-
-  if (self%boundaries%topbot(2)) then
-    self%Inu(:,:,1,:) = self%Snu(:,:,1,:)
-  endif
+  allocate(xxup, ssup, mold=chi)
+  allocate(Inuup, mold=chi(:,:,1,1))
 
   if (self%dir == 1) then                       ! top to bottom of atmosphere, bottom to top in index space
     k1=self%li(3) ; k2=self%ui(3)
@@ -209,71 +209,78 @@ SUBROUTINE Inu_update (self)
     k1=self%ui(3) ; k2=self%li(3)
   endif
 
-  do k=k1,k2,self%dir
-    z = k - self%li(3) + 1
-    
-    xx    = 0.0
-    ss    = 0.0
-    Inuup = 0.0
-    
-    ! opacity and source function at center point
-    xx(:,:,2,:) = self%chi(:,:,k,:)
-    ss(:,:,2,:) = self%Snu(:,:,k,:)
+  select case(self%ray%upplane)
+  case(1,2) ! yz-plane or xz-plane
+    print *, 'SolveLong_plane needs to be updated. Stopping...'
+    stop
+    !call self%interp_z_up_plane(k, xx, ss, self%ray%upplane)
+    !call self%solveLong_plane(k, xx, ss, Inuup)
+  case(3) ! xy-plane
+    call self%interp_xx_ss_up(xxup,ssup)      
+  end select
 
-    select case(self%ray%upplane)
-        case(1,2) ! yz-plane or xz-plane
-            call self%interp_z_up_plane(k, xx, ss, self%ray%upplane)
-            call self%solveLong_plane(k, xx, ss, Inuup)
-        case(3) ! xy-plane
-            call self%interp_xy_up_plane(k, xx, ss, Inuup)         
-    end select
-    
-    call self%linear_formsolv(xx(:,:,1,:), xx(:,:,2,:), ss(:,:,1,:), ss(:,:,2,:), &
-                              Inuup, self%Psi(:,:,z,:), Inu(:,:,z,:))
+  do f=1, self%nv
+  ! ----------------------------------------------------------------------------
+  ! frequency vectorisation is slower, because k varies quicker in mem than f.
+  ! ----------------------------------------------------------------------------
+    do k=k1,k2,self%dir
+      z = k - self%li(3) + 1
 
-    do f=1, size(Inu,4)
+      select case(self%ray%upplane)
+          case(1,2) ! yz-plane or xz-plane
+            !call self%interp_z_up_plane(k, xxup, ssup, self%ray%upplane)
+            !call self%solveLong_plane(k, xxup, ssup, Inuup)
+          case(3) ! xy-plane
+            call self%interp_Inuup_plane(k, f, Inuup)         
+      end select
+      
+      call self%linear_formsolv(xxup(:,:,z,f), self%chi(:,:,k,f), ssup(:,:,z,f), self%Snu(:,:,k,f), &
+                                Inuup, self%Psi(:,:,z,f), Inu(:,:,z,f))
+
       ! HOT-FIX must be updated later
       ! Otherwise Inu remains zero in the guard zones
       ! Only valid for plane parallel atmospheres 
       self%Inu(:,:,k,f) = Inu(1,1,z,f)
-    end do
-  end do ! k-loop
+    end do ! k-loop
+  end do ! f-loop
 
   self%Psi = self%Psi / chi
 
-  !select case (self%dir)
-  !case(1)
-  !  write(*,'(A10, 2(I4), 3(ES18.7))'), trim(self%kind), self%i_omega, self%i_nu, Inu(1,1,1,1)
-  !case(-1)
-  !  write(*,'(A10, 2(I4), 3(ES18.7))'), trim(self%kind), self%i_omega, self%i_nu, Inu(1,1,self%n(3),1)
-  !end select
-  
+  if (self%verbose > 1) then
+    select case (self%dir)
+    case(1)
+      write(*,'(A10, 2(I4), 3(ES18.7))'), trim(self%kind), self%i_omega, self%i_nu, Inu(1,1,1,1)
+    case(-1)
+      write(*,'(A10, 2(I4), 3(ES18.7))'), trim(self%kind), self%i_omega, self%i_nu, Inu(1,1,self%n(3),1)
+    end select
+  endif
+  call trace%end()
 END SUBROUTINE Inu_update
 
 !===============================================================================
 SUBROUTINE Jnu_update (self)
   class(radiation_t) :: self
   class(radiation_t), pointer :: sheep
-  integer :: xs, xe, ys, ye, zs, ze, i
-  
+  integer :: i
   real(4), dimension(:,:,:,:), pointer :: Jnu
   real(4), dimension(:,:,:,:,:), allocatable :: opac
   ! ----------------------------------------------------------------------------
-  xs = self%li(1); xe = self%ui(1);
-  ys = self%li(2); ye = self%ui(2);
-  zs = self%li(3); ze = self%ui(3);
+  call trace_begin('radiation_t%Jnu_update')
 
-  Jnu => self%mem(xs:xe, ys:ye, zs:ze, self%i_inu, self%it, :)
+  Jnu => self%mem(:,:,:,:, self%it, self%i_inu)
   Jnu = 0
 
   do i=1, size(self%sheep)
     sheep => self%sheep(i)
-    Jnu = Jnu + sheep%wmu * sheep%mem(xs:xe, ys:ye, zs:ze, self%i_inu, self%it, :)
+    Jnu = Jnu + sheep%wmu * sheep%authority_mem(:,:,:,:, sheep%it, self%i_inu)
   end do
 
   Jnu = Jnu / math%pi4
 
-  !write(*,'(A10, 2(I4), 3(ES18.7))'), trim(self%kind), self%i_omega, self%i_nu, Jnu(1,1,1,1), Jnu(1,1,self%n(3),1)
+  if (self%verbose > 1) then
+    write(*,'(A10, 2(I4), 3(ES18.7))'), trim(self%kind), self%i_omega, self%i_nu, Jnu(1,1,1,1), Jnu(1,1,self%n(3),1)
+  endif
+  call trace%end()
 END SUBROUTINE Jnu_update
 
 !===============================================================================
@@ -370,6 +377,108 @@ pure subroutine interp_z_up_plane(self, k, xx, ss, axis)
   end do
   end do
 end subroutine interp_z_up_plane
+
+!===============================================================================
+pure subroutine interp_xx_ss_up(self, xxup, ssup)
+  class(radiation_t), intent(in) :: self
+  integer :: x1,x2,y1,y2,z1,z2,i,j,k,f
+  real(4),dimension(:,:,:,:),intent(out) :: xxup,ssup
+  real(4),dimension(:,:,:,:), allocatable :: xxmin,ssmin
+  ! ----------------------------------------------------------------------------
+  xxup = 0.0
+  ssup = 0.0
+
+  do f=1,self%nv
+  do k=1,self%n(3)
+  do j=1,self%n(2)
+  do i=1,self%n(1)
+
+      x1 = i + self%li(1) - 1 + self%ray%upo1
+      y1 = j + self%li(2) - 1 + self%ray%upo2
+      z1 = k + self%li(3) - 1 - self%dir
+
+      xxup(i,j,k,f) = xxup(i,j,k,f) + sum(self%ray%upkern * self%chi ( x1:x1+3, y1:y1+3, z1, f))
+      ssup(i,j,k,f) = ssup(i,j,k,f) + sum(self%ray%upkern * self%Snu ( x1:x1+3, y1:y1+3, z1, f))
+
+  end do
+  end do
+  end do
+  end do
+
+  ! suppress undershoot
+
+  allocate(xxmin, ssmin, mold=xxup)
+  
+  z1 = self%li(3)-self%dir
+  z2 = self%ui(3)-self%dir
+
+  xxmin = huge(1.0e0)
+  ssmin = huge(1.0e0)
+
+  do i=1,2
+  do j=1,2
+
+      x1 = self%li(1) + self%ray%upo1 + i
+      x2 = self%ui(1) + self%ray%upo1 + i               
+      y1 = self%li(2) + self%ray%upo2 + j
+      y2 = self%ui(2) + self%ray%upo2 + j 
+
+      where ( xxmin > self%chi( x1:x2, y1:y2, z1:z2, :) )    xxmin = self%chi( x1:x2, y1:y2, z1:z2, :)
+      where ( ssmin > self%Snu( x1:x2, y1:y2, z1:z2, :) )    ssmin = self%Snu( x1:x2, y1:y2, z1:z2, :)
+
+  end do
+  end do
+
+  where ( xxup < xxmin ) xxup = xxmin
+  where ( ssup < ssmin ) ssup = ssmin
+end subroutine interp_xx_ss_up
+
+!===============================================================================
+pure subroutine interp_Inuup_plane(self, k, f, Inuup)
+  class(radiation_t), intent(in) :: self
+  integer :: x1,x2,y1,y2,z1,i,j
+  integer, intent(in) :: k, f
+  real(4),dimension(:,:), allocatable :: Inuupmin
+  real(4),dimension(:,:), intent(out) :: Inuup
+  ! ----------------------------------------------------------------------------
+  z1 = k-self%dir ! 2 + ry%kup 
+
+  Inuup = 0.0
+
+  do j=1,self%n(2)
+  do i=1,self%n(1)
+
+      x1 = i + self%li(1) - 1 + self%ray%upo1
+      y1 = j + self%li(2) - 1 + self%ray%upo2
+
+      Inuup(i,j) = Inuup(i,j) + sum(self%ray%upkern * self%Inu ( x1:x1+3, y1:y1+3, z1, f))
+
+  end do
+  end do
+
+  ! suppress undershoot
+
+  allocate(Inuupmin, mold=Inuup)
+
+  z1 = k-self%dir ! 2 + ry%kup 
+
+  Inuupmin = huge(1.0e0)
+
+  do i=1,2
+  do j=1,2
+
+      x1 = self%li(1) + self%ray%upo1 + i
+      x2 = self%ui(1) + self%ray%upo1 + i               
+      y1 = self%li(2) + self%ray%upo2 + j
+      y2 = self%ui(2) + self%ray%upo2 + j 
+
+      where ( Inuupmin > self%Inu( x1:x2, y1:y2, z1, f) ) Inuupmin = self%Inu( x1:x2, y1:y2, z1, f)
+
+  end do
+  end do
+
+  where ( Inuup < Inuupmin ) Inuup = Inuupmin
+end subroutine interp_Inuup_plane
 
 !===============================================================================
 pure subroutine interp_xy_up_plane(self, k, xx, ss, Inuup)
@@ -602,30 +711,101 @@ SUBROUTINE radiation_nbor_relations(self, another, needed, needs_me, download)
   end if
 
   ! First check the main relations, based on location and level of refinement
-  !call self%m3d_t%nbor_relations(another, needed, needs_me, download)
   needed = .false.; needs_me = .false.; download = .false.
 
-  if (self%kind == 'mean_rad') then
+  select case (self%kind)
+  case ('angle_rad')
+    if (another%id == self%opac%id) then
+      needed = .true.; needs_me = .false.; download = .false.
+    elseif(another%id == self%mean_rad%id) then
+      needed = .false.; needs_me = .true.; download = .false.
+    elseif (associated(self%out_rad)) then
+      if (another%id == self%out_rad%id) then
+        needed = .false.; needs_me = .true.; download = .false.
+      endif
+    endif
     select type (another)
     class is (radiation_t)
-      if (another%kind == 'angle_rad' .and. another%on) then
-        if (another%patch%id == self%patch%id) then
-          if (another%i_nu == self%i_nu) then
-            ! This means it is an overlapping angle_rad task, which is needed
-            ! by the mean_rad task, but it must not download from it.
-            needed = .true.; needs_me = .false.; download = .false.
+      if (another%i_nu == self%i_nu) then
+        if (another%i_omega == self%i_omega) then
+          if (another%kind == self%kind) then
+            if (self%is_upstream(another)) then
+              needed = .true.; needs_me = .false.; download = .true.
+            endif
           endif
         endif
       endif
     end select
-  else ! not mean_rad
-    if (another%id == self%opac%id) then
+  case ('mean_rad')
+    if (any(self%sheep%id == another%id)) then
       needed = .true.; needs_me = .false.; download = .false.
     endif
-  endif
+  case ('out_rad')
+    if (any(self%sheep%id == another%id)) then
+      needed = .true.; needs_me = .false.; download = .false.
+    endif
+  end select
 
   call trace%end()
 END SUBROUTINE radiation_nbor_relations
+
+!===============================================================================
+SUBROUTINE bndries (self)
+  class(radiation_t):: self
+  !----------------------------------------------------------------------------
+  if (self%kind == 'angle_rad') then
+    self%Inu => self%mem(:,:,:,:, self%it, self%i_inu)
+    self%chi => self%opac%mem(:,:,:,:, self%opac%it, self%opac%i_chi)
+    self%Snu => self%opac%mem(:,:,:,:, self%opac%it, self%opac%i_snu)
+
+    if (self%boundaries%topbot(1)) then
+      self%Inu(:,:,self%gn(3),:) = 0
+    endif
+  
+    if (self%boundaries%topbot(2)) then
+      self%Inu(:,:,1,:) = self%Snu(:,:,1,:)
+    endif
+  else
+    call self%m3d_t%bndries()
+  endif
+END SUBROUTINE bndries
+
+!===============================================================================
+SUBROUTINE save_radiation_output(self)
+  USE mconst, only: cc
+  class(radiation_t),intent(inout):: self
+  class(radiation_t), pointer :: sheep
+  character(len=64) :: filename
+  real(4), allocatable :: lam(:)
+  real(4), dimension(:,:,:), pointer :: Inu
+  integer :: lunit
+  integer :: i
+  !-----------------------------------------------------------------------------
+  call trace_begin('radiation_t%save_radiation_output')
+  write(*,'(A64)') 'Writing output for angle ' // self%ray_name
+
+  do i=1, size(self%sheep)
+    sheep => self%sheep(i)
+    Inu => self%mem(:,:,1, sheep%fs:sheep%fe, self%it, self%i_inu)
+    Inu = sheep%authority_mem(:,:,sheep%n(3), :, sheep%it, sheep%i_inu)
+  end do
+
+  lam = 1e8 * cc / self%sp%nu
+  Inu => self%mem(:,:,1,:, self%it, self%i_inu)
+
+  filename = trim(out_folder) // trim(self%ray_name) // '_lam.bin'
+  open(newunit=lunit, file=filename, access='stream')
+  write(lunit) lam
+  call self%save_meta4(filename, lam)
+  close(lunit)
+
+  filename = trim(out_folder) // trim(self%ray_name) // '_inu.bin'
+  open(newunit=lunit, file=filename, access='stream')
+  write(lunit) Inu
+  call self%save_meta4(filename, Inu)
+  close(lunit)
+  call trace%end()
+END SUBROUTINE save_radiation_output
 
 !===============================================================================
 SUBROUTINE setup_metafile(self)
@@ -633,14 +813,13 @@ SUBROUTINE setup_metafile(self)
   integer :: meta_unit, iostat
   ! ----------------------------------------------------------------------------
 
-  write(self%ray_name,'(A1, I3.3, A7, I3.3, A4, I3.3)') 'p', self%patch%id, '_rad_ray', self%i_omega, '_wav', self%i_nu
+  write(self%ray_name,'(A1, I3.3, A4, I3.3)') 'p', self%patch%id, '_ray', self%i_omega/2
 
   self%meta_file = trim(out_folder) // trim(self%ray_name) // '_meta.txt'
   open(newunit=meta_unit, file=self%meta_file, form='formatted')
 
   write(meta_unit, '(A8, 1X, SP, 3(F12.8))') 'position', self%patch%position
   write(meta_unit, '(A8, 1X, SP, 3(F12.8))') 'vec', self%vec
-  write(meta_unit, '(A8, 1X, I4)') 'fbin', self%i_nu
 
   close(meta_unit)
 END SUBROUTINE
@@ -657,37 +836,5 @@ SUBROUTINE save_meta4(self, filename, arr)
   write(meta_unit, '(A64, I4, 8(I5))') filename, storage_size(arr), shape(arr)
   close(meta_unit)
 END SUBROUTINE save_meta4
-
-!===============================================================================
-!> Do Multi3D specific output
-!===============================================================================
-SUBROUTINE output (self)
-  use mconst
-  class(radiation_t):: self
-  character(len=64) :: filename
-  real(4), allocatable :: lam(:)
-  real(4), pointer, dimension(:,:,:) :: ie
-  integer :: lunit
-  !-----------------------------------------------------------------------------
-  ! if at top-boundary
-  if (self%boundaries%topbot(1) .and. self%dir > 0) then
-    write(*,*) 'Writing output for angle ', self%ray_name
-
-    lam = 1e8 * cc / self%sp%nu(self%fs:self%fe)
-    ie => self%mem(:,:,self%ui(3),self%i_inu,self%it,:)
-
-    filename = trim(out_folder) // trim(self%ray_name) // '_lam.bin'
-    open(newunit=lunit, file=filename, access='stream')
-    write(lunit) lam
-    call self%save_meta4(filename, lam)
-    close(lunit)
-
-    filename = trim(out_folder) // trim(self%ray_name) // '_inu.bin'
-    open(newunit=lunit, file=filename, access='stream')
-    write(lunit) ie
-    call self%save_meta4(filename, ie)
-    close(lunit)
-  endif
-END SUBROUTINE output
 
 end module
