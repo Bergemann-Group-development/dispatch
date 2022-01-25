@@ -82,6 +82,7 @@ SUBROUTINE init (self)
   end select
 
   call self%standard_boundaries_t%init ()
+  call trace%end ()
 END SUBROUTINE init
 
 !===============================================================================
