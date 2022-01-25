@@ -35,7 +35,6 @@ MODULE trace_mod
   integer, public, save:: indent=4                             ! trace indent
   integer, private, save:: level=1                              ! trace level
   !$omp threadprivate(indent,level,tracing,verbosity)
-PUBLIC trace_begin, trace_tag, trace_end
 CONTAINS
 
 !===============================================================================

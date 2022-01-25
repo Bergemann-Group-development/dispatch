@@ -62,11 +62,11 @@ SUBROUTINE pre_init (self)
   class(experiment_t), target :: self
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin('experiment_mod::pre_init', itimer=itimer)
+  call trace%begin('experiment_mod::pre_init', itimer=itimer)
   call self%gpatch_t%pre_init ()
   !call self%pre_init_atom()
   call self%pre_init_composition()
-  call trace_end (itimer=itimer)
+  call trace%end (itimer=itimer)
 END SUBROUTINE pre_init
 
 !===============================================================================
@@ -77,7 +77,7 @@ SUBROUTINE init (self)
   integer, save:: itimer=0
   real(8), save:: timestep=0.01d0
   !----------------------------------------------------------------------------
-  call trace_begin('experiment_mod::init', itimer=itimer)
+  call trace%begin('experiment_mod::init', itimer=itimer)
 !  call self%solver_t%init
   call self%gpatch_t%init                                           ! keep
 
@@ -85,7 +85,7 @@ SUBROUTINE init (self)
 
   self%dtime = timestep
 
-  call trace_end (itimer=itimer)
+  call trace%end (itimer=itimer)
 END SUBROUTINE init
 
 !===============================================================================
@@ -95,7 +95,7 @@ SUBROUTINE bndries (self)
   class(experiment_t):: self
   real(var_k), dimension(:,:,:,:,:), pointer :: mem
   !----------------------------------------------------------------------------
-  call trace_begin('experiment_t%bndries')
+  call trace%begin('experiment_t%bndries')
   mem => self%mem(:,:,:,:,self%it,:)
   if (any(self%boundaries%topbot)) call self%boundaries%boundary(mem)
   call trace%end()
@@ -108,7 +108,7 @@ SUBROUTINE update (self)
   class(experiment_t):: self
   integer :: it_l, in_l, in_lte_l
   !----------------------------------------------------------------------------
-  call trace_begin('experiment_t%update')
+  call trace%begin('experiment_t%update')
   !call self%solver_t%update
 
   if (self%iter == 0) then
@@ -117,7 +117,7 @@ SUBROUTINE update (self)
   endif
 
   self%iter = self%iter + 1
-  call trace_end()
+  call trace%end()
 END SUBROUTINE update
 
 !===============================================================================
