@@ -696,7 +696,7 @@ contains
             end do
         end do
 
-
+        allocate (Hm%rho_per_h(size(H0%rho_per_h,1),size(H0%rho_per_h,2),size(H0%rho_per_h,3)))
         Hm%rho_per_h = H0%rho_per_h * Hm%pk
         ! keep this around for consistency with legacy code, its just a bunch of wrong constants.
         self%xfakh = self%ne*(BK/uop_BK) * H%f / self%fe / self%rho * (1.008*UU / XMH)
@@ -926,6 +926,13 @@ contains
 
         Hm%pk = 1/Hm%saha
 
+        PRINT *, '======= molecular_equilibrium ======='
+        PRINT *, allocated(H%fil)
+        allocate (H%fil(size(H0%saha,1),size(H0%saha,2),size(H0%saha,3)))
+
+        PRINT *, shape(H0%saha), shape(Hm%pk), shape(H%fil)
+
+
         H%fil = 1 + H0%saha + Hm%pk
         fe = xnecno
 
@@ -950,24 +957,33 @@ contains
 
         do i=1, self%nmolec
             !partial electron pressures due to each molecule
+            allocate (molecules(i)%f(size(H0%saha,1),size(H0%saha,2),size(H0%saha,3)))
+            allocate (molecules(i)%e(size(H0%saha,1),size(H0%saha,2),size(H0%saha,3)))
             molecules(i)%f = molecules(i)%calc_f(teta, pefe)
         end do
 
         b = C%f_of_molecules_with(O) / C%f
+        allocate (O%fil(size(H0%saha,1),size(H0%saha,2),size(H0%saha,3)))
+        allocate (C%fil(size(H0%saha,1),size(H0%saha,2),size(H0%saha,3)))
         O%fil = 1 + O0%saha + O%f_of_molecules_with(H) / O%f
         C%fil = 1 + C0%saha + C%f_of_molecules_with(H) / C%f
 
         p = (C%abund-O%abund)/O%fil + C%fil/b
         q = - O%abund/O%fil * C%fil/b
+        !allocate (O%f(size(H0%saha,1),size(H0%saha,2),size(H0%saha,3)))
+        !allocate (C%f(size(H0%saha,1),size(H0%saha,2),size(H0%saha,3)))
         O%f = solve_quadratic(p, q)
         C%f = C%abund / (C%fil + b*O%f)
 
+        !allocate (CN%f(size(H0%saha,1),size(H0%saha,2),size(H0%saha,3)))
         CN%f = CN%calc_f(teta, pefe) ! has to be recalculated since C%f changed
         
+        allocate (N%fil(size(H0%saha,1),size(H0%saha,2),size(H0%saha,3)))
         N%fil = 1 + N0%saha + (N%f_of_molecules_with(H) + N%f_of_molecules_with(C)) / N%f
         b = N%f / N%f_of_molecules_with(N, count_double=.true.) 
         p = 2*N%fil*b
         q = - 2*N%abund*b
+        !allocate (N%f(size(H0%saha,1),size(H0%saha,2),size(H0%saha,3)))
         N%f = solve_quadratic(p, q)
         where (N%f < 0) N%f = 0
 
