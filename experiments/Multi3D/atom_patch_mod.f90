@@ -224,7 +224,7 @@ module atom_patch_mod
     class(atom_patch_t), target :: self
     class(atom_type), pointer :: atom
     integer, dimension(3, self%atom%nlevel) :: pos3
-    integer, dimension(self%atom%nlevel) :: maxerr
+    real, dimension(self%atom%nlevel) :: maxerr
     real(8), pointer :: temp, ne, totn
     real(8), dimension(:), pointer :: nh, Gij, Gji
     real(4), dimension(:), pointer :: n, nstar
