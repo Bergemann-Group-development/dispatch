@@ -666,7 +666,7 @@ SUBROUTINE output_aux (self, iout, id, singlefile)
     open (io_unit%aux, file=trim(singlefile), form='unformatted', &
       access='sequential', status='unknown')
   else
-    write (filename,'(a,i5.5"/",i5.5,".aux")') trim(io%outputname), iout, id
+    write (filename,'(a,i5.5,"/",i5.5,".aux")') trim(io%outputname), iout, id
     open (io_unit%aux, file=trim(filename), form='unformatted', &
       access='sequential', status='unknown')
   end if

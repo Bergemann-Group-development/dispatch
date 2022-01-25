@@ -532,7 +532,7 @@ SUBROUTINE ddeos(self,ee,d,dlnpdE_r,dlnpdlnr_E)
       !-------------------------------------------------------------------------
       ntab(ix)  = mtab(np(ix))
       eek       = 1.+(ee(ix,iy)-eemin(np(ix)))/deetab(np(ix))
-      eek       = max(eek,1.0)                          ! FIXME
+      eek       = max(eek,1d0)                          ! FIXME
       kee       = min(ntab(ix)-1,max(1,int(eek)))
       py(ix)    = eek-kee
       ik(ix)    = itab(np(ix))+kee-1
@@ -546,7 +546,7 @@ SUBROUTINE ddeos(self,ee,d,dlnpdE_r,dlnpdlnr_E)
       !  These lines may be commented out when we are satisfied it never panics
       !-------------------------------------------------------------------------
       eek1      = 1.+(ee(ix,iy)-eemin(np(ix)+1))/deetab(np(ix)+1)
-      eek1      = max(eek1,real(kee1))                  ! FIXME
+      eek1      = max(eek1,real(kee1,kind=8))                  ! FIXME
       py1(ix)   = eek1-kee1
     end do
     !---------------------------------------------------------------------------

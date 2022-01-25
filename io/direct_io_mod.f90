@@ -94,7 +94,7 @@ SUBROUTINE output (self, patch)
     write (io%data_unit,'(a)') trim(patch%kind)
     write (io%data_unit,'(a)') trim(patch%eos)
     write (io%data_unit,'(a)') trim(patch%opacity)
-    write (io%data_unit,'(1p,2e18.10,6(2x,3e18.10)1x,1x,2e10.3)') &
+    write (io%data_unit,'(1p,2e18.10,6(2x,3e18.10),1x,1x,2e10.3)') &
           patch%out_next, patch%dtime, self%position, patch%ds, &
           patch%velocity, patch%llc_nat, patch%llc_cart, &
           patch%mesh%centre_nat, patch%quality, eos%gamma
@@ -158,7 +158,7 @@ SUBROUTINE input (self, patch, ok)
       read (io%data_unit,'(a)')
       read (io%data_unit,'(a)')
       read (io%data_unit,'(a)')
-      read (io%data_unit,'(1p,2e18.10,6(2x,3e18.10)1x,1x,2e10.3)') time
+      read (io%data_unit,'(1p,2e18.10,6(2x,3e18.10),1x,1x,2e10.3)') time
       close (io%data_unit)
       self%filename = trim(filename)//'.dat'
     end if
@@ -307,7 +307,7 @@ SUBROUTINE write_out (self, rec)
   end if
   self%rec = l_rec
   wt = wallclock()
-  if (sizeof(self%buffer) < 2e9) then
+  if (product(shape(self%buffer)) < 5e8) then
     recl = 4*product(self%dims)
     open (io_unit%direct, file=trim(self%filename), access='direct', &
           status='unknown', recl=recl)
@@ -362,7 +362,7 @@ SUBROUTINE read_in (self, rec)
   end if
   self%rec = l_rec
   wt = wallclock()
-  if (sizeof(self%buffer) < 2e9) then
+  if (product(shape(self%buffer)) < 5e8) then
     recl = 4*product(self%dims)
     open (io_unit%direct, file=trim(self%filename), access='direct', &
           status='old', recl=recl)

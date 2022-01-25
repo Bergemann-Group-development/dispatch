@@ -326,7 +326,7 @@ FUNCTION test (self) RESULT (out)
     !print *, omp%thread, ' already has lock id', self%id
   else
     !print *, omp%thread, ' omp_test_lock for id', self%id
-    out =  omp_test_nest_lock (self%lock)
+    out =  omp_test_nest_lock (self%lock) > 0
     if (out) then
       self%thread = omp%thread
       !$omp atomic update

@@ -605,7 +605,7 @@ SUBROUTINE set_filled (self, task)
         !$omp simd
         do i1=1,target%gn(1)
           target%outside(i1,i2,i3) = .true.
-          target%filled(i1,i2,i3) = .false.
+          target%filled(i1,i2,i3) = 0
         end do
       end do
     end do

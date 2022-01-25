@@ -660,7 +660,7 @@ subroutine ctoprim(self)
   if (isothermal) then
     entho = one
   else
-    entho = one/max(eos%gamma-one,1e-6)
+    entho = one/max(eos%gamma-one,1d-6)
   end if
   smallp = smallr*smallc**2/eos%gamma
   n = shape(uin)-1
