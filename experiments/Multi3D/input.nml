@@ -23,6 +23,7 @@
 !===============================================================================
 
 ! -- Parameters defining the run -----------------------------------------------
+&io_params          do_trace=t omp_trace=f /
 &atmos_params       verbose=1 atmos_file='./input_multi3d/atmos/atmos.sun_MARCS' npatches=3 /
 &boundary_params    verbose=0 condition=1 /
 &download_params    check_filled=F verbose=0 /
