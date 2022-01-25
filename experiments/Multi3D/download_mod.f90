@@ -2066,7 +2066,7 @@ MODULE download_mod
                   ! filling factor; if zero, then no overlap.
                   ! the logical mask is used to produce an area filling factor for
                   ! mag. fields (but a volume filling factor otherwise)
-                  filling_factor = product(max(ue - le, 0.0),mask=qmask) 
+                  filling_factor = product(max(ue - le, 0d0),mask=qmask) 
                   filling_total = filling_total + filling_factor
                   ! `accumulate` should be multipled by `dWsource`, but 
                   ! `filling_factor` should be divided by `dWsource`, so they cancel.
@@ -2179,7 +2179,7 @@ MODULE download_mod
                   ! filling factor; if zero, then no overlap.
                   ! the logical mask is used to produce an area filling factor for
                   ! mag. fields (but a volume filling factor otherwise)
-                  filling_factor = product(max(ue - le, 0.0),mask=qmask)
+                  filling_factor = product(max(ue - le, 0d0),mask=qmask)
                   filling_total = filling_total + filling_factor
                   ! `accumulate` should be multipled by `dWsource`. but
                   ! `filling_factor` should be divided by `dWsource`, so they cancel.

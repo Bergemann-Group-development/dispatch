@@ -2142,7 +2142,7 @@ SUBROUTINE check_nan (self, panic, label, always)
   logical, optional:: always
   !.............................................................................
   integer:: ix, iy, iz, iv, ii(3)
-  logical:: nan
+  logical:: nan, isnan
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not. do_check_nan) then
@@ -2440,8 +2440,8 @@ SUBROUTINE scalar_stats (f, l, u, s)
   do ix=l(1),u(1)
     s(2) = s(2) + f(ix,iy,iz)
     s(3) = s(3) + f(ix,iy,iz)**2
-    s(1) = min(s(1),f(ix,iy,iz))
-    s(4) = max(s(4),f(ix,iy,iz))
+    s(1) = min(s(1),real(f(ix,iy,iz),kind=8))
+    s(4) = max(s(4),real(f(ix,iy,iz),kind=8))
   end do
   end do
   end do
@@ -2670,7 +2670,7 @@ SUBROUTINE time_interval (self, time, jt, pt, all, id, extrap, it)
           end block
         end if
       end if
-      pt(2) = max(0d0-grace, min(1d0+grace, pt(2)))
+      pt(2) = max(-grace, min(1.0+grace, pt(2)))
     end if
   end if
   pt(1) = 1.-pt(2)
