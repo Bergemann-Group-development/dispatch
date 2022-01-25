@@ -201,6 +201,7 @@ SUBROUTINE init_sub_patches(self)
       read (io%input, experiment_params)
     end if
     call io%namelist_warning ('experiment_params', iostat)
+    write (io%namelist, experiment_params)
     first_time = .false.
   endif
   

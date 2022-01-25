@@ -144,6 +144,7 @@ module atom_patch_mod
         read (io%input, atom_params)
       end if
       call io%namelist_warning ('atom_params', iostat)
+      write (io%namelist, atom_params)
 
       call read_atom(atom, atom_file, qnorm)
       call sp%init(atom%line, atom%cont, atom%qnorm)
@@ -296,9 +297,13 @@ module atom_patch_mod
     gamma_ij = 0.0d0
     gamma_ji = 0.0d0
 
+    print *,'************************************************************************************'
     do i_nu=1, size(self%rate, 2)
       do i_omega=1, size(self%rate, 1)
         rate => self%rate(i_omega, i_nu)
+        PRINT *, shape(gamma_ij)
+        PRINT *, shape(gamma_ji)
+        PRINT *, shape(rate%mem(:,:,:,:,rate%it,rate%i_Gij))
         gamma_ij = gamma_ij + rate%wmu * rate%mem(:,:,:,:,rate%it,rate%i_Gij)
         gamma_ji = gamma_ji + rate%wmu * rate%mem(:,:,:,:,rate%it,rate%i_Gji)
       end do
