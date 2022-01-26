@@ -270,8 +270,8 @@ recursive SUBROUTINE initial_refine(self, task,level_min, ip)
   class(task_t), pointer:: patch_task
   logical, save:: on = .false.
   real(8), save:: center(3)=0d0
-  real(8), save:: extent(3)=0d0, ratio=2.0
-  integer, save:: n_refine(3)=0
+  real(8), save:: extent(3)=0d0
+  integer, save:: n_refine(3)=0, ratio=2
   logical, save:: first_time=.true.
   logical, save:: keep_parent=.true.
   real(8), dimension(3):: size, pos

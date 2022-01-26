@@ -42,7 +42,7 @@ FUNCTION SelectInterpolator (iorder) result(interp)
   procedure(interpolator_interface), pointer :: interp
   integer, intent(in) :: iorder
   !-----------------------------------------------------------------------------
-  call trace_begin('interpolate_t%SelectInterpolator')
+  call trace%begin('interpolate_t%SelectInterpolator')
 
   select case (iorder)
   case (0) ! donor cell
@@ -59,7 +59,7 @@ FUNCTION SelectInterpolator (iorder) result(interp)
   end select
   interpolator%order_interpolator = iorder
 
-  call trace_end
+  call trace%end
 END FUNCTION SelectInterpolator
 
 !===============================================================================
@@ -71,11 +71,11 @@ FUNCTION interpolator_donor_cell (q,i,j,k,w) result(qtilde)
   real, intent(in):: w(3)
   real(kind=KindScalarVar):: qtilde
   !-----------------------------------------------------------------------------
-  call trace_begin('interpolate_mod::donor_cell', 2)
+  call trace%begin('interpolate_mod::donor_cell', 2)
   
   qtilde = q(i,j,k)
   
-  call trace_end
+  call trace%end
 END FUNCTION interpolator_donor_cell
 
 !===============================================================================
@@ -96,7 +96,7 @@ FUNCTION interpolator_van_Leer_3d (q,i,j,k,w) result(qtilde)
   real(8) :: qijk, dq1, dq2, dq3, qp, qm, dp, dm, aych1, aych2, aych3
   integer:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin('interpolate_mod::van_Leer', 1, itimer=itimer)
+  call trace%begin('interpolate_mod::van_Leer', 1, itimer=itimer)
   ldim(:) = .false.
   if (lzc) ldim(:) = .true.
   if (lfc(2) .or. lfc(3)) ldim(1) = .true.
@@ -163,7 +163,7 @@ FUNCTION interpolator_van_Leer_3d (q,i,j,k,w) result(qtilde)
                 + dq2 * ( w(2) - aych2 ) &
                 + dq3 * ( w(3) - aych3 )
 
-  call trace_end (itimer)
+  call trace%end (itimer)
 END FUNCTION interpolator_van_Leer_3d
 
 !===============================================================================
@@ -177,7 +177,7 @@ FUNCTION interpolator_trilinear (q,i,j,k,w) result(qtilde)
   integer:: i1, j1, k1
   integer:: itimer=0
   !-----------------------------------------------------------------------------
-  !call trace_begin('interpolate_mod::trilinear', 2, itimer=itimer)
+  !call trace%begin('interpolate_mod::trilinear', 2, itimer=itimer)
   i1 = merge(1,0,size(q,1) > 1)
   j1 = merge(1,0,size(q,2) > 1)
   k1 = merge(1,0,size(q,3) > 1)
@@ -186,7 +186,7 @@ FUNCTION interpolator_trilinear (q,i,j,k,w) result(qtilde)
                    w(2) * (m(1) * q(i  ,j+j1,k   ) + w(1) * q(i+i1,j+j1,k   ))) + &
            w(3) * (m(2) * (m(1) * q(i  ,j   ,k+k1) + w(1) * q(i+i1,j   ,k+k1))  + &
                    w(2) * (m(1) * q(i  ,j+j1,k+k1) + w(1) * q(i+i1,j+j1,k+k1)))
-  !call trace_end (itimer)
+  !call trace%end (itimer)
 END FUNCTION interpolator_trilinear
 
 !===============================================================================
@@ -200,7 +200,7 @@ FUNCTION trilinear_log (q,i,j,k,w) result(qtilde)
   integer:: i1, j1, k1
   integer:: itimer=0
   !-----------------------------------------------------------------------------
-  !call trace_begin('interpolate_mod::trilinear', 2, itimer=itimer)
+  !call trace%begin('interpolate_mod::trilinear', 2, itimer=itimer)
   i1 = merge(1,0,size(q,1) > 1)
   j1 = merge(1,0,size(q,2) > 1)
   k1 = merge(1,0,size(q,3) > 1)
@@ -209,7 +209,7 @@ FUNCTION trilinear_log (q,i,j,k,w) result(qtilde)
                  w(2)*(m(1)*log(q(i  ,j+j1,k   )) + w(1)*log(q(i+i1,j+j1,k   )))) + &
            w(3)*(m(2)*(m(1)*log(q(i  ,j   ,k+k1)) + w(1)*log(q(i+i1,j   ,k+k1)))  + &
                  w(2)*(m(1)*log(q(i  ,j+j1,k+k1)) + w(1)*log(q(i+i1,j+j1,k+k1))))
-  !call trace_end (itimer)
+  !call trace%end (itimer)
 END FUNCTION trilinear_log
 
 !===============================================================================
@@ -223,7 +223,7 @@ FUNCTION trilinear_pv (q,d,i,j,k,w) result(qtilde)
   integer:: i1, j1, k1
   integer:: itimer=0
   !-----------------------------------------------------------------------------
-  !call trace_begin('interpolate_mod::trilinear', 2, itimer=itimer)
+  !call trace%begin('interpolate_mod::trilinear', 2, itimer=itimer)
   i1 = merge(1,0,size(q,1) > 1)
   j1 = merge(1,0,size(q,2) > 1)
   k1 = merge(1,0,size(q,3) > 1)
@@ -236,7 +236,7 @@ FUNCTION trilinear_pv (q,d,i,j,k,w) result(qtilde)
                        w(1)*q(i+i1,j   ,k+k1)/d(i+i1,j   ,k+k1))  + &
                  w(2)*(m(1)*q(i   ,j+j1,k+k1)/d(i   ,j+j1,k+k1)   + &
                        w(1)*q(i+i1,j+j1,k+k1)/d(i+i1,j+j1,k+k1)))
-  !call trace_end (itimer)
+  !call trace%end (itimer)
 END FUNCTION trilinear_pv
 
 !===============================================================================
@@ -250,7 +250,7 @@ FUNCTION interpolator_trilinear_3d (q,i,j,k,w) result(qtilde)
   integer:: i1, j1, k1
   integer:: itimer=0
   !-----------------------------------------------------------------------------
-  !call trace_begin('interpolate_mod::trilinear', 2, itimer=itimer)
+  !call trace%begin('interpolate_mod::trilinear', 2, itimer=itimer)
   i1 = merge(1,0,size(q,1) > 1)
   j1 = merge(1,0,size(q,2) > 1)
   k1 = merge(1,0,size(q,3) > 1)
@@ -259,7 +259,7 @@ FUNCTION interpolator_trilinear_3d (q,i,j,k,w) result(qtilde)
                    w(2) * (m(1) * q(i  ,j+j1,k   ) + w(1) * q(i+i1,j+j1,k   ))) + &
            w(3) * (m(2) * (m(1) * q(i  ,j   ,k+k1) + w(1) * q(i+i1,j   ,k+k1))  + &
                    w(2) * (m(1) * q(i  ,j+j1,k+k1) + w(1) * q(i+i1,j+j1,k+k1)))
-  !call trace_end (itimer)
+  !call trace%end (itimer)
 END FUNCTION interpolator_trilinear_3d
 
 !===============================================================================
@@ -274,14 +274,14 @@ FUNCTION interpolator_unsigned (q,i,j,k,w) result(qtilde)
   real(kind=KindScalarVar), allocatable:: logq(:,:,:)
   integer:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin('interpolate_mod::unsigned', 1, itimer=itimer)
+  call trace%begin('interpolate_mod::unsigned', 1, itimer=itimer)
   !
   allocate(logq(size(q,1),size(q,2),size(q,3)))
   logq(:,:,:) = log(q(:,:,:))
   qtilde = exp(interpolator%interpolator(logq,i,j,k,w))
   !
   deallocate (logq)
-  call trace_end (itimer)
+  call trace%end (itimer)
 END FUNCTION interpolator_unsigned
 
 !===============================================================================
@@ -297,7 +297,7 @@ FUNCTION four_d (q, i, j, k, l, w) RESULT (qtilde)
   real(kind=KindScalarVar):: m(4)
   integer:: itimer=0
   !-----------------------------------------------------------------------------
-  !call trace_begin('interpolate_mod::trilinear', 2, itimer=itimer)
+  !call trace%begin('interpolate_mod::trilinear', 2, itimer=itimer)
   i1 = merge(1,0,size(q,1) > 1)
   j1 = merge(1,0,size(q,2) > 1)
   k1 = merge(1,0,size(q,3) > 1)
@@ -313,7 +313,7 @@ FUNCTION four_d (q, i, j, k, l, w) RESULT (qtilde)
                 w(2)*(m(1)*q(i  ,j+j1,k   ,l2) + w(1)*q(i+i1,j+j1,k   ,l2)))  + &
           w(3)*(m(2)*(m(1)*q(i  ,j   ,k+k1,l2) + w(1)*q(i+i1,j   ,k+k1,l2))   + &
                 w(2)*(m(1)*q(i  ,j+j1,k+k1,l2) + w(1)*q(i+i1,j+j1,k+k1,l2))))
-  !call trace_end (itimer)
+  !call trace%end (itimer)
 END FUNCTION four_d
 
 !===============================================================================
@@ -329,7 +329,7 @@ FUNCTION four_d_pv (q, d1, d2, i, j, k, l, w) RESULT (qtilde)
   real(kind=KindScalarVar):: m(4)
   integer:: itimer=0
   !-----------------------------------------------------------------------------
-  !call trace_begin('interpolate_mod::trilinear', 2, itimer=itimer)
+  !call trace%begin('interpolate_mod::trilinear', 2, itimer=itimer)
   i1 = merge(1,0,size(q,1) > 1)
   j1 = merge(1,0,size(q,2) > 1)
   k1 = merge(1,0,size(q,3) > 1)
@@ -353,7 +353,7 @@ FUNCTION four_d_pv (q, d1, d2, i, j, k, l, w) RESULT (qtilde)
                       w(1)*q(i+i1,j   ,k+k1,l2)/d2(i+i1,j   ,k+k1))   + &
                 w(2)*(m(1)*q(i   ,j+j1,k+k1,l2)/d2(i   ,j+j1,k+k1)    + &
                       w(1)*q(i+i1,j+j1,k+k1,l2)/d2(i+i1,j+j1,k+k1))))
-  !call trace_end (itimer)
+  !call trace%end (itimer)
 END FUNCTION four_d_pv
   
 !===============================================================================
@@ -369,7 +369,7 @@ FUNCTION four_d_log (q, i, j, k, l, w) RESULT (qtilde)
   real(kind=KindScalarVar):: m(4)
   integer:: itimer=0
   !-----------------------------------------------------------------------------
-  !call trace_begin('interpolate_mod::trilinear', 2, itimer=itimer)
+  !call trace%begin('interpolate_mod::trilinear', 2, itimer=itimer)
   i1 = merge(1,0,size(q,1) > 1)
   j1 = merge(1,0,size(q,2) > 1)
   k1 = merge(1,0,size(q,3) > 1)
@@ -385,7 +385,7 @@ FUNCTION four_d_log (q, i, j, k, l, w) RESULT (qtilde)
                 w(2)*(m(1)*log(q(i  ,j+j1,k   ,l2)) + w(1)*log(q(i+i1,j+j1,k   ,l2))))  + &
           w(3)*(m(2)*(m(1)*log(q(i  ,j   ,k+k1,l2)) + w(1)*log(q(i+i1,j   ,k+k1,l2)))   + &
                 w(2)*(m(1)*log(q(i  ,j+j1,k+k1,l2)) + w(1)*log(q(i+i1,j+j1,k+k1,l2)))))
-  !call trace_end (itimer)
+  !call trace%end (itimer)
 END FUNCTION four_d_log
 
 END MODULE interpolate_mod

@@ -828,7 +828,7 @@ SUBROUTINE save_meta4(self, filename, arr)
   integer :: meta_unit
   ! ----------------------------------------------------------------------------
 
-  open(newunit=meta_unit, file=self%meta_file, form='formatted', access='append')
+  open(newunit=meta_unit, file=self%meta_file, form='formatted', position='append')
   write(meta_unit, '(A64, I4, 8(I5))') filename, storage_size(arr), shape(arr)
   close(meta_unit)
 END SUBROUTINE save_meta4

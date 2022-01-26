@@ -41,7 +41,7 @@ SUBROUTINE pre_init (self, patch)
   logical, save:: first_time=.true.
   namelist /IC_params/ type
   !----------------------------------------------------------------------------
-  call trace_begin('initial_conditions_t%pre_init')
+  call trace%begin('initial_conditions_t%pre_init')
   self%patch => patch
   call io%lock%set
   if (first_time) then
@@ -64,7 +64,7 @@ SUBROUTINE pre_init (self, patch)
   case default
     print*,'UNKNOWN INITIAL CONDITION TYPE :'//trim(type)//':'
   end select
-  call trace_end
+  call trace%end
 END SUBROUTINE pre_init
 
 !===============================================================================
@@ -73,9 +73,9 @@ END SUBROUTINE pre_init
 SUBROUTINE init (self)
   class(initial_conditions_t):: self
   !----------------------------------------------------------------------------
-  call trace_begin('initial_conditions_t%init')
+  call trace%begin('initial_conditions_t%init')
   call self%condition
-  call trace_end
+  call trace%end
 END SUBROUTINE init
 
 !===============================================================================
@@ -108,7 +108,7 @@ SUBROUTINE single_solenoidal (self)
   namelist /IC_solenoidal_params/ k, a0, u0, b0, d0, e0, mhd, gamma, t_turn
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin('initial_conditions_t%single_solenoidal', itimer=itimer)
+  call trace%begin('initial_conditions_t%single_solenoidal', itimer=itimer)
   m => self%patch%mesh
   ff => self%patch%mem(:,:,:,:,1,1)
   idx => self%patch%idx
@@ -146,7 +146,7 @@ SUBROUTINE single_solenoidal (self)
   end do
   call energy (self, m, idx, ff)
   end associate
-  call trace_end (itimer)
+  call trace%end (itimer)
 END SUBROUTINE single_solenoidal
 
 !===============================================================================
@@ -167,7 +167,7 @@ SUBROUTINE single_compressive (self)
   namelist /IC_compressive_params/ k, a0, u0, b0, d0, e0, mhd, gamma, t_turn
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin('initial_conditions_t%single_compressive', itimer=itimer)
+  call trace%begin('initial_conditions_t%single_compressive', itimer=itimer)
   m => self%patch%mesh
   ff => self%patch%mem(:,:,:,:,1,1)
   idx => self%patch%idx
@@ -208,7 +208,7 @@ SUBROUTINE single_compressive (self)
   end do
   call energy (self, m, idx, ff)
   end associate
-  call trace_end (itimer)
+  call trace%end (itimer)
 END SUBROUTINE single_compressive
 
 !===============================================================================
@@ -228,7 +228,7 @@ SUBROUTINE single_advection (self)
   namelist /IC_advection_params/ k, a0, u0, b0, d0, e0, mhd, gamma
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin('initial_conditions_t%single_advection', itimer=itimer)
+  call trace%begin('initial_conditions_t%single_advection', itimer=itimer)
   m => self%patch%mesh
   ff => self%patch%mem(:,:,:,:,1,1)
   idx => self%patch%idx
@@ -266,7 +266,7 @@ SUBROUTINE single_advection (self)
   end do
   call energy (self, m, idx, ff)
   end associate
-  call trace_end (itimer)
+  call trace%end (itimer)
 END SUBROUTINE single_advection
 
 !===============================================================================

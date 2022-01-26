@@ -170,7 +170,7 @@ subroutine non_ideal_comp(self,mesh,idx,bf,uin,qin,fluxambdiff,emfambdiff, &
        florentzz,fluxad,bmagij,emfambdiff,fluxambdiff,jxbsquare,ds,dt)
      l = mesh%lo
      u = mesh%uo
-     u_max = max(u_max, maxval( &
+     u_max = max(real(u_max,kind=8), maxval( &
        uin(l(1):u(1),l(2):u(2),l(3):u(3),idx%bx)**2 + &
        uin(l(1):u(1),l(2):u(2),l(3):u(3),idx%by)**2 + &
        uin(l(1):u(1),l(2):u(2),l(3):u(3),idx%bz)**2 / &
@@ -183,7 +183,7 @@ subroutine non_ideal_comp(self,mesh,idx,bf,uin,qin,fluxambdiff,emfambdiff, &
   
   if(self%mhd_Ohm) then
      call computdifmag(self,uin,qin,bemfx,bemfy,bemfz,jemfx,jemfy,jemfz,bmagij,fluxmd,emfohmdiss,fluxohmdiss,jcentersquare,ds,dt)
-     u_max = max(u_max,self%eta_Ohm/ minval(ds))
+     u_max = max (real(u_max,kind=8), self%eta_Ohm/ minval(ds))
   endif
 
   
@@ -1107,10 +1107,10 @@ subroutine comp_weight_element(x,xarr,cx,idx,w)
     real, dimension(:) :: w
     real(8) :: x0,cx
     real, dimension(:) :: xarr
-    real :: arr, xd, xu, idx_r
-    real(8) :: mult
+    real :: arr, xd, idx_r
+    real(8) :: mult, xu
     integer(8) :: idx
-    integer :: nxarr
+    integer(8) :: nxarr
 
     nxarr = size(xarr)
     idx = 0
@@ -1126,7 +1126,7 @@ subroutine comp_weight_element(x,xarr,cx,idx,w)
     idx_r = real(min(idx,nxarr-1))
  
     xd = x0 * cx**idx_r
-    xu = min(x0 * cx**(idx_r+1.d0),real(nxarr))
+    xu = min(x0 * cx**(idx_r+1.d0),real(nxarr,kind=8))
     ! weight factors
     w(1)  = ( min(x,xu) - xd ) / ( x0 * cx)
     w(2)  = 1. - w(1)

@@ -341,7 +341,7 @@ SUBROUTINE real_print (self)
   n_previous = timer%n_update
   musppt = sec*1d6*min(omp%nthreads,omp%ncores)/updates
   if (musppt > 1e3) musppt = 0.0
-  n_recv = max(timer%n_recv,1)
+  n_recv = max(timer%n_recv,1_8)
   if (shared%mpi_master) then
     call write_to (io_unit%output)
   end if
@@ -431,8 +431,8 @@ contains
       " f_unpk",f7.2," f_mem",f7.2," f_que",f7.2," f_cheap")') &
       timer%bytes_recv/1024.**2/sec, timer%bytes_recv/1024.**2/n_recv, &
       timer%nq_send_max, timer%nq_recv_max, timer%latency%max, timer%latency%aver, &
-      timer%mpi_hit/real(max(1,timer%mpi_test)), &
-      timer%mem_hit/real(max(1,timer%mem_test)), &
+      timer%mpi_hit/real(max(1_8,timer%mpi_test)), &
+      timer%mem_hit/real(max(1_8,timer%mem_test)), &
       timer%busy_time/max(timer%spin_time + timer%busy_time,1d-30), &
       timer%n_cheap/real(timer%n_cheap+timer%n_expensive+1)
     !$omp atomic write

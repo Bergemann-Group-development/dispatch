@@ -7,6 +7,7 @@ os_mod.o:               io_unit_mod.o trace_mod.o mpi_mod.o omp_mod.o kinds_mod.
 io_mod.o:               omp_mod.o omp_timer_mod.o mpi_mod.o io_unit_mod.o timer_mod.o os_mod.o \
                         omp_lock_mod.o
 trace_mod.o:            io_unit_mod.o timer_mod.o
+trace.o:                trace_mod.o
 timer_mod.o:            io_unit_mod.o omp_mod.o omp_timer_mod.o omp_lock_mod.o \
                         shared_mod.o
 legacy_io_mod.o:        io_mod.o trace_mod.o patch_mod.o kinds_mod.o

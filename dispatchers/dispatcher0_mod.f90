@@ -567,7 +567,7 @@ subroutine stall_handler
           write (stderr,'(1x,a,i5,3f12.5)') 'task logging stopped on rank', &
             mpi%rank, now, stall_start, io%log_interval*0.9
           write (stderr,*) 'task logging stopped on rank', mpi%rank
-          io%task_logging = .false.
+          io%task_logging = 0
           !---------------------------------------------------------------------
           ! Check what's holding up tasks on this rank
           !---------------------------------------------------------------------

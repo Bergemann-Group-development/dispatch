@@ -172,8 +172,8 @@ SUBROUTINE scalar_stats (f, label)
   do ix=1,size(f,1)
     s1 = s1 + f(ix,iy,iz)
     s2 = s2 + f(ix,iy,iz)**2
-    s0 = min(s0,f(ix,iy,iz))
-    s3 = max(s3,f(ix,iy,iz))
+    s0 = min(s0,real(f(ix,iy,iz),kind=8))
+    s3 = max(s3,real(f(ix,iy,iz),kind=8))
   end do
   end do
   end do

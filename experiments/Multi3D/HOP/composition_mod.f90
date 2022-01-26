@@ -65,6 +65,7 @@ contains
         type(level_type),      pointer :: lvl
         type(transition_type), pointer :: trans
 
+        call trace_begin ('composition_type%init')
 
         106 FORMAT(4(F10.3,F10.4))
         107 FORMAT(I10,5I5)
@@ -403,6 +404,7 @@ contains
         close(absdat)
 
         self%initialised = .true.
+        call trace_end ()
     end subroutine injon
 
     subroutine reassign_pointer(self)
@@ -413,6 +415,8 @@ contains
         type(level_type),       pointer :: lvl
         type(transition_type),  pointer :: trans
         integer :: i, j
+
+        call trace_begin ('composition_type%reassign_pointer')
         
         do i=1, self%nel
             element => self%elements(i)
@@ -463,6 +467,7 @@ contains
                 trans%ion => molecule
             end select
         end do
+        call trace_end ()
     end subroutine reassign_pointer
 
     subroutine init_molecules(self)
@@ -472,6 +477,8 @@ contains
         !type(ion_type),     pointer :: ion
         character(len=3) :: mol_ids(12), ion_id
         integer :: i, j
+
+        call trace_begin ('composition_type%init_molecules')
 
         mol_ids = ['H2 ', 'H2p', 'H2O', 'OH ', 'CH ', 'CO ', 'CN ', 'C2 ', 'N2 ', 'O2 ', 'NO ', 'NH ']
 
@@ -588,6 +595,7 @@ contains
                 element%mcount = element%mcount + 1 
             end do
         end do
+        call trace_end ()
     end subroutine
 
     subroutine load_state_variables(self, temp, ne, rho)
@@ -600,6 +608,8 @@ contains
         real(dp), dimension(:,:,:), intent(in) :: temp, ne, rho
         real(dp), dimension(:,:,:), allocatable :: xnen, ejon, xnenh, xnecno
         integer :: i,j
+
+        call trace_begin ('composition_type%load_state_variables')
         allocate(xnenh, xnecno, ejon, mold=temp)
         xnenh = 0
         xnecno = 0
@@ -686,7 +696,7 @@ contains
             end do
         end do
 
-
+        allocate (Hm%rho_per_h(size(H0%rho_per_h,1),size(H0%rho_per_h,2),size(H0%rho_per_h,3)))
         Hm%rho_per_h = H0%rho_per_h * Hm%pk
         ! keep this around for consistency with legacy code, its just a bunch of wrong constants.
         self%xfakh = self%ne*(BK/uop_BK) * H%f / self%fe / self%rho * (1.008*UU / XMH)
@@ -701,6 +711,7 @@ contains
 
         ! legacy rho, should probably be replaced by actual rho
         self%ro = self%ne*(BK/uop_BK) * self%grph / self%fe
+        call trace_end ()
     end subroutine load_state_variables
 
     subroutine absorption(self, nu, Jnu, chi, eta)
@@ -719,6 +730,8 @@ contains
         real(dp), dimension(:), allocatable :: lam
         real(dp) :: xray2
         integer :: i, f, nf
+
+        call trace_begin ('composition_type%absorption')
 
         nf = size(nu, 1)
         lam = cc / nu * 1e8
@@ -814,6 +827,7 @@ contains
             chi(:,:,:,f) = real((abslte(:,:,:,f) + sumsca(:,:,:,f)) * self%rho)
             eta(:,:,:,f) = real((abslte(:,:,:,f)*planck(nu(f), self%temp) + sumsca(:,:,:,f)*Jnu(:,:,:,f)) * self%rho)
         end do
+        call trace_end ()
     end subroutine absorption
 
     subroutine get_totn(self, id, abund, totn)
@@ -823,6 +837,7 @@ contains
         real(dp), dimension(:,:,:), allocatable :: totn
         type(element_type), pointer :: element
 
+        call trace_begin ('composition_type%get_totn')
         call self%element_by_id(id, element)
 
         if (associated(element)) then
@@ -830,6 +845,7 @@ contains
         else
             totn = 10.0**(abund-12.0) * self%rho / (self%xmy*1.008*uu)
         endif
+        call trace_end ()
     end subroutine get_totn
 
     subroutine get_nhyd(self, nhyd)
@@ -840,6 +856,7 @@ contains
         type(level_type) :: level
         integer :: k, nk
 
+        call trace_begin ('composition_type%get_nhyd')
         nk = size(nhyd, 4)
         H0 => self%elements(1)%ions(1)
 
@@ -850,6 +867,7 @@ contains
             blzfac = level%boltzmann(self%EK_over_temp, natural_log=.true.)
             nhyd(:,:,:,k) = k**2 * blzfac * nh
         end do
+        call trace_end ()
     end subroutine
 
     subroutine molecular_equilibrium(self, temp, pe, dxi, xnecno, eh, pg, fe)
@@ -870,6 +888,7 @@ contains
         real(dp), dimension(:,:,:), pointer :: Fi
         real(dp), dimension(:), allocatable :: Fold, Fnew
 
+        call trace_begin ('composition_type%molecular_equilibrium')
         call self%element_by_id('H', H)
         call self%element_by_id('C', C)
         call self%element_by_id('N', N)
@@ -907,6 +926,13 @@ contains
 
         Hm%pk = 1/Hm%saha
 
+        PRINT *, '======= molecular_equilibrium ======='
+        PRINT *, allocated(H%fil)
+        allocate (H%fil(size(H0%saha,1),size(H0%saha,2),size(H0%saha,3)))
+
+        PRINT *, shape(H0%saha), shape(Hm%pk), shape(H%fil)
+
+
         H%fil = 1 + H0%saha + Hm%pk
         fe = xnecno
 
@@ -931,24 +957,33 @@ contains
 
         do i=1, self%nmolec
             !partial electron pressures due to each molecule
+            allocate (molecules(i)%f(size(H0%saha,1),size(H0%saha,2),size(H0%saha,3)))
+            allocate (molecules(i)%e(size(H0%saha,1),size(H0%saha,2),size(H0%saha,3)))
             molecules(i)%f = molecules(i)%calc_f(teta, pefe)
         end do
 
         b = C%f_of_molecules_with(O) / C%f
+        allocate (O%fil(size(H0%saha,1),size(H0%saha,2),size(H0%saha,3)))
+        allocate (C%fil(size(H0%saha,1),size(H0%saha,2),size(H0%saha,3)))
         O%fil = 1 + O0%saha + O%f_of_molecules_with(H) / O%f
         C%fil = 1 + C0%saha + C%f_of_molecules_with(H) / C%f
 
         p = (C%abund-O%abund)/O%fil + C%fil/b
         q = - O%abund/O%fil * C%fil/b
+        !allocate (O%f(size(H0%saha,1),size(H0%saha,2),size(H0%saha,3)))
+        !allocate (C%f(size(H0%saha,1),size(H0%saha,2),size(H0%saha,3)))
         O%f = solve_quadratic(p, q)
         C%f = C%abund / (C%fil + b*O%f)
 
+        !allocate (CN%f(size(H0%saha,1),size(H0%saha,2),size(H0%saha,3)))
         CN%f = CN%calc_f(teta, pefe) ! has to be recalculated since C%f changed
         
+        allocate (N%fil(size(H0%saha,1),size(H0%saha,2),size(H0%saha,3)))
         N%fil = 1 + N0%saha + (N%f_of_molecules_with(H) + N%f_of_molecules_with(C)) / N%f
         b = N%f / N%f_of_molecules_with(N, count_double=.true.) 
         p = 2*N%fil*b
         q = - 2*N%abund*b
+        !allocate (N%f(size(H0%saha,1),size(H0%saha,2),size(H0%saha,3)))
         N%f = solve_quadratic(p, q)
         where (N%f < 0) N%f = 0
 
@@ -1037,6 +1072,7 @@ contains
 
         pg = pg * pefe
 
+        call trace_end ()
     end subroutine molecular_equilibrium
 
     subroutine molecule_by_id(self, id, molecule)
@@ -1044,7 +1080,9 @@ contains
         character(len=*), intent(in) :: id
         type(molec_type), pointer, intent(out) :: molecule
 
+        call trace_begin ('composition_type%init')
         molecule => self%molecules(findloc(self%molecules%id, id, 1))
+        call trace_end ()
     end subroutine molecule_by_id
 
     subroutine element_by_id(self, id, element)
@@ -1053,6 +1091,7 @@ contains
         type(element_type), pointer, intent(out) :: element
         integer :: idx
 
+        call trace_begin ('composition_type%init')
         idx = findloc(self%elements%id, id, 1)
 
         if (idx == 0) then
@@ -1061,6 +1100,7 @@ contains
         else
             element => self%elements(idx)
         endif
+        call trace_end ()
     end subroutine element_by_id
 
     subroutine ion_by_id(self, id, ion)
@@ -1070,12 +1110,14 @@ contains
         type(element_type), pointer :: element
         integer :: idx
 
+        call trace_begin ('composition_type%init')
         call self%element_by_id(id(1:3), element)
         idx = findloc(element%ions%id, id, 1)
         if (lbound(element%ions,1) /= 1) then
             idx = idx + lbound(element%ions,1) - 1
         endif
         ion => element%ions(idx)
+        call trace_end ()
     end subroutine ion_by_id
 
     subroutine trans_by_id(self, id, trans)
@@ -1084,9 +1126,11 @@ contains
         type(transition_type), pointer, intent(out) :: trans
         integer :: i, idx
 
+        call trace_begin ('composition_type%init')
         do i=1, size(self%trans)
             if (trim(self%trans(i)%key) == id) then
                 trans => self%trans(i)
+                call trace_end ()
                 return
             endif
         end do

@@ -520,7 +520,7 @@ SUBROUTINE output_txt (patch, append)
   write (io_unit%data,'(a)') trim(patch%kind)
   write (io_unit%data,'(a)') trim(patch%eos)
   write (io_unit%data,'(a)') trim(patch%opacity)
-  write (io_unit%data,'(1p,2e18.10,6(2x,3e18.10)1x,1x,2e10.3)') patch%out_next, &
+  write (io_unit%data,'(1p,2e18.10,6(2x,3e18.10),1x,1x,2e10.3)') patch%out_next, &
         patch%dtime, patch%position, patch%ds, patch%velocity, patch%llc_nat, &
         patch%llc_cart, patch%mesh%centre_nat, patch%quality, eos%gamma
   write (io_unit%data,'(6(3i10.1,2x),3i2.1,1x,1i2.1,i3)') int(patch%box/patch%ds+0.5), &
