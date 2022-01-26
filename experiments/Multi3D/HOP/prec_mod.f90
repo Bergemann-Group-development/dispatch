@@ -6,7 +6,7 @@ module prec_mod
     !integer, parameter :: sp = REAL32 ! in conflict with spectrum object
     integer, parameter :: dp = REAL64
     integer, parameter :: qp = REAL128
-    
+     
     ! physics
     real(dp), parameter :: Ryd = 13.598408    ! Rydberg constant [eV]
     real(dp), parameter :: EK  = EE/BK

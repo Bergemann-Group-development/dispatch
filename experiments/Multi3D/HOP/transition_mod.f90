@@ -192,6 +192,7 @@ contains
         
         if (self%ntt > 1) then
             allocate(yyt(nx,ny,nz,self%nnu))
+            allocate(ab, yt, mold=temp)
             allocate(quadratic(nx,ny,nz))
             allocate(in_bounds(nx,ny,nz))
             allocate(it(nx,ny,nz))
@@ -590,7 +591,9 @@ contains
 
         call self%load_lam_interp_weights(lam)
 
-        if (self%active) call self%interp_xkap2(abslte, lam, temp, teta, fakt)
+        if (self%active) then
+            call self%interp_xkap2(abslte, lam, temp, teta, fakt)
+        endif
         !print *, self%key, abslte(1,1,1,1)
 
         deallocate(self%quad)

@@ -48,7 +48,7 @@ module atom_patch_mod
       real(8), dimension(:,:,:), pointer :: ne   => null()
       real(8), dimension(:,:,:,:), pointer :: nh => null()
       real(8) :: t_offset=0.1d0
-      integer :: iter, maxiter
+      integer :: iter=0, maxiter=0
     contains
       procedure :: pre_init => atom_task_pre_init
       procedure :: init => atom_task_init
@@ -131,11 +131,12 @@ module atom_patch_mod
     logical, save :: first_time=.true.
     character(len=128), save :: atom_file='./input_multi3d/atoms/atom.ba06'
     real(8), save :: qnorm=10.0
-    integer, save :: maxiter=30
+    integer, save :: maxiter
     integer :: iostat
     namelist /atom_params/ atom_file, qnorm, maxiter
     !-----------------------------------------------------------------------------
     if (first_time) then
+      maxiter = self%maxiter !default value
       write (*,*) ' - Reading atom'
       rewind (io%input)
       read (io%input, atom_params, iostat=iostat)
@@ -297,20 +298,9 @@ module atom_patch_mod
     gamma_ij = 0.0d0
     gamma_ji = 0.0d0
 
-    PRINT *,'================== atom_patch_mod::sum_rates ===================='
     do i_nu=1, size(self%rate, 2)
       do i_omega=1, size(self%rate, 1)
         rate => self%rate(i_omega, i_nu)
-        m = shape(rate%mem(:,:,:,:,rate%it,rate%i_Gij))
-        if (any(shape(gamma_ij) /= m)) then
-          PRINT *, 'atom_patch_mod::sum_rates ERROR: wrong shapes; reallocating'
-          PRINT *, shape(gamma_ij)
-          PRINT *, shape(gamma_ji)
-          PRINT *, shape(rate%mem(:,:,:,:,rate%it,rate%i_Gij))
-          deallocate (gamma_ij, gamma_ji)
-          allocate (gamma_ij(m(1),m(2),m(3),m(4)))
-          allocate (gamma_ji(m(1),m(2),m(3),m(4)))
-        end if
         gamma_ij = gamma_ij + rate%wmu * rate%mem(:,:,:,:,rate%it,rate%i_Gij)
         gamma_ji = gamma_ji + rate%wmu * rate%mem(:,:,:,:,rate%it,rate%i_Gji)
       end do

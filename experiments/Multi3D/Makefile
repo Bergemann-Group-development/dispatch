@@ -27,6 +27,8 @@ sinclude $(TOP)/config/Makefile
 sinclude $(HOP)/dispatch.mkf
 sinclude $(MULTI3D)/dispatch.mkf
 
+#OPT = -O0 -fimplicit-none  -Wall  -Wline-truncation  -Wcharacter-truncation  -Wsurprising  -Waliasing  -Wimplicit-interface  -Wunused-parameter  -fwhole-file  -fcheck=all  -fbacktrace
+
 # List the .o files the main program depends on after the colon:
 $(EXEC): read_external_mod.o
 

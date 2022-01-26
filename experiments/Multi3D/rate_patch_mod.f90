@@ -104,9 +104,6 @@ module rate_patch_mod
     chi_l => self%line_opac%mem(:,:,:,:,self%it,self%line_opac%i_chi)
     eta_l => self%line_opac%mem(:,:,:,:,self%it,self%line_opac%i_eta)
 
-    !eta = self%cont_opac%mem(:,:,:,:,self%it,self%cont_opac%i_eta)
-    !eta = self%line_opac%mem(:,:,:,:,self%it,self%line_opac%i_eta) + eta
-
     Ieff = Inu - self%rad%Psi * (eta_c + eta_l)
 
     gamma_ij => self%mem(:,:,:,:, self%it, self%i_Gij)
@@ -120,9 +117,9 @@ module rate_patch_mod
     if (self%verbose > 1) then
       select case (self%dir)
       case(-1)
-        write(*,'(A10, 3(I4), 3(ES18.7))') trim(self%kind), self%patch%id, self%i_omega, self%i_nu, gamma_ij(1,1,1,1), gamma_ji(1,1,1,1)
+        write(*,'(A10, 3(I4), 3(ES18.7))') trim(self%kind), self%patch%id, self%i_omega, self%i_nu, gamma_ij(1,1,1,4), gamma_ji(1,1,1,4)
       case(1)
-        write(*,'(A10, 3(I4), 3(ES18.7))') trim(self%kind), self%patch%id, self%i_omega, self%i_nu, gamma_ij(1,1,self%n(3),1), gamma_ji(1,1,self%n(3),1)
+        write(*,'(A10, 3(I4), 3(ES18.7))') trim(self%kind), self%patch%id, self%i_omega, self%i_nu, gamma_ij(1,1,self%n(3),4), gamma_ji(1,1,self%n(3),4)
       end select
     endif
   

@@ -188,13 +188,14 @@ SUBROUTINE Inu_update (self)
   class(radiation_t), target :: self
   real(4), dimension(:,:,:,:), allocatable :: xxup, ssup
   real(4), dimension(:,:), allocatable :: Inuup
-  real(4), dimension(:,:,:,:), pointer :: Inu, chi
+  real(4), dimension(:,:,:,:), pointer :: Inu, chi, Snu
   integer :: k1, k2, f, k, z, i, j
   ! ----------------------------------------------------------------------------
   call trace_begin('radiation_t%Inu_update')
 
   Inu => self%authority_mem(:,:,:,:,self%it,self%i_inu)
   chi => self%opac%authority_mem(:,:,:,:,self%opac%it,self%opac%i_chi)
+  Snu => self%opac%authority_mem(:,:,:,:,self%opac%it,self%opac%i_Snu)
 
   allocate(xxup, ssup, mold=chi)
   allocate(Inuup, mold=chi(:,:,1,1))
@@ -230,7 +231,7 @@ SUBROUTINE Inu_update (self)
             call self%interp_Inuup_plane(k, f, Inuup)         
       end select
       
-      call self%linear_formsolv(xxup(:,:,z,f), self%chi(:,:,k,f), ssup(:,:,z,f), self%Snu(:,:,k,f), &
+      call self%linear_formsolv(xxup(:,:,z,f), chi(:,:,z,f), ssup(:,:,z,f), Snu(:,:,z,f), &
                                 Inuup, self%Psi(:,:,z,f), Inu(:,:,z,f))
 
       ! HOT-FIX must be updated later
@@ -792,13 +793,13 @@ SUBROUTINE save_radiation_output(self)
   filename = trim(out_folder) // trim(self%ray_name) // '_lam.bin'
   open(newunit=lunit, file=filename, access='stream')
   write(lunit) lam
-  call self%save_meta4(filename, lam)
+  call self%save_meta4(filename, pack(lam, .true.), shape(lam))
   close(lunit)
 
   filename = trim(out_folder) // trim(self%ray_name) // '_inu.bin'
   open(newunit=lunit, file=filename, access='stream')
   write(lunit) Inu
-  call self%save_meta4(filename, Inu)
+  call self%save_meta4(filename, pack(Inu, .true.), shape(Inu))
   close(lunit)
   call trace%end()
 END SUBROUTINE save_radiation_output
@@ -821,15 +822,16 @@ SUBROUTINE setup_metafile(self)
 END SUBROUTINE
 
 !===============================================================================
-SUBROUTINE save_meta4(self, filename, arr)
+SUBROUTINE save_meta4(self, filename, arr, shpe)
   class(radiation_t):: self
   character(len=*), intent(in) :: filename
-  real(4), intent(in) :: arr(..)
+  real(4), dimension(:), intent(in) :: arr
+  integer, dimension(:), intent(in) :: shpe
   integer :: meta_unit
   ! ----------------------------------------------------------------------------
 
   open(newunit=meta_unit, file=self%meta_file, form='formatted', position='append')
-  write(meta_unit, '(A64, I4, 8(I5))') filename, storage_size(arr), shape(arr)
+  write(meta_unit, '(A64, I4, 8(I5))') filename, storage_size(arr), shpe
   close(meta_unit)
 END SUBROUTINE save_meta4
 

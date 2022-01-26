@@ -747,7 +747,10 @@ contains
         do i=1, size(self%trans)
             trans => self%trans(i)
             select case (trim(trans%key))
-            case ('H BF', 'H FF')
+            case ('H BF')
+                call trans%add_absorption(abslte, lam, self%temp, self%EK_over_temp, self%teta, &
+                                          self%pe, self%ro, self%dxi, self%xfakh)
+            case ('H FF')
                 call trans%add_absorption(abslte, lam, self%temp, self%EK_over_temp, self%teta, &
                                           self%pe, self%ro, self%dxi, self%xfakh)
             end select
@@ -889,6 +892,7 @@ contains
         real(dp), dimension(:), allocatable :: Fold, Fnew
 
         call trace_begin ('composition_type%molecular_equilibrium')
+
         call self%element_by_id('H', H)
         call self%element_by_id('C', C)
         call self%element_by_id('N', N)
@@ -921,17 +925,11 @@ contains
         allocate(Fvec(np1, nx, ny, nz))
         allocate(Amat(np1, np1, nx, ny, nz))
         allocate(Fold(np1), Fnew(np1))
+        allocate(H%fil, O%fil, C%fil, N%fil, mold=temp)
 
         teta = temp_to_theta / temp
 
         Hm%pk = 1/Hm%saha
-
-        PRINT *, '======= molecular_equilibrium ======='
-        PRINT *, allocated(H%fil)
-        allocate (H%fil(size(H0%saha,1),size(H0%saha,2),size(H0%saha,3)))
-
-        PRINT *, shape(H0%saha), shape(Hm%pk), shape(H%fil)
-
 
         H%fil = 1 + H0%saha + Hm%pk
         fe = xnecno
@@ -957,14 +955,11 @@ contains
 
         do i=1, self%nmolec
             !partial electron pressures due to each molecule
-            allocate (molecules(i)%f(size(H0%saha,1),size(H0%saha,2),size(H0%saha,3)))
-            allocate (molecules(i)%e(size(H0%saha,1),size(H0%saha,2),size(H0%saha,3)))
+            allocate (molecules(i)%f, molecules(i)%e, mold=temp)
             molecules(i)%f = molecules(i)%calc_f(teta, pefe)
         end do
 
         b = C%f_of_molecules_with(O) / C%f
-        allocate (O%fil(size(H0%saha,1),size(H0%saha,2),size(H0%saha,3)))
-        allocate (C%fil(size(H0%saha,1),size(H0%saha,2),size(H0%saha,3)))
         O%fil = 1 + O0%saha + O%f_of_molecules_with(H) / O%f
         C%fil = 1 + C0%saha + C%f_of_molecules_with(H) / C%f
 
@@ -978,7 +973,6 @@ contains
         !allocate (CN%f(size(H0%saha,1),size(H0%saha,2),size(H0%saha,3)))
         CN%f = CN%calc_f(teta, pefe) ! has to be recalculated since C%f changed
         
-        allocate (N%fil(size(H0%saha,1),size(H0%saha,2),size(H0%saha,3)))
         N%fil = 1 + N0%saha + (N%f_of_molecules_with(H) + N%f_of_molecules_with(C)) / N%f
         b = N%f / N%f_of_molecules_with(N, count_double=.true.) 
         p = 2*N%fil*b
@@ -1138,7 +1132,6 @@ contains
         print *, 'transition key = ', id, ' not found. Stopping...'
         stop
     end subroutine trans_by_id
-
 
     !---------------------------------------------------------------------
     ! PE: 22-09-21: Convert to elemental function

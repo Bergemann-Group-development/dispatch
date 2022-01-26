@@ -227,6 +227,7 @@ SUBROUTINE init_sub_patches(self)
   allocate(atom_task%rate(n_omega, n_nu))
   self%atom_task => atom_task
 
+  atom_task%maxiter = self%maxiter !default value
   call self%link_sub_task(atom_task)
   call atom_task%pre_init()
   call atom_task%init()

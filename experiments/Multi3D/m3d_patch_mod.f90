@@ -47,7 +47,7 @@ module m3d_patch_mod
     real(8), dimension(:,:,:), allocatable :: ne  
     real(4), dimension(:,:,:,:,:,:), pointer :: authority_mem => null()
     real(8) :: vec(3), wmu, mu, phi, t_offset
-    integer :: i_nu=0, i_phi=0, i_mu=0, dir=0, i_omega=0, fs, fe, iter, maxiter
+    integer :: i_nu=0, i_phi=0, i_mu=0, dir=0, i_omega=0, fs, fe, iter=0, maxiter
   contains
     procedure :: pre_init => m3d_pre_init
     procedure :: init => m3d_init
@@ -180,14 +180,20 @@ SUBROUTINE set_freq_indices (self, n, nnu, n_nu)
   integer, intent(in) :: n    ! index  of frequency bin
   integer, intent(in) :: nnu  ! number of total frequencies
   integer, intent(in) :: n_nu ! number of frequency bins
+  integer :: fs, fe, nv
   !-----------------------------------------------------------------------------
+  nv = nnu / n_nu
+  fs = (n-1) * nv + 1
+  if (n == n_nu) nv = nv + mod(nnu, n_nu)
+  fe = fs + nv - 1
+
+  if (self%kind /= 'rad_rate') then
+    self%nv = nv
+  endif
+
   self%i_nu = n
-  self%nv = nnu / n_nu
-  self%fs = (self%i_nu-1) * self%nv + 1
-
-  if (self%i_nu == n_nu) self%nv = self%nv + mod(nnu, n_nu)
-
-  self%fe = self%fs + self%nv - 1
+  self%fs = fs
+  self%fe = fe
 END SUBROUTINE set_freq_indices
 
 !===============================================================================
