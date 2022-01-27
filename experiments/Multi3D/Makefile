@@ -1,8 +1,9 @@
 # Option groups
-OPTS = full_debug
+#OPTS = full_debug
 #OPTS = vscode
 #OPTS = debug
 #OPTS =
+OPTS = hoppe
 #OPTS = optimized
 
 # Default target and paths

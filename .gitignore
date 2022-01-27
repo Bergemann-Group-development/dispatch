@@ -27,3 +27,4 @@ fort.*
 .ipynb_checkpoints
 .d/
 .vscode/
+experiments/Multi3D/out/*

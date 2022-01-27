@@ -1086,7 +1086,7 @@ contains
         integer :: idx
 
         call trace_begin ('composition_type%init')
-        idx = findloc(self%elements%id, id, 1)
+        idx = findloc(self%elements%id, uppercase(id, len(id)), 1)
 
         if (idx == 0) then
             !print *, 'Element of id= ', id, ' is not part of the opacity package.'
@@ -1159,5 +1159,29 @@ contains
         endif
     end function planck
     !---------------------------------------------------------------------
+
+    !---------------------------------------------------------------------
+    pure function uppercase(string,ss)
+    ! converts the first ss characters of string to uppercase and returns them as a new string.
+    character(len=*),intent(in) :: string
+    integer,intent(in) :: ss
+    character(len=ss) :: uppercase
+    integer :: i,k
+    character(len=26),parameter :: ucase='ABCDEFGHIJKLMNOPQRSTUVWXYZ' 
+    character(len=26),parameter :: lcase='abcdefghijklmnopqrstuvwxyz'
+
+    uppercase(:)=' '
+    uppercase(1:ss)=string(1:ss)
+    do i=1,ss
+       k=index(lcase,string(i:i))
+       if (k > 0) then
+          uppercase(i:i)=ucase(k:k)
+       else
+          uppercase(i:i)=string(i:i)
+       end if
+    end do
+
+  end function uppercase
+  !---------------------------------------------------------------------
 
 end module composition_mod
