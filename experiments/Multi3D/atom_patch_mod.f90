@@ -47,8 +47,9 @@ module atom_patch_mod
       real(8), dimension(:,:,:), pointer :: rho  => null()
       real(8), dimension(:,:,:), pointer :: ne   => null()
       real(8), dimension(:,:,:,:), pointer :: nh => null()
-      real(8) :: t_offset=0.1d0
+      real(8) :: t_offset=0.1d0, maxerr=huge(1.0)
       integer :: iter=0, maxiter=0
+      logical :: converged=.false.
     contains
       procedure :: pre_init => atom_task_pre_init
       procedure :: init => atom_task_init
@@ -64,6 +65,9 @@ module atom_patch_mod
       procedure update_populations
       procedure freeze_atom
     end type atom_patch_t
+
+    real(8), public:: global_maxerr=0
+    real(8), public:: convlim=1d-3
 
     !-----------------------------------------------------------------------------
   
@@ -133,7 +137,7 @@ module atom_patch_mod
     real(8), save :: qnorm=10.0
     integer, save :: maxiter
     integer :: iostat
-    namelist /atom_params/ atom_file, qnorm, maxiter
+    namelist /atom_params/ atom_file, qnorm, maxiter, convlim
     !-----------------------------------------------------------------------------
     if (first_time) then
       maxiter = self%maxiter !default value
@@ -212,8 +216,14 @@ module atom_patch_mod
       stop
     endif
 
-    write(*,'(A10, 1(I4), 3(ES18.7))') trim(self%kind), self%patch%id, self%atom%n(1,1,1,3)
-    write(*,'(A10, 1(I4), 3(ES18.7))') trim(self%kind), self%patch%id, self%atom%n(1,1,self%n(3),3)
+    write(*,'(A10, 1(I4), 3(ES18.7))') trim(self%kind), self%patch%id, self%atom%n(1,1,1,3), self%atom%n(1,1,self%n(3),3)
+    write(*,'(A10, ES18.7, A10, 3ES18.7)') 'Maxerr=', self%maxerr, ', global=', global_maxerr
+
+    if ((global_maxerr > 0) .and. global_maxerr < convlim) then
+      print *, 'Converged!'
+      self%converged = .true.
+      call self%set(bits%frozen)
+    endif
   
     self%iter = self%iter + 1
   
@@ -235,19 +245,19 @@ module atom_patch_mod
     ! ----------------------------------------------------------------------------
     atom => self%atom
 
-    maxerr   = 0.0d0
+    maxerr = 0.0d0
 
     do k=1, self%n(3)
       do j=1, self%n(2)
         do i=1, self%n(1)
-          temp  => self%temp (i,j,k)
-          ne    => self%ne   (i,j,k)
-          totn  => atom%totn (i,j,k)
-          nh    => self%nh   (i,j,k,:)
-          n     => atom%n    (i,j,k,:)
-          nstar => atom%nstar(i,j,k,:)
-          Gij   => gamma_ij  (i,j,k,:)
-          Gji   => gamma_ji  (i,j,k,:)
+          temp  => self%temp  (i,j,k)
+          ne    => self%ne    (i,j,k)
+          totn  => atom%totn  (i,j,k)
+          nh    => self%nh    (i,j,k,:)
+          n     => atom%n     (i,j,k,:)
+          nstar => atom%nstar (i,j,k,:)
+          Gij   => gamma_ij   (i,j,k,:)
+          Gji   => gamma_ji   (i,j,k,:)
 
           call atom%solve_stat_equilibrium(temp, ne, totn, n, nstar, nh, Gij, Gji, cswitch)
 
@@ -263,6 +273,15 @@ module atom_patch_mod
         end do
       end do
     end do
+
+    if (global_maxerr == self%maxerr) then
+      self%maxerr = maxval(abs(maxerr))
+      global_maxerr = self%maxerr
+    else
+      self%maxerr = maxval(abs(maxerr))
+      global_maxerr = max(global_maxerr, self%maxerr)
+    endif
+
   END SUBROUTINE update_populations
 
   !===============================================================================

@@ -801,6 +801,9 @@ SUBROUTINE save_radiation_output(self)
   write(lunit) Inu
   call self%save_meta4(filename, pack(Inu, .true.), shape(Inu))
   close(lunit)
+
+  call self%set(bits%frozen)
+  
   call trace%end()
 END SUBROUTINE save_radiation_output
 
