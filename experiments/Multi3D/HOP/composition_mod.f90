@@ -19,6 +19,7 @@ module composition_mod
         real(dp), dimension(:,:,:), allocatable :: temp, ne, rho
         real(dp), dimension(:,:,:), allocatable :: EK_over_temp, pe, dxi, fe, toth, saha
         real(dp), dimension(:,:,:), allocatable :: teta, eh, pg, E, xfakh, ro
+        real(dp), dimension(:,:,:,:), allocatable :: abslte, sumsca
     contains
         procedure :: init => injon
         procedure :: init_molecules
@@ -29,6 +30,7 @@ module composition_mod
         procedure :: trans_by_id
         procedure :: ion_by_id
         procedure :: absorption
+        procedure :: scattering
         procedure :: reassign_pointer
         procedure :: get_totn
         procedure :: get_nhyd
@@ -714,7 +716,7 @@ contains
         call trace_end ()
     end subroutine load_state_variables
 
-    subroutine absorption(self, nu, Jnu, chi, eta)
+    subroutine absorption(self, nu, chi)
         !use phys_mod, only:planck
         class(composition_type), target :: self
         type(transition_type), pointer :: trans
@@ -722,36 +724,36 @@ contains
         type(molec_type), pointer :: H2
         type(ion_type), pointer :: H0
         real(dp), dimension(:),     intent(in) :: nu
-        real(4), dimension(:,:,:,:), intent(in) :: Jnu
-        real(4), dimension(:,:,:,:), intent(inout) :: chi, eta
+        real(4), dimension(:,:,:,:), intent(inout) :: chi
         real(dp), dimension(:,:,:), allocatable :: fakt, abso, hrest, abfakray, ab
         real(dp), dimension(:,:,:), allocatable :: fakray, h2ray, els, rayh, rayh2
-        real(dp), dimension(:,:,:,:), allocatable :: abslte, sumsca
         real(dp), dimension(:), allocatable :: lam
         real(dp) :: xray2
-        integer :: i, f, nf
+        integer :: i, f, nf, nx, ny, nz
 
         call trace_begin ('composition_type%absorption')
 
         nf = size(nu, 1)
+        nx = size(self%temp, 1)
+        ny = size(self%temp, 2)
+        nz = size(self%temp, 3)
+
         lam = cc / nu * 1e8
 
-        if(size(Jnu, 4) /= nf) then
-            print *, 'nu and Jnu do not have the same number of frequencies. Stopping...'
-            stop
-        endif
+        allocate(self%abslte(nx,ny,nz,nf))
+        allocate(self%sumsca(nx,ny,nz,nf))
 
-        allocate(abslte, sumsca, mold=dble(Jnu))
-        abslte = 0
+        self%abslte = 0
+        self%sumsca = 0 ! line list not implemented yet
 
         do i=1, size(self%trans)
             trans => self%trans(i)
             select case (trim(trans%key))
             case ('H BF')
-                call trans%add_absorption(abslte, lam, self%temp, self%EK_over_temp, self%teta, &
+                call trans%add_absorption(self%abslte, lam, self%temp, self%EK_over_temp, self%teta, &
                                           self%pe, self%ro, self%dxi, self%xfakh)
             case ('H FF')
-                call trans%add_absorption(abslte, lam, self%temp, self%EK_over_temp, self%teta, &
+                call trans%add_absorption(self%abslte, lam, self%temp, self%EK_over_temp, self%teta, &
                                           self%pe, self%ro, self%dxi, self%xfakh)
             end select
         end do
@@ -761,7 +763,7 @@ contains
         hrest = fakt * (exp(31.30364*self%teta/(15.5**2) - 2.3026 * self%dxi * self%teta) - 1)
 
         do f=1, nf
-            abslte(:,:,:,f) = (abslte(:,:,:,f) + hrest) * lam(f)**3
+            self%abslte(:,:,:,f) = (self%abslte(:,:,:,f) + hrest) * lam(f)**3
         end do
 
         ! all continua above are multiplied by lam**3
@@ -775,14 +777,14 @@ contains
                 ! H BF and HFF have already been added
                 ! H- FF still to be added after multiplication of stim
             case default
-                call trans%add_absorption(abslte, lam, self%temp, self%EK_over_temp, self%teta, &
+                call trans%add_absorption(self%abslte, lam, self%temp, self%EK_over_temp, self%teta, &
                                           self%pe, self%ro, self%dxi, self%xfakh)
             end select
         end do
 
         do f=1, nf
             !stim(:,:,:, f) = 1 - exp(- h_e * nu(f) * self%EK_over_temp)
-            abslte(:,:,:, f) = abslte(:,:,:, f) * (1 - exp(-28556.*self%teta/(CC/nu(f)*1e8)))
+            self%abslte(:,:,:, f) = self%abslte(:,:,:, f) * (1 - exp(-28556.*self%teta/(CC/nu(f)*1e8)))
         end do
 
         ! all continua above are multiplied by stim
@@ -790,7 +792,7 @@ contains
 
         ! H- FF absorption is added without stim factor
         call self%trans_by_id('H- FF', trans)
-        call trans%add_absorption(abslte, lam, self%temp, self%EK_over_temp, self%teta, &
+        call trans%add_absorption(self%abslte, lam, self%temp, self%EK_over_temp, self%teta, &
                                   self%pe, self%ro, self%dxi, self%xfakh)
 
         ! electron scattering
@@ -803,11 +805,9 @@ contains
         call self%element_by_id('H', H)
         H0 => H%ions(1)
         fakray = 2 / H0%part * H0%rho_per_h
-        
-        sumsca = 0 ! line list not implemented yet
 
         do f=1, nf
-            sumsca(:,:,:,f) = sumsca(:,:,:,f) + els
+            self%sumsca(:,:,:,f) = self%sumsca(:,:,:,f) + els
 
             if (lam(f) >= 911) then
                 if (lam(f) < 1026) then
@@ -819,19 +819,37 @@ contains
                 rayh  = xray2*xray2*(5.799e-13 + xray2*(1.422e-6 + xray2*2.784)) * fakray
                 rayh2 = xray2*xray2*( 8.14e-13 + xray2*( 1.28e-6 + xray2*1.61 )) * h2ray
     
-                ! add sumsca to sumsca from lines
-                sumsca(:,:,:,f) = sumsca(:,:,:,f) + rayh + rayh2
+                ! add self%sumsca to self%sumsca from lines
+                self%sumsca(:,:,:,f) = self%sumsca(:,:,:,f) + rayh + rayh2
             endif
         end do
 
         ! BACKGROUND OPACITY
         
         do f=1, nf
-            chi(:,:,:,f) = real((abslte(:,:,:,f) + sumsca(:,:,:,f)) * self%rho)
-            eta(:,:,:,f) = real((abslte(:,:,:,f)*planck(nu(f), self%temp) + sumsca(:,:,:,f)*Jnu(:,:,:,f)) * self%rho)
+            chi(:,:,:,f) = real((self%abslte(:,:,:,f) + self%sumsca(:,:,:,f)) * self%rho)
         end do
         call trace_end ()
     end subroutine absorption
+
+    subroutine scattering (self, nu, Jnu, eta)
+        class(composition_type), target :: self
+        real(dp), dimension(:),     intent(in) :: nu
+        real(4), dimension(:,:,:,:), intent(in) :: Jnu
+        real(4), dimension(:,:,:,:), intent(inout) :: eta
+        integer :: f, nf
+
+        nf = size(nu, 1)
+
+        if(size(Jnu, 4) /= nf) then
+            print *, 'nu and Jnu do not have the same number of frequencies. Stopping...'
+            stop
+        endif
+
+        do f=1, nf
+            eta(:,:,:,f) = real((self%abslte(:,:,:,f)*planck(nu(f), self%temp) + self%sumsca(:,:,:,f)*Jnu(:,:,:,f)) * self%rho)
+        end do
+    end subroutine scattering
 
     subroutine get_totn(self, id, abund, totn)
         class(composition_type), target :: self

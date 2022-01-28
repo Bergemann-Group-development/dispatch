@@ -24,14 +24,14 @@
 
 ! -- Parameters defining the run -----------------------------------------------
 !&io_params          do_trace=t omp_trace=f /
-&atmos_params       verbose=1 atmos_file='./input_multi3d/atmos/atmos.sun_MARCS' npatches=2 /
+&atmos_params       verbose=1 atmos_file='./input_multi3d/atmos/atmos.sun_MARCS' npatches=1 /
 &boundary_params    verbose=0 condition=1 /
 &download_params    check_filled=F verbose=0 /
 &atom_params        atom_file='./input_multi3d/atoms/atom.ba06' qnorm=10.0 convlim=1d-2 /
 !&atom_params        atom_file='./input_multi3d/atoms/atom.o41f' qnorm=10.0 /
 &radiation_params   save_output=T /
-&experiment_params  n_nu=10 maxiter=50 verbose=0 /
+&experiment_params  n_nu=1 maxiter=30 verbose=2 ilambd=0 /
 &timer_params       sec_per_report = 1000 /
-&task_list_params   verbose = 0 /
-&task_params        verbose = 0 /
+&task_list_params   verbose=0 /
+&task_params        verbose=0 /
 &halo_params        check_filled=F /

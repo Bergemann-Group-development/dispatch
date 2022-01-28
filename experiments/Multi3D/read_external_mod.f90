@@ -106,6 +106,10 @@ SUBROUTINE init(self, task_list, name)
     endif
   end do
 
+  io%end_time = (patch%maxiter + patch%ilambd) * patch%dtime
+  io%print_every = huge(1)
+  timer%dead_mans_hand = huge(1.0)
+
   !-----------------------------------------------------------------------------
   ! Generate nbor lists and set status bits for all tasks
   !-----------------------------------------------------------------------------

@@ -34,14 +34,15 @@ MODULE experiment_mod
     class(opacity_t), pointer, dimension(:,:) :: opac
     class(radiation_t), pointer, dimension(:) :: out_rad
     class(radiation_t), pointer, dimension(:,:) :: rt_patches
-    class(atom_patch_t), pointer :: atom_task
+    class(atom_patch_t), pointer :: atom_patch
     real(8), allocatable, dimension(:,:,:) :: ne, temp, rho, vx, vy, vz
     real(8), allocatable, dimension(:,:,:,:) :: nh
-    integer :: idx_pe=6, n_mu, n_phi, n_nu, iter=0, maxiter=1
+    integer :: idx_pe=6, n_mu, n_phi, n_nu, iter=0, maxiter, ilambd
   contains
     procedure:: pre_init
     procedure:: init
     procedure:: update
+    procedure:: post_update
     procedure:: init_level
     procedure:: bndries
     procedure:: pre_init_composition
@@ -53,6 +54,7 @@ MODULE experiment_mod
     procedure:: freeze_mhd
     procedure:: nbor_relations => experiment_nbor_relations
   end type
+  
 CONTAINS
 
 !===============================================================================
@@ -75,7 +77,7 @@ END SUBROUTINE pre_init
 SUBROUTINE init (self)
   class(experiment_t):: self
   integer, save:: itimer=0
-  real(8), save:: timestep=0.01d0
+  real(8), save:: timestep=1.d0
   !----------------------------------------------------------------------------
   call trace%begin('experiment_mod::init', itimer=itimer)
 !  call self%solver_t%init
@@ -83,7 +85,11 @@ SUBROUTINE init (self)
 
   allocate(self%nh(self%n(1), self%n(2), self%n(3), 6))
 
-  self%dtime = timestep
+  self%time     = 0
+  self%dtime    = timestep
+  self%out_next = huge(1.0)
+
+  self%kind = 'mhd_patch'
 
   call trace%end (itimer=itimer)
 END SUBROUTINE init
@@ -115,12 +121,29 @@ SUBROUTINE update (self)
 
   if (self%iter == 0) then
     call self%init_composition()
-    call self%freeze_mhd()
   endif
 
-  self%iter = self%iter + 1
+  call self%post_update()
   call trace%end (itimer)
 END SUBROUTINE update
+
+!===============================================================================
+SUBROUTINE post_update (self)
+  class(experiment_t):: self
+  !----------------------------------------------------------------------------
+  if (self%iter == 0) then
+    self%finished = .true.
+    self%time = io%end_time
+    call self%set(bits%frozen)
+  endif
+  
+  self%iter = self%iter + 1
+
+  if (self%verbose > 1) then
+      write(*,'(F5.1, L2, A12, I4, 12(ES15.7))') self%time, self%finished, trim(self%kind), self%id, self%mem(1,1,1,:,1,1)
+      write(*,'(23X, 12(ES15.7))') self%mem(1,1,self%gn(3),:,1,1)
+  endif
+END SUBROUTINE post_update
 
 !===============================================================================
 SUBROUTINE init_level (self)
@@ -184,16 +207,16 @@ SUBROUTINE init_sub_patches(self)
   class (experiment_t), target :: self
   logical, save :: first_time=.true.
   class(m3d_t), pointer :: patch
-  class(atom_patch_t), pointer :: atom_task
+  class(atom_patch_t), pointer :: atom_patch
   class(opacity_t), pointer, dimension(:) :: back_opac
   class(opacity_t), pointer, dimension(:,:) :: sum_opac
   class(radiation_t), pointer, dimension(:) :: out_rad
   class(radiation_t), pointer, dimension(:,:) :: rt_patches
   integer :: iostat, n_omega, n
   real, dimension(:), allocatable:: mu, w_mu, mux, muy, muz
-  integer, save :: n_nu=1, n_mu=1, n_phi=4, verbose=0, maxiter=1
+  integer, save :: n_nu=1, n_mu=1, n_phi=4, verbose=0, maxiter=1, ilambd=3
   integer :: i, dir, i_phi, i_mu, p
-  namelist /experiment_params/ n_nu, n_mu, n_phi, maxiter, verbose
+  namelist /experiment_params/ n_nu, n_mu, n_phi, maxiter, verbose, ilambd
   !-----------------------------------------------------------------------------
   if (first_time) then
     rewind (io%input)
@@ -206,7 +229,8 @@ SUBROUTINE init_sub_patches(self)
     write (io%namelist, experiment_params)
     first_time = .false.
   endif
-  
+
+  self%ilambd  = ilambd
   self%maxiter = maxiter
   self%verbose = verbose
 
@@ -222,17 +246,16 @@ SUBROUTINE init_sub_patches(self)
   muy = [ 0.57735026,  0.57735026, -0.57735026, -0.57735026]
   w_mu = 1
 
-  allocate(atom_task)
-  allocate(atom_task%opac(0:n_omega, n_nu))
-  allocate(atom_task%rate(n_omega, n_nu))
-  self%atom_task => atom_task
+  allocate(atom_patch)
+  allocate(atom_patch%opac(0:n_omega, n_nu))
+  allocate(atom_patch%rate(n_omega, n_nu))
+  self%atom_patch => atom_patch
 
-  atom_task%maxiter = self%maxiter !default value
-  call self%link_sub_task(atom_task)
-  call atom_task%pre_init()
-  call atom_task%init()
-  call atom_task%append_to_task_list(self%task_list)
-  self%sp => atom_task%sp
+  call self%link_sub_task(atom_patch)
+  call atom_patch%pre_init()
+  call atom_patch%init()
+  call atom_patch%append_to_task_list(self%task_list)
+  self%sp => atom_patch%sp
 
   allocate(back_opac(n_nu))
   self%back_opac => back_opac
@@ -252,8 +275,8 @@ SUBROUTINE init_sub_patches(self)
       rt_patches(0,n)%kind = 'mean_rad'
       call self%link_and_init(rt_patches(0,n), n, n_nu)
 
-      atom_task%opac(0,n)%kind = 'cont_opac'
-      call self%link_and_init(atom_task%opac(0,n), n, n_nu)
+      atom_patch%opac(0,n)%kind = 'cont_opac'
+      call self%link_and_init(atom_patch%opac(0,n), n, n_nu)
 
       back_opac(n)%kind = 'back_opac'
       call self%link_and_init(back_opac(n), n, n_nu)
@@ -266,7 +289,7 @@ SUBROUTINE init_sub_patches(self)
         do dir=-1,1,2
           do n=1, n_nu
             if (p==4) then
-              patch => atom_task%opac(i,n)
+              patch => atom_patch%opac(i,n)
               patch%kind = 'line_opac'
             elseif (p==3) then
               patch => sum_opac(i,n)
@@ -275,7 +298,7 @@ SUBROUTINE init_sub_patches(self)
               patch => rt_patches(i,n)
               patch%kind = 'angle_rad'
             elseif (p==1) then
-              patch => atom_task%rate(i,n)
+              patch => atom_patch%rate(i,n)
               patch%kind = 'rad_rate'
             endif
 
@@ -328,22 +351,22 @@ SUBROUTINE link_and_init (self, m3d, n, n_nu)
         call m3d%composition%reassign_pointer()
         m3d%mean_rad => self%rt_patches(0,n)
       case ('cont_opac')
-        m3d%atom => self%atom_task%atom
+        m3d%atom => self%atom_patch%atom
       case ('line_opac')
-        m3d%atom => self%atom_task%atom
+        m3d%atom => self%atom_patch%atom
         m3d%vproj = m3d%vec(1)*self%vx + m3d%vec(2)*self%vy + m3d%vec(3)*self%vz
       case ('sum_opac')
         m3d%back_opac => self%back_opac(n)
-        m3d%cont_opac => self%atom_task%opac(0,n)
-        m3d%line_opac => self%atom_task%opac(m3d%i_omega,n)
+        m3d%cont_opac => self%atom_patch%opac(0,n)
+        m3d%line_opac => self%atom_patch%opac(m3d%i_omega,n)
         m3d%rad => self%rt_patches(m3d%i_omega,n)
       end select
 
     class is (rate_patch_t)
-      m3d%atom => self%atom_task%atom
+      m3d%atom => self%atom_patch%atom
       m3d%rad  => self%rt_patches(m3d%i_omega,n)
-      m3d%cont_opac => self%atom_task%opac(0,n)
-      m3d%line_opac => self%atom_task%opac(m3d%i_omega,n)
+      m3d%cont_opac => self%atom_patch%opac(0,n)
+      m3d%line_opac => self%atom_patch%opac(m3d%i_omega,n)
       m3d%vproj = m3d%vec(1)*self%vx + m3d%vec(2)*self%vy + m3d%vec(3)*self%vz
 
     class is (radiation_t)
@@ -383,7 +406,16 @@ SUBROUTINE link_sub_task (self, task)
     task%rho     = self%rho 
     task%ne      = self%ne
     task%sp      = self%sp
-    task%maxiter = self%maxiter
+
+    select case (task%kind)
+    case ('back_opac', 'mean_rad')
+      task%maxiter = self%ilambd
+    case ('out_rad')
+      task%maxiter = self%ilambd + self%maxiter
+    case default
+      task%maxiter = self%maxiter
+    end select
+
   class is (atom_patch_t)
     task%patch => self
     task%temp  => self%temp
@@ -391,6 +423,8 @@ SUBROUTINE link_sub_task (self, task)
     task%ne    => self%ne
     task%nh =>  self%nh
     task%composition => self%composition
+    task%ilambd = self%ilambd
+    task%maxiter = self%maxiter
   end select
 
   task%verbose = self%verbose
@@ -403,11 +437,6 @@ SUBROUTINE freeze_mhd (self)
   !-----------------------------------------------------------------------------
   call self%set(bits%frozen)
   self%time = io%end_time
-
-  !do i=1, size(self%back_opac)
-  !  !call self%back_opac(i)%set(bits%frozen)
-  !  self%back_opac(i)%time = huge(1.0)
-  !end do
 END SUBROUTINE
 
 !===============================================================================

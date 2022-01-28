@@ -123,8 +123,6 @@ SUBROUTINE opacity_update (self)
   ! ----------------------------------------------------------------------------
   chi => self%authority_mem(:,:,:,:, self%it, self%i_chi)
   eta => self%authority_mem(:,:,:,:, self%it, self%i_eta)
-  chi = 0
-  eta = 0
 
   select case (self%kind)
   case ('back_opac')
@@ -137,16 +135,7 @@ SUBROUTINE opacity_update (self)
     call self%sum_opac_update()
   end select
 
-  self%iter = self%iter + 1
-
-  if (self%verbose > 1) then
-    select case (self%dir)
-    case(0, -1)
-      write(*,'(A10, 3(I4), 3(ES18.7))') trim(self%kind), self%patch%id, self%i_omega, self%i_nu, chi(1,1,1,1), eta(1,1,1,1)
-    case(1)
-      write(*,'(A10, 3(I4), 3(ES18.7))') trim(self%kind), self%patch%id, self%i_omega, self%i_nu, chi(1,1,self%n(3),1), eta(1,1,self%n(3),1)
-    end select
-  endif
+  call self%post_update()
 END SUBROUTINE opacity_update
 
 !===============================================================================
@@ -161,12 +150,14 @@ SUBROUTINE back_opac_update (self, chi, eta)
   Jold => self%mean_rad%authority_mem(:,:,:,:,self%mean_rad%it,1)
 
   if (self%iter == 0) then
+    chi = 0
+    eta = 0
     call self%init_composition()
-    !call self%set(bits%frozen)
+    call self%composition%absorption(nu, chi)
   endif
 
-  if (self%patch%is_set(bits%frozen)) self%time = huge(1.0)
-  call self%composition%absorption(nu, Jold, chi, eta)
+  call self%composition%scattering(nu, Jold, eta)
+
   call trace%end()
 END SUBROUTINE back_opac_update
 
@@ -176,6 +167,8 @@ SUBROUTINE cont_opac_update (self, chi, eta)
   real(4), dimension(:,:,:,:), intent(inout) :: chi, eta
   ! ----------------------------------------------------------------------------
   call trace_begin('opacity_t%cont_opac_update')
+  chi = 0
+  eta = 0
   call self%atom%add_continuum_opacities(self%fs, self%fe, self%sp%nu, self%temp, chi, eta)
   call trace%end()
 END SUBROUTINE cont_opac_update
@@ -186,6 +179,8 @@ SUBROUTINE line_opac_update (self, chi, eta)
   real(4), dimension(:,:,:,:), intent(inout) :: chi, eta
   ! ----------------------------------------------------------------------------
   call trace_begin('opacity_t%line_opac_update')
+  chi = 0
+  eta = 0
   if (self%iter == 0) then
     call self%atom%compute_wphi(self%fs, self%fe, self%sp%nu, self%temp, self%vproj, self%wphi)
   endif
@@ -206,6 +201,12 @@ SUBROUTINE sum_opac_update (self)
   mem(:,:,:,:,self%i_snu) = mem(:,:,:,:,self%i_eta) / mem(:,:,:,:,self%i_chi)
   mem => self%mem(:,:,:,:,self%it,:)
   call self%boundaries%mirror(mem)
+
+  if (self%back_opac%finished .and. self%cont_opac%finished .and. self%line_opac%finished) then
+    self%finished = .true.
+    self%time = io%end_time
+  endif
+
   call trace%end()
 END SUBROUTINE sum_opac_update
 

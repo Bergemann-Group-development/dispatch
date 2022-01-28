@@ -51,6 +51,7 @@ module m3d_patch_mod
   contains
     procedure :: pre_init => m3d_pre_init
     procedure :: init => m3d_init
+    procedure :: post_update => m3d_post_update
     procedure :: nbor_relations => m3d_nbor_relations
     procedure :: bndries
     procedure :: m3d_name
@@ -156,6 +157,7 @@ SUBROUTINE m3d_init (self)
   self%dt_fixed = self%patch%dtime
   self%dtime    = self%patch%dtime
   self%dt       = self%patch%dtime
+  self%out_next = self%patch%out_next
 
   ! ----------------------------------------------------------------------------
   ! Do not check density or validate with it. This is rather important to be set
@@ -173,6 +175,23 @@ SUBROUTINE m3d_init (self)
   self%pervolume = .false.
   self%unsigned  = .true.
 END SUBROUTINE m3d_init
+
+!===============================================================================
+SUBROUTINE m3d_post_update (self)
+  class(m3d_t) :: self
+  !-----------------------------------------------------------------------------
+  if (self%iter == self%maxiter) then
+    self%finished = .true.
+    self%time = io%end_time
+  endif
+
+  self%iter = self%iter + 1
+
+  if (self%verbose > 1) then
+      write(*,'(F5.1, L2, A12, 3(I4), 6(ES15.7))') self%time, self%finished, trim(self%kind), self%patch%id, self%i_nu, self%i_omega, &
+      self%authority_mem(1,1,1,1,1,:), self%authority_mem(1,1,self%n(3),1,1,:)
+  endif
+END SUBROUTINE m3d_post_update
 
 !===============================================================================
 SUBROUTINE set_freq_indices (self, n, nnu, n_nu)

@@ -93,6 +93,10 @@ module rate_patch_mod
     ! ----------------------------------------------------------------------------
     call trace_begin('rate_patch_t%update')
 
+    if (self%finished) then
+      return
+    endif
+
     fs = self%fs
     fe = self%fe
 
@@ -112,17 +116,7 @@ module rate_patch_mod
     call self%atom%add_all_gammas(fs, fe, self%temp, self%vproj, Ieff, self%rad%Psi, &
                                   chi_l, chi_c, eta_l, eta_c, gamma_ij, gamma_ji)
   
-    self%iter = self%iter + 1
-
-    if (self%verbose > 1) then
-      select case (self%dir)
-      case(-1)
-        write(*,'(A10, 3(I4), 3(ES18.7))') trim(self%kind), self%patch%id, self%i_omega, self%i_nu, gamma_ij(1,1,1,4), gamma_ji(1,1,1,4)
-      case(1)
-        write(*,'(A10, 3(I4), 3(ES18.7))') trim(self%kind), self%patch%id, self%i_omega, self%i_nu, gamma_ij(1,1,self%n(3),4), gamma_ji(1,1,self%n(3),4)
-      end select
-    endif
-  
+    call self%post_update()
     call trace%end()
   END SUBROUTINE rate_patch_update
   

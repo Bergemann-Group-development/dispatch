@@ -48,13 +48,14 @@ module atom_patch_mod
       real(8), dimension(:,:,:), pointer :: ne   => null()
       real(8), dimension(:,:,:,:), pointer :: nh => null()
       real(8) :: t_offset=0.1d0, maxerr=huge(1.0)
-      integer :: iter=0, maxiter=0
-      logical :: converged=.false.
+      integer :: iter=0, maxiter=0, ilambd
     contains
-      procedure :: pre_init => atom_task_pre_init
-      procedure :: init => atom_task_init
-      procedure :: update => atom_task_update
-      procedure :: nbor_relations => atom_task_nbor_relations
+      procedure :: pre_init => atom_patch_pre_init
+      procedure :: init => atom_patch_init
+      procedure :: update => atom_patch_update
+      procedure :: post_update => atom_patch_post_update
+      procedure :: finish => atom_patch_finish
+      procedure :: nbor_relations => atom_patch_nbor_relations
       procedure pre_init_atom
       procedure init_atom
       procedure append_to_task_list
@@ -63,7 +64,6 @@ module atom_patch_mod
       procedure normalize_phi
       procedure sum_rates
       procedure update_populations
-      procedure freeze_atom
     end type atom_patch_t
 
     real(8), public:: global_maxerr=0
@@ -74,7 +74,7 @@ module atom_patch_mod
   contains
     
   !===============================================================================
-  SUBROUTINE atom_task_pre_init (self)
+  SUBROUTINE atom_patch_pre_init (self)
     class(atom_patch_t), target:: self
     ! ----------------------------------------------------------------------------
     call self%gpatch_t%pre_init()
@@ -98,10 +98,10 @@ module atom_patch_mod
     self%llc_nat    = self%patch%llc_nat
     self%status     = self%patch%status
     self%periodic   = self%patch%periodic
-  END SUBROUTINE atom_task_pre_init
+  END SUBROUTINE atom_patch_pre_init
   
   !===============================================================================
-  SUBROUTINE atom_task_init (self)
+  SUBROUTINE atom_patch_init (self)
     class(atom_patch_t) :: self
     !real(8) :: grace
     integer :: i
@@ -115,6 +115,7 @@ module atom_patch_mod
     self%dt_fixed = self%patch%dtime
     self%dtime    = self%patch%dtime
     self%dt       = self%patch%dtime
+    self%out_next = self%patch%out_next
 
     ! ----------------------------------------------------------------------------
     ! Do not check density or validate with it. This is rather important to be set
@@ -125,7 +126,7 @@ module atom_patch_mod
     !grace = 0.1d0
   
     self%time = self%patch%time + self%t_offset*self%dtime
-  END SUBROUTINE atom_task_init
+  END SUBROUTINE atom_patch_init
 
   !===============================================================================
   SUBROUTINE pre_init_atom (self)
@@ -160,7 +161,7 @@ module atom_patch_mod
 
     self%atom = atom
     self%sp   = sp
-    self%maxiter = maxiter + 1 ! we start from zeroth iteration
+    self%maxiter = maxiter
 
     allocate(self%atom%C(atom%nlevel, atom%nlevel))
     allocate(self%atom%W(atom%nlevel, atom%nlevel))
@@ -181,17 +182,20 @@ module atom_patch_mod
   END SUBROUTINE init_atom
 
   !===============================================================================
-  SUBROUTINE atom_task_update (self)
+  SUBROUTINE atom_patch_update (self)
     class(atom_patch_t) :: self
     real(8), dimension(:,:,:,:), allocatable :: gamma_ij, gamma_ji
     character(len=64) :: text
-    real(8), save :: time=0
     ! ----------------------------------------------------------------------------
     call trace_begin('atom_patch_t%update')
 
+    write(text,'(A,I2,A,I2,A)') 'Iteration ', self%iter, '/', self%maxiter, '.'
+    call io%header (text)
+
     if (self%iter == 0) then
-      time = wallclock()
       call self%init_atom()
+      self%time = self%time + self%dtime*self%ilambd
+      self%rate%time = self%rate%time + self%dtime*self%ilambd
     elseif (self%iter == 1) then
       call self%normalize_phi()
     endif
@@ -203,32 +207,40 @@ module atom_patch_mod
       call self%sum_rates(gamma_ij, gamma_ji)
       call self%update_populations(gamma_ij, gamma_ji)
     endif
+  
+    call self%post_update()
+    call trace%end()
+  END SUBROUTINE atom_patch_update
 
-    if (self%iter < self%maxiter) then
-      write(text,'(A,I2,A,I2,A)') 'Iteration ', self%iter, '/', self%maxiter-1, '.'
-      call io%header (text)
-
-    elseif(self%iter == self%maxiter) then
-      write(text,'(A,I2,A,A)') 'End of iteration ', self%iter-1, '.'
-      call io%header (text)
-      call self%freeze_atom()
-      print *, 'Dispatch finished after ', wallclock() - time, ' seconds'
-      stop
-    endif
-
-    write(*,'(A10, 1(I4), 3(ES18.7))') trim(self%kind), self%patch%id, self%atom%n(1,1,1,3), self%atom%n(1,1,self%n(3),3)
-    write(*,'(A10, ES18.7, A10, 3ES18.7)') 'Maxerr=', self%maxerr, ', global=', global_maxerr
+  !===============================================================================
+  SUBROUTINE atom_patch_post_update (self)
+    class(atom_patch_t) :: self
+    ! ----------------------------------------------------------------------------
+    self%iter = self%iter + 1
 
     if ((global_maxerr > 0) .and. global_maxerr < convlim) then
       print *, 'Converged!'
-      self%converged = .true.
-      call self%set(bits%frozen)
+      call self%finish()
     endif
-  
-    self%iter = self%iter + 1
-  
-    call trace%end()
-  END SUBROUTINE atom_task_update
+
+    write(*,'(F5.1, L2, A12, 1(I4), 3(ES15.7))') self%time, self%finished, trim(self%kind), self%patch%id, self%atom%n(1,1,1,3), self%atom%n(1,1,self%n(3),3)
+    write(*,'(A19, ES19.7, A10, 3ES15.7)') 'Maxerr =', self%maxerr, ', global =', global_maxerr
+    if (self%verbose > 1) write(*,'(1X, A80)') '................................................................................'
+
+  END SUBROUTINE atom_patch_post_update
+
+  !===============================================================================
+  SUBROUTINE atom_patch_finish (self)
+    class(atom_patch_t) :: self
+    integer :: i, j
+    ! ----------------------------------------------------------------------------
+    self%finished = .true.
+    self%rate%finished = .true.
+    self%opac%finished = .true.
+    self%time = io%end_time
+    self%rate%time = io%end_time
+    self%opac%time = io%end_time
+  END SUBROUTINE atom_patch_finish
 
   !===============================================================================
   SUBROUTINE update_populations (self, gamma_ij, gamma_ji)
@@ -332,7 +344,7 @@ module atom_patch_mod
   END SUBROUTINE
   
   !===============================================================================
-  SUBROUTINE atom_task_nbor_relations(self, another, needed, needs_me, download)
+  SUBROUTINE atom_patch_nbor_relations(self, another, needed, needs_me, download)
     class(atom_patch_t) :: self
     class(task_t), pointer :: another         ! another task in the list
     logical :: needed, needs_me, download    ! Is the other task: needed, 
@@ -362,7 +374,7 @@ module atom_patch_mod
     endif
   
     call trace%end()
-  END SUBROUTINE atom_task_nbor_relations
+  END SUBROUTINE atom_patch_nbor_relations
 
   !===============================================================================
   SUBROUTINE append_to_task_list(self, task_list)
@@ -398,26 +410,4 @@ module atom_patch_mod
       self%level = 1
     end if
   END SUBROUTINE init_level
-
-  !===============================================================================
-  SUBROUTINE freeze_atom (self)
-    class(atom_patch_t):: self
-    integer :: i_nu, i_omega
-    !-----------------------------------------------------------------------------
-    call self%set(bits%frozen)
-    self%time = 0 !self%patch%time + self%t_offset
-
-    do i_nu=1, size(self%rate, 2)
-      call self%opac(0, i_nu)%set(bits%frozen)
-      self%opac(0, i_nu)%time = 0 !self%patch%time + self%opac(0, i_nu)%t_offset
-
-      do i_omega=1, size(self%rate, 1)
-        call self%opac(i_omega, i_nu)%set(bits%frozen)
-        call self%rate(i_omega, i_nu)%set(bits%frozen)
-        self%opac(i_omega, i_nu)%time = 0 !self%patch%time + self%opac(i_omega, i_nu)%t_offset
-        self%rate(i_omega, i_nu)%time = 0 !self%patch%time + self%rate(i_omega, i_nu)%t_offset
-      end do
-    end do
-  END SUBROUTINE freeze_atom
-  
   end module

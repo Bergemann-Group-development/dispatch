@@ -156,7 +156,10 @@ SUBROUTINE radiation_init (self)
     self%ray = self%rays(1)
 
     self%t_offset = 0.6d0
-  case ('mean_rad', 'out_rad')
+  case ('mean_rad')
+    self%t_offset = 0.8d0
+  case ('out_rad')
+    self%iter = self%maxiter
     self%t_offset = 0.8d0
   end select
 
@@ -180,7 +183,7 @@ SUBROUTINE radiation_update (self)
     if (save_output) call self%save_radiation_output()
   end select
 
-  self%iter = self%iter + 1
+  call self%post_update()
 END SUBROUTINE radiation_update
 
 !===============================================================================
@@ -243,15 +246,11 @@ SUBROUTINE Inu_update (self)
 
   self%Psi = self%Psi / chi
 
-  if (self%verbose > 1) then
-    if (self%dir > 0) then
-      write(*,'(A10, 3(I4), 3(ES18.7))') trim(self%kind), self%patch%id, self%i_omega, self%i_nu, &
-      self%mem(5,5,1,1,1,1), self%mem(5,5,self%ui(3),1,1,1)
-    else
-      write(*,'(A10, 3(I4), 3(ES18.7))') trim(self%kind), self%patch%id, self%i_omega, self%i_nu, &
-      self%mem(5,5,self%li(3),1,1,1), self%mem(5,5,self%gn(3),1,1,1)
-    endif
+  if (self%opac%finished) then
+    self%finished = .true.
+    self%time = io%end_time
   endif
+
   call trace%end()
 END SUBROUTINE Inu_update
 
@@ -274,9 +273,11 @@ SUBROUTINE Jnu_update (self)
 
   Jnu = Jnu / math%pi4
 
-  if (self%verbose > 1) then
-    write(*,'(A10, 3(I4), 3(ES18.7))') trim(self%kind), self%patch%id, self%i_omega, self%i_nu, Jnu(1,1,1,1), Jnu(1,1,self%n(3),1)
+  if (all(self%sheep%finished)) then
+    self%finished = .true.
+    self%time = io%end_time
   endif
+
   call trace%end()
 END SUBROUTINE Jnu_update
 
@@ -801,8 +802,6 @@ SUBROUTINE save_radiation_output(self)
   write(lunit) Inu
   call self%save_meta4(filename, pack(Inu, .true.), shape(Inu))
   close(lunit)
-
-  call self%set(bits%frozen)
   
   call trace%end()
 END SUBROUTINE save_radiation_output
