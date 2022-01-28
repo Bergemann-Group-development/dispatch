@@ -144,6 +144,7 @@ SUBROUTINE back_opac_update (self, chi, eta)
   real(4), dimension(:,:,:,:), intent(inout) :: chi, eta
   real(8), dimension(:), pointer :: nu
   real(4), dimension(:,:,:,:), pointer :: Jold
+  character(len=64) :: text
   ! ----------------------------------------------------------------------------
   call trace_begin('opacity_t%back_opac_update')
   nu   => self%sp%nu(self%fs:self%fe)
@@ -201,12 +202,6 @@ SUBROUTINE sum_opac_update (self)
   mem(:,:,:,:,self%i_snu) = mem(:,:,:,:,self%i_eta) / mem(:,:,:,:,self%i_chi)
   mem => self%mem(:,:,:,:,self%it,:)
   call self%boundaries%mirror(mem)
-
-  if (self%back_opac%finished .and. self%cont_opac%finished .and. self%line_opac%finished) then
-    self%finished = .true.
-    self%time = io%end_time
-  endif
-
   call trace%end()
 END SUBROUTINE sum_opac_update
 

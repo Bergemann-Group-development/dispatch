@@ -246,11 +246,6 @@ SUBROUTINE Inu_update (self)
 
   self%Psi = self%Psi / chi
 
-  if (self%opac%finished) then
-    self%finished = .true.
-    self%time = io%end_time
-  endif
-
   call trace%end()
 END SUBROUTINE Inu_update
 
@@ -272,11 +267,6 @@ SUBROUTINE Jnu_update (self)
   end do
 
   Jnu = Jnu / math%pi4
-
-  if (all(self%sheep%finished)) then
-    self%finished = .true.
-    self%time = io%end_time
-  endif
 
   call trace%end()
 END SUBROUTINE Jnu_update

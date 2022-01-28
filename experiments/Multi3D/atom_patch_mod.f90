@@ -48,7 +48,7 @@ module atom_patch_mod
       real(8), dimension(:,:,:), pointer :: ne   => null()
       real(8), dimension(:,:,:,:), pointer :: nh => null()
       real(8) :: t_offset=0.1d0, maxerr=huge(1.0)
-      integer :: iter=0, maxiter=0, ilambd
+      integer :: iter=0, maxiter=0, ilambd, n_nu, n_omega
     contains
       procedure :: pre_init => atom_patch_pre_init
       procedure :: init => atom_patch_init
@@ -122,8 +122,9 @@ module atom_patch_mod
     ! ----------------------------------------------------------------------------
     call self%set (bits%no_density)
     call self%set (bits%internal)
-  
-    !grace = 0.1d0
+
+    self%rate%maxiter = self%maxiter - 1
+    self%opac%maxiter = self%maxiter
   
     self%time = self%patch%time + self%t_offset*self%dtime
   END SUBROUTINE atom_patch_init
@@ -189,18 +190,24 @@ module atom_patch_mod
     ! ----------------------------------------------------------------------------
     call trace_begin('atom_patch_t%update')
 
-    write(text,'(A,I2,A,I2,A)') 'Iteration ', self%iter, '/', self%maxiter, '.'
-    call io%header (text)
-
     if (self%iter == 0) then
-      call self%init_atom()
-      self%time = self%time + self%dtime*self%ilambd
-      self%rate%time = self%rate%time + self%dtime*self%ilambd
-    elseif (self%iter == 1) then
-      call self%normalize_phi()
-    endif
+      write(text,'(A,I2,A,I2,A)') 'LTE Iteration .'
+      call io%header (text)
 
-    if (self%iter > 0) then
+      call self%init_atom()
+      self%dtime = self%dtime + self%dtime*self%ilambd
+      self%rate%time = self%rate%time + self%rate%dtime*self%ilambd
+      self%opac(:,:)%dtime = self%dtime
+    else
+      write(text,'(A,I2,A,I2,A)') 'Iteration ', self%iter, '/', self%maxiter, '.'
+      call io%header (text)
+
+      if (self%iter == 1) then
+        self%dtime = self%dt_fixed
+        self%opac(:,:)%dtime = self%opac%dt_fixed
+        call self%normalize_phi()
+      endif
+
       allocate(gamma_ij(self%n(1), self%n(2), self%n(3), self%atom%nrad))
       allocate(gamma_ji(self%n(1), self%n(2), self%n(3), self%atom%nrad))
 
@@ -216,17 +223,20 @@ module atom_patch_mod
   SUBROUTINE atom_patch_post_update (self)
     class(atom_patch_t) :: self
     ! ----------------------------------------------------------------------------
-    self%iter = self%iter + 1
+    write(*,'(F5.1, L2, A12, 1(I4), 3(ES15.7))') self%time, self%finished, trim(self%kind), self%patch%id, self%atom%n(1,1,1,3), self%atom%n(1,1,self%n(3),3)
+    write(*,'(A19, ES19.7, A10, 3ES15.7)') 'Maxerr =', self%maxerr, ', global =', global_maxerr
+    if (self%verbose > 1) write(*,'(1X, A80)') '................................................................................'
+
+    if (self%iter == self%maxiter) then
+      call self%finish()
+    endif
 
     if ((global_maxerr > 0) .and. global_maxerr < convlim) then
       print *, 'Converged!'
       call self%finish()
     endif
 
-    write(*,'(F5.1, L2, A12, 1(I4), 3(ES15.7))') self%time, self%finished, trim(self%kind), self%patch%id, self%atom%n(1,1,1,3), self%atom%n(1,1,self%n(3),3)
-    write(*,'(A19, ES19.7, A10, 3ES15.7)') 'Maxerr =', self%maxerr, ', global =', global_maxerr
-    if (self%verbose > 1) write(*,'(1X, A80)') '................................................................................'
-
+    self%iter = self%iter + 1
   END SUBROUTINE atom_patch_post_update
 
   !===============================================================================
@@ -235,11 +245,8 @@ module atom_patch_mod
     integer :: i, j
     ! ----------------------------------------------------------------------------
     self%finished = .true.
-    self%rate%finished = .true.
-    self%opac%finished = .true.
-    self%time = io%end_time
-    self%rate%time = io%end_time
-    self%opac%time = io%end_time
+    self%time = io%end_time + self%t_offset*self%dtime
+    call self%set(bits%frozen)
   END SUBROUTINE atom_patch_finish
 
   !===============================================================================

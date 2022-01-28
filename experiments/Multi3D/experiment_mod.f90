@@ -85,7 +85,7 @@ SUBROUTINE init (self)
 
   allocate(self%nh(self%n(1), self%n(2), self%n(3), 6))
 
-  self%time     = 0
+  self%time     = -1.0
   self%dtime    = timestep
   self%out_next = huge(1.0)
 
@@ -131,6 +131,11 @@ END SUBROUTINE update
 SUBROUTINE post_update (self)
   class(experiment_t):: self
   !----------------------------------------------------------------------------
+  if (self%verbose > 1) then
+      write(*,'(F5.1, L2, A12, I4, 12(ES15.7))') self%time, self%finished, trim(self%kind), self%id, self%mem(1,1,1,:,1,1)
+      write(*,'(23X, 12(ES15.7))') self%mem(1,1,self%gn(3),:,1,1)
+  endif
+
   if (self%iter == 0) then
     self%finished = .true.
     self%time = io%end_time
@@ -138,11 +143,6 @@ SUBROUTINE post_update (self)
   endif
   
   self%iter = self%iter + 1
-
-  if (self%verbose > 1) then
-      write(*,'(F5.1, L2, A12, I4, 12(ES15.7))') self%time, self%finished, trim(self%kind), self%id, self%mem(1,1,1,:,1,1)
-      write(*,'(23X, 12(ES15.7))') self%mem(1,1,self%gn(3),:,1,1)
-  endif
 END SUBROUTINE post_update
 
 !===============================================================================
@@ -250,6 +250,8 @@ SUBROUTINE init_sub_patches(self)
   allocate(atom_patch%opac(0:n_omega, n_nu))
   allocate(atom_patch%rate(n_omega, n_nu))
   self%atom_patch => atom_patch
+  atom_patch%n_omega = n_omega
+  atom_patch%n_nu = n_nu
 
   call self%link_sub_task(atom_patch)
   call atom_patch%pre_init()
@@ -335,6 +337,43 @@ SUBROUTINE init_sub_patches(self)
 END SUBROUTINE init_sub_patches
 
 !===============================================================================
+SUBROUTINE link_sub_task (self, task)
+  class(experiment_t), target :: self
+  class(task_t) :: task
+  !-----------------------------------------------------------------------------
+  select type (task)
+  class is (m3d_t)
+    task%patch => self
+    task%temp    = self%temp
+    task%rho     = self%rho 
+    task%ne      = self%ne
+    task%sp      = self%sp
+
+    select case (task%kind)
+    case ('back_opac')
+      ! LTE iteration counts as first lambda iteration
+      task%maxiter = max(0, self%ilambd - 1)
+    case ('mean_rad')
+      task%maxiter = max(0, self%ilambd - 2)
+    case ('out_rad', 'angle_rad', 'sum_opac')
+      task%maxiter = self%ilambd + self%maxiter
+    end select
+
+  class is (atom_patch_t)
+    task%patch => self
+    task%temp  => self%temp
+    task%rho   => self%rho 
+    task%ne    => self%ne
+    task%nh =>  self%nh
+    task%composition => self%composition
+    task%ilambd = self%ilambd
+    task%maxiter = self%maxiter
+  end select
+
+  task%verbose = self%verbose
+END SUBROUTINE link_sub_task
+
+!===============================================================================
 SUBROUTINE link_and_init (self, m3d, n, n_nu)
   class(experiment_t), target :: self
   class(m3d_t) :: m3d
@@ -349,7 +388,7 @@ SUBROUTINE link_and_init (self, m3d, n, n_nu)
       case ('back_opac')
         m3d%composition = self%composition
         call m3d%composition%reassign_pointer()
-        m3d%mean_rad => self%rt_patches(0,n)
+        m3d%mean_rad => self%rt_patches(0, n)
       case ('cont_opac')
         m3d%atom => self%atom_patch%atom
       case ('line_opac')
@@ -393,42 +432,6 @@ SUBROUTINE link_and_init (self, m3d, n, n_nu)
 
   !m3d%boundaries%topbot = self%boundaries%topbot
 END SUBROUTINE link_and_init
-
-!===============================================================================
-SUBROUTINE link_sub_task (self, task)
-  class(experiment_t), target :: self
-  class(task_t) :: task
-  !-----------------------------------------------------------------------------
-  select type (task)
-  class is (m3d_t)
-    task%patch => self
-    task%temp    = self%temp
-    task%rho     = self%rho 
-    task%ne      = self%ne
-    task%sp      = self%sp
-
-    select case (task%kind)
-    case ('back_opac', 'mean_rad')
-      task%maxiter = self%ilambd
-    case ('out_rad')
-      task%maxiter = self%ilambd + self%maxiter
-    case default
-      task%maxiter = self%maxiter
-    end select
-
-  class is (atom_patch_t)
-    task%patch => self
-    task%temp  => self%temp
-    task%rho   => self%rho 
-    task%ne    => self%ne
-    task%nh =>  self%nh
-    task%composition => self%composition
-    task%ilambd = self%ilambd
-    task%maxiter = self%maxiter
-  end select
-
-  task%verbose = self%verbose
-END SUBROUTINE link_sub_task
 
 !===============================================================================
 SUBROUTINE freeze_mhd (self)

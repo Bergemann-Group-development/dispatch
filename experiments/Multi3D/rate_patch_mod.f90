@@ -93,7 +93,7 @@ module rate_patch_mod
     ! ----------------------------------------------------------------------------
     call trace_begin('rate_patch_t%update')
 
-    if (self%finished) then
+    if (self%maxiter<0) then
       return
     endif
 

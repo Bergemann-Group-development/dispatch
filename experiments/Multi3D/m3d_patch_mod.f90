@@ -52,6 +52,7 @@ module m3d_patch_mod
     procedure :: pre_init => m3d_pre_init
     procedure :: init => m3d_init
     procedure :: post_update => m3d_post_update
+    procedure :: finish => m3d_finish
     procedure :: nbor_relations => m3d_nbor_relations
     procedure :: bndries
     procedure :: m3d_name
@@ -180,18 +181,26 @@ END SUBROUTINE m3d_init
 SUBROUTINE m3d_post_update (self)
   class(m3d_t) :: self
   !-----------------------------------------------------------------------------
+  if (self%verbose > 1) then
+    write(*,'(F5.1, L2, A12, 3(I4), 6(ES15.7))') self%time, self%finished, trim(self%kind), self%patch%id, self%i_nu, self%i_omega, &
+    self%authority_mem(1,1,1,1,1,:), self%authority_mem(1,1,self%n(3),1,1,:)
+  endif
+
   if (self%iter == self%maxiter) then
-    self%finished = .true.
-    self%time = io%end_time
+    call self%finish()
   endif
 
   self%iter = self%iter + 1
-
-  if (self%verbose > 1) then
-      write(*,'(F5.1, L2, A12, 3(I4), 6(ES15.7))') self%time, self%finished, trim(self%kind), self%patch%id, self%i_nu, self%i_omega, &
-      self%authority_mem(1,1,1,1,1,:), self%authority_mem(1,1,self%n(3),1,1,:)
-  endif
 END SUBROUTINE m3d_post_update
+
+!===============================================================================
+SUBROUTINE m3d_finish (self)
+  class(m3d_t):: self
+  !.............................................................................
+  self%finished = .true.
+  self%time = io%end_time + self%t_offset*self%dtime
+  call self%set(bits%frozen)
+END SUBROUTINE m3d_finish
 
 !===============================================================================
 SUBROUTINE set_freq_indices (self, n, nnu, n_nu)
