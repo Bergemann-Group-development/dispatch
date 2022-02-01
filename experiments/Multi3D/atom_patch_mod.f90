@@ -187,8 +187,9 @@ module atom_patch_mod
     class(atom_patch_t) :: self
     real(8), dimension(:,:,:,:), allocatable :: gamma_ij, gamma_ji
     character(len=64) :: text
-    ! ----------------------------------------------------------------------------
-    call trace_begin('atom_patch_t%update')
+    integer, save:: itimer=0
+    !-----------------------------------------------------------------------------
+    call trace%begin('atom_patch_t%atom_patch_update', itimer=itimer)
 
     if (self%iter == 0) then
       write(text,'(A,I2,A,I2,A)') 'LTE Iteration .'
@@ -216,7 +217,7 @@ module atom_patch_mod
     endif
   
     call self%post_update()
-    call trace%end()
+    call trace%end(itimer)
   END SUBROUTINE atom_patch_update
 
   !===============================================================================

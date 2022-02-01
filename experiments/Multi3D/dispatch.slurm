@@ -9,7 +9,7 @@
 #SBATCH --partition=astro_devel
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=1
+#SBATCH --cpus-per-task=2
 #SBATCH --threads-per-core=1
 # --- User notifications ---
 #SBATCH --time 00:05:00

@@ -75,7 +75,7 @@ SUBROUTINE opacity_pre_init (self)
   self%new = self%it
 
   if (self%kind == 'sum_opac') then
-    self%ng = [4,4,1]
+    self%ng = [3,3,1]
   endif
   
   ! ----------------------------------------------------------------------------
@@ -145,8 +145,9 @@ SUBROUTINE back_opac_update (self, chi, eta)
   real(8), dimension(:), pointer :: nu
   real(4), dimension(:,:,:,:), pointer :: Jold
   character(len=64) :: text
-  ! ----------------------------------------------------------------------------
-  call trace_begin('opacity_t%back_opac_update')
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin('opacity_t%back_opac_update', itimer=itimer)
   nu   => self%sp%nu(self%fs:self%fe)
   Jold => self%mean_rad%authority_mem(:,:,:,:,self%mean_rad%it,1)
 
@@ -159,42 +160,45 @@ SUBROUTINE back_opac_update (self, chi, eta)
 
   call self%composition%scattering(nu, Jold, eta)
 
-  call trace%end()
+  call trace%end(itimer)
 END SUBROUTINE back_opac_update
 
 !===============================================================================
 SUBROUTINE cont_opac_update (self, chi, eta)
   class(opacity_t) :: self
   real(4), dimension(:,:,:,:), intent(inout) :: chi, eta
-  ! ----------------------------------------------------------------------------
-  call trace_begin('opacity_t%cont_opac_update')
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin('opacity_t%cont_opac_update', itimer=itimer)
   chi = 0
   eta = 0
   call self%atom%add_continuum_opacities(self%fs, self%fe, self%sp%nu, self%temp, chi, eta)
-  call trace%end()
+  call trace%end(itimer)
 END SUBROUTINE cont_opac_update
 
 !===============================================================================
 SUBROUTINE line_opac_update (self, chi, eta)
   class(opacity_t) :: self
   real(4), dimension(:,:,:,:), intent(inout) :: chi, eta
-  ! ----------------------------------------------------------------------------
-  call trace_begin('opacity_t%line_opac_update')
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin('opacity_t%line_opac_update', itimer=itimer)
   chi = 0
   eta = 0
   if (self%iter == 0) then
     call self%atom%compute_wphi(self%fs, self%fe, self%sp%nu, self%temp, self%vproj, self%wphi)
   endif
   call self%atom%add_line_opacities(self%fs, self%fe, self%sp%nu, self%temp, self%vproj, chi, eta)
-  call trace%end()
+  call trace%end(itimer)
 END SUBROUTINE line_opac_update
 
 !===============================================================================
 SUBROUTINE sum_opac_update (self)
   class(opacity_t) :: self
   real(4), dimension(:,:,:,:,:), pointer :: mem
-  ! ----------------------------------------------------------------------------
-  call trace_begin('opacity_t%sum_opac_update')
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin('opacity_t%sum_opac_update', itimer=itimer)
   mem => self%authority_mem(:,:,:,:,self%it,:)
   mem = self%back_opac%mem(:,:,:,:,self%back_opac%it,:)
   mem = self%cont_opac%mem(:,:,:,:,self%cont_opac%it,:) + mem
@@ -202,7 +206,7 @@ SUBROUTINE sum_opac_update (self)
   mem(:,:,:,:,self%i_snu) = mem(:,:,:,:,self%i_eta) / mem(:,:,:,:,self%i_chi)
   mem => self%mem(:,:,:,:,self%it,:)
   call self%boundaries%mirror(mem)
-  call trace%end()
+  call trace%end(itimer)
 END SUBROUTINE sum_opac_update
 
 !===============================================================================

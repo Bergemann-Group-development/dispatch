@@ -12,7 +12,6 @@ MODULE experiment_mod
   USE kinds_mod
   USE composition_mod, only: composition_type
   USE atom_var, only: atom_type
-  USE geometry_var, only:geometry_type
   USE spectrum_mod, only:spectrum_type
   USE m3d_patch_mod, only: m3d_t, halo_m3d_t
   USE opac_patch_mod, only: opacity_t
@@ -24,12 +23,12 @@ MODULE experiment_mod
   USE task_mod
   USE math_mod
   USE timer_mod
+  USE geometry_mod
   implicit none
   private
   type, public, extends(solver_t):: experiment_t
     type(composition_type) :: composition
     class(spectrum_type), pointer :: sp
-    type(geometry_type) :: geometry
     class(opacity_t), pointer, dimension(:) :: back_opac
     class(opacity_t), pointer, dimension(:,:) :: opac
     class(radiation_t), pointer, dimension(:) :: out_rad
@@ -51,7 +50,6 @@ MODULE experiment_mod
     procedure:: link_sub_task
     procedure:: link_and_init
     procedure:: init_sub_patches
-    procedure:: freeze_mhd
     procedure:: nbor_relations => experiment_nbor_relations
   end type
   
@@ -132,8 +130,8 @@ SUBROUTINE post_update (self)
   class(experiment_t):: self
   !----------------------------------------------------------------------------
   if (self%verbose > 1) then
-      write(*,'(F5.1, L2, A12, I4, 12(ES15.7))') self%time, self%finished, trim(self%kind), self%id, self%mem(1,1,1,:,1,1)
-      write(*,'(23X, 12(ES15.7))') self%mem(1,1,self%gn(3),:,1,1)
+      write(*,'(F5.1, L2, A12, I4, 12(ES15.7))') self%time, self%finished, trim(self%kind), self%id, self%mem(self%li(1),self%li(2),self%li(3),:,1,1)
+      write(*,'(23X, 12(ES15.7))') self%mem(self%ui(1),self%ui(2),self%ui(3),:,1,1)
   endif
 
   if (self%iter == 0) then
@@ -213,10 +211,12 @@ SUBROUTINE init_sub_patches(self)
   class(radiation_t), pointer, dimension(:) :: out_rad
   class(radiation_t), pointer, dimension(:,:) :: rt_patches
   integer :: iostat, n_omega, n
-  real, dimension(:), allocatable:: mu, w_mu, mux, muy, muz
-  integer, save :: n_nu=1, n_mu=1, n_phi=4, verbose=0, maxiter=1, ilambd=3
-  integer :: i, dir, i_phi, i_mu, p
-  namelist /experiment_params/ n_nu, n_mu, n_phi, maxiter, verbose, ilambd
+  real(8), dimension(:), allocatable:: wmu
+  real(8), dimension(:,:), allocatable:: vec
+  integer, save :: n_nu=1, verbose=0, maxiter=1, ilambd=3
+  character(len=32), save :: quad_scheme='set_a2'
+  integer :: i, dir, p
+  namelist /experiment_params/ n_nu, maxiter, verbose, ilambd, quad_scheme
   !-----------------------------------------------------------------------------
   if (first_time) then
     rewind (io%input)
@@ -237,14 +237,8 @@ SUBROUTINE init_sub_patches(self)
   !-------------------------------------------------------------------------
   ! Assign angles and integration weights
   !-------------------------------------------------------------------------
-  n_omega = 2 * n_phi * n_mu ! only for comparison with 'set_a2'
-  allocate (mu  (n_omega))
-  allocate (w_mu(n_omega))
-  !call radau%init (self%n_mu, mu, w_mu)
-  mu = 0.57735026 ! only for comparison with 'set_a2'
-  mux = [-0.57735026,  0.57735026,  0.57735026, -0.57735026]
-  muy = [ 0.57735026,  0.57735026, -0.57735026, -0.57735026]
-  w_mu = 1
+  call set_carlson_quadratures (quad_scheme, vec, wmu)
+  n_omega = size(vec, 2)
 
   allocate(atom_patch)
   allocate(atom_patch%opac(0:n_omega, n_nu))
@@ -285,44 +279,30 @@ SUBROUTINE init_sub_patches(self)
   end do
 
   do p=1,4 ! do this for line_opac, angle_rad, sum_opac, line_rate
-    i = 1
-    do i_phi=1, n_phi
-      do i_mu=1, n_mu
-        do dir=-1,1,2
-          do n=1, n_nu
-            if (p==4) then
-              patch => atom_patch%opac(i,n)
-              patch%kind = 'line_opac'
-            elseif (p==3) then
-              patch => sum_opac(i,n)
-              patch%kind = 'sum_opac'
-            elseif (p==2) then
-              patch => rt_patches(i,n)
-              patch%kind = 'angle_rad'
-            elseif (p==1) then
-              patch => atom_patch%rate(i,n)
-              patch%kind = 'rad_rate'
-            endif
+    do i=1, n_omega
+      do n=1, n_nu
+        if (p==4) then
+          patch => atom_patch%opac(i,n)
+          patch%kind = 'line_opac'
+        elseif (p==3) then
+          patch => sum_opac(i,n)
+          patch%kind = 'sum_opac'
+        elseif (p==2) then
+          patch => rt_patches(i,n)
+          patch%kind = 'angle_rad'
+        elseif (p==1) then
+          patch => atom_patch%rate(i,n)
+          patch%kind = 'rad_rate'
+        endif
 
-            patch%i_omega = i
-            patch%i_phi = i_phi
-            patch%i_mu = i_mu
-            patch%i_nu = n
-            patch%dir = dir
+        patch%i_omega = i
+        patch%i_nu = n
 
-            patch%wmu = w_mu(i) * math%pi4 / (2*n_phi)
+        patch%vec = vec(:,i)
+        patch%wmu = wmu(i)
+        patch%dir = merge(1, -1, vec(3,i) > 0)
 
-            patch%vec(1) = mux(i_phi)
-            patch%vec(2) = muy(i_phi)
-            patch%vec(3) = dir*mu(i)
-
-            patch%mu  = patch%vec(3) ! only for comparison with 'set_a2'
-            patch%phi = patch%vec(1) ! only for comparison with 'set_a2'
-
-            call self%link_and_init(patch, n, n_nu)
-          end do
-          i = i+1
-        end do
+        call self%link_and_init(patch, n, n_nu)
       end do
     end do
   end do
@@ -330,7 +310,7 @@ SUBROUTINE init_sub_patches(self)
   if (associated(self%out_rad)) then
     do i=1, n_omega/2 ! only use dir=1
       out_rad(i)%kind = 'out_rad'
-      out_rad(i)%i_omega = i*2
+      out_rad(i)%i_omega = i
       call self%link_and_init(out_rad(i), 1, 1)
     end do
   endif
@@ -420,7 +400,7 @@ SUBROUTINE link_and_init (self, m3d, n, n_nu)
         m3d%mean_rad => self%rt_patches(0, n)
 
         if (m3d%dir > 0 .and. associated(self%out_rad)) then
-          m3d%out_rad  => self%out_rad(m3d%i_omega/2)
+          m3d%out_rad => self%out_rad(m3d%i_omega)
         endif
       end select
   end select
@@ -429,18 +409,7 @@ SUBROUTINE link_and_init (self, m3d, n, n_nu)
   call m3d%set_freq_indices(n, self%sp%nnu, n_nu)
   call m3d%init()
   call m3d%append_to_task_list()
-
-  !m3d%boundaries%topbot = self%boundaries%topbot
 END SUBROUTINE link_and_init
-
-!===============================================================================
-SUBROUTINE freeze_mhd (self)
-  class(experiment_t), target :: self
-  integer :: i
-  !-----------------------------------------------------------------------------
-  call self%set(bits%frozen)
-  self%time = io%end_time
-END SUBROUTINE
 
 !===============================================================================
 SUBROUTINE experiment_nbor_relations(self, another, needed, needs_me, download)

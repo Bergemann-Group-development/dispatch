@@ -90,8 +90,9 @@ module rate_patch_mod
     real(4), dimension(:,:,:,:), pointer :: Inu, gamma_ij, gamma_ji, chi_l, chi_c, eta_l, eta_c
     real(4), dimension(:,:,:,:), allocatable :: Ieff!, eta
     integer :: fs, fe
-    ! ----------------------------------------------------------------------------
-    call trace_begin('rate_patch_t%update')
+    integer, save:: itimer=0
+    !-----------------------------------------------------------------------------
+    call trace%begin('rate_patch_t%rate_patch_update', itimer=itimer)
 
     if (self%maxiter<0) then
       return
@@ -117,7 +118,7 @@ module rate_patch_mod
                                   chi_l, chi_c, eta_l, eta_c, gamma_ij, gamma_ji)
   
     call self%post_update()
-    call trace%end()
+    call trace%end(itimer)
   END SUBROUTINE rate_patch_update
   
   !===============================================================================

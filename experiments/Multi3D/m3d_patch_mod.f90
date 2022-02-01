@@ -46,8 +46,8 @@ module m3d_patch_mod
     real(8), dimension(:,:,:), allocatable :: rho 
     real(8), dimension(:,:,:), allocatable :: ne  
     real(4), dimension(:,:,:,:,:,:), pointer :: authority_mem => null()
-    real(8) :: vec(3), wmu, mu, phi, t_offset
-    integer :: i_nu=0, i_phi=0, i_mu=0, dir=0, i_omega=0, fs, fe, iter=0, maxiter
+    real(8) :: vec(3), wmu, t_offset
+    integer :: i_nu=0, dir=0, i_omega=0, fs, fe, iter=0, maxiter
   contains
     procedure :: pre_init => m3d_pre_init
     procedure :: init => m3d_init
@@ -305,11 +305,11 @@ END SUBROUTINE info
 SUBROUTINE task_info (self)
   class(m3d_t):: self
   !-----------------------------------------------------------------------------
-  write(io_unit%mpi,'(1x,a,2x,a10,i6,2i4,7x,2l1,2x,3f9.3,i4,i4,i4)') &
-    'm3d_t%task_info: kind, id, rank, level, BV, pos, i_omega, i_mu, i_phi =', &
+  write(io_unit%mpi,'(1x,a,2x,a10,i6,2i4,7x,2l1,2x,3f9.3,i4)') &
+    'm3d_t%task_info: kind, id, rank, level, BV, pos, i_omega =', &
     self%kind, self%id, self%rank, self%level, &
     self%is_set(bits%boundary), self%is_set(bits%virtual), self%position, &
-    self%i_omega, self%i_mu, self%i_phi
+    self%i_omega
 END SUBROUTINE task_info
 
 !===============================================================================
@@ -352,8 +352,6 @@ logical FUNCTION m3d_is_upstream (self, other) result(is_upstream)
     ds1 = modulo(ds1 + 0.5_8*self%box, self%box) - 0.5_8*self%box
   end where
   ds1 = ds1/self%box                                                            ! relative task offsets
-  sinth = merge(0d0, sqrt(1.0-self%mu**2), abs(self%mu)==1.0)
-  ds2 = [sinth*cos(self%phi),sinth*sin(other%phi),self%mu]
   is1 = 0; is2=0
   do i=1,3
     if (ds1(i)      > +eps) is1(i)=1

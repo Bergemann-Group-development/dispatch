@@ -27,11 +27,11 @@
 &atmos_params       verbose=1 atmos_file='./input_multi3d/atmos/atmos.sun_MARCS' npatches=1 /
 &boundary_params    verbose=0 condition=1 /
 &download_params    check_filled=F verbose=0 /
-&atom_params        atom_file='./input_multi3d/atoms/atom.ba06' qnorm=10.0 convlim=1d-2 /
+&atom_params        atom_file='./input_multi3d/atoms/atom.ba06' qnorm=10.0 convlim=1d-3 /
 !&atom_params        atom_file='./input_multi3d/atoms/atom.o41f' qnorm=10.0 /
 &radiation_params   save_output=T /
-&experiment_params  n_nu=1 maxiter=0 verbose=2 ilambd=0 /
-&timer_params       sec_per_report = 1000 /
+&experiment_params  n_nu=1 maxiter=50 verbose=1 ilambd=0 quad_scheme='set_a4'/
+&timer_params       sec_per_report = 3 /
 &task_list_params   verbose=0 /
 &task_params        verbose=0 /
 &halo_params        check_filled=F /
