@@ -25,7 +25,7 @@ module rad_patch_mod
   !USE scratch_mod
   USE m3d_patch_mod
   USE opac_patch_mod
-  USE geometry_mod, only:ray_type
+  USE ray_mod, only:ray_type
   implicit none
 
   !-----------------------------------------------------------------------------
@@ -36,7 +36,6 @@ module rad_patch_mod
     class(radiation_t), pointer :: sheep(:) => null()
     class(radiation_t), pointer :: mean_rad => null()
     class(radiation_t), pointer :: out_rad => null()
-    type(ray_type) :: ray
     real(4), dimension(:,:,:,:), pointer :: Inu, chi, Snu
     real(4), dimension(:,:,:,:), allocatable :: Psi
     character(len=64) :: meta_file, ray_name
@@ -50,6 +49,7 @@ module rad_patch_mod
     procedure :: short_ray_update
     procedure :: Jnu_update
     procedure :: bndries
+    procedure :: periodic_index
     procedure :: periodic_plane
     procedure :: interp_xy_up_plane
     procedure :: interp_xx_ss_up
@@ -206,7 +206,7 @@ SUBROUTINE Inu_update (self)
   k2 = merge(self%li(3), self%ui(3), self%dir < 0)
 
   if (self%ray%long) then
-    call self%long_ray_update(k1,k2, chi, Snu, Inu)
+    call self%long_ray_update(k1, k2, chi, Snu, Inu)
   else
     call self%short_ray_update(k1, k2, chi, Snu, Inu)
   endif
@@ -238,7 +238,7 @@ SUBROUTINE long_ray_update (self, k1, k2, chi, Snu, Inu)
     do k=k1,k2,self%dir
       z = k - self%li(3) + 1
 
-      call self%solve_long_plane(k, f, Inuup)
+      call self%solve_long_plane(k, f, xxup(:,:,z,f), ssup(:,:,z,f), Inuup)
       call linear_formsolv(self%ray%dsup, xxup(:,:,z,f), chi(:,:,z,f), ssup(:,:,z,f), Snu(:,:,z,f), Inuup, self%Psi(:,:,z,f), Inu(:,:,z,f))
       call self%periodic_plane(self%Inu(:,:,k,f))
     end do ! k-loop
@@ -316,9 +316,9 @@ pure subroutine interp_xx_ss_up(self, xxup, ssup)
       y1 = j + j1
       y2 = y1 + d1
       z1 = k + k1
-      z2 = z1 + d2
-      xxup(i,j,k,f) = xxup(i,j,k,f) + sum(kernel * self%chi ( x1, y1:y2, z1:z2:self%dir, f))
-      ssup(i,j,k,f) = ssup(i,j,k,f) + sum(kernel * self%Snu ( x1, y1:y2, z1:z2:self%dir, f))
+      z2 = z1 + self%dir
+      xxup(i,j,k,f) = sum(kernel * self%chi ( x1, y1:y2, z1:z2:self%dir, f))
+      ssup(i,j,k,f) = sum(kernel * self%Snu ( x1, y1:y2, z1:z2:self%dir, f))
     end do
     end do
     end do
@@ -336,9 +336,9 @@ pure subroutine interp_xx_ss_up(self, xxup, ssup)
       x2 = x1 + d1
       y1 = j + j1
       z1 = k + k1
-      z2 = z1 + d2
-      xxup(i,j,k,f) = xxup(i,j,k,f) + sum(kernel * self%chi ( x1:x2, y1, z1:z2:self%dir, f))
-      ssup(i,j,k,f) = ssup(i,j,k,f) + sum(kernel * self%Snu ( x1:x2, y1, z1:z2:self%dir, f))
+      z2 = z1 + self%dir
+      xxup(i,j,k,f) = sum(kernel * self%chi ( x1:x2, y1, z1:z2:self%dir, f))
+      ssup(i,j,k,f) = sum(kernel * self%Snu ( x1:x2, y1, z1:z2:self%dir, f))
     end do
     end do
     end do
@@ -355,8 +355,8 @@ pure subroutine interp_xx_ss_up(self, xxup, ssup)
       y2 = y1 + d2
       z1 = k + k1
 
-      xxup(i,j,k,f) = xxup(i,j,k,f) + sum(self%ray%upkern * self%chi ( x1:x2, y1:y2, z1, f))
-      ssup(i,j,k,f) = ssup(i,j,k,f) + sum(self%ray%upkern * self%Snu ( x1:x2, y1:y2, z1, f))
+      xxup(i,j,k,f) = sum(self%ray%upkern * self%chi ( x1:x2, y1:y2, z1, f))
+      ssup(i,j,k,f) = sum(self%ray%upkern * self%Snu ( x1:x2, y1:y2, z1, f))
 
       ! suppress undershoot
       xxmin = minval(self%chi ( x1+1:x2-1, y1+1:y2-1, z1, f))
@@ -406,7 +406,7 @@ pure subroutine interp_xy_up_plane(self, VarIn, VarUp, up1, up2, kernel)
 end subroutine interp_xy_up_plane
 
 !===============================================================================
-subroutine solve_long_plane(self, k, f, Inuup)
+subroutine solve_long_plane(self, k, f, xxup, ssup, Inuup)
   !---------------------------------------------------------------------
   !
   ! Perform a formal solution with linear interpolation of the source
@@ -415,43 +415,43 @@ subroutine solve_long_plane(self, k, f, Inuup)
   !
   !---------------------------------------------------------------------
   class(radiation_t), intent(in) :: self
-  real(4), dimension(:,:), allocatable :: xxup,ssup, xx, ss, iiup, ii
+  real(4), dimension(:,:), intent(in) :: xxup, ssup
+  real(4), dimension(:,:), allocatable :: xxl, ssl, xx, ss, iil, ii
   real(4), dimension(:,:), intent(out) :: Inuup
   real(4), dimension(:,:), allocatable :: psi_tmp
+  real(8), dimension(2,2) :: kernel
   integer, intent(in) :: k, f
-  integer ::  x1,x2,y1,y2,z1,i,j,m
+  integer ::  x1,x2,y1,y2,z1,z2, i,j,m, i1,j1,k1
   ! ----------------------------------------------------------------------------
-  allocate(xxup, ssup, iiup, xx, ss, psi_tmp, mold=Inuup)
+  allocate(xxl, ssl, iil, xx, ss, psi_tmp, mold=Inuup)
   ! X,S and incoming intensity  at the upwind XY plane
-  call self%interp_xy_up_plane(self%Chi(:,:,k-self%dir,f), xxup, self%ray%longo1, self%ray%longo2, self%ray%longkern)
-  call self%interp_xy_up_plane(self%Snu(:,:,k-self%dir,f), ssup, self%ray%longo1, self%ray%longo2, self%ray%longkern)
-  call self%interp_xy_up_plane(self%Inu(:,:,k-self%dir,f), iiup, self%ray%longo1, self%ray%longo2, self%ray%longkern)
+  call self%interp_xy_up_plane(self%Chi(:,:,k-self%dir,f), xxl, self%ray%longo1, self%ray%longo2, self%ray%longkern)
+  call self%interp_xy_up_plane(self%Snu(:,:,k-self%dir,f), ssl, self%ray%longo1, self%ray%longo2, self%ray%longkern)
+  call self%interp_xy_up_plane(self%Inu(:,:,k-self%dir,f), iil, self%ray%longo1, self%ray%longo2, self%ray%longkern)
 
   ! linear interpolation of snu and chi at each xz or yz intersection
-  do m=1,self%ray%Nintersect
+  do m=1,self%ray%Nintersect - 1
     xx = 0.0
     ss = 0.0
-
-    do i=1,2
-      do j=1,2 
+    do j=1,2
+      do i=1,2 
         x1 = self%ray%int(m)%iof(i,j) + self%li(1)
         x2 = self%ray%int(m)%iof(i,j) + self%ui(1)
         y1 = self%ray%int(m)%jof(i,j) + self%li(2)
         y2 = self%ray%int(m)%jof(i,j) + self%ui(2)
-        z1 = k - self%dir*abs(self%ray%int(m)%kof(i,j))
-
+        z1 = k + self%ray%int(m)%kof(i,j)
+    
         xx(:,:) = xx(:,:) + self%ray%int(m)%wght(i,j) * self%chi( x1:x2, y1:y2, z1, f)
         ss(:,:) = ss(:,:) + self%ray%int(m)%wght(i,j) * self%Snu( x1:x2, y1:y2, z1, f)
       end do
     end do
-
-    call linear_formsolv(self%ray%int(m)%ds, xxup, xx, ssup, ss, iiup, psi_tmp, Inuup)
-
-    ! set new start point to old end point
-    xxup = xx
-    ssup = ss
-    iiup = Inuup
+    call linear_formsolv(self%ray%int(m)%ds, xxl, xx, ssl, ss, iil, psi_tmp, Inuup)
+    xxl = xx
+    ssl = ss
+    iil = Inuup
   end do
+
+  call linear_formsolv(self%ray%int(self%ray%Nintersect)%ds, xxl, xxup, ssl, ssup, iil, psi_tmp, Inuup)
 end subroutine solve_long_plane
 
 !====================================================================================
@@ -489,7 +489,10 @@ SUBROUTINE periodic_plane (self, arr)
   real(4), dimension(:,:), intent(inout) :: arr
   integer, dimension(3) :: li, ui, lb, ub
   integer :: dir, is, ie, off
-  ! ----------------------------------------------------------------------------
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin('radiation_t%periodic_plane', itimer=itimer)
+
   li = self%mesh%li; ui = self%mesh%ui
   lb = self%mesh%lb; ub = self%mesh%ub
 
@@ -510,6 +513,8 @@ SUBROUTINE periodic_plane (self, arr)
       arr(:,is+off) = arr(:,ie-dir+off)
     end do
   end do
+
+  call trace%end(itimer)
 END SUBROUTINE periodic_plane
 
 !===============================================================================
@@ -613,11 +618,13 @@ SUBROUTINE save_radiation_output(self)
   lam = 1e8 * cc / self%sp%nu
   Inu => self%mem(:,:,1,:, self%it, self%i_inu)
 
-  filename = trim(out_folder) // trim(self%ray_name) // '_lam.bin'
-  open(newunit=lunit, file=filename, access='stream')
-  write(lunit) lam
-  call self%save_meta4(filename, pack(lam, .true.), shape(lam))
-  close(lunit)
+  if (self%i_omega == 1) then
+    filename = trim(out_folder) // 'lam.bin'
+    open(newunit=lunit, file=filename, access='stream')
+    write(lunit) lam
+    call self%save_meta4(filename, pack(lam, .true.), shape(lam))
+    close(lunit)
+  endif
 
   filename = trim(out_folder) // trim(self%ray_name) // '_inu.bin'
   open(newunit=lunit, file=filename, access='stream')
@@ -658,5 +665,18 @@ SUBROUTINE save_meta4(self, filename, arr, shpe)
   write(meta_unit, '(A64, I4, 8(I5))') filename, storage_size(arr), shpe
   close(meta_unit)
 END SUBROUTINE save_meta4
+
+!===============================================================================
+integer pure FUNCTION periodic_index(self, i, axis)
+  class(radiation_t), intent(in) :: self
+  integer, intent(in) :: i, axis
+  ! ----------------------------------------------------------------------------
+  if (self%periodic_xy) then
+    periodic_index = mod(i, self%n(axis))
+    if (periodic_index == 0) periodic_index = self%n(axis)
+  else
+    periodic_index = i
+  endif
+END FUNCTION periodic_index
 
 end module

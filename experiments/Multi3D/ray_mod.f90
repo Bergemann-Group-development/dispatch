@@ -1,4 +1,4 @@
-module geometry_mod
+module ray_mod
   use mconst
   implicit none
 
@@ -272,7 +272,7 @@ SUBROUTINE set_stencil(ray, ds)
   real(8), intent(in) :: ds(3)
   integer :: i,j,k,ncrossXZ,ncrossYZ,slct
   integer :: count,Nvalid,nmc
-  integer, parameter :: mb=5
+  integer, parameter :: mb=3
   real(8) :: dx,dy,dz, mux,muy,muz
   real(8) :: wt1, wt2, rx, ry, rz
   real(8) :: longfracx,longfracy 
@@ -883,4 +883,4 @@ subroutine SetLinKern(kern,h1,h2)
 end subroutine SetLinKern
 !---------------------------------------------------------------------
     
-end module geometry_mod
+end module ray_mod

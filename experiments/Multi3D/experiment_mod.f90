@@ -23,7 +23,7 @@ MODULE experiment_mod
   USE task_mod
   USE math_mod
   USE timer_mod
-  USE geometry_mod
+  USE ray_mod, only: set_carlson_quadratures
   implicit none
   private
   type, public, extends(solver_t):: experiment_t

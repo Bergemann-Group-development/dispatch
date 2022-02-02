@@ -22,13 +22,15 @@ MODULE read_external_mod
   type, public:: read_external_t
     character(len=126) :: atmos_file
     class(task_list_t), pointer:: task_list
-    integer :: nz, npatches(3), n(3), ng(3), verbose
-    real(8), dimension(:), allocatable :: zi, temp, pe, rho, vturb
-    real(8) :: size, ds(3)
+    integer :: npatches(3), n(3), ng(3), verbose
+    real(4), dimension(:,:,:), allocatable :: temp, ne, pe, rho, vturb, vx, vy, vz
+    real(8), dimension(:), allocatable :: xi, yi, zi
+    real(8) :: ds(3)
     character(len=126) :: atmos_name
   contains
     procedure:: init
-    procedure:: read_snapshot
+    procedure:: read_1d_snapshot
+    procedure:: read_stagger_snapshot
     procedure:: create_patch
     procedure:: load_authority
   end type read_external_t
@@ -85,13 +87,16 @@ SUBROUTINE init(self, task_list, name)
   call self%task_list%init ('multi3d_mod')
 
   call scaling%init()
-  call self%read_snapshot()
+  !call self%read_1d_snapshot()
+  call self%read_stagger_snapshot()
 
-  self%size = self%zi(self%nz) - self%zi(1)
+  if (abs(self%ds(3) - (self%zi(self%n(3)) - self%zi(self%n(3)-1))) > 1d-4) then
+    write(stdout,*) 'read_external_t%init: Warning: Non-equidistant atmosphere grid!'
+  endif
 
-  if (mod(self%nz, npatches) /= 0) then
+  if (mod(self%n(3), npatches) /= 0) then
     write(stdout,*) 'read_external_t%init: Error: npatches must be a factor of the atmosphere size!'
-    write(stdout,*) 'npatches = ', self%npatches(3), 'nz = ', self%nz
+    write(stdout,*) 'npatches = ', self%npatches(3), 'nz = ', self%n(3)
     write(stdout,*) 'Stopping.'
     stop
   endif
@@ -152,11 +157,8 @@ SUBROUTINE create_patch (self, i, patch)
   patch%nt = 4 ! Download returns wrong stuff if nt <= 2
   patch%nw = 1
 
-  patch%box(1) = self%ds(1) * 1
-  patch%box(2) = self%ds(2) * 1
-  patch%box(3) = self%ds(3) * self%nz
-
-  patch%ds = self%ds
+  patch%box = self%ds * self%n
+  patch%ds  = self%ds
 
   patch%size = patch%ds * patch%n
   patch%periodic = [.true., .true., .false.]
@@ -180,16 +182,14 @@ SUBROUTINE create_patch (self, i, patch)
   call trace%end ()
 END SUBROUTINE create_patch
 
-
 !===============================================================================
 !> Reads the actual text files and stores variables under self
 !===============================================================================
-SUBROUTINE read_snapshot(self)
+SUBROUTINE read_1d_snapshot(self)
   !-----------------------------------------------------------------------------
   USE m3io_mod, only: NextEntry
   class(read_external_t):: self
-  !-----------------------------------------------------------------------------
-  integer :: lunit, i, iostat
+  integer :: nz, lunit, i, iostat
   !-----------------------------------------------------------------------------
   ! Open atmosphere file and read MHD variables
   !-----------------------------------------------------------------------------
@@ -197,32 +197,73 @@ SUBROUTINE read_snapshot(self)
   call nextentry(lunit)
   read(lunit, *) self%atmos_name
   call nextentry(lunit)
-  read(lunit, *) self%nz
+  read(lunit, *) nz
 
-  self%nz = self%nz - 2*self%ng(3)
+  self%n(3) = nz - 2*self%ng(3)
 
-  allocate(self%zi(1-self%ng(3):self%nz+self%ng(3)))
-  allocate(self%temp, self%pe, self%rho, self%vturb, mold=self%zi)
+  allocate(self%zi(1-self%ng(3):self%n(3)+self%ng(3)))
+  allocate(self%temp(1,1, 1-self%ng(3):self%n(3)+self%ng(3)))
+  allocate(self%pe, self%rho, self%vturb, mold=self%temp)
 
   do i=lbound(self%zi,1), ubound(self%zi,1)
     call nextentry(lunit)
-    read(lunit, *) self%zi(i), self%temp(i), self%pe(i), self%rho(i), self%vturb(i)
+    read(lunit, *) self%zi(i), self%temp(1,1,i), self%pe(1,1,i), self%rho(1,1,i), self%vturb(1,1,i)
   end do
+
+  close(lunit)
 
   self%zi  = self%zi  / scaling%l
   self%rho = self%rho / scaling%d
   self%pe  = self%pe  / scaling%p
 
-  self%n = 1
-  self%n(3) = self%nz
+  self%n(:2) = 1
   self%ds(1) = 1e-2 ! 10km spacing as for 1d atmospheres in Multi
   self%ds(2) = 1e-2
   self%ds(3) = self%zi(2) - self%zi(1)
+END SUBROUTINE read_1d_snapshot
 
-  if (self%ds(3) /= self%zi(self%nz) - self%zi(self%nz-1)) then
-    write(stdout,*) 'read_external_t%read_snapshot: Warning: Non-equidistant atmosphere grid!'
-  endif
-END SUBROUTINE read_snapshot
+!===============================================================================
+SUBROUTINE read_stagger_snapshot(self)
+  class(read_external_t):: self
+  integer :: lunit
+  character(len=126) :: stagger_file='./input_multi3d/atmos/t5777g44m0005_20.5x5x230'
+  real(4) :: test
+  !-----------------------------------------------------------------------------
+  ! Open atmosphere file and read MHD variables
+  !-----------------------------------------------------------------------------
+  open(file=trim(stagger_file) // '.mesh', newunit=lunit, form='FORMATTED')
+  read(lunit, *) self%n
+  allocate(self%xi(self%n(1)))
+  allocate(self%yi(self%n(2)))
+  allocate(self%zi(self%n(3)))
+  read(lunit, *) self%xi
+  read(lunit, *) self%yi
+  read(lunit, *) self%zi
+  close(lunit)
+
+  allocate(self%temp(self%n(1), self%n(2), self%n(3)))
+  allocate(self%rho, self%ne, self%vx, self%vy, self%vz, mold=self%temp)
+
+  open(file=trim(stagger_file) // '.atmos', newunit=lunit, form='UNFORMATTED', access='stream')
+  read(lunit) self%ne
+  read(lunit) self%temp
+  read(lunit) self%vx
+  read(lunit) self%vy
+  read(lunit) self%vz
+  read(lunit) self%rho
+  close(lunit)
+
+  self%xi  = self%xi  / scaling%l
+  self%yi  = self%yi  / scaling%l
+  self%zi  = self%zi  / scaling%l
+  self%rho = self%rho / scaling%d
+  self%pe  = self%ne * cgs%k_b * self%temp  / scaling%l**3
+
+  self%ds(1) = self%xi(2) - self%xi(1)
+  self%ds(2) = self%yi(2) - self%yi(1)
+  self%ds(3) = self%zi(2) - self%zi(1)
+END SUBROUTINE read_stagger_snapshot
+
 
 !===============================================================================
 !> Takes variables read from text file and loads them into patch memory
@@ -240,20 +281,14 @@ SUBROUTINE load_authority(self, patch, ii)
 
   do k=zs,ze
     ! flipping z-axis, so that the first patch is the bottom of the atmosphere
-    iz = self%nz - ((ii-1)*patch%n(3) + k - zs) ! better not
-    
-    !iz = 1 + (ii-1)*patch%n(3) + k - patch%li(3)
+    iz = self%n(3) - ((ii-1)*patch%n(3) + k - zs) ! better not
 
-    do j=ys,ye
-      do i=xs,xe
-        patch%mem(i,j,k,patch%idx%d ,it,1) = self%rho(iz)
-        patch%mem(i,j,k,patch%idx%px,it,1) = 0
-        patch%mem(i,j,k,patch%idx%py,it,1) = 0
-        patch%mem(i,j,k,patch%idx%pz,it,1) = 0
-        patch%mem(i,j,k,patch%idx%e ,it,1) = self%temp(iz)
-        patch%mem(i,j,k,patch%idx_pe,it,1) = self%pe(iz)
-      end do
-    end do
+    patch%mem(xs:xe,ys:ye,k,patch%idx%d ,it,1) = self%rho(:,:,iz)
+    patch%mem(xs:xe,ys:ye,k,patch%idx%px,it,1) = 0
+    patch%mem(xs:xe,ys:ye,k,patch%idx%py,it,1) = 0
+    patch%mem(xs:xe,ys:ye,k,patch%idx%pz,it,1) = 0
+    patch%mem(xs:xe,ys:ye,k,patch%idx%e ,it,1) = self%temp(:,:,iz)
+    patch%mem(xs:xe,ys:ye,k,patch%idx_pe,it,1) = self%pe(:,:,iz)
   end do
 
   patch%rho  = dble(patch%mem(xs:xe,ys:ye,zs:ze,patch%idx%d , it, 1)) * scaling%d

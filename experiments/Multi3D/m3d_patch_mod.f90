@@ -29,6 +29,7 @@ module m3d_patch_mod
   USE atom_var, only: atom_type
   USE composition_mod, only:composition_type
   USE spectrum_mod, only: spectrum_type
+  USE ray_mod, only:ray_type
   implicit none
   private
 
@@ -39,15 +40,15 @@ module m3d_patch_mod
     integer                  :: master_id
     logical                  :: on=.false.       ! allows local turn-off
     logical                  :: in_task_list = .false.
-
-    type(spectrum_type) :: sp
-
+    type(spectrum_type)      :: sp
+    type(ray_type)           :: ray
     real(8), dimension(:,:,:), allocatable :: temp
     real(8), dimension(:,:,:), allocatable :: rho 
     real(8), dimension(:,:,:), allocatable :: ne  
     real(4), dimension(:,:,:,:,:,:), pointer :: authority_mem => null()
     real(8) :: vec(3), wmu, t_offset
     integer :: i_nu=0, dir=0, i_omega=0, fs, fe, iter=0, maxiter
+    logical :: periodic_xy=.false.
   contains
     procedure :: pre_init => m3d_pre_init
     procedure :: init => m3d_init
@@ -134,6 +135,8 @@ SUBROUTINE m3d_pre_init (self)
   self%status     = self%patch%status
   self%periodic   = self%patch%periodic
   self%level      = 1
+
+  self%periodic_xy = all(self%box(:2) == self%ds(:2))
 
   if (self%on) then 
     call self%task_t%init_unique (same=.true.) ! obtain an unique ID

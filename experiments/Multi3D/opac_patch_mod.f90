@@ -75,7 +75,11 @@ SUBROUTINE opacity_pre_init (self)
   self%new = self%it
 
   if (self%kind == 'sum_opac') then
-    self%ng = [3,3,1]
+    if (self%rad%ray%long) then
+      self%ng = [3,3,1]
+    else
+      self%ng = [2,2,1]
+    endif
   endif
   
   ! ----------------------------------------------------------------------------
