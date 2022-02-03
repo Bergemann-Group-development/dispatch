@@ -51,8 +51,8 @@ module rad_patch_mod
     procedure :: bndries
     procedure :: periodic_index
     procedure :: periodic_plane
+    procedure :: interp_xy_up
     procedure :: interp_xy_up_plane
-    procedure :: interp_xx_ss_up
     procedure :: solve_long_plane
     procedure :: setup_metafile
     procedure :: save_meta4
@@ -217,20 +217,28 @@ END SUBROUTINE Inu_update
 !===============================================================================
 SUBROUTINE long_ray_update (self, k1, k2, chi, Snu, Inu)
   class(radiation_t), target :: self
-  real(4), dimension(:,:,:,:), allocatable :: xxup, ssup
-  real(4), dimension(:,:), allocatable :: Inuup
+  !real(4), dimension(:,:,:,:), allocatable :: xxup, ssup
+  real(4), dimension(:,:,:,:,:), pointer :: xx_ss
+  real(4), dimension(:,:,:,:,:), allocatable :: xx_ss_up
+  real(4), dimension(:,:), allocatable :: Inuup, iil, kernel
   real(4), dimension(:,:,:,:) :: Inu, chi, Snu
   integer, intent(in) :: k1, k2
+  real(4) :: dsup
   integer :: f, k, z
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('radiation_t%long_ray_update', itimer=itimer)
 
-  allocate(xxup, ssup, mold=chi)
-  allocate(Inuup, mold=chi(:,:,1,1))
+  !allocate(xxup, ssup, mold=chi)
+  allocate(Inuup(self%n(1), self%n(2)))
+  allocate(iil, mold=Inuup)
+  allocate(xx_ss_up(self%n(1), self%n(2), self%n(3), self%nv, self%opac%nw))
+  xx_ss => self%opac%mem(:,:,:,:,self%opac%it,:)
+  
+  call self%interp_xy_up(xx_ss, xx_ss_up, self%ray%longo1, self%ray%longo2, real(self%ray%longkern), .false.)
 
-  call self%interp_xx_ss_up(xxup,ssup)
-
+  dsup = real(self%ray%dsup)
+  kernel = real(self%ray%upkern(2:3,2:3))
   do f=1, self%nv
   ! ----------------------------------------------------------------------------
   ! frequency vectorisation is slower, because k varies quicker in mem than f.
@@ -238,8 +246,10 @@ SUBROUTINE long_ray_update (self, k1, k2, chi, Snu, Inu)
     do k=k1,k2,self%dir
       z = k - self%li(3) + 1
 
-      call self%solve_long_plane(k, f, xxup(:,:,z,f), ssup(:,:,z,f), Inuup)
-      call linear_formsolv(self%ray%dsup, xxup(:,:,z,f), chi(:,:,z,f), ssup(:,:,z,f), Snu(:,:,z,f), Inuup, self%Psi(:,:,z,f), Inu(:,:,z,f))
+      call self%interp_xy_up_plane(self%Inu(:,:,k-self%dir,f), Inuup, self%ray%upo1, self%ray%upo2, kernel, .false.)
+      call self%solve_long_plane(k, f, xx_ss_up(:,:,z,f,1), xx_ss_up(:,:,z,f,2), Inuup)
+      call linear_formsolv(dsup, xx_ss_up(:,:,z,f,1), chi(:,:,z,f), xx_ss_up(:,:,z,f,2), &
+                            Snu(:,:,z,f), Inuup, self%Psi(:,:,z,f), Inu(:,:,z,f))
       call self%periodic_plane(self%Inu(:,:,k,f))
     end do ! k-loop
   end do ! f-loop
@@ -250,20 +260,25 @@ END SUBROUTINE long_ray_update
 !===============================================================================
 SUBROUTINE short_ray_update (self, k1, k2, chi, Snu, Inu)
   class(radiation_t), target :: self
-  real(4), dimension(:,:,:,:), allocatable :: xxup, ssup
-  real(4), dimension(:,:), allocatable :: Inuup
+  real(4), dimension(:,:,:,:,:), pointer :: xx_ss
+  real(4), dimension(:,:,:,:,:), allocatable :: xx_ss_up
+  real(4), dimension(:,:), allocatable :: Inuup, kernel
   real(4), dimension(:,:,:,:) :: Inu, chi, Snu
   integer, intent(in) :: k1, k2
+  real(4) :: dsup
   integer :: f, k, z
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('radiation_t%short_ray_update', itimer=itimer)
 
-  allocate(xxup, ssup, mold=chi)
-  allocate(Inuup, mold=chi(:,:,1,1))
+  allocate(Inuup(self%n(1), self%n(2)))
+  allocate(xx_ss_up(self%n(1), self%n(2), self%n(3), self%nv, self%opac%nw))
+  xx_ss => self%opac%mem(:,:,:,:,self%opac%it,:)
 
-  call self%interp_xx_ss_up(xxup,ssup)
-
+  dsup = real(self%ray%dsup)
+  kernel = real(self%ray%upkern)
+  
+  call self%interp_xy_up(xx_ss, xx_ss_up, self%ray%upo1, self%ray%upo2, kernel, .true.)
   do f=1, self%nv
   ! ----------------------------------------------------------------------------
   ! frequency vectorisation is slower, because k varies quicker in mem than f.
@@ -271,121 +286,51 @@ SUBROUTINE short_ray_update (self, k1, k2, chi, Snu, Inu)
     do k=k1,k2,self%dir
       z = k - self%li(3) + 1
 
-      call self%interp_xy_up_plane(self%Inu(:,:,k-self%dir,f), Inuup, self%ray%upo1, self%ray%upo2, self%ray%upkern)
-      call linear_formsolv(self%ray%dsup, xxup(:,:,z,f), chi(:,:,z,f), ssup(:,:,z,f), Snu(:,:,z,f), Inuup, self%Psi(:,:,z,f), Inu(:,:,z,f))
+      call self%interp_xy_up_plane(self%Inu(:,:,k-self%dir,f), Inuup, self%ray%upo1, self%ray%upo2, kernel, .true.)
+      call linear_formsolv(dsup, xx_ss_up(:,:,z,f,1), chi(:,:,z,f), xx_ss_up(:,:,z,f,2), &
+                            Snu(:,:,z,f), Inuup, self%Psi(:,:,z,f), Inu(:,:,z,f))
       call self%periodic_plane(self%Inu(:,:,k,f))
     end do ! k-loop
   end do ! f-loop
-
   call trace%end(itimer)
 END SUBROUTINE short_ray_update
 
 !===============================================================================
-pure subroutine interp_xx_ss_up(self, xxup, ssup)
+pure subroutine interp_xy_up(self, VarIn, VarUp, up1, up2, kernel, check_undershoot)
   class(radiation_t), intent(in) :: self
-  real(4), dimension(:,:,:,:), intent(inout) :: xxup,ssup
-  real(8), dimension(:,:), allocatable :: kernel
-  real :: xxmin, ssmin
-  integer :: x1,x2,y1,y2,z1,z2,i,j,k,f, i1,j1,k1, d1,d2
-  ! ----------------------------------------------------------------------------
-  xxup = 0.0
-  ssup = 0.0
-
-  if (self%ray%upplane /= 3) then
-    kernel = self%ray%upkern(2:3,2:3)
-  else
-    kernel = self%ray%upkern
-    i1 = self%li(1) - 1 + self%ray%upo1
-    j1 = self%li(2) - 1 + self%ray%upo2
-  endif
-
+  integer :: z1,k,f,v,k1
+  integer, intent(in) :: up1, up2
+  real(4), dimension(:,:,:,:,:), intent(in) :: VarIn
+  real(4), dimension(:,:,:,:,:), intent(out) :: VarUp
+  real(4), dimension(:,:), intent(in) :: kernel
+  logical, intent(in) :: check_undershoot
+  !-----------------------------------------------------------------------------
   k1 = self%li(3) - 1 - self%dir
 
-  d1 = size(kernel, 1) - 1
-  d2 = size(kernel, 2) - 1
-
-  if (self%ray%upplane == 1) then
-    i1 = self%li(1) - 1 + self%ray%iup
-    j1 = self%li(2) - 1 + self%ray%upo1
-
+  do v=1,2
     do f=1,self%nv
-    do k=1,self%n(3)
-    do j=1,self%n(2)
-    do i=1,self%n(1)
-      x1 = i + i1
-      y1 = j + j1
-      y2 = y1 + d1
-      z1 = k + k1
-      z2 = z1 + self%dir
-      xxup(i,j,k,f) = sum(kernel * self%chi ( x1, y1:y2, z1:z2:self%dir, f))
-      ssup(i,j,k,f) = sum(kernel * self%Snu ( x1, y1:y2, z1:z2:self%dir, f))
+      do k=1,self%n(3)
+        z1 = k + k1
+        call self%interp_xy_up_plane(VarIn(:,:,z1,f,v), VarUp(:,:,k,f,v), up1, up2, kernel, check_undershoot)
+      end do
     end do
-    end do
-    end do
-    end do
-
-  elseif(self%ray%upplane == 2) then
-    i1 = self%li(1) - 1 + self%ray%upo1
-    j1 = self%li(2) - 1 + self%ray%jup
-
-    do f=1,self%nv
-    do k=1,self%n(3)
-    do j=1,self%n(2)
-    do i=1,self%n(1)
-      x1 = i + i1
-      x2 = x1 + d1
-      y1 = j + j1
-      z1 = k + k1
-      z2 = z1 + self%dir
-      xxup(i,j,k,f) = sum(kernel * self%chi ( x1:x2, y1, z1:z2:self%dir, f))
-      ssup(i,j,k,f) = sum(kernel * self%Snu ( x1:x2, y1, z1:z2:self%dir, f))
-    end do
-    end do
-    end do
-    end do
-
-  elseif(self%ray%upplane == 3) then
-    do f=1,self%nv
-    do k=1,self%n(3)
-    do j=1,self%n(2)
-    do i=1,self%n(1)
-      x1 = i + i1
-      x2 = x1 + d1
-      y1 = j + j1
-      y2 = y1 + d2
-      z1 = k + k1
-
-      xxup(i,j,k,f) = sum(self%ray%upkern * self%chi ( x1:x2, y1:y2, z1, f))
-      ssup(i,j,k,f) = sum(self%ray%upkern * self%Snu ( x1:x2, y1:y2, z1, f))
-
-      ! suppress undershoot
-      xxmin = minval(self%chi ( x1+1:x2-1, y1+1:y2-1, z1, f))
-      ssmin = minval(self%Snu ( x1+1:x2-1, y1+1:y2-1, z1, f))
-      if (xxup(i,j,k,f) < xxmin) xxup(i,j,k,f) = xxmin
-      if (ssup(i,j,k,f) < ssmin) ssup(i,j,k,f) = xxmin
-    end do
-    end do
-    end do
-    end do
-  endif
-end subroutine interp_xx_ss_up
+  end do
+end subroutine interp_xy_up
 
 !===============================================================================
-pure subroutine interp_xy_up_plane(self, VarIn, VarUp, up1, up2, kernel)
+pure subroutine interp_xy_up_plane(self, VarIn, VarUp, up1, up2, kernel, check_undershoot)
   class(radiation_t), intent(in) :: self
   integer :: x1,x2,y1,y2,i,j, dx,dy, i1,j1
   integer, intent(in) :: up1, up2
-  real(4) :: VarMin
-  real(4), dimension(:,:), intent(in) :: VarIn
+  real(4), dimension(:,:), intent(in) :: VarIn, kernel
   real(4), dimension(:,:), intent(out) :: VarUp
-  real(8), dimension(:,:), intent(in) :: kernel
+  logical, intent(in) :: check_undershoot
+  real(4) :: VarMin
   !-----------------------------------------------------------------------------
   dx = size(kernel, 1) - 1
   dy = size(kernel, 2) - 1
   i1 = self%li(1) - 1 + up1
   j1 = self%li(2) - 1 + up2
-
-  VarUp = 0.0
 
   do j=1,self%n(2)
     y1 = j + j1
@@ -396,17 +341,20 @@ pure subroutine interp_xy_up_plane(self, VarIn, VarUp, up1, up2, kernel)
       x1 = i + i1
       x2 = x1 + dx
 
-      VarUp(i,j) = VarUp(i,j) + sum(kernel * VarIn(x1:x2, y1:y2))
+      VarUp(i,j) = sum(kernel * VarIn(x1:x2, y1:y2))
 
-      ! suppress undershoot
-      VarMin = minval(VarIn(x1+1:x2-1, y1+1:y2-1))
-      if (VarUp(i,j) < VarMin) VarUp(i,j) = VarMin
+      if (check_undershoot) then
+        VarMin = minval(VarIn(x1+1:x1+2, y1+1:y1+2))
+        if (VarUp(i,j) < VarMin) then
+          VarUp(i,j) = VarMin
+        endif
+      endif
   end do
   end do
 end subroutine interp_xy_up_plane
 
 !===============================================================================
-subroutine solve_long_plane(self, k, f, xxup, ssup, Inuup)
+subroutine solve_long_plane(self, k, f, xxl, ssl, Inuup)
   !---------------------------------------------------------------------
   !
   ! Perform a formal solution with linear interpolation of the source
@@ -415,22 +363,15 @@ subroutine solve_long_plane(self, k, f, xxup, ssup, Inuup)
   !
   !---------------------------------------------------------------------
   class(radiation_t), intent(in) :: self
-  real(4), dimension(:,:), intent(in) :: xxup, ssup
-  real(4), dimension(:,:), allocatable :: xxl, ssl, xx, ss, iil, ii
-  real(4), dimension(:,:), intent(out) :: Inuup
-  real(4), dimension(:,:), allocatable :: psi_tmp
-  real(8), dimension(2,2) :: kernel
+  real(4), dimension(:,:), intent(inout) :: xxl, ssl, Inuup
+  real(4), dimension(:,:), allocatable :: xx, ss
+  real(4), dimension(:,:), allocatable :: psi_tmp 
   integer, intent(in) :: k, f
   integer ::  x1,x2,y1,y2,z1,z2, i,j,m, i1,j1,k1
   ! ----------------------------------------------------------------------------
-  allocate(xxl, ssl, iil, xx, ss, psi_tmp, mold=Inuup)
-  ! X,S and incoming intensity  at the upwind XY plane
-  call self%interp_xy_up_plane(self%Chi(:,:,k-self%dir,f), xxl, self%ray%longo1, self%ray%longo2, self%ray%longkern)
-  call self%interp_xy_up_plane(self%Snu(:,:,k-self%dir,f), ssl, self%ray%longo1, self%ray%longo2, self%ray%longkern)
-  call self%interp_xy_up_plane(self%Inu(:,:,k-self%dir,f), iil, self%ray%longo1, self%ray%longo2, self%ray%longkern)
-
+  allocate(xx, ss, psi_tmp, mold=Inuup)
   ! linear interpolation of snu and chi at each xz or yz intersection
-  do m=1,self%ray%Nintersect - 1
+  do m=1,self%ray%Nintersect
     xx = 0.0
     ss = 0.0
     do j=1,2
@@ -445,13 +386,10 @@ subroutine solve_long_plane(self, k, f, xxup, ssup, Inuup)
         ss(:,:) = ss(:,:) + self%ray%int(m)%wght(i,j) * self%Snu( x1:x2, y1:y2, z1, f)
       end do
     end do
-    call linear_formsolv(self%ray%int(m)%ds, xxl, xx, ssl, ss, iil, psi_tmp, Inuup)
+    call linear_formsolv(real(self%ray%int(m)%ds), xxl, xx, ssl, ss, Inuup, psi_tmp, Inuup)
     xxl = xx
     ssl = ss
-    iil = Inuup
   end do
-
-  call linear_formsolv(self%ray%int(self%ray%Nintersect)%ds, xxl, xxup, ssl, ssup, iil, psi_tmp, Inuup)
 end subroutine solve_long_plane
 
 !====================================================================================
@@ -459,11 +397,11 @@ end subroutine solve_long_plane
 !====================================================================================
 elemental subroutine linear_formsolv(ds, xx1, xx2, ss1, ss2, Inuup, Psi, Inu)
   use mconst
-  real(8), intent(in) :: ds
+  real(4), intent(in) :: ds
   real(4), intent(in) :: xx1, xx2, ss1, ss2, Inuup
   real(4), intent(out) :: Psi
   real(4), intent(out) :: Inu
-  real(8) :: dt, ex, u0
+  real(4) :: dt, ex, u0
   ! ----------------------------------------------------------------------------
 
   dt = 0.5d0 * ds * ( xx1 + xx2 ) ! upwind optical pathlength

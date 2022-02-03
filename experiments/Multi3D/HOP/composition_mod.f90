@@ -34,6 +34,7 @@ module composition_mod
         procedure :: reassign_pointer
         procedure :: get_totn
         procedure :: get_nhyd
+        procedure :: init_mol_dissociation
     end type
 
 contains
@@ -85,7 +86,7 @@ contains
 
         do i = 1, self%nel
             element => elements(i)
-            element%np = findloc(element_ids, element%id, dim=1)
+            element%np = findloc(element_ids, element%id(:3), dim=1)
 
             if (i>1) then
                 allocate(element%ions(element%nion))
@@ -247,13 +248,13 @@ contains
                 ion => element%ions(j)
 
                 if (j == 0) then
-                    ion%id = element%id // '-'
+                    ion%id = element%id(:3) // '-'
                 elseif (j < 4) then
-                    ion%id = element%id // repeat('I', j)
+                    ion%id = element%id(:3) // repeat('I', j)
                 elseif (j == 4) then
-                    ion%id = element%id // 'IV'
+                    ion%id = element%id(:3) // 'IV'
                 elseif (j == 5) then
-                    ion%id = element%id // 'V'
+                    ion%id = element%id(:3) // 'V'
                 endif
 
                 if(j < ubound(element%ions, 1)) ion%above => element%ions(j+1)
@@ -275,6 +276,7 @@ contains
         Hm%levels(1)%xion = 0.754
 
         call self%init_molecules()
+        call self%init_mol_dissociation()
 
         101 FORMAT(7X,I3,5(9X,I1))
         999 FORMAT(4(9X,I1),8X,I2,9X,I1)
@@ -416,7 +418,7 @@ contains
         type(ion_type),         pointer :: ion
         type(level_type),       pointer :: lvl
         type(transition_type),  pointer :: trans
-        integer :: i, j
+        integer :: i, j, m
 
         call trace_begin ('composition_type%reassign_pointer')
         
@@ -432,12 +434,11 @@ contains
                 elseif(j < ubound(element%ions,1)) then
                     ion%above => element%ions(j+1)
                 endif
-            end do
 
-            do j=1, element%nmolec
-                molecule => element%molecules(j)%p
-                call self%molecule_by_id(molecule%id, molecule)
-                element%molecules(j)%p => molecule
+                do m=1, ion%nmolec
+                    call self%molecule_by_id(ion%molecules(m)%p%id, molecule)
+                    ion%molecules(m)%p => molecule
+                end do
             end do
         end do
 
@@ -449,10 +450,10 @@ contains
                 molecule%ion => ion
             endif
 
-            do j=1, molecule%nel
-                element => molecule%elements(j)%p
-                call self%element_by_id(element%id, element)
-                molecule%elements(j)%p => element
+            do j=1, molecule%nions
+                ion => molecule%ions(j)%p
+                call self%ion_by_id(ion%id, ion)
+                molecule%ions(j)%p => ion
             end do
         end do
 
@@ -476,8 +477,9 @@ contains
         class(composition_type), target :: self
         type(molec_type),   pointer :: molecule
         type(element_type), pointer :: element
-        !type(ion_type),     pointer :: ion
-        character(len=3) :: mol_ids(12), ion_id
+        type(ion_type),     pointer :: ion
+        character(len=3) :: mol_ids(12)
+        character(len=6) :: ion_id
         integer :: i, j
 
         call trace_begin ('composition_type%init_molecules')
@@ -487,44 +489,79 @@ contains
         self%nmolec = size(mol_ids)
 
         allocate(self%molecules(self%nmolec))
-        self%elements%nmolec=0
 
         do i=1, size(mol_ids)
             molecule => self%molecules(i)
-            molecule%nel = len(trim(mol_ids(i)))
+            molecule%nions = len(trim(mol_ids(i)))
             molecule%id = trim(mol_ids(i))
 
-            allocate(molecule%elements(molecule%nel))
+            allocate(molecule%ions(molecule%nions))
 
-            do j=1, molecule%nel
+            do j=1, molecule%nions
                 ion_id = molecule%id(j:j)
 
-                select case (ion_id)
-                case ('H')
-                    element => self%elements(findloc(self%elements%id, 'H  ', 1))
-                case ('C')
-                    element => self%elements(findloc(self%elements%id, 'C  ', 1))
-                case ('N')
-                    element => self%elements(findloc(self%elements%id, 'N  ', 1))
-                case ('O')
-                    element => self%elements(findloc(self%elements%id, 'O  ', 1))
+                select case (ion_id(:3))
+                case ('H', 'C', 'N', 'O')
+                    ion_id(4:4) = 'I'
+                    call self%ion_by_id(ion_id, ion)
                 case ('2')
-                    molecule%elements(j)%p => element ! use previous ion a second time
-                    element%nmolec = element%nmolec + 1 
+                    molecule%ions(j)%p => ion ! use previous ion a second time
+                    ion%nmolec = ion%nmolec + 1 
                     cycle
                 case ('p')
-                    molecule%nel = molecule%nel - 1
-                    molecule%ion => element%ions(1)
-                    !molecule%ions(j-1)%p => element%ions(2)
+                    molecule%nions = molecule%nions - 1
+                    molecule%ions(j-1)%p => ion%above
                     cycle
                 case default 
                     cycle
                 end select
 
-                !ion => element%ions(1)
-                molecule%elements(j)%p => element
-                element%nmolec = element%nmolec + 1 
+                molecule%ions(j)%p => ion
+                ion%nmolec = ion%nmolec + 1 
             end do
+        end do
+
+        do i=1, self%nel
+            element => self%elements(i)
+            do j=1, element%nion
+                ion => element%ions(j)
+                allocate(ion%molecules(ion%nmolec))
+                ion%mcount = 1
+            end do
+        end do
+
+        do i=1, size(mol_ids)
+            molecule => self%molecules(i)
+
+            do j=1, molecule%nions
+                ion_id = molecule%id(j:j)
+
+                select case (ion_id)
+                case ('H', 'C', 'N', 'O')
+                    ion_id(4:4) = 'I'
+                    call self%ion_by_id(ion_id, ion)
+                case ('2')
+                    ion => ion ! use previous ion a second time
+                case ('p')
+                    ion => ion%above
+                case default 
+                    cycle
+                end select
+                
+                ion%molecules(ion%mcount)%p => molecule
+                ion%mcount = ion%mcount + 1 
+            end do
+        end do
+        call trace_end ()
+    end subroutine
+
+    subroutine init_mol_dissociation (self)
+        class(composition_type), target :: self
+        type(molec_type),   pointer :: molecule
+        integer :: i
+
+        do i=1, size(self%molecules)
+            molecule => self%molecules(i)
 
             select case (trim(molecule%id))
             case ('H2')
@@ -565,40 +602,7 @@ contains
                 molecule%de = [       3.21 ]
             end select
         end do
-
-        do i=1, self%nel
-            element => self%elements(i)
-            allocate(element%molecules(element%nmolec))
-            element%mcount = 1
-        end do
-
-        do i=1, size(mol_ids)
-            molecule => self%molecules(i)
-
-            do j=1, molecule%nel
-                ion_id = molecule%id(j:j)
-
-                select case (ion_id)
-                case ('H')
-                    element => self%elements(findloc(self%elements%id, 'H  ', 1))
-                case ('C')
-                    element => self%elements(findloc(self%elements%id, 'C  ', 1))
-                case ('N')
-                    element => self%elements(findloc(self%elements%id, 'N  ', 1))
-                case ('O')
-                    element => self%elements(findloc(self%elements%id, 'O  ', 1))
-                case ('2')
-                    element => element ! use previous element a second time
-                case default 
-                    cycle
-                end select
-                
-                element%molecules(element%mcount)%p => molecule
-                element%mcount = element%mcount + 1 
-            end do
-        end do
-        call trace_end ()
-    end subroutine
+    end subroutine init_mol_dissociation
 
     subroutine load_state_variables(self, temp, ne, rho)
         class(composition_type), target :: self
@@ -642,7 +646,6 @@ contains
                 ion => element%ions(j)
 
                 ion%f = ion%anjon * element%abund
-                !ion%n = ion%f * self%toth
 
                 ! number of electrons from ion
                 xnen = ion%f  * (j-1)
@@ -684,11 +687,6 @@ contains
 
         do i=1, self%nel
             element => self%elements(i)
-        
-            select case (trim(element%id))
-            case('H', 'C' , 'N' , 'O')
-                element%ions(1)%f = element%f
-            end select
 
             element%ions(1)%rho_per_h = element%ions(1)%f / self%grph
 
@@ -701,7 +699,7 @@ contains
         allocate (Hm%rho_per_h(size(H0%rho_per_h,1),size(H0%rho_per_h,2),size(H0%rho_per_h,3)))
         Hm%rho_per_h = H0%rho_per_h * Hm%pk
         ! keep this around for consistency with legacy code, its just a bunch of wrong constants.
-        self%xfakh = self%ne*(BK/uop_BK) * H%f / self%fe / self%rho * (1.008*UU / XMH)
+        self%xfakh = self%ne*(BK/uop_BK) * H0%f / self%fe / self%rho * (1.008*UU / XMH)
 
         where (self%temp > self%tmolim)
             self%fe = xnenh + H%ions(2)%anjon
@@ -896,12 +894,12 @@ contains
         real(dp), dimension(:,:,:), intent(in) :: temp, pe, dxi, xnecno
         real(dp), dimension(:,:,:), allocatable, intent(out) :: eh, pg, fe
         real(dp), dimension(:,:,:), allocatable :: teta, r, s, b, pefe, p, q
-        type(molec_type),   pointer :: molecules(:)
-        type(molec_type),   pointer :: H2, CN, H2p
-        type(element_pointer_t) :: elements(4)
-        type(element_type), pointer :: H, C, N, O, eli, elj
-        type(ion_type), pointer :: H0, C0, N0, O0, Hm
-        integer :: i, j, nx, ny, nz, nel, ix, iy, iz, np1, iter
+        type(molec_type), pointer :: molecules(:)
+        type(molec_type), pointer :: H2, CN, H2p
+        type(ion_pointer_t) :: ions(4)
+        type(ion_type), pointer :: H, C, N, O, ioni, ionj
+        type(ion_type), pointer :: Hm
+        integer :: i, j, nx, ny, nz, ix, iy, iz, np1, iter, nions
         real(dp) :: new_diff
         real(dp), dimension(:,:,:), allocatable :: diff
         real(dp), dimension(:,:,:,:)  , allocatable, target :: Fvec
@@ -911,33 +909,33 @@ contains
 
         call trace_begin ('composition_type%molecular_equilibrium')
 
-        call self%element_by_id('H', H)
-        call self%element_by_id('C', C)
-        call self%element_by_id('N', N)
-        call self%element_by_id('O', O)
+        call self%ion_by_id('H  I', H)
+        call self%ion_by_id('C  I', C)
+        call self%ion_by_id('N  I', N)
+        call self%ion_by_id('O  I', O)
 
         call self%molecule_by_id('H2' , H2)
         call self%molecule_by_id('CN' , CN)
         call self%molecule_by_id('H2p', H2p)
 
-        Hm => H%ions(0)
-        H0 => H%ions(1)
-        C0 => C%ions(1)
-        N0 => N%ions(1)
-        O0 => O%ions(1)
-
-        elements(1)%p => H
-        elements(2)%p => C
-        elements(3)%p => O
-        elements(4)%p => N
+        Hm => H%below
+        !H0 => H
+        !C0 => C
+        !N0 => N
+        !O0 => O
+        
+        ions(1)%p => H
+        ions(2)%p => C
+        ions(3)%p => N
+        ions(4)%p => O
+        nions = size(ions)
+        np1 = nions + 1
 
         molecules => self%molecules
 
         nx = size(temp, 1)
         ny = size(temp, 2)
         nz = size(temp, 3)
-        nel = size(elements)
-        np1 = nel + 1
 
         allocate(r, s, eh, pg, fe, diff, mold=temp)
         allocate(Fvec(np1, nx, ny, nz))
@@ -949,7 +947,7 @@ contains
 
         Hm%pk = 1/Hm%saha
 
-        H%fil = 1 + H0%saha + Hm%pk
+        H%fil = 1 + H%saha + Hm%pk
         fe = xnecno
 
         q = - fe/pe / H2%dis
@@ -958,7 +956,7 @@ contains
 
         ! number of free electrons donated by ions over toth
         ! fe = ne / toth
-        fe = H%f * (H0%saha - Hm%pk) + xnecno
+        fe = H%f * (H%saha - Hm%pk) + xnecno
 
         where (fe <= 0)
             r = H2%dis * Hm%saha * Hm%saha
@@ -978,8 +976,8 @@ contains
         end do
 
         b = C%f_of_molecules_with(O) / C%f
-        O%fil = 1 + O0%saha + O%f_of_molecules_with(H) / O%f
-        C%fil = 1 + C0%saha + C%f_of_molecules_with(H) / C%f
+        O%fil = 1 + O%saha + O%f_of_molecules_with(H) / O%f
+        C%fil = 1 + C%saha + C%f_of_molecules_with(H) / C%f
 
         p = (C%abund-O%abund)/O%fil + C%fil/b
         q = - O%abund/O%fil * C%fil/b
@@ -991,7 +989,7 @@ contains
         !allocate (CN%f(size(H0%saha,1),size(H0%saha,2),size(H0%saha,3)))
         CN%f = CN%calc_f(teta, pefe) ! has to be recalculated since C%f changed
         
-        N%fil = 1 + N0%saha + (N%f_of_molecules_with(H) + N%f_of_molecules_with(C)) / N%f
+        N%fil = 1 + N%saha + (N%f_of_molecules_with(H) + N%f_of_molecules_with(C)) / N%f
         b = N%f / N%f_of_molecules_with(N, count_double=.true.) 
         p = 2*N%fil*b
         q = - 2*N%abund*b
@@ -1007,28 +1005,28 @@ contains
                 molecules(i)%f = molecules(i)%calc_f(teta, pefe)
             end do
 
-            do i=1, nel
-                eli => elements(i)%p
+            do i=1, nions
+                ioni => ions(i)%p
                 Fi  => Fvec(i,:,:,:)
 
-                Fi = eli%f_of_own_molecules()
+                Fi = ioni%f_of_own_molecules()
                 Amat(i, np1,:,:,:) = - Fi / fe
 
                 if (i==1) then
-                    Amat(i,  i,:,:,:) = 1 + H0%saha + Hm%pk
-                    Amat(np1,i,:,:,:) = H0%saha + 2*H2p%f /(H%f * pefe) - Hm%pk
-                    Fvec(np1,:,:,:) = H%f * (H0%saha + H2p%f - Hm%pk) - fe + xnecno
+                    Amat(i,  i,:,:,:) = 1 + H%saha + Hm%pk
+                    Amat(np1,i,:,:,:) = H%saha + 2*H2p%f /(H%f * pefe) - Hm%pk
+                    Fvec(np1,:,:,:) = H%f * (H%saha + H2p%f - Hm%pk) - fe + xnecno
                 else
-                    Amat(i,  i,:,:,:) = 1 + eli%ions(1)%saha
-                    Amat(np1,i,:,:,:) = eli%ions(1)%saha
-                    Fvec(np1,:,:,:) = Fvec(np1,:,:,:) + eli%ions(1)%saha*eli%f
+                    Amat(i,  i,:,:,:) = 1 + ioni%saha
+                    Amat(np1,i,:,:,:) = ioni%saha
+                    Fvec(np1,:,:,:) = Fvec(np1,:,:,:) + ioni%saha * ioni%f
                 endif
 
-                Fi = Amat(i,i,:,:,:)*eli%f + Fi - eli%abund
+                Fi = Amat(i,i,:,:,:)*ioni%f + Fi - ioni%abund
 
-                do j=1, nel
-                    elj => elements(j)%p
-                    Amat(i,j,:,:,:) = Amat(i,j,:,:,:) + elj%f_of_molecules_with(eli, count_double=.true.) / elj%f
+                do j=1, nions
+                    ionj => ions(j)%p
+                    Amat(i,j,:,:,:) = Amat(i,j,:,:,:) + ionj%f_of_molecules_with(ioni, count_double=.true.) / ionj%f
                 end do
             end do
 
@@ -1041,14 +1039,14 @@ contains
                     cycle
                 endif
 
-                Fold(1:nel) = [(elements(i)%p%f(ix, iy, iz), i=1, nel)]
+                Fold(1:nions) = [(ions(i)%p%f(ix, iy, iz), i=1, nions)]
                 Fold(np1) = fe(ix,iy,iz)
 
                 call AINV2(Amat(:,:,ix,iy,iz),np1)
                 Fnew = Fold - matmul(Amat(:,:,ix,iy,iz),Fvec(:,ix,iy,iz))
 
-                do i=1, nel
-                    elements(i)%p%f(ix, iy, iz) = Fnew(i)
+                do i=1, nions
+                    ions(i)%p%f(ix, iy, iz) = Fnew(i)
                 end do
 
                 fe(ix,iy,iz) = Fnew(np1)
@@ -1066,7 +1064,7 @@ contains
 
         !print *, iter, 'iterations in molecular equilibrium calculations'
 
-        eh = - H%f*((H0%levels(1)%xion - dxi)*(1+Hm%pk) + (Hm%levels(1)%xion - 2*dxi)*Hm%pk)
+        eh = - H%f*((H%levels(1)%xion - dxi)*(1+Hm%pk) + (Hm%levels(1)%xion - 2*dxi)*Hm%pk)
         pg = fe + sum(self%elements%abund)
 
         do i=1, self%nmolec
@@ -1077,9 +1075,9 @@ contains
             pg = pg + molecules(i)%f
         end do
 
-        do i=1, nel
-            eli => elements(i)%p
-            pg = pg + eli%f*(1+eli%ions(1)%saha) - eli%abund
+        do i=1, nions
+            ioni => ions(i)%p
+            pg = pg + ioni%f*(1+ioni%saha) - ioni%abund
         end do
 
         pg = pg * pefe

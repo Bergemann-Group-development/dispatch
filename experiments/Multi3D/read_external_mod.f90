@@ -45,15 +45,13 @@ SUBROUTINE init(self, task_list, name)
   class(task_list_t),  pointer:: task_list
   character(len=*),   optional:: name
   !-----------------------------------------------------------------------------
-  class(task_t),       pointer:: task
   class(experiment_t), pointer:: patch
-  class(link_t), pointer:: link
   logical, save:: first_time=.true.
-  logical :: searching
+  logical, save :: read_Stagger=.false.
   integer :: iostat, iz, i
   integer, save :: npatches=1, ng(3)=1, verbose=1
   character(len=126) :: atmos_file='./input_multi3d/atmos/atmos.sun_MARCS_50'
-  namelist /atmos_params/ atmos_file, npatches, ng, verbose
+  namelist /atmos_params/ atmos_file, npatches, ng, verbose, read_Stagger
   !-----------------------------------------------------------------------------
   if (associated(task_list)) return
   call trace%begin('read_external_t%init')
@@ -87,8 +85,12 @@ SUBROUTINE init(self, task_list, name)
   call self%task_list%init ('multi3d_mod')
 
   call scaling%init()
-  !call self%read_1d_snapshot()
-  call self%read_stagger_snapshot()
+  
+  if (read_Stagger) then
+    call self%read_stagger_snapshot()
+  else
+    call self%read_1d_snapshot()
+  endif
 
   if (abs(self%ds(3) - (self%zi(self%n(3)) - self%zi(self%n(3)-1))) > 1d-4) then
     write(stdout,*) 'read_external_t%init: Warning: Non-equidistant atmosphere grid!'

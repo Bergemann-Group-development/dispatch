@@ -24,7 +24,7 @@
 
 ! -- Parameters defining the run -----------------------------------------------
 !&io_params          do_trace=t omp_trace=f /
-&atmos_params       verbose=1 atmos_file='./input_multi3d/atmos/atmos.sun_MARCS' npatches=1 /
+&atmos_params       verbose=1 atmos_file='./input_multi3d/atmos/atmos.sun_MARCS' npatches=1 read_Stagger=F/
 &boundary_params    verbose=0 condition=1 /
 &download_params    check_filled=F verbose=0 /
 &atom_params        atom_file='./input_multi3d/atoms/atom.ba06' qnorm=10.0 convlim=1d-3 /

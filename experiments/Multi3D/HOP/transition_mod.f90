@@ -4,6 +4,7 @@ module transition_mod
     use level_mod
     use ion_mod
     use element_mod
+    use molecule_mod
     implicit none
     
     type :: transition_type

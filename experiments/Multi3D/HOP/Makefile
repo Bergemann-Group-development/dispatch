@@ -11,7 +11,7 @@ LFLAGS  = $(FLAGS)
 
 
 # Object Files for build
-SRCS =  prec_mod op_math_mod level_mod ion_mod element_mod transition_mod composition_mod main
+SRCS =  prec_mod op_math_mod level_mod ion_mod molecule_mod element_mod transition_mod composition_mod main
 OBJS = $(SRCS:=.o)
 
 MAIN = main
