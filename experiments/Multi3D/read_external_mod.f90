@@ -20,7 +20,6 @@ MODULE read_external_mod
   USE m3d_patch_mod
 
   type, public:: read_external_t
-    character(len=126) :: atmos_file
     class(task_list_t), pointer:: task_list
     integer :: npatches(3), n(3), ng(3), verbose
     real(4), dimension(:,:,:), allocatable :: temp, ne, pe, rho, vturb, px, py, pz
@@ -72,7 +71,6 @@ SUBROUTINE init(self, task_list, name)
     call io%namelist_warning ('atmos_params', iostat)
     write (io%namelist, atmos_params)
 
-    self%atmos_file = atmos_file
     self%npatches(1) = 1
     self%npatches(2) = 1
     self%npatches(3) = npatches
@@ -88,9 +86,9 @@ SUBROUTINE init(self, task_list, name)
   call scaling%init()
   
   if (read_Stagger) then
-    call self%read_stagger_snapshot()
+    call self%read_stagger_snapshot(atmos_file)
   else
-    call self%read_1d_snapshot()
+    call self%read_1d_snapshot(atmos_file)
   endif
 
   if (abs(self%ds(3) - (self%zi(self%n(3)) - self%zi(self%n(3)-1))) > 1d-4) then
@@ -188,15 +186,16 @@ END SUBROUTINE create_patch
 !===============================================================================
 !> Reads the actual text files and stores variables under self
 !===============================================================================
-SUBROUTINE read_1d_snapshot(self)
+SUBROUTINE read_1d_snapshot(self, atmos_1d_file)
   !-----------------------------------------------------------------------------
   USE m3io_mod, only: NextEntry
   class(read_external_t):: self
   integer :: nz, lunit, i, iostat
+  character(len=126) :: atmos_1d_file
   !-----------------------------------------------------------------------------
   ! Open atmosphere file and read MHD variables
   !-----------------------------------------------------------------------------
-  open(file=self%atmos_file, newunit=lunit)
+  open(file=atmos_1d_file, newunit=lunit)
   call nextentry(lunit)
   read(lunit, *) self%atmos_name
   call nextentry(lunit)
@@ -229,10 +228,10 @@ SUBROUTINE read_1d_snapshot(self)
 END SUBROUTINE read_1d_snapshot
 
 !===============================================================================
-SUBROUTINE read_stagger_snapshot(self)
+SUBROUTINE read_stagger_snapshot(self, stagger_file)
   class(read_external_t):: self
   integer :: lunit
-  character(len=126) :: stagger_file='./input_multi3d/atmos/t5777g44m0005_20.5x5x230'
+  character(len=126) :: stagger_file
   real(4) :: test
   !-----------------------------------------------------------------------------
   ! Open atmosphere file and read MHD variables
