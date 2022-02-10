@@ -887,12 +887,9 @@ contains
 
         nh = H0%f / self%fe * self%ne * (BK/uop_BK)
 
-        print *, nh(1,1,1)
-
         do k=1, nk
             level%xion = Ryd * (1. - 1./k**2)
             blzfac = level%boltzmann(self%EK_over_temp, natural_log=.true.)
-            print *, k, blzfac(1,1,1), self%EK_over_temp(1,1,1)
             nhyd(:,:,:,k) = k**2 * blzfac * nh
         end do
         call trace_end ()
