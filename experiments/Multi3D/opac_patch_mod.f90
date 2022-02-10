@@ -206,6 +206,7 @@ SUBROUTINE sum_opac_update (self)
   call trace%begin('opacity_t%sum_opac_update', itimer=itimer)
   allocate(tmp, mold=self%back_opac%mem)
   tmp = self%back_opac%mem + self%cont_opac%mem + self%line_opac%mem
+  self%authority_mem(:,:,:,:,:,self%i_chi) = tmp(:,:,:,:,:,self%i_chi)
   self%authority_mem(:,:,:,:,:,self%i_snu) = tmp(:,:,:,:,:,self%i_eta) / tmp(:,:,:,:,:,self%i_chi)
   mem => self%mem(:,:,:,:,self%it,:)
   call self%boundaries%mirror(mem)

@@ -36,4 +36,4 @@
 &task_list_params   verbose=0 /
 &task_params        verbose=0 /
 &halo_params        check_filled=F /
-&m3d_params         fcheck=101 pcheck=1,1,1 /
+&m3d_params         fcheck=101 pcheck=1,1,230 /
