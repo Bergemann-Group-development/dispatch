@@ -32,6 +32,7 @@ PROGRAM dispatch
   USE task_list_mod
   USE experiment_mod
   USE read_external_mod
+  USE timer_mod
   !type(cartesian_t):: cartesian                 ! Use Cartesian patch arrangement
   class(task_list_t), pointer:: task_list => null()
   !.............................................................................
@@ -41,6 +42,7 @@ PROGRAM dispatch
   !call restart%init (task_list)                 ! Possibly initialize task_list
   !call cartesian%init (task_list)               ! .. or else here ...
   call dispatcher%execute (task_list)           ! Run dispatcher on the task_list
+  call timer%print() 
   call setup%end                                ! End setup
 !===============================================================================
 END PROGRAM dispatch

@@ -295,6 +295,7 @@ contains
             trans%bound_free = .false.
 
             read(absdat,'(A65)') text
+            trans%label = text(:20)
             
             if (text(1:1) == '/') then
                 trans%key = text(2:6)
@@ -365,25 +366,15 @@ contains
             trans%iteta = iteta > 0
 
             if (ntt > 1) then
-                allocate(trans%temp (ntt))
-                !allocate(trans%tdisk(ntt))
+                allocate(trans%temp(ntt))
+                allocate(trans%tt  (ntt))
                 read(absdat, *) trans%temp
 
-                !tdiff = trans%temp(2:) - trans%temp(:ntt-1)
-                !if (any(tdiff == 0)) print *, 'warning: Tdiff = 0'
-
-                !trans%tdisk = .false.
-                !do j=2, ntt-1
-                !    if (abs(1 - tdiff(j)/tdiff(j-1)) > 1.e-4) then
-                !        trans%tdisk(j) = .true.
-                !    endif
-                !end do
-
                 if (iteta > 0) then
+                    allocate(trans%teta(ntt))
                     trans%teta = trans%temp
                     trans%temp = temp_to_theta / trans%teta(ntt:1:-1)
                     trans%tt = trans%teta
-                    !trans%tdisk = cshift(trans%tdisk(ntt:1:-1), -1)
                 else
                     trans%tt = trans%temp
                 endif
@@ -444,11 +435,6 @@ contains
 
         do i=1, size(self%molecules)
             molecule => self%molecules(i)
-            if (associated(molecule%ion)) then
-                ion => molecule%ion
-                call self%ion_by_id(ion%id, ion)
-                molecule%ion => ion
-            endif
 
             do j=1, molecule%nions
                 ion => molecule%ions(j)%p
@@ -564,6 +550,13 @@ contains
             molecule => self%molecules(i)
 
             select case (trim(molecule%id))
+            case ('H2', 'H2p')
+                allocate(molecule%de(5))
+            case default
+                allocate(molecule%de(1))
+            end select
+
+            select case (trim(molecule%id))
             case ('H2')
                 molecule%dc = [ 6.3021E-4, -1.4149E-2,  1.2572E-1, -5.1172E0,  12.739E0 ]
                 molecule%de = [  0.00975,  -0.12427,   0.60602,   -1.4772,    2.6757 ]
@@ -640,11 +633,16 @@ contains
 
         do i=1, self%nel
             element => self%elements(i)
+
+            do j=1, element%nion
+                ion => element%ions(j)
+                allocate(ion%f, ion%saha, ion%part, ion%anjon, mold=temp)
+            end do
+
             call element%compute_ion_equilibrium(self%EK_over_temp, self%ne, self%saha, self%dxi)
             
             do j=1, element%nion
                 ion => element%ions(j)
-
                 ion%f = ion%anjon * element%abund
 
                 ! number of electrons from ion
@@ -674,11 +672,7 @@ contains
 
         Hm%saha = Hm%saha_eq(self%EK_over_temp, self%ne, self%saha, self%dxi, partition_ratio=2.d0) ! ratio H0/H-
 
-        do i=1, self%nmolec
-            self%molecules(i)%dis = self%molecules(i)%pk(self%teta)
-        end do
-
-        call self%molecular_equilibrium(self%temp, self%pe, self%dxi, xnecno, self%eh, self%pg, self%fe)
+        call self%molecular_equilibrium(self%temp, self%teta, self%pe, self%dxi, xnecno, xnenh, self%eh, self%pg, self%fe)
 
         do i=1, self%nmolec
             !self%molecules(i)%n = self%molecules(i)%f * self%ne / self%fe
@@ -696,18 +690,17 @@ contains
             end do
         end do
 
-        allocate (Hm%rho_per_h(size(H0%rho_per_h,1),size(H0%rho_per_h,2),size(H0%rho_per_h,3)))
-        Hm%rho_per_h = H0%rho_per_h * Hm%pk
-        ! keep this around for consistency with legacy code, its just a bunch of wrong constants.
-        self%xfakh = self%ne*(BK/uop_BK) * H0%f / self%fe / self%rho * (1.008*UU / XMH)
+        allocate (Hm%rho_per_h, self%xfakh, mold=temp)
+        Hm%rho_per_h = H0%rho_per_h / Hm%saha
 
-        where (self%temp > self%tmolim)
-            self%fe = xnenh + H%ions(2)%anjon
-            self%eh = (H%ions(1)%levels(1)%xion - self%dxi) * H%ions(2)%anjon
-            self%pg = self%pe * (1 + self%suma/self%fe)
+        where (temp < self%tmolim)
+            ! keep this around for consistency with legacy code, its just a bunch of wrong constants.
+            self%xfakh = self%ne*(BK/uop_BK) * H0%f / self%fe / self%rho * (1.008*UU / XMH)
+        elsewhere
+            self%xfakh = H0%rho_per_h
         end where
 
-        self%E = 1.5*self%pg/self%rho+(self%eh+ejon)*EE/self%grph
+        !self%E = 1.5*self%pg/self%rho+(self%eh+ejon)*EE/self%grph
 
         ! legacy rho, should probably be replaced by actual rho
         self%ro = self%ne*(BK/uop_BK) * self%grph / self%fe
@@ -724,7 +717,9 @@ contains
         real(dp), dimension(:),     intent(in) :: nu
         real(4), dimension(:,:,:,:), intent(inout) :: chi
         real(dp), dimension(:,:,:), allocatable :: fakt, abso, hrest, abfakray, ab
+        real(dp), dimension(:,:,:), allocatable :: umc, h1
         real(dp), dimension(:,:,:), allocatable :: fakray, h2ray, els, rayh, rayh2
+        integer, dimension(:,:,:), allocatable :: nniv
         real(dp), dimension(:), allocatable :: lam
         real(dp) :: xray2
         integer :: i, f, nf, nx, ny, nz
@@ -740,6 +735,7 @@ contains
 
         allocate(self%abslte(nx,ny,nz,nf))
         allocate(self%sumsca(nx,ny,nz,nf))
+        allocate(hrest(nx,ny,nz), fakt(nx,ny,nz))
 
         self%abslte = 0
         self%sumsca = 0 ! line list not implemented yet
@@ -749,34 +745,42 @@ contains
             select case (trim(trans%key))
             case ('H BF')
                 call trans%add_absorption(self%abslte, lam, self%temp, self%EK_over_temp, self%teta, &
-                                          self%pe, self%ro, self%dxi, self%xfakh)
+                                          self%pe, self%ro, self%dxi, self%xfakh, fakt)
             case ('H FF')
                 call trans%add_absorption(self%abslte, lam, self%temp, self%EK_over_temp, self%teta, &
-                                          self%pe, self%ro, self%dxi, self%xfakh)
+                                          self%pe, self%ro, self%dxi, self%xfakh, fakt)
+
+                hrest = 0
+                h1 = sqrt(13.595/self%dxi)
+                nniv = min(int(h1), 15)
+                umc = 2.3026 * self%dxi * self%teta
+                
+                where (h1 > 15.5)
+                    hrest = fakt * (exp(31.30364*self%teta/((float(nniv)+0.5)**2)-umc)-1.)
+                end where
+
+                do f=1, nf
+                    self%abslte(:,:,:,f) = self%abslte(:,:,:,f) + hrest
+                end do
             end select
         end do
 
-        call self%trans_by_id('H FF', trans)
-        fakt  = trans%absorption_factor(self%EK_over_temp, self%teta, self%pe, self%ro, self%dxi, self%xfakh)
-        hrest = fakt * (exp(31.30364*self%teta/(15.5**2) - 2.3026 * self%dxi * self%teta) - 1)
-
         do f=1, nf
-            self%abslte(:,:,:,f) = (self%abslte(:,:,:,f) + hrest) * lam(f)**3
+            ! all continua above are multiplied by lam**3
+            !------------------------------------------------------
+            self%abslte(:,:,:,f) = self%abslte(:,:,:,f) * lam(f)**3
         end do
-
-        ! all continua above are multiplied by lam**3
-        !--------------------------------------------------------------------------------
 
         do i=1, size(self%trans)
             trans => self%trans(i)
 
             select case (trim(trans%key))
             case ('H FF', 'H BF', 'H- FF')
-                ! H BF and HFF have already been added
+                ! H BF and H FF have already been added
                 ! H- FF still to be added after multiplication of stim
             case default
                 call trans%add_absorption(self%abslte, lam, self%temp, self%EK_over_temp, self%teta, &
-                                          self%pe, self%ro, self%dxi, self%xfakh)
+                                          self%pe, self%ro, self%dxi, self%xfakh, fakt)
             end select
         end do
 
@@ -791,7 +795,7 @@ contains
         ! H- FF absorption is added without stim factor
         call self%trans_by_id('H- FF', trans)
         call trans%add_absorption(self%abslte, lam, self%temp, self%EK_over_temp, self%teta, &
-                                  self%pe, self%ro, self%dxi, self%xfakh)
+                                  self%pe, self%ro, self%dxi, self%xfakh, fakt)
 
         ! electron scattering
         els = 4.8206e-9 * self%pe / (self%temp * self%ro)
@@ -860,7 +864,7 @@ contains
         call self%element_by_id(id, element)
 
         if (associated(element)) then
-            totn = element%f * (1 + element%ions(1)%saha) * self%toth
+            totn = element%ions(1)%f * (1 + element%ions(1)%saha) * self%toth
         else
             totn = 10.0**(abund-12.0) * self%rho / (self%xmy*1.008*uu)
         endif
@@ -879,25 +883,30 @@ contains
         nk = size(nhyd, 4)
         H0 => self%elements(1)%ions(1)
 
+        allocate(nh, blzfac, mold=nhyd(:,:,:,1))
+
         nh = H0%f / self%fe * self%ne * (BK/uop_BK)
+
+        print *, nh(1,1,1)
 
         do k=1, nk
             level%xion = Ryd * (1. - 1./k**2)
             blzfac = level%boltzmann(self%EK_over_temp, natural_log=.true.)
+            print *, k, blzfac(1,1,1), self%EK_over_temp(1,1,1)
             nhyd(:,:,:,k) = k**2 * blzfac * nh
         end do
         call trace_end ()
     end subroutine
 
-    subroutine molecular_equilibrium(self, temp, pe, dxi, xnecno, eh, pg, fe)
+    subroutine molecular_equilibrium(self, temp, teta, pe, dxi, xnecno, xnenh, eh, pg, fe)
         class(composition_type), target :: self
-        real(dp), dimension(:,:,:), intent(in) :: temp, pe, dxi, xnecno
+        real(dp), dimension(:,:,:), intent(in) :: temp, pe, teta, dxi, xnecno, xnenh
         real(dp), dimension(:,:,:), allocatable, intent(out) :: eh, pg, fe
-        real(dp), dimension(:,:,:), allocatable :: teta, r, s, b, pefe, p, q
+        real(dp), dimension(:,:,:), allocatable :: r, s, b, pefe, p, q
         type(molec_type), pointer :: molecules(:)
         type(molec_type), pointer :: H2, CN, H2p
         type(ion_pointer_t) :: ions(4)
-        type(ion_type), pointer :: H, C, N, O, ioni, ionj
+        type(ion_type), pointer :: H, C, N, O, ion, ioni, ionj
         type(ion_type), pointer :: Hm
         integer :: i, j, nx, ny, nz, ix, iy, iz, np1, iter, nions
         real(dp) :: new_diff
@@ -906,23 +915,25 @@ contains
         real(dp), dimension(:,:,:,:,:), allocatable, target :: Amat
         real(dp), dimension(:,:,:), pointer :: Fi
         real(dp), dimension(:), allocatable :: Fold, Fnew
+        logical, dimension(:,:,:), allocatable :: tmolim
 
         call trace_begin ('composition_type%molecular_equilibrium')
+
+        nx = size(temp, 1)
+        ny = size(temp, 2)
+        nz = size(temp, 3)
 
         call self%ion_by_id('H  I', H)
         call self%ion_by_id('C  I', C)
         call self%ion_by_id('N  I', N)
         call self%ion_by_id('O  I', O)
+        Hm => H%below
+
+        molecules => self%molecules
 
         call self%molecule_by_id('H2' , H2)
         call self%molecule_by_id('CN' , CN)
         call self%molecule_by_id('H2p', H2p)
-
-        Hm => H%below
-        !H0 => H
-        !C0 => C
-        !N0 => N
-        !O0 => O
         
         ions(1)%p => H
         ions(2)%p => C
@@ -931,110 +942,116 @@ contains
         nions = size(ions)
         np1 = nions + 1
 
-        molecules => self%molecules
-
-        nx = size(temp, 1)
-        ny = size(temp, 2)
-        nz = size(temp, 3)
-
-        allocate(r, s, eh, pg, fe, diff, mold=temp)
+        allocate(r, s, eh, pg, fe, diff, q, p, b, mold=temp)
         allocate(Fvec(np1, nx, ny, nz))
         allocate(Amat(np1, np1, nx, ny, nz))
         allocate(Fold(np1), Fnew(np1))
-        allocate(H%fil, O%fil, C%fil, N%fil, mold=temp)
+        allocate(H%fil, O%fil, C%fil, N%fil, Hm%pk, mold=temp)
 
-        teta = temp_to_theta / temp
+        do i=1, self%nmolec
+            allocate (molecules(i)%f, molecules(i)%e, molecules(i)%dis, mold=temp)
+            molecules(i)%dis = molecules(i)%pk(teta)
+        end do
 
-        Hm%pk = 1/Hm%saha
+        tmolim = temp < self%tmolim
 
-        H%fil = 1 + H%saha + Hm%pk
-        fe = xnecno
+        where (tmolim)
+            Hm%pk = 1/Hm%saha
+            H%fil = 1 + H%saha + Hm%pk
+            fe = xnecno
+            q = - fe/pe / H2%dis
+            p = - H%fil * q
+            H%f = solve_quadratic(p, q)
 
-        q = - fe/pe / H2%dis
-        p = - H%fil * q
-        H%f = solve_quadratic(p, q)
+            ! number of free electrons donated by ions over toth
+            ! fe = ne / toth
+            fe = H%f * (H%saha - Hm%pk) + xnecno
 
-        ! number of free electrons donated by ions over toth
-        ! fe = ne / toth
-        fe = H%f * (H%saha - Hm%pk) + xnecno
-
-        where (fe <= 0)
-            r = H2%dis * Hm%saha * Hm%saha
-            s = r - H%fil*Hm%saha
-            p = (H%fil*Hm%saha * xnecno - 1 - 2*xnecno*r) / s
-            q = r*xnecno*xnecno/s
-            fe = solve_quadratic(p, q, avoid_negative=.true.)
-            H%f = (xnecno - fe)*Hm%saha
+            where (fe <= 0)
+                r = H2%dis * Hm%saha * Hm%saha
+                s = r - H%fil*Hm%saha
+                p = (H%fil*Hm%saha * xnecno - 1 - 2*xnecno*r) / s
+                q = r*xnecno*xnecno/s
+                fe = solve_quadratic(p, q, avoid_negative=.true.)
+                H%f = (xnecno - fe)*Hm%saha
+            end where
+        elsewhere
+            fe = xnenh + self%elements(1)%ions(2)%anjon
         end where
 
         pefe = pe/fe
 
         do i=1, self%nmolec
             !partial electron pressures due to each molecule
-            allocate (molecules(i)%f, molecules(i)%e, mold=temp)
-            molecules(i)%f = molecules(i)%calc_f(teta, pefe)
+            where (tmolim) molecules(i)%f = molecules(i)%calc_f(teta, pefe)
         end do
 
-        b = C%f_of_molecules_with(O) / C%f
-        O%fil = 1 + O%saha + O%f_of_molecules_with(H) / O%f
-        C%fil = 1 + C%saha + C%f_of_molecules_with(H) / C%f
+        where (tmolim)
+            b = C%f_of_molecules_with(O) / C%f
+            O%fil = 1 + O%saha + O%f_of_molecules_with(H) / O%f
+            C%fil = 1 + C%saha + C%f_of_molecules_with(H) / C%f
 
-        p = (C%abund-O%abund)/O%fil + C%fil/b
-        q = - O%abund/O%fil * C%fil/b
-        !allocate (O%f(size(H0%saha,1),size(H0%saha,2),size(H0%saha,3)))
-        !allocate (C%f(size(H0%saha,1),size(H0%saha,2),size(H0%saha,3)))
-        O%f = solve_quadratic(p, q)
-        C%f = C%abund / (C%fil + b*O%f)
+            p = (C%abund-O%abund)/O%fil + C%fil/b
+            q = - O%abund/O%fil * C%fil/b
+            O%f = solve_quadratic(p, q)
+            C%f = C%abund / (C%fil + b*O%f)
 
-        !allocate (CN%f(size(H0%saha,1),size(H0%saha,2),size(H0%saha,3)))
-        CN%f = CN%calc_f(teta, pefe) ! has to be recalculated since C%f changed
-        
-        N%fil = 1 + N%saha + (N%f_of_molecules_with(H) + N%f_of_molecules_with(C)) / N%f
-        b = N%f / N%f_of_molecules_with(N, count_double=.true.) 
-        p = 2*N%fil*b
-        q = - 2*N%abund*b
-        !allocate (N%f(size(H0%saha,1),size(H0%saha,2),size(H0%saha,3)))
-        N%f = solve_quadratic(p, q)
-        where (N%f < 0) N%f = 0
+            CN%f = CN%calc_f(teta, pefe) ! has to be recalculated since C%f changed
+            
+            N%fil = 1 + N%saha + (N%f_of_molecules_with(H) + N%f_of_molecules_with(C)) / N%f
+            b = N%f / N%f_of_molecules_with(N, count_double=.true.) 
+            p = 2*N%fil*b
+            q = - 2*N%abund*b
+            N%f = solve_quadratic(p, q)
+            where (N%f < 0) N%f = 0
+        end where
 
         diff = 0
 
         do iter=1, 100
             Amat = 0
             do i=1, self%nmolec
-                molecules(i)%f = molecules(i)%calc_f(teta, pefe)
+                where (tmolim) molecules(i)%f = molecules(i)%calc_f(teta, pefe)
             end do
 
             do i=1, nions
                 ioni => ions(i)%p
                 Fi  => Fvec(i,:,:,:)
 
-                Fi = ioni%f_of_own_molecules()
-                Amat(i, np1,:,:,:) = - Fi / fe
+                where (tmolim) 
+                    Fi = ioni%f_of_own_molecules()
+                    Amat(i, np1,:,:,:) = - Fi / fe
+                end where
 
                 if (i==1) then
-                    Amat(i,  i,:,:,:) = 1 + H%saha + Hm%pk
-                    Amat(np1,i,:,:,:) = H%saha + 2*H2p%f /(H%f * pefe) - Hm%pk
-                    Fvec(np1,:,:,:) = H%f * (H%saha + H2p%f - Hm%pk) - fe + xnecno
+                    where (tmolim) 
+                        Amat(i,  i,:,:,:) = 1 + H%saha + Hm%pk
+                        Amat(np1,i,:,:,:) = H%saha + 2*H2p%f /(H%f * pefe) - Hm%pk
+                        Fvec(np1,:,:,:) = H%f * (H%saha + H2p%f - Hm%pk) - fe + xnecno
+                    end where
                 else
-                    Amat(i,  i,:,:,:) = 1 + ioni%saha
-                    Amat(np1,i,:,:,:) = ioni%saha
-                    Fvec(np1,:,:,:) = Fvec(np1,:,:,:) + ioni%saha * ioni%f
+                    where (tmolim) 
+                        Amat(i,  i,:,:,:) = 1 + ioni%saha
+                        Amat(np1,i,:,:,:) = ioni%saha
+                        Fvec(np1,:,:,:) = Fvec(np1,:,:,:) + ioni%saha * ioni%f
+                    end where
                 endif
 
-                Fi = Amat(i,i,:,:,:)*ioni%f + Fi - ioni%abund
+                where (tmolim) Fi = Amat(i,i,:,:,:)*ioni%f + Fi - ioni%abund
 
                 do j=1, nions
                     ionj => ions(j)%p
-                    Amat(i,j,:,:,:) = Amat(i,j,:,:,:) + ionj%f_of_molecules_with(ioni, count_double=.true.) / ionj%f
+                    where (tmolim) Amat(i,j,:,:,:) = Amat(i,j,:,:,:) + ionj%f_of_molecules_with(ioni, count_double=.true.) / ionj%f
                 end do
             end do
 
-            Amat(np1, np1,:,:,:) = - H2p%f/pe - 1
+            where (tmolim) Amat(np1, np1,:,:,:) = - H2p%f/pe - 1
 
             do iz=1, nz
             do iy=1, ny
             do ix=1, nx
+                if (.not. tmolim(ix,iy,iz)) cycle
+
                 if (iter > 2 .and. diff(ix,iy,iz) < 0.001) then
                     cycle
                 endif
@@ -1053,8 +1070,6 @@ contains
                 pefe(ix,iy,iz) = pe(ix,iy,iz) / fe(ix,iy,iz)
 
                 diff(ix,iy,iz) = maxval(abs(1-Fold/Fnew))
-                !new_diff = maxval(abs(1-Fold/Fnew))
-                !diff(ix,iy,iz) = merge(new_diff, diff(ix,iy,iz), new_diff > diff(ix,iy,iz))
             end do
             end do
             end do
@@ -1063,24 +1078,29 @@ contains
         end do
 
         !print *, iter, 'iterations in molecular equilibrium calculations'
-
-        eh = - H%f*((H%levels(1)%xion - dxi)*(1+Hm%pk) + (Hm%levels(1)%xion - 2*dxi)*Hm%pk)
-        pg = fe + sum(self%elements%abund)
+        where (tmolim)
+            !eh = - H%f*((H%levels(1)%xion - dxi)*(1+Hm%pk) + (Hm%levels(1)%xion - 2*dxi)*Hm%pk)
+            pg = fe + self%suma !sum(self%elements%abund)
+        elsewhere
+            !eh = (H%levels(1)%xion - dxi) * H%above%anjon
+            pg = pe * (1 + self%suma/fe)
+        end where
 
         do i=1, self%nmolec
-            molecules(i)%f = molecules(i)%calc_f(teta, pefe) ! has to be called first
-            molecules(i)%e = molecules(i)%calc_e(teta, temp, dxi)
-
-            eh = eh + molecules(i)%e
-            pg = pg + molecules(i)%f
+            where (tmolim)
+                molecules(i)%f = molecules(i)%calc_f(teta, pefe) ! has to be called first
+                pg = pg + molecules(i)%f
+                !molecules(i)%e = molecules(i)%calc_e(teta, temp, dxi)
+                !eh = eh + molecules(i)%e
+            end where
         end do
 
         do i=1, nions
-            ioni => ions(i)%p
-            pg = pg + ioni%f*(1+ioni%saha) - ioni%abund
+            ion => ions(i)%p
+            where (tmolim) pg = pg + ion%f*(1+ion%saha) - ion%abund
         end do
 
-        pg = pg * pefe
+        where (tmolim) pg = pg * pefe
 
         call trace_end ()
     end subroutine molecular_equilibrium
@@ -1178,26 +1198,26 @@ contains
 
     !---------------------------------------------------------------------
     pure function uppercase(string,ss)
-    ! converts the first ss characters of string to uppercase and returns them as a new string.
-    character(len=*),intent(in) :: string
-    integer,intent(in) :: ss
-    character(len=ss) :: uppercase
-    integer :: i,k
-    character(len=26),parameter :: ucase='ABCDEFGHIJKLMNOPQRSTUVWXYZ' 
-    character(len=26),parameter :: lcase='abcdefghijklmnopqrstuvwxyz'
+        ! converts the first ss characters of string to uppercase and returns them as a new string.
+        character(len=*),intent(in) :: string
+        integer,intent(in) :: ss
+        character(len=ss) :: uppercase
+        integer :: i,k
+        character(len=26),parameter :: ucase='ABCDEFGHIJKLMNOPQRSTUVWXYZ' 
+        character(len=26),parameter :: lcase='abcdefghijklmnopqrstuvwxyz'
 
-    uppercase(:)=' '
-    uppercase(1:ss)=string(1:ss)
-    do i=1,ss
-       k=index(lcase,string(i:i))
-       if (k > 0) then
-          uppercase(i:i)=ucase(k:k)
-       else
-          uppercase(i:i)=string(i:i)
-       end if
-    end do
+        uppercase(:)=' '
+        uppercase(1:ss)=string(1:ss)
+        do i=1,ss
+        k=index(lcase,string(i:i))
+        if (k > 0) then
+            uppercase(i:i)=ucase(k:k)
+        else
+            uppercase(i:i)=string(i:i)
+        end if
+        end do
 
-  end function uppercase
-  !---------------------------------------------------------------------
+    end function uppercase
+    !---------------------------------------------------------------------
 
 end module composition_mod

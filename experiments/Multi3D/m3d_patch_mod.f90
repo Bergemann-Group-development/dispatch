@@ -76,7 +76,10 @@ module m3d_patch_mod
   end type
 
   !-----------------------------------------------------------------------------
-  integer, save:: verbose=0                           ! verbosity
+  integer, save:: verbose=0
+  integer, public, save:: fcheck=1
+  integer, public, save:: pcheck(3)=[1,1,1]
+  integer, save:: linecheck=3
     
 contains
 
@@ -88,7 +91,7 @@ SUBROUTINE m3d_pre_init (self)
   logical, save :: on=.true.
   integer :: iostat
   !-----------------------------------------------------------------------------
-  namelist /m3d_params/ on, verbose
+  namelist /m3d_params/ on, verbose, fcheck, linecheck, pcheck
 
   !-----------------------------------------------------------------------------
   ! Read parameters
@@ -185,8 +188,17 @@ SUBROUTINE m3d_post_update (self)
   class(m3d_t) :: self
   !-----------------------------------------------------------------------------
   if (self%verbose > 1) then
-    write(*,'(F5.1, L2, A12, 3(I4), 6(ES15.7))') self%time, self%finished, trim(self%kind), self%patch%id, self%i_nu, self%i_omega, &
-    self%authority_mem(1,1,1,1,1,:), self%authority_mem(1,1,self%n(3),1,1,:)
+    select case (self%kind)
+    case('rad_rate')
+      write(*,'(F5.1, A12, 4(I4), 6(ES15.7))') self%time, trim(self%kind), self%patch%id, self%i_nu, self%dir, self%i_omega, &
+      self%authority_mem(pcheck(1),pcheck(2),pcheck(3),linecheck,1,:)
+    case('out_rad')
+      write(*,'(F5.1, A12, 4(I4), 6(ES15.7))') self%time, trim(self%kind), self%patch%id, self%i_nu, self%dir, self%i_omega, &
+      self%authority_mem(pcheck(1),pcheck(2),1,fcheck,1,:)
+    case default
+      write(*,'(F5.1, A12, 4(I4), 6(ES15.7))') self%time, trim(self%kind), self%patch%id, self%i_nu, self%dir, self%i_omega, &
+      self%authority_mem(pcheck(1),pcheck(2),pcheck(3),fcheck,1,:)
+    end select
   endif
 
   if (self%iter == self%maxiter) then

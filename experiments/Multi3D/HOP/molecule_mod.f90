@@ -7,7 +7,6 @@ module molecule_mod
     type, extends(particle_type) :: molec_type
         integer :: nions
         class(ion_pointer_t), allocatable :: ions(:)
-        type(ion_type), pointer :: ion => null()
         real(dp) :: dc(5) ! dissociation_constants
         real(dp), dimension(:), allocatable :: de ! dissociation_energies
         real(dp), dimension(:,:,:), allocatable :: dis
@@ -29,40 +28,32 @@ elemental real(dp) function pk(self, teta)
     pk = 10**(-poly1d(teta, self%dc(1), self%dc(2), self%dc(3), self%dc(4), self%dc(5)))
 end function
 
-
+!===============================================================================
 function calc_f(self, teta, pe_over_fe) result(f)
     class(molec_type), intent(in) :: self
     real(dp), dimension(:,:,:) :: teta, pe_over_fe
     real(dp), dimension(:,:,:), allocatable :: f
     type(ion_type), pointer :: ion
     integer :: j
-
+    !---------------------------------------------------------------------------
+    allocate(f, mold=self%dis) 
     f = self%dis
-
-    if (associated(self%ion)) then
-        f = f * self%ion%saha
-    endif
 
     do j=1, self%nions
         ion => self%ions(j)%p
-
-        if (.not. allocated(ion%f)) then
-            allocate(ion%f, mold=f)
-            ion%f = 1
-        endif
-
         f = f * ion%f
         if (j > 1) f = f * pe_over_fe
     end do
 end function calc_f
 
+!===============================================================================
 function calc_e(self, teta, temp, dxi) result(e)
     class(molec_type), intent(in) :: self
     class(ion_type), pointer :: ion
     real(dp), dimension(:,:,:) :: teta, temp, dxi
     real(dp), dimension(:,:,:), allocatable :: dis, e
     integer :: i
-
+    !---------------------------------------------------------------------------
     allocate(dis, mold=temp)
 
     if (size(self%de) > 1) then
@@ -78,7 +69,7 @@ function calc_e(self, teta, temp, dxi) result(e)
         ion => self%ions(i)%p
 
         ! why only consider ionisation energy from H?
-        if (trim(ion%id) == 'H I') then
+        if (trim(ion%id) == 'H  I') then
             dis = dis + ion%levels(1)%xion - dxi
         endif
     end do

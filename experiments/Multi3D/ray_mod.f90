@@ -67,8 +67,8 @@ module ray_mod
     type(intersect_type),dimension(8) :: int
 
   contains
-    procedure init => ray_init
-    procedure set_stencil
+    procedure :: init => ray_init
+    procedure :: set_stencil
 
   end type ray_type
   
@@ -168,14 +168,14 @@ SUBROUTINE set_carlson_quadratures (quad_scheme, vec, wts)
   ! the above sets are normalized so that integration over one octant yields 1.
   wmu = wmu * 0.5 * pi
 
-  nmu = 8*nro
+  nmu = 8*nro + 1
 
   allocate(vec(3, nmu), wts(nmu))
   vec = 0
   wts = 0
 
-  vec(1, :nro) = mux
-  vec(2, :nro) = muy
+  vec(1, :nro) = -mux
+  vec(2, :nro) = -muy
   vec(3, :nro) = sqrt(1.0d0 - mux**2 - muy**2)
   wts(:nro) = wmu
 
@@ -191,11 +191,12 @@ SUBROUTINE set_carlson_quadratures (quad_scheme, vec, wts)
   vec(2,2*nro+1:4*nro) = -vec(2,1:2*nro)
   vec(3,2*nro+1:4*nro) =  vec(3,1:2*nro)
 
-  ! Fill the other octants with rays reflected in the x-y plane
-  wts(  4*nro+1:nmu) =  wts(  1:4*nro)
-  vec(1,4*nro+1:nmu) =  vec(1,1:4*nro)
-  vec(2,4*nro+1:nmu) =  vec(2,1:4*nro)
-  vec(3,4*nro+1:nmu) = -vec(3,1:4*nro)
+  ! Fill the other octants with inverted rays 
+  wts(  4*nro+1:8*nro) =  wts(  1:4*nro)
+  vec(:,4*nro+1:8*nro) = -vec(:,1:4*nro)
+
+  wts(nmu)   = 0
+  vec(:,nmu) = [0.0, 0.0, 1.0]
 END SUBROUTINE set_carlson_quadratures
 !---------------------------------------------------------------------
 

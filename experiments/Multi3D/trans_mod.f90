@@ -137,7 +137,7 @@ contains
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  pure subroutine line_opacities(self, nu, hnu_4pi, n, vel_dop, doppler_factor, &
+  subroutine line_opacities(self, nu, hnu_4pi, n, vel_dop, doppler_factor, &
                                 phi, eta, chi)
     class(line_type), intent(in) :: self
     real(8), dimension(:), intent(in) :: nu, hnu_4pi
@@ -183,39 +183,7 @@ contains
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  pure subroutine line_rates(self, wnumu, nu, hnu_4pi, vel_dop, doppler_factor, &
-                              phi, Inu, Rij, Rji)
-      class(line_type), intent(in) :: self
-      real(8), dimension(:), intent(in) :: wnumu, nu, hnu_4pi
-      real(4), dimension(:,:,:,:), intent(in) :: Inu
-      real(8), dimension(:,:,:,:), intent(inout) :: phi
-      real(8), dimension(:,:,:), intent(in) :: vel_dop, doppler_factor
-      real(8), dimension(:,:,:), intent(out) :: Rij, Rji
-      real(8), dimension(:), allocatable :: wAji, wBij
-      integer :: f
-
-      Rij = 0
-      Rji = 0
-
-      call self%profile(nu, hnu_4pi, vel_dop, doppler_factor, phi)
-
-      wAji = wnumu(f) * self%Aji
-      wBij = wnumu(f) * self%Bij
-
-      do f=1, size(wnumu)
-        Rij = Rij + wBij(f) * Inu(:,:,:,f) * phi(:,:,:,f)
-      end do
-
-      Rji = Rij
-
-      do f=1, size(wnumu)
-        Rji = Rji + wAji(f) * phi(:,:,:,f)
-      end do
-  end subroutine line_rates
-  !------------------------------------------------------------------------------------
-
-  !====================================================================================
-  pure subroutine line_profile(self, nu, nu_fac, vel_dop, doppler_factor, phi)
+  subroutine line_profile(self, nu, nu_fac, vel_dop, doppler_factor, phi)
       class(line_type), intent(in) :: self
       real(8), dimension(:), intent(in) :: nu, nu_fac
       real(8), dimension(:,:,:), intent(in) :: vel_dop, doppler_factor

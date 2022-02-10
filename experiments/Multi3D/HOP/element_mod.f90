@@ -4,27 +4,30 @@ module element_mod
     use ion_mod
     implicit none
 
-    type, extends(particle_type) :: element_type
+    type :: element_type
         integer :: np, nion, nmolec, mcount
         real(dp) :: awgt, abund
         type(ion_type), allocatable :: ions(:)
         !type(mol_pointer_t), allocatable :: molecules(:)
         integer :: active
         real(dp), dimension(:,:,:), allocatable :: fil, n
+        character(len=3) :: id
         contains
         procedure :: compute_ion_equilibrium
     end type element_type
     
 contains
 
+!===============================================================================
 subroutine compute_ion_equilibrium(self, EK_over_temp, ne, saha, dxi)
     class(element_type), target :: self
     type(ion_type), pointer :: ions(:)
     real(dp), dimension(:,:,:), intent(in) :: EK_over_temp, ne, dxi, saha
     real(dp), dimension(:,:,:), allocatable :: fil, partition_ratio
     integer :: j
+    !---------------------------------------------------------------------------
 
-    allocate(fil, mold=ne)
+    allocate(fil, partition_ratio, mold=ne)
     
     ions => self%ions
 

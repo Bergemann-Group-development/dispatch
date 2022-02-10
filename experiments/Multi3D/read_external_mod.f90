@@ -23,7 +23,8 @@ MODULE read_external_mod
     character(len=126) :: atmos_file
     class(task_list_t), pointer:: task_list
     integer :: npatches(3), n(3), ng(3), verbose
-    real(4), dimension(:,:,:), allocatable :: temp, ne, pe, rho, vturb, vx, vy, vz
+    real(4), dimension(:,:,:), allocatable :: temp, ne, pe, rho, vturb, px, py, pz
+    real(4), dimension(:,:,:,:), allocatable :: nh
     real(8), dimension(:), allocatable :: xi, yi, zi
     real(8) :: ds(3)
     character(len=126) :: atmos_name
@@ -205,7 +206,7 @@ SUBROUTINE read_1d_snapshot(self)
 
   allocate(self%zi(1-self%ng(3):self%n(3)+self%ng(3)))
   allocate(self%temp(1,1, 1-self%ng(3):self%n(3)+self%ng(3)))
-  allocate(self%pe, self%rho, self%vturb, mold=self%temp)
+  allocate(self%px, self%py, self%pz, self%pe, self%rho, self%vturb, mold=self%temp)
 
   do i=lbound(self%zi,1), ubound(self%zi,1)
     call nextentry(lunit)
@@ -217,6 +218,9 @@ SUBROUTINE read_1d_snapshot(self)
   self%zi  = self%zi  / scaling%l
   self%rho = self%rho / scaling%d
   self%pe  = self%pe  / scaling%p
+  self%px  = 0
+  self%py  = 0
+  self%pz  = 0
 
   self%n(:2) = 1
   self%ds(1) = 1e-2 ! 10km spacing as for 1d atmospheres in Multi
@@ -244,22 +248,27 @@ SUBROUTINE read_stagger_snapshot(self)
   close(lunit)
 
   allocate(self%temp(self%n(1), self%n(2), self%n(3)))
-  allocate(self%rho, self%ne, self%vx, self%vy, self%vz, mold=self%temp)
+  allocate(self%nh(self%n(1), self%n(2), self%n(3), 6))
+  allocate(self%rho, self%ne, self%px, self%py, self%pz, self%pe, mold=self%temp)
 
   open(file=trim(stagger_file) // '.atmos', newunit=lunit, form='UNFORMATTED', access='stream')
   read(lunit) self%ne
   read(lunit) self%temp
-  read(lunit) self%vx
-  read(lunit) self%vy
-  read(lunit) self%vz
+  read(lunit) self%px
+  read(lunit) self%py
+  read(lunit) self%pz
   read(lunit) self%rho
+  read(lunit) self%nh
   close(lunit)
 
   self%xi  = self%xi  / scaling%l
   self%yi  = self%yi  / scaling%l
   self%zi  = self%zi  / scaling%l
   self%rho = self%rho / scaling%d
-  self%pe  = self%ne * cgs%k_b * self%temp  / scaling%l**3
+  self%px  = self%px * self%rho / scaling%u
+  self%py  = self%py * self%rho / scaling%u
+  self%pz  = self%pz * self%rho / scaling%u
+  self%pe  = self%ne * cgs%k_b * self%temp  / scaling%p
 
   self%ds(1) = self%xi(2) - self%xi(1)
   self%ds(2) = self%yi(2) - self%yi(1)
@@ -283,15 +292,21 @@ SUBROUTINE load_authority(self, patch, ii)
 
   do k=zs,ze
     ! flipping z-axis, so that the first patch is the bottom of the atmosphere
-    iz = self%n(3) - ((ii-1)*patch%n(3) + k - zs) ! better not
+    iz = self%n(3) - ((ii-1)*patch%n(3) + k - zs)
 
     patch%mem(xs:xe,ys:ye,k,patch%idx%d ,it,1) = self%rho(:,:,iz)
-    patch%mem(xs:xe,ys:ye,k,patch%idx%px,it,1) = 0
-    patch%mem(xs:xe,ys:ye,k,patch%idx%py,it,1) = 0
-    patch%mem(xs:xe,ys:ye,k,patch%idx%pz,it,1) = 0
+    patch%mem(xs:xe,ys:ye,k,patch%idx%px,it,1) = self%px(:,:,iz)
+    patch%mem(xs:xe,ys:ye,k,patch%idx%py,it,1) = self%py(:,:,iz)
+    patch%mem(xs:xe,ys:ye,k,patch%idx%pz,it,1) = self%pz(:,:,iz)
     patch%mem(xs:xe,ys:ye,k,patch%idx%e ,it,1) = self%temp(:,:,iz)
     patch%mem(xs:xe,ys:ye,k,patch%idx_pe,it,1) = self%pe(:,:,iz)
+
+    if (allocated(self%nh)) then
+      patch%nh(:,:,k-zs+1,:) = self%nh(:,:,iz,:)
+    endif
   end do
+
+  if (allocated(self%nh)) patch%nh_missing = .false.
 
   patch%rho  = dble(patch%mem(xs:xe,ys:ye,zs:ze,patch%idx%d , it, 1)) * scaling%d
   patch%temp = dble(patch%mem(xs:xe,ys:ye,zs:ze,patch%idx%e , it, 1))

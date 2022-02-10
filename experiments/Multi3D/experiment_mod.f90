@@ -13,7 +13,7 @@ MODULE experiment_mod
   USE composition_mod, only: composition_type
   USE atom_var, only: atom_type
   USE spectrum_mod, only:spectrum_type
-  USE m3d_patch_mod, only: m3d_t, halo_m3d_t
+  USE m3d_patch_mod, only: m3d_t, halo_m3d_t, pcheck
   USE opac_patch_mod, only: opacity_t
   USE rad_patch_mod, only: radiation_t
   USE atom_patch_mod, only: atom_patch_t
@@ -37,6 +37,7 @@ MODULE experiment_mod
     real(8), allocatable, dimension(:,:,:) :: ne, temp, rho, vx, vy, vz
     real(8), allocatable, dimension(:,:,:,:) :: nh
     integer :: idx_pe=6, n_mu, n_phi, n_nu, iter=0, maxiter, ilambd
+    logical :: nh_missing=.true.
   contains
     procedure:: pre_init
     procedure:: init
@@ -130,8 +131,8 @@ SUBROUTINE post_update (self)
   class(experiment_t):: self
   !----------------------------------------------------------------------------
   if (self%verbose > 1) then
-      write(*,'(F5.1, L2, A12, I4, 12(ES15.7))') self%time, self%finished, trim(self%kind), self%id, self%mem(self%li(1),self%li(2),self%li(3),:,1,1)
-      write(*,'(23X, 12(ES15.7))') self%mem(self%ui(1),self%ui(2),self%ui(3),:,1,1)
+      write(*,'(F5.1, A12, I4, 12(ES15.7))') self%time, trim(self%kind), self%id, &
+      self%mem(self%li(1)+pcheck(1)-1,self%li(2)+pcheck(2)-1,self%li(3)+pcheck(3)-1,:,1,1)
   endif
 
   if (self%iter == 0) then
@@ -184,7 +185,10 @@ SUBROUTINE init_composition (self)
   ! loading temp, ne and rho in to composition objekt
   ! ion and molecule equilibrium are solved immediately
   call self%composition%load_state_variables(self%temp, self%ne, self%rho)
-  call self%composition%get_nhyd(self%nh)
+  if (self%nh_missing) then
+    call self%composition%get_nhyd(self%nh)
+  endif
+  print *, 'nh', self%nh(1,1,self%n(3),1), self%nh(1,1,self%n(3),6)
 END SUBROUTINE init_composition
 
 !===============================================================================
@@ -210,7 +214,7 @@ SUBROUTINE init_sub_patches(self)
   class(opacity_t), pointer, dimension(:,:) :: sum_opac
   class(radiation_t), pointer, dimension(:) :: out_rad
   class(radiation_t), pointer, dimension(:,:) :: rt_patches
-  integer :: iostat, n_omega, n
+  integer :: iostat, n_omega, n, n_out, i_out
   real(8), dimension(:), allocatable:: wmu
   real(8), dimension(:,:), allocatable:: vec
   integer, save :: n_nu=1, verbose=0, maxiter=1, ilambd=3
@@ -239,6 +243,7 @@ SUBROUTINE init_sub_patches(self)
   !-------------------------------------------------------------------------
   call set_carlson_quadratures (quad_scheme, vec, wmu)
   n_omega = size(vec, 2)
+  n_out = count(vec(3,:)>0)
 
   allocate(atom_patch)
   allocate(atom_patch%opac(0:n_omega, n_nu))
@@ -263,7 +268,7 @@ SUBROUTINE init_sub_patches(self)
   self%rt_patches => rt_patches
 
   if (self%boundaries%topbot(1)) then
-    allocate(out_rad(n_omega/2))
+    allocate(out_rad(n_out))
     self%out_rad => out_rad
   endif
 
@@ -308,10 +313,13 @@ SUBROUTINE init_sub_patches(self)
   end do
 
   if (associated(self%out_rad)) then
-    do i=1, n_omega/2 ! only use dir=1
-      out_rad(i)%kind = 'out_rad'
-      out_rad(i)%i_omega = i
-      call self%link_and_init(out_rad(i), 1, 1)
+    i_out = 1
+    do i=1, n_omega ! only use dir=1
+      if (vec(3,i)<0) cycle
+      out_rad(i_out)%kind = 'out_rad'
+      out_rad(i_out)%i_omega = i
+      call self%link_and_init(out_rad(i_out), 1, 1)
+      i_out = i_out + 1
     end do
   endif
 END SUBROUTINE init_sub_patches
@@ -356,9 +364,10 @@ END SUBROUTINE link_sub_task
 !===============================================================================
 SUBROUTINE link_and_init (self, m3d, n, n_nu)
   class(experiment_t), target :: self
-  class(m3d_t) :: m3d
+  class(m3d_t), target :: m3d
   integer, intent(in) :: n    ! index  of frequency bin
   integer, intent(in) :: n_nu ! number of frequency bins
+  integer :: i
   !-----------------------------------------------------------------------------
   call self%link_sub_task(m3d)
 
@@ -394,14 +403,13 @@ SUBROUTINE link_and_init (self, m3d, n, n_nu)
         m3d%sheep => self%rt_patches(1:, n)
       case ('out_rad')
         m3d%sheep => self%rt_patches(m3d%i_omega, :)
+        do i=1, size(m3d%sheep)
+          m3d%sheep(i)%out_rad => m3d
+        end do
         m3d%vec = m3d%sheep(1)%vec
       case ('angle_rad')
         m3d%opac => self%opac(m3d%i_omega,n)
         m3d%mean_rad => self%rt_patches(0, n)
-
-        if (m3d%dir > 0 .and. associated(self%out_rad)) then
-          m3d%out_rad => self%out_rad(m3d%i_omega)
-        endif
       end select
   end select
 

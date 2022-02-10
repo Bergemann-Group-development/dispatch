@@ -22,7 +22,7 @@ contains
             dum = -EK_over_temp*(self%xion - dxi)
         else
             dum = -EK_over_temp*self%xion
-        endif
+        endif 
 
         if (dum < -80.d0) then
             boltzmann = 0

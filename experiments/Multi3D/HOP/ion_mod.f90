@@ -4,7 +4,7 @@ module ion_mod
     implicit none
 
     type particle_type
-        real(dp), dimension(:,:,:), allocatable :: f, rho_per_h, e
+        real(dp), dimension(:,:,:), allocatable :: f, rho_per_h, e, part
         character(len=6) :: id
     end type
 
@@ -27,7 +27,7 @@ module ion_mod
         real(dp), pointer :: abund
         real(dp) :: acolc, tcolc, aradc, xradc, adic, bdic, t0c, t1c
         real(dp), dimension(:,:,:), allocatable :: anjon, saha
-        real(dp), dimension(:,:,:), allocatable :: pk, part, fil
+        real(dp), dimension(:,:,:), allocatable :: pk, fil
     contains
         procedure :: partition
         procedure :: saha_eq
@@ -40,12 +40,12 @@ module ion_mod
 
 contains
 
-
+!===============================================================================
 elemental real(dp) function partition(self, EK_over_temp, ne)
     class(ion_type), intent(in) :: self
     real(dp), intent(in) :: EK_over_temp, ne
     real(dp), dimension(self%nk) :: blz, fis, g
-
+    !---------------------------------------------------------------------------
     fis = 1
 
     if (self%iqfix == 0) then
@@ -58,12 +58,13 @@ elemental real(dp) function partition(self, EK_over_temp, ne)
     endif
 end function partition
 
+!===============================================================================
 elemental real(dp) function saha_eq(self, EK_over_temp, ne, saha, dxi, partition_ratio)
     class(ion_type), intent(in) :: self
     real(dp), intent(in) :: EK_over_temp, ne, saha, dxi
     real(dp), intent(in), optional :: partition_ratio
     real(dp) :: dxi_j
-
+    !---------------------------------------------------------------------------
     if (self%j == -2) then
         dxi_j = 2*dxi
     else
@@ -78,12 +79,13 @@ elemental real(dp) function saha_eq(self, EK_over_temp, ne, saha, dxi, partition
     endif
 end function saha_eq
 
+!===============================================================================
 function f_of_own_molecules(self) result(fsum)
     class(ion_type) :: self
     type(particle_type), pointer :: molecule
     integer :: i
     real(dp), dimension(:,:,:), allocatable :: fsum
-
+    !---------------------------------------------------------------------------
     allocate(fsum, mold=self%f)
 
     fsum = 0
@@ -93,6 +95,7 @@ function f_of_own_molecules(self) result(fsum)
     end do
 end function
 
+!===============================================================================
 function f_of_molecules_with(self, other, count_double) result(fsum)
     class(ion_type) :: self
     type(ion_type) :: other
@@ -101,7 +104,7 @@ function f_of_molecules_with(self, other, count_double) result(fsum)
     integer :: i
     real(dp), dimension(:,:,:), allocatable :: fsum
     logical, optional :: count_double
-
+    !---------------------------------------------------------------------------
     allocate(fsum, mold=self%f)
 
     call self%molecules_with(other, mol_list, count_double)
@@ -113,6 +116,7 @@ function f_of_molecules_with(self, other, count_double) result(fsum)
     end do
 end function
 
+!===============================================================================
 function e_of_molecules_with(self, other, count_double) result(esum)
     class(ion_type) :: self
     type(ion_type) :: other
@@ -121,7 +125,7 @@ function e_of_molecules_with(self, other, count_double) result(esum)
     integer :: i
     real(dp), dimension(:,:,:), allocatable :: esum
     logical, optional :: count_double
-
+    !---------------------------------------------------------------------------
     allocate(esum, mold=self%f)
 
     call self%molecules_with(other, mol_list, count_double)
@@ -133,6 +137,7 @@ function e_of_molecules_with(self, other, count_double) result(esum)
     end do
 end function
 
+!===============================================================================
 subroutine molecules_with (self, other, mol_list, count_double)
     class(ion_type), target, intent(in) :: self
     type(ion_type), intent(in) :: other
@@ -141,7 +146,7 @@ subroutine molecules_with (self, other, mol_list, count_double)
     class(particle_type), pointer :: molecule
     logical :: cd
     integer :: mi, mj, count
-
+    !---------------------------------------------------------------------------
     if (present(count_double)) then
         cd = count_double
     else
@@ -179,7 +184,6 @@ subroutine molecules_with (self, other, mol_list, count_double)
             endif
         end do
     end do
-
 end subroutine molecules_with
     
 end module ion_mod
