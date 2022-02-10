@@ -199,16 +199,16 @@ END SUBROUTINE line_opac_update
 !===============================================================================
 SUBROUTINE sum_opac_update (self)
   class(opacity_t) :: self
-  real(4), dimension(:,:,:,:,:,:), pointer :: mem
-  real(4), dimension(:,:,:,:,:), pointer :: mem2
+  real(4), dimension(:,:,:,:,:), pointer :: mem
+  real(4), dimension(:,:,:,:,:,:), allocatable :: tmp
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('opacity_t%sum_opac_update', itimer=itimer)
-  mem => self%authority_mem
-  mem = self%back_opac%mem + self%cont_opac%mem + self%line_opac%mem
-  mem(:,:,:,:,:,self%i_snu) = mem(:,:,:,:,:,self%i_eta) / mem(:,:,:,:,:,self%i_chi)
-  mem2 => self%mem(:,:,:,:,self%it,:)
-  call self%boundaries%mirror(mem2)
+  allocate(tmp, mold=self%back_opac%mem)
+  tmp = self%back_opac%mem + self%cont_opac%mem + self%line_opac%mem
+  self%authority_mem(:,:,:,:,:,self%i_snu) = tmp(:,:,:,:,:,self%i_eta) / tmp(:,:,:,:,:,self%i_chi)
+  mem => self%mem(:,:,:,:,self%it,:)
+  call self%boundaries%mirror(mem)
   call trace%end(itimer)
 END SUBROUTINE sum_opac_update
 
