@@ -436,7 +436,7 @@ function absorption_factor(self, EK_over_temp, teta, pe, rho, dxi, xfakh) result
             where (nniv < self%k)
                 fakt = 0
             elsewhere (nniv == self%k)
-                fakt = fakt * min(h1 - float(nniv), 1.0)
+                fakt = fakt * min(h1 - float(nniv), 1.0_8)
             end where
 
         case('H FF')

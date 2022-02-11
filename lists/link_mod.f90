@@ -591,7 +591,7 @@ SUBROUTINE log_nbors (self, label)
   if (present(label)) then
     if (trim(label) /= '') write (io_unit%log,'(a)') label
   end if
-  write (io_unit%log,'(a,i5,2x,a,f14.8,2x,a,l3,2x,a,i3,2x,a,$)') &
+  write (io_unit%log,'(a,i5,2x,a,f14.8,2x,a,l3,2x,a,i3,2x,a)',advance='no') &
     'task', self%task%id, 'time', self%task%time, &
     'ready', self%task%is_set(bits%ready), 'level', self%task%level, 'nbors:'
   if (io%verbose>4) write (io_unit%log,*) ''
@@ -601,7 +601,7 @@ SUBROUTINE log_nbors (self, label)
       write (io_unit%log,'(i7,f14.8,l3)') &
         nbor%task%id, nbor%task%time, nbor%task%is_set(bits%ready)
     else
-      write (io_unit%log,'(i4,l2,$)') nbor%task%id, nbor%task%is_set(bits%ready)
+      write (io_unit%log,'(i4,l2)',advance='no') nbor%task%id, nbor%task%is_set(bits%ready)
     end if
     nbor => nbor%next
   end do
@@ -619,8 +619,8 @@ SUBROUTINE print_nbors (self, label, verbose)
   integer:: idmax
   character(len=16):: fmt
   !.............................................................................
-  if (present(label)) write (io_unit%output,'(a,$)') label
-  write (io_unit%output, '(i6,l1," nbors:",$)') &
+  if (present(label)) write (io_unit%output,'(a)',advance='no') label
+  write (io_unit%output, '(i6,l1," nbors:")',advance='no') &
     self%task%id, self%task%is_set (bits%ready)
   idmax = 0
   nbor => self%nbor
