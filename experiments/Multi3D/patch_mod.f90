@@ -557,7 +557,7 @@ SUBROUTINE pre_init (self)
       'patch_t%pre_init WARNING: nw,nv,ng old/new =', &
       nw,nv,ng, self%nw,self%nv,self%ng
   end if
-  call omp%set_stacksize (self%nv)
+  call omp%set_stacksize (self%nv, .false.)
   call trace%end()
 END SUBROUTINE pre_init
 

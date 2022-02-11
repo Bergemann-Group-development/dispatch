@@ -94,10 +94,10 @@ subroutine print_out (unit)
   integer:: unit
   if (present(itimer)) then
     write(unit,fmt) &
-      omp_mythread, wc, trim(id)//' begin, itimer =', itimer
+      omp%thread, wc, trim(id)//' begin, itimer =', itimer
   else
     write(unit,fmt) &
-      omp_mythread, wc, trim(id)//' begin'
+      omp%thread, wc, trim(id)//' begin'
   end if
   flush(unit)
 end subroutine
@@ -119,11 +119,11 @@ SUBROUTINE trace_tag (id)
     wc = wallclock()
     level  = max(level-1,1)
     if (io_unit%omp_trace) then
-      write(io_unit%log,fmt) omp_mythread, wc, trim(tracing(level))//' '//trim(id)
+      write(io_unit%log,fmt) omp%thread, wc, trim(tracing(level))//' '//trim(id)
       flush(io_unit%log)
     else
       !$omp critical (trace_cr)
-      write(io_unit%output,fmt) omp_mythread, wc, trim(tracing(level))//' '//trim(id)
+      write(io_unit%output,fmt) omp%thread, wc, trim(tracing(level))//' '//trim(id)
       flush(io_unit%output)
       !$omp end critical (trace_cr)
     end if
@@ -175,10 +175,10 @@ subroutine print_out (unit)
   integer:: unit
   if (present(itimer)) then
     write (unit,fmt) &
-      omp_mythread, wc, trim(tracing(level))//' end, itimer =', itimer
+      omp%thread, wc, trim(tracing(level))//' end, itimer =', itimer
   else
     write (unit,fmt) &
-      omp_mythread, wc, trim(tracing(level))//' end'
+      omp%thread, wc, trim(tracing(level))//' end'
   end if
   flush (unit)
 end subroutine
