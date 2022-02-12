@@ -148,7 +148,7 @@ SUBROUTINE set_stacksize (nv, verbose)
   logical, save:: first_time=.true., printed=.false.
   !-----------------------------------------------------------------------------
   if (io_unit%do_validate) return
-  recommended = (4*1024**2*nv) / 8
+  recommended = (50*1024**2)
 #ifdef _OPENMP
 #ifdef __INTEL_COMPILER
   call getenv ('KMP_STACKSIZE', envvar)
@@ -169,12 +169,12 @@ SUBROUTINE set_stacksize (nv, verbose)
   if (kind(r)==kind(1.0E0_8)) new_stacksize = new_stacksize * 2
   if (new_stacksize > stacksize) then
     call kmp_set_stacksize_s(new_stacksize)
-    if (omp_get_num_threads()==0 .and. first_time) then
+    if (omp_get_thread_num()==0 .and. first_time .and. .not.printed) then
       if (verbose .and. .not.printed) print '(1x,a)', &
         '*************************************************************************************'
-      print '(1x,a,f5.1,a)', &
-      '* WARNING! OpenMP stacksize has been reset to ', new_stacksize/1024.**2, &
-      ' MB to avoid segfault'
+      print '(1x,a,i5,a)', &
+      '* WARNING! OpenMP stacksize has been reset to ', &
+      nint(new_stacksize/1024.**2), ' MB to avoid segfaults'
       printed = .true.
     end if
   else if (first_time.and.io_unit%master) then
@@ -186,13 +186,13 @@ SUBROUTINE set_stacksize (nv, verbose)
   endif
 #else
   call getenv ('OMP_STACKSIZE', envvar)
-  if (verbose .and. envvar == '' .and. omp_get_num_threads()==0 .and. first_time) then
+  if (verbose .and. envvar == '' .and. omp_get_thread_num()==0 .and. first_time) then
     print '(/,2(1x,a,/),1x,a,i9)', &
     '*************************************************************************************', &
     '* omp_mod.f90:', &
     '* WARNING: environment variable OMP_STACKSIZE not set, recommended value =',recommended
     call getenv ('KMP_STACKSIZE', envvar)
-    if (envvar /= '' .and. omp_get_num_threads()==0 .and. first_time) then
+    if (envvar /= '' .and. omp_get_thread_num()==0 .and. first_time) then
       if (.not.printed) print *, &
         '*************************************************************************************'
       print '(2(1x,a,/),1x,a)', &
