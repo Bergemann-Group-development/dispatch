@@ -48,6 +48,7 @@ extras_mod.o            : newton_mod.o gravity_mod.o
 guards_mod.o            : math_mod.o
 coll_var.o              : coll_mod.o
 coll_mod.o              : mmath.o 
+trans_mod.o             : coll_mod.o
 atom_var.o              : m3io_mod.o spectrum_mod.o trans_mod.o coll_mod.o
 spectrum_mod.o          : mmath.o trans_mod.o
 m3d_patch_mod.o         : gpatch_mod.o composition_mod.o trace.o ray_mod.o solver_mod.o
