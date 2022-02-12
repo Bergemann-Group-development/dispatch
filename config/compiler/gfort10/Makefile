@@ -14,7 +14,8 @@ ifeq ($(strip $(MPI)),mpi)
 else
   FC  = gfortran -I${BUILD} -J${BUILD}
 endif
-STD = -std=f2008ts
+#STD = -std=f2008ts
+STD =
 F90 = $(FC) -x f95-cpp-input -ffree-line-length-0 $(STD) $(W)
 LD  = $(FC)
 

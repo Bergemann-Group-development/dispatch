@@ -50,9 +50,11 @@ coll_var.o              : coll_mod.o
 coll_mod.o              : mmath.o 
 atom_var.o              : m3io_mod.o spectrum_mod.o trans_mod.o coll_mod.o
 spectrum_mod.o          : mmath.o trans_mod.o
-m3d_patch_mod.o         : gpatch_mod.o composition_mod.o trace.o ray_mod.o
+m3d_patch_mod.o         : gpatch_mod.o composition_mod.o trace.o ray_mod.o solver_mod.o
 opac_patch_mod.o        : m3d_patch_mod.o
-rad_patch_mod.o         : m3d_patch_mod.o
-rate_patch_mod.o        : m3d_patch_mod.o
+rad_patch_mod.o         : m3d_patch_mod.o opac_patch_mod.o
+rate_patch_mod.o        : m3d_patch_mod.o opac_patch_mod.o rad_patch_mod.o
 atom_patch_mod.o        : rate_patch_mod.o
 mmath.o                 : search_mod.o
+m_unista.o              : m_refsor.o
+ray_mod.o               : mmath.o
