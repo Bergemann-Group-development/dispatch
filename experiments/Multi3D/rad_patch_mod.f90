@@ -257,12 +257,20 @@ END SUBROUTINE long_ray_update
 !===============================================================================
 SUBROUTINE short_ray_update (self)
   class(radiation_t), target :: self
+!define CONTIG
+#ifdef CONTIG
   real(4), dimension(:,:,:,:,:), pointer, contiguous :: xx_ss_up
   real(4), dimension(:,:,:,:),   pointer, contiguous :: u0, dt, ex, source, xxup, ssup
   real(4), dimension(:,:),       pointer, contiguous :: Inuup, kernel
-  real(4), dimension(:,:,:,:),   pointer, contiguous :: Inu, chi, Snu
   real(4), dimension(:,:),       pointer, contiguous :: II
-  integer :: k1, k2
+#else
+  real(4), dimension(:,:,:,:,:), pointer :: xx_ss_up
+  real(4), dimension(:,:,:,:),   pointer :: u0, dt, ex, source, xxup, ssup
+  real(4), dimension(:,:),       pointer :: Inuup, kernel
+  real(4), dimension(:,:),       pointer :: II
+#endif
+  real(4), dimension(:,:,:,:),   pointer             :: Inu, chi, Snu
+  integer :: k1, k2, m(4), i2, i3, i4
   real(4) :: Inumin
   integer :: f, k, z, i, j, dx,dy,i1,j1,x1,x2,y1,y2
   integer, save:: itimer=0
@@ -405,9 +413,9 @@ subroutine interp_xy_up2(self, VarIn, VarUp, up1, up2, kernel, check_undershoot)
   class(radiation_t), intent(in) :: self
   integer :: z1,k,f,v,k1
   integer, intent(in) :: up1, up2
-  real(4), dimension(:,:,:,:), intent(in), contiguous :: VarIn
-  real(4), dimension(:,:,:,:), intent(out), contiguous :: VarUp
-  real(4), dimension(:,:), intent(in), contiguous :: kernel
+  real(4), dimension(:,:,:,:), intent(in) :: VarIn
+  real(4), dimension(:,:,:,:), intent(out) :: VarUp
+  real(4), dimension(:,:), intent(in) :: kernel
   logical, intent(in) :: check_undershoot
   !-----------------------------------------------------------------------------
   k1 = self%li(3) - 1 - self%dir
@@ -422,12 +430,12 @@ end subroutine interp_xy_up2
 
 !===============================================================================
 subroutine interp_xy_up3(self, VarIn, VarUp, up1, up2, kernel, check_undershoot)
-  class(radiation_t), intent(in) :: self
+  class(radiation_t):: self
   integer :: x1,x2,y1,y2,z1,i,j,k,f,v,i1,j1,k1,dx,dy
   integer, intent(in) :: up1, up2
-  real(4), dimension(:,:,:,:), intent(in), contiguous :: VarIn
-  real(4), dimension(:,:,:,:), intent(out), contiguous :: VarUp
-  real(4), dimension(:,:), intent(in), contiguous :: kernel
+  real(4), dimension(:,:,:,:) :: VarIn
+  real(4), dimension(:,:,:,:) :: VarUp
+  real(4), dimension(:,:) :: kernel
   logical, intent(in) :: check_undershoot
   real(4) :: VarMin
   !-----------------------------------------------------------------------------
@@ -469,7 +477,7 @@ pure subroutine interp_xy_up_plane(self, VarIn, VarUp, up1, up2, kernel, check_u
   class(radiation_t), intent(in) :: self
   integer :: x1,x2,y1,y2,i,j, dx,dy, i1,j1
   integer, intent(in) :: up1, up2
-  real(4), dimension(:,:), intent(in), contiguous :: VarIn, kernel
+  real(4), dimension(:,:), intent(in) :: VarIn, kernel
   real(4), dimension(:,:), intent(out) :: VarUp
   logical, intent(in) :: check_undershoot
   real(4) :: VarMin

@@ -874,7 +874,7 @@ contains
     subroutine get_nhyd(self, nhyd)
         class(composition_type), target :: self
         real(dp), dimension(:,:,:,:), intent(out) :: nhyd
-        real(dp), dimension(:,:,:), allocatable :: nh, blzfac
+        real(dp), dimension(:,:,:), pointer :: nh, blzfac
         class(ion_type), pointer :: H0
         type(level_type) :: level
         integer :: k, nk
@@ -892,6 +892,8 @@ contains
             blzfac = level%boltzmann(self%EK_over_temp, natural_log=.true.)
             nhyd(:,:,:,k) = k**2 * blzfac * nh
         end do
+
+        deallocate (nh, blzfac)
         call trace_end ()
     end subroutine
 
