@@ -343,20 +343,24 @@ SUBROUTINE short_ray_update (self)
         y2 = y1 + dy
     
         !$omp simd
-        do i=1,self%n(1)
+        do i=1,self%n(1)-i1-dx
 
             if (ex(i,j,z,f) == 0) then
               Inu(i,j,z,f) = source(i,j,z,f)
             else
               x1 = i + i1
               x2 = x1 + dx
-              Inuup(i,j) = sum(kernel * II(x1:x2, y1:y2))
-              Inumin = minval(II(x1+1:x1+2, y1+1:y1+2))
-              if (Inuup(i,j) < Inumin) then
-                Inuup(i,j) = Inumin
-              endif
+              if (x2 <= size(II,1) .and. y2 <= size(II,2)) then
+                Inuup(i,j) = sum(kernel * II(x1:x2, y1:y2))
+                Inumin = minval(II(x1+1:x1+2, y1+1:y1+2))
+                if (Inuup(i,j) < Inumin) then
+                  Inuup(i,j) = Inumin
+                endif
 
-              Inu(i,j,z,f) = Inuup(i,j)*ex(i,j,z,f) + source(i,j,z,f)
+                Inu(i,j,z,f) = Inuup(i,j)*ex(i,j,z,f) + source(i,j,z,f)
+              else
+                PRINT *, 'WARNING: attempted index overrun', x2, y2
+              end if
             endif
         end do
       end do
@@ -446,15 +450,15 @@ subroutine interp_xy_up3(self, VarIn, VarUp, up1, up2, kernel, check_undershoot)
   k1 = self%li(3) - 1 - self%dir
 
   do f=1,self%nv
-    do k=1,self%n(3)
+    do k=1,self%n(3)-k1
       z1 = k + k1
 
-      do j=1,self%n(2)
+      do j=1,self%n(2)-dy-j1
         y1 = j + j1
         y2 = y1 + dy
 
         !$omp simd
-        do i=1,self%n(1)
+        do i=1,self%n(1)-dx-i1
             x1 = i + i1
             x2 = x1 + dx
 
