@@ -220,13 +220,21 @@ module atom_patch_mod
     call trace%end(itimer)
   END SUBROUTINE atom_patch_update
 
-  !===============================================================================
+  !=============================================================================
   SUBROUTINE atom_patch_post_update (self)
     class(atom_patch_t) :: self
-    ! ----------------------------------------------------------------------------
-    write(*,'(F5.1, L2, A12, 1(I4), 3(ES15.7))') self%time, self%finished, trim(self%kind), self%patch%id, self%atom%n(1,1,1,3), self%atom%n(1,1,self%n(3),3)
-    write(*,'(A19, ES19.7, A10, 3ES15.7)') 'Maxerr =', self%maxerr, ', global =', global_maxerr
-    if (self%verbose > 1) write(*,'(1X, A80)') '................................................................................'
+    ! --------------------------------------------------------------------------
+    if (self%verbose > 1) then
+      call io%lock%set
+      ! write(*,'(F5.1, L2, A12, 1(I4), 3(ES15.7))') &
+      !   self%time, self%finished, trim(self%kind), self%patch%id, &
+      !   self%atom%n(1,1,1,3), self%atom%n(1,1,self%n(3),3)
+      write(*,'(A19, ES19.7, A10, 3ES15.7)') 'Maxerr =', self%maxerr, &
+        ', global =', global_maxerr
+      write(*,'(1X, A80)') &
+'................................................................................'
+      call io%lock%unset
+    end if
 
     if (self%iter == self%maxiter) then
       call self%finish()
