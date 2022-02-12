@@ -277,10 +277,6 @@ SUBROUTINE short_ray_update (self)
   !-----------------------------------------------------------------------------
   call trace%begin('radiation_t%short_ray_update', itimer=itimer)
 
-  call self%lock%set
-  PRINT '(a,6i6)', 'short_ray_update:', omp%thread, self%it, self%i_inu, &
-    self%opac%it, self%opac%i_chi, self%opac%i_snu
-
   self%Inu => self%mem(:,:,:,:, self%it, self%i_inu)
   self%chi => self%opac%mem(:,:,:,:, self%opac%it, self%opac%i_chi)
   self%Snu => self%opac%mem(:,:,:,:, self%opac%it, self%opac%i_snu)
@@ -292,38 +288,42 @@ SUBROUTINE short_ray_update (self)
   k1 = merge(self%li(3), self%ui(3), self%dir > 0)
   k2 = merge(self%li(3), self%ui(3), self%dir < 0)
 
+  m = shape(Snu)
   call os%allocate (Inuup, self%n(1:2))
   call os%allocate (kernel, self%n(1:2))
-  call os%allocate (u0, shape(chi))
-  call os%allocate (dt, shape(chi))
-  call os%allocate (ex, shape(chi))
-  call os%allocate (xxup, shape(chi))
-  call os%allocate (ssup, shape(chi))
-  call os%allocate (source, shape(chi))
+  ! allocate (u0,dt,ex,xxup,ssup,source, mold=chi)
+  call os%allocate (u0, m)
+  call os%allocate (dt, m)
+  call os%allocate (ex, m)
+  call os%allocate (xxup, m)
+  call os%allocate (ssup, m)
+  call os%allocate (source, m)
 
   kernel = real(self%ray%upkern)
   call self%interp_xy_up3(self%chi, xxup, self%ray%upo1, self%ray%upo2, kernel, .true.)
   call self%interp_xy_up3(self%Snu, ssup, self%ray%upo1, self%ray%upo2, kernel, .true.)
   
-  ! PRINT *, associated(chi)
-  PRINT '(7i6)', omp%thread, shape(chi)
-  dt = 0.5 * self%ray%dsup * ( xxup + chi ) ! upwind optical pathlength
-  where (dt < 38)
-    ex = exp(-dt) 
-  elsewhere
-    ex = 0
-  end where
-  ! Compute the U functions, use Taylor expansion for small dt
-  ! to avoid accuracy issues with 1-(number slightly smaller than one)
-  where ( dt > 1.0e-3 )
-          u0 = 1.0 - ex
-          self%Psi = 1 - u0 / dt
-  elsewhere
-          self%Psi = dt * (0.5 - 0.16666667*dt)
-          u0 = dt * (1 - self%Psi)
-  end where
+  do i4=1,size(dt,4)
+    dt(:,:,:,i4) = 0.5 * self%ray%dsup &
+      * (xxup(:,:,:,i4) + chi(:,:,:,i4)) ! upwind optical pathlength
+    where (dt(:,:,:,i4) < 38)
+      ex(:,:,:,i4) = exp(-dt(:,:,:,i4)) 
+    elsewhere
+      ex(:,:,:,i4) = 0
+    end where
+    ! Compute the U functions, use Taylor expansion for small dt
+    ! to avoid accuracy issues with 1-(number slightly smaller than one)
+    where ( dt(:,:,:,i4) > 1.0e-3 )
+      u0(:,:,:,i4) = 1.0 - ex(:,:,:,i4)
+      self%Psi(:,:,:,i4) = 1. - u0(:,:,:,i4) / dt(:,:,:,i4)
+    elsewhere
+      self%Psi(:,:,:,i4) = dt(:,:,:,i4) * (0.5 - 0.16666667*dt(:,:,:,i4))
+      u0(:,:,:,i4) = dt(:,:,:,i4) * (1. - self%Psi(:,:,:,i4))
+    end where
 
-  source = (u0 - self%Psi) * ssup + self%Psi*Snu
+    source(:,:,:,i4) = (u0(:,:,:,i4) - &
+      self%Psi(:,:,:,i4)) * ssup(:,:,:,i4) + self%Psi(:,:,:,i4)*Snu(:,:,:,i4)
+  end do
 
   dx = size(kernel, 1) - 1
   dy = size(kernel, 2) - 1
@@ -338,7 +338,7 @@ SUBROUTINE short_ray_update (self)
       z = k - self%li(3) + 1
       II => self%Inu(:,:, k-self%dir,f) 
       
-      do j=1,self%n(2)
+      do j=1,self%n(2)-j1-dy
         y1 = j + j1
         y2 = y1 + dy
     
@@ -383,9 +383,7 @@ SUBROUTINE short_ray_update (self)
   call os%deallocate(xxup)
   call os%deallocate(ssup)
   call os%deallocate(source)
-
-  call self%lock%unset
-  !$omp barrier
+  ! deallocate (u0,dt,ex,xxup,ssup,source)
 
   call trace%end(itimer)
 END SUBROUTINE short_ray_update
