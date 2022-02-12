@@ -3,6 +3,12 @@
 SHELL = /bin/bash
 
 #############################################################################
+# Generate macro with commit hash tag
+BRANCH := $(shell git name-rev --name-only HEAD)
+HASH := $(shell git log --pretty='format:%h' -n1 HEAD)
+#FCFLAGS = $(FOPT) $(DEBUG) $(LIBS) -D'GIT_REV="$(REV)"' -cpp
+
+#############################################################################
 # Defalt compiler and directives
 COMPILER ?= gfortran
 OMP      ?= yes
@@ -12,7 +18,8 @@ SOLVER   ?= VOID
 UPD      ?= adams_bashforth
 PREC     ?= SINGLE
 EXEC     ?= dispatch.x
-DEFS = -D$(PREC) -DDISPATCH
+OFFLOAD  ?= CPU
+DEFS = -D$(PREC) -DDISPATCH -D'BRANCH="$(BRANCH)"' -D'HASH="$(HASH)"'
 
 #############################################################################
 # Default target
@@ -22,6 +29,7 @@ default: $(EXEC)
 # 1st part of Makefile macro info
 info::
 	@echo "Selected Makeflags and options:"
+	@echo "$B  VERBOSE     $N= $(VERBOSE)"
 	@echo "$B  HOST        $N= $(HOST)"
 	@echo "$B  COMPILER    $N= $(COMPILER)"
 	@echo "$B  MPI         $N= $(MPI)"
@@ -43,6 +51,37 @@ CONFIG = $(TOP)/config
 sinclude options.mkf
 sinclude $(TOP)/options.mkf
 sinclude $(CONFIG)/host/$(HOST)/Makefile
+target: default
+
+#############################################################################
+# Check that the $(COMPILER) Makefile is present (typo trap)
+ifneq ($(COMPILER),)
+  COMPILER_MK = $(TOP)/config/compiler/$(COMPILER)/Makefile
+  COMPILER_OS  = $(shell ls $(COMPILER_MK))
+  ifneq ("$(COMPILER_OS)", "$(COMPILER_MK)")
+    $(error $(COMPILER_MK) does not exist)
+  endif
+endif
+
+#############################################################################
+# Check that the $(SOLVER) Makefileis present (typo trap)
+ifneq ($(SOLVER),)
+  SOLVER_MK = $(TOP)/solvers/$(SOLVER)/Makefile
+  SOLVER_OS  = $(shell ls $(SOLVER_MK))
+  ifneq ("$(SOLVER_OS)", "$(SOLVER_MK)")
+    $(error $(SOLVER_MK) does not exist)
+  endif
+endif
+
+#############################################################################
+# Check that the $(OPTS) file is present (typo trap)
+ifneq ($(OPTS),)
+  OPTS_COMP = $(shell ls $(CONFIG)/compiler/$(COMPILER)/$(OPTS).mkf)
+  OPTS_FILE = $(CONFIG)/compiler/$(COMPILER)/$(OPTS).mkf
+  ifneq ("$(OPTS_COMP)", "$(OPTS_FILE)")
+    $(error $(OPTS_FILE) does not exist)
+  endif
+endif
 
 #############################################################################
 # Optional separate build directories
@@ -53,6 +92,7 @@ else
   BUILD    ?= build_$(SOLVER)_$(OPTS)
 endif
 $(shell mkdir -p $(BUILD) >/dev/null)
+$(info make COMPILER=$(COMPILER) OPTS=$(OPTS) BUILD=$(BUILD))
 
 #############################################################################
 # Infrastructure to automatically determine dependencies
@@ -60,23 +100,25 @@ DEPDIR := $(BUILD)/.d
 $(shell mkdir -p $(DEPDIR) >/dev/null)
 
 #############################################################################
-# Check for options, and check that the $(OPTS) file is present (typo trap)
-ifeq ($(OPTS),)
-  target: default
-else
-  OPTS_COMP = $(shell ls $(CONFIG)/compiler/$(COMPILER)/$(OPTS).mkf) 
-  OPTS_FILE = $(CONFIG)/compiler/$(COMPILER)/$(OPTS).mkf
-  ifeq ("$(OPTS_COMP)","$(CONFIG)/compiler/$(COMPILER)/$(OPTS).mkf ")
-    target: default
-  else
-    target: error
-  endif
-endif
 # sinclude $(OPTS) and $(HOST) dependent config files
 sinclude $(CONFIG)/compiler/$(COMPILER)/Makefile
 sinclude $(CONFIG)/compiler/$(COMPILER)/$(OPTS).mkf
 sinclude $(CONFIG)/compiler/$(COMPILER)/$(HOST)/Makefile
 sinclude $(CONFIG)/compiler/$(COMPILER)/$(HOST)/$(OPTS).mkf
+
+#############################################################################
+# HDF5 option
+ifneq ($(HDF5),)
+  INCL += -I$(HDF5)/include
+  LIBS += -L$(HDF5)/lib $(HDF5)/lib/libhdf5_fortran.a $(HDF5)/lib/libhdf5.a $(HDF5)/lib/libhdf5hl_fortran.a $(HDF5)/lib/libhdf5_hl.a -lz -ldl -lm
+  DEFS += -DHDF5
+  HDF5_MOD = h5_mod.o
+  ifneq ($(VERBOSE),)
+    $(info $(TOP)/config/Makefile HDF5=$(HDF5) HDF5_MOD=$(HDF5_MOD))
+  endif
+endif
+FFLAGS += $(INCL)
+LDFLAGS += $(INCL)
 
 #############################################################################
 # Executable
@@ -110,17 +152,6 @@ sinclude $(TOP)/timestep/$(UPD)/Makefile
 sinclude $(TOP)/particles/Makefile
 sinclude $(TOP)/states/Makefile
 sinclude $(TOP)/boundaries/Makefile
-
-#############################################################################
-# HDF5 option
-ifneq ($(HDF5),)
-  INCL += -I$(HDF5)/include
-  LIBS += -L$(HDF5)/lib $(HDF5)/lib/libhdf5_fortran.a $(HDF5)/lib/libhdf5.a $(HDF5)/lib/libhdf5hl_fortran.a $(HDF5)/lib/libhdf5_hl.a -lz -ldl -lm
-  DEFS += -DHDF5
-  HDF5_MOD = hdf5_mod.o
-endif
-FFLAGS += $(INCL)
-LDFLAGS += $(INCL)
 
 #############################################################################
 # Optional patches and extra dependencies
@@ -232,10 +263,12 @@ info::
 	@echo "$B  LD          $N= $(LD)"
 	@echo "$B  FFLAGS      $N= $(FFLAGS)"
 	@echo "$B  LDFLAGS     $N= $(LDFLAGS)"
-	@echo "$B  DEFS        $N= $(DEFS)"
-	@echo "$B  LIBS        $N= $(LIBS)"
 	@echo "$B  BUILD       $N= $(BUILD)"
 	@echo "$B  EXEC        $N= $(EXEC)"
+	@echo "$B  DEFS        $N= $(DEFS)"
+	@echo "$B  LIBS        $N= $(LIBS)"
+	@echo "$B  BRANCH      $N= $(BRANCH)"
+	@echo "$B  HASH        $N= $(HASH)"
 
 compiler:
 	@echo "$(COMPILER)"
