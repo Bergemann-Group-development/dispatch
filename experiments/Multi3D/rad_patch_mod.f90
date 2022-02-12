@@ -26,6 +26,9 @@ module rad_patch_mod
   USE m3d_patch_mod
   USE opac_patch_mod
   USE ray_mod, only:ray_type
+  USE os_mod
+  USE omp_mod
+  USE omp_lock_mod
   implicit none
 
   !-----------------------------------------------------------------------------
@@ -129,6 +132,7 @@ SUBROUTINE radiation_init (self)
   integer :: i
   ! ----------------------------------------------------------------------------
   call self%m3d_t%init()
+  call self%lock%init ()
 
   select case (self%kind)
   case ('angle_rad')
@@ -253,17 +257,21 @@ END SUBROUTINE long_ray_update
 !===============================================================================
 SUBROUTINE short_ray_update (self)
   class(radiation_t), target :: self
-  real(4), dimension(:,:,:,:,:), allocatable :: xx_ss_up
-  real(4), dimension(:,:,:,:), allocatable :: u0, dt, ex, source, xxup, ssup
-  real(4), dimension(:,:), allocatable :: Inuup, kernel
-  real(4), dimension(:,:,:,:), pointer :: Inu, chi, Snu
-  real(4), dimension(:,:), pointer, contiguous :: II
+  real(4), dimension(:,:,:,:,:), pointer, contiguous :: xx_ss_up
+  real(4), dimension(:,:,:,:),   pointer, contiguous :: u0, dt, ex, source, xxup, ssup
+  real(4), dimension(:,:),       pointer, contiguous :: Inuup, kernel
+  real(4), dimension(:,:,:,:),   pointer, contiguous :: Inu, chi, Snu
+  real(4), dimension(:,:),       pointer, contiguous :: II
   integer :: k1, k2
   real(4) :: Inumin
   integer :: f, k, z, i, j, dx,dy,i1,j1,x1,x2,y1,y2
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('radiation_t%short_ray_update', itimer=itimer)
+
+  call self%lock%set
+  PRINT '(a,6i6)', 'short_ray_update:', omp%thread, self%it, self%i_inu, &
+    self%opac%it, self%opac%i_chi, self%opac%i_snu
 
   self%Inu => self%mem(:,:,:,:, self%it, self%i_inu)
   self%chi => self%opac%mem(:,:,:,:, self%opac%it, self%opac%i_chi)
@@ -276,13 +284,21 @@ SUBROUTINE short_ray_update (self)
   k1 = merge(self%li(3), self%ui(3), self%dir > 0)
   k2 = merge(self%li(3), self%ui(3), self%dir < 0)
 
-  allocate(Inuup(self%n(1), self%n(2)))
-  allocate(u0, dt, ex, xxup, ssup, source, mold=chi)
+  call os%allocate (Inuup, self%n(1:2))
+  call os%allocate (kernel, self%n(1:2))
+  call os%allocate (u0, shape(chi))
+  call os%allocate (dt, shape(chi))
+  call os%allocate (ex, shape(chi))
+  call os%allocate (xxup, shape(chi))
+  call os%allocate (ssup, shape(chi))
+  call os%allocate (source, shape(chi))
 
   kernel = real(self%ray%upkern)
   call self%interp_xy_up3(self%chi, xxup, self%ray%upo1, self%ray%upo2, kernel, .true.)
   call self%interp_xy_up3(self%Snu, ssup, self%ray%upo1, self%ray%upo2, kernel, .true.)
   
+  ! PRINT *, associated(chi)
+  PRINT '(7i6)', omp%thread, shape(chi)
   dt = 0.5 * self%ray%dsup * ( xxup + chi ) ! upwind optical pathlength
   where (dt < 38)
     ex = exp(-dt) 
@@ -347,6 +363,18 @@ SUBROUTINE short_ray_update (self)
   !write(*,'(F5.1, A12, 4(I4), 6(ES15.7))') self%time, 'xxup ssup', self%patch%id, self%i_nu, self%dir, self%i_omega, &
   !xx_ss_up(pcheck(1),pcheck(2),pcheck(3),fcheck,:)
   !endif
+  call os%deallocate(Inuup)
+  call os%deallocate(kernel)
+  call os%deallocate(u0)
+  call os%deallocate(dt)
+  call os%deallocate(ex)
+  call os%deallocate(xxup)
+  call os%deallocate(ssup)
+  call os%deallocate(source)
+
+  call self%lock%unset
+  !$omp barrier
+
   call trace%end(itimer)
 END SUBROUTINE short_ray_update
 
