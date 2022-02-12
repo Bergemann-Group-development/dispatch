@@ -40,8 +40,6 @@ CONTAINS
 SUBROUTINE init (self)
   class(setup_t):: self
   !.............................................................................
-  call omp%init                         ! OpenMP startup
-  call mpi%init                         ! MPI startup
   call io%init                          ! I/O system
   call omp_lock%init ('setup')          ! needs omp, io%init
   call timer%init                       ! needs locks
