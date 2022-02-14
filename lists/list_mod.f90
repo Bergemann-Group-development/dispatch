@@ -2307,7 +2307,7 @@ SUBROUTINE real_queue_by_time (self, this, error)
       if (next%task%is_clear (bits%remove)) &
         n = n+1
       if (associated(next%task, task)) then
-        write (io_unit%log,*) omp_mythread, ' WARNING: task', task%id, &
+        write (io_unit%log,*) omp%thread, ' WARNING: task', task%id, &
           ' is already in ready queue'
         go to 9
       else if (next%task%time > task%time) then
@@ -2397,7 +2397,7 @@ SUBROUTINE queue_active (self, this)
   next => self%active
   do while (associated(next))
     if (associated(next%task, task)) then
-      write (io_unit%log,*) omp_mythread, ' WARNING: task', task%id, &
+      write (io_unit%log,*) omp%thread, ' WARNING: task', task%id, &
         ' is already in active queue'
       exit
     else if (next%task%atime > task%atime) then

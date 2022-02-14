@@ -7,7 +7,7 @@ MODULE io_unit_mod
   private
   type io_unit_t
     logical:: master=.true., do_validate=.false., &
-      do_trace=.false., omp_trace=.false.
+      do_trace=.false., omp_trace=.false., flush_logs=.false.
     integer:: verbose=0, input=1, output=6, data=3, log=4, debug=7, &
       flag=8, index=9, dump=10, trace=11, os=12, mpi=13, queue=14, direct=15, &
       validate=16, dispatcher=17, nml=18, copy1=19, copy2=20, datain=21, &

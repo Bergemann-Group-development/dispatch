@@ -1,0 +1,17 @@
+! -- Parameters defining the run -----------------------------------------------
+!&io_params          do_trace=t omp_trace=f /
+!&atmos_params       verbose=1 atmos_file='./input_multi3d/atmos/atmos.sun_MARCS' npatches=1 read_Stagger=F/
+&atmos_params       verbose=1 atmos_file='./input_multi3d/atmos/t5777g44m0005_20.5x5x230' npatches=1 read_Stagger=T/
+&boundary_params    verbose=0 condition=1 /
+&download_params    check_filled=F verbose=0 /
+&atom_params        atom_file='./input_multi3d/atoms/atom.ba06' qnorm=10.0 convlim=1d-3 /
+!&atom_params        atom_file='./input_multi3d/atoms/atom.o41f' qnorm=10.0 /
+&radiation_params   save_output=T /
+&experiment_params  n_nu=1 maxiter=1 verbose=2 ilambd=0 quad_scheme='set_a4'/
+&timer_params       sec_per_report = 1000 /
+&task_list_params   verbose=0 /
+&task_params        verbose=0 /
+&halo_params        check_filled=F /
+&m3d_params         fcheck=101 pcheck=1,1,1 /
+
+&lock_params        verbose=0 alternate_time=300 /

@@ -26,6 +26,9 @@ module rad_patch_mod
   USE m3d_patch_mod
   USE opac_patch_mod
   USE ray_mod, only:ray_type
+  USE os_mod
+  USE omp_mod
+  USE omp_lock_mod
   implicit none
 
   !-----------------------------------------------------------------------------
@@ -135,6 +138,7 @@ SUBROUTINE radiation_init (self)
   integer :: i
   ! ----------------------------------------------------------------------------
   call self%m3d_t%init()
+  call self%lock%init ()
 
   if (self%kind=='angle_rad') then
     allocate(self%Psi(self%n(1),  self%n(2),  self%n(3),  self%nv))
@@ -247,11 +251,18 @@ END SUBROUTINE long_ray_update
 !===============================================================================
 SUBROUTINE short_ray_update (self)
   class(radiation_t), target :: self
-  real(4), dimension(:,:,:,:), allocatable :: ex, source, xxup, ssup
-  real(4), dimension(:,:), allocatable :: Inuup, kernel
-  real(4), dimension(:,:,:,:), pointer :: Inu, xx, ss
-  real(4), dimension(:,:), pointer, contiguous :: II
-  integer :: k1, k2
+!define CONTIG
+#ifdef CONTIG
+  real(4), dimension(:,:,:,:),   pointer, contiguous :: u0, dt, ex, source, xxup, ssup
+  real(4), dimension(:,:),       pointer, contiguous :: Inuup, kernel
+  real(4), dimension(:,:),       pointer, contiguous :: II
+#else
+  real(4), dimension(:,:,:,:),   pointer :: u0, dt, ex, source, xxup, ssup
+  real(4), dimension(:,:),       pointer :: Inuup, kernel
+  real(4), dimension(:,:),       pointer :: II
+#endif
+  real(4), dimension(:,:,:,:),   pointer             :: Inu, chi, Snu
+  integer :: k1, k2, m(4), i2, i3, i4
   real(4) :: Inumin
   integer :: f, k, z, i, j, dx,dy,i1,j1,x1,x2,y1,y2
   integer, save:: itimer=0
@@ -269,13 +280,42 @@ SUBROUTINE short_ray_update (self)
   k1 = merge(self%li(3), self%ui(3), self%dir > 0)
   k2 = merge(self%li(3), self%ui(3), self%dir < 0)
 
-  allocate(Inuup(self%n(1), self%n(2)))
-  allocate(ex, xxup, ssup, source, mold=xx)
+  m = shape(Snu)
+  call os%allocate (Inuup, self%n(1:2))
+  call os%allocate (kernel, self%n(1:2))
+  ! allocate (u0,dt,ex,xxup,ssup,source, mold=chi)
+  call os%allocate (u0, m)
+  call os%allocate (dt, m)
+  call os%allocate (ex, m)
+  call os%allocate (xxup, m)
+  call os%allocate (ssup, m)
+  call os%allocate (source, m)
 
   kernel = real(self%ray%upkern)
   call self%interp_xy_up3(self%chi, xxup, self%ray%upo1, self%ray%upo2, kernel, .true.)
   call self%interp_xy_up3(self%Snu, ssup, self%ray%upo1, self%ray%upo2, kernel, .true.)
-  call extinction_and_source(real(self%ray%dsup), xx, xxup, ss, ssup, self%Psi, ex, source)
+  
+  do i4=1,size(dt,4)
+    dt(:,:,:,i4) = 0.5 * self%ray%dsup &
+      * (xxup(:,:,:,i4) + chi(:,:,:,i4)) ! upwind optical pathlength
+    where (dt(:,:,:,i4) < 38)
+      ex(:,:,:,i4) = exp(-dt(:,:,:,i4)) 
+    elsewhere
+      ex(:,:,:,i4) = 0
+    end where
+    ! Compute the U functions, use Taylor expansion for small dt
+    ! to avoid accuracy issues with 1-(number slightly smaller than one)
+    where ( dt(:,:,:,i4) > 1.0e-3 )
+      u0(:,:,:,i4) = 1.0 - ex(:,:,:,i4)
+      self%Psi(:,:,:,i4) = 1. - u0(:,:,:,i4) / dt(:,:,:,i4)
+    elsewhere
+      self%Psi(:,:,:,i4) = dt(:,:,:,i4) * (0.5 - 0.16666667*dt(:,:,:,i4))
+      u0(:,:,:,i4) = dt(:,:,:,i4) * (1. - self%Psi(:,:,:,i4))
+    end where
+
+    source(:,:,:,i4) = (u0(:,:,:,i4) - &
+      self%Psi(:,:,:,i4)) * ssup(:,:,:,i4) + self%Psi(:,:,:,i4)*Snu(:,:,:,i4)
+  end do
 
   dx = size(kernel, 1) - 1
   dy = size(kernel, 2) - 1
@@ -290,25 +330,29 @@ SUBROUTINE short_ray_update (self)
       z = k - self%li(3) + 1
       II => self%Inu(:,:, k-self%dir,f) 
       
-      do j=1,self%n(2)
+      do j=1,self%n(2)-j1-dy
         y1 = j + j1
         y2 = y1 + dy
     
         !$omp simd
-        do i=1,self%n(1)
+        do i=1,self%n(1)-i1-dx
 
             if (ex(i,j,z,f) == 0) then
               Inu(i,j,z,f) = source(i,j,z,f)
             else
               x1 = i + i1
               x2 = x1 + dx
-              Inuup(i,j) = sum(kernel * II(x1:x2, y1:y2))
-              Inumin = minval(II(x1+1:x1+2, y1+1:y1+2))
-              if (Inuup(i,j) < Inumin) then
-                Inuup(i,j) = Inumin
-              endif
+              if (x2 <= size(II,1) .and. y2 <= size(II,2)) then
+                Inuup(i,j) = sum(kernel * II(x1:x2, y1:y2))
+                Inumin = minval(II(x1+1:x1+2, y1+1:y1+2))
+                if (Inuup(i,j) < Inumin) then
+                  Inuup(i,j) = Inumin
+                endif
 
-              Inu(i,j,z,f) = Inuup(i,j)*ex(i,j,z,f) + source(i,j,z,f)
+                Inu(i,j,z,f) = Inuup(i,j)*ex(i,j,z,f) + source(i,j,z,f)
+              else
+                PRINT *, 'WARNING: attempted index overrun', x2, y2
+              end if
             endif
         end do
       end do
@@ -323,6 +367,16 @@ SUBROUTINE short_ray_update (self)
   !write(*,'(F5.1, A12, 4(I4), 6(ES15.7))') self%time, 'xxup ssup', self%patch%id, self%i_nu, self%dir, self%i_mu, &
   !xx_ss_up(pcheck(1),pcheck(2),pcheck(3),fcheck,:)
   !endif
+  call os%deallocate(Inuup)
+  call os%deallocate(kernel)
+  call os%deallocate(u0)
+  call os%deallocate(dt)
+  call os%deallocate(ex)
+  call os%deallocate(xxup)
+  call os%deallocate(ssup)
+  call os%deallocate(source)
+  ! deallocate (u0,dt,ex,xxup,ssup,source)
+
   call trace%end(itimer)
 END SUBROUTINE short_ray_update
 
@@ -442,9 +496,9 @@ subroutine interp_xy_up2(self, VarIn, VarUp, up1, up2, kernel, check_undershoot)
   class(radiation_t), intent(in) :: self
   integer :: z1,k,f,v,k1
   integer, intent(in) :: up1, up2
-  real(4), dimension(:,:,:,:), intent(in), contiguous :: VarIn
-  real(4), dimension(:,:,:,:), intent(out), contiguous :: VarUp
-  real(4), dimension(:,:), intent(in), contiguous :: kernel
+  real(4), dimension(:,:,:,:), intent(in) :: VarIn
+  real(4), dimension(:,:,:,:), intent(out) :: VarUp
+  real(4), dimension(:,:), intent(in) :: kernel
   logical, intent(in) :: check_undershoot
   !-----------------------------------------------------------------------------
   k1 = self%li(3) - 1 - self%dir
@@ -459,12 +513,12 @@ end subroutine interp_xy_up2
 
 !===============================================================================
 subroutine interp_xy_up3(self, VarIn, VarUp, up1, up2, kernel, check_undershoot)
-  class(radiation_t), intent(in) :: self
+  class(radiation_t):: self
   integer :: x1,x2,y1,y2,z1,i,j,k,f,v,i1,j1,k1,dx,dy
   integer, intent(in) :: up1, up2
-  real(4), dimension(:,:,:,:), intent(in), contiguous :: VarIn
-  real(4), dimension(:,:,:,:), intent(out), contiguous :: VarUp
-  real(4), dimension(:,:), intent(in), contiguous :: kernel
+  real(4), dimension(:,:,:,:) :: VarIn
+  real(4), dimension(:,:,:,:) :: VarUp
+  real(4), dimension(:,:) :: kernel
   logical, intent(in) :: check_undershoot
   real(4) :: VarMin
   !-----------------------------------------------------------------------------
@@ -475,15 +529,15 @@ subroutine interp_xy_up3(self, VarIn, VarUp, up1, up2, kernel, check_undershoot)
   k1 = self%li(3) - 1 - self%dir
 
   do f=1,self%nv
-    do k=1,self%n(3)
+    do k=1,self%n(3)-k1
       z1 = k + k1
 
-      do j=1,self%n(2)
+      do j=1,self%n(2)-dy-j1
         y1 = j + j1
         y2 = y1 + dy
 
         !$omp simd
-        do i=1,self%n(1)
+        do i=1,self%n(1)-dx-i1
             x1 = i + i1
             x2 = x1 + dx
 
@@ -506,7 +560,7 @@ pure subroutine interp_xy_up_plane(self, VarIn, VarUp, up1, up2, kernel, check_u
   class(radiation_t), intent(in) :: self
   integer :: x1,x2,y1,y2,i,j, dx,dy, i1,j1
   integer, intent(in) :: up1, up2
-  real(4), dimension(:,:), intent(in), contiguous :: VarIn, kernel
+  real(4), dimension(:,:), intent(in) :: VarIn, kernel
   real(4), dimension(:,:), intent(out) :: VarUp
   logical, intent(in) :: check_undershoot
   real(4) :: VarMin

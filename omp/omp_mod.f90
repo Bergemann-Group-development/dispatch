@@ -9,51 +9,88 @@ MODULE omp_mod
   logical, save:: omp_trace=.false.
   type, public:: omp_t
     integer:: thread=0
+    integer:: place=0
     integer:: thread_global=0, nthreads_global=0
     integer:: ncores=1
     integer:: nthreads=1
+    integer:: nplaces=0
     integer:: nsockets=1
     integer:: thread_task=0
     logical:: trace=.false.
     logical:: master=.true.
+    real(8):: wait_time=0d0
   contains
     procedure:: init
+    procedure:: info
     procedure, nopass:: mythread
     procedure, nopass:: numthreads => omp_numthreads
     procedure, nopass:: set_stacksize
     procedure, nopass:: delay
   end type
-  logical, public, save:: omp_master
-  integer, public, save:: omp_nthreads
-  integer, public, save:: omp_mythread
   public:: omp_numthreads
   type(omp_t), public, save:: omp
-  !$omp threadprivate (omp_master, omp, omp_mythread)
+  !$omp threadprivate (omp)
 CONTAINS
 
 !===============================================================================
 SUBROUTINE init (self)
   class(omp_t):: self
+  integer:: thread, nthreads, place, nplaces
+  logical:: master
   !-----------------------------------------------------------------------------
   !print*,'OMP threads:'
-  !$omp parallel
+  !$omp parallel private(master,thread,place)
 #if defined (_OPENMP)
-  omp_master = (omp_get_thread_num() == 0)
-  omp_mythread = omp_get_thread_num()
   !$omp single
-  omp_nthreads = omp_get_num_threads()
+  call omp_set_nested(.true.)
+  call omp_set_max_active_levels(2)
+  nthreads = omp_get_num_threads()
+  nplaces = omp_get_num_places()
   !$omp end single
+  thread = omp_get_thread_num()
+  master = (thread == 0)
+  if (nplaces > 0) then
+    place = omp_get_place_num()
+  else
+    place = thread
+  end if
 #else
-  omp_nthreads = 1
-  omp_master = .true.
-  omp_mythread = 0
+  nthreads = 1
+  master = .true.
+  thread = 0
+  place = 0
+  nplaces = 0
 #endif
-  omp%nthreads = omp_nthreads
-  omp%thread = omp_mythread
-  omp%master = omp_master
-  io_unit%master = io_unit%master .and. omp_master
+  omp%nthreads = nthreads
+  omp%thread = thread
+  omp%place = place
+  omp%nplaces = nplaces
+  omp%master = master
+  io_unit%master = io_unit%master .and. master
   !$omp end parallel
+  omp%nthreads = nthreads
+  omp%nplaces = nplaces
 END SUBROUTINE init
+
+!===============================================================================
+!> Write information about threads and places
+!===============================================================================
+SUBROUTINE info (self)
+  class(omp_t):: self
+  integer:: thread
+  !-----------------------------------------------------------------------------
+  !$omp single
+  write (io_unit%mpi,'(a,2i4)') &
+    ' omp%init: nthreads,nplaces=', omp%nthreads, omp%nplaces
+  !$omp end single
+  do thread=0,self%nthreads-1
+    !$omp barrier
+    if (thread==omp%thread) then
+      write (io_unit%mpi,'(a,2i4)') &
+        '  omp%init: thread,place=', omp%thread, omp%place
+    end if
+  end do
+END SUBROUTINE info
 
 #if ! defined (_OPENMP)
 #if ! defined (__xlc__)
@@ -96,7 +133,7 @@ END FUNCTION
 !> Adjust OMP_STACKSIZE according to number of passive scalars, with baseline
 !> being 4M for MHD
 !===============================================================================
-SUBROUTINE set_stacksize (nv)
+SUBROUTINE set_stacksize (nv, verbose)
 #ifdef __INTEL_COMPILER
 #ifdef _OPENMP
   USE omp_lib, only : kmp_set_stacksize_s, kmp_get_stacksize_s, kmp_size_t_kind
@@ -105,20 +142,21 @@ SUBROUTINE set_stacksize (nv)
 #endif
 #endif
   integer:: nv, recommended
+  logical:: verbose
   character(len=16):: envvar
   logical:: kmp, omp
   logical, save:: first_time=.true., printed=.false.
   !-----------------------------------------------------------------------------
   if (io_unit%do_validate) return
-  recommended = (4*1024**2*nv) / 8
+  recommended = (50*1024**2)
 #ifdef _OPENMP
 #ifdef __INTEL_COMPILER
   call getenv ('KMP_STACKSIZE', envvar)
   kmp = envvar /= ''
   call getenv ('OMP_STACKSIZE', envvar)
   omp = envvar /= ''
-  if (omp .and. .not.kmp .and. io_unit%master .and. first_time) then
-    if (.not.printed) print '(/2x,a)', &
+  if (omp .and. .not.kmp .and. omp_get_num_threads()==0 .and. first_time) then
+    if (verbose .and. .not.printed) print '(/2x,a)', &
       '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
     print '(2x,a)', &
       '! WARNING: Use KMP_STACKSIZE rather than OMP_STACKSIZE with Intel-MPI!   !'
@@ -131,41 +169,41 @@ SUBROUTINE set_stacksize (nv)
   if (kind(r)==kind(1.0E0_8)) new_stacksize = new_stacksize * 2
   if (new_stacksize > stacksize) then
     call kmp_set_stacksize_s(new_stacksize)
-    if (io_unit%master .and. first_time) then
-      if (.not.printed) print '(1x,a)', &
+    if (omp_get_thread_num()==0 .and. first_time .and. .not.printed) then
+      if (verbose .and. .not.printed) print '(1x,a)', &
         '*************************************************************************************'
-      print '(1x,a,f5.1,a)', &
-      '* WARNING! OpenMP stacksize has been reset to ', new_stacksize/1024.**2, &
-      ' MB to avoid segfault'
+      print '(1x,a,i5,a)', &
+      '* WARNING! OpenMP stacksize has been reset to ', &
+      nint(new_stacksize/1024.**2), ' MB to avoid segfaults'
       printed = .true.
     end if
   else if (first_time.and.io_unit%master) then
-    print '(1x,a,f5.1,a,i3,a)', 'OpenMP stacksize default:', stacksize/1024.**2, ' MB for', &
+    if (verbose) &
+      print '(1x,a,f5.1,a,i3,a)', 'OpenMP stacksize default:', stacksize/1024.**2, ' MB for', &
       nv, ' variables'
 
     first_time = .false.
   endif
 #else
   call getenv ('OMP_STACKSIZE', envvar)
-  if (envvar == '' .and. io_unit%master .and. first_time) then
+  if (verbose .and. envvar == '' .and. omp_get_thread_num()==0 .and. first_time) then
     print '(/,2(1x,a,/),1x,a,i9)', &
     '*************************************************************************************', &
     '* omp_mod.f90:', &
     '* WARNING: environment variable OMP_STACKSIZE not set, recommended value =',recommended
-    printed = .true.
     call getenv ('KMP_STACKSIZE', envvar)
-    if (envvar /= '' .and. io_unit%master .and. first_time) then
+    if (envvar /= '' .and. omp_get_thread_num()==0 .and. first_time) then
       if (.not.printed) print *, &
         '*************************************************************************************'
       print '(2(1x,a,/),1x,a)', &
         '* omp_mod.f90:', &
         '* WARNING: environment variable KMP_STACKSIZE is set, this assumes Intel MPI'
-      printed = .true.
     end if
+    printed = .true.
   end if
 #endif
 #endif
-  if (printed .and. io_unit%master .and. first_time) then
+  if (omp_get_num_threads()==0 .and. first_time) then
     first_time = .false.
     print '(1x,a)', &
     '*************************************************************************************'

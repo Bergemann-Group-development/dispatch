@@ -98,6 +98,7 @@ SUBROUTINE m3d_pre_init (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('m3d_t%pre_init')
 
+  call io%lock%set ('m3d_t%pre_init')
   if (first_time) then
     first_time = .false.
     rewind (io%input)

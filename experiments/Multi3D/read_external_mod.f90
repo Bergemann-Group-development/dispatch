@@ -55,7 +55,6 @@ SUBROUTINE init(self, task_list, name)
   !-----------------------------------------------------------------------------
   if (associated(task_list)) return
   call trace%begin('read_external_t%init')
-  call io%init ('read_external_t%init')
   call io%header ('read_external_t%init')
   !-----------------------------------------------------------------------------
   ! The first thread reads the namelist parameters and saves them

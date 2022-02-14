@@ -5,6 +5,7 @@ module composition_mod
     use ion_mod
     use level_mod
     use transition_mod
+    use omp_lib
     implicit none
 
     type :: composition_type
@@ -874,7 +875,7 @@ contains
     subroutine get_nhyd(self, nhyd)
         class(composition_type), target :: self
         real(dp), dimension(:,:,:,:), intent(out) :: nhyd
-        real(dp), dimension(:,:,:), allocatable :: nh, blzfac
+        real(dp), dimension(:,:,:), pointer :: nh, blzfac
         class(ion_type), pointer :: H0
         type(level_type) :: level
         integer :: k, nk
@@ -885,6 +886,12 @@ contains
 
         allocate(nh, blzfac, mold=nhyd(:,:,:,1))
 
+        PRINT *, omp_get_thread_num(), allocated(self%fe), allocated(self%ne)
+        PRINT *, omp_get_thread_num(), shape(self%fe), 'fe'
+        PRINT *, omp_get_thread_num(), shape(self%ne), 'ne'
+        if (.not.allocated(self%ne)) then
+          PRINT *, 'self%fe not allocated on thread', omp_get_thread_num()
+        end if
         nh = H0%f / self%fe * self%ne * (BK/uop_BK)
 
         do k=1, nk
@@ -892,6 +899,8 @@ contains
             blzfac = level%boltzmann(self%EK_over_temp, natural_log=.true.)
             nhyd(:,:,:,k) = k**2 * blzfac * nh
         end do
+
+        deallocate (nh, blzfac)
         call trace_end ()
     end subroutine
 

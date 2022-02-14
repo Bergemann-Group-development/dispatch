@@ -452,7 +452,7 @@ SUBROUTINE update (self, head, test)
   mpi_mesg%n_update = mpi_mesg%n_update+1
   if (self%verbose > 1) &
     write (io_unit%log,'(a,i4,2x,a,i7,2x,a,2x,a,i7,2x,a,1p,2g14.6,2x,a,2i5,l3)') &
-    'thread', omp_mythread, 'task', task%id, trim(task%type), &
+    'thread', omp%thread, 'task', task%id, trim(task%type), &
     'step', task%istep, 'dt, time:', task%dtime, task%time, &
     'n, nq', self%n, self%nq, associated(head%nbor)
   !-----------------------------------------------------------------------------

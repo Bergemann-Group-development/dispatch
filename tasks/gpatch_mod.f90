@@ -616,7 +616,7 @@ contains
       fmt = '(a,i8,2i4,i3,1p,2e12.5,     0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,i6,3i5,i6,4i5,i4,l3,l1,o12)'
     end if
     write(unit,fmt) &
-      'upd',self%id, self%level, iv, omp_mythread, time, &
+      'upd',self%id, self%level, iv, omp%thread, time, &
       self%dtime, log10(max(self%u_max,1e-30)), &
       dmin, dmax, &
       self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
