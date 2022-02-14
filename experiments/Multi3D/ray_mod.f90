@@ -75,7 +75,7 @@ module ray_mod
 contains
 
 !===============================================================================
-SUBROUTINE set_carlson_quadratures (quad_scheme, vec, wts)
+SUBROUTINE set_carlson_quadratures (quad_scheme, vec, wts, up_and_down)
   !---------------------------------------------------------------------
   !
   !  Routine is modified from set_ang by AJG for output ray quadrature
@@ -87,10 +87,18 @@ SUBROUTINE set_carlson_quadratures (quad_scheme, vec, wts)
   real(8), dimension(:), allocatable :: mux,  muy,  wmu
   real(8), dimension(:), allocatable, intent(out) :: wts
   real(8), dimension(:,:), allocatable, intent(out) :: vec
+  logical, optional :: up_and_down
+  logical :: mirror=.true.
   ! ----------------------------------------------------------------------------
 
   ! define the different angle sets
   select case (trim(quad_scheme))
+
+  case('disk_center')
+    allocate(vec(3, 1), wts(1))
+    vec(:,1) = [0.0, 0.0, 1.0]
+    wts = 1.0
+    return
 
   case('set_a2')
     nro    = 1
@@ -164,11 +172,19 @@ SUBROUTINE set_carlson_quadratures (quad_scheme, vec, wts)
     stop
   end select
 
-  ! Normalize, so that integration over 8 octants yields 4 pi
-  ! the above sets are normalized so that integration over one octant yields 1.
-  wmu = wmu * 0.5 * pi
+  if (present(up_and_down)) then
+    mirror = up_and_down
+  endif
 
-  nmu = 8*nro + 1
+  if (mirror) then
+    ! Normalize, so that integration over 8 octants yields 4 pi
+    ! the above sets are normalized so that integration over one octant yields 1.
+    wmu = wmu * 0.5 * pi
+    nmu = 8*nro
+  else
+    wmu = wmu * 0.5 * pi
+    nmu = 4*nro
+  endif
 
   allocate(vec(3, nmu), wts(nmu))
   vec = 0
@@ -191,12 +207,11 @@ SUBROUTINE set_carlson_quadratures (quad_scheme, vec, wts)
   vec(2,2*nro+1:4*nro) = -vec(2,1:2*nro)
   vec(3,2*nro+1:4*nro) =  vec(3,1:2*nro)
 
-  ! Fill the other octants with inverted rays 
-  wts(  4*nro+1:8*nro) =  wts(  1:4*nro)
-  vec(:,4*nro+1:8*nro) = -vec(:,1:4*nro)
-
-  wts(nmu)   = 0
-  vec(:,nmu) = [0.0, 0.0, 1.0]
+  if (mirror) then
+    ! Fill the other octants with inverted rays 
+    wts(  4*nro+1:8*nro) =  wts(  1:4*nro)
+    vec(:,4*nro+1:8*nro) = -vec(:,1:4*nro)
+  endif
 END SUBROUTINE set_carlson_quadratures
 !---------------------------------------------------------------------
 

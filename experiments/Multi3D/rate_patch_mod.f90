@@ -40,7 +40,6 @@ module rate_patch_mod
       class(opacity_t), pointer :: line_opac => null()
       contains
         procedure :: pre_init => rate_patch_pre_init
-        procedure :: init => rate_patch_init
         procedure :: update => rate_patch_update
         procedure :: nbor_relations => rate_patch_nbor_relations
     end type rate_patch_t
@@ -73,18 +72,6 @@ module rate_patch_mod
   END SUBROUTINE rate_patch_pre_init
   
   !===============================================================================
-  SUBROUTINE rate_patch_init (self)
-    class(rate_patch_t) :: self
-    integer :: i
-    ! ----------------------------------------------------------------------------
-    call self%m3d_t%init()
-    
-    self%t_offset = 0.9d0
-  
-    self%time = self%patch%time + self%t_offset*self%dtime
-  END SUBROUTINE rate_patch_init
-  
-  !===============================================================================
   SUBROUTINE rate_patch_update (self)
     class(rate_patch_t) :: self
     real(4), dimension(:,:,:,:), pointer :: Inu, gamma_ij, gamma_ji, chi_l, chi_c, eta_l, eta_c
@@ -93,10 +80,6 @@ module rate_patch_mod
     integer, save:: itimer=0
     !-----------------------------------------------------------------------------
     call trace%begin('rate_patch_t%rate_patch_update', itimer=itimer)
-
-    if (self%maxiter<0) then
-      return
-    endif
 
     fs = self%fs
     fe = self%fe

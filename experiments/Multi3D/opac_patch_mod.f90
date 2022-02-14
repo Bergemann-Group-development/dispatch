@@ -43,7 +43,6 @@ module opac_patch_mod
   class(m3d_t), pointer :: mean_rad => null()
   contains
     procedure :: pre_init => opacity_pre_init
-    procedure :: init => opacity_init
     procedure :: update => opacity_update
     procedure :: nbor_relations => opacity_nbor_relations
     procedure :: init_composition
@@ -75,10 +74,14 @@ SUBROUTINE opacity_pre_init (self)
   self%new = self%it
 
   if (self%kind == 'sum_opac') then
-    if (self%rad%ray%long) then
-      self%ng = [3,3,1]
+    if (self%out_ray) then
+      self%ng = [0,0,1]
     else
-      self%ng = [2,2,1]
+      if (self%ray%long) then
+        self%ng = [3,3,1]
+      else
+        self%ng = [2,2,1]
+      endif
     endif
   endif
   
@@ -104,21 +107,6 @@ SUBROUTINE init_composition (self)
   allocate(self%nh(self%n(1), self%n(2), self%n(3), 6))
   call self%composition%get_nhyd(self%nh)
 END SUBROUTINE init_composition
-
-!===============================================================================
-SUBROUTINE opacity_init (self)
-  class(opacity_t) :: self
-  ! ----------------------------------------------------------------------------
-  call self%m3d_t%init()
-
-  if (self%kind == 'sum_opac') then
-    self%t_offset = 0.4d0
-  else
-    self%t_offset = 0.2d0
-  endif
-
-  self%time = self%patch%time + self%t_offset*self%dtime
-END SUBROUTINE opacity_init
 
 !===============================================================================
 SUBROUTINE opacity_update (self)
@@ -249,7 +237,7 @@ SUBROUTINE opacity_nbor_relations(self, another, needed, needs_me, download)
       select type (another)
       class is (opacity_t)
         if (another%i_nu == self%i_nu) then
-          if (another%i_omega == self%i_omega) then
+          if (another%i_mu == self%i_mu) then
             if (another%kind == self%kind) then
               if (self%is_upstream(another)) then
                 needed = .true.; needs_me = .false.; download = .true.

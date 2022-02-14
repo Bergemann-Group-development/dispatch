@@ -122,9 +122,6 @@ module atom_patch_mod
     ! ----------------------------------------------------------------------------
     call self%set (bits%no_density)
     call self%set (bits%internal)
-
-    self%rate%maxiter = self%maxiter - 1
-    self%opac%maxiter = self%maxiter
   
     self%time = self%patch%time + self%t_offset*self%dtime
   END SUBROUTINE atom_patch_init
@@ -309,16 +306,16 @@ module atom_patch_mod
     class(atom_patch_t), target :: self
     class(line_type), pointer :: line
     class(opacity_t), pointer :: opac
-    integer :: i, i_omega, i_nu
+    integer :: i, i_mu, i_nu
     ! ----------------------------------------------------------------------------
     do i=1, self%atom%nline
       line => self%atom%line(i)
       allocate(line%wphi(self%n(1), self%n(2), self%n(3)))
       line%wphi = 0
 
-      do i_nu=1, size(self%opac(1:,1:), 2)
-        do i_omega=1, size(self%opac(1:,1:), 1)
-          opac => self%opac(i_omega, i_nu)
+      do i_nu=1, size(self%opac(1:self%n_omega,1:), 2)
+        do i_mu=1, size(self%opac(1:self%n_omega,1:), 1)
+          opac => self%opac(i_mu, i_nu)
           line%wphi = line%wphi + opac%wmu * opac%wphi(:,:,:,i)
         end do
       end do
@@ -331,15 +328,15 @@ module atom_patch_mod
   SUBROUTINE sum_rates (self, gamma_ij, gamma_ji)
     class(atom_patch_t), target :: self
     class(rate_patch_t), pointer :: rate
-    integer :: i, i_omega, i_nu, m(4)
+    integer :: i, i_mu, i_nu, m(4)
     real(8), dimension(:,:,:,:), allocatable:: gamma_ij, gamma_ji
     ! ----------------------------------------------------------------------------
     gamma_ij = 0.0d0
     gamma_ji = 0.0d0
 
     do i_nu=1, size(self%rate, 2)
-      do i_omega=1, size(self%rate, 1)
-        rate => self%rate(i_omega, i_nu)
+      do i_mu=1, size(self%rate, 1)
+        rate => self%rate(i_mu, i_nu)
         gamma_ij = gamma_ij + rate%wmu * rate%mem(:,:,:,:,rate%it,rate%i_Gij)
         gamma_ji = gamma_ji + rate%wmu * rate%mem(:,:,:,:,rate%it,rate%i_Gji)
       end do

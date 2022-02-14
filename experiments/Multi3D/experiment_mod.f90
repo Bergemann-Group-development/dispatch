@@ -48,6 +48,8 @@ MODULE experiment_mod
     procedure:: pre_init_composition
     procedure:: init_composition
     procedure:: append_to
+    procedure:: set_t_offset
+    procedure:: set_maxiter
     procedure:: link_sub_task
     procedure:: link_and_init
     procedure:: init_sub_patches
@@ -214,13 +216,14 @@ SUBROUTINE init_sub_patches(self)
   class(opacity_t), pointer, dimension(:,:) :: sum_opac
   class(radiation_t), pointer, dimension(:) :: out_rad
   class(radiation_t), pointer, dimension(:,:) :: rt_patches
-  integer :: iostat, n_omega, n, n_out, i_out
-  real(8), dimension(:), allocatable:: wmu
-  real(8), dimension(:,:), allocatable:: vec
+  integer :: iostat, n_omega, n, n_out, i_out, n_mu
+  real(8), dimension(:), allocatable:: wmu, long_wmu
+  real(8), dimension(:,:), allocatable:: vec, long_vec
   integer, save :: n_nu=1, verbose=0, maxiter=1, ilambd=3
-  character(len=32), save :: quad_scheme='set_a2'
+  character(len=32), save :: quad_scheme='set_a4'
+  character(len=32), save :: long_scheme='set_a2'
   integer :: i, dir, p
-  namelist /experiment_params/ n_nu, maxiter, verbose, ilambd, quad_scheme
+  namelist /experiment_params/ n_nu, maxiter, verbose, ilambd, quad_scheme, long_scheme
   !-----------------------------------------------------------------------------
   if (first_time) then
     rewind (io%input)
@@ -241,12 +244,14 @@ SUBROUTINE init_sub_patches(self)
   !-------------------------------------------------------------------------
   ! Assign angles and integration weights
   !-------------------------------------------------------------------------
-  call set_carlson_quadratures (quad_scheme, vec, wmu)
+  call set_carlson_quadratures (quad_scheme, vec, wmu, up_and_down=.true.)
+  call set_carlson_quadratures (long_scheme, long_vec, long_wmu, up_and_down=.false.)
   n_omega = size(vec, 2)
-  n_out = count(vec(3,:)>0)
+  n_out = size(long_vec, 2)
+  n_mu = n_omega + n_out
 
   allocate(atom_patch)
-  allocate(atom_patch%opac(0:n_omega, n_nu))
+  allocate(atom_patch%opac(0:n_mu, n_nu))
   allocate(atom_patch%rate(n_omega, n_nu))
   self%atom_patch => atom_patch
   atom_patch%n_omega = n_omega
@@ -254,6 +259,8 @@ SUBROUTINE init_sub_patches(self)
 
   call self%link_sub_task(atom_patch)
   call atom_patch%pre_init()
+  call self%set_t_offset(atom_patch)
+  call self%set_maxiter(atom_patch)
   call atom_patch%init()
   call atom_patch%append_to_task_list(self%task_list)
   self%sp => atom_patch%sp
@@ -261,10 +268,10 @@ SUBROUTINE init_sub_patches(self)
   allocate(back_opac(n_nu))
   self%back_opac => back_opac
 
-  allocate(sum_opac(n_omega, n_nu))
+  allocate(sum_opac(n_mu, n_nu))
   self%opac => sum_opac
 
-  allocate(rt_patches(0:n_omega, n_nu))
+  allocate(rt_patches(0:n_mu, n_nu))
   self%rt_patches => rt_patches
 
   if (self%boundaries%topbot(1)) then
@@ -284,7 +291,7 @@ SUBROUTINE init_sub_patches(self)
   end do
 
   do p=1,4 ! do this for line_opac, angle_rad, sum_opac, line_rate
-    do i=1, n_omega
+    do i=1, n_mu
       do n=1, n_nu
         if (p==4) then
           patch => atom_patch%opac(i,n)
@@ -296,16 +303,26 @@ SUBROUTINE init_sub_patches(self)
           patch => rt_patches(i,n)
           patch%kind = 'angle_rad'
         elseif (p==1) then
+          if (i > n_omega) cycle
           patch => atom_patch%rate(i,n)
           patch%kind = 'rad_rate'
         endif
 
-        patch%i_omega = i
+        patch%i_mu = i
         patch%i_nu = n
 
-        patch%vec = vec(:,i)
-        patch%wmu = wmu(i)
-        patch%dir = merge(1, -1, vec(3,i) > 0)
+        if (i > n_omega) then
+          patch%out_ray = .true.
+          patch%i_out = i - n_omega
+          patch%vec = long_vec(:,patch%i_out)
+          patch%wmu = long_wmu(patch%i_out)
+          patch%dir = 1
+        else
+          patch%vec = vec(:,i)
+          patch%wmu = wmu(i)
+          patch%dir = merge(1, -1, vec(3,i) > 0)
+        endif
+
 
         call self%link_and_init(patch, n, n_nu)
       end do
@@ -313,16 +330,77 @@ SUBROUTINE init_sub_patches(self)
   end do
 
   if (associated(self%out_rad)) then
-    i_out = 1
-    do i=1, n_omega ! only use dir=1
-      if (vec(3,i)<0) cycle
-      out_rad(i_out)%kind = 'out_rad'
-      out_rad(i_out)%i_omega = i
-      call self%link_and_init(out_rad(i_out), 1, 1)
-      i_out = i_out + 1
+    do i=1, n_out
+      out_rad(i)%kind = 'out_rad'
+      out_rad(i)%i_mu  = i + n_omega
+      out_rad(i)%i_out = i
+      out_rad(i)%out_ray = .true.
+      call self%link_and_init(out_rad(i), 1, 1)
     end do
   endif
 END SUBROUTINE init_sub_patches
+
+!===============================================================================
+SUBROUTINE set_t_offset (self, task)
+  class (experiment_t) :: self
+  class(task_t) :: task
+  real(8) :: t_offset
+  !-----------------------------------------------------------------------------
+  select type (task)
+  class is (atom_patch_t)
+    t_offset = 0.1
+  class is (m3d_t)
+    select case (task%kind)
+    case ('back_opac', 'cont_opac', 'line_opac')
+      t_offset = 0.2
+    case ('sum_opac')
+      t_offset = 0.4
+    case ('angle_rad')
+      t_offset = 0.6
+    case ('mean_rad', 'out_rad')
+      t_offset = 0.8
+    case ('rad_rate')
+      t_offset = 0.9
+    end select
+    
+    if (task%out_ray) then
+      t_offset = t_offset + self%ilambd + self%maxiter
+    endif
+  end select
+
+  task%time = self%time + t_offset * self%dtime
+END SUBROUTINE set_t_offset
+
+!===============================================================================
+SUBROUTINE set_maxiter (self, task)
+  class (experiment_t) :: self
+  class(task_t) :: task
+  !-----------------------------------------------------------------------------
+  select type (task)
+  class is (atom_patch_t)
+    task%maxiter = self%maxiter
+    task%rate%maxiter = task%maxiter - 1
+    task%opac(0,:)%maxiter = task%maxiter
+    task%opac(1:task%n_omega,:)%maxiter = task%maxiter - 1
+    task%opac(task%n_omega+1:,:)%maxiter = 0
+  class is (m3d_t)
+    select case (task%kind)
+    case ('back_opac')
+      ! LTE iteration counts as first lambda iteration
+      task%maxiter = max(0, self%ilambd - 1)
+    case ('mean_rad')
+      task%maxiter = self%ilambd - 1
+    case ('angle_rad', 'sum_opac')
+      if (task%out_ray) then
+        task%maxiter = 0
+      else
+        task%maxiter = self%ilambd + self%maxiter - 1
+      endif
+    case ('out_rad')
+      task%maxiter = 0
+    end select
+  end select
+END SUBROUTINE set_maxiter
 
 !===============================================================================
 SUBROUTINE link_sub_task (self, task)
@@ -332,20 +410,10 @@ SUBROUTINE link_sub_task (self, task)
   select type (task)
   class is (m3d_t)
     task%patch => self
-    task%temp    = self%temp
-    task%rho     = self%rho 
-    task%ne      = self%ne
-    task%sp      = self%sp
-
-    select case (task%kind)
-    case ('back_opac')
-      ! LTE iteration counts as first lambda iteration
-      task%maxiter = max(0, self%ilambd - 1)
-    case ('mean_rad')
-      task%maxiter = max(0, self%ilambd - 2)
-    case ('out_rad', 'angle_rad', 'sum_opac')
-      task%maxiter = self%ilambd + self%maxiter
-    end select
+    task%temp = self%temp
+    task%rho  = self%rho 
+    task%ne   = self%ne
+    task%sp   = self%sp
 
   class is (atom_patch_t)
     task%patch => self
@@ -355,7 +423,6 @@ SUBROUTINE link_sub_task (self, task)
     task%nh =>  self%nh
     task%composition => self%composition
     task%ilambd = self%ilambd
-    task%maxiter = self%maxiter
   end select
 
   task%verbose = self%verbose
@@ -382,19 +449,19 @@ SUBROUTINE link_and_init (self, m3d, n, n_nu)
         m3d%atom => self%atom_patch%atom
       case ('line_opac')
         m3d%atom => self%atom_patch%atom
-        m3d%vproj = m3d%vec(1)*self%vx + m3d%vec(2)*self%vy + m3d%vec(3)*self%vz
+        m3d%vproj = m3d%vec(1)*self%vx + m3d%vec(2)*self%vy + m3d%vec(3)*self%vz 
       case ('sum_opac')
         m3d%back_opac => self%back_opac(n)
         m3d%cont_opac => self%atom_patch%opac(0,n)
-        m3d%line_opac => self%atom_patch%opac(m3d%i_omega,n)
-        m3d%rad => self%rt_patches(m3d%i_omega,n)
+        m3d%line_opac => self%atom_patch%opac(m3d%i_mu,n)
+        m3d%rad => self%rt_patches(m3d%i_mu,n)
       end select
 
     class is (rate_patch_t)
       m3d%atom => self%atom_patch%atom
-      m3d%rad  => self%rt_patches(m3d%i_omega,n)
+      m3d%rad  => self%rt_patches(m3d%i_mu,n)
       m3d%cont_opac => self%atom_patch%opac(0,n)
-      m3d%line_opac => self%atom_patch%opac(m3d%i_omega,n)
+      m3d%line_opac => self%atom_patch%opac(m3d%i_mu,n)
       m3d%vproj = m3d%vec(1)*self%vx + m3d%vec(2)*self%vy + m3d%vec(3)*self%vz
 
     class is (radiation_t)
@@ -402,18 +469,20 @@ SUBROUTINE link_and_init (self, m3d, n, n_nu)
       case ('mean_rad')
         m3d%sheep => self%rt_patches(1:, n)
       case ('out_rad')
-        m3d%sheep => self%rt_patches(m3d%i_omega, :)
+        m3d%sheep => self%rt_patches(m3d%i_mu, :)
         do i=1, size(m3d%sheep)
           m3d%sheep(i)%out_rad => m3d
         end do
         m3d%vec = m3d%sheep(1)%vec
       case ('angle_rad')
-        m3d%opac => self%opac(m3d%i_omega,n)
+        m3d%opac => self%opac(m3d%i_mu,n)
         m3d%mean_rad => self%rt_patches(0, n)
       end select
   end select
 
   call m3d%pre_init()
+  call self%set_t_offset(m3d)
+  call self%set_maxiter(m3d)
   call m3d%set_freq_indices(n, self%sp%nnu, n_nu)
   call m3d%init()
   call m3d%append_to_task_list()

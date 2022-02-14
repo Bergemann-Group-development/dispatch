@@ -264,8 +264,8 @@ SUBROUTINE read_stagger_snapshot(self, stagger_file)
   self%yi  = self%yi  / scaling%l
   self%zi  = self%zi  / scaling%l
   self%rho = self%rho / scaling%d
-  self%px  = self%px * self%rho / scaling%u
-  self%py  = self%py * self%rho / scaling%u
+  self%px  = -self%px * self%rho / scaling%u
+  self%py  = -self%py * self%rho / scaling%u
   self%pz  = self%pz * self%rho / scaling%u
   self%pe  = self%ne * cgs%k_b * self%temp  / scaling%p
 

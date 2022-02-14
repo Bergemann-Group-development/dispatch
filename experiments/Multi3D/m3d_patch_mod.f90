@@ -46,12 +46,12 @@ module m3d_patch_mod
     real(8), dimension(:,:,:), allocatable :: rho 
     real(8), dimension(:,:,:), allocatable :: ne  
     real(4), dimension(:,:,:,:,:,:), pointer :: authority_mem => null()
-    real(8) :: vec(3), wmu, t_offset
-    integer :: i_nu=0, dir=0, i_omega=0, fs, fe, iter=0, maxiter
-    logical :: periodic_xy=.false.
+    real(8) :: vec(3), wmu
+    integer :: i_nu=0, dir=0, i_mu=0, fs, fe, iter=0, maxiter, i_out=0
+    logical :: periodic_xy=.false., out_ray=.false.
   contains
     procedure :: pre_init => m3d_pre_init
-    procedure :: init => m3d_init
+    procedure :: init => m3d_init 
     procedure :: post_update => m3d_post_update
     procedure :: finish => m3d_finish
     procedure :: nbor_relations => m3d_nbor_relations
@@ -190,13 +190,13 @@ SUBROUTINE m3d_post_update (self)
   if (self%verbose > 1) then
     select case (self%kind)
     case('rad_rate')
-      write(*,'(F5.1, A12, 4(I4), 6(ES15.7))') self%time, trim(self%kind), self%patch%id, self%i_nu, self%dir, self%i_omega, &
+      write(*,'(F5.1, A12, 4(I4), 6(ES15.7))') self%time, trim(self%kind), self%patch%id, self%i_nu, self%dir, self%i_mu, &
       self%authority_mem(pcheck(1),pcheck(2),pcheck(3),linecheck,1,:)
     case('out_rad')
-      write(*,'(F5.1, A12, 4(I4), 6(ES15.7))') self%time, trim(self%kind), self%patch%id, self%i_nu, self%dir, self%i_omega, &
+      write(*,'(F5.1, A12, 4(I4), 6(ES15.7))') self%time, trim(self%kind), self%patch%id, self%i_nu, self%dir, self%i_mu, &
       self%authority_mem(pcheck(1),pcheck(2),1,fcheck,1,:)
     case default
-      write(*,'(F5.1, A12, 4(I4), 6(ES15.7))') self%time, trim(self%kind), self%patch%id, self%i_nu, self%dir, self%i_omega, &
+      write(*,'(F5.1, A12, 4(I4), 6(ES15.7))') self%time, trim(self%kind), self%patch%id, self%i_nu, self%dir, self%i_mu, &
       self%authority_mem(pcheck(1),pcheck(2),pcheck(3),fcheck,1,:)
     end select
   endif
@@ -213,7 +213,7 @@ SUBROUTINE m3d_finish (self)
   class(m3d_t):: self
   !.............................................................................
   self%finished = .true.
-  self%time = io%end_time + self%t_offset*self%dtime
+  self%time = io%end_time + self%dtime
   call self%set(bits%frozen)
 END SUBROUTINE m3d_finish
 
@@ -271,10 +271,12 @@ SUBROUTINE append_to_task_list(self)
   class(link_t),  pointer :: link
   class (task_t), pointer :: task
   !-----------------------------------------------------------------------------
-  allocate (halo_m3d_t:: link)
-  link%task => self
-  self%link => link
-  call self%patch%task_list%append (link)
+  if (self%maxiter >= 0) then
+    allocate (halo_m3d_t:: link)
+    link%task => self
+    self%link => link
+    call self%patch%task_list%append (link)
+  endif
 END SUBROUTINE append_to_task_list
 
 !===============================================================================
@@ -297,7 +299,7 @@ SUBROUTINE info (self, label)
           nt%id, nt%level, nt%rank, nbor%needed, nbor%needs_me, &
           nbor%download, nt%is_set(bits%boundary), &
           nt%is_set(bits%virtual), distance/ &
-          (0.5d0*(self%task%size+nt%size)), ' i_omega: ', nt%i_omega
+          (0.5d0*(self%task%size+nt%size)), ' i_mu: ', nt%i_mu
       class default
         write(io_unit%mpi,'(3x,a16,a,i6,":",i2.2,i4,2x,3l1,2x,2l1,3x,3f9.3)') &
           nt%kind, ' nbor_info: id, rank, level, needed, needs_me, download, BV, pos =', &
@@ -321,10 +323,10 @@ SUBROUTINE task_info (self)
   class(m3d_t):: self
   !-----------------------------------------------------------------------------
   write(io_unit%mpi,'(1x,a,2x,a10,i6,2i4,7x,2l1,2x,3f9.3,i4)') &
-    'm3d_t%task_info: kind, id, rank, level, BV, pos, i_omega =', &
+    'm3d_t%task_info: kind, id, rank, level, BV, pos, i_mu =', &
     self%kind, self%id, self%rank, self%level, &
     self%is_set(bits%boundary), self%is_set(bits%virtual), self%position, &
-    self%i_omega
+    self%i_mu
 END SUBROUTINE task_info
 
 !===============================================================================
@@ -346,7 +348,7 @@ logical FUNCTION m3d_is_upstream (self, other) result(is_upstream)
     return
   end if
   !
-  if (self%i_omega /= other%i_omega) then
+  if (self%i_mu /= other%i_mu) then
     is_upstream=.false.
     return
   end if
@@ -453,7 +455,7 @@ SUBROUTINE m3d_periodic_grid (self, only)
         is = dir*max(dir*li(1), dir*ui(1))
         ie = dir*min(dir*li(1), dir*ui(1))
 
-        do off=dir, dir*self%ng(1), dir
+        do off=dir, dir*self%ng(1), dir 
           mem(is+off,li(2):ui(2),:,:,:) = mem(ie-dir+off,li(2):ui(2),:,:,:)
         end do
       end do
