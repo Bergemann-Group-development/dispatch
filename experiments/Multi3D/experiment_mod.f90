@@ -190,7 +190,6 @@ SUBROUTINE init_composition (self)
   if (self%nh_missing) then
     call self%composition%get_nhyd(self%nh)
   endif
-  print *, 'nh', self%nh(1,1,self%n(3),1), self%nh(1,1,self%n(3),6)
 END SUBROUTINE init_composition
 
 !===============================================================================

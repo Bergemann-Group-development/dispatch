@@ -40,7 +40,7 @@ module rad_patch_mod
     class(radiation_t), pointer :: mean_rad => null()
     class(radiation_t), pointer :: out_rad => null()
     real(4), dimension(:,:,:,:), contiguous, pointer :: Inu, chi, Snu
-    real(4), dimension(:,:,:,:), allocatable :: Psi
+    real(4), dimension(:,:,:,:), contiguous, pointer :: Psi
     character(len=64) :: meta_file, ray_name
   contains
     procedure :: pre_init => radiation_pre_init
@@ -141,7 +141,7 @@ SUBROUTINE radiation_init (self)
   call self%lock%init ()
 
   if (self%kind=='angle_rad') then
-    allocate(self%Psi(self%n(1),  self%n(2),  self%n(3),  self%nv))
+    call os%allocate(self%Psi, [self%n(1),  self%n(2),  self%n(3),  self%nv])
   end if
 END SUBROUTINE radiation_init
 
@@ -251,19 +251,12 @@ END SUBROUTINE long_ray_update
 !===============================================================================
 SUBROUTINE short_ray_update (self)
   class(radiation_t), target :: self
-!define CONTIG
-#ifdef CONTIG
   real(4), dimension(:,:,:,:),   pointer, contiguous :: u0, dt, ex, source, xxup, ssup
   real(4), dimension(:,:),       pointer, contiguous :: Inuup, kernel
   real(4), dimension(:,:),       pointer, contiguous :: II
-#else
-  real(4), dimension(:,:,:,:),   pointer :: u0, dt, ex, source, xxup, ssup
-  real(4), dimension(:,:),       pointer :: Inuup, kernel
-  real(4), dimension(:,:),       pointer :: II
-#endif
-  real(4), dimension(:,:,:,:),   pointer             :: Inu, chi, Snu
+  real(4), dimension(:,:,:,:),   pointer             :: Inu, xx,ss
   integer :: k1, k2, m(4), i2, i3, i4
-  real(4) :: Inumin
+  real(4) :: Inumin, dsup
   integer :: f, k, z, i, j, dx,dy,i1,j1,x1,x2,y1,y2
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -280,10 +273,9 @@ SUBROUTINE short_ray_update (self)
   k1 = merge(self%li(3), self%ui(3), self%dir > 0)
   k2 = merge(self%li(3), self%ui(3), self%dir < 0)
 
-  m = shape(Snu)
+  m = shape(ss)
   call os%allocate (Inuup, self%n(1:2))
-  call os%allocate (kernel, self%n(1:2))
-  ! allocate (u0,dt,ex,xxup,ssup,source, mold=chi)
+  call os%allocate (kernel, shape(self%ray%upkern))
   call os%allocate (u0, m)
   call os%allocate (dt, m)
   call os%allocate (ex, m)
@@ -292,30 +284,10 @@ SUBROUTINE short_ray_update (self)
   call os%allocate (source, m)
 
   kernel = real(self%ray%upkern)
+  dsup   = real(self%ray%dsup)
   call self%interp_xy_up3(self%chi, xxup, self%ray%upo1, self%ray%upo2, kernel, .true.)
   call self%interp_xy_up3(self%Snu, ssup, self%ray%upo1, self%ray%upo2, kernel, .true.)
-  
-  do i4=1,size(dt,4)
-    dt(:,:,:,i4) = 0.5 * self%ray%dsup &
-      * (xxup(:,:,:,i4) + chi(:,:,:,i4)) ! upwind optical pathlength
-    where (dt(:,:,:,i4) < 38)
-      ex(:,:,:,i4) = exp(-dt(:,:,:,i4)) 
-    elsewhere
-      ex(:,:,:,i4) = 0
-    end where
-    ! Compute the U functions, use Taylor expansion for small dt
-    ! to avoid accuracy issues with 1-(number slightly smaller than one)
-    where ( dt(:,:,:,i4) > 1.0e-3 )
-      u0(:,:,:,i4) = 1.0 - ex(:,:,:,i4)
-      self%Psi(:,:,:,i4) = 1. - u0(:,:,:,i4) / dt(:,:,:,i4)
-    elsewhere
-      self%Psi(:,:,:,i4) = dt(:,:,:,i4) * (0.5 - 0.16666667*dt(:,:,:,i4))
-      u0(:,:,:,i4) = dt(:,:,:,i4) * (1. - self%Psi(:,:,:,i4))
-    end where
-
-    source(:,:,:,i4) = (u0(:,:,:,i4) - &
-      self%Psi(:,:,:,i4)) * ssup(:,:,:,i4) + self%Psi(:,:,:,i4)*Snu(:,:,:,i4)
-  end do
+  call extinction_and_source(dsup, xx, xxup, ss, ssup, self%Psi, ex, source)
 
   dx = size(kernel, 1) - 1
   dy = size(kernel, 2) - 1
@@ -328,32 +300,30 @@ SUBROUTINE short_ray_update (self)
   ! ----------------------------------------------------------------------------
     do k=k1,k2,self%dir
       z = k - self%li(3) + 1
-      II => self%Inu(:,:, k-self%dir,f) 
+      II => self%Inu(:,:, k-self%dir,f)
       
-      do j=1,self%n(2)-j1-dy
+      do j=1,self%n(2)
         y1 = j + j1
         y2 = y1 + dy
     
         !$omp simd
-        do i=1,self%n(1)-i1-dx
+        do i=1,self%n(1)
 
-            if (ex(i,j,z,f) == 0) then
-              Inu(i,j,z,f) = source(i,j,z,f)
-            else
-              x1 = i + i1
-              x2 = x1 + dx
-              if (x2 <= size(II,1) .and. y2 <= size(II,2)) then
-                Inuup(i,j) = sum(kernel * II(x1:x2, y1:y2))
-                Inumin = minval(II(x1+1:x1+2, y1+1:y1+2))
-                if (Inuup(i,j) < Inumin) then
-                  Inuup(i,j) = Inumin
-                endif
+          if (ex(i,j,z,f) == 0) then
+            Inu(i,j,z,f) = source(i,j,z,f)
+          else
+            x1 = i + i1
+            x2 = x1 + dx
+            Inuup(i,j) = sum(kernel * II(x1:x2, y1:y2))
 
-                Inu(i,j,z,f) = Inuup(i,j)*ex(i,j,z,f) + source(i,j,z,f)
-              else
-                PRINT *, 'WARNING: attempted index overrun', x2, y2
-              end if
+            !supress undershoot
+            Inumin = minval(II(x1+1:x1+2, y1+1:y1+2))
+            if (Inuup(i,j) < Inumin) then
+              Inuup(i,j) = Inumin
             endif
+
+            Inu(i,j,z,f) = Inuup(i,j)*ex(i,j,z,f) + source(i,j,z,f)
+          endif
         end do
       end do
 
@@ -361,12 +331,10 @@ SUBROUTINE short_ray_update (self)
     end do ! k-loop
   end do ! f-loop
 
-  self%Psi = self%Psi / xx
-
-  !if (self%verbose>1) then
-  !write(*,'(F5.1, A12, 4(I4), 6(ES15.7))') self%time, 'xxup ssup', self%patch%id, self%i_nu, self%dir, self%i_mu, &
-  !xx_ss_up(pcheck(1),pcheck(2),pcheck(3),fcheck,:)
-  !endif
+  if (self%verbose>1) then
+    write(*,'(F5.1, A12, 4(I4), 6(ES15.7))') self%time, 'xxup ssup', self%patch%id, self%i_nu, self%dir, self%i_mu, &
+    xxup(pcheck(1),pcheck(2),pcheck(3),fcheck), ssup(pcheck(1),pcheck(2),pcheck(3),fcheck)
+  endif
   call os%deallocate(Inuup)
   call os%deallocate(kernel)
   call os%deallocate(u0)
@@ -375,7 +343,6 @@ SUBROUTINE short_ray_update (self)
   call os%deallocate(xxup)
   call os%deallocate(ssup)
   call os%deallocate(source)
-  ! deallocate (u0,dt,ex,xxup,ssup,source)
 
   call trace%end(itimer)
 END SUBROUTINE short_ray_update
@@ -383,9 +350,10 @@ END SUBROUTINE short_ray_update
 !===============================================================================
 SUBROUTINE long_char_update (self)
   class(radiation_t), target :: self
-  real(4), dimension(:,:,:,:), allocatable :: u0, dt, ex, source
-  real(4), dimension(:,:), allocatable :: xxup, ssup
-  real(4), dimension(:,:,:,:), pointer :: xx, ss
+  real(4), dimension(:,:,:,:), allocatable :: Psi, ex, source
+  real(4), dimension(:,:), allocatable :: xxup_tmp, ssup_tmp
+  real(4), dimension(:,:,:,:), pointer, contiguous :: xx, ss
+  real(4), dimension(:,:,:,:), pointer :: xxup, ssup
   real(4), dimension(2) :: delta, deltak, fpart
   integer, dimension(2) :: ipart
   real(4), dimension(4) :: kernel
@@ -400,10 +368,12 @@ SUBROUTINE long_char_update (self)
 
   xx => self%opac%authority_mem(:,:,:,:,self%opac%it,self%opac%i_chi)
   ss => self%opac%authority_mem(:,:,:,:,self%opac%it,self%opac%i_Snu)
+  xxup => self%chi(:,:,:self%n(3),:)
+  ssup => self%Snu(:,:,:self%n(3),:)
 
-  allocate(xxup(self%n(1), self%n(2)))
-  allocate(ssup(self%n(1), self%n(2)))
-  allocate(u0, dt, ex, source, mold=xx)
+  allocate(xxup_tmp(self%n(1), self%n(2)))
+  allocate(ssup_tmp(self%n(1), self%n(2)))
+  allocate(Psi, ex, source, mold=xx)
 
   delta = self%vec(:2) * self%ds(3) / (self%vec(3) * self%ds(:2)) ! shift in units of grid cells
 
@@ -426,33 +396,17 @@ SUBROUTINE long_char_update (self)
       kernel(3) = (1.0-fpart(1))*     fpart(2) 
       kernel(4) =      fpart(1) *     fpart(2) 
 
-      call self%interp_long(self%chi(:,:,k,f), xxup, ipart(1), ipart(2), kernel)
-      call self%interp_long(self%Snu(:,:,k,f), ssup, ipart(1), ipart(2), kernel)
+      call self%interp_long(self%chi(:,:,k,f), xxup_tmp, ipart(1), ipart(2), kernel)
+      call self%interp_long(self%Snu(:,:,k,f), ssup_tmp, ipart(1), ipart(2), kernel)
 
-      self%chi(:,:,k,f) = xxup
-      self%Snu(:,:,k,f) = ssup
+      xxup(:,:,k,f) = xxup_tmp
+      ssup(:,:,k,f) = ssup_tmp
     end do
   end do ! f-loop
   
-  self%Inu(:,:,1,:) = self%Snu(:,:,1,:) ! reinforce boundary condition
+  call self%bndries() ! reinforce boundary condition
 
-  dt = 0.5 * real(self%ray%dsup) * ( self%chi(:,:,:self%n(3),:) + xx ) ! upwind optical pathlength
-  where (dt < 80)
-    ex = exp(-dt) 
-  elsewhere
-    ex = 0
-  end where
-  ! Compute the U functions, use Taylor expansion for small dt
-  ! to avoid accuracy issues with 1-(number slightly smaller than one)
-  where ( dt > 1.0e-3 )
-    u0 = 1.0 - ex 
-    self%Psi = 1 - u0 / dt
-  elsewhere
-    self%Psi = dt * (0.5 - 0.16666667*dt)
-    u0 = dt * (1 - self%Psi)
-  end where 
-
-  source = (u0 - self%Psi) * self%Snu(:,:,:self%n(3),:) + self%Psi*ss
+  call extinction_and_source(real(self%ray%dsup), xx, xxup, ss, ssup, Psi, ex, source)
 
   do f=1, self%nv
     do k=1, self%n(3)
@@ -460,12 +414,10 @@ SUBROUTINE long_char_update (self)
     end do
   end do ! f-loop
 
-  self%Psi = self%Psi / xx
-
-  if (self%verbose>1) then
-  write(*,'(F5.1, A12, 4(I4), 6(ES15.7))') self%time, 'xxup ssup', self%patch%id, self%i_nu, self%dir, self%i_mu, &
-  self%chi(pcheck(1),pcheck(2),pcheck(3),fcheck), self%Snu(pcheck(1),pcheck(2),pcheck(3),fcheck)
-  endif
+  !if (self%verbose>1) then
+  !write(*,'(F5.1, A12, 4(I4), 6(ES15.7))') self%time, 'xxup ssup', self%patch%id, self%i_nu, self%dir, self%i_mu, &
+  !self%chi(pcheck(1),pcheck(2),pcheck(3),fcheck), self%Snu(pcheck(1),pcheck(2),pcheck(3),fcheck)
+  !endif
   call trace%end(itimer)
 END SUBROUTINE long_char_update
 
@@ -529,15 +481,15 @@ subroutine interp_xy_up3(self, VarIn, VarUp, up1, up2, kernel, check_undershoot)
   k1 = self%li(3) - 1 - self%dir
 
   do f=1,self%nv
-    do k=1,self%n(3)-k1
+    do k=1,self%n(3)
       z1 = k + k1
 
-      do j=1,self%n(2)-dy-j1
+      do j=1,self%n(2)
         y1 = j + j1
         y2 = y1 + dy
 
         !$omp simd
-        do i=1,self%n(1)-dx-i1
+        do i=1,self%n(1)
             x1 = i + i1
             x2 = x1 + dx
 
@@ -576,7 +528,6 @@ pure subroutine interp_xy_up_plane(self, VarIn, VarUp, up1, up2, kernel, check_u
 
   !$omp simd
   do i=1,self%n(1)
-
       x1 = i + i1
       x2 = x1 + dx
 
@@ -735,32 +686,30 @@ pure elemental subroutine linear_formsolv(ds, xx1, xx2, ss1, ss2, Inuup, Psi, In
 end subroutine linear_formsolv
 
 !===============================================================================
-SUBROUTINE extinction_and_source(dsup, xx, xxup, ss, ssup, Psi, ex, source)
+ELEMENTAL SUBROUTINE extinction_and_source(dsup, xx, xxup, ss, ssup, Psi, ex, source)
   real(4), intent(in) :: dsup
-  real(4), intent(in), dimension(:,:,:,:), contiguous :: xxup, ssup
-  real(4), intent(in), dimension(:,:,:,:) :: xx, ss
-  real(4), intent(out), dimension(:,:,:,:), contiguous :: Psi, ex, source
-  real(4), dimension(:,:,:,:), allocatable :: u0, dt
+  real(4), intent(in) :: xxup, ssup, xx, ss
+  real(4), intent(out) :: Psi, ex, source
+  real(4) :: u0, dt
   ! ----------------------------------------------------------------------------
-  allocate(u0, dt, mold=xxup)
-
   dt = 0.5 * dsup * ( xxup + xx ) ! upwind optical pathlength
-  where (dt < 80)
+  if (dt < 80) then
     ex = exp(-dt) 
-  elsewhere
+  else
     ex = 0
-  end where
+  endif
   ! Compute the U functions, use Taylor expansion for small dt
   ! to avoid accuracy issues with 1-(number slightly smaller than one)
-  where ( dt > 1.0e-3 )
+  if ( dt > 1.0e-3 ) then
           u0 = 1.0 - ex
           Psi = 1 - u0 / dt
-  elsewhere
+  else
           Psi = dt * (0.5 - 0.16666667*dt)
           u0 = dt * (1 - Psi)
-  end where
+  endif
 
   source = (u0 - Psi) * ssup + Psi*ss
+  Psi = Psi / xx
 END SUBROUTINE extinction_and_source
 
 !===============================================================================

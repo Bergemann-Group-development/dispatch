@@ -886,12 +886,12 @@ contains
 
         allocate(nh, blzfac, mold=nhyd(:,:,:,1))
 
-        PRINT *, omp_get_thread_num(), allocated(self%fe), allocated(self%ne)
-        PRINT *, omp_get_thread_num(), shape(self%fe), 'fe'
-        PRINT *, omp_get_thread_num(), shape(self%ne), 'ne'
-        if (.not.allocated(self%ne)) then
-          PRINT *, 'self%fe not allocated on thread', omp_get_thread_num()
-        end if
+        !PRINT *, omp_get_thread_num(), allocated(self%fe), allocated(self%ne)
+        !PRINT *, omp_get_thread_num(), shape(self%fe), 'fe'
+        !PRINT *, omp_get_thread_num(), shape(self%ne), 'ne'
+        !if (.not.allocated(self%ne)) then
+        !  PRINT *, 'self%fe not allocated on thread', omp_get_thread_num()
+        !end if
         nh = H0%f / self%fe * self%ne * (BK/uop_BK)
 
         do k=1, nk

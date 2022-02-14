@@ -21,6 +21,7 @@ module opac_patch_mod
   !USE omp_timer_mod
   !USE math_mod
   USE bits_mod
+  USE os_mod
   !USE units_mod
   !USE scratch_mod
   USE atom_var, only: atom_type
@@ -188,18 +189,48 @@ END SUBROUTINE line_opac_update
 SUBROUTINE sum_opac_update (self)
   class(opacity_t) :: self
   real(4), dimension(:,:,:,:,:), pointer :: mem
-  real(4), dimension(:,:,:,:,:,:), allocatable :: tmp
+  real(4), dimension(:,:,:,:,:), pointer, contiguous :: chi, Snu
   integer, save:: itimer=0
+  integer :: i,j,k,it,f
   !-----------------------------------------------------------------------------
   call trace%begin('opacity_t%sum_opac_update', itimer=itimer)
-  allocate(tmp, mold=self%back_opac%mem)
-  tmp = self%back_opac%mem + self%cont_opac%mem + self%line_opac%mem
-  self%authority_mem(:,:,:,:,:,self%i_chi) = tmp(:,:,:,:,:,self%i_chi)
-  self%authority_mem(:,:,:,:,:,self%i_snu) = tmp(:,:,:,:,:,self%i_eta) / tmp(:,:,:,:,:,self%i_chi)
+  chi => self%authority_mem(:,:,:,:,:,self%i_chi)
+  Snu => self%authority_mem(:,:,:,:,:,self%i_Snu)
+  !$omp simd
+  do it=1, self%nt
+  do f=1, self%nv
+  do k=1, self%n(3)
+  do j=1, self%n(2)
+  do i=1, self%n(1)
+    chi(i,j,k,f,it) = self%back_opac%mem(i,j,k,f,it,self%i_chi) &
+                    + self%cont_opac%mem(i,j,k,f,it,self%i_chi) &
+                    + self%line_opac%mem(i,j,k,f,it,self%i_chi)
+
+    Snu(i,j,k,f,it) = (self%back_opac%mem(i,j,k,f,it,self%i_eta)  & 
+                    +  self%cont_opac%mem(i,j,k,f,it,self%i_eta)  & 
+                    +  self%line_opac%mem(i,j,k,f,it,self%i_eta)) &
+                    / chi(i,j,k,f,it)
+  end do
+  end do
+  end do
+  end do
+  end do
   mem => self%mem(:,:,:,:,self%it,:)
   call self%boundaries%mirror(mem)
   call trace%end(itimer)
 END SUBROUTINE sum_opac_update
+
+!===============================================================================
+real(4) ELEMENTAL FUNCTION sum_mem(back_mem, cont_mem, line_mem)
+  real(4), intent(in) :: back_mem, cont_mem, line_mem
+  sum_mem = back_mem + cont_mem + line_mem
+END FUNCTION sum_mem
+
+!===============================================================================
+real(4) ELEMENTAL FUNCTION compute_Snu (chi, eta) result(Snu)
+  real(4), intent(in) :: chi, eta
+  Snu = eta/chi
+END FUNCTION compute_Snu
 
 !===============================================================================
 SUBROUTINE opacity_nbor_relations(self, another, needed, needs_me, download)
