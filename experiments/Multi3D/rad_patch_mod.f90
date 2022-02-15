@@ -149,8 +149,15 @@ END SUBROUTINE radiation_init
 SUBROUTINE radiation_update (self)
   class(radiation_t) :: self
   ! ----------------------------------------------------------------------------
+  if (self%finished) return
+
   select case (self%kind)
   case ('angle_rad')
+    if (self%opac%finished .and. self%opac%iter < self%opac%maxiter) then
+      call self%finish(freeze=.true., rotated=.true.)
+      return
+    endif
+
     if (self%out_ray) then
       call self%long_char_update()
     else
@@ -166,7 +173,7 @@ SUBROUTINE radiation_update (self)
     if (save_output) call self%save_radiation_output()
   end select
 
-  call self%post_update()
+  if (.not. self%finished) call self%post_update()
 END SUBROUTINE radiation_update
 
 !===============================================================================
@@ -841,14 +848,15 @@ SUBROUTINE save_radiation_output(self)
     filename = trim(out_folder) // 'lam.bin'
     open(newunit=lunit, file=filename, access='stream')
     write(lunit) lam
-    call self%save_meta4(filename, pack(lam, .true.), shape(lam))
+    !call self%save_meta4(filename, pack(lam, .true.), shape(lam))
     close(lunit)
   endif
 
+  filename = trim(self%ray_name) // '_inu.bin'
+  call self%save_meta4(filename, pack(Inu, .true.), shape(Inu))
   filename = trim(out_folder) // trim(self%ray_name) // '_inu.bin'
   open(newunit=lunit, file=filename, access='stream')
   write(lunit) Inu
-  call self%save_meta4(filename, pack(Inu, .true.), shape(Inu))
   close(lunit)
   
   call trace%end()
@@ -860,13 +868,13 @@ SUBROUTINE setup_metafile(self)
   integer :: meta_unit, iostat
   ! ----------------------------------------------------------------------------
 
-  write(self%ray_name,'(A1, I3.3, A4, I3.3)') 'p', self%patch%id, '_ray', self%i_out
+  write(self%ray_name,'(A3, I3.3)') 'ray', self%i_out
 
   self%meta_file = trim(out_folder) // trim(self%ray_name) // '_meta.txt'
   open(newunit=meta_unit, file=self%meta_file, form='formatted')
 
-  write(meta_unit, '(A8, 1X, SP, 3(F12.8))') 'position', self%patch%position
   write(meta_unit, '(A8, 1X, SP, 3(F12.8))') 'vec', self%vec
+  write(meta_unit, '(A8, 1X, SP, F12.8)') 'weight', self%wmu
 
   close(meta_unit)
 END SUBROUTINE

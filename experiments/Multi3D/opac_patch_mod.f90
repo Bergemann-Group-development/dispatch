@@ -114,6 +114,11 @@ SUBROUTINE opacity_update (self)
   class(opacity_t) :: self
   real(4), dimension(:,:,:,:), pointer :: chi, eta
   ! ----------------------------------------------------------------------------
+  if (self%finished) then
+    call self%set(bits%frozen)
+    return
+  endif
+
   chi => self%authority_mem(:,:,:,:, self%it, self%i_chi)
   eta => self%authority_mem(:,:,:,:, self%it, self%i_eta)
 
@@ -128,7 +133,7 @@ SUBROUTINE opacity_update (self)
     call self%sum_opac_update()
   end select
 
-  call self%post_update()
+  if (.not. self%finished) call self%post_update()
 END SUBROUTINE opacity_update
 
 !===============================================================================
@@ -193,7 +198,13 @@ SUBROUTINE sum_opac_update (self)
   integer, save:: itimer=0
   integer :: i,j,k,it,f
   !-----------------------------------------------------------------------------
+  if (self%line_opac%finished .and. self%line_opac%iter < self%line_opac%maxiter) then
+    call self%finish(freeze=.true., rotated=.true.)
+    return
+  endif
+
   call trace%begin('opacity_t%sum_opac_update', itimer=itimer)
+
   chi => self%authority_mem(:,:,:,:,:,self%i_chi)
   Snu => self%authority_mem(:,:,:,:,:,self%i_Snu)
   !$omp simd

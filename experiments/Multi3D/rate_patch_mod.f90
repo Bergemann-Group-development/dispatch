@@ -79,6 +79,11 @@ module rate_patch_mod
     integer :: fs, fe
     integer, save:: itimer=0
     !-----------------------------------------------------------------------------
+    if (self%finished) then
+      call self%set(bits%frozen)
+      return
+    endif
+    
     call trace%begin('rate_patch_t%rate_patch_update', itimer=itimer)
 
     fs = self%fs
@@ -100,8 +105,8 @@ module rate_patch_mod
     call self%atom%add_all_gammas(fs, fe, self%temp, self%vproj, Ieff, self%rad%Psi, &
                                   chi_l, chi_c, eta_l, eta_c, gamma_ij, gamma_ji)
   
-    call self%post_update()
     call trace%end(itimer)
+    if (.not. self%finished) call self%post_update()
   END SUBROUTINE rate_patch_update
   
   !===============================================================================

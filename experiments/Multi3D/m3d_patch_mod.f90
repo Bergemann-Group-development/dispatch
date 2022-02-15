@@ -203,19 +203,23 @@ SUBROUTINE m3d_post_update (self)
   endif
 
   if (self%iter == self%maxiter) then
-    call self%finish()
+    call self%finish(freeze=.true.)
   endif
 
   self%iter = self%iter + 1
 END SUBROUTINE m3d_post_update
 
 !===============================================================================
-SUBROUTINE m3d_finish (self)
+SUBROUTINE m3d_finish (self, freeze, rotated)
   class(m3d_t):: self
+  logical :: freeze
+  logical, optional :: rotated
   !.............................................................................
   self%finished = .true.
   self%time = io%end_time + self%dtime
-  call self%set(bits%frozen)
+  call self%set(bits%no_download)
+  if (freeze) call self%set(bits%frozen)
+  if (present(rotated)) self%rotated = rotated
 END SUBROUTINE m3d_finish
 
 !===============================================================================

@@ -37,7 +37,7 @@ MODULE experiment_mod
     real(8), allocatable, dimension(:,:,:) :: ne, temp, rho, vx, vy, vz
     real(8), allocatable, dimension(:,:,:,:) :: nh
     integer :: idx_pe=6, n_mu, n_phi, n_nu, iter=0, maxiter, ilambd
-    logical :: nh_missing=.true.
+    logical :: nh_missing=.true., comp_initialized=.false.
   contains
     procedure:: pre_init
     procedure:: init
@@ -120,8 +120,11 @@ SUBROUTINE update (self)
   call trace%begin('experiment_t%update', itimer=itimer)
   !call self%solver_t%update
 
-  if (self%iter == 0) then
+  if (self%iter == 0 .and. .not. self%comp_initialized) then
+    print *, 'experiment update', self%id
+    print *, allocated(self%composition%elements(1)%ions(1)%fil)
     call self%init_composition()
+    self%comp_initialized = .true.
   endif
 
   call self%post_update()
@@ -313,7 +316,7 @@ SUBROUTINE init_sub_patches(self)
         if (i > n_omega) then
           patch%out_ray = .true.
           patch%i_out = i - n_omega 
-          patch%vec = long_vec(:,patch%i_out)
+          patch%vec = long_vec(:,patch%i_out) 
           patch%wmu = long_wmu(patch%i_out)
           patch%dir = 1
         else
@@ -328,13 +331,15 @@ SUBROUTINE init_sub_patches(self)
     end do
   end do
 
-  if (associated(self%out_rad)) then
+  if (self%boundaries%topbot(1)) then
     do i=1, n_out
-      out_rad(i)%kind = 'out_rad'
-      out_rad(i)%i_mu  = i + n_omega
-      out_rad(i)%i_out = i
-      out_rad(i)%out_ray = .true.
-      call self%link_and_init(out_rad(i), 1, 1)
+      patch => out_rad(i)
+      patch%kind = 'out_rad'
+      patch%i_mu  = i + n_omega
+      patch%i_out = i
+      patch%out_ray = .true.
+      patch%wmu = long_wmu(patch%i_out)
+      call self%link_and_init(patch, 1, 1)
     end do
   endif
 END SUBROUTINE init_sub_patches

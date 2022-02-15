@@ -186,6 +186,7 @@ module atom_patch_mod
     character(len=64) :: text
     integer, save:: itimer=0
     !-----------------------------------------------------------------------------
+    if (self%finished) return
     call trace%begin('atom_patch_t%atom_patch_update', itimer=itimer)
 
     if (self%iter == 0) then
@@ -253,6 +254,15 @@ module atom_patch_mod
     self%finished = .true.
     self%time = io%end_time + self%t_offset*self%dtime
     call self%set(bits%frozen)
+
+    do j=1, self%n_nu
+      call self%opac(0,j)%finish(freeze=.false.)
+
+      do i=1, self%n_omega
+        call self%opac(i,j)%finish(freeze=.false.)
+        call self%rate(i,j)%finish(freeze=.false.)
+      end do
+    end do
   END SUBROUTINE atom_patch_finish
 
   !===============================================================================
