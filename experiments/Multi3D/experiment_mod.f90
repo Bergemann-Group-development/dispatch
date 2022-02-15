@@ -37,7 +37,7 @@ MODULE experiment_mod
     real(8), allocatable, dimension(:,:,:) :: ne, temp, rho, vx, vy, vz
     real(8), allocatable, dimension(:,:,:,:) :: nh
     integer :: idx_pe=6, n_mu, n_phi, n_nu, iter=0, maxiter, ilambd
-    logical :: nh_missing=.true., comp_initialized=.false.
+    logical :: nh_missing=.true.
   contains
     procedure:: pre_init
     procedure:: init
@@ -120,11 +120,8 @@ SUBROUTINE update (self)
   call trace%begin('experiment_t%update', itimer=itimer)
   !call self%solver_t%update
 
-  if (self%iter == 0 .and. .not. self%comp_initialized) then
-    print *, 'experiment update', self%id
-    print *, allocated(self%composition%elements(1)%ions(1)%fil)
+  if (self%iter == 0) then
     call self%init_composition()
-    self%comp_initialized = .true.
   endif
 
   call self%post_update()

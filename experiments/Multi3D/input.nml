@@ -35,6 +35,7 @@
 &experiment_params  n_nu=1 maxiter=1 verbose=2 ilambd=0 quad_scheme='set_a4' long_scheme='set_a4'/
 &timer_params       sec_per_report = 1000 /
 &task_list_params   verbose=0 /
+&dispatcher0_params verbose=1 /
 &task_params        verbose=0 /
 &halo_params        check_filled=F /
 &m3d_params         fcheck=98 pcheck=1,1,1 /

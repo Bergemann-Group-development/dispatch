@@ -180,7 +180,7 @@ SUBROUTINE update (self, task_list, test)
   class(mesg_t), pointer:: mesg
   real(8):: wc, start, time_incr
   real(8), save:: time, otime=0d0, spin_start=0d0
-  logical:: already_busy
+  logical:: already_busy, this_sync
   integer, save:: oid=0
   integer:: i, id, nq, n_unpk
   integer:: stalled_l
@@ -245,6 +245,7 @@ SUBROUTINE update (self, task_list, test)
     call trace%begin('dispatcher0_t%update(3)', itimer=itimer(i))
   end if
   nullify (prev)
+  this_sync = .false.
   if (associated(head) .and. .not.task_list%syncing) then
     if (verbose > 0) &
       write(io_unit%log,'(f12.6,2x,a,i6,i7,1p,e12.4)') wallclock(), &
@@ -385,6 +386,7 @@ SUBROUTINE update (self, task_list, test)
     !---------------------------------------------------------------------------
     if (task%time == task_list%sync_next) then
       task_list%syncing = .true.
+      this_sync = .true.
       write (io_unit%mpi,*) task%id,omp%thread, &
         ' is triggering a sync at t =', task_list%sync_next
     end if
@@ -400,7 +402,7 @@ SUBROUTINE update (self, task_list, test)
   ! that hit the sync time last of all threads has set this flag, and will clear
   ! it as soon as all other ranks have arrived at the same time.
   !-----------------------------------------------------------------------------
-  if (associated(head)) then
+  if (associated(head) .and. (task_list%syncing==this_sync)) then
     nullify (head%next_time)
     if (detailed_timer) then
       call trace%end (itimer(i))
