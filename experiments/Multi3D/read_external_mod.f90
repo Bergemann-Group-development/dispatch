@@ -246,25 +246,25 @@ SUBROUTINE read_stagger_snapshot(self, stagger_file)
   close(lunit)
 
   allocate(self%temp(self%n(1), self%n(2), self%n(3)))
-  allocate(self%nh(self%n(1), self%n(2), self%n(3), 6))
+  !allocate(self%nh(self%n(1), self%n(2), self%n(3), 6))
   allocate(self%rho, self%ne, self%px, self%py, self%pz, self%pe, mold=self%temp)
 
   open(file=trim(stagger_file) // '.atmos', newunit=lunit, form='UNFORMATTED', access='stream')
-  read(lunit) self%ne
+  read(lunit) self%ne 
   read(lunit) self%temp
   read(lunit) self%px
   read(lunit) self%py
   read(lunit) self%pz
   read(lunit) self%rho
-  read(lunit) self%nh
+  !read(lunit) self%nh
   close(lunit)
 
   self%xi  = self%xi  / scaling%l
   self%yi  = self%yi  / scaling%l
   self%zi  = self%zi  / scaling%l
   self%rho = self%rho / scaling%d
-  self%px  = -self%px * self%rho / scaling%u
-  self%py  = -self%py * self%rho / scaling%u
+  self%px  = self%px * self%rho / scaling%u
+  self%py  = self%py * self%rho / scaling%u
   self%pz  = self%pz * self%rho / scaling%u
   self%pe  = self%ne * cgs%k_b * self%temp  / scaling%p
 

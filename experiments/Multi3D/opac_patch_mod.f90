@@ -36,7 +36,7 @@ module opac_patch_mod
   class(atom_type), pointer :: atom => null()
   type(composition_type) :: composition
   real(8), dimension(:,:,:), allocatable :: vproj
-  real(8), dimension(:,:,:,:), allocatable :: nh, wphi
+  real(8), dimension(:,:,:,:), pointer, contiguous :: nh, wphi
   class(opacity_t), pointer :: back_opac => null()
   class(opacity_t), pointer :: cont_opac => null()
   class(opacity_t), pointer :: line_opac => null()
@@ -105,7 +105,7 @@ SUBROUTINE init_composition (self)
   ! ion and molecule equilibrium are solved immediately
   call self%composition%load_state_variables(self%temp, self%ne, self%rho)
 
-  allocate(self%nh(self%n(1), self%n(2), self%n(3), 6))
+  call os%allocate(self%nh, [self%n(1), self%n(2), self%n(3), 6])
   call self%composition%get_nhyd(self%nh)
 END SUBROUTINE init_composition
 
@@ -189,7 +189,7 @@ END SUBROUTINE line_opac_update
 SUBROUTINE sum_opac_update (self)
   class(opacity_t) :: self
   real(4), dimension(:,:,:,:,:), pointer :: mem
-  real(4), dimension(:,:,:,:,:), pointer, contiguous :: chi, Snu
+  real(4), dimension(:,:,:,:,:), pointer :: chi, Snu
   integer, save:: itimer=0
   integer :: i,j,k,it,f
   !-----------------------------------------------------------------------------

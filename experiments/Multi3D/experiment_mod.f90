@@ -312,7 +312,7 @@ SUBROUTINE init_sub_patches(self)
 
         if (i > n_omega) then
           patch%out_ray = .true.
-          patch%i_out = i - n_omega
+          patch%i_out = i - n_omega 
           patch%vec = long_vec(:,patch%i_out)
           patch%wmu = long_wmu(patch%i_out)
           patch%dir = 1
@@ -448,7 +448,16 @@ SUBROUTINE link_and_init (self, m3d, n, n_nu)
         m3d%atom => self%atom_patch%atom
       case ('line_opac')
         m3d%atom => self%atom_patch%atom
-        m3d%vproj = m3d%vec(1)*self%vx + m3d%vec(2)*self%vy + m3d%vec(3)*self%vz 
+        !-----------------------------------------------------------------------------
+        ! There appears to be an issue with angles in M3D. The vectors of the final
+        ! intensity rays are not in line with the vectors used for the projected
+        ! velocities. The x and y coordinates seem to be flipped.
+        !-----------------------------------------------------------------------------
+        if (m3d%out_ray) then
+          m3d%vproj = -m3d%vec(1)*self%vx - m3d%vec(2)*self%vy + m3d%vec(3)*self%vz 
+        else
+          m3d%vproj = m3d%vec(1)*self%vx + m3d%vec(2)*self%vy + m3d%vec(3)*self%vz 
+        endif
       case ('sum_opac')
         m3d%back_opac => self%back_opac(n)
         m3d%cont_opac => self%atom_patch%opac(0,n)

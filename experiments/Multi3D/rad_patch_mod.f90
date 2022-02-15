@@ -251,7 +251,7 @@ END SUBROUTINE long_ray_update
 !===============================================================================
 SUBROUTINE short_ray_update (self)
   class(radiation_t), target :: self
-  real(4), dimension(:,:,:,:),   pointer, contiguous :: u0, dt, ex, source, xxup, ssup
+  real(4), dimension(:,:,:,:),   pointer, contiguous :: ex, source, xxup, ssup
   real(4), dimension(:,:),       pointer, contiguous :: Inuup, kernel
   real(4), dimension(:,:),       pointer, contiguous :: II
   real(4), dimension(:,:,:,:),   pointer             :: Inu, xx,ss
@@ -276,8 +276,6 @@ SUBROUTINE short_ray_update (self)
   m = shape(ss)
   call os%allocate (Inuup, self%n(1:2))
   call os%allocate (kernel, shape(self%ray%upkern))
-  call os%allocate (u0, m)
-  call os%allocate (dt, m)
   call os%allocate (ex, m)
   call os%allocate (xxup, m)
   call os%allocate (ssup, m)
@@ -331,14 +329,12 @@ SUBROUTINE short_ray_update (self)
     end do ! k-loop
   end do ! f-loop
 
-  if (self%verbose>1) then
-    write(*,'(F5.1, A12, 4(I4), 6(ES15.7))') self%time, 'xxup ssup', self%patch%id, self%i_nu, self%dir, self%i_mu, &
-    xxup(pcheck(1),pcheck(2),pcheck(3),fcheck), ssup(pcheck(1),pcheck(2),pcheck(3),fcheck)
-  endif
+  !if (self%verbose>1) then
+  !  write(*,'(F5.1, A12, 4(I4), 6(ES15.7))') self%time, 'xxup ssup', self%patch%id, self%i_nu, self%dir, self%i_mu, &
+  !  xxup(pcheck(1),pcheck(2),pcheck(3),fcheck), ssup(pcheck(1),pcheck(2),pcheck(3),fcheck)
+  !endif
   call os%deallocate(Inuup)
   call os%deallocate(kernel)
-  call os%deallocate(u0)
-  call os%deallocate(dt)
   call os%deallocate(ex)
   call os%deallocate(xxup)
   call os%deallocate(ssup)
@@ -352,8 +348,7 @@ SUBROUTINE long_char_update (self)
   class(radiation_t), target :: self
   real(4), dimension(:,:,:,:), allocatable :: Psi, ex, source
   real(4), dimension(:,:), allocatable :: xxup_tmp, ssup_tmp
-  real(4), dimension(:,:,:,:), pointer, contiguous :: xx, ss
-  real(4), dimension(:,:,:,:), pointer :: xxup, ssup
+  real(4), dimension(:,:,:,:), pointer :: xx, ss, xxup, ssup
   real(4), dimension(2) :: delta, deltak, fpart
   integer, dimension(2) :: ipart
   real(4), dimension(4) :: kernel
@@ -375,14 +370,14 @@ SUBROUTINE long_char_update (self)
   allocate(ssup_tmp(self%n(1), self%n(2)))
   allocate(Psi, ex, source, mold=xx)
 
-  delta = self%vec(:2) * self%ds(3) / (self%vec(3) * self%ds(:2)) ! shift in units of grid cells
+  delta = self%vec(:2) / (self%vec(3) * self%ds(:2)) ! shift in units of grid cells
 
   do f=1, self%nv
     ! ----------------------------------------------------------------------------
     ! frequency vectorisation is slower, because k varies quicker in mem than f.
     ! ----------------------------------------------------------------------------
     do k=1, self%n(3)
-      deltak = (self%n(3)+1 - k) * delta 
+      deltak = (self%box(3) - (k-1)*self%ds(3) + self%origin(3)) * delta
       ipart = int(deltak) !integer part of shift
       fpart = deltak - ipart !fractional part
       where (deltak < 0) 

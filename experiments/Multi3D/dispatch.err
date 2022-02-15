@@ -1,14 +1,12 @@
-forrtl: severe (174): SIGSEGV, segmentation fault occurred
-Image              PC                Routine            Line        Source             
-dispatch.x         000000000075583D  Unknown               Unknown  Unknown
-libpthread-2.17.s  00002B35B576A630  Unknown               Unknown  Unknown
-dispatch.x         000000000047EE1A  dispatcher0_mod_m         412  dispatcher0_mod.f90
-dispatch.x         000000000047D4AB  dispatcher0_mod_m         118  dispatcher0_mod.f90
-libiomp5.so        00002B35B5C607D3  __kmp_invoke_micr     Unknown  Unknown
-libiomp5.so        00002B35B5C2754A  Unknown               Unknown  Unknown
-libiomp5.so        00002B35B5C26C0B  Unknown               Unknown  Unknown
-libiomp5.so        00002B35B5C60C30  Unknown               Unknown  Unknown
-libpthread-2.17.s  00002B35B5762EA5  Unknown               Unknown  Unknown
-libc-2.17.so       00002B35B6056B0D  clone                 Unknown  Unknown
-srun: error: node789: task 0: Exited with exit code 174
-srun: Terminating job step 30110753.0
+
+Program received signal SIGILL: Illegal instruction.
+
+Backtrace for this error:
+#0  0x2b737c79b3ff in ???
+#1  0x73350f in ???
+#2  0x406eb4 in ???
+#3  0x2b737c787554 in ???
+#4  0x406f4b in ???
+#5  0xffffffffffffffff in ???
+srun: error: node762: task 0: Illegal instruction
+srun: Terminating job step 30282173.0

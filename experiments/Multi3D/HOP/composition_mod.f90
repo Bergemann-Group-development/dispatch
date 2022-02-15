@@ -6,6 +6,7 @@ module composition_mod
     use level_mod
     use transition_mod
     use omp_lib
+    use os_mod
     implicit none
 
     type :: composition_type
@@ -20,7 +21,7 @@ module composition_mod
         real(dp), dimension(:,:,:), allocatable :: temp, ne, rho
         real(dp), dimension(:,:,:), allocatable :: EK_over_temp, pe, dxi, fe, toth, saha
         real(dp), dimension(:,:,:), allocatable :: teta, eh, pg, E, xfakh, ro
-        real(dp), dimension(:,:,:,:), allocatable :: abslte, sumsca
+        real(dp), dimension(:,:,:,:), pointer, contiguous :: abslte, sumsca
     contains
         procedure :: init => injon
         procedure :: init_molecules
@@ -637,7 +638,9 @@ contains
 
             do j=1, element%nion
                 ion => element%ions(j)
-                allocate(ion%f, ion%saha, ion%part, ion%anjon, mold=temp)
+                if (.not. allocated(ion%f)) then
+                    allocate(ion%f, ion%saha, ion%part, ion%anjon, mold=temp)
+                endif
             end do
 
             call element%compute_ion_equilibrium(self%EK_over_temp, self%ne, self%saha, self%dxi)
@@ -734,8 +737,9 @@ contains
 
         lam = cc / nu * 1e8
 
-        allocate(self%abslte(nx,ny,nz,nf))
-        allocate(self%sumsca(nx,ny,nz,nf))
+        ! these need to stay allocated for the scattering part
+        call os%allocate(self%abslte, shape(chi))
+        call os%allocate(self%sumsca, shape(chi))
         allocate(hrest(nx,ny,nz), fakt(nx,ny,nz))
 
         self%abslte = 0
