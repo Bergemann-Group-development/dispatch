@@ -36,13 +36,14 @@ MODULE experiment_mod
     class(atom_patch_t), pointer :: atom_patch
     real(8), allocatable, dimension(:,:,:) :: ne, temp, rho, vx, vy, vz
     real(8), allocatable, dimension(:,:,:,:) :: nh
-    integer :: idx_pe=6, n_mu, n_phi, n_nu, iter=0, maxiter, ilambd
+    integer :: idx_pe=6, n_mu, n_phi, n_nu, iter=0, maxiter, ilambd, zs, ze
     logical :: nh_missing=.true.
   contains
     procedure:: pre_init
     procedure:: init
     procedure:: update
     procedure:: post_update
+    procedure:: finish
     procedure:: init_level
     procedure:: bndries
     procedure:: pre_init_composition
@@ -140,13 +141,20 @@ SUBROUTINE post_update (self)
   endif
 
   if (self%iter == 0) then
-    self%finished = .true.
-    self%time = io%end_time
-    call self%set(bits%frozen)
+    call self%finish()
   endif
   
   self%iter = self%iter + 1
 END SUBROUTINE post_update
+
+!===============================================================================
+SUBROUTINE finish (self)
+  class(experiment_t):: self
+  !-----------------------------------------------------------------------------
+  self%finished = .true.
+  self%time = io%end_time
+  call self%set(bits%frozen)
+END SUBROUTINE finish
 
 !===============================================================================
 SUBROUTINE init_level (self)
@@ -347,31 +355,31 @@ END SUBROUTINE init_sub_patches
 SUBROUTINE set_t_offset (self, task)
   class (experiment_t) :: self
   class(task_t) :: task
-  real(8) :: t_offset
   !-----------------------------------------------------------------------------
   select type (task)
   class is (atom_patch_t)
-    t_offset = 0.1
+    task%t_offset = 0.1
+    task%time = self%time + task%t_offset * self%dtime
   class is (m3d_t)
     select case (task%kind)
     case ('back_opac', 'cont_opac', 'line_opac')
-      t_offset = 0.2
+      task%t_offset = 0.2
     case ('sum_opac')
-      t_offset = 0.4
+      task%t_offset = 0.4
     case ('angle_rad')
-      t_offset = 0.6
+      task%t_offset = 0.6
     case ('mean_rad', 'out_rad')
-      t_offset = 0.8
+      task%t_offset = 0.8
     case ('rad_rate')
-      t_offset = 0.9
+      task%t_offset = 0.9
     end select
     
     if (task%out_ray) then
-      t_offset = t_offset + self%ilambd + self%maxiter
+      task%t_offset = task%t_offset + self%ilambd + self%maxiter
     endif
+    task%time = self%time + task%t_offset * self%dtime
   end select
 
-  task%time = self%time + t_offset * self%dtime
 END SUBROUTINE set_t_offset
 
 !===============================================================================

@@ -47,6 +47,7 @@ module m3d_patch_mod
     real(8), dimension(:,:,:), allocatable :: ne  
     real(4), dimension(:,:,:,:,:,:), pointer :: authority_mem => null()
     real(8) :: vec(3), wmu
+    real(8) :: t_offset=0
     integer :: i_nu=0, dir=0, i_mu=0, fs, fe, iter=0, maxiter, i_out=0
     logical :: periodic_xy=.false., out_ray=.false.
     integer :: fcheck
@@ -55,6 +56,7 @@ module m3d_patch_mod
   contains
     procedure :: pre_init => m3d_pre_init
     procedure :: init => m3d_init 
+    procedure :: pre_update => m3d_pre_update
     procedure :: post_update => m3d_post_update
     procedure :: finish => m3d_finish
     procedure :: nbor_relations => m3d_nbor_relations
@@ -194,40 +196,50 @@ SUBROUTINE m3d_init (self)
 END SUBROUTINE m3d_init
 
 !===============================================================================
+SUBROUTINE m3d_pre_update (self)
+  class(m3d_t), target :: self
+  !-----------------------------------------------------------------------------
+  if (self%finished) then
+    print '(A, I4, 3(A))', 'task ', self%id, ' of kind ', trim(self%kind), ' is updating despite finished!'
+    print *, 'task%time = ', self%time
+  endif
+END SUBROUTINE m3d_pre_update
+
+!===============================================================================
 SUBROUTINE m3d_post_update (self)
   class(m3d_t) :: self
+  character(len=38) :: text
   !-----------------------------------------------------------------------------
   if (self%verbose > 1) then
+    write(text, '(F5.1, A12, 5(I4))') self%time, trim(self%kind), self%iter, self%patch%id, self%i_nu, self%dir, self%i_mu
     select case (self%kind)
     case('rad_rate')
-      write(*,'(F5.1, A12, 4(I4), 6(ES15.7))') self%time, trim(self%kind), self%patch%id, self%i_nu, self%dir, self%i_mu, &
+      write(*,'(A, 6(ES15.7))') text, &
       self%authority_mem(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%linecheck,1,:)
     case('out_rad')
-      write(*,'(F5.1, A12, 4(I4), 6(ES15.7))') self%time, trim(self%kind), self%patch%id, self%i_nu, self%dir, self%i_mu, &
+      write(*,'(A, 6(ES15.7))') text, &
       self%authority_mem(self%pcheck(1),self%pcheck(2),1,self%fcheck,1,:)
     case default
-      write(*,'(F5.1, A12, 4(I4), 6(ES15.7))') self%time, trim(self%kind), self%patch%id, self%i_nu, self%dir, self%i_mu, &
+      write(*,'(A, 6(ES15.7))') text, &
       self%authority_mem(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%fcheck,1,:)
     end select
   endif
 
   if (self%iter == self%maxiter) then
-    call self%finish(freeze=.true.)
+    call self%finish()
   endif
 
   self%iter = self%iter + 1
 END SUBROUTINE m3d_post_update
 
 !===============================================================================
-SUBROUTINE m3d_finish (self, freeze, rotated)
+SUBROUTINE m3d_finish (self, rotated)
   class(m3d_t):: self
-  logical :: freeze
   logical, optional :: rotated
   !.............................................................................
   self%finished = .true.
-  self%time = io%end_time + self%dtime
+  self%time = io%end_time + self%t_offset * self%dtime
   call self%set(bits%no_download)
-  !if (freeze) call self%set(bits%frozen)
   if (present(rotated)) self%rotated = rotated
 END SUBROUTINE m3d_finish
 

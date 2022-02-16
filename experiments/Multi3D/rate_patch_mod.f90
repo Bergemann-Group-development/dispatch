@@ -79,8 +79,8 @@ module rate_patch_mod
     integer :: fs, fe
     integer, save:: itimer=0
     !-----------------------------------------------------------------------------
+    call self%pre_update()
     if (self%finished) then
-      call self%set(bits%frozen)
       return
     endif
     

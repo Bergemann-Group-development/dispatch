@@ -253,14 +253,14 @@ module atom_patch_mod
     ! ----------------------------------------------------------------------------
     self%finished = .true.
     self%time = io%end_time + self%t_offset*self%dtime
-    call self%set(bits%frozen)
+    !call self%set(bits%frozen)
 
     do j=1, self%n_nu
-      call self%opac(0,j)%finish(freeze=.false.)
+      !call self%opac(0,j)%finish()
 
       do i=1, self%n_omega
-        call self%opac(i,j)%finish(freeze=.false.)
-        call self%rate(i,j)%finish(freeze=.false.)
+        call self%opac(i,j)%finish()
+        call self%rate(i,j)%finish()
       end do
     end do
   END SUBROUTINE atom_patch_finish

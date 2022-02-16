@@ -357,7 +357,7 @@ SUBROUTINE update (self, head, test)
   !-----------------------------------------------------------------------------
   ! If the task is frozen, make sure it is marked "not ready", and then return
   !-----------------------------------------------------------------------------
-  if (task%is_set (bits%frozen)) then
+  if (task%is_set (bits%frozen) .or. task%finished) then
     call task%clear (bits%ready)
     call trace%end (itimer)
     return

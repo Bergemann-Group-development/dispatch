@@ -1,12 +1,1 @@
-
-Program received signal SIGILL: Illegal instruction.
-
-Backtrace for this error:
-#0  0x2b737c79b3ff in ???
-#1  0x73350f in ???
-#2  0x406eb4 in ???
-#3  0x2b737c787554 in ???
-#4  0x406f4b in ???
-#5  0xffffffffffffffff in ???
-srun: error: node762: task 0: Illegal instruction
-srun: Terminating job step 30282173.0
+OMP: Info #274: omp_set_nested routine deprecated, please use omp_set_max_active_levels instead.

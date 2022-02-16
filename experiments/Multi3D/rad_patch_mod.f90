@@ -149,12 +149,15 @@ END SUBROUTINE radiation_init
 SUBROUTINE radiation_update (self)
   class(radiation_t) :: self
   ! ----------------------------------------------------------------------------
-  if (self%finished) return
+  call self%pre_update()
+  if (self%finished) then
+    return
+  endif
 
   select case (self%kind)
   case ('angle_rad')
     if (self%opac%finished .and. self%opac%iter < self%opac%maxiter) then
-      call self%finish(freeze=.true., rotated=.true.)
+      call self%finish(rotated=.true.)
       return
     endif
 
@@ -173,7 +176,12 @@ SUBROUTINE radiation_update (self)
     if (save_output) call self%save_radiation_output()
   end select
 
-  if (.not. self%finished) call self%post_update()
+  call self%post_update()
+
+  if (self%kind == 'angle_rad') then
+    call self%task_t%rotate
+    self%rotated=.true.
+  endif
 END SUBROUTINE radiation_update
 
 !===============================================================================
@@ -339,8 +347,6 @@ SUBROUTINE short_ray_update (self)
       !endif
     end do ! k-loop
   end do ! f-loop
-
-  self%rotated=.true.
 
   !if (self%verbose>1) then
   !  write(*,'(F5.1, A12, 4(I4), 6(ES15.7))') self%time, 'xxup ssup', self%patch%id, self%i_nu, self%dir, self%i_mu, &

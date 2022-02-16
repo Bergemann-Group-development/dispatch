@@ -94,20 +94,19 @@ SUBROUTINE init(self, task_list, name)
     write(stdout,*) 'read_external_t%init: Warning: Non-equidistant atmosphere grid!'
   endif
 
-  if (mod(self%n(3), npatches) /= 0) then
-    write(stdout,*) 'read_external_t%init: Error: npatches must be a factor of the atmosphere size!'
-    write(stdout,*) 'npatches = ', self%npatches(3), 'nz = ', self%n(3)
-    write(stdout,*) 'Stopping.'
-    stop
-  endif
+  !if (mod(self%n(3), npatches) /= 0) then
+  !  write(stdout,*) 'read_external_t%init: Error: npatches must be a factor of the atmosphere size!'
+  !  write(stdout,*) 'npatches = ', self%npatches(3), 'nz = ', self%n(3)
+  !  write(stdout,*) 'Stopping.'
+  !  stop
+  !endif
 
   do i=1, npatches
     call self%create_patch(i, patch) ! patch is allocated here
 
     if (verbose > 0) then 
-      iz = (i-1)*self%n(3)/npatches + 1
       if (i==1) write(stdout,'(I2, A28)') npatches, ' subdomains in z-direction:'
-      write(stdout,'(I4, I6,A3,I4)') i, iz, ' - ', iz + self%n(3)/npatches - 1
+      write(stdout,'(I4, I6,A3,I4)') i, patch%zs, ' - ', patch%ze
     endif
   end do
 
@@ -150,8 +149,14 @@ SUBROUTINE create_patch (self, i, patch)
 
   call patch%pre_init()
   patch%pre_initialized = .true.
-
+  
   patch%n = self%n / self%npatches
+  patch%zs = (i-1) * patch%n(3) + 1
+  if (i == self%npatches(3)) then
+    patch%n(3) = patch%n(3) + mod(self%n(3), self%npatches(3))
+  endif
+  patch%ze = patch%zs + patch%n(3) - 1
+
   patch%ng = self%ng
   patch%nv = 6
   patch%nt = 4 ! Download returns wrong stuff if nt <= 2
@@ -165,7 +170,7 @@ SUBROUTINE create_patch (self, i, patch)
 
   patch%position(1) = 0.5d0*patch%size(1)
   patch%position(2) = 0.5d0*patch%size(2)
-  patch%position(3) = (i - 0.5d0)*patch%size(3)
+  patch%position(3) = (patch%zs - 1) * patch%ds(3)
   patch%origin = patch%position - 0.5d0*patch%size
 
   call patch%init()
@@ -291,7 +296,8 @@ SUBROUTINE load_authority(self, patch, ii)
 
   do k=zs,ze
     ! flipping z-axis, so that the first patch is the bottom of the atmosphere
-    iz = self%n(3) - ((ii-1)*patch%n(3) + k - zs)
+    !iz = self%n(3) - ((ii-1)*patch%n(3) + k - zs)
+    iz = self%n(3) - (patch%zs - 1 + k - zs) 
 
     patch%mem(xs:xe,ys:ye,k,patch%idx%d ,it,1) = self%rho(:,:,iz)
     patch%mem(xs:xe,ys:ye,k,patch%idx%px,it,1) = self%px(:,:,iz)
