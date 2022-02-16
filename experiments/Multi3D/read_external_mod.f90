@@ -166,6 +166,7 @@ SUBROUTINE create_patch (self, i, patch)
   patch%position(1) = 0.5d0*patch%size(1)
   patch%position(2) = 0.5d0*patch%size(2)
   patch%position(3) = (i - 0.5d0)*patch%size(3)
+  patch%origin = patch%position - 0.5d0*patch%size
 
   call patch%init()
   call patch%idx%init (energy=5, mhd=patch%mhd)

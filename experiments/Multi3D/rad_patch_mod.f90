@@ -333,12 +333,21 @@ SUBROUTINE short_ray_update (self)
       end do
 
       call self%periodic_plane(self%Inu(:,:,k,f))
+      !if (self%verbose>1 .and. z==self%pcheck(3) .and. f==self%fcheck) then
+      !  write(*,'(F5.1, A12, 4(I4), 6(ES15.7))') self%time, 'Inuup', self%patch%id, self%i_nu, self%dir, self%i_mu, &
+      !  Inuup(self%pcheck(1),self%pcheck(2))
+      !endif
     end do ! k-loop
   end do ! f-loop
 
+  self%rotated=.true.
+
   !if (self%verbose>1) then
   !  write(*,'(F5.1, A12, 4(I4), 6(ES15.7))') self%time, 'xxup ssup', self%patch%id, self%i_nu, self%dir, self%i_mu, &
-  !  xxup(pcheck(1),pcheck(2),pcheck(3),fcheck), ssup(pcheck(1),pcheck(2),pcheck(3),fcheck)
+  !  xxup(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%fcheck), &
+  !  ssup(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%fcheck), &
+  !  ex(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%fcheck), &
+  !  source(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%fcheck)
   !endif
   call os%deallocate(Inuup)
   call os%deallocate(kernel)
@@ -353,9 +362,8 @@ END SUBROUTINE short_ray_update
 !===============================================================================
 SUBROUTINE long_char_update (self)
   class(radiation_t), target :: self
-  real(4), dimension(:,:,:,:), allocatable :: Psi, ex, source
-  real(4), dimension(:,:), allocatable :: xxup_tmp, ssup_tmp
-  real(4), dimension(:,:,:,:), pointer :: xx, ss, xxup, ssup
+  real(4), dimension(:,:,:,:), pointer, contiguous :: xx, ss, Psi, ex, source
+  real(4), dimension(:,:,:,:), pointer :: xxup, ssup, xxl, ssl
   real(4), dimension(2) :: delta, deltak, fpart
   integer, dimension(2) :: ipart
   real(4), dimension(4) :: kernel
@@ -368,14 +376,15 @@ SUBROUTINE long_char_update (self)
   self%chi => self%opac%mem(:,:,:,:, self%opac%it, self%opac%i_chi)
   self%Snu => self%opac%mem(:,:,:,:, self%opac%it, self%opac%i_snu)
 
-  xx => self%opac%authority_mem(:,:,:,:,self%opac%it,self%opac%i_chi)
-  ss => self%opac%authority_mem(:,:,:,:,self%opac%it,self%opac%i_Snu)
-  xxup => self%chi(:,:,:self%n(3),:)
-  ssup => self%Snu(:,:,:self%n(3),:)
-
-  allocate(xxup_tmp(self%n(1), self%n(2)))
-  allocate(ssup_tmp(self%n(1), self%n(2)))
-  allocate(Psi, ex, source, mold=xx)
+  !xx => self%opac%authority_mem(:,:,:,:,self%opac%it,self%opac%i_chi)
+  !ss => self%opac%authority_mem(:,:,:,:,self%opac%it,self%opac%i_Snu)
+  !xxup => self%chi(:,:,:self%n(3),:)
+  !ssup => self%Snu(:,:,:self%n(3),:)
+  call os%allocate(xx,     shape(self%mem))
+  call os%allocate(ss,     shape(self%mem))
+  call os%allocate(Psi,    shape(self%authority_mem))
+  call os%allocate(ex,     shape(self%authority_mem))
+  call os%allocate(source, shape(self%authority_mem))
 
   delta = self%vec(:2) / (self%vec(3) * self%ds(:2)) ! shift in units of grid cells
 
@@ -383,8 +392,8 @@ SUBROUTINE long_char_update (self)
     ! ----------------------------------------------------------------------------
     ! frequency vectorisation is slower, because k varies quicker in mem than f.
     ! ----------------------------------------------------------------------------
-    do k=1, self%n(3)
-      deltak = (self%box(3) - (k-1)*self%ds(3) + self%origin(3)) * delta
+    do k=1, self%ui(3)
+      deltak = (self%box(3) - (k-1)*self%ds(3) - self%origin(3)) * delta
       ipart = int(deltak) !integer part of shift
       fpart = deltak - ipart !fractional part
       where (deltak < 0) 
@@ -398,28 +407,46 @@ SUBROUTINE long_char_update (self)
       kernel(3) = (1.0-fpart(1))*     fpart(2) 
       kernel(4) =      fpart(1) *     fpart(2) 
 
-      call self%interp_long(self%chi(:,:,k,f), xxup_tmp, ipart(1), ipart(2), kernel)
-      call self%interp_long(self%Snu(:,:,k,f), ssup_tmp, ipart(1), ipart(2), kernel)
-
-      xxup(:,:,k,f) = xxup_tmp
-      ssup(:,:,k,f) = ssup_tmp
+      call self%interp_long(self%chi(:,:,k,f), xx(:,:,k,f), ipart(1), ipart(2), kernel)
+      call self%interp_long(self%Snu(:,:,k,f), ss(:,:,k,f), ipart(1), ipart(2), kernel)
     end do
   end do ! f-loop
+
+  xxl => xx(:,:,self%li(3):self%ui(3),:) 
+  ssl => ss(:,:,self%li(3):self%ui(3),:) 
+  xxup => xx(:,:,1:self%n(3),:) 
+  ssup => ss(:,:,1:self%n(3),:) 
   
   call self%bndries() ! reinforce boundary condition
 
-  call extinction_and_source(real(self%ray%dsup), xx, xxup, ss, ssup, Psi, ex, source)
+  call extinction_and_source(real(self%ray%dsup), xxl, xxup, ssl, ssup, Psi, ex, source)
 
   do f=1, self%nv
     do k=1, self%n(3)
       self%Inu(:,:,k+1,f) = self%Inu(:,:,k,f)*ex(:,:,k,f) + source(:,:,k,f)
+      !if (self%verbose>1 .and. k==self%pcheck(3) .and. f==self%fcheck) then
+      !  write(*,'(F5.1, A12, 4(I4), 6(ES15.7))') self%time, 'Inuup', self%patch%id, self%i_nu, self%dir, self%i_mu, &
+      !  self%Inu(self%pcheck(1),self%pcheck(2), k, f)
+      !endif
     end do
   end do ! f-loop
 
   !if (self%verbose>1) then
-  !write(*,'(F5.1, A12, 4(I4), 6(ES15.7))') self%time, 'xxup ssup', self%patch%id, self%i_nu, self%dir, self%i_mu, &
-  !self%chi(pcheck(1),pcheck(2),pcheck(3),fcheck), self%Snu(pcheck(1),pcheck(2),pcheck(3),fcheck)
+  !  write(*,'(F5.1, A12, 4(I4), 8(ES15.7))') self%time, 'xxup ssup', self%patch%id, self%i_nu, self%dir, self%i_mu, &
+  !  self%chi(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%fcheck), &
+  !  self%Snu(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%fcheck), &
+  !  xxup(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%fcheck), &
+  !  ssup(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%fcheck), &
+  !  xxl(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%fcheck), &
+  !  ssl(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%fcheck), self%origin(3)
   !endif
+
+  call os%deallocate(xx)
+  call os%deallocate(ss)
+  call os%deallocate(Psi)
+  call os%deallocate(ex)
+  call os%deallocate(source)
+
   call trace%end(itimer)
 END SUBROUTINE long_char_update
 

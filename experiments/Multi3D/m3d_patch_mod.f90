@@ -49,6 +49,9 @@ module m3d_patch_mod
     real(8) :: vec(3), wmu
     integer :: i_nu=0, dir=0, i_mu=0, fs, fe, iter=0, maxiter, i_out=0
     logical :: periodic_xy=.false., out_ray=.false.
+    integer :: fcheck
+    integer :: pcheck(3)
+    integer :: linecheck
   contains
     procedure :: pre_init => m3d_pre_init
     procedure :: init => m3d_init 
@@ -77,9 +80,6 @@ module m3d_patch_mod
 
   !-----------------------------------------------------------------------------
   integer, save:: verbose=0
-  integer, public, save:: fcheck=1
-  integer, public, save:: pcheck(3)=[1,1,1]
-  integer, save:: linecheck=3
     
 contains
 
@@ -90,6 +90,7 @@ SUBROUTINE m3d_pre_init (self)
   logical, save :: first_time=.true.
   logical, save :: on=.true.
   integer :: iostat
+  integer, save :: fcheck=1, linecheck=3, pcheck(3)=[1,1,1]
   !-----------------------------------------------------------------------------
   namelist /m3d_params/ on, verbose, fcheck, linecheck, pcheck
 
@@ -109,6 +110,14 @@ SUBROUTINE m3d_pre_init (self)
     end if
     call io%namelist_warning ('m3d_params', iostat)
   end if
+
+  self%pcheck = pcheck
+  self%fcheck = fcheck
+  self%linecheck = linecheck
+
+  where (self%pcheck < 0)
+    self%pcheck = self%patch%n + self%pcheck + 1
+  end where
 
   if (self%pre_initialized) print *, 'pre_init issued somewhere'
   call io%lock%unset ('m3d_t%pre_init')
@@ -192,13 +201,13 @@ SUBROUTINE m3d_post_update (self)
     select case (self%kind)
     case('rad_rate')
       write(*,'(F5.1, A12, 4(I4), 6(ES15.7))') self%time, trim(self%kind), self%patch%id, self%i_nu, self%dir, self%i_mu, &
-      self%authority_mem(pcheck(1),pcheck(2),pcheck(3),linecheck,1,:)
+      self%authority_mem(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%linecheck,1,:)
     case('out_rad')
       write(*,'(F5.1, A12, 4(I4), 6(ES15.7))') self%time, trim(self%kind), self%patch%id, self%i_nu, self%dir, self%i_mu, &
-      self%authority_mem(pcheck(1),pcheck(2),1,fcheck,1,:)
+      self%authority_mem(self%pcheck(1),self%pcheck(2),1,self%fcheck,1,:)
     case default
       write(*,'(F5.1, A12, 4(I4), 6(ES15.7))') self%time, trim(self%kind), self%patch%id, self%i_nu, self%dir, self%i_mu, &
-      self%authority_mem(pcheck(1),pcheck(2),pcheck(3),fcheck,1,:)
+      self%authority_mem(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%fcheck,1,:)
     end select
   endif
 
@@ -218,7 +227,7 @@ SUBROUTINE m3d_finish (self, freeze, rotated)
   self%finished = .true.
   self%time = io%end_time + self%dtime
   call self%set(bits%no_download)
-  if (freeze) call self%set(bits%frozen)
+  !if (freeze) call self%set(bits%frozen)
   if (present(rotated)) self%rotated = rotated
 END SUBROUTINE m3d_finish
 
@@ -552,7 +561,7 @@ LOGICAL FUNCTION is_ahead_of (self, target)
       is_ahead_of = nbtime > tgtime
     ! -- use a grace interval that is fraction of the nbor time step
     else
-      is_ahead_of = nbtime + nbdtime*grace > tgtime
+      is_ahead_of = nbtime + nbdtime*grace > tgtime 
     end if
   end if
 END FUNCTION is_ahead_of

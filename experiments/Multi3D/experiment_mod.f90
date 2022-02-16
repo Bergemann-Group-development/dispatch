@@ -13,7 +13,7 @@ MODULE experiment_mod
   USE composition_mod, only: composition_type
   USE atom_var, only: atom_type
   USE spectrum_mod, only:spectrum_type
-  USE m3d_patch_mod, only: m3d_t, halo_m3d_t, pcheck
+  USE m3d_patch_mod, only: m3d_t, halo_m3d_t
   USE opac_patch_mod, only: opacity_t
   USE rad_patch_mod, only: radiation_t
   USE atom_patch_mod, only: atom_patch_t
@@ -131,8 +131,10 @@ END SUBROUTINE update
 !===============================================================================
 SUBROUTINE post_update (self)
   class(experiment_t):: self
+  integer :: pcheck(3)
   !----------------------------------------------------------------------------
   if (self%verbose > 1) then
+      pcheck = self%back_opac(1)%pcheck
       write(*,'(F5.1, A12, I4, 12(ES15.7))') self%time, trim(self%kind), self%id, &
       self%mem(self%li(1)+pcheck(1)-1,self%li(2)+pcheck(2)-1,self%li(3)+pcheck(3)-1,:,1,1)
   endif
