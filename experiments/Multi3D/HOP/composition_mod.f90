@@ -63,12 +63,12 @@ contains
                                 'CL ', 'AR ', 'K  ', 'CA ', 'SC ', 'TI ', 'V  ', 'CR ', &
                                 'MN ', 'FE ', 'CO ', 'NI '/)
 
-        type(element_type),    pointer :: elements(:)
-        type(element_type),    pointer :: element, H
-        type(molec_type),      pointer :: molecule
-        type(ion_type),        pointer :: ion, Hm, H0
-        type(level_type),      pointer :: lvl
-        type(transition_type), pointer :: trans
+        class(element_type),    pointer :: elements(:)
+        class(element_type),    pointer :: element, H
+        class(molec_type),      pointer :: molecule
+        class(ion_type),        pointer :: ion, Hm, H0
+        class(level_type),      pointer :: lvl
+        class(transition_type), pointer :: trans
 
         call trace_begin ('composition_type%init')
 
@@ -406,11 +406,11 @@ contains
 
     subroutine reassign_pointer(self)
         class(composition_type), target :: self
-        type(element_type),     pointer :: element
-        type(molec_type),       pointer :: molecule
-        type(ion_type),         pointer :: ion
-        type(level_type),       pointer :: lvl
-        type(transition_type),  pointer :: trans
+        class(element_type),     pointer :: element
+        class(molec_type),       pointer :: molecule
+        class(ion_type),         pointer :: ion
+        class(level_type),       pointer :: lvl
+        class(transition_type),  pointer :: trans
         integer :: i, j, m
 
         call trace_begin ('composition_type%reassign_pointer')
@@ -463,9 +463,9 @@ contains
 
     subroutine init_molecules(self)
         class(composition_type), target :: self
-        type(molec_type),   pointer :: molecule
-        type(element_type), pointer :: element
-        type(ion_type),     pointer :: ion
+        class(molec_type),   pointer :: molecule
+        class(element_type), pointer :: element
+        class(ion_type),     pointer :: ion
         character(len=3) :: mol_ids(12)
         character(len=6) :: ion_id
         integer :: i, j
@@ -545,7 +545,7 @@ contains
 
     subroutine init_mol_dissociation (self)
         class(composition_type), target :: self
-        type(molec_type),   pointer :: molecule
+        class(molec_type),   pointer :: molecule
         integer :: i
 
         do i=1, size(self%molecules)
@@ -601,11 +601,11 @@ contains
 
     subroutine load_state_variables(self, temp, ne, rho)
         class(composition_type), target :: self
-        type(element_type), pointer :: element
-        type(ion_type), pointer :: ion
-        type(level_type), pointer :: ground_below
-        type(element_type), pointer :: H
-        type(ion_type), pointer :: Hm, H0
+        class(element_type), pointer :: element
+        class(ion_type), pointer :: ion
+        class(level_type), pointer :: ground_below
+        class(element_type), pointer :: H
+        class(ion_type), pointer :: Hm, H0
         real(dp), dimension(:,:,:), intent(in) :: temp, ne, rho
         real(dp), dimension(:,:,:), allocatable :: xnen, ejon, xnenh, xnecno
         integer :: i,j
@@ -714,10 +714,10 @@ contains
     subroutine absorption(self, nu, chi)
         !use phys_mod, only:planck
         class(composition_type), target :: self
-        type(transition_type), pointer :: trans
-        type(element_type), pointer :: H
-        type(molec_type), pointer :: H2
-        type(ion_type), pointer :: H0
+        class(transition_type), pointer :: trans
+        class(element_type), pointer :: H
+        class(molec_type), pointer :: H2
+        class(ion_type), pointer :: H0
         real(dp), dimension(:),     intent(in) :: nu
         real(4), dimension(:,:,:,:), intent(inout) :: chi
         real(dp), dimension(:,:,:), allocatable :: fakt, abso, hrest, abfakray, ab
@@ -863,7 +863,7 @@ contains
         character(len=*), intent(in) :: id
         real(dp), intent(in) :: abund
         real(dp), dimension(:,:,:), allocatable :: totn
-        type(element_type), pointer :: element
+        class(element_type), pointer :: element
 
         call trace_begin ('composition_type%get_totn')
         call self%element_by_id(id, element)
@@ -913,11 +913,11 @@ contains
         real(dp), dimension(:,:,:), intent(in) :: temp, pe, teta, dxi, xnecno, xnenh
         real(dp), dimension(:,:,:), allocatable, intent(out) :: eh, pg, fe
         real(dp), dimension(:,:,:), allocatable :: r, s, b, pefe, p, q
-        type(molec_type), pointer :: molecules(:)
-        type(molec_type), pointer :: H2, CN, H2p
+        class(molec_type), pointer :: molecules(:)
+        class(molec_type), pointer :: H2, CN, H2p
         type(ion_pointer_t) :: ions(4)
-        type(ion_type), pointer :: H, C, N, O, ion, ioni, ionj
-        type(ion_type), pointer :: Hm
+        class(ion_type), pointer :: H, C, N, O, ion, ioni, ionj
+        class(ion_type), pointer :: Hm
         integer :: i, j, nx, ny, nz, ix, iy, iz, np1, iter, nions
         real(dp) :: new_diff
         real(dp), dimension(:,:,:), allocatable :: diff
@@ -1118,7 +1118,7 @@ contains
     subroutine molecule_by_id(self, id, molecule)
         class(composition_type), target :: self
         character(len=*), intent(in) :: id
-        type(molec_type), pointer, intent(out) :: molecule
+        class(molec_type), pointer, intent(out) :: molecule
 
         call trace_begin ('composition_type%init')
         molecule => self%molecules(findloc(self%molecules%id, id, 1))
@@ -1128,7 +1128,7 @@ contains
     subroutine element_by_id(self, id, element)
         class(composition_type), target :: self
         character(len=*), intent(in) :: id
-        type(element_type), pointer, intent(out) :: element
+        class(element_type), pointer, intent(out) :: element
         integer :: idx
 
         call trace_begin ('composition_type%init')
@@ -1146,8 +1146,8 @@ contains
     subroutine ion_by_id(self, id, ion)
         class(composition_type), target :: self
         character(len=*), intent(in) :: id
-        type(ion_type), pointer, intent(out) :: ion
-        type(element_type), pointer :: element
+        class(ion_type), pointer, intent(out) :: ion
+        class(element_type), pointer :: element
         integer :: idx
 
         call trace_begin ('composition_type%init')
@@ -1163,7 +1163,7 @@ contains
     subroutine trans_by_id(self, id, trans)
         class(composition_type), target :: self
         character(len=*), intent(in) :: id
-        type(transition_type), pointer, intent(out) :: trans
+        class(transition_type), pointer, intent(out) :: trans
         integer :: i, idx
 
         call trace_begin ('composition_type%init')

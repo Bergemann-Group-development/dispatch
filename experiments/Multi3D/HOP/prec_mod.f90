@@ -17,6 +17,7 @@ module prec_mod
     real(dp), parameter :: temp_to_theta = 5040
     real(dp), parameter :: prec_err = temp_to_theta / (log10(exp(1.d0))*EK)
     real(dp), parameter :: uop_BK = 1.38053e-16
+    !real(dp), parameter :: uop_BK = BK
     
 contains
     

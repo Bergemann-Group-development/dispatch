@@ -402,7 +402,7 @@ SUBROUTINE update (self, task_list, test)
   ! that hit the sync time last of all threads has set this flag, and will clear
   ! it as soon as all other ranks have arrived at the same time.
   !-----------------------------------------------------------------------------
-  if (associated(head) .and. (task_list%syncing==this_sync)) then
+  if (associated(head) .and. (task_list%syncing.eqv.this_sync)) then
     nullify (head%next_time)
     if (detailed_timer) then
       call trace%end (itimer(i))
