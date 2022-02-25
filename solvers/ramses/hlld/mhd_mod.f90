@@ -27,7 +27,6 @@ MODULE mhd_mod
   USE mpi_mod
   USE omp_mod
   USE index_mod
-  USE non_ideal_mod
   USE flux_mod
   USE omp_timer_mod
   USE timer_mod
@@ -95,6 +94,8 @@ SUBROUTINE pre_init (self)
   self%ng = 3
   self%nv = 8
   self%kind = 'hlld_mhd_patch'
+  self%type  = 'mhd_t'
+  self%etype = 'thermal'
   call self%idx%init (energy=5, mhd=self%mhd)
   if (do_temperature) then
     call self%idx%request_index (self%idx%tt, self%nv)
@@ -155,7 +156,6 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Initialize everything else, and do a sanity check
   !-----------------------------------------------------------------------------
-  call non_ideal%init  
   call divb%init
   call trace%end()
 END SUBROUTINE init
@@ -262,15 +262,6 @@ SUBROUTINE update (self)
     write (stdlog,*) 'uslope', self%id, minval(self%dq), maxval(self%dq)
     write (stdlog,*) 'uslope', self%id, minval(self%dq2), maxval(self%dq2)
   end if
-  if (non_ideal%is_used) then
-    allocate (fluxambdiff(self%gn(1),self%gn(2),self%gn(3),3))
-    allocate (emfambdiff(self%gn(1),self%gn(2),self%gn(3),3))
-    allocate (fluxohmdiss(self%gn(1),self%gn(2),self%gn(3),3))
-    allocate (emfohmdiss(self%gn(1),self%gn(2),self%gn(3),3))
-    fluxambdiff = 0d0; emfambdiff = 0d0; fluxohmdiss = 0d0; emfohmdiss = 0d0;   
-    call non_ideal%non_ideal_comp(self%mesh,self%idx,self%bf,uin,self%q,&
-      fluxambdiff,emfambdiff,fluxohmdiss,emfohmdiss,self%u_max,self%ds,self%dtime)
-  end if
   call self%courant_condition                           ! compute dt
   call trace3d(self)                                    ! predictor step
   allocate (fl(self%gn(1),self%gn(2),self%gn(3),self%nv,3))
@@ -286,21 +277,13 @@ SUBROUTINE update (self)
   dtdx = self%dtime/self%ds(1) 
   dtdy = self%dtime/self%ds(2) 
   dtdz = self%dtime/self%ds(3) 
-  em(:,:,:,1) = em(:,:,:,1)*dtdy
-  em(:,:,:,2) = em(:,:,:,2)*dtdz
-  em(:,:,:,3) = em(:,:,:,3)*dtdx
+  em(:,:,:,1) = em(:,:,:,1)*self%dtime
+  em(:,:,:,2) = em(:,:,:,2)*self%dtime
+  em(:,:,:,3) = em(:,:,:,3)*self%dtime
   if (self%id==io%id_debug) then
     write (io%output,'("X6",f10.6,i4,1p,10e12.3)') self%time, 6, em(4:13,8,8,1)
     write (io%output,'("X7",f10.6,i4,1p,10e12.3)') self%time, 7, em(4:13,8,8,2)
     write (io%output,'("X8",f10.6,i4,1p,10e12.3)') self%time, 8, em(4:13,8,8,3)
-  end if
-  if (non_ideal%is_used) then
-    call non_ideal%flux_upd(fl,fluxambdiff,fluxohmdiss,self%ds(1),self%dtime,1)
-    call non_ideal%flux_upd(fl,fluxambdiff,fluxohmdiss,self%ds(2),self%dtime,2)
-    call non_ideal%flux_upd(fl,fluxambdiff,fluxohmdiss,self%ds(3),self%dtime,3)
-    call non_ideal%non_ideal_emf_up(em(:,:,:,3),emfambdiff,emfohmdiss,self%ds(3),self%dtime,3)
-    call non_ideal%non_ideal_emf_up(em(:,:,:,2),emfambdiff,emfohmdiss,self%ds(2),self%dtime,2)
-    call non_ideal%non_ideal_emf_up(em(:,:,:,1),emfambdiff,emfohmdiss,self%ds(1),self%dtime,1)
   end if
   ! Compute fluxes with appropriate time step
   fl(:,:,:,:,1) = fl(:,:,:,:,1) * dtdx
@@ -384,28 +367,28 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) =  &
    uin(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) + &
-   (( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,2)   - &
-      em(i0  :i1  ,j0  :j1  ,k0+1:k1+1,2) ) - &
-    ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,3)   - &
-      em(i0  :i1  ,j0+1:j1+1,k0  :k1  ,3) ))
+   (( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,2)  - &
+      em(i0  :i1  ,j0  :j1  ,k0+1:k1+1,2)) / self%ds(3) - &
+    ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,3)  - &
+      em(i0  :i1  ,j0+1:j1+1,k0  :k1  ,3)) / self%ds(2))
   !-----------------------------------------------------------------------------
   ! Update By 
   !-----------------------------------------------------------------------------
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) = &
    uin(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) + &
-   (( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,3)   - &
-      em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,3) ) - &
-    ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,1)   - &
-      em(i0  :i1  ,j0  :j1  ,k0+1:k1+1,1) ))
+   (( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,3)  - &
+      em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,3)) / self%ds(1) - &
+    ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,1)  - &
+      em(i0  :i1  ,j0  :j1  ,k0+1:k1+1,1)) / self%ds(3))
   !-----------------------------------------------------------------------------
   ! Update Bz 
   !-----------------------------------------------------------------------------
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) = &
    uin(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) + &
-   (( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,1)   - &
-      em(i0  :i1  ,j0+1:j1+1,k0  :k1  ,1) ) - &
-    ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,2)   - &
-      em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,2) ))
+   (( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,1)  - &
+      em(i0  :i1  ,j0+1:j1+1,k0  :k1  ,1)) / self%ds(2) - &
+    ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,2)  - &
+      em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,2)) / self%ds(3))
   end associate
   !-----------------------------------------------------------------------------
   ! Save the current value of the kinetic energy
@@ -459,8 +442,6 @@ SUBROUTINE update (self)
   ! Deallocate
   !-----------------------------------------------------------------------------
   call self%counter_update
-  if (non_ideal%is_used) &
-    deallocate (fluxambdiff,emfambdiff,fluxohmdiss,emfohmdiss)
   deallocate (fl,em,self%q,self%qp,self%qm,self%dq,self%dq2,self%bf,self%dbf, &
               self%qLT,self%qLB,self%qRT,self%qRB,self%c, &
               self%Ex,self%Ey,self%Ez)
@@ -486,6 +467,7 @@ SUBROUTINE update (self)
 END SUBROUTINE update
 
 !===============================================================================
+!> Check for small or negative densities
 !===============================================================================
 subroutine check_small (self, it)
   class(mhd_t):: self

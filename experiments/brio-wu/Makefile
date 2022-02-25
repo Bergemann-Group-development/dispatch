@@ -1,7 +1,9 @@
 
 # Option groups
+#OPTS = full_debug
+#OPTS = vscode
 #OPTS = debug
-OPTS =
+#OPTS =
 #OPTS = full_debug
 #OPTS = optimized
 
@@ -9,10 +11,11 @@ OPTS =
 UPD             = adams_bashforth
 #SOLVER          = zeus3d
 #SOLVER          = ramses/hydro
-SOLVER          = stagger2/bifrost
-STAGGER         = stagger_6th.o
-#SOLVER          = ramses/mhd_eos
-#SOLVER          = ramses/mhd
+#SOLVER          = stagger2/bifrost
+#STAGGER         = stagger_6th.o
+SOLVER          = ramses/hlld_eos
+#EOS             = microphysics/eos/itable
+EOS             = microphysics/eos/ideal
 EXEC            = dispatch.x
 TOP             = ../..
 sinclude $(TOP)/config/Makefile

@@ -46,6 +46,7 @@ MODULE task_list_mod
   USE mesh_mod
   USE mulligan_mod
   USE offload_mod
+  USE memory_mod
   implicit none
   private
   type, public, extends(task_mesg_t):: task_list_t
@@ -70,6 +71,8 @@ MODULE task_list_mod
   end type
   real(8), save:: dead_mans_hand=60d0, first_finished=0d0
   logical, save:: check_nbor_consistency=.true.
+  logical, save:: check_memory=.false.
+  logical, save:: check_queue=.false.
   public:: task2patch
   type(task_list_t), target:: task_list
 CONTAINS
@@ -88,28 +91,50 @@ SUBROUTINE init (self, name)
   logical, save:: detailed_timer=.false.
   integer, save:: verbose=0
   namelist /task_list_params/ verbose, job_seconds, dead_mans_hand, sync_time, &
-    detailed_timer, check_nbor_consistency
+    detailed_timer, check_nbor_consistency, check_memory, check_queue
+  logical:: first_time=.true.
   !-----------------------------------------------------------------------------
   ! An optional namelist can be used to turn debugging on
   !-----------------------------------------------------------------------------
   call trace%begin('task_list_t%init')
   call self%list_t%init (name)
-  rewind (io%input)
-  read(io%input, task_list_params, iostat=iostat)
-  call io%namelist_warning ('task_list_params', iostat)
-  write (io%namelist, task_list_params)
+  if (first_time) then
+    call io%lock%set ('task_list')
+    if (first_time) then
+      first_time = .false.
+      rewind (io%input)
+      read(io%input, task_list_params, iostat=iostat)
+      call io%namelist_warning ('task_list_params', iostat)
+      write (io%namelist, task_list_params)
+      io%job_seconds = job_seconds
+      timer%dead_mans_hand = dead_mans_hand
+      call mulligan%init
+      call offload%init
+      offload%task_list => self
+      if (check_memory .and. omp%nthreads > 1) then
+        call io%warning ('task_list_t%init: check_memory requires single core, turning off')
+        check_memory = .false.
+      end if
+    end if
+    call io%lock%unset ('task_list')
+  end if
   if (sync_time > 0.0) &
     self%sync_next = sync_time
   self%sync_time = sync_time
-  io%job_seconds = job_seconds
-  timer%dead_mans_hand = dead_mans_hand
   self%verbose = verbose
   self%detailed_timer = detailed_timer
-  call mulligan%init
-  call offload%init
-  offload%task_list => self
+  call self%hash_table%init ()
   call trace_end
 END SUBROUTINE init
+
+!===============================================================================
+!> Deallocate related resources
+!===============================================================================
+SUBROUTINE dealloc (self)
+  class(task_list_t):: self
+  !.............................................................................
+  call self%hash_table%dealloc
+END SUBROUTINE dealloc
 
 !===============================================================================
 !> Initialize the task list, so it is ready to execute
@@ -226,16 +251,21 @@ SUBROUTINE startup (self)
   !call self%init_bdries
   !call self%init_all_nbors
   call self%count_status
+  call timer%toc ('task_list_t: count_status')
   !-----------------------------------------------------------------------------
   ! Note that refine%init is called as part of self%init_levels
   !-----------------------------------------------------------------------------
   call self%init_levels
+  call timer%toc ('task_list_t: init_levels')
   call self%task_mesg_t%init
+  call timer%toc ('task_list_t: task_mesg%init')
   call validate%init
+  call timer%toc ('task_list_t: validate%init')
   task_list => self
   if (check_nbor_consistency) &
     call self%check_nbor_consistency ('startup')
   call load_balance%init (task_list)
+  call timer%toc ('task_list_t: load_balance%init')
   !-----------------------------------------------------------------------------
   ! When restarting, the virtual tasks need to be received and unpacked before
   ! the first guard zone downloads.  We therefore trigger a send of all bndry
@@ -252,6 +282,7 @@ SUBROUTINE startup (self)
   ! prevent boundary tasks from trying to update.
   !-----------------------------------------------------------------------------
   call self%init_queue
+  call timer%toc ('task_list_t: init_queue')
   !-----------------------------------------------------------------------------
   ! Make sure the namelist file is flushed, in case the run is interrupted
   !-----------------------------------------------------------------------------
@@ -261,7 +292,7 @@ SUBROUTINE startup (self)
   !-----------------------------------------------------------------------------
   call os%gb_print (os%gb)
   call mpi%barrier ('self%execute')
-  call tic (time=sec)
+  call timer%tic (time=sec)
 !  call timer%print()
   self%n_tasks = self%na
   call trace%end (itimer)
@@ -273,6 +304,7 @@ END SUBROUTINE startup
 SUBROUTINE init_queue (self)
   class(task_list_t):: self
   class(link_t), pointer:: link
+  integer:: i, i0, i1, i2
   !-----------------------------------------------------------------------------
   call trace%begin ('task_list_t%init_queue')
   link => self%head
@@ -280,13 +312,39 @@ SUBROUTINE init_queue (self)
     call link%task%clear(bits%ready)
     if (link%task%is_set(bits%virtual)) then
       link%task%wc_last = wallclock()
-    else
-      call self%check_ready (link)
     end if
     if (self%sync_time > 0.0) &
       link%task%sync_time = link%task%time + self%sync_time
     link => link%next
   end do
+  !-----------------------------------------------------------------------------
+  ! Run check_ready on the task list, but normally exit on first success
+  !-----------------------------------------------------------------------------
+  if (check_queue) then
+    i2 = self%n/omp%nthreads + 1
+    !$omp parallel private(i,i0,i1,link) &
+    !$omp          shared(self,i2) default(none)
+    i0 = omp%thread*i2
+    i1 = i0 + i2
+    i = 0
+    link => self%head
+    do while (associated(link))
+      i = i+1                                             ! increment counter
+      if (i >= i0 .and. i<i1) then                        ! thread interval
+        call self%check_ready (link)
+      end if
+      link => link%next
+    end do
+    !$omp end parallel
+  else
+    link => self%head
+    do while (associated(link))
+      call self%check_ready (link)
+      if (self%n > 0) &
+        exit
+      link => link%next
+    end do
+  end if
   if (self%verbose > 0) &
     call self%print_queue_times ('init_queue')
   call trace%end()
@@ -300,12 +358,12 @@ SUBROUTINE execute (self)
   USE omp_timer_mod
   class(task_list_t):: self
   real(8):: sec
-  integer:: dims(4)
+  integer:: dims(4), n
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('task_list_t%execute', itimer=itimer)
   call self%startup
-  call tic (time=sec)
+  call timer%tic (time=sec)
   call timer%print()
   !-----------------------------------------------------------------------------
   ! Loop over tasks
@@ -319,7 +377,8 @@ SUBROUTINE execute (self)
   write (io_unit%log,*) 'thread',omp%thread,' arrived'
   flush (io_unit%log)
   !$omp end parallel
-  call toc ('wall time', timer%n_update, time=sec)
+  n = timer%n_update
+  call timer%toc ('wall time', n, time=sec)
   call mpi%barrier ('end')
   !if (io%master) &
   !  write (io_unit%log,*) 'download_differ % =', 100.*download%n_differ/ &
@@ -424,6 +483,9 @@ SUBROUTINE update (self, head, test)
       call offload%update (task)                    ! add task to offload bunch
     else
       call task%update                              ! update the task
+      if (check_memory) then                        ! check for leaks?
+        call os%memory_info ('task_list%update', 1) ! only print if increasing
+      end if
     end if
     call mulligan%check (self, head)                ! should nbors do a Mulligan?
     if (self%verbose > 1) then
@@ -465,11 +527,16 @@ SUBROUTINE update (self, head, test)
   if (.not.task%rotated) then
     call task%rotate
   end if
-  if (self%verbose > 0) then
+  !-----------------------------------------------------------------------------
+  ! Clear the ready-bit, to indicate that the task may be checked and queued
+  ! again
+  !-----------------------------------------------------------------------------
+  !.............................................................................
+  if (self%verbose > 0) &
     write (io_unit%log,'(f12.6,1x,a,i6,2f12.6,l4)') &
       wallclock(), 'task_list_t%update: id,time,dtime,B =', &
       task%id, task%time, task%dtime, task%is_set(bits%boundary)
-  end if
+  !.............................................................................
   select type (task)
   class is (experiment_t)
   call validate%check (head, task%mem(:,:,:,task%idx%d,task%it,1), ' after update')
@@ -494,7 +561,8 @@ SUBROUTINE update (self, head, test)
     call load_balance%lock%set ('task_list')
   !call self%update_status (head)
   if (task%is_set(bits%boundary)) then                ! boundary patch?
-    head%task%nq = self%nq                            ! make sure to pass on
+    !!$omp atomic write
+    !head%task%nq = self%nq                            ! make sure to pass on
     call load_balance%check_queue (head)              ! consider load balance
     call self%send_to_vnbors (head)                   ! send to virtual nbors
   end if
@@ -546,9 +614,11 @@ SUBROUTINE update (self, head, test)
     self%syncing = .false.
   end if
   task%sync_time = self%sync_next
-  !$omp atomic
-  timer%levelcost(task%level) = &
-  timer%levelcost(task%level) + (wallclock() - levelstart)
+  if (task%level <= size(timer%levelcost)) then
+    !$omp atomic
+    timer%levelcost(task%level) = &
+    timer%levelcost(task%level) + (wallclock() - levelstart)
+  end if
   !-----------------------------------------------------------------------------
   ! The task should now again be checked, before it can be returned to the
   ! queue, and its neighbors should also be checked for return to the queue.
@@ -557,6 +627,7 @@ SUBROUTINE update (self, head, test)
   ! The busy bit should not be cleared until after check_nbors, in case the
   ! task itself will be rescheduled
   !-----------------------------------------------------------------------------
+  call task%clear (bits%ready)
   if (.not.offload%on) then
     call self%check_nbors (head)
     call task%clear (bits%busy)
@@ -603,7 +674,7 @@ SUBROUTINE end_game (self, task)
     ! Count tasks that have gone past io%end_time with both task%time and
     ! task%out_next, and increment mpi%end_counter until done
     !---------------------------------------------------------------------------
-    if (task%out_next > io%end_time .or. .not.io%do_output) then
+    if (min(task%time,task%out_next) > io%end_time .or. .not.io%do_output) then
       !$omp atomic update
       count = count+1                                 ! count finished tasks
       if (count == self%na) then
@@ -614,6 +685,7 @@ SUBROUTINE end_game (self, task)
       !$omp atomic write
       timer%done = (end_count >= mpi%size)
     end if
+    call task%set (bits%frozen)
     !---------------------------------------------------------------------------
     ! Check dead_mans_hand
     !---------------------------------------------------------------------------
@@ -642,7 +714,7 @@ SUBROUTINE end_game (self, task)
     ! the first_finished clock, increment the task finished count, and when
     ! that reaches the number of active tasks, increment the MPI counter also
     !---------------------------------------------------------------------------
-    !$omp critical (finish_cr)
+    call self%lock%set ('finished')
     task%finished = .true.
     na = self%na
     if (self%na /= na) &
@@ -656,7 +728,7 @@ SUBROUTINE end_game (self, task)
       write (stdlog,'(a,1p,g12.4)') &
         'first finish at run time =', first_finished
     end if
-    !$omp end critical (finish_cr)
+    call self%lock%unset ('finished')
   end if
   !.............................................................................
   if (self%verbose > 0) then
@@ -727,7 +799,7 @@ FUNCTION average (self, idx, time)
       m = task%n
       l = task%li
       u = l + m - 1
-      call task%time_interval (time, jt, pt)
+      call task%time_interval (task, time, jt, pt)
       if (.not.allocated(buffer)) &
         allocate (buffer(m(1),m(2),m(3)))
       buffer = task%mem(l(1):u(1),l(2):u(2),l(3):u(3),idx,jt(1),1)*pt(1) &
@@ -790,17 +862,16 @@ FUNCTION task2experiment (task) RESULT (exper)
 END FUNCTION task2experiment
 
 !===============================================================================
-!> Initialize level statistics, making sure to only do it once.  Note that, by
-!> placing the allocation of levelcost last, threads are encouraged to get
-!> caught on this critical region until everything is ready.
+!> Initialize level statistics, making sure to only do it once.
 !===============================================================================
 SUBROUTINE init_levelstats (self)
   class(task_list_t):: self
   class(link_t), pointer:: link
+  logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
   call trace%begin ('task_list_t%init_levelstats')
-  !$omp critical (levelstat_cr)
-  if (.not. allocated(timer%levelcost)) then
+  call io%lock%set ('task_list_t%init_levelstats')
+  if (first_time) then
     allocate (timer%levelpop  (refine%levelmin:refine%levelmax))
     timer%levelmin = refine%levelmin
     timer%levelmax = refine%levelmax
@@ -815,8 +886,9 @@ SUBROUTINE init_levelstats (self)
     end do
     allocate (timer%levelcost(refine%levelmin:refine%levelmax))
     timer%levelcost = 0d0
+    first_time = .false.
   end if
-  !$omp end critical (levelstat_cr)
+  call io%lock%unset ('task_list_t%init_levelstats')
   call trace%end()
 END SUBROUTINE init_levelstats
 

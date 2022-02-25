@@ -17,6 +17,7 @@ MODULE link_mod
   USE omp_timer_mod
   USE omp_lock_mod
   USE timer_mod
+  USE shared_mod
   implicit none
   private
   type, public:: nbor_t
@@ -77,7 +78,7 @@ MODULE link_mod
     procedure, nopass:: garbage_remove
     procedure:: delete
     procedure:: sort_nbors_by_level
-    procedure:: reset_status
+    procedure:: reset
     procedure:: needs_to_add
     procedure:: add_nbor
     procedure:: nbor_inconsistency
@@ -257,10 +258,22 @@ SUBROUTINE add_nbor (self, link, nbors, nbor, added, by_quality, by_rank)
   !-----------------------------------------------------------------------------
   call link%alloc_nbor (nbor_l)
   !-----------------------------------------------------------------------------
-  ! FIXME: Consider this carefully!
+  ! Consider this carefully!
+  ! From Andrius: please consult me before changing this.
   !-----------------------------------------------------------------------------
-  call self%task%nbor_relations (nbor_l%task, nbor_l%needed, nbor_l%needs_me, &
+  !call self%task%nbor_relations (nbor_l%task, nbor_l%needed, nbor_l%needs_me, &
+  !                               nbor_l%download)
+  call self%check_nbor_relations(nbor_l%task, nbor_l%needed, nbor_l%needs_me, & 
                                  nbor_l%download)
+  if (.not. nbor_l%needed   .and. &
+      .not. nbor_l%needs_me .and. &
+      .not. nbor_l%download) then
+    deallocate(nbor_l)
+    call link%lock%unset('add_nbor')
+    call trace%end(itimer)
+    if (present(added)) added=.false.
+    return
+  end if
   !.............................................................................
   if (verbose > 1) &
     write (io_unit%mpi,'(f12.6,i4,i6,2x,a,i4,2x,a)') wallclock(), omp%thread, &
@@ -310,11 +323,10 @@ SUBROUTINE add_nbor (self, link, nbors, nbor, added, by_quality, by_rank)
   end do
   if (ok) then
     !---------------------------------------------------------------------------
-    ! This task has the highest quality / level, so append it
+    ! Found a place to insert, it link it in
     !---------------------------------------------------------------------------
     if (associated(prev)) then
       prev%next => nbor_l
-      nullify (nbor_l%next)
     else
       !-------------------------------------------------------------------------
       ! If prev is not associated, this is the first nbor
@@ -355,16 +367,17 @@ END SUBROUTINE alloc_nbor
 
 !===============================================================================
 !===============================================================================
-SUBROUTINE check_nbor_relations(self, nbor, needed, needs_me, download)
-  class(link_t):: self, nbor
+SUBROUTINE check_nbor_relations(self, nbtask, needed, needs_me, download)
+  class(link_t):: self
+  class(task_t), pointer:: nbtask
   logical:: needed, needs_me, download
   !.............................................................................
   logical:: my_needed, my_needs_me, my_download
   logical:: nb_needed, nb_needs_me, nb_download
   !-----------------------------------------------------------------------------
   call trace%begin ('link_t%check_nbor_relations')
-  call self%task%nbor_relations(nbor%task,my_needed,my_needs_me,my_download)
-  call nbor%task%nbor_relations(self%task,nb_needed,nb_needs_me,nb_download)
+  call self%task%nbor_relations(nbtask,my_needed,my_needs_me,my_download)
+  call nbtask%nbor_relations(self%task,nb_needed,nb_needs_me,nb_download)
   needed   = (my_needed   .or. nb_needs_me)
   needs_me = (my_needs_me .or. nb_needed)
   download = my_download
@@ -414,6 +427,7 @@ SUBROUTINE remove_nbor (self, this, nbor_list)
     write (io_unit%log,*) 'link_t%remove_nbor: ', this%id, &
       ' from nbor list of', self%task%id
   !.............................................................................
+                                              call self%lock%set ('remove_nbor')
   nullify (prev)
   failed = .true.
   nbor => nbor_list
@@ -436,6 +450,7 @@ SUBROUTINE remove_nbor (self, this, nbor_list)
     prev => nbor
     nbor => next
   end do
+                                            call self%lock%unset ('remove_nbor')
   if (failed) then
     write (io_unit%log,*) &
       'link_t%remove_nbor: WARNING, could not find task', this%id
@@ -453,7 +468,7 @@ SUBROUTINE remove_from_nbors (self, this)
   !.............................................................................
   call trace_begin ('link_t%remove_from_nbors', 2)
   call self%lock%set ('remove_from_nbors')
-  write (stderr,*) 'link_t%remove_from:nbors is DEPRECATED'
+  !write (stderr,*) 'link_t%remove_from:nbors is DEPRECATED'
   nbor => self%nbor
   do while (associated(nbor))
     call nbor%link%remove_nbor (this%task, nbor%link%nbor)
@@ -558,10 +573,11 @@ SUBROUTINE copy_nbor_list (self, old_head, new_head)
     new%link => nbor%link
     !$omp atomic update
     nbor%task%n_needed = nbor%task%n_needed + 1
-    if (verbose > 2) &
+    if (verbose > 2) then
       write (io_unit%mpi,'(f12.6,i4,i6,2x,a,i5,2x,a)') wallclock(), omp%thread, &
       nbor%task%id, 'needed by', nbor%task%n_needed, 'copy_nb_list'
-    flush (io_unit%mpi)
+      flush (io_unit%mpi)
+    end if
     !---------------------------------------------------------------------------
     ! If the new list is empty the new link becomes the first one, and if not,
     ! it becomes the next one after the last one
@@ -611,18 +627,20 @@ END SUBROUTINE log_nbors
 !===============================================================================
 !> Print a list of nbors to io_unit%mpi
 !===============================================================================
-SUBROUTINE print_nbors (self, label, verbose)
+SUBROUTINE print_nbors (self, label, verbose, unit)
   class (link_t):: self
   character(len=*), optional:: label
-  integer, optional:: verbose
+  integer, optional:: verbose, unit
   class(nbor_t) , pointer:: nbor
-  integer:: idmax
+  integer:: idmax, unit_L
   character(len=16):: fmt
   !.............................................................................
-  if (present(label)) write (io_unit%output,'(a)',advance='no') label
-  write (io_unit%output, '(i6,l1," nbors:")',advance='no') &
+  if (present(label)) write (io_unit%output,'(a,$)') label
+  unit_L = shared%option (unit, stdout)
+  write (unit_L, '(i6,l1," nbors:",$)') &
     self%task%id, self%task%is_set (bits%ready)
   idmax = 0
+  idmax = 1
   nbor => self%nbor
   do while (associated(nbor))
     idmax = max(idmax, nbor%task%id)
@@ -632,13 +650,11 @@ SUBROUTINE print_nbors (self, label, verbose)
   write (fmt, '("(i",i1,",2l1,$)")') idmax
   nbor => self%nbor
   do while (associated(nbor))
-    write (io_unit%output,fmt) nbor%task%id, nbor%download, &
+    write (unit_L,fmt) nbor%task%id, nbor%download, &
       nbor%task%is_ahead_of(self%task)
-    if (.not.associated(nbor%link)) &
-! print *, 'link_t%print_nbors: WARNING, nbor%link not associated for task', nbor%task%id
     nbor => nbor%next
   end do
-  write (io_unit%output,*) ''
+  write (unit_L,*) ''
 END SUBROUTINE print_nbors
 
 !===============================================================================
@@ -651,7 +667,6 @@ SUBROUTINE garbage_collect (link)
   !class(nbor_t), pointer:: nbor
   !.............................................................................
   call trace%begin ('link_t%garbage_collect')
-  flush (io_unit%mpi)
   !-----------------------------------------------------------------------------
   ! Immediately decrement the n_needed of the task, corresponding to the pending
   ! deletion, and also reduce the n_needed of nbors and nbors_by_level, and remove
@@ -839,10 +854,11 @@ contains
     new%link => nbor%link
     !$omp atomic update
     nbor%task%n_needed = nbor%task%n_needed + 1
-    if (verbose > 1) &
+    if (verbose > 1) then
       write (io_unit%mpi,'(f12.6,i4,i6,2x,a,i4,2x,a)') wallclock(), omp%thread, &
       nbor%task%id, 'needed by', nbor%task%n_needed, 'sort_by_level'
-    flush (io_unit%mpi)
+      flush (io_unit%mpi)
+    end if
     new%next => find
     if (associated(prev)) then
       prev%next => new
@@ -894,8 +910,9 @@ END SUBROUTINE sort_nbors_by_level
 !===============================================================================
 !> Reset the status bits and flags on a linked task and an nbor list
 !===============================================================================
-SUBROUTINE reset_status (self, nbor_list, check)
+SUBROUTINE reset (self, nbor_list, check)
   class(link_t):: self
+  class(link_t), pointer:: nblink
   class(nbor_t), pointer:: nbor_list
   logical, optional:: check
   !.............................................................................
@@ -924,8 +941,13 @@ SUBROUTINE reset_status (self, nbor_list, check)
     if (present(check)) then
       flags(:,1) = [nb%needed, nb%needs_me, nb%download]
     end if
-    call self%check_nbor_relations(nb%link,nb%needed, nb%needs_me, nb%download)
-    !call self%task%nbor_relations (nb%task, nb%needed, nb%needs_me, nb%download)
+    nblink => nb%link
+    nblink%task => nb%task
+    if (.not.associated(nb%link)) then
+      write (stderr,*) mpi%rank, 'nb%link not associated'
+      call io%abort ('nb%link not associated')
+    end if
+    call self%check_nbor_relations(nblink%task,nb%needed, nb%needs_me, nb%download)
     if (present(check)) then
       flags(:,2) = [nb%needed, nb%needs_me, nb%download]
       if (.not.all(flags(:,2) .eqv. flags(:,1))) then
@@ -937,6 +959,7 @@ SUBROUTINE reset_status (self, nbor_list, check)
     end if
     nb => nb%next
   end do
+  !.............................................................................
   if (verbose > 1) then
     write(io_unit%log,'(a,i6,i4,3x,3l1)') &
       'reset_status: task, rank, IBV =', self%task%id, self%task%rank, &
@@ -945,7 +968,7 @@ SUBROUTINE reset_status (self, nbor_list, check)
       self%task%is_set(bits%virtual)
   end if
   call trace%end ()
-END SUBROUTINE reset_status
+END SUBROUTINE reset
 
 !===============================================================================
 !> First, check if there is relation between self and and nbor link.  If so,
@@ -959,7 +982,7 @@ LOGICAL FUNCTION needs_to_add (self, nblink)
   logical:: needed, needs_me, download, done
   !-----------------------------------------------------------------------------
   call trace%begin ('link_t%needs_to_add')
-  call self%check_nbor_relations (nblink%link, needed, needs_me, download)
+  call self%check_nbor_relations (nblink%link%task, needed, needs_me, download)
   if (needed .or. needs_me) then
     needs_to_add = .true.
     nbor => self%nbor
@@ -1005,9 +1028,9 @@ SUBROUTINE nbor_info (self, task)
   real(8):: distance(3)
   !-----------------------------------------------------------------------------
   distance = self%task%distance(task)
-  write(io_unit%mpi,'(3x,a,i6,":",i2.2,i4,2x,3l1,2x,2l1,3x,3f9.3)') &
-    'pa_t%nbor_info: id, rank, level, needed, needs_me, download, BV, pos =', &
-    self%task%id, self%task%level, self%task%rank, self%needed, self%needs_me, &
+  write(io_unit%mpi,'(3x,2a,i6,":",i2.2,i4,2x,3l1,2x,2l1,3x,3f9.3)') &
+    'pa_t%nbor_info: kind,id, rank, level, needed, needs_me, download, BV, pos =', &
+    self%task%kind(1:6),self%task%id, self%task%level, self%task%rank, self%needed, self%needs_me, &
     self%download, self%task%is_set(bits%boundary), &
     self%task%is_set(bits%virtual), distance/ &
     (0.5d0*(task%size+self%task%size))

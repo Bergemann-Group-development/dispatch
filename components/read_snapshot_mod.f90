@@ -17,6 +17,7 @@
 MODULE read_snapshot_mod
   USE io_mod
   USE trace_mod
+  USE timer_mod
   USE task_mod
   USE patch_mod
   USE mesh_mod
@@ -94,10 +95,10 @@ SUBROUTINE read_bifrost_snap (task_list)
   real:: sb(8), sd(8), sc_u, sc_b, minv, maxv
   real(8):: zpos_bot, zpos_top
   real:: ee_top, d_top, d_bot, e_bot, newton_ee
-  real, dimension(:), allocatable, target:: dxm, dxmdn, xm, xmdn
-  real, dimension(:), allocatable, target:: dym, dymdn, ym, ymdn
-  real, dimension(:), allocatable, target:: dzm, dzmdn, zm, zmdn, fl, fldn
-  real, dimension(:,:,:), allocatable:: rbuf, buffer
+  real, dimension(:), pointer, contiguous:: dxm, dxmdn, xm, xmdn
+  real, dimension(:), pointer, contiguous:: dym, dymdn, ym, ymdn
+  real, dimension(:), pointer, contiguous:: dzm, dzmdn, zm, zmdn, fl, fldn
+  real, dimension(:,:,:), pointer, contiguous:: rbuf, buffer
   integer, save:: itimer=0
   integer:: iostat
   logical:: searching
@@ -153,7 +154,6 @@ SUBROUTINE read_bifrost_snap (task_list)
     print *, 'setup dims =', nint(m%b/m%d), nv
     print *, '  box dims =', m%b
   end if
-
   ! periodic extensions
   if (ext>0) then
     do iext=1,ext
@@ -187,7 +187,6 @@ SUBROUTINE read_bifrost_snap (task_list)
     print *, 'nz for max res:', int((zm(mz)-zm(1))/minval(dzm))+1
   end if
   close (io_unit%datain)
-
   if (do_means.and..not.allocated(d_mean)) then
     allocate (d_mean(mz))
     allocate (e_mean(mz))
@@ -197,7 +196,7 @@ SUBROUTINE read_bifrost_snap (task_list)
   ! Allocate a buffer for reading Bifrost legacy snapshots
   !---------------------------------------------------------------------------
   allocate (rbuf(mx,my,mz))
-  if (allocated(rbuf))call io%bits_mem (storage_size (rbuf), mx*my*mz)
+  call io%bits_mem (storage_size (rbuf), mx*my*mz)
   allocate (buffer(mx+ext,my+ext,mz))
   call io%bits_mem (storage_size (buffer), product(shape(buffer)), 'buffer')
   recl = kind(1.0)*mx*my*mz
@@ -339,8 +338,8 @@ SUBROUTINE read_bifrost_snap (task_list)
   close (io_unit%datain)
   call io%bits_mem (-storage_size (buffer), product(shape(buffer)), 'buffer')
   deallocate (buffer)
-  if (allocated(rbuf))call io%bits_mem (-storage_size (rbuf), mx*my*mz)
-  if (allocated(rbuf)) deallocate(rbuf)
+  if (associated(rbuf))call io%bits_mem (-storage_size (rbuf), mx*my*mz)
+  if (associated(rbuf)) deallocate(rbuf)
   !-----------------------------------------------------------------------------
   ! Collect mean values at boundaries
   !-----------------------------------------------------------------------------
@@ -356,17 +355,17 @@ SUBROUTINE read_bifrost_snap (task_list)
         m => patch%mesh
         if (m(3)%lower_boundary.and. .not.bot_set) then
           zpos_bot = m(3)%r(m(3)%li)+m(3)%p
-          d_bot = lagrange%interpolate1d8(zpos_bot,mz,real(zm,8),real(d_mean,8),order=order)
-          e_bot = lagrange%interpolate1d8(zpos_bot,mz,real(zm,8),real(e_mean,8),order=order)
+          d_bot = lagrange%interpolate1d (zpos_bot,real(zm,8),real(d_mean,8),order=order)
+          e_bot = lagrange%interpolate1d (zpos_bot,real(zm,8),real(e_mean,8),order=order)
           bot_set=.true.
         end if
         if (m(3)%upper_boundary.and. .not.top_set) then
           zpos_top = patch%newton%position
-          newton_ee = lagrange%interpolate1d8(zpos_top,mz,real(zm,8),real(e_mean,8),order=order) &
-                    / lagrange%interpolate1d8(zpos_top,mz,real(zm,8),real(d_mean,8),order=order)
+          newton_ee = lagrange%interpolate1d (zpos_top,real(zm,8),real(e_mean,8),order=order) &
+                    / lagrange%interpolate1d (zpos_top,real(zm,8),real(d_mean,8),order=order)
           zpos_top = m(3)%r(m(3)%ui)+m(3)%p 
-          d_top  = lagrange%interpolate1d8(zpos_top,mz,real(zm,8),real(d_mean,8),order=order)
-          ee_top = lagrange%interpolate1d8(zpos_top,mz,real(zm,8),real(e_mean,8),order=order) &
+          d_top  = lagrange%interpolate1d (zpos_top,real(zm,8),real(d_mean,8),order=order)
+          ee_top = lagrange%interpolate1d (zpos_top,real(zm,8),real(e_mean,8),order=order) &
                  / d_top
           top_set=.true.
         end if
@@ -392,12 +391,12 @@ SUBROUTINE read_bifrost_snap (task_list)
           patch%boundaries%e_bot = e_bot
         end if
         if (m(3)%upper_boundary) then
-          patch%newton%ee_top = newton_ee
+          patch%newton%ee0 = newton_ee
           patch%newton%position = zpos_top
           patch%boundaries%ee_top = ee_top
           patch%boundaries%d_top  = d_top
         else
-          patch%newton%ee_top = newton_ee
+          patch%newton%ee0 = newton_ee
           patch%boundaries%ee_top = ee_top
         end if
       end if
@@ -429,16 +428,17 @@ SUBROUTINE read_stagger_snap (task_list)
   integer:: mx, my, mz, nx, ny, nz, nv, ii(9), biv
   real(8):: zpos_top, zpos_bot
   real   :: ee_top, e_bot, d_top, d_bot, newton_ee
-  real, dimension(:), allocatable, target:: dxm, dxmdn, xm, xmdn
-  real, dimension(:), allocatable, target:: dym, dymdn, ym, ymdn
-  real, dimension(:), allocatable, target:: dzm, dzmdn, zm, zmdn, fl, fldn
-  real, dimension(:,:,:), allocatable:: rbuf, buffer
+  real, dimension(:), pointer, contiguous:: dxm, dxmdn, xm, xmdn
+  real, dimension(:), pointer, contiguous:: dym, dymdn, ym, ymdn
+  real, dimension(:), pointer, contiguous:: dzm, dzmdn, zm, zmdn, fl, fldn
+  real, dimension(:,:,:), pointer, contiguous:: rbuf, buffer
   logical:: searching
   logical:: top_set, bot_set
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('read_stagger_snap', itimer=itimer)
   call io%header('read_snapshot_mod: Reading Stagger Code data:')
+  call timer%tic ()
   !-----------------------------------------------------------------------------
   ! Pick up patch info from task_list
   !-----------------------------------------------------------------------------
@@ -516,6 +516,7 @@ SUBROUTINE read_stagger_snap (task_list)
     print *, 'nz for max res:', int((zm(1)-zm(mz))/minval(dzm))+1
   end if
   close (io_unit%datain)
+  call timer%toc ('mesh data')
   !---------------------------------------------------------------------------
   ! Allocate buffers for reading and for transposing to z vertical
   !---------------------------------------------------------------------------
@@ -530,11 +531,23 @@ SUBROUTINE read_stagger_snap (task_list)
   !-----------------------------------------------------------------------------
   ! Read data and swap indices, so z becomes vertical
   !-----------------------------------------------------------------------------
-  ii = [patch%idx%d, patch%idx%py, patch%idx%pz, patch%idx%px, &
-        patch%idx%e, patch%idx%tt, patch%idx%by, patch%idx%bz, patch%idx%bx]
+  if (patch%idx%s>0) then
+    ii = [patch%idx%d, patch%idx%py, patch%idx%pz, patch%idx%px, &
+          patch%idx%s, patch%idx%tt, patch%idx%by, patch%idx%bz, patch%idx%bx]
+          if (io%do_generic) ii(6)=patch%idx%s
+  else
+    ii = [patch%idx%d, patch%idx%py, patch%idx%pz, patch%idx%px, &
+          patch%idx%e, patch%idx%tt, patch%idx%by, patch%idx%bz, patch%idx%bx]
+    if (io%do_generic) ii(6)=patch%idx%e
+  end if
   biv=1
   do iv=1,min(nv,9)
-    if ((iv==6).and.(patch%idx%tt<1)) then
+    if (iv==5 .and. io%do_generic) then
+      if (io%master) print *, 'Generic snapshot. Warning - temperature is at index 6 until snapshot is updated!'
+      if (io%master) print *, 'Skipping internal energy.'
+      biv=biv+1
+    end if
+    if ((iv==6).and.(patch%idx%tt<1).and. .not.io%do_generic) then
       biv = biv+1
       if (io%master .and. verbose > 0) print *, 'skipping temperature', iv
       !cycle
@@ -617,6 +630,7 @@ SUBROUTINE read_stagger_snap (task_list)
       select type(task)
       class is(experiment_t)
         patch => task
+        if (io%do_generic) call patch%allocate_generic()
         if (verbose==4) print *, 'read_stagger_snap spawning task for patch%id =', patch%id
         !-------------------------------------------------------------------------
         ! Spawn OMP tasks to interpolate the patch data
@@ -636,14 +650,15 @@ SUBROUTINE read_stagger_snap (task_list)
     biv = biv+1
   end do
   close (io_unit%datain)
-  if (allocated(buffer)) then
+  if (associated(buffer)) then
     call io%bits_mem (-storage_size (buffer), product(shape(buffer)), 'buffer')
     deallocate (buffer)
   end if
-  if (allocated(rbuf)) then
+  if (associated(rbuf)) then
     call io%bits_mem (-storage_size (rbuf), mx*my*mz)
     deallocate(rbuf)
   end if
+  call timer%toc ('binary data')
   !-----------------------------------------------------------------------------
   ! Collect mean values at boundaries
   !-----------------------------------------------------------------------------
@@ -659,17 +674,17 @@ SUBROUTINE read_stagger_snap (task_list)
         m => patch%mesh
         if (m(3)%lower_boundary.and. .not.(bot_set)) then
           zpos_bot = m(3)%r(m(3)%li)+m(3)%p
-          d_bot = lagrange%interpolate1d8(zpos_bot,mz,real(zm,8),real(d_mean,8),order=order)
-          e_bot = lagrange%interpolate1d8(zpos_bot,mz,real(zm,8),real(e_mean,8),order=order)
+          d_bot = lagrange%interpolate1d (zpos_bot,real(zm,8),real(d_mean,8),order=order)
+          e_bot = lagrange%interpolate1d (zpos_bot,real(zm,8),real(e_mean,8),order=order)
           bot_set=.true.
         end if
         if (m(3)%upper_boundary.and. .not.top_set) then
           zpos_top = patch%newton%position
-          newton_ee = lagrange%interpolate1d8(zpos_top,mz,real(zm,8),real(e_mean,8),order=order) &
-                    / lagrange%interpolate1d8(zpos_top,mz,real(zm,8),real(d_mean,8),order=order)
+          newton_ee = lagrange%interpolate1d (zpos_top,real(zm,8),real(e_mean,8),order=order) &
+                    / lagrange%interpolate1d (zpos_top,real(zm,8),real(d_mean,8),order=order)
           zpos_top = m(3)%r(m(3)%ui)+m(3)%p 
-          d_top  = lagrange%interpolate1d8(zpos_top,mz,real(zm,8),real(d_mean,8),order=order)
-          ee_top = lagrange%interpolate1d8(zpos_top,mz,real(zm,8),real(e_mean,8),order=order) &
+          d_top  = lagrange%interpolate1d (zpos_top,real(zm,8),real(d_mean,8),order=order)
+          ee_top = lagrange%interpolate1d (zpos_top,real(zm,8),real(e_mean,8),order=order) &
                  / d_top
           top_set=.true.
         end if
@@ -695,14 +710,15 @@ SUBROUTINE read_stagger_snap (task_list)
           patch%boundaries%e_bot = e_bot
         end if
         if (m(3)%upper_boundary) then
-          patch%newton%ee_top = newton_ee
+          patch%newton%ee0 = newton_ee
           patch%boundaries%ee_top = ee_top
           patch%boundaries%d_top = d_top
         else
-          patch%newton%ee_top = newton_ee
+          patch%newton%ee0 = newton_ee
           patch%boundaries%ee_top = ee_top
         end if
       end if
+      call patch%from_generic()
       !
       if (b0(1) >= -99) patch%mem(:,:,:,patch%idx%bx,1,1) = b0(1)
       if (b0(2) >= -99) patch%mem(:,:,:,patch%idx%by,1,1) = b0(2)
@@ -714,6 +730,7 @@ SUBROUTINE read_stagger_snap (task_list)
   deallocate (xm,ym,zm,xmdn,ymdn,zmdn, fl, fldn)
   if (io%master .and. verbose > 0) &
     print *,'read_stagger_snap finished'
+  call timer%toc ('read_stagger_snap')
   call trace%end(itimer)
 END SUBROUTINE read_stagger_snap
 
@@ -722,11 +739,11 @@ END SUBROUTINE read_stagger_snap
 !===============================================================================
 SUBROUTINE interpolate (iv, patch, buffer, mx, my, mz, xm, ym, zm, xmdn, ymdn, zmdn)
   class(experiment_t), pointer:: patch
-  real, dimension(:,:,:), allocatable:: buffer
+  real, dimension(:,:,:), pointer, contiguous:: buffer, ff
   integer:: iv, mx, my, mz
-  real, dimension(:), allocatable, target:: dxm, dxmdn, xm, xmdn
-  real, dimension(:), allocatable, target:: dym, dymdn, ym, ymdn
-  real, dimension(:), allocatable, target:: dzm, dzmdn, zm, zmdn
+  real, dimension(:), pointer, contiguous:: dxm, dxmdn, xm, xmdn
+  real, dimension(:), pointer, contiguous:: dym, dymdn, ym, ymdn
+  real, dimension(:), pointer, contiguous:: dzm, dzmdn, zm, zmdn
   !.............................................................................
   class(mesh_t), pointer:: m(:), m1, m2, m3
   integer:: nx, ny, nz, o(3)
@@ -751,7 +768,11 @@ SUBROUTINE interpolate (iv, patch, buffer, mx, my, mz, xm, ym, zm, xmdn, ymdn, z
   if (iv==patch%idx%pz.or.iv==patch%idx%bz) zi => zmdn
   xo = modulo(xo-xi(1),xm(mx+ext)-xm(1))
   yo = modulo(yo-yi(1),ym(my+ext)-ym(1))
-  associate (ff => patch%mem(:,:,:,iv,patch%it,1))
+  if (associated(patch%generic)) then
+    ff => patch%generic(:,:,:,iv)
+  else
+    ff => patch%mem(:,:,:,iv,patch%it,1)
+  end if
   if (order==-2) then
     call lagrange%trilinear3d (xi, yi, zi, buffer, &
                                xo, yo, zo, ff, order)
@@ -775,7 +796,6 @@ SUBROUTINE interpolate (iv, patch, buffer, mx, my, mz, xm, ym, zm, xmdn, ymdn, z
         minval(buffer), maxval(buffer), &
         minval(    ff), maxval(    ff)
   end if
-  end associate
   deallocate (xo, yo, zo)
 END SUBROUTINE
 
@@ -784,15 +804,15 @@ END SUBROUTINE
 !===============================================================================
 SUBROUTINE interpolate_mean (iv, patch, buffer, mx, my, mz, xm, ym, zm, xmdn, ymdn, zmdn)
   class(experiment_t), pointer:: patch
-  real, dimension(:,:,:), allocatable:: buffer
+  real, dimension(:,:,:), pointer, contiguous:: buffer
   integer:: iv, mx, my, mz, iz
   real(8):: zpos
-  real, dimension(:), allocatable, target:: dxm, dxmdn, xm, xmdn
-  real, dimension(:), allocatable, target:: dym, dymdn, ym, ymdn
-  real, dimension(:), allocatable, target:: dzm, dzmdn, zm, zmdn
+  real, dimension(:), pointer, contiguous:: dxm, dxmdn, xm, xmdn
+  real, dimension(:), pointer, contiguous:: dym, dymdn, ym, ymdn
+  real, dimension(:), pointer, contiguous:: dzm, dzmdn, zm, zmdn
   !.............................................................................
   class(mesh_t), pointer:: m(:), m1, m2, m3
-   real, dimension(:,:,:), pointer :: ff
+   real, dimension(:,:,:), pointer, contiguous :: ff
   integer:: nx, ny, nz, o(3)
   real, dimension(:), pointer:: xi, yi, zi, xo, yo, zo, mean_buff
   !-----------------------------------------------------------------------------
@@ -815,7 +835,11 @@ SUBROUTINE interpolate_mean (iv, patch, buffer, mx, my, mz, xm, ym, zm, xmdn, ym
   if (iv==patch%idx%pz.or.iv==patch%idx%bz) zi => zmdn
   xo = modulo(xo-xi(1),xm(mx+ext)-xm(1))
   yo = modulo(yo-yi(1),ym(my+ext)-ym(1))
-  ff => patch%mem(:,:,:,iv,patch%it,1)
+  if (associated(patch%generic)) then
+    ff => patch%generic(:,:,:,iv)
+  else
+    ff => patch%mem(:,:,:,iv,patch%it,1)
+  end if
   if (iv==patch%idx%pz.or.iv==patch%idx%py.or.iv==patch%idx%px) then
     ff(:,:,:) = 0.0
   else
@@ -824,7 +848,7 @@ SUBROUTINE interpolate_mean (iv, patch, buffer, mx, my, mz, xm, ym, zm, xmdn, ym
     end do
     do iz = 1, nz
       zpos = m3%r(iz)+m3%p + m3%h(iv)*m3%d
-      ff(:,:,iz) = lagrange%interpolate1d8(zpos,mz,real(zi,8),real(mean_buff,8),order=2)
+      ff(:,:,iz) = lagrange%interpolate1d (zpos,real(zi,8),real(mean_buff,8),order=2)
     end do
   end if
   deallocate (xo, yo, zo, mean_buff)

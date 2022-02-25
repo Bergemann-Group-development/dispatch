@@ -21,18 +21,18 @@ PROGRAM test_eos
   dim = [n,n,n]
   call tic
   call eos%lookup (dim, d=d, ee=ee)
-  call toc ('  void',n**3)
+  call timer%toc ('  void',n**3)
   !$omp barrier
   call tic
   call eos%lookup (dim, d=d, ee=ee, pg=pg)
-  call toc ('    pg',n**3)
+  call timer%toc ('    pg',n**3)
   !$omp barrier
   print *,'using d and ee'
   ni=6
   do i=1,ni
     call tic
     call eos%lookup (dim, d=d, ee=ee, tt=tt, pg=pg, iskip=i)
-    call toc (' tt,pg',n**3)
+    call timer%toc (' tt,pg',n**3)
     !$omp barrier
   end do
   lne = log(ee)
@@ -40,14 +40,14 @@ PROGRAM test_eos
   do i=1,ni
     call tic
     call eos%lookup (dim, d=d, lne=lne, tt=tt, pg=pg, iskip=i)
-    call toc (' tt,pg',n**3)
+    call timer%toc (' tt,pg',n**3)
     !$omp barrier
   end do
   print *,'using lnd and ee'
   do i=1,ni
     call tic
     call eos%lookup (dim, lnd=lnd, ee=ee, tt=tt, pg=pg, iskip=i)
-    call toc (' tt,pg',n**3)
+    call timer%toc (' tt,pg',n**3)
     !$omp barrier
   end do
   lnd = log(d)
@@ -55,14 +55,14 @@ PROGRAM test_eos
   do i=1,ni
     call tic
     call eos%lookup (dim, lnd=lnd, lne=lne, tt=tt, pg=pg, iskip=i)
-    call toc (' tt,pg',n**3)
+    call timer%toc (' tt,pg',n**3)
     !$omp barrier
   end do
   print *,'using lnd and lne'
   do i=1,ni
     call tic
     call eos%lookup (dim, lnd=lnd, lne=lne, tt=tt, pg=pg, iskip=i)
-    call toc (' tt,pg',n**3)
+    call timer%toc (' tt,pg',n**3)
     !$omp barrier
   end do
   !$omp end parallel

@@ -283,7 +283,7 @@ SUBROUTINE dnload_from_same (self, only)
   integer, save:: itimer=0
   ! --------------------------------------------------------------------
   call trace%begin ('data_hub_t%dnload_same',itimer=itimer)
-  call self%source%time_interval (self%target%time, jt, pt)
+  call self%source%time_interval (self%target, self%target%time, jt, pt)
   sl = self%s_l(:,1); su = self%s_u(:,1)
   tl = self%t_l(:,1); tu = self%t_u(:,1)
   if (self%rt_target) then
@@ -415,7 +415,7 @@ SUBROUTINE dnload_from_higher (self, only)
   source => self%source
   target => self%target
   allocate(cube(2,2,2,2))
-  call source%time_interval (target%time, jt, pt)
+  call source%time_interval (target, target%time, jt, pt)
   if (self%rt_target) then
     tl = self%t_l(:,1); tu = self%t_u(:,1)
     do k = tl(3), tu(3)
@@ -639,7 +639,7 @@ SUBROUTINE dnload_from_lower (self, only)
   ! source patch, and have to be retrieved either from the target or from
   ! other nbors.
   ! --------------------------------------------------------------------
-  call source%time_interval (target%time, jt2, pt2)
+  call source%time_interval (target, target%time, jt2, pt2)
   time = target%time
   id = -1
   if (self%rt_target) then
@@ -827,7 +827,7 @@ SUBROUTINE check_in_target (self, pos, iv, time, jt, pt, id, found, scr, rt_scr)
   ! do spatial interpolation.
   ! --------------------------------------------------------------------
     if (id /=target%id) then
-      call target%time_interval (time, jt, pt)
+      call target%time_interval (target, time, jt, pt)
       id = target%id
     end if
     allocate(cube(2,2,2,2))
@@ -903,7 +903,7 @@ SUBROUTINE check_in_nbors (self, pos, iv, time, jt, pt, id, found, scr, rt_scr)
           inside = all(cl>=nbpatch%mesh%li .and. cl<=nbpatch%mesh%ui)
           if (inside) then                                              ! same size, just take the value by temporal interpolation
             if (id /=nbpatch%id) then
-              call nbpatch%time_interval (time, jt, pt)
+              call nbpatch%time_interval (nbpatch, time, jt, pt)
               id = nbpatch%id
             end if
             if(self%rt_target) then
@@ -935,7 +935,7 @@ SUBROUTINE check_in_nbors (self, pos, iv, time, jt, pt, id, found, scr, rt_scr)
           inside = all(cl>=nbpatch%mesh%li .and. cl<=nbpatch%mesh%ui)
           if (inside) then                                              ! different size, spatial and temporal interpolation
             if (id /=nbpatch%id) then
-              call nbpatch%time_interval (time, jt, pt)
+              call nbpatch%time_interval (nbpatch, time, jt, pt)
               id = nbpatch%id
             end if
             allocate(cube(2,2,2,2))

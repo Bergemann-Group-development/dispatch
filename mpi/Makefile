@@ -11,6 +11,6 @@ mpi_comm_mod.o:    mpi_lib.o mpi_mod.o
 mpi_rma_mod.o:     mpi_lib.o mpi_mod.o
 mpi_buffer_mod.o:  mpi_lib.o trace_mod.o
 mpi_counter_mod.o: mpi_lib.o mpi_mod.o io_unit_mod.o omp_timer_mod.o trace_mod.o
-mpi_global_mod.o:  mpi_lib.o mpi_mod.o trace_mod.o
+mpi_global_mod.o:  mpi_lib.o mpi_mod.o trace_mod.o io_mod.o
 mpi_window_mod.o:  mpi_lib.o mpi_mod.o trace_mod.o
 mpi_lib.o:

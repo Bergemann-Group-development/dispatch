@@ -9,7 +9,7 @@ MODULE table_mod
   private
   type, public:: table_t
     integer:: ioformat
-    integer:: i_pg, i_tt, i_ss, i_rk, i_src
+    integer:: i_pg, i_tt, i_ss, i_src, i_ct, i_cs, i_gamma, i_cv, i_kr, i_kp
     integer:: n1, n2, n3
     logical:: first_time=.true.
     logical:: first_print=.true.
@@ -42,10 +42,15 @@ SUBROUTINE init (self, file)
       read (io_unit%data) self%ioformat, self%n1, self%n2, self%n3
       read (io_unit%data) self%x_min, self%x_step
       read (io_unit%data) self%y_min, self%y_step
-      read (io_unit%data) self%i_pg, self%i_tt, self%i_ss, self%i_rk, self%i_src
-      if (io%master) &
-        print '(a,7i4)', ' init_table: i_pg, i_tt, i_ss, i_rk, i_src =', &
-        self%i_pg, self%i_tt, self%i_ss, self%i_rk, self%i_src
+      read (io_unit%data) self%i_pg, self%i_tt, self%i_gamma, self%i_ss, self%i_kr, self%i_kp, self%i_src
+      if (io%master) then
+        print '(a,4i4)', ' init_table: ioformat, n1, n2, nvar =', &
+        self%ioformat, self%n1, self%n2, self%n3
+        print *,' init_table: dmin, dstep =', self%x_min, self%x_step
+        print *,' init_table: emin, estep =', self%y_min, self%y_step
+        print '(a,9i4)', ' items: i_pg, i_tt, i_gamma, i_ss, i_kr, i_kp, i_src =', &
+        self%i_pg, self%i_tt, self%i_gamma,self%i_ss, self%i_kr, self%i_kp, self%i_src
+      end if
       allocate (self%data(self%n1,self%n2,self%n3))
       read (io_unit%data) self%data
       close (io_unit%data)
@@ -54,8 +59,10 @@ SUBROUTINE init (self, file)
       !-------------------------------------------------------------------------
       self%data(:,:,self%i_pg ) = self%data(:,:,self%i_pg )/scaling%p
       self%data(:,:,self%i_tt ) = self%data(:,:,self%i_tt )/scaling%temp
-      if (self%i_rk>0) &
-      self%data(:,:,self%i_rk ) = self%data(:,:,self%i_rk )*scaling%l
+      if (self%i_kr>0) &
+      self%data(:,:,self%i_kr ) = self%data(:,:,self%i_kr )*scaling%l
+      if (self%i_kp>0) &
+      self%data(:,:,self%i_kp ) = self%data(:,:,self%i_kp )*scaling%l
       if (self%i_src>0) &
       self%data(:,:,self%i_src) = self%data(:,:,self%i_src)/(scaling%e/scaling%l**2/scaling%t)
     end if
@@ -72,15 +79,14 @@ END SUBROUTINE init
 !> variable to compute after that takes about 6 ns, and thus the average
 !> for 4 opacities and 4 source functions is about 10/8 + 6 = 7 ns/pt
 !===============================================================================
-SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
+SUBROUTINE lookup (self, dim, lnd, lny, pg, tt, ss, rk, src, gamma)
   class (table_t):: self
   integer:: dim(3)
-  real, dimension(:,:,:), intent(in), pointer, optional :: lnx, x, lny, y
+  real, dimension(:,:,:), intent(in), pointer, optional :: lnd, lny
   real, dimension(:,:,:),                      optional :: pg, tt, ss
   real, dimension(:,:,:,:),                    optional :: src, rk
-  real, optional:: gamma
+  real, optional:: gamma(:,:,:)
   !.............................................................................
-  real, dimension(:,:,:), pointer               :: x_loc, y_loc
   real                                          :: p1, p2, q1, q2
   real, dimension(dim(1),4,size(self%data,3))  :: f
   real, dimension(dim(1),4)                     :: g
@@ -94,39 +100,26 @@ SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
   m1 = self%n1
   m2 = self%n2
   m3 = 0
-  if (present(pg))  m3 = max(m3,self%i_pg)
-  if (present(tt))  m3 = max(m3,self%i_tt)
-  if (present(ss))  m3 = max(m3,self%i_ss)
-  if (present(rk))  m3 = max(m3,self%i_rk +size(rk ,4)-1)
-  if (present(src)) m3 = max(m3,self%i_src+size(src,4)-1)
+  if (present(pg))     m3 = max(m3,self%i_pg)
+  if (present(tt))     m3 = max(m3,self%i_tt)
+  if (present(gamma))  m3 = max(m3,self%i_gamma)
+  if (present(ss))     m3 = max(m3,self%i_ss)
+  if (present(rk))     m3 = max(m3,self%i_kr +size(rk ,4)-1)
+  if (present(src))    m3 = max(m3,self%i_src+size(src,4)-1)
   m0 = self%n3
-  if (present(pg))  m0 = min(m0,self%i_pg)
-  if (present(tt))  m0 = min(m0,self%i_tt)
-  if (present(ss))  m0 = min(m0,self%i_ss)
-  if (present(rk))  m0 = min(m0,self%i_rk +size(rk ,4)-1)
-  if (present(src)) m0 = min(m0,self%i_src+size(src,4)-1)
+  if (present(pg))     m0 = min(m0,self%i_pg)
+  if (present(tt))     m0 = min(m0,self%i_tt)
+  if (present(gamma))  m0 = min(m0,self%i_gamma)
+  if (present(ss))     m0 = min(m0,self%i_ss)
+  if (present(rk))     m0 = min(m0,self%i_kr +size(rk ,4)-1)
+  if (present(src))    m0 = min(m0,self%i_src+size(src,4)-1)
   !-----------------------------------------------------------------------------
   ! Allocate temporary arrays, if necessary to take the log of an input
   !-----------------------------------------------------------------------------
   if (self%first_print) then
     print *,'m0,m3',m0,m3
   end if
-  if (present(lnx)) then
-    x_loc => lnx
-  else if (present(x)) then
-    allocate (x_loc(dim(1),dim(2),dim(3)))
-    x_loc = log(x)
-  else
-    call io%abort ('eos_t: missing 1st argument')
-  end if
-  if (present(lny)) then
-    y_loc => lny
-  else if (present(y)) then
-    allocate (y_loc(dim(1),dim(2),dim(3)))
-    y_loc = log(y)
-  else
-    call io%abort ('eos_t: missing 2nd argument')
-  end if
+
   !-----------------------------------------------------------------------------
   ! Loop over points
   !-----------------------------------------------------------------------------
@@ -138,10 +131,12 @@ SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
     ! Addresses and weights, vectorized
     !-------------------------------------------------------------------------
     do ix=1,dim(1)
-      p1 = 1.+(x_loc(ix,iy,iz)-self%x_min)*cx
-      p2 = 1.+(y_loc(ix,iy,iz)-self%y_min)*cy
+      p1 = 1.+(lnd(ix,iy,iz)-self%x_min)*cx
+      p2 = 1.+(lny(ix,iy,iz)-self%y_min)*cy
       i1(ix) = p1
       i2(ix) = p2
+      if (i1(ix)>m1) print *, 'i1,m1', i1(ix), m1
+      if (i2(ix)>m2) print *, 'i2,m2', i2(ix), m2
       i1(ix) = max(1,min(i1(ix),m1))
       i2(ix) = max(1,min(i2(ix),m2))
       p1 = p1-i1(ix)
@@ -193,13 +188,24 @@ SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
     end if
     !---------------------------------------------------------------------------
     if (present(rk)) then
-      do iv=0,size(rk,4)-1
-        rk(:,iy,iz, iv+1) = &
-           f(:,1,self%i_rk+iv)*g(:,1) &
-         + f(:,2,self%i_rk+iv)*g(:,2) &
-         + f(:,3,self%i_rk+iv)*g(:,3) &
-         + f(:,4,self%i_rk+iv)*g(:,4)
-      end do
+      rk(:,iy,iz, 1) = &
+         f(:,1,self%i_kr)*g(:,1) &
+       + f(:,2,self%i_kr)*g(:,2) &
+       + f(:,3,self%i_kr)*g(:,3) &
+       + f(:,4,self%i_kr)*g(:,4)
+       rk(:,iy,iz, 2) = &
+         f(:,1,self%i_kp)*g(:,1) &
+       + f(:,2,self%i_kp)*g(:,2) &
+       + f(:,3,self%i_kp)*g(:,3) &
+       + f(:,4,self%i_kp)*g(:,4)
+    end if
+    ! --------------------------------------------------------------------------
+    if (present(gamma)) then
+      gamma(:,iy,iz) = &
+         f(:,1,self%i_gamma)*g(:,1) &
+       + f(:,2,self%i_gamma)*g(:,2) &
+       + f(:,3,self%i_gamma)*g(:,3) &
+       + f(:,4,self%i_gamma)*g(:,4)
     end if
     !---------------------------------------------------------------------------
     if (present(src)) then
@@ -220,8 +226,8 @@ SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
     call io%lock%set ('table_t%test')
     if (self%first_print) then
       self%first_print = .false.
-      print *, 'lookup: x_loc =', x_loc(1,1,1)
-      print *, 'lookup: y_loc =', y_loc(1,1,1)
+      print *, 'lookup: x_loc =', lnd(1,1,1)
+      print *, 'lookup: y_loc =', lny(1,1,1)
       if (present(pg)) &
       print *, 'lookup: pg    =', pg(1,1,1)
       if (present(ss)) &
@@ -229,10 +235,6 @@ SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
     end if
     call io%lock%unset ('table_t%test')
   end if
-  !-----------------------------------------------------------------------------
-  ! Deallocate if allocated
-  !-----------------------------------------------------------------------------
-  if (present(x))  deallocate (x_loc)
-  if (present(y))  deallocate (y_loc)
+
 END SUBROUTINE lookup
 END MODULE table_mod

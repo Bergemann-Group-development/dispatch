@@ -118,7 +118,7 @@ SUBROUTINE output (self, patch)
   n = u-l+1
   if (verbose>1) print *, 'output:', patch%id, l, u
   allocate (buf(n(1),n(2),n(3),io%nv))
-  call patch%time_interval (patch%out_next, jt, pt)
+  call patch%time_interval (patch, patch%out_next, jt, pt)
   buf = patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),:,jt(1),1)*pt(1) &
       + patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),:,jt(2),1)*pt(2)
   offset(1:3) = 1 + patch%ipos*patch%ncell
@@ -173,7 +173,7 @@ SUBROUTINE input (self, patch, ok)
     if (all(patch%ncell == 0)) then
       patch%ncell = patch%gn
     end if
-    !call patch%time_interval (patch%out_next, jt, pt)
+    !call patch%time_interval (patch, patch%out_next, jt, pt)
     offset(1:3) = 1 + patch%ipos*patch%ncell
     call self%in (buf, offset)
     patch%mem(    :    ,    :    ,    :    ,:,patch%it,1) = 0.0

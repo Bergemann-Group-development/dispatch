@@ -142,6 +142,7 @@ SUBROUTINE radiation_init (self)
 
   if (self%kind=='angle_rad') then
     call os%allocate(self%Psi, [self%n(1),  self%n(2),  self%n(3),  self%nv])
+    self%Psi = tiny(1.0)
   end if
 END SUBROUTINE radiation_init
 
@@ -188,8 +189,9 @@ END SUBROUTINE radiation_update
 SUBROUTINE Jnu_update (self)
   class(radiation_t) :: self
   class(radiation_t), pointer :: sheep
-  integer :: i
+  integer :: i,j,k,f,s
   real(4), dimension(:,:,:,:), pointer :: Jnu
+  real(4), dimension(:,:,:,:), pointer :: Inu
   real(4), dimension(:,:,:,:,:), allocatable :: opac
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -198,8 +200,17 @@ SUBROUTINE Jnu_update (self)
   Jnu => self%mem(:,:,:,:, self%it, self%i_inu)
   Jnu = 0
 
-  do i=1, size(self%sheep)
-    Jnu = Jnu + self%sheep(i)%wmu * self%sheep(i)%authority_mem(:,:,:,:, self%sheep(i)%it, self%i_inu)
+  do s=1, size(self%sheep)
+    Inu => self%sheep(s)%authority_mem(:,:,:,:, self%sheep(s)%it, self%i_inu)
+    do f=1, self%nv
+    do k=1, self%n(3)
+    do j=1, self%n(2)
+    do i=1, self%n(1)
+      Jnu(i,j,k,f) = Jnu(i,j,k,f) + self%sheep(s)%wmu * Inu(i,j,k,f)
+    end do
+    end do
+    end do
+    end do
   end do
 
   Jnu = Jnu / math%pi4
@@ -382,10 +393,6 @@ SUBROUTINE long_char_update (self)
   self%chi => self%opac%mem(:,:,:,:, self%opac%it, self%opac%i_chi)
   self%Snu => self%opac%mem(:,:,:,:, self%opac%it, self%opac%i_snu)
 
-  !xx => self%opac%authority_mem(:,:,:,:,self%opac%it,self%opac%i_chi)
-  !ss => self%opac%authority_mem(:,:,:,:,self%opac%it,self%opac%i_Snu)
-  !xxup => self%chi(:,:,:self%n(3),:)
-  !ssup => self%Snu(:,:,:self%n(3),:)
   call os%allocate(xx,     shape(self%mem))
   call os%allocate(ss,     shape(self%mem))
   call os%allocate(Psi,    shape(self%authority_mem))
@@ -411,7 +418,7 @@ SUBROUTINE long_char_update (self)
       kernel(1) = (1.0-fpart(1))*(1.0-fpart(2))
       kernel(2) =      fpart(1) *(1.0-fpart(2))
       kernel(3) = (1.0-fpart(1))*     fpart(2) 
-      kernel(4) =      fpart(1) *     fpart(2) 
+      kernel(4) =      fpart(1) *     fpart(2)
 
       call self%interp_long(self%chi(:,:,k,f), xx(:,:,k,f), ipart(1), ipart(2), kernel)
       call self%interp_long(self%Snu(:,:,k,f), ss(:,:,k,f), ipart(1), ipart(2), kernel)
@@ -439,12 +446,12 @@ SUBROUTINE long_char_update (self)
 
   !if (self%verbose>1) then
   !  write(*,'(F5.1, A12, 4(I4), 8(ES15.7))') self%time, 'xxup ssup', self%patch%id, self%i_nu, self%dir, self%i_mu, &
-  !  self%chi(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%fcheck), &
-  !  self%Snu(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%fcheck), &
+  !  self%chi(self%pcheck(1),self%pcheck(2),self%pcheck(3)+1,self%fcheck), &
+  !  self%Snu(self%pcheck(1),self%pcheck(2),self%pcheck(3)+1,self%fcheck), &
   !  xxup(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%fcheck), &
   !  ssup(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%fcheck), &
   !  xxl(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%fcheck), &
-  !  ssl(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%fcheck), self%origin(3)
+  !  ssl(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%fcheck)
   !endif
 
   call os%deallocate(xx)

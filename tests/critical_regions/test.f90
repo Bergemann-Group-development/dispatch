@@ -16,7 +16,7 @@ PROGRAM test
   do i=1,n
     a(i)=i+1
   end do
-  call toc("no omp critical",n)
+  call timer%toc("no omp critical",n)
   !-----------------------------------------------------------------------------
   call tic
   do i=1,n
@@ -24,6 +24,6 @@ PROGRAM test
     a(i)=i+2
     !$omp end critical (test_cr)
   end do
-  call toc("omp critical",n)
+  call timer%toc("omp critical",n)
   !-----------------------------------------------------------------------------
 END PROGRAM

@@ -16,6 +16,7 @@ MODULE solver_mod
   USE vector_ops
   USE validate_mod
   USE eos_mod
+  USE shared_mod
   implicit none
   private
   type, public, extends(mhd_t):: solver_t
@@ -27,30 +28,24 @@ MODULE solver_mod
     procedure:: p2U
     procedure:: U2p
     procedure:: e2E_th
-    procedure:: s2E_th
     procedure:: E_th2e
-    procedure:: E_th2s
     procedure:: e2s
     procedure:: s2e
     procedure:: e2ss
     procedure:: ss2e
     procedure:: log_density => void
     procedure:: log_pressure => void
-    !procedure:: gas_pressure_ngz
+    procedure:: gas_pressure_sub
+    procedure:: gas_pressure_ngz
     !procedure:: cell_gas_pressure
-    !procedure:: gas_pressure
-    !procedure:: gas_temperature
-    !procedure:: gas_temperature_ngz
-    !procedure:: cell_gas_temperature
-    procedure:: velocity_magnitude => void
-    procedure:: magnetic_field_magnitude => void
-    procedure:: grav_potential => void
-    procedure:: apply_heating
-    procedure:: compression_magnitude
-    procedure:: vorticity_magnitude
     procedure:: gas_velocity_vector
     procedure:: gas_velocity_scalar
+    procedure:: compression_magnitude
+    procedure:: vorticity_magnitude
     generic:: gas_velocity => gas_velocity_vector, gas_velocity_scalar
+    procedure:: to_thermal
+    procedure:: from_generic
+    procedure:: to_generic
   end type
   type(solver_t), public:: solver
 CONTAINS
@@ -66,6 +61,7 @@ SUBROUTINE pre_init (self)
     call self%mhd_t%pre_init
     self%pre_initialized = .true.
   end if
+  self%patch_ptr => self
   call trace%end ()
 END SUBROUTINE pre_init
 
@@ -76,8 +72,9 @@ SUBROUTINE init (self)
   class(solver_t) :: self
   !.............................................................................
   call trace%begin ('solver_t%init')
-  call self%pre_init()
-  call self%mhd_t%init                  ! calls self%gpatch_t%init
+  call self%pre_init
+  call self%mhd_t%init
+  call self%from_generic
   call validate%init
   call trace%end ()
 END SUBROUTINE init
@@ -106,143 +103,147 @@ END FUNCTION cast2solver
 SUBROUTINE update (self)
   class(solver_t) :: self
   type(lock_t), pointer:: lock
-  !.............................................................................
-  call trace%begin ('solver_t%update')
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! Make sure %new refers to the next timeslot, and assign pointers
   !-----------------------------------------------------------------------------
-  self%new = 1 + mod(self%it,self%nt)
+  call trace%begin ('solver_t%update', itimer=itimer)
+  !-----------------------------------------------------------------------------
+  ! Proceed, referring everywhere to the %new time slot
+  !-----------------------------------------------------------------------------
   lock => self%mem_lock(self%new)
-  !-----------------------------------------------------------------------------
-  ! As an extra precautioin against extras_mod that lack calls to gpatch_t,
-  ! extra calls are added here -- flags protect against double execution
-  !-----------------------------------------------------------------------------
-  call self%gpatch_t%pre_update
   call self%mhd_t%pre_update
-  associate (d => self%mem(:,:,:,self%idx%d,self%new,1))
-  call validate%check (self, d, 'before update')
   call self%mhd_t%update
-  call validate%check (self, d, ' after update')
-  end associate
-  call self%gpatch_t%post_update
   call self%mhd_t%post_update
-  call trace%end()
+  !-----------------------------------------------------------------------------
+  call trace%end (itimer)
 END SUBROUTINE update
 
 !===============================================================================
 !> Get velocities from momenta
 !===============================================================================
-SUBROUTINE p2U(self, U, it)
+SUBROUTINE p2U(self, U, it, linear)
   class(solver_t) :: self
-  real, dimension(:,:,:,:), pointer:: U
+  real, dimension(:,:,:,:), pointer, contiguous:: U
   integer:: it
-  !.............................................................................
-  real, dimension(:,:,:,:), allocatable:: dd
-  !-----------------------------------------------------------------------------
+  logical, optional:: linear
+  !.....................................................................
+  real, pointer, contiguous:: dd(:,:,:,:), d1(:,:,:)
+  integer:: i, i3, i4
+  integer, save:: itimer=0
+  !---------------------------------------------------------------------
+  call trace%begin ('solver_t%p2U', itimer=itimer)
   associate(d => self%mem(:,:,:,self%idx%d,           it,1), &
             p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1))
-  allocate(dd(size(d,1),size(d,2),size(d,3),3))
+  allocate (dd, mold=p)
+  allocate (d1, mold=d)
   if (self%kind(1:13) == 'stagger2e_pic') then
-    dd=up(log(d))
-    U = p/exp(dd)
+    d1 = log(d)
+    dd = up(d1)
+    do i4=1,3
+      do i3=1,self%gn(3)
+        U(:,:,i3,i4) = p(:,:,i3,i4)/exp(dd(:,:,i3,i4))
+      end do
+    end do
+  else if (shared%option(linear,.false.)) then
+    dd = down(d)
+    do i4=1,3
+      do i3=1,self%gn(3)
+        U(:,:,i3,i4) = p(:,:,i3,i4)/dd(:,:,i3,i4)
+      end do
+    end do
   else
-    dd=down(log(d))
-    U = p/exp(dd)
+    d1 = log(d)
+    dd=down(d1)
+    do i4=1,3
+      do i3=1,self%gn(3)
+        U(:,:,i3,i4) = p(:,:,i3,i4)/exp(dd(:,:,i3,i4))
+      end do
+    end do
   end if
-  deallocate(dd)
+  deallocate (dd, d1)
   end associate
+  call trace%end (itimer)
 END SUBROUTINE p2U
 
 !=======================================================================
 !> Put velocities to momenta
 !=======================================================================
-SUBROUTINE U2p(self, U, it)
+SUBROUTINE U2p(self, U, it, linear)
   class(solver_t) :: self
   real, dimension(:,:,:,:), pointer:: U
   integer:: it
-  !.............................................................................
-  real, dimension(:,:,:,:), allocatable:: dd
-  !-----------------------------------------------------------------------------
+  logical, optional:: linear
+  !.....................................................................
+  real, pointer, contiguous:: dd(:,:,:,:), d1(:,:,:)
+  integer:: i, i3, i4
+  integer, save:: itimer=0
+  !---------------------------------------------------------------------
+  call trace%begin ('solver_t%U2p', itimer=itimer)
   associate(d => self%mem(:,:,:,self%idx%d           ,it,1), &
             p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1))
-  allocate(dd(size(d,1),size(d,2),size(d,3),3))
+  allocate (dd, mold=U)
+  allocate (d1, mold=d)
   if (self%kind(1:13) == 'stagger2e_pic') then
-    dd=up(log(d))
-    p = U*exp(dd)
+    d1 = log(d)
+    dd = up(d1)
+    do i4=1,3
+      do i3=1,self%gn(3)
+        p(:,:,i3,i4) = U(:,:,i3,i4)*exp(dd(:,:,i3,i4))
+      end do
+    end do
+  else if (shared%option(linear,.false.)) then
+    dd = down(d)
+    do i4=1,3
+      do i3=1,self%gn(3)
+        p(:,:,i3,i4) = U(:,:,i3,i4)*dd(:,:,i3,i4)
+      end do
+    end do
   else
-    dd=down(log(d))
-    p = U*exp(dd)
+    d1 = log(d)
+    dd = down(d1)
+    do i4=1,3
+      do i3=1,self%gn(3)
+        p(:,:,i3,i4) = U(:,:,i3,i4)*exp(dd(:,:,i3,i4))
+      end do
+    end do
   end if
-  deallocate(dd)
+  deallocate (dd, d1)
   end associate
+  call trace%end (itimer)
 END SUBROUTINE U2p
 
-!===============================================================================
+!=======================================================================
 !> Get thermal energy per unit mass from entropy
-!===============================================================================
+!=======================================================================
 SUBROUTINE e2E_th(self, E_th, it)
   class(solver_t) :: self
   integer:: it
-  !.............................................................................
+  !.....................................................................
   real, dimension(:,:,:), pointer:: E_th
   real:: g1
-  !-----------------------------------------------------------------------------
+  !---------------------------------------------------------------------
   associate(d => self%mem(:,:,:,self%idx%d,it,1), &
             e => self%mem(:,:,:,self%idx%e,it,1))
   E_th = e/d
   end associate
 END SUBROUTINE e2E_th
 
-!===============================================================================
-!> Get thermal energy per unit mass from entropy
-!===============================================================================
-SUBROUTINE s2E_th(self, E_th, it)
-  class(solver_t) :: self
-  integer:: it
-  !.............................................................................
-  real, dimension(:,:,:), pointer:: E_th
-  real:: g1
-  !-----------------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%idx%d,it,1), &
-            s => self%mem(:,:,:,self%idx%s,it,1))
-  g1 = eos%gamma-1d0
-  E_th = d**g1*exp(s*g1/d)/g1
-  end associate
-END SUBROUTINE s2E_th
-
-!===============================================================================
+!=======================================================================
 !> Put thermal energy to entropy per unit volume
-!===============================================================================
-SUBROUTINE E_th2e (self, E_th, it)
+!=======================================================================
+SUBROUTINE E_th2e(self, E_th, it)
   class(solver_t) :: self
   integer:: it
-  !.............................................................................
+  !.....................................................................
   real, dimension(:,:,:), pointer:: E_th
   real:: g1
-  !-----------------------------------------------------------------------------
+  !---------------------------------------------------------------------
   associate(d => self%mem(:,:,:,self%idx%d,it,1), &
             e => self%mem(:,:,:,self%idx%e,it,1))
-  g1 = eos%gamma-1d0
   e = d*E_th
   end associate
 END SUBROUTINE E_th2e
-
-!===============================================================================
-!> Put thermal energy to entropy per unit volume
-!===============================================================================
-SUBROUTINE E_th2s (self, E_th, it)
-  class(solver_t) :: self
-  integer:: it
-  !.............................................................................
-  real, dimension(:,:,:), pointer:: E_th
-  real:: g1
-  !-----------------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%idx%d,it,1), &
-            s => self%mem(:,:,:,self%idx%s,it,1))
-  g1 = eos%gamma-1d0
-  s = d*log(E_th*g1/d**g1)/g1
-  end associate
-END SUBROUTINE E_th2s
 
 !===============================================================================
 !> Get entropy per unit volume from energy per unit volume
@@ -255,7 +256,7 @@ SUBROUTINE e2s(self, s, it)
   real:: g1
   !-----------------------------------------------------------------------------
   associate(d => self%mem(:,:,:,self%idx%d,it,1), &
-            e => self%mem(:,:,:,self%idx%e,it,1))
+            e => self%mem(:,:,:,self%idx%s,it,1))
   g1 = eos%gamma-1d0
   s = d*log(e*g1/d**eos%gamma)/g1
   end associate
@@ -272,7 +273,7 @@ SUBROUTINE e2ss(self, ss, it)
   real:: g1
   !-----------------------------------------------------------------------------
   associate(d => self%mem(:,:,:,self%idx%d,it,1), &
-            e => self%mem(:,:,:,self%idx%e,it,1))
+            e => self%mem(:,:,:,self%idx%s,it,1))
   g1 = eos%gamma-1d0
   ss = log(e*g1/d**eos%gamma)/g1
   end associate
@@ -330,20 +331,82 @@ END SUBROUTINE ss2e
 !> temperature from ideal gas law, taking into account that the temperature is
 !> normalised by k_B and mu (so that specific gas constant = 1)
 !===============================================================================
-!FUNCTION gas_temperature (self, lnd, ss) RESULT (tmp)
-!  class(solver_t):: self
-!  real, dimension(:,:,:), pointer:: lnd, ss
-!  real, dimension(self%gn(1),self%gn(2),self%gn(3)):: tmp
-!  !-----------------------------------------------------------------------------
-!  associate (d => self%mem(:,:,:,  1,self%it,1))
-!  tmp = self%gas_pressure()/d
-!  if (io%verbose > 2) then
-!    if (any(tmp<0)) then
-!      call io%abort ("solver_t%gas_temperature: T<0")
-!    end if
-!  end if
-!  end associate
-!END FUNCTION gas_temperature
+!> Subroutine interface to solver-independent gas pressure function
+!===============================================================================
+SUBROUTINE gas_pressure_sub (self, pg)
+  class(solver_t):: self
+  real, dimension(:,:,:), pointer, contiguous:: d, e, pg
+  !-----------------------------------------------------------------------------
+  d  => self%mem(:,:,:,self%idx%d ,self%it,1)
+  e  => self%mem(:,:,:,self%idx%e ,self%it,1)
+  if (eos%gamma==1d0) then
+    pg = d*self%csound**2
+  else
+    call eos%lookup (d=d, e=e, pg=pg)
+  end if
+END SUBROUTINE gas_pressure_sub
+
+!===============================================================================
+FUNCTION gas_pressure_ngz (self) RESULT (pg)
+  class(solver_t):: self
+  real, dimension(self%n(1),self%n(2),self%n(3)):: pg
+  integer :: l(3), u(3)
+  !-----------------------------------------------------------------------------
+  l = self%li; u = self%ui
+  associate (d  => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%d ,self%it,1), &
+             px => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%px,self%it,1), &
+             py => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%py,self%it,1), &
+             pz => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%pz,self%it,1), &
+             bx => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%bx,self%it,1), &
+             by => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%by,self%it,1), &
+             bz => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%bz,self%it,1), &
+             e  => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%e ,self%it,1))
+  if (eos%gamma==1.0) then
+    pg = d(l(1):u(1),l(2):u(2),l(3):u(3))
+  else
+    pg = (eos%gamma-1d0) *e(l(1):u(1),l(2):u(2),l(3):u(3))
+  end if
+  end associate
+END FUNCTION gas_pressure_ngz
+
+!===============================================================================
+!> Subroutine interface to solver-independent gas pressure function
+!===============================================================================
+SUBROUTINE gas_temperature_sub (self, tt)
+  class(solver_t):: self
+  real, dimension(:,:,:), pointer, contiguous:: d, px, py, pz, e, eth, tt
+  real, dimension(:,:,:), pointer, contiguous:: bx, by, bz
+  integer:: m(3)
+  !-----------------------------------------------------------------------------
+  d  => self%mem(:,:,:,self%idx%d ,self%it,1)
+  px => self%mem(:,:,:,self%idx%px,self%it,1)
+  py => self%mem(:,:,:,self%idx%py,self%it,1)
+  pz => self%mem(:,:,:,self%idx%pz,self%it,1)
+  e  => self%mem(:,:,:,self%idx%e ,self%it,1)
+  if (eos%gamma==1d0) then
+    tt = d*self%csound**2
+  else
+    call eos%lookup (d=d, e=e, tt=tt)
+  end if
+END SUBROUTINE gas_temperature_sub
+
+!===============================================================================
+FUNCTION gas_temperature_ngz (self) RESULT (tmp)
+  class(solver_t):: self
+  real, dimension(self%n(1),self%n(2),self%n(3)):: tmp
+  integer :: l(3), u(3)
+  !---------------------------------------------------------------------
+  l = self%li; u = self%ui
+  associate (d => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),  1,self%it,1))
+  tmp = self%gas_pressure_ngz()/d
+
+  if (io%verbose > 2) then
+    if (any(tmp<0)) then
+      error stop "solver_t%gas_temperature: T<0"
+    end if
+  end if
+  end associate
+END FUNCTION gas_temperature_ngz
 
 !===============================================================================
 SUBROUTINE log_density (self, v)
@@ -357,22 +420,27 @@ END SUBROUTINE
 SUBROUTINE log_pressure (self, lnd, ss, v)
   class(solver_t):: self
   real, dimension(:,:,:), pointer:: lnd, ss, v
+  contiguous:: v
   !-----------------------------------------------------------------------------
-  v = log(self%gas_pressure())
+  call self%gas_pressure_sub (v)
+  v = log(v)
 END SUBROUTINE
 
 !===============================================================================
 SUBROUTINE velocity_magnitude (self, v)
   class (solver_t):: self
-  real, dimension(:,:,:), pointer:: v
-  real, dimension(:,:,:,:), pointer:: p
+  real, dimension(:,:,:), pointer:: v, d
+  real, dimension(:,:,:,:), pointer:: p, U,dd
+  integer:: i
   !-----------------------------------------------------------------------------
+  d => self%mem(:,:,:,self%idx%d,self%it,1)
+  dd=down(d)
   p => self%mem(:,:,:,self%idx%px:self%idx%px,self%it,1)
-  if (self%kind(1:13) == 'stagger2e_pic') then
-    v = norm(p/exp(up(log(self%mem(:,:,:,self%id,self%it,1)))))
-  else
-    v = norm(p/exp(down(log(self%mem(:,:,:,self%id,self%it,1)))))
-  end if
+  v = 0.0
+  do i=1,3
+    v(:,:,:) = v(:,:,:) + (p(:,:,:,i)/dd(:,:,:,i))**2
+  end do
+  v = sqrt(v)
 END SUBROUTINE
 
 !===============================================================================
@@ -381,8 +449,12 @@ SUBROUTINE magnetic_field_magnitude (self, v)
   real, dimension(:,:,:), pointer:: v
   real, dimension(:,:,:,:), pointer:: b
   !-----------------------------------------------------------------------------
-  b => self%mem(:,:,:,self%idx%bx:self%idx%bx,self%it,1)
-  v = norm(b)
+  associate (bx => self%mem(:,:,:,self%idx%bx,self%it,1), &
+             by => self%mem(:,:,:,self%idx%by,self%it,1), &
+             bz => self%mem(:,:,:,self%idx%bz,self%it,1))
+  v = xup(bx)**2 + yup(by)**2 + zup(bz)**2
+  v = sqrt(v)
+  end associate
 END SUBROUTINE
 
 !===============================================================================
@@ -554,5 +626,112 @@ SUBROUTINE vorticity_magnitude (self, w)
   deallocate (vx, vy, vz)
   call trace%end (itimer)
 END SUBROUTINE vorticity_magnitude
+
+!===============================================================================
+!> Compute or assign thermal energy
+!===============================================================================
+SUBROUTINE to_thermal (self, it, eth, kind)
+  class(solver_t):: self
+  integer:: it
+  real, contiguous:: eth(:,:,:)
+  character(len=*), optional:: kind
+  !.............................................................................
+  integer:: i1, i2, i3
+  real, pointer, contiguous, dimension(:,:,:):: e
+  !-----------------------------------------------------------------------------
+  call trace%begin ('solver_t%to_thermal')
+  e  => self%mem(:,:,:,self%idx%e ,it,1)
+  eth = e
+  call trace%end ()
+END SUBROUTINE to_thermal
+
+!===============================================================================
+!> Convert from rho,T,p,B to solver-preferred variables
+!===============================================================================
+SUBROUTINE from_generic (self)
+  class(solver_t):: self
+  real(var_k), pointer, dimension(:,:,:):: dm, db, em, Tg, ss
+  integer:: iv, l(3), u(3), ie
+  !-----------------------------------------------------------------------------
+  call trace%begin ('solver_t%from_generic')
+  if (associated(self%generic)) then
+    l = merge (self%mesh%lb, self%mesh%li, io%guard_zones)
+    u = merge (self%mesh%ub, self%mesh%ui, io%guard_zones)
+    ! Density
+    db => self%generic(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%d)
+    dm => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%d,self%it,1)
+    dm = db
+    ! Momentum and magnetic fields
+    do iv=self%idx%px,self%idx%pz
+      self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1) = &
+      self%generic(l(1):u(1),l(2):u(2),l(3):u(3),iv) *dm
+    end do
+    if (self%idx%bx > 0) then
+      do iv=self%idx%bx,self%idx%bz
+        self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1) = &
+        self%generic(l(1):u(1),l(2):u(2),l(3):u(3),iv)
+      end do
+    end if
+    ! Energy or entropy
+    select case(trim(self%etype))
+    case('thermal')
+      Tg => self%generic(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%e)
+      em => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%e,self%it,1)
+      call eos%inverse_lookup (d=dm, v=Tg, name='T', ee=em)
+      em = em*dm
+    case('entropy')
+      Tg => self%generic(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%s)
+      ss => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%s,self%it,1)
+      call eos%inverse_lookup (d=dm, v=Tg, name='T', ss=ss)
+      ss = ss * dm
+    case default
+      call io%abort("unknown etype in solver_mod::from_generic")
+    end select
+  end if
+  call trace%end ()
+END SUBROUTINE from_generic
+
+!===============================================================================
+!> Convert from rho,T,p,B to solver-preferred variables
+!===============================================================================
+SUBROUTINE to_generic (self)
+  class(solver_t):: self
+  real(var_k), pointer, contiguous, dimension(:,:,:):: dm, db, em, Tg, s
+  integer:: iv, l(3), u(3)
+  !-----------------------------------------------------------------------------
+  call trace%begin ('solver_t%to_generic')
+  if (associated(self%generic)) then
+    l = merge (self%mesh%lb, self%mesh%li, io%guard_zones)
+    u = merge (self%mesh%ub, self%mesh%ui, io%guard_zones)
+    ! Density
+    db => self%generic(:,:,:,self%idx%d)
+    dm => self%mem(:,:,:,self%idx%d,self%it,1)
+    em => self%mem(:,:,:,self%idx%e,self%it,1)
+    db = dm
+    ! Momentum and magnetic fields
+    do iv=self%idx%px,self%idx%pz
+      self%generic(:,:,:,iv) = self%mem(:,:,:,iv,self%it,1)
+    end do
+    if (self%idx%bx > 0) then
+      do iv=self%idx%bx,self%idx%bz
+        self%generic(:,:,:,iv) = self%mem(:,:,:,iv,self%it,1)
+      end do
+    end if
+    ! Energy or entropy
+    select case(trim(self%etype))
+    case('thermal')
+      Tg => self%generic(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%e)
+      em => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%e,self%it,1)
+      call eos%lookup (d=db, e=em, tt=Tg)
+    case('entropy')
+      Tg => self%generic(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%s)
+      s  => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%s,self%it,1)
+      call eos%lookup (d=db, s=s, tt=Tg)
+    case default
+      call io%abort("unknown etype in solver_mod::from_generic")
+    end select
+  end if
+  call trace%end ()
+END SUBROUTINE to_generic
 
 END MODULE solver_mod

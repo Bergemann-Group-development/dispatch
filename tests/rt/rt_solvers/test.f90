@@ -364,7 +364,7 @@ SUBROUTINE solve_1st (self)
     packet => packet%next
   end do
   nullify (packet)
-  call toc('solve 1st', product(self%my_rt_data%n)*self%nrun)
+  call timer%toc('solve 1st', product(self%my_rt_data%n)*self%nrun)
   if (detailed_timer) then
     call timer%print
   end if
@@ -489,7 +489,7 @@ SUBROUTINE solve_2nd1 (self)
     packet => packet%next
   end do
   nullify (packet,rtd,cell)
-  call toc('solve 2nd1', product(self%my_rt_data%n)*self%nrun)
+  call timer%toc('solve 2nd1', product(self%my_rt_data%n)*self%nrun)
   if (detailed_timer) then
     call timer%print
   end if
@@ -611,7 +611,7 @@ SUBROUTINE solve_2nd12 (self)
     packet => packet%next
   end do
   nullify (packet,rtd,cell)
-  call toc('solve 2nd1-2', product(self%my_rt_data%n)*self%nrun)
+  call timer%toc('solve 2nd1-2', product(self%my_rt_data%n)*self%nrun)
   if (detailed_timer) then
     call timer%print
   end if
@@ -741,7 +741,7 @@ SUBROUTINE solve_2nd2(self)
     packet => packet%next
   end do
   nullify (packet,rtd,cell)
-  call toc('solve 2nd2', product(self%my_rt_data%n)*self%nrun)
+  call timer%toc('solve 2nd2', product(self%my_rt_data%n)*self%nrun)
   if (detailed_timer) then
     call timer%print
   end if
@@ -878,7 +878,7 @@ SUBROUTINE solve_2nd3 (self)
     packet => packet%next
   end do
   nullify (packet,rtd,cell)
-  call toc('solve 2nd3', product(self%my_rt_data%n)*self%nrun)
+  call timer%toc('solve 2nd3', product(self%my_rt_data%n)*self%nrun)
   if (detailed_timer) then
     call timer%print
   end if
@@ -921,15 +921,15 @@ PROGRAM test
 
   call tic
   call ray_geometry%init(1,l,n)
-  call toc('ray_geometry%init')
+  call timer%toc('ray_geometry%init')
 
   allocate (rt_data)
   call tic
   call rt_data%init(n,nrun)
-  call toc('rt_data%init')
+  call timer%toc('rt_data%init')
   call tic
   call rt_data%set
-  call toc('rt_data%set')
+  call timer%toc('rt_data%set')
 
   allocate (rt_obj_fw, rt_obj_rv)
   rt_obj_fw%rt_type = 2
@@ -944,7 +944,7 @@ PROGRAM test
   call tic
   call rt_obj_fw%init(nrun)
   call rt_obj_rv%init(nrun)
-  call toc('rt_obj_xx%init')
+  call timer%toc('rt_obj_xx%init')
 
   rt_data%q = 0.0
   call rt_obj_fw%solve
@@ -1013,6 +1013,6 @@ PROGRAM test
 
 !END SUBROUTINE test1
 
- !call toc('all', product(n)*nrun)
+ !call timer%toc('all', product(n)*nrun)
 
 END

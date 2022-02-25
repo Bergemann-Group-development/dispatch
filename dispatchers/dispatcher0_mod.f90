@@ -100,14 +100,12 @@ SUBROUTINE execute (self, task_list, test)
   logical:: test
   !.............................................................................
   real(8):: sec
-  integer:: dims(4), nq
+  integer:: dims(4), nq, n
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('dispatcher0_t%execute', itimer=itimer)
   call io%header ('dispatcher0: begin execution:')
-  call task_list%startup
-  call task_list%list_t%info
-  call tic (time=sec)
+  call timer%tic (time=sec)
 !  call timer%print()
   !-----------------------------------------------------------------------------
   ! Loop over tasks
@@ -130,7 +128,8 @@ SUBROUTINE execute (self, task_list, test)
   !$omp end parallel
 !  call timer%print()
   call mpi_mesg%diagnostics(1)
-  call toc ('wall time', timer%n_update, time=sec)
+  n = timer%n_update
+  call timer%toc ('wall time', n, time=sec)
   write (io_unit%mpi,*) 'at mpi%barrier'
   flush (io_unit%mpi)
   call mpi%barrier ('end')
@@ -257,11 +256,11 @@ SUBROUTINE update (self, task_list, test)
     if (omp_pick) then
       do while (associated(head))
         task => head%task
-        if (task%mem_thread==-1) exit
+        if (task%place==-1) exit
         !-----------------------------------------------------------------------
-        ! Skip otherwise good tasks that have bits%busy set -- see below
+        ! Skip otherwise good tasks that have bits%ready set -- see below
         !-----------------------------------------------------------------------
-        if (omp%thread == task%mem_thread .and. task%is_clear(bits%busy)) then
+        if (omp%place == task%place) then
           exit
         end if
         prev => head
@@ -277,21 +276,21 @@ SUBROUTINE update (self, task_list, test)
       end if
     else
       !-------------------------------------------------------------------------
-      ! Skip tasks with bits%busy set. This will generally be tasks that were
-      ! found to be ready to update again by the same thread that did the update
+      ! Skip tasks with bits%ready set. This will generally be tasks that were
+      ! found to be ready to update again by the same place that did the update
       ! -- such tasks will have bits%ready set while they still have unfinished
-      ! work, the end of which is signalled by clearing bits%busy
+      ! work, the end of which is signalled by clearing bits%ready
       !-------------------------------------------------------------------------
       do while (associated(head))
         task => head%task
-        if (task%is_clear(bits%busy)) then
+        if (task%is_clear(bits%ready)) then
           exit
         else
           head => head%next_time
         end if
       end do
     end if
-    if (omp%thread == task%mem_thread) then
+    if (omp%place == task%place) then
       !$omp atomic update
       timer%mem_hit = timer%mem_hit+1
     end if
@@ -336,44 +335,39 @@ SUBROUTINE update (self, task_list, test)
     !---------------------------------------------------------------------------
     already_busy = task%is_set (bits%busy)
     id = task%id
-    if (.not.already_busy) then
-      call task%set (bits%busy)                              ! mark task busy
-      if (associated(prev)) then
-        !print *, omp%thread, 'match'
-        prev%next_time => head%next_time                     ! skip over
+    call task%set (bits%busy)                              ! mark task busy
+    if (associated(prev)) then
+      prev%next_time => head%next_time                     ! skip over
+    else
+      task_list%queue => head%next_time                    ! chop head off
+    end if
+    if (track_active) &
+      call task_list%queue_active (head)
+    !$omp atomic
+    task_list%nq = task_list%nq-1                          ! decrement queue count
+    task%nq = task_list%nq                                 ! for info print
+    if (verbose > 0) then
+      if (track_active) then
+        otask => task_list%active%task
+        time = otask%atime
+        if (time < otime) &
+          write (*,'(a,2(f12.6,i6))') 'TIME ERROR: otime, oid, time, id =', otime, oid, time, otask%id
+        !$omp atomic write
+        otime = time
+        !$omp atomic write
+        oid = otask%id
+        if (omp%master) then
+          write (io_unit%queue,'(f12.6,2i7,2f12.6,2i5)') &
+            wallclock(), task%id, task%istep, task%time, &
+            otask%atime, task_list%nq, task_list%nac
+          flush (io_unit%queue)
+        end if
       else
-        !print *, omp%thread, 'fall back'
-        task_list%queue => head%next_time                    ! chop head off
-      end if
-      call task%clear (bits%ready)                           ! not in queue
-      if (track_active) &
-        call task_list%queue_active (head)
-      !$omp atomic
-      task_list%nq = task_list%nq-1                          ! decrement queue count
-      task%nq = task_list%nq                                 ! for info print
-      if (verbose > 0) then
-        if (track_active) then
-          otask => task_list%active%task
-          time = otask%atime
-          if (time < otime) &
-            write (*,'(a,2(f12.6,i6))') 'TIME ERROR: otime, oid, time, id =', otime, oid, time, otask%id
-          !$omp atomic write
-          otime = time
-          !$omp atomic write
-          oid = otask%id
-          if (omp%master) then
-            write (io_unit%queue,'(f12.6,2i7,2f12.6,2i5)') &
-              wallclock(), task%id, task%istep, task%time, &
-              otask%atime, task_list%nq, task_list%nac
-            flush (io_unit%queue)
-          end if
-        else
-          if (omp%master .and. verbose > 0) then
-            write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,2i6)') &
-              wallclock(), omp%thread, 'take', task%id, task%time, &
-              task%istep, task_list%nq
-            flush (io_unit%queue)
-          end if
+        if (omp%master .and. verbose > 1) then
+          write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,2i6)') &
+            wallclock(), omp%thread, 'take', task%id, task%time, &
+            task%istep, task_list%nq
+          flush (io_unit%queue)
         end if
       end if
     end if
@@ -410,15 +404,12 @@ SUBROUTINE update (self, task_list, test)
       call trace%begin('dispatcher0_t%update(4)', itimer=itimer(i))
     end if
     if (already_busy) then
-      !$omp critical (stderr_cr)
-      write (stdlog,*) mpi%rank,' WARNING: thread', omp%thread, &
-        ' tried to update busy task', task%id
-      write (stderr,'(f12.6,i5,2x,a,i4,1x,a,i6)') &
-        wallclock(), mpi%rank,' WARNING: thread', omp%thread, &
-        'tried to update busy task', task%id
-      !$omp end critical (stderr_cr)
-      call trace%end (itimer(i))
-      return
+      if (verbose > 0) then
+        !$omp critical (stderr_cr)
+        write (stdlog,*) mpi%rank,' WARNING: thread', omp%thread, &
+          ' found task with busy-bit set:', task%id
+        !$omp end critical (stderr_cr)
+      end if
     end if
     call task_list%update (head, test)
     !---------------------------------------------------------------------------
@@ -599,8 +590,9 @@ subroutine stall_handler
         ! task list for ready tasks -- finding such tasks shows that check_nbors()
         ! is not working correctly.
         !-----------------------------------------------------------------------
-        print '(f12.6,i6,2x,a,2i6,f12.6)', now, mpi%rank, &
-          'STALLED:', stalled, n_stalled, now-stall_start
+        if (verbose > 1) &
+          print '(f12.6,i6,2x,a,2i10,f12.6)', now, mpi%rank, &
+            'STALLED:', stalled, n_stalled, now-stall_start
         call task_list%check_all
         if (associated(task_list%queue)) then
           write(stderr,1) mpi%rank, omp%thread, 'check_all', wallclock()

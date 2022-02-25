@@ -81,6 +81,7 @@ MODULE extras_mod
   !USE sink_particles_mod                                               ! sinkp
   !USE pic_mod                                                          ! PIC
   !USE cooling_mod                                                      ! cool
+  !USE non_ideal_mod                                                    ! niMHD
   !-----------------------------------------------------------------------------
   implicit none
   private
@@ -101,11 +102,13 @@ MODULE extras_mod
     !class(trace_particles_t), pointer:: trace_particles                ! tracep
     !real, dimension(:,:,:,:), pointer:: v                              ! tracep
     !type(cooling_t):: cooling                                          ! cool
+    !type(non_ideal_t):: non_ideal_mhd                                  ! niMHD
   contains
     procedure, nopass:: cast2extras
     procedure:: pre_init
     procedure:: init
     procedure:: init_task_list
+    procedure:: add_to_task_list
     procedure:: dealloc
     procedure:: pre_update
     procedure:: post_update
@@ -140,6 +143,7 @@ SUBROUTINE pre_init (self)
   !allocate (self%trace_particles)                                      ! tracep
   !allocate (self%pic)                                                  ! pic
   !call self%pic%pre_init (self%patch)                                  ! pic
+  !call self%non_ideal_mhd%pre_init (self%gpatch)                       ! niMHD
 END SUBROUTINE pre_init
 
 !===============================================================================
@@ -186,10 +190,21 @@ SUBROUTINE init_task_list (self, task_list)
   ! ----------------------------------------------------------------------------
   ! Optional adds to task list
   ! ----------------------------------------------------------------------------
-  !call self%rt%init_task_list(task_list)                               ! RT
   !call sink_particles%ad_hoc_add                                       ! sink
   call trace%end ()                                                    ! keep
 END SUBROUTINE init_task_list
+
+!===============================================================================
+!> This intercept is the correct place to add underlings to the task list.
+!===============================================================================
+SUBROUTINE add_to_task_list (self, task_list)
+  class(extras_t):: self
+  class(list_t), pointer:: task_list
+  !.............................................................................
+  call trace%begin ('extras_t%add_to_task_list')
+  !if (associated(self%rt)) call self%rt%add_to_task_list(task_list)       ! RT
+  call trace%end ()
+END SUBROUTINE add_to_task_list
 
 !===============================================================================
 !> Deallocate associated arrays

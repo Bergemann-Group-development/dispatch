@@ -40,7 +40,6 @@
 &out_params
  end_time=0.022
  out_time=1e-3
- print_time=0
 /
 
 &aux_params         select='pg'/

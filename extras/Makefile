@@ -3,7 +3,8 @@
 # and if a local solver dependent version is needed, it should be
 # placed in /$(SOLVER)/extra, below the experiment directory
 #
-VPATH := $(TOP)/extras:$(SOLVER)/extras:$(TOP)/solvers/$(SOLVER)/extras:$(VPATH)
+VPATH := $(SOLVER)/extras:$(TOP)/solvers/$(SOLVER)/extras:$(TOP)/solvers/$(SOLVER)/../extras:$(TOP)/extras:$(VPATH)
+#$(info $(VPATH))
 include $(TOP)/extras/heat_conductivity/Makefile
 include $(TOP)/extras/cooling/Makefile
 include $(TOP)/extras/initial_conditions/Makefile
@@ -31,3 +32,5 @@ SNe_mod.o               : io_mod.o dll_mod.o gpatch_mod.o units_mod.o scaling_mo
                           lagrange_mod.o bits_mod.o
 sinks_mod.o             : io_mod.o trace_mod.o gpatch_mod.o scaling_mod.o
 viscosity_mod.o         : io_mod.o trace_mod.o gpatch_mod.o scratch_mod.o
+non_ideal_mod.o         : io_mod.o trace_mod.o link_mod.o gpatch_mod.o
+rad_diffusion_mod.o     : gpatch_mod.o eos_mod.o scratch_mod.o

@@ -63,15 +63,16 @@ v0 = 0.045
  select='pg','pb','jx','jy','jz'
 /
 &bifrost_params             
-loginterpolation=t
-ca_max = 3e2 
-courant=0.2
-max_r=3
-symmetric_e=f
-!     Ca    U    Uv   d     e      E
-!     nu1   nu2  nu3  nu_d  nu_ee  eta3
-!nu=  0.08 , 0.05,  0.3,  0.05,  0.8, 0.5 /
-nu = 0.05, 0.3,0.7,0.05,0.5,0.7
+ loginterpolation=t
+ ca_max = 3e2
+ courant=0.2
+ max_r=3
+ symmetric_e=f
+ !     Ca    U    Uv   d     e      E
+ !     nu1   nu2  nu3  nu_d  nu_ee  eta3
+ !nu=  0.08 , 0.05,  0.3,  0.05,  0.8, 0.5 /
+ nu = 0.05, 0.3,0.7,0.05,0.5,0.7
+/
 
 &dispatcher_params      method=0 /
 &dispatcher3_params     verbose=0 f_over=3 use_taskyield=f use_critical=f /

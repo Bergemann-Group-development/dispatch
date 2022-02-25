@@ -247,7 +247,7 @@ SUBROUTINE test_2nd (nn, f, d)
     d=xdn(f)
     m=m+1
   end do
-  call toc('xdn',m*n**3)
+  call timer%toc('xdn',m*n**3)
   m=0
   wt = wallclock()
   call tic
@@ -255,7 +255,7 @@ SUBROUTINE test_2nd (nn, f, d)
     d=ydn(f)
     m=m+1
   end do
-  call toc('ydn',m*n**3)
+  call timer%toc('ydn',m*n**3)
   m=0
   wt = wallclock()
   call tic
@@ -263,7 +263,7 @@ SUBROUTINE test_2nd (nn, f, d)
     d=zdn(f)
     m=m+1
   end do
-  call toc('zdn',m*n**3)
+  call timer%toc('zdn',m*n**3)
 END SUBROUTINE
 
 SUBROUTINE test_4th (nn, f, d)
@@ -282,7 +282,7 @@ SUBROUTINE test_4th (nn, f, d)
     d=xdn(f)
     m=m+1
   end do
-  call toc('xdn',m*n**3)
+  call timer%toc('xdn',m*n**3)
   m=0
   wt = wallclock()
   call tic
@@ -290,7 +290,7 @@ SUBROUTINE test_4th (nn, f, d)
     d=ydn(f)
     m=m+1
   end do
-  call toc('ydn',m*n**3)
+  call timer%toc('ydn',m*n**3)
   m=0
   wt = wallclock()
   call tic
@@ -298,7 +298,7 @@ SUBROUTINE test_4th (nn, f, d)
     d=zdn(f)
     m=m+1
   end do
-  call toc('zdn',m*n**3)
+  call timer%toc('zdn',m*n**3)
 END SUBROUTINE
 
 SUBROUTINE test_6th (nn, f, d)
@@ -318,7 +318,7 @@ SUBROUTINE test_6th (nn, f, d)
     d=d+xdn(f+m)
     m=m+1
   end do
-  call toc('xdn',m*n**3)
+  call timer%toc('xdn',m*n**3)
   m=0
   wt = wallclock()
   d=0.0
@@ -327,7 +327,7 @@ SUBROUTINE test_6th (nn, f, d)
     d=d+ydn(f+m)
     m=m+1
   end do
-  call toc('ydn',m*n**3)
+  call timer%toc('ydn',m*n**3)
   m=0
   wt = wallclock()
   d=0.0
@@ -336,6 +336,6 @@ SUBROUTINE test_6th (nn, f, d)
     d=d+zdn(f+m)
     m=m+1
   end do
-  call toc('zdn',m*n**3)
+  call timer%toc('zdn',m*n**3)
 END SUBROUTINE
 

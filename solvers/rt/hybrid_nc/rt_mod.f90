@@ -415,8 +415,7 @@ SUBROUTINE update_rt (self)
   !> -------------------------------------------------------------------
   !> Get the source function and rk
   !> -------------------------------------------------------------------
-  call eos%lookup (shape(self%d), x=self%e, y=self%d, &                 ! call the table lookup, ...
-                   rk=self%rk, src=self%src)
+  call eos%lookup (e=self%e, d=self%d, rk=self%rk, src=self%src)
   !> -------------------------------------------------------------------
   !> Combine scattering mean <Q> with thermal source part
   !> -------------------------------------------------------------------
@@ -1364,7 +1363,7 @@ SUBROUTINE output_legacy_rt (self, experiment_name)
   write (io%data_unit,'(a)') trim(self%opacity)
   write (io%data_unit,'(1p,2e18.10,6(2x,3e18.10)1x,1x,2e10.3)') time, self%dtime, &
         self%position, self%ds, self%velocity, self%llc_nat, self%llc_cart, &
-        self%mesh%centre_nat, self%quality, self%gamma
+        self%mesh%centre_nat, self%quality, eos%gamma
   write (io%data_unit,'(6(3i10.1,2x),3i2.1,1x,1i2.1,i3)') int(self%box/self%ds+0.5), &
         u-l+1, self%li, self%ui, self%n, self%gn, self%ng, 3, self%level
   write (io%data_unit,'(3(1i8.1,1x),i2.1)') self%id, self%iout, self%istep, self%mesh_type

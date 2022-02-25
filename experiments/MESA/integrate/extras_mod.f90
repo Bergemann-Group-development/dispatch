@@ -12,11 +12,11 @@
 !>                      /    \
 !>                     /      \
 !>                extras_1_t extras_2_t
-!>                       \    /   |
-!>                      gpatch_t  |
-!>                       patch_t  |
-!>                       /    \   |
-!>                    task_t  connect_t
+!>                       \    /
+!>                      gpatch_t
+!>                       patch_t
+!>                       /
+!>                    task_t 
 !>
 !> The extra modules needed in an experiment should be chosen and coordinated
 !> in this module, and the ones that are "below" (USEd by) this module should
@@ -79,7 +79,6 @@ MODULE extras_mod
   USE gpatch_mod
   USE patch_mod
   USE list_mod
-  USE connect_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.  
   !-----------------------------------------------------------------------------

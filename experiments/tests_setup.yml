@@ -1,0 +1,64 @@
+---
+enviroments:
+  intel:
+    descption: Intel Parallel Studio 2020
+    setup: |
+      source /etc/profile.d/modules.sh
+      module load Intel_parallel_studio
+      export I_MPI_FABRICS=shm
+      export OMP_NUM_THREADS=1 
+    experiments:
+      blast_bifrost:
+        experiment: blast 
+        dir: experiments/blast
+        solver: stagger2/bifrost
+        compiler: intel
+        tests:
+          no_1:
+            descption: compilation only
+            lvl: 0
+      blast_hlld:
+        experiment: blast 
+        dir: experiments/blast
+        solver: ramses/hlld_eos
+        compiler: intel
+        tests:
+          no_1:
+            descption: compilation only
+            lvl: 0
+      rt_shadow_hlls:
+        experiment: rt_shadow
+        dir: experiments/rt_shadow_bench 
+        solver: ramses/hlls
+        compiler: intel
+        tests: 
+          no_1:
+            descption: compilation only
+            lvl: 0 
+  gnu:
+    descption: OpenMPI 4.1.1 + GNU GCC 10.2
+    setup: |
+      source /etc/profile.d/modules.sh
+      source /opt/rh/devtoolset-10/enable 
+      module load use.own openmpi/gnu/4.1.1
+    experiments:
+      blast_bifrost:
+        experiment: blast
+        dir: experiments/blast
+        solver: stagger2/bifrost
+        compiler: gfort10
+        tests:
+          no_1:
+            descption: compilation only
+            lvl: 0  
+      rt_shadow_hlls:
+        experiment: rt_shadow
+        dir: experiments/rt_shadow_bench 
+        solver: ramses/hlls
+        compiler: gfort10
+        tests: 
+          no_1:
+            descption: compilation only
+            lvl: 0 
+  
+

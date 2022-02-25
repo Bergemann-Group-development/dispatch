@@ -1,0 +1,90 @@
+================================================================================
+ MPI implementation only provides support for MPI calls in one thread at a time
+ copying data/params.nml to data/restart.nml
+        1107  lines copied
+ This version was compiled with default real KIND = 4
+ ================================= io_t%init ====================================
+ n_sockets =   1
+   n_cores =   6
+ n_threads =   1
+  n_places =   0
+   n_ranks =   1
+ reading parameters from: input.nml
+ output directory: data/
+ ============================== scaling_t%init ==================================
+ -------------------------------- scaling_mod ---------------------------------
+  CODE UNITS:   (cgs):
+      length:   1.000E+00
+    velocity:   1.000E+00
+        mass:   1.000E+00
+        time:   1.000E+00
+     density:   1.000E+00
+    pressure:   1.000E+00
+      energy:   1.000E+00
+     gravity:   6.674E-08
+ temperature:   2.423E-08
+ ====================== microphysics/eos/ideal/eos_mod ==========================
+   1.3999999999999999     
+   1.00000000    
+   1.00000000    
+   0.0000000000000000     
+ F
+  0.100000001    
+ number of AMR criteria:   0
+ ============================== restart_t%init ==================================
+ =============== cartesian_t%init: Cartesian patch arrangement ==================
+ AMR levels:  min, max =    7   7
+ number of tasks in task list:      64
+ memory shape:  38  38  38  11   5   1
+ variable indices:   d: 1  p1: 2  p2: 3  p3: 4  e: 5  b1: 6  b2: 7  b3: 8 :
+ patches per process:      64
+ ======================= dispatcher0: begin execution ===========================
+ AMR levels:  min, max =    7   7
+ list_t%check_nbor_consistency: startup
+ time to run check_nbor_consistency:  201. mus,  
+ process memory allocated:   0.734 GB
+   load EB:  3.94 ms,  12.0 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+ Vay push1:  17.2 ms,  52.6 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+ Vay push2:  16.9 ms,  51.8 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+ Vay push3:  17.0 ms,  52.0 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+   load EB:  3.14 ms,  9.61 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+ Vay push1:  16.6 ms,  50.6 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+ Vay push2:  17.3 ms,  52.8 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+ Vay push3:  16.2 ms,  49.5 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+omp_lock_t%set WARNING: lock not initialized, thread =   0
+
+         id lvl thr        time       dtime   cinf      dt_min    dt_max      rho_min    rho_max     cellupd  ntsk   nq  chk  rdy   upd  snd  rcv  unp  snq BV
+upd       1   7   0 0.00000E+00 0.00000E+00   0.00    0.00E+00  0.00E+00    1.000E+00  1.000E+00    0.00E+00    64   63    0   64     1    0    0    0    0 FF
+   load EB:  2.70 ms,  8.26 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+ Vay push1:  17.4 ms,  53.2 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+ Vay push2:  17.4 ms,  53.2 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+ Vay push3:  16.3 ms,  49.8 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+   load EB:  4.48 ms,  13.6 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+ Vay push1:  16.3 ms,  49.8 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+ Vay push2:  16.9 ms,  51.5 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+ Vay push3:  17.2 ms,  52.6 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+   load EB:  2.56 ms,  7.82 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+ Vay push1:  16.9 ms,  51.5 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+ Vay push2:  19.3 ms,  58.9 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+ Vay push3:  17.1 ms,  52.4 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+   load EB:  4.15 ms,  12.6 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+ Vay push1:  16.6 ms,  50.7 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+ Vay push2:  16.9 ms,  51.7 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+ Vay push3:  16.9 ms,  51.6 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+   load EB:  2.98 ms,  9.11 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+ Vay push1:  17.0 ms,  52.1 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+ Vay push2:  17.9 ms,  54.7 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+ Vay push3:  17.2 ms,  52.5 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+   load EB:  3.68 ms,  11.2 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+ Vay push1:  16.7 ms,  51.0 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+ Vay push2:  16.8 ms,  51.2 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+ Vay push3:  17.5 ms,  53.5 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+   load EB:  2.51 ms,  7.66 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+ Vay push1:  19.3 ms,  59.1 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+ Vay push2:  17.6 ms,  53.7 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+ Vay push3:  17.0 ms,  51.9 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+   load EB:  3.39 ms,  10.3 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+ Vay push1:  16.2 ms,  49.4 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+ Vay push2:  16.8 ms,  51.2 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+ Vay push3:  16.5 ms,  50.3 ns/upd,  3.28E+05 updates/process,   1 process,     1 core/process 
+upd      10   7   0 0.00000E+00 0.00000E+00   0.00    0.00E+00  0.00E+00    1.000E+00  1.000E+00    0.00E+00    64   63    0    9     9    0    0    0    0 FF

@@ -1,27 +1,27 @@
+&snapshot_params        verbose=1 flip_z=t force_mean=f extension=1 order=2 b0=0.0,0.0,0.0 
+                        model='stagger'
+                        meshfile='48h5/mhd48h5_733.2.msh'
+                        snapfile='48h5/mhd48h5_733.2.scr' /
 
-&task_list_params       job_seconds=1e6 /
-&task_mesg_params       verbose=0 /
-&mpi_mesg_params        verbose=0 debug=t /
-
-&ic_params              verbose=1 file='48h5' order=1 /
+!&ic_params              verbose=1 file='48h5' order=1 /
 &experiment_params      verbose=0 d_bot=37579.6 e_bot=1.65493e+6 /   ! iy=494, z_bot=20.003
 !experiment_params      verbose=0 d_bot=38949.6 e_bot=1.74062e+6 /   ! iy=499, z_bot=20.394
 
-&rt_params              verbose=0 nt=1 n_mu=2 n_phi=4 n_bin=4 rt_time=0.005
-                        dtau_min=1e-6 dtau_dif=1e3 dtau_max=1e4 grace=0
-                        order=0 dbg_position=2*-0.25 rt_bottom=0.45 /
+&sc_rt_params           verbose=1 on=f /
+&rt_integral_params     /
 &rt_setup_params        verbose=0 n_warmup=0 only_vertical=t /
 
                         ! zm = -0.55, -0.534778, -0.519650, -0.504616, -0.489676, -0.474831
-&cartesian_params       size=2*48,20.5 dims=2*64,32 mpi_dims=8,4,1 origin=0,0,-0.5 omp_init=f fast_nbors=f /
+&cartesian_params       size=2*48,20.5 dims=2*32,16 mpi_dims=1,1,1 origin=0,0,-0.5
+                        periodic=t,t,f /
+&patch_params           do_check_nan=t nt=5 grace=0.1 n=3*32 dt_fixed=-1 /
 
-&io_params              verbose=0 do_trace=f omp_trace=t do_output=t method='parallel' id_debug=0 restart=-1 /
-&patch_params           do_check_nan=t nt=5 grace=0.1 n=2*20,20 no_mans_land=t use_data_hub=f dt_fixed=-1 /
-&out_params             end_time=0.60 out_time=0.05 print_time=0 guard_zones=t /
+&io_params              verbose=0 do_trace=t omp_trace=t do_output=t id_debug=0
+                        end_time=0.60 out_time=0.05 print_time=0 guard_zones=t /
                         !    cs    pa  ofd   mas  kap  eta
 &stagger_params         nu=  0.03, 1.0, 1.0, 0.15, 1.0, 1.0
                         gamma=1.4 eos='tabular' courant=0.15 /
-&eos_params             top='./' tablefile='table.dat' verbose=1 /
+&eos_params             verbose=0 top='./' tablefile='48h5/table.dat' /
 &timestep_params        time_order=2 /
 &ramses_params          /
 
@@ -29,3 +29,7 @@
 &dispatcher_params      method=0 /
 &dispatcher3_params     verbose=0 n_write=5000 f_over=3 master_works=f use_critical=t /
 &download_params        verbose=0 /
+
+&task_list_params       job_seconds=1e6 /
+&task_mesg_params       verbose=0 /
+&mpi_mesg_params        verbose=0 debug=t /

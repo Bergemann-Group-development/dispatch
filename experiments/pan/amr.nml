@@ -6,7 +6,7 @@
                        !dims=3*16 mpi_dims=2,2,4   !    16     8    2048   160  256^3         12
                        !dims=3*32 mpi_dims=4,4,4   !    32    16     16k  3200  512^3          5
                         size=1,1,1 origin=0,0,0 /
-&patch_params           nt=5 grace=0.3 n=3*16 do_check_nan=f
+&patch_params           nt=5 grace=0.3 n=3*32 do_check_nan=f
                         zero_order_extrap=t /
 &task_params            verbose=0 /
 
@@ -22,11 +22,11 @@
 &validate_params        mode='' /
 
 ! --- Refinement and guard zone parameters -------------------------------------
-&refine_params          on=t verbose=0 levelmin=6 levelmax=9
+&refine_params          on=t verbose=0 levelmin=6 levelmax=10
                         min_jeans=16
                         max_vorticity=6
                         max_compress=8 max_compress_level=7
-                        check_interval=1 /
+                        check_interval=5 /
 &halo_params            verbose=0 /
 &guards_params          verbose=0 /
 &intrp_params           verbose=0 /
@@ -36,7 +36,7 @@
 &IC_params              type='turbulence' /
 &force_params           type='turbulence' /
 &turbulence_params      ampl_turb=8 t_turn=0.10 k1=1 k2=2 pk=0.0 seed=5 /
-&IC_turbulence_params   b0=0.1 /
+&IC_turbulence_params   b0=3*0.0 /
 &selfgravity_params     on=f /
 &trace_particle_params  on=f verbose=0 per_cell=1.0 /
 
@@ -50,7 +50,7 @@
 &kdk_params             on=f /
 
 ! --- Framerwork parameters ----------------------------------------------------
-&lock_params            verbose=0 verbose_time=0 log='queue' tasks=t /
+&lock_params            verbose=1 verbose_time=0 log='queue' tasks=t /
 !lock_params            verbose=0 alternate_time=15 verbose_time=0 tasks=t /
 &counters_params        verbose=0 /
 &dispatcher_params      verbose=0 method=0 /

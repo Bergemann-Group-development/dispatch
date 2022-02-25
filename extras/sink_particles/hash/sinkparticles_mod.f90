@@ -101,8 +101,6 @@ MODULE sinkparticles_mod
   USE patch_mod
   USE gpatch_mod
   USE index_mod
-  USE download_mod
-  USE data_hub_mod
   USE link_mod
   USE list_mod
   USE bits_mod

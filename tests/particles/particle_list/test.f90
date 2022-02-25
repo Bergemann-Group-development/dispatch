@@ -72,7 +72,7 @@ PROGRAM test
     end do
     dust => dust%next
   end do
-  call toc ("particle motion", npart*nbin)
+  call timer%toc ("particle motion", npart*nbin)
 
   !-----------------------------------------------------------------------------
   ! Evolve with explicit variables
@@ -96,7 +96,7 @@ PROGRAM test
     end do
     dust => dust%next
   end do
-  call toc ("particle motion", npart*nbin)
+  call timer%toc ("particle motion", npart*nbin)
 
   !-----------------------------------------------------------------------------
   ! Evolve with explicit variables
@@ -114,7 +114,7 @@ PROGRAM test
     dust%p = dust%p + dust%v*dust%dt
     dust => dust%next
   end do
-  call toc ("particle motion", npart*nbin)
+  call timer%toc ("particle motion", npart*nbin)
 
   !-----------------------------------------------------------------------------
   ! Evolve with explicit variables
@@ -132,7 +132,7 @@ PROGRAM test
     dust%p = dust%p + dust%v*dust%dt
     dust => dust%next
   end do
-  call toc ("particle motion", npart*nbin)
+  call timer%toc ("particle motion", npart*nbin)
 END PROGRAM
 
 !===============================================================================

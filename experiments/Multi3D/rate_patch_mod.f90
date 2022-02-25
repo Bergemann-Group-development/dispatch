@@ -16,6 +16,7 @@ module rate_patch_mod
     USE timer_mod
     USE scaling_mod
     USE trace_mod
+    USE os_mod
     !USE mpi_mod
     !USE omp_mod
     !USE omp_timer_mod
@@ -74,9 +75,9 @@ module rate_patch_mod
   !===============================================================================
   SUBROUTINE rate_patch_update (self)
     class(rate_patch_t) :: self
-    real(4), dimension(:,:,:,:), pointer :: Inu, gamma_ij, gamma_ji, chi_l, chi_c, eta_l, eta_c
-    real(4), dimension(:,:,:,:), allocatable :: Ieff!, eta
-    integer :: fs, fe
+    real(4), dimension(:,:,:,:), pointer :: Inu, gamma_ij, gamma_ji, chi_l, chi_c, eta_l, eta_c, Psi
+    real(4), dimension(:,:,:,:), contiguous, pointer :: Ieff
+    integer :: fs, fe, i,j,k,f
     integer, save:: itimer=0
     !-----------------------------------------------------------------------------
     call self%pre_update()
@@ -90,21 +91,34 @@ module rate_patch_mod
     fe = self%fe
 
     Inu => self%rad%authority_mem(:,:,:,:,self%rad%it,self%rad%i_inu)
+    Psi => self%rad%Psi
 
     chi_c => self%cont_opac%mem(:,:,:,:,self%it,self%cont_opac%i_chi)
     eta_c => self%cont_opac%mem(:,:,:,:,self%it,self%cont_opac%i_eta)
 
     chi_l => self%line_opac%mem(:,:,:,:,self%it,self%line_opac%i_chi)
     eta_l => self%line_opac%mem(:,:,:,:,self%it,self%line_opac%i_eta)
-
-    Ieff = Inu - self%rad%Psi * (eta_c + eta_l)
+    
+    call os%allocate(Ieff, shape(Psi))
+    
+    do f=1, self%rad%nv
+    do k=1, self%n(3)
+    do j=1, self%n(2)
+    do i=1, self%n(1)
+      Ieff(i,j,k,f) = Inu(i,j,k,f) - Psi(i,j,k,f) * (eta_c(i,j,k,f) + eta_l(i,j,k,f))
+    end do
+    end do
+    end do
+    end do
 
     gamma_ij => self%mem(:,:,:,:, self%it, self%i_Gij)
     gamma_ji => self%mem(:,:,:,:, self%it, self%i_Gji)
 
-    call self%atom%add_all_gammas(fs, fe, self%temp, self%vproj, Ieff, self%rad%Psi, &
+    call self%atom%add_all_gammas(fs, fe, self%temp, self%vproj, Ieff, Psi, &
                                   chi_l, chi_c, eta_l, eta_c, gamma_ij, gamma_ji)
   
+
+    call os%deallocate(Ieff)
     call trace%end(itimer)
     if (.not. self%finished) call self%post_update()
   END SUBROUTINE rate_patch_update

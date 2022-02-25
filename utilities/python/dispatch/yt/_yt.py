@@ -69,20 +69,9 @@ def patch(p,copy=False,aux=True):
       'particle_position_y': p_void,
       'particle_position_z': p_void}
     for k,iv in p.idx.dict.items():
-        if p.kind[0:6]=='ramses':
-            k = 'ux' if k=='p1' else k
-            k = 'uy' if k=='p2' else k
-            k = 'uz' if k=='p3' else k
-        elif p.kind[0:8]=='stagger2':
-            k = 'ux' if k=='p1' else k
-            k = 'uy' if k=='p2' else k
-            k = 'uz' if k=='p3' else k
-        elif p.kind[0:4]=='hlld':
-            k = 'ux' if k=='p1' else k
-            k = 'uy' if k=='p2' else k
-            k = 'uz' if k=='p3' else k
-        else: 
-            print (p.kind)
+        k = 'ux' if k=='px' else k
+        k = 'uy' if k=='py' else k
+        k = 'uz' if k=='pz' else k
         key = tr[k] if k in tr.keys() else k
         if iv >= 0:
             dict[key]=p.var(k,copy=copy)#[l[0]:u[0],l[1]:u[1],l[2]:u[2]]
@@ -96,14 +85,17 @@ def patch(p,copy=False,aux=True):
     dict['emag']=p.var('emag')
     return dict
 
-def patches(s,copy=True,aux=True):
+def patches(s,copy=False,aux=True):
     gg=[]
     for p in s.patches:
         gg.append(patch(p,copy=copy,aux=aux))
     return gg
 
 def domain_dimensions(s):
-    return s.cartesian.dims
+    try:
+        return s.cartesian.dims
+    except:
+        return s.cartesian_vb.dims
 
 def magnetic_unit(s):
     return s.units.l**(-0.5)*s.units.m**(0.5)*s.units.t**(-1.0)

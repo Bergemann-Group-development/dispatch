@@ -4,6 +4,7 @@ PROGRAM dispatch
 !> Setup a set of Cartesian patches on a task list, and update until finished
 !|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
   USE io_mod
+  USE omp_mod
   USE mpi_mod
   USE scaling_mod
   USE eos_mod
@@ -11,6 +12,7 @@ PROGRAM dispatch
   USE setup_mod
   USE dispatcher_mod
   !.............................................................................
+  call omp%init
   call mpi%init
   call io%init ('pebble_atmosphere')
   call scaling%init

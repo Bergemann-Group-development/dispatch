@@ -4,11 +4,11 @@ from scipy import interpolate,integrate
 
 import constants as c
 import eos_reader
-reload(eos_reader)
-from eos_reader import table_t
+#reload(eos_reader)
+from eos_reader import table_t,opac_t
 
-# Read table
-t=table_t()
+# Read table. If use kr and kp, nvar=9, with src nvar=10else - nvar=7
+t=table_t(nvar=10)
 t.read_tomida()
 
 # Construct a linear spacing in logU, inside the table range
@@ -17,9 +17,27 @@ logUmax=np.min(t.d[:,t.nt-1,1])
 logU=np.linspace(logUmin,logUmax,num=t.nt)
 t.us=logU
 
+# Add opacities
+opac=opac_t()
+opac.read_opac()
+f1 = interpolate.interp2d(opac.rs, opac.ts, opac.d[:,:,0],kind='cubic')
+f2 = interpolate.interp2d(opac.rs, opac.ts, opac.d[:,:,1],kind='cubic')
+for i in range(t.nr):
+    for j in range(t.nt):
+        t.d[i,j,t.nvar-2]=f1(t.rs[i],t.ts[j])
+        t.d[i,j,t.nvar-1]=f2(t.rs[i],t.ts[j])
+t.vars.append('kr')
+t.vars.append('kp')
+t.add_src()
+
+
+
+
+
 # Add a new table d1, where the 2nd index corresponds to logU
 t.d1=np.copy(t.d)
 for ir in range(t.nr):
+    #print  ('working on id', ir, 'from', t.nr)
     # f1 is logT(logU), based on non-linear logU
     f1=interpolate.interp1d(t.d[ir,:,1],t.ts,kind='cubic')
     t.d1[ir,:,0]=f1(logU)
@@ -35,18 +53,18 @@ for ir in range(t.nr):
 # Test this, at some point ir,it
 it=250
 ir=300
-logT=t.ts[it]; print 'logT =',logT
-logD=t.rs[ir]; print 'logD =',logD
+logT=t.ts[it]; print ('logT =',logT)
+logD=t.rs[ir]; print ('logD =',logD)
 logT2logU=interpolate.interp1d(t.ts,t.d[ir,:,1],kind='cubic')
 logT2logP=interpolate.interp1d(t.ts,t.d[ir,:,0],kind='cubic')
-print 'interpolated in (logT,logD):'
-logU=logT2logU(logT); print 'logU =',logU
-logP=logT2logP(logT); print 'logP =',logP
+print ('interpolated in (logT,logD):')
+logU=logT2logU(logT); print ('logU =',logU)
+logP=logT2logP(logT); print ('logP =',logP)
 logU2logT=interpolate.interp1d(t.us,t.d1[ir,:,0],kind='cubic')
 logU2logP=interpolate.interp1d(t.us,t.d1[ir,:,1],kind='cubic')
-print 'interpolated in (logU,logD):'
-logT=logU2logT(logU); print 'logT =',logT
-logP=logU2logP(logU); print 'logP =',logP
+print ('interpolated in (logU,logD):')
+logT=logU2logT(logU); print ('logT =',logT)
+logP=logU2logP(logU); print ('logP =',logP)
 
 # Integrate dSdlnD_lnU = -P/(k_B*T*D/m_p) to get S[:,0]
 logD=t.rs
@@ -59,7 +77,7 @@ dlnD=np.log(10.0)*dlogD
 S=integrate.cumtrapz(dSdlogD,initial=0.0,dx=dlnD)
 S=S-S[t.nr-1]
 i_s=6
-t.d1[:,0,i]=S
+t.d1[:,0,i_s]=S
 
 # Integrate dSdlnU_lnD = -U/(k_B*T/m_p) to get S[:,:]
 logU=t.us
@@ -68,18 +86,19 @@ dlnU=np.log(10.0)*dlogU
 for ir in range(t.nr):
     logD=t.rs[ir]
     logU2logT=interpolate.interp1d(t.us,t.d1[ir,:,0],kind='cubic',\
-        fill_value='extrapolate')
+                                   fill_value='extrapolate')
     logT=logU2logT(logU)
     dSdlnU=10.**(logU-logT)*c.amu/c.K_B
     S=integrate.cumtrapz(dSdlnU,initial=0.0,dx=dlnU)
     t.d1[ir,:,i_s]=t.d1[ir,0,i_s]+S
-    logT2logU=interpolate.interp1d(t.ts,t.d[ir,:,1],kind='cubic',\
-        fill_value='extrapolate')
-    logU2S=interpolate.interp1d(t.us,t.d1[ir,:,i_s],kind='cubic',\
-        fill_value='extrapolate')
+    logT2logU=interpolate.interp1d(t.ts,t.d[ir,:,1],kind='cubic', \
+                                   fill_value='extrapolate')
+    logU2S=interpolate.interp1d(t.us,t.d1[ir,:,i_s],kind='cubic', \
+                                fill_value='extrapolate')
     logU=logT2logU(t.ts)
     t.d[ir,:,i_s]=logU2S(logU)
-
+t.vars.append('S')
+print ('writing table')
 t.write("e/eos.dat",t.d1)
 
 # Contour plot showing constant entropy
@@ -118,18 +137,18 @@ for ir in range(t.nr):
 # Test this, at some point ir,it
 it=250
 ir=300
-logT=t.ts[it]; print 'logT =',logT
-logD=t.rs[ir]; print 'logD =',logD
+logT=t.ts[it]; print ('logT =',logT)
+logD=t.rs[ir]; print ('logD =',logD)
 logT2S=interpolate.interp1d(t.ts,t.d[ir,:,i_s],kind='cubic')
 logT2logP=interpolate.interp1d(t.ts,t.d[ir,:,0],kind='cubic')
-print 'interpolated in (logT,logD):'
-logP=logT2logP(logT); print 'logP =',logP
-S=logT2S(logT)      ; print 'S    =',S
+print ('interpolated in (logT,logD):')
+logP=logT2logP(logT); print ('logP =',logP)
+S=logT2S(logT)      ; print ('S    =',S)
 
 S2logT=interpolate.interp1d(t.ss,t.d2[ir,:,0],kind='cubic')
 S2logP=interpolate.interp1d(t.ss,t.d2[ir,:,1],kind='cubic')
-print 'interpolated in (S,logD):'
-logT=logU2logT(logU); print 'logT =',logT
-logP=logU2logP(logU); print 'logP =',logP
+print ('interpolated in (S,logD):')
+logT=S2logT(S); print ('logT =',logT)
+logP=S2logP(S); print ('logP =',logP)
 
 t.write("s/eos.dat",t.d2)

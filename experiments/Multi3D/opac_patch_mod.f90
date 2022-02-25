@@ -159,6 +159,8 @@ SUBROUTINE back_opac_update (self, chi, eta)
     eta = 0
     call self%init_composition()
     call self%composition%absorption(nu, chi)
+  elseif (self%iter == self%maxiter-1) then
+    self%time = self%time + (self%master_maxiter - self%iter)*self%dtime
   endif
 
   call self%composition%scattering(nu, Jold, eta)

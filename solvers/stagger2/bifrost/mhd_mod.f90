@@ -15,6 +15,7 @@ MODULE mhd_mod
   USE omp_mod
   USE math_mod
   USE omp_timer_mod
+  USE omp_lock_mod
   USE mpi_mod
   USE mesh_mod
   USE trace_mod
@@ -56,11 +57,8 @@ MODULE mhd_mod
     procedure:: update
     procedure:: output
     procedure:: set_nu
-    procedure:: gas_pressure
-    procedure:: gas_pressure_sub
     procedure :: smooth_loc
     procedure :: cowboy_hat
-    procedure :: to_total_e
     procedure, nopass:: cowboy_hat_1d
     procedure, nopass:: cowboy_hat_2d
     procedure, nopass:: cowboy_hat_3d
@@ -120,7 +118,7 @@ SUBROUTINE pre_init (self)
     read (io%input, bifrost_params)
     write (io%output, bifrost_params)
     write (io%namelist, bifrost_params)
-    call non_ideal%init
+    !call non_ideal%init()
     call divb%init
     call timestep%init
     ! fool-proofing
@@ -172,6 +170,7 @@ SUBROUTINE init (self)
   ! Patch initialization
   !-----------------------------------------------------------------------------
   self%type = 'mhd_t'
+  self%etype = 'thermal'
   call self%extras_t%init
   do i=1,3
     self%mesh(i)%h(self%idx%px+i-1) = -0.5
@@ -202,9 +201,11 @@ SUBROUTINE pde (self)
   class(mhd_t):: self
   !.............................................................................
   real, dimension(:,:,:),   pointer:: d, e, dddt, dedt, lnd_p, d_p, ee_p
+  contiguous                       :: lnd_p, ee_p
   real, dimension(:,:,:),   pointer:: dpdtx, dpdty, dpdtz, dBdtx, dBdty, dBdtz
   real, dimension(:,:,:),   pointer:: Bx, By, Bz, px, py, pz, phi, qr
   real, dimension(:,:,:),   pointer:: Ux, Uy, Uz, Uxc, Uyc, Uzc, pg
+  contiguous                       :: pg
   real, dimension(:,:,:,:), pointer:: p, B, dpdt, dBdt
   real, dimension(:,:,:),   pointer:: Ex, Ey, Ez, Jx, Jy, Jz
   real, dimension(:,:,:),   allocatable, target:: sij, Ca, fudge, lnd, cs, ee, Q, Tij
@@ -275,7 +276,7 @@ SUBROUTINE pde (self)
   ee  = e/d
   ! calculate speed of sound.
   lnd_p => lnd; d_p=>d; ee_p => ee
-  call self%gas_pressure_sub (d_p, lnd_p, ee_p, pg)
+  call eos%lookup(lnd=lnd_p,ee=ee_p,pg=pg,label='mhd')
 
   self%pg => pg
   call self%aux%register ('pg', self%pg)
@@ -664,7 +665,7 @@ SUBROUTINE pde (self)
     dpdty = dpdty + xup(Jz*scr6) - zup(Jx*scr1)
     dpdtz = dpdtz + yup(Jx*scr2) - xup(Jy*scr3)
     !
-    call non_ideal%update (self%gn, dsmin, d, Jx, Jy, Jz, Bx, By, Bz, Q, emf, self%u_max)
+    !call non_ideal%update (self%gn, dsmin, d, Jx, Jy, Jz, Bx, By, Bz, Q, emf, self%u_max)
     dedt = dedt + Q
     !
     dBdt = -curl_up(ds,emf)
@@ -787,7 +788,7 @@ SUBROUTINE pre_update (self)
     e => self%mem(:,:,:,self%idx%e,self%it,1)
     lnd = alog(d)
     ee = e/d
-    call eos%lookup_table (shape(self%tt), lnd=lnd, ee=ee, tt=self%tt, label='mhd')
+    call eos%lookup(lnd=lnd, ee=ee, tt=self%tt, label='mhd')
     deallocate (lnd, ee)
     if (verbose > 0) &
       write(io%output,*) self%id, 'mhd_t%pre_update:  tt =', &
@@ -822,6 +823,7 @@ SUBROUTINE update (self)
   integer, save:: itimer=0
   real(kind=KindScalarVar), dimension(:,:,:,:,:), pointer:: mem
   real(kind=KindScalarVar), pointer:: B(:,:,:,:)
+  type(lock_t), pointer:: lock
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%update',itimer=itimer)
   if (eos%gamma==1d0) then
@@ -850,12 +852,15 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! The call to courant_condition may optionally be interscepted in extras_t
   !-----------------------------------------------------------------------------
+  lock => self%mem_lock(self%new)
+  call lock%set ('update')
   call self%courant_condition
   if (verbose>2) &
     call self%check_density('before timestep')
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh, self%lock)
   call self%check_density(' after timestep')
   call self%counter_update
+  call lock%unset ('update')
   !-----------------------------------------------------------------------------
   call trace%end (itimer)
 END SUBROUTINE update
@@ -887,77 +892,6 @@ SUBROUTINE output (self)
   end if
   call trace%end()
 END SUBROUTINE output
-
-!===============================================================================
-SUBROUTINE gas_pressure_sub (self, d, lnd, ee, pg)
-  class(mhd_t):: self
-  real, dimension(:,:,:):: pg
-  real, dimension(:,:,:),pointer:: d, lnd, ee
-  integer, save:: nprint=1
-  !-----------------------------------------------------------------------------
-  call trace%begin ('mhd_t%gas_pressure_sub')
-  if (trim(self%eos)=='ideal') then
-    if (eos%gamma==1d0) then
-      pg = d*self%csound**2
-    else
-      pg = d*ee*(eos%gamma-1)
-    end if
-  else
-    if (do_temperature) then
-      call eos%lookup_table (shape(d), d=d, ee=ee, pg=pg, tt=self%tt, label='mhd_gp_sub', id=self%id)
-    else
-      call eos%lookup_table (shape(d), d=d, ee=ee, pg=pg, label='mhd_gp_sub2')
-    end if
-    if (verbose > 1 .or. nprint > 0) then
-      nprint = nprint-1
-      write(io%output,*) self%id, 'lookup_table: d =', minval(d), maxval(d)
-      write(io%output,*) self%id, 'lookup_table:  ee =', minval(ee) , maxval(ee)
-      write(io%output,*) self%id, 'lookup_table:  pg =', minval(pg) , maxval(pg)
-      if (do_temperature) &
-        write(io%output,*) self%id, 'lookup_table:  tt =', minval(self%tt), &
-          maxval(self%tt)
-    end if
-  end if
-  call trace%end()
-END SUBROUTINE gas_pressure_sub
-
-!===============================================================================
-FUNCTION gas_pressure (self) result(pg)
-  class(mhd_t):: self
-  real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
-  real, dimension(:,:,:), pointer:: d, lnd, e, ee
-  integer, save:: nprint=1
-  !-----------------------------------------------------------------------------
-  call trace%begin ('mhd_t%gas_pressure_sub')
-  d  => self%mem(:,:,:,self%idx%d ,self%it,1)
-  e  => self%mem(:,:,:,self%idx%e ,self%it,1)
-  call allocate_scalars(self%gn,ee)
-  ee = e/d
-  if (trim(self%eos)=='ideal') then
-    if (eos%gamma==1d0) then
-      pg = d*self%csound**2
-    else
-      pg = d*ee*(eos%gamma-1)
-    end if
-  else
-    if (do_temperature) then
-      call eos%lookup_table (shape(d), d=d, ee=ee, pg=pg, tt=self%tt, label='mhd_gp')
-    else
-      call eos%lookup_table (shape(d), d=d, ee=ee, pg=pg, label='mhd_gp2')
-    end if
-    if (verbose > 1 .or. nprint > 0) then
-      nprint = nprint-1
-      write(io%output,*) self%id, 'lookup_table: lnd =', minval(d), maxval(d)
-      write(io%output,*) self%id, 'lookup_table:  ee =', minval(ee) , maxval(ee)
-      write(io%output,*) self%id, 'lookup_table:  pg =', minval(pg) , maxval(pg)
-      if (do_temperature) &
-        write(io%output,*) self%id, 'lookup_table:  tt =', minval(self%tt), &
-          maxval(self%tt)
-    end if
-  end if
-  call deallocate_scalars(ee)
-  call trace%end()
-END FUNCTION gas_pressure
 
 !> =============================================================================
 !> =============================================================================
@@ -1490,20 +1424,5 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
     call trace%end(itimer=itimer)
 
 END SUBROUTINE nbor_relations
-
-!===============================================================================
-!> For Riemann solvers we need to convert internal energy to total energy
-!===============================================================================
-SUBROUTINE to_total_e(self, it)
-  class(mhd_t):: self
-  integer, dimension(3):: lb, lo, li, ui, uo, ub, n, gn
-  integer:: ix, iy, iz, iz1, i, it
-  real, dimension(:,:,:), pointer:: d, e, px, py, pz
-  real, dimension(:,:,:), pointer:: bx, by, bz, emag
-  real, dimension(:,:,:), pointer:: b1, b2, b3
-  ! ----------------------------------------------------------------------------
-  call io%abort('mhd_t: to_total_e not set up')
-
-END subroutine to_total_e
  
 END MODULE mhd_mod

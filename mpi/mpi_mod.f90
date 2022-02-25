@@ -215,18 +215,18 @@ SUBROUTINE init_mpi (self)
   mpi_master = (mpi_rank == 0)
   master = mpi_master
   if (master) then
-    print 1, '================================================================================'
+    print 1, ' ==============================================================================='
     !print 1, ' MPI initialized, mpi%size =', mpi_size
   1 format(a,i7)
     select case (mpi_provided)
     case(MPI_THREAD_MULTIPLE)
-      print 1, ' MPI implementation provides support for simultaneous MPI calls by different threads'
+      print 1, ' MPI implementation has support for simultaneous MPI calls by different threads'
     case(MPI_THREAD_SINGLE)
-      print 1, ' MPI implementation only provides support for MPI calls in one thread at a time'
+      print 1, ' MPI implementation only has support for MPI calls in one thread at a time'
     case(MPI_THREAD_FUNNELED)
-      print 1, ' MPI implementation only provides support for MPI calls in master regions'
+      print 1, ' MPI implementation only has support for MPI calls in master regions'
     case(MPI_THREAD_SERIALIZED)
-      print 1, ' MPI implementation only provides support for serial MPI calls by any thread'
+      print 1, ' MPI implementation only has support for serial MPI calls by any thread'
     case default
       print 1, ' unknown MPI implementation'
     end select
@@ -348,13 +348,10 @@ SUBROUTINE barrier_mpi (self, label, delay)
     if (present(delay)) then
       call omp%delay (1e3*delay)
     end if
-    if (mpi%mode == MPI_THREAD_MULTIPLE) then
-      call MPI_Barrier (mpi_comm_world, mpi_err)
-    else
-      !$omp critical (mpi_cr)
-      call MPI_Barrier (mpi_comm_world, mpi_err)
-      !$omp end critical (mpi_cr)
-    end if
+    !$omp barrier
+    !$omp single
+    call MPI_Barrier (mpi_comm_world, mpi_err)
+    !$omp end single
   end if
 #endif
 END SUBROUTINE barrier_mpi
@@ -591,12 +588,10 @@ FUNCTION update8 (self, i) RESULT (j)
   call trace%begin ('mpi_counter_t%update', 2)
   !-----------------------------------------------------------------------------
   ! Do NOT make this depend on MPI_THREAD_MULTIPLE -- this really needs a
-  ! critical region and an MPI_LOCK_SHARED window lock, otherwise it does
-  ! not work (no critical region), or locks up (MPI_LOCK_EXCLUSIVE) for large
-  ! numbers of ranks
+  ! critical region and an MPI_LOCK_EXCLUSIVE window lock
   !-----------------------------------------------------------------------------
-  !$omp critical (mpi_cr)
-  call MPI_Win_lock (MPI_LOCK_SHARED, master, 0, self%window, mpi_err)
+  !$omp critical (mpi_upd8_cr)
+  call MPI_Win_lock (MPI_LOCK_EXCLUSIVE, master, 0, self%window, mpi_err)
   call mpi%assert ('MPI_Win_lock', mpi_err)
   call MPI_Get_accumulate (i, 1, MPI_INTEGER8, &
                            k, 1, MPI_INTEGER8, master, offset, &
@@ -604,8 +599,8 @@ FUNCTION update8 (self, i) RESULT (j)
   call mpi%assert ('MPI_Get_accumulate', mpi_err)
   call MPI_Win_unlock (master, self%window, mpi_err)
   call mpi%assert ('MPI_Win_unlock', mpi_err)
-  !$omp end critical (mpi_cr)
   j = k+i
+  !$omp end critical (mpi_upd8_cr)
 #else
   call trace%begin ('mpi_counter_t%update')
   !$omp atomic capture
@@ -635,7 +630,7 @@ FUNCTION update8d (self, i) RESULT (j)
   ! Do NOT make this depend on MPI_THREAD_MULTIPLE -- this really needs a
   ! critical region
   !-----------------------------------------------------------------------------
-  !$omp critical (mpi_cr)
+  !$omp critical (mpi_upd8d_cr)
   call MPI_Win_lock (MPI_LOCK_EXCLUSIVE, master, 0, self%window, mpi_err)
   call mpi%assert ('MPI_Win_lock', mpi_err)
   call MPI_Get_accumulate (i, 1, MPI_REAL8, &
@@ -644,8 +639,8 @@ FUNCTION update8d (self, i) RESULT (j)
   call mpi%assert ('MPI_Get_accumulate', mpi_err)
   call MPI_Win_unlock (master, self%window, mpi_err)
   call mpi%assert ('MPI_Win_unlock', mpi_err)
-  !$omp end critical (mpi_cr)
   j = k+i
+  !$omp end critical (mpi_upd8d_cr)
 #else
   call trace%begin ('mpi_counter_t%update')
   !$omp atomic capture

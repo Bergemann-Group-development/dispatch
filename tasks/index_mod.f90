@@ -159,10 +159,10 @@ SUBROUTINE output (self, unit)
     jx   = self%jx  - 1
     jy   = self%jy  - 1
     jz   = self%jz  - 1
-    !if (io%do_generic) then
-    !  tt = self%e-1
-    !  e  = -1
-    !end if
+    if (io%do_generic) then
+      tt = self%e-1
+      e  = -1
+    end if
     write (unit, idx_nml)
   end if
 END SUBROUTINE output

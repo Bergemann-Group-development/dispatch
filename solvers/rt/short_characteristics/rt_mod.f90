@@ -103,7 +103,6 @@ MODULE rt_mod
     integer:: master_id
 !
     logical                  :: on=.false.                                      ! allows local turn-off
-    logical                  :: vertical_propagation=.false. ! see code
     logical                  :: warmup_done=.false.
     logical                  :: pre_initialized_rt=.false.
     logical                  :: initialized=.false.
@@ -115,13 +114,15 @@ MODULE rt_mod
     real, pointer            :: src(:,:,:,:)                                    ! EOS source function
     real, pointer            :: qr(:,:,:)                                       ! net radiative heating
   contains
+    procedure:: bndries
     procedure:: dealloc                               ! clean deallocate RT
     procedure:: pre_init                              ! read parameters
     procedure:: init                                  ! init RT task
-    procedure:: init_task_list                        ! add to task list
+    procedure:: add_to_task_list                        ! add to task list
     procedure:: needs                                 ! check upstream
     procedure:: is_upstream_of                        ! check upstream
     procedure:: pre_update                            ! pre MHD
+    procedure:: prepare
     procedure:: post_update                           ! post MHD
     procedure:: update                                ! RT task update
     procedure:: rt_eos                                ! EOS for RT
@@ -155,12 +156,11 @@ recursive SUBROUTINE pre_init (self)
   real(8), save:: rt_llc(3)=-huge(1d0)
   real(8), save:: rt_urc(3)=+huge(1d0)
   real(8), save:: rt_timestep=0.01_8
-  logical, save:: vertical_propagation=.false.
   logical, save:: first_time=.true.
   logical, save:: on=.true.
   !-----------------------------------------------------------------------------
   namelist /sc_rt_params/ on, verbose, nt, ng, rt_llc, rt_urc, rt_timestep, &
-    n_mu, n_phi, n_bin, rt_grace, vertical_propagation, n_warmup, courant, cdtd, rt_freq, dnload_mhd
+    n_mu, n_phi, n_bin, rt_grace,  n_warmup, courant, cdtd, rt_freq, dnload_mhd
   !-----------------------------------------------------------------------------
   ! Read parameters
   !-----------------------------------------------------------------------------
@@ -170,6 +170,10 @@ recursive SUBROUTINE pre_init (self)
     first_time = .false.
     rewind (io%input)
     read (io%input, sc_rt_params, iostat=iostat)
+    if (iostat > 0) then
+      rewind (io%input)
+      read (io%input, sc_rt_params)
+    end if
     call io%namelist_warning ('sc_rt_params', iostat)
     write (io%namelist, sc_rt_params)
   end if
@@ -186,6 +190,18 @@ recursive SUBROUTINE pre_init (self)
   self%nw = self%patch%nw
   self%nv = self%patch%nv
   self%ng = self%patch%ng
+  self%size       = self%patch%size
+  self%ipos       = self%patch%ipos
+  self%rank       = self%patch%rank
+  self%box        = self%patch%box
+  self%position   = self%patch%position
+  ! ----------------------------------------------------------------------------
+  ! Provide an unique task ID during initialization. Done only initially, since
+  ! it would collide with normal, unique set of IDs later on.
+  ! ----------------------------------------------------------------------------
+  if (self%patch%istep<1) then
+    call self%task_t%init_unique(same=.true.)
+  end if
   call self%gpatch_t%pre_init()
   self%on = on
   self%nt = nt
@@ -197,7 +213,6 @@ recursive SUBROUTINE pre_init (self)
   self%rt_llc = rt_llc
   self%rt_urc = rt_urc
   self%rt_timestep = rt_timestep
-  self%vertical_propagation = vertical_propagation
   self%n_mu  = n_mu
   self%n_phi = n_phi
   self%courant = courant
@@ -225,7 +240,6 @@ recursive SUBROUTINE pre_init (self)
   !-----------------------------------------------------------------------------
   call self%check_boundaries
   if (self%on) then 
-    call self%task_t%init_unique (same=.true.)                                  ! obtain an unique ID
     !---------------------------------------------------------------------------
     self%type    = 'rt_t'
     if (self%i_omega==0) then
@@ -364,21 +378,22 @@ SUBROUTINE init (self)
   self%dtime    = self%rt_timestep
   self%dt       = self%rt_timestep
   self%time     = p%time - (self%n_warmup-self%grace)*self%dtime
-  self%t        = self%time
   self%qr_time  = self%time - 2.0*self%grace*self%dtime
   ! ----------------------------------------------------------------------------
   ! Set omegaX time to be marginally after omega0, so EOS would be done before
   ! omegaX
   ! ----------------------------------------------------------------------------
   if (self%i_omega/=0) then
-    self%time     = self%time + 2.0*self%grace*self%dtime
+    self%time     = self%time + 1.1*self%grace*self%dtime
   end if
+  self%t        = self%time
   self%iout     = self%restart+1
   self%verbose  = verbose
   ! ----------------------------------------------------------------------------
   ! Do not check density or validate with it. This is rather important to be set
   ! ----------------------------------------------------------------------------
   call self%set (bits%no_density)
+  call self%clear (bits%has_output)
   ! ----------------------------------------------------------------------------
   ! Allocate and set unsigned and pervolume. qr, src and tt are definite
   ! positive, whereas Qr can be positive or negative. omegaX stores just Qr.
@@ -387,15 +402,7 @@ SUBROUTINE init (self)
   ! ----------------------------------------------------------------------------
   allocate (self%unsigned(self%nv), self%pervolume(self%nv))
   self%pervolume = .false.
-  if (self%i_omega==0) then
-    self%unsigned  = .false.
-    self%unsigned(self%nv) = .false.
-    self%pervolume(self%irk(1):self%irk(2))   = .true.
-    self%pervolume(self%isrc(1):self%isrc(2)) = .true.
-    self%pervolume(self%itt)   = .true.
-  else
-    self%unsigned  = .false.
-  end if
+  self%unsigned  = .false.
   ! ----------------------------------------------------------------------------
   ! Init boundary conditions
   ! ----------------------------------------------------------------------------  
@@ -429,11 +436,7 @@ SUBROUTINE update (self)
   !.............................................................................
   class(rt_t), pointer :: omega
   integer:: i_omega, i_bin
-  real, dimension(:,:,:), pointer:: q, mem3, mem4
-  real, dimension(:,:,:,:), pointer:: mem1, mem2
   real(8):: time
-  real::pt(2)
-  integer:: jt(2), ir(2),is(2), itt
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not. self%on) &
@@ -451,6 +454,46 @@ SUBROUTINE update (self)
   ! RT sub-task, solving for the radiation field in a given direction
   !-----------------------------------------------------------------------------
   else
+    call self%solve ()
+    ! --------------------------------------------------------------------------
+    ! Estimate dtime
+    ! --------------------------------------------------------------------------
+    self%u_max     = self%main%u_max
+    self%dt_fixed = self%main%dtime
+    !print *, 'minmax q', minval(self%q), maxval(self%q), self%time, self%main%time
+    !print *, 'minmax rk', minval(self%rk), maxval(self%rk)
+    !print *, 'minmax tt', minval(self%tt)*scaling%temp, maxval(self%tt)*scaling%temp
+    !print *, 'minmax src', minval(self%src), maxval(self%src)
+    ! --------------------------------------------------------------------------
+    ! If there is a limit, how much RT can advance without MHD update
+    ! --------------------------------------------------------------------------
+
+    call self%patch_t%courant_condition
+write (io_unit%log,'(a,2i6,1p,3e11.2,l4,e11.2)') &                          !DEBUG
+'upd: thread,id,time,dtime,rotated =', &                                    !DEBUG
+omp%thread, self%id, self%time, self%dtime, self%dt_fixed, self%rotated, &  !DEBUG
+self%u_max                                                                  !DEBUG
+    ! --------------------------------------------------------------------------
+    ! cleanup
+    ! --------------------------------------------------------------------------
+    deallocate (self%rk, self%src, self%tt)
+  end if
+  call trace%end (itimer)
+END SUBROUTINE update
+
+!===============================================================================
+! Prepare an RT patch to work on BCs.
+!===============================================================================
+SUBROUTINE prepare(self)
+  class(rt_t):: self
+  real, dimension(:,:,:), pointer:: q, mem3, mem4
+  real, dimension(:,:,:,:), pointer:: mem1, mem2
+  integer:: jt(2), ir(2),is(2), itt
+  real::pt(2)
+  integer, save:: itimer=0
+  ! ----------------------------------------------------------------------------
+  call trace%begin ('rt_t%prepare', itimer=itimer)
+  if (self%i_omega /=0) then
     ! --------------------------------------------------------------------------
     ! Allocate RT scratches
     ! --------------------------------------------------------------------------
@@ -460,7 +503,7 @@ SUBROUTINE update (self)
     ! --------------------------------------------------------------------------
     ! get the right time slices for rk, src and temperature
     ! --------------------------------------------------------------------------
-    call self%main%time_interval (self%time, jt, pt, extrap=.true.)
+    call self%main%time_interval (self, self%time, jt, pt, extrap=.true.)
     ! --------------------------------------------------------------------------
     ! get the right time slices for rk, src and temperature
     ! --------------------------------------------------------------------------
@@ -487,31 +530,27 @@ SUBROUTINE update (self)
     ! -------------------------------------------------------------------------- 
     self%q => self%mem(:,:,:,:,self%new,1)
     self%q = self%mem(:,:,:,:,self%it,1)
-    call self%solve ()
-    ! --------------------------------------------------------------------------
-    ! Estimate dtime
-    ! --------------------------------------------------------------------------
-    self%u_max     = self%main%u_max
-    self%dt_fixed = self%main%dtime
-    !print *, 'minmax q', minval(self%q), maxval(self%q), self%time, self%main%time
-    !print *, 'minmax rk', minval(self%rk), maxval(self%rk)
-    !print *, 'minmax src', minval(self%src), maxval(self%src)
-    ! --------------------------------------------------------------------------
-    ! If there is a limit, how much RT can advance without MHD update
-    ! --------------------------------------------------------------------------
-
-    call self%patch_t%courant_condition
-write (io_unit%log,'(a,2i6,1p,3e11.2,l4,e11.2)') &                          !DEBUG
-'upd: thread,id,time,dtime,rotated =', &                                    !DEBUG
-omp%thread, self%id, self%time, self%dtime, self%dt_fixed, self%rotated, &  !DEBUG
-self%u_max                                                                  !DEBUG
-     ! --------------------------------------------------------------------------
-    ! cleanup
-    ! --------------------------------------------------------------------------
-    deallocate (self%rk, self%src, self%tt)
   end if
   call trace%end (itimer)
-END SUBROUTINE update
+END SUBROUTINE prepare
+
+SUBROUTINE bndries(self)
+  class(rt_t):: self
+  ! ----------------------------------------------------------------------------
+  call self%prepare()
+  ! i_omega==0 patches do not need boundaries
+  if (self%i_omega==0) then
+    if (associated(self%filled)) then
+      self%filled = 1
+    end if
+  else
+    call self%boundaries%radiation (mem=self%q, src=self%src, rk=self%rk, &
+                                       tt=self%tt, dir=self%axis, mu=self%rt_hat)
+   ! print *, 'id', self%id
+   !                                    print *, self%src(12,12,:,1)
+  end if
+END SUBROUTINE bndries
+
 
 !===============================================================================
 !> This is called only for MHD tasks, just before they update, with self = main,
@@ -540,16 +579,18 @@ SUBROUTINE pre_update (self)
   ! ----------------------------------------------------------------------------
   ! Check, if new qr has to be collected.
   ! ----------------------------------------------------------------------------
+  call io%assert (associated(self%mesh), 'rt_t%pre_update: mesh not associated')
   l  = self%mesh%lb
   u  = self%mesh%ub
   n  = self%mesh%gn
   allocate(rk(n(1),n(2),n(3),self%n_bin))
   allocate(qr(n(1),n(2),n(3)))
   qr=0.0
-  call self%time_interval(self%patch%time, jt, pt, extrap=.true.)
+  call self%time_interval (self%patch, self%patch%time, jt, pt, extrap=.true.)
   call self%mem_lock(jt(1))%set ('rt_collect')
   if (jt(2) /= jt(1)) &
     call self%mem_lock(jt(2))%set ('rt_collect')
+   ! print *, self%patch%id, jt, pt
   rk = exp(log(self%mem(:,:,:,self%irk(1):self%irk(2),jt(1),1))*pt(1) + &
            log(self%mem(:,:,:,self%irk(1):self%irk(2),jt(2),1))*pt(2))
   call self%mem_lock(jt(1))%unset ('rt_collect')
@@ -557,7 +598,7 @@ SUBROUTINE pre_update (self)
     call self%mem_lock(jt(2))%unset ('rt_collect')
   omega => self%omeg
   do while(associated(omega))
-  call omega%time_interval(self%patch%time,jt,pt, extrap=.true.)
+  call omega%time_interval (self%patch, self%patch%time,jt,pt, extrap=.true.)
   call omega%mem_lock(jt(1))%set ('rt_assembly')
   if (jt(2) /= jt(1)) &
       call omega%mem_lock(jt(2))%set ('rt_assembly')
@@ -622,8 +663,8 @@ SUBROUTINE rt_eos (self)
   class (rt_t):: self
   !.............................................................................
   class (gpatch_t), pointer :: patch
-  real, dimension(:,:,:), pointer:: lnd, pgas
-  real, dimension(:,:,:), allocatable:: e1,e2, fmax, lnd1, lnd2
+  real, dimension(:,:,:), pointer, contiguous:: lnd, pgas,ss
+  real, dimension(:,:,:), pointer, contiguous:: e1,e2, fmax, lnd1, lnd2, ss1,ss2
   integer:: n(3), ib, loc(3), pl(3), pu(3),l(3), u(3), it, jt(2), pgn(3)
   real:: u_max, stefan, fmaxv, pt(2), dsmin
   real, pointer:: eth(:,:,:), tt(:,:,:), rk(:,:,:,:), src(:,:,:,:)
@@ -643,14 +684,14 @@ SUBROUTINE rt_eos (self)
     l  = self%mesh%li-self%mesh%ng
     u  = self%mesh%ui+self%mesh%ng
     n  = merge(self%n+2*self%mesh%ng,self%n,self%n>1)
-    call patch%time_interval (self%time, jt, pt, extrap=.true.)
+    call patch%time_interval (self, self%time, jt, pt, extrap=.true.)
   else
     pl = patch%mesh%li
     pu = patch%mesh%ui
     l  = self%mesh%li
     u  = self%mesh%ui
     n  = self%n
-    call patch%time_interval (self%time, jt, pt, extrap=.true.)
+    call patch%time_interval (self, self%time, jt, pt, extrap=.true.)
   end if
   pgn = patch%mesh%gn
   if (dnload_mhd) call self%patch%dnload()
@@ -659,9 +700,11 @@ SUBROUTINE rt_eos (self)
   allocate (lnd(n(1),n(2),n(3)))
   allocate (lnd1(n(1),n(2),n(3)))
   allocate (lnd2(n(1),n(2),n(3)))
-  allocate (eth(n(1),n(2),n(3)))
-  allocate (e1(pgn(1),pgn(2),pgn(3)))
-  allocate (e2(pgn(1),pgn(2),pgn(3)))
+  if (patch%idx%e>0) then
+    allocate (eth(n(1),n(2),n(3)))
+    allocate (e1(pgn(1),pgn(2),pgn(3)))
+    allocate (e2(pgn(1),pgn(2),pgn(3)))
+  end if
   !-----------------------------------------------------------------------------
   call patch%mem_lock(jt(1))%set ('rt_eos')
     if (jt(2) /= jt(1)) &
@@ -675,10 +718,24 @@ SUBROUTINE rt_eos (self)
   !print *, 'pl, pu', pl, pu
   lnd2 = log(patch%mem(pl(1):pu(1),pl(2):pu(2),pl(3):pu(3),patch%idx%d,jt(2),1))
   lnd = lnd1*pt(1) + lnd2*pt(2)
-  call patch%to_thermal(jt(1),eth=e1, kind=patch%kind)
-  call patch%to_thermal(jt(2),eth=e2, kind=patch%kind)
-  eth = exp(log(e1(pl(1):pu(1),pl(2):pu(2),pl(3):pu(3)))*pt(1) + &
-            log(e2(pl(1):pu(1),pl(2):pu(2),pl(3):pu(3)))*pt(2))
+  if (patch%idx%s>0) then
+    allocate (ss1(n(1),n(2),n(3)))
+    allocate (ss2(n(1),n(2),n(3)))
+    allocate (ss(n(1),n(2),n(3)))
+    ss1 = patch%mem(pl(1):pu(1),pl(2):pu(2),pl(3):pu(3),patch%idx%s,jt(1),1)/ &
+          patch%mem(pl(1):pu(1),pl(2):pu(2),pl(3):pu(3),patch%idx%d,jt(1),1)
+    ss2 = patch%mem(pl(1):pu(1),pl(2):pu(2),pl(3):pu(3),patch%idx%s,jt(2),1)/ &
+          patch%mem(pl(1):pu(1),pl(2):pu(2),pl(3):pu(3),patch%idx%d,jt(2),1)
+    ss = ss1*pt(1) + ss2*pt(2)
+  end if
+  
+  if (patch%idx%e>0) then
+    call self%patch%to_thermal(jt(1),eth=e1, kind=patch%kind)
+    call self%patch%to_thermal(jt(2),eth=e2, kind=patch%kind)
+    !print *, minval(e1), maxval(e1),minval(e2), maxval(e2)
+    eth = exp(log(e1(pl(1):pu(1),pl(2):pu(2),pl(3):pu(3)))*pt(1) + &
+              log(e2(pl(1):pu(1),pl(2):pu(2),pl(3):pu(3)))*pt(2))
+  end if
   call patch%mem_lock(jt(1))%unset ('rt_eos')
     if (jt(2) /= jt(1)) &
       call patch%mem_lock(jt(2))%unset ('rt_eos')
@@ -692,8 +749,13 @@ SUBROUTINE rt_eos (self)
     call self%stats (eth, 'e')
   end if
   !call patch%to_thermal_begin (patch%it, kind=patch%kind) 
-  call eos%lookup_table (n, lnd=lnd, e=eth, rk=rk, src=src, &
-                         tt=tt, pg=pgas, label='rt', id=self%id)
+  if (patch%idx%e>0) then
+    call eos%lookup(lnd=lnd, e=eth, rk=rk, src=src, &
+                           tt=tt, pg=pgas, label='rt', id=self%id)
+  else if (patch%idx%s>0) then
+    call eos%lookup(lnd=lnd, ss=ss, rk=rk, src=src, &
+                           tt=tt, pg=pgas, label='rt', id=self%id)
+  end if
   !call patch%to_thermal_end (kind=patch%kind)
   self%rk  => self%mem(:,:,:,self%irk(1):self%irk(2),it,1)
   self%src => self%mem(:,:,:,self%isrc(1):self%isrc(2),it,1)
@@ -724,8 +786,11 @@ SUBROUTINE rt_eos (self)
     call self%stats (fmax, 'fmax')
   end if
   ! ----------------------------------------------------------------------------
-  deallocate (fmax, pgas, lnd, eth, e1, e2, lnd1, lnd2)
+  if (patch%idx%e>0) deallocate(eth, e1, e2)
+  if (patch%idx%s>0) deallocate(ss, ss1, ss2)
+  deallocate (fmax, pgas, lnd, lnd1, lnd2)
   if (.not.self%warmup_done) then
+
     if (self%time > self%warmup_end_time) then
       self%warmup_done=.true.
       self%dt_fixed = -1.0
@@ -745,9 +810,6 @@ SUBROUTINE solve (self)
   if (self%i_omega==0) return
   call trace%begin ('rt_t%solve', itimer=itimer)
   !-----------------------------------------------------------------------------
-  call self%boundaries%radiation (mem=self%q, src=self%src, rk=self%rk, &
-                                     tt=self%tt, dir=self%axis, mu=self%rt_hat)
-
   call rt_integral%solve (self%rk, self%src, self%q, self%mesh, self%axis, &
                           self%rt_hat)
   call trace%end (itimer)
@@ -757,7 +819,7 @@ END SUBROUTINE solve
 !===============================================================================
 !> Add the (1+n_omega) RT tasks to the task list
 !===============================================================================
-SUBROUTINE init_task_list(self, task_list)
+SUBROUTINE add_to_task_list(self, task_list)
   class(rt_t):: self
   class(task_t),pointer:: rt_task
   class(list_t), pointer:: task_list
@@ -766,27 +828,25 @@ SUBROUTINE init_task_list(self, task_list)
   call trace%begin ('rt_t%add_tasks_to')
   !-----------------------------------------------------------------------------
   self%task_list => task_list
-  if (self%on) then
-    rt_task => self%main        ! point to self
-    if (.not.associated(self%link)) &
-      call self%task_list%prepare(rt_task)
-    if (.not.self%in_task_list) &
-      call self%task_list%append_link (self%link)
-    self%in_task_list = .true.
-    omega => self%omeg
-    do while(associated(omega))
-      omega%task_list => task_list
-      rt_task => omega
-      if (.not.associated(omega%link)) &
-        call self%task_list%prepare(rt_task)
-      if (.not.omega%in_task_list) &
-        call self%task_list%append_link (omega%link)
-      omega%in_task_list = .true.
-      omega => omega%next
-    end do
+  if (.not.self%in_task_list) then
+    if (self%on) then
+      rt_task => self%main        ! point to self
+      if (.not.associated(self%link)) call self%task_list%prepare(rt_task)
+      if (.not.self%in_task_list) call self%task_list%add (self%link)
+      self%in_task_list = .true.
+      omega => self%omeg
+      do while(associated(omega))
+        omega%task_list => task_list
+        rt_task => omega
+        if (.not.associated(omega%link)) call self%task_list%prepare(rt_task)
+        if (.not.omega%in_task_list) call self%task_list%add (omega%link)
+        omega%in_task_list = .true.
+        omega => omega%next
+      end do
+    end if
   end if
   call trace%end()
-END SUBROUTINE init_task_list
+END SUBROUTINE add_to_task_list
 
 !===============================================================================
 !> Determine if a task is needed (is upstream).  
@@ -799,7 +859,7 @@ FUNCTION needs (self, omega)
   real:: sinth
   real, parameter:: eps=1e-4
   integer:: is1(3), is2(3), is3(3), is4(3), i, lbit(3), ubit(3)
-  logical:: lower, upper, upstream
+  logical:: lower, upper, upstream, needs_LOC(3)
   !-----------------------------------------------------------------------------
   ! If self is at a boundary and omega points inward, or the task has no RT,
   ! then the task is outside and is not needed
@@ -825,6 +885,7 @@ FUNCTION needs (self, omega)
   end if
   !
   needs=.true.
+  !ds1=omega%distance_to(self)
   ds1 = self%position-omega%position
   where (self%periodic)
     ds1 = modulo(ds1 + 0.5_8*self%box, self%box) - 0.5_8*self%box
@@ -839,7 +900,16 @@ FUNCTION needs (self, omega)
     if (ds1(i)         < -eps) is1(i)=-1
     if (self%rt_hat(i) < -eps) is2(i)=-1
   end do
-  if (all(is1*is2 <= 0)) needs = .false.
+  !if (any(is1*is2 < 0)) needs = .false.
+  needs_loc=.true.
+  do i=1,3
+    if (is2(i)/=0 .and. is1(i)*is2(i)<0) needs_loc(i)=.false.
+    if (is2(i)==0 .and. is1(i)/=0) needs_loc(i)=.false.
+  end do
+  if (any(.not.needs_loc)) needs=.false.
+
+
+
   ! ----------------------------------------------------------------------------
   ! If the nbor lies outside the boundaries it is not needed
   ! ----------------------------------------------------------------------------
@@ -855,14 +925,6 @@ FUNCTION needs (self, omega)
       needs = .false.
     end if
   end do
-  !-----------------------------------------------------------------------------
-  ! If the task does not have RT it is not needed
-  !-----------------------------------------------------------------------------
-  if (.not.omega%on) then
-    needs = .false.
-    call trace%end ()
-    return
-  end if
   call trace%end ()
 END FUNCTION needs
 
@@ -1029,9 +1091,7 @@ SUBROUTINE nbor_info (self, nbor)
 END SUBROUTINE nbor_info
 
 !===============================================================================
-!> This procedure is called from rt_setup, at a point where nbor lists have
-!> already been made (based on needs() btw RT tasks), so the only thing to do
-!> is to set the three flags appropriately.
+
 !===============================================================================
 SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   class(rt_t):: self
@@ -1162,7 +1222,6 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   class default
     needed = .false.; needs_me = .false.; download = .false.
   end select
-
   !
   call trace%end()
 END SUBROUTINE nbor_relations

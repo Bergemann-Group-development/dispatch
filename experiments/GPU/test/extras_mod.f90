@@ -61,7 +61,6 @@ MODULE extras_mod
   USE task_mod
   USE io_mod
   USE trace_mod
-  USE connect_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.
   !-----------------------------------------------------------------------------
@@ -123,9 +122,7 @@ SUBROUTINE pre_init (self)
   !allocate(self%rt)                                                    ! RT
   !call self%rt%pre_init(self%link)                                     ! RT
   !allocate (self%trace_particles)                                      ! tracep
-  !self%connect%trace_particles => self%trace_particles                 ! tracep
   !allocate(self%pic)                                                   ! pic
-  !self%connect%pic_patch => self%pic                                   ! pic
   !call self%pic%pre_init(self%link)                                    ! pic
 END SUBROUTINE pre_init
 
@@ -138,11 +135,10 @@ SUBROUTINE init (self)
   call trace%begin ('extras_t%init')
   call self%forces%init                                                 ! forces
   !-----------------------------------------------------------------------------
-  ! Allocate a trace_particles data type, connect a pointer, and initialize
+  ! Allocate a trace_particles data type, initialize
   !-----------------------------------------------------------------------------
   !call self%newton%init (self%link)                                    ! Newton
   !allocate (self%trace_particles)                                      ! tracep
-  !self%connect%trace_particles => self%trace_particles                 ! tracep
   !call self%trace_particles%add (self%link%task)                       ! tracep
   !call self%pic%init                                                   ! pic
   !if (self%pic%on) self%do_mhd = self%pic%do_mhd                       ! pic

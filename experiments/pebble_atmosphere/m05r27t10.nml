@@ -3,29 +3,26 @@
 &experiment_params
  x_sponge=500.
 /
-&IC_params /
+&initial_params /
 &force_params   /
 
-&timer_params sec_per_report=10 /
+&timer_params sec_per_report=30 /
 !&task_list_params
 ! sync_time=0.5
 !/
 &io_params
  verbose=0
  do_trace=f
- omp_trace=f
+ omp_trace=t
  do_debug=f
  do_output=t
- do_legacy=t
+ do_legacy=f
 !id_debug=204
- !datadir='./data
-/
-&out_params
+!datadir='./data
  end_time=10000 out_time=100 !1-100
- print_time=0
+!end_time=30 out_time=100 !1-100
+ print_time=2
  guard_zones=t
- time_derivs=f
- max_files=90000
 /
 &rubiks_params
  size=3*26.91144                    ! 0.8306*2.4*27/2.
@@ -66,14 +63,11 @@
 &atmosphere_params
  densitY_cgs=1e-10                  ! outer density of the atmosphere at 1 Hill radius (i.e. surrounding local disk density)
  temperature_K=300.                 ! outer temperature of the atmosphere at 1 Hill radius
- mass_m_earth=0.5
  orbit_au=1.0
- gamma = 1.4                        ! adiabatic index (gradient?)
  temp_gamma=2000.                   ! temperature above which second gamma is used instead of first
  nr=500                             ! number of initial atmosphere layers from which mhd values will be picked up
 /
 &planet_atm_params                  ! initial parameters for planet atmosphere when it is interpolated to mhd grid
- gamma = 1.4
  v_head_cgs=0.0                     ! headwind speed
  v_accrete_cgs=0.0                  ! accretion speed
  omega = 0.0,0.0,1.0
@@ -82,16 +76,13 @@
 &patch_params
  use_data_hub=f
  no_mans_land=f
- periodic=f,t,f
  n=3*33
  nt=5
  grace=0.10
- courant=0.2
 !dt_fixed=0.001
 /
 
 &mhd_params
- gamma=1.4
  nu=  0.20, 1.0, 1.0, 0.0, 1.0, 1.0
  !     cs   pa   ofd  mas  kap  eta
 /
@@ -104,3 +95,5 @@ refine_level = 5, 6, 7
 /
 
 &timestep_params /
+&halo_params     check_filled=f /
+&lock_params     verbose=1 /

@@ -90,7 +90,7 @@ PROGRAM test
       cb(x,y) = mem(p(1),p(2),p(3))   
     end do
   end do
-  call toc('cell based lookup in 2D', i1)
+  call timer%toc('cell based lookup in 2D', i1)
        do x=1,n
     do y = 1, npt(x)
       print *, cb(x,y), 'cell', cell(:,x,y)
@@ -104,7 +104,7 @@ PROGRAM test
     p = cell(:,x,y)
     cb(x,1:y) = mem(p(1),p(2),:)   
   end do
-  call toc('cell based lookup in 2D, striding over z', i1)
+  call timer%toc('cell based lookup in 2D, striding over z', i1)
   
    
   
@@ -135,7 +135,7 @@ PROGRAM test
       cb(iy,y) = mem(p(1),p(2),p(3))   
     end do
   end do
-  call toc('cell based lookup in 2D, 1st loop unrolled', i1)
+  call timer%toc('cell based lookup in 2D, 1st loop unrolled', i1)
   
   
     call tic
@@ -161,7 +161,7 @@ PROGRAM test
     cb(iy,1:y) = mem(p(1),p(2),:) 
   end do
   
-  call toc('cell based lookup in 2D, striding over z, 1st loop unrolled', i1)
+  call timer%toc('cell based lookup in 2D, striding over z, 1st loop unrolled', i1)
   
   call tic
   do y=1,n
@@ -172,7 +172,7 @@ PROGRAM test
       end do   
     end do
   end do
-  call toc('cell based lookup in 3D',i1)
+  call timer%toc('cell based lookup in 3D',i1)
   
   ! first test assumes dstep(1,1,0) - two positives and 0
    iy=0; r3 = dstep(2)
@@ -187,7 +187,7 @@ PROGRAM test
     end do
 
   end do
-  call toc('plane based lookup',i1)
+  call timer%toc('plane based lookup',i1)
   
      iy=0; r3 = n
   call tic
@@ -199,6 +199,6 @@ PROGRAM test
 
     end do
   end do
-  call toc('plane based lookup2: removing inner loop',i1)
+  call timer%toc('plane based lookup2: removing inner loop',i1)
   
 END

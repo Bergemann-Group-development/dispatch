@@ -26,7 +26,6 @@ MODULE mhd_mod
   USE mpi_mod
   USE omp_mod
   USE index_mod
-  USE non_ideal_mod
   USE flux_mod
   USE omp_timer_mod
   USE timer_mod
@@ -34,6 +33,7 @@ MODULE mhd_mod
   USE task_mod
   USE eos_mod
   USE divb_clean_mod
+  USE interface_mod
   implicit none
   PRIVATE
   type, public, extends(extras_t):: mhd_t
@@ -47,6 +47,7 @@ MODULE mhd_mod
     real, contiguous, pointer, dimension(:,:,:,:,:):: qLB,qRB,qLT,qRT
     real, contiguous, pointer, dimension(:,:,:):: Ex,Ey,Ez
     real, contiguous, pointer, dimension(:,:,:):: c
+    type(interface_list_t) :: interface
     !dir$ attributes align:64 :: q,bf,em,qp,qm,dq,dq2,dbf,qLB,qRB,qLT,qRT,Ex,Ey,Ez,c
   contains
     procedure:: pre_init
@@ -100,6 +101,8 @@ SUBROUTINE pre_init (self)
   self%ng = 3
   self%nv = 8
   self%kind = 'ramses_mhd_patch'
+  self%type  = 'mhd_t'
+  self%etype = 'total'
   call self%idx%init (energy=5, mhd=self%mhd)
   if (do_temperature) then
     call self%idx%request_index (self%idx%tt, self%nv)
@@ -163,9 +166,11 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Initialize everything else, and do a sanity check
   !-----------------------------------------------------------------------------
-  call non_ideal%init
   call divb%init
   call self%set_solver_vars
+  call self%interface%init(self%link)
+  call self%interface%add_quantity('hd')
+  call self%interface%add_quantity('emf')
   call trace%end()
 END SUBROUTINE init
 
@@ -195,6 +200,7 @@ SUBROUTINE pre_update (self)
   integer:: n(3)
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%pre_update')
+  call self%gpatch_t%pre_update ()
   !-----------------------------------------------------------------------------
   ! Primitive variables may be needed in extras courant_conditions
   !-----------------------------------------------------------------------------
@@ -203,10 +209,8 @@ SUBROUTINE pre_update (self)
   call ctoprim(self)                  ! Primitive variables, sound speeds
   call self%extras_t%courant_condition (detailed_timer)
   !-----------------------------------------------------------------------------
-  ! Pre-update extras components; as a precaution against missing calls, an
-  ! extra call to self%gpatch_t%pre_update() is done here
+  ! Pre-update extras components
   !-----------------------------------------------------------------------------
-  call self%gpatch_t%pre_update ()
   call self%extras_t%pre_update
   call trace%end ()
 END SUBROUTINE pre_update
@@ -281,15 +285,6 @@ SUBROUTINE update (self)
     write (stdlog,*) 'uslope', self%id, minval(self%dq), maxval(self%dq)
     write (stdlog,*) 'uslope', self%id, minval(self%dq2), maxval(self%dq2)
   end if
-  if (non_ideal%is_used) then
-    allocate (fluxambdiff(self%gn(1),self%gn(2),self%gn(3),3))
-    allocate (emfambdiff(self%gn(1),self%gn(2),self%gn(3),3))
-    allocate (fluxohmdiss(self%gn(1),self%gn(2),self%gn(3),3))
-    allocate (emfohmdiss(self%gn(1),self%gn(2),self%gn(3),3))
-    fluxambdiff = 0d0; emfambdiff = 0d0; fluxohmdiss = 0d0; emfohmdiss = 0d0;   
-    call non_ideal%non_ideal_comp(self%mesh,self%idx,self%bf,uin,self%q,&
-      fluxambdiff,emfambdiff,fluxohmdiss,emfohmdiss,self%u_max,self%ds,self%dtime)
-  end if
   call self%courant_condition                           ! compute dt
   call trace3d(self)                                    ! predictor step
   allocate (fl(self%gn(1),self%gn(2),self%gn(3),self%nvar,3))
@@ -305,21 +300,18 @@ SUBROUTINE update (self)
   dtdx = self%dtime/self%ds(1) 
   dtdy = self%dtime/self%ds(2) 
   dtdz = self%dtime/self%ds(3) 
-  em(:,:,:,1) = em(:,:,:,1)*dtdy
-  em(:,:,:,2) = em(:,:,:,2)*dtdz
-  em(:,:,:,3) = em(:,:,:,3)*dtdx
+  ! ----------------------------------------------------------------------------
+  ! Apply flux corrections
+  ! ----------------------------------------------------------------------------
+  call self%interface%update(fl,'hd')
+  call self%interface%update(em,'emf')
+  em(:,:,:,1) = em(:,:,:,1)*self%dtime
+  em(:,:,:,2) = em(:,:,:,2)*self%dtime
+  em(:,:,:,3) = em(:,:,:,3)*self%dtime
   if (self%id==io%id_debug) then
     write (io%output,'("X6",f10.6,i4,1p,10e12.3)') self%time, 6, em(4:13,8,8,1)
     write (io%output,'("X7",f10.6,i4,1p,10e12.3)') self%time, 7, em(4:13,8,8,2)
     write (io%output,'("X8",f10.6,i4,1p,10e12.3)') self%time, 8, em(4:13,8,8,3)
-  end if
-  if (non_ideal%is_used) then
-    call non_ideal%flux_upd(fl,fluxambdiff,fluxohmdiss,self%ds(1),self%dtime,1)
-    call non_ideal%flux_upd(fl,fluxambdiff,fluxohmdiss,self%ds(2),self%dtime,2)
-    call non_ideal%flux_upd(fl,fluxambdiff,fluxohmdiss,self%ds(3),self%dtime,3)
-    call non_ideal%non_ideal_emf_up(em(:,:,:,3),emfambdiff,emfohmdiss,self%ds(3),self%dtime,3)
-    call non_ideal%non_ideal_emf_up(em(:,:,:,2),emfambdiff,emfohmdiss,self%ds(2),self%dtime,2)
-    call non_ideal%non_ideal_emf_up(em(:,:,:,1),emfambdiff,emfohmdiss,self%ds(1),self%dtime,1)
   end if
   ! Compute fluxes with appropriate time step
   fl(:,:,:,:,1) = fl(:,:,:,:,1) * dtdx
@@ -332,6 +324,7 @@ SUBROUTINE update (self)
       write (io%output,'("X5",f10.6,i4,1p,10e12.3)') self%time, i, fl(4:13,8,8,i,3)
     end do
   end if
+ 
   !-----------------------------------------------------------------------------
   ! Update conservative variables
   !-----------------------------------------------------------------------------
@@ -365,28 +358,28 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) =  &
    uin(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) + &
-   (( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,2)   - &
-      em(i0  :i1  ,j0  :j1  ,k0+1:k1+1,2) ) - &
-    ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,3)   - &
-      em(i0  :i1  ,j0+1:j1+1,k0  :k1  ,3) ))
+   (( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,2)  - &
+      em(i0  :i1  ,j0  :j1  ,k0+1:k1+1,2)) / self%ds(3) - &
+    ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,3)  - &
+      em(i0  :i1  ,j0+1:j1+1,k0  :k1  ,3)) / self%ds(2))
   !-----------------------------------------------------------------------------
   ! Update By 
   !-----------------------------------------------------------------------------
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) = &
    uin(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) + &
-   (( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,3)   - &
-      em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,3) ) - &
-    ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,1)   - &
-      em(i0  :i1  ,j0  :j1  ,k0+1:k1+1,1) ))
+   (( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,3)  - &
+      em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,3)) / self%ds(1) - &
+    ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,1)  - &
+      em(i0  :i1  ,j0  :j1  ,k0+1:k1+1,1)) / self%ds(3))
   !-----------------------------------------------------------------------------
   ! Update Bz 
   !-----------------------------------------------------------------------------
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) = &
    uin(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) + &
-   (( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,1)   - &
-      em(i0  :i1  ,j0+1:j1+1,k0  :k1  ,1) ) - &
-    ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,2)   - &
-      em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,2) ))
+   (( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,1)  - &
+      em(i0  :i1  ,j0+1:j1+1,k0  :k1  ,1)) / self%ds(2) - &
+    ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,2)  - &
+      em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,2)) / self%ds(1))
   end associate
   !-----------------------------------------------------------------------------
   ! Add the external force per unit mass as a source term
@@ -468,8 +461,6 @@ SUBROUTINE update (self)
   ! Deallocate
   !-----------------------------------------------------------------------------
   call self%counter_update
-  if (non_ideal%is_used) &
-    deallocate (fluxambdiff,emfambdiff,fluxohmdiss,emfohmdiss)
   deallocate (fl)
   deallocate(em)
   deallocate(self%q)
@@ -552,7 +543,7 @@ subroutine check_small (self, it)
     else
       p = (uu(i,j,k,5)-ekin-emag)*(eos%gamma-one)
       if (p < smallr*smallc**2) then
-        !print *, 'smallp', uu(i,j,k,5), ekin, emag, p
+       ! print *, 'smallp', uu(i,j,k,5), ekin, emag, p
         p = smallr*smallc**2
         uu(i,j,k,5) = p/(eos%gamma-one)+ekin+emag
         n_smallp = n_smallp+1
@@ -595,7 +586,6 @@ subroutine ctoprim(self)
   real(dp):: smallp, c, entho, g1
   real(dp):: eken, emag, etot, eint, B1, B2, B3
   integer, save:: itimer=0
-  logical:: e_below
   integer:: i, j, k, loc(3), l(3), u(3), m(3)
   real, pointer, dimension(:,:,:):: lnd, ee, pg, tt, aux, d
   real, pointer, contiguous, dimension(:,:,:):: ee0
@@ -609,7 +599,7 @@ subroutine ctoprim(self)
   allocate (self%c  (m(1),m(2),m(3)))
   allocate (self%q  (m(1),m(2),m(3),self%nvar))
   allocate (self%bf (m(1),m(2),m(3),3))
-  call check_small (self, self%new)
+  call check_small (self)
   associate(q=>self%q,bf=>self%bf,dt=>self%dtime,c=>self%c)
   !-----------------------------------------------------------------------------
   if (isothermal) then
@@ -666,7 +656,7 @@ subroutine ctoprim(self)
   allocate (ee0(n(1),n(2),n(3)))
   ee0 = ee
   !if (any(ee(1:n(1),1:n(2),1:n(3))<eos%ee_min)) print *, 'before lookup, ee<eemin', eos%ee_min, maxval(ee), minval(ee), minloc(ee), smallr*smallc**2
-  call eos%lookup_table (shape(ee), lnd=lnd, ee=ee, pg=pg, tt=tt, e_below=e_below, label='mhd', id=self%id)
+  call eos%lookup(lnd=lnd, ee=ee, pg=pg, tt=tt, label='mhd', id=self%id)
   if (verbose > 1) then
     write (stdlog,*) 'ctoprim:rh', self%id, minval(q(:,:,:,1)), maxval(q(:,:,:,1))
     write (stdlog,*) 'ctoprim:bf', self%id, minval(bf), maxval(bf)

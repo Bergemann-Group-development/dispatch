@@ -27,8 +27,10 @@ MODULE timer_mod
   type:: timer_t
     integer(8):: calls(maxproc)=0
     real(8), dimension(maxproc):: start=0d0, total=0d0
+    real(8), dimension(maxproc):: lock_start=0d0, locks=0d0
     integer, dimension(maxdepth):: stack
     integer:: istack=0
+    real(8):: out_next=0d0, out_time=0d0
     real(8):: bytes_recv=0.0_8
     real(8):: sec_per_report=10d0
     real(8):: time, prev=0d0
@@ -43,6 +45,7 @@ MODULE timer_mod
     integer:: nq_recv_max=0
     integer:: n_lines=0
     integer:: n_mhd=0, n_solve=0
+    integer:: time_level=0
     type(latency_t):: latency
     real(8), allocatable:: levelcost(:)
     integer(8), allocatable:: levelpop(:)
@@ -59,25 +62,23 @@ MODULE timer_mod
     procedure:: end
     procedure:: print
     procedure, nopass:: tic
+    procedure, nopass:: toc_0
     procedure, nopass:: toc_1
     procedure, nopass:: toc_i4
     procedure, nopass:: toc_i8
     procedure, nopass:: toc_r
-    generic:: toc => toc_1, toc_i4, toc_i8, toc_r
+    generic:: toc => toc_0, toc_1, toc_i4, toc_i8, toc_r
   end type
   character(len=64), dimension(maxproc):: names
   type(timer_t), pointer:: timers(:)
   type(timer_t), public:: timer
+  logical, save:: toc=.false.
   integer, save:: nprint=20
   integer, save:: verbose=0
   real(8), save:: prev2=0d0
   real, save:: min_fraction=0.0005
-  interface toc
-    module procedure toc_i4, toc_i8, toc_1
-  end interface
   real(8), save:: wt=0d0
   !$omp threadprivate (wt)
-  public tic, toc
 CONTAINS
 
 !===============================================================================
@@ -87,7 +88,7 @@ SUBROUTINE init (self)
   logical, save:: first_time=.true., detailed=.false.
   integer:: ignore, i
   real(8):: sec_per_report=10.
-  namelist /timer_params/ sec_per_report, min_fraction, verbose, detailed
+  namelist /timer_params/ sec_per_report, min_fraction, verbose, toc, detailed
   !.............................................................................¨
   if (omp_in_parallel()) then
     !$omp critical (timer_cr)
@@ -100,6 +101,7 @@ SUBROUTINE init (self)
       !$omp atomic write
       timer%next_report_sec = wallclock() + sec_per_report
       omp%nthreads = max(1,omp%nthreads)
+      shared%sec_per_report = sec_per_report
       timer%detailed = detailed
       allocate (timers(0:omp%nthreads-1))
       allocate (self%lock)
@@ -112,6 +114,8 @@ SUBROUTINE init (self)
       timers(i)%calls(:) = 0
       timers(i)%start(:) = 0d0
       timers(i)%total(:) = 0d0
+      timers(i)%lock_start(:) = 0d0
+      timers(i)%locks(:) = 0d0
     end do
   else
     if (first_time) then
@@ -123,6 +127,7 @@ SUBROUTINE init (self)
       !$omp atomic write
       timer%next_report_sec = wallclock() + sec_per_report
       omp%nthreads = max(1,omp%nthreads)
+      shared%sec_per_report = sec_per_report
       timer%detailed = detailed
       allocate (timers(0:omp%nthreads-1))
       allocate (self%lock)
@@ -135,6 +140,8 @@ SUBROUTINE init (self)
       timers(i)%calls(:) = 0
       timers(i)%start(:) = 0d0
       timers(i)%total(:) = 0d0
+      timers(i)%lock_start(:) = 0d0
+      timers(i)%locks(:) = 0d0
     end do
     !$omp end parallel
   end if
@@ -187,6 +194,10 @@ SUBROUTINE begin (self, name, itimer)
     otimer = timers(thread)%stack(istack)
     used = wc - timers(thread)%start(otimer)
     timers(thread)%total(otimer) = timers(thread)%total(otimer) + used
+    !---------------------------------------------------------------------------
+    used = omp%wait_time - timers(thread)%lock_start(otimer)
+    timers(thread)%locks(otimer) = &
+    timers(thread)%locks(otimer) + used
     !...........................................................................
     if (verbose > 0) then
       write (unit,'(80x,a,2i5,f10.6,3x,a)') &
@@ -198,6 +209,7 @@ SUBROUTINE begin (self, name, itimer)
   ! Start the new timer, and push it on the stack
   !-----------------------------------------------------------------------------
   timers(thread)%start(itimer) = wc
+  timers(thread)%lock_start(itimer) = omp%wait_time
   istack = istack+1
   if (istack>maxdepth) call shared%abort ('too many timer levels;'//trim(name))
   timers(thread)%stack(istack) = itimer
@@ -250,6 +262,10 @@ SUBROUTINE end (self, itimer)
   timers(thread)%calls(otimer) = timers(thread)%calls(otimer) + 1
   used = wc - timers(thread)%start(otimer)
   timers(thread)%total(otimer) = timers(thread)%total(otimer) + used
+  !---------------------------------------------------------------------------
+  used = omp%wait_time - timers(thread)%lock_start(otimer)
+  timers(thread)%locks(otimer) = &
+  timers(thread)%locks(otimer) + used
   !.............................................................................
   if (verbose > 0) then
     write (unit,'(80x,a,2i5,f10.6,3x,a)') &
@@ -263,6 +279,8 @@ SUBROUTINE end (self, itimer)
   if (istack>0) then
     otimer = timers(thread)%stack(istack)
     timers(thread)%start(otimer) = wc
+    !---------------------------------------------------------------------------
+    timers(thread)%lock_start(otimer) = omp%wait_time
     !...........................................................................
     if (verbose > 0) then
       write (unit,'(80x,a,2i5,10x,3x,a)') &
@@ -305,7 +323,7 @@ END SUBROUTINE print
 SUBROUTINE real_print (self)
   class(timer_t):: self
   real(8):: proc(maxproc), ncalls(maxproc), lock(maxproc)
-  real(8):: updates, musppt, calls, total, total_locks
+  real(8):: updates, musppt, calls, total
   real(8), save:: n_previous=0
   real(8):: wc, sec
   integer:: i, n_recv, lntimer
@@ -317,19 +335,16 @@ SUBROUTINE real_print (self)
   wc = wallclock()
   sec = wc - prev2
   total = 0d0
-  total_locks = 0d0
   calls = 0d0
   !$omp atomic read
   lntimer = ntimer
   do i=1,lntimer
     proc(i) = sum(timers(:)%total(i))
-    lock(i) = omp_lock%time (i)
+    lock(i) = sum(timers(:)%locks(i))
     ncalls(i) = sum(timers(:)%calls(i))
     total = total + proc(i)
-    total_locks = total_locks + lock(i)
     calls = calls + ncalls(i)
   end do
-  total_locks = max(total_locks,tiny(1d0))
   !-----------------------------------------------------------------------------
   ! 'sec' measure wall clock time on a single thread, while 'total' is a sum over
   ! all procedures being measured, over all threads.
@@ -361,6 +376,7 @@ SUBROUTINE real_print (self)
   timer%mpi_hit = 0_8
   do i=1,lntimer
     timers(:)%total(i) = 0d0
+    timers(:)%locks(i) = 0d0
     timers(:)%calls(i) = 0
   end do
   timer%mpi_hit = 0
@@ -388,13 +404,13 @@ contains
     if (total > 0.0) then
       mesg = .false.
       do i=1,lntimer
-        if (proc(i)/total > min_fraction) then
+        if (proc(i)/total       > min_fraction) then
           per_call = proc(i)/max(ncalls(i),1d0)
           warn = per_call < 0.5e-6
           mesg = mesg .or. warn
           write (unit,'(a40,1p,2g15.3,0p,f10.1,f12.6,f10.1,1x,a1)') &
             trim(names(i)), ncalls(i), proc(i), proc(i)/total*100., &
-            per_call, lock(i)/total_locks*100, merge('W',' ',warn)
+            per_call, lock(i)/total*100., merge('W',' ',warn)
         end if
       end do
       if (mesg) &
@@ -425,14 +441,15 @@ contains
       self%time-self%prev, ' time advance', &
       musppt, ' core-mus/cell-upd', wc, ' wall sec'
     self%prev = self%time
+    self%time_level = 0
     timer%latency%aver = timer%latency%aver/max(1,timer%latency%n)
-    write (unit,'(1x,"MPI recv:",f9.1," MB/s",f10.3," MB/mesg",i8, &
-      " nq_send_max",i8, " nq_recv_max",2f8.3," max, aver latency",f7.2, &
-      " f_unpk",f7.2," f_mem",f7.2," f_que",f7.2," f_cheap")') &
+    write (unit,'(1x,"MPI recv:",f9.1," MB/s",f10.3," MB/mesg",2x, &
+      "mean latency:",f6.3,2x,"max:",f6.3,2x,"nq_send_max:",i4,2x, &
+      "f_unpk:",f5.2,2x,"f_mem:",f5.2,2x,"f_que:",f5.2,2x,"f_cheap:",f5.2)') &
       timer%bytes_recv/1024.**2/sec, timer%bytes_recv/1024.**2/n_recv, &
-      timer%nq_send_max, timer%nq_recv_max, timer%latency%max, timer%latency%aver, &
-      timer%mpi_hit/real(max(1_8,timer%mpi_test)), &
-      timer%mem_hit/real(max(1_8,timer%mem_test)), &
+      timer%latency%aver, timer%latency%max, timer%nq_send_max, &
+      timer%mpi_hit/real(max(1,timer%mpi_test)), &
+      timer%mem_hit/real(max(1,timer%mem_test)), &
       timer%busy_time/max(timer%spin_time + timer%busy_time,1d-30), &
       timer%n_cheap/real(timer%n_cheap+timer%n_expensive+1)
     !$omp atomic write
@@ -463,6 +480,15 @@ SUBROUTINE tic (time)
     wt = wallclock()
   end if
 END SUBROUTINE tic
+
+!===============================================================================
+!===============================================================================
+SUBROUTINE toc_0 ()
+  implicit none
+  integer:: n
+  !.............................................................................
+  call toc_r ("time", 1.0)
+END SUBROUTINE toc_0
 
 !===============================================================================
 !===============================================================================
@@ -550,7 +576,7 @@ SUBROUTINE toc_r (label, n, time)
   real(8):: dtime, now
   integer:: n_cores, n_threads
   !.............................................................................
-  if (io_unit%do_validate) return
+  if (io_unit%do_validate .or. .not.toc) return
   now = wallclock()
   if (present(time)) then
     dtime = (now - time)

@@ -10,14 +10,23 @@ import matplotlib.pyplot as pl
 import dispatch as di
 import dispatch.select   as ds
 
+import time
+
 def _kw_extract(kw,dict):
     """ if keys from dict occur in kw, pop them """
     for key,value in dict.items():
         dict[key]=kw.pop(key,value)
     return kw,dict
 
+def _cmap(v,cmap,verbose=0):
+    if cmap is None:
+        if verbose: print('cmap was None')
+        cmap='viridis' if v.min() >= 0.0 else 'coolwarm'
+        if verbose: print('cmap is',cmap)
+    return cmap
+
 def imshow(f,colorbar=None,origin='lower',interpolation='nearest',
-           cmap='coolwarm',verbose=0,update=False,**kw):
+           cmap=None,verbose=0,update=False,**kw):
     """
         imshow with default options and updateable colorbar.  Example use:
 
@@ -35,7 +44,10 @@ def imshow(f,colorbar=None,origin='lower',interpolation='nearest',
     if f is None: return
     if verbose>0:
         print ('min:',f.min(),' max:',f.max())
-    pl.imshow(np.transpose(f),origin=origin,interpolation=interpolation,cmap=cmap,**kw)
+    cmap=_cmap(f,cmap)
+    im=pl.imshow(np.transpose(f),origin=origin,interpolation=interpolation,cmap=cmap,**kw)
+    if verbose:
+        print('cmap:',im.get_cmap().name)
     """ Check if there is an existing colorbar """
     cb=None
     ims=pl.gca().images
@@ -58,22 +70,31 @@ def plot(f,**kw):
     else:
         pl.plot(f,**kw)
 
-def plot_values_along(pp,pt=[0.5,0.5,0.5],**kw):
+def plot_values_along(pp,pt=[0.0,0.0,0.0],xlim=None,**kw):
     """ Plot values along direction dir={0,1,2}, through point pt=[x,y,z] """
     kv = {'dir':0, 'verbose':0, 'all':False, 'iv':0, 'i4':0, 'var':None}
     kw,kv = _kw_extract(kw,kv)
-    plot(ds.values_along(pp,pt,iv=kv['iv'],dir=kv['dir'],all=kv['all']),**kw)
+    plot(ds.values_along(pp,pt,iv=kv['iv'],dir=kv['dir'],all=kv['all'],xlim=xlim),**kw)
 
-def plot_patch_values_along(pp_in,pt=[0.5,0.5,0.5],hold=False,**kw):
+def plot_patch_values_along(pp_in,pt=[0.0,0.0,0.0],hold=False,xlim=None,**kw):
     """ Plot values along direction dir={0,1,2}, through point pt=[x,y,z] """
     kv = {'dir':0, 'verbose':0, 'all':False, 'iv':0, 'i4':0, 'var':None}
     kw,kv = _kw_extract(kw,kv)
-    pp = ds.patches_along(pp_in,pt,dir=kv['dir'],verbose=kv['verbose'])
-    xmin,xmax = ds.minmax_patches(pp,dir=kv['dir'])
+    pp = ds.patches_along(pp_in,pt,dir=kv['dir'],verbose=kv['verbose'],xlim=xlim)
+    if xlim is None:
+        xl = pl.xlim()
+        if xl is None:
+            xmin,xmax = ds.minmax_patches(pp,dir=kv['dir'])
+        else:
+            xmin,xmax = xl
+    else:
+        xmin,xmax = xlim
     if not hold:
         pl.xlim(xmin,xmax)
     for p in pp:
-        plot(ds.values_in(p,pt,**kv),label=p.id,**kw)
+        v=ds.values_in(p,pt,**kv)
+        if v[0].max()>xmin and v[0].min()<xmax:
+            plot(ds.values_in(p,pt,**kv),label=p.id,**kw)
     pl.legend()
 
 def _rotate(d,e):
@@ -119,7 +140,7 @@ def pause(time=1e-6):
     pl.gcf().canvas.start_event_loop(time)
 
 def image_plane(snap,x=None,y=None,z=0.5,iv=0,grids=False,cbar=None,zoom=None,
-                title=None,verbose=1):
+                cmap=None,title=None,verbose=1):
     o=np.array(snap.cartesian.origin)
     s=np.array(snap.cartesian.size)
     c=o+0.5*s
@@ -159,7 +180,7 @@ def image_plane(snap,x=None,y=None,z=0.5,iv=0,grids=False,cbar=None,zoom=None,
         emin=np.minimum(emin,np.array((e[0],e[2])))
         emax=np.maximum(emax,np.array((e[1],e[3])))
         ll[p.id]=(im,e,p.level)
-    cmap='coolwarm' if fmin<0 else None
+    cmap=_cmap(np.array([fmin,fmax]),cmap,verbose=verbose)
     for id in sorted(ll.keys()):
         im,e,level=ll[id]
         pl.imshow(im.T,origin='lower',extent=e,vmin=fmin,vmax=fmax,cmap=cmap)
@@ -223,16 +244,14 @@ def _title(sn,x=None,y=None,z=0.5,iv=None,title=None):
     else:
         axis,s=_axis(x,y,z)
         ax=['x','y','z'][axis]
-        pl.title('iv={},  {}={:.3f},  t={:.4f}'.format(iv,ax,s,sn.time))
+        if sn.time<0.01:
+            text='{},  {}={:.5f},  t={:.4e}'.format(iv,ax,s,sn.time)
+        else:
+            text='{},  {}={:.5f},  t={:.4f}'.format(iv,ax,s,sn.time)
+        pl.title(text)
     pl.tight_layout()
 
-def _cmap(v,cmap):
-    if cmap is None:
-        if v.min()<=0.0:
-            cmap='coolwarm'
-    return cmap
-
-def unigrid_plane(sn,iv='d',z=0.5,x=None,y=None,title=None,cmap=None,i4=0,**kw):
+def unigrid_plane(sn,iv='d',z=0.0,x=None,y=None,title=None,cmap=None,i4=0,**kw):
     """
     keywords passed on to dispatch.select.unigrid_plane(),
     and to dispatch.graphics.imshow()
@@ -246,21 +265,22 @@ def unigrid_plane(sn,iv='d',z=0.5,x=None,y=None,title=None,cmap=None,i4=0,**kw):
     imshow(ff,cmap=cmap,**kw)  
     _title(sn,x,y,z,iv,title)
 
-def amr_plane(sn,iv='d',z=0.5,x=None,y=None,log=False,
+def amr_plane(sn,iv='d',z=0.0,x=None,y=None,log=False,
         xmin=None,xmax=None,ymin=None,ymax=None,lmin=None,lmax=None,
-        xlim=None,ylim=None,center=None,width=None,
+        xlim=None,ylim=None,center=None,width=None,axis=None,
         cmap=None,vmin=None,vmax=None,zero=False,title=None,
         mesh=False,ident=False,bbox=dict(facecolor='grey',alpha=1),
         verbose=0):
     """ 
          cmap: color map name (e.g. 'coolwarm')
         x,y,z: select plane by specifying one
+       center: 3-tuple zoom center
+        width: zoom width
+         axis: view axis
     vmin/vmax: colorscale end points
-    xmin/xmax: view limits in x
-    ymin/ymax: view limits in y
+    xmin/xmax: view limits in x (deprecated)
+    ymin/ymax: view limits in y (deprecated)
     xlim/ylim: view limits (xmin,xmax), (ymin,ymax)
-       center: view center (x,y)
-        width: view width -> xlim=(center[0]-width/2,center[0]+width/2), ylim=...
           log: force log10 values
          zero: symmetric colorscale around value=0.0
         title: text title
@@ -273,21 +293,19 @@ def amr_plane(sn,iv='d',z=0.5,x=None,y=None,log=False,
         print('snapshot has no patches')
         return
     def contains(p,s,axis):
-        return abs(s-p.position[axis]) <= p.size[axis]/2
+        return abs(s[axis]-p.position[axis]) <= p.size[axis]/2
     def outline(e):
-        x=[e[0],e[0],e[1],e[1],e[0]]
-        y=[e[2],e[3],e[3],e[2],e[2]]
-        pl.plot(x,y,color='grey')
+        xl=[e[0],e[0],e[1],e[1],e[0]]
+        yl=[e[2],e[3],e[3],e[2],e[2]]
+        pl.plot(xl,yl,color='grey')
     def interpolate(p,iv,s,axis=2,log=False,verbose=0):
         n=p.n[axis]
         ds=p.size[axis]/n
-        s0=p.position[axis]-p.size[axis]/2+ds/2
+        s0=p.position[axis]-p.size[axis]/2+p.ds[axis]/2
         w=(s-s0)/ds
         i=int(w)
         i=max(0,min(i,n-2))
         w=w-i
-        if verbose:
-            print('id: {:3d}   i: {:2d}   w: {:6.3f}'.format(p.id,i,w))
         f=p.var(iv)
         if log:
             f=np.log(f)
@@ -295,17 +313,55 @@ def amr_plane(sn,iv='d',z=0.5,x=None,y=None,log=False,
             f=(1-w)*f[:,:,i]+w*f[:,:,i+1]
         elif axis==1:
             f=(1-w)*f[:,i,:]+w*f[:,i+1,:]
-            f=f.transpose()
         elif axis==0:
             f=(1-w)*f[i,:,:]+w*f[i+1,:,:]
         if log:
             f=np.exp(f)
+        if verbose>1:
+            print('id: {:3d}   i: {:2d}   w: {:6.3f}  l: {}  p: {}  max: {:.2e}'.format(p.id,i,w,p.level,p.position,f.max()))
         return f
-    if center and width:
-        xmin=center[0]-width/2
-        xmax=center[0]+width/2
-        ymin=center[1]-width/2
-        ymax=center[1]+width/2
+    if verbose:
+        start=time.time()
+    if axis is None:
+        if x is not None:
+            axis=0
+        if y is not None:
+            axis=1
+        if z is not None:
+            axis=2
+    if width is None:
+        width=1
+    if np.isscalar(width):
+        width=(width,width,width)
+    if center is None:
+        if x is not None:
+            center=[x,0.,0.]
+        if y is not None:
+            center=[0.,y,0.]
+        if z is not None:
+            center=[0.,0.,z]
+    if axis==0:
+        xmin=center[1]-width[0]/2
+        xmax=center[1]+width[0]/2
+        ymin=center[2]-width[1]/2
+        ymax=center[2]+width[1]/2
+        x=center[0]
+        y=None
+        z=None
+    if axis==1:
+        xmin=center[0]-width[0]/2
+        xmax=center[0]+width[0]/2
+        ymin=center[2]-width[1]/2
+        ymax=center[2]+width[1]/2
+        x=None
+        y=center[1]
+        z=None
+    if axis==2:
+        xmin=center[0]-width[0]/2
+        xmax=center[0]+width[0]/2
+        ymin=center[1]-width[1]/2
+        ymax=center[1]+width[1]/2
+        z=center[2]
     if xlim:
         xmin=xlim[0]
         xmax=xlim[1]
@@ -313,29 +369,52 @@ def amr_plane(sn,iv='d',z=0.5,x=None,y=None,log=False,
         ymin=ylim[0]
         ymax=ylim[1]
     axis,s=_axis(x,y,z)
-    if lmin:
-        pp=[p for p in sn.patches if contains(p,s,axis) and p.level<=lmin]
-    else:
-        pp=[p for p in sn.patches if contains(p,s,axis)]
-    if lmax:
-        pp=[p for p in sn.patches if contains(p,s,axis) and p.level<=lmax]
-    else:
-        pp=[p for p in sn.patches if contains(p,s,axis)]
+    if not lmin:
+        lmin=1
+    if not lmax:
+        lmax=30
+    
+    le=np.zeros((3))
+    ue=np.zeros((3))
+    if axis==0:
+        le[0]=x
+        ue[0]=x
+        le[1]=center[1]-width[0]/2
+        ue[1]=center[1]+width[0]/2
+        le[2]=center[2]-width[1]/2
+        ue[2]=center[2]+width[1]/2
+    if axis==1:
+        le[1]=y
+        ue[1]=y
+        le[0]=center[0]-width[0]/2
+        ue[0]=center[0]+width[0]/2
+        le[2]=center[2]-width[1]/2
+        ue[2]=center[2]+width[1]/2
+    if axis==2:
+        le[2]=z
+        ue[2]=z
+        le[0]=center[0]-width[0]/2
+        ue[0]=center[0]+width[0]/2
+        le[1]=center[1]-width[1]/2
+        ue[1]=center[1]+width[1]/2
+    pp=[p for p in sn.patches if p.contains(le,ue,lmax=lmax)]
+    
+    pp=sort_by_level(pp)
     vmin1=1e20
-    vmax1=0.0
+    vmax1=-vmin1
     for p in pp:
         d=interpolate(p,iv,s,axis)
         vmin1=min(vmin1,d.min())
         vmax1=max(vmax1,d.max())
         if verbose>1:
-            print('id: {:3d}  dmin: {:10.3e}  dmax: {:10.3e}'.format(p.id,d.min(),d.max()))
+            print('id: {:3d}  axis:{}  dmin: {:10.3e}  dmax: {:10.3e}'.format(p.id,axis,d.min(),d.max()))
     if vmin is None: vmin=vmin1
     if vmax is None: vmax=vmax1
     if zero:
         vmax = max(abs(vmax),abs(vmin))
         vmin = -vmax
+    cmap=_cmap(np.array([vmin,vmax]),cmap,verbose=verbose)
     vv=np.array([vmin,vmax])
-    cmap=_cmap(vv,cmap)
     if log:
         vmin=np.log10(vmin)
         vmax=np.log10(vmax)
@@ -354,7 +433,15 @@ def amr_plane(sn,iv='d',z=0.5,x=None,y=None,log=False,
         ymn=ymin
     if ymax:
         ymx=ymax
-    pp=sort_by_level(pp)
+    if axis==0:
+        s=x
+        label=('y','z')
+    if axis==1:
+        s=y
+        label=('x','z')
+    if axis==2:
+        s=z
+        label=('x','y')
     for p in pp:
         e=p.extent[axis]
         d=interpolate(p,iv,s,axis,verbose=verbose)
@@ -362,9 +449,12 @@ def amr_plane(sn,iv='d',z=0.5,x=None,y=None,log=False,
             d=np.log10(interpolate(p,iv,s,axis,log,verbose=verbose))
         pl.imshow(d.transpose(),extent=e,
               vmin=vmin,vmax=vmax,origin='lower',cmap=cmap)
-        x0,x1,y0,y1=p.extent[axis]
+        #print(p.id,(p.position-center)/0.5**lmax)
+        pl.xlabel(label[0])
+        pl.ylabel(label[1])
+        x0,x1,y0,y1=e
         if mesh:
-            outline(p.extent[axis])
+            outline(e)
         if ident:
             x0,x1,y0,y1=p.extent[axis]
             if x0>=xmn and x0<=xmx and y0>=ymn and y0<=ymx:
@@ -373,6 +463,8 @@ def amr_plane(sn,iv='d',z=0.5,x=None,y=None,log=False,
     pl.ylim(ymn,ymx)
     pl.colorbar()
     _title(sn,x,y,z,iv,title)
+    if verbose:
+        print('{} patches, {:.2e} sec'.format(len(pp),time.time()-start))
 
 def sort_by_level(pp):
     ii=np.argsort([p.level for p in pp])
@@ -388,3 +480,57 @@ def pdf(io,run='',data='../data',log=True,**kwargs):
     tmp=di.pdf(io,run,data,**kwargs)
     plot_pdf(tmp,log=log,**kwargs)
 
+def outline(p,nb,ps='o',color='red',ROI=False):
+    """ Outline of nbor patch nb, projected onto
+        the xy-plane of patch
+    """
+    xhat=np.matmul(p.erot,nb.erot[0])[0:2]
+    yhat=np.matmul(p.erot,nb.erot[1])[0:2]
+    dx=xhat*nb.size[0]
+    dy=yhat*nb.size[1]
+    if ROI:
+        dx*=p.gn[0]/p.n[0]
+        dy*=p.gn[1]/p.n[1]
+    p0=np.matmul(p.erot,nb.position)[0:2]  # position of the nbor, expressed in local (x,y) coordinates
+    xy=np.copy(p0)
+    xy=xy-dx/2-dy/2; pp=[xy]
+    xy=xy+dy; pp.append(xy)
+    xy=xy+dx; pp.append(xy)
+    xy=xy-dy; pp.append(xy)
+    xy=xy-dx; pp.append(xy)
+    pp=np.array(pp).transpose()
+    pl.plot(pp[0],pp[1],color=color)
+    pl.plot(p0[0],p0[1],ps,color=color)
+    
+def show_nbors(sn,p=None,size=6,all=None):
+    """ Show outlines of nbor patches, by default
+        only at the same layer radius
+    """
+    if p is None:
+        p=sn.patches[0]                             # default patch
+    pl.figure(figsize=(size,size))                  # setup square figure
+    rp=np.sum(p.position*p.erot[2])                 # layer radius
+    outline(p,p,'s',ROI=True)                       # outline of patch ROI
+    for id in p.nbor_ids:                           # loop over nbor IDs
+        nb=sn.patches[id-1]                         # nbor patch
+        x=np.sum(nb.position*p.erot[0])             # x-position of center
+        y=np.sum(nb.position*p.erot[1])             # y-position of center
+        rnb=np.sum(nb.position*nb.erot[2])          # neighbor layer radius
+        xx=np.sum(p.erot[0]*nb.erot[0])             # length of nbor x-hat
+        if abs(rp-rnb)<1 or all:                    # show only the same layer
+            if xx>0.99:                             # same face
+                outline(p,nb,color='grey')          # grey outline
+            else:                                   # different face
+                outline(p,nb,'+',color='lightblue') # light-blue outline
+    # make plot isotropic
+    xl=pl.xlim(); wx=xl[1]-xl[0]
+    yl=pl.ylim(); wy=yl[1]-yl[0]
+    xm=(xl[0]+xl[1])/2
+    ym=(yl[0]+yl[1])/2
+    w=max(wx,wy)/2
+    pl.xlim(xm-w,xm+w)
+    pl.ylim(ym-w,ym+w)
+    if all:
+        pl.title('all nbors of patch {}'.format(p.id))
+    else:
+        pl.title('layer nbors of patch {}'.format(p.id))

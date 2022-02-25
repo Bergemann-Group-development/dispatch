@@ -36,7 +36,7 @@ SUBROUTINE init (self, length, initial_value, verbose)
   self%length = length
   allocate (self%ring(length))
   if (self%verbose > 0) &
-    write (io_unit%log, *) &
+    write (io_unit%log,'(a,i8,1p,g14.5,l3)') &
      'running_mean_t%init: length, initial_value, associated', &
       length, initial_value, associated(self%ring)
   self%ring = initial_value

@@ -25,7 +25,7 @@ PROGRAM test
   close (unit)
   !$omp end critical
   !$omp end parallel
-  call toc ('critical')
+  call timer%toc ('critical')
 
   call tic
   !$omp parallel private(filename, unit,i, rec)
@@ -41,6 +41,6 @@ PROGRAM test
     !$omp end critical
   end do
   !$omp end parallel
-  call toc ('shared')
+  call timer%toc ('shared')
 
 END PROGRAM

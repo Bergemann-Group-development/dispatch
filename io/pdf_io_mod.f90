@@ -102,7 +102,7 @@ SUBROUTINE update (self, patch)
   end if
   call trace%begin ('pdf_io_t%update')
   if (patch%time > patch%pdf_next) then
-    call patch%time_interval (patch%pdf_next, jt, pt)
+    call patch%time_interval (patch, patch%pdf_next, jt, pt)
     deallocated = .not.associated(patch%frefine)
     if (deallocated) &
       allocate (patch%frefine(patch%gn(1),patch%gn(2),patch%gn(3)))

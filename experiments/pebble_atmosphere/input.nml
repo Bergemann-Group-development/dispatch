@@ -1,77 +1,35 @@
-&timer_params sec_per_report=30 /
+!------------------ I/O params -------------------------------------------------
+&timer_params       sec_per_report=10 /
+&io_params          verbose=0 do_trace=f omp_trace=t 
+                    do_output=f end_time=1.0 out_time=0.01
+                    print_seconds=1 print_every=1 guard_zones=t /
 
-&experiment_params
-/
-&IC_params /
-&force_params   /
+!------------------ patch params -----------------------------------------------
+&rubiks_params      verbose=1 n_levels=7 n_patch=3 m_zoom=3 n_repeat=1,3,1 /
+&patch_params       n=3*21 nt=7 grace=0.1 dt_small=1e-20 /
 
-&io_params
- verbose=0
- do_output=t
- do_trace=f
- omp_trace=f
- !id_debug=62
-/
-&out_params
- end_time=1.0 out_time=0.1
- !restart=2
- !end_time=100.0 out_time=10
- print_time=0
- guard_zones=t
- time_derivs=f
- max_files=9000
-/
-&rubiks_params
- n_levels=7
- n_patch=3
- m_zoom=3
- n_repeat=1,3,1
-/
-&pebble_params
- do_pebbles=f
- omega_yr=0.0,0.0,1.0
-!omega_yr=0.0,0.0,0.0   ! TEST only
- !----------------------- TOP/BOTTOM ENTRY --------------
- vz_pebble_cgs=1.5e6    ! incoming vertical velocity
- pebble_rate_cgs=1      ! top/bottom rate of pebble entry
- !----------------------- RANDOM DISTRIBUTION -----------
- ppc=0.1                ! particles per cell
- trace_every=1          ! trace every 10th pebble => data/*.peb
-/
-&planet_params
- mass_m_earth=0.95
-/
-&atmosphere_params
- density_cgs=1e-10
- temperature_K=300.
- mass_m_earth=0.95
- orbit_au=1.0
-/
-&planet_atm_params
- omega=0.0,0.0,1.0
- v_head_cgs=0.0
- v_accrete_cgs=0.0
-/
-&patch_params
- n=3*21
- nv=5
- nt=7
- grace=0.0
- no_mans_land=f
- use_data_hub=f
-/
-&timestep_params /
-&stagger_params
- gamma=1.4
- nu=  0.05, 1.0, 1.0, 0.0, 1.0, 1.0
- !     cs   pa   ofd  mas  kap  eta
-/
-&ramses_params          ! Used only when SOLVER=ramses/hydro
- gamma=1.4
- slope_type=2
- smallr=1e-20
- smallc=1e-3
- do_isothermal=f
- csound=0.2
- detailed_timer=f
-/
+!------------------ model params -----------------------------------------------
+&eos_params         gamma=1.4 /
+&planet_params      mass_m_earth=0.95 radius_r_earth=0.98 rad_mult=1 /
+&atmosphere_params  verbose=0 density_cgs=1e-10 temperature_K=300 orbit_au=1.0 /
+&planet_atm_params  omega=0.0,0.0,1.0 v_head_cgs=0.0 v_accrete_cgs=0.0 /
+&experiment_params  verbose=0 /
+&pebble_params      do_pebbles=f
+                    !------------- TOP/BOTTOM ENTRY --------------
+                    vz_pebble_cgs=1.5e6    ! incoming vertical velocity
+                    pebble_rate_cgs=1      ! top/bottom rate of pebble entry
+                    !------------- RANDOM DISTRIBUTION -----------
+                    ppc=0.1                ! particles per cell
+                    trace_every=1          ! trace every 10th pebble => data/*.peb
+                    omega_yr=0.0,0.0,1.0 /
+
+!------------------ solver params ----------------------------------------------
+&hllc_params        /
+                    !     cs  pa ofd mas kap eta
+&stagger_params     nu= 0.05,1.0,1.0,0.0,1.0,1.0 verbose=0 /
+&timestep_params    /
+
+!------------------ framework params -------------------------------------------
+&dispatcher0_params /
+&task_list_params   verbose=0 check_memory=t /
+&halo_params        check_filled=f /

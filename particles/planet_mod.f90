@@ -44,10 +44,24 @@ SUBROUTINE init (self)
   real:: r_smooth=0.0
   real(8):: t_growth=0d0                ! in orbit periods
   real(8):: t_inj = 0.5
+  integer:: iostat
+  logical, save:: first_time=.true.
   namelist /planet_params/ orbit_radius_au, rad_mult, position_orbit_radii, radius_r_earth, &
     mass_m_earth, temperature_k, artificial_friction, trap, r_smooth
   !-----------------------------------------------------------------------------
-  rewind (io%input); read (io%input, planet_params); write (*,planet_params)
+  call io%lock%set
+  if (first_time) then
+    first_time = .false.
+    rewind (io%input)
+    read (io%input, planet_params, iostat=iostat)
+    if (iostat > 0) then
+      rewind (io%input)
+      read (io%input, planet_params)
+    end if
+    write (io%namelist,planet_params)
+  end if
+  call io%lock%unset
+  !
   self%radius = radius_r_earth*rad_mult*cgs%r_earth/scaling%l
   self%mass = mass_m_earth*cgs%m_earth/scaling%m
   self%orbit_radius = orbit_radius_au*cgs%au/scaling%l
@@ -57,7 +71,7 @@ SUBROUTINE init (self)
   self%trap = trap
   self%r_smooth = r_smooth
   self%t_growth = t_growth * self%orbit_radius * 2 * cgs%pi
-  print *, "============= PLANET INIT POSITION ===========", self%position
+  !print '(a,3g14.5)', ' planet postion:', self%position
 END SUBROUTINE init
 
 

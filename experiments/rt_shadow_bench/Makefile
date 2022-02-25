@@ -7,7 +7,7 @@
 # Default target and methods
 UPD             = adams_bashforth
 #SOLVER          = stagger2/bifrost
-SOLVER          = ramses/mhd_eos
+SOLVER          = ramses/hlls
 #STAGGER         = stagger_6th.o
 RT_SOLVER       = short_characteristics
 #RT_SOLVER       = hybrid

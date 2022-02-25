@@ -1,0 +1,45 @@
+!----------------- Main experiment parameters ----------------------------------
+&experiment_params kappa=0.0 stencil=1.8 kinematic=t amplitude=0.00,0.0
+                   z0=0.2 mpoly=10 q_rate=2.0 courant_c=1.7 courant_v=1.7 /
+&boundaries_params /
+&gravity_params    on=t constant=20 axis=3 position=0.0 mass=-1 minrad=-1 /
+&viscosity_params  on=f /
+&conduction_params on=f /
+
+!----------------- I/O parameters -----------------------------------------------
+&io_params         verbose=0 do_trace=f do_debug=f do_output=t
+                   task_logging=1 log_interval=600
+                   method='parallel' guard_zones=t nml_version=1 /
+!&restart_params    snapshot=5 /
+&out_params        end_time=5.01 out_time=0.1 print_every=30 /
+&timer_params      sec_per_report=15 /
+
+!----------------- Initial condition parameter ---------------------------------
+&patch_params      nt=5 n=3*32 do_check_nan=t grace=0.01 dt_fixed=2.5e-3 /
+&cartesian_params  size=4,4,1 dims=4,4,2 mpi_dims=4,2,1 origin=3*0.0 periodic=t,t,f /
+
+!----------------- Refinemennt parameters --------------------------------------
+&refine_params     on=f levelmax=12 levelmin=1 verbose=3 check_interval=2 /
+
+!----------------- Solver parameters --------------------------------------------
+&aux_params        verbose=0 select= /
+&eos_params        gamma=1.6666666666667 /
+&divb_clean_params on=f divb_iter=4 divb_cleaner=0 /
+&ramses_params     slope_type=-1 smallr=1e-9 smallc=0.1 detailed_timer=f
+                   courant_factor=0.20 /
+&non_ideal_params  mhd_Ohm=f eta_Ohm=0.1 mhd_AD=f /
+
+!                     cs    pa   ofd  mas  kap  eta
+&stagger_params    nu=0.10, 1.0, 1.0, 0.0, 1.0, 1.0 courant=0.10 do_maxwell=t /
+
+&bifrost_params    loginterpolation=t ca_max=3e2 courant=0.2 max_r=3 symmetric_e=f
+!                        Ca    U    Uv   d     e      E
+!                        nu1   nu2  nu3  nu_d  nu_ee  eta3
+                   nu=  0.03 , 0.1, 0.1, 0.05,  0.30,  0.3 /
+                  !nu=  0.03 , 0.3, 0.1, 0.00,  0.05,  1.0 /
+                  !nu=  0.05 , 0.1, 0.2, 0.05,  0.05,  0.8 /
+
+!----------------- Framework parameters -----------------------------------------
+&dispatcher_params /
+&timestep_params   /
+&lock_params       verbose=1 /

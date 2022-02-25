@@ -147,7 +147,7 @@ SUBROUTINE compute_q(self, ff)
   ! magnetic field topology
   call self%compute_b_field_topology(ff)
   ! gas temperature
-  call eos%lookup_table (n, d=d, e=e, tt=tg)
+  call eos%lookup(d=d, e=e, tt=tg)
   lntg = alog(tg)
   ! centered temperature gradient
   dtg=up(grad(self%patch%mesh,lntg))
@@ -289,7 +289,7 @@ SUBROUTINE post_update_explicit(self)
   call allocate_scalars (n, lntg, tg, qspitz)
   call allocate_vectors (n, dtg, Bc)
   ! gas temperature
-  call eos%lookup_table (n, d=d, e=e, tt=tg)
+  call eos%lookup (d=d, e=e, tt=tg)
   lntg = alog(tg)
 
   u_cond=8e-7*scaling%temp**3.5/scaling%l**2*(scaling%t/scaling%e)
@@ -403,7 +403,7 @@ SUBROUTINE conductive_flux(self, ff, dt)
   call allocate_scalars (n,ux, uy, uz)
   call allocate_scalars (n, lnd, self%sigmac, lntg, tg)
   ! gas temperature
-  call eos%lookup_table (n, d=d, e=e, tt=tg)
+  call eos%lookup(d=d, e=e, tt=tg)
   lntg = log(tg)
   ! gas velocities
   lnd = log(d)

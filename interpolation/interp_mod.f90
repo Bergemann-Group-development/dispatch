@@ -19,13 +19,14 @@ MODULE interp_mod
   type, public:: interp_t
     class(task_t), pointer:: source => null()    ! source patch
     class(task_t), pointer:: target => null()    ! target patch
-    real, allocatable:: r(:,:,:,:)
+    real, pointer, contiguous:: r(:,:,:,:)
     type(lock_t):: lock
   contains
     procedure:: init
     procedure:: from_source
     procedure:: indices
     procedure, nopass:: in_t
+    procedure, nopass:: no_t
     procedure, nopass:: in_x
     procedure, nopass:: in_y
     procedure, nopass:: in_z
@@ -47,23 +48,25 @@ SUBROUTINE init (self, nbtask)
   namelist /interp_params/ verbose, detailed_timer
   !-----------------------------------------------------------------------------
   call trace%begin ('interp_t%init')
-  call io%lock%set ('interp_t%init')
+  !-----------------------------------------------------------------------------
+  ! Read namelist inside double-if, since this is called repeatedly
+  !-----------------------------------------------------------------------------
   if (first_time) then
-    !---------------------------------------------------------------------------
-    ! Read namelist parameters
-    !---------------------------------------------------------------------------
-    rewind (io%input)
-    read (io%input, interp_params, iostat=iostat)
-    if (iostat > 0) then
+    call io%lock%set ('interp_t%init')
+    if (first_time) then
       rewind (io%input)
-      read (io%input, interp_params)
+      read (io%input, interp_params, iostat=iostat)
+      if (iostat > 0) then
+        rewind (io%input)
+        read (io%input, interp_params)
+      end if
+      call io%namelist_warning ('interp_params', iostat)
+      write (io%namelist, interp_params)
+      first_time = .false.
     end if
-    call io%namelist_warning ('interp_params', iostat)
-    write (io%namelist, interp_params)
-    first_time = .false.
+    call io%lock%unset ('interp_t%init')
   end if
   call self%lock%init
-  call io%lock%unset ('interp_t%init')
   !-----------------------------------------------------------------------------
   call trace%end ()
 END SUBROUTINE init
@@ -71,23 +74,28 @@ END SUBROUTINE init
 !===============================================================================
 !> Interpolate in 3-D index space
 !===============================================================================
-SUBROUTINE from_source (self, tgt, lt, ut, src, filled)
-  class(interp_t)           :: self
-  class(patch_t)            :: tgt, src
-  integer, dimension(3)     :: lt, ut
-  integer(kind=int8)        :: filled(:,:,:)
-  optional                  :: filled
+SUBROUTINE from_source (self, tgt, lt, ut, src, filled, all_src)
+  class(interp_t)             :: self
+  class(patch_t)              :: tgt, src
+  integer, dimension(3)       :: lt, ut
+  integer(kind=int8), pointer :: filled(:,:,:)
+  optional                    :: filled
+  logical, optional           :: all_src
   !.............................................................................
-  real, pointer, contiguous :: p(:,:,:,:)
-  real, pointer, contiguous :: tm(:,:,:,:), sm(:,:,:,:)
-  real, pointer, contiguous :: sp(:,:,:,:), tp(:,:,:,:)
-  real                      :: pt(2), r1, r2, r
-  real(8)                   :: p1, p2, q1, q2, p3, q3, v(3), v_shift(3), d_omega
-  real(8)                   :: d(3), e(3,3)
-  logical                   :: outside(3)
-  integer                   :: i1, i2, i3, j1 ,j2, j3, iv, j, it(2)
-  integer, dimension(3)     :: l, u, m(4)
-  integer, save             :: itimer=0
+  real, pointer, contiguous   :: p(:,:,:,:)
+  real(8), pointer, contiguous   :: tr1(:), tr2(:), tr3(:)
+  real, pointer, contiguous   :: tm(:,:,:,:), sm(:,:,:,:)
+  real, pointer, contiguous   :: sp(:,:,:,:), tp(:,:,:,:)
+  real                        :: pt(2), r1, r2, r
+  real(8)                     :: p1, p2, q1, q2, p3, q3, v(3), v_shift(3), d_omega
+  real(8)                     :: d(3), e(3,3)
+  logical                     :: outside(3)
+  integer                     :: i1, i2, i3, j1 ,j2, j3, iv, j, it(2), idx_es
+  integer, dimension(3)       :: l, u, m(4)
+  logical, pointer            :: available(:,:,:)
+  logical                     :: all_src_loc
+  integer                     :: m_extrap
+  integer, save               :: itimer=0, n_extrap=0
   !-----------------------------------------------------------------------------
   if (detailed_timer) call trace%begin ('interp_t%from_source', itimer=itimer)
   !-----------------------------------------------------------------------------
@@ -97,19 +105,35 @@ SUBROUTINE from_source (self, tgt, lt, ut, src, filled)
   tm => tgt%mem(:,:,:,:,tgt%it,1)
   sm => src%mem(:,:,:,:,src%it,1)
   m = shape(sm)
+  if (present(all_src)) then
+    all_src_loc = all_src
+  else
+    all_src_loc = .false.
+  end if
+  !-----------------------------------------------------------------------------
+  ! Combine handling of energy and entropy per unit mass
+  !-----------------------------------------------------------------------------
+  idx_es = max(src%idx%e,src%idx%s)  
+  !-----------------------------------------------------------------------------
+  ! the available grid holds logicals, telling us, which cells are available to
+  ! be filled from source.
+  !-----------------------------------------------------------------------------
+  allocate (available(m(1),m(2),m(3)))
+  available(:,:,:) = .false.
+  !
   allocate (tp(m(1),m(2),m(3),m(4)))
   allocate (sp(m(1),m(2),m(3),m(4)))
-  call src%time_interval (tgt%time, it, pt)
+  call src%time_interval (tgt, tgt%time, it, pt)
   call to_per_unit_mass (src, sp, it, pt)
   !-----------------------------------------------------------------------------
-  ! Get the distance and rotation matrix from src to tgt
+  ! Get the distance and rotation matrix from tgt to src
   !-----------------------------------------------------------------------------
-  call tgt%get_position (src, p=d, e=e)
+  call src%get_position (tgt, p=d, e=e)
   !-----------------------------------------------------------------------------
   ! Interpolation coordinates and weights p(:,:,:,1:3)
   !-----------------------------------------------------------------------------
   allocate (p(src%gn(1),src%gn(3),src%gn(3),3))
-  call interp%indices (tgt, lt, ut, src, p, d, e)
+  call interp%indices (tgt, lt, ut, src, p, available, d, e)
   !-----------------------------------------------------------------------------
   ! Bi-linear interpolation in per-unit-mass variables
   !-----------------------------------------------------------------------------
@@ -118,8 +142,10 @@ SUBROUTINE from_source (self, tgt, lt, ut, src, filled)
   do iv=1,tgt%nv
     do i3=lt(3),ut(3)
       do i2=lt(2),ut(2)
-        if (present(filled)) then
+        if (all_src_loc) then
           do i1=lt(1),ut(1)
+            if (.not.available(i1,i2,i3)) &
+              cycle
             !-------------------------------------------------------------------
             ! Skip interior points
             !-------------------------------------------------------------------
@@ -132,6 +158,22 @@ SUBROUTINE from_source (self, tgt, lt, ut, src, filled)
             p1 = p(i1,i2,i3,1) - j1
             p2 = p(i1,i2,i3,2) - j2
             p3 = p(i1,i2,i3,3) - j3
+            if (any([p1,p2,p2] > 1.5 .or. [p1,p2,p3] < -0.5)) then
+              ! PRINT '(2i6,4x,3f8.3,2x,a)', &
+              ! tgt%id, src%id, j1+p1,j2+p2,j3+p3,'extrapolation prevented'
+              !$omp atomic capture
+              n_extrap = n_extrap+1
+              m_extrap = n_extrap
+              !$omp end atomic
+              if (m_extrap == 100000) then
+                call io%warning ("100,000 extrapolations prevented")
+                !$omp atomic write
+                n_extrap = 0
+              end if
+            end if
+            p1 = min(max(p1,0.0),1.0)
+            p2 = min(max(p2,0.0),1.0)
+            p3 = min(max(p3,0.0),1.0)
             q1 = 1.0 - p1
             q2 = 1.0 - p2
             q3 = 1.0 - p3
@@ -146,6 +188,8 @@ SUBROUTINE from_source (self, tgt, lt, ut, src, filled)
           end do
         else
           do i1=lt(1),ut(1)
+            if (.not.available(i1,i2,i3)) &
+              cycle
             !-------------------------------------------------------------------
             ! Skip interior points
             !-------------------------------------------------------------------
@@ -158,6 +202,22 @@ SUBROUTINE from_source (self, tgt, lt, ut, src, filled)
             p1 = p(i1,i2,i3,1) - j1
             p2 = p(i1,i2,i3,2) - j2
             p3 = p(i1,i2,i3,3) - j3
+            if (any([p1,p2,p2] > 1.5 .or. [p1,p2,p3] < -0.5)) then
+              ! PRINT '(2i6,4x,3f8.3,2x,a)', &
+              ! tgt%id, src%id, j1+p1,j2+p2,j3+p3,'extrapolation prevented'
+              !$omp atomic capture
+              n_extrap = n_extrap+1
+              m_extrap = n_extrap
+              !$omp end atomic
+              if (m_extrap == 100000) then
+                call io%warning ("100,000 extrapolations prevented")
+                !$omp atomic write
+                n_extrap = 0
+              end if
+            end if
+            p1 = min(max(p1,0.0),1.0)
+            p2 = min(max(p2,0.0),1.0)
+            p3 = min(max(p3,0.0),1.0)
             q1 = 1.0 - p1
             q2 = 1.0 - p2
             q3 = 1.0 - p3
@@ -173,11 +233,17 @@ SUBROUTINE from_source (self, tgt, lt, ut, src, filled)
     end do
   end do
   !-----------------------------------------------------------------------------
+  ! Get the distance and rotation matrix from src to tgt
+  !-----------------------------------------------------------------------------
+  call tgt%get_position (src, p=d, e=e)
+  !-----------------------------------------------------------------------------
   ! Deposit interpolated values in target mem, taking into account that the
   ! tp values are "per unit mass"
   !-----------------------------------------------------------------------------
   l = src%mesh%li
   u = src%mesh%ui
+  tr1 => tgt%mesh(1)%r
+  tr2 => tgt%mesh(2)%r
   do i3=lt(3),ut(3)
     outside(3) = i3 < tgt%mesh(3)%li .or. i3 > tgt%mesh(3)%ui
     do i2=lt(2),ut(2)
@@ -187,7 +253,7 @@ SUBROUTINE from_source (self, tgt, lt, ut, src, filled)
         !-----------------------------------------------------------------------
         ! Skip interior points
         !-----------------------------------------------------------------------
-        if (any(outside)) then
+        if (any(outside) .and. available(i1,i2,i3)) then
           !---------------------------------------------------------------------
           ! Mass density
           !---------------------------------------------------------------------
@@ -198,8 +264,8 @@ SUBROUTINE from_source (self, tgt, lt, ut, src, filled)
           ! to target is the difference from target to source.  The direction
           ! of that velocity is along phi_hat
           !---------------------------------------------------------------------
-          r1 = self%r(i1,i2,i3,1)*tgt%ds(1) + tgt%centre_nat(1)
-          r2 = self%r(i1,i2,i3,2)*tgt%ds(2)
+          r1 = tr1(i1)*tgt%ds(1) + tgt%centre_nat(1)
+          r2 = tr2(i2)*tgt%ds(2)
           r = sqrt(r1**2+r2**2)
           d_omega = (src%omega(3)-tgt%omega(3))
           v_shift = d_omega*[-r2,+r1,0.0]
@@ -222,7 +288,7 @@ SUBROUTINE from_source (self, tgt, lt, ut, src, filled)
           ! But the velocity difference is already expressed in the tgt system,
           ! so this should be fine:
           !---------------------------------------------------------------------
-          v = matmul (e, v)
+          v = matmul (v, e)
           !---------------------------------------------------------------------
           ! Add velocity shift, which is already in the tgt system
           !---------------------------------------------------------------------
@@ -236,11 +302,18 @@ SUBROUTINE from_source (self, tgt, lt, ut, src, filled)
           ! to which needs to be added the kinetic energy in the target frame,
           ! keeping in mind that the tm(...%px) values are still velocities
           !---------------------------------------------------------------------
-          tm(i1,i2,i3,tgt%idx%e ) = tm(i1,i2,i3,tgt%idx%d)*( &
-          tp(i1,i2,i3,tgt%idx%e ) + 0.5*( &
-          tm(i1,i2,i3,tgt%idx%px)**2 + &
-          tm(i1,i2,i3,tgt%idx%py)**2 + &
-          tm(i1,i2,i3,tgt%idx%pz)**2))
+         ! print*, 'd,e', tm(i1,i2,i3,tgt%idx%d), tp(i1,i2,i3,tgt%idx%e )
+          if (tgt%etype == 'total') then
+            tm(i1,i2,i3,tgt%idx%e ) = tm(i1,i2,i3,tgt%idx%d)*( &
+            tp(i1,i2,i3,tgt%idx%e ) + 0.5*( &
+            tm(i1,i2,i3,tgt%idx%px)**2 + &
+            tm(i1,i2,i3,tgt%idx%py)**2 + &
+            tm(i1,i2,i3,tgt%idx%pz)**2))
+          else
+            tm(i1,i2,i3,    idx_es) = tm(i1,i2,i3,tgt%idx%d)* &
+                                      tp(i1,i2,i3,   idx_es)
+          end if
+         ! print*, 'tot e', tm(i1,i2,i3,tgt%idx%e ), i1,i2,i3, p(i1,i2,i3,:)
           !---------------------------------------------------------------------
           ! Convert from velocities to linear momenta
           !---------------------------------------------------------------------
@@ -250,11 +323,19 @@ SUBROUTINE from_source (self, tgt, lt, ut, src, filled)
           tm(i1,i2,i3,tgt%idx%py) * tm(i1,i2,i3,tgt%idx%d)
           tm(i1,i2,i3,tgt%idx%pz) = &
           tm(i1,i2,i3,tgt%idx%pz) * tm(i1,i2,i3,tgt%idx%d)
+          if (tgt%id == io%id_debug) then
+            PRINT 1,src%id,i1,i2,i3,tm(i1,i2,i3,tgt%idx%d)
+            1 format("from:source",i6,3i3,1p,g12.3)
+          end if
+          ! --------------------------------------------------------------------
+          ! Fill in the filled grid
+          ! --------------------------------------------------------------------
+          if (associated(filled)) filled(i1,i2,i3)=max(src%level,tgt%level)
         end if
       end do
     end do
   end do
-  deallocate (p, tp, sp)
+  deallocate (p, tp, sp, available)
   if (detailed_timer) call trace%end (itimer)
 END SUBROUTINE from_source
 
@@ -270,48 +351,69 @@ SUBROUTINE to_per_unit_mass (src, sp, it, pt)
   real, dimension(:,:,:), contiguous, pointer:: d1, e1, px1, py1, pz1
   real, dimension(:,:,:), contiguous, pointer:: d2, e2, px2, py2, pz2
   real:: di1, di2
-  integer:: i1, i2, i3
+  integer:: i1, i2, i3, idx_es
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (detailed_timer) call trace%begin ('interp_t%to_per_unit_mass', itimer=itimer)
+  idx_es = max(src%idx%e,src%idx%s)  
   d1  => src%mem(:,:,:,src%idx%d ,it(1),1)
-  e1  => src%mem(:,:,:,src%idx%e ,it(1),1)
-  px1 => src%mem(:,:,:,src%idx%px,it(1),1)
-  py1 => src%mem(:,:,:,src%idx%py,it(1),1)
-  pz1 => src%mem(:,:,:,src%idx%pz,it(1),1)
-  !.............................................................................
   d2  => src%mem(:,:,:,src%idx%d ,it(2),1)
-  e2  => src%mem(:,:,:,src%idx%e ,it(2),1)
+  px1 => src%mem(:,:,:,src%idx%px,it(1),1)
   px2 => src%mem(:,:,:,src%idx%px,it(2),1)
+  py1 => src%mem(:,:,:,src%idx%py,it(1),1)
   py2 => src%mem(:,:,:,src%idx%py,it(2),1)
+  pz1 => src%mem(:,:,:,src%idx%pz,it(1),1)
   pz2 => src%mem(:,:,:,src%idx%pz,it(2),1)
-  l = src%mesh%li
-  u = src%mesh%ui
-  do i3=l(3),u(3)
-  do i2=l(2),u(2)
-    !$omp simd
-    do i1=l(1),u(1)
-      di1 = 1.0/d1(i1,i2,i3)
-      di2 = 1.0/d2(i1,i2,i3)
-      sp(i1,i2,i3,src%idx%d ) = pt(1)*d1(i1,i2,i3) &
-                              + pt(2)*d2(i1,i2,i3)
-      sp(i1,i2,i3,src%idx%px) = pt(1)*px1(i1,i2,i3)*di1 &
-                              + pt(2)*px2(i1,i2,i3)*di2
-      sp(i1,i2,i3,src%idx%py) = pt(1)*py1(i1,i2,i3)*di1 &
-                              + pt(2)*py2(i1,i2,i3)*di2
-      sp(i1,i2,i3,src%idx%pz) = pt(1)*pz1(i1,i2,i3)*di1 &
-                              + pt(2)*pz2(i1,i2,i3)*di2
-      sp(i1,i2,i3,src%idx%e ) = pt(1)*(e1(i1,i2,i3) - ( &
-                                      px1(i1,i2,i3)**2 + &
-                                      py1(i1,i2,i3)**2 + &
-                                      pz1(i1,i2,i3)**2)*0.5*di1)*di1 &
-                              + pt(2)*(e2(i1,i2,i3) - ( &
-                                      px2(i1,i2,i3)**2 + &
-                                      py2(i1,i2,i3)**2 + &
-                                      pz2(i1,i2,i3)**2)*0.5*di2)*di2
+  e1  => src%mem(:,:,:,    idx_es,it(1),1)
+  e2  => src%mem(:,:,:,    idx_es,it(2),1)
+  !.............................................................................
+  l = src%mesh%lo
+  u = src%mesh%uo
+  if (trim(src%etype)=='total') then
+    do i3=l(3),u(3)
+    do i2=l(2),u(2)
+      do i1=l(1),u(1)
+        di1 = 1.0/d1(i1,i2,i3)
+        di2 = 1.0/d2(i1,i2,i3)
+        sp(i1,i2,i3,src%idx%d ) = pt(1)*d1(i1,i2,i3) &
+                                + pt(2)*d2(i1,i2,i3)
+        sp(i1,i2,i3,src%idx%px) = pt(1)*px1(i1,i2,i3)*di1 &
+                                + pt(2)*px2(i1,i2,i3)*di2
+        sp(i1,i2,i3,src%idx%py) = pt(1)*py1(i1,i2,i3)*di1 &
+                                + pt(2)*py2(i1,i2,i3)*di2
+        sp(i1,i2,i3,src%idx%pz) = pt(1)*pz1(i1,i2,i3)*di1 &
+                                + pt(2)*pz2(i1,i2,i3)*di2
+        sp(i1,i2,i3,    idx_es) = pt(1)*(e1(i1,i2,i3) - ( &
+                                        px1(i1,i2,i3)**2 + &
+                                        py1(i1,i2,i3)**2 + &
+                                        pz1(i1,i2,i3)**2)*0.5*di1)*di1 &
+                                + pt(2)*(e2(i1,i2,i3) - ( &
+                                        px2(i1,i2,i3)**2 + &
+                                        py2(i1,i2,i3)**2 + &
+                                        pz2(i1,i2,i3)**2)*0.5*di2)*di2
+      end do
     end do
-  end do
-  end do
+    end do
+  else
+    do i3=l(3),u(3)
+    do i2=l(2),u(2)
+      do i1=l(1),u(1)
+        di1 = 1.0/d1(i1,i2,i3)
+        di2 = 1.0/d2(i1,i2,i3)
+        sp(i1,i2,i3,src%idx%d ) = pt(1)*d1(i1,i2,i3) &
+                                + pt(2)*d2(i1,i2,i3)
+        sp(i1,i2,i3,src%idx%px) = pt(1)*px1(i1,i2,i3)*di1 &
+                                + pt(2)*px2(i1,i2,i3)*di2
+        sp(i1,i2,i3,src%idx%py) = pt(1)*py1(i1,i2,i3)*di1 &
+                                + pt(2)*py2(i1,i2,i3)*di2
+        sp(i1,i2,i3,src%idx%pz) = pt(1)*pz1(i1,i2,i3)*di1 &
+                                + pt(2)*pz2(i1,i2,i3)*di2
+        sp(i1,i2,i3,    idx_es) = pt(1)* e1(i1,i2,i3)*di1 &
+                                + pt(2)* e2(i1,i2,i3)*di2
+      end do
+    end do
+    end do
+  end if
   if (detailed_timer) call trace%end (itimer)
 END SUBROUTINE to_per_unit_mass
 
@@ -322,72 +424,70 @@ END SUBROUTINE to_per_unit_mass
 !> Cartesian displacement in the j-direction for one cell along the local
 !> unit vector in the k-direction.
 !===============================================================================
-SUBROUTINE indices (self, tgt, lt, ut, src, ps, d, e)
-  class(interp_t):: self
-  class(patch_t):: tgt, src
-  integer, dimension(3):: lt, ut, ls, us
-  real(8):: d(3), e(3,3), c, o
+SUBROUTINE indices (self, tgt, lt, ut, src, ps, available, d, e)
+  class(interp_t) :: self
+  class(patch_t)  :: tgt, src
+  integer         :: lt(3), ut(3)
+  real(8)         :: d(3), e(3,3), c(3), o(3), v(3)
   real, contiguous:: ps(:,:,:,:)
+  logical, pointer:: available(:,:,:)
   !.............................................................................
-  real, allocatable:: pt(:,:)
-  integer:: i1, i2, i3, i, j, k
+  real, contiguous, pointer:: r(:,:,:,:)
+  integer:: i1, i2, i3, i, j, k, ls(3), us(3)
   integer, save:: itimer=0
+  real(8), parameter:: eps=0.5001d0
   !-----------------------------------------------------------------------------
   if (detailed_timer) call trace%begin ('interp_t%indices', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Cache the index space cell coordinates -- common to all patches
   !-----------------------------------------------------------------------------
-  call self%lock%set ('indices')
-  if (allocated(self%r)) then
-    if (any(shape(self%r) /= [tgt%gn(1),tgt%gn(2),tgt%gn(3),3])) then
-      deallocate (self%r)
-    end if
-  end if
-  if (.not. allocated(self%r)) then
-    allocate (self%r(tgt%gn(1),tgt%gn(2),tgt%gn(3),3))
-    do i3=1,tgt%gn(3)
+  allocate (r(tgt%gn(1),tgt%gn(2),tgt%gn(3),3))
+  do i3=1,tgt%gn(3)
     do i2=1,tgt%gn(2)
-    do i1=1,tgt%gn(1)
-      self%r(i1,i2,i3,1) = (i1-tgt%mesh(1)%o)
-      self%r(i1,i2,i3,2) = (i2-tgt%mesh(2)%o)
-      self%r(i1,i2,i3,3) = (i3-tgt%mesh(3)%o)
+      do i1=1,tgt%gn(1)
+        r(i1,i2,i3,1) = tgt%mesh(1)%r(i1)
+        r(i1,i2,i3,2) = tgt%mesh(2)%r(i2)
+        r(i1,i2,i3,3) = tgt%mesh(3)%r(i3)
+      end do
     end do
+  end do
+  c = 1d0/src%mesh%d
+  o = src%mesh%o
+  do i3=lt(3),ut(3)
+    do i2=lt(2),ut(2)
+      !-------------------------------------------------------------------------
+      ! ps(:,j) are the integer index space coordinates in the local source
+      ! coordinate system.  We get this by rotating the target points into the
+      ! source coordinate system, and rescaling them to integer index space.
+      !-------------------------------------------------------------------------
+      do i1=lt(1),ut(1)
+        ! v = matmul(r(i1,i2,i3,:), tgt%erot)                ! tgt to global
+        ! ps(i1,i2,i3,:) = (matmul(src%erot,v) + d)*c + o    ! global to src
+        !-----------------------------------------------------------------------
+        ! The e-matrix may be used to go from source to target coordinates, but
+        ! here we need to go from target to source, so we should multiply from
+        ! the left!
+        !-----------------------------------------------------------------------
+        ps(i1,i2,i3,:) = (matmul(r(i1,i2,i3,:),e)+d)*c + o
+        !ps(i1,i2,i3,:) = (matmul(e,r(i1,i2,i3,:))+d)*c + o
+      end do
     end do
-    end do
-  end if
-  call self%lock%unset ('indices')
-  allocate (pt(size(ps,1),3))
+  end do
+  !-----------------------------------------------------------------------------
+  ! available(:,:,:) is an array, indicating if the ps() is in the valid range
+  ! inside the source li and ui
+  !-----------------------------------------------------------------------------
   ls = src%mesh%li
   us = src%mesh%ui
   do i3=lt(3),ut(3)
     do i2=lt(2),ut(2)
-      !-------------------------------------------------------------------------
-      ! pt(:,j) is the displacement in the target index space for each index
-      ! triplet (i1,i2,i3), and we get the corresponding points in the source
-      ! by adding the distance to source, still in target coordinate system.
-      !-------------------------------------------------------------------------
-      do j=1,3
-        do i1=lt(1),ut(1)
-          pt(i1,j) = self%r(i1,i2,i3,j)*tgt%ds(j) - d(j)
-        end do
-      end do
-      !-------------------------------------------------------------------------
-      ! ps(:,:,:,j) are the integer index space coordinates in the local source
-      ! coordinate system.  We get this by rotating the target points into the
-      ! source coordinate system, and rescaling them to integer index space
-      !-------------------------------------------------------------------------
-      do j=1,3
-        c = 1d0/src%mesh(j)%d
-        o = src%mesh(j)%o
-        do i1=lt(1),ut(1)
-          ps(i1,i2,i3,j) = (pt(i1,1)*e(1,j) &
-                          + pt(i1,2)*e(2,j) &
-                          + pt(i1,3)*e(3,j))*c + o
-        end do
+      do i1=lt(1),ut(1)
+        available(i1,i2,i3) = (all(int(ps(i1,i2,i3,:)-eps)<us).and. &
+                               all(int(ps(i1,i2,i3,:)+eps)>=ls))
       end do
     end do
   end do
-  deallocate (pt)
+  deallocate (r)
   if (detailed_timer) call trace%end (itimer)
 END SUBROUTINE indices
 
@@ -405,12 +505,15 @@ SUBROUTINE in_t (target, source, ls, us, in, out, lt, ut, all, only, extrap)
   logical, optional               :: all, extrap
   integer, optional               :: only
   !.............................................................................
+  real, pointer, contiguous       :: in1(:,:,:,:), in2(:,:,:,:)
   integer, dimension(3)           :: l, u, o
-  integer                         :: i1, i2, i3, i4, jt(2), nv, n, it, unit
+  integer                         :: i1, i2, i3, i4, jt(2), nv, n, it, id, m(4)
+  integer                         :: unit, iv0, iv1
   real                            :: pt(2), v_min, d_min
+  real, pointer, contiguous       :: d(:,:,:)
   real(8)                         :: wc
   real(8), save                   :: wtimer
-  type(lock_t), pointer           :: lock1, lock2
+  type(lock_t), pointer           :: lock1, lock2, lock3
   integer, save                   :: itimer=0, ntimer=0
   !-----------------------------------------------------------------------------
   if (detailed_timer) call trace%begin ('interp_t%in_t', itimer=itimer)
@@ -425,71 +528,54 @@ SUBROUTINE in_t (target, source, ls, us, in, out, lt, ut, all, only, extrap)
         in(:,:,:,1,source%it,1), ls, us, 'src')
     end if
   end if
+  call source%time_interval (target, target%time, jt, pt, extrap=extrap)
   !-----------------------------------------------------------------------------
-  ! If the src is at the same time and level, just copy
-  ! FIXME: This is vulnerable to the source task changing source%it, but is only
-  ! likely to be used during tests and with fixed time steps.
+  ! Lock access to source while interpolating
   !-----------------------------------------------------------------------------
-  if (source%time==target%time .and. source%level==target%level) then
-    it = source%it
-    !...........................................................................
-    if (target%id == io%id_debug) then
-      print '("debug:",2(i6,":",i2.2,i3),2(f10.6,i3,f10.6))', &
-        target%id, target%level, target%istep, &
-        source%id, source%istep, source%level, &
-        target%time, target%it, target%t(target%it), &
-        source%time, source%it, source%t(source%it)
-    end if
-    !...........................................................................
-    if (present(lt)) then
-      l = lt
-      u = ut
-    else
-      l = ls
-      u = us
-    end if
-    o = 0
-    !...........................................................................
-    if (verbose > 1) then
-      write (stdlog,'(a,2i6,4(2x,3i4))') &
-      'interp_t%in_t: copy ls,us=', target%id, source%id, ls, us, l, u
-      flush (stdlog)
-    end if
-    !...........................................................................
-    out(l (1):u (1),l (2):u (2),l (3):u (3),:) = &
-     in(ls(1):us(1),ls(2):us(2),ls(3):us(3),:,it,1)
-    n = product(us-ls+1)
-    !...........................................................................
-    if (verbose > 1) then
-      wc = wallclock()-wc
-      n = product(us-ls+1)
-      write (stdlog,'(a,f6.3,1p,4(2x,3e11.2))') &
-      'interp_t%in_t(1): mus/p,min,max,min,max=', wc/n, &
-      minval( in(ls(1):us(1),ls(2):us(2),ls(3):us(3),1,1,1)), &
-      maxval( in(ls(1):us(1),ls(2):us(2),ls(3):us(3),1,1,1)), &
-      minval(out(ls(1):us(1),ls(2):us(2),ls(3):us(3),1)), &
-      maxval(out(ls(1):us(1),ls(2):us(2),ls(3):us(3),1))
-    end if
-  !-----------------------------------------------------------------------------
-  ! Interpolate in time
-  !-----------------------------------------------------------------------------
-  else
-    call source%time_interval (target%time, jt, pt, id=target%id, extrap=extrap)
-    !...........................................................................
-    if (target%id == io%id_debug) then
-      print '("debug:",2(i6,":",i2.2,i3),f10.6,2(i4,f10.6,f7.3))', &
-        target%id, target%level, target%istep, &
-        source%id, source%istep, source%level, &
-        target%time, &
-        jt(1), source%t(jt(1)), pt(1), &
-        jt(2), source%t(jt(2)), pt(2)
-    end if
-    !...........................................................................
-    if (verbose > 1) then
-      write (stdlog,'(a,6i3,3x,4i3)') &
-      'interp_t%in_t: shapes=', shape(in), shape(out)
-    end if
-    !---------------------------------------------------------------------------
+  m = shape(out)
+  allocate (in1(m(1),m(2),m(3),m(4)))
+  allocate (in2(m(1),m(2),m(3),m(4)))
+  !
+  lock1 => source%mem_lock(jt(1))
+  lock2 => source%mem_lock(jt(2))
+  lock3 => target%mem_lock(target%it)
+                                       call lock1%set   ('interp_t%in_t src(1)')
+  do i4=1,source%nv
+  do i3=ls(3),us(3)
+  do i2=ls(2),us(2)
+  do i1=ls(1),us(1)
+    in1(i1,i2,i3,i4) = in(i1,i2,i3,i4,jt(1),1)
+  end do
+  end do
+  end do
+  end do
+                                       call lock1%unset ('interp_t%in_t src(1)')
+                                       call lock2%set   ('interp_t%in_t src(2)')
+  do i4=1,source%nv
+  do i3=ls(3),us(3)
+  do i2=ls(2),us(2)
+  do i1=ls(1),us(1)
+    in2(i1,i2,i3,i4) = in(i1,i2,i3,i4,jt(2),1)
+  end do
+  end do
+  end do
+  end do
+                                       call lock2%unset ('interp_t%in_t src(2)')
+  !...........................................................................
+  if (target%id == io%id_debug) then
+    print '("debug:",2(i6,":",i2.2,i3),f10.6,2(i4,f10.6,f7.3))', &
+      target%id, target%level, target%istep, &
+      source%id, source%istep, source%level, &
+      target%time, &
+      jt(1), source%t(jt(1)), pt(1), &
+      jt(2), source%t(jt(2)), pt(2)
+  end if
+  !...........................................................................
+  if (verbose > 1) then
+    write (stdlog,'(a,6i3,3x,4i3)') &
+    'interp_t%in_t: shapes=', shape(in), shape(out)
+  end if
+  !---------------------------------------------------------------------------
     ! Lock access to source while interpolating
     !---------------------------------------------------------------------------
     if (associated(source%lock)) then
@@ -499,172 +585,200 @@ SUBROUTINE in_t (target, source, ls, us, in, out, lt, ut, all, only, extrap)
       !call lock2%set ('interp_t%in_t')
     end if
     !---------------------------------------------------------------------------
-    ! Shifted from source index space
-    !---------------------------------------------------------------------------
-    if (present(lt)) then
-      if (verbose > 0) then
-        write (stdlog,'(f12.6,a,2i6,1x,2i3,2f7.3,2(1x,2(1x,3i3)),1x,9l1)') &
-          wallclock(), pad_trace(1:indent)// &
-          'interp_t%in_t: tgt,src,jt,pt,ls,us,lt,ut,usg=', &
-          target%id, source%id, jt, pt, ls, us, lt, ut, &
-          source%unsigned
-      end if
-      if (unit == stdout) then
-        write (unit,'(a,2(i6,":",i2.2,f10.6),1x,2i3,2f7.3,2(1x,2(1x,3i3)),1x,9l1)') &
-          'interp_t%in_t(1): tgt,src,jt,pt,ls,us,lt,ut,usg=', &
-          target%id, target%level, target%time, &
-          source%id, source%level, source%time, &
-          jt, pt, ls, us, lt, ut, &
-          source%unsigned
-      end if
-      !.........................................................................
-      if (verbose > 2) then
-        write (stdlog,'(a,1p,4(2x,2e11.2))') &
-          'interp_t%in_t: min/max=', &
-          minval( in(:,:,:,1,jt(1),1)), &
-          maxval( in(:,:,:,1,jt(1),1)), &
-          minval( in(:,:,:,1,jt(2),1)), &
-          maxval( in(:,:,:,1,jt(2),1)), &
-          minval( in(ls(1):us(1),ls(2):us(2),ls(3):us(3),1,jt(1),1)), &
-          maxval( in(ls(1):us(1),ls(2):us(2),ls(3):us(3),1,jt(1),1)), &
-          minval( in(ls(1):us(1),ls(2):us(2),ls(3):us(3),1,jt(2),1)), &
-          maxval( in(ls(1):us(1),ls(2):us(2),ls(3):us(3),1,jt(2),1))
-        flush (stdlog)
-      end if
-      !.........................................................................
-      o = lt-ls
-      do i4=1,target%nv
-        if (skip(i4,only)) &
-          cycle
-        do i3=ls(3),us(3)
-          !---------------------------------------------------------------------
-          ! Use log interpolation only when needed
-          !---------------------------------------------------------------------
-          if (target%unsigned(i4) .and. product(pt) < 0.0) then
-            do i2=ls(2),us(2)
-              !$omp simd
-              do i1=ls(1),us(1)
-                out(i1+o(1),i2+o(2),i3+o(3),i4) = &
-                exp(log(in(i1,i2,i3,i4,jt(1),1))*pt(1) &
-                  + log(in(i1,i2,i3,i4,jt(2),1))*pt(2))
-              end do
+  ! Shifted from source index space
+  !---------------------------------------------------------------------------
+                                                   call lock3%set ('interp tgt')
+  if (present(lt)) then
+    if (verbose > 0) then
+      write (stdlog,'(f12.6,a,2i6,1x,2i3,2f7.3,2(1x,2(1x,3i3)),1x,9l1)') &
+        wallclock(), pad_trace(1:indent)// &
+        'interp_t%in_t: tgt,src,jt,pt,ls,us,lt,ut,usg=', &
+        target%id, source%id, jt, pt, ls, us, lt, ut, &
+        source%unsigned
+    end if
+    if (unit == stdout) then
+      write (unit,'(a,2(i6,":",i2.2,f10.6),1x,2i3,2f7.3,2(1x,2(1x,3i3)),1x,9l1)') &
+        'interp_t%in_t(1): tgt,src,jt,pt,ls,us,lt,ut,usg=', &
+        target%id, target%level, target%time, &
+        source%id, source%level, source%time, &
+        jt, pt, ls, us, lt, ut, &
+        source%unsigned
+    end if
+    !.........................................................................
+    if (verbose > 2) then
+      write (stdlog,'(a,1p,4(2x,2e11.2))') &
+        'interp_t%in_t: min/max=', &
+        minval( in1(:,:,:,1)), &
+        maxval( in1(:,:,:,1)), &
+        minval( in2(:,:,:,1)), &
+        maxval( in2(:,:,:,1)), &
+        minval( in1(ls(1):us(1),ls(2):us(2),ls(3):us(3),1)), &
+        maxval( in1(ls(1):us(1),ls(2):us(2),ls(3):us(3),1)), &
+        minval( in2(ls(1):us(1),ls(2):us(2),ls(3):us(3),1)), &
+        maxval( in2(ls(1):us(1),ls(2):us(2),ls(3):us(3),1))
+      flush (stdlog)
+    end if
+    !.........................................................................
+    id = target%idx%d
+    if (any(target%pervolume)) then
+      allocate (d(target%gn(1),target%gn(2),target%gn(3)))
+    end if
+    o = lt-ls
+    if (present(only)) then
+      iv0 = only
+      iv1 = only
+    else
+      iv0 = 1
+      iv1 = target%nv
+    end if
+    do i4=iv0,iv1                                         ! loop over variables
+      do i3=ls(3),us(3)
+        !---------------------------------------------------------------------
+        ! Use log interpolation only when needed
+        !---------------------------------------------------------------------
+        if (target%unsigned(i4)) then
+          do i2=ls(2),us(2)
+            !$omp simd
+            do i1=ls(1),us(1)
+              out(i1+o(1),i2+o(2),i3+o(3),i4) = &
+              exp(log(in1(i1,i2,i3,i4))*pt(1) &
+                + log(in2(i1,i2,i3,i4))*pt(2))
             end do
-          !---------------------------------------------------------------------
-          ! Signed variables, or safe positive, shifted in index
-          !---------------------------------------------------------------------
-          else
+          end do
+          !-------------------------------------------------------------------
+          ! If per-volume variables are used, save the density
+          !-------------------------------------------------------------------
+          if (i4==id .and. any(target%pervolume)) then
             do i2=ls(2),us(2)
               !$omp simd
               do i1=ls(1),us(1)
-                out(i1+o(1),i2+o(2),i3+o(3),i4) = in(i1,i2,i3,i4,jt(1),1)*pt(1) &
-                                                + in(i1,i2,i3,i4,jt(2),1)*pt(2)
+                  d(i1+o(1),i2+o(2),i3+o(3)) = &
+                out(i1+o(1),i2+o(2),i3+o(3),i4)
               end do
             end do
           end if
-        end do
-      end do
-      n = product(us-ls+1)
-    !---------------------------------------------------------------------------
-    ! Unshifted interpolation in time
-    !---------------------------------------------------------------------------
-    else
-      o = 0
-      !.........................................................................
-      if (verbose > 0) then
-        write (stdlog,'(f12.6,a,2i6,1x,2i3,2f7.3,2(1x,3i3),1x,9l1)') &
-          wallclock(), &
-          pad_trace(1:indent)//'interp_t%in_t: tgt,src,jt,pt,ls,us,usg=', &
-          target%id, source%id, jt, pt, ls, us, &
-          source%unsigned
-      end if
-      if (unit == stdout) then
-        write (unit,'(a,2(i6,":",i2.2,f10.6),1x,2i3,2f7.3,2(1x,3i3),1x,9l1)') &
-          'interp_t%in_t(2): tgt,src,jt,pt,ls,us,lt,ut,usg=', &
-          target%id, target%level, target%time, &
-          source%id, source%level, source%time, &
-          jt, pt, ls, us, &
-          source%unsigned
-      end if
-      !.........................................................................
-      do i4=1,target%nv
-        if (skip(i4,only)) &
-          cycle
-        v_min = huge(1.)
-        do i3=ls(3),us(3)
-          if (source%unsigned(i4)) then
-            do i2=ls(2),us(2)
-              if (verbose > 0) then
-                do i1=ls(1),us(1)
-                  if (in(i1,i2,i3,i4,jt(1),1) <= 0.0 .or. &
-                      in(i1,i2,i3,i4,jt(2),1) <= 0.0) then
-                    write (stdlog,'(a,2(i6,":",i2.2,3i4))') &
-                      'interp_t%in_t: tgt,src=', &
-                      target%id, target%key, source%id, source%key
-                  end if
-                  out(i1,i2,i3,i4) = &
-                    exp(log(in(i1,i2,i3,i4,jt(1),1))*pt(1) &
-                      + log(in(i1,i2,i3,i4,jt(2),1))*pt(2))
-                  v_min = min(v_min,out(i1,i2,i3,i4))
-                  !...............................................................
-                  !write (stdlog,'(a,1(2x,3i3),2x,2i3,2f7.3,2x,1p,3e11.2)') &
-                  !  'in_t(2):', i1, i2, i3, jt, pt, &
-                  !  in(i1,i2,i3,i4,jt(1),1), in(i1,i2,i3,i4,jt(2),1), &
-                  !  out(i1,i2,i3,i4)
-                  !...............................................................
-                end do
-              else
-                !$omp simd
-                do i1=ls(1),us(1)
-                  out(i1,i2,i3,i4) = &
-                    exp(log(in(i1,i2,i3,i4,jt(1),1))*pt(1) &
-                      + log(in(i1,i2,i3,i4,jt(2),1))*pt(2))
-                  v_min = min(v_min,out(i1,i2,i3,i4))
-                  !...............................................................
-                  !write (stdlog,'(a,1(2x,3i3),2x,2i3,2f7.3,2x,1p,3e11.2)') &
-                  !  'in_t(2):', i1, i2, i3, jt, pt, &
-                  !  in(i1,i2,i3,i4,jt(1),1), in(i1,i2,i3,i4,jt(2),1), &
-                  !  out(i1,i2,i3,i4)
-                  !...............................................................
-                end do
-              end if
+        !---------------------------------------------------------------------
+        ! Use per-volume interpolation
+        !---------------------------------------------------------------------
+        else if (target%pervolume(i4)) then
+          do i2=ls(2),us(2)
+            !$omp simd
+            do i1=ls(1),us(1)
+              out(i1+o(1),i2+o(2),i3+o(3),i4) = &
+                d(i1+o(1),i2+o(2),i3+o(3))* &
+                (in1(i1,i2,i3,i4)/in1(i1,i2,i3,id)*pt(1) &
+               + in2(i1,i2,i3,i4)/in2(i1,i2,i3,id)*pt(2))
             end do
-          else
-            do i2=ls(2),us(2)
-              !$omp simd
+          end do
+        !---------------------------------------------------------------------
+        ! Signed variables, or safe positive, shifted in index
+        !---------------------------------------------------------------------
+        else
+          do i2=ls(2),us(2)
+            !$omp simd
+            do i1=ls(1),us(1)
+              out(i1+o(1),i2+o(2),i3+o(3),i4) = in1(i1,i2,i3,i4)*pt(1) &
+                                              + in2(i1,i2,i3,i4)*pt(2)
+            end do
+          end do
+        end if
+      end do
+    end do
+    if (any(target%pervolume)) then
+      deallocate (d)
+    end if
+    n = product(us-ls+1)
+  !---------------------------------------------------------------------------
+  ! Unshifted interpolation in time
+  !---------------------------------------------------------------------------
+  else
+    o = 0
+    !.........................................................................
+    if (verbose > 0) then
+      write (stdlog,'(f12.6,a,2i6,1x,2i3,2f7.3,2(1x,3i3),1x,9l1)') &
+        wallclock(), &
+        pad_trace(1:indent)//'interp_t%in_t: tgt,src,jt,pt,ls,us,usg=', &
+        target%id, source%id, jt, pt, ls, us, &
+        source%unsigned
+    end if
+    if (unit == stdout) then
+      write (unit,'(a,2(i6,":",i2.2,f10.6),1x,2i3,2f7.3,2(1x,3i3),1x,9l1)') &
+        'interp_t%in_t(2): tgt,src,jt,pt,ls,us,lt,ut,usg=', &
+        target%id, target%level, target%time, &
+        source%id, source%level, source%time, &
+        jt, pt, ls, us, &
+        source%unsigned
+    end if
+    !.........................................................................
+    if (present(only)) then
+      iv0 = only
+      iv1 = only
+    else
+      iv0 = 1
+      iv1 = target%nv
+    end if
+    do i4=iv0,iv1                                         ! loop over variables
+      v_min = huge(1.)
+      do i3=ls(3),us(3)
+        if (source%unsigned(i4)) then
+          do i2=ls(2),us(2)
+            if (verbose > 0) then
               do i1=ls(1),us(1)
-                out(i1,i2,i3,i4) = in(i1,i2,i3,i4,jt(1),1)*pt(1) &
-                                + in(i1,i2,i3,i4,jt(2),1)*pt(2)
+                if (in1(i1,i2,i3,i4) <= 0.0 .or. &
+                    in2(i1,i2,i3,i4) <= 0.0) then
+                  write (stdlog,'(a,2(i6,":",i2.2,3i4))') &
+                    'interp_t%in_t: tgt,src=', &
+                    target%id, target%key, source%id, source%key
+                end if
+                out(i1,i2,i3,i4) = &
+                  exp(log(in1(i1,i2,i3,i4))*pt(1) &
+                    + log(in2(i1,i2,i3,i4))*pt(2))
                 v_min = min(v_min,out(i1,i2,i3,i4))
               end do
+            else
+              !$omp simd
+              do i1=ls(1),us(1)
+                out(i1,i2,i3,i4) = &
+                  exp(log(in1(i1,i2,i3,i4))*pt(1) &
+                    + log(in2(i1,i2,i3,i4))*pt(2))
+                v_min = min(v_min,out(i1,i2,i3,i4))
+              end do
+            end if
+          end do
+        else
+          do i2=ls(2),us(2)
+            !$omp simd
+            do i1=ls(1),us(1)
+              out(i1,i2,i3,i4) = in1(i1,i2,i3,i4)*pt(1) &
+                               + in2(i1,i2,i3,i4)*pt(2)
+              v_min = min(v_min,out(i1,i2,i3,i4))
             end do
-          end if
-        end do
-        if (i4==1) d_min = v_min
+          end do
+        end if
       end do
-      n = product(us-ls+1)
-    end if
-    if (associated(source%lock)) then
-      !call lock2%unset ('interp_t%in_t')
-      !call lock1%unset ('interp_t%in_t')
-    end if
-    !...........................................................................
-    if (verbose > 1 .and. present(lt)) then
-      wc = wallclock()-wc
-      n = product(us-ls+1)
-      !lt = ls+o
-      write (stdlog,'(a,f6.3,1p,6(2x,3e11.2))') &
-      'interp_t%in_t(2): mus/p,min,max,min,max=', wc/n, &
-      minval( in(ls(1):us(1),ls(2):us(2),ls(3):us(3),1,jt(1),1)), &
-      maxval( in(ls(1):us(1),ls(2):us(2),ls(3):us(3),1,jt(1),1)), &
-      minval( in(ls(1):us(1),ls(2):us(2),ls(3):us(3),1,jt(2),1)), &
-      maxval( in(ls(1):us(1),ls(2):us(2),ls(3):us(3),1,jt(2),1)), &
-      minval(out(lt(1):ut(1),lt(2):ut(2),lt(3):ut(3),1)), &
-      maxval(out(lt(1):ut(1),lt(2):ut(2),lt(3):ut(3),1))
-      if (verbose > 2) then
-        call check_positive (target, out(:,:,:,1), lt, ut, 'in_t: out')
-      end if
+      if (i4==1) d_min = v_min
+    end do
+    n = product(us-ls+1)
+  end if
+                                                 call lock3%unset ('interp tgt')
+  !...........................................................................
+  if (verbose > 1 .and. present(lt)) then
+    wc = wallclock()-wc
+    n = product(us-ls+1)
+    !lt = ls+o
+    write (stdlog,'(a,f6.3,1p,6(2x,3e11.2))') &
+    'interp_t%in_t(2): mus/p,min,max,min,max=', wc/n, &
+    minval(in1(ls(1):us(1),ls(2):us(2),ls(3):us(3),1)), &
+    maxval(in1(ls(1):us(1),ls(2):us(2),ls(3):us(3),1)), &
+    minval(in2(ls(1):us(1),ls(2):us(2),ls(3):us(3),1)), &
+    maxval(in2(ls(1):us(1),ls(2):us(2),ls(3):us(3),1)), &
+    minval(out(lt(1):ut(1),lt(2):ut(2),lt(3):ut(3),1)), &
+    maxval(out(lt(1):ut(1),lt(2):ut(2),lt(3):ut(3),1))
+    if (verbose > 2) then
+      call check_positive (target, out(:,:,:,1), lt, ut, 'in_t: out')
     end if
   end if
+  deallocate (in1, in2)
   !.............................................................................
   if (verbose > 1) then
     ntimer = ntimer + n
@@ -684,16 +798,17 @@ END SUBROUTINE in_t
 SUBROUTINE in_x (tgt, lt, ut, src, ls, us, om, in, out, all, only)
   class(patch_t)           :: src, tgt
   integer, dimension(3)    :: lt, ut, ls, us, l1, u1
-  class(meshp_t)           :: om(3)
+  type(meshp_t)            :: om(3)
   real, dimension(:,:,:,:) :: in, out
   pointer                  :: in, out
   logical                  :: all
   integer, optional        :: only
   !.............................................................................
-  integer                  :: j, i1, i2, i3, i4, nv, n, sh(4), nf(2)
+  integer                  :: j, i1, i2, i3, i4, nv, n, sh(4), nf(2), iv0, iv1
   integer, dimension(3)    :: l, u, si, st, li, ui
   real                     :: p, q, v_min, d_min
   real(8)                  :: x, wc, wtimer, sm_p, d(3)
+  real(8), allocatable     :: dst(:), dss(:)
   class(mesh_t), pointer   :: tm, sm
   logical, dimension(3)    :: outside
   integer, save            :: itimer=0, ntimer=0
@@ -703,6 +818,14 @@ SUBROUTINE in_x (tgt, lt, ut, src, ls, us, om, in, out, all, only)
   if (verbose > 1) then
     wc = wallclock()
   end if
+  !-----------------------------------------------------------------------------
+  ! Staggering offsets
+  !-----------------------------------------------------------------------------
+  allocate (dst(tgt%mv), dss(src%mv))
+  dst = 0
+  dss = 0
+  dst(1:tgt%nv) = tgt%mesh(1)%h*tgt%mesh(1)%d
+  dss(1:tgt%nv) = src%mesh(1)%h*src%mesh(1)%d
   !-----------------------------------------------------------------------------
   ! If the source level is lower than the target level (prolongation), then
   ! ignore the fact that the target%filled may be at the target level already.
@@ -744,17 +867,22 @@ SUBROUTINE in_x (tgt, lt, ut, src, ls, us, om, in, out, all, only)
     flush (stdlog)
   end if
   !.............................................................................
-  do i4=1,tgt%nv                                        ! loop over variables
-    if (skip(i4,only)) &
-      cycle
+  if (present(only)) then
+    iv0 = only
+    iv1 = only
+  else
+    iv0 = 1
+    iv1 = tgt%nv
+  end if
+  do i4=iv0,iv1                                         ! loop over variables
     !---------------------------------------------------------------------------
     ! Using the full valid range
     !---------------------------------------------------------------------------
     nf = 0
     if (all) then
       do i1=l(1),u(1)
-        x = tm%p + tm%r(i1)                             ! x-position
-        p = (x-sm_p)/sm%d + sm%o                        ! float source index
+        x = tm%p + tm%r(i1) + dst(i4)                   ! x-position
+        p = (x-sm_p-dss(i4))/sm%d + sm%o                ! float source index
         j = floor(p)                                    ! integer source index
         j = min(max(j,ls(1)),us(1)-1)                   ! make sure inside src
         p = p - j                                       ! 2nd fraction
@@ -796,8 +924,8 @@ SUBROUTINE in_x (tgt, lt, ut, src, ls, us, om, in, out, all, only)
       n = 0
       do i1=l(1),u(1)
         outside(1) = (i1 < om(1)%p%li .or. i1 > om(1)%p%ui)
-        x = tm%p + tm%r(i1)                             ! x-position
-        p = (x-sm_p)/sm%d + sm%o                        ! float source index
+        x = tm%p + tm%r(i1) + dst(i4)                   ! x-position
+        p = (x-sm_p-dss(i4))/sm%d + sm%o                ! float source index
         j = floor(p)                                    ! integer source index
         j = min(max(j,ls(1)),us(1)-1)                   ! make sure inside src
         p = p - j                                       ! 2nd fraction
@@ -878,16 +1006,17 @@ END SUBROUTINE in_x
 SUBROUTINE in_y (tgt, lt, ut, src, ls, us, om, in, out, all, only)
   class(patch_t)           :: src, tgt
   integer, dimension(3)    :: lt, ut, ls, us, l1, u1
-  class(meshp_t)           :: om(3)
+  type(meshp_t)            :: om(3)
   real, dimension(:,:,:,:) :: in, out
   pointer                  :: in, out
   logical                  :: all
   integer, optional        :: only
   !.............................................................................
-  integer                  :: j, i1, i2, i3, i4, nv, n, sh(4)
+  integer                  :: j, i1, i2, i3, i4, nv, n, sh(4), iv0, iv1
   integer, dimension(3)    :: l, u, si, st, li, ui
   real                     :: p, q, v_min, d_min
   real(8)                  :: y, wc, wtimer, sm_p, d(3)
+  real(8), allocatable     :: dst(:), dss(:)
   class(mesh_t), pointer   :: tm, sm
   logical, dimension(3)    :: outside
   integer, save            :: itimer=0, ntimer=0
@@ -897,6 +1026,14 @@ SUBROUTINE in_y (tgt, lt, ut, src, ls, us, om, in, out, all, only)
   if (verbose > 1) then
     wc = wallclock()
   end if
+  !-----------------------------------------------------------------------------
+  ! Staggering offsets
+  !-----------------------------------------------------------------------------
+  allocate (dst(tgt%mv), dss(src%mv))
+  dst = 0
+  dss = 0
+  dst(1:tgt%nv) = tgt%mesh(2)%h*tgt%mesh(2)%d
+  dss(1:tgt%nv) = src%mesh(2)%h*src%mesh(2)%d
   !-----------------------------------------------------------------------------
   ! Choose lower and upper index limits based on source and target ranges;
   ! where they already agree the values have already been interpolated
@@ -934,16 +1071,21 @@ SUBROUTINE in_y (tgt, lt, ut, src, ls, us, om, in, out, all, only)
     flush (stdlog)
   end if
   !.............................................................................
-  do i4=1,tgt%nv                                        ! loop over variables
-    if (skip(i4,only)) &
-      cycle
+  if (present(only)) then
+    iv0 = only
+    iv1 = only
+  else
+    iv0 = 1
+    iv1 = tgt%nv
+  end if
+  do i4=iv0,iv1                                         ! loop over variables
 !---------------------------------------------------------------------------
     ! Using the full valid range
     !---------------------------------------------------------------------------
     if (all) then
       do i2=l(2),u(2)
-        y = tm%p + tm%r(i2)                             ! x-position
-        p = (y-sm_p)/sm%d + sm%o                        ! float source index
+        y = tm%p + tm%r(i2) + dst(i4)                   ! y-position
+        p = (y-sm_p-dss(i4))/sm%d + sm%o                ! float source index
         j = floor(p)                                    ! integer source index
         j = min(max(j,ls(2)),us(2)-1)                   ! make sure inside src
         p = p - j                                       ! 2nd fraction
@@ -982,8 +1124,8 @@ SUBROUTINE in_y (tgt, lt, ut, src, ls, us, om, in, out, all, only)
       n = 0
       do i2=l(2),u(2)
         outside(2) = (i2 < om(2)%p%li .or. i2 > om(2)%p%ui)
-        y = tm%p + tm%r(i2)                             ! x-position
-        p = (y-sm_p)/sm%d + sm%o                        ! float source index
+        y = tm%p + tm%r(i2) + dst(i4)                   ! y-position
+        p = (y-sm_p-dss(i4))/sm%d + sm%o                ! float source index
         j = floor(p)                                    ! integer source index
         j = min(max(j,ls(2)),us(2)-1)                   ! make sure inside src
         p = p - j                                       ! 2nd fraction
@@ -1078,16 +1220,17 @@ END SUBROUTINE in_y
 SUBROUTINE in_z (tgt, lt, ut, src, ls, us, om, in, out, all, only)
   class(patch_t)           :: src, tgt
   integer, dimension(3)    :: lt, ut, ls, us, l1, u1
-  class(meshp_t)           :: om(3)
+  type(meshp_t)            :: om(3)
   real, dimension(:,:,:,:) :: in, out
   pointer                  :: in, out
   logical                  :: all
   integer, optional        :: only
   !.............................................................................
-  integer                  :: j, i1, i2, i3, i4, nv, n
+  integer                  :: j, i1, i2, i3, i4, nv, n, iv0, iv1
   integer, dimension(3)    :: l, u, si, st, li, ui
   real                     :: p, q, v_min, d_min
   real(8)                  :: z, wc, wtimer, sm_p, d(3)
+  real(8), allocatable     :: dst(:), dss(:)
   class(mesh_t), pointer   :: tm, sm
   logical, dimension(3)    :: outside
   integer, save            :: itimer=0, ntimer=0
@@ -1097,6 +1240,14 @@ SUBROUTINE in_z (tgt, lt, ut, src, ls, us, om, in, out, all, only)
   if (verbose > 1) then
     wc = wallclock()
   end if
+  !-----------------------------------------------------------------------------
+  ! Staggering offsets
+  !-----------------------------------------------------------------------------
+  allocate (dst(tgt%mv), dss(src%mv))
+  dst = 0
+  dss = 0
+  dst(1:tgt%nv) = tgt%mesh(3)%h*tgt%mesh(3)%d
+  dss(1:tgt%nv) = src%mesh(3)%h*src%mesh(3)%d
   !-----------------------------------------------------------------------------
   ! Choose lower and upper index limits based on source and target ranges;
   ! where they already agree the values have already been interpolated
@@ -1133,16 +1284,21 @@ SUBROUTINE in_z (tgt, lt, ut, src, ls, us, om, in, out, all, only)
     flush (stdlog)
   end if
   !.............................................................................
-  do i4=1,tgt%nv                                        ! loop over variables
-    if (skip(i4,only)) &
-      cycle
+  if (present(only)) then
+    iv0 = only
+    iv1 = only
+  else
+    iv0 = 1
+    iv1 = tgt%nv
+  end if
+  do i4=iv0,iv1                                         ! loop over variables
     !---------------------------------------------------------------------------
     ! Using the full valid range, not excluding the interior
     !---------------------------------------------------------------------------
     if (all) then
       do i3=l(3),u(3)
-        z = tm%p + tm%r(i3)                             ! x-position
-        p = (z-sm_p)/sm%d + sm%o                        ! float src index
+        z = tm%p + tm%r(i3) + dst(i4)                   ! z-position
+        p = (z-sm_p-dss(i4))/sm%d + sm%o                ! float source index
         j = floor(p)                                    ! integer src index
         j = min(max(j,ls(3)),us(3)-1)                   ! make sure inside src
         p = p - j                                       ! 2nd fraction
@@ -1193,8 +1349,8 @@ SUBROUTINE in_z (tgt, lt, ut, src, ls, us, om, in, out, all, only)
       n = 0
       do i3=l(3),u(3)
         outside(3) = (i3 < om(3)%p%li .or. i3 > om(3)%p%ui)
-        z = tm%p + tm%r(i3)                             ! x-position
-        p = (z-sm_p)/sm%d + sm%o                        ! float src index
+        z = tm%p + tm%r(i3) + dst(i4)                   ! z-position
+        p = (z-sm_p-dss(i4))/sm%d + sm%o                ! float source index
         j = floor(p)                                    ! integer src index
         j = min(max(j,ls(3)),us(3)-1)                   ! make sure inside src
         p = p - j                                       ! 2nd fraction
@@ -1269,6 +1425,177 @@ SUBROUTINE in_z (tgt, lt, ut, src, ls, us, om, in, out, all, only)
 END SUBROUTINE in_z
 
 !===============================================================================
+!> Not interpolating in time, but simply copying over the relevant source region
+!===============================================================================
+SUBROUTINE no_t (target, source, ls, us, in, out, lt, ut, only)
+  class(patch_t)                  :: source, target
+  integer, dimension(3)           :: ls, us
+  real                            :: in (:,:,:,:,:,:)
+  real                            :: out(:,:,:,:,:,:)
+!  intent(in)                      :: in
+!  contiguous                      :: in, out
+  integer, dimension(3), optional :: lt, ut
+  integer, optional               :: only
+  !.............................................................................
+  integer, dimension(3)           :: l, u, o
+  integer                         :: i1, i2, i3, i4, i5, n, it, id, m(5)
+  integer                         :: unit, iv0, iv1
+  real(8)                         :: wc
+  real(8), save                   :: wtimer
+  type(lock_t), pointer           :: lock1, lock2
+  integer, save                   :: itimer=0, ntimer=0
+  !-----------------------------------------------------------------------------
+  if (detailed_timer) call trace%begin ('interp_t%no_t', itimer=itimer)
+  unit = merge (stdout, stdlog, verbose > 2 .or. target%id==io%id_debug)
+  if (verbose > 1) then
+    wc = wallclock()
+    if (ntimer == 0) then
+      wtimer = 0d0
+    end if
+    if (verbose > 2) then
+      call check_positive (source, &
+        in(:,:,:,1,source%it,1), ls, us, 'src')
+    end if
+  end if
+  !-----------------------------------------------------------------------------
+  ! Lock access to source while copying
+  !-----------------------------------------------------------------------------
+  lock1 => source%mem_lock(1)
+  lock2 => target%mem_lock(1)
+  !...........................................................................
+  if (target%id == io%id_debug) then
+    print '("debug:",2(i6,":",i2.2,i3),f10.6,2(i4,f10.6,f7.3))', &
+      target%id, target%level, target%istep, &
+      source%id, source%istep, source%level, &
+      target%time, &
+      1, source%time, 1
+  end if
+  !...........................................................................
+  if (verbose > 1) then
+    write (stdlog,'(a,6i3,3x,4i3)') &
+    'interp_t%no_t: shapes=', shape(in), shape(out)
+  end if
+  !---------------------------------------------------------------------------
+  ! Lock access to source while interpolating
+  !---------------------------------------------------------------------------
+  if (associated(source%lock)) then
+    lock1 => source%mem_lock(1)
+  end if
+  if (present(only)) then
+    iv0 = only
+    iv1 = only
+  else
+    iv0 = 1
+    iv1 = target%nv
+  end if
+  !---------------------------------------------------------------------------
+  ! Shifted from source index space
+  !---------------------------------------------------------------------------
+                                                   call lock2%set ('interp tgt')
+  if (present(lt)) then
+    if (verbose > 0) then
+      write (stdlog,'(f12.6,a,2i6,1x,2i3,2f7.3,2(1x,2(1x,3i3)),1x,9l1)') &
+        wallclock(), pad_trace(1:indent)// &
+        'interp_t%no_t: tgt,src,jt,pt,ls,us,lt,ut,usg=', &
+        target%id, source%id, 1, 1, ls, us, lt, ut, &
+        source%unsigned
+    end if
+    if (unit == stdout) then
+      write (unit,'(a,2(i6,":",i2.2,f10.6),1x,2i3,2f7.3,2(1x,2(1x,3i3)),1x,9l1)') &
+        'interp_t%no_t(1): tgt,src,jt,pt,ls,us,lt,ut,usg=', &
+        target%id, target%level, target%time, &
+        source%id, source%level, source%time, &
+        1, 1, ls, us, lt, ut, &
+        source%unsigned
+    end if
+    !.........................................................................
+    if (verbose > 2) then
+      write (stdlog,'(a,1p,4(2x,2e11.2))') &
+        'interp_t%no_t: min/max=', &
+        minval(in(:,:,:,:,1,:)), &
+        maxval(in(:,:,:,:,1,:)), &
+        minval(in(ls(1):us(1),ls(2):us(2),ls(3):us(3),:,1,:)), &
+        maxval(in(ls(1):us(1),ls(2):us(2),ls(3):us(3),:,1,:))
+      flush (stdlog)
+    end if
+    !.........................................................................
+    id = target%idx%d
+    o = lt-ls
+    do i5=1,source%nw
+    do i4=iv0,iv1                                         ! loop over variables
+    do i3=ls(3),us(3)
+    do i2=ls(2),us(2)
+    !$omp simd
+    do i1=ls(1),us(1)
+      out(i1+o(1),i2+o(2),i3+o(3),i4,1,i5) = in(i1,i2,i3,i4,1,i5)
+    end do
+    end do
+    end do
+    end do
+    end do
+    n = product(us-ls+1)
+  !---------------------------------------------------------------------------
+  ! Unshifted copy in time
+  !---------------------------------------------------------------------------
+  else
+    o = 0
+    !.........................................................................
+    if (verbose > 0) then
+      write (stdlog,'(f12.6,a,2i6,1x,2i3,2f7.3,2(1x,3i3),1x,9l1)') &
+        wallclock(), &
+        pad_trace(1:indent)//'interp_t%no_t: tgt,src,jt,pt,ls,us,usg=', &
+        target%id, source%id, 1, 1, ls, us, &
+        source%unsigned
+    end if
+    if (unit == stdout) then
+      write (unit,'(a,2(i6,":",i2.2,f10.6),1x,2i3,2f7.3,2(1x,3i3),1x,9l1)') &
+        'interp_t%no_t(2): tgt,src,jt,pt,ls,us,lt,ut,usg=', &
+        target%id, target%level, target%time, &
+        source%id, source%level, source%time, &
+        1, 1, ls, us, &
+        source%unsigned
+    end if
+    !.........................................................................
+    do i5=1,source%nw
+    do i4=iv0,iv1                                         ! loop over variables
+    do i3=ls(3),us(3)
+    do i2=ls(2),us(2)
+    !$omp simd
+    do i1=ls(1),us(1)
+      out(i1,i2,i3,i4,1,i5) = in(i1,i2,i3,i4,1,i5)
+    end do
+    end do
+    end do
+    end do
+    end do
+    n = product(us-ls+1)
+  end if
+                                                 call lock2%unset ('interp tgt')
+  !...........................................................................
+  if (verbose > 1 .and. present(lt)) then
+    wc = wallclock()-wc
+    !lt = ls+o
+    write (stdlog,'(a,f6.3,1p,6(2x,3e11.2))') &
+    'interp_t%in_t(2): mus/p,min,max,min,max=', wc/n, &
+    minval(in (ls(1):us(1),ls(2):us(2),ls(3):us(3),:,1,:)), &
+    maxval(in (ls(1):us(1),ls(2):us(2),ls(3):us(3),:,1,:)), &
+    minval(out(lt(1):ut(1),lt(2):ut(2),lt(3):ut(3),:,1,:)), &
+    maxval(out(lt(1):ut(1),lt(2):ut(2),lt(3):ut(3),:,1,:))
+  end if
+  !.............................................................................
+  if (verbose > 1) then
+    ntimer = ntimer + n
+    wtimer = wtimer + wc
+    if (ntimer > 1e6) then
+      write (stdlog,'(a,6p,f7.3)') 'no_t: average mus/pt=', wtimer/ntimer
+      ntimer = 0
+    end if
+  end if
+  !.............................................................................
+  if (detailed_timer) call trace%end (itimer)
+END SUBROUTINE no_t
+
+!===============================================================================
 !> Check positivity of array
 !===============================================================================
 SUBROUTINE check_positive (task, v, l, u, label)
@@ -1299,18 +1626,5 @@ SUBROUTINE check_positive (task, v, l, u, label)
   end do
   call trace%end (itimer)
 END SUBROUTINE check_positive
-
-!===============================================================================
-!> Skip an index, or not
-!===============================================================================
-LOGICAL FUNCTION skip (i, only)
-  integer:: i, only
-  optional:: only
-  if (present(only)) then
-    skip = i /= only
-  else
-    skip = .false.
-  end if
-END FUNCTION skip
 
 END MODULE interp_mod

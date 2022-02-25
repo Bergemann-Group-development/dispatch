@@ -159,7 +159,7 @@ REAL FUNCTION lifetime (mass)
   real:: mass
   !.............................................................................
   call trace%begin ('sne_t%lifetime')
-  lifetime = lagrange%interpolate1d (mass, n_table, sn_table%mass, sn_table%lifetime)
+  lifetime = lagrange%interpolate1d (mass, sn_table%mass, sn_table%lifetime)
   call trace%end()
 END FUNCTION lifetime
 

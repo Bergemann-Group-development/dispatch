@@ -8,7 +8,7 @@
 # 
 import numpy as np
 from scipy import interpolate
-from fortranfile import FortranFile
+from scipy.io import FortranFile
 import csv
 import constants as const
 import scaling   as sc
@@ -30,7 +30,7 @@ class opac_t(object):
     
     def read_opac(self):
         for i in range(2):
-            print 'reading file',self.files[i]
+            print ('reading file',self.files[i])
             f = open(self.files[i],'r')
             ir = 0
             it = 0
@@ -50,8 +50,8 @@ class opac_t(object):
 
 class table_t(object):
     'Just an EOS table...'
-    def __init__ (self):
-        self.nvar = 7
+    def __init__ (self, nvar=7):
+        self.nvar = nvar
         self.nt = 761
         self.nr = 461
         self.d = np.zeros((self.nr,self.nt,self.nvar))
@@ -64,6 +64,7 @@ class table_t(object):
         self.tmax = 8.
         self.rmax = 1
         self.eos = 'tomida.dat'
+        self.vars=['logP','logU','logcT','logcS','gamma','logCv']
         
     def init_resc(self):
         self.nvar = 10
@@ -94,7 +95,7 @@ class table_t(object):
         rm = self.rmin
         it = 0
         ir = 0
-        print 'reading data from table',self.eos
+        print ('reading data from table',self.eos)
         for line in f:
             line = line.strip()
             if not line.startswith("#"):
@@ -119,20 +120,19 @@ class table_t(object):
             self.d[:,:,7+i] = ff(self.ts,self.rs)
             
     def add_src(self):
-        print 'adding the source function'
-        stf = const.sigm
-        a/np.pi*sc.temp**4/sc.f
+        print ('adding the source function')
+        stf = const.sigma/np.pi#*sc.temp**4/sc.f
         for t in range(0,self.nt):
             self.d[:,t,9] = np.log10(stf*self.ts[t]**4)
             
     def add_entropy(self):
-        print 'adding entropy'
+        print ('adding entropy')
         for r in range(0,self.nr):
             for t in range(0,self.nt):
                 self.d[r,t,6] = 10**self.rs[r]*(self.d[r,t,0]-self.d[r,t,4]*self.rs[r])/(self.d[r,t,4]-1.0)
                 
     def rescale(self):
-        print 'rescaling the table'
+        print ('rescaling the table')
         for t in range(0,self.nt):
             self.ts[t] = np.log10(10**self.ts[t]/sc.temp)
         for r in range(0,self.nr):
@@ -149,14 +149,14 @@ class table_t(object):
                 
     def reinterpolate_t(self,object):
         ot = object
-        print 'reinterpolating to scaled values'
+        print ('reinterpolating to scaled values')
         for i in range(0,self.nvar):
             fff = interpolate.interp2d(ot.ts,ot.rs,ot.d[:,:,i])
             self.d[:,:,i] = fff(self.ts,self.rs)
             
             
     def reinterpolate_S(self,object):
-        print 'reconfiguring to S'
+        print ('reconfiguring to S')
         ot = object
         old_s = np.zeros(ot.nt)
         for rr in range(ot.nr):
@@ -164,7 +164,7 @@ class table_t(object):
                 old_s[ss] = ot.d[rr,ss,6]
             fff = interpolate.interp1d(old_s,ot.ts)
             for ss in range(self.nS):
-                print rr, ss, self.Ss[ss]
+                print (rr, ss, self.Ss[ss])
                 self.d[rr,ss,6] = fff(self.Ss[ss])
             for i in range(self.nvar):
                 if i != 6:
@@ -177,25 +177,32 @@ class table_t(object):
         #    self.d[:,:,i] = fff(self.ts,self.rs)
     
     def write(self,file,d):
-        f=FortranFile(file,"wb")
+        f=FortranFile(file,"w")
         ioformat=1
-        f.writeInts([ioformat,self.nr,self.nt,self.nvar])
-        lnd_min=np.log(10.)*self.rs[0]
-        lne_min=np.log(10.)*self.us[0]
-        lnd_step=np.log(10.)*(self.rs[self.nr-1]-self.rs[0])/(self.nr-1)
-        lne_step=np.log(10.)*(self.us[self.nt-1]-self.us[0])/(self.nt-1)
-        f.writeReals([lnd_min,lnd_step])
-        f.writeReals([lne_min,lne_step])
-        i_pg=2
+        f.write_record(np.array([ioformat,self.nr,self.nt,self.nvar],dtype=np.int32))
+        lnd_min = np.log(10.)*self.rs[0]
+        lne_min = np.log(10.)*self.us[0]
+        lnd_step = np.log(10.)*(self.rs[self.nr-1]-self.rs[0])/(self.nr-1)
+        lne_step = np.log(10.)*(self.us[self.nt-1]-self.us[0])/(self.nt-1)
+        print ('dmin dstep', lnd_min, lnd_step)
+        print ('emin estep', lne_min, lne_step)
+        f.write_record(np.array([lnd_min,lnd_step],dtype=np.float32))
+        f.write_record(np.array([lne_min, lne_step], dtype=np.float32))
         i_tt=1
+        i_pg=2
+        i_ct=3
+        i_cs=4
+        i_gamma=5
+        i_cv=6
         i_ss=7
-        i_rk=0
-        i_src=0
-        f.writeInts([i_pg,i_tt,i_ss,i_rk,i_src])
-        d[:,:,i_pg]=10.**d[:,:,i_pg]
-        d[:,:,i_tt]=10.**d[:,:,i_tt]
-        d=np.array(d.transpose(2,1,0).flatten(),dtype=np.float)
-        f.writeReals(d)
+        i_kr=8
+        i_kp=9
+        i_src=10
+        f.write_record(np.array([i_pg, i_tt, i_gamma, i_ss, i_kr, i_kp, i_src],dtype=np.int32))
+        d[:,:,i_pg-1]=10.**d[:,:,i_pg-1]
+        d[:,:,i_tt-1]=10.**d[:,:,i_tt-1]
+        d=np.array(d.transpose(2,1,0).flatten(),dtype=np.float32)
+        f.write_record(d)
         f.close()
 
 def read_q(infile,val):

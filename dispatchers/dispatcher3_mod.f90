@@ -178,7 +178,7 @@ SUBROUTINE execute (self, task_list, test)
       ', fraction of ready tasks =', real(n_ready)/real(n_check), &
       ', fraction of dispatcher idle time =', wc_failed/max(1d-10,wallclock()-start)
   call mpi_mesg%diagnostics(1)
-  call toc ('wall time', timer%n_update, time=start)
+  call timer%toc ('wall time', timer%n_update, time=start)
   call trace%end (itimer)
 END SUBROUTINE execute
 

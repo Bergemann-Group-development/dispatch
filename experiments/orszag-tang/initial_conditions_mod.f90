@@ -71,7 +71,7 @@ SUBROUTINE init (self)
   real, dimension(:,:,:,:), pointer :: ff
   !.............................................................................
   integer:: ix, iy, iz                                       ! loop indices
-  real:: entropy, twopi, xa, ya, za, xb, yb, zb, d0 , rhov2, b2         ! local variables
+  real:: entropy, twopi, xa, ya, za, xb, yb, zb, xs,ys,d0 , rhov2, b2 , p0        ! local variables
   real,dimension(:,:,:),allocatable :: vecpot, emag
   !.............................................................................
   call trace_begin ('initial_t%initial_conditions')
@@ -87,7 +87,7 @@ SUBROUTINE init (self)
   end if
 
   twopi = 2.0 * math%pi
-  d0 = eos%gamma * self%p0
+  d0 = 25.0 / (36.0 * math%pi)!eos%gamma * self%p0
 
   ! "pre"-initialisation of all variables, independent of `idirect`.
   if (eos%gamma==1.0) then
@@ -96,13 +96,15 @@ SUBROUTINE init (self)
     entropy = (eos%s0+log(self%p0)-log(d0)*eos%gamma)/(eos%gamma-1.0)
   end if
 
+  p0 = 5.0 / (12.0 * math%pi)
+
 
   do iz=m(3)%lb,m(3)%ub
     do iy=m(2)%lb,m(2)%ub
       do ix=m(1)%lb,m(1)%ub
         ff(ix,iy,iz,idx%d) = d0
         if (idx%s>0) ff(ix,iy,iz,idx%s) = entropy*d0
-        if (idx%e>0) ff(ix,iy,iz,idx%e) = self%p0/(eos%gamma-1.0)
+        if (idx%e>0) ff(ix,iy,iz,idx%e) = p0/(eos%gamma-1.0)
         ff(ix,iy,iz,idx%px) = 0.0
         ff(ix,iy,iz,idx%py) = 0.0
         ff(ix,iy,iz,idx%pz) = 0.0
@@ -143,12 +145,14 @@ SUBROUTINE init (self)
     do iz=m(3)%lb,m(3)%ub
       do iy=m(2)%lb,m(2)%ub
         yb = m(2)%p + r2(iy)
+        ys = yb - 0.5*m(2)%d
         do ix=m(1)%lb,m(1)%ub
           xb = m(1)%p + r1(ix)
-          ff(ix,iy,iz,idx%px) = -d0 * self%v0 * sin(twopi * yb)
-          ff(ix,iy,iz,idx%py) =  d0 * self%v0 * sin(twopi * xb)
-          ff(ix,iy,iz,idx%bx) =  (vecpot(ix,iy+1,iz) - vecpot(ix,iy,iz) ) / m(2)%d
-          ff(ix,iy,iz,idx%by) = -(vecpot(ix+1,iy,iz) - vecpot(ix,iy,iz) ) / m(1)%d
+          xs = xb - 0.5*m(1)%d
+          ff(ix,iy,iz,idx%px) =   d0 * self%v0 * sin(twopi * yb)
+          ff(ix,iy,iz,idx%py) =  -d0 * self%v0 * sin(twopi * xb)
+          ff(ix,iy,iz,idx%bx) = self%b0 * sin(2.0 * math%pi * ys) !(vecpot(ix,iy+1,iz) - vecpot(ix,iy,iz) ) / m(2)%d
+          ff(ix,iy,iz,idx%by) = -self%b0 * sin(4.0 * math%pi * xs)!-(vecpot(ix+1,iy,iz) - vecpot(ix,iy,iz) ) / m(1)%d
         end do
       end do
     end do

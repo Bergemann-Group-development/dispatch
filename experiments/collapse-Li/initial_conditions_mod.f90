@@ -133,6 +133,7 @@ SUBROUTINE init (self)
 !      Set up sphere with uniform density following Zhao et al. 2021 
 !      https://ui.adsabs.harvard.edu/abs/2021MNRAS.505.5142Z/abstract  
 !-----------------------------------------------------------------------
+  ciso=0.54892086
   rho0 = 4.77e-19/scaling%d !0.239819  g cm^-3
   r0 = 5d-1 ! 
   omega_rot0 =  1e-13 * scaling%t ! 0.27446s^-1
@@ -177,11 +178,9 @@ SUBROUTINE init (self)
   m1 => m(1)
   m2 => m(2)
   m3 => m(3)
-  print * ,'x0,y0,z0', x0,y0,z0
   ! initialise field variables
   do k=m3%lb,m3%ub
     z = (m3%centre_nat + m3%r(k))
-    print * ,'z', z
     do j=m2%lb,m2%ub
       y = (m2%centre_nat + m2%r(j))
       do i=m1%lb,m1%ub

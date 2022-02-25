@@ -51,7 +51,6 @@ MODULE selfgravity_mod
   USE link_mod
   USE halo_mod
   USE kinds_mod
-  USE data_hub_mod
   USE mesh_mod
   USE units_mod
   USE poisson_mod
@@ -268,10 +267,12 @@ SUBROUTINE download (self)
       !-------------------------------------------------------------------------
       ! In the special case where tgt%istep=0, use the parent to load phi
       !-------------------------------------------------------------------------
-      if (tgt%istep == 0 .and. nbor%task%id == tgt%parent%id) then
-        link => self%patch%link
-        call link%download (link%nbor, only=tgt%idx%phi, &
-                            all_tgt=.true., all_src=.true.)
+      if (tgt%istep == 0 .and. associated(tgt%parent)) then
+        if (nbor%task%id == tgt%parent%id) then
+          link => self%patch%link
+          call link%download (link%nbor, only=tgt%idx%phi, &
+                              all_tgt=.true., all_src=.true.)
+        end if
       end if
       !-------------------------------------------------------------------------
       ! Prepend each task, reversing the order

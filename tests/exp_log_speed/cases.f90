@@ -18,7 +18,7 @@ SUBROUTINE cases
   do i=1,ntot
     sum=sum+c*real(i)
   end do
-  call toc ('sum(real)', ntot)
+  call timer%toc ('sum(real)', ntot)
   print*,sum
 
   sum8 = 0.0
@@ -28,7 +28,7 @@ SUBROUTINE cases
   do i=1,ntot
     sum8=sum8+c8*real(i,kind=8)
   end do
-  call toc ('sum(double)', ntot)
+  call timer%toc ('sum(double)', ntot)
   print*,sum8
 
   sum = 0.0
@@ -37,7 +37,7 @@ SUBROUTINE cases
   do i=1,ntot
     sum=sum+exp(-c*real(i))
   end do
-  call toc ('sum(exp(real))', ntot)
+  call timer%toc ('sum(exp(real))', ntot)
   print*,sum
 
   sum = 0.0
@@ -51,7 +51,7 @@ SUBROUTINE cases
     sum=sum+exp(-c*real(i))
 #endif
   end do
-  call toc ('sum(exp2(real))', ntot)
+  call timer%toc ('sum(exp2(real))', ntot)
   print*,sum
 
   sum = 0.0
@@ -67,7 +67,7 @@ SUBROUTINE cases
     end if
     sum=sum+ex
   end do
-  call toc ('sum(exp_series(real))', ntot)
+  call timer%toc ('sum(exp_series(real))', ntot)
   print*,sum
 
   sum = 0.0
@@ -83,7 +83,7 @@ SUBROUTINE cases
     end if
     sum=sum+ex
   end do
-  call toc ('non_vector_sum(exp(real))', ntot)
+  call timer%toc ('non_vector_sum(exp(real))', ntot)
   print*,sum
 
   sum8 = 0.0
@@ -93,7 +93,7 @@ SUBROUTINE cases
   do i=1,ntot
     sum8=sum8+exp(-c8*real(i,kind=8))
   end do
-  call toc ('sum(exp(double))', ntot)
+  call timer%toc ('sum(exp(double))', ntot)
   print*,sum8
 
   sum = 0.0
@@ -102,7 +102,7 @@ SUBROUTINE cases
   do i=1,ntot
     sum=sum+log(real(i))
   end do
-  call toc ('sum(log(real))', ntot)
+  call timer%toc ('sum(log(real))', ntot)
   print*,sum
 
   sum8 = 0.0
@@ -111,7 +111,7 @@ SUBROUTINE cases
   do i=1,ntot
     sum8=sum8+log(real(i,kind=8))
   end do
-  call toc ('sum(log(double))', ntot)
+  call timer%toc ('sum(log(double))', ntot)
   print*,sum8
 
 END SUBROUTINE

@@ -68,7 +68,7 @@ PROGRAM test
       p(id) = p(id) + v(id)*dt
     end do
   end do
-  call toc ("particle motion", npart)
+  call timer%toc ("particle motion", npart)
 
   !-----------------------------------------------------------------------------
   ! Evolve with explicit variables
@@ -90,7 +90,7 @@ PROGRAM test
       dust(ip)%p(id) = dust(ip)%p(id) + dust(ip)%v(id)*dust(ip)%dt
     end do
   end do
-  call toc ("particle motion", npart)
+  call timer%toc ("particle motion", npart)
 
   deallocate (dust)
 END PROGRAM

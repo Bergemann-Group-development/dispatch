@@ -25,16 +25,16 @@
 !>                      /    \         |
 !>                     /      \        |
 !>              extras_1_t extras_2_t  |
-!>                 |     \    /        |
-!>                 |     gpatch_t      |
-!>                 |       |     \     |
-!>                 |       |      list_t
-!>                 |       |     /  |
-!>                 |      patch_t   |
-!>                 |      /   \     |
-!>                 |     /     link_t
-!>                 |    /       |
-!>                connect_t   task_t
+!>                       \    /        |
+!>                       gpatch_t      |
+!>                         |     \     |
+!>                         |      list_t
+!>                         |     /  |
+!>                        patch_t   |
+!>                            \     |
+!>                             link_t
+!>                              |
+!>                            task_t
 !>
 !> The extra modules needed in an experiment should be chosen and coordinated
 !> in this module, and the ones that are "below" (USEd by) this module should
@@ -61,7 +61,6 @@ MODULE extras_mod
   USE gpatch_mod
   USE patch_mod
   USE list_mod
-  USE connect_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.
   !-----------------------------------------------------------------------------
@@ -128,14 +127,12 @@ SUBROUTINE pre_init (self)
   !.............................................................................
   !call self%forces%pre_init (self%patch)                                         ! forces
   !-----------------------------------------------------------------------------
-  ! Allocate a trace_particles data type, connect a pointer, and initialize
+  ! Allocate a trace_particles data type, and initialize
   !-----------------------------------------------------------------------------
   !allocate(self%rt)                                                    ! RT
   !call self%rt%pre_init(self%link)                                     ! RT
   !allocate (self%trace_particles)                                      ! tracep
-  !self%connect%trace_particles => self%trace_particles                 ! tracep
   !allocate(self%pic)                                                   ! pic
-  !self%connect%pic_patch => self%pic                                   ! pic
   !call self%pic%pre_init(self%link)                                    ! pic
   call self%selfgravity%pre_init (self%patch)                          ! selfg
   !call self%gravity%pre_init (self%patch)                          ! selfg
@@ -154,11 +151,10 @@ SUBROUTINE init (self)
   call self%selfgravity%init                                           ! selfg
   !call self%forces%init                                        ! forces
   !-----------------------------------------------------------------------------
-  ! Allocate a trace_particles data type, connect a pointer, and initialize
+  ! Allocate a trace_particles data type, and initialize
   !-----------------------------------------------------------------------------
   !call self%newton%init (self%link)                                    ! Newton
   !allocate (self%trace_particles)                                      ! tracep
-  !self%connect%trace_particles => self%trace_particles                 ! tracep
   !call self%trace_particles%add (self%link%task)                       ! tracep
   !call self%pic%init                                                   ! pic
   !if (self%pic%on) self%do_mhd = self%pic%do_mhd                       ! pic

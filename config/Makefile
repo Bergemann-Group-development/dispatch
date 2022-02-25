@@ -19,7 +19,6 @@ UPD      ?= adams_bashforth
 PREC     ?= SINGLE
 EXEC     ?= dispatch.x
 OFFLOAD  ?= CPU
-DEFS = -D$(PREC) -DDISPATCH -D'BRANCH="$(BRANCH)"' -D'HASH="$(HASH)"'
 
 #############################################################################
 # Default target
@@ -52,6 +51,8 @@ sinclude options.mkf
 sinclude $(TOP)/options.mkf
 sinclude $(CONFIG)/host/$(HOST)/Makefile
 target: default
+
+DEFS = -D$(PREC) -DDISPATCH -D'BRANCH="$(BRANCH)"' -D'HASH="$(HASH)"' -D'OPTS="$(OPTS)"'
 
 #############################################################################
 # Check that the $(COMPILER) Makefile is present (typo trap)

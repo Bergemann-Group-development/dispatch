@@ -1,1 +1,20 @@
-OMP: Info #274: omp_set_nested routine deprecated, please use omp_set_max_active_levels instead.
+forrtl: severe (174): SIGSEGV, segmentation fault occurred
+Image              PC                Routine            Line        Source             
+dispatch.x         0000000000749B9A  Unknown               Unknown  Unknown
+libpthread-2.17.s  00002ADC4BEAD630  Unknown               Unknown  Unknown
+dispatch.x         0000000000647A5D  rate_patch_mod_mp         114  rate_patch_mod.f90
+dispatch.x         00000000006C0DCA  task_list_mod_mp_         485  task_list_mod.f90
+dispatch.x         000000000047F31C  dispatcher0_mod_m         414  dispatcher0_mod.f90
+dispatch.x         000000000047D8D7  dispatcher0_mod_m         116  dispatcher0_mod.f90
+libiomp5.so        00002ADC4C3ECCC3  __kmp_invoke_micr     Unknown  Unknown
+libiomp5.so        00002ADC4C372947  __kmp_fork_call       Unknown  Unknown
+libiomp5.so        00002ADC4C3365C3  __kmpc_fork_call      Unknown  Unknown
+dispatch.x         000000000047D36F  dispatcher0_mod_m         113  dispatcher0_mod.f90
+dispatch.x         0000000000481030  dispatcher_mod_mp         135  dispatcher_mod.f90
+dispatch.x         0000000000480F39  dispatcher_mod_mp         113  dispatcher_mod.f90
+dispatch.x         0000000000408F21  MAIN__                     44  dispatch.f90
+dispatch.x         0000000000408BD2  Unknown               Unknown  Unknown
+libc-2.17.so       00002ADC4C6E2555  __libc_start_main     Unknown  Unknown
+dispatch.x         0000000000408AE9  Unknown               Unknown  Unknown
+srun: error: node680: task 0: Exited with exit code 174
+srun: Terminating job step 30433685.0

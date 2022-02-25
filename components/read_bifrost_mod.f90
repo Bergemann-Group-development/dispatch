@@ -483,7 +483,7 @@ SUBROUTINE interpolate_mean (iv, patch, buffer, mx, my, mz, xm, ym, zm, xmdn, ym
     end do
     do iz = 1, nz
       zpos = m3%r(iz)+m3%p + m3%h(iv)*m3%d
-      ff(:,:,iz) = lagrange%interpolate1d8(zpos,mz,real(zi,8),real(mean_buff,8))
+      ff(:,:,iz) = lagrange%interpolate1d8(zpos,real(zi,8),real(mean_buff,8))
     end do
   end if
   deallocate (xo, yo, zo, mean_buff)

@@ -35,6 +35,10 @@ SUBROUTINE init (self)
     first_time = .false.
     rewind (io%input)
     read (io%input, scaling_params, iostat=iostat)
+    if (iostat > 0) then
+      rewind (io%input)
+      read (io%input, scaling_params)
+    end if
     call io%namelist_warning ('scaling_params', iostat)
     write (io%namelist, scaling_params)
   end if

@@ -1,8 +1,10 @@
 MODULE cartesian_vb_mod
   USE task_list_mod
   USE experiment_mod
+  USE gpatch_mod
   USE patch_mod
   USE link_mod
+  USE list_mod
   USE task_mod
   USE trace_mod
   USE io_mod
@@ -20,13 +22,15 @@ MODULE cartesian_vb_mod
   type, public, extends(task_t):: rank_t
   end type
   type, public:: cartesian_vb_t
+    real(8):: position(3)
     real(8):: size(3)
     integer:: dims(3)
-    type(task_list_t), pointer:: task_list
+    type(task_list_t), pointer:: task_list => null()
   contains
     procedure init
     procedure, nopass:: diagnostics
   end type
+  integer:: verbose=0
   logical:: omp_init=.false.
   type(rank_t):: rank
   integer, save:: np=0                  ! patches per process
@@ -42,6 +46,7 @@ SUBROUTINE init (self, task_list, label)
   character(len=*), optional:: label
   !.............................................................................
   class(task_list_t), pointer:: patch_list
+  class(list_t), pointer:: tlist
   class(link_t), pointer:: link, next
   class(experiment_t), pointer:: patch
   class(task_t), pointer:: task
@@ -49,31 +54,56 @@ SUBROUTINE init (self, task_list, label)
   type(sphere_points_t), pointer:: info
   class(dll_node_t), pointer:: node
   class(*), pointer:: ptr
-  integer:: i, j, k, id, ip
+  integer:: i, j, k, id, ip, iostat
   integer:: dims(3) = [4,4,4]
   integer:: patches_per_mpi(3)
   integer:: mpi_dims(3) = [1,1,1]
   integer:: per_rank(3) = [0,0,0]
   real(8):: size(3) = [1.0,1.0,1.0]
   real(8):: origin(3) = [-0.5,-0.5,-0.5]
+  real(8):: position(3) = tiny(1d0)
   real(8):: wc
   logical:: periodic(3)=.true.
   integer, save:: itimer=0
-  namelist /cartesian_vb_params/ size, dims, mpi_dims, per_rank, origin, &
+  namelist /cartesian_vb_params/ size, position, dims, mpi_dims, per_rank, origin, &
     omp_init, periodic
   character(len=120):: ids = &
     '$Id$ components/cartesian_mod.f90'
+  !-----------------------------------------------------------------------------
+  if (present (task_list)) then
+    if (associated(task_list)) then
+      write (stdlog,*) 'cartesian_t%init: return -- task_list already allocated'
+      return
+    else
+      allocate(task_list)
+      self%task_list => task_list
+    end if
+  else
+    allocate(self%task_list)
+  end if
+tlist => self%task_list
   !-----------------------------------------------------------------------------
   call trace%begin ('cartesian_vb_t%init')
   call io%header('begin cartesian_vb_t%init: Cartesian patch arrangement')
   call trace%print_id (ids)
   !-----------------------------------------------------------------------------
-  rewind (io%input); read (io%input, cartesian_vb_params)
-  write (io%output, cartesian_vb_params)
+  rewind (io%input)
+  read (io%input, cartesian_vb_params, iostat=iostat)
+  call io%namelist_warning ('cartesian_params', iostat)
+  if (any(position /= tiny(1d0))) then
+    origin = position - size/2d0
+    call io%warning ('cartesian_t%init: position used, origin ignored')
+  else
+    position = origin + size/2d0
+  end if
   if (any(per_rank/=0)) then
     where (per_rank/=0) dims=per_rank*mpi_dims
   end if
   per_rank = dims/mpi_dims
+  if (any(dims == 2 .and. periodic)) then
+    call io%abort ('two patches per dimension is not allowed')
+  end if
+  self%position = position
   self%dims = dims
   self%size = size
   if (mpi%size==1) &
@@ -95,6 +125,7 @@ SUBROUTINE init (self, task_list, label)
   patches_per_mpi = self%dims/mpi_dims
   mpi_coords%npatch = patches_per_mpi
   io%mpi_dims = mpi_dims
+  write (io%namelist, cartesian_vb_params)
   !-----------------------------------------------------------------------------
   ! Set attritbutes of the rank_t data type -- just enough to use distance().
   !-----------------------------------------------------------------------------
@@ -102,30 +133,30 @@ SUBROUTINE init (self, task_list, label)
   rank%box = self%size
   rank%size = rank%box/mpi_dims
   rank%ds = rank%size/patches_per_mpi
-  rank%position = (mpi_coords%rank_to_coords(mpi%rank) + 0.5_8)*rank%size
+  rank%position = (mpi_coords%rank_to_coords(mpi%rank) + 0.5_8)*rank%size + origin
   !-----------------------------------------------------------------------------
   ! Begin on task list
   !-----------------------------------------------------------------------------
-  allocate (self%task_list)
-  call self%task_list%init ('tlist')
+  call self%task_list%init ('volleyball')
   self%task_list%size = self%size
   self%task_list%dims = self%dims
+  self%task_list%position = self%position
   self%task_list%n_tasks = product(self%dims)
   !-----------------------------------------------------------------------------
   ! Generate centers and orientations of all patches, stored in vb_layers_t%list
   !-----------------------------------------------------------------------------
   call vb_layers%init
-print *, vb_layers%list%n, 'list%n'
+print *, 'layers', vb_layers%list%n, 'list%n'
   node => vb_layers%list%head
   do while (associated(node))
     !---------------------------------------------------------------------------
     ! Initially append all tasks to the task list, to build nbor lists
     !---------------------------------------------------------------------------
-    allocate (link, patch)
-    link%task => patch
-    patch%link => link
+    allocate (patch)
+    task => patch
+    call self%task_list%prepare (task)
     call patch%task_t%init_unique (same=.true.)
-    call self%task_list%append_link (link)
+    patch%task_list => self%task_list
     !---------------------------------------------------------------------------
     ! Pick up location and orientation
     !---------------------------------------------------------------------------
@@ -167,6 +198,10 @@ print *, vb_layers%list%n, 'list%n'
     patch%orient%e(:,1) = normalize(cross(patch%orient%e(:,2),patch%orient%e(:,3)))
     ! North
     patch%orient%e(:,2) = cross(patch%orient%e(:,3),patch%orient%e(:,1))
+! -- finalize patch
+    call task%pre_init()
+    call self%task_list%add (patch%link)
+    call patch%init_task_list (tlist)
     node => node%next
   end do
   !-----------------------------------------------------------------------------
@@ -186,24 +221,24 @@ print *, vb_layers%list%n, 'list%n'
     if (link%task%is_set (bits%external)) then
       call link%remove_nbor_list2 (link%nbor)
       call self%task_list%remove (link)
+      call link%task%dealloc()
       deallocate (link%task)
       deallocate (link)
     end if
     link => next
   end do
   !-----------------------------------------------------------------------------
-  ! Count task statistics
+  ! This counts are not fully correct until the patch meshes have been allocated
   !-----------------------------------------------------------------------------
-  if (io%verbose > 0) write(stdout,*) 'cartesian_vb_t%init: count status'
+  if (verbose > 0) write(stdout,*) 'cartesian_vb_t%init: count status'
   call self%task_list%count_status
   !-----------------------------------------------------------------------------
-  ! These must be set before (possibly) reading input snapshots
+  ! The I/O conunters must be set before initializing patches
   !-----------------------------------------------------------------------------
-  io%ntask = self%task_list%na
-  io%nwrite = self%task_list%na
-  io%ntotal = product(self%dims)
-  write (stdout,*) 'Number of tasks in task list:', self%task_list%n
-  write(stdout,*) 'ntask, nwrite, ntotal =', io%ntask, io%nwrite, io%ntotal
+  call self%task_list%set_io_counts
+  write (stdout,'(a,i8)') ' number of tasks in task list:', self%task_list%n
+  write (stdlog,*) 'cartesian_vb_mod: ntask,nwrite=', &
+    io%ntask, io%nwrite
   !-----------------------------------------------------------------------------
   ! Initialize tasks
   !-----------------------------------------------------------------------------
@@ -215,23 +250,30 @@ print *, vb_layers%list%n, 'list%n'
     call init_exp (self, origin)
   end if
   !-----------------------------------------------------------------------------
+  ! Refresh the counts, now with bits%has_output set on tasks
+  !-----------------------------------------------------------------------------
+  call self%task_list%set_io_counts
+  write (stdlog,*) 'cartesian_mod: ntask,nwrite=', &
+    io%ntask, io%nwrite
+  !-----------------------------------------------------------------------------
   ! This call is not valid until the patch mem and meshes have been allocated
   !-----------------------------------------------------------------------------
-  if (io%verbose > 0) &
+  if (verbose > 0) &
     write(stdout,*) 'cartesian_vb_t%init: init boundaries'
   call self%task_list%init_bdries
   !-----------------------------------------------------------------------------
-  if (io%master) then
-    write (io_unit%nml, cartesian_vb_params)
-    flush (io_unit%nml)
+  if (io_unit%master) then
+    write (io%namelist, cartesian_vb_params)
+    flush (io%namelist)
   end if
-  if (io%verbose > 0) &
+  if (verbose > 0) &
     write(stdout,*) 'cartesian_vb_t%init: diagnostics'
   call self%diagnostics()
-  if (io%verbose > 0) &
+  if (verbose > 0) &
     write(stdout,*) 'cartesian_vb_t%init: print tasks'
   call self%task_list%print_tasks
-  if (io%verbose > 0) &
+  call self%task_list%check_hash_table
+  if (verbose > 0) &
     write(stdout,*) 'cartesian_vb_t%init: done'
   flush (stdout)
   !-----------------------------------------------------------------------------
@@ -258,11 +300,6 @@ SUBROUTINE init_exp (self, origin)
       class is (experiment_t)
         patch => task
         call patch%init
-        if (omp_init .and. omp%nthreads>1) then
-          task%mem_thread = omp%thread
-        else
-          task%mem_thread = -1
-        end if
         !-----------------------------------------------------------------------
         ! Redefine the mesh position, to a locally vertical coordinate system
         !-----------------------------------------------------------------------

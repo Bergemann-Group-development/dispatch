@@ -1,4 +1,4 @@
 DEBUG =
-OPT = -Ofast -march=native -ftree-vectorize -ftree-vectorizer-verbose=4 -fopt-info-all
+OPT = -Ofast -fno-finite-math-only -fopt-info-all 
 HW = -march=native
 #LDFLAGS = $(OPT) $(PAR) $(HW)

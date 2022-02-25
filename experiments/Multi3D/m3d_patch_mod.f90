@@ -48,7 +48,8 @@ module m3d_patch_mod
     real(4), dimension(:,:,:,:,:,:), pointer :: authority_mem => null()
     real(8) :: vec(3), wmu
     real(8) :: t_offset=0
-    integer :: i_nu=0, dir=0, i_mu=0, fs, fe, iter=0, maxiter, i_out=0
+    integer :: i_nu=0, dir=0, i_mu=0, fs, fe, i_out=0
+    integer :: iter=0, maxiter, master_maxiter
     logical :: periodic_xy=.false., out_ray=.false.
     integer :: fcheck
     integer :: pcheck(3)
@@ -299,6 +300,7 @@ SUBROUTINE append_to_task_list(self)
   !-----------------------------------------------------------------------------
   if (self%maxiter >= 0) then
     allocate (halo_m3d_t:: link)
+    call link%init()
     link%task => self
     self%link => link
     call self%patch%task_list%append (link)

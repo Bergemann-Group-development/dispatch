@@ -11,9 +11,9 @@ MODULE itable_mod
   ! Data type for linear scales, used for axis values
   !-----------------------------------------------------------------------------
   type, public:: independent_t
-   integer:: n
-   character(len=32):: name
-   real:: min=huge(1.), step, max=-huge(1.)
+   integer:: n, j1, j2
+   character(len=32):: name=''
+   real(8):: min=huge(1.), step, max=-huge(1.)
   contains
     procedure:: read => read_independent
     procedure:: test => test_independent
@@ -23,27 +23,38 @@ MODULE itable_mod
   !-----------------------------------------------------------------------------
   type, public:: dependent_t
     integer:: n, nv
-    character(32):: name
-    real, pointer, contiguous:: v(:,:)
+    character(32), pointer:: names(:)
+    real(8), pointer, contiguous:: v(:,:)
+    logical, pointer:: log_values(:)
   contains
     procedure:: read => read_values
     procedure:: test => test_values
   end type
   !-----------------------------------------------------------------------------
   ! Data type for table, with index offsets
+  !
+  ! scale1: full axis scale for the 1st independent variable
+  ! scale2: full axis scale for the 2nd independent variable
+  ! scales(i1): axis scale for the i'th value of the 1st index
+  ! values(i1)%v(:,:): table values for the i'th value of the 1st index
+  ! values(i1)%v(i2,iv): table value for index pair (i1,i2) for variable iv
   !-----------------------------------------------------------------------------
   type, public:: itable_t
-    integer:: n1, n2, nv
+    integer:: n1, n2, nv, igen=0
     type(independent_t):: scale1, scale2
-    type(independent_t), pointer:: scales(:)
-    type(dependent_t), pointer:: values(:)
+    type(independent_t), pointer:: scales(:) => null()
+    type(dependent_t),   pointer:: values(:) => null()
+    character(32),       pointer:: names(:)  => null()
   contains
     procedure:: init
     procedure:: lookup1_1d
     procedure:: lookup1_2d
     procedure:: lookup1_3d
     procedure:: lookup_3d
+    procedure:: get_index
     generic:: lookup => lookup1_1d, lookup1_2d, lookup1_3d, lookup_3d
+    procedure:: lookup_table => lookup_3d
+    procedure:: inverse_lookup => inverse_lookup_3d
   end type
   integer:: verbose = 0
 CONTAINS
@@ -55,8 +66,9 @@ CONTAINS
 SUBROUTINE init (self, file)
   class(itable_t):: self
   character(len=*):: file
+  logical:: convert
   !.............................................................................
-  integer:: i, iv, n, u, o
+  integer:: i, iv, n, u, o, j1, j2
   type(dependent_t), pointer:: values
   !-----------------------------------------------------------------------------
   call trace%begin ('itable_t%init')
@@ -69,8 +81,8 @@ SUBROUTINE init (self, file)
     call self%scale1%test ()
     call self%scale2%test ()
     allocate (self%values(self%scale1%n))
+    allocate (self%scales(self%scale1%n))
     do i=1,self%scale1%n
-      allocate (self%scales(i))
       call self%scales(i)%test (i-1)
       o = floor((self%scales(i)%min-self%scale2%min)/self%scale2%step)
       values => self%values(i)
@@ -80,13 +92,19 @@ SUBROUTINE init (self, file)
       end do
     end do
   !-----------------------------------------------------------------------------
-  ! Read EOS file created by Python package dispatch.EOS
+  ! Read EOS file created by Python package dispatch.EOS.
+  ! record 1: nv -- the number of dependent variables
+  ! record 2: values for independent variable 1
+  ! record 3: values for independent variable 2
+  ! record 4: values for independent variable 1, index 1
+  ! record 5: values for dependent variables, index 1
   !-----------------------------------------------------------------------------
+  
   else
+    call io%lock%set('itable_t%init')
     u = io_unit%tmp
     open (u,file=file,form='unformatted',status='old')
     read (u) self%nv
-    if (verbose>0) print *,'nv',self%nv
     write (stdlog,'(a,i2)') 'itable_t%read: nv =', self%nv
     !---------------------------------------------------------------------------
     ! Read linear scales specifying the full extend of axis 1 and axis 2
@@ -98,20 +116,48 @@ SUBROUTINE init (self, file)
     ! values, with index offsets
     !---------------------------------------------------------------------------
     allocate (self%values(self%scale1%n))
+    allocate (self%scales(self%scale1%n))
+    allocate (self%names(self%scale1%n))
+    self%names = ''
     do i=1,self%scale1%n
-      allocate (self%scales(i))
       call self%scales(i)%read (u)
       o = floor((self%scales(i)%min-self%scale2%min)/self%scale2%step)
-      allocate (self%values(i)%v(self%nv,o:o+self%scales(i)%n-1))
+      j1 = o + 1
+      j2 = o + self%scales(i)%n
+      self%scales(i)%j1 = j1
+      self%scales(i)%j2 = j2
+      allocate (self%values(i)%v(self%nv,j1:j2))
+      allocate (self%values(i)%names(self%nv))
+      self%values(i)%names = ''
       do iv=1,self%nv
         call self%values(i)%read (u, iv)
+        self%names(iv) = self%values(i)%names(iv)
       end do
     end do
     close(u)
+    call io%lock%unset('itable_t%init')
   end if
   call trace%end ()
 END SUBROUTINE init
 
+FUNCTION get_index(self,name) RESULT (idx)
+  class(itable_t):: self
+  character(*):: name
+  !-----------------------------------------------------------------------------
+  integer:: idx
+  logical:: found
+  ! ............................................................................
+  found=.false.
+  do idx=1,self%nv
+    if (trim(name) == self%names(idx)(1:len(trim(name)))) then
+      found=.true.
+      exit
+    end if
+  end do
+  if (.not.found) then
+    call io%abort ('itable_mod:: get_index not found: '//trim(name))
+  end if
+END FUNCTION get_index
 !===============================================================================
 !> Read a byte-by-byte representation of a string
 !===============================================================================
@@ -185,11 +231,7 @@ SUBROUTINE read_values (self, u, iv)
   character(len=32):: name
   !-----------------------------------------------------------------------------
   call trace%begin ('dependent_t%read')
-  read (u) m
-  read (u) (c(i),i=1,m)
-  do i=1,m
-    self%name(i:i)=c(i)
-  end do
+  call read_str (u, self%names(iv))
   read (u) self%n
   read (u) self%v(iv,:)
   if (verbose > 1) then
@@ -212,7 +254,7 @@ SUBROUTINE test_values (self, i1, iv)
   !-----------------------------------------------------------------------------
   call trace%begin ('dependent_t%test')
 #ifdef __GFORTRAN__
-  write (self%name,'(a,i1)') 'test', iv
+  write (self%names(iv),'(a,i1)') 'test', iv
 #endif
   self%n = 30
   do i2=lbound(self%v,2),ubound(self%v,2)
@@ -233,7 +275,7 @@ SUBROUTINE lookup1_1d (self, iv, x1, x2, v)
   integer, pointer, contiguous:: q1(:), q2(:)
   integer:: i, n
   integer, save:: itimer=0
-  real, pointer:: values1(:), values2(:)
+  real(8), pointer:: values1(:), values2(:)
   !-----------------------------------------------------------------------------
   call trace%begin ('itable_t%lookup1_1d', itimer=itimer)
   n = size(x1)
@@ -242,8 +284,8 @@ SUBROUTINE lookup1_1d (self, iv, x1, x2, v)
   ! Compute interpolation indices and weights in a vectorized loop
   !-----------------------------------------------------------------------------
   do i=1,n
-    p1(i) = (x1(i)-self%scale1%min)/self%scale1%step
-    p2(i) = (x2(i)-self%scale2%min)/self%scale2%step
+    p1(i) = 1d0+(x1(i)-self%scale1%min)/self%scale1%step
+    p2(i) = 1d0+(x2(i)-self%scale2%min)/self%scale2%step
     q1(i) = p1(i)
     p1(i) = p1(i) - q1(i)
     q2(i) = p2(i)
@@ -285,7 +327,7 @@ SUBROUTINE lookup1_2d (self, iv, x1, x2, v)
   integer, pointer, contiguous:: q1(:), q2(:)
   integer:: i, n, i2, n2
   integer, save:: itimer=0
-  real, pointer:: values1(:), values2(:)
+  real(8), pointer:: values1(:), values2(:)
   !-----------------------------------------------------------------------------
   call trace%begin ('itable_t%lookup1_2d', itimer=itimer)
   n  = size(x1,1)
@@ -296,8 +338,8 @@ SUBROUTINE lookup1_2d (self, iv, x1, x2, v)
   !-----------------------------------------------------------------------------
   do i2=1,n2
   do i=1,n
-    p1(i) = (x1(i,i2)-self%scale1%min)/self%scale1%step
-    p2(i) = (x2(i,i2)-self%scale2%min)/self%scale2%step
+    p1(i) = 1d0+(x1(i,i2)-self%scale1%min)/self%scale1%step
+    p2(i) = 1d0+(x2(i,i2)-self%scale2%min)/self%scale2%step
     q1(i) = p1(i)
     p1(i) = p1(i) - q1(i)
     q2(i) = p2(i)
@@ -337,7 +379,7 @@ SUBROUTINE lookup1_3d (self, iv, x1, x2, v)
   integer, pointer, contiguous:: q1(:), q2(:)
   integer:: i, n, iv, i2, n2, i3, n3, nv
   integer, save:: itimer=0
-  real, pointer:: values1(:,:), values2(:,:)
+  real(8), pointer:: values1(:,:), values2(:,:)
   !-----------------------------------------------------------------------------
   call trace%begin ('itable_t%lookup1_3d', itimer=itimer)
   n  = size(v,1)
@@ -353,8 +395,8 @@ SUBROUTINE lookup1_3d (self, iv, x1, x2, v)
     !$omp simd
 #endif
     do i=1,n
-      p1(i) = (x1(i,i2,i3)-self%scale1%min)/self%scale1%step
-      p2(i) = (x2(i,i2,i3)-self%scale2%min)/self%scale2%step
+      p1(i) = 1d0+(x1(i,i2,i3)-self%scale1%min)/self%scale1%step
+      p2(i) = 1d0+(x2(i,i2,i3)-self%scale2%min)/self%scale2%step
       q1(i) = p1(i)
       p1(i) = p1(i) - q1(i)
       q2(i) = p2(i)
@@ -407,6 +449,17 @@ SUBROUTINE lookup_3d (self, x1, x2, v)
 END SUBROUTINE lookup_3d
 
 !===============================================================================
+!> 3-D lookup; choose btw v(nv,n,n,n) and v(n,n,n,nv)
+!===============================================================================
+SUBROUTINE inverse_lookup_3d (self, x1, x2, idx, v)
+  class(itable_t):: self
+  real:: x1(:,:,:), x2(:,:,:), v(:,:,:,:)
+  integer:: idx
+  !-----------------------------------------------------------------------------
+  call inverse_lookup_3d_nnv (self, x1, x2, idx, v)
+END SUBROUTINE inverse_lookup_3d
+
+!===============================================================================
 !> 3-D lookup, order (n,n,n,nv)
 !===============================================================================
 SUBROUTINE lookup_3d_nnv (self, x1, x2, v)
@@ -417,7 +470,7 @@ SUBROUTINE lookup_3d_nnv (self, x1, x2, v)
   integer, pointer, contiguous:: q1(:), q2(:)
   integer:: i, n, iv, i2, n2, i3, n3, nv
   integer, save:: itimer=0
-  real, pointer:: values1(:,:), values2(:,:)
+  real(8), pointer:: values1(:,:), values2(:,:)
   !-----------------------------------------------------------------------------
   call trace%begin ('itable_t%lookup_3d_nnv', itimer=itimer)
   !print *,'lookup_3d_nnv'
@@ -435,8 +488,8 @@ SUBROUTINE lookup_3d_nnv (self, x1, x2, v)
     !$omp simd
 #endif
     do i=1,n
-      p1(i) = (x1(i,i2,i3)-self%scale1%min)/self%scale1%step
-      p2(i) = (x2(i,i2,i3)-self%scale2%min)/self%scale2%step
+      p1(i) = 1d0+(x1(i,i2,i3)-self%scale1%min)/self%scale1%step
+      p2(i) = 1d0+(x2(i,i2,i3)-self%scale2%min)/self%scale2%step
       q1(i) = p1(i)
       p1(i) = p1(i) - q1(i)
       q2(i) = p2(i)
@@ -477,6 +530,68 @@ SUBROUTINE lookup_3d_nnv (self, x1, x2, v)
 END SUBROUTINE lookup_3d_nnv
 
 !===============================================================================
+!> Inverse lookup of the variable 'log(T)' (fall back 'T'), in terms of input
+!> values v(:,:,:) in terms of the 2nd independent table variable (typically
+!> log(E) or S)
+!===============================================================================
+SUBROUTINE inverse_lookup_3d_nnv (self, x1, x2, idx, v)
+  class(itable_t):: self
+  real:: x1(:,:,:), x2(:,:,:), v(:,:,:,:)
+  integer:: idx
+  !.............................................................................
+  real(8):: p1, p2, v1
+  integer:: iv, i1, i2, i3, n1, n2, n3, q1, q2, j, j1, j2
+  integer, save:: itimer=0
+  real(8), pointer:: values1(:,:), values2(:,:), values(:)
+  !-----------------------------------------------------------------------------
+  call trace%begin ('itable_t%inverse_lookup_3d_nnv', itimer=itimer)
+  !-----------------------------------------------------------------------------
+  n1 = size(v,1)
+  n2 = size(v,2)
+  n3 = size(v,3)
+  !-----------------------------------------------------------------------------
+  ! For each v(i1,i2,i3) value, find the two brancketing table index 1 values,
+  ! determine the common index range of those two axis 2 scales, and search
+  ! for the interval in 2nd index that contains the given v(i1,i2,i3). Then
+  ! determine the value of 2nd axis variable for which linear interpolation
+  ! gives the given v-value.
+  !-----------------------------------------------------------------------------
+  allocate (values(self%scale2%n))
+  do i3=1,n3
+  do i2=1,n2
+    do i1=1,n1
+      p1 = 1d0+(x1(i1,i2,i3)-self%scale1%min)/self%scale1%step
+      q1 = p1
+      q2 = q1 + 1
+      p1 = p1 - q1
+      j1 = max (self%scales(q1)%j1, self%scales(q2)%j1)
+      j2 = min (self%scales(q1)%j2, self%scales(q2)%j2)
+      values(j1:j2) = (1.-p1)*self%values(q1)%v(idx,j1:j2) + &
+                          p1 *self%values(q2)%v(idx,j1:j2)
+      !-------------------------------------------------------------------------
+      ! Search for the interval that contains v(i1,i2,i3)
+      !-------------------------------------------------------------------------
+      do j=j1+1,j2
+        if (values(j) > x2(i1,i2,i3)) then
+          exit
+        end if
+      end do
+      j = min(j,j2)
+      !-------------------------------------------------------------------------
+      ! Compute the linear interpolation weight p2, the starting value and
+      ! step across the interval
+      !-------------------------------------------------------------------------
+      p2 = (x2(i1,i2,i3)-values(j-1))/(values(j)-values(j-1))
+      v1 = self%scale2%min + (j-2)*self%scale2%step
+      v(i1,i2,i3,1) = v1 + p2*self%scale2%step
+    end do
+  end do
+  end do
+  deallocate (values)
+  call trace%end (itimer)
+END SUBROUTINE inverse_lookup_3d_nnv
+
+!===============================================================================
 !> 3-D lookup, order (nv,n,n,n)
 !===============================================================================
 SUBROUTINE lookup_3d_nvn (self, x1, x2, v)
@@ -487,7 +602,7 @@ SUBROUTINE lookup_3d_nvn (self, x1, x2, v)
   integer, pointer, contiguous:: q1(:), q2(:)
   integer:: i, n, iv, i2, n2, i3, n3, nv
   integer, save:: itimer=0
-  real, pointer:: values1(:,:), values2(:,:)
+  real(8), pointer:: values1(:,:), values2(:,:)
   real:: c1, c2
   !-----------------------------------------------------------------------------
   call trace%begin ('itable_t%lookup_3d', itimer=itimer)

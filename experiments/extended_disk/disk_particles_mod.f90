@@ -67,6 +67,7 @@ FUNCTION particle_force (self, p, vp, grad_phi, v) RESULT (a)
   real, dimension(3)                       :: p, v, a, grad_phi
   real, dimension(2)                       :: vp
   !.............................................................................
+  a = 0.0
 END FUNCTION particle_force
 
 !===============================================================================

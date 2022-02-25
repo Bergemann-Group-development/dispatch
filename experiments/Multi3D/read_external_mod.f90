@@ -170,7 +170,7 @@ SUBROUTINE create_patch (self, i, patch)
 
   patch%position(1) = 0.5d0*patch%size(1)
   patch%position(2) = 0.5d0*patch%size(2)
-  patch%position(3) = (patch%zs - 1) * patch%ds(3)
+  patch%position(3) = (patch%zs - 1) * patch%ds(3) + 0.5d0*patch%size(3)
   patch%origin = patch%position - 0.5d0*patch%size
 
   call patch%init()

@@ -29,7 +29,7 @@ MODULE mhd_mod
   USE index_mod
   USE timestep_mod
   USE eos_mod
-  USE non_ideal_mod
+  !USE non_ideal_mod
   USE divb_clean_mod
   USE task_mod
   USE timer_mod
@@ -55,9 +55,6 @@ MODULE mhd_mod
     procedure:: pre_update
     procedure:: update
     procedure:: output
-    procedure :: to_total_e
-    procedure:: gas_pressure
-    procedure:: gas_pressure_sub
     procedure :: nbor_relations
   end type
   logical, save:: unsigned=.true.
@@ -75,7 +72,8 @@ SUBROUTINE pre_init (self)
   class(mhd_t), target:: self
   type(index_t):: idx
   integer:: i, iv, iostat
-  real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], csound=1.0, cdtd=0.5, courant=0.2
+  !                   nu   pa  off mas kap eta
+  real, save:: nu(6)=[0.05,1.0,0.5,0.1,0.5,0.5], csound=1.0, cdtd=0.5, courant=0.2
   logical, save:: first_time=.true.
   logical, save:: mhd=.true.
   namelist /stagger_params/ nu, courant, csound, cdtd, hardwire, &
@@ -91,7 +89,7 @@ SUBROUTINE pre_init (self)
     read (io%input, stagger_params, iostat=iostat)
     call io%namelist_warning ('stagger_params', iostat)
     write (io%namelist, stagger_params)
-    call non_ideal%init
+    !call non_ideal%init
     call timestep%init
     ! fool-proofing
     if (timestep%time_order <= 0) call mpi%abort("The Stagger solvers require `time_order` > 0. Abort!")
@@ -101,6 +99,8 @@ SUBROUTINE pre_init (self)
   ! Note that the experiment must set self%mhd, possibly depending on IC
   !-----------------------------------------------------------------------------
   self%type = 'mhd_t'
+  self%etype = 'thermal'
+  self%staggered = .true.
   self%mhd = mhd
   if (self%mhd) then
     self%kind = 'stagger2e_mhd_patch'
@@ -172,7 +172,7 @@ SUBROUTINE init (self)
   ! Initialize everything else, and do a sanity check
   !-----------------------------------------------------------------------------
   self%type = 'mhd_t'
-  call non_ideal%init
+  !call non_ideal%init
   call divb%init
   !-----------------------------------------------------------------------------
   ! Self tests, only on one thread
@@ -385,7 +385,11 @@ SUBROUTINE pde (self)
   ee = e/d                                                                      ! ops: 0 0 1
   self%lnd => lnd
   self%ee  => ee
-  call self%gas_pressure_sub (pg, lnd=self%lnd, ee=self%ee)
+  if (do_temperature) then
+    call eos%lookup (d=d, lnd=lnd, e=e, ee=ee, pg=pg, tt=self%tt)
+  else
+    call eos%lookup (d=d, lnd=lnd, e=e, ee=ee, pg=pg)
+  end if
   self%pg => pg
   !-----------------------------------------------------------------------------
   ! Conservation of momentum -- first the diagonal part of the stress tensor
@@ -602,7 +606,7 @@ SUBROUTINE pde (self)
     Ex = Ex + ydn(Uz)*zdn(By) - zdn(Uy)*ydn(Bz)                                 ! mhd: 2 2 0
     Ey = Ey + zdn(Ux)*xdn(Bz) - xdn(Uz)*zdn(Bx)                                 ! mhd: 2 2 0
     Ez = Ez + xdn(Uy)*ydn(Bx) - ydn(Ux)*xdn(By)                                 ! mhd: 2 2 0
-    call non_ideal%update (self%gn, minval(ds), d, Jx, Jy, Jz, Bx, By, Bz, Q, emf, self%u_max)
+    !call non_ideal%update (self%gn, minval(ds), d, Jx, Jy, Jz, Bx, By, Bz, Q, emf, self%u_max)
     dBdt = -curl_up(ds,emf)
   end if
   !-----------------------------------------------------------------------------
@@ -670,7 +674,7 @@ SUBROUTINE pre_update (self)
     e => self%mem(:,:,:,self%idx%e,self%it,1)
     lnd = alog(d)
     ee = e/d
-    call eos%lookup_table (shape(self%tt), lnd=lnd, ee=ee, tt=self%tt, label='mhd')
+    call eos%lookup(lnd=lnd, ee=ee, tt=self%tt, label='mhd')
     deallocate (lnd, ee)
     if (verbose > 0) &
       write(io%output,*) self%id, 'mhd_t%pre_update:  tt =', &
@@ -751,61 +755,6 @@ SUBROUTINE output (self)
 END SUBROUTINE output
 
 !===============================================================================
-SUBROUTINE gas_pressure_sub (self, pg, lnd, ee)
-  class(mhd_t):: self
-  real, dimension(:,:,:):: pg
-  real, dimension(:,:,:), pointer, optional:: lnd, ee
-  !.............................................................................
-  real, dimension(:,:,:), pointer:: d, e
-  integer, save:: nprint=1
-  !-----------------------------------------------------------------------------
-  call trace%begin ('mhd_t%gas_pressure_sub')
-  d  => self%mem(:,:,:,self%idx%d,self%it,1)
-  e  => self%mem(:,:,:,self%idx%e,self%it,1)
-  if (trim(self%eos)=='ideal') then
-    if (eos%gamma==1d0) then
-      pg = d*self%csound**2
-    else
-      pg = e*(eos%gamma-1)
-    end if
-  else
-    if (do_temperature) then
-      if (present(lnd) .and. present(ee)) then
-        call eos%lookup_table (shape(d), lnd=lnd, ee=ee, pg=pg, tt=self%tt)
-      else
-        call eos%lookup_table (shape(d), d=d, e=e, pg=pg, tt=self%tt)
-      end if
-    else
-      if (present(lnd) .and. present(ee)) then
-        call eos%lookup_table (shape(d), lnd=lnd, ee=ee, pg=pg)
-      else
-        call eos%lookup_table (shape(d), d=d, e=e, pg=pg)
-      end if
-    end if
-    if (verbose > 1 .or. nprint > 0) then
-      nprint = nprint-1
-      write(io%output,*) self%id, 'lookup_table:  d =', minval(d) , maxval(d)
-      write(io%output,*) self%id, 'lookup_table: ee =', minval(ee), maxval(ee)
-      write(io%output,*) self%id, 'lookup_table: pg =', minval(pg), maxval(pg)
-      if (do_temperature) &
-        write(io%output,*) self%id, 'lookup_table: tt =', minval(self%tt), &
-          maxval(self%tt)
-    end if
-  end if
-  call trace%end()
-END SUBROUTINE gas_pressure_sub
-
-!===============================================================================
-FUNCTION gas_pressure (self) result(pg)
-  class(mhd_t):: self
-  real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
-  !-----------------------------------------------------------------------------
-  call trace%begin ('mhd_t%gas_pressure')
-  call self%gas_pressure_sub (pg)
-  call trace%end ()
-END FUNCTION gas_pressure
-
-!===============================================================================
 !> Set up nbor relations between MHD tasks
 !===============================================================================
 SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
@@ -831,20 +780,5 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
     call trace%end(itimer=itimer)
 
 END SUBROUTINE nbor_relations
-
-!===============================================================================
-!> For Riemann solvers we need to convert internal energy to total energy
-!===============================================================================
-SUBROUTINE to_total_e(self, it)
-  class(mhd_t):: self
-  integer, dimension(3):: lb, lo, li, ui, uo, ub, n, gn
-  integer:: ix, iy, iz, iz1, i, it
-  real, dimension(:,:,:), pointer:: d, e, px, py, pz
-  real, dimension(:,:,:), pointer:: bx, by, bz, emag
-  real, dimension(:,:,:), pointer:: b1, b2, b3
-  ! ----------------------------------------------------------------------------
-  call io%abort('mhd_t: to_total_e not set up')
-
-END subroutine to_total_e
 
 END MODULE mhd_mod

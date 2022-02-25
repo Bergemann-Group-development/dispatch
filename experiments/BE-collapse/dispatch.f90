@@ -7,7 +7,7 @@ PROGRAM dispatch
   USE mpi_mod
   USE cartesian_mod
   type (cartesian_t):: cartesian
-  type (task_list_t), pointer:: task_list
+  class (task_list_t), pointer:: task_list
   real:: position(3)=0.0, size(3)=1.0
   !.............................................................................
   call mpi%init

@@ -5,7 +5,7 @@ PROGRAM dispatch
   USE setup_mod
   USE cartesian_mod
   USE dispatcher_mod
-  type (cartesian_t):: cartesian
+  class (cartesian_t):: cartesian
   !.............................................................................
   call setup%init                               ! Standard setup (MPI, I/O, scaling, ...)
   call dispatcher%init                          ! Set dispatcher method

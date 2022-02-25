@@ -220,6 +220,41 @@ class itable_c(object):
             v2=self.tables[ix+1][v].interpolate(y)
             return (1-px)*v1+px*v2
 
+    def inverse_lookup(self,v,x,y,verbose=0):
+        """ Do an inverse lookup of the variable  in terms of input values v  
+            in terms of the 2nd independent table variable
+        """
+        if verbose>1:
+            self.scale0.print()
+            self.scale1.print()
+        ix,px=self.scale0.index(x)
+        #iy,py=self.scale1.index(y)
+        if type(ix) is np.ndarray:
+            vmax = max(self.scales[ix].n +
+                       self.scales[ix].offset,
+                       self.scales[ix+1].n +
+                       self.scales[ix+1].offset)
+            table0 = self.tables[ix+0][v]
+            table1 = self.tables[ix+1][v]
+            values = table0.values*(1-px)+table1.values*px
+            yvals = self.scales[ix].values*(1-px)+self.scales[ix+1].values*px
+            res = scipy.interpolate.interp1d(
+                values, yvals, table0.kind, fill_value=table0.fill_value)
+            #return res(y)
+            print ('taking range')
+        else:
+            vmax = max(self.scales[ix].n + \
+                       self.scales[ix].offset, \
+                       self.scales[ix+1].n + \
+                       self.scales[ix+1].offset)
+            table0 = self.tables[ix+0][v]
+            table1 = self.tables[ix+1][v]
+            values = table0.values*(1-px)+table1.values*px
+            yvals  = self.scales[ix].values*(1-px)+self.scales[ix+1].values*px
+            res=scipy.interpolate.interp1d(
+                values, yvals, table0.kind, fill_value=table0.fill_value)
+            return res(y)
+
     def write(self,file,verbose=0):
         """ Write out an EOS table as unformatted Fortran records """
         with scipy.io.FortranFile(file,'w') as fd:

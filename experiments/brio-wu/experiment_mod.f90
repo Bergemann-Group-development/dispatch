@@ -28,6 +28,7 @@ SUBROUTINE init (self)
   class(experiment_t):: self
   logical:: first_time = .true.
   class(mesh_t), pointer:: m(:)
+  integer:: l(3), u(3), idir
   call trace_begin('experiment_t%init')
   !----------------------------------------------------------------------------
   ! Initial conditions
@@ -38,29 +39,49 @@ SUBROUTINE init (self)
   self%unsigned(self%idx%d) = .true.
   ! assign boundary conditions.
   m=>self%mesh
-  self%boundaries%rho_l = self%mem(m(1)%lo,m(2)%li,m(3)%li,self%idx%d,1,1)
-  self%boundaries%rho_r = self%mem(m(1)%uo,m(2)%li,m(3)%li,self%idx%d,1,1)
+  idir=self%initial_conditions%idir
+  select case(idir)
+  case(1)
+    l=m%li
+    l(1)=m(1)%lo
+    u=m%ui
+    u(1)=m(1)%uo
+  case(2)
+    l=m%li
+    l(2)=m(2)%lo
+    u=m%ui
+    u(2)=m(2)%uo
+  case(3)
+    l=m%li
+    l(3)=m(3)%lo
+    u=m%ui
+    u(3)=m(3)%uo
+  end select
+
+
+  self%boundaries%rho_l = self%mem(l(1),l(2),l(3),self%idx%d,1,1)
+  self%boundaries%rho_r = self%mem(u(1),u(2),u(3),self%idx%d,1,1)
   if (self%idx%e>0) then
-  self%boundaries%e_l   = self%mem(m(1)%lo,m(2)%li,m(3)%li,self%idx%e,1,1)
-  self%boundaries%e_r   = self%mem(m(1)%uo,m(2)%li,m(3)%li,self%idx%e,1,1)
+  self%boundaries%e_l   = self%mem(l(1),l(2),l(3),self%idx%e,1,1)
+  self%boundaries%e_r   = self%mem(u(1),u(2),u(3),self%idx%e,1,1)
   end if
   if (self%idx%s>0) then
-  self%boundaries%s_l   = self%mem(m(1)%lo,m(2)%li,m(3)%li,self%idx%s,1,1)
-  self%boundaries%s_r   = self%mem(m(1)%uo,m(2)%li,m(3)%li,self%idx%s,1,1)
+  self%boundaries%s_l   = self%mem(l(1),l(2),l(3),self%idx%s,1,1)
+  self%boundaries%s_r   = self%mem(u(1),u(2),u(3),self%idx%s,1,1)
   end if
-  self%boundaries%px_l  = self%mem(m(1)%lo,m(2)%li,m(3)%li,self%idx%px,1,1)
-  self%boundaries%px_r  = self%mem(m(1)%uo,m(2)%li,m(3)%li,self%idx%px,1,1)
-  self%boundaries%py_l  = self%mem(m(1)%lo,m(2)%li,m(3)%li,self%idx%py,1,1)
-  self%boundaries%py_r  = self%mem(m(1)%uo,m(2)%li,m(3)%li,self%idx%py,1,1)
-  self%boundaries%pz_l  = self%mem(m(1)%lo,m(2)%li,m(3)%li,self%idx%pz,1,1)
-  self%boundaries%pz_r  = self%mem(m(1)%uo,m(2)%li,m(3)%li,self%idx%pz,1,1)
+  self%boundaries%px_l  = self%mem(l(1),l(2),l(3),self%idx%px,1,1)
+  self%boundaries%px_r  = self%mem(u(1),u(2),u(3),self%idx%px,1,1)
+  self%boundaries%py_l  = self%mem(l(1),l(2),l(3),self%idx%py,1,1)
+  self%boundaries%py_r  = self%mem(u(1),u(2),u(3),self%idx%py,1,1)
+  self%boundaries%pz_l  = self%mem(l(1),l(2),l(3),self%idx%pz,1,1)
+  self%boundaries%pz_r  = self%mem(u(1),u(2),u(3),self%idx%pz,1,1)
 
-  self%boundaries%bx_l  = self%mem(m(1)%lo,m(2)%li,m(3)%li,self%idx%bx,1,1)
-  self%boundaries%bx_r  = self%mem(m(1)%uo,m(2)%li,m(3)%li,self%idx%bx,1,1)
-  self%boundaries%by_l  = self%mem(m(1)%lo,m(2)%li,m(3)%li,self%idx%by,1,1)
-  self%boundaries%by_r  = self%mem(m(1)%uo,m(2)%li,m(3)%li,self%idx%by,1,1)
-  self%boundaries%bz_l  = self%mem(m(1)%lo,m(2)%li,m(3)%li,self%idx%bz,1,1)
-  self%boundaries%bz_r  = self%mem(m(1)%uo,m(2)%li,m(3)%li,self%idx%bz,1,1)
+  self%boundaries%bx_l  = self%mem(l(1),l(2),l(3),self%idx%bx,1,1)
+  self%boundaries%bx_r  = self%mem(u(1),u(2),u(3),self%idx%bx,1,1)
+  self%boundaries%by_l  = self%mem(l(1),l(2),l(3),self%idx%by,1,1)
+  self%boundaries%by_r  = self%mem(u(1),u(2),u(3),self%idx%by,1,1)
+  self%boundaries%bz_l  = self%mem(l(1),l(2),l(3),self%idx%bz,1,1)
+  self%boundaries%bz_r  = self%mem(u(1),u(2),u(3),self%idx%bz,1,1)
 
   call trace_end
 END SUBROUTINE init

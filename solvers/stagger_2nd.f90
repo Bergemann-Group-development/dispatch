@@ -1329,8 +1329,8 @@ SUBROUTINE stagger_test
   end do
   allok = allok .and. ok
   if (.not.ok) write (stdout,*) 'ddzup:', ok
-  write (stdout,*) io%hl
   if (omp%master) then
+    write (stdout,*) io%hl
     if (allok) then
       write (stdout,*) '2nd/1st order stagger operator test passed'
       write (stdout,*) io%hl

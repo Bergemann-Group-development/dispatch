@@ -28,6 +28,6 @@ PROGRAM test
   call poisson%init (patch%mesh)
   call tic
   call poisson%solve (patch%mesh, rho, phi, iters)
-  call toc ('poisson', product(patch%mesh%n)*iters)
-  !call toc ('poisson', product(patch%mesh%n))
+  call timer%toc ('poisson', product(patch%mesh%n)*iters)
+  !call timer%toc ('poisson', product(patch%mesh%n))
 END PROGRAM test

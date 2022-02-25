@@ -10,6 +10,7 @@ MODULE gravity_mod
   USE trace_mod
   USE bits_mod
   USE scratch_mod
+  USE mesh_mod
   implicit none
   private
   type, public:: gravity_t
@@ -20,6 +21,8 @@ MODULE gravity_mod
     real(8)                        :: position(3) = 0.0   ! centre of gravity
     integer                        :: axis = 3
     class(gpatch_t),        pointer:: patch => null()
+    real, pointer, contiguous:: vector_field(:,:,:,:)
+    logical:: from_tab=.false.
     logical:: on=.false.
   contains
     procedure:: pre_init
@@ -42,9 +45,10 @@ SUBROUTINE pre_init (self, patch)
   logical, save :: on          = .false.
   real(kind=KindScalarVar), save:: mass = -1.0
   real(8),                  save:: minrad = 0.0
+  logical,                  save:: table=.false.
   real(8), save :: position(3) = 0.0                    ! centre of gravity
   integer, save :: axis  = 3
-  namelist /gravity_params/ on, constant, axis, position, mass, minrad
+  namelist /gravity_params/ on, constant, axis, position, mass, minrad, table
   !-----------------------------------------------------------------------------
   call trace%begin ('selfgravity_t%pre_init')
   self%patch => patch
@@ -62,9 +66,10 @@ SUBROUTINE pre_init (self, patch)
     self%on = on
     self%const_grav = constant
     self%axis = axis
-    self%position   = position
-    self%mass       = mass
-    self%minrad     = minrad
+    self%position   = position/scaling%l
+    self%mass       = mass/scaling%m
+    self%minrad     = minrad/scaling%l
+    self%from_tab   = table
     !---------------------------------------------------------------------------
     ! Request force per unit mass for MHD
     !---------------------------------------------------------------------------
@@ -72,6 +77,8 @@ SUBROUTINE pre_init (self, patch)
       self%grav => const_grav
     else if (mass > -1.0) then
       self%grav => var_grav
+    else if (table) then
+      self%grav => table_grav
     else
       call io%abort("gravity_mod%init:: neither constant nor mass is set.")
     end if
@@ -165,5 +172,26 @@ SUBROUTINE var_grav(self)
   end associate
   end associate
 END SUBROUTINE var_grav
+
+!===============================================================================
+!===============================================================================
+SUBROUTINE table_grav(self)
+  class(gravity_t) :: self
+  ! ----------------------------------------------------------------------------
+  integer:: nn(4)
+  real, pointer          :: gz(:,:,:)
+  ! ............................................................................
+  nn(1:3)=self%patch%mesh%gn
+  nn(4) = 3
+  call scratch%allocate (scratch%force_per_unit_mass, nn)
+  scratch%force_per_unit_mass=scratch%force_per_unit_mass+self%vector_field
+  gz=> self%vector_field(:,:,:,3)
+  call self%patch%aux%register('grav',gz)
+  !print *, '======= gravity ==', self%patch%id
+  !print *, 'grav x', minval(self%vector_field(:,:,:,1)),maxval(self%vector_field(:,:,:,1))
+  !print *, 'grav y', minval(self%vector_field(:,:,:,2)),maxval(self%vector_field(:,:,:,2))
+  !print *, 'grav z', minval(self%vector_field(:,:,:,3)),maxval(self%vector_field(:,:,:,3))
+  !print *, 'grav in x', self%vector_field(:,12,12,3)
+END SUBROUTINE table_grav
 
 END MODULE gravity_mod

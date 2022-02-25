@@ -178,6 +178,7 @@ SUBROUTINE init_task_list(self, task_list)
   !-----------------------------------------------------------------------------
   call trace%begin ('extras_t%init_task_list')
   self%task_list => task_list                                          ! keep
+  call self%gpatch_t%init_task_list (task_list)                        ! keep
   ! ----------------------------------------------------------------------------
   ! Optional adds to task list
   ! ----------------------------------------------------------------------------
@@ -209,6 +210,7 @@ SUBROUTINE pre_update (self)
   class(extras_t), target:: self
   !.............................................................................
   call trace%begin ('extras_t%pre_update')  
+  call self%gpatch_t%pre_update ()                                     ! keep
   !call self%rt%pre_update()                                            ! RT
   !call self%newton%pre_update()                                        ! Newton
   !call self%forces%pre_update                                          ! forces
@@ -228,6 +230,7 @@ END SUBROUTINE pre_update
 SUBROUTINE post_update (self)
   class(extras_t):: self
   !.............................................................................
+  call self%gpatch_t%post_update                                       ! selfg
   call self%selfgravity%post_update                                    ! selfg
   !call self%rt%post_update                                             ! RT
   !call self%forces%post_update                                         ! forces

@@ -35,13 +35,12 @@ MODULE eos_mod
     real(8) :: gamma=1.4d0
     real    :: kappa
     logical :: on = .false.
+    logical :: initialized = .false.
   contains
     procedure:: init
     procedure:: lookup
-    procedure:: lookup_table
-    procedure:: pressure
-    procedure:: temperature
-    procedure:: ddeos
+    procedure:: inverse_lookup
+    procedure, private:: lookup_table
   end type
   integer, save:: verbose=0
   type (eos_t), public:: eos
@@ -53,7 +52,7 @@ CONTAINS
 SUBROUTINE init (self)
   class (eos_t):: self
   real, dimension(:,:,:), pointer:: d, ee, pg
-  real, save :: kappa = 1.0, gamma=1.4d0
+  real, save :: kappa = 1.0, gamma=1.2d0
   integer:: ir, iostat
   namelist /eos_params/ do_eos, top, tablefile, kappa, verbose, gamma
   !-----------------------------------------------------------------------------
@@ -75,218 +74,170 @@ SUBROUTINE init (self)
     ! Read the table file
     !-----------------------------------------------------------------------------
     file = trim(top)//'/'//trim(tablefile)
-    open (io_unit%data, file=trim(file), form='unformatted', status='old', action='read')
-    read (io_unit%data) md,iupdte,nvar,mbox,eosxmin,dbox,ul,ut,ur,eps,tff,grv,abnd
+    open (io_unit%data, file=trim(file), form='unformatted', status='old', &
+      action='read')
+    read (io_unit%data) md, iupdte, nvar, mbox, eosxmin, dbox, ul, ut, ur, &
+      eps, tff, grv, abnd
     njon = nvar-mbox
-    allocate (tmean(md),tamp(md),rhm(md),xcorr(md),thmin(md),thmax(md))
-    allocate (dth(md),eemin(md),eemax(md),deetab(md),itab(md),mtab(md))
-    if (io%do_trace.and.io%master) print *,mpi%rank, 'reading 12 times', md, ' values'
-    read (io_unit%data) tmean,tamp,rhm,xcorr,thmin,thmax,dth,eemin,eemax,deetab,itab,mtab
+    allocate (tmean(md), tamp(md), rhm(md), xcorr(md), thmin(md), thmax(md))
+    allocate (dth(md), eemin(md), eemax(md), deetab(md), itab(md), mtab(md))
+    if (io%do_trace .and. io%master) &
+      write (stdout,*) 'eos_t%init:', 'reading 12 times', md, ' values'
+    read (io_unit%data) tmean, tamp, rhm, xcorr, thmin, thmax, dth, eemin, &
+      eemax, deetab, itab, mtab
     read (io_unit%data) mtable
     allocate (tab(mtable))
     read (io_unit%data) tab
     close (io_unit%data)
-    if (mpi%master) then
-      print *, trim(tablefile)//': md, mtable =', md, mtable
+      write (stdout,*) trim(tablefile)//': md, mtable =', md, mtable
       allocate (d(1,1,1), ee(1,1,1), pg(1,1,1))
       d = 1.0
       ee  = 5.0
       !call self%lookup (shape(ee), ee=ee, d=d, pg=pg)
-      print *,'d, ee, pg =', d, ee, pg
+      write (stdout,*) 'd, ee, pg =', d, ee, pg
       deallocate (d, ee, pg)
       if (verbose > 0) then
-        print *, '      density       min(E)      max(E)        min(T)      max(T)'
+        write (stdout,*) &
+        '      density       min(E)      max(E)        min(T)      max(T)'
         do ir=1,md
-          print '(i4,1p,e12.4,2(2x,2e12.4))', ir, rhm(ir), eemin(ir), eemax(ir), &
+          write (stdout,'(i4,1p,e12.4,2(2x,2e12.4))') &
+            ir, rhm(ir), eemin(ir), eemax(ir), &
             tab(itab(ir)+2*3*mtab(ir)), tab(itab(ir)+(2*3+1)*mtab(ir)-1)
         end do
       end if
-    end if
   end if
-  self%gamma = gamma
-  self%ee_min = minval(eemin)
-  self%ee_max = maxval(eemax)
-  self%ee_stp = deetab(1)
+  self%gamma   = gamma
+  self%ee_min  = minval(eemin)
+  self%ee_max  = maxval(eemax)
+  self%ee_stp  = deetab(1)
   self%lnd_min = log(rhm(1))
   self%lnd_max = log(rhm(md))
   self%lnd_stp = (self%lnd_max-self%lnd_min)/(md-1)
-
-  self%on = do_eos
-  self%kappa = kappa
+  self%on      = do_eos
+  self%kappa   = kappa
+  self%Initialized=.true.
   call trace%end()
 END SUBROUTINE init
-
-!-------------------------------------------------------------------------------
-!> Simple pressure function interface
-!-------------------------------------------------------------------------------
-FUNCTION pressure (self, d, e) RESULT (pg)
-  class (eos_t):: self
-  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, e
-  real(kind=KindScalarVar), dimension(size(d,1),size(d,2),size(d,3)):: pg
-  integer:: dim(3)
-  !-----------------------------------------------------------------------------
-  dim = shape(d)
-  call self%lookup_table (dim, d=d, e=e, pg=pg)
-END FUNCTION
-
-!-------------------------------------------------------------------------------
-!> Simple temperature function interface
-!-------------------------------------------------------------------------------
-FUNCTION temperature (self, d, e) RESULT (tt)
-  class (eos_t):: self
-  real, dimension(:,:,:), pointer:: d, e
-  real, dimension(size(d,1),size(d,2),size(d,3)), target:: tt
-  integer:: dim(3)
-  !-----------------------------------------------------------------------------
-  dim = shape(d)
-  call self%lookup_table (dim, d=d, e=e, tt=tt)
-END FUNCTION
 
 !===============================================================================
 !> Interface to call with ideal equation of state fall-back
 !> FIXME: Check if this is actually used, and replace with generic call
 !===============================================================================
-SUBROUTINE lookup (self, dim, lnd, ee, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
+SUBROUTINE lookup (self, lnd, d, lne, lnee, e, ee, ss, s, pg, tt, ne, rk, src, &
+                   dlnpdE_r, dlnpdlnr_E, gamma, id, e_below, label)
   class (eos_t):: self
-  integer:: dim(3)
-  real, optional:: gamma
-  real, dimension(:,:,:), intent(in), pointer, optional :: lnx, x, lny, y, lnd, ee
-  real, dimension(:,:,:),                      optional :: pg, tt, ss
+  real, dimension(:,:,:), intent(in), pointer, optional :: lnd, d, lne, lnee, e, ee
+  real, dimension(:,:,:), intent(in), pointer, optional :: ss, s
+  real, dimension(:,:,:),                      optional :: pg, tt, ne
+  real, dimension(:,:,:),                      optional :: dlnpdE_r, dlnpdlnr_E
   real, dimension(:,:,:,:),                    optional :: src, rk
-  real, dimension(:,:,:), pointer :: x_loc, y_loc, lnd_l, ee_l
-  integer:: i
+  real, optional:: gamma
+  integer, optional:: id
+  logical, optional:: e_below
+  character(len=*), optional::label
+  !.............................................................................
+  real, dimension(:,:,:), pointer :: lnd_L, ee_L
+  real(8):: g1
+  integer:: dim(3)
   integer, save:: itimer=0
-  real:: stefan
   !-----------------------------------------------------------------------------
   call trace%begin ('eos_t%lookup', itimer=itimer)
+  !-----------------------------------------------------------------------------
+  if (.not. self%initialized) call self%init
   if (present(gamma)) then
     self%gamma = gamma
   end if
+  g1 = merge(1d0, self%gamma-1d0, self%gamma==1d0)
   !-----------------------------------------------------------------------------
-  if (present(y)) then
-    y_loc => y
-  else if (present(lny)) then
-    allocate (y_loc(dim(1),dim(2),dim(3)))
-    y_loc = exp(lny)
-  else
-    call mpi%abort ('eos_t: missing 2nd argument')
-  end if
+  ! Establish d_L as the density
   !-----------------------------------------------------------------------------
-  if (present(x)) then
-    x_loc => x
-  else if (present(lnx)) then
-    allocate (x_loc(dim(1),dim(2),dim(3)))
-    x_loc = exp(lnx)
+  nullify (lnd_L, ee_L)
+  if (present(d)) then
+    dim = shape(d)
+    allocate (lnd_L(dim(1),dim(2),dim(3)))
+    lnd_L = log(d)
+  else if (present(lnd)) then
+    dim = shape(lnd)
+    lnd_L => lnd
   else
     call mpi%abort ('eos_t: missing 1st argument')
   end if
   !-----------------------------------------------------------------------------
-  if (present(lnd).and.present(ee)) then
-    if (present(src)) then
-      call lookup_table (self, dim, ee=ee, lnd=lnd, rk=rk, src=src)
+  ! Establish ee_L as the internal energy per unit volume
+  !-----------------------------------------------------------------------------
+  if (present(ee)) then
+    !--- energy per unit mass given ---
+    ee_L => ee
+  else if (present(lnee)) then
+    !--- log energy per unit mass given ---
+    allocate (ee_L(dim(1),dim(2),dim(3)))
+    ee_L = exp(lnee)
+  else if (present(lne)) then
+    !--- log energy per unit volume given ---
+    allocate (ee_L(dim(1),dim(2),dim(3)))
+    ee_L = exp(lne - lnd_L)
+  else if (present(e)) then
+    !--- energy per unit volume given ---
+    allocate (ee_L(dim(1),dim(2),dim(3)))
+    if (.not. present(d)) then
+      ee_L = e/exp(lnd_L)
     else
-      call lookup_table (self, dim, ee=ee, lnd=lnd, rk=rk)
+      ee_L = e/d
     end if
-  else if (present(src).and.present(rk)) then
-    allocate (lnd_l(dim(1),dim(2),dim(3)))
-    allocate (ee_l (dim(1),dim(2),dim(3)))
-    lnd_l = log(x_loc)
-    ee_l = y_loc/x_loc
-    call lookup_table (self, dim, ee=ee_l, lnd=lnd_l, src=src, rk=rk)
-    deallocate (lnd_l, ee_l)
+  else if (present(ss).or.present(s)) then
+    call mpi%abort('stagger EOS table not set up for entropy')
   else
-    if (present(tt)) then
-      tt = (self%gamma-1.0)*x_loc
-    end if
-    if (present(src)) then
-      stefan = cgs%stefan/(scaling%p*scaling%u)*scaling%temp**4
-      do i=1,size(src,4)
-        src(:,:,:,i) = stefan*real(((self%gamma-1.0)*x_loc),kind=8)**4
-      end do
-    end if
-    if (present(pg)) then
-      pg = (self%gamma-1.0)*y_loc*x_loc
-    end if
-    if (present(rk)) then
-      do i=1,size(rk,4)
-        rk(:,:,:,i) = y_loc*self%kappa
-      end do
-    end if
+    call mpi%abort ('eos_t: missing 2nd argument')
   end if
-  if (present(lnx)) deallocate(x_loc)
-  if (present(lny)) deallocate(y_loc)
+  !-----------------------------------------------------------------------------
+  ! Do the table lookup and deallocate locals
+  !-----------------------------------------------------------------------------  
+  call lookup_table (self, dim, lnd_L, ee_L, pg=pg, tt=tt, ne=ne, rk=rk, src=src, &
+                     dlnpdE_r=dlnpdE_r, dlnpdlnr_E=dlnpdlnr_E, gamma=gamma, &
+                     id=id, e_below=e_below, label=label)
+  if (.not.present(ee)) deallocate( ee_L)
+  if (present(d)) deallocate(lnd_L)
+  !-----------------------------------------------------------------------------
   call trace%end(itimer)
 END SUBROUTINE lookup
 
 !===============================================================================
 !> General EOS lookup routine, returning values in optional arguments
 !===============================================================================
-SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne, pg, tt, ne, rk, src, &
-                         ss, gamma, e_below, label, id)
+SUBROUTINE lookup_table (self, dim, lnd, ee, pg, tt, ne, rk, src, &
+                         dlnpdE_r, dlnpdlnr_E, gamma, id, e_below, label)
   class (eos_t):: self
-  integer:: dim(3), id_loc=-1
-  integer, optional:: id
-  real, dimension(:,:,:)  , pointer, optional :: lnd,d,lne,e,ee,ne,ss
-  intent(in)                                  :: lnd,d,lne,e,ee,ne,ss
-  real, dimension(:,:,:,:)         , optional :: src,rk
-  real, dimension(:,:,:)           , optional :: pg,tt
+  integer:: dim(3)
+  real, dimension(:,:,:)            :: lnd, ee
+  real, dimension(:,:,:)  , optional:: pg, tt, ne
+  real, dimension(:,:,:,:), optional:: src, rk
+  real, dimension(:,:,:)  , optional:: dlnpdE_r, dlnpdlnr_E
   real, optional:: gamma
+  integer, optional:: id
   logical, optional:: e_below
-  character(len=*),optional::label
+  character(len=*), optional::label
   !.............................................................................
-  real, dimension(:,:,:), pointer, contiguous    :: lnd_loc, ee_loc
   integer,         dimension(dim(1)) :: np,np1,ik,ntab,ik1,ntab1
   real(kind=4),    dimension(dim(1)) :: px,py,f00,f01,f10,f11, &
                                         fx00,fx01,fx10,fx11,fy00,fy01,fy10,fy11
   real    :: rhm1,rhm2,drhm,algrk,eek,eek1,py1
   real    :: qx,qy,pxqx,pxpx,qxqx,pypy,pyqy,qyqy,pxpy,qxqy,pxqy,qxpy
   logical :: newtable
-  integer :: ix,iy,iz,kee,kee1,j
-  integer :: mx,my,mz,mbox,nbelow_d, nbelow_e
+  integer :: ix, iy, iz, kee, kee1, j, id_L
+  integer :: mx, my, mz, mbox, nbelow_d, nbelow_e
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! Allocate temporary arrays
   !-----------------------------------------------------------------------------
   call trace%begin ('eos_t%lookup_table', itimer=itimer)
-  if (io%verbose>2) then
-    print *, 'present(lnd) =', present(lnd)
-    print *, 'present(ee)  =', present(ee)
-    print *, 'present(pg)  =', present(pg)
-    print *, 'present(src) =', present(src)
-    print *, 'present(rk)  =', present(rk)
-    print *, 'dim:', dim
-  end if
   mx=dim(1)
   my=dim(2)
   mz=dim(3)
   newtable = .false.
-  if (present(lnd)) then
-    lnd_loc => lnd
-  else if (present(d)) then
-    allocate (lnd_loc(dim(1),dim(2),dim(3)))
-    lnd_loc = log(d)
-  else
-    call mpi%abort ('eos_t: missing density')
-  end if
-  if (present(ee)) then
-    ee_loc => ee
-  else if (present(e)) then
-    allocate (ee_loc(dim(1),dim(2),dim(3)))
-    if (present(d)) then
-      ee_loc = e/d
-    else
-      ee_loc = e/exp(lnd_loc)
-    end if
-  else if (present(lne)) then
-    allocate (ee_loc(dim(1),dim(2),dim(3)))
-    ee_loc = exp(lne)/exp(lnd_loc)
-  else
-    call mpi%abort ('eos_t: missing internal energy')
-  end if
   !
-  rhm1=log(rhm(1))
-  rhm2=log(rhm(md))
-  drhm=(rhm2-rhm1)/(md-1)
+  rhm1 = log(rhm(1))
+  rhm2 = log(rhm(md))
+  drhm = (rhm2-rhm1)/(md-1)
   !-----------------------------------------------------------------------------
   ! Loop over points
   !-----------------------------------------------------------------------------
@@ -300,8 +251,8 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne, pg, tt, ne, rk, src, &
     !dir$ ivdep
     !$omp simd private (algrk)
     do ix=1,mx
-      algrk=1.+(lnd_loc(ix,iy,iz)-rhm1)/drhm
-      nbelow_d = nbelow_d + merge(1,0,lnd_loc(ix,iy,iz)<rhm1)
+      algrk=1.+(lnd(ix,iy,iz)-rhm1)/drhm
+      nbelow_d = nbelow_d + merge(1,0,lnd(ix,iy,iz)<rhm1)
       np(ix)=max0(1,min0(md-1,int(algrk)))
       px(ix)=algrk-np(ix)
     end do
@@ -312,10 +263,17 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne, pg, tt, ne, rk, src, &
       ! Internal energy index -- this loop has indirect referencing (9 flops)
       !-------------------------------------------------------------------------
       ntab(ix)  = mtab(np(ix))
-      eek       = 1.+(ee_loc(ix,iy,iz)-eemin(np(ix)))/deetab(np(ix))
-      nbelow_e  = nbelow_e + merge(1,0,eek<1.0)
-      if (ee_loc(ix,iy,iz)< eemin(np(ix))) print *, 'e below in eos..',ix,iy, iz, ee_loc(ix,iy,iz), eemin(np(ix)), 'from ',label, id
-      ee_loc(ix,iy,iz) = max (ee_loc(ix,iy,iz), eemin(np(ix)))
+      eek       = 1.+(ee(ix,iy,iz)-eemin(np(ix)))/deetab(np(ix))
+      !nbelow_e  = nbelow_e + merge(1,0,eek<1.0)
+      if (lnd(ix,iy,iz)< rhm1) &
+        write (stdout,*) 'd below in eos..', &
+        ix,iy, iz, lnd(ix,iy,iz), rhm1, np(ix), 'from ',label, id
+      if (ee(ix,iy,iz)< eemin(np(ix))) &
+        write (stdout,*) 'e below in eos..', &
+        ix,iy, iz, ee(ix,iy,iz), np(ix), shape(eemin)
+      if (ee(ix,iy,iz)< eemin(np(ix))) &
+       write (stdout,*) 'eemin', eemin(np(ix)), 'from ',label, id
+      ee(ix,iy,iz) = max (ee(ix,iy,iz), eemin(np(ix)))
       eek       = max(eek,1.0)
       kee       = min(ntab(ix)-1,max(1,int(eek)))
       py(ix)    = eek-kee
@@ -386,8 +344,31 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne, pg, tt, ne, rk, src, &
         )
      end do
     end if
-    ik  = ik  + 3*ntab
-    ik1 = ik1 + 3*ntab1
+    ik  = ik  + ntab
+    ik1 = ik1 + ntab1
+    !---------------------------------------------------------------------------
+    ! Pressure derivatives -- just bi-linear interpolation here
+    !---------------------------------------------------------------------------
+    if (present(dlnpdE_r)) then
+      do ix=1,mx
+        dlnpdE_r(ix,iy,iz) = ( &
+          f00(ix)*tab(ik (ix)) +  f01(ix)*tab(ik (ix)+1) &
+        + f10(ix)*tab(ik1(ix)) +  f11(ix)*tab(ik1(ix)+1) &
+                           ) / deetab(np(ix))
+      end do
+    end if
+    ik  = ik  + ntab
+    ik1 = ik1 + ntab1
+    if (present(dlnpdlnr_E)) then
+      do ix=1,mx
+        dlnpdlnr_E(ix,iy,iz) = ( &
+          f00(ix)*tab(ik (ix)) +  f01(ix)*tab(ik (ix)+1) &
+        + f10(ix)*tab(ik1(ix)) +  f11(ix)*tab(ik1(ix)+1) &
+                          ) / drhm
+      end do
+    end if
+    ik  = ik  + ntab
+    ik1 = ik1 + ntab1
     !---------------------------------------------------------------------------
     if (present(rk)) then
       do ix=1,mx
@@ -472,9 +453,10 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne, pg, tt, ne, rk, src, &
   end do
   end do
   if (nbelow_d+nbelow_e > 0) then
-    if (present(id)) id_loc=id
-    write(io%output,*) &
-      'WARNING: number of points below table d & e:', nbelow_d, nbelow_e, 'for ',trim(label), id_loc, minval(lnd_loc), minval(ee_loc)
+    if (present(id)) id_L=id
+    write (stdout,*) &
+      'WARNING: number of points below table d & e:', nbelow_d, nbelow_e, &
+      'for ',trim(label), id_L, minval(lnd), minval(ee)
   end if
   if (present(e_below)) then
     if (nbelow_e > 0) then
@@ -483,95 +465,31 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne, pg, tt, ne, rk, src, &
       e_below = .false.
     end if
   end if
-  if (present(d)) then
-    deallocate (lnd_loc)
-    nullify (lnd_loc)
-  end if
-  if (present(e).or.present(lne)) then
-    deallocate (ee_loc)
-    nullify (ee_loc)
-  end if
   call trace%end (itimer)
 END SUBROUTINE lookup_table
 
 !===============================================================================
-!> Thermodynamic derivatives of the equation-of-state
+!> Interface to call with ideal equation of state fall-back
+!> FIXME: Check if this is actually used, and replace with generic call
 !===============================================================================
-SUBROUTINE ddeos(self,ee,d,dlnpdE_r,dlnpdlnr_E)
-  class(eos_t):: self
-  real(kind=KindScalarVar), dimension(:,:), pointer:: ee, d
-  real(kind=KindScalarVar), dimension(:,:), pointer:: dlnpdE_r, dlnpdlnr_E
-  !-----------------------------------------------------------------------------
-  integer:: n(2), ix, iy, kee, kee1
-  integer,      dimension(:), contiguous, pointer:: np,np1,ik,ntab,ik1,ntab1
-  real(kind=8), dimension(:), contiguous, pointer:: px,py,py1
-  real(kind=8) rhm1,rhm2,drhm,algrk,eek,eek1
+SUBROUTINE inverse_lookup (self, d, lnd, v, name, ss, ee, label)
+  class (eos_t):: self
+  real, dimension(:,:,:), pointer :: d, lnd, v
+  optional                        :: d, lnd, v
+  real, dimension(:,:,:), pointer :: ss, ee
+  optional                        :: ss, ee
+  character(*), optional:: name
+  character(*), optional:: label
+  !.............................................................................
+  real, dimension(:,:,:), pointer :: x_L, y_L, lnd_l, ee_l
+  integer:: dim(3)
+  integer:: i
   integer, save:: itimer=0
+  real:: stefan
   !-----------------------------------------------------------------------------
-  call trace%begin ('eos_t%ddeos', itimer=itimer)
-  n = shape(ee)
-  rhm1 = self%lnd_min
-  rhm2 = self%lnd_max
-  drhm = self%lnd_stp
-  allocate(np(n(1)),ntab(n(1)), ik(n(1)), ik1(n(1)), ntab1(n(1)))
-  allocate(px(n(1)),py(n(1)),py1(n(1)))
-  do iy=1,n(2)
-    !dir$ ivdep
-    !$omp simd private (algrk, eek, kee, kee1, eek1)
-    do ix=1,n(1)
-      !-------------------------------------------------------------------------
-      !  Density index
-      !  6 flops
-      !-------------------------------------------------------------------------
-      algrk=1d0+(log(d(ix,iy))-rhm1)/drhm
-      np(ix)=max0(1,min0(md-1,int(algrk)))
-      px(ix)=algrk-np(ix)
-      !-------------------------------------------------------------------------
-      !  Internal energy index.  This loop has indirect referencing.
-      ! +6 = 12 flops
-      !-------------------------------------------------------------------------
-      ntab(ix)  = mtab(np(ix))
-      eek       = 1.+(ee(ix,iy)-eemin(np(ix)))/deetab(np(ix))
-      eek       = max(eek,1d0)                          ! FIXME
-      kee       = min(ntab(ix)-1,max(1,int(eek)))
-      py(ix)    = eek-kee
-      ik(ix)    = itab(np(ix))+kee-1
-      ntab1(ix) = mtab(np(ix)+1)
-      ! +3 = 15 flops
-       kee1      = kee - nint((eemin(np(ix)+1)-eemin(np(ix))) &
-                                            /deetab(np(ix)))
-      kee1      = min0(ntab1(ix)-1,max0(1,kee1))
-      ik1(ix)   = itab(np(ix)+1)+kee1-1
-      !-------------------------------------------------------------------------
-      !  These lines may be commented out when we are satisfied it never panics
-      !-------------------------------------------------------------------------
-      eek1      = 1.+(ee(ix,iy)-eemin(np(ix)+1))/deetab(np(ix)+1)
-      eek1      = max(eek1,real(kee1,kind=8))                  ! FIXME
-      py1(ix)   = eek1-kee1
-    end do
-    !---------------------------------------------------------------------------
-    !  Loop over table entries, nvar = 4.  Would this be more efficent
-    !  if split into one gather loop and one calculation loop?
-    !---------------------------------------------------------------------------
-    do ix=1,n(1)
-      dlnpdE_r(ix,iy) = ( &
-        (1.-px(ix)) * (1.-py(ix)) * tab(ik(ix)  + ntab(ix)     ) &
-    +   (1.-px(ix)) *  py(ix)     * tab(ik(ix)  + ntab(ix)  + 1) &
-    +    px(ix)     * (1.-py(ix)) * tab(ik1(ix) + ntab1(ix)    ) &
-    +    px(ix)     *  py(ix)     * tab(ik1(ix) + ntab1(ix) + 1) )/deetab(np(ix))
-      dlnpdlnr_E(ix,iy) = ( &
-        (1.-px(ix)) * (1.-py(ix)) * tab(ik(ix)  + 2*ntab(ix)     ) &
-    +   (1.-px(ix)) *  py(ix)     * tab(ik(ix)  + 2*ntab(ix)  + 1) &
-    +    px(ix)     * (1.-py(ix)) * tab(ik1(ix) + 2*ntab1(ix)    ) &
-    +    px(ix)     *  py(ix)     * tab(ik1(ix) + 2*ntab1(ix) + 1) )/drhm
-    end do
-    !---------------------------------------------------------------------------
-    ! End outer loops
-    !---------------------------------------------------------------------------
-  end do
-  deallocate(np,ntab, ik, ik1)
-  deallocate(px,py,py1)
-  call trace%end (itimer)
-END SUBROUTINE ddeos
+  call trace%begin ('eos_t%inverse_lookup', itimer=itimer)
+  call io%abort ('eos_t%inverse_lookup not ready yet')
+  call trace%end(itimer)
+END SUBROUTINE inverse_lookup
 
 END MODULE eos_mod

@@ -18,13 +18,15 @@ MODULE dll_mod
     class(dll_node_t), pointer:: tail => null()
     integer:: n=0
     character(len=32):: name
-    class(lock_t), pointer:: lock => null()
+    type(lock_t), pointer:: lock => null()
     logical:: initialized = .false.
   contains
     procedure:: init
+    procedure:: dealloc
     procedure:: append
     procedure:: prepend
     procedure:: find
+    procedure:: find_id
     procedure:: insert_before
     procedure:: insert_after
     procedure:: remove
@@ -59,6 +61,21 @@ SUBROUTINE init (self, name)
   call io%lock%unset ('dll_t%init')
   call trace%end ()
 END SUBROUTINE init
+
+!===============================================================================
+!> Initialize a doubly-linked-list (DLL), with anonymous carry
+!===============================================================================
+SUBROUTINE dealloc (self)
+  class(dll_t):: self
+  !.............................................................................
+  call trace%begin ('dll_t%dealloc')
+  call io%lock%set ('dll_t%dealloc')
+  if (associated(self%lock)) then
+    call omp_lock%dealloc (self%lock)
+  end if
+  call io%lock%unset ('dll_t%dealloc')
+  call trace%end ()
+END SUBROUTINE dealloc
 
 !===============================================================================
 !> Add an item at the tail
@@ -113,6 +130,24 @@ SUBROUTINE find (self, old, prev, next)
   end do
   nullify (prev, next)
 END SUBROUTINE find
+
+!===============================================================================
+!> Find an item, by matching with a known member
+!===============================================================================
+SUBROUTINE find_id (self, id, node)
+  class(dll_t):: self
+  class(dll_node_t), pointer:: node
+  integer:: id
+  !.............................................................................
+  call self%check_initialized
+  node => self%head
+  do while (associated(node))
+    if (node%id==id) then
+      return
+    end if
+    node => node%next
+  end do
+END SUBROUTINE find_id
 
 !===============================================================================
 !> Insert a new item before an old one

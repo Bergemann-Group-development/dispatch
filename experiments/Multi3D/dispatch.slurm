@@ -8,9 +8,10 @@
 # --- CPU and node logistics ---
 #SBATCH --partition=astro2_devel
 #SBATCH --exclusive
-#SBATCH --ntasks=2
-#SBATCH --cpus-per-task=10
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=1
 # --- User notifications ---
 #SBATCH --time 00:20:00
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
-srun -n 1 dispatch.x
+export OMP_STACKSIZE=512m
+srun dispatch.x

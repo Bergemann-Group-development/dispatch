@@ -164,6 +164,16 @@ def read_rank_namelist(file,patches,rank,nml,verbose=0):
                     d['position'] = _parse_multiple(items)
                 elif items[0]=='CENTRE_NAT':
                     d['centre_nat'] = _parse_multiple(items)
+                elif items[0] == 'LLC_NAT':
+                    d['llc_nat'] = _parse_multiple(items)
+                elif items[0] == 'EROT1':
+                    d['erot1'] = _parse_multiple(items)
+                elif items[0] == 'EROT2':
+                    d['erot2'] = _parse_multiple(items)
+                elif items[0] == 'EROT3':
+                    d['erot3'] = _parse_multiple(items)
+                elif items[0] == 'LLC_CART':
+                    d['llc_cart'] = _parse_multiple(items)
                 elif items[0]=='VELOCITY':
                     d['velocity'] = _parse_multiple(items)
                 elif items[0]=='OMEGA':
@@ -187,7 +197,9 @@ def read_rank_namelist(file,patches,rank,nml,verbose=0):
                 elif items[0]=='NCELL':
                     d['ncell'] = _parse_multiple(items)
                 elif items[0]=='KIND':
-                    d['kind']=items[1]
+                    d['kind']=items[1].replace("'","")
+                elif items[0]=='ETYPE':
+                    d['etype']=items[1].replace("'","")
                 elif items[0]=='RANK':
                     d['rank']=rank
                 elif items[0]=='/' and watch_block:

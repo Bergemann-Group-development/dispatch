@@ -74,7 +74,7 @@ subroutine test_single_thread
         mpi%rank, omp%thread, rec, minval(f), maxval(f)
     !end if
     call io_h%write (h, rec, omp%thread+1)
-    call toc('write',n**3)
+    call timer%toc('write',n**3)
   end do
   !-----------------------------------------------------------------------------
   ! Do non-blocking write
@@ -91,7 +91,7 @@ subroutine test_single_thread
         mpi%rank, omp%thread, rec, minval(f), maxval(f)
     end if
     call io_h%iwrite (h, rec, omp%thread+1)
-    call toc('iwrite',n**3)
+    call timer%toc('iwrite',n**3)
   end do
   !-----------------------------------------------------------------------------
   ! Test and wait
@@ -100,7 +100,7 @@ subroutine test_single_thread
     call tic
     if (.not.io_f%test()) call io_f%wait
     if (.not.io_h%test()) call io_h%wait
-    call toc('wait',n**3)
+    call timer%toc('wait',n**3)
   end do
   !-----------------------------------------------------------------------------
   ! Close and re-open -- with implied MPI barriers.  Note omp barrier before
@@ -127,7 +127,7 @@ subroutine test_single_thread
         mpi%rank, omp%thread, rec, minval(f), maxval(f)
       call io_h%read (h, rec, omp%thread+1)
     end if
-    call toc('read',n**3)
+    call timer%toc('read',n**3)
   end do
   !-----------------------------------------------------------------------------
   ! Wait for all threads, then close

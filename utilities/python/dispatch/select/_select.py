@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
 
-# Pythn 2/3 compatibility
-from __future__ import print_function
 
 import numpy as np
+import dispatch
 from time import time
 #import dispatch
 
@@ -27,7 +26,7 @@ def maxloc(a):
     i = a.argmax()
     return np.unravel_index(i,np.shape(a))
 
-def patch_at(pp,point=[0.5,0.5,0.5],verbose=0):
+def patch_at(pp,point=[0.0,0.0,0.0],verbose=0):
     ''' Find the patch that contains a given point
     '''
     level=-1
@@ -39,14 +38,14 @@ def patch_at(pp,point=[0.5,0.5,0.5],verbose=0):
                 level=p.level
     return p1
 
-def is_inside(p,point=[0.5,0.5,0.5],verbose=0):
+def is_inside(p,point=[0.0,0.0,0.0],verbose=0):
     ''' Return True/False depending on if the point is inside the patch
     '''
     left=point>=p.llc_cart
     right=point<=p.llc_cart+p.size
     return left.all() and right.all()
 
-def count_inside(p,point=[0.5,0.5,0.5],verbose=0):
+def count_inside(p,point=[0.0,0.0,0.0],verbose=0):
     ''' Return the number of dimension in which point is inside the patch
     '''
     left=point>=p.llc_cart
@@ -57,12 +56,12 @@ def count_inside(p,point=[0.5,0.5,0.5],verbose=0):
             count+=1
     return count
 
-def patches_along(pp,pt=[0.5,0.5,0.5],dir=0,verbose=0):
+def patches_along(pp,pt=[0.0,0.0,0.0],dir=0,xlim=None,verbose=0):
     ''' Get the patches along a given direction through a point
     '''
     if hasattr(pp,'patches'):
         pp=pp.patches
-    pt=np.copy(pt)
+    pt=np.copy(np.array(pt,dtype=float))
     if verbose>0:
         np.set_printoptions(formatter={'float_kind': '{:6.3f}'.format})
 
@@ -74,8 +73,12 @@ def patches_along(pp,pt=[0.5,0.5,0.5],dir=0,verbose=0):
                 print('fwd {:4d} {} {}'.format(p.id,p.position,p.size))
             pt[dir]=p.position[dir]-p.size[dir]*0.6
             p=patch_at(pp,pt)
-            if p:
-                p1=p
+            if xlim is None:
+                if p:
+                    p1=p
+            else:
+                if p and pt[dir] > xlim[0]:
+                    p1=p
         p=p1
         out=[]
         while p:
@@ -84,6 +87,9 @@ def patches_along(pp,pt=[0.5,0.5,0.5],dir=0,verbose=0):
                 print('rev {:4d} {} {}'.format(p.id,p.position,p.size))
             pt[dir]=p.position[dir]+p.size[dir]*0.6
             p=patch_at(pp,pt)
+            if xlim is not None:
+                if pt[dir] > xlim[1]:
+                    p=None
         if verbose>0:
             for p in out:
                 print('id: {:4d}  level:{:2d}  position: {}'
@@ -93,24 +99,29 @@ def patches_along(pp,pt=[0.5,0.5,0.5],dir=0,verbose=0):
     np.set_printoptions(formatter=None)
     return out
 
-def patches_along_x(pp,point=[0.5,0.5,0.5],verbose=0):
+def patches_along_x(pp,point=[0.0,0.0,0.0],verbose=0):
     ''' Get the patches along the x direction through a point '''
     patches_along(pp,point,dir=0,verbose=verbose)
 
-def patches_along_y(pp,point=[0.5,0.5,0.5],verbose=0):
+def patches_along_y(pp,point=[0.0,0.0,0.0],verbose=0):
     ''' Get the patches along the y direction through a point '''
     patches_along(pp,point,dir=1,verbose=verbose)
 
-def patches_along_z(pp,point=[0.5,0.5,0.5],verbose=0):
+def patches_along_z(pp,point=[0.0,0.0,0.0],verbose=0):
     ''' Get the patches along the z direction through a point '''
     patches_along(pp,point,dir=2,verbose=verbose)
 
-def indices_and_weights(p,point=[0.5,0.5,0.5],iv=0):
+def indices_and_weights(p,point=[0.0,0.0,0.0],iv=0,all=None):
     ''' Return indices and interpolation weights for a point in a patch p
     '''
-    x0=p.xi[0]
-    y0=p.yi[0]
-    z0=p.zi[0]
+    if all:
+        x0=p.x[0]
+        y0=p.y[0]
+        z0=p.z[0]
+    else:
+        x0=p.xi[0]
+        y0=p.yi[0]
+        z0=p.zi[0]
     if 'p1' in p.idx.dict.keys():
         if iv==p.idx.p1: x0=p.xs[0]
         if iv==p.idx.p2: y0=p.ys[0]
@@ -129,7 +140,7 @@ def indices_and_weights(p,point=[0.5,0.5,0.5],iv=0):
     #print(' after:',indices,weights)
     return indices, weights
 
-def values_in(p,point=[0.5,0.5,0.5],dir=0,iv=0,i4=0,var=None,verbose=0,all=0):
+def values_in(p,point=[0.0,0.0,0.0],dir=0,iv=0,i4=0,var=None,verbose=0,all=0):
     ''' Return s,f(s) with s the coordinates and f the values in the iv
         slot of data, taken along the direction v -- so far restricted
         to axis values
@@ -137,7 +148,7 @@ def values_in(p,point=[0.5,0.5,0.5],dir=0,iv=0,i4=0,var=None,verbose=0,all=0):
 
     ss=[]
     ff=[]
-    ii,w=indices_and_weights(p,point,iv)
+    ii,w=indices_and_weights(p,point,iv,all)
     data=p.var(iv,i4=i4,all=all)
     ione = (0,1)[p.n[0] > 1]
     jone = (0,1)[p.n[1] > 1]
@@ -171,63 +182,89 @@ def values_in(p,point=[0.5,0.5,0.5],dir=0,iv=0,i4=0,var=None,verbose=0,all=0):
             f=f1*(1-w[2])+f2*w[2]
             if hasattr(p,'p1'):
                 if iv==p.idx.p1:
-                    ss.append(p.xis[i])
+                    if all:
+                        ss.append(p.xs[i])
+                    else:
+                        ss.append(p.xis[i])
+                else:
+                    if all:
+                        ss.append(p.x[i])
+                    else:
+                        ss.append(p.xi[i])
+            else:
+                if all:
+                    ss.append(p.x[i])
                 else:
                     ss.append(p.xi[i])
-            else:
-                ss.append(p.xi[i])
             ff.append(f)
     elif dir==1:
         i=ii[0]
         k=ii[2]
         if verbose>0:
             print('{:4d} x-interpolation: {}-{} w={:.2f} x={:.3f}-{:.3f}'
-                  .format(p.id,i,i+ione,w[1],p.xi[i],p.xi[i+ione]))
+                  .format(p.id,i,i+ione,w[0],p.xi[i],p.xi[i+ione]))
             print('{:4d} z-interpolation: {}-{} w={:.2f} z={:.3f}-{:.3f}'
                   .format(p.id,k,k+kone,w[2],p.zi[k],p.zi[k+kone]))
-        print(m[1],m[1]+n[1])
         for j in range(m[1],m[1]+n[1]):
             f1=data[i,j,k     ]*(1-w[0])+data[i+ione,j,k     ]*w[0]
             f2=data[i,j,k+kone]*(1-w[0])+data[i+ione,j,k+kone]*w[0]
             f=f1*(1-w[2])+f2*w[2]
             if hasattr(p,'p2'):
                 if iv==p.idx.p2:
-                    ss.append(p.yis[j])
+                    if all:
+                        ss.append(p.ys[j])
+                    else:
+                        ss.append(p.yis[j])
+                else:
+                    if all:
+                        ss.append(p.y[j])
+                    else:
+                        ss.append(p.yi[j])
+            else:
+                if all:
+                    ss.append(p.y[j])
                 else:
                     ss.append(p.yi[j])
-            else:
-                ss.append(p.yi[j])
             ff.append(f)
     else:
         i=ii[0]
         j=ii[1]
         if verbose>0:
             print('{:4d} x-interpolation: {}-{} w={:.2f} x={:.3f}-{:.3f}'
-                  .format(p.id,i,i+ione,w[1],p.xi[i],p.xi[i+ione]))
+                  .format(p.id,i,i+ione,w[0],p.xi[i],p.xi[i+ione]))
             print('{:4d} y-interpolation: {}-{} w={:.2f} y={:.3f}-{:.3f}'
-                  .format(p.id,j,j+jone,w[2],p.yi[j],p.yi[j+jone]))
+                  .format(p.id,j,j+jone,w[1],p.yi[j],p.yi[j+jone]))
         for k in range(m[2],m[2]+n[2]):
             f1=data[i,j     ,k]*(1-w[0])+data[i+ione,j     ,k]*w[0]
             f2=data[i,j+jone,k]*(1-w[0])+data[i+ione,j+jone,k]*w[0]
             f=f1*(1-w[1])+f2*w[1]
             if hasattr(p,'p3'):
                 if iv==p.idx.p3:
-                    ss.append(p.zis[k])
+                    if all:
+                        ss.append(p.zs[k])
+                    else:
+                        ss.append(p.zis[k])
+                else:
+                    if all:
+                        ss.append(p.z[k])
+                    else:
+                        ss.append(p.zi[k])
+            else:
+                if all:
+                    ss.append(p.z[k])
                 else:
                     ss.append(p.zi[k])
-            else:
-                ss.append(p.zi[k])
             ff.append(f)
     ss=np.array(ss)
     ff=np.array(ff)
     return ss,ff
 
-def values_along(pp,point=[0.5,0.5,0.5],dir=0,iv=0,var=None,verbose=0,all=0):
+def values_along(pp,point=[0.0,0.0,0.0],dir=0,iv=0,var=None,all=0,xlim=None,verbose=0):
     ''' Return s,f(s) with s the coordinates and f the values in the iv
         slot of data, taken along the direction v -- so far restricted
         to axis values
     '''
-    patches=patches_along(pp,point,dir=dir,verbose=verbose)
+    patches=patches_along(pp,point,dir=dir,xlim=xlim,verbose=verbose)
     ss=[]
     ff=[]
     for p in patches:
@@ -270,17 +307,17 @@ def corners(pp,active=1):
         c=_corners(pp,active=active)
     return c
 
-def values_along_x(p,point=[0.5,0.5,0.5],iv=0,verbose=0):
+def values_along_x(p,point=[0.0,0.0,0.0],iv=0,verbose=0):
     ''' Get the iv values along the x direction through a point '''
     s,f=values_along(p,point,dir=0,iv=iv,verbose=verbose)
     return s,f
 
-def values_along_y(p,point=[0.5,0.5,0.5],iv=0,verbose=0):
+def values_along_y(p,point=[0.0,0.0,0.0],iv=0,verbose=0):
     ''' Get the iv values along the y direction through a point '''
     s,f=values_along(p,point,dir=1,iv=iv,verbose=verbose)
     return s,f
 
-def values_along_z(p,point=[0.5,0.5,0.5],iv=0,verbose=0):
+def values_along_z(p,point=[0.0,0.0,0.0],iv=0,verbose=0):
     ''' Get the iv values along the z direction through a point '''
     s,f=values_along(p,point,dir=2,iv=iv,verbose=verbose)
     return s,f
@@ -296,7 +333,7 @@ def _corner_radii(p,origin=[0.,0.,0.]):
     return np.sqrt(np.array(pt))
 
 class shell_values:
-    def __init__(self,pp,radius=0.25,nds=1,dr=0.05,origin=[0.5,0.5,0.5],iv=0,verbose=0):
+    def __init__(self,pp,radius=0.25,nds=1,dr=0.05,origin=[0.0,0.0,0.0],iv=0,verbose=0):
         ''' return a dict with shell data '''
         if isinstance(pp,dispatch._dispatch.snapshot):
             pp=pp.patches
@@ -385,6 +422,8 @@ def stat(s,iv=0,i4=0,verbose=0):
     v=0.0
     pp=_patches(s)
     p=pp[0]
+    pmax=p
+    pmin=p
     data=p.var(iv,i4=i4)
     d=data
     m=maxloc(d)
@@ -418,11 +457,12 @@ def stat(s,iv=0,i4=0,verbose=0):
             f=f+dv*d.mean()
     av=float(f/v)
     f=0.0
+    v=0.0
     for p in pp:
         if iv in p.all_keys:
             data=p.var(iv)
             dv=np.product(p.ds)
-            v=v+dv
+            v=v+dv*np.product(data.shape)
             f=f+dv*np.sum((data-av)**2)
     rm=np.sqrt(float(f/v))
     if verbose:

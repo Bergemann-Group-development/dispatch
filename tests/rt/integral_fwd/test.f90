@@ -24,7 +24,7 @@ PROGRAM test
         qfw = 0.0
         call transfer0 (m, n, dtau, s, qfw)
       end do
-      call toc ('transfer             ', nit*n*m)
+      call timer%toc ('transfer             ', nit*n*m)
 
       call tic
       do it=1,nit
@@ -33,7 +33,7 @@ PROGRAM test
         qfw = 0.0
         call transfer1 (m, n, dtau, s, qfw)
       end do
-      call toc ('transfer (vectorized)', nit*n*m)
+      call timer%toc ('transfer (vectorized)', nit*n*m)
 
       call tic
       do it=1,nit
@@ -42,7 +42,7 @@ PROGRAM test
         qfw = 0.0
         call transfer2 (m, n, dtau, s, qfw)
       end do
-      call toc ('transfer  (optimized)', nit*n*m)
+      call timer%toc ('transfer  (optimized)', nit*n*m)
 
       deallocate (dtau, s, qfw)
       call tic
@@ -54,7 +54,7 @@ PROGRAM test
         call transfer2 (m, n, dtau, s, qfw)
         deallocate (dtau, s, qfw)
       end do
-      call toc ('transfer   (allocate)', nit*n*m)
+      call timer%toc ('transfer   (allocate)', nit*n*m)
       m = m/2
       nit = nit*2
     end do

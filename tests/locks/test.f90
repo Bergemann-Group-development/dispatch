@@ -17,7 +17,7 @@ PROGRAM test
     call omp_unset_lock (lock%lock)
   end do
   end do
-  call toc ('direct', n**2)
+  call timer%toc ('direct', n**2)
 
   call tic
   do i=1,n
@@ -26,7 +26,7 @@ PROGRAM test
     call lock%unset ('test')
   end do
   end do
-  call toc ('call', n**2)
+  call timer%toc ('call', n**2)
 
   call tic
   do i=1,n
@@ -36,7 +36,7 @@ PROGRAM test
     call omp_unset_lock (lock%lock)
   end do
   end do
-  call toc ('direct+flush', n**2)
+  call timer%toc ('direct+flush', n**2)
 
   call tic
   do i=1,n
@@ -46,7 +46,7 @@ PROGRAM test
     call lock%unset ('test')
   end do
   end do
-  call toc ('call+flush', n**2)
+  call timer%toc ('call+flush', n**2)
 
   call tic
   do i=1,n
@@ -56,6 +56,6 @@ PROGRAM test
     !$omp end critical
   end do
   end do
-  call toc ('critical', n**2)
+  call timer%toc ('critical', n**2)
 
 END PROGRAM

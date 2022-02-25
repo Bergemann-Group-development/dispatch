@@ -74,6 +74,7 @@ MODULE bits_mod
     integer:: symmetric    = 2**8
     integer:: antisymmetric= 2**9
     integer:: extrapolate  = 2**10
+    integer:: immersed     = 2**11
   contains
     procedure, nopass:: print
   end type

@@ -11,6 +11,7 @@ MODULE standard_boundaries_mod
   USE index_mod
   USE patch_mod
   USE boundary_wavekill_mod
+  USE shared_mod
   implicit none
   private
   type, public:: standard_boundaries_t
@@ -23,11 +24,15 @@ MODULE standard_boundaries_mod
     real(8):: position(3)=0d0, radius=0d0
     real:: vmax
     logical(kind=2), pointer:: filled(:,:,:,:)
+    logical:: was_filled(3,2)=.false.
     logical:: check_filled=.false.
+    logical:: set_bc_bits=.true.
   contains
     procedure:: pre_init
     procedure:: init
+    procedure:: set_attribute
     procedure:: set
+    procedure:: clear
     procedure:: is_set
     procedure:: is_clear
     procedure:: mask
@@ -41,6 +46,7 @@ MODULE standard_boundaries_mod
     procedure:: zero_gradient
     procedure:: spherical0
     procedure:: spherical3
+    procedure:: spherical_keep
     procedure:: spherical_p_ns
     procedure:: spherical_ns
     procedure:: spherical_jagged_d
@@ -51,6 +57,7 @@ MODULE standard_boundaries_mod
     procedure:: spherical_extrapolate
     procedure:: spherical_constant_entropy
     procedure, nopass:: sponge => wave_killing
+    procedure:: set_filled
   end type
 CONTAINS
 
@@ -59,6 +66,7 @@ CONTAINS
 SUBROUTINE pre_init (self, patch)
   class(standard_boundaries_t) :: self
   class(patch_t), target       :: patch
+  !-----------------------------------------------------------------------------
   call trace%begin ('standard_boundaries_t%init')
   self%patch => patch
   self%unset1 = .false.
@@ -86,38 +94,42 @@ SUBROUTINE init (self)
   patch => self%patch
   self%id = patch%id
   self%patch => patch
-  self%radius = patch%radius
   self%mesh => patch%mesh
   self%position = patch%position
   !-----------------------------------------------------------------------------
   ! If at edge, set boundary bits
   ! FIXME: Consider position and origin and box definitions
   !-----------------------------------------------------------------------------
-   position = patch%position - patch%origin - 0.5d0 * patch%box
-  !position = patch%position
+  position = patch%position
   limit = 0.5d0 * (patch%box - patch%size - patch%ds)
-  if (.not.patch%periodic(1)) then
-    if (position(1)  <= -limit(1)) then
-      call self%set (bits%xl)
+  ! ----------------------------------------------------------------------------
+  ! some non-cartesian setups might already set the boundary bits by some other
+  ! recipe, so the bits should not touched.
+  ! ----------------------------------------------------------------------------
+  if (self%set_bc_bits) then
+    if (.not.patch%periodic(1)) then
+      if (position(1)  <= -limit(1)) then
+        call self%set (bits%xl)
+      end if
+      if (position(1) >= +limit(1)) then
+        call self%set (bits%xu)
+      end if
     end if
-    if (position(1) >= +limit(1)) then
-      call self%set (bits%xu)
+    if (.not.patch%periodic(2)) then
+      if (position(2)  <= -limit(2)) then
+        call self%set (bits%yl)
+      end if
+      if (position(2) >= +limit(2)) then
+        call self%set (bits%yu)
+      end if
     end if
-  end if
-  if (.not.patch%periodic(2)) then
-    if (position(2)  <= -limit(2)) then
-      call self%set (bits%yl)
-    end if
-    if (position(2) >= +limit(2)) then
-      call self%set (bits%yu)
-    end if
-  end if
-  if (.not.patch%periodic(3)) then
-    if (position(3)  <= -limit(3)) then
-      call self%set (bits%zl)
-    end if
-    if (position(3) >= +limit(3)) then
-      call self%set (bits%zu)
+    if (.not.patch%periodic(3)) then
+      if (position(3)  <= -limit(3)) then
+        call self%set (bits%zl)
+      end if
+      if (position(3) >= +limit(3)) then
+        call self%set (bits%zu)
+      end if
     end if
   end if
   !-----------------------------------------------------------------------------
@@ -138,42 +150,68 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Spherical boundary flag
   !-----------------------------------------------------------------------------
-  one_inside = .false.
-  all_inside = .true.
-  do i=1,3
-    size(i) = patch%size(i)
-  end do
-  do k=-1,1; do j=-1,1; do i=-1,1
-    p(:) = position(:) + 0.5*size(:)*[i,j,k]
-    if (sum(p**2) < self%radius**2) then
-      one_inside = .true.
-    else
-      all_inside = .false.
-    end if
-  end do; end do; end do
-  if (one_inside) call self%set (bits%spherical)
+  if (self%set_bc_bits) then
+    one_inside = .false.
+    all_inside = .true.
+    do i=1,3
+      size(i) = patch%size(i)
+    end do
+    do k=-1,1; do j=-1,1; do i=-1,1
+      p(:) = position(:) + 0.5*size(:)*[i,j,k]
+      if (sum(p**2) < self%radius**2) then
+        one_inside = .true.
+      else
+        all_inside = .false.
+      end if
+    end do; end do; end do
+    if (one_inside) call self%set (bits%spherical)
+    if (all_inside) call self%set (bits%immersed)
+  end if
   !-----------------------------------------------------------------------------
   self%unset2 = .false.
   call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
+!> Set optional attributes
+!===============================================================================
+SUBROUTINE set_attribute (self, radius)
+  class(standard_boundaries_t) :: self
+  real(8), optional            :: radius
+  !-----------------------------------------------------------------------------
+  call trace%begin ('standard_boundaries_t%set_attribute')
+  if (present(radius)) &
+    self%radius = radius
+  call trace%end ()
+END SUBROUTINE set_attribute
+
+!===============================================================================
 !> Set bits in the status word
 !===============================================================================
 SUBROUTINE set (self, bits)
   class(standard_boundaries_t) :: self
-  integer             :: bits
+  integer                      :: bits
   !-----------------------------------------------------------------------------
   self%bits = ior (self%bits, bits)
 END SUBROUTINE set
+
+!===============================================================================
+!> Set bits in the status word
+!===============================================================================
+SUBROUTINE clear (self, bits)
+  class(standard_boundaries_t) :: self
+  integer                      :: bits
+  !-----------------------------------------------------------------------------
+  self%bits = iand (self%bits, not(bits))
+END SUBROUTINE clear
 
 !===============================================================================
 !> Check bits in the status word
 !===============================================================================
 FUNCTION is_set (self, bits) RESULT (out)
   class(standard_boundaries_t) :: self
-  integer             :: bits
-  logical             :: out
+  integer                      :: bits
+  logical                      :: out
   !-----------------------------------------------------------------------------
   out = (iand (self%bits, bits) /=0)
 END FUNCTION is_set
@@ -183,8 +221,8 @@ END FUNCTION is_set
 !===============================================================================
 FUNCTION is_clear (self, bits) RESULT (out)
   class(standard_boundaries_t) :: self
-  integer             :: bits
-  logical             :: out
+  integer                      :: bits
+  logical                      :: out
   !-----------------------------------------------------------------------------
   out = (iand (self%bits, bits) ==0)
 END FUNCTION is_clear
@@ -200,7 +238,7 @@ FUNCTION mask (self, m) RESULT (out)
   integer                  :: ix, iy, iz
   real(8)                  :: x, y, z, r
   !-----------------------------------------------------------------------------
-  call trace_begin('standard_boundaries_t%mask')
+  call trace%begin('standard_boundaries_t%mask')
   out(:,:,:) = .false.
   out(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui) = .true.
   if (self%is_set (bits%spherical)) then
@@ -218,15 +256,15 @@ FUNCTION mask (self, m) RESULT (out)
     end do
     end associate
   end if
-  call trace_end
+  call trace%end ()
 END FUNCTION mask
 
 !===============================================================================
 !> Apply a boundary condition, using the procedure pointer "operator"
 !===============================================================================
 SUBROUTINE condition (self, f, iv, operator, value, select)
-  class(standard_boundaries_t)                :: self
-  real(kind=KindScalarVar)           :: f(:,:,:)
+  class(standard_boundaries_t)       :: self
+  real(var_k)                        :: f(:,:,:)
   integer                            :: iv
   real, optional                     :: value
   procedure(make_symmetric), pointer :: operator
@@ -243,41 +281,52 @@ SUBROUTINE condition (self, f, iv, operator, value, select)
   if (present(select)) then
     saved_status = self%bits
     self%bits = iand (self%bits, select)
-    if (self%is_set(bits%xl+bits%xu)) call x_condition
-    if (self%is_set(bits%yl+bits%yu)) call y_condition
-    if (self%is_set(bits%zl+bits%zu)) call z_condition
+    if (self%is_set(bits%xl+bits%xu)) &
+      call x_condition
+    if (self%is_set(bits%yl+bits%yu)) &
+      call y_condition
+    if (self%is_set(bits%zl+bits%zu)) &
+      call z_condition
     self%bits = saved_status
   else
-    if (self%is_set(bits%xl+bits%xu)) call x_condition
-    if (self%is_set(bits%yl+bits%yu)) call y_condition
-    if (self%is_set(bits%zl+bits%zu)) call z_condition
+    if (self%is_set(bits%xl+bits%xu)) &
+      call x_condition
+    if (self%is_set(bits%yl+bits%yu)) &
+      call y_condition
+    if (self%is_set(bits%zl+bits%zu)) &
+      call z_condition
   end if
   call trace%end()
   return
 contains
   subroutine x_condition
-    if (self%check_filled) call trace_begin ('x_condition')
+    logical:: lower, upper
+    if (self%check_filled) call trace%begin ('x_condition')
     if (self%id==io%id_debug) &
       print *, 'MK BOUNDARY CONDITION: x-direction', self%bits, present(value)
     m1 => self%mesh(2)
     m2 => self%mesh(1)
     if (m2%n<2) print *, 'unconstrained boundaries:: more cells per X direction needed'
+    lower = self%is_set(bits%xl)
+    upper = self%is_set(bits%xu)
     do i=m(3)%lb,m(3)%ub
-      call operator (self, f(:,:,i),m1,m2,iv,lower=self%is_set(bits%xl), &
-        upper=self%is_set(bits%xu), transpose=.true., value=value)
+      call operator (self, f(:,:,i),m1,m2,iv,lower=lower, &
+        upper=upper, transpose=.true., value=value)
     end do
     if (self%check_filled) then
       if (self%is_set(bits%xl)) then
-        self%filled(self%mesh(1)%lb:self%mesh(1)%lo,:,:,iv) = .true.
+        self%filled(self%mesh(1)%lb:self%mesh(1)%lo,:,:,iv) = self%patch%level
       end if
       if (self%is_set(bits%xu)) then
-        self%filled(self%mesh(1)%uo:self%mesh(1)%ub,:,:,iv) = .true.
+        self%filled(self%mesh(1)%uo:self%mesh(1)%ub,:,:,iv) = self%patch%level
       end if
     end if
-    if (self%check_filled) call trace_end
+    if (self%is_set(bits%xl)) self%was_filled(1,1) = .true.
+    if (self%is_set(bits%xu)) self%was_filled(1,2) = .true.
+    if (self%check_filled) call trace%end ()
   end subroutine x_condition
   subroutine y_condition
-    if (self%check_filled) call trace_begin ('y_condition')
+    if (self%check_filled) call trace%begin ('y_condition')
     if (self%id==io%id_debug) &
       print *, 'MK BOUNDARY CONDITION: y-direction', self%bits, present(value)
     m1 => self%mesh(1)
@@ -295,10 +344,12 @@ contains
         self%filled(:,self%mesh(2)%uo:self%mesh(2)%ub,:,iv) = .true.
       end if
     end if
-    if (self%check_filled) call trace_end
+    if (self%is_set(bits%yl)) self%was_filled(2,1) = .true.
+    if (self%is_set(bits%yu)) self%was_filled(2,2) = .true.
+    if (self%check_filled) call trace%end ()
   end subroutine y_condition
   subroutine z_condition
-    if (self%check_filled) call trace_begin ('z_condition')
+    if (self%check_filled) call trace%begin ('z_condition')
     if (self%id==io%id_debug) &
       print *, 'MK BOUNDARY CONDITION: z-direction', self%bits, present(value)
     m1 => self%mesh(1)
@@ -316,7 +367,9 @@ contains
         self%filled(:,:,self%mesh(3)%uo:self%mesh(3)%ub,iv) = .true.
       end if
     end if
-    if (self%check_filled) call trace_end
+    if (self%is_set(bits%zl)) self%was_filled(3,1) = .true.
+    if (self%is_set(bits%zu)) self%was_filled(3,2) = .true.
+    if (self%check_filled) call trace%end ()
   end subroutine z_condition
 END SUBROUTINE condition
 
@@ -324,8 +377,8 @@ END SUBROUTINE condition
 !> Apply symmetric boundary conditions in the directions indicated by status bits
 !===============================================================================
 SUBROUTINE symmetric (self, mem, iv, select)
-  class(standard_boundaries_t)                :: self
-  real(kind=KindScalarVar), pointer  :: mem(:,:,:)
+  class(standard_boundaries_t)       :: self
+  real(var_k),               pointer :: mem(:,:,:)
   integer                            :: iv
   integer, optional                  :: select
   procedure(make_symmetric), pointer :: operator
@@ -342,8 +395,8 @@ END SUBROUTINE symmetric
 !> Apply antisymmetric boundary conditions
 !===============================================================================
 SUBROUTINE antisymmetric (self, mem, iv, select)
-  class(standard_boundaries_t)                :: self
-  real(kind=KindScalarVar), pointer  :: mem(:,:,:)
+  class(standard_boundaries_t)       :: self
+  real(var_k),               pointer :: mem(:,:,:)
   integer                            :: iv
   integer, optional                  :: select
   procedure(make_symmetric), pointer :: operator
@@ -358,8 +411,8 @@ END SUBROUTINE antisymmetric
 !> Apply extrapolating boundary conditions
 !===============================================================================
 SUBROUTINE extrapolate (self, mem, iv, select)
-  class(standard_boundaries_t)                :: self
-  real(kind=KindScalarVar), pointer  :: mem(:,:,:)
+  class(standard_boundaries_t)       :: self
+  real(var_k),               pointer :: mem(:,:,:)
   integer                            :: iv
   integer, optional                  :: select
   procedure(make_symmetric), pointer :: operator
@@ -376,8 +429,8 @@ END SUBROUTINE extrapolate
 !> Apply extrapolating boundary conditions
 !===============================================================================
 SUBROUTINE extrapolate_constrained (self, mem, iv, select)
-  class(standard_boundaries_t)                :: self
-  real(kind=KindScalarVar), pointer  :: mem(:,:,:)
+  class(standard_boundaries_t)       :: self
+  real(var_k),               pointer :: mem(:,:,:)
   integer                            :: iv
   integer, optional                  :: select
   procedure(make_symmetric), pointer :: operator
@@ -394,8 +447,8 @@ END SUBROUTINE extrapolate_constrained
 !> Apply extrapolating boundary conditions
 !===============================================================================
 SUBROUTINE log_extrapolate (self, mem, iv, select)
-  class(standard_boundaries_t)                :: self
-  real(kind=KindScalarVar), pointer  :: mem(:,:,:)
+  class(standard_boundaries_t)       :: self
+  real(var_k),               pointer :: mem(:,:,:)
   integer                            :: iv
   integer, optional                  :: select
   procedure(make_symmetric), pointer :: operator
@@ -410,8 +463,8 @@ END SUBROUTINE log_extrapolate
 !> Apply constant boundary conditions
 !===============================================================================
 SUBROUTINE constant (self, mem, iv, value, select)
-  class(standard_boundaries_t)                :: self
-  real(kind=KindScalarVar), pointer  :: mem(:,:,:)
+  class(standard_boundaries_t)       :: self
+  real(var_k),               pointer :: mem(:,:,:)
   integer                            :: iv
   real                               :: value
   integer, optional                  :: select
@@ -427,8 +480,8 @@ END SUBROUTINE constant
 !> Apply constant/zero gradient boundary conditions
 !===============================================================================
 SUBROUTINE zero_gradient (self, mem, iv, select)
-  class(standard_boundaries_t)                :: self
-  real(kind=KindScalarVar), pointer  :: mem(:,:,:)
+  class(standard_boundaries_t)       :: self
+  real(var_k),               pointer :: mem(:,:,:)
   integer                            :: iv
   integer, optional                  :: select
   procedure(make_symmetric), pointer :: operator
@@ -451,18 +504,24 @@ SUBROUTINE bndry_indices (m, iv, lo, li, ui, uo)
   integer                :: iv, lo, li, ui, uo
   !-----------------------------------------------------------------------------
   ! no-mans-land mesh, with staggered points at patch boundaries
-  !                    |                     |
-  !  centered:   x---x-|-o---o-- ... --o---o-|-x---x
-  !                 lo   li               ui   uo
-  ! staggered: x---x---o---o-- ... --o---o---x---x
-  !               lo       li           ui       uo
+  !                             |                     |
+  !  centered variable:   x---x-|-o---o-- ... --o---o-|-x---x
+  !                          lo | li               ui | uo
+  ! staggered variable: x---x---o---o-- ... --o---o---x---x
+  !                            lo  li            ui  uo
   !-----------------------------------------------------------------------------
-  ! --- staggered variables ---
+  ! --- down-staggered variables ---
   if (m%h(iv) < 0.0) then
+    lo = m%li
+    li = lo+1
+    uo = m%uo
+    ui = uo-1
+  ! --- up-staggered variables ---
+  else if (m%h(iv) > 0.0) then
     lo = m%lo
-    li = lo+2
-    uo = m%uo+1
-    ui = uo-2
+    li = lo+1
+    uo = m%ui
+    ui = uo-1
   ! --- centered variables ---
   else
     lo = m%lo
@@ -476,13 +535,13 @@ END SUBROUTINE bndry_indices
 !> Apply symmtric boundary condition to the 2nd index, looping over the 1st
 !===============================================================================
 SUBROUTINE make_symmetric (self, f, m1, m2, iv, lower, upper, transpose, value)
-  class(standard_boundaries_t)                      :: self
-  real(kind=KindScalarVar), dimension(:,:) :: f
-  class(mesh_t), pointer                   :: m1, m2
-  integer                                  :: iv
-  logical                                  :: lower, upper, transpose
-  real, optional                           :: value
-  integer                                  :: i, j, lo, li, ui, uo
+  class(standard_boundaries_t) :: self
+  real(var_k), dimension(:,:)  :: f
+  class(mesh_t), pointer       :: m1, m2
+  integer                      :: iv
+  logical                      :: lower, upper, transpose
+  real, optional               :: value
+  integer                      :: i, j, lo, li, ui, uo
   !-----------------------------------------------------------------------------
   call bndry_indices (m2, iv, lo, li, ui, uo)
   if (lower) then
@@ -521,13 +580,13 @@ END SUBROUTINE make_symmetric
 !> Make the solution antisymmetric across the boundary
 !===============================================================================
 SUBROUTINE make_antisymmetric (self, f, m1, m2, iv, lower, upper, transpose, value)
-  class(standard_boundaries_t)                      :: self
-  real(kind=KindScalarVar), dimension(:,:) :: f
-  class(mesh_t), pointer                   :: m1, m2
-  integer                                  :: iv
-  logical                                  :: lower, upper, transpose
-  real, optional                           :: value
-  integer                                  :: i, j, lo, li, ui, uo
+  class(standard_boundaries_t) :: self
+  real(var_k), dimension(:,:)  :: f
+  class(mesh_t), pointer       :: m1, m2
+  integer                      :: iv
+  logical                      :: lower, upper, transpose
+  real, optional               :: value
+  integer                      :: i, j, lo, li, ui, uo
   !-----------------------------------------------------------------------------
   call bndry_indices (m2, iv, lo, li, ui, uo)
   if (lower) then
@@ -537,12 +596,22 @@ SUBROUTINE make_antisymmetric (self, f, m1, m2, iv, lower, upper, transpose, val
           f(j,i) = -f(li+(lo-j),i)
         end do
       end do
+      if (li-lo == 2) then
+        do i=m1%lb,m1%ub
+          f(li-1,i) = 0.0
+        end do
+      end if
     else
       do j=1,lo
         do i=m1%lb,m1%ub
           f(i,j) = -f(i,li+(lo-j))
         end do
       end do
+      if (li-lo == 2) then
+        do i=m1%lb,m1%ub
+          f(i,li-1) = 0.0
+        end do
+      end if
     end if
   end if
   if (upper) then
@@ -552,12 +621,22 @@ SUBROUTINE make_antisymmetric (self, f, m1, m2, iv, lower, upper, transpose, val
           f(j,i) = -f(ui-(j-uo),i)
         end do
       end do
+      if (uo-ui == 2) then
+        do i=m1%lb,m1%ub
+          f(ui+1,i) = 0.0
+        end do
+      end if
     else
       do j=uo,m2%ub
         do i=m1%lb,m1%ub
           f(i,j) = -f(i,ui-(j-uo))
         end do
       end do
+      if (uo-ui == 2) then
+        do i=m1%lb,m1%ub
+          f(i,ui+1) = 0.0
+        end do
+      end if
     end if
   end if
 END SUBROUTINE make_antisymmetric
@@ -567,13 +646,13 @@ END SUBROUTINE make_antisymmetric
 !> speedup
 !===============================================================================
 SUBROUTINE make_extrapolated (self, f, m1, m2, iv, lower, upper, transpose, value)
-  class(standard_boundaries_t)                      :: self
-  real(kind=KindScalarVar), dimension(:,:) :: f
-  class(mesh_t), pointer                   :: m1, m2
-  integer                                  :: iv
-  logical                                  :: lower, upper, transpose
-  real, optional                           :: value
-  integer                                  :: i, j, lo, li, ui, uo
+  class(standard_boundaries_t) :: self
+  real(var_k), dimension(:,:)  :: f
+  class(mesh_t), pointer       :: m1, m2
+  integer                      :: iv
+  logical                      :: lower, upper, transpose
+  real, optional               :: value
+  integer                      :: i, j, lo, li, ui, uo
   !-----------------------------------------------------------------------------
   call bndry_indices (m2, iv, lo, li, ui, uo)
   if (lower) then
@@ -613,14 +692,14 @@ END SUBROUTINE make_extrapolated
 !> speedup
 !===============================================================================
 SUBROUTINE make_extrapolated_constrained (self, f, m1, m2, iv, lower, upper, transpose, value)
-  class(standard_boundaries_t)                      :: self
-  real(kind=KindScalarVar), dimension(:,:) :: f
-  class(mesh_t), pointer                   :: m1, m2
-  integer                                  :: iv
-  logical                                  :: lower, upper, transpose
-  real, optional                           :: value
-  integer                                  :: i, j, lo, li, ui, uo
-  real                                     :: p
+  class(standard_boundaries_t) :: self
+  real(var_k), dimension(:,:)  :: f
+  class(mesh_t), pointer       :: m1, m2
+  integer                      :: iv
+  logical                      :: lower, upper, transpose
+  real, optional               :: value
+  integer                      :: i, j, lo, li, ui, uo
+  real                         :: p
   !-----------------------------------------------------------------------------
   call bndry_indices (m2, iv, lo, li, ui, uo)
   if (lower) then
@@ -664,9 +743,9 @@ END SUBROUTINE make_extrapolated_constrained
 !> speedup
 !===============================================================================
 SUBROUTINE make_log_extrapolated (self, f, m1, m2, iv, lower, upper, transpose, value)
-  class(standard_boundaries_t)                      :: self
-  real(kind=KindScalarVar), dimension(:,:) :: f
-  class(mesh_t), pointer                   :: m1, m2
+  class(standard_boundaries_t) :: self
+  real(var_k), dimension(:,:)  :: f
+  class(mesh_t), pointer       :: m1, m2
   integer                                  :: iv
   logical                                  :: lower, upper, transpose
   real, optional                           :: value
@@ -710,13 +789,13 @@ END SUBROUTINE make_log_extrapolated
 !> speedup
 !===============================================================================
 SUBROUTINE make_constant (self, f, m1, m2, iv, lower, upper, transpose, value)
-  class(standard_boundaries_t)                      :: self
-  real(kind=KindScalarVar), dimension(:,:) :: f
-  class(mesh_t), pointer                   :: m1, m2
-  integer                                  :: iv
-  logical                                  :: lower, upper, transpose
-  real, optional                           :: value
-  integer                                  :: i, j, lo, li, ui, uo
+  class(standard_boundaries_t) :: self
+  real(var_k), dimension(:,:)  :: f
+  class(mesh_t), pointer       :: m1, m2
+  integer                      :: iv
+  logical                      :: lower, upper, transpose
+  real, optional               :: value
+  integer                      :: i, j, lo, li, ui, uo
   !-----------------------------------------------------------------------------
   call bndry_indices (m2, iv, lo, li, ui, uo)
   if (lower) then
@@ -756,13 +835,13 @@ END SUBROUTINE make_constant
 !> speedup
 !===============================================================================
 SUBROUTINE make_zero_grad (self, f, m1, m2, iv, lower, upper, transpose, value)
-  class(standard_boundaries_t)                      :: self
-  real(kind=KindScalarVar), dimension(:,:) :: f
-  class(mesh_t), pointer                   :: m1, m2
-  integer                                  :: iv
-  logical                                  :: lower, upper, transpose
-  real, optional                           :: value
-  integer                                  :: i, j, lo, li, ui, uo
+  class(standard_boundaries_t) :: self
+  real(var_k), dimension(:,:)  :: f
+  class(mesh_t), pointer       :: m1, m2
+  integer                      :: iv
+  logical                      :: lower, upper, transpose
+  real, optional               :: value
+  integer                      :: i, j, lo, li, ui, uo
   !-----------------------------------------------------------------------------
   call bndry_indices (m2, iv, lo, li, ui, uo)
   if (lower) then
@@ -828,17 +907,17 @@ END SUBROUTINE set_stagger
 !> Impose fixed boundary condition; scalar values
 !===============================================================================
 SUBROUTINE spherical0 (self, mem, v, m, iv, maxfill)
-  class(standard_boundaries_t)                        :: self
-  real(kind=KindScalarVar), dimension(:,:,:) :: mem
-  real                                       :: v
-  class(mesh_t), pointer                     :: m(:)
-  integer                                    :: iv
-  logical, optional                          :: maxfill
+  class(standard_boundaries_t)  :: self
+  real(var_k), dimension(:,:,:) :: mem
+  real                          :: v
+  class(mesh_t), pointer        :: m(:)
+  integer                       :: iv
+  logical, optional             :: maxfill
   !............................................................................
   integer                                    :: ix, iy, iz
   real(8)                                    :: x, y, z, r, h(3)
   !-----------------------------------------------------------------------------
-  call trace_begin('standard_boundaries_t%spherical0')
+  call trace%begin('standard_boundaries_t%spherical0')
   call set_stagger (m, h, iv)
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
@@ -855,24 +934,61 @@ SUBROUTINE spherical0 (self, mem, v, m, iv, maxfill)
     end do
   end do
   end associate
-  call trace_end
+  call trace%end ()
 END SUBROUTINE spherical0
+
+!===============================================================================
+!> Copy the values inside a given radius from the previous time slice
+!===============================================================================
+SUBROUTINE spherical_keep (self, mem, iv, it, new, m, position, radius)
+  class(standard_boundaries_t) :: self
+  real(var_k), pointer         :: mem(:,:,:,:,:)
+  integer                      :: iv, it, new
+  class(mesh_t), pointer       :: m(:)
+  real(8)                      :: position(3), radius
+  !............................................................................
+  integer                      :: ix, iy, iz, i
+  real                         :: h(3), r(3), rad2
+  class(mesh_t), pointer       :: mp
+  !-----------------------------------------------------------------------------
+  call trace%begin('standard_boundaries_t%spherical_p_ns')
+  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
+  do i=1,3
+    mp => m(i)
+    h(i) = mp%h(iv)*mp%d
+  end do
+  rad2 = (radius-m(1)%d)**2
+  do iz=m(3)%lb,m(3)%ub
+    r(3) = m(3)%p - position(3) + r3(iz) + h(3)
+    do iy=m(2)%lb,m(2)%ub
+      r(2) = m(2)%p - position(2) + r2(iy) + h(2)
+      do ix=m(1)%lb,m(1)%ub
+        r(1) = m(1)%p - position(1) + r1(ix) + h(1)
+        if (sum(r**2) < rad2) then
+          mem(ix,iy,iz,iv,new) = mem(ix,iy,iz,iv,it)
+        end if
+      end do
+    end do
+  end do
+  end associate
+  call trace%end ()
+END SUBROUTINE spherical_keep
 
 !===============================================================================
 !> Impose vanishing mass flux on any face that is inside the radius; this
 !> automatically makes density and entropy well behaved there also
 !===============================================================================
 SUBROUTINE spherical_p_ns (self, p, m, position, radius)
-  class(standard_boundaries_t)                          :: self
-  real(kind=KindScalarVar), pointer            :: p(:,:,:,:)
-  class(mesh_t), pointer                       :: m(:)
-  real(8)                                      :: position(3), radius
+  class(standard_boundaries_t) :: self
+  real(var_k), pointer         :: p(:,:,:,:)
+  class(mesh_t), pointer       :: m(:)
+  real(8)                      :: position(3), radius
   !............................................................................
-  integer                                      :: ix, iy, iz, iv, i
-  real                                         :: h(3), r(3)
-  class(mesh_t), pointer                       :: mm
+  integer                      :: ix, iy, iz, iv, i
+  real                         :: h(3), r(3)
+  class(mesh_t), pointer       :: mm
   !-----------------------------------------------------------------------------
-  call trace_begin('standard_boundaries_t%spherical_p_ns')
+  call trace%begin('standard_boundaries_t%spherical_p_ns')
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iv=1,3
     do i=1,3
@@ -880,36 +996,36 @@ SUBROUTINE spherical_p_ns (self, p, m, position, radius)
       h(i) = mm%h(idx%px+iv-1)*mm%d
     end do
     do iz=m(3)%lb,m(3)%ub
-    do iy=m(2)%lb,m(2)%ub
-    do ix=m(1)%lb,m(1)%ub
-      r(1) = m(1)%p - position(1) + r1(ix) + h(1)
-      r(2) = m(2)%p - position(2) + r2(iy) + h(2)
       r(3) = m(3)%p - position(3) + r3(iz) + h(3)
-      if (sum(r**2) < radius**2) p(ix,iy,iz,iv) = 0.0
-    end do
-    end do
+      do iy=m(2)%lb,m(2)%ub
+        r(2) = m(2)%p - position(2) + r2(iy) + h(2)
+        do ix=m(1)%lb,m(1)%ub
+          r(1) = m(1)%p - position(1) + r1(ix) + h(1)
+          if (sum(r**2) < radius**2) p(ix,iy,iz,iv) = 0.0
+        end do
+      end do
     end do
   end do
   end associate
-  call trace_end
+  call trace%end ()
 END SUBROUTINE spherical_p_ns
 
 !===============================================================================
 !> Impose no-slip boundary condition; scalar values
 !===============================================================================
 SUBROUTINE spherical_ns (self, mem, v, m, iv, maxfill)
-  class(standard_boundaries_t)                        :: self
-  real(kind=KindScalarVar), dimension(:,:,:) :: mem
-  real                                       :: v
-  class(mesh_t), pointer                     :: m(:)
-  integer                                    :: iv
-  logical, optional                          :: maxfill
+  class(standard_boundaries_t)  :: self
+  real(var_k), dimension(:,:,:) :: mem
+  real                          :: v
+  class(mesh_t), pointer        :: m(:)
+  integer                       :: iv
+  logical, optional             :: maxfill
   !............................................................................
   integer      :: ix, iy, iz
   real(8)      :: x, y, z, r, h(3)
   real(8)      :: d1, dw, x1, rp, p1, p2
   !-----------------------------------------------------------------------------
-  call trace_begin('standard_boundaries_t%spherical_ns')
+  call trace%begin('standard_boundaries_t%spherical_ns')
   call set_stagger (m, h, iv)
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
@@ -1045,24 +1161,24 @@ SUBROUTINE spherical_ns (self, mem, v, m, iv, maxfill)
   end do
  ! error stop "end"
   end associate
-  call trace_end
+  call trace%end ()
 END SUBROUTINE spherical_ns
 
 !===============================================================================
 !> Impose spherical density boundary condition, assuming that the sphere is jagged.
 !===============================================================================
 SUBROUTINE spherical_jagged_d (self, mem, m, iv, it, new)
-  class(standard_boundaries_t)                          :: self
-  real(kind=KindScalarVar), dimension(:,:,:,:) :: mem
-  class(mesh_t), pointer                       :: m(:), m1, m2, m3
-  integer                                      :: iv, it, new
+  class(standard_boundaries_t)    :: self
+  real(var_k), dimension(:,:,:,:) :: mem
+  class(mesh_t), pointer          :: m(:), m1, m2, m3
+  integer                         :: iv, it, new
   !............................................................................
   integer      :: ix, iy, iz
   real(8)      :: x1, x2, y1, y2, z1, z2
   real(8)      :: r(3)
   logical      :: inside(8)
   !-----------------------------------------------------------------------------
-  call trace_begin('standard_boundaries_t%spherical_jagged_d')
+  call trace%begin('standard_boundaries_t%spherical_jagged_d')
   m1 => m(1)
   m2 => m(2)
   m3 => m(3)
@@ -1073,30 +1189,29 @@ SUBROUTINE spherical_jagged_d (self, mem, m, iv, it, new)
     r(1) = m(1)%p - self%position(1) + r1(ix)
     r(2) = m(2)%p - self%position(2) + r2(iy)
     r(3) = m(3)%p - self%position(3) + r3(iz)
-    if (sum(r**2) < self%radius**2) mem(ix,iy,iz,new) = &
-                         mem(ix,iy,iz,it)
+    if (sum(r**2) < self%radius**2) mem(ix,iy,iz,new) = mem(ix,iy,iz,it)
   end do
   end do
   end do
   end associate
   nullify (m1, m2, m3)
-  call trace_end
+  call trace%end ()
 END SUBROUTINE spherical_jagged_d
 
 !===============================================================================
-!> Impose spherical density boundary condition, assuming that the sphere is jagged.
+!> Impose spherical boundary condition, assuming that the sphere is jagged
 !===============================================================================
 SUBROUTINE spherical_jagged_s (self, new, old, m)
-  class(standard_boundaries_t)                        :: self
-  real(kind=KindScalarVar), dimension(:,:,:) :: old, new
-  class(mesh_t), pointer                     :: m(:), m1, m2, m3
+  class(standard_boundaries_t)  :: self
+  real(var_k), dimension(:,:,:) :: old, new
+  class(mesh_t), pointer        :: m(:), m1, m2, m3
   !............................................................................
   type(index_t):: idx
   integer      :: ix, iy, iz
   real(8)      :: r(3)
   logical      :: inside(8)
   !-----------------------------------------------------------------------------
-  call trace_begin('standard_boundaries_t%spherical_jagged_s')
+  call trace%begin('standard_boundaries_t%spherical_jagged_s')
   m1 => m(1)
   m2 => m(2)
   m3 => m(3)
@@ -1107,32 +1222,31 @@ SUBROUTINE spherical_jagged_s (self, new, old, m)
     r(1) = m(1)%p - self%position(1) + r1(ix)
     r(2) = m(2)%p - self%position(2) + r2(iy)
     r(3) = m(3)%p - self%position(3) + r3(iz)
-    if (sum(r**2) < self%radius**2) new(ix,iy,iz) = &
-                         old(ix,iy,iz)
+    if (sum(r**2) < self%radius**2) new(ix,iy,iz) = old(ix,iy,iz)
   end do
   end do
   end do
   end associate
   nullify (m1, m2, m3)
-  call trace_end
+  call trace%end ()
 END SUBROUTINE spherical_jagged_s
 
-!> =============================================================================
+!===============================================================================
 !> Impose spherical density boundary condition, assuming that the sphere is jagged.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE spherical_jagged_s0 (self, mem, m, iv, v)
   class(standard_boundaries_t)                        :: self
-  real(kind=KindScalarVar), dimension(:,:,:) :: mem
-  class(mesh_t), pointer                     :: m(:), m1, m2, m3
-  integer                                    :: iv, it
-  real                                       :: v
+  real(var_k), dimension(:,:,:) :: mem
+  class(mesh_t), pointer        :: m(:), m1, m2, m3
+  integer                       :: iv, it
+  real                          :: v
   !............................................................................
   integer      :: ix, iy, iz
   real(8)      :: x1, x2, y1, y2, z1, z2
   real(8)      :: r2
   logical      :: inside(8)
   !-----------------------------------------------------------------------------
-  call trace_begin('standard_boundaries_t%spherical_jagged_s0')
+  call trace%begin('standard_boundaries_t%spherical_jagged_s0')
   m1 => m(1)
   m2 => m(2)
   m3 => m(3)
@@ -1164,24 +1278,24 @@ SUBROUTINE spherical_jagged_s0 (self, mem, m, iv, v)
     call io%abort ("boundaries_mod::spherical_jagged_d:: invalid memory index iv")
   end if
   nullify (m1, m2, m3)
-  call trace_end
+  call trace%end ()
 END SUBROUTINE spherical_jagged_s0
 
 !===============================================================================
 !> Same as above, but for momentum
 !===============================================================================
 SUBROUTINE spherical_jagged_p (self, mem, m, iv)
-  class(standard_boundaries_t)                        :: self
-  real(kind=KindScalarVar), dimension(:,:,:) :: mem
-  class(mesh_t), pointer                     :: m(:), m1, m2, m3
-  integer                                    :: iv
+  class(standard_boundaries_t)  :: self
+  real(var_k), dimension(:,:,:) :: mem
+  class(mesh_t), pointer        :: m(:), m1, m2, m3
+  integer                       :: iv
   !............................................................................
   integer      :: ix, iy, iz
   real(8)      :: x1, x2, y1, y2, z1, z2
   real(8)      :: r2, h(3)
   logical      :: inside(4)
   !-----------------------------------------------------------------------------
-  call trace_begin('standard_boundaries_t%spherical_jagged_p')
+  call trace%begin('standard_boundaries_t%spherical_jagged_p')
   m1 => m(1)
   m2 => m(2)
   m3 => m(3)
@@ -1243,7 +1357,7 @@ SUBROUTINE spherical_jagged_p (self, mem, m, iv)
     call io%abort ("boundaries_mod::spherical_jagged_p:: invalid memory index iv")
   end if
   nullify (m1, m2, m3)
-  call trace_end
+  call trace%end ()
 END SUBROUTINE spherical_jagged_p
 
 !=======================================================================
@@ -1251,7 +1365,7 @@ END SUBROUTINE spherical_jagged_p
 !=======================================================================
 FUNCTION extrapolate_antisym(ip, op, bp, yop) result(out)
   real(8) :: ip, op, bp
-  real(kind=KindScalarVar):: yop, out
+  real(var_k):: yop, out
   !.....................................................................
   out = yop+(ip-op)/(bp-op)*(-yop)
 END FUNCTION extrapolate_antisym
@@ -1260,16 +1374,16 @@ END FUNCTION extrapolate_antisym
 !> Impose fixed boundary condition; array values
 !===============================================================================
 SUBROUTINE spherical3 (self, mem, v, m, iv, maxfill)
-  class(standard_boundaries_t)                        :: self
-  real(kind=KindScalarVar), dimension(:,:,:) :: mem, v
-  class(mesh_t), pointer                     :: m(:)
-  integer                                    :: iv
-  logical, optional                          :: maxfill
+  class(standard_boundaries_t)  :: self
+  real(var_k), dimension(:,:,:) :: mem, v
+  class(mesh_t), pointer        :: m(:)
+  integer                       :: iv
+  logical, optional             :: maxfill
   !............................................................................
   integer                                    :: ix, iy, iz, n1, n2
   real(8)                                    :: x, y, z, r, h(3)
   !-----------------------------------------------------------------------------
-  call trace_begin('standard_boundaries_t%spherical3')
+  call trace%begin('standard_boundaries_t%spherical3')
   call set_stagger (m, h, iv)
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   self%vmax = 0.0
@@ -1304,7 +1418,7 @@ SUBROUTINE spherical3 (self, mem, v, m, iv, maxfill)
   end do
   end if
   end associate
-  call trace_end
+  call trace%end ()
 END SUBROUTINE spherical3
 
 !===============================================================================
@@ -1312,15 +1426,15 @@ END SUBROUTINE spherical3
 !> from the boundary, and at the boundary, to establish a stable slope
 !===============================================================================
 SUBROUTINE spherical_extrapolate (self, mem, m, iv)
-  class(standard_boundaries_t)                        :: self
-  real(kind=KindScalarVar), dimension(:,:,:) :: mem
-  class(mesh_t), pointer                     :: m(:)
-  integer                                    :: iv
+  class(standard_boundaries_t)  :: self
+  real(var_k), dimension(:,:,:) :: mem
+  class(mesh_t), pointer        :: m(:)
+  integer                       :: iv
   !............................................................................
-  integer                                    :: ix, iy, iz, n1, n2
-  real(8)                                    :: x, y, z, r, h(3), a1, a2, ds, p
+  integer                       :: ix, iy, iz, n1, n2
+  real(8)                       :: x, y, z, r, h(3), a1, a2, ds, p
   !-----------------------------------------------------------------------------
-  call trace_begin('standard_boundaries_t%spherical_extrapolate')
+  call trace%begin('standard_boundaries_t%spherical_extrapolate')
   call set_stagger (m, h, iv)
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   ds = m(1)%d
@@ -1371,22 +1485,22 @@ SUBROUTINE spherical_extrapolate (self, mem, m, iv)
     end do
   end do
   end associate
-  call trace_end
+  call trace%end ()
 END SUBROUTINE spherical_extrapolate
 
 !===============================================================================
 !> Set constant entropy inside the boundary radius (included)
 !===============================================================================
 SUBROUTINE spherical_constant_entropy (self, d, e, m, s, gamma)
-  class(standard_boundaries_t)                        :: self
-  real(kind=KindScalarVar), dimension(:,:,:) :: d, e
-  class(mesh_t), pointer                     :: m(:)
-  real                                       :: s, gamma
+  class(standard_boundaries_t)  :: self
+  real(var_k), dimension(:,:,:) :: d, e
+  class(mesh_t), pointer        :: m(:)
+  real                          :: s, gamma
   !............................................................................
-  integer                                    :: ix, iy, iz
-  real(8)                                    :: x, y, z, r, ds, c
+  integer                       :: ix, iy, iz
+  real(8)                       :: x, y, z, r, ds, c
   !-----------------------------------------------------------------------------
-  call trace_begin('standard_boundaries_t%sperical_entropy')
+  call trace%begin('standard_boundaries_t%sperical_entropy')
   !-----------------------------------------------------------------------------
   ! a1 and a2 sample the values in annuli around R-3*ds and R, respectively
   !-----------------------------------------------------------------------------
@@ -1408,7 +1522,46 @@ SUBROUTINE spherical_constant_entropy (self, d, e, m, s, gamma)
     end do
   end do
   end associate
-  call trace_end
+  call trace%end ()
 END SUBROUTINE spherical_constant_entropy
+
+!===============================================================================
+!> Set self%patch%filled(:,:,:) if associated
+!===============================================================================
+SUBROUTINE set_filled (self)
+  class(standard_boundaries_t):: self
+  integer:: i, j, l(3), u(3)
+  logical:: boundary(2)
+  character(5):: dir
+  !-----------------------------------------------------------------------------
+  call trace%begin ('standard_boudaries_t%set_filled')
+  if (associated(self%patch%filled)) then
+    do i=1,3
+      boundary(1) = self%mesh(i)%lower_boundary
+      boundary(2) = self%mesh(i)%upper_boundary
+      do j=1,2
+        if (boundary(j)) then
+          l = self%patch%mesh%lb
+          u = self%patch%mesh%ub
+          if (j==1) then
+            dir = 'lower'
+            u(i) = self%patch%mesh(i)%lo
+          else
+            dir = 'upper'
+            l(i) = self%patch%mesh(1)%uo
+          end if
+          self%patch%filled(l(1):u(1),l(2):u(2),l(3):u(3)) = self%patch%level
+          if (.not.self%was_filled(i,j)) then
+            write (stderr,'(a,i2,a,i6)') &
+              'WARNING: unfilled '//dir//' boundary for direction', i, &
+              ', patch', self%patch%id
+            self%was_filled(i,j) = .true.
+          end if
+        end if
+      end do
+    end do
+  end if
+  call trace%end ()
+END SUBROUTINE set_filled
 
 END MODULE standard_boundaries_mod

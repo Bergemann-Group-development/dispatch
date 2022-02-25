@@ -42,7 +42,7 @@ SUBROUTINE init (self)
   !$omp parallel private(master,thread,place)
 #if defined (_OPENMP)
   !$omp single
-  call omp_set_nested(.true.)
+  !call omp_set_nested(.true.)
   call omp_set_max_active_levels(2)
   nthreads = omp_get_num_threads()
   nplaces = omp_get_num_places()
@@ -133,7 +133,7 @@ END FUNCTION
 !> Adjust OMP_STACKSIZE according to number of passive scalars, with baseline
 !> being 4M for MHD
 !===============================================================================
-SUBROUTINE set_stacksize (nv, verbose)
+SUBROUTINE set_stacksize (nw, verbose)
 #ifdef __INTEL_COMPILER
 #ifdef _OPENMP
   USE omp_lib, only : kmp_set_stacksize_s, kmp_get_stacksize_s, kmp_size_t_kind
@@ -141,14 +141,14 @@ SUBROUTINE set_stacksize (nv, verbose)
   real:: r
 #endif
 #endif
-  integer:: nv, recommended
+  integer:: nw, recommended
   logical:: verbose
   character(len=16):: envvar
   logical:: kmp, omp
   logical, save:: first_time=.true., printed=.false.
   !-----------------------------------------------------------------------------
   if (io_unit%do_validate) return
-  recommended = (50*1024**2)
+  recommended = 6*(4*nw)
 #ifdef _OPENMP
 #ifdef __INTEL_COMPILER
   call getenv ('KMP_STACKSIZE', envvar)
@@ -169,7 +169,7 @@ SUBROUTINE set_stacksize (nv, verbose)
   if (kind(r)==kind(1.0E0_8)) new_stacksize = new_stacksize * 2
   if (new_stacksize > stacksize) then
     call kmp_set_stacksize_s(new_stacksize)
-    if (omp_get_thread_num()==0 .and. first_time .and. .not.printed) then
+    if (first_time .and. omp_get_num_threads()==0) then
       if (verbose .and. .not.printed) print '(1x,a)', &
         '*************************************************************************************'
       print '(1x,a,i5,a)', &
@@ -177,22 +177,20 @@ SUBROUTINE set_stacksize (nv, verbose)
       nint(new_stacksize/1024.**2), ' MB to avoid segfaults'
       printed = .true.
     end if
-  else if (first_time.and.io_unit%master) then
-    if (verbose) &
-      print '(1x,a,f5.1,a,i3,a)', 'OpenMP stacksize default:', stacksize/1024.**2, ' MB for', &
-      nv, ' variables'
-
+  else if (first_time .and. omp_get_num_threads()==0) then
+      print '(1x,a,f5.1,a,i8,a)', 'OpenMP stacksize (default):', &
+      stacksize/1024.**2, ' MB for', nw, ' mem-words'
     first_time = .false.
   endif
 #else
   call getenv ('OMP_STACKSIZE', envvar)
-  if (verbose .and. envvar == '' .and. omp_get_thread_num()==0 .and. first_time) then
+  if (verbose .and. envvar == '' .and. omp_get_num_threads()==0 .and. first_time) then
     print '(/,2(1x,a,/),1x,a,i9)', &
     '*************************************************************************************', &
     '* omp_mod.f90:', &
     '* WARNING: environment variable OMP_STACKSIZE not set, recommended value =',recommended
     call getenv ('KMP_STACKSIZE', envvar)
-    if (envvar /= '' .and. omp_get_thread_num()==0 .and. first_time) then
+    if (envvar /= '' .and. omp_get_num_threads()==0 .and. first_time) then
       if (.not.printed) print *, &
         '*************************************************************************************'
       print '(2(1x,a,/),1x,a)', &

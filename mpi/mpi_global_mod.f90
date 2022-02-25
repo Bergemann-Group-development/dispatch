@@ -16,6 +16,7 @@ MODULE mpi_global_mod
   USE mpi_lib
   USE mpi_mod
   USE trace_mod
+  USE io_mod
   implicit none
   private
   type, public:: mpi_global_t
@@ -50,15 +51,10 @@ SUBROUTINE init (self, n)
     self%a(:) = 0d0
 #ifdef MPI
     nbytes = 8*n
-    if (mpi%mode == MPI_THREAD_MULTIPLE) then
-      call MPI_Win_create (self%a, nbytes, 8, MPI_INFO_NULL, MPI_COMM_WORLD, &
-                          self%window, mpi_err)
-    else
-      !$omp critical (mpi_cr)
-      call MPI_Win_create (self%a, nbytes, 8, MPI_INFO_NULL, MPI_COMM_WORLD, &
-                          self%window, mpi_err)
-      !$omp end critical (mpi_cr)
-    end if
+    !$omp single
+    call MPI_Win_create (self%a, nbytes, 8, MPI_INFO_NULL, MPI_COMM_WORLD, &
+                         self%window, mpi_err)
+    !$omp end single nowait
     call mpi%assert ('MPI_Win_create', mpi_err)
 #else
     self%a = 0d0
@@ -114,9 +110,7 @@ FUNCTION update8_real (self, a) RESULT (b)
   if (mpi%mode == MPI_THREAD_MULTIPLE) then
     call update_l
   else
-    !$omp critical (mpi_cr)
     call update_l
-    !$omp end critical (mpi_cr)
   end if
 #endif
   b = b + a
@@ -126,6 +120,7 @@ contains
   subroutine update_l
 #ifdef MPI
   integer(kind=MPI_ADDRESS_KIND):: offset=0
+  !$omp critical (global_cr)
   call MPI_Win_lock (MPI_LOCK_EXCLUSIVE, master, 0, self%window, mpi_err)
   call mpi%assert ('MPI_Win_lock', mpi_err)
   call MPI_Get_accumulate (a, self%n, MPI_REAL8, &
@@ -133,7 +128,8 @@ contains
                               self%n, MPI_REAL8, MPI_SUM, self%window, mpi_err)
   call mpi%assert ('MPI_Accumulate', mpi_err)
   call MPI_Win_unlock (master, self%window, mpi_err)
-  call mpi%assert ('MPI_Win_unlockxÂ½', mpi_err)
+  !$omp end critical (global_cr)
+  call mpi%assert ('MPI_Win_unlock½', mpi_err)
 #endif
   end subroutine update_l
 END FUNCTION update8_real

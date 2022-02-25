@@ -165,7 +165,7 @@ SUBROUTINE different_opt (self, target, source, jt, pt, same, only)
   if (detailed_timer) then
     start = wallclock()
   end if
-  call source%time_interval (target%time, jt, pt)
+  call source%time_interval (target, target%time, jt, pt)
   do iv=1,target%nv
     if (present(only)) then
       if (iv /= only) cycle
@@ -259,7 +259,7 @@ SUBROUTINE restrict_vect (self, target, source, jt, pt, same, only)
   !-----------------------------------------------------------------------------
   ! Interpolate in time and space
   !-----------------------------------------------------------------------------
-  call source%time_interval (target%time, jt, pt)
+  call source%time_interval (target, target%time, jt, pt)
   if (verbose > 0) &
     write(io_unit%log,'(a,2(2x,i6,i3,2x,3f7.3),2x,3f7.3)') &
       'target, level, lc, source, level, lc, relative =', &

@@ -22,23 +22,23 @@ PROGRAM test_eos
   allocate (src(n,n,n,4))
   call tic
   call eos%lookup (rho, ee)
-  call toc ('  void',n**3)
+  call timer%toc ('  void',n**3)
   !$omp barrier
   call tic
   call eos%lookup (rho, ee, pg=pg)
-  call toc ('    pg',n**3)
+  call timer%toc ('    pg',n**3)
   !$omp barrier
   call tic
   call eos%lookup (rho, ee, tt=tt, ne=ne)
-  call toc (' tt,ne',n**3)
+  call timer%toc (' tt,ne',n**3)
   !$omp barrier
   call tic
   call eos%lookup (rho, ee, rk=rk, src=src)
-  call toc ('rk,src',n**3)
+  call timer%toc ('rk,src',n**3)
   !$omp barrier
   call tic
   call eos%lookup (rho, ee, pg=pg, tt=tt, ne=ne, rk=rk, src=src)
-  call toc (' all 8',n**3)
+  call timer%toc (' all 8',n**3)
   !$omp end parallel
   print *,'  pg =', pg(1:4,1,1)
   print *,'  tt =', tt(1:4,1,1)

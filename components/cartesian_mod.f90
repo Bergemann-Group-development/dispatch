@@ -65,7 +65,7 @@ SUBROUTINE init (self, task_list, label)
   !-----------------------------------------------------------------------------
   if (present (task_list)) then
     if (associated(task_list)) then
-      write (stdout,*) 'cartesian_t%init: return -- task_list already allocated'
+      write (stdlog,*) 'cartesian_t%init: return -- task_list already allocated'
       return
     else
       allocate(task_list)
@@ -81,6 +81,10 @@ SUBROUTINE init (self, task_list, label)
   !-----------------------------------------------------------------------------
   rewind (io%input)
   read (io%input, cartesian_params, iostat=iostat)
+  if (iostat > 0) then
+    rewind (io%input)
+    read (io%input, cartesian_params)
+  end if
   call io%namelist_warning ('cartesian_params', iostat)
   if (any(position /= tiny(1d0))) then
     origin = position - size/2d0
@@ -182,10 +186,13 @@ SUBROUTINE init (self, task_list, label)
       if (all(self%dims==1)) call task%set(bits%root_grid)
       ! -- initially append all tasks to the task list, to build nbor lists ----
       call self%initial_refine(patch, patch%level, ip)
+      if (mod(ip,2000)==0) write (stdout,*) &
+        ip, 'patch tasks', self%task_list%n, 'total tasks generated'
     !end if
   end do
   end do
   end do
+  write (stdout,*) ip, 'task generated'
   !-----------------------------------------------------------------------------
   ! Generate nbor lists and set status bits for all tasks
   !-----------------------------------------------------------------------------
@@ -221,8 +228,8 @@ SUBROUTINE init (self, task_list, label)
   !-----------------------------------------------------------------------------
   call self%task_list%set_io_counts
   write (stdout,'(a,i8)') ' number of tasks in task list:', self%task_list%n
-  write (stdlog,*) 'cartesian_mod: ntask,nwrite=', &
-    io%ntask, io%nwrite
+  io%nwrite = product(self%dims)
+  write (stdlog,*) 'cartesian_mod: ntask,nwrite=', io%ntask, io%nwrite
   !-----------------------------------------------------------------------------
   ! Initialize tasks
   !-----------------------------------------------------------------------------
@@ -233,8 +240,7 @@ SUBROUTINE init (self, task_list, label)
   ! Refresh the counts, now with bits%has_output set on tasks
   !-----------------------------------------------------------------------------
   call self%task_list%set_io_counts
-  write (stdlog,*) 'cartesian_mod: ntask,nwrite=', &
-    io%ntask, io%nwrite
+  write (stdlog,*) 'cartesian_mod: ntask,nwrite=', io%ntask, io%nwrite
   !-----------------------------------------------------------------------------
   ! This call is not valid until the patch mem and meshes have been allocated
   !-----------------------------------------------------------------------------
@@ -252,6 +258,7 @@ SUBROUTINE init (self, task_list, label)
   if (verbose > 0) &
     write(stdout,*) 'cartesian_t%init: print tasks'
   call self%task_list%print_tasks
+  call self%task_list%check_hash_table
   if (verbose > 0) &
     write(stdout,*) 'cartesian_t%init: done'
   flush (stdout)
@@ -283,6 +290,10 @@ recursive SUBROUTINE initial_refine(self, task,level_min, ip)
     first_time = .false.
     rewind (io%input)
     read (io%input, initial_refine_params, iostat=iostat)
+    if (iostat > 0) then
+      rewind (io%input)
+      read (io%input, initial_refine_params)
+    end if
     call io%namelist_warning ('initial_refine_params', iostat)
     write (io%namelist, initial_refine_params)
     if (on) call io%header('begin initial mesh refinement')
@@ -290,8 +301,7 @@ recursive SUBROUTINE initial_refine(self, task,level_min, ip)
   tlist => self%task_list
   if (.not.on) then
     call task%pre_init()
-    call self%task_list%append_link (task%link)
-    call task%init_task_list (tlist)
+    call self%task_list%add (task%link)
     return
   end if
   level_max = level_min+maxval(n_refine)
@@ -307,8 +317,7 @@ recursive SUBROUTINE initial_refine(self, task,level_min, ip)
            exp(-abs(task%position(3)-center(3))/(extent(3)+1e-20))) - task%level)
   if (all(refine>0) .and. task%level<level_max) then
     call task%pre_init()
-    call self%task_list%add_by_level (task%link)
-    call task%init_task_list (tlist)
+    call self%task_list%add (task%link)
     do k=1,ratio
       do j=1,ratio
         do i=1,ratio
@@ -377,7 +386,7 @@ recursive SUBROUTINE initial_refine(self, task,level_min, ip)
   else
     call task%pre_init()
     call self%task_list%add_by_level (task%link)
-    call task%init_task_list (tlist)
+    call task%add_to_task_list (tlist)
     write (io_unit%mpi,'(3i4,3f8.3,i4,a)') &
       i,j,k,task%position,task%rank,'i,j,k,pos,rank'
   end if
@@ -408,11 +417,6 @@ SUBROUTINE init_exp (self, origin)
         if (any(patch%periodic .neqv. periodic)) then
           write (stdlog,*) 'cartesian_t%init: id=', patch%id, patch%periodic
           call io%warning ('cartesian_t%init: experiment%init changed %periodic')
-        end if
-        if (omp%nthreads>1) then
-          task%mem_thread = omp%thread
-        else
-          task%mem_thread = -1
         end if
         patch%mesh%origin = origin
         !$omp atomic

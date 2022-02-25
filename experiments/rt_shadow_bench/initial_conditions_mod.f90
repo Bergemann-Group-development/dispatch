@@ -68,10 +68,11 @@ SUBROUTINE init (self)
   class(initial_conditions_t) :: self
   class(mesh_t), pointer, dimension(:) :: m
   real, dimension(:,:,:,:), pointer :: mem
+  real, dimension(:,:,:), pointer :: tt, src
   type(index_t), pointer :: idx
   class(mesh_t), pointer :: mx, my, mz
   integer :: ix, iy, iz
-  real :: p0, q, x, y, z, d
+  real :: p0, q, x, y, z, d, stefan
   !----------------------------------------------------------------------------
   call trace%begin('initial_t::initial_conditions')
 
@@ -80,7 +81,9 @@ SUBROUTINE init (self)
   mz  => self%patch%mesh(3)
   idx => self%patch%idx
   mem => self%patch%mem(:,:,:,:,1,1)
-
+!  stefan = cgs%stefan/(scaling%p*scaling%u)*scaling%temp**4
+!allocate(tt(self%patch%gn(1),self%patch%gn(2),self%patch%gn(3)))
+!allocate(src(self%patch%gn(1),self%patch%gn(2),self%patch%gn(3)))
   ! note: I've assumed a unit system where k_B / mu * m_pro is 1.
   p0 = self%t0 * self%d0
   do iz=mz%lb,mz%ub
@@ -108,12 +111,17 @@ SUBROUTINE init (self)
         mem(ix,iy,iz,idx%d) = d
         if (idx%e>0) then
           mem(ix,iy,iz,idx%e) = p0/(eos%gamma-1.0)!*d
+      !    tt(ix,iy,iz)= mem(ix,iy,iz,idx%e)/d*(eos%gamma-1.0)*scaling%temp
+      !    src(ix,iy,iz)= stefan*real((mem(ix,iy,iz,idx%e)/d*(eos%gamma-1.0)*scaling%temp),kind=8)**4
         else if (idx%s>0) then
           mem(ix,iy,iz,idx%s) = d*(log(p0)-eos%gamma*log(d))/(eos%gamma-1.0)
+      !    tt(ix,iy,iz)= d**eos%gamma*exp(mem(ix,iy,iz,idx%s)/d*(eos%gamma-1.0))/d*scaling%temp
+      !    src(ix,iy,iz)= stefan*real(d**eos%gamma*exp(mem(ix,iy,iz,idx%s)/d*(eos%gamma-1.0))/d*scaling%temp,kind=8)**4
         else
           print *,trim(self%solver)
           error stop "initial_mod (1): solver type not known"
         end if
+        
 
         ! momentum components
         mem(ix,iy,iz,idx%px) = 0.0
@@ -128,7 +136,11 @@ SUBROUTINE init (self)
       end do
     end do
   end do
+  !print *, 'IC minmax d', minval(mem(:,:,:,idx%d)), maxval(mem(:,:,:,idx%d))
+  !print *, 'IC minmax tt', minval(tt), maxval(tt)
+  !print *, 'IC minmax src', minval(src), maxval(src)
   nullify (mx, my, mz, mem,idx)
+  !error stop "end"
   call trace%end()
 END SUBROUTINE init
 

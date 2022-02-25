@@ -25,16 +25,16 @@
 !>                      /    \         |
 !>                     /      \        |
 !>              extras_1_t extras_2_t  |
-!>                 |     \    /        |
-!>                 |     gpatch_t      |
-!>                 |       |     \     |
-!>                 |       |      list_t
-!>                 |       |     /  |
-!>                 |      patch_t   |
-!>                 |      /   \     |
-!>                 |     /     link_t
-!>                 |    /       |
-!>                connect_t   task_t
+!>                       \    /        |
+!>                       gpatch_t      |
+!>                         |     \     |
+!>                         |      list_t
+!>                         |     /  |
+!>                        patch_t   |
+!>                            \     |
+!>                             link_t
+!>                              |
+!>                            task_t
 !>
 !> The extra modules needed in an experiment should be chosen and coordinated
 !> in this module, and the ones that are "below" (USEd by) this module should
@@ -61,7 +61,6 @@ MODULE extras_mod
   USE task_mod
   USE io_mod
   USE trace_mod
-  USE connect_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.
   !-----------------------------------------------------------------------------
@@ -100,7 +99,6 @@ MODULE extras_mod
     procedure, nopass:: cast2extras
     procedure:: pre_init
     procedure:: init
-    procedure:: init_task_list
     procedure:: dealloc
     procedure:: pre_update
     procedure:: post_update
@@ -129,10 +127,10 @@ SUBROUTINE pre_init (self)
   allocate(self%rt)                                                     ! RT
   self%rt%patch => self
   call self%rt%pre_init ()                                              ! RT
+  call self%rt%add_to_task_list (self%task_list)                        ! RT
+  if (.not.self%rt%on) deallocate(self%rt)                              ! RT
   !allocate (self%trace_particles)                                      ! tracep
-  !self%connect%trace_particles => self%trace_particles                 ! tracep
   !allocate(self%pic)                                                   ! pic
-  !self%connect%pic_patch => self%pic                                   ! pic
   !call self%pic%pre_init (self%link)                                   ! pic
   !call self%selfgravity%pre_init (self)                                ! selfg
   call trace%end ()
@@ -152,7 +150,6 @@ SUBROUTINE init (self)
   call self%initial_conditions%init                                    ! initial
   !call self%newton%init (self%link)                                    ! Newton
   !allocate (self%trace_particles)                                      ! tracep
-  !self%connect%trace_particles => self%trace_particles                 ! tracep
   !call self%trace_particles%add (self%link%task)                       ! tracep
   !call self%pic%init                                                   ! pic
   !if (self%pic%on) self%do_mhd = self%pic%do_mhd                       ! pic
@@ -166,22 +163,18 @@ SUBROUTINE init (self)
   call trace%end()
 END SUBROUTINE init
 
+
 !===============================================================================
-!> This intercept is the correct place to add calls to extras 'underlings' that
-!> need information both about the corresponding MHD patch (self), AND the task
-!> list.  The procedure is called for every task on the task list, just before
-!> task list updates start.
+!> This intercept is the correct place to add underlings to the task list.
 !===============================================================================
-SUBROUTINE init_task_list (self, task_list)
+SUBROUTINE add_to_task_list (self, task_list)
   class(extras_t):: self
   class(list_t), pointer:: task_list
   !.............................................................................
   call trace%begin ('extras_t%init_task_list')
-  call self%gpatch_t%init_task_list (task_list)                        ! keep
-  if (associated(self%rt)) call self%rt%init_task_list(task_list)       ! RT
-  !call sink_particles%ad_hoc_add                                       ! sinkp
+  if (associated(self%rt)) call self%rt%add_to_task_list(task_list)       ! RT
   call trace%end ()
-END SUBROUTINE init_task_list
+END SUBROUTINE add_to_task_list
 
 !===============================================================================
 !> Deallocate allocated arrays
@@ -234,6 +227,7 @@ END SUBROUTINE pre_update
 SUBROUTINE post_update (self)
   class(extras_t):: self
   !.............................................................................
+  call self%gpatch_t%post_update ()                                ! keep
   call self%rt%post_update                                             ! RT
   !call self%forces%post_update                                         ! forces
   !call self%trace_particles%post_update (self)                         ! tracep

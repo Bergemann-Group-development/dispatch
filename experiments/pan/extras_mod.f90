@@ -12,11 +12,11 @@
 !>                      /    \
 !>                     /      \
 !>                extras_1_t extras_2_t
-!>                       \    /   |
-!>                      gpatch_t  |
-!>                       patch_t  |
-!>                       /    \   |
-!>                    task_t  connect_t
+!>                       \    /
+!>                      gpatch_t
+!>                       patch_t
+!>                       /
+!>                    task_t
 !>
 !> The extra modules needed in an experiment should be chosen and coordinated
 !> in this module, and the ones that are "below" (USEd by) this module should
@@ -53,6 +53,7 @@ MODULE extras_mod
   USE lagrangian_mod                                            ! move
   USE sinkparticles_mod                                         ! sinks
   USE SNe_mod                                                   ! SN
+  USE non_ideal_mod                                             ! niMHD
   !-----------------------------------------------------------------------------
   implicit none
   private
@@ -69,6 +70,7 @@ MODULE extras_mod
     type(cooling_t):: cooling                                   ! cool
     type(lagrangian_t):: lagrangian                             ! move
     type(SN_t):: SN                                             ! SN
+    type(non_ideal_t):: non_ideal_mhd                           ! niMHD
     class(gpatch_t), pointer:: gpatch => null()                 ! keep
   contains
     procedure:: pre_init
@@ -77,7 +79,6 @@ MODULE extras_mod
     procedure:: dealloc
     procedure:: pre_update
     procedure:: post_update
-    procedure:: output
     procedure:: check_refine
     procedure:: courant_condition
   end type
@@ -98,6 +99,7 @@ SUBROUTINE pre_init (self)
   call self%initial_conditions%pre_init (self%gpatch)           ! initial
   call self%selfgravity%pre_init        (self%gpatch)           ! selfg
   call self%cooling%pre_init            (self%gpatch)           ! cool
+  call self%non_ideal_mhd%pre_init      (self%gpatch)           ! niMHD
   call io%lock%set ('extras_t%pre_init')
   if (.not. associated(sinks)) then                             ! sinks
     allocate (sinks)                                            ! sinks
@@ -181,18 +183,10 @@ SUBROUTINE post_update (self)
   call self%gpatch_t%post_update                                ! keep
   call self%forces%post_update                                  ! forces
   !call self%trace_particles%post_update                         ! tracep
-  call self%selfgravity%post_update                             ! selfg
   !call self%lagrangian%post_update                              ! move
+  call self%selfgravity%post_update                             ! selfg
+  call self%non_ideal_mhd%post_update                           ! niMHD
 END SUBROUTINE post_update
-
-!===============================================================================
-!> Optionally call specific output modules for the extra features
-!===============================================================================
-SUBROUTINE output (self)
-  class(extras_t):: self
-  !.............................................................................
-  call self%gpatch_t%output                                     ! keep
-END SUBROUTINE output
 
 !===============================================================================
 !> Interface to refinement.

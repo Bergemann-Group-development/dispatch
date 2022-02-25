@@ -45,7 +45,7 @@ PROGRAM test
   !$omp taskwait
   print*,wallclock(),parent,' wait done', n
   !$omp end parallel
-  call toc ('took')
+  call timer%toc ('took')
 CONTAINS
   !-----------------------------------------------------------------------------
   subroutine delay (s)

@@ -70,8 +70,6 @@ SUBROUTINE update (self)
   call self%mhd_t%pre_update
   call self%output
 
-  if (self%id==285) print *, self%id, 'update', self%time, self%dtime
-
   if (eos%do_rt.and.associated(self%rt)) then
     call self%rt%update
     call self%pde
@@ -80,14 +78,14 @@ SUBROUTINE update (self)
       allocate(pgas(self%gn(1), self%gn(2), self%gn(3)))
       dedt=0.0
       call self%rt%get_q (self%time, dedt)                                  ! interpolate in time and space
-      pgas = self%gas_pressure()
       d    => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%d,self%it,1)
+      s    => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%s,self%it,1)
+      call eos%lookup (d=d, s=s, pg=pgas)
       dsdt => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%s,self%it,2)
       dsdt = dsdt + dedt*d/pgas(l(1):u(1),l(2):u(2),l(3):u(3))
       !-----------------------------------------------------------------------------
       ! Time step limitation for rate of change dS/dt = (ds/dt-(s/d)*dddt)/d
       !-----------------------------------------------------------------------------
-      s    => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%s,self%it,1)
       dddt => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%d,self%it,2)
       if (io%debug(1)) then
         print *,'mk: cdtd', self%cdtd

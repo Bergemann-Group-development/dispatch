@@ -10,9 +10,8 @@
 !>           omp
 !===============================================================================
 MODULE setup_mod
-  USE omp_mod
-  USE mpi_mod
   USE io_mod
+  USE mpi_mod
   USE omp_lock_mod
   USE timer_mod
   USE trace_mod
@@ -20,7 +19,6 @@ MODULE setup_mod
   USE scaling_mod
   USE eos_mod
   USE opacity_mod
-  USE download_mod
   USE refine_mod
   implicit none
   private
@@ -39,7 +37,6 @@ CONTAINS
 !===============================================================================
 SUBROUTINE init (self)
   class(setup_t):: self
-  !.............................................................................
   call io%init                          ! I/O system
   call omp_lock%init ('setup')          ! needs omp, io%init
   call timer%init                       ! needs locks
@@ -49,7 +46,6 @@ SUBROUTINE init (self)
   call scaling%init                     ! Scaling to code units
   call eos%init                         ! Equation-of-state
   call opacity%init                     ! Opacity
-  call download%init                    ! Downloading and interpolation parameters
   call refine%init                      ! adaptive mesh refinement
   call trace%end ()
 END SUBROUTINE init

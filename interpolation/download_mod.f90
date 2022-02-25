@@ -254,16 +254,16 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
         nbor%needed, nbor%download, source%n_needed
       flush (io_unit%log)
     end if
-    !-------------------------------------------------------------------------
+    !-------------------------------------------------time------------------------
     ! If the source task is being actively updated, and the slot could become
     ! the one after source%new, lock the task mem, so either it cannot change
     ! during the guard zone loading or, if the lock is already set, access to
     ! the source will have to wait until after the source update.
     !-------------------------------------------------------------------------
     if (target%allow_extrapolate) then
-      call source%time_interval(target%time,jt,pt,id=target%id,extrap=.true.)
+      call source%time_interval(target, target%time,jt,pt,extrap=.true.)
     else
-      call source%time_interval(target%time,jt,pt,id=target%id)
+      call source%time_interval(target, target%time,jt,pt)
     end if
     if (verbose > 1) &
       write (io_unit%mpi,'(a,2i3,1x,2i3,2x,2f6.3,i5,f12.6,i5,10f12.6)') &
@@ -2319,7 +2319,7 @@ SUBROUTINE test (self)
       call set_values (src)
       call set_values (target)
       if (src%level==target%level) then
-        call src%time_interval (target%time, jt, pt, id=target%id)
+        call src%time_interval (target, target%time, jt, pt)
         call self%same (target, src, jt, pt, all_cells=.false.)
         if (self%check_filled) then
           if (any(filled < 0)) then
@@ -2329,7 +2329,7 @@ SUBROUTINE test (self)
         end if
       else
         !call different_prolong (self, target, src, all_cells=.false.)
-        call src%time_interval (target%time, jt, pt)
+        call src%time_interval (target, target%time, jt, pt)
         call prolong (self, target, src, jt, pt, all_cells=.false.)
       end if
       call check_values (target, ok)

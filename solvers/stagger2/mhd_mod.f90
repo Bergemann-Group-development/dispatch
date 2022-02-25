@@ -29,7 +29,7 @@ MODULE mhd_mod
   USE index_mod
   USE timestep_mod
   USE eos_mod
-  USE non_ideal_mod
+  !USE non_ideal_mod
   USE divb_clean_mod
   USE task_mod
   USE timer_mod
@@ -53,9 +53,7 @@ MODULE mhd_mod
     procedure:: pre_update
     procedure:: update
     procedure:: output
-    procedure:: gas_pressure
-    procedure:: gas_pressure_sub
-    procedure :: nbor_relations
+    procedure:: nbor_relations
   end type
   logical, save:: flop_count=.false.
   logical, save:: unsigned=.true.
@@ -75,7 +73,8 @@ SUBROUTINE pre_init (self)
   class(mhd_t), target:: self
   type(index_t):: idx
   integer:: i, iv, iostat
-  real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], csound=1.0, cdtd=0.5, courant=0.2
+  !                   nu   pa  off mas kap eta
+  real, save:: nu(6)=[0.03,1.0,0.5,0.1,0.5,0.5], csound=1.0, cdtd=0.5, courant=0.2
   logical, save:: mhd=.true.
   logical, save:: first_time=.true.
   namelist /stagger_params/ nu, courant, csound, cdtd, hardwire, &
@@ -94,7 +93,7 @@ SUBROUTINE pre_init (self)
     read (io%input, stagger_params, iostat=iostat)
     call io%namelist_warning ('stagger_params', iostat)
     write (io%namelist, stagger_params)
-    call non_ideal%init
+    !call non_ideal%pre_init
     call divb%init
     call timestep%init
     ! fool-proofing
@@ -113,11 +112,14 @@ SUBROUTINE pre_init (self)
   ! Note that the experiment must set self%mhd, possibly depending on IC
   !-----------------------------------------------------------------------------
   self%mhd = mhd
+  self%type = 'mhd_t'
+  self%etype = 'entropy'
+  self%staggered = .true.
   if (self%mhd) then
-    self%kind = 'stagger2_mhd_patch'
+    self%kind = 'stagger2_mhd'
     self%nv = 8
   else
-    self%kind = 'stagger2_hd_patch'
+    self%kind = 'stagger2_hd'
     self%nv = 5
   end if
   self%nw = 2
@@ -245,7 +247,7 @@ SUBROUTINE test (self)
     ok = all(abs(tmp%mem(ix,m(2),m(3),1:5,tmp%it,2)- &
                  tmp%mem(i1,m(2),m(3),1:5,tmp%it,2)) < eps)
     allok = allok .and. ok
-    if (io%verbose>0 .or. io_unit%do_validate .or. .not.ok) &
+    if (verbose > 0 .or. io_unit%do_validate .or. .not.ok) &
       print 1,ix,tmp%mem(ix,m(2),m(3),1:5,tmp%it,2), &
                  tmp%mem(i1,m(2),m(3),1:5,tmp%it,2)
     1 format("mhd_t%test:",i4,1p,2(2x,5e14.5))
@@ -255,7 +257,7 @@ SUBROUTINE test (self)
     ok = all(abs(tmp%mem(m(1),iy,m(3),1:5,tmp%it,2)- &
                  tmp%mem(m(1),i1,m(3),1:5,tmp%it,2)) < eps)
     allok = allok .and. ok
-    if (io%verbose>0 .or. io_unit%do_validate .or. .not.ok) &
+    if (verbose > 0 .or. io_unit%do_validate .or. .not.ok) &
       print 1,iy,tmp%mem(m(1),iy,m(3),1:5,tmp%it,2), &
                  tmp%mem(m(1),i1,m(3),1:5,tmp%it,2)
   end do
@@ -264,7 +266,7 @@ SUBROUTINE test (self)
     ok = all(abs(tmp%mem(m(1),m(2),iz,1:5,tmp%it,2)- &
                  tmp%mem(m(1),m(2),i1,1:5,tmp%it,2)) < eps)
     allok = allok .and. ok
-    if (io%verbose>0 .or. io_unit%do_validate .or. .not.ok) &
+    if (verbose > 0 .or. io_unit%do_validate .or. .not.ok) &
       print 1,iz,tmp%mem(m(1),m(2),iz,1:5,tmp%it,2), &
                  tmp%mem(m(1),m(2),i1,1:5,tmp%it,2)
   end do
@@ -296,7 +298,7 @@ SUBROUTINE pde (self)
   real, dimension(:,:,:),   pointer::      fyy, fyz
   real, dimension(:,:,:),   pointer:: fzx,      fzz
   real, dimension(:,:,:),   allocatable:: du, cs, pa, pp, pb, Q, uu
-  real, dimension(:,:,:),   allocatable, target:: ss, lnd
+  real, dimension(:,:,:),   pointer:: ss, lnd
   real, dimension(:,:,:),   allocatable:: Txx, Txy
   real, dimension(:,:,:),   allocatable::      Tyy, Tyz
   real, dimension(:,:,:),   allocatable:: Tzx,      Tzz
@@ -306,10 +308,9 @@ SUBROUTINE pde (self)
   logical, save:: first_time=.true.
   !.............................................................................
   real(8):: ds(3), dsmax
-  integer, save:: itimer=0
   real:: u_max
   !-----------------------------------------------------------------------------
-  call trace%begin('mhd_t%pde',itimer=itimer)
+  call trace%begin('mhd_t%pde')
   call io%assert ((self%nw == 2), &
     'mhd_t%pde: memory slot for time derivatives missing')
   associate (i => self%idx)
@@ -345,7 +346,8 @@ SUBROUTINE pde (self)
   end if
   end associate
   call allocate_vectors_a (self%gn, ld, dd, emf, J, fd, fx, fy, fz, fm)
-  call allocate_scalars_a (self%gn, lnd, pa, du, ss, cs, pp, pb, Q)
+  call allocate_scalars_a (self%gn, pa, du, cs, pp, pb, Q)
+  call allocate_scalars   (self%gn, ss, lnd)
   if (self%do_pebbles) then
     U => self%vgas(:,:,:,:,self%it)
     pg => self%pressure(:,:,:,self%it)
@@ -378,12 +380,13 @@ SUBROUTINE pde (self)
   dd = exp(ld)                                                                  ! ops: 0 0 0 0 3
   U = p/dd                                                                      ! ops: 0 0 3
   !-----------------------------------------------------------------------------
-  ! Gas pressure.
+  ! Gas pressure; eos%lookup() should be tailored to make use of both d and lnd,
+  ! so when given ss only a single exp() is required to get the gas pressure
   !-----------------------------------------------------------------------------
   ss = s/d                                                                      ! ops: 0 0 1
   self%ss => ss
   self%lnd => lnd
-  call self%gas_pressure_sub (pg, lnd=self%lnd, ss=self%ss)
+  call eos%lookup (d=d, lnd=lnd, ss=ss, pg=pg)
   self%pg => pg
   !-----------------------------------------------------------------------------
   ! Conservation of momentum -- first the diagonal part of the stress tensor
@@ -424,9 +427,9 @@ SUBROUTINE pde (self)
     Ez = zup(Bz)**2                                                             ! mhd: 0 1 0
     ! Magnetic pressure and fast mode speed
     pb = 0.5*(Ex+Ey+Ez)                                                         ! mhd: 2 1 0
-    cs = sqrt((eos%gamma*pg+2.0*pb + pa)/d)                                    ! mhd: 1 1 0
-    if (verbose>2) then
-      u_max = self%fmaxval(cs,outer=.true.)
+    cs = sqrt((eos%gamma*pg+2.0*pb + pa)/d)                                     ! mhd: 1 1 0
+    if (verbose > 2) then
+      u_max = self%fmaxval (cs, outer=.false.)
       self%u_max = max(self%u_max,u_max)
       print 1, self%id, 'u_max(ca)     ', u_max, self%u_max
     1 format(i6,2x,a,1p,2g12.3)
@@ -451,9 +454,9 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   else
     ! Sound speed + velocity
-    cs = sqrt((eos%gamma*pg+pa)/d)                                             ! ops: 1 1 1 1 0
-    if (verbose>3) then
-      u_max = self%fmaxval(cs,outer=.true.)
+    cs = sqrt((eos%gamma*pg+pa)/d)                                              ! ops: 1 1 1 1 0
+    if (verbose > 3) then
+      u_max = self%fmaxval (cs, outer=.false.)
       self%u_max = max(self%u_max,u_max)
       print 1, self%id, 'u_max(cs)     ', u_max, self%u_max
     end if
@@ -469,18 +472,20 @@ SUBROUTINE pde (self)
     fyy = pp + d*(fyy - du*Tyy)                                                 ! ops: 2 2 0
     fzz = pp + d*(fzz - du*Tzz)                                                 ! ops: 2 2 0
   end if
-  if (mpi%master .and. (first_time .or. flop_count)) &
-    print *, stagger%count, ' stagger calls', stagger%flops/product(real(self%n)),' flops per interior point'
-  u_max = self%fmaxval(cs + uu,outer=.true.)
+  u_max = self%fmaxval (cs+uu, outer=.false.)
   self%u_max = max(self%u_max,u_max)
-  if (verbose>2) print 1, self%id, 'u_max(cs+u)   ', u_max, self%u_max
+  !.............................................................................
+  if (verbose > 2) print 1, self%id, 'u_max(cs+u)   ', u_max, self%u_max
+  if (omp%master .and. (first_time .or. flop_count)) &
+    write (stdout,*) stagger%count, ' stagger calls', &
+      stagger%flops/product(real(self%n)),' flops per interior point'
   !-----------------------------------------------------------------------------
   ! du has units area per unit time, which gives velocity squared times mass
   ! density per unit time = energy per unit volume and time
   !-----------------------------------------------------------------------------
   Q = d*du*(Txx**2 + Tyy**2 + Tzz**2)                                           ! ops: 2 5 0
   call deallocate_scalars_a (Txx, Tyy, Tzz, uu)
-  if (verbose==1) print *, 'average(Q):', self%faver(Q)
+  if (verbose == 1) print *, 'average(Q):', self%faver(Q)
   !-----------------------------------------------------------------------------
   ! Conservation of mass
   !-----------------------------------------------------------------------------
@@ -489,7 +494,7 @@ SUBROUTINE pde (self)
   dddt = -div(ds,fm)                                    ! density derivative
   u_max = self%cdtd*dsmax*self%fmaxval(abs(dddt/d),outer=.true.)                ! ops: 0 0 1
   self%u_max = max(self%u_max,u_max)
-  !if (verbose>2) print 1, self%id, 'u_max(dddt)   ', u_max, self%u_max
+  !if (verbose > 2) print 1, self%id, 'u_max(dddt)   ', u_max, self%u_max
   !-----------------------------------------------------------------------------
   ! Off-diagonal part of Reynolds stress, for now without the density factor.
   ! Note that, because of the symmmetry, we define only three components
@@ -579,8 +584,8 @@ SUBROUTINE pde (self)
     !---------------------------------------------------------------------------
     ! Q is heating per unit volume (energy per unit volume and time), which when
     ! divided by presssure (energy per unit volume) becomes entropy (unitless)
-    ! per unit mass.  Multiplied by mass density it becomes mass-entropy per
-    ! unit volume, which is our units for s.
+    ! per unit time.  Multiplied by mass density it becomes entropy per
+    ! unit volume and time, which is our units for dsdt.
     !---------------------------------------------------------------------------
     dsdt = -div(ds,fm) + Q*d/pg                                                 ! ops: 1 1 1
   end if
@@ -613,7 +618,7 @@ SUBROUTINE pde (self)
     Ex = Ex + ydn(Uz)*zdn(By) - zdn(Uy)*ydn(Bz)                                 ! mhd: 2 2 0
     Ey = Ey + zdn(Ux)*xdn(Bz) - xdn(Uz)*zdn(Bx)                                 ! mhd: 2 2 0
     Ez = Ez + xdn(Uy)*ydn(Bx) - ydn(Ux)*xdn(By)                                 ! mhd: 2 2 0
-    call non_ideal%update (self%gn, minval(ds), d, Jx, Jy, Jz, Bx, By, Bz, Q, emf, self%u_max)
+    !call non_ideal%update (self%gn, minval(ds), d, Jx, Jy, Jz, Bx, By, Bz, Q, emf, self%u_max)
     if (eos%gamma==1d0) then
       dsdt = 0.0
     else
@@ -635,17 +640,20 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   u_max = self%cdtd*dsmax*self%fmaxval(abs((dsdt-s*dddt/d)/d),outer=.true.)     ! ops: 1 1 2
   self%u_max = max(self%u_max,u_max)
-  if (verbose>2) print 1, self%id, 'u_max(dsdt)   ', u_max, self%u_max
+  if (verbose > 2) print 1, self%id, 'u_max(dsdt)   ', u_max, self%u_max
   !-----------------------------------------------------------------------------
   call deallocate_vectors_a (ld, dd, emf, J, fd, fx, fy, fz, fm)
-  call deallocate_scalars_a (lnd, pa, du, ss, cs, pp, pb, Q)
+  call deallocate_scalars_a (pa, du, cs, pp, pb, Q)
+  call deallocate_scalars   (lnd, ss)
   if (.not.self%do_pebbles) then
     call deallocate_vectors (U)
     call deallocate_scalars (pg)
   end if
-  call trace%end (itimer)
-  if (mpi%master .and. (first_time .or. flop_count)) then
-    print *, stagger%count, ' stagger calls', stagger%flops/product(real(self%n)),' flops per interior point'
+  call trace%end ()
+  !.............................................................................
+  if (omp%master .and. (first_time .or. flop_count)) then
+    write (stdout,*) stagger%count, ' stagger calls', &
+      stagger%flops/product(real(self%n)),' flops per interior point'
     stagger%count=0
     stagger%flops=0
     first_time = .false.
@@ -672,7 +680,7 @@ SUBROUTINE pre_update (self)
     s => self%mem(:,:,:,self%idx%s,self%it,1)
     lnd = alog(d)
     ss = s/d
-    call eos%lookup_table (shape(self%tt), lnd=lnd, ss=ss, tt=self%tt)
+    call eos%lookup (lnd=lnd, ss=ss, tt=self%tt)
     deallocate (lnd, ss)
     if (verbose > 0) &
       write(io%output,*) self%id, 'mhd_t%pre_update:  tt =', &
@@ -721,7 +729,7 @@ SUBROUTINE update (self)
   ! The call to courant_condition may optionally be interscepted in extras_t
   !-----------------------------------------------------------------------------
   call self%courant_condition
-  if (verbose>2) &
+  if (verbose > 2) &
     call self%check_density('before timestep')
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh, self%lock)
   call self%check_density(' after timestep')
@@ -757,61 +765,6 @@ SUBROUTINE output (self)
   end if
   call trace%end()
 END SUBROUTINE output
-
-!===============================================================================
-SUBROUTINE gas_pressure_sub (self, pg, lnd, ss)
-  class(mhd_t):: self
-  real, dimension(:,:,:):: pg
-  real, dimension(:,:,:), pointer, optional:: lnd, ss
-  !.............................................................................
-  real, dimension(:,:,:), pointer:: d, s
-  integer, save:: nprint=1
-  !-----------------------------------------------------------------------------
-  call trace%begin ('mhd_t%gas_pressure_sub')
-  d  => self%mem(:,:,:,self%idx%d,self%it,1)
-  s  => self%mem(:,:,:,self%idx%s,self%it,1)
-  if (trim(self%eos)=='ideal') then
-    if (eos%gamma==1d0) then
-      pg = d*self%csound**2
-    else
-      pg = d**eos%gamma*exp(s/d*(eos%gamma-1d0))
-    end if
-  else
-    if (do_temperature) then
-      if (present(lnd) .and. present(ss)) then
-        call eos%lookup_table (shape(d), lnd=lnd, ss=ss, pg=pg, tt=self%tt)
-      else
-        call eos%lookup_table (shape(d), d=d, s=s, pg=pg, tt=self%tt)
-      end if
-    else
-      if (present(lnd) .and. present(ss)) then
-        call eos%lookup_table (shape(d), lnd=lnd, ss=ss, pg=pg)
-      else
-        call eos%lookup_table (shape(d), d=d, s=s, pg=pg)
-      end if
-    end if
-    if (verbose > 1 .or. nprint > 0) then
-      nprint = nprint-1
-      write(io%output,*) self%id, 'lookup_table: lnd =', minval(lnd), maxval(lnd)
-      write(io%output,*) self%id, 'lookup_table:  ss =', minval(ss) , maxval(ss)
-      write(io%output,*) self%id, 'lookup_table:  pg =', minval(pg) , maxval(pg)
-      if (do_temperature) &
-        write(io%output,*) self%id, 'lookup_table:  tt =', minval(self%tt), &
-          maxval(self%tt)
-    end if
-  call trace%end()
-  end if
-END SUBROUTINE gas_pressure_sub
-
-!===============================================================================
-FUNCTION gas_pressure (self) result(pg)
-  class(mhd_t):: self
-  real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
-  !-----------------------------------------------------------------------------
-  call trace%begin ('mhd_t%gas_pressure')
-  call self%gas_pressure_sub (pg)
-  call trace%end ()
-END FUNCTION gas_pressure
 
 !===============================================================================
 !> Set up nbor relations between MHD tasks

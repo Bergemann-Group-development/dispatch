@@ -4,6 +4,7 @@
 MODULE lagrange_mod
   USE io_mod
   USE trace_mod
+  USE shared_mod
   implicit none
   private
   type, public:: lagrange_t
@@ -275,10 +276,11 @@ SUBROUTINE interval4 (self, x0, x, i0, i2, o, order)
   real(kind=4), dimension(:):: x
   real(kind=4), dimension(size(x)):: y
   real(kind=4):: x0, f
-  integer:: i0, i1, i2, i3, o, n, ii(1)
+  integer:: i0, i1, i2, i3, o, n, ii(1), order_L
   !.............................................................................
   ! Default order = 3, or n-1 if that is smaller
-  if (order==0) then
+  order_L = shared%option (order, 3)
+  if (order_L == 0) then
     ii = minloc(abs(x-x0))
     i0 = ii(1)
     i2 = ii(1)
@@ -287,7 +289,7 @@ SUBROUTINE interval4 (self, x0, x, i0, i2, o, order)
   end if
   n = size(x)
   o = 3
-  if (present(order)) o = order
+  if (present(order)) o = order_L
   o = min(o,n-1)
   ! Search for identical initial points
   i1 = 1
@@ -506,9 +508,10 @@ FUNCTION sequence8 (self, x0, x, y, order, correct) RESULT(f)
   real(kind=8), optional:: correct
   real(kind=8), dimension(:):: x, y
   real(kind=8):: x0, f
-  integer:: i0, i2, o, n, ii(1)
+  integer:: i0, i2, o, n, ii(1), order_L
   !.............................................................................
-  if (order==0) then
+  order_L = shared%option (order, 2)
+  if (order_L == 0) then
     ii = minloc(abs(x-x0))
     i0 = ii(1)
     i2 = ii(1)
@@ -516,7 +519,7 @@ FUNCTION sequence8 (self, x0, x, y, order, correct) RESULT(f)
     return
   end if
   n = size(x)
-  call self%interval (x0, x, i0, i2, o, order)
+  call self%interval (x0, x, i0, i2, o, order_L)
   if (self%verbose>0) then
     print'(" i0,i2,order=",3i3,4x,"x0,x,y  =",1p,18g12.4)', &
       i0, i2, o, x0, x(i0:i2), y(i0:i2)
@@ -542,9 +545,10 @@ SUBROUTINE sequence_weights4 (self, x0, x, i0, i2, w, order)
   integer, optional:: order
   real(kind=4), dimension(:):: x, w
   real(kind=4):: x0
-  integer:: i0, i2, o, n, ii(1)
+  integer:: i0, i2, o, n, ii(1), order_L
   !.............................................................................
-  if (order == 0) then
+  order_L = shared%option (order, 2)
+  if (order_L == 0) then
     ii = minloc(abs(x-x0))
     i0 = ii(1)
     i2 = ii(1)
@@ -553,7 +557,7 @@ SUBROUTINE sequence_weights4 (self, x0, x, i0, i2, w, order)
     return
   end if
   n = size(x)
-  call self%interval (x0, x, i0, i2, o, order)
+  call self%interval (x0, x, i0, i2, o, order_L)
   w = 0d0
   if (o==0) then
     w(1) = 1.0
@@ -566,9 +570,10 @@ SUBROUTINE sequence_weights8 (self, x0, x, i0, i2, w, order)
   integer, optional:: order
   real(kind=8), dimension(:):: x, w
   real(kind=8):: x0
-  integer:: i0, i2, o, n, ii(1)
+  integer:: i0, i2, o, n, ii(1), order_L
   !.............................................................................
-  if (order == 0) then
+  order_L = shared%option (order, 2)
+  if (order_L == 0) then
     ii = minloc(abs(x-x0))
     i0 = ii(1)
     i2 = ii(1)
@@ -577,7 +582,7 @@ SUBROUTINE sequence_weights8 (self, x0, x, i0, i2, w, order)
     return
   end if
   n = size(x)
-  call self%interval (x0, x, i0, i2, o, order)
+  call self%interval (x0, x, i0, i2, o, order_L)
   w = 0d0
   if (o==0) then
     w(1) = 1.0
@@ -827,33 +832,35 @@ END SUBROUTINE init
 !> =============================================================================
 !> Use default 1-D Lagrange interpolation
 !> =============================================================================
-FUNCTION interpolate1d4 (self,x0, n, x, y,order) RESULT(f)
+FUNCTION interpolate1d4 (self, x0, x, y, order) RESULT(f)
   class(lagrange_t):: self
-  integer:: n
+  real(kind=4):: x0, x(:), y(:), f
   integer, optional:: order
-  real(kind=4):: x0, x(n), y(n), f
+  integer:: n
   !.............................................................................
+  n = size(x)
   if (x0 < x(1)) then
     f = y(1)
   else if (x0 > x(n)) then
     f = y(n)
   else
-    f = self%sequence (x0, x, y,order)
+    f = self%sequence (x0, x, y, order)
   end if
 END FUNCTION interpolate1d4
 
-FUNCTION interpolate1d8 (self,x0, n, x, y,order) RESULT(f)
+FUNCTION interpolate1d8 (self, x0, x, y, order) RESULT(f)
   class(lagrange_t):: self
-  integer:: n
+  real(kind=8):: x0, x(:), y(:), f
   integer, optional:: order
-  real(kind=8):: x0, x(n), y(n), f
+  integer:: n
   !.............................................................................
+  n = size(x)
   if (x0 < x(1)) then
     f = y(1)
   else if (x0 > x(n)) then
     f = y(n)
   else
-    f = self%sequence (x0, x, y,order)
+    f = self%sequence (x0, x, y, order)
   end if
 END FUNCTION interpolate1d8
 

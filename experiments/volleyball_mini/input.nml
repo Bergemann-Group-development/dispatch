@@ -1,0 +1,64 @@
+! -- Parameters defining the setup ---------------------------------------------
+&volleyball_params size=1,1,1 mpi_dims=1,1,1 origin=0,0,0
+                   omp_init=t /
+&vb_layers_params  verbose=0 n_wide=12 r_min=0.8 r_max=1.0 detailed_timer=f /
+&cartesian_params   size=0.4,0.4,0.2 
+                    dims=12,12,6 
+                    mpi_dims=2,2,1 
+                    origin=0,0,0.79
+                    omp_init=f 
+                    periodic=t,t,f
+                    verbose=0
+&experiment_params verbose=0 detailed_timer=t initial_bc=f perturb=t/
+
+&model_1d_params file='JCD-model-S' /
+
+&boundaries_params set_bc_bits=f/
+
+&scaling_params    l_cgs=1e8 t_cgs=1e3, d_cgs=1e-4 /
+!&scaling_params    l_cgs=1e0 t_cgs=1e0, d_cgs=1e0 /
+
+! -- I/O parameters ------------------------------------------------------------
+&io_params          verbose=0 do_trace=f omp_trace=t do_output=t id_debug=0
+                    restart=-1  guard_zones=t nml_version=1 /
+&out_params         start_time=0 end_time=2e2 out_time=1e-1 print_every=2112 /
+&aux_params         verbose=0 select='grav','newton' /
+&task_params        do_dumps=t track_id=1 verbose=2 /
+&dump_params        id=1 /
+&dump_params        id=4801 /
+&dump_params        id=9601 /
+&dump_params        id=14401 /
+&dump_params        id=19201 /
+
+! -- Guard zone parameters -----------------------------------------------------
+&halo_params        check_filled=t verbose=0/
+&guards_params      verbose=0 detailed_timer=f /
+&interp_params      verbose=0 detailed_timer=f /
+
+! -- Parameters defining the run -----------------------------------------------
+&patch_params       nt=5 grace=0.05 n=3*20 do_check_nan=t dt_fixed=-1/
+&gravity_params     on=t table=t position=0.0 minrad=0.01 / !constant=-31500
+&newton_params      on=f axis=3 position=696 scale=1
+                    ee1=20 time=10 /
+&eos_params         gamma=1.66667 dir='data/eos/' file='dispatch_tomida.eos' convert_to_code=t verbose=1/
+&IC_params          mhd=f /
+
+! -- RT parameters -------------------------------------------------------------
+&rt_setup_params    on=f verbose=0 /
+&rt_integral_params verbose=0 detailed_timer=f solver=2 
+                    dtau_min=1e-1 dtau_dif=1e1 dtau_max=1e2 order=1 /
+&sc_rt_params       verbose=0 nt=5 n_mu=2 n_phi=4 n_bin=4
+                    rt_grace=1e-5 rt_llc=0,0,-0.5 rt_urc=6,6,0.45 courant=1.0
+                    n_warmup=6 vertical_propagation=f cdtd=1.0 /
+
+! -- Solver parameters ---------------------------------------------------------
+&timestep_params    time_order=2 /
+&ramses_params      slope_type=3.5 isothermal=f/
+
+! -- Task control parameters ---------------------------------------------------
+&timer_params       sec_per_report=20 verbose=0 /
+&task_list_params   job_seconds=1e6 dead_mans_hand=10 check_memory=t /
+&dispatcher_params  method=0 /
+&dispatcher3_params verbose=0 f_over=3 use_taskyield=f use_critical=f /
+&task_mesg_params   verbose=0 /
+&mpi_mesg_params    verbose=0 debug=f /

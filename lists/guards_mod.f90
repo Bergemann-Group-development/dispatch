@@ -201,7 +201,7 @@ SUBROUTINE source_to_target (self, source, target, all_tgt, all_src, n_op, &
     end select
     !...........................................................................
     if (verbose > 1) then
-      write (unit,'(a,2x,i6,";",i2.2,f12.6,2x,i6,":",i2.2,2x,3f8.3,2x,a)') &
+      write (unit,'(a,2x,i6,":",i2.2,f12.6,2x,i6,":",i2.2,2x,3f8.3,2x,a)') &
         'guards_t%source_to_target: tgt,time,src,dist,type=', &
         target%id, target%level, target%time, source%id, source%level, &
         self%distance/target%size, type
@@ -254,7 +254,7 @@ SUBROUTINE same (self, tgt, src, all_tgt, all_src, only)
   lt = tgt%index_only (fl, roundup=.true.)   ! tgt lowwe index
   ut = tgt%index_only (fu, rounddn=.true.)   ! tgt upper index
   if (verbose > 2) then
-    write (stdlog,'(a,2i6,4(2x,3i4))') 'guards_t%same: tgt,src,ls,us,lt,ut=', &
+    write (stdlog,'(a,2i6,4(2x,3i7))') 'guards_t%same: tgt,src,ls,us,lt,ut=', &
       tgt%id, src%id, ls, us, lt, ut
     call tgt%stats ('guards_t%same tgt')
     call src%stats ('guards_t%same src')
@@ -262,10 +262,14 @@ SUBROUTINE same (self, tgt, src, all_tgt, all_src, only)
   !-----------------------------------------------------------------------------
   ! Time interpolate in the target region
   !-----------------------------------------------------------------------------
-  m = shape(tgt%mem)
-  mem => tgt%mem(:,:,:,:,tgt%it,1)
-  call interp%in_t   (tgt, src, ls, us, src%mem, mem, lt, ut, only=only, &
-                        extrap=tgt%allow_extrapolate)
+  if (tgt%nt==1 .and. src%nt==1) then
+    call interp%no_t   (tgt, src, ls, us, src%mem, tgt%mem, lt, ut, only=only)
+  else
+    m = shape(tgt%mem)
+    mem => tgt%mem(:,:,:,:,tgt%it,1)
+    call interp%in_t   (tgt, src, ls, us, src%mem, mem, lt, ut, only=only, &
+                          extrap=tgt%allow_extrapolate)
+  endif
   if (associated(tgt%filled)) &
     tgt%filled (lt(1):ut(1),lt(2):ut(2),lt(3):ut(3)) = src%level
   !.............................................................................
@@ -366,10 +370,10 @@ SUBROUTINE differ (self, tgt, src, all_tgt, all_src, only)
   ! Produce values also in internal cells if specifically ordered to, or if
   ! the source is at a higher level, or if a child is taking the first step.
   !-----------------------------------------------------------------------------
-  tgt_int = present(all_tgt)                    ! produce full target
-  tgt_int = tgt_int .or. tgt%istep==0           ! first child update
+  tgt_int = tgt%istep==0                        ! first child update
   tgt_int = tgt_int .or. src%level > tgt%level  ! restrict
   tgt_int = tgt_int .and. tgt%time > 0.0        ! FIXME: restarts!
+  tgt_int = tgt_int .or. present(all_tgt)       ! produce full target
   !.............................................................................
   if (verbose > 1) then
     write (unit,'(f12.6,a,2(i6,":",i2.2,2x),4l1)') &
@@ -462,14 +466,14 @@ SUBROUTINE differ (self, tgt, src, all_tgt, all_src, only)
   above = src%mesh%p > tgt%mesh%p + tgt%mesh%s/2d0
   !.............................................................................
   if (verbose > 1) then
-    write (stdlog,'(f12.6,a,2(i6,":",i2.2,1x),2(1x,2(1x,3i4)),3(2x,3l1))') &
+    write (stdlog,'(f12.6,a,2(i6,":",i2.2,1x),2(1x,2(1x,3i7)),3(2x,3l1))') &
       wallclock(), pad_trace(1:indent)// &
       'guards_t%differ: src,tgt,ls,us,lt,ut,bel,abv=', &
       src%id, src%level, tgt%id, tgt%level, ls, us, lt, ut,  &
       below, above, tgt_int, src_all
   end if
   if (unit == stdout) then
-    write (unit,'(f12.6,2x,a,2(i6,":",i2.2,1x),2(1x,2(1x,3i4)),3(2x,3l1))') &
+    write (unit,'(f12.6,2x,a,2(i6,":",i2.2,1x),2(1x,2(1x,3i7)),3(2x,3l1))') &
       wallclock(), &
       'guards_t%differ: src,tgt,ls,us,lt,ut,bel,abv=', &
       src%id, src%level, tgt%id, tgt%level, ls, us, lt, ut,  &
@@ -540,8 +544,9 @@ SUBROUTINE tilted (self, tgt, src, all_tgt, all_src, only)
   real, dimension(:,:,:,:), pointer    :: tgt0, tgt1, tgt2, mem
   !contiguous                           :: tgt0, tgt1, tgt2, mem
   logical                              :: src_all, tgt_int
-  integer                              :: i, m(5), tid, sid
+  integer                              :: i, j, k, m(5), tid, sid
   real(8)                              :: src_p(3), src_v(3), src_e(3,3), e(3,3)
+  real(8)                              :: s_corners(2,2,2,3), ss(2,3)
   integer, save                        :: itimer=0, nprint=10
   real(8), parameter                   :: eps=1e-6
   !-----------------------------------------------------------------------------
@@ -590,19 +595,36 @@ SUBROUTINE tilted (self, tgt, src, all_tgt, all_src, only)
     sl = - sm%s*0.5d0 - sm%ng*sm%d              ! src lower corner
     su = + sm%s*0.5d0 + sm%ng*sm%d              ! src upper corner
   else
-    sl = - sm%s*0.5d0                           ! src lower corner
-    su = + sm%s*0.5d0                           ! src upper corner
+    !---------------------------------------------------------------------------
+    ! we add half the cell size margin as the face corners furthest away from the
+    ! experiment centre in outer boundary patches can become no-mans-land. The
+    ! shift is actually really really small, especially if tilt between patches
+    ! is limited to max one cell, extrapolation is small and thus the error
+    ! should be small.
+    !--------------------------------------------------------------------------- 
+    sl = - sm%s*0.5d0 - 0.5d0*sm%d                       ! src lower corner
+    su = + sm%s*0.5d0 + 0.5d0*sm%d                       ! src upper corner
   end if
-  !.............................................................................
+  !-----------------------------------------------------------------------------
+  ! Rotate ALL src corners to tgt coordinates and get the extrema
+  !-----------------------------------------------------------------------------
+  ss(1,:)=sl
+  ss(2,:)=su
+  do k=1,2
+    do j=1,2
+      do i=1,2
+        s_corners(i,j,k,:) = matmul(src_e,[ss(i,1),ss(j,2),ss(k,3)])
+      end do
+    end do
+  end do
+  do i=1,3
+    sl(i) = minval(s_corners(:,:,:,i))
+    su(i) = maxval(s_corners(:,:,:,i))
+  end do
   if (verbose > 0) then
     write (stdlog,*) sl, 'sl src'
     write (stdlog,*) su, 'su src'
   end if
-  !-----------------------------------------------------------------------------
-  ! Rotate src corners to tgt coordinates
-  !-----------------------------------------------------------------------------
-  sl = matmul (src_e, sl)                       ! tgt local
-  su = matmul (src_e, su)                       ! tgt local
   !.............................................................................
   if (verbose > 0) then
     write (stdlog,*) sl, 'sl tgt'
@@ -615,7 +637,7 @@ SUBROUTINE tilted (self, tgt, src, all_tgt, all_src, only)
   su = su + src_p
   !.............................................................................
   if (verbose > 1) then
-    write (stdlog,'(a,2(2(1x,3f6.2)))') &
+    write (stdout,'(a,2(2(1x,3f6.2)))') &
       'guards_t%tilted: tl,tu,sl,su=', &
       tl/tm%d, tu/tm%d, sl/tm%d, su/tm%d
   end if
@@ -626,22 +648,16 @@ SUBROUTINE tilted (self, tgt, src, all_tgt, all_src, only)
   !-----------------------------------------------------------------------------
   fl = max(tl,sl) - eps                         ! overlap lower corner
   fu = min(tu,su) + eps                         ! overlap upper corner
-  lt = ceiling(fl/tm%d + tm%o)                  ! integet tgt lower index
-  ut =   floor(fu/tm%d + tm%o)                  ! integer tgt upper index
-  if (any(lt < tm%lb .or. ut > tm%ub)) then
-    if (nprint > 0) then
-      call io%warning ('target limits outside range')
-      !$omp atomic update
-      nprint = nprint-1
-    end if
-  end if
+  lt =   floor(fl/tm%d + tm%o)                  ! integet tgt lower index
+  ut = ceiling(fu/tm%d + tm%o)                  ! integer tgt upper index
   lt = max(lt,tm%lb)                            ! inside target halo
   ut = min(ut,tm%ub)                            ! inside target halo
+
   if (verbose > 0) &
     write (stdout,'(a,2(i6,":",i2.2,3i3),2(2x,3i3),5(2x,3f10.6))') &
       'guards_t%tilted: tgt,key,src,key,lt,ut=', &
       tgt%id, tgt%key, src%id, src%key, lt, ut, &
-      src_p, src_v, src_e(:,1:2), md(tgt%centre_nat(2)), md(src%centre_nat(2))
+      src_p, src_v, src_e(:,:), md(tgt%centre_nat(2)), md(src%centre_nat(2))
   !.............................................................................
   if (tgt%id == 1) then
     call validate%check (tgt, src%id, 'source ID')
@@ -649,17 +665,12 @@ SUBROUTINE tilted (self, tgt, src, all_tgt, all_src, only)
     call validate%check (tgt, ut, 'ut')
     call validate%check (tgt, tgt%mem(:,:,:,:,tgt%it,1), 'before from_source')
   end if
-  if (present(all_src)) then
-    call interp%from_source (tgt, lt, ut, src, filled=tgt%filled)
-  else
-    call interp%from_source (tgt, lt, ut, src)
-  end if
-  if (tgt%id == 1) &
-    call validate%check (tgt, tgt%mem(:,:,:,:,tgt%it,1), 'after from_source')
+  call interp%from_source (tgt, lt, ut, src, filled=tgt%filled, all_src=all_src)
   !.............................................................................
-  if (associated(tgt%filled)) &
-    tgt%filled (lt(1):ut(1),lt(2):ut(2),lt(3):ut(3)) = max(src%level, tgt%level)
+  if (tgt%id == io%id_debug) &
+    call validate%check (tgt, tgt%mem(:,:,:,:,tgt%it,1), 'after from_source')
   call trace%end (itimer)
+
 contains
   FUNCTION md(r)
     real(8):: r, md

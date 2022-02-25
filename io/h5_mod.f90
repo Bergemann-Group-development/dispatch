@@ -366,7 +366,7 @@ LOGICAL FUNCTION exists (self, sequence, record, name, id, attribute)
   logical, optional:: attribute
   !.............................................................................
   if (self%fid == 0) then
-    self%fid = self%open (trim(io_unit%rundir)//'/hdf5.dat')
+    self%fid = self%open (trim(io_unit%run_dir)//'/hdf5.dat')
   end if
   write (srecord,'(i6.6)') record
   id = self%group_open (self%group_open (self%fid, sequence), srecord)

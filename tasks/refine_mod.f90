@@ -389,7 +389,7 @@ SUBROUTINE check (self, tasklist, link, was_refined, was_derefined)
     !---------------------------------------------------------------------------
     if (refine /= 0) then
       allocate (child_list)
-      call child_list%init ()
+      call child_list%init ('child')
       call self%selective_refine (patch, child_list, refine, &
         was_refined, was_derefined)
       call self%post_process (patch, child_list)
@@ -726,6 +726,27 @@ SUBROUTINE post_process (self, patch, child_list)
   !-----------------------------------------------------------------------------
   if (associated(child_list%head)) then
     !---------------------------------------------------------------------------
+    ! Add the new tasks to the task list, so nbor lists can be made
+    !---------------------------------------------------------------------------
+    link => child_list%head
+    do while (associated(link))
+      task => link%task
+      select type (task)
+      class is (patch_t)
+        !-----------------------------------------------------------------------
+        ! The busy bit is set before the task is added to the task list, to
+        ! avoid that it is sheduled prematurely in a multi-threaded setting
+        !-----------------------------------------------------------------------
+        omp%thread_task = task%link%task%id
+        call task%set (bits%busy)
+        !-----------------------------------------------------------------------
+        ! Add the task%link (not the temporary link) to the task list
+        !-----------------------------------------------------------------------
+        call self%task_list%add_by_level (task%link, count=.true.)
+      end select
+      link => link%next
+    end do
+    !---------------------------------------------------------------------------
     ! Do the standard set of actions after adding new tasks
     !---------------------------------------------------------------------------
     link => child_list%head
@@ -733,33 +754,22 @@ SUBROUTINE post_process (self, patch, child_list)
       task => link%task
       select type (task)
       class is (patch_t)
-        omp%thread_task = task%link%task%id
         call self%task_list%add_new_link (task%link)
-        !.......................................................................
-        if (verbose > 1) then
-          write (stdout,'(a,i6,a,i6,":",i2.2,3i3,l3)') &
-            'refine_mod:',patch%id,' add_new_link', task%id, task%key, &
-            task%is_clear (bits%no_support)
-        end if
-        !.......................................................................
       end select
       link => link%next
     end do
-  end if
   omp%thread_task = patch%id
-  !-----------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
   ! Deallocate and delete the child list, after check_ready()
-  !-----------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
   link => child_list%head
   do while (associated(link))
     task => link%task
     select type (task)
     class is (patch_t)
-      !-------------------------------------------------------------------------
-      ! Clear the busy bit, now that the task is ready to be scheduled.  The
-      ! busy bit is set before the task is added to the task list, to avoid
-      ! that it is sheduled by check_nbor calls in a multi-threaded setting.
-      !-------------------------------------------------------------------------
+        !-----------------------------------------------------------------------
+        ! Clear the busy bit, now that the task is ready to be scheduled
+        !-----------------------------------------------------------------------
       call link%task%clear (bits%busy)
       call self%task_list%check_ready (task%link)
     end select
@@ -767,6 +777,7 @@ SUBROUTINE post_process (self, patch, child_list)
     deallocate (link)
     link => next
   end do
+  end if
   call trace%end ()
 END SUBROUTINE post_process
 
@@ -892,6 +903,7 @@ SUBROUTINE make_child_patch (self, parent, pos, child_size, &
   child%level = parent%level + 1                     ! must be set before init!
   child%pre_initialized = .false.                    ! force pre_init
   call child%init()                                  ! patch, for a new id
+  call child%set (bits%internal)                     ! for now
   call child%init_bdries                             ! BCs
   child%boundaries%bits = 0                          ! reset bdry bits
   child%level = parent%level + 1                     ! override patch_t%init
@@ -966,13 +978,6 @@ SUBROUTINE make_child_patch (self, parent, pos, child_size, &
   end if
   deallocate (child%link%nbor)
   !-----------------------------------------------------------------------------
-  ! Add the task to the task list, locking the queue briefly, to avoid that the
-  ! task is discovered and testet, before the no_support and ready bits are set
-  !-----------------------------------------------------------------------------
-  call self%task_list%qlock%set ('add_by_level')
-  call self%task_list%add_by_level (child%link, count=.true.)
-  call self%task_list%qlock%unset ('add_by_level')
-  !-----------------------------------------------------------------------------
   if (verbose > 1 .or. child%id == io%id_debug) then
     if (child%id == io%id_debug) &
       unit = stdout
@@ -1030,7 +1035,7 @@ FUNCTION check_Jeans (self, patch) RESULT(refine_it)
   call io%assert (associated(patch), '%patch not associated in check_Jeans')
   allocate(pg(patch%gn(1),patch%gn(2),patch%gn(3)))
   !call patch%gas_pressure_sub (pg)
-  pg = patch%gas_pressure()
+  call patch%gas_pressure_sub (pg)
   pgmin = minval(pg)
   if (pgmin <= 0.0) then
     imin = minloc(pg)
@@ -1165,7 +1170,7 @@ FUNCTION shock_and_cd_detector (self, patch) RESULT (refine)
   ! we need the gas pressure, density and velocity
   d => patch%mem(:,:,:,patch%idx%d,patch%it,1)
   e => patch%mem(:,:,:,patch%idx%e,patch%it,1)
-  pg = patch%gas_pressure()
+  call patch%gas_pressure_sub (pg)
   v  = patch%gas_velocity()
   !
   refine = 0
@@ -1274,10 +1279,12 @@ FUNCTION gradient_detector (self, patch) RESULT (refine)
     if (trim(grad_var(n)) == 'b1') q = patch%mem(:,:,:,patch%idx%bx,patch%it,1)
     if (trim(grad_var(n)) == 'b2') q = patch%mem(:,:,:,patch%idx%by,patch%it,1)
     if (trim(grad_var(n)) == 'b3') q = patch%mem(:,:,:,patch%idx%bz,patch%it,1)
-    if (trim(grad_var(n)) == 'p')  q = patch%gas_pressure()
     if (trim(grad_var(n)) == 'v1') q = patch%gas_velocity(1)
     if (trim(grad_var(n)) == 'v2') q = patch%gas_velocity(2)
     if (trim(grad_var(n)) == 'v3') q = patch%gas_velocity(3)
+    if (trim(grad_var(n)) == 'p') then
+      call patch%gas_pressure_sub (q)
+    end if
     is_unsigned = .false.
     do i=1,size(unsigned)
       if (grad_var(n) == unsigned(i)) then
@@ -1402,9 +1409,11 @@ SUBROUTINE evaluate (self, label, patch, test, refine_it)
 END SUBROUTINE evaluate
 
 !===============================================================================
-!> Given a box defined by its lower and upper corners, flag a patch for refinement
-!> if it lies inside this box, up to a maximum level.
-!> This particular criteria is primarily used for testing and debugging.
+!> Given a box defined by its lower and upper corners, flag a patch for
+!> refinement if it lies inside this box, up to a maximum level.
+!> This particular criterion is primarily used for testing and debugging,
+!> but can also be used to enforce enhanced resolution in a specific region
+!> (aka "static refinement").
 !===============================================================================
 FUNCTION refine_region (self, patch) RESULT (refine)
   USE mesh_mod

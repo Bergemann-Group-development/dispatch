@@ -3,6 +3,8 @@ import scipy
 import numpy as np
 import dispatch.EOS
 from dispatch.EOS.irregular_tables import itable_c
+from astropy import constants as SI
+
 
 def interp(x,y,x0):
     """ Interpolate in x[:] and y[:] to x-coordinat(s) x0
@@ -48,6 +50,54 @@ class eos_c(itable_c):
     """ Sub-class that inherits all table_c methods, and adds other EOS 
         specific methods.
     """
+    def add_S(self,n1=1000,verbose=0):
+        """ Add entropy to EOS table
+        """
+        # Compute and save a first entropy array for each ln(rho)
+        n0=self.scale0.n
+        iS=self.nv
+        self.nv+=1
+        for i in range(n0):
+            d,T,P,E,lnT,lnP,lnE=self.all_values(i)
+            S=integral(E,1/T)                     # entropy at i=0
+            self.set_dependent(i,iS,S,'S')         # save in table
+
+        # Connect the S(lnT) values at all densities
+        for i in range(n0-1):
+            # Gather all relevant values
+            d0,T0,P0,E0,lnT0,lnP0,lnE0=self.all_values(i)
+            d1,T1,P1,E1,lnT1,lnP1,lnE1=self.all_values(i+1)
+            dS0=-P0/(d0*T0)*self.scale0.step       # dS_dlnr_E for lnE at i
+            dS1=-P1/(d1*T1)*self.scale0.step       # dS_dlnr_E for lnE at i+1
+            dS0=interp(lnE0,dS0,lnE1)             # interpolate to lnE at i+1
+            dS=(dS0+dS1)/2                        # at constant E = lnE at i
+            S0=self.tables[i  ]['S'].values        # entropy at i
+            S1=self.tables[i+1]['S'].values        # entropy at i+1
+            S0=interp(lnE0,S0,lnE1)               # interpolate to lnE at i+1
+            dS=dS-(S1-S0)                         # difference
+            S=S1+np.median(dS)                    # adjust the S-level at i+1
+            self.set_dependent(i+1,iS,S,'S')       # save in table
+            if verbose>3:
+                print('{:4d}{:15.3e}{:15.3e}'.format(i,dS0,dS.mean()))
+
+    def add_Src(self,verbose=0):
+        """ Add Source function to the EOS table
+        """
+        for i in self.variables:
+            if self.variables[i]=='Src':
+                print ('add_Src: source function already present.')
+                return
+        sigma = SI.sigma_sb.cgs.value
+        n0=self.scale0.n
+        iSrc=self.nv
+        self.nv+=1
+        for i in range(n0):
+            if (self.scale1.name=='ln(T)'):
+                T=self.scales[i].values
+            elif(self.scale1.name=='ln(ee'):
+                lnee, T = self.values(i, 'T')
+            Src=sigma*T**4
+            self.set_dependent(i,iSrc,Src,'Src')
 
     def to_S(self,n1=1000,verbose=0):
         """ Transform the EOS to have entropy on axis 1. This method is generic,

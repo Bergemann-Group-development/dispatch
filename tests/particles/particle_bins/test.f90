@@ -82,7 +82,7 @@ PROGRAM test
     end do
     end do
   end do
-  call toc ("particle motion", npart*nbin)
+  call timer%toc ("particle motion", npart*nbin)
 
   !-----------------------------------------------------------------------------
   ! Evolve with subroutine call exposing arrays
@@ -97,7 +97,7 @@ PROGRAM test
     dt => dust%particles(ip,it)%dt
     call move_particles (p, v, m, s, t, dt, ra, r, f, a, star%position, nbin, ndim)
   end do
-  call toc ("particle motion", npart*nbin)
+  call timer%toc ("particle motion", npart*nbin)
 
   deallocate (dust)
 END PROGRAM

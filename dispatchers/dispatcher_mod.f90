@@ -5,6 +5,7 @@
 MODULE dispatcher_mod
   USE io_mod
   USE trace_mod
+  USE timer_mod
   USE mpi_mod
   USE task_list_mod
   USE dispatcher0_mod
@@ -96,10 +97,16 @@ SUBROUTINE execute (self, task_list)
   !-----------------------------------------------------------------------------
   ! Reset task_list status to re-establish nbor relations, checking consistency
   !-----------------------------------------------------------------------------
+  call timer%tic ()
   call task_list%reset_status (check=.true.)
+  call timer%toc ('dispatcher_t: reset_status')
   call task_list%init_task_list_pointers (task_list)
+  call timer%toc ('dispatcher_t: task list pointers')
+  call task_list%startup ()
+  call timer%toc ('dispatcher_t: startup')
+  call task_list%info ()
+  call timer%toc ('dispatcher_t: info')
   call mpi%barrier('pre-execute')
-  call task_list%info
   !-----------------------------------------------------------------------------
   ! Call the selected dispatcher method
   !-----------------------------------------------------------------------------

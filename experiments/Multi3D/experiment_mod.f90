@@ -210,6 +210,7 @@ SUBROUTINE append_to(self, task_list)
   class (task_t), pointer :: task
   !-----------------------------------------------------------------------------
   allocate (halo_m3d_t:: link)
+  call link%init()
   link%task => self
   self%link => link
   call task_list%append (link)
@@ -398,9 +399,9 @@ SUBROUTINE set_maxiter (self, task)
     select case (task%kind)
     case ('back_opac')
       ! LTE iteration counts as first lambda iteration
-      task%maxiter = max(0, self%ilambd - 1)
+      task%maxiter = self%ilambd + 1
     case ('mean_rad')
-      task%maxiter = self%ilambd - 1
+      task%maxiter = self%ilambd
     case ('angle_rad', 'sum_opac')
       if (task%out_ray) then
         task%maxiter = 0
@@ -410,6 +411,8 @@ SUBROUTINE set_maxiter (self, task)
     case ('out_rad')
       task%maxiter = 0
     end select
+
+    task%master_maxiter = self%maxiter + self%ilambd
   end select
 END SUBROUTINE set_maxiter
 

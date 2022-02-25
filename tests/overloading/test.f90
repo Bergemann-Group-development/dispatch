@@ -63,36 +63,36 @@ PROGRAM test
   dims = n
   call tic
   call m%init (n=dims,ng=[2,2,2])
-  call toc("init",n**3)
+  call timer%toc("init",n**3)
   allocate (f(n,n,n,3), g(n,n,n,3), h(n,n,n,3), h0(n,n,n,3))
-  call toc("allocate",n**3)
+  call timer%toc("allocate",n**3)
   do i=1,3
     f(:,:,:,i) = 1.0+i
     g(:,:,:,i) = 2.0-i
   end do
-  call toc("set",n**3)
+  call timer%toc("set",n**3)
   call cross1 (f, g, h)
-  call toc("cross1",n**3)
+  call timer%toc("cross1",n**3)
   call tic
   h0 = h
-  call toc("copy",n**3)
+  call timer%toc("copy",n**3)
   call tic
   call cross2 (f, g, h)
-  call toc("cross2",n**3)
+  call timer%toc("cross2",n**3)
   call tic
   call cross1 (f, g, h)
-  call toc("cross1",n**3)
+  call timer%toc("cross1",n**3)
   call tic
   h =  crossf (f, g)
-  call toc("crossf",n**3)
+  call timer%toc("crossf",n**3)
   print*,minval(h-h0),maxval(h-h0)
   call tic
   h =  cross (f, g)
-  call toc("cross",n**3)
+  call timer%toc("cross",n**3)
   print*,minval(h-h0),maxval(h-h0)
   call tic
   h =  crossf (f, g)
-  call toc("crossf",n**3)
+  call timer%toc("crossf",n**3)
   print*,minval(h-h0),maxval(h-h0)
   !-----------------------------------------------------------------------------
   call v1%init(dims,ds,'v1')
@@ -102,7 +102,7 @@ PROGRAM test
   v2 = 1.0
   call tic
   v2 = curl(v1)
-  call toc("curl",n**3)
+  call timer%toc("curl",n**3)
   print*,'mk2',v2%allocated,' ',trim(v2%name),v2%x%n,v2%x%l
   !-----------------------------------------------------------------------------
   !call init_vectors (dims, ds, v1, v2, v3, v4, v5, v6, v7, v8, v9)
@@ -113,29 +113,29 @@ PROGRAM test
   print*,'mk3',v2%allocated,' ',trim(v2%name),v2%x%n,v2%x%l
   print*,'mk3',v3%allocated,' ',trim(v3%name),v3%x%n,v3%x%l
   print*,'mk3',s1%allocated,' ',trim(s1%name),s1%n,s1%l
-  call toc("div",n**3)
+  call timer%toc("div",n**3)
   v3 = v2
   !-----------------------------------------------------------------------------
   call tic
   v1 = grad(s1)
-  call toc("grad",n**3)
+  call timer%toc("grad",n**3)
   !-----------------------------------------------------------------------------
   call tic
   v1 = down(s1)
-  call toc("down",n**3)
+  call timer%toc("down",n**3)
   !-----------------------------------------------------------------------------
   v1 = 1.0
   call tic
   v1 = exp(v1)
-  call toc("exp",n**3)
+  call timer%toc("exp",n**3)
   !-----------------------------------------------------------------------------
   call tic
   v1 = log(v1)
-  call toc("log",n**3)
+  call timer%toc("log",n**3)
   !-----------------------------------------------------------------------------
   call tic
   v1 = edge(s1)
-  call toc("edge",n**3)
+  call timer%toc("edge",n**3)
   !-----------------------------------------------------------------------------
   block
   type(scalar_t):: d, s, dddt, dsdt
@@ -146,16 +146,16 @@ PROGRAM test
   do i=1,10
     call pde (d, dddt, s, dsdt, p, dpdt, B, dBdt)
   end do
-  call toc("mhd",10*n**3)
+  call timer%toc("mhd",10*n**3)
   call tic
   do i=1,10
     call pde (d, dddt, s, dsdt, p, dpdt)
   end do
-  call toc("hd",10*n**3)
+  call timer%toc("hd",10*n**3)
   do i=1,10
     call pde (d, dddt, s, dsdt, p, dpdt, B, dBdt)
   end do
-  call toc("mhd",10*n**3)
+  call timer%toc("mhd",10*n**3)
   end block
   !-----------------------------------------------------------------------------
   call cleanup_temp

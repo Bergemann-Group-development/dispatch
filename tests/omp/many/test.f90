@@ -38,7 +38,7 @@ PROGRAM test
   !$omp taskwait
   print*,wallclock(),mpi%rank,parent,' wait done', n
   !$omp end parallel
-  call toc ('took')
+  call timer%toc ('took')
   call mpi%end
 CONTAINS
   !-----------------------------------------------------------------------------

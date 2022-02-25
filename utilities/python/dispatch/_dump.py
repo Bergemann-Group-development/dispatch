@@ -3,6 +3,8 @@
     Syntax:
       dd=dispatch.dump('../data/run/rank_00000.dump')
       a=dd.read()
+      dd=dispatch.debug_dump(run='',data='../data',file='debug_dump.dat')
+      a=dd.read()
       ...
 """
 
@@ -11,6 +13,48 @@ import copy
 import os
 
 from scipy.io import FortranFile
+
+class debug_dump(object):
+    def __init__(self,run='',data='../data/',file='debug_dump.dat',verbose=0):
+        self.fd=FortranFile(data+run+'/'+file)
+        self.sentinel=self.fd.read_ints()[0]
+        self.x=0
+        if self.sentinel==1:
+            self.x='nbor'
+        elif self.sentinel==2:
+            self.x='all'
+        else:
+            self.x=='patch'
+        self.patch=[]
+
+
+    def read(self):
+        fd=self.fd
+        id,it,gn,n,nv,nt,nw,rank,thread=fd.read_record(
+            'i4,i4,(3)i4,(3)i4,i4,i4,i4,i4,i4')[0]
+        fmt='f8,f8,({0:})f8,({0:})f8,({0:})i4'.format(nt)
+        time,dtime,t,dt,iit=fd.read_record(fmt)[0]
+        fmt='({0:},{1:},{2:},{3:},{3:},{3:})f4'.format(nw,nt,nv,gn[0],gn[1],gn[2])
+        mem=fd.read_record(fmt)[0].transpose()
+        self.id=id
+        dict={
+            'id':id,
+            'time':time,
+            'mem':mem,
+            't':t,
+            'dt':dt,
+            'gn':gn,
+            'n':n,
+            'nv':nv,
+            'nt':nt,
+            'iit':iit,
+            'mem':mem}
+        class obj(object):
+            pass
+        patch=obj()
+        for k,v in dict.items():
+            setattr(patch,k,v)
+        self.patch.append(patch)
 
 class dump():
     """ Open a dump file for reading. 

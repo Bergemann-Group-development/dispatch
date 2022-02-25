@@ -23,6 +23,8 @@ MODULE patch_mod
   USE shared_mod
   USE region_mod
   USE lagrange_mod
+  USE dll_mod
+  USE bdry_interface_mod
   implicit none
   private
   integer, parameter:: ndim = 3
@@ -32,11 +34,10 @@ MODULE patch_mod
     ! typically used by methods called from the extras_t data type procedures.
     !---------------------------------------------------------------------------
     !dir$ attributes align: 64 :: filled
+    type(nbor_dll_t) :: bdry_interface  ! boundary interface for flux corrections
     class(mesh_t), dimension(:), pointer:: mesh => null()
     real:: courant                      ! courant number
     real(8):: pdf_next=0.0              ! next PDF output time
-    real(8):: dt_fixed                  ! for fixed time step Courant condition
-    real(8):: radius=0d0                ! generic radius
     real(8):: omega(3)=0d0              ! generic rotation speed
     real:: u_max=0.0                    ! for Courant condition
     real:: u_fixed                      ! for fixed time step Courant condition
@@ -46,7 +47,7 @@ MODULE patch_mod
     integer:: mv=0                      ! number of memory slots
     integer:: nw=2                      ! number of work indices
     integer:: msplit=0                  ! how to split a patch when refining
-    integer:: max_files                 ! prevent disk overrun when NaN happens
+    integer:: max_files=1000            ! prevent disk overrun when NaN happens
     integer:: check_refine_next=0       ! next step to check refinement
     integer:: time_derivs               ! for restart changes
     integer:: not_filled=0              ! guard zones not filled
@@ -61,9 +62,9 @@ MODULE patch_mod
     logical:: get_umax_location=.false.
     character(len=32):: eos='ideal'
     character(len=32):: opacity='none'
+    character(len=8):: etype='thermal' ! or 'total', 'entropy'
     integer:: file_offset(4)
     type(index_t):: idx
-    real:: safety_factor=1.0
     real:: ee_min=tiny(1.0)
     !---------------------------------------------------------------------------
     ! HACKs below:  FIXME
@@ -108,6 +109,8 @@ MODULE patch_mod
     !--- used in refine ---
     type(lock_t)         , pointer:: request_lock               => null()
     type(lock_t)         , pointer:: mem_lock(:)                => null()
+    real(var_k), pointer, contiguous:: generic(:,:,:,:)         => null()
+    class(patch_t)       , pointer:: patch_ptr                  => null()
   contains
     procedure, nopass:: cast2patch
     procedure:: init
@@ -160,6 +163,7 @@ MODULE patch_mod
     procedure:: nbor_courant_conditions
     procedure:: check_density
     procedure:: check_nan
+    procedure:: corners
     procedure:: custom_refine
     procedure:: patch_to_header
     procedure:: header_to_patch
@@ -202,6 +206,11 @@ MODULE patch_mod
     procedure:: cover
     procedure:: support_arrays
     procedure:: write_nml
+    procedure:: allocate_generic
+    procedure:: deallocate_generic
+    procedure:: to_generic
+    procedure:: from_generic
+    procedure:: overlaps2
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -248,6 +257,7 @@ MODULE patch_mod
     integer:: dim(3)
   end type
   logical, save:: do_check_nan=.false.              ! check for NaN?
+  logical, save:: do_check_density=.false.          ! check for zero density?
   logical, save:: zero_order_extrap=.true.          ! extrap to no-mans-land
   logical, save:: courant_ramp=.false.              ! ramp up Courant param
   public task2patch
@@ -455,20 +465,19 @@ SUBROUTINE pre_init (self)
   !.............................................................................
   integer       :: iostat, i, n_alloc=0, n_ext=0
   !.............................................................................
-  integer, save :: n(3)=16, ng(3)=0, nv=1, nt=5, nw=1, max_files=1000, &
-                   print_every=0
+  integer, save :: n(3)=16, ng(3)=0, nv=1, nt=5, nw=1, max_files=1000
   logical, save :: no_mans_land=.true., use_data_hub=.false., limit_dtime=.false.
   real,    save :: u_fixed=-1.0, grace=0.0
   real(8), save :: start_time=0d0, end_time=1.0, out_time=0.1, print_time=0.0
   real(8), save :: dt_fixed=-1.0
+  real(8), save :: dt_small=1e-7
   logical, save :: first_time = .true.
-  namelist /patch_params/ n, nv, nt, u_fixed, dt_fixed, grace, &
-                          no_mans_land, use_data_hub, do_check_nan, &
-                          zero_order_extrap, limit_dtime, courant_ramp
-  namelist /out_params/ start_time, out_time, end_time, print_time, &
-                        print_every, max_files
+  namelist /patch_params/ n, nv, nt, u_fixed, dt_fixed, grace, no_mans_land, &
+    use_data_hub, do_check_density, do_check_nan, zero_order_extrap, &
+    limit_dtime, courant_ramp, dt_small
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%pre_init')
+  self%patch_ptr => self
   !-----------------------------------------------------------------------------
   ! Read and set patch parameters; the preferred defalts may have been set by
   ! the calling code -- typically in experiment_mod.f90
@@ -488,45 +497,30 @@ SUBROUTINE pre_init (self)
     if (dt_fixed > 0.0) grace=max(grace,1e-6)
     write (io%namelist, patch_params)
     !...........................................................................
-    rewind (io%input)
-    read (io%input, out_params,iostat=iostat)
-    if (iostat > 0) then
-      rewind (io%input)
-      read (io%input, out_params)
-    end if
-    call io%namelist_warning ('out_params', iostat)
-    write (io%namelist, out_params)
-    !...........................................................................
     if (mpi%rank > 0) &
       self%track = .true.
-    io%print_every = print_every                ! print 1st task
-    io%iprint = print_every                     ! print 1st task
+    write (stdout,*) 'patch_t%pre_init: etype='//trim(self%etype)// &
+                                      ', kind='//trim(self%kind)
     first_time = .false.
   end if
-  !-----------------------------------------------------------------------------
-  ! Output related parameters
-  !-----------------------------------------------------------------------------
-  io%start_time    = start_time
-  io%end_time      = end_time
-  io%out_time      = out_time
-  io%print_time    = print_time
   !-----------------------------------------------------------------------------
   ! Multi-threading below -- only self% references allowed
   !-----------------------------------------------------------------------------
   self%n            = n
   self%nt           = nt
   self%ng           = ng                         ! cf warning
-  self%nv           = nv                         ! ditto
+  self%nv           = max(nv,self%nv)            ! do not allow decrease
   self%mv           = self%nv                    ! make sure %mv is set
   self%nw           = nw                         ! ditto
   self%restart      = io%restart                 ! restart snapshot
   self%grace        = grace                      ! grace fraction of dtime
   self%dt_fixed     = dt_fixed
+  self%dt_small     = dt_small
   self%u_fixed      = u_fixed
-  self%max_files    = max_files                  ! prevent run-away NaN
   self%use_data_hub = use_data_hub               ! guard zone handling
   !self%no_mans_land = no_mans_land               ! mesh centering
-  self%print_next   = print_time
+  self%max_files    = io%max_files               ! prevent run-away NaN
+  self%print_next   = io%print_time
   self%limit_dtime  = limit_dtime
   !-----------------------------------------------------------------------------
   ! Preliminary region information, relative to the task position.  This may
@@ -538,7 +532,7 @@ SUBROUTINE pre_init (self)
   self%interest%u  = self%authority%u + self%ng*self%size/self%n
   !-----------------------------------------------------------------------------
   allocate (self%request_lock)                   ! allocate lock for frefine
-  call self%request_lock%init                    ! initialize lock
+  call self%request_lock%init ('rqst')           ! initialize lock
   !-----------------------------------------------------------------------------
   ! Preliminary level and hash key assignment
   !-----------------------------------------------------------------------------
@@ -557,7 +551,6 @@ SUBROUTINE pre_init (self)
       'patch_t%pre_init WARNING: nw,nv,ng old/new =', &
       nw,nv,ng, self%nw,self%nv,self%ng
   end if
-  call omp%set_stacksize (self%nv)
   call trace%end()
 END SUBROUTINE pre_init
 
@@ -786,7 +779,7 @@ SUBROUTINE init (self)
     !$omp end critical (log_cr)
   end if
   !-----------------------------------------------------------------------------
-  ! Allocate memory, if not already associated
+  ! Set OMP stacksize, and allocate memory, if not already associated
   !-----------------------------------------------------------------------------
   if (.not.self%mem_allocated) then
     self%mem_allocated = .true.
@@ -807,6 +800,7 @@ SUBROUTINE init (self)
     do i=1,self%nt
       call self%mem_lock(i)%init ('meml')
     end do
+    call omp%set_stacksize (product(shape(self%mem)), io%master)
     call io%bits_mem (storage_size(self%mem), product(shape(self%mem)), 'mem')
     !---------------------------------------------------------------------------
     ! The unsigned and pervolume flags may also be modified by the solver. They
@@ -844,6 +838,8 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call io%lock%set ('patch_t%init')
   if (first_time) then
+    call io%header ('patch_t%init:')
+    write (stdout,*) 'SOLVER=',trim(self%kind)
     write (stdout,'(a,6i4)') &
       ' memory shape:', shape(self%mem)
     call self%idx%print (stdout)
@@ -872,10 +868,11 @@ SUBROUTINE dealloc (self)
   if (associated(self%mesh)) &
     call MeshRecycler (self%mesh)
   if (associated(self%mem)) then
-    call io%bits_mem (-storage_size(self%mem), product(shape(self%mem)),'-mem')
+    call io%bits_mem (-storage_size(self%mem), &
+                      product(shape(self%mem)),'-mem')
     deallocate (self%mem)
+    nullify (self%mem)
   end if
-  nullify (self%mem)
   self%mem_allocated = .false.
   if (associated(self%vgas)) then
     call io%bits_mem (-storage_size(self%vgas), &
@@ -1371,13 +1368,15 @@ SUBROUTINE extrapolate_guards (self, target_mem)
       end if
     end if
   end do
-  d => targ_mem(:,:,:,self%idx%d)
-  dmin = min(dmin,minval(d(lb(1):ub(1),lb(2):ub(2),lb(3):lo(3))), &
+  if (self%idx%d>0) then
+    d => targ_mem(:,:,:,self%idx%d)
+    dmin = min(dmin,minval(d(lb(1):ub(1),lb(2):ub(2),lb(3):lo(3))), &
                   minval(d(lb(1):ub(1),lb(2):ub(2),uo(3):ub(3))), &
                   minval(d(lb(1):ub(1),lb(2):lo(2),li(3):ui(3))), &
                   minval(d(lb(1):ub(1),uo(2):ub(2),li(3):ui(3))), &
                   minval(d(lb(1):lo(1),li(2):ui(2),li(3):ui(3))), &
                   minval(d(uo(1):ub(1),li(2):ui(2),li(3):ui(3))))
+  end if
   call self%lock%unset ('patch_t%extrapolate_guards')
   !.............................................................................
   if (io%verbose > 1) &
@@ -1414,13 +1413,24 @@ SUBROUTINE time_extrapolate (self, iv, order, time)
   ! Sum up into slow %new, under OMP lock
   !-----------------------------------------------------------------------------
   call self%lock%set ('time_extrapolate')
-  self%mem(:,:,:,iv,self%new,1) = &
-  self%mem(:,:,:,iv,it(i0),1)*w(1)
-  do i=i0+1,i2
+  if (self%unsigned(iv)) then
     self%mem(:,:,:,iv,self%new,1) = &
-    self%mem(:,:,:,iv,self%new,1) + &
-    self%mem(:,:,:,iv,it(i),1)*w(i-i0+1)
-  end do
+    log(self%mem(:,:,:,iv,it(i0),1))*w(1)
+    do i=i0+1,i2
+      self%mem(:,:,:,iv,self%new,1) = &
+      self%mem(:,:,:,iv,self%new,1) + &
+      log(self%mem(:,:,:,iv,it(i),1))*w(i-i0+1)
+    end do
+    self%mem(:,:,:,iv,self%new,1)=exp(self%mem(:,:,:,iv,self%new,1))
+  else
+    self%mem(:,:,:,iv,self%new,1) = &
+    self%mem(:,:,:,iv,it(i0),1)*w(1)
+    do i=i0+1,i2
+      self%mem(:,:,:,iv,self%new,1) = &
+      self%mem(:,:,:,iv,self%new,1) + &
+      self%mem(:,:,:,iv,it(i),1)*w(i-i0+1)
+    end do
+  end if
   call self%lock%unset ('time_extrapolate')
   !-----------------------------------------------------------------------------
   call trace%end (itimer)
@@ -1787,6 +1797,44 @@ FUNCTION highest (self, other, index) RESULT (out)
 END FUNCTION highest
 
 !===============================================================================
+!> Return all corner positions in local frame of reference
+!===============================================================================
+FUNCTION corners (self, guards) RESULT (out)
+  class(patch_t):: self
+  logical, optional:: guards
+  real(8):: out(8,3)
+  ! ----------------------------------------------------------------------------
+  class(mesh_t), pointer:: m(:)
+  logical:: guards_loc=.false.
+  real(8):: pl(3), pu(3)
+  integer:: l(3), u(3), i
+  ! ............................................................................
+  if (present(guards)) guards_loc = guards
+  m => self%mesh
+  if (guards_loc) then
+    do i=1,3
+      l(i) = m(i)%lb
+      u(i) = m(i)%ub
+    end do
+  else
+    l = self%li
+    u = self%ui
+  end if
+  do i=1,3
+    pl(i)=m(i)%r(l(i))-0.5d0*m(i)%d
+    pu(i)=m(i)%r(u(i))+0.5d0*m(i)%d
+  end do
+  out(1,:)=[pl(1),pl(2),pl(3)]
+  out(2,:)=[pu(1),pl(2),pl(3)]
+  out(3,:)=[pl(1),pu(2),pl(3)]
+  out(4,:)=[pu(1),pu(2),pl(3)]
+  out(5,:)=[pl(1),pl(2),pu(3)]
+  out(6,:)=[pu(1),pl(2),pu(3)]
+  out(7,:)=[pl(1),pu(2),pu(3)]
+  out(8,:)=[pu(1),pu(2),pu(3)]
+END FUNCTION corners
+
+!===============================================================================
 !> Courant condition, one way or another
 !===============================================================================
 SUBROUTINE courant_condition (self, detailed_timer)
@@ -1794,7 +1842,6 @@ SUBROUTINE courant_condition (self, detailed_timer)
   logical, optional:: detailed_timer
   real(8):: dtime, ds(3), courant, dsmin
   integer:: i2
-  integer, save:: nprint=10
   logical, parameter:: save_dbg=.false.
   !.............................................................................
   call trace%begin('patch_t%courant_condition')
@@ -1816,35 +1863,23 @@ SUBROUTINE courant_condition (self, detailed_timer)
   courant = self%courant
   if (self%dt_fixed > 0.0) then
     dtime = self%dt_fixed
-    self%u_max = self%courant*dsmin/dtime
+    self%courant_info = self%u_max*dtime/dsmin
   else if (self%u_fixed > 0.0) then
     dtime = self%courant*dsmin/self%u_fixed
+    self%courant_info = self%u_max*dtime/dsmin
   else
     if (courant_ramp) then
       courant = self%courant*min(self%istep+1,self%nt)/real(self%nt)
     end if
     dtime = courant*dsmin/self%u_max*self%safety_factor
+    self%courant_info = log10(max(self%u_max,1e-30))
   endif
   !-----------------------------------------------------------------------------
-  !> Prevent too rapid increase of time steps
+  ! Apply constraints that should hold for tasks of any kind
   !-----------------------------------------------------------------------------
-  if (self%nt > 1 .and. self%istep > 5) then
-    if (dtime < 0.5*self%dt(self%iit(self%nt-1)) .and. self%dt_fixed < 0.0) then
-      self%safety_factor = 0.5
-    end if
-    self%safety_factor = self%safety_factor**0.9
-    dtime = dtime*self%safety_factor
-  end if
   !$omp atomic write
   self%dtime = dtime
-  if (dtime < 1e-7) then
-    if (nprint > 0) then
-      print *,'WARNING: id,dtime=', self%id, self%dtime
-      nprint = nprint-1
-    else
-      call io%abort ('patch_t: courant_condition dmin')
-    end if
-  end if
+  call self%task_t%courant_condition (detailed_timer)
   !-----------------------------------------------------------------------------
   ! Force the time step to give exactly sync_time if within reach (active only
   ! if/when self%sync_time is being updated).  Syncing to a common time makes
@@ -1858,11 +1893,6 @@ SUBROUTINE courant_condition (self, detailed_timer)
       write (io_unit%mpi,*) 'patch_t%courant_condition: syncing turned on for', &
         self%id, self%time
   end if
-  !-----------------------------------------------------------------------------
-  ! Apply constraints that should hold for tasks of any kind, and set %dt(it)
-  !-----------------------------------------------------------------------------
-  call self%task_t%courant_condition (detailed_timer)
-  self%dt(self%it) = self%dtime
   !-----------------------------------------------------------------------------
   if (io%verbose> 3 .or. self%id == io%id_debug) &
     write(io%output,'(a,i7,f12.6,f8.4,1p,e10.2)') 'courant:', &
@@ -2204,31 +2234,38 @@ LOGICAL FUNCTION isinf(a)
   isinf = ieee_is_nan(a) .or. (abs(a) > huge(1.0_KindScalarVar))
 END FUNCTION isinf
 
+LOGICAL FUNCTION isnan(a)
+  use ieee_arithmetic, only : ieee_is_nan
+  real(kind=KindScalarVar):: a
+  isnan = ieee_is_nan(a)
+END FUNCTION isnan
+
 !===============================================================================
 !> Check if the density pr energy is negative somewhere, counting points in the
 !> interior and guard zones separately
 !===============================================================================
-SUBROUTINE check_density (self, label)
+SUBROUTINE check_density (self, label, it)
   class(patch_t):: self
   character(len=*), optional:: label
+  integer, optional:: it
   real(kind=KindScalarVar):: mind, posd, mine
   real:: tiny = 1.0e-32
-  integer:: ix, iy, iz, iv, ii(3), ntot, nins, l(3), u(3), it, jt, iw
+  integer:: ix, iy, iz, iv, ii(3), ntot, nins, l(3), u(3), it_L, jt, iw
   logical:: inside, nan, panic
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! If I/O reducing measures are in effect, or self%mem is not associated, or
   ! the task is frozen, skip the test
   !-----------------------------------------------------------------------------
-  if ((io%verbose < 2 .or. io%print_time > 0.0 .or. io%print_every > 1) .and. &
-      .not.do_check_nan) return
+  if (.not.do_check_density) return
   if (self%is_set(bits%no_density+bits%frozen)) return
   if (.not. associated(self%mem)) return
   !-----------------------------------------------------------------------------
   call timer%begin ('patch_t%check_density', itimer=itimer)
+  it_L = shared%option (it, self%it)
   l = self%mesh%lb
   u = self%mesh%ub
-  mind = minval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%d,self%it,1))
+  mind = minval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%d,it_L,1))
   if (present(label) .and. io%verbose>1) &
     write (io_unit%log,*) label, self%id, mind
   panic = .false.
@@ -2236,7 +2273,7 @@ SUBROUTINE check_density (self, label)
     call check_var (self%idx%d)
   end if
   if (self%idx%e > 0) then
-    mine = minval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%e,self%it,1))
+    mine = minval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%e,it_L,1))
     if (mine <= 0.0) then
       call check_var (self%idx%e)
     end if
@@ -2278,30 +2315,31 @@ contains
     do ix=1,self%gn(1)
       ii = [ix,iy,iz]
       inside = all(ii>self%mesh%lo .and. ii<self%mesh%uo)
-      posd = merge (posd, max(posd,self%mem(ix,iy,iz,iv,self%it,1)), inside)
-      ntot = ntot + merge(1,0,self%mem(ix,iy,iz,iv,self%it,1)<=0.0)
-      nins = nins + merge(1,0,self%mem(ix,iy,iz,iv,self%it,1)<=0.0 .and. inside)
+      posd = merge (posd, max(posd,self%mem(ix,iy,iz,iv,it_L,1)), inside)
+      ntot = ntot + merge(1,0,self%mem(ix,iy,iz,iv,it_L,1)<=0.0)
+      nins = nins + merge(1,0,self%mem(ix,iy,iz,iv,it_L,1)<=0.0 .and. inside)
     end do
     end do
     end do
     if (present(label)) then
-      call print_var (label)
+      call print_var (iv, label)
     else
-      call print_var ('')
+      call print_var (iv, '')
     end if
     if (nins > 0) &
       panic = .true.
   end subroutine check_var
   !=============================================================================
-  subroutine print_var (l)
+  subroutine print_var (iv, l)
+    integer:: iv
     character(*):: l
     if (nins > 0) then
-      write (stdout,1) 'ID ',self%id, iv, &
+      write (stdout,1) 'ID,it,iv:',self%id, it_L, iv, &
         'ERROR: non-positive in',ntot,' points,',nins,' inside, '// &
         trim(l)
-    1 format(a,i8,i3,3x,a,i8,a,i8,a)
-    else if (io%verbose>0) then
-        write (stdout,1) 'ID ',self%id, iv, &
+    1 format(a,i8,2i3,3x,a,i8,a,i8,a)
+    else if (ntot > 0) then
+        write (stdout,1) 'ID,it,iv:',self%id, it_L, iv, &
           'WARNING: non-positive in',ntot,' points,',nins,' inside, '// &
           trim(l)
     end if
@@ -2311,27 +2349,36 @@ END SUBROUTINE check_density
 !===============================================================================
 !> Statistics for all vars in a patch
 !===============================================================================
-SUBROUTINE stats_patch (self, label, unit, verbose)
+SUBROUTINE stats_patch (self, label, unit, verbose, it)
   class (patch_t):: self
   character(len=*):: label
-  integer, optional:: unit, verbose
+  integer, optional:: unit, verbose, it
   !.............................................................................
-  integer:: iv, unit_l
+  integer:: iv, unit_l, it_l, verb_l
   real(8), dimension(4):: si, sb
   class(mesh_t), pointer:: mesh(:)
   integer, save:: tag=0
   !-----------------------------------------------------------------------------
-  if (present(unit)) then
-    unit_l = unit
+  ! Allow zero-cost and hidden noise presence of this call
+  !-----------------------------------------------------------------------------
+  verb_l = shared%option (verbose, 0)
+  if (verb_l == 0) then
+    return
+  else if (verb_l == 1) then
+    unit_l = shared%option (unit, stdlog)
   else
-    unit_l = io%output
+    unit_l = shared%option (unit, stdout)
   end if
+  !-----------------------------------------------------------------------------
+  it_l = shared%option (it, self%it)
   mesh => self%mesh
+  write (unit_l,*) trim(label)
   do iv=1,self%mv
-    call scalar_stats (self%mem(:,:,:,iv,self%it,1), mesh%li, mesh%ui, si)
-    call scalar_stats (self%mem(:,:,:,iv,self%it,1), mesh%lb, mesh%ub, sb)
-    write (unit_l, '(i7,2x,a,i3,1p,2(3x,4g12.4))') &
-      self%id, trim(label)//' stats: iv, min, aver, rms, max =', iv, si, sb
+    call scalar_stats (self%mem(:,:,:,iv,it_l,1), mesh%li, mesh%ui, si)
+    call scalar_stats (self%mem(:,:,:,iv,it_l,1), mesh%lb, mesh%ub, sb)
+    write (unit_l, '(2x,a,i6,2i3,1p,2(3x,4g12.4),2x,a)') &
+      'stats: id,it,iv,min,aver,rms,max=', &
+      self%id, it_l, iv, si, sb
   end do
   !.............................................................................
   if (self%id == io%id_debug) then
@@ -2340,7 +2387,7 @@ SUBROUTINE stats_patch (self, label, unit, verbose)
       if (verbose > 0) &
         print *, 'dump: id,iv,tag=', self%id,   tag 
     end if
-    call self%dump (tag, it=self%it, ad_hoc=.true.)
+    call self%dump (tag, it=it_l, ad_hoc=.true.)
   end if
   flush (unit_l)
 END SUBROUTINE stats_patch
@@ -2348,24 +2395,29 @@ END SUBROUTINE stats_patch
 !===============================================================================
 !> Statistics for a scalar field
 !===============================================================================
-SUBROUTINE stats_scalar (self, var, label, unit)
+SUBROUTINE stats_scalar (self, var, label, unit, verbose)
   class (patch_t):: self
   real(kind=KindScalarVar), dimension(:,:,:):: var
   character(len=*):: label
-  integer, optional:: unit
+  integer, optional:: unit, verbose
   !.............................................................................
-  integer:: unit_l
+  integer:: unit_l, verb_l
   real(8), dimension(4):: si, sb
+  !-----------------------------------------------------------------------------  !-----------------------------------------------------------------------------
+  ! Allow zero-cost and hidden noise presence of this call
   !-----------------------------------------------------------------------------
-  if (present(unit)) then
-    unit_l = unit
+  verb_l = shared%option (verbose, 0)
+  if (verb_l == 0) then
+    return
+  else if (verb_l == 1) then
+    unit_l = shared%option (unit, stdlog)
   else
-    unit_l = io%output
+    unit_l = shared%option (unit, stdout)
   end if
   call scalar_stats (var, self%mesh%li, self%mesh%ui, si)
   call scalar_stats (var, self%mesh%lb, self%mesh%ub, sb)
   write (unit_l, '(i7,2x,a,1p,2(3x,4g12.4),2x,a)') &
-    self%id, ' stats: min, aver, rms, max =', si, sb,label
+    self%id, ' stats: min, aver, rms, max =', si, sb, label
   flush (unit_l)
 END SUBROUTINE stats_scalar
 
@@ -2537,8 +2589,8 @@ END FUNCTION beyond_patch_edge
 !> Interpolate -- only in time for now -- from the MHD time slots save in
 !> this module to the time requested from the solve procedure
 !===============================================================================
-SUBROUTINE log_interpolate (self, time, i, a)
-  class (patch_t)                 :: self
+SUBROUTINE log_interpolate (self, target, time, i, a)
+  class (patch_t)                 :: self, target
   real(8)                         :: time
   integer                         :: i
   real(kind=KindScalarVar), dimension(:,:,:), pointer :: a, b
@@ -2548,7 +2600,7 @@ SUBROUTINE log_interpolate (self, time, i, a)
   integer, save                   :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%log_interpolate', itimer=itimer)
-  call self%time_interval (time, jt, pt)
+  call self%time_interval (target, time, jt, pt)
   if (io%verbose > 1) then
     b => self%mem(:,:,:,i,jt(1),1)
     write(io%output,*) self%id, 'log_interp(1)', jt(1), minval(b), maxval(b)
@@ -2565,13 +2617,12 @@ END SUBROUTINE log_interpolate
 !> Search for a time interval to interpolate in, and return the time
 !> slot indices and weight factors
 !===============================================================================
-SUBROUTINE time_interval (self, time, jt, pt, all, id, extrap, it)
-  class (patch_t)                 :: self
+SUBROUTINE time_interval (self, target, time, jt, pt, all, extrap)
+  class (patch_t)                 :: self, target
   real(8)                         :: time
   integer                         :: jt(2)
   real                            :: pt(2)
   logical, optional               :: all
-  integer, optional               :: id, it
   logical, optional               :: extrap
   !.............................................................................
   integer                         :: i, j, n, iit(self%nt-1)
@@ -2620,51 +2671,52 @@ SUBROUTINE time_interval (self, time, jt, pt, all, id, extrap, it)
     end do
     jt = iit(j:j+1)
     dt = t(j+1)-t(j)
-    if (present(it)) it=j
     if (dt==0.0) then
       pt(2) = 0.0
     else
       pt(2) = (time-t(j))/dt
       if (pt(2) > 1.01d0 + grace .and. .not.present(extrap)) then
         pt(1) = 1.-pt(2)
-        if (present(id)) then
-          write (stderr,'(2a,2i6,":",i2.2,f12.6,f7.2,9f12.6)') &
-            'patch_t%time_interval: excessive extrapolation prevented, ', &
-            'id,src,time,pt,t=', id, self%id, self%level, time, pt(2), t
-          write (io_unit%mpi,'(f8.3,i4,2x,a,2i6,1p,4e11.2)') &
-            wallclock(), omp%thread, &
-            'patch_t%time_interval: excessive id,id,t,tm,t,f =', &
-            self%id, id, time, time-t(j), t(j+1)-t(j), (time-t(j))/dt
-          write (io_unit%mpi,'(f8.3,i4,2x,a,2i2,2f5.2,1p,11e11.3)') &
-            wallclock(), omp%thread, &
-            'patch_t%time_interval: jt,pt,tm,t(:) =', &
-            jt, pt, time, self%t-time
-        else
-          write (stderr,'(2a,i6,":",i2.2,f12.6,f7.2,9f12.6)') &
-            'patch_t%time_interval: excessive extrapolation prevented, ', &
-            'id,time,pt,t=', self%id, self%level, time, pt(2), t
-          write (io_unit%mpi,'(i4,2x,a,i6,1p,6e11.2)') omp%thread, &
-            'patch_t%time_interval: excessive id,t,tm,t,f =', &
-            self%id, time, t(j+1), time-t(j), t(j+1)-t(j), (time-t(j))/dt
-        end if
-        if (io%verbose > 1) then
+        write (stderr,'(2a,2i4,2(i6,":",i2.2,i8),f12.6,f7.2,11f12.6)') &
+          'time_interval: excessive, ', &
+          'rank,thread,id,src,istep,time,pt,t=', mpi%rank, omp%thread, &
+          target%id, target%level, target%istep, &
+          self%id, self%level, self%istep, time, pt(2), t
+        write (stdlog,'(f8.3,2x,a,2i6,":",i2.2,i8,f12.6,f7.2,11f12.6)') &
+          wallclock(), &
+          'time_interval: excessive, tgt,src,step,t,f,tsrc =', &
+          target%id, self%id, self%level, self%istep, time, pt(2), t
+        write (stdlog,'(f8.3,2x,a,2i2,2f5.2,11f12.6)') wallclock(), &
+          'time_interval: jt,pt,tm,t-tm =', jt, pt, time, (time-t)/dt
+        write (stdlog,'(f8.2,2x,a,12i10)') wallclock(), &
+          'time_interval: iit,it,new =', self%iit, self%it, self%new
+        write (stdlog,'(f8.2,2x,a,12f10.6)') wallclock(), &
+          'time_interval:     t,time =', &
+          self%t, self%t(self%it), self%t(self%new), self%time
+        write (stdlog,'(f8.2,2x,a,12f10.6)') wallclock(), &
+          'time_interval:   dt,dtime =', &
+          self%dt, self%dt(self%it), self%dt(self%new), self%dtime
+       if (io%verbose > 1) then
           write (stdlog,'(a,2i6,2f6.2      )') 'time_interval:', jt, pt
-          write (stdlog,'(a,2i6            )') '   nbor, targ:', self%id, id
+          write (stdlog,'(a,2i6            )') '   nbor, targ:', self%id, target%id
           write (stdlog,'(a,9i4            )') '     self%iit:', self%iit
           write (stdlog,'(a,9i4            )') '          iit:', iit
           write (stdlog,'(a,f12.6,2x,9f12.6)') '  time, times:', time, self%time
           write (stdlog,'(a,f12.6,2x,9f12.6)') '     grace, t:', grace, t
           flush (stdlog)
         end if
-        if (io%task_logging > 2) then
+        call nbor_info (target)
+        call nbor_info (self)
+        if (io%task_logging > 1) then
           block
           character(len=24):: label
           call io%lock%set ('excess')
           write (label,'(a,i6,f10.5)') 'excess ', self%id, time
-          call self%log (label)
+          call target%log (label)
           call io%lock%unset ('excess')
           end block
         end if
+        call io%warning ('excess time interpolation')
       end if
       pt(2) = max(0d0-grace, min(1d0+grace, pt(2)))
     end if
@@ -2680,6 +2732,26 @@ SUBROUTINE time_interval (self, time, jt, pt, all, id, extrap, it)
   end if
   if (timer%detailed) &
     call trace%end (itimer)
+  return
+contains
+  !=============================================================================
+  subroutine nbor_info (task)
+    class(patch_t):: task
+    class(link_t), pointer:: link
+    class(nbor_t), pointer:: nbor
+    !---------------------------------------------------------------------------
+    write (stdlog,1) 'task: id,step,time,update_time', &
+      task%id, task%level, task%istep, task%time, task%wallclock
+    1 format(3x,a,i6,":",i2.2,i6,2f12.6)
+    link => task%link
+    nbor => link%nbor
+    do while (associated(nbor))
+      write (stdlog,1) 'nbor: ', &
+        nbor%task%id, nbor%task%level, nbor%task%istep, nbor%task%time, &
+          nbor%task%wallclock
+      nbor => nbor%next
+    end do
+  end subroutine nbor_info
 END SUBROUTINE time_interval
 
 !===============================================================================
@@ -3108,18 +3180,64 @@ SUBROUTINE update_position (self)
 END SUBROUTINE update_position
 
 !===============================================================================
-!> Generic procedure returning relative position and velocity of a source patch
+!> Return the position and velocity of the source in the target coordinates at
+!> the target time, and the relative orientation of the source at that time.
 !===============================================================================
 SUBROUTINE get_position (self, source, p, v, e)
   class(patch_t):: self
   class(task_t):: source
   real(8):: time, p(3), v(3), e(3,3)
   optional:: p, v, e
+  !.............................................................................
+  real(8):: crn(8,3)
+  integer:: i
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('patch_t%get_position')
-  p = self%distance_to (source)
-  v = source%velocity - self%velocity
-  call trace%end()
+  if (timer%detailed) &
+    call trace%begin ('experiment_t%get_position', itimer=itimer)
+  if (self%id == io%id_debug) then
+    PRINT *,'get_position debug'
+  end if
+  select type (source)
+  class is (patch_t)
+    !---------------------------------------------------------------------------
+    ! Relative position and velocity in target coordinates
+    !---------------------------------------------------------------------------
+    if (present(p)) then
+      p = source%position-self%position
+      if (self%id == io%id_debug) PRINT *,'p1=',p
+      p = self%distance_to (source)
+      if (self%id == io%id_debug) PRINT *,'p2=',p
+      if (associated(self%erot)) then
+        p = matmul (p, self%erot)
+        if (self%id == io%id_debug) PRINT *,'p3=',p
+        if (self%id == io%id_debug) PRINT 1,'slf%erot=',self%erot
+        if (self%id == io%id_debug) PRINT 1,'src%erot=',source%erot
+        1 format(a,3(2x,3f9.4))
+      end if
+    end if
+    if (present(v)) then
+      v = source%velocity - self%velocity
+      if (associated(self%erot)) then
+        v = matmul (self%erot, v)
+      end if
+    end if
+    !---------------------------------------------------------------------------
+    ! Return the relative rotation matrix, at the given target time
+    !---------------------------------------------------------------------------
+    if (present(e)) then
+      if (associated(self%erot)) then
+        e = matmul(transpose(source%erot),self%erot)
+        if (self%id == io%id_debug) PRINT 1,'       e=',e
+      else
+        e(:,1) = [1d0,0d0,0d0]
+        e(:,2) = [0d0,1d0,0d0]
+        e(:,2) = [0d0,0d0,1d0]
+      end if
+    end if
+  end select
+  if (timer%detailed) &
+    call trace%end (itimer)
 END SUBROUTINE get_position
 
 !===============================================================================
@@ -3616,8 +3734,8 @@ END SUBROUTINE support_arrays
 SUBROUTINE write_nml (self, unit)
   class(patch_t):: self
   integer:: unit
-  namelist /patch_nml/ ncell, n, nw, mesh_type, record
   integer:: ncell(3), n(3), nw, mesh_type, record, parent_id
+  namelist /patch_nml/ ncell, n, nw, mesh_type, record
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%write_nml')
   !-----------------------------------------------------------------------------
@@ -3632,5 +3750,112 @@ SUBROUTINE write_nml (self, unit)
   write (unit, patch_nml)
   call trace%end ()
 END SUBROUTINE write_nml
+
+!===============================================================================
+!> This is called just before use, with a call to deallocate_generic expected,
+!> so we count the memory, in case the deallocate call is not made
+!===============================================================================
+SUBROUTINE allocate_generic (self)
+  class(patch_t):: self
+  integer:: l(3), u(3)
+  !.............................................................................
+  if (.not.associated(self%generic)) then
+    call trace%begin ('patch_t%allocate_generic')
+    l = merge (self%mesh%lb, self%mesh%li, io%guard_zones)
+    u = merge (self%mesh%ub, self%mesh%ui, io%guard_zones)
+    allocate (self%generic(l(1):u(1),l(2):u(2),l(3):u(3),self%nv))
+    call io%bits_mem (+storage_size(self%generic), &
+                      product(shape(self%generic)), 'generic')
+  call trace%end ()
+  end if
+END SUBROUTINE allocate_generic
+
+!===============================================================================
+!> This should be called briefly after use--memory accounting is used as a check
+!===============================================================================
+SUBROUTINE deallocate_generic (self)
+  class(patch_t):: self
+  !.............................................................................
+  call trace%begin ('patch_t%deallocate_generic')
+  if (associated(self%generic)) then
+    call io%bits_mem (-storage_size(self%generic), &
+                      product(shape(self%generic)), 'generic')
+    deallocate (self%generic)
+  end if
+  call trace%end ()
+END SUBROUTINE deallocate_generic
+
+!===============================================================================
+!> Generic call, to overload
+!===============================================================================
+SUBROUTINE to_generic (self)
+  class(patch_t):: self
+  call trace%begin ('patch_t%to_generic')
+  call trace%end ()
+END SUBROUTINE
+
+!===============================================================================
+!> Generic call, to overload
+!===============================================================================
+SUBROUTINE from_generic (self)
+  class(patch_t):: self
+  call trace%begin ('patch_t%from_generic')
+  call trace%end
+END SUBROUTINE
+!===============================================================================
+!> Exact overlap determination
+!===============================================================================
+function overlaps2 (self, task2, verbose) result (out)
+  class(patch_t)          :: self, task2
+  integer, optional       :: verbose
+  logical                 :: out
+  !.............................................................................
+  class(mesh_t),  pointer :: m
+  real(8), dimension(3)   :: p1, s1, p2, s2, llc, urc, corner
+  real(8)                 :: erot(3,3)
+  logical                 :: debug=.false.
+  integer                 :: i1, i2, i3, i
+  !-----------------------------------------------------------------------------
+  ! Rotation matrix transforming from task2 to self local coordinates
+  !-----------------------------------------------------------------------------
+  erot = matmul(transpose(self%erot), task2%erot)
+  !-----------------------------------------------------------------------------
+  ! self and task2 positions and half sizes in local coordinates
+  !-----------------------------------------------------------------------------
+  p1 = matmul(self%position, self%erot)
+  p2 = matmul(task2%position, task2%erot)
+  s1 = self%size*(self%n+2*self%ng)/(2d0*self%n)
+  s2 = task2%size/2d0
+  !-----------------------------------------------------------------------------
+  ! self LLC and URC corner
+  !-----------------------------------------------------------------------------
+  llc = p1 - s1
+  urc = p1 + s1
+  out = .false.
+  !-----------------------------------------------------------------------------
+  ! Loop over and check corners
+  !-----------------------------------------------------------------------------
+  do i3=-1,1,2
+  do i2=-1,1,2
+  do i1=-1,1,2
+    !---------------------------------------------------------------------------
+    ! Transform task2 coordinates to self local, and check corners
+    !---------------------------------------------------------------------------
+    corner = p2 + [i1,i2,i3]*s2
+    corner = matmul (task2%erot, corner)
+    corner = matmul (corner, self%erot)
+    out = out .or. all(corner > llc .and. corner < urc)
+    if (out) then
+      if (self%id == io%id_debug) then
+        p2 = matmul(task2%position, self%erot)
+        PRINT '("overlaps2",2i6,4(1x,3f8.2))', &
+          self%id, task2%id, self%position, task2%position, p1, p2
+      end if
+      return
+    end if
+  end do
+  end do
+  end do
+end function overlaps2
 
 END MODULE patch_mod

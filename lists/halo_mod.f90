@@ -54,6 +54,7 @@ MODULE halo_mod
     procedure:: check_support
     procedure:: find_support
     procedure:: alloc_nbor
+    procedure:: check_nbor_list
   end type
   logical, save:: check_filled=.true.
   logical, save:: detailed_timer=.false.
@@ -117,6 +118,7 @@ SUBROUTINE update (self, all_tgt, all_src, only)
   integer, save           :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('halo_t%update',itimer=itimer)
+  call self%check_nbor_list ()
   unit = merge (stdlog, stdout, verbose > 2)
   self%n_op = 0
   !-----------------------------------------------------------------------------
@@ -157,6 +159,7 @@ SUBROUTINE download (self, nbors, only, all_tgt, all_src)
   integer,      optional :: only
   logical,      optional :: all_tgt, all_src
   !.............................................................................
+  class(nbor_t), pointer :: tnbors
   integer                :: unit, n_same
   logical                :: use_coarse
   class(nbor_t), pointer :: nbor
@@ -166,8 +169,10 @@ SUBROUTINE download (self, nbors, only, all_tgt, all_src)
   ! Decide whether to use a coarse clone or not
   !-----------------------------------------------------------------------------
   call trace%begin ('halo_t%download', itimer=itimer)
+                                          call self%lock%set ('halo_t%download')
+  call self%copy_nbor_list (self%nbor, tnbors)
+                                        call self%lock%unset ('halo_t%download')
   unit = merge (stdlog, stdout, verbose > 2)
-  use_coarse = .false.
   target => self%task
   !-----------------------------------------------------------------------------
   ! If the task does not yet have support it will soon have it, and until then
@@ -186,7 +191,7 @@ SUBROUTINE download (self, nbors, only, all_tgt, all_src)
       source => self%parent%task
       call guards%source_to_target (source, target, n_op=self%n_op, only=only, &
                                     all_src=.true., all_tgt=all_tgt)
-    else
+    else if (verbose > 0) then
       write (stdout,*) self%task%id, 'now supported in download'
     end if
   end if
@@ -196,6 +201,7 @@ SUBROUTINE download (self, nbors, only, all_tgt, all_src)
   ! not use a coarse clone. The case with 26 same level nbors is a special case,
   ! but there are additional ones to discover.
   !-----------------------------------------------------------------------------
+  use_coarse = .false.
   n_same = 0
   nbor => nbors
   do while (associated(nbor))
@@ -208,18 +214,38 @@ SUBROUTINE download (self, nbors, only, all_tgt, all_src)
           'tgt:', target%id, target%key, &
           'src:', source%id, source%key
       end if
-      !...........................................................................
+      !-------------------------------------------------------------------------
+      ! An nbor ROA that covers the target ROI is sufficient 
+      !-------------------------------------------------------------------------
+      if (source%authority%covers (target%interest, nbor%distance)) then
+        if (verbose > 0) &
+          write (stdlog,*) target%id, 'covered by', source%id
+        exit
+      end if
+      !-------------------------------------------------------------------------
+      ! An nbor at level L-1 is potential reason to use a coarse clone, unless
+      ! another nbor is found above, or 26 nbors on the same level are found
+      !-------------------------------------------------------------------------
       if (source%level < target%level) then
-        if (source%id /= target%parent%id) then
-          use_coarse = .true.
-        end if
+        use_coarse = .true.
       else if (source%level == target%level) then
         n_same = n_same+1
       end if
     end if
     nbor => nbor%next
   end do
-  if (n_same==26) use_coarse = .false.
+  if (n_same==26) then
+    if (verbose > 0) &
+      write (stdlog,*) target%id, 'has 26 level L nbors'
+    use_coarse = .false.
+  else if (my_present(all_src).and. my_present(all_tgt)) then
+    if (verbose > 0) &
+      write (stdlog,*) target%id, 'all_src and all_tgt'
+    use_coarse = .false.
+  else if (use_coarse) then
+    if (verbose > 0) &
+      write (stdlog,*) target%id, 'needs a coarse clone'
+  end if
   !-----------------------------------------------------------------------------
   ! Pass on, or loop over nbors
   !-----------------------------------------------------------------------------
@@ -229,7 +255,7 @@ SUBROUTINE download (self, nbors, only, all_tgt, all_src)
     nbor => nbors
     do while (associated(nbor))
       if (nbor%download) then
-        if (nbor%task%is_clear (bits%remove+bits%frozen)) then
+        if (nbor%task%is_clear (bits%remove)) then
           source => nbor%task
           call guards%source_to_target (source, target, n_op=self%n_op, &
             only=only, all_src=all_src, all_tgt=all_tgt)
@@ -243,14 +269,14 @@ SUBROUTINE download (self, nbors, only, all_tgt, all_src)
   !-----------------------------------------------------------------------------
   ! Boundary conditions
   !-----------------------------------------------------------------------------
-  call self%task%bndries
+  call self%task%bndries()
   call self%task%periodic_grid()
   !-----------------------------------------------------------------------------
   ! Emergency procedure: If some cells are not filled; redo the guard zone
   ! loading, using full source patches, while printing warnings
   !-----------------------------------------------------------------------------
   if (self%not_filled (target)) then
-    write (stderr,'(a,i6,":",i2.2,3i4)') &
+    write (stderr,'(a,i6,":",i2.2,3i7)') &
       ' halo_t%not_filled: target=', target%id, target%key
     nbor => nbors
     do while (associated(nbor))
@@ -289,13 +315,28 @@ SUBROUTINE download (self, nbors, only, all_tgt, all_src)
       'halo_t%download: n_same,prolong,restrict=', self%n_op
     self%n_op = 0
   end if
-call trace%end (itimer)
+  call self%remove_nbor_list (tnbors)
+  call trace%end (itimer)
 END SUBROUTINE download
 
 !===============================================================================
-!> Create a clone of the coarse parent patch at level L-1, and fill its guard
-!> zone from patches in the child (self) nbor list at level L-1; these will
-!> all be at most interpolations in time and copies in space.  The completed
+!> Simplify optional argument handling
+!===============================================================================
+FUNCTION my_present(flag) result (yes)
+  logical, optional:: flag
+  logical:: yes
+  !-----------------------------------------------------------------------------
+  if (present(flag)) then
+    yes = flag
+  else
+    yes = .false.
+  end if
+END FUNCTION my_present
+
+!===============================================================================
+!> Create a clone (C) of the coarse parent patch (P) at level L-1, and fill its
+!> guard zones from patches in the child (self) nbor list at level L-1; these
+!> will all be at most interpolations in time and copies in space.  The completed
 !> coarse patch is able to supply all guard zone values for the level L task
 !> by prolongation.
 !===============================================================================
@@ -324,6 +365,8 @@ SUBROUTINE make_coarse (self, nbors, only)
   !-----------------------------------------------------------------------------
   target => self%task
   source => self%task%parent
+  call io%assert (associated(target), "make_coarse: target not associated")
+  call io%assert (associated(source), "make_coarse: source not associated")
   !.............................................................................
   if (verbose > 0 .or. &
       target%id == io%id_debug .or. &
@@ -355,9 +398,10 @@ SUBROUTINE make_coarse (self, nbors, only)
   !-----------------------------------------------------------------------------
   if (target%is_set (bits%no_support)) then
     source => self%task%parent
-    write (unit,'(a,2(i6,":",i2.2))') &
-      'halo_t%make_coarse: target,source=', &
-      coarse%id, coarse%level, source%id, source%level
+    if (verbose > 0) &
+      write (unit,'(a,2(i6,":",i2.2))') &
+        'halo_t%make_coarse: target,source=', &
+        coarse%id, coarse%level, source%id, source%level
     target_mem => coarse%mem(:,:,:,:,1,1)
     select type (source)
     class is (patch_t)
@@ -380,6 +424,10 @@ SUBROUTINE make_coarse (self, nbors, only)
   end if
   do while (associated(nbor))
     if (nbor%download) then
+      !-------------------------------------------------------------------------
+      ! Use all nbors at the same level as the clone, including the task%parent,
+      ! whose values are needed where ii is the supplying guard zone values
+      !-------------------------------------------------------------------------
       if (nbor%task%level == self%task%parent%level) then
         if (guards%verbose > 1 .or. self%task%id == io%id_debug) then
           write (unit,'(a,2(i6,":",i2.2),l3)') &
@@ -491,6 +539,7 @@ SUBROUTINE conditionally_add_nbor (self, nblink, nbors, added)
   integer                :: n(4)
   real(8)                :: distance(3)
   integer, save          :: itimer=0
+  logical:: added_loc
   !-----------------------------------------------------------------------------
   if (detailed_timer) &
     call trace%begin ('halo_t%conditionally_add_nbor',itimer=itimer)
@@ -511,12 +560,18 @@ SUBROUTINE conditionally_add_nbor (self, nblink, nbors, added)
           n(2) = n(2) + 1
           if (patch%interest%overlaps (nbtask%authority, distance)) then
             n(3) = n(3) + 1
-            call self%add_nbor (nblink, nbors, nbor)
+            call self%add_nbor (nblink, nbors, nbor, added_loc)
+            if (.not. added_loc) then
+              if (present(added)) added=added_loc
+              if (detailed_timer) &
+                call trace%end (itimer)
+              return
+            end if
             nbor%distance = distance
             !...................................................................
             if (nbtask%id == io%id_debug) write (stdlog,*) nbtask%id, 'overlaps_r'
             if (verbose > 0) then
-              write (stdlog,'(f12.6,a,2i6,":",i2.2,2(1x,3f7.3),2(1x,4i4))') &
+              write (stdlog,'(f12.6,a,2i6,":",i2.2,2(1x,3f7.3),2(1x,3i7))') &
                 wallclock(), pad_trace(1:indent)// &
                 'halo_t%cnd_add_nbor: tgt,src,dist,size,n=', &
                 task%id, nbor%task%id, nbor%task%level, &
@@ -626,7 +681,6 @@ SUBROUTINE set_filled (self, task)
         ! Simple logics, easy to read
         !-----------------------------------------------------------------------
         if (method == 3) then
-          !$omp simd
           do i1=1,target%gn(1)
             mesh => target%mesh(1)
             outside(1) = (i1 < mesh%li .or. i1 > mesh%ui)
@@ -657,7 +711,6 @@ SUBROUTINE set_filled (self, task)
     !---------------------------------------------------------------------------
     do i3=target%li(3),target%ui(3)
       do i2=target%li(2),target%ui(2)
-        !$omp simd
         do i1=target%li(1),target%ui(1)
           target%outside(i1,i2,i3) = .false.
           target%filled(i1,i2,i3) = target%level
@@ -668,7 +721,7 @@ SUBROUTINE set_filled (self, task)
   if (guards%verbose > 0) then
     write (stdlog,'(f12.6,a,i3,9p,2f8.3)') &
       wallclock(), pad_trace(1:indent)// &
-      'guards_t%set_filled: filled,outside method,ns/pt=', method, &
+      'halo_t%set_filled: filled,outside method,ns/pt=', method, &
       (wc(2)-wc(1))/product(target%n), (wallclock()-wc(1))/product(target%n)
   end if
   call trace%end (itimer)
@@ -689,7 +742,7 @@ SUBROUTINE get_filled (self, target)
   class is (patch_t)
     if (associated(target%filled)) then
       if (any(target%filled == 0)) then
-         call print_filled (target)
+         call print_filled (self, target)
       end if
       !call target%lock%set ('halo_t%get_filled')
       !deallocate (target%filled, target%outside)
@@ -703,14 +756,16 @@ END SUBROUTINE get_filled
 !===============================================================================
 !> Check that target is filled
 !===============================================================================
-SUBROUTINE print_filled (target)
+SUBROUTINE print_filled (self, target)
+  class(halo_t)      :: self
   class(patch_t)     :: target
   integer            :: i1, i2, i3
   integer, parameter :: m_max=500
   integer, save      :: n_max=m_max
   !-----------------------------------------------------------------------------
   write (stdlog,'(a,i6)') &
-    'guards_t%check_filled: target not filled =', target%id
+    'halo_t%print_filled: target not filled =', target%id
+  io%id_debug = target%id
   do i3=1,target%gn(3)
   do i2=1,target%gn(2)
   do i1=1,target%gn(1)
@@ -721,14 +776,16 @@ SUBROUTINE print_filled (target)
       return
     end if
     if (target%filled(i1,i2,i3)==0) then
-      write (stdlog,'(a,i6,2x,3i3)') &
-        'guards_t%print_filled: id,ii=', target%id, i1, i2, i3
+      write (stdlog,'(a,i6,2x,4i3)') &
+        'halo_t%print_filled: id,ii=', target%id, i1, i2, i3, target%filled(i1,i2,i3)
       !$omp atomic update
       n_max = n_max-1
     end if
   end do
   end do
   end do
+  io%id_debug = self%task%id
+  call self%check_nbor_list ()
 END SUBROUTINE print_filled
 
 !===============================================================================
@@ -749,7 +806,7 @@ FUNCTION not_filled (self, target)
       if (associated(target%filled)) then
         not_filled = any(target%filled == 0)
         if (not_filled .and. verbose > 0) then
-          call print_filled (target)
+          call print_filled (self, target)
         end if
       else
         not_filled = .false.
@@ -866,9 +923,10 @@ SUBROUTINE request_support (self, source)
             source%request(ii(1),ii(2),ii(3)) = 2
             target%filled(i1,i2,i3) = 0
             n = n+1
-            write (stdlog,'(a,2(i6,":",i2.2,3i4))') 'request:', &
-            target%id, target%level, i1,i2,i3, &
-            source%id, source%level, ii
+            if (verbose > 0) &
+              write (stdlog,'(a,2(i6,":",i2.2,3i4))') 'request:', &
+              target%id, target%level, i1,i2,i3, &
+              source%id, source%level, ii
           end if
         end if
       end do
@@ -935,7 +993,7 @@ SUBROUTINE find_support (self)
     end if
     nbor => nbor%next
   end do
-  if (.not.found) then
+  if (.not.found .and. verbose > 0) then
     write (stderr,*) 'halo_t%check_support WARNING: did not find support', &
       self%task%id, omp%thread, associated(self%nbor)
     nbor => self%nbor
@@ -959,5 +1017,29 @@ SUBROUTINE alloc_nbor (self, nbor)
   nbor%link => self
   nbor%task => self%task
 END SUBROUTINE alloc_nbor
+
+SUBROUTINE check_nbor_list (self)
+  class(halo_t):: self
+  class(link_t), pointer:: link
+  class(nbor_t), pointer:: nbor
+  class(task_t), pointer:: task, nbtask
+  logical:: test
+  !-----------------------------------------------------------------------------
+  if (self%task%id == io%id_debug) then
+    task => self%task
+    select type (task)
+    class is (patch_t)
+      nbor => self%nbor
+      do while (associated(nbor))
+        nbtask => nbor%task
+        select type (nbtask)
+        class is (patch_t)
+          test = task%overlaps2 (nbtask)
+        end select
+        nbor => nbor%next
+      end do
+    end select
+  end if
+END SUBROUTINE check_nbor_list
 
 END MODULE halo_mod

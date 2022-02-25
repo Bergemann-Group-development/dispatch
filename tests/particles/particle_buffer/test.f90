@@ -108,7 +108,7 @@ PROGRAM test
     dust => prev
     call copy_fr_buffer (dust, p, v, m, s, t, dt, nbin, ndim)
   end do
-  call toc ("particle motion", npart*nbin)
+  call timer%toc ("particle motion", npart*nbin)
 END PROGRAM
 
 !===============================================================================

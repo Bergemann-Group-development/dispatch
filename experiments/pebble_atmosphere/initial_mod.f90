@@ -13,6 +13,7 @@ MODULE initial_mod
   USE scaling_mod
   USE index_mod
   USE kinds_mod
+  USE eos_mod
   implicit none
   private
   real(8), parameter:: pi2=8d0*atan(1d0)
@@ -20,14 +21,14 @@ MODULE initial_mod
     integer:: id
     character(len=20) :: initial_condition
     real:: b0(3)
-    real:: gamma
     real(8):: size(3)
     logical:: mhd = .false.
-    character(len=64):: solver
+    character(len=64):: kind, etype
     procedure(planet_atmosphere), pointer:: condition => null()
   contains
     procedure init
   end type
+  real, save:: gamma=1.4
   logical, save:: test=.false.
   public planet_atmosphere
 CONTAINS
@@ -39,10 +40,9 @@ CONTAINS
 !> setups -- the proper place to set the type of IC is here, via the namelist
 !> below
 !===============================================================================
-SUBROUTINE init (self, solver, gamma)
+SUBROUTINE init (self, kind, etype)
    class(initial_t):: self
-   character(len=64):: solver
-   real, optional:: gamma
+   character(*):: kind, etype
    !............................................................................
    logical, save:: first_time=.true.
    character(len=20), save:: initial_condition = 'planet_atmosphere'
@@ -51,16 +51,23 @@ SUBROUTINE init (self, solver, gamma)
    !----------------------------------------------------------------------------
    call trace%begin('initial_t%init')
    call scaling%init
-   call io%lock%set
+   call io%lock%set ()
    if (first_time) then
      first_time = .false.
      initial_condition = self%initial_condition
-     rewind (io%input); read (io%input, IC_params, iostat=iostat)
-     if (io%master) write (*, IC_params)
+     rewind (io%input)
+     read (io%input, IC_params, iostat=iostat)
+     if (iostat > 0) then
+      rewind (io%input)
+      read (io%input, IC_params)
+     end if
+     write (io%namelist, IC_params)
    end if
-   call io%lock%unset
+   call io%lock%unset ()
+   gamma = eos%gamma
    self%initial_condition = initial_condition
-   self%solver = trim(solver)
+   self%kind = kind
+   self%etype = etype
    select case(trim(self%initial_condition))
      case('star_and_planet')
        self%condition => planet_atmosphere
@@ -88,10 +95,12 @@ SUBROUTINE planet_atmosphere (self, m, mem, idx)
   real(8) :: xs, ys, zs, xp, yp, zp, R_Hill, f_Hill
   !-----------------------------------------------------------------------------
   logical, save:: first_time=.true.
+  integer:: iostat
   real, save:: omega(3)=0.0
-  real, save:: b0(3) = 0.0, gamma=1.4, v_head_cgs=0.0, v_accrete_cgs=0.0
-  namelist /planet_atm_params/ omega, gamma, b0, v_head_cgs, v_accrete_cgs, test
-  integer, save:: itimer=0
+  real, save:: b0(3) = 0.0, v_head_cgs=0.0, v_accrete_cgs=0.0
+  namelist /planet_atm_params/ omega, b0, v_head_cgs, v_accrete_cgs, &
+    test, verbose
+  integer, save:: itimer=0, verbose=0
   !-----------------------------------------------------------------------------
   call trace%begin('initial_t%planet_atmosphere', itimer=itimer)
   call io%lock%set
@@ -99,8 +108,12 @@ SUBROUTINE planet_atmosphere (self, m, mem, idx)
     first_time = .false.
     omega = planet%omega*cgs%yr/(2.*cgs%pi*scaling%t)
     rewind (io%input)
-    read (io%input, planet_atm_params)
-    if (io%master) write (*, planet_atm_params)
+    read (io%input, planet_atm_params, iostat=iostat)
+    if (iostat > 0) then
+      rewind (io%input)
+      read (io%input, planet_atm_params)
+    end if
+    write (io%namelist, planet_atm_params)
   end if
   call io%lock%unset
   planet%omega   = omega*2.*cgs%pi*scaling%t/cgs%yr
@@ -108,27 +121,30 @@ SUBROUTINE planet_atmosphere (self, m, mem, idx)
   planet%v_accrete = v_accrete_cgs/scaling%u
   T0 = atmosphere%external%temperature
   nr = atmosphere%nr
-  if (self%solver(1:7)=='stagger') then
+  if (self%kind(1:7) == 'stagger') then
     ds2 = 0.5*m%d
-  else if (self%solver(1:6)=='zeus3d') then
+  else if (self%kind(1:6) == 'zeus3d') then
     ds2 = 0.5*m%d
   else
     ds2 = 0.0
   endif
   if (test) then
-   l = m%li
-   u = m%ui
+    l = m%li
+    u = m%ui
   else
-   l = m%lb
-   u = m%ub
+    l = m%lb
+    u = m%ub
   end if
   R_Hill = cgs%au/scaling%l*(cgs%m_earth/(3.*cgs%m_sun))**(1./3.)
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
+  !$omp parallel do collapse(2) default(none) &
+  !$omp private(ix,iy,iz,z,zp,zs,y,yp,ys,x,xp,xs,rp,d,p,d0,ux,uy,uz,f_hill,ds) &
+  !$omp shared(l,u,m,lagrange,planet,atmosphere,ds2,nr,b0,gamma,r_hill,self,t0,mem,idx,test)
   do iz=l(3),u(3)
-    z = m(3)%p + r3(iz)
-    zp = z  - planet%position(3)
-    zs = zp - ds2(3)
     do iy=l(2),u(2)
+      z = m(3)%p + r3(iz)
+      zp = z  - planet%position(3)
+      zs = zp - ds2(3)
       y = m(2)%p + r2(iy)
       yp = y  - planet%position(2)
       ys = yp - ds2(2)
@@ -137,8 +153,8 @@ SUBROUTINE planet_atmosphere (self, m, mem, idx)
         xp = x  - planet%position(1)
         xs = xp - ds2(1)
         rp = sqrt(xp**2+yp**2+zp**2)
-        d = lagrange%interpolate1d (rp, nr ,atmosphere%rr, atmosphere%rho)
-        p = lagrange%interpolate1d (rp, nr, atmosphere%rr, atmosphere%pg)
+        d = lagrange%interpolate1d (rp, atmosphere%rr, atmosphere%rho)
+        p = lagrange%interpolate1d (rp, atmosphere%rr, atmosphere%pg)
         !-----------------------------------------------------------------------
         ! Vertical stratification is added by adding Gaussian profile and
         ! subtracting off the otherwise constant external density
@@ -175,26 +191,26 @@ SUBROUTINE planet_atmosphere (self, m, mem, idx)
         ! Momenta from (possibly) staggered densities
         !-----------------------------------------------------------------------
         rp = sqrt(xs**2+yp**2+zp**2)
-        ds = lagrange%interpolate1d (rp, nr ,atmosphere%rr, atmosphere%rho)
+        ds = lagrange%interpolate1d (rp, atmosphere%rr, atmosphere%rho)
         ds = ds*exp(-(planet%omega(3)**2*0.5*(zp**2+2.*planet%trap*xs**2)/T0))
         mem(ix,iy,iz,idx%px) = ds*ux
         rp = sqrt(xp**2+ys**2+zp**2)
-        ds = lagrange%interpolate1d (rp, nr ,atmosphere%rr, atmosphere%rho)
+        ds = lagrange%interpolate1d (rp, atmosphere%rr, atmosphere%rho)
         ds = ds*exp(-(planet%omega(3)**2*0.5*(zp**2+2.*planet%trap*xp**2)/T0))
         mem(ix,iy,iz,idx%py) = ds*uy
         rp = sqrt(xp**2+yp**2+zs**2)
-        ds = lagrange%interpolate1d (rp, nr ,atmosphere%rr, atmosphere%rho)
+        ds = lagrange%interpolate1d (rp, atmosphere%rr, atmosphere%rho)
         ds = ds*exp(-(planet%omega(3)**2*0.5*(zs**2+2.*planet%trap*xp**2)/T0))
         mem(ix,iy,iz,idx%pz) = ds*uz
-        if (self%solver(1:7)=='ramses_') then
+        if (self%etype == 'total') then
           mem(ix,iy,iz,idx%e) = p/(gamma-1.0) + 0.5*d*(ux**2+uy**2+uz**2)
-        else if (self%solver(1:9)=='stagger2e') then
+        else if (self%etype == 'thermal') then
           mem(ix,iy,iz,idx%e) = p/(gamma-1.0)
-        else if (self%solver(1:9)=='stagger2_') then
+        else if (self%etype == 'entropy') then
           mem(ix,iy,iz,idx%s) = d*(log(p)-gamma*log(d))/(gamma-1.0)
         else
-          print *,trim(self%solver)
-          error stop "initial_mod (1): solver type not known"
+          print *,trim(self%etype)
+          error stop "initial_mod (1): etype type not known"
         end if
         if (self%mhd) then
           mem(ix,iy,iz,idx%bx) = b0(1)
@@ -222,9 +238,10 @@ SUBROUTINE disk (self, m, mem, idx)
   real(8) :: xs, ys, zs, xp, yp, zp, rp
   !-----------------------------------------------------------------------------
   logical, save:: first_time=.true.
+  integer:: iostat
   real, save:: omega(3)=0.0
-  real, save:: b0(3) = 0.0, gamma=1.4, v_head_cgs=0.0, v_accrete_cgs=0.0
-  namelist /planet_atm_params/ omega, gamma, b0, v_head_cgs, v_accrete_cgs
+  real, save:: b0(3) = 0.0, v_head_cgs=0.0, v_accrete_cgs=0.0
+  namelist /planet_atm_params/ omega, b0, v_head_cgs, v_accrete_cgs
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('initial_t%disk', itimer=itimer)
@@ -234,7 +251,7 @@ SUBROUTINE disk (self, m, mem, idx)
     omega = planet%omega*cgs%yr/(2.*cgs%pi*scaling%t)
     rewind (io%input)
     read (io%input, planet_atm_params)
-    if (io%master) write (*, planet_atm_params)
+    write (io%namelist, planet_atm_params)
   end if
   call io%lock%unset
   planet%omega   = omega*2.*cgs%pi*scaling%t/cgs%yr
@@ -242,7 +259,9 @@ SUBROUTINE disk (self, m, mem, idx)
   planet%v_accrete = v_accrete_cgs/scaling%u
   nr = atmosphere%nr
   T0 = atmosphere%external%temperature
-  if (self%solver(1:7)=='stagger') then
+  if (self%kind(1:6) == 'stagger') then
+    ds2 = 0.5*m%d
+  else if (self%kind(1:6) == 'zeus3d') then
     ds2 = 0.5*m%d
   else
     ds2 = 0.0
@@ -293,26 +312,26 @@ SUBROUTINE disk (self, m, mem, idx)
         ! Momenta from (possibly) staggered densities
         !-----------------------------------------------------------------------
         !rp = sqrt(xs**2+yp**2+zp**2)
-        !ds = lagrange%interpolate (rp, nr ,atmosphere%rr, atmosphere%rho)
+        !ds = lagrange%interpolate (rp, atmosphere%rr, atmosphere%rho)
         !ds = ds*exp(-(planet%omega(3)**2*0.5*(zp**2+2.*planet%trap*xs**2)/T0))
         mem(ix,iy,iz,idx%px) = d*ux
         !rp = sqrt(xp**2+ys**2+zp**2)
-        !ds = lagrange%interpolate (rp, nr ,atmosphere%rr, atmosphere%rho)
+        !ds = lagrange%interpolate (rp, atmosphere%rr, atmosphere%rho)
         !ds = ds*exp(-(planet%omega(3)**2*0.5*(zp**2+2.*planet%trap*xp**2)/T0))
         mem(ix,iy,iz,idx%py) = d*uy
         !rp = sqrt(xp**2+yp**2+zs**2)
-        !ds = lagrange%interpolate (rp, nr ,atmosphere%rr, atmosphere%rho)
+        !ds = lagrange%interpolate (rp, atmosphere%rr, atmosphere%rho)
         !ds = ds*exp(-(planet%omega(3)**2*0.5*(zs**2+2.*planet%trap*xp**2)/T0))
         mem(ix,iy,iz,idx%pz) = d*uz
-        if (self%solver(1:7)=='ramses_') then
+        if (self%etype == 'total') then
           mem(ix,iy,iz,idx%e) = p/(gamma-1.0) + 0.5*d*(ux**2+uy**2+uz**2)
-        else if (self%solver(1:9)=='stagger2e') then
+        else if (self%etype == 'thermal') then
           mem(ix,iy,iz,idx%e) = p/(gamma-1.0)
-        else if (self%solver(1:9)=='stagger2_') then
+        else if (self%etype == 'entropy') then
           mem(ix,iy,iz,idx%s) = d*(log(p)-gamma*log(d))/(gamma-1.0)
         else
-          print *,trim(self%solver)
-          error stop "initial_mod (1): solver type not known"
+          print *,trim(self%etype)
+          error stop "initial_mod (1): etype type not known"
         end if
         if (self%mhd) then
           mem(ix,iy,iz,idx%bx) = b0(1)

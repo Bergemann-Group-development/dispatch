@@ -1,3 +1,8 @@
+# VERBOSE info
+ifneq ($(VERBOSE),)
+  $(info $(TOP)/solvers/Makefile OFFLOAD=$(OFFLOAD))
+endif
+
 # First set VPATH, then allow the sinclude to modify
 #
 VPATH := $(VPATH):$(TOP)/solvers/$(SOLVER)
@@ -27,3 +32,4 @@ forces_mod.o            : io_mod.o trace_mod.o gpatch_mod.o force_mod.o link_mod
 flux_mod.o              : io_mod.o trace_mod.o patch_mod.o
 divb_clean_mod.o        : io_mod.o trace_mod.o mesh_mod.o vector_mod.o scalar_mod.o vector_ops.o
 
+solver_mod.o            : trace_mod.o extras_mod.o

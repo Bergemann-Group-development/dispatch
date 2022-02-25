@@ -63,13 +63,13 @@ PROGRAM test
   do it=1,nit
     id = n*random%ran1()
   end do
-  call toc ('  void', nit*n)
+  call timer%toc ('  void', nit*n)
   call tic
   do it=1,nit
     id = n*random%ran1()
     link => search (head, id)
   end do
-  call toc ('search', nit*n)
+  call timer%toc ('search', nit*n)
 
 END PROGRAM
 

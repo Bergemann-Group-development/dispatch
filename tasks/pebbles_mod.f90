@@ -840,7 +840,7 @@ SUBROUTINE test (self, link)
     self%time = self%time + self%dtime
     call self%update_pebbles (link%nbor)
   end do
-  call toc ('kdk', self%pebbles%n_update)
+  call timer%toc ('kdk', self%pebbles%n_update)
   print 1, &
     'KDK   accreted:', self%pebbles%n_accrete, self%pebbles%n_outside, self%pebbles%n_old
   1 format(1x,a,i7,10x,"walls:",3i7,10x,"old:",i7)
@@ -862,7 +862,7 @@ SUBROUTINE test (self, link)
     self%time = self%time + self%dtime
     call self%update_pebbles (link%nbor)
   end do
-  call toc ('kdk_drag', self%pebbles%n_update)
+  call timer%toc ('kdk_drag', self%pebbles%n_update)
   print 1, &
     'KDK_d accreted:', self%pebbles%n_accrete, self%pebbles%n_outside, self%pebbles%n_old
   call trace_end

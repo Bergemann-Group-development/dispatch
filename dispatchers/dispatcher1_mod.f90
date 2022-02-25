@@ -173,7 +173,7 @@ SUBROUTINE execute (self, task_list, test)
   !$omp end parallel
   call timer%print()
   call mpi_mesg%diagnostics(1)
-  call toc ('wall time', timer%n_update, time=start)
+  call timer%toc ('wall time', timer%n_update, time=start)
 END SUBROUTINE execute
 
 END MODULE dispatcher1_mod

@@ -3,8 +3,8 @@
 #OPTS = full_debug
 #OPTS = vscode
 #OPTS = debug
-OPTS =
-#OPTS = optimized
+#OPTS =
+OPTS = optimized
 
 # Default target and methods
 UPD             = adams_bashforth
@@ -21,6 +21,7 @@ conductivity    = extras/heat_conductivity/spitzer
 #OPACITY         = stub
 # Legacy stagger code
 EOS             = microphysics/eos/stagger
+#EOS             = microphysics/eos/itable
 OPACITY         = stub
 # Tomida & Hori, with opacity
 #EOS             = data/eos/Tomida+Hori_2016/e
@@ -28,6 +29,7 @@ OPACITY         = stub
 CONDUCTIVITY     = spitzer
 
 # Include Makefile chain
+$(info Makefile)
 sinclude $(TOP)/config/Makefile
 #PPCODE          = $(TOP)/solvers/pic/PPcode
 #sinclude $(PPCODE)/Experiments/DISPATCH/Makefile

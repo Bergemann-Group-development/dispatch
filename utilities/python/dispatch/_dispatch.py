@@ -86,13 +86,13 @@ def _dir(d,subd,Assert=False):
         assert (os.path.isdir(p)), 'the directory {} does not exist'.format(p)
     return p if p.endswith('/') else p+'/'
 
-class _obj(object):
+class dict2obj(object):
     """ Transform a namelist dict to an object, turning lists into numpy arrays
     """
     def __init__(self, d):
         for a, b in d.items():
             ba = np.array(b) if isinstance(b, list) else b
-            setattr(self, a, _obj(b) if isinstance(b, dict) else ba)
+            setattr(self, a, dict2obj(b) if isinstance(b, dict) else ba)
 
 def _add_nml_to(obj,d,verbose=0):
     for key,value in d.items():
@@ -292,31 +292,41 @@ def _var(patch,filed,snap,verbose=0,copy=None):
         # Determine data representation
         is_ln=False
         is_vel=False
-        is_hlls=False
-        is_hlld=False
+        etype=patch.etype
         if snap.io.method.strip()=='parallel':
             is_ln = ((patch.ioformat-6)/2==0
                   or (patch.ioformat-10)//2==0)
-            is_vel = ((patch.ioformat-6)%2==0)
+            is_vel = (patch.ioformat!=0 and  (patch.ioformat-6)%2==0)
             if patch.ioformat==14:
                 is_vel = False
                 is_ln = False
         is_staggered = patch.kind[0:4] == 'zeus' or patch.kind[0:7] == 'stagger'
-        tot_e = patch.kind[0:6] == 'ramses'
-        is_hlls = patch.kind[0:8] == 'ramses_s'
+        is_hlls = patch.kind[0:4] == 'hlls'
         is_hlld = patch.kind[0:4] == 'hlld'
+
+        is_T=False
+        if hasattr(snap.io,'generic'):
+            if snap.io.do_generic:
+                is_ln=False
+                is_vel=True
+                is_T=True
+                if verbose:
+                    print('do_generic')
         if verbose:
+            print("")
+            print("kind:",patch.kind)
+            print("etype:",patch.etype)
+            print("is_T:",is_T)
             print("is_ln:",is_ln)
             print("is_vel:",is_vel)
-            print("tot_e:",tot_e)
             print("is_staggered:",is_staggered)
         v = None
 
         # Check if the index corresponds to a cached array
         if iv in patch.data.keys():
+            v=patch.data[iv]
             if verbose:
                 print(iv,'in data keys',v.shape)
-            v=patch.data[iv]
 
         # or an aux item
         elif iv in patch.aux.vars.keys():
@@ -327,14 +337,14 @@ def _var(patch,filed,snap,verbose=0,copy=None):
         # or a numeric index
         elif iv in patch.keys['numbers']:
             if verbose:
-                print('iv is a number:',iv)
+                print('is a number:',iv)
             if iv >= 0:
                 v=mem(iv,verbose=verbose)
 
         # or a known variables
         elif iv in patch.keys['known']:
             if verbose:
-                print('iv is a known name:',iv)
+                print('is a known name:',iv)
 
             # Density
             def fd():
@@ -380,18 +390,27 @@ def _var(patch,filed,snap,verbose=0,copy=None):
                               np.exp(zdn(var('lnd',all=True,verbose=verbose))))
                     else:
                         v=mem('p3')/var('d',all=True,verbose=verbose)
+            # Magnetic fields
+            elif iv == 'Bx' :
+                v = xup(var('bx', all=True, verbose=verbose))
+            elif iv == 'By' :
+                v = yup(var('by', all=True, verbose=verbose))
+            elif iv == 'Bz' :
+                v = zup(var('bz', all=True, verbose=verbose))
 
             # Energy per unit mass
             elif iv=='ee' or iv=='E':
                 """ Expressions common to all other solvers """
-                if patch.ioformat==14 or patch.ioformat==15:
+                if is_T:
+                    v=mem('e')*snap.eos.mu
+                elif patch.ioformat==14 or patch.ioformat==15:
                     v=mem('e')
-                elif is_hlld:
+                elif patch.etype=='thermal':
                     v=mem('e')/mem('d')
-                elif not is_staggered:
+                elif patch.etype=='total':
                     v = (mem('e')-var('ekin',all=True,verbose=verbose)-var('emag',all=True,verbose=verbose))/mem('d')
                 else:
-                    v=mem('e')/mem('d')
+                    v=var('eth',all=True,verbose=verbose)/mem('d')
                 
 
             # Kinetic energy
@@ -409,14 +428,16 @@ def _var(patch,filed,snap,verbose=0,copy=None):
 
             # Thermal energy
             elif iv=='eth':
-                if is_hlls:
+                if is_T:
+                    v=var('ee',all=True)*var('d',all=True)
+                elif patch.etype=='entropy':
                     g1=(snap.gamma-1.0)
                     d = var('d',all=True,verbose=verbose)
                     s = var('s',all=True,verbose=verbose)
                     v = d**snap.gamma*np.exp(s/d*g1)/g1
                 elif patch.gamma==1.0:
                     v = mem('e')
-                elif tot_e:
+                elif patch.etype=='total':
                     v = var('e',all=True,verbose=verbose) \
                       - var('ekin',all=True,verbose=verbose) \
                       - var('emag',all=True,verbose=verbose)
@@ -425,14 +446,14 @@ def _var(patch,filed,snap,verbose=0,copy=None):
                     
             # Total energy
             elif iv=='e_tot':
-                if is_hlls:
+                if patch.etype=='entropy' or is_T:
                     v = var('eth',all=True,verbose=verbose) \
                       + var('ekin',all=True,verbose=verbose) \
                       + var('emag',all=True,verbose=verbose)
                 elif patch.gamma==1.0:
                     v=mem('e')
-                elif tot_e:
-                    v=var('e',all=True,verbose=verbose)
+                elif patch.etype=='total':
+                    v=mem('e')
                 else:
                     v=mem('e')+var('ekin',all=True,verbose=verbose) \
                      + var('emag',all=True,verbose=verbose)
@@ -448,13 +469,16 @@ def _var(patch,filed,snap,verbose=0,copy=None):
 
             # Temperature
             elif iv=='tt' or iv=='T':
-                v=var('Eth',all=True,verbose=verbose)*(snap.gamma-1.0)
-                # if hasattr(snap,'scaling'):
-                #     v=v*snap.scaling.temp
+                if is_T:
+                    v=mem('e')
+                else:
+                    v=var('Eth',all=True,verbose=verbose)*(snap.gamma-1.0)
+                    # if hasattr(snap,'scaling'):
+                    #     v=v*snap.scaling.temp
 
             # Specific entropy
             elif iv=='s':
-                if is_hlls:
+                if patch.etype=='entropy':
                     v = mem('s')
                 else:
                     d = var('d',all=True,verbose=verbose)
@@ -463,18 +487,24 @@ def _var(patch,filed,snap,verbose=0,copy=None):
 
             # Specific entropy
             elif iv=='S':
-                v = var('s',all=True,verbose=verbose) \
-                  / var('d',all=True,verbose=verbose)
+                if patch.etype=='entropy':
+                    v = mem('s')/mem('d')
+                else:
+                    v = var('s',all=True,verbose=verbose) \
+                      / var('d',all=True,verbose=verbose)
 
         # or a letter index
         elif iv in patch.keys['letters']:
             if verbose:
-                print('iv is a string:',iv,patch.idx.dict[iv])
-            iv=patch.idx.dict[iv]
-            if iv >= 0:
-                v=mem(iv)
+                print('is a letter index: {} -> {}'.format(iv,patch.idx.dict[iv]))
+            if is_T and iv=='e':
+                v=var('ee',all=True)*var('d',all=True)
             else:
-                v=0.0*mem(0)
+                iv=patch.idx.dict[iv]
+                if iv >= 0:
+                    v=mem(iv)
+                else:
+                    v=0.0*mem(0)
 
         # if not, treat it as an expression
         else:
@@ -483,6 +513,8 @@ def _var(patch,filed,snap,verbose=0,copy=None):
             v=expression_parser(patch,iv,all=True)
             if verbose:
                 print('shape:',v.shape)
+        if verbose:
+            print('if/elif/else end')
 
         # Success or failure
         if not v is None:
@@ -532,7 +564,7 @@ class _patch():
             llc=self.position-self.size/2.0
             urc=self.position+self.size/2.0
             self.extent=np.array(((llc[1],urc[1],llc[2],urc[2]),
-                                  (llc[2],urc[2],llc[0],urc[0]),
+                                  (llc[0],urc[0],llc[2],urc[2]),
                                   (llc[0],urc[0],llc[1],urc[1])))
             self.llc_cart=llc
         timer.add('llc-urc-extent')
@@ -558,6 +590,11 @@ class _patch():
                 self.mesh_type = "spherical"
             elif self.mesh_type == 3:
                 self.mesh_type = "cylindrical"
+        if hasattr(self,'erot1'):
+            self.erot=np.zeros((3,3))
+            self.erot[0,:]=self.erot1
+            self.erot[1,:]=self.erot2
+            self.erot[2,:]=self.erot3
         # support for legacy I/O method filenames
         #timer.add('_patch(7))')
         if snap.io.method.strip()=='legacy':
@@ -579,7 +616,7 @@ class _patch():
         self.keys['numbers']=list(snap.idx.dict.values())
         timer.add('numbers')
         self.keys['known']=['d','lnd','logd','ux','uy','uz','u1','u2','u3',
-                 'ee','E','T','eth','Eth','ekin','emag','e_tot','s','S','P','pg','pgas']
+                 'ee','E','T','eth','Eth','ekin','emag','e_tot','s','S','P','pg','pgas', 'Bx','By','Bz']
         timer.add('known')
 
         # attach an aux filename, if one exists for this task
@@ -606,6 +643,20 @@ class _patch():
             all.extend(key_list)
         self.all_keys=all
         timer.add('all-values')
+
+    def contains(self,le,ue,lmax=30):
+        if self.level>lmax:
+            return False
+        lp=np.array([self.position[0]-self.size[0]/2,
+                     self.position[1]-self.size[1]/2,
+                     self.position[2]-self.size[2]/2])
+        up=np.array([self.position[0]+self.size[0]/2,
+                     self.position[1]+self.size[1]/2,
+                     self.position[2]+self.size[2]/2])
+        u=np.minimum(up,ue)
+        l=np.maximum(lp,le)
+        e=u-l
+        return np.all(e>=0)
 
     def _h(self):
         idx=self.idx
@@ -754,7 +805,7 @@ class snapshot():
             _add_nml_list_to(self,nml_list,verbose=verbose)
             if 'idx_nml' in nml_list.keys():
                 idx_dict = nml_list['idx_nml']
-                idx = _obj(idx_dict)
+                idx = dict2obj(idx_dict)
                 idx.dict = idx_dict
                 # add a dict with (existing) alphabetic variable names
                 idx.vars={}
@@ -818,7 +869,10 @@ class snapshot():
                 the snapshot.patches list """
             p=_patch(id,patch_dict[id],self,memmap=memmap,verbose=verbose)
             timer.add('snapshot(1)')
-            self._add_axes(p)
+            if hasattr(self,'volleyball'):
+                self._add_axes_vb(p)
+            else:
+                self._add_axes(p)
             # Append to array of patch instances
             self.patches.append(p)
 
@@ -826,7 +880,7 @@ class snapshot():
             if verbose==2 and hasattr(p,'idx'):
                 data=p.var('d')
                 dmax=data.max()
-                print ('    id:{:4d}  pos: {} {}'.format(p.id,p.position,dmax))
+                print ('    id:{:4d}  pos: {} {}'.format(p.id,center,dmax))
             elif verbose==3:
                 print('id:',p.id)
                 for iv in range(p.nv):
@@ -842,6 +896,23 @@ class snapshot():
             print('  added',len(self.patches),'patches')
         timer.add('_patches')
         timer.print(verbose=verbose,timeit=timeit)
+
+    def _add_axes_vb(self,patch):
+        """ add axes for the volleyball experiment
+        """
+        patch.radius=np.sum(patch.position**2)**0.5
+        gn=patch.gn[0]
+        n=patch.n[0]
+        s= (np.arange(gn)-gn/2)*patch.ds[0]
+        si=(np.arange(n )-n /2)*patch.ds[0]
+        patch.z= patch.radius+s
+        patch.zi=patch.radius+si
+        patch.x=s
+        patch.y=s
+        patch.z=s+patch.radius
+        patch.xi=si
+        patch.yi=si
+        patch.zi=si+patch.radius
 
     def _add_axes(self,patch):
         first=patch.llc_cart-patch.ng*patch.ds
@@ -939,7 +1010,7 @@ def pdf(iout=1,run='',data='../data'):
             time=ff.read_reals('<f8')[0]
             bins=ff.read_reals('<f4')/np.log(10)
             counts+=ff.read_reals('<f4')
-    return _obj({'ioformat':ioformat,'time':time,'bins':bins,'counts':counts})
+    return dict2obj({'ioformat':ioformat,'time':time,'bins':bins,'counts':counts})
 
 if __name__ == "__main__":
     pass

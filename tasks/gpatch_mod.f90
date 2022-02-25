@@ -16,23 +16,23 @@ MODULE gpatch_mod
   USE timer_mod
   USE omp_timer_mod
   USE bits_mod
+  USE eos_mod
   USE data_io_mod
-  USE guard_zones_mod
-  USE download_mod
-  USE data_hub_mod
   USE validate_mod
+  USE link_mod
   USE list_mod
   USE task_mod
   USE scratch_mod
   USE boundaries_mod
   USE stagger_mod
+  USE connect_mod
+  USE shared_mod
   implicit none
   private
   type, public, extends(patch_t):: gpatch_t
-    type(data_hub_t):: data_hub
+    type(connect_t):: connect
     real(8):: d0=0d0
     logical:: pre_updated=.false.
-    character(len=8):: etype='thermal' ! or 'total', 'entropy'
     class(list_t),       pointer:: task_list => null()
     class(boundaries_t), pointer:: boundaries => null()
   contains
@@ -41,6 +41,7 @@ MODULE gpatch_mod
     procedure:: init
     procedure:: init_bdries
     procedure:: init_task_list
+    procedure:: add_to_task_list
     procedure:: pre_update
     procedure:: post_update
     procedure:: input
@@ -62,6 +63,8 @@ MODULE gpatch_mod
     procedure:: output_metadata
     procedure:: input_metadata
     procedure:: reset
+    procedure:: initial_load_balance
+    procedure:: debug_dump
   end type
   real(8), save :: restart_time = 0d0
   logical, save :: detailed_timer=.false.
@@ -94,6 +97,7 @@ SUBROUTINE pre_init (self)
   class(gpatch_t), target:: self
   !-----------------------------------------------------------------------------
   call trace%begin ('gpatch_t%pre_init')
+  call eos%init()
   call self%patch_t%pre_init
   if (.not. associated (self%boundaries)) then
     allocate (self%boundaries)
@@ -128,6 +132,18 @@ SUBROUTINE init_task_list (self, task_list)
   self%task_list => task_list
   call trace%end()
 END SUBROUTINE init_task_list
+
+!===============================================================================
+!> Void subroutine, to be intercepted by extras_mod, if extras underlings 
+!> need to be added to the task list
+!===============================================================================
+SUBROUTINE add_to_task_list (self, task_list)
+  class(gpatch_t):: self
+  class(list_t), pointer:: task_list
+  !.............................................................................
+  call trace%begin ('gpatch_t%init_task_list')                                     ! sinkp
+  call trace%end ()
+END SUBROUTINE add_to_task_list
 
 !===============================================================================
 !> Post-initialize. For all solvers, copy the %it slot to the %new slot.
@@ -177,6 +193,7 @@ END SUBROUTINE input
 !===============================================================================
 SUBROUTINE output (self)
   class(gpatch_t):: self
+  class(task_t), pointer:: task
   !-----------------------------------------------------------------------------
   call trace%begin ('gpatch_t%output')
   call data_io%output (self)
@@ -229,11 +246,9 @@ SUBROUTINE dnload (self, only)
   !-----------------------------------------------------------------------------
   call trace%begin ('gpatch_t%dnload', itimer=itimer)
   if (self%is_clear (bits%frozen)) then
-    if (self%use_data_hub) then
-      call self%data_hub%update (self%link, only=only)
-    else
-      call download%download_link (self%link, only=only)
-    end if
+    write (stderr,*) self%id, 'called gpatch_t%dnload, time=', self%time
+    call io%warning ('gpatch_t%download is deprecated')
+    call self%link%update
   end if
   call trace%end (itimer)
 END SUBROUTINE dnload
@@ -413,7 +428,7 @@ END FUNCTION fminval8sph
 !>   verbose==3:        print iv=1,nv to stdout and io_unit%log for all id
 !===============================================================================
 SUBROUTINE info (self, nq, ntask, experiment_name)
-  class(gpatch_t)     :: self
+  class(gpatch_t)    :: self
   integer            :: nq, ntask
   character(len=64)  :: experiment_name
   optional           :: nq, ntask, experiment_name
@@ -424,16 +439,42 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   integer, save      :: counts(6)=0, id_prv=0
   integer            :: counts_l(6), i
   integer            :: it0, it1, it, iv, nv, iprint_l
-  real, save         :: d_min=0.0, d_max=huge(1.)
-  real               :: fmin, fmax
+  real, save         :: d_max=0.0, d_min=huge(1.)
+  real, save         :: dt_min=huge(1.), dt_max=0.0
+  real, save         :: courant_info=0.0
+  real               :: fmin, fmax, dmin, dmax, dtime
   real, pointer      :: df(:,:,:)
-  real(8)            :: time, print_next
+  real(8)            :: wc, time, print_next
   logical            :: print_it
   character(len=120) :: fmt
+  logical, save      :: first_time=.true.
   !-----------------------------------------------------------------------------
   call trace%begin ('gpatch_t%info', itimer=itimer)
-  !$omp atomic write
-  timer%time = self%time
+  !-----------------------------------------------------------------------------
+  ! Double-if to initialize the shared lock since this is entered often
+  !-----------------------------------------------------------------------------
+  if (first_time) then
+    call io%lock%set ('gpatch_t%info')
+    if (first_time) then
+      call lock%init
+      first_time = .false.
+    end if
+    call io%lock%unset ('gpatch_t%info')
+  end if
+  !-----------------------------------------------------------------------------
+  ! Keep track of time and timer level
+  !-----------------------------------------------------------------------------
+  if (self%level >= timer%time_level) then
+    !$omp atomic update
+    timer%time = max(timer%time,self%time)
+    if (self%level > timer%time_level) then
+      !$omp atomic write
+      timer%time_level = self%level
+    end if
+  end if
+  !-----------------------------------------------------------------------------
+  ! Low noise case for log-file based validation
+  !-----------------------------------------------------------------------------
   if (io_unit%do_validate) then
     it0 = merge (self%iit(self%nt-2), 1, self%nt>2)
     it1 = merge (self%iit(self%nt-1), 1, self%nt>1)
@@ -452,7 +493,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
       end if
       write(io%output,2) &
       'upd',self%id, self%level, iv, self%istep, self%time-self%dtime, &
-      self%dtime, self%u_max, fmin, fmax, &
+      self%dtime, courant_info, fmin, fmax, &
       self%fminval(self%mem(:,:,:,iv,it0,1)), &
       self%fmaxval(self%mem(:,:,:,iv,it0,1)), &
       real(timer%n_update), ntask, nq, self%is_set(bits%boundary), self%is_set(bits%virtual)
@@ -465,15 +506,9 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
     return
   end if
   !-----------------------------------------------------------------------------
+  ! Normal case conditional output
+  !-----------------------------------------------------------------------------
   if ((io%verbose >= 0) .and. self%is_clear(bits%no_density)) then
-    !call self%mem_lock(self%it)%set ('info')
-    self%d_min = self%fminval(self%idx%d)
-    self%d_max = self%fmaxval(self%idx%d)
-    !call self%mem_lock(self%it)%unset ('info')
-    !$omp atomic
-    io%dmin = min(io%dmin, self%d_min)
-    !$omp atomic
-    io%dmax = max(io%dmax, self%d_max)
     !---------------------------------------------------------------------------
     ! After coming back to the saved ID, reset it, so we stop searching
     !---------------------------------------------------------------------------
@@ -482,9 +517,22 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
       id_prv = 0
     end if
     !---------------------------------------------------------------------------
-    ! Allow print every print_every update, if print_every > 0
+    ! If print_every==0, then check if print_time controls cadence, using
+    ! an if-lock-if sequence to ensure only one thread prints and updates
     !---------------------------------------------------------------------------
-    if (io%print_every > 0) then
+    print_it = .false.
+    if (io%print_seconds > 0.0) then
+      wc = wallclock()
+      if (wc >= io%print_next) then
+        call lock%set ('print')
+        if (wc >= io%print_next) then
+          print_it = .true.
+          print_next = (nint(wc/io%print_seconds)+1)*io%print_seconds
+          io%print_next = print_next
+        end if
+        call lock%unset ('print')
+      end if
+    else if (io%print_every > 0) then
       !$omp atomic read
       iprint_l = io%iprint
       if (iprint_l >= io%print_every .and. io%print_every > 0) then
@@ -516,18 +564,22 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
     else if (self%id==io%id) then
       print_it = .true.
     end if
-    !$omp atomic update
-    d_min = min(d_min, self%d_min)
-    !$omp atomic update
-    d_max = min(d_max, self%d_max)
     !---------------------------------------------------------------------------
-    ! Write info to rank log for every time step if io%verbose > 0
+    ! Accumulate extrema
     !---------------------------------------------------------------------------
-    if (io%verbose > 0) then
-      time = self%time
-      iv = 1
-      call write_info (io_unit%mpi)
-    end if
+    !$omp atomic update
+    courant_info = max (self%courant_info, courant_info)
+    dmin = self%fminval(self%idx%d)
+    dmax = self%fmaxval(self%idx%d)
+    dtime = self%dtime
+    !$omp atomic update
+    d_min = min (dmin, d_min)
+    !$omp atomic update
+    d_max = max (dmax, d_max)
+    !$omp atomic update
+    dt_min = min(dt_min,dtime)
+    !$omp atomic update
+    dt_max = max(dt_max,dtime)
     !---------------------------------------------------------------------------
     ! Print info for selected task, or tracked task
     !---------------------------------------------------------------------------
@@ -545,15 +597,15 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
       end do
       !$omp atomic update
       timer%n_lines = timer%n_lines-1
-      if (timer%n_lines==0) then
+      if (timer%n_lines<=0) then
         !$omp critical (info_cr2)
         !$omp atomic write
         timer%n_lines = max_lines
         !$omp end atomic
-        write(io%output,'(a)') &
-        '0....+....1....+....2....+....3....+....4....+....5....+....' &
-        //'6....+....7....+....8....+....9....+....0....+....1  ntsk   nq ' &
-        //' chk  rdy   upd  snd  rcv  unp  snq rcq  BV'
+        write(io%output,'(/a)') &
+        '         id lvl thr        time       dtime   cinf      ' &
+        //'dt_min    dt_max      rho_min    rho_max     cellupd  ntsk   nq ' &
+        //' chk  rdy   upd  snd  rcv  unp  snq BV'
         !$omp end critical (info_cr2)
       end if
       !-----------------------------------------------------------------------
@@ -562,21 +614,11 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
       ! To allow using the column for plotting, we show this time when all
       ! times are printed.
       !-----------------------------------------------------------------------
-      if (io%print_time == 0.0 .and. io%verbose == 0) then
-        time = self%time - self%dtime
-      else
-        time = self%time
-      end if
+      time = self%time - self%dtime
       do iv=1,nv
         call write_info (io%output)
       end do
       flush (io%output)
-      !$omp atomic write
-      io%dmin = huge(1.)
-      !$omp atomic write
-      io%dmax = tiny(1.)
-      !$omp atomic write
-      io%dtime = huge(1d0)
       !$omp atomic write
       id_prv = io%id
       counts(:) = 0
@@ -605,25 +647,33 @@ contains
   !=============================================================================
   subroutine write_info (unit)
     integer:: unit
-    real:: dmin, dmax
-    !$omp atomic read
-    dmin = io%dmin
-    !$omp atomic read
-    dmax = io%dmax
+    character(64):: fmt_end
+    !---------------------------------------------------------------------------
+    fmt_end = '0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e9.2,2i6,2i5,i6,4i5,l2,l1)'
     if (self%time < 1d4 .and. self%time > 1e-4) then
-      fmt = '(a,i8,2i4,i3,f12.6,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,i6,3i5,i6,4i5,i4,l3,l1,o12)'
+      fmt = '(a,i8,2i4,f12.6,1p,e12.4,'//fmt_end
     else
-      fmt = '(a,i8,2i4,i3,1p,2e12.5,     0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,i6,3i5,i6,4i5,i4,l3,l1,o12)'
+      fmt = '(a,i8,2i4,1p,2e12.5,     '//fmt_end
     end if
     write(unit,fmt) &
-      'upd',self%id, self%level, iv, omp%thread, time, &
-      self%dtime, log10(max(self%u_max,1e-30)), &
-      dmin, dmax, &
-      self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
-      self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
-      real(timer%n_update), ntask, nq, counts, &
-      mpi_mesg%nq_send, mpi_mesg%nq_recv, &
+      'upd',self%id, self%level, omp%thread, time, &
+      self%dtime, courant_info, &
+      dt_min, dt_max, d_min, d_max, &
+      real(timer%n_update), ntask, nq, counts, mpi_mesg%nq_send,  &
       self%is_set(bits%boundary), self%is_set(bits%virtual)
+    !---------------------------------------------------------------------------
+    ! Reset extrema info
+    !---------------------------------------------------------------------------
+    !$omp atomic write
+    courant_info = 0.0
+    !$omp atomic write
+    d_min = huge(1.)
+    !$omp atomic write
+    d_max = 0.0
+    !$omp atomic write
+    dt_min = huge(1.)
+    !$omp atomic write
+    dt_max = 0.0
   end subroutine write_info
 END SUBROUTINE info
 
@@ -663,13 +713,11 @@ SUBROUTINE rotate (self)
   ! Update patch position for non-zero patch velocities;
   ! This happens *before* `rotate` because `dtime` stores the time step just taken.
   !-----------------------------------------------------------------------------
-  call self%lock%set ('position')
   call self%update_position
   !-----------------------------------------------------------------------------
   ! Task time slot rotation
   !-----------------------------------------------------------------------------
   call self%task_t%rotate
-  call self%lock%unset ('position')
   call trace%end (itimer)
 END SUBROUTINE rotate
 
@@ -707,5 +755,103 @@ SUBROUTINE reset (self)
   self%pre_updated = .false.
   call trace%end ()
 END SUBROUTINE reset
+
+!===============================================================================
+!> Initialize
+!===============================================================================
+SUBROUTINE initial_load_balance (self, task_list)
+  class(gpatch_t):: self
+  class(list_t), pointer:: task_list
+  !----------------------------------------------------------------------------
+  call trace_begin('gpatch_t%initial_load_balance')
+  call trace_end
+END SUBROUTINE initial_load_balance
+
+!===============================================================================
+!> Write a debug_dump file with binary Fortran data, for either
+!>       default: only the patch in the argument list
+!>   all==.true.: in addition, all patches in the task list
+!> nbors==.true.: in addition, all patches in the nbor list
+!===============================================================================
+SUBROUTINE debug_dump (self, label, nbors, all)
+  class(gpatch_t):: self
+  character(*):: label
+  logical, optional:: nbors, all
+  !.............................................................................
+  class(link_t), pointer:: link
+  class(nbor_t), pointer:: nbor
+  class(task_t), pointer:: task
+  integer:: sentinel
+  integer, save:: u=0
+  !-----------------------------------------------------------------------------
+  ! Dump patch data to unformatted Fortran file
+  !-----------------------------------------------------------------------------
+  call io%lock%set ('debug_dump')
+  if (u /= 0) return
+  write (stderr,*) mpi%rank, omp%thread, ' dumping patch', self%id 
+  flush (stderr)
+  sentinel = 0
+  if (shared%option(nbors)) then
+    sentinel = 1
+    !---------------------------------------------------------------------------
+    ! Dump nbor patches as well
+    !---------------------------------------------------------------------------
+    write (stderr,*) 'dumping all nbor patches as well'
+    flush (stderr)
+    call dump_patch (self)
+    nbor => self%link%nbor
+    do while (associated(nbor))
+      task => nbor%task
+      select type (task)
+      class is (patch_t)
+        call dump_patch (task)
+      end select
+      nbor => nbor%next
+    end do
+  else if (shared%option(all)) then
+    !---------------------------------------------------------------------------
+    ! Dump all other patches as well
+    !---------------------------------------------------------------------------
+    sentinel = 2
+    write (stderr,*) 'dumping all other patches as well'
+    flush (stderr)
+    call dump_patch (self)
+    link => self%task_list%head
+    do while (associated(link))
+      task => link%task
+      if (task%id /= self%id) then
+        select type (task)
+        class is (patch_t)
+          call dump_patch (task)
+        end select
+      end if
+      link => link%next
+    end do
+  else
+    call dump_patch (self)    
+  end if
+  write (stderr,*) 'dump done'
+  flush (stderr)
+  call io%lock%unset ('debug_dump')
+contains
+  !=============================================================================
+  !> Dump a singel patch
+  !=============================================================================
+  subroutine dump_patch (p)
+    class(patch_t):: p
+    character(len=128):: f
+    !---------------------------------------------------------------------------
+    if (u==0) then
+      write (f,'(a,"/debug_data.dat")') trim(io%run_dir)
+      write (stderr,*) 'file: '//trim(f)
+      open (newunit=u, file=trim(f), form='unformatted', status='unknown')
+    end if
+    write (u) sentinel
+    write (u) p%id, p%it, p%gn, p%n, p%nv, p%nt, p%nw, mpi%rank, omp%thread
+    write (u) p%time, p%dtime, p%t, p%dt, p%iit
+    write (u) p%mem
+    flush (u)
+  end subroutine
+END SUBROUTINE debug_dump
 
 END MODULE gpatch_mod

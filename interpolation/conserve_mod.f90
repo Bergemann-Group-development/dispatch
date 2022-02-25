@@ -13,11 +13,121 @@ MODULE conserve_mod
   type, public:: conserve_t
     class(patch_t), pointer:: patch => null()
   contains
+    procedure:: prolong
     procedure:: restrict
     procedure:: test
   end type
   type(conserve_t), public:: conserve
 CONTAINS
+
+!===============================================================================
+!> Conservative restrict operation, in the special case with aligned source and
+!> target cells
+!===============================================================================
+SUBROUTINE prolong (self, target, source, all_src, only, count)
+  class(conserve_t)      :: self
+  class(patch_t)         :: target, source
+  class(mesh_t), pointer :: m, m1, m2, m3
+  logical,      optional :: all_src, count
+  integer,      optional :: only
+  !.............................................................................
+  integer                :: i1, i2, i3, i4, iv0, iv1, j1, j2, j3, jt(2), l, n
+  integer,  dimension(3) :: lt, ut, ls, us, k
+  real(8)                :: p(3), d(3)
+  real                   :: pt(2), c(2)
+  integer,          save :: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin ('conserve_t%prolong', itimer=itimer)
+  d = target%distance_to (source)
+  !.............................................................................
+  if (target%id == io%id_debug) &
+    write (stdout,'(a,2(i6,":",i2.2,3i5),3x,3g12.3)') &
+      'conserve_t%prolong: target,source,distance/size=', &
+      target%id, target%key, source%id, source%key, d/target%size
+  !.............................................................................
+  call source%time_interval (target, target%time, jt, pt)
+  if (present(only)) then
+    iv0 = only
+    iv1 = only
+  else
+    iv0 = 1
+    iv1 = target%nv
+  end if
+  if (option(all_src)) then
+    ls = source%mesh%lb
+    us = source%mesh%ub
+  else
+    ls = source%mesh%li
+    us = source%mesh%ui
+  end if
+  lt = target%mesh%li
+  ut = target%mesh%ui
+  do i4=iv0,iv1
+    !---------------------------------------------------------------------------
+    ! [i1,i2,i3] is the target index coordinates of the cell to give a value
+    !---------------------------------------------------------------------------
+    !$omp parallel do collapse(2) private (i1,i2,i3,p,k,j1,j2,j3)
+    do i3=lt(3),ut(3)
+      do i2=lt(2),ut(2)
+        do i1=lt(1),ut(1)
+          !---------------------------------------------------------------------
+          ! p is the target cell center location in target index coordinates,
+          ! to which we add 27 contributions from source cells with rounded
+          ! integer indices k(:)
+          !---------------------------------------------------------------------
+          if (target%filled(i1,i2,i3) < target%level) then
+            target%mem(i1,i2,i3,i4,target%it,1) = 0.0
+            c = pt/27.
+            do j3=-1,1
+              do j2=-1,1
+                do j1=-1,1
+                  p = ([i1+j1,i2+j2,i3+j3]-target%offset)*target%ds
+                  k = (p - d)/source%ds + source%offset
+                  k = max(ls,min(k,us))
+                    target%mem(i1,i2,i3,i4,target%it,1) = &
+                    target%mem(i1,i2,i3,i4,target%it,1) + &
+                    source%mem(k(1),k(2),k(3),i4,jt(1),1)*c(1) + &
+                    source%mem(k(1),k(2),k(3),i4,jt(2),1)*c(2)
+                end do
+              end do
+            end do
+          end if
+        end do
+      end do
+    end do
+    !$omp end parallel do
+  end do
+  !-----------------------------------------------------------------------------
+  ! Mark filled
+  !-----------------------------------------------------------------------------
+  n = 0
+  do i3=lt(3),ut(3)
+    do i2=lt(2),ut(2)
+      do i1=lt(1),ut(1)
+        if (target%filled(i1,i2,i3) < target%level) then
+          target%filled(i1,i2,i3) =  target%level
+          n = n + 1
+        end if
+      end do
+    end do
+  end do
+  if (option(count)) &
+    print '("ancestor",i6,":",i2.2," filled",i6," out of",i6," cells")', &
+    target%id, target%level, n, product(ut-lt+1)
+  call trace%end (itimer)
+END SUBROUTINE prolong
+
+!===============================================================================
+!> Convinience function
+!===============================================================================
+LOGICAL FUNCTION option (flag)
+  logical, optional:: flag
+  if (present(flag)) then
+    option = flag
+  else
+    option = .false.
+  end if
+END FUNCTION option
 
 !===============================================================================
 !> Conservative restrict operation, in the special case with aligned source and

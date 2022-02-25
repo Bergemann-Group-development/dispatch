@@ -14,6 +14,7 @@ MODULE omp_lock_mod
   USE omp_mod
   USE omp_timer_mod
   USE omp_lib
+  USE shared_mod
 !define TRACE
 #ifdef TRACE 
   USE trace_mod
@@ -256,6 +257,7 @@ SUBROUTINE set (self, label, itimer)
   self%start_time = end
   !$omp atomic update
   wait_time = wait_time + used
+  omp%wait_time = wait_time
   self%level = self%level+1
   !$omp flush
   if (self%log) then
@@ -290,7 +292,8 @@ SUBROUTINE alternate_log (self)
     wc = wallclock()
     if (wc > alternate_next) then
       write (io_unit%log,*) omp%thread,'waiting at lock_cr'
-      flush (io_unit%log)
+      if (io_unit%flush_logs) &
+        flush (io_unit%log)
       !$omp critical (lock_cr)
       write (io_unit%log,*) omp%thread,'in lock_cr'
       if (wc > alternate_next) then
@@ -326,7 +329,7 @@ FUNCTION test (self) RESULT (out)
     !print *, omp%thread, ' already has lock id', self%id
   else
     !print *, omp%thread, ' omp_test_lock for id', self%id
-    out =  omp_test_nest_lock (self%lock) > 0
+    out =  ( omp_test_nest_lock (self%lock) .gt. 0 )
     if (out) then
       self%thread = omp%thread
       !$omp atomic update
@@ -396,7 +399,8 @@ SUBROUTINE unset (self, label)
         ' lock kind, id, level, thread = ', self%kind, self%id, level, &
         omp%thread, used, ' unset'
     end if
-    flush (unit)
+    if (io_unit%flush_logs) &
+      flush (unit)
   end if
 #ifdef TRACE 
   call trace%end()
@@ -436,19 +440,23 @@ SUBROUTINE info (self, unit, p_verbose)
   integer:: unit, p_verbose
   class(lock_t), pointer:: lock
   real(8):: time
+  real(8), save:: prev=0d0
   !-----------------------------------------------------------------------------
   if (.not. self%on) return
   if (verbose > 0) then
     !$omp atomic read
     time = wait_time
-    write (stdout,'(a,1p,g11.2,a)') ' lock waiting time =', &
-      time, ' core-s'
+    write (stdout,'(a,f6.2,1x,a,2p,f6.1,1x,a)') ' lock waiting time =', &
+      time-prev, 'core-s', (time-prev)/(shared%sec_per_report*omp%nthreads), '%'
+    !$omp atomic write
+    prev = time
+    !---------------------------------------------------------------------------
     !$omp atomic read
     time = log_time
-    write (stdout,'(a,1p,g11.2,a)') ' lock     log time =', &
+    write (stdout,'(a,f6.2,a)') ' lock     log time =', &
       time, ' core-s'
-    !$omp atomic write
-    wait_time = 0d0
+    ! !$omp atomic write
+    ! wait_time = 0d0
     !$omp atomic write
     log_time = 0d0
   end if

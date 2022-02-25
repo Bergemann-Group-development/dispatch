@@ -3,6 +3,7 @@
 !===============================================================================
 MODULE force_mod
   USE io_mod
+  USE os_mod
   USE mpi_global_mod
   USE trace_mod
   USE mesh_mod
@@ -230,12 +231,8 @@ SUBROUTINE init_turbulence (self, solver, id, mesh)
   self%t_damp = t_damp
   self%verbose = verbose
   self%mesh   => mesh
-  mx = self%mesh(1)%gn
-  my = self%mesh(2)%gn
-  mz = self%mesh(3)%gn
   if (.not.associated(self%fran)) then
-    allocate (self%fran(mx,my,mz,3,2))
-    call io%bits_mem (storage_size(self%fran), product(shape(self%fran)), 'fran')
+    call os%allocate (self%fran, [mesh%gn,3,2], 'fran')
   end if
   self%fran = 0.0
   self%selected => turbulence

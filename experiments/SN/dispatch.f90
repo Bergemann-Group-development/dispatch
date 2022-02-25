@@ -12,7 +12,7 @@ PROGRAM dispatch
   USE task_list_mod
   implicit none
   type(cartesian_t):: cartesian
-  type(task_list_t), pointer:: task_list
+  class(task_list_t), pointer:: task_list
   !.............................................................................
   call mpi%init                                 ! MPI startup
   call io%init                                  ! I/O system
@@ -35,7 +35,7 @@ SUBROUTINE setup (task_list)
   USE sinks_mod
   USE task_mod
   implicit none
-  type(task_list_t):: task_list
+  class(task_list_t):: task_list
   !.............................................................................
   class(sinks_t), pointer:: sink
   class(task_t), pointer:: task

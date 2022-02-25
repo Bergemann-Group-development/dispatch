@@ -29,8 +29,11 @@ SUBROUTINE init (self, value)
   call trace%begin ('mpi_window_t%init')
   self%value = value
 #ifdef MPI
+  !$omp barrier
+  !$omp single
   call MPI_Win_create (self%value, nbytes, 1, MPI_INFO_NULL, &
                        MPI_COMM_WORLD, self%window, err)
+  !$omp end single
 #endif
   call trace%end ()
 END SUBROUTINE init
@@ -46,9 +49,11 @@ FUNCTION get (self, rank) RESULT (value)
   !-----------------------------------------------------------------------------
   call trace%begin ('mpi_window_t%get')
 #ifdef MPI
+  !$omp critical (mpi_get_cr)
   call MPI_Win_lock (MPI_LOCK_SHARED, rank, 0, self%window, err)
   call MPI_Get (value, 1, MPI_REAL, rank, offset, 1, MPI_REAL, self%window, err)
   call MPI_Win_unlock (rank, self%window, err)
+  !$omp end critical (mpi_get_cr)
 #endif
   call trace%end ()
 END FUNCTION get
@@ -64,9 +69,11 @@ SUBROUTINE put (self, rank, value)
   !-----------------------------------------------------------------------------
   call trace%begin ('mpi_window_t%put')
 #ifdef MPI
+  !$omp critical (mpi_put_cr)
   call MPI_Win_lock (MPI_LOCK_EXCLUSIVE, rank, 0, self%window, err)
   call MPI_Put (value, 1, MPI_REAL, rank, offset, 1, MPI_REAL, self%window, err)
   call MPI_Win_unlock (rank, self%window, err)
+  !$omp end critical (mpi_put_cr)
 #endif
   call trace%end ()
 END SUBROUTINE put

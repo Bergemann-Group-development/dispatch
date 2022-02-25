@@ -12,11 +12,11 @@
 !>                      /    \
 !>                     /      \
 !>                extras_1_t extras_2_t
-!>                       \    /   |
-!>                      gpatch_t  |
-!>                       patch_t  |
-!>                       /    \   |
-!>                    task_t  connect_t
+!>                       \    /    
+!>                      gpatch_t   
+!>                       patch_t   
+!>                       /         
+!>                    task_t           
 !>
 !> The extra modules needed in an experiment should be chosen and coordinated
 !> in this module, and the ones that are "below" (USEd by) this module should
@@ -46,7 +46,6 @@ MODULE extras_mod
   ! Optional modules start here.  
   !-----------------------------------------------------------------------------
   USE forces_mod                                                ! forces
-  !USE connect_mod                                               ! connect
   !USE trace_particles_mod                                       ! tracep
   !USE sink_patch_mod                                            ! sinkp
   !USE particle_solver_mod                                       ! sinkp
@@ -98,7 +97,6 @@ SUBROUTINE init (self)
   call self%gpatch_t%init                                       ! keep
   !call self%forces%init (self%link)                             ! forces
   !allocate (self%trace_particles)                               ! tracep
-  !self%connect%trace_particles => self%trace_particles          ! tracep
   !call self%trace_particles%add (self%link)                     ! tracep
   !call sink_patch%init                                          ! sinkp
   call trace%end()

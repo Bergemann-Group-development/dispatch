@@ -145,7 +145,7 @@ SUBROUTINE init (self, name)
   real:: test
   integer:: i, iostat, i1, i2
   character(len=10), save:: hash=''
-  character(len=32), save:: branch=''
+  character(len=32), save:: branch='', opts=''
   character(len=128), save:: compiler=''
   character(len=120):: ids = &
   '$Id$'
@@ -154,7 +154,7 @@ SUBROUTINE init (self, name)
     id_debug, method, restart, format, guard_zones, time_derivs, log_sent, &
     task_logging, namelist_errors, nml_version, log_interval, top, datadir, &
     flush_logs, print_seconds, max_files, print_time, print_every, &
-    start_time, out_time, end_time, print_every, os_verbose
+    start_time, out_time, end_time, os_verbose
   namelist /out_params/ start_time, out_time, end_time, print_every
   namelist /code_params/ branch, hash, compiler
   !-----------------------------------------------------------------------------
@@ -162,9 +162,11 @@ SUBROUTINE init (self, name)
   print '(a)', &
 ' ==============================================================================='
 #ifdef BRANCH
-  print *, 'DISPATCH code framework, branch:', BRANCH, ', hash:', HASH
+  print *, 'DISPATCH code framework, branch:', BRANCH, ', hash:', HASH, &
+    ', OPTS=', OPTS
   branch = BRANCH
   hash = HASH
+  opts = OPTS
   compiler = compiler_version()
   i1 = index(compiler,'(R)')+3
   i2 = index(compiler,'Version')

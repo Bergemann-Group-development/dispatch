@@ -27,8 +27,18 @@ MODULE shared_mod
     real:: f_zoom(3)        = 1.0
     real:: extra_grace      = 0.0
     real(8):: mean_density  = 0d0
+    real(8):: sec_per_report= 1d0
   contains
     procedure, nopass:: abort
+    procedure, nopass:: option_l
+    procedure, nopass:: option_i
+    procedure, nopass:: option_i8
+    procedure, nopass:: option_r
+    procedure, nopass:: option_r8
+    procedure, nopass:: option_r8_3d
+    procedure, nopass:: option_s
+    generic:: option => option_l, option_i, option_i8, option_r, option_r8, &
+                        option_r8_3d, option_s
   end type
   type(shared_t):: shared
 CONTAINS
@@ -38,5 +48,81 @@ SUBROUTINE abort (label)
   write (*,*) label
   stop 'shared%abort'
 END SUBROUTINE abort
+
+!===============================================================================
+!> Convenience functions, to handle optional arguments
+!===============================================================================
+FUNCTION option_l (in, def) RESULT (out)
+  logical:: in, def, out
+  optional:: in, def
+  if (present(in)) then
+    out = in
+  else if (present(def)) then
+    out = def
+  else
+    out = .false.
+  end if
+END FUNCTION
+!===============================================================================
+FUNCTION option_i (in, def) RESULT (out)
+  integer:: in, def, out
+  optional:: in
+  if (present(in)) then
+    out = in
+  else
+    out = def
+  end if
+END FUNCTION
+!===============================================================================
+FUNCTION option_i8 (in, def) RESULT (out)
+  integer(8):: in, def, out
+  optional:: in
+  if (present(in)) then
+    out = in
+  else
+    out = def
+  end if
+END FUNCTION
+!===============================================================================
+FUNCTION option_r (in, def) RESULT (out)
+  real(4):: in, def, out
+  optional:: in
+  if (present(in)) then
+    out = in
+  else
+    out = def
+  end if
+END FUNCTION
+!===============================================================================
+FUNCTION option_r8 (in, def) RESULT (out)
+  real(8):: in, out, def
+  optional:: in
+  if (present(in)) then
+    out = in
+  else
+    out = def
+  end if
+END FUNCTION
+!===============================================================================
+FUNCTION option_r8_3d (in, def) RESULT (out)
+  real(8), dimension(3):: in, out, def
+  optional:: in
+  if (present(in)) then
+    out = in
+  else
+    out = def
+  end if
+END FUNCTION
+!===============================================================================
+FUNCTION option_s (in, def) RESULT (out)
+  character(*):: in, def
+  character(64):: out
+  optional:: in
+  if (present(in)) then
+    out = in
+  else
+    out = def
+  end if
+END FUNCTION
 
 END MODULE shared_mod

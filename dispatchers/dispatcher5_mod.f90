@@ -98,7 +98,7 @@ SUBROUTINE execute (self, task_list, test)
   !$omp end parallel
   call timer%print()
   call mpi_mesg%diagnostics(1)
-  call toc ('wall time', timer%n_update, time=sec)
+  call timer%toc ('wall time', timer%n_update, time=sec)
   call mpi%barrier ('end')
   write (io%output,*) "task list finished, min_nq =", min_nq
   call trace%end (itimer)
@@ -164,7 +164,7 @@ SUBROUTINE update_list (task_list, test)
     !---------------------------------------------------------------------------
     do while (associated(head))
       task => head%task
-      if (task%mem_thread==-1 .or. omp%thread == task%mem_thread) exit
+      if (task%thread==-1 .or. omp%thread == task%thread) exit
       prev => head
       head => head%next_time
     end do

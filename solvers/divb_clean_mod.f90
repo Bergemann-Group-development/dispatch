@@ -18,7 +18,7 @@ MODULE divb_clean_mod
   end type
   integer, save:: divb_cleaner=0
   integer, save:: divb_iter=4
-  logical, save:: on = .true.
+  logical, save:: on = .false.
   type(divb_clean_t), public:: divb
 CONTAINS
 
@@ -30,10 +30,15 @@ SUBROUTINE init_clean(self)
   logical, save:: first_time = .true.
   namelist /divb_clean_params/ on, divb_cleaner, divb_iter
   ! ----------------------------------------------------------------------------
+  call io%lock%set ('divb_clean')
   if (first_time) then
     first_time = .false.
     rewind (io%input)
     read (io%input, divb_clean_params, iostat=iostat)
+    if (iostat > 0) then
+      rewind (io%input)
+      read (io%input, divb_clean_params)
+    end if
     call io%namelist_warning ('divb_clean_params', iostat)
     write (io%namelist, divb_clean_params,iostat=iostat)
     select case(divb_cleaner)
@@ -43,10 +48,15 @@ SUBROUTINE init_clean(self)
       self%clean => divb_clean1
     case(2)
       self%clean => divb_clean2
+    case(3)
+      self%clean => divb_clean3
+    case(4)
+      self%clean => divb_clean3
     case default
       call io%abort('divb_clean_mod:: divb cleaner method not understood')
     end select
-   end if
+  end if
+  call io%lock%unset ('divb_clean')
 END SUBROUTINE init_clean
 
 !===============================================================================
@@ -281,5 +291,516 @@ SUBROUTINE divb_clean2 (self, m, f)
   call trace%end (itimer)
 END SUBROUTINE divb_clean2
 
+!===============================================================================
+!> Enforce div(B)=0 in the guard zones, by succesively imposing the condition,
+!> layer-by-layer, on the component perpendicular to each of the patch faces,
+!> and on edges with 1, 2, or 3 guard zone surfaces.
+!===============================================================================
+SUBROUTINE divb_clean3 (self, m, f)
+  class(divb_clean_t) :: self
+  class(mesh_t), pointer:: m(:)
+  real, dimension(:,:,:,:), pointer:: f
+  !.............................................................................
+  real, dimension(:,:,:), pointer:: bx, by, bz
+  real:: divb, divb_max
+  integer:: l(3), u(3), ix, iy, iz
+  integer:: itimer=0
+  !-----------------------------------------------------------------------------
+  if (.not.on) return
+  call trace%begin('mhd_t%divb_clean3', itimer=itimer)
+  bx => f(:,:,:,1)
+  by => f(:,:,:,2)
+  bz => f(:,:,:,3)
+  !-----------------------------------------------------------------------------
+  ! Start with a cube define below.  It has div(B)=0 for all indices, except
+  ! where one or more indicaes hit the upper boundary u(:). We acan extend that by
+  ! fixing all of the upper boundary cases
+  !-----------------------------------------------------------------------------
+  l = m%li
+  u = m%ui
+  !-----------------------------------------------------------------------------
+  ! Upper yz-surface
+  !-----------------------------------------------------------------------------
+  ix = u(1)
+  do iz=l(3),u(3)
+  do iy=l(2),u(2)
+    divb = &
+      (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+      (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+      (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+    bx(ix+1,iy,iz) = &
+    bx(ix+1,iy,iz) - divb
+    divb = &
+      (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+      (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+      (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+    if (abs(divb) > 1e-4) print*,'ERROR',divb,1
+  end do
+  end do
+  !-----------------------------------------------------------------------------
+  ! Upper xz-surface
+  !-----------------------------------------------------------------------------
+  iy = u(2)
+  do iz=l(3),u(3)
+  do ix=l(1),u(1)
+    divb = &
+      (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+      (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+      (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+    by(ix,iy+1,iz) = &
+    by(ix,iy+1,iz) - divb
+    divb = &
+      (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+      (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+      (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+    if (abs(divb) > 1e-4) print*,'ERROR',divb,2
+  end do
+  end do
+  !-----------------------------------------------------------------------------
+  ! Upper xy-surface
+  !-----------------------------------------------------------------------------
+  iz = u(3)
+  do iy=l(2),u(2)
+  do ix=l(1),u(1)
+    divb = &
+      (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+      (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+      (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+    bz(ix,iy,iz+1) = &
+    bz(ix,iy,iz+1) - divb
+    divb = &
+      (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+      (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+      (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+    if (abs(divb) > 1e-4) print*,'ERROR',divb,3
+  end do
+  end do
+  !-----------------------------------------------------------------------------
+  ! Edge cells, Ex
+  !-----------------------------------------------------------------------------
+  iy = u(2)
+  iz = u(3)
+  do ix=m(1)%lo,m(1)%lb,-1
+    divb = &
+      (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+      (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+      (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+    by(ix,iy+1,iz) = &
+    by(ix,iy+1,iz) - divb/2.
+    bz(ix,iy,iz+1) = &
+    bz(ix,iy,iz+1) - divb/2.
+    divb = &
+      (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+      (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+      (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+    if (abs(divb) > 1e-4) print*,'ERROR',divb,4
+  end do
+  iy = l(2)
+  iz = u(3)
+  do ix=m(1)%lo,m(1)%lb,-1
+    divb = &
+      (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+      (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+      (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+    bz(ix,iy,iz+1) = &
+    bz(ix,iy,iz+1) - divb
+    divb = &
+      (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+      (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+      (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+    if (abs(divb) > 1e-4) print*,'ERROR',divb,5
+  end do
+  iy = u(2)
+  iz = l(3)
+  do ix=m(1)%lb,m(1)%ub-1
+    divb = &
+      (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+      (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+      (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+    by(ix,iy+1,iz) = &
+    by(ix,iy+1,iz) - divb
+    divb = &
+      (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+      (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+      (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+    if (abs(divb) > 1e-4) print*,'ERROR',divb,6
+  end do
+  !-----------------------------------------------------------------------------
+  ! Edge cells, By
+  !-----------------------------------------------------------------------------
+  ix = u(1)
+  iz = u(3)
+  do iy=m(2)%lo,m(2)%lb,-1
+    divb = &
+      (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+      (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+      (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+    bx(ix+1,iy,iz) = &
+    bx(ix+1,iy,iz) - divb/2.
+    bz(ix,iy,iz+1) = &
+    bz(ix,iy,iz+1) - divb/2.
+    divb = &
+      (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+      (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+      (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+    if (abs(divb) > 1e-4) print*,'ERROR',divb,7
+  end do
+  ix = l(1)
+  iz = u(3)
+  do iy=m(2)%lo,m(2)%lb,-1
+    divb = &
+      (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+      (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+      (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+    bx(ix+1,iy,iz) = &
+    bx(ix+1,iy,iz) - divb
+    divb = &
+      (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+      (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+      (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+    if (abs(divb) > 1e-4) print*,'ERROR',divb,8
+  end do
+  ix = u(1)
+  iz = l(3)
+  do iy=m(2)%lo,m(2)%lb,-1
+    divb = &
+      (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+      (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+      (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+    bz(ix,iy,iz+1) = &
+    bz(ix,iy,iz+1) - divb
+    divb = &
+      (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+      (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+      (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+    if (abs(divb) > 1e-4) print*,'ERROR',divb,9
+  end do
+  !-----------------------------------------------------------------------------
+  ! Edge cells, Bz
+  !-----------------------------------------------------------------------------
+  ix = u(1)
+  iy = u(2)
+  do iz=m(3)%lo,m(3)%lb,-1
+    divb = &
+      (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+      (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+      (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+    bx(ix+1,iy,iz) = &
+    bx(ix+1,iy,iz) - divb/2.
+    by(ix,iy+1,iz) = &
+    by(ix,iy+1,iz) - divb/2.
+    divb = &
+      (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+      (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+      (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+    if (abs(divb) > 1e-4) print*,'ERROR',divb,10
+  end do
+  ix = l(1)
+  iy = u(2)
+  do iz=m(3)%lo,m(3)%lb,-1
+    divb = &
+      (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+      (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+      (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+    by(ix,iy+1,iz) = &
+    by(ix,iy+1,iz) - divb
+    divb = &
+      (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+      (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+      (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+    if (abs(divb) > 1e-4) print*,'ERROR',divb,11
+  end do
+  ix = u(1)
+  iy = l(2)
+  do iz=m(3)%lo,m(3)%lb,-1
+    divb = &
+      (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+      (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+      (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+    bx(ix+1,iy,iz) = &
+    bx(ix+1,iy,iz) - divb
+    divb = &
+      (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+      (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+      (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+    if (abs(divb) > 1e-4) print*,'ERROR',divb,12
+  end do
+  !-----------------------------------------------------------------------------
+  ! Corner cell, all 3 upper
+  !-----------------------------------------------------------------------------
+  ix = u(1)
+  iy = u(2)
+  iz = u(3)
+  divb = &
+    (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+    (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+    (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+  bx(ix+1,iy,iz) = &
+  bx(ix+1,iy,iz) - divb/3.
+  by(ix,iy+1,iz) = &
+  by(ix,iy+1,iz) - divb/3.
+  bz(ix,iy,iz+1) = &
+  bz(ix,iy,iz+1) - divb/3.
+    divb = &
+      (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+      (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+      (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+    if (abs(divb) > 1e-4) print*,'ERROR',divb,13
+  !-----------------------------------------------------------------------------
+  ! Corner cells, 2 upper
+  !-----------------------------------------------------------------------------
+  ix = l(1)
+  iy = u(2)
+  iz = u(3)
+  divb = &
+    (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+    (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+    (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+  by(ix,iy+1,iz) = &
+  by(ix,iy+1,iz) - divb/2.
+  bz(ix,iy,iz+1) = &
+  bz(ix,iy,iz+1) - divb/2.
+    divb = &
+      (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+      (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+      (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+    if (abs(divb) > 1e-4) print*,'ERROR',divb,14
+  ix = u(1)
+  iy = l(2)
+  iz = u(3)
+  divb = &
+    (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+    (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+    (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+  bx(ix+1,iy,iz) = &
+  bx(ix+1,iy,iz) - divb/2.
+  bz(ix,iy,iz+1) = &
+  bz(ix,iy,iz+1) - divb/2.
+    divb = &
+      (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+      (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+      (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+    if (abs(divb) > 1e-4) print*,'ERROR',divb,15
+  ix = u(1)
+  iy = u(2)
+  iz = l(3)
+  divb = &
+    (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+    (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+    (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+  bx(ix+1,iy,iz) = &
+  bx(ix+1,iy,iz) - divb/2.
+  by(ix,iy+1,iz) = &
+  by(ix,iy+1,iz) - divb/2.
+    divb = &
+      (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+      (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+      (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+    if (abs(divb) > 1e-4) print*,'ERROR',divb,16
+  !-----------------------------------------------------------------------------
+  ! Corner cells, 1 upper
+  !-----------------------------------------------------------------------------
+  ix = u(1)
+  iy = l(2)
+  iz = l(3)
+  divb = &
+    (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+    (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+    (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+  bx(ix+1,iy,iz) = &
+  bx(ix+1,iy,iz) - divb
+    divb = &
+      (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+      (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+      (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+    if (abs(divb) > 1e-4) print*,'ERROR',divb,17
+  ix = l(1)
+  iy = u(2)
+  iz = l(3)
+  divb = &
+    (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+    (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+    (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+  by(ix,iy+1,iz) = &
+  by(ix,iy+1,iz) - divb
+    divb = &
+      (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+      (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+      (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+    if (abs(divb) > 1e-4) print*,'ERROR',divb,18
+  ix = l(1)
+  iy = l(2)
+  iz = u(3)
+  divb = &
+    (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+    (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+    (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+  bz(ix,iy,iz+1) = &
+  bz(ix,iy,iz+1) - divb
+    divb = &
+      (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+      (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+      (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+    if (abs(divb) > 1e-4) print*,'ERROR',divb,19
+  !-----------------------------------------------------------------------------
+  ! Validate
+  !-----------------------------------------------------------------------------
+  if (verbose > 1) then
+    divb_max = 0.0
+    do iz=l(3),u(3)
+    do iy=l(2),u(2)
+    do ix=l(1),u(1)
+      divb = &
+        (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+        (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+        (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+      divb_max = max (abs(divb), divb_max)
+    end do
+    end do
+    end do
+    print *, 'divb_max', divb_max
+  end if
+  !-----------------------------------------------------------------------------
+  ! div(B) is now zero in all cells from l=li to u=uo, and we can extend this
+  ! outwards surface by surface -- this will leave some corner value, but they
+  ! are never used.  First Bx
+  !-----------------------------------------------------------------------------
+  if (divb_cleaner==4) then
+    do iz=l(3),u(3)
+    do iy=l(2),u(2)
+    do ix=u(1)+1,m(1)%ub-1
+      divb = &
+        (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+        (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+        (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+      bx(ix+1,iy,iz) = &
+      bx(ix+1,iy,iz) - divb
+    end do
+    end do
+    end do
+    do iz=l(3),u(3)
+    do iy=l(2),u(2)
+    do ix=l(1)-1,m(1)%lb,-1
+      divb = &
+        (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+        (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+        (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+      bx(ix,iy,iz) = &
+      bx(ix,iy,iz) + divb
+    end do
+    end do
+    end do
+    !-----------------------------------------------------------------------------
+    ! Validate
+    !-----------------------------------------------------------------------------
+    if (verbose > 0) then
+      divb_max = 0.0
+      do iz=l(3),u(3)
+      do iy=l(2),u(2)
+      do ix=m(1)%lb,m(1)%ub-1
+        divb = &
+          (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+          (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+          (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+        divb_max = max (abs(divb), divb_max)
+      end do
+      end do
+      end do
+      print *, 'divb_max(x)', divb_max
+    end if
+    !-----------------------------------------------------------------------------
+    ! By
+    !-----------------------------------------------------------------------------
+    do iz=l(3),u(3)
+    do iy=u(2)+1,m(2)%ub-1
+    do ix=l(1),u(1)
+      divb = &
+        (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+        (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+        (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+      by(ix,iy+1,iz) = &
+      by(ix,iy+1,iz) - divb
+    end do
+    end do
+    end do
+    do iz=l(3),u(3)
+    do iy=l(2)-1,m(2)%lb,-1
+    do ix=l(1),u(1)
+      divb = &
+        (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+        (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+        (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+      by(ix,iy,iz) = &
+      by(ix,iy,iz) + divb
+    end do
+    end do
+    end do
+    !-----------------------------------------------------------------------------
+    ! Validate
+    !-----------------------------------------------------------------------------
+    if (verbose > 0) then
+      divb_max = 0.0
+      do iz=l(3),u(3)
+      do iy=m(2)%lb,m(2)%ub-1
+      do ix=l(1),u(1)
+        divb = &
+          (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+          (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+          (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+        divb_max = max (abs(divb), divb_max)
+      end do
+      end do
+      end do
+      print *, 'divb_max(y)', divb_max
+    end if
+    !-----------------------------------------------------------------------------
+    ! Bz
+    !-----------------------------------------------------------------------------
+    do iz=u(3)+1,m(2)%ub-1
+    do iy=l(2),u(2)
+    do ix=l(1),u(1)
+      divb = &
+        (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+        (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+        (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+      bz(ix,iy,iz+1) = &
+      bz(ix,iy,iz+1) - divb
+    end do
+    end do
+    end do
+    do iz=l(3)-1,m(3)%lb,-1
+    do iy=l(2),u(2)
+    do ix=l(1),u(1)
+      divb = &
+        (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+        (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+        (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+      bz(ix,iy,iz) = &
+      bz(ix,iy,iz) + divb
+    end do
+    end do
+    end do
+    !-----------------------------------------------------------------------------
+    ! Validate
+    !-----------------------------------------------------------------------------
+    if (verbose > 0) then
+      divb_max = 0.0
+      do iz=m(3)%lb,m(3)%ub-1
+      do iy=l(2),u(2)
+      do ix=l(1),u(1)
+        divb = &
+          (bx(ix+1,iy  ,iz  ) - bx(ix,iy,iz)) + &
+          (by(ix  ,iy+1,iz  ) - by(ix,iy,iz)) + &
+          (bz(ix  ,iy  ,iz+1) - bz(ix,iy,iz))
+        divb_max = max (abs(divb), divb_max)
+      end do
+      end do
+      end do
+      print *, 'divb_max(z)', divb_max
+    end if
+  end if
+   call trace%end (itimer)
+END SUBROUTINE divb_clean3
 
 END MODULE divb_clean_mod
+

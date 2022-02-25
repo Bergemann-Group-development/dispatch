@@ -95,8 +95,7 @@ SUBROUTINE init (self, llc, urc)
     e = t/(eos%gamma-1.0)
     self%llc = llc
     self%urc = urc
-    call eos%lookup (shape(e), x=e, y=d, &                           ! call the table lookup, ...
-                    src=src, rk=rk)
+    call eos%lookup (e=e, d=d, src=src, rk=rk)
     self%rk = rk(1,1,1,:)
     self%src = src(1,1,1,:)
     print *, 'Rt boundaries: surf t, d, e:', t, d, e

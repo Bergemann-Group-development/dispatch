@@ -80,7 +80,7 @@ SUBROUTINE execute (self, task_list, test)
   call trace_end
   call timer%print()
   call mpi_mesg%diagnostics(1)
-  call toc ('wall time', timer%n_update, time=start)
+  call timer%toc ('wall time', timer%n_update, time=start)
 END SUBROUTINE execute
 
 !===============================================================================

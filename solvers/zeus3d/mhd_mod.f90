@@ -268,6 +268,7 @@ SUBROUTINE init_zeus (self)
   self%courant = courant
 
   self%kind = 'zeus_mhd_patch'
+  self%etype = 'thermal'
   ! don't store the time derivatives, only the MHD quantities;
   ! this also implies that `time_order` in `timestep_params` should be set to 0.
   self%nw = 1

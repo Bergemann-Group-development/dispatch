@@ -13,6 +13,7 @@ MODULE hash_table_mod
   USE timer_mod
   USE task_mod
   USE link_mod
+  USE shared_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -33,9 +34,11 @@ MODULE hash_table_mod
   !-----------------------------------------------------------------------------
   type, public:: hash_table_t
     type(bucket_t), allocatable, dimension(:)  :: data
+    integer         :: id=0
     integer         :: ndim=4
     integer         :: key_length
     integer         :: total_size, head_free, nfree_chain, nfree
+    integer(8)      :: n_add = 0_8
     integer(kind=8) :: size
     integer(kind=8) :: bitmask
     integer, allocatable, dimension(:) :: next_free
@@ -81,19 +84,14 @@ SUBROUTINE init (self, size, ndim)
   integer, optional  , intent(in)    :: ndim
   !.............................................................................
   integer                            :: req_size
-  integer, save                      :: itimer=0
+  integer, save                      :: itimer=0, id=0
   !-----------------------------------------------------------------------------
   call trace%begin ('hash_table_t%init', itimer=itimer)
-  if (present(size)) then
-    req_size = size
-  else
-    req_size = 2**13-1
-  end if
-  if (present(ndim)) then
-    self%ndim = ndim
-  else
-    self%ndim = 4
-  end if
+  req_size  = shared%option (size, 2**15-1)
+  self%ndim = shared%option (ndim, 4)
+  !$omp atomic update
+  id = id + 1
+  self%id = id
   self%size = 2
   self%key_length = self%ndim*8
   do while (self%size < req_size*4)
@@ -294,6 +292,10 @@ SUBROUTINE set_ptr (htable, key, val)
   ! Compute ibucket
   !-----------------------------------------------------------------------------
   !call trace%begin ('hash_table_t%set', itimer=itimer)
+  associate (htable_n_add => htable%n_add)
+  !$omp atomic update
+  htable_n_add = htable_n_add + 1
+  end associate
   full_hash = hash_func(key)
   ibucket = IAND(full_hash, htable%bitmask) + 1
   if (htable%data(ibucket)%next_ibucket < 0) then          
@@ -335,7 +337,8 @@ SUBROUTINE set_ptr (htable, key, val)
      htable%head_free   = htable%next_free(htable%head_free)
      htable%nfree_chain = htable%nfree_chain - 1
   else
-     write(*,*)"hash chaining space full "
+     write(*,*)  'hash chaining space full'
+     write(*,*)  'size, n_add =', htable%size, htable%n_add
      stop
   end if
   !call trace%end (itimer)

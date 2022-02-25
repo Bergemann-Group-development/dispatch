@@ -1,4 +1,5 @@
 # Depending on MPI use mpif90 or not
+HDF5=
 ifeq ($(strip $(MPI)),mpi)
   FC  = mpif90 -I${BUILD} -J${BUILD}
 endif

@@ -101,7 +101,7 @@ SUBROUTINE init (self)
     e(:,:,1) = (cool_temp/scaling%temp)/(eos%gamma-1.0)
     e(:,:,2) = (hot_temp/scaling%temp)/(eos%gamma-1.0)
     m = shape(rk)
-    call eos%lookup_table (m, d=d, e=e, rk=rk, src=src)
+    call eos%lookup(d=d, e=e, rk=rk, src=src)
     cool = 0.0      
     hot  = src(1,1,2,1) - src(1,1,1,1)          
     deallocate(d,e,src, rk)
@@ -117,13 +117,37 @@ SUBROUTINE primary(self, mem)
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: mem
   real(kind=KindScalarVar), dimension(:,:,:), pointer :: mem2
   real(8):: dtime
-  integer:: iv, n
+  integer:: iv, n, lo(3), uo(3), lb(3), ub(3)
   ! ----------------------------------------------------------------------------
   n = size(mem,4)
+  lo = self%patch%mesh%lo
+  lb = self%patch%mesh%lb
+  uo = self%patch%mesh%uo
+  ub = self%patch%mesh%ub
   do iv=1, n
     mem2 => mem(:,:,:,iv)
     call self%zero_gradient(mem2, iv)
   end do
+  if (associated(self%patch%filled)) then
+    if (self%patch%mesh(1)%lower_boundary) then
+      self%patch%filled(lb(1):lo(1),lb(2):ub(2),lb(3):ub(3)) = 1
+    end if
+    if (self%patch%mesh(1)%upper_boundary) then
+      self%patch%filled(uo(1):ub(1),lb(2):ub(2),lb(3):ub(3)) = 1
+    end if
+    if (self%patch%mesh(2)%lower_boundary) then
+      self%patch%filled(lb(1):ub(1),lb(2):lo(2),lb(3):ub(3)) = 1
+    end if
+    if (self%patch%mesh(2)%upper_boundary) then
+      self%patch%filled(lb(1):ub(1),uo(2):ub(2),lb(3):ub(3)) = 1
+    end if
+    if (self%patch%mesh(3)%lower_boundary) then
+      self%patch%filled(lb(1):ub(1),lb(2):ub(2),lb(3):lo(3)) = 1
+    end if
+    if (self%patch%mesh(3)%upper_boundary) then
+      self%patch%filled(lb(1):ub(1),lb(2):ub(2),uo(3):ub(3)) = 1
+    end if
+  end if
 
 END SUBROUTINE primary
 
@@ -166,6 +190,9 @@ SUBROUTINE radiation (self, mem, src, rk, tt, dir, mu)
             tau = dr*0.5*(rk(i1,i2,li,iv)+rk(i1,i2,i3,iv))
             mem(i1,i2,i3b:i3,iv) = self%hot*exp(-tau)
           end do
+          if (associated(self%patch%filled)) then
+            self%patch%filled(i1,i2,i3b:i3) = 1
+          end if 
         end do
       end do
     else
@@ -177,6 +204,9 @@ SUBROUTINE radiation (self, mem, src, rk, tt, dir, mu)
             tau = dr*0.5*(rk(i1,i2,ui,iv)+rk(i1,i2,i3,iv))
             mem(i1,i2,i3b:i3,iv) = self%cool*exp(-tau)
           end do
+          if (associated(self%patch%filled)) then
+            self%patch%filled(i1,i2,i3b:i3) = 1
+          end if
         end do
       end do
     end if
@@ -190,6 +220,9 @@ SUBROUTINE radiation (self, mem, src, rk, tt, dir, mu)
       do iv=1, n(4)
         mem(i1,i2,i3:i3b,iv) = self%hot*rk(i1,i2,i3:i3b,iv)*dr
       end do
+        if (associated(self%patch%filled)) then
+            self%patch%filled(i1,i2,i3:i3b) = 1
+        end if
       end do
       end do
     else
@@ -198,6 +231,9 @@ SUBROUTINE radiation (self, mem, src, rk, tt, dir, mu)
       do iv=1, n(4)
         mem(i1,i2,i3:i3b,iv) = self%cool*rk(i1,i2,i3:i3b,iv)
       end do
+      if (associated(self%patch%filled)) then
+        self%patch%filled(i1,i2,i3:i3b) = 1
+      end if
       end do
       end do
     end if
@@ -212,6 +248,9 @@ SUBROUTINE radiation (self, mem, src, rk, tt, dir, mu)
       do iv=1, n(4)
         mem(i1,i3b:i3,i2,iv) = self%hot*rk(i1,i3b:i3,i2,iv)*dr
       end do
+      if (associated(self%patch%filled)) then
+        self%patch%filled(i1,i3b:i3,i2) = 1
+      end if
       end do
       end do
     else
@@ -220,6 +259,9 @@ SUBROUTINE radiation (self, mem, src, rk, tt, dir, mu)
       do iv=1, n(4)
         mem(i1,i3b:i3,i2,iv) = self%cool*rk(i1,i3b:i3,i2,iv)
       end do
+      if (associated(self%patch%filled)) then
+        self%patch%filled(i1,i3b:i3,i2) = 1
+      end if
       end do
       end do
     end if
@@ -233,6 +275,9 @@ SUBROUTINE radiation (self, mem, src, rk, tt, dir, mu)
       do iv=1, n(4)
         mem(i1,i3:i3b,i2,iv) = self%hot*rk(i1,i3:i3b,i2,iv)*dr
       end do
+      if (associated(self%patch%filled)) then
+        self%patch%filled(i1,i3:i3b,i2) = 1
+      end if
       end do
       end do
     else
@@ -241,6 +286,9 @@ SUBROUTINE radiation (self, mem, src, rk, tt, dir, mu)
       do iv=1, n(4)
         mem(i1,i3:i3b,i2,iv) = self%cool*rk(i1,i3:i3b,i2,iv)
       end do
+      if (associated(self%patch%filled)) then
+        self%patch%filled(i1,i3:i3b,i2) = 1
+      end if
       end do
       end do
     end if
@@ -255,6 +303,9 @@ SUBROUTINE radiation (self, mem, src, rk, tt, dir, mu)
       do iv=1, n(4)
         mem(i3b:i3,i1,i2,iv) = self%hot*rk(i3b:i3,i1,i2,iv)*dr
       end do
+      if (associated(self%patch%filled)) then
+        self%patch%filled(i3b:i3,i1,i2) = 1
+      end if
       end do
       end do
     else
@@ -263,6 +314,9 @@ SUBROUTINE radiation (self, mem, src, rk, tt, dir, mu)
       do iv=1, n(4)
         mem(i3b:i3,i1,i2,iv) = self%cool*rk(i3b:i3,i1,i2,iv)
       end do
+      if (associated(self%patch%filled)) then
+        self%patch%filled(i3b:i3,i1,i2) = 1
+      end if
       end do
       end do
     end if
@@ -276,6 +330,9 @@ SUBROUTINE radiation (self, mem, src, rk, tt, dir, mu)
       do iv=1, n(4)
         mem(i3:i3b,i1,i2,iv) = self%hot*rk(i3:i3b,i1,i2,iv)*dr
       end do
+      if (associated(self%patch%filled)) then
+        self%patch%filled(i3:i3b,i1,i2) = 1
+      end if
       end do
       end do
     else
@@ -284,6 +341,9 @@ SUBROUTINE radiation (self, mem, src, rk, tt, dir, mu)
       do iv=1, n(4)
         mem(i3:i3b,i1,i2,iv) = self%cool*rk(i3:i3b,i1,i2,iv)
       end do
+      if (associated(self%patch%filled)) then
+        self%patch%filled(i3:i3b,i1,i2) = 1
+      end if
       end do
       end do
     end if

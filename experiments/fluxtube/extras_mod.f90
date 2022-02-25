@@ -25,16 +25,16 @@
 !>                      /    \         |
 !>                     /      \        |
 !>              extras_1_t extras_2_t  |
-!>                 |     \    /        |
-!>                 |     gpatch_t      |
-!>                 |       |     \     |
-!>                 |       |      list_t
-!>                 |       |     /  |
-!>                 |      patch_t   |
-!>                 |      /   \     |
-!>                 |     /     link_t
-!>                 |    /       |
-!>                connect_t   task_t
+!>                       \    /        |
+!>                       gpatch_t      |
+!>                         |     \     |
+!>                         |      list_t
+!>                         |     /  |
+!>                        patch_t   |
+!>                            \     |
+!>                             link_t
+!>                              |
+!>                            task_t
 !>
 !> The extra modules needed in an experiment should be chosen and coordinated
 !> in this module, and the ones that are "below" (USEd by) this module should
@@ -59,7 +59,6 @@ MODULE extras_mod
   USE trace_mod
   USE gpatch_mod
   USE patch_mod
-  USE connect_mod
   USE list_mod
   USE task_mod
   !-----------------------------------------------------------------------------
@@ -118,15 +117,12 @@ SUBROUTINE pre_init (self)
   call self%gpatch_t%pre_init                                   ! keep
   !call self%forces%init (self)                                  ! forces
   !-----------------------------------------------------------------------------
-  ! Allocate a trace_particles data type, connect a pointer, and initialize
+  ! Allocate a trace_particles data type, and initialize
   !-----------------------------------------------------------------------------
   !allocate(self%rt)                                             ! radiative_transfer
-  !self%connect%radiative_transfer => self%rt                    ! radiative transfer
   !call self%rt%pre_init(self%link)                              ! radiative transfer
   !allocate (self%trace_particles)                               ! tracep
-  !self%connect%trace_particles => self%trace_particles          ! tracep
   allocate(self%pic)                                            ! pic
-  self%connect%pic_patch => self%pic                            ! pic
   call self%pic%pre_init(self%link)                             ! pic
 END SUBROUTINE pre_init
 
@@ -140,11 +136,10 @@ SUBROUTINE init (self)
   call self%gpatch_t%init                                       ! keep
   !call self%forces%init (self)                                  ! forces
   !-----------------------------------------------------------------------------
-  ! Allocate a trace_particles data type, connect a pointer, and initialize
+  ! Allocate a trace_particles data type, and initialize
   !-----------------------------------------------------------------------------
   !call self%rt%init(self%link)                                  ! radiative transfer
   !allocate (self%trace_particles)                               ! tracep
-  !self%connect%trace_particles => self%trace_particles          ! tracep
   !call self%trace_particles%add (self%link%task)                ! tracep
   call self%pic%init                                            ! pic
   if (self%pic%on) self%do_mhd = self%pic%do_mhd                ! pic

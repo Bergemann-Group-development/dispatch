@@ -66,7 +66,7 @@ PROGRAM test
     call make_task_at_time (link,real(i))
     call task_list%append (link)
   end do
-  call toc ('     append @  1000', n)
+  call timer%toc ('     append @  1000', n)
 
   call tic
   m = 200
@@ -74,7 +74,7 @@ PROGRAM test
     call make_task_at_time (link,n-m+(i-0.5))
     call task_list%add_by_time (link)
   end do
-  call toc ('add_by_time @  1000', m)
+  call timer%toc ('add_by_time @  1000', m)
 
   call tic
   n = 10000
@@ -82,7 +82,7 @@ PROGRAM test
     call make_task_at_time (link,real(i))
     call task_list%append (link)
   end do
-  call toc ('     append @ 10000', n)
+  call timer%toc ('     append @ 10000', n)
 
   call tic
   m = 1000
@@ -90,7 +90,7 @@ PROGRAM test
     call make_task_at_time (link, n-m+(i-0.5))
     call task_list%add_by_time (link)
   end do
-  call toc ('add_by_time @ 10000', m)
+  call timer%toc ('add_by_time @ 10000', m)
 
   call task_list%reset
   deallocate (task_list)

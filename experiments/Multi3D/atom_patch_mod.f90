@@ -407,6 +407,7 @@ module atom_patch_mod
     class (task_t), pointer :: task
     !-----------------------------------------------------------------------------
     allocate (halo_m3d_t:: link)
+    call link%init()
     link%task => self
     self%link => link
     call task_list%append (link)

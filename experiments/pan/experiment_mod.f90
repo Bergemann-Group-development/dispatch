@@ -42,7 +42,6 @@ SUBROUTINE input (self, ok)
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%input')
   call data_io%input (self, ok)
-!print *, 'experiment%input:', self%id, self%idx%d, self%it, self%fminval(self%idx%d), minval(self%mem(:,:,:,self%idx%d,self%it,1))
   call trace_end
 END SUBROUTINE input
 
@@ -50,9 +49,24 @@ END SUBROUTINE input
 !===============================================================================
 SUBROUTINE update (self)
   class(experiment_t):: self
+  real:: dmin
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
+  if (self%verbose > 0) then
+    dmin = minval(self%mem(:,:,:,self%idx%d,self%it,1))
+    if (dmin <= 0.0) then
+      print *, self%id, 'density is non-positive before update', &
+        dmin, minloc(self%mem(:,:,:,self%idx%d,self%it,1))
+    end if
+  end if
   call self%solver_t%update
+  if (self%verbose > 0) then
+    dmin = self%fminval(self%mem(:,:,:,self%idx%d,self%new,1))
+    if (dmin <= 0.0) then
+      print *, self%id, 'density is non-positive after update', &
+        dmin, self%fminloc(self%mem(:,:,:,self%idx%d,self%new,1))
+    end if
+  end if
   call self%task_log ('aft upd')
   call trace_end
 END SUBROUTINE update
@@ -79,7 +93,7 @@ SUBROUTINE task_log (self, l)
   real:: vmin(self%nv)
   integer:: iv
   !----------------------------------------------------------------------------
-  if (io%task_logging > 3) then
+  if (io%task_logging > 4) then
     do iv=1,self%nv
         vmax(iv) = self%fmaxval(self%mem(:,:,:,iv,self%it,1))
         vmin(iv) = self%fminval(self%mem(:,:,:,iv,self%it,1))

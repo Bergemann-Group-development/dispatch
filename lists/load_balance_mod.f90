@@ -70,6 +70,7 @@ MODULE load_balance_mod
   USE omp_lock_mod
   USE task_mod
   USE patch_mod
+  USE gpatch_mod
   USE experiment_mod
   USE list_mod
   USE link_mod
@@ -97,12 +98,13 @@ MODULE load_balance_mod
   ! Static module parameters and data types
   !-----------------------------------------------------------------------------
   integer, save :: cadence=1              ! how often load balancing is done
-  integer, save :: length=5               ! length of running mean
+  integer, save :: length=2               ! length of running mean
   real, save    :: duration=0.0           ! limit the duration, if non-zero
   real, save    :: q_min=5.               ! limit below which ranks get tasks
   real, save    :: q_max=50.              ! limit above which ranks loose tasks
   integer, save :: verbose=0              ! verbosity
-  character(16) :: initial_method=''      ! default method
+  logical, save :: do_initial=.false.     ! always reassign?
+  character(16) :: initial_method='nbors' ! default method
   type(load_balance_t), save, public :: load_balance    ! public instance
 CONTAINS
 
@@ -116,16 +118,19 @@ SUBROUTINE init (self, task_list)
   class(link_t), pointer :: link
   logical, save :: is_on=.false.          ! task swapping actually done
   logical, save :: dry_run=.false.        ! load balancing is active
-  integer       :: iostat, na
+  integer       :: iostat, n
   real          :: value
   namelist /load_balance_params/ &
     is_on, dry_run, cadence, length, duration, q_min, q_max, initial_method, &
-    verbose
+    do_initial, verbose
   !-----------------------------------------------------------------------------
   if (mpi%size==1) &
     return
   call trace%begin ('load_balance_t%init')
   self%task_list => task_list
+  if (mpi%size /= io%in%mpi_size) then
+    do_initial = .true.
+  end if
   if (verbose > 3) &
     write (io_unit%log, *) 'load_balance_t%init: associated(task_list) =', &
       associated(self%task_list)
@@ -136,10 +141,10 @@ SUBROUTINE init (self, task_list)
   write (io%namelist, load_balance_params)
   !-----------------------------------------------------------------------------
   allocate (self%task_list%running_mean)
-  na = self%task_list%na
-  call self%task_list%running_mean%init (length*na, 1.0, verbose)
+  n = self%task_list%n
+  call self%task_list%running_mean%init (length*n, 1.0, verbose)
   call self%lock%init ('load')
-  call self%task_list%mpi_window%init (real(na))
+  call self%task_list%mpi_window%init (real(n))
   if (verbose > 0) then
     value = self%task_list%running_mean%value(0.0)
     write (io_unit%log, *) 'load_balance_t%init: running_mean =', &
@@ -350,81 +355,261 @@ END FUNCTION measure_queue
 SUBROUTINE initial (self, task_list)
   class(load_balance_t) :: self
   class(list_t), pointer:: task_list
-  class(link_t), pointer:: link
+  class(link_t), pointer:: link, next
   class(nbor_t), pointer:: nbor
-  class(task_t), pointer:: task
-  real(8):: total_cost, part
-  integer(8):: n, n1, i, rank
+  class(task_t), pointer:: task, min_task
+  class(patch_t), pointer:: patch
+  !.............................................................................
+  type:: process_t
+    real(8):: cost=0d0, share, position(3)
+    integer:: n=0
+  end type process_t
+  type(process_t), pointer:: process(:)
+  class(gpatch_t), pointer:: experiment
+  !.............................................................................
+  integer:: min_rank
+  real(8):: total_cost, part, min_cost, volume, patch_volume, total_volume
+  real(8), dimension(3):: position, patch_size
+  integer(8):: n, i, ni, nn, nv, rank, n_task, level
+  integer, pointer:: n_tasks(:)
+  logical:: ok
   !-----------------------------------------------------------------------------
-  if (any(io%in%mpi_dims /= io%mpi_dims)) then
-    total_cost = 0d0
-    n = 0
-    link => task_list%head
-    do while (associated(link))
-      task => link%task
-      task%rank = -1
-      !-------------------------------------------------------------------------
-      ! If task%cost is not set, use an estimate based on number of cells and
-      ! the time step (estimate if it does not exist)
-      !-------------------------------------------------------------------------
-      if (task%cost <= 0.0) then
-        select type (task)
-        class is (patch_t)
-          if (task%dtime == 0d0) then
-            task%dtime = task%ds(1)
-          end if
-          task%cost = 1d-6*product(task%n)/task%dtime
-        end select
-      end if
-      total_cost = total_cost + task%cost
-      link => link%next
-      n = n + 1
-    end do
+  if (mpi%size==1) &
+    return
+  call trace%begin ('load_balance_t%initial')
+  allocate (experiment)
+  !-----------------------------------------------------------------------------
+  ! Compute total task list cost
+  !-----------------------------------------------------------------------------
+  allocate (n_tasks(shared%levelmin:shared%levelmax))
+  n_tasks = 0
+  n = 0
+  total_cost = 0d0
+  link => task_list%head
+  do while (associated(link))
+    task => link%task
+    task%rank = -1
+    n_tasks(task%level) = n_tasks(task%level) + 1
+    !---------------------------------------------------------------------------
+    ! If task%cost is not set, use an estimate based on number of cells and
+    ! the time step (estimate if it does not exist)
+    !---------------------------------------------------------------------------
+    if (task%cost <= 0.0) then
+      select type (task)
+      class is (patch_t)
+        if (task%dtime == 0d0) then
+          task%dtime = task%ds(1)
+        end if
+        task%cost = 1d-6*product(task%n)/task%dtime
+      end select
+    end if
+    total_cost = total_cost + task%cost
+    link => link%next
+    n = n + 1
+  end do
+  part = total_cost/mpi%size
+  write (stdout,*) 'total_cost:', total_cost, '  part:', part
+  !-----------------------------------------------------------------------------
+  ! Allocate a data type instance for each process
+  !-----------------------------------------------------------------------------
+  allocate (process(0:mpi%size-1))
+  do rank=0,mpi%size-1
+    process(rank)%share = total_cost/mpi%size
+  end do
+  !-----------------------------------------------------------------------------
+  ! Need to reassign?
+  !-----------------------------------------------------------------------------
+  if (do_initial .or. any(io%in%mpi_dims /= io%mpi_dims)) then
     !---------------------------------------------------------------------------
     ! Select intial load-balancing method
     !---------------------------------------------------------------------------
     select case (initial_method)
+    case ('experiment')
+      call experiment%initial_load_balance (task_list)
     case ('nbors')
       !-------------------------------------------------------------------------
-      ! The 'nbors' scheme adds task from the nbor list of the previous task
+      ! Find a level with enough task spacing
       !-------------------------------------------------------------------------
-      part = total_cost/mpi%size
-      total_cost = 0d0
+      do level=shared%levelmin,shared%levelmax
+        n_task = n_tasks(level)
+        if (n_task > mpi%size) &
+          exit
+      end do
+      n_task = n_task/mpi%size
+      !-------------------------------------------------------------------------
+      ! Assign a position to each n_task process at the given level
+      !-------------------------------------------------------------------------
+      write (stdout,*) 'total number of tasks:', task_list%n
+      write (stdout,*) 'assigning positions'
+      rank = 0
+      n = 0
+      i = 0
       link => task_list%head
       do while (associated(link))
         task => link%task
-        rank = total_cost/part
-        if (task%rank < 0) then
-          task%rank = rank
-          total_cost = total_cost + task%cost
-        end if
-        nbor => link%nbor
-        do while (associated(nbor))
-          task => nbor%task
-          if (task%rank < 0) then
+        task%rank = -1
+        if (task%level == level) then
+          if (mod(i,n_task)==0) then
             task%rank = rank
-            total_cost = total_cost + task%cost
+            process(rank)%n    = process(rank)%n    + 1
+            process(rank)%cost = process(rank)%cost + task%cost
+            process(rank)%position = task%position
+            rank = rank+1
+            n = n+1
+            if (rank == mpi%size) &
+              exit
           end if
-          nbor => nbor%next
-        end do
+          i = i+1
+        end if
         link => link%next
+      end do
+      write (stdout,*) 'initially assigned rank',rank,'to',n,'tasks'
+      !-------------------------------------------------------------------------
+      ! The 'nbors' scheme adds unassigned tasks to the rank that has the so-far
+      ! lowest accumulated cost and is on the nbor list.  Initially, many tasks
+      ! will have no nbor with rank assigned, and will be skipped, but in each
+      ! sweep there will be more and more eligible tasks, until there are no
+      ! tasks left
+      !-------------------------------------------------------------------------
+      do while (n < task_list%n)
+        link => task_list%head
+        do while (associated(link))
+          task => link%task
+          !---------------------------------------------------------------------
+          ! If the task has no rank assigned, look through it's nbor list for
+          ! the rank that has the lowest cost
+          !---------------------------------------------------------------------
+          min_cost = huge(1.)
+          min_rank = -1
+          if (task%rank < 0) then
+            !write (stdout,*) task%id, task%n_nbors, associated(link%nbor)
+            nbor => link%nbor
+            do while (associated(nbor))
+              if (nbor%task%rank >= 0) then
+                if (process(nbor%task%rank)%cost < min_cost) then
+                  min_task => nbor%task
+                  min_rank = nbor%task%rank
+                  min_cost = process(nbor%task%rank)%cost
+                end if
+              end if
+              nbor => nbor%next
+            end do
+            if (min_rank >= 0) then
+              !-----------------------------------------------------------------
+              ! A best rank to assign a task to was found, so assign the rank,
+              ! add the cost to it, and increment the count
+              !-----------------------------------------------------------------
+              task%rank = min_rank
+              process(min_rank)%cost = process(min_rank)%cost + min_task%cost
+              process(min_rank)%n = process(min_rank)%n + 1
+              n = n+1
+              !write (stdout,*) n, min_task%id, min_rank, process(min_rank)%cost
+            end if
+          end if
+          link => link%next
+        end do
+        write (stdout,*) n, 'of', task_list%n, 'tasks assigned'
       end do
     case default
       !-------------------------------------------------------------------------
       ! The simplest scheme just distributes according to accumulated cost
-      !-------------------------------------------------------------------------
-      part = total_cost/mpi%size
+      !-------------------------------------------------------------------------¨
       total_cost = 0d0
       link => task_list%head
       do while (associated(link))
         task => link%task
         task%rank = total_cost/part
         total_cost = total_cost + task%cost
+        write (stdout,*) task%id, task%rank, task%cost, total_cost
+        process(task%rank)%cost = process(task%rank)%cost + task%cost
         link => link%next
         n = n + 1
       end do
     end select
   end if
+  !-----------------------------------------------------------------------------
+  ! Write out the initial cost distribution and rank positions
+  !-----------------------------------------------------------------------------
+  process%cost = 0.0
+  link => task_list%head
+  do while (associated(link))
+    process(link%task%rank)%cost = &
+    process(link%task%rank)%cost + link%task%cost
+    link => link%next
+  end do
+  do rank=0,mpi%size-1
+    write (stdout,'(a,i4,i6,f7.2,2x,1p,3g12.3)') &
+      'load_balance_t%initial: rank,n_task,cost,position=', &
+      rank, process(rank)%n, &
+      process(rank)%cost/process(rank)%share, process(rank)%position
+  end do
+  !-----------------------------------------------------------------------------
+  ! Pick up the tasks that have the current rank, or are nbors to it
+  !-----------------------------------------------------------------------------
+  n=0; ni=0; nv=0
+  link => task_list%head
+  do while (associated(link))
+    next => link%next
+    task => link%task
+    ok = .false.
+    !---------------------------------------------------------------------------
+    ! Real task?
+    !---------------------------------------------------------------------------
+    if (task%rank == mpi%rank) then
+      ok = .true.
+    !---------------------------------------------------------------------------
+    ! Virtual task?
+    !---------------------------------------------------------------------------
+    else
+      nbor => link%nbor
+      do while (associated(nbor))
+        if (nbor%task%rank == mpi%rank) then
+          ok = .true.
+          exit
+        end if
+        nbor => nbor%next
+      end do
+    end if
+    !---------------------------------------------------------------------------
+    ! Keep in our task list if real or virtual task
+    !---------------------------------------------------------------------------
+    task%status = 0
+    if (ok) then
+      if (task%rank == mpi%rank) then
+        ni = ni+1
+        call task%set (bits%internal)
+      else
+        nv = nv+1
+        call task%set (bits%virtual)
+      end if
+      n = n+1
+      nn = 0
+      nbor => link%nbor
+      do while (associated(nbor))
+        nn = nn+1
+        if (.not.associated(nbor%task)) then
+          write (stderr,*) task%id, 'has unassocicated nbor'
+        end if
+        nbor => nbor%next
+      end do
+      !write (stdout,*) task%id, nn, task%level, task%cost
+    else
+      call task_list%remove (link)
+      !call task%dealloc ()
+      !deallocate (task)
+      !deallocate (link)
+    end if
+    link => next
+  end do
+  write (stdout,*) 'assigned', n, 'rank tasks', ni, 'internal'
+  !-----------------------------------------------------------------------------
+  ! Dealllocate process instances
+  !-----------------------------------------------------------------------------
+  deallocate (process)
+  call mpi%barrier ('load_balance_t%initial')
+  write (io_unit%mpi,*) 'load_balance_t%initial barrier passed'
+  flush (io_unit%mpi)
+  call trace%end ()
 END SUBROUTINE initial
 
 !===============================================================================

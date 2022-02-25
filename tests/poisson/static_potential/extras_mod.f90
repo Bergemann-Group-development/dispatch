@@ -12,11 +12,11 @@
 !>                      /    \
 !>                     /      \
 !>                extras_1_t extras_2_t
-!>                       \    /   |
-!>                      gpatch_t  |
-!>                       patch_t  |
-!>                       /    \   |
-!>                    task_t  connect_t
+!>                       \    /
+!>                      gpatch_t
+!>                       patch_t
+!>                       /
+!>                    task_t
 !>
 !> The extra modules needed in an experiment should be chosen and coordinated
 !> in this module, and the ones that are "below" (USEd by) this module should
@@ -40,7 +40,6 @@ MODULE extras_mod
   USE io_mod
   USE trace_mod
   USE gpatch_mod
-  USE connect_mod
   USE patch_mod
   USE list_mod
   !-----------------------------------------------------------------------------
@@ -102,9 +101,7 @@ SUBROUTINE pre_init (self)
   !allocate(self%rt)                                                    ! RT
   !call self%rt%pre_init (self%link)                                    ! RT
   !allocate (self%trace_particles)                                      ! tracep
-  !self%connect%trace_particles => self%trace_particles                 ! tracep
   !allocate (self%pic)                                                  ! pic
-  !self%connect%pic_patch => self%pic                                   ! pic
   !call self%pic%pre_init (self%link)                                   ! pic
   call self%selfgravity%pre_init (self)                                ! selfg
 END SUBROUTINE pre_init
@@ -122,7 +119,6 @@ SUBROUTINE init (self)
   !call self%forces%init (self)                                         ! forces
   !call self%newton%init (self%link)                                    ! Newton
   !allocate (self%trace_particles)                                      ! tracep
-  !self%connect%trace_particles => self%trace_particles                 ! tracep
   !call self%trace_particles%add (self%link%task)                       ! tracep
   !call self%pic%init                                                   ! pic
   !if (self%pic%on) self%do_mhd = self%pic%do_mhd                       ! pic

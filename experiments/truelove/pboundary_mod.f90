@@ -49,6 +49,13 @@ SUBROUTINE init (self, patch)
       call patch%boundaries%set(bits%zl)
       call patch%boundaries%set(bits%zu)
     end if
+    patch%mesh%lower_boundary = patch%position - patch%size < -patch%box/2d0
+    patch%mesh%upper_boundary = patch%position + patch%size > +patch%box/2d0
+    if (any(patch%mesh%lower_boundary .or. patch%mesh%upper_boundary)) then
+      write (stdlog,'(a,i5,2(2x,3l1))') &
+        'pboundary_t%init: id,lower,upper=', &
+        patch%id, patch%mesh%lower_boundary, patch%mesh%upper_boundary
+    end if
   end if
 END SUBROUTINE init
 

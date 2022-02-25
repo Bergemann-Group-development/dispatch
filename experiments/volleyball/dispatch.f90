@@ -1,21 +1,17 @@
 !===============================================================================
-!> Generic DISPATCH main program.  A selection of components may be added; the
-!> first one that defines a task list defines the job.
+!> Generic DISPATCH main program for Cartesian meshes
 !===============================================================================
 PROGRAM dispatch
   USE setup_mod
   USE restart_mod
   USE dispatcher_mod
-  USE cartesian_vb_mod
-  USE task_list_mod
-  type(cartesian_vb_t):: cartesian              ! Use Cartesian patch arrangement
-  class(task_list_t), pointer:: task_list => null()
+  USE volleyball_mod
+  type (volleyball_t):: volleyball               ! Volleyball patch arrangement
   !.............................................................................
-  call setup%init                               ! Generic setup (MPI, I/O, ...)
-  call dispatcher%init                          ! Initialize the dispatcher
-  call restart%init (task_list)                 ! Possibly initialize task_list
-  call cartesian%init (task_list)               ! .. or else here ...
-  call dispatcher%execute (task_list)           ! Run dispatcher on the task_list
-  call setup%end                                ! End setup
+  call setup%init                                ! Standard setup
+  call dispatcher%init                           ! Initialize the dispatcher
+  call volleyball%init                           ! Initialize the task list
+  call dispatcher%execute (volleyball%task_list) ! Run dispatcher on task_list
+  call setup%end                                 ! End run
 !===============================================================================
 END PROGRAM dispatch

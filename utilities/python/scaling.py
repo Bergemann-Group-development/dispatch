@@ -79,6 +79,6 @@ def scaling(type='ISM',units=cgs,verbose=0,mu=2):
         p=d*v**2
         g=units.grav*d*t**2
         u=units.kms
-        e=m*u**2
+        e=d*v**2
         temp = mu*(units.m_u)/(units.k_b)*v**2
     return s

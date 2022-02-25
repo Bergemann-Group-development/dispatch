@@ -31,7 +31,7 @@ SUBROUTINE create
     write (10,rec=i) buffer
   end do
   close (10)
-  call toc ('write', nbuf)
+  call timer%toc ('write', nbuf)
 END SUBROUTINE
 END MODULE
 
@@ -57,7 +57,7 @@ PROGRAM test_omp_io
   print*,unit, omp%thread, omp%mythread(), bufs(1)
   close (unit)
   !$omp end parallel
-  call toc ('read', nbuf)
+  call timer%toc ('read', nbuf)
 
   call create
   print '(/a)', 'critical read:'
@@ -72,7 +72,7 @@ PROGRAM test_omp_io
   close (unit)
   !$omp end critical
   !$omp end parallel
-  call toc ('read', nbuf)
+  call timer%toc ('read', nbuf)
 
   call create
   print '(/a)', 'serial read:'
@@ -85,6 +85,6 @@ PROGRAM test_omp_io
     print*, unit, i, omp%mythread(), bufs(1)
     close (unit)
   end do
-  call toc ('read', nbuf)
+  call timer%toc ('read', nbuf)
 
 END PROGRAM

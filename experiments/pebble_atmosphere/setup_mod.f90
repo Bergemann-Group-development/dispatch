@@ -15,7 +15,7 @@ MODULE setup_mod
   USE eos_mod
   USE experiment_mod
   USE pebble_trace_mod
-  USE radiative_transfer_mod
+  !USE radiative_transfer_mod
   USE rubiks_mod
   USE shared_mod
   USE list_mod
@@ -56,11 +56,10 @@ SUBROUTINE init (self, label)
   planet%position = 0.0
   self%position = planet%position
   call self%rubiks_t%init_hierarchy (label)
-  call self%task_list%remove_parents
-  if (eos%do_rt) then
-    call rt_setup (self%task_list,2)
-  end if
-  print*, 'n_initial, n_add =', shared%n_initial, shared%n_add
+  !if (eos%do_rt) then
+    !call rt_setup (self%task_list,2)
+  !end if
+  print*, 'task_list%n =', self%task_list%n
   call trace_end
 END SUBROUTINE init
 

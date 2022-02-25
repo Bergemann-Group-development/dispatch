@@ -1,5 +1,6 @@
 import numpy as np
 import dispatch.EOS
+import scaling
 from scipy.io import FortranFile
 from dispatch.EOS import eos_c
 
@@ -10,6 +11,7 @@ class stagger(eos_c):
         and an 'info' dictionary with non-mandatory extra information.
     """
     def __init__(self,file='48h1/table.dat',dir='data/eos/stagger/',top=None,verbose=0):
+        sc = scaling.scaling(type='solar', mu=0.8)
         if top is None:
             path=file
             self.file=file
@@ -58,9 +60,11 @@ class stagger(eos_c):
             itab,ntab=ints2
             tmean,_,rhm,xcorr,_,_,_,ymin,_,dy=reals2
             
+        """ Set fiducial gamma """
+        self.gamma = 1.4
         """ Store extra info """
         self.set_info({'units':'code','tmean':tmean,'xcorr':xcorr,'mbox':mbox,
-                   'dbox':dbox,'ul':ul,'ut':ut,'ur':ur,'abund':abnd})
+                   'dbox':dbox,'ul':ul,'ut':ut,'ur':ur,'abund':abnd,'gamma':self.gamma})
             
         nx=nd
         x_min=np.log(rhm[0])
@@ -94,8 +98,14 @@ class stagger(eos_c):
                         self.set_dependent(id,jv,np.exp(tab[i:i+n])*10**k,var)
                         jv+=1
                     jv-=1
-                elif vars[iv].startswith('S'):
-                    self.set_dependent(id,jv,np.exp(tab[i:i+n]),vars[iv])        
+                elif vars[iv]=='S1':
+                    self.set_dependent(id,jv,np.exp(tab[i:i+n]),vars[iv])
+                elif vars[iv]=='S2':
+                    self.set_dependent(id,jv,np.exp(tab[i:i+n]),vars[iv])
+                elif vars[iv]=='S3':
+                    self.set_dependent(id,jv,np.exp(tab[i:i+n]),vars[iv])
+                elif vars[iv]=='S4':
+                    self.set_dependent(id,jv,np.exp(tab[i:i+n]),vars[iv])
                 else:
                     self.set_dependent(id,jv,tab[i:i+n],vars[iv])        
                 i+=3*n
@@ -207,9 +217,22 @@ class stagger(eos_c):
             
     def all_values(self,i):
         d=np.exp(self.scale0.values[i])
-        E,lnP=self.values(i,'ln(P)')
+        E,P=self.values(i,'P')
         E,T=self.values(i,'T')
-        P=np.exp(lnP)
         lnT=np.log(T)
         lnE=np.log(E)
+        lnP=np.log(P)
+        return d,T,P,E,lnT,lnP,lnE
+
+    def all_SI_values(self,i):
+        scale=scaling.scaling(type='solar',mu=0.8)
+        d=np.exp(self.scale0.values[i])*scale.d
+        E,P=self.values(i,'P')
+        E,T=self.values(i,'T')
+        E = E * scale.e
+        P = P * scale.p
+        T = T# * scale.temp
+        lnT=np.log(T)
+        lnE=np.log(E)
+        lnP=np.log(P)
         return d,T,P,E,lnT,lnP,lnE
