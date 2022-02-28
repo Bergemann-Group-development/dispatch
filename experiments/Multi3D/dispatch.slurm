@@ -13,5 +13,5 @@
 # --- User notifications ---
 #SBATCH --time 00:20:00
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
-export OMP_STACKSIZE=512m
+export OMP_STACKSIZE=512M
 srun dispatch.x

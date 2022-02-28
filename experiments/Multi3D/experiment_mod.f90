@@ -67,7 +67,7 @@ SUBROUTINE pre_init (self)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('experiment_mod::pre_init', itimer=itimer)
-  call self%gpatch_t%pre_init ()
+  call self%solver_t%pre_init ()
   !call self%pre_init_atom()
   call self%pre_init_composition()
   call trace%end (itimer=itimer)

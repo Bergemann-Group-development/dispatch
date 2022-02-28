@@ -24,6 +24,12 @@
 
 ! -- Parameters defining the run -----------------------------------------------
 !&io_params          do_trace=T omp_trace=F /
+!&snapshot_params    verbose=0 flip_z=t force_mean=f extension=1 order=2 b0=0.0,0.0,0.0 
+!                    model='stagger'
+!                    meshfile='../../data/stellar_atmospheres/mhd63.msh'
+!                    snapfile='../../data/stellar_atmospheres/mhd63.dat' /
+!&cartesian_params   size=6,6,3 dims=6,6,3 mpi_dims=2,2,1 origin=0,0,-2.5
+!                    omp_init=t periodic=t,t,f /
 !&atmos_params       verbose=1 atmos_file='./input_multi3d/atmos/atmos.sun_MARCS' npatches=1 /
 !&atmos_params       verbose=1 atmos_file='./input_multi3d/atmos/t5777g44m0005_20.5x5x230' npatches=1 read_Stagger=T/
 &atmos_params       verbose=1 atmos_file='./input_multi3d/atmos/Sun.5x5x230' npatches=1 read_Stagger=T/
