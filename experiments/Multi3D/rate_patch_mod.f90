@@ -6,7 +6,6 @@ module rate_patch_mod
     !USE list_mod
     USE halo_mod
     USE gpatch_mod
-    USE solver_mod
     USE link_mod
     USE task_mod
     !USE index_mod
@@ -24,7 +23,7 @@ module rate_patch_mod
     USE bits_mod
     !USE units_mod
     !USE scratch_mod
-    USE m3d_patch_mod
+    USE ray_patch_mod
     USE opac_patch_mod
     USE rad_patch_mod
     USE atom_var, only: atom_type
@@ -32,10 +31,8 @@ module rate_patch_mod
 
     !-----------------------------------------------------------------------------
 
-    type, public, extends(m3d_t) :: rate_patch_t
-      integer :: i_Gij=1, i_Gji=2
+    type, public, extends(ray_patch_t) :: rate_patch_t
       class(atom_type), pointer :: atom => null()
-      real(8), dimension(:,:,:), allocatable :: vproj
       class(radiation_t), pointer :: rad => null()
       class(opacity_t), pointer :: cont_opac => null()
       class(opacity_t), pointer :: line_opac => null()
@@ -53,23 +50,10 @@ module rate_patch_mod
   SUBROUTINE rate_patch_pre_init (self)
     class(rate_patch_t), target:: self
     ! ----------------------------------------------------------------------------
-    call self%m3d_t%pre_init()
-
-    self%nw = 2
-    self%nv = self%atom%nrad
-    self%mv = self%nv
-    self%nt = 1
-    self%it = 1
-    self%new = self%it
-    
-    ! ----------------------------------------------------------------------------
-    ! Allocate and set unsigned and pervolume. Rates are all positive definite
-    ! Although quantities are generally per volume, but density is not stored
-    ! locally, thus this flag must not be set.
-    ! ----------------------------------------------------------------------------
-    allocate (self%unsigned(self%nv), self%pervolume(self%nv))
-    self%pervolume = .false.
-    self%unsigned  = .true.
+    call trace%begin('rate_patch_t%rate_patch_pre_init')
+    call self%ray_patch_t%pre_init()
+    call self%set_nv_and_nw(self%atom%nrad, 2)
+    call trace%end()
   END SUBROUTINE rate_patch_pre_init
   
   !===============================================================================
@@ -77,6 +61,7 @@ module rate_patch_mod
     class(rate_patch_t) :: self
     real(4), dimension(:,:,:,:), pointer :: Inu, gamma_ij, gamma_ji, chi_l, chi_c, eta_l, eta_c, Psi
     real(4), dimension(:,:,:,:), contiguous, pointer :: Ieff
+    real(4), dimension(:,:,:), pointer, contiguous :: temp
     integer :: fs, fe, i,j,k,f
     integer, save:: itimer=0
     !-----------------------------------------------------------------------------
@@ -98,6 +83,8 @@ module rate_patch_mod
 
     chi_l => self%line_opac%mem(:,:,:,:,self%it,self%line_opac%i_chi)
     eta_l => self%line_opac%mem(:,:,:,:,self%it,self%line_opac%i_eta)
+
+    temp => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_temp, self%it,1)
     
     call os%allocate(Ieff, shape(Psi))
     
@@ -114,9 +101,12 @@ module rate_patch_mod
     gamma_ij => self%mem(:,:,:,:, self%it, self%i_Gij)
     gamma_ji => self%mem(:,:,:,:, self%it, self%i_Gji)
 
-    call self%atom%add_all_gammas(fs, fe, self%temp, self%vproj, Ieff, Psi, &
+    if (self%iter == 0) then
+      call self%comp_vproj(self%vproj)
+    endif
+
+    call self%atom%add_all_gammas(fs, fe, temp, self%vproj, Ieff, Psi, &
                                   chi_l, chi_c, eta_l, eta_c, gamma_ij, gamma_ji)
-  
 
     call os%deallocate(Ieff)
     call trace%end(itimer)
@@ -141,12 +131,18 @@ module rate_patch_mod
 
     needed = .false.; needs_me = .false.; download = .false.
 
-    if (another%id == self%rad%id) then
-      needed = .true.; needs_me = .false.; download = .false.
-    endif
+    select type (another)
+    class is (radiation_t)
+      if (another%patch%id == self%patch%id) then
+        if (another%i_mu == self%i_mu .and. another%i_nu == self%i_nu) then
+          self%rad => another
+          needed = .true.; needs_me = .false.; download = .false.
+        endif
+      endif
+    end select
 
     if (all(another%position == self%position)) then
-      if (another%kind == trim(self%atom%id) // '_patch') then
+      if (another%kind == 'atom_patch') then
         needed = .false.; needs_me = .true.; download = .false.
       endif
     endif

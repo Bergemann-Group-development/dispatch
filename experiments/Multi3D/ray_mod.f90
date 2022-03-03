@@ -95,9 +95,16 @@ SUBROUTINE set_carlson_quadratures (quad_scheme, vec, wts, up_and_down)
   select case (trim(quad_scheme))
 
   case('disk_center')
-    allocate(vec(3, 1), wts(1))
-    vec(:,1) = [0.0, 0.0, 1.0]
-    wts = 1.0
+    if (mirror) then
+      allocate(vec(3, 2), wts(2))
+      vec(:,1) = [0.0, 0.0, 1.0]
+      vec(:,2) = [0.0, 0.0,-1.0]
+      wts = 1.0
+    else
+      allocate(vec(3, 1), wts(1))
+      vec(:,1) = [0.0, 0.0, 1.0]
+      wts = 1.0
+    endif
     return
 
   case('set_a2')

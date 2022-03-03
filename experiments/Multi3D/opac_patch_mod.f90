@@ -6,7 +6,6 @@ module opac_patch_mod
   !USE list_mod
   USE halo_mod
   USE gpatch_mod
-  USE solver_mod
   USE link_mod
   USE task_mod
   !USE index_mod
@@ -25,36 +24,31 @@ module opac_patch_mod
   !USE units_mod
   !USE scratch_mod
   USE atom_var, only: atom_type
+  USE ray_patch_mod, only:ray_patch_t
   USE composition_mod, only:composition_type
-  USE m3d_patch_mod, only:m3d_t
   implicit none
   private
 
   !-----------------------------------------------------------------------------
-  type, public, extends(m3d_t) :: opacity_t
-  integer :: i_chi=1, i_eta=2, i_snu=2
+  type, public, extends(ray_patch_t) :: opacity_t
+  integer :: i_abs=3, i_sca=4
   class(atom_type), pointer :: atom => null()
-  type(composition_type) :: composition
-  real(8), dimension(:,:,:), allocatable :: vproj
-  real(8), dimension(:,:,:,:), pointer, contiguous :: nh, wphi
+  class(composition_type), pointer :: composition
+  real(8), dimension(:,:,:,:), pointer, contiguous :: wphi
   class(opacity_t), pointer :: back_opac => null()
   class(opacity_t), pointer :: cont_opac => null()
   class(opacity_t), pointer :: line_opac => null()
-  class(m3d_t), pointer :: rad => null()
-  class(m3d_t), pointer :: mean_rad => null()
+  class(ray_patch_t), pointer :: rad => null()
+  class(ray_patch_t), pointer :: mean_rad => null()
   contains
     procedure :: pre_init => opacity_pre_init
     procedure :: update => opacity_update
     procedure :: nbor_relations => opacity_nbor_relations
-    procedure :: init_composition
     procedure :: back_opac_update
     procedure :: cont_opac_update
     procedure :: line_opac_update
     procedure :: sum_opac_update
   end type opacity_t
-
-
-
 
   !-----------------------------------------------------------------------------
   integer, save:: verbose=0                           ! verbosity
@@ -65,16 +59,16 @@ contains
 SUBROUTINE opacity_pre_init (self)
   class(opacity_t), target:: self
   ! ----------------------------------------------------------------------------
-  call self%m3d_t%pre_init()
+  call trace%begin('opacity_t%opacity_pre_init')
+  call self%ray_patch_t%pre_init()
 
-  self%nw = 2
-  self%mv = self%nv
-  !self%nv is assigned in experiment_mod : init_sub_patches
-  self%nt = 1
-  self%it = 1
-  self%new = self%it
+  if (self%kind == 'back_opac') then
+    call self%set_nv_and_nw (self%fe-self%fs+1,4)
+  else
+    call self%set_nv_and_nw (self%fe-self%fs+1,2)
+  endif
 
-  if (self%kind == 'sum_opac') then
+  if (self%kind == 'net_opac') then
     if (self%out_ray) then
       self%ng = [0,0,1]
     else
@@ -85,29 +79,8 @@ SUBROUTINE opacity_pre_init (self)
       endif
     endif
   endif
-  
-  ! ----------------------------------------------------------------------------
-  ! Allocate and set unsigned and pervolume. Opacity, source function,
-  ! intensity and populations are all positive definite
-  ! Although quantities are generally per volume, but density is not stored
-  ! locally, thus this flag must not be set.
-  ! ----------------------------------------------------------------------------
-  allocate (self%unsigned(self%nv), self%pervolume(self%nv))
-  self%pervolume = .false.
-  self%unsigned  = .true.
+  call trace%end()
 END SUBROUTINE opacity_pre_init
-
-!===============================================================================
-SUBROUTINE init_composition (self)
-  class(opacity_t) :: self
-  !-----------------------------------------------------------------------------
-  ! loading temp, ne and rho in to composition objekt
-  ! ion and molecule equilibrium are solved immediately
-  call self%composition%load_state_variables(self%temp, self%ne, self%rho)
-
-  call os%allocate(self%nh, [self%n(1), self%n(2), self%n(3), 6])
-  call self%composition%get_nhyd(self%nh)
-END SUBROUTINE init_composition
 
 !===============================================================================
 SUBROUTINE opacity_update (self)
@@ -129,7 +102,7 @@ SUBROUTINE opacity_update (self)
     call self%cont_opac_update(chi, eta)
   case ('line_opac')
     call self%line_opac_update(chi, eta)
-  case ('sum_opac')
+  case ('net_opac')
     if (self%line_opac%finished .and. self%line_opac%iter < self%line_opac%maxiter) then
       call self%finish(rotated=.true.)
       return
@@ -146,24 +119,26 @@ SUBROUTINE back_opac_update (self, chi, eta)
   class(opacity_t), target :: self
   real(4), dimension(:,:,:,:), intent(inout) :: chi, eta
   real(8), dimension(:), pointer :: nu
-  real(4), dimension(:,:,:,:), pointer :: Jold
+  real(4), dimension(:,:,:,:), pointer :: Jold, abslte, sumsca
   character(len=64) :: text
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('opacity_t%back_opac_update', itimer=itimer)
   nu   => self%sp%nu(self%fs:self%fe)
   Jold => self%mean_rad%authority_mem(:,:,:,:,self%mean_rad%it,1)
+  abslte => self%mem(:,:,:,:,self%it,self%i_abs)
+  sumsca => self%mem(:,:,:,:,self%it,self%i_sca)
 
   if (self%iter == 0) then
     chi = 0
     eta = 0
-    call self%init_composition()
-    call self%composition%absorption(nu, chi)
+    !call self%init_composition()
+    call self%composition%absorption(nu, chi, abslte, sumsca)
   elseif (self%iter == self%maxiter-1) then
     self%time = self%time + (self%master_maxiter - self%iter)*self%dtime
   endif
 
-  call self%composition%scattering(nu, Jold, eta)
+  call self%composition%scattering(nu, Jold, abslte, sumsca, eta)
 
   call trace%end(itimer)
 END SUBROUTINE back_opac_update
@@ -172,12 +147,14 @@ END SUBROUTINE back_opac_update
 SUBROUTINE cont_opac_update (self, chi, eta)
   class(opacity_t) :: self
   real(4), dimension(:,:,:,:), intent(inout) :: chi, eta
+  real(4), dimension(:,:,:), pointer, contiguous :: temp
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('opacity_t%cont_opac_update', itimer=itimer)
   chi = 0
   eta = 0
-  call self%atom%add_continuum_opacities(self%fs, self%fe, self%sp%nu, self%temp, chi, eta)
+  temp => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_temp, self%it,1)
+  call self%atom%add_continuum_opacities(self%fs, self%fe, self%sp%nu, temp, chi, eta)
   call trace%end(itimer)
 END SUBROUTINE cont_opac_update
 
@@ -185,15 +162,19 @@ END SUBROUTINE cont_opac_update
 SUBROUTINE line_opac_update (self, chi, eta)
   class(opacity_t) :: self
   real(4), dimension(:,:,:,:), intent(inout) :: chi, eta
+  real(4), dimension(:,:,:), pointer, contiguous :: temp
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('opacity_t%line_opac_update', itimer=itimer)
   chi = 0
   eta = 0
+  temp => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_temp, self%it,1)
+
   if (self%iter == 0) then
-    call self%atom%compute_wphi(self%fs, self%fe, self%sp%nu, self%temp, self%vproj, self%wphi)
+    call self%comp_vproj(self%vproj)
+    call self%atom%compute_wphi(self%fs, self%fe, self%sp%nu, temp, self%vproj, self%wphi)
   endif
-  call self%atom%add_line_opacities(self%fs, self%fe, self%sp%nu, self%temp, self%vproj, chi, eta)
+  call self%atom%add_line_opacities(self%fs, self%fe, self%sp%nu, temp, self%vproj, chi, eta)
   call trace%end(itimer)
 END SUBROUTINE line_opac_update
 
@@ -265,7 +246,7 @@ SUBROUTINE opacity_nbor_relations(self, another, needed, needs_me, download)
 
   needed = .false.; needs_me = .false.; download = .false.
 
-  if (self%kind == 'sum_opac') then
+  if (self%kind == 'net_opac') then
     if (another%id == self%back_opac%id) then
       needed = .true.; needs_me = .false.; download = .false.
 
@@ -295,7 +276,7 @@ SUBROUTINE opacity_nbor_relations(self, another, needed, needs_me, download)
     select type (another)
     class is (opacity_t)
       if (another%i_nu == self%i_nu) then
-        if (another%kind == 'sum_opac') then
+        if (another%kind == 'net_opac') then
           if (another%patch%id == self%patch%id) then
             needed = .false.; needs_me = .true.; download = .false.
           endif
@@ -306,14 +287,14 @@ SUBROUTINE opacity_nbor_relations(self, another, needed, needs_me, download)
 
   select case (self%kind)
   case ('back_opac')
-    if (another%id == self%patch%id) then
+    if (another%id == self%m3d_parent%id) then
       needed = .true. ; needs_me = .false.; download = .false.
     elseif (another%id == self%mean_rad%id) then
       needed = .true. ; needs_me = .false.; download = .false.
     endif
   case ('line_opac', 'cont_opac')
     if (all(another%position == self%position)) then
-      if (another%kind == trim(self%atom%id) // '_patch') then
+      if (another%kind == 'atom_patch') then
         needed = .true. ; needs_me = .false.; download = .false.
       endif
     endif

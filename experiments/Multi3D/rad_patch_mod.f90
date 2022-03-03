@@ -6,7 +6,6 @@ module rad_patch_mod
   !USE list_mod
   USE halo_mod
   USE gpatch_mod
-  USE solver_mod
   USE link_mod
   USE task_mod
   !USE index_mod
@@ -23,9 +22,8 @@ module rad_patch_mod
   USE bits_mod
   USE units_mod, only: cgs
   !USE scratch_mod
-  USE m3d_patch_mod
+  USE ray_patch_mod
   USE opac_patch_mod
-  USE ray_mod, only:ray_type
   USE os_mod
   USE omp_mod
   USE omp_lock_mod
@@ -33,8 +31,7 @@ module rad_patch_mod
 
   !-----------------------------------------------------------------------------
 
-  type, public, extends(m3d_t) :: radiation_t
-    integer :: i_Inu=1
+  type, public, extends(ray_patch_t) :: radiation_t
     class(opacity_t), pointer :: opac => null()
     class(radiation_t), pointer :: sheep(:) => null()
     class(radiation_t), pointer :: mean_rad => null()
@@ -52,7 +49,6 @@ module rad_patch_mod
     procedure :: short_ray_update
     procedure :: Jnu_update
     procedure :: bndries
-    procedure :: periodic_index
     procedure :: periodic_plane
     procedure :: interp_long
     procedure :: interp_xy_up
@@ -77,9 +73,10 @@ contains
 SUBROUTINE radiation_pre_init (self)
   class(radiation_t), target:: self
   logical, save :: first_time=.true.
-  integer :: iostat
+  integer :: iostat, nv, nw
   namelist /radiation_params/ save_output
   ! ----------------------------------------------------------------------------
+  call trace%begin('radiation_t%radiation_pre_init')
   if (first_time) then
     rewind (io%input)
     read (io%input, radiation_params, iostat=iostat)
@@ -91,7 +88,7 @@ SUBROUTINE radiation_pre_init (self)
     first_time = .false.
   endif
 
-  call self%m3d_t%pre_init()
+  call self%ray_patch_t%pre_init()
 
   if (self%kind == 'angle_rad') then
     call self%ray%init(self%vec, self%wmu)
@@ -106,30 +103,21 @@ SUBROUTINE radiation_pre_init (self)
         self%ng = [2,2,1]
       endif
     endif
-
-  elseif (self%kind == 'out_rad') then
-    self%n(3) = 1
-    self%nv = self%sp%nnu
   endif
 
-  self%nw = 1
-  self%mv = self%nv
-  !self%nv is assigned in experiment_mod : init_sub_patches
-  self%nt = 1
-  self%it = 1
-  self%new = self%it
-  
-  ! ----------------------------------------------------------------------------
-  ! Allocate and set unsigned and pervolume. Opacity, source function,
-  ! intensity and populations are all positive definite
-  ! Although quantities are generally per volume, but density is not stored
-  ! locally, thus this flag must not be set.
-  ! ----------------------------------------------------------------------------
-  allocate (self%unsigned(self%nv), self%pervolume(self%nv))
-  self%pervolume = .false.
-  self%unsigned  = .true.
+  select case (self%kind) 
+  case ('angle_rad', 'mean_rad')
+    nv = self%fe-self%fs+1
+  case ('out_rad') 
+    self%n(3) = 1
+    nv = self%sp%nnu
+  end select
 
+  nw = 1
+
+  call self%set_nv_and_nw (nv, nw)
   if (save_output .and. self%kind=='out_rad') call self%setup_metafile()
+  call trace%end()
 END SUBROUTINE radiation_pre_init
 
 !===============================================================================
@@ -137,13 +125,14 @@ SUBROUTINE radiation_init (self)
   class(radiation_t) :: self
   integer :: i
   ! ----------------------------------------------------------------------------
-  call self%m3d_t%init()
-  call self%lock%init ()
+  call trace%begin('radiation_t%radiation_pre_init')
+  call self%ray_patch_t%init()
 
   if (self%kind=='angle_rad') then
     call os%allocate(self%Psi, [self%n(1),  self%n(2),  self%n(3),  self%nv])
     self%Psi = tiny(1.0)
   end if
+  call trace%end()
 END SUBROUTINE radiation_init
 
 !===============================================================================
@@ -362,10 +351,11 @@ SUBROUTINE short_ray_update (self)
   !if (self%verbose>1) then
   !  write(*,'(F5.1, A12, 4(I4), 6(ES15.7))') self%time, 'xxup ssup', self%patch%id, self%i_nu, self%dir, self%i_mu, &
   !  xxup(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%fcheck), &
-  !  ssup(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%fcheck), &
-  !  ex(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%fcheck), &
-  !  source(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%fcheck)
+  !  ssup(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%fcheck)
+  !  !ex(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%fcheck), &
+  !  !source(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%fcheck)
   !endif
+
   call os%deallocate(Inuup)
   call os%deallocate(kernel)
   call os%deallocate(ex)
@@ -849,15 +839,15 @@ SUBROUTINE bndries (self)
     self%chi => self%opac%mem(:,:,:,:, self%opac%it, self%opac%i_chi)
     self%Snu => self%opac%mem(:,:,:,:, self%opac%it, self%opac%i_snu)
 
-    if (self%boundaries%topbot(1)) then
+    if (self%boundaries%upper) then
       self%Inu(:,:,self%gn(3),:) = 0
     endif
   
-    if (self%boundaries%topbot(2)) then
+    if (self%boundaries%lower) then
       self%Inu(:,:,1,:) = self%Snu(:,:,1,:)
     endif
   else
-    call self%m3d_t%bndries()
+    call self%ray_patch_t%bndries()
   endif
 END SUBROUTINE bndries
 
@@ -932,18 +922,5 @@ SUBROUTINE save_meta4(self, filename, arr, shpe)
   write(meta_unit, '(A64, I4, 8(I5))') filename, storage_size(arr), shpe
   close(meta_unit)
 END SUBROUTINE save_meta4
-
-!===============================================================================
-integer pure FUNCTION periodic_index(self, i, axis)
-  class(radiation_t), intent(in) :: self
-  integer, intent(in) :: i, axis
-  ! ----------------------------------------------------------------------------
-  if (self%periodic_xy) then
-    periodic_index = mod(i, self%n(axis))
-    if (periodic_index == 0) periodic_index = self%n(axis)
-  else
-    periodic_index = i
-  endif
-END FUNCTION periodic_index
 
 end module

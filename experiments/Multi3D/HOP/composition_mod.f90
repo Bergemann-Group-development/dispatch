@@ -4,12 +4,14 @@ module composition_mod
     use element_mod
     use ion_mod
     use level_mod
-    use transition_mod
+    use transition_mod, only:transition_type
+    use molecule_mod, only:molec_type
     use omp_lib
     use os_mod
     implicit none
+    private
 
-    type :: composition_type
+    type, public :: composition_type
         logical :: initialised
         integer :: nel, nlevels, nmolec
         real(dp) :: xmy, suma, sumh, grph, summy, tmolim, molh
@@ -21,7 +23,6 @@ module composition_mod
         real(dp), dimension(:,:,:), allocatable :: temp, ne, rho
         real(dp), dimension(:,:,:), allocatable :: EK_over_temp, pe, dxi, fe, toth, saha
         real(dp), dimension(:,:,:), allocatable :: teta, eh, pg, E, xfakh, ro
-        real(dp), dimension(:,:,:,:), pointer, contiguous :: abslte, sumsca
     contains
         procedure :: init => injon
         procedure :: init_molecules
@@ -606,15 +607,11 @@ contains
         class(level_type), pointer :: ground_below
         class(element_type), pointer :: H
         class(ion_type), pointer :: Hm, H0
-        real(dp), dimension(:,:,:), intent(in) :: temp, ne, rho
+        real(4), dimension(:,:,:), intent(in) :: temp, ne, rho
         real(dp), dimension(:,:,:), allocatable :: xnen, ejon, xnenh, xnecno
         integer :: i,j
 
         call trace_begin ('composition_type%load_state_variables')
-        allocate(xnenh, xnecno, ejon, mold=temp)
-        xnenh = 0
-        xnecno = 0
-        ejon = 0
 
         if (.not. self%initialised) then
             print *, 'composition has not been initialised yet'
@@ -633,13 +630,18 @@ contains
         ! -4.98e-4 = log10(XMH * op_saha_const)*(temp_to_theta*sqrt(BK))
         self%dxi = 4.98e-4*self%teta*sqrt(self%pe)
 
+        allocate(xnenh, xnecno, ejon, mold=self%temp)
+        xnenh = 0
+        xnecno = 0
+        ejon = 0
+
         do i=1, self%nel
             element => self%elements(i)
 
             do j=1, element%nion
                 ion => element%ions(j)
                 if (.not. allocated(ion%f)) then
-                    allocate(ion%f, ion%saha, ion%part, ion%anjon, mold=temp)
+                    allocate(ion%f, ion%saha, ion%part, ion%anjon, mold=self%temp)
                 endif
             end do
 
@@ -694,7 +696,7 @@ contains
             end do
         end do
 
-        allocate (Hm%rho_per_h, self%xfakh, mold=temp)
+        allocate (Hm%rho_per_h, self%xfakh, mold=self%temp)
         Hm%rho_per_h = H0%rho_per_h / Hm%saha
 
         where (temp < self%tmolim)
@@ -711,7 +713,7 @@ contains
         call trace_end ()
     end subroutine load_state_variables
 
-    subroutine absorption(self, nu, chi)
+    subroutine absorption(self, nu, chi, abslte, sumsca)
         !use phys_mod, only:planck
         class(composition_type), target :: self
         class(transition_type), pointer :: trans
@@ -719,7 +721,7 @@ contains
         class(molec_type), pointer :: H2
         class(ion_type), pointer :: H0
         real(dp), dimension(:),     intent(in) :: nu
-        real(4), dimension(:,:,:,:), intent(inout) :: chi
+        real(4), dimension(:,:,:,:), intent(inout) :: chi, abslte, sumsca
         real(dp), dimension(:,:,:), allocatable :: fakt, abso, hrest, abfakray, ab
         real(dp), dimension(:,:,:), allocatable :: umc, h1
         real(dp), dimension(:,:,:), allocatable :: fakray, h2ray, els, rayh, rayh2
@@ -738,21 +740,21 @@ contains
         lam = cc / nu * 1e8
 
         ! these need to stay allocated for the scattering part
-        call os%allocate(self%abslte, shape(chi))
-        call os%allocate(self%sumsca, shape(chi))
+        !call os%allocate(abslte, shape(chi))
+        !call os%allocate(sumsca, shape(chi))
         allocate(hrest(nx,ny,nz), fakt(nx,ny,nz))
 
-        self%abslte = 0
-        self%sumsca = 0 ! line list not implemented yet
+        abslte = 0
+        sumsca = 0 ! line list not implemented yet
 
         do i=1, size(self%trans)
             trans => self%trans(i)
             select case (trim(trans%key))
             case ('H BF')
-                call trans%add_absorption(self%abslte, lam, self%temp, self%EK_over_temp, self%teta, &
+                call trans%add_absorption(abslte, lam, self%temp, self%EK_over_temp, self%teta, &
                                           self%pe, self%ro, self%dxi, self%xfakh, fakt)
             case ('H FF')
-                call trans%add_absorption(self%abslte, lam, self%temp, self%EK_over_temp, self%teta, &
+                call trans%add_absorption(abslte, lam, self%temp, self%EK_over_temp, self%teta, &
                                           self%pe, self%ro, self%dxi, self%xfakh, fakt)
 
                 hrest = 0
@@ -765,7 +767,7 @@ contains
                 end where
 
                 do f=1, nf
-                    self%abslte(:,:,:,f) = self%abslte(:,:,:,f) + hrest
+                    abslte(:,:,:,f) = abslte(:,:,:,f) + hrest
                 end do
             end select
         end do
@@ -773,7 +775,7 @@ contains
         do f=1, nf
             ! all continua above are multiplied by lam**3
             !------------------------------------------------------
-            self%abslte(:,:,:,f) = self%abslte(:,:,:,f) * lam(f)**3
+            abslte(:,:,:,f) = abslte(:,:,:,f) * lam(f)**3
         end do
 
         do i=1, size(self%trans)
@@ -784,14 +786,14 @@ contains
                 ! H BF and H FF have already been added
                 ! H- FF still to be added after multiplication of stim
             case default
-                call trans%add_absorption(self%abslte, lam, self%temp, self%EK_over_temp, self%teta, &
+                call trans%add_absorption(abslte, lam, self%temp, self%EK_over_temp, self%teta, &
                                           self%pe, self%ro, self%dxi, self%xfakh, fakt)
             end select
         end do
 
         do f=1, nf
             !stim(:,:,:, f) = 1 - exp(- h_e * nu(f) * self%EK_over_temp)
-            self%abslte(:,:,:, f) = self%abslte(:,:,:, f) * (1 - exp(-28556.*self%teta/(CC/nu(f)*1e8)))
+            abslte(:,:,:, f) = abslte(:,:,:, f) * (1 - exp(-28556.*self%teta/(CC/nu(f)*1e8)))
         end do
 
         ! all continua above are multiplied by stim
@@ -799,7 +801,7 @@ contains
 
         ! H- FF absorption is added without stim factor
         call self%trans_by_id('H- FF', trans)
-        call trans%add_absorption(self%abslte, lam, self%temp, self%EK_over_temp, self%teta, &
+        call trans%add_absorption(abslte, lam, self%temp, self%EK_over_temp, self%teta, &
                                   self%pe, self%ro, self%dxi, self%xfakh, fakt)
 
         ! electron scattering
@@ -814,7 +816,7 @@ contains
         fakray = 2 / H0%part * H0%rho_per_h
 
         do f=1, nf
-            self%sumsca(:,:,:,f) = self%sumsca(:,:,:,f) + els
+            sumsca(:,:,:,f) = sumsca(:,:,:,f) + els
 
             if (lam(f) >= 911) then
                 if (lam(f) < 1026) then
@@ -826,23 +828,23 @@ contains
                 rayh  = xray2*xray2*(5.799e-13 + xray2*(1.422e-6 + xray2*2.784)) * fakray
                 rayh2 = xray2*xray2*( 8.14e-13 + xray2*( 1.28e-6 + xray2*1.61 )) * h2ray
     
-                ! add self%sumsca to self%sumsca from lines
-                self%sumsca(:,:,:,f) = self%sumsca(:,:,:,f) + rayh + rayh2
+                ! add sumsca to sumsca from lines
+                sumsca(:,:,:,f) = sumsca(:,:,:,f) + rayh + rayh2
             endif
         end do
 
         ! BACKGROUND OPACITY
         
         do f=1, nf
-            chi(:,:,:,f) = real((self%abslte(:,:,:,f) + self%sumsca(:,:,:,f)) * self%rho)
+            chi(:,:,:,f) = real((abslte(:,:,:,f) + sumsca(:,:,:,f)) * self%rho)
         end do
         call trace_end ()
     end subroutine absorption
 
-    subroutine scattering (self, nu, Jnu, eta)
+    subroutine scattering (self, nu, Jnu, abslte, sumsca, eta)
         class(composition_type), target :: self
         real(dp), dimension(:),     intent(in) :: nu
-        real(4), dimension(:,:,:,:), intent(in) :: Jnu
+        real(4), dimension(:,:,:,:), intent(in) :: Jnu, abslte, sumsca
         real(4), dimension(:,:,:,:), intent(inout) :: eta
         integer :: f, nf
 
@@ -854,7 +856,7 @@ contains
         endif
 
         do f=1, nf
-            eta(:,:,:,f) = real((self%abslte(:,:,:,f)*planck(nu(f), self%temp) + self%sumsca(:,:,:,f)*Jnu(:,:,:,f)) * self%rho)
+            eta(:,:,:,f) = real((abslte(:,:,:,f)*planck(nu(f), self%temp) + sumsca(:,:,:,f)*Jnu(:,:,:,f)) * self%rho)
         end do
     end subroutine scattering
 
@@ -862,7 +864,7 @@ contains
         class(composition_type), target :: self
         character(len=*), intent(in) :: id
         real(dp), intent(in) :: abund
-        real(dp), dimension(:,:,:), allocatable :: totn
+        real(4), dimension(:,:,:), allocatable :: totn
         class(element_type), pointer :: element
 
         call trace_begin ('composition_type%get_totn')
@@ -878,7 +880,7 @@ contains
 
     subroutine get_nhyd(self, nhyd)
         class(composition_type), target :: self
-        real(dp), dimension(:,:,:,:), intent(out) :: nhyd
+        real(4), dimension(:,:,:,:), intent(out) :: nhyd
         real(dp), dimension(:,:,:), pointer :: nh, blzfac
         class(ion_type), pointer :: H0
         type(level_type) :: level
@@ -888,7 +890,7 @@ contains
         nk = size(nhyd, 4)
         H0 => self%elements(1)%ions(1)
 
-        allocate(nh, blzfac, mold=nhyd(:,:,:,1))
+        allocate(nh, blzfac, mold=self%temp)
 
         !PRINT *, omp_get_thread_num(), allocated(self%fe), allocated(self%ne)
         !PRINT *, omp_get_thread_num(), shape(self%fe), 'fe'

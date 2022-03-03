@@ -67,6 +67,7 @@ MODULE extras_mod
     USE task_mod
     USE io_mod
     USE trace_mod
+    USE composition_patch_mod
     !-----------------------------------------------------------------------------
     ! Optional modules start here.
     !-----------------------------------------------------------------------------
@@ -98,6 +99,7 @@ MODULE extras_mod
       !type (spitzer_t):: spitzer                                         ! spitzer
       !type(gravity_t):: gravity                                          ! gravity
       !class(rt_t), pointer:: rt => null()                                ! RT
+      class(composition_patch_t), pointer :: composition => null()
       !type(newton_t):: newton                                            ! Newton
       !class(trace_particles_t), pointer:: trace_particles                ! tracep
       !real, dimension(:,:,:,:), pointer:: v                              ! tracep
@@ -136,6 +138,9 @@ MODULE extras_mod
     !allocate(self%rt)                                                    ! RT
     !self%rt%patch => self                                                ! RT
     !call self%rt%pre_init                                                ! RT
+    allocate(self%composition)
+    self%composition%patch  => self
+    call self%composition%pre_init()
     !call self%newton%pre_init  (self)                                    ! Newton
     !call self%gravity%pre_init (self)                                    ! gravity
     !call self%spitzer%pre_init (self)                                    ! spitzer
@@ -168,6 +173,7 @@ MODULE extras_mod
     !call self%spitzer%init                                               ! spitzer
     !call self%gravity%init                                               ! gravity
     !call self%rt%init_task (self%rt)                                     ! RT
+    call self%composition%init()
     ! -- ensure consistency (a value is already set via rt%init)          ! experiment
     !self%rt%rt_boundaries%grav = self%gravity%const_grav                 ! experiment
     !call sink_particles%init                                             ! sinkp
@@ -203,6 +209,7 @@ MODULE extras_mod
     !.............................................................................
     call trace%begin ('extras_t%add_to_task_list')
     !if (associated(self%rt)) call self%rt%add_to_task_list(task_list)       ! RT
+    call self%composition%add_to_task_list(task_list)
     call trace%end ()
   END SUBROUTINE add_to_task_list
   
@@ -310,8 +317,17 @@ MODULE extras_mod
     !-----------------------------------------------------------------------------
     ! First check the main relations, then specific ones
     !-----------------------------------------------------------------------------
-    call self%task_t%nbor_relations(another, needed, needs_me, download) ! keep
-    !
+    
+    if (another%kind == self%kind .or. another%kind == 'composition') then
+      call self%task_t%nbor_relations(another, needed, needs_me, download) ! keep
+
+      if (another%kind == 'composition') then
+        needed=.false.; download=.false.
+      endif
+    else
+      needed=.false.; needs_me=.false.; download=.false.
+    endif
+
     call trace%end()
   END SUBROUTINE nbor_relations
   

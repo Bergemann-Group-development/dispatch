@@ -5,22 +5,22 @@ module transition_mod
     use ion_mod
     use element_mod
     use molecule_mod
+    use os_mod
     implicit none
+    private
     
-    type :: transition_type
-        integer :: j, k, ntt, nnu, fs, fe, di
+    type, public :: transition_type
+        integer :: j, k, ntt, nnu
         type(level_type) :: level
         class(particle_type), pointer :: ion
         real(dp) :: mint, maxt, minl, maxl
         logical :: ilogl, kvadl, minex, maxex
         logical :: ilogt, kvadt, minet, maxet, iteta
-        integer, dimension(:), allocatable :: iw
         real(dp), dimension(:), allocatable :: lam, temp, teta, tt
-        real(dp), dimension(:,:), allocatable :: xkap, yy2d
+        real(dp), dimension(:,:), allocatable :: xkap
         real(dp), dimension(:,:), allocatable :: log_xkap
-        real(dp), dimension(:,:), allocatable :: lagrange
-        logical, dimension(:), allocatable :: quad, ldisk!, tdisk
-        logical :: bound_free, regular, active
+        logical, dimension(:), allocatable :: ldisk!, tdisk
+        logical :: bound_free, regular
         character(len=5) :: key
         character(len=20) :: label
 
@@ -38,6 +38,14 @@ module transition_mod
         procedure :: interp_temp_linear
     end type
 
+    logical :: active
+    integer :: fs, fe, di
+    integer, dimension(:), pointer, contiguous :: iw => null()
+    logical, dimension(:), pointer, contiguous :: quad => null()
+    real(dp), dimension(:,:), pointer, contiguous :: lagrange => null()
+    real(dp), dimension(:,:), pointer, contiguous :: pvt_xkap => null()
+    !$omp threadprivate(active, fs, fe, di, iw, quad, lagrange, pvt_xkap)
+
 contains
 
 !===============================================================================
@@ -45,11 +53,11 @@ subroutine load_lam_interp_weights(self,lam)
     class(transition_type) :: self
     real(dp), dimension(:), intent(in) :: lam
     real(dp), dimension(:), allocatable :: test
-    integer :: nf, f, fs, fe, di
+    integer :: nf, f
     integer :: nx, j, i
     logical :: quadratic
     !---------------------------------------------------------------------------
-    self%active = .true.
+    active = .true.
 
     nx = size(self%lam)
     nf = size(lam)
@@ -66,7 +74,7 @@ subroutine load_lam_interp_weights(self,lam)
 
     if (.not. self%minex .and. self%minl > lam(fs)) then
         if (lam(fe) < self%minl) then
-            self%active = .false.
+            active = .false.
             return
         endif
         do f=fs,fe,di
@@ -79,7 +87,7 @@ subroutine load_lam_interp_weights(self,lam)
 
     if (.not. self%maxex .and. self%maxl < lam(fe)) then
         if (lam(fs) > self%maxl) then
-            self%active = .false.
+            active = .false.
             return
         endif
         do f=fe,fs,-di
@@ -94,11 +102,11 @@ subroutine load_lam_interp_weights(self,lam)
     f = fs
 
     quadratic = self%check_lam_quadratic(j)
-    self%quad(f) = quadratic
+    quad(f) = quadratic
 
     do i=1, nf+nx ! i is not actually needed
         if (j >= nx) then
-            self%iw(f) = nx
+            iw(f) = nx
 
         elseif (self%lam(j+1) < lam(f)) then
             j = j+1
@@ -106,22 +114,18 @@ subroutine load_lam_interp_weights(self,lam)
             cycle
 
         elseif (self%lam(j) < lam(f)) then
-            self%iw(f) = j
+            iw(f) = j
 
         else
-            self%iw(f) = 1
+            iw(f) = 1
         endif
 
         call self%set_xweight(lam, f)
 
         if (f == fe) exit
         f = f+di
-        self%quad(f) = quadratic
+        quad(f) = quadratic
     end do
-
-    self%fs = fs
-    self%fe = fe
-    self%di = di
 end subroutine
 
 !===============================================================================
@@ -131,18 +135,18 @@ subroutine set_xweight(self, lam, f)
     integer, intent(in) :: f
     integer :: j
     !---------------------------------------------------------------------------
-    j = self%iw(f)
+    j = iw(f)
 
-    if (self%quad(f)) then
+    if (quad(f)) then
         if (size(self%lam) - j < 2) then
             ! if there are not enough points, step back one index
-            self%iw(f) = self%iw(f) - 1
-            j = self%iw(f)
+            iw(f) = iw(f) - 1
+            j = iw(f)
         endif
 
-        self%lagrange(1:3,f) = quadratic_weight(self%lam(j:j+2), lam(f))
+        lagrange(1:3,f) = quadratic_weight(self%lam(j:j+2), lam(f))
     else
-        self%lagrange(1:2,f) = linear_weight(self%lam(j:j+1), lam(f))
+        lagrange(1:2,f) = linear_weight(self%lam(j:j+1), lam(f))
     endif
 end subroutine set_xweight
 
@@ -171,7 +175,7 @@ end function linear_weight
 subroutine interp_xkap(self, abslte, lam, temp, teta, fakt)
     class(transition_type) :: self
     real(dp), dimension(:), intent(in) :: lam
-    real(dp), dimension(:,:,:,:), intent(inout) :: abslte
+    real(4), dimension(:,:,:,:), intent(inout) :: abslte
     real(dp), intent(in), dimension(:,:,:), target :: temp, teta
     real(dp), intent(in), dimension(:,:,:) :: fakt
     real(dp), dimension(:,:,:), pointer :: newt
@@ -181,14 +185,10 @@ subroutine interp_xkap(self, abslte, lam, temp, teta, fakt)
     real(dp), dimension(self%nnu) :: yy
     real(dp), dimension(self%ntt) :: tt
     real(dp), dimension(:,:), allocatable :: yy2d, dum
-    integer :: i, fs, fe, f, di, nx, ny, nz, nf, iw
+    integer :: i, f, nx, ny, nz, nf
     integer, dimension(:,:,:), allocatable :: it
     logical, dimension(:,:,:), allocatable :: quadratic, in_bounds
     !---------------------------------------------------------------------------
-    fs = self%fs
-    fe = self%fe
-    di = self%di
-
     nx = size(temp, 1)
     ny = size(temp, 2)
     nz = size(temp, 3)
@@ -223,9 +223,9 @@ subroutine interp_xkap(self, abslte, lam, temp, teta, fakt)
         endif
 
         if (self%ilogt) then
-            self%yy2d = self%log_xkap
+            pvt_xkap = self%log_xkap
         else
-            self%yy2d = self%xkap
+            pvt_xkap = self%xkap
         endif
 
         if (self%iteta) then
@@ -259,17 +259,17 @@ subroutine interp_xkap(self, abslte, lam, temp, teta, fakt)
         end do
 
         do f=fs,fe,di
-            iw = self%iw(f)
-            if (self%quad(f)) then
+            i = iw(f)
+            if (quad(f)) then
                 where (in_bounds)
-                    ab = yyt(:,:,:,iw)   * self%lagrange(1,f) + &
-                            yyt(:,:,:,iw+1) * self%lagrange(2,f) + &
-                            yyt(:,:,:,iw+2) * self%lagrange(3,f)
+                    ab = yyt(:,:,:,i)   * lagrange(1,f) + &
+                            yyt(:,:,:,i+1) * lagrange(2,f) + &
+                            yyt(:,:,:,i+2) * lagrange(3,f)
                 end where
             else
                 where (in_bounds)
-                    ab = yyt(:,:,:,iw)   * self%lagrange(1,f) + & 
-                            yyt(:,:,:,iw+1) * self%lagrange(2,f)
+                    ab = yyt(:,:,:,i)   * lagrange(1,f) + & 
+                            yyt(:,:,:,i+1) * lagrange(2,f)
                 end where
             endif
 
@@ -289,11 +289,11 @@ subroutine interp_xkap(self, abslte, lam, temp, teta, fakt)
         endif
 
         do f=fs,fe,di
-            iw = self%iw(f)
-            if (self%quad(f)) then
-                ab1 = sum(yy(iw:iw+2) * self%lagrange(1:3,f))
+            i = iw(f)
+            if (quad(f)) then
+                ab1 = sum(yy(i:i+2) * lagrange(1:3,f))
             else
-                ab1 = sum(yy(iw:iw+1) * self%lagrange(1:2,f))
+                ab1 = sum(yy(i:i+1) * lagrange(1:2,f))
             endif
 
             if (self%ilogl) ab1 = exp(ab1)
@@ -328,7 +328,7 @@ elemental function interp_temp_quadratic(self, f, it, newt) result(newy)
     w(2) = (newt-self%tt(j1)) * (newt-self%tt(j3)) / ((self%tt(j2)-self%tt(j1)) * (self%tt(j2)-self%tt(j3)))
     w(3) = (newt-self%tt(j1)) * (newt-self%tt(j2)) / ((self%tt(j3)-self%tt(j1)) * (self%tt(j3)-self%tt(j2)))
 
-    newy = sum(self%yy2d(f,j1:j3) * w(1:3))
+    newy = sum(pvt_xkap(f,j1:j3) * w(1:3))
 end function interp_temp_quadratic 
 
 !===============================================================================
@@ -338,8 +338,8 @@ elemental function interp_temp_linear(self, f, it, newt) result(newy)
     integer, intent(in) :: f, it
     real(dp) :: m, newy
     !---------------------------------------------------------------------------
-    m = (self%yy2d(f,it+1) - self%yy2d(f,it)) / (self%tt(it+1) - self%tt(it))
-    newy = m * (newt - self%tt(it)) + self%yy2d(f,it)
+    m = (pvt_xkap(f,it+1) - pvt_xkap(f,it)) / (self%tt(it+1) - self%tt(it))
+    newy = m * (newt - self%tt(it)) + pvt_xkap(f,it)
 end function interp_temp_linear
 
 !===============================================================================
@@ -459,7 +459,7 @@ end function absorption_factor
 subroutine add_absorption(self, abslte, lam, temp, EK_over_temp, teta, pe, rho, dxi, xfakh, fakt)
     use timer_mod
     class(transition_type) :: self
-    real(dp), dimension(:,:,:,:), intent(inout) :: abslte
+    real(4), dimension(:,:,:,:), intent(inout) :: abslte
     real(dp), dimension(:,:,:), intent(in) :: temp, EK_over_temp, teta, pe, rho, dxi, xfakh
     real(dp), dimension(:), intent(in) :: lam
     real(dp), dimension(:), allocatable :: ab, abkof
@@ -468,23 +468,29 @@ subroutine add_absorption(self, abslte, lam, temp, EK_over_temp, teta, pe, rho, 
     !---------------------------------------------------------------------------
 
     nf = size(lam)
-    allocate(self%quad(nf))
-    allocate(self%iw(nf))
-    allocate(self%lagrange(3,nf))
 
-    self%lagrange = 0
+    if (associated(quad)) then
+        print *, 'stopping...'
+        stop
+    endif
+
+    call os%allocate(quad, [nf])
+    call os%allocate(iw, [nf])
+    call os%allocate(lagrange, [3,nf], zero=.true.)
+    call os%allocate(pvt_xkap, shape(self%xkap))
 
     call self%load_lam_interp_weights(lam)
 
-    if (self%active) then
+    if (active) then
         fakt = self%absorption_factor(EK_over_temp, teta, pe, rho, dxi, xfakh)
         call self%interp_xkap(abslte, lam, temp, teta, fakt)
     endif
 
     !print '(A20, E18.10)', self%label, abslte(1,1,1,1)
 
-    deallocate(self%quad)
-    deallocate(self%iw)
-    deallocate(self%lagrange)
+    call os%deallocate(quad)
+    call os%deallocate(iw)
+    call os%deallocate(lagrange)
+    call os%deallocate(pvt_xkap)
 end subroutine add_absorption
 end module

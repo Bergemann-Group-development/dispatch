@@ -26,12 +26,14 @@ MODULE boundaries_mod
     ! --------------------------------------------------------------------------
     ! Experiment - specific variables
     ! --------------------------------------------------------------------------
-    logical, dimension(:), pointer, contiguous :: topbot
+    logical :: lower=.false.
+    logical :: upper=.false.
     procedure(mirror), pointer     :: boundary
   contains
     ! --------------------------------------------------------------------------
     ! Default procedures
     ! --------------------------------------------------------------------------
+    procedure:: pre_init
     procedure:: init
     ! --------------------------------------------------------------------------
     ! Experiment - specific procedures
@@ -41,6 +43,20 @@ MODULE boundaries_mod
   end type
   integer, save:: verbose=1
 CONTAINS
+
+!===============================================================================
+SUBROUTINE pre_init (self, patch)
+  class(boundaries_t) :: self
+  class(patch_t), target :: patch
+  ! ----------------------------------------------------------------------------
+  call trace%begin('boundaries_t%pre_init')
+  call self%standard_boundaries_t%pre_init(patch)
+
+  self%lower = self%patch%origin(3) <= 0
+  self%upper = self%patch%origin(3)+self%patch%size(3) >= self%patch%box(3)
+
+  call trace%end()
+END SUBROUTINE pre_init
 
 !===============================================================================
 !> Initialize the boundary data type.
@@ -71,9 +87,6 @@ SUBROUTINE init (self)
   call io%lock%unset('boundaries_t%init')
   if (.not. io%master) verbose=0
 
-  allocate(self%topbot(2))
-  self%topbot = .false. ! default value
-
   select case(patch%kind)
     case ('hlld_mhd_patch')
       self%boundary => mirror
@@ -92,12 +105,12 @@ SUBROUTINE mirror(self, mem)
   ! ----------------------------------------------------------------------------
   integer :: i, b
 
-    if (self%topbot(1)) then
+    if (self%upper) then
         b = ubound(mem,3)
         mem(:,:,b,:,:) = mem(:,:,b-1,:,:)
     endif
 
-    if (self%topbot(2)) then
+    if (self%lower) then
         b = lbound(mem,3)
         mem(:,:,b,:,:) = mem(:,:,b+1,:,:)
     endif

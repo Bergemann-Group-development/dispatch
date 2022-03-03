@@ -33,11 +33,12 @@ MODULE os_mod
     procedure, nopass:: allocate_2d_i
     procedure, nopass:: allocate_3d_i
     procedure, nopass:: allocate_4d_i
+    procedure, nopass:: allocate_1d_l
     generic:: allocate => &
       allocate_1d_r, allocate_2d_r, allocate_3d_r, allocate_4d_r, &
       allocate_1d_d, allocate_2d_d, allocate_3d_d, allocate_4d_d, &
       allocate_1d_i, allocate_2d_i, allocate_3d_i, allocate_4d_i, &
-      allocate_5d_r, allocate_6d_r
+      allocate_5d_r, allocate_6d_r, allocate_1d_l
     procedure, nopass:: deallocate_1d_r
     procedure, nopass:: deallocate_2d_r
     procedure, nopass:: deallocate_3d_r
@@ -52,11 +53,12 @@ MODULE os_mod
     procedure, nopass:: deallocate_2d_i
     procedure, nopass:: deallocate_3d_i
     procedure, nopass:: deallocate_4d_i
+    procedure, nopass:: deallocate_1d_l
     generic:: deallocate => &
       deallocate_1d_r, deallocate_2d_r, deallocate_3d_r, deallocate_4d_r, &
       deallocate_1d_d, deallocate_2d_d, deallocate_3d_d, deallocate_4d_d, &
       deallocate_1d_i, deallocate_2d_i, deallocate_3d_i, deallocate_4d_i, &
-      deallocate_5d_r, deallocate_6d_r
+      deallocate_5d_r, deallocate_6d_r, deallocate_1d_l
     procedure, nopass:: mem_register
     procedure:: memory_info
   end type
@@ -383,6 +385,19 @@ SUBROUTINE allocate_6d_r (a, m, zero)
 END SUBROUTINE allocate_6d_r
 
 !===============================================================================
+!> Allocate a 1-D logical array
+!===============================================================================
+SUBROUTINE allocate_1d_l (a, m, zero)
+  logical, pointer, contiguous:: a(:)
+  integer:: m(:)
+  logical, optional:: zero
+  !-----------------------------------------------------------------------------
+  allocate (a(m(1)))
+  call mem_register (storage_size(a), product(shape(a)), 'mem')
+  if (option(zero)) a = .false.
+END SUBROUTINE allocate_1d_l
+
+!===============================================================================
 !> Allocate a 1-D integer array
 !===============================================================================
 SUBROUTINE allocate_1d_i (a, m, zero)
@@ -557,6 +572,18 @@ SUBROUTINE deallocate_6d_r (a)
     deallocate (a)
   end if
 END SUBROUTINE deallocate_6d_r
+
+!===============================================================================
+!> Dealloccate a 1-D logical array
+!===============================================================================
+SUBROUTINE deallocate_1d_l (a)
+  logical, pointer, contiguous:: a(:)
+  !-----------------------------------------------------------------------------
+  if (associated(a)) then
+    call mem_register (storage_size(a), -product(shape(a)), 'mem')
+    deallocate (a)
+  end if
+END SUBROUTINE deallocate_1d_l
 
 !===============================================================================
 !> Dealloccate a 1-D integer array

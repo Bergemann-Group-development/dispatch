@@ -17,13 +17,13 @@ MODULE read_external_mod
   USE experiment_mod
   USE patch_mod
   USE download_mod
-  USE m3d_patch_mod
+  USE ray_patch_mod
+  USE m3d_patch_mod, only: maxiter, ilambd
 
   type, public:: read_external_t
     class(task_list_t), pointer:: task_list
     integer :: npatches(3), n(3), ng(3), verbose
     real(4), dimension(:,:,:), allocatable :: temp, ne, pe, rho, vturb, px, py, pz
-    real(4), dimension(:,:,:,:), allocatable :: nh
     real(8), dimension(:), allocatable :: xi, yi, zi
     real(8) :: ds(3)
     character(len=126) :: atmos_name
@@ -110,7 +110,7 @@ SUBROUTINE init(self, task_list, name)
     endif
   end do
 
-  io%end_time = (patch%maxiter + patch%ilambd) * patch%dtime
+  io%end_time = (maxiter + ilambd) * patch%dtime
   io%print_every = huge(1)
   timer%dead_mans_hand = huge(1.0)
 
@@ -143,24 +143,17 @@ SUBROUTINE create_patch (self, i, patch)
   patch%task_list => self%task_list
 
   call patch%init_unique (same=.true.) ! obtain an unique ID
+  call patch%gpatch_t%pre_init()
 
   patch%mhd = .false.
-  patch%kind = 'hlld_mhd_patch'
+  patch%kind = 'mhd_patch'
 
-  call patch%pre_init()
-  patch%pre_initialized = .true.
-  
   patch%n = self%n / self%npatches
   patch%zs = (i-1) * patch%n(3) + 1
   if (i == self%npatches(3)) then
     patch%n(3) = patch%n(3) + mod(self%n(3), self%npatches(3))
   endif
   patch%ze = patch%zs + patch%n(3) - 1
-
-  patch%ng = self%ng
-  patch%nv = 6
-  patch%nt = 4 ! Download returns wrong stuff if nt <= 2
-  patch%nw = 1
 
   patch%box = self%ds * self%n
   patch%ds  = self%ds
@@ -172,18 +165,31 @@ SUBROUTINE create_patch (self, i, patch)
   patch%position(2) = 0.5d0*patch%size(2)
   patch%position(3) = (patch%zs - 1) * patch%ds(3) + 0.5d0*patch%size(3)
   patch%origin = patch%position - 0.5d0*patch%size
-
-  call patch%init()
-  call patch%idx%init (energy=5, mhd=patch%mhd)
-
-  call self%load_authority(patch, i)
+  patch%level = 1
   
+  allocate (patch%boundaries)
+  call patch%boundaries%pre_init (patch)
+  
+  allocate(patch%composition)
+  patch%composition%patch => patch
+  call patch%composition%pre_init()
+
+  patch%pre_initialized = .true.
+  call patch%pre_init()
+  
+  patch%ng = self%ng
+  patch%nv = 6
+  patch%nt = 4 ! Download returns wrong stuff if nt <= 2
+  patch%nw = 1
+
+  call patch%idx%init (energy=5, mhd=patch%mhd)
   !---------------------------------------------------------------------------
   ! Add the patch to the task list -- this creates the patch%link
   !---------------------------------------------------------------------------
   call patch%append_to(patch%task_list)
+  call patch%init()
 
-  call patch%init_sub_patches()
+  call self%load_authority(patch, i)
 
   call trace%end ()
 END SUBROUTINE create_patch
@@ -252,7 +258,6 @@ SUBROUTINE read_stagger_snapshot(self, stagger_file)
   close(lunit)
 
   allocate(self%temp(self%n(1), self%n(2), self%n(3)))
-  !allocate(self%nh(self%n(1), self%n(2), self%n(3), 6))
   allocate(self%rho, self%ne, self%px, self%py, self%pz, self%pe, mold=self%temp)
 
   open(file=trim(stagger_file) // '.atmos', newunit=lunit, form='UNFORMATTED', access='stream')
@@ -262,7 +267,6 @@ SUBROUTINE read_stagger_snapshot(self, stagger_file)
   read(lunit) self%py
   read(lunit) self%pz
   read(lunit) self%rho
-  !read(lunit) self%nh
   close(lunit)
 
   self%xi  = self%xi  / scaling%l
@@ -305,32 +309,14 @@ SUBROUTINE load_authority(self, patch, ii)
     patch%mem(xs:xe,ys:ye,k,patch%idx%pz,it,1) = self%pz(:,:,iz)
     patch%mem(xs:xe,ys:ye,k,patch%idx%e ,it,1) = self%temp(:,:,iz)
     patch%mem(xs:xe,ys:ye,k,patch%idx_pe,it,1) = self%pe(:,:,iz)
-
-    if (allocated(self%nh)) then
-      patch%nh(:,:,k-zs+1,:) = self%nh(:,:,iz,:)
-    endif
   end do
 
-  if (allocated(self%nh)) patch%nh_missing = .false.
-
-  patch%rho  = dble(patch%mem(xs:xe,ys:ye,zs:ze,patch%idx%d , it, 1)) * scaling%d
-  patch%temp = dble(patch%mem(xs:xe,ys:ye,zs:ze,patch%idx%e , it, 1))
-  patch%ne   = dble(patch%mem(xs:xe,ys:ye,zs:ze,patch%idx_pe, it, 1)) * scaling%p / (cgs%k_b * patch%temp)
-  patch%vx   = dble(patch%mem(xs:xe,ys:ye,zs:ze,patch%idx%px, it, 1)) * scaling%d * scaling%u / patch%rho
-  patch%vy   = dble(patch%mem(xs:xe,ys:ye,zs:ze,patch%idx%py, it, 1)) * scaling%d * scaling%u / patch%rho
-  patch%vz   = dble(patch%mem(xs:xe,ys:ye,zs:ze,patch%idx%pz, it, 1)) * scaling%d * scaling%u / patch%rho
-
-  ! Top of the atmosphere is bottom of index space!!!
-  !    -> Top of atmosphere is top in index space (swiched if conditions)
-  if (ii == self%npatches(3)) then
-    patch%mesh(3)%upper_boundary = .true.
-    patch%boundaries%topbot(1) = .true.
-  endif
-
-  if (ii == 1) then
-    patch%mesh(3)%lower_boundary = .true.
-    patch%boundaries%topbot(2) = .true.
-  endif
+  !patch%rho  = dble(patch%mem(xs:xe,ys:ye,zs:ze,patch%idx%d , it, 1)) * scaling%d
+  !patch%temp = dble(patch%mem(xs:xe,ys:ye,zs:ze,patch%idx%e , it, 1))
+  !patch%ne   = dble(patch%mem(xs:xe,ys:ye,zs:ze,patch%idx_pe, it, 1)) * scaling%p / (cgs%k_b * patch%temp)
+  !patch%vx   = dble(patch%mem(xs:xe,ys:ye,zs:ze,patch%idx%px, it, 1)) * scaling%d * scaling%u / patch%rho
+  !patch%vy   = dble(patch%mem(xs:xe,ys:ye,zs:ze,patch%idx%py, it, 1)) * scaling%d * scaling%u / patch%rho
+  !patch%vz   = dble(patch%mem(xs:xe,ys:ye,zs:ze,patch%idx%pz, it, 1)) * scaling%d * scaling%u / patch%rho
 
   allocate(patch%filled(patch%gn(1), patch%gn(2), patch%gn(3)))
   patch%filled = -1

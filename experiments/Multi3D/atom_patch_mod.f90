@@ -6,7 +6,6 @@ module atom_patch_mod
     USE list_mod
     USE halo_mod
     USE gpatch_mod
-    USE solver_mod
     USE link_mod
     USE task_mod
     USE omp_timer_mod
@@ -31,24 +30,17 @@ module atom_patch_mod
     USE trans_mod, only: line_type
     USE spectrum_mod, only:spectrum_type
     USE composition_mod, only: composition_type
-    USE setup_mod
+    USE m3d_patch_mod, only: m3d_patch_t, maxiter, ilambd
     implicit none
   
     !-----------------------------------------------------------------------------
   
-    type, public, extends(gpatch_t) :: atom_patch_t
-      class(gpatch_t), pointer :: patch            ! pointer to MHD patch
-      type(atom_type) :: atom
-      type(spectrum_type) :: sp
+    type, public, extends(m3d_patch_t) :: atom_patch_t
+      type(atom_type), pointer :: atom
       class(composition_type), pointer :: composition
       class(rate_patch_t), pointer, dimension(:,:) :: rate
       class(opacity_t), pointer, dimension(:,:) :: opac
-      real(8), dimension(:,:,:), pointer :: temp => null()
-      real(8), dimension(:,:,:), pointer :: rho  => null()
-      real(8), dimension(:,:,:), pointer :: ne   => null()
-      real(8), dimension(:,:,:,:), pointer :: nh => null()
-      real(8) :: t_offset=0.1d0, maxerr=huge(1.0)
-      integer :: iter=0, maxiter=0, ilambd, n_nu, n_omega
+      real(8) :: maxerr=huge(1.0)
     contains
       procedure :: pre_init => atom_patch_pre_init
       procedure :: init => atom_patch_init
@@ -57,10 +49,8 @@ module atom_patch_mod
       procedure :: finish => atom_patch_finish
       procedure :: nbor_relations => atom_patch_nbor_relations
       procedure pre_init_atom
+      procedure add_to_task_list
       procedure init_atom
-      procedure append_to_task_list
-      procedure init_level
-      procedure task_info
       procedure normalize_phi
       procedure sum_rates
       procedure update_populations
@@ -76,70 +66,75 @@ module atom_patch_mod
   !===============================================================================
   SUBROUTINE atom_patch_pre_init (self)
     class(atom_patch_t), target:: self
+    integer :: m, n
     ! ----------------------------------------------------------------------------
-    call self%gpatch_t%pre_init()
+    call trace%begin('atom_patch_t%atom_patch_pre_init')
+    call self%m3d_patch_t%pre_init()
+    call self%set_nv_and_nw(0, 0)
     call self%pre_init_atom()
-    call self%task_t%init_unique (same=.true.) ! obtain an unique ID
-    
-    ! ----------------------------------------------------------------------------
-    ! relevant synchronization items for cartesian setup
-    ! ----------------------------------------------------------------------------
-    self%n          = self%patch%n
-    self%ng         = 0 !self%patch%ng
-    self%ipos       = self%patch%ipos
-    self%rank       = self%patch%rank
-    self%box        = self%patch%box
-    self%size       = self%patch%size
-    self%position   = self%patch%position
-    self%ds         = self%patch%ds
-    self%origin     = self%patch%origin
-    self%llc_cart   = self%patch%llc_cart
-    self%centre_nat = self%patch%centre_nat
-    self%llc_nat    = self%patch%llc_nat
-    self%status     = self%patch%status
-    self%periodic   = self%patch%periodic
+
+    allocate(self%opac(0:self%n_mu, self%n_nu))
+    allocate(self%rate(self%n_omega, self%n_nu))
+
+    do n=1, self%n_nu
+      self%opac(0,n)%kind = 'cont_opac'
+      self%opac(0,n)%atom => self%atom
+      call self%opac(0,n)%pre_init_and_link(self)
+    end do
+
+    do m=1, self%n_mu
+      do n=1, self%n_nu
+        self%opac(m,n)%kind = 'line_opac'
+        self%opac(m,n)%atom => self%atom
+        call self%opac(m,n)%pre_init_and_link(self, i_mu=m, i_nu=n)
+        
+        if (m > self%n_omega) cycle
+        self%rate(m,n)%kind = 'rad_rate'
+        self%rate(m,n)%atom => self%atom
+        self%rate(m,n)%cont_opac => self%opac(0,n)
+        self%rate(m,n)%line_opac => self%opac(m,n)
+        call self%rate(m,n)%pre_init_and_link(self, i_mu=m, i_nu=n)
+      end do
+    end do
+
+    call trace%end()
   END SUBROUTINE atom_patch_pre_init
   
   !===============================================================================
   SUBROUTINE atom_patch_init (self)
     class(atom_patch_t) :: self
-    !real(8) :: grace
-    integer :: i
+    integer :: m, n
     ! ----------------------------------------------------------------------------
-    call self%gpatch_t%init()
-    self%kind = trim(self%atom%id) // '_patch'
-    self%nv = 0
-    !-----------------------------------------------------------------------------
-    ! Synchronize with MHD patch
-    ! ----------------------------------------------------------------------------
-    self%dt_fixed = self%patch%dtime
-    self%dtime    = self%patch%dtime
-    self%dt       = self%patch%dtime
-    self%out_next = self%patch%out_next
+    call trace%begin('atom_patch_t%atom_patch_pre_init')
+    call self%m3d_patch_t%init()
 
-    ! ----------------------------------------------------------------------------
-    ! Do not check density or validate with it. This is rather important to be set
-    ! ----------------------------------------------------------------------------
-    call self%set (bits%no_density)
-    call self%set (bits%internal)
-  
-    self%time = self%patch%time + self%t_offset*self%dtime
+    do n=1, self%n_nu
+      call self%opac(0,n)%init()
+    end do
+
+    do m=1, self%n_mu
+      do n=1, self%n_nu
+        call self%opac(m,n)%init()
+        if (m > self%n_omega) cycle
+        call self%rate(m,n)%init()
+      end do
+    end do
+    call trace%end()
   END SUBROUTINE atom_patch_init
 
   !===============================================================================
   SUBROUTINE pre_init_atom (self)
     class(atom_patch_t) :: self
     type(atom_type), save :: atom
-    type(spectrum_type), save :: sp
+    type(spectrum_type), save, target :: sp
     logical, save :: first_time=.true.
     character(len=128), save :: atom_file='./input_multi3d/atoms/atom.ba06'
     real(8), save :: qnorm=10.0
-    integer, save :: maxiter
     integer :: iostat
-    namelist /atom_params/ atom_file, qnorm, maxiter, convlim
+    namelist /atom_params/ atom_file, qnorm, convlim
     !-----------------------------------------------------------------------------
+    call trace%begin('atom_patch_t%pre_init_atom')
     if (first_time) then
-      maxiter = self%maxiter !default value
       write (*,*) ' - Reading atom'
       rewind (io%input)
       read (io%input, atom_params, iostat=iostat)
@@ -157,26 +152,34 @@ module atom_patch_mod
       first_time = .false.
     endif
 
+    allocate(self%atom)
     self%atom = atom
-    self%sp   = sp
-    self%maxiter = maxiter
+    self%sp => sp
 
     allocate(self%atom%C(atom%nlevel, atom%nlevel))
     allocate(self%atom%W(atom%nlevel, atom%nlevel))
     allocate(self%atom%e(atom%nlevel))
-    !allocate(self%atom%pos(3,atom%nlevel))
+    call trace%end()
   END SUBROUTINE pre_init_atom
 
   !===============================================================================
   SUBROUTINE init_atom (self)
     class(atom_patch_t), target :: self
     class(atom_type), pointer :: atom
+    real(4), dimension(:,:,:), pointer :: ne, temp
+    real(4), dimension(:,:,:,:), pointer :: nh
     !-----------------------------------------------------------------------------
+    call trace%begin('atom_patch_t%init_atom')
     atom => self%atom
 
-    call atom%compute_line_damping(self%ne, self%temp, self%nh)
+    ne   => self%m3d_parent%mem(:,:,:,self%i_ne,            self%it,1)
+    temp => self%m3d_parent%mem(:,:,:,self%i_temp,          self%it,1)
+    nh   => self%m3d_parent%mem(:,:,:,self%i_nh1:self%i_nh6,self%it,1)
+
+    call atom%compute_line_damping(ne, temp, nh)
     call self%composition%get_totn(trim(atom%id), atom%abnd, atom%totn)
-    call atom%compute_lte_populations(self%temp, self%ne)
+    call atom%compute_lte_populations(temp, ne)
+    call trace%end()
   END SUBROUTINE init_atom
 
   !===============================================================================
@@ -194,8 +197,8 @@ module atom_patch_mod
       call io%header (text)
 
       call self%init_atom()
-      self%dtime = self%dtime + self%dtime*self%ilambd
-      self%rate%time = self%rate%time + self%rate%dtime*self%ilambd
+      self%dtime = self%dtime + self%dtime*ilambd
+      self%rate%time = self%rate%time + self%rate%dtime*ilambd
       self%opac(:,:)%dtime = self%dtime
     else
       write(text,'(A,I2,A,I2,A)') 'Iteration ', self%iter, '/', self%maxiter, '.'
@@ -222,6 +225,7 @@ module atom_patch_mod
   SUBROUTINE atom_patch_post_update (self)
     class(atom_patch_t) :: self
     ! --------------------------------------------------------------------------
+    call trace%begin('atom_patch_t%atom_patch_post_update')
     if (self%verbose > 1) then
       call io%lock%set
        write(*,'(F5.1, L2, A12, 1(I4), 3(ES15.7))') &
@@ -230,7 +234,7 @@ module atom_patch_mod
       write(*,'(A19, ES19.7, A10, 3ES15.7)') 'Maxerr =', self%maxerr, &
         ', global =', global_maxerr
       write(*,'(1X, A80)') &
-'................................................................................'
+      '................................................................................'
       call io%lock%unset
     end if
 
@@ -244,13 +248,16 @@ module atom_patch_mod
     endif
 
     self%iter = self%iter + 1
+    call trace%end()
   END SUBROUTINE atom_patch_post_update
 
   !===============================================================================
-  SUBROUTINE atom_patch_finish (self)
+  SUBROUTINE atom_patch_finish (self, rotated)
     class(atom_patch_t) :: self
+    logical, optional :: rotated
     integer :: i, j
     ! ----------------------------------------------------------------------------
+    call trace%begin('atom_patch_t%atom_patch_finish')
     self%finished = .true.
     self%time = io%end_time + self%t_offset*self%dtime
     !call self%set(bits%frozen)
@@ -263,6 +270,7 @@ module atom_patch_mod
         call self%rate(i,j)%finish()
       end do
     end do
+    call trace%end()
   END SUBROUTINE atom_patch_finish
 
   !===============================================================================
@@ -271,8 +279,9 @@ module atom_patch_mod
     class(atom_type), pointer :: atom
     integer, dimension(3, self%atom%nlevel) :: pos3
     real, dimension(self%atom%nlevel) :: maxerr
-    real(8), pointer :: temp, ne, totn
-    real(8), dimension(:), pointer :: nh, Gij, Gji
+    real(4), pointer :: temp, ne, totn
+    real(4), dimension(:), pointer :: nh
+    real(8), dimension(:), pointer :: Gij, Gji
     real(4), dimension(:), pointer :: n, nstar
     real(8), dimension(:,:,:,:), target :: gamma_ij, gamma_ji
     integer :: i, j, k, ii
@@ -285,10 +294,10 @@ module atom_patch_mod
     do k=1, self%n(3)
       do j=1, self%n(2)
         do i=1, self%n(1)
-          temp  => self%temp  (i,j,k)
-          ne    => self%ne    (i,j,k)
+          ne    => self%m3d_parent%mem(i,j,k,self%i_ne,            self%it,1)
+          temp  => self%m3d_parent%mem(i,j,k,self%i_temp,          self%it,1)
+          nh    => self%m3d_parent%mem(i,j,k,self%i_nh1:self%i_nh6,self%it,1)
           totn  => atom%totn  (i,j,k)
-          nh    => self%nh    (i,j,k,:)
           n     => atom%n     (i,j,k,:)
           nstar => atom%nstar (i,j,k,:)
           Gij   => gamma_ij   (i,j,k,:)
@@ -316,7 +325,6 @@ module atom_patch_mod
       self%maxerr = maxval(abs(maxerr))
       global_maxerr = max(global_maxerr, self%maxerr)
     endif
-
   END SUBROUTINE update_populations
 
   !===============================================================================
@@ -377,7 +385,7 @@ module atom_patch_mod
 
     needed = .false.; needs_me = .false.; download = .false.
   
-    if (another%id == self%patch%id) then
+    if (another%id == self%m3d_parent%id) then
       needed = .true.; needs_me = .false.; download = .false.
     else
       select type (another)
@@ -400,38 +408,28 @@ module atom_patch_mod
   END SUBROUTINE atom_patch_nbor_relations
 
   !===============================================================================
-  SUBROUTINE append_to_task_list(self, task_list)
-    class (atom_patch_t), target :: self
-    class (list_t) :: task_list
+  SUBROUTINE add_to_task_list(self, task_list)
+    class (atom_patch_t) :: self
+    class(list_t), pointer :: task_list
     class(link_t),  pointer :: link
     class (task_t), pointer :: task
+    integer :: m,n
     !-----------------------------------------------------------------------------
-    allocate (halo_m3d_t:: link)
-    call link%init()
-    link%task => self
-    self%link => link
-    call task_list%append (link)
-  END SUBROUTINE append_to_task_list
+    call trace%begin('atom_patch_t%add_to_task_list')
+    call self%append_to_task_list(task_list)
 
-  !===============================================================================
-  !> For diagnostic output of tasks and nbor lists to data/run/rank_RRRRR.log
-  !===============================================================================
-  SUBROUTINE task_info (self)
-    class(atom_patch_t):: self
-    !-----------------------------------------------------------------------------
-    write(io_unit%mpi,'(1x,a,2x,a10,i6,2i4,7x,2l1,2x,3f9.3,i4,i4,i4)') &
-      'atom_patch_t%task_info: kind, id, rank, level, BV, pos =', &
-      self%kind, self%id, self%rank, self%level, &
-      self%is_set(bits%boundary), self%is_set(bits%virtual), self%position
-  END SUBROUTINE task_info
+    do n=1, self%n_nu
+      call self%opac(0,n)%append_to_task_list(task_list)
+    end do
 
-  !===============================================================================
-  SUBROUTINE init_level (self)
-    class(atom_patch_t):: self
-    !-----------------------------------------------------------------------------
-    if (any(self%n > 1)) then
-      ! The level does not depend on the patch size in non-regular grids
-      self%level = 1
-    end if
-  END SUBROUTINE init_level
+    do m=1, self%n_mu
+      do n=1, self%n_nu
+        call self%opac(m,n)%append_to_task_list(task_list)
+        if (m > self%n_omega) cycle
+        call self%rate(m,n)%append_to_task_list(task_list)
+      end do
+    end do
+    call trace%end()
+  END SUBROUTINE add_to_task_list
+
   end module
