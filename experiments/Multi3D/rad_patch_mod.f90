@@ -132,6 +132,7 @@ SUBROUTINE radiation_init (self)
     call os%allocate(self%Psi, [self%n(1),  self%n(2),  self%n(3),  self%nv])
     self%Psi = tiny(1.0)
   end if
+
   call trace%end()
 END SUBROUTINE radiation_init
 
@@ -177,8 +178,8 @@ END SUBROUTINE radiation_update
 !===============================================================================
 SUBROUTINE Jnu_update (self)
   class(radiation_t) :: self
-  class(radiation_t), pointer :: sheep
-  integer :: i,j,k,f,s
+  class(nbor_t), pointer:: nbor
+  integer :: i,j,k,f
   real(4), dimension(:,:,:,:), pointer :: Jnu
   real(4), dimension(:,:,:,:), pointer :: Inu
   real(4), dimension(:,:,:,:,:), allocatable :: opac
@@ -189,17 +190,22 @@ SUBROUTINE Jnu_update (self)
   Jnu => self%mem(:,:,:,:, self%it, self%i_inu)
   Jnu = 0
 
-  do s=1, size(self%sheep)
-    Inu => self%sheep(s)%authority_mem(:,:,:,:, self%sheep(s)%it, self%i_inu)
-    do f=1, self%nv
-    do k=1, self%n(3)
-    do j=1, self%n(2)
-    do i=1, self%n(1)
-      Jnu(i,j,k,f) = Jnu(i,j,k,f) + self%sheep(s)%wmu * Inu(i,j,k,f)
-    end do
-    end do
-    end do
-    end do
+  nbor => self%link%nbor
+  do while (associated(nbor))
+    select type(nb => nbor%task)
+    class is (radiation_t)
+      Inu => nb%authority_mem(:,:,:,:, nb%it, self%i_inu)
+      do f=1, self%nv
+      do k=1, self%n(3)
+      do j=1, self%n(2)
+      do i=1, self%n(1)
+        Jnu(i,j,k,f) = Jnu(i,j,k,f) + nb%wmu * Inu(i,j,k,f)
+      end do
+      end do
+      end do
+      end do
+    end select
+    nbor => nbor%next
   end do
 
   Jnu = Jnu / math%pi4
@@ -780,52 +786,38 @@ SUBROUTINE radiation_nbor_relations(self, another, needed, needs_me, download)
   logical :: needed, needs_me, download    ! Is the other task: needed, 
                                            !    does it need me, should I download?
   ! ----------------------------------------------------------------------------
-  
   call trace%begin ('radiation_t%nbor_relations')
 
-  ! If this RT task has no RT on, it should have no nbor relations
-  if (.not.(self%on)) then
-    needed = .false.; needs_me = .false.; download = .false.
-    call trace%end()
-    return
-  end if
+  call self%ray_patch_t%nbor_relations(another, needed, needs_me, download)
 
-  ! First check the main relations, based on location and level of refinement
-  needed = .false.; needs_me = .false.; download = .false.
-
-  select case (self%kind)
-  case ('angle_rad')
-    if (another%id == self%opac%id) then
-      needed = .true.; needs_me = .false.; download = .false.
-    elseif(another%id == self%mean_rad%id) then
-      needed = .false.; needs_me = .true.; download = .false.
-    elseif (associated(self%out_rad)) then
-      if (another%id == self%out_rad%id) then
-        needed = .false.; needs_me = .true.; download = .false.
-      endif
-    endif
-    select type (another)
+  if (needed .or. needs_me) then
+    select type(another)
     class is (radiation_t)
-      if (another%i_nu == self%i_nu) then
-        if (another%i_mu == self%i_mu) then
-          if (another%kind == self%kind) then
-            if (self%is_upstream(another)) then
-              needed = .true.; needs_me = .false.; download = .true.
-            endif
-          endif
-        endif
+      if (self%kind=='angle_rad' .and. another%kind=='mean_rad' &
+          .and. .not. self%out_ray) then
+        needed=.false.
+      elseif (self%kind=='mean_rad' .and. another%kind=='angle_rad' &
+              .and. .not. another%out_ray) then
+        needs_me=.false.
+      elseif (self%kind=='angle_rad' .and. another%kind=='out_rad') then
+        needed=.false.
+      elseif (self%kind=='out_rad' .and. another%kind=='angle_rad') then
+        needs_me=.false.
+      else
+        needed=.false. ; needs_me=.false.
       endif
+    class is (ray_patch_t)
+      if (self%kind=='angle_rad' .and. another%m3d_parent%kind=='atom_rad') then
+        needs_me=.false.
+      elseif(self%kind=='mean_rad' .and. another%kind=='back_opac') then
+        needed=.false.
+      else
+        needed=.false. ; needs_me=.false.
+      endif
+    class default
+      needed=.false. ; needs_me=.false.
     end select
-  case ('mean_rad')
-    if (any(self%sheep%id == another%id)) then
-      needed = .true.; needs_me = .false.; download = .false.
-    endif
-  case ('out_rad')
-    if (any(self%sheep%id == another%id)) then
-      needed = .true.; needs_me = .false.; download = .false.
-    endif
-  end select
-
+  endif
   call trace%end()
 END SUBROUTINE radiation_nbor_relations
 
@@ -835,6 +827,11 @@ SUBROUTINE bndries (self)
   integer :: li(3), ui(3)
   !----------------------------------------------------------------------------
   if (self%kind == 'angle_rad') then
+    if(.not. self%initialized) then
+      call self%init()
+      self%initialized=.true.
+    endif
+
     self%Inu => self%mem(:,:,:,:, self%it, self%i_inu)
     self%chi => self%opac%mem(:,:,:,:, self%opac%it, self%opac%i_chi)
     self%Snu => self%opac%mem(:,:,:,:, self%opac%it, self%opac%i_snu)

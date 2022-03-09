@@ -144,12 +144,15 @@ SUBROUTINE create_patch (self, i, patch)
 
   call patch%init_unique (same=.true.) ! obtain an unique ID
   call patch%gpatch_t%pre_init()
+  patch%pre_initialized = .true.
 
   patch%mhd = .false.
   patch%kind = 'mhd_patch'
+  patch%ipos = 0
+  patch%ipos(3) = i-1
 
   patch%n = self%n / self%npatches
-  patch%zs = (i-1) * patch%n(3) + 1
+  patch%zs = patch%ipos(3) * patch%n(3) + 1
   if (i == self%npatches(3)) then
     patch%n(3) = patch%n(3) + mod(self%n(3), self%npatches(3))
   endif
@@ -166,16 +169,15 @@ SUBROUTINE create_patch (self, i, patch)
   patch%position(3) = (patch%zs - 1) * patch%ds(3) + 0.5d0*patch%size(3)
   patch%origin = patch%position - 0.5d0*patch%size
   patch%level = 1
-  
+
   allocate (patch%boundaries)
   call patch%boundaries%pre_init (patch)
+  
+  call patch%pre_init()
   
   allocate(patch%composition)
   patch%composition%patch => patch
   call patch%composition%pre_init()
-
-  patch%pre_initialized = .true.
-  call patch%pre_init()
   
   patch%ng = self%ng
   patch%nv = 6

@@ -89,7 +89,7 @@ module atom_patch_mod
         call self%opac(m,n)%pre_init_and_link(self, i_mu=m, i_nu=n)
         
         if (m > self%n_omega) cycle
-        self%rate(m,n)%kind = 'rad_rate'
+        self%rate(m,n)%kind = 'rate_patch'
         self%rate(m,n)%atom => self%atom
         self%rate(m,n)%cont_opac => self%opac(0,n)
         self%rate(m,n)%line_opac => self%opac(m,n)
@@ -108,17 +108,17 @@ module atom_patch_mod
     call trace%begin('atom_patch_t%atom_patch_pre_init')
     call self%m3d_patch_t%init()
 
-    do n=1, self%n_nu
-      call self%opac(0,n)%init()
-    end do
-
-    do m=1, self%n_mu
-      do n=1, self%n_nu
-        call self%opac(m,n)%init()
-        if (m > self%n_omega) cycle
-        call self%rate(m,n)%init()
-      end do
-    end do
+    !do n=1, self%n_nu
+    !  call self%opac(0,n)%init()
+    !end do
+    !
+    !do m=1, self%n_mu
+    !  do n=1, self%n_nu
+    !    call self%opac(m,n)%init()
+    !    if (m > self%n_omega) cycle
+    !    call self%rate(m,n)%init()
+    !  end do
+    !end do
     call trace%end()
   END SUBROUTINE atom_patch_init
 
@@ -191,6 +191,7 @@ module atom_patch_mod
     !-----------------------------------------------------------------------------
     if (self%finished) return
     call trace%begin('atom_patch_t%atom_patch_update', itimer=itimer)
+    call self%pre_update()
 
     if (self%iter == 0) then
       write(text,'(A,I2,A,I2,A)') 'LTE Iteration .'
@@ -382,24 +383,26 @@ module atom_patch_mod
                                              !    does it need me, should I download?
     
     call trace%begin ('atom_patch_t%nbor_relations')
-
-    needed = .false.; needs_me = .false.; download = .false.
+    call self%m3d_patch_t%nbor_relations(another, needed, needs_me, download)
   
-    if (another%id == self%m3d_parent%id) then
-      needed = .true.; needs_me = .false.; download = .false.
-    else
+    if (needed .or. needs_me) then
       select type (another)
       class is (opacity_t)
+        needed = .false.
         if (associated(another%atom)) then
-          if (another%atom%id == self%atom%id) then
-            needed = .false.; needs_me = .true.; download = .false.
+          if (another%atom%id /= self%atom%id) then
+            needs_me = .false.
           endif
+        else
+          needs_me = .false.
         endif
       class is (rate_patch_t)
-        if (associated(another%atom)) then
-          if (another%atom%id == self%atom%id) then
-            needed = .true.; needs_me = .false.; download = .false.
-          endif
+        if (another%atom%id /= self%atom%id) then
+          needed = .false.; needs_me = .false.
+        endif
+      class default
+        if (another%id /= self%m3d_parent%id) then
+          needed = .false. ; needs_me = .false.
         endif
       end select
     endif

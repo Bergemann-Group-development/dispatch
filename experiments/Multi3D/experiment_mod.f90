@@ -41,8 +41,14 @@ CONTAINS
 SUBROUTINE pre_init (self)
   class(experiment_t), target :: self
   integer, save:: itimer=0
+  real(8), save:: timestep=1.d0
   !-----------------------------------------------------------------------------
   call trace%begin('experiment_mod::pre_init', itimer=itimer)
+
+  self%time     = -1.0
+  self%dtime    = timestep
+  self%out_next = huge(1.0)
+
   call self%solver_t%pre_init ()
   call trace%end (itimer=itimer)
 END SUBROUTINE pre_init
@@ -53,13 +59,8 @@ END SUBROUTINE pre_init
 SUBROUTINE init (self)
   class(experiment_t):: self
   integer, save:: itimer=0
-  real(8), save:: timestep=1.d0
   !----------------------------------------------------------------------------
   call trace%begin('experiment_mod::init', itimer=itimer)
-
-  self%time     = -1.0
-  self%dtime    = timestep
-  self%out_next = huge(1.0)
 
   call self%solver_t%init
 

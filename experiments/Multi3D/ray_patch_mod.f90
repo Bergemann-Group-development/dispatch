@@ -41,6 +41,7 @@ module ray_patch_mod
   contains
     procedure :: pre_init => ray_patch_pre_init
     procedure :: init => ray_patch_init
+    procedure :: nbor_relations => ray_nbor_relations
     procedure :: set_freq_indices
     procedure :: check_topbot
     procedure :: is_upstream => ray_is_upstream
@@ -58,8 +59,7 @@ SUBROUTINE ray_patch_pre_init (self)
   ! ----------------------------------------------------------------------------
   call self%m3d_patch_t%pre_init()
   
-  if (self%i_mu > self%n_omega) then
-    self%out_ray = .true.
+  if (self%out_ray) then
     self%i_out = self%i_mu - self%n_omega 
     self%vec = long_vec(:,self%i_out) 
     self%wmu = long_wmu(self%i_out)
@@ -210,6 +210,35 @@ SUBROUTINE check_topbot (self)
   elseif (self%patch%boundaries%lower .and. self%dir > 0) then
     self%boundaries%lower = .true.
   endif
+END 
+
+!===============================================================================
+SUBROUTINE ray_nbor_relations(self, another, needed, needs_me, download)
+  class(ray_patch_t) :: self
+  class(task_t), pointer :: another         ! another task in the list
+  logical :: needed, needs_me, download    ! Is the other task: needed, 
+                                           !    does it need me, should I download?
+  class(task_t), pointer :: other
+  !-----------------------------------------------------------------------------
+  call trace%begin ('ray_patch_t%ray_nbor_relations')
+  call self%m3d_patch_t%nbor_relations(another, needed, needs_me, download)
+
+  if (needed .or. needs_me) then
+    select type(another)
+    class is(ray_patch_t)
+      if (download) then
+        if (.not. self%is_upstream(another)) then
+          needed = .false.; needs_me = .false.; download = .false.
+        endif
+      endif
+    class default
+      if (another%id /= self%m3d_parent%id) then
+        needed = .false.; needs_me = .false.; download = .false.
+      endif
+    end select
+  endif
+
+  call trace%end()
 END SUBROUTINE
 
 end module ray_patch_mod

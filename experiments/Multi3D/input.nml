@@ -23,7 +23,7 @@
 !===============================================================================
 
 ! -- Parameters defining the run -----------------------------------------------
-!&io_params          do_trace=T omp_trace=F /
+&io_params          do_trace=F omp_trace=F os_verbose=0/
 !&snapshot_params    verbose=0 flip_z=t force_mean=f extension=1 order=2 b0=0.0,0.0,0.0 
 !                    model='stagger'
 !                    meshfile='../../data/stellar_atmospheres/mhd63.msh'
@@ -44,5 +44,7 @@
 &dispatcher0_params verbose=0 /
 &task_params        verbose=0 /
 &halo_params        check_filled=F /
-&m3d_params         fcheck=98 pcheck=1,1,230 n_nu=1 maxiter=1 verbose=2 ilambd=0
+&m3d_params         fcheck=98 pcheck=1,1,230 n_nu=1 maxiter=2 verbose=2 ilambd=0
                     quad_scheme='set_a2' long_scheme='set_a4'/
+&stagger_params     ix=1, iy=1, iz=1 /
+!&eos_params         gamma=1.66667 dir='data/eos/' file='dispatch_tomida.eos' convert_to_code=t verbose=1/

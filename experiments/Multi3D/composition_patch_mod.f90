@@ -99,16 +99,12 @@ SUBROUTINE composition_pre_init (self)
     call self%back_opac(n)%pre_init_and_link(self, i_nu=n)
 
     self%rad(0,n)%kind = 'mean_rad'
-    self%rad(0,n)%sheep => self%rad(1:, n)
     call self%rad(0,n)%pre_init_and_link(self, i_nu=n)
   end do
 
   do m=1, self%n_mu
     do n=1, self%n_nu
       self%opac(m,n)%kind = 'net_opac'
-      self%opac(m,n)%back_opac => self%back_opac(n)
-      self%opac(m,n)%cont_opac => self%atom_patch%opac(0,n)
-      self%opac(m,n)%line_opac => self%atom_patch%opac(m,n)
       self%opac(m,n)%rad       => self%rad(m,n)
       call self%opac(m,n)%pre_init_and_link(self, i_mu=m, i_nu=n)
 
@@ -142,25 +138,25 @@ SUBROUTINE composition_init (self)
   ! ----------------------------------------------------------------------------
   call trace%begin('composition_patch_t%composition_init', itimer=itimer)
   call self%m3d_patch_t%init()
-  call self%atom_patch%init()
-
-  do n=1, self%n_nu
-    call self%back_opac(n)%init()
-    call self%rad(0,n)%init()
-  end do
-
-  do m=1, self%n_mu
-    do n=1, self%n_nu
-      call self%opac(m,n)%init()
-      call self%rad(m,n)%init()
-    end do
-  end do
-
-  if (self%boundaries%upper) then
-    do i=1, self%n_out
-      call self%out_rad(i)%init()
-    end do
-  endif
+  !call self%atom_patch%init()
+  !
+  !do n=1, self%n_nu
+  !  call self%back_opac(n)%init()
+  !  call self%rad(0,n)%init()
+  !end do
+  !
+  !do m=1, self%n_mu
+  !  do n=1, self%n_nu
+  !    call self%opac(m,n)%init()
+  !    call self%rad(m,n)%init()
+  !  end do
+  !end do
+  !
+  !if (self%boundaries%upper) then
+  !  do i=1, self%n_out
+  !    call self%out_rad(i)%init()
+  !  end do
+  !endif
 
   call trace%end(itimer)
 END SUBROUTINE composition_init
@@ -248,10 +244,16 @@ SUBROUTINE composition_patch_nbor_relations(self, another, needed, needs_me, dow
   !-----------------------------------------------------------------------------
   call trace%begin ('composition_patch_t%nbor_relations')
 
-  needed = .false.; needs_me = .false.; download = .false.
+  call self%m3d_patch_t%nbor_relations(another, needed, needs_me, download)
 
-  if (another%id == self%patch%id) then
-    needed = .true.; needs_me = .false.; download = .false.
+  if (needed .or. needs_me) then
+    if (another%id /= self%patch%id) then
+      if (another%kind=='back_opac') then
+        needed = .false.
+      else
+        needed = .false.; needs_me = .false.
+      endif
+    endif
   endif
   call trace%end()
 END SUBROUTINE composition_patch_nbor_relations
@@ -260,10 +262,8 @@ END SUBROUTINE composition_patch_nbor_relations
 SUBROUTINE composition_finish (self, rotated)
   class(composition_patch_t):: self
   logical, optional :: rotated
-  logical :: rotated_dummy=.false.
   !-----------------------------------------------------------------------------
-  if (present(rotated)) rotated_dummy=rotated
-  call self%m3d_patch_t%finish(rotated_dummy)
+  call self%m3d_patch_t%finish(rotated=rotated)
   call self%set(bits%frozen)
 END SUBROUTINE composition_finish
 

@@ -121,32 +121,23 @@ module rate_patch_mod
                                              !    does it need me, should I download?
     
     call trace%begin ('radiation_t%nbor_relations')
-  
-    ! If this RT task has no RT on, it should have no nbor relations
-    if (.not.(self%on)) then
-      needed = .false.; needs_me = .false.; download = .false.
-      call trace%end()
-      return
-    end if
+    call self%ray_patch_t%nbor_relations(another, needed, needs_me, download)
 
-    needed = .false.; needs_me = .false.; download = .false.
-
-    select type (another)
-    class is (radiation_t)
-      if (another%patch%id == self%patch%id) then
-        if (another%i_mu == self%i_mu .and. another%i_nu == self%i_nu) then
-          self%rad => another
-          needed = .true.; needs_me = .false.; download = .false.
-        endif
-      endif
-    end select
-
-    if (all(another%position == self%position)) then
-      if (another%kind == 'atom_patch') then
-        needed = .false.; needs_me = .true.; download = .false.
-      endif
+    if (needed .or. needs_me) then
+      select case (another%kind)
+      case ('angle_rad', 'cont_opac', 'line_opac')
+        needs_me=.false.
+        
+        select type(another)
+        class is (radiation_t)
+        self%rad => another
+        end select
+      case ('atom_patch')
+        ! is needed and needs me
+      case default
+        needed = .false.; needs_me = .false.
+      end select
     endif
-  
     call trace%end()
   END SUBROUTINE rate_patch_nbor_relations
   
