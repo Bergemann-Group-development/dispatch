@@ -43,7 +43,6 @@ module atom_patch_mod
       real(8) :: maxerr=huge(1.0)
     contains
       procedure :: pre_init => atom_patch_pre_init
-      procedure :: init => atom_patch_init
       procedure :: update => atom_patch_update
       procedure :: post_update => atom_patch_post_update
       procedure :: finish => atom_patch_finish
@@ -79,7 +78,7 @@ module atom_patch_mod
     do n=1, self%n_nu
       self%opac(0,n)%kind = 'cont_opac'
       self%opac(0,n)%atom => self%atom
-      call self%opac(0,n)%pre_init_and_link(self)
+      call self%opac(0,n)%pre_init_and_link(self, i_nu=n)
     end do
 
     do m=1, self%n_mu
@@ -99,28 +98,6 @@ module atom_patch_mod
 
     call trace%end()
   END SUBROUTINE atom_patch_pre_init
-  
-  !===============================================================================
-  SUBROUTINE atom_patch_init (self)
-    class(atom_patch_t) :: self
-    integer :: m, n
-    ! ----------------------------------------------------------------------------
-    call trace%begin('atom_patch_t%atom_patch_pre_init')
-    call self%m3d_patch_t%init()
-
-    !do n=1, self%n_nu
-    !  call self%opac(0,n)%init()
-    !end do
-    !
-    !do m=1, self%n_mu
-    !  do n=1, self%n_nu
-    !    call self%opac(m,n)%init()
-    !    if (m > self%n_omega) cycle
-    !    call self%rate(m,n)%init()
-    !  end do
-    !end do
-    call trace%end()
-  END SUBROUTINE atom_patch_init
 
   !===============================================================================
   SUBROUTINE pre_init_atom (self)

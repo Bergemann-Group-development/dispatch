@@ -10,6 +10,7 @@ module m3d_patch_mod
     USE gpatch_mod
     USE link_mod
     USE task_mod
+    USE guards_mod
     !USE index_mod
     !USE mesh_mod
     USE io_mod
@@ -78,6 +79,7 @@ module m3d_patch_mod
     type, public, extends(halo_t):: halo_m3d_t
     contains
       procedure:: info
+      procedure:: download
     end type
   
     !-----------------------------------------------------------------------------
@@ -149,17 +151,16 @@ module m3d_patch_mod
     end if
     call self%set_initial_time()
   
-    ! ----------------------------------------------------------------------------
-    ! Fill namelist variables
-    ! ----------------------------------------------------------------------------
     self%on = on
     self%in_task_list = .false.
+    if (self%on) then 
+      call self%task_t%init_unique (same=.true.) ! obtain an unique ID
+    end if
   
     ! ----------------------------------------------------------------------------
     ! relevant synchronization items for cartesian setup
     ! ----------------------------------------------------------------------------
     self%n          = self%patch%n
-    self%ng         = 0 !self%patch%ng
     self%ipos       = self%patch%ipos
     self%rank       = self%patch%rank
     self%box        = self%patch%box
@@ -172,15 +173,31 @@ module m3d_patch_mod
     self%llc_nat    = self%patch%llc_nat
     self%status     = self%patch%status
     self%periodic   = self%patch%periodic
-    self%level      = 1
     self%mesh       => self%patch%mesh
+
+    self%ng         = 0
+
+    select case (self%kind)
+    case ('net_opac', 'angle_rad')
+      self%ng(3) = 1 ! needed for nbor_relations
+    end select
+
+  !-----------------------------------------------------------------------------
+  ! Preliminary region information, relative to the task position.  This may
+  ! change in patch_t%init, but the settings below allow overlap() calls to work
+  !-----------------------------------------------------------------------------
+    self%authority%l = - self%size*0.5_8
+    self%authority%u = + self%size*0.5_8
+    self%interest%l  = self%authority%l - self%ng*self%size/self%n
+    self%interest%u  = self%authority%u + self%ng*self%size/self%n
+
+    ! ----------------------------------------------------------------------------
+    ! Do not check density or validate with it. This is rather important to be set
+    ! ----------------------------------------------------------------------------
+    call self%set (bits%no_density)
 
     allocate (self%boundaries)
     call self%boundaries%pre_init (self)
-  
-    if (self%on) then 
-      call self%task_t%init_unique (same=.true.) ! obtain an unique ID
-    end if
     call trace%end ()
   END SUBROUTINE m3d_pre_init
 
@@ -229,6 +246,7 @@ module m3d_patch_mod
     ! ----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%m3d_init')
     call self%gpatch_t%init()
+    call self%init_level()
     call self%set_maxiter()
 
     self%mem = tiny(1.)
@@ -238,10 +256,6 @@ module m3d_patch_mod
 
     self%authority_mem => self%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),:,:,:)
   
-    ! ----------------------------------------------------------------------------
-    ! Do not check density or validate with it. This is rather important to be set
-    ! ----------------------------------------------------------------------------
-    call self%set (bits%no_density)
     call self%set (bits%internal)
     self%initialized=.true.
     call trace%end()
@@ -343,7 +357,8 @@ module m3d_patch_mod
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%m3d_post_update')
     if (verbose > 1) then
-      write(text, '(F5.1, A12, 3(I4))') self%time, trim(self%kind), self%id, self%iter, self%i_mu
+      write(text, '(F5.1, A12, 4(I4))') self%time, trim(self%kind), self%id, self%ipos(3), &
+                                        self%i_nu, self%i_mu
       select case (self%kind)
       case('rate_patch')
         write(*,'(A, 6(ES15.7))') text, &
@@ -411,8 +426,6 @@ module m3d_patch_mod
       endif
       nbor => nbor%next
     end do
-
-
     call trace%end()
   END SUBROUTINE m3d_finish
   
@@ -538,10 +551,7 @@ module m3d_patch_mod
     class(m3d_patch_t):: self
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%init_level')
-    if (any(self%n > 1)) then
-      ! The level does not depend on the patch size in non-regular grids
-      self%level = 1
-    end if
+    self%level = 1
     call trace%end()
   END SUBROUTINE init_level
   
@@ -551,11 +561,6 @@ module m3d_patch_mod
     real(4), dimension(:,:,:,:,:), pointer :: mem
     !----------------------------------------------------------------------------
     call trace_begin('m3d_patch_t%bndries')
-    if(.not. self%initialized) then
-      call self%init()
-      self%initialized=.true.
-    endif
-
     mem => self%mem(:,:,:,:,self%it,:)
     if (self%boundaries%lower .or. self%boundaries%upper) then
       call self%boundaries%boundary(mem)
@@ -676,6 +681,59 @@ module m3d_patch_mod
     end if
     call trace%end()
   END FUNCTION is_ahead_of
+
+  !===============================================================================
+  !> Comprehensive entry point
+  !===============================================================================
+  SUBROUTINE download (self, nbors, only, all_tgt, all_src)
+    class(halo_m3d_t)          :: self
+    class(nbor_t), pointer :: nbors
+    integer,      optional :: only
+    logical,      optional :: all_tgt, all_src
+    !.............................................................................
+    class(nbor_t), pointer :: tnbors
+    class(nbor_t), pointer :: nbor
+    class(task_t), pointer :: target, source
+    integer, save          :: itimer=0
+    !-----------------------------------------------------------------------------
+    ! Decide whether to use a coarse clone or not
+    !-----------------------------------------------------------------------------
+    call trace%begin ('halo_t%download', itimer=itimer)
+                                            call self%lock%set ('halo_t%download')
+    call self%copy_nbor_list (self%nbor, tnbors)
+                                          call self%lock%unset ('halo_t%download')
+    target => self%task
+    !.............................................................................
+    ! important for dynamic initialisation of patches
+    select type (target)
+    class is (m3d_patch_t)
+      if (.not. target%initialized) call target%init()
+    end select
+    !.............................................................................
+    call self%set_filled (target)
+    !-----------------------------------------------------------------------------
+    ! loop over nbors
+    !-----------------------------------------------------------------------------
+    nbor => nbors
+    do while (associated(nbor))
+      if (nbor%download) then
+        if (nbor%task%is_clear (bits%remove)) then
+          source => nbor%task
+          call guards%source_to_target (source, target, n_op=self%n_op, &
+            only=only, all_src=all_src, all_tgt=all_tgt)
+        end if
+      end if
+      nbor => nbor%next
+    end do
+    !-----------------------------------------------------------------------------
+    ! Boundary conditions
+    !-----------------------------------------------------------------------------
+    call self%task%bndries()
+    call self%task%periodic_grid()
+    call self%get_filled (target)
+    call self%remove_nbor_list (tnbors)
+    call trace%end (itimer)
+  END SUBROUTINE download
       
   end module m3d_patch_mod
   

@@ -25,25 +25,25 @@ module read_stagger_snapshot_mod
 contains
 
 !===============================================================================
-SUBROUTINE read_stagger
+SUBROUTINE read_stagger_snapshot(ds, d, px, py, pz, ee, tt, ne)
+  real(4), intent(out) :: ds(3)
+  real(4), pointer, contiguous, dimension(:,:,:), intent(out) :: d, px, py, pz, ee
+  real(4), pointer, contiguous, dimension(:,:,:), intent(out), optional :: tt, ne
   logical, save :: first_time=.true.
   character(len=128), save :: stagger_file='/lustre/astro/rhoppe/multi-3d/input/atmos/t5777g44m00/t5777g44m0005'
   character(len=128), save :: mesh_file, snap_file, data_file, aux_file
-  integer, save :: snap=20, ix=1, iy=1, iz=1
-  real(4), save :: zcut=1.5 ! in Mm below the surface
+  integer, save :: snap=20, inx=5, iny=5, inz=230
+  real(4), save :: zcut=1.5, ee_offset=3.2122 ! in Mm below the surface
   integer :: iostat, lunit, recl
   integer :: nx, ny, nz, nnz, m(3)
-  real(4), pointer, contiguous, dimension(:) :: xm, xx, x
-  real(4), pointer, contiguous, dimension(:) :: ym, yy, y
-  real(4), pointer, contiguous, dimension(:) :: zm, zz, z
+  real(4), pointer, contiguous, dimension(:) :: xx, yy, zm, zz
+  real(4), pointer, contiguous, dimension(:) :: newx, newy, newz
   real(4), pointer, contiguous, dimension(:) :: xdn, dxidxup, dxidxdn, dx, dxdn
   real(4), pointer, contiguous, dimension(:) :: ydn, dyidyup, dyidydn, dy, dydn
   real(4), pointer, contiguous, dimension(:) :: zdn, dzidzup, dzidzdn, dz, dzdn
-  real(4), pointer, contiguous, dimension(:,:,:) :: temp, rho, px, py, pz, ee, lne
-  real(4), pointer, contiguous, dimension(:,:,:) :: eos_lne, eos_tt
   real(4), pointer, contiguous, dimension(:,:,:) :: irho, ipx, ipy, ipz, iie, itemp, ilne
   real(4), pointer, contiguous, dimension(:,:,:) :: ppx, ppy, ppz
-  namelist /stagger_params/ stagger_file, snap, zcut, ix, iy, iz
+  namelist /stagger_params/ stagger_file, snap, zcut, ee_offset, inx, iny, inz
   !-----------------------------------------------------------------------------
   call trace%begin('read_stagger_snapshot_mod%read_stagger')
 
@@ -72,26 +72,24 @@ SUBROUTINE read_stagger
 
   call os%allocate(xx, [nx])
   call os%allocate(yy, [ny])
-  call os%allocate(zz, [nnz])
+  call os%allocate(zm, [nnz])
   allocate(xdn, dxidxup, dxidxdn, dx, dxdn, mold=xx)
   allocate(ydn, dyidyup, dyidydn, dy, dydn, mold=yy)
-  allocate(zdn, dzidzup, dzidzdn, dz, dzdn, mold=zz)
+  allocate(zdn, dzidzup, dzidzdn, dz, dzdn, mold=zm)
 
   read (unit=lunit, iostat=iostat) dx, dxdn, xx, xdn, dxidxup, dxidxdn
-  read (unit=lunit, iostat=iostat) dz, dzdn, zz, zdn, dzidzup, dzidzdn ! y is z in stagger
+  read (unit=lunit, iostat=iostat) dz, dzdn, zm, zdn, dzidzup, dzidzdn ! y is z in stagger
   read (unit=lunit, iostat=iostat) dy, dydn, yy, ydn, dyidyup, dyidydn
   ! close mesh file
   close(unit=lunit)
   !=============================================================================
 
   m = [nx, ny, nnz]
-  call os%allocate(itemp, m)
   call os%allocate(irho, m)
   call os%allocate(ipx, m)
   call os%allocate(ipy, m)
   call os%allocate(ipz, m)
   call os%allocate(iie, m)
-  call os%allocate(ilne, m)
 
   recl = kind(1.0)*nx*ny*nnz
   !=============================================================================
@@ -112,257 +110,170 @@ SUBROUTINE read_stagger
   read (unit=lunit, iostat=iostat, rec=3) ipz ! y is z in stagger
   read (unit=lunit, iostat=iostat, rec=4) ipy ! z is y in stagger
   read (unit=lunit, iostat=iostat, rec=5) iie
-  read (unit=lunit, iostat=iostat, rec=6) itemp
+  if (present(tt)) then
+    call os%allocate(itemp, m)
+    read (unit=lunit, iostat=iostat, rec=6) itemp
+  endif
   ! close data file
   close(unit=lunit)
 
   !=============================================================================
   ! Reading aux file
   !-----------------------------------------------------------------------------
-  open(newunit=lunit, file=aux_file, iostat=iostat, convert='big_endian', &
-       form='unformatted', status='old', access='direct', recl=recl)
+  if (present(ne)) then
+    call os%allocate(ilne, m)
+    open(newunit=lunit, file=aux_file, iostat=iostat, convert='big_endian', &
+         form='unformatted', status='old', access='direct', recl=recl)
 
-    ! 1: ln total pressure (gas + rad)
-    ! 2: ln Rosseland extinction coeff.
-    ! 3: ln Temperature
-    ! 4: ln electron number density
-    ! 5: ln Planck-averaged extinction coeff.
-    ! 6: ln extinction coeff at 500 nm
+      ! 1: ln total pressure (gas + rad)
+      ! 2: ln Rosseland extinction coeff.
+      ! 3: ln Temperature
+      ! 4: ln electron number density
+      ! 5: ln Planck-averaged extinction coeff.
+      ! 6: ln extinction coeff at 500 nm
 
-  read (unit=lunit, iostat=iostat, rec=4) ilne
-  ! close aux file
-  close(unit=lunit)
+    read (unit=lunit, iostat=iostat, rec=4) ilne
+    ! close aux file
+    close(unit=lunit)
+  endif
   !=============================================================================
 
   ! "un"-staggering vectors relative to scalars
   call os%allocate(ppx, m)
   call os%allocate(ppy, m)
   call os%allocate(ppz, m)
-  call xup_set(ipx, ppx, nx, ny, nnz)
-  call yup_set(ipy, ppy, nx, ny, nnz)
-  call zup_set(ipz, ppz, nx, ny, nnz)
+  call xup_set(ipx, ppx)
 
   ! transposing data (y to z)
   call transpose_stagger(irho)
   call transpose_stagger(ppx)
-  call transpose_stagger(ppy)
-  call transpose_stagger(ppz)
+  call transpose_stagger(ipy)
+  call transpose_stagger(ipz)
   call transpose_stagger(iie)
-  call transpose_stagger(itemp)
-  call transpose_stagger(ilne)
+
+  call yup_set(ipy, ppy)
+  call zup_set(ipz, ppz)
 
   ! Index the ghost zones to be ommited 
   nz  = nnz - (2 * gz)
-    
-  m = [nx, ny, nz]
-  call os%allocate(x, [nx])
-  call os%allocate(y, [ny])
-  call os%allocate(z, [nz])
-  call os%allocate(temp, m)
-  call os%allocate(rho, m)
+
+  call os%allocate(zz, [nz])
+
+  zz = -zm(nnz-gz:gz+1:-1) ! flipping z-axis
+
+  call os%allocate(newx, [inx])
+  call os%allocate(newy, [iny])
+  call os%allocate(newz, [inz])
+
+  newx = linspace(xx(1), xx(nx), inx)
+  newy = linspace(yy(1), yy(ny), iny)
+  newz = linspace(zz(1), zz(nz), inz)
+
+  m = [inx, iny, inz]
+  call os%allocate(d, m)
   call os%allocate(px, m)
   call os%allocate(py, m)
   call os%allocate(pz, m)
   call os%allocate(ee, m)
-  call os%allocate(lne, m)
 
-  ! Converting to cgs from internal units
-  ! and flipping z-axis
-  x = xx ! * uul
-  y = yy ! * uul
-  z = zz(nnz-gz:gz+1:-1) ! * uul
+  call linterpolate_3d(irho (:,:, nnz-gz:gz+1:-1), d,  xx, yy, zz, newx, newy, newz)
+  call linterpolate_3d( ppx (:,:, nnz-gz:gz+1:-1), px, xx, yy, zz, newx, newy, newz)
+  call linterpolate_3d( ppy (:,:, nnz-gz:gz+1:-1), py, xx, yy, zz, newx, newy, newz)
+  call linterpolate_3d(-ppz (:,:, nnz-gz:gz+1:-1), pz, xx, yy, zz, newx, newy, newz)
+  call linterpolate_3d( iie (:,:, nnz-gz:gz+1:-1), ee, xx, yy, zz, newx, newy, newz)
 
-  rho  = irho  (:,:, nnz-gz:gz+1:-1 )! * uur
-  ee   = iie   (:,:, nnz-gz:gz+1:-1 ) / rho
-  px   = ppx   (:,:, nnz-gz:gz+1:-1 )! * uum
-  py   = ppy   (:,:, nnz-gz:gz+1:-1 )! * uum
-  pz   = ppz   (:,:, nnz-gz:gz+1:-1 )! * uum
-  temp = itemp (:,:, nnz-gz:gz+1:-1 )
-  lne  = ilne  (:,:, nnz-gz:gz+1:-1 )
-  !ne   = exp(ilne(:,:, nnz-gz:gz+1:-1 ) - 3.0*alog(uul)) ! 1 / length [1/cm^3]
+  ee = ee / d + ee_offset
 
-  print *, 'temp min = ', minval(temp), 'temp max = ', maxval(temp)
-  print *, 'rho  min = ', minval(rho ), 'rho  max = ', maxval(rho )
-  print *, 'ee   min = ', minval(ee  ), 'ee   max = ', maxval(ee  )
+  if (present(tt)) then
+    call transpose_stagger(itemp)
+    call os%allocate(tt, m)
+    call linterpolate_3d(itemp(:,:, nnz-gz:gz+1:-1), tt, xx, yy, zz, newx, newy, newz)
+  endif
 
-  allocate(eos_lne, eos_tt, mold=temp(ix:ix, iy:iy, iz:iz))
-  !call eos%lookup (d=rho(ix:ix, iy:iy, iz:iz), ee=ee(ix:ix, iy:iy, iz:iz), &
-  !                 tt=eos_tt, lne=eos_lne, id=1, label='read_stagger')
+  if (present(ne)) then
+    call transpose_stagger(ilne)
+    call os%allocate(ne, m)
+    ilne = exp(ilne - 3*log(uul))
+    call linterpolate_3d(ilne(:,:, nnz-gz:gz+1:-1), ne, xx, yy, zz, newx, newy, newz)
+  endif
 
-  call eos%lookup (d=rho(ix:ix, iy:iy, iz:iz), ee=ee(ix:ix, iy:iy, iz:iz), &
-  tt=eos_tt, id=1, label='read_stagger')
+  call os%deallocate(irho)
+  call os%deallocate(ppx)
+  call os%deallocate(ppy)
+  call os%deallocate(ppz)
+  call os%deallocate(iie)
+  call os%deallocate(itemp)
+  call os%deallocate(ilne)
 
-  print *, nx, ny, nz
-  print *, temp(ix,iy,iz), eos_tt
-  !print *, lne(ix,iy,iz), eos_lne
-  stop
+  ds(1) = (newx(inx) - newx(1)) / (inx - 1)
+  ds(2) = (newy(iny) - newy(1)) / (iny - 1)
+  ds(3) = (newz(inz) - newz(1)) / (inz - 1)
 
   call trace%end()
-END SUBROUTINE read_stagger
+END SUBROUTINE read_stagger_snapshot
 
 !===============================================================================
-SUBROUTINE xup_set (f, fp, nx, ny, nz)
+SUBROUTINE xup_set (f, fp)
   ! f is centered on (i-.5,j,k), fifth order stagger
-  integer, intent(in) :: nx, ny, nz
-  real(4), dimension(nx,ny,nz), intent(in) :: f
-  real(4), dimension(nx,ny,nz), intent(out) :: fp
-  integer :: i, j, k
-  integer :: ix, iy, iz
+  real(4), dimension(:,:,:), intent(in) :: f
+  real(4), dimension(:,:,:), intent(out) :: fp
+  integer :: j, k
   !--------------------------------------------------------------------------
-  ix=1; iy=1; iz=1
-
-  if (nz==1) then
-    fp = f
-  else
-    do k=iz, nz
-      do j=iy, ny
-        fp(nx-2, j, k) = (                          &
-            a * ( f(nx-2, j, k) + f(nx-1, j, k) ) + &
-            b * ( f(nx-3, j, k) + f(nx  , j, k) ) + &
-            c * ( f(nx-4, j, k) + f(ix  , j, k) )   )
-
-        fp(nx-1, j, k) = (                          &
-            a * ( f(nx-1, j, k) + f(nx  , j, k) ) + &
-            b * ( f(nx-2, j, k) + f(ix  , j, k) ) + &
-            c * ( f(nx-3, j, k) + f(ix+1, j, k) )   )
-
-        fp(nx  , j, k) = (                          &
-            a * ( f(nx  , j, k) + f(ix  , j, k) ) + &
-            b * ( f(nx-1, j, k) + f(ix+1, j, k) ) + &
-            c * ( f(nx-2, j, k) + f(ix+2, j, k) )   )
-
-        fp(ix  , j, k) = (                          & 
-            a * ( f(ix  , j, k) + f(ix+1, j, k) ) + &
-            b * ( f(nx  , j, k) + f(ix+2, j, k) ) + &
-            c * ( f(nx-1, j, k) + f(ix+3, j, k) )   )
-
-        fp(ix+1, j, k) = (                          &
-            a * ( f(ix+1, j, k) + f(ix+2, j, k) ) + &
-            b * ( f(ix  , j, k) + f(ix+3, j, k) ) + &
-            c * ( f(nx  , j, k) + f(ix+4, j, k) )   )
-      end do
-
-      do j = iy, ny
-        do i = ix+2, nx-3
-          fp(i  , j, k) = (                           &
-                a * ( f(i  , j, k) + f(i+1, j, k) ) + &
-                b * ( f(i-1, j, k) + f(i+2, j, k) ) + &
-                c * ( f(i-2, j, k) + f(i+3, j, k) )   )
-        end do
-      end do
+  do k=1, size(f, 3)
+    do j=1, size(f, 2)
+      call destagger_vector(f(:,j,k), fp(:,j,k))
     end do
-  end if
+  end do
 END SUBROUTINE xup_set
     
 !===============================================================================
-SUBROUTINE yup_set (f, fp, nx, ny, nz)
+SUBROUTINE yup_set (f, fp)
   ! f is centered on (i-.5,j,k), fifth order stagger
-  integer, intent(in) :: nx, ny, nz
-  real(4), dimension(nx,ny,nz), intent(in) :: f
-  real(4), dimension(nx,ny,nz), intent(out) :: fp
-  integer :: i, j, k
-  integer :: ix, iy, iz
+  real(4), dimension(:,:,:), intent(in) :: f
+  real(4), dimension(:,:,:), intent(out) :: fp
+  integer :: i, k
   !--------------------------------------------------------------------------
-  ix=1; iy=1; iz=1
-
-  if (ny==1) then
-    fp = f
-  else
-    do k=iz, nz
-      do i=ix, nx
-        fp(i, ny-2, k) = (                          &
-            a * ( f(i, ny-2, k) + f(i, ny-1, k) ) + &
-            b * ( f(i, ny-3, k) + f(i, ny  , k) ) + &
-            c * ( f(i, ny-4, k) + f(i, iy  , k) )   )
-
-        fp(i, ny-1, k) = (                          &
-            a * ( f(i, ny-1, k) + f(i, ny  , k) ) + &
-            b * ( f(i, ny-2, k) + f(i, iy  , k) ) + &
-            c * ( f(i, ny-3, k) + f(i, iy+1, k) )   )
-
-        fp(i, ny  , k) = (                          &
-            a * ( f(i, ny  , k) + f(i, iy  , k) ) + &
-            b * ( f(i, ny-1, k) + f(i, iy+1, k) ) + &
-            c * ( f(i, ny-2, k) + f(i, iy+2, k) )   )
-
-        fp(i, iy  , k) = (                          &
-            a * ( f(i, iy  , k) + f(i, iy+1, k) ) + &
-            b * ( f(i, ny  , k) + f(i, iy+2, k) ) + &
-            c * ( f(i, ny-1, k) + f(i, iy+3, k) )   )
-
-        fp(i, iy+1, k) = (                          &
-            a * ( f(i, iy+1, k) + f(i, iy+2, k) ) + &
-            b * ( f(i, iy  , k) + f(i, iy+3, k) ) + &
-            c * ( f(i, ny  , k) + f(i, iy+4, k) )   )
-      end do
-
-      do j = iy+2, ny-3
-        do i = ix, nx
-          fp(i, j  ,k) = (                            &
-              a * ( f(i, j   , k) + f(i, j+1 , k) ) + &
-              b * ( f(i, j-1 , k) + f(i, j+2 , k) ) + &
-              c * ( f(i, j-2 , k) + f(i, j+3 , k) )   )
-        end do
-      end do
+  do k=1, size(f, 3)
+    do i=1, size(f, 1)
+      call destagger_vector(f(i,:,k), fp(i,:,k))
     end do
-  end if
+  end do
 END SUBROUTINE yup_set
 
 !===============================================================================
-SUBROUTINE zup_set (f, fp, nx, ny, nz)
+SUBROUTINE zup_set (f, fp)
   ! f is centered on (i-.5,j,k), fifth order stagger
-  integer, intent(in) :: nx, ny, nz
-  real(4), dimension(nx,ny,nz), intent(in) :: f
-  real(4), dimension(nx,ny,nz), intent(out) :: fp
-  integer :: i, j, k
-  integer :: ix, iy, iz
+  real(4), dimension(:,:,:), intent(in) :: f
+  real(4), dimension(:,:,:), intent(out) :: fp
+  integer :: i, j
   !--------------------------------------------------------------------------
-  ix=1; iy=1; iz=1
-
-  if (nz==1) then
-    fp = f
-  else
-    do j = iy, ny
-      do i = ix, nx
-        fp(i, j, nz-2) = (                          &
-            a * ( f(i, j, nz-2) + f(i, j, nz-1) ) + &
-            b * ( f(i, j, nz-3) + f(i, j, nz  ) ) + &
-            c * ( f(i, j, nz-4) + f(i, j, iz  ) )   )
-
-        fp(i, j, nz-1) = (                          &
-            a * ( f(i, j, nz-1) + f(i, j, nz  ) ) + &
-            b * ( f(i, j, nz-2) + f(i, j, iz  ) ) + &
-            c * ( f(i, j, nz-3) + f(i, j, iz+1) )   )
-
-        fp(i, j, nz  ) = (                          &
-            a * ( f(i, j, nz  ) + f(i, j, iz  ) ) + &
-            b * ( f(i, j, nz-1) + f(i, j, iz+1) ) + &
-            c * ( f(i, j, nz-2) + f(i, j, iz+2) )   )
-
-        fp(i, j, iz  ) = (                          &
-            a * ( f(i, j, iz  ) + f(i, j, iz+1) ) + &
-            b * ( f(i, j, nz  ) + f(i, j, iz+2) ) + &
-            c * ( f(i, j, nz-1) + f(i, j, iz+3) )   )
-
-        fp(i, j, iz+1) = (                          &
-            a * ( f(i, j, iz+1) + f(i, j, iz+2) ) + &
-            b * ( f(i, j, iz  ) + f(i, j, iz+3) ) + &
-            c * ( f(i, j, nz  ) + f(i, j, iz+4) )   )
-      end do
+  do j=1, size(f, 2)
+    do i=1, size(f, 1)
+      call destagger_vector(f(i,j,:), fp(i,j,:))
     end do
-
-    do k = iz+2, nz-3
-      do j = iy, ny
-          do i = ix, nx
-            fp(i, j, k) = (                             &
-                  a * ( f(i, j, k  ) + f(i, j, k+1) ) + &
-                  b * ( f(i, j, k-1) + f(i, j, k+2) ) + &
-                  c * ( f(i, j, k-2) + f(i, j, k+3) )   )
-          end do
-      end do
-    end do
-  end if
+  end do
 END SUBROUTINE zup_set
+
+!===============================================================================
+SUBROUTINE destagger_vector(f, fout)
+  real, dimension(:), intent(in)  :: f
+  real, dimension(:), intent(out) :: fout
+  integer :: i, n, j, idx
+  real(4) :: wts(-2:3)=[c,b,a,a,b,c]
+  ! ----------------------------------------------------------------------------
+  n = size(f,1)
+  do i=1, n
+    do j=-2,3
+      idx = i + j
+      if (idx<1) then
+        idx = n + idx
+      elseif (idx>n) then
+        idx = idx-n
+      endif  
+      fout(i) = fout(i) + wts(j) * f(idx)
+    end do
+  end do
+END SUBROUTINE destagger_vector
 
 !===============================================================================
 PURE SUBROUTINE transpose_stagger(f)
@@ -375,7 +286,7 @@ PURE SUBROUTINE transpose_stagger(f)
 END SUBROUTINE transpose_stagger
 
 !===============================================================================
-PURE FUNCTION interp1d_sorted (xx, yy, newx) result(newy)
+FUNCTION interp1d_sorted (xx, yy, newx) result(newy)
   real(4), dimension(:), intent(in) :: xx, yy, newx
   real(4), dimension(:), allocatable :: newy
   real(4) :: m
@@ -417,5 +328,42 @@ PURE FUNCTION linspace (x1, x2, n) result(xx)
   dx = (x2 - x1) / real(n-1)
   xx = (/ (x1 + i*dx, i=0, n-1) /)
 END FUNCTION linspace
+
+!===============================================================================
+SUBROUTINE linterpolate_3d(f, fout, oldx, oldy, oldz, newx, newy, newz)
+  real(4), dimension(:,:,:), intent(in)  :: f
+  real(4), dimension(:,:,:), intent(out) :: fout
+  real(4), dimension(:), intent(in) :: oldx, oldy, oldz, newx, newy, newz
+  real(4), dimension(:,:,:), allocatable :: fz, fy
+  integer :: i,j,k, nx, ny, nz, ox,oy,oz
+  !-----------------------------------------------------------------------------
+  ox = size(oldx,1); nx = size(newx,1)
+  oy = size(oldy,1); ny = size(newy,1)
+  oz = size(oldz,1); nz = size(newz,1)
+  
+  allocate(fz(ox,oy,nz))
+  allocate(fy(ox,ny,nz))
+
+  ! z-dimension linear interpolation
+  do j = 1, oy
+    do i = 1, ox
+       fz(i,j,:) = interp1d_sorted(oldz, f(i,j,:), newz)
+    end do
+  end do
+
+  ! y-dimension linear interpolation
+  do k = 1, nz
+    do i = 1, ox
+       fy(i,:,k) = interp1d_sorted(oldy, fz(i,:,k), newy)
+    end do
+  end do
+
+  ! x-dimension linear interpolation
+  do k = 1, nz
+    do j = 1, ny
+       fout(:,j,k) = interp1d_sorted(oldx, fy(:,j,k), newx)
+    end do
+  end do
+END SUBROUTINE linterpolate_3d
 
 end module read_stagger_snapshot_mod

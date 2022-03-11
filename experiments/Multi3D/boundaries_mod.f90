@@ -88,13 +88,13 @@ SUBROUTINE init (self)
   if (.not. io%master) verbose=0
 
   select case(patch%kind)
-    case ('hlld_mhd_patch')
+    case ('mhd_patch')
       self%boundary => mirror
+      call self%standard_boundaries_t%init ()
     case default
       self%boundary => no_boundary
   end select
 
-  call self%standard_boundaries_t%init ()
   call trace%end ()
 END SUBROUTINE init
 

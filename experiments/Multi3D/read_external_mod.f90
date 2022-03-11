@@ -3,6 +3,10 @@
 !===============================================================================
 MODULE read_external_mod
   USE io_mod
+  USE mpi_coords_mod
+  USE mpi_mod
+  USE omp_mod
+  USE omp_timer_mod
   USE timer_mod
   USE units_mod
   USE scaling_mod
@@ -16,26 +20,34 @@ MODULE read_external_mod
   USE task_list_mod
   USE experiment_mod
   USE patch_mod
-  USE download_mod
   USE ray_patch_mod
   USE m3d_patch_mod, only: maxiter, ilambd
+  USE read_stagger_snapshot_mod
+  implicit none
 
   type, public:: read_external_t
     class(task_list_t), pointer:: task_list
-    integer :: npatches(3), n(3), ng(3), verbose
-    real(4), dimension(:,:,:), allocatable :: temp, ne, pe, rho, vturb, px, py, pz
-    real(8), dimension(:), allocatable :: xi, yi, zi
-    real(8) :: ds(3)
+    integer :: dims(3), n(3), ng(3), verbose
+    real(4), dimension(:,:,:), pointer, contiguous :: temp, ne, pe, rho, vturb, px, py, pz, ee
+    real(4), dimension(:), pointer, contiguous :: xi, yi, zi
+    real(4) :: ds(3), size(3), position(3)!, origin(3)
     character(len=126) :: atmos_name
   contains
     procedure:: init
+    procedure:: init_exp
     procedure:: read_1d_snapshot
-    procedure:: read_stagger_snapshot
-    procedure:: create_patch
+    procedure:: read_multi_snapshot
+    procedure:: setup_patch
     procedure:: load_authority
   end type read_external_t
 
+  type, public, extends(task_t):: rank_t
+  end type
+
   type(read_external_t), public:: read_external
+  type(rank_t) :: rank
+  logical, save :: read_Stagger=.false.
+  logical, save :: read_Multi=.false.
 
 CONTAINS
 
@@ -46,12 +58,16 @@ SUBROUTINE init(self, task_list, name)
   character(len=*),   optional:: name
   !-----------------------------------------------------------------------------
   class(experiment_t), pointer:: patch
-  logical, save:: first_time=.true.
-  logical, save :: read_Stagger=.false.
-  integer :: iostat, iz, i
-  integer, save :: npatches=1, ng(3)=1, verbose=1
+  class(link_t), pointer:: link, next
+  !real(4) :: origin(3)=[0.0,0.0,0.0]
+  integer :: iostat, k, ip
+  integer :: mpi_dims(3)=[1,1,1]
+  integer :: patches_per_mpi(3)=[1,1,1]
+  integer :: dims(3)=[1,1,1]
+  integer :: verbose=1
+  logical :: face_nbors=.false.
   character(len=126) :: atmos_file='./input_multi3d/atmos/atmos.sun_MARCS_50'
-  namelist /atmos_params/ atmos_file, npatches, ng, verbose, read_Stagger
+  namelist /atmos_params/ atmos_file, dims, verbose, read_Stagger, read_Multi, mpi_dims
   !-----------------------------------------------------------------------------
   if (associated(task_list)) return
   call trace%begin('read_external_t%init')
@@ -60,55 +76,101 @@ SUBROUTINE init(self, task_list, name)
   ! The first thread reads the namelist parameters and saves them
   !-----------------------------------------------------------------------------
   call io%lock%set
-  if (first_time) then
+  rewind (io%input)
+  read (io%input, nml=atmos_params, iostat=iostat)
+  if (iostat > 0) then
     rewind (io%input)
-    read (io%input, nml=atmos_params, iostat=iostat)
-    if (iostat > 0) then
-      rewind (io%input)
-      read (io%input, atmos_params)
-    end if
-    call io%namelist_warning ('atmos_params', iostat)
-    write (io%namelist, atmos_params)
+    read (io%input, atmos_params)
+  end if
+  call io%namelist_warning ('atmos_params', iostat)
+  write (io%namelist, atmos_params)
 
-    self%npatches(1) = 1
-    self%npatches(2) = 1
-    self%npatches(3) = npatches
-    self%ng = ng
-    self%verbose = verbose
-  endif
+  self%dims = dims
+  self%verbose = verbose
+  !self%origin = origin
   call io%lock%unset
 
   allocate (task_list)
   self%task_list => task_list
-  call self%task_list%init ('multi3d_mod')
-
   call scaling%init()
   
   if (read_Stagger) then
-    call self%read_stagger_snapshot(atmos_file)
+    call read_stagger_snapshot(self%ds, self%rho, self%px, self%py, &
+    self%pz, self%ee, tt=self%temp, ne=self%ne)
+    self%n = shape(self%rho)
+  elseif (read_Multi) then
+    call self%read_multi_snapshot(atmos_file)
   else
     call self%read_1d_snapshot(atmos_file)
   endif
+  self%size = self%n * self%ds
+  self%position = 0.5*self%size! + self%origin
 
-  if (abs(self%ds(3) - (self%zi(self%n(3)) - self%zi(self%n(3)-1))) > 1d-4) then
-    write(stdout,*) 'read_external_t%init: Warning: Non-equidistant atmosphere grid!'
-  endif
+  !===============================================================================
+  if (mpi%size==1) &
+    mpi_dims = 1
+  !-----------------------------------------------------------------------------
+  ! Generate a (periodic) MPI geometry, with dims specified in the input file,
+  ! or assigned automatically by mpi_coords%init.
+  !-----------------------------------------------------------------------------
+  if (mpi%size == 1) then
+     mpi_coords%dims = 1
+  else
+    if (product(mpi_dims)==1) then
+      call mpi_coords%init (dims=self%dims)
+    else
+      call mpi_coords%init (mpi_dims=mpi_dims)
+    end if
+  end if
+  mpi_dims = mpi_coords%dims
+  patches_per_mpi = self%dims/mpi_dims
+  mpi_coords%npatch = patches_per_mpi
+  io%mpi_dims = mpi_dims
+  !-----------------------------------------------------------------------------
+  ! Set attritbutes of the rank_t data type -- just enough to use distance().
+  !-----------------------------------------------------------------------------
+  rank%periodic = .true.
+  rank%box = self%size
+  rank%size = rank%box/mpi_dims
+  rank%ds = rank%size/patches_per_mpi
+  rank%position = (mpi_coords%rank_to_coords(mpi%rank) + 0.5_8)*rank%size! + self%origin
+  !-----------------------------------------------------------------------------
+  ! Begin on task list
+  !-----------------------------------------------------------------------------
+  call self%task_list%init ('read_external_mod')
+  self%task_list%size = self%size
+  self%task_list%dims = self%dims
+  self%task_list%position = self%position
+  self%task_list%n_tasks = product(self%dims)
+  self%task_list%face_nbors = face_nbors
 
-  !if (mod(self%n(3), npatches) /= 0) then
-  !  write(stdout,*) 'read_external_t%init: Error: npatches must be a factor of the atmosphere size!'
-  !  write(stdout,*) 'npatches = ', self%npatches(3), 'nz = ', self%n(3)
-  !  write(stdout,*) 'Stopping.'
-  !  stop
-  !endif
-
-  do i=1, npatches
-    call self%create_patch(i, patch) ! patch is allocated here
+  !-----------------------------------------------------------------------------
+  ! Allocate an array of links, pointing to patches, and give the patches each
+  ! id, rank, size, position, integer position, and status bits.  Discard
+  ! external patches and add the rest to the task_list.
+  !-----------------------------------------------------------------------------
+  ip = 0
+  do k=0, self%dims(3)-1
+    allocate (patch)
+    ! --- patch 3D and 1D coordinates ---
+    patch%ipos = [0,0,k]
+    patch%rank = mpi_coords%coords_to_rank ([0,0,k]/patches_per_mpi)
+    if (patch%rank == mpi%rank) then
+      ip = ip + 1
+      patch%ip = ip
+    end if
+    if (all(self%dims==1)) call patch%task_t%set(bits%root_grid)
+    call self%setup_patch(patch)
+    call patch%set (bits%virtual)
+    call patch%set (bits%static)
 
     if (verbose > 0) then 
-      if (i==1) write(stdout,'(I2, A28)') npatches, ' subdomains in z-direction:'
-      write(stdout,'(I4, I6,A3,I4)') i, patch%zs, ' - ', patch%ze
+      if (k==0) write(stdout,'(I2, A28)') dims(3), ' subdomains in z-direction:'
+      write(stdout,'(I4, I6,A3,I4)') k+1, patch%zs, ' - ', patch%ze
     endif
+
   end do
+  write (stdout,*) ip, 'task generated'
 
   io%end_time = (maxiter + ilambd) * patch%dtime
   io%print_every = huge(1)
@@ -117,7 +179,6 @@ SUBROUTINE init(self, task_list, name)
   !-----------------------------------------------------------------------------
   ! Generate nbor lists and set status bits for all tasks
   !-----------------------------------------------------------------------------
-
   if (verbose > 0) write(stdout,*) 'read_external_t%init: init_levels'
   call self%task_list%init_levels
   if (verbose > 0) write(stdout,*) 'read_external_t%init: init_all_nbors'
@@ -127,51 +188,111 @@ SUBROUTINE init(self, task_list, name)
   if (verbose > 0) write(stdout,*) 'read_external_t%init: info'
   call task_list%info
 
+  !-----------------------------------------------------------------------------
+  ! Remove tasks that are external, and make sure to also remove them from the
+  ! nbor lists of virtual tasks
+  !-----------------------------------------------------------------------------
+  link => self%task_list%head
+  do while (associated(link))
+    next => link%next
+    if (link%task%is_set (bits%external)) then
+      call link%remove_nbor_list2 (link%nbor)
+      call self%task_list%remove (link)
+      call link%task%dealloc()
+      deallocate (link%task)
+      deallocate (link)
+    end if
+    link => next
+  end do
+  !-----------------------------------------------------------------------------
+  ! This counts are not fully correct until the patch meshes have been allocated
+  !-----------------------------------------------------------------------------
+  if (verbose > 0) write(stdout,*) 'read_external_t%init: count status'
+  call self%task_list%count_status
+  !-----------------------------------------------------------------------------
+  ! The I/O conunters must be set before initializing patches
+  !-----------------------------------------------------------------------------
+  call self%task_list%set_io_counts
+  write (stdout,'(a,i8)') ' number of tasks in task list:', self%task_list%n
+  io%nwrite = product(self%dims)
+  write (stdlog,*) 'read_external_mod: ntask,nwrite=', io%ntask, io%nwrite
+
+  !-----------------------------------------------------------------------------
+  ! Initialize tasks
+  !-----------------------------------------------------------------------------
+  !$omp parallel default(shared)
+  call self%init_exp()
+  !$omp end parallel
+  !-----------------------------------------------------------------------------
+  ! Refresh the counts, now with bits%has_output set on tasks
+  !-----------------------------------------------------------------------------
+  call self%task_list%set_io_counts
+  write (stdlog,*) 'read_external_mod: ntask,nwrite=', io%ntask, io%nwrite
+  !-----------------------------------------------------------------------------
+  ! This call is not valid until the patch mem and meshes have been allocated
+  !-----------------------------------------------------------------------------
+  if (verbose > 0) write(stdout,*) 'read_external_t%init: init boundaries'
+  call self%task_list%init_bdries
+  !-----------------------------------------------------------------------------
+  !if (verbose > 0) write(stdout,*) 'read_external_t%init: diagnostics'
+  !call self%diagnostics()
+  if (verbose > 0) write(stdout,*) 'read_external_t%init: print tasks'
+  call self%task_list%print_tasks
+  call self%task_list%check_hash_table
+  if (verbose > 0) write(stdout,*) 'read_external_t%init: done'
+  flush (stdout)
+  !-----------------------------------------------------------------------------
   call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
 !> Initialize a minimum amount of patch information in a Cartesian arrangement
 !===============================================================================
-SUBROUTINE create_patch (self, i, patch)
+SUBROUTINE setup_patch (self, patch)
   class (read_external_t):: self
-  class (experiment_t), intent(out), pointer:: patch
-  integer :: i
+  class (experiment_t), intent(inout), target :: patch
   !-----------------------------------------------------------------------------
-  call trace%begin ('read_external_t%create_patch')
-  allocate (patch)
+  call trace%begin ('read_external_t%setup_patch')
   patch%task_list => self%task_list
 
   call patch%init_unique (same=.true.) ! obtain an unique ID
-  call patch%gpatch_t%pre_init()
+  call patch%gpatch_t%pre_init() ! this overwrites patch%n
   patch%pre_initialized = .true.
 
   patch%mhd = .false.
   patch%kind = 'mhd_patch'
-  patch%ipos = 0
-  patch%ipos(3) = i-1
 
-  patch%n = self%n / self%npatches
+  patch%n = self%n / self%dims
+  patch%ng = 1 ! needed for nbor_relation
   patch%zs = patch%ipos(3) * patch%n(3) + 1
-  if (i == self%npatches(3)) then
-    patch%n(3) = patch%n(3) + mod(self%n(3), self%npatches(3))
+  if (patch%ipos(3)+1 == self%dims(3)) then
+    patch%n(3) = patch%n(3) + mod(self%n(3), self%dims(3))
   endif
   patch%ze = patch%zs + patch%n(3) - 1
 
-  patch%box = self%ds * self%n
+  patch%box = self%size
   patch%ds  = self%ds
 
   patch%size = patch%ds * patch%n
   patch%periodic = [.true., .true., .false.]
 
-  patch%position(1) = 0.5d0*patch%size(1)
-  patch%position(2) = 0.5d0*patch%size(2)
-  patch%position(3) = (patch%zs - 1) * patch%ds(3) + 0.5d0*patch%size(3)
+  patch%position = 0.5d0*patch%size
+  patch%position(3) = patch%position(3) + (patch%zs - 1) * patch%ds(3)
   patch%origin = patch%position - 0.5d0*patch%size
-  patch%level = 1
+
+  !-----------------------------------------------------------------------------
+  ! Preliminary region information, relative to the task position.
+  ! The settings below allow overlap() calls to work
+  !-----------------------------------------------------------------------------
+  patch%authority%l = - patch%size*0.5_8
+  patch%authority%u = + patch%size*0.5_8
+  patch%interest%l  = patch%authority%l - patch%ng*patch%size/patch%n
+  patch%interest%u  = patch%authority%u + patch%ng*patch%size/patch%n
 
   allocate (patch%boundaries)
   call patch%boundaries%pre_init (patch)
+  if (patch%ipos(3)==0)              call patch%boundaries%set(bits%zl)
+  if (patch%ipos(3)==self%dims(3)-1) call patch%boundaries%set(bits%zu)
   
   call patch%pre_init()
   
@@ -179,7 +300,6 @@ SUBROUTINE create_patch (self, i, patch)
   patch%composition%patch => patch
   call patch%composition%pre_init()
   
-  patch%ng = self%ng
   patch%nv = 6
   patch%nt = 4 ! Download returns wrong stuff if nt <= 2
   patch%nw = 1
@@ -189,12 +309,33 @@ SUBROUTINE create_patch (self, i, patch)
   ! Add the patch to the task list -- this creates the patch%link
   !---------------------------------------------------------------------------
   call patch%append_to(patch%task_list)
-  call patch%init()
-
-  call self%load_authority(patch, i)
 
   call trace%end ()
-END SUBROUTINE create_patch
+END SUBROUTINE setup_patch
+
+!===============================================================================
+SUBROUTINE init_exp (self)
+  class(read_external_t):: self
+  type(link_t), pointer:: link
+  class(task_t), pointer:: task
+  logical:: periodic(3)
+  integer:: id
+  !-----------------------------------------------------------------------------
+  id = 0
+  link => self%task_list%head
+  do while (associated(link))
+    id = id+1
+    if (mod(id,omp%nthreads)==omp%thread) then
+      task => link%task
+      select type (task)
+      class is (experiment_t)
+        call task%init()
+        call self%load_authority(task)
+      end select
+    endif
+    link => link%next
+  end do
+END SUBROUTINE init_exp
 
 !===============================================================================
 !> Reads the actual text files and stores variables under self
@@ -238,10 +379,14 @@ SUBROUTINE read_1d_snapshot(self, atmos_1d_file)
   self%ds(1) = 1e-2 ! 10km spacing as for 1d atmospheres in Multi
   self%ds(2) = 1e-2
   self%ds(3) = self%zi(2) - self%zi(1)
+
+  if (abs(self%ds(3) - (self%zi(self%n(3)) - self%zi(self%n(3)-1))) > 1d-4) then
+    write(stdout,*) 'read_external_t%init: Warning: Non-equidistant atmosphere grid!'
+  endif
 END SUBROUTINE read_1d_snapshot
 
 !===============================================================================
-SUBROUTINE read_stagger_snapshot(self, stagger_file)
+SUBROUTINE read_multi_snapshot(self, stagger_file)
   class(read_external_t):: self
   integer :: lunit
   character(len=126) :: stagger_file
@@ -283,17 +428,16 @@ SUBROUTINE read_stagger_snapshot(self, stagger_file)
   self%ds(1) = self%xi(2) - self%xi(1)
   self%ds(2) = self%yi(2) - self%yi(1)
   self%ds(3) = self%zi(2) - self%zi(1)
-END SUBROUTINE read_stagger_snapshot
-
+END SUBROUTINE read_multi_snapshot
 
 !===============================================================================
-!> Takes variables read from text file and loads them into patch memory
+!> Takes variables from self and loads them into patch memory
 !===============================================================================
-SUBROUTINE load_authority(self, patch, ii)
+SUBROUTINE load_authority(self, patch)
   !-----------------------------------------------------------------------------
-  class (read_external_t):: self
-  class (experiment_t), pointer:: patch
-  integer :: i,j,k, it, iz, ii, xs, xe, ys, ye, zs, ze
+  class (read_external_t) :: self
+  class (experiment_t) :: patch
+  integer :: i,j,k, it, iz, xs, xe, ys, ye, zs, ze
 
   it = 1 ! time index, it=1 is the initial condition
   xs = patch%li(1); xe = patch%ui(1)
@@ -301,24 +445,36 @@ SUBROUTINE load_authority(self, patch, ii)
   zs = patch%li(3); ze = patch%ui(3)
 
   do k=zs,ze
-    ! flipping z-axis, so that the first patch is the bottom of the atmosphere
-    !iz = self%n(3) - ((ii-1)*patch%n(3) + k - zs)
-    iz = self%n(3) - (patch%zs - 1 + k - zs) 
+    if (read_Stagger) then
+      iz = patch%zs + k - zs
+    else
+      ! flipping z-axis, so that the first patch is the bottom of the atmosphere
+      iz = self%n(3) - (patch%zs - 1 + k - zs) 
+    endif
 
     patch%mem(xs:xe,ys:ye,k,patch%idx%d ,it,1) = self%rho(:,:,iz)
     patch%mem(xs:xe,ys:ye,k,patch%idx%px,it,1) = self%px(:,:,iz)
     patch%mem(xs:xe,ys:ye,k,patch%idx%py,it,1) = self%py(:,:,iz)
     patch%mem(xs:xe,ys:ye,k,patch%idx%pz,it,1) = self%pz(:,:,iz)
-    patch%mem(xs:xe,ys:ye,k,patch%idx%e ,it,1) = self%temp(:,:,iz)
-    patch%mem(xs:xe,ys:ye,k,patch%idx_pe,it,1) = self%pe(:,:,iz)
+
+    if (associated(self%temp)) then
+      patch%mem(xs:xe,ys:ye,k,patch%idx%e ,it,1) = self%temp(:,:,iz)
+    elseif (associated(self%ee)) then
+      patch%mem(xs:xe,ys:ye,k,patch%idx%e ,it,1) = self%ee(:,:,iz)
+    endif
+    
+    if (associated(self%pe)) then
+      patch%mem(xs:xe,ys:ye,k,6,it,1) = self%pe(:,:,iz)
+    elseif (associated(self%ne) .and. associated(self%temp)) then
+      patch%mem(xs:xe,ys:ye,k,6,it,1) = self%ne(:,:,iz) * cgs%k_b * self%temp(:,:,iz)  / scaling%p
+    endif
   end do
 
-  !patch%rho  = dble(patch%mem(xs:xe,ys:ye,zs:ze,patch%idx%d , it, 1)) * scaling%d
-  !patch%temp = dble(patch%mem(xs:xe,ys:ye,zs:ze,patch%idx%e , it, 1))
-  !patch%ne   = dble(patch%mem(xs:xe,ys:ye,zs:ze,patch%idx_pe, it, 1)) * scaling%p / (cgs%k_b * patch%temp)
-  !patch%vx   = dble(patch%mem(xs:xe,ys:ye,zs:ze,patch%idx%px, it, 1)) * scaling%d * scaling%u / patch%rho
-  !patch%vy   = dble(patch%mem(xs:xe,ys:ye,zs:ze,patch%idx%py, it, 1)) * scaling%d * scaling%u / patch%rho
-  !patch%vz   = dble(patch%mem(xs:xe,ys:ye,zs:ze,patch%idx%pz, it, 1)) * scaling%d * scaling%u / patch%rho
+  if (associated(self%temp)) then
+    patch%v5 = 'tt'
+  elseif (associated(self%ee)) then
+    patch%v5 = 'ee'
+  endif
 
   allocate(patch%filled(patch%gn(1), patch%gn(2), patch%gn(3)))
   patch%filled = -1

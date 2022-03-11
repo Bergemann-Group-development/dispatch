@@ -29,7 +29,6 @@ module composition_patch_mod
     class(atom_patch_t), pointer :: atom_patch
   contains
     procedure :: pre_init => composition_pre_init
-    procedure :: init => composition_init
     procedure :: update => composition_update
     procedure :: finish => composition_finish
     procedure :: add_to_task_list
@@ -52,9 +51,9 @@ SUBROUTINE composition_pre_init (self)
   namelist /composition_params/ verbose, absdat_file, abund_file
   ! ----------------------------------------------------------------------------
   call trace%begin('composition_patch_t%composition_pre_init', itimer=itimer)
+  self%kind = 'composition'
   call self%m3d_patch_t%pre_init()
   call self%set_nv_and_nw(9,1)
-  self%kind = 'composition'
 
   if (first_time) then
     rewind (io%input)
@@ -105,7 +104,7 @@ SUBROUTINE composition_pre_init (self)
   do m=1, self%n_mu
     do n=1, self%n_nu
       self%opac(m,n)%kind = 'net_opac'
-      self%opac(m,n)%rad       => self%rad(m,n)
+      self%opac(m,n)%rad  => self%rad(m,n)
       call self%opac(m,n)%pre_init_and_link(self, i_mu=m, i_nu=n)
 
       self%rad(m,n)%kind = 'angle_rad'
@@ -128,38 +127,6 @@ SUBROUTINE composition_pre_init (self)
   endif
   call trace%end(itimer)
 END SUBROUTINE composition_pre_init
-
-!===============================================================================
-SUBROUTINE composition_init (self)
-  class(composition_patch_t) :: self
-  class(m3d_patch_t), pointer :: patch
-  integer, save:: itimer=0
-  integer :: i, m, n
-  ! ----------------------------------------------------------------------------
-  call trace%begin('composition_patch_t%composition_init', itimer=itimer)
-  call self%m3d_patch_t%init()
-  !call self%atom_patch%init()
-  !
-  !do n=1, self%n_nu
-  !  call self%back_opac(n)%init()
-  !  call self%rad(0,n)%init()
-  !end do
-  !
-  !do m=1, self%n_mu
-  !  do n=1, self%n_nu
-  !    call self%opac(m,n)%init()
-  !    call self%rad(m,n)%init()
-  !  end do
-  !end do
-  !
-  !if (self%boundaries%upper) then
-  !  do i=1, self%n_out
-  !    call self%out_rad(i)%init()
-  !  end do
-  !endif
-
-  call trace%end(itimer)
-END SUBROUTINE composition_init
 
 !===============================================================================
 SUBROUTINE composition_update (self)

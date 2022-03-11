@@ -32,18 +32,18 @@ sinclude $(MULTI3D)/dispatch.mkf
 #OPT = -O0 -fimplicit-none  -Wall  -Wline-truncation  -Wcharacter-truncation  -Wsurprising  -Waliasing  -Wimplicit-interface  -Wunused-parameter  -fwhole-file  -fcheck=all  -fbacktrace
 
 # List the .o files the main program depends on after the colon:
-$(EXEC): read_external_mod.o read_stagger_snapshot_mod.o
+$(EXEC): read_external_mod.o
 
 # Dependencies
 read_external_mod.o         : io_mod.o m3io_mod.o mesh_mod.o task_list_mod.o experiment_mod.o \
                               trace_mod.o task_mod.o link_mod.o bits_mod.o halo_mod.o scaling_mod.o \
                               units_mod.o timer_mod.o patch_mod.o download_mod.o list_mod.o \
-                              ray_patch_mod.o
+                              ray_patch_mod.o read_stagger_snapshot_mod.o
 read_stagger_snapshot_mod.o : io_mod.o os_mod.o eos_mod.o scaling_mod.o
 experiment_mod.o            : trace_mod.o io_mod.o solver_mod.o kinds_mod.o atom_var.o spectrum_mod.o \
                               ray_patch_mod.o opac_patch_mod.o rad_patch_mod.o atom_patch_mod.o rate_patch_mod.o \
                               composition_patch_mod.o
-dispatch.o                  : io_mod.o mpi_mod.o
+dispatch.o                  : io_mod.o
 boundaries_mod.o            : standard_boundaries_mod.o io_mod.o trace_mod.o \
                               mpi_mod.o bits_mod.o mesh_mod.o index_mod.o units_mod.o \
                               eos_mod.o vector_ops.o units_mod.o scaling_mod.o
@@ -67,4 +67,3 @@ m_unista.o                  : m_refsor.o
 ray_mod.o                   : mmath.o
 prec_mod.o                  : mconst.o os_mod.o
 patch_mod.o                 : os_mod.o
-io_unit_mod.o               :

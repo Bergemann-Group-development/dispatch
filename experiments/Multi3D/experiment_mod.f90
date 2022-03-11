@@ -20,7 +20,8 @@ MODULE experiment_mod
   implicit none
   private
   type, public, extends(solver_t):: experiment_t
-    integer :: idx_pe=6, iter=0, maxiter, zs, ze
+    integer :: iter=0, maxiter, zs, ze
+    character(len=2) :: v5
   contains
     procedure:: pre_init
     procedure:: init
@@ -61,9 +62,8 @@ SUBROUTINE init (self)
   integer, save:: itimer=0
   !----------------------------------------------------------------------------
   call trace%begin('experiment_mod::init', itimer=itimer)
-
   call self%solver_t%init
-
+  call self%init_level()
   call trace%end (itimer=itimer)
 END SUBROUTINE init
 

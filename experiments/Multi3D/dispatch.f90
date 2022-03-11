@@ -32,13 +32,11 @@ PROGRAM dispatch
   USE task_list_mod
   USE experiment_mod
   USE read_external_mod
-  USE read_stagger_snapshot_mod
   USE timer_mod
   !type(cartesian_t):: cartesian                 ! Use Cartesian patch arrangement
   class(task_list_t), pointer:: task_list => null()
   !.............................................................................
   call setup%init                               ! Generic setup (MPI, I/O, ...)
-  !call read_stagger()
   call dispatcher%init                          ! Initialize the dispatcher
   call read_external%init (task_list)           ! Possibly initialize task_list
   !call restart%init (task_list)                 ! Possibly initialize task_list

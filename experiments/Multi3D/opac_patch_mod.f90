@@ -25,6 +25,7 @@ module opac_patch_mod
   !USE units_mod
   !USE scratch_mod
   USE atom_var, only: atom_type
+  use m3d_patch_mod, only:maxiter
   USE ray_patch_mod, only:ray_patch_t
   USE composition_mod, only:composition_type
   implicit none
@@ -45,7 +46,7 @@ module opac_patch_mod
     procedure :: back_opac_update
     procedure :: cont_opac_update
     procedure :: line_opac_update
-    procedure :: sum_opac_update
+    procedure :: net_opac_update
   end type opacity_t
 
   !-----------------------------------------------------------------------------
@@ -106,7 +107,7 @@ SUBROUTINE opacity_update (self)
   case ('line_opac')
     call self%line_opac_update(chi, eta)
   case ('net_opac')
-    call self%sum_opac_update()
+    call self%net_opac_update()
   end select
 
   call self%post_update()
@@ -130,8 +131,6 @@ SUBROUTINE back_opac_update (self, chi, eta)
     chi = 0
     !call self%init_composition()
     call self%composition%absorption(nu, chi, abslte, sumsca)
-  elseif (self%iter == self%maxiter-1) then
-    self%time = self%time + (self%master_maxiter - self%iter)*self%dtime
   endif
 
   if (self%iter > 0) then
@@ -142,7 +141,10 @@ SUBROUTINE back_opac_update (self, chi, eta)
     call self%composition%scattering(nu, Jold, abslte, sumsca, eta)
     call os%deallocate(Jold)
   endif
-
+  
+  if (self%iter == self%maxiter-1) then
+    self%time = self%time + (maxiter - self%iter - 1)*self%dtime
+  endif
 
   call trace%end(itimer)
 END SUBROUTINE back_opac_update
@@ -181,7 +183,7 @@ SUBROUTINE line_opac_update (self, chi, eta)
 END SUBROUTINE line_opac_update
 
 !===============================================================================
-SUBROUTINE sum_opac_update (self)
+SUBROUTINE net_opac_update (self)
   class(opacity_t) :: self
   class(nbor_t), pointer:: nbor
   class(task_t), pointer:: nbtask
@@ -191,7 +193,7 @@ SUBROUTINE sum_opac_update (self)
   integer, save:: itimer=0
   integer :: iw,it,f
   !-----------------------------------------------------------------------------
-  call trace%begin('opacity_t%sum_opac_update', itimer=itimer)
+  call trace%begin('opacity_t%net_opac_update', itimer=itimer)
   mem => self%authority_mem
   chi => self%authority_mem(:,:,:,:,:,self%i_chi)
   eta => self%authority_mem(:,:,:,:,:,self%i_eta)
@@ -199,7 +201,7 @@ SUBROUTINE sum_opac_update (self)
 
   nbor => self%link%nbor
   do while (associated(nbor))
-    if (nbor%needed) then
+    if (nbor%needed .and. .not. nbor%download) then
       nbtask => nbor%task
       select type (nbtask)
       class is (opacity_t)
@@ -226,7 +228,7 @@ SUBROUTINE sum_opac_update (self)
   mem1 => self%mem(:,:,:,:,self%it,:)
   call self%boundaries%mirror(mem1)
   call trace%end(itimer)
-END SUBROUTINE sum_opac_update
+END SUBROUTINE net_opac_update
 
 !===============================================================================
 SUBROUTINE opacity_nbor_relations(self, another, needed, needs_me, download)

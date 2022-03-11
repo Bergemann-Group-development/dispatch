@@ -827,11 +827,6 @@ SUBROUTINE bndries (self)
   integer :: li(3), ui(3)
   !----------------------------------------------------------------------------
   if (self%kind == 'angle_rad') then
-    if(.not. self%initialized) then
-      call self%init()
-      self%initialized=.true.
-    endif
-
     self%Inu => self%mem(:,:,:,:, self%it, self%i_inu)
     self%chi => self%opac%mem(:,:,:,:, self%opac%it, self%opac%i_chi)
     self%Snu => self%opac%mem(:,:,:,:, self%opac%it, self%opac%i_snu)

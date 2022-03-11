@@ -207,8 +207,10 @@ SUBROUTINE check_topbot (self)
   !.............................................................................
   if (self%patch%boundaries%upper .and. self%dir < 0) then
     self%boundaries%upper = .true.
+    call self%boundaries%set(bits%zu)
   elseif (self%patch%boundaries%lower .and. self%dir > 0) then
     self%boundaries%lower = .true.
+    call self%boundaries%set(bits%zl)
   endif
 END 
 

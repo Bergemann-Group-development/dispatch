@@ -1,0 +1,7 @@
+Abort(806969103) on node 0 (rank 0 in comm 0): Fatal error in PMPI_Finalize: Other MPI error, error stack:
+PMPI_Finalize(214)...............: MPI_Finalize failed
+PMPI_Finalize(159)...............: 
+MPID_Finalize(1026)..............: 
+MPIDI_OFI_mpi_finalize_hook(1706): OFI domain close failed (ofi_init.c:1706:MPIDI_OFI_mpi_finalize_hook:Device or resource busy)
+srun: error: gemini-node11: task 0: Exited with exit code 15
+srun: launch/slurm: _step_signal: Terminating StepId=4742.0
