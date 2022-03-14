@@ -6,10 +6,9 @@
 #SBATCH -D ./
 #SBATCH -J M3D_DIS
 # --- CPU and node logistics ---
-#SBATCH --partition=astro2_devel
-#SBATCH --exclusive
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=1
+#SBATCH --partition=debug
+#SBATCH --ntasks=2
+#SBATCH --cpus-per-task=16
 # --- User notifications ---
 #SBATCH --time 00:20:00
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK

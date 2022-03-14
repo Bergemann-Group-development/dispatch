@@ -25,7 +25,7 @@ module opac_patch_mod
   !USE units_mod
   !USE scratch_mod
   USE atom_var, only: atom_type
-  use m3d_patch_mod, only:maxiter
+  USE m3d_patch_mod, only:maxiter, m3d_patch_t
   USE ray_patch_mod, only:ray_patch_t
   USE composition_mod, only:composition_type
   implicit none
@@ -37,8 +37,8 @@ module opac_patch_mod
   class(atom_type), pointer :: atom => null()
   class(composition_type), pointer :: composition
   real(8), dimension(:,:,:,:), pointer, contiguous :: wphi
-  class(ray_patch_t), pointer :: rad => null()
-  class(ray_patch_t), pointer :: mean_rad => null()
+  class(m3d_patch_t), pointer :: rad => null()
+  class(m3d_patch_t), pointer :: mean_rad => null()
   contains
     procedure :: pre_init => opacity_pre_init
     procedure :: update => opacity_update
@@ -60,6 +60,7 @@ SUBROUTINE opacity_pre_init (self)
   ! ----------------------------------------------------------------------------
   call trace%begin('opacity_t%opacity_pre_init')
   call self%ray_patch_t%pre_init()
+  call self%append_to_task_list()
 
   if (self%kind == 'back_opac') then
     call self%set_nv_and_nw (self%fe-self%fs+1,4)
@@ -257,7 +258,7 @@ SUBROUTINE opacity_nbor_relations(self, another, needed, needs_me, download)
           needs_me=.false.
         end select
       end select
-    class default
+    class is (m3d_patch_t)
       if (another%id == self%m3d_parent%id) then
         needs_me = .false.
         if (self%kind=='net_opac') then
@@ -268,12 +269,15 @@ SUBROUTINE opacity_nbor_relations(self, another, needed, needs_me, download)
           needed = .false.
         elseif(self%kind=='back_opac' .and. another%kind=='mean_rad') then
           needs_me = .false.
+          self%mean_rad => another
         elseif(self%m3d_parent%kind=='atom_rad' .and. another%kind=='rate_rad') then
           needed = .false.
         else
           needed = .false.; needs_me = .false.
         endif
       endif
+    class default
+      needed = .false.; needs_me = .false.
     end select
   endif
   call trace%end()

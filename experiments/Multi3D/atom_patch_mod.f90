@@ -38,8 +38,6 @@ module atom_patch_mod
     type, public, extends(m3d_patch_t) :: atom_patch_t
       type(atom_type), pointer :: atom
       class(composition_type), pointer :: composition
-      class(rate_patch_t), pointer, dimension(:,:) :: rate
-      class(opacity_t), pointer, dimension(:,:) :: opac
       real(8) :: maxerr=huge(1.0)
     contains
       procedure :: pre_init => atom_patch_pre_init
@@ -48,7 +46,6 @@ module atom_patch_mod
       procedure :: finish => atom_patch_finish
       procedure :: nbor_relations => atom_patch_nbor_relations
       procedure pre_init_atom
-      procedure add_to_task_list
       procedure init_atom
       procedure normalize_phi
       procedure sum_rates
@@ -65,34 +62,36 @@ module atom_patch_mod
   !===============================================================================
   SUBROUTINE atom_patch_pre_init (self)
     class(atom_patch_t), target:: self
+    class(rate_patch_t), pointer :: rate
+    class(opacity_t), pointer :: opac
     integer :: m, n
     ! ----------------------------------------------------------------------------
     call trace%begin('atom_patch_t%atom_patch_pre_init')
     call self%m3d_patch_t%pre_init()
+    call self%append_to_task_list()
     call self%set_nv_and_nw(0, 0)
     call self%pre_init_atom()
 
-    allocate(self%opac(0:self%n_mu, self%n_nu))
-    allocate(self%rate(self%n_omega, self%n_nu))
-
     do n=1, self%n_nu
-      self%opac(0,n)%kind = 'cont_opac'
-      self%opac(0,n)%atom => self%atom
-      call self%opac(0,n)%pre_init_and_link(self, i_nu=n)
+      allocate(opac)
+      opac%kind = 'cont_opac'
+      opac%atom => self%atom
+      call opac%pre_init_and_link(self, i_nu=n)
     end do
 
     do m=1, self%n_mu
       do n=1, self%n_nu
-        self%opac(m,n)%kind = 'line_opac'
-        self%opac(m,n)%atom => self%atom
-        call self%opac(m,n)%pre_init_and_link(self, i_mu=m, i_nu=n)
+        allocate(opac)
+        opac%kind = 'line_opac'
+        opac%atom => self%atom
+        call opac%pre_init_and_link(self, i_mu=m, i_nu=n)
         
         if (m > self%n_omega) cycle
-        self%rate(m,n)%kind = 'rate_patch'
-        self%rate(m,n)%atom => self%atom
-        self%rate(m,n)%cont_opac => self%opac(0,n)
-        self%rate(m,n)%line_opac => self%opac(m,n)
-        call self%rate(m,n)%pre_init_and_link(self, i_mu=m, i_nu=n)
+
+        allocate(rate)
+        rate%kind = 'rate_patch'
+        rate%atom => self%atom
+        call rate%pre_init_and_link(self, i_mu=m, i_nu=n)
       end do
     end do
 
@@ -162,6 +161,8 @@ module atom_patch_mod
   !===============================================================================
   SUBROUTINE atom_patch_update (self)
     class(atom_patch_t) :: self
+    class(nbor_t), pointer:: nbor
+    class(task_t), pointer:: nbtask
     real(8), dimension(:,:,:,:), allocatable :: gamma_ij, gamma_ji
     character(len=64) :: text
     integer, save:: itimer=0
@@ -176,15 +177,33 @@ module atom_patch_mod
 
       call self%init_atom()
       self%dtime = self%dtime + self%dtime*ilambd
-      self%rate%time = self%rate%time + self%rate%dtime*ilambd
-      self%opac(:,:)%dtime = self%dtime
+
+      nbor => self%link%nbor
+      do while (associated(nbor))
+        nbtask => nbor%task
+        select type(nbtask)
+        class is (rate_patch_t)
+          nbtask%time = nbtask%time + nbtask%dtime*ilambd
+        class is (opacity_t)
+          nbtask%dtime = nbtask%dtime
+        end select
+        nbor => nbor%next
+      end do
     else
       write(text,'(A,I2,A,I2,A)') 'Iteration ', self%iter, '/', self%maxiter, '.'
       call io%header (text)
 
       if (self%iter == 1) then
         self%dtime = self%dt_fixed
-        self%opac(:,:)%dtime = self%opac%dt_fixed
+        nbor => self%link%nbor
+        do while (associated(nbor))
+          nbtask => nbor%task
+          select type(nbtask)
+          class is (opacity_t)
+            nbtask%dtime = nbtask%dt_fixed
+          end select
+          nbor => nbor%next
+        end do
         call self%normalize_phi()
       endif
 
@@ -232,21 +251,27 @@ module atom_patch_mod
   !===============================================================================
   SUBROUTINE atom_patch_finish (self, rotated)
     class(atom_patch_t) :: self
+    class(nbor_t), pointer:: nbor
+    class(task_t), pointer:: nbtask
     logical, optional :: rotated
     integer :: i, j
     ! ----------------------------------------------------------------------------
     call trace%begin('atom_patch_t%atom_patch_finish')
     self%finished = .true.
     self%time = io%end_time + self%t_offset*self%dtime
-    !call self%set(bits%frozen)
 
-    do j=1, self%n_nu
-      !call self%opac(0,j)%finish()
-
-      do i=1, self%n_omega
-        call self%opac(i,j)%finish()
-        call self%rate(i,j)%finish()
-      end do
+    nbor => self%link%nbor
+    do while (associated(nbor))
+      if (nbor%needs_me) then
+        nbtask => nbor%task
+        select type(nbtask)
+        class is (m3d_patch_t)
+          if (nbtask%i_mu > 0 .and. .not. nbtask%out_ray) then
+            call nbtask%finish()
+          endif
+        end select
+      endif
+      nbor => nbor%next
     end do
     call trace%end()
   END SUBROUTINE atom_patch_finish
@@ -308,8 +333,9 @@ module atom_patch_mod
   !===============================================================================
   SUBROUTINE normalize_phi (self)
     class(atom_patch_t), target :: self
+    class(nbor_t), pointer:: nbor
+    class(task_t), pointer:: nbtask
     class(line_type), pointer :: line
-    class(opacity_t), pointer :: opac
     integer :: i, i_mu, i_nu
     ! ----------------------------------------------------------------------------
     do i=1, self%atom%nline
@@ -317,11 +343,16 @@ module atom_patch_mod
       allocate(line%wphi(self%n(1), self%n(2), self%n(3)))
       line%wphi = 0
 
-      do i_nu=1, size(self%opac(1:self%n_omega,1:), 2)
-        do i_mu=1, size(self%opac(1:self%n_omega,1:), 1)
-          opac => self%opac(i_mu, i_nu)
-          line%wphi = line%wphi + opac%wmu * opac%wphi(:,:,:,i)
-        end do
+      nbor => self%link%nbor
+      do while (associated(nbor))
+        nbtask => nbor%task
+        select type(opac => nbtask)
+        class is (opacity_t)
+          if (opac%i_mu > 0 .and. .not. opac%out_ray) then
+            line%wphi = line%wphi + opac%wmu * opac%wphi(:,:,:,i)
+          endif
+        end select
+        nbor => nbor%next
       end do
 
       line%wphi = math%pi4 / line%wphi
@@ -331,19 +362,24 @@ module atom_patch_mod
   !===============================================================================
   SUBROUTINE sum_rates (self, gamma_ij, gamma_ji)
     class(atom_patch_t), target :: self
-    class(rate_patch_t), pointer :: rate
+    class(nbor_t), pointer:: nbor
+    class(task_t), pointer:: nbtask
     integer :: i, i_mu, i_nu, m(4)
     real(8), dimension(:,:,:,:), allocatable:: gamma_ij, gamma_ji
     ! ----------------------------------------------------------------------------
     gamma_ij = 0.0d0
     gamma_ji = 0.0d0
 
-    do i_nu=1, size(self%rate, 2)
-      do i_mu=1, size(self%rate, 1)
-        rate => self%rate(i_mu, i_nu)
+
+    nbor => self%link%nbor
+    do while (associated(nbor))
+      nbtask => nbor%task
+      select type(rate => nbtask)
+      class is (rate_patch_t)
         gamma_ij = gamma_ij + rate%wmu * rate%mem(:,:,:,:,rate%it,rate%i_Gij)
         gamma_ji = gamma_ji + rate%wmu * rate%mem(:,:,:,:,rate%it,rate%i_Gji)
-      end do
+      end select
+      nbor => nbor%next
     end do
 
     do i=1, self%atom%nline
@@ -378,7 +414,9 @@ module atom_patch_mod
           needed = .false.; needs_me = .false.
         endif
       class default
-        if (another%id /= self%m3d_parent%id) then
+        if (another%id == self%m3d_parent%id) then
+          needs_me = .false.
+        else
           needed = .false. ; needs_me = .false.
         endif
       end select
@@ -386,30 +424,5 @@ module atom_patch_mod
   
     call trace%end()
   END SUBROUTINE atom_patch_nbor_relations
-
-  !===============================================================================
-  SUBROUTINE add_to_task_list(self, task_list)
-    class (atom_patch_t) :: self
-    class(list_t), pointer :: task_list
-    class(link_t),  pointer :: link
-    class (task_t), pointer :: task
-    integer :: m,n
-    !-----------------------------------------------------------------------------
-    call trace%begin('atom_patch_t%add_to_task_list')
-    call self%append_to_task_list(task_list)
-
-    do n=1, self%n_nu
-      call self%opac(0,n)%append_to_task_list(task_list)
-    end do
-
-    do m=1, self%n_mu
-      do n=1, self%n_nu
-        call self%opac(m,n)%append_to_task_list(task_list)
-        if (m > self%n_omega) cycle
-        call self%rate(m,n)%append_to_task_list(task_list)
-      end do
-    end do
-    call trace%end()
-  END SUBROUTINE add_to_task_list
 
   end module

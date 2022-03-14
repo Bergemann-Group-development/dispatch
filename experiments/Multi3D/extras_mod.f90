@@ -139,7 +139,7 @@ MODULE extras_mod
     !self%rt%patch => self                                                ! RT
     !call self%rt%pre_init                                                ! RT
     allocate(self%composition)
-    self%composition%patch  => self
+    self%composition%patch => self
     call self%composition%pre_init()
     !call self%newton%pre_init  (self)                                    ! Newton
     !call self%gravity%pre_init (self)                                    ! gravity
@@ -209,7 +209,6 @@ MODULE extras_mod
     !.............................................................................
     call trace%begin ('extras_t%add_to_task_list')
     !if (associated(self%rt)) call self%rt%add_to_task_list(task_list)       ! RT
-    call self%composition%add_to_task_list(task_list)
     call trace%end ()
   END SUBROUTINE add_to_task_list
   
@@ -321,9 +320,14 @@ MODULE extras_mod
     if (another%kind == self%kind .or. another%kind == 'composition') then
       call self%task_t%nbor_relations(another, needed, needs_me, download) ! keep
 
-      if (another%kind == 'composition') then
-        needed=.false.; download=.false.
-      endif
+      select type (another)
+      class is (composition_patch_t)
+        if (another%patch%id == self%id) then
+          needed=.false.; download=.false.
+        else
+          needed=.false.; needs_me=.false.; download=.false.
+        endif
+      end select
     else
       needed=.false.; needs_me=.false.; download=.false.
     endif

@@ -52,6 +52,7 @@ module rate_patch_mod
     ! ----------------------------------------------------------------------------
     call trace%begin('rate_patch_t%rate_patch_pre_init')
     call self%ray_patch_t%pre_init()
+    call self%append_to_task_list()
     call self%set_nv_and_nw(self%atom%nrad, 2)
     call trace%end()
   END SUBROUTINE rate_patch_pre_init
@@ -124,18 +125,31 @@ module rate_patch_mod
     call self%ray_patch_t%nbor_relations(another, needed, needs_me, download)
 
     if (needed .or. needs_me) then
-      select case (another%kind)
-      case ('angle_rad', 'cont_opac', 'line_opac')
-        needs_me=.false.
-        
-        select type(another)
-        class is (radiation_t)
-        self%rad => another
+      select type (another)
+      class is (radiation_t)
+        if (another%kind == 'angle_rad') then
+          needs_me=.false.
+          self%rad => another
+        else
+          needed = .false.; needs_me = .false.
+        endif
+      class is (opacity_t)
+        select case (another%kind)
+        case ('cont_opac')
+          needs_me=.false.
+          self%cont_opac => another
+        case ('line_opac')
+          needs_me=.false.
+          self%line_opac => another
+        case default
+          needed = .false.; needs_me = .false.
         end select
-      case ('atom_patch')
-        ! is needed and needs me
-      case default
-        needed = .false.; needs_me = .false.
+      class default
+        if (another%kind == 'atom_patch') then
+          ! is needed and needs me
+        else
+          needed = .false.; needs_me = .false.
+        endif
       end select
     endif
     call trace%end()

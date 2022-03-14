@@ -145,7 +145,6 @@ SUBROUTINE append_to(self, task_list)
   link%task => self
   self%link => link
   call task_list%append (link)
-  call self%add_to_task_list(task_list)
 END SUBROUTINE append_to
 
 !===============================================================================

@@ -22,6 +22,7 @@ module rad_patch_mod
   USE bits_mod
   USE units_mod, only: cgs
   !USE scratch_mod
+  USE m3d_patch_mod, only:m3d_patch_t
   USE ray_patch_mod
   USE opac_patch_mod
   USE os_mod
@@ -32,10 +33,7 @@ module rad_patch_mod
   !-----------------------------------------------------------------------------
 
   type, public, extends(ray_patch_t) :: radiation_t
-    class(opacity_t), pointer :: opac => null()
-    class(radiation_t), pointer :: sheep(:) => null()
-    class(radiation_t), pointer :: mean_rad => null()
-    class(radiation_t), pointer :: out_rad => null()
+    class(m3d_patch_t), pointer :: opac => null()
     real(4), dimension(:,:,:,:), contiguous, pointer :: Inu, chi, Snu
     real(4), dimension(:,:,:,:), contiguous, pointer :: Psi
     character(len=64) :: meta_file, ray_name
@@ -89,6 +87,7 @@ SUBROUTINE radiation_pre_init (self)
   endif
 
   call self%ray_patch_t%pre_init()
+  call self%append_to_task_list()
 
   if (self%kind == 'angle_rad') then
     call self%ray%init(self%vec, self%wmu)
@@ -793,7 +792,9 @@ SUBROUTINE radiation_nbor_relations(self, another, needed, needs_me, download)
   if (needed .or. needs_me) then
     select type(another)
     class is (radiation_t)
-      if (self%kind=='angle_rad' .and. another%kind=='mean_rad' &
+      if (download) then
+        needs_me=.false.
+      elseif (self%kind=='angle_rad' .and. another%kind=='mean_rad' &
           .and. .not. self%out_ray) then
         needed=.false.
       elseif (self%kind=='mean_rad' .and. another%kind=='angle_rad' &
@@ -807,8 +808,9 @@ SUBROUTINE radiation_nbor_relations(self, another, needed, needs_me, download)
         needed=.false. ; needs_me=.false.
       endif
     class is (ray_patch_t)
-      if (self%kind=='angle_rad' .and. another%m3d_parent%kind=='atom_rad') then
+      if (self%kind=='angle_rad' .and. another%kind=='net_opac') then
         needs_me=.false.
+        self%opac => another
       elseif(self%kind=='mean_rad' .and. another%kind=='back_opac') then
         needed=.false.
       else
@@ -848,6 +850,7 @@ SUBROUTINE save_radiation_output(self)
   USE mconst, only: cc
   class(radiation_t),intent(inout):: self
   class(radiation_t), pointer :: sheep
+  class(nbor_t), pointer:: nbor
   character(len=64) :: filename
   real(4), allocatable :: lam(:)
   real(4), dimension(:,:,:), pointer :: Inu
@@ -857,10 +860,14 @@ SUBROUTINE save_radiation_output(self)
   call trace_begin('radiation_t%save_radiation_output')
   write(*,'(A64)') 'Writing output for angle ' // self%ray_name
 
-  do i=1, size(self%sheep)
-    sheep => self%sheep(i)
-    Inu => self%mem(:,:,1, sheep%fs:sheep%fe, self%it, self%i_inu)
-    Inu = sheep%authority_mem(:,:,sheep%n(3), :, sheep%it, sheep%i_inu)
+  nbor => self%link%nbor
+  do while (associated(nbor))
+    select type(nb => nbor%task)
+    class is (radiation_t)
+      Inu => self%mem(:,:,1, nb%fs:nb%fe, self%it, self%i_inu)
+      Inu = nb%authority_mem(:,:,nb%n(3), :, nb%it, nb%i_inu)
+    end select
+    nbor => nbor%next
   end do
 
   lam = 1e8 * cc / self%sp%nu

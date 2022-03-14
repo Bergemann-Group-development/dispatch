@@ -1,20 +1,12 @@
-forrtl: severe (174): SIGSEGV, segmentation fault occurred
-Image              PC                Routine            Line        Source             
-dispatch.x         0000000000749B9A  Unknown               Unknown  Unknown
-libpthread-2.17.s  00002ADC4BEAD630  Unknown               Unknown  Unknown
-dispatch.x         0000000000647A5D  rate_patch_mod_mp         114  rate_patch_mod.f90
-dispatch.x         00000000006C0DCA  task_list_mod_mp_         485  task_list_mod.f90
-dispatch.x         000000000047F31C  dispatcher0_mod_m         414  dispatcher0_mod.f90
-dispatch.x         000000000047D8D7  dispatcher0_mod_m         116  dispatcher0_mod.f90
-libiomp5.so        00002ADC4C3ECCC3  __kmp_invoke_micr     Unknown  Unknown
-libiomp5.so        00002ADC4C372947  __kmp_fork_call       Unknown  Unknown
-libiomp5.so        00002ADC4C3365C3  __kmpc_fork_call      Unknown  Unknown
-dispatch.x         000000000047D36F  dispatcher0_mod_m         113  dispatcher0_mod.f90
-dispatch.x         0000000000481030  dispatcher_mod_mp         135  dispatcher_mod.f90
-dispatch.x         0000000000480F39  dispatcher_mod_mp         113  dispatcher_mod.f90
-dispatch.x         0000000000408F21  MAIN__                     44  dispatch.f90
-dispatch.x         0000000000408BD2  Unknown               Unknown  Unknown
-libc-2.17.so       00002ADC4C6E2555  __libc_start_main     Unknown  Unknown
-dispatch.x         0000000000408AE9  Unknown               Unknown  Unknown
-srun: error: node680: task 0: Exited with exit code 174
-srun: Terminating job step 30433685.0
+Abort(806969103) on node 0 (rank 0 in comm 0): Fatal error in PMPI_Finalize: Other MPI error, error stack:
+PMPI_Finalize(214)...............: MPI_Finalize failed
+PMPI_Finalize(159)...............: 
+MPID_Finalize(1026)..............: 
+MPIDI_OFI_mpi_finalize_hook(1706): OFI domain close failed (ofi_init.c:1706:MPIDI_OFI_mpi_finalize_hook:Device or resource busy)
+Abort(806969103) on node 0 (rank 0 in comm 0): Fatal error in PMPI_Finalize: Other MPI error, error stack:
+PMPI_Finalize(214)...............: MPI_Finalize failed
+PMPI_Finalize(159)...............: 
+MPID_Finalize(1026)..............: 
+MPIDI_OFI_mpi_finalize_hook(1706): OFI domain close failed (ofi_init.c:1706:MPIDI_OFI_mpi_finalize_hook:Device or resource busy)
+srun: error: gemini-node12: tasks 0-1: Exited with exit code 15
+srun: launch/slurm: _step_signal: Terminating StepId=4853.0

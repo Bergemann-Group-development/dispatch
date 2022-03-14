@@ -18,7 +18,7 @@ module m3d_patch_mod
     !USE timer_mod
     !USE scaling_mod
     USE trace_mod
-    !USE mpi_mod
+    USE mpi_mod
     !USE omp_mod
     USE omp_lock_mod
     USE shared_mod
@@ -161,6 +161,7 @@ module m3d_patch_mod
     ! relevant synchronization items for cartesian setup
     ! ----------------------------------------------------------------------------
     self%n          = self%patch%n
+    self%ng         = 0
     self%ipos       = self%patch%ipos
     self%rank       = self%patch%rank
     self%box        = self%patch%box
@@ -174,8 +175,7 @@ module m3d_patch_mod
     self%status     = self%patch%status
     self%periodic   = self%patch%periodic
     self%mesh       => self%patch%mesh
-
-    self%ng         = 0
+    self%task_list  => self%patch%task_list
 
     select case (self%kind)
     case ('net_opac', 'angle_rad')
@@ -195,9 +195,13 @@ module m3d_patch_mod
     ! Do not check density or validate with it. This is rather important to be set
     ! ----------------------------------------------------------------------------
     call self%set (bits%no_density)
+    call self%set (bits%internal)
+    call self%set (bits%external)
+    call self%set (bits%static)
 
     allocate (self%boundaries)
     call self%boundaries%pre_init (self)
+
     call trace%end ()
   END SUBROUTINE m3d_pre_init
 
@@ -403,7 +407,7 @@ module m3d_patch_mod
         nbtask => nbor%task
         select type (nbtask)
         class is (m3d_patch_t)
-        if (nbtask%finished) then
+        if (nbtask%finished .and. nbtask%kind /= 'composition') then
           nbnbor => nbtask%link%nbor
           nbors_finished=.true.
           do while (associated(nbnbor))
@@ -480,19 +484,20 @@ module m3d_patch_mod
   END SUBROUTINE m3d_nbor_relations
   
   !===============================================================================
-  SUBROUTINE append_to_task_list(self, task_list)
+  SUBROUTINE append_to_task_list(self)
     class (m3d_patch_t), target :: self
-    class (list_t), pointer :: task_list
     class (link_t), pointer :: link
     class (task_t), pointer :: task
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%add_to_task_list')
-    if (self%maxiter >= 0) then
-      allocate (halo_m3d_t:: link)
-      call link%init()
-      link%task => self
-      self%link => link
-      call task_list%append (link)
+    if (associated(self%task_list)) then
+      if (self%maxiter >= 0) then
+        allocate (halo_m3d_t:: link)
+        call link%init()
+        link%task => self
+        self%link => link
+        call self%task_list%append (link)
+      endif
     endif
     call trace%end()
   END SUBROUTINE append_to_task_list

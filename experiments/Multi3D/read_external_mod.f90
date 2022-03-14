@@ -161,7 +161,8 @@ SUBROUTINE init(self, task_list, name)
     end if
     if (all(self%dims==1)) call patch%task_t%set(bits%root_grid)
     call self%setup_patch(patch)
-    call patch%set (bits%virtual)
+    call patch%set (bits%internal)
+    call patch%set (bits%external)
     call patch%set (bits%static)
 
     if (verbose > 0) then 
@@ -255,6 +256,11 @@ SUBROUTINE setup_patch (self, patch)
   call trace%begin ('read_external_t%setup_patch')
   patch%task_list => self%task_list
 
+  !---------------------------------------------------------------------------
+  ! Add the patch to the task list -- this creates the patch%link
+  !---------------------------------------------------------------------------
+  call patch%append_to(patch%task_list)
+
   call patch%init_unique (same=.true.) ! obtain an unique ID
   call patch%gpatch_t%pre_init() ! this overwrites patch%n
   patch%pre_initialized = .true.
@@ -298,6 +304,8 @@ SUBROUTINE setup_patch (self, patch)
   
   allocate(patch%composition)
   patch%composition%patch => patch
+  patch%composition%task_list => self%task_list
+  
   call patch%composition%pre_init()
   
   patch%nv = 6
@@ -305,10 +313,6 @@ SUBROUTINE setup_patch (self, patch)
   patch%nw = 1
 
   call patch%idx%init (energy=5, mhd=patch%mhd)
-  !---------------------------------------------------------------------------
-  ! Add the patch to the task list -- this creates the patch%link
-  !---------------------------------------------------------------------------
-  call patch%append_to(patch%task_list)
 
   call trace%end ()
 END SUBROUTINE setup_patch
