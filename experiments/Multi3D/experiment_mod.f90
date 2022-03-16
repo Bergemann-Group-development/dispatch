@@ -25,6 +25,7 @@ MODULE experiment_mod
   contains
     procedure:: pre_init
     procedure:: init
+    procedure:: info
     procedure:: update
     procedure:: post_update
     procedure:: finish
@@ -46,7 +47,7 @@ SUBROUTINE pre_init (self)
   !-----------------------------------------------------------------------------
   call trace%begin('experiment_mod::pre_init', itimer=itimer)
 
-  self%time     = -1.0
+  self%time     = 0.0
   self%dtime    = timestep
   self%out_next = huge(1.0)
 
@@ -113,6 +114,16 @@ SUBROUTINE post_update (self)
   
   self%iter = self%iter + 1
 END SUBROUTINE post_update
+
+!===============================================================================
+SUBROUTINE info (self, nq, ntask, experiment_name)
+  class(experiment_t)    :: self
+  integer            :: nq, ntask
+  character(len=64)  :: experiment_name
+  optional           :: nq, ntask, experiment_name
+  !-----------------------------------------------------------------------------
+  print *, 'Experiment update called for patch', self%id
+END SUBROUTINE info
 
 !===============================================================================
 SUBROUTINE finish (self)

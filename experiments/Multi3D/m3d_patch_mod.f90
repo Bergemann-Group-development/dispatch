@@ -254,6 +254,7 @@ module m3d_patch_mod
     call self%set_maxiter()
 
     self%mem = tiny(1.)
+    self%gn = self%n + 2*self%ng
 
     li = self%li
     ui = self%ui
@@ -442,7 +443,46 @@ module m3d_patch_mod
     class(task_t), pointer :: other
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%m3d_nbor_relations')
-    call self%task_t%nbor_relations(another, needed, needs_me, download)
+    !call self%task_t%nbor_relations(another, needed, needs_me, download)
+
+    if (.not.associated(another)) then
+      write (stderr,*) mpi%rank, 'another not associated'
+      call io%abort ('task_t another not associated')
+    end if
+
+    needed=.true. ; needs_me=.true. ; download=.true.
+
+    if (another%is_set (bits%frozen)) then
+      needs_me = .false.
+      needed = .false.
+    endif
+
+    if (another%rank /= self%rank) then
+      call self%set(bits%boundary)
+    endif
+
+    if (self%rank == mpi%rank) then
+      call self%clear(bits%external)
+      if (another%rank /= mpi%rank) then
+        call self%clear(bits%internal)
+      end if
+    else
+      call self%clear(bits%internal)
+      if (another%rank==mpi%rank) then
+        call self%set(bits%virtual)
+        call self%clear(bits%external)
+      !---------------------------------------------------------------------------
+      ! task is virtual, nbor is virtual
+      !---------------------------------------------------------------------------
+      else
+        needed = .false.
+        needs_me = .false.
+      end if
+      !---------------------------------------------------------------------------
+      ! virtual tasks don't need guard zones
+      !---------------------------------------------------------------------------
+      download = .false.
+    end if
 
     if (needed .or. needs_me) then
       select type(another)

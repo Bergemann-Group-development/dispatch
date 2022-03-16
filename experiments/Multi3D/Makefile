@@ -32,7 +32,7 @@ sinclude $(MULTI3D)/dispatch.mkf
 #OPT = -O0 -fimplicit-none  -Wall  -Wline-truncation  -Wcharacter-truncation  -Wsurprising  -Waliasing  -Wimplicit-interface  -Wunused-parameter  -fwhole-file  -fcheck=all  -fbacktrace
 
 # List the .o files the main program depends on after the colon:
-$(EXEC): read_external_mod.o
+$(EXEC): read_external_mod.o mpi_debug_mod.o
 
 # Dependencies
 read_external_mod.o         : io_mod.o m3io_mod.o mesh_mod.o task_list_mod.o experiment_mod.o \
@@ -67,3 +67,4 @@ m_unista.o                  : m_refsor.o
 ray_mod.o                   : mmath.o
 prec_mod.o                  : mconst.o os_mod.o
 patch_mod.o                 : os_mod.o
+mpi_debug_mod.o             : mpi_mod.o io_mod.o

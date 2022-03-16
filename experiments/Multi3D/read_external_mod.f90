@@ -173,7 +173,7 @@ SUBROUTINE init(self, task_list, name)
   end do
   write (stdout,*) ip, 'task generated'
 
-  io%end_time = (maxiter + ilambd) * patch%dtime
+  io%end_time = (maxiter + ilambd + 1) * patch%dtime
   io%print_every = huge(1)
   timer%dead_mans_hand = huge(1.0)
 

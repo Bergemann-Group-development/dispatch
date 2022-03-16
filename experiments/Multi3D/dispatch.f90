@@ -25,6 +25,7 @@
 !>
 !===============================================================================
 PROGRAM dispatch
+  USE mpi_mod
   USE setup_mod
   USE restart_mod
   USE dispatcher_mod
@@ -33,16 +34,14 @@ PROGRAM dispatch
   USE experiment_mod
   USE read_external_mod
   USE timer_mod
+  USE mpi_debug_mod
   !type(cartesian_t):: cartesian                 ! Use Cartesian patch arrangement
   class(task_list_t), pointer:: task_list => null()
-  integer :: i=0
   !.............................................................................
   call setup%init                               ! Generic setup (MPI, I/O, ...)
   call dispatcher%init                          ! Initialize the dispatcher
-  do while (i==0)
-    call sleep(5)
-  end do
   call read_external%init (task_list)           ! Possibly initialize task_list
+  call check_mpi_debug()
   !call restart%init (task_list)                 ! Possibly initialize task_list
   !call cartesian%init (task_list)               ! .. or else here ...
   !call read_snapshot%init (task_list)           ! Construct ICs
