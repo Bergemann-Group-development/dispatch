@@ -792,8 +792,8 @@ SUBROUTINE radiation_nbor_relations(self, another, needed, needs_me, download)
   if (needed .or. needs_me) then
     select type(another)
     class is (radiation_t)
-      if (download) then
-        needs_me=.false.
+      if (self%kind==another%kind) then
+        ! do nothing
       elseif (self%kind=='angle_rad' .and. another%kind=='mean_rad' &
           .and. .not. self%out_ray) then
         needed=.false.
@@ -811,6 +811,8 @@ SUBROUTINE radiation_nbor_relations(self, another, needed, needs_me, download)
       if (self%kind=='angle_rad' .and. another%kind=='net_opac') then
         needs_me=.false.
         self%opac => another
+      elseif(self%kind=='angle_rad' .and. another%kind=='rate_patch') then
+        needed=.false.
       elseif(self%kind=='mean_rad' .and. another%kind=='back_opac') then
         needed=.false.
       else

@@ -179,7 +179,7 @@ SUBROUTINE send (self, rank, tag)
   end if
   self%tag = ltag
   if (verbose > 0 .or. self%id==io%id_debug) then
-    write (io_unit%log,'(f12.6,1x,a,3i6,i8)') wallclock(), &
+    write (io_unit%log,'(f12.6,1x,a,3i10,i8)') wallclock(), &
       'mpi_mesg_t%send id, nbuf, to, tag =', self%id, self%nbuf, rank, ltag
   end if
 #ifdef MPI

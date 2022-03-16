@@ -248,11 +248,11 @@ SUBROUTINE opacity_nbor_relations(self, another, needed, needs_me, download)
     class is(opacity_t)
       select case (self%kind)
       case ('net_opac')
-        needs_me=.false.
-      case ('line_opac', 'cont_opac', 'back_opac')
-        if (.not. download) then
-          needed=.false.
+        if (another%kind/='net_opac') then
+          needs_me=.false.
         endif
+      case ('line_opac', 'cont_opac', 'back_opac')
+        needed=.false.
         select case (another%kind)
         case ('line_opac', 'cont_opac', 'back_opac')
           needs_me=.false.
@@ -270,7 +270,7 @@ SUBROUTINE opacity_nbor_relations(self, another, needed, needs_me, download)
         elseif(self%kind=='back_opac' .and. another%kind=='mean_rad') then
           needs_me = .false.
           self%mean_rad => another
-        elseif(self%m3d_parent%kind=='atom_rad' .and. another%kind=='rate_rad') then
+        elseif(self%m3d_parent%kind=='atom_patch' .and. another%kind=='rate_patch') then
           needed = .false.
         else
           needed = .false.; needs_me = .false.

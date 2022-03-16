@@ -1494,18 +1494,18 @@ SUBROUTINE no_t (target, source, ls, us, in, out, lt, ut, only)
                                                    call lock2%set ('interp tgt')
   if (present(lt)) then
     if (verbose > 0) then
-      write (stdlog,'(f12.6,a,2i6,1x,2i3,2f7.3,2(1x,2(1x,3i3)),1x,9l1)') &
+      write (stdlog,'(f12.6,a,2i6,1x,2(1x,2(1x,3i3)),1x,9l1)') &
         wallclock(), pad_trace(1:indent)// &
-        'interp_t%no_t: tgt,src,jt,pt,ls,us,lt,ut,usg=', &
-        target%id, source%id, 1, 1, ls, us, lt, ut, &
+        'interp_t%no_t: tgt,src,ls,us,lt,ut,usg=', &
+        target%id, source%id, ls, us, lt, ut, &
         source%unsigned
     end if
     if (unit == stdout) then
-      write (unit,'(a,2(i6,":",i2.2,f10.6),1x,2i3,2f7.3,2(1x,2(1x,3i3)),1x,9l1)') &
-        'interp_t%no_t(1): tgt,src,jt,pt,ls,us,lt,ut,usg=', &
+      write (unit,'(a,2(i6,":",i2.2,f10.6),1x,2(1x,2(1x,3i3)),1x,9l1)') &
+        'interp_t%no_t(1): tgt,src,ls,us,lt,ut,usg=', &
         target%id, target%level, target%time, &
         source%id, source%level, source%time, &
-        1, 1, ls, us, lt, ut, &
+        ls, us, lt, ut, &
         source%unsigned
     end if
     !.........................................................................
@@ -1541,18 +1541,18 @@ SUBROUTINE no_t (target, source, ls, us, in, out, lt, ut, only)
     o = 0
     !.........................................................................
     if (verbose > 0) then
-      write (stdlog,'(f12.6,a,2i6,1x,2i3,2f7.3,2(1x,3i3),1x,9l1)') &
+      write (stdlog,'(f12.6,a,2i6,1x,2(1x,3i3),1x,9l1)') &
         wallclock(), &
-        pad_trace(1:indent)//'interp_t%no_t: tgt,src,jt,pt,ls,us,usg=', &
-        target%id, source%id, 1, 1, ls, us, &
+        pad_trace(1:indent)//'interp_t%no_t: tgt,src,ls,us,usg=', &
+        target%id, source%id, ls, us, &
         source%unsigned
     end if
     if (unit == stdout) then
-      write (unit,'(a,2(i6,":",i2.2,f10.6),1x,2i3,2f7.3,2(1x,3i3),1x,9l1)') &
-        'interp_t%no_t(2): tgt,src,jt,pt,ls,us,lt,ut,usg=', &
+      write (unit,'(a,2(i6,":",i2.2,f10.6),1x,2(1x,3i3),1x,9l1)') &
+        'interp_t%no_t(2): tgt,src,ls,us,lt,ut,usg=', &
         target%id, target%level, target%time, &
         source%id, source%level, source%time, &
-        1, 1, ls, us, &
+        ls, us, &
         source%unsigned
     end if
     !.........................................................................

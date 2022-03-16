@@ -426,7 +426,7 @@ SUBROUTINE bits_mem (self, bits, count, label)
   integer:: bits, count
   character(len=*), optional:: label
   !-----------------------------------------------------------------------------
-  !if (io%verbose>2) then
+  if (io%verbose>2) then
     if (present(label)) then
       write(io_unit%mpi,1) bits,' bits per word', count,' words, for', &
         (bits/(8.*1024.**3))*count, os%gb, ' GB '//trim(label)
@@ -435,7 +435,7 @@ SUBROUTINE bits_mem (self, bits, count, label)
       write(io_unit%mpi,1) bits,' bits per word', count,' words, for', &
         (bits/(8.*1024.**3))*count, os%gb, ' GB'
     end if
-  !end if
+  end if
   call os%gb_mem (bits, count)
 END SUBROUTINE bits_mem
 

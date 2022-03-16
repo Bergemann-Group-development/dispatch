@@ -175,7 +175,7 @@ SUBROUTINE composition_patch_nbor_relations(self, another, needed, needs_me, dow
 
   if (needed .or. needs_me) then
     if (another%id /= self%patch%id) then
-      if (another%kind=='back_opac') then
+      if (another%kind=='back_opac' .or. another%kind=='atom_patch') then
         needed = .false.
       else
         needed = .false.; needs_me = .false.
