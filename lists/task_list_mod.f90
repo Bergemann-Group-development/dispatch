@@ -68,6 +68,7 @@ MODULE task_list_mod
     procedure:: init_levelstats
     procedure:: init_task_list_pointers
     procedure:: init_bdries
+    procedure:: check_if_all_ranks_are_done
   end type
   real(8), save:: dead_mans_hand=60d0, first_finished=0d0
   logical, save:: check_nbor_consistency=.true.
@@ -651,11 +652,8 @@ SUBROUTINE end_game (self, task)
   class(task_list_t):: self
   class(task_t), pointer:: task
   integer:: end_count, io_count, na
-  integer, save:: count=0
   !-----------------------------------------------------------------------------
   call trace%begin ('task_list_t%end_game')
-  end_count = mpi%end_counter%update(0)
-  io_count = io%counter%update(0)
   !.............................................................................
   if (task%finished) then
     call task%log ('finished')
@@ -676,26 +674,22 @@ SUBROUTINE end_game (self, task)
     !---------------------------------------------------------------------------
     if (min(task%time,task%out_next) > io%end_time .or. .not.io%do_output) then
       !$omp atomic update
-      count = count+1                                 ! count finished tasks
-      if (count == self%na) then
-        end_count = mpi%end_counter%update(+1)
-      else
-        end_count = mpi%end_counter%update(0)
-      end if
-      !$omp atomic write
-      timer%done = (end_count >= mpi%size)
+      self%nfinished = self%nfinished+1                                 ! count finished tasks
+      call self%check_if_all_ranks_are_done(timer%done)
     end if
     call task%set (bits%frozen)
     !---------------------------------------------------------------------------
     ! Check dead_mans_hand
     !---------------------------------------------------------------------------
     if (first_finished > 0d0) then
+      end_count = mpi%end_counter%update(0)
+      io_count = io%counter%update(0)
       if (wallclock() > first_finished + dead_mans_hand) then
         call io%warning ('dead_mans_hand time expired -- run stopping')
         write (io_unit%mpi,'(1x,a,a,5i6,1p,2g12.4,l3)') &
           'task_list_t%end_game, dead_mans_hand: ', &
           'count, end_count, io_count, io%nwrite, io%ntask, times =', &
-          count, end_count, io_count, io%nwrite, io%ntask, &
+          self%nfinished, end_count, io_count, io%nwrite, io%ntask, &
           wallclock(), first_finished + dead_mans_hand, timer%done
         call dead_mans_hand_list (self)
         !$omp atomic write
@@ -704,7 +698,7 @@ SUBROUTINE end_game (self, task)
         write (io_unit%mpi,'(1x,a,a,5i6,1p,2g12.4,l3)') &
           'task_list_t%end_game, dead_mans_hand: ', &
           'count, end_count, io_count, io%nwrite, io%ntask, times =', &
-          count, end_count, io_count, io%nwrite, io%ntask, &
+          self%nfinished, end_count, io_count, io%nwrite, io%ntask, &
           wallclock(), first_finished + dead_mans_hand, timer%done
       end if
     end if
@@ -732,10 +726,12 @@ SUBROUTINE end_game (self, task)
   end if
   !.............................................................................
   if (self%verbose > 0) then
+    end_count = mpi%end_counter%update(0)
+    io_count = io%counter%update(0)
     write (io_unit%mpi,'(f9.3,2x,2a,i6,3f12.6,6i6,2l3)') &
       wallclock(), 'task_list_t%end_game: ', &
       'id,time,count,na,end_count,io_count,io%nwrite,io%ntask,done=', &
-      task%id, task%time, task%out_next, io%end_time, count, self%na, &
+      task%id, task%time, task%out_next, io%end_time, self%nfinished, self%na, &
       end_count, io_count, io%nwrite, io%ntask, task%finished, timer%done
   end if
   call trace%end ()
@@ -958,5 +954,18 @@ contains
   if (task%boundaries%is_set(bits%zu))  out(6:6) = 'T'
   end function formatted
 END SUBROUTINE init_bdries
+
+!===============================================================================
+SUBROUTINE check_if_all_ranks_are_done (self, done)
+  class(task_list_t) :: self
+  integer :: end_count=0
+  logical :: done
+  !-----------------------------------------------------------------------------
+  if (self%nfinished == self%na) then
+    end_count = mpi%end_counter%update(+1)
+  end if
+  !$omp atomic write
+  done = (end_count >= mpi%size)
+END SUBROUTINE check_if_all_ranks_are_done
 
 END MODULE task_list_mod

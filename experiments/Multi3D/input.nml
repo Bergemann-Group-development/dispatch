@@ -24,7 +24,6 @@
 
 ! -- Parameters defining the run -----------------------------------------------
 &io_params          do_trace=F omp_trace=F os_verbose=0/
-&task_mesg_params   verbose=0
 !&task_list_params   verbose=3/
 !&cartesian_params   size=6,6,3 dims=6,6,3 mpi_dims=2,2,1 origin=0,0,-2.5
 !                    omp_init=t periodic=t,t,f /
@@ -43,10 +42,12 @@
 &timer_params       sec_per_report = 1000 /
 &task_list_params   verbose=0 /
 &dispatcher0_params verbose=0 /
-&task_params        verbose=0 /
+&task_params        verbose=0 mpi_init_ids=F /
 &halo_params        check_filled=F /
-&m3d_params         fcheck=1 pcheck=1,1,-1 linecheck=1, n_nu=1 maxiter=1 verbose=2 ilambd=0
+&m3d_params         fcheck=98 pcheck=1,1,-1 linecheck=1, n_nu=1 maxiter=1 verbose=2 ilambd=0
                     quad_scheme='set_a2' long_scheme='set_a4'/
+!                    quad_scheme='disk_center' long_scheme='disk_center'/
 &mpi_debug_params   debug=F /
-&mpi_mesg_params    verbose=0 /
+&mpi_mesg_params    verbose=0/
+&task_mesg_params   verbose=0 await_new=F /
 &interp_params      verbose=0 /

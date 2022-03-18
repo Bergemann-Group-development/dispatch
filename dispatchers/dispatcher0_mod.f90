@@ -223,13 +223,16 @@ SUBROUTINE update (self, task_list, test)
   !$omp atomic read
   nq = task_list%nq
   if (nq == 0) then
-    if (n_stalled == 0) then
-      !$omp atomic write
-      spin_start = wallclock()
-    end if
-    !$omp atomic update
-    n_stalled = n_stalled + 1
-    call stall_handler
+    call task_list%check_if_all_ranks_are_done(timer%done)
+    if (.not.timer%done) then
+      if (n_stalled == 0) then
+        !$omp atomic write
+        spin_start = wallclock()
+      end if
+      !$omp atomic update
+      n_stalled = n_stalled + 1
+      call stall_handler
+    endif
     call trace%end(itimer(i))
     return
   end if

@@ -221,6 +221,7 @@ MODULE task_mod
     integer:: key(4)                    ! task hash key
   end type
   logical:: first_time=.true.
+  logical:: mpi_init_ids=.true.
   integer:: track_id=0
   integer:: verbose=0
   type(dll_t), pointer:: deleted_list
@@ -276,23 +277,26 @@ END SUBROUTINE pre_init
 SUBROUTINE init (self)
   class (task_t):: self
   integer:: id, id_master, id_tmp
+  integer, save::itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('task_t%init')
+  call trace%begin ('task_t%init', itimer=itimer)
   call init_params (self)
   if (self%id == 0) then
     call init_unique (self)
     if (verbose > 0) &
       write (io_unit%log,*) 'task_t%init: id =', id
   else
-    !---------------------------------------------------------------------------
-    ! If a task already has an id, update the MPI counter if its value is less.
-    ! The id of a virtual copy of a new AMR task should NOT trigger this.
-    !---------------------------------------------------------------------------
-    id_master = mpi%id%update (0)
-    id_tmp = id_master
-    if (self%id > id_master) then
-      id_master = mpi%id%update (self%id-id_master+1)
-    end if
+    if (mpi_init_ids) then
+      !---------------------------------------------------------------------------
+      ! If a task already has an id, update the MPI counter if its value is less.
+      ! The id of a virtual copy of a new AMR task should NOT trigger this.
+      !---------------------------------------------------------------------------
+      id_master = mpi%id%update (0)
+      id_tmp = id_master
+      if (self%id > id_master) then
+        id_master = mpi%id%update (self%id-id_master+1)
+      end if
+    endif
   end if
   !-----------------------------------------------------------------------------
   ! Locks, random numbers, etc
@@ -329,7 +333,7 @@ SUBROUTINE init (self)
   self%key = self%hash_key ()                     ! cache the hash key
   call io%lock%unset
   call self%log ('init', 2)
-  call trace%end ()
+  call trace%end (itimer)
 END SUBROUTINE init
 
 !===============================================================================
@@ -342,7 +346,7 @@ SUBROUTINE init_params (self)
   integer:: iostat, id=0, id_master
   logical, save:: do_dumps=.false., dump_all=.false.
   integer, save:: id_max=0
-  namelist /task_params/ track_id, do_dumps, dump_all, verbose
+  namelist /task_params/ track_id, do_dumps, dump_all, verbose, mpi_init_ids
   namelist /dump_params/ id
   !-----------------------------------------------------------------------------
   call trace%begin ('task_t%init_params')

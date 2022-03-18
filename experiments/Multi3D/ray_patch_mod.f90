@@ -273,10 +273,10 @@ SUBROUTINE ray_nbor_relations(self, another, needed, needs_me, download)
     class is(ray_patch_t)
       if (self%kind==another%kind) then
         if (self%is_upstream(another)) then
+          needs_me = .false.
+        elseif (another%is_upstream(self)) then
           needed = .false.
           download = .false.
-        elseif (another%is_upstream(self)) then
-          needs_me = .false.
         else
           needed = .false.; needs_me = .false.; download = .false.
         endif

@@ -98,13 +98,13 @@ module m3d_patch_mod
     logical, save :: on=.true.
     integer :: iostat
     integer, save :: fcheck=1, linecheck=3, pcheck(3)=[1,1,1]
-    integer, save :: n_nu=1
+    integer, save :: n_nu=1, itimer=0
     character(len=32), save :: quad_scheme='set_a2'
     character(len=32), save :: long_scheme='disk_center'
     namelist /m3d_params/ on, verbose, fcheck, linecheck, pcheck, quad_scheme, &
     long_scheme, n_nu, maxiter, ilambd
     !-----------------------------------------------------------------------------
-    call trace%begin ('m3d_patch_t%pre_init')
+    call trace%begin ('m3d_patch_t%pre_init', itimer=itimer)
     !-----------------------------------------------------------------------------
     ! Read parameters
     !-----------------------------------------------------------------------------
@@ -202,7 +202,7 @@ module m3d_patch_mod
     allocate (self%boundaries)
     call self%boundaries%pre_init (self)
 
-    call trace%end ()
+    call trace%end (itimer)
   END SUBROUTINE m3d_pre_init
 
   !===============================================================================
@@ -247,8 +247,9 @@ module m3d_patch_mod
   SUBROUTINE m3d_init (self)
     class(m3d_patch_t) :: self
     integer :: li(3), ui(3)
+    integer, save:: itimer=0
     ! ----------------------------------------------------------------------------
-    call trace%begin ('m3d_patch_t%m3d_init')
+    call trace%begin ('m3d_patch_t%m3d_init', itimer=itimer)
     call self%gpatch_t%init()
     call self%init_level()
     call self%set_maxiter()
@@ -263,7 +264,7 @@ module m3d_patch_mod
   
     call self%set (bits%internal)
     self%initialized=.true.
-    call trace%end()
+    call trace%end(itimer)
   END SUBROUTINE m3d_init
 
   !===============================================================================
@@ -743,10 +744,10 @@ module m3d_patch_mod
     !-----------------------------------------------------------------------------
     ! Decide whether to use a coarse clone or not
     !-----------------------------------------------------------------------------
-    call trace%begin ('halo_t%download', itimer=itimer)
-                                            call self%lock%set ('halo_t%download')
+    call trace%begin ('m3d_halo_t%download', itimer=itimer)
+                                            call self%lock%set ('m3d_halo_t%download')
     call self%copy_nbor_list (self%nbor, tnbors)
-                                          call self%lock%unset ('halo_t%download')
+                                          call self%lock%unset ('m3d_halo_t%download')
     target => self%task
     !.............................................................................
     ! important for dynamic initialisation of patches

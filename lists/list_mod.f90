@@ -94,6 +94,7 @@ MODULE list_mod
     integer:: no=0                      ! has output
     integer:: na=0                      ! active = internal+boundary
     integer:: nac=0                     ! active tasks
+    integer:: nfinished=0               ! finished tasks
     real(8):: lc(3) = +huge(0d0)        ! lower corner
     real(8):: uc(3) = -huge(0d0)        ! upper corner
     real(8):: llc(3) = +huge(0d0)       ! lower left corner

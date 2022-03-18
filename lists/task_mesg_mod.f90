@@ -98,6 +98,7 @@ MODULE task_mesg_mod
   end type
   integer, save:: verbose=0
   logical, save:: lock_recv=.false.
+  logical, save:: await_new=.true.
   logical, save:: use_copy = .true.
   character(len=8), save:: method='irecv'
   public:: task2patch
@@ -113,7 +114,7 @@ SUBROUTINE init (self, name)
   integer:: iostat
   class(link_t), pointer:: link
   class(task_t), pointer:: task
-  namelist /task_mesg_params/ verbose, method, lock_recv, use_copy
+  namelist /task_mesg_params/ verbose, method, lock_recv, use_copy, await_new
   character(len=120):: id = &
     '$Id$'
   !-----------------------------------------------------------------------------
@@ -407,6 +408,7 @@ SUBROUTINE check_new (self)
   ! Each thread has a thread-private new task allocated, ready to receive the
   ! next new virtual task, distinguished by having tag=MPI_ANY_TAG
   !-----------------------------------------------------------------------------
+  if (.not. await_new) return
   call trace%begin ('task_mesg_t%check_new', itimer=itimer)
   if (.not.associated(task)) then
     call create_new (task)
