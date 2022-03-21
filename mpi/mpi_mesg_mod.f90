@@ -115,6 +115,7 @@ MODULE mpi_mesg_mod
   integer, save:: id=0
   integer, save:: verbose=0
   logical, save:: detailed_timer=.false.
+  integer, parameter:: tag_num=10
 CONTAINS
 
 !===============================================================================
@@ -405,8 +406,8 @@ SUBROUTINE get_id (self, stat)
   self%tag = stat(MPI_TAG)
   self%sender = stat(MPI_SOURCE)
   if (mpi_mesg%uniq_mesg) then
-    self%seq = mod(self%tag,100)
-    self%id = self%tag/100
+    self%seq = mod(self%tag,tag_num)
+    self%id = self%tag/tag_num
     if (verbose > 1) &
       write (io_unit%log,*) 'mpi_mesg_t%get_id: id, sender, seq =', &
         self%id, self%sender, self%seq

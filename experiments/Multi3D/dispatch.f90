@@ -26,6 +26,7 @@
 !===============================================================================
 PROGRAM dispatch
   USE mpi_mod
+  USE os_mod
   USE setup_mod
   USE restart_mod
   USE dispatcher_mod
@@ -40,13 +41,14 @@ PROGRAM dispatch
   !.............................................................................
   call setup%init                               ! Generic setup (MPI, I/O, ...)
   call dispatcher%init                          ! Initialize the dispatcher
-  call read_external%init (task_list)           ! Possibly initialize task_list
   call check_mpi_debug()
+  call read_external%init (task_list)           ! Possibly initialize task_list
   !call restart%init (task_list)                 ! Possibly initialize task_list
   !call cartesian%init (task_list)               ! .. or else here ...
   !call read_snapshot%init (task_list)           ! Construct ICs
   call dispatcher%execute (task_list)           ! Run dispatcher on the task_list
   call timer%print() 
+  write(*,'(a, I3, a, F7.2, a)') 'maximum memory on rank', mpi%rank, ' was', os%max_mem, 'Gb'
   call setup%end                                ! End setup
 !===============================================================================
 END PROGRAM dispatch

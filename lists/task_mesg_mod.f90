@@ -103,6 +103,7 @@ MODULE task_mesg_mod
   character(len=8), save:: method='irecv'
   public:: task2patch
   type(task_mesg_t), public:: task_mesg
+  integer, parameter::tag_num=10
 CONTAINS
 
 !===============================================================================
@@ -389,7 +390,7 @@ SUBROUTINE new_request (task)
   !-----------------------------------------------------------------------------
   task%seq = task%seq + 1
   task%mesg%id = task%id
-  task%mesg%tag = task%id*100 + mod(task%seq,100)
+  task%mesg%tag = task%id*tag_num + mod(task%seq,tag_num)
   task%mesg%sender = task%rank
   call task%mesg%request
 END SUBROUTINE new_request

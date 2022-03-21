@@ -13,7 +13,7 @@ module composition_mod
 
     type, public :: composition_type
         logical :: initialised
-        integer :: nel, nlevels, nmolec
+        integer :: nel, nlevels, nmolec, verbose
         real(dp) :: xmy, suma, sumh, grph, summy, tmolim, molh
         type(element_type),    allocatable :: elements(:)
         type(level_type),      allocatable :: levels(:)
@@ -292,6 +292,7 @@ contains
         read(absdat,101) nkomp,nextl,nutzl,nextt,nutzt,null
 
         allocate(self%trans(nkomp))
+        self%trans%verbose = self%verbose
 
         do i=1, nkomp
             trans => self%trans(i)

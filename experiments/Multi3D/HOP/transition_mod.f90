@@ -10,7 +10,7 @@ module transition_mod
     private
     
     type, public :: transition_type
-        integer :: j, k, ntt, nnu
+        integer :: j, k, ntt, nnu, verbose
         type(level_type) :: level
         class(particle_type), pointer :: ion
         real(dp) :: mint, maxt, minl, maxl
@@ -217,7 +217,7 @@ subroutine interp_xkap(self, abslte, lam, temp, teta, fakt)
             end where
         endif
 
-        if (.not. all(in_bounds)) then
+        if (.not. all(in_bounds) .and. self%verbose > 1) then
             print *, 'temperature out of bounds in continuum ', self%key
             print *, 'this could be a problem, please check'
         endif

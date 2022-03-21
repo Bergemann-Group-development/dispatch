@@ -61,7 +61,7 @@ SUBROUTINE init(self, task_list, name)
   class(link_t), pointer:: link, next
   !real(4) :: origin(3)=[0.0,0.0,0.0]
   integer :: iostat, k, ip
-  integer :: mpi_dims(3)=[1,1,1]
+  integer :: mpi_dims(3)
   integer :: patches_per_mpi(3)=[1,1,1]
   integer :: dims(3)=[1,1,1]
   integer :: verbose=1
@@ -72,6 +72,9 @@ SUBROUTINE init(self, task_list, name)
   if (associated(task_list)) return
   call trace%begin('read_external_t%init')
   call io%header ('read_external_t%init')
+  ! default values
+  mpi_dims = [1,1,mpi%size]
+  dims = mpi_dims
   !-----------------------------------------------------------------------------
   ! The first thread reads the namelist parameters and saves them
   !-----------------------------------------------------------------------------
@@ -84,6 +87,11 @@ SUBROUTINE init(self, task_list, name)
   end if
   call io%namelist_warning ('atmos_params', iostat)
   write (io%namelist, atmos_params)
+
+  if (any(mpi_dims > dims)) then
+    print *, 'More mpi ranks requested than spatial atmosphere splits. Stopping...'
+    stop
+  endif
 
   self%dims = dims
   self%verbose = verbose
@@ -107,8 +115,7 @@ SUBROUTINE init(self, task_list, name)
   self%position = 0.5*self%size! + self%origin
 
   !===============================================================================
-  if (mpi%size==1) &
-    mpi_dims = 1
+  if (mpi%size==1) mpi_dims = 1
   !-----------------------------------------------------------------------------
   ! Generate a (periodic) MPI geometry, with dims specified in the input file,
   ! or assigned automatically by mpi_coords%init.
@@ -197,11 +204,11 @@ SUBROUTINE init(self, task_list, name)
   do while (associated(link))
     next => link%next
     if (link%task%is_set (bits%external)) then
-      call link%remove_nbor_list2 (link%nbor)
+      !call link%remove_nbor_list2 (link%nbor)
       call self%task_list%remove (link)
       call link%task%dealloc()
-      deallocate (link%task)
-      deallocate (link)
+      !deallocate (link%task)
+      !deallocate (link)
     end if
     link => next
   end do

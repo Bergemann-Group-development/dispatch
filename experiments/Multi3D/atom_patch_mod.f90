@@ -69,8 +69,8 @@ module atom_patch_mod
     call trace%begin('atom_patch_t%atom_patch_pre_init')
     call self%m3d_patch_t%pre_init()
     call self%append_to_task_list()
-    call self%set_nv_and_nw(0, 0)
     call self%pre_init_atom()
+    call self%set_nv_and_nw(self%atom%nlevel, 2)
 
     do n=1, self%n_nu
       allocate(opac)
@@ -107,11 +107,11 @@ module atom_patch_mod
     character(len=128), save :: atom_file='./input_multi3d/atoms/atom.ba06'
     real(8), save :: qnorm=10.0
     integer :: iostat
-    namelist /atom_params/ atom_file, qnorm, convlim
+    integer, save:: verbose=0
+    namelist /atom_params/ atom_file, qnorm, convlim, verbose
     !-----------------------------------------------------------------------------
     call trace%begin('atom_patch_t%pre_init_atom')
     if (first_time) then
-      write (*,*) ' - Reading atom'
       rewind (io%input)
       read (io%input, atom_params, iostat=iostat)
       if (iostat > 0) then
@@ -121,6 +121,8 @@ module atom_patch_mod
       call io%namelist_warning ('atom_params', iostat)
       write (io%namelist, atom_params)
 
+      sp%verbose = verbose
+      if (verbose) write (*,*) ' - Reading atom'
       call read_atom(atom, atom_file, qnorm)
       call sp%init(atom%line, atom%cont, atom%qnorm)
       atom%sp = sp
@@ -151,6 +153,9 @@ module atom_patch_mod
     ne   => self%m3d_parent%mem(:,:,:,self%i_ne,            self%it,1)
     temp => self%m3d_parent%mem(:,:,:,self%i_temp,          self%it,1)
     nh   => self%m3d_parent%mem(:,:,:,self%i_nh1:self%i_nh6,self%it,1)
+
+    atom%nstar => self%mem(:,:,:,:,self%it,1)
+    atom%n     => self%mem(:,:,:,:,self%it,2)
 
     call atom%compute_line_damping(ne, temp, nh)
     call self%composition%get_totn(trim(atom%id), atom%abnd, atom%totn)
@@ -223,7 +228,7 @@ module atom_patch_mod
     class(atom_patch_t) :: self
     ! --------------------------------------------------------------------------
     call trace%begin('atom_patch_t%atom_patch_post_update')
-    if (self%verbose > 1) then
+    if (self%verbose > 0) then
       call io%lock%set
        write(*,'(F5.1, L2, A12, 1(I4), 3(ES15.7))') &
          self%time, self%finished, trim(self%kind), self%patch%id, &

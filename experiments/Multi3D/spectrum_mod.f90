@@ -10,7 +10,7 @@ module spectrum_mod
     !-------------------------------------------------------------------------------
     type spectrum_type
         ! total number of frequencies
-        integer :: nnu
+        integer :: nnu, verbose
         ! maximum number of active lines or continua at any given frequency
         integer :: maxal,maxac
         ! frequency [Hz] and frequency integration weights
@@ -225,7 +225,9 @@ module spectrum_mod
       sp%maxac=maxval(sp%nac)
       sp%maxal=maxval(sp%nal)
 
-      write(*,'(a,I0,a)') 'initialise_spectrum: frequency grid has ',sp%nnu,' points.'
+      if (sp%verbose>0) then
+         write(*,'(a,I0,a)') 'initialise_spectrum: frequency grid has ',sp%nnu,' points.'
+      endif
   
     end subroutine initialise_spectrum
     !---------------------------------------------------------------------

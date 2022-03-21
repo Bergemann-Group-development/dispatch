@@ -125,11 +125,18 @@ END SUBROUTINE ray_patch_pre_init
 !===============================================================================
 SUBROUTINE set_freq_indices (self)
   class(ray_patch_t) :: self
-  integer :: fs, fe, nv
+  integer :: fs, fe, nv, md
   !-----------------------------------------------------------------------------
+  if (self%kind == 'out_rad') return
   nv = self%sp%nnu / self%n_nu
-  fs = (self%i_nu-1) * nv + 1
-  if (self%i_nu == self%n_nu) nv = nv + mod(self%sp%nnu, self%n_nu)
+  md = mod(self%sp%nnu, self%n_nu)
+
+  fs = (self%i_nu-1) * nv + 1 + min(md, self%i_nu-1)
+
+  if (self%i_nu <= md) then
+    nv = nv + 1
+  endif
+
   fe = fs + nv - 1
 
   self%fs = fs
@@ -161,13 +168,22 @@ END SUBROUTINE comp_vproj
 !===============================================================================
 SUBROUTINE ray_patch_init (self)
   class(ray_patch_t) :: self
+  real(8) :: offset
   ! ----------------------------------------------------------------------------
+  if (self%is_set(bits%virtual)) then
+    offset = self%dir * (self%n(3)-1)/2 * self%ds(3)
+    self%position(3) = self%position(3) + offset
+    self%origin(3) = self%origin(3) + offset
+    self%size(3) = self%ds(3)
+    self%n(3) = 1
+    self%ng(3) = 0
+  elseif (self%i_mu > 0) then
+    call os%allocate(self%vproj, [self%n(1), self%n(2), self%n(3)])
+  endif
+
   call self%m3d_patch_t%init()
   call self%check_topbot()
 
-  if (self%i_mu > 0) then
-    call os%allocate(self%vproj, [self%n(1), self%n(2), self%n(3)])
-  endif
 END SUBROUTINE ray_patch_init
 
 !===============================================================================
@@ -268,12 +284,19 @@ SUBROUTINE ray_nbor_relations(self, another, needed, needs_me, download)
   call trace%begin ('ray_patch_t%ray_nbor_relations')
   call self%m3d_patch_t%nbor_relations(another, needed, needs_me, download)
 
+  if (self%kind == 'net_opac' .or. self%kind == 'angle_rad') then
+    call self%set(bits%boundary)
+  endif
+
   if (needed .or. needs_me) then
     select type(another)
     class is(ray_patch_t)
       if (self%kind==another%kind) then
         if (self%is_upstream(another)) then
           needs_me = .false.
+          if (self%is_set(bits%virtual)) then
+            call self%set(bits%external)
+          endif
         elseif (another%is_upstream(self)) then
           needed = .false.
           download = .false.
@@ -341,8 +364,8 @@ SUBROUTINE ray_pack (self)
     end do
   end do
   !-----------------------------------------------------------------------------
-  if (io%verbose > 2) &
-    write (io_unit%log,*) self%id, 'after pack', minval(self%mem(:,:,:,1,self%it,1))
+  if (self%verbose > 2) &
+    print *, self%id, 'packing message on rank', mpi%rank
   call trace%end (itimer)
 END SUBROUTINE ray_pack
 
@@ -384,7 +407,8 @@ SUBROUTINE ray_unpack (self, mesg)
   ! Copy array data from the buffer to the time slot, under time slot lock
   !-----------------------------------------------------------------------------
   lock => self%mem_lock(header%it)
-  iz = merge(self%ui(3), self%li(3), self%dir > 0)
+  !iz = merge(self%ui(3), self%li(3), self%dir > 0)
+  iz=1
                                                         call lock%set ('unpack')
   do iw=1,self%nw
     do iv=1,self%nv
@@ -437,10 +461,9 @@ SUBROUTINE ray_unpack (self, mesg)
       self%is_set (bits%swap_request), &
       self%wc_last
     1 format(a,3i6,f12.6,2x,5l1,f12.1)
-    if (io%verbose > 2) then
-      write (io_unit%log,*) &
-        self%id, 'after unpack', minval(self%mem(:,:,:,1,self%it,1))
-    end if
+  end if
+  if (self%verbose > 2) then
+    print *, self%id, 'unpacking message on rank', mpi%rank
   end if
   !-----------------------------------------------------------------------------
     call trace%end (itimer)
@@ -556,9 +579,9 @@ SUBROUTINE ray_header_to_patch (self, head)
   self%out_next   = head%out_next
   self%print_next = head%print_next
   self%dtime      = head%dtime
-  self%position   = head%position
+  !self%position   = head%position
   self%velocity   = head%velocity
-  self%size       = head%size
+  !self%size       = head%size
   self%rank_steps = head%rank_steps
   self%it         = head%it
   self%nv         = head%nv

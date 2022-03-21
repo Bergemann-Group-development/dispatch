@@ -19,7 +19,7 @@ module m3d_patch_mod
     !USE scaling_mod
     USE trace_mod
     USE mpi_mod
-    !USE omp_mod
+    USE omp_mod
     USE omp_lock_mod
     USE shared_mod
     !USE omp_timer_mod
@@ -150,6 +150,7 @@ module m3d_patch_mod
       call self%lock%init('m3d')
     end if
     call self%set_initial_time()
+    call self%set_maxiter()
   
     self%on = on
     self%in_task_list = .false.
@@ -160,6 +161,7 @@ module m3d_patch_mod
     ! ----------------------------------------------------------------------------
     ! relevant synchronization items for cartesian setup
     ! ----------------------------------------------------------------------------
+    self%master_id  = self%patch%id
     self%n          = self%patch%n
     self%ng         = 0
     self%ipos       = self%patch%ipos
@@ -249,13 +251,12 @@ module m3d_patch_mod
     integer :: li(3), ui(3)
     integer, save:: itimer=0
     ! ----------------------------------------------------------------------------
+    if (self%is_set(bits%external)) return
     call trace%begin ('m3d_patch_t%m3d_init', itimer=itimer)
     call self%gpatch_t%init()
     call self%init_level()
-    call self%set_maxiter()
 
     self%mem = tiny(1.)
-    self%gn = self%n + 2*self%ng
 
     li = self%li
     ui = self%ui
@@ -331,9 +332,9 @@ module m3d_patch_mod
     case ('cont_opac')
       self%maxiter = self%m3d_parent%maxiter
     case ('back_opac')
-      self%maxiter = ilambd + 1
+      self%maxiter = min(maxiter, ilambd + 1)
     case ('mean_rad')
-      self%maxiter = ilambd
+      self%maxiter = min(maxiter - 1, ilambd)
     case ('angle_rad', 'net_opac')
       self%maxiter = ilambd + maxiter - 1
     end select
@@ -458,10 +459,6 @@ module m3d_patch_mod
       needed = .false.
     endif
 
-    if (another%rank /= self%rank) then
-      call self%set(bits%boundary)
-    endif
-
     if (self%rank == mpi%rank) then
       call self%clear(bits%external)
       if (another%rank /= mpi%rank) then
@@ -489,14 +486,14 @@ module m3d_patch_mod
       select type(another)
       class is(m3d_patch_t)
         if (another%kind == self%kind) then
-          if (another%patch%id == self%patch%id) then
+          if (another%master_id == self%master_id) then
             needed=.false. ; needs_me=.false. ; download=.false.
           elseif((another%i_mu /= self%i_mu) .or. (another%i_nu /= self%i_nu)) then
             needed=.false. ; needs_me=.false. ; download=.false.
           endif
         else
           download=.false.
-          if (another%patch%id /= self%patch%id) then
+          if (another%master_id /= self%master_id) then
             needed=.false. ; needs_me=.false.
           else
             if(self%i_mu > 0 .and. another%i_mu > 0) then
@@ -513,7 +510,7 @@ module m3d_patch_mod
           endif
         endif
       class default
-        if (another%id == self%patch%id) then
+        if (another%id == self%master_id) then
           needs_me=.false. ; download=.false.
         else
           needed=.false. ; needs_me=.false. ; download=.false.
@@ -535,6 +532,7 @@ module m3d_patch_mod
       if (self%maxiter >= 0) then
         allocate (halo_m3d_t:: link)
         call link%init()
+        call link%init_verbose (self%verbose-2)
         link%task => self
         self%link => link
         call self%task_list%append (link)
@@ -551,7 +549,7 @@ module m3d_patch_mod
     real(8):: distance(3)
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%info')
-    if (verbose < 3) then
+    if (verbose < 5) then
       call self%task%task_info()
       nbor => self%nbor
       do while (associated(nbor))
@@ -755,8 +753,6 @@ module m3d_patch_mod
     class is (m3d_patch_t)
       if (.not. target%initialized) call target%init()
     end select
-    !.............................................................................
-    call self%set_filled (target)
     !-----------------------------------------------------------------------------
     ! loop over nbors
     !-----------------------------------------------------------------------------
@@ -776,7 +772,6 @@ module m3d_patch_mod
     !-----------------------------------------------------------------------------
     call self%task%bndries()
     call self%task%periodic_grid()
-    call self%get_filled (target)
     call self%remove_nbor_list (tnbors)
     call trace%end (itimer)
   END SUBROUTINE download

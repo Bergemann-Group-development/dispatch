@@ -143,7 +143,9 @@ SUBROUTINE back_opac_update (self, chi, eta)
     call os%deallocate(Jold)
   endif
   
-  if (self%iter == self%maxiter-1) then
+  if (self%maxiter==0) then
+    self%time = io%end_time
+  elseif (self%iter == self%maxiter-1) then
     self%time = self%time + (maxiter - self%iter - 1)*self%dtime
   endif
 

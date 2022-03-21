@@ -90,6 +90,9 @@ SUBROUTINE set_carlson_quadratures (quad_scheme, vec, wts, up_and_down)
   logical, optional :: up_and_down
   logical :: mirror=.true.
   ! ----------------------------------------------------------------------------
+  if (present(up_and_down)) then
+    mirror = up_and_down
+  endif
 
   ! define the different angle sets
   select case (trim(quad_scheme))
@@ -178,10 +181,6 @@ SUBROUTINE set_carlson_quadratures (quad_scheme, vec, wts, up_and_down)
     print *, 'Quadrature keyword "'// trim(quad_scheme) // '" not recognized. Stopping...'
     stop
   end select
-
-  if (present(up_and_down)) then
-    mirror = up_and_down
-  endif
 
   if (mirror) then
     ! Normalize, so that integration over 8 octants yields 4 pi

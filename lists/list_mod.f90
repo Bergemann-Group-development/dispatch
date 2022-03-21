@@ -2091,20 +2091,22 @@ SUBROUTINE check_hash_table (self, label)
       key = link%task%key
       call self%hash_table%get_ptr (key, ptr)
       assoc = associated(ptr)
-      select type (ptr)
-      class is (link_t)
-        write (stdlog,'(a,i6,4i3,l3,i6,2x,a)') &
-          'check_hash_table:', link%task%id, key, &
-          link%task%is_set (bits%virtual), ptr%task%id, 'link'
-      class is (patch_t)
-        write (stdlog,'(a,i6,4i3,l3 ,i6,2x,a)') &
-          'check_hash_table:', link%task%id, key, &
-          link%task%is_set (bits%virtual), ptr%id, 'patch'
-      class default
-        write (stdlog,'(a,i6,4i3,l3,l1,2x,a)') &
-          'check_hash_table:', link%task%id, key, &
-          link%task%is_set (bits%virtual), assoc, 'other'
-      end select
+      if (assoc) then
+        select type (ptr)
+        class is (link_t)
+          write (stdlog,'(a,i6,4i3,l3,i6,2x,a)') &
+            'check_hash_table:', link%task%id, key, &
+            link%task%is_set (bits%virtual), ptr%task%id, 'link'
+        class is (patch_t)
+          write (stdlog,'(a,i6,4i3,l3 ,i6,2x,a)') &
+            'check_hash_table:', link%task%id, key, &
+            link%task%is_set (bits%virtual), ptr%id, 'patch'
+        class default
+          write (stdlog,'(a,i6,4i3,l3,l1,2x,a)') &
+            'check_hash_table:', link%task%id, key, &
+            link%task%is_set (bits%virtual), assoc, 'other'
+        end select
+      endif
       link => link%next
     end do
     call trace%end ()
@@ -3196,6 +3198,7 @@ SUBROUTINE send_to_vnbors (self, link)
   logical, allocatable:: active(:)
   integer, save, allocatable:: sequence(:)
   integer, save:: itimer=0
+  integer, parameter:: tag_num=10
   !-----------------------------------------------------------------------------
   ! Error traps
   !-----------------------------------------------------------------------------
@@ -3257,7 +3260,7 @@ SUBROUTINE send_to_vnbors (self, link)
     if (task%seq == 0) then
       tag = 0
     else
-      tag = task%id*100 + mod(task%seq,100)
+      tag = task%id*tag_num + mod(task%seq,tag_num)
     end if
   else
     tag = task%id

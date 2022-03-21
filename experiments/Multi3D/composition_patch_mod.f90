@@ -1,5 +1,7 @@
 module composition_patch_mod
   USE io_mod
+  USE mpi_mod
+  USE omp_mod
   USE gpatch_mod
   USE m3d_patch_mod,   only: m3d_patch_t
   USE composition_mod, only: composition_type
@@ -63,13 +65,12 @@ SUBROUTINE composition_pre_init (self)
     call io%namelist_warning ('composition_params', iostat)
     write (io%namelist, composition_params)
 
-    write (*,*) ' - Initializing the NEW opacity package'
+    if (verbose) write (*,*) ' - Initializing the NEW opacity package'
+    composition%verbose = verbose
     call composition%init(absdat_file, abund_file)
 
     first_time = .false.
   endif
-
-  self%verbose = verbose
 
   ! copy composition with all the information from the abund
   ! and absdat file into dispackage to make it threadprivate
@@ -174,7 +175,7 @@ SUBROUTINE composition_patch_nbor_relations(self, another, needed, needs_me, dow
   call self%m3d_patch_t%nbor_relations(another, needed, needs_me, download)
 
   if (needed .or. needs_me) then
-    if (another%id /= self%patch%id) then
+    if (another%id /= self%master_id) then
       if (another%kind=='back_opac' .or. another%kind=='atom_patch') then
         needed = .false.
       else

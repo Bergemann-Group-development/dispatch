@@ -12,6 +12,7 @@ MODULE os_mod
   type, public:: os_t
     integer:: verbose=0
     real(8):: gb=0.0
+    real(8):: max_mem=0.0
   contains
     procedure:: mkdir
     procedure:: exists_dir
@@ -293,6 +294,10 @@ SUBROUTINE gb_mem (self, bits, count)
     !$omp atomic write
     self%gb = lgb
   end if
+  if (self%gb > self%max_mem) then
+    !$omp atomic write
+    self%max_mem = self%gb
+  endif
 END SUBROUTINE gb_mem
 
 !===============================================================================
