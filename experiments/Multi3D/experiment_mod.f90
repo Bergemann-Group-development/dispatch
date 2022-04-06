@@ -88,10 +88,14 @@ END SUBROUTINE bndries
 SUBROUTINE update (self)
   class(experiment_t):: self
   integer :: it_l, in_l, in_lte_l
+  integer :: pcheck(3)
   integer, save:: itimer=0
   !----------------------------------------------------------------------------
   call trace%begin('experiment_t%update', itimer=itimer)
   !call self%solver_t%update
+  pcheck = [1,1,1]
+  write(*,'(F5.1, A12, I4, 12(ES15.7))') self%time, trim(self%kind), self%id, &
+  self%mem(self%li(1)+pcheck(1)-1,self%li(2)+pcheck(2)-1,self%li(3)+pcheck(3)-1,:,1,1)
 
   call self%post_update()
   call trace%end (itimer)

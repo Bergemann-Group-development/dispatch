@@ -59,11 +59,12 @@ module rate_patch_mod
   
   !===============================================================================
   SUBROUTINE rate_patch_update (self)
+    use mconst, only:cc
     class(rate_patch_t) :: self
-    real(4), dimension(:,:,:,:), pointer :: Inu, gamma_ij, gamma_ji, chi_l, chi_c, eta_l, eta_c, Psi
-    real(4), dimension(:,:,:,:), contiguous, pointer :: Ieff
-    real(4), dimension(:,:,:), pointer, contiguous :: temp
-    integer :: fs, fe, i,j,k,f
+    real(4), dimension(:,:,:,:), pointer :: gamma_ij, gamma_ji
+    real(4), dimension(:,:,:), pointer :: Inu, chi_l, chi_c, eta_l, eta_c, Psi
+    real(4), dimension(:,:,:), pointer, contiguous :: temp, zero
+    integer :: f, f2, ff
     integer, save:: itimer=0
     !-----------------------------------------------------------------------------
     call self%pre_update()
@@ -73,43 +74,65 @@ module rate_patch_mod
     
     call trace%begin('rate_patch_t%rate_patch_update', itimer=itimer)
 
-    fs = self%fs
-    fe = self%fe
-
-    Inu => self%rad%authority_mem(:,:,:,:,self%rad%it,self%rad%i_inu)
-    Psi => self%rad%Psi
-
-    chi_c => self%cont_opac%mem(:,:,:,:,self%it,self%cont_opac%i_chi)
-    eta_c => self%cont_opac%mem(:,:,:,:,self%it,self%cont_opac%i_eta)
-
-    chi_l => self%line_opac%mem(:,:,:,:,self%it,self%line_opac%i_chi)
-    eta_l => self%line_opac%mem(:,:,:,:,self%it,self%line_opac%i_eta)
-
     temp => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_temp, self%it,1)
-    
-    call os%allocate(Ieff, shape(Psi))
-    
-    do f=1, self%rad%nv
-    do k=1, self%n(3)
-    do j=1, self%n(2)
-    do i=1, self%n(1)
-      Ieff(i,j,k,f) = Inu(i,j,k,f) - Psi(i,j,k,f) * (eta_c(i,j,k,f) + eta_l(i,j,k,f))
-    end do
-    end do
-    end do
-    end do
-
     gamma_ij => self%mem(:,:,:,:, self%it, self%i_Gij)
     gamma_ji => self%mem(:,:,:,:, self%it, self%i_Gji)
 
+    ! Zero the rates etc
+    gamma_ij = 0.0d0
+    gamma_ji = 0.0d0
+    
     if (self%iter == 0) then
       call self%comp_vproj(self%vproj)
+      self%vproj = (1 + self%vproj/cc) / self%atom%doppler_factor
     endif
 
-    call self%atom%add_all_gammas(fs, fe, temp, self%vproj, Ieff, Psi, &
-                                  chi_l, chi_c, eta_l, eta_c, gamma_ij, gamma_ji)
+    call os%allocate(zero, shape(temp))
+    zero = 0.0
 
-    call os%deallocate(Ieff)
+    if (.not. associated(self%cont_opac)) then
+      chi_c => zero
+      eta_c => zero
+    endif
+
+    if (.not. associated(self%line_opac)) then
+      chi_l => zero
+      eta_l => zero
+    endif
+
+    do f=1, self%rad%nv
+      Inu => self%rad%authority_mem(:,:,:,f,self%rad%it,self%rad%i_inu)
+      Psi => self%rad%Psi(:,:,:,f)
+
+      ff = self%fs + f - 1
+
+      if (associated(self%cont_opac)) then
+        if (ff >= self%cont_opac%fs .and. ff <= self%cont_opac%fe) then
+          f2 = ff - self%cont_opac%fs + 1
+          chi_c => self%cont_opac%mem(:,:,:,f2,self%it,self%cont_opac%i_chi)
+          eta_c => self%cont_opac%mem(:,:,:,f2,self%it,self%cont_opac%i_eta)
+        else
+          chi_c => zero
+          eta_c => zero
+        endif
+      endif
+  
+      if (associated(self%line_opac)) then
+        if (ff >= self%line_opac%fs .and. ff <= self%line_opac%fe) then
+          f2 = ff - self%line_opac%fs + 1
+          chi_l => self%line_opac%mem(:,:,:,f2,self%it,self%line_opac%i_chi)
+          eta_l => self%line_opac%mem(:,:,:,f2,self%it,self%line_opac%i_eta)
+        else
+          chi_l => zero
+          eta_l => zero
+        endif
+      endif
+
+      call self%atom%add_all_gammas(ff, temp, self%vproj, Inu, Psi, &
+           chi_l, chi_c, eta_l, eta_c, gamma_ij, gamma_ji)
+    end do
+
+    call os%deallocate(zero)
     call trace%end(itimer)
     if (.not. self%finished) call self%post_update()
   END SUBROUTINE rate_patch_update

@@ -238,6 +238,9 @@ SUBROUTINE same (self, tgt, src, all_tgt, all_src, only)
   call self%info ('same', tgt, src, all_tgt, all_src, only)
   tm => tgt%mesh                             ! tgt mesh
   sm => src%mesh                             ! src mesh
+  if (.not. associated(sm)) then
+    print *, 'Mesh of ', trim(src%kind), src%id, 'has not been allocated'
+  endif
   do i=1,3
     om(i)%p => sm(i)
   end do

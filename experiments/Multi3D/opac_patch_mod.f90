@@ -36,7 +36,7 @@ module opac_patch_mod
   integer :: i_abs=3, i_sca=4
   class(atom_type), pointer :: atom => null()
   class(composition_type), pointer :: composition
-  real(8), dimension(:,:,:,:), pointer, contiguous :: wphi
+  real(4), dimension(:,:,:,:), pointer, contiguous :: wphi
   class(m3d_patch_t), pointer :: rad => null()
   class(m3d_patch_t), pointer :: mean_rad => null()
   contains
@@ -57,16 +57,39 @@ contains
 !===============================================================================
 SUBROUTINE opacity_pre_init (self)
   class(opacity_t), target:: self
+  integer :: nw, fs, fe
   ! ----------------------------------------------------------------------------
   call trace%begin('opacity_t%opacity_pre_init')
   call self%ray_patch_t%pre_init()
+
+  if (self%kind == 'cont_opac' .or. self%kind == 'line_opac') then
+    if (self%kind == 'cont_opac') then
+      fs = max(minval(self%atom%cont%ired),  self%fs)
+      fe = min(maxval(self%atom%cont%iblue), self%fe)
+    else
+      fs = max(minval(self%atom%line%ired),  self%fs)
+      fe = min(maxval(self%atom%line%iblue), self%fe)
+    endif
+
+    if (fs >= self%fe .or. fe <= self%fs) then
+      ! do not add to task list
+      call trace%end()
+      return
+    else
+      self%fs = fs
+      self%fe = fe
+    endif
+  endif
+
   call self%append_to_task_list()
 
   if (self%kind == 'back_opac') then
-    call self%set_nv_and_nw (self%fe-self%fs+1,4)
+    nw = 4
   else
-    call self%set_nv_and_nw (self%fe-self%fs+1,2)
+    nw = 2
   endif
+
+  call self%set_nv_and_nw (self%fe-self%fs+1,nw)
 
   if (self%kind == 'net_opac') then
     if (self%out_ray) then
@@ -179,7 +202,9 @@ SUBROUTINE line_opac_update (self, chi, eta)
 
   if (self%iter == 0) then
     call self%comp_vproj(self%vproj)
-    call self%atom%compute_wphi(self%fs, self%fe, self%sp%nu, temp, self%vproj, self%wphi)
+    if (.not. self%out_ray) then
+      call self%atom%compute_wphi(self%fs, self%fe, self%sp%nu, temp, self%vproj, self%wphi)
+    endif
   endif
   call self%atom%add_line_opacities(self%fs, self%fe, self%sp%nu, temp, self%vproj, chi, eta)
   call trace%end(itimer)
@@ -194,7 +219,7 @@ SUBROUTINE net_opac_update (self)
   real(4), dimension(:,:,:,:,:), pointer :: mem1
   real(4), dimension(:,:,:,:,:), pointer :: chi, eta, Snu
   integer, save:: itimer=0
-  integer :: iw,it,f
+  integer :: iw,it, f, fs, fe, fn
   !-----------------------------------------------------------------------------
   call trace%begin('opacity_t%net_opac_update', itimer=itimer)
   mem => self%authority_mem
@@ -208,11 +233,14 @@ SUBROUTINE net_opac_update (self)
       nbtask => nbor%task
       select type (nbtask)
       class is (opacity_t)
+      fs = nbtask%fs - self%fs + 1
+      fe = fs + nbtask%nv - 1
         do iw=1, self%nw
         do it=1, self%nt
         !$omp simd
-        do f=1, self%nv
-          mem(:,:,:,f,it,iw) = mem(:,:,:,f,it,iw) + nbtask%mem(:,:,:,f,it,iw)
+        do f=fs,fe
+          fn = f - fs + 1
+          mem(:,:,:,f,it,iw) = mem(:,:,:,f,it,iw) + nbtask%mem(:,:,:,fn,it,iw)
         end do
         end do
         end do
@@ -284,4 +312,5 @@ SUBROUTINE opacity_nbor_relations(self, another, needed, needs_me, download)
   endif
   call trace%end()
 END SUBROUTINE opacity_nbor_relations
-  end module opac_patch_mod
+
+end module opac_patch_mod

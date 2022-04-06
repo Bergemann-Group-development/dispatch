@@ -1,5 +1,7 @@
 !---------------------------------------------------------------------
 module spectrum_mod 
+    USE timer_mod
+    USE trace_mod
     implicit none
     !---------------------------------------------------------------------
     !
@@ -30,7 +32,7 @@ module spectrum_mod
 
   contains
   
-    !---------------------------------------------------------------------
+    !===============================================================================
     subroutine initialise_spectrum(sp, line, cont, qnorm)
       use m3io_mod,only:stop
       use mmath
@@ -51,7 +53,10 @@ module spectrum_mod
       integer :: iflag,nnutmp,k,impi_error, nline, ncont
       !real(8),dimension(:,:),allocatable :: work,coef
       !real(8),dimension(:)  ,allocatable :: break
-      real(8),dimension(:)  ,allocatable :: dalpha_dnu,alpha_fromfile,nu_fromfile
+      real(8),dimension(:)  ,allocatable :: dalpha_dnu,alpha_fromfile,nu_fromfile, alpha
+      integer, save:: itimer=0
+      !-----------------------------------------------------------------------------
+      call trace%begin('spectrum_type%initialise_spectrum', itimer=itimer)
   
       nline = size(line, 1)
       ncont = size(cont, 1)
@@ -143,7 +148,7 @@ module spectrum_mod
             ! interpolate from given values
             if (allocated(dalpha_dnu)) deallocate(dalpha_dnu)
             allocate( dalpha_dnu(cnt%nnu) )
-            call hermite_derivative(dalpha_dnu, cnt%nu, cnt%alpha)
+            call hermite_derivative(dalpha_dnu, cnt%nu, dble(cnt%alpha))
             
             if (allocated(alpha_fromfile)) deallocate(alpha_fromfile)
             allocate( alpha_fromfile(cnt%nnu) )
@@ -164,8 +169,12 @@ module spectrum_mod
             allocate(   cnt%alpha(ired:iblue) )
   
             ! fill new cross sections 
-            call hermite_interpolation(cnt%alpha, cnt%nu, nu_fromfile, alpha_fromfile, dalpha_dnu)
-  
+            allocate(alpha(cnt%nnu))
+            alpha = dble(cnt%alpha)
+            call hermite_interpolation(alpha, cnt%nu, nu_fromfile, alpha_fromfile, dalpha_dnu)
+            cnt%alpha = real(alpha)
+            deallocate(alpha)
+
          case default
   
             call stop('initialise_spectrum : cont(i)%bf_type' &
@@ -228,7 +237,7 @@ module spectrum_mod
       if (sp%verbose>0) then
          write(*,'(a,I0,a)') 'initialise_spectrum: frequency grid has ',sp%nnu,' points.'
       endif
-  
+      call trace%end(itimer)
     end subroutine initialise_spectrum
     !---------------------------------------------------------------------
 

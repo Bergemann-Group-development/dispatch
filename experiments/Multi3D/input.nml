@@ -29,25 +29,27 @@
 !                    omp_init=t periodic=t,t,f /
 !&atmos_params       verbose=1 atmos_file='./input_multi3d/atmos/atmos.sun_MARCS' npatches=1 /
 !&atmos_params       verbose=1 atmos_file='./input_multi3d/atmos/Sun.5x5x230' npatches=1 read_Multi=T/
-&atmos_params       verbose=1 atmos_file='./input_multi3d/atmos/t5777g44m0005_20.5x5x230' read_Multi=T/
-!&atmos_params       verbose=1 npatches=1 read_Stagger=T/
+!&atmos_params       verbose=1 atmos_file='./input_multi3d/atmos/t5777g44m0005_20.5x5x230' read_Multi=T dims=1,1,1/
+&atmos_params       verbose=1 read_Stagger=T patches_per_mpi=1,1,1/
 &stagger_params     stagger_file='/mnt/beegfs/gemini/groups/bergemann/users/hoppe/Stagger/grid/t5777g44m00/t5777g44m0005'
-                    snap=20/
+                    snap=20, dims=10,10,230/
 &boundary_params    verbose=0 condition=1 /
 &download_params    check_filled=F verbose=0 /
-!&atom_params        atom_file='./input_multi3d/atoms/atom.fe607a' qnorm=10.0 convlim=1d-3 verbose=2 /
-!&atom_params        atom_file='./input_multi3d/atoms/atom.ba06' qnorm=10.0 convlim=1d-3 /
-&atom_params        atom_file='./input_multi3d/atoms/atom.o41f' qnorm=10.0 convlim=1d-3 verbose=2/
+&atom_params        atom_file='./input_multi3d/atoms/atom.fe607a' convlim=1d-3 verbose=2 exclude_trace_cont=F use_atom_abnd=T qnorm=10.0/
+!&atom_params        atom_file='./input_multi3d/atoms/atom.ba06' convlim=1d-3 verbose=2/
+!&atom_params        atom_file='./input_multi3d/atoms/atom.h20' convlim=1d-2/
+!&atom_params        atom_file='./input_multi3d/atoms/atom.o41f' convlim=1d-2 verbose=2/
 &radiation_params   save_output=T /
 &timer_params       sec_per_report = 1000 /
 &task_list_params   verbose=0 check_nbor_consistency=F /
 &dispatcher0_params verbose=0 /
 &task_params        verbose=0 mpi_init_ids=F /
 &halo_params        check_filled=F /
-&m3d_params         fcheck=1 pcheck=1,1,-1 linecheck=1, n_nu=50 maxiter=0 verbose=2 ilambd=0
-                    quad_scheme='set_a2' long_scheme='set_a4'/
+&m3d_params         fcheck=31242 pcheck=1,1,-1 linecheck=1 n_nu=32 maxiter=0 verbose=3 ilambd=0 dynamic_memory=T
+!&m3d_params         fcheck=98 pcheck=1,1,-1 linecheck=1 n_nu=1 maxiter=0 verbose=2 ilambd=0 dynamic_memory=T
+                    quad_scheme='set_a2' long_scheme='set_a4' /
 !                    quad_scheme='disk_center' long_scheme='disk_center'/
-&composition_params verbose=0/
+&composition_params verbose=0 /
 &mpi_debug_params   debug=F /
 &mpi_mesg_params    verbose=0/
 &task_mesg_params   verbose=0 await_new=F /

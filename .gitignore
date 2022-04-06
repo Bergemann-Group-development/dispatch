@@ -28,3 +28,7 @@ fort.*
 .d/
 .vscode/
 experiments/Multi3D/out/*
+experiments/Multi3D/saved_outputs/*
+experiments/Multi3D/input_multi3d/*
+*.err
+*.log

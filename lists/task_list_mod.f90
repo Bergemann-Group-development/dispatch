@@ -164,8 +164,9 @@ SUBROUTINE init_levels (self)
   type(link_t), pointer:: link
   logical:: first_time=.true.
   integer, save:: levelmin, levelmax
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('task_list_t%init_levels')
+  call trace%begin ('task_list_t%init_levels', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Active task_list locking is needed only when AMR is on
   !-----------------------------------------------------------------------------
@@ -219,7 +220,7 @@ SUBROUTINE init_levels (self)
   write (io%output,'(1x,a,2i4)') &
     'AMR levels:  min, max = ', refine%levelmin, refine%levelmax
   call self%init_levelstats
-  call trace%end()
+  call trace%end(itimer)
 END SUBROUTINE init_levels
 
 !===============================================================================
@@ -306,8 +307,9 @@ SUBROUTINE init_queue (self)
   class(task_list_t):: self
   class(link_t), pointer:: link
   integer:: i, i0, i1, i2
+  integer, save :: itimer
   !-----------------------------------------------------------------------------
-  call trace%begin ('task_list_t%init_queue')
+  call trace%begin ('task_list_t%init_queue', itimer=itimer)
   link => self%head
   do while (associated(link))
     call link%task%clear(bits%ready)
@@ -348,7 +350,7 @@ SUBROUTINE init_queue (self)
   end if
   if (self%verbose > 0) &
     call self%print_queue_times ('init_queue')
-  call trace%end()
+  call trace%end(itimer)
 END SUBROUTINE init_queue
 
 !===============================================================================
@@ -417,7 +419,7 @@ SUBROUTINE update (self, head, test)
   !-----------------------------------------------------------------------------
   ! If the task is frozen, make sure it is marked "not ready", and then return
   !-----------------------------------------------------------------------------
-  if (task%is_set (bits%frozen) .or. task%finished) then
+  if (task%is_set (bits%frozen)) then
     call task%clear (bits%ready)
     call trace%end (itimer)
     return

@@ -26,16 +26,17 @@ contains
 
 !===============================================================================
 SUBROUTINE read_stagger_snapshot(ds, d, px, py, pz, ee, tt, ne)
-  real(4), intent(out) :: ds(3)
+  real(8), intent(out) :: ds(3)
   real(4), pointer, contiguous, dimension(:,:,:), intent(out) :: d, px, py, pz, ee
   real(4), pointer, contiguous, dimension(:,:,:), intent(out), optional :: tt, ne
   logical, save :: first_time=.true.
   character(len=128), save :: stagger_file='/lustre/astro/rhoppe/multi-3d/input/atmos/t5777g44m00/t5777g44m0005'
   character(len=128), save :: mesh_file, snap_file, data_file, aux_file
-  integer, save :: snap=20, inx=5, iny=5, inz=230
+  integer, save :: snap=20, dims(3)=[5,5,230]
   real(4), save :: zcut=1.5, ee_offset=3.2122 ! in Mm below the surface
   integer :: iostat, lunit, recl
   integer :: nx, ny, nz, nnz, m(3)
+  integer, save :: itimer
   real(4), pointer, contiguous, dimension(:) :: xx, yy, zm, zz
   real(4), pointer, contiguous, dimension(:) :: newx, newy, newz
   real(4), pointer, contiguous, dimension(:) :: xdn, dxidxup, dxidxdn, dx, dxdn
@@ -43,9 +44,9 @@ SUBROUTINE read_stagger_snapshot(ds, d, px, py, pz, ee, tt, ne)
   real(4), pointer, contiguous, dimension(:) :: zdn, dzidzup, dzidzdn, dz, dzdn
   real(4), pointer, contiguous, dimension(:,:,:) :: irho, ipx, ipy, ipz, iie, itemp, ilne
   real(4), pointer, contiguous, dimension(:,:,:) :: ppx, ppy, ppz
-  namelist /stagger_params/ stagger_file, snap, zcut, ee_offset, inx, iny, inz
+  namelist /stagger_params/ stagger_file, snap, zcut, ee_offset, dims
   !-----------------------------------------------------------------------------
-  call trace%begin('read_stagger_snapshot_mod%read_stagger')
+  call trace%begin('read_stagger_snapshot_mod%read_stagger', itimer=itimer)
 
   if (first_time) then
     first_time = .false.
@@ -161,20 +162,19 @@ SUBROUTINE read_stagger_snapshot(ds, d, px, py, pz, ee, tt, ne)
 
   zz = -zm(nnz-gz:gz+1:-1) ! flipping z-axis
 
-  call os%allocate(newx, [inx])
-  call os%allocate(newy, [iny])
-  call os%allocate(newz, [inz])
+  call os%allocate(newx, [dims(1)])
+  call os%allocate(newy, [dims(2)])
+  call os%allocate(newz, [dims(3)])
 
-  newx = linspace(xx(1), xx(nx), inx)
-  newy = linspace(yy(1), yy(ny), iny)
-  newz = linspace(zz(1), zz(nz), inz)
+  newx = linspace(xx(1), xx(nx), dims(1))
+  newy = linspace(yy(1), yy(ny), dims(2))
+  newz = linspace(zz(1), zz(nz), dims(3))
 
-  m = [inx, iny, inz]
-  call os%allocate(d, m)
-  call os%allocate(px, m)
-  call os%allocate(py, m)
-  call os%allocate(pz, m)
-  call os%allocate(ee, m)
+  call os%allocate(d,  dims)
+  call os%allocate(px, dims)
+  call os%allocate(py, dims)
+  call os%allocate(pz, dims)
+  call os%allocate(ee, dims)
 
   call linterpolate_3d(irho (:,:, nnz-gz:gz+1:-1), d,  xx, yy, zz, newx, newy, newz)
   call linterpolate_3d( ppx (:,:, nnz-gz:gz+1:-1), px, xx, yy, zz, newx, newy, newz)
@@ -186,13 +186,13 @@ SUBROUTINE read_stagger_snapshot(ds, d, px, py, pz, ee, tt, ne)
 
   if (present(tt)) then
     call transpose_stagger(itemp)
-    call os%allocate(tt, m)
+    call os%allocate(tt, dims)
     call linterpolate_3d(itemp(:,:, nnz-gz:gz+1:-1), tt, xx, yy, zz, newx, newy, newz)
   endif
 
   if (present(ne)) then
     call transpose_stagger(ilne)
-    call os%allocate(ne, m)
+    call os%allocate(ne, dims)
     ilne = exp(ilne - 3*log(uul))
     call linterpolate_3d(ilne(:,:, nnz-gz:gz+1:-1), ne, xx, yy, zz, newx, newy, newz)
   endif
@@ -205,11 +205,11 @@ SUBROUTINE read_stagger_snapshot(ds, d, px, py, pz, ee, tt, ne)
   call os%deallocate(itemp)
   call os%deallocate(ilne)
 
-  ds(1) = (newx(inx) - newx(1)) / (inx - 1)
-  ds(2) = (newy(iny) - newy(1)) / (iny - 1)
-  ds(3) = (newz(inz) - newz(1)) / (inz - 1)
+  ds(1) = (newx(dims(1)) - newx(1)) / (dims(1) - 1)
+  ds(2) = (newy(dims(2)) - newy(1)) / (dims(2) - 1)
+  ds(3) = (newz(dims(3)) - newz(1)) / (dims(3) - 1)
 
-  call trace%end()
+  call trace%end(itimer)
 END SUBROUTINE read_stagger_snapshot
 
 !===============================================================================

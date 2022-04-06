@@ -2855,7 +2855,7 @@ FUNCTION index_only (self, pos, iv, roundup, rounddn, nearest, nowrap, local) &
   integer             :: ii(3)
   !.............................................................................
   integer             :: i
-  real(8)             :: p(3), h(3)
+  real(8)             :: p(3), h(3), md
   class(mesh_t), pointer :: mesh
   !-----------------------------------------------------------------------------
   if (present(iv)) &
@@ -2872,8 +2872,11 @@ FUNCTION index_only (self, pos, iv, roundup, rounddn, nearest, nowrap, local) &
       p(i) = pos(i)
     end if
     if (self%periodic(i)) then
-      if (.not.present(nowrap)) &
-        p(i) = modulo(p(i)+0.5_8*mesh%b, mesh%b)-0.5_8*mesh%b   ! periodic wrap
+      if (.not.present(nowrap)) then
+        md = modulo(p(i)+0.5_8*mesh%b, mesh%b)
+        if (md == 0) md = min(p(i)+0.5_8*mesh%b, mesh%b)
+        p(i) = md-0.5_8*mesh%b   ! periodic wrap
+      end if
     end if
     p(i) = p(i)/mesh%d + self%offset(i)                         ! float index
     if (present(iv)) then

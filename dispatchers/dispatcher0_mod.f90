@@ -194,7 +194,7 @@ SUBROUTINE update (self, task_list, test)
   !-----------------------------------------------------------------------------
   ! Check incoming MPI, which may free up tasks for execution
   !-----------------------------------------------------------------------------
-  call task_list%check_mpi (n_unpk)                     ! check incoming MPI
+  if (task_list%nq <= omp%nthreads*4) call task_list%check_mpi (n_unpk)                     ! check incoming MPI
   call mpi_io%iwrite_list%check                         ! I/O check
   if (omp%nthreads >= mpi_only_master .and. omp%master) then
     call trace%end (itimer(i))

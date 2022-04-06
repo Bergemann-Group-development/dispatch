@@ -1439,14 +1439,13 @@ SUBROUTINE no_t (target, source, ls, us, in, out, lt, ut, only)
   !.............................................................................
   integer, dimension(3)           :: l, u, o
   integer                         :: i1, i2, i3, i4, i5, n, it, id, m(5)
-  integer                         :: unit, iv0, iv1
+  integer                         :: iv0, iv1
   real(8)                         :: wc
   real(8), save                   :: wtimer
   type(lock_t), pointer           :: lock1, lock2
   integer, save                   :: itimer=0, ntimer=0
   !-----------------------------------------------------------------------------
   if (detailed_timer) call trace%begin ('interp_t%no_t', itimer=itimer)
-  unit = merge (stdout, stdlog, verbose > 2 .or. target%id==io%id_debug)
   if (verbose > 1) then
     wc = wallclock()
     if (ntimer == 0) then
@@ -1500,14 +1499,6 @@ SUBROUTINE no_t (target, source, ls, us, in, out, lt, ut, only)
         target%id, source%id, ls, us, lt, ut, &
         source%unsigned
     end if
-    if (unit == stdout) then
-      write (unit,'(a,2(i6,":",i2.2,f10.6),1x,2(1x,2(1x,3i3)),1x,9l1)') &
-        'interp_t%no_t(1): tgt,src,ls,us,lt,ut,usg=', &
-        target%id, target%level, target%time, &
-        source%id, source%level, source%time, &
-        ls, us, lt, ut, &
-        source%unsigned
-    end if
     !.........................................................................
     if (verbose > 2) then
       write (stdlog,'(a,1p,4(2x,2e11.2))') &
@@ -1545,14 +1536,6 @@ SUBROUTINE no_t (target, source, ls, us, in, out, lt, ut, only)
         wallclock(), &
         pad_trace(1:indent)//'interp_t%no_t: tgt,src,ls,us,usg=', &
         target%id, source%id, ls, us, &
-        source%unsigned
-    end if
-    if (unit == stdout) then
-      write (unit,'(a,2(i6,":",i2.2,f10.6),1x,2(1x,3i3),1x,9l1)') &
-        'interp_t%no_t(2): tgt,src,ls,us,lt,ut,usg=', &
-        target%id, target%level, target%time, &
-        source%id, source%level, source%time, &
-        ls, us, &
         source%unsigned
     end if
     !.........................................................................

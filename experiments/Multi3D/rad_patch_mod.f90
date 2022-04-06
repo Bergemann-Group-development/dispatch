@@ -55,9 +55,11 @@ module rad_patch_mod
     procedure :: interp_xy_up_plane
     procedure :: interp_xy_up_plane2
     procedure :: solve_long_plane
+    procedure :: remove_lower_layers_mem
     procedure :: setup_metafile
     procedure :: save_meta4
     procedure :: save_radiation_output
+    procedure :: deallocate_mem
   end type radiation_t
 
   !-----------------------------------------------------------------------------
@@ -72,7 +74,7 @@ SUBROUTINE radiation_pre_init (self)
   class(radiation_t), target:: self
   logical, save :: first_time=.true.
   integer :: iostat, nv, nw
-  namelist /radiation_params/ save_output
+  namelist /radiation_params/ save_output, out_folder
   ! ----------------------------------------------------------------------------
   call trace%begin('radiation_t%radiation_pre_init')
   if (first_time) then
@@ -171,6 +173,9 @@ SUBROUTINE radiation_update (self)
   if (self%kind == 'angle_rad') then
     call self%task_t%rotate
     self%rotated=.true.
+    if (self%out_ray .and. self%boundaries%upper) then
+      call self%remove_lower_layers_mem()
+    endif
   endif
 END SUBROUTINE radiation_update
 
@@ -828,7 +833,7 @@ END SUBROUTINE radiation_nbor_relations
 !===============================================================================
 SUBROUTINE bndries (self)
   class(radiation_t):: self
-  integer :: li(3), ui(3)
+  integer :: li(3), ui(3), f
   !----------------------------------------------------------------------------
   if (self%kind == 'angle_rad') then
     self%Inu => self%mem(:,:,:,:, self%it, self%i_inu)
@@ -836,16 +841,38 @@ SUBROUTINE bndries (self)
     self%Snu => self%opac%mem(:,:,:,:, self%opac%it, self%opac%i_snu)
 
     if (self%boundaries%upper) then
-      self%Inu(:,:,self%gn(3),:) = 0
+      do f=1, self%nv
+        self%Inu(:,:,self%gn(3),f) = 0
+      end do
     endif
   
     if (self%boundaries%lower) then
-      self%Inu(:,:,1,:) = self%Snu(:,:,1,:)
+      do f=1, self%nv
+        self%Inu(:,:,1,f) = self%Snu(:,:,1,f)
+      end do
     endif
   else
+    
     call self%ray_patch_t%bndries()
   endif
 END SUBROUTINE bndries
+
+!===============================================================================
+SUBROUTINE remove_lower_layers_mem (self)
+  class(radiation_t):: self
+  real(4), dimension(:,:,:,:,:,:), contiguous, pointer :: top_slice 
+  integer :: m(6)
+  !----------------------------------------------------------------------------
+  m = shape(self%authority_mem)
+  m(3) = 1
+
+  call os%allocate(top_slice, m)
+  top_slice = self%authority_mem(:,:,self%n(3):self%n(3),:,:,:)
+  call os%deallocate(self%mem)
+  self%mem => top_slice
+  self%authority_mem => top_slice
+  self%n(3)=1
+END SUBROUTINE remove_lower_layers_mem
 
 !===============================================================================
 SUBROUTINE save_radiation_output(self)
@@ -854,7 +881,7 @@ SUBROUTINE save_radiation_output(self)
   class(radiation_t), pointer :: sheep
   class(nbor_t), pointer:: nbor
   character(len=64) :: filename
-  real(4), allocatable :: lam(:)
+  real(8), allocatable :: lam(:)
   real(4), dimension(:,:,:), pointer :: Inu
   integer :: lunit
   integer :: i
@@ -872,19 +899,18 @@ SUBROUTINE save_radiation_output(self)
     nbor => nbor%next
   end do
 
-  lam = 1e8 * cc / self%sp%nu
+  lam = 1d8 * dble(cc) / self%sp%nu
   Inu => self%mem(:,:,1,:, self%it, self%i_inu)
 
   if (self%i_out == 1) then
     filename = trim(out_folder) // 'lam.bin'
     open(newunit=lunit, file=filename, access='stream')
     write(lunit) lam
-    !call self%save_meta4(filename, pack(lam, .true.), shape(lam))
     close(lunit)
   endif
 
   filename = trim(self%ray_name) // '_inu.bin'
-  call self%save_meta4(filename, pack(Inu, .true.), shape(Inu))
+  call self%save_meta4(filename, storage_size(Inu), shape(Inu))
   filename = trim(out_folder) // trim(self%ray_name) // '_inu.bin'
   open(newunit=lunit, file=filename, access='stream')
   write(lunit) Inu
@@ -911,17 +937,28 @@ SUBROUTINE setup_metafile(self)
 END SUBROUTINE
 
 !===============================================================================
-SUBROUTINE save_meta4(self, filename, arr, shpe)
+SUBROUTINE save_meta4(self, filename, store, shpe)
   class(radiation_t):: self
   character(len=*), intent(in) :: filename
-  real(4), dimension(:), intent(in) :: arr
+  integer, intent(in) :: store
   integer, dimension(:), intent(in) :: shpe
   integer :: meta_unit
   ! ----------------------------------------------------------------------------
 
   open(newunit=meta_unit, file=self%meta_file, form='formatted', position='append')
-  write(meta_unit, '(A64, I4, 8(I5))') filename, storage_size(arr), shpe
+  write(meta_unit, '(A64, I4, 8(I10))') filename, store, shpe
   close(meta_unit)
 END SUBROUTINE save_meta4
+
+!===============================================================================
+SUBROUTINE deallocate_mem (self)
+  class(radiation_t):: self
+  integer :: m(6), li(3), ui(3)
+  !-----------------------------------------------------------------------------
+  call self%ray_patch_t%deallocate_mem()
+  if (associated(self%Psi)) then
+    call os%deallocate(self%Psi)
+  endif
+END SUBROUTINE deallocate_mem
 
 end module

@@ -17,6 +17,7 @@ module composition_patch_mod
   USE ray_mod, only: set_carlson_quadratures
   USE list_mod, only: list_t
   USE bits_mod
+  USE atom_var, only: atom_type
   implicit none
   private
   
@@ -41,7 +42,7 @@ SUBROUTINE composition_pre_init (self)
   class(opacity_t), pointer :: opac
   class(radiation_t), pointer :: rad
   integer :: iostat, i_out
-  integer, save:: itimer=0
+  integer, save:: itimer=0, itimer2=0
   integer, save :: n_nu=1, verbose=0
   character(len=80), save :: absdat_file='./input_multi3d/absdat'
   character(len=80), save :: abund_file='./input_multi3d/abund'
@@ -67,8 +68,11 @@ SUBROUTINE composition_pre_init (self)
 
     if (verbose) write (*,*) ' - Initializing the NEW opacity package'
     composition%verbose = verbose
-    call composition%init(absdat_file, abund_file)
 
+    call trace%begin('compositiont%init', itimer=itimer2)
+    call composition%init(absdat_file, abund_file)
+    call trace%end(itimer2)
+    
     first_time = .false.
   endif
 
@@ -81,23 +85,27 @@ SUBROUTINE composition_pre_init (self)
 
   allocate(atom_patch)
   atom_patch%kind = 'atom_patch'
+  atom_patch%composition => self%composition
   call atom_patch%pre_init_and_link(self)
   self%sp => atom_patch%sp
-  atom_patch%composition => self%composition
 
   do n=1, self%n_nu
-    allocate(opac)
-    opac%kind = 'back_opac'
-    opac%composition => self%composition
-    call opac%composition%reassign_pointer()
-    call opac%pre_init_and_link(self, i_nu=n)
+    do m=0, self%n_omega
+      allocate(opac)
+      if (m==0) then
+        opac%composition => self%composition
+        call opac%composition%reassign_pointer()
+      endif
+      opac%kind = merge('net_opac ', 'back_opac', m>0)
+      call opac%pre_init_and_link(self, i_mu=m, i_nu=n)
 
-    allocate(rad)
-    rad%kind = 'mean_rad'
-    call rad%pre_init_and_link(self, i_nu=n)
+      allocate(rad)
+      rad%kind = merge('angle_rad', 'mean_rad ', m>0)
+      call rad%pre_init_and_link(self, i_mu=m, i_nu=n)
+    end do
   end do
 
-  do m=1, self%n_mu
+  do m=self%n_omega+1, self%n_mu
     do n=1, self%n_nu
       allocate(opac)
       opac%kind = 'net_opac'
@@ -194,5 +202,6 @@ SUBROUTINE composition_finish (self, rotated)
   call self%m3d_patch_t%finish(rotated=rotated)
   call self%set(bits%frozen)
 END SUBROUTINE composition_finish
+
 
 end module composition_patch_mod

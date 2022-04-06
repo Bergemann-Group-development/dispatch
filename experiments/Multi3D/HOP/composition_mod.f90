@@ -14,7 +14,7 @@ module composition_mod
     type, public :: composition_type
         logical :: initialised
         integer :: nel, nlevels, nmolec, verbose
-        real(dp) :: xmy, suma, sumh, grph, summy, tmolim, molh
+        real(dp) :: xmy, suma, grph, tmolim, molh
         type(element_type),    allocatable :: elements(:)
         type(level_type),      allocatable :: levels(:)
         type(molec_type),      allocatable :: molecules(:)
@@ -38,6 +38,8 @@ module composition_mod
         procedure :: get_totn
         procedure :: get_nhyd
         procedure :: init_mol_dissociation
+        procedure :: compute_grams_per_hydrogen
+        procedure :: overwrite_abundance
     end type
 
 contains
@@ -112,18 +114,7 @@ contains
         endif
 
         elements%abund = 10**(elements%abund - elements(1)%abund)
-
-        ! XMY = GRAMS OF STELLAR MATTER / GRAMS OF HYDROGEN
-        ! SUMH = NUMBER OF OTHER NUCLEI / NUMBER OF HYDROGEN NUCLEI.
-        ! SUMM = NUMBER OF NUCLEI OTHER THAN H, C, N, O / NUMBER OF HYDROGEN NUCLEI
-        self%xmy  = sum(elements%abund*elements%awgt) / elements(1)%awgt
-        self%suma = sum(elements%abund)
-        self%sumh = self%suma - 1
-        !self%summ = sum(elements%abund) - sum(elements([1, 3, 4, 5])%abund)
-
-        self%grph  = XMH*self%xmy
-        self%summy = self%xmy / self%suma * 1.008
-
+        call self%compute_grams_per_hydrogen(self%suma, self%xmy, self%grph)
 
         ! First, we walk through the ions stored in absdat in order to get
         ! total number of energy levels (including fake levels for PFs)
@@ -270,6 +261,7 @@ contains
         call self%element_by_id('H', H)
         Hm => H%ions(0) ! H- is ion number 0
         H0 => H%ions(1)
+        H0%below => Hm
 
         Hm%iqfix = 0
         Hm%parco = 1
@@ -869,11 +861,12 @@ contains
         class(element_type), pointer :: element
 
         call trace_begin ('composition_type%get_totn')
-        call self%element_by_id(id, element)
+        call self%element_by_id(trim(id), element)
 
         if (associated(element)) then
             totn = element%ions(1)%f * (1 + element%ions(1)%saha) * self%toth
         else
+            print *, 'get_totn: Element of id= ', id, ' is not part of the opacity package.'
             totn = 10.0**(abund-12.0) * self%rho / (self%xmy*1.008*uu)
         endif
         call trace_end ()
@@ -1138,7 +1131,6 @@ contains
         idx = findloc(self%elements%id, uppercase(id, len(id)), 1)
 
         if (idx == 0) then
-            !print *, 'Element of id= ', id, ' is not part of the opacity package.'
             element => null()
         else
             element => self%elements(idx)
@@ -1207,7 +1199,6 @@ contains
             bnu=c1*exp(-x)
         endif
     end function planck
-    !---------------------------------------------------------------------
 
     !---------------------------------------------------------------------
     pure function uppercase(string,ss)
@@ -1231,6 +1222,40 @@ contains
         end do
 
     end function uppercase
-    !---------------------------------------------------------------------
+
+    !=========================================================================
+    subroutine compute_grams_per_hydrogen(self, suma, xmy, grph)
+        class(composition_type), target :: self
+        real(dp), intent(out) :: suma, xmy, grph
+        !---------------------------------------------------------------------
+        ! Abundances should not be in log units when they enter here!
+        ! XMY = GRAMS OF STELLAR MATTER / GRAMS OF HYDROGEN
+        !---------------------------------------------------------------------
+        suma = sum(self%elements%abund)
+        xmy  = sum(self%elements%abund*self%elements%awgt) / self%elements(1)%awgt
+        grph = XMH*xmy
+    end subroutine compute_grams_per_hydrogen
+
+    !=========================================================================
+    subroutine overwrite_abundance(self, id, abnd, awgt)
+        class(composition_type), target :: self
+        class(element_type), pointer :: element
+        character(len=*), intent(in) :: id
+        real(dp), intent(in) :: abnd, awgt
+        real(dp) :: abund
+        !---------------------------------------------------------------------
+        call self%element_by_id(trim(id), element)
+
+        if (associated(element)) then
+            abund = log10(element%abund) + 12.0
+            print '(A, A, A, F5.2, A, F5.2)', 'Changing abundance of ', trim(id), ' from ', abund, ' to ', abnd
+
+            element%abund =  10**(abnd - 12.0)
+            element%awgt  =  awgt / uu
+            call self%compute_grams_per_hydrogen(self%suma, self%xmy, self%grph)
+        else
+            print *, 'overwrite_abundance: Element of id= ', id, ' is not part of the opacity package.'
+        endif
+    end subroutine overwrite_abundance
 
 end module composition_mod

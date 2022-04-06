@@ -31,11 +31,11 @@ module coll_mod
     real(8), parameter :: cbar=2.3d0, x100=5.0d2
     real(8), parameter :: actelc=1.d0
  
-    character(len=8),dimension(14),parameter :: theprocesses = &
+    character(len=8),dimension(15),parameter :: theprocesses = &
           (/'OHMEGA  ','CI      ','CH      ','CE      ',&
              'FIXRAT  ','SHULL82 ','AR85-CDI','AR85-CEA',&
              'BURGESS ','AR85-CH ','AR85-CHE','AR85-CHP',&
-             'BADNELL ','CH0     '/)
+             'BADNELL ','CH0     ','CHI     '/)
     
     !integer :: n_coll_processes! number of keywords 
     type(coll_type),dimension(:),allocatable :: coll
@@ -84,8 +84,9 @@ module coll_mod
             read(file_unit,*) ntemp, (tgrid(j),j=1,ntemp)
             if (ntemp<2) call stop("read_collisions: ntemp<2")
    
-         ! MB 5.04.2018 - added CH0 keyword
-         case('OHMEGA','CE','CH','CI','FIXRAT','CH0')
+          ! MB  5.04.2018 - added CH0 keyword
+          ! RH 25.03.2022 - added CHI keyword
+         case('OHMEGA','CE','CH','CI','FIXRAT','CH0','CHI')
             col%key=key
             call nextentry(file_unit)
             allocate(col%t(ntemp))
@@ -317,6 +318,17 @@ module coll_mod
           cup = cdn * nsr  
 
           !********************************************************************
+
+       case('CHI')
+
+          ! b-f collisions with neutral hydrogen
+          ! these are downward rates (cdn); cup are upward rates
+ 
+          call hermite_interpolation(ct,tg,coll(i)%t,coll(i)%c,coll(i)%dcdt)
+          cup = ct * nnh(1)
+          cdn = cup / nsr  
+
+         !********************************************************************
 
        case('CI')
 
@@ -610,6 +622,16 @@ module coll_mod
             cup = cdn * nsr  
   
             !********************************************************************
+
+         case('CHI')
+
+            ! b-f collisions with neutral hydrogen
+            ! these are downward rates (cdn); cup are upward rates
+
+            call hermite_interpolation(ct,tg,coll(i)%t,coll(i)%c,coll(i)%dcdt)
+            cup = ct * nnh(1)
+            cdn = cup / nsr  
+
   
          case('CI')
   

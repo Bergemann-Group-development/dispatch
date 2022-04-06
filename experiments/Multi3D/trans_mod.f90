@@ -56,12 +56,12 @@ module trans_mod
     real(8),dimension(:),allocatable :: q ! frequencies [Doppler units]
     real(8),dimension(:),allocatable :: wq  ! frequency quadrature weight [Doppler units]
 
-    real(8),dimension(:,:,:),allocatable :: wphi ! normalization such that
+    real(4),dimension(:,:,:),allocatable :: wphi ! normalization such that
     ! \Sigma_mu=1^{nrays} \Sigma_nu=1^{nnu} phi(nu,v(mu)) = 1
     ! in case of strong velocities this does not automatically follow from
     ! the independent normalization of the angle and frequency quadrature
 
-    real(8),dimension(:,:,:),allocatable :: adamp ! voigt damping parameter
+    real(4),dimension(:,:,:),allocatable :: adamp ! voigt damping parameter
     real(8),dimension(:,:,:,:),allocatable :: rho ! prd rho
     real(8),dimension(:,:,:,:),allocatable :: Jrest ! Jnu in rest frame of atom
     real(8),dimension(:,:,:),  allocatable :: Qe ! prd Q elastic collision rate, used to compute coherency fraction
@@ -107,7 +107,7 @@ module trans_mod
     real(8) :: nu0 ! ionization edge frequency
     real(8) :: numax ! maximum frequency 
     real(8) :: alpha0 ! cross section at ionization threshold [cm^2]
-    real(8),dimension(:),allocatable :: alpha ! cross sections [cm^2]    
+    real(4),dimension(:),allocatable :: alpha ! cross sections [cm^2]    
 
   contains
       procedure :: opacities => cont_opacities
@@ -117,21 +117,32 @@ module trans_mod
 contains
 
   !====================================================================================
-  pure subroutine cont_opacities(self, alpha, twohnu3_c2, n, nstar, blzfac, eta, chi)
+  pure subroutine cont_opacities(self, alpha, n, nstar, eta, chi)
     class(cont_type), intent(in) :: self
-    real(8), dimension(:), intent(in) :: alpha, twohnu3_c2
+    real(4), dimension(:), intent(in) :: alpha
     real(4), dimension(:,:,:,:), intent(in) :: n, nstar
-    real(8), dimension(:,:,:,:), intent(in) :: blzfac
-    real(8), dimension(:,:,:,:), intent(inout) :: eta, chi
-    real(8), dimension(:,:,:), allocatable :: fakt
-    integer :: f
+    real(4), dimension(:,:,:,:), intent(inout) :: eta, chi
+    real(4), dimension(:,:,:), allocatable :: fakt
+    integer :: i,j,k,f, nf, nx, ny, nz
+    !----------------------------------------------------------------------------------
+    nx = size(n, 1)
+    ny = size(n, 2)
+    nz = size(n, 3)
+    nf = size(eta,4)
 
+    allocate(fakt(nx,ny,nz))
     fakt = nstar(:,:,:,self%i) / nstar(:,:,:,self%j) * n(:,:,:,self%j)
 
-    do f=1,size(twohnu3_c2)
-      eta(:,:,:,f) = alpha(f) * fakt * blzfac(:,:,:,f)
-      chi(:,:,:,f) = alpha(f) * n(:,:,:,self%i) - eta(:,:,:,f)
-      eta(:,:,:,f) = twohnu3_c2(f) * eta(:,:,:,f)
+    !$omp simd
+    do f=1, nf
+    do k=1, nz
+    do j=1, ny
+    do i=1, nx
+      eta(i,j,k,f) = eta(i,j,k,f) + alpha(f) * fakt(i,j,k)
+      chi(i,j,k,f) = chi(i,j,k,f) + alpha(f) * n(i,j,k,self%i)
+    end do
+    end do
+    end do
     end do
   end subroutine cont_opacities
   !------------------------------------------------------------------------------------
@@ -142,9 +153,9 @@ contains
     class(line_type), intent(in) :: self
     real(8), dimension(:), intent(in) :: nu, hnu_4pi
     real(4), dimension(:,:,:,:), intent(in) :: n
-    real(8), dimension(:,:,:), intent(in) :: vel_dop, doppler_factor
-    real(8), dimension(:,:,:,:), intent(inout) :: phi, eta, chi
-    real(8), dimension(:,:,:), allocatable :: scr1, scr2
+    real(4), dimension(:,:,:), intent(in) :: vel_dop, doppler_factor
+    real(4), dimension(:,:,:,:), intent(inout) :: phi, eta, chi
+    real(4), dimension(:,:,:), allocatable :: scr1, scr2
     integer :: f
 
     call self%profile(nu, hnu_4pi, vel_dop, doppler_factor, phi)
@@ -153,8 +164,8 @@ contains
     scr2 = self%Bij * n(:,:,:,self%i) - self%Bji * n(:,:,:,self%j)
 
     do f=1, size(nu)
-      eta(:,:,:,f) = phi(:,:,:,f) * scr1
-      chi(:,:,:,f) = phi(:,:,:,f) * scr2
+      eta(:,:,:,f) = eta(:,:,:,f) + phi(:,:,:,f) * scr1
+      chi(:,:,:,f) = chi(:,:,:,f) + phi(:,:,:,f) * scr2
     end do
   end subroutine line_opacities
   !------------------------------------------------------------------------------------
@@ -186,9 +197,9 @@ contains
   subroutine line_profile(self, nu, nu_fac, vel_dop, doppler_factor, phi)
       class(line_type), intent(in) :: self
       real(8), dimension(:), intent(in) :: nu, nu_fac
-      real(8), dimension(:,:,:), intent(in) :: vel_dop, doppler_factor
-      real(8), dimension(:,:,:,:), intent(inout) :: phi
-      real(8), dimension(:,:,:), allocatable :: norm
+      real(4), dimension(:,:,:), intent(in) :: vel_dop, doppler_factor
+      real(4), dimension(:,:,:,:), intent(inout) :: phi
+      real(4), dimension(:,:,:), allocatable :: norm
       integer :: f
 
       !if (self%io > 1) then ! io = nterm
@@ -235,8 +246,8 @@ contains
       !---------------------------------------------------------------------
       !
       implicit none
-      real(8), intent(in) :: a,vs
-      real(8) :: h
+      real(4), intent(in) :: a,vs
+      real(4) :: h
 
       integer :: k,m,i
 

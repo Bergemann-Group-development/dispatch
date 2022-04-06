@@ -43,11 +43,13 @@ PROGRAM dispatch
   call dispatcher%init                          ! Initialize the dispatcher
   call check_mpi_debug()
   call read_external%init (task_list)           ! Possibly initialize task_list
+  call timer%print() 
   !call restart%init (task_list)                 ! Possibly initialize task_list
   !call cartesian%init (task_list)               ! .. or else here ...
   !call read_snapshot%init (task_list)           ! Construct ICs
   call dispatcher%execute (task_list)           ! Run dispatcher on the task_list
   call timer%print() 
+  call mpi%barrier()
   write(*,'(a, I3, a, F7.2, a)') 'maximum memory on rank', mpi%rank, ' was', os%max_mem, 'Gb'
   call setup%end                                ! End setup
 !===============================================================================

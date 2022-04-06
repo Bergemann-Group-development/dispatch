@@ -42,11 +42,14 @@ module ray_patch_mod
   contains
     procedure :: pre_init => ray_patch_pre_init
     procedure :: init => ray_patch_init
+    procedure :: post_update => ray_post_update
     procedure :: nbor_relations => ray_nbor_relations
     procedure :: set_freq_indices
     procedure :: check_topbot
     procedure :: is_upstream => ray_is_upstream
     procedure :: comp_vproj
+    procedure :: deallocate_mem
+    procedure :: ff_index
     procedure :: pack => ray_pack
     procedure :: unpack => ray_unpack
     procedure :: allocate_mesg => ray_allocate_mesg
@@ -113,12 +116,21 @@ SUBROUTINE ray_patch_pre_init (self)
     self%dir = merge(1, -1, vec(3,self%i_mu) > 0)
   endif
 
-  if (self%dir < 0) then
-    self%boundaries%lower = .false.
-  elseif (self%dir > 0) then
-    self%boundaries%upper = .false.
-  endif
+  call self%check_topbot()
 
+  !if (self%dir < 0) then
+  !  self%boundaries%lower = .false.
+  !elseif (self%dir > 0) then
+  !  self%boundaries%upper = .false.
+  !endif
+
+  !select case (self%kind)
+  !case ('line_opac', 'cont_opac')
+  !  if (self%boundaries%lower .or. self%boundaries%upper) then
+  !    self%time = self%time - 0.1
+  !  endif
+  !end select
+  
   call self%set_freq_indices()
 END SUBROUTINE ray_patch_pre_init
 
@@ -127,7 +139,11 @@ SUBROUTINE set_freq_indices (self)
   class(ray_patch_t) :: self
   integer :: fs, fe, nv, md
   !-----------------------------------------------------------------------------
-  if (self%kind == 'out_rad') return
+  if (self%kind == 'out_rad') then
+    self%fs = 1
+    self%fe = self%sp%nnu
+    return
+  endif
   nv = self%sp%nnu / self%n_nu
   md = mod(self%sp%nnu, self%n_nu)
 
@@ -166,6 +182,52 @@ SUBROUTINE comp_vproj (self, vproj)
 END SUBROUTINE comp_vproj
 
 !===============================================================================
+SUBROUTINE ray_post_update (self)
+  class(ray_patch_t) :: self
+  character(len=38) :: text
+  logical :: in_bounds
+  integer :: f
+  !-----------------------------------------------------------------------------
+  call trace%begin ('ray_patch_t%ray_post_update')
+  if (self%verbose > 1) then
+    write(text, '(F5.2, A12, I6, 3(I4))') self%time, trim(self%kind), self%id, self%ipos(3), &
+                                      self%i_nu, self%i_mu
+
+    call self%ff_index(self%fcheck, f)
+    in_bounds = f > 0
+
+    if (in_bounds) then
+      select case (self%kind)
+      case('out_rad')
+        in_bounds = all(self%pcheck(:2) <= self%n(:2))
+      case default
+        in_bounds = all(self%pcheck <= self%n)
+      end select
+    endif
+
+    if (in_bounds) then
+      select case (self%kind)
+      case('rate_patch')
+        write(stdout,'(A, 6(ES15.7))') text, &
+        self%authority_mem(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%linecheck,1,:)
+      case('out_rad')
+        write(stdout,'(A, 6(ES15.7))') text, &
+        self%authority_mem(self%pcheck(1),self%pcheck(2),1,f,1,:)
+      case default
+        write(stdout,'(A, 6(ES15.7))') text, &
+        self%authority_mem(self%pcheck(1),self%pcheck(2),self%pcheck(3),f,1,:)
+      end select
+    elseif (self%verbose > 2) then
+      write(stdout,'(A,A)') text
+    endif
+  endif 
+
+  call self%m3d_patch_t%post_update()
+
+  call trace%end()
+END SUBROUTINE ray_post_update
+
+!===============================================================================
 SUBROUTINE ray_patch_init (self)
   class(ray_patch_t) :: self
   real(8) :: offset
@@ -182,9 +244,19 @@ SUBROUTINE ray_patch_init (self)
   endif
 
   call self%m3d_patch_t%init()
-  call self%check_topbot()
 
 END SUBROUTINE ray_patch_init
+
+!===============================================================================
+SUBROUTINE deallocate_mem (self)
+  class(ray_patch_t):: self
+  integer :: m(6), li(3), ui(3)
+  !-----------------------------------------------------------------------------
+  call self%m3d_patch_t%deallocate_mem()
+  if (associated(self%vproj)) then
+    call os%deallocate(self%vproj)
+  endif
+END SUBROUTINE deallocate_mem
 
 !===============================================================================
 !> Determine if a task is upstream.  
@@ -261,13 +333,32 @@ logical FUNCTION ray_is_upstream (self, other) result(is_upstream)
 END FUNCTION ray_is_upstream
 
 !===============================================================================
+SUBROUTINE ff_index(self, ff, f)
+  class(ray_patch_t):: self
+  integer, intent(in)  :: ff
+  integer, intent(out) :: f
+  logical :: ff_in_range
+  !-----------------------------------------------------------------------------
+  ff_in_range = ff>=self%fs .and. ff<=self%fe
+  if (ff_in_range) then
+    f = ff - self%fs + 1
+  else
+    f = -1
+  endif
+END SUBROUTINE ff_index
+
+
+!===============================================================================
 SUBROUTINE check_topbot (self)
   class(ray_patch_t):: self
   !.............................................................................
-  if (self%patch%boundaries%upper .and. self%dir < 0) then
+  self%boundaries%upper = .false.
+  self%boundaries%lower = .false.
+  
+  if (self%patch%boundaries%upper .and. self%dir <= 0) then
     self%boundaries%upper = .true.
     call self%boundaries%set(bits%zu)
-  elseif (self%patch%boundaries%lower .and. self%dir > 0) then
+  elseif (self%ipos(3)==0 .and. self%dir >= 0) then
     self%boundaries%lower = .true.
     call self%boundaries%set(bits%zl)
   endif
@@ -402,7 +493,7 @@ SUBROUTINE ray_unpack (self, mesg)
   call anonymous_copy (n_header, buffer(ibuf), header)
   ibuf = ibuf + n_header
   call self%ray_header_to_patch (header)
-  if (.not. self%initialized) call self%init()
+  call self%check_mem()
   !-----------------------------------------------------------------------------
   ! Copy array data from the buffer to the time slot, under time slot lock
   !-----------------------------------------------------------------------------

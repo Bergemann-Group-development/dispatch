@@ -3,7 +3,7 @@ module level_mod
     implicit none
 
     type :: level_type
-        real(dp) :: xion, xl, g2
+        real(dp) :: xion, xl, g2=0
     contains
         procedure :: boltzmann
         procedure :: fischel_sparks

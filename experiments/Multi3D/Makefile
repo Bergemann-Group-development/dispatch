@@ -53,7 +53,7 @@ coll_var.o                  : coll_mod.o
 coll_mod.o                  : mmath.o 
 trans_mod.o                 : coll_mod.o
 atom_var.o                  : m3io_mod.o spectrum_mod.o trans_mod.o coll_mod.o
-spectrum_mod.o              : mmath.o trans_mod.o
+spectrum_mod.o              : mmath.o trans_mod.o timer_mod.o trace_mod.o
 m3d_patch_mod.o             : gpatch_mod.o trace.o spectrum_mod.o ray_mod.o
 ray_patch_mod.o             : m3d_patch_mod.o
 opac_patch_mod.o            : ray_patch_mod.o composition_mod.o atom_var.o

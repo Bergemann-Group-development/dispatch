@@ -120,13 +120,14 @@ SUBROUTINE init (self, task_list)
   logical, save :: dry_run=.false.        ! load balancing is active
   integer       :: iostat, n
   real          :: value
+  integer, save :: itimer=0
   namelist /load_balance_params/ &
     is_on, dry_run, cadence, length, duration, q_min, q_max, initial_method, &
     do_initial, verbose
   !-----------------------------------------------------------------------------
   if (mpi%size==1) &
     return
-  call trace%begin ('load_balance_t%init')
+  call trace%begin ('load_balance_t%init', itimer=itimer)
   self%task_list => task_list
   if (mpi%size /= io%in%mpi_size) then
     do_initial = .true.
@@ -140,6 +141,10 @@ SUBROUTINE init (self, task_list)
   call io%namelist_warning ('load_balance_params', iostat)
   write (io%namelist, load_balance_params)
   !-----------------------------------------------------------------------------
+  if (.not.is_on) then
+    call trace%end (itimer)
+    return
+  endif
   allocate (self%task_list%running_mean)
   n = self%task_list%n
   call self%task_list%running_mean%init (length*n, 1.0, verbose)
@@ -159,7 +164,7 @@ SUBROUTINE init (self, task_list)
     link => link%next
   end do
   call task_list%lock%unset ('load_balance_t%init')
-  call trace%end ()
+  call trace%end (itimer)
 END SUBROUTINE init
 
 !===============================================================================

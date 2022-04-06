@@ -20,7 +20,7 @@ module transition_mod
         real(dp), dimension(:,:), allocatable :: xkap
         real(dp), dimension(:,:), allocatable :: log_xkap
         logical, dimension(:), allocatable :: ldisk!, tdisk
-        logical :: bound_free, regular
+        logical :: bound_free, regular, exclude=.false.
         character(len=5) :: key
         character(len=20) :: label
 
@@ -473,6 +473,8 @@ subroutine add_absorption(self, abslte, lam, temp, EK_over_temp, teta, pe, rho, 
         print *, 'stopping...'
         stop
     endif
+
+    if (self%exclude) return
 
     call os%allocate(quad, [nf])
     call os%allocate(iw, [nf])

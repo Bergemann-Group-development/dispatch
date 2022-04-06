@@ -16,7 +16,7 @@ module atom_patch_mod
     USE timer_mod
     USE scaling_mod
     USE trace_mod
-    !USE mpi_mod
+    USE mpi_mod
     !USE omp_mod
     !USE omp_timer_mod
     !USE math_mod
@@ -31,6 +31,7 @@ module atom_patch_mod
     USE spectrum_mod, only:spectrum_type
     USE composition_mod, only: composition_type
     USE m3d_patch_mod, only: m3d_patch_t, maxiter, ilambd
+    USE transition_mod, only: transition_type
     implicit none
   
     !-----------------------------------------------------------------------------
@@ -45,11 +46,12 @@ module atom_patch_mod
       procedure :: post_update => atom_patch_post_update
       procedure :: finish => atom_patch_finish
       procedure :: nbor_relations => atom_patch_nbor_relations
-      procedure pre_init_atom
-      procedure init_atom
-      procedure normalize_phi
-      procedure sum_rates
-      procedure update_populations
+      procedure :: pre_init_atom
+      procedure :: init_atom
+      procedure :: normalize_phi
+      procedure :: sum_rates
+      procedure :: update_populations
+      procedure :: exclude_double_continua
     end type atom_patch_t
 
     real(8), public:: global_maxerr=0
@@ -65,28 +67,22 @@ module atom_patch_mod
     class(rate_patch_t), pointer :: rate
     class(opacity_t), pointer :: opac
     integer :: m, n
+    integer, save :: itimer=0
     ! ----------------------------------------------------------------------------
-    call trace%begin('atom_patch_t%atom_patch_pre_init')
+    call trace%begin('atom_patch_t%atom_patch_pre_init', itimer=itimer)
     call self%m3d_patch_t%pre_init()
     call self%append_to_task_list()
     call self%pre_init_atom()
     call self%set_nv_and_nw(self%atom%nlevel, 2)
 
     do n=1, self%n_nu
-      allocate(opac)
-      opac%kind = 'cont_opac'
-      opac%atom => self%atom
-      call opac%pre_init_and_link(self, i_nu=n)
-    end do
-
-    do m=1, self%n_mu
-      do n=1, self%n_nu
+      do m=0, self%n_omega
         allocate(opac)
-        opac%kind = 'line_opac'
         opac%atom => self%atom
+        opac%kind = merge('line_opac', 'cont_opac', m>0)
         call opac%pre_init_and_link(self, i_mu=m, i_nu=n)
-        
-        if (m > self%n_omega) cycle
+
+        if (m==0) cycle
 
         allocate(rate)
         rate%kind = 'rate_patch'
@@ -95,23 +91,36 @@ module atom_patch_mod
       end do
     end do
 
-    call trace%end()
+    do m=self%n_omega+1, self%n_mu
+      do n=1, self%n_nu
+        allocate(opac)
+        opac%kind = 'line_opac'
+        opac%atom => self%atom
+        call opac%pre_init_and_link(self, i_mu=m, i_nu=n)
+      end do
+    end do
+
+    call trace%end(itimer)
   END SUBROUTINE atom_patch_pre_init
 
   !===============================================================================
   SUBROUTINE pre_init_atom (self)
     class(atom_patch_t) :: self
-    type(atom_type), save :: atom
+    type(atom_type), save, target :: atom
     type(spectrum_type), save, target :: sp
-    logical, save :: first_time=.true.
+    logical, save :: first_time=.true., atom_read=.false.
     character(len=128), save :: atom_file='./input_multi3d/atoms/atom.ba06'
+    character(len=256) :: command
     real(8), save :: qnorm=10.0
     integer :: iostat
     integer, save:: verbose=0
-    namelist /atom_params/ atom_file, qnorm, convlim, verbose
+    integer, save :: itimer=0, itimer1=0
+    logical, save :: exclude_trace_cont=.true., use_atom_abnd=.true.
+    namelist /atom_params/ atom_file, qnorm, convlim, verbose, exclude_trace_cont, use_atom_abnd
     !-----------------------------------------------------------------------------
-    call trace%begin('atom_patch_t%pre_init_atom')
+    call trace%begin('atom_patch_t%pre_init_atom', itimer=itimer)
     if (first_time) then
+      first_time = .false.
       rewind (io%input)
       read (io%input, atom_params, iostat=iostat)
       if (iostat > 0) then
@@ -127,17 +136,32 @@ module atom_patch_mod
       call sp%init(atom%line, atom%cont, atom%qnorm)
       atom%sp = sp
 
-      first_time = .false.
+      atom%fcheck = self%fcheck
+      atom%pcheck = self%pcheck
+      atom%linecheck = self%linecheck
+
+      write (command, *) 'cp ', trim(atom_file), ' ./out/atom.txt' 
+      call execute_command_line (trim(command), exitstat=iostat)
     endif
 
-    allocate(self%atom)
-    self%atom = atom
+    if (mpi%size==self%task_list%dims(3)) then
+      self%atom => atom
+    else
+      allocate(self%atom)
+      self%atom = atom
+    endif
+
     self%sp => sp
 
-    allocate(self%atom%C(atom%nlevel, atom%nlevel))
-    allocate(self%atom%W(atom%nlevel, atom%nlevel))
-    allocate(self%atom%e(atom%nlevel))
-    call trace%end()
+    if (exclude_trace_cont) then
+      call self%exclude_double_continua()
+    endif
+
+    if (use_atom_abnd) then
+      call self%composition%overwrite_abundance(atom%id, atom%abnd, atom%awgt)
+    endif
+
+    call trace%end(itimer)
   END SUBROUTINE pre_init_atom
 
   !===============================================================================
@@ -146,9 +170,14 @@ module atom_patch_mod
     class(atom_type), pointer :: atom
     real(4), dimension(:,:,:), pointer :: ne, temp
     real(4), dimension(:,:,:,:), pointer :: nh
+    integer, save:: itimer=0
     !-----------------------------------------------------------------------------
-    call trace%begin('atom_patch_t%init_atom')
+    call trace%begin('atom_patch_t%init_atom', itimer=itimer)
     atom => self%atom
+
+    allocate(atom%C(atom%nlevel, atom%nlevel))
+    allocate(atom%W(atom%nlevel, atom%nlevel))
+    allocate(atom%e(atom%nlevel))
 
     ne   => self%m3d_parent%mem(:,:,:,self%i_ne,            self%it,1)
     temp => self%m3d_parent%mem(:,:,:,self%i_temp,          self%it,1)
@@ -158,9 +187,9 @@ module atom_patch_mod
     atom%n     => self%mem(:,:,:,:,self%it,2)
 
     call atom%compute_line_damping(ne, temp, nh)
-    call self%composition%get_totn(trim(atom%id), atom%abnd, atom%totn)
+    call self%composition%get_totn(atom%id, atom%abnd, atom%totn)
     call atom%compute_lte_populations(temp, ne)
-    call trace%end()
+    call trace%end(itimer)
   END SUBROUTINE init_atom
 
   !===============================================================================
@@ -172,9 +201,9 @@ module atom_patch_mod
     character(len=64) :: text
     integer, save:: itimer=0
     !-----------------------------------------------------------------------------
+    call self%pre_update()
     if (self%finished) return
     call trace%begin('atom_patch_t%atom_patch_update', itimer=itimer)
-    call self%pre_update()
 
     if (self%iter == 0) then
       write(text,'(A,I2,A,I2,A)') 'LTE Iteration .'
@@ -230,31 +259,28 @@ module atom_patch_mod
     call trace%begin('atom_patch_t%atom_patch_post_update')
     if (self%verbose > 0) then
       call io%lock%set
-       write(*,'(F5.1, L2, A12, 1(I4), 3(ES15.7))') &
-         self%time, self%finished, trim(self%kind), self%patch%id, &
+       write(stdout,'(F5.1, L2, A12, 1(I4), 3(ES15.7))') &
+         self%time, self%finished, trim(self%kind), self%id, &
          self%atom%n(1,1,1,3), self%atom%n(1,1,self%n(3),3)
-      write(*,'(A19, ES19.7, A10, 3ES15.7)') 'Maxerr =', self%maxerr, &
+      write(stdout,'(A19, ES19.7, A10, 3ES15.7)') 'Maxerr =', self%maxerr, &
         ', global =', global_maxerr
-      write(*,'(1X, A80)') &
+      write(stdout,'(1X, A80)') &
       '................................................................................'
       call io%lock%unset
     end if
-
-    if (self%iter == self%maxiter) then
-      call self%finish()
-    endif
-
+    
     if ((global_maxerr > 0) .and. global_maxerr < convlim) then
       print *, 'Converged!'
       call self%finish()
     endif
 
-    self%iter = self%iter + 1
+    call self%m3d_patch_t%post_update()
     call trace%end()
   END SUBROUTINE atom_patch_post_update
 
   !===============================================================================
   SUBROUTINE atom_patch_finish (self, rotated)
+    use m3d_patch_mod, only: converged
     class(atom_patch_t) :: self
     class(nbor_t), pointer:: nbor
     class(task_t), pointer:: nbtask
@@ -264,6 +290,7 @@ module atom_patch_mod
     call trace%begin('atom_patch_t%atom_patch_finish')
     self%finished = .true.
     self%time = io%end_time + self%t_offset*self%dtime
+    converged = .true.
 
     nbor => self%link%nbor
     do while (associated(nbor))
@@ -271,8 +298,14 @@ module atom_patch_mod
         nbtask => nbor%task
         select type(nbtask)
         class is (m3d_patch_t)
-          if (nbtask%i_mu > 0 .and. .not. nbtask%out_ray) then
-            call nbtask%finish()
+          if (nbtask%i_mu > 0) then
+            if (.not. nbtask%out_ray) then
+              call nbtask%finish()
+            endif
+          else
+            nbtask%time = io%end_time + (self%t_offset - 1)*nbtask%dtime
+            nbtask%iter = nbtask%maxiter
+            nbtask%out_ray = .true.
           endif
         end select
       endif
@@ -392,6 +425,36 @@ module atom_patch_mod
       gamma_ji(:,:,:,i) = gamma_ji(:,:,:,i) * self%atom%line(i)%wphi
     end do
   END SUBROUTINE
+
+  !===============================================================================
+  SUBROUTINE exclude_double_continua (self)
+    class(atom_patch_t), target :: self
+    class(transition_type), pointer :: trans
+    integer :: i, lower, kc
+    logical :: same
+    !-----------------------------------------------------------------------------
+    do i=1, size(self%composition%trans)
+      trans => self%composition%trans(i)
+      if (trans%level%g2 > 0) then
+        if (uppercase(trans%ion%id, 2) == uppercase(self%atom%id, 2)) then
+          do kc=1, self%atom%ncont
+            lower = self%atom%cont(kc)%i
+
+            if (self%atom%ev(lower)==0) then
+              same = trans%level%xion == self%atom%ev(lower)
+            else
+              same = abs(trans%level%xion / self%atom%ev(lower) - 1) < 1d-2
+            endif
+
+            if (same) then
+              trans%exclude = .true.
+              print *, 'excluding transition', trans%label
+            endif
+          end do
+        endif
+      endif
+    end do
+  END SUBROUTINE exclude_double_continua
   
   !===============================================================================
   SUBROUTINE atom_patch_nbor_relations(self, another, needed, needs_me, download)
@@ -399,7 +462,7 @@ module atom_patch_mod
     class(task_t), pointer :: another         ! another task in the list
     logical :: needed, needs_me, download    ! Is the other task: needed, 
                                              !    does it need me, should I download?
-    
+    ! ----------------------------------------------------------------------------
     call trace%begin ('atom_patch_t%nbor_relations')
     call self%m3d_patch_t%nbor_relations(another, needed, needs_me, download)
   
@@ -429,5 +492,27 @@ module atom_patch_mod
   
     call trace%end()
   END SUBROUTINE atom_patch_nbor_relations
+
+  !===============================================================================
+    pure function uppercase(string,ss)
+    ! converts the first ss characters of string to uppercase and returns them as a new string.
+    character(len=*),intent(in) :: string
+    integer,intent(in) :: ss
+    character(len=ss) :: uppercase
+    integer :: i,k
+    character(len=26),parameter :: ucase='ABCDEFGHIJKLMNOPQRSTUVWXYZ' 
+    character(len=26),parameter :: lcase='abcdefghijklmnopqrstuvwxyz'
+    !-----------------------------------------------------------------------------
+    uppercase(:)=' '
+    uppercase(1:ss)=string(1:ss)
+    do i=1,ss
+    k=index(lcase,string(i:i))
+    if (k > 0) then
+        uppercase(i:i)=ucase(k:k)
+    else
+        uppercase(i:i)=string(i:i)
+    end if
+    end do
+  end function uppercase
 
   end module

@@ -7,13 +7,14 @@
 #SBATCH -J M3D_DIS
 # --- CPU and node logistics ---
 #SBATCH --partition=debug
-#SBATCH --nodes=8                   # Maximum number of nodes to be allocated
-#SBATCH --ntasks=8                  # Number of MPI tasks (i.e. processes)
+#SBATCH --ntasks=1                  # Number of MPI tasks (i.e. processes)
 #SBATCH --ntasks-per-node=1         # Maximum number of tasks on each node
-#SBATCH --cpus-per-task=32           # Number of cores per MPI task 
+#SBATCH --cpus-per-task=32          # Number of cores per MPI task 
+#SBATCH --ntasks-per-core=1
 # --- User notifications ---
 #SBATCH --time 00:30:00
+rm ./out/*
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
-export OMP_STACKSIZE=512M
+export OMP_STACKSIZE=1024M
 unset I_MPI_PMI_LIBRARY 
 mpirun ./dispatch.x
