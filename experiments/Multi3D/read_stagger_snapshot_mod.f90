@@ -33,7 +33,9 @@ SUBROUTINE read_stagger_snapshot(ds, d, px, py, pz, ee, tt, ne)
   character(len=128), save :: stagger_file='/lustre/astro/rhoppe/multi-3d/input/atmos/t5777g44m00/t5777g44m0005'
   character(len=128), save :: mesh_file, snap_file, data_file, aux_file
   integer, save :: snap=20, dims(3)=[5,5,230]
-  real(4), save :: zcut=1.5, ee_offset=3.2122 ! in Mm below the surface
+  real(4), save :: zcut=-99! in Mm below the surface
+  real(4), save :: maxTemp=huge(1.0)
+  real(4), save :: ee_offset=3.2122
   integer :: iostat, lunit, recl
   integer :: nx, ny, nz, nnz, m(3)
   integer, save :: itimer
@@ -44,7 +46,7 @@ SUBROUTINE read_stagger_snapshot(ds, d, px, py, pz, ee, tt, ne)
   real(4), pointer, contiguous, dimension(:) :: zdn, dzidzup, dzidzdn, dz, dzdn
   real(4), pointer, contiguous, dimension(:,:,:) :: irho, ipx, ipy, ipz, iie, itemp, ilne
   real(4), pointer, contiguous, dimension(:,:,:) :: ppx, ppy, ppz
-  namelist /stagger_params/ stagger_file, snap, zcut, ee_offset, dims
+  namelist /stagger_params/ stagger_file, snap, zcut, ee_offset, dims, maxTemp
   !-----------------------------------------------------------------------------
   call trace%begin('read_stagger_snapshot_mod%read_stagger', itimer=itimer)
 
@@ -168,7 +170,12 @@ SUBROUTINE read_stagger_snapshot(ds, d, px, py, pz, ee, tt, ne)
 
   newx = linspace(xx(1), xx(nx), dims(1))
   newy = linspace(yy(1), yy(ny), dims(2))
-  newz = linspace(zz(1), zz(nz), dims(3))
+
+  if (zcut > -99) then
+    newz = linspace(zcut, zz(nz), dims(3))
+  else
+    newz = linspace(zz(1), zz(nz), dims(3))
+  endif
 
   call os%allocate(d,  dims)
   call os%allocate(px, dims)
@@ -300,7 +307,7 @@ FUNCTION interp1d_sorted (xx, yy, newx) result(newy)
   do ii=1, nnew
     do while (xx(i+1) < newx(ii)) 
         i = i + 1
-        if (i > nold) then
+        if (i >= nold) then
           i = nold
           exit
         endif

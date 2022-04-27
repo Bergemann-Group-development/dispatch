@@ -8,7 +8,7 @@ module op_math_mod
     
 contains
 
-   function interp1d(xx,yy,newx, order, sorted) result(newy)
+   FUNCTION interp1d(xx,yy,newx, order, sorted) result(newy)
          real(dp), dimension(:), intent(in) :: xx, yy, newx
          real(dp), dimension(:), allocatable :: newy
          integer, value, optional :: order
@@ -72,9 +72,9 @@ contains
             end do
          endif
 
-   end function interp1d
+   end FUNCTION interp1d
 
-   pure function interp1d_linear(j,xx,yy,newx) result(newy)
+   pure FUNCTION interp1d_linear(j,xx,yy,newx) result(newy)
       real(dp), dimension(:), intent(in) :: xx, yy
       real(dp), intent(in) :: newx
       integer, intent(in) :: j
@@ -82,9 +82,9 @@ contains
 
       m = (yy(j+1) - yy(j)) / (xx(j+1) - xx(j))
       newy = m * (newx - xx(j)) + yy(j)
-   end function interp1d_linear
+   end FUNCTION interp1d_linear
 
-   pure function interp1d_quadratic(j,xx,yy,newx) result(newy)
+   pure FUNCTION interp1d_quadratic(j,xx,yy,newx) result(newy)
       real(dp), dimension(:), intent(in) :: xx, yy
       real(dp), intent(in) :: newx
       integer, intent(in) :: j
@@ -107,10 +107,10 @@ contains
 
       newy = sum(yy(j1:j3)*w(1:3))
 
-   end function interp1d_quadratic
+   end FUNCTION interp1d_quadratic
 
-   ! Finds index where after which element should be inserted to maintain order.
-   pure function searchsorted(arr, value) result(i)
+   ! Finds index of element after which value should be inserted to maintain order.
+   pure FUNCTION searchsorted(arr, value) result(i)
       real(8), intent(in) :: arr(:), value
       integer :: i
 
@@ -121,9 +121,9 @@ contains
          i = BinarySearch(arr, 1, size(arr), value)
       
       endif
-   end function searchsorted
+   end FUNCTION searchsorted
 
-   pure recursive function BinarySearch(arr, l, r, x) result(idx)
+   pure recursive FUNCTION BinarySearch(arr, l, r, x) result(idx)
       real(8), intent(in) :: arr(:)
       real(8), intent(in) :: x
       integer, intent(in) :: l, r
@@ -143,31 +143,30 @@ contains
           idx = l
       endif
 
-   end function BinarySearch
+   end FUNCTION BinarySearch
 
-
-   elemental real(dp) function poly3(x, a, b, c) result(poly)
+   elemental real(dp) FUNCTION poly3(x, a, b, c) result(poly)
       real(dp), intent(in) :: x, a, b, c
       poly = a*x*x + b*x + c
-   end function poly3
+   end FUNCTION poly3
 
-   elemental real(dp) function poly4(x, a, b, c, d) result(poly)
+   elemental real(dp) FUNCTION poly4(x, a, b, c, d) result(poly)
       real(dp), intent(in) :: x, a, b, c, d
       poly = x*poly3(x, a, b, c) + d
-   end function poly4
+   end FUNCTION poly4
 
-   elemental real(dp) function poly5(x, a, b, c, d, e) result(poly)
+   elemental real(dp) FUNCTION poly5(x, a, b, c, d, e) result(poly)
       real(dp), intent(in) :: x, a, b, c, d, e
       poly = x*poly4(x, a, b, c, d) + e
-   end function poly5
+   end FUNCTION poly5
 
-   elemental real(dp) function poly6(x, a, b, c, d, e, f) result(poly)
+   elemental real(dp) FUNCTION poly6(x, a, b, c, d, e, f) result(poly)
       real(dp), intent(in) :: x, a, b, c, d, e, f
       poly = x*poly5(x, a, b, c, d, e) + f
-   end function poly6
+   end FUNCTION poly6
 
 
-   elemental real(dp) function solve_quadratic(p, q, avoid_negative) result(x)
+   elemental real(dp) FUNCTION solve_quadratic(p, q, avoid_negative) result(x)
       real(dp), intent(in) :: p, q
       logical, intent(in), optional :: avoid_negative
       real(dp) :: cam, root
@@ -180,10 +179,10 @@ contains
       if (present(avoid_negative)) then
          if (avoid_negative .and. x<0) x = cam - root
       endif
-   end function solve_quadratic
+   end FUNCTION solve_quadratic
     
    !---------------------------------------------------------------------
-   subroutine lineq(a,b,n)
+   SUBROUTINE lineq(a,b,n)
       !***********************************************************************
       !
       !  finds solution of system of linear equations
@@ -288,7 +287,7 @@ contains
          b(i) = c(i)
       end do
 
-   end subroutine lineq
+   end SUBROUTINE lineq
    !---------------------------------------------------------------------
 
 

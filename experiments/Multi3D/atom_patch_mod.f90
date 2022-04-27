@@ -1,8 +1,5 @@
 module atom_patch_mod
-    !USE rt_integral_mod
-    !USE radau_mod
-    !USE boundaries_mod
-    !USE eos_mod
+    USE os_mod
     USE list_mod
     USE halo_mod
     USE gpatch_mod
@@ -30,8 +27,9 @@ module atom_patch_mod
     USE trans_mod, only: line_type
     USE spectrum_mod, only:spectrum_type
     USE composition_mod, only: composition_type
-    USE m3d_patch_mod, only: m3d_patch_t, maxiter, ilambd
+    USE m3d_patch_mod, only: m3d_patch_t, maxiter, ilambd, voigt_interp
     USE transition_mod, only: transition_type
+    USE lines_patch_mod, only:lines_patch_t
     implicit none
   
     !-----------------------------------------------------------------------------
@@ -66,6 +64,7 @@ module atom_patch_mod
     class(atom_patch_t), target:: self
     class(rate_patch_t), pointer :: rate
     class(opacity_t), pointer :: opac
+    class(lines_patch_t), pointer :: lines
     integer :: m, n
     integer, save :: itimer=0
     ! ----------------------------------------------------------------------------
@@ -77,10 +76,24 @@ module atom_patch_mod
 
     do n=1, self%n_nu
       do m=0, self%n_omega
-        allocate(opac)
-        opac%atom => self%atom
-        opac%kind = merge('line_opac', 'cont_opac', m>0)
-        call opac%pre_init_and_link(self, i_mu=m, i_nu=n)
+        if (m==0) then
+          allocate(opac)
+          opac%atom => self%atom
+          opac%kind = 'cont_opac'
+          call opac%pre_init_and_link(self, i_mu=m, i_nu=n)
+        else
+          if (voigt_interp) then
+            allocate(lines)
+            lines%kind = 'lines_patch'
+            lines%atom => self%atom
+            call lines%pre_init_and_link(self, i_mu=m, i_nu=n)
+          else
+            allocate(opac)
+            opac%kind = 'line_opac'
+            opac%atom => self%atom
+            call opac%pre_init_and_link(self, i_mu=m, i_nu=n)
+          endif
+        endif
 
         if (m==0) cycle
 
@@ -93,10 +106,17 @@ module atom_patch_mod
 
     do m=self%n_omega+1, self%n_mu
       do n=1, self%n_nu
-        allocate(opac)
-        opac%kind = 'line_opac'
-        opac%atom => self%atom
-        call opac%pre_init_and_link(self, i_mu=m, i_nu=n)
+        if (voigt_interp) then
+          allocate(lines)
+          lines%kind = 'lines_patch'
+          lines%atom => self%atom
+          call lines%pre_init_and_link(self, i_mu=m, i_nu=n)
+        else
+          allocate(opac)
+          opac%kind = 'line_opac'
+          opac%atom => self%atom
+          call opac%pre_init_and_link(self, i_mu=m, i_nu=n)
+        endif
       end do
     end do
 
@@ -111,12 +131,15 @@ module atom_patch_mod
     logical, save :: first_time=.true., atom_read=.false.
     character(len=128), save :: atom_file='./input_multi3d/atoms/atom.ba06'
     character(len=256) :: command
-    real(8), save :: qnorm=10.0
-    integer :: iostat
+    real(8), save :: qnorm=10.0, logf_cut = -99.9, red_cut=huge(1.0), blue_cut=tiny(1.0)
+    integer :: iostat, lunit
     integer, save:: verbose=0
-    integer, save :: itimer=0, itimer1=0
+    integer, save :: itimer=0, itimer1=0, n_in_lines=0
     logical, save :: exclude_trace_cont=.true., use_atom_abnd=.true.
-    namelist /atom_params/ atom_file, qnorm, convlim, verbose, exclude_trace_cont, use_atom_abnd
+    integer, save, allocatable :: in_lines(:)
+    namelist /atom_params/ atom_file, qnorm, convlim, verbose, exclude_trace_cont, &
+    use_atom_abnd, logf_cut, red_cut, blue_cut, n_in_lines
+    namelist /line_mask/ in_lines
     !-----------------------------------------------------------------------------
     call trace%begin('atom_patch_t%pre_init_atom', itimer=itimer)
     if (first_time) then
@@ -130,11 +153,27 @@ module atom_patch_mod
       call io%namelist_warning ('atom_params', iostat)
       write (io%namelist, atom_params)
 
+      open(newunit=lunit, file='./out/atom_params.nml', delim='apostrophe', form='formatted')
+      write (lunit, atom_params)
+
+      if (n_in_lines > 0) then
+        allocate(in_lines(n_in_lines))
+        rewind (io%input)
+        read (io%input, line_mask, iostat=iostat)
+        if (iostat > 0) then
+          rewind (io%input)
+          read (io%input, line_mask)
+        end if
+        write (lunit, line_mask)
+      endif
+
+      close(lunit)
+
       sp%verbose = verbose
       if (verbose) write (*,*) ' - Reading atom'
-      call read_atom(atom, atom_file, qnorm)
-      call sp%init(atom%line, atom%cont, atom%qnorm)
-      atom%sp = sp
+      call read_atom(atom, atom_file, qnorm, logf_cut=logf_cut, red_cut=red_cut, blue_cut=blue_cut, in_lines=in_lines)
+      call sp%init(atom%line, atom%cont, atom%qnorm, atom%awgt)
+      atom%sp => sp
 
       atom%fcheck = self%fcheck
       atom%pcheck = self%pcheck
@@ -185,10 +224,14 @@ module atom_patch_mod
 
     atom%nstar => self%mem(:,:,:,:,self%it,1)
     atom%n     => self%mem(:,:,:,:,self%it,2)
+    
+    allocate(atom%totn, atom%doppler_factor, mold=temp)
 
-    call atom%compute_line_damping(ne, temp, nh)
+    atom%doppler_factor = atom%compute_doppler_factor(temp)
+    !call atom%compute_line_damping(ne, temp, nh)
     call self%composition%get_totn(atom%id, atom%abnd, atom%totn)
     call atom%compute_lte_populations(temp, ne)
+    call atom%compute_cont_factors()
     call trace%end(itimer)
   END SUBROUTINE init_atom
 
@@ -374,17 +417,24 @@ module atom_patch_mod
     class(nbor_t), pointer:: nbor
     class(task_t), pointer:: nbtask
     class(line_type), pointer :: line
-    integer :: i, i_mu, i_nu
+    integer :: i, j, i_mu, i_nu
     ! ----------------------------------------------------------------------------
     do i=1, self%atom%nline
       line => self%atom%line(i)
-      allocate(line%wphi(self%n(1), self%n(2), self%n(3)))
-      line%wphi = 0
+      call os%allocate(line%wphi, self%n, zero=.true.)
 
       nbor => self%link%nbor
       do while (associated(nbor))
         nbtask => nbor%task
         select type(opac => nbtask)
+        class is (lines_patch_t)
+          if (.not. opac%out_ray) then
+            j = opac%idx_map(i)
+            if (j>0) then
+              line%wphi = line%wphi + opac%wmu * opac%line(j)%wphi
+              call os%deallocate(opac%line(j)%wphi)
+            endif
+          endif
         class is (opacity_t)
           if (opac%i_mu > 0 .and. .not. opac%out_ray) then
             line%wphi = line%wphi + opac%wmu * opac%wphi(:,:,:,i)
@@ -402,7 +452,7 @@ module atom_patch_mod
     class(atom_patch_t), target :: self
     class(nbor_t), pointer:: nbor
     class(task_t), pointer:: nbtask
-    integer :: i, i_mu, i_nu, m(4)
+    integer :: i, i_mu, i_nu, m(4), p(3)
     real(8), dimension(:,:,:,:), allocatable:: gamma_ij, gamma_ji
     ! ----------------------------------------------------------------------------
     gamma_ij = 0.0d0
@@ -468,6 +518,15 @@ module atom_patch_mod
   
     if (needed .or. needs_me) then
       select type (another)
+      class is (lines_patch_t)
+        needed = .false.
+        if (associated(another%atom)) then
+          if (another%atom%id /= self%atom%id) then
+            needs_me = .false.
+          endif
+        else
+          needs_me = .false.
+        endif
       class is (opacity_t)
         needed = .false.
         if (associated(another%atom)) then

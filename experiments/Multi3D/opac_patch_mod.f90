@@ -80,7 +80,7 @@ SUBROUTINE opacity_pre_init (self)
       self%fe = fe
     endif
   endif
-
+  
   call self%append_to_task_list()
 
   if (self%kind == 'back_opac') then
@@ -294,6 +294,13 @@ SUBROUTINE opacity_nbor_relations(self, another, needed, needs_me, download)
         if (self%kind=='net_opac') then
           needed = .false.
         endif
+      elseif (another%kind == 'net_opac') then
+        select case(self%kind)
+          case ('net_opac')
+            ! do nothing
+          case ('line_opac', 'cont_opac', 'back_opac')
+            needed=.false.
+        end select
       else
         if (self%kind=='net_opac' .and. another%kind=='angle_rad') then
           needed = .false.

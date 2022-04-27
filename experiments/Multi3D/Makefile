@@ -1,8 +1,8 @@
 # Option groups
-#OPTS = full_debug
+OPTS = full_debug
 #OPTS = vscode
 #OPTS = debug
-OPTS =
+#OPTS =
 #OPTS = hoppe
 #OPTS = optimized
 
@@ -30,6 +30,7 @@ sinclude $(HOP)/dispatch.mkf
 sinclude $(MULTI3D)/dispatch.mkf
 
 #OPT = -O0 -fimplicit-none  -Wall  -Wline-truncation  -Wcharacter-truncation  -Wsurprising  -Waliasing  -Wimplicit-interface  -Wunused-parameter  -fwhole-file  -fcheck=all  -fbacktrace
+#OPT = -Ofast
 
 # List the .o files the main program depends on after the colon:
 $(EXEC): read_external_mod.o mpi_debug_mod.o
@@ -58,9 +59,9 @@ m3d_patch_mod.o             : gpatch_mod.o trace.o spectrum_mod.o ray_mod.o
 ray_patch_mod.o             : m3d_patch_mod.o
 opac_patch_mod.o            : ray_patch_mod.o composition_mod.o atom_var.o
 rad_patch_mod.o             : ray_patch_mod.o opac_patch_mod.o
-rate_patch_mod.o            : ray_patch_mod.o opac_patch_mod.o rad_patch_mod.o
-atom_patch_mod.o            : rate_patch_mod.o
-composition_patch_mod.o     : m3d_patch_mod.o opac_patch_mod.o rad_patch_mod.o rate_patch_mod.o atom_patch_mod.o 
+rate_patch_mod.o            : ray_patch_mod.o opac_patch_mod.o rad_patch_mod.o lines_patch_mod.o
+atom_patch_mod.o            : rate_patch_mod.o lines_patch_mod.o
+composition_patch_mod.o     : m3d_patch_mod.o opac_patch_mod.o rad_patch_mod.o rate_patch_mod.o atom_patch_mod.o net_opac_patch_mod.o
 transition_mod.o            : os_mod.o
 mmath.o                     : search_mod.o
 m_unista.o                  : m_refsor.o
@@ -68,3 +69,5 @@ ray_mod.o                   : mmath.o
 prec_mod.o                  : mconst.o os_mod.o
 patch_mod.o                 : os_mod.o
 mpi_debug_mod.o             : mpi_mod.o io_mod.o
+lines_patch_mod.o           : ray_patch_mod.o
+net_opac_patch_mod.o        : ray_patch_mod.o lines_patch_mod.o

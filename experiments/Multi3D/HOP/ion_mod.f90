@@ -5,7 +5,9 @@ module ion_mod
 
     type particle_type
         real(dp), dimension(:,:,:), allocatable :: f, rho_per_h, e, part
+        integer :: nx, ny, nz
         character(len=6) :: id
+        logical :: allocated=.false.
     end type
 
     type particle_pointer_t
@@ -35,13 +37,14 @@ module ion_mod
         procedure :: f_of_own_molecules
         procedure :: f_of_molecules_with
         procedure :: e_of_molecules_with
+        procedure :: allocate => allocate_ion
         !procedure :: absorption_factor => ion_absorption_factor
     end type
 
 contains
 
 !===============================================================================
-elemental real(dp) function partition(self, EK_over_temp, ne)
+elemental real(dp) FUNCTION partition(self, EK_over_temp, ne)
     class(ion_type), intent(in) :: self
     real(dp), intent(in) :: EK_over_temp, ne
     real(dp), dimension(self%nk) :: blz, fis, g
@@ -56,10 +59,10 @@ elemental real(dp) function partition(self, EK_over_temp, ne)
         where(self%levels%xl > 0) fis = self%levels%fischel_sparks(self%j, EK_over_temp, ne)
         partition = self%g0 + sum(g*fis*blz)
     endif
-end function partition
+end FUNCTION partition
 
 !===============================================================================
-elemental real(dp) function saha_eq(self, EK_over_temp, ne, saha, dxi, partition_ratio)
+elemental real(dp) FUNCTION saha_eq(self, EK_over_temp, ne, saha, dxi, partition_ratio)
     class(ion_type), intent(in) :: self
     real(dp), intent(in) :: EK_over_temp, ne, saha, dxi
     real(dp), intent(in), optional :: partition_ratio
@@ -77,36 +80,32 @@ elemental real(dp) function saha_eq(self, EK_over_temp, ne, saha, dxi, partition
     else
         saha_eq = saha * self%levels(1)%boltzmann(EK_over_temp, dxi=dxi_j) * partition_ratio
     endif
-end function saha_eq
+end FUNCTION saha_eq
 
 !===============================================================================
-function f_of_own_molecules(self) result(fsum)
+FUNCTION f_of_own_molecules(self) result(fsum)
     class(ion_type) :: self
     type(particle_type), pointer :: molecule
     integer :: i
-    real(dp), dimension(:,:,:), allocatable :: fsum
+    real(dp), dimension(self%nx, self%ny, self%nz) :: fsum
     !---------------------------------------------------------------------------
-    allocate(fsum, mold=self%f)
-
     fsum = 0
     do i=1, self%nmolec
         molecule => self%molecules(i)%p
         fsum = fsum + molecule%f
     end do
-end function
+end FUNCTION
 
 !===============================================================================
-function f_of_molecules_with(self, other, count_double) result(fsum)
+FUNCTION f_of_molecules_with(self, other, count_double) result(fsum)
     class(ion_type) :: self
     type(ion_type) :: other
     type(particle_type), pointer :: molecule
     type(particle_pointer_t), allocatable :: mol_list(:)
     integer :: i
-    real(dp), dimension(:,:,:), allocatable :: fsum
+    real(dp), dimension(self%nx, self%ny, self%nz) :: fsum
     logical, optional :: count_double
     !---------------------------------------------------------------------------
-    allocate(fsum, mold=self%f)
-
     call self%molecules_with(other, mol_list, count_double)
 
     fsum = 0
@@ -114,20 +113,18 @@ function f_of_molecules_with(self, other, count_double) result(fsum)
         molecule => mol_list(i)%p
         fsum = fsum + molecule%f
     end do
-end function
+end FUNCTION
 
 !===============================================================================
-function e_of_molecules_with(self, other, count_double) result(esum)
+FUNCTION e_of_molecules_with(self, other, count_double) result(esum)
     class(ion_type) :: self
     type(ion_type) :: other
     class(particle_type), pointer :: molecule
     type(particle_pointer_t), allocatable :: mol_list(:)
     integer :: i
-    real(dp), dimension(:,:,:), allocatable :: esum
+    real(dp), dimension(self%nx, self%ny, self%nz) :: esum
     logical, optional :: count_double
     !---------------------------------------------------------------------------
-    allocate(esum, mold=self%f)
-
     call self%molecules_with(other, mol_list, count_double)
 
     esum = 0
@@ -135,10 +132,10 @@ function e_of_molecules_with(self, other, count_double) result(esum)
         molecule => mol_list(i)%p
         esum = esum + molecule%e
     end do
-end function
+end FUNCTION
 
 !===============================================================================
-subroutine molecules_with (self, other, mol_list, count_double)
+SUBROUTINE molecules_with (self, other, mol_list, count_double)
     class(ion_type), target, intent(in) :: self
     type(ion_type), intent(in) :: other
     logical, intent(in), optional :: count_double
@@ -184,6 +181,23 @@ subroutine molecules_with (self, other, mol_list, count_double)
             endif
         end do
     end do
-end subroutine molecules_with
+END SUBROUTINE molecules_with
+
+SUBROUTINE allocate_ion (self, nx, ny, nz)
+    class(ion_type) :: self
+    integer :: nx, ny, nz
+    !---------------------------------------------------------------------------
+    if (.not. self%allocated) then
+        self%nx = nx
+        self%ny = ny
+        self%nz = nz
+        allocate(self%f(nx,ny,nz))
+        allocate(self%saha(nx,ny,nz))
+        allocate(self%part(nx,ny,nz))
+        allocate(self%anjon(nx,ny,nz))
+        allocate(self%rho_per_h(nx,ny,nz))
+        self%allocated = .true.
+    endif
+END SUBROUTINE allocate_ion
     
 end module ion_mod

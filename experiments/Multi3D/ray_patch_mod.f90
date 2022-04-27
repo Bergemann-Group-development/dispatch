@@ -29,6 +29,7 @@ module ray_patch_mod
   !USE scratch_mod
   USE ray_mod, only:ray_type
   USE m3d_patch_mod, only: m3d_patch_t, vec, wmu, long_vec, long_wmu
+  USE mconst, only: cc
   implicit none
   private
 
@@ -138,6 +139,7 @@ END SUBROUTINE ray_patch_pre_init
 SUBROUTINE set_freq_indices (self)
   class(ray_patch_t) :: self
   integer :: fs, fe, nv, md
+  integer, save :: counter=0
   !-----------------------------------------------------------------------------
   if (self%kind == 'out_rad') then
     self%fs = 1
@@ -157,6 +159,12 @@ SUBROUTINE set_freq_indices (self)
 
   self%fs = fs
   self%fe = fe
+
+  if (self%i_nu > counter) then
+    if (counter == 0) write(stdout,'(I2, A18)') self%n_nu, 'frequency splits'
+    write(stdout,'(I4, I6,A3,I4)') self%i_nu, fs, ' - ', fe
+    counter = self%i_nu
+  endif
 END SUBROUTINE set_freq_indices
 
 !===============================================================================
@@ -175,9 +183,9 @@ SUBROUTINE comp_vproj (self, vproj)
   pz => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),self%patch%idx%pz,self%it,1)
 
   if (self%out_ray) then
-    vproj = (-self%vec(1)*px - self%vec(2)*py + self%vec(3)*pz) * scaling%u / d
+    vproj = (-self%vec(1)*px - self%vec(2)*py + self%vec(3)*pz) * scaling%u / (d*cc)
   else
-    vproj = (self%vec(1)*px + self%vec(2)*py + self%vec(3)*pz) * scaling%u / d
+    vproj = (self%vec(1)*px + self%vec(2)*py + self%vec(3)*pz) * scaling%u / (d*cc)
   endif
 END SUBROUTINE comp_vproj
 

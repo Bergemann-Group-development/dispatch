@@ -49,10 +49,9 @@ module transition_mod
 contains
 
 !===============================================================================
-subroutine load_lam_interp_weights(self,lam)
+SUBROUTINE load_lam_interp_weights(self,lam)
     class(transition_type) :: self
     real(dp), dimension(:), intent(in) :: lam
-    real(dp), dimension(:), allocatable :: test
     integer :: nf, f
     integer :: nx, j, i
     logical :: quadratic
@@ -126,10 +125,10 @@ subroutine load_lam_interp_weights(self,lam)
         f = f+di
         quad(f) = quadratic
     end do
-end subroutine
+END SUBROUTINE
 
 !===============================================================================
-subroutine set_xweight(self, lam, f)
+SUBROUTINE set_xweight(self, lam, f)
     class(transition_type) :: self
     real(dp), dimension(:), intent(in) :: lam
     integer, intent(in) :: f
@@ -148,10 +147,10 @@ subroutine set_xweight(self, lam, f)
     else
         lagrange(1:2,f) = linear_weight(self%lam(j:j+1), lam(f))
     endif
-end subroutine set_xweight
+END SUBROUTINE set_xweight
 
 !===============================================================================
-function quadratic_weight(xxx,newx) result(w)
+FUNCTION quadratic_weight(xxx,newx) result(w)
     real(dp), dimension(3), intent(in) :: xxx
     real(dp), intent(in) :: newx
     real(dp) :: w(3)
@@ -159,20 +158,20 @@ function quadratic_weight(xxx,newx) result(w)
     w(1) = (newx-xxx(2)) * (newx-xxx(3)) / ((xxx(1)-xxx(2)) * (xxx(1)-xxx(3)))
     w(2) = (newx-xxx(1)) * (newx-xxx(3)) / ((xxx(2)-xxx(1)) * (xxx(2)-xxx(3)))
     w(3) = (newx-xxx(1)) * (newx-xxx(2)) / ((xxx(3)-xxx(1)) * (xxx(3)-xxx(2)))
-end function quadratic_weight
+end FUNCTION quadratic_weight
 
 !===============================================================================
-function linear_weight(xx,newx) result(w)
+FUNCTION linear_weight(xx,newx) result(w)
     real(dp), dimension(2), intent(in) :: xx
     real(dp), intent(in) :: newx
     real(dp) :: w(2)
     !---------------------------------------------------------------------------
     w(1) = (xx(2) - newx) / (xx(2) - xx(1))
     w(2) = (newx - xx(1)) / (xx(2) - xx(1))
-end function linear_weight
+end FUNCTION linear_weight
 
 !===============================================================================
-subroutine interp_xkap(self, abslte, lam, temp, teta, fakt)
+SUBROUTINE interp_xkap(self, abslte, lam, temp, teta, fakt)
     class(transition_type) :: self
     real(dp), dimension(:), intent(in) :: lam
     real(4), dimension(:,:,:,:), intent(inout) :: abslte
@@ -184,7 +183,6 @@ subroutine interp_xkap(self, abslte, lam, temp, teta, fakt)
     real(dp) :: ab1
     real(dp), dimension(self%nnu) :: yy
     real(dp), dimension(self%ntt) :: tt
-    real(dp), dimension(:,:), allocatable :: yy2d, dum
     integer :: i, f, nx, ny, nz, nf
     integer, dimension(:,:,:), allocatable :: it
     logical, dimension(:,:,:), allocatable :: quadratic, in_bounds
@@ -304,10 +302,10 @@ subroutine interp_xkap(self, abslte, lam, temp, teta, fakt)
             !endif
         end do
     endif
-end subroutine interp_xkap
+END SUBROUTINE interp_xkap
 
 !===============================================================================
-elemental function interp_temp_quadratic(self, f, it, newt) result(newy)
+elemental FUNCTION interp_temp_quadratic(self, f, it, newt) result(newy)
     class(transition_type), intent(in) :: self
     real(dp), intent(in) :: newt
     integer, intent(in) :: f, it
@@ -329,10 +327,10 @@ elemental function interp_temp_quadratic(self, f, it, newt) result(newy)
     w(3) = (newt-self%tt(j1)) * (newt-self%tt(j2)) / ((self%tt(j3)-self%tt(j1)) * (self%tt(j3)-self%tt(j2)))
 
     newy = sum(pvt_xkap(f,j1:j3) * w(1:3))
-end function interp_temp_quadratic 
+end FUNCTION interp_temp_quadratic 
 
 !===============================================================================
-elemental function interp_temp_linear(self, f, it, newt) result(newy)
+elemental FUNCTION interp_temp_linear(self, f, it, newt) result(newy)
     class(transition_type), intent(in) :: self
     real(dp), intent(in) :: newt
     integer, intent(in) :: f, it
@@ -340,10 +338,10 @@ elemental function interp_temp_linear(self, f, it, newt) result(newy)
     !---------------------------------------------------------------------------
     m = (pvt_xkap(f,it+1) - pvt_xkap(f,it)) / (self%tt(it+1) - self%tt(it))
     newy = m * (newt - self%tt(it)) + pvt_xkap(f,it)
-end function interp_temp_linear
+end FUNCTION interp_temp_linear
 
 !===============================================================================
-elemental function check_lam_quadratic(self, iw) result(quadratic)
+elemental FUNCTION check_lam_quadratic(self, iw) result(quadratic)
     class(transition_type), intent(in) :: self
     integer, intent(in) :: iw
     logical :: quadratic
@@ -357,10 +355,10 @@ elemental function check_lam_quadratic(self, iw) result(quadratic)
             endif
         endif
     endif
-end function check_lam_quadratic
+end FUNCTION check_lam_quadratic
 
 !===============================================================================
-elemental function check_temp_quadratic(self, it) result(quadratic)
+elemental FUNCTION check_temp_quadratic(self, it) result(quadratic)
     class(transition_type), intent(in) :: self
     integer, intent(in) :: it
     logical :: quadratic
@@ -374,10 +372,10 @@ elemental function check_temp_quadratic(self, it) result(quadratic)
             !endif
         endif
     endif
-end function check_temp_quadratic
+end FUNCTION check_temp_quadratic
 
 !===============================================================================
-elemental subroutine get_temp_index(self, newt, idx, no_extrap)
+elemental SUBROUTINE get_temp_index(self, newt, idx, no_extrap)
     class(transition_type), intent(in) :: self
     real(dp), intent(in) :: newt
     integer,  intent(out) :: idx
@@ -393,29 +391,31 @@ elemental subroutine get_temp_index(self, newt, idx, no_extrap)
         idx = BinarySearch(self%tt, 1, self%ntt, newt)
         no_extrap = .true.
     endif
-end subroutine get_temp_index
+END SUBROUTINE get_temp_index
 
 !===============================================================================
-pure function trans_boltzmann_weight(self, EK_over_temp) result(frac)
+pure SUBROUTINE trans_boltzmann_weight(self, EK_over_temp, frac)
     class(transition_type), intent(in) :: self
     real(dp), dimension(:,:,:), intent(in) :: EK_over_temp
-    real(dp), dimension(:,:,:), allocatable :: frac
+    real(dp), dimension(:,:,:), intent(out) :: frac
     !---------------------------------------------------------------------------
     frac = self%level%g2 * self%level%boltzmann(EK_over_temp, natural_log=.true.)
-end function trans_boltzmann_weight
+END SUBROUTINE trans_boltzmann_weight
 
 !===============================================================================
-function absorption_factor(self, EK_over_temp, teta, pe, rho, dxi, xfakh) result(fakt)
+SUBROUTINE absorption_factor(self, EK_over_temp, teta, pe, rho, dxi, xfakh, fakt)
     class(transition_type), intent(in) :: self
     class(particle_type), pointer :: ion
     real(dp), dimension(:,:,:), intent(in) :: EK_over_temp, teta, pe, rho, dxi, xfakh
-    real(dp), dimension(:,:,:), allocatable :: teta31, fakt, h1
+    real(dp), dimension(:,:,:), intent(out) :: fakt
+    real(dp), dimension(:,:,:), allocatable :: h1
     integer, dimension(:,:,:), allocatable :: nniv
     !---------------------------------------------------------------------------
     ion => self%ion
 
     if (self%regular) then
-        fakt = self%boltzmann_weight(EK_over_temp) / ion%part * ion%rho_per_h
+        call self%boltzmann_weight(EK_over_temp, fakt)
+        fakt = fakt / ion%part * ion%rho_per_h
     else
         select case(trim(self%key))
         case('H- BF')
@@ -424,13 +424,14 @@ function absorption_factor(self, EK_over_temp, teta, pe, rho, dxi, xfakh) result
             fakt = 2.E-26 / ion%part * pe * ion%rho_per_h
         case('H BF')
             if (self%k <= 5) then
-                fakt = self%boltzmann_weight(EK_over_temp)
+                call self%boltzmann_weight(EK_over_temp, fakt)
                 fakt = 1.045E-26 / ion%part * fakt * ion%rho_per_h / self%k**5
             else
-                teta31 = 31.30364*teta
                 fakt = 2.0898E-26 / ion%part * xfakh
-                fakt = fakt * exp(-teta31*(1. - 1./self%k**2)) / self%k**3
+                fakt = fakt * exp(-31.30364*teta*(1. - 1./self%k**2)) / self%k**3
             endif
+            allocate(nniv(size(pe,1), size(pe,2), size(pe,3)))
+            allocate(h1, mold=dxi)
             h1 = sqrt(13.595/dxi)
             nniv = int(h1)
             where (nniv < self%k)
@@ -440,9 +441,8 @@ function absorption_factor(self, EK_over_temp, teta, pe, rho, dxi, xfakh) result
             end where
 
         case('H FF')
-            teta31 = 31.30364*teta
             fakt = 2.0898E-26 / ion%part * xfakh
-            fakt = fakt * exp(-teta31 + 2.3026 * dxi * teta) / (2*teta31)
+            fakt = fakt * exp(-31.30364*teta + 2.3026 * dxi * teta) / (2*31.30364*teta)
 
         case('(H+H)')
             fakt = (1e-25 * ion%rho_per_h)**2 * rho
@@ -453,17 +453,16 @@ function absorption_factor(self, EK_over_temp, teta, pe, rho, dxi, xfakh) result
         end select
     endif
     !print *, self%key, fakt
-end function absorption_factor
+END SUBROUTINE absorption_factor
 
 !===============================================================================
-subroutine add_absorption(self, abslte, lam, temp, EK_over_temp, teta, pe, rho, dxi, xfakh, fakt)
+SUBROUTINE add_absorption(self, abslte, lam, temp, EK_over_temp, teta, pe, rho, dxi, xfakh, fakt)
     use timer_mod
     class(transition_type) :: self
     real(4), dimension(:,:,:,:), intent(inout) :: abslte
     real(dp), dimension(:,:,:), intent(in) :: temp, EK_over_temp, teta, pe, rho, dxi, xfakh
     real(dp), dimension(:), intent(in) :: lam
-    real(dp), dimension(:), allocatable :: ab, abkof
-    real(dp), dimension(:,:,:), allocatable, intent(out) :: fakt
+    real(dp), dimension(:,:,:), intent(out) :: fakt
     integer :: i,j,k,nf
     !---------------------------------------------------------------------------
 
@@ -484,7 +483,7 @@ subroutine add_absorption(self, abslte, lam, temp, EK_over_temp, teta, pe, rho, 
     call self%load_lam_interp_weights(lam)
 
     if (active) then
-        fakt = self%absorption_factor(EK_over_temp, teta, pe, rho, dxi, xfakh)
+        call self%absorption_factor(EK_over_temp, teta, pe, rho, dxi, xfakh, fakt)
         call self%interp_xkap(abslte, lam, temp, teta, fakt)
     endif
 
@@ -494,5 +493,5 @@ subroutine add_absorption(self, abslte, lam, temp, EK_over_temp, teta, pe, rho, 
     call os%deallocate(iw)
     call os%deallocate(lagrange)
     call os%deallocate(pvt_xkap)
-end subroutine add_absorption
+END SUBROUTINE add_absorption
 end module

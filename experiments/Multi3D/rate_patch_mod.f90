@@ -23,10 +23,12 @@ module rate_patch_mod
     USE bits_mod
     !USE units_mod
     !USE scratch_mod
+    USE m3d_patch_mod, only:voigt_interp
     USE ray_patch_mod
     USE opac_patch_mod
     USE rad_patch_mod
     USE atom_var, only: atom_type
+    USE lines_patch_mod, only: lines_patch_t
     implicit none
 
     !-----------------------------------------------------------------------------
@@ -36,9 +38,12 @@ module rate_patch_mod
       class(radiation_t), pointer :: rad => null()
       class(opacity_t), pointer :: cont_opac => null()
       class(opacity_t), pointer :: line_opac => null()
+      class(lines_patch_t), pointer :: lines => null()
       contains
         procedure :: pre_init => rate_patch_pre_init
         procedure :: update => rate_patch_update
+        procedure :: rate_patch_update1
+        procedure :: rate_patch_update2
         procedure :: nbor_relations => rate_patch_nbor_relations
     end type rate_patch_t
   
@@ -56,9 +61,20 @@ module rate_patch_mod
     call self%set_nv_and_nw(self%atom%nrad, 2)
     call trace%end()
   END SUBROUTINE rate_patch_pre_init
-  
+
   !===============================================================================
   SUBROUTINE rate_patch_update (self)
+    class(rate_patch_t) :: self
+    !-----------------------------------------------------------------------------
+    if (voigt_interp) then
+      call self%rate_patch_update2()
+    else
+      call self%rate_patch_update1()
+    endif
+  END SUBROUTINE rate_patch_update
+  
+  !===============================================================================
+  SUBROUTINE rate_patch_update1 (self)
     use mconst, only:cc
     class(rate_patch_t) :: self
     real(4), dimension(:,:,:,:), pointer :: gamma_ij, gamma_ji
@@ -84,7 +100,7 @@ module rate_patch_mod
     
     if (self%iter == 0) then
       call self%comp_vproj(self%vproj)
-      self%vproj = (1 + self%vproj/cc) / self%atom%doppler_factor
+      self%vproj = (1 + self%vproj) / self%atom%doppler_factor
     endif
 
     call os%allocate(zero, shape(temp))
@@ -135,7 +151,39 @@ module rate_patch_mod
     call os%deallocate(zero)
     call trace%end(itimer)
     if (.not. self%finished) call self%post_update()
-  END SUBROUTINE rate_patch_update
+  END SUBROUTINE rate_patch_update1
+
+  !===============================================================================
+  SUBROUTINE rate_patch_update2 (self)
+    class(rate_patch_t) :: self
+    real(4), dimension(:,:,:,:), pointer :: gamma_ij, gamma_ji
+    real(4), dimension(:,:,:,:), pointer :: Inu, Psi
+    real(4), dimension(:,:,:), pointer, contiguous :: temp
+    integer :: f, f2, ff
+    integer, save:: itimer=0
+    !-----------------------------------------------------------------------------
+    call self%pre_update()
+    if (self%finished) then
+      return
+    endif
+    
+    call trace%begin('rate_patch_t%rate_patch_update', itimer=itimer)
+
+    Psi => self%rad%Psi
+    Inu => self%rad%authority_mem(:,:,:,:,self%rad%it,self%rad%i_inu)
+    temp => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_temp, self%it,1)
+    gamma_ij => self%mem(:,:,:,:, self%it, self%i_Gij)
+    gamma_ji => self%mem(:,:,:,:, self%it, self%i_Gji)
+
+    ! Zero the rates etc
+    gamma_ij = 0.0d0
+    gamma_ji = 0.0d0
+
+    call self%atom%add_all_gammas2(self%fs, temp, Inu, Psi, gamma_ij, gamma_ji, self%lines%line, self%lines%idx_map)
+
+    call trace%end(itimer)
+    if (.not. self%finished) call self%post_update()
+  END SUBROUTINE rate_patch_update2
   
   !===============================================================================
   SUBROUTINE rate_patch_nbor_relations(self, another, needed, needs_me, download)
@@ -156,6 +204,9 @@ module rate_patch_mod
         else
           needed = .false.; needs_me = .false.
         endif
+      class is (lines_patch_t)
+        needs_me=.false.
+        self%lines => another
       class is (opacity_t)
         select case (another%kind)
         case ('cont_opac')

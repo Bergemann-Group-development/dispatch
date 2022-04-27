@@ -11,7 +11,7 @@ module level_mod
     
 contains
 
-    elemental real(dp) function boltzmann(self, EK_over_temp, dxi, natural_log)
+    elemental real(dp) FUNCTION boltzmann(self, EK_over_temp, dxi, natural_log)
         class(level_type), intent(in) :: self
         real(dp), intent(in) :: EK_over_temp
         real(dp), intent(in), optional :: dxi
@@ -35,9 +35,9 @@ contains
                 boltzmann = exp(dum * prec_err)
             endif
         endif
-    end function boltzmann
+    end FUNCTION boltzmann
 
-    elemental real(dp) function fischel_sparks(self, ion, EK_over_temp, ne)
+    elemental real(dp) FUNCTION fischel_sparks(self, ion, EK_over_temp, ne)
         class(level_type), intent(in) :: self
         real(dp), intent(in) :: EK_over_temp, ne
         integer, intent(in) :: ion
@@ -66,6 +66,6 @@ contains
             fischel_sparks = 1.33333333*p3 + 0.5*p2 + 0.16666667*p + 1.33333333*a*p - 0.4*a2/p &
                             - 0.33333333*r3 - 0.5*r2 - 0.16666667*r - a*r + 0.5*a2/self%xl
         endif
-    end function fischel_sparks
+    end FUNCTION fischel_sparks
     
 end module level_mod

@@ -3,12 +3,13 @@ module composition_patch_mod
   USE mpi_mod
   USE omp_mod
   USE gpatch_mod
-  USE m3d_patch_mod,   only: m3d_patch_t
+  USE m3d_patch_mod,   only: m3d_patch_t, voigt_interp
   USE composition_mod, only: composition_type
   USE opac_patch_mod,  only: opacity_t
   USE rad_patch_mod,   only: radiation_t
   USE atom_patch_mod,  only: atom_patch_t
   USE rate_patch_mod,  only: rate_patch_t
+  USE net_opac_patch_mod,  only: net_opac_t
   USE task_mod
   USE os_mod
   USE trace_mod
@@ -41,14 +42,16 @@ SUBROUTINE composition_pre_init (self)
   class(atom_patch_t), pointer :: atom_patch
   class(opacity_t), pointer :: opac
   class(radiation_t), pointer :: rad
+  class(net_opac_t), pointer :: net_opac
   integer :: iostat, i_out
   integer, save:: itimer=0, itimer2=0
   integer, save :: n_nu=1, verbose=0
   character(len=80), save :: absdat_file='./input_multi3d/absdat'
   character(len=80), save :: abund_file='./input_multi3d/abund'
+  character(len=80), save :: absmet_file=''
   integer :: i, dir, p, m, n
   logical, save :: first_time=.true.
-  namelist /composition_params/ verbose, absdat_file, abund_file
+  namelist /composition_params/ verbose, absdat_file, abund_file, absmet_file
   ! ----------------------------------------------------------------------------
   call trace%begin('composition_patch_t%composition_pre_init', itimer=itimer)
   self%kind = 'composition'
@@ -70,7 +73,7 @@ SUBROUTINE composition_pre_init (self)
     composition%verbose = verbose
 
     call trace%begin('compositiont%init', itimer=itimer2)
-    call composition%init(absdat_file, abund_file)
+    call composition%init(absdat_file, abund_file, absmet_file)
     call trace%end(itimer2)
     
     first_time = .false.
@@ -91,13 +94,23 @@ SUBROUTINE composition_pre_init (self)
 
   do n=1, self%n_nu
     do m=0, self%n_omega
-      allocate(opac)
       if (m==0) then
+        allocate(opac)
+        opac%kind = 'back_opac'
         opac%composition => self%composition
         call opac%composition%reassign_pointer()
+        call opac%pre_init_and_link(self, i_mu=m, i_nu=n)
+      else
+        if (voigt_interp) then
+          allocate(net_opac)
+          net_opac%kind = 'net_opac'
+          call net_opac%pre_init_and_link(self, i_mu=m, i_nu=n)
+        else
+          allocate(opac)
+          opac%kind = 'net_opac'
+          call opac%pre_init_and_link(self, i_mu=m, i_nu=n)
+        endif
       endif
-      opac%kind = merge('net_opac ', 'back_opac', m>0)
-      call opac%pre_init_and_link(self, i_mu=m, i_nu=n)
 
       allocate(rad)
       rad%kind = merge('angle_rad', 'mean_rad ', m>0)
@@ -107,9 +120,15 @@ SUBROUTINE composition_pre_init (self)
 
   do m=self%n_omega+1, self%n_mu
     do n=1, self%n_nu
-      allocate(opac)
-      opac%kind = 'net_opac'
-      call opac%pre_init_and_link(self, i_mu=m, i_nu=n)
+      if (voigt_interp) then
+        allocate(net_opac)
+        net_opac%kind = 'net_opac'
+        call net_opac%pre_init_and_link(self, i_mu=m, i_nu=n)
+      else
+        allocate(opac)
+        opac%kind = 'net_opac'
+        call opac%pre_init_and_link(self, i_mu=m, i_nu=n)
+      endif
 
       allocate(rad)
       rad%kind = 'angle_rad'

@@ -21,10 +21,14 @@ module trans_mod
       integer :: ntrans ! transition identifier
       integer :: j   ! upper level  
       integer :: i   ! lower level
+      integer :: nq  ! number of input frequencies in the line
       integer :: nnu ! number of frequencies in the line
 
       integer :: ired  ! start index where line is active in overall frequency grid
       integer :: iblue ! end index where line is active in overall frequency grid
+
+      integer :: lower_ion ! ionisation stage of lower level
+      real(8) :: lower_ev, upper_ev
 
       real(8),dimension(:),allocatable :: nu ! frequencies [Hz]
       real(8),dimension(:),allocatable :: wnu ! frequency quadrature weight [Hz]
@@ -53,18 +57,22 @@ module trans_mod
     real(8)  :: lambda0       ! line center vacuum wavelength
                             ! [cm]
     real(8)  :: nu0         ! line center frequency [Hz]
+    real(8)  :: cnt_ev      ! energy of continuum above
+    logical  :: hydrogen
     real(8),dimension(:),allocatable :: q ! frequencies [Doppler units]
     real(8),dimension(:),allocatable :: wq  ! frequency quadrature weight [Doppler units]
 
-    real(4),dimension(:,:,:),allocatable :: wphi ! normalization such that
+    real(4),dimension(:,:,:), pointer, contiguous :: wphi ! normalization such that
     ! \Sigma_mu=1^{nrays} \Sigma_nu=1^{nnu} phi(nu,v(mu)) = 1
     ! in case of strong velocities this does not automatically follow from
     ! the independent normalization of the angle and frequency quadrature
 
-    real(4),dimension(:,:,:),allocatable :: adamp ! voigt damping parameter
+    real(4),dimension(:,:,:), pointer, contiguous :: adamp ! voigt damping parameter
+    real(4),dimension(:,:,:), pointer, contiguous :: chi_fac, eta_fac
     real(8),dimension(:,:,:,:),allocatable :: rho ! prd rho
     real(8),dimension(:,:,:,:),allocatable :: Jrest ! Jnu in rest frame of atom
     real(8),dimension(:,:,:),  allocatable :: Qe ! prd Q elastic collision rate, used to compute coherency fraction
+    real(4),dimension(:,:,:,:), pointer :: phi
 
     ! optional radiation anisotropy tensor
     type(anisotropy_type) :: an
@@ -94,9 +102,19 @@ module trans_mod
     integer :: nsub  ! number of subordinate lines in case of cross redistribution
     integer, dimension(:),allocatable :: krsub ! indices of subordinate lines
 
+    logical :: active=.true.
+
   contains
       procedure :: opacities => line_opacities
       procedure :: profile => line_profile
+      procedure :: freql
+      procedure :: LinearStarkH
+      procedure :: IonicH
+      procedure :: Stark
+      procedure :: VanderWaals
+      procedure :: damping
+      procedure :: estimate_qmax
+      procedure :: interpolate_phi
 
   end type line_type
 
@@ -108,10 +126,12 @@ module trans_mod
     real(8) :: numax ! maximum frequency 
     real(8) :: alpha0 ! cross section at ionization threshold [cm^2]
     real(4),dimension(:),allocatable :: alpha ! cross sections [cm^2]    
+    real(4), dimension(:,:,:), contiguous, pointer :: ni_over_nj_lte
 
   contains
       procedure :: opacities => cont_opacities
       procedure :: rates => cont_rates
+      procedure :: freqc
   end type cont_type
 
 contains
@@ -131,7 +151,8 @@ contains
     nf = size(eta,4)
 
     allocate(fakt(nx,ny,nz))
-    fakt = nstar(:,:,:,self%i) / nstar(:,:,:,self%j) * n(:,:,:,self%j)
+    !fakt = nstar(:,:,:,self%i) / nstar(:,:,:,self%j) * n(:,:,:,self%j)
+    fakt = self%ni_over_nj_lte * n(:,:,:,self%j)
 
     !$omp simd
     do f=1, nf
@@ -158,7 +179,11 @@ contains
     real(4), dimension(:,:,:), allocatable :: scr1, scr2
     integer :: f
 
-    call self%profile(nu, hnu_4pi, vel_dop, doppler_factor, phi)
+    call self%profile(nu, vel_dop, doppler_factor, phi)
+
+    do f=1, size(nu)
+      phi(:,:,:,f) = phi(:,:,:,f) * hnu_4pi(f)
+    end do
 
     scr1 = self%Aji * n(:,:,:,self%j)
     scr2 = self%Bij * n(:,:,:,self%i) - self%Bji * n(:,:,:,self%j)
@@ -194,19 +219,15 @@ contains
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  subroutine line_profile(self, nu, nu_fac, vel_dop, doppler_factor, phi)
+  subroutine line_profile(self, nu, vel_dop, doppler_factor, phi)
       class(line_type), intent(in) :: self
-      real(8), dimension(:), intent(in) :: nu, nu_fac
+      real(8), dimension(:), intent(in) :: nu
       real(4), dimension(:,:,:), intent(in) :: vel_dop, doppler_factor
       real(4), dimension(:,:,:,:), intent(inout) :: phi
       real(4), dimension(:,:,:), allocatable :: norm
       integer :: f
-
-      !if (self%io > 1) then ! io = nterm
-      !   print *, 'Hyperfine-splitting not implemented yet. Stopping...'
-      !   stop
-      !endif
-
+      !----------------------------------------------------------------------------------
+      allocate(norm, mold=doppler_factor)
       norm = 1 / (self%nu0 * doppler_factor)
 
       do f=1, size(nu)
@@ -228,9 +249,53 @@ contains
       norm = norm / sqrt(pi)
 
       do f=1, size(nu)
-        phi(:,:,:,f) = phi(:,:,:,f)*norm * nu_fac(f)
+        phi(:,:,:,f) = phi(:,:,:,f)*norm! * nu_fac(f)
       end do
   end subroutine line_profile
+  !------------------------------------------------------------------------------------
+
+  !====================================================================================
+  subroutine interpolate_phi(self, nu, phi)
+    use op_math_mod, only: searchsorted
+    class(line_type), intent(in) :: self
+    real(8), dimension(:), intent(in) :: nu
+    real(4), dimension(:,:,:,:), intent(out) :: phi
+    integer :: i,j,k,f, i1, i2, n(4)
+    real(8) :: dx, dy, norm, newq
+    !----------------------------------------------------------------------------------
+    n = shape(phi)
+    norm = 1 / self%nu0
+
+    do f=1, n(4)
+      newq = nu(f)*norm - 1
+      i1 = searchsorted(self%q, newq)
+
+      if (i1==-1) then
+        phi(:,:,:,f) = 0
+        cycle 
+      endif
+
+      i2 = i1+1
+      dx = (newq - self%q(i1)) / (self%q(i2)-self%q(i1))
+
+      if (dx < 1e-6) then
+        phi(:,:,:,f) = self%phi(:,:,:,i1)
+        cycle
+      elseif (dx > 1-1e-6) then
+        phi(:,:,:,f) = self%phi(:,:,:,i2)
+        cycle
+      endif
+
+      do k=1,n(3)
+      do j=1,n(2)
+      do i=1,n(1)
+        dy = self%phi(i,j,k,i2) - self%phi(i,j,k,i1)
+        phi(i,j,k,f) = dy*dx + self%phi(i,j,k,i1)
+      end do
+      end do
+      end do
+    end do
+  end subroutine interpolate_phi
   !------------------------------------------------------------------------------------
 
   !====================================================================================
@@ -299,22 +364,25 @@ contains
       if (v >= 2.4) then
         quo = 1./(v2 - 1.5)
         m = 11
+        !h1 = 1./(v2 - 1.5) * ( 0.554153432 + v*( 0.278711796 + v*(-0.188325687 + v*( 0.042991293 + v*-0.003278278))))
       else
         m = 6
+        !h1 = -4.48480194 + v*( 9.39456063 + v*(-6.61487486 + v*( 1.98919585 + v*-0.22041650)))
         if (v < 1.3) m = 1
+        !h1 = -1.12470432 + v*(-0.15516677 + v*( 3.28867591 + v*(-2.34357915 + v* 0.42139162)))
       endif
 
       do i=1,5
-      a1(i) = ak(m)
-      m = m + 1
+        a1(i) = ak(m)
+        m = m + 1
       end do
 
       h1 = quo*(a1(1) + v*(a1(2) + v*(a1(3) + v*(a1(4) + v*a1(5)))))
 
       if (k==1) then
-      ! a le 0.2  and v lt 5.
-      h = h1*a + ex*(1. + a*a*(1. - 2.*v2))
-      return
+        ! a le 0.2  and v lt 5.
+        h = h1*a + ex*(1. + a*a*(1. - 2.*v2))
+        return
       endif
       
       pqs = 2./sqp
@@ -331,6 +399,33 @@ contains
   !------------------------------------------------------------------------------------
 
   !====================================================================================
+  function estimate_qmax(self, temp, ne, nh6, tothi, awgt) result(qmax)
+    class(line_type), intent(in)  :: self
+    real(4), intent(in) :: temp, ne, nh6, tothi
+    real(8), intent(in) :: awgt
+    real(4) :: qmax
+    real(4) :: a, h0, vmax, doppler_factor, ratio
+    real(8), parameter :: sqp = 1.772453851
+    real(8), parameter :: sq2 = 1.414213562
+    real(8), parameter :: tol = 1d-4
+    !----------------------------------------------------------------------------------
+    doppler_factor = sqrt(2*bk / awgt * temp) / cc
+    a = self%damping(temp, ne, nh6, tothi, doppler_factor, awgt)
+    h0 = voigt_function(a, 0.0)
+
+    if (a > 1.4) then
+      vmax = a * 19*sq2 / (sqp * h0 * tol)
+    else
+      vmax = sqrt(a / (sqp * h0 * tol))
+    endif
+
+    ratio = voigt_function(a, vmax) / h0
+    qmax = vmax * doppler_factor * cc / KM_TO_CM
+    !print '(I6, 6(ES17.10))', self%ntrans, self%lambda0, a, self%f, qmax, ratio
+  end function estimate_qmax
+  !------------------------------------------------------------------------------------
+
+  !====================================================================================
   pure subroutine check_range(self, fs_in, fe_in, fs_out, fe_out, skip)
       class(transition_type), intent(in) :: self
       integer, intent(in) :: fs_in, fe_in
@@ -342,9 +437,9 @@ contains
       fs_out = max(self%ired,  fs_in)
       fe_out = min(self%iblue, fe_in)
 
-      if (fs_out >= fe_out) skip = .true.
-      if (fs_out >= fe_in)  skip = .true.
-      if (fe_out <= fs_in)  skip = .true.
+      if (fs_out > fe_out) skip = .true.
+      if (fs_out > fe_in)  skip = .true.
+      if (fe_out < fs_in)  skip = .true.
   end subroutine check_range
   !------------------------------------------------------------------------------------
 
@@ -376,7 +471,7 @@ contains
 
 
   !====================================================================================
-  subroutine freql(line, qnorm)
+  subroutine freql(self, qnorm, symmetric)
       !***********************************************************************
   
       !  gives  frequency quadrature points and corresponding weights.
@@ -408,53 +503,64 @@ contains
       !:
       !***********************************************************************
   
-      class(line_type), intent(inout)  :: line
+      class(line_type), intent(inout)  :: self
       real(8) :: qnorm
       real(8),dimension(:),allocatable :: q,wq
   
-      real(8)  :: dq, x, x10, al10, a, half, xmax, dx,qmax,q0
+      real(8)  :: dq, x, x10, a, half, xmax, dx,qmax,q0, start
       integer :: nnu, j
+      logical :: symmetric
   
   
-      q0=line%q0
-      qmax=line%qmax
-      nnu=line%nnu
+      q0=self%q0
+      qmax=self%qmax
+      nnu=self%nnu
       allocate(q(nnu))
       allocate(wq(nnu))
   
       if (qmax.le.q0) then
-      ! linear spacing
-      dq = 2 * qmax / (nnu-1)
-      q(1)=-qmax
-      do j=2,nnu
-          q(j) = q(j-1) + dq
-      end do
+        ! linear spacing
+        dq = qmax / (nnu-1)
+        q(1) = 0
+
+        if (symmetric) then
+          dq = 2.*dq
+          q(1) = -qmax
+        endif
+
+        do j=2,nnu
+            q(j) = q(j-1) + dq
+        end do
   
       else if(qmax.ge.0.0 .and. q0.ge.0.0) then
-  
-      ! constants
-      al10=log(10.)
-      a=10.**(q0+.5)
-      half=0.5
-      xmax=log10(a*max(half,qmax-q0-half))
-  
-      dx=2.*xmax/(nnu-1)
-      do j=1,nnu
-          x=-xmax+(j-1)*dx
-          x10=10.**x
-          q(j)=x+(x10-1./x10)/a
-      end do
+        a=10.**(q0+.5)
+        half=0.5
+        xmax=log10(a*max(half,qmax-q0-half))
+    
+        dx=xmax/(nnu-1)
+        start=0
+
+        if (symmetric) then
+          dx = 2.*dx
+          start = -xmax
+        endif
+
+        do j=1,nnu
+            x=start+(j-1)*dx
+            x10=10.**x
+            q(j)=x+(x10-1./x10)/a
+        end do
   
       end if
   
       ! convert to [Hz]
-      line%nu = line%nu0*(1.0+q*qnorm*KM_TO_CM/cc)
+      self%nu = self%nu0*(1.0+q*qnorm*KM_TO_CM/cc)
   
   end subroutine freql
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  subroutine freqc(cnt)
+  subroutine freqc(self)
       !---------------------------------------------------------------------   
       !
       !  gives quadrature points and weights for continua
@@ -469,35 +575,221 @@ contains
       !
       !---------------------------------------------------------------------
 
-      class(cont_type), intent(inout) :: cnt
+      class(cont_type), intent(inout) :: self
       
       integer :: j,nnu,ired,iblue
       real(8) :: dnu
 
-      select case(cnt%bf_type)
+      select case(self%bf_type)
       case('hydrogenic')
-          nnu   = cnt%nnu
-          ired  = cnt%ired
-          iblue = cnt%iblue
+          nnu   = self%nnu
+          ired  = self%ired
+          iblue = self%iblue
 
           ! equidistant grid in nu, between nu0 and numax 
-          cnt%nu(ired)  = cnt%nu0
-          cnt%nu(iblue) = cnt%numax
+          self%nu(ired)  = self%nu0
+          self%nu(iblue) = self%numax
 
-          dnu = (cnt%numax-cnt%nu0) / (nnu-1)
+          dnu = (self%numax-self%nu0) / (nnu-1)
 
           do j=ired,iblue
-              cnt%nu(j)    = cnt%nu0 + (j-ired) * dnu
-              cnt%alpha(j) = cnt%alpha0 * ( cnt%nu(j) / cnt%nu0 )**(-3)
+              self%nu(j)    = self%nu0 + (j-ired) * dnu
+              self%alpha(j) = self%alpha0 * ( self%nu(j) / self%nu0 )**(-3)
           end do
       case('detail')
           ! do nothing, frequencies were computed in read_atom
       case default
-          print *, 'freqc: bf_type ' // cnt%bf_type // ' not recognized. Stopping...'
+          print *, 'freqc: bf_type ' // self%bf_type // ' not recognized. Stopping...'
           stop
       end select
   end subroutine freqc
   !------------------------------------------------------------------------------------
+
+  !====================================================================================
+  pure elemental function damping (self, temp, ne, nh6, tothi, doppler_factor, awgt) result(adamp)
+    class(line_type), intent(in)  :: self
+    real(4), intent(in)  :: temp, ne, nh6, tothi, doppler_factor
+    real(8), intent(in)  :: awgt
+    real(4) :: adamp
+    integer :: iterm
+    !----------------------------------------------------------------------------------
+    iterm = 1 ! hyperfine splitting not implemented yet
+    adamp = 0
+
+    if (self%hydrogen) then
+       call self%LinearStarkH(adamp,ne)
+       call self%IonicH(adamp,temp,nh6,ne)
+    endif
+
+    call self%vanderWaals(adamp,tothi,iterm,ne,temp,awgt)
+    call self%Stark(adamp,iterm,ne,temp)
+    
+    adamp = adamp + self%ga
+    adamp = adamp / (4.0*PI*self%nu0*doppler_factor)
+  end function damping
+  !------------------------------------------------------------------------------------
+
+  !====================================================================================
+  ! Linear Stark broadening for hydrogen, see
+  ! Sutton K. (1978), JQSRT, 20, 333
+  !====================================================================================
+  pure elemental subroutine LinearStarkH(self, gamma, ne)
+    class(line_type), intent(in)  :: self
+    real(4), intent(inout) :: gamma
+    real(4), intent(in)    :: ne
+    real(4) :: a1
+    !----------------------------------------------------------------------------------
+    if(self%j-self%i.eq.1) then
+      a1=0.642
+    else
+      a1=1.000
+    endif
+
+    gamma = gamma + a1 * 0.6 * (self%j**2-self%i**2) * ne**two_third
+  end subroutine LinearStarkH
+  !------------------------------------------------------------------------------------
+
+  !====================================================================================
+  ! Computes quadratic Stark broadening, see The observation and
+  ! analysis of stellar photospheres, D.F. Gray, 2005, Cambridge
+  ! University Press, Chapter 11, equation 11.27
+  !====================================================================================
+  pure elemental subroutine Stark(self, gamma, interm, ne, temp)
+    class(line_type), intent(in)  :: self
+    real(4),        intent(in)    :: temp,ne
+    real(4),        intent(inout) :: gamma
+    integer,        intent(in)    :: interm
+    real(4)                       :: gq,gslg,gs
+    !----------------------------------------------------------------------------------
+    if (self%io .le. 1) then
+      gq = self%gq
+    else
+      gq = self%gqterm(interm)
+    endif
+
+    if (gq .ge. 0.0) then
+      gs = gq * ne
+    else
+      gslg = 19.4 + 2./3. * gq + log10(ne*bk) + log10(temp) / 6.
+      gs = 10.0 ** gslg
+    end if
+    
+    gamma = gamma + gs
+  end subroutine Stark
+  !------------------------------------------------------------------------------------
+
+  !====================================================================================
+  pure elemental subroutine IonicH (self, gamma, temp, nh, ne) 
+    class(line_type), intent(in)  :: self
+    real(4),intent(in)         :: temp,nh,ne
+    real(4),intent(inout)      :: gamma
+
+    integer :: i,j,k,il,jl
+    real(8) :: fn,fn1,rd,rmax,rmin,dohm,gprot,xmr,xmp,xm,rratio,xn
+    real(8) :: gion
+    !----------------------------------------------------------------------------------
+    il = self%i
+    jl = self%j
+
+    ! ionic broadening
+    if( (jl-il >= 1) .and. (jl-il <= 3) .and. (il >= 4) .and. (il <= 20) ) then
+
+      fn1 = 2.25 * il**2 * ( 1.5 + 0.271*log(2.0/3.0*il)+  1.92/il**0.422 )
+      if(jl-il.eq.1) then
+        fn=fn1
+      else if(jl-il.eq.2) then
+        fn=fn1*(9.1333/il+5.57333)
+      else if(jl-il.eq.3) then
+        fn=fn1*(38.6667/il+12.9667)
+      endif
+
+      ! xm is reduced mass of radiator and perturber
+      xmr=1.0
+      xmp=1.0
+      xm=xmp*xmr/(xmp+xmr)
+
+      rd=6.90*sqrt( temp/nh )
+      rmax=min( rd , self%lambda0 / 2. / pi )
+
+      rmin = sqrt(2./3.) * sqrt(fn) / 2.0/pi/em*hh*sqrt(2.0*xm*uu/pi/bk/temp)
+      rratio=max(rmax/rmin,one)
+      dohm=2.7e8*sqrt(uu*2*xm/temp)*nh*fn*(0.5+log(rratio))
+      !  dohm is half-width in angular frequency units. convert to
+      !  gamma (hwhm(ohmega)=gamma/2, hwhm(nu)=gamma/4pi)
+      gprot=dohm
+
+      !  ion broadening from other ions than protons. assume an atomi! 
+      !  weight of 25 and calculate n from ne-np (assuming all electrons come
+      !  from singly ionized atoms
+      xn=max(ne-nh,zero)
+      xmp=25.0
+      xm=xmp*xmr/(xmp+xmr)
+      if(xn.gt.0.0) then
+        rd=6.90*sqrt(temp/xn)
+        rmax=min(rd,self%lambda0/2./pi)
+        rmin=sqrt(2./3.)*sqrt(fn)/2./pi/em*hh*sqrt(2*xm*uu/pi/bk/temp) 
+        rratio=max(rmax/rmin,one)
+        dohm=2.7e8*sqrt(uu*2*xm/temp)*xn*fn*(0.5+log(rratio))
+        gion=dohm
+      else
+        gion=0.0
+      endif
+
+      gamma = gamma + gprot + gion
+    endif
+  end subroutine IonicH
+  !------------------------------------------------------------------------------------
+
+  !====================================================================================
+  pure elemental subroutine VanderWaals(self,gamma,tothi,interm,ne,temp,awgt)
+    class(line_type), intent(in)  :: self
+    real(4), intent(in)    :: temp,ne,tothi
+    real(8), intent(in)    :: awgt
+    real(4), intent(inout) :: gamma
+    integer, intent(in)    :: interm
+    integer                :: ic
+    real(4)                :: alpha,sigma,gx,gammaf,gv,c1,c625,scr
+    !----------------------------------------------------------------------------------
+    ! compute van der waals broadening due to hydrogen
+    ! following Barklem
+    if (self%io .le. 1) then
+      gv = self%gw
+    else
+      gv = self%gwterm(interm)
+    endif
+
+    if(gv.ge.20.0) then
+      sigma=int(gv)*2.80028e-21
+      alpha=gv-int(gv)
+      gx=2.0-alpha*0.5
+      gx=gx-1.0
+      gammaf=1+(-.5748646+(.9512363+(-.6998588+ &
+      (.4245549-.1010678*gx)*gx)*gx)*gx)*gx
+
+      gv = (4.0/pi)**(alpha*0.5) * gammaf * 1.e4 * sigma
+      c1= 21173.*(1./1.008+1./(awgt/uu))
+      scr = sqrt(c1*temp)
+      scr=gv*((scr/1.e4)**(1.-alpha))
+      scr=scr*tothi*1.e6*2.
+
+    elseif(gv.ne.0.0) then
+      ! Unsold approximation
+      ! Jul  5 2010 jorritl: I'm sceptical about the numerical 
+      ! constant  1.283984e-12. According to Gray it should be 
+      ! 0.3d-30^0.4 = 6.1780059e-13 and  8.411 should be 17
+      ! I haven't found the original reference to Unsold 1955 yet...
+      c1 = (1./(self%cnt_ev-self%upper_ev)**2 - 1./(self%cnt_ev-self%lower_ev)**2)**.4
+      c625 = 1.283984e-12 * self%lower_ion**0.8 * c1 
+
+      ! this is v_rel^3/5
+      scr = ( 8.0 * bk / pi *  (1.0/mh + 1.0/awgt) * temp )**0.3
+      scr = gv * 8.411 * scr * tothi * c625
+    endif
+
+    gamma = gamma + scr
+  end subroutine VanderWaals
+  !------------------------------------------------------------------------------------
+
 
   end module trans_mod
 

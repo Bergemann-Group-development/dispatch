@@ -5,7 +5,7 @@ module element_mod
     implicit none
 
     type :: element_type
-        integer :: np, nion, nmolec, mcount
+        integer :: np, nion, nmolec, mcount, nx, ny, nz
         real(dp) :: awgt, abund
         type(ion_type), allocatable :: ions(:)
         !type(mol_pointer_t), allocatable :: molecules(:)
@@ -19,20 +19,19 @@ module element_mod
 contains
 
 !===============================================================================
-subroutine compute_ion_equilibrium(self, EK_over_temp, ne, saha, dxi)
+SUBROUTINE compute_ion_equilibrium(self, EK_over_temp, ne, saha, dxi)
     class(element_type), target :: self
-    type(ion_type), pointer :: ions(:)
+    type(ion_type), pointer :: ions(:), ion
     real(dp), dimension(:,:,:), intent(in) :: EK_over_temp, ne, dxi, saha
-    real(dp), dimension(:,:,:), allocatable :: fil, partition_ratio
+    real(dp), dimension(self%nx, self%ny, self%nz) :: fil, partition_ratio
     integer :: j
     !---------------------------------------------------------------------------
-
-    allocate(fil, partition_ratio, mold=ne)
-    
     ions => self%ions
 
     do j=1, self%nion
-        ions(j)%part = ions(j)%partition(EK_over_temp, ne)
+        ion => self%ions(j)
+        call ion%allocate(self%nx, self%ny, self%nz)
+        ion%part = ion%partition(EK_over_temp, ne)
     end do
 
     fil = 1
@@ -49,6 +48,6 @@ subroutine compute_ion_equilibrium(self, EK_over_temp, ne, saha, dxi)
         fil = fil*ions(j-1)%saha
         ions(j)%anjon = fil
     end do
-end subroutine compute_ion_equilibrium
+END SUBROUTINE compute_ion_equilibrium
 
 end module element_mod

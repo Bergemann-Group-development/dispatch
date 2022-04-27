@@ -93,7 +93,7 @@ module m3d_patch_mod
     integer, public :: maxiter, ilambd
     real(8), public, save, dimension(:), allocatable:: wmu, long_wmu
     real(8), public, save, dimension(:,:), allocatable:: vec, long_vec
-    logical, public, save :: converged=.false., dynamic_memory=.true.
+    logical, public, save :: converged=.false., dynamic_memory=.true., voigt_interp=.true.
       
   contains
   
@@ -109,7 +109,7 @@ module m3d_patch_mod
     character(len=32), save :: quad_scheme='set_a2'
     character(len=32), save :: long_scheme='disk_center'
     namelist /m3d_params/ on, verbose, fcheck, linecheck, pcheck, quad_scheme, &
-    long_scheme, n_nu, maxiter, ilambd, dynamic_memory
+    long_scheme, n_nu, maxiter, ilambd, dynamic_memory, voigt_interp
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%pre_init', itimer=itimer)
     !-----------------------------------------------------------------------------
@@ -161,9 +161,6 @@ module m3d_patch_mod
   
     self%on = on
     self%in_task_list = .false.
-    if (self%on) then 
-      call self%task_t%init_unique (same=.true.) ! obtain an unique ID
-    end if
   
     ! ----------------------------------------------------------------------------
     ! relevant synchronization items for cartesian setup
@@ -555,6 +552,7 @@ module m3d_patch_mod
     call trace%begin ('m3d_patch_t%add_to_task_list')
     if (associated(self%task_list)) then
       if (self%maxiter >= 0) then
+        call self%task_t%init_unique (same=.true.) ! obtain an unique ID
         allocate (halo_m3d_t:: link)
         call link%init()
         link%task => self

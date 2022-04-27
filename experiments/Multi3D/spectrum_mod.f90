@@ -1,5 +1,6 @@
 !---------------------------------------------------------------------
 module spectrum_mod 
+    USE io_mod
     USE timer_mod
     USE trace_mod
     implicit none
@@ -33,7 +34,7 @@ module spectrum_mod
   contains
   
     !===============================================================================
-    subroutine initialise_spectrum(sp, line, cont, qnorm)
+    subroutine initialise_spectrum(sp, line, cont, qnorm, awgt)
       use m3io_mod,only:stop
       use mmath
       use trans_mod
@@ -42,7 +43,7 @@ module spectrum_mod
       class(spectrum_type) :: sp
       class(line_type), intent(inout), dimension(:), target :: line
       class(cont_type), intent(inout), dimension(:), target :: cont
-      real(8), intent(in) :: qnorm
+      real(8), intent(in) :: qnorm, awgt
       type(line_type),pointer :: lin
       type(cont_type),pointer :: cnt
       integer :: i,j,nnu,ired,iblue,js,je
@@ -50,16 +51,42 @@ module spectrum_mod
       real(8),dimension(:),allocatable :: nu
   
       ! work space for tautsp
-      integer :: iflag,nnutmp,k,impi_error, nline, ncont
+      integer :: iflag,nnutmp,k,impi_error, nline, ncont, na, iostat
       !real(8),dimension(:,:),allocatable :: work,coef
       !real(8),dimension(:)  ,allocatable :: break
       real(8),dimension(:)  ,allocatable :: dalpha_dnu,alpha_fromfile,nu_fromfile, alpha
+      integer, dimension(:), allocatable :: order, ref
       integer, save:: itimer=0
+      real(4), save:: temp=0, ne=0, nh6=0, tothi=0
+      namelist /spectrum_params/ temp, ne, nh6, tothi
       !-----------------------------------------------------------------------------
       call trace%begin('spectrum_type%initialise_spectrum', itimer=itimer)
+
+      rewind (io%input)
+      read (io%input, spectrum_params, iostat=iostat)
+      if (iostat > 0) then
+        rewind (io%input)
+        read (io%input, spectrum_params)
+      end if
+      call io%namelist_warning ('spectrum_params', iostat)
+      write (io%namelist, spectrum_params)
   
       nline = size(line, 1)
       ncont = size(cont, 1)
+
+      ! frequency grid in lines
+      do i=1,nline
+         if (temp>0) then
+            line(i)%qmax = line(i)%estimate_qmax(temp, ne, nh6, tothi, awgt) / qnorm
+         endif
+
+         call line(i)%freql(qnorm, symmetric=.true.)
+      end do
+
+      !  frequency grid in continua
+      do i=1,ncont
+         call cont(i)%freqc()
+      end do
 
       ! compute total number of frequencies
       nnu=0
@@ -234,6 +261,43 @@ module spectrum_mod
       sp%maxac=maxval(sp%nac)
       sp%maxal=maxval(sp%nal)
 
+      !allocate(order(max(sp%maxal, sp%maxac)))
+      !allocate(ref  (max(sp%maxal, sp%maxac)))
+      !
+      !do i=1, sp%nnu
+      !   na = sp%nac(i)
+      !   do j=1, na
+      !      cnt => cont(sp%ac(j,i))
+      !      ref(j) = cnt%j
+      !   end do
+      !
+      !   call argSort(na, ref(1:na), order(1:na))
+      !   
+      !   do j=1, na
+      !      ref(j) = sp%ac(order(j),i)
+      !   end do
+      !
+      !   do j=1, na
+      !      sp%ac(j,i) = ref(j)
+      !   end do
+      !
+      !   na = sp%nal(i)
+      !   do j=1, na
+      !      lin => line(sp%al(j,i))
+      !      ref(j) = lin%i
+      !   end do
+      !
+      !   call argSort(na, ref(1:na), order(1:na))
+      !   
+      !   do j=1, na
+      !      ref(j) = sp%al(order(j),i)
+      !   end do
+      !
+      !   do j=1, na
+      !      sp%al(j,i) = ref(j)
+      !   end do
+      !end do
+
       if (sp%verbose>0) then
          write(*,'(a,I0,a)') 'initialise_spectrum: frequency grid has ',sp%nnu,' points.'
       endif
@@ -262,6 +326,30 @@ module spectrum_mod
         weight(end) = 0.5 * ( nu(n) - nu(n-1) )
     end subroutine set_weights
     !---------------------------------------------------------------------
+
+    !---------------------------------------------------------------------
+    subroutine argSort(n, a, order)
+      integer :: n, i, j
+      integer, intent(in) :: a(n)
+      integer, intent(out) :: order(n)
+      real :: scr(n)
+      !-------------------------------------------------------------------
+      scr = a
+      order = 1
+   
+      do i = 2, n
+         j = i - 1
+         do while (j >= 1)
+            if (scr(j) <= a(i)) exit
+            scr(j + 1) = scr(j)
+            order(j+1) = order(j)
+            j = j - 1
+         end do
+         scr(j + 1) = a(i)
+         order(j+1) = i
+      end do
+   end subroutine argSort
+   !---------------------------------------------------------------------
   
   
   end module spectrum_mod
