@@ -106,7 +106,7 @@ SUBROUTINE ray_patch_pre_init (self)
   ! ----------------------------------------------------------------------------
   call self%m3d_patch_t%pre_init()
   
-  if (self%out_ray) then
+  if (self%out_ray .and. self%i_mu /= 0) then
     self%i_out = self%i_mu - self%n_omega 
     self%vec = long_vec(:,self%i_out) 
     self%wmu = long_wmu(self%i_out)
@@ -138,7 +138,7 @@ END SUBROUTINE ray_patch_pre_init
 !===============================================================================
 SUBROUTINE set_freq_indices (self)
   class(ray_patch_t) :: self
-  integer :: fs, fe, nv, md
+  integer :: fs, fe, nv, md, i_nu
   integer, save :: counter=0
   !-----------------------------------------------------------------------------
   if (self%kind == 'out_rad') then
@@ -149,9 +149,14 @@ SUBROUTINE set_freq_indices (self)
   nv = self%sp%nnu / self%n_nu
   md = mod(self%sp%nnu, self%n_nu)
 
-  fs = (self%i_nu-1) * nv + 1 + min(md, self%i_nu-1)
+  i_nu = self%i_nu
+  if (i_nu > self%n_nu) then
+    i_nu = i_nu - self%n_nu
+  endif
 
-  if (self%i_nu <= md) then
+  fs = (i_nu-1) * nv + 1 + min(md, i_nu-1)
+
+  if (i_nu <= md) then
     nv = nv + 1
   endif
 
@@ -160,10 +165,10 @@ SUBROUTINE set_freq_indices (self)
   self%fs = fs
   self%fe = fe
 
-  if (self%i_nu > counter) then
+  if (i_nu > counter) then
     if (counter == 0) write(stdout,'(I2, A18)') self%n_nu, 'frequency splits'
-    write(stdout,'(I4, I6,A3,I4)') self%i_nu, fs, ' - ', fe
-    counter = self%i_nu
+    write(stdout,'(I4, I6,A3,I4)') i_nu, fs, ' - ', fe
+    counter = i_nu
   endif
 END SUBROUTINE set_freq_indices
 
@@ -192,15 +197,11 @@ END SUBROUTINE comp_vproj
 !===============================================================================
 SUBROUTINE ray_post_update (self)
   class(ray_patch_t) :: self
-  character(len=38) :: text
   logical :: in_bounds
   integer :: f
   !-----------------------------------------------------------------------------
   call trace%begin ('ray_patch_t%ray_post_update')
   if (self%verbose > 1) then
-    write(text, '(F5.2, A12, I6, 3(I4))') self%time, trim(self%kind), self%id, self%ipos(3), &
-                                      self%i_nu, self%i_mu
-
     call self%ff_index(self%fcheck, f)
     in_bounds = f > 0
 
@@ -216,17 +217,17 @@ SUBROUTINE ray_post_update (self)
     if (in_bounds) then
       select case (self%kind)
       case('rate_patch')
-        write(stdout,'(A, 6(ES15.7))') text, &
+        write(stdout,'(A, 6(ES15.7))') self%m3d_patch_info(), &
         self%authority_mem(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%linecheck,1,:)
       case('out_rad')
-        write(stdout,'(A, 6(ES15.7))') text, &
+        write(stdout,'(A, 6(ES15.7))') self%m3d_patch_info(), &
         self%authority_mem(self%pcheck(1),self%pcheck(2),1,f,1,:)
       case default
-        write(stdout,'(A, 6(ES15.7))') text, &
+        write(stdout,'(A, 6(ES15.7))') self%m3d_patch_info(), &
         self%authority_mem(self%pcheck(1),self%pcheck(2),self%pcheck(3),f,1,:)
       end select
     elseif (self%verbose > 2) then
-      write(stdout,'(A,A)') text
+      write(stdout,'(A,A)') self%m3d_patch_info()
     endif
   endif 
 

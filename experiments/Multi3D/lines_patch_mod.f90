@@ -21,7 +21,7 @@ module lines_patch_mod
     !USE units_mod
     !USE scratch_mod
     USE mconst
-    USE atom_var, only: atom_type
+    USE atom_mod, only: atom_type
     USE trans_mod, only: line_type
     USE m3d_patch_mod, only: m3d_patch_t, maxiter
     USE ray_patch_mod, only: ray_patch_t
@@ -39,7 +39,7 @@ module lines_patch_mod
       procedure :: pre_init => lines_patch_pre_init
       procedure :: init => lines_patch_init
       procedure :: update => lines_patch_update
-      !procedure :: post_update => linelist_post_update
+      procedure :: post_update => lines_patch_post_update
       !procedure :: finish => linelist_finish
       procedure :: nbor_relations => lines_patch_nbor_relations
       procedure :: create_line_indices
@@ -167,52 +167,66 @@ module lines_patch_mod
 
   !===============================================================================
   SUBROUTINE lines_patch_update (self)
-    use spectrum_mod, only: set_weights
     class(lines_patch_t) :: self
     class(line_type), pointer :: line
-    real(4), dimension(:,:,:), pointer, contiguous :: tothi, ne, temp, adamp, doppler_factor, vel_dop, ni, nj
+    real(4), dimension(:,:,:), pointer, contiguous :: tothi, ne, temp, adamp, doppler_factor, vel_dop, ni, nj, unsold_temp, stark_pe
     real(4), dimension(:,:,:,:), pointer, contiguous :: phi
     real(4), dimension(:,:,:,:), pointer :: nh
     real(8), dimension(:), allocatable :: wnu
-    integer :: i, f
+    integer :: i, f, p(3)
     integer, save:: itimer=0
     !-----------------------------------------------------------------------------
+    call self%pre_update()
     call trace%begin('lines_patch_t%lines_patch_update', itimer=itimer)
-    call os%allocate(tothi, self%n)
-    call os%allocate(adamp, self%n)
-
-    ne   => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_ne,            self%it,1)
-    temp => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_temp,          self%it,1)
-    nh   => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_nh1:self%i_nh6,self%it,1)
-    doppler_factor => self%atom%doppler_factor
-    tothi = sum(nh(:,:,:,1:5), 4) ! total neutral hydrogen density
 
     if (self%iter == 0) then
+      ne   => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_ne,            self%it,1)
+      temp => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_temp,          self%it,1)
+      nh   => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_nh1:self%i_nh6,self%it,1)
+      doppler_factor => self%atom%doppler_factor
+
+      call os%allocate(tothi, self%n)
+      call os%allocate(adamp, self%n)
+      call os%allocate(unsold_temp, self%n)
+      call os%allocate(stark_pe, self%n)
+
       call self%comp_vproj(self%vproj)
       self%vproj = (1 + self%vproj) / doppler_factor
-    endif
 
-    do i=1, self%nline
-      line => self%line(i)
-      adamp = line%damping(temp, ne, nh(:,:,:,6), tothi, doppler_factor, self%atom%awgt)
-      !print *, i, 176, line%estimate_qmax(temp(1,1,176), ne(1,1,176), nh(1,1,176,6), tothi(1,1,176), self%atom%awgt)
-      !print *, temp(1,1,176), ne(1,1,176), nh(1,1,176,6), tothi(1,1,176)
-      line%adamp => adamp
-      call line%profile(line%nu, self%vproj, doppler_factor, line%phi)
+      tothi = sum(nh(:,:,:,1:5), 4) ! total neutral hydrogen density
+      unsold_temp =  8.0*BK / PI * (1.0/MH + 1.0/self%atom%awgt) * temp
+      stark_pe = ne * bk * temp**one_sixth
 
-      if (self%iter == 0) then
+      do i=1, self%nline
+        line => self%line(i)
+        adamp = 0
+        call line%damping(adamp, temp, ne, tothi, unsold_temp, stark_pe)
+        if (self%atom%id == 'H') then
+         call line%dampingH(adamp, temp, ne, nh(:,:,:,6))
+        endif
+        
+        call line%profile(line%nu, self%vproj, doppler_factor, adamp, line%phi)
+  
         call os%allocate(line%wphi, self%n, zero=.true.)
-        call set_weights(wnu, line%nu, 1, line%nnu)
+        call os%allocate(line%chi_fac, self%n)
+        call os%allocate(line%eta_fac, self%n)
+
+        call self%sp%set_weights(wnu, line%nu, 1, line%nnu)
 
         do f=1,line%nnu
           line%wphi = line%wphi + line%phi(:,:,:,f) * wnu(f)
           line%phi(:,:,:,f) = line%phi(:,:,:,f) * h_4pi * line%nu(f)
         end do
         deallocate(wnu)
-        call os%allocate(line%chi_fac, self%n)
-        call os%allocate(line%eta_fac, self%n)
-      endif
+      enddo
 
+      call os%deallocate(tothi)
+      call os%deallocate(adamp)
+      call os%deallocate(unsold_temp)
+    endif
+
+    do i=1, self%nline
+      line => self%line(i)
       ni => self%atom%n(:,:,:,line%i)
       nj => self%atom%n(:,:,:,line%j)
 
@@ -220,8 +234,6 @@ module lines_patch_mod
       line%chi_fac = line%Bij * ni - line%Bji * nj
     enddo
 
-    call os%deallocate(tothi)
-    call os%deallocate(adamp)
     call self%post_update()
     call trace%end(itimer)
   END SUBROUTINE lines_patch_update
@@ -247,7 +259,6 @@ module lines_patch_mod
 
     do i=1, self%nline
       line => self%line(i)
-
       call line%check_range(fcs,fce,fs,fe,skip)
       if (skip) print *, 'line not active. Something is wrong!'
 
@@ -261,9 +272,9 @@ module lines_patch_mod
       !  f = self%fcheck-fs+1
       !  ff = self%fcheck-self%fs+1
       !  p = self%pcheck
-      !  print '(8(ES15.7))', chi(p(1),p(2),p(3),ff) + phi(p(1),p(2),p(3),f) * scr2(p(1),p(2),p(3)), &
-      !    phi(p(1),p(2),p(3),f) * scr2(p(1),p(2),p(3)), phi(p(1),p(2),p(3),f), ni(p(1),p(2),p(3)), &
-      !    nj(p(1),p(2),p(3)), nu(f)
+      !  print '(8(ES15.7))', chi(p(1),p(2),p(3),ff) + phi(p(1),p(2),p(3),f) * line%chi_fac(p(1),p(2),p(3)), &
+      !    phi(p(1),p(2),p(3),f) * line%chi_fac(p(1),p(2),p(3)), phi(p(1),p(2),p(3),f), &
+      !    self%atom%n(p(1),p(2),p(3),line%i), self%atom%n(p(1),p(2),p(3),line%j)
       !endif
   
       do f=1,nnu
@@ -275,6 +286,37 @@ module lines_patch_mod
 
     call os%deallocate(scratch_phi)
   END SUBROUTINE interpolate_lines
+
+  !=============================================================================
+  SUBROUTINE lines_patch_post_update (self)
+    class(lines_patch_t) :: self
+    class(line_type), pointer :: line
+    real(8), dimension(:), contiguous, pointer :: nu
+    real(4), dimension(:,:,:,:), contiguous, pointer :: phi
+    integer :: p(3), f, fs, fe
+    logical :: skip, in_bounds=.false.
+    ! --------------------------------------------------------------------------
+    call trace%begin('lines_patch_t%atom_patch_post_update')
+    if (self%verbose > 0) then
+      p = self%pcheck
+      line => self%line(self%linecheck)
+      call line%check_range(self%fcheck,self%fcheck,fs,fe,skip)
+      if (.not. skip) in_bounds = all(p <= self%n)
+      if (in_bounds) then
+        nu => self%sp%nu(self%fcheck:self%fcheck)
+        call os%allocate(phi, [self%n(1), self%n(2), self%n(3), 1])
+        call line%interpolate_phi(nu, phi)
+        write(stdout,'(A, 6(ES15.7))') self%m3d_patch_info(), &
+        phi(p(1),p(2),p(3),1) * line%chi_fac(p(1),p(2),p(3)), &
+        phi(p(1),p(2),p(3),1) * line%eta_fac(p(1),p(2),p(3))
+        call os%deallocate(phi)
+      else
+        write(stdout,'(A,A)') self%m3d_patch_info()
+      endif
+    end if
+    call self%m3d_patch_t%post_update()
+    call trace%end()
+  END SUBROUTINE lines_patch_post_update
 
   !===============================================================================
   SUBROUTINE lines_patch_nbor_relations(self, another, needed, needs_me, download)

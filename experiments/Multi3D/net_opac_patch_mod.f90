@@ -28,6 +28,7 @@ module net_opac_patch_mod
     USE ray_patch_mod, only:ray_patch_t
     USE opac_patch_mod, only:opacity_t
     USE lines_patch_mod, only:lines_patch_t
+    USE back_line_patch_mod, only:back_line_patch_t
     implicit none
     private
   
@@ -101,15 +102,25 @@ module net_opac_patch_mod
         class is (opacity_t)
           fs = nbtask%fs - self%fs + 1
           fe = fs + nbtask%nv - 1
-            do iw=1, self%nw
-            do it=1, self%nt
-            !$omp simd
-            do f=fs,fe
-              fn = f - fs + 1
-              mem(:,:,:,f,it,iw) = mem(:,:,:,f,it,iw) + nbtask%mem(:,:,:,fn,it,iw)
-            end do
-            end do
-            end do
+          do iw=1, self%nw
+          do it=1, self%nt
+          do f=fs,fe
+            fn = f - fs + 1
+            mem(:,:,:,f,it,iw) = mem(:,:,:,f,it,iw) + nbtask%mem(:,:,:,fn,it,iw)
+          end do
+          end do
+          end do
+        class is (back_line_patch_t)
+          fs = nbtask%fs - self%fs + 1
+          fe = fs + nbtask%nv - 1
+          do iw=1, self%nw
+          do it=1, self%nt
+          do f=fs,fe
+            fn = f - fs + 1
+            mem(:,:,:,f,it,iw) = mem(:,:,:,f,it,iw) + nbtask%mem(:,:,:,fn,it,iw)
+          end do
+          end do
+          end do
         end select
       endif
       nbor => nbor%next
@@ -141,6 +152,9 @@ module net_opac_patch_mod
     if (needed .or. needs_me) then
       select type(another)
       class is (lines_patch_t)
+        needs_me=.false.
+
+      class is (back_line_patch_t)
         needs_me=.false.
         
       class is(opacity_t)

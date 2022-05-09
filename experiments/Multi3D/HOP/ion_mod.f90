@@ -1,13 +1,15 @@
 module ion_mod
     use prec_mod
     use level_mod
+    use bbtrans_mod, only: bbtrans_type
     implicit none
 
     type particle_type
         real(dp), dimension(:,:,:), allocatable :: f, rho_per_h, e, part
-        integer :: nx, ny, nz
+        integer :: nx, ny, nz, nline=0
         character(len=6) :: id
         logical :: allocated=.false.
+        class(bbtrans_type), dimension(:), allocatable :: line
     end type
 
     type particle_pointer_t
@@ -25,7 +27,7 @@ module ion_mod
         type(ion_type), pointer :: below
         class(particle_pointer_t), allocatable :: molecules(:)
         integer :: active
-        real(dp) :: parco, awgt
+        real(dp) :: parco, awgt, iso_awgt
         real(dp), pointer :: abund
         real(dp) :: acolc, tcolc, aradc, xradc, adic, bdic, t0c, t1c
         real(dp), dimension(:,:,:), allocatable :: anjon, saha

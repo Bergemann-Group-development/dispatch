@@ -4,7 +4,8 @@ MODULE composition_mod
     use element_mod
     use ion_mod
     use level_mod
-    use transition_mod, only:transition_type
+    use bbtrans_mod, only:bbtrans_type
+    use bftrans_mod, only:bftrans_type
     use molecule_mod, only:molec_type
     use osmet_mod
     use omp_lib
@@ -13,13 +14,12 @@ MODULE composition_mod
     private
 
     type, public :: composition_type
-        logical :: initialised
-        integer :: nel, nlevels, nmolec, verbose
+        logical :: initialised, ll_initialised=.false.
+        integer :: nel, nmolec, verbose
         real(dp) :: xmy, suma, grph, tmolim, molh
-        type(element_type),    allocatable :: elements(:)
-        type(level_type),      allocatable :: levels(:)
-        type(molec_type),      allocatable :: molecules(:)
-        type(transition_type), allocatable :: trans(:)
+        type(element_type), allocatable :: elements(:)
+        type(molec_type),   allocatable :: molecules(:)
+        type(bftrans_type), allocatable :: trans(:)
         type(osmet_type) :: osmet
         real(dp), dimension(:,:,:,:), allocatable :: nhyd
         real(dp), dimension(:,:,:), allocatable :: temp, ne, rho
@@ -39,10 +39,10 @@ MODULE composition_mod
         procedure :: reassign_pointer
         procedure :: get_totn
         procedure :: get_nhyd
-        procedure :: init_mol_dissociation
         procedure :: compute_grams_per_hydrogen
         procedure :: compute_p6
         procedure :: overwrite_abundance
+        procedure :: init_linelist
     end type
 
 contains
@@ -74,7 +74,7 @@ contains
         class(molec_type),      pointer :: molecule
         class(ion_type),        pointer :: ion, Hm, H0
         class(level_type),      pointer :: lvl
-        class(transition_type), pointer :: trans
+        class(bftrans_type), pointer :: trans
         !---------------------------------------------------------------------------
         call trace_begin ('composition_type%init')
 
@@ -119,10 +119,6 @@ contains
         elements%abund = 10**(elements%abund - elements(1)%abund)
         call self%compute_grams_per_hydrogen(self%suma, self%xmy, self%grph)
 
-        ! First, we walk through the ions stored in absdat in order to get
-        ! total number of energy levels (including fake levels for PFs)
-
-        self%nlevels = 0
         do i=1, self%nel
             element => elements(i)
 
@@ -179,9 +175,6 @@ contains
 
             end do
         end do
-
-        ! Now we rewind the file and this time we actually store the
-        ! information on the energy levels
 
         do i=1, self%nel
             element => elements(i)
@@ -274,7 +267,6 @@ contains
         Hm%levels(1)%xion = 0.754
 
         call self%init_molecules()
-        call self%init_mol_dissociation()
 
         101 FORMAT(7X,I3,5(9X,I1))
         999 FORMAT(4(9X,I1),8X,I2,9X,I1)
@@ -408,13 +400,102 @@ contains
     END SUBROUTINE injon
 
     !===============================================================================
+    SUBROUTINE init_linelist (self, linelist_file)
+        class(composition_type) :: self
+        class(ion_type), pointer :: ion
+        class(bbtrans_type), dimension(:), allocatable :: lines
+        class(bbtrans_type), pointer :: line
+        character(len=*) :: linelist_file
+        character(20) :: mass_id
+        character(20) :: ion_id
+        real(dp) :: lam0, gv, gq, loggf, ent8, ent9, mass, cnt_ev
+        character :: lower_orb, upper_orb
+        character(len=150) :: label
+        integer :: lunit, iostat, j, nline, i, prev, ntotal=0
+        logical :: isotope
+        !-----------------------------------------------------------------------------
+        if (linelist_file == '') return
+
+        open(newunit=lunit, file=linelist_file, iostat=iostat)
+        do while (iostat==0)
+            read(lunit,*,iostat=iostat) mass_id, j, nline
+            if (iostat/=0) exit
+            read(lunit,*,iostat=iostat) ion_id
+            read(mass_id,*) mass
+            ion_id = adjustl(trim(ion_id))
+            call self%ion_by_id(ion_id(1:6), ion)
+            isotope = mod(mass, 1.0) > 0
+
+            !ignore isotopes for now
+            if (.not. associated(ion) .or. isotope) then
+                do i=1, nline
+                    read(lunit, *, iostat=iostat) ! skipping this ion
+                    if (iostat.ne.0) exit
+                end do
+                cycle
+            endif
+
+            if (ion%nline == 0) then
+                allocate(ion%line(nline))
+                ion%nline = nline
+                prev = 0
+            else
+                allocate(lines(nline))
+                lines = ion%line
+                deallocate(ion%line)
+                allocate(ion%line(ion%nline+nline))
+                ion%line(1:ion%nline) = lines
+                deallocate(lines)
+                prev = ion%nline
+                ion%nline = ion%nline + nline
+            endif
+
+            do i=1, nline
+                line => ion%line(prev+i)
+                ! Try to read with stark broadening parameter
+                read(lunit,*,iostat=iostat) lam0, line%lower_ev, loggf, gv, line%upper_g, &
+                    line%ga, gq, lower_orb, upper_orb, ent8, ent9, label
+
+                if (iostat.ne.0) then
+                    ! Try to read without stark broadening parameter
+                    backspace lunit
+                    read(lunit,*,iostat=iostat) lam0, line%lower_ev, loggf, gv, line%upper_g, &
+                        line%ga, lower_orb, upper_orb, ent8, ent9, label
+
+                    ! Stop if nothing has worked
+                    if (iostat.ne.0) then
+                        print *, "Failed to read a line in the linelist", lam0
+                        stop
+                    endif
+                    gq = 0.0
+                endif
+
+                lam0 = air2vac(lam0) * 1e-8
+                line%nu0 = CC / lam0
+                line%Aji = f_to_Aji * 10**loggf / (line%upper_g * lam0**2)
+                line%Bji = c2_2h / line%nu0**3 * line%Aji
+                line%Bij = line%Bji * line%upper_g
+                cnt_ev = ion%above%levels(1)%xion
+
+                call line%prepare_Stark(gq)
+                call line%prepare_VanderWaals(gv, j, cnt_ev)
+
+                ntotal = ntotal + 1
+            end do
+        end do
+        close(lunit)
+        print *, ntotal, ' lines read from linelist ', linelist_file
+        self%ll_initialised = .true.
+    END SUBROUTINE init_linelist
+
+    !===============================================================================
     SUBROUTINE reassign_pointer(self)
         class(composition_type), target :: self
         class(element_type),     pointer :: element
         class(molec_type),       pointer :: molecule
         class(ion_type),         pointer :: ion
         class(level_type),       pointer :: lvl
-        class(transition_type),  pointer :: trans
+        class(bftrans_type),  pointer :: trans
         integer :: i, j, m
         !---------------------------------------------------------------------------
         call trace_begin ('composition_type%reassign_pointer')
@@ -487,6 +568,7 @@ contains
             molecule => self%molecules(i)
             molecule%nions = len(trim(mol_ids(i)))
             molecule%id = trim(mol_ids(i))
+            call molecule%init_mol_dissociation()
 
             allocate(molecule%ions(molecule%nions))
 
@@ -549,63 +631,6 @@ contains
     END SUBROUTINE
 
     !===============================================================================
-    SUBROUTINE init_mol_dissociation (self)
-        class(composition_type), target :: self
-        class(molec_type),   pointer :: molecule
-        integer :: i
-        !---------------------------------------------------------------------------
-        do i=1, size(self%molecules)
-            molecule => self%molecules(i)
-
-            select case (trim(molecule%id))
-            case ('H2', 'H2p')
-                allocate(molecule%de(5))
-            case default
-                allocate(molecule%de(1))
-            end select
-
-            select case (trim(molecule%id))
-            case ('H2')
-                molecule%dc = [ 6.3021E-4, -1.4149E-2,  1.2572E-1, -5.1172E0,  12.739E0 ]
-                molecule%de = [  0.00975,  -0.12427,   0.60602,   -1.4772,    2.6757 ]
-            case ('H2p')
-                molecule%dc = [ 0.0000e+00,  0.024790, -7.9196803E-2, -2.7942767E0,  11.206998E0 ]
-                molecule%de = [  0.15253,  -0.82685,    1.7231,   -2.0036,    2.9216 ]
-            case ('H2O')
-                molecule%dc = [ 8.1730E-04, -1.8368E-02,  1.6939E-1, -10.522E0,  25.420E0 ]
-                molecule%de = [       9.50 ]
-            case ('OH')
-                molecule%dc = [ 7.7224E-04, -1.6547E-02,  1.3822E-01, -5.0578E0,  12.371E0 ]
-                molecule%de = [       4.38 ]
-            case ('CH')
-                molecule%dc = [ 7.2661E-04, -1.5473E-02,  1.2768E-01, -4.0760E0,  12.135E0 ]
-                molecule%de = [       3.47 ]
-            case ('CO')
-                molecule%dc = [ 1.1349E-03, -2.2888E-02,  1.7217E-01, -11.795E0,  13.820E0 ]
-                molecule%de = [      11.11 ]
-            case ('CN')
-                molecule%dc = [ 3.4666E-04, -7.3627E-03,  6.4162E-02, -8.2793E0,  12.805E0 ]
-                molecule%de = [       7.90 ]
-            case ('C2')
-                molecule%dc = [ 6.2603E-04, -1.2739E-02,  9.7719E-02, -6.5178E0,  12.804E0 ]
-                molecule%de = [       6.12 ]
-            case ('N2')
-                molecule%dc = [ 1.4993E-03, -2.9997E-02,  2.2067E-01, -10.585E0,  13.590E0 ]
-                molecule%de = [       9.76 ]
-            case ('O2')
-                molecule%dc = [ 3.7970E-04, -8.1511E-03,  6.9935E-02, -5.5181E0,  13.228E0 ]
-                molecule%de = [       5.12 ]
-            case ('NO')
-                molecule%dc = [ 1.1380E-03, -2.3065E-02,  1.7349E-01, -7.1964E0,  12.831E0 ]
-                molecule%de = [       6.51 ]
-            case ('NH')
-                molecule%dc = [ 7.8691E-04, -1.6643E-02,  1.3629E-01, -3.8435E0,  12.033E0 ]
-                molecule%de = [       3.21 ]
-            end select
-        end do
-    END SUBROUTINE init_mol_dissociation
-
-    !===============================================================================
     SUBROUTINE load_state_variables(self, temp, ne, rho)
         class(composition_type), target :: self
         class(element_type), pointer :: element
@@ -637,7 +662,7 @@ contains
         self%temp = temp
         self%ne   = ne
         self%rho  = rho
-        self%EK_over_temp = EK/self%temp
+        self%EK_over_temp = EK / self%temp
         self%pe   = self%temp*BK*self%ne
         self%toth = self%rho / self%grph
         self%saha = 2 * op_saha_const * self%temp*sqrt(self%temp) / self%ne
@@ -748,7 +773,7 @@ contains
     SUBROUTINE absorption(self, nu, chi, abslte, sumsca)
         !use phys_mod, only:planck
         class(composition_type), target :: self
-        class(transition_type), pointer :: trans
+        class(bftrans_type), pointer :: trans
         class(element_type), pointer :: H
         class(molec_type), pointer :: H2
         class(ion_type), pointer :: H0
@@ -845,7 +870,7 @@ contains
 
         call self%element_by_id('H', H)
         H0 => H%ions(1)
-        fakray = 2 / H0%part * H0%rho_per_h
+        fakray = 2 * H0%part * H0%rho_per_h
 
         do f=1, nf
             sumsca(:,:,:,f) = sumsca(:,:,:,f) + els
@@ -866,18 +891,6 @@ contains
         end do
 
         if (self%osmet%initialised) then
-            !do f=1, nf
-            !    do k=1,nz
-            !    do j=1,ny
-            !    do i=1,nx
-            !        epsln = self%osmet%compute_epsln(nu(f), self%temp(i,j,k), self%ne(i,j,k))
-            !        call self%osmet%interp(self%p6(i,j,k), self%temp(i,j,k), nu(f), linop)
-            !        abslte(i,j,k,f) = abslte(i,j,k,f) + linop * epsln
-            !        sumsca(i,j,k,f) = sumsca(i,j,k,f) + linop * (1 - epsln)
-            !    end do
-            !    end do
-            !    end do
-            !end do
             call self%osmet%add_line_opacities(nu, self%p6, self%temp, self%ne, abslte, sumsca)
         endif
 
@@ -923,7 +936,6 @@ contains
         if (associated(element)) then
             totn = element%ions(1)%f * (1 + element%ions(1)%saha) * self%toth
         else
-            print *, 'get_totn: Element of id= ', id, ' is not part of the opacity package.'
             totn = 10.0**(abund-12.0) * self%rho / (self%xmy*1.008*uu)
         endif
         call trace_end ()
@@ -943,7 +955,7 @@ contains
         H0 => self%elements(1)%ions(1)
 
         allocate(nh, blzfac, mold=self%temp)
-        nh = H0%f / self%fe * self%ne * (BK/uop_BK)
+        nh = H0%f * self%ne / self%fe * (BK/uop_BK)
 
         do k=1, nk
             level%xion = Ryd * (1. - 1./k**2)
@@ -1212,15 +1224,19 @@ contains
         eid = '   '
         eid(1:space) = id(1:space)
         call self%element_by_id(eid, element)
-        idx = findloc(element%ions%id, id, 1)
-        if (lbound(element%ions,1) /= 1) then
-            idx = idx + lbound(element%ions,1) - 1
-        endif
-        if (idx < lbound(element%ions,1) .or. idx>ubound(element%ions,1)) then
-            ion => null()
-            print *, 'ion with id=' // id // ' was not found.'
+        if (associated(element)) then
+            idx = findloc(element%ions%id, uppercase(id, len(id)), 1)
+            if (lbound(element%ions,1) /= 1) then
+                idx = idx + lbound(element%ions,1) - 1
+            endif
+            if (idx < lbound(element%ions,1) .or. idx>ubound(element%ions,1)) then
+                ion => null()
+                print *, 'ion with id=' // id // ' was not found.'
+            else
+                ion => element%ions(idx)
+            endif
         else
-            ion => element%ions(idx)
+            ion => null()
         endif
         call trace_end ()
     END SUBROUTINE ion_by_id
@@ -1229,7 +1245,7 @@ contains
     SUBROUTINE trans_by_id(self, id, trans)
         class(composition_type), target :: self
         character(len=*), intent(in) :: id
-        class(transition_type), pointer, intent(out) :: trans
+        class(bftrans_type), pointer, intent(out) :: trans
         integer :: i, idx
         !---------------------------------------------------------------------------
         call trace_begin ('composition_type%init')

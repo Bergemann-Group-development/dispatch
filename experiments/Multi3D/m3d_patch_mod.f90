@@ -27,7 +27,7 @@ module m3d_patch_mod
     USE bits_mod
     !USE units_mod
     !USE scratch_mod
-    USE spectrum_mod, only: spectrum_type
+    USE atom_mod, only: atomic_spectrum_type
     USE ray_mod, only:set_carlson_quadratures
     implicit none
     private
@@ -37,16 +37,16 @@ module m3d_patch_mod
     type, public, extends(gpatch_t) :: m3d_patch_t
       class(gpatch_t),      pointer :: patch => null()         ! pointer to mhd patch
       class(m3d_patch_t),   pointer :: m3d_parent => null()    ! pointer to parent patch
-      class(spectrum_type), pointer :: sp => null()
+      class(atomic_spectrum_type), pointer :: sp => null()
       integer                  :: master_id
       logical                  :: on=.false.       ! allows local turn-off
       logical                  :: in_task_list = .false.
       logical                  :: initialized  = .false.
       real(4), dimension(:,:,:,:,:,:), pointer :: authority_mem => null()
-      real(8) :: t_offset=0
+      real(8) :: t_offset=0, teff
       integer :: iter=0, maxiter, master_maxiter
       integer :: n_mu, n_nu, n_omega, n_out
-      integer :: fcheck, pcheck(3), linecheck
+      integer :: fcheck, pcheck(3), linecheck, lvlcheck
       logical :: out_ray=.false., pushed=.false.
       integer :: i_nu=0, i_mu=0
       integer :: i_ne=1, i_rho=2, i_temp=3, i_nh1=4, i_nh6=9
@@ -78,6 +78,7 @@ module m3d_patch_mod
       procedure :: allocate_mem
       procedure :: deallocate_mem
       procedure :: check_mem
+      procedure :: m3d_patch_info
     end type m3d_patch_t
   
     !-----------------------------------------------------------------------------
@@ -104,12 +105,13 @@ module m3d_patch_mod
     logical, save :: first_time=.true.
     logical, save :: on=.true.
     integer :: iostat
-    integer, save :: fcheck=1, linecheck=3, pcheck(3)=[1,1,1]
+    integer, save :: fcheck=1, linecheck=3, pcheck(3)=[1,1,1], lvlcheck=1
     integer, save :: n_nu=1, itimer=0
     character(len=32), save :: quad_scheme='set_a2'
     character(len=32), save :: long_scheme='disk_center'
+    real(8), save :: teff=0
     namelist /m3d_params/ on, verbose, fcheck, linecheck, pcheck, quad_scheme, &
-    long_scheme, n_nu, maxiter, ilambd, dynamic_memory, voigt_interp
+    long_scheme, n_nu, maxiter, ilambd, dynamic_memory, voigt_interp, lvlcheck, teff
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%pre_init', itimer=itimer)
     !-----------------------------------------------------------------------------
@@ -136,13 +138,15 @@ module m3d_patch_mod
     self%pcheck = pcheck
     self%fcheck = fcheck
     self%linecheck = linecheck
+    self%lvlcheck = lvlcheck
     self%verbose = verbose
+    self%teff = teff
 
     self%n_omega = size(vec, 2)
     self%n_out = size(long_vec, 2)
     self%n_mu = self%n_omega + self%n_out
     self%n_nu = n_nu
-    self%out_ray = self%i_mu > self%n_omega  
+    self%out_ray = self%i_nu > self%n_nu .or. self%i_mu > self%n_omega
   
     where (self%pcheck < 0)
       self%pcheck = self%patch%n + self%pcheck + 1
@@ -212,18 +216,19 @@ module m3d_patch_mod
   END SUBROUTINE m3d_pre_init
 
   !===============================================================================
-  SUBROUTINE pre_init_and_link (self, m3d_parent, i_mu, i_nu)
+  SUBROUTINE pre_init_and_link (self, m3d_parent, i_mu, i_nu, sp)
     class(m3d_patch_t), target :: self, m3d_parent
+    class(atomic_spectrum_type), pointer, optional :: sp
     integer, optional :: i_mu, i_nu
     integer, save :: itimer=0
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%pre_init_and_link', itimer=itimer)
     if (present(i_mu)) self%i_mu = i_mu
     if (present(i_nu)) self%i_nu = i_nu
+    if (present(sp)) self%sp => sp
 
     self%patch => m3d_parent%patch
     self%m3d_parent => m3d_parent
-    if (self%kind /= 'atom_patch') self%sp => m3d_parent%sp
     call self%pre_init()
     call trace%end(itimer)
   END SUBROUTINE pre_init_and_link
@@ -339,19 +344,19 @@ module m3d_patch_mod
       self%maxiter = 0
     case ('atom_patch')
       self%maxiter = maxiter
-    case ('rate_patch', 'line_opac')
+    case ('rate_patch', 'line_opac', 'cont_opac', 'lines_patch')
       self%maxiter = self%m3d_parent%maxiter - 1
-    case ('cont_opac')
-      self%maxiter = self%m3d_parent%maxiter
+    case ('back_line')
+      self%maxiter = min(0, maxiter - 1)
     case ('back_opac')
-      self%maxiter = min(maxiter, ilambd + 1)
+      self%maxiter = min(ilambd, maxiter-1)
     case ('mean_rad')
-      self%maxiter = min(maxiter - 1, ilambd)
+      self%maxiter = ilambd - 1
     case ('angle_rad', 'net_opac')
       self%maxiter = ilambd + maxiter - 1
     end select
 
-    if (self%out_ray) self%maxiter = 0
+    if (self%out_ray) self%maxiter = ilambd
     call trace%end()
   END SUBROUTINE set_maxiter
 
@@ -370,30 +375,8 @@ module m3d_patch_mod
   !===============================================================================
   SUBROUTINE m3d_post_update (self)
     class(m3d_patch_t) :: self
-    character(len=38) :: text
-    logical :: in_bounds=.false.
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%m3d_post_update')
-    if (self%verbose > 1) then
-      write(text, '(F5.2, A12, I6, 3(I4))') self%time, trim(self%kind), self%id, self%ipos(3), &
-                                        self%i_nu, self%i_mu
-
-      select case (self%kind)
-      case('composition')
-        in_bounds = all(self%pcheck <= self%n)
-      end select
-
-      if (in_bounds) then
-        select case (self%kind)
-        case('composition')
-          write(stdout,'(A, 6(ES15.7))') text, &
-          self%authority_mem(self%pcheck(1),self%pcheck(2),self%pcheck(3),:self%i_temp,1,:)
-        end select
-      else
-        write(stdout,'(A,A)') text, 'check out of bounds'
-      endif
-    endif
-
     if (dynamic_memory) then
       call self%free_unused_memory()
       call self%push_nbors_for_update()
@@ -406,6 +389,15 @@ module m3d_patch_mod
     self%iter = self%iter + 1
     call trace%end()
   END SUBROUTINE m3d_post_update
+
+  !===============================================================================
+  FUNCTION m3d_patch_info (self) result(text)
+    class(m3d_patch_t) :: self
+    character(len=38) :: text
+    !-----------------------------------------------------------------------------
+    write(text, '(F5.2, A12, I6, 3(I4))') self%time, trim(self%kind), self%id, &
+    self%ipos(3), self%i_nu, self%i_mu
+  END FUNCTION m3d_patch_info
   
   !===============================================================================
   SUBROUTINE m3d_finish (self, rotated)

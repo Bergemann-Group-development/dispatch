@@ -110,15 +110,32 @@ contains
    end FUNCTION interp1d_quadratic
 
    ! Finds index of element after which value should be inserted to maintain order.
-   pure FUNCTION searchsorted(arr, value) result(i)
-      real(8), intent(in) :: arr(:), value
-      integer :: i
+   pure FUNCTION searchsorted(arr, val, outbounds_ok) result(i)
+      real(8), intent(in) :: arr(:), val
+      logical, optional, intent(in) :: outbounds_ok
+      logical :: ob_ok, above, below
+      integer :: i, n
 
-      if (value < arr(1) .or. value > arr(size(arr))) then
-         i = -1
+      if (present(outbounds_ok)) then
+         ob_ok = outbounds_ok
+      else
+         ob_ok = .false.
+      endif
+
+      n = size(arr)
+      below = val < arr(1)
+      above = val > arr(n)
+
+      if (below .or. above) then
+         if (ob_ok) then
+            if (below) i = 0
+            if (above) i = n
+         else
+            i = -1
+         endif
 
       else
-         i = BinarySearch(arr, 1, size(arr), value)
+         i = BinarySearch(arr, 1, n, val)
       
       endif
    end FUNCTION searchsorted
@@ -290,7 +307,6 @@ contains
    end SUBROUTINE lineq
    !---------------------------------------------------------------------
 
-
    ! **************************************************************************
    SUBROUTINE AINV2(A,M)
       implicit none
@@ -404,4 +420,38 @@ contains
    END SUBROUTINE
    ! **************************************************************************
 
+   !===============================================================================
+   SUBROUTINE argSort(n, a, order)
+      integer :: n, i, j
+      integer, intent(in) :: a(n)
+      integer, intent(out) :: order(n)
+      real :: scr(n)
+      !-----------------------------------------------------------------------------
+      scr = a
+      order = 1
+   
+      do i = 2, n
+         j = i - 1
+         do while (j >= 1)
+            if (scr(j) <= a(i)) exit
+            scr(j + 1) = scr(j)
+            order(j+1) = order(j)
+            j = j - 1
+         end do
+         scr(j + 1) = a(i)
+         order(j+1) = i
+      end do
+    END SUBROUTINE argSort
+
+    !===============================================================================
+    elemental FUNCTION air2vac (air) result(vac)
+      real(8), intent(in) :: air
+      real(8) :: vac, n, s, s2
+      !-----------------------------------------------------------------------------
+      s = 1e4 / air
+      s2 = s**2
+      n = 1 + 0.00008336624212083 + 0.02408926869968 / (130.1065924522 - s2) &
+            + 0.0001599740894897 / (38.92568793293 - s2)
+      vac = air*n
+    END FUNCTION air2vac
 end module op_math_mod

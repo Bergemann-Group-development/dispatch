@@ -24,7 +24,7 @@ module opac_patch_mod
   USE os_mod
   !USE units_mod
   !USE scratch_mod
-  USE atom_var, only: atom_type
+  USE atom_mod, only: atom_type
   USE m3d_patch_mod, only:maxiter, m3d_patch_t
   USE ray_patch_mod, only:ray_patch_t
   USE composition_mod, only:composition_type

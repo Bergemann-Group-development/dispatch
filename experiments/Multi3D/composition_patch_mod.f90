@@ -10,6 +10,7 @@ module composition_patch_mod
   USE atom_patch_mod,  only: atom_patch_t
   USE rate_patch_mod,  only: rate_patch_t
   USE net_opac_patch_mod,  only: net_opac_t
+  USE back_line_patch_mod, only:back_line_patch_t
   USE task_mod
   USE os_mod
   USE trace_mod
@@ -18,7 +19,7 @@ module composition_patch_mod
   USE ray_mod, only: set_carlson_quadratures
   USE list_mod, only: list_t
   USE bits_mod
-  USE atom_var, only: atom_type
+  USE atom_mod, only: atom_type, atomic_spectrum_type
   implicit none
   private
   
@@ -29,6 +30,7 @@ module composition_patch_mod
   contains
     procedure :: pre_init => composition_pre_init
     procedure :: update => composition_update
+    procedure :: post_update => composition_patch_post_update
     procedure :: finish => composition_finish
     procedure :: nbor_relations => composition_patch_nbor_relations
   end type
@@ -43,15 +45,18 @@ SUBROUTINE composition_pre_init (self)
   class(opacity_t), pointer :: opac
   class(radiation_t), pointer :: rad
   class(net_opac_t), pointer :: net_opac
+  class(back_line_patch_t), pointer :: back_line
+  class(atomic_spectrum_type), save, pointer :: output_sp
   integer :: iostat, i_out
   integer, save:: itimer=0, itimer2=0
   integer, save :: n_nu=1, verbose=0
   character(len=80), save :: absdat_file='./input_multi3d/absdat'
   character(len=80), save :: abund_file='./input_multi3d/abund'
   character(len=80), save :: absmet_file=''
-  integer :: i, dir, p, m, n
+  character(len=80), save :: linelist_file=''
+  integer :: i, dir, p, m, n, m2, n2
   logical, save :: first_time=.true.
-  namelist /composition_params/ verbose, absdat_file, abund_file, absmet_file
+  namelist /composition_params/ verbose, absdat_file, abund_file, absmet_file, linelist_file
   ! ----------------------------------------------------------------------------
   call trace%begin('composition_patch_t%composition_pre_init', itimer=itimer)
   self%kind = 'composition'
@@ -74,8 +79,11 @@ SUBROUTINE composition_pre_init (self)
 
     call trace%begin('compositiont%init', itimer=itimer2)
     call composition%init(absdat_file, abund_file, absmet_file)
+    call composition%init_linelist(linelist_file)
     call trace%end(itimer2)
     
+    allocate(output_sp)
+    call output_sp%init()
     first_time = .false.
   endif
 
@@ -89,8 +97,10 @@ SUBROUTINE composition_pre_init (self)
   allocate(atom_patch)
   atom_patch%kind = 'atom_patch'
   atom_patch%composition => self%composition
-  call atom_patch%pre_init_and_link(self)
-  self%sp => atom_patch%sp
+  call atom_patch%pre_init_and_link(self, sp=output_sp)
+  if (output_sp%nnu == 0) then
+    output_sp => atom_patch%sp
+  endif
 
   do n=1, self%n_nu
     do m=0, self%n_omega
@@ -99,50 +109,65 @@ SUBROUTINE composition_pre_init (self)
         opac%kind = 'back_opac'
         opac%composition => self%composition
         call opac%composition%reassign_pointer()
-        call opac%pre_init_and_link(self, i_mu=m, i_nu=n)
+        call opac%pre_init_and_link(self, i_mu=m, i_nu=n, sp=atom_patch%sp)
       else
         if (voigt_interp) then
           allocate(net_opac)
           net_opac%kind = 'net_opac'
-          call net_opac%pre_init_and_link(self, i_mu=m, i_nu=n)
+          call net_opac%pre_init_and_link(self, i_mu=m, i_nu=n, sp=atom_patch%sp)
         else
           allocate(opac)
           opac%kind = 'net_opac'
-          call opac%pre_init_and_link(self, i_mu=m, i_nu=n)
+          call opac%pre_init_and_link(self, i_mu=m, i_nu=n, sp=atom_patch%sp)
         endif
       endif
 
       allocate(rad)
       rad%kind = merge('angle_rad', 'mean_rad ', m>0)
-      call rad%pre_init_and_link(self, i_mu=m, i_nu=n)
+      call rad%pre_init_and_link(self, i_mu=m, i_nu=n, sp=atom_patch%sp)
     end do
   end do
 
-  do m=self%n_omega+1, self%n_mu
+  do m=0, self%n_out
+    m2 = m+self%n_omega
     do n=1, self%n_nu
-      if (voigt_interp) then
-        allocate(net_opac)
-        net_opac%kind = 'net_opac'
-        call net_opac%pre_init_and_link(self, i_mu=m, i_nu=n)
-      else
+      n2 = n+self%n_nu
+      if (m==0) then
         allocate(opac)
-        opac%kind = 'net_opac'
-        call opac%pre_init_and_link(self, i_mu=m, i_nu=n)
+        opac%kind = 'back_opac'
+        opac%composition => self%composition
+        call opac%composition%reassign_pointer()
+        call opac%pre_init_and_link(self, i_mu=0, i_nu=n2, sp=output_sp)
+      else
+        if (voigt_interp) then
+          if (self%composition%ll_initialised) then
+            allocate(back_line)
+            back_line%kind = 'back_line'
+            back_line%composition => self%composition
+            call back_line%pre_init_and_link(self, i_mu=m2, i_nu=n2, sp=output_sp)
+          endif
+
+          allocate(net_opac)
+          net_opac%kind = 'net_opac'
+          call net_opac%pre_init_and_link(self, i_mu=m2, i_nu=n2, sp=output_sp)
+        else
+          allocate(opac)
+          opac%kind = 'net_opac'
+          call opac%pre_init_and_link(self, i_mu=m2, i_nu=n2, sp=output_sp)
+        endif
+
+        allocate(rad)
+        rad%kind = 'angle_rad'
+        call rad%pre_init_and_link(self, i_mu=m2, i_nu=n2, sp=output_sp)
       endif
-
-      allocate(rad)
-      rad%kind = 'angle_rad'
-      call rad%pre_init_and_link(self, i_mu=m, i_nu=n)
     end do
-  end do
 
-  if (self%boundaries%upper) then
-    do i=1, self%n_out
+    if (m > 0 .and. self%boundaries%upper) then
       allocate(rad)
       rad%kind = 'out_rad'
-      call rad%pre_init_and_link(self, i_mu=i+self%n_omega)
-    end do
-  endif
+      call rad%pre_init_and_link(self, i_mu=m2, sp=output_sp)
+    endif
+  end do
   call trace%end(itimer)
 END SUBROUTINE composition_pre_init
 
@@ -191,6 +216,28 @@ SUBROUTINE composition_update (self)
 END SUBROUTINE composition_update
 
 !===============================================================================
+SUBROUTINE composition_patch_post_update (self)
+  class(composition_patch_t) :: self
+  integer :: p(3)
+  logical :: skip, in_bounds
+  !-----------------------------------------------------------------------------
+  call trace%begin ('composition_patch_t%composition_patch_post_update')
+  if (self%verbose > 0) then
+    p = self%pcheck
+    in_bounds = all(p <= self%n)
+    if (in_bounds) then
+      write(stdout,'(A, 8(ES15.7))') self%m3d_patch_info(), &
+      self%authority_mem(p(1),p(2),p(3),:self%i_temp,1,:), self%composition%grph
+    else
+      write(stdout,'(A,A)') self%m3d_patch_info()
+    endif
+  end if
+
+  call self%m3d_patch_t%post_update()
+  call trace%end()
+END SUBROUTINE composition_patch_post_update
+
+!===============================================================================
 SUBROUTINE composition_patch_nbor_relations(self, another, needed, needs_me, download)
   class(composition_patch_t) :: self
   class(task_t), pointer :: another         ! another task in the list
@@ -203,11 +250,12 @@ SUBROUTINE composition_patch_nbor_relations(self, another, needed, needs_me, dow
 
   if (needed .or. needs_me) then
     if (another%id /= self%master_id) then
-      if (another%kind=='back_opac' .or. another%kind=='atom_patch') then
+      select case (another%kind)
+      case ('back_opac', 'back_line', 'atom_patch')
         needed = .false.
-      else
+      case default
         needed = .false.; needs_me = .false.
-      endif
+      end select
     endif
   endif
   call trace%end()

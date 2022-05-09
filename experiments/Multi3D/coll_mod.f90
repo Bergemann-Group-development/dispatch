@@ -238,8 +238,6 @@ module coll_mod
    !********************************************************************
    ! MOD PE: Add temp,ne,nh,nstar as input parameters
    subroutine gencol(coll,id,nlevel,g,ev,ion,cij,ix,iy,iz,temp,ne,nstar,nh)
-    !use atmos_var
-    !use atom_var
     use mconst
     use mclu
     use mem_mod

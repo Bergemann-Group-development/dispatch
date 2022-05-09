@@ -27,7 +27,7 @@ module rate_patch_mod
     USE ray_patch_mod
     USE opac_patch_mod
     USE rad_patch_mod
-    USE atom_var, only: atom_type
+    USE atom_mod, only: atom_type
     USE lines_patch_mod, only: lines_patch_t
     implicit none
 

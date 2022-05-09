@@ -31,12 +31,12 @@ SUBROUTINE compute_ion_equilibrium(self, EK_over_temp, ne, saha, dxi)
     do j=1, self%nion
         ion => self%ions(j)
         call ion%allocate(self%nx, self%ny, self%nz)
-        ion%part = ion%partition(EK_over_temp, ne)
+        ion%part = 1 / ion%partition(EK_over_temp, ne)
     end do
 
     fil = 1
     do j=self%nion-1, 1, -1
-        partition_ratio = ions(j+1)%part / ions(j)%part
+        partition_ratio = ions(j)%part / ions(j+1)%part
         ions(j)%saha = ions(j)%saha_eq(EK_over_temp, ne, saha, dxi, partition_ratio)
         fil = 1 + fil * ions(j)%saha
     end do

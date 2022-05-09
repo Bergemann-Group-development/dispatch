@@ -1,15 +1,15 @@
-module transition_mod
-    use prec_mod
-    use op_math_mod
-    use level_mod
-    use ion_mod
-    use element_mod
-    use molecule_mod
-    use os_mod
+MODULE bftrans_mod
+    USE prec_mod
+    USE op_math_mod
+    USE level_mod
+    USE ion_mod
+    USE element_mod
+    USE molecule_mod
+    USE os_mod
     implicit none
     private
     
-    type, public :: transition_type
+    type, public :: bftrans_type
         integer :: j, k, ntt, nnu, verbose
         type(level_type) :: level
         class(particle_type), pointer :: ion
@@ -50,7 +50,7 @@ contains
 
 !===============================================================================
 SUBROUTINE load_lam_interp_weights(self,lam)
-    class(transition_type) :: self
+    class(bftrans_type) :: self
     real(dp), dimension(:), intent(in) :: lam
     integer :: nf, f
     integer :: nx, j, i
@@ -129,7 +129,7 @@ END SUBROUTINE
 
 !===============================================================================
 SUBROUTINE set_xweight(self, lam, f)
-    class(transition_type) :: self
+    class(bftrans_type) :: self
     real(dp), dimension(:), intent(in) :: lam
     integer, intent(in) :: f
     integer :: j
@@ -171,9 +171,8 @@ FUNCTION linear_weight(xx,newx) result(w)
 end FUNCTION linear_weight
 
 !===============================================================================
-SUBROUTINE interp_xkap(self, abslte, lam, temp, teta, fakt)
-    class(transition_type) :: self
-    real(dp), dimension(:), intent(in) :: lam
+SUBROUTINE interp_xkap(self, abslte, temp, teta, fakt)
+    class(bftrans_type) :: self
     real(4), dimension(:,:,:,:), intent(inout) :: abslte
     real(dp), intent(in), dimension(:,:,:), target :: temp, teta
     real(dp), intent(in), dimension(:,:,:) :: fakt
@@ -183,14 +182,13 @@ SUBROUTINE interp_xkap(self, abslte, lam, temp, teta, fakt)
     real(dp) :: ab1
     real(dp), dimension(self%nnu) :: yy
     real(dp), dimension(self%ntt) :: tt
-    integer :: i, f, nx, ny, nz, nf
+    integer :: i, f, nx, ny, nz
     integer, dimension(:,:,:), allocatable :: it
     logical, dimension(:,:,:), allocatable :: quadratic, in_bounds
     !---------------------------------------------------------------------------
     nx = size(temp, 1)
     ny = size(temp, 2)
     nz = size(temp, 3)
-    nf = size(lam)
     
     if (self%ntt > 1) then
         allocate(yyt(nx,ny,nz,self%nnu))
@@ -261,13 +259,13 @@ SUBROUTINE interp_xkap(self, abslte, lam, temp, teta, fakt)
             if (quad(f)) then
                 where (in_bounds)
                     ab = yyt(:,:,:,i)   * lagrange(1,f) + &
-                            yyt(:,:,:,i+1) * lagrange(2,f) + &
-                            yyt(:,:,:,i+2) * lagrange(3,f)
+                         yyt(:,:,:,i+1) * lagrange(2,f) + &
+                         yyt(:,:,:,i+2) * lagrange(3,f)
                 end where
             else
                 where (in_bounds)
                     ab = yyt(:,:,:,i)   * lagrange(1,f) + & 
-                            yyt(:,:,:,i+1) * lagrange(2,f)
+                         yyt(:,:,:,i+1) * lagrange(2,f)
                 end where
             endif
 
@@ -306,7 +304,7 @@ END SUBROUTINE interp_xkap
 
 !===============================================================================
 elemental FUNCTION interp_temp_quadratic(self, f, it, newt) result(newy)
-    class(transition_type), intent(in) :: self
+    class(bftrans_type), intent(in) :: self
     real(dp), intent(in) :: newt
     integer, intent(in) :: f, it
     real(dp) :: newy, w(3)
@@ -331,7 +329,7 @@ end FUNCTION interp_temp_quadratic
 
 !===============================================================================
 elemental FUNCTION interp_temp_linear(self, f, it, newt) result(newy)
-    class(transition_type), intent(in) :: self
+    class(bftrans_type), intent(in) :: self
     real(dp), intent(in) :: newt
     integer, intent(in) :: f, it
     real(dp) :: m, newy
@@ -342,7 +340,7 @@ end FUNCTION interp_temp_linear
 
 !===============================================================================
 elemental FUNCTION check_lam_quadratic(self, iw) result(quadratic)
-    class(transition_type), intent(in) :: self
+    class(bftrans_type), intent(in) :: self
     integer, intent(in) :: iw
     logical :: quadratic
     !---------------------------------------------------------------------------
@@ -359,7 +357,7 @@ end FUNCTION check_lam_quadratic
 
 !===============================================================================
 elemental FUNCTION check_temp_quadratic(self, it) result(quadratic)
-    class(transition_type), intent(in) :: self
+    class(bftrans_type), intent(in) :: self
     integer, intent(in) :: it
     logical :: quadratic
     !---------------------------------------------------------------------------
@@ -376,7 +374,7 @@ end FUNCTION check_temp_quadratic
 
 !===============================================================================
 elemental SUBROUTINE get_temp_index(self, newt, idx, no_extrap)
-    class(transition_type), intent(in) :: self
+    class(bftrans_type), intent(in) :: self
     real(dp), intent(in) :: newt
     integer,  intent(out) :: idx
     logical,  intent(out) :: no_extrap
@@ -395,7 +393,7 @@ END SUBROUTINE get_temp_index
 
 !===============================================================================
 pure SUBROUTINE trans_boltzmann_weight(self, EK_over_temp, frac)
-    class(transition_type), intent(in) :: self
+    class(bftrans_type), intent(in) :: self
     real(dp), dimension(:,:,:), intent(in) :: EK_over_temp
     real(dp), dimension(:,:,:), intent(out) :: frac
     !---------------------------------------------------------------------------
@@ -404,7 +402,7 @@ END SUBROUTINE trans_boltzmann_weight
 
 !===============================================================================
 SUBROUTINE absorption_factor(self, EK_over_temp, teta, pe, rho, dxi, xfakh, fakt)
-    class(transition_type), intent(in) :: self
+    class(bftrans_type), intent(in) :: self
     class(particle_type), pointer :: ion
     real(dp), dimension(:,:,:), intent(in) :: EK_over_temp, teta, pe, rho, dxi, xfakh
     real(dp), dimension(:,:,:), intent(out) :: fakt
@@ -415,19 +413,19 @@ SUBROUTINE absorption_factor(self, EK_over_temp, teta, pe, rho, dxi, xfakh, fakt
 
     if (self%regular) then
         call self%boltzmann_weight(EK_over_temp, fakt)
-        fakt = fakt / ion%part * ion%rho_per_h
+        fakt = fakt * ion%part * ion%rho_per_h
     else
         select case(trim(self%key))
         case('H- BF')
             fakt = 1.e-17 * ion%rho_per_h 
         case('H- FF')
-            fakt = 2.E-26 / ion%part * pe * ion%rho_per_h
+            fakt = 2.E-26 * ion%part * pe * ion%rho_per_h
         case('H BF')
             if (self%k <= 5) then
                 call self%boltzmann_weight(EK_over_temp, fakt)
-                fakt = 1.045E-26 / ion%part * fakt * ion%rho_per_h / self%k**5
+                fakt = 1.045E-26 * ion%part * fakt * ion%rho_per_h / self%k**5
             else
-                fakt = 2.0898E-26 / ion%part * xfakh
+                fakt = 2.0898E-26 * ion%part * xfakh
                 fakt = fakt * exp(-31.30364*teta*(1. - 1./self%k**2)) / self%k**3
             endif
             allocate(nniv(size(pe,1), size(pe,2), size(pe,3)))
@@ -441,7 +439,7 @@ SUBROUTINE absorption_factor(self, EK_over_temp, teta, pe, rho, dxi, xfakh, fakt
             end where
 
         case('H FF')
-            fakt = 2.0898E-26 / ion%part * xfakh
+            fakt = 2.0898E-26 * ion%part * xfakh
             fakt = fakt * exp(-31.30364*teta + 2.3026 * dxi * teta) / (2*31.30364*teta)
 
         case('(H+H)')
@@ -458,7 +456,7 @@ END SUBROUTINE absorption_factor
 !===============================================================================
 SUBROUTINE add_absorption(self, abslte, lam, temp, EK_over_temp, teta, pe, rho, dxi, xfakh, fakt)
     use timer_mod
-    class(transition_type) :: self
+    class(bftrans_type) :: self
     real(4), dimension(:,:,:,:), intent(inout) :: abslte
     real(dp), dimension(:,:,:), intent(in) :: temp, EK_over_temp, teta, pe, rho, dxi, xfakh
     real(dp), dimension(:), intent(in) :: lam
@@ -484,7 +482,7 @@ SUBROUTINE add_absorption(self, abslte, lam, temp, EK_over_temp, teta, pe, rho, 
 
     if (active) then
         call self%absorption_factor(EK_over_temp, teta, pe, rho, dxi, xfakh, fakt)
-        call self%interp_xkap(abslte, lam, temp, teta, fakt)
+        call self%interp_xkap(abslte, temp, teta, fakt)
     endif
 
     !print '(A20, E18.10)', self%label, abslte(1,1,1,1)
@@ -494,4 +492,5 @@ SUBROUTINE add_absorption(self, abslte, lam, temp, EK_over_temp, teta, pe, rho, 
     call os%deallocate(lagrange)
     call os%deallocate(pvt_xkap)
 END SUBROUTINE add_absorption
-end module
+
+END MODULE

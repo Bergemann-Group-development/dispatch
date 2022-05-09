@@ -49,7 +49,7 @@
 !&m3d_params         fcheck=31242 pcheck=1,1,-1 linecheck=1 n_nu=32 maxiter=0 verbose=3 ilambd=0 dynamic_memory=T
 !&m3d_params         fcheck=31242 pcheck=1,1,-1 linecheck=1 n_nu=32 maxiter=0 verbose=3 ilambd=0 dynamic_memory=T
 !&m3d_params         fcheck=1776 pcheck=1,1,-1 linecheck=103 n_nu=4 maxiter=1 verbose=3 ilambd=0 dynamic_memory=T voigt_interp=T
-&m3d_params         fcheck=98 pcheck=1,1,-1 linecheck=4 n_nu=1 maxiter=0 verbose=3 ilambd=0 dynamic_memory=T voigt_interp=T
+&m3d_params         fcheck=3738 pcheck=1,1,-1 linecheck=2 n_nu=32 maxiter=0 verbose=3 ilambd=0 dynamic_memory=T voigt_interp=T
 !                    quad_scheme='set_a2' long_scheme='set_a4' /
                     quad_scheme='disk_center' long_scheme='disk_center'/
 &composition_params verbose=0 absmet_file='./input_multi3d/absmet' /
