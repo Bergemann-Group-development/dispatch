@@ -77,10 +77,8 @@ contains
 !===============================================================================
 SUBROUTINE set_carlson_quadratures (quad_scheme, vec, wts, up_and_down)
   !---------------------------------------------------------------------
-  !
   !  Routine is modified from set_ang by AJG for output ray quadrature
   !  schemes
-  !
   !---------------------------------------------------------------------
   character(len=*), intent(in) :: quad_scheme
   integer :: m, i, nro, nmu
@@ -220,6 +218,90 @@ SUBROUTINE set_carlson_quadratures (quad_scheme, vec, wts, up_and_down)
   endif
 END SUBROUTINE set_carlson_quadratures
 !---------------------------------------------------------------------
+
+!===============================================================================
+SUBROUTINE set_lobatto_quadratures(ntheta, nphi, vec, wts)
+  ! -------------------------------------------------------------------
+  ! Computes Lobatto quadratures for a given number of theta and phi
+  ! angles. It then converts the spherical geometry into cartesian geometry
+  ! -------------------------------------------------------------------
+  integer, intent(in) :: ntheta, nphi
+  real(8), intent(out), dimension(:), allocatable :: wts
+  real(8), intent(out), dimension(:,:), allocatable :: vec
+  real(8), dimension(:), allocatable :: mu, wmu
+  real(8) :: pi2, pi05, xphi, theta
+  integer :: nrays, i, nt, np, nmuphi
+  ! -------------------------------------------------------------------
+  pi05   = PI * 0.5d0
+  pi2    = PI * 2.0d0
+
+  nrays  = ntheta + 1
+  nmuphi = ntheta*nphi + 1
+
+  allocate(mu(nrays))
+  allocate(wmu(nrays))
+  allocate(wts(nmuphi))
+  allocate(vec(3, nmuphi))
+
+  ! setting indexes and hard-coded Lobatto coefficients
+  select case (nrays)
+  case (1)
+     vec(:,1) = (/0.0, 0.0, 1.0/)
+     wts = 1.0
+     return
+     
+  case (2)
+     mu  = (/1.0,        0.44721360/)
+     wmu = (/0.16666667, 0.83333333/)
+     
+  case (3)
+     mu  = (/1.0,        0.76505532, 0.28523152/)
+     wmu = (/0.06666667, 0.37847496, 0.55485838/)
+
+  case (4)
+     mu  = (/1.0,        0.87174015, 0.59170018, 0.20929922/)
+     wmu = (/0.03571428, 0.21070422, 0.34112270, 0.41245880/)
+
+  case (5)
+     mu  = (/1.0,          0.9195339082, 0.7387738651, &
+             0.4779249498, 0.1652789577/)
+     wmu = (/0.0222222222, 0.1333059908, 0.2248893420, &
+             0.2920426836, 0.3275397612/)
+
+  case (6)
+     mu  = (/1.0           , 0.944899272223, 0.819279321644, &
+             0.632876153032, 0.399530940965, 0.136552932855/)
+     wmu = (/0.015151515153, 0.091684517440, 0.157974705655, &
+             0.212508417834, 0.251275603210, 0.271405240910/)
+     
+  case default
+     stop 'Error: ntheta is set too high. *ntheta<5*'
+
+  end select
+
+  wmu = wmu * mu * 2
+
+  ! storing first index of vec and wts
+  wts(1) = wmu(1)
+  vec(3,1) = mu(1)
+  ! storing the rest of vec and wts indexes
+  do nt = 2, nrays
+     do np = 1, nphi
+        i = (nt-2) * nphi + np+1
+        
+        ! Computing cartesian geometries
+        xphi = pi2 / dble(nphi) * (np-1)
+        theta = acos(mu(nt))
+        vec(1,i) = sin(theta) * cos(xphi)
+        vec(2,i) = sin(theta) * sin(xphi)
+        vec(3,i) = mu(nt)
+        wts(i)   = wmu(nt) / dble(nphi)
+     end do
+  end do
+
+  ! Remove computational anomalies
+  where (abs(vec) < 1d-3) vec = 0d0
+END SUBROUTINE set_lobatto_quadratures
 
 !===============================================================================
 SUBROUTINE ray_init(ray, vec, wmu)

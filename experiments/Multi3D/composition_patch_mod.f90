@@ -32,6 +32,7 @@ module composition_patch_mod
     procedure :: update => composition_update
     procedure :: post_update => composition_patch_post_update
     procedure :: finish => composition_finish
+    procedure :: deallocate_mem => composition_patch_deallocate_mem
     procedure :: nbor_relations => composition_patch_nbor_relations
   end type
 
@@ -168,6 +169,7 @@ SUBROUTINE composition_pre_init (self)
       call rad%pre_init_and_link(self, i_mu=m2, sp=output_sp)
     endif
   end do
+  call self%post_pre_init()
   call trace%end(itimer)
 END SUBROUTINE composition_pre_init
 
@@ -218,16 +220,15 @@ END SUBROUTINE composition_update
 !===============================================================================
 SUBROUTINE composition_patch_post_update (self)
   class(composition_patch_t) :: self
-  integer :: p(3)
-  logical :: skip, in_bounds
+  integer :: p(3), z
+  logical :: skip
   !-----------------------------------------------------------------------------
   call trace%begin ('composition_patch_t%composition_patch_post_update')
   if (self%verbose > 0) then
     p = self%pcheck
-    in_bounds = all(p <= self%n)
-    if (in_bounds) then
+    if (all(p > 0)) then
       write(stdout,'(A, 8(ES15.7))') self%m3d_patch_info(), &
-      self%authority_mem(p(1),p(2),p(3),:self%i_temp,1,:), self%composition%grph
+      self%mem(p(1),p(2),p(3),:self%i_temp,1,:), self%composition%grph
     else
       write(stdout,'(A,A)') self%m3d_patch_info()
     endif
@@ -269,6 +270,13 @@ SUBROUTINE composition_finish (self, rotated)
   call self%m3d_patch_t%finish(rotated=rotated)
   call self%set(bits%frozen)
 END SUBROUTINE composition_finish
+
+!===============================================================================
+SUBROUTINE composition_patch_deallocate_mem(self)
+  class(composition_patch_t) :: self
+  ! ----------------------------------------------------------------------------
+  ! no memory to be deallocated
+END SUBROUTINE composition_patch_deallocate_mem
 
 
 end module composition_patch_mod

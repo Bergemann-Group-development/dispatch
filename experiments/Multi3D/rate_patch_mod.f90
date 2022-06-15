@@ -59,6 +59,7 @@ module rate_patch_mod
     call self%ray_patch_t%pre_init()
     call self%append_to_task_list()
     call self%set_nv_and_nw(self%atom%nrad, 2)
+    call self%post_pre_init()
     call trace%end()
   END SUBROUTINE rate_patch_pre_init
 
@@ -180,6 +181,7 @@ module rate_patch_mod
     gamma_ji = 0.0d0
 
     call self%atom%add_all_gammas2(self%fs, temp, Inu, Psi, gamma_ij, gamma_ji, self%lines%line, self%lines%idx_map)
+    !call self%atom%add_all_gammas3(self%fs, temp, Inu, Psi, gamma_ij, gamma_ji, self%lines%line)
 
     call trace%end(itimer)
     if (.not. self%finished) call self%post_update()

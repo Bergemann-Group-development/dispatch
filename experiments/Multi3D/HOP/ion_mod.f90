@@ -68,20 +68,15 @@ elemental real(dp) FUNCTION saha_eq(self, EK_over_temp, ne, saha, dxi, partition
     class(ion_type), intent(in) :: self
     real(dp), intent(in) :: EK_over_temp, ne, saha, dxi
     real(dp), intent(in), optional :: partition_ratio
-    real(dp) :: dxi_j
+    real(dp) :: dxi_j, partp
     !---------------------------------------------------------------------------
     if (self%j == -2) then
         dxi_j = 2*dxi
     else
-        dxi_j = dxi*(self%j*(self%j+1)*0.5)
+        dxi_j = dxi*self%j
     endif
 
-    if (.not. present(partition_ratio)) then
-        saha_eq = saha * self%levels(1)%boltzmann(EK_over_temp, dxi=dxi_j) * &
-            self%above%partition(EK_over_temp, ne) / self%partition(EK_over_temp, ne)
-    else
-        saha_eq = saha * self%levels(1)%boltzmann(EK_over_temp, dxi=dxi_j) * partition_ratio
-    endif
+    saha_eq = saha * self%levels(1)%boltzmann(EK_over_temp, dxi=dxi_j) * partition_ratio
 end FUNCTION saha_eq
 
 !===============================================================================
@@ -189,17 +184,19 @@ SUBROUTINE allocate_ion (self, nx, ny, nz)
     class(ion_type) :: self
     integer :: nx, ny, nz
     !---------------------------------------------------------------------------
-    if (.not. self%allocated) then
-        self%nx = nx
-        self%ny = ny
-        self%nz = nz
-        allocate(self%f(nx,ny,nz))
-        allocate(self%saha(nx,ny,nz))
-        allocate(self%part(nx,ny,nz))
-        allocate(self%anjon(nx,ny,nz))
-        allocate(self%rho_per_h(nx,ny,nz))
-        self%allocated = .true.
+    if (self%allocated) then
+        deallocate(self%f, self%saha, self%part, self%anjon, self%rho_per_h)
     endif
+    
+    self%nx = nx
+    self%ny = ny
+    self%nz = nz
+    allocate(self%f(nx,ny,nz))
+    allocate(self%saha(nx,ny,nz))
+    allocate(self%part(nx,ny,nz))
+    allocate(self%anjon(nx,ny,nz))
+    allocate(self%rho_per_h(nx,ny,nz))
+    self%allocated = .true.
 END SUBROUTINE allocate_ion
     
 end module ion_mod

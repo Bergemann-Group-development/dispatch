@@ -102,6 +102,7 @@ SUBROUTINE opacity_pre_init (self)
       endif
     endif
   endif
+  call self%post_pre_init()
   call trace%end()
 END SUBROUTINE opacity_pre_init
 
@@ -154,7 +155,7 @@ SUBROUTINE back_opac_update (self, chi, eta)
   if (self%iter == 0) then
     chi = 0
     !call self%init_composition()
-    call self%composition%absorption(nu, chi, abslte, sumsca)
+    call self%composition%absorption(nu, chi, abslte, sumsca, include_osmet=self%out_ray==.false.)
   endif
 
   if (self%iter > 0) then

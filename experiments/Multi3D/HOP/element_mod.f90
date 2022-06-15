@@ -14,6 +14,7 @@ module element_mod
         character(len=3) :: id
         contains
         procedure :: compute_ion_equilibrium
+        procedure :: print_info
     end type element_type
     
 contains
@@ -23,7 +24,7 @@ SUBROUTINE compute_ion_equilibrium(self, EK_over_temp, ne, saha, dxi)
     class(element_type), target :: self
     type(ion_type), pointer :: ions(:), ion
     real(dp), dimension(:,:,:), intent(in) :: EK_over_temp, ne, dxi, saha
-    real(dp), dimension(self%nx, self%ny, self%nz) :: fil, partition_ratio
+    real(dp), dimension(self%nx, self%ny, self%nz) :: fil, partition_ratio, partp
     integer :: j
     !---------------------------------------------------------------------------
     ions => self%ions
@@ -36,18 +37,52 @@ SUBROUTINE compute_ion_equilibrium(self, EK_over_temp, ne, saha, dxi)
 
     fil = 1
     do j=self%nion-1, 1, -1
-        partition_ratio = ions(j)%part / ions(j+1)%part
+        partp = ions(j+1)%part
+        ! --- this only shows up in the Oslo legacy code ---!
+        partp = max(1d-3, partp)
+        ! --------------------------------------------------!
+        partition_ratio = ions(j)%part / partp
         ions(j)%saha = ions(j)%saha_eq(EK_over_temp, ne, saha, dxi, partition_ratio)
         fil = 1 + fil * ions(j)%saha
     end do
 
-    fil = 1 / fil
-    ions(1)%anjon = fil
+    ions(1)%anjon = 1 / fil
 
     do j=2, self%nion
-        fil = fil*ions(j-1)%saha
-        ions(j)%anjon = fil
+        ions(j)%anjon = ions(j-1)%anjon * ions(j-1)%saha
     end do
 END SUBROUTINE compute_ion_equilibrium
+
+!===============================================================================
+SUBROUTINE print_info(self, lunit, p)
+    class(element_type), target :: self
+    integer, intent(in) :: lunit, p(:)
+    type(ion_type), pointer :: ion
+    character(32) :: info
+    character(32) :: anjon_string
+    character(48) :: saha_string
+    character(64) :: part_string
+    integer :: j
+    !---------------------------------------------------------------------------
+    write(info,'(A4, e12.4)') self%id, self%abund
+    anjon_string=''
+    part_string=''
+    saha_string=''
+    do j=1, self%nion
+        ion => self%ions(j)
+        write(anjon_string, '(A, f8.4)') trim(anjon_string), ion%anjon(p(1),p(2),p(3))
+    end do
+
+    do j=1, self%nion
+        ion => self%ions(j)
+        write(saha_string, '(A, es10.2)') trim(saha_string), ion%saha(p(1),p(2),p(3))
+    end do
+
+    do j=1, self%nion
+        ion => self%ions(j)
+        write(part_string, '(A, es10.2)') trim(part_string), 1/ion%part(p(1),p(2),p(3))
+    end do
+    write(lunit, '(A,A,A,A)'), trim(info), anjon_string, saha_string, part_string
+END SUBROUTINE print_info
 
 end module element_mod

@@ -4,8 +4,8 @@ MODULE atom_mod
     USE mconst
     USE coll_mod
     USE trans_mod
-    USE mmath
-    USE op_math_mod, only: searchsorted
+    USE mmath, only: refsor, unista
+    USE op_math_mod, only: searchsorted, lineq
     USE os_mod
     USE trace_mod
     USE spectrum_mod, only: spectrum_type
@@ -79,6 +79,7 @@ MODULE atom_mod
         procedure :: add_continuum_opacities
         procedure :: add_all_gammas
         procedure :: add_all_gammas2
+        procedure :: add_all_gammas3
         procedure :: compute_line_damping
         procedure :: compute_doppler_factor
         procedure :: partition_function
@@ -450,26 +451,25 @@ MODULE atom_mod
      !------------------------------------------------------------------------------------
   
      !====================================================================================
-     SUBROUTINE add_all_gammas2(self, fs, temp, Inu, all_Psi, gamma_ij, gamma_ji, lines, idx_map)
+     SUBROUTINE add_all_gammas2(self, fs, temp, Inu, Psi, gamma_ij, gamma_ji, lines, idx_map)
         class(atom_type), target, intent(in) :: self
         integer, intent(in) :: fs
-        real(4), dimension(:,:,:), intent(in) :: temp
+        real(4), dimension(:,:,:), intent(in), contiguous :: temp
         real(4), dimension(:,:,:,:), intent(in) :: Inu
-        real(4), dimension(:,:,:,:), intent(in), target :: all_Psi
-        real(4), dimension(:,:,:,:), intent(inout), target :: gamma_ij, gamma_ji
+        real(4), dimension(:,:,:,:), intent(in), contiguous :: Psi
+        real(4), dimension(:,:,:,:), intent(inout), contiguous :: gamma_ij, gamma_ji
         class(line_type), dimension(:), intent(in) :: lines
         integer, dimension(:), intent(in) :: idx_map
-        real(4), dimension(:,:,:), allocatable :: blzfac, chi, Ieff, SumEta, hk_over_temp
-        real(4), dimension(:,:,:), pointer :: vij, vji, Psi
-        real(4), dimension(:,:,:,:), allocatable :: SumU, SumChiDn, SumChiUp, phi
-        real(4), dimension(:,:,:,:), allocatable, target :: Gij, Gji
-        real(8), dimension(:), allocatable :: wnu, fac
-        integer, dimension(:), allocatable :: lower, upper, trans
-        logical, dimension(:), allocatable :: cross, up_done, lo_done
-        real(8) :: twohnu3_c2, hnu_inv, ufac, Bij, Bji, alpha
-        real(4) :: U
-        integer :: i, j, k, kr, kr2, kc, kl, fe, n_active, ff, f, p(3), x,y,z, nx, ny, nz
-        logical :: recompute_opac, cross_coupling=.false.
+        real(4), dimension(:,:,:), allocatable :: blzfac, Ieff, hk_over_temp
+        real(4), dimension(:,:,:), pointer, contiguous :: ni, nj
+        real(4), dimension(:,:,:,:), allocatable :: SumChiDn, SumChiUp, phi, SumEta
+        real(4), dimension(:,:,:,:), allocatable :: vij, vji
+        real(4), dimension(:), allocatable :: wnu
+        integer, dimension(:), allocatable :: lower, upper, trans, ii, jj
+        logical, dimension(:), allocatable :: cross
+        real(4) :: chi, twohnu3_c2, alpha, hnu_inv, Bij, Bji, ufac
+        integer :: i, j, k, kr, kr2, kc, kl, fe, n_active, ff, f, p(3), x,y,z, nx, ny, nz, nupper, nlower, i2
+        logical :: cross_coupling
         integer, save :: itimer1, itimer2, itimer3, itimer4, itimer5, itimer6
         !------------------------------------------------------------------------------------
         fe = fs + size(Inu, 4) - 1 
@@ -477,31 +477,54 @@ MODULE atom_mod
         ny = size(Inu,2)
         nz = size(Inu,3)
   
-        allocate(phi, mold=Inu(:,:,:,1:1))
-        allocate(SumU, mold=self%n)
-        allocate(SumChiUp, mold=self%n)
-        allocate(SumChiDn, mold=self%n)
-        allocate(blzfac, vij, vji, chi, Ieff, SumEta, hk_over_temp, mold=temp)
-        allocate(Gij, mold=gamma_ij)
-        allocate(Gji, mold=gamma_ji)
-  
         n_active = maxval(self%sp%nac(fs:fe) + self%sp%nal(fs:fe))
-        allocate(wnu(n_active), fac(n_active))
+
+        allocate(wnu(n_active))
         allocate(lower(n_active), upper(n_active), trans(n_active), cross(n_active))
-        allocate(up_done(self%nlevel), lo_done(self%nlevel))
+        allocate(ii(n_active), jj(n_active))
+        allocate(Vij(nx,ny,nz,n_active))
+        allocate(Vji(nx,ny,nz,n_active))
+        
+        nlower = 0
+        nupper = 0
+        do ff=fs,fe
+          n_active = self%sp%nac(ff) + self%sp%nal(ff)
+          do kr=1, n_active
+            if (kr <= self%sp%nac(ff)) then
+              kc = self%sp%ac(kr,ff)
+              lower(kr) = self%cont(kc)%i
+              upper(kr) = self%cont(kc)%j
+            else
+              kl = self%sp%al(kr - self%sp%nac(ff),ff)
+              lower(kr) = self%line(kl)%i
+              upper(kr) = self%line(kl)%j
+            endif
+          end do
+          
+          call unique_int(lower(1:n_active), lower(1:n_active), i)
+          call unique_int(upper(1:n_active), upper(1:n_active), j)
+          if (i > nlower) nlower = i
+          if (j > nupper) nupper = j
+        end do
+  
+        allocate(phi, mold=Inu(:,:,:,1:1))
+        allocate(blzfac, Ieff, hk_over_temp, mold=temp)
+        allocate(SumChiUp(nx,ny,nz,nlower))
+        allocate(SumChiDn(nx,ny,nz,nupper))
+        allocate(SumEta  (nx,ny,nz,nupper))
   
         hk_over_temp = h_k / temp
-  
+
         do ff=fs,fe
-           call trace%begin('administration', itimer=itimer2)
+           !call trace%begin('administration', itimer=itimer1)
            f = ff - fs + 1
            n_active = self%sp%nac(ff) + self%sp%nal(ff)
   
            hnu_inv = 1 / (hh*self%sp%nu(ff))
+           twohnu3_c2 = twoh_c2 * self%sp%nu(ff)**3
   
            if (self%sp%nac(ff) > 0) then
-              twohnu3_c2 = twoh_c2 * self%sp%nu(ff)**3
-              blzfac = exp(- hk_over_temp * self%sp%nu(ff))
+              blzfac = exp(- hk_over_temp * real(self%sp%nu(ff)))
            endif
            
            do kr=1, n_active
@@ -510,64 +533,76 @@ MODULE atom_mod
                  lower(kr) = self%cont(kc)%i
                  upper(kr) = self%cont(kc)%j
                  trans(kr) = self%cont(kc)%ntrans
-                 fac  (kr) = twohnu3_c2
                  wnu  (kr) = self%cont(kc)%wnu(ff) * hnu_inv ! wm needs to be multiplied later
               else
                  kl = self%sp%al(kr - self%sp%nac(ff),ff)
                  lower(kr) = self%line(kl)%i
                  upper(kr) = self%line(kl)%j
                  trans(kr) = self%line(kl)%ntrans
-                 fac  (kr) = self%line(kl)%Aji / self%line(kl)%Bji
                  wnu  (kr) = self%line(kl)%wnu(ff) * hnu_inv ! wm needs to be multiplied later
               endif
            end do
+
+           cross(1:n_active) = .false.
+           cross_coupling = .false.
   
            do kr=1, n_active
               do kr2=1, n_active
                  if (lower(kr) == upper(kr2)) then
                     cross_coupling = .true.
-                    cross(kr2) = .true.
+                    cross(kr) = .true.
                  endif
               end do
            end do
+
+           call unique_int(lower(1:n_active), lower(1:n_active), nlower)
+           call unique_int(upper(1:n_active), upper(1:n_active), nupper)
+
+           do kr=1, n_active
+            if (kr <= self%sp%nac(ff)) then
+              kc = self%sp%ac(kr,ff)
+              ii(kr) = findloc(lower(1:nlower), self%cont(kc)%i, 1)
+              jj(kr) = findloc(upper(1:nupper), self%cont(kc)%j, 1)
+            else
+              kl = self%sp%al(kr - self%sp%nac(ff),ff)
+              ii(kr) = findloc(lower(1:nlower), self%line(kl)%i, 1)
+              jj(kr) = findloc(upper(1:nupper), self%line(kl)%j, 1)
+            endif
+           end do
+
+           do i=1,nlower
+            SumChiUp(:,:,:,i) = 0
+           end do
+
+           do j=1,nupper
+            SumEta(:,:,:,j) = 0
+            if (cross_coupling) SumChiDn(:,:,:,j) = 0
+           end do
   
-           SumEta = 0
-  
-           call zero_sums(SumU, upper, up_done, n_active)
-           call zero_sums(SumChiUp, lower, lo_done, n_active)
-  
-           if (cross_coupling) then
-              call zero_sums(SumU, lower, lo_done, n_active)
-              call zero_sums(SumChiDn, upper, up_done, n_active)
-           endif
-  
-           call trace%end(itimer2)
-           call trace%begin('vij', itimer=itimer3)
+           !call trace%end(itimer1)
+           !call trace%begin('vij', itimer=itimer2)
   
            do kr=1, n_active
-              i = lower(kr)
-              j = upper(kr)
-              k = trans(kr)
-  
-              vij => Gij(:,:,:,k)
-              vji => Gji(:,:,:,k)
+              i = ii(kr)
+              j = jj(kr)
+              ni => self%n(:,:,:,lower(i))
+              nj => self%n(:,:,:,upper(j))
+
+              ufac = twohnu3_c2 / wnu(kr)
   
               if (kr <= self%sp%nac(ff)) then
                  kc = self%sp%ac(kr,ff)
                  alpha = self%cont(kc)%alpha(ff) * wnu(kr)
-                 ufac = fac(kr) / wnu(kr)
                  do z=1,nz
                  do y=1,ny
                  do x=1,nx
-                    vij(x,y,z) = alpha
-                    vji(x,y,z) = self%cont(kc)%ni_over_nj_lte(x,y,z) * blzfac(x,y,z) * alpha
-                    chi(x,y,z) = vij(x,y,z) * self%n(x,y,z,i) - vji(x,y,z) * self%n(x,y,z,j)
-                    U = vji(x,y,z) * ufac
+                    vij(x,y,z,kr) = alpha * ni(x,y,z)
+                    vji(x,y,z,kr) = alpha * self%cont(kc)%ni_over_nj_lte(x,y,z) * blzfac(x,y,z) * nj(x,y,z)
+                    chi = vij(x,y,z,kr) - vji(x,y,z,kr)
   
-                    SumU    (x,y,z,j) = SumU    (x,y,z,j) + U
-                    SumChiUp(x,y,z,i) = SumChiUp(x,y,z,i) + chi(x,y,z)
-     
-                    SumEta(x,y,z) = SumEta(x,y,z) + U * self%n(x,y,z,j)
+                    SumEta  (x,y,z,j) = SumEta  (x,y,z,j) + vji(x,y,z,kr) * ufac
+                    SumChiUp(x,y,z,i) = SumChiUp(x,y,z,i) + chi
+                    if (cross(kr)) SumChiDn(x,y,z,j) = SumChiDn(x,y,z,j) + chi
                  end do
                  end do
                  end do
@@ -577,26 +612,19 @@ MODULE atom_mod
                  call lines(kl)%interpolate_phi(self%sp%nu(ff:ff), phi)
                  Bij = lines(kl)%Bij * wnu(kr)
                  Bji = lines(kl)%Bji * wnu(kr)
-                 ufac = fac(kr) / wnu(kr)
                  do z=1,nz
                  do y=1,ny
                  do x=1,nx
-                    vij(x,y,z) = Bij * phi(x,y,z,1)
-                    vji(x,y,z) = Bji * phi(x,y,z,1)
-                    chi(x,y,z) = vij(x,y,z) * self%n(x,y,z,i) - vji(x,y,z) * self%n(x,y,z,j)
-                    U = vji(x,y,z) * ufac
+                    vij(x,y,z,kr) = phi(x,y,z,1) * Bij * ni(x,y,z)
+                    vji(x,y,z,kr) = phi(x,y,z,1) * Bji * nj(x,y,z)
+                    chi = vij(x,y,z,kr) - vji(x,y,z,kr)
   
-                    SumU    (x,y,z,j) = SumU    (x,y,z,j) + U
-                    SumChiUp(x,y,z,i) = SumChiUp(x,y,z,i) + chi(x,y,z)
-     
-                    SumEta(x,y,z) = SumEta(x,y,z) + U * self%n(x,y,z,j)
+                    SumEta  (x,y,z,j) = SumEta  (x,y,z,j) + vji(x,y,z,kr) * ufac
+                    SumChiUp(x,y,z,i) = SumChiUp(x,y,z,i) + chi
+                    if (cross(kr)) SumChiDn(x,y,z,j) = SumChiDn(x,y,z,j) + chi
                  end do
                  end do
                  end do
-              endif
-                 
-              if (cross(kr)) then
-                 SumChiDn(:,:,:,j) = SumChiDn(:,:,:,j) + chi
               endif
   
               !if (ff==self%fcheck) then
@@ -607,61 +635,245 @@ MODULE atom_mod
               !endif
            end do
   
-           call trace%end(itimer3)
-           call trace%begin('Gij', itimer=itimer4)
-  
-           Psi => all_Psi(:,:,:,f)
-           Ieff = Inu(:,:,:,f) - Psi * SumEta
-  
-           up_done = .false.
-           lo_done = .false.
-           
-           do kr=1, n_active
-              i = lower(kr)
-              j = upper(kr)
-  
-              if (.not. lo_done(i)) then
-                 SumChiUp(:,:,:,i) = SumChiUp(:,:,:,i) * Psi
-                 lo_done(i) = .true.
-              endif
-  
-              if (cross(kr) .and. .not. up_done(j)) then
-                 SumChiDn(:,:,:,j) = SumChiDn(:,:,:,j) * Psi
-                 up_done(j) = .true.
-              endif
+           !call trace%end(itimer2)
+           !call trace%begin('Ieff', itimer=itimer3)
+
+           do j=1,nupper
+            SumEta(:,:,:,j) = SumEta(:,:,:,j) * Psi(:,:,:,f)
            end do
   
+           Ieff = Inu(:,:,:,f) - sum(SumEta(:,:,:,1:nupper), 4)
+
            do kr=1, n_active
-              i = lower(kr)
-              j = upper(kr)
-              k = trans(kr)
-  
-              !if (ff==self%fcheck) then
-              !   p(:) = self%pcheck
-              !   f = self%fcheck
-              !   print *, k, i, j, 'cross coupling'
-              !   print '(8(ES15.7))', SumChiUp(p(1),p(2),p(3),i), SumChiDn(p(1),p(2),p(3),j), SumU(p(1),p(2),p(3),j), &
-              !   Ieff(p(1),p(2),p(3)), SumEta(p(1),p(2),p(3))
-              !endif
-              
-              Gji(:,:,:,k) = Gji(:,:,:,k) * (fac(kr) + Ieff) - SumChiUp(:,:,:,i) * SumU(:,:,:,j)
-  
+             i = ii(kr)
+             j = jj(kr)
+             if (cross(kr)) i2 = findloc(upper(1:nupper), lower(i), 1)
+             k = trans(kr)
+
+             do z=1,nz
+             do y=1,ny
+             do x=1,nx
+              vji(x,y,z,kr) = vji(x,y,z,kr) * (twohnu3_c2 + Ieff(x,y,z)) - SumChiUp(x,y,z,i) * SumEta(x,y,z,j)
               if (cross(kr)) then
-                 Gij(:,:,:,k) = Gij(:,:,:,k) * Ieff + SumChiDn(:,:,:,j) * SumU(:,:,:,i)
+               vij(x,y,z,kr) = vij(x,y,z,kr) * Ieff(x,y,z) + SumChiDn(x,y,z,j) * SumEta(x,y,z,i2)
               else
-                 Gij(:,:,:,k) = Gij(:,:,:,k) * Ieff
+               vij(x,y,z,kr) = vij(x,y,z,kr) * Ieff(x,y,z)
               endif
-  
-              ! add to upward rate coefficient Gamma_ij  
-              ! add to downward rate coefficient Gamma_ji 
-              gamma_ij(:,:,:,k) = gamma_ij(:,:,:,k) + Gij(:,:,:,k)
-              gamma_ji(:,:,:,k) = gamma_ji(:,:,:,k) + Gji(:,:,:,k)
+              gamma_ji(x,y,z,k) = gamma_ji(x,y,z,k) + vji(x,y,z,kr)
+              gamma_ij(x,y,z,k) = gamma_ij(x,y,z,k) + vij(x,y,z,kr)
+             end do
+             end do
+             end do
            end do
-  
-           call trace%end(itimer4)
+
+           !call trace%end(itimer3)
         end do
+
+        deallocate(Vij)
+        deallocate(Vji)
      END SUBROUTINE add_all_gammas2
      !------------------------------------------------------------------------------------
+    
+   !====================================================================================
+   SUBROUTINE add_all_gammas3(self, fs_patch, temp, Inu, Psi, gamma_ij, gamma_ji, lines)
+      class(atom_type), target, intent(in) :: self
+      integer, intent(in) :: fs_patch
+      real(4), dimension(:,:,:), intent(in), contiguous :: temp
+      real(4), dimension(:,:,:,:), intent(in) :: Inu
+      real(4), dimension(:,:,:,:), intent(in), contiguous :: Psi
+      real(4), dimension(:,:,:,:), intent(inout), contiguous :: gamma_ij, gamma_ji
+      class(line_type), dimension(:), intent(in), target :: lines
+      class(line_type), pointer :: line
+      class(cont_type), pointer :: cnt
+      !integer, dimension(:), intent(in) :: idx_map
+      real(4), dimension(:,:,:,:,:), allocatable :: ContEta
+      real(4), dimension(:,:,:,:), allocatable, target :: Ieff, scratch_phi
+      real(4), dimension(:,:,:,:), pointer, contiguous :: eta, phi
+      real(4), dimension(:,:,:), allocatable :: fakt, t_inv
+      real(4), dimension(:), allocatable :: twohnu3_c2, hnu_inv, hnu_k
+      real(8), dimension(:), pointer, contiguous :: nu
+      integer, dimension(:), allocatable :: cont_lvls
+      real(4) :: blz, alpha, alpha_Ieff, scr, wnu
+      integer :: nx, ny, nz, nf, i_lvl, nion, nnu
+      integer :: i, j, k, f, x, y, z, jj, ff, fs, fe, ffs, ffe, fcs, fce, fe_patch, fff
+      logical :: skip
+      integer, save :: itimer1, itimer2, itimer3, itimer4, itimer5, itimer6
+      !------------------------------------------------------------------------------------
+      nx = size(Inu,1)
+      ny = size(Inu,2)
+      nz = size(Inu,3)
+      nf = size(inu,4)
+      fe_patch = fs_patch + nf -1
+      nu => self%sp%nu(fs_patch:fe_patch)
+
+      nion = self%ion(self%nlevel)
+      allocate(cont_lvls(nion-1))
+
+      allocate(Ieff(nx,ny,nz,nf))
+      allocate(ContEta(nx,ny,nz,nf,nion-1))
+      allocate(twohnu3_c2(nf), hnu_k(nf), hnu_inv(nf))
+      allocate(fakt(nx,ny,nz), t_inv(nx,ny,nz))
+
+      twohnu3_c2 = twoh_c2 * nu**3
+      hnu_k = h_k * nu
+      t_inv = 1 / temp
+      hnu_inv = 1 / (hh*nu)
+
+      fcs = max(minval(self%cont%ired),  fs_patch)
+      fce = min(maxval(self%cont%iblue), fe_patch)
+
+      j = -1
+      i_lvl = 0
+      do i=1, size(self%cont)
+         cnt => self%cont(i)
+         call cnt%check_range(fs_patch,fe_patch,fs,fe,skip)
+         if (skip) cycle
+
+         if (j /= self%ion(cnt%j)-1) then
+            j = self%ion(cnt%j)-1
+            i_lvl = i_lvl +1
+            cont_lvls(i_lvl) = cnt%j
+         endif
+     
+         do ff=fs,fe
+            f = ff - fs_patch + 1
+         do z=1, nz
+         do y=1, ny
+         do x=1, nx
+            ContEta(x,y,z,f,j) = ContEta(x,y,z,f,j) + cnt%alpha(ff) * cnt%ni_over_nj_lte(x,y,z)! * self%n(:,:,:,cnt%j)
+         end do
+         end do
+         end do
+         end do
+      end do
+
+      do j=1, size(cont_lvls)
+         jj = cont_lvls(j)
+         do ff=fcs,fce
+            f = ff - fs_patch + 1
+            do z=1,nz
+            do y=1,ny
+            do x=1,nx
+               blz = - hnu_k(f) * t_inv(x,y,z)
+               if (blz < -100) then
+                  ContEta(x,y,z,f,j) = 0
+               else
+                  if (blz < -1e-8) then
+                     ContEta(x,y,z,f,j) = ContEta(x,y,z,f,j) * exp(blz)
+                  endif
+                  ContEta(x,y,z,f,j) = ContEta(x,y,z,f,j) * twohnu3_c2(f) * self%n(x,y,z,jj)
+               endif
+            end do
+            end do
+            end do
+         end do
+      end do
+
+      eta => Ieff ! use Ieff as scratch array for eta
+      eta = 0
+
+      do j=1, size(cont_lvls)
+        do f=1,nf
+           eta(:,:,:,f) = eta(:,:,:,f) + ContEta(:,:,:,f,j)
+        end do
+      end do
+
+      allocate(scratch_phi(nx,ny,nz, maxval(lines%iblue-lines%ired+1)))
+
+      do i=1, size(lines)
+         line => lines(i)
+         call line%check_range(fs_patch,fe_patch,fs,fe,skip)
+         if (skip) print *, 'line not active. Something is wrong!'
+   
+         nu => self%sp%nu(fs:fe)
+         nnu = size(nu)
+         phi => scratch_phi(:,:,:,1:nnu)
+     
+         call line%interpolate_phi(nu, phi)
+
+         do f=1,nnu
+           ff = fs - fs_patch + f
+           eta(:,:,:,ff) = eta(:,:,:,ff) + phi(:,:,:,f) * line%eta_fac
+         end do
+      end do
+
+      do f=1,nf
+         Ieff(:,:,:,f) = Inu(:,:,:,f) - Psi(:,:,:,f) * eta(:,:,:,f)
+      end do
+
+      if (any(Ieff < 0)) then
+         print *, 'Effective intensity below zero!'
+      endif
+
+      do i=1, size(self%cont)
+         cnt => self%cont(i)
+         call cnt%check_range(fs_patch,fe_patch,fs,fe,skip)
+         if (skip) cycle
+         k = cnt%ntrans
+     
+         do ff=fs,fe
+            f = ff - fs_patch + 1
+            alpha = cnt%wnu(ff) * hnu_inv(f) * cnt%alpha(ff)
+            scr = alpha * twohnu3_c2(f)
+            do z=1,nz
+            do y=1,ny
+            do x=1,nx
+               alpha_Ieff = alpha * Ieff(x,y,z,f)
+               blz = - hnu_k(f) * t_inv(x,y,z)
+               if (blz > -100) then
+                  gamma_ji(x,y,z,k) = gamma_ji(x,y,z,k) + (alpha_Ieff + scr) * exp(blz)
+               endif
+               gamma_ij(x,y,z,k) = gamma_ij(x,y,z,k) + alpha_Ieff
+            end do
+            end do
+            end do
+         end do
+         
+         gamma_ij(:,:,:,k) = gamma_ij(:,:,:,k) * self%n(:,:,:,cnt%i)
+         gamma_ji(:,:,:,k) = gamma_ji(:,:,:,k) * self%n(:,:,:,cnt%j) * cnt%ni_over_nj_lte
+      end do
+
+      do i=1, size(lines)
+         line => lines(i)
+         call line%check_range(fs_patch,fe_patch,fs,fe,skip)
+         if (skip) cycle
+         k = line%ntrans
+      
+         nu => self%sp%nu(fs:fe)
+         phi => scratch_phi(:,:,:,1:size(nu))
+     
+         call line%interpolate_phi(nu, phi)
+     
+         do ff=fs,fe
+            f = ff - fs_patch + 1
+            fff = ff - fs + 1
+            wnu = line%wnu(ff) * hnu_inv(f)
+            do z=1,nz
+            do y=1,ny
+            do x=1,nx
+               scr = wnu * phi(x,y,z,fff)
+               gamma_ji(x,y,z,k) = gamma_ji(x,y,z,k) + scr * (Ieff(x,y,z,f) + twohnu3_c2(f))
+               gamma_ij(x,y,z,k) = gamma_ij(x,y,z,k) + scr * Ieff(x,y,z,f)
+            end do
+            end do
+            end do
+         end do
+         
+         gamma_ij(:,:,:,k) = gamma_ij(:,:,:,k) * self%n(:,:,:,line%i) * line%Bij
+         gamma_ji(:,:,:,k) = gamma_ji(:,:,:,k) * self%n(:,:,:,line%j) * line%Bji
+      end do
+
+      ! gamma_ji / (wnu*nj) = Bji*Inu - Bji*nj*Psi*Aji + Aji - Bij*ni*Psi*Aji + Bji*nj*Psi*Aji
+      ! gamma_ji / (wnu*nj) = Bji * (Inu - gj/gi*ni*Psi*Aji) + Aji
+
+
+      deallocate(Ieff)
+      deallocate(ContEta, scratch_phi)
+      deallocate(twohnu3_c2, hnu_k, hnu_inv)
+      deallocate(fakt, t_inv)
+
+   END SUBROUTINE add_all_gammas3
+   !------------------------------------------------------------------------------------
   
      !====================================================================================
      SUBROUTINE solve_stat_equilibrium (self, temp, ne, totn, n, nstar, nh, gamma_ij, gamma_ji, cswitch)
@@ -673,9 +885,9 @@ MODULE atom_mod
         real(4), dimension(:), intent(in) :: nstar
         real(4), dimension(:), intent(inout) :: n
         integer, intent(in) :: cswitch
-        integer :: kr, pos, i
+        integer :: kr, pos, i, j
         real(8) :: tmax_update =1.0d7
-        
+        !------------------------------------------------------------------------------------
         if (temp > tmax_update) then
            return !self%e = 1.0d0
         endif
@@ -697,6 +909,11 @@ MODULE atom_mod
         case default
             call stop('read_atom: collisional routine keyword: "' // self%crout // '" not supported.')
         end select
+
+        ! go from rate coefficients to actual rates   
+        do i=1,self%nlevel
+            self%c(i,:) = self%c(i,:) * n 
+        enddo
   
         self%w = self%w + self%c * cswitch
   
@@ -706,15 +923,25 @@ MODULE atom_mod
         end do
   
         ! go from rate coefficients to actual rates   
-        do i=1,self%nlevel
-            self%w(i,:) = self%w(i,:) * n 
-        enddo
+        !do i=1,self%nlevel
+        !    self%w(i,:) = self%w(i,:) * n 
+        !enddo
   
         ! replace row with largest population with particle conservation
         ! equation.
         pos = maxloc(n,1)
         self%w(pos,:) = n
         self%e(pos)   = totn
+
+        do i=1,self%nlevel
+        do j=1,self%nlevel
+          if (self%w(i,j) /= self%w(i,j)) then
+            print *, 'NaN in rate Matrix at i,j = ', i, j
+            print *, 'Temp = ', temp
+            stop
+          endif
+        end do
+        end do
         
         ! solve w n . x = e
         ! e contains the solution vector x on exit
@@ -1434,7 +1661,6 @@ MODULE atom_mod
 
           ! fill new cross sections 
           allocate(alpha(cnt%nnu))
-          alpha = dble(cnt%alpha)
           call hermite_interpolation(alpha, cnt%nu, nu_fromfile, alpha_fromfile, dalpha_dnu)
           cnt%alpha = real(alpha)
           deallocate(alpha)
@@ -1495,6 +1721,29 @@ MODULE atom_mod
       endif
       call trace%end(itimer)
     END SUBROUTINE set_active_transitions
+
+    !===============================================================================
+    SUBROUTINE unique_int(arr, out, nout)
+      integer, intent(in), dimension(:) :: arr
+      integer, intent(out), dimension(:) :: out
+      integer, intent(out) :: nout
+      integer :: i, j, n
+      logical :: new
+      !-----------------------------------------------------------------------------
+      n = size(arr)
+      nout = 0
+      do i=1, n
+        new = .true.
+        do j=1, nout
+          if (arr(i) == out(j)) new = .false.
+        end do
+
+        if (new) then
+          nout = nout+1
+          out(nout) = arr(i)
+        endif
+      end do
+    END SUBROUTINE unique_int
   
   END MODULE atom_mod
   

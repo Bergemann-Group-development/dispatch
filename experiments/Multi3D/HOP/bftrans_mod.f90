@@ -46,6 +46,8 @@ MODULE bftrans_mod
     real(dp), dimension(:,:), pointer, contiguous :: pvt_xkap => null()
     !$omp threadprivate(active, fs, fe, di, iw, quad, lagrange, pvt_xkap)
 
+    integer, public :: pp(4)=[7,4,1,1]
+
 contains
 
 !===============================================================================
@@ -485,7 +487,7 @@ SUBROUTINE add_absorption(self, abslte, lam, temp, EK_over_temp, teta, pe, rho, 
         call self%interp_xkap(abslte, temp, teta, fakt)
     endif
 
-    !print '(A20, E18.10)', self%label, abslte(1,1,1,1)
+    !print '(A20, E18.10)', self%label, abslte(p(1), p(2), p(3), p(4)) * rho(p(1),p(2),p(3))
 
     call os%deallocate(quad)
     call os%deallocate(iw)

@@ -40,7 +40,7 @@ module lines_patch_mod
       procedure :: init => lines_patch_init
       procedure :: update => lines_patch_update
       procedure :: post_update => lines_patch_post_update
-      !procedure :: finish => linelist_finish
+      procedure :: deallocate_mem => lines_patch_deallocate_mem
       procedure :: nbor_relations => lines_patch_nbor_relations
       procedure :: create_line_indices
       procedure :: create_line_frequencies
@@ -70,6 +70,7 @@ module lines_patch_mod
 
     call self%set_nv_and_nw(nv, 1)
     self%ng = 0
+    call self%post_pre_init()
   END SUBROUTINE lines_patch_pre_init
 
   !===============================================================================
@@ -223,6 +224,7 @@ module lines_patch_mod
       call os%deallocate(tothi)
       call os%deallocate(adamp)
       call os%deallocate(unsold_temp)
+      call os%deallocate(stark_pe)
     endif
 
     do i=1, self%nline
@@ -245,7 +247,7 @@ module lines_patch_mod
     real(4), dimension(:,:,:,:), intent(inout) :: chi, eta
     real(8), dimension(:), contiguous, pointer :: hnu_4pi, nu, q
     real(4), dimension(:,:,:,:), contiguous, pointer :: scratch_phi, phi
-    integer :: i, fcs, fce, fs, fe, f, newq, ff, i1, i2, m(4), nnu, p(3)
+    integer :: i, fcs, fce, fs, fe, f, newq, ff, i1, i2, m(4), nnu, p(3), x,y,z
     logical :: skip
     !---------------------------------------------------------------------------
     fcs = max(self%ired,  self%fs)
@@ -256,6 +258,10 @@ module lines_patch_mod
     m = shape(chi)
     m(4) = size(nu)
     call os%allocate(scratch_phi, m)
+
+    if (.not. associated(self%mem)) then
+      print *, 'mem not allocated. Something is wrong!'
+    endif
 
     do i=1, self%nline
       line => self%line(i)
@@ -279,8 +285,14 @@ module lines_patch_mod
   
       do f=1,nnu
         ff = fs - self%fs + f
-        eta(:,:,:,ff) = eta(:,:,:,ff) + phi(:,:,:,f) * line%eta_fac
-        chi(:,:,:,ff) = chi(:,:,:,ff) + phi(:,:,:,f) * line%chi_fac
+        do z=1,m(3)
+        do y=1,m(2)
+        do x=1,m(1)
+          eta(x,y,z,ff) = eta(x,y,z,ff) + phi(x,y,z,f) * line%eta_fac(x,y,z)
+          chi(x,y,z,ff) = chi(x,y,z,ff) + phi(x,y,z,f) * line%chi_fac(x,y,z)
+        end do
+        end do
+        end do
       end do
     end do
 
@@ -294,15 +306,18 @@ module lines_patch_mod
     real(8), dimension(:), contiguous, pointer :: nu
     real(4), dimension(:,:,:,:), contiguous, pointer :: phi
     integer :: p(3), f, fs, fe
-    logical :: skip, in_bounds=.false.
+    logical :: skip
     ! --------------------------------------------------------------------------
     call trace%begin('lines_patch_t%atom_patch_post_update')
     if (self%verbose > 0) then
+      if (self%linecheck < lbound(self%line,1) .or. self%linecheck > ubound(self%line,1)) then
+        skip = .true.
+      else
+        line => self%line(self%linecheck)
+        call line%check_range(self%fcheck,self%fcheck,fs,fe,skip)
+      endif
       p = self%pcheck
-      line => self%line(self%linecheck)
-      call line%check_range(self%fcheck,self%fcheck,fs,fe,skip)
-      if (.not. skip) in_bounds = all(p <= self%n)
-      if (in_bounds) then
+      if (.not. skip .and. all(p > 0)) then
         nu => self%sp%nu(self%fcheck:self%fcheck)
         call os%allocate(phi, [self%n(1), self%n(2), self%n(3), 1])
         call line%interpolate_phi(nu, phi)
@@ -348,5 +363,16 @@ module lines_patch_mod
     endif
     call trace%end()
   END SUBROUTINE lines_patch_nbor_relations
+
+  !===============================================================================
+  SUBROUTINE lines_patch_deallocate_mem(self)
+    class(lines_patch_t) :: self
+    ! ----------------------------------------------------------------------------
+    if (self%finished) then
+      call self%m3d_patch_t%deallocate_mem()
+      !deallocate(self%line)
+      !call os%deallocate(self%idx_map)
+    endif    
+  END SUBROUTINE lines_patch_deallocate_mem
 
   end module

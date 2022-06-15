@@ -76,6 +76,7 @@ module back_line_patch_mod
     nv = self%fe-self%fs+1
     call self%set_nv_and_nw (nv,nw)
     self%ng = 0
+    call self%post_pre_init()
   END SUBROUTINE back_line_patch_pre_init
 
   !===============================================================================

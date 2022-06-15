@@ -81,16 +81,22 @@ SUBROUTINE allocate_molec (self, nx, ny, nz)
     class(molec_type) :: self
     integer :: nx, ny, nz
     !---------------------------------------------------------------------------
-    if (.not. self%allocated) then
-        self%nx = nx
-        self%ny = ny
-        self%nz = nz
-        allocate(self%f(nx,ny,nz))
-        allocate(self%e(nx,ny,nz))
-        allocate(self%dis(nx,ny,nz))
-        allocate(self%rho_per_h(nx,ny,nz))
-        self%allocated = .true.
+    if (self%allocated) then
+        deallocate(self%f, self%e, self%dis, self%rho_per_h)
     endif
+
+    self%nx = nx
+    self%ny = ny
+    self%nz = nz
+    allocate(self%f(nx,ny,nz))
+    allocate(self%e(nx,ny,nz))
+    allocate(self%dis(nx,ny,nz))
+    allocate(self%rho_per_h(nx,ny,nz))
+    self%f = 0
+    self%e = 0
+    self%dis = 0
+    self%rho_per_h = 0
+    self%allocated = .true.
 END SUBROUTINE allocate_molec
 
 !===============================================================================

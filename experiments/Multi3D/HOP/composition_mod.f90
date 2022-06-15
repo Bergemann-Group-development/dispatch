@@ -1,11 +1,12 @@
 MODULE composition_mod
+    use trace_mod
     use prec_mod
     use op_math_mod
     use element_mod
     use ion_mod
     use level_mod
     use bbtrans_mod, only:bbtrans_type
-    use bftrans_mod, only:bftrans_type
+    use bftrans_mod, only:bftrans_type, pp
     use molecule_mod, only:molec_type
     use osmet_mod
     use omp_lib
@@ -14,7 +15,7 @@ MODULE composition_mod
     private
 
     type, public :: composition_type
-        logical :: initialised, ll_initialised=.false.
+        logical :: initialised, ll_initialised=.false., loaded=.false.
         integer :: nel, nmolec, verbose
         real(dp) :: xmy, suma, grph, tmolim, molh
         type(element_type), allocatable :: elements(:)
@@ -29,12 +30,15 @@ MODULE composition_mod
         procedure :: init => injon
         procedure :: init_molecules
         procedure :: load_state_variables
+        procedure :: load_state_variables_without_nel
         procedure :: molecular_equilibrium
         procedure :: molecule_by_id
         procedure :: element_by_id
         procedure :: trans_by_id
         procedure :: ion_by_id
         procedure :: absorption
+        procedure :: electron_scattering
+        procedure :: rayleigh_scattering
         procedure :: scattering
         procedure :: reassign_pointer
         procedure :: get_totn
@@ -43,6 +47,7 @@ MODULE composition_mod
         procedure :: compute_p6
         procedure :: overwrite_abundance
         procedure :: init_linelist
+        procedure :: print_ion_table
     end type
 
 contains
@@ -51,7 +56,7 @@ contains
     SUBROUTINE injon(self, absdat_file, abund_file, absmet_file)
         class(composition_type), target :: self
         character(len=80), intent(in) :: absdat_file, abund_file
-        character(len=80), intent(in) :: absmet_file
+        character(len=80), intent(in), optional :: absmet_file
         integer :: absdat, abund_unit
         integer :: i, j, k, m, nl, nk
         integer :: lvl_count, skip_back
@@ -72,11 +77,11 @@ contains
         class(element_type),    pointer :: elements(:)
         class(element_type),    pointer :: element, H
         class(molec_type),      pointer :: molecule
-        class(ion_type),        pointer :: ion, Hm, H0
+        class(ion_type),        pointer :: ion, Hm, HI
         class(level_type),      pointer :: lvl
         class(bftrans_type), pointer :: trans
         !---------------------------------------------------------------------------
-        call trace_begin ('composition_type%init')
+        call trace%begin ('composition_type%init')
 
         106 FORMAT(4(F10.3,F10.4))
         107 FORMAT(I10,5I5)
@@ -256,8 +261,8 @@ contains
 
         call self%element_by_id('H', H)
         Hm => H%ions(0) ! H- is ion number 0
-        H0 => H%ions(1)
-        H0%below => Hm
+        HI => H%ions(1)
+        HI%below => Hm
 
         Hm%iqfix = 0
         Hm%parco = 1
@@ -313,7 +318,7 @@ contains
                     trans%level%xion = Ryd * (1. - 1./trans%k**2)
                     trans%level%g2 = 2 * trans%k**2
                 case('H- FF', 'H FF', '(H+H)', 'H2+')
-                    trans%ion => H0
+                    trans%ion => HI
                 case('H2-')
                     call self%molecule_by_id('H2', molecule)
                     trans%ion => molecule
@@ -390,13 +395,15 @@ contains
 
         close(absdat)
 
-        if (absmet_file /= '') then
-            call self%osmet%init(absmet_file)
-            self%osmet%eosmet = 0.5
+        if (present(absmet_file)) then
+            if (absmet_file /= '') then
+                call self%osmet%init(absmet_file)
+                self%osmet%eosmet = 0.5
+            endif
         endif
 
         self%initialised = .true.
-        call trace_end ()
+        call trace%end ()
     END SUBROUTINE injon
 
     !===============================================================================
@@ -498,7 +505,7 @@ contains
         class(bftrans_type),  pointer :: trans
         integer :: i, j, m
         !---------------------------------------------------------------------------
-        call trace_begin ('composition_type%reassign_pointer')
+        call trace%begin ('composition_type%reassign_pointer')
         
         do i=1, self%nel
             element => self%elements(i)
@@ -543,7 +550,7 @@ contains
                 trans%ion => molecule
             end select
         end do
-        call trace_end ()
+        call trace%end ()
     END SUBROUTINE reassign_pointer
 
     !===============================================================================
@@ -556,7 +563,7 @@ contains
         character(len=6) :: ion_id
         integer :: i, j
         !---------------------------------------------------------------------------
-        call trace_begin ('composition_type%init_molecules')
+        call trace%begin ('composition_type%init_molecules')
 
         mol_ids = ['H2 ', 'H2p', 'H2O', 'OH ', 'CH ', 'CO ', 'CN ', 'C2 ', 'N2 ', 'O2 ', 'NO ', 'NH ']
 
@@ -627,22 +634,21 @@ contains
                 ion%mcount = ion%mcount + 1 
             end do
         end do
-        call trace_end ()
-    END SUBROUTINE
+        call trace%end ()
+    END SUBROUTINE init_molecules
 
     !===============================================================================
     SUBROUTINE load_state_variables(self, temp, ne, rho)
         class(composition_type), target :: self
         class(element_type), pointer :: element
         class(ion_type), pointer :: ion
-        class(level_type), pointer :: ground_below
         class(element_type), pointer :: H
-        class(ion_type), pointer :: Hm, H0
+        class(ion_type), pointer :: Hm, HI
         real(4), dimension(:,:,:), intent(in) :: temp, ne, rho
-        real(dp), dimension(:,:,:), allocatable :: xnen, ejon, xnenh, xnecno, nh0
-        integer :: i,j, nx, ny, nz
+        real(dp), dimension(:,:,:), allocatable :: xnen, ejon, xnecno, nh0, xerg
+        integer :: i,j, nx, ny, nz, lunit
         !---------------------------------------------------------------------------
-        call trace_begin ('composition_type%load_state_variables')
+        call trace%begin ('composition_type%load_state_variables')
 
         if (.not. self%initialised) then
             print *, 'composition has not been initialised yet'
@@ -653,11 +659,18 @@ contains
         ny = size(temp,2)
         nz = size(temp,3)
 
+        if (self%loaded) then
+            deallocate(self%temp)
+            deallocate(self%xfakh, self%ne,   self%rho,  self%pe, self%pg)
+            deallocate(self%toth,  self%saha, self%teta, self%dxi, self%eh)
+            deallocate(self%EK_over_temp, self%ro, self%p6, self%fe)
+        endif
+        
         allocate(self%temp(nx,ny,nz))
-        allocate(self%xfakh, self%ne,   self%rho,  self%pe,  mold=self%temp)
-        allocate(self%toth,  self%saha, self%teta, self%dxi, mold=self%temp)
-        allocate(self%EK_over_temp, self%ro, self%p6, mold=self%temp)
-        allocate(xnen, xnenh, xnecno, ejon, nh0, mold=self%temp)
+        allocate(self%xfakh, self%ne,   self%rho,  self%pe, self%pg, mold=self%temp)
+        allocate(self%toth,  self%saha, self%teta, self%dxi, self%eh, mold=self%temp)
+        allocate(self%EK_over_temp, self%ro, self%p6, self%fe, mold=self%temp)
+        allocate(xnen, xnecno, ejon, nh0, xerg, mold=self%temp)
 
         self%temp = temp
         self%ne   = ne
@@ -668,10 +681,12 @@ contains
         self%saha = 2 * op_saha_const * self%temp*sqrt(self%temp) / self%ne
         self%teta = temp_to_theta / self%temp
 
-        ! -4.98e-4 = log10(XMH * op_saha_const)*(temp_to_theta*sqrt(BK))
         self%dxi = 4.98e-4*self%teta*sqrt(self%pe)
+        ! --- this only shows up in the Oslo legacy code ---!
+        self%dxi=min(self%dxi,0.747*0.5)
+        ! --------------------------------------------------!
 
-        xnenh = 0
+        self%fe = 0
         xnecno = 0
         ejon = 0
 
@@ -688,34 +703,39 @@ contains
                 ion%f = ion%anjon * element%abund
 
                 ! number of electrons from ion
-                xnen = ion%f  * (j-1)
+                xnen = ion%f * (j-1)
                 
-                ! number of electrons from elements other than H
-                if (i > 1) xnenh = xnenh + xnen
+                ! number of electrons from elements other than HI
+                if (ion%id /= 'H I') self%fe = self%fe + xnen
                 
-                ! number of electrons from elements C, N, O
-                if (any(['C', 'N', 'O'] == trim(element%id))) then
+                ! number of electrons from elements other than H, C, N, O
+                if (all(trim(element%id) /= ['H', 'C', 'N', 'O'])) then
                     xnecno = xnecno + xnen
                 endif
 
                 if (j > 1) then
-                    ground_below => element%ions(j-1)%levels(1)
-                    ejon = ejon + ion%f * (ground_below%xion - self%dxi*(j-1))
+                    xerg = ion%f * (ion%below%levels(1)%xion - self%dxi*(j-1))
+
+                    if (trim(element%id) == 'H') then
+                        self%eh = xerg
+                    else
+                        ! energy of ionization (ejon). hydrogen is not included.
+                        ejon = ejon + xerg
+                    endif
                 endif
             end do
         end do
 
-        ! number of electrons from elements other than H,C,N,O
-        xnecno = xnenh - xnecno
-
         call self%element_by_id('H', H)
         Hm => H%ions(0)
-        H0 => H%ions(1)
+        HI => H%ions(1)
         call Hm%allocate(nx,ny,nz)
 
-        Hm%saha = Hm%saha_eq(self%EK_over_temp, self%ne, self%saha, self%dxi, partition_ratio=2.d0) ! ratio H0/H-
+        Hm%saha = Hm%saha_eq(self%EK_over_temp, self%ne, self%saha, self%dxi, partition_ratio=2.d0) ! ratio HI/H-
 
-        call self%molecular_equilibrium(self%temp, self%teta, self%pe, self%dxi, xnecno, xnenh, self%eh, self%pg, self%fe)
+        self%pg = self%pe * (1 + self%suma/self%fe)
+
+        call self%molecular_equilibrium(self%temp, self%teta, self%pe, self%dxi, xnecno, self%eh, self%pg, self%fe)
 
         do i=1, self%nmolec
             !self%molecules(i)%n = self%molecules(i)%f * self%ne / self%fe
@@ -724,7 +744,6 @@ contains
 
         do i=1, self%nel
             element => self%elements(i)
-
             element%ions(1)%rho_per_h = element%ions(1)%f / self%grph
 
             do j=2, element%nion
@@ -733,61 +752,59 @@ contains
             end do
         end do
 
-        nh0 = H0%f * self%ne / self%fe * (BK/uop_BK)
+        nh0 = HI%f * self%ne / self%fe * (BK/uop_BK)
 
-        Hm%rho_per_h = H0%rho_per_h / Hm%saha
+        Hm%rho_per_h = HI%rho_per_h / Hm%saha
 
         where (temp < self%tmolim)
             ! keep this around for consistency with legacy code, its just a bunch of wrong constants.
-            !self%xfakh = self%ne*(BK/uop_BK) * H0%f / (self%fe * self%rho) * (1.008*UU / XMH)
+            !self%xfakh = self%ne*(BK/uop_BK) * HI%f / (self%fe * self%rho) * (1.008*UU / XMH)
             self%xfakh = nh0 / self%rho * (1.008*UU / XMH)
         elsewhere
-            self%xfakh = H0%rho_per_h
+            self%xfakh = HI%rho_per_h
         end where
 
-        !self%E = 1.5*self%pg/self%rho+(self%eh+ejon)*EE/self%grph
+        self%E = 1.5*self%pg/self%rho + (self%eh + ejon)*EE/self%grph
 
         ! legacy rho, should probably be replaced by actual rho
         self%ro = self%ne / self%fe * (BK/uop_BK) * self%grph
 
         call self%compute_p6(self%p6)
-        call trace_end ()
+        self%loaded = .true.
+        call trace%end ()
     END SUBROUTINE load_state_variables
 
     !===============================================================================
     SUBROUTINE compute_p6(self, p6)
         class(composition_type), target :: self
-        class(ion_type), pointer :: HeI, H0
+        class(ion_type), pointer :: HeI, HI
         class(molec_type), pointer :: H2, H2p
         real(dp), dimension(:,:,:), intent(out) :: p6
         !---------------------------------------------------------------------------
         call self%molecule_by_id('H2',  H2)
         call self%molecule_by_id('H2p', H2p)
-        call self%ion_by_id('H I', H0)
+        call self%ion_by_id('H I', HI)
         call self%ion_by_id('HE I', HeI)
  
-        p6 = LOG10((H0%f + 0.42*HeI%f + 0.85*(H2%f + H2p%f)) * self%toth * BK * self%temp)
+        p6 = LOG10((HI%f + 0.42*HeI%f + 0.85*(H2%f + H2p%f)) * self%toth * BK * self%temp)
     END SUBROUTINE compute_p6
 
     !===============================================================================
-    SUBROUTINE absorption(self, nu, chi, abslte, sumsca)
+    SUBROUTINE absorption(self, nu, chi, abslte, sumsca, include_osmet)
         !use phys_mod, only:planck
         class(composition_type), target :: self
         class(bftrans_type), pointer :: trans
-        class(element_type), pointer :: H
-        class(molec_type), pointer :: H2
-        class(ion_type), pointer :: H0
         real(dp), dimension(:), intent(in) :: nu
         real(4), dimension(:,:,:,:), intent(inout) :: chi, abslte, sumsca
         real(dp), dimension(:,:,:), allocatable :: fakt, hrest, umc, h1
-        real(dp), dimension(:,:,:), allocatable :: fakray, h2ray, els, rayh, rayh2
         integer, dimension(:,:,:), allocatable :: nniv
         real(dp), dimension(:), allocatable :: lam
+        logical, optional :: include_osmet
         real(dp) :: xray2, epsln
         real(4) :: linop
         integer :: i, j, k, f, nf, nx, ny, nz
         !---------------------------------------------------------------------------
-        call trace_begin ('composition_type%absorption')
+        call trace%begin ('composition_type%absorption')
 
         nf = size(nu, 1)
         nx = size(self%temp, 1)
@@ -797,12 +814,11 @@ contains
         allocate(lam(nf))
         allocate(hrest(nx,ny,nz))
         allocate(nniv (nx,ny,nz))
-        allocate(fakt, umc, h1, fakray, h2ray, els, rayh, rayh2, mold=hrest)
+        allocate(fakt, umc, h1, mold=hrest)
 
         lam = cc / nu * 1e8
 
         abslte = 0
-        sumsca = 0 ! line list not implemented yet
 
         do i=1, size(self%trans)
             trans => self%trans(i)
@@ -861,37 +877,14 @@ contains
         call trans%add_absorption(abslte, lam, self%temp, self%EK_over_temp, self%teta, &
                                   self%pe, self%ro, self%dxi, self%xfakh, fakt)
 
-        ! electron scattering
-        els = 4.8206e-9 * self%pe / (self%temp * self%ro)
+        sumsca = 0
+        call self%electron_scattering(sumsca)
+        call self%rayleigh_scattering(lam, sumsca)
 
-        ! rayleigh scattering
-        call self%molecule_by_id('H2', H2)
-        h2ray = H2%rho_per_h
-
-        call self%element_by_id('H', H)
-        H0 => H%ions(1)
-        fakray = 2 * H0%part * H0%rho_per_h
-
-        do f=1, nf
-            sumsca(:,:,:,f) = sumsca(:,:,:,f) + els
-
-            if (lam(f) >= 911) then
-                if (lam(f) < 1026) then
-                    xray2 = 1 / 1026**2
-                else
-                    xray2 = 1 / lam(f)**2
-                endif
-
-                rayh  = (5.799e-13 + xray2*(1.422e-6 + xray2*2.784)) * fakray
-                rayh2 = ( 8.14e-13 + xray2*( 1.28e-6 + xray2*1.61 )) * h2ray
-    
-                ! add sumsca to sumsca from lines
-                sumsca(:,:,:,f) = sumsca(:,:,:,f) + (rayh + rayh2)*xray2*xray2
+        if (present(include_osmet)) then
+            if (self%osmet%initialised .and. include_osmet) then
+                call self%osmet%add_line_opacities(nu, self%p6, self%temp, self%ne, abslte, sumsca)
             endif
-        end do
-
-        if (self%osmet%initialised) then
-            call self%osmet%add_line_opacities(nu, self%p6, self%temp, self%ne, abslte, sumsca)
         endif
 
         ! BACKGROUND OPACITY
@@ -899,7 +892,7 @@ contains
         do f=1, nf
             chi(:,:,:,f) = real((abslte(:,:,:,f) + sumsca(:,:,:,f)) * self%rho)
         end do
-        call trace_end ()
+        call trace%end ()
     END SUBROUTINE absorption
 
     !===============================================================================
@@ -930,7 +923,7 @@ contains
         real(4), dimension(:,:,:) :: totn
         class(element_type), pointer :: element
         !---------------------------------------------------------------------------
-        call trace_begin ('composition_type%get_totn')
+        call trace%begin ('composition_type%get_totn')
         call self%element_by_id(trim(id), element)
 
         if (associated(element)) then
@@ -938,7 +931,7 @@ contains
         else
             totn = 10.0**(abund-12.0) * self%rho / (self%xmy*1.008*uu)
         endif
-        call trace_end ()
+        call trace%end ()
     END SUBROUTINE get_totn
 
     !===============================================================================
@@ -946,16 +939,16 @@ contains
         class(composition_type), target :: self
         real(4), dimension(:,:,:,:), intent(out) :: nhyd
         real(dp), dimension(:,:,:), pointer :: nh, blzfac
-        class(ion_type), pointer :: H0
+        class(ion_type), pointer :: HI
         type(level_type) :: level
         integer :: k, nk
         !---------------------------------------------------------------------------
-        call trace_begin ('composition_type%get_nhyd')
+        call trace%begin ('composition_type%get_nhyd')
         nk = size(nhyd, 4)
-        H0 => self%elements(1)%ions(1)
+        HI => self%elements(1)%ions(1)
 
         allocate(nh, blzfac, mold=self%temp)
-        nh = H0%f * self%ne / self%fe * (BK/uop_BK)
+        nh = HI%f * self%ne / self%fe * (BK/uop_BK)
 
         do k=1, nk
             level%xion = Ryd * (1. - 1./k**2)
@@ -964,14 +957,14 @@ contains
         end do
 
         deallocate (nh, blzfac)
-        call trace_end ()
-    END SUBROUTINE
+        call trace%end ()
+    END SUBROUTINE get_nhyd
 
     !===============================================================================
-    SUBROUTINE molecular_equilibrium(self, temp, teta, pe, dxi, xnecno, xnenh, eh, pg, fe)
+    SUBROUTINE molecular_equilibrium(self, temp, teta, pe, dxi, xnecno, eh, pg, fe)
         class(composition_type), target :: self
-        real(dp), dimension(:,:,:), intent(in) :: temp, pe, teta, dxi, xnecno, xnenh
-        real(dp), dimension(:,:,:), allocatable, intent(out) :: eh, pg, fe
+        real(dp), dimension(:,:,:), intent(in) :: temp, pe, teta, dxi, xnecno
+        real(dp), dimension(:,:,:), allocatable, intent(inout) :: eh, pg, fe
         real(dp), dimension(:,:,:), allocatable :: r, s, b, pefe, p, q
         class(molec_type), pointer :: molecules(:)
         class(molec_type), pointer :: H2, CN, H2p
@@ -987,7 +980,7 @@ contains
         real(dp), dimension(:), allocatable :: Fold, Fnew
         logical, dimension(:,:,:), allocatable :: tmolim
         !---------------------------------------------------------------------------
-        call trace_begin ('composition_type%molecular_equilibrium')
+        call trace%begin ('composition_type%molecular_equilibrium')
 
         nx = size(temp, 1)
         ny = size(temp, 2)
@@ -1012,13 +1005,17 @@ contains
         nions = size(ions)
         np1 = nions + 1
 
-        allocate(r, s, eh, pg, fe, diff, q, p, b, pefe, mold=temp)
+        allocate(r, s, diff, q, p, b, pefe, mold=temp)
         allocate(Fvec(np1, nx, ny, nz))
         allocate(Amat(np1, np1, nx, ny, nz))
         allocate(Fold(np1), Fnew(np1))
-        allocate(H%fil, O%fil, C%fil, N%fil, mold=temp)
-        allocate(Hm%pk, mold=temp)
         allocate(tmolim(nx,ny,nz))
+
+        if (allocated(Hm%pk)) then
+            deallocate(Hm%pk, H%fil, O%fil, C%fil, N%fil)
+        endif
+
+        allocate(Hm%pk, H%fil, O%fil, C%fil, N%fil, mold=temp)
 
         do i=1, self%nmolec
             call molecules(i)%allocate(nx,ny,nz)
@@ -1035,8 +1032,6 @@ contains
             p = - H%fil * q
             H%f = solve_quadratic(p, q)
 
-            ! number of free electrons donated by ions over toth
-            ! fe = ne / toth
             fe = H%f * (H%saha - Hm%pk) + xnecno
 
             where (fe <= 0)
@@ -1047,8 +1042,6 @@ contains
                 fe = solve_quadratic(p, q, avoid_negative=.true.)
                 H%f = (xnecno - fe)*Hm%saha
             end where
-        elsewhere
-            fe = xnenh + self%elements(1)%ions(2)%anjon
         end where
 
         pefe = pe/fe
@@ -1151,19 +1144,16 @@ contains
 
         !print *, iter, 'iterations in molecular equilibrium calculations'
         where (tmolim)
-            !eh = - H%f*((H%levels(1)%xion - dxi)*(1+Hm%pk) + (Hm%levels(1)%xion - 2*dxi)*Hm%pk)
+            eh = - H%f*((H%levels(1)%xion - dxi)*(1+Hm%pk) + (Hm%levels(1)%xion - 2*dxi)*Hm%pk)
             pg = fe + self%suma !sum(self%elements%abund)
-        elsewhere
-            !eh = (H%levels(1)%xion - dxi) * H%above%anjon
-            pg = pe * (1 + self%suma/fe)
         end where
 
         do i=1, self%nmolec
             where (tmolim)
                 molecules(i)%f = molecules(i)%calc_f(teta, pefe) ! has to be called first
+                molecules(i)%e = molecules(i)%calc_e(teta, temp, dxi)
                 pg = pg + molecules(i)%f
-                !molecules(i)%e = molecules(i)%calc_e(teta, temp, dxi)
-                !eh = eh + molecules(i)%e
+                eh = eh + molecules(i)%e
             end where
         end do
 
@@ -1174,7 +1164,7 @@ contains
 
         where (tmolim) pg = pg * pefe
 
-        call trace_end ()
+        call trace%end ()
     END SUBROUTINE molecular_equilibrium
 
     !===============================================================================
@@ -1183,9 +1173,9 @@ contains
         character(len=*), intent(in) :: id
         class(molec_type), pointer, intent(out) :: molecule
         !---------------------------------------------------------------------------
-        call trace_begin ('composition_type%init')
+        call trace%begin ('composition_type%init')
         molecule => self%molecules(findloc(self%molecules%id, id, 1))
-        call trace_end ()
+        call trace%end ()
     END SUBROUTINE molecule_by_id
 
     !===============================================================================
@@ -1195,7 +1185,7 @@ contains
         class(element_type), pointer, intent(out) :: element
         integer :: idx
         !---------------------------------------------------------------------------
-        call trace_begin ('composition_type%init')
+        call trace%begin ('composition_type%init')
         idx = findloc(self%elements%id, uppercase(id, len(id)), 1)
 
         if (idx == 0) then
@@ -1204,7 +1194,7 @@ contains
         else
             element => self%elements(idx)
         endif
-        call trace_end ()
+        call trace%end ()
     END SUBROUTINE element_by_id
 
     !===============================================================================
@@ -1216,7 +1206,7 @@ contains
         class(element_type), pointer :: element
         integer :: idx, space
         !---------------------------------------------------------------------------
-        call trace_begin ('composition_type%init')
+        call trace%begin ('composition_type%init')
         space = 0
         do while (id(space+1:space+1) /= ' ')
             space = space+1
@@ -1238,7 +1228,7 @@ contains
         else
             ion => null()
         endif
-        call trace_end ()
+        call trace%end ()
     END SUBROUTINE ion_by_id
 
     !===============================================================================
@@ -1248,11 +1238,11 @@ contains
         class(bftrans_type), pointer, intent(out) :: trans
         integer :: i, idx
         !---------------------------------------------------------------------------
-        call trace_begin ('composition_type%init')
+        call trace%begin ('composition_type%init')
         do i=1, size(self%trans)
             if (trim(self%trans(i)%key) == id) then
                 trans => self%trans(i)
-                call trace_end ()
+                call trace%end ()
                 return
             endif
         end do
@@ -1344,5 +1334,175 @@ contains
             print *, 'overwrite_abundance: Element of id= ', id, ' is not part of the opacity package.'
         endif
     END SUBROUTINE overwrite_abundance
+
+    !=========================================================================
+    SUBROUTINE load_state_variables_without_nel(self,temp,rho,tol)
+        ! find a state variables consistent with given temp & rho
+        class(composition_type), target :: self
+        real(4), dimension(:,:,:), intent(in) :: temp, rho
+        real(4), intent(in) :: tol ! stop cryterium
+        logical, dimension(:,:,:), allocatable :: ne_converged
+        real(4), dimension(:,:,:), allocatable :: ne, a, b, x, xold, fx, fa, fb 
+        integer :: i, nconverded, arr_size, arr_shape(3)
+        integer, parameter :: nmax = 20 ! max number of iteration
+
+        !self%temp = temp 
+        !self%rho = rho
+        
+        arr_shape = shape(temp)
+        arr_size = size(temp)
+
+        allocate(ne, mold=temp)
+        allocate(ne_converged(arr_shape(1),arr_shape(2),arr_shape(3))) !can use mold= on different kind=
+        allocate(x,xold,a,b,fx,fa,fb, mold=temp)
+
+        ne_converged(:,:,:) = .false.
+
+        ! set initial value for electron density
+
+        where (temp.gt.1.0d4) ! fully ionized gas
+            ne =  rho/self%GRPH
+        else where ! neutrals only
+            ne = 1e-4*rho/self%GRPH
+        end where
+
+        a = log(ne)
+        call self%load_state_variables(temp, ne, rho)
+
+        fa = log(self%ro / rho)
+
+        where (abs(fa) < tol)
+            ne_converged = .true.
+        endwhere
+
+        b = a - 0.69*fa
+        ne = exp(b)
+
+        call self%load_state_variables(temp, ne, rho)
+        fb = log(self%ro / rho)
+
+        where (abs(fb) < tol)
+            ne_converged = .true.
+        endwhere
+
+        nconverded = count(ne_converged)
+        i = 0
+        write(*,*)
+        write(*,fmt="(5x,'it [',I2.2,']',1x,'n-converded:',1x,I3,1X,'/ total size: ',I3)") i, nconverded, arr_size
+
+        if (nconverded < arr_size) then
+            x=b
+            do i=1,nmax
+                xold = x
+                where (.not.ne_converged)
+                    x=a-(b-a)/(fb-fa)*fa
+                end where
+        
+                where (abs(x-xold) < tol)
+                    ne_converged = .true.
+                end where
+                nconverded = count(ne_converged)
+                if (size(ne_converged) == count(ne_converged)) exit ! all good !
+
+                where (.not.ne_converged)
+                    ne = exp(x)
+                endwhere
+
+                call self%load_state_variables(temp, ne, rho)
+                fx = log(self%ro / rho)
+                where (abs(a-x).lt.abs(b-x)) 
+                    b = x 
+                    fb = fx
+                else where 
+                    a = x 
+                    fa = fx 
+                end where
+            enddo
+        endif
+
+        write(*,fmt="(5x,'it [',I2.2,']',1x,'n-converded:',1x,I3,1X,'/ total size: ',I3)") i, nconverded, arr_size
+        write(*,*)
+
+        deallocate(ne)
+        deallocate(ne_converged)
+        deallocate(x,xold,a,b,fx,fa,fb)
+
+    END SUBROUTINE load_state_variables_without_nel
+
+    !=========================================================================
+    SUBROUTINE electron_scattering(self, sumsca)
+        class(composition_type), target :: self
+        real(4), dimension(:,:,:,:), intent(inout) :: sumsca
+        real(dp), dimension(:,:,:), allocatable :: els
+        integer :: f
+        !---------------------------------------------------------------------
+        allocate(els, mold=self%temp)
+        els = 4.8206e-9 * self%pe / (self%temp * self%ro)
+
+        do f=1, size(sumsca, 4)
+            sumsca(:,:,:,f) = sumsca(:,:,:,f) + els
+        end do
+
+        !print *, 'els', els(p(1),p(2),p(3))
+    END SUBROUTINE electron_scattering
+
+    !=========================================================================
+    SUBROUTINE rayleigh_scattering(self, lam, sumsca)
+        class(composition_type), target :: self
+        class(molec_type), pointer :: H2
+        class(ion_type), pointer :: HI
+        real(dp), dimension(:), intent(in) :: lam
+        real(4), dimension(:,:,:,:), intent(inout) :: sumsca
+        real(dp), dimension(:,:,:), allocatable :: h2ray, rayh, rayh2
+        real(dp) :: xray2, ll
+        integer :: f
+        !---------------------------------------------------------------------
+        allocate(h2ray, rayh, rayh2, mold=self%temp)
+
+        ! rayleigh scattering
+        call self%ion_by_id('H I', HI)
+        call self%molecule_by_id('H2', H2)
+
+        !print *, 'h2ray', H2%rho_per_h(p(1),p(2),p(3))
+
+        do f=1, size(lam)
+            if (lam(f) >= 911) then
+                ll = max(1026., lam(f))
+                xray2 = 1 / ll**2
+
+                rayh  = (5.799e-13 + xray2*(1.422e-6 + xray2*2.784)) * HI%rho_per_h
+                rayh2 = ( 8.14e-13 + xray2*( 1.28e-6 + xray2*1.61 )) * H2%rho_per_h
+    
+                ! add sumsca to sumsca from lines
+                sumsca(:,:,:,f) = sumsca(:,:,:,f) + (rayh + rayh2)*xray2*xray2
+
+                !if (f==p(4)) then
+                !    print *, 'rayh', rayh(p(1),p(2),p(3))*xray2**2
+                !    print *, 'rayh2', rayh2(p(1),p(2),p(3))*xray2**2
+                !endif
+            endif
+        end do
+
+        !print *, 'sumsca', sumsca(p(1),p(2),p(3),p(4))
+    END SUBROUTINE rayleigh_scattering
+
+    !=========================================================================
+    SUBROUTINE print_ion_table(self)
+        class(composition_type), target :: self
+        integer :: i, lunit
+        !---------------------------------------------------------------------
+        open(newunit=lunit, file='./ion_info.txt')
+        write(lunit, '(A8, es12.4)') 'temp=', self%temp(pp(1),pp(2),pp(3))
+        write(lunit, '(A8, es12.4)') 'pe=', self%pe(pp(1),pp(2),pp(3))
+        write(lunit, '(A8, es12.4)') 'ne=', self%ne(pp(1),pp(2),pp(3))
+        write(lunit, '(A8, es12.4)') 'rho=', self%rho(pp(1),pp(2),pp(3))
+        write(lunit, '(A8, es12.4)') 'ro=', self%ro(pp(1),pp(2),pp(3))
+        write(lunit, '(A8, es12.4)') 'dxi=', self%dxi(pp(1),pp(2),pp(3))
+
+        do i=1, self%nel
+            call self%elements(i)%print_info(lunit, pp)
+        end do
+        close(lunit)
+    END SUBROUTINE print_ion_table
 
 END MODULE composition_mod

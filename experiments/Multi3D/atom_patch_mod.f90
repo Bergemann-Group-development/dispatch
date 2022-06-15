@@ -38,7 +38,8 @@ module atom_patch_mod
     !-----------------------------------------------------------------------------
   
     type, public, extends(m3d_patch_t) :: atom_patch_t
-      type(atom_type), pointer :: atom, output_atom
+      !type(atom_type), pointer :: atom, output_atom
+      type(atom_type) :: atom, output_atom
       class(composition_type), pointer :: composition
       class(atomic_spectrum_type), pointer :: output_sp
       real(8) :: maxerr=huge(1.0)
@@ -131,7 +132,7 @@ module atom_patch_mod
         endif
       end do
     end do
-
+    call self%post_pre_init()
     call trace%end(itimer)
   END SUBROUTINE atom_patch_pre_init
 
@@ -202,25 +203,31 @@ module atom_patch_mod
       call execute_command_line (trim(command), exitstat=iostat)
     endif
 
-    if (mpi%size==self%task_list%dims(3)) then
-      self%atom => atom
-      if (second_sp) self%output_atom => output_atom
+    !if (mpi%size==self%task_list%dims(3)) then
+    !  self%atom => atom
+    !  if (second_sp) self%output_atom => output_atom
+    !else
+    !  ! if there are multiple subregions on one rank
+    !  ! every subregion needs its own atom
+    !  allocate(self%atom)
+    !  self%atom = atom
+    !  if (second_sp) then
+    !    allocate(self%output_atom)
+    !    self%output_atom = output_atom
+    !  endif
+    !endif
+
+    self%atom = atom
+    if (second_sp) then
+      self%output_atom = output_atom
     else
-      ! if there are multiple subregions on one rank
-      ! every subregion needs its own atom
-      allocate(self%atom)
-      self%atom = atom
-      if (second_sp) then
-        allocate(self%output_atom)
-        self%output_atom = output_atom
-      endif
+      self%output_atom = atom
     endif
 
     if (second_sp) then
       self%output_sp => self%sp
     else
       self%output_sp => sp
-      self%output_atom => atom
     endif
 
     self%sp => sp
@@ -342,21 +349,23 @@ module atom_patch_mod
   !=============================================================================
   SUBROUTINE atom_patch_post_update (self)
     class(atom_patch_t) :: self
-    integer :: p(3), i
+    integer :: p(3), i, z
     ! --------------------------------------------------------------------------
     call trace%begin('atom_patch_t%atom_patch_post_update')
     if (self%verbose > 0) then
       p = self%pcheck
-      i = self%lvlcheck
-      call io%lock%set
-       write(stdout,'(A, 8(ES15.7))') self%m3d_patch_info(), self%atom%abnd, &
-         self%atom%n(p(1),p(2),p(3),i), self%atom%totn(p(1),p(2),p(3)), &
-         10.0**(self%atom%abnd-12.0)*self%composition%toth(p(1),p(2),p(3))
-      write(stdout,'(A19, ES19.7, A10, 3ES15.7)') 'Maxerr =', self%maxerr, &
-        ', global =', global_maxerr
-      write(stdout,'(1X, A80)') &
-      '................................................................................'
-      call io%lock%unset
+      if (all(p > 0)) then
+        i = self%lvlcheck
+        call io%lock%set
+        write(stdout,'(A, 8(ES15.7))') self%m3d_patch_info(), self%atom%abnd, &
+          self%atom%n(p(1),p(2),p(3),i), self%atom%totn(p(1),p(2),p(3)), &
+          10.0**(self%atom%abnd-12.0)*self%composition%toth(p(1),p(2),p(3))
+        write(stdout,'(A19, ES19.7, A10, 3ES15.7)') 'Maxerr =', self%maxerr, &
+          ', global =', global_maxerr
+        write(stdout,'(1X, A80)') &
+        '................................................................................'
+        call io%lock%unset
+      endif
     end if
     
     if ((global_maxerr > 0) .and. global_maxerr < convlim) then
@@ -492,6 +501,19 @@ module atom_patch_mod
 
       line%wphi = math%pi4 / line%wphi
     end do
+
+    nbor => self%link%nbor
+    do while (associated(nbor))
+      nbtask => nbor%task
+      select type(opac => nbtask)
+      class is (lines_patch_t)
+        if (opac%finished) then
+          call os%deallocate(opac%idx_map)
+          deallocate(opac%line)
+        endif
+      end select
+      nbor => nbor%next
+    end do
   END SUBROUTINE
 
   !===============================================================================
@@ -563,6 +585,7 @@ module atom_patch_mod
     logical :: same
     !-----------------------------------------------------------------------------
     call self%composition%element_by_id(trim(self%atom%id), element)
+    if (.not. associated(element)) return
     if (all(element%ions%nline == 0)) return
 
     do j=lbound(element%ions,1), ubound(element%ions,1) - 1

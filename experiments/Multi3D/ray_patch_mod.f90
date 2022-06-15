@@ -49,7 +49,7 @@ module ray_patch_mod
     procedure :: check_topbot
     procedure :: is_upstream => ray_is_upstream
     procedure :: comp_vproj
-    procedure :: deallocate_mem
+    procedure :: deallocate_mem => ray_patch_deallocate_mem
     procedure :: ff_index
     procedure :: pack => ray_pack
     procedure :: unpack => ray_unpack
@@ -167,7 +167,7 @@ SUBROUTINE set_freq_indices (self)
 
   if (i_nu > counter) then
     if (counter == 0) write(stdout,'(I2, A18)') self%n_nu, 'frequency splits'
-    write(stdout,'(I4, I6,A3,I4)') i_nu, fs, ' - ', fe
+    write(stdout,'(I4, I10,A3,I8)') i_nu, fs, ' - ', fe
     counter = i_nu
   endif
 END SUBROUTINE set_freq_indices
@@ -198,33 +198,29 @@ END SUBROUTINE comp_vproj
 SUBROUTINE ray_post_update (self)
   class(ray_patch_t) :: self
   logical :: in_bounds
-  integer :: f
+  integer :: f, p(3)
   !-----------------------------------------------------------------------------
   call trace%begin ('ray_patch_t%ray_post_update')
   if (self%verbose > 1) then
+    p = self%pcheck
     call self%ff_index(self%fcheck, f)
     in_bounds = f > 0
 
     if (in_bounds) then
-      select case (self%kind)
-      case('out_rad')
-        in_bounds = all(self%pcheck(:2) <= self%n(:2))
-      case default
-        in_bounds = all(self%pcheck <= self%n)
-      end select
+      if (self%kind /= 'out_rad') in_bounds = all(p > 0)
     endif
 
     if (in_bounds) then
       select case (self%kind)
       case('rate_patch')
         write(stdout,'(A, 6(ES15.7))') self%m3d_patch_info(), &
-        self%authority_mem(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%linecheck,1,:)
-      case('out_rad')
+        self%mem(p(1),p(2),p(3),self%linecheck,1,:)
+      case ('out_rad')
         write(stdout,'(A, 6(ES15.7))') self%m3d_patch_info(), &
-        self%authority_mem(self%pcheck(1),self%pcheck(2),1,f,1,:)
+        sum(self%mem(:,:,1,f,1,1)) / product(self%n(1:2))
       case default
         write(stdout,'(A, 6(ES15.7))') self%m3d_patch_info(), &
-        self%authority_mem(self%pcheck(1),self%pcheck(2),self%pcheck(3),f,1,:)
+        self%mem(p(1),p(2),p(3),f,1,:)
       end select
     elseif (self%verbose > 2) then
       write(stdout,'(A,A)') self%m3d_patch_info()
@@ -251,13 +247,11 @@ SUBROUTINE ray_patch_init (self)
   elseif (self%i_mu > 0) then
     call os%allocate(self%vproj, [self%n(1), self%n(2), self%n(3)])
   endif
-
   call self%m3d_patch_t%init()
-
 END SUBROUTINE ray_patch_init
 
 !===============================================================================
-SUBROUTINE deallocate_mem (self)
+SUBROUTINE ray_patch_deallocate_mem (self)
   class(ray_patch_t):: self
   integer :: m(6), li(3), ui(3)
   !-----------------------------------------------------------------------------
@@ -265,7 +259,7 @@ SUBROUTINE deallocate_mem (self)
   if (associated(self%vproj)) then
     call os%deallocate(self%vproj)
   endif
-END SUBROUTINE deallocate_mem
+END SUBROUTINE ray_patch_deallocate_mem
 
 !===============================================================================
 !> Determine if a task is upstream.  
@@ -355,7 +349,6 @@ SUBROUTINE ff_index(self, ff, f)
     f = -1
   endif
 END SUBROUTINE ff_index
-
 
 !===============================================================================
 SUBROUTINE check_topbot (self)

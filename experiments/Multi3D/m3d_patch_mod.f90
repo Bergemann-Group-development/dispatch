@@ -28,7 +28,7 @@ module m3d_patch_mod
     !USE units_mod
     !USE scratch_mod
     USE atom_mod, only: atomic_spectrum_type
-    USE ray_mod, only:set_carlson_quadratures
+    USE ray_mod, only: set_carlson_quadratures, set_lobatto_quadratures
     implicit none
     private
   
@@ -45,7 +45,7 @@ module m3d_patch_mod
       real(4), dimension(:,:,:,:,:,:), pointer :: authority_mem => null()
       real(8) :: t_offset=0, teff
       integer :: iter=0, maxiter, master_maxiter
-      integer :: n_mu, n_nu, n_omega, n_out
+      integer :: n_mu, n_nu, n_omega, n_out, zs, ze
       integer :: fcheck, pcheck(3), linecheck, lvlcheck
       logical :: out_ray=.false., pushed=.false.
       integer :: i_nu=0, i_mu=0
@@ -55,6 +55,7 @@ module m3d_patch_mod
       integer :: i_Inu=1
     contains
       procedure :: pre_init => m3d_pre_init
+      procedure :: post_pre_init => m3d_post_pre_init
       procedure :: init => m3d_init 
       procedure :: pre_update => m3d_pre_update
       procedure :: post_update => m3d_post_update
@@ -78,6 +79,7 @@ module m3d_patch_mod
       procedure :: allocate_mem
       procedure :: deallocate_mem
       procedure :: check_mem
+      procedure :: check_mem_NaN
       procedure :: m3d_patch_info
     end type m3d_patch_t
   
@@ -95,6 +97,7 @@ module m3d_patch_mod
     real(8), public, save, dimension(:), allocatable:: wmu, long_wmu
     real(8), public, save, dimension(:,:), allocatable:: vec, long_vec
     logical, public, save :: converged=.false., dynamic_memory=.true., voigt_interp=.true.
+    logical, public, save :: check_NaN=.false.
       
   contains
   
@@ -106,12 +109,13 @@ module m3d_patch_mod
     logical, save :: on=.true.
     integer :: iostat
     integer, save :: fcheck=1, linecheck=3, pcheck(3)=[1,1,1], lvlcheck=1
-    integer, save :: n_nu=1, itimer=0
+    integer, save :: n_nu=1, itimer=0, ntheta=3, nphi=4, total_n(3)
     character(len=32), save :: quad_scheme='set_a2'
     character(len=32), save :: long_scheme='disk_center'
     real(8), save :: teff=0
     namelist /m3d_params/ on, verbose, fcheck, linecheck, pcheck, quad_scheme, &
-    long_scheme, n_nu, maxiter, ilambd, dynamic_memory, voigt_interp, lvlcheck, teff
+    long_scheme, n_nu, maxiter, ilambd, dynamic_memory, voigt_interp, lvlcheck, &
+    teff, ntheta, nphi, check_NaN
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%pre_init', itimer=itimer)
     !-----------------------------------------------------------------------------
@@ -132,13 +136,20 @@ module m3d_patch_mod
       ! Assign angles and integration weights
       !-------------------------------------------------------------------------
       call set_carlson_quadratures (quad_scheme, vec, wmu, up_and_down=.true.)
-      call set_carlson_quadratures (long_scheme, long_vec, long_wmu, up_and_down=.false.)
+
+      if (long_scheme == 'lobatto') then
+        call set_lobatto_quadratures (ntheta, nphi, long_vec, long_wmu)
+      else
+        call set_carlson_quadratures (long_scheme, long_vec, long_wmu, up_and_down=.false.)
+      endif
+
+      total_n = nint(self%patch%box / self%patch%ds)
+  
+      where (pcheck < 0)
+        pcheck = total_n + pcheck + 1
+      end where
     end if
   
-    self%pcheck = pcheck
-    self%fcheck = fcheck
-    self%linecheck = linecheck
-    self%lvlcheck = lvlcheck
     self%verbose = verbose
     self%teff = teff
 
@@ -147,10 +158,6 @@ module m3d_patch_mod
     self%n_mu = self%n_omega + self%n_out
     self%n_nu = n_nu
     self%out_ray = self%i_nu > self%n_nu .or. self%i_mu > self%n_omega
-  
-    where (self%pcheck < 0)
-      self%pcheck = self%patch%n + self%pcheck + 1
-    end where
   
     if (self%pre_initialized) print *, 'pre_init issued somewhere'
     call io%lock%unset ('m3d_patch_t%pre_init')
@@ -201,6 +208,16 @@ module m3d_patch_mod
     self%interest%l  = self%authority%l - self%ng*self%size/self%n
     self%interest%u  = self%authority%u + self%ng*self%size/self%n
 
+    self%zs = nint(self%origin(3) / self%ds(3)) + 1 
+    self%ze = self%zs + self%n(3) - 1
+
+    self%pcheck = pcheck
+    self%fcheck = fcheck
+    self%linecheck = linecheck
+    self%lvlcheck = lvlcheck
+
+    self%pcheck(3) = self%pcheck(3) - self%zs + 1
+
     ! ----------------------------------------------------------------------------
     ! Do not check density or validate with it. This is rather important to be set
     ! ----------------------------------------------------------------------------
@@ -214,6 +231,17 @@ module m3d_patch_mod
 
     call trace%end (itimer)
   END SUBROUTINE m3d_pre_init
+
+  !===============================================================================
+  SUBROUTINE m3d_post_pre_init (self)
+    class(m3d_patch_t) :: self
+    !-----------------------------------------------------------------------------
+    self%pcheck = self%pcheck + self%ng
+    self%gn = self%n + 2*self%ng
+    if (any(self%pcheck <= 0) .or. any(self%pcheck > self%gn)) then
+      self%pcheck = -1
+    endif
+  END SUBROUTINE m3d_post_pre_init
 
   !===============================================================================
   SUBROUTINE pre_init_and_link (self, m3d_parent, i_mu, i_nu, sp)
@@ -377,13 +405,17 @@ module m3d_patch_mod
     class(m3d_patch_t) :: self
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%m3d_post_update')
+    if (self%iter == self%maxiter) then
+      call self%finish()
+    endif
+
     if (dynamic_memory) then
       call self%free_unused_memory()
       call self%push_nbors_for_update()
     endif
-  
-    if (self%iter == self%maxiter) then
-      call self%finish()
+
+    if (check_NaN) then
+      call self%check_mem_NaN()
     endif
   
     self%iter = self%iter + 1
@@ -395,7 +427,7 @@ module m3d_patch_mod
     class(m3d_patch_t) :: self
     character(len=38) :: text
     !-----------------------------------------------------------------------------
-    write(text, '(F5.2, A12, I6, 3(I4))') self%time, trim(self%kind), self%id, &
+    write(text, '(F5.2, A12, I8, 3(I4))') self%time, trim(self%kind), self%id, &
     self%ipos(3), self%i_nu, self%i_mu
   END FUNCTION m3d_patch_info
   
@@ -419,7 +451,7 @@ module m3d_patch_mod
         nbtask => nbor%task
         select type (nbtask)
         class is (m3d_patch_t)
-        if (nbtask%finished .and. nbtask%kind /= 'composition') then
+        if (nbtask%finished) then
           nbnbor => nbtask%link%nbor
           nbors_finished=.true.
           do while (associated(nbnbor))
@@ -820,7 +852,6 @@ module m3d_patch_mod
     end select
     d = self%task_t%distance_to(task)
   END FUNCTION distance_to
-      
 
   !===============================================================================
   SUBROUTINE free_unused_memory (self)
@@ -902,6 +933,33 @@ module m3d_patch_mod
       call self%allocate_mem()
     endif
   END SUBROUTINE check_mem
+
+  !===============================================================================
+  SUBROUTINE check_mem_NaN (self)
+    class(m3d_patch_t):: self
+    integer :: i,j,k,v,t,w
+    integer, save :: itimer
+    !-----------------------------------------------------------------------------
+    call trace%begin ('m3d_patch_t%check_mem_NaN', itimer=itimer)
+    if (associated(self%mem)) then
+      do w=1, self%nw
+      do t=1, self%nt
+      do v=1, self%nv
+      do k=1, self%gn(3)
+      do j=1, self%gn(2)
+      do i=1, self%gn(1)
+        if (self%mem(i,j,k,v,t,w) /= self%mem(i,j,k,v,t,w)) then
+          write(stdout, '(A,A,3(I4),I5,I3,I3)') self%m3d_patch_info(), '  NaN', i,j,k,v,t,w
+        endif
+      end do
+      end do
+      end do
+      end do
+      end do
+      end do
+    endif
+    call trace%end(itimer)
+  END SUBROUTINE check_mem_NaN
 
   !===============================================================================
   SUBROUTINE push_nbors_for_update (self)

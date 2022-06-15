@@ -66,6 +66,7 @@ module net_opac_patch_mod
         self%ng = [2,2,1]
       endif
     endif
+    call self%post_pre_init()
     call trace%end()
   END SUBROUTINE net_opac_pre_init
   
@@ -78,7 +79,7 @@ module net_opac_patch_mod
     real(4), dimension(:,:,:,:,:), pointer :: mem1
     real(4), dimension(:,:,:,:), pointer :: chi, eta, Snu
     integer, save:: itimer=0
-    integer :: iw,it, f, fs, fe, fn
+    integer :: iw,it, f, fs, fe, fn, x, y, z
     !-----------------------------------------------------------------------------
     call self%pre_update()
     if (self%finished) then
@@ -91,6 +92,7 @@ module net_opac_patch_mod
     chi => self%authority_mem(:,:,:,:,it,self%i_chi)
     eta => self%authority_mem(:,:,:,:,it,self%i_eta)
     Snu => self%authority_mem(:,:,:,:,it,self%i_Snu)
+    self%mem = 0
   
     nbor => self%link%nbor
     do while (associated(nbor))
@@ -106,7 +108,13 @@ module net_opac_patch_mod
           do it=1, self%nt
           do f=fs,fe
             fn = f - fs + 1
-            mem(:,:,:,f,it,iw) = mem(:,:,:,f,it,iw) + nbtask%mem(:,:,:,fn,it,iw)
+            do z=1, self%n(3)
+            do y=1, self%n(2)
+            do x=1, self%n(1)
+              mem(x,y,z,f,it,iw) = mem(x,y,z,f,it,iw) + nbtask%mem(x,y,z,fn,it,iw)
+            end do
+            end do
+            end do
           end do
           end do
           end do
@@ -117,7 +125,13 @@ module net_opac_patch_mod
           do it=1, self%nt
           do f=fs,fe
             fn = f - fs + 1
-            mem(:,:,:,f,it,iw) = mem(:,:,:,f,it,iw) + nbtask%mem(:,:,:,fn,it,iw)
+            do z=1, self%n(3)
+            do y=1, self%n(2)
+            do x=1, self%n(1)
+              mem(x,y,z,f,it,iw) = mem(x,y,z,f,it,iw) + nbtask%mem(x,y,z,fn,it,iw)
+            end do
+            end do
+            end do
           end do
           end do
           end do
@@ -128,7 +142,13 @@ module net_opac_patch_mod
   
     !$omp simd
     do f=1, self%nv
-      Snu(:,:,:,f) = eta(:,:,:,f) / chi(:,:,:,f)
+      do z=1, self%n(3)
+      do y=1, self%n(2)
+      do x=1, self%n(1)
+        Snu(x,y,z,f) = eta(x,y,z,f) / chi(x,y,z,f)
+      end do
+      end do
+      end do
     end do
     
     mem1 => self%mem(:,:,:,:,self%it,:)
@@ -151,6 +171,10 @@ module net_opac_patch_mod
   
     if (needed .or. needs_me) then
       select type(another)
+
+      class is (net_opac_t)
+        ! do nothing
+      
       class is (lines_patch_t)
         needs_me=.false.
 
