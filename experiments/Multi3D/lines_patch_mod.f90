@@ -309,7 +309,7 @@ module lines_patch_mod
     logical :: skip
     ! --------------------------------------------------------------------------
     call trace%begin('lines_patch_t%atom_patch_post_update')
-    if (self%verbose > 0) then
+    if (self%verbose > 1) then
       if (self%linecheck < lbound(self%line,1) .or. self%linecheck > ubound(self%line,1)) then
         skip = .true.
       else
@@ -325,7 +325,7 @@ module lines_patch_mod
         phi(p(1),p(2),p(3),1) * line%chi_fac(p(1),p(2),p(3)), &
         phi(p(1),p(2),p(3),1) * line%eta_fac(p(1),p(2),p(3))
         call os%deallocate(phi)
-      else
+      elseif (self%verbose > 2) then
         write(stdout,'(A,A)') self%m3d_patch_info()
       endif
     end if

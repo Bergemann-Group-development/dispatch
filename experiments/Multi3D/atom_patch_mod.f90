@@ -30,7 +30,7 @@ module atom_patch_mod
     USE element_mod, only: element_type
     USE bbtrans_mod, only: bbtrans_type
     USE composition_mod, only: composition_type
-    USE m3d_patch_mod, only: m3d_patch_t, maxiter, ilambd, voigt_interp
+    USE m3d_patch_mod, only: m3d_patch_t, maxiter, ilambd
     USE bftrans_mod, only: bftrans_type
     USE lines_patch_mod, only:lines_patch_t
     implicit none
@@ -88,17 +88,10 @@ module atom_patch_mod
           opac%kind = 'cont_opac'
           call opac%pre_init_and_link(self, i_mu=m, i_nu=n, sp=self%sp)
         else
-          if (voigt_interp) then
-            allocate(lines)
-            lines%kind = 'lines_patch'
-            lines%atom => self%atom
-            call lines%pre_init_and_link(self, i_mu=m, i_nu=n, sp=self%sp)
-          else
-            allocate(opac)
-            opac%kind = 'line_opac'
-            opac%atom => self%atom
-            call opac%pre_init_and_link(self, i_mu=m, i_nu=n, sp=self%sp)
-          endif
+          allocate(lines)
+          lines%kind = 'lines_patch'
+          lines%atom => self%atom
+          call lines%pre_init_and_link(self, i_mu=m, i_nu=n, sp=self%sp)
 
           allocate(rate)
           rate%kind = 'rate_patch'
@@ -118,21 +111,17 @@ module atom_patch_mod
           opac%kind = 'cont_opac'
           call opac%pre_init_and_link(self, i_mu=0, i_nu=n2, sp=self%output_sp)
         else
-          if (voigt_interp) then
-            allocate(lines)
-            lines%kind = 'lines_patch'
-            lines%atom => self%output_atom
-            call lines%pre_init_and_link(self, i_mu=m2, i_nu=n2, sp=self%output_sp)
-          else
-            allocate(opac)
-            opac%kind = 'line_opac'
-            opac%atom => self%output_atom
-            call opac%pre_init_and_link(self, i_mu=m2, i_nu=n2, sp=self%output_sp)
-          endif
+          allocate(lines)
+          lines%kind = 'lines_patch'
+          lines%atom => self%output_atom
+          call lines%pre_init_and_link(self, i_mu=m2, i_nu=n2, sp=self%output_sp)
         endif
       end do
     end do
     call self%post_pre_init()
+    self%atom%fcheck = self%fcheck
+    self%atom%pcheck = self%pcheck
+    self%atom%linecheck = self%linecheck
     call trace%end(itimer)
   END SUBROUTINE atom_patch_pre_init
 
@@ -194,28 +183,9 @@ module atom_patch_mod
       if (second_sp) then
         call output_atom%set_active_transitions(self%sp) 
       endif
-
-      atom%fcheck = self%fcheck
-      atom%pcheck = self%pcheck
-      atom%linecheck = self%linecheck
-
       write (command, *) 'cp ', trim(atom_file), ' ./out/atom.txt' 
       call execute_command_line (trim(command), exitstat=iostat)
     endif
-
-    !if (mpi%size==self%task_list%dims(3)) then
-    !  self%atom => atom
-    !  if (second_sp) self%output_atom => output_atom
-    !else
-    !  ! if there are multiple subregions on one rank
-    !  ! every subregion needs its own atom
-    !  allocate(self%atom)
-    !  self%atom = atom
-    !  if (second_sp) then
-    !    allocate(self%output_atom)
-    !    self%output_atom = output_atom
-    !  endif
-    !endif
 
     self%atom = atom
     if (second_sp) then
@@ -350,6 +320,7 @@ module atom_patch_mod
   SUBROUTINE atom_patch_post_update (self)
     class(atom_patch_t) :: self
     integer :: p(3), i, z
+    integer, save :: count=0
     ! --------------------------------------------------------------------------
     call trace%begin('atom_patch_t%atom_patch_post_update')
     if (self%verbose > 0) then
@@ -367,10 +338,14 @@ module atom_patch_mod
         call io%lock%unset
       endif
     end if
+
+    if (self%iter > 0) count = count + 1 
     
-    if ((global_maxerr > 0) .and. global_maxerr < convlim) then
-      print *, 'Converged!'
-      call self%finish()
+    if (count >= self%task_list%dims(3)) then
+      if ((global_maxerr > 0) .and. global_maxerr < convlim) then
+        print *, self%ipos(3), 'Converged!', count
+        call self%finish()
+      endif
     endif
 
     call self%m3d_patch_t%post_update()
@@ -426,9 +401,9 @@ module atom_patch_mod
     real(8), dimension(:,:,:,:), target :: gamma_ij, gamma_ji
     integer :: i, j, k, ii
     integer :: cswitch=1
+    integer, save :: itimer=0
     ! ----------------------------------------------------------------------------
     atom => self%atom
-
     maxerr = 0.0d0
 
     do k=1, self%n(3)
@@ -523,10 +498,10 @@ module atom_patch_mod
     class(task_t), pointer:: nbtask
     integer :: i, i_mu, i_nu, m(4), p(3)
     real(8), dimension(:,:,:,:), allocatable:: gamma_ij, gamma_ji
+    integer, save :: itimer=0
     ! ----------------------------------------------------------------------------
     gamma_ij = 0.0d0
     gamma_ji = 0.0d0
-
 
     nbor => self%link%nbor
     do while (associated(nbor))
@@ -654,7 +629,7 @@ module atom_patch_mod
   END SUBROUTINE atom_patch_nbor_relations
 
   !===============================================================================
-    pure function uppercase(string,ss)
+  pure function uppercase(string,ss)
     ! converts the first ss characters of string to uppercase and returns them as a new string.
     character(len=*),intent(in) :: string
     integer,intent(in) :: ss

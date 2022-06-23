@@ -77,9 +77,8 @@ MODULE atom_mod
      contains
         procedure :: add_line_opacities
         procedure :: add_continuum_opacities
-        procedure :: add_all_gammas
-        procedure :: add_all_gammas2
-        procedure :: add_all_gammas3
+        procedure :: full_preconditioning
+        procedure :: self_preconditioning
         procedure :: compute_line_damping
         procedure :: compute_doppler_factor
         procedure :: partition_function
@@ -298,160 +297,7 @@ MODULE atom_mod
      !------------------------------------------------------------------------------------
   
      !====================================================================================
-     SUBROUTINE add_all_gammas(self, ff, temp, vel_dop, Inu, Psi, chi_l, chi_c, eta_l, eta_c, gamma_ij, gamma_ji)
-        class(atom_type), target, intent(in) :: self
-        integer, intent(in) :: ff
-        real(4), dimension(:,:,:), intent(in) :: temp, vel_dop
-        real(4), dimension(:,:,:), intent(in) :: Inu, Psi, chi_l, chi_c, eta_l, eta_c
-        real(4), dimension(:,:,:,:), intent(inout), target :: gamma_ij, gamma_ji
-        real(4), dimension(:,:,:), pointer :: Gij, Gji
-        real(4), dimension(:,:,:), allocatable :: blzfac, vij, vji, eta, chi, Ieff
-        real(4), dimension(:,:,:,:), allocatable :: phi
-        real(4), dimension(:,:,:,:), allocatable :: SumU, SumChiDn, SumChiUp
-        real(8), dimension(:), allocatable :: wnu, fac
-        integer, dimension(:), allocatable :: lower, upper, trans
-        real(8) :: twohnu3_c2, hnu_inv
-        real(8) :: hnu_4pi
-        integer :: i, j, f, kr, kr2, kc, kl, nx, ny, nz, n_active, p(3)
-        logical :: recompute_opac, cross_coupling=.false.
-        !------------------------------------------------------------------------------------
-        nx = size(temp,1)
-        ny = size(temp,2)
-        nz = size(temp,3)
-        n_active = self%sp%nac(ff) + self%sp%nal(ff)
-  
-        allocate(phi(nx,ny,nz,1))
-        allocate(SumU(nx,ny,nz,self%nlevel))
-        allocate(SumChiDn(nx,ny,nz,self%nlevel))
-        allocate(SumChiUp(nx,ny,nz,self%nlevel))
-        allocate(blzfac, vij, vji, eta, chi, Ieff, mold=temp)
-        allocate(wnu(n_active), fac(n_active))
-        allocate(lower(n_active), upper(n_active), trans(n_active))
-  
-        SumU     = 0
-        SumChiUp = 0
-        SumChiDn = 0
-  
-        hnu_inv = 1 / (hh*self%sp%nu(ff))
-        hnu_4pi = h_4pi * self%sp%nu(ff)
-        
-        Ieff = Inu - Psi * (eta_c + eta_l)
-  
-        if (self%sp%nac(ff) > 0) then
-           twohnu3_c2 = twoh_c2 * self%sp%nu(ff)**3
-           blzfac = exp(- h_k * self%sp%nu(ff) / temp)
-        endif
-        
-        do kr=1, n_active
-           if (kr <= self%sp%nac(ff)) then
-              kc = self%sp%ac(kr,ff)
-              lower(kr) = self%cont(kc)%i
-              upper(kr) = self%cont(kc)%j
-              trans(kr) = self%cont(kc)%ntrans
-              fac  (kr) = twohnu3_c2
-              wnu  (kr) = self%cont(kc)%wnu(ff) * hnu_inv ! wm needs to be multiplied later
-           else
-              kl = self%sp%al(kr - self%sp%nac(ff),ff)
-              lower(kr) = self%line(kl)%i
-              upper(kr) = self%line(kl)%j
-              trans(kr) = self%line(kl)%ntrans
-              fac  (kr) = self%line(kl)%Aji / self%line(kl)%Bji
-              wnu  (kr) = self%line(kl)%wnu(ff) * hnu_inv ! wm needs to be multiplied later
-           endif
-        end do
-  
-        do kr=1, n_active
-           do kr2=1, n_active
-              if (lower(kr) == upper(kr2)) then
-                 cross_coupling=.true.
-              endif
-           end do
-        end do
-  
-        recompute_opac = self%sp%nac(ff) > 1 .or. self%sp%nal(ff) > 1
-  
-        do kr=1, n_active
-           i = lower(kr)
-           j = upper(kr)
-  
-           if (kr <= self%sp%nac(ff)) then
-              if (recompute_opac) then
-                 kc = self%sp%ac(kr,ff)
-                 vij = self%cont(kc)%alpha(ff)
-                 vji = self%nstar(:,:,:,i) / self%nstar(:,:,:,j) * blzfac * vij
-              else
-                 chi = chi_c
-                 eta = eta_c
-              endif
-           else
-              if (recompute_opac) then
-                 kl = self%sp%al(kr - self%sp%nac(ff),ff)
-                 call self%line(kl)%profile(self%sp%nu(ff:ff), vel_dop, self%doppler_factor, self%line(kl)%adamp, phi)
-                 phi(:,:,:,1) = phi(:,:,:,1) * hnu_4pi
-                 vij = self%line(kl)%Bij * phi(:,:,:,1)
-                 vji = self%line(kl)%Bji * phi(:,:,:,1)
-              else
-                 chi = chi_l
-                 eta = eta_l
-              endif
-           endif
-  
-           if (recompute_opac) then
-              chi = vij * self%n(:,:,:,i) - vji * self%n(:,:,:,j)
-           else
-              vji = eta / (fac(kr) * self%n(:,:,:,j))
-              vij = (chi + vji * self%n(:,:,:,j)) / self%n(:,:,:,i)
-           endif
-  
-           SumU    (:,:,:,j) = SumU    (:,:,:,j) + fac(kr) * vji
-           SumChiUp(:,:,:,i) = SumChiUp(:,:,:,i) + chi
-           
-           if (cross_coupling) then
-              SumChiDn(:,:,:,j) = SumChiDn(:,:,:,j) + chi
-           endif
-  
-           Gij => gamma_ij(:,:,:,trans(kr))
-           Gji => gamma_ji(:,:,:,trans(kr))
-  
-           ! add to upward rate coefficient Gamma_ij   
-           Gij = Gij + wnu(kr) * Ieff * vij
-  
-           ! add to downward rate coefficient Cont(Kc)%gamma_ji 
-           Gji = Gji + wnu(kr) * (fac(kr) + Ieff) * vji
-  
-           !if (ff==self%fcheck) then
-           !   p(:) = self%pcheck
-           !   f = self%fcheck
-           !   print *, trans(kr), i, j, 'rate'
-           !   print '(8(ES15.7))', wnu(kr), vij(p(1),p(2),p(3)), vji(p(1),p(2),p(3))
-           !endif
-        end do
-  
-        do kr=1, n_active
-           i = lower(kr)
-           j = upper(kr)
-           Gij => gamma_ij(:,:,:,trans(kr))
-           Gji => gamma_ji(:,:,:,trans(kr))
-  
-           Gji = Gji - wnu(kr) * SumChiUp(:,:,:,i) * Psi * SumU(:,:,:,j)
-  
-           if (cross_coupling) then
-              Gij = Gij + wnu(kr) * SumChiDn(:,:,:,j) * Psi * SumU(:,:,:,i)
-           endif
-  
-           !if (ff==self%fcheck) then
-           !   p(:) = self%pcheck
-           !   f = self%fcheck
-           !   print *, trans(kr), i, j, 'cross coupling'
-           !   print '(8(ES15.7))', SumChiUp(p(1),p(2),p(3),i), SumChiDn(p(1),p(2),p(3),j), SumU(p(1),p(2),p(3),j), &
-           !      Ieff(p(1),p(2),p(3)), eta_c(p(1),p(2),p(3)) + eta_l(p(1),p(2),p(3))
-           !endif
-        end do
-     END SUBROUTINE add_all_gammas
-     !------------------------------------------------------------------------------------
-  
-     !====================================================================================
-     SUBROUTINE add_all_gammas2(self, fs, temp, Inu, Psi, gamma_ij, gamma_ji, lines, idx_map)
+     SUBROUTINE full_preconditioning(self, fs, temp, Inu, Psi, gamma_ij, gamma_ji, lines, idx_map)
         class(atom_type), target, intent(in) :: self
         integer, intent(in) :: fs
         real(4), dimension(:,:,:), intent(in), contiguous :: temp
@@ -625,14 +471,13 @@ MODULE atom_mod
                  end do
                  end do
                  end do
-              endif
   
-              !if (ff==self%fcheck) then
-              !   p(:) = self%pcheck
-              !   f = self%fcheck
-              !   print *, k, i, j, 'rate'
-              !   print '(8(ES15.7))', wnu(kr), vij(p(1),p(2),p(3)), vji(p(1),p(2),p(3))
-              !endif
+                 !if (ff==self%fcheck .and. all(self%pcheck>0)) then
+                 !   p(:) = self%pcheck
+                 !   print *, self%sp%al(kr - self%sp%nac(ff),ff), lower(i), upper(j), 'rate', p
+                 !   print '(8(ES15.7))', wnu(kr), vij(p(1),p(2),p(3),kr), vji(p(1),p(2),p(3),kr)
+                 !endif
+              endif
            end do
   
            !call trace%end(itimer2)
@@ -664,6 +509,12 @@ MODULE atom_mod
              end do
              end do
              end do
+
+             !if (ff==self%fcheck .and. all(self%pcheck>0)) then
+             !   p(:) = self%pcheck
+             !   print *, lower(i), upper(j), 'Ieff', cross(kr), p
+             !   print '(8(ES15.7))', Ieff(p(1),p(2),p(3)), vij(p(1),p(2),p(3),kr), vji(p(1),p(2),p(3),kr)
+             !endif
            end do
 
            !call trace%end(itimer3)
@@ -671,11 +522,11 @@ MODULE atom_mod
 
         deallocate(Vij)
         deallocate(Vji)
-     END SUBROUTINE add_all_gammas2
+     END SUBROUTINE full_preconditioning
      !------------------------------------------------------------------------------------
     
    !====================================================================================
-   SUBROUTINE add_all_gammas3(self, fs_patch, temp, Inu, Psi, gamma_ij, gamma_ji, lines)
+   SUBROUTINE self_preconditioning(self, fs_patch, temp, Inu, Psi, gamma_ij, gamma_ji, lines)
       class(atom_type), target, intent(in) :: self
       integer, intent(in) :: fs_patch
       real(4), dimension(:,:,:), intent(in), contiguous :: temp
@@ -685,17 +536,13 @@ MODULE atom_mod
       class(line_type), dimension(:), intent(in), target :: lines
       class(line_type), pointer :: line
       class(cont_type), pointer :: cnt
-      !integer, dimension(:), intent(in) :: idx_map
-      real(4), dimension(:,:,:,:,:), allocatable :: ContEta
-      real(4), dimension(:,:,:,:), allocatable, target :: Ieff, scratch_phi
-      real(4), dimension(:,:,:,:), pointer, contiguous :: eta, phi
-      real(4), dimension(:,:,:), allocatable :: fakt, t_inv
+      real(4), dimension(:,:,:,:), allocatable :: blzfac, phi
+      real(4), dimension(:,:,:), allocatable :: t_inv, fakt
       real(4), dimension(:), allocatable :: twohnu3_c2, hnu_inv, hnu_k
       real(8), dimension(:), pointer, contiguous :: nu
-      integer, dimension(:), allocatable :: cont_lvls
-      real(4) :: blz, alpha, alpha_Ieff, scr, wnu
-      integer :: nx, ny, nz, nf, i_lvl, nion, nnu
-      integer :: i, j, k, f, x, y, z, jj, ff, fs, fe, ffs, ffe, fcs, fce, fe_patch, fff
+      real(4) :: blz, Ieff, wnu, eta, chi, vij, vji, alpha, ufac, Bij, Bji
+      integer :: nx, ny, nz, nf, nnu, p(3)
+      integer :: i, j, k, f, x, y, z, jj, ff, fs, fe, ffs, ffe, fcs, fce, fe_patch, fff, kr
       logical :: skip
       integer, save :: itimer1, itimer2, itimer3, itimer4, itimer5, itimer6
       !------------------------------------------------------------------------------------
@@ -703,176 +550,110 @@ MODULE atom_mod
       ny = size(Inu,2)
       nz = size(Inu,3)
       nf = size(inu,4)
+
       fe_patch = fs_patch + nf -1
       nu => self%sp%nu(fs_patch:fe_patch)
+      fcs = max(minval(self%cont%ired),  fs_patch)
+      fce = min(maxval(self%cont%iblue), fe_patch)
 
-      nion = self%ion(self%nlevel)
-      allocate(cont_lvls(nion-1))
-
-      allocate(Ieff(nx,ny,nz,nf))
-      allocate(ContEta(nx,ny,nz,nf,nion-1))
       allocate(twohnu3_c2(nf), hnu_k(nf), hnu_inv(nf))
-      allocate(fakt(nx,ny,nz), t_inv(nx,ny,nz))
+      allocate(t_inv(nx,ny,nz), fakt(nx,ny,nz))
+      allocate(phi(nx,ny,nz, maxval(lines%iblue-lines%ired+1)))
+      allocate(blzfac(nx,ny,nz,fcs:fce))
+
+      call trace%begin('blzfac', itimer=itimer1)
 
       twohnu3_c2 = twoh_c2 * nu**3
       hnu_k = h_k * nu
       t_inv = 1 / temp
       hnu_inv = 1 / (hh*nu)
 
-      fcs = max(minval(self%cont%ired),  fs_patch)
-      fce = min(maxval(self%cont%iblue), fe_patch)
-
-      j = -1
-      i_lvl = 0
-      do i=1, size(self%cont)
-         cnt => self%cont(i)
-         call cnt%check_range(fs_patch,fe_patch,fs,fe,skip)
-         if (skip) cycle
-
-         if (j /= self%ion(cnt%j)-1) then
-            j = self%ion(cnt%j)-1
-            i_lvl = i_lvl +1
-            cont_lvls(i_lvl) = cnt%j
-         endif
-     
-         do ff=fs,fe
-            f = ff - fs_patch + 1
-         do z=1, nz
-         do y=1, ny
-         do x=1, nx
-            ContEta(x,y,z,f,j) = ContEta(x,y,z,f,j) + cnt%alpha(ff) * cnt%ni_over_nj_lte(x,y,z)! * self%n(:,:,:,cnt%j)
-         end do
-         end do
-         end do
-         end do
+      do ff=fcs,fce
+         f = ff - fs_patch + 1
+         blzfac(:,:,:,ff) = exp(-hnu_k(f) * t_inv)
       end do
 
-      do j=1, size(cont_lvls)
-         jj = cont_lvls(j)
-         do ff=fcs,fce
-            f = ff - fs_patch + 1
-            do z=1,nz
-            do y=1,ny
-            do x=1,nx
-               blz = - hnu_k(f) * t_inv(x,y,z)
-               if (blz < -100) then
-                  ContEta(x,y,z,f,j) = 0
-               else
-                  if (blz < -1e-8) then
-                     ContEta(x,y,z,f,j) = ContEta(x,y,z,f,j) * exp(blz)
-                  endif
-                  ContEta(x,y,z,f,j) = ContEta(x,y,z,f,j) * twohnu3_c2(f) * self%n(x,y,z,jj)
-               endif
-            end do
-            end do
-            end do
-         end do
-      end do
+      call trace%end(itimer1)
+      call trace%begin('rate_cont', itimer=itimer2)
 
-      eta => Ieff ! use Ieff as scratch array for eta
-      eta = 0
-
-      do j=1, size(cont_lvls)
-        do f=1,nf
-           eta(:,:,:,f) = eta(:,:,:,f) + ContEta(:,:,:,f,j)
-        end do
-      end do
-
-      allocate(scratch_phi(nx,ny,nz, maxval(lines%iblue-lines%ired+1)))
-
-      do i=1, size(lines)
-         line => lines(i)
-         call line%check_range(fs_patch,fe_patch,fs,fe,skip)
-         if (skip) print *, 'line not active. Something is wrong!'
-   
-         nu => self%sp%nu(fs:fe)
-         nnu = size(nu)
-         phi => scratch_phi(:,:,:,1:nnu)
-     
-         call line%interpolate_phi(nu, phi)
-
-         do f=1,nnu
-           ff = fs - fs_patch + f
-           eta(:,:,:,ff) = eta(:,:,:,ff) + phi(:,:,:,f) * line%eta_fac
-         end do
-      end do
-
-      do f=1,nf
-         Ieff(:,:,:,f) = Inu(:,:,:,f) - Psi(:,:,:,f) * eta(:,:,:,f)
-      end do
-
-      if (any(Ieff < 0)) then
-         print *, 'Effective intensity below zero!'
-      endif
-
-      do i=1, size(self%cont)
-         cnt => self%cont(i)
+      do kr=1, size(self%cont)
+         cnt => self%cont(kr)
          call cnt%check_range(fs_patch,fe_patch,fs,fe,skip)
          if (skip) cycle
          k = cnt%ntrans
+         i = cnt%i
+         j = cnt%j
+
+         fakt = cnt%ni_over_nj_lte * self%n(:,:,:,j)
      
          do ff=fs,fe
             f = ff - fs_patch + 1
-            alpha = cnt%wnu(ff) * hnu_inv(f) * cnt%alpha(ff)
-            scr = alpha * twohnu3_c2(f)
+            wnu = cnt%wnu(ff) * hnu_inv(f)
+            ufac = twohnu3_c2(f) / wnu
+            alpha = cnt%alpha(ff) * wnu
             do z=1,nz
             do y=1,ny
             do x=1,nx
-               alpha_Ieff = alpha * Ieff(x,y,z,f)
-               blz = - hnu_k(f) * t_inv(x,y,z)
-               if (blz > -100) then
-                  gamma_ji(x,y,z,k) = gamma_ji(x,y,z,k) + (alpha_Ieff + scr) * exp(blz)
-               endif
-               gamma_ij(x,y,z,k) = gamma_ij(x,y,z,k) + alpha_Ieff
+               vij = alpha * self%n(x,y,z,i)
+               vji = alpha * fakt(x,y,z) * blzfac(x,y,z,ff)
+               chi = vij - vji
+               eta = vji * ufac * Psi(x,y,z,f)
+               Ieff = Inu(x,y,z,f) - eta
+               gamma_ji(x,y,z,k) = gamma_ji(x,y,z,k) + vji*(Ieff + twohnu3_c2(f)) - chi*eta
+               gamma_ij(x,y,z,k) = gamma_ij(x,y,z,k) + vij*Ieff
             end do
             end do
             end do
          end do
-         
-         gamma_ij(:,:,:,k) = gamma_ij(:,:,:,k) * self%n(:,:,:,cnt%i)
-         gamma_ji(:,:,:,k) = gamma_ji(:,:,:,k) * self%n(:,:,:,cnt%j) * cnt%ni_over_nj_lte
       end do
 
-      do i=1, size(lines)
-         line => lines(i)
+      call trace%end(itimer2)
+      call trace%begin('rate_line', itimer=itimer3)
+
+      do kr=1, size(lines)
+         line => lines(kr)
          call line%check_range(fs_patch,fe_patch,fs,fe,skip)
          if (skip) cycle
          k = line%ntrans
+         i = line%i
+         j = line%j
       
          nu => self%sp%nu(fs:fe)
-         phi => scratch_phi(:,:,:,1:size(nu))
-     
-         call line%interpolate_phi(nu, phi)
+         call line%interpolate_phi(nu, phi(:,:,:,1:size(nu)))
      
          do ff=fs,fe
             f = ff - fs_patch + 1
             fff = ff - fs + 1
             wnu = line%wnu(ff) * hnu_inv(f)
+            ufac = twohnu3_c2(f) / wnu
+            Bij = wnu * line%Bij
+            Bji = wnu * line%Bji
             do z=1,nz
             do y=1,ny
             do x=1,nx
-               scr = wnu * phi(x,y,z,fff)
-               gamma_ji(x,y,z,k) = gamma_ji(x,y,z,k) + scr * (Ieff(x,y,z,f) + twohnu3_c2(f))
-               gamma_ij(x,y,z,k) = gamma_ij(x,y,z,k) + scr * Ieff(x,y,z,f)
+               vij = Bij * phi(x,y,z,fff) * self%n(x,y,z,i)
+               vji = Bji * phi(x,y,z,fff) * self%n(x,y,z,j)
+               chi = vij - vji
+               eta = vji * ufac * Psi(x,y,z,f)
+               Ieff = Inu(x,y,z,f) - eta
+               gamma_ji(x,y,z,k) = gamma_ji(x,y,z,k) + vji * (Ieff + twohnu3_c2(f)) - chi*eta
+               gamma_ij(x,y,z,k) = gamma_ij(x,y,z,k) + vij * Ieff
             end do
             end do
             end do
          end do
-         
-         gamma_ij(:,:,:,k) = gamma_ij(:,:,:,k) * self%n(:,:,:,line%i) * line%Bij
-         gamma_ji(:,:,:,k) = gamma_ji(:,:,:,k) * self%n(:,:,:,line%j) * line%Bji
       end do
+
+      call trace%end(itimer3)
 
       ! gamma_ji / (wnu*nj) = Bji*Inu - Bji*nj*Psi*Aji + Aji - Bij*ni*Psi*Aji + Bji*nj*Psi*Aji
       ! gamma_ji / (wnu*nj) = Bji * (Inu - gj/gi*ni*Psi*Aji) + Aji
 
-
-      deallocate(Ieff)
-      deallocate(ContEta, scratch_phi)
+      deallocate(phi)
       deallocate(twohnu3_c2, hnu_k, hnu_inv)
-      deallocate(fakt, t_inv)
+      deallocate(t_inv, fakt)
 
-   END SUBROUTINE add_all_gammas3
+   END SUBROUTINE self_preconditioning
    !------------------------------------------------------------------------------------
   
      !====================================================================================
@@ -897,9 +678,15 @@ MODULE atom_mod
         
         ! Add radiative rates to W
         do kr=1, self%nrad
-            trans => self%get_trans(kr)
-            self%w(trans%j,trans%i) = gamma_ij(kr)
-            self%w(trans%i,trans%j) = gamma_ji(kr)
+            if (kr <= self%nline) then
+               i = self%line(kr)%i
+               j = self%line(kr)%j
+            else
+               i = self%cont(kr-self%nline)%i
+               j = self%cont(kr-self%nline)%j
+            endif
+            self%w(j,i) = gamma_ij(kr)
+            self%w(i,j) = gamma_ji(kr)
         enddo
   
         select case(trim(self%crout))

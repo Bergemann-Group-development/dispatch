@@ -6,7 +6,7 @@ MODULE composition_mod
     use ion_mod
     use level_mod
     use bbtrans_mod, only:bbtrans_type
-    use bftrans_mod, only:bftrans_type, pp
+    use bftrans_mod, only:bftrans_type
     use molecule_mod, only:molec_type
     use osmet_mod
     use omp_lib
@@ -37,6 +37,7 @@ MODULE composition_mod
         procedure :: trans_by_id
         procedure :: ion_by_id
         procedure :: absorption
+        procedure :: add_hrest
         procedure :: electron_scattering
         procedure :: rayleigh_scattering
         procedure :: scattering
@@ -270,6 +271,11 @@ contains
         Hm%j = -2
         allocate(Hm%levels(1))
         Hm%levels(1)%xion = 0.754
+        ! --- Different Hm ionisation in Oslo legacy code ---!
+        !Hm%levels(1)%xion = 0.747
+        ! --------------------------------------------------!
+        RYD = HI%levels(1)%xion ! overwriting RYD constant
+        ! --------------------------------------------------!
 
         call self%init_molecules()
 
@@ -315,10 +321,11 @@ contains
                     trans%ion => elements(1)%ions(1)
                     ! hydrogen energy level
                     read (text(8:10),*) trans%k
-                    trans%level%xion = Ryd * (1. - 1./trans%k**2)
+                    trans%level%xion = RYD * (1. - 1./trans%k**2)
                     trans%level%g2 = 2 * trans%k**2
                 case('H- FF', 'H FF', '(H+H)', 'H2+')
                     trans%ion => HI
+                    trans%level = HI%levels(1)
                 case('H2-')
                     call self%molecule_by_id('H2', molecule)
                     trans%ion => molecule
@@ -641,11 +648,12 @@ contains
     SUBROUTINE load_state_variables(self, temp, ne, rho)
         class(composition_type), target :: self
         class(element_type), pointer :: element
+        class(molec_type), pointer :: molecule
         class(ion_type), pointer :: ion
         class(element_type), pointer :: H
         class(ion_type), pointer :: Hm, HI
         real(4), dimension(:,:,:), intent(in) :: temp, ne, rho
-        real(dp), dimension(:,:,:), allocatable :: xnen, ejon, xnecno, nh0, xerg
+        real(dp), dimension(:,:,:), allocatable :: xnen, ejon, xnecno, nh0, xerg, ehm
         integer :: i,j, nx, ny, nz, lunit
         !---------------------------------------------------------------------------
         call trace%begin ('composition_type%load_state_variables')
@@ -670,7 +678,7 @@ contains
         allocate(self%xfakh, self%ne,   self%rho,  self%pe, self%pg, mold=self%temp)
         allocate(self%toth,  self%saha, self%teta, self%dxi, self%eh, mold=self%temp)
         allocate(self%EK_over_temp, self%ro, self%p6, self%fe, mold=self%temp)
-        allocate(xnen, xnecno, ejon, nh0, xerg, mold=self%temp)
+        allocate(xnen, xnecno, ejon, nh0, xerg, ehm, mold=self%temp)
 
         self%temp = temp
         self%ne   = ne
@@ -714,13 +722,13 @@ contains
                 endif
 
                 if (j > 1) then
-                    xerg = ion%f * (ion%below%levels(1)%xion - self%dxi*(j-1))
+                    xerg = ion%below%levels(1)%xion - self%dxi*(j-1)
 
                     if (trim(element%id) == 'H') then
-                        self%eh = xerg
+                        self%eh = ion%below%f * xerg
                     else
                         ! energy of ionization (ejon). hydrogen is not included.
-                        ejon = ejon + xerg
+                        ejon = ejon + ion%f * xerg
                     endif
                 endif
             end do
@@ -732,15 +740,17 @@ contains
         call Hm%allocate(nx,ny,nz)
 
         Hm%saha = Hm%saha_eq(self%EK_over_temp, self%ne, self%saha, self%dxi, partition_ratio=2.d0) ! ratio HI/H-
+        ehm = (Hm%levels(1)%xion + HI%levels(1)%xion) * HI%f / Hm%saha
 
         self%pg = self%pe * (1 + self%suma/self%fe)
 
-        call self%molecular_equilibrium(self%temp, self%teta, self%pe, self%dxi, xnecno, self%eh, self%pg, self%fe)
-
         do i=1, self%nmolec
-            !self%molecules(i)%n = self%molecules(i)%f * self%ne / self%fe
-            self%molecules(i)%rho_per_h = self%molecules(i)%f / self%grph
+            molecule => self%molecules(i)
+            call molecule%allocate(nx,ny,nz)
+            molecule%dis = molecule%pk(self%teta)
         end do
+
+        call self%molecular_equilibrium(self%temp, self%teta, self%pe, self%dxi, xnecno, self%eh, self%pg, self%fe)
 
         do i=1, self%nel
             element => self%elements(i)
@@ -764,10 +774,10 @@ contains
             self%xfakh = HI%rho_per_h
         end where
 
-        self%E = 1.5*self%pg/self%rho + (self%eh + ejon)*EE/self%grph
-
         ! legacy rho, should probably be replaced by actual rho
         self%ro = self%ne / self%fe * (BK/uop_BK) * self%grph
+
+        self%E = 1.5*self%pg/self%ro + (ejon - self%eh)*EE/self%grph
 
         call self%compute_p6(self%p6)
         self%loaded = .true.
@@ -785,7 +795,7 @@ contains
         call self%molecule_by_id('H2p', H2p)
         call self%ion_by_id('H I', HI)
         call self%ion_by_id('HE I', HeI)
- 
+        
         p6 = LOG10((HI%f + 0.42*HeI%f + 0.85*(H2%f + H2p%f)) * self%toth * BK * self%temp)
     END SUBROUTINE compute_p6
 
@@ -796,86 +806,68 @@ contains
         class(bftrans_type), pointer :: trans
         real(dp), dimension(:), intent(in) :: nu
         real(4), dimension(:,:,:,:), intent(inout) :: chi, abslte, sumsca
-        real(dp), dimension(:,:,:), allocatable :: fakt, hrest, umc, h1
-        integer, dimension(:,:,:), allocatable :: nniv
+        real(dp), dimension(:,:,:), allocatable :: stim
         real(dp), dimension(:), allocatable :: lam
         logical, optional :: include_osmet
         real(dp) :: xray2, epsln
         real(4) :: linop
-        integer :: i, j, k, f, nf, nx, ny, nz
+        integer :: i, j, k, f, nf
         !---------------------------------------------------------------------------
         call trace%begin ('composition_type%absorption')
+        allocate(lam, mold=nu)
 
         nf = size(nu, 1)
-        nx = size(self%temp, 1)
-        ny = size(self%temp, 2)
-        nz = size(self%temp, 3)
-
-        allocate(lam(nf))
-        allocate(hrest(nx,ny,nz))
-        allocate(nniv (nx,ny,nz))
-        allocate(fakt, umc, h1, mold=hrest)
-
         lam = cc / nu * 1e8
-
         abslte = 0
 
         do i=1, size(self%trans)
             trans => self%trans(i)
             select case (trim(trans%key))
-            case ('H BF')
+            case ('H BF', 'H FF')
                 call trans%add_absorption(abslte, lam, self%temp, self%EK_over_temp, self%teta, &
-                                          self%pe, self%ro, self%dxi, self%xfakh, fakt)
-            case ('H FF')
-                call trans%add_absorption(abslte, lam, self%temp, self%EK_over_temp, self%teta, &
-                                          self%pe, self%ro, self%dxi, self%xfakh, fakt)
-
-                hrest = 0
-                h1 = sqrt(13.595/self%dxi)
-                nniv = min(int(h1), 15)
-                umc = 2.3026 * self%dxi * self%teta
-                
-                where (h1 > 15.5)
-                    hrest = fakt * (exp(31.30364*self%teta/((float(nniv)+0.5)**2)-umc)-1.)
-                end where
-
-                do f=1, nf
-                    abslte(:,:,:,f) = abslte(:,:,:,f) + hrest
-                end do
+                                          self%pe, self%ro, self%dxi, self%xfakh)
             end select
         end do
 
+        call self%add_hrest(abslte)
+
         do f=1, nf
-            ! all continua above are multiplied by lam**3
+            ! Hrest, H BF and H FF are multiplied by lam**3
             !------------------------------------------------------
             abslte(:,:,:,f) = abslte(:,:,:,f) * lam(f)**3
         end do
 
+        !print *, 'after lam3', abslte(pp(1),pp(2),pp(3),pp(4)), lam(pp(4))**3
+
         do i=1, size(self%trans)
             trans => self%trans(i)
-
             select case (trim(trans%key))
             case ('H FF', 'H BF', 'H- FF')
                 ! H BF and H FF have already been added
                 ! H- FF still to be added after multiplication of stim
             case default
                 call trans%add_absorption(abslte, lam, self%temp, self%EK_over_temp, self%teta, &
-                                          self%pe, self%ro, self%dxi, self%xfakh, fakt)
+                                          self%pe, self%ro, self%dxi, self%xfakh)
             end select
         end do
 
+        allocate(stim, mold=self%temp)
         do f=1, nf
-            !stim(:,:,:, f) = 1 - exp(- h_e * nu(f) * self%EK_over_temp)
-            abslte(:,:,:, f) = abslte(:,:,:, f) * (1 - exp(-28556.*self%teta/(CC/nu(f)*1e8)))
-        end do
+            ! all continua above are multiplied by stim
+            !--------------------------------------------------------------------------------
+            !stim = 1. - exp(- h_e * nu(f) * self%EK_over_temp)
+            stim = 1. - exp(-28556.*self%teta/lam(f))
+            abslte(:,:,:, f) = abslte(:,:,:, f) * stim
 
-        ! all continua above are multiplied by stim
-        !--------------------------------------------------------------------------------
+            !if (f==pp(4)) then
+            !    print *, 'stim', stim(pp(1),pp(2),pp(3)), lam(f)
+            !endif
+        end do
 
         ! H- FF absorption is added without stim factor
         call self%trans_by_id('H- FF', trans)
         call trans%add_absorption(abslte, lam, self%temp, self%EK_over_temp, self%teta, &
-                                  self%pe, self%ro, self%dxi, self%xfakh, fakt)
+                                  self%pe, self%ro, self%dxi, self%xfakh)
 
         sumsca = 0
         call self%electron_scattering(sumsca)
@@ -887,11 +879,15 @@ contains
             endif
         endif
 
-        ! BACKGROUND OPACITY
-        
         do f=1, nf
+            ! BACKGROUND OPACITY
             chi(:,:,:,f) = real((abslte(:,:,:,f) + sumsca(:,:,:,f)) * self%rho)
         end do
+
+        !print *, 'chi/rho', abslte(pp(1),pp(2),pp(3),pp(4)) + sumsca(pp(1),pp(2),pp(3),pp(4))
+        !print *, 'abslte', abslte(pp(1),pp(2),pp(3),pp(4))
+        !print *, 'sumsca', sumsca(pp(1),pp(2),pp(3),pp(4))
+
         call trace%end ()
     END SUBROUTINE absorption
 
@@ -906,6 +902,7 @@ contains
         nf = size(nu, 1)
 
         if(size(Jnu, 4) /= nf) then
+            print *, nf, size(Jnu, 4)
             print *, 'nu and Jnu do not have the same number of frequencies. Stopping...'
             stop
         endif
@@ -951,7 +948,7 @@ contains
         nh = HI%f * self%ne / self%fe * (BK/uop_BK)
 
         do k=1, nk
-            level%xion = Ryd * (1. - 1./k**2)
+            level%xion = RYD * (1. - 1./k**2)
             blzfac = level%boltzmann(self%EK_over_temp, natural_log=.true.)
             nhyd(:,:,:,k) = k**2 * blzfac * nh
         end do
@@ -1016,11 +1013,6 @@ contains
         endif
 
         allocate(Hm%pk, H%fil, O%fil, C%fil, N%fil, mold=temp)
-
-        do i=1, self%nmolec
-            call molecules(i)%allocate(nx,ny,nz)
-            molecules(i)%dis = molecules(i)%pk(teta)
-        end do
 
         tmolim = temp < self%tmolim
 
@@ -1163,6 +1155,11 @@ contains
         end do
 
         where (tmolim) pg = pg * pefe
+
+        do i=1, self%nmolec
+            !self%molecules(i)%n = self%molecules(i)%f * self%ne / self%fe
+            self%molecules(i)%rho_per_h = self%molecules(i)%f / self%grph
+        end do
 
         call trace%end ()
     END SUBROUTINE molecular_equilibrium
@@ -1325,11 +1322,13 @@ contains
 
         if (associated(element)) then
             abund = log10(element%abund) + 12.0
-            print '(A, A, A, F5.2, A, F5.2)', 'Changing abundance of ', trim(id), ' from ', abund, ' to ', abnd
+            if (abund /= abnd) then
+                print '(A, A, A, F5.2, A, F5.2)', 'Changing abundance of ', trim(id), ' from ', abund, ' to ', abnd
 
-            element%abund =  10**(abnd - 12.0)
-            element%awgt  =  awgt / uu
-            call self%compute_grams_per_hydrogen(self%suma, self%xmy, self%grph)
+                element%abund =  10**(abnd - 12.0)
+                element%awgt  =  awgt / uu
+                call self%compute_grams_per_hydrogen(self%suma, self%xmy, self%grph)
+            endif
         else
             print *, 'overwrite_abundance: Element of id= ', id, ' is not part of the opacity package.'
         endif
@@ -1430,6 +1429,37 @@ contains
     END SUBROUTINE load_state_variables_without_nel
 
     !=========================================================================
+    SUBROUTINE add_hrest(self, abslte)
+        class(composition_type), target :: self
+        class(ion_type), pointer :: HI
+        real(4), dimension(:,:,:,:), intent(inout) :: abslte
+        real(dp), dimension(:,:,:), allocatable :: hrest, umc, h1, nniv, fakt
+        integer :: f
+        !---------------------------------------------------------------------
+        allocate(hrest, fakt, umc, h1, nniv, mold=self%temp)
+        call self%ion_by_id('H I', HI)
+
+        fakt = HI%levels(1)%boltzmann(self%EK_over_temp, self%dxi, natural_log=.true.)
+        fakt = 2.0898E-26 / (2*RYD*self%EK_over_temp) * fakt * HI%part * HI%rho_per_h
+        h1 = sqrt(RYD/self%dxi)
+        nniv = (min(int(h1), 15) + 0.5)**2
+        
+        hrest = 0
+        where (h1 > 15.5)
+            !umc = 2.3026 * self%dxi * self%teta
+            !hrest = fakt * (exp(31.30364*self%teta/nniv-umc)-1.)
+            hrest = exp(self%EK_over_temp*(HI%levels(1)%xion/nniv - self%dxi))
+            hrest = fakt * (hrest - 1)
+        end where
+
+        do f=1, size(abslte, 4)
+            abslte(:,:,:,f) = abslte(:,:,:,f) + hrest
+        end do
+
+        !print *, 'hrest', hrest(pp(1),pp(2),pp(3)), abslte(pp(1),pp(2),pp(3),pp(4))
+    END SUBROUTINE add_hrest
+
+    !=========================================================================
     SUBROUTINE electron_scattering(self, sumsca)
         class(composition_type), target :: self
         real(4), dimension(:,:,:,:), intent(inout) :: sumsca
@@ -1443,7 +1473,7 @@ contains
             sumsca(:,:,:,f) = sumsca(:,:,:,f) + els
         end do
 
-        !print *, 'els', els(p(1),p(2),p(3))
+        !print *, 'els', els(pp(1),pp(2),pp(3))
     END SUBROUTINE electron_scattering
 
     !=========================================================================
@@ -1463,8 +1493,6 @@ contains
         call self%ion_by_id('H I', HI)
         call self%molecule_by_id('H2', H2)
 
-        !print *, 'h2ray', H2%rho_per_h(p(1),p(2),p(3))
-
         do f=1, size(lam)
             if (lam(f) >= 911) then
                 ll = max(1026., lam(f))
@@ -1476,14 +1504,12 @@ contains
                 ! add sumsca to sumsca from lines
                 sumsca(:,:,:,f) = sumsca(:,:,:,f) + (rayh + rayh2)*xray2*xray2
 
-                !if (f==p(4)) then
-                !    print *, 'rayh', rayh(p(1),p(2),p(3))*xray2**2
-                !    print *, 'rayh2', rayh2(p(1),p(2),p(3))*xray2**2
+                !if (f==pp(4)) then
+                !    print *, 'rayh', rayh(pp(1),pp(2),pp(3))*xray2**2, HI%rho_per_h(pp(1),pp(2),pp(3)), xray2
+                !    print *, 'rayh2', rayh2(pp(1),pp(2),pp(3))*xray2**2
                 !endif
             endif
         end do
-
-        !print *, 'sumsca', sumsca(p(1),p(2),p(3),p(4))
     END SUBROUTINE rayleigh_scattering
 
     !=========================================================================

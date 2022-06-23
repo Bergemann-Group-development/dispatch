@@ -322,7 +322,7 @@ contains
     integer :: i, j
     !----------------------------------------------------------------------------------
     j = nint(sqrt(self%upper_g / 2))
-    i = nint(sqrt(1 / (1./j**2 - self%nu0 * H_E / Ryd)))
+    i = nint(sqrt(1 / (1./j**2 - self%nu0 * H_E / RYD)))
   
     call self%LinearStarkH(adamp,ne,i,j)
     call self%IonicH(adamp,temp,nh6,ne,i,j)

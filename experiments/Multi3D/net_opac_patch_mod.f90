@@ -92,7 +92,7 @@ module net_opac_patch_mod
     chi => self%authority_mem(:,:,:,:,it,self%i_chi)
     eta => self%authority_mem(:,:,:,:,it,self%i_eta)
     Snu => self%authority_mem(:,:,:,:,it,self%i_Snu)
-    self%mem = 0
+    mem = 0
   
     nbor => self%link%nbor
     do while (associated(nbor))

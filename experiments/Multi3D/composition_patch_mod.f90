@@ -3,7 +3,7 @@ module composition_patch_mod
   USE mpi_mod
   USE omp_mod
   USE gpatch_mod
-  USE m3d_patch_mod,   only: m3d_patch_t, voigt_interp
+  USE m3d_patch_mod,   only: m3d_patch_t
   USE composition_mod, only: composition_type
   USE opac_patch_mod,  only: opacity_t
   USE rad_patch_mod,   only: radiation_t
@@ -112,15 +112,9 @@ SUBROUTINE composition_pre_init (self)
         call opac%composition%reassign_pointer()
         call opac%pre_init_and_link(self, i_mu=m, i_nu=n, sp=atom_patch%sp)
       else
-        if (voigt_interp) then
-          allocate(net_opac)
-          net_opac%kind = 'net_opac'
-          call net_opac%pre_init_and_link(self, i_mu=m, i_nu=n, sp=atom_patch%sp)
-        else
-          allocate(opac)
-          opac%kind = 'net_opac'
-          call opac%pre_init_and_link(self, i_mu=m, i_nu=n, sp=atom_patch%sp)
-        endif
+        allocate(net_opac)
+        net_opac%kind = 'net_opac'
+        call net_opac%pre_init_and_link(self, i_mu=m, i_nu=n, sp=atom_patch%sp)
       endif
 
       allocate(rad)
@@ -140,22 +134,16 @@ SUBROUTINE composition_pre_init (self)
         call opac%composition%reassign_pointer()
         call opac%pre_init_and_link(self, i_mu=0, i_nu=n2, sp=output_sp)
       else
-        if (voigt_interp) then
-          if (self%composition%ll_initialised) then
-            allocate(back_line)
-            back_line%kind = 'back_line'
-            back_line%composition => self%composition
-            call back_line%pre_init_and_link(self, i_mu=m2, i_nu=n2, sp=output_sp)
-          endif
-
-          allocate(net_opac)
-          net_opac%kind = 'net_opac'
-          call net_opac%pre_init_and_link(self, i_mu=m2, i_nu=n2, sp=output_sp)
-        else
-          allocate(opac)
-          opac%kind = 'net_opac'
-          call opac%pre_init_and_link(self, i_mu=m2, i_nu=n2, sp=output_sp)
+        if (self%composition%ll_initialised) then
+          allocate(back_line)
+          back_line%kind = 'back_line'
+          back_line%composition => self%composition
+          call back_line%pre_init_and_link(self, i_mu=m2, i_nu=n2, sp=output_sp)
         endif
+
+        allocate(net_opac)
+        net_opac%kind = 'net_opac'
+        call net_opac%pre_init_and_link(self, i_mu=m2, i_nu=n2, sp=output_sp)
 
         allocate(rad)
         rad%kind = 'angle_rad'
@@ -224,12 +212,12 @@ SUBROUTINE composition_patch_post_update (self)
   logical :: skip
   !-----------------------------------------------------------------------------
   call trace%begin ('composition_patch_t%composition_patch_post_update')
-  if (self%verbose > 0) then
+  if (self%verbose > 1) then
     p = self%pcheck
     if (all(p > 0)) then
       write(stdout,'(A, 8(ES15.7))') self%m3d_patch_info(), &
       self%mem(p(1),p(2),p(3),:self%i_temp,1,:), self%composition%grph
-    else
+    elseif (self%verbose > 2) then
       write(stdout,'(A,A)') self%m3d_patch_info()
     endif
   end if

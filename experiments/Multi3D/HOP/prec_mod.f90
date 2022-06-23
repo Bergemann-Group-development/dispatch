@@ -8,7 +8,6 @@ module prec_mod
     integer, parameter :: qp = REAL128
      
     ! physics
-    real(dp), parameter :: Ryd = 13.598408    ! Rydberg constant [eV]
     real(dp), parameter :: EK  = EE/BK
     real(dp), parameter :: XMH = 1.67339e-24
     !real(dp), parameter :: op_saha_const = (2*PI*EM*BK/HH**2)**1.5
@@ -18,6 +17,11 @@ module prec_mod
     real(dp), parameter :: prec_err = temp_to_theta / (log10(exp(1.d0))*EK)
     real(dp), parameter :: uop_BK = 1.38053e-16
     !real(dp), parameter :: uop_BK = BK
+
+    ! This is public so it can be overwritten by input from absdat
+    real(dp), public :: RYD = 13.598408 ! Rydberg constant [eV]
+
+    integer, public :: pp(4)=[10,2,1,1]
     
 contains
     

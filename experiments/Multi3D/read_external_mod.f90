@@ -189,7 +189,7 @@ SUBROUTINE init(self, task_list, name)
     call patch%set (bits%static)
 
     if (verbose > 0) then 
-      if (k==0) write(stdout,'(I2, A28)') dims(3), ' subdomains in z-direction:'
+      if (k==0) write(stdout,'(I2, A28)') self%dims(3), ' subdomains in z-direction:'
       write(stdout,'(I4, I6,A3,I4)') k+1, patch%zs, ' - ', patch%ze
     endif
 

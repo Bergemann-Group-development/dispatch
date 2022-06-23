@@ -23,7 +23,7 @@ module rate_patch_mod
     USE bits_mod
     !USE units_mod
     !USE scratch_mod
-    USE m3d_patch_mod, only:voigt_interp
+    USE m3d_patch_mod, only: conditioning
     USE ray_patch_mod
     USE opac_patch_mod
     USE rad_patch_mod
@@ -42,8 +42,6 @@ module rate_patch_mod
       contains
         procedure :: pre_init => rate_patch_pre_init
         procedure :: update => rate_patch_update
-        procedure :: rate_patch_update1
-        procedure :: rate_patch_update2
         procedure :: nbor_relations => rate_patch_nbor_relations
     end type rate_patch_t
   
@@ -66,113 +64,20 @@ module rate_patch_mod
   !===============================================================================
   SUBROUTINE rate_patch_update (self)
     class(rate_patch_t) :: self
-    !-----------------------------------------------------------------------------
-    if (voigt_interp) then
-      call self%rate_patch_update2()
-    else
-      call self%rate_patch_update1()
-    endif
-  END SUBROUTINE rate_patch_update
-  
-  !===============================================================================
-  SUBROUTINE rate_patch_update1 (self)
-    use mconst, only:cc
-    class(rate_patch_t) :: self
-    real(4), dimension(:,:,:,:), pointer :: gamma_ij, gamma_ji
-    real(4), dimension(:,:,:), pointer :: Inu, chi_l, chi_c, eta_l, eta_c, Psi
-    real(4), dimension(:,:,:), pointer, contiguous :: temp, zero
-    integer :: f, f2, ff
-    integer, save:: itimer=0
-    !-----------------------------------------------------------------------------
-    call self%pre_update()
-    if (self%finished) then
-      return
-    endif
-    
-    call trace%begin('rate_patch_t%rate_patch_update', itimer=itimer)
-
-    temp => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_temp, self%it,1)
-    gamma_ij => self%mem(:,:,:,:, self%it, self%i_Gij)
-    gamma_ji => self%mem(:,:,:,:, self%it, self%i_Gji)
-
-    ! Zero the rates etc
-    gamma_ij = 0.0d0
-    gamma_ji = 0.0d0
-    
-    if (self%iter == 0) then
-      call self%comp_vproj(self%vproj)
-      self%vproj = (1 + self%vproj) / self%atom%doppler_factor
-    endif
-
-    call os%allocate(zero, shape(temp))
-    zero = 0.0
-
-    if (.not. associated(self%cont_opac)) then
-      chi_c => zero
-      eta_c => zero
-    endif
-
-    if (.not. associated(self%line_opac)) then
-      chi_l => zero
-      eta_l => zero
-    endif
-
-    do f=1, self%rad%nv
-      Inu => self%rad%authority_mem(:,:,:,f,self%rad%it,self%rad%i_inu)
-      Psi => self%rad%Psi(:,:,:,f)
-
-      ff = self%fs + f - 1
-
-      if (associated(self%cont_opac)) then
-        if (ff >= self%cont_opac%fs .and. ff <= self%cont_opac%fe) then
-          f2 = ff - self%cont_opac%fs + 1
-          chi_c => self%cont_opac%mem(:,:,:,f2,self%it,self%cont_opac%i_chi)
-          eta_c => self%cont_opac%mem(:,:,:,f2,self%it,self%cont_opac%i_eta)
-        else
-          chi_c => zero
-          eta_c => zero
-        endif
-      endif
-  
-      if (associated(self%line_opac)) then
-        if (ff >= self%line_opac%fs .and. ff <= self%line_opac%fe) then
-          f2 = ff - self%line_opac%fs + 1
-          chi_l => self%line_opac%mem(:,:,:,f2,self%it,self%line_opac%i_chi)
-          eta_l => self%line_opac%mem(:,:,:,f2,self%it,self%line_opac%i_eta)
-        else
-          chi_l => zero
-          eta_l => zero
-        endif
-      endif
-
-      call self%atom%add_all_gammas(ff, temp, self%vproj, Inu, Psi, &
-           chi_l, chi_c, eta_l, eta_c, gamma_ij, gamma_ji)
-    end do
-
-    call os%deallocate(zero)
-    call trace%end(itimer)
-    if (.not. self%finished) call self%post_update()
-  END SUBROUTINE rate_patch_update1
-
-  !===============================================================================
-  SUBROUTINE rate_patch_update2 (self)
-    class(rate_patch_t) :: self
-    real(4), dimension(:,:,:,:), pointer :: gamma_ij, gamma_ji
-    real(4), dimension(:,:,:,:), pointer :: Inu, Psi
+    real(4), dimension(:,:,:,:), pointer :: gamma_ij, gamma_ji, Inu, Psi
     real(4), dimension(:,:,:), pointer, contiguous :: temp
-    integer :: f, f2, ff
     integer, save:: itimer=0
     !-----------------------------------------------------------------------------
     call self%pre_update()
     if (self%finished) then
       return
     endif
-    
     call trace%begin('rate_patch_t%rate_patch_update', itimer=itimer)
 
     Psi => self%rad%Psi
     Inu => self%rad%authority_mem(:,:,:,:,self%rad%it,self%rad%i_inu)
     temp => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_temp, self%it,1)
+
     gamma_ij => self%mem(:,:,:,:, self%it, self%i_Gij)
     gamma_ji => self%mem(:,:,:,:, self%it, self%i_Gji)
 
@@ -180,12 +85,18 @@ module rate_patch_mod
     gamma_ij = 0.0d0
     gamma_ji = 0.0d0
 
-    call self%atom%add_all_gammas2(self%fs, temp, Inu, Psi, gamma_ij, gamma_ji, self%lines%line, self%lines%idx_map)
-    !call self%atom%add_all_gammas3(self%fs, temp, Inu, Psi, gamma_ij, gamma_ji, self%lines%line)
+    if (conditioning == 'full') then
+      call self%atom%full_preconditioning(self%fs, temp, Inu, Psi, gamma_ij, gamma_ji, self%lines%line, self%lines%idx_map)
+    elseif (conditioning == 'self') then
+      call self%atom%self_preconditioning(self%fs, temp, Inu, Psi, gamma_ij, gamma_ji, self%lines%line)
+    else
+      print *, conditioning, ' is an unknown type of rate equation conditioning. Stopping...'
+      stop
+    endif
 
     call trace%end(itimer)
     if (.not. self%finished) call self%post_update()
-  END SUBROUTINE rate_patch_update2
+  END SUBROUTINE rate_patch_update
   
   !===============================================================================
   SUBROUTINE rate_patch_nbor_relations(self, another, needed, needs_me, download)

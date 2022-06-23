@@ -46,8 +46,6 @@ MODULE bftrans_mod
     real(dp), dimension(:,:), pointer, contiguous :: pvt_xkap => null()
     !$omp threadprivate(active, fs, fe, di, iw, quad, lagrange, pvt_xkap)
 
-    integer, public :: pp(4)=[7,4,1,1]
-
 contains
 
 !===============================================================================
@@ -419,35 +417,36 @@ SUBROUTINE absorption_factor(self, EK_over_temp, teta, pe, rho, dxi, xfakh, fakt
     else
         select case(trim(self%key))
         case('H- BF')
-            fakt = 1.e-17 * ion%rho_per_h 
+            fakt = 1.e-17 * ion%rho_per_h
         case('H- FF')
-            fakt = 2.E-26 * ion%part * pe * ion%rho_per_h
+            fakt = 2.E-26 * pe * ion%part * ion%rho_per_h
         case('H BF')
-            if (self%k <= 5) then
-                call self%boltzmann_weight(EK_over_temp, fakt)
-                fakt = 1.045E-26 * ion%part * fakt * ion%rho_per_h / self%k**5
-            else
-                fakt = 2.0898E-26 * ion%part * xfakh
-                fakt = fakt * exp(-31.30364*teta*(1. - 1./self%k**2)) / self%k**3
-            endif
+            !call self%boltzmann_weight(EK_over_temp, fakt) 
+            fakt = 2 * self%k**2 * exp(-31.30364*teta*(1. - 1./self%k**2))
+            fakt = 2.0898E-26 / (2*self%k**5) * fakt * ion%part * ion%rho_per_h
+
             allocate(nniv(size(pe,1), size(pe,2), size(pe,3)))
             allocate(h1, mold=dxi)
-            h1 = sqrt(13.595/dxi)
+            h1 = sqrt(RYD/dxi)
             nniv = int(h1)
             where (nniv < self%k)
                 fakt = 0
             elsewhere (nniv == self%k)
-                fakt = fakt * min(h1 - float(nniv), 1.0_8)
+                fakt = fakt * min(h1 - float(nniv), 1.0d0)
             end where
 
         case('H FF')
-            fakt = 2.0898E-26 * ion%part * xfakh
-            fakt = fakt * exp(-31.30364*teta + 2.3026 * dxi * teta) / (2*31.30364*teta)
+            !fakt = 2.0898E-26 / 2 * ion%part * xfakh * exp(-31.30364*teta + 2.3026*dxi*teta) / (31.30364*teta)
+            fakt = self%level%boltzmann(EK_over_temp, dxi, natural_log=.true.)
+            fakt = 2.0898E-26 / (2*RYD*EK_over_temp) * fakt * ion%part * ion%rho_per_h
 
         case('(H+H)')
             fakt = (1e-25 * ion%rho_per_h)**2 * rho
         case('H2+')
-            fakt = (1e-20 * ion%rho_per_h)**2 * rho
+            select type(ion)
+            class is (ion_type)
+                fakt = (1e-20 * ion%rho_per_h)**2 * rho * ion%saha
+            end select
         case('H2-', 'HE-')
             fakt = pe * ion%rho_per_h
         end select
@@ -456,13 +455,14 @@ SUBROUTINE absorption_factor(self, EK_over_temp, teta, pe, rho, dxi, xfakh, fakt
 END SUBROUTINE absorption_factor
 
 !===============================================================================
-SUBROUTINE add_absorption(self, abslte, lam, temp, EK_over_temp, teta, pe, rho, dxi, xfakh, fakt)
+SUBROUTINE add_absorption(self, abslte, lam, temp, EK_over_temp, teta, pe, rho, dxi, xfakh)
     use timer_mod
     class(bftrans_type) :: self
     real(4), dimension(:,:,:,:), intent(inout) :: abslte
     real(dp), dimension(:,:,:), intent(in) :: temp, EK_over_temp, teta, pe, rho, dxi, xfakh
     real(dp), dimension(:), intent(in) :: lam
-    real(dp), dimension(:,:,:), intent(out) :: fakt
+    real(dp), dimension(:,:,:), allocatable :: fakt
+    real(dp) :: prev
     integer :: i,j,k,nf
     !---------------------------------------------------------------------------
 
@@ -479,15 +479,17 @@ SUBROUTINE add_absorption(self, abslte, lam, temp, EK_over_temp, teta, pe, rho, 
     call os%allocate(iw, [nf])
     call os%allocate(lagrange, [3,nf], zero=.true.)
     call os%allocate(pvt_xkap, shape(self%xkap))
+    allocate(fakt, mold=temp)
 
     call self%load_lam_interp_weights(lam)
 
     if (active) then
+        !prev = abslte(pp(1), pp(2), pp(3), pp(4))
         call self%absorption_factor(EK_over_temp, teta, pe, rho, dxi, xfakh, fakt)
         call self%interp_xkap(abslte, temp, teta, fakt)
+        !print '(A14, A, 8(ES14.6))', self%label, self%ion%id, fakt(pp(1),pp(2),pp(3)), abslte(pp(1),pp(2),pp(3),pp(4)) - prev, abslte(pp(1),pp(2),pp(3),pp(4))
     endif
 
-    !print '(A20, E18.10)', self%label, abslte(p(1), p(2), p(3), p(4)) * rho(p(1),p(2),p(3))
 
     call os%deallocate(quad)
     call os%deallocate(iw)

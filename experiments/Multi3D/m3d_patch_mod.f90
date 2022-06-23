@@ -96,8 +96,9 @@ module m3d_patch_mod
     integer, public :: maxiter, ilambd
     real(8), public, save, dimension(:), allocatable:: wmu, long_wmu
     real(8), public, save, dimension(:,:), allocatable:: vec, long_vec
-    logical, public, save :: converged=.false., dynamic_memory=.true., voigt_interp=.true.
+    logical, public, save :: converged=.false., dynamic_memory=.true.
     logical, public, save :: check_NaN=.false.
+    character(4), public, save :: conditioning='full'
       
   contains
   
@@ -114,8 +115,8 @@ module m3d_patch_mod
     character(len=32), save :: long_scheme='disk_center'
     real(8), save :: teff=0
     namelist /m3d_params/ on, verbose, fcheck, linecheck, pcheck, quad_scheme, &
-    long_scheme, n_nu, maxiter, ilambd, dynamic_memory, voigt_interp, lvlcheck, &
-    teff, ntheta, nphi, check_NaN
+    long_scheme, n_nu, maxiter, ilambd, dynamic_memory, lvlcheck, &
+    teff, ntheta, nphi, check_NaN, conditioning
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%pre_init', itimer=itimer)
     !-----------------------------------------------------------------------------
@@ -674,6 +675,11 @@ module m3d_patch_mod
     if (any(self%ng(:2) > 0)) then
       li = self%mesh%li; ui = self%mesh%ui
       lb = self%mesh%lb; ub = self%mesh%ub
+
+      if (.not. associated(self%mem)) then
+        print *, self%m3d_patch_info(), 'memory array not associated in m3d_periodic_grid'
+        stop
+      endif
   
       mem => self%mem(:,:,:,:,self%it,:)
   
