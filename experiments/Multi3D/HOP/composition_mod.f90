@@ -1317,13 +1317,17 @@ contains
         character(len=*), intent(in) :: id
         real(dp), intent(in) :: abnd, awgt
         real(dp) :: abund
+        logical, save :: first_time=.true.
         !---------------------------------------------------------------------
         call self%element_by_id(trim(id), element)
 
         if (associated(element)) then
             abund = log10(element%abund) + 12.0
             if (abund /= abnd) then
-                print '(A, A, A, F5.2, A, F5.2)', 'Changing abundance of ', trim(id), ' from ', abund, ' to ', abnd
+                if (first_time) then
+                    first_time = .false.
+                    print '(A, A, A, F5.2, A, F5.2)', 'Changing abundance of ', trim(id), ' from ', abund, ' to ', abnd
+                endif
 
                 element%abund =  10**(abnd - 12.0)
                 element%awgt  =  awgt / uu

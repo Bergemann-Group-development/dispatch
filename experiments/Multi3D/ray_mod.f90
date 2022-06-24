@@ -106,6 +106,7 @@ SUBROUTINE set_carlson_quadratures (quad_scheme, vec, wts, up_and_down)
       vec(:,1) = [0.0, 0.0, 1.0]
       wts = 1.0
     endif
+    wts = wts * 2 * pi
     return
 
   case('set_a2')

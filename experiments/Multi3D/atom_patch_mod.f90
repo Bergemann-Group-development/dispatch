@@ -30,7 +30,7 @@ module atom_patch_mod
     USE element_mod, only: element_type
     USE bbtrans_mod, only: bbtrans_type
     USE composition_mod, only: composition_type
-    USE m3d_patch_mod, only: m3d_patch_t, maxiter, ilambd
+    USE m3d_patch_mod, only: m3d_patch_t, maxiter, ilambd, conditioning, check_NaN
     USE bftrans_mod, only: bftrans_type
     USE lines_patch_mod, only:lines_patch_t
     implicit none
@@ -92,7 +92,9 @@ module atom_patch_mod
           lines%kind = 'lines_patch'
           lines%atom => self%atom
           call lines%pre_init_and_link(self, i_mu=m, i_nu=n, sp=self%sp)
+        endif
 
+        if (conditioning=='self' .or. m>0) then
           allocate(rate)
           rate%kind = 'rate_patch'
           rate%atom => self%atom
@@ -418,7 +420,7 @@ module atom_patch_mod
           Gij   => gamma_ij   (i,j,k,:)
           Gji   => gamma_ji   (i,j,k,:)
 
-          call atom%solve_stat_equilibrium(temp, ne, totn, n, nstar, nh, Gij, Gji, cswitch)
+          call atom%solve_stat_equilibrium(temp, ne, totn, n, nstar, nh, Gij, Gji, cswitch, check_NaN)
 
           ! keep track of maximum population change
           do ii=1,atom%nlevel
@@ -508,8 +510,13 @@ module atom_patch_mod
       nbtask => nbor%task
       select type(rate => nbtask)
       class is (rate_patch_t)
-        gamma_ij = gamma_ij + rate%wmu * rate%mem(:,:,:,:,rate%it,rate%i_Gij)
-        gamma_ji = gamma_ji + rate%wmu * rate%mem(:,:,:,:,rate%it,rate%i_Gji)
+        if (rate%i_mu>0) then
+          gamma_ij = gamma_ij + rate%wmu * rate%mem(:,:,:,:,rate%it,rate%i_Gij)
+          gamma_ji = gamma_ji + rate%wmu * rate%mem(:,:,:,:,rate%it,rate%i_Gji)
+        else
+          gamma_ij = gamma_ij + rate%mem(:,:,:,:,rate%it,rate%i_Gij)
+          gamma_ji = gamma_ji + rate%mem(:,:,:,:,rate%it,rate%i_Gji)
+        endif
       end select
       nbor => nbor%next
     end do

@@ -352,7 +352,7 @@ module lines_patch_mod
           needs_me = .false.
         elseif (another%kind == 'net_opac') then
           needed = .false.
-        elseif(another%kind == 'rate_patch') then
+        elseif(another%kind == 'rate_patch' .and. another%i_mu>0) then
           needed = .false.
         else
           needed = .false.; needs_me = .false.

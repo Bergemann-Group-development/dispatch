@@ -88,7 +88,12 @@ module rate_patch_mod
     if (conditioning == 'full') then
       call self%atom%full_preconditioning(self%fs, temp, Inu, Psi, gamma_ij, gamma_ji, self%lines%line, self%lines%idx_map)
     elseif (conditioning == 'self') then
-      call self%atom%self_preconditioning(self%fs, temp, Inu, Psi, gamma_ij, gamma_ji, self%lines%line)
+      if (self%i_mu==0) then
+        ! Inu is actually Jnu here
+        call self%atom%self_cont_preconditioning(self%fs, temp, Inu, Psi, gamma_ij, gamma_ji)
+      else
+        call self%atom%self_line_preconditioning(self%fs, temp, Inu, Psi, gamma_ij, gamma_ji, self%lines%line)
+      endif
     else
       print *, conditioning, ' is an unknown type of rate equation conditioning. Stopping...'
       stop
@@ -111,15 +116,19 @@ module rate_patch_mod
     if (needed .or. needs_me) then
       select type (another)
       class is (radiation_t)
-        if (another%kind == 'angle_rad') then
+        if (self%i_mu == another%i_mu) then
           needs_me=.false.
           self%rad => another
         else
           needed = .false.; needs_me = .false.
         endif
       class is (lines_patch_t)
-        needs_me=.false.
-        self%lines => another
+        if (self%i_mu > 0) then
+          needs_me=.false.
+          self%lines => another
+        else
+          needed = .false.; needs_me = .false.
+        endif
       class is (opacity_t)
         select case (another%kind)
         case ('cont_opac')

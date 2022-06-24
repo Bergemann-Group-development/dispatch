@@ -21,8 +21,9 @@ module rad_patch_mod
   USE math_mod
   USE bits_mod
   USE units_mod, only: cgs
+  USE mconst, only: over_4pi
   !USE scratch_mod
-  USE m3d_patch_mod, only:m3d_patch_t
+  USE m3d_patch_mod, only:m3d_patch_t, conditioning
   USE ray_patch_mod
   USE opac_patch_mod
   USE os_mod
@@ -133,7 +134,7 @@ SUBROUTINE radiation_init (self)
   call trace%begin('radiation_t%radiation_pre_init')
   call self%ray_patch_t%init()
 
-  if (self%kind=='angle_rad') then
+  if (self%kind=='angle_rad' .or. conditioning == 'self') then
     call os%allocate(self%Psi, [self%n(1),  self%n(2),  self%n(3),  self%nv])
     self%Psi = tiny(1.0)
   end if
@@ -188,26 +189,31 @@ SUBROUTINE Jnu_update (self)
   class(radiation_t) :: self
   class(nbor_t), pointer:: nbor
   integer :: i,j,k,f
-  real(4), dimension(:,:,:,:), pointer :: Jnu
+  real(4), dimension(:,:,:,:), pointer :: Jnu, Psi
   real(4), dimension(:,:,:,:), pointer :: Inu
   real(4), dimension(:,:,:,:,:), allocatable :: opac
   integer, save:: itimer=0
+  real(4) :: wmu
   !-----------------------------------------------------------------------------
   call trace%begin('radiation_t%Jnu_update', itimer=itimer)
 
   Jnu => self%mem(:,:,:,:, self%it, self%i_inu)
+  Psi => self%Psi
   Jnu = 0
+  Psi = 0
 
   nbor => self%link%nbor
   do while (associated(nbor))
     select type(nb => nbor%task)
     class is (radiation_t)
       Inu => nb%authority_mem(:,:,:,:, nb%it, self%i_inu)
+      wmu = nb%wmu * over_4pi
       do f=1, self%nv
       do k=1, self%n(3)
       do j=1, self%n(2)
       do i=1, self%n(1)
-        Jnu(i,j,k,f) = Jnu(i,j,k,f) + nb%wmu * Inu(i,j,k,f)
+        Jnu(i,j,k,f) = Jnu(i,j,k,f) + wmu * Inu(i,j,k,f)
+        Psi(i,j,k,f) = Psi(i,j,k,f) + wmu * nb%Psi(i,j,k,f)
       end do
       end do
       end do
@@ -215,8 +221,6 @@ SUBROUTINE Jnu_update (self)
     end select
     nbor => nbor%next
   end do
-
-  Jnu = Jnu / math%pi4
 
   call trace%end(itimer)
 END SUBROUTINE Jnu_update
@@ -1010,7 +1014,7 @@ SUBROUTINE radiation_nbor_relations(self, another, needed, needs_me, download)
       if (self%kind=='angle_rad' .and. another%kind=='net_opac') then
         needs_me=.false.
         self%opac => another
-      elseif(self%kind=='angle_rad' .and. another%kind=='rate_patch') then
+      elseif(another%kind=='rate_patch' .and. self%i_mu==another%i_mu) then
         needed=.false.
       elseif(self%kind=='mean_rad' .and. another%kind=='back_opac') then
         needed=.false.

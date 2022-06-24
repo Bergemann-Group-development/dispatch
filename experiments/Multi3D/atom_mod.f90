@@ -5,7 +5,7 @@ MODULE atom_mod
     USE coll_mod
     USE trans_mod
     USE mmath, only: refsor, unista
-    USE op_math_mod, only: searchsorted, lineq
+    USE op_math_mod, only: searchsorted, lineq, lineq_no_pivot
     USE os_mod
     USE trace_mod
     USE spectrum_mod, only: spectrum_type
@@ -78,7 +78,8 @@ MODULE atom_mod
         procedure :: add_line_opacities
         procedure :: add_continuum_opacities
         procedure :: full_preconditioning
-        procedure :: self_preconditioning
+        procedure :: self_cont_preconditioning
+        procedure :: self_line_preconditioning
         procedure :: compute_line_damping
         procedure :: compute_doppler_factor
         procedure :: partition_function
@@ -256,9 +257,10 @@ MODULE atom_mod
         real(4), dimension(:,:,:,:), pointer :: phi
         real(4), dimension(:,:,:,:), pointer, contiguous, intent(out) :: wphi
         class(line_type), pointer :: line
+        real(4) :: wnu
         integer :: i, fcs, fce, fs, fe, nx, ny, nz, f
         logical :: skip
-  
+        !------------------------------------------------------------------------------------
         nx = size(temp,1)
         ny = size(temp,2)
         nz = size(temp,3)
@@ -526,26 +528,25 @@ MODULE atom_mod
      !------------------------------------------------------------------------------------
     
    !====================================================================================
-   SUBROUTINE self_preconditioning(self, fs_patch, temp, Inu, Psi, gamma_ij, gamma_ji, lines)
+   SUBROUTINE self_cont_preconditioning(self, fs_patch, temp, Inu, Psi, gamma_ij, gamma_ji)
       class(atom_type), target, intent(in) :: self
       integer, intent(in) :: fs_patch
       real(4), dimension(:,:,:), intent(in), contiguous :: temp
       real(4), dimension(:,:,:,:), intent(in) :: Inu
       real(4), dimension(:,:,:,:), intent(in), contiguous :: Psi
       real(4), dimension(:,:,:,:), intent(inout), contiguous :: gamma_ij, gamma_ji
-      class(line_type), dimension(:), intent(in), target :: lines
-      class(line_type), pointer :: line
       class(cont_type), pointer :: cnt
-      real(4), dimension(:,:,:,:), allocatable :: blzfac, phi
+      real(4), dimension(:,:,:,:), allocatable :: blzfac
       real(4), dimension(:,:,:), allocatable :: t_inv, fakt
       real(4), dimension(:), allocatable :: twohnu3_c2, hnu_inv, hnu_k
       real(8), dimension(:), pointer, contiguous :: nu
-      real(4) :: blz, Ieff, wnu, eta, chi, vij, vji, alpha, ufac, Bij, Bji
+      real(4) :: Ieff, wnu, eta, chi, vij, vji, alpha, ufac
       integer :: nx, ny, nz, nf, nnu, p(3)
-      integer :: i, j, k, f, x, y, z, jj, ff, fs, fe, ffs, ffe, fcs, fce, fe_patch, fff, kr
+      integer :: i, j, k, f, x, y, z, ff, fs, fe, fcs, fce, fe_patch, fff, kr
       logical :: skip
-      integer, save :: itimer1, itimer2, itimer3, itimer4, itimer5, itimer6
+      integer, save :: itimer
       !------------------------------------------------------------------------------------
+      call trace%begin('atom_type%self_cont_preconditioning', itimer=itimer)
       nx = size(Inu,1)
       ny = size(Inu,2)
       nz = size(Inu,3)
@@ -558,10 +559,7 @@ MODULE atom_mod
 
       allocate(twohnu3_c2(nf), hnu_k(nf), hnu_inv(nf))
       allocate(t_inv(nx,ny,nz), fakt(nx,ny,nz))
-      allocate(phi(nx,ny,nz, maxval(lines%iblue-lines%ired+1)))
       allocate(blzfac(nx,ny,nz,fcs:fce))
-
-      call trace%begin('blzfac', itimer=itimer1)
 
       twohnu3_c2 = twoh_c2 * nu**3
       hnu_k = h_k * nu
@@ -572,9 +570,6 @@ MODULE atom_mod
          f = ff - fs_patch + 1
          blzfac(:,:,:,ff) = exp(-hnu_k(f) * t_inv)
       end do
-
-      call trace%end(itimer1)
-      call trace%begin('rate_cont', itimer=itimer2)
 
       do kr=1, size(self%cont)
          cnt => self%cont(kr)
@@ -607,8 +602,45 @@ MODULE atom_mod
          end do
       end do
 
-      call trace%end(itimer2)
-      call trace%begin('rate_line', itimer=itimer3)
+      deallocate(twohnu3_c2, hnu_k, hnu_inv)
+      deallocate(t_inv, fakt)
+      call trace%end(itimer)
+   END SUBROUTINE self_cont_preconditioning
+   !------------------------------------------------------------------------------------
+
+   !====================================================================================
+   SUBROUTINE self_line_preconditioning(self, fs_patch, temp, Inu, Psi, gamma_ij, gamma_ji, lines)
+      class(atom_type), target, intent(in) :: self
+      integer, intent(in) :: fs_patch
+      real(4), dimension(:,:,:), intent(in), contiguous :: temp
+      real(4), dimension(:,:,:,:), intent(in) :: Inu
+      real(4), dimension(:,:,:,:), intent(in), contiguous :: Psi
+      real(4), dimension(:,:,:,:), intent(inout), contiguous :: gamma_ij, gamma_ji
+      class(line_type), dimension(:), intent(in), target :: lines
+      class(line_type), pointer :: line
+      real(4), dimension(:,:,:,:), allocatable :: phi
+      real(4), dimension(:), allocatable :: twohnu3_c2, hnu_inv
+      real(8), dimension(:), pointer, contiguous :: nu
+      real(4) :: Ieff, wnu, eta, chi, vij, vji, ufac, Bij, Bji
+      integer :: nx, ny, nz, nf, nnu, p(3)
+      integer :: i, j, k, f, x, y, z, ff, fs, fe, fe_patch, fff, kr
+      logical :: skip
+      integer, save :: itimer
+      !------------------------------------------------------------------------------------
+      call trace%begin('atom_type%self_line_preconditioning', itimer=itimer)
+      nx = size(Inu,1)
+      ny = size(Inu,2)
+      nz = size(Inu,3)
+      nf = size(inu,4)
+
+      fe_patch = fs_patch + nf -1
+      nu => self%sp%nu(fs_patch:fe_patch)
+
+      allocate(twohnu3_c2(nf), hnu_inv(nf))
+      allocate(phi(nx,ny,nz, maxval(lines%iblue-lines%ired+1)))
+
+      twohnu3_c2 = twoh_c2 * nu**3
+      hnu_inv = 1 / (hh*nu)
 
       do kr=1, size(lines)
          line => lines(kr)
@@ -644,20 +676,14 @@ MODULE atom_mod
          end do
       end do
 
-      call trace%end(itimer3)
-
-      ! gamma_ji / (wnu*nj) = Bji*Inu - Bji*nj*Psi*Aji + Aji - Bij*ni*Psi*Aji + Bji*nj*Psi*Aji
-      ! gamma_ji / (wnu*nj) = Bji * (Inu - gj/gi*ni*Psi*Aji) + Aji
-
       deallocate(phi)
-      deallocate(twohnu3_c2, hnu_k, hnu_inv)
-      deallocate(t_inv, fakt)
-
-   END SUBROUTINE self_preconditioning
+      deallocate(twohnu3_c2, hnu_inv)
+      call trace%end(itimer)
+   END SUBROUTINE self_line_preconditioning
    !------------------------------------------------------------------------------------
   
      !====================================================================================
-     SUBROUTINE solve_stat_equilibrium (self, temp, ne, totn, n, nstar, nh, gamma_ij, gamma_ji, cswitch)
+     SUBROUTINE solve_stat_equilibrium (self, temp, ne, totn, n, nstar, nh, gamma_ij, gamma_ji, cswitch, check_NaN)
         class(atom_type), target :: self
         class(transition_type), pointer :: trans
         real(4), intent(in) :: temp, ne, totn
@@ -666,8 +692,10 @@ MODULE atom_mod
         real(4), dimension(:), intent(in) :: nstar
         real(4), dimension(:), intent(inout) :: n
         integer, intent(in) :: cswitch
+        logical, intent(in) :: check_NaN
         integer :: kr, pos, i, j
         real(8) :: tmax_update =1.0d7
+        integer, save :: itimer=0
         !------------------------------------------------------------------------------------
         if (temp > tmax_update) then
            return !self%e = 1.0d0
@@ -720,19 +748,22 @@ MODULE atom_mod
         self%w(pos,:) = n
         self%e(pos)   = totn
 
-        do i=1,self%nlevel
-        do j=1,self%nlevel
-          if (self%w(i,j) /= self%w(i,j)) then
-            print *, 'NaN in rate Matrix at i,j = ', i, j
-            print *, 'Temp = ', temp
-            stop
-          endif
-        end do
-        end do
-        
+        if (check_NaN) then
+           do i=1,self%nlevel
+           do j=1,self%nlevel
+              if (self%w(i,j) /= self%w(i,j)) then
+                 print *, 'NaN in rate Matrix at i,j = ', i, j
+                 print *, 'Temp = ', temp
+                 stop
+              endif
+           end do
+           end do
+        endif
+
         ! solve w n . x = e
         ! e contains the solution vector x on exit
-        call lineq(self%w, self%e, self%nlevel)
+        !call lineq(self%w, self%e, self%nlevel)
+        call lineq_no_pivot(self%w, self%e, self%nlevel)
   
         ! set limits on corrections
         where(self%e < 0.001d0) self%e = 0.001d0

@@ -23,8 +23,9 @@ module m3d_patch_mod
     USE omp_lock_mod
     USE shared_mod
     !USE omp_timer_mod
-    !USE math_mod
+    USE math_mod
     USE bits_mod
+    USE mconst
     !USE units_mod
     !USE scratch_mod
     USE atom_mod, only: atomic_spectrum_type
@@ -380,7 +381,11 @@ module m3d_patch_mod
     case ('back_opac')
       self%maxiter = min(ilambd, maxiter-1)
     case ('mean_rad')
-      self%maxiter = ilambd - 1
+      if (conditioning=='self') then
+        self%maxiter = ilambd + maxiter - 1
+      else
+        self%maxiter = ilambd - 1
+      endif
     case ('angle_rad', 'net_opac')
       self%maxiter = ilambd + maxiter - 1
     end select
@@ -635,9 +640,9 @@ module m3d_patch_mod
   SUBROUTINE task_info (self)
     class(m3d_patch_t):: self
     !-----------------------------------------------------------------------------
-    write(io_unit%mpi,'(1x,a,2x,a10,i6,2i4,7x,2l1,2x,3f9.3)') &
-      'm3d_patch_t%task_info: kind, id, rank, level, BV, pos', &
-      self%kind, self%id, self%rank, self%level, &
+    write(io_unit%mpi,'(1x,a,2x,a10,i6,4i4,7x,2l1,2x,3f9.3)') &
+      'm3d_patch_t%task_info: kind, id, rank, level, mu, nu, BV, pos', &
+      self%kind, self%id, self%rank, self%level, self%i_mu, self%i_nu, &
       self%is_set(bits%boundary), self%is_set(bits%virtual), self%position
   END SUBROUTINE task_info
   

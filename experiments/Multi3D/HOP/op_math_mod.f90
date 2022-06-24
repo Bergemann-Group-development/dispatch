@@ -198,21 +198,12 @@ contains
       endif
    end FUNCTION solve_quadratic
     
-   !---------------------------------------------------------------------
+   !===============================================================================
+   !  finds solution of system of linear equations
+   !  with gaussian elimination with pivoting
+   !: lineq  90-06-05  new routine: (martin j stift)
+   !===============================================================================
    SUBROUTINE lineq(a,b,n)
-      !***********************************************************************
-      !
-      !  finds solution of system of linear equations
-      !  with gaussian elimination with pivoting
-      !
-      !: lineq  90-06-05  new routine: (martin j stift)
-      !:
-      !***********************************************************************
-      !
-      implicit none
-      !
-      ! declaration of the supplied variables
-      !
       integer :: n
       real(dp), dimension(n,n) :: a
       real(dp), dimension(n)   :: b
@@ -221,7 +212,7 @@ contains
       integer, dimension(n) :: icol
       integer :: i, ibeg, jbeg, ima, jma, j, it, n1, jmin, i1, imin
       real(dp)  :: ama, temp, quot
-
+      !-----------------------------------------------------------------------------
       ! initialize column count and starting points
 
       do i = 1,n
@@ -306,6 +297,34 @@ contains
 
    end SUBROUTINE lineq
    !---------------------------------------------------------------------
+
+   !===============================================================================
+   SUBROUTINE lineq_no_pivot (a, b, n)
+      real(8):: a(n,n), b(n)
+      integer :: i, j, k, n
+      !-----------------------------------------------------------------------------
+      do k=1,n-1
+        do i=k+1,n
+          a(i,k) = a(i,k)/a(k,k)
+        end do
+        do j=k+1,n
+          do i=k+1,n
+            a(i,j) = a(i,j) - a(i,k)*a(k,j)
+          end do
+        end do
+      end do
+      do i=1,n
+        do j=1,i-1
+          b(i) = b(i) - a(i,j)*b(j)
+        end do
+      end do
+      do i=n,1,-1
+        do j=i+1,n
+          b(i) = b(i) - a(i,j)*b(j)
+        end do
+        b(i) = b(i)/a(i,i)
+      end do
+   END SUBROUTINE lineq_no_pivot
 
    ! **************************************************************************
    SUBROUTINE AINV2(A,M)
