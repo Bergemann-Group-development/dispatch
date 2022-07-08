@@ -85,40 +85,32 @@ module net_opac_patch_mod
     if (self%finished) then
       return
     endif
+    call self%decompress_mem(self)
 
     call trace%begin('net_opac_t%net_opac_update', itimer=itimer)
-    it = 1
+    it = self%it
     mem => self%authority_mem
     chi => self%authority_mem(:,:,:,:,it,self%i_chi)
     eta => self%authority_mem(:,:,:,:,it,self%i_eta)
     Snu => self%authority_mem(:,:,:,:,it,self%i_Snu)
-    mem = 0
-  
+
+    do iw=1, self%nw
+      do it=1, self%nt
+        do f=1, self%nv
+          mem(:,:,:,f,it,iw) = 0
+        end do
+      end do
+    end do
+
     nbor => self%link%nbor
     do while (associated(nbor))
       if (nbor%needed .and. .not. nbor%download) then
         nbtask => nbor%task
+        call self%check_access(nbtask)
         select type (nbtask)
         class is (lines_patch_t)
           call nbtask%interpolate_lines(chi, eta)
-        class is (opacity_t)
-          fs = nbtask%fs - self%fs + 1
-          fe = fs + nbtask%nv - 1
-          do iw=1, self%nw
-          do it=1, self%nt
-          do f=fs,fe
-            fn = f - fs + 1
-            do z=1, self%n(3)
-            do y=1, self%n(2)
-            do x=1, self%n(1)
-              mem(x,y,z,f,it,iw) = mem(x,y,z,f,it,iw) + nbtask%mem(x,y,z,fn,it,iw)
-            end do
-            end do
-            end do
-          end do
-          end do
-          end do
-        class is (back_line_patch_t)
+        class is (ray_patch_t)
           fs = nbtask%fs - self%fs + 1
           fe = fs + nbtask%nv - 1
           do iw=1, self%nw
@@ -171,21 +163,16 @@ module net_opac_patch_mod
   
     if (needed .or. needs_me) then
       select type(another)
-
       class is (net_opac_t)
         ! do nothing
-      
       class is (lines_patch_t)
         needs_me=.false.
-
       class is (back_line_patch_t)
         needs_me=.false.
-        
       class is(opacity_t)
         if (another%kind/='net_opac') then
           needs_me=.false.
         endif
-        
       class is (m3d_patch_t)
         if (another%id == self%m3d_parent%id) then
           needs_me = .false.; needed = .false.

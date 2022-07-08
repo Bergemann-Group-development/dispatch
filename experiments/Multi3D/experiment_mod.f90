@@ -121,7 +121,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   character(len=64)  :: experiment_name
   optional           :: nq, ntask, experiment_name
   !-----------------------------------------------------------------------------
-  print *, 'Experiment update called for patch', self%id
+  !print *, 'Experiment update called for patch', self%id
 END SUBROUTINE info
 
 !===============================================================================

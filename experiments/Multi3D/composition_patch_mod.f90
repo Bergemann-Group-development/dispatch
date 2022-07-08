@@ -56,14 +56,15 @@ SUBROUTINE composition_pre_init (self)
   character(len=80), save :: absmet_file=''
   character(len=80), save :: linelist_file=''
   integer :: i, dir, p, m, n, m2, n2
-  logical, save :: first_time=.true.
-  namelist /composition_params/ verbose, absdat_file, abund_file, absmet_file, linelist_file
+  logical, save :: first_time=.true., absmet_big_end=.false.
+  namelist /composition_params/ verbose, absdat_file, abund_file, absmet_file, absmet_big_end, linelist_file
   ! ----------------------------------------------------------------------------
   call trace%begin('composition_patch_t%composition_pre_init', itimer=itimer)
   self%kind = 'composition'
   call self%m3d_patch_t%pre_init()
   call self%append_to_task_list()
   call self%set_nv_and_nw(9,1)
+  self%static_mem=.true.
 
   if (first_time) then
     rewind (io%input)
@@ -79,7 +80,7 @@ SUBROUTINE composition_pre_init (self)
     composition%verbose = verbose
 
     call trace%begin('compositiont%init', itimer=itimer2)
-    call composition%init(absdat_file, abund_file, absmet_file)
+    call composition%init(absdat_file, abund_file, absmet_file, absmet_big_end=absmet_big_end)
     call composition%init_linelist(linelist_file)
     call trace%end(itimer2)
     
@@ -260,8 +261,9 @@ SUBROUTINE composition_finish (self, rotated)
 END SUBROUTINE composition_finish
 
 !===============================================================================
-SUBROUTINE composition_patch_deallocate_mem(self)
+SUBROUTINE composition_patch_deallocate_mem(self, deallocator)
   class(composition_patch_t) :: self
+  class(m3d_patch_t), intent(in), target :: deallocator
   ! ----------------------------------------------------------------------------
   ! no memory to be deallocated
 END SUBROUTINE composition_patch_deallocate_mem

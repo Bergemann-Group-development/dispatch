@@ -21,7 +21,7 @@ MODULE read_external_mod
   USE experiment_mod
   USE patch_mod
   USE ray_patch_mod
-  USE m3d_patch_mod, only: maxiter, ilambd
+  USE m3d_patch_mod, only: maxiter, ilambd, out_folder
   USE read_stagger_snapshot_mod
   implicit none
 
@@ -727,11 +727,11 @@ END SUBROUTINE add_nbor
 !===============================================================================
 SUBROUTINE save_atmos (self)
   class (read_external_t) :: self
-  character(len=82) :: out_atmos_file='./out/atmos_data.bin'
-  character(len=82) :: out_mesh_file='./out/atmos_mesh.txt'
+  character(len=82) :: out_atmos_file='atmos_data.bin'
+  character(len=82) :: out_mesh_file='atmos_mesh.txt'
   integer :: lunit, zs,ze,step
   !-----------------------------------------------------------------------------
-  open(file=out_mesh_file, newunit=lunit, form='FORMATTED')
+  open(file=trim(out_folder)//out_mesh_file, newunit=lunit, form='FORMATTED')
   write(lunit, *) self%n
   write(lunit, *) self%ds
   close(lunit)
@@ -747,7 +747,7 @@ SUBROUTINE save_atmos (self)
     step = -1
   endif
 
-  open(file=out_atmos_file, newunit=lunit, form='UNFORMATTED')
+  open(file=trim(out_folder)//out_atmos_file, newunit=lunit, form='UNFORMATTED')
   write(lunit) self%temp(:,:,zs:ze:step)
   write(lunit) self%rho (:,:,zs:ze:step)
   write(lunit) self%px  (:,:,zs:ze:step)

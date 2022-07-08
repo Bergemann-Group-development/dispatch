@@ -12,10 +12,9 @@
 #SBATCH --cpus-per-task=23         # Number of cores per MPI task 
 #SBATCH --ntasks-per-core=1
 # --- User notifications ---
-#SBATCH --time 12:00:00
-rm ./out/*
+#SBATCH --time 24:00:00
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export OMP_STACKSIZE=1024M
 unset I_MPI_PMI_LIBRARY 
-#mpirun ./dispatch.x input_o_nlte.nml
-mpirun ./dispatch.x input_fe_nlte.nml
+mpirun ./dispatch.x input_o_nlte.nml
+#mpirun ./dispatch.x input_fe_nlte.nml

@@ -30,7 +30,7 @@ module atom_patch_mod
     USE element_mod, only: element_type
     USE bbtrans_mod, only: bbtrans_type
     USE composition_mod, only: composition_type
-    USE m3d_patch_mod, only: m3d_patch_t, maxiter, ilambd, conditioning, check_NaN
+    USE m3d_patch_mod, only: m3d_patch_t, maxiter, ilambd, conditioning, check_NaN, out_folder
     USE bftrans_mod, only: bftrans_type
     USE lines_patch_mod, only:lines_patch_t
     implicit none
@@ -52,14 +52,15 @@ module atom_patch_mod
       procedure :: pre_init_atom
       procedure :: init_atom
       procedure :: normalize_phi
-      procedure :: sum_rates
       procedure :: update_populations
+      procedure :: check_skip
       procedure :: exclude_double_continua
       procedure :: exclude_double_lines
     end type atom_patch_t
 
     real(8), public:: global_maxerr=0
     real(8), public:: convlim=1d-3
+    integer, save :: epos(3)
 
     !-----------------------------------------------------------------------------
   
@@ -79,6 +80,7 @@ module atom_patch_mod
     call self%append_to_task_list()
     call self%pre_init_atom()
     call self%set_nv_and_nw(self%atom%nlevel, 2)
+    self%static_mem=.true.
 
     do n=1, self%n_nu
       do m=0, self%n_omega
@@ -157,7 +159,7 @@ module atom_patch_mod
       call io%namelist_warning ('atom_params', iostat)
       write (io%namelist, atom_params)
 
-      open(newunit=lunit, file='./out/atom_params.nml', delim='apostrophe', form='formatted')
+      open(newunit=lunit, file=trim(out_folder)//'atom_params.nml', delim='apostrophe', form='formatted')
       write (lunit, atom_params)
 
       if (n_in_lines > 0) then
@@ -185,7 +187,7 @@ module atom_patch_mod
       if (second_sp) then
         call output_atom%set_active_transitions(self%sp) 
       endif
-      write (command, *) 'cp ', trim(atom_file), ' ./out/atom.txt' 
+      write (command, *) 'cp ', trim(atom_file), ' ', trim(out_folder)//'atom.txt' 
       call execute_command_line (trim(command), exitstat=iostat)
     endif
 
@@ -244,7 +246,6 @@ module atom_patch_mod
     call os%allocate(atom%doppler_factor, shape(temp))
 
     atom%doppler_factor = atom%compute_doppler_factor(temp)
-    !call atom%compute_line_damping(ne, temp, nh)
     call self%composition%get_totn(atom%id, atom%abnd, atom%totn)
     call atom%compute_lte_populations(temp, ne)
     call atom%compute_cont_factors()
@@ -263,8 +264,8 @@ module atom_patch_mod
     class(atom_patch_t) :: self
     class(nbor_t), pointer:: nbor
     class(task_t), pointer:: nbtask
-    real(8), dimension(:,:,:,:), allocatable :: gamma_ij, gamma_ji
-    character(len=64) :: text
+    real(8), dimension(:,:,:,:), pointer, contiguous :: gamma_ij, gamma_ji
+    integer :: i
     integer, save:: itimer=0
     !-----------------------------------------------------------------------------
     call self%pre_update()
@@ -272,9 +273,6 @@ module atom_patch_mod
     call trace%begin('atom_patch_t%atom_patch_update', itimer=itimer)
 
     if (self%iter == 0) then
-      write(text,'(A,I2,A,I2,A)') 'LTE Iteration .'
-      call io%header (text)
-
       call self%init_atom()
       self%dtime = self%dtime + self%dtime*ilambd
 
@@ -290,9 +288,6 @@ module atom_patch_mod
         nbor => nbor%next
       end do
     else
-      write(text,'(A,I2,A,I2,A)') 'Iteration ', self%iter, '/', self%maxiter, '.'
-      call io%header (text)
-
       if (self%iter == 1) then
         self%dtime = self%dt_fixed
         nbor => self%link%nbor
@@ -307,11 +302,20 @@ module atom_patch_mod
         call self%normalize_phi()
       endif
 
-      allocate(gamma_ij(self%n(1), self%n(2), self%n(3), self%atom%nrad))
-      allocate(gamma_ji(self%n(1), self%n(2), self%n(3), self%atom%nrad))
+      if (.not. self%atom%stiff) then
+        gamma_ij => self%atom%gamma_ij
+        gamma_ji => self%atom%gamma_ji
 
-      call self%sum_rates(gamma_ij, gamma_ji)
-      call self%update_populations(gamma_ij, gamma_ji)
+        do i=1, self%atom%nline
+          gamma_ij(:,:,:,i) = gamma_ij(:,:,:,i) * self%atom%line(i)%wphi
+          gamma_ji(:,:,:,i) = gamma_ji(:,:,:,i) * self%atom%line(i)%wphi
+        end do
+
+        call self%update_populations(gamma_ij, gamma_ji)
+      endif
+
+      call os%deallocate(self%atom%gamma_ij)
+      call os%deallocate(self%atom%gamma_ji)
     endif
   
     call self%post_update()
@@ -322,6 +326,7 @@ module atom_patch_mod
   SUBROUTINE atom_patch_post_update (self)
     class(atom_patch_t) :: self
     integer :: p(3), i, z
+    character(len=64) :: text
     integer, save :: count=0
     ! --------------------------------------------------------------------------
     call trace%begin('atom_patch_t%atom_patch_post_update')
@@ -330,14 +335,30 @@ module atom_patch_mod
       if (all(p > 0)) then
         i = self%lvlcheck
         call io%lock%set
-        write(stdout,'(A, 8(ES15.7))') self%m3d_patch_info(), self%atom%abnd, &
-          self%atom%n(p(1),p(2),p(3),i), self%atom%totn(p(1),p(2),p(3)), &
-          10.0**(self%atom%abnd-12.0)*self%composition%toth(p(1),p(2),p(3))
-        write(stdout,'(A19, ES19.7, A10, 3ES15.7)') 'Maxerr =', self%maxerr, &
-          ', global =', global_maxerr
+        if (self%iter == 0) then
+          write(text,'(A,I2,A,I2,A)') 'LTE Iteration .'
+        else
+          write(text,'(A,I2,A,I2,A)') 'Iteration ', self%iter, '/', self%maxiter, '.'
+        endif
+        call io%header(text)
+        if (self%atom%stiff) then
+          write(stdout,'(A, A)') self%m3d_patch_info(), 'update skipped'
+        else
+          write(stdout,'(A, 8(ES15.7))') self%m3d_patch_info(), self%atom%abnd, &
+            self%atom%n(p(1),p(2),p(3),i), self%atom%totn(p(1),p(2),p(3)), &
+            10.0**(self%atom%abnd-12.0)*self%composition%toth(p(1),p(2),p(3))
+        endif
+        write(stdout,'(A19, ES19.7, A10, ES15.7, 3I4)') 'local err =', self%maxerr, &
+          ', global =', global_maxerr, epos
         write(stdout,'(1X, A80)') &
         '................................................................................'
         call io%lock%unset
+      elseif (self%verbose>2) then
+        if (self%atom%stiff) then
+          write(stdout,'(A, A)') self%m3d_patch_info(), 'update skipped'
+        else
+          write(stdout,'(A, 8(ES15.7))') self%m3d_patch_info()
+        endif
       endif
     end if
 
@@ -351,8 +372,51 @@ module atom_patch_mod
     endif
 
     call self%m3d_patch_t%post_update()
+
+    if (self%atom%stiff .and. .not. self%finished) then
+      call self%check_skip()
+    endif
+
     call trace%end()
   END SUBROUTINE atom_patch_post_update
+
+  !===============================================================================
+  SUBROUTINE check_skip (self)
+    class(atom_patch_t) :: self
+    class(nbor_t), pointer :: nbor
+    class(task_t), pointer :: nbtask
+    integer :: iter, atom_iter
+    real(8) :: time
+    ! ----------------------------------------------------------------------------
+    time=huge(1.d0)
+    nbor => self%link%nbor
+    do while (associated(nbor))
+      nbtask => nbor%task
+      select type(nbtask)
+      class is (rate_patch_t)
+        if (.not. nbtask%out_ray) then
+          time = min(time, nbtask%rad%time)
+        endif
+      end select
+      nbor => nbor%next
+    end do
+    iter = max(0, floor(time - self%time))
+    atom_iter = max(0, min(self%maxiter - self%iter - 1, iter))
+    call self%skip_iterations(atom_iter)
+    nbor => self%link%nbor
+    do while (associated(nbor))
+      if (nbor%needs_me) then
+        nbtask => nbor%task
+        select type(nbtask)
+        class is (m3d_patch_t)
+          if (.not. nbtask%out_ray .and. .not. nbtask%finished) then
+            call nbtask%skip_iterations(iter)
+          endif
+        end select
+      endif
+      nbor => nbor%next
+    end do
+  END SUBROUTINE check_skip
 
   !===============================================================================
   SUBROUTINE atom_patch_finish (self, rotated)
@@ -394,7 +458,7 @@ module atom_patch_mod
   SUBROUTINE update_populations (self, gamma_ij, gamma_ji)
     class(atom_patch_t), target :: self
     class(atom_type), pointer :: atom
-    integer, dimension(3, self%atom%nlevel) :: pos3
+    integer, dimension(3, self%atom%nlevel) :: ep
     real, dimension(self%atom%nlevel) :: maxerr
     real(4), pointer :: temp, ne, totn
     real(4), dimension(:), pointer :: nh
@@ -405,6 +469,7 @@ module atom_patch_mod
     integer :: cswitch=1
     integer, save :: itimer=0
     ! ----------------------------------------------------------------------------
+    call trace%begin('atom_patch_t%update_populations', itimer=itimer)
     atom => self%atom
     maxerr = 0.0d0
 
@@ -426,9 +491,9 @@ module atom_patch_mod
           do ii=1,atom%nlevel
             if (abs(atom%e(ii)) > maxerr(ii)) then
                 maxerr(ii) = atom%e(ii)
-                pos3(1,ii) = i  
-                pos3(2,ii) = j 
-                pos3(3,ii) = k
+                ep(1,ii) = i  
+                ep(2,ii) = j 
+                ep(3,ii) = k
             end if
           end do
         end do
@@ -438,10 +503,15 @@ module atom_patch_mod
     if (global_maxerr == self%maxerr) then
       self%maxerr = maxval(abs(maxerr))
       global_maxerr = self%maxerr
+      epos = ep(:,maxloc(abs(maxerr),1))
     else
       self%maxerr = maxval(abs(maxerr))
-      global_maxerr = max(global_maxerr, self%maxerr)
+      if (self%maxerr > global_maxerr) then
+        global_maxerr = self%maxerr
+        epos = ep(:,maxloc(abs(maxerr),1))
+      endif
     endif
+    call trace%end(itimer)
   END SUBROUTINE update_populations
 
   !===============================================================================
@@ -478,53 +548,6 @@ module atom_patch_mod
 
       line%wphi = math%pi4 / line%wphi
     end do
-
-    nbor => self%link%nbor
-    do while (associated(nbor))
-      nbtask => nbor%task
-      select type(opac => nbtask)
-      class is (lines_patch_t)
-        if (opac%finished) then
-          call os%deallocate(opac%idx_map)
-          deallocate(opac%line)
-        endif
-      end select
-      nbor => nbor%next
-    end do
-  END SUBROUTINE
-
-  !===============================================================================
-  SUBROUTINE sum_rates (self, gamma_ij, gamma_ji)
-    class(atom_patch_t), target :: self
-    class(nbor_t), pointer:: nbor
-    class(task_t), pointer:: nbtask
-    integer :: i, i_mu, i_nu, m(4), p(3)
-    real(8), dimension(:,:,:,:), allocatable:: gamma_ij, gamma_ji
-    integer, save :: itimer=0
-    ! ----------------------------------------------------------------------------
-    gamma_ij = 0.0d0
-    gamma_ji = 0.0d0
-
-    nbor => self%link%nbor
-    do while (associated(nbor))
-      nbtask => nbor%task
-      select type(rate => nbtask)
-      class is (rate_patch_t)
-        if (rate%i_mu>0) then
-          gamma_ij = gamma_ij + rate%wmu * rate%mem(:,:,:,:,rate%it,rate%i_Gij)
-          gamma_ji = gamma_ji + rate%wmu * rate%mem(:,:,:,:,rate%it,rate%i_Gji)
-        else
-          gamma_ij = gamma_ij + rate%mem(:,:,:,:,rate%it,rate%i_Gij)
-          gamma_ji = gamma_ji + rate%mem(:,:,:,:,rate%it,rate%i_Gji)
-        endif
-      end select
-      nbor => nbor%next
-    end do
-
-    do i=1, self%atom%nline
-      gamma_ij(:,:,:,i) = gamma_ij(:,:,:,i) * self%atom%line(i)%wphi
-      gamma_ji(:,:,:,i) = gamma_ji(:,:,:,i) * self%atom%line(i)%wphi
-    end do
   END SUBROUTINE
 
   !===============================================================================
@@ -533,6 +556,7 @@ module atom_patch_mod
     class(bftrans_type), pointer :: trans
     integer :: i, lower, kc
     logical :: same
+    logical, save :: first_time=.true.
     !-----------------------------------------------------------------------------
     do i=1, size(self%composition%trans)
       trans => self%composition%trans(i)
@@ -549,7 +573,10 @@ module atom_patch_mod
 
             if (same) then
               trans%exclude = .true.
-              print *, 'excluding transition', trans%label
+              if (first_time) then
+                print *, 'excluding transition ', trans%label
+                first_time = .false.
+              endif
             endif
           end do
         endif

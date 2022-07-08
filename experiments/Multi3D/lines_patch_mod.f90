@@ -170,7 +170,8 @@ module lines_patch_mod
   SUBROUTINE lines_patch_update (self)
     class(lines_patch_t) :: self
     class(line_type), pointer :: line
-    real(4), dimension(:,:,:), pointer, contiguous :: tothi, ne, temp, adamp, doppler_factor, vel_dop, ni, nj, unsold_temp, stark_pe
+    real(4), dimension(:,:,:), pointer, contiguous :: tothi, ne, temp, adamp, doppler_factor
+    real(4), dimension(:,:,:), pointer, contiguous :: vel_dop, ni, nj, unsold_temp, stark_pe, vproj
     real(4), dimension(:,:,:,:), pointer, contiguous :: phi
     real(4), dimension(:,:,:,:), pointer :: nh
     real(8), dimension(:), allocatable :: wnu
@@ -178,63 +179,57 @@ module lines_patch_mod
     integer, save:: itimer=0
     !-----------------------------------------------------------------------------
     call self%pre_update()
+    if (self%finished) then
+      return
+    endif
     call trace%begin('lines_patch_t%lines_patch_update', itimer=itimer)
 
-    if (self%iter == 0) then
-      ne   => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_ne,            self%it,1)
-      temp => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_temp,          self%it,1)
-      nh   => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_nh1:self%i_nh6,self%it,1)
-      doppler_factor => self%atom%doppler_factor
+    ne   => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_ne,            self%it,1)
+    temp => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_temp,          self%it,1)
+    nh   => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_nh1:self%i_nh6,self%it,1)
+    doppler_factor => self%atom%doppler_factor
 
-      call os%allocate(tothi, self%n)
-      call os%allocate(adamp, self%n)
-      call os%allocate(unsold_temp, self%n)
-      call os%allocate(stark_pe, self%n)
+    call os%allocate(tothi,       self%n)
+    call os%allocate(adamp,       self%n)
+    call os%allocate(unsold_temp, self%n)
+    call os%allocate(stark_pe,    self%n)
+    call os%allocate(vproj,       self%n)
+    
+    call self%comp_vproj(vproj)
+    vproj = (1 + vproj) / doppler_factor
 
-      call self%comp_vproj(self%vproj)
-      self%vproj = (1 + self%vproj) / doppler_factor
-
-      tothi = sum(nh(:,:,:,1:5), 4) ! total neutral hydrogen density
-      unsold_temp =  8.0*BK / PI * (1.0/MH + 1.0/self%atom%awgt) * temp
-      stark_pe = ne * bk * temp**one_sixth
-
-      do i=1, self%nline
-        line => self%line(i)
-        adamp = 0
-        call line%damping(adamp, temp, ne, tothi, unsold_temp, stark_pe)
-        if (self%atom%id == 'H') then
-         call line%dampingH(adamp, temp, ne, nh(:,:,:,6))
-        endif
-        
-        call line%profile(line%nu, self%vproj, doppler_factor, adamp, line%phi)
-  
-        call os%allocate(line%wphi, self%n, zero=.true.)
-        call os%allocate(line%chi_fac, self%n)
-        call os%allocate(line%eta_fac, self%n)
-
-        call self%sp%set_weights(wnu, line%nu, 1, line%nnu)
-
-        do f=1,line%nnu
-          line%wphi = line%wphi + line%phi(:,:,:,f) * wnu(f)
-          line%phi(:,:,:,f) = line%phi(:,:,:,f) * h_4pi * line%nu(f)
-        end do
-        deallocate(wnu)
-      enddo
-
-      call os%deallocate(tothi)
-      call os%deallocate(adamp)
-      call os%deallocate(unsold_temp)
-      call os%deallocate(stark_pe)
-    endif
+    tothi = sum(nh(:,:,:,1:5), 4) ! total neutral hydrogen density
+    unsold_temp =  8.0*BK / PI * (1.0/MH + 1.0/self%atom%awgt) * temp
+    stark_pe = ne * bk * temp**one_sixth
 
     do i=1, self%nline
       line => self%line(i)
-      ni => self%atom%n(:,:,:,line%i)
-      nj => self%atom%n(:,:,:,line%j)
+      adamp = 0
+      call line%damping(adamp, temp, ne, tothi, unsold_temp, stark_pe)
+      if (self%atom%id == 'H') then
+        call line%dampingH(adamp, temp, ne, nh(:,:,:,6))
+      endif
+      
+      call line%profile(line%nu, vproj, doppler_factor, adamp, line%phi)
 
-      line%eta_fac = line%Aji * nj
-      line%chi_fac = line%Bij * ni - line%Bji * nj
+      call os%allocate(line%wphi, self%n, zero=.true.)
+      !call os%allocate(line%chi_fac, self%n)
+      !call os%allocate(line%eta_fac, self%n)
+
+      call self%sp%set_weights(wnu, line%nu, 1, line%nnu)
+
+      do f=1,line%nnu
+        line%wphi = line%wphi + line%phi(:,:,:,f) * wnu(f)
+        line%phi(:,:,:,f) = line%phi(:,:,:,f) * h_4pi * line%nu(f)
+      end do
+      deallocate(wnu)
     enddo
+
+    call os%deallocate(tothi)
+    call os%deallocate(adamp)
+    call os%deallocate(unsold_temp)
+    call os%deallocate(stark_pe)
+    call os%deallocate(vproj)
 
     call self%post_update()
     call trace%end(itimer)
@@ -246,6 +241,7 @@ module lines_patch_mod
     class(line_type), pointer :: line
     real(4), dimension(:,:,:,:), intent(inout) :: chi, eta
     real(8), dimension(:), contiguous, pointer :: hnu_4pi, nu, q
+    real(4), dimension(:,:,:), pointer, contiguous :: ni, nj, chi_fac, eta_fac
     real(4), dimension(:,:,:,:), contiguous, pointer :: scratch_phi, phi
     integer :: i, fcs, fce, fs, fe, f, newq, ff, i1, i2, m(4), nnu, p(3), x,y,z
     logical :: skip
@@ -258,6 +254,8 @@ module lines_patch_mod
     m = shape(chi)
     m(4) = size(nu)
     call os%allocate(scratch_phi, m)
+    call os%allocate(chi_fac, self%n)
+    call os%allocate(eta_fac, self%n)
 
     if (.not. associated(self%mem)) then
       print *, 'mem not allocated. Something is wrong!'
@@ -282,14 +280,20 @@ module lines_patch_mod
       !    phi(p(1),p(2),p(3),f) * line%chi_fac(p(1),p(2),p(3)), phi(p(1),p(2),p(3),f), &
       !    self%atom%n(p(1),p(2),p(3),line%i), self%atom%n(p(1),p(2),p(3),line%j)
       !endif
+
+      ni => self%atom%n(:,:,:,line%i)
+      nj => self%atom%n(:,:,:,line%j)
+
+      eta_fac = line%Aji * nj
+      chi_fac = line%Bij * ni - line%Bji * nj
   
       do f=1,nnu
         ff = fs - self%fs + f
         do z=1,m(3)
         do y=1,m(2)
         do x=1,m(1)
-          eta(x,y,z,ff) = eta(x,y,z,ff) + phi(x,y,z,f) * line%eta_fac(x,y,z)
-          chi(x,y,z,ff) = chi(x,y,z,ff) + phi(x,y,z,f) * line%chi_fac(x,y,z)
+          eta(x,y,z,ff) = eta(x,y,z,ff) + phi(x,y,z,f) * eta_fac(x,y,z)
+          chi(x,y,z,ff) = chi(x,y,z,ff) + phi(x,y,z,f) * chi_fac(x,y,z)
         end do
         end do
         end do
@@ -305,16 +309,23 @@ module lines_patch_mod
     class(line_type), pointer :: line
     real(8), dimension(:), contiguous, pointer :: nu
     real(4), dimension(:,:,:,:), contiguous, pointer :: phi
-    integer :: p(3), f, fs, fe
+    integer :: p(3), f, fs, fe, i
     logical :: skip
     ! --------------------------------------------------------------------------
     call trace%begin('lines_patch_t%atom_patch_post_update')
     if (self%verbose > 1) then
-      if (self%linecheck < lbound(self%line,1) .or. self%linecheck > ubound(self%line,1)) then
+      if (self%linecheck > self%atom%nline) then
+        skip = .true.
+      elseif (self%fcheck < self%fs .or. self%fcheck > self%fe) then
         skip = .true.
       else
-        line => self%line(self%linecheck)
-        call line%check_range(self%fcheck,self%fcheck,fs,fe,skip)
+        i = self%idx_map(self%linecheck)
+        if ( i == 0) then
+          skip = .true.
+        else
+          line => self%line(i)
+          call line%check_range(self%fcheck,self%fcheck,fs,fe,skip)
+        endif
       endif
       p = self%pcheck
       if (.not. skip .and. all(p > 0)) then
@@ -322,8 +333,8 @@ module lines_patch_mod
         call os%allocate(phi, [self%n(1), self%n(2), self%n(3), 1])
         call line%interpolate_phi(nu, phi)
         write(stdout,'(A, 6(ES15.7))') self%m3d_patch_info(), &
-        phi(p(1),p(2),p(3),1) * line%chi_fac(p(1),p(2),p(3)), &
-        phi(p(1),p(2),p(3),1) * line%eta_fac(p(1),p(2),p(3))
+        phi(p(1),p(2),p(3),1)! * line%chi_fac(p(1),p(2),p(3)), &
+        !phi(p(1),p(2),p(3),1) * line%eta_fac(p(1),p(2),p(3))
         call os%deallocate(phi)
       elseif (self%verbose > 2) then
         write(stdout,'(A,A)') self%m3d_patch_info()
@@ -365,13 +376,14 @@ module lines_patch_mod
   END SUBROUTINE lines_patch_nbor_relations
 
   !===============================================================================
-  SUBROUTINE lines_patch_deallocate_mem(self)
+  SUBROUTINE lines_patch_deallocate_mem(self, deallocator)
     class(lines_patch_t) :: self
+    class(m3d_patch_t), intent(in), target :: deallocator
     ! ----------------------------------------------------------------------------
-    if (self%finished) then
-      call self%m3d_patch_t%deallocate_mem()
-      !deallocate(self%line)
-      !call os%deallocate(self%idx_map)
+    if (self%finished .and. self%is_clear(bits%busy)) then
+      call self%m3d_patch_t%deallocate_mem(deallocator)
+      if (associated(self%line)) deallocate(self%line)
+      if (associated(self%idx_map)) call os%deallocate(self%idx_map)
     endif    
   END SUBROUTINE lines_patch_deallocate_mem
 

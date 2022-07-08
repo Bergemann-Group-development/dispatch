@@ -22,39 +22,38 @@ MODULE atom_mod
         ! maximum number of active lines or continua at any given frequency
         integer :: maxal,maxac
         ! which continua (ac) and lines (al) are active at each frequency
-        integer,dimension(:,:),  allocatable :: ac,al
+        integer, dimension(:,:),  allocatable :: ac,al
         ! how many continua (nac) and lines (nal) are active at each frequency
-        integer,dimension(:),  allocatable :: nac,nal
+        integer, dimension(:),  allocatable :: nac,nal
         ! has this frequency an active prd line
         !logical,dimension(:),allocatable :: hasPRDline
     end type atomic_spectrum_type
     !---------------------------------------------------------------------
   
-    type atom_type
-  
-       integer :: nrad   ! total number of radiative transitions
-       integer :: nrfix  ! number of fixed transitions
-       integer :: ncont  ! number of bound-free transitions
-       integer :: nline  ! number of bound-bound transitions
-       integer :: nlevel ! number of levels
-       integer :: nprd=0 ! number of PRD transitions
-       
-       character(len=20) :: id    ! atom id string 
-       character(len=20) :: crout ! which collisional SUBROUTINE to use 
-  
-       character(len=20),dimension(:),allocatable :: label ! level label
-  
-       integer,dimension(:),allocatable :: ion ! ionization stage of each level
-  
-       integer,dimension(:,:), allocatable :: ilin,icon ! ilin(l1,l2) is the index of the line
-                                                          ! between l1 and l2, if any, 
-                                                          ! likewise for icon
-  
-       real(8) :: abnd ! abundance ( in the [hydrogen]=12 scale)
-       real(8) :: awgt ! atomic weight [g]
-  
-       real(8),dimension(:),allocatable :: ev ! energy of level above ground state [eV]
-       real(8),dimension(:),allocatable :: g ! multiplicity of level
+    type :: atom_type
+        integer :: nrad   ! total number of radiative transitions
+        integer :: nrfix  ! number of fixed transitions
+        integer :: ncont  ! number of bound-free transitions
+        integer :: nline  ! number of bound-bound transitions
+        integer :: nlevel ! number of levels
+        integer :: nprd=0 ! number of PRD transitions
+        
+        character(len=20) :: id    ! atom id string 
+        character(len=20) :: crout ! which collisional SUBROUTINE to use 
+   
+        character(len=20), dimension(:), allocatable :: label ! level label
+   
+        integer, dimension(:), allocatable :: ion ! ionization stage of each level
+   
+        !integer,dimension(:,:), allocatable :: ilin,icon ! ilin(l1,l2) is the index of the line
+        !                                                   ! between l1 and l2, if any, 
+        !                                                   ! likewise for icon
+   
+        real(8) :: abnd ! abundance ( in the [hydrogen]=12 scale)
+        real(8) :: awgt ! atomic weight [g]
+   
+        real(8), dimension(:), allocatable :: ev ! energy of level above ground state [eV]
+        real(8), dimension(:), allocatable :: g ! multiplicity of level
   
         type(line_type), dimension(:), allocatable :: line
         type(cont_type), dimension(:), allocatable :: cont
@@ -65,41 +64,37 @@ MODULE atom_mod
         real(4), dimension(:,:,:), pointer, contiguous :: doppler_factor
   
         ! LTE, NLTE and total population of active atom
-        real(4), dimension(:,:,:,:), pointer, contiguous :: nstar=>null()
-        real(4), dimension(:,:,:,:), pointer, contiguous :: n    =>null()
+        real(4), dimension(:,:,:,:), pointer, contiguous :: nstar => null()
+        real(4), dimension(:,:,:,:), pointer, contiguous :: n     => null()
+        real(8), dimension(:,:,:,:), pointer, contiguous :: gamma_ij => null()
+        real(8), dimension(:,:,:,:), pointer, contiguous :: gamma_ji => null()
         real(4), dimension(:,:,:), pointer, contiguous :: totn
   
-        real(8), dimension(:)  , allocatable  :: e
+        real(8), dimension(:),   allocatable  :: e
         real(8), dimension(:,:), allocatable  :: C, W
         
         real(8) :: qnorm
         integer :: fcheck, pcheck(3), linecheck
+        logical :: stiff 
+        
      contains
         procedure :: add_line_opacities
         procedure :: add_continuum_opacities
         procedure :: full_preconditioning
         procedure :: self_cont_preconditioning
         procedure :: self_line_preconditioning
-        procedure :: compute_line_damping
         procedure :: compute_doppler_factor
         procedure :: partition_function
         procedure :: lte_pop
         procedure :: compute_lte_populations
         procedure :: compute_cont_factors
         procedure :: compute_wphi
-        procedure :: get_trans
         procedure :: solve_stat_equilibrium
         procedure :: create_spectrum
         procedure :: set_active_transitions
         procedure :: read
      
     end type atom_type
-  
-    ! *******************************************************************
-  
-    !type(atom_type),target :: atom
-    !type(line_type),dimension(:),allocatable,target :: line
-    !type(cont_type),dimension(:),allocatable,target :: cont
   
   contains
   
@@ -299,18 +294,17 @@ MODULE atom_mod
      !------------------------------------------------------------------------------------
   
      !====================================================================================
-     SUBROUTINE full_preconditioning(self, fs, temp, Inu, Psi, gamma_ij, gamma_ji, lines, idx_map)
+     SUBROUTINE full_preconditioning(self, fs, temp, Ieff, Psi, gamma_ij, gamma_ji, idx_map, lines, lin_idx_map)
         class(atom_type), target, intent(in) :: self
         integer, intent(in) :: fs
         real(4), dimension(:,:,:), intent(in), contiguous :: temp
-        real(4), dimension(:,:,:,:), intent(in) :: Inu
-        real(4), dimension(:,:,:,:), intent(in), contiguous :: Psi
+        real(4), dimension(:,:,:,:), intent(in), contiguous :: Psi, Ieff
         real(4), dimension(:,:,:,:), intent(inout), contiguous :: gamma_ij, gamma_ji
         class(line_type), dimension(:), intent(in) :: lines
-        integer, dimension(:), intent(in) :: idx_map
-        real(4), dimension(:,:,:), allocatable :: blzfac, Ieff, hk_over_temp
+        integer, dimension(:), intent(in) :: idx_map, lin_idx_map
+        real(4), dimension(:,:,:), allocatable :: blzfac, hk_over_temp
         real(4), dimension(:,:,:), pointer, contiguous :: ni, nj
-        real(4), dimension(:,:,:,:), allocatable :: SumChiDn, SumChiUp, phi, SumEta
+        real(4), dimension(:,:,:,:), allocatable :: SumChiDn, SumChiUp, phi, SumU
         real(4), dimension(:,:,:,:), allocatable :: vij, vji
         real(4), dimension(:), allocatable :: wnu
         integer, dimension(:), allocatable :: lower, upper, trans, ii, jj
@@ -320,10 +314,10 @@ MODULE atom_mod
         logical :: cross_coupling
         integer, save :: itimer1, itimer2, itimer3, itimer4, itimer5, itimer6
         !------------------------------------------------------------------------------------
-        fe = fs + size(Inu, 4) - 1 
-        nx = size(Inu,1)
-        ny = size(Inu,2)
-        nz = size(Inu,3)
+        fe = fs + size(Psi, 4) - 1 
+        nx = size(Psi,1)
+        ny = size(Psi,2)
+        nz = size(Psi,3)
   
         n_active = maxval(self%sp%nac(fs:fe) + self%sp%nal(fs:fe))
 
@@ -355,11 +349,11 @@ MODULE atom_mod
           if (j > nupper) nupper = j
         end do
   
-        allocate(phi, mold=Inu(:,:,:,1:1))
-        allocate(blzfac, Ieff, hk_over_temp, mold=temp)
+        allocate(phi, mold=Psi(:,:,:,1:1))
+        allocate(blzfac, hk_over_temp, mold=temp)
         allocate(SumChiUp(nx,ny,nz,nlower))
         allocate(SumChiDn(nx,ny,nz,nupper))
-        allocate(SumEta  (nx,ny,nz,nupper))
+        allocate(SumU  (nx,ny,nz,nupper))
   
         hk_over_temp = h_k / temp
 
@@ -380,13 +374,13 @@ MODULE atom_mod
                  kc = self%sp%ac(kr,ff)
                  lower(kr) = self%cont(kc)%i
                  upper(kr) = self%cont(kc)%j
-                 trans(kr) = self%cont(kc)%ntrans
+                 trans(kr) = idx_map(self%cont(kc)%ntrans)
                  wnu  (kr) = self%cont(kc)%wnu(ff) * hnu_inv ! wm needs to be multiplied later
               else
                  kl = self%sp%al(kr - self%sp%nac(ff),ff)
                  lower(kr) = self%line(kl)%i
                  upper(kr) = self%line(kl)%j
-                 trans(kr) = self%line(kl)%ntrans
+                 trans(kr) = idx_map(self%line(kl)%ntrans)
                  wnu  (kr) = self%line(kl)%wnu(ff) * hnu_inv ! wm needs to be multiplied later
               endif
            end do
@@ -423,7 +417,7 @@ MODULE atom_mod
            end do
 
            do j=1,nupper
-            SumEta(:,:,:,j) = 0
+            SumU(:,:,:,j) = 0
             if (cross_coupling) SumChiDn(:,:,:,j) = 0
            end do
   
@@ -444,11 +438,11 @@ MODULE atom_mod
                  do z=1,nz
                  do y=1,ny
                  do x=1,nx
-                    vij(x,y,z,kr) = alpha * ni(x,y,z)
-                    vji(x,y,z,kr) = alpha * self%cont(kc)%ni_over_nj_lte(x,y,z) * blzfac(x,y,z) * nj(x,y,z)
-                    chi = vij(x,y,z,kr) - vji(x,y,z,kr)
+                    vij(x,y,z,kr) = alpha
+                    vji(x,y,z,kr) = alpha * self%cont(kc)%ni_over_nj_lte(x,y,z) * blzfac(x,y,z)
+                    chi = vij(x,y,z,kr) * ni(x,y,z) - vji(x,y,z,kr) * nj(x,y,z)
   
-                    SumEta  (x,y,z,j) = SumEta  (x,y,z,j) + vji(x,y,z,kr) * ufac
+                    SumU(x,y,z,j) = SumU(x,y,z,j) + vji(x,y,z,kr) * ufac
                     SumChiUp(x,y,z,i) = SumChiUp(x,y,z,i) + chi
                     if (cross(kr)) SumChiDn(x,y,z,j) = SumChiDn(x,y,z,j) + chi
                  end do
@@ -456,18 +450,18 @@ MODULE atom_mod
                  end do
               else
                  kl = self%sp%al(kr - self%sp%nac(ff),ff)
-                 kl = idx_map(kl)
+                 kl = lin_idx_map(kl)
                  call lines(kl)%interpolate_phi(self%sp%nu(ff:ff), phi)
                  Bij = lines(kl)%Bij * wnu(kr)
                  Bji = lines(kl)%Bji * wnu(kr)
                  do z=1,nz
                  do y=1,ny
                  do x=1,nx
-                    vij(x,y,z,kr) = phi(x,y,z,1) * Bij * ni(x,y,z)
-                    vji(x,y,z,kr) = phi(x,y,z,1) * Bji * nj(x,y,z)
-                    chi = vij(x,y,z,kr) - vji(x,y,z,kr)
+                    vij(x,y,z,kr) = phi(x,y,z,1) * Bij
+                    vji(x,y,z,kr) = phi(x,y,z,1) * Bji
+                    chi = vij(x,y,z,kr) * ni(x,y,z) - vji(x,y,z,kr) * nj(x,y,z)
   
-                    SumEta  (x,y,z,j) = SumEta  (x,y,z,j) + vji(x,y,z,kr) * ufac
+                    SumU(x,y,z,j) = SumU(x,y,z,j) + vji(x,y,z,kr) * ufac
                     SumChiUp(x,y,z,i) = SumChiUp(x,y,z,i) + chi
                     if (cross(kr)) SumChiDn(x,y,z,j) = SumChiDn(x,y,z,j) + chi
                  end do
@@ -486,10 +480,10 @@ MODULE atom_mod
            !call trace%begin('Ieff', itimer=itimer3)
 
            do j=1,nupper
-            SumEta(:,:,:,j) = SumEta(:,:,:,j) * Psi(:,:,:,f)
+            SumU(:,:,:,j) = SumU(:,:,:,j) * Psi(:,:,:,f)
            end do
   
-           Ieff = Inu(:,:,:,f) - sum(SumEta(:,:,:,1:nupper), 4)
+           !Ieff = Inu(:,:,:,f) - sum(SumU(:,:,:,1:nupper), 4)
 
            do kr=1, n_active
              i = ii(kr)
@@ -500,11 +494,11 @@ MODULE atom_mod
              do z=1,nz
              do y=1,ny
              do x=1,nx
-              vji(x,y,z,kr) = vji(x,y,z,kr) * (twohnu3_c2 + Ieff(x,y,z)) - SumChiUp(x,y,z,i) * SumEta(x,y,z,j)
+              vji(x,y,z,kr) = vji(x,y,z,kr) * (twohnu3_c2 + Ieff(x,y,z,f)) - SumChiUp(x,y,z,i) * SumU(x,y,z,j)
               if (cross(kr)) then
-               vij(x,y,z,kr) = vij(x,y,z,kr) * Ieff(x,y,z) + SumChiDn(x,y,z,j) * SumEta(x,y,z,i2)
+               vij(x,y,z,kr) = vij(x,y,z,kr) * Ieff(x,y,z,f) + SumChiDn(x,y,z,j) * SumU(x,y,z,i2)
               else
-               vij(x,y,z,kr) = vij(x,y,z,kr) * Ieff(x,y,z)
+               vij(x,y,z,kr) = vij(x,y,z,kr) * Ieff(x,y,z,f)
               endif
               gamma_ji(x,y,z,k) = gamma_ji(x,y,z,k) + vji(x,y,z,kr)
               gamma_ij(x,y,z,k) = gamma_ij(x,y,z,k) + vij(x,y,z,kr)
@@ -528,29 +522,29 @@ MODULE atom_mod
      !------------------------------------------------------------------------------------
     
    !====================================================================================
-   SUBROUTINE self_cont_preconditioning(self, fs_patch, temp, Inu, Psi, gamma_ij, gamma_ji)
+   SUBROUTINE self_cont_preconditioning(self, fs_patch, temp, Ieff, Psi, gamma_ij, gamma_ji, idx_map)
       class(atom_type), target, intent(in) :: self
       integer, intent(in) :: fs_patch
       real(4), dimension(:,:,:), intent(in), contiguous :: temp
-      real(4), dimension(:,:,:,:), intent(in) :: Inu
-      real(4), dimension(:,:,:,:), intent(in), contiguous :: Psi
+      real(4), dimension(:,:,:,:), intent(in), contiguous :: Psi, Ieff
       real(4), dimension(:,:,:,:), intent(inout), contiguous :: gamma_ij, gamma_ji
+      integer, dimension(:), intent(in) :: idx_map
       class(cont_type), pointer :: cnt
       real(4), dimension(:,:,:,:), allocatable :: blzfac
       real(4), dimension(:,:,:), allocatable :: t_inv, fakt
       real(4), dimension(:), allocatable :: twohnu3_c2, hnu_inv, hnu_k
       real(8), dimension(:), pointer, contiguous :: nu
-      real(4) :: Ieff, wnu, eta, chi, vij, vji, alpha, ufac
+      real(4) :: wnu, eta, chi, vij, vji, alpha, ufac
       integer :: nx, ny, nz, nf, nnu, p(3)
       integer :: i, j, k, f, x, y, z, ff, fs, fe, fcs, fce, fe_patch, fff, kr
       logical :: skip
       integer, save :: itimer
       !------------------------------------------------------------------------------------
       call trace%begin('atom_type%self_cont_preconditioning', itimer=itimer)
-      nx = size(Inu,1)
-      ny = size(Inu,2)
-      nz = size(Inu,3)
-      nf = size(inu,4)
+      nx = size(Psi,1)
+      ny = size(Psi,2)
+      nz = size(Psi,3)
+      nf = size(Psi,4)
 
       fe_patch = fs_patch + nf -1
       nu => self%sp%nu(fs_patch:fe_patch)
@@ -575,11 +569,11 @@ MODULE atom_mod
          cnt => self%cont(kr)
          call cnt%check_range(fs_patch,fe_patch,fs,fe,skip)
          if (skip) cycle
-         k = cnt%ntrans
+         k = idx_map(cnt%ntrans)
          i = cnt%i
          j = cnt%j
 
-         fakt = cnt%ni_over_nj_lte * self%n(:,:,:,j)
+         fakt = cnt%ni_over_nj_lte
      
          do ff=fs,fe
             f = ff - fs_patch + 1
@@ -589,13 +583,13 @@ MODULE atom_mod
             do z=1,nz
             do y=1,ny
             do x=1,nx
-               vij = alpha * self%n(x,y,z,i)
+               vij = alpha
                vji = alpha * fakt(x,y,z) * blzfac(x,y,z,ff)
-               chi = vij - vji
+               chi = vij * self%n(x,y,z,i) - vji * self%n(x,y,z,j)
                eta = vji * ufac * Psi(x,y,z,f)
-               Ieff = Inu(x,y,z,f) - eta
-               gamma_ji(x,y,z,k) = gamma_ji(x,y,z,k) + vji*(Ieff + twohnu3_c2(f)) - chi*eta
-               gamma_ij(x,y,z,k) = gamma_ij(x,y,z,k) + vij*Ieff
+               !Ieff = Inu(x,y,z,f) - eta
+               gamma_ji(x,y,z,k) = gamma_ji(x,y,z,k) + vji*(Ieff(x,y,z,f) + twohnu3_c2(f)) - chi*eta
+               gamma_ij(x,y,z,k) = gamma_ij(x,y,z,k) + vij*Ieff(x,y,z,f)
             end do
             end do
             end do
@@ -609,29 +603,29 @@ MODULE atom_mod
    !------------------------------------------------------------------------------------
 
    !====================================================================================
-   SUBROUTINE self_line_preconditioning(self, fs_patch, temp, Inu, Psi, gamma_ij, gamma_ji, lines)
+   SUBROUTINE self_line_preconditioning(self, fs_patch, temp, Ieff, Psi, gamma_ij, gamma_ji, idx_map, lines)
       class(atom_type), target, intent(in) :: self
       integer, intent(in) :: fs_patch
       real(4), dimension(:,:,:), intent(in), contiguous :: temp
-      real(4), dimension(:,:,:,:), intent(in) :: Inu
-      real(4), dimension(:,:,:,:), intent(in), contiguous :: Psi
+      real(4), dimension(:,:,:,:), intent(in), contiguous :: Psi, Ieff
       real(4), dimension(:,:,:,:), intent(inout), contiguous :: gamma_ij, gamma_ji
+      integer, dimension(:), intent(in) :: idx_map
       class(line_type), dimension(:), intent(in), target :: lines
       class(line_type), pointer :: line
       real(4), dimension(:,:,:,:), allocatable :: phi
       real(4), dimension(:), allocatable :: twohnu3_c2, hnu_inv
       real(8), dimension(:), pointer, contiguous :: nu
-      real(4) :: Ieff, wnu, eta, chi, vij, vji, ufac, Bij, Bji
+      real(4) :: wnu, eta, chi, vij, vji, ufac, Bij, Bji
       integer :: nx, ny, nz, nf, nnu, p(3)
       integer :: i, j, k, f, x, y, z, ff, fs, fe, fe_patch, fff, kr
       logical :: skip
       integer, save :: itimer
       !------------------------------------------------------------------------------------
       call trace%begin('atom_type%self_line_preconditioning', itimer=itimer)
-      nx = size(Inu,1)
-      ny = size(Inu,2)
-      nz = size(Inu,3)
-      nf = size(inu,4)
+      nx = size(Psi,1)
+      ny = size(Psi,2)
+      nz = size(Psi,3)
+      nf = size(Psi,4)
 
       fe_patch = fs_patch + nf -1
       nu => self%sp%nu(fs_patch:fe_patch)
@@ -646,7 +640,7 @@ MODULE atom_mod
          line => lines(kr)
          call line%check_range(fs_patch,fe_patch,fs,fe,skip)
          if (skip) cycle
-         k = line%ntrans
+         k = idx_map(line%ntrans)
          i = line%i
          j = line%j
       
@@ -663,13 +657,13 @@ MODULE atom_mod
             do z=1,nz
             do y=1,ny
             do x=1,nx
-               vij = Bij * phi(x,y,z,fff) * self%n(x,y,z,i)
-               vji = Bji * phi(x,y,z,fff) * self%n(x,y,z,j)
-               chi = vij - vji
+               vij = Bij * phi(x,y,z,fff)
+               vji = Bji * phi(x,y,z,fff)
+               chi = vij * self%n(x,y,z,i) - vji * self%n(x,y,z,j)
                eta = vji * ufac * Psi(x,y,z,f)
-               Ieff = Inu(x,y,z,f) - eta
-               gamma_ji(x,y,z,k) = gamma_ji(x,y,z,k) + vji * (Ieff + twohnu3_c2(f)) - chi*eta
-               gamma_ij(x,y,z,k) = gamma_ij(x,y,z,k) + vij * Ieff
+               !Ieff = Inu(x,y,z,f) - eta
+               gamma_ji(x,y,z,k) = gamma_ji(x,y,z,k) + vji * (Ieff(x,y,z,f) + twohnu3_c2(f)) - chi*eta
+               gamma_ij(x,y,z,k) = gamma_ij(x,y,z,k) + vij * Ieff(x,y,z,f)
             end do
             end do
             end do
@@ -724,11 +718,6 @@ MODULE atom_mod
         case default
             call stop('read_atom: collisional routine keyword: "' // self%crout // '" not supported.')
         end select
-
-        ! go from rate coefficients to actual rates   
-        do i=1,self%nlevel
-            self%c(i,:) = self%c(i,:) * n 
-        enddo
   
         self%w = self%w + self%c * cswitch
   
@@ -738,9 +727,9 @@ MODULE atom_mod
         end do
   
         ! go from rate coefficients to actual rates   
-        !do i=1,self%nlevel
-        !    self%w(i,:) = self%w(i,:) * n 
-        !enddo
+        do i=1,self%nlevel
+            self%w(i,:) = self%w(i,:) * n 
+        enddo
   
         ! replace row with largest population with particle conservation
         ! equation.
@@ -774,20 +763,6 @@ MODULE atom_mod
         ! set e to the relative change in the populations 
         self%e = self%e - 1.0d0
      END SUBROUTINE solve_stat_equilibrium
-     !------------------------------------------------------------------------------------
-  
-     !====================================================================================
-     function get_trans(self, kr) result(trans)
-        class(atom_type), intent(inout), target :: self
-        integer, intent(in) :: kr
-        class(transition_type), pointer :: trans
-  
-        if (kr > self%nline) then
-           trans => self%cont(kr-self%nline)
-        else
-           trans => self%line(kr)
-        endif
-     end function
      !------------------------------------------------------------------------------------
   
      !====================================================================================
@@ -916,39 +891,6 @@ MODULE atom_mod
         doppler_factor = sqrt( 2.0d0*bk / self%awgt * temp ) / cc
      end function compute_doppler_factor
      !------------------------------------------------------------------------------------
-  
-     !====================================================================================
-     SUBROUTINE compute_line_damping(self, ne, temp, nh) ! Compute the damping array
-        class(atom_type), target, intent(inout) :: self
-        real(4),dimension(:,:,:,:),intent(in)  :: nh
-        real(4),dimension(:,:,:),  intent(in)  :: ne, temp
-        real(4), dimension(:,:,:), pointer, contiguous :: tothi, unsold_temp, stark_pe
-        integer :: i, kr, nterm, iterm
-        class(line_type), pointer :: line
-        !---------------------------------------------------------------------------------
-        call os%allocate(tothi, shape(temp))
-        call os%allocate(unsold_temp, shape(temp))
-        call os%allocate(stark_pe, shape(temp))
-  
-        tothi = sum(nh(:,:,:,1:5), 4) ! total neutral hydrogen density
-        unsold_temp =  8.0*BK / PI * (1.0/MH + 1.0/self%awgt) * temp
-        stark_pe = ne * bk * temp**one_sixth
-     
-        do kr=1,self%nline
-           line => self%line(kr)
-           call os%allocate(line%adamp, shape(temp))
-           line%adamp = 0
-           call line%damping(line%adamp, temp, ne, tothi, unsold_temp, stark_pe)
-           if (self%id == 'H') then
-            call line%dampingH(line%adamp, temp, ne, nh(:,:,:,6))
-           endif
-        enddo
-  
-        call os%deallocate(tothi)
-        call os%deallocate(unsold_temp)
-        call os%deallocate(stark_pe)
-     END SUBROUTINE compute_line_damping
-     !------------------------------------------------------------------------------------
      
      !====================================================================================
      SUBROUTINE compute_cont_factors(self)
@@ -962,24 +904,6 @@ MODULE atom_mod
            cont%ni_over_nj_lte = self%nstar(:,:,:,cont%i) / self%nstar(:,:,:,cont%j)
         enddo
      END SUBROUTINE compute_cont_factors
-     !------------------------------------------------------------------------------------
-  
-     !====================================================================================
-     SUBROUTINE zero_sums(sum_arr, indices, clean, n)
-        real(4), dimension(:,:,:,:), intent(inout) :: sum_arr
-        integer, dimension(:), intent(in) :: indices
-        logical, dimension(:), intent(inout) :: clean
-        integer, intent(in) :: n
-        integer :: i
-        !---------------------------------------------------------------------------------
-        clean = .false.
-        do i=1, n
-           if (.not. clean(indices(i))) then
-              sum_arr(:,:,:, indices(i)) = 0
-              clean(indices(i)) = .true.
-           endif
-        end do
-     END SUBROUTINE zero_sums
      !------------------------------------------------------------------------------------
   
      !====================================================================================
@@ -1035,8 +959,8 @@ MODULE atom_mod
         allocate(  self%label ( self%nlevel) ) ; self%label = ' '
         allocate(  self%ion   ( self%nlevel) ) ; self%ion = 0
   
-        allocate(  self%ilin  ( self%nlevel,self%nlevel) ) ; self%ilin=0
-        allocate(  self%icon  ( self%nlevel,self%nlevel) ) ; self%icon=0
+        !allocate(  self%ilin  ( self%nlevel,self%nlevel) ) ; self%ilin=0
+        !allocate(  self%icon  ( self%nlevel,self%nlevel) ) ; self%icon=0
   
         do i=1, self%nlevel
             call nextentry(latom)
@@ -1184,8 +1108,8 @@ MODULE atom_mod
             lin%iblue = lin%nnu
   
             lin%ntrans=i
-            self%ilin(lin%j,lin%i) = i
-            self%ilin(lin%i,lin%j) = i
+            !self%ilin(lin%j,lin%i) = i
+            !self%ilin(lin%i,lin%j) = i
   
             if ( (trim(lin%profile_type) .ne. 'voigt'  ) .and. &
                 (trim(lin%profile_type) .ne. 'prd'    ) .and. &
@@ -1255,8 +1179,8 @@ MODULE atom_mod
   
             cnt%ired=1
             cnt%iblue=cnt%nnu
-            self%icon( cnt%j, cnt%i ) = i
-            self%icon( cnt%i, cnt%j ) = i
+            !self%icon( cnt%j, cnt%i ) = i
+            !self%icon( cnt%i, cnt%j ) = i
   
             if ( cnt%numax .lt. 0.0 ) then
   

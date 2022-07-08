@@ -54,10 +54,11 @@ MODULE composition_mod
 contains
 
     !===============================================================================
-    SUBROUTINE injon(self, absdat_file, abund_file, absmet_file)
+    SUBROUTINE injon(self, absdat_file, abund_file, absmet_file, absmet_big_end)
         class(composition_type), target :: self
         character(len=80), intent(in) :: absdat_file, abund_file
         character(len=80), intent(in), optional :: absmet_file
+        logical, intent(in), optional :: absmet_big_end
         integer :: absdat, abund_unit
         integer :: i, j, k, m, nl, nk
         integer :: lvl_count, skip_back
@@ -404,7 +405,7 @@ contains
 
         if (present(absmet_file)) then
             if (absmet_file /= '') then
-                call self%osmet%init(absmet_file)
+                call self%osmet%init(absmet_file, absmet_big_end=absmet_big_end)
                 self%osmet%eosmet = 0.5
             endif
         endif
@@ -800,7 +801,7 @@ contains
     END SUBROUTINE compute_p6
 
     !===============================================================================
-    SUBROUTINE absorption(self, nu, chi, abslte, sumsca, include_osmet)
+    SUBROUTINE absorption(self, nu, chi, abslte, sumsca, include_absmet, absmet_big_end)
         !use phys_mod, only:planck
         class(composition_type), target :: self
         class(bftrans_type), pointer :: trans
@@ -808,7 +809,7 @@ contains
         real(4), dimension(:,:,:,:), intent(inout) :: chi, abslte, sumsca
         real(dp), dimension(:,:,:), allocatable :: stim
         real(dp), dimension(:), allocatable :: lam
-        logical, optional :: include_osmet
+        logical, optional :: include_absmet, absmet_big_end
         real(dp) :: xray2, epsln
         real(4) :: linop
         integer :: i, j, k, f, nf
@@ -873,8 +874,8 @@ contains
         call self%electron_scattering(sumsca)
         call self%rayleigh_scattering(lam, sumsca)
 
-        if (present(include_osmet)) then
-            if (self%osmet%initialised .and. include_osmet) then
+        if (present(include_absmet)) then
+            if (self%osmet%initialised .and. include_absmet) then
                 call self%osmet%add_line_opacities(nu, self%p6, self%temp, self%ne, abslte, sumsca)
             endif
         endif

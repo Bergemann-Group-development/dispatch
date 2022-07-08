@@ -25,9 +25,10 @@ contains
     !===============================================================================
     ! initialises osmet type.
     !===============================================================================
-    SUBROUTINE init_osmet (self, absmet_file)
+    SUBROUTINE init_osmet (self, absmet_file, absmet_big_end)
         class(osmet_type) :: self
         character(len=80), intent(in) :: absmet_file
+        logical, intent(in), optional :: absmet_big_end
         integer :: lunit, iostat, maxp6, maxtem
         real(4) :: orig_ostabl(mp6, mtem)
         real(4), allocatable :: p6(:), temp(:)
@@ -35,7 +36,12 @@ contains
         integer :: nnu, nt, np
         !---------------------------------------------------------------------------
         print *, 'Reading absmet file: ' // trim(absmet_file)
-        open(file=absmet_file, newunit=lunit, form='unformatted')
+
+        if (absmet_big_end) then
+            open(file=absmet_file, newunit=lunit, form='unformatted', convert='big_endian')
+        else
+            open(file=absmet_file, newunit=lunit, form='unformatted')
+        endif
 
         read(lunit) !textatom
         read(lunit) !textatom

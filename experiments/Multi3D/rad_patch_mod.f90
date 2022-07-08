@@ -23,7 +23,7 @@ module rad_patch_mod
   USE units_mod, only: cgs
   USE mconst, only: over_4pi
   !USE scratch_mod
-  USE m3d_patch_mod, only:m3d_patch_t, conditioning
+  USE m3d_patch_mod, only: m3d_patch_t, conditioning, out_folder
   USE ray_patch_mod
   USE opac_patch_mod
   USE os_mod
@@ -34,29 +34,29 @@ module rad_patch_mod
   !-----------------------------------------------------------------------------
 
   type, public, extends(ray_patch_t) :: radiation_t
-    class(m3d_patch_t), pointer :: opac => null()
+    class(ray_patch_t), pointer :: opac => null()
+    class(ray_patch_t), pointer :: back_opac => null()
     real(4), dimension(:,:,:,:), contiguous, pointer :: Inu, chi, Snu
-    real(4), dimension(:,:,:,:), contiguous, pointer :: Psi
+    real(4), dimension(:,:,:,:), contiguous, pointer :: Psi, Ieff
+    real(4), dimension(:,:,:,:), contiguous, pointer :: Inu_old
+    integer :: stiff_count=1
+    logical :: stiff=.false.
     character(len=64) :: meta_file, ray_name
   contains
     procedure :: pre_init => radiation_pre_init
     procedure :: init => radiation_init
     procedure :: update => radiation_update
+    procedure :: post_update => radiation_post_update
     procedure :: nbor_relations => radiation_nbor_relations
     procedure :: long_ray_update
     procedure :: long_char_update
-    procedure :: long_char_update2
     procedure :: short_ray_update
-    procedure :: short_ray_update2
     procedure :: Jnu_update
     procedure :: bndries
     procedure :: periodic_plane
     procedure :: interp_long
     procedure :: interp_xy_up
-    procedure :: interp_xy_up2
-    procedure :: interp_xy_up3
     procedure :: interp_xy_up_plane
-    procedure :: interp_xy_up_plane2
     procedure :: solve_long_plane
     procedure :: remove_lower_layers_mem
     procedure :: setup_metafile
@@ -69,7 +69,8 @@ module rad_patch_mod
   !-----------------------------------------------------------------------------
 
   logical :: save_output=.false.
-  character(len=64), save:: out_folder = './out/'
+  real(4), save :: stiff_lim=1e-8
+  logical, public, save :: lock_Inu=.false.
 
 contains
   
@@ -78,7 +79,7 @@ SUBROUTINE radiation_pre_init (self)
   class(radiation_t), target:: self
   logical, save :: first_time=.true.
   integer :: iostat, nv, nw
-  namelist /radiation_params/ save_output, out_folder
+  namelist /radiation_params/ save_output, stiff_lim, lock_Inu
   ! ----------------------------------------------------------------------------
   call trace%begin('radiation_t%radiation_pre_init')
   if (first_time) then
@@ -129,15 +130,26 @@ END SUBROUTINE radiation_pre_init
 !===============================================================================
 SUBROUTINE radiation_init (self)
   class(radiation_t) :: self
-  integer :: i
+  integer :: i, m(6)
   ! ----------------------------------------------------------------------------
   call trace%begin('radiation_t%radiation_pre_init')
   call self%ray_patch_t%init()
 
-  if (self%kind=='angle_rad' .or. conditioning == 'self') then
-    call os%allocate(self%Psi, [self%n(1),  self%n(2),  self%n(3),  self%nv])
-    self%Psi = tiny(1.0)
-  end if
+  if (.not. self%out_ray) then
+    m = shape(self%authority_mem)
+    if (self%kind=='angle_rad' .or. conditioning == 'self') then
+      call os%allocate(self%Psi,  m(1:4))
+      call os%allocate(self%Ieff, m(1:4))
+      self%Psi  = tiny(1.0)
+      self%Ieff = tiny(1.0)
+    end if
+    if (lock_Inu) then
+      m = shape(self%authority_mem)
+      m(3) = 2
+      call os%allocate(self%Inu_old, m(1:4))
+      self%Inu_old = tiny(1.0)
+    endif
+  endif
 
   call trace%end()
 END SUBROUTINE radiation_init
@@ -158,13 +170,19 @@ SUBROUTINE radiation_update (self)
       return
     endif
 
+    call self%check_access(self%opac)
+
     if (self%out_ray) then
-      call self%long_char_update2()
+      call self%long_char_update()
     else
+      call self%decompress_mem(self)
+      call self%check_access(self%back_opac)
       if (self%ray%long) then
-        call self%long_ray_update()
+        print *, 'long ray detected! Stopping...'
+        stop
+        !call self%long_ray_update()
       else
-        call self%short_ray_update2()
+        call self%short_ray_update()
       endif
     endif
   case ('mean_rad')
@@ -185,11 +203,66 @@ SUBROUTINE radiation_update (self)
 END SUBROUTINE radiation_update
 
 !===============================================================================
+SUBROUTINE radiation_post_update (self)
+  class(radiation_t) :: self
+  real(4), dimension(:,:,:,:), pointer :: Inu_new
+  integer :: k, f, p(3)
+  !-----------------------------------------------------------------------------
+  if (lock_Inu .and. .not. self%out_ray) then
+    k = self%n(3)
+    Inu_new => self%authority_mem(:,:,1:k:k-1,:,self%it,self%i_Inu)
+    if (all(abs(1 - self%Inu_old/Inu_new) < stiff_lim)) then
+      self%stiff_count = self%stiff_count*2
+      self%stiff = .true.
+      if (.not. self%opac%finished) then
+        call self%opac%compress_mem(self)
+        call self%opac%skip_iterations(self%stiff_count-1)
+      endif
+
+    elseif(self%stiff) then
+      !print *, self%m3d_patch_info(), 'Inu has changed, but used to be stiff'
+      self%stiff_count = 1
+      self%stiff = .false.
+    endif
+
+    self%Inu_old = Inu_new
+  endif
+  
+  if (self%verbose > 1) then
+    if (self%stiff) then
+      if (self%check_in_bounds .or. self%verbose > 2) then
+        write(stdout,'(A, A, I4)') self%m3d_patch_info(), &
+        'intensity has not changed, skipping', self%stiff_count-1
+      endif
+    elseif (self%check_in_bounds) then
+      p = self%pcheck
+      f = self%fcheck
+      select case (self%kind)
+      case ('out_rad')
+        write(stdout,'(A, 6(ES15.7))') self%m3d_patch_info(), &
+        sum(self%mem(:,:,1,f,1,1)) / product(self%n(1:2))
+      case default
+        write(stdout,'(A, 6(ES15.7))') self%m3d_patch_info(), &
+        self%mem(p(1),p(2),p(3),f,1,:)
+      end select
+    elseif (self%verbose > 2) then
+      write(stdout,'(A,A)') self%m3d_patch_info()
+    endif
+  endif 
+
+  call self%m3d_patch_t%post_update()
+
+  if (self%stiff .and. .not. self%finished) then
+    call self%skip_iterations(self%stiff_count-1)
+  endif
+END SUBROUTINE radiation_post_update
+
+!===============================================================================
 SUBROUTINE Jnu_update (self)
   class(radiation_t) :: self
   class(nbor_t), pointer:: nbor
   integer :: i,j,k,f
-  real(4), dimension(:,:,:,:), pointer :: Jnu, Psi
+  real(4), dimension(:,:,:,:), pointer :: Jnu, Psi, Ieff
   real(4), dimension(:,:,:,:), pointer :: Inu
   real(4), dimension(:,:,:,:,:), allocatable :: opac
   integer, save:: itimer=0
@@ -199,8 +272,10 @@ SUBROUTINE Jnu_update (self)
 
   Jnu => self%mem(:,:,:,:, self%it, self%i_inu)
   Psi => self%Psi
+  Ieff => self%Ieff
   Jnu = 0
   Psi = 0
+  Ieff = 0
 
   nbor => self%link%nbor
   do while (associated(nbor))
@@ -212,8 +287,9 @@ SUBROUTINE Jnu_update (self)
       do k=1, self%n(3)
       do j=1, self%n(2)
       do i=1, self%n(1)
-        Jnu(i,j,k,f) = Jnu(i,j,k,f) + wmu * Inu(i,j,k,f)
-        Psi(i,j,k,f) = Psi(i,j,k,f) + wmu * nb%Psi(i,j,k,f)
+        Jnu(i,j,k,f)  = Jnu(i,j,k,f)  + wmu * Inu(i,j,k,f)
+        Psi(i,j,k,f)  = Psi(i,j,k,f)  + wmu * nb%Psi(i,j,k,f)
+        Ieff(i,j,k,f) = Ieff(i,j,k,f) + wmu * nb%Ieff(i,j,k,f)
       end do
       end do
       end do
@@ -276,7 +352,7 @@ SUBROUTINE long_ray_update (self)
     end do ! k-loop
   end do ! f-loop
 
-  self%Psi = self%Psi / chi
+  !self%Psi = self%Psi / chi
 
   call trace%end(itimer)
 END SUBROUTINE long_ray_update
@@ -284,110 +360,8 @@ END SUBROUTINE long_ray_update
 !===============================================================================
 SUBROUTINE short_ray_update (self)
   class(radiation_t), target :: self
-  real(4), dimension(:,:,:,:),   pointer, contiguous :: ex, source, xxup, ssup
-  real(4), dimension(:,:),       pointer, contiguous :: Inuup, kernel
-  real(4), dimension(:,:),       pointer, contiguous :: II
-  real(4), dimension(:,:,:,:),   pointer             :: Inu, xx,ss
-  integer :: k1, k2, m(4), i2, i3, i4
-  real(4) :: Inumin, dsup
-  integer :: f, k, z, i, j, dx,dy,i1,j1,x1,x2,y1,y2
-  integer, save:: itimer=0
-  !-----------------------------------------------------------------------------
-  call trace%begin('radiation_t%short_ray_update', itimer=itimer)
-
-  self%Inu => self%mem(:,:,:,:, self%it, self%i_inu)
-  self%chi => self%opac%mem(:,:,:,:, self%opac%it, self%opac%i_chi)
-  self%Snu => self%opac%mem(:,:,:,:, self%opac%it, self%opac%i_snu)
-
-  Inu => self%authority_mem(:,:,:,:,self%it,self%i_inu)
-  xx => self%opac%authority_mem(:,:,:,:,self%opac%it,self%opac%i_chi)
-  ss => self%opac%authority_mem(:,:,:,:,self%opac%it,self%opac%i_Snu)
-
-  k1 = merge(self%li(3), self%ui(3), self%dir > 0)
-  k2 = merge(self%li(3), self%ui(3), self%dir < 0)
-
-  m = shape(ss)
-  call os%allocate (Inuup, self%n(1:2))
-  call os%allocate (kernel, shape(self%ray%upkern))
-  call os%allocate (ex, m)
-  call os%allocate (xxup, m)
-  call os%allocate (ssup, m)
-  call os%allocate (source, m)
-
-  kernel = real(self%ray%upkern)
-  dsup   = real(self%ray%dsup)
-  call self%interp_xy_up3(self%chi, xxup, self%ray%upo1, self%ray%upo2, kernel, .true.)
-  call self%interp_xy_up3(self%Snu, ssup, self%ray%upo1, self%ray%upo2, kernel, .true.)
-  call extinction_and_source(dsup, xx, xxup, ss, ssup, self%Psi, ex, source)
-
-  dx = size(kernel, 1) - 1
-  dy = size(kernel, 2) - 1
-  i1 = self%li(1) - 1 + self%ray%upo1
-  j1 = self%li(2) - 1 + self%ray%upo2
-
-  do f=1, self%nv
-  ! ----------------------------------------------------------------------------
-  ! frequency vectorisation is slower, because k varies quicker in mem than f.
-  ! ----------------------------------------------------------------------------
-    do k=k1,k2,self%dir
-      z = k - self%li(3) + 1
-      II => self%Inu(:,:, k-self%dir,f)
-      
-      do j=1,self%n(2)
-        y1 = j + j1
-        y2 = y1 + dy
-    
-        !$omp simd
-        do i=1,self%n(1)
-
-          if (ex(i,j,z,f) == 0) then
-            Inu(i,j,z,f) = source(i,j,z,f)
-          else
-            x1 = i + i1
-            x2 = x1 + dx
-            Inuup(i,j) = sum(kernel * II(x1:x2, y1:y2))
-
-            !supress undershoot
-            Inumin = minval(II(x1+1:x1+2, y1+1:y1+2))
-            if (Inuup(i,j) < Inumin) then
-              Inuup(i,j) = Inumin
-            endif
-
-            Inu(i,j,z,f) = Inuup(i,j)*ex(i,j,z,f) + source(i,j,z,f)
-          endif
-        end do
-      end do
-
-      call self%periodic_plane(self%Inu(:,:,k,f))
-      !if (self%verbose>1 .and. z==self%pcheck(3) .and. f==self%fcheck) then
-      !  write(*,'(F5.1, A12, 4(I4), 6(ES15.7))') self%time, 'Inuup', self%patch%id, self%i_nu, self%dir, self%i_mu, &
-      !  Inuup(self%pcheck(1),self%pcheck(2))
-      !endif
-    end do ! k-loop
-  end do ! f-loop
-
-  !if (self%verbose>1) then
-  !  write(*,'(F5.1, A12, 4(I4), 6(ES15.7))') self%time, 'xxup ssup', self%patch%id, self%i_nu, self%dir, self%i_mu, &
-  !  xxup(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%fcheck), &
-  !  ssup(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%fcheck)
-  !  !ex(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%fcheck), &
-  !  !source(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%fcheck)
-  !endif
-
-  call os%deallocate(Inuup)
-  call os%deallocate(kernel)
-  call os%deallocate(ex)
-  call os%deallocate(xxup)
-  call os%deallocate(ssup)
-  call os%deallocate(source)
-
-  call trace%end(itimer)
-END SUBROUTINE short_ray_update
-
-!===============================================================================
-SUBROUTINE short_ray_update2 (self)
-  class(radiation_t), target :: self
   real(4), dimension(:,:), pointer, contiguous :: kernel
+  real(4), dimension(:,:,:,:), pointer, contiguous :: eta_back
   real(4) :: dt, u0, ex, Inuup, xxup, ssup, xxmin, ssmin, Inumin, dsup05, Psi, xx, ss, Inu
   integer :: f, k, i, j, dx,dy,i1,j1,x1,x2,y1,y2, kup, k1, k2, dir, x, y, z, ii, jj
   integer, save:: itimer=0
@@ -397,6 +371,7 @@ SUBROUTINE short_ray_update2 (self)
   self%Inu => self%mem(:,:,:,:, self%it, self%i_inu)
   self%chi => self%opac%mem(:,:,:,:, self%opac%it, self%opac%i_chi)
   self%Snu => self%opac%mem(:,:,:,:, self%opac%it, self%opac%i_snu)
+  eta_back => self%back_opac%mem(:,:,:,:, self%back_opac%it, self%back_opac%i_eta)
 
   call os%allocate (kernel, shape(self%ray%upkern))
   kernel = real(self%ray%upkern)
@@ -476,6 +451,7 @@ SUBROUTINE short_ray_update2 (self)
           endif
 
           self%Psi(x,y,z,f) = Psi / xx
+          self%Ieff(x,y,z,f) = self%Inu(i,j,k,f) - self%Psi(x,y,z,f) * (ss*xx - eta_back(x,y,z,f))
         end do
       end do
 
@@ -485,97 +461,10 @@ SUBROUTINE short_ray_update2 (self)
 
   call os%deallocate(kernel)
   call trace%end(itimer)
-END SUBROUTINE short_ray_update2
+END SUBROUTINE short_ray_update
 
 !===============================================================================
 SUBROUTINE long_char_update (self)
-  class(radiation_t), target :: self
-  real(4), dimension(:,:,:,:), pointer, contiguous :: xx, ss, Psi, ex, source
-  real(4), dimension(:,:,:,:), pointer :: xxup, ssup, xxl, ssl
-  real(4), dimension(2) :: delta, deltak, fpart
-  integer, dimension(2) :: ipart
-  real(4), dimension(4) :: kernel
-  integer :: f, k
-  integer, save:: itimer=0
-  !-----------------------------------------------------------------------------
-  call trace%begin('radiation_t%long_char_update', itimer=itimer)
-
-  self%Inu => self%mem(:,:,:,:, self%it, self%i_inu)
-  self%chi => self%opac%mem(:,:,:,:, self%opac%it, self%opac%i_chi)
-  self%Snu => self%opac%mem(:,:,:,:, self%opac%it, self%opac%i_snu)
-
-  call os%allocate(xx,     shape(self%mem))
-  call os%allocate(ss,     shape(self%mem))
-  call os%allocate(Psi,    shape(self%authority_mem))
-  call os%allocate(ex,     shape(self%authority_mem))
-  call os%allocate(source, shape(self%authority_mem))
-
-  delta = self%vec(:2) / (self%vec(3) * self%ds(:2)) ! shift in units of grid cells
-
-  do f=1, self%nv
-    ! ----------------------------------------------------------------------------
-    ! frequency vectorisation is slower, because k varies quicker in mem than f.
-    ! ----------------------------------------------------------------------------
-    do k=1, self%ui(3)
-      deltak = (self%box(3) - (k-1)*self%ds(3) - self%origin(3)) * delta
-      ipart = int(deltak) !integer part of shift
-      fpart = deltak - ipart !fractional part
-      where (deltak < 0) 
-        fpart = 1.0 + fpart
-        ipart = ipart - 1.0
-      end where
-
-      ! bilinear interpolation to avoid overshooting
-      kernel(1) = (1.0-fpart(1))*(1.0-fpart(2))
-      kernel(2) =      fpart(1) *(1.0-fpart(2))
-      kernel(3) = (1.0-fpart(1))*     fpart(2) 
-      kernel(4) =      fpart(1) *     fpart(2)
-
-      call self%interp_long(self%chi(:,:,k,f), xx(:,:,k,f), ipart(1), ipart(2), kernel)
-      call self%interp_long(self%Snu(:,:,k,f), ss(:,:,k,f), ipart(1), ipart(2), kernel)
-    end do
-  end do ! f-loop
-
-  xxl => xx(:,:,self%li(3):self%ui(3),:) 
-  ssl => ss(:,:,self%li(3):self%ui(3),:) 
-  xxup => xx(:,:,1:self%n(3),:) 
-  ssup => ss(:,:,1:self%n(3),:) 
-  
-  call self%bndries() ! reinforce boundary condition
-
-  call extinction_and_source(real(self%ray%dsup), xxl, xxup, ssl, ssup, Psi, ex, source)
-
-  do f=1, self%nv
-    do k=1, self%n(3)
-      self%Inu(:,:,k+1,f) = self%Inu(:,:,k,f)*ex(:,:,k,f) + source(:,:,k,f)
-      !if (self%verbose>1 .and. k==self%pcheck(3) .and. f==self%fcheck) then
-      !  write(*,'(F5.1, A12, 4(I4), 6(ES15.7))') self%time, 'Inuup', self%patch%id, self%i_nu, self%dir, self%i_mu, &
-      !  self%Inu(self%pcheck(1),self%pcheck(2), k, f)
-      !endif
-    end do
-  end do ! f-loop
-
-  !if (self%verbose>1) then
-  !  write(*,'(F5.1, A12, 4(I4), 8(ES15.7))') self%time, 'xxup ssup', self%patch%id, self%i_nu, self%dir, self%i_mu, &
-  !  self%chi(self%pcheck(1),self%pcheck(2),self%pcheck(3)+1,self%fcheck), &
-  !  self%Snu(self%pcheck(1),self%pcheck(2),self%pcheck(3)+1,self%fcheck), &
-  !  xxup(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%fcheck), &
-  !  ssup(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%fcheck), &
-  !  xxl(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%fcheck), &
-  !  ssl(self%pcheck(1),self%pcheck(2),self%pcheck(3),self%fcheck)
-  !endif
-
-  call os%deallocate(xx)
-  call os%deallocate(ss)
-  call os%deallocate(Psi)
-  call os%deallocate(ex)
-  call os%deallocate(source)
-
-  call trace%end(itimer)
-END SUBROUTINE long_char_update
-
-!===============================================================================
-SUBROUTINE long_char_update2 (self)
   class(radiation_t), target :: self
   real(4), dimension(:,:,:), pointer, contiguous :: xx, ss
   real(4), dimension(:,:), contiguous, pointer :: kernel
@@ -659,7 +548,7 @@ SUBROUTINE long_char_update2 (self)
   call os%deallocate(ss)
 
   call trace%end(itimer)
-END SUBROUTINE long_char_update2
+END SUBROUTINE long_char_update
 
 !===============================================================================
 pure subroutine interp_xy_up(self, VarIn, VarUp, up1, up2, kernel, check_undershoot)
@@ -682,70 +571,6 @@ pure subroutine interp_xy_up(self, VarIn, VarUp, up1, up2, kernel, check_undersh
     end do
   end do
 end subroutine interp_xy_up
-
-!===============================================================================
-subroutine interp_xy_up2(self, VarIn, VarUp, up1, up2, kernel, check_undershoot)
-  class(radiation_t), intent(in) :: self
-  integer :: z1,k,f,v,k1
-  integer, intent(in) :: up1, up2
-  real(4), dimension(:,:,:,:), intent(in) :: VarIn
-  real(4), dimension(:,:,:,:), intent(out) :: VarUp
-  real(4), dimension(:,:), intent(in) :: kernel
-  logical, intent(in) :: check_undershoot
-  !-----------------------------------------------------------------------------
-  k1 = self%li(3) - 1 - self%dir
-
-  do f=1,self%nv
-    do k=1,self%n(3)
-      z1 = k + k1
-      call self%interp_xy_up_plane(VarIn(:,:,z1,f), VarUp(:,:,k,f), up1, up2, kernel, check_undershoot)
-    end do
-  end do
-end subroutine interp_xy_up2
-
-!===============================================================================
-subroutine interp_xy_up3(self, VarIn, VarUp, up1, up2, kernel, check_undershoot)
-  class(radiation_t):: self
-  integer :: x1,x2,y1,y2,z1,i,j,k,f,v,i1,j1,k1,dx,dy
-  integer, intent(in) :: up1, up2
-  real(4), dimension(:,:,:,:) :: VarIn
-  real(4), dimension(:,:,:,:) :: VarUp
-  real(4), dimension(:,:) :: kernel
-  logical, intent(in) :: check_undershoot
-  real(4) :: VarMin
-  !-----------------------------------------------------------------------------
-  dx = size(kernel, 1) - 1
-  dy = size(kernel, 2) - 1
-  i1 = self%li(1) - 1 + up1
-  j1 = self%li(2) - 1 + up2
-  k1 = self%li(3) - 1 - self%dir
-
-  do f=1,self%nv
-    do k=1,self%n(3)
-      z1 = k + k1
-
-      do j=1,self%n(2)
-        y1 = j + j1
-        y2 = y1 + dy
-
-        !$omp simd
-        do i=1,self%n(1)
-            x1 = i + i1
-            x2 = x1 + dx
-
-            VarUp(i,j,k,f) = sum(kernel * VarIn(x1:x2, y1:y2, z1, f))
-
-            if (check_undershoot) then
-              VarMin = minval(VarIn(x1+1:x1+2, y1+1:y1+2, z1, f))
-              if (VarUp(i,j,k,f) < VarMin) then
-                VarUp(i,j,k,f) = VarMin
-              endif
-            endif
-        end do
-      end do
-    end do
-  end do
-end subroutine interp_xy_up3
 
 !===============================================================================
 pure subroutine interp_xy_up_plane(self, VarIn, VarUp, up1, up2, kernel, check_undershoot)
@@ -782,55 +607,6 @@ pure subroutine interp_xy_up_plane(self, VarIn, VarUp, up1, up2, kernel, check_u
   end do
   end do
 end subroutine interp_xy_up_plane
-
-!===============================================================================
-pure subroutine interp_xy_up_plane2(self, VarIn, VarUp, up1, up2, kernel, check_undershoot)
-  class(radiation_t), intent(in) :: self
-  integer :: x1,x2,y1,y2,i,j, kx,ky
-  integer, intent(in) :: up1, up2
-  real(4), dimension(:,:), intent(in) :: VarIn, kernel
-  real(4), dimension(:,:), intent(out) :: VarUp
-  logical, intent(in) :: check_undershoot
-  real(4), dimension(:,:), allocatable :: VarMin
-  !-----------------------------------------------------------------------------
-  kx = size(kernel, 1)
-  ky = size(kernel, 2)
-
-  VarUp = 0.0
-
-  do i=1,kx
-    do j=1,ky
-
-       x1 = self%li(1) + up1 + i - 1
-       x2 = self%ui(1) + up1 + i - 1              
-       y1 = self%li(2) + up2 + j - 1
-       y2 = self%ui(2) + up2 + j - 1
-
-       VarUp = VarUp + kernel(i,j) * VarIn(x1:x2, y1:y2)
-
-    end do
-  end do
-
-  if (check_undershoot) then
-    ! suppress undershoot
-    allocate(Varmin, mold=VarUp)
-    Varmin = huge(1.0e0)
-
-    do i=1,2
-        do j=1,2
-
-          x1 = self%li(1) + up1 + i
-          x2 = self%ui(1) + up1 + i               
-          y1 = self%li(2) + up2 + j
-          y2 = self%ui(2) + up2 + j 
-
-          where ( VarMin > VarIn(x1:x2, y1:y2) ) VarMin = VarIn(x1:x2, y1:y2)
-        end do
-    end do
-
-    where ( VarUp < VarMin ) VarUp = VarMin
-  endif
-end subroutine interp_xy_up_plane2
 
 !===============================================================================
 subroutine solve_long_plane(self, k, f, xxl, ssl, Inuup)
@@ -891,7 +667,6 @@ SUBROUTINE interp_long(self, Varin, Varup, up1, up2, kernel)
       ! indices might cross periodic boundary, hence no array sum possible
       VarUp(i,j) = kernel(1)*VarIn(x1,y1) + kernel(2)*Varin(x2,y1) &
                  + kernel(3)*VarIn(x1,y2) + kernel(4)*Varin(x2,y2)
-
     end do
   end do
 END SUBROUTINE interp_long
@@ -924,33 +699,6 @@ pure elemental subroutine linear_formsolv(ds, xx1, xx2, ss1, ss2, Inuup, Psi, In
   ! intensity at center point
   Inu = Inuup*ex + (u0 - Psi)*ss1 + Psi*ss2
 end subroutine linear_formsolv
-
-!===============================================================================
-ELEMENTAL SUBROUTINE extinction_and_source(dsup, xx, xxup, ss, ssup, Psi, ex, source)
-  real(4), intent(in) :: dsup
-  real(4), intent(in) :: xxup, ssup, xx, ss
-  real(4), intent(out) :: Psi, ex, source
-  real(4) :: u0, dt
-  ! ----------------------------------------------------------------------------
-  dt = 0.5 * dsup * ( xxup + xx ) ! upwind optical pathlength
-  if (dt < 80) then
-    ex = exp(-dt) 
-  else
-    ex = 0
-  endif
-  ! Compute the U functions, use Taylor expansion for small dt
-  ! to avoid accuracy issues with 1-(number slightly smaller than one)
-  if ( dt > 1.0e-3 ) then
-          u0 = 1.0 - ex
-          Psi = 1 - u0 / dt
-  else
-          Psi = dt * (0.5 - 0.16666667*dt)
-          u0 = dt * (1 - Psi)
-  endif
-
-  source = (u0 - Psi) * ssup + Psi*ss
-  Psi = Psi / xx
-END SUBROUTINE extinction_and_source
 
 !===============================================================================
 SUBROUTINE periodic_plane (self, arr)
@@ -1014,6 +762,9 @@ SUBROUTINE radiation_nbor_relations(self, another, needed, needs_me, download)
       if (self%kind=='angle_rad' .and. another%kind=='net_opac') then
         needs_me=.false.
         self%opac => another
+      elseif (self%kind=='angle_rad' .and. another%kind=='back_opac') then
+        needs_me=.false.
+        self%back_opac => another
       elseif(another%kind=='rate_patch' .and. self%i_mu==another%i_mu) then
         needed=.false.
       elseif(self%kind=='mean_rad' .and. another%kind=='back_opac') then
@@ -1031,7 +782,7 @@ END SUBROUTINE radiation_nbor_relations
 !===============================================================================
 SUBROUTINE bndries (self)
   class(radiation_t):: self
-  integer :: li(3), ui(3), f
+  integer :: li, ui, f
   !----------------------------------------------------------------------------
   if (self%kind == 'angle_rad') then
     self%Inu => self%mem(:,:,:,:, self%it, self%i_inu)
@@ -1039,14 +790,16 @@ SUBROUTINE bndries (self)
     self%Snu => self%opac%mem(:,:,:,:, self%opac%it, self%opac%i_snu)
 
     if (self%boundaries%upper) then
+      ui = ubound(self%mem,3)
       do f=1, self%nv
-        self%Inu(:,:,self%gn(3),f) = 0
+        self%Inu(:,:,ui,f) = 0
       end do
     endif
   
     if (self%boundaries%lower) then
+      li = lbound(self%mem,3)
       do f=1, self%nv
-        self%Inu(:,:,1,f) = self%Snu(:,:,1,f)
+        self%Inu(:,:,li,f) = self%Snu(:,:,li,f)
       end do
     endif
   else
@@ -1149,25 +902,33 @@ SUBROUTINE save_meta4(self, filename, store, shpe)
 END SUBROUTINE save_meta4
 
 !===============================================================================
-SUBROUTINE rad_patch_deallocate_mem (self)
+SUBROUTINE rad_patch_deallocate_mem (self, deallocator)
   class(radiation_t):: self
+  class(m3d_patch_t), intent(in), target :: deallocator
   integer :: m(6), li(3), ui(3)
   !-----------------------------------------------------------------------------
-  call self%ray_patch_t%deallocate_mem()
-  if (associated(self%Psi)) then
+  call self%ray_patch_t%deallocate_mem(deallocator)
+  if (associated(self%Psi) .and. self%is_clear(bits%busy)) then
     call os%deallocate(self%Psi)
+    call os%deallocate(self%Ieff)
   endif
 END SUBROUTINE rad_patch_deallocate_mem
 
 !===============================================================================
-SUBROUTINE rad_patch_allocate_mem (self)
+SUBROUTINE rad_patch_allocate_mem (self, allocator, m_in)
   class(radiation_t):: self
-  integer :: m(6), li(3), ui(3)
+  class(m3d_patch_t), intent(in), target :: allocator
+  integer, intent(in), optional :: m_in(6)
+  integer :: m(4)
   !-----------------------------------------------------------------------------
-  call self%ray_patch_t%allocate_mem()
+  call self%ray_patch_t%allocate_mem(allocator, m_in)
   if (.not. associated(self%Psi)) then
-    call os%allocate(self%Psi, [self%n(1),  self%n(2),  self%n(3),  self%nv])
-    self%Psi = tiny(1.0)
+    m(1:3) = self%n
+    m(4) = self%nv
+    call os%allocate(self%Psi, m)
+    call os%allocate(self%Ieff,m)
+    self%Psi  = tiny(1.0)
+    self%Ieff = tiny(1.0)
   endif
 END SUBROUTINE rad_patch_allocate_mem
 

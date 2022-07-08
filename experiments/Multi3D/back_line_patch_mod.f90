@@ -85,7 +85,7 @@ module back_line_patch_mod
     class(element_type), pointer :: element
     class(ion_type), pointer :: ion
     class(bbtrans_type), pointer :: line
-    real(4), dimension(:,:,:), pointer, contiguous :: tothi, ne, temp, adamp, inv_df
+    real(4), dimension(:,:,:), pointer, contiguous :: tothi, ne, temp, adamp, inv_df, vproj
     real(4), dimension(:,:,:), pointer, contiguous :: vel_dop, nh6, inv_part, unsold_temp, stark_pe
     real(8), dimension(:,:,:), pointer, contiguous :: EK_over_temp
     real(4), dimension(:,:,:,:), pointer, contiguous :: nh, phi, eta, chi
@@ -112,9 +112,10 @@ module back_line_patch_mod
     call os%allocate(inv_part, self%n)
     call os%allocate(unsold_temp, self%n)
     call os%allocate(stark_pe, self%n)
+    call os%allocate(vproj, self%n)
     call os%allocate(h4pi_nu, shape(nu))
 
-    call self%comp_vproj(self%vproj)
+    call self%comp_vproj(vproj)
     tothi = sum(nh(:,:,:,1:5), 4) ! total neutral hydrogen density
     stark_pe = ne * bk * temp**one_sixth
     h4pi_nu = h_4pi * nu
@@ -150,7 +151,7 @@ module back_line_patch_mod
         scalar = CC / sqrt(2*BK / awgt)
         inv_df = scalar / sqrt(temp)
 
-        vel_dop = (1 + self%vproj) * inv_df
+        vel_dop = (1 + vproj) * inv_df
 
         scalar = 8.0*BK / PI * (1.0/MH + 1.0/awgt)
         unsold_temp =  scalar * temp
@@ -193,6 +194,7 @@ module back_line_patch_mod
     call os%deallocate(inv_part)
     call os%deallocate(unsold_temp)
     call os%deallocate(stark_pe)
+    call os%deallocate(vproj)
     call self%post_update()
     call trace%end(itimer)
   END SUBROUTINE back_line_patch_update

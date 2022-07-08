@@ -39,18 +39,20 @@ module ray_patch_mod
     type(ray_type) :: ray
     real(8) :: vec(3), wmu
     integer :: dir=0, fs, fe, i_out=0
-    real(4), dimension(:,:,:), pointer, contiguous :: vproj
+    logical :: check_in_bounds
   contains
     procedure :: pre_init => ray_patch_pre_init
     procedure :: init => ray_patch_init
     procedure :: post_update => ray_post_update
+    procedure :: finish => ray_patch_finish
     procedure :: nbor_relations => ray_nbor_relations
     procedure :: set_freq_indices
     procedure :: check_topbot
     procedure :: is_upstream => ray_is_upstream
     procedure :: comp_vproj
-    procedure :: deallocate_mem => ray_patch_deallocate_mem
     procedure :: ff_index
+    procedure :: compress_mem
+    procedure :: decompress_mem
     procedure :: pack => ray_pack
     procedure :: unpack => ray_unpack
     procedure :: allocate_mesg => ray_allocate_mesg
@@ -136,6 +138,32 @@ SUBROUTINE ray_patch_pre_init (self)
 END SUBROUTINE ray_patch_pre_init
 
 !===============================================================================
+SUBROUTINE ray_patch_init (self)
+  class(ray_patch_t) :: self
+  integer :: f, p(3)
+  real(8) :: offset
+  ! ----------------------------------------------------------------------------
+  if (self%is_set(bits%virtual)) then
+    offset = self%dir * (self%n(3)-1)/2 * self%ds(3)
+    self%position(3) = self%position(3) + offset
+    self%origin(3) = self%origin(3) + offset
+    self%size(3) = self%ds(3)
+    self%n(3) = 1
+    self%ng(3) = 0
+  endif
+  p = self%pcheck
+  call self%ff_index(self%fcheck, f)
+  self%check_in_bounds = f > 0
+  if (self%check_in_bounds) then
+    if (self%kind /= 'out_rad') then
+      self%check_in_bounds = all(p > 0)
+    endif
+    self%fcheck = f
+  endif
+  call self%m3d_patch_t%init()
+END SUBROUTINE ray_patch_init
+
+!===============================================================================
 SUBROUTINE set_freq_indices (self)
   class(ray_patch_t) :: self
   integer :: fs, fe, nv, md, i_nu
@@ -197,24 +225,14 @@ END SUBROUTINE comp_vproj
 !===============================================================================
 SUBROUTINE ray_post_update (self)
   class(ray_patch_t) :: self
-  logical :: in_bounds
   integer :: f, p(3)
   !-----------------------------------------------------------------------------
   call trace%begin ('ray_patch_t%ray_post_update')
   if (self%verbose > 1) then
-    p = self%pcheck
-    call self%ff_index(self%fcheck, f)
-    in_bounds = f > 0
-
-    if (in_bounds) then
-      if (self%kind /= 'out_rad') in_bounds = all(p > 0)
-    endif
-
-    if (in_bounds) then
+    if (self%check_in_bounds) then
+      p = self%pcheck
+      f = self%fcheck
       select case (self%kind)
-      case('rate_patch')
-        write(stdout,'(A, 6(ES15.7))') self%m3d_patch_info(), &
-        self%mem(p(1),p(2),p(3),self%linecheck,1,:)
       case ('out_rad')
         write(stdout,'(A, 6(ES15.7))') self%m3d_patch_info(), &
         sum(self%mem(:,:,1,f,1,1)) / product(self%n(1:2))
@@ -233,33 +251,13 @@ SUBROUTINE ray_post_update (self)
 END SUBROUTINE ray_post_update
 
 !===============================================================================
-SUBROUTINE ray_patch_init (self)
+SUBROUTINE ray_patch_finish (self, rotated)
   class(ray_patch_t) :: self
-  real(8) :: offset
-  ! ----------------------------------------------------------------------------
-  if (self%is_set(bits%virtual)) then
-    offset = self%dir * (self%n(3)-1)/2 * self%ds(3)
-    self%position(3) = self%position(3) + offset
-    self%origin(3) = self%origin(3) + offset
-    self%size(3) = self%ds(3)
-    self%n(3) = 1
-    self%ng(3) = 0
-  elseif (self%i_mu > 0) then
-    call os%allocate(self%vproj, [self%n(1), self%n(2), self%n(3)])
-  endif
-  call self%m3d_patch_t%init()
-END SUBROUTINE ray_patch_init
-
-!===============================================================================
-SUBROUTINE ray_patch_deallocate_mem (self)
-  class(ray_patch_t):: self
-  integer :: m(6), li(3), ui(3)
+  logical, optional :: rotated
   !-----------------------------------------------------------------------------
-  call self%m3d_patch_t%deallocate_mem()
-  if (associated(self%vproj)) then
-    call os%deallocate(self%vproj)
-  endif
-END SUBROUTINE ray_patch_deallocate_mem
+  call self%m3d_patch_t%finish(rotated)
+  self%static_mem = .false.
+END SUBROUTINE ray_patch_finish
 
 !===============================================================================
 !> Determine if a task is upstream.  
@@ -407,6 +405,68 @@ SUBROUTINE ray_nbor_relations(self, another, needed, needs_me, download)
   call trace%end()
 END SUBROUTINE ray_nbor_relations
 
+!===============================================================================
+SUBROUTINE compress_mem (self, compressor)
+  class(ray_patch_t):: self
+  class(m3d_patch_t), intent(in), target :: compressor
+  integer :: i, k, m(6)
+  real(4), dimension(:,:,:,:,:,:), pointer, contiguous :: dn
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  if (.not. self%compressed) then
+    call trace%begin ('ray_patch_t%compress_mem', itimer=itimer)
+    call self%mem_lock(1)%set ('compress_mem')
+    self%static_mem = .true.
+    self%compressed = .true.
+    m = shape(self%mem)
+    m(3) = 1
+    k = merge(self%ui(3), self%li(3),self%dir>0)
+    call os%allocate(dn, m)
+    do i=1, self%nv
+      dn(:,:,1:1,i,:,:) = self%mem(:,:,k:k,i,:,:)
+    end do
+    call self%deallocate_mem(compressor)
+    call self%m3d_patch_t%allocate_mem(compressor, m)
+    self%allocation_time = self%time
+    do i=1, self%nv
+      self%mem(:,:,1:1,i,:,:) = dn(:,:,1:1,i,:,:)
+    end do
+    call os%deallocate(dn)
+    call self%mem_lock(1)%unset ('compress_mem')
+    call trace%end(itimer)
+  endif
+END SUBROUTINE compress_mem
+
+!===============================================================================
+SUBROUTINE decompress_mem (self, decompressor)
+  class(ray_patch_t) :: self
+  class(m3d_patch_t), intent(in), target :: decompressor
+  integer :: i, k, m(6)
+  real(4), dimension(:,:,:,:,:,:), pointer, contiguous :: up
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  if (self%compressed) then
+    call trace%begin ('ray_patch_t%decompress_mem', itimer=itimer)
+    call self%mem_lock(1)%set ('decompress_mem')
+    self%static_mem = .false.
+    self%compressed = .false.
+    m = shape(self%mem)
+    call os%allocate(up, m)
+    do i=1, self%nv
+      up(:,:,1:1,i,:,:) = self%mem(:,:,1:1,i,:,:)
+    end do
+    call self%m3d_patch_t%deallocate_mem(decompressor)
+    call self%allocate_mem(decompressor)
+    k = merge(1,self%gn(3),self%dir>0)
+    do i=1, self%nv
+      self%mem(:,:,k:k,i,:,:) = up(:,:,1:1,i,:,:)
+    end do
+    call os%deallocate(up)
+    call self%mem_lock(1)%unset ('decompress_mem')
+    call trace%end(itimer)
+  endif
+END SUBROUTINE decompress_mem
+  
 !===============================================================================
 !> Pack patch info into a buffer, for MPI communication
 !> FIXME: Consider replacing with mpi_buffer() calls
