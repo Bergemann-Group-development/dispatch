@@ -39,12 +39,14 @@ module lines_patch_mod
       procedure :: pre_init => lines_patch_pre_init
       procedure :: init => lines_patch_init
       procedure :: update => lines_patch_update
-      procedure :: post_update => lines_patch_post_update
       procedure :: deallocate_mem => lines_patch_deallocate_mem
       procedure :: nbor_relations => lines_patch_nbor_relations
       procedure :: create_line_indices
       procedure :: create_line_frequencies
       procedure :: interpolate_lines
+      procedure :: print_post_update_info
+      procedure :: check_in_bounds
+      procedure :: integrate_wphi
     end type lines_patch_t
 
     !-----------------------------------------------------------------------------
@@ -189,11 +191,11 @@ module lines_patch_mod
     nh   => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_nh1:self%i_nh6,self%it,1)
     doppler_factor => self%atom%doppler_factor
 
-    call os%allocate(tothi,       self%n)
-    call os%allocate(adamp,       self%n)
-    call os%allocate(unsold_temp, self%n)
-    call os%allocate(stark_pe,    self%n)
-    call os%allocate(vproj,       self%n)
+    call os%allocate(tothi,       self%n, label='tothi')
+    call os%allocate(adamp,       self%n, label='adamp')
+    call os%allocate(unsold_temp, self%n, label='unsold_temp')
+    call os%allocate(stark_pe,    self%n, label='stark_pe')
+    call os%allocate(vproj,       self%n, label='vproj')
     
     call self%comp_vproj(vproj)
     vproj = (1 + vproj) / doppler_factor
@@ -212,9 +214,7 @@ module lines_patch_mod
       
       call line%profile(line%nu, vproj, doppler_factor, adamp, line%phi)
 
-      call os%allocate(line%wphi, self%n, zero=.true.)
-      !call os%allocate(line%chi_fac, self%n)
-      !call os%allocate(line%eta_fac, self%n)
+      call os%allocate(line%wphi, self%n, zero=.true., label=trim(self%kind)//'%wphi')
 
       call self%sp%set_weights(wnu, line%nu, 1, line%nnu)
 
@@ -225,15 +225,35 @@ module lines_patch_mod
       deallocate(wnu)
     enddo
 
-    call os%deallocate(tothi)
-    call os%deallocate(adamp)
-    call os%deallocate(unsold_temp)
-    call os%deallocate(stark_pe)
-    call os%deallocate(vproj)
+    call os%deallocate(tothi, label='tothi')
+    call os%deallocate(adamp, label='adamp')
+    call os%deallocate(unsold_temp, label='unsold_temp')
+    call os%deallocate(stark_pe, label='stark_pe')
+    call os%deallocate(vproj, label='vproj')
 
+    call self%integrate_wphi()
     call self%post_update()
     call trace%end(itimer)
   END SUBROUTINE lines_patch_update
+
+  !===============================================================================
+  SUBROUTINE integrate_wphi (self)
+    class(lines_patch_t) :: self
+    class(line_type), pointer :: line
+    integer :: i, k
+    !-----------------------------------------------------------------------------
+    call self%m3d_parent%mem_lock(1)%set('integrate_wphi')
+    do i=1, self%nline
+      k = self%line(i)%ntrans
+      line => self%atom%line(k)
+      if (.not. associated(line%wphi)) then
+        call os%allocate(line%wphi, self%n, zero=.true., label=trim(self%m3d_parent%kind)//'%wphi')
+      endif
+      line%wphi = line%wphi + self%wmu * self%line(i)%wphi
+      call os%deallocate(self%line(i)%wphi, label=trim(self%kind)//'%wphi')
+    end do
+    call self%m3d_parent%mem_lock(1)%unset('integrate_wphi')
+  END SUBROUTINE integrate_wphi
 
   !===============================================================================
   SUBROUTINE interpolate_lines (self, chi, eta)
@@ -253,9 +273,9 @@ module lines_patch_mod
 
     m = shape(chi)
     m(4) = size(nu)
-    call os%allocate(scratch_phi, m)
-    call os%allocate(chi_fac, self%n)
-    call os%allocate(eta_fac, self%n)
+    call os%allocate(scratch_phi, m, label='scratch_phi')
+    call os%allocate(chi_fac, self%n, label='chi_fac')
+    call os%allocate(eta_fac, self%n, label='eta_fac')
 
     if (.not. associated(self%mem)) then
       print *, 'mem not allocated. Something is wrong!'
@@ -300,49 +320,10 @@ module lines_patch_mod
       end do
     end do
 
-    call os%deallocate(scratch_phi)
+    call os%deallocate(scratch_phi, label='scratch_phi')
+    call os%deallocate(chi_fac, label='chi_fac')
+    call os%deallocate(eta_fac, label='eta_fac')
   END SUBROUTINE interpolate_lines
-
-  !=============================================================================
-  SUBROUTINE lines_patch_post_update (self)
-    class(lines_patch_t) :: self
-    class(line_type), pointer :: line
-    real(8), dimension(:), contiguous, pointer :: nu
-    real(4), dimension(:,:,:,:), contiguous, pointer :: phi
-    integer :: p(3), f, fs, fe, i
-    logical :: skip
-    ! --------------------------------------------------------------------------
-    call trace%begin('lines_patch_t%atom_patch_post_update')
-    if (self%verbose > 1) then
-      if (self%linecheck > self%atom%nline) then
-        skip = .true.
-      elseif (self%fcheck < self%fs .or. self%fcheck > self%fe) then
-        skip = .true.
-      else
-        i = self%idx_map(self%linecheck)
-        if ( i == 0) then
-          skip = .true.
-        else
-          line => self%line(i)
-          call line%check_range(self%fcheck,self%fcheck,fs,fe,skip)
-        endif
-      endif
-      p = self%pcheck
-      if (.not. skip .and. all(p > 0)) then
-        nu => self%sp%nu(self%fcheck:self%fcheck)
-        call os%allocate(phi, [self%n(1), self%n(2), self%n(3), 1])
-        call line%interpolate_phi(nu, phi)
-        write(stdout,'(A, 6(ES15.7))') self%m3d_patch_info(), &
-        phi(p(1),p(2),p(3),1)! * line%chi_fac(p(1),p(2),p(3)), &
-        !phi(p(1),p(2),p(3),1) * line%eta_fac(p(1),p(2),p(3))
-        call os%deallocate(phi)
-      elseif (self%verbose > 2) then
-        write(stdout,'(A,A)') self%m3d_patch_info()
-      endif
-    end if
-    call self%m3d_patch_t%post_update()
-    call trace%end()
-  END SUBROUTINE lines_patch_post_update
 
   !===============================================================================
   SUBROUTINE lines_patch_nbor_relations(self, another, needed, needs_me, download)
@@ -376,15 +357,55 @@ module lines_patch_mod
   END SUBROUTINE lines_patch_nbor_relations
 
   !===============================================================================
-  SUBROUTINE lines_patch_deallocate_mem(self, deallocator)
+  SUBROUTINE lines_patch_deallocate_mem(self, deallocator, print)
     class(lines_patch_t) :: self
     class(m3d_patch_t), intent(in), target :: deallocator
+    logical, optional :: print
     ! ----------------------------------------------------------------------------
     if (self%finished .and. self%is_clear(bits%busy)) then
-      call self%m3d_patch_t%deallocate_mem(deallocator)
+      call self%m3d_patch_t%deallocate_mem(deallocator, print)
       if (associated(self%line)) deallocate(self%line)
       if (associated(self%idx_map)) call os%deallocate(self%idx_map)
     endif    
   END SUBROUTINE lines_patch_deallocate_mem
+
+  !===============================================================================
+  SUBROUTINE print_post_update_info (self)
+    class(lines_patch_t) :: self
+    real(8), dimension(:), contiguous, pointer :: nu
+    real(4), dimension(:,:,:,:), contiguous, pointer :: phi
+    integer :: p(3), i
+    !-----------------------------------------------------------------------------
+    i = self%linecheck
+    p = self%pcheck
+    nu => self%sp%nu(self%fcheck:self%fcheck)
+    call os%allocate(phi, [self%n(1), self%n(2), self%n(3), 1], label='pu_phi')
+    call self%line(i)%interpolate_phi(nu, phi)
+    call self%print_to_stdout(arr=phi(p(1),p(2),p(3),:))
+    call os%deallocate(phi, label='pu_phi')
+  END SUBROUTINE print_post_update_info
+  
+  !===============================================================================
+  FUNCTION check_in_bounds (self) result (cib)
+    class(lines_patch_t) :: self
+    integer :: i, fs, fe
+    logical :: skip, cib
+    !-----------------------------------------------------------------------------+
+    cib = .false.
+    if (self%m3d_patch_t%check_in_bounds()) then
+      if (self%linecheck <= self%atom%nline) then
+        if (self%fcheck >= self%fs .and. self%fcheck <= self%fe) then
+          i = self%idx_map(self%linecheck)
+          if ( i > 0) then
+            call self%line(i)%check_range(self%fcheck,self%fcheck,fs,fe,skip)
+            if (.not. skip) then
+              cib=.true.
+            endif
+          endif
+          self%linecheck = i
+        endif
+      endif
+    endif
+  END FUNCTION check_in_bounds
 
   end module

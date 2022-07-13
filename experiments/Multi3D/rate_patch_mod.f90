@@ -24,9 +24,9 @@ module rate_patch_mod
     !USE units_mod
     !USE scratch_mod
     USE m3d_patch_mod, only: conditioning
-    USE ray_patch_mod
-    USE opac_patch_mod
-    USE rad_patch_mod
+    USE ray_patch_mod, only: ray_patch_t
+    USE opac_patch_mod, only: opac_patch_t
+    USE rad_patch_mod, only: rad_patch_t
     USE trans_mod, only: transition_type
     USE atom_mod, only: atom_type
     USE lines_patch_mod, only: lines_patch_t
@@ -36,15 +36,17 @@ module rate_patch_mod
 
     type, public, extends(ray_patch_t) :: rate_patch_t
       class(atom_type), pointer :: atom => null()
-      class(radiation_t), pointer :: rad => null()
+      class(rad_patch_t), pointer :: rad => null()
       class(lines_patch_t), pointer :: lines => null()
       integer, dimension(:), pointer, contiguous :: idx_map, idx_remap
+      logical :: update_skipped=.false.
       contains
         procedure :: pre_init => rate_patch_pre_init
         procedure :: update => rate_patch_update
-        procedure :: post_update => rate_patch_post_update
         procedure :: nbor_relations => rate_patch_nbor_relations
         procedure :: integrate_rates
+        procedure :: print_post_update_info
+        procedure :: check_in_bounds
     end type rate_patch_t
   
     !-----------------------------------------------------------------------------
@@ -62,7 +64,7 @@ module rate_patch_mod
     call self%ray_patch_t%pre_init()
     call self%append_to_task_list()
 
-    call os%allocate(self%idx_map, [self%atom%nrad], zero=.true.)
+    call os%allocate(self%idx_map, [self%atom%nrad], zero=.true., label='rate_patch:idx_map')
     nrad = 0
     do i=1, size(self%atom%line)
       trans => self%atom%line(i)
@@ -78,12 +80,11 @@ module rate_patch_mod
       nrad = nrad+1
       self%idx_map(i+self%atom%nline) = nrad
     end do
-    call os%allocate(self%idx_remap, [nrad])
+    call os%allocate(self%idx_remap, [nrad], label='rate_patch:idx_remap')
     do i=1, self%atom%nrad
       k = self%idx_map(i)
       if (k > 0) self%idx_remap(k) = i
     end do
-    self%linecheck = self%idx_map(self%linecheck)
 
     call self%set_nv_and_nw(nrad, 2)
 
@@ -134,46 +135,24 @@ module rate_patch_mod
         print *, conditioning, ' is an unknown type of rate equation conditioning. Stopping...'
         stop
       endif
+      self%update_skipped = .false.
+    else
+      self%update_skipped = .true.
     endif
 
     call self%integrate_rates(gamma_ij, gamma_ji)
 
-    call trace%end(itimer)
-    call self%post_update()
-  END SUBROUTINE rate_patch_update
-
-  !===============================================================================
-  SUBROUTINE rate_patch_post_update (self)
-    class(rate_patch_t) :: self
-    integer :: k, m(6), p(3)
-    !-----------------------------------------------------------------------------
-    if (self%verbose > 1) then
-      if (self%static_mem) then
-        if (self%check_in_bounds .or. self%verbose > 2) then
-          write(stdout,'(A, A)') self%m3d_patch_info(), 'update skipped'
-        endif
-      elseif (self%check_in_bounds) then
-        p = self%pcheck
-        if (self%linecheck>0) then
-          write(stdout,'(A, 6(ES15.7))') self%m3d_patch_info(), &
-          self%mem(p(1),p(2),p(3),self%linecheck,1,:)
-        else
-          write(stdout,'(A, A)') self%m3d_patch_info(), &
-          'transition not active here'
-        endif
-      elseif (self%verbose > 2) then
-        write(stdout,'(A,A)') self%m3d_patch_info()
-      endif
-    endif
     if (self%rad%stiff) then
       self%static_mem = .true.
       call self%rad%compress_mem(self)
     endif
-    call self%m3d_patch_t%post_update()
+
+    call trace%end(itimer)
+    call self%post_update()
     if (.not. self%static_mem) then
-      call self%deallocate_mem(self)
+      call self%deallocate_mem(self, print=.true.)
     endif
-  END SUBROUTINE rate_patch_post_update
+  END SUBROUTINE rate_patch_update
 
   !===============================================================================
   SUBROUTINE integrate_rates (self, gamma_ij, gamma_ji)
@@ -185,8 +164,8 @@ module rate_patch_mod
     if (.not. associated(self%atom%gamma_ij)) then
       m(1:3) = self%n
       m(4) = self%atom%nrad
-      call os%allocate(self%atom%gamma_ij, m, zero=.true.)
-      call os%allocate(self%atom%gamma_ji, m, zero=.true.)
+      call os%allocate(self%atom%gamma_ij, m, zero=.true., label='atom%gamma_ij')
+      call os%allocate(self%atom%gamma_ji, m, zero=.true., label='atom%gamma_ji')
       self%atom%stiff=.true.
     endif
     if (self%i_mu>0) then
@@ -215,12 +194,12 @@ module rate_patch_mod
     logical :: needed, needs_me, download    ! Is the other task: needed, 
                                              !    does it need me, should I download?
     
-    call trace%begin ('radiation_t%nbor_relations')
+    call trace%begin ('rad_patch_t%nbor_relations')
     call self%ray_patch_t%nbor_relations(another, needed, needs_me, download)
 
     if (needed .or. needs_me) then
       select type (another)
-      class is (radiation_t)
+      class is (rad_patch_t)
         if (self%i_mu == another%i_mu) then
           needs_me=.false.
           self%rad => another
@@ -244,5 +223,30 @@ module rate_patch_mod
     endif
     call trace%end()
   END SUBROUTINE rate_patch_nbor_relations
+
+  !===============================================================================
+  SUBROUTINE print_post_update_info (self)
+    class(rate_patch_t) :: self
+    integer :: p(3), l
+    !-----------------------------------------------------------------------------
+    p = self%pcheck
+    l = self%idx_map(self%linecheck)
+    if (self%update_skipped) then
+      call self%print_to_stdout(text='update skipped')
+    else
+      call self%print_to_stdout(arr=self%mem(p(1),p(2),p(3),l,1,:))
+    endif
+  END SUBROUTINE print_post_update_info
+  
+  !===============================================================================
+  FUNCTION check_in_bounds (self) result (cib)
+    class(rate_patch_t) :: self
+    logical :: cib
+    !-----------------------------------------------------------------------------
+    cib = .false.
+    if (self%ray_patch_t%check_in_bounds()) then
+      cib = self%idx_map(self%linecheck) > 0
+    endif
+  END FUNCTION check_in_bounds
   
   end module

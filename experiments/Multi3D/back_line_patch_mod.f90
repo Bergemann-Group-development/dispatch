@@ -105,15 +105,15 @@ module back_line_patch_mod
     nu   => self%sp%nu(self%fs:self%fe)
     EK_over_temp => self%composition%EK_over_temp
 
-    call os%allocate(inv_df, self%n)
-    call os%allocate(tothi, self%n)
-    call os%allocate(adamp, self%n)
-    call os%allocate(vel_dop, self%n)
-    call os%allocate(inv_part, self%n)
-    call os%allocate(unsold_temp, self%n)
-    call os%allocate(stark_pe, self%n)
-    call os%allocate(vproj, self%n)
-    call os%allocate(h4pi_nu, shape(nu))
+    call os%allocate(inv_df, self%n, label='inv_df')
+    call os%allocate(tothi, self%n, label='tohi')
+    call os%allocate(adamp, self%n, label='adamp')
+    call os%allocate(vel_dop, self%n, label='vel_dop')
+    call os%allocate(inv_part, self%n, label='inv_part')
+    call os%allocate(unsold_temp, self%n, label='unsold_temp')
+    call os%allocate(stark_pe, self%n, label='stark_pe')
+    call os%allocate(vproj, self%n, label='vproj')
+    call os%allocate(h4pi_nu, shape(nu), label='h4pi_nu')
 
     call self%comp_vproj(vproj)
     tothi = sum(nh(:,:,:,1:5), 4) ! total neutral hydrogen density
@@ -187,14 +187,14 @@ module back_line_patch_mod
         end do
     end do
 
-    call os%deallocate(inv_df)
-    call os%deallocate(tothi)
-    call os%deallocate(adamp)
-    call os%deallocate(vel_dop)
-    call os%deallocate(inv_part)
-    call os%deallocate(unsold_temp)
-    call os%deallocate(stark_pe)
-    call os%deallocate(vproj)
+    call os%deallocate(inv_df, label='inv_df')
+    call os%deallocate(tothi, label='tothi')
+    call os%deallocate(adamp, label='adamp')
+    call os%deallocate(vel_dop, label='vel_dop')
+    call os%deallocate(inv_part, label='inv_part')
+    call os%deallocate(unsold_temp, label='unsold_temp')
+    call os%deallocate(stark_pe, label='stark_pe')
+    call os%deallocate(vproj, label='vproj')
     call self%post_update()
     call trace%end(itimer)
   END SUBROUTINE back_line_patch_update

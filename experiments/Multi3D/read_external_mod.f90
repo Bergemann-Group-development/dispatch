@@ -127,8 +127,6 @@ SUBROUTINE init(self, task_list, name)
     call self%read_1d_snapshot(atmos_file)
   endif
 
-  call self%save_atmos()
-
   self%size = self%n * self%ds
   self%position = 0.5*self%size! + self%origin
 
@@ -195,6 +193,8 @@ SUBROUTINE init(self, task_list, name)
 
   end do
   write (stdout,*) ip, 'task generated'
+
+  call self%save_atmos()
 
   io%end_time = (maxiter + ilambd + 1) * patch%dtime
   io%print_every = huge(1)

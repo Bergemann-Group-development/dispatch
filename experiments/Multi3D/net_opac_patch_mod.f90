@@ -26,7 +26,7 @@ module net_opac_patch_mod
     !USE scratch_mod
     USE m3d_patch_mod, only:maxiter, m3d_patch_t
     USE ray_patch_mod, only:ray_patch_t
-    USE opac_patch_mod, only:opacity_t
+    USE opac_patch_mod, only:opac_patch_t
     USE lines_patch_mod, only:lines_patch_t
     USE back_line_patch_mod, only:back_line_patch_t
     implicit none
@@ -169,7 +169,7 @@ module net_opac_patch_mod
         needs_me=.false.
       class is (back_line_patch_t)
         needs_me=.false.
-      class is(opacity_t)
+      class is(opac_patch_t)
         if (another%kind/='net_opac') then
           needs_me=.false.
         endif

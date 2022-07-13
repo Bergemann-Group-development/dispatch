@@ -436,7 +436,7 @@ SUBROUTINE bits_mem (self, bits, count, label)
         (bits/(8.*1024.**3))*count, os%gb, ' GB'
     end if
   end if
-  call os%gb_mem (bits, count)
+  call os%gb_mem (bits, count, label)
 END SUBROUTINE bits_mem
 
 !===============================================================================

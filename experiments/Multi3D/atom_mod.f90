@@ -260,7 +260,7 @@ MODULE atom_mod
         ny = size(temp,2)
         nz = size(temp,3)
   
-        call os%allocate(wphi, [nx,ny,nz,self%nline])
+        call os%allocate(wphi, [nx,ny,nz,self%nline], label='wphi')
         wphi = 0
         
         fcs = max(minval(self%line%ired),  fs_patch)
@@ -900,14 +900,14 @@ MODULE atom_mod
         !---------------------------------------------------------------------------------
         do kr=1,self%ncont
            cont => self%cont(kr)
-           call os%allocate(cont%ni_over_nj_lte, shape(self%nstar(:,:,:,1)))
+           call os%allocate(cont%ni_over_nj_lte, shape(self%nstar(:,:,:,1)), label='cont%ni_over_nj_lte')
            cont%ni_over_nj_lte = self%nstar(:,:,:,cont%i) / self%nstar(:,:,:,cont%j)
         enddo
      END SUBROUTINE compute_cont_factors
      !------------------------------------------------------------------------------------
   
      !====================================================================================
-     SUBROUTINE read (self, atom_file, qnorm, abnd, logf_cut, red_cut, blue_cut, in_lines, teff)
+     SUBROUTINE read (self, atom_file, qnorm, abnd, logf_cut, red_cut, blue_cut, in_lines)
         !---------------------------------------------------------------------
         !
         !  reads an atomic model and calculates einstein a,b coefficients.
@@ -918,7 +918,7 @@ MODULE atom_mod
         class(atom_type), target :: self
         character(len=*), intent(in) :: atom_file
         real(8), intent(in) :: qnorm
-        real(8), intent(in), optional :: abnd, logf_cut, red_cut, blue_cut, teff
+        real(8), intent(in), optional :: abnd, logf_cut, red_cut, blue_cut
         integer, intent(in), optional, allocatable :: in_lines(:)
   
         ! Declaration of the local variables
@@ -1062,12 +1062,12 @@ MODULE atom_mod
             lin%Bji   = c2_2h / lin%nu0**3 * lin%Aji 
             lin%Bij   = lin%Bji / lin%Grat
 
-            if (present(teff)) then
-               if (teff > 0) then
-                  lin%qmax = lin%estimate_qmax(teff)
-                  lin%q0 = lin%qmax
-               endif
-            endif
+            !if (present(teff)) then
+            !   if (teff > 0) then
+            !      lin%qmax = lin%estimate_qmax(teff)
+            !      lin%q0 = lin%qmax
+            !   endif
+            !endif
   
             if (present(red_cut)) then
               scr = lin%lambda0 / (1.0-lin%qmax*qnorm*KM_TO_CM/cc) * 1e8

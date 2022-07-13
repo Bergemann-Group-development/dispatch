@@ -893,24 +893,24 @@ contains
     END SUBROUTINE absorption
 
     !===============================================================================
-    SUBROUTINE scattering (self, nu, Jnu, abslte, sumsca, eta)
+    SUBROUTINE scattering (self, nu, abslte, eta, Jnu, sumsca)
         class(composition_type), target :: self
         real(dp), dimension(:),     intent(in) :: nu
-        real(4), dimension(:,:,:,:), intent(in) :: Jnu, abslte, sumsca
+        real(4), dimension(:,:,:,:), intent(in) :: abslte
         real(4), dimension(:,:,:,:), intent(inout) :: eta
+        real(4), dimension(:,:,:,:), intent(in), optional :: Jnu, sumsca
         integer :: f, nf
         !---------------------------------------------------------------------------
         nf = size(nu, 1)
-
-        if(size(Jnu, 4) /= nf) then
-            print *, nf, size(Jnu, 4)
-            print *, 'nu and Jnu do not have the same number of frequencies. Stopping...'
-            stop
+        if (present(Jnu) .and. present(sumsca)) then
+            do f=1, nf
+                eta(:,:,:,f) = real((abslte(:,:,:,f)*planck(nu(f), self%temp) + sumsca(:,:,:,f)*Jnu(:,:,:,f)) * self%rho)
+            end do
+        else
+            do f=1, nf
+                eta(:,:,:,f) = real((abslte(:,:,:,f)*planck(nu(f), self%temp)) * self%rho)
+            end do
         endif
-
-        do f=1, nf
-            eta(:,:,:,f) = real((abslte(:,:,:,f)*planck(nu(f), self%temp) + sumsca(:,:,:,f)*Jnu(:,:,:,f)) * self%rho)
-        end do
     END SUBROUTINE scattering
 
     !===============================================================================

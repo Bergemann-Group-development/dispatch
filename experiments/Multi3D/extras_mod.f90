@@ -173,7 +173,7 @@ MODULE extras_mod
     !call self%spitzer%init                                               ! spitzer
     !call self%gravity%init                                               ! gravity
     !call self%rt%init_task (self%rt)                                     ! RT
-    call self%composition%init()
+    !call self%composition%init()
     ! -- ensure consistency (a value is already set via rt%init)          ! experiment
     !self%rt%rt_boundaries%grav = self%gravity%const_grav                 ! experiment
     !call sink_particles%init                                             ! sinkp

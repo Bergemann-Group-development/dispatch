@@ -278,20 +278,21 @@ SUBROUTINE update (self, task_list, test)
         task => head%task                                   ! head task
       end if
     else
-      !-------------------------------------------------------------------------
-      ! Skip tasks with bits%ready set. This will generally be tasks that were
-      ! found to be ready to update again by the same place that did the update
-      ! -- such tasks will have bits%ready set while they still have unfinished
-      ! work, the end of which is signalled by clearing bits%ready
-      !-------------------------------------------------------------------------
-      do while (associated(head))
-        task => head%task
-        if (task%is_clear(bits%ready)) then
-          exit
-        else
-          head => head%next_time
-        end if
-      end do
+      !!-------------------------------------------------------------------------
+      !! Skip tasks with bits%ready set. This will generally be tasks that were
+      !! found to be ready to update again by the same place that did the update
+      !! -- such tasks will have bits%ready set while they still have unfinished
+      !! work, the end of which is signalled by clearing bits%ready
+      !!-------------------------------------------------------------------------
+      !do while (associated(head))
+      !  task => head%task
+      !  if (task%is_clear(bits%ready)) then
+      !    exit
+      !  else
+      !    head => head%next_time
+      !  end if
+      !end do
+      task => head%task
     end if
     if (omp%place == task%place) then
       !$omp atomic update

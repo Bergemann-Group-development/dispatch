@@ -7,12 +7,18 @@ MODULE os_mod
   USE omp_timer_mod
   USE mpi_mod
   USE kinds_mod
+  USE shared_mod
   implicit none
   private
+  integer, parameter:: maxlabels=100
   type, public:: os_t
     integer:: verbose=0
     real(8):: gb=0.0
     real(8):: max_mem=0.0
+    character(len=64), dimension(maxlabels):: labels
+    real(8), dimension(maxlabels):: labelled_mem
+    integer, dimension(maxlabels):: n_allocated
+    integer:: nlabels=0
   contains
     procedure:: mkdir
     procedure:: exists_dir
@@ -62,6 +68,7 @@ MODULE os_mod
       deallocate_5d_r, deallocate_6d_r, deallocate_1d_l
     procedure, nopass:: mem_register
     procedure:: memory_info
+    procedure:: track_mem
   end type
   logical, save:: initialized = .false.
   real, parameter:: ms=30.
@@ -266,9 +273,10 @@ END SUBROUTINE copy_file
 !===============================================================================
 !> Register increase of memory, counted in gigabytes
 !===============================================================================
-SUBROUTINE gb_mem (self, bits, count)
+SUBROUTINE gb_mem (self, bits, count, label)
   class (os_t):: self
   integer(4):: bits, count
+  character(len=*), optional:: label
   !.............................................................................
   real(8):: gb, lgb
   real, save:: gb_next=1.0
@@ -298,7 +306,52 @@ SUBROUTINE gb_mem (self, bits, count)
     !$omp atomic write
     self%max_mem = self%gb
   endif
+  if (present(label)) then
+    !$omp critical (profiling_mem)
+    call self%track_mem(gb, label)
+    !$omp end critical (profiling_mem)
+  endif
 END SUBROUTINE gb_mem
+
+!===============================================================================
+SUBROUTINE track_mem (self, gb, label)
+  class (os_t):: self
+  real(8):: gb
+  character(len=*):: label
+  integer :: i
+  real(8), save :: last_print_gb=0.0
+  real(8) :: total
+  !.............................................................................
+  i = findloc(self%labels(1:self%nlabels), label, 1)
+  if (i == 0) then
+    if (gb > 0) then
+      i = findloc(self%n_allocated, 0, 1)
+      !i = self%nlabels + 1
+      if (i > maxlabels) call shared%abort ('os_mod: increase maxlabels')
+      !self%nlabels = i
+      self%nlabels = max(i, self%nlabels)
+      self%labels(i) = label
+    else
+      call shared%abort ('os_mod: memory with unknown label is deallocated.')
+    endif
+  endif
+  self%labelled_mem(i) = self%labelled_mem(i) + gb
+  self%n_allocated(i) = self%n_allocated(i) + sign(1d0, gb)
+
+  if (self%max_mem - last_print_gb > 1.0) then
+    last_print_gb = self%max_mem
+    total = sum(self%labelled_mem(1:self%nlabels))
+    do i=1, self%nlabels
+      if (self%labelled_mem(i) / total > 0.05) then
+        write(stdout, '(A, 1x, I6, f10.4)') &
+              adjustr(self%labels(i)), &
+              self%n_allocated(i), &
+              self%labelled_mem(i)
+      endif
+    end do
+    write(stdout, '(56x, A, 1x, f10.4)') 'rest_mem', self%gb - total
+  endif
+END SUBROUTINE track_mem
 
 !===============================================================================
 !> Print memory use, gigabytes
@@ -313,63 +366,67 @@ END SUBROUTINE gb_print
 !===============================================================================
 !> Allocate a 1-D real array
 !===============================================================================
-SUBROUTINE allocate_1d_r (a, m, zero)
+SUBROUTINE allocate_1d_r (a, m, zero, label)
   real(4), pointer, contiguous:: a(:)
   integer:: m(:)
   logical, optional:: zero
+  character(len=*), optional:: label
   !-----------------------------------------------------------------------------
   allocate (a(m(1)))
-  call mem_register (storage_size(a), product(shape(a)), 'mem')
+  call mem_register (storage_size(a), product(shape(a)), label)
   if (option(zero)) a = 0.0
 END SUBROUTINE allocate_1d_r
 
 !===============================================================================
 !> Allocate a 2-D real array
 !===============================================================================
-SUBROUTINE allocate_2d_r (a, m, zero)
+SUBROUTINE allocate_2d_r (a, m, zero, label)
   real(4), pointer:: a(:,:)
   integer:: m(:)
   logical, optional:: zero
+  character(len=*), optional:: label
   !-----------------------------------------------------------------------------
   allocate (a(m(1),m(2)))
-  call mem_register (storage_size(a), product(shape(a)), 'mem')
+  call mem_register (storage_size(a), product(shape(a)), label)
   if (option(zero)) a = 0.0
 END SUBROUTINE allocate_2d_r
 
 !===============================================================================
 !> Allocate a 3-D real array
 !===============================================================================
-SUBROUTINE allocate_3d_r (a, m, zero)
+SUBROUTINE allocate_3d_r (a, m, zero, label)
   real(4), pointer, contiguous:: a(:,:,:)
   integer:: m(:)
   logical, optional:: zero
+  character(len=*), optional:: label
   !-----------------------------------------------------------------------------
   allocate (a(m(1),m(2),m(3)))
-  call mem_register (storage_size(a), product(shape(a)), 'mem')
+  call mem_register (storage_size(a), product(shape(a)), label)
   if (option(zero)) a = 0.0
 END SUBROUTINE allocate_3d_r
 
 !===============================================================================
 !> Allocate a 4-D real array
 !===============================================================================
-SUBROUTINE allocate_4d_r (a, m, zero)
+SUBROUTINE allocate_4d_r (a, m, zero, label)
   real(4), pointer, contiguous:: a(:,:,:,:)
   integer:: m(:)
   logical, optional:: zero
+  character(len=*), optional:: label
   !-----------------------------------------------------------------------------
   allocate (a(m(1),m(2),m(3),m(4)))
-  call mem_register (storage_size(a), product(shape(a)), 'mem')
+  call mem_register (storage_size(a), product(shape(a)), label)
   if (option(zero)) a = 0.0
 END SUBROUTINE allocate_4d_r
 
 !===============================================================================
 !> Allocate a 5-D real array
 !===============================================================================
-SUBROUTINE allocate_5d_r (a, m, label, zero)
+SUBROUTINE allocate_5d_r (a, m, zero, label)
   real(4), pointer, contiguous:: a(:,:,:,:,:)
   integer:: m(:)
-  character(*), optional:: label
   logical, optional:: zero
+  character(len=*), optional:: label
   !-----------------------------------------------------------------------------
   allocate (a(m(1),m(2),m(3),m(4),m(5)))
   call mem_register (storage_size(a), product(shape(a)), label)
@@ -379,141 +436,152 @@ END SUBROUTINE allocate_5d_r
 !===============================================================================
 !> Allocate a 6-D real array
 !===============================================================================
-SUBROUTINE allocate_6d_r (a, m, zero)
+SUBROUTINE allocate_6d_r (a, m, zero, label)
   real(4), pointer, contiguous:: a(:,:,:,:,:,:)
   integer:: m(:)
   logical, optional:: zero
+  character(len=*), optional:: label
   !-----------------------------------------------------------------------------
   allocate (a(m(1),m(2),m(3),m(4),m(5),m(6)))
-  call mem_register (storage_size(a), product(shape(a)), 'mem')
+  call mem_register (storage_size(a), product(shape(a)), label)
   if (option(zero)) a = 0.0
 END SUBROUTINE allocate_6d_r
 
 !===============================================================================
 !> Allocate a 1-D logical array
 !===============================================================================
-SUBROUTINE allocate_1d_l (a, m, zero)
+SUBROUTINE allocate_1d_l (a, m, zero, label)
   logical, pointer, contiguous:: a(:)
   integer:: m(:)
   logical, optional:: zero
+  character(len=*), optional:: label
   !-----------------------------------------------------------------------------
   allocate (a(m(1)))
-  call mem_register (storage_size(a), product(shape(a)), 'mem')
+  call mem_register (storage_size(a), product(shape(a)), label)
   if (option(zero)) a = .false.
 END SUBROUTINE allocate_1d_l
 
 !===============================================================================
 !> Allocate a 1-D integer array
 !===============================================================================
-SUBROUTINE allocate_1d_i (a, m, zero)
+SUBROUTINE allocate_1d_i (a, m, zero, label)
   integer(4), pointer, contiguous:: a(:)
   integer:: m(:)
   logical, optional:: zero
+  character(len=*), optional:: label
   !-----------------------------------------------------------------------------
   allocate (a(m(1)))
-  call mem_register (storage_size(a), product(shape(a)), 'mem')
+  call mem_register (storage_size(a), product(shape(a)), label)
   if (option(zero)) a = 0.0
 END SUBROUTINE allocate_1d_i
 
 !===============================================================================
 !> Allocate a 2-D integer array
 !===============================================================================
-SUBROUTINE allocate_2d_i (a, m, zero)
+SUBROUTINE allocate_2d_i (a, m, zero, label)
   integer(4), pointer:: a(:,:)
   integer:: m(:)
   logical, optional:: zero
+  character(len=*), optional:: label
   !-----------------------------------------------------------------------------
   allocate (a(m(1),m(2)))
-  call mem_register (storage_size(a), product(shape(a)), 'mem')
+  call mem_register (storage_size(a), product(shape(a)), label)
   if (option(zero)) a = 0.0
 END SUBROUTINE allocate_2d_i
 
 !===============================================================================
 !> Allocate a 3-D integer array
 !===============================================================================
-SUBROUTINE allocate_3d_i (a, m, zero)
+SUBROUTINE allocate_3d_i (a, m, zero, label)
   integer(4), pointer, contiguous:: a(:,:,:)
   integer:: m(:)
   logical, optional:: zero
+  character(len=*), optional:: label
   !-----------------------------------------------------------------------------
   allocate (a(m(1),m(2),m(3)))
-  call mem_register (storage_size(a), product(shape(a)), 'mem')
+  call mem_register (storage_size(a), product(shape(a)), label)
   if (option(zero)) a = 0.0
 END SUBROUTINE allocate_3d_i
 
 !===============================================================================
 !> Allocate a 4-D integer array
 !===============================================================================
-SUBROUTINE allocate_4d_i (a, m, zero)
+SUBROUTINE allocate_4d_i (a, m, zero, label)
   integer(4), pointer, contiguous:: a(:,:,:,:)
   integer:: m(:)
   logical, optional:: zero
+  character(len=*), optional:: label
   !-----------------------------------------------------------------------------
   allocate (a(m(1),m(2),m(3),m(4)))
-  call mem_register (storage_size(a), product(shape(a)), 'mem')
+  call mem_register (storage_size(a), product(shape(a)), label)
   if (option(zero)) a = 0.0
 END SUBROUTINE allocate_4d_i
 
 !===============================================================================
 !> Allocate a 1-D double array
 !===============================================================================
-SUBROUTINE allocate_1d_d (a, m, zero)
+SUBROUTINE allocate_1d_d (a, m, zero, label)
   real(8), pointer, contiguous:: a(:)
   integer:: m(:)
   logical, optional:: zero
+  character(len=*), optional:: label
   !-----------------------------------------------------------------------------
   allocate (a(m(1)))
-  call mem_register (storage_size(a), product(shape(a)), 'mem')
+  call mem_register (storage_size(a), product(shape(a)), label)
   if (option(zero)) a = 0.0
 END SUBROUTINE allocate_1d_d
 
 !===============================================================================
 !> Allocate a 2-D double array
 !===============================================================================
-SUBROUTINE allocate_2d_d (a, m, zero)
+SUBROUTINE allocate_2d_d (a, m, zero, label)
   real(8), pointer:: a(:,:)
   integer:: m(:)
   logical, optional:: zero
+  character(len=*), optional:: label
   !-----------------------------------------------------------------------------
   allocate (a(m(1),m(2)))
-  call mem_register (storage_size(a), product(shape(a)), 'mem')
+  call mem_register (storage_size(a), product(shape(a)), label)
   if (option(zero)) a = 0.0
 END SUBROUTINE allocate_2d_d
 
 !===============================================================================
 !> Allocate a 3-D double array
 !===============================================================================
-SUBROUTINE allocate_3d_d (a, m, zero)
+SUBROUTINE allocate_3d_d (a, m, zero, label)
   real(8), pointer, contiguous:: a(:,:,:)
   integer:: m(:)
   logical, optional:: zero
+  character(len=*), optional:: label
   !-----------------------------------------------------------------------------
   allocate (a(m(1),m(2),m(3)))
-  call mem_register (storage_size(a), product(shape(a)), 'mem')
+  call mem_register (storage_size(a), product(shape(a)), label)
   if (option(zero)) a = 0.0
 END SUBROUTINE allocate_3d_d
 
 !===============================================================================
 !> Allocate a 4-D double array
 !===============================================================================
-SUBROUTINE allocate_4d_d (a, m, zero)
+SUBROUTINE allocate_4d_d (a, m, zero, label)
   real(8), pointer, contiguous:: a(:,:,:,:)
   integer:: m(:)
   logical, optional:: zero
+  character(len=*), optional:: label
   !-----------------------------------------------------------------------------
   allocate (a(m(1),m(2),m(3),m(4)))
-  call mem_register (storage_size(a), product(shape(a)), 'mem')
+  call mem_register (storage_size(a), product(shape(a)), label)
   if (option(zero)) a = 0.0
 END SUBROUTINE allocate_4d_d
 
 !===============================================================================
 !> Dealloccate a 1-D integer array
 !===============================================================================
-SUBROUTINE deallocate_1d_r (a)
+SUBROUTINE deallocate_1d_r (a, label)
   real(4), pointer, contiguous:: a(:)
+  character(len=*), optional:: label
   !-----------------------------------------------------------------------------
   if (associated(a)) then
-    call mem_register (storage_size(a), -product(shape(a)), 'mem')
+    call mem_register (storage_size(a), -product(shape(a)), label)
     deallocate (a)
   end if
 END SUBROUTINE deallocate_1d_r
@@ -521,11 +589,12 @@ END SUBROUTINE deallocate_1d_r
 !===============================================================================
 !> Dealloccate a 2-D integer array
 !===============================================================================
-SUBROUTINE deallocate_2d_r (a)
+SUBROUTINE deallocate_2d_r (a, label)
   real(4), pointer, contiguous:: a(:,:)
+  character(len=*), optional:: label
   !-----------------------------------------------------------------------------
   if (associated(a)) then
-    call mem_register (storage_size(a), -product(shape(a)), 'mem')
+    call mem_register (storage_size(a), -product(shape(a)), label)
     deallocate (a)
   end if
 END SUBROUTINE deallocate_2d_r
@@ -533,11 +602,12 @@ END SUBROUTINE deallocate_2d_r
 !===============================================================================
 !> Dealloccate a 3-D integer array
 !===============================================================================
-SUBROUTINE deallocate_3d_r (a)
+SUBROUTINE deallocate_3d_r (a, label)
   real(4), pointer, contiguous:: a(:,:,:)
+  character(len=*), optional:: label
   !-----------------------------------------------------------------------------
   if (associated(a)) then
-    call mem_register (storage_size(a), -product(shape(a)), 'mem')
+    call mem_register (storage_size(a), -product(shape(a)), label)
     deallocate (a)
   end if
 END SUBROUTINE deallocate_3d_r
@@ -545,11 +615,12 @@ END SUBROUTINE deallocate_3d_r
 !===============================================================================
 !> Dealloccate a 4-D integer array
 !===============================================================================
-SUBROUTINE deallocate_4d_r (a)
+SUBROUTINE deallocate_4d_r (a, label)
   real(4), pointer, contiguous:: a(:,:,:,:)
+  character(len=*), optional:: label
   !-----------------------------------------------------------------------------
   if (associated(a)) then
-    call mem_register (storage_size(a), -product(shape(a)), 'mem')
+    call mem_register (storage_size(a), -product(shape(a)), label)
     deallocate (a)
   end if
 END SUBROUTINE deallocate_4d_r
@@ -557,11 +628,12 @@ END SUBROUTINE deallocate_4d_r
 !===============================================================================
 !> Dealloccate a 5-D integer array
 !===============================================================================
-SUBROUTINE deallocate_5d_r (a)
+SUBROUTINE deallocate_5d_r (a, label)
   real(4), pointer, contiguous:: a(:,:,:,:,:)
+  character(len=*), optional:: label
   !-----------------------------------------------------------------------------
   if (associated(a)) then
-    call mem_register (storage_size(a), -product(shape(a)), 'mem')
+    call mem_register (storage_size(a), -product(shape(a)), label)
     deallocate (a)
   end if
 END SUBROUTINE deallocate_5d_r
@@ -569,11 +641,12 @@ END SUBROUTINE deallocate_5d_r
 !===============================================================================
 !> Dealloccate a 6-D integer array
 !===============================================================================
-SUBROUTINE deallocate_6d_r (a)
+SUBROUTINE deallocate_6d_r (a, label)
   real(4), pointer, contiguous:: a(:,:,:,:,:,:)
+  character(len=*), optional:: label
   !-----------------------------------------------------------------------------
   if (associated(a)) then
-    call mem_register (storage_size(a), -product(shape(a)), 'mem')
+    call mem_register (storage_size(a), -product(shape(a)), label)
     deallocate (a)
   end if
 END SUBROUTINE deallocate_6d_r
@@ -581,11 +654,12 @@ END SUBROUTINE deallocate_6d_r
 !===============================================================================
 !> Dealloccate a 1-D logical array
 !===============================================================================
-SUBROUTINE deallocate_1d_l (a)
+SUBROUTINE deallocate_1d_l (a, label)
   logical, pointer, contiguous:: a(:)
+  character(len=*), optional:: label
   !-----------------------------------------------------------------------------
   if (associated(a)) then
-    call mem_register (storage_size(a), -product(shape(a)), 'mem')
+    call mem_register (storage_size(a), -product(shape(a)), label)
     deallocate (a)
   end if
 END SUBROUTINE deallocate_1d_l
@@ -593,11 +667,12 @@ END SUBROUTINE deallocate_1d_l
 !===============================================================================
 !> Dealloccate a 1-D integer array
 !===============================================================================
-SUBROUTINE deallocate_1d_i (a)
+SUBROUTINE deallocate_1d_i (a, label)
   integer(4), pointer, contiguous:: a(:)
+  character(len=*), optional:: label
   !-----------------------------------------------------------------------------
   if (associated(a)) then
-    call mem_register (storage_size(a), -product(shape(a)), 'mem')
+    call mem_register (storage_size(a), -product(shape(a)), label)
     deallocate (a)
   end if
 END SUBROUTINE deallocate_1d_i
@@ -605,11 +680,12 @@ END SUBROUTINE deallocate_1d_i
 !===============================================================================
 !> Dealloccate a 2-D integer array
 !===============================================================================
-SUBROUTINE deallocate_2d_i (a)
+SUBROUTINE deallocate_2d_i (a, label)
   integer(4), pointer, contiguous:: a(:,:)
+  character(len=*), optional:: label
   !-----------------------------------------------------------------------------
   if (associated(a)) then
-    call mem_register (storage_size(a), -product(shape(a)), 'mem')
+    call mem_register (storage_size(a), -product(shape(a)), label)
     deallocate (a)
   end if
 END SUBROUTINE deallocate_2d_i
@@ -617,11 +693,12 @@ END SUBROUTINE deallocate_2d_i
 !===============================================================================
 !> Dealloccate a 3-D integer array
 !===============================================================================
-SUBROUTINE deallocate_3d_i (a)
+SUBROUTINE deallocate_3d_i (a, label)
   integer(4), pointer, contiguous:: a(:,:,:)
+  character(len=*), optional:: label
   !-----------------------------------------------------------------------------
   if (associated(a)) then
-    call mem_register (storage_size(a), -product(shape(a)), 'mem')
+    call mem_register (storage_size(a), -product(shape(a)), label)
     deallocate (a)
   end if
 END SUBROUTINE deallocate_3d_i
@@ -629,11 +706,12 @@ END SUBROUTINE deallocate_3d_i
 !===============================================================================
 !> Dealloccate a 4-D integer array
 !===============================================================================
-SUBROUTINE deallocate_4d_i (a)
+SUBROUTINE deallocate_4d_i (a, label)
   integer(4), pointer, contiguous:: a(:,:,:,:)
+  character(len=*), optional:: label
   !-----------------------------------------------------------------------------
   if (associated(a)) then
-    call mem_register (storage_size(a), -product(shape(a)), 'mem')
+    call mem_register (storage_size(a), -product(shape(a)), label)
     deallocate (a)
   end if
 END SUBROUTINE deallocate_4d_i
@@ -641,11 +719,12 @@ END SUBROUTINE deallocate_4d_i
 !===============================================================================
 !> Dealloccate a 1-D double array
 !===============================================================================
-SUBROUTINE deallocate_1d_d (a)
+SUBROUTINE deallocate_1d_d (a, label)
   real(8), pointer, contiguous:: a(:)
+  character(len=*), optional:: label
   !-----------------------------------------------------------------------------
   if (associated(a)) then
-    call mem_register (storage_size(a), -product(shape(a)), 'mem')
+    call mem_register (storage_size(a), -product(shape(a)), label)
     deallocate (a)
   end if
 END SUBROUTINE deallocate_1d_d
@@ -653,11 +732,12 @@ END SUBROUTINE deallocate_1d_d
 !===============================================================================
 !> Dealloccate a 2-D double array
 !===============================================================================
-SUBROUTINE deallocate_2d_d (a)
+SUBROUTINE deallocate_2d_d (a, label)
   real(8), pointer, contiguous:: a(:,:)
+  character(len=*), optional:: label
   !-----------------------------------------------------------------------------
   if (associated(a)) then
-    call mem_register (storage_size(a), -product(shape(a)), 'mem')
+    call mem_register (storage_size(a), -product(shape(a)), label)
     deallocate (a)
   end if
 END SUBROUTINE deallocate_2d_d
@@ -665,11 +745,12 @@ END SUBROUTINE deallocate_2d_d
 !===============================================================================
 !> Dealloccate a 3-D double array
 !===============================================================================
-SUBROUTINE deallocate_3d_d (a)
+SUBROUTINE deallocate_3d_d (a, label)
   real(8), pointer, contiguous:: a(:,:,:)
+  character(len=*), optional:: label
   !-----------------------------------------------------------------------------
   if (associated(a)) then
-    call mem_register (storage_size(a), -product(shape(a)), 'mem')
+    call mem_register (storage_size(a), -product(shape(a)), label)
     deallocate (a)
   end if
 END SUBROUTINE deallocate_3d_d
@@ -677,11 +758,12 @@ END SUBROUTINE deallocate_3d_d
 !===============================================================================
 !> Dealloccate a 4-D double array
 !===============================================================================
-SUBROUTINE deallocate_4d_d (a)
+SUBROUTINE deallocate_4d_d (a, label)
   real(8), pointer, contiguous:: a(:,:,:,:)
+  character(len=*), optional:: label
   !-----------------------------------------------------------------------------
   if (associated(a)) then
-    call mem_register (storage_size(a), -product(shape(a)), 'mem')
+    call mem_register (storage_size(a), -product(shape(a)), label)
     deallocate (a)
   end if
 END SUBROUTINE deallocate_4d_d
@@ -742,7 +824,7 @@ SUBROUTINE mem_register (bits, count, label)
         (bits/(8.*1024.**3))*count, os%gb, ' GB'
     end if
   end if
-  call os%gb_mem (bits, count)
+  call os%gb_mem (bits, count, label)
 END SUBROUTINE mem_register
 
 !===============================================================================

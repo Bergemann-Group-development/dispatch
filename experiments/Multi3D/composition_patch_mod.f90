@@ -5,8 +5,8 @@ module composition_patch_mod
   USE gpatch_mod
   USE m3d_patch_mod,   only: m3d_patch_t
   USE composition_mod, only: composition_type
-  USE opac_patch_mod,  only: opacity_t
-  USE rad_patch_mod,   only: radiation_t
+  USE opac_patch_mod,  only: opac_patch_t
+  USE rad_patch_mod,   only: rad_patch_t
   USE atom_patch_mod,  only: atom_patch_t
   USE rate_patch_mod,  only: rate_patch_t
   USE net_opac_patch_mod,  only: net_opac_t
@@ -30,9 +30,8 @@ module composition_patch_mod
   contains
     procedure :: pre_init => composition_pre_init
     procedure :: update => composition_update
-    procedure :: post_update => composition_patch_post_update
+    procedure :: print_post_update_info
     procedure :: finish => composition_finish
-    procedure :: deallocate_mem => composition_patch_deallocate_mem
     procedure :: nbor_relations => composition_patch_nbor_relations
   end type
 
@@ -43,8 +42,8 @@ SUBROUTINE composition_pre_init (self)
   class(composition_patch_t), target:: self
   type(composition_type), save :: composition
   class(atom_patch_t), pointer :: atom_patch
-  class(opacity_t), pointer :: opac
-  class(radiation_t), pointer :: rad
+  class(opac_patch_t), pointer :: opac
+  class(rad_patch_t), pointer :: rad
   class(net_opac_t), pointer :: net_opac
   class(back_line_patch_t), pointer :: back_line
   class(atomic_spectrum_type), save, pointer :: output_sp
@@ -207,25 +206,13 @@ SUBROUTINE composition_update (self)
 END SUBROUTINE composition_update
 
 !===============================================================================
-SUBROUTINE composition_patch_post_update (self)
-  class(composition_patch_t) :: self
-  integer :: p(3), z
-  logical :: skip
+SUBROUTINE print_post_update_info (self)
+  class(composition_patch_t):: self
+  integer :: p(3)
   !-----------------------------------------------------------------------------
-  call trace%begin ('composition_patch_t%composition_patch_post_update')
-  if (self%verbose > 1) then
-    p = self%pcheck
-    if (all(p > 0)) then
-      write(stdout,'(A, 8(ES15.7))') self%m3d_patch_info(), &
-      self%mem(p(1),p(2),p(3),:self%i_temp,1,:), self%composition%grph
-    elseif (self%verbose > 2) then
-      write(stdout,'(A,A)') self%m3d_patch_info()
-    endif
-  end if
-
-  call self%m3d_patch_t%post_update()
-  call trace%end()
-END SUBROUTINE composition_patch_post_update
+  p = self%pcheck
+  call self%print_to_stdout(arr=self%mem(p(1),p(2),p(3),:self%i_temp,1,1))
+END SUBROUTINE print_post_update_info
 
 !===============================================================================
 SUBROUTINE composition_patch_nbor_relations(self, another, needed, needs_me, download)
@@ -259,14 +246,4 @@ SUBROUTINE composition_finish (self, rotated)
   call self%m3d_patch_t%finish(rotated=rotated)
   call self%set(bits%frozen)
 END SUBROUTINE composition_finish
-
-!===============================================================================
-SUBROUTINE composition_patch_deallocate_mem(self, deallocator)
-  class(composition_patch_t) :: self
-  class(m3d_patch_t), intent(in), target :: deallocator
-  ! ----------------------------------------------------------------------------
-  ! no memory to be deallocated
-END SUBROUTINE composition_patch_deallocate_mem
-
-
 end module composition_patch_mod

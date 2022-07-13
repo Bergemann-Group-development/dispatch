@@ -1,7 +1,7 @@
 #!/bin/bash -l
 # --- Log file and error file names ---
-#SBATCH -o ./dispatch.log
-#SBATCH -e ./dispatch.err
+#SBATCH -o ./test.log
+#SBATCH -e ./test.err
 # --- Job name and working directory ---
 #SBATCH -D ./
 #SBATCH -J M3D_DIS
@@ -16,5 +16,5 @@
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export OMP_STACKSIZE=1024M
 unset I_MPI_PMI_LIBRARY 
-mpirun ./dispatch.x input_o_nlte.nml
-#mpirun ./dispatch.x input_fe_nlte.nml
+#mpirun ./dispatch.x input_o_nlte.nml
+mpirun ./dispatch.x input_fe_nlte.nml

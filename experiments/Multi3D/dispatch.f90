@@ -51,6 +51,7 @@ PROGRAM dispatch
   call timer%print() 
   call mpi%barrier()
   write(*,'(a, I3, a, F7.2, a)') 'maximum memory on rank', mpi%rank, ' was', os%max_mem, 'Gb'
+  write(*,'(a, I3, a, F7.2, a)') 'still allocated memory on rank', mpi%rank, ' is', os%gb, 'Gb'
   call setup%end                                ! End setup
 !===============================================================================
 END PROGRAM dispatch

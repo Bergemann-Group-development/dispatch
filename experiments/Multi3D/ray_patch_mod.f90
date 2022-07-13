@@ -28,7 +28,7 @@ module ray_patch_mod
   !USE units_mod
   !USE scratch_mod
   USE ray_mod, only:ray_type
-  USE m3d_patch_mod, only: m3d_patch_t, vec, wmu, long_vec, long_wmu
+  USE m3d_patch_mod, only: m3d_patch_t, vec, wmu, long_vec, long_wmu, detailed_prints
   USE mconst, only: cc
   implicit none
   private
@@ -39,11 +39,11 @@ module ray_patch_mod
     type(ray_type) :: ray
     real(8) :: vec(3), wmu
     integer :: dir=0, fs, fe, i_out=0
-    logical :: check_in_bounds
   contains
     procedure :: pre_init => ray_patch_pre_init
     procedure :: init => ray_patch_init
-    procedure :: post_update => ray_post_update
+    procedure :: print_post_update_info
+    procedure :: check_in_bounds
     procedure :: finish => ray_patch_finish
     procedure :: nbor_relations => ray_nbor_relations
     procedure :: set_freq_indices
@@ -120,20 +120,6 @@ SUBROUTINE ray_patch_pre_init (self)
   endif
 
   call self%check_topbot()
-
-  !if (self%dir < 0) then
-  !  self%boundaries%lower = .false.
-  !elseif (self%dir > 0) then
-  !  self%boundaries%upper = .false.
-  !endif
-
-  !select case (self%kind)
-  !case ('line_opac', 'cont_opac')
-  !  if (self%boundaries%lower .or. self%boundaries%upper) then
-  !    self%time = self%time - 0.1
-  !  endif
-  !end select
-  
   call self%set_freq_indices()
 END SUBROUTINE ray_patch_pre_init
 
@@ -150,15 +136,6 @@ SUBROUTINE ray_patch_init (self)
     self%size(3) = self%ds(3)
     self%n(3) = 1
     self%ng(3) = 0
-  endif
-  p = self%pcheck
-  call self%ff_index(self%fcheck, f)
-  self%check_in_bounds = f > 0
-  if (self%check_in_bounds) then
-    if (self%kind /= 'out_rad') then
-      self%check_in_bounds = all(p > 0)
-    endif
-    self%fcheck = f
   endif
   call self%m3d_patch_t%init()
 END SUBROUTINE ray_patch_init
@@ -221,34 +198,6 @@ SUBROUTINE comp_vproj (self, vproj)
     vproj = (self%vec(1)*px + self%vec(2)*py + self%vec(3)*pz) * scaling%u / (d*cc)
   endif
 END SUBROUTINE comp_vproj
-
-!===============================================================================
-SUBROUTINE ray_post_update (self)
-  class(ray_patch_t) :: self
-  integer :: f, p(3)
-  !-----------------------------------------------------------------------------
-  call trace%begin ('ray_patch_t%ray_post_update')
-  if (self%verbose > 1) then
-    if (self%check_in_bounds) then
-      p = self%pcheck
-      f = self%fcheck
-      select case (self%kind)
-      case ('out_rad')
-        write(stdout,'(A, 6(ES15.7))') self%m3d_patch_info(), &
-        sum(self%mem(:,:,1,f,1,1)) / product(self%n(1:2))
-      case default
-        write(stdout,'(A, 6(ES15.7))') self%m3d_patch_info(), &
-        self%mem(p(1),p(2),p(3),f,1,:)
-      end select
-    elseif (self%verbose > 2) then
-      write(stdout,'(A,A)') self%m3d_patch_info()
-    endif
-  endif 
-
-  call self%m3d_patch_t%post_update()
-
-  call trace%end()
-END SUBROUTINE ray_post_update
 
 !===============================================================================
 SUBROUTINE ray_patch_finish (self, rotated)
@@ -421,7 +370,7 @@ SUBROUTINE compress_mem (self, compressor)
     m = shape(self%mem)
     m(3) = 1
     k = merge(self%ui(3), self%li(3),self%dir>0)
-    call os%allocate(dn, m)
+    call os%allocate(dn, m, label='compress:dn')
     do i=1, self%nv
       dn(:,:,1:1,i,:,:) = self%mem(:,:,k:k,i,:,:)
     end do
@@ -431,8 +380,11 @@ SUBROUTINE compress_mem (self, compressor)
     do i=1, self%nv
       self%mem(:,:,1:1,i,:,:) = dn(:,:,1:1,i,:,:)
     end do
-    call os%deallocate(dn)
+    call os%deallocate(dn, label='compress:dn')
     call self%mem_lock(1)%unset ('compress_mem')
+    if (self%print_update_info .and. detailed_prints) then
+      write(stdout,*) self%m3d_patch_info2(), ' has been compressed'
+    endif
     call trace%end(itimer)
   endif
 END SUBROUTINE compress_mem
@@ -451,7 +403,7 @@ SUBROUTINE decompress_mem (self, decompressor)
     self%static_mem = .false.
     self%compressed = .false.
     m = shape(self%mem)
-    call os%allocate(up, m)
+    call os%allocate(up, m, label='decompress:up')
     do i=1, self%nv
       up(:,:,1:1,i,:,:) = self%mem(:,:,1:1,i,:,:)
     end do
@@ -461,8 +413,11 @@ SUBROUTINE decompress_mem (self, decompressor)
     do i=1, self%nv
       self%mem(:,:,k:k,i,:,:) = up(:,:,1:1,i,:,:)
     end do
-    call os%deallocate(up)
+    call os%deallocate(up, label='decompress:up')
     call self%mem_lock(1)%unset ('decompress_mem')
+    if (self%print_update_info .and. detailed_prints) then
+      write(stdout,*) self%m3d_patch_info2(), ' has been decompressed'
+    endif
     call trace%end(itimer)
   endif
 END SUBROUTINE decompress_mem
@@ -517,7 +472,7 @@ SUBROUTINE ray_pack (self)
     end do
   end do
   !-----------------------------------------------------------------------------
-  if (self%verbose > 2) &
+  if (self%print_update_info .and. detailed_prints) &
     print *, self%id, 'packing message on rank', mpi%rank
   call trace%end (itimer)
 END SUBROUTINE ray_pack
@@ -615,7 +570,7 @@ SUBROUTINE ray_unpack (self, mesg)
       self%wc_last
     1 format(a,3i6,f12.6,2x,5l1,f12.1)
   end if
-  if (self%verbose > 2) then
+  if (self%print_update_info .and. detailed_prints) then
     print *, self%id, 'unpacking message on rank', mpi%rank
   end if
   !-----------------------------------------------------------------------------
@@ -807,5 +762,32 @@ FUNCTION total_mesg_buffer_size(self) result(n_buf)
   if (kind(self%mem)==8) n_buf = n_buf*2
   n_buf = n_buf * self%nw * self%nv
 END FUNCTION total_mesg_buffer_size
+
+!===============================================================================
+SUBROUTINE print_post_update_info (self)
+  class(ray_patch_t) :: self
+  integer :: f, p(3)
+  !-----------------------------------------------------------------------------
+  f = self%fcheck
+  p = self%pcheck
+  call self%print_to_stdout(arr=self%mem(p(1),p(2),p(3),f,1,:))
+END SUBROUTINE print_post_update_info
+
+!===============================================================================
+FUNCTION check_in_bounds (self) result (cib)
+  class(ray_patch_t) :: self
+  logical :: cib
+  integer :: f
+  !-----------------------------------------------------------------------------
+  cib = .false.
+  call self%ff_index(self%fcheck, f)
+  if (f > 0) then
+    if (self%kind == 'out_rad') then
+      self%pcheck(3) = 1
+    endif
+    cib = self%m3d_patch_t%check_in_bounds()
+  endif
+  self%fcheck = f
+END FUNCTION check_in_bounds
 
 end module ray_patch_mod

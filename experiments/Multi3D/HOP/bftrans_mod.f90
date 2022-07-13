@@ -475,10 +475,10 @@ SUBROUTINE add_absorption(self, abslte, lam, temp, EK_over_temp, teta, pe, rho, 
 
     if (self%exclude) return
 
-    call os%allocate(quad, [nf])
-    call os%allocate(iw, [nf])
-    call os%allocate(lagrange, [3,nf], zero=.true.)
-    call os%allocate(pvt_xkap, shape(self%xkap))
+    call os%allocate(quad, [nf], label='quad')
+    call os%allocate(iw, [nf], label='iw')
+    call os%allocate(lagrange, [3,nf], zero=.true., label='lagrange')
+    call os%allocate(pvt_xkap, shape(self%xkap), label='pvt_xkap')
     allocate(fakt, mold=temp)
 
     call self%load_lam_interp_weights(lam)
@@ -491,10 +491,10 @@ SUBROUTINE add_absorption(self, abslte, lam, temp, EK_over_temp, teta, pe, rho, 
     endif
 
 
-    call os%deallocate(quad)
-    call os%deallocate(iw)
-    call os%deallocate(lagrange)
-    call os%deallocate(pvt_xkap)
+    call os%deallocate(quad, label='quad')
+    call os%deallocate(iw,   label='iw')
+    call os%deallocate(lagrange, label='lagrange')
+    call os%deallocate(pvt_xkap, label='pvt_xkap')
 END SUBROUTINE add_absorption
 
 END MODULE

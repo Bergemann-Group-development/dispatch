@@ -15,6 +15,7 @@ MODULE patch_mod
   USE bits_mod
   USE trace_mod
   USE mpi_mod
+  USE os_mod
   USE kinds_mod
   USE task_mod
   USE link_mod
@@ -793,15 +794,18 @@ SUBROUTINE init (self)
     end if
     self%mv = max (self%mv, self%nv)
     gn = self%mesh%gn
-    allocate (self%mem    (gn(1), gn(2), gn(3), self%mv, self%nt, self%nw))
-    allocate (self%u_phase(gn(1), gn(2), gn(3)))
+    !allocate (self%mem    (gn(1), gn(2), gn(3), self%mv, self%nt, self%nw))
+    !allocate (self%u_phase(gn(1), gn(2), gn(3)))
+    call os%allocate(self%mem, [gn(1), gn(2), gn(3), self%mv, self%nt, self%nw], &
+                     label=trim(self%kind)//'%mem')
+    call os%allocate(self%u_phase, [gn(1), gn(2), gn(3)], label='u_phase')
     self%u_phase = 0.0
     allocate (self%mem_lock(self%nt))
     do i=1,self%nt
       call self%mem_lock(i)%init ('meml')
     end do
     call omp%set_stacksize (product(shape(self%mem)), io%master)
-    call io%bits_mem (storage_size(self%mem), product(shape(self%mem)), 'mem')
+    !call io%bits_mem (storage_size(self%mem), product(shape(self%mem)), 'mem')
     !---------------------------------------------------------------------------
     ! The unsigned and pervolume flags may also be modified by the solver. They
     ! are allocated here, but need to be reallocated by solvers modifying nv.
