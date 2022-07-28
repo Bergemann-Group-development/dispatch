@@ -50,6 +50,8 @@ SUBROUTINE pre_init (self)
   self%time     = 0.0
   self%dtime    = timestep
   self%out_next = huge(1.0)
+  call self%set(bits%no_download)
+  !call self%set(bits%remove)
 
   call self%solver_t%pre_init ()
   call trace%end (itimer=itimer)

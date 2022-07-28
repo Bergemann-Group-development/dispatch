@@ -191,11 +191,11 @@ module lines_patch_mod
     nh   => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_nh1:self%i_nh6,self%it,1)
     doppler_factor => self%atom%doppler_factor
 
-    call os%allocate(tothi,       self%n, label='tothi')
-    call os%allocate(adamp,       self%n, label='adamp')
-    call os%allocate(unsold_temp, self%n, label='unsold_temp')
-    call os%allocate(stark_pe,    self%n, label='stark_pe')
-    call os%allocate(vproj,       self%n, label='vproj')
+    call os%allocate(tothi,       self%n)
+    call os%allocate(adamp,       self%n)
+    call os%allocate(unsold_temp, self%n)
+    call os%allocate(stark_pe,    self%n)
+    call os%allocate(vproj,       self%n)
     
     call self%comp_vproj(vproj)
     vproj = (1 + vproj) / doppler_factor
@@ -225,11 +225,11 @@ module lines_patch_mod
       deallocate(wnu)
     enddo
 
-    call os%deallocate(tothi, label='tothi')
-    call os%deallocate(adamp, label='adamp')
-    call os%deallocate(unsold_temp, label='unsold_temp')
-    call os%deallocate(stark_pe, label='stark_pe')
-    call os%deallocate(vproj, label='vproj')
+    call os%deallocate(tothi)
+    call os%deallocate(adamp)
+    call os%deallocate(unsold_temp)
+    call os%deallocate(stark_pe)
+    call os%deallocate(vproj)
 
     call self%integrate_wphi()
     call self%post_update()

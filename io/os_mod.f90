@@ -332,7 +332,7 @@ SUBROUTINE track_mem (self, gb, label)
       self%nlabels = max(i, self%nlabels)
       self%labels(i) = label
     else
-      call shared%abort ('os_mod: memory with unknown label is deallocated.')
+      call shared%abort ('os_mod: memory with unknown label='//trim(label)//' is deallocated.')
     endif
   endif
   self%labelled_mem(i) = self%labelled_mem(i) + gb

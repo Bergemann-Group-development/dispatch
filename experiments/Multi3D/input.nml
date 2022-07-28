@@ -44,15 +44,16 @@
 &radiation_params   save_output=T lock_Inu=F stiff_lim=1e-8 /
 &timer_params       sec_per_report = 1000 /
 &task_list_params   verbose=0 check_nbor_consistency=F /
-&dispatcher0_params verbose=0 omp_pick=F /
+&dispatcher0_params verbose=0 omp_pick=F retry_stalled=1e8 /
 &task_params        verbose=0 mpi_init_ids=F /
 &halo_params        check_filled=F /
 !&m3d_params         fcheck=31242 pcheck=1,1,-1 linecheck=1 n_nu=32 maxiter=0 verbose=3 ilambd=0 dynamic_memory=T
 !&m3d_params         fcheck=31242 pcheck=1,1,-1 linecheck=1 n_nu=32 maxiter=0 verbose=3 ilambd=0 dynamic_memory=T
 !&m3d_params         fcheck=1776 pcheck=1,1,-1 linecheck=103 n_nu=4 maxiter=1 verbose=3 ilambd=0 dynamic_memory=T
-&m3d_params         verbose=6 fcheck=850 pcheck=1,1,180 linecheck=4 lvlcheck=6, n_nu=4 maxiter=2 ilambd=0 dynamic_memory=T conditioning='full'
-!                    quad_scheme='set_a2' long_scheme='disk_center' /
-                    quad_scheme='disk_center' long_scheme='disk_center'
+&m3d_params         verbose=2 fcheck=850 pcheck=1,1,180 linecheck=4 lvlcheck=6, n_nu=1 maxiter=5 ilambd=0 dynamic_memory=T conditioning='full'
+                    quad_scheme='set_a2' long_scheme='disk_center' /
+!                   quad_scheme='disk_center' long_scheme='disk_center' /
+!                   quad_scheme='disk_center' long_scheme='custom' custom_mu='0.197 0.424 0.608 0.793 1.0'
                     out_folder='./out/' save_back_opac=F detailed_prints=F print_finished=F/
 !&composition_params verbose=0 absmet_file='./input_multi3d/absmet' /
 !&composition_params verbose=0 absmet_file='./input_multi3d/metals_noFe.x01' /

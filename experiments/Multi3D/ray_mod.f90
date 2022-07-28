@@ -305,6 +305,68 @@ SUBROUTINE set_lobatto_quadratures(ntheta, nphi, vec, wts)
 END SUBROUTINE set_lobatto_quadratures
 
 !===============================================================================
+SUBROUTINE set_custom_quadratures(mu, nphi, vec, wts)
+  real(8), intent(inout), dimension(:) :: mu
+  integer, intent(in) :: nphi
+  real(8), intent(out), dimension(:), allocatable :: wts
+  real(8), intent(out), dimension(:,:), allocatable :: vec
+  real(8), dimension(:), allocatable :: wmu, smus, swts, swts2
+  real(8) :: pi2, pi05, xphi, theta
+  integer :: ntheta, nrays, i, nt, np, nmuphi
+  ! -------------------------------------------------------------------
+  nrays = size(mu)
+  nmuphi = (nrays-1)*nphi + 1
+
+  allocate(wmu(nrays))
+  allocate(wts(nmuphi))
+  allocate(vec(3, nmuphi))
+  allocate(smus(nrays+1))
+  allocate(swts(nrays+1))
+
+  call dirty_sort(mu)
+  smus(1) = 0.d0
+  smus(2:nrays+1) = mu
+
+  if (mod(size(smus), 2) == 1) then
+    call simps_weights(smus, swts)
+  else
+    allocate(swts2(nrays))
+    call simps_weights(smus(1:nrays), swts(1:nrays))
+    call simps_weights(smus(2:nrays+1), swts2)
+    swts(1:2) = swts(1:2) + 0.5*(smus(2)-smus(1))
+    swts2(nrays-1:nrays) = swts2(nrays-1:nrays) + 0.5*(smus(nrays+1)-smus(nrays))
+    swts(2:nrays+1) = swts(2:nrays+1) + swts2
+    swts = swts / 2
+  endif
+
+  wmu = swts(nrays+1:2:-1)
+  mu = mu(nrays:1:-1)
+  wmu = wmu * 2*mu
+  
+  pi2 = PI * 2.0d0
+  ! storing first index of vec and wts
+  wts(1) = wmu(1)
+  vec(3,1) = mu(1)
+  ! storing the rest of vec and wts indexes
+  do nt = 2, nrays
+     do np = 1, nphi
+        i = (nt-2) * nphi + np+1
+        
+        ! Computing cartesian geometries
+        xphi = pi2 / dble(nphi) * (np-1)
+        theta = acos(mu(nt))
+        vec(1,i) = sin(theta) * cos(xphi)
+        vec(2,i) = sin(theta) * sin(xphi)
+        vec(3,i) = mu(nt)
+        wts(i)   = wmu(nt) / dble(nphi)
+     end do
+  end do
+
+  ! Remove computational anomalies
+  where (abs(vec) < 1d-3) vec = 0d0
+END SUBROUTINE set_custom_quadratures
+
+!===============================================================================
 SUBROUTINE ray_init(ray, vec, wmu)
   class(ray_type), intent(inout) :: ray
   real(8), intent(in) :: vec(3), wmu
@@ -687,12 +749,11 @@ SUBROUTINE set_stencil(ray, ds)
     ray%int(1)%ds=ray%longds-ray%int(1)%ds
 
   end if 
-end subroutine set_stencil
+END SUBROUTINE set_stencil
 !---------------------------------------------------------------------
 
-
 !---------------------------------------------------------------------
-subroutine GetIntersect(rx,ry,rz,plane)
+SUBROUTINE GetIntersect(rx,ry,rz,plane)
   !---------------------------------------------------------------------
   !
   ! Determines which plane is hit first by a ray
@@ -722,12 +783,11 @@ subroutine GetIntersect(rx,ry,rz,plane)
      plane = 1 !yz plane
   endif
 
-end subroutine getintersect
+END SUBROUTINE getintersect
 !---------------------------------------------------------------------
 
-
 !---------------------------------------------------------------------
-subroutine CalcFrac(wt1,wt2,rx,ry,rz,plane)
+SUBROUTINE CalcFrac(wt1,wt2,rx,ry,rz,plane)
   !---------------------------------------------------------------------
   ! Calculate coordinate of point where the characteristic hits cell 
   ! boundary in units of cell size, relative to the central point of the 
@@ -766,11 +826,11 @@ subroutine CalcFrac(wt1,wt2,rx,ry,rz,plane)
      wt2 = ry/abs(rz)
   end select
 
-end subroutine CalcFrac
+END SUBROUTINE CalcFrac
 !---------------------------------------------------------------------
 
 !---------------------------------------------------------------------
-subroutine CalcDistance(ds,plane,rx,ry,rz)
+SUBROUTINE CalcDistance(ds,plane,rx,ry,rz)
   !---------------------------------------------------------------------
   !
   ! Computes distance ds between center point of the short charactersitic
@@ -795,11 +855,11 @@ subroutine CalcDistance(ds,plane,rx,ry,rz)
      ds = 1.0d0/abs(rz)
   end select
 
-end subroutine CalcDistance
+END SUBROUTINE CalcDistance
 !---------------------------------------------------------------------
 
 !---------------------------------------------------------------------
-subroutine SetShortKern(ray,wt1,wt2,isup)
+SUBROUTINE SetShortKern(ray,wt1,wt2,isup)
   !---------------------------------------------------------------------
   !
   ! Set up the interpolation kernel for short characteristics.
@@ -896,11 +956,11 @@ subroutine SetShortKern(ray,wt1,wt2,isup)
      end select
   endif
 
-end subroutine SetShortKern
+END SUBROUTINE SetShortKern
 !---------------------------------------------------------------------
 
 !---------------------------------------------------------------------
-subroutine SetLongKern(ray,wt1,wt2,longfracX,longfracY)
+SUBROUTINE SetLongKern(ray,wt1,wt2,longfracX,longfracY)
   type(ray_type),intent(inout) :: ray
   real(8)       ,intent(in)    :: wt1,wt2,longfracX,longfracY
   real(8) :: h1,h2
@@ -924,12 +984,11 @@ subroutine SetLongKern(ray,wt1,wt2,longfracX,longfracY)
   ! xy grid is equidistant, so we can do cubic convolution    
   call SetCcKern(ray%longkern,h1,h2)
 
-end subroutine SetLongKern
+END SUBROUTINE SetLongKern
 !---------------------------------------------------------------------
 
-
 !---------------------------------------------------------------------
-subroutine SetCcKern(kern,h1,h2)
+SUBROUTINE SetCcKern(kern,h1,h2)
   use mmath,only:cc_kernel
   !---------------------------------------------------------------------
   !
@@ -949,11 +1008,11 @@ subroutine SetCcKern(kern,h1,h2)
      kern(i,j) = xkern(i)*ykern(j)
   endforall
 
-end subroutine SetCcKern
+END SUBROUTINE SetCcKern
 !---------------------------------------------------------------------
 
 !---------------------------------------------------------------------
-subroutine SetLinKern(kern,h1,h2)
+SUBROUTINE SetLinKern(kern,h1,h2)
   !---------------------------------------------------------------------
   ! set the inner 2x2 grid of a 4x4 kernel to a linear interpolation
   ! kernel
@@ -985,7 +1044,50 @@ subroutine SetLinKern(kern,h1,h2)
   kern(2,3)=(1.0-h1)*     h2
   kern(3,3)=     h1 *     h2  
 
-end subroutine SetLinKern
+END SUBROUTINE SetLinKern
 !---------------------------------------------------------------------
     
+!===============================================================================
+! Returns simpson integration weights for odd numbered xx-grid.
+!===============================================================================
+SUBROUTINE simps_weights(xx, wts)
+  real(8), intent(in), dimension(:) :: xx
+  real(8), intent(out), dimension(:) :: wts
+  real(8), allocatable, target, dimension(:) :: h
+  real(8), pointer, dimension(:) :: h0, h1
+  integer :: n
+  !-----------------------------------------------------------------------------
+  n = size(xx)
+
+  if (n < 4) then
+    stop 'less than 4 weights in simps_weights'
+  endif
+
+  allocate(h(n-1))
+
+  wts = 0.d0
+  h = xx(2:n) - xx(1:n-1)
+  h0 => h(1:n-2:2)
+  h1 => h(2:n-1:2)
+
+  wts(1:n-2:2) = wts(1:n-2:2) +  (h0 + h1)/6 * (2 - h1 / h0)
+  wts(2:n-1:2) = wts(2:n-1:2) +  (h0 + h1)**3 / (6*h0*h1)
+  wts(3:n-0:2) = wts(3:n-0:2) +  (h0 + h1)/6 * (2 - h0 / h1)
+END SUBROUTINE simps_weights
+
+!===============================================================================
+SUBROUTINE dirty_sort(arr)
+  real(8), intent(inout), dimension(:) :: arr
+  real(8) :: tmp
+  integer :: i, imin, n
+  !-----------------------------------------------------------------------------
+  n = size(arr)
+  do i=1, n-1
+    imin = i - 1 + minloc(arr(i:n), 1)
+    tmp = arr(i)
+    arr(i) = arr(imin)
+    arr(imin) = tmp
+  end do
+END SUBROUTINE dirty_sort
+
 end module ray_mod

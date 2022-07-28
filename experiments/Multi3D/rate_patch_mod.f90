@@ -122,6 +122,7 @@ module rate_patch_mod
       gamma_ij = 0.0d0
       gamma_ji = 0.0d0
 
+      call self%check_access(self%lines)
       if (conditioning == 'full') then
         call self%atom%full_preconditioning(self%fs, temp, Ieff, Psi, gamma_ij, gamma_ji, self%idx_map, self%lines%line, self%lines%idx_map)
       elseif (conditioning == 'self') then

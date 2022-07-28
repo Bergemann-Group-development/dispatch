@@ -56,7 +56,7 @@ module net_opac_patch_mod
   
     nw = 2
     call self%set_nv_and_nw (self%fe-self%fs+1,nw)
-  
+
     if (self%out_ray) then
       self%ng = [0,0,1]
     else

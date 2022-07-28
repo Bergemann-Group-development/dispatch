@@ -39,6 +39,8 @@ PROGRAM dispatch
   !type(cartesian_t):: cartesian                 ! Use Cartesian patch arrangement
   class(task_list_t), pointer:: task_list => null()
   !.............................................................................
+  print *, 'HOST:'
+  call execute_command_line ('hostname')
   call setup%init                               ! Generic setup (MPI, I/O, ...)
   call dispatcher%init                          ! Initialize the dispatcher
   call check_mpi_debug()

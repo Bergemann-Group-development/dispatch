@@ -753,6 +753,7 @@ SUBROUTINE bndries (self)
   integer :: li, ui, f
   !----------------------------------------------------------------------------
   if (self%kind == 'angle_rad') then
+    call self%check_access(self%opac)
     self%Inu => self%mem(:,:,:,:, self%it, self%i_inu)
     self%chi => self%opac%mem(:,:,:,:, self%opac%it, self%opac%i_chi)
     self%Snu => self%opac%mem(:,:,:,:, self%opac%it, self%opac%i_snu)

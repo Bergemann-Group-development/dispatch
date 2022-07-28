@@ -1182,13 +1182,17 @@ contains
         character(len=*), intent(in) :: id
         class(element_type), pointer, intent(out) :: element
         integer :: idx
+        logical :: first_print=.true.
         !---------------------------------------------------------------------------
         call trace%begin ('composition_type%init')
         idx = findloc(self%elements%id, uppercase(id, len(id)), 1)
 
         if (idx == 0) then
             element => null()
-            print *, 'element with id=' // id // ' was not found.'
+            if (first_print) then
+                first_print = .false.
+                print *, 'element with id=' // id // ' was not found.'
+            endif
         else
             element => self%elements(idx)
         endif
@@ -1334,7 +1338,8 @@ contains
                 element%awgt  =  awgt / uu
                 call self%compute_grams_per_hydrogen(self%suma, self%xmy, self%grph)
             endif
-        else
+        elseif (first_time) then
+            first_time = .false.
             print *, 'overwrite_abundance: Element of id= ', id, ' is not part of the opacity package.'
         endif
     END SUBROUTINE overwrite_abundance

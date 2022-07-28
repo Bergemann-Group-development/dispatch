@@ -38,7 +38,7 @@ module ray_patch_mod
   type, public, extends(m3d_patch_t) :: ray_patch_t
     type(ray_type) :: ray
     real(8) :: vec(3), wmu
-    integer :: dir=0, fs, fe, i_out=0
+    integer :: fs, fe, i_out=0
   contains
     procedure :: pre_init => ray_patch_pre_init
     procedure :: init => ray_patch_init

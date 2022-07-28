@@ -139,13 +139,14 @@ module atom_patch_mod
     character(len=128), save :: atom_file='./input_multi3d/atoms/atom.ba06'
     character(len=256) :: command
     real(8), save :: qnorm=10.0, logf_cut = -99.9, red_cut=huge(1.0), blue_cut=tiny(1.0)
+    real(8), save :: abundance=0
     integer :: iostat, lunit
     integer, save:: verbose=0
     integer, save :: itimer=0, itimer1=0, n_in_lines=0
     logical, save :: exclude_trace_cont=.true., use_atom_abnd=.true., second_sp=.false.
     integer, save, allocatable :: in_lines(:)
     namelist /atom_params/ atom_file, qnorm, convlim, verbose, exclude_trace_cont, &
-    use_atom_abnd, logf_cut, red_cut, blue_cut, n_in_lines
+    use_atom_abnd, logf_cut, red_cut, blue_cut, n_in_lines, abundance
     namelist /line_mask/ in_lines
     !-----------------------------------------------------------------------------
     call trace%begin('atom_patch_t%pre_init_atom', itimer=itimer)
@@ -179,6 +180,7 @@ module atom_patch_mod
       sp%verbose = verbose
       if (verbose) write (*,*) ' - Reading atom'
       call atom%read(atom_file, qnorm, logf_cut=logf_cut, red_cut=red_cut, blue_cut=blue_cut, in_lines=in_lines)
+      if (abundance > 0) atom%abnd = abundance
       output_atom = atom
       call atom%create_spectrum(sp)
       call atom%set_active_transitions(sp)
@@ -213,7 +215,7 @@ module atom_patch_mod
 
     call self%exclude_double_lines()
 
-    if (use_atom_abnd) then
+    if (use_atom_abnd .or. abundance > 0) then
       call self%composition%overwrite_abundance(atom%id, atom%abnd, atom%awgt)
     endif
 
