@@ -32,6 +32,7 @@ MODULE experiment_mod
     procedure:: init_level
     procedure:: bndries
     procedure:: append_to
+    procedure:: statistics
     procedure:: nbor_relations => experiment_nbor_relations
   end type
   
@@ -50,6 +51,7 @@ SUBROUTINE pre_init (self)
   self%time     = 0.0
   self%dtime    = timestep
   self%out_next = huge(1.0)
+  self%place    = -1
   call self%set(bits%no_download)
   !call self%set(bits%remove)
 
@@ -146,17 +148,16 @@ SUBROUTINE init_level (self)
 END SUBROUTINE init_level
 
 !===============================================================================
-SUBROUTINE append_to(self, task_list)
+SUBROUTINE append_to(self, list)
   class (experiment_t), target :: self
-  class(list_t),  pointer :: task_list
-  class(link_t),  pointer :: link
-  class (task_t), pointer :: task
+  class(list_t),  pointer :: list
+  class(halo_m3d_t),  pointer :: link
   !-----------------------------------------------------------------------------
-  allocate (halo_m3d_t:: link)
+  allocate (link)
   call link%init()
   link%task => self
   self%link => link
-  call task_list%append (link)
+  call link%append_to(list)
 END SUBROUTINE append_to
 
 !===============================================================================
@@ -170,5 +171,12 @@ SUBROUTINE experiment_nbor_relations(self, another, needed, needs_me, download)
   call self%extras_t%nbor_relations(another, needed, needs_me, download)
   call trace%end()
 END SUBROUTINE experiment_nbor_relations
+
+!===============================================================================
+SUBROUTINE statistics (self)
+  class(experiment_t):: self
+  !-----------------------------------------------------------------------------
+  ! do nothing!
+END SUBROUTINE statistics
 
 END MODULE

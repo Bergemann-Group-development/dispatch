@@ -140,7 +140,7 @@ SUBROUTINE init (self, name)
   logical, save:: do_legacy=.false., do_flags=.false., do_direct=.false.
   logical ,save:: namelist_errors=.true., guard_zones=.false.
   logical ,save:: do_generic=.false., flush_logs=.false.
-  real(8):: log_interval=5d0, print_seconds=1d0
+  real(8):: log_interval=5d0, print_seconds=1d0, gb_step=1d0
   real(8), save :: start_time=0d0, end_time=1.0, out_time=0.1, print_time=0.0
   real:: test
   integer:: i, iostat, i1, i2
@@ -154,7 +154,7 @@ SUBROUTINE init (self, name)
     id_debug, method, restart, format, guard_zones, time_derivs, log_sent, &
     task_logging, namelist_errors, nml_version, log_interval, top, datadir, &
     flush_logs, print_seconds, max_files, print_time, print_every, &
-    start_time, out_time, end_time, os_verbose
+    start_time, out_time, end_time, os_verbose, gb_step
   namelist /out_params/ start_time, out_time, end_time, print_every
   namelist /code_params/ branch, hash, compiler
   !-----------------------------------------------------------------------------
@@ -201,38 +201,25 @@ SUBROUTINE init (self, name)
       self%inputname = 'input.nml'
       self%run_name = ''
     end if
-    call ensure_dirname (self%data_dir)
-    self%run_dir = trim(self%data_dir)//trim(self%run_name)
-    call ensure_dirname (self%run_dir)
+    
     if (mpi%rank == 0) &
       write(*,'(a,i2)') &
       ' This version was compiled with default real KIND =', kind(test)
-    call io%header ('io_t%init:')
-    !---------------------------------------------------------------------------
-    ! `mkdir -p` doesn't work from inside the code, so two `mkdir` are required
-    call os%mkdir (trim(self%data_dir))
-    call os%mkdir (trim(self%run_dir))
-    call os%copy_file (trim(self%run_dir)//'params.nml', &
-                       trim(self%run_dir)//'restart.nml')
-    open (io_unit%nml, file=trim(self%run_dir)//'params.nml', form='formatted', &
-          delim='apostrophe', status='unknown')
-    open (io_unit%hash, file=trim(self%run_dir)//'hash.log', form='formatted', &
-          status='unknown')
-    open (self%input, file=self%inputname, form='formatted', status='old')
-    write (io_unit%nml, code_params)
     if (mpi%rank > 0) then
       io%output = io_unit%mpi
     end if
+    call io%header ('io_t%init:')
+    open (self%input, file=self%inputname, form='formatted', status='old')
     !---------------------------------------------------------------------------
     ! Read out_params (obsolete)
     !---------------------------------------------------------------------------
-    rewind (io%input)
-    read (io%input, out_params, iostat=iostat)
-    if (iostat > 0) then
-      rewind (io%input)
-      read (io%input, out_params)
-    end if
-    call io%namelist_warning ('out_params', iostat)
+    !rewind (io%input)
+    !read (io%input, out_params, iostat=iostat)
+    !if (iostat > 0) then
+    !  rewind (io%input)
+    !  read (io%input, out_params)
+    !end if
+    !call io%namelist_warning ('out_params', iostat)
     !---------------------------------------------------------------------------
     ! Read io_params
     !---------------------------------------------------------------------------
@@ -249,7 +236,22 @@ SUBROUTINE init (self, name)
     io%print_every = print_every                ! print 1st task
     io%iprint      = print_every                ! print 1st task
     os%verbose     = os_verbose
+    os%gb_step     = gb_step
     call self%namelist_warning ('io_params', iostat)
+    !---------------------------------------------------------------------------
+    ! `mkdir -p` doesn't work from inside the code, so two `mkdir` are required
+    call ensure_dirname (datadir)
+    self%run_dir = trim(datadir)//trim(self%run_name)
+    call ensure_dirname (self%run_dir)
+    call os%mkdir (trim(datadir))
+    call os%mkdir (trim(self%run_dir))
+    call os%copy_file (trim(self%run_dir)//'params.nml', &
+                       trim(self%run_dir)//'restart.nml')
+    open (io_unit%nml, file=trim(self%run_dir)//'params.nml', form='formatted', &
+          delim='apostrophe', status='unknown')
+    open (io_unit%hash, file=trim(self%run_dir)//'hash.log', form='formatted', &
+          status='unknown')
+    write (io_unit%nml, code_params)
     if (mpi%master .and. .not. do_validate) then
       print'(a,i4)', ' n_sockets =', omp%nsockets
       print'(a,i4)', '   n_cores =', omp%ncores

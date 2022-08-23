@@ -58,7 +58,8 @@ MODULE mpi_mod
     generic:: init => init4, init8, init8d
     procedure, private:: reset4
     procedure, private:: reset8
-    generic:: reset => reset4, reset8
+    procedure, private:: reset8d
+    generic:: reset => reset4, reset8, reset8d
     procedure, private:: update4
     procedure, private:: update8
     procedure, private:: update8d
@@ -566,6 +567,22 @@ SUBROUTINE reset8 (self, n)
 END SUBROUTINE reset8
 
 !===============================================================================
+!> Reset the counter to n
+!===============================================================================
+SUBROUTINE reset8d (self, n)
+  class(mpi_counter_t):: self
+  real(8):: n, i
+  !.............................................................................
+  call trace%begin ('mpi_counter_t%reset')
+  i = self%update(0.d0)
+  i = self%update(n-i)
+  if (io_unit%verbose > 0) then
+    write (io_unit%log,*) 'mpi_counter_t%reset: count =', i
+  endif
+  call trace%end ()
+END SUBROUTINE reset8d
+
+!===============================================================================
 !> Add a value i to the counter on master.  If the value reaches 0, return 0,
 !> while resetting the counter to n.  Allow both 4-byte and 8-byte arguments.
 !===============================================================================
@@ -580,12 +597,13 @@ END FUNCTION update4
 FUNCTION update8 (self, i) RESULT (j)
   class(mpi_counter_t):: self
   integer(8):: i, j, k
+  integer, save :: itimer=0
   !.............................................................................
 #ifdef MPI
   integer:: master=0, mpi_err
   integer(kind=MPI_ADDRESS_KIND):: offset=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('mpi_counter_t%update', 2)
+  call trace%begin ('mpi_counter_t%update8', 2, itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Do NOT make this depend on MPI_THREAD_MULTIPLE -- this really needs a
   ! critical region and an MPI_LOCK_EXCLUSIVE window lock
@@ -602,7 +620,7 @@ FUNCTION update8 (self, i) RESULT (j)
   j = k+i
   !$omp end critical (mpi_upd8_cr)
 #else
-  call trace%begin ('mpi_counter_t%update')
+  call trace%begin ('mpi_counter_t%update8', itimer=itimer)
   !$omp atomic capture
   self%i = self%i + i
   j = self%i
@@ -613,19 +631,20 @@ FUNCTION update8 (self, i) RESULT (j)
       'mpi_counter_t%update: incr, sum, rank, size =', &
       i, j, mpi%rank, mpi%size
   end if
-  call trace%end ()
+  call trace%end (itimer)
 END FUNCTION update8
 
 !===============================================================================
 FUNCTION update8d (self, i) RESULT (j)
   class(mpi_counter_t):: self
   real(8):: i, j, k
+  integer, save :: itimer=0
   !.............................................................................
 #ifdef MPI
   integer:: master=0, mpi_err
   integer(kind=MPI_ADDRESS_KIND):: offset=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('mpi_counter_t%update', 2)
+  call trace%begin ('mpi_counter_t%update8d', 2, itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Do NOT make this depend on MPI_THREAD_MULTIPLE -- this really needs a
   ! critical region
@@ -642,7 +661,7 @@ FUNCTION update8d (self, i) RESULT (j)
   j = k+i
   !$omp end critical (mpi_upd8d_cr)
 #else
-  call trace%begin ('mpi_counter_t%update')
+  call trace%begin ('mpi_counter_t%update8d', itimer=itimer)
   !$omp atomic capture
   self%r = self%r + i
   j = self%r
@@ -653,7 +672,7 @@ FUNCTION update8d (self, i) RESULT (j)
       'mpi_counter_t%update: incr, sum, rank, size =', &
       i, j, mpi%rank, mpi%size
   end if
-  call trace%end ()
+  call trace%end (itimer)
 END FUNCTION update8d
 
 END MODULE mpi_mod

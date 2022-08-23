@@ -28,7 +28,8 @@ module ray_patch_mod
   !USE units_mod
   !USE scratch_mod
   USE ray_mod, only:ray_type
-  USE m3d_patch_mod, only: m3d_patch_t, vec, wmu, long_vec, long_wmu, detailed_prints
+  USE m3d_patch_mod, only: m3d_patch_t, vec, wmu, long_vec, long_wmu, detailed_prints, &
+  converged, print_send, atom_update_counter
   USE mconst, only: cc
   implicit none
   private
@@ -53,9 +54,9 @@ module ray_patch_mod
     procedure :: ff_index
     procedure :: compress_mem
     procedure :: decompress_mem
-    procedure :: pack => ray_pack
-    procedure :: unpack => ray_unpack
-    procedure :: allocate_mesg => ray_allocate_mesg
+    procedure :: pack
+    procedure :: unpack
+    procedure :: allocate_mesg
     procedure :: ray_header_to_patch
     procedure :: ray_patch_to_header
     procedure :: total_mesg_buffer_size
@@ -66,7 +67,7 @@ module ray_patch_mod
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
   !-----------------------------------------------------------------------------
-  integer, public, save:: n_header = (14*4 + 4*8 + 5*8*3 + 1*8 + 2*8*8 + 1*4*8 + 2*4*3)/4
+  integer, public, save:: n_header = (14*4 + 4*8 + 5*8*3 + 1*8 + 2*8*8 + 1*4*8 + 2*4*3) / 4
   type, public:: ray_header_t
     sequence
     integer:: n_header
@@ -192,19 +193,18 @@ SUBROUTINE comp_vproj (self, vproj)
   py => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),self%patch%idx%py,self%it,1)
   pz => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),self%patch%idx%pz,self%it,1)
 
-  if (self%out_ray) then
-    vproj = (-self%vec(1)*px - self%vec(2)*py + self%vec(3)*pz) * scaling%u / (d*cc)
-  else
+  !if (self%out_ray) then
+  !  vproj = (-self%vec(1)*px - self%vec(2)*py + self%vec(3)*pz) * scaling%u / (d*cc)
+  !else
     vproj = (self%vec(1)*px + self%vec(2)*py + self%vec(3)*pz) * scaling%u / (d*cc)
-  endif
+  !endif
 END SUBROUTINE comp_vproj
 
 !===============================================================================
-SUBROUTINE ray_patch_finish (self, rotated)
+SUBROUTINE ray_patch_finish (self)
   class(ray_patch_t) :: self
-  logical, optional :: rotated
   !-----------------------------------------------------------------------------
-  call self%m3d_patch_t%finish(rotated)
+  call self%m3d_patch_t%finish()
   self%static_mem = .false.
 END SUBROUTINE ray_patch_finish
 
@@ -319,14 +319,9 @@ SUBROUTINE ray_nbor_relations(self, another, needed, needs_me, download)
   class(task_t), pointer :: another         ! another task in the list
   logical :: needed, needs_me, download    ! Is the other task: needed, 
                                            !    does it need me, should I download?
-  class(task_t), pointer :: other
   !-----------------------------------------------------------------------------
   call trace%begin ('ray_patch_t%ray_nbor_relations')
   call self%m3d_patch_t%nbor_relations(another, needed, needs_me, download)
-
-  if (self%kind == 'net_opac' .or. self%kind == 'angle_rad') then
-    call self%set(bits%boundary)
-  endif
 
   if (needed .or. needs_me) then
     select type(another)
@@ -340,6 +335,10 @@ SUBROUTINE ray_nbor_relations(self, another, needed, needs_me, download)
         elseif (another%is_upstream(self)) then
           needed = .false.
           download = .false.
+          if (self%rank /= another%rank .and. self%rank == mpi%rank) then
+            call self%set(bits%boundary)
+            call self%clear(bits%internal)
+          endif
         else
           needed = .false.; needs_me = .false.; download = .false.
         endif
@@ -370,7 +369,7 @@ SUBROUTINE compress_mem (self, compressor)
     m = shape(self%mem)
     m(3) = 1
     k = merge(self%ui(3), self%li(3),self%dir>0)
-    call os%allocate(dn, m, label='compress:dn')
+    call os%allocate(dn, m)
     do i=1, self%nv
       dn(:,:,1:1,i,:,:) = self%mem(:,:,k:k,i,:,:)
     end do
@@ -380,7 +379,7 @@ SUBROUTINE compress_mem (self, compressor)
     do i=1, self%nv
       self%mem(:,:,1:1,i,:,:) = dn(:,:,1:1,i,:,:)
     end do
-    call os%deallocate(dn, label='compress:dn')
+    call os%deallocate(dn)
     call self%mem_lock(1)%unset ('compress_mem')
     if (self%print_update_info .and. detailed_prints) then
       write(stdout,*) self%m3d_patch_info2(), ' has been compressed'
@@ -403,7 +402,7 @@ SUBROUTINE decompress_mem (self, decompressor)
     self%static_mem = .false.
     self%compressed = .false.
     m = shape(self%mem)
-    call os%allocate(up, m, label='decompress:up')
+    call os%allocate(up, m)
     do i=1, self%nv
       up(:,:,1:1,i,:,:) = self%mem(:,:,1:1,i,:,:)
     end do
@@ -413,7 +412,7 @@ SUBROUTINE decompress_mem (self, decompressor)
     do i=1, self%nv
       self%mem(:,:,k:k,i,:,:) = up(:,:,1:1,i,:,:)
     end do
-    call os%deallocate(up, label='decompress:up')
+    call os%deallocate(up)
     call self%mem_lock(1)%unset ('decompress_mem')
     if (self%print_update_info .and. detailed_prints) then
       write(stdout,*) self%m3d_patch_info2(), ' has been decompressed'
@@ -426,7 +425,7 @@ END SUBROUTINE decompress_mem
 !> Pack patch info into a buffer, for MPI communication
 !> FIXME: Consider replacing with mpi_buffer() calls
 !===============================================================================
-SUBROUTINE ray_pack (self)
+SUBROUTINE pack (self)
   class(ray_patch_t):: self
   !.............................................................................
   class(mesg_t), pointer:: mesg
@@ -436,23 +435,21 @@ SUBROUTINE ray_pack (self)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('ray_patch_t%ray_pack', itimer=itimer)
+  if ((self%verbose > 4 .or. self%print_update_info) .and. print_send) then
+    write(stdout, *) self%id, 'packing message on rank', mpi%rank
+  endif
   !-----------------------------------------------------------------------------
   ! Allocate a task%mesg instance, mesg%reqs() and similar array
   !-----------------------------------------------------------------------------
-  call self%allocate_mesg
+  call self%allocate_mesg()
   if (omp%nthreads > 1) then
     allocate (self%mesg%lock)
     call self%mesg%lock%init ('smsg')
   end if
   mesg => self%mesg
-  allocate (mesg%reqs(mpi%size))
-  allocate (mesg%fail(mpi%size))
-  allocate (mesg%ranks(mpi%size))
-  mesg%fail = 0
-  mesg%reqs = 0
-  mesg%ranks = 0
-  call io%bits_mem (storage_size(mesg%reqs), &
-                    product(shape(mesg%reqs)))
+  call os%allocate (mesg%reqs,  mpi%size, zero=.true.)
+  call os%allocate (mesg%fail,  mpi%size, zero=.true.)
+  call os%allocate (mesg%ranks, mpi%size, zero=.true.)
   !-----------------------------------------------------------------------------
   ! Packing meta-data is a task-owner read operation, and does not need locking
   !-----------------------------------------------------------------------------
@@ -460,22 +457,23 @@ SUBROUTINE ray_pack (self)
   ibuf = 1
   call anonymous_copy (n_header, header, mesg%buffer(ibuf))
   ibuf = ibuf + n_header
-  !-----------------------------------------------------------------------------
-  ! Copy the variables to the output buffer.
-  !-----------------------------------------------------------------------------
-  iz = merge(self%ui(3), self%li(3), self%dir > 0)
-  n_buf = self%total_mesg_buffer_size() / (self%nw*self%nv)
-  do iw=1,self%nw
-    do iv=1,self%nv
-      call anonymous_copy (n_buf, self%mem(:,:,iz,iv,self%it,iw), mesg%buffer(ibuf))
-      ibuf = ibuf + n_buf
+  if (.not. converged .or. self%out_ray) then
+    call self%check_mem()
+    !-----------------------------------------------------------------------------
+    ! Copy the variables to the output buffer.
+    !-----------------------------------------------------------------------------
+    iz = merge(self%ui(3), self%li(3), self%dir > 0)
+    n_buf = self%total_mesg_buffer_size() / (self%nw*self%nv)
+    do iw=1,self%nw
+      do iv=1,self%nv
+        call anonymous_copy (n_buf, self%mem(:,:,iz,iv,self%it,iw), mesg%buffer(ibuf))
+        ibuf = ibuf + n_buf
+      end do
     end do
-  end do
+  endif
   !-----------------------------------------------------------------------------
-  if (self%print_update_info .and. detailed_prints) &
-    print *, self%id, 'packing message on rank', mpi%rank
   call trace%end (itimer)
-END SUBROUTINE ray_pack
+END SUBROUTINE pack
 
 !===============================================================================
 !> Unpack patch info from an MPI buffer.  To ensure consistency, the task meta-
@@ -486,7 +484,7 @@ END SUBROUTINE ray_pack
 !> to the new time slot.
 !> FIXME: Consider replacing with mpi_buffer() calls
 !===============================================================================
-SUBROUTINE ray_unpack (self, mesg)
+SUBROUTINE unpack (self, mesg)
   class(ray_patch_t):: self
   class(mesg_t), pointer:: mesg
   !.............................................................................
@@ -500,6 +498,9 @@ SUBROUTINE ray_unpack (self, mesg)
   !-----------------------------------------------------------------------------
   call trace%begin ('ray_patch_t%ray_unpack', itimer=itimer)
   call self%set (bits%busy)
+  if ((self%verbose > 4 .or. self%print_update_info) .and. print_send) then
+    write(stdout, *) self%id, 'unpacking message on rank', mpi%rank
+  end if
   self%unpack_time = wallclock()
   buffer => mesg%buffer
   n_buf = self%total_mesg_buffer_size() / (self%nw*self%nv)
@@ -508,41 +509,39 @@ SUBROUTINE ray_unpack (self, mesg)
   !-----------------------------------------------------------------------------
   ibuf = 1
   call anonymous_copy (n_header, buffer(ibuf), header)
-  ibuf = ibuf + n_header
   call self%ray_header_to_patch (header)
-  call self%check_mem()
-  !-----------------------------------------------------------------------------
-  ! Copy array data from the buffer to the time slot, under time slot lock
-  !-----------------------------------------------------------------------------
-  lock => self%mem_lock(header%it)
-  !iz = merge(self%ui(3), self%li(3), self%dir > 0)
-  iz=1
-                                                        call lock%set ('unpack')
-  do iw=1,self%nw
-    do iv=1,self%nv
-      call anonymous_copy (n_buf, buffer(ibuf), self%mem(:,:,iz,iv,header%it,iw))
-      ibuf = ibuf + n_buf
+  ibuf = ibuf + n_header
+  if (.not. converged .or. self%out_ray) then
+    call self%check_mem()
+    !-----------------------------------------------------------------------------
+    ! Copy array data from the buffer to the time slot, under time slot lock
+    !-----------------------------------------------------------------------------
+    lock => self%mem_lock(header%it)
+    !iz = merge(self%ui(3), self%li(3), self%dir > 0)
+    iz=1
+                                                          call lock%set ('unpack')
+    do iw=1,self%nw
+      do iv=1,self%nv
+        call anonymous_copy (n_buf, buffer(ibuf), self%mem(:,:,iz,iv,header%it,iw))
+        ibuf = ibuf + n_buf
+      end do
     end do
-  end do
-                                                      call lock%unset ('unpack')
+                                                        call lock%unset ('unpack')
+  endif
   !-----------------------------------------------------------------------------
   ! Update the patch meta-data under lock, now that the time slices are in place
   !-----------------------------------------------------------------------------
                                                    call self%lock%set ('unpack')
   self%it         = header%it
   self%time       = header%time
-  self%nt         = header%nt
   if (header%nt > 0) then
+    self%nt       = header%nt
     self%new      = mod(header%it,header%nt) + 1
     do i=1,self%nt
       self%t(i)   = header%t(i)
       self%dt(i)  = header%dt(i)
       self%iit(i) = header%iit(i)
     end do
-  else
-    write (io_unit%log,*) omp%thread, &
-      'header_to_patch WARNING: nt non-positive', header%nt
-    flush (io_unit%log)
   end if
   !.............................................................................
                                                call self%lock%unset ('unpack')
@@ -570,12 +569,9 @@ SUBROUTINE ray_unpack (self, mesg)
       self%wc_last
     1 format(a,3i6,f12.6,2x,5l1,f12.1)
   end if
-  if (self%print_update_info .and. detailed_prints) then
-    print *, self%id, 'unpacking message on rank', mpi%rank
-  end if
   !-----------------------------------------------------------------------------
-    call trace%end (itimer)
-END SUBROUTINE ray_unpack
+  call trace%end (itimer)
+END SUBROUTINE unpack
 
 !===============================================================================
 !> Copy he most important fields to a sequenced header, for communication and I/O
@@ -600,7 +596,11 @@ SUBROUTINE ray_patch_to_header (self, head)
   head%position   = self%position
   head%velocity   = self%velocity
   head%size       = self%size
-  head%nt         = self%nt
+  if (associated(self%mem)) then
+    head%nt       = self%nt
+  else
+    head%nt       = 0
+  endif
   head%nv         = self%nv
   head%nw         = self%nw
   head%it         = self%it
@@ -611,6 +611,7 @@ SUBROUTINE ray_patch_to_header (self, head)
   head%nq         = shared%n_queue
   head%rank_steps = self%rank_steps
   head%send_time  = wallclock()
+  !
   if (io%verbose > 1) &
     write (io_unit%log,'(f12.6,3x,a,i7,i4,l3,2i4,f8.4)') &
       wallclock(), 'ray_patch_to_header: id, nq =', self%id, &
@@ -624,7 +625,7 @@ END SUBROUTINE ray_patch_to_header
 SUBROUTINE ray_header_to_patch (self, head)
   class(ray_patch_t):: self
   type(ray_header_t):: head
-  integer:: nt, new, i, save_bits
+  integer:: nt, new, i, save_bits, count
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! Swap the roles of boundary and virtual on incoming patches.  Also clear the
@@ -694,21 +695,26 @@ SUBROUTINE ray_header_to_patch (self, head)
   self%it         = head%it
   self%nv         = head%nv
   self%nw         = head%nw
-  self%nt         = head%nt
+  if (head%nt > 0) then
+    self%nt       = head%nt
+  elseif (.not. converged) then
+    converged = .true.
+    print *, 'Converged message has been passed by MPI from rank', head%rank
+  endif
   self%nq         = head%nq
   self%t          = head%t  (1:self%nt)
   self%dt         = head%dt (1:self%nt)
   self%iit        = head%iit(1:self%nt)
   self%time       = head%time
   !
-  if (head%istep == 0) then
-    write (io_unit%log,'(1x,a,i6,f12.6,2x,9f12.6)') &
-      'patch_t%header_to_patch: id, time, t =', &
-      self%id, self%time, self%t
-    write (io_unit%log,'(1x,a,i6,2x,3i4,2x,9i4)') &
-      'patch_t%header_to_patch: id, istep, it, new, iit =', &
-      self%id, self%istep, self%it, self%new, self%iit
-  end if
+  !if (head%istep == 0) then
+  !  write (io_unit%log,'(1x,a,i6,f12.6,2x,9f12.6)') &
+  !    'patch_t%header_to_patch: id, time, t =', &
+  !    self%id, self%time, self%t
+  !  write (io_unit%log,'(1x,a,i6,2x,3i4,2x,9i4)') &
+  !    'patch_t%header_to_patch: id, istep, it, new, iit =', &
+  !    self%id, self%istep, self%it, self%new, self%iit
+  !end if
   if (self%it > self%nt .or. self%it < 1) then
     write (io_unit%log,*) 'header_to_patch ERROR: it =', self%it, self%iit(nt-1)
     self%it = self%iit(nt-1)
@@ -732,7 +738,7 @@ END SUBROUTINE ray_header_to_patch
 !===============================================================================
 !> Allocate a message structure, for communication
 !===============================================================================
-SUBROUTINE ray_allocate_mesg (self)
+SUBROUTINE allocate_mesg (self)
   class(ray_patch_t):: self
   class(mesg_t), pointer:: mesg
   integer:: n_buf
@@ -747,11 +753,9 @@ SUBROUTINE ray_allocate_mesg (self)
   !-----------------------------------------------------------------------------
   n_buf = self%total_mesg_buffer_size()
   mesg%nbuf = n_header + n_buf
-  allocate (mesg%buffer(mesg%nbuf))
-  call io%bits_mem (storage_size(self%mesg%buffer), &
-                    product(shape(self%mesg%buffer)))
+  call os%allocate (mesg%buffer, mesg%nbuf)
   call trace%end ()
-END SUBROUTINE ray_allocate_mesg
+END SUBROUTINE allocate_mesg
 
 !===============================================================================
 FUNCTION total_mesg_buffer_size(self) result(n_buf)

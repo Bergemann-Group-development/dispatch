@@ -212,6 +212,7 @@ MODULE patch_mod
     procedure:: to_generic
     procedure:: from_generic
     procedure:: overlaps2
+    procedure:: init_outside
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -261,6 +262,7 @@ MODULE patch_mod
   logical, save:: do_check_density=.false.          ! check for zero density?
   logical, save:: zero_order_extrap=.true.          ! extrap to no-mans-land
   logical, save:: courant_ramp=.false.              ! ramp up Courant param
+  logical, contiguous, pointer:: outside(:,:,:) => null()
   public task2patch
 CONTAINS
 
@@ -794,36 +796,22 @@ SUBROUTINE init (self)
     end if
     self%mv = max (self%mv, self%nv)
     gn = self%mesh%gn
-    !allocate (self%mem    (gn(1), gn(2), gn(3), self%mv, self%nt, self%nw))
-    !allocate (self%u_phase(gn(1), gn(2), gn(3)))
-    call os%allocate(self%mem, [gn(1), gn(2), gn(3), self%mv, self%nt, self%nw], &
-                     label=trim(self%kind)//'%mem')
-    call os%allocate(self%u_phase, [gn(1), gn(2), gn(3)], label='u_phase')
-    self%u_phase = 0.0
+    call os%allocate(self%mem, [gn, self%mv, self%nt, self%nw], label=trim(self%kind)//'%mem')
+    call os%allocate(self%u_phase, gn, zero=.true., label='u_phase')
     allocate (self%mem_lock(self%nt))
     do i=1,self%nt
       call self%mem_lock(i)%init ('meml')
     end do
     call omp%set_stacksize (product(shape(self%mem)), io%master)
-    !call io%bits_mem (storage_size(self%mem), product(shape(self%mem)), 'mem')
     !---------------------------------------------------------------------------
     ! The unsigned and pervolume flags may also be modified by the solver. They
     ! are allocated here, but need to be reallocated by solvers modifying nv.
     ! Tracking even the small memory use, in case deallocation is forgotten.
     !---------------------------------------------------------------------------
-    allocate (self%unsigned (self%mv))
-    allocate (self%pervolume(self%mv))
-    self%unsigned (:) = .false.
-    self%pervolume(:) = .false.
-    call io%bits_mem (storage_size(self%unsigned)  , &
-                    product(shape(self%unsigned)) , 'uns')
-    call io%bits_mem (storage_size(self%pervolume) , &
-                    product(shape(self%pervolume)), 'perv')
+    call os%allocate (self%unsigned,  self%mv, zero=.true.)
+    call os%allocate (self%pervolume, self%mv, zero=.true.)
     if (shared%refine_on) then
-      allocate (self%request(gn(1),gn(2),gn(3)))
-      call io%bits_mem (storage_size(self%request) , &
-                       product(shape(self%request)), 'req')
-      self%request = 0
+      call os%allocate(self%request, gn, zero=.true., label='request')
     end if
   end if
   self%wallclock = wallclock()                  ! starting time
@@ -872,46 +860,30 @@ SUBROUTINE dealloc (self)
   if (associated(self%mesh)) &
     call MeshRecycler (self%mesh)
   if (associated(self%mem)) then
-    call io%bits_mem (-storage_size(self%mem), &
-                      product(shape(self%mem)),'-mem')
-    deallocate (self%mem)
+    call os%deallocate (self%mem, label=trim(self%kind)//'%mem')
     nullify (self%mem)
   end if
   self%mem_allocated = .false.
   if (associated(self%vgas)) then
-    call io%bits_mem (-storage_size(self%vgas), &
-                      product(shape(self%vgas)),'-vgas')
-    deallocate (self%vgas)
+    call os%deallocate (self%vgas)
   end if
   if (associated(self%density)) then
-    call io%bits_mem (-storage_size(self%density), &
-                      product(shape(self%density)),'-density')
-    deallocate (self%density)
+    call os%deallocate (self%density)
   end if
   if (associated(self%pressure)) then
-    call io%bits_mem (-storage_size(self%pressure), &
-                      product(shape(self%pressure)),'-pressure')
-    deallocate (self%pressure)
+    call os%deallocate (self%pressure)
   end if
   if (associated(self%mask)) then
-    call io%bits_mem (-storage_size(self%mask), &
-                      product(shape(self%mask)), '-mask')
-    deallocate (self%mask)
+    call os%deallocate (self%mask)
   end if
   if (associated(self%frefine)) then
-    call io%bits_mem (-storage_size(self%frefine), &
-                      product(shape(self%frefine)), '-%frefine')
-    deallocate (self%frefine)
+    call os%deallocate (self%frefine, label='frefine')
   end if
   if (associated(self%unsigned)) then
-    call io%bits_mem (-storage_size(self%unsigned), &
-                      product(shape(self%unsigned)), '-unsigned')
-    deallocate (self%unsigned)
+    call os%deallocate (self%unsigned)
   end if
   if (associated(self%pervolume)) then
-    call io%bits_mem (-storage_size(self%pervolume), &
-                      product(shape(self%pervolume)), '-pervolume')
-    deallocate (self%pervolume)
+    call os%deallocate (self%pervolume)
   end if
   if (associated(self%mesg)) then
     call self%mesg%dealloc
@@ -930,10 +902,10 @@ SUBROUTINE clone_mem_accounting (self)
   class(patch_t):: self
   if (associated(self%mask)) &
     call io%bits_mem (storage_size(self%mask), &
-                     product(shape(self%mask)), 'mask')
+                     product(shape(self%mask)))
   if (associated(self%frefine)) &
     call io%bits_mem (storage_size(self%frefine), &
-                     product(shape(self%frefine)), '%frefine')
+                     product(shape(self%frefine)), 'frefine')
 END SUBROUTINE clone_mem_accounting
 
 !===============================================================================
@@ -1475,9 +1447,7 @@ SUBROUTINE allocate_mesg (self)
   if (self%is_set(bits%swap_request) .and. self%is_set(bits%boundary)) then
     mesg%nbuf = mesg%nbuf+ self%nv*n_buf
   end if
-  allocate (mesg%buffer(mesg%nbuf))
-  call io%bits_mem (storage_size(self%mesg%buffer), &
-                    product(shape(self%mesg%buffer)))
+  call os%allocate(mesg%buffer, mesg%nbuf)
   call trace%end ()
 END SUBROUTINE allocate_mesg
 
@@ -1504,14 +1474,9 @@ SUBROUTINE pack (self)
     call self%mesg%lock%init ('smsg')
   end if
   mesg => self%mesg
-  allocate (mesg%reqs(mpi%size))
-  allocate (mesg%fail(mpi%size))
-  allocate (mesg%ranks(mpi%size))
-  mesg%fail = 0
-  mesg%reqs = 0
-  mesg%ranks = 0
-  call io%bits_mem (storage_size(mesg%reqs), &
-                    product(shape(mesg%reqs)))
+  call os%allocate (mesg%reqs,  mpi%size, zero=.true.)
+  call os%allocate (mesg%fail,  mpi%size, zero=.true.)
+  call os%allocate (mesg%ranks, mpi%size, zero=.true.)
   !-----------------------------------------------------------------------------
   ! Copy relevant patch info to sequenced header, and copy that to the buffer
   !-----------------------------------------------------------------------------
@@ -3705,35 +3670,48 @@ SUBROUTINE support_arrays (self)
   select type (self)
   class is (patch_t)
   if (.not.associated(self%frefine)) then
-    call self%lock%set ('patch_t%support_arrays')
-    if (.not.associated(self%frefine)) then
-      allocate (self%frefine(self%gn(1),self%gn(2),self%gn(3)))
-    end if
-    call self%lock%unset ('patch_t%support_arrays')
+    call                                self%lock%set ('patch_t%support_arrays')
+    call os%allocate (self%frefine, self%gn, label='frefine')
+    call                              self%lock%unset ('patch_t%support_arrays')
   end if
   if (.not.associated(self%filled)) then
-    call self%lock%set ('patch_t%support_arrays 2')
-    if (.not.associated(self%filled)) then
-      allocate (self%filled(self%gn(1),self%gn(2),self%gn(3)))
-    end if
-    call self%lock%unset ('patch_t%support_arrays 2')
+    call                              self%lock%set ('patch_t%support_arrays 2')
+    call os%allocate (self%filled, self%gn, label='filled')
+    call                            self%lock%unset ('patch_t%support_arrays 2')
   end if
   if (.not.associated(self%request)) then
-    call self%lock%set ('patch_t%support_arrays 2')
-    if (.not.associated(self%request)) then
-      allocate (self%request(self%gn(1),self%gn(2),self%gn(3)))
-    end if
-    call self%lock%unset ('patch_t%support_arrays 2')
+    call                              self%lock%set ('patch_t%support_arrays 3')
+    call os%allocate (self%request, self%gn, label='request')
+    call                            self%lock%unset ('patch_t%support_arrays 3')
   end if
-  if (.not.associated(self%outside)) then
-    call self%lock%set ('patch_t%support_arrays 3')
-    if (.not.associated(self%outside)) then
-      allocate (self%outside(self%gn(1),self%gn(2),self%gn(3)))
-    end if
-    call self%lock%unset ('patch_t%support_arrays 3')
-  end if
+  call self%init_outside ()
 end select
 END SUBROUTINE support_arrays
+
+!===============================================================================
+!> Check that %frefine is allocated, and allocate under lock if not
+!===============================================================================
+SUBROUTINE init_outside (self)
+  class(patch_t):: self
+  !-----------------------------------------------------------------------------
+  select type (self)
+  class is (patch_t)
+  if (.not.associated(outside)) then
+    call                                  self%lock%set ('patch_t%init_outside')
+    if (.not.associated(outside)) then
+      call os%allocate (outside, self%gn, label='outside')
+      outside = .true.
+      associate (l=>self%li, u=>self%ui)
+      outside(l(1):u(1),l(2):u(2),l(3):u(3)) = .false.
+      end associate
+    end if
+    call                                self%lock%unset ('patch_t%init_outside')
+  end if
+  if (.not.associated(self%outside)) then
+    self%outside => outside
+  end if
+end select
+END SUBROUTINE init_outside
 
 !===============================================================================
 !> Write metadata namelist
@@ -3784,11 +3762,7 @@ SUBROUTINE deallocate_generic (self)
   class(patch_t):: self
   !.............................................................................
   call trace%begin ('patch_t%deallocate_generic')
-  if (associated(self%generic)) then
-    call io%bits_mem (-storage_size(self%generic), &
-                      product(shape(self%generic)), 'generic')
-    deallocate (self%generic)
-  end if
+  call os%deallocate(self%generic)
   call trace%end ()
 END SUBROUTINE deallocate_generic
 

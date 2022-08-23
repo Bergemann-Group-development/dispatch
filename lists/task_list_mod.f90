@@ -961,10 +961,18 @@ END SUBROUTINE init_bdries
 SUBROUTINE check_if_all_ranks_are_done (self, done)
   class(task_list_t) :: self
   integer :: end_count=0
+  logical, save :: first_time=.true.
   logical :: done
   !-----------------------------------------------------------------------------
-  if (self%nfinished == self%na) then
-    end_count = mpi%end_counter%update(+1)
+  if (self%nfinished >= self%na) then
+    if (first_time) then
+      first_time = .false.
+      end_count = mpi%end_counter%update(+1)
+    else
+      end_count = mpi%end_counter%update(0)
+    endif
+  else
+    first_time = .true.
   end if
   !$omp atomic write
   done = (end_count >= mpi%size)

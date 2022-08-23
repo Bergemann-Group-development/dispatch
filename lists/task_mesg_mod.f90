@@ -351,7 +351,7 @@ SUBROUTINE check_recv (self, link, n_unpk)
       return
     end if
   end if
-  call trace%begin ('task_mesg_t%check_recv')
+  call trace%begin ('task_mesg_t%check_recv', itimer=itimer)
   if (verbose > 1) then
     write (io_unit%log,'(f12.6,i4,1x,a12,i6,f12.6,i6)') &
       wallclock(), omp%thread, 'check_recv', task%id, task%time, task%mesg%seq
@@ -379,7 +379,7 @@ SUBROUTINE check_recv (self, link, n_unpk)
   if (lock_recv) then
     call task%mesg%lock%unset ('check_recv')
   end if
-  call trace%end ()
+  call trace%end (itimer)
 END SUBROUTINE check_recv
 
 !===============================================================================

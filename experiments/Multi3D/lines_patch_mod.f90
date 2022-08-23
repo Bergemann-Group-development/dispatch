@@ -60,7 +60,6 @@ module lines_patch_mod
     integer :: i, nv
     !---------------------------------------------------------------------------
     call self%ray_patch_t%pre_init()
-    call self%append_to_task_list()
     call self%create_line_indices()
     call self%create_line_frequencies()
 
@@ -102,7 +101,7 @@ module lines_patch_mod
     self%ired  = self%fe
     self%iblue = self%fs
 
-    call os%allocate(self%idx_map, [self%atom%nline], zero=.true.)
+    call os%allocate(self%idx_map, self%atom%nline, zero=.true.)
     nline = 0
     do i=1, self%atom%nline
       line => self%atom%line(i)
@@ -186,6 +185,7 @@ module lines_patch_mod
     endif
     call trace%begin('lines_patch_t%lines_patch_update', itimer=itimer)
 
+    call self%check_access(self%m3d_parent%m3d_parent)
     ne   => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_ne,            self%it,1)
     temp => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_temp,          self%it,1)
     nh   => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_nh1:self%i_nh6,self%it,1)
@@ -274,8 +274,8 @@ module lines_patch_mod
     m = shape(chi)
     m(4) = size(nu)
     call os%allocate(scratch_phi, m, label='scratch_phi')
-    call os%allocate(chi_fac, self%n, label='chi_fac')
-    call os%allocate(eta_fac, self%n, label='eta_fac')
+    call os%allocate(chi_fac, self%n)
+    call os%allocate(eta_fac, self%n)
 
     if (.not. associated(self%mem)) then
       print *, 'mem not allocated. Something is wrong!'
@@ -321,8 +321,8 @@ module lines_patch_mod
     end do
 
     call os%deallocate(scratch_phi, label='scratch_phi')
-    call os%deallocate(chi_fac, label='chi_fac')
-    call os%deallocate(eta_fac, label='eta_fac')
+    call os%deallocate(chi_fac)
+    call os%deallocate(eta_fac)
   END SUBROUTINE interpolate_lines
 
   !===============================================================================
@@ -379,10 +379,10 @@ module lines_patch_mod
     i = self%linecheck
     p = self%pcheck
     nu => self%sp%nu(self%fcheck:self%fcheck)
-    call os%allocate(phi, [self%n(1), self%n(2), self%n(3), 1], label='pu_phi')
+    call os%allocate(phi, [self%n, 1])
     call self%line(i)%interpolate_phi(nu, phi)
     call self%print_to_stdout(arr=phi(p(1),p(2),p(3),:))
-    call os%deallocate(phi, label='pu_phi')
+    call os%deallocate(phi)
   END SUBROUTINE print_post_update_info
   
   !===============================================================================

@@ -62,9 +62,8 @@ module rate_patch_mod
     ! ----------------------------------------------------------------------------
     call trace%begin('rate_patch_t%rate_patch_pre_init')
     call self%ray_patch_t%pre_init()
-    call self%append_to_task_list()
 
-    call os%allocate(self%idx_map, [self%atom%nrad], zero=.true., label='rate_patch:idx_map')
+    call os%allocate(self%idx_map, self%atom%nrad, zero=.true., label='rate_patch:idx_map')
     nrad = 0
     do i=1, size(self%atom%line)
       trans => self%atom%line(i)
@@ -80,7 +79,7 @@ module rate_patch_mod
       nrad = nrad+1
       self%idx_map(i+self%atom%nline) = nrad
     end do
-    call os%allocate(self%idx_remap, [nrad], label='rate_patch:idx_remap')
+    call os%allocate(self%idx_remap, nrad, label='rate_patch:idx_remap')
     do i=1, self%atom%nrad
       k = self%idx_map(i)
       if (k > 0) self%idx_remap(k) = i

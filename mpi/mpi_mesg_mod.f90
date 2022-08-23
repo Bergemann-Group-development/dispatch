@@ -13,6 +13,7 @@
 !> list of irecv requests.
 !===============================================================================
 MODULE mpi_mesg_mod
+  USE os_mod
   USE trace_mod
   USE mpi_mod
   USE io_mod
@@ -141,26 +142,10 @@ SUBROUTINE dealloc_mesg (self)
   if (associated(self%lock)) then
     call omp_lock%dealloc (self%lock)
   end if
-  if (associated(self%buffer)) then
-    call io%bits_mem (-storage_size(self%buffer), &
-                      product(shape(self%buffer)), '-buffer')
-    deallocate (self%buffer)
-  end if
-  if (associated(self%reqs)) then
-    call io%bits_mem (-storage_size(self%reqs), &
-                      product(shape(self%reqs)), '-reqs')
-    deallocate (self%reqs)
-  end if
-  if (associated(self%fail)) then
-    call io%bits_mem (-storage_size(self%fail), &
-                      product(shape(self%fail)), '-fail')
-    deallocate (self%fail)
-  end if
-  if (associated(self%ranks)) then
-    call io%bits_mem (-storage_size(self%ranks), &
-                      product(shape(self%ranks)), '-ranks')
-    deallocate (self%ranks)
-  end if
+  call os%deallocate(self%buffer)
+  call os%deallocate(self%reqs)
+  call os%deallocate(self%fail)
+  call os%deallocate(self%ranks)
   call trace%end ()
 END SUBROUTINE dealloc_mesg
 

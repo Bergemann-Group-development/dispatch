@@ -52,7 +52,6 @@ module net_opac_patch_mod
     ! ----------------------------------------------------------------------------
     call trace%begin('net_opac_t%opacity_pre_init')
     call self%ray_patch_t%pre_init()
-    call self%append_to_task_list()
   
     nw = 2
     call self%set_nv_and_nw (self%fe-self%fs+1,nw)
@@ -145,6 +144,9 @@ module net_opac_patch_mod
     
     mem1 => self%mem(:,:,:,:,self%it,:)
     call self%boundaries%mirror(mem1)
+    if (self%is_periodic()) then
+      call self%periodic_grid
+    end if
     call self%post_update()
     call trace%end(itimer)
   END SUBROUTINE net_opac_update

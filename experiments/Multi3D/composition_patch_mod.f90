@@ -31,7 +31,6 @@ module composition_patch_mod
     procedure :: pre_init => composition_pre_init
     procedure :: update => composition_update
     procedure :: print_post_update_info
-    procedure :: finish => composition_finish
     procedure :: nbor_relations => composition_patch_nbor_relations
   end type
 
@@ -61,7 +60,6 @@ SUBROUTINE composition_pre_init (self)
   call trace%begin('composition_patch_t%composition_pre_init', itimer=itimer)
   self%kind = 'composition'
   call self%m3d_patch_t%pre_init()
-  call self%append_to_task_list()
   call self%set_nv_and_nw(9,1)
   self%static_mem=.true.
 
@@ -104,19 +102,23 @@ SUBROUTINE composition_pre_init (self)
   endif
 
   do n=1, self%n_nu
-    do m=0, self%n_omega
-      if (m==0) then
-        allocate(opac)
-        opac%kind = 'back_opac'
-        opac%composition => self%composition
-        call opac%composition%reassign_pointer()
-        call opac%pre_init_and_link(self, i_mu=m, i_nu=n, sp=atom_patch%sp)
-      else
-        allocate(net_opac)
-        net_opac%kind = 'net_opac'
-        call net_opac%pre_init_and_link(self, i_mu=m, i_nu=n, sp=atom_patch%sp)
-      endif
+    allocate(opac)
+    opac%kind = 'back_opac'
+    opac%composition => self%composition
+    call opac%composition%reassign_pointer()
+    call opac%pre_init_and_link(self, i_mu=0, i_nu=n, sp=atom_patch%sp)
+  end do
 
+  do n=1, self%n_nu
+    do m=1, self%n_omega
+      allocate(net_opac)
+      net_opac%kind = 'net_opac'
+      call net_opac%pre_init_and_link(self, i_mu=m, i_nu=n, sp=atom_patch%sp)
+    end do
+  end do
+
+  do n=1, self%n_nu
+    do m=0, self%n_omega
       allocate(rad)
       rad%kind = merge('angle_rad', 'mean_rad ', m>0)
       call rad%pre_init_and_link(self, i_mu=m, i_nu=n, sp=atom_patch%sp)
@@ -174,32 +176,39 @@ SUBROUTINE composition_update (self)
   call self%pre_update()
 
   if (self%finished) then
+    call trace%end(itimer)
     return
-  elseif (self%iter > 0) then
-    print *, 'updating composition more than once is not implemented yet. Stopping...'
-    stop
   endif
 
-  li = self%patch%li
-  ui = self%patch%ui
+  if (self%iter == 0) then
+    li = self%patch%li
+    ui = self%patch%ui
+  
+    e  => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),self%patch%idx%e,self%it,1)
+    d  => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),self%patch%idx%d,self%it,1)
+    pe => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),6               ,self%it,1)
+  
+    ne   => self%mem(:,:,:,self%i_ne,  self%it,1)
+    rho  => self%mem(:,:,:,self%i_rho, self%it,1)
+    temp => self%mem(:,:,:,self%i_temp,self%it,1)
+    nh   => self%mem(:,:,:,self%i_nh1:self%i_nh6,self%it,1)
+  
+    temp = e
+    rho  = d * scaling%d
+    ne   = pe * scaling%p / (cgs%k_b * temp)
+  
+    ! loading temp, ne and rho in to composition objekt
+    ! ion and molecule equilibrium are solved immediately
+    call self%composition%load_state_variables(temp, ne, rho)
+    call self%composition%get_nhyd(nh)
 
-  e  => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),self%patch%idx%e,self%it,1)
-  d  => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),self%patch%idx%d,self%it,1)
-  pe => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),6               ,self%it,1)
-
-  ne   => self%mem(:,:,:,self%i_ne,  self%it,1)
-  rho  => self%mem(:,:,:,self%i_rho, self%it,1)
-  temp => self%mem(:,:,:,self%i_temp,self%it,1)
-  nh   => self%mem(:,:,:,self%i_nh1:self%i_nh6,self%it,1)
-
-  temp = e
-  rho  = d * scaling%d
-  ne   = pe * scaling%p / (cgs%k_b * temp)
-
-  ! loading temp, ne and rho in to composition objekt
-  ! ion and molecule equilibrium are solved immediately
-  call self%composition%load_state_variables(temp, ne, rho)
-  call self%composition%get_nhyd(nh)
+    self%dtime = io%end_time - self%dtime
+  else
+    self%dtime = self%patch%dtime
+    !print *, self%m3d_patch_info()
+    !print *, 'updating composition more than once is not implemented yet. Stopping...'
+    !stop
+  endif
 
   call self%post_update()
   call trace%end(itimer)
@@ -226,9 +235,11 @@ SUBROUTINE composition_patch_nbor_relations(self, another, needed, needs_me, dow
   call self%m3d_patch_t%nbor_relations(another, needed, needs_me, download)
 
   if (needed .or. needs_me) then
-    if (another%id /= self%master_id) then
+    if (another%id /= self%patch%id) then
       select case (another%kind)
-      case ('back_opac', 'back_line', 'atom_patch')
+      case ('atom_patch')
+        ! is needed after convergence and needs me
+      case ('back_opac', 'back_line')
         needed = .false.
       case default
         needed = .false.; needs_me = .false.
@@ -237,13 +248,4 @@ SUBROUTINE composition_patch_nbor_relations(self, another, needed, needs_me, dow
   endif
   call trace%end()
 END SUBROUTINE composition_patch_nbor_relations
-
-!===============================================================================
-SUBROUTINE composition_finish (self, rotated)
-  class(composition_patch_t):: self
-  logical, optional :: rotated
-  !-----------------------------------------------------------------------------
-  call self%m3d_patch_t%finish(rotated=rotated)
-  call self%set(bits%frozen)
-END SUBROUTINE composition_finish
 end module composition_patch_mod

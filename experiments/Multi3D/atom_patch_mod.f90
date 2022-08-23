@@ -30,7 +30,8 @@ module atom_patch_mod
     USE element_mod, only: element_type
     USE bbtrans_mod, only: bbtrans_type
     USE composition_mod, only: composition_type
-    USE m3d_patch_mod, only: m3d_patch_t, maxiter, ilambd, conditioning, check_NaN, out_folder
+    USE m3d_patch_mod, only: m3d_patch_t, maxiter, ilambd, conditioning, check_NaN, &
+    global_maxerr, rank_maxerr, convlim, atom_update_counter
     USE bftrans_mod, only: bftrans_type
     USE lines_patch_mod, only:lines_patch_t
     implicit none
@@ -59,8 +60,6 @@ module atom_patch_mod
       procedure :: check_in_bounds
     end type atom_patch_t
 
-    real(8), public:: global_maxerr=0
-    real(8), public:: convlim=1d-3
     integer, save :: epos(3)
 
     !-----------------------------------------------------------------------------
@@ -78,25 +77,28 @@ module atom_patch_mod
     ! ----------------------------------------------------------------------------
     call trace%begin('atom_patch_t%atom_patch_pre_init', itimer=itimer)
     call self%m3d_patch_t%pre_init()
-    call self%append_to_task_list()
     call self%pre_init_atom()
     call self%set_nv_and_nw(self%atom%nlevel, 2)
     self%static_mem=.true.
 
     do n=1, self%n_nu
-      do m=0, self%n_omega
-        if (m==0) then
-          allocate(opac)
-          opac%atom => self%atom
-          opac%kind = 'cont_opac'
-          call opac%pre_init_and_link(self, i_mu=m, i_nu=n, sp=self%sp)
-        else
-          allocate(lines)
-          lines%kind = 'lines_patch'
-          lines%atom => self%atom
-          call lines%pre_init_and_link(self, i_mu=m, i_nu=n, sp=self%sp)
-        endif
+      allocate(opac)
+      opac%atom => self%atom
+      opac%kind = 'cont_opac'
+      call opac%pre_init_and_link(self, i_mu=0, i_nu=n, sp=self%sp)
+    end do
 
+    do n=1, self%n_nu
+      do m=1, self%n_omega
+        allocate(lines)
+        lines%kind = 'lines_patch'
+        lines%atom => self%atom
+        call lines%pre_init_and_link(self, i_mu=m, i_nu=n, sp=self%sp)
+      end do
+    end do
+
+    do n=1, self%n_nu
+      do m=0, self%n_omega
         if (conditioning=='self' .or. m>0) then
           allocate(rate)
           rate%kind = 'rate_patch'
@@ -106,10 +108,10 @@ module atom_patch_mod
       end do
     end do
 
-    do m=0, self%n_out
-      m2 = m+self%n_omega
-      do n=1, self%n_nu
-        n2 = n+self%n_nu
+    do n=1, self%n_nu
+      n2 = n+self%n_nu
+      do m=0, self%n_out
+        m2 = m+self%n_omega
         if (m==0) then
           allocate(opac)
           opac%atom => self%output_atom
@@ -161,9 +163,6 @@ module atom_patch_mod
       call io%namelist_warning ('atom_params', iostat)
       write (io%namelist, atom_params)
 
-      open(newunit=lunit, file=trim(out_folder)//'atom_params.nml', delim='apostrophe', form='formatted')
-      write (lunit, atom_params)
-
       if (n_in_lines > 0) then
         allocate(in_lines(n_in_lines))
         rewind (io%input)
@@ -172,10 +171,10 @@ module atom_patch_mod
           rewind (io%input)
           read (io%input, line_mask)
         end if
-        write (lunit, line_mask)
+        write (io%namelist, line_mask)
       endif
 
-      close(lunit)
+      !close(lunit)
 
       sp%verbose = verbose
       if (verbose) write (*,*) ' - Reading atom'
@@ -190,8 +189,7 @@ module atom_patch_mod
       if (second_sp) then
         call output_atom%set_active_transitions(self%sp) 
       endif
-      write (command, *) 'cp ', trim(atom_file), ' ', trim(out_folder)//'atom.txt' 
-      call execute_command_line (trim(command), exitstat=iostat)
+      call os%copy_file(trim(atom_file), trim(io%run_dir)//'atom.txt')
     endif
 
     self%atom = atom
@@ -271,6 +269,7 @@ module atom_patch_mod
     real(8), dimension(:,:,:,:), pointer, contiguous :: gamma_ij, gamma_ji
     integer :: i
     integer, save:: itimer=0, count=0
+    real(8) :: global
     !-----------------------------------------------------------------------------
     call self%pre_update()
     if (self%finished) return
@@ -329,10 +328,13 @@ module atom_patch_mod
       call os%deallocate(self%atom%gamma_ji, label='atom%gamma_ji')
     endif
     
-    if (self%iter > 0) count = count + 1 
+    if (self%iter > 0) then
+      count = atom_update_counter%update(+1)
+    endif
     if (count >= self%task_list%dims(3)) then
-      if ((global_maxerr > 0) .and. global_maxerr < convlim) then
-        print *, self%ipos(3)+1, 'Converged!', count
+      global = global_maxerr%update(0.d0)
+      if ((global > 0) .and. global < convlim) then
+        write(stdout, *) self%ipos(3)+1, 'Converged!', count
         call self%finish()
       endif
     endif
@@ -351,6 +353,7 @@ module atom_patch_mod
     character(len=64) :: text
     integer :: i, p(3)
     real(4), dimension(4) :: arr
+    real(8) :: global
     !-----------------------------------------------------------------------------
     i = self%lvlcheck
     p = self%pcheck
@@ -369,8 +372,9 @@ module atom_patch_mod
       arr(4) = 10.0**(self%atom%abnd-12.0)*self%composition%toth(p(1),p(2),p(3))
       call self%print_to_stdout(arr=arr)
     endif
+    global = global_maxerr%update(0.d0)
     write(stdout,'(A19, ES19.7, A10, ES15.7, 3I4)') 'local err =', self%maxerr, &
-      ', global =', global_maxerr, epos
+      ', global =', global, epos
     write(stdout,'(1X, A80)') &
     '................................................................................'
   END SUBROUTINE print_post_update_info
@@ -414,17 +418,15 @@ module atom_patch_mod
   END SUBROUTINE check_skip
 
   !===============================================================================
-  SUBROUTINE atom_patch_finish (self, rotated)
+  SUBROUTINE atom_patch_finish (self)
     use m3d_patch_mod, only: converged
     class(atom_patch_t) :: self
     class(nbor_t), pointer:: nbor
     class(task_t), pointer:: nbtask
-    logical, optional :: rotated
     integer :: i, j
     ! ----------------------------------------------------------------------------
     call trace%begin('atom_patch_t%atom_patch_finish')
-    self%finished = .true.
-    self%time = io%end_time + self%t_offset*self%dtime
+    call self%m3d_patch_t%finish()
     if (self%iter < self%maxiter) converged = .true.
 
     nbor => self%link%nbor
@@ -433,13 +435,21 @@ module atom_patch_mod
         nbtask => nbor%task
         select type(nbtask)
         class is (m3d_patch_t)
-          if (.not. (nbtask%out_ray .or. nbtask%finished)) then
-            call nbtask%finish()
+          if (.not. nbtask%out_ray) then
+            if (.not. nbtask%finished) then
+              call nbtask%finish()
+              call nbtask%free_unused_memory()
+            elseif (.not. nbtask%static_mem) then
+              call nbtask%mem_lock(1)%set ('atom_patch_finish')
+              call nbtask%deallocate_mem(self, print=.true.)
+              call nbtask%mem_lock(1)%unset ('atom_patch_finish')
+            endif
           endif
         end select
       endif
       nbor => nbor%next
     end do
+    
     call trace%end()
   END SUBROUTINE atom_patch_finish
 
@@ -448,7 +458,7 @@ module atom_patch_mod
     class(atom_patch_t), target :: self
     class(atom_type), pointer :: atom
     integer, dimension(3, self%atom%nlevel) :: ep
-    real, dimension(self%atom%nlevel) :: maxerr
+    real(8), dimension(self%atom%nlevel) :: maxerr
     real(4), pointer :: temp, ne, totn
     real(4), dimension(:), pointer :: nh
     real(8), dimension(:), pointer :: Gij, Gji
@@ -457,6 +467,7 @@ module atom_patch_mod
     integer :: i, j, k, ii
     integer :: cswitch=1
     integer, save :: itimer=0
+    real(8) :: global
     ! ----------------------------------------------------------------------------
     call trace%begin('atom_patch_t%update_populations', itimer=itimer)
     atom => self%atom
@@ -489,14 +500,16 @@ module atom_patch_mod
       end do
     end do
 
-    if (global_maxerr == self%maxerr) then
+    global = global_maxerr%update(0.d0)
+    if (abs(global/self%maxerr-1) < 1e-5) then
       self%maxerr = maxval(abs(maxerr))
-      global_maxerr = self%maxerr
+      call global_maxerr%reset(self%maxerr)
       epos = ep(:,maxloc(abs(maxerr),1))
     else
       self%maxerr = maxval(abs(maxerr))
-      if (self%maxerr > global_maxerr) then
-        global_maxerr = self%maxerr
+      if (self%maxerr > global) then
+        call global_maxerr%reset(self%maxerr)
+        rank_maxerr   = self%rank
         epos = ep(:,maxloc(abs(maxerr),1))
       endif
     endif
@@ -605,7 +618,8 @@ module atom_patch_mod
         endif
       class default
         if (another%id == self%m3d_parent%id) then
-          needs_me = .false.
+          ! the composition patch needs this to be able to
+          ! update again before final spectrum is printed
         else
           needed = .false. ; needs_me = .false.
         endif
@@ -643,7 +657,9 @@ module atom_patch_mod
     logical :: cib
     !-----------------------------------------------------------------------------
     cib = .false.
-    if (self%m3d_patch_t%check_in_bounds()) then
+    if (self%verbose > 4) then
+      cib = .true.
+    elseif (self%m3d_patch_t%check_in_bounds()) then
       cib = self%lvlcheck > 0 .and. self%lvlcheck <= self%atom%nlevel
     endif
   END FUNCTION check_in_bounds

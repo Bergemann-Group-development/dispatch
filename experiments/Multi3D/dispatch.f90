@@ -39,8 +39,6 @@ PROGRAM dispatch
   !type(cartesian_t):: cartesian                 ! Use Cartesian patch arrangement
   class(task_list_t), pointer:: task_list => null()
   !.............................................................................
-  print *, 'HOST:'
-  call execute_command_line ('hostname')
   call setup%init                               ! Generic setup (MPI, I/O, ...)
   call dispatcher%init                          ! Initialize the dispatcher
   call check_mpi_debug()
@@ -53,7 +51,8 @@ PROGRAM dispatch
   call timer%print() 
   call mpi%barrier()
   write(*,'(a, I3, a, F7.2, a)') 'maximum memory on rank', mpi%rank, ' was', os%max_mem, 'Gb'
-  write(*,'(a, I3, a, F7.2, a)') 'still allocated memory on rank', mpi%rank, ' is', os%gb, 'Gb'
+  call os%print_tracked_mem()
+  !write(*,'(a, I3, a, F7.2, a)') 'still allocated memory on rank', mpi%rank, ' is', os%gb, 'Gb'
   call setup%end                                ! End setup
 !===============================================================================
 END PROGRAM dispatch

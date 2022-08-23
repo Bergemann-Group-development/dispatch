@@ -169,10 +169,14 @@ END SUBROUTINE download
 !===============================================================================
 SUBROUTINE init_verbose (verb)
   integer:: verb
+  logical, save :: first_time=.true.
   !.............................................................................
-  !$omp atomic write
-  verbose = verb
-  write (io_unit%log,*) 'link_t%init_verbose: verbose =', verb
+  if (first_time) then
+    first_time = .false.
+    !$omp atomic write
+    verbose = verb
+    write (io_unit%log,*) 'link_t%init_verbose: verbose =', verb
+  endif
 END SUBROUTINE init_verbose
 
 !===============================================================================

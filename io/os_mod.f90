@@ -1,6 +1,7 @@
 !===============================================================================
 !===============================================================================
 MODULE os_mod
+  USE iso_fortran_env, only: int8
   USE io_unit_mod
   USE omp_mod
   USE omp_lock_mod
@@ -15,6 +16,7 @@ MODULE os_mod
     integer:: verbose=0
     real(8):: gb=0.0
     real(8):: max_mem=0.0
+    real(8):: gb_step=1.0
     character(len=64), dimension(maxlabels):: labels
     real(8), dimension(maxlabels):: labelled_mem
     integer, dimension(maxlabels):: n_allocated
@@ -39,13 +41,16 @@ MODULE os_mod
     procedure, nopass:: allocate_1d_i
     procedure, nopass:: allocate_2d_i
     procedure, nopass:: allocate_3d_i
+    procedure, nopass:: allocate_3d_i8
     procedure, nopass:: allocate_4d_i
     procedure, nopass:: allocate_1d_l
+    procedure, nopass:: allocate_3d_l
     generic:: allocate => &
       allocate_1d_r, allocate_2d_r, allocate_3d_r, allocate_4d_r, &
       allocate_1d_d, allocate_2d_d, allocate_3d_d, allocate_4d_d, &
       allocate_1d_i, allocate_2d_i, allocate_3d_i, allocate_4d_i, &
-      allocate_5d_r, allocate_6d_r, allocate_1d_l
+      allocate_5d_r, allocate_6d_r, allocate_1d_l, allocate_3d_i8, &
+      allocate_3d_l
     procedure, nopass:: deallocate_1d_r
     procedure, nopass:: deallocate_2d_r
     procedure, nopass:: deallocate_3d_r
@@ -59,16 +64,20 @@ MODULE os_mod
     procedure, nopass:: deallocate_1d_i
     procedure, nopass:: deallocate_2d_i
     procedure, nopass:: deallocate_3d_i
+    procedure, nopass:: deallocate_3d_i8
     procedure, nopass:: deallocate_4d_i
     procedure, nopass:: deallocate_1d_l
+    procedure, nopass:: deallocate_3d_l
     generic:: deallocate => &
       deallocate_1d_r, deallocate_2d_r, deallocate_3d_r, deallocate_4d_r, &
       deallocate_1d_d, deallocate_2d_d, deallocate_3d_d, deallocate_4d_d, &
       deallocate_1d_i, deallocate_2d_i, deallocate_3d_i, deallocate_4d_i, &
-      deallocate_5d_r, deallocate_6d_r, deallocate_1d_l
+      deallocate_5d_r, deallocate_6d_r, deallocate_1d_l, deallocate_3d_i8, &
+      deallocate_3d_l
     procedure, nopass:: mem_register
     procedure:: memory_info
     procedure:: track_mem
+    procedure:: print_tracked_mem
   end type
   logical, save:: initialized = .false.
   real, parameter:: ms=30.
@@ -279,37 +288,34 @@ SUBROUTINE gb_mem (self, bits, count, label)
   character(len=*), optional:: label
   !.............................................................................
   real(8):: gb, lgb
-  real, save:: gb_next=1.0
+  real, save:: gb_next=0d0
   !-----------------------------------------------------------------------------
+  if (gb_next==0d0) gb_next = self%gb_step
   gb = (bits/(8.*1024.**3))*count
-  lgb = self%gb + gb
-  if (abs(lgb - gb_next) > 1.0) then
-    !---------------------------------------------------------------------------
-    ! We only need a critical region when printing is desired
-    !---------------------------------------------------------------------------
+  !$omp atomic capture
+  self%gb = self%gb + gb
+  lgb = self%gb
+  !$omp end atomic
+  if (present(label)) then
+    call self%track_mem(gb, label)
+  endif
+  !-----------------------------------------------------------------------------
+  ! When passing a GB limit, print and incremnt
+  !-----------------------------------------------------------------------------
+  if (abs(lgb - gb_next) > self%gb_step) then
     !$omp critical (gb_cr)
-    if (abs(lgb - gb_next) > 1.0) then
-      do while (abs(lgb - gb_next) > 1.0)
-        !-----------------------------------------------------------------------
-        ! Print the next level, and increment
-        !-----------------------------------------------------------------------
+    if (abs(lgb - gb_next) > self%gb_step) then
+      do while (abs(lgb - gb_next) > self%gb_step)
         call self%gb_print (real(gb_next,kind=8))
-        gb_next = gb_next + sign (1d0, lgb-gb_next)
+        gb_next = gb_next + sign (self%gb_step, lgb-gb_next)
       end do
+      if (self%gb > self%max_mem) call self%print_tracked_mem()
     end if
     !$omp end critical (gb_cr)
-  else
-    !$omp atomic write
-    self%gb = lgb
   end if
   if (self%gb > self%max_mem) then
     !$omp atomic write
     self%max_mem = self%gb
-  endif
-  if (present(label)) then
-    !$omp critical (profiling_mem)
-    call self%track_mem(gb, label)
-    !$omp end critical (profiling_mem)
   endif
 END SUBROUTINE gb_mem
 
@@ -319,39 +325,44 @@ SUBROUTINE track_mem (self, gb, label)
   real(8):: gb
   character(len=*):: label
   integer :: i
-  real(8), save :: last_print_gb=0.0
-  real(8) :: total
   !.............................................................................
+  !$omp critical (track_mem_cr)
   i = findloc(self%labels(1:self%nlabels), label, 1)
   if (i == 0) then
     if (gb > 0) then
       i = findloc(self%n_allocated, 0, 1)
-      !i = self%nlabels + 1
       if (i > maxlabels) call shared%abort ('os_mod: increase maxlabels')
-      !self%nlabels = i
       self%nlabels = max(i, self%nlabels)
       self%labels(i) = label
+      self%labelled_mem(i) = self%labelled_mem(i) + gb
+      self%n_allocated(i) = self%n_allocated(i) + sign(1d0, gb)
     else
       call shared%abort ('os_mod: memory with unknown label='//trim(label)//' is deallocated.')
     endif
   endif
   self%labelled_mem(i) = self%labelled_mem(i) + gb
   self%n_allocated(i) = self%n_allocated(i) + sign(1d0, gb)
-
-  if (self%max_mem - last_print_gb > 1.0) then
-    last_print_gb = self%max_mem
-    total = sum(self%labelled_mem(1:self%nlabels))
-    do i=1, self%nlabels
-      if (self%labelled_mem(i) / total > 0.05) then
-        write(stdout, '(A, 1x, I6, f10.4)') &
-              adjustr(self%labels(i)), &
-              self%n_allocated(i), &
-              self%labelled_mem(i)
-      endif
-    end do
-    write(stdout, '(56x, A, 1x, f10.4)') 'rest_mem', self%gb - total
-  endif
+  !$omp end critical (track_mem_cr)
 END SUBROUTINE track_mem
+
+!===============================================================================
+SUBROUTINE print_tracked_mem (self)
+  class (os_t):: self
+  real(8) :: total
+  integer :: i
+  !.............................................................................
+  total = sum(self%labelled_mem(1:self%nlabels))
+  do i=1, self%nlabels
+    if (self%labelled_mem(i) / total > 0.05) then
+      write(stdout, '(A, 1x, I6, f10.4)') &
+            adjustr(self%labels(i)), &
+            self%n_allocated(i), &
+            self%labelled_mem(i)
+    endif
+  end do
+  write(stdout, '(56x, A, 1x, f10.4)') 'rest_mem', self%gb - total
+  write(stdout, '(56x, A, 1x, f10.4)') 'total', self%gb
+END SUBROUTINE print_tracked_mem
 
 !===============================================================================
 !> Print memory use, gigabytes
@@ -368,11 +379,11 @@ END SUBROUTINE gb_print
 !===============================================================================
 SUBROUTINE allocate_1d_r (a, m, zero, label)
   real(4), pointer, contiguous:: a(:)
-  integer:: m(:)
+  integer:: m
   logical, optional:: zero
   character(len=*), optional:: label
   !-----------------------------------------------------------------------------
-  allocate (a(m(1)))
+  allocate (a(m))
   call mem_register (storage_size(a), product(shape(a)), label)
   if (option(zero)) a = 0.0
 END SUBROUTINE allocate_1d_r
@@ -452,25 +463,39 @@ END SUBROUTINE allocate_6d_r
 !===============================================================================
 SUBROUTINE allocate_1d_l (a, m, zero, label)
   logical, pointer, contiguous:: a(:)
+  integer:: m
+  logical, optional:: zero
+  character(len=*), optional:: label
+  !-----------------------------------------------------------------------------
+  allocate (a(m))
+  call mem_register (storage_size(a), product(shape(a)), label)
+  if (option(zero)) a = .false.
+END SUBROUTINE allocate_1d_l
+
+!===============================================================================
+!> Allocate a 3-D logical array
+!===============================================================================
+SUBROUTINE allocate_3d_l (a, m, zero, label)
+  logical, pointer, contiguous:: a(:,:,:)
   integer:: m(:)
   logical, optional:: zero
   character(len=*), optional:: label
   !-----------------------------------------------------------------------------
-  allocate (a(m(1)))
+  allocate (a(m(1), m(2), m(3)))
   call mem_register (storage_size(a), product(shape(a)), label)
   if (option(zero)) a = .false.
-END SUBROUTINE allocate_1d_l
+END SUBROUTINE allocate_3d_l
 
 !===============================================================================
 !> Allocate a 1-D integer array
 !===============================================================================
 SUBROUTINE allocate_1d_i (a, m, zero, label)
   integer(4), pointer, contiguous:: a(:)
-  integer:: m(:)
+  integer:: m
   logical, optional:: zero
   character(len=*), optional:: label
   !-----------------------------------------------------------------------------
-  allocate (a(m(1)))
+  allocate (a(m))
   call mem_register (storage_size(a), product(shape(a)), label)
   if (option(zero)) a = 0.0
 END SUBROUTINE allocate_1d_i
@@ -504,6 +529,20 @@ SUBROUTINE allocate_3d_i (a, m, zero, label)
 END SUBROUTINE allocate_3d_i
 
 !===============================================================================
+!> Allocate a 3-D integer array
+!===============================================================================
+SUBROUTINE allocate_3d_i8 (a, m, zero, label)
+  integer(kind=int8), pointer, contiguous:: a(:,:,:)
+  integer:: m(:)
+  logical, optional:: zero
+  character(len=*), optional:: label
+  !-----------------------------------------------------------------------------
+  allocate (a(m(1),m(2),m(3)))
+  call mem_register (storage_size(a), product(shape(a)), label)
+  if (option(zero)) a = 0.0
+END SUBROUTINE allocate_3d_i8
+
+!===============================================================================
 !> Allocate a 4-D integer array
 !===============================================================================
 SUBROUTINE allocate_4d_i (a, m, zero, label)
@@ -522,11 +561,11 @@ END SUBROUTINE allocate_4d_i
 !===============================================================================
 SUBROUTINE allocate_1d_d (a, m, zero, label)
   real(8), pointer, contiguous:: a(:)
-  integer:: m(:)
+  integer:: m
   logical, optional:: zero
   character(len=*), optional:: label
   !-----------------------------------------------------------------------------
-  allocate (a(m(1)))
+  allocate (a(m))
   call mem_register (storage_size(a), product(shape(a)), label)
   if (option(zero)) a = 0.0
 END SUBROUTINE allocate_1d_d
@@ -665,6 +704,19 @@ SUBROUTINE deallocate_1d_l (a, label)
 END SUBROUTINE deallocate_1d_l
 
 !===============================================================================
+!> Dealloccate a 3-D logical array
+!===============================================================================
+SUBROUTINE deallocate_3d_l (a, label)
+  logical, pointer, contiguous:: a(:,:,:)
+  character(len=*), optional:: label
+  !-----------------------------------------------------------------------------
+  if (associated(a)) then
+    call mem_register (storage_size(a), -product(shape(a)), label)
+    deallocate (a)
+  end if
+END SUBROUTINE deallocate_3d_l
+
+!===============================================================================
 !> Dealloccate a 1-D integer array
 !===============================================================================
 SUBROUTINE deallocate_1d_i (a, label)
@@ -702,6 +754,19 @@ SUBROUTINE deallocate_3d_i (a, label)
     deallocate (a)
   end if
 END SUBROUTINE deallocate_3d_i
+
+!===============================================================================
+!> Dealloccate a 3-D integer array
+!===============================================================================
+SUBROUTINE deallocate_3d_i8 (a, label)
+  integer(kind=int8), pointer, contiguous:: a(:,:,:)
+  character(len=*), optional:: label
+  !-----------------------------------------------------------------------------
+  if (associated(a)) then
+    call mem_register (storage_size(a), -product(shape(a)), label)
+    deallocate (a)
+  end if
+END SUBROUTINE deallocate_3d_i8
 
 !===============================================================================
 !> Dealloccate a 4-D integer array

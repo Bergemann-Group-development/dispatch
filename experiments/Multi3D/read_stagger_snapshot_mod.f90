@@ -59,6 +59,7 @@ SUBROUTINE read_stagger_snapshot(ds, d, px, py, pz, ee, tt, ne)
       read (io%input, stagger_params)
     end if
     call io%namelist_warning ('stagger_params', iostat)
+    write (io%namelist, stagger_params)
     mesh_file = trim(stagger_file) // '.msh'
     write(snap_file, '(A,A1,I5.5)') trim(stagger_file), '_', snap
     write(data_file, *) trim(snap_file), '.dat'
@@ -73,9 +74,9 @@ SUBROUTINE read_stagger_snapshot(ds, d, px, py, pz, ee, tt, ne)
   ! read first entry in mesh file
   read(unit=lunit, iostat=iostat) nx, nnz, ny ! y is z in stagger
 
-  call os%allocate(xx, [nx])
-  call os%allocate(yy, [ny])
-  call os%allocate(zm, [nnz])
+  call os%allocate(xx, nx)
+  call os%allocate(yy, ny)
+  call os%allocate(zm, nnz)
   allocate(xdn, dxidxup, dxidxdn, dx, dxdn, mold=xx)
   allocate(ydn, dyidyup, dyidydn, dy, dydn, mold=yy)
   allocate(zdn, dzidzup, dzidzdn, dz, dzdn, mold=zm)
@@ -160,13 +161,13 @@ SUBROUTINE read_stagger_snapshot(ds, d, px, py, pz, ee, tt, ne)
   ! Index the ghost zones to be ommited 
   nz  = nnz - (2 * gz)
 
-  call os%allocate(zz, [nz])
+  call os%allocate(zz, nz)
 
   zz = -zm(nnz-gz:gz+1:-1) ! flipping z-axis
 
-  call os%allocate(newx, [dims(1)])
-  call os%allocate(newy, [dims(2)])
-  call os%allocate(newz, [dims(3)])
+  call os%allocate(newx, dims(1))
+  call os%allocate(newy, dims(2))
+  call os%allocate(newz, dims(3))
 
   newx = linspace(xx(1), xx(nx), dims(1))
   newy = linspace(yy(1), yy(ny), dims(2))

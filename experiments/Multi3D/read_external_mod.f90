@@ -21,7 +21,7 @@ MODULE read_external_mod
   USE experiment_mod
   USE patch_mod
   USE ray_patch_mod
-  USE m3d_patch_mod, only: maxiter, ilambd, out_folder
+  USE m3d_patch_mod, only: maxiter, ilambd, m3d_patch_t, atom_update_counter, global_maxerr
   USE read_stagger_snapshot_mod
   implicit none
 
@@ -192,7 +192,7 @@ SUBROUTINE init(self, task_list, name)
     endif
 
   end do
-  write (stdout,*) ip, 'task generated'
+  write (stdout,*) ip, 'tasks generated'
 
   call self%save_atmos()
 
@@ -203,6 +203,8 @@ SUBROUTINE init(self, task_list, name)
   !-----------------------------------------------------------------------------
   ! Generate nbor lists and set status bits for all tasks
   !-----------------------------------------------------------------------------
+  if (verbose > 0) write(stdout,*) 'read_external_t%init: init_ids'
+  call init_ids(task_list)
   if (verbose > 0) write(stdout,*) 'read_external_t%init: init_levels'
   call self%task_list%init_levels
   if (verbose > 0) write(stdout,*) 'read_external_t%init: init_all_nbors'
@@ -228,6 +230,8 @@ SUBROUTINE init(self, task_list, name)
     end if
     link => next
   end do
+
+  call print_list(task_list)
   !-----------------------------------------------------------------------------
   ! This counts are not fully correct until the patch meshes have been allocated
   !-----------------------------------------------------------------------------
@@ -240,6 +244,12 @@ SUBROUTINE init(self, task_list, name)
   write (stdout,'(a,i8)') ' number of tasks in task list:', self%task_list%n
   io%nwrite = product(self%dims)
   write (stdlog,*) 'read_external_mod: ntask,nwrite=', io%ntask, io%nwrite
+
+  !-----------------------------------------------------------------------------
+  ! Initialize mpi counters
+  !-----------------------------------------------------------------------------
+  call atom_update_counter%init(0)
+  call global_maxerr%init(0)
 
   !-----------------------------------------------------------------------------
   ! Initialize tasks
@@ -284,8 +294,6 @@ SUBROUTINE setup_patch (self, patch)
   ! Add the patch to the task list -- this creates the patch%link
   !---------------------------------------------------------------------------
   call patch%append_to(patch%task_list)
-
-  call patch%init_unique (same=.true.) ! obtain an unique ID
   call patch%gpatch_t%pre_init() ! this overwrites patch%n
   patch%pre_initialized = .true.
 
@@ -731,7 +739,7 @@ SUBROUTINE save_atmos (self)
   character(len=82) :: out_mesh_file='atmos_mesh.txt'
   integer :: lunit, zs,ze,step
   !-----------------------------------------------------------------------------
-  open(file=trim(out_folder)//out_mesh_file, newunit=lunit, form='FORMATTED')
+  open(file=trim(io%run_dir)//out_mesh_file, newunit=lunit, form='FORMATTED')
   write(lunit, *) self%n
   write(lunit, *) self%ds
   close(lunit)
@@ -747,7 +755,7 @@ SUBROUTINE save_atmos (self)
     step = -1
   endif
 
-  open(file=trim(out_folder)//out_atmos_file, newunit=lunit, form='UNFORMATTED')
+  open(file=trim(io%run_dir)//out_atmos_file, newunit=lunit, form='UNFORMATTED')
   write(lunit) self%temp(:,:,zs:ze:step)
   write(lunit) self%rho (:,:,zs:ze:step)
   write(lunit) self%px  (:,:,zs:ze:step)
@@ -755,7 +763,53 @@ SUBROUTINE save_atmos (self)
   write(lunit) self%pz  (:,:,zs:ze:step)
   write(lunit) self%pe  (:,:,zs:ze:step)
   close(lunit)
-
 END SUBROUTINE
+
+!===============================================================================
+SUBROUTINE init_ids (list)
+  class(list_t):: list
+  class(link_t), pointer:: link
+  class(task_t), pointer:: task
+  !-----------------------------------------------------------------------------
+  call list%lock%set ('init_ids')
+  link => list%head
+  do while (associated(link))
+    task => link%task
+    call task%init_unique (same=.true.) ! obtain a unique ID
+    link => link%next
+  end do
+  call list%lock%unset ('init_ids')
+END SUBROUTINE init_ids
+
+!===============================================================================
+SUBROUTINE print_list (list)
+  class(list_t):: list
+  class(link_t), pointer:: link
+  class(task_t), pointer:: task
+  !-----------------------------------------------------------------------------
+  call list%lock%set ('print_list')
+  write (io_unit%queue, *) 'print_list'
+  link => list%head
+  do while (associated(link))
+    task => link%task
+    select type(task)
+    class is (m3d_patch_t)
+      write (io_unit%queue, *) task%is_set(bits%external), &
+                               task%is_set(bits%internal), &
+                               task%is_set(bits%virtual), &
+                               task%m3d_patch_info()
+                              
+    class is (experiment_t)
+      write(io_unit%queue, '(3(L2), 1x, I3, 1x, I3, 1x, F8.4, A12, I8, I4)') &
+                    task%is_set(bits%external), &
+                    task%is_set(bits%internal), &
+                    task%is_set(bits%virtual), &
+                    omp%place, task%place, task%time, &
+                    trim(task%kind), task%id, task%ipos(3)+1
+    end select
+    link => link%next
+  end do
+  call list%lock%unset ('print_list')
+END SUBROUTINE print_list
 
 END MODULE

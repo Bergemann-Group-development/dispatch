@@ -88,7 +88,6 @@ MODULE atom_mod
         procedure :: lte_pop
         procedure :: compute_lte_populations
         procedure :: compute_cont_factors
-        procedure :: compute_wphi
         procedure :: solve_stat_equilibrium
         procedure :: create_spectrum
         procedure :: set_active_transitions
@@ -239,58 +238,6 @@ MODULE atom_mod
            !endif
         end do
      END SUBROUTINE add_line_opacities
-     !------------------------------------------------------------------------------------
-  
-     !====================================================================================
-     SUBROUTINE compute_wphi (self, fs_patch, fe_patch, nu, temp, vproj, wphi)
-        class(atom_type), intent(in), target :: self
-        integer, intent(in) :: fs_patch, fe_patch
-        real(8), dimension(:), intent(in) :: nu
-        real(4), dimension(:,:,:), intent(in) :: temp, vproj
-        real(4), dimension(:,:,:), allocatable :: vel_dop
-        real(4), dimension(:,:,:,:), allocatable, target :: scratch_phi
-        real(4), dimension(:,:,:,:), pointer :: phi
-        real(4), dimension(:,:,:,:), pointer, contiguous, intent(out) :: wphi
-        class(line_type), pointer :: line
-        real(4) :: wnu
-        integer :: i, fcs, fce, fs, fe, nx, ny, nz, f
-        logical :: skip
-        !------------------------------------------------------------------------------------
-        nx = size(temp,1)
-        ny = size(temp,2)
-        nz = size(temp,3)
-  
-        call os%allocate(wphi, [nx,ny,nz,self%nline], label='wphi')
-        wphi = 0
-        
-        fcs = max(minval(self%line%ired),  fs_patch)
-        fce = min(maxval(self%line%iblue), fe_patch)
-  
-        if (fcs >= fe_patch) return
-        if (fce <= fs_patch) return
-  
-        allocate(scratch_phi(nx,ny,nz,fcs:fce))
-  
-        vel_dop = (1 + vproj) / self%doppler_factor
-  
-        do i=1, self%nline
-           line => self%line(i)
-           call line%check_range(fcs,fce,fs,fe,skip)
-           if (skip) cycle
-           
-           phi => scratch_phi(:,:,:,fs:fe)
-  
-           call line%profile(nu(fs:fe), vel_dop, self%doppler_factor, line%adamp, phi)
-  
-           do f=fs,fe
-              scratch_phi(:,:,:,f) = scratch_phi(:,:,:,f) * line%wnu(f)
-           end do
-  
-           wphi(:,:,:,i) = sum(phi,4) ! angle weight is multiplied later
-        end do
-  
-        deallocate(scratch_phi)
-     END SUBROUTINE
      !------------------------------------------------------------------------------------
   
      !====================================================================================

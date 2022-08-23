@@ -312,10 +312,16 @@ SUBROUTINE set_custom_quadratures(mu, nphi, vec, wts)
   real(8), intent(out), dimension(:,:), allocatable :: vec
   real(8), dimension(:), allocatable :: wmu, smus, swts, swts2
   real(8) :: pi2, pi05, xphi, theta
-  integer :: ntheta, nrays, i, nt, np, nmuphi
+  integer :: ntheta, nrays, i, nt, np, nmuphi, n1
+  logical :: includes_mu1
   ! -------------------------------------------------------------------
   nrays = size(mu)
-  nmuphi = (nrays-1)*nphi + 1
+  includes_mu1 = findloc(mu, 1.0, 1) > 0
+  if (includes_mu1) then
+    nmuphi = (nrays-1)*nphi + 1
+  else
+    nmuphi = nrays*nphi
+  endif
 
   allocate(wmu(nrays))
   allocate(wts(nmuphi))
@@ -344,13 +350,20 @@ SUBROUTINE set_custom_quadratures(mu, nphi, vec, wts)
   wmu = wmu * 2*mu
   
   pi2 = PI * 2.0d0
+
   ! storing first index of vec and wts
-  wts(1) = wmu(1)
-  vec(3,1) = mu(1)
+  if (includes_mu1) then
+    wts(1) = wmu(1)
+    vec(:,1) = [0.,0.,1.]
+    n1 = 2
+  else
+    n1 = 1
+  endif
   ! storing the rest of vec and wts indexes
-  do nt = 2, nrays
+  do nt = n1, nrays
      do np = 1, nphi
-        i = (nt-2) * nphi + np+1
+        i = (nt-n1) * nphi + np
+        if (includes_mu1) i = i+1
         
         ! Computing cartesian geometries
         xphi = pi2 / dble(nphi) * (np-1)
