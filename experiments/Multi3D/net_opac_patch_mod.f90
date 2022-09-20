@@ -24,9 +24,10 @@ module net_opac_patch_mod
     USE os_mod
     !USE units_mod
     !USE scratch_mod
-    USE m3d_patch_mod, only:maxiter, m3d_patch_t
+    USE m3d_patch_mod, only:maxiter, m3d_patch_t, hash_string
     USE ray_patch_mod, only:ray_patch_t
-    USE opac_patch_mod, only:opac_patch_t
+    USE back_opac_patch_mod, only:back_opac_patch_t
+    USE cont_opac_patch_mod, only:cont_opac_patch_t
     USE lines_patch_mod, only:lines_patch_t
     USE back_line_patch_mod, only:back_line_patch_t
     implicit none
@@ -38,6 +39,7 @@ module net_opac_patch_mod
       procedure :: pre_init => net_opac_pre_init
       procedure :: update => net_opac_update
       procedure :: nbor_relations => net_opac_nbor_relations
+      procedure :: init_nbors_hash
     end type net_opac_t
   
     !-----------------------------------------------------------------------------
@@ -49,8 +51,10 @@ module net_opac_patch_mod
   SUBROUTINE net_opac_pre_init (self)
     class(net_opac_t), target:: self
     integer :: nw, fs, fe
+    integer, save :: itimer=0
     ! ----------------------------------------------------------------------------
-    call trace%begin('net_opac_t%opacity_pre_init')
+    call trace%begin('net_opac_t%opacity_pre_init', itimer=itimer)
+    self%kind = 'net_opac'
     call self%ray_patch_t%pre_init()
   
     nw = 2
@@ -66,7 +70,7 @@ module net_opac_patch_mod
       endif
     endif
     call self%post_pre_init()
-    call trace%end()
+    call trace%end(itimer)
   END SUBROUTINE net_opac_pre_init
   
   !===============================================================================
@@ -80,10 +84,12 @@ module net_opac_patch_mod
     integer, save:: itimer=0
     integer :: iw,it, f, fs, fe, fn, x, y, z
     !-----------------------------------------------------------------------------
-    call self%pre_update()
-    if (self%finished) then
-      return
-    endif
+    if (self%is_finished()) return
+    !-----------------------------------------------------------------------------
+    ! Boundary conditions
+    !-----------------------------------------------------------------------------
+    call self%bndries()
+    call self%periodic_grid(only=merge(1, self%gn(3), self%dir>0))
     call self%decompress_mem(self)
 
     call trace%begin('net_opac_t%net_opac_update', itimer=itimer)
@@ -171,16 +177,18 @@ module net_opac_patch_mod
         needs_me=.false.
       class is (back_line_patch_t)
         needs_me=.false.
-      class is(opac_patch_t)
-        if (another%kind/='net_opac') then
+      class is(back_opac_patch_t)
           needs_me=.false.
-        endif
+      class is(cont_opac_patch_t)
+          needs_me=.false.
       class is (m3d_patch_t)
         if (another%id == self%m3d_parent%id) then
           needs_me = .false.; needed = .false.
         else
           if (another%kind=='angle_rad') then
             needed = .false.
+          elseif (another%kind=='atom_patch') then
+              needs_me = .false.
           else
             needed = .false.; needs_me = .false.
           endif
@@ -192,6 +200,47 @@ module net_opac_patch_mod
 
     call trace%end()
   END SUBROUTINE net_opac_nbor_relations
+  
+  !===============================================================================
+  !> Fast method to generate nbor lists in cases with very long task lists
+  !===============================================================================
+  SUBROUTINE init_nbors_hash (self, nbors)
+    class(net_opac_t):: self
+    class(nbor_t), pointer:: nbors
+    !.............................................................................
+    class(task_t), pointer:: task
+    class(nbor_t), pointer:: nbor
+    integer, save:: itimer=0
+    integer :: key(4)
+    !-----------------------------------------------------------------------------
+    call trace%begin('net_opac_t%init_nbors_hash', itimer=itimer)
+    call self%ray_patch_t%init_nbors_hash(nbors)
+  
+    key(1:3) = self%key(1:3)
+    key(4) = hash_string('lines_patch')
+    call self%check_nbor(key, nbors)
+
+    key(4) = hash_string('angle_rad')
+    call self%check_nbor(key, nbors)
+
+    if (self%out_ray) then
+      key(4) = hash_string('back_line')
+      call self%check_nbor(key, nbors)
+    endif
+
+    key(3) = 0
+    key(4) = hash_string('back_opac')
+    call self%check_nbor(key, nbors)
+
+    key(4) = hash_string('cont_opac')
+    call self%check_nbor(key, nbors)
+
+    ! because of lines_patches
+    key(2) = 0
+    key(4) = hash_string('atom_patch')
+    call self%check_nbor(key, nbors)
+    call trace%end (itimer)
+  END SUBROUTINE init_nbors_hash
   
   end module net_opac_patch_mod
   

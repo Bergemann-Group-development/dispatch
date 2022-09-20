@@ -17,11 +17,15 @@ MODULE read_external_mod
   USE bits_mod
   USE halo_mod
   USE list_mod
+  USE shared_mod
   USE task_list_mod
   USE experiment_mod
+  USE composition_mod
   USE patch_mod
+  USE mconst, only:cc
   USE ray_patch_mod
   USE m3d_patch_mod, only: maxiter, ilambd, m3d_patch_t, atom_update_counter, global_maxerr
+  USE m3d_halo_mod, only: m3d_halo_t
   USE read_stagger_snapshot_mod
   implicit none
 
@@ -48,6 +52,7 @@ MODULE read_external_mod
   type(rank_t) :: rank
   logical, save :: read_Stagger=.false.
   logical, save :: read_Multi=.false.
+  real(8), save :: FeH=0
 
 CONTAINS
 
@@ -67,7 +72,8 @@ SUBROUTINE init(self, task_list, name)
   integer :: verbose=1
   logical :: face_nbors=.false.
   character(len=126) :: atmos_file='./input_multi3d/atmos/atmos.sun_MARCS_50'
-  namelist /atmos_params/ atmos_file, dims, verbose, read_Stagger, read_Multi, mpi_dims, patches_per_mpi
+  namelist /atmos_params/ atmos_file, dims, verbose, read_Stagger, read_Multi, &
+  mpi_dims, patches_per_mpi, FeH
   !-----------------------------------------------------------------------------
   if (associated(task_list)) return
   call trace%begin('read_external_t%init')
@@ -173,6 +179,7 @@ SUBROUTINE init(self, task_list, name)
   ip = 0
   do k=0, self%dims(3)-1
     allocate (patch)
+    patch%kind = 'mhd_patch'
     ! --- patch 3D and 1D coordinates ---
     patch%ipos = [0,0,k]
     patch%rank = mpi_coords%coords_to_rank ([0,0,k]/patches_per_mpi)
@@ -182,9 +189,6 @@ SUBROUTINE init(self, task_list, name)
     end if
     if (all(self%dims==1)) call patch%task_t%set(bits%root_grid)
     call self%setup_patch(patch)
-    call patch%set (bits%internal)
-    call patch%set (bits%external)
-    call patch%set (bits%static)
 
     if (verbose > 0) then 
       if (k==0) write(stdout,'(I2, A28)') self%dims(3), ' subdomains in z-direction:'
@@ -194,7 +198,7 @@ SUBROUTINE init(self, task_list, name)
   end do
   write (stdout,*) ip, 'tasks generated'
 
-  call self%save_atmos()
+  call self%save_atmos(patch)
 
   io%end_time = (maxiter + ilambd + 1) * patch%dtime
   io%print_every = huge(1)
@@ -203,34 +207,19 @@ SUBROUTINE init(self, task_list, name)
   !-----------------------------------------------------------------------------
   ! Generate nbor lists and set status bits for all tasks
   !-----------------------------------------------------------------------------
+  if (verbose > 0) write(stdout,*) 'read_external_t%init: init_levels'
+  call task_list%init_levels()
+  shared%levelroot = shared%levelmin
   if (verbose > 0) write(stdout,*) 'read_external_t%init: init_ids'
   call init_ids(task_list)
-  if (verbose > 0) write(stdout,*) 'read_external_t%init: init_levels'
-  call self%task_list%init_levels
   if (verbose > 0) write(stdout,*) 'read_external_t%init: init_all_nbors'
-  call init_all_nbors(self%task_list)
-  if (verbose > 0) write(stdout,*) 'read_external_t%init: reset_status'
-  call self%task_list%reset_status
-  if (verbose > 0) write(stdout,*) 'read_external_t%init: info'
-  call task_list%info
-
-  !-----------------------------------------------------------------------------
-  ! Remove tasks that are external, and make sure to also remove them from the
-  ! nbor lists of virtual tasks
-  !-----------------------------------------------------------------------------
-  link => self%task_list%head
-  do while (associated(link))
-    next => link%next
-    if (link%task%is_set (bits%external)) then
-      !call link%remove_nbor_list2 (link%nbor)
-      call self%task_list%remove (link)
-      call link%task%dealloc()
-      !deallocate (link%task)
-      !deallocate (link)
-    end if
-    link => next
-  end do
-
+  call init_all_nbors(task_list)
+  if (verbose > 0) write(stdout,*) 'read_external_t%init: remove_external'
+  call remove_external(task_list)
+  if (verbose > 1) then
+    write(stdout,*) 'read_external_t%init: info'
+    call task_list%info
+  endif
   call print_list(task_list)
   !-----------------------------------------------------------------------------
   ! This counts are not fully correct until the patch meshes have been allocated
@@ -273,6 +262,7 @@ SUBROUTINE init(self, task_list, name)
   if (verbose > 0) write(stdout,*) 'read_external_t%init: print tasks'
   call self%task_list%print_tasks
   call self%task_list%check_hash_table
+  call self%task_list%hash_table%stats
   if (verbose > 0) write(stdout,*) 'read_external_t%init: done'
   flush (stdout)
   !-----------------------------------------------------------------------------
@@ -298,7 +288,6 @@ SUBROUTINE setup_patch (self, patch)
   patch%pre_initialized = .true.
 
   patch%mhd = .false.
-  patch%kind = 'mhd_patch'
 
   patch%ng = 1 ! needed for nbor_relation
   patch%n = self%n / self%dims
@@ -340,6 +329,7 @@ SUBROUTINE setup_patch (self, patch)
   patch%composition%patch => patch
   patch%composition%task_list => self%task_list
   
+  patch%composition%FeH = FeH
   call patch%composition%pre_init()
   
   patch%nv = 6
@@ -398,7 +388,7 @@ SUBROUTINE read_1d_snapshot(self, atmos_1d_file)
 
   allocate(zi(1-self%ng(3):self%n(3)+self%ng(3)))
   allocate(self%temp(1,1, 1-self%ng(3):self%n(3)+self%ng(3)))
-  allocate(self%px, self%py, self%pz, self%pe, self%rho, self%vturb, mold=self%temp)
+  allocate(self%px, self%py, self%pz, self%pe, self%rho, self%vturb, self%ne, mold=self%temp)
 
   do i=lbound(zi,1), ubound(zi,1)
     call nextentry(lunit)
@@ -409,14 +399,17 @@ SUBROUTINE read_1d_snapshot(self, atmos_1d_file)
 
   zi = zi / scaling%l
   self%rho = self%rho / scaling%d
+  self%ne  = self%pe / (cgs%k_b * self%temp)
   self%pe  = self%pe  / scaling%p
   self%px  = 0
   self%py  = 0
   self%pz  = 0
 
   self%n(:2) = 1
-  self%ds(1) = 1e-2 ! 10km spacing as for 1d atmospheres in Multi
-  self%ds(2) = 1e-2
+  !self%ds(1) = 1e-2 ! 10km spacing as for 1d atmospheres in Multi
+  !self%ds(2) = 1e-2
+  self%ds(1) = 1d2
+  self%ds(2) = 1d2 
   self%ds(3) = zi(2) - zi(1)
 
   if (abs(self%ds(3) - (zi(self%n(3)) - zi(self%n(3)-1))) > 1d-4) then
@@ -529,8 +522,6 @@ SUBROUTINE init_all_nbors (self)
   call trace%begin('read_external_mod%init_all_nbors', itimer=itimer)
   if (self%verbose > 0) &
     call timer%tic (time)
-  call self%reset_status                                ! update task bits
-  call self%count_status                                ! update task counts
   fixed_threads = min(omp%nthreads, 4)
   i2 = self%n/fixed_threads + 1                         ! tasks per thread
   n = 0
@@ -565,32 +556,39 @@ SUBROUTINE init_nbors (self, link)
   call trace%begin('read_external_mod%init_nbors', itimer=itimer)
   call link%task%log ('init_nbors')
   nullify (new_nbors)
-  call init_nbors_by_level (self, link, new_nbors)
+  if (self%use_hash) then
+    !$omp atomic write
+    link%task%n_nbors = 0
+    select type (task => link%task)
+    class is (m3d_patch_t)
+      call task%init_nbors_hash(new_nbors)
+    class is (experiment_t)
+      call task%init_nbors_hash(new_nbors)
+    end select
+  else
+    call init_nbors_by_level (self, link, new_nbors)
+  end if
   !-----------------------------------------------------------------------------
   ! Swap the link%nbor pointer under lock
   !-----------------------------------------------------------------------------
-  call link%lock%set ('init_nbors')
+  call                                              link%lock%set ('init_nbors')
   old_nbors => link%nbor
   link%nbor => new_nbors
   !-----------------------------------------------------------------------------
-  ! Update the status bits based on the new nbor list
+  ! Update the status bits based on the new nbor list and adjust counts
   !-----------------------------------------------------------------------------
-  call self%update_status (link)
+  call link%reset_status (link%nbor)
+  link%task%previous_status = link%task%status
+  !call self%update_status (link)
+  call                                            link%lock%unset ('init_nbors')
   !-----------------------------------------------------------------------------
-  ! Remove the released nbor list, to recover the memory
+  ! Clear the init_nbors bit and remove the old nbor list
   !-----------------------------------------------------------------------------
-  call link%remove_nbor_list (old_nbors)              ! recover nbor list mem
-  call link%lock%unset ('init_nbors')
-  !-----------------------------------------------------------------------------
-  ! Clear the init_nbors bit, unless the task is a boundary task, in which
-  ! case the bit needs to be present also on the nbor ranks, where it will be
-  ! cleared at this point.   This creates a potential problem, since if a task
-  ! that still has the init_nbors bit set, after coming in with the swap_reuqest
-  ! bit set, it will never clear its init_nbors bit.
-  !-----------------------------------------------------------------------------
-  if (link%task%is_clear (bits%boundary)) then
-    call link%task%clear (bits%init_nbors)
-  end if
+  call link%task%clear (bits%init_nbors)
+  call link%remove_nbor_list (old_nbors)
+  !.............................................................................
+  if (self%verbose > 0) &
+    call link%info ('init_nbors')
   call trace%end (itimer)
 END SUBROUTINE init_nbors
 
@@ -657,7 +655,7 @@ SUBROUTINE add_nbor (self, link, nbors, nbor, added, by_quality, by_rank)
   !-----------------------------------------------------------------------------
   ! Use a class method to overload the allocation
   !-----------------------------------------------------------------------------
-  call link%alloc_nbor (nbor_l)
+  call self%alloc_nbor (link, nbor_l)
   !-----------------------------------------------------------------------------
   ! Consider this carefully!
   ! From Andrius: please consult me before changing this.
@@ -733,11 +731,16 @@ SUBROUTINE add_nbor (self, link, nbors, nbor, added, by_quality, by_rank)
 END SUBROUTINE add_nbor
 
 !===============================================================================
-SUBROUTINE save_atmos (self)
+SUBROUTINE save_atmos (self, patch)
   class (read_external_t) :: self
+  class(experiment_t), pointer:: patch
+  class(composition_type), pointer:: composition
+  real(4), dimension(:,:,:,:), allocatable :: chi, abslte, sumsca
+  real(4), dimension(:,:,:), allocatable :: tau
+  real(8), dimension(1) :: nu
   character(len=82) :: out_atmos_file='atmos_data.bin'
   character(len=82) :: out_mesh_file='atmos_mesh.txt'
-  integer :: lunit, zs,ze,step
+  integer :: lunit, zs,ze,step, m(3), i, j, k
   !-----------------------------------------------------------------------------
   open(file=trim(io%run_dir)//out_mesh_file, newunit=lunit, form='FORMATTED')
   write(lunit, *) self%n
@@ -755,6 +758,17 @@ SUBROUTINE save_atmos (self)
     step = -1
   endif
 
+  m = shape(self%temp)
+  allocate(chi(m(1), m(2), m(3),1))
+  allocate(abslte, sumsca, mold=chi)
+  allocate(tau, mold=self%temp)
+  nu = 1e8 * cc / 5000.0
+
+  composition => patch%composition%composition
+  call composition%load_state_variables(self%temp, self%ne, self%rho*real(scaling%d))
+  call composition%absorption(nu, chi, abslte, sumsca)
+  call compute_tau_scale(chi(:,:,ze:zs:-step,1), self%ds(3)*scaling%l, tau(:,:,ze:zs:-step))
+
   open(file=trim(io%run_dir)//out_atmos_file, newunit=lunit, form='UNFORMATTED')
   write(lunit) self%temp(:,:,zs:ze:step)
   write(lunit) self%rho (:,:,zs:ze:step)
@@ -762,31 +776,80 @@ SUBROUTINE save_atmos (self)
   write(lunit) self%py  (:,:,zs:ze:step)
   write(lunit) self%pz  (:,:,zs:ze:step)
   write(lunit) self%pe  (:,:,zs:ze:step)
+  write(lunit) tau      (:,:,zs:ze:step)
   close(lunit)
 END SUBROUTINE
+
+!===============================================================================
+SUBROUTINE compute_tau_scale (chi, ds, tau)
+  real(4), dimension(:,:,:), intent(in) :: chi
+  real(4), dimension(:,:,:), intent(out):: tau
+  real(8) :: ds
+  integer :: k
+  !-----------------------------------------------------------------------------
+  tau(:,:,2) = 0.5*(chi(:,:,2) + chi(:,:,1)) * ds
+  tau(:,:,3) = 0.5*(chi(:,:,3) + chi(:,:,2)) * ds + tau(:,:,2)
+  tau(:,:,1) = exp(2*log(tau(:,:,2))-log(tau(:,:,3)))
+
+  do k=2, size(chi,3)
+    tau(:,:,k) = tau(:,:,k-1) + 0.5*(chi(:,:,k) + chi(:,:,k-1)) * ds
+  end do
+END SUBROUTINE compute_tau_scale
 
 !===============================================================================
 SUBROUTINE init_ids (list)
   class(list_t):: list
   class(link_t), pointer:: link
   class(task_t), pointer:: task
+  integer, save :: level=0
   !-----------------------------------------------------------------------------
   call list%lock%set ('init_ids')
   link => list%head
   do while (associated(link))
     task => link%task
     call task%init_unique (same=.true.) ! obtain a unique ID
+    if (task%level > level) then
+      level = task%level
+      list%first(level)%pointer => link
+    endif
     link => link%next
   end do
   call list%lock%unset ('init_ids')
 END SUBROUTINE init_ids
 
 !===============================================================================
+SUBROUTINE remove_external (list)
+  class(list_t):: list
+  class(link_t), pointer:: link, next
+  integer, save :: itimer=0
+  !-----------------------------------------------------------------------------
+  ! Remove tasks that are external, and make sure to also remove them from the
+  ! nbor lists of virtual tasks
+  !-----------------------------------------------------------------------------
+  call trace%begin('read_external_mod%remove_external', itimer=itimer)
+  link => list%head
+  do while (associated(link))
+    next => link%next
+    if (link%task%is_set (bits%external)) then
+      !call link%remove_nbor_list2 (link%nbor)
+      call list%remove (link)
+      call link%task%dealloc()
+      !deallocate (link%task)
+      !deallocate (link)
+    end if
+    link => next
+  end do
+  call trace%end(itimer)
+END SUBROUTINE remove_external
+
+!===============================================================================
 SUBROUTINE print_list (list)
   class(list_t):: list
   class(link_t), pointer:: link
   class(task_t), pointer:: task
+  integer, save :: itimer=0
   !-----------------------------------------------------------------------------
+  call trace%begin('read_external_mod%print_list', itimer=itimer)
   call list%lock%set ('print_list')
   write (io_unit%queue, *) 'print_list'
   link => list%head
@@ -796,13 +859,15 @@ SUBROUTINE print_list (list)
     class is (m3d_patch_t)
       write (io_unit%queue, *) task%is_set(bits%external), &
                                task%is_set(bits%internal), &
+                               task%is_set(bits%boundary), &
                                task%is_set(bits%virtual), &
                                task%m3d_patch_info()
                               
     class is (experiment_t)
-      write(io_unit%queue, '(3(L2), 1x, I3, 1x, I3, 1x, F8.4, A12, I8, I4)') &
+      write(io_unit%queue, '(4(L2), 1x, I3, 1x, I3, 1x, F8.4, A12, I8, I4)') &
                     task%is_set(bits%external), &
                     task%is_set(bits%internal), &
+                    task%is_set(bits%boundary), &
                     task%is_set(bits%virtual), &
                     omp%place, task%place, task%time, &
                     trim(task%kind), task%id, task%ipos(3)+1
@@ -810,6 +875,7 @@ SUBROUTINE print_list (list)
     link => link%next
   end do
   call list%lock%unset ('print_list')
+  call trace%end(itimer)
 END SUBROUTINE print_list
 
 END MODULE

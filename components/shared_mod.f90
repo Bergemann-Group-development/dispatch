@@ -10,6 +10,7 @@ MODULE shared_mod
   type, public:: shared_t
     integer:: levelmin      = 99
     integer:: levelmax      = 0
+    integer:: levelroot     = 0
     integer:: n_repeat(3)   = 1
     integer:: n_patch       = 0
     integer:: n_initial     = 0
@@ -21,9 +22,11 @@ MODULE shared_mod
     integer:: mpi_rank      = 0
     integer:: benchmark     = 0
     logical:: mpi_master    = .true.
+    logical:: all_src       = .false.
     logical:: refine_on     = .false.
     logical:: debug         = .false.
-    real:: refine_ratio     = 2.0
+    real(8):: refine_ratio  = 2d0
+    real(8):: tlist_size(3) = 1d0
     real:: f_zoom(3)        = 1.0
     real:: extra_grace      = 0.0
     real(8):: mean_density  = 0d0
@@ -32,13 +35,14 @@ MODULE shared_mod
     procedure, nopass:: abort
     procedure, nopass:: option_l
     procedure, nopass:: option_i
+    procedure, nopass:: option_i_3d
     procedure, nopass:: option_i8
     procedure, nopass:: option_r
     procedure, nopass:: option_r8
     procedure, nopass:: option_r8_3d
     procedure, nopass:: option_s
     generic:: option => option_l, option_i, option_i8, option_r, option_r8, &
-                        option_r8_3d, option_s
+                        option_r8_3d, option_s, option_i_3d
   end type
   type(shared_t):: shared
 CONTAINS
@@ -66,6 +70,16 @@ END FUNCTION
 !===============================================================================
 FUNCTION option_i (in, def) RESULT (out)
   integer:: in, def, out
+  optional:: in
+  if (present(in)) then
+    out = in
+  else
+    out = def
+  end if
+END FUNCTION
+!===============================================================================
+FUNCTION option_i_3d (in, def) RESULT (out)
+  integer, dimension(3):: in, def, out
   optional:: in
   if (present(in)) then
     out = in

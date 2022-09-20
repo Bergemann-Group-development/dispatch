@@ -71,7 +71,8 @@ SUBROUTINE dealloc (self)
   call trace%begin ('dll_t%dealloc')
   call io%lock%set ('dll_t%dealloc')
   if (associated(self%lock)) then
-    call omp_lock%dealloc (self%lock)
+    call self%lock%destroy
+    deallocate (self%lock)
   end if
   call io%lock%unset ('dll_t%dealloc')
   call trace%end ()

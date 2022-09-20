@@ -23,7 +23,7 @@ module lines_patch_mod
     USE mconst
     USE atom_mod, only: atom_type
     USE trans_mod, only: line_type
-    USE m3d_patch_mod, only: m3d_patch_t, maxiter
+    USE m3d_patch_mod, only: m3d_patch_t, maxiter, hash_string
     USE ray_patch_mod, only: ray_patch_t
     implicit none
   
@@ -47,6 +47,7 @@ module lines_patch_mod
       procedure :: print_post_update_info
       procedure :: check_in_bounds
       procedure :: integrate_wphi
+      procedure :: init_nbors_hash
     end type lines_patch_t
 
     !-----------------------------------------------------------------------------
@@ -58,7 +59,10 @@ module lines_patch_mod
     class(lines_patch_t), target :: self
     class(line_type), pointer :: line
     integer :: i, nv
+    integer, save :: itimer=0
     !---------------------------------------------------------------------------
+    call trace%begin('lines_patch_t%pre_init', itimer=itimer)
+    self%kind = 'lines_patch'
     call self%ray_patch_t%pre_init()
     call self%create_line_indices()
     call self%create_line_frequencies()
@@ -72,6 +76,7 @@ module lines_patch_mod
     call self%set_nv_and_nw(nv, 1)
     self%ng = 0
     call self%post_pre_init()
+    call trace%end(itimer)
   END SUBROUTINE lines_patch_pre_init
 
   !===============================================================================
@@ -172,17 +177,14 @@ module lines_patch_mod
     class(lines_patch_t) :: self
     class(line_type), pointer :: line
     real(4), dimension(:,:,:), pointer, contiguous :: tothi, ne, temp, adamp, doppler_factor
-    real(4), dimension(:,:,:), pointer, contiguous :: vel_dop, ni, nj, unsold_temp, stark_pe, vproj
+    real(4), dimension(:,:,:), pointer, contiguous :: inv_df, ni, nj, unsold_temp, stark_pe, vproj
     real(4), dimension(:,:,:,:), pointer, contiguous :: phi
     real(4), dimension(:,:,:,:), pointer :: nh
     real(8), dimension(:), allocatable :: wnu
     integer :: i, f, p(3)
     integer, save:: itimer=0
     !-----------------------------------------------------------------------------
-    call self%pre_update()
-    if (self%finished) then
-      return
-    endif
+    if (self%is_finished()) return
     call trace%begin('lines_patch_t%lines_patch_update', itimer=itimer)
 
     call self%check_access(self%m3d_parent%m3d_parent)
@@ -196,9 +198,10 @@ module lines_patch_mod
     call os%allocate(unsold_temp, self%n)
     call os%allocate(stark_pe,    self%n)
     call os%allocate(vproj,       self%n)
+    call os%allocate(inv_df,      self%n)
     
     call self%comp_vproj(vproj)
-    vproj = (1 + vproj) / doppler_factor
+    inv_df = 1 / doppler_factor
 
     tothi = sum(nh(:,:,:,1:5), 4) ! total neutral hydrogen density
     unsold_temp =  8.0*BK / PI * (1.0/MH + 1.0/self%atom%awgt) * temp
@@ -212,15 +215,15 @@ module lines_patch_mod
         call line%dampingH(adamp, temp, ne, nh(:,:,:,6))
       endif
       
-      call line%profile(line%nu, vproj, doppler_factor, adamp, line%phi)
+      call line%profile(line%q, vproj, inv_df, adamp, line%phi)
 
       call os%allocate(line%wphi, self%n, zero=.true., label=trim(self%kind)//'%wphi')
 
-      call self%sp%set_weights(wnu, line%nu, 1, line%nnu)
+      call self%sp%set_weights(wnu, line%q, 1, line%nnu)
 
       do f=1,line%nnu
         line%wphi = line%wphi + line%phi(:,:,:,f) * wnu(f)
-        line%phi(:,:,:,f) = line%phi(:,:,:,f) * h_4pi * line%nu(f)
+        line%phi(:,:,:,f) = line%phi(:,:,:,f) * over_4pi * (line%q(f) + 1)
       end do
       deallocate(wnu)
     enddo
@@ -230,6 +233,7 @@ module lines_patch_mod
     call os%deallocate(unsold_temp)
     call os%deallocate(stark_pe)
     call os%deallocate(vproj)
+    call os%deallocate(inv_df)
 
     call self%integrate_wphi()
     call self%post_update()
@@ -362,7 +366,7 @@ module lines_patch_mod
     class(m3d_patch_t), intent(in), target :: deallocator
     logical, optional :: print
     ! ----------------------------------------------------------------------------
-    if (self%finished .and. self%is_clear(bits%busy)) then
+    if (self%is_finished() .and. self%is_clear(bits%busy)) then
       call self%m3d_patch_t%deallocate_mem(deallocator, print)
       if (associated(self%line)) deallocate(self%line)
       if (associated(self%idx_map)) call os%deallocate(self%idx_map)
@@ -407,5 +411,27 @@ module lines_patch_mod
       endif
     endif
   END FUNCTION check_in_bounds
+
+  !===============================================================================
+  SUBROUTINE init_nbors_hash (self, nbors)
+    class(lines_patch_t):: self
+    class(nbor_t), pointer:: nbors
+    !.............................................................................
+    class(task_t), pointer:: task
+    class(nbor_t), pointer:: nbor
+    integer, save:: itimer=0
+    integer :: i, key(4)
+    !-----------------------------------------------------------------------------
+    call trace%begin('lines_patch_t%init_nbors_hash', itimer=itimer)
+    call self%m3d_patch_t%init_nbors_hash(nbors)
+
+    key(1:3) = self%key(1:3)
+    key(4) = hash_string('net_opac')
+    call self%check_nbor(key, nbors)
+
+    key(4) = hash_string('rate_patch')
+    call self%check_nbor(key, nbors)
+    call trace%end (itimer)
+  END SUBROUTINE init_nbors_hash
 
   end module

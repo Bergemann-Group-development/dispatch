@@ -49,18 +49,21 @@ MODULE composition_mod
         procedure :: overwrite_abundance
         procedure :: init_linelist
         procedure :: print_ion_table
+        procedure :: read_molec_data
     end type
 
 contains
 
     !===============================================================================
-    SUBROUTINE injon(self, absdat_file, abund_file, absmet_file, absmet_big_end)
+    SUBROUTINE injon(self, absdat_file, abund_file, absmet_file, FeH, &
+        isotope_file, molec_file, absmet_big_end)
         class(composition_type), target :: self
-        character(len=80), intent(in) :: absdat_file, abund_file
-        character(len=80), intent(in), optional :: absmet_file
+        character(len=*), intent(in) :: absdat_file, abund_file
+        character(len=*), intent(in), optional :: absmet_file, isotope_file, molec_file
         logical, intent(in), optional :: absmet_big_end
-        integer :: absdat, abund_unit
-        integer :: i, j, k, m, nl, nk
+        real(8), intent(in) :: FeH
+        integer :: absdat, lunit, iostat
+        integer :: i, j, k, m, nl, nk, n_iso
         integer :: lvl_count, skip_back
         real(dp) :: abund, xion, g2, dump, tecor, decor
         character(len=3) :: id
@@ -80,6 +83,7 @@ contains
         class(element_type),    pointer :: element, H
         class(molec_type),      pointer :: molecule
         class(ion_type),        pointer :: ion, Hm, HI
+        class(isotope_type),    pointer :: iso
         class(level_type),      pointer :: lvl
         class(bftrans_type), pointer :: trans
         !---------------------------------------------------------------------------
@@ -110,18 +114,24 @@ contains
             endif
         end do
 
-        open(file=abund_file, newunit=abund_unit)
-
-        do i=1, self%nel
-            read(abund_unit, *) id, abund
-            elements(findloc(elements%id, id))%abund = abund
+        open(file=abund_file, newunit=lunit, iostat=iostat)
+        do while (iostat==0)
+            read(lunit, *, iostat=iostat) id, abund
+            call self%element_by_id(trim(id), element)
+            if(associated(element)) element%abund = abund
         end do
-
-        close(abund_unit)
+        close(lunit)
 
         if (elements(1)%abund == 1) then
             elements%abund = log10(elements%abund) + 12.0
         endif
+
+        do i=1, self%nel
+            element => elements(i)
+            if (element%id /= 'H' .and. element%id /= 'HE') then
+                element%abund = element%abund + FeH
+            endif
+        end do
 
         elements%abund = 10**(elements%abund - elements(1)%abund)
         call self%compute_grams_per_hydrogen(self%suma, self%xmy, self%grph)
@@ -141,45 +151,57 @@ contains
                 read(absdat, *) ion%g0, nk
                 ion%nk = nk
 
-                skip_back = 0
-                do k=1, nk
-                    read(absdat, *) dump, dump, dump, nl
-                    skip_back = skip_back + 1 + ceiling(nl / 4.0)
+                if (ion%g0 > 0) then
+                    skip_back = 0
+                    do k=1, nk
+                        read(absdat, *) dump, dump, dump, nl
+                        skip_back = skip_back + 1 + ceiling(nl / 4.0)
 
-                    if (nl > 0) then
-                        ion%nk = ion%nk + nl
-                        read(absdat, 106) (xion, g2, m=1,nl)
-                    endif
+                        if (nl > 0) then
+                            ion%nk = ion%nk + nl
+                            read(absdat, 106) (xion, g2, m=1,nl)
+                        endif
 
-                end do
+                    end do
 
-                do k=1, skip_back
-                    backspace absdat
-                end do
+                    do k=1, skip_back
+                        backspace absdat
+                    end do
 
-                allocate(ion%levels(ion%nk))
-                ion%levels%xl=0
+                    allocate(ion%levels(ion%nk))
+                    ion%levels%xl=0
 
-                lvl_count = 0
-                do k=1, nk
-                    lvl_count = lvl_count + 1
-                    lvl => ion%levels(lvl_count)
+                    lvl_count = 0
+                    do k=1, nk
+                        lvl_count = lvl_count + 1
+                        lvl => ion%levels(lvl_count)
 
-                    !xion = THE IONIZATION ENERGY IN ELECTRON VOLTS
-                    !g2   = THE STATISTICAL WEIGHT (2L+1)*(2J+1)
-                    !xl   = THE LOWEST QUANTUM NUMBER OF THE ASYMPTOTIC
-                    !       (HYDROGENIC) PARTOF THE PARTITION FUNCTION,
-                    !nl   = THE NUMBER OF TERMS IN THE (APPROXIMATE) EXPRESSION
-                    !       FOR THE 'MIDDLE PART' OF THE PARTITION FUNCTION ('QPRIME').
+                        !xion = THE IONIZATION ENERGY IN ELECTRON VOLTS
+                        !g2   = THE STATISTICAL WEIGHT (2L+1)*(2J+1)
+                        !xl   = THE LOWEST QUANTUM NUMBER OF THE ASYMPTOTIC
+                        !       (HYDROGENIC) PARTOF THE PARTITION FUNCTION,
+                        !nl   = THE NUMBER OF TERMS IN THE (APPROXIMATE) EXPRESSION
+                        !       FOR THE 'MIDDLE PART' OF THE PARTITION FUNCTION ('QPRIME').
 
-                    read(absdat, *) lvl%xion, lvl%g2, lvl%xl, nl
+                        read(absdat, *) lvl%xion, lvl%g2, lvl%xl, nl
 
-                    if (nl > 0) then
-                        read(absdat, 106) (ion%levels(m)%xion, ion%levels(m)%g2, m=lvl_count+1, lvl_count+nl)
-                        lvl_count = lvl_count + nl
-                    endif
-                end do
-
+                        if (nl > 0) then
+                            read(absdat, 106) (ion%levels(m)%xion, ion%levels(m)%g2, m=lvl_count+1, lvl_count+nl)
+                            lvl_count = lvl_count + nl
+                        endif
+                    end do
+                else ! IRWIN FORMAT
+                    allocate(ion%levels(ion%nk))
+                    
+                    lvl_count = 0
+                    do k=1, nk
+                        lvl_count = lvl_count + 1
+                        lvl => ion%levels(lvl_count)
+                        read(absdat, *) lvl%xion, lvl%g2, lvl%xl, nl
+                        allocate(ion%irwin(nl))
+                        read(absdat, *) ion%irwin
+                    end do
+                endif
             end do
         end do
 
@@ -278,7 +300,7 @@ contains
         RYD = HI%levels(1)%xion ! overwriting RYD constant
         ! --------------------------------------------------!
 
-        call self%init_molecules()
+        call self%init_molecules(molec_file)
 
         101 FORMAT(7X,I3,5(9X,I1))
         999 FORMAT(4(9X,I1),8X,I2,9X,I1)
@@ -410,6 +432,28 @@ contains
             endif
         endif
 
+        if (present(isotope_file)) then
+            open(file=isotope_file, newunit=lunit)
+            read(lunit, *, iostat=iostat) text
+            do while (iostat==0)
+                do while (text(1:1) == '!')
+                    read(lunit, *, iostat=iostat) text
+                end do
+                backspace lunit
+                read(lunit, *, iostat=iostat) id, n_iso
+                call self%element_by_id(id, element)
+                if (associated(element)) then
+                    allocate(element%isotope(n_iso))
+                    do i=1, n_iso
+                        iso => element%isotope(i)
+                        read(lunit, *) iso%iso, iso%mass, iso%f
+                    end do
+                endif
+                read(lunit, *, iostat=iostat) text
+            end do
+            close(lunit)
+        endif
+
         self%initialised = .true.
         call trace%end ()
     END SUBROUTINE injon
@@ -418,6 +462,9 @@ contains
     SUBROUTINE init_linelist (self, linelist_file)
         class(composition_type) :: self
         class(ion_type), pointer :: ion
+        class(molec_type), pointer :: mol
+        class(particle_type), pointer :: p
+        class(element_type), pointer :: element
         class(bbtrans_type), dimension(:), allocatable :: lines
         class(bbtrans_type), pointer :: line
         character(len=*) :: linelist_file
@@ -426,8 +473,8 @@ contains
         real(dp) :: lam0, gv, gq, loggf, ent8, ent9, mass, cnt_ev
         character :: lower_orb, upper_orb
         character(len=150) :: label
-        integer :: lunit, iostat, j, nline, i, prev, ntotal=0
-        logical :: isotope
+        integer :: lunit, iostat, j, nline, i, prev, iso_id, ntotal=0, iso_idx
+        logical :: isotope, ok
         !-----------------------------------------------------------------------------
         if (linelist_file == '') return
 
@@ -437,12 +484,27 @@ contains
             if (iostat/=0) exit
             read(lunit,*,iostat=iostat) ion_id
             read(mass_id,*) mass
-            ion_id = adjustl(trim(ion_id))
-            call self%ion_by_id(ion_id(1:6), ion)
             isotope = mod(mass, 1.0) > 0
+            ion_id = adjustl(trim(ion_id))
+            nullify(mol)
+            nullify(p)
+            call self%ion_by_id(ion_id(1:6), ion, element)
+            ok = associated(ion)
+            if (.not. ok) then
+                call self%molecule_by_id(ion_id(1:6), mol)
+                ok = associated(mol)
+            endif
+            
+            if (associated(ion) .and. isotope) then
+                iso_id = nint((mass - int(mass))*1000)
+                iso_idx = findloc(element%isotope%iso, iso_id, 1)
+                ok = iso_idx > 0
+            endif
 
-            !ignore isotopes for now
-            if (.not. associated(ion) .or. isotope) then
+            if (.not. ok) then
+                if (associated(ion) .and. isotope) then
+                    print *, ion%id, ' isotope', iso_id, 'not found'
+                endif
                 do i=1, nline
                     read(lunit, *, iostat=iostat) ! skipping this ion
                     if (iostat.ne.0) exit
@@ -450,23 +512,31 @@ contains
                 cycle
             endif
 
-            if (ion%nline == 0) then
-                allocate(ion%line(nline))
-                ion%nline = nline
+            if (associated(ion)) then
+                p => ion
+            elseif (associated(mol)) then
+                p => mol
+            endif
+            
+            p%in_linelist=.true.
+
+            if (p%nline == 0) then
+                allocate(p%line(nline))
+                p%nline = nline
                 prev = 0
             else
                 allocate(lines(nline))
-                lines = ion%line
-                deallocate(ion%line)
-                allocate(ion%line(ion%nline+nline))
-                ion%line(1:ion%nline) = lines
+                lines = p%line
+                deallocate(p%line)
+                allocate(p%line(p%nline+nline))
+                p%line(1:p%nline) = lines
                 deallocate(lines)
-                prev = ion%nline
-                ion%nline = ion%nline + nline
+                prev = p%nline
+                p%nline = p%nline + nline
             endif
 
             do i=1, nline
-                line => ion%line(prev+i)
+                line => p%line(prev+i)
                 ! Try to read with stark broadening parameter
                 read(lunit,*,iostat=iostat) lam0, line%lower_ev, loggf, gv, line%upper_g, &
                     line%ga, gq, lower_orb, upper_orb, ent8, ent9, label
@@ -487,13 +557,17 @@ contains
 
                 lam0 = air2vac(lam0) * 1e-8
                 line%nu0 = CC / lam0
-                line%Aji = f_to_Aji * 10**loggf / (line%upper_g * lam0**2)
+                line%Aji = hh * f_to_Aji * 10**loggf / (line%upper_g * lam0**2)
                 line%Bji = c2_2h / line%nu0**3 * line%Aji
-                line%Bij = line%Bji * line%upper_g
-                cnt_ev = ion%above%levels(1)%xion
+                line%Bij = line%Bji * line%upper_g ! 1 / gi is missing but cancels when multiplying with ni
 
                 call line%prepare_Stark(gq)
-                call line%prepare_VanderWaals(gv, j, cnt_ev)
+
+                if (associated(ion)) then
+                    cnt_ev = ion%levels(1)%xion
+                    call line%prepare_VanderWaals(gv, j, cnt_ev)
+                    if (isotope) line%iso_idx = iso_idx
+                endif
 
                 ntotal = ntotal + 1
             end do
@@ -562,11 +636,12 @@ contains
     END SUBROUTINE reassign_pointer
 
     !===============================================================================
-    SUBROUTINE init_molecules(self)
+    SUBROUTINE init_molecules(self, molec_file)
         class(composition_type), target :: self
         class(molec_type),   pointer :: molecule
         class(element_type), pointer :: element
         class(ion_type),     pointer :: ion
+        character(len=*) :: molec_file
         character(len=3) :: mol_ids(12)
         character(len=6) :: ion_id
         integer :: i, j
@@ -583,7 +658,7 @@ contains
             molecule => self%molecules(i)
             molecule%nions = len(trim(mol_ids(i)))
             molecule%id = trim(mol_ids(i))
-            call molecule%init_mol_dissociation()
+            !call molecule%init_mol_dissociation()
 
             allocate(molecule%ions(molecule%nions))
 
@@ -642,6 +717,7 @@ contains
                 ion%mcount = ion%mcount + 1 
             end do
         end do
+        call self%read_molec_data(molec_file)
         call trace%end ()
     END SUBROUTINE init_molecules
 
@@ -914,12 +990,12 @@ contains
     END SUBROUTINE scattering
 
     !===============================================================================
-    SUBROUTINE get_totn(self, id, abund, totn)
+    SUBROUTINE get_totn(self, id, abund, totn, element)
         class(composition_type), target :: self
+        class(element_type), intent(out), pointer :: element
         character(len=*), intent(in) :: id
         real(dp), intent(in) :: abund
         real(4), dimension(:,:,:) :: totn
-        class(element_type), pointer :: element
         !---------------------------------------------------------------------------
         call trace%begin ('composition_type%get_totn')
         call self%element_by_id(trim(id), element)
@@ -960,6 +1036,7 @@ contains
 
     !===============================================================================
     SUBROUTINE molecular_equilibrium(self, temp, teta, pe, dxi, xnecno, eh, pg, fe)
+        USE omp_lib, only : kmp_set_stacksize_s, kmp_get_stacksize_s, kmp_size_t_kind
         class(composition_type), target :: self
         real(dp), dimension(:,:,:), intent(in) :: temp, pe, teta, dxi, xnecno
         real(dp), dimension(:,:,:), allocatable, intent(inout) :: eh, pg, fe
@@ -1041,23 +1118,23 @@ contains
 
         do i=1, self%nmolec
             !partial electron pressures due to each molecule
-            where (tmolim) molecules(i)%f = molecules(i)%calc_f(teta, pefe)
+            where (tmolim) molecules(i)%f = molecules(i)%calc_f(pefe)
         end do
 
         where (tmolim)
-            b = C%f_of_molecules_with(O) / C%f
-            O%fil = 1 + O%saha + O%f_of_molecules_with(H) / O%f
-            C%fil = 1 + C%saha + C%f_of_molecules_with(H) / C%f
+            b = C%f_of_molecules_with(O)
+            O%fil = 1 + O%saha + O%f_of_molecules_with(H)
+            C%fil = 1 + C%saha + C%f_of_molecules_with(H)
 
             p = (C%abund-O%abund)/O%fil + C%fil/b
             q = - O%abund/O%fil * C%fil/b
             O%f = solve_quadratic(p, q)
             C%f = C%abund / (C%fil + b*O%f)
 
-            CN%f = CN%calc_f(teta, pefe) ! has to be recalculated since C%f changed
+            CN%f = CN%calc_f(pefe) ! has to be recalculated since C%f changed
             
-            N%fil = 1 + N%saha + (N%f_of_molecules_with(H) + N%f_of_molecules_with(C)) / N%f
-            b = N%f / N%f_of_molecules_with(N, count_double=.true.) 
+            N%fil = 1 + N%saha + N%f_of_molecules_with(H) + N%f_of_molecules_with(C)
+            b = 1 / N%f_of_molecules_with(N, count_double=.true.) 
             p = 2*N%fil*b
             q = - 2*N%abund*b
             N%f = solve_quadratic(p, q)
@@ -1069,7 +1146,7 @@ contains
         do iter=1, 100
             Amat = 0
             do i=1, self%nmolec
-                where (tmolim) molecules(i)%f = molecules(i)%calc_f(teta, pefe)
+                where (tmolim) molecules(i)%f = molecules(i)%calc_f(pefe)
             end do
 
             do i=1, nions
@@ -1099,7 +1176,7 @@ contains
 
                 do j=1, nions
                     ionj => ions(j)%p
-                    where (tmolim) Amat(i,j,:,:,:) = Amat(i,j,:,:,:) + ionj%f_of_molecules_with(ioni, count_double=.true.) / ionj%f
+                    where (tmolim) Amat(i,j,:,:,:) = Amat(i,j,:,:,:) + ionj%f_of_molecules_with(ioni, count_double=.true.)
                 end do
             end do
 
@@ -1143,7 +1220,7 @@ contains
 
         do i=1, self%nmolec
             where (tmolim)
-                molecules(i)%f = molecules(i)%calc_f(teta, pefe) ! has to be called first
+                molecules(i)%f = molecules(i)%calc_f(pefe) ! has to be called first
                 molecules(i)%e = molecules(i)%calc_e(teta, temp, dxi)
                 pg = pg + molecules(i)%f
                 eh = eh + molecules(i)%e
@@ -1170,9 +1247,20 @@ contains
         class(composition_type), target :: self
         character(len=*), intent(in) :: id
         class(molec_type), pointer, intent(out) :: molecule
+        integer :: idx
+        logical :: first_print=.true.
         !---------------------------------------------------------------------------
         call trace%begin ('composition_type%init')
-        molecule => self%molecules(findloc(self%molecules%id, id, 1))
+        idx = findloc(self%molecules%id, id, 1)
+        if (idx == 0) then
+            molecule => null()
+            if (first_print) then
+                first_print = .false.
+                print *, 'molecule with id=' // id // ' was not found.'
+            endif
+        else
+            molecule => self%molecules(idx)
+        endif
         call trace%end ()
     END SUBROUTINE molecule_by_id
 
@@ -1200,12 +1288,13 @@ contains
     END SUBROUTINE element_by_id
 
     !===============================================================================
-    SUBROUTINE ion_by_id(self, id, ion)
+    SUBROUTINE ion_by_id(self, id, ion, element_out)
         class(composition_type), target :: self
         character(len=*), intent(in) :: id
-        character(3) :: eid
         class(ion_type), pointer, intent(out) :: ion
+        class(element_type), intent(out), pointer, optional :: element_out
         class(element_type), pointer :: element
+        character(3) :: eid
         integer :: idx, space
         !---------------------------------------------------------------------------
         call trace%begin ('composition_type%init')
@@ -1229,6 +1318,9 @@ contains
             endif
         else
             ion => null()
+        endif
+        if (present(element_out)) then
+            element_out => element
         endif
         call trace%end ()
     END SUBROUTINE ion_by_id
@@ -1324,7 +1416,7 @@ contains
         real(dp) :: abund
         logical, save :: first_time=.true.
         !---------------------------------------------------------------------
-        call self%element_by_id(trim(id), element)
+        call self%element_by_id(id(1:3), element)
 
         if (associated(element)) then
             abund = log10(element%abund) + 12.0
@@ -1541,4 +1633,51 @@ contains
         close(lunit)
     END SUBROUTINE print_ion_table
 
+    !===============================================================================
+    SUBROUTINE read_molec_data (self, molec_file)
+        class(composition_type) :: self
+        class(molec_type), pointer :: mol
+        character(len=*) :: molec_file
+        character(80) :: text
+        character(3) :: id
+        integer :: i, lunit, iostat, defix, n_irwin, n_de
+        !---------------------------------------------------------------------------
+        open(file=molec_file, newunit=lunit)
+        read(lunit, *, iostat=iostat) text
+        do while (iostat==0)
+            do while (text(1:1) == '!')
+                read(lunit, *, iostat=iostat) text
+            end do
+            backspace lunit
+            read(lunit, *, iostat=iostat) id, defix, n_irwin
+            call self%molecule_by_id(id, mol)
+            if (associated(mol)) then
+                n_de = merge(5, 1, defix==0)
+                allocate(mol%de(n_de))
+                allocate(mol%irwin(n_irwin))
+                read(lunit, *) mol%de
+                read(lunit, *) mol%dc ! always 5 numbers
+                read(lunit, *) mol%irwin
+            endif
+            read(lunit, *, iostat=iostat) text
+        end do
+        close(lunit)
+    END SUBROUTINE read_molec_data
+
+    !===============================================================================
+    SUBROUTINE check_for_comment(lunit, comment, n_skipped)
+        integer :: lunit, iostat, n_skipped
+        character(len=1) :: comment, first_char
+        !---------------------------------------------------------------------------
+        iostat = 0
+        n_skipped = 0
+        do while (iostat==0)
+            read(lunit, *, iostat=iostat) first_char
+            if (first_char /= comment) then
+                backspace(lunit)
+                return
+            endif
+            n_skipped = n_skipped + 1
+        end do
+    END SUBROUTINE check_for_comment
 END MODULE composition_mod

@@ -1,85 +1,52 @@
 !===============================================================================
-!> Define code units, in terms of (here) CGS units
+!> Define code units, in terms of (here) CGS units.  Demonstrates how to pass
+!> on the three standard scaling values (l,t,m), and benefit from the standard
+!> metadata produced and passed on to Python by self%set (...)
 !===============================================================================
 MODULE scaling_mod
   USE units_mod
   USE io_mod
   USE trace_mod
-  USE math_mod
+  USE standard_scaling_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
-  ! Extend the units_t data type, which contains only the three fundamental
-  ! units: length, mass, and time (cf. CGS and MKS)
+  ! Extend the units_t data typem which handles scaling metadata output
   !-----------------------------------------------------------------------------
-  type, public, extends(units_t):: scaling_t
-    real(kind=8):: d, e, ee, p, u, temp, grav, mu, kr, b
+  type, public, extends(standard_scaling_t):: scaling_t
   contains
     procedure:: init
-    procedure:: output
   end type
   type(scaling_t), public:: scaling
 CONTAINS
 
 !===============================================================================
-!> Initialize code units:
+!> Default scaling module, optionally overloaded with local version.
 !===============================================================================
 SUBROUTINE init (self)
   class(scaling_t):: self
+  real(8), save:: l=1d0, d=1d0, v=1d0
+  character(4), save:: system='CGS'
+  integer:: iostat
   logical, save:: first_time=.true.
-  !-----------------------------------------------------------------------------
-  if (.not.first_time) return
-  call trace%begin ('scaling_t%init')
-  if (io%master) print *, &
- '-------------------------------- scaling_mod -------------------------'
-  first_time = .false.
-  call cgs%init
-  !--------------------------- defining quantities ---------------------
-  self%system = 'cgs'
-  self%l  = 1d0
-  self%d  = 1d0
-  self%t  = 1d0
-  !--------------------------- derived quantities ----------------------
-  self%u  = self%l/self%t                                               ! speed
-  self%m  = self%d*self%l**3                                            ! mass
-  self%p  = self%d*self%u**2                                            ! pressure = energy density [dyne / cm2]
-  self%kr = 1.0/(self%d*self%l)                                         ! rosseland opacity [cm2/g]
-  self%ee = self%u**2                                                   ! specific energy
-  self%e  = self%m*self%u**2                                            ! energy
-  self%b  = sqrt(scaling%d)*scaling%u                                   ! magnetic flux density (B^2/2 ~ rho U^2)
-  self%mu = 2.4
-  self%temp = self%mu*(cgs%m_u/self%m)/(cgs%k_b/self%e)                 ! temperature for given mu
-  self%grav = cgs%grav*(self%m/self%l**3)*self%t**2     ! constant of gravity
-  if (io%master) then
-    print 1,' CODE UNITS:   (cgs):'
-    print 1,'               length: ',self%l
-    print 1,'                 mass: ',self%m
-    print 1,'                 time: ',self%t
-    print 1,'             velocity: ',self%u
-    print 1,'              density: ',self%d
-    print 1,'             pressure: ',self%p
-    print 1,'magnetic flux density: ',self%b
-    print 1,'               energy: ',self%e
-    print 1,'              gravity: ',self%grav
-    print 1,'          temperature: ',self%temp
-  1 format(1x,a,1p,e11.3)
+  namelist /scaling_params/ system, l, v, d
+  !----------------------------------------------------------------------------
+  call trace_begin('scaling_t%init')
+  call io%lock%set
+  if (first_time) then
+    first_time = .false.
+    rewind (io%input)
+    read (io%input, scaling_params, iostat=iostat)
+    if (iostat > 0) then
+      rewind (io%input)
+      read (io%input, scaling_params)
+    end if
+    call io%namelist_warning ('scaling_params', iostat)
+    write (io%namelist, scaling_params)
+    call self%units_t%init ()
+    call self%set (system, l=l, t=l/v, m=d*l**3)
   end if
-  call self%output
-  call trace%end()
+  call io%lock%unset
 END SUBROUTINE init
-
-!===============================================================================
-!> Output scaling units. Do NOT call units%output from here!
-!===============================================================================
-SUBROUTINE output (self)
-  class(scaling_t):: self
-  real:: l, t, d
-  namelist /scaling_nml/ l, t, d
-  !-----------------------------------------------------------------------------
-  l = self%l
-  t = self%t
-  d = self%d
-  write (io%namelist,scaling_nml)
-END SUBROUTINE output
 
 END MODULE scaling_mod

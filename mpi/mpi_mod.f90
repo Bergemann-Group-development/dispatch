@@ -1,5 +1,4 @@
 !===============================================================================
-!> $Id$
 !> Basic MPI calls; initialization, end, barriers, asserts, wallclock, ...
 !>
 !> To make use of this module, make sure it is compiled together with your code,
@@ -70,13 +69,14 @@ MODULE mpi_mod
   !-----------------------------------------------------------------------------
   type, public:: mpi_t
     integer:: size=1, osize=1, rank=0, comm, verbose=0
-    integer:: mode
+    integer:: mode, max_tag
     logical:: master
     logical:: ok = .false.
     type(mpi_counter_t):: id, file_size
     type(mpi_counter_t):: end_counter
   contains
     procedure:: init
+    procedure:: info
     procedure:: barrier => barrier_
     procedure:: print => print_
     procedure:: assert
@@ -96,8 +96,6 @@ SUBROUTINE init (self, mpi_dims, dims)
   class(mpi_t):: self
   integer, optional, dimension(3):: mpi_dims, dims
   real(8):: offset
-  character(len=120):: ids = &
-  '$Id$'
   !-----------------------------------------------------------------------------
   if (self%ok) return
   call trace%begin ('mpi_t%init')
@@ -135,8 +133,6 @@ SUBROUTINE init (self, mpi_dims, dims)
   shared%mpi_size   = mpi%size
   shared%mpi_master = mpi%master
   mpi%ok     = .true.
-  if (mpi%master .and. first_time) &
-    print'(1x,a)', trim(ids)
   !-----------------------------------------------------------------------------
   ! For some reason, this must be done element by element.  Turning it around,
   ! and doing mpi = self (which is syntactically correct), values are screwed
@@ -196,7 +192,6 @@ END SUBROUTINE barrier_
 SUBROUTINE init_mpi (self)
   implicit none
   class(mpi_t):: self
-  character(len=mch):: id='mpi.f90 $Id$'
   character(len=mch):: filename
   integer:: mpi_provided
 !-------------------------------------------------------------------------------
@@ -204,34 +199,13 @@ SUBROUTINE init_mpi (self)
 !-------------------------------------------------------------------------------
   call trace%begin ('mpi_t%init_mpi')
 #ifdef MPI
-#ifdef __GFORTRAN__
-  call MPI_INIT_THREAD (MPI_THREAD_SINGLE, mpi_provided, mpi_err)
-#else
   call MPI_INIT_THREAD (MPI_THREAD_MULTIPLE, mpi_provided, mpi_err)
-#endif
   self%mode = mpi_provided
   call MPI_Comm_dup (mpi_comm_world, self%comm, mpi_err)
   call MPI_Comm_size (self%comm, mpi_size, mpi_err)
   call MPI_Comm_rank (self%comm, mpi_rank, mpi_err)
   mpi_master = (mpi_rank == 0)
   master = mpi_master
-  if (master) then
-    print 1, ' ==============================================================================='
-    !print 1, ' MPI initialized, mpi%size =', mpi_size
-  1 format(a,i7)
-    select case (mpi_provided)
-    case(MPI_THREAD_MULTIPLE)
-      print 1, ' MPI implementation has support for simultaneous MPI calls by different threads'
-    case(MPI_THREAD_SINGLE)
-      print 1, ' MPI implementation only has support for MPI calls in one thread at a time'
-    case(MPI_THREAD_FUNNELED)
-      print 1, ' MPI implementation only has support for MPI calls in master regions'
-    case(MPI_THREAD_SERIALIZED)
-      print 1, ' MPI implementation only has support for serial MPI calls by any thread'
-    case default
-      print 1, ' unknown MPI implementation'
-    end select
-  end if
   if (self%verbose > 1) then
     write (filename,'(a,i4.4,a)') 'rank_', mpi_rank, '.dat'
     open (output, file=filename, form='formatted', status='unknown')
@@ -246,6 +220,40 @@ SUBROUTINE init_mpi (self)
 END SUBROUTINE init_mpi
 
 !===============================================================================
+!> Print information about MPI library support
+!===============================================================================
+SUBROUTINE info (self)
+  class(mpi_t):: self
+#ifdef MPI
+  integer(8):: tag_ub
+  logical:: flag
+  !-----------------------------------------------------------------------------
+  call MPI_Comm_get_attr (MPI_COMM_WORLD, MPI_TAG_UB, tag_ub, flag, mpi_err)
+  if (.not. flag) then
+    tag_ub = 2**15
+  end if
+  self%max_tag = tag_ub
+  if (mpi%rank==0) then
+    select case (self%mode)
+    case(MPI_THREAD_MULTIPLE)
+      print 1, ' MPI implementation has support for simultaneous MPI calls by different threads'
+    1 format(a,i7)    
+    case(MPI_THREAD_SINGLE)
+      print 1, ' MPI implementation only has support for MPI calls in one thread at a time'
+    case(MPI_THREAD_FUNNELED)
+      print 1, ' MPI implementation only has support for MPI calls in master regions'
+    case(MPI_THREAD_SERIALIZED)
+      print 1, ' MPI implementation only has support for serial MPI calls by any thread'
+    case default
+      print 1, ' unknown MPI implementation'
+    end select
+    print '(" MPI tag max =",1p,g10.3," = 2**",i2)', &
+      real(tag_ub), nint(log(real(tag_ub))/log(2.))
+  end if
+#endif
+END SUBROUTINE info
+
+!===============================================================================
 SUBROUTINE end_mpi (self, label)
   class(mpi_t):: self
   character(len=*), optional:: label
@@ -258,8 +266,8 @@ SUBROUTINE end_mpi (self, label)
     end if
   end if
 #ifdef MPI
-  !write (io_unit%mpi,*) self%rank, wallclock(), 'calling MPI_Finalize'
-  !flush (io_unit%mpi)
+  write (io_unit%mpi,*) self%rank, wallclock(), 'calling MPI_Finalize'
+  flush (io_unit%mpi)
   if (mpi%mode == MPI_THREAD_MULTIPLE) then
     call MPI_Finalize (mpi_err)
   else
@@ -267,10 +275,10 @@ SUBROUTINE end_mpi (self, label)
     call MPI_Finalize (mpi_err)
     !$omp end critical (mpi_cr)
   end if
-  !write (io_unit%mpi,*) self%rank, wallclock(), 'returned from MPI_Finalize'
-  !flush (io_unit%mpi)
+  write (io_unit%mpi,*) self%rank, wallclock(), 'returned from MPI_Finalize'
+  flush (io_unit%mpi)
 #endif
-  !call exit        ! avoid "stop" which may produce one output line per process
+  call exit        ! avoid "stop" which may produce one output line per process
   call trace%end ()
 END SUBROUTINE
 
@@ -364,12 +372,12 @@ SUBROUTINE assert (self, message, code)
   integer code
   character (len=64):: codemsg
 !..............................................................................
-  if (code/=0) then
+  if (code /= 0) then
     write (codemsg,'(2x,a," error: code =",i10)') message, code
-    write (stderr,*)  'rank', mpi_rank, codemsg
+    write (stderr,*) 'mpi_t%assert: rank', mpi_rank, 'mesg:', codemsg
     flush (stderr)
-    write (io_unit%mpi,*) codemsg
-    flush (io_unit%mpi)
+    write (stdlog,*) 'mpi_t%assert: rank', mpi_rank, 'mesg:', codemsg
+    flush (stdlog)
   end if
 END SUBROUTINE assert
 

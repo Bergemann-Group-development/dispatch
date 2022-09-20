@@ -7,13 +7,14 @@ MODULE bbtrans_mod
   type :: bbtrans_type
     real(dp) :: nu0
     integer :: nnu ! number of frequencies in the line
-    real(dp) :: ga, gw1, gw2, gq ! line broadening (damping) constants
+    real(dp) :: ga=0, gw1=0, gw2=0, gq=0 ! line broadening (damping) constants
     real(dp) :: lower_ev, upper_g
     !real(dp) :: gf
     real(dp) :: Aji, Bji, Bij ! Einstein coefficients, Bij is the
                               ! transition from the lower to the upper
                               ! level
     logical :: active=.true., unsold
+    integer :: iso_idx=0 ! isotope index for lines in line list
   contains
     procedure :: profile => line_profile
     procedure :: damping => line_damping
@@ -30,46 +31,48 @@ MODULE bbtrans_mod
 contains
 
   !====================================================================================
-  SUBROUTINE line_profile(self, nu, vel_dop, doppler_factor, adamp, phi)
+  SUBROUTINE line_profile(self, q, vproj, inv_df, adamp, phi)
     class(bbtrans_type), intent(in) :: self
-    real(8), dimension(:), intent(in) :: nu
-    real(4), dimension(:,:,:), intent(in) :: vel_dop, doppler_factor, adamp
+    real(8), dimension(:), intent(in) :: q
+    real(4), dimension(:,:,:), intent(in) :: vproj, inv_df, adamp
     real(4), dimension(:,:,:,:), intent(inout) :: phi
     real(4), dimension(:,:,:), allocatable :: norm, psi, damp
     integer :: f
     !----------------------------------------------------------------------------------
-    allocate(norm, psi, damp, mold=doppler_factor)
-    norm = 1 / (self%nu0 * doppler_factor)
-    damp = adamp * norm * over_4pi
+    allocate(psi, damp, mold=inv_df)
+    damp = adamp * inv_df * over_4pi / self%nu0
     psi = psi_func(damp)
 
     !DIR$ FORCEINLINE
-    do f=1, size(nu)
-      phi(:,:,:,f) = nu(f)*norm - vel_dop
+    do f=1, size(q)
+      phi(:,:,:,f) = (q(f) - vproj) * inv_df
       phi(:,:,:,f) = voigt_function2(damp, phi(:,:,:,f), psi)
-      phi(:,:,:,f) = phi(:,:,:,f)*norm
+      phi(:,:,:,f) = phi(:,:,:,f)*inv_df
     end do 
   END SUBROUTINE line_profile
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  SUBROUTINE add_lte_opacities(self, nu, h4pi_nu, vel_dop, inv_df, EK_over_temp, inv_part, adamp, eta, chi)
+  SUBROUTINE add_lte_opacities(self, nu, vproj, inv_df, EK_over_temp, inv_part, adamp, eta, chi)
     class(bbtrans_type), intent(in) :: self
-    real(8), dimension(:), intent(in), contiguous :: nu, h4pi_nu
-    real(4), dimension(:,:,:), intent(in), contiguous :: vel_dop, inv_df, inv_part, adamp
+    real(8), dimension(:), intent(in), contiguous :: nu
+    real(4), dimension(:,:,:), intent(in), contiguous :: vproj, inv_df, inv_part, adamp
     real(8), dimension(:,:,:), intent(in), contiguous :: EK_over_temp
     real(4), dimension(:,:,:,:), intent(inout), contiguous :: eta, chi
     real(4), dimension(:,:,:), allocatable :: eta_fac, chi_fac, norm, damp, psi, phi
+    real(8), dimension(:), allocatable :: q
     real(4) :: ex, ni, nj, upper_ev
     integer :: i,j,k,f, m(4)
     integer, save :: itimer=0, itimer2=0
     !----------------------------------------------------------------------------------
     call trace%begin('bbtrans_type%add_lte_opacities', itimer=itimer)
-    allocate(eta_fac, chi_fac, norm, psi, damp, phi, mold=vel_dop)
+    allocate(eta_fac, chi_fac, norm, psi, damp, phi, mold=vproj)
+    allocate(q, mold=nu)
     m = shape(eta)
 
-    norm = 1 / self%nu0 * inv_df
-    damp = adamp * norm * over_4pi
+    q = nu / self%nu0 - 1
+    norm = inv_df / self%nu0 * over_4pi
+    damp = adamp * norm
     psi = psi_func(damp)
 
     upper_ev = self%lower_ev + H_E * self%nu0
@@ -95,9 +98,9 @@ contains
     
     !DIR$ FORCEINLINE
     do f=1, m(4)
-      phi = nu(f)*norm - vel_dop
+      phi = (q(f) - vproj) * inv_df
       phi = voigt_function2(damp, phi, psi)
-      phi = phi * h4pi_nu(f)
+      phi = phi * nu(f)
 
       do k=1, m(3)
       do j=1, m(2)
@@ -299,6 +302,9 @@ contains
     ! Van der Waals Broadening
     if(self%unsold) then
       adamp = adamp + self%gw1 * unsold_temp**0.3 * tothi
+    elseif (self%gw2 == 0) then
+      ! recipe 'W' Turbospectrum
+      adamp = adamp + self%gw1 * temp**0.3 * tothi
     else
       adamp = adamp + self%gw1 * unsold_temp**self%gw2 * tothi
     endif
@@ -322,7 +328,7 @@ contains
     integer :: i, j
     !----------------------------------------------------------------------------------
     j = nint(sqrt(self%upper_g / 2))
-    i = nint(sqrt(1 / (1./j**2 - self%nu0 * H_E / RYD)))
+    i = nint(sqrt(1 / (1./i**2 - self%nu0 * H_E / RYD)))
   
     call self%LinearStarkH(adamp,ne,i,j)
     call self%IonicH(adamp,temp,nh6,ne,i,j)
@@ -434,17 +440,21 @@ contains
     !----------------------------------------------------------------------------------
     ! compute van der waals broadening due to hydrogen
     ! following Barklem
+    self%unsold = .false.
     if(gv.ge.20.0) then
-      self%unsold = .false.
       sigma=int(gv)*2.80028e-21
       alpha=gv-int(gv)
       gx=2.0-alpha*0.5
       gx=gx-1.0
-      gammaf=1+(-.5748646+(.9512363+(-.6998588+ &
-      (.4245549-.1010678*gx)*gx)*gx)*gx)*gx
+      gammaf=1+(-.5748646+(.9512363+(-.6998588+(.4245549-.1010678*gx)*gx)*gx)*gx)*gx
 
       self%gw2 = 0.5*(1 - alpha)
       self%gw1 = (4.0/pi)**(alpha*0.5) * gammaf * 2.e10 * sigma * 10**(-12*self%gw2)
+    
+    elseif (gv < 0.0) then
+      ! recipe 'W' Turbospectrum
+      self%gw1 = 10**gv / 10000.**0.3
+      self%gw2 = 0.0
 
     elseif(gv.ne.0.0) then
       self%unsold = .true.

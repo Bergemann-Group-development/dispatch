@@ -7,6 +7,7 @@ module ray_patch_mod
   !USE list_mod
   USE mpi_mesg_mod
   USE halo_mod
+  USE patch_mod, only: header_t, n_header
   USE gpatch_mod
   USE link_mod
   USE task_mod
@@ -27,9 +28,9 @@ module ray_patch_mod
   USE os_mod
   !USE units_mod
   !USE scratch_mod
-  USE ray_mod, only:ray_type
+  USE ray_mod, only: ray_type
   USE m3d_patch_mod, only: m3d_patch_t, vec, wmu, long_vec, long_wmu, detailed_prints, &
-  converged, print_send, atom_update_counter
+  converged, print_send, atom_update_counter, hash_string
   USE mconst, only: cc
   implicit none
   private
@@ -57,56 +58,38 @@ module ray_patch_mod
     procedure :: pack
     procedure :: unpack
     procedure :: allocate_mesg
-    procedure :: ray_header_to_patch
-    procedure :: ray_patch_to_header
     procedure :: total_mesg_buffer_size
+    procedure :: init_nbors_hash
   end type ray_patch_t
 
   !-----------------------------------------------------------------------------
   integer, save:: verbose=0
-  !-----------------------------------------------------------------------------
-  ! Sequential header, for MPI and I/O
-  !-----------------------------------------------------------------------------
-  integer, public, save:: n_header = (14*4 + 4*8 + 5*8*3 + 1*8 + 2*8*8 + 1*4*8 + 2*4*3) / 4
-  type, public:: ray_header_t
-    sequence
-    integer:: n_header
-    integer:: n_data
-    integer:: id
-    integer:: status
-    integer:: rank
-    integer:: istep
-    integer:: iout
-    integer:: level
-    integer:: nt
-    integer:: nv                        ! number of frequencies
-    integer:: nw                        ! number of variables
-    integer:: it
-    integer:: nq=0
-    integer:: rank_steps=0
-    real(8):: time
-    real(8):: out_next
-    real(8):: print_next
-    real(8):: dtime
-    real(8):: position(3)
-    real(8):: velocity(3)
-    real(8):: size(3)
-    real(8):: box(3)                    ! the periodic wrapping size
-    real(8):: ds(3)
-    real(8):: send_time
-    real(8), dimension(8):: t
-    real(8), dimension(8):: dt
-    integer, dimension(8):: iit
-    integer:: n(3)=16                   ! convenience
-    integer:: ng(3)=2                   ! convenience
-  end type
-    
+  character(len=12), public, save :: formal_solver='linear'
+
 contains
 
 !===============================================================================
 SUBROUTINE ray_patch_pre_init (self)
   class(ray_patch_t), target :: self
+  integer :: iostat
+  logical, save :: first_time=.true.
+  integer, save :: itimer=0
+  namelist /formal_solver_params/ formal_solver
   ! ----------------------------------------------------------------------------
+  call trace%begin('ray_patch_t%pre_init', itimer=itimer)
+
+  if (first_time) then
+    rewind (io%input)
+    read (io%input, formal_solver_params, iostat=iostat)
+    if (iostat > 0) then
+      rewind (io%input)
+      read (io%input, formal_solver_params)
+    end if
+    call io%namelist_warning ('formal_solver_params', iostat)
+    write (io%namelist, formal_solver_params)
+    first_time = .false.
+  endif
+
   call self%m3d_patch_t%pre_init()
   
   if (self%out_ray .and. self%i_mu /= 0) then
@@ -122,12 +105,12 @@ SUBROUTINE ray_patch_pre_init (self)
 
   call self%check_topbot()
   call self%set_freq_indices()
+  call trace%end(itimer)
 END SUBROUTINE ray_patch_pre_init
 
 !===============================================================================
 SUBROUTINE ray_patch_init (self)
   class(ray_patch_t) :: self
-  integer :: f, p(3)
   real(8) :: offset
   ! ----------------------------------------------------------------------------
   if (self%is_set(bits%virtual)) then
@@ -136,7 +119,7 @@ SUBROUTINE ray_patch_init (self)
     self%origin(3) = self%origin(3) + offset
     self%size(3) = self%ds(3)
     self%n(3) = 1
-    self%ng(3) = 0
+    self%ng = 0
   endif
   call self%m3d_patch_t%init()
 END SUBROUTINE ray_patch_init
@@ -307,9 +290,12 @@ SUBROUTINE check_topbot (self)
   if (self%patch%boundaries%upper .and. self%dir <= 0) then
     self%boundaries%upper = .true.
     call self%boundaries%set(bits%zu)
-  elseif (self%ipos(3)==0 .and. self%dir >= 0) then
+    call self%set(bits%no_download)
+  endif
+  if (self%patch%boundaries%lower .and. self%dir >= 0) then
     self%boundaries%lower = .true.
     call self%boundaries%set(bits%zl)
+    call self%set(bits%no_download)
   endif
 END SUBROUTINE check_topbot
 
@@ -329,24 +315,25 @@ SUBROUTINE ray_nbor_relations(self, another, needed, needs_me, download)
       if (self%kind==another%kind) then
         if (self%is_upstream(another)) then
           needs_me = .false.
-          if (self%is_set(bits%virtual)) then
-            call self%set(bits%external)
-          endif
         elseif (another%is_upstream(self)) then
           needed = .false.
           download = .false.
-          if (self%rank /= another%rank .and. self%rank == mpi%rank) then
-            call self%set(bits%boundary)
-            call self%clear(bits%internal)
-          endif
         else
           needed = .false.; needs_me = .false.; download = .false.
         endif
       endif
-    class default
+    class is(m3d_patch_t)
       if (another%id /= self%m3d_parent%id) then
         needed = .false.; needs_me = .false.; download = .false.
+        if (associated(another%m3d_parent)) then
+          if (another%m3d_parent%id == self%m3d_parent%id) then
+            ! could be an atom_patch needed by net_opac
+            needed = .true.
+          endif
+        endif
       endif
+    class default
+      needed = .false.; needs_me = .false.; download = .false.
     end select
   endif
 
@@ -429,19 +416,19 @@ SUBROUTINE pack (self)
   class(ray_patch_t):: self
   !.............................................................................
   class(mesg_t), pointer:: mesg
-  type(ray_header_t):: header
+  type(header_t):: header
   integer:: n_buf, ibuf, iv, it, iw, iz
   real:: pt
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('ray_patch_t%ray_pack', itimer=itimer)
-  if ((self%verbose > 4 .or. self%print_update_info) .and. print_send) then
-    write(stdout, *) self%id, 'packing message on rank', mpi%rank
+  if ((self%verbose > 2 .or. self%print_update_info) .and. print_send) then
+    write(stdout, '(I6, A32, I3, A6, I6)') self%id, 'packing message on rank', & 
+                                      mpi%rank, 'tag=', self%mesg%tag
   endif
   !-----------------------------------------------------------------------------
   ! Allocate a task%mesg instance, mesg%reqs() and similar array
   !-----------------------------------------------------------------------------
-  call self%allocate_mesg()
   if (omp%nthreads > 1) then
     allocate (self%mesg%lock)
     call self%mesg%lock%init ('smsg')
@@ -453,7 +440,10 @@ SUBROUTINE pack (self)
   !-----------------------------------------------------------------------------
   ! Packing meta-data is a task-owner read operation, and does not need locking
   !-----------------------------------------------------------------------------
-  call self%ray_patch_to_header (header)
+  call self%patch_to_header (header)
+  if (converged .and. .not. self%out_ray) then
+    header%level = 0
+  endif
   ibuf = 1
   call anonymous_copy (n_header, header, mesg%buffer(ibuf))
   ibuf = ibuf + n_header
@@ -462,11 +452,11 @@ SUBROUTINE pack (self)
     !-----------------------------------------------------------------------------
     ! Copy the variables to the output buffer.
     !-----------------------------------------------------------------------------
-    iz = merge(self%ui(3), self%li(3), self%dir > 0)
+    iz = merge(self%n(3), 1, self%dir > 0)
     n_buf = self%total_mesg_buffer_size() / (self%nw*self%nv)
     do iw=1,self%nw
       do iv=1,self%nv
-        call anonymous_copy (n_buf, self%mem(:,:,iz,iv,self%it,iw), mesg%buffer(ibuf))
+        call anonymous_copy (n_buf, self%authority_mem(:,:,iz,iv,self%it,iw), mesg%buffer(ibuf))
         ibuf = ibuf + n_buf
       end do
     end do
@@ -484,32 +474,41 @@ END SUBROUTINE pack
 !> to the new time slot.
 !> FIXME: Consider replacing with mpi_buffer() calls
 !===============================================================================
-SUBROUTINE unpack (self, mesg)
+SUBROUTINE unpack (self, buffer)
   class(ray_patch_t):: self
-  class(mesg_t), pointer:: mesg
+  integer, pointer:: buffer(:)
   !.............................................................................
-  type(ray_header_t):: header
+  type(header_t):: header
   type(lock_t), pointer:: lock
+  real(8), dimension(3) :: size, position 
   integer:: n_buf, ibuf, iv, it, i, iw, iz
-  integer, dimension(:), pointer:: buffer
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! Compute size of buffer
   !-----------------------------------------------------------------------------
   call trace%begin ('ray_patch_t%ray_unpack', itimer=itimer)
   call self%set (bits%busy)
-  if ((self%verbose > 4 .or. self%print_update_info) .and. print_send) then
-    write(stdout, *) self%id, 'unpacking message on rank', mpi%rank
+  if ((self%verbose > 2 .or. self%print_update_info) .and. print_send) then
+    write(stdout, '(I6, A32, I3, A6, I6)') self%id, 'unpacking message on rank', & 
+                                      mpi%rank, 'tag=', self%mesg%tag
   end if
   self%unpack_time = wallclock()
-  buffer => mesg%buffer
   n_buf = self%total_mesg_buffer_size() / (self%nw*self%nv)
   !-----------------------------------------------------------------------------
   ! Copy buffer into sequenced header, to get the new %it slot
   !-----------------------------------------------------------------------------
   ibuf = 1
   call anonymous_copy (n_header, buffer(ibuf), header)
-  call self%ray_header_to_patch (header)
+  size = self%size
+  position = self%position
+  call self%header_to_patch (header)
+  self%size = size
+  self%position = position
+  if (header%level == 0 .and. .not. converged) then
+    converged = .true.
+    call self%init_level()
+    write(stdout, '(A, I3, A, I3)'), 'Converged message has been passed by MPI from rank', header%rank, ' to', mpi%rank
+  endif
   ibuf = ibuf + n_header
   if (.not. converged .or. self%out_ray) then
     call self%check_mem()
@@ -517,12 +516,11 @@ SUBROUTINE unpack (self, mesg)
     ! Copy array data from the buffer to the time slot, under time slot lock
     !-----------------------------------------------------------------------------
     lock => self%mem_lock(header%it)
-    !iz = merge(self%ui(3), self%li(3), self%dir > 0)
     iz=1
                                                           call lock%set ('unpack')
     do iw=1,self%nw
       do iv=1,self%nv
-        call anonymous_copy (n_buf, buffer(ibuf), self%mem(:,:,iz,iv,header%it,iw))
+        call anonymous_copy (n_buf, buffer(ibuf), self%authority_mem(:,:,iz,iv,header%it,iw))
         ibuf = ibuf + n_buf
       end do
     end do
@@ -548,192 +546,8 @@ SUBROUTINE unpack (self, mesg)
   call self%clear (bits%busy)
   self%wc_last = wallclock()
   !-----------------------------------------------------------------------------
-  ! Diagnostics
-  !-----------------------------------------------------------------------------
-  if (io%verbose > 1) then
-    write (io_unit%log,'(f12.6,3x,a,i7,2i4,2x,3l1,2i4,f8.4,f11.6)') &
-      wallclock(), 'patch_t%unpack: id, nq, BVS, nsnd, nrcv, latency, time =', &
-      self%id, mesg%sender, self%nq, &
-      self%is_set(bits%boundary), &
-      self%is_set(bits%virtual), &
-      self%is_set(bits%swap_request), &
-      mpi_mesg%sent_list%n, mpi_mesg%recv_list%n, self%latency, self%time
-    write (io_unit%log,1) &
-      'patch_t%unpack id, it, nq, time  after:', &
-      self%id, self%it, self%nq, self%time, &
-      self%is_set (bits%internal), &
-      self%is_set (bits%boundary), &
-      self%is_set (bits%virtual), &
-      self%is_set (bits%external), &
-      self%is_set (bits%swap_request), &
-      self%wc_last
-    1 format(a,3i6,f12.6,2x,5l1,f12.1)
-  end if
-  !-----------------------------------------------------------------------------
   call trace%end (itimer)
 END SUBROUTINE unpack
-
-!===============================================================================
-!> Copy he most important fields to a sequenced header, for communication and I/O
-!===============================================================================
-SUBROUTINE ray_patch_to_header (self, head)
-  class(ray_patch_t):: self
-  type(ray_header_t):: head
-  integer:: nt
-  !-----------------------------------------------------------------------------
-  head%n_header   = n_header
-  head%n_data     = product(self%gn)*self%nv
-  head%id         = self%id
-  head%status     = self%status
-  head%rank       = self%rank
-  head%istep      = self%istep
-  head%iout       = self%iout
-  head%level      = self%level
-  head%time       = self%time
-  head%out_next   = self%out_next
-  head%print_next = self%print_next
-  head%dtime      = self%dtime
-  head%position   = self%position
-  head%velocity   = self%velocity
-  head%size       = self%size
-  if (associated(self%mem)) then
-    head%nt       = self%nt
-  else
-    head%nt       = 0
-  endif
-  head%nv         = self%nv
-  head%nw         = self%nw
-  head%it         = self%it
-  nt              = self%nt
-  head%t(1:nt)    = self%t
-  head%dt(1:nt)   = self%dt
-  head%iit(1:nt)  = self%iit
-  head%nq         = shared%n_queue
-  head%rank_steps = self%rank_steps
-  head%send_time  = wallclock()
-  !
-  if (io%verbose > 1) &
-    write (io_unit%log,'(f12.6,3x,a,i7,i4,l3,2i4,f8.4)') &
-      wallclock(), 'ray_patch_to_header: id, nq =', self%id, &
-      self%nq, self%is_set(bits%swap_request), &
-      mpi_mesg%sent_list%n, mpi_mesg%recv_list%n
-END SUBROUTINE ray_patch_to_header
-
-!===============================================================================
-!> Copy he most important fields from a sequenced header, for communication and I/O
-!===============================================================================
-SUBROUTINE ray_header_to_patch (self, head)
-  class(ray_patch_t):: self
-  type(ray_header_t):: head
-  integer:: nt, new, i, save_bits, count
-  integer, save:: itimer=0
-  !-----------------------------------------------------------------------------
-  ! Swap the roles of boundary and virtual on incoming patches.  Also clear the
-  ! ready bit, which is an indicator of a patch being in the ready queue, which
-  ! an incoming patch is not.  By doing this here, we avoid having to do it in
-  ! a critical region, otherwise needed to protect an operation on the patch
-  !-----------------------------------------------------------------------------
-  call trace%begin ('ray_patch_t%ray_header_to_patch', itimer=itimer)
-  if (iand(head%status, bits%boundary) /= 0) then
-    head%status = ior(head%status, bits%virtual)
-    head%status = iand(head%status, not(bits%boundary))
-    if (io%verbose>2) &
-      write (io_unit%mpi, *) head%id, 'swapping to virtual'
-  else if (iand(head%status, bits%virtual) /= 0) then
-    head%status = ior(head%status, bits%boundary)
-    head%status = iand(head%status, not(bits%virtual))
-    if (io%verbose>2) &
-      write (io_unit%mpi, *) head%id, 'swapping to boundary'
-  end if
-  head%status = iand(head%status, not(bits%ready+bits%busy))
-  !-----------------------------------------------------------------------------
-  ! Lock task while modifying metadata
-  !-----------------------------------------------------------------------------
-  !-----------------------------------------------------------------------------
-  ! Except for the first and last appearance, istep should increase be one
-  !-----------------------------------------------------------------------------
-  if (head%id /= self%id) then
-    call io%abort('wrong message ID unpacked')
-  end if
-  if ((self%istep > 0) .and. (iand(head%status, bits%remove) == 0)) then
-    if (head%istep > self%istep+1) then
-      write(io_unit%log,1) &
-        'WARNING: early arrival in time reversal id, rank =', &
-        self%id, mpi%rank, head%istep, self%istep, head%time, self%time
-    1 format(a,4i6,2f12.6)
-      flush (io_unit%log)
-    else if (head%istep < self%istep+1) then
-      write(io_unit%log,1) &
-        'WARNING: late arrival in time reversal id, rank =', &
-        self%id, mpi%rank, head%istep, self%istep, head%time, self%time
-      flush (io_unit%log)
-    end if
-  end if
-  !-----------------------------------------------------------------------------
-  ! If the task is virtual, preserve bits%init_nbors and bits%update_status
-  ! across the task update
-  !-----------------------------------------------------------------------------
-                                        call self%lock%set ('header_to_patch')
-  if (self%is_set(bits%virtual)) then
-    save_bits = iand(self%status,bits%init_nbors+bits%update_status)
-    self%status = ior(self%status,save_bits)
-  else
-    self%status     = head%status
-  end if
-  self%id         = head%id
-  self%rank       = head%rank
-  self%istep      = head%istep
-  self%iout       = head%iout
-  self%level      = head%level
-  self%out_next   = head%out_next
-  self%print_next = head%print_next
-  self%dtime      = head%dtime
-  !self%position   = head%position
-  self%velocity   = head%velocity
-  !self%size       = head%size
-  self%rank_steps = head%rank_steps
-  self%it         = head%it
-  self%nv         = head%nv
-  self%nw         = head%nw
-  if (head%nt > 0) then
-    self%nt       = head%nt
-  elseif (.not. converged) then
-    converged = .true.
-    print *, 'Converged message has been passed by MPI from rank', head%rank
-  endif
-  self%nq         = head%nq
-  self%t          = head%t  (1:self%nt)
-  self%dt         = head%dt (1:self%nt)
-  self%iit        = head%iit(1:self%nt)
-  self%time       = head%time
-  !
-  !if (head%istep == 0) then
-  !  write (io_unit%log,'(1x,a,i6,f12.6,2x,9f12.6)') &
-  !    'patch_t%header_to_patch: id, time, t =', &
-  !    self%id, self%time, self%t
-  !  write (io_unit%log,'(1x,a,i6,2x,3i4,2x,9i4)') &
-  !    'patch_t%header_to_patch: id, istep, it, new, iit =', &
-  !    self%id, self%istep, self%it, self%new, self%iit
-  !end if
-  if (self%it > self%nt .or. self%it < 1) then
-    write (io_unit%log,*) 'header_to_patch ERROR: it =', self%it, self%iit(nt-1)
-    self%it = self%iit(nt-1)
-  end if
-  self%nq         = head%nq
-  self%latency    = wallclock() - head%send_time
-                                        call self%lock%unset ('header_to_patch')
-  !-----------------------------------------------------------------------------
-  ! Latency stats
-  !-----------------------------------------------------------------------------
-  !$omp atomic
-  timer%latency%max  = max(timer%latency%max,self%latency)
-  !$omp atomic
-  timer%latency%aver = timer%latency%aver+self%latency
-  !$omp atomic
-  timer%latency%n    = timer%latency%n+1
-  !.............................................................................
-  call trace%end (itimer)
-END SUBROUTINE ray_header_to_patch
 
 !===============================================================================
 !> Allocate a message structure, for communication
@@ -744,16 +558,27 @@ SUBROUTINE allocate_mesg (self)
   integer:: n_buf
   !-----------------------------------------------------------------------------
   call trace%begin ('ray_patch_t%allocate_mesg')
-  allocate (self%mesg)
-  mesg => self%mesg
-  mesg%id = self%id
+  allocate (mesg)
+  call io%bits_mem (storage_size(mesg), 1)
+  if (self%is_set(bits%boundary) .and. associated(self%mesg)) then
+    if (self%mesg%id /= self%id .and. self%mesg%id > 0) then
+      write (stdlog,*) &
+        'allocate_mesg: wrong task%id,mesg%id=', self%id, self%mesg%id
+      call trace%end ()
+      return
+    end if
+  end if
+  self%mesg => mesg
   call mesg%init
   !-----------------------------------------------------------------------------
   ! Store the standard buffer size (not valid for swap requests!)
   !-----------------------------------------------------------------------------
   n_buf = self%total_mesg_buffer_size()
   mesg%nbuf = n_header + n_buf
-  call os%allocate (mesg%buffer, mesg%nbuf)
+  if (associated(mesg%buffer)) then
+    call os%deallocate(mesg%buffer)
+  endif
+  call os%allocate(mesg%buffer, mesg%nbuf)
   call trace%end ()
 END SUBROUTINE allocate_mesg
 
@@ -762,7 +587,7 @@ FUNCTION total_mesg_buffer_size(self) result(n_buf)
   class(ray_patch_t):: self
   integer :: n_buf
   !-----------------------------------------------------------------------------
-  n_buf = product(self%n(:2) + 2*self%ng(:2))
+  n_buf = product(self%n(:2))
   if (kind(self%mem)==8) n_buf = n_buf*2
   n_buf = n_buf * self%nw * self%nv
 END FUNCTION total_mesg_buffer_size
@@ -793,5 +618,29 @@ FUNCTION check_in_bounds (self) result (cib)
   endif
   self%fcheck = f
 END FUNCTION check_in_bounds
+
+!===============================================================================
+!> Fast method to generate nbor lists in cases with very long task lists
+!===============================================================================
+SUBROUTINE init_nbors_hash (self, nbors)
+  class(ray_patch_t):: self
+  class(nbor_t), pointer:: nbors
+  !.............................................................................
+  class(task_t), pointer:: task
+  class(nbor_t), pointer:: nbor
+  integer, save:: itimer=0
+  integer :: i, key(4)
+  !-----------------------------------------------------------------------------
+  call trace%begin('ray_patch_t%init_nbors_hash', itimer=itimer)
+  !call self%m3d_patch_t%init_nbors_hash(nbors)
+
+  key(2:4) = self%key(2:4)
+  key(1) = self%key(1)-1
+  call self%check_nbor(key, nbors)
+
+  key(1) = self%key(1)+1
+  call self%check_nbor(key, nbors)
+  call trace%end (itimer)
+END SUBROUTINE init_nbors_hash
 
 end module ray_patch_mod

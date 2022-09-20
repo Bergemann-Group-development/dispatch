@@ -31,9 +31,9 @@ elemental real(dp) FUNCTION pk(self, teta)
 end FUNCTION
 
 !===============================================================================
-FUNCTION calc_f(self, teta, pe_over_fe) result(f)
+FUNCTION calc_f(self, pe_over_fe) result(f)
     class(molec_type), intent(in) :: self
-    real(dp), dimension(:,:,:) :: teta, pe_over_fe
+    real(dp), dimension(:,:,:) :: pe_over_fe
     real(dp), dimension(self%nx,self%ny,self%nz) :: f
     type(ion_type), pointer :: ion
     integer :: j
@@ -150,6 +150,4 @@ SUBROUTINE init_mol_dissociation (self)
         self%de = [       3.21 ]
     end select
 END SUBROUTINE init_mol_dissociation
-
-
 end module molecule_mod

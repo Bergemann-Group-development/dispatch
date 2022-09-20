@@ -10,16 +10,17 @@
 !>   task%set (bits%busy)
 !>   task%clear (bits%ready)
 !>   task_list%update
-!>     task%dnload to load guard zones
+!>     link%update to load guard zones
 !>     refine%check_current (task) to check for refinement
 !>     task%update to update the task%mem(task%new) values
 !>     task%rodate to update the task metadata (task%time, task%dtime)
 !>     lod_balanceA%check_queue (head)
 !>     task_list%send_to_vnbors (head)
+!>     task_list%check_nbors to check of any nbors have become ready
 !>     task_list%init_nbors (task%link) if requested by a status bit
-!>     task_list%update_status (head) if requested by a status bit¨
-!>   task_list%check_nbors to check of any nbors have become ready
-!>   task_list%heck_ready on itself, to see if the task is ready
+!>     task_list%update_status (head) if requested by a status bit
+!>     task%clear (bits%busy)
+!>     task_list%heck_ready on itself, to see if the task is ready
 !===============================================================================
 MODULE task_list_mod
   USE io_mod
@@ -32,6 +33,7 @@ MODULE task_list_mod
   USE mpi_mesg_mod
   USE list_mod
   USE link_mod
+  USE halo_mod
   USE task_mod
   USE patch_mod
   USE gpatch_mod
@@ -52,8 +54,11 @@ MODULE task_list_mod
   type, public, extends(task_mesg_t):: task_list_t
     logical:: syncing=.false.
     logical:: dispatcher=.false.
+    logical:: restarted=.false.
+    integer:: min_level=5, max_level=22    ! FIXME: hard-wired
     real(8):: sync_time=-1.0, sync_next=-1.0
     real(8):: update_time=0d0
+    real(8):: first_finished=0d0
   contains
     procedure:: init
     procedure:: initialize
@@ -64,16 +69,19 @@ MODULE task_list_mod
     procedure:: update
     procedure:: average
     procedure:: append_task_list
+    procedure:: prepend_task_list
     procedure:: print => print1
     procedure:: init_levelstats
     procedure:: init_task_list_pointers
     procedure:: init_bdries
-    procedure:: check_if_all_ranks_are_done
+    procedure:: make_parent_levels
   end type
-  real(8), save:: dead_mans_hand=60d0, first_finished=0d0
+  real(8), save:: dead_mans_hand=300d0
   logical, save:: check_nbor_consistency=.true.
   logical, save:: check_memory=.false.
-  logical, save:: check_queue=.false.
+  logical, save:: track_memory=.false.
+  logical, save:: check_queue=.true.
+  logical, save:: omp_queue=.false.
   public:: task2patch
   type(task_list_t), target:: task_list
 CONTAINS
@@ -90,21 +98,31 @@ SUBROUTINE init (self, name)
   real(8), save:: job_seconds=1d30
   real(8), save:: sync_time=0.0
   logical, save:: detailed_timer=.false.
-  integer, save:: verbose=0
+  logical, save:: use_hash=.true.
+  integer, save:: hash_min=100
+  integer, save:: debug=0
+  integer, save:: hash_table_size=128000
+  integer, save:: verbose=0, benchmark=0
   namelist /task_list_params/ verbose, job_seconds, dead_mans_hand, sync_time, &
-    detailed_timer, check_nbor_consistency, check_memory, check_queue
+    detailed_timer, check_nbor_consistency, check_memory, check_queue, &
+    omp_queue, use_hash, hash_min, hash_table_size, track_memory, debug
   logical:: first_time=.true.
   !-----------------------------------------------------------------------------
   ! An optional namelist can be used to turn debugging on
   !-----------------------------------------------------------------------------
   call trace%begin('task_list_t%init')
-  call self%list_t%init (name)
   if (first_time) then
     call io%lock%set ('task_list')
     if (first_time) then
       first_time = .false.
+      use_hash= self%use_hash
+      hash_table_size= self%hash_table_size
       rewind (io%input)
       read(io%input, task_list_params, iostat=iostat)
+      if (iostat > 0) then
+        rewind (io%input)
+        read(io%input, task_list_params)
+      end if
       call io%namelist_warning ('task_list_params', iostat)
       write (io%namelist, task_list_params)
       io%job_seconds = job_seconds
@@ -121,21 +139,18 @@ SUBROUTINE init (self, name)
   end if
   if (sync_time > 0.0) &
     self%sync_next = sync_time
+  self%debug = debug
+  self%use_hash = use_hash
+  self%hash_min = hash_min
+  self%hash_table_size = hash_table_size
   self%sync_time = sync_time
   self%verbose = verbose
   self%detailed_timer = detailed_timer
-  call self%hash_table%init ()
+  shared%benchmark = benchmark
+  self%list => self
+  call self%list_t%init (name)
   call trace_end
 END SUBROUTINE init
-
-!===============================================================================
-!> Deallocate related resources
-!===============================================================================
-SUBROUTINE dealloc (self)
-  class(task_list_t):: self
-  !.............................................................................
-  call self%hash_table%dealloc
-END SUBROUTINE dealloc
 
 !===============================================================================
 !> Initialize the task list, so it is ready to execute
@@ -164,14 +179,13 @@ SUBROUTINE init_levels (self)
   type(link_t), pointer:: link
   logical:: first_time=.true.
   integer, save:: levelmin, levelmax
-  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('task_list_t%init_levels', itimer=itimer)
+  call trace%begin ('task_list_t%init_levels')
   !-----------------------------------------------------------------------------
   ! Active task_list locking is needed only when AMR is on
   !-----------------------------------------------------------------------------
   self%lock%on = refine%on
-  write (stdlog,*) 'task_list%lock%on =', self%lock%on
+  if (self%verbose > 1) write (stdlog,*) 'task_list%lock%on =', self%lock%on
   !-----------------------------------------------------------------------------
   ! Loop to find the initial level interval (e.g. due to fixed mesh refinement)
   !-----------------------------------------------------------------------------
@@ -179,10 +193,8 @@ SUBROUTINE init_levels (self)
   link => self%head
   do while (associated(link))
     associate (patch => link%task)
-    select type (patch)
-    class is (patch_t)
-      call patch%init_level
-    end select
+    call patch%init_level
+    !patch%level = patch%key(1)
     if (first_time) then
       first_time = .false.
       levelmin = patch%level
@@ -213,14 +225,14 @@ SUBROUTINE init_levels (self)
   !-----------------------------------------------------------------------------
   call self%init_levelstats
   !-----------------------------------------------------------------------------
-  self%first(levelmin)%pointer => self%head
+  !self%first(levelmin)%pointer => self%head
   shared%levelmin = refine%levelmin
   shared%levelmax = refine%levelmax
   !.............................................................................
   write (io%output,'(1x,a,2i4)') &
     'AMR levels:  min, max = ', refine%levelmin, refine%levelmax
   call self%init_levelstats
-  call trace%end(itimer)
+  call trace%end()
 END SUBROUTINE init_levels
 
 !===============================================================================
@@ -252,7 +264,7 @@ SUBROUTINE startup (self)
   !-----------------------------------------------------------------------------
   !call self%init_bdries
   !call self%init_all_nbors
-  call self%count_status
+  call self%set_io_counts ()
   call timer%toc ('task_list_t: count_status')
   !-----------------------------------------------------------------------------
   ! Note that refine%init is called as part of self%init_levels
@@ -304,12 +316,12 @@ END SUBROUTINE startup
 !> Initialize the queue
 !===============================================================================
 SUBROUTINE init_queue (self)
+  USE omp_lib
   class(task_list_t):: self
   class(link_t), pointer:: link
-  integer:: i, i0, i1, i2
-  integer, save :: itimer
+  integer:: i, level
   !-----------------------------------------------------------------------------
-  call trace%begin ('task_list_t%init_queue', itimer=itimer)
+  call trace%begin ('task_list_t%init_queue')
   link => self%head
   do while (associated(link))
     call link%task%clear(bits%ready)
@@ -321,24 +333,30 @@ SUBROUTINE init_queue (self)
     link => link%next
   end do
   !-----------------------------------------------------------------------------
-  ! Run check_ready on the task list, but normally exit on first success
+  ! Run check_ready on the entire task list, OMP parallelized
   !-----------------------------------------------------------------------------
   if (check_queue) then
-    i2 = self%n/omp%nthreads + 1
-    !$omp parallel private(i,i0,i1,link) &
-    !$omp          shared(self,i2) default(none)
-    i0 = omp%thread*i2
-    i1 = i0 + i2
-    i = 0
-    link => self%head
-    do while (associated(link))
-      i = i+1                                             ! increment counter
-      if (i >= i0 .and. i<i1) then                        ! thread interval
-        call self%check_ready (link)
-      end if
-      link => link%next
-    end do
-    !$omp end parallel
+    if (omp_queue) then
+      do level=shared%levelmin,shared%levelmax
+        !$omp parallel default(shared)
+        call init_queue_parallel (self, level)
+        !$omp end parallel
+      end do
+    else
+      do level=shared%levelmin,shared%levelmax
+        link => self%first(level)%pointer
+        do while (associated(link))
+          if (link%task%level /= level) then
+            exit
+          end if
+          call self%check_ready (link)
+          link => link%next
+        end do
+      end do
+    end if
+  !-----------------------------------------------------------------------------
+  ! Optionally, find only the 1st task, and let check_nbors find the rest
+  !-----------------------------------------------------------------------------
   else
     link => self%head
     do while (associated(link))
@@ -350,8 +368,31 @@ SUBROUTINE init_queue (self)
   end if
   if (self%verbose > 0) &
     call self%print_queue_times ('init_queue')
-  call trace%end(itimer)
+  call trace%end()
 END SUBROUTINE init_queue
+
+!===============================================================================
+!===============================================================================
+SUBROUTINE init_queue_parallel (self, level)
+  class(task_list_t):: self
+  integer:: level
+  !.............................................................................
+  class(link_t), pointer:: link
+  integer:: i
+  !-----------------------------------------------------------------------------
+  i = 0
+  link => self%first(level)%pointer
+  do while (associated(link))
+    if (link%task%level /= level) then
+      exit
+    end if
+    if (mod(i,omp%nthreads)==omp%thread) then           ! thread selected
+      call self%check_ready (link)
+    end if
+    i = i+1
+    link => link%next
+  end do
+END SUBROUTINE init_queue_parallel
 
 !===============================================================================
 !> Execute the task list, updating it until it is empty.  With !$omp parallel here,
@@ -377,15 +418,14 @@ SUBROUTINE execute (self)
   end do
   call timer%print()
   call mpi_mesg%diagnostics(1)
-  write (io_unit%log,*) 'thread',omp%thread,' arrived'
-  flush (io_unit%log)
+  if (self%verbose > 1) then
+    write (stdlog,*) 'thread',omp%thread,' arrived'
+    flush (stdlog)
+  end if
   !$omp end parallel
   n = timer%n_update
   call timer%toc ('wall time', n, time=sec)
   call mpi%barrier ('end')
-  !if (io%master) &
-  !  write (io_unit%log,*) 'download_differ % =', 100.*download%n_differ/ &
-  !    max(1,(download%n_differ+download%n_same))
   call trace%end (itimer)
 END SUBROUTINE execute
 
@@ -393,14 +433,14 @@ END SUBROUTINE execute
 !> Common part of task list update, used by dispatchers
 !===============================================================================
 SUBROUTINE update (self, head, test)
-  class(task_list_t):: self
+  class(task_list_t), target:: self
   class(link_t), pointer:: head
   logical:: test
   !.............................................................................
   class(task_t), pointer:: task
   class(nbor_t), pointer:: nbor
-  real(8):: wc, levelstart  !, time
-  logical:: refined, derefined
+  real(8):: wc, levelstart, gb
+  logical:: refined, derefined, check_mem
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('task_list_t%update', itimer=itimer)
@@ -415,6 +455,12 @@ SUBROUTINE update (self, head, test)
   if (task%id==io%id_track) then
     task%track =  .not.task%track
     io%id_track = 0
+  end if
+  !--- check for memory leaks ---
+  check_mem = check_memory .and. task%time > 0d0
+  if (check_mem) then
+    call os%memory_info ('task_list_t%update begin', 1, 'begin')
+    gb = os%gb_thread(omp%thread)
   end if
   !-----------------------------------------------------------------------------
   ! If the task is frozen, make sure it is marked "not ready", and then return
@@ -438,7 +484,10 @@ SUBROUTINE update (self, head, test)
         wc, omp%thread, 'dnload', task%id, task%time, task%it, &
         task%istep, task%dtime
     end if
-    call head%update                                  ! halo update
+    call head%update ()                 ! halo update
+    if (check_mem) then
+      call os%memory_info ('halo%update', 1)
+    end if
   end if
   !-----------------------------------------------------------------------------
   ! Check if refinement is needed on the task; if so this will push new tasks
@@ -446,12 +495,13 @@ SUBROUTINE update (self, head, test)
   ! If the task is virtual, it will not be checked by this rank.
   !-----------------------------------------------------------------------------
   if (load_balance%is_on) then
-    call load_balance%lock%set ('refine')
+    call                                        load_balance%lock%set ('refine')
     call refine%check (self, head, refined, derefined)
-    call load_balance%lock%unset ('refine')
+    call                                      load_balance%lock%unset ('refine')
   else
     call refine%check (self, head, refined, derefined)
   end if
+  call memory_tracking ()
   !-----------------------------------------------------------------------------
   ! If the task was derefined it does not exist, so bail out
   !-----------------------------------------------------------------------------
@@ -485,14 +535,18 @@ SUBROUTINE update (self, head, test)
     if (offload%on) then
       call offload%update (task)                    ! add task to offload bunch
     else
-      call task%update                              ! update the task
-      if (check_memory) then                        ! check for leaks?
-        call os%memory_info ('task_list%update', 1) ! only print if increasing
+      if (task%is_set(bits%virtual)) then
+        ! call self%unpack ()
+      else
+        call task%update ()                           ! update the task
+      end if
+      if (check_mem) then                           ! check for leaks?
+        call os%memory_info ('task%update', 1)      ! only print if increasing
       end if
     end if
     call mulligan%check (self, head)                ! should nbors do a Mulligan?
     if (self%verbose > 1) then
-      associate (unit => merge (io_unit%log, io_unit%mpi, self%verbose > 1))
+      associate (unit => merge (stdlog, io_unit%mpi, self%verbose > 1))
       write (unit,'(f12.6,2x,a,i6,1p,2g14.6,l4)') &
         wallclock(), 'update:', task%id, task%time+task%dtime, &
         task%dtime, task%is_set (bits%boundary)
@@ -516,7 +570,7 @@ SUBROUTINE update (self, head, test)
   !$omp atomic
   mpi_mesg%n_update = mpi_mesg%n_update+1
   if (self%verbose > 1) &
-    write (io_unit%log,'(a,i4,2x,a,i7,2x,a,2x,a,i7,2x,a,1p,2g14.6,2x,a,2i5,l3)') &
+    write (stdlog,'(a,i4,2x,a,i7,2x,a,2x,a,i7,2x,a,1p,2g14.6,2x,a,2i5,l3)') &
     'thread', omp%thread, 'task', task%id, trim(task%type), &
     'step', task%istep, 'dt, time:', task%dtime, task%time, &
     'n, nq', self%n, self%nq, associated(head%nbor)
@@ -536,7 +590,7 @@ SUBROUTINE update (self, head, test)
   !-----------------------------------------------------------------------------
   !.............................................................................
   if (self%verbose > 0) &
-    write (io_unit%log,'(f12.6,1x,a,i6,2f12.6,l4)') &
+    write (stdlog,'(f12.6,1x,a,i6,2f12.6,l4)') &
       wallclock(), 'task_list_t%update: id,time,dtime,B =', &
       task%id, task%time, task%dtime, task%is_set(bits%boundary)
   !.............................................................................
@@ -545,14 +599,6 @@ SUBROUTINE update (self, head, test)
   call validate%check (head, task%mem(:,:,:,task%idx%d,task%it,1), ' after update')
   call task%info (self%nq, self%na)                   ! print info on stdout
   end select
-  if (io%log_sent > 0) then
-    !$omp critical (log_sent_cr)
-    call mpi_mesg%log_files ()
-    write (io_unit%sent,'(f16.6,i4,2x,a,i6,f16.6,l5)') &
-      wallclock(), omp%thread, 'upd', task%id, task%time, task%is_set(bits%boundary)
-    flush (io_unit%sent)
-    !$omp end critical (log_sent_cr)
-  end if
   !-----------------------------------------------------------------------------
   ! If the task is a boundary patch, first check if it should be given to
   ! another rank.  A patch that has been given to another rank becomes
@@ -561,34 +607,17 @@ SUBROUTINE update (self, head, test)
   ! while the patch itself is sent here, with bits%virtual+swap_reqest set.
   !-----------------------------------------------------------------------------
   if (load_balance%is_on) &
-    call load_balance%lock%set ('task_list')
+    call                                     load_balance%lock%set ('task_list')
   !call self%update_status (head)
   if (task%is_set(bits%boundary)) then                ! boundary patch?
     !!$omp atomic write
     !head%task%nq = self%nq                            ! make sure to pass on
     call load_balance%check_queue (head)              ! consider load balance
+    call head%task%log ('send2vnbs', 3)
     call self%send_to_vnbors (head)                   ! send to virtual nbors
   end if
   if (load_balance%is_on) &
-    call load_balance%lock%unset ('task_list')
-  !-----------------------------------------------------------------------------
-  ! If the task has bits%init_nbors set, call init_nbors(), which also clears
-  ! the bit, unless it is a boundary task
-  !-----------------------------------------------------------------------------
-  if (task%is_set (bits%init_nbors)) then
-    call self%init_nbors (head)                                         ! RULE D
-    !call self%recv_from_vnbors (head)                                   ! RULE F
-    if (self%verbose > 1) then
-      call head%info
-    else if (self%verbose > 0) then
-      write (io_unit%log,*) 'task_list_t%update: init_nbors for task', task%id
-    end if
-  end if
-  !call self%init_nbors2 (head)                                          ! RULE E
-  !-----------------------------------------------------------------------------
-  if (task%is_set (bits%update_status)) then
-    call self%update_status (head)
-  end if
+    call                                   load_balance%lock%unset ('task_list')
   !-----------------------------------------------------------------------------
   ! If this is boundary task, check all virtual nbors for incoming messages
   !-----------------------------------------------------------------------------
@@ -596,9 +625,9 @@ SUBROUTINE update (self, head, test)
   !  call self%recv_from_vnbors (head)
   !end if
   !-----------------------------------------------------------------------------
-  ! If the task has passed io%end_time, count finished tasks and ranks
+  ! If the task has passed io%end_time twice, set frozen bit and decrement na
   !-----------------------------------------------------------------------------
-  if (task%time > io%end_time) then
+  if (task%t(task%iit(max(1,task%nt-2))) >= io%end_time) then
     call end_game (self, task)
   end if
   !-----------------------------------------------------------------------------
@@ -617,124 +646,137 @@ SUBROUTINE update (self, head, test)
     self%syncing = .false.
   end if
   task%sync_time = self%sync_next
-  if (task%level <= size(timer%levelcost)) then
+  if (task%level >= timer%levelmin .and. task%level <= timer%levelmax) then
     !$omp atomic
     timer%levelcost(task%level) = &
     timer%levelcost(task%level) + (wallclock() - levelstart)
   end if
   !-----------------------------------------------------------------------------
-  ! The task should now again be checked, before it can be returned to the
-  ! queue, and its neighbors should also be checked for return to the queue.
-  ! If the task was turned into a virtual task by the load balance, its virtual
-  ! bit will prevent it being checked, but its nbors still need to be checked.
-  ! The busy bit should not be cleared until after check_nbors, in case the
-  ! task itself will be rescheduled
+  ! Common part of post_update processing on CPUs
   !-----------------------------------------------------------------------------
-  call task%clear (bits%ready)
-  if (.not.offload%on) then
-    call self%check_nbors (head)
-    call task%clear (bits%busy)
+  if (.not. offload%on) then
+    call self%post_update (head)
+  end if
+  !--- check for memory leaks ---
+  if (check_mem) then
+    call os%memory_info ('task_list%update end', 1, 'end')
   end if
   !.............................................................................
-  omp%thread_task = -1
   call trace%end (itimer)
-  return
+contains
+  !=============================================================================
+  subroutine memory_tracking
+    integer, save:: n_refine=0, n_derefine=0
+    !---------------------------------------------------------------------------
+    if (track_memory .and. (derefined .or. refined)) then
+      !-------------------------------------------------------------------------
+      ! Start memory tracking at the first derefine, and stop after at least
+      ! two derefine and refine update cycles.
+      !-------------------------------------------------------------------------
+      if (derefined) then
+        if (n_derefine == 0) then
+          os%verbose = 2
+          io_unit%do_trace = .true.
+          call task%log ('mem tracking on')
+          write (stderr,*) 'turning on mem tracking'
+          write (stdlog,*) 'turning on mem tracking'
+          n_refine = 0  
+        end if
+        n_derefine = n_derefine + 1
+      end if
+      if (refined) n_refine = n_refine + 1
+      if (os%verbose == 2) then
+        if (n_derefine > 2 .and. n_refine > 2) then
+          call task%log ('mem tracking off')
+          write (stderr,*) 'turning off mem tracking'
+          write (stdlog,*) 'turning off mem tracking'
+          os%verbose = 0
+          io_unit%do_trace = .false.
+        end if
+      end if
+    end if
+  end subroutine
 END SUBROUTINE update
 
 !===============================================================================
 !> Task that pass the end_time are flagged as finished, but continue updating,
 !> while load balancing and refinement are turned off.  The number of tasks
 !> that have finished is counted, and when the number reaches the number of
-!> active tasks the MPI end_counter is incremented from this rank.  When all
-!> ranks have incremented the end_counter, AND have also finished their
-!> contributions to any active output, the timer%done flag is set, which causes
-!> exit from the event loop in the dispatcher, and the code exits.
+!> active tasks the timer%done flag is set, which causes exit from the event
+!> loop in the dispatcher.
 !===============================================================================
 SUBROUTINE end_game (self, task)
   class(task_list_t):: self
   class(task_t), pointer:: task
-  integer:: end_count, io_count, na
+  class(link_t), pointer:: link
+  real(8):: time
+  integer:: end_count, n, ignore
+  integer, save:: count=0
   !-----------------------------------------------------------------------------
+  ! Ignore tasks that do not generate output (e.g. RT tasks)
+  !-----------------------------------------------------------------------------
+  !if (task%is_clear (bits%has_output)) return
   call trace%begin ('task_list_t%end_game')
+  end_count = mpi%end_counter%update(0)
   !.............................................................................
   if (task%finished) then
-    call task%log ('finished')
-    !---------------------------------------------------------------------------
-    ! If verbose is non-zero, turn on more
-    !---------------------------------------------------------------------------
-    if (self%verbose > 0) then
-      if (io%verbose /= 2) then
-        call io%lock%set
-        self%verbose = 2
-        io%verbose = 2
-        call io%lock%unset
-      end if
-    end if
-    !---------------------------------------------------------------------------
-    ! Count tasks that have gone past io%end_time with both task%time and
-    ! task%out_next, and increment mpi%end_counter until done
-    !---------------------------------------------------------------------------
-    if (min(task%time,task%out_next) > io%end_time .or. .not.io%do_output) then
-      !$omp atomic update
-      self%nfinished = self%nfinished+1                                 ! count finished tasks
-      call self%check_if_all_ranks_are_done(timer%done)
-    end if
-    call task%set (bits%frozen)
-    !---------------------------------------------------------------------------
-    ! Check dead_mans_hand
-    !---------------------------------------------------------------------------
-    if (first_finished > 0d0) then
-      end_count = mpi%end_counter%update(0)
-      io_count = io%counter%update(0)
-      if (wallclock() > first_finished + dead_mans_hand) then
-        call io%warning ('dead_mans_hand time expired -- run stopping')
-        write (io_unit%mpi,'(1x,a,a,5i6,1p,2g12.4,l3)') &
-          'task_list_t%end_game, dead_mans_hand: ', &
-          'count, end_count, io_count, io%nwrite, io%ntask, times =', &
-          self%nfinished, end_count, io_count, io%nwrite, io%ntask, &
-          wallclock(), first_finished + dead_mans_hand, timer%done
-        call dead_mans_hand_list (self)
-        !$omp atomic write
-        timer%done = .true.
-      else
-        write (io_unit%mpi,'(1x,a,a,5i6,1p,2g12.4,l3)') &
-          'task_list_t%end_game, dead_mans_hand: ', &
-          'count, end_count, io_count, io%nwrite, io%ntask, times =', &
-          self%nfinished, end_count, io_count, io%nwrite, io%ntask, &
-          wallclock(), first_finished + dead_mans_hand, timer%done
-      end if
-    end if
+    call task%log ('already finished')
   else
     !---------------------------------------------------------------------------
     ! If this is the first time this task%time is larger than end_time, start
     ! the first_finished clock, increment the task finished count, and when
     ! that reaches the number of active tasks, increment the MPI counter also
     !---------------------------------------------------------------------------
-    call self%lock%set ('finished')
     task%finished = .true.
-    na = self%na
-    if (self%na /= na) &
-      write (io_unit%mpi,*) 'task_list_t%end_game: na revised', na, self%na
-    if (first_finished == 0.0) then
+    !$omp atomic update
+    count = count+1                                 ! count finished tasks
+    !---------------------------------------------------------------------------
+    ! Count the actual number of active tasks, rather then rely on self%na
+    !---------------------------------------------------------------------------
+    call                                              self%lock%set ('end game')
+    n = 0
+    ignore = bits%static + bits%virtual + bits%external + bits%remove
+    link => self%head
+    do while (associated(link))
+      if (link%task%is_clear (ignore)) then
+        n = n+1
+      end if
+      link => link%next
+    end do
+    call                                            self%lock%unset ('end game')
+    !---------------------------------------------------------------------------
+    ! Count the number of ranks that have finished -- done when all have
+    !---------------------------------------------------------------------------
+    self%nfinished = count
+    if (count >= n) then
+      end_count = mpi%end_counter%update(+1)
+    else
+      end_count = mpi%end_counter%update(0)
+    end if
+    !$omp atomic write
+    timer%done = (end_count >= mpi%size)
+    !---------------------------------------------------------------------------
+    ! The first task that finishes sets the first_finished wallclock() time
+    !---------------------------------------------------------------------------
+    call self%lock%set ('finished')
+    if (self%first_finished == 0d0) then
+      self%first_finished = wallclock()             ! cf. dispatcher
       call load_balance%set (active=.false.)        ! turn off load balancing
       refine%on = .false.                           ! turn off refinement
-      first_finished = wallclock()                  ! cf. dispatcher
       write (stdout,'(a,1p,g12.4)') &
-        'first finish at run time =', first_finished
+        ' first finish at run time =', self%first_finished
       write (stdlog,'(a,1p,g12.4)') &
-        'first finish at run time =', first_finished
+        ' first finish at run time =', self%first_finished
     end if
     call self%lock%unset ('finished')
   end if
   !.............................................................................
   if (self%verbose > 0) then
-    end_count = mpi%end_counter%update(0)
-    io_count = io%counter%update(0)
-    write (io_unit%mpi,'(f9.3,2x,2a,i6,3f12.6,6i6,2l3)') &
+    write (io_unit%mpi,'(f9.3,1x,2a,i5,3f12.6,5i5,1x,2l1)') &
       wallclock(), 'task_list_t%end_game: ', &
-      'id,time,count,na,end_count,io_count,io%nwrite,io%ntask,done=', &
-      task%id, task%time, task%out_next, io%end_time, self%nfinished, self%na, &
-      end_count, io_count, io%nwrite, io%ntask, task%finished, timer%done
+      'id,time,count,na,end_count,io%nwrite,io%ntask,done=', &
+      task%id, task%time, task%out_next, io%end_time, count, self%na, &
+      end_count, io%nwrite, io%ntask, task%finished, timer%done
   end if
   call trace%end ()
 END SUBROUTINE end_game
@@ -827,6 +869,20 @@ SUBROUTINE append_task_list (self, task_list)
 END SUBROUTINE append_task_list
 
 !===============================================================================
+!> Append a task list to self
+!===============================================================================
+SUBROUTINE prepend_task_list (self, task_list)
+  class (task_list_t):: self
+  class (task_list_t), pointer:: task_list
+  class (list_t), pointer:: list
+  !-----------------------------------------------------------------------------
+  call trace%begin ('task_list_t%prepend_task_list')
+  list => task_list
+  call self%prepend_list (list)
+  call trace%end()
+END SUBROUTINE prepend_task_list
+
+!===============================================================================
 !> Print a table with task id and all nbors
 !===============================================================================
 SUBROUTINE print1 (self, label)
@@ -870,9 +926,9 @@ SUBROUTINE init_levelstats (self)
   call trace%begin ('task_list_t%init_levelstats')
   call io%lock%set ('task_list_t%init_levelstats')
   if (first_time) then
-    allocate (timer%levelpop  (refine%levelmin:refine%levelmax))
     timer%levelmin = refine%levelmin
     timer%levelmax = refine%levelmax
+    call timer%allocate ()
     timer%levelpop = 0
     link => self%head
     do while (associated(link))
@@ -933,7 +989,7 @@ SUBROUTINE init_bdries (self)
     patch => link%task
     select type (patch)
     class is (gpatch_t)
-      call patch%init_bdries
+      call link%task%init_bdries
     end select
     self%lc  = min(self%lc,  link%task%position)
     self%uc  = max(self%uc,  link%task%position)
@@ -958,24 +1014,145 @@ contains
 END SUBROUTINE init_bdries
 
 !===============================================================================
-SUBROUTINE check_if_all_ranks_are_done (self, done)
-  class(task_list_t) :: self
-  integer :: end_count=0
-  logical, save :: first_time=.true.
-  logical :: done
+!> Make all levels down to where the size is equal to the task list size.
+!> At entry, the task list is assumed to be sorted by level, starting with
+!> levelmin.  Each iteration creates task on the next lower level, with the
+!> new tasks being in practice prepended to existing task (because they have
+!> a lower level).  This means they will be included in the next level sweep,
+!> until the process is complete.
+!===============================================================================
+SUBROUTINE make_parent_levels (self)
+  class(task_list_t):: self
+  class(link_t), pointer:: link
+  class(task_t), pointer:: task
+  real(8):: size(3)
   !-----------------------------------------------------------------------------
-  if (self%nfinished >= self%na) then
-    if (first_time) then
-      first_time = .false.
-      end_count = mpi%end_counter%update(+1)
-    else
-      end_count = mpi%end_counter%update(0)
-    endif
-  else
-    first_time = .true.
+  call trace%begin('list_t%make_parent_level')
+  !-----------------------------------------------------------------------------
+  ! Make missing parent levels
+  !-----------------------------------------------------------------------------
+  shared%levelroot = shared%levelmin
+  call make_parent_level (self, size)
+  do while (all(size < task_list%size*0.9))
+    call make_parent_level (self, size)
+  end do
+  !.............................................................................
+  if (self%verbose > 0) then
+    link => self%head
+    do while (associated(link))
+      if (associated (link%task%parent)) then
+        print '(2(i6,":",i2.2,3i3))', link%task%id, link%task%key, &
+          link%task%parent%id, link%task%parent%key
+      else
+        print '(i6,":",i2.2,3i3)', link%task%id, link%task%key
+      end if
+      link => link%next
+    end do
   end if
-  !$omp atomic write
-  done = (end_count >= mpi%size)
-END SUBROUTINE check_if_all_ranks_are_done
+  call self%count_status ()
+  call self%set_io_counts ()
+  !-----------------------------------------------------------------------------
+  ! Add nbor lists to the new tasks
+  !-----------------------------------------------------------------------------
+  link => self%head
+  do while (associated(link))
+    if (link%task%level <= shared%levelmin+1) then
+      call self%init_nbors (link)
+      call link%info ('make_parent_levels')
+      call link%update (all_tgt=.true.)
+      ! task => link%task
+      ! select type (task)
+      ! class is (patch_t)
+      !   call task%stats ('make_parent_levels', verbose=2)
+      ! end select
+    end if
+    link => link%next
+  end do
+  call trace%end ()
+END SUBROUTINE make_parent_levels
+
+!===============================================================================
+!> Make lower level parent tasks
+!===============================================================================
+SUBROUTINE make_parent_level (self, size)
+  class(task_list_t):: self
+  real(8):: size(3)
+  !.............................................................................
+  class(link_t), pointer:: link, parent_link
+  class(task_t), pointer:: task, parent_task
+  class(*), pointer:: ptr
+  integer:: level, key(4), tid, pid
+  real(8):: position(3)
+  !-----------------------------------------------------------------------------
+  call trace%begin('list_t%make_parent_level')
+  size = huge(1.)
+  key = -99
+  !-----------------------------------------------------------------------------
+  ! Loop over existing levelmin tasks, creating their parent tasks
+  !-----------------------------------------------------------------------------
+  link => self%head
+  do while (associated(link))
+    task => link%task
+    tid = task%id
+    level = link%task%level
+    if (level == shared%levelroot) then
+      if (.not.associated(link%parent)) then
+        size = task%size*shared%refine_ratio
+        key = task%hash_key (level=level-1, size=size)     ! hash_key call overloadable at all levels
+        call self%hash_table%get (key, parent_link)
+        if (associated(parent_link)) then
+          pid = parent_task%id
+          link%parent => parent_link
+          task%parent => parent_link%task
+        else
+          allocate (parent_task, source=task)
+          allocate (parent_link, source=link)
+          call parent_task%reset ()
+          call parent_link%reset_link ()
+          link%parent => parent_link
+          task%parent => parent_task
+          parent_link%task => parent_task
+          select type (parent_task)
+          class is (gpatch_t)
+            parent_task%link => parent_link
+            select type (task)
+            class is (gpatch_t)
+              parent_task%task_list => task%task_list
+            end select
+          end select
+          call parent_link%init ()
+          parent_task%size = size
+          parent_task%key = key
+          position = self%position + key(2:4)*size/2d0
+          parent_task%position = position
+          call parent_task%pre_init ()
+          call parent_task%init ()
+          parent_task%level = level-1
+          key = parent_task%hash_key ()      ! hash_key call overloadable (??) at all levels
+          !---------------------------------------------------------------------
+          ! If this task is at the root-grid level, mark it as such
+          !---------------------------------------------------------------------
+          if (all(size > self%size*0.9)) then
+            call parent_task%set (bits%root_grid)
+            parent_task%periodic = .true.
+          end if
+          !---------------------------------------------------------------------
+          ! This puts new tasks first at their level, hence before existing ones
+          !---------------------------------------------------------------------
+          call self%add_by_level (parent_link)
+        end if
+      end if
+    end if
+    link => link%next
+  end do
+  !-----------------------------------------------------------------------------
+  ! If any new tasks created, adjust levelmin
+  !-----------------------------------------------------------------------------
+  if (key(1) > -99) then
+    shared%levelroot = key(1)
+  end if
+  !.............................................................................
+  call trace%end ()
+END SUBROUTINE make_parent_level
 
 END MODULE task_list_mod

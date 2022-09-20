@@ -3,11 +3,16 @@ module element_mod
     use op_math_mod
     use ion_mod
     implicit none
+    type isotope_type
+        integer  :: iso
+        real(dp) :: mass, f
+    end type isotope_type
 
     type :: element_type
         integer :: np, nion, nmolec, mcount, nx, ny, nz
         real(dp) :: awgt, abund
         type(ion_type), allocatable :: ions(:)
+        class(isotope_type), allocatable :: isotope(:)
         !type(mol_pointer_t), allocatable :: molecules(:)
         integer :: active
         real(dp), dimension(:,:,:), allocatable :: fil, n

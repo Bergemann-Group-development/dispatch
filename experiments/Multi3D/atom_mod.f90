@@ -6,6 +6,8 @@ MODULE atom_mod
     USE trans_mod
     USE mmath, only: refsor, unista
     USE op_math_mod, only: searchsorted, lineq, lineq_no_pivot
+    USE ion_mod, only: ion_type
+    USE element_mod, only: element_type
     USE os_mod
     USE trace_mod
     USE spectrum_mod, only: spectrum_type
@@ -38,7 +40,7 @@ MODULE atom_mod
         integer :: nlevel ! number of levels
         integer :: nprd=0 ! number of PRD transitions
         
-        character(len=20) :: id    ! atom id string 
+        character(len=3) :: id    ! atom id string 
         character(len=20) :: crout ! which collisional SUBROUTINE to use 
    
         character(len=20), dimension(:), allocatable :: label ! level label
@@ -78,7 +80,7 @@ MODULE atom_mod
         logical :: stiff 
         
      contains
-        procedure :: add_line_opacities
+        !procedure :: add_line_opacities
         procedure :: add_continuum_opacities
         procedure :: full_preconditioning
         procedure :: self_cont_preconditioning
@@ -178,67 +180,67 @@ MODULE atom_mod
      END SUBROUTINE add_continuum_opacities
      !------------------------------------------------------------------------------------
   
-     !====================================================================================
-     SUBROUTINE add_line_opacities(self, fs_patch, fe_patch, nu, temp, vproj, chi, eta)
-        class(atom_type), intent(in), target :: self
-        integer, intent(in) :: fs_patch, fe_patch
-        real(8), dimension(:), intent(in) :: nu
-        real(4), dimension(:,:,:), intent(in) :: temp, vproj
-        real(4), dimension(:,:,:,:), intent(inout) :: chi, eta
-        real(4), dimension(:,:,:,:), allocatable, target :: scratch_phi
-        real(4), dimension(:,:,:,:), pointer :: phi
-        real(4), dimension(:,:,:), allocatable :: vel_dop
-        real(8), dimension(:), allocatable :: hnu_4pi
-        class(line_type), pointer :: line
-        integer :: i, fcs, fce, fs, fe, nx, ny, nz, ffs, ffe, f, p(3)
-        logical :: skip
-  
-        ! all_chi and all_eta only range from fs:fe
-        ! nu however contains all frequencies from atom
-  
-        fcs = max(minval(self%line%ired),  fs_patch)
-        fce = min(maxval(self%line%iblue), fe_patch)
-  
-        if (fcs >= fe_patch) return
-        if (fce <= fs_patch) return
-  
-        nx = size(temp,1)
-        ny = size(temp,2)
-        nz = size(temp,3)
-  
-        allocate(hnu_4pi(fcs:fce))
-        allocate(scratch_phi(nx,ny,nz,fcs:fce))
-  
-        hnu_4pi = h_4pi * nu(fcs:fce)
-        vel_dop = (1 + vproj) / self%doppler_factor
-  
-        do i=1, self%nline
-           line => self%line(i)
-           call line%check_range(fcs,fce,fs,fe,skip)
-           if (skip) cycle
-        
-           ffs = fs-fs_patch+1
-           ffe = fe-fs_patch+1
-  
-           phi => scratch_phi(:,:,:,fs:fe)
-  
-           call line%opacities(nu(fs:fe), hnu_4pi(fs:fe), self%n, vel_dop, self%doppler_factor, phi, eta(:,:,:,ffs:ffe), chi(:,:,:,ffs:ffe))
-  
-           !if (self%fcheck >= fs .and. self%fcheck <= fe) then
-           !   p(:) = self%pcheck
-           !   f = self%fcheck
-           !   print *, i, line%i, line%j, 'chi line'
-           !   print '(8(ES15.7))', chi(p(1),p(2),p(3),f-fs_patch+1), &
-           !             scratch_phi(p(1),p(2),p(3), f) &
-           !          * (line%Bij * self%n(p(1),p(2),p(3),line%i) &
-           !          -  line%Bji * self%n(p(1),p(2),p(3),line%j)), &
-           !          scratch_phi(p(1),p(2),p(3), f), &
-           !          self%n(p(1),p(2),p(3),line%i), &
-           !          self%n(p(1),p(2),p(3),line%j), nu(f)
-           !endif
-        end do
-     END SUBROUTINE add_line_opacities
-     !------------------------------------------------------------------------------------
+!     !====================================================================================
+!     SUBROUTINE add_line_opacities(self, fs_patch, fe_patch, nu, temp, vproj, chi, eta)
+!        class(atom_type), intent(in), target :: self
+!        integer, intent(in) :: fs_patch, fe_patch
+!        real(8), dimension(:), intent(in) :: nu
+!        real(4), dimension(:,:,:), intent(in) :: temp, vproj
+!        real(4), dimension(:,:,:,:), intent(inout) :: chi, eta
+!        real(4), dimension(:,:,:,:), allocatable, target :: scratch_phi
+!        real(4), dimension(:,:,:,:), pointer :: phi
+!        real(4), dimension(:,:,:), allocatable :: vel_dop
+!        real(8), dimension(:), allocatable :: hnu_4pi
+!        class(line_type), pointer :: line
+!        integer :: i, fcs, fce, fs, fe, nx, ny, nz, ffs, ffe, f, p(3)
+!        logical :: skip
+!  
+!        ! all_chi and all_eta only range from fs:fe
+!        ! nu however contains all frequencies from atom
+!  
+!        fcs = max(minval(self%line%ired),  fs_patch)
+!        fce = min(maxval(self%line%iblue), fe_patch)
+!  
+!        if (fcs >= fe_patch) return
+!        if (fce <= fs_patch) return
+!  
+!        nx = size(temp,1)
+!        ny = size(temp,2)
+!        nz = size(temp,3)
+!  
+!        allocate(hnu_4pi(fcs:fce))
+!        allocate(scratch_phi(nx,ny,nz,fcs:fce))
+!  
+!        hnu_4pi = h_4pi * nu(fcs:fce)
+!        vel_dop = (1 + vproj) / self%doppler_factor
+!  
+!        do i=1, self%nline
+!           line => self%line(i)
+!           call line%check_range(fcs,fce,fs,fe,skip)
+!           if (skip) cycle
+!        
+!           ffs = fs-fs_patch+1
+!           ffe = fe-fs_patch+1
+!  
+!           phi => scratch_phi(:,:,:,fs:fe)
+!  
+!           call line%opacities(nu(fs:fe), hnu_4pi(fs:fe), self%n, vel_dop, self%doppler_factor, phi, eta(:,:,:,ffs:ffe), chi(:,:,:,ffs:ffe))
+!  
+!           !if (self%fcheck >= fs .and. self%fcheck <= fe) then
+!           !   p(:) = self%pcheck
+!           !   f = self%fcheck
+!           !   print *, i, line%i, line%j, 'chi line'
+!           !   print '(8(ES15.7))', chi(p(1),p(2),p(3),f-fs_patch+1), &
+!           !             scratch_phi(p(1),p(2),p(3), f) &
+!           !          * (line%Bij * self%n(p(1),p(2),p(3),line%i) &
+!           !          -  line%Bji * self%n(p(1),p(2),p(3),line%j)), &
+!           !          scratch_phi(p(1),p(2),p(3), f), &
+!           !          self%n(p(1),p(2),p(3),line%i), &
+!           !          self%n(p(1),p(2),p(3),line%j), nu(f)
+!           !endif
+!        end do
+!     END SUBROUTINE add_line_opacities
+!     !------------------------------------------------------------------------------------
   
      !====================================================================================
      SUBROUTINE full_preconditioning(self, fs, temp, Ieff, Psi, gamma_ij, gamma_ji, idx_map, lines, lin_idx_map)
@@ -623,208 +625,206 @@ MODULE atom_mod
    END SUBROUTINE self_line_preconditioning
    !------------------------------------------------------------------------------------
   
-     !====================================================================================
-     SUBROUTINE solve_stat_equilibrium (self, temp, ne, totn, n, nstar, nh, gamma_ij, gamma_ji, cswitch, check_NaN)
-        class(atom_type), target :: self
-        class(transition_type), pointer :: trans
-        real(4), intent(in) :: temp, ne, totn
-        real(4), dimension(:), intent(in) :: nh
-        real(8), dimension(:), intent(in) :: gamma_ij, gamma_ji
-        real(4), dimension(:), intent(in) :: nstar
-        real(4), dimension(:), intent(inout) :: n
-        integer, intent(in) :: cswitch
-        logical, intent(in) :: check_NaN
-        integer :: kr, pos, i, j
-        real(8) :: tmax_update =1.0d7
-        integer, save :: itimer=0
-        !------------------------------------------------------------------------------------
-        if (temp > tmax_update) then
-           return !self%e = 1.0d0
-        endif
-  
-        self%w=0.0d0
-        self%e=0.0d0
-        
-        ! Add radiative rates to W
-        do kr=1, self%nrad
-            if (kr <= self%nline) then
-               i = self%line(kr)%i
-               j = self%line(kr)%j
-            else
-               i = self%cont(kr-self%nline)%i
-               j = self%cont(kr-self%nline)%j
+   !====================================================================================
+   SUBROUTINE solve_stat_equilibrium (self, temp, ne, totn, n, nstar, nh, gamma_ij, gamma_ji, cswitch, check_NaN)
+      class(atom_type), target :: self
+      class(transition_type), pointer :: trans
+      real(4), intent(in) :: temp, ne, totn
+      real(4), dimension(:), intent(in) :: nh
+      real(8), dimension(:), intent(in) :: gamma_ij, gamma_ji
+      real(4), dimension(:), intent(in) :: nstar
+      real(4), dimension(:), intent(inout) :: n
+      integer, intent(in) :: cswitch
+      logical, intent(in) :: check_NaN
+      integer :: kr, pos, i, j
+      real(8) :: tmax_update =1.0d7
+      integer, save :: itimer=0
+      !------------------------------------------------------------------------------------
+      if (temp > tmax_update) then
+         return !self%e = 1.0d0
+      endif
+
+      self%w=0.0d0
+      self%e=0.0d0
+      
+      ! Add radiative rates to W
+      do kr=1, self%nrad
+         if (kr <= self%nline) then
+            i = self%line(kr)%i
+            j = self%line(kr)%j
+         else
+            i = self%cont(kr-self%nline)%i
+            j = self%cont(kr-self%nline)%j
+         endif
+         self%w(j,i) = gamma_ij(kr)
+         self%w(i,j) = gamma_ji(kr)
+      enddo
+
+      select case(trim(self%crout))
+      case('gencol')
+         call gencol_new(self%coll,self%id,self%nlevel,self%g,self%ev,self%ion,&
+                     self%c,dble(temp),dble(ne),nstar,dble(nh))
+      case default
+         call stop('read_atom: collisional routine keyword: "' // self%crout // '" not supported.')
+      end select
+
+      self%w = self%w + self%c * cswitch
+
+      ! fill diagonal elements of rate coefficient matrix
+      do i=1, self%nlevel
+         self%w(i,i) = -1.d0*sum(self%w(:,i))
+      end do
+
+      ! go from rate coefficients to actual rates   
+      do i=1,self%nlevel
+         self%w(i,:) = self%w(i,:) * n 
+      enddo
+
+      ! replace row with largest population with particle conservation
+      ! equation.
+      pos = maxloc(n,1)
+      self%w(pos,:) = n
+      self%e(pos)   = totn
+
+      if (check_NaN) then
+         do i=1,self%nlevel
+         do j=1,self%nlevel
+            if (self%w(i,j) /= self%w(i,j)) then
+               print *, 'NaN in rate Matrix at i,j = ', i, j
+               print *, 'Temp = ', temp
+               stop
             endif
-            self%w(j,i) = gamma_ij(kr)
-            self%w(i,j) = gamma_ji(kr)
-        enddo
-  
-        select case(trim(self%crout))
-        case('gencol')
-            call gencol_new(self%coll,self%id,self%nlevel,self%g,self%ev,self%ion,&
-                        self%c,dble(temp),dble(ne),nstar,dble(nh))
-        case default
-            call stop('read_atom: collisional routine keyword: "' // self%crout // '" not supported.')
-        end select
-  
-        self%w = self%w + self%c * cswitch
-  
-        ! fill diagonal elements of rate coefficient matrix
-        do i=1, self%nlevel
-            self%w(i,i) = -1.d0*sum(self%w(:,i))
-        end do
-  
-        ! go from rate coefficients to actual rates   
-        do i=1,self%nlevel
-            self%w(i,:) = self%w(i,:) * n 
-        enddo
-  
-        ! replace row with largest population with particle conservation
-        ! equation.
-        pos = maxloc(n,1)
-        self%w(pos,:) = n
-        self%e(pos)   = totn
+         end do
+         end do
+      endif
 
-        if (check_NaN) then
-           do i=1,self%nlevel
-           do j=1,self%nlevel
-              if (self%w(i,j) /= self%w(i,j)) then
-                 print *, 'NaN in rate Matrix at i,j = ', i, j
-                 print *, 'Temp = ', temp
-                 stop
-              endif
-           end do
-           end do
-        endif
+      ! solve w n . x = e
+      ! e contains the solution vector x on exit
+      !call lineq(self%w, self%e, self%nlevel)
+      call lineq_no_pivot(self%w, self%e, self%nlevel)
 
-        ! solve w n . x = e
-        ! e contains the solution vector x on exit
-        !call lineq(self%w, self%e, self%nlevel)
-        call lineq_no_pivot(self%w, self%e, self%nlevel)
+      ! set limits on corrections
+      where(self%e < 0.001d0) self%e = 0.001d0
+
+      ! update the populations
+      n = n * self%e
+
+      ! set e to the relative change in the populations 
+      self%e = self%e - 1.0d0
+   END SUBROUTINE solve_stat_equilibrium
+   !------------------------------------------------------------------------------------
   
-        ! set limits on corrections
-        where(self%e < 0.001d0) self%e = 0.001d0
-  
-        ! update the populations
-        n = n * self%e
-  
-        ! set e to the relative change in the populations 
-        self%e = self%e - 1.0d0
-     END SUBROUTINE solve_stat_equilibrium
-     !------------------------------------------------------------------------------------
+   !====================================================================================
+   SUBROUTINE compute_lte_populations(self, temp, ne, dxi, element)
+      class(atom_type), intent(inout) :: self
+      class(element_type), pointer :: element
+      class(ion_type), pointer :: ion
+      integer :: i, j
+      logical :: molec
+      real(4), dimension(:,:,:), intent(in) :: temp, ne, dxi
+      real(4), dimension(:,:,:), allocatable :: partition, saha
+      integer :: nx, ny, nz
+      !---------------------------------------------------------------------------------
+      nx = size(temp, 1)
+      ny = size(temp, 2)
+      nz = size(temp, 3)
+      
+      allocate(partition, mold=temp)
+      allocate(saha, mold=temp)
+      if (.not. associated(self%nstar)) allocate(self%nstar(nx, ny, nz, self%nlevel))
+      if (.not. associated(self%n    )) allocate(self%n    (nx, ny, nz, self%nlevel))
+
+      !dxi = 4.98e-4*5040./temp*sqrt(ne*bk*temp)
+
+      if (associated(element)) then
+         partition = self%totn
+         saha = 0.0
+         do i=1, self%nlevel
+            j = self%ion(i)
+            ion => element%ions(j)
+            self%nstar(:,:,:,i) = self%lte_pop(i, temp, dxi, saha, partition)
+            self%nstar(:,:,:,i) = self%nstar(:,:,:,i) * ion%anjon * ion%part
+            self%n(:,:,:,i)     = self%nstar(:,:,:,i) 
+         end do
+      else
+         !saha = temp*sqrt(temp) / (saha_const*ne)
+         saha = 1.5*log(temp) - log(saha_const*ne) ! actually log(saha)
+
+         select case (self%id(1:len_trim(self%id)))
+         case ('ch','co','cn')
+            molec=.true.
+            !partition = totn * self%g(1) * exp(-e_k/temp*self%ev(1)) / qcalc(elemid, temp)
+            print *, 'molecule partition functions need to be updated. Stopping...'
+            stop
+         case default
+            molec=.false.
+            partition = self%partition_function(temp, dxi, saha, self%totn)
+         end select
+
+         do i=1, self%nlevel
+            self%nstar(:,:,:,i) = self%lte_pop(i, temp, dxi, saha, partition)
+
+            if(any(self%nstar(:,:,:,i) <= 0.0)) then
+               print *, ' ltepop: level ',i,' has zero lte population. Stopping...'
+               stop
+            end if
+         end do
+
+         ! scale total abundances if treated model is a molecule
+         if(molec) then
+            self%totn = partition * self%nstar(:,:,:,1)
+         endif
+
+         do i=1, self%nlevel
+            self%n(:,:,:,i) = self%nstar(:,:,:,i) 
+         end do
+      endif
+   END SUBROUTINE compute_lte_populations
+   !------------------------------------------------------------------------------------
+
+   !====================================================================================
+   elemental function lte_pop(self, i_lvl, temp, dxi, saha, partition) result(nstar)
+      class(atom_type), intent(in) :: self
+      real(4), intent(in) :: temp, dxi, saha, partition
+      integer, intent(in) :: i_lvl
+      real(8) :: evi, tns, nstar
+      logical :: molec
+      integer :: i, j, l
+      !---------------------------------------------------------------------------------
+      j = self%ion(i_lvl)
+      evi  = (self%ev(i_lvl) - self%ev(1)) - dxi * 0.5*(j-1)*j
+      tns = log(self%g(i_lvl)) - e_k/temp*evi
+
+      if(j > self%ion(1)) then
+         l = j - self%ion(1)
+         tns = tns + float(l)*saha
+      endif
+
+      nstar = exp(tns) * partition
+   end function lte_pop
+   !------------------------------------------------------------------------------------
   
      !====================================================================================
-     SUBROUTINE compute_lte_populations(self, temp, ne)
-        class(atom_type), intent(inout) :: self
-        integer :: i
-        logical :: molec
-        real(4), dimension(:,:,:), intent(in) :: temp, ne
-        real(4), dimension(:,:,:), allocatable :: partition
-        integer :: nx, ny, nz
-        !---------------------------------------------------------------------------------
-        nx = size(temp, 1)
-        ny = size(temp, 2)
-        nz = size(temp, 3)
-        
-        allocate(partition, mold=temp)
-        if (.not. associated(self%nstar)) allocate(self%nstar(nx, ny, nz, self%nlevel))
-        if (.not. associated(self%n    )) allocate(self%n    (nx, ny, nz, self%nlevel))
-  
-        select case (self%id(1:len_trim(self%id)))
-        case ('ch','co','cn')
-           molec=.true.
-           !partition = totn * self%g(1) * exp(-e_k/temp*self%ev(1)) / qcalc(elemid, temp)
-           print *, 'molecule partition functions need to be updated. Stopping...'
-           stop
-        case default
-           molec=.false.
-           partition = self%partition_function(temp, ne, self%totn)
-        end select
-  
-        do i=1, self%nlevel
-           self%nstar(:,:,:,i) = self%lte_pop(i, temp, ne, partition)
-  
-           if(any(self%nstar(:,:,:,i) <= 0.0)) then
-              print *, ' ltepop: level ',i,' has zero lte population. Stopping...'
-              stop
-           end if
-        end do
-  
-        ! scale total abundances if treated model is a molecule
-        if(molec) then
-           self%totn = partition * self%nstar(:,:,:,1)
-        endif
-  
-        do i=1, self%nlevel
-           self%n(:,:,:,i) = self%nstar(:,:,:,i) 
-        end do
-     END SUBROUTINE compute_lte_populations
-     !------------------------------------------------------------------------------------
-  
-     !====================================================================================
-     elemental function lte_pop(self, i_lvl, temp, ne, partition) result(nstar)
+     elemental function partition_function(self, temp, dxi, saha, totn) result(sumn)
         class(atom_type), intent(in) :: self
-        real(4), intent(in) :: temp, ne, partition
-        integer, intent(in) :: i_lvl
-        real(8) :: evi, dxi, tns, nstar, saha
-        logical :: molec
-        integer :: i, j, l
-        !---------------------------------------------------------------------------------
-  
-        if (i_lvl == 1) then
-           nstar = partition
-           return
-        endif
-  
-        dxi=4.98e-4*5040./temp*sqrt(ne*bk*temp)
-        !saha = temp*sqrt(temp) / (saha_const*ne)
-        saha = log(ne*saha_const)-1.5*log(temp)
-  
-        j = self%ion(i_lvl)
-        evi  = (self%ev(i_lvl) - self%ev(1)) - dxi * 0.5*(j-1)*j
-  
-        !tns = self%g(i_lvl)/self%g(1) * exp(-e_k/temp*evi)
-        tns = log(self%g(i_lvl)) - log(self%g(1)) - e_k/temp*evi
-  
-        if(j > self%ion(1)) then
-           l = j - self%ion(1)
-           !tns = tns * saha**l
-           tns = tns-float(l)*saha
-        endif
-  
-        nstar = exp(tns) * partition
-  
-     end function lte_pop
-     !------------------------------------------------------------------------------------
-  
-     !====================================================================================
-     elemental function partition_function(self, temp, ne, totn) result(sumn)
-        class(atom_type), intent(in) :: self
-        real(4), intent(in) :: temp, ne, totn
-        real(8) :: sumn, evi, dxi, tns, saha
+        real(4), intent(in) :: temp, dxi, totn, saha
+        real(8) :: sumn, evi, tns
         integer :: i, j, l
         !--------------------------------------------------------------------------------
-        dxi = 4.98e-4*5040./temp*sqrt(ne*bk*temp)
-        !saha = temp*sqrt(temp) / (saha_const*ne)
-        saha = log(ne*saha_const)-1.5*log(temp)
-  
-        sumn = 1.
-  
-        do i=2, self%nlevel
+        sumn = 0.
+        do i=1, self%nlevel
            j = self%ion(i)
            evi  = (self%ev(i) - self%ev(1)) - dxi * 0.5*(j-1)*j
   
-           !tns = self%g(i)/self%g(1)*exp(-e_k/temp*evi)
-           tns = log(self%g(i)) - log(self%g(1)) - e_k/temp*evi
+           tns = log(self%g(i)) - e_k/temp*evi
   
            if(j > self%ion(1)) then
               l = j - self%ion(1)
-              !tns = tns * saha**l
-              tns = tns - float(l)*saha
+              tns = tns + float(l)*saha
            endif
   
            sumn = sumn + exp(tns)
         enddo 
-  
         sumn = totn / sumn
      end function
      !------------------------------------------------------------------------------------
@@ -1005,8 +1005,8 @@ MODULE atom_mod
             lin%nu0   = cc / lin%lambda0    ! [Hz]
   
             lin%Grat  = self%g(lin%i) / self%g(lin%j)
-            lin%Aji   = f_to_Aji * lin%f * lin%Grat / lin%lambda0**2
-            lin%Bji   = c2_2h / lin%nu0**3 * lin%Aji 
+            lin%Aji   = hh * f_to_Aji * lin%f * lin%Grat / lin%lambda0**2
+            lin%Bji   = c2_2h / lin%nu0**3 * lin%Aji
             lin%Bij   = lin%Bji / lin%Grat
 
             !if (present(teff)) then

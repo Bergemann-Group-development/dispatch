@@ -592,7 +592,12 @@ SUBROUTINE check (self)
       end if
       !!omp critical (iwrite_cr)
       next => node%next
-      call self%remove (node)
+      if (associated(node%prev)) node%prev%next => node%next
+      if (associated(node%next)) node%next%prev => node%prev
+      if (associated(node, self%head)) self%head => node%next
+      if (associated(node, self%tail)) self%tail => node%prev
+      !$omp atomic
+      self%n = self%n-1
       deallocate (node)
       node => next
       !!omp end critical (iwrite_cr)

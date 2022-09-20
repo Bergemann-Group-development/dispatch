@@ -1,4 +1,4 @@
-HW      = -align array64byte -qopt-assume-safe-padding -fp-model source
+HW      = -march=core-avx2 -align array64byte -qopt-assume-safe-padding -fp-model source
 PAR     = -qopenmp
 LDFLAGS = 
 

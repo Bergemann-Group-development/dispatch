@@ -3,6 +3,7 @@
 !|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE task_mod
   USE io_mod
+  USE os_mod
   USE omp_mod
   USE omp_lock_mod
   USE omp_timer_mod
@@ -28,7 +29,8 @@ MODULE task_mod
   end type
   type, public:: task_t
     integer:: id = 0
-    integer:: status = 0
+    integer:: status = 0                ! 32-bit status word
+    integer:: previous_status = 0       ! to detect changes
     integer:: rank = 0
     integer:: n_check = 0
     integer:: n_nbors = 0
@@ -54,6 +56,8 @@ MODULE task_mod
     integer:: logging=0                 ! level of logging
     integer:: next_lb                   ! next LB step
     integer:: rank_steps=0              ! steps on rank
+    integer:: check_step=0              ! step when cleared check_ready
+    integer:: tag=0                     ! MPI message tag
     real(8):: cost = 0d0                ! task update cost
     integer:: key(4)=0                  ! hash key
     real(8):: time = 0d0
@@ -66,7 +70,7 @@ MODULE task_mod
     real(4):: grace = 0.0
     real(8):: position(3) = 0d0
     real(8):: origin(3)=0d0             ! the cartesian box origin (for BCs)
-    real(8):: radius=0d0                ! generic radius
+    real(8):: radius=1d0                ! generic radius (do NOT set to 0d0)
     real(8):: velocity(3) = 0d0         ! velocity of task in Cartesian coords.
     real(8):: size(3) = 0.9999d0
     real(8):: gsize(3)                  ! convenience
@@ -79,6 +83,8 @@ MODULE task_mod
     real(8):: mulligan_time = -1d0      ! time to rewind to
     real(8):: dt_small=1d-7             ! smallest allowed dtime
     real(8):: dt_fixed=-1d0             ! for fixed time step Courant condition
+    real(8):: dt_extra=0d0              ! extra step (cf. courant_condition)
+    real(8):: mb=0d0                    ! MB memory
     real   :: quality = 0.0             ! floating point level
     real   :: safety_factor=1.0         ! time step change
     character(len=64):: kind='task'     ! solver name
@@ -154,8 +160,8 @@ MODULE task_mod
     procedure:: test_update
     procedure:: solver_is
     procedure:: debug
-    procedure, private:: contains1      ! patch contains a point
-    procedure, private:: contains2      ! patch contains a patch
+    procedure:: contains1      ! patch contains a point
+    procedure:: contains2      ! patch contains a patch
     generic:: contains => contains1, contains2
     procedure:: task_info
     procedure:: log
@@ -174,14 +180,21 @@ MODULE task_mod
     procedure:: get_position
     procedure:: velocity_shift
     procedure:: hash_key
+    procedure:: hash_position
+    procedure:: set_properties
     procedure:: check_refine
     procedure:: write_nml
     procedure:: reset
+    procedure:: periodic_wrap4
+    procedure:: periodic_wrap8
+    generic:: periodic_wrap => periodic_wrap4, periodic_wrap8
+    procedure:: set_rank
     ! ----- Void overloadable subroutines
     procedure:: allocate_generic => void
     procedure:: deallocate_generic => void
     procedure:: to_generic => void
     procedure:: from_generic => void
+    procedure:: init_bdries => void
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -221,7 +234,6 @@ MODULE task_mod
     integer:: key(4)                    ! task hash key
   end type
   logical:: first_time=.true.
-  logical:: mpi_init_ids=.true.
   integer:: track_id=0
   integer:: verbose=0
   type(dll_t), pointer:: deleted_list
@@ -245,6 +257,7 @@ END SUBROUTINE post_update
 !===============================================================================
 SUBROUTINE void (self)
   class (task_t):: self
+  !.............................................................................
   call trace%begin ('task_t%void')
   call io%abort('task_t%void called')
   call trace%end ()
@@ -268,7 +281,7 @@ SUBROUTINE pre_init (self)
   !.............................................................................
   self%out_next = io%start_time
   self%aux%aux_next = io%start_time
-  self%key = self%hash_key ()                     ! cache the hash key
+  call self%set (bits%internal)                   ! to be revised later
 END SUBROUTINE pre_init
 
 !===============================================================================
@@ -277,31 +290,28 @@ END SUBROUTINE pre_init
 SUBROUTINE init (self)
   class (task_t):: self
   integer:: id, id_master, id_tmp
-  integer, save::itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('task_t%init', itimer=itimer)
+  call trace%begin ('task_t%init')
   call init_params (self)
   if (self%id == 0) then
     call init_unique (self)
     if (verbose > 0) &
-      write (io_unit%log,*) 'task_t%init: id =', id
+      write (stdlog,*) 'task_t%init: id =', self%id
   else
-    if (mpi_init_ids) then
-      !---------------------------------------------------------------------------
-      ! If a task already has an id, update the MPI counter if its value is less.
-      ! The id of a virtual copy of a new AMR task should NOT trigger this.
-      !---------------------------------------------------------------------------
-      id_master = mpi%id%update (0)
-      id_tmp = id_master
-      if (self%id > id_master) then
-        id_master = mpi%id%update (self%id-id_master+1)
-      end if
-    endif
+    !---------------------------------------------------------------------------
+    ! If a task already has an id, update the MPI counter if its value is less.
+    ! The id of a virtual copy of a new AMR task should NOT trigger this.
+    !---------------------------------------------------------------------------
+    id_master = mpi%id%update (0)
+    id_tmp = id_master
+    if (self%id > id_master) then
+      id_master = mpi%id%update (self%id-id_master+1)
+    end if
   end if
   !-----------------------------------------------------------------------------
   ! Locks, random numbers, etc
   !-----------------------------------------------------------------------------
-  call io%lock%set
+  call io%lock%set ('task_t%init')
   if (.not.associated(self%lock)) then
     allocate (self%lock, self%mulligan_lock)
     call self%lock%init ('task')
@@ -310,6 +320,7 @@ SUBROUTINE init (self)
   if (.not.self%lock%initialized) then
     call self%lock%init ('task')
   end if
+  call io%lock%unset ('task_t%init')
   call self%random%init
   call self%aux%init
   !-----------------------------------------------------------------------------
@@ -331,9 +342,8 @@ SUBROUTINE init (self)
   self%thread = omp%thread                        ! thread affinity
   self%place = omp%place                          ! memory affinity
   self%key = self%hash_key ()                     ! cache the hash key
-  call io%lock%unset
-  call self%log ('init', 2)
-  call trace%end (itimer)
+  call self%log ('init', 3)
+  call trace%end ()
 END SUBROUTINE init
 
 !===============================================================================
@@ -346,7 +356,7 @@ SUBROUTINE init_params (self)
   integer:: iostat, id=0, id_master
   logical, save:: do_dumps=.false., dump_all=.false.
   integer, save:: id_max=0
-  namelist /task_params/ track_id, do_dumps, dump_all, verbose, mpi_init_ids
+  namelist /task_params/ track_id, do_dumps, dump_all, verbose
   namelist /dump_params/ id
   !-----------------------------------------------------------------------------
   call trace%begin ('task_t%init_params')
@@ -381,7 +391,7 @@ SUBROUTINE init_params (self)
       else if (id == self%id) then
         self%verbose = verbose
         self%dump_it = .true.
-        write (io_unit%log,*) 'task_t%init: dump_id =', id
+        write (stdlog,*) 'task_t%init: dump_id =', id
         write (io%namelist, dump_params)
         exit
       end if
@@ -422,7 +432,7 @@ SUBROUTINE init_unique (self, same)
     id = id_same
     !$omp end atomic
     if (verbose > 0) &
-      write (io_unit%log,*) 'task_t%init_unique(same): id =', &
+      write (stdlog,*) 'task_t%init_unique(same): id =', &
         id, id_same, id_master
   !-----------------------------------------------------------------------------
   ! Calls without the same option return unique IDs, which do not overlap with
@@ -439,7 +449,7 @@ SUBROUTINE init_unique (self, same)
     id_same = id_master-1
     id = id_master
     if (verbose > 0) &
-      write (io_unit%log,*) 'task_t%init_unique(else): id =', &
+      write (stdlog,*) 'task_t%init_unique(else): id =', &
         id, id_same, id_master
   end if
   self%id = id
@@ -454,24 +464,30 @@ SUBROUTINE init_level (self)
 END SUBROUTINE init_level
 
 !===============================================================================
-!> Deallocate permanent arrays
+!> Deallocate allocated attributes
 !===============================================================================
 SUBROUTINE dealloc (self)
-  class (task_t):: self
+  class(task_t):: self
+  class(mesg_t), pointer:: mesg, next
+  character(2):: label
   !.............................................................................
   call trace%begin ('task_t%dealloc')
-  if (associated(self%t  )) deallocate (self%t  )
-  if (associated(self%dt )) deallocate (self%dt )
-  if (associated(self%iit)) deallocate (self%iit)
-  if (associated(self%mesg)) then
-    call self%mesg%dealloc
-    deallocate (self%mesg)
-  end if
+  if (associated(self%t  )) call os%deallocate (self%t  )
+  if (associated(self%dt )) call os%deallocate (self%dt )
+  if (associated(self%iit)) call os%deallocate (self%iit)
   if (associated(self%sent_list)) then
-    call self%sent_list%dealloc
+    write (label,'(i2)') self%sent_list%n
+    call self%log ('dealloc mesg_list '//label, 3)
+    call self%sent_list%dealloc (self%mesg)
+    call os%mem_register (-storage_size(self%sent_list), 1, 'sent_list')
     deallocate (self%sent_list)
   end if
-  call trace%end
+  if (associated(self%mesg)) then
+    call self%log ('dealloc mesg', 3)
+    call self%mesg%dealloc ()
+    deallocate (self%mesg)
+  end if
+  call trace%end ()
 END SUBROUTINE dealloc
 
 !===============================================================================
@@ -491,7 +507,7 @@ SUBROUTINE save_id (self)
   id = self%id
   node%car => id
   call deleted_list%append (node)
-  call trace%end
+  call trace%end ()
 END SUBROUTINE save_id
 
 !===============================================================================
@@ -528,16 +544,16 @@ SUBROUTINE header_to_task (self, head)
   end if
   if ((self%istep > 0) .and. (iand(head%status, bits%remove) == 0)) then
     if (head%istep > self%istep+1) then
-      write(io_unit%log,1) &
+      write(stdlog,1) &
         'WARNING: early arrival in time reversal id, rank =', &
         self%id, mpi%rank, head%istep, self%istep, head%time, self%time
     1 format(a,4i6,2f12.6)
-      flush (io_unit%log)
+      flush (stdlog)
     else if (head%istep < self%istep+1) then
-      write(io_unit%log,1) &
+      write(stdlog,1) &
         'WARNING: late arrival in time reversal id, rank =', &
         self%id, mpi%rank, head%istep, self%istep, head%time, self%time
-      flush (io_unit%log)
+      flush (stdlog)
     end if
   end if
   !-----------------------------------------------------------------------------
@@ -582,19 +598,19 @@ SUBROUTINE header_to_task (self, head)
     end do
     !self%new      = head%iit(nt)
   else
-    write (io_unit%log,*) omp%thread,'header_to_task WARNING: nt non-positive', nt
-    flush (io_unit%log)
+    write (stdlog,*) omp%thread,'header_to_task WARNING: nt non-positive', nt
+    flush (stdlog)
   end if
   if (head%istep == 0) then
-    write (io_unit%log,'(1x,a,i6,f12.6,2x,9f12.6)') &
+    write (stdlog,'(1x,a,i6,f12.6,2x,9f12.6)') &
       'task%header_to_task: id, time, t =', &
       self%id, self%time, self%t
-    write (io_unit%log,'(1x,a,i6,2x,3i4,2x,9i4)') &
+    write (stdlog,'(1x,a,i6,2x,3i4,2x,9i4)') &
       'task%header_to_task: id, istep, it, new, iit =', &
       self%id, self%istep, self%it, self%new, self%iit
   end if
   if (self%it > self%nt .or. self%it < 1) then
-    write (io_unit%log,*) 'header_to_task ERROR: it =', self%it, self%iit(nt-1)
+    write (stdlog,*) 'header_to_task ERROR: it =', self%it, self%iit(nt-1)
     self%it = self%iit(nt-1)
   end if
   self%nq         = head%nq
@@ -641,8 +657,8 @@ SUBROUTINE rotate (self)
   ! Call timestep update procedure to fill the next time slot with values
   !-----------------------------------------------------------------------------
   if (io%verbose > 1) then
-    write (io_unit%log,'(a,7i10)')   'task_t%rotate iit =', self%iit
-    flush (io_unit%log)
+    write (stdlog,'(a,7i10)')   'task_t%rotate iit =', self%iit
+    flush (stdlog)
   end if
   !-----------------------------------------------------------------------------
   ! If this task has self%syncing set, then the time step has been set so as to
@@ -660,7 +676,7 @@ SUBROUTINE rotate (self)
   !-----------------------------------------------------------------------------
   ! Time slot rotation.
   !-----------------------------------------------------------------------------
-                                                   call self%lock%set ('rotate')
+  ! call                                                  self%lock%set ('rotate')
   !-----------------------------------------------------------------------------
   ! First update the t and dt of the new time slot, and only then the index.
   ! This ensures that other tasks always see a consistent state.  The new
@@ -687,6 +703,7 @@ SUBROUTINE rotate (self)
   ! one prevents the next guard zone downloading from starting with until
   ! the slot values are correct
   !-----------------------------------------------------------------------------
+  !$omp atomic write
   self%time = time                                    ! new time
   !-----------------------------------------------------------------------------
   ! These updates also must be done atomically, but are not operation critical
@@ -697,7 +714,7 @@ SUBROUTINE rotate (self)
   ! These are not time critical
   !-----------------------------------------------------------------------------
   self%rotated = .true.
-                                                 call self%lock%unset ('rotate')
+  ! call                                                self%lock%unset ('rotate')
   !-----------------------------------------------------------------------------
   ! Compute update cost
   !-----------------------------------------------------------------------------
@@ -710,10 +727,10 @@ SUBROUTINE rotate (self)
   !end if
   !.............................................................................
   if (io%verbose>2) then
-   write (io_unit%log,*) 'task id:',self%id,'  it:',self%it,'  new:',self%new
+   write (stdlog,*) 'task id:',self%id,'  it:',self%it,'  new:',self%new
    if (io%verbose>3) then
-     write (io_unit%log,*) 'task iit:', self%iit
-     write (io_unit%log,*) 'task t(iit):', self%t(self%iit)
+     write (stdlog,*) 'task iit:', self%iit
+     write (stdlog,*) 'task t(iit):', self%t(self%iit)
     end if
   end if
   call self%log ('rotate', 3)
@@ -833,23 +850,26 @@ LOGICAL FUNCTION is_ahead_of (self, target)
   real:: grace
   real(8):: nbtime, nbdtime, tgtime
   !-----------------------------------------------------------------------------
-  grace = self%grace + shared%extra_grace
   !-----------------------------------------------------------------------------
   ! dt(self%dt) is always consistent with t(:), while dtime changes in
   ! courant_condition(), before other attributes change in rotate()
   !-----------------------------------------------------------------------------
-                                              call self%lock%set ('is_ahead_of')
-  nbtime  = self%t (self%it)
-  nbdtime = self%dt(self%it)
+  !$omp atomic read
   tgtime = target%time
+                                         call self%lock%set_read ('is_ahead_of')
+  nbtime  = self%t (self%it)
+  nbdtime = max (self%dt(self%it), 1d-30)   ! ensure non-zero
   if (self%is_set(bits%frozen)) then
     is_ahead_of = .true.
+  else if (self%level < target%level) then  ! lower levels go first
+    is_ahead_of = nbtime >= tgtime
   else if (self%istep < 3) then
     is_ahead_of = nbtime >= tgtime
   else
+    grace = self%grace
     is_ahead_of = nbtime + nbdtime*grace >= tgtime
   end if
-                                            call self%lock%unset ('is_ahead_of')
+                                       call self%lock%unset_read ('is_ahead_of')
 END FUNCTION is_ahead_of
 
 SUBROUTINE print (self)
@@ -957,9 +977,9 @@ END FUNCTION overlaps_point
 !> Decide if another task is needed, if it needs_me, and if it should be
 !> downloaded (= used in one way or another to prepare the task for update)
 !> This is the lowest, most generic relations call. The checks are based solely
-!> on ranks and some bits.
-!> Initially all 3 logicals are set to true and if any criterion is not met,
-!> the particular flag is set to .false.
+!> on ranks.  A proxy task is used to determine the status bits from scratch,
+!> which allows determination of transition from boundary to internal, or from
+!> virtual to external.
 !===============================================================================
 SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   class(task_t):: self
@@ -974,10 +994,9 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   if (timer%detailed) &
     call trace%begin ('task_t%nbor_relations', 2, itimer=itimer)
   !-----------------------------------------------------------------------------
-  ! task is real
+  ! If this thread owns the task, start by assuming either internal or external
   !-----------------------------------------------------------------------------
   if (self%rank == mpi%rank) then
-    call self%clear(bits%external)
     !---------------------------------------------------------------------------
     ! nbor is frozen
     !---------------------------------------------------------------------------
@@ -990,8 +1009,6 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
     ! nbor is virtual
     !---------------------------------------------------------------------------
     else if (another%rank /= mpi%rank) then
-      call self%set(bits%boundary)
-      call self%clear(bits%internal)
       ! -- use in check_ready(), but not in check_nbors()
       !$omp atomic write
       needed = .true.
@@ -1017,7 +1034,6 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   !-----------------------------------------------------------------------------
   else
     ! write (stdout,*) self%id, another%id, another%is_set (bits%frozen)
-    call self%clear(bits%internal)
     !---------------------------------------------------------------------------
     ! nbor is frozen
     !---------------------------------------------------------------------------
@@ -1030,12 +1046,11 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
       needs_me = .false.
       !$omp atomic write
       needed = .false.
+    end if
     !---------------------------------------------------------------------------
     ! task is virtual, nbor is real
     !---------------------------------------------------------------------------
-    else if (another%rank==mpi%rank) then
-      call self%set(bits%virtual)
-      call self%clear(bits%external)
+    if (another%rank==mpi%rank) then
       ! -- don't use in check_ready(), use in check_nbors()
       !$omp atomic write
       needed = .false.
@@ -1068,12 +1083,6 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
     !$omp atomic write
     download = .false.
   end if
-  if (self%verbose > 2) &
-    write(io_unit%log,'(a,i6,i4,3x,3l1)') &
-      'set_nbor_relations: nbor, rank, IBV =', another%id, another%rank, &
-      another%is_set(bits%internal), &
-      another%is_set(bits%boundary), &
-      another%is_set(bits%virtual)
   !-----------------------------------------------------------------------------
   if (timer%detailed) &
     call trace%end (itimer)
@@ -1156,9 +1165,9 @@ SUBROUTINE pack (self)
   call mpi%abort ('task_t%pack called')
 END SUBROUTINE
 
-SUBROUTINE unpack (self, mesg)
+SUBROUTINE unpack (self, buffer)
   class(task_t):: self
-  class(mesg_t), pointer:: mesg
+  integer, pointer:: buffer(:)
   call mpi%abort ('task_t%unpack called')
 END SUBROUTINE
 
@@ -1238,19 +1247,21 @@ FUNCTION debug (self, level)
 END FUNCTION debug
 
 !===============================================================================
-SUBROUTINE task_info (self)
+SUBROUTINE task_info (self, unit)
   class(task_t):: self
-  integer:: parent
+  integer, optional:: unit
+  integer:: parent, unit_L
   !-----------------------------------------------------------------------------
+  unit_L = shared%option (unit, io_unit%mpi)
   if (associated(self%parent)) then
     parent = self%parent%id
   else
     parent = 0
   end if
-  write(io_unit%mpi,'(1x,a,22x,i6,":",i2.2,3i3,2i6,2x,5x,2l1,2x,3f10.3)') &
-    'task_t%task_info: id, key, pid, BV, pos =', self%id, self%key, parent, &
-    self%rank, self%is_set(bits%boundary), self%is_set(bits%virtual), &
-    self%position
+  write(unit_L,'(1x,a,4x,i6,":",i2.2,3i4,3i6,5x,2l1,2x,3f9.3)') &
+    'task_t%task_info: id,key,nnb,pid,rank,BV,pos=', self%id, self%key, &
+    self%n_nbors, parent, self%rank, self%is_set(bits%boundary), &
+    self%is_set(bits%virtual), self%position
 END SUBROUTINE task_info
 
 !===============================================================================
@@ -1259,6 +1270,7 @@ SUBROUTINE log (self, label, level)
   character(len=*):: label
   integer, optional:: level
   real(8):: now
+  character(128):: s
   real(8), save:: last=0d0
   integer, save:: ilog=1
   !-----------------------------------------------------------------------------
@@ -1281,10 +1293,24 @@ SUBROUTINE log (self, label, level)
       end if
       last = now
     end if
-    write (io_unit%task,'(f12.6,i5,i4,i6,":",i2.2,f12.6,1p,e11.2,4x,a)') &
-      wallclock(), mpi%rank, omp%thread, self%id, self%level, &
-      self%time, self%dtime, trim(label)
-    if (io_unit%flush_logs) &
+    !---------------------------------------------------------------------------
+    ! Write a log line to io_uni%task, and echo to stdlog if verbose > 0
+    !---------------------------------------------------------------------------
+    if (os%verbose > 0) then
+      write (s,'(f12.6,i5,i4,i7,":",i2.2,i6,2f12.6,1p,e11.2,4x,a)') &
+        wallclock(), self%rank, omp%thread, self%id, self%level, &
+        self%istep, os%gb, self%time, self%dtime, trim(label)
+    else
+      write (s,'(f12.6,i5,i4,i7,":",i2.2,i6,f12.6,1p,e11.2,4x,a)') &
+        wallclock(), self%rank, omp%thread, self%id, self%level, &
+        self%istep, self%time, self%dtime, trim(label)
+    end if
+    write (io_unit%task,'(a)') trim(s)
+    if (verbose > 0) then
+      write (stdlog,'(a)') 'task_t%log:'//trim(s)
+      flush (stdlog)
+    end if
+    if (io_unit%flush_logs .or. os%isnan(self%time)) &
       flush (io_unit%task)
     !$omp end critical (tasklog_cr)
   end if
@@ -1331,12 +1357,8 @@ SUBROUTINE courant_condition (self, detailed_timer)
   snapshot_time = .false.
   dtime = self%dtime
   !if (io%do_output .and. io%out_time > 0.0 .and. self%time > start_time) then
-  if (io%do_output .and. io%out_time > 0.0) then
-    if (dtime > io%out_time) then
-      dtime = io%out_time
-      !$omp atomic write
-      self%dtime = dtime
-    end if
+  if (io%do_output .and. io%out_time > 0.0 .and. &
+      self%is_set (bits%has_output)) then
     if (self%time < self%out_next) then
       if (self%time + dtime > self%out_next) then
         dtime = self%out_next - self%time
@@ -1352,15 +1374,29 @@ SUBROUTINE courant_condition (self, detailed_timer)
             'task_t%courant_condition: iterating, dtime =', &
             self%id, self%istep, dtime
         end do
+        !-----------------------------------------------------------------------
+        ! If dtime is reduced with more than a factor of 2, set dt_extra, which
+        ! may trigger the solver to take that extra step.
+        !-----------------------------------------------------------------------
+        if (dtime < self%dtime/2d0) then
+          self%dt_extra = self%dtime
+        end if
+        !.......................................................................
         if (io%verbose > 0) &
           write (stdlog,'(a,2i6,1p,4e15.6)') &
               'task_t%courant_condition: snapshot dtime =', &
               self%id, self%istep, self%dt(self%it), dtime, &
               self%time, self%out_next
         !$omp atomic write
+        !.......................................................................
         self%dtime = dtime
         snapshot_time = .true.
       end if
+    end if
+    if (dtime > io%out_time) then
+      dtime = io%out_time
+      !$omp atomic write
+      self%dtime = dtime
     end if
   end if
   !---------------------------------------------------------------------------
@@ -1511,9 +1547,9 @@ END SUBROUTINE get_position
 !===============================================================================
 !> Return the velocity shift from source to target
 !===============================================================================
-FUNCTION velocity_shift (self, source) RESULT (v)
+FUNCTION velocity_shift (self, source, r_tgt) RESULT (v)
   class(task_t):: self, source
-  real(8), dimension(3):: v
+  real(8), dimension(3):: r_tgt, v
   !-----------------------------------------------------------------------------
   v = 0d0
   call io%abort ('task_t%velocity_shift')
@@ -1526,7 +1562,7 @@ FUNCTION hash_key (self, position, size, level, box, origin) RESULT (key)
   class(task_t):: self
   real(8), dimension(3), optional:: position, origin, size, box
   integer, optional:: level
-  real(8), dimension(3):: p, o, s, b, rkey
+  real(8), dimension(3):: p, o, s, b, c, rkey
   integer:: key(4), n(3), l
   !-----------------------------------------------------------------------------
   p = shared%option (position, self%position)
@@ -1534,20 +1570,70 @@ FUNCTION hash_key (self, position, size, level, box, origin) RESULT (key)
   o = shared%option (origin  , self%origin  )
   b = shared%option (box     , self%box     )
   l = shared%option (level   , self%level   )
-  n = floor(b/s+0.01d0)
+  n = nint(b/s)
   key(1) = l
-  rkey = (p-o)/s
-  key(2:4) = floor(rkey) - n/2
-  where (self%periodic)
-    key(2:4) = modulo(key(2:4)+n/2,n) - n/2
+  !-----------------------------------------------------------------------------
+  ! A position half the box size from the origin (left corner) should have
+  ! position index 0,0,0, with 1,1,1 if half a patch size displaced.
+  ! The position is always encoded as the key times half the patch size.
+  !-----------------------------------------------------------------------------
+  c = o + b/2d0                         ! box center
+  rkey = (p-c)/s                        ! distance from center in size units
+  where (mod(n,2)==1)                   ! for odd number of patches
+    key(2:4) = 2*nint(rkey)             ! round to zero, with increment 2
+  else where
+    key(2:4) = 2*floor(rkey) + 1        ! round to one, with increment 2
   end where
+  where (self%periodic)
+    key(2:4) = modulo (key(2:4)+n, 2*n) - n
+  end where
+  if (verbose > 0) &
+    write (stdlog,'(a,i6,":",i2.2,3i4,4(2x,3f10.4),i4)') &
+      'hash_key: id,key,pos,size,ori,box,level=', &
+      self%id, self%key, self%position, self%size, self%origin, self%box, &
+      self%level
 END FUNCTION hash_key
+
+!===============================================================================
+!> Return the exact position corresponding to a hash key
+!===============================================================================
+FUNCTION hash_position (self, key) RESULT (out)
+  class(task_t):: self
+  integer:: key(4)
+  real(8):: out(3)
+  !.............................................................................
+  out = self%origin + self%box/2d0 + key(2:4)*self%size/2d0 
+END FUNCTION hash_position
+
+!===============================================================================
+!> Set the properties from the argument list
+!===============================================================================
+SUBROUTINE set_properties (self, key, position, size, level)
+  class(task_t):: self
+  integer, optional:: key(4), level
+  real(8), optional:: size(3), position(3)
+  !.............................................................................
+  if (present(level)) then
+    self%level = level
+  end if
+  if (present(size)) then
+    self%size = size
+  end if
+  if (present(key)) then
+    self%level = key(1)
+    self%position = self%origin + self%size/2d0 + key(2:4)*self%size/2d0 
+  end if
+  if (present(position)) then
+    self%position = position
+  end if
+END SUBROUTINE set_properties
 
 !===============================================================================
 !> Interface to refinement
 !===============================================================================
-INTEGER function check_refine (self)
+INTEGER function check_refine (self, test)
   class(task_t), target:: self
+  real, dimension(:,:,:), pointer, contiguous:: test
   !.............................................................................
   check_refine = -1                                                    ! keep
 END FUNCTION check_refine
@@ -1604,7 +1690,37 @@ SUBROUTINE reset (self)
   nullify (self%dt)
   nullify (self%lock)
   nullify (self%mulligan_lock)
+  call self%clear (bits%ready + bits%busy)
   call trace%end ()
 END SUBROUTINE reset
+
+!===============================================================================
+!> Protected periodic wrapping
+!===============================================================================
+SUBROUTINE periodic_wrap4 (self, position)
+  class(task_t):: self
+  real(4):: position(3)
+  where (self%periodic .and. self%box > 0d0)
+    position = modulo (position + self%box*0.5d0, self%box) - self%box*0.5d0
+  end where
+END SUBROUTINE periodic_wrap4
+!===============================================================================
+SUBROUTINE periodic_wrap8 (self, position)
+  class(task_t):: self
+  real(8):: position(3)
+  where (self%periodic .and. self%box > 0d0)
+    position = modulo (position + self%box*0.5d0, self%box) - self%box*0.5d0
+  end where
+END SUBROUTINE periodic_wrap8
+
+!===============================================================================
+!> Stub
+!===============================================================================
+SUBROUTINE set_rank (self)
+  class(task_t):: self
+  !-----------------------------------------------------------------------------
+  call trace%begin ('task_t%set_rank')
+  call trace%end ()
+END SUBROUTINE set_rank
 
 END MODULE task_mod

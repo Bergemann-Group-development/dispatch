@@ -29,12 +29,13 @@ MODULE trace_mod
   ! The data manipulated by the trace routines are thread private, and do not
   ! need to be visible from the calling code.
   !-----------------------------------------------------------------------------
-  integer, parameter:: maxlev=30                                ! max number of levels
-  character(len=80), dimension(maxlev), save:: tracing          ! active routine
-  integer, save:: verbosity(maxlev)                             ! verbosity level
-  integer, public, save:: indent=4                             ! trace indent
-  integer, private, save:: level=1                              ! trace level
+  integer, parameter:: maxlev=30                          ! max number of levels
+  character(len=80), dimension(maxlev), save:: tracing    ! active routine
+  integer, save:: verbosity(maxlev)                       ! verbosity level
+  integer, public, save:: indent=4                        ! trace indent
+  integer, private, save:: level=1                        ! trace level
   !$omp threadprivate(indent,level,tracing,verbosity)
+PUBLIC trace_begin, trace_tag, trace_end
 CONTAINS
 
 !===============================================================================
@@ -52,7 +53,7 @@ SUBROUTINE trace_begin (id, set_verbose, itimer, detailed_timer)
   integer:: verbose
   real(8):: wc
   !-----------------------------------------------------------------------------
-  tracing(level) = trim(id)
+  tracing(level) = id
   if (present(set_verbose)) then
     verbosity(level) = set_verbose
   else
@@ -185,12 +186,14 @@ end subroutine
 END SUBROUTINE trace_end
 
 !===============================================================================
-!> Write a trace-back to io_unit%output
+!> Write a trace-back to stdout
 !===============================================================================
 SUBROUTINE back
   integer:: l
-  do l=level,1,-1
-    write (io_unit%output,*) 'called from', tracing(l)
+  !-----------------------------------------------------------------------------
+  write (stdout,'(/," thread",i4,2x,"traceback:")') omp%thread
+  do l=1,level-1
+    write (stdout,'(i3,2x,a)') l,trim(tracing(l))
   end do
 END SUBROUTINE back
 

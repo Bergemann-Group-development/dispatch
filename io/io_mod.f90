@@ -10,6 +10,7 @@ MODULE io_mod
   USE io_unit_mod
   USE timer_mod
   USE os_mod
+  USE trace_mod
   implicit none
   private
   logical:: mpi_trace=.false.
@@ -93,11 +94,11 @@ MODULE io_mod
     type(input_t):: in
   contains
     procedure:: init
-    procedure:: open_rank_file
     procedure:: debug
     procedure:: check_flags
     procedure:: bits_mem
     procedure:: namelist_warning
+    procedure, nopass:: open_rank_file
     procedure, nopass:: warning
     procedure, nopass:: abort
     procedure, nopass:: assert
@@ -134,7 +135,7 @@ SUBROUTINE init (self, name)
   character(len=16), save:: method='background'
   integer, save:: id_debug=-1, restart=-9, format=0, time_derivs=0
   integer, save:: log_sent=0, task_logging=0, nml_version=4
-  integer, save:: print_every=1, max_files=1000, os_verbose=0
+  integer, save:: print_every=0, max_files=1000, os_verbose=0
   logical, save:: first_time=.true., omp_trace=.false., do_validate=.false.
   logical, save:: do_debug=.false., do_trace=.false., do_output=.false., exist
   logical, save:: do_legacy=.false., do_flags=.false., do_direct=.false.
@@ -145,6 +146,7 @@ SUBROUTINE init (self, name)
   real:: test
   integer:: i, iostat, i1, i2
   character(len=10), save:: hash=''
+  character(len=16), save:: solver=''
   character(len=32), save:: branch='', opts=''
   character(len=128), save:: compiler=''
   character(len=120):: ids = &
@@ -156,29 +158,7 @@ SUBROUTINE init (self, name)
     flush_logs, print_seconds, max_files, print_time, print_every, &
     start_time, out_time, end_time, os_verbose, gb_step
   namelist /out_params/ start_time, out_time, end_time, print_every
-  namelist /code_params/ branch, hash, compiler
-  !-----------------------------------------------------------------------------
-  call omp%init
-  print '(a)', &
-' ==============================================================================='
-#ifdef BRANCH
-  print *, 'DISPATCH code framework, branch:', BRANCH, ', hash:', HASH, &
-    ', OPTS=', OPTS
-  branch = BRANCH
-  hash = HASH
-  opts = OPTS
-  compiler = compiler_version()
-  i1 = index(compiler,'(R)')+3
-  i2 = index(compiler,'Version')
-  if (i1>0 .and. i2>0) then
-    print *,compiler(1:i1)//compiler(i2:)
-  else
-    print *,compiler
-  end if
-#endif
-  call mpi%init
-  self%master = mpi%master
-  io%master   = mpi%master
+  namelist /code_params/ branch, hash, compiler, solver
   !-----------------------------------------------------------------------------
   ! I/O unit numbers, for convenience and backwards compatibility.  All other
   ! unit numbers should be taken directly from io_unit_mod
@@ -208,18 +188,17 @@ SUBROUTINE init (self, name)
     if (mpi%rank > 0) then
       io%output = io_unit%mpi
     end if
-    call io%header ('io_t%init:')
     open (self%input, file=self%inputname, form='formatted', status='old')
     !---------------------------------------------------------------------------
     ! Read out_params (obsolete)
     !---------------------------------------------------------------------------
-    !rewind (io%input)
-    !read (io%input, out_params, iostat=iostat)
-    !if (iostat > 0) then
-    !  rewind (io%input)
-    !  read (io%input, out_params)
-    !end if
-    !call io%namelist_warning ('out_params', iostat)
+    rewind (io%input)
+    read (io%input, out_params, iostat=iostat)
+    if (iostat > 0) then
+      rewind (io%input)
+      read (io%input, out_params)
+    end if
+    call io%namelist_warning ('out_params', iostat)
     !---------------------------------------------------------------------------
     ! Read io_params
     !---------------------------------------------------------------------------
@@ -229,13 +208,14 @@ SUBROUTINE init (self, name)
       rewind (io%input)
       read (io%input, io_params)
     end if
+    if (print_every > 0) &
+      print_seconds = 0d0
     io%start_time  = start_time
     io%end_time    = end_time
     io%out_time    = out_time
     io%print_time  = print_time
     io%print_every = print_every                ! print 1st task
     io%iprint      = print_every                ! print 1st task
-    os%verbose     = os_verbose
     os%gb_step     = gb_step
     call self%namelist_warning ('io_params', iostat)
     !---------------------------------------------------------------------------
@@ -247,30 +227,15 @@ SUBROUTINE init (self, name)
     call os%mkdir (trim(self%run_dir))
     call os%copy_file (trim(self%run_dir)//'params.nml', &
                        trim(self%run_dir)//'restart.nml')
-    open (io_unit%nml, file=trim(self%run_dir)//'params.nml', form='formatted', &
-          delim='apostrophe', status='unknown')
-    open (io_unit%hash, file=trim(self%run_dir)//'hash.log', form='formatted', &
-          status='unknown')
-    write (io_unit%nml, code_params)
-    if (mpi%master .and. .not. do_validate) then
-      print'(a,i4)', ' n_sockets =', omp%nsockets
-      print'(a,i4)', '   n_cores =', omp%ncores
-      print'(a,i4)', ' n_threads =', omp%nthreads
-      print'(a,i4)', '  n_places =', omp%nplaces
-      print'(a,i4)', '   n_ranks =', mpi%size
-    end if
     if (mpi%master) then
       write (io_unit%hash,'(a)') trim(ids)
     end if
     !---------------------------------------------------------------------------
-    call os%mkdir (trim(self%run_dir))
     open (io_unit%nml, file=trim(self%run_dir)//'params.nml', form='formatted', &
           delim='apostrophe', status='unknown')
     open (io_unit%hash, file=trim(self%run_dir)//'hash.log', form='formatted', &
           status='unknown')
     open (self%input, file=self%inputname, form='formatted', status='old')
-    !---------------------------------------------------------------------------
-    ! Read io_params namelist
     !---------------------------------------------------------------------------
     self%task_logging = task_logging
     self%log_interval = log_interval
@@ -279,7 +244,21 @@ SUBROUTINE init (self, name)
     self%outputname = self%run_dir                               ! compatibility
     self%do_generic = do_generic
     self%print_seconds = print_seconds
-    !...........................................................................
+    !---------------------------------------------------------------------------
+    ! Initialize the modules needed for comprehensive I/O
+    !---------------------------------------------------------------------------
+    call omp%init ()
+    !$omp parallel
+    !call omp%info ()
+    call omp_lock%init ('io')
+    !$omp end parallel
+    call os%init (os_verbose)
+    call mpi%init ()
+    mpi%master = mpi%rank==0
+    io%master = mpi%master
+    !---------------------------------------------------------------------------
+    ! Make the run directory
+    !---------------------------------------------------------------------------
     write (filename,'(a,i5.5,"/")') trim(self%run_dir), 0
     if (io%do_output) call os%mkdir (trim(filename))
     !---------------------------------------------------------------------------
@@ -305,31 +284,33 @@ SUBROUTINE init (self, name)
     ! -- io_unit%dispatcher : data/run/rank_rrrrr.disp
     ! -- io_unit%log        : data/run/thread_rrrrr_ttt.log
     !---------------------------------------------------------------------------
-    call self%open_rank_file (io_unit%queue     , ".que"  , 'formatted')
-    call self%open_rank_file (io_unit%mpi       , ".log"  , 'formatted')
-    call self%open_rank_file (io_unit%dbg       , ".dbg"  , 'unformatted')
-    call self%open_rank_file (io_unit%dump      , ".dump" , 'unformatted')
-    call self%open_rank_file (io_unit%validate  , ".val"  , 'unformatted')
-    call self%open_rank_file (io_unit%dispatcher, ".disp" , 'formatted')
-    call self%open_rank_file (io_unit%particle_d, ".pdat" , 'unformatted')
-    call self%open_rank_file (io_unit%particle_i, ".pinf" , 'unformatted')
+    call open_rank_file (io_unit%queue     , ".que"  , 'formatted')
+    call open_rank_file (io_unit%mpi       , ".log"  , 'formatted')
+    call open_rank_file (io_unit%dbg       , ".dbg"  , 'unformatted')
+    call open_rank_file (io_unit%dump      , ".dump" , 'unformatted')
+    call open_rank_file (io_unit%validate  , ".val"  , 'unformatted')
+    call open_rank_file (io_unit%dispatcher, ".disp" , 'formatted')
+    call open_rank_file (io_unit%particle_d, ".pdat" , 'unformatted')
+    call open_rank_file (io_unit%particle_i, ".pinf" , 'unformatted')
     if (self%task_logging > 0) &
-    call self%open_rank_file (io_unit%task      , ".task1", 'formatted')
+    call open_rank_file (io_unit%task      , ".task1", 'formatted')
     !---------------------------------------------------------------------------
     ! Open MPI rank and OMP thread-specific log files if omp_trace is true,
     ! else fall back to io_unit%log being just MPI rank-specific
     !---------------------------------------------------------------------------
-    if (omp%master) then
-      write (io%output,*) 'reading parameters from: '//trim(self%inputname)
-      write (io%output,*) 'output directory: '//trim(self%run_dir)
+    if (mpi%master) then
+      io%namelist = io_unit%nml
+    else
+      io%namelist = io_unit%mpi
     end if
     if (omp_trace .and. omp%nthreads>1) then
-      io_unit%log = 110 + omp%mythread()
-      call self%open_rank_file (io_unit%log     , ".log"  , 'formatted', omp%mythread())
+      io_unit%log = 0
+      call self%open_rank_file (io_unit%log,".log",'formatted',omp%mythread())
     else
       io_unit%log = io_unit%mpi
     end if
     stdlog = io_unit%log
+    call omp_lock%init_unit ()
     !---------------------------------------------------------------------------
     ! For non-master MPI ranks, redirect log file output to run_dir/rank_rrrrr.log
     !---------------------------------------------------------------------------
@@ -339,15 +320,15 @@ SUBROUTINE init (self, name)
     call io%lock%init ('io')
     !$omp end critical (open_cr)
     io_unit%master = io%master .and. omp%master
-    write (io_unit%log,'(a,2i4,3l4)') &
+    write (io_unit%log,'(a,2i4,l,i4)') &
       'io_mod::init io_unit%log, omp%thread, io_unit%master, io_unit%verbose:', &
       io_unit%log, omp%thread, io_unit%master, io_unit%verbose
-    call omp%info ()
     !$omp end parallel
     !---------------------------------------------------------------------------
     ! stdout is the same as the the %output unit, and is not threadprivate
     !---------------------------------------------------------------------------
     stdout = io_unit%output
+    io%output = io_unit%output
     write (self%namelist, out_params)
     write (self%namelist, io_params)
     !---------------------------------------------------------------------------
@@ -355,6 +336,55 @@ SUBROUTINE init (self, name)
     !---------------------------------------------------------------------------
     io%data_unit = io_unit%data
     first_time=.false.
+  end if
+  !-----------------------------------------------------------------------------
+  ! Code information
+  !-----------------------------------------------------------------------------
+#ifdef BRANCH
+  if (mpi%rank == 0) then
+    print '(a)', &
+' ==============================================================================='
+    write (stdout,*)  'DISPATCH code framework, branch:', BRANCH, ', hash:', HASH
+    write (stdout,*)  'SOLVER=', SOLVER, ' OPTS=', OPTS
+    solver = SOLVER
+    branch = BRANCH
+    hash = HASH
+    opts = OPTS
+#ifdef __NVCOMPILER
+#if __NVCOMPILER_MAJOR__ < 22
+    compiler = 'nvfortran'
+#endif
+#else
+    compiler = compiler_version()
+#endif
+    i1 = index(compiler,'(R)')+3
+    i2 = index(compiler,'Version')
+    if (i1>0 .and. i2>0) then
+      write (stdout,*) compiler(1:i1)//compiler(i2:)
+    else
+      write (stdout,*) compiler
+    end if
+    write (io_unit%nml, code_params)
+  end if
+#endif
+  !-----------------------------------------------------------------------------
+  ! MPI/OMP info
+  !-----------------------------------------------------------------------------
+  call io%header ('mpi_t%info:')
+  call mpi%info
+  if (mpi%master) then
+    if (.not. do_validate) then
+      print'(a,i4)', ' n_sockets =', omp%nsockets
+      print'(a,i4)', '   n_cores =', omp%ncores
+      print'(a,i4)', ' n_threads =', omp%nthreads
+      print'(a,i4)', '  n_places =', omp%nplaces
+      print'(a,i4)', '   n_ranks =', mpi%size
+    end if
+    write(*,'(a,i2)') &
+    ' This version was compiled with default real KIND =', kind(test)
+    call io%header ('io_t%init:')
+    write (io%output,*) 'parameters from: '//trim(self%inputname)
+    write (io%output,*) 'output directory: '//trim(self%run_dir)
   end if
   self%guard_zones = guard_zones
   self%time_derivs = time_derivs
@@ -379,6 +409,7 @@ SUBROUTINE init (self, name)
   io_unit%top    = top
   io_unit%do_validate = do_validate
   stdout = io_unit%output
+  io%output = io_unit%output
   call io%counter%init (mpi%size)
   call omp_lock%init ('io')
   call timer%init
@@ -401,8 +432,7 @@ END SUBROUTINE
 !===============================================================================
 !> Generic text file open
 !===============================================================================
-SUBROUTINE open_rank_file (self, unit, ext, form, thread)
-  class(io_t):: self
+SUBROUTINE open_rank_file (unit, ext, form, thread)
   integer:: unit
   integer, optional:: thread
   character(len=*):: ext, form
@@ -410,14 +440,18 @@ SUBROUTINE open_rank_file (self, unit, ext, form, thread)
   !-----------------------------------------------------------------------------
   if (present(thread)) then
     write (io_unit%threadbase,'(a,"thread_",i5.5,"_",i3.3)') &
-      trim(self%run_dir), mpi%rank, thread
+      trim(io%run_dir), mpi%rank, thread
     filename = trim(io_unit%threadbase)//ext
   else
     write (io_unit%rankbase,'(a,"rank_",i5.5)') &
-      trim(self%run_dir), mpi%rank
+      trim(io%run_dir), mpi%rank
     filename = trim(io_unit%rankbase)//ext
   end if
-  open (unit=unit, file=trim(filename), form=form, status='unknown')
+  if (unit==0) then
+    open (newunit=unit, file=trim(filename), form=form, status='unknown')
+  else
+    open (unit=unit, file=trim(filename), form=form, status='unknown')
+  end if
 END SUBROUTINE open_rank_file
 
 !===============================================================================
@@ -428,17 +462,7 @@ SUBROUTINE bits_mem (self, bits, count, label)
   integer:: bits, count
   character(len=*), optional:: label
   !-----------------------------------------------------------------------------
-  if (io%verbose>2) then
-    if (present(label)) then
-      write(io_unit%mpi,1) bits,' bits per word', count,' words, for', &
-        (bits/(8.*1024.**3))*count, os%gb, ' GB '//trim(label)
-      1 format("bits_mem:",i4,a,i9,a,2f8.3,a)
-    else
-      write(io_unit%mpi,1) bits,' bits per word', count,' words, for', &
-        (bits/(8.*1024.**3))*count, os%gb, ' GB'
-    end if
-  end if
-  call os%gb_mem (bits, count, label)
+  call os%mem_register (bits, count, label)
 END SUBROUTINE bits_mem
 
 !===============================================================================
@@ -528,7 +552,7 @@ contains
       write (stdout,*) file
       open (io_unit%flag, file=file, form='formatted', status='unknown')
       close (io_unit%flag, status='delete')
-      call io%abort ('stop.flag detected')
+      call mpi%abort ('stop.flag detected')
     end if
   end if
   !$omp end critical (flag_cr)
@@ -658,7 +682,8 @@ END SUBROUTINE warning
 !===============================================================================
 SUBROUTINE abort (error)
   character(len=*), optional:: error
-  !.............................................................................
+  !.............................................................................¨
+  call trace%back ()
   call mpi%abort (error)
 END SUBROUTINE abort
 
@@ -737,7 +762,7 @@ SUBROUTINE line (s, left)
       buf(i:i) = c
     end if
   end do
-  print '(1x,a)', buf
+  write (stdout,'(1x,a)') buf
 END SUBROUTINE line
 
 !===============================================================================
@@ -746,7 +771,7 @@ SUBROUTINE print_hl
     '--------------------------------------------------------------------------------'
   !..............................................................................
   if (io%master) then
-    write (io_unit%output,'(a)') trim(hl)
+    write (stdout,'(a)') trim(hl)
   end if
 END SUBROUTINE print_hl
 

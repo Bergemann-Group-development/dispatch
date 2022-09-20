@@ -13,12 +13,41 @@ MODULE background_io_mod
   private
   type, public:: background_io_t
   contains
+    procedure:: init
     procedure, nopass:: output
     procedure, nopass:: input
   end type
   integer, save:: verbose = 0
   type(background_io_t), public:: background_io
 CONTAINS
+
+!===============================================================================
+!> Initialize AMR I/O, by initializing the rank counter; the counter resets to
+!> the initial value after hitting zero.
+!===============================================================================
+SUBROUTINE init (self)
+  class(background_io_t):: self
+  integer:: iostat
+  logical, save:: first_time = .true.
+  namelist /background_io_params/ verbose
+  !-----------------------------------------------------------------------------
+  if (.not. io%do_output) return
+  call trace%begin ('background_io_t%init')
+  call io%lock%set ('background_io_t')
+  if (first_time) then
+    rewind (io%input)
+    read (io%input, background_io_params, iostat=iostat)
+    if (iostat > 0) then
+      rewind (io%input)
+      read (io%input, background_io_params)
+    end if
+    call io%namelist_warning ('background_io_params', iostat)
+    write (io%namelist, background_io_params)
+    first_time = .false.
+  end if
+  call io%lock%unset ('background_io_t')
+  call trace%end ()
+END SUBROUTINE init
 
 !===============================================================================
 !> Interface to prepare background writing into a specific record of the
@@ -63,29 +92,32 @@ SUBROUTINE output (self)
   ! Open a direct access file if not already open
   !-----------------------------------------------------------------------------
   snapshot => snapshots%get (self%iout)
+  recl = kind(buffer)*product(shape(buffer))
   if (snapshot%data_unit == 0) then
     snapshot%record = 0
     write (filename,'(a,i5.5,"/snapshot_",i5.5,".dat")') &
       trim(io%run_dir), snap, mpi%rank
-    recl = kind(buffer)*product(shape(buffer))
     open (newunit=snapshot%data_unit, file=trim(filename), form='unformatted', &
         recl=recl,  access='direct', status='unknown')
     if (verbose > 0) &
-      write (stdout,'(1x,a,3i5,2x,a)') 'background_io: unit,iout,rec,file=', &
-        snapshot%data_unit, self%iout, snapshot%record, trim(filename)
+      write (stdout,'(1x,a,2i5,2x,a)') &
+        'background_io_t%output: unit,iout,rec,file=', &
+        self%iout, snapshot%record, trim(filename)
   end if
   unit = snapshot%data_unit
   snapshot%record = snapshot%record + 1
   self%record = snapshot%record
   rec = snapshot%record
   if (verbose > 1) &
-    write (stdout,*) 'background_io_t%output: unit,iout,rec=', &
-      snapshot%data_unit, snapshot%iout, snapshot%record
+    write (stdout,'(a,i6,2i5,i7)') &
+      'background_io_t%output: id,iout,rec,recl=', &
+      self%id, snapshot%iout, snapshot%record, recl
   call io%lock%unset ('background_t%output')
   !.............................................................................
-  if (verbose > 1) &
+  if (verbose > 0) &
     write (stdlog,*) &
-      'background_io_t%output: snapshot,record,it=', self%iout, rec, it
+      'background_io_t%output: id,snapshot,record,it=', &
+      self%id, self%iout, rec, it
   !-----------------------------------------------------------------------------
   ! Write out with background task
   !-----------------------------------------------------------------------------
@@ -117,20 +149,20 @@ SUBROUTINE write_out (buffer, snap, rec, unit, start)
   real(8):: start
   !.............................................................................
   character(len=64) filename
-  integer:: recl
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('background_io%write_out', itimer=itimer)
-  if (verbose > 0) then
+  if (verbose > 2) then
     write (io_unit%mpi,'(a,2i5,f10.6)') &
       'write_out begin:',snap, rec, wallclock()-start
   end if
-  if (verbose > 1) &
+  if (verbose > 3) &
     write (io_unit%mpi,*) &
-      'write_out: record,recl=', rec, recl
+      'write_out: record=', rec
   !-----------------------------------------------------------------------------
   call io%lock%set ('background_io_t%write_out')
   write (unit, rec=rec) buffer
+  flush (unit)
   call io%lock%unset ('background_io_t%write_out')
   !-----------------------------------------------------------------------------
   !call log (rec, 4)
@@ -146,12 +178,12 @@ END SUBROUTINE write_out
 !===============================================================================
 SUBROUTINE input (self, ok)
   class(patch_t):: self
-  class(task_t), pointer:: task
+  class(snapshot_t), pointer:: snapshot
   logical:: ok
   !.............................................................................
   character(len=64) filename
   real, pointer:: buffer(:,:,:,:)
-  integer:: unit, l(3), u(3), recl
+  integer:: unit, l(3), u(3), recl, iostat
   !-----------------------------------------------------------------------------
   call trace%begin('background_io_t%input')
   !-----------------------------------------------------------------------------
@@ -164,18 +196,29 @@ SUBROUTINE input (self, ok)
   u = merge (self%mesh%ub, self%mesh%ui, io%in%guard_zones)
   buffer => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),1:self%mv,self%it,1)
   recl = kind(buffer)*product(shape(buffer))
+  if (verbose > 0) &
+    write (stdout,'(1x,a,2i5,2x,a)') &
+      'background_io_t%input: iout,rec,file=', &
+      self%iout, self%record, trim(filename)
   open (newunit=unit, file=trim(filename), form='unformatted', &
         recl=recl, access='direct', status='unknown')
-  write (io_unit%mpi,*) 'background_io_t%input: recl,rec=', recl, self%record
-  flush (io_unit%mpi)
-  read (unit, rec=self%record) buffer
+  if (verbose > 0) then
+    write (io_unit%mpi,*) 'background_io_t%input: id,rec,recl=', &
+      self%id, self%record, recl
+    flush (io_unit%mpi)
+  end if
+  read (unit, rec=self%record, iostat=iostat) buffer
+  if (iostat /= 0) then
+    write (stderr,*) 'background_io_t%input: I/O error id,record,recl=', &
+      self%id, self%record,recl
+  end if
   close (unit)
   !-----------------------------------------------------------------------------
   if (io%in%do_generic) then
-    call task%allocate_generic()
+    call self%allocate_generic()
     self%generic = buffer
-    call task%from_generic ()
-    call task%deallocate_generic()
+    call self%from_generic ()
+    call self%deallocate_generic()
   end if 
   !-----------------------------------------------------------------------------
   !call log (self%record, 5)

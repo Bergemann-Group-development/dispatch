@@ -87,7 +87,6 @@ module trans_mod
     integer, dimension(:),allocatable :: krsub ! indices of subordinate lines
 
   contains
-      procedure :: opacities => line_opacities
       procedure :: freql
       procedure :: interpolate_phi
 
@@ -143,32 +142,32 @@ contains
   end subroutine cont_opacities
   !------------------------------------------------------------------------------------
 
-  !====================================================================================
-  subroutine line_opacities(self, nu, hnu_4pi, n, vel_dop, doppler_factor, &
-                                phi, eta, chi)
-    class(line_type), intent(in) :: self
-    real(8), dimension(:), intent(in) :: nu, hnu_4pi
-    real(4), dimension(:,:,:,:), intent(in) :: n
-    real(4), dimension(:,:,:), intent(in) :: vel_dop, doppler_factor
-    real(4), dimension(:,:,:,:), intent(inout) :: phi, eta, chi
-    real(4), dimension(:,:,:), allocatable :: scr1, scr2
-    integer :: f
-
-    call self%profile(nu, vel_dop, doppler_factor, self%adamp, phi)
-
-    do f=1, size(nu)
-      phi(:,:,:,f) = phi(:,:,:,f) * hnu_4pi(f)
-    end do
-
-    scr1 = self%Aji * n(:,:,:,self%j)
-    scr2 = self%Bij * n(:,:,:,self%i) - self%Bji * n(:,:,:,self%j)
-
-    do f=1, size(nu)
-      eta(:,:,:,f) = eta(:,:,:,f) + phi(:,:,:,f) * scr1
-      chi(:,:,:,f) = chi(:,:,:,f) + phi(:,:,:,f) * scr2
-    end do
-  end subroutine line_opacities
-  !------------------------------------------------------------------------------------
+!  !====================================================================================
+!  subroutine line_opacities(self, nu, hnu_4pi, n, vel_dop, doppler_factor, &
+!                                phi, eta, chi)
+!    class(line_type), intent(in) :: self
+!    real(8), dimension(:), intent(in) :: nu, hnu_4pi
+!    real(4), dimension(:,:,:,:), intent(in) :: n
+!    real(4), dimension(:,:,:), intent(in) :: vel_dop, doppler_factor
+!    real(4), dimension(:,:,:,:), intent(inout) :: phi, eta, chi
+!    real(4), dimension(:,:,:), allocatable :: scr1, scr2
+!    integer :: f
+!    !----------------------------------------------------------------------------------
+!    call self%profile(nu, vel_dop, doppler_factor, self%adamp, phi)
+!
+!    do f=1, size(nu)
+!      phi(:,:,:,f) = phi(:,:,:,f) * hnu_4pi(f)
+!    end do
+!
+!    scr1 = self%Aji * n(:,:,:,self%j)
+!    scr2 = self%Bij * n(:,:,:,self%i) - self%Bji * n(:,:,:,self%j)
+!
+!    do f=1, size(nu)
+!      eta(:,:,:,f) = eta(:,:,:,f) + phi(:,:,:,f) * scr1
+!      chi(:,:,:,f) = chi(:,:,:,f) + phi(:,:,:,f) * scr2
+!    end do
+!  end subroutine line_opacities
+!  !------------------------------------------------------------------------------------
 
   !====================================================================================
   pure subroutine cont_rates(self, walpha, fconst, nstar, blzfac, Inu, Rij, Rji)
@@ -179,7 +178,7 @@ contains
       real(8), dimension(:,:,:), intent(out) :: Rij, Rji
       real(8), dimension(:,:,:), allocatable :: Rijf
       integer :: f
-
+      !----------------------------------------------------------------------------------
       Rij = 0
       Rji = 0
 

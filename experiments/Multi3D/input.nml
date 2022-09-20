@@ -23,43 +23,65 @@
 !===============================================================================
 
 ! -- Parameters defining the run -----------------------------------------------
-&io_params          do_trace=F omp_trace=F os_verbose=0 datadir='data/' verbose=0 gb_step=1.0/
+&scaling_params     l=1e8 v=1e6 d=1e-7
+&io_params          do_trace=F omp_trace=F os_verbose=0 datadir='data/' verbose=0 gb_step=10.0 do_output=T/
+&out_params         out_time=0 /
 !&task_list_params   verbose=3/
 !&cartesian_params   size=6,6,3 dims=6,6,3 mpi_dims=2,2,1 origin=0,0,-2.5
 !                    omp_init=t periodic=t,t,f /
 !&atmos_params       verbose=1 atmos_file='./input_multi3d/atmos/atmos.sun_MARCS' npatches=1 /
+!&atmos_params       verbose=1 atmos_file='./input_multi3d/atmos/atmos.hd140283_MARCS'  dims=1,1,3 FeH=-2.4 /
 !&atmos_params       verbose=1 atmos_file='./input_multi3d/atmos/Sun.5x5x230' npatches=1 read_Multi=T/
-!&atmos_params       verbose=1 atmos_file='./input_multi3d/atmos/t5777g44m0005_20.5x5x230' read_Multi=T patches_per_mpi=1,1,7/
-&atmos_params       verbose=1 read_Stagger=T patches_per_mpi=1,1,3/
-&stagger_params     stagger_file='/mnt/beegfs/gemini/groups/bergemann/users/hoppe/Stagger/grid/t5777g44m00/t5777g44m0005' snap=20
-                    dims=10,10,230/
+&atmos_params       verbose=1 atmos_file='./input_multi3d/atmos/t5777g44m0005_20.5x5x230' read_Multi=T patches_per_mpi=1,1,2/
+!&atmos_params       verbose=1 atmos_file='./input_multi3d/atmos/t5777g44m0005_20.5x5x230' read_Multi=T dims=1,1,1/
+!&atmos_params       verbose=1 atmos_file='input_multi3d/atmos/atmos.s4500_g+2.0_m1.0_t02_st_z-3.00_a+0.40_c+0.00_n+0.00_o+0.40_r+0.00_s+0.00'/
+!&atmos_params       verbose=1 atmos_file='input_multi3d/atmos/atmos.p6000_g+4.0_m0.0_t01_st_z-1.00_a+0.40_c+0.00_n+0.00_o+0.40_r+0.00_s+0.00'/
+!&atmos_params       verbose=1 read_Stagger=T patches_per_mpi=1,1,2/
+!&atmos_params       verbose=1 read_Stagger=T dims=1,1,1 FeH=-2.4/
+!&stagger_params     stagger_file='/mnt/beegfs/gemini/groups/bergemann/users/hoppe/Stagger/grid/t5777g44m00/t5777g44m0005' snap=20
+!&stagger_params     stagger_file='/shared-storage/bergemann-data/big/hd1225623/2013-04-10_nlam48/t46g16m2503' snap=0
+&stagger_params     stagger_file='/shared-storage/bergemann-data/big/hd140283/2011-03-22/t5750g37m2505' snap=100
+!&stagger_params     stagger_file='/shared-storage/bergemann-data/big/hd84937/2011-03-28/t64g40m2005' snap=0
+                    dims=5,5,230 /
 &boundary_params    verbose=0 condition=1 /
 &download_params    check_filled=F verbose=0 /
 !&atom_params        atom_file='./input_multi3d/atoms/atom.fe607a_nobf' convlim=1d-3 verbose=2 
 !exclude_trace_cont=F use_atom_abnd=T qnorm=10.0 n_in_lines=683 /! logf_cut=-3.0 blue_cut=5360 red_cut=5390 /
-!&atom_params        atom_file='./input_multi3d/atoms/atom.ba06' convlim=1d-0 verbose=2/
-!&atom_params        atom_file='./input_multi3d/atoms/atom.h20' convlim=1d-2/
-&atom_params        atom_file='./input_multi3d/atoms/atom.o41f' convlim=1d-0 verbose=2 exclude_trace_cont=F /
-!&atom_params        atom_file='./input_multi3d/atoms/atom.fe607aLRCA' convlim=1d-2 verbose=2 exclude_trace_cont=F /
-&radiation_params   save_output=T lock_Inu=F stiff_lim=1e-8 /
+&atom_params        atom_file='./input_multi3d/atoms/atom.ba06' convlim=1d-0 verbose=2/
+!&atom_params        atom_file='./input_multi3d/atoms/atom.li13' convlim=1d-2 level_partf=T abundance=1.05
+!&atom_params        atom_file='./input_multi3d/atoms/atom.o41f' convlim=1d-2
+!&atom_params        atom_file='./input_multi3d/atoms/atom.fe607aLRCA' convlim=1d-2
+!&atom_params        atom_file='./input_multi3d/atoms/atom.fe607aLRCA_nobf' convlim=1d-2
+                    verbose=2 exclude_trace_cont=F exclude_from_line_list=T use_atom_abnd=F /
+&radiation_params   lock_Inu=F stiff_lim=1e-8 /
 &timer_params       sec_per_report = 1e8 /
-&task_list_params   verbose=0 check_nbor_consistency=F /
+&task_list_params   verbose=0 check_nbor_consistency=F use_hash=T/
 &dispatcher0_params verbose=0 omp_pick=F retry_stalled=1e8 /
-&task_params        verbose=0 mpi_init_ids=F /
-&halo_params        check_filled=F /
+&task_params        verbose=0 /
+&halo_params        check_filled=F verbose=0 /
 !&m3d_params         fcheck=31242 pcheck=1,1,-1 linecheck=1 n_nu=32 maxiter=0 verbose=3 ilambd=0
 !&m3d_params         fcheck=31242 pcheck=1,1,-1 linecheck=1 n_nu=32 maxiter=0 verbose=3 ilambd=0
 !&m3d_params         fcheck=1776 pcheck=1,1,-1 linecheck=103 n_nu=4 maxiter=1 verbose=3 ilambd=0
-&m3d_params         verbose=2 fcheck=1211 pcheck=1,1,15 linecheck=103 lvlcheck=6 check_NaN=F
-                    n_nu=4 maxiter=60 ilambd=0 conditioning='full'
+&m3d_params         verbose=2 fcheck=98 pcheck=1,1,230 linecheck=1 lvlcheck=1 check_NaN=F
+                    n_nu=1 maxiter=5 ilambd=0 conditioning='full'
 !                    quad_scheme='set_a4' long_scheme='set_a4'
-!                    quad_scheme='disk_center' long_scheme='disk_center'
-                    quad_scheme='set_a4' long_scheme='custom' custom_mu='0.2 0.3 0.4 0.5 0.6 0.8 0.9 0.95 0.98 0.99 1.0'
+                   quad_scheme='set_a4' long_scheme='lobatto'
+!                    quad_scheme='set_a4' long_scheme='custom' custom_mu='0.2 0.3 0.4 0.5 0.6 0.8 0.9 0.95 0.98 0.99 1.0'
                     save_back_opac=T detailed_prints=F print_push=F print_finished=F print_start=F print_send=F/
 !&composition_params verbose=0 absmet_file='./input_multi3d/absmet' /
+&composition_params verbose=0
+                    absdat_file='./input_multi3d/absdat_irwin'
+                    abund_file='./input_multi3d/abund_irwin'
+                    !abund_file='input_multi3d/atmos/abund.p6000_g+4.0_m0.0_t01_st_z-1.00_a+0.40_c+0.00_n+0.00_o+0.40_r+0.00_s+0.00'
+                    !absdat_file='./input_multi3d/absdat'
+                    !abund_file='./input_multi3d/abund'
+                    linelist_file='./input_multi3d/nlte_ges_linelist_jmg17feb2022_I_II.txt' /
+                    !linelist_file='./input_multi3d/test_linelist2.txt' /
+!&linelist_params    exclude_elements='V CN Cr Si Fe'
 !&composition_params verbose=0 absmet_file='./input_multi3d/metals_noFe.x01' /
 &mpi_debug_params   debug=F /
-&mpi_mesg_params    verbose=1/
-&task_mesg_params   verbose=0 await_new=F use_copy=T lock_recv=F /
+&mpi_mesg_params    verbose=0/
+&task_mesg_params   verbose=0 use_copy=T lock_recv=F /
 &interp_params      verbose=0 /
-!&spectrum_params    temp=5895.648 ne=2.2602832E+13 nh6=1.8157682E+07 tothi=1.0096497E+17 /
+&lock_params        verbose=1 log='stdlog' /
+!&spectrum_params    daa=0.01 aa_blue=6707 aa_red=6708.5 /

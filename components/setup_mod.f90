@@ -38,8 +38,6 @@ CONTAINS
 SUBROUTINE init (self)
   class(setup_t):: self
   call io%init                          ! I/O system
-  call omp_lock%init ('setup')          ! needs omp, io%init
-  call timer%init                       ! needs locks
   call mpi_mesg%init                    ! needs locks
   call trace%begin ('setup_t%init')     ! needs timer
   call io%header ('scaling_t%init:')

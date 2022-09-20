@@ -33,3 +33,5 @@ flux_mod.o              : io_mod.o trace_mod.o patch_mod.o
 divb_clean_mod.o        : io_mod.o trace_mod.o mesh_mod.o vector_mod.o scalar_mod.o vector_ops.o
 
 solver_mod.o            : trace_mod.o extras_mod.o
+divb_cleaner_mod.o      : patch_mod.o stagger_2nd.o kinds_mod.o poisson_mod.o \
+                          list_mod.o timer_mod.o

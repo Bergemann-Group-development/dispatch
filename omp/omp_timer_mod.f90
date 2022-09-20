@@ -8,6 +8,7 @@ MODULE omp_timer_mod
   private
   real(8), external:: omp_get_wtime
   type omp_timer_t
+    logical:: sync=.true.
   contains
     procedure, nopass:: get
     procedure, nopass:: set
@@ -43,7 +44,9 @@ END SUBROUTINE get
 SUBROUTINE set (wc)
   real(8):: wc
   !.............................................................................
-  offset = wc
+  if (omp_timer%sync) then
+    offset = wc
+  end if
 END SUBROUTINE set
 
 END MODULE omp_timer_mod

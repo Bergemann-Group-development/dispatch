@@ -5,8 +5,8 @@
 MODULE bits_mod
   implicit none
   private
-  integer, parameter::       static_bit=1
-  integer, parameter::         leaf_bit=2
+  integer, parameter::       static_bit=2**0
+  integer, parameter::         leaf_bit=2**1
   integer, parameter::        ready_bit=2**2
   integer, parameter::     internal_bit=2**3
   integer, parameter::     boundary_bit=2**4
@@ -34,6 +34,10 @@ MODULE bits_mod
   integer, parameter::       status_bit=2**22   ! trigger update_status on nbors
   integer, parameter::       output_bit=2**21
   integer, parameter::      counter_bit=2**20
+  integer, parameter::   initialize_bit=2**19
+  integer, parameter::    no_filled_bit=2**18
+  integer, parameter::     send_new_bit=2**17
+  integer, parameter::  remove_sent_bit=ishft(1,30)
   type bits_t
     integer:: remove       = remove_bit
     integer:: retry        = retry_bit
@@ -55,6 +59,7 @@ MODULE bits_mod
     integer:: has_BC       = has_BC_bit
     integer:: trace        = trace_bit
     integer:: busy         = busy_bit
+    integer:: no_filled    = no_filled_bit
     integer:: no_download  = no_download_bit
     integer:: no_density   = no_density_bit
     integer:: no_rt        = no_rt_bit
@@ -62,7 +67,11 @@ MODULE bits_mod
     integer:: update_status= status_bit
     integer:: has_counter  = counter_bit
     integer:: has_output   = output_bit
+    integer:: initialize   = initialize_bit
+    integer:: remove_sent  = remove_sent_bit
+    integer:: send_new     = send_new_bit
     integer:: hands_off    = ready_bit+busy_bit+virtual_bit+frozen_bit+external_bit
+    integer:: ignore       = ready_bit+busy_bit
     !-------- BOUNDARY CONDITION BITS ------------------------------------------
     integer:: xl           = 2**1
     integer:: xu           = 2**2
@@ -88,16 +97,21 @@ SUBROUTINE print (unit, label, status)
   character(32) :: cstatus
   integer       :: i
   !-----------------------------------------------------------------------------
+  ! Header line
+  !-----------------------------------------------------------------------------
+  cstatus = 'slRIBVEwSg*pdarRt..fcoSNnnnbftB'
+  do i=11,31,10
+    cstatus(i:i) = '|'
+  end do
+  write (unit,1) '  bits', cstatus, label
+  1 format(1x,a,":",1x,a32,2x,a)
+  !-----------------------------------------------------------------------------
+  ! status line
+  !-----------------------------------------------------------------------------
   do i=1,32
     cstatus(i:i) = merge ('1', '0', iand(status,2**(i-1)) /= 0)
   end do
-  write (unit,'(a,1x,a32)') label//'status', cstatus
-  do i=17,32
-    cstatus(i:i) = merge ('|', '.', mod(i-1,10)==0)
-  end do
-  cstatus( 1:16) = 'slRIBVEwSg*pdarRt'
-  cstatus(22:22) = 'o'
-  write (unit,'(a,1x,a32)') label//'  bits', cstatus 
+  write (unit,1) 'status', cstatus, label
 END SUBROUTINE print
 
 END MODULE bits_mod

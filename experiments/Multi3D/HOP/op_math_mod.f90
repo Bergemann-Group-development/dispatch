@@ -183,18 +183,39 @@ contains
    end FUNCTION poly6
 
 
+!   elemental real(dp) FUNCTION solve_quadratic(p, q, avoid_negative) result(x)
+!      real(dp), intent(in) :: p, q
+!      logical, intent(in), optional :: avoid_negative
+!      real(dp) :: cam, root
+!
+!      cam = - 0.5*p
+!      root = sqrt(abs(0.25*p*p - q))
+!
+!      x = cam + root
+!
+!      if (present(avoid_negative)) then
+!         if (avoid_negative .and. x<0) x = cam - root
+!      endif
+!   end FUNCTION solve_quadratic
+
+   !===============================================================================
    elemental real(dp) FUNCTION solve_quadratic(p, q, avoid_negative) result(x)
       real(dp), intent(in) :: p, q
       logical, intent(in), optional :: avoid_negative
       real(dp) :: cam, root
-
-      cam = - 0.5*p
-      root = sqrt(abs(0.25*p*p - q))
-
-      x = cam + root
-
-      if (present(avoid_negative)) then
-         if (avoid_negative .and. x<0) x = cam - root
+      !----------------------------------------------------------------------------
+      if (p > 0) then
+         root = sqrt(abs(p*p - 4.d0*q))
+         x = - 2.d0*q / (p + root)
+      else
+         cam = - 0.5d0*p
+         root = sqrt(abs(0.25d0*p*p - q))
+         x = cam + root
+      endif
+      if (x < 0) then
+         if (present(avoid_negative)) then
+            if (avoid_negative) x = cam - root
+         endif
       endif
    end FUNCTION solve_quadratic
     
@@ -467,10 +488,10 @@ contains
       real(8), intent(in) :: air
       real(8) :: vac, n, s, s2
       !-----------------------------------------------------------------------------
-      s = 1e4 / air
-      s2 = s**2
-      n = 1 + 0.00008336624212083 + 0.02408926869968 / (130.1065924522 - s2) &
-            + 0.0001599740894897 / (38.92568793293 - s2)
+      s = 1d4 / air
+      s2 = s*s
+      n = 1d0 + 0.00008336624212083d0 + 0.02408926869968d0 / (130.1065924522d0 - s2) &
+            + 0.0001599740894897d0 / (38.92568793293d0 - s2)
       vac = air*n
     END FUNCTION air2vac
 end module op_math_mod

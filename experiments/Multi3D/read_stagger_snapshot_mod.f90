@@ -39,6 +39,7 @@ SUBROUTINE read_stagger_snapshot(ds, d, px, py, pz, ee, tt, ne)
   integer :: iostat, lunit, recl
   integer :: nx, ny, nz, nnz, m(3)
   integer, save :: itimer
+  logical :: ok
   real(4), pointer, contiguous, dimension(:) :: xx, yy, zm, zz
   real(4), pointer, contiguous, dimension(:) :: newx, newy, newz
   real(4), pointer, contiguous, dimension(:) :: xdn, dxidxup, dxidxdn, dx, dxdn
@@ -64,6 +65,17 @@ SUBROUTINE read_stagger_snapshot(ds, d, px, py, pz, ee, tt, ne)
     write(snap_file, '(A,A1,I5.5)') trim(stagger_file), '_', snap
     write(data_file, *) trim(snap_file), '.dat'
     write(aux_file,  *) trim(snap_file), '.aux'
+    ok = .false.
+    if (.not. os%exists(mesh_file)) then
+      print *, 'mesh_file', trim(mesh_file), 'not found'
+    elseif (.not. os%exists(data_file)) then
+      print *, 'data_file', trim(data_file), 'not found'
+    elseif (.not. os%exists(aux_file))  then
+      print *, 'aux_file', trim(aux_file),  'not found'
+    else
+      ok = .true.
+    endif
+    if (.not. ok) stop
   end if
 
   !=============================================================================

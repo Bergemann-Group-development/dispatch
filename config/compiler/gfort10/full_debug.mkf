@@ -1,3 +1,3 @@
 OPT  = -O0
-DEBUG = -g -fbounds-check -fimplicit-none -fbacktrace -ftrapv -ffpe-trap=invalid,zero,overflow -finit-real=snan
+DEBUG = -g -fbacktrace -fimplicit-none -finit-real=snan -ffpe-trap=invalid,zero,overflow -fbounds-check -ftrapv
 HW = -Wline-truncation -Wno-surprising

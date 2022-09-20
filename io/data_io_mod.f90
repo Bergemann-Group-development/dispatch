@@ -57,7 +57,6 @@ MODULE data_io_mod
   USE task_mod
   USE patch_mod
   USE link_mod
-  USE amr_io_mod
   USE legacy_io_mod
   USE background_io_mod
   USE parallel_io_mod
@@ -71,6 +70,8 @@ MODULE data_io_mod
   USE bits_mod
   USE shared_mod
   USE snapshots_mod
+  USE scaling_mod
+  USE kinds_mod
   implicit none
   private
   type, public:: io_kind_t
@@ -122,14 +123,13 @@ SUBROUTINE init (self, task)
         select type (task)
         class is (patch_t)
           select case (trim(io%method))
-          case ('amr')
-            call amr_io%init        (task)
+          case ('background')
+            call background_io%init ()
           case ('parallel')
             call parallel_io%init   (task)
-          case ('background')
           case ('legacy')
           case default
-            call io%warning ("'amr', 'background', 'parallel' & 'legacy' supported")
+            call io%warning ("'background', 'parallel' & 'legacy' supported")
             call mpi%abort ('unsupported io method = '//io%in%method)
           end select
         end select
@@ -217,7 +217,7 @@ SUBROUTINE output (self, patch, experiment_name)
   integer, save:: itimer=0
   logical:: append, use_lock
   logical, save:: io_active=.false.
-  integer:: it, count, np, prv, io_count
+  integer:: it, count, prv, io_count
   real(8):: t
   character(16):: label
   !-----------------------------------------------------------------------------
@@ -248,19 +248,16 @@ SUBROUTINE output (self, patch, experiment_name)
     if (io%method=='legacy'     .or. &
         io%method=='background' .or. &
         time_slices%order <= 0) then
-      np = 1
       use_lock = .false.
-    else
-      np = (time_slices%order+1)/2
     end if
     !$omp atomic read
-    it = patch%iit(patch%nt-np)
+    it = patch%it
     !$omp atomic read
-    t = patch%t(it)
+    t = patch%time
     if (t >= patch%out_next) then
       if (io%verbose > 0) &
-        write (stdout,'(a,i6,3i4,2f12.6)') &
-        'data_io_t%output: ', patch%id, np, it, patch%nt, t, patch%time
+        write (stdout,'(a,i6,2i4,2f12.6)') &
+        'data_io_t%output: ', patch%id, it, patch%nt, t, patch%time
       if (io%verbose > 1) &
         write (io%output,*) wallclock(),' thread',omp%thread,' waitfor output'
       !-------------------------------------------------------------------------
@@ -273,7 +270,7 @@ SUBROUTINE output (self, patch, experiment_name)
       !-------------------------------------------------------------------------
       if (io%verbose > 1) &
         write (io%output,*) wallclock(),' thread',omp%thread,' locked output'
-      do while (patch%t(it) >= patch%out_next)
+      do while (patch%time >= patch%out_next)
         !-----------------------------------------------------------------------
                                                     call io%lock%set ('output2')
         count = self%counters%decrement (patch%iout+1, io%nwrite)
@@ -282,8 +279,6 @@ SUBROUTINE output (self, patch, experiment_name)
         append = (count < io%nwrite-1)
         !-----------------------------------------------------------------------
         select case (io%method)
-        case('amr')
-          call amr_io%output        (patch, count)
         case('legacy')
           call legacy_io%output     (patch)
         case('background')
@@ -405,13 +400,13 @@ SUBROUTINE open_and_close (self)
   ! initially zero, which makes sure that a directory for snapshot 0 exists.
   !-----------------------------------------------------------------------------
   im_the_one = .false.
+  call                                                self%dirlock%set ('mkdir')
   if (self%created < self%iout .or. first_time) then
     !---------------------------------------------------------------------------
     ! The first thread that reaches this point creates a lock, increments the
     ! count of directories, and releases the lock before continuing to create
     ! the directory
     !---------------------------------------------------------------------------
-    call self%dirlock%set ('mkdir')
     if (self%created < self%iout) then
       !-------------------------------------------------------------------------
       ! Only one thread succeeds to come here
@@ -424,7 +419,6 @@ SUBROUTINE open_and_close (self)
     ! wait until the first thread has succeeded
     !---------------------------------------------------------------------------
     first_time = .false.
-    call self%dirlock%unset ('mkdir')
     !---------------------------------------------------------------------------
     ! The lucky thread can now spend the time it takes to make a directory
     !---------------------------------------------------------------------------
@@ -434,16 +428,12 @@ SUBROUTINE open_and_close (self)
       self%done_created = self%iout
     end if
   end if
+  call                                              self%dirlock%unset ('mkdir')
   !-----------------------------------------------------------------------------
   !> Some methods require opening and closing files collectively
   !-----------------------------------------------------------------------------
   if (io%method == 'snapshot') then
     call parallel_io%open_and_close ()
-  else if (io%method == 'amr') then
-    if (io%halt) then
-      call self%lock%set ('halt')
-      call self%lock%unset ('halt')
-    end if
   end if
   call trace%end (itimer)
 END SUBROUTINE open_and_close
@@ -462,8 +452,6 @@ SUBROUTINE input (self, patch, ok)
   if (io%restart >= 0) then
     call io%lock%set ('data_io_t%input')
     select case (trim(io%in%method))
-    case ('amr')
-      call amr_io%input        (patch, ok)
     case ('background')
       call background_io%input (patch, ok)
     case ('parallel')
@@ -471,18 +459,105 @@ SUBROUTINE input (self, patch, ok)
     case ('legacy')
       call legacy_io%input     (patch, ok)
     case default
-      call io%warning ("'amr', 'background', 'parallel' & 'legacy' supported")
+      call io%warning ("'background', 'parallel' & 'legacy' supported")
       call mpi%abort ('unsupported io input method = '//io%in%method)
     end select
+    call rescale (self, patch)
     if (ok) then
       patch%iout = patch%restart+1
       patch%t(patch%it) = patch%time
-      call self%update_counters (patch, 0)
     end if
     call io%lock%unset ('data_io_t%input')
   end if
   call trace%end()
 END SUBROUTINE input
+
+!===============================================================================
+!> Rescaling from incoming to current code units
+!===============================================================================
+SUBROUTINE rescale (self, patch)
+  class(data_io_t):: self
+  class(patch_t):: patch
+  !.............................................................................
+  type(scaling_t):: in_scaling
+  integer:: unit, iostat
+  real(var_k), dimension(:,:,:), pointer, contiguous:: px, py, pz, rh, et, &
+                                                       bx, by, bz
+  character(len=4):: system
+  real(8), save:: l, t, m, d, v, u, b, e, ee, em, ev, temp, grav, mu, sm
+  logical, save:: first_time=.true., ok=.true.
+  namelist /scaling_nml/ system, l, t, d, v, m, e, em, ev, b, temp, grav, mu, sm
+  !-----------------------------------------------------------------------------
+  call trace%begin ('data_io_t%rescale')
+  if (first_time) then
+    call io%lock%set ('data_io_t%rescale')
+    if (first_time) then
+      !-------------------------------------------------------------------------
+      ! Try reading the params file of the run restarting from
+      !-------------------------------------------------------------------------
+      open (newunit=unit,file=trim(io%inputdir)//'params.nml', &
+        form='formatted', status='old', iostat=iostat)
+      if (iostat == 0) then
+        !-----------------------------------------------------------------------
+        ! If reading once succeeds, try reading again, and fall back on fail
+        !-----------------------------------------------------------------------
+        read (unit, scaling_nml, iostat=iostat)
+        if (iostat == 0) then
+          read (unit, scaling_nml, iostat=iostat)
+          if (iostat /=0 ) then
+            rewind (unit)
+            read (unit, scaling_nml, iostat=iostat)
+          end if
+        end if
+        close (unit)
+        write (stdout,1) ' density rescaling:', d/scaling%d
+        write (stdout,1) 'velocity rescaling:', v/scaling%v
+        write (stdout,1) '    time rescaling:', t/scaling%t
+        1 format(1x,a,1p,g12.3)
+      end if
+      !-------------------------------------------------------------------------
+      ! Either no file was found, or scaling_nml couldn't be read
+      !-------------------------------------------------------------------------
+      if (iostat /= 0) then
+        call io%warning ('data_io_t%rescale: no input scaling_nml')
+        ok = .false.
+      end if
+      first_time = .false.
+    end if
+    call io%lock%unset ('data_io_t%rescale')
+  end if
+  if (ok) then
+    rh => patch%mem(:,:,:,patch%idx%d ,patch%it,1)
+    px => patch%mem(:,:,:,patch%idx%px,patch%it,1)
+    py => patch%mem(:,:,:,patch%idx%py,patch%it,1)
+    pz => patch%mem(:,:,:,patch%idx%pz,patch%it,1)
+    if (patch%idx%bx > 0) then
+      bx => patch%mem(:,:,:,patch%idx%bx,patch%it,1)
+      by => patch%mem(:,:,:,patch%idx%by,patch%it,1)
+      bz => patch%mem(:,:,:,patch%idx%bz,patch%it,1)
+    end if
+    rh = rh*d/scaling%d
+    px = px*(v*d)/(scaling%v*scaling%d)
+    py = py*(v*d)/(scaling%v*scaling%d)
+    py = pz*(v*d)/(scaling%v*scaling%d)
+    if (patch%idx%bx > 0) then
+      bx = bx*b/scaling%b
+      by = by*b/scaling%b
+      bz = bz*b/scaling%b
+    end if
+    if (patch%etype == 'thermal' .or. patch%etype == 'total') then
+      et => patch%mem(:,:,:,patch%idx%e ,patch%it,1)
+      et = et*ev/scaling%ev
+    else if (patch%etype == 'entropy') then
+      et => patch%mem(:,:,:,patch%idx%s ,patch%it,1)
+      et = et*(ev/temp)/(scaling%ev/scaling%temp)
+    else if (patch%etype == 'Entropy') then
+      et => patch%mem(:,:,:,patch%idx%s ,patch%it,1)
+      et = et*(em/temp)/(scaling%em/scaling%temp)
+    end if
+  end if
+  call trace%end ()
+END SUBROUTINE rescale
 
 !===============================================================================
 !> Output text with patch info, either to individual files (io%format=1,2) or
@@ -526,7 +601,7 @@ SUBROUTINE output_txt (patch, append)
   write (io_unit%data,'(a)') trim(patch%kind)
   write (io_unit%data,'(a)') trim(patch%eos)
   write (io_unit%data,'(a)') trim(patch%opacity)
-  write (io_unit%data,'(1p,2e18.10,6(2x,3e18.10),1x,1x,2e10.3)') patch%out_next, &
+  write (io_unit%data,'(1p,2e18.10,6(2x,3e18.10)1x,1x,2e10.3)') patch%out_next, &
         patch%dtime, patch%position, patch%ds, patch%velocity, patch%llc_nat, &
         patch%llc_cart, patch%mesh%centre_nat, patch%quality, eos%gamma
   write (io_unit%data,'(6(3i10.1,2x),3i2.1,1x,1i2.1,i3)') int(patch%box/patch%ds+0.5), &
@@ -545,12 +620,11 @@ SUBROUTINE output_nml (patch)
   class(patch_t):: patch
   integer:: unit
   !.............................................................................
-  call io%lock%set ('output_nml')
+  ! call io%lock%set ('output_nml')
   !-----------------------------------------------------------------------------
   ! Open new output files if this is a new snapshot, and write nml metadata
   !-----------------------------------------------------------------------------
-  call open_nml_files (patch)
-  unit = io_unit%nml2
+  call open_nml_files (patch, unit)
   select case (io%nml_version)
   case (1)
     call output_nml_v1 (patch, unit)
@@ -570,16 +644,17 @@ SUBROUTINE output_nml (patch)
   !-----------------------------------------------------------------------------
   ! Appen a list of nbor IDs
   !-----------------------------------------------------------------------------
-  call write_nbor_ids (patch)
+  call write_nbor_ids (patch, unit)
   flush (unit)
-  call io%lock%unset ('output_nml')
+  ! call io%lock%unset ('output_nml')
 CONTAINS
 
 !===============================================================================
 !> Open new namelist files for a new snapshot
 !===============================================================================
-SUBROUTINE open_nml_files (patch)
+SUBROUTINE open_nml_files (patch, unit)
   class(patch_t)       :: patch
+  integer              :: unit
   !.............................................................................
   integer              :: ioformat, id, iout, istep, mesh_type, level,nv, nt, &
                           mv, nw, ntotal, format, nml_version
@@ -603,8 +678,10 @@ SUBROUTINE open_nml_files (patch)
   !-----------------------------------------------------------------------------
   ! Open a new snapshots.nml if this is a new snapshot
   !-----------------------------------------------------------------------------
+  ! call io%lock%set ('open_nml_files')
   snapshot => snapshots%get (patch%iout)
-  if (snapshot%meta_unit == 0) then
+  unit = snapshot%meta_unit
+  if (unit == 0) then
     !---------------------------------------------------------------------------
     ! On mpi%master, write a `snapshot.nml` file
     !---------------------------------------------------------------------------
@@ -650,21 +727,22 @@ SUBROUTINE open_nml_files (patch)
       !--- idx_nml -------------------------------------------------------------
       call patch%idx%output (io_unit%nml1)
       close (io_unit%nml1)
-      !-------------------------------------------------------------------------
-      ! Open a new "data/run/rank_rrrrr_patches.nml"
-      !-------------------------------------------------------------------------
-      write (filename,'(a,i5.5,"/rank_",i5.5,"_patches.nml")') &
-        trim(io%outputname), patch%iout, mpi%rank
-      open (newunit=snapshot%meta_unit, file=trim(filename), form='formatted', &
-            delim='apostrophe', status='unknown')
     end if
-    call patch%idx%output (snapshot%meta_unit)
+    !-------------------------------------------------------------------------
+    ! Open a new "data/run/rank_rrrrr_patches.nml"
+    !-------------------------------------------------------------------------
+    write (filename,'(a,i5.5,"/rank_",i5.5,"_patches.nml")') &
+      trim(io%outputname), patch%iout, mpi%rank
+    open (newunit=unit, file=trim(filename), form='formatted', &
+          delim='apostrophe', status='unknown')
+    snapshot%meta_unit = unit
+    call patch%idx%output (unit)
     !...........................................................................
     if (io%verbose > 0) &
       write (stdout,'(1x,a,3i5,2x,a)') 'OPEN: unit,iout,rec,file=', &
-        snapshot%meta_unit, patch%iout, snapshot%record, trim(filename)
+        unit, patch%iout, snapshot%record, trim(filename)
   end if
-  io_unit%nml2 = snapshot%meta_unit
+  ! call io%lock%unset ('open_nml_files')
 END SUBROUTINE open_nml_files
 
 !===============================================================================
@@ -752,12 +830,14 @@ SUBROUTINE output_nml_v4 (patch, unit)
   class(patch_t):: patch
   integer:: unit
   !.............................................................................
-  integer :: id, level, istep, ncell(3), n(3), nw, mesh_type, record, rank
+  integer :: id, level, istep, ncell(3), n(3), nw, mesh_type, record, rank, ipos(3)
   real    :: quality, cost
-  real(8) :: time, dtime, position(3), size(3), centre_nat(3), ds(3), velocity(3), llc_nat(3), erot1(3),erot2(3),erot3(3)
+  real(8) :: time, dtime, position(3), size(3), centre_nat(3), ds(3), &
+    velocity(3), llc_nat(3), erot1(3), erot2(3), erot3(3)
   character(len=16) :: kind, etype
   namelist /patch_nml/ id, position, size, level, dtime, istep, ds, ncell, n, &
-    nw, velocity, quality, mesh_type, kind, etype, record, rank, cost, centre_nat, llc_nat, erot1, erot2, erot3
+    nw, velocity, quality, mesh_type, kind, etype, record, rank, ipos, cost, &
+    centre_nat, llc_nat, erot1, erot2, erot3
   !-----------------------------------------------------------------------------
   call trace%begin ('data_io_t%output_nml_v3')
   id          = patch%id
@@ -766,6 +846,7 @@ SUBROUTINE output_nml_v4 (patch, unit)
   level       = patch%level
   dtime       = patch%dtime
   istep       = patch%istep
+  ipos        = patch%ipos
   ds          = patch%ds
   ncell       = patch%ncell
   n           = patch%n
@@ -785,9 +866,15 @@ SUBROUTINE output_nml_v4 (patch, unit)
     erot2        = patch%erot(:,2)
     erot3        = patch%erot(:,3)
   else
-    erot1        = [1.0,0.0,0.0]
-    erot2        = [0.0,1.0,0.0]
-    erot3        = [0.0,0.0,1.0]
+  ! ----------------------------------------------------------------------------
+  ! If erot is not associated, it is best to have them as all 0.0, so in python
+  ! and in restarts we would know, that it is not initialized. The 1.0 in 
+  ! diagonals, as it was before, can happen by chance as well. And in restarts 
+  ! this can force using tildet guard zone loading, which is more expensive.
+  ! ----------------------------------------------------------------------------
+    erot1        = [0.0,0.0,0.0]
+    erot2        = [0.0,0.0,0.0]
+    erot3        = [0.0,0.0,0.0]
   end if
   write (unit, patch_nml)
   call trace%end()
@@ -798,13 +885,15 @@ END SUBROUTINE output_nml
 !===============================================================================
 !> Write an arrays of neighbor IDs
 !===============================================================================
-SUBROUTINE write_nbor_ids (patch)
+SUBROUTINE write_nbor_ids (patch, unit)
   class(patch_t)         :: patch
+  integer                :: unit
+  !.............................................................................
   class(nbor_t), pointer :: nbor
   integer                :: id, parent_id, n
   integer, pointer       :: nbor_ids(:)
   namelist /nbor_nml/ parent_id, nbor_ids
-  !.............................................................................
+  !-----------------------------------------------------------------------------
   n = 0
   nbor => patch%link%nbor
   do while (associated(nbor))
@@ -826,7 +915,7 @@ SUBROUTINE write_nbor_ids (patch)
   else
     parent_id  = 0
   end if
-  write (io_unit%nml2, nbor_nml)
+  write (unit, nbor_nml)
   deallocate (nbor_ids)
 END SUBROUTINE write_nbor_ids
 
@@ -879,8 +968,8 @@ SUBROUTINE input_io (unit)
   implicit none
   integer:: unit
   !.............................................................................
-  integer            :: format, ntotal, time_derivs, nml_version
-  logical            :: guard_zones, do_generic
+  integer, save      :: format=0, ntotal=0, time_derivs=0, nml_version=4
+  logical, save      :: guard_zones=.false., do_generic=.false.
   real(8)            :: out_time
   character(len=16)  :: method
   character(len=128) :: filename
@@ -1222,11 +1311,12 @@ SUBROUTINE input_nml_v4 (self, patch, unit, verbose)
   real                    :: gamma, quality, cost
   real(8)                 :: time, dtime, out_next, out_time, ms
   real(8), dimension(3)   :: size, position, ds, box, velocity, &
-                             llc_nat, llc_cart, centre_nat, origin
+                             llc_nat, llc_cart, centre_nat, origin, &
+                             erot1, erot2, erot3
   logical                 :: guard_zones, no_mans_land, periodic(3)
   character(len=16)       :: kind, etype, eos_name, opacity, method
   character(len=128), save:: filename
-  integer                 :: dims(3), mpi_dims(3), mpi_size
+  integer                 :: dims(3), mpi_dims(3), mpi_size, ipos(3)
   namelist /snapshot_nml/ ioformat, iout, time, ntotal, box, li, ui, ng, &
     gn, n, nv, mv, nt, gamma, eos_name, opacity, periodic, guard_zones, &
     time_derivs, no_mans_land, omp_nthreads, mpi_size, mesh_type, mpi_dims, &
@@ -1237,7 +1327,9 @@ SUBROUTINE input_nml_v4 (self, patch, unit, verbose)
     refine_ratio, origin
   !-----------------------------------------------------------------------------
   namelist /patch_nml/ id, position, size, level, dtime, istep, ds, ncell, n, &
-    nw, velocity, quality, mesh_type, kind, etype, record, rank, cost, centre_nat
+    nw, velocity, quality, mesh_type, kind, etype, record, rank, ipos, cost, &
+    centre_nat, llc_nat, erot1, erot2, erot3
+
   logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
   ! Read info from namelist
@@ -1265,6 +1357,7 @@ SUBROUTINE input_nml_v4 (self, patch, unit, verbose)
     io%in%nv           = nv
     io%in%mv           = mv
   end if
+  patch%iout         = iout
   patch%time         = time
   patch%box          = box
   patch%li           = li
@@ -1286,7 +1379,15 @@ SUBROUTINE input_nml_v4 (self, patch, unit, verbose)
   ! Read patch-specific values, from all previous ranks
   !-----------------------------------------------------------------------------
   call read
-  if (iostat /= 0) then
+  !-----------------------------------------------------------------------------
+  ! A positive iostat means an error in the namelist
+  !-----------------------------------------------------------------------------
+  if (iostat > 0) then
+    call io%abort ('data_io%input_nml_v4: error in namelist')
+  !-----------------------------------------------------------------------------
+  ! A negative iostat means no additional namelist was found
+  !-----------------------------------------------------------------------------
+  else if (iostat < 0) then
     if (rank_in < io%in%mpi_size) then
       !-------------------------------------------------------------------------
       ! Assume that an error means end-of-file; setup for reading the next file
@@ -1314,6 +1415,7 @@ SUBROUTINE input_nml_v4 (self, patch, unit, verbose)
   patch%level     = level
   patch%dtime     = dtime
   patch%istep     = istep
+  patch%ipos      = ipos
   patch%ds        = ds
   patch%n         = n
   patch%nw        = nw
@@ -1326,6 +1428,14 @@ SUBROUTINE input_nml_v4 (self, patch, unit, verbose)
   patch%cost      = cost
   patch%rank      = rank
   patch%in%rank   = rank
+  if (any(erot1/=0.0) .or. &
+      any(erot2/=0.0) .or. &
+      any(erot3/=0.0)) then
+    call os%allocate(patch%erot,[3,3])
+    patch%erot(:,1) = erot1
+    patch%erot(:,2) = erot2
+    patch%erot(:,3) = erot3
+  end if
   !-----------------------------------------------------------------------------
   call io%lock%unset ('input_nml_v4')
   call trace%end()

@@ -166,6 +166,7 @@ SUBROUTINE trigger (task_list, task, nbtask, dt)
   class(list_t):: task_list
   class(patch_t):: task, nbtask
   real(8):: dt
+  integer:: istep
   class(nbor_t), pointer:: nbor
   !-----------------------------------------------------------------------------
   call trace%begin ('mulligan_t%trigger')
@@ -203,7 +204,9 @@ SUBROUTINE trigger (task_list, task, nbtask, dt)
     end if
     !...........................................................................
   end if
-  call task_list%queue_by_time (nbtask%link)
+  !$omp atomic read
+  istep = nbtask%istep
+  call task_list%queue_by_time (nbtask%link, istep)
   !-----------------------------------------------------------------------------
   call task_list%lock%unset ('mulligan')
   call trace%end()

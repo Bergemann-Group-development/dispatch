@@ -8,6 +8,7 @@ MODULE units_mod
   USE math_mod
   USE omp_mod
   USE trace_mod
+  USE shared_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -15,30 +16,29 @@ MODULE units_mod
   !-----------------------------------------------------------------------------
   type, public:: const_t
     character(len=16):: name='not set'
-    real(kind=8):: m_u, m_h, m_he, m_e                                          ! proton, hydrogen, helium, electron mass
-    real(kind=8):: amu                                                          ! Atomic mass unit
-    real(kind=8):: k_b                                                          ! Boltzmann's constant
-    real(kind=8):: h_p                                                          ! Planck's constant
-    real(kind=8):: c                                                            ! speed of light
-    real(kind=8):: e                                                            ! electron charge
-    real(kind=8):: q                                                            ! electron charge
-    real(kind=8):: stefan                                                       ! Stefan-Boltzmann constant
-    real(kind=8):: grav                                                         ! constant of gravity
-    real(kind=8):: AU                                                           ! astronomical unit
-    real(kind=8):: pc                                                           ! parsec
-    real(kind=8):: yr                                                           ! year
-    real(kind=8):: kms                                                          ! kilometres per second
-    real(kind=8):: mum                                                          ! micrometer
-    real(kind=8):: Myr                                                          ! Megayear
-    real(kind=8):: m_sun                                                        ! Solar mass
-    real(kind=8):: r_sun                                                        ! Solar radius
-    real(kind=8):: m_earth                                                      ! Earth mass
-    real(kind=8):: r_earth                                                      ! Earth radius
-    real(kind=8):: pi
-    real(kind=8):: mu_0                ! vacuum permeability
-    real(kind=8):: eps_0               ! vacuum permittivity
+    real(kind=8):: m_u, m_h, m_he, m_e  ! proton, hydrogen, helium, electron mass
+    real(kind=8):: amu                  ! Atomic mass unit
+    real(kind=8):: k_b                  ! Boltzmann's constant
+    real(kind=8):: h_p                  ! Planck's constant
+    real(kind=8):: c                    ! speed of light
+    real(kind=8):: e                    ! electron charge
+    real(kind=8):: q                    ! electron charge
+    real(kind=8):: stefan               ! Stefan-Boltzmann constant
+    real(kind=8):: grav                 ! constant of gravity
+    real(kind=8):: AU                   ! astronomical unit
+    real(kind=8):: pc                   ! parsec
+    real(kind=8):: yr                   ! year
+    real(kind=8):: kms                  ! kilometres per second
+    real(kind=8):: mum                  ! micrometer
+    real(kind=8):: Myr                  ! Megayear
+    real(kind=8):: m_sun                ! Solar mass
+    real(kind=8):: r_sun                ! Solar radius
+    real(kind=8):: m_earth              ! Earth mass
+    real(kind=8):: r_earth              ! Earth radius
+    real(kind=8):: mu_0                 ! vacuum permeability
+    real(kind=8):: eps_0                ! vacuum permittivity
   contains
-    procedure:: init
+    procedure:: init => init_const
   end type
   type(const_t), public:: cgs, si
   !-----------------------------------------------------------------------------
@@ -50,17 +50,24 @@ MODULE units_mod
     real(kind=8):: t=1d0
     real(kind=8):: m=1d0
   contains
+    procedure:: init
     procedure:: output
+    procedure:: m_sun
+    procedure:: myr
   end type
+  type(units_t), public:: units
 CONTAINS
 
-SUBROUTINE init (self)
+!===============================================================================
+!> Catch any cgs%init() or si%init()
+!===============================================================================
+SUBROUTINE init_const (self)
   class(const_t):: self
-  type(units_t):: units
+  !-----------------------------------------------------------------------------
+  call trace%begin ('const_t%init')
   !-----------------------------------------------------------------------------
   ! CGS units
   !-----------------------------------------------------------------------------
-  call trace%begin ('const_t%init')
   cgs%name    = 'cgs'
   cgs%m_u     = 1.6726219d-24
   cgs%m_e     = 9.10938356d-28
@@ -70,8 +77,8 @@ SUBROUTINE init (self)
   cgs%k_b     = 1.380658d-16                                            ! [erg/K]
   cgs%h_p     = 6.6260755d-27
   cgs%c       = 2.999792d10
-  cgs%e       = 4.80320451d-10!1.602177e-12
-  cgs%q       =  4.80320451d-10 !1.602177e-12
+  cgs%e       = 4.80320451d-10 !1.602177e-12
+  cgs%q       = 4.80320451d-10 !1.602177e-12
   cgs%stefan  = 5.67d-5
   cgs%grav    = 6.6743d-8
   cgs%AU      = 1.496d13
@@ -86,7 +93,6 @@ SUBROUTINE init (self)
   cgs%r_earth = 6.371d8
   cgs%mu_0    = 1.0
   cgs%eps_0   = 1.0
-  cgs%pi      = math%pi
   !-----------------------------------------------------------------------------
   ! SI units
   !-----------------------------------------------------------------------------
@@ -114,8 +120,18 @@ SUBROUTINE init (self)
   si%r_earth = 6.371d6
   si%mu_0    = math%pi4*1d-7
   si%eps_0   = 8.8542d-12
-  si%pi      = math%pi
-  !call units%output
+  call trace%end ()
+END SUBROUTINE init_const
+
+!===============================================================================
+!> Generic init
+!===============================================================================
+SUBROUTINE init (self)
+  class(units_t):: self
+  type(const_t):: systems
+  !.............................................................................
+  call trace%begin ('units_t%init')
+  call systems%init ()
   call trace%end ()
 END SUBROUTINE init
 
@@ -124,21 +140,14 @@ END SUBROUTINE init
 !===============================================================================
 SUBROUTINE output (self)
   class(units_t):: self
-  character(len=4):: system
-  real(kind=8):: l, t, m
-  real:: m_sun, r_sun, pc, au, grav, stefan, yr, myr
-  namelist /scaling_nml/ system, l, t, m
+  real:: m_sun, r_sun, pc, au, stefan, yr, myr, grav, stfan
   namelist /cgs_nml/ m_sun, r_sun, pc, au, grav, stefan, yr, myr
   namelist /si_nml/ m_sun, r_sun, pc, au, grav, stefan, yr, myr
   !----------------------------------------------------------------------------
   call trace%begin ('units_t%output')
-  system = self%system
-  l      = self%l
-  t      = self%t
-  m      = self%m
+  !.............................................................................
   if (omp%master) then
     !$omp critical (write_nml_cr)
-    write (io_unit%nml, scaling_nml)
     m_sun  = cgs%m_sun
     r_sun  = cgs%r_sun
     pc     = cgs%pc
@@ -147,7 +156,7 @@ SUBROUTINE output (self)
     stefan = cgs%stefan
     yr     = cgs%yr
     myr    = cgs%myr
-    write (io_unit%nml, cgs_nml)
+    write (io%namelist, cgs_nml)
     m_sun  = si%m_sun
     r_sun  = si%r_sun
     pc     = si%pc
@@ -156,10 +165,25 @@ SUBROUTINE output (self)
     stefan = si%stefan
     yr     = si%yr
     myr    = si%myr
-    write (io_unit%nml, si_nml)
+    write (io%namelist, si_nml)
     !$omp end critical (write_nml_cr)
   end if
   call trace%end()
 END SUBROUTINE output
+
+!===============================================================================
+!> Convenience functions
+!===============================================================================
+REAL FUNCTION m_sun (self, mass)
+  class(units_t):: self
+  real(8):: mass
+  m_sun = mass*self%m/cgs%m_sun
+END FUNCTION m_sun
+!===============================================================================
+REAL FUNCTION myr (self, time)
+  class(units_t):: self
+  real(8):: time
+  myr = time*self%t/cgs%myr
+END FUNCTION myr
 
 END MODULE units_mod

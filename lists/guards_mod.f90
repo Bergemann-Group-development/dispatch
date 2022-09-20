@@ -11,6 +11,8 @@
 !===============================================================================
 MODULE guards_mod
   USE io_mod
+  USE os_mod
+  USE mpi_mod
   USE trace_mod
   USE omp_timer_mod
   USE task_mod
@@ -22,6 +24,8 @@ MODULE guards_mod
   USE conserve_mod
   USE validate_mod
   USE math_mod
+  USE shared_mod
+  USE bits_mod
   implicit none
   private
   type, public, extends(nbor_t):: guards_t
@@ -39,6 +43,8 @@ MODULE guards_mod
     procedure:: info
     procedure:: differ
     procedure:: tilted
+    procedure:: nbor_info
+    procedure, nopass:: alloc_nbor
   end type
   integer:: verbose=0
   logical:: detailed_timer = .false.
@@ -110,14 +116,14 @@ END SUBROUTINE update
 !===============================================================================
 !===============================================================================
 SUBROUTINE source_to_target (self, source, target, all_tgt, all_src, n_op, &
-                             only)
+                             only, nbstep)
   class(guards_t)        :: self
   class(task_t)          :: source, target
   logical, optional      :: all_tgt, all_src
   integer, optional      :: n_op(3)
-  integer, optional      :: only
+  integer, optional      :: only, nbstep
   !.............................................................................
-  character(len=8)       :: type
+  character(10)          :: type
   logical                :: tilted
   integer                :: m(6), tid, sid, unit
   integer, save          :: itimer=0
@@ -128,8 +134,7 @@ SUBROUTINE source_to_target (self, source, target, all_tgt, all_src, n_op, &
   tid = target%id
   sid = source%id
   !.............................................................................
-  if (verbose > 2 .or. target%id == io%id_debug &
-                  .or. source%id == io%id_debug) then
+  if (verbose > 2) then
     unit = stdout
   else
     unit = stdlog
@@ -151,16 +156,24 @@ SUBROUTINE source_to_target (self, source, target, all_tgt, all_src, n_op, &
       !-------------------------------------------------------------------------
       self%distance = target%distance_to (source)
       tilted = associated (source%erot)
-      if (tilted) then
+      if (source%level < shared%levelmin) then
+        type = 'none'
+      else if (target%level < shared%levelmin) then
+        type = 'none'
+        if (source%level == target%level+1) then
+          call self%restrict (target, source, all_tgt=.true., nbstep=nbstep)
+          type = 'restrict1'
+        end if
+      else if (tilted) then
         type = 'tilted'
         call self%tilted (target, source, all_tgt, all_src, only)
       else if (source%level == target%level) then
         type = 'same'
-        call self%same (target, source, all_tgt, all_src, only)
+        call self%same (target, source, all_tgt, all_src, only, nbstep)
         if (present(n_op)) n_op  (1) = n_op(1) + 1
       else if (source%level == target%level-1) then
         type = 'prolong'
-        call self%prolong (target, source, all_tgt, all_src, only)
+        call self%prolong (target, source, all_tgt, all_src, only, nbstep)
         if (present(n_op)) n_op(2) = n_op(2) + 1
       else if (source%level == target%level+1) then
         type = 'restrict'
@@ -170,33 +183,38 @@ SUBROUTINE source_to_target (self, source, target, all_tgt, all_src, n_op, &
         ! the source is contained in the target then all cells should be used,
         ! so there is no need to test on all_tgt here:
         !-----------------------------------------------------------------------
-        if (source%parent%id == target%id .and. &
-            .not. present(all_src)) then
-          call conserve%restrict (target, source, all_tgt, all_src, only)
-        else
-          if (source%parent%id == target%id) then
-            write (stdlog,'(a,2(i6,":",i2.2,2x),2l1)') &
-              'guards_t%restrict: warning, source,target,all=', &
-              source%id, source%level, target%id, target%level, &
-              present(all_tgt), present(all_src)
+        if (associated(source%parent)) then
+          if (source%parent%id == target%id .and. &
+              .not. present(all_src)) then
+            call self%restrict (target, source, all_tgt, all_src, only, nbstep)
+            !call conserve%restrict (target, source, all_tgt, all_src, only)
+            type = 'restrict-c'
+          else
+            if (source%parent%id == target%id) then
+              write (stdlog,'(a,2(i6,":",i2.2,2x),2l1)') &
+                'guards_t%restrict: warning, source,target,all=', &
+                source%id, source%level, target%id, target%level, &
+                present(all_tgt), present(all_src)
+            end if
+            call self%restrict (target, source, all_tgt, all_src, only, nbstep)
+            !call conserve%restrict (target, source, all_tgt, all_src, only)
           end if
-          call self%restrict (target, source, all_tgt, all_src, only)
-          !call conserve%restrict (target, source, all_tgt, all_src, only)
+        else
+          call source%log ('missing parent')
+          write (stderr,'(/,2(1x,a,i6,":",i2.2,3i3,2x))') &
+            'source:', source%id, source%key, &
+            'target:', target%id, target%key
+          call io%warning ('guards_t%source_to_target: missing source%parent')
         end if
         if (present(n_op)) n_op(3) = n_op(3) + 1
       end if
-      if (verbose > 0 .or. target%id == io%id_debug &
-                      .or. source%id == io%id_debug) then
-        write (unit,'(a8,2x,2(a,i6,":",i2.2,1x,4i3,3x),2x,3l1)') type, &
-          'tgt:', tid, target%level, target%key, &
-          'src:', sid, source%level, source%key, &
-          present(all_tgt), present(all_src), present(only)
-      end if
-      if (target%id == io%id_debug) then
-        write (unit,'(a8,2x,2(a,i6,":",i2.2,3x),a,1p,e12.2)') type, &
-          'tgt:', tid, target%level, &
-          'src:', sid, source%level, &
-          'dmin:', minval(target%mem(:,:,:,target%idx%d,target%it,1))
+      if (verbose > 1 .or. target%id == io%id_debug) then
+        if (target%idx%d > 0) then
+          write (unit,'(a8,2x,2(a,i6,":",i2.2,3x),a,1p,e12.2)') type, &
+            'tgt:', tid, target%level, &
+            'src:', sid, source%level, &
+            'dmin:', minval(target%mem(:,:,:,target%idx%d,target%it,1))
+        end if
       end if
     end select
     !...........................................................................
@@ -204,7 +222,7 @@ SUBROUTINE source_to_target (self, source, target, all_tgt, all_src, n_op, &
       write (unit,'(a,2x,i6,":",i2.2,f12.6,2x,i6,":",i2.2,2x,3f8.3,2x,a)') &
         'guards_t%source_to_target: tgt,time,src,dist,type=', &
         target%id, target%level, target%time, source%id, source%level, &
-        self%distance/target%size, type
+        self%distance/target%size, trim(type)
     end if
     !...........................................................................
   end select
@@ -217,11 +235,11 @@ END SUBROUTINE source_to_target
 !> ignores the values of all_tgt and all_src, always using as much as possible
 !> from the internal parts of the source, corrsponging to all_tgt=T, all_scr=F
 !===============================================================================
-SUBROUTINE same (self, tgt, src, all_tgt, all_src, only)
+SUBROUTINE same (self, tgt, src, all_tgt, all_src, only, nbstep)
   class(guards_t)                      :: self
   class(patch_t)                       :: tgt, src
   logical, optional                    :: all_tgt, all_src
-  integer, optional                    :: only
+  integer, optional                    :: only, nbstep
   !.............................................................................
   class(mesh_t), pointer, dimension(:) :: tm, sm
   type(meshp_t)                        :: om(3)
@@ -233,32 +251,35 @@ SUBROUTINE same (self, tgt, src, all_tgt, all_src, only)
   integer, dimension(3)                :: ls, us, lt, ut
   integer, save                        :: itimer=0
   !-----------------------------------------------------------------------------
-  if (detailed_timer) &
-    call trace%begin ('guards_t%same', itimer=itimer)
+  call trace%begin ('guards_t%same', itimer=itimer)
   call self%info ('same', tgt, src, all_tgt, all_src, only)
   tm => tgt%mesh                             ! tgt mesh
   sm => src%mesh                             ! src mesh
   do i=1,3
     om(i)%p => sm(i)
   end do
-  d = src%distance (tgt)
-  sm_p    = tm%p + d                         ! src position
-  tl = tm%p - tm%s*0.5d0 - tm%ng*tm%d        ! tgt lower corner
-  tu = tm%p + tm%s*0.5d0 + tm%ng*tm%d        ! tgt upper corner
-  sl = sm_p - sm%s*0.5d0                     ! src lower corner
-  su = sm_p + sm%s*0.5d0                     ! src upper corner
+  d = tgt%distance_to (src)                  ! wrapped vector (src-tgt)
+  tl =   - tm%s*0.5d0 - tm%ng*tm%d           ! tgt lower corner
+  tu =   + tm%s*0.5d0 + tm%ng*tm%d           ! tgt upper corner
+  sl = d - sm%s*0.5d0                        ! src lower corner
+  su = d + sm%s*0.5d0                        ! src upper corner
   fl = max(tl,sl)                            ! overlap lower corner
   fu = min(tu,su)                            ! overlap upper corner
-  ls = src%index_only (fl, roundup=.true.)   ! src lower index
-  us = src%index_only (fu, rounddn=.true.)   ! src upper index
-  lt = tgt%index_only (fl, roundup=.true.)   ! tgt lowwe index
-  ut = tgt%index_only (fu, rounddn=.true.)   ! tgt upper index
+  call io%assert (all(fu > fl), 'guards_t%differ: corner reversal')
+  ls = ceiling((fl-d)/sm%d + sm%o)      ! src lower index
+  us = floor  ((fu-d)/sm%d + sm%o)      ! src upper index
+  lt = ceiling((fl  )/tm%d + tm%o)      ! tgt lowwe index
+  ut = floor  ((fu  )/tm%d + tm%o)      ! tgt upper index
   if (verbose > 2) then
     write (stdlog,'(a,2i6,4(2x,3i7))') 'guards_t%same: tgt,src,ls,us,lt,ut=', &
       tgt%id, src%id, ls, us, lt, ut
     call tgt%stats ('guards_t%same tgt')
     call src%stats ('guards_t%same src')
   end if
+  call io%assert (all(lt >= tm%lb), 'guards_t%same: lt breach')
+  call io%assert (all(ut <= tm%ub), 'guards_t%same: ut breach')
+  call io%assert (all(ls >= sm%lb), 'guards_t%same: ls breach')
+  call io%assert (all(us <= sm%ub), 'guards_t%same: us breach')
   !-----------------------------------------------------------------------------
   ! Time interpolate in the target region
   !-----------------------------------------------------------------------------
@@ -268,45 +289,54 @@ SUBROUTINE same (self, tgt, src, all_tgt, all_src, only)
     m = shape(tgt%mem)
     mem => tgt%mem(:,:,:,:,tgt%it,1)
     call interp%in_t   (tgt, src, ls, us, src%mem, mem, lt, ut, only=only, &
-                          extrap=tgt%allow_extrapolate)
+                          extrap=tgt%allow_extrapolate, nbstep=nbstep)
   endif
   if (associated(tgt%filled)) &
-    tgt%filled (lt(1):ut(1),lt(2):ut(2),lt(3):ut(3)) = src%level
+    tgt%filled (lt(1):ut(1),lt(2):ut(2),lt(3):ut(3)) = 10*src%level
   !.............................................................................
-  if (detailed_timer) &
-    call trace%end (itimer)
+  if (verbose > 1 .or. tgt%id == io%id_debug) then
+    if (tgt%idx%d > 0) then
+      write (stdlog,'(a,2(i6,"::",i2.2),2(2x,3i3),1p,2g14.3)') &
+        '  same: tid,sid,l,u,min=', &
+        tgt%id, tgt%level, src%id, src%level, lt, ut, &
+        minval(tgt%mem(lt(1):ut(1),lt(2):ut(2),lt(3):ut(3), &
+          tgt%idx%d,tgt%it,1)), &
+        minval(tgt%mem(:,:,:,tgt%idx%d,tgt%it,1))
+    else
+      write (stdlog,'(a,2(i6,"::",i2.2),2(2x,3i3))') &
+        '  same: tid,sid,l,u,min=', &
+        tgt%id, tgt%level, src%id, src%level, lt, ut
+    end if
+    flush (stdout)  
+  end if
+  !.............................................................................
+  call trace%end (itimer)
 END SUBROUTINE same
 
 !===============================================================================
-SUBROUTINE prolong (self, tgt, src, all_tgt, all_src, only)
+SUBROUTINE prolong (self, tgt, src, all_tgt, all_src, only, nbstep)
   class(guards_t)   :: self
   class(patch_t)    :: tgt, src
   logical, optional :: all_tgt, all_src
-  integer, save     :: itimer=0
-  integer, optional :: only
+  integer, optional :: only, nbstep
   !-----------------------------------------------------------------------------
-  if (detailed_timer) &
-    call trace%begin ('guards_t%prolong', itimer=itimer)
+  call trace%begin ('guards_t%prolong')
   call self%info ('prolong', tgt, src, all_tgt, all_src, only)
-  call self%differ (tgt, src, all_tgt, all_src, only)
-  if (detailed_timer) &
-    call trace%end (itimer)
+  call self%differ (tgt, src, all_tgt, all_src, only, nbstep)
+  call trace%end ()
 END SUBROUTINE prolong
 
 !===============================================================================
-SUBROUTINE restrict (self, tgt, src, all_tgt, all_src, only)
+SUBROUTINE restrict (self, tgt, src, all_tgt, all_src, only, nbstep)
   class(guards_t)   :: self
   class(patch_t)    :: tgt, src
   logical, optional :: all_tgt, all_src
-  integer, save     :: itimer=0
-  integer, optional :: only
+  integer, optional :: only, nbstep
   !-----------------------------------------------------------------------------
-  if (detailed_timer) &
-    call trace%begin ('guards_t%restrict',  itimer=itimer)
+  call trace%begin ('guards_t%restrict')
   call self%info ('restrict', tgt, src, all_tgt, all_src, only)
-  call self%differ (tgt, src, all_tgt, all_src, only)
-  if (detailed_timer) &
-    call trace%end (itimer)
+  call self%differ (tgt, src, all_tgt, all_src, only, nbstep)
+  call trace%end ()
 END SUBROUTINE restrict
 
 !===============================================================================
@@ -319,14 +349,14 @@ SUBROUTINE info (self, label, target, source, all_tgt, all_src, only)
   integer, optional :: only
   integer           :: o
   !.............................................................................
-  if (verbose > 0) then
+  if (verbose > 1) then
     if (present(only)) then
       o = only
     else
       o = 0
     end if
-    write (stdlog,'(2(f12.6,a,2x,i6,":",i2.2),2(2x,3f7.3),2x,2l1,i3)') &
-      wallclock(), pad_trace(1:indent)//'guards_t%'// &
+    write (stdlog,'(2(f12.6,2x,a,2x,i6,":",i2.2),2(2x,3f7.3),2x,2l1,i3)') &
+      wallclock(), 'guards_t%'// &
       trim(label)//': tgt,time,src,dist,all_tgt,all_src=', &
       target%id, target%level, &
       target%time, '  src:', source%id, source%level, &
@@ -337,22 +367,25 @@ SUBROUTINE info (self, label, target, source, all_tgt, all_src, only)
 END SUBROUTINE info
 
 !===============================================================================
-!> Interpolate in time, leaving the result in the target
+!> Interpolate in time, leaving the result in the target.  Unless all_tgt is
+!> set the target memory will only be changed in the guard zones, which is of
+!> no concern to other tasks, so then there is no need to lock the memory slot.
 !===============================================================================
-SUBROUTINE differ (self, tgt, src, all_tgt, all_src, only)
+SUBROUTINE differ (self, tgt, src, all_tgt, all_src, only, nbstep)
   class(guards_t)                      :: self
   class(patch_t)                       :: tgt, src
   logical, optional                    :: all_tgt, all_src
-  integer, optional                    :: only
+  integer, optional                    :: only, nbstep
   !.............................................................................
   class(task_t), pointer               :: nbtask
   class(mesh_t), pointer, dimension(:) :: tm, sm
   type(meshp_t)                        :: om(3)
   real(8), dimension(3)                :: tl, tu, sl, su, fl, fu, pl, pu, sm_p
+  real(8), dimension(3)                :: d
   logical, dimension(3)                :: below, above
-  integer, dimension(3)                :: ls, us, lt, ut
+  integer, dimension(3)                :: ls, us, lt, ut, sm_lb, sm_ub
   real, dimension(:,:,:,:), pointer    :: tgt0, tgt1, tgt2, mem
-  !contiguous                           :: tgt0, tgt1, tgt2, mem
+  contiguous                           :: tgt0, tgt1, tgt2, mem
   logical                              :: src_all, tgt_int
   integer                              :: i, m(5), unit, sid, tid
   integer, save                        :: itimer=0
@@ -363,7 +396,7 @@ SUBROUTINE differ (self, tgt, src, all_tgt, all_src, only)
   call trace%begin ('guards_t%differ', itimer=itimer)
   tid = tgt%id
   sid = src%id
-  unit = merge (stdout, stdlog, verbose > 2 .or. tgt%id==io%id_debug)
+  unit = merge (stdout, stdlog, verbose > 2)
   src_all = present(all_src) !.or. tgt%istep==0  ! use full source region
  !src_all = src_all .or. tgt%istep==0            ! first child update
   !-----------------------------------------------------------------------------
@@ -381,13 +414,13 @@ SUBROUTINE differ (self, tgt, src, all_tgt, all_src, only)
       'guards_t%differ: src,tgt,all_tgt,all_src,tgt_int,src_all=', &
       src%id, src%level, tgt%id, tgt%level, &
       present(all_tgt), present(all_src), tgt_int, src_all
-  end if
-  if (unit == stdout) then
-    write (unit,'(f12.6,2x,a,2(i6,":",i2.2,2x),4l1)') &
-      wallclock(), &
-      'guards_t%differ: src,tgt,all_tgt,all_src,tgt_int,src_all=', &
-      src%id, src%level, tgt%id, tgt%level, &
-      present(all_tgt), present(all_src), tgt_int, src_all
+    if (unit == stdout) then
+      write (unit,'(f12.6,2x,a,2(i6,":",i2.2,2x),4l1)') &
+        wallclock(), &
+        'guards_t%differ: src,tgt,all_tgt,all_src,tgt_int,src_all=', &
+        src%id, src%level, tgt%id, tgt%level, &
+        present(all_tgt), present(all_src), tgt_int, src_all
+    end if
   end if
   !.............................................................................
   tm => tgt%mesh                                ! target mesh
@@ -399,66 +432,61 @@ SUBROUTINE differ (self, tgt, src, all_tgt, all_src, only)
   ! Here we need to either work exclusively with nbor%distance, or else rely
   ! exclusively on task %position
   !-----------------------------------------------------------------------------
-  tl = tm%p - tm%s*0.5d0 - tm%ng*tm%d           ! tgt lower corner
-  tu = tm%p + tm%s*0.5d0 + tm%ng*tm%d           ! tgt upper corner
-  sm_p = tm%p + tgt%distance_to (src)           ! position relative target
+  tl = - tm%s*0.5d0 - tm%ng*tm%d                ! tgt lower corner
+  tu = + tm%s*0.5d0 + tm%ng*tm%d                ! tgt upper corner
+  d = tgt%distance_to (src)                     ! vector (src%p-tgt%p)
   if (src_all) then                             ! new child
-    sl = sm_p - sm%s*0.5d0 - sm%ng*sm%d         ! src lower corner
-    su = sm_p + sm%s*0.5d0 + sm%ng*sm%d         ! src upper corner
+    sl = d - sm%s*0.5d0 - sm%ng*sm%d            ! src lower corner
+    su = d + sm%s*0.5d0 + sm%ng*sm%d            ! src upper corner
+    sm_lb = sm%lb
+    sm_ub = sm%ub
   else
-    sl = sm_p - sm%s*0.5d0                      ! src lower corner
-    su = sm_p + sm%s*0.5d0                      ! src upper corner
-  end if
-  if (verbose > 2 .or. unit==stdout) then
-    write (unit,'(a,i6,2x,3i5,5(2x,3f8.3))') &
-      'guards_t%differ src mesh: id,s,p,b=', &
-      sm(1)%id, sm%n, sm%s, sm%p, sm%b
-    write (unit,'(a,i6,2x,3i5,5(2x,3f8.3))') &
-      'guards_t%differ tgt mesh: id,s,p,b=', &
-      tm(1)%id, tm%n, tm%s, tm%p, tm%b
+    sl = d - sm%s*0.5d0                         ! src lower corner
+    su = d + sm%s*0.5d0                         ! src upper corner
+    sm_lb = sm%li
+    sm_ub = sm%ui
   end if
   !-----------------------------------------------------------------------------
-  ! Use the whole target range?  Not that this should be redundant, since if we
-  ! are to use the whole target range it must be included in the source range in
-  ! any case
+  ! The (tl,tu) and (sl,sy) boxes include all cells -- the last cell centers
+  ! are half a cell inside the corners, so taking the max() and min() of the
+  ! corners gives a box with a half cell margin to cell centers.
   !-----------------------------------------------------------------------------
   fl = max(tl,sl)                               ! overlap lower corner
   fu = min(tu,su)                               ! overlap upper corner
-  if (tgt%level < src%level) then
-    !-------------------------------------------------------------------------
-    ! Restrict operation:  Use indices that are strictly inside intersection
-    !-------------------------------------------------------------------------
-    ls = src%index_only (fl, roundup=.true.)    ! src lower index
-    us = src%index_only (fu, rounddn=.true.)    ! src upper index
-    tl = src%myposition (ls)                    ! position of lt
-    tu = src%myposition (us)                    ! position of ut
-    lt = tgt%index_only (tl, roundup=.true.)    ! target lower corner
-    ut = tgt%index_only (tu, rounddn=.true.)    ! target upper corner
-  else
-    !-------------------------------------------------------------------------
-    ! Prolongation operation: Use tgt-indices that are strictly inside, and
-    ! the correspondingly necessary source indices (which may fall outside
-    ! the common intersection).
-    !-------------------------------------------------------------------------
-    lt = tgt%index_only (fl, roundup=.true.)    ! target lower corner
-    ut = tgt%index_only (fu, rounddn=.true.)    ! target upper corner
-    tl = tgt%myposition (lt)                    ! position of lt
-    tu = tgt%myposition (ut)                    ! position of ut
-    ls = src%index_only (fl, rounddn=.true.)    ! src lower index
-    us = src%index_only (fu, roundup=.true.)    ! src upper index
+  if (.not. all(fu > fl)) &
+    call io%abort ('guards_t%differ: corner reversal')
+  !---------------------------------------------------------------------------
+  ! Restrict operation:  The source cells are smaller, and are hence closer
+  ! to the cell corners.
+  !---------------------------------------------------------------------------
+  lt = ceiling((fl  )/tm%d + tm%o)              ! tgt lower index
+  ut = floor  ((fu  )/tm%d + tm%o)              ! tgt upper index
+  fl = (lt-tm%o)*tm%d                           ! floating lower
+  fu = (ut-tm%o)*tm%d                           ! floating upper
+  ls = floor  ((fl-d)/sm%d + sm%o)              ! src lower index
+  us = ceiling((fu-d)/sm%d + sm%o)              ! src upper index
+  ls = max(ls,sm_lb)                            ! bounds
+  us = min(us,sm_ub)                            ! bounds
+  lt = max(lt,tm%lb)                            ! bounds
+  ut = min(ut,tm%ub)                            ! bounds
+  if (src%is_set (bits%root_grid)) then
+    lt = tm%lb
+    ut = tm%ub
   end if
+  !-----------------------------------------------------------------------------
+  ! By construction, all indices should already be within bounds
+  !-----------------------------------------------------------------------------
   if (src_all) then
-    ls = max(ls,sm%lb)                          ! inside source halo
-    us = min(us,sm%ub)                          ! inside source halo
+    call io%assert (all(ls >= sm%lb), 'guards_t%differ: ls index error')
+    call io%assert (all(us <= sm%ub), 'guards_t%differ: us index error')
   else
-    ls = max(ls,sm%li)                          ! inside source interior
-    us = min(us,sm%ui)                          ! inside source interior
+    call io%assert (all(ls >= sm%li), 'guards_t%differ: ls index error')
+    call io%assert (all(us <= sm%ui), 'guards_t%differ: us index error')
   end if
-  if (any(lt < tm%lb .or. ut > tm%ub)) then
-    call io%warning ('target limits outside range')
-  end if
-  lt = max(lt,tm%lb)                            ! inside target halo
-  ut = min(ut,tm%ub)                            ! inside target halo
+  call io%assert (all(lt >= tm%lb), 'guards_t%differ: lt index error')
+  call io%assert (all(ut <= tm%ub), 'guards_t%differ: ut index error')
+  call io%assert (all(us >= ls), 'guards_t%differ: ls/us index reversal')
+  call io%assert (all(ut >= lt), 'guards_t%differ: lt/ut index reversal')
   !-----------------------------------------------------------------------------
   ! Decide relative positioning, in terms of axes
   !-----------------------------------------------------------------------------
@@ -471,25 +499,25 @@ SUBROUTINE differ (self, tgt, src, all_tgt, all_src, only)
       'guards_t%differ: src,tgt,ls,us,lt,ut,bel,abv=', &
       src%id, src%level, tgt%id, tgt%level, ls, us, lt, ut,  &
       below, above, tgt_int, src_all
-  end if
-  if (unit == stdout) then
-    write (unit,'(f12.6,2x,a,2(i6,":",i2.2,1x),2(1x,2(1x,3i7)),3(2x,3l1))') &
-      wallclock(), &
-      'guards_t%differ: src,tgt,ls,us,lt,ut,bel,abv=', &
-      src%id, src%level, tgt%id, tgt%level, ls, us, lt, ut,  &
-      below, above, tgt_int, src_all
+    if (unit == stdout) then
+      write (unit,2) wallclock(), &
+        'guards_t%differ: src,tgt,ls,us,lt,ut,bel,abv=', &
+        src%id, src%key, tgt%id, tgt%key, tgt%distance_to(src)/tgt%size, &
+        ls, us, lt, ut, below, above, tgt_int, src_all
+    2 format(f12.6,2x,a,2(i6,":",i2.2,3i4,1x),3f10.4,2(1x,2(1x,3i7)),3(2x,3l1))
+    end if
   end if
   !-----------------------------------------------------------------------------
   ! Allocate temporary arrays with common size
   !-----------------------------------------------------------------------------
   nullify (tgt0, tgt1)
   m = shape(tgt%mem(:,:,:,:,:,1))
-  allocate (tgt0(m(1),m(2),m(3),m(4)))
-  allocate (tgt1(m(1),m(2),m(3),m(4)))
-  allocate (tgt2(m(1),m(2),m(3),m(4)))
+  call os%allocate (tgt0, m, 'tgt0')
+  call os%allocate (tgt1, m, 'tgt1')
+  call os%allocate (tgt2, m, 'tgt2')
   ! Interpolate in time, unless already done
   call interp%in_t (tgt, src, ls, us, src%mem, tgt0, only=only, &
-                    extrap=tgt%allow_extrapolate)
+                    extrap=tgt%allow_extrapolate, nbstep=nbstep)
   !-----------------------------------------------------------------------------
   ! The choice of interpolation order is for optimization only; the results
   ! would not differ if a fixed order was used.  The om(i)%p pointer points
@@ -499,11 +527,23 @@ SUBROUTINE differ (self, tgt, src, all_tgt, all_src, only)
   if (below(3) .or. above(3)) then
     call interp%in_z (tgt, lt, ut, src, ls, us, om, tgt0, tgt1,  .true., only=only)
     call interp%in_x (tgt, lt, ut, src, ls, us, om, tgt1, tgt2,  .true., only=only)
-    call interp%in_y (tgt, lt, ut, src, ls, us, om, tgt2, mem , tgt_int, only=only)
+    if (tgt_int) then
+      call interp%in_y (tgt, lt, ut, src, ls, us, om, tgt2, mem , tgt_int, &
+                        only=only, lock=tgt%mem_lock(tgt%it))
+    else
+      call interp%in_y (tgt, lt, ut, src, ls, us, om, tgt2, mem , tgt_int, &
+                        only=only)
+    end if
   else if (below(2) .or. above(2)) then
     call interp%in_y (tgt, lt, ut, src, ls, us, om, tgt0, tgt1,  .true., only=only)
     call interp%in_x (tgt, lt, ut, src, ls, us, om, tgt1, tgt2,  .true., only=only)
-    call interp%in_z (tgt, lt, ut, src, ls, us, om, tgt2, mem , tgt_int, only=only)
+    if (tgt_int) then
+      call interp%in_z (tgt, lt, ut, src, ls, us, om, tgt2, mem , tgt_int, &
+                        only=only, lock=tgt%mem_lock(tgt%it))
+    else
+      call interp%in_z (tgt, lt, ut, src, ls, us, om, tgt2, mem , tgt_int, &
+                        only=only)
+    end if
   else if (below(1) .or. above(1)) then
     call interp%in_x (tgt, lt, ut, src, ls, us, om, tgt0, tgt1,  .true., only=only)
     call interp%in_y (tgt, lt, ut, src, ls, us, om, tgt1, tgt2,  .true., only=only)
@@ -512,9 +552,17 @@ SUBROUTINE differ (self, tgt, src, all_tgt, all_src, only)
     1 format(a,2(2x,3i3))
     call interp%in_z (tgt, lt, ut, src, ls, us, om, tgt0, tgt1,  .true., only=only)
     call interp%in_y (tgt, lt, ut, src, ls, us, om, tgt1, tgt2,  .true., only=only)
-    call interp%in_x (tgt, lt, ut, src, ls, us, om, tgt2, mem , tgt_int, only=only)
+    if (tgt_int) then
+      call interp%in_x (tgt, lt, ut, src, ls, us, om, tgt2, mem , tgt_int, &
+                        only=only, lock=tgt%mem_lock(tgt%it))
+    else
+      call interp%in_x (tgt, lt, ut, src, ls, us, om, tgt2, mem , tgt_int, &
+                        only=only)
+    end if
   end if
-  deallocate (tgt0, tgt1, tgt2)
+  call os%deallocate (tgt0, 'tgt0')
+  call os%deallocate (tgt1, 'tgt1')
+  call os%deallocate (tgt2, 'tgt2')
   nullify    (tgt0, tgt1, tgt2)
   !-----------------------------------------------------------------------------
   ! When the source level is larger than the target level (restriction), record
@@ -522,8 +570,19 @@ SUBROUTINE differ (self, tgt, src, all_tgt, all_src, only)
   ! source level is lower (prolongation), record the target level, since that
   ! is what is deposited
   !-----------------------------------------------------------------------------
+  if (verbose > 1 .or. tgt%id == io%id_debug) then
+   if (tgt%idx%d > 0) then
+    write (stdout,'(a,2(i6,":",i2.2,3i4,1x),3f10.4,2(2x,3i3),1p,2g14.3)') &
+      'differ: tgt,src,dist,l,u,max=', tgt%id, tgt%key, src%id, src%key, &
+      tgt%distance_to(src)/tgt%size, lt, ut, &
+      minval(tgt%mem(lt(1):ut(1),lt(2):ut(2),lt(3):ut(3), &
+        tgt%idx%d,tgt%it,1)), &
+      minval(tgt%mem(:,:,:,tgt%idx%d,tgt%it,1))
+   end if
+  end if
   if (associated(tgt%filled)) &
-    tgt%filled (lt(1):ut(1),lt(2):ut(2),lt(3):ut(3)) = max(src%level, tgt%level)
+    tgt%filled (lt(1):ut(1),lt(2):ut(2),lt(3):ut(3)) = &
+      10*max(src%level, tgt%level)
   call trace%end (itimer)
 END SUBROUTINE differ
 
@@ -553,7 +612,8 @@ SUBROUTINE tilted (self, tgt, src, all_tgt, all_src, only)
   ! Use all source cells if the all_src is present, or the rarget (child) is
   ! taking the first step.
   !-----------------------------------------------------------------------------
-  call trace%begin ('guards_t%tilted', itimer=itimer)
+  if (detailed_timer) &
+    call trace%begin ('guards_t%tilted', itimer=itimer)
   src_all = present(all_src) !.or. tgt%istep==0  ! use full source region
   tid = tgt%id
   sid = src%id
@@ -579,7 +639,7 @@ SUBROUTINE tilted (self, tgt, src, all_tgt, all_src, only)
     om(i)%p => src%mesh(i)                      ! output mesh
   end do
   !-----------------------------------------------------------------------------
-  ! Positions are in the target local coordinate system.  mulmat(p,tgt%erot)
+  ! Positions are in the target local coordinate system.  matmul(p,tgt%erot)
   ! tranforms from Cartesian to local, matmul(src%erot,p) from local to Cartesian
   !-----------------------------------------------------------------------------
   tl = - tm%s*0.5d0 - tm%ng*tm%d                ! tgt lower corner
@@ -613,7 +673,7 @@ SUBROUTINE tilted (self, tgt, src, all_tgt, all_src, only)
   do k=1,2
     do j=1,2
       do i=1,2
-        s_corners(i,j,k,:) = matmul(src_e,[ss(i,1),ss(j,2),ss(k,3)])
+        s_corners(i,j,k,:) = matmul (src_e, [ss(i,1),ss(j,2),ss(k,3)])
       end do
     end do
   end do
@@ -652,7 +712,7 @@ SUBROUTINE tilted (self, tgt, src, all_tgt, all_src, only)
   ut = ceiling(fu/tm%d + tm%o)                  ! integer tgt upper index
   lt = max(lt,tm%lb)                            ! inside target halo
   ut = min(ut,tm%ub)                            ! inside target halo
-
+  !.............................................................................
   if (verbose > 0) &
     write (stdout,'(a,2(i6,":",i2.2,3i3),2(2x,3i3),5(2x,3f10.6))') &
       'guards_t%tilted: tgt,key,src,key,lt,ut=', &
@@ -665,17 +725,70 @@ SUBROUTINE tilted (self, tgt, src, all_tgt, all_src, only)
     call validate%check (tgt, ut, 'ut')
     call validate%check (tgt, tgt%mem(:,:,:,:,tgt%it,1), 'before from_source')
   end if
-  call interp%from_source (tgt, lt, ut, src, filled=tgt%filled, all_src=all_src)
+  !.............................................................................
+  if (present(only)) then
+    call interp%from_only (tgt,lt,ut, src, only, filled=tgt%filled, &
+                          all_src=all_src)
+  else
+    if (interp%use_staggered) then
+      call interp%from_source_stag (tgt,lt,ut, src, filled=tgt%filled, all_src=all_src)
+    else
+      call interp%from_source (tgt,lt,ut, src, filled=tgt%filled, all_src=all_src)
+    end if
+  end if
+  !if (associated(tgt%filled)) &
+  !  tgt%filled (lt(1):ut(1),lt(2):ut(2),lt(3):ut(3)) = &
+  !    10*max(src%level, tgt%level)
   !.............................................................................
   if (tgt%id == io%id_debug) &
     call validate%check (tgt, tgt%mem(:,:,:,:,tgt%it,1), 'after from_source')
-  call trace%end (itimer)
-
+  if (detailed_timer) &
+    call trace%end (itimer)
+!===============================================================================
 contains
   FUNCTION md(r)
     real(8):: r, md
     md = modulo(r+math%pi,math%pi*2d0) - math%pi
   END FUNCTION md
 END SUBROUTINE tilted
+
+!===============================================================================
+!> Info for one nbor
+!===============================================================================
+SUBROUTINE nbor_info (self, task, unit)
+  class(guards_t):: self
+  class(task_t):: task
+  class(task_t), pointer:: nbtask
+  integer, optional:: unit
+  real(8):: distance(3)
+  integer:: unit_L
+  !-----------------------------------------------------------------------------
+  unit_L = shared%option (unit, io_unit%mpi)
+  nbtask => self%task
+  distance = task%distance_to (nbtask)
+  select type (nbtask)
+  class is (patch_t)
+  write(unit_L,'(3x,2a,i6,":",i2.2,i4,2x,3l1,2x,2l1,2(2x,3f9.3))') &
+    'pa_t%nbor_info: kind,id,rank,level,needed,needs_me,dnload,BV,pos= ', &
+    self%task%kind(1:6),self%task%id, self%task%level, self%task%rank, &
+    self%needed, self%needs_me, self%download, self%task%is_set(bits%boundary), &
+    self%task%is_set(bits%virtual), nbtask%centre_nat, &
+    distance/(0.5d0*(task%size+self%task%size))
+  end select
+END SUBROUTINE nbor_info
+
+!===============================================================================
+!> Overloaded procedure
+!===============================================================================
+SUBROUTINE alloc_nbor (link, nbor)
+  class(link_t), pointer:: link
+  class(nbor_t), pointer:: nbor
+  !-----------------------------------------------------------------------------
+  allocate (guards_t:: nbor)
+  call os%mem_register (storage_size(nbor), 1, 'alloc_nbor')
+  call nbor%init ()
+  nbor%link => link
+  nbor%task => link%task
+END SUBROUTINE alloc_nbor
 
 END MODULE guards_mod

@@ -15,6 +15,7 @@ OMP      ?= yes
 MPI      ?= mpi
 MOD      ?= mod
 SOLVER   ?= VOID
+OPTS     ?= devel
 UPD      ?= adams_bashforth
 PREC     ?= SINGLE
 EXEC     ?= dispatch.x
@@ -52,7 +53,7 @@ sinclude $(TOP)/options.mkf
 sinclude $(CONFIG)/host/$(HOST)/Makefile
 target: default
 
-DEFS = -D$(PREC) -DDISPATCH -D'BRANCH="$(BRANCH)"' -D'HASH="$(HASH)"' -D'OPTS="$(OPTS)"'
+DEFS = -D$(PREC) -DDISPATCH -D'SOLVER="$(SOLVER)"' -D'BRANCH="$(BRANCH)"' -D'HASH="$(HASH)"' -D'OPTS="$(OPTS)"'
 
 #############################################################################
 # Check that the $(COMPILER) Makefile is present (typo trap)
@@ -65,8 +66,8 @@ ifneq ($(COMPILER),)
 endif
 
 #############################################################################
-# Check that the $(SOLVER) Makefileis present (typo trap)
-ifneq ($(SOLVER),)
+# Check that the $(SOLVER) Makefile is present (typo trap)
+ifneq ($(SOLVER),VOID)
   SOLVER_MK = $(TOP)/solvers/$(SOLVER)/Makefile
   SOLVER_OS  = $(shell ls $(SOLVER_MK))
   ifneq ("$(SOLVER_OS)", "$(SOLVER_MK)")
@@ -87,13 +88,21 @@ endif
 #############################################################################
 # Optional separate build directories
 SEPARATE_BUILDS ?= $(SEPARATE_BUILD)
-ifeq ($(SEPARATE_BUILDS),)
-  BUILD    ?= build
+ifeq ($(SEPARATE_HOSTS),)
+	ifeq ($(SEPARATE_BUILDS),)
+		BUILD    ?= build
+	else
+		BUILD    ?= build/$(SOLVER)/$(OPTS)
+	endif
 else
-  BUILD    ?= build_$(SOLVER)_$(OPTS)
+	ifeq ($(SEPARATE_BUILDS),)
+		BUILD    ?= build/$(HOST)
+	else
+		BUILD    ?= build/$(HOST)/$(SOLVER)/$(OPTS)
+	endif
 endif
 $(shell mkdir -p $(BUILD) >/dev/null)
-$(info make COMPILER=$(COMPILER) OPTS=$(OPTS) BUILD=$(BUILD))
+$(info make HOST=$(HOST) COMPILER=$(COMPILER) OPTS=$(OPTS) BUILD=$(BUILD))
 
 #############################################################################
 # Infrastructure to automatically determine dependencies
@@ -219,13 +228,16 @@ clean:: cleandeps
 cleanlog:
 	rm -f *.log log*
 cleandata:
-	rm -f *.dat fort.*
+	rm -f *.dat
+cleanfort:
+	rm -f fort.*
 cleandirs:
 	rm -rf data $(DEPDIR) $(BUILD)
 cleandeps:
 	rm -f $(DEPDIR)/*.d
-cleaner: clean cleandata
+cleaner: clean cleanfort
 	rm -f *.x *.bak *.optrpt *.exe *.pyc
+	rm -rf build_*
 cleanest: cleaner cleandata cleanlog cleandeps cleandirs
 pure: cleanest
 	rm -rf build*

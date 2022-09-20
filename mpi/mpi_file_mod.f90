@@ -123,14 +123,14 @@ SUBROUTINE open (self, filename, mode)
         (mp%comm, self%name, mode_l, MPI_INFO_NULL, self%handle, self%err)
       if (self%err /= 0) then
         write (stderr,*) self%err, ' error when trying to open ', trim(self%name)
-        call io%abort
+        call io%abort ('mpi_file_t%open')
       end if
     else
       call MPI_File_open &
         (mp%comm, self%name, mode_l, MPI_INFO_NULL, self%handle, self%err)
       if (self%err /= 0) then
         write (stderr,*) self%err, ' error when trying to open ', trim(self%name)
-        call io%abort
+        call io%abort ('mpi_file_t%open')
       end if
     end if
       if (io%verbose > 0) then

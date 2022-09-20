@@ -273,8 +273,9 @@ END SUBROUTINE output
 !===============================================================================
 !> Interface to refinement
 !===============================================================================
-INTEGER function check_refine (self)
+INTEGER function check_refine (self, test)
   class(extras_t), target:: self
+  real, dimension(:,:,:), pointer, contiguous:: test
   !.............................................................................
   check_refine = -1                                                    ! keep
   !check_refine = max (check_refine, sinkparticles%check_refine ())    ! sinkp

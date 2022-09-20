@@ -40,9 +40,7 @@ read_external_mod.o         : io_mod.o m3io_mod.o mesh_mod.o task_list_mod.o exp
                               units_mod.o timer_mod.o patch_mod.o download_mod.o list_mod.o \
                               ray_patch_mod.o read_stagger_snapshot_mod.o
 read_stagger_snapshot_mod.o : io_mod.o os_mod.o eos_mod.o scaling_mod.o
-experiment_mod.o            : trace_mod.o io_mod.o solver_mod.o kinds_mod.o atom_mod.o spectrum_mod.o \
-                              ray_patch_mod.o opac_patch_mod.o rad_patch_mod.o atom_patch_mod.o rate_patch_mod.o \
-                              composition_patch_mod.o
+experiment_mod.o            : trace_mod.o io_mod.o solver_mod.o kinds_mod.o m3d_halo_mod.o
 dispatch.o                  : io_mod.o
 boundaries_mod.o            : standard_boundaries_mod.o io_mod.o trace_mod.o \
                               mpi_mod.o bits_mod.o mesh_mod.o index_mod.o units_mod.o \
@@ -54,13 +52,14 @@ coll_mod.o                  : mmath.o
 trans_mod.o                 : bbtrans_mod.o coll_mod.o
 atom_mod.o                  : m3io_mod.o trans_mod.o coll_mod.o op_math_mod.o spectrum_mod.o
 spectrum_mod.o              : io_mod.o timer_mod.o trace_mod.o mconst.o
-m3d_patch_mod.o             : gpatch_mod.o trace.o atom_mod.o ray_mod.o
+m3d_halo_mod.o              : halo_mod.o guards_mod.o gpatch_mod.o
+m3d_patch_mod.o             : gpatch_mod.o atom_mod.o ray_mod.o m3d_halo_mod.o
 ray_patch_mod.o             : m3d_patch_mod.o
-opac_patch_mod.o            : ray_patch_mod.o composition_mod.o atom_mod.o
-rad_patch_mod.o             : ray_patch_mod.o opac_patch_mod.o
-rate_patch_mod.o            : ray_patch_mod.o opac_patch_mod.o rad_patch_mod.o lines_patch_mod.o
-atom_patch_mod.o            : rate_patch_mod.o lines_patch_mod.o
-composition_patch_mod.o     : m3d_patch_mod.o opac_patch_mod.o rad_patch_mod.o rate_patch_mod.o atom_patch_mod.o net_opac_patch_mod.o
+#opac_patch_mod.o            : ray_patch_mod.o composition_mod.o atom_mod.o
+rad_patch_mod.o             : ray_patch_mod.o back_opac_patch_mod.o
+rate_patch_mod.o            : ray_patch_mod.o rad_patch_mod.o lines_patch_mod.o
+atom_patch_mod.o            : rate_patch_mod.o lines_patch_mod.o cont_opac_patch_mod.o
+composition_patch_mod.o     : out_rad_patch_mod.o back_opac_patch_mod.o rad_patch_mod.o atom_patch_mod.o net_opac_patch_mod.o
 bftrans_mod.o               : os_mod.o
 bbtrans_mod.o               : trace_mod.o
 mmath.o                     : search_mod.o
@@ -71,4 +70,7 @@ patch_mod.o                 : os_mod.o
 mpi_debug_mod.o             : mpi_mod.o io_mod.o
 lines_patch_mod.o           : ray_patch_mod.o
 back_line_patch_mod.o       : ray_patch_mod.o composition_mod.o
-net_opac_patch_mod.o        : ray_patch_mod.o lines_patch_mod.o back_line_patch_mod.o
+back_opac_patch_mod.o       : ray_patch_mod.o composition_mod.o
+cont_opac_patch_mod.o       : ray_patch_mod.o atom_mod.o
+net_opac_patch_mod.o        : ray_patch_mod.o lines_patch_mod.o back_line_patch_mod.o cont_opac_patch_mod.o
+out_rad_patch_mod.o         : ray_patch_mod.o rad_patch_mod.o

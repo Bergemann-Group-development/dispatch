@@ -23,9 +23,8 @@ module rate_patch_mod
     USE bits_mod
     !USE units_mod
     !USE scratch_mod
-    USE m3d_patch_mod, only: conditioning
+    USE m3d_patch_mod, only: conditioning, hash_string
     USE ray_patch_mod, only: ray_patch_t
-    USE opac_patch_mod, only: opac_patch_t
     USE rad_patch_mod, only: rad_patch_t
     USE trans_mod, only: transition_type
     USE atom_mod, only: atom_type
@@ -47,6 +46,7 @@ module rate_patch_mod
         procedure :: integrate_rates
         procedure :: print_post_update_info
         procedure :: check_in_bounds
+        procedure :: init_nbors_hash
     end type rate_patch_t
   
     !-----------------------------------------------------------------------------
@@ -59,8 +59,10 @@ module rate_patch_mod
     class(transition_type), pointer :: trans
     integer :: i, k, nrad, fs, fe
     logical :: skip
+    integer, save :: itimer=0
     ! ----------------------------------------------------------------------------
-    call trace%begin('rate_patch_t%rate_patch_pre_init')
+    call trace%begin('rate_patch_t%rate_patch_pre_init', itimer=itimer)
+    self%kind = 'rate_patch'
     call self%ray_patch_t%pre_init()
 
     call os%allocate(self%idx_map, self%atom%nrad, zero=.true., label='rate_patch:idx_map')
@@ -88,7 +90,7 @@ module rate_patch_mod
     call self%set_nv_and_nw(nrad, 2)
 
     call self%post_pre_init()
-    call trace%end()
+    call trace%end(itimer)
   END SUBROUTINE rate_patch_pre_init
 
   !===============================================================================
@@ -98,10 +100,7 @@ module rate_patch_mod
     real(4), dimension(:,:,:), pointer, contiguous :: temp
     integer, save:: itimer=0
     !-----------------------------------------------------------------------------
-    call self%pre_update()
-    if (self%finished) then
-      return
-    endif
+    if (self%is_finished()) return
     call trace%begin('rate_patch_t%rate_patch_update', itimer=itimer)
 
     gamma_ij => self%mem(:,:,:,:, self%it, self%i_Gij)
@@ -248,5 +247,29 @@ module rate_patch_mod
       cib = self%idx_map(self%linecheck) > 0
     endif
   END FUNCTION check_in_bounds
+  
+  !===============================================================================
+  !> Fast method to generate nbor lists in cases with very long task lists
+  !===============================================================================
+  SUBROUTINE init_nbors_hash (self, nbors)
+    class(rate_patch_t):: self
+    class(nbor_t), pointer:: nbors
+    !.............................................................................
+    class(task_t), pointer:: task
+    class(nbor_t), pointer:: nbor
+    integer, save:: itimer=0
+    integer :: key(4)
+    !-----------------------------------------------------------------------------
+    call trace%begin('rate_patch_t%init_nbors_hash', itimer=itimer)
+    call self%m3d_patch_t%init_nbors_hash(nbors)
+  
+    key(1:3) = self%key(1:3)
+    key(4) = hash_string('lines_patch')
+    call self%check_nbor(key, nbors)
+
+    key(4) = hash_string('angle_rad')
+    call self%check_nbor(key, nbors)
+    call trace%end (itimer)
+  END SUBROUTINE init_nbors_hash
   
   end module

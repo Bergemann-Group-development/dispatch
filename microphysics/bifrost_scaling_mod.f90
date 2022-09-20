@@ -5,6 +5,7 @@ MODULE bifrost_scaling_mod
   USE units_mod
   USE io_mod
   USE trace_mod
+  USE math_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -42,12 +43,12 @@ SUBROUTINE init (self)
   self%m  = self%d*self%l**3                            ! mass
   self%p  = self%d*self%u**2                            ! pressure = energy density
   self%e  = self%d*self%u**2                            ! energy
-  self%ee = self%u**2                                                   ! specific energy
+  self%ee = self%u**2                                   ! specific energy
   self%te = self%e/self%t*self%l                        ! box therm. em. [erg/(s ster cm2)]
-  self%kr = 1.0/(self%d*self%l)                                         ! rosseland opacity [cm2/g]
+  self%kr = 1.0/(self%d*self%l)                         ! rosseland opacity [cm2/g]
   self%mu = 0.8
-  self%b = self%u*sqrt(cgs%pi*4.0*self%d)
-  self%temp = self%mu*(cgs%m_u/cgs%k_b)*self%ee                      ! temperature for given mu
+  self%b = self%u*sqrt(math%pi*4.0*self%d)
+  self%temp = self%mu*(cgs%m_u/cgs%k_b)*self%ee         ! temperature for given mu
   self%grav = cgs%grav*(self%m/self%l**3)*self%t**2     ! constant of gravity
   if (io%master) then
     print 1,' CODE UNITS:   (cgs):'
@@ -63,7 +64,7 @@ SUBROUTINE init (self)
     print 1,'magnetic flux density:', self%b
   1 format(1x,a,1p,e11.3)
   end if
-  call trace%end
+  call trace%end ()
 END SUBROUTINE init
 
 END MODULE bifrost_scaling_mod

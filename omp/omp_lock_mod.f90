@@ -1,467 +1,182 @@
 ! $Id$
 !===============================================================================
-!> The lock module uses nested locks, to allow versatile use of locks, where
-!> a procedure may want to make sure to lock a data type, even though it may
-!> (or may not) already have been locked by another procedure in the calling
-!> hierarchy.
-!>
-!> NOTE: Enabling trace_mod here, via the TRACE macro, causes a dependency 
-!> loop, and can only be compiled if/when the code is already successfully 
-!> compiled.  It should only be used to trace problems with locks.
+!> This module implements a multi-thread-read / singl-thread-write lock.
+!> It uses a single nested lock and an atomically updated count of the number
+!> of readers.  A write request starts with acquiring the lock, which blocks
+!> new read requests, and then spin-waits for the count of readers to reach
+!> zero.  A read request engages the lock briefly, allowing the request to be
+!> blocked during writes, and then increments the reader count.
 !===============================================================================
 MODULE omp_lock_mod
-  USE io_unit_mod
+  USE omp_lib
   USE omp_mod
   USE omp_timer_mod
-  USE omp_lib
-  USE shared_mod
-!define TRACE
-#ifdef TRACE 
-  USE trace_mod
-#endif
+  USE io_unit_mod
+  USE org_lock_mod
   implicit none
   private
-  integer, parameter:: mkinds=20, maxproc=100
-  type, public:: lock_t
-    integer:: id=-1
-    integer:: verbose=0
-    integer(kind=omp_nest_lock_kind):: lock
-    integer:: thread=-1
-    character(len=4):: kind = 'orig'
-    integer:: level=0
-    logical:: on = .true., log = .false.
-    logical:: initialized=.false.
-    real(8):: time(maxproc) = 0d0                 ! lock waiting times
-    real(8):: start_time = 0d0
-    logical:: links=.false.             ! lock nbor lists
-    logical:: tasks=.true.              ! lock task memory updates
+  type, public, extends(org_lock_t):: lock_t
   contains
     procedure:: init
-    procedure, nopass:: check_pointer
     procedure:: set
-    procedure:: test
-    procedure:: check
+    procedure:: set_read
     procedure:: unset
-    procedure:: dealloc
+    procedure:: unset_read
     procedure:: destroy
-    procedure:: info
   end type
-  real, save:: verbose_time=0.0
-  integer, save:: id_save=-1, n_lock=0
-  integer, save:: verbose=0
-  integer, save:: unit=0
-  character(len=6):: log='lock'
-  character(len=6):: ext, ext1, ext2
-  real(8):: alternate_time=0d0, alternate_next=0d0
-  real(8):: wait_time = 0d0
-  real(8):: log_time = 0d0
+  integer:: verbose=0
   type(lock_t), save, public:: omp_lock
 CONTAINS
 
 !===============================================================================
-!> Initialize a lock, taking care not to do it more than once
+!> Initialize read and write locks
 !===============================================================================
 SUBROUTINE init (self, kind, id)
   class(lock_t), target:: self
   character(len=*), optional:: kind
   integer, optional:: id
   !.............................................................................
-  character(len=64):: filename
-  logical omp_in_parallel
-  logical, save:: tasks=.true., links=.false.
-  integer:: iostat, i, u
-  logical:: set_id
-  logical, save:: on = .true.
   logical, save:: first_time=.true.
-  namelist /lock_params/ on, verbose, verbose_time, log, tasks, links, &
-    alternate_time
-  character(len=120):: ids= &
-  '$Id$'
   !-----------------------------------------------------------------------------
-  call io_unit%print_id (ids)
-  !-----------------------------------------------------------------------------
-#ifdef TRACE 
-  call trace%begin('lock_t%init')
-#endif
-  !-----------------------------------------------------------------------------
-  ! This part is executed only once, reading parameters
+  ! Make sure the first lock initialization reads parameters
   !-----------------------------------------------------------------------------
   if (first_time) then
     !$omp critical (input_cr)
     if (first_time) then
-      rewind (io_unit%input)
-      read (io_unit%input, lock_params, iostat=iostat)
-      write (io_unit%nml, lock_params)
-      if (omp%nthreads == 1) then
-        on = .false.
-      end if
-      omp_lock%on = on
-      omp_lock%verbose = verbose
-      omp_lock%tasks = tasks
-      omp_lock%links = links
+      call self%org_lock_t%init (kind, id)
+      call self%org_lock_t%init_unit ()
       first_time = .false.
     end if
     !$omp end critical (input_cr)
+  else
+    call self%org_lock_t%init (kind, id)
   end if
-  !-----------------------------------------------------------------------------
-  ! This part is executed once per thread, choosing unit, depending on params
-  !-----------------------------------------------------------------------------
-  if (unit == 0) then
-    !$omp critical (unit_cr)
-    if (unit == 0) then
-      u = io_unit%lock1
-      if (alternate_time > 0d0) then
-        filename = trim(io_unit%rankbase)//'.lock1'
-        open (io_unit%lock1, file=trim(filename), form='formatted', &
-              status='unknown')
-        filename = trim(io_unit%rankbase)//'.lock2'
-        open (io_unit%lock2, file=trim(filename), form='formatted', &
-              status='unknown')
-        alternate_next = wallclock() + alternate_time
-      else
-        if (trim(log)=='queue') then
-          u = io_unit%queue
-        else if (trim(log)=='log') then
-          u = io_unit%log
-        else
-          u = io_unit%lock1
-        end if
-        filename = trim(io_unit%rankbase)//'.lock'
-        open (io_unit%lock1, file=trim(filename), form='formatted', &
-              status='unknown')
-      end if
-      unit = u
-    end if
-    !$omp end critical (unit_cr)
-  end if
-  !-----------------------------------------------------------------------------
-  ! This part is executed once per lock, initializing it
-  !-----------------------------------------------------------------------------
-  if (.not.self%initialized) then
-    !$omp critical (lock_cr)
-    if (.not.self%initialized) then
-      call omp_init_nest_lock (self%lock)
-      if (present(id)) then
-        self%id = id
-        id_save = max(id_save,id)
-        set_id = .true.
-      else
-        id_save = id_save+1
-        self%id = id_save
-        set_id = .false.
-      end if
-      if (present(kind)) then
-        self%kind = kind(1:min(len(kind),4))
-      else
-        self%kind = 'void'
-      end if
-      self%on  = on
-      n_lock = n_lock+1
-      if (wallclock() < verbose_time .or. verbose > 2) &
-        write(unit,*) omp_get_thread_num(), 'initialized lock kind, id ', &
-          self%kind, self%id, set_id
-      if (verbose > 2) then
-        write (io_unit%log,'(a,i10,l4)') &
-          'omp_lock_t%init: id, initialized =', self%id, self%initialized
-      end if
-      self%initialized = .true.
-    end if
-    !$omp end critical (lock_cr)
-  end if
-#ifdef TRACE 
-  call trace%end()
-#endif
 END SUBROUTINE init
 
 !===============================================================================
-!> Local clock function, returning the fine-grained OMP time when verbose > 0
+!> To get read access, acquire the write lock briefly and increase the reader
+!> count.
 !===============================================================================
-FUNCTION wclock()
-  real(8):: wclock
-  !.............................................................................
-  if (verbose > 0) then
-    wclock = wallclock()
-  else
-    wclock = 0d0
-  end if
-END FUNCTION
-
-!===============================================================================
-!> Check a pointer to a lock
-!===============================================================================
-SUBROUTINE check_pointer (lock, label, id)
-  type(lock_t), pointer:: lock
-  character(len=*):: label
-  integer:: id
+SUBROUTINE set_read (self, label, itimer)
+  class(lock_t):: self
+  character(len=*), optional:: label
+  integer, optional:: itimer
+  integer:: writer
   !-----------------------------------------------------------------------------
-  if (.not. associated(lock)) then
-    write (io_unit%log,*) label//' ERROR: lock not assoc', id
-    allocate (lock)
-    call lock%init ('err1')
+  if (.not. self%on) return
+  if (self%fall_through) then
+    call self%org_lock_t%set (label, itimer)
+    return
   end if
-  if (.not. lock%initialized) then
-    write (io_unit%log,*) label//' ERROR: lock not initialized', id
-    allocate (lock)
-    call lock%init ('err2')
-  end if
-END SUBROUTINE check_pointer
+  !-----------------------------------------------------------------------------
+  ! Use the access to increment the number of readers; if a writer is active
+  ! the access lock is being held until the write is done
+  !-----------------------------------------------------------------------------
+  call self%org_lock_t%set ('R'//label)
+  !$omp atomic update
+  self%readers = self%readers + 1
+  call self%org_lock_t%unset ('R'//label)
+  !-----------------------------------------------------------------------------
+END SUBROUTINE set_read
 
 !===============================================================================
-!> Return with the lock, waiting if necessary, and creating the lock if needed
+!> Unset the associated thread number and release the lock (in that order!)
+!===============================================================================
+SUBROUTINE unset_read (self, label)
+  class(lock_t):: self
+  character(len=*), optional:: label
+  !-----------------------------------------------------------------------------
+  if (.not. self%on) return
+  if (self%fall_through) then
+    call self%org_lock_t%unset (label)
+    return
+  end if
+  !-----------------------------------------------------------------------------
+  !$omp atomic update
+  self%readers = self%readers - 1
+  call self%unset_log (label)
+  !-----------------------------------------------------------------------------
+END SUBROUTINE unset_read
+
+!===============================================================================
+!> Hold on to a write_lock while a thread has write access, with the self%write
+!> setting signalling to readers that they must wait for the lock before reads
 !===============================================================================
 SUBROUTINE set (self, label, itimer)
   class(lock_t):: self
   character(len=*), optional:: label
   integer, optional:: itimer
-  character(len=32):: filename
-  real(8):: start, end, used
-  integer:: thread
+  integer:: readers, oreaders
+  real(8):: last, now
   !-----------------------------------------------------------------------------
   if (.not. self%on) return
-#ifdef TRACE 
-  call trace%begin('lock_t%set')
-#endif
-  if (.not. self%initialized) then
-    write (stderr,'(a,i4)') &
-    'omp_lock_t%set WARNING: lock not initialized, thread =', omp%thread
-    write (io_unit%log,'(f14.6,2x,a,i4)') wallclock(), &
-    'omp_lock_t%set WARNING: lock not initialized, thread =', omp%thread
-    call self%init
+  if (self%fall_through) then
+    call self%org_lock_t%set (label, itimer)
+    return
   end if
   !-----------------------------------------------------------------------------
-  ! Must print log info before the lock, to reveal dead-locks
+  ! Acquire the write lock, which will hold back new read attempts
   !-----------------------------------------------------------------------------
-  call alternate_log (self)
-  start = wclock()
-  self%log = start < verbose_time .or. verbose > 1
-  if (self%log) then
-    if (present(label)) then
-      write (unit,'(f14.6,a,a4,i10,i3,i4,12x,a)') start, &
-        ' lock kind, id, level, thread = ', self%kind, self%id, &
-        self%level, omp_get_thread_num(), '   get at '//label
-    else
-      write (unit,'(f14.6,a,a4,i10,i3,i4,12x,a)') start, &
-        ' lock kind, id, level, thread = ', self%kind, self%id, &
-        self%level,   omp_get_thread_num(), '   get'
+  call self%org_lock_t%set (label)
+  !-----------------------------------------------------------------------------
+  ! Loop until self%readers is zero, engaging the access lock while testing
+  !-----------------------------------------------------------------------------
+  readers = 1
+  oreaders = 0
+  last = omp_get_wtime()
+  do while (readers > 0)
+    !$omp atomic read
+    readers = self%readers
+    if (omp%nthreads==1 .and. readers>0) then
+      write (*,*) 'lock_t%set_write: inside own read lock'
+      stop
     end if
-    !flush (unit)
-    used = wclock()-start
-    !$omp atomic update
-    log_time = log_time + used
-  end if
-  !$omp flush
-  call omp_set_nest_lock (self%lock)
-  !$omp flush
-  end = wclock()
-  used = end-start
-  self%start_time = end
-  !$omp atomic update
-  wait_time = wait_time + used
-  omp%wait_time = wait_time
-  self%level = self%level+1
-  !$omp flush
-  if (self%log) then
-    if (present(label)) then
-      write (unit,'(f14.6,a,a4,i10,i3,i4,6p,f10.1,2x,a)') end, &
-        ' lock kind, id, level, thread = ', self%kind, self%id, &
-        self%level, omp%thread, used, '   set at '//label
-    else
-      write (unit,'(f14.6,a,a4,i10,i3,i4,6p,f10.1,2x,a)') end, &
-        ' lock kind, id, level, thread = ', self%kind, self%id, &
-        self%level, omp%thread, used, '   set'
+    if (readers /= oreaders) then
+      write (self%unit,'(a,i6,2i4)') &
+        'set: id,thread,readers=', self%id, omp%thread, readers
+      oreaders = readers
     end if
-    !flush (unit)
-    used = wclock()-start
-    !$omp atomic update
-    log_time = log_time + used
-  end if
-#ifdef TRACE 
-  call trace%end()
-#endif
+    now = omp_get_wtime()
+    if (now > last + 1d0) then
+      write (self%unit,'(a,i6,2i4)') &
+        'set: time-out, id,thread,readers=', self%id, omp%thread, readers
+      last = now
+    end if
+    if (readers == 0) &
+      exit
+  end do
+  !-----------------------------------------------------------------------------
 END SUBROUTINE set
 
 !===============================================================================
-!> Alternate between two log files
-!===============================================================================
-SUBROUTINE alternate_log (self)
-  class(lock_t):: self
-  real(8):: wc
-  !-----------------------------------------------------------------------------
-  if (.not. self%on) return
-  if (alternate_time > 0d0) then
-    wc = wallclock()
-    if (wc > alternate_next) then
-      write (io_unit%log,*) omp%thread,'waiting at lock_cr'
-      if (io_unit%flush_logs) &
-        flush (io_unit%log)
-      !$omp critical (lock_cr)
-      write (io_unit%log,*) omp%thread,'in lock_cr'
-      if (wc > alternate_next) then
-        if (unit == io_unit%lock1) then
-          rewind (io_unit%lock2)
-          unit = io_unit%lock2
-        else
-          rewind (io_unit%lock1)
-          unit = io_unit%lock1
-        end if
-        alternate_next = wc + alternate_time
-      end if
-      write (io_unit%log,*) omp%thread,'exit lock_cr'
-      !$omp end critical (lock_cr)
-    end if
-  end if
-END SUBROUTINE alternate_log
-
-!===============================================================================
-!> Return true if we already have the lock, or if we get it now
-!===============================================================================
-FUNCTION test (self) RESULT (out)
-  class(lock_t):: self
-  logical:: out
-  real(8):: wc
-  !-----------------------------------------------------------------------------
-  if (.not. self%on) return
-#ifdef TRACE 
-  call trace%begin('lock_t%test')
-#endif
-  if (omp%thread == self%thread) then
-    out = .true.
-    !print *, omp%thread, ' already has lock id', self%id
-  else
-    !print *, omp%thread, ' omp_test_lock for id', self%id
-    out =  ( omp_test_nest_lock (self%lock) .gt. 0 )
-    if (out) then
-      self%thread = omp%thread
-      !$omp atomic update
-      self%level = self%level+1
-      wc = wallclock()
-      if (wc < verbose_time .or. verbose > 1 .or. alternate_time > 0d0) then
-        write (io_unit%log,'(f14.6,i4,a,i10,i3,a)') wc, omp%thread, ' lock id', &
-          self%id, self%level, '  test'
-      end if
-    else
-      !print *, omp%thread, ' failed to acquire lock id', self%id, self%thread
-    end if
-  end if
-  !$omp flush
-#ifdef TRACE 
-  call trace%end()
-#endif
-END FUNCTION test
-
-!===============================================================================
-!> Return true only if we have rightful access to the locked item
-!===============================================================================
-FUNCTION check (self) RESULT (out)
-  class(lock_t):: self
-  logical:: out
-  !-----------------------------------------------------------------------------
-  if (.not. self%on) return
-  out = (omp%thread == self%thread)
-END FUNCTION check
-
-!===============================================================================
-!> Unset the associated thread number and release the lock (in that order!)
+!> Unset the write lock, which has held back read requests in the meantime
 !===============================================================================
 SUBROUTINE unset (self, label)
   class(lock_t):: self
   character(len=*), optional:: label
-  integer:: level
-  real(8):: wc, used
   !-----------------------------------------------------------------------------
   if (.not. self%on) return
-#ifdef TRACE 
-  call trace%begin('lock_t%unset')
-#endif
-  !-----------------------------------------------------------------------------
-  ! It should be impossible to come here with an uninitialized lock
-  !-----------------------------------------------------------------------------
-  if (.not. self%initialized) then
-    write (stderr,'(a,i4)') &
-      'omp_lock_t%unset ERROR: lock not initialized, thread =', omp%thread
-    stop 'omp_lock_t%unset'
+  if (self%fall_through) then
+    call self%org_lock_t%unset (label)
+    return
   end if
-  self%level = self%level-1
-  level = self%level
-  !$omp flush
-  call omp_unset_nest_lock (self%lock)
-  !$omp flush
-  wc = wclock()
-  used = wc - self%start_time
-  !call alternate_log (self)
-  if (wc < verbose_time .or. verbose > 1) then
-    if (present(label)) then
-      write (unit,'(f14.6,a,a4,i10,i3,i4,6p,f10.1,2x,a)') wc, &
-        ' lock kind, id, level, thread = ', self%kind, self%id, level, &
-        omp%thread, used, ' unset at '//label
-    else
-      write (unit,'(f14.6,a,a4,i10,i3,i4,6p,f10.1,2x,a)') wc, &
-        ' lock kind, id, level, thread = ', self%kind, self%id, level, &
-        omp%thread, used, ' unset'
-    end if
-    if (io_unit%flush_logs) &
-      flush (unit)
-  end if
-#ifdef TRACE 
-  call trace%end()
-#endif
+  !-----------------------------------------------------------------------------
+  call self%org_lock_t%unset (label)
 END SUBROUTINE unset
-
-!===============================================================================
-SUBROUTINE dealloc (self, this)
-  class(lock_t):: self
-  type(lock_t), pointer:: this
-  !-----------------------------------------------------------------------------
-  if (omp_lock%on .and. associated(this)) then
-    call this%destroy
-    if (verbose > 0) then
-      write (unit,'(f14.6,a,a4,i10,i3,i4,6p,f10.1,2x,a)') wallclock(), &
-        ' lock kind, id, level, thread = ', this%kind, this%id, this%level, &
-        omp_get_thread_num(), 0.0, ' destroy'
-    end if
-    deallocate (this)
-    nullify (this)
-  end if
-END SUBROUTINE dealloc
 
 !===============================================================================
 SUBROUTINE destroy (self)
   class(lock_t):: self
   !-----------------------------------------------------------------------------
+  if (self%fall_through) then
+    call self%org_lock_t%destroy
+    return
+  end if
   if (self%initialized) then
-    call omp_destroy_nest_lock (self%lock)
+    call self%org_lock_t%destroy ()
     self%initialized = .false.
   end if
 END SUBROUTINE destroy
-
-!===============================================================================
-SUBROUTINE info (self, unit, p_verbose)
-  class(lock_t):: self
-  integer:: unit, p_verbose
-  class(lock_t), pointer:: lock
-  real(8):: time
-  real(8), save:: prev=0d0
-  !-----------------------------------------------------------------------------
-  if (.not. self%on) return
-  if (verbose > 0) then
-    !$omp atomic read
-    time = wait_time
-    write (stdout,'(a,f6.2,1x,a,2p,f6.1,1x,a)') ' lock waiting time =', &
-      time-prev, 'core-s', (time-prev)/(shared%sec_per_report*omp%nthreads), '%'
-    !$omp atomic write
-    prev = time
-    !---------------------------------------------------------------------------
-    !$omp atomic read
-    time = log_time
-    write (stdout,'(a,f6.2,a)') ' lock     log time =', &
-      time, ' core-s'
-    ! !$omp atomic write
-    ! wait_time = 0d0
-    !$omp atomic write
-    log_time = 0d0
-  end if
-  return
-END SUBROUTINE info
 
 !===============================================================================
 END MODULE omp_lock_mod

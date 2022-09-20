@@ -284,7 +284,7 @@ SUBROUTINE set_lobatto_quadratures(ntheta, nphi, vec, wts)
 
   ! storing first index of vec and wts
   wts(1) = wmu(1)
-  vec(3,1) = mu(1)
+  vec(:,1) = [0.d0, 0.d0, mu(1)]
   ! storing the rest of vec and wts indexes
   do nt = 2, nrays
      do np = 1, nphi
@@ -450,7 +450,7 @@ SUBROUTINE set_stencil(ray, ds)
 
   class(ray_type) :: ray
   real(8), intent(in) :: ds(3)
-  integer :: i,j,k,ncrossXZ,ncrossYZ,slct
+  integer :: i,j,ncrossXZ,ncrossYZ,slct
   integer :: count,Nvalid,nmc
   integer, parameter :: mb=3
   real(8) :: dx,dy,dz, mux,muy,muz
@@ -550,8 +550,7 @@ SUBROUTINE set_stencil(ray, ds)
     if (ncrossYZ.gt.nmc.or.ncrossXZ.gt.nmc) then
         ! one process per plane of processes issues a warning
         print *, 'warning:long ray extends upwind beyond boundary zones, truncating at'
-        write(txt,fmt='(a,i4,a,5(f7.3,a))') 'k=',k,'; (mux,muy,muz)=(',mux,',',muy,',',muz,&
-              '). (lf1,lf2)=(',longfracX,',',longfracY,').'
+        write(txt,fmt='(A,3(F8.4),A,2(F8.4))') 'mux,muy,muz=',mux,muy,muz,',  lf1,lf2=',longfracX,longfracY
         print *, txt
     endif
 
