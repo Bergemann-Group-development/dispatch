@@ -117,6 +117,7 @@ contains
     real(4), dimension(:,:,:,:), intent(in) :: n, nstar
     real(4), dimension(:,:,:,:), intent(inout) :: eta, chi
     real(4), dimension(:,:,:), allocatable :: fakt
+    real(4) :: alpha2
     integer :: i,j,k,f, nf, nx, ny, nz
     !----------------------------------------------------------------------------------
     nx = size(n, 1)
@@ -130,11 +131,12 @@ contains
 
     !$omp simd
     do f=1, nf
+      alpha2 = alpha(f)! * self%alpha0
     do k=1, nz
     do j=1, ny
     do i=1, nx
       eta(i,j,k,f) = eta(i,j,k,f) + alpha(f) * fakt(i,j,k)
-      chi(i,j,k,f) = chi(i,j,k,f) + alpha(f) * n(i,j,k,self%i)
+      chi(i,j,k,f) = chi(i,j,k,f) + alpha2 * n(i,j,k,self%i)
     end do
     end do
     end do
@@ -391,6 +393,8 @@ contains
           do j=ired,iblue
               self%nu(j)    = self%nu0 + (j-ired) * dnu
               self%alpha(j) = self%alpha0 * ( self%nu(j) / self%nu0 )**(-3)
+              ! for overflow reasons
+              !self%alpha(j) = ( self%nu(j) / self%nu0 )**(-3)
           end do
       case('detail')
           ! do nothing, frequencies were computed in read_atom

@@ -83,8 +83,6 @@ MODULE atom_mod
         !procedure :: add_line_opacities
         procedure :: add_continuum_opacities
         procedure :: full_preconditioning
-        procedure :: self_cont_preconditioning
-        procedure :: self_line_preconditioning
         procedure :: compute_doppler_factor
         procedure :: partition_function
         procedure :: lte_pop
@@ -258,7 +256,7 @@ MODULE atom_mod
         real(4), dimension(:), allocatable :: wnu
         integer, dimension(:), allocatable :: lower, upper, trans, ii, jj
         logical, dimension(:), allocatable :: cross
-        real(4) :: chi, twohnu3_c2, alpha, hnu_inv, Bij, Bji, ufac
+        real(4) :: chi, twohnu3_c2, alpha, hnu_inv, Bij, Bji, ufac, alpha2
         integer :: i, j, k, kr, kr2, kc, kl, fe, n_active, ff, f, p(3), x,y,z, nx, ny, nz, nupper, nlower, i2
         logical :: cross_coupling
         integer, save :: itimer1, itimer2, itimer3, itimer4, itimer5, itimer6
@@ -383,11 +381,13 @@ MODULE atom_mod
   
               if (kr <= self%sp%nac(ff)) then
                  kc = self%sp%ac(kr,ff)
+                 ! alpha0 is part of ni_over_nj_lte for overflow reasons
                  alpha = self%cont(kc)%alpha(ff) * wnu(kr)
+                 alpha2 = alpha! * self%cont(kc)%alpha0
                  do z=1,nz
                  do y=1,ny
                  do x=1,nx
-                    vij(x,y,z,kr) = alpha
+                    vij(x,y,z,kr) = alpha2
                     vji(x,y,z,kr) = alpha * self%cont(kc)%ni_over_nj_lte(x,y,z) * blzfac(x,y,z)
                     chi = vij(x,y,z,kr) * ni(x,y,z) - vji(x,y,z,kr) * nj(x,y,z)
   
@@ -470,161 +470,6 @@ MODULE atom_mod
      END SUBROUTINE full_preconditioning
      !------------------------------------------------------------------------------------
     
-   !====================================================================================
-   SUBROUTINE self_cont_preconditioning(self, fs_patch, temp, Ieff, Psi, gamma_ij, gamma_ji, idx_map)
-      class(atom_type), target, intent(in) :: self
-      integer, intent(in) :: fs_patch
-      real(4), dimension(:,:,:), intent(in), contiguous :: temp
-      real(4), dimension(:,:,:,:), intent(in), contiguous :: Psi, Ieff
-      real(4), dimension(:,:,:,:), intent(inout), contiguous :: gamma_ij, gamma_ji
-      integer, dimension(:), intent(in) :: idx_map
-      class(cont_type), pointer :: cnt
-      real(4), dimension(:,:,:,:), allocatable :: blzfac
-      real(4), dimension(:,:,:), allocatable :: t_inv, fakt
-      real(4), dimension(:), allocatable :: twohnu3_c2, hnu_inv, hnu_k
-      real(8), dimension(:), pointer, contiguous :: nu
-      real(4) :: wnu, eta, chi, vij, vji, alpha, ufac
-      integer :: nx, ny, nz, nf, nnu, p(3)
-      integer :: i, j, k, f, x, y, z, ff, fs, fe, fcs, fce, fe_patch, fff, kr
-      logical :: skip
-      integer, save :: itimer
-      !------------------------------------------------------------------------------------
-      call trace%begin('atom_type%self_cont_preconditioning', itimer=itimer)
-      nx = size(Psi,1)
-      ny = size(Psi,2)
-      nz = size(Psi,3)
-      nf = size(Psi,4)
-
-      fe_patch = fs_patch + nf -1
-      nu => self%sp%nu(fs_patch:fe_patch)
-      fcs = max(minval(self%cont%ired),  fs_patch)
-      fce = min(maxval(self%cont%iblue), fe_patch)
-
-      allocate(twohnu3_c2(nf), hnu_k(nf), hnu_inv(nf))
-      allocate(t_inv(nx,ny,nz), fakt(nx,ny,nz))
-      allocate(blzfac(nx,ny,nz,fcs:fce))
-
-      twohnu3_c2 = twoh_c2 * nu**3
-      hnu_k = h_k * nu
-      t_inv = 1 / temp
-      hnu_inv = 1 / (hh*nu)
-
-      do ff=fcs,fce
-         f = ff - fs_patch + 1
-         blzfac(:,:,:,ff) = exp(-hnu_k(f) * t_inv)
-      end do
-
-      do kr=1, size(self%cont)
-         cnt => self%cont(kr)
-         call cnt%check_range(fs_patch,fe_patch,fs,fe,skip)
-         if (skip) cycle
-         k = idx_map(cnt%ntrans)
-         i = cnt%i
-         j = cnt%j
-
-         fakt = cnt%ni_over_nj_lte
-     
-         do ff=fs,fe
-            f = ff - fs_patch + 1
-            wnu = cnt%wnu(ff) * hnu_inv(f)
-            ufac = twohnu3_c2(f) / wnu
-            alpha = cnt%alpha(ff) * wnu
-            do z=1,nz
-            do y=1,ny
-            do x=1,nx
-               vij = alpha
-               vji = alpha * fakt(x,y,z) * blzfac(x,y,z,ff)
-               chi = vij * self%n(x,y,z,i) - vji * self%n(x,y,z,j)
-               eta = vji * ufac * Psi(x,y,z,f)
-               !Ieff = Inu(x,y,z,f) - eta
-               gamma_ji(x,y,z,k) = gamma_ji(x,y,z,k) + vji*(Ieff(x,y,z,f) + twohnu3_c2(f)) - chi*eta
-               gamma_ij(x,y,z,k) = gamma_ij(x,y,z,k) + vij*Ieff(x,y,z,f)
-            end do
-            end do
-            end do
-         end do
-      end do
-
-      deallocate(twohnu3_c2, hnu_k, hnu_inv)
-      deallocate(t_inv, fakt)
-      call trace%end(itimer)
-   END SUBROUTINE self_cont_preconditioning
-   !------------------------------------------------------------------------------------
-
-   !====================================================================================
-   SUBROUTINE self_line_preconditioning(self, fs_patch, temp, Ieff, Psi, gamma_ij, gamma_ji, idx_map, lines)
-      class(atom_type), target, intent(in) :: self
-      integer, intent(in) :: fs_patch
-      real(4), dimension(:,:,:), intent(in), contiguous :: temp
-      real(4), dimension(:,:,:,:), intent(in), contiguous :: Psi, Ieff
-      real(4), dimension(:,:,:,:), intent(inout), contiguous :: gamma_ij, gamma_ji
-      integer, dimension(:), intent(in) :: idx_map
-      class(line_type), dimension(:), intent(in), target :: lines
-      class(line_type), pointer :: line
-      real(4), dimension(:,:,:,:), allocatable :: phi
-      real(4), dimension(:), allocatable :: twohnu3_c2, hnu_inv
-      real(8), dimension(:), pointer, contiguous :: nu
-      real(4) :: wnu, eta, chi, vij, vji, ufac, Bij, Bji
-      integer :: nx, ny, nz, nf, nnu, p(3)
-      integer :: i, j, k, f, x, y, z, ff, fs, fe, fe_patch, fff, kr
-      logical :: skip
-      integer, save :: itimer
-      !------------------------------------------------------------------------------------
-      call trace%begin('atom_type%self_line_preconditioning', itimer=itimer)
-      nx = size(Psi,1)
-      ny = size(Psi,2)
-      nz = size(Psi,3)
-      nf = size(Psi,4)
-
-      fe_patch = fs_patch + nf -1
-      nu => self%sp%nu(fs_patch:fe_patch)
-
-      allocate(twohnu3_c2(nf), hnu_inv(nf))
-      allocate(phi(nx,ny,nz, maxval(lines%iblue-lines%ired+1)))
-
-      twohnu3_c2 = twoh_c2 * nu**3
-      hnu_inv = 1 / (hh*nu)
-
-      do kr=1, size(lines)
-         line => lines(kr)
-         call line%check_range(fs_patch,fe_patch,fs,fe,skip)
-         if (skip) cycle
-         k = idx_map(line%ntrans)
-         i = line%i
-         j = line%j
-      
-         nu => self%sp%nu(fs:fe)
-         call line%interpolate_phi(nu, phi(:,:,:,1:size(nu)))
-     
-         do ff=fs,fe
-            f = ff - fs_patch + 1
-            fff = ff - fs + 1
-            wnu = line%wnu(ff) * hnu_inv(f)
-            ufac = twohnu3_c2(f) / wnu
-            Bij = wnu * line%Bij
-            Bji = wnu * line%Bji
-            do z=1,nz
-            do y=1,ny
-            do x=1,nx
-               vij = Bij * phi(x,y,z,fff)
-               vji = Bji * phi(x,y,z,fff)
-               chi = vij * self%n(x,y,z,i) - vji * self%n(x,y,z,j)
-               eta = vji * ufac * Psi(x,y,z,f)
-               !Ieff = Inu(x,y,z,f) - eta
-               gamma_ji(x,y,z,k) = gamma_ji(x,y,z,k) + vji * (Ieff(x,y,z,f) + twohnu3_c2(f)) - chi*eta
-               gamma_ij(x,y,z,k) = gamma_ij(x,y,z,k) + vij * Ieff(x,y,z,f)
-            end do
-            end do
-            end do
-         end do
-      end do
-
-      deallocate(phi)
-      deallocate(twohnu3_c2, hnu_inv)
-      call trace%end(itimer)
-   END SUBROUTINE self_line_preconditioning
-   !------------------------------------------------------------------------------------
-  
    !====================================================================================
    SUBROUTINE solve_stat_equilibrium (self, temp, ne, totn, n, nstar, nh, gamma_ij, gamma_ji, cswitch, check_NaN)
       class(atom_type), target :: self
@@ -764,9 +609,9 @@ MODULE atom_mod
          do i=1, self%nlevel
             self%nstar(:,:,:,i) = self%lte_pop(i, temp, dxi, saha, partition)
 
-            if(any(self%nstar(:,:,:,i) <= 0.0)) then
-               print *, ' ltepop: level ',i,' has zero lte population. Stopping...'
-               stop
+            if(any(self%nstar(:,:,:,i) <= tiny(0.0))) then
+               print *, ' WARNING: ltepop: level ',i,' has zero lte population.'
+               !stop
             end if
          end do
 
@@ -787,7 +632,8 @@ MODULE atom_mod
       class(atom_type), intent(in) :: self
       real(4), intent(in) :: temp, dxi, saha, partition
       integer, intent(in) :: i_lvl
-      real(8) :: evi, tns, nstar
+      real(8) :: evi, tns
+      real(4) :: nstar
       logical :: molec
       integer :: i, j, l
       !---------------------------------------------------------------------------------
@@ -800,7 +646,11 @@ MODULE atom_mod
          tns = tns + float(l)*saha
       endif
 
-      nstar = exp(tns) * partition
+      if (tns+log(partition) < -75) then
+         nstar = tiny(1.0)
+      else
+         nstar = exp(tns) * partition
+      endif
    end function lte_pop
    !------------------------------------------------------------------------------------
   
@@ -808,7 +658,8 @@ MODULE atom_mod
      elemental function partition_function(self, temp, dxi, saha, totn) result(sumn)
         class(atom_type), intent(in) :: self
         real(4), intent(in) :: temp, dxi, totn, saha
-        real(8) :: sumn, evi, tns
+        real(8) :: evi, tns
+        real(4) :: sumn
         integer :: i, j, l
         !--------------------------------------------------------------------------------
         sumn = 0.
@@ -840,15 +691,34 @@ MODULE atom_mod
      !------------------------------------------------------------------------------------
      
      !====================================================================================
-     SUBROUTINE compute_cont_factors(self)
+     SUBROUTINE compute_cont_factors(self, temp, dxi, ne)
         class(atom_type), target, intent(inout) :: self
-        integer :: i, j, kr
+        real(4), dimension(:,:,:) :: temp, dxi, ne
+        real(4) :: dev, tns, test, saha, lalpha
+        integer :: i, j, k, kr, n(3), x, y, z, ii, jj
         class(cont_type), pointer :: cont
         !---------------------------------------------------------------------------------
+        n = shape(self%totn)
         do kr=1,self%ncont
            cont => self%cont(kr)
-           call os%allocate(cont%ni_over_nj_lte, shape(self%nstar(:,:,:,1)), label='cont%ni_over_nj_lte')
-           cont%ni_over_nj_lte = self%nstar(:,:,:,cont%i) / self%nstar(:,:,:,cont%j)
+           call os%allocate(cont%ni_over_nj_lte, n, label='cont%ni_over_nj_lte')
+           i = cont%i
+           j = cont%j
+           ii = 0.5*(self%ion(i)*(self%ion(i)-1))
+           jj = 0.5*(self%ion(j)*(self%ion(j)-1))
+           lalpha = log(cont%alpha0)
+           do z=1, n(3)
+           do y=1, n(2)
+           do x=1, n(1)
+            !saha = 1.5*log(temp(x,y,z)) - log(saha_const*ne(x,y,z)) ! actually log(saha)
+            !dev = self%ev(i) - self%ev(j) - dxi(x,y,z)*(ii - jj)
+            !tns = log(self%g(i)/self%g(j)) - e_k/temp(x,y,z)*dev
+            !tns = tns + (self%ion(i) - self%ion(j))*saha
+            !cont%ni_over_nj_lte(x,y,z) = exp(tns + lalpha)
+            cont%ni_over_nj_lte(x,y,z) = self%nstar(x,y,z,i) / self%nstar(x,y,z,j)
+           end do
+           end do
+           end do
         enddo
      END SUBROUTINE compute_cont_factors
      !------------------------------------------------------------------------------------
@@ -1005,7 +875,7 @@ MODULE atom_mod
             lin%nu0   = cc / lin%lambda0    ! [Hz]
   
             lin%Grat  = self%g(lin%i) / self%g(lin%j)
-            lin%Aji   = hh * f_to_Aji * lin%f * lin%Grat / lin%lambda0**2
+            lin%Aji   = f_to_Aji * lin%f * lin%Grat / lin%lambda0**2! * hh
             lin%Bji   = c2_2h / lin%nu0**3 * lin%Aji
             lin%Bij   = lin%Bji / lin%Grat
 
@@ -1140,6 +1010,8 @@ MODULE atom_mod
                  call nextentry(latom) 
                  read(latom,*)  nu(j), alpha(j)
                 end do
+                ! for overflow reasons
+                !alpha = alpha / cnt%alpha0
                 ! sanity check
                 doubles = 0
                 do j=2,cnt%nnu

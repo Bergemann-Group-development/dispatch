@@ -23,7 +23,7 @@ module rad_patch_mod
   USE units_mod, only: cgs
   USE mconst, only: over_4pi
   !USE scratch_mod
-  USE m3d_patch_mod, only: m3d_patch_t, conditioning, hash_string
+  USE m3d_patch_mod, only: m3d_patch_t, hash_string, comoving_frame
   USE ray_patch_mod, only: ray_patch_t, formal_solver
   USE os_mod
   USE omp_mod
@@ -124,7 +124,7 @@ SUBROUTINE radiation_init (self)
 
   if (.not. self%out_ray) then
     m = shape(self%authority_mem)
-    if (self%kind=='angle_rad' .or. conditioning == 'self') then
+    if (self%kind=='angle_rad') then
       call self%allocate_mem(self)
     end if
     if (lock_Inu) then
@@ -293,8 +293,8 @@ SUBROUTINE short_ray_update (self)
             do ii=1,dx
               xx = self%chi(ii+x1, jj+y1, kup,f)
               ss = self%Snu(ii+x1, jj+y1, kup,f)
-              xxup = xxup  + kernel(ii,jj) * xx
-              ssup = ssup  + kernel(ii,jj) * ss
+              xxup = xxup + kernel(ii,jj) * xx
+              ssup = ssup + kernel(ii,jj) * ss
               if (ii>1 .and. ii<dx .and. jj>1 .and. jj<dy) then
                 xxmin = min(xxmin, xx)
                 ssmin = min(ssmin, ss)
@@ -338,8 +338,10 @@ SUBROUTINE short_ray_update (self)
             self%Inu(i,j,k,f) = u0*ssup + Psi*ss
           endif
 
-          self%Psi(x,y,z,f) = Psi / xx
-          self%Ieff(x,y,z,f) = self%Inu(i,j,k,f) - self%Psi(x,y,z,f) * (ss*xx - eta_back(x,y,z,f))
+          if (.not. comoving_frame) then
+            self%Psi(x,y,z,f) = Psi / xx
+            self%Ieff(x,y,z,f) = self%Inu(i,j,k,f) - self%Psi(x,y,z,f) * (ss*xx - eta_back(x,y,z,f))
+          endif
         end do
       end do
 
@@ -506,10 +508,11 @@ SUBROUTINE radiation_nbor_relations(self, another, needed, needs_me, download)
     class is (ray_patch_t)
       if (self%kind==another%kind) then
         ! do nothing
-      elseif(another%kind=='rate_patch' .and. self%i_mu==another%i_mu) then
+      elseif(another%kind=='rate_patch' .and. self%i_mu==another%i_mu &
+        .and. .not. comoving_frame) then
         needed=.false.
       elseif (self%kind=='angle_rad') then
-          if (another%kind=='net_opac') then
+          if (another%kind=='net_opac' .and. .not. comoving_frame) then
             needs_me=.false.
             self%opac => another
           elseif (another%kind=='mean_rad'  .and. .not. self%out_ray) then
@@ -517,6 +520,9 @@ SUBROUTINE radiation_nbor_relations(self, another, needed, needs_me, download)
           elseif (another%kind=='back_opac' .and. .not. self%out_ray) then
             needs_me=.false.
             self%back_opac => another
+          elseif (another%kind=='proj_patch') then
+            needs_me=.false.
+            self%opac => another
           elseif (another%kind=='out_rad') then
             needed=.false.
           else
@@ -621,20 +627,30 @@ END SUBROUTINE rad_patch_allocate_mem
 SUBROUTINE print_post_update_info (self)
   class(rad_patch_t) :: self
   character(48) :: text
-  integer :: p(3), f
+  integer :: p(3), p2(3), f
+  real(4) :: arr(3)
   !-----------------------------------------------------------------------------
   f = self%fcheck
-  select case (self%kind)
-  case ('angle_rad')
-    if (self%stiff) then
-      write(text, '(A,I4)') 'intensity has not changed, skipping', self%stiff_count-1
-      call self%print_to_stdout(text=text)
-    else
-      call self%ray_patch_t%print_post_update_info()
+  p = self%pcheck
+  if (self%stiff) then
+    write(text, '(A,I4)') 'intensity has not changed, skipping', self%stiff_count-1
+    call self%print_to_stdout(text=text)
+  else
+    arr = 0
+    arr(1) = self%mem(p(1),p(2),p(3),f,1,1)
+    if (associated(self%Psi)) then
+      p2 = p - self%ng
+      if (all(p2>0)) then
+        arr(2) = self%Psi(p2(1),p2(2),p2(3),f)
+        arr(3) = self%Ieff(p2(1),p2(2),p2(3),f)
+      endif
     endif
-  case default
-    call self%ray_patch_t%print_post_update_info()
-  end select
+    if (arr(2) /= 0) then
+      call self%print_to_stdout(arr=arr)
+    else
+      call self%print_to_stdout(arr=arr(1:1))
+    endif
+  endif
 END SUBROUTINE print_post_update_info
 
 !===============================================================================
@@ -656,13 +672,19 @@ SUBROUTINE init_nbors_hash (self, nbors)
   case ('angle_rad')
     call self%ray_patch_t%init_nbors_hash(nbors)
     key(2:3) = self%key(2:3)
-    key(4) = hash_string('net_opac')
+    if (comoving_frame) then
+      key(4) = hash_string('proj_patch')
+    else
+      key(4) = hash_string('net_opac')
+    endif
     call self%check_nbor(key, nbors)
     if (.not. self%out_ray) then
       key(4) = hash_string('rate_patch')
       call self%check_nbor(key, nbors)
       key(3) = 0
       key(4) = hash_string('back_opac')
+      call self%check_nbor(key, nbors)
+      key(4) = hash_string('mean_rad')
       call self%check_nbor(key, nbors)
     else
       key(2) = 0

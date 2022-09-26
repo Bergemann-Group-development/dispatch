@@ -36,7 +36,7 @@ contains
     real(8), dimension(:), intent(in) :: q
     real(4), dimension(:,:,:), intent(in) :: vproj, inv_df, adamp
     real(4), dimension(:,:,:,:), intent(inout) :: phi
-    real(4), dimension(:,:,:), allocatable :: norm, psi, damp
+    real(4), dimension(:,:,:), allocatable :: psi, damp
     integer :: f
     !----------------------------------------------------------------------------------
     allocate(psi, damp, mold=inv_df)
@@ -47,7 +47,8 @@ contains
     do f=1, size(q)
       phi(:,:,:,f) = (q(f) - vproj) * inv_df
       phi(:,:,:,f) = voigt_function2(damp, phi(:,:,:,f), psi)
-      phi(:,:,:,f) = phi(:,:,:,f)*inv_df
+      !phi(:,:,:,f) = phi(:,:,:,f) * inv_df
+      phi(:,:,:,f) = phi(:,:,:,f) * inv_df / self%nu0
     end do 
   END SUBROUTINE line_profile
   !------------------------------------------------------------------------------------

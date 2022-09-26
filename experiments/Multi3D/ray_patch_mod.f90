@@ -1,20 +1,11 @@
 module ray_patch_mod
-
-  !USE rt_integral_mod
-  !USE radau_mod
-  !USE boundaries_mod
-  !USE eos_mod
-  !USE list_mod
   USE mpi_mesg_mod
   USE halo_mod
   USE patch_mod, only: header_t, n_header
   USE gpatch_mod
   USE link_mod
   USE task_mod
-  !USE index_mod
-  !USE mesh_mod
   USE io_mod
-  !USE aux_mod
   USE timer_mod
   USE scaling_mod
   USE trace_mod
@@ -23,14 +14,12 @@ module ray_patch_mod
   USE omp_lock_mod
   USE omp_timer_mod
   USE shared_mod
-  !USE math_mod
   USE bits_mod
   USE os_mod
-  !USE units_mod
-  !USE scratch_mod
+  USE op_math_mod, only: searchsorted
   USE ray_mod, only: ray_type
   USE m3d_patch_mod, only: m3d_patch_t, vec, wmu, long_vec, long_wmu, detailed_prints, &
-  converged, print_send, atom_update_counter, hash_string
+  converged, print_send, atom_update_counter, hash_string, comoving_frame
   USE mconst, only: cc
   implicit none
   private
@@ -60,6 +49,7 @@ module ray_patch_mod
     procedure :: allocate_mesg
     procedure :: total_mesg_buffer_size
     procedure :: init_nbors_hash
+    procedure :: frequency_padding
   end type ray_patch_t
 
   !-----------------------------------------------------------------------------
@@ -101,6 +91,8 @@ SUBROUTINE ray_patch_pre_init (self)
     self%vec = vec(:,self%i_mu)
     self%wmu = wmu(self%i_mu)
     self%dir = merge(1, -1, vec(3,self%i_mu) > 0)
+  elseif (self%i_mu == 0 .and. comoving_frame) then
+    self%wmu = 1.0
   endif
 
   call self%check_topbot()
@@ -112,7 +104,16 @@ END SUBROUTINE ray_patch_pre_init
 SUBROUTINE ray_patch_init (self)
   class(ray_patch_t) :: self
   real(8) :: offset
+  real(4), dimension(:,:,:), pointer, contiguous :: vproj
+  integer :: tmp
   ! ----------------------------------------------------------------------------
+  if (comoving_frame) then
+    select case (self%kind)
+    case ('back_opac', 'back_line', 'cont_opac', 'net_opac')
+      call self%frequency_padding()
+    ! frequency padding for lines_patches is done in lines_patch%init
+    end select
+  endif
   if (self%is_set(bits%virtual)) then
     offset = self%dir * (self%n(3)-1)/2 * self%ds(3)
     self%position(3) = self%position(3) + offset
@@ -137,23 +138,17 @@ SUBROUTINE set_freq_indices (self)
   endif
   nv = self%sp%nnu / self%n_nu
   md = mod(self%sp%nnu, self%n_nu)
-
   i_nu = self%i_nu
   if (i_nu > self%n_nu) then
     i_nu = i_nu - self%n_nu
   endif
-
   fs = (i_nu-1) * nv + 1 + min(md, i_nu-1)
-
   if (i_nu <= md) then
     nv = nv + 1
   endif
-
   fe = fs + nv - 1
-
   self%fs = fs
   self%fe = fe
-
   if (i_nu > counter) then
     if (counter == 0) write(stdout,'(I2, A18)') self%n_nu, 'frequency splits'
     write(stdout,'(I4, I10,A3,I8)') i_nu, fs, ' - ', fe
@@ -164,10 +159,39 @@ END SUBROUTINE set_freq_indices
 !===============================================================================
 SUBROUTINE comp_vproj (self, vproj)
   class(ray_patch_t) :: self
-  real(4), dimension(:,:,:), pointer, contiguous :: vproj
+  real(4), dimension(:,:,:) :: vproj
   real(4), dimension(:,:,:), pointer :: d, px, py, pz
   integer :: li(3), ui(3)
   !-----------------------------------------------------------------------------
+  if (self%i_mu == 0) then
+    vproj = 0
+  else
+    li = self%patch%li
+    ui = self%patch%ui
+
+    d  => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),self%patch%idx%d, self%it,1)
+    px => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),self%patch%idx%px,self%it,1)
+    py => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),self%patch%idx%py,self%it,1)
+    pz => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),self%patch%idx%pz,self%it,1)
+
+    !if (self%out_ray) then
+    !  vproj = (-self%vec(1)*px - self%vec(2)*py + self%vec(3)*pz) * scaling%u / (d*cc)
+    !else
+      vproj = (self%vec(1)*px + self%vec(2)*py + self%vec(3)*pz) * scaling%u / (d*cc)
+    !endif
+  endif
+END SUBROUTINE comp_vproj
+
+!===============================================================================
+SUBROUTINE frequency_padding (self)
+  class(ray_patch_t) :: self
+  real(4), dimension(:,:,:), pointer, contiguous :: to_vel
+  real(4), dimension(:,:,:), pointer :: d, px, py, pz
+  real(4) :: max_vel
+  real(8) :: max_nu, min_nu, dnu
+  integer :: li(3), ui(3), fs, fe, nv
+  !-----------------------------------------------------------------------------
+  call os%allocate(to_vel, self%n)
   li = self%patch%li
   ui = self%patch%ui
 
@@ -176,12 +200,23 @@ SUBROUTINE comp_vproj (self, vproj)
   py => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),self%patch%idx%py,self%it,1)
   pz => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),self%patch%idx%pz,self%it,1)
 
-  !if (self%out_ray) then
-  !  vproj = (-self%vec(1)*px - self%vec(2)*py + self%vec(3)*pz) * scaling%u / (d*cc)
-  !else
-    vproj = (self%vec(1)*px + self%vec(2)*py + self%vec(3)*pz) * scaling%u / (d*cc)
-  !endif
-END SUBROUTINE comp_vproj
+  to_vel = scaling%u / (d*cc)
+  max_vel = maxval(abs(px * to_vel))
+  max_vel = max(max_vel, maxval(abs(py * to_vel)))
+  max_vel = max(max_vel, maxval(abs(pz * to_vel)))
+  dnu = maxval(self%sp%nu) * max_vel
+  call os%deallocate(to_vel)
+
+  min_nu = self%sp%nu(self%fs) - dnu
+  max_nu = self%sp%nu(self%fe) + dnu
+  fs = searchsorted(self%sp%nu, min_nu, outbounds_ok=.true.)
+  fe = searchsorted(self%sp%nu, max_nu, outbounds_ok=.true.)
+  self%fs = max(1, fs)
+  self%fe = min(self%sp%nnu, fe+1)
+  
+  nv = self%fe-self%fs+1
+  call self%set_nv_and_nw (nv,self%nw)
+END SUBROUTINE frequency_padding
 
 !===============================================================================
 SUBROUTINE ray_patch_finish (self)

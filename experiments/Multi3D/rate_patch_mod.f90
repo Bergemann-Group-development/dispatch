@@ -1,34 +1,21 @@
 module rate_patch_mod
-    !USE rt_integral_mod
-    !USE radau_mod
-    !USE boundaries_mod
-    !USE eos_mod
-    !USE list_mod
     USE halo_mod
     USE gpatch_mod
     USE link_mod
     USE task_mod
-    !USE index_mod
-    !USE mesh_mod
     USE io_mod
-    !USE aux_mod
     USE timer_mod
     USE scaling_mod
     USE trace_mod
     USE os_mod
-    !USE mpi_mod
-    !USE omp_mod
-    !USE omp_timer_mod
-    !USE math_mod
     USE bits_mod
-    !USE units_mod
-    !USE scratch_mod
-    USE m3d_patch_mod, only: conditioning, hash_string
+    USE m3d_patch_mod, only: hash_string, comoving_frame
     USE ray_patch_mod, only: ray_patch_t
     USE rad_patch_mod, only: rad_patch_t
     USE trans_mod, only: transition_type
     USE atom_mod, only: atom_type
     USE lines_patch_mod, only: lines_patch_t
+    USE mean_rad_patch_mod, only:mean_rad_patch_t
     implicit none
 
     !-----------------------------------------------------------------------------
@@ -121,19 +108,8 @@ module rate_patch_mod
       gamma_ji = 0.0d0
 
       call self%check_access(self%lines)
-      if (conditioning == 'full') then
-        call self%atom%full_preconditioning(self%fs, temp, Ieff, Psi, gamma_ij, gamma_ji, self%idx_map, self%lines%line, self%lines%idx_map)
-      elseif (conditioning == 'self') then
-        if (self%i_mu==0) then
-          ! Ieff is actually Jeff here
-          call self%atom%self_cont_preconditioning(self%fs, temp, Ieff, Psi, gamma_ij, gamma_ji, self%idx_map)
-        else
-          call self%atom%self_line_preconditioning(self%fs, temp, Ieff, Psi, gamma_ij, gamma_ji, self%idx_map, self%lines%line)
-        endif
-      else
-        print *, conditioning, ' is an unknown type of rate equation conditioning. Stopping...'
-        stop
-      endif
+      call self%atom%full_preconditioning(self%fs, temp, Ieff, Psi, gamma_ij, gamma_ji, &
+                                      self%idx_map, self%lines%line, self%lines%idx_map)
       self%update_skipped = .false.
     else
       self%update_skipped = .true.
@@ -206,7 +182,7 @@ module rate_patch_mod
           needed = .false.; needs_me = .false.
         endif
       class is (lines_patch_t)
-        if (self%i_mu > 0) then
+        if (self%i_mu > 0 .or. comoving_frame) then
           needs_me=.false.
           self%lines => another
         else
@@ -244,7 +220,9 @@ module rate_patch_mod
     !-----------------------------------------------------------------------------
     cib = .false.
     if (self%ray_patch_t%check_in_bounds()) then
-      cib = self%idx_map(self%linecheck) > 0
+      if (self%linecheck <= self%atom%nline) then
+        cib = self%idx_map(self%linecheck) > 0
+      endif
     endif
   END FUNCTION check_in_bounds
   
@@ -258,16 +236,20 @@ module rate_patch_mod
     class(task_t), pointer:: task
     class(nbor_t), pointer:: nbor
     integer, save:: itimer=0
-    integer :: key(4)
+    integer :: key(4), i
     !-----------------------------------------------------------------------------
     call trace%begin('rate_patch_t%init_nbors_hash', itimer=itimer)
     call self%m3d_patch_t%init_nbors_hash(nbors)
-  
+
     key(1:3) = self%key(1:3)
     key(4) = hash_string('lines_patch')
     call self%check_nbor(key, nbors)
-
-    key(4) = hash_string('angle_rad')
+  
+    if (comoving_frame) then
+      key(4) = hash_string('mean_rad')
+    else
+      key(4) = hash_string('angle_rad')
+    endif
     call self%check_nbor(key, nbors)
     call trace%end (itimer)
   END SUBROUTINE init_nbors_hash

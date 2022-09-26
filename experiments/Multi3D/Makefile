@@ -57,9 +57,9 @@ m3d_patch_mod.o             : gpatch_mod.o atom_mod.o ray_mod.o m3d_halo_mod.o
 ray_patch_mod.o             : m3d_patch_mod.o
 #opac_patch_mod.o            : ray_patch_mod.o composition_mod.o atom_mod.o
 rad_patch_mod.o             : ray_patch_mod.o back_opac_patch_mod.o
-rate_patch_mod.o            : ray_patch_mod.o rad_patch_mod.o lines_patch_mod.o
+rate_patch_mod.o            : ray_patch_mod.o rad_patch_mod.o lines_patch_mod.o mean_rad_patch_mod.o
 atom_patch_mod.o            : rate_patch_mod.o lines_patch_mod.o cont_opac_patch_mod.o
-composition_patch_mod.o     : out_rad_patch_mod.o back_opac_patch_mod.o rad_patch_mod.o atom_patch_mod.o net_opac_patch_mod.o
+composition_patch_mod.o     : out_rad_patch_mod.o back_opac_patch_mod.o rad_patch_mod.o atom_patch_mod.o net_opac_patch_mod.o proj_patch_mod.o mean_rad_patch_mod.o
 bftrans_mod.o               : os_mod.o
 bbtrans_mod.o               : trace_mod.o
 mmath.o                     : search_mod.o
@@ -74,3 +74,5 @@ back_opac_patch_mod.o       : ray_patch_mod.o composition_mod.o
 cont_opac_patch_mod.o       : ray_patch_mod.o atom_mod.o
 net_opac_patch_mod.o        : ray_patch_mod.o lines_patch_mod.o back_line_patch_mod.o cont_opac_patch_mod.o
 out_rad_patch_mod.o         : ray_patch_mod.o rad_patch_mod.o
+proj_patch_mod.o            : ray_patch_mod.o
+mean_rad_patch_mod.o        : ray_patch_mod.o rad_patch_mod.o proj_patch_mod.o

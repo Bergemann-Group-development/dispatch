@@ -30,8 +30,8 @@ module atom_patch_mod
     USE element_mod, only: element_type
     USE bbtrans_mod, only: bbtrans_type
     USE composition_mod, only: composition_type
-    USE m3d_patch_mod, only: m3d_patch_t, maxiter, ilambd, conditioning, check_NaN, &
-    global_maxerr, rank_maxerr, convlim, atom_update_counter, hash_string
+    USE m3d_patch_mod, only: m3d_patch_t, maxiter, ilambd, check_NaN, &
+    global_maxerr, rank_maxerr, convlim, atom_update_counter, hash_string, comoving_frame
     USE bftrans_mod, only: bftrans_type
     USE lines_patch_mod, only:lines_patch_t
     USE net_opac_patch_mod, only:net_opac_t
@@ -94,24 +94,27 @@ module atom_patch_mod
       allocate(cont)
       cont%atom => self%atom
       call cont%pre_init_and_link(self, i_mu=0, i_nu=n, sp=self%sp)
-    end do
 
-    do n=1, self%n_nu
-      do m=1, self%n_omega
+      if (comoving_frame) then
         allocate(lines)
         lines%atom => self%atom
-        call lines%pre_init_and_link(self, i_mu=m, i_nu=n, sp=self%sp)
-      end do
-    end do
+        call lines%pre_init_and_link(self, i_mu=0, i_nu=n, sp=self%sp)
+        allocate(rate)
+        rate%atom => self%atom
+        call rate%pre_init_and_link(self, i_mu=0, i_nu=n, sp=self%sp)
+      else
+        do m=1, self%n_omega
+          allocate(lines)
+          lines%atom => self%atom
+          call lines%pre_init_and_link(self, i_mu=m, i_nu=n, sp=self%sp)
+        end do
 
-    do n=1, self%n_nu
-      do m=0, self%n_omega
-        if (conditioning=='self' .or. m>0) then
-          allocate(rate)
-          rate%atom => self%atom
-          call rate%pre_init_and_link(self, i_mu=m, i_nu=n, sp=self%sp)
-        endif
-      end do
+        do m=1, self%n_omega
+            allocate(rate)
+            rate%atom => self%atom
+            call rate%pre_init_and_link(self, i_mu=m, i_nu=n, sp=self%sp)
+        end do
+      endif
     end do
 
     do n=1, self%n_nu
@@ -122,7 +125,13 @@ module atom_patch_mod
           allocate(cont)
           cont%atom => self%output_atom
           call cont%pre_init_and_link(self, i_mu=0, i_nu=n2, sp=self%output_sp)
-        else
+
+          if (comoving_frame) then
+            allocate(lines)
+            lines%atom => self%output_atom
+            call lines%pre_init_and_link(self, i_mu=0, i_nu=n2, sp=self%output_sp)
+          endif
+        elseif (.not. comoving_frame) then
           allocate(lines)
           lines%atom => self%output_atom
           call lines%pre_init_and_link(self, i_mu=m2, i_nu=n2, sp=self%output_sp)
@@ -268,7 +277,7 @@ module atom_patch_mod
     call self%composition%get_totn(atom%id, atom%abnd, atom%totn, element)
     if (level_partf) nullify(element)
     call atom%compute_lte_populations(temp, ne, real(self%composition%dxi), element)
-    call atom%compute_cont_factors()
+    call atom%compute_cont_factors(temp, real(self%composition%dxi), ne)
     self%output_atom%n => atom%n
     self%output_atom%nstar => atom%nstar
     self%output_atom%doppler_factor => atom%doppler_factor
@@ -714,7 +723,8 @@ module atom_patch_mod
         if (i_mu == 0) then
           key(4) = hash_string('cont_opac')
           call self%check_nbor(key, nbors)
-        else
+        endif
+        if (comoving_frame .or. i_mu > 0) then
           key(4) = hash_string('lines_patch')
           call self%check_nbor(key, nbors)
 
@@ -733,8 +743,9 @@ module atom_patch_mod
           key(3) = 0
           key(4) = hash_string('cont_opac')
           call self%check_nbor(key, nbors)
-        else
-          key(3) = i + self%n_omega
+        endif
+        if (comoving_frame .or. i > 0) then
+          key(3) = merge(0, i + self%n_omega, i==0)
           key(4) = hash_string('lines_patch')
           call self%check_nbor(key, nbors)
 

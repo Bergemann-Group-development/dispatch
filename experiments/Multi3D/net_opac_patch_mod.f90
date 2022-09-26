@@ -24,7 +24,7 @@ module net_opac_patch_mod
     USE os_mod
     !USE units_mod
     !USE scratch_mod
-    USE m3d_patch_mod, only:maxiter, m3d_patch_t, hash_string
+    USE m3d_patch_mod, only:maxiter, m3d_patch_t, hash_string, comoving_frame
     USE ray_patch_mod, only:ray_patch_t
     USE back_opac_patch_mod, only:back_opac_patch_t
     USE cont_opac_patch_mod, only:cont_opac_patch_t
@@ -60,13 +60,17 @@ module net_opac_patch_mod
     nw = 2
     call self%set_nv_and_nw (self%fe-self%fs+1,nw)
 
-    if (self%out_ray) then
-      self%ng = [0,0,1]
+    if (comoving_frame) then
+      self%ng = 0
     else
-      if (self%ray%long) then
-        self%ng = [3,3,1]
+      if (self%out_ray) then
+        self%ng = [0,0,1]
       else
-        self%ng = [2,2,1]
+        if (self%ray%long) then
+          self%ng = [3,3,1]
+        else
+          self%ng = [2,2,1]
+        endif
       endif
     endif
     call self%post_pre_init()
@@ -151,7 +155,7 @@ module net_opac_patch_mod
     mem1 => self%mem(:,:,:,:,self%it,:)
     call self%boundaries%mirror(mem1)
     if (self%is_periodic()) then
-      call self%periodic_grid
+      call self%periodic_grid()
     end if
     call self%post_update()
     call trace%end(itimer)
@@ -173,25 +177,24 @@ module net_opac_patch_mod
       select type(another)
       class is (net_opac_t)
         ! do nothing
-      class is (lines_patch_t)
-        needs_me=.false.
-      class is (back_line_patch_t)
-        needs_me=.false.
-      class is(back_opac_patch_t)
-          needs_me=.false.
-      class is(cont_opac_patch_t)
-          needs_me=.false.
       class is (m3d_patch_t)
         if (another%id == self%m3d_parent%id) then
           needs_me = .false.; needed = .false.
         else
-          if (another%kind=='angle_rad') then
+          select case(another%kind)
+          case ('lines_patch', 'back_opac', 'back_line', 'cont_opac', 'atom_patch')
+            needs_me = .false.
+          case ('angle_rad')
+            if (.not. comoving_frame) then
+              needed = .false.
+            else
+              needed = .false.; needs_me = .false.
+            endif
+          case ('proj_patch', 'mean_rad')
             needed = .false.
-          elseif (another%kind=='atom_patch') then
-              needs_me = .false.
-          else
+          case default
             needed = .false.; needs_me = .false.
-          endif
+          end select
         endif
       class default
         needed = .false.; needs_me = .false.
@@ -211,16 +214,17 @@ module net_opac_patch_mod
     class(task_t), pointer:: task
     class(nbor_t), pointer:: nbor
     integer, save:: itimer=0
-    integer :: key(4)
+    integer :: key(4), i
     !-----------------------------------------------------------------------------
     call trace%begin('net_opac_t%init_nbors_hash', itimer=itimer)
-    call self%ray_patch_t%init_nbors_hash(nbors)
+    if (comoving_frame) then
+      call self%m3d_patch_t%init_nbors_hash(nbors)
+    else
+      call self%ray_patch_t%init_nbors_hash(nbors)
+    endif
   
     key(1:3) = self%key(1:3)
     key(4) = hash_string('lines_patch')
-    call self%check_nbor(key, nbors)
-
-    key(4) = hash_string('angle_rad')
     call self%check_nbor(key, nbors)
 
     if (self%out_ray) then
@@ -228,6 +232,20 @@ module net_opac_patch_mod
       call self%check_nbor(key, nbors)
     endif
 
+    if (comoving_frame) then
+      key(4) = hash_string('mean_rad')
+      call self%check_nbor(key, nbors)
+
+      do i=1, self%n_mu
+        key(3) = i
+        key(4) = hash_string('proj_patch')
+        call self%check_nbor(key, nbors)
+      end do
+    else
+      key(4) = hash_string('angle_rad')
+      call self%check_nbor(key, nbors)
+    endif
+    
     key(3) = 0
     key(4) = hash_string('back_opac')
     call self%check_nbor(key, nbors)

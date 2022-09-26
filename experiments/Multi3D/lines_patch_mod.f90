@@ -23,7 +23,7 @@ module lines_patch_mod
     USE mconst
     USE atom_mod, only: atom_type
     USE trans_mod, only: line_type
-    USE m3d_patch_mod, only: m3d_patch_t, maxiter, hash_string
+    USE m3d_patch_mod, only: m3d_patch_t, maxiter, hash_string, comoving_frame
     USE ray_patch_mod, only: ray_patch_t
     implicit none
   
@@ -58,12 +58,26 @@ module lines_patch_mod
   SUBROUTINE lines_patch_pre_init (self)
     class(lines_patch_t), target :: self
     class(line_type), pointer :: line
-    integer :: i, nv
+    integer :: i
     integer, save :: itimer=0
     !---------------------------------------------------------------------------
     call trace%begin('lines_patch_t%pre_init', itimer=itimer)
     self%kind = 'lines_patch'
     call self%ray_patch_t%pre_init()
+    self%ng = 0
+    call self%post_pre_init()
+    call trace%end(itimer)
+  END SUBROUTINE lines_patch_pre_init
+
+  !===============================================================================
+  SUBROUTINE lines_patch_init (self)
+    class(lines_patch_t) :: self
+    class(line_type), pointer :: line
+    integer :: i, fs, fe, nv
+    !---------------------------------------------------------------------------
+    if (comoving_frame) then
+      call self%frequency_padding()
+    endif
     call self%create_line_indices()
     call self%create_line_frequencies()
 
@@ -74,18 +88,7 @@ module lines_patch_mod
     end do
 
     call self%set_nv_and_nw(nv, 1)
-    self%ng = 0
-    call self%post_pre_init()
-    call trace%end(itimer)
-  END SUBROUTINE lines_patch_pre_init
-
-  !===============================================================================
-  SUBROUTINE lines_patch_init (self)
-    class(lines_patch_t) :: self
-    class(line_type), pointer :: line
-    integer :: i, fs, fe
-    !---------------------------------------------------------------------------
-    call self%ray_patch_t%init()
+    call self%m3d_patch_t%init()
 
     fs = 1
     do i=1, self%nline
@@ -94,6 +97,7 @@ module lines_patch_mod
       line%phi => self%mem(:,:,:,fs:fe,1,1)
       fs = fe + 1
     end do
+    self%print_update_info = self%check_in_bounds()
   END SUBROUTINE lines_patch_init
 
   !===============================================================================
@@ -219,11 +223,13 @@ module lines_patch_mod
 
       call os%allocate(line%wphi, self%n, zero=.true., label=trim(self%kind)//'%wphi')
 
-      call self%sp%set_weights(wnu, line%q, 1, line%nnu)
+      !call self%sp%set_weights(wnu, line%q, 1, line%nnu)
+      call self%sp%set_weights(wnu, line%nu, 1, line%nnu)
 
       do f=1,line%nnu
         line%wphi = line%wphi + line%phi(:,:,:,f) * wnu(f)
-        line%phi(:,:,:,f) = line%phi(:,:,:,f) * over_4pi * (line%q(f) + 1)
+        !line%phi(:,:,:,f) = line%phi(:,:,:,f) * over_4pi * (line%q(f) + 1)
+        line%phi(:,:,:,f) = line%phi(:,:,:,f) * h_4pi * line%nu(f)
       end do
       deallocate(wnu)
     enddo
@@ -348,7 +354,7 @@ module lines_patch_mod
           needs_me = .false.
         elseif (another%kind == 'net_opac') then
           needed = .false.
-        elseif(another%kind == 'rate_patch' .and. another%i_mu>0) then
+        elseif(another%kind == 'rate_patch') then
           needed = .false.
         else
           needed = .false.; needs_me = .false.
@@ -396,11 +402,12 @@ module lines_patch_mod
     logical :: skip, cib
     !-----------------------------------------------------------------------------+
     cib = .false.
+    if (.not. associated(self%idx_map)) return
     if (self%m3d_patch_t%check_in_bounds()) then
       if (self%linecheck <= self%atom%nline) then
         if (self%fcheck >= self%fs .and. self%fcheck <= self%fe) then
           i = self%idx_map(self%linecheck)
-          if ( i > 0) then
+          if (i > 0) then
             call self%line(i)%check_range(self%fcheck,self%fcheck,fs,fe,skip)
             if (.not. skip) then
               cib=.true.

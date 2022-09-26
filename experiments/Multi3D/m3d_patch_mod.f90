@@ -114,11 +114,11 @@ module m3d_patch_mod
     integer, public:: rank_maxerr
     logical, public, save :: converged=.false.
     logical, public, save :: check_NaN=.false., save_back_opac=.true.
-    logical, public, save :: detailed_prints=.false.
+    logical, public, save :: detailed_prints=.false., comoving_frame=.false.
     logical, public, save :: print_start=.false., print_push=.false., print_send=.false.
-    character(4), public, save :: conditioning='full'
     character(len=64), public, save:: custom_mu
     real(8), parameter :: t_push=0.1d0
+    real(4), public :: vel_max=0.0
     type(mpi_counter_t), public :: atom_update_counter, global_maxerr
       
     public :: hash_string, count_words
@@ -139,8 +139,8 @@ module m3d_patch_mod
     character(len=32), save :: long_scheme='disk_center'
     real(8), dimension(:), allocatable:: cust_mu
     namelist /m3d_params/ on, verbose, fcheck, linecheck, pcheck, quad_scheme, &
-    long_scheme, n_nu, maxiter, ilambd, lvlcheck, &
-    ntheta, nphi, check_NaN, conditioning, custom_mu, &
+    long_scheme, n_nu, maxiter, ilambd, lvlcheck, comoving_frame, &
+    ntheta, nphi, check_NaN, custom_mu, &
     save_back_opac, detailed_prints, print_finished, print_start, print_push, print_send
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%pre_init', itimer=itimer)
@@ -415,12 +415,12 @@ module m3d_patch_mod
         self%maxiter = ilambd + maxiter - 1
       endif
     case ('mean_rad')
-      if (conditioning=='self') then
+      if (comoving_frame) then
         self%maxiter = ilambd + maxiter - 1
       else
         self%maxiter = ilambd - 1
       endif
-    case ('angle_rad', 'net_opac')
+    case ('angle_rad', 'net_opac', 'proj_patch')
       self%maxiter = ilambd + maxiter - 1
     end select
 

@@ -5,7 +5,7 @@ module composition_patch_mod
   USE omp_mod
   USE gpatch_mod
   USE element_mod, only: element_type
-  USE m3d_patch_mod,   only: m3d_patch_t, hash_string
+  USE m3d_patch_mod,   only: m3d_patch_t, hash_string, comoving_frame
   USE composition_mod, only: composition_type
   USE back_opac_patch_mod,  only: back_opac_patch_t
   USE rad_patch_mod,   only: rad_patch_t
@@ -14,6 +14,8 @@ module composition_patch_mod
   USE net_opac_patch_mod,  only: net_opac_t
   USE back_line_patch_mod, only:back_line_patch_t
   USE out_rad_patch_mod, only:out_rad_patch_t
+  USE proj_patch_mod, only:proj_patch_t
+  USE mean_rad_patch_mod, only:mean_rad_patch_t
   USE task_mod
   USE trace_mod
   USE scaling_mod
@@ -51,6 +53,8 @@ SUBROUTINE composition_pre_init (self)
   class(rad_patch_t), pointer :: rad
   class(out_rad_patch_t), pointer :: out_rad
   class(net_opac_t), pointer :: net_opac
+  class(proj_patch_t), pointer :: proj
+  class(mean_rad_patch_t), pointer :: mean_rad
   class(back_line_patch_t), pointer :: back_line
   class(atomic_spectrum_type), save, pointer :: output_sp
   integer :: iostat, i_out
@@ -117,17 +121,26 @@ SUBROUTINE composition_pre_init (self)
       back_opac%composition => self%composition
       call back_opac%composition%reassign_pointer()
       call back_opac%pre_init_and_link(self, i_mu=0, i_nu=n, sp=atom_patch%sp)
-    end do
-  
-    do n=1, self%n_nu
-      do m=1, self%n_omega
+
+      if (comoving_frame) then
         allocate(net_opac)
-        call net_opac%pre_init_and_link(self, i_mu=m, i_nu=n, sp=atom_patch%sp)
-      end do
-    end do
-  
-    do n=1, self%n_nu
-      do m=0, self%n_omega
+        call net_opac%pre_init_and_link(self, i_mu=0, i_nu=n, sp=atom_patch%sp)
+
+        allocate(mean_rad)
+        call mean_rad%pre_init_and_link(self, i_mu=0, i_nu=n, sp=atom_patch%sp)
+
+        do m=1, self%n_omega
+          allocate(proj)
+          call proj%pre_init_and_link(self, i_mu=m, i_nu=n, sp=atom_patch%sp)
+        end do
+      else
+        do m=1, self%n_omega
+          allocate(net_opac)
+          call net_opac%pre_init_and_link(self, i_mu=m, i_nu=n, sp=atom_patch%sp)
+        end do
+      endif
+
+      do m=1, self%n_omega
         allocate(rad)
         call rad%pre_init_and_link(self, i_mu=m, i_nu=n, sp=atom_patch%sp)
       end do
@@ -139,35 +152,55 @@ SUBROUTINE composition_pre_init (self)
     endif
   endif
 
-  do m=0, self%n_out
-    m2 = m+self%n_omega
-    do n=1, self%n_nu
-      n2 = n+self%n_nu
+  do n=1, self%n_nu
+    n2 = n+self%n_nu
+    do m=0, self%n_out
+      m2 = m+self%n_omega
       if (m==0) then
         allocate(back_opac)
         back_opac%composition => self%composition
         call back_opac%composition%reassign_pointer()
         call back_opac%pre_init_and_link(self, i_mu=0, i_nu=n2, sp=output_sp)
-      else
-        if (self%composition%ll_initialised) then
-          allocate(back_line)
-          back_line%composition => self%composition
-          call back_line%pre_init_and_link(self, i_mu=m2, i_nu=n2, sp=output_sp)
-        endif
 
-        allocate(net_opac)
-        call net_opac%pre_init_and_link(self, i_mu=m2, i_nu=n2, sp=output_sp)
+        if (comoving_frame) then
+          if (self%composition%ll_initialised) then
+            allocate(back_line)
+            back_line%composition => self%composition
+            call back_line%pre_init_and_link(self, i_mu=0, i_nu=n2, sp=output_sp)
+          endif
+
+          allocate(net_opac)
+          call net_opac%pre_init_and_link(self, i_mu=0, i_nu=n2, sp=output_sp)
+        endif
+      else
+        if (comoving_frame) then
+          allocate(proj)
+          call proj%pre_init_and_link(self, i_mu=m2, i_nu=n2, sp=atom_patch%sp)
+        else
+          if (self%composition%ll_initialised) then
+            allocate(back_line)
+            back_line%composition => self%composition
+            call back_line%pre_init_and_link(self, i_mu=m2, i_nu=n2, sp=output_sp)
+          endif
+
+          allocate(net_opac)
+          call net_opac%pre_init_and_link(self, i_mu=m2, i_nu=n2, sp=output_sp)
+        endif
 
         allocate(rad)
         call rad%pre_init_and_link(self, i_mu=m2, i_nu=n2, sp=output_sp)
       endif
     end do
+  end do
 
-    if (m > 0 .and. self%boundaries%upper) then
+  do m=1, self%n_out
+    m2 = m+self%n_omega
+    if (self%boundaries%upper) then
       allocate(out_rad)
       call out_rad%pre_init_and_link(self, i_mu=m2, sp=output_sp)
     endif
   end do
+  
   call self%save_abundances_to_file(trim(io%run_dir) // 'abund.txt')
   call self%post_pre_init()
   call trace%end(itimer)
@@ -295,11 +328,16 @@ SUBROUTINE init_nbors_hash (self, nbors)
 
   do i_nu=self%n_nu+1, 2*self%n_nu
     key(2) = i_nu
-    do i_mu=1, self%n_out
-      key(3) = i_mu+self%n_omega
+    if (comoving_frame) then
       key(4) = hash_string('back_line')
       call self%check_nbor(key, nbors)
-    end do
+    else
+      do i_mu=1, self%n_out
+        key(3) = i_mu+self%n_omega
+        key(4) = hash_string('back_line')
+        call self%check_nbor(key, nbors)
+      end do
+    endif
   end do
   call trace%end (itimer)
 END SUBROUTINE init_nbors_hash

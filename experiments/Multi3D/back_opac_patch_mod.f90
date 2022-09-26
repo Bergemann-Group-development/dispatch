@@ -9,7 +9,7 @@ module back_opac_patch_mod
     USE trace_mod
     USE bits_mod
     USE os_mod
-    USE m3d_patch_mod, only: maxiter, m3d_patch_t, save_back_opac, hash_string
+    USE m3d_patch_mod, only: maxiter, m3d_patch_t, save_back_opac, hash_string, comoving_frame
     USE ray_patch_mod, only: ray_patch_t
     USE composition_mod, only: composition_type
     implicit none
@@ -79,7 +79,7 @@ module back_opac_patch_mod
       call self%composition%absorption(nu, chi, abslte, sumsca, include_absmet=self%out_ray==.false.)
     endif
     
-    if (associated(self%mean_rad)) then
+    if (associated(self%mean_rad) .and. .not. comoving_frame) then
       call self%check_access(self%mean_rad)
       Jold => self%mean_rad%authority_mem(:,:,:,:,self%mean_rad%it,1)
       call self%composition%scattering(nu, abslte, eta, Jold, sumsca)
@@ -118,7 +118,11 @@ module back_opac_patch_mod
         elseif(another%kind=='angle_rad' .and. .not. self%out_ray) then
           needed = .false.
         elseif(another%kind=='mean_rad') then
-          needs_me = .false.
+          if (.not. comoving_frame) then
+            needs_me = .false.
+          else
+            needed = .false.
+          endif
           self%mean_rad => another
         else
           needed = .false.; needs_me = .false.
@@ -145,15 +149,26 @@ module back_opac_patch_mod
     call trace%begin('back_opac_patch_t%init_nbors_hash', itimer=itimer)
     call self%m3d_patch_t%init_nbors_hash(nbors)
   
+    key(1:3) = self%key(1:3)
     mu_start = merge(self%n_omega+1, 1, self%out_ray)
     mu_stop  = merge(self%n_mu, self%n_omega, self%out_ray)
   
-    key(1:2) = self%key(1:2)
-    do i_mu=mu_start, mu_stop
-      key(3) = i_mu
+    if (comoving_frame) then
       key(4) = hash_string('net_opac')
       call self%check_nbor(key, nbors)
+
+      key(4) = hash_string('mean_rad')
+      call self%check_nbor(key, nbors)
+    else
+      do i_mu=mu_start, mu_stop
+        key(3) = i_mu
+        key(4) = hash_string('net_opac')
+        call self%check_nbor(key, nbors)
+      end do
+    endif
+    do i_mu=mu_start, mu_stop
       if (.not. self%out_ray) then
+        key(3) = i_mu
         key(4) = hash_string('angle_rad')
         call self%check_nbor(key, nbors)
       endif

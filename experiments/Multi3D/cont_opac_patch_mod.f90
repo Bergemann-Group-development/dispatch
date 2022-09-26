@@ -10,7 +10,7 @@ module cont_opac_patch_mod
     USE bits_mod
     USE os_mod
     USE atom_mod, only: atom_type
-    USE m3d_patch_mod, only: m3d_patch_t, hash_string
+    USE m3d_patch_mod, only: m3d_patch_t, hash_string, comoving_frame
     USE ray_patch_mod, only: ray_patch_t
     implicit none
     private
@@ -119,8 +119,13 @@ module cont_opac_patch_mod
     call trace%begin('cont_opac_patch_t%init_nbors_hash', itimer=itimer)
     call self%m3d_patch_t%init_nbors_hash(nbors)
   
-    mu_start = merge(self%n_omega+1, 1, self%out_ray)
-    mu_stop  = merge(self%n_mu, self%n_omega, self%out_ray)
+    if (comoving_frame) then
+      mu_start = 0
+      mu_stop  = 0
+    else
+      mu_start = merge(self%n_omega+1, 1, self%out_ray)
+      mu_stop  = merge(self%n_mu, self%n_omega, self%out_ray)
+    endif
   
     key(1:2) = self%key(1:2)
     do i_mu=mu_start, mu_stop
