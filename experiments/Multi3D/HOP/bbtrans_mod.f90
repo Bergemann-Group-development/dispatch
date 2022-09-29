@@ -47,8 +47,8 @@ contains
     do f=1, size(q)
       phi(:,:,:,f) = (q(f) - vproj) * inv_df
       phi(:,:,:,f) = voigt_function2(damp, phi(:,:,:,f), psi)
-      !phi(:,:,:,f) = phi(:,:,:,f) * inv_df
-      phi(:,:,:,f) = phi(:,:,:,f) * inv_df / self%nu0
+      phi(:,:,:,f) = phi(:,:,:,f) * inv_df
+      !phi(:,:,:,f) = phi(:,:,:,f) * inv_df / self%nu0
     end do 
   END SUBROUTINE line_profile
   !------------------------------------------------------------------------------------

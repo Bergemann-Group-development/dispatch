@@ -131,7 +131,7 @@ contains
 
     !$omp simd
     do f=1, nf
-      alpha2 = alpha(f)! * self%alpha0
+      alpha2 = alpha(f) * self%alpha0
     do k=1, nz
     do j=1, ny
     do i=1, nx
@@ -348,7 +348,6 @@ contains
             x10=10.**x
             q(j)=x+(x10-1./x10)/a
         end do
-  
       end if
   
       ! convert to [Hz]
@@ -392,9 +391,9 @@ contains
 
           do j=ired,iblue
               self%nu(j)    = self%nu0 + (j-ired) * dnu
-              self%alpha(j) = self%alpha0 * ( self%nu(j) / self%nu0 )**(-3)
+              !self%alpha(j) = self%alpha0 * ( self%nu(j) / self%nu0 )**(-3)
               ! for overflow reasons
-              !self%alpha(j) = ( self%nu(j) / self%nu0 )**(-3)
+              self%alpha(j) = ( self%nu(j) / self%nu0 )**(-3)
           end do
       case('detail')
           ! do nothing, frequencies were computed in read_atom

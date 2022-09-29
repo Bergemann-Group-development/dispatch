@@ -2,6 +2,7 @@ module coll_mod
     use m3io_mod
     use mmath,only:ei1,hermite_interpolation,hermite_derivative
     use mconst
+    use prec_mod
     implicit none
 
 
@@ -280,7 +281,7 @@ module coll_mod
        cdn=0.0d0
        ll=coll(i)%ll
        ul=coll(i)%ul
-       nsr=nstar(ix,iy,iz,ul)/nstar(ix,iy,iz,ll) 
+       nsr=nstar(ix,iy,iz,ul)/nstar(ix,iy,iz,ll)
 
        !********************************************************************
 
@@ -564,7 +565,8 @@ module coll_mod
       real(8) :: t4,summrs
       real(8) :: betab,ddekt,wlog,wb,dexin1,xj,fac,fxj
       real(8) :: dekti,qb,he1,he2
-      integer :: ul,ll,i,j,k,z, nhlevels
+      real(8) :: saha, dxi, dev, tns
+      integer :: ul,ll,i,j,k,z, nhlevels, ii, jj
   
       character(len=6),parameter :: rname='gencol'
   
@@ -576,6 +578,8 @@ module coll_mod
       nne=ne
       nnh=nh(:)
       nhlevels = size(nh, 1)
+      saha = 1.5*log(temp) - log(saha_const*ne)
+      dxi = 4.98e-4*5040./temp*sqrt(ne*bk*temp)
   
       ! loop over all the transitions
       do i=1, size(coll, 1)
@@ -584,7 +588,13 @@ module coll_mod
          cdn=0.0d0
          ll=coll(i)%ll
          ul=coll(i)%ul
-         nsr=nstar(ul)/nstar(ll) 
+         !nsr=nstar(ul)/nstar(ll)
+
+         ii = 0.5 * ion(ul) * (ion(ul)-1)
+         jj = 0.5 * ion(ll) * (ion(ll)-1)
+         dev = ev(ul) - ev(ll) - dxi*(ii-jj)
+         tns = - dev*e_k/temp + (ion(ul) - ion(ll))*saha
+         nsr = g(ul)/g(ll) * exp(tns)
   
          !********************************************************************
   
@@ -635,7 +645,7 @@ module coll_mod
   
             ! ionization by electron collisions
             call hermite_interpolation(ct,tg,coll(i)%t,coll(i)%c,coll(i)%dcdt)
-            de_k = (ev(ul)-ev(ll))*ee/bk
+            de_k = (ev(ul)-ev(ll))*e_k
             cup = ct * nne * stg * exp(-de_k/tg) 
             cdn = cup / nsr
   

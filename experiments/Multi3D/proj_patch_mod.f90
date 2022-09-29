@@ -103,8 +103,8 @@ module proj_patch_mod
     real(8), dimension(:,:,:), pointer, contiguous :: new_nu
     integer, dimension(:,:,:), pointer, contiguous :: ff
     integer :: n(3), f, nf, i, x, y, z, nf_in
-    real(4) :: yy1, yy2, m, wmu, res
-    real(8) :: nunu
+    real(4) :: yy1, yy2, wmu, res
+    real(8) :: nunu, dnu
     logical :: negative
     !-----------------------------------------------------------------------------
     n = shape(proj)
@@ -137,8 +137,8 @@ module proj_patch_mod
           end do
           yy1 = yy(x,y,z,i)
           yy2 = yy(x,y,z,i+1)
-          m = (yy2 - yy1) / (nu_in(i+1) - nu_in(i))
-          res = m * (nunu - nu_in(i)) + yy1
+          dnu = (nunu - nu_in(i)) / (nu_in(i+1) - nu_in(i))
+          res = (yy2 - yy1) * dnu + yy1
           ff(x,y,z) = i
         endif
         if (res < 0.0) then

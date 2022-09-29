@@ -75,7 +75,7 @@ module lines_patch_mod
     class(line_type), pointer :: line
     integer :: i, fs, fe, nv
     !---------------------------------------------------------------------------
-    if (comoving_frame) then
+    if (comoving_frame .and. .not. self%out_ray) then
       call self%frequency_padding()
     endif
     call self%create_line_indices()
@@ -223,13 +223,11 @@ module lines_patch_mod
 
       call os%allocate(line%wphi, self%n, zero=.true., label=trim(self%kind)//'%wphi')
 
-      !call self%sp%set_weights(wnu, line%q, 1, line%nnu)
-      call self%sp%set_weights(wnu, line%nu, 1, line%nnu)
+      call self%sp%set_weights(wnu, line%q, 1, line%nnu)
 
       do f=1,line%nnu
         line%wphi = line%wphi + line%phi(:,:,:,f) * wnu(f)
-        !line%phi(:,:,:,f) = line%phi(:,:,:,f) * over_4pi * (line%q(f) + 1)
-        line%phi(:,:,:,f) = line%phi(:,:,:,f) * h_4pi * line%nu(f)
+        line%phi(:,:,:,f) = line%phi(:,:,:,f) * over_4pi * (line%q(f) + 1)
       end do
       deallocate(wnu)
     enddo

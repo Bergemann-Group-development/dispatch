@@ -60,7 +60,7 @@ module net_opac_patch_mod
     nw = 2
     call self%set_nv_and_nw (self%fe-self%fs+1,nw)
 
-    if (comoving_frame) then
+    if (comoving_frame .and. .not. self%out_ray) then
       self%ng = 0
     else
       if (self%out_ray) then
@@ -185,7 +185,7 @@ module net_opac_patch_mod
           case ('lines_patch', 'back_opac', 'back_line', 'cont_opac', 'atom_patch')
             needs_me = .false.
           case ('angle_rad')
-            if (.not. comoving_frame) then
+            if (self%out_ray .or. .not. comoving_frame) then
               needed = .false.
             else
               needed = .false.; needs_me = .false.
@@ -214,10 +214,10 @@ module net_opac_patch_mod
     class(task_t), pointer:: task
     class(nbor_t), pointer:: nbor
     integer, save:: itimer=0
-    integer :: key(4), i
+    integer :: key(4), i, mu_start, mu_stop
     !-----------------------------------------------------------------------------
     call trace%begin('net_opac_t%init_nbors_hash', itimer=itimer)
-    if (comoving_frame) then
+    if (comoving_frame .and. .not. self%out_ray) then
       call self%m3d_patch_t%init_nbors_hash(nbors)
     else
       call self%ray_patch_t%init_nbors_hash(nbors)
@@ -227,16 +227,19 @@ module net_opac_patch_mod
     key(4) = hash_string('lines_patch')
     call self%check_nbor(key, nbors)
 
+    mu_start = merge(self%n_omega+1, 1, self%out_ray)
+    mu_stop  = merge(self%n_mu, self%n_omega, self%out_ray)
+
     if (self%out_ray) then
       key(4) = hash_string('back_line')
       call self%check_nbor(key, nbors)
     endif
 
-    if (comoving_frame) then
+    if (comoving_frame .and. .not. self%out_ray) then
       key(4) = hash_string('mean_rad')
       call self%check_nbor(key, nbors)
 
-      do i=1, self%n_mu
+      do i=mu_start, mu_stop
         key(3) = i
         key(4) = hash_string('proj_patch')
         call self%check_nbor(key, nbors)

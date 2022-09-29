@@ -119,7 +119,7 @@ module cont_opac_patch_mod
     call trace%begin('cont_opac_patch_t%init_nbors_hash', itimer=itimer)
     call self%m3d_patch_t%init_nbors_hash(nbors)
   
-    if (comoving_frame) then
+    if (comoving_frame .and. .not. self%out_ray) then
       mu_start = 0
       mu_stop  = 0
     else

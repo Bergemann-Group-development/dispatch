@@ -27,10 +27,11 @@ module m3d_patch_mod
     USE math_mod
     USE bits_mod
     USE mconst
+    USE prec_mod, only: inf4
     !USE units_mod
     !USE scratch_mod
     USE m3d_halo_mod, only: m3d_halo_t, print_finished
-    USE atom_mod, only: atomic_spectrum_type
+    USE atom_mod, only: atomic_spectrum_type, lse_solver, lse_niter
     USE ray_mod, only: set_carlson_quadratures, set_lobatto_quadratures, set_custom_quadratures
     implicit none
     private
@@ -140,7 +141,7 @@ module m3d_patch_mod
     real(8), dimension(:), allocatable:: cust_mu
     namelist /m3d_params/ on, verbose, fcheck, linecheck, pcheck, quad_scheme, &
     long_scheme, n_nu, maxiter, ilambd, lvlcheck, comoving_frame, &
-    ntheta, nphi, check_NaN, custom_mu, &
+    ntheta, nphi, check_NaN, custom_mu, lse_solver, lse_niter, &
     save_back_opac, detailed_prints, print_finished, print_start, print_push, print_send
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%pre_init', itimer=itimer)
@@ -297,16 +298,6 @@ module m3d_patch_mod
     self%nv = nv
     self%nw = nw
     self%mv = self%nv
-    ! ----------------------------------------------------------------------------
-    ! Allocate and set unsigned and pervolume. Opacity, source function,
-    ! intensity and populations are all positive definite
-    ! Although quantities are generally per volume, but density is not stored
-    ! locally, thus this flag must not be set.
-    ! ----------------------------------------------------------------------------
-    call os%allocate (self%unsigned,  self%mv)
-    call os%allocate (self%pervolume, self%mv)
-    self%pervolume = .false.
-    self%unsigned  = .true.
     call trace%end()
   END SUBROUTINE set_nv_and_nw
   
@@ -324,6 +315,14 @@ module m3d_patch_mod
     call self%init_level()
 
     self%mem = tiny(1.)
+    ! ----------------------------------------------------------------------------
+    ! Set unsigned and pervolume. Opacity, source function,
+    ! intensity and populations are all positive definite
+    ! Although quantities are generally per volume, but density is not stored
+    ! locally, thus this flag must not be set.
+    ! ----------------------------------------------------------------------------
+    self%pervolume = .false.
+    self%unsigned  = .true.
 
     li = self%li
     ui = self%ui
@@ -974,6 +973,13 @@ module m3d_patch_mod
       do i=1, self%gn(1)
         if (self%mem(i,j,k,v,t,w) /= self%mem(i,j,k,v,t,w)) then
           write(stdout, '(A,A,3(I4),I5,I3,I3)') self%m3d_patch_info(), '  NaN', i,j,k,v,t,w
+          stop
+        elseif (self%mem(i,j,k,v,t,w) > inf4) then
+          write(stdout, '(A,A,3(I4),I5,I3,I3)') self%m3d_patch_info(), '  Infinity', i,j,k,v,t,w
+          stop
+        elseif (self%unsigned(w) .and. self%mem(i,j,k,v,t,w) < 0) then
+          write(stdout, '(A,A,3(I4),I5,I3,I3)') self%m3d_patch_info(), '  negative', i,j,k,v,t,w
+          stop
         endif
       end do
       end do

@@ -16,6 +16,8 @@ module prec_mod
     real(dp), parameter :: temp_to_theta = 5040
     real(dp), parameter :: prec_err = temp_to_theta / (log10(exp(1.d0))*EK)
     real(dp), parameter :: uop_BK = 1.38053e-16
+    real(8),  parameter :: inf8 = huge(1.d0) 
+    real(4),  parameter :: inf4 = huge(1.e0) 
     !real(dp), parameter :: uop_BK = BK
 
     ! This is public so it can be overwritten by input from absdat

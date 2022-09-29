@@ -329,9 +329,11 @@ contains
           a(i,k) = a(i,k)/a(k,k)
         end do
         do j=k+1,n
-          do i=k+1,n
-            a(i,j) = a(i,j) - a(i,k)*a(k,j)
-          end do
+          if (a(k,j) /= 0) then
+            do i=k+1,n
+              a(i,j) = a(i,j) - a(i,k)*a(k,j)
+            end do
+          endif
         end do
       end do
       do i=1,n
@@ -346,6 +348,35 @@ contains
         b(i) = b(i)/a(i,i)
       end do
    END SUBROUTINE lineq_no_pivot
+
+   !===============================================================================
+   SUBROUTINE lineq_GS (a, x, n, lse_niter)
+      real(8) :: A(n, n), Dinv(n), C(n, n)
+      real(8) :: d(n), x(n)
+      integer :: iter, i, j, n, lse_niter
+      !-----------------------------------------------------------------------------
+      do i = 1, n
+         Dinv(i) = 1d0 / A(i, i)
+         d(i) = x(i) * Dinv(i)
+      enddo
+      ! calculate iteration matrix and vector
+      do j = 1, n
+         do i = 1, n
+            C(i,j) = - Dinv(i) * A(i,j)
+         enddo
+         C(j, j) = 1d0 + C(j, j)
+      enddo
+      x = d
+      ! start iteration
+      do iter = 1, lse_niter
+         do i=1, n 
+            x(i) = d(i)
+            do j=1, n 
+               x(i) = x(i) + C(i,j) * x(j)
+            end do
+         end do
+      end do
+   END SUBROUTINE lineq_GS
 
    ! **************************************************************************
    SUBROUTINE AINV2(A,M)

@@ -125,13 +125,7 @@ module atom_patch_mod
           allocate(cont)
           cont%atom => self%output_atom
           call cont%pre_init_and_link(self, i_mu=0, i_nu=n2, sp=self%output_sp)
-
-          if (comoving_frame) then
-            allocate(lines)
-            lines%atom => self%output_atom
-            call lines%pre_init_and_link(self, i_mu=0, i_nu=n2, sp=self%output_sp)
-          endif
-        elseif (.not. comoving_frame) then
+        else
           allocate(lines)
           lines%atom => self%output_atom
           call lines%pre_init_and_link(self, i_mu=m2, i_nu=n2, sp=self%output_sp)
@@ -154,7 +148,7 @@ module atom_patch_mod
     character(len=128), save :: atom_file=''
     character(len=256) :: command
     real(8), save :: qnorm=10.0, logf_cut = -99.9, red_cut=huge(1.0), blue_cut=tiny(1.0)
-    real(8), save :: abundance=0
+    real(8), save :: abundance=-99.9
     integer :: iostat, lunit
     integer, save:: verbose=0
     integer, save :: itimer=0, itimer1=0, n_in_lines=0
@@ -197,8 +191,9 @@ module atom_patch_mod
 
       sp%verbose = verbose
       if (verbose) write (*,*) ' - Reading atom'
-      call atom%read(atom_file, qnorm, logf_cut=logf_cut, red_cut=red_cut, blue_cut=blue_cut, in_lines=in_lines)
-      if (abundance > 0) atom%abnd = abundance
+      call atom%read(atom_file, qnorm, logf_cut=logf_cut, red_cut=red_cut, &
+      blue_cut=blue_cut, in_lines=in_lines)
+      if (abundance > -99) atom%abnd = abundance
       output_atom = atom
       call atom%create_spectrum(sp)
       call atom%set_active_transitions(sp)
@@ -743,9 +738,8 @@ module atom_patch_mod
           key(3) = 0
           key(4) = hash_string('cont_opac')
           call self%check_nbor(key, nbors)
-        endif
-        if (comoving_frame .or. i > 0) then
-          key(3) = merge(0, i + self%n_omega, i==0)
+        else
+          key(3) = i + self%n_omega
           key(4) = hash_string('lines_patch')
           call self%check_nbor(key, nbors)
 

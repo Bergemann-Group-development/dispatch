@@ -107,7 +107,7 @@ SUBROUTINE ray_patch_init (self)
   real(4), dimension(:,:,:), pointer, contiguous :: vproj
   integer :: tmp
   ! ----------------------------------------------------------------------------
-  if (comoving_frame) then
+  if (comoving_frame .and. .not. self%out_ray) then
     select case (self%kind)
     case ('back_opac', 'back_line', 'cont_opac', 'net_opac')
       call self%frequency_padding()

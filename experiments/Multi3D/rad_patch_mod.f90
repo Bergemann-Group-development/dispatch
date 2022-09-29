@@ -512,7 +512,7 @@ SUBROUTINE radiation_nbor_relations(self, another, needed, needs_me, download)
         .and. .not. comoving_frame) then
         needed=.false.
       elseif (self%kind=='angle_rad') then
-          if (another%kind=='net_opac' .and. .not. comoving_frame) then
+          if (another%kind=='net_opac' .and. (self%out_ray .or. .not. comoving_frame)) then
             needs_me=.false.
             self%opac => another
           elseif (another%kind=='mean_rad'  .and. .not. self%out_ray) then
@@ -601,7 +601,9 @@ SUBROUTINE rad_patch_deallocate_mem (self, deallocator, print)
   call self%ray_patch_t%deallocate_mem(deallocator, print)
   if (associated(self%Psi) .and. self%is_clear(bits%busy)) then
     call os%deallocate(self%Psi, label=trim(self%kind)//'%Psi')
-    call os%deallocate(self%Ieff,label=trim(self%kind)//'%Ieff')
+    if (associated(self%Ieff)) then
+      call os%deallocate(self%Ieff,label=trim(self%kind)//'%Ieff')
+    endif
   endif
 END SUBROUTINE rad_patch_deallocate_mem
 
@@ -613,13 +615,17 @@ SUBROUTINE rad_patch_allocate_mem (self, allocator, m_in)
   integer :: m(4)
   !-----------------------------------------------------------------------------
   call self%ray_patch_t%allocate_mem(allocator, m_in)
-  if (.not. (associated(self%Psi) .or. self%is_set(bits%virtual))) then
-    m(1:3) = self%n
-    m(4) = self%nv
-    call os%allocate(self%Psi, m,label=trim(self%kind)//'%Psi')
-    call os%allocate(self%Ieff,m,label=trim(self%kind)//'%Ieff')
-    self%Psi  = tiny(1.0)
-    self%Ieff = tiny(1.0)
+  if (.not. self%out_ray) then
+    if (.not. (associated(self%Psi) .or. self%is_set(bits%virtual))) then
+      m(1:3) = self%n
+      m(4) = self%nv
+      call os%allocate(self%Psi, m,label=trim(self%kind)//'%Psi')
+      self%Psi  = tiny(1.0)
+      if (.not. comoving_frame .or. self%i_mu == 0) then
+        call os%allocate(self%Ieff,m,label=trim(self%kind)//'%Ieff')
+        self%Ieff = tiny(1.0)
+      endif
+    endif
   endif
 END SUBROUTINE rad_patch_allocate_mem
 
@@ -627,7 +633,7 @@ END SUBROUTINE rad_patch_allocate_mem
 SUBROUTINE print_post_update_info (self)
   class(rad_patch_t) :: self
   character(48) :: text
-  integer :: p(3), p2(3), f
+  integer :: p(3), p2(3), f, w
   real(4) :: arr(3)
   !-----------------------------------------------------------------------------
   f = self%fcheck
@@ -636,20 +642,21 @@ SUBROUTINE print_post_update_info (self)
     write(text, '(A,I4)') 'intensity has not changed, skipping', self%stiff_count-1
     call self%print_to_stdout(text=text)
   else
+    w = 1
     arr = 0
     arr(1) = self%mem(p(1),p(2),p(3),f,1,1)
     if (associated(self%Psi)) then
+      w = w + 1
       p2 = p - self%ng
       if (all(p2>0)) then
         arr(2) = self%Psi(p2(1),p2(2),p2(3),f)
-        arr(3) = self%Ieff(p2(1),p2(2),p2(3),f)
+        if (associated(self%Ieff)) then
+          w = w + 1
+          arr(3) = self%Ieff(p2(1),p2(2),p2(3),f)
+        endif
       endif
     endif
-    if (arr(2) /= 0) then
-      call self%print_to_stdout(arr=arr)
-    else
-      call self%print_to_stdout(arr=arr(1:1))
-    endif
+    call self%print_to_stdout(arr=arr(1:w))
   endif
 END SUBROUTINE print_post_update_info
 
@@ -672,7 +679,7 @@ SUBROUTINE init_nbors_hash (self, nbors)
   case ('angle_rad')
     call self%ray_patch_t%init_nbors_hash(nbors)
     key(2:3) = self%key(2:3)
-    if (comoving_frame) then
+    if (comoving_frame .and. .not. self%out_ray) then
       key(4) = hash_string('proj_patch')
     else
       key(4) = hash_string('net_opac')

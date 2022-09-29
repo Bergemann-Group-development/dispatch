@@ -153,7 +153,7 @@ module back_opac_patch_mod
     mu_start = merge(self%n_omega+1, 1, self%out_ray)
     mu_stop  = merge(self%n_mu, self%n_omega, self%out_ray)
   
-    if (comoving_frame) then
+    if (comoving_frame .and. .not. self%out_ray) then
       key(4) = hash_string('net_opac')
       call self%check_nbor(key, nbors)
 

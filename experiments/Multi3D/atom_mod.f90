@@ -1,11 +1,12 @@
 ! *******************************************************************
 MODULE atom_mod
     USE m3io_mod
+    USE prec_mod, only: inf8
     USE mconst
     USE coll_mod
     USE trans_mod
     USE mmath, only: refsor, unista
-    USE op_math_mod, only: searchsorted, lineq, lineq_no_pivot
+    USE op_math_mod, only: searchsorted, lineq, lineq_no_pivot, lineq_GS
     USE ion_mod, only: ion_type
     USE element_mod, only: element_type
     USE os_mod
@@ -94,6 +95,9 @@ MODULE atom_mod
         procedure :: read
      
     end type atom_type
+
+    integer, public :: lse_niter=100
+    character(len=32) :: lse_solver='default'
   
   contains
   
@@ -383,12 +387,12 @@ MODULE atom_mod
                  kc = self%sp%ac(kr,ff)
                  ! alpha0 is part of ni_over_nj_lte for overflow reasons
                  alpha = self%cont(kc)%alpha(ff) * wnu(kr)
-                 alpha2 = alpha! * self%cont(kc)%alpha0
+                 alpha2 = alpha * self%cont(kc)%alpha0
                  do z=1,nz
                  do y=1,ny
                  do x=1,nx
                     vij(x,y,z,kr) = alpha2
-                    vji(x,y,z,kr) = alpha * self%cont(kc)%ni_over_nj_lte(x,y,z) * blzfac(x,y,z)
+                    vji(x,y,z,kr) = alpha * blzfac(x,y,z) * self%cont(kc)%ni_over_nj_lte(x,y,z)
                     chi = vij(x,y,z,kr) * ni(x,y,z) - vji(x,y,z,kr) * nj(x,y,z)
   
                     SumU(x,y,z,j) = SumU(x,y,z,j) + vji(x,y,z,kr) * ufac
@@ -533,20 +537,47 @@ MODULE atom_mod
 
       if (check_NaN) then
          do i=1,self%nlevel
-         do j=1,self%nlevel
-            if (self%w(i,j) /= self%w(i,j)) then
-               print *, 'NaN in rate Matrix at i,j = ', i, j
+            if (self%w(i,i) == 0.d0) then
+               print *, 'zero in rate diagonal at i = ', i
                print *, 'Temp = ', temp
                stop
             endif
-         end do
+            do j=1,self%nlevel
+               if (self%w(i,j) /= self%w(i,j)) then
+                  print *, 'NaN in rate Matrix at i,j = ', i, j
+                  print *, 'Temp = ', temp
+                  stop
+               elseif (self%w(i,j) > inf8) then
+                  print *, 'Infinity in rate Matrix at i,j = ', i, j
+                  print *, 'Temp = ', temp
+                  stop
+               endif
+            end do
          end do
       endif
 
       ! solve w n . x = e
       ! e contains the solution vector x on exit
-      !call lineq(self%w, self%e, self%nlevel)
-      call lineq_no_pivot(self%w, self%e, self%nlevel)
+      select case (lse_solver)
+      case ('no_pivot')
+         call lineq_no_pivot(self%w, self%e, self%nlevel)
+      case ('GS')
+         self%w = self%w / totn
+         self%e = self%e / totn
+         call lineq_GS(self%w, self%e, self%nlevel, lse_niter)
+      case default
+         call lineq(self%w, self%e, self%nlevel)
+      end select
+
+      if (check_NaN) then
+         do i=1,self%nlevel
+            if (self%e(i) /= self%e(i)) then
+               print *, 'NaN in error vector at i = ', i
+               print *, 'Temp = ', temp
+               stop
+            endif
+         end do
+      endif
 
       ! set limits on corrections
       where(self%e < 0.001d0) self%e = 0.001d0
@@ -647,6 +678,7 @@ MODULE atom_mod
       endif
 
       if (tns+log(partition) < -75) then
+         !nstar = 0d0
          nstar = tiny(1.0)
       else
          nstar = exp(tns) * partition
@@ -710,12 +742,12 @@ MODULE atom_mod
            do z=1, n(3)
            do y=1, n(2)
            do x=1, n(1)
-            !saha = 1.5*log(temp(x,y,z)) - log(saha_const*ne(x,y,z)) ! actually log(saha)
-            !dev = self%ev(i) - self%ev(j) - dxi(x,y,z)*(ii - jj)
-            !tns = log(self%g(i)/self%g(j)) - e_k/temp(x,y,z)*dev
-            !tns = tns + (self%ion(i) - self%ion(j))*saha
-            !cont%ni_over_nj_lte(x,y,z) = exp(tns + lalpha)
-            cont%ni_over_nj_lte(x,y,z) = self%nstar(x,y,z,i) / self%nstar(x,y,z,j)
+            saha = 1.5*log(temp(x,y,z)) - log(saha_const*ne(x,y,z)) ! actually log(saha)
+            dev = self%ev(i) - self%ev(j) - dxi(x,y,z)*(ii - jj)
+            tns = log(self%g(i)/self%g(j)) - e_k/temp(x,y,z)*dev
+            tns = tns + (self%ion(i) - self%ion(j))*saha
+            cont%ni_over_nj_lte(x,y,z) = exp(tns + lalpha)
+            !cont%ni_over_nj_lte(x,y,z) = self%nstar(x,y,z,i) / self%nstar(x,y,z,j)
            end do
            end do
            end do
@@ -875,7 +907,7 @@ MODULE atom_mod
             lin%nu0   = cc / lin%lambda0    ! [Hz]
   
             lin%Grat  = self%g(lin%i) / self%g(lin%j)
-            lin%Aji   = f_to_Aji * lin%f * lin%Grat / lin%lambda0**2! * hh
+            lin%Aji   = f_to_Aji * lin%f * lin%Grat / lin%lambda0**2 * hh
             lin%Bji   = c2_2h / lin%nu0**3 * lin%Aji
             lin%Bij   = lin%Bji / lin%Grat
 
@@ -986,6 +1018,11 @@ MODULE atom_mod
             call nextentry(latom) 
   
             read(latom,*) cnt%j,cnt%i,cnt%alpha0,cnt%nnu,cnt%numax
+
+            if (self%ion(cnt%i) == self%ion(cnt%j)) then
+               print *, 'bound-free transition', i, 'is between two levels of the same ion', cnt%i, cnt%j
+               stop
+            endif
   
             cnt%lower_ev = self%ev(cnt%i)
             cnt%upper_ev = self%ev(cnt%j)
@@ -1011,7 +1048,7 @@ MODULE atom_mod
                  read(latom,*)  nu(j), alpha(j)
                 end do
                 ! for overflow reasons
-                !alpha = alpha / cnt%alpha0
+                alpha = alpha / cnt%alpha0
                 ! sanity check
                 doubles = 0
                 do j=2,cnt%nnu
@@ -1159,7 +1196,7 @@ MODULE atom_mod
         cnt => self%cont(i)
 
         ! find minimum and maximum index of this continuum in the sp%nu grid
-        ired  = searchsorted(sp%nu, cnt%nu(1), outbounds_ok=.true.)
+        ired  = searchsorted(sp%nu, cnt%nu(1), outbounds_ok=.true.) + 1
         iblue = searchsorted(sp%nu, cnt%nu(cnt%nnu), outbounds_ok=.true.)
         if (iblue == 0 .or. ired == sp%nnu) then
          cnt%ired  = 0
@@ -1167,7 +1204,6 @@ MODULE atom_mod
          cycle
         endif
 
-        if (ired == 0) ired = 1
         ! total number of frequencies where this continuum is active
         nnu=iblue-ired+1
 
@@ -1239,7 +1275,7 @@ MODULE atom_mod
           lin => self%line(i)
 
           ! find minimum and maximum index of this line in the sp%nu grid
-          ired  = searchsorted(sp%nu, lin%nu(1), outbounds_ok=.true.)
+          ired  = searchsorted(sp%nu, lin%nu(1), outbounds_ok=.true.) + 1
           iblue = searchsorted(sp%nu, lin%nu(lin%nnu), outbounds_ok=.true.)
           if (iblue == 0 .or. ired == sp%nnu) then
            lin%ired  = 0
@@ -1247,7 +1283,6 @@ MODULE atom_mod
            cycle
           endif
 
-          if (ired == 0) ired = 1
           ! total number of frequencies where this line is active
           nnu=iblue-ired+1
 

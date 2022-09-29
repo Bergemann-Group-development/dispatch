@@ -162,30 +162,15 @@ SUBROUTINE composition_pre_init (self)
         call back_opac%composition%reassign_pointer()
         call back_opac%pre_init_and_link(self, i_mu=0, i_nu=n2, sp=output_sp)
 
-        if (comoving_frame) then
-          if (self%composition%ll_initialised) then
-            allocate(back_line)
-            back_line%composition => self%composition
-            call back_line%pre_init_and_link(self, i_mu=0, i_nu=n2, sp=output_sp)
-          endif
-
-          allocate(net_opac)
-          call net_opac%pre_init_and_link(self, i_mu=0, i_nu=n2, sp=output_sp)
-        endif
       else
-        if (comoving_frame) then
-          allocate(proj)
-          call proj%pre_init_and_link(self, i_mu=m2, i_nu=n2, sp=atom_patch%sp)
-        else
-          if (self%composition%ll_initialised) then
-            allocate(back_line)
-            back_line%composition => self%composition
-            call back_line%pre_init_and_link(self, i_mu=m2, i_nu=n2, sp=output_sp)
-          endif
-
-          allocate(net_opac)
-          call net_opac%pre_init_and_link(self, i_mu=m2, i_nu=n2, sp=output_sp)
+        if (self%composition%ll_initialised) then
+          allocate(back_line)
+          back_line%composition => self%composition
+          call back_line%pre_init_and_link(self, i_mu=m2, i_nu=n2, sp=output_sp)
         endif
+
+        allocate(net_opac)
+        call net_opac%pre_init_and_link(self, i_mu=m2, i_nu=n2, sp=output_sp)
 
         allocate(rad)
         call rad%pre_init_and_link(self, i_mu=m2, i_nu=n2, sp=output_sp)
@@ -328,16 +313,11 @@ SUBROUTINE init_nbors_hash (self, nbors)
 
   do i_nu=self%n_nu+1, 2*self%n_nu
     key(2) = i_nu
-    if (comoving_frame) then
+    do i_mu=1, self%n_out
+      key(3) = i_mu+self%n_omega
       key(4) = hash_string('back_line')
       call self%check_nbor(key, nbors)
-    else
-      do i_mu=1, self%n_out
-        key(3) = i_mu+self%n_omega
-        key(4) = hash_string('back_line')
-        call self%check_nbor(key, nbors)
-      end do
-    endif
+    end do
   end do
   call trace%end (itimer)
 END SUBROUTINE init_nbors_hash
