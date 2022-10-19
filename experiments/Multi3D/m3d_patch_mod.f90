@@ -1,4 +1,4 @@
-module m3d_patch_mod
+MODULE m3d_patch_mod
 
     !USE rt_integral_mod
     !USE radau_mod
@@ -111,8 +111,6 @@ module m3d_patch_mod
     real(8), public, save, dimension(:), allocatable:: wmu, long_wmu
     real(8), public, save, dimension(:,:), allocatable:: vec, long_vec
     real(8), public:: convlim=1d-3
-    !real(8), public:: global_maxerr=0
-    integer, public:: rank_maxerr
     logical, public, save :: converged=.false.
     logical, public, save :: check_NaN=.false., save_back_opac=.true.
     logical, public, save :: detailed_prints=.false., comoving_frame=.false.
@@ -120,7 +118,7 @@ module m3d_patch_mod
     character(len=64), public, save:: custom_mu
     real(8), parameter :: t_push=0.1d0
     real(4), public :: vel_max=0.0
-    type(mpi_counter_t), public :: atom_update_counter, global_maxerr
+    type(mpi_counter_t), public :: atom_update_counter, global_maxerr, global_pos
       
     public :: hash_string, count_words
 
@@ -977,9 +975,9 @@ module m3d_patch_mod
         elseif (self%mem(i,j,k,v,t,w) > inf4) then
           write(stdout, '(A,A,3(I4),I5,I3,I3)') self%m3d_patch_info(), '  Infinity', i,j,k,v,t,w
           stop
-        elseif (self%unsigned(w) .and. self%mem(i,j,k,v,t,w) < 0) then
-          write(stdout, '(A,A,3(I4),I5,I3,I3)') self%m3d_patch_info(), '  negative', i,j,k,v,t,w
-          stop
+        !elseif (self%unsigned(w) .and. self%mem(i,j,k,v,t,w) < 0) then
+        !  write(stdout, '(A,A,3(I4),I5,I3,I3)') self%m3d_patch_info(), '  negative', i,j,k,v,t,w
+        !  stop
         endif
       end do
       end do
@@ -1252,7 +1250,7 @@ module m3d_patch_mod
     class(m3d_patch_t):: self
     integer:: snap, rec, recl, unit, id, level, ipos(3), n(3), m(5), nv, nw, rank
     real(8), dimension(3) :: ds, position, size, box
-    character(len=64) filename, knd
+    character(len=128) filename, knd
     class(snapshot_t), pointer:: snapshot
     namelist /m3d_out_nml/ snap, box, ds
     namelist /patch_nml/ id, position, size, level, rank, ipos, knd, n, nv, nw, m
@@ -1316,5 +1314,5 @@ module m3d_patch_mod
     call io%lock%unset ('m3d_patch_t%output')
   END SUBROUTINE output
 
-end module m3d_patch_mod
+END MODULE m3d_patch_mod
   

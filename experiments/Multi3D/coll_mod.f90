@@ -1,8 +1,9 @@
-module coll_mod
-    use m3io_mod
-    use mmath,only:ei1,hermite_interpolation,hermite_derivative
-    use mconst
-    use prec_mod
+MODULE coll_mod
+    USE io_mod
+    USE m3io_mod
+    USE mmath,only:ei1,hermite_interpolation,hermite_derivative
+    USE mconst
+    USE prec_mod
     implicit none
 
 
@@ -44,7 +45,7 @@ module coll_mod
  contains
  
  
-   subroutine read_collisions(file_unit, coll, max_n_temp, nlevel)
+   SUBROUTINE read_collisions(file_unit, coll, max_n_temp, nlevel)
       class(coll_type), target :: coll(:)
       integer :: file_unit,ntemp, max_n_temp, nlevel
       character(len=8) :: key
@@ -62,7 +63,10 @@ module coll_mod
          !  read the keyword 
          call nextentry(file_unit)
          read(file_unit,fmt='(a8)',iostat=ios) key
-         if (ios<0) call stop('read_collisions: keyword "END" not found in collision file')
+         if (ios<0) then
+            write(stdout, *) 'read_collisions: keyword "END" not found in collision file'
+            stop
+         endif
    
          key=uppercase(adjustl(key),len_trim(key))
          
@@ -83,7 +87,9 @@ module coll_mod
          case('TEMP')
             call nextentry(file_unit)
             read(file_unit,*) ntemp, (tgrid(j),j=1,ntemp)
-            if (ntemp<2) call stop("read_collisions: ntemp<2")
+            if (ntemp<2) then
+               stop "read_collisions: ntemp<2"
+            endif
    
           ! MB  5.04.2018 - added CH0 keyword
           ! RH 25.03.2022 - added CHI keyword
@@ -149,7 +155,10 @@ module coll_mod
             end do
    
          case default
-            if (.not.is_valid_process(key)) call stop('read_collisions: unrecognized keyword '//key)
+            if (.not.is_valid_process(key)) then
+               write(stdout,*) 'read_collisions: unrecognized keyword ', key
+               stop
+            endif
          end select
    
          ! sanity check on levels
@@ -157,7 +166,10 @@ module coll_mod
             l = col%ll
             u = col%ul
             
-            if (l==u) call stop("ll==ul for process " // col%key // " " // string3(l) // " " // string3(u))
+            if (l==u) then
+               write(stdout, *) "ll==ul for process ", col%key, l, u
+               stop
+            endif
    
             if (l>u) then
                col%ul=l
@@ -166,20 +178,20 @@ module coll_mod
    
             ! within level range
             if(l<0.or.u>nlevel) then
-               write(*,*) 'key=',col%key
-               write(*,*) 'll=',l
-               write(*,*) 'ul=',u
-               write(*,*) 'nk=', nlevel
-               call stop('read_collisions:  level index outside range (1,nk)')
+               write(stdout,*) 'key=',col%key
+               write(stdout,*) 'll=',l
+               write(stdout,*) 'ul=',u
+               write(stdout,*) 'nk=', nlevel
+               stop 'read_collisions:  level index outside range (1,nk)'
             endif
          end if
    
       end do
    
-   end subroutine read_collisions
+   END SUBROUTINE read_collisions
    
    
-   subroutine get_ncoll(file_unit, crout, n_coll_processes, max_n_temp)
+   SUBROUTINE get_ncoll(file_unit, crout, n_coll_processes, max_n_temp)
       integer :: file_unit, ntemp
       character(len=8) :: key
       integer ::  ios, strl
@@ -198,7 +210,9 @@ module coll_mod
       do while (.true.)
          call nextentry(file_unit)
          read(file_unit,fmt='(a8)',iostat=ios) key
-         if (ios<0) call stop('read_collisions: keyword "END" not found in collision file')
+         if (ios<0) then
+            stop 'read_collisions: keyword "END" not found in collision file'
+         endif
          key=uppercase(adjustl(key),len_trim(key))
    
          ! read next non-comment line if key doesnt start with a letter
@@ -216,7 +230,8 @@ module coll_mod
             if(ntemp>max_n_temp) max_n_temp=ntemp
          case default
             if (.not.is_valid_process(key)) then
-               call stop('read_collisions: unrecognized keyword '//key)
+               write(stdout, *) 'read_collisions: unrecognized keyword '//key
+               stop
             end if
             n_coll_processes=n_coll_processes+1
          end select
@@ -233,15 +248,13 @@ module coll_mod
          if (txt==crout(1:strl)) exit
       enddo
    
-   end subroutine get_ncoll
+   END SUBROUTINE get_ncoll
 
 
    !********************************************************************
    ! MOD PE: Add temp,ne,nh,nstar as input parameters
-   subroutine gencol(coll,id,nlevel,g,ev,ion,cij,ix,iy,iz,temp,ne,nstar,nh)
-    use mconst
-    use mclu
-    use mem_mod
+   SUBROUTINE gencol(coll,id,nlevel,g,ev,ion,cij,ix,iy,iz,temp,ne,nstar,nh)
+    USE mconst
     implicit none
 
     class(coll_type), dimension(:) :: coll
@@ -539,13 +552,11 @@ module coll_mod
 
     end do ! transition loop 
 
-   end subroutine gencol
+   END SUBROUTINE gencol
 
 
-   subroutine gencol_new(coll,id,nlevel,g,ev,ion,cij,temp,ne,nstar,nh)
-      use mconst
-      use mclu
-      use mem_mod
+   SUBROUTINE gencol_new(coll,id,nlevel,g,ev,ion,cij,temp,ne,nstar,nh)
+      USE mconst
       implicit none
   
       class(coll_type), dimension(:) :: coll
@@ -851,7 +862,7 @@ module coll_mod
   
       end do ! transition loop 
   
-   end subroutine gencol_new
+   END SUBROUTINE gencol_new
  
    !*********************************************************************
  
@@ -953,7 +964,7 @@ module coll_mod
    !**********************************************************************
 
    function ftwo(x)
-      use mconst,only:pi,euler_const
+      USE mconst,only:pi,euler_const
       implicit none
       ! new routine 24-jan-1994  p. judge
       ! calculates f2(x) needed for collisional rates of arnaud and rothenflug 
@@ -1010,7 +1021,9 @@ module coll_mod
          xfact=xfact*(-x)
          term = xfact/count/count/fact
          f0x=f0x+term
-         if(count .gt. 100.) call stop('ftwo: too many iterations')
+         if(count .gt. 100.) then
+            stop 'ftwo: too many iterations'
+         endif
       enddo
       ftwo=exp(x)*((log(x)+euler_const)*(log(x)+euler_const)*0.5 + f0x)
       endif
@@ -1021,7 +1034,7 @@ module coll_mod
    !*********************************************************************
 
    pure integer function atomic_number(atomic_symbol)
-      use mconst,only:element_name
+      USE mconst,only:element_name
       implicit none
       CHARACTER(len=*), intent(in) :: atomic_symbol
       integer :: i
@@ -1037,7 +1050,7 @@ module coll_mod
 
    !*********************************************************************
 
-   pure subroutine rowcol(an,row,col)
+   PURE SUBROUTINE rowcol(an,row,col)
       !**********************************************************************
       !
       ! returns the row and column of the element in
@@ -1066,11 +1079,11 @@ module coll_mod
          endif
       end  do
       col=an-istart(row)
-   end subroutine rowcol
+   END SUBROUTINE rowcol
 
    !**********************************************************************
 
-   subroutine ar85cea(id, ion, tg,ilo,ihi,cup)
+   SUBROUTINE ar85cea(id, ion, tg,ilo,ihi,cup)
       !  new routine for computing collisional autoionization 
       !  rates using formalism and formulae from arnaud and rothenflug 1985
       ! 
@@ -1103,8 +1116,8 @@ module coll_mod
       zz=real(z)
    
       if (z<1 .or. z>92) then 
-         call messg('ar85-cea:  atomic number = ' //string3(z) // ' for ' // element)
-         call messg('ar85-cea:  no autoionization included')
+         write(stdout, *) 'ar85-cea:  atomic number = ', z, ' for ', element
+         write(stdout, *) 'ar85-cea:  no autoionization included'
          return
       endif
    
@@ -1187,12 +1200,12 @@ module coll_mod
          b=1.0         
          cup=6.69e+7*a *iea/sqrt(bkt) * exp(-y)*(1. + b*f1y)
       endif
-   end subroutine ar85cea
+   END SUBROUTINE ar85cea
 
    !*********************************************************************
 
-   subroutine hepop(tg,hpop,he1,he2)
-      use mmath,only:linear1d
+   SUBROUTINE hepop(tg,hpop,he1,he2)
+      USE mmath,only:linear1d
       implicit none
       !Ratio of Helium ionization fraction from table IV of Arnaud and Rothenflug
       !ABHE is abundance of Helium- assumed =0.1
@@ -1225,9 +1238,9 @@ module coll_mod
       call linear1d(nt,tt,ie1,tlog,dum,.true.)
       he2=hpop * abhe * 10.**dum    !10.**splin(tlog,tt,ie2,nt,nt)
 
-   end subroutine hepop
+   END SUBROUTINE hepop
 
    !*********************************************************************
 
      
- end module coll_mod
+ END MODULE coll_mod

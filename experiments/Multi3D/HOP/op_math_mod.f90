@@ -1,5 +1,5 @@
-module op_math_mod
-   use prec_mod
+MODULE op_math_mod
+   USE prec_mod
    implicit none
 
    interface poly1d
@@ -525,4 +525,4 @@ contains
             + 0.0001599740894897d0 / (38.92568793293d0 - s2)
       vac = air*n
     END FUNCTION air2vac
-end module op_math_mod
+END MODULE op_math_mod

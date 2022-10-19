@@ -1,5 +1,5 @@
-module level_mod
-    use prec_mod
+MODULE level_mod
+    USE prec_mod
     implicit none
 
     type :: level_type
@@ -68,4 +68,4 @@ contains
         endif
     end FUNCTION fischel_sparks
     
-end module level_mod
+END MODULE level_mod

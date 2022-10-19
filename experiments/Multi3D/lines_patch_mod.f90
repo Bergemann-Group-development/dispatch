@@ -1,4 +1,4 @@
-module lines_patch_mod
+MODULE lines_patch_mod
     USE os_mod
     USE list_mod
     USE halo_mod
@@ -221,15 +221,18 @@ module lines_patch_mod
       
       call line%profile(line%q, vproj, inv_df, adamp, line%phi)
 
-      call os%allocate(line%wphi, self%n, zero=.true., label=trim(self%kind)//'%wphi')
-
-      call self%sp%set_weights(wnu, line%q, 1, line%nnu)
+      if (.not. self%out_ray) then
+        call os%allocate(line%wphi, self%n, zero=.true., label=trim(self%kind)//'%wphi')
+        call self%sp%set_weights(wnu, line%q, 1, line%nnu)
+        do f=1,line%nnu
+          line%wphi = line%wphi + line%phi(:,:,:,f) * wnu(f)
+        end do
+        deallocate(wnu)
+      endif
 
       do f=1,line%nnu
-        line%wphi = line%wphi + line%phi(:,:,:,f) * wnu(f)
         line%phi(:,:,:,f) = line%phi(:,:,:,f) * over_4pi * (line%q(f) + 1)
       end do
-      deallocate(wnu)
     enddo
 
     call os%deallocate(tothi)
@@ -239,7 +242,9 @@ module lines_patch_mod
     call os%deallocate(vproj)
     call os%deallocate(inv_df)
 
-    call self%integrate_wphi()
+    if (.not. self%out_ray) then
+      call self%integrate_wphi()
+    endif
     call self%post_update()
     call trace%end(itimer)
   END SUBROUTINE lines_patch_update
@@ -439,4 +444,4 @@ module lines_patch_mod
     call trace%end (itimer)
   END SUBROUTINE init_nbors_hash
 
-  end module
+  END MODULE

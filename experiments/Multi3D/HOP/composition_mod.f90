@@ -1,23 +1,23 @@
 MODULE composition_mod
-    use trace_mod
-    use prec_mod
-    use op_math_mod
-    use element_mod
-    use ion_mod
-    use level_mod
-    use bbtrans_mod, only:bbtrans_type
-    use bftrans_mod, only:bftrans_type
-    use molecule_mod, only:molec_type
-    use osmet_mod
-    use omp_lib
-    use os_mod
+    USE trace_mod
+    USE prec_mod
+    USE op_math_mod
+    USE element_mod
+    USE ion_mod
+    USE level_mod
+    USE bbtrans_mod, only:bbtrans_type
+    USE bftrans_mod, only:bftrans_type
+    USE molecule_mod, only:molec_type
+    USE osmet_mod
+    USE omp_lib
+    USE os_mod
     implicit none
     private
 
     type, public :: composition_type
         logical :: initialised, ll_initialised=.false., loaded=.false.
         integer :: nel, nmolec, verbose
-        real(dp) :: xmy, suma, grph, tmolim, molh
+        real(dp) :: xmy, suma, grph, tmolim, molh, FeH
         type(element_type), allocatable :: elements(:)
         type(molec_type),   allocatable :: molecules(:)
         type(bftrans_type), allocatable :: trans(:)
@@ -117,7 +117,7 @@ contains
         open(file=abund_file, newunit=lunit, iostat=iostat)
         do while (iostat==0)
             read(lunit, *, iostat=iostat) id, abund
-            call self%element_by_id(trim(id), element)
+            call self%element_by_id(id, element)
             if(associated(element)) element%abund = abund
         end do
         close(lunit)
@@ -132,6 +132,7 @@ contains
                 element%abund = element%abund + FeH
             endif
         end do
+        self%FeH = FeH
 
         elements%abund = 10**(elements%abund - elements(1)%abund)
         call self%compute_grams_per_hydrogen(self%suma, self%xmy, self%grph)
@@ -998,7 +999,7 @@ contains
         real(4), dimension(:,:,:) :: totn
         !---------------------------------------------------------------------------
         call trace%begin ('composition_type%get_totn')
-        call self%element_by_id(trim(id), element)
+        call self%element_by_id(id, element)
 
         if (associated(element)) then
             totn = element%ions(1)%f * (1 + element%ions(1)%saha) * self%toth
@@ -1022,7 +1023,8 @@ contains
         HI => self%elements(1)%ions(1)
 
         allocate(nh, blzfac, mold=self%temp)
-        nh = HI%f * self%ne / self%fe * (BK/uop_BK)
+        !nh = HI%f * self%ne / self%fe * (BK/uop_BK)
+        nh = 2*HI%part * HI%f * self%toth
 
         do k=1, nk
             level%xion = RYD * (1. - 1./k**2)
@@ -1353,7 +1355,7 @@ contains
         !  calculates planck FUNCTION bnu at frequency nu, temp t
         !
         !---------------------------------------------------------------------
-        use mconst
+        USE mconst
         implicit none
         real(8), intent(in)  :: nu
         real(8), intent(in)  :: t
@@ -1384,14 +1386,13 @@ contains
         uppercase(:)=' '
         uppercase(1:ss)=string(1:ss)
         do i=1,ss
-        k=index(lcase,string(i:i))
-        if (k > 0) then
-            uppercase(i:i)=ucase(k:k)
-        else
-            uppercase(i:i)=string(i:i)
-        end if
+            k=index(lcase,string(i:i))
+            if (k > 0) then
+                uppercase(i:i)=ucase(k:k)
+            else
+                uppercase(i:i)=string(i:i)
+            end if
         end do
-
     end FUNCTION uppercase
 
     !=========================================================================

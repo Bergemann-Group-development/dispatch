@@ -1,4 +1,4 @@
-module composition_patch_mod
+MODULE composition_patch_mod
   USE io_mod
   USE os_mod
   USE mpi_mod
@@ -186,7 +186,7 @@ SUBROUTINE composition_pre_init (self)
     endif
   end do
   
-  call self%save_abundances_to_file(trim(io%run_dir) // 'abund.txt')
+  call self%save_abundances_to_file()
   call self%post_pre_init()
   call trace%end(itimer)
 END SUBROUTINE composition_pre_init
@@ -247,17 +247,19 @@ SUBROUTINE print_post_update_info (self)
 END SUBROUTINE print_post_update_info
 
 !===============================================================================
-SUBROUTINE save_abundances_to_file (self, file)
+SUBROUTINE save_abundances_to_file (self)
   class(composition_patch_t), target :: self
   class(element_type), pointer :: element
-  character(len=*) :: file
   integer :: lunit, i
   !-----------------------------------------------------------------------------
-  open(newunit=lunit, file=file, form='FORMATTED')
-  do i=1, self%composition%nel
-    element => self%composition%elements(i)
-    write(lunit, '(A3, F8.4)') element%id, log10(element%abund) + 12.0
-  end do
+  if (self%ipos(3)==0) then
+    open(newunit=lunit, file=trim(io%run_dir)//'abund.txt', form='FORMATTED')
+    do i=1, self%composition%nel
+      element => self%composition%elements(i)
+      write(lunit, '(A3, F8.4)') element%id, log10(element%abund) + 12.0
+    end do
+    close(lunit)
+  endif
 END SUBROUTINE save_abundances_to_file
 
 !===============================================================================
@@ -322,4 +324,4 @@ SUBROUTINE init_nbors_hash (self, nbors)
   call trace%end (itimer)
 END SUBROUTINE init_nbors_hash
 
-end module composition_patch_mod
+END MODULE composition_patch_mod

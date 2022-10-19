@@ -1,6 +1,6 @@
-module osmet_mod
-    use prec_mod
-    use op_math_mod
+MODULE osmet_mod
+    USE prec_mod
+    USE op_math_mod
     implicit none
 
     real(dp), parameter :: ln10 = log(10.0)
@@ -187,4 +187,4 @@ contains
         endif
         return
       end FUNCTION psemi
-end module osmet_mod
+END MODULE osmet_mod

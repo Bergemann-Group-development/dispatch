@@ -1,4 +1,4 @@
-module read_stagger_snapshot_mod
+MODULE read_stagger_snapshot_mod
   USE io_mod
   USE os_mod
   USE trace_mod
@@ -67,11 +67,11 @@ SUBROUTINE read_stagger_snapshot(ds, d, px, py, pz, ee, tt, ne)
     write(aux_file,  *) trim(snap_file), '.aux'
     ok = .false.
     if (.not. os%exists(mesh_file)) then
-      print *, 'mesh_file', trim(mesh_file), 'not found'
+      print *, 'mesh_file ', trim(mesh_file), 'not found'
     elseif (.not. os%exists(data_file)) then
-      print *, 'data_file', trim(data_file), 'not found'
+      print *, 'data_file ', trim(data_file), 'not found'
     elseif (.not. os%exists(aux_file))  then
-      print *, 'aux_file', trim(aux_file),  'not found'
+      print *, 'aux_file ', trim(aux_file),  'not found'
     else
       ok = .true.
     endif
@@ -386,4 +386,4 @@ SUBROUTINE linterpolate_3d(f, fout, oldx, oldy, oldz, newx, newy, newz)
   end do
 END SUBROUTINE linterpolate_3d
 
-end module read_stagger_snapshot_mod
+END MODULE read_stagger_snapshot_mod

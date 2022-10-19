@@ -1,7 +1,7 @@
 ! *******************************************************************
-module trans_mod
-  use mconst
-  use bbtrans_mod
+MODULE trans_mod
+  USE mconst
+  USE bbtrans_mod
   ! *******************************************************************
   !
   !     Contains variables connected to the atom(s) 
@@ -87,6 +87,7 @@ module trans_mod
     integer, dimension(:),allocatable :: krsub ! indices of subordinate lines
 
   contains
+      procedure :: profile => line_profile
       procedure :: freql
       procedure :: interpolate_phi
 
@@ -111,7 +112,47 @@ module trans_mod
 contains
 
   !====================================================================================
-  pure subroutine cont_opacities(self, alpha, n, nstar, eta, chi)
+  SUBROUTINE line_profile(self, q, vproj, inv_df, adamp, phi)
+    class(line_type), intent(in) :: self
+    real(8), dimension(:), intent(in) :: q
+    real(4), dimension(:,:,:), intent(in) :: vproj, inv_df, adamp
+    real(4), dimension(:,:,:,:), intent(inout) :: phi
+    real(4), dimension(:,:,:), allocatable :: psi, damp, dphi, inv_df2
+    real(8) :: nu0, ga
+    real(8), dimension(:), allocatable :: q2
+    integer :: f, i
+    !----------------------------------------------------------------------------------
+    if (self%io > 1) then
+      allocate(q2, mold=q)
+      allocate(psi, damp, dphi, inv_df2, mold=vproj)
+      do f=1, size(q)
+        phi(:,:,:,f) = 0
+      end do
+      
+      do i=1, self%io
+        nu0 = self%nu0 + cc * self%determ(i)
+        !q2 = (q + 1) * self%nu0 / nu0 - 1
+        q2 = q + 1 - nu0/self%nu0
+        ga = self%gaterm(i) - self%ga
+        damp = (adamp + ga) * inv_df * over_4pi / nu0
+        psi = psi_func(damp)
+        inv_df2 = self%wterm(i) * inv_df
+
+        !DIR$ FORCEINLINE
+        do f=1, size(q)
+            dphi = (q2(f) - vproj) * inv_df
+            dphi = voigt_function2(damp, dphi, psi)
+            phi(:,:,:,f) = phi(:,:,:,f) + dphi * inv_df2
+        end do 
+        end do
+    else
+      call self%bbtrans_type%profile(q, vproj, inv_df, adamp, phi)  
+    endif
+  END SUBROUTINE line_profile
+  !------------------------------------------------------------------------------------
+
+  !====================================================================================
+  PURE SUBROUTINE cont_opacities(self, alpha, n, nstar, eta, chi)
     class(cont_type), intent(in) :: self
     real(4), dimension(:), intent(in) :: alpha
     real(4), dimension(:,:,:,:), intent(in) :: n, nstar
@@ -141,7 +182,7 @@ contains
     end do
     end do
     end do
-  end subroutine cont_opacities
+  END SUBROUTINE cont_opacities
   !------------------------------------------------------------------------------------
 
 !  !====================================================================================
@@ -172,7 +213,7 @@ contains
 !  !------------------------------------------------------------------------------------
 
   !====================================================================================
-  pure subroutine cont_rates(self, walpha, fconst, nstar, blzfac, Inu, Rij, Rji)
+  PURE SUBROUTINE cont_rates(self, walpha, fconst, nstar, blzfac, Inu, Rij, Rji)
       class(cont_type), intent(in) :: self
       real(8), dimension(:), intent(in) :: walpha, fconst
       real(4), dimension(:,:,:,:), intent(in) :: nstar
@@ -191,12 +232,12 @@ contains
       end do
 
       Rji = Rji * nstar(:,:,:,self%i) / nstar(:,:,:,self%j)
-  end subroutine cont_rates
+  END SUBROUTINE cont_rates
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  subroutine interpolate_phi(self, nu, phi)
-    use op_math_mod, only: searchsorted
+  SUBROUTINE interpolate_phi(self, nu, phi)
+    USE op_math_mod, only: searchsorted
     class(line_type), intent(in) :: self
     real(8), dimension(:), intent(in) :: nu
     real(4), dimension(:,:,:,:), intent(out) :: phi
@@ -235,11 +276,11 @@ contains
       end do
       end do
     end do
-  end subroutine interpolate_phi
+  END SUBROUTINE interpolate_phi
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  pure subroutine check_range(self, fs_in, fe_in, fs_out, fe_out, skip)
+  PURE SUBROUTINE check_range(self, fs_in, fe_in, fs_out, fe_out, skip)
       class(transition_type), intent(in) :: self
       integer, intent(in) :: fs_in, fe_in
       integer, intent(out) :: fs_out, fe_out
@@ -253,7 +294,7 @@ contains
       if (fs_out > fe_out) skip = .true.
       if (fs_out > fe_in)  skip = .true.
       if (fe_out < fs_in)  skip = .true.
-  end subroutine check_range
+  END SUBROUTINE check_range
   !------------------------------------------------------------------------------------
 
   !====================================================================================
@@ -269,7 +310,7 @@ contains
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  subroutine freql(self, qnorm, symmetric)
+  SUBROUTINE freql(self, qnorm, symmetric)
       !***********************************************************************
   
       !  gives  frequency quadrature points and corresponding weights.
@@ -353,11 +394,11 @@ contains
       ! convert to [Hz]
       self%nu = self%nu0*(1.0+q*qnorm*KM_TO_CM/cc)
   
-  end subroutine freql
+  END SUBROUTINE freql
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  subroutine freqc(self)
+  SUBROUTINE freqc(self)
       !---------------------------------------------------------------------   
       !
       !  gives quadrature points and weights for continua
@@ -401,9 +442,9 @@ contains
           print *, 'freqc: bf_type ' // self%bf_type // ' not recognized. Stopping...'
           stop
       end select
-  end subroutine freqc
+  END SUBROUTINE freqc
   !------------------------------------------------------------------------------------
 
-  end module trans_mod
+  END MODULE trans_mod
 
 ! *******************************************************************

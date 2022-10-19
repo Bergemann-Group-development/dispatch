@@ -1,4 +1,4 @@
-module cont_opac_patch_mod
+MODULE cont_opac_patch_mod
     USE os_mod
     USE halo_mod
     USE gpatch_mod
@@ -136,5 +136,5 @@ module cont_opac_patch_mod
     call trace%end (itimer)
   END SUBROUTINE init_nbors_hash
   
-  end module cont_opac_patch_mod
+  END MODULE cont_opac_patch_mod
   

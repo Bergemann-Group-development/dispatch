@@ -1,5 +1,5 @@
-module ray_mod
-  use mconst
+MODULE ray_mod
+  USE mconst
   implicit none
 
   ! *******************************************************************
@@ -446,7 +446,7 @@ SUBROUTINE set_stencil(ray, ds)
   !               upwind
   !
   !---------------------------------------------------------------------
-  use mmath, only:qsortd
+  USE mmath, only:qsortd
 
   class(ray_type) :: ray
   real(8), intent(in) :: ds(3)
@@ -1001,7 +1001,7 @@ END SUBROUTINE SetLongKern
 
 !---------------------------------------------------------------------
 SUBROUTINE SetCcKern(kern,h1,h2)
-  use mmath,only:cc_kernel
+  USE mmath,only:cc_kernel
   !---------------------------------------------------------------------
   !
   ! set a 2D cubic convulution kernel as the multiplication
@@ -1102,4 +1102,4 @@ SUBROUTINE dirty_sort(arr)
   end do
 END SUBROUTINE dirty_sort
 
-end module ray_mod
+END MODULE ray_mod

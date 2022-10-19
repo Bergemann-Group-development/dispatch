@@ -1,4 +1,4 @@
-module proj_patch_mod
+MODULE proj_patch_mod
     USE os_mod
     USE halo_mod
     USE gpatch_mod
@@ -105,7 +105,6 @@ module proj_patch_mod
     integer :: n(3), f, nf, i, x, y, z, nf_in
     real(4) :: yy1, yy2, wmu, res
     real(8) :: nunu, dnu
-    logical :: negative
     !-----------------------------------------------------------------------------
     n = shape(proj)
     nf = size(nu_out)
@@ -119,7 +118,6 @@ module proj_patch_mod
       wmu = 0
     endif
 
-    negative = .false.
     do f=1, nf
       new_nu = nu_out(f) * dble(proj)
       do z=1, n(3)
@@ -141,9 +139,6 @@ module proj_patch_mod
           res = (yy2 - yy1) * dnu + yy1
           ff(x,y,z) = i
         endif
-        if (res < 0.0) then
-          negative = .true.
-        endif
         if (wmu == 0) then
           new_yy(x,y,z,f) = res
         else
@@ -153,9 +148,6 @@ module proj_patch_mod
       end do
       end do
     end do
-    if (negative) then
-      stop 'negative value in interpolation of strictly positive quantities.'
-    endif
     call os%deallocate(ff)
     call os%deallocate(new_nu)
   END SUBROUTINE interpolate_to_ray
@@ -214,5 +206,5 @@ module proj_patch_mod
     call trace%end (itimer)
   END SUBROUTINE init_nbors_hash
   
-  end module proj_patch_mod
+  END MODULE proj_patch_mod
   

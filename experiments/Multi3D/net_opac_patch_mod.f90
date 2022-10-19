@@ -1,4 +1,4 @@
-module net_opac_patch_mod
+MODULE net_opac_patch_mod
     !USE rt_integral_mod
     !USE radau_mod
     !USE boundaries_mod
@@ -263,5 +263,5 @@ module net_opac_patch_mod
     call trace%end (itimer)
   END SUBROUTINE init_nbors_hash
   
-  end module net_opac_patch_mod
+  END MODULE net_opac_patch_mod
   

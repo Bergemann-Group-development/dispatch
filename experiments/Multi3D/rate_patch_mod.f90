@@ -1,4 +1,4 @@
-module rate_patch_mod
+MODULE rate_patch_mod
     USE halo_mod
     USE gpatch_mod
     USE link_mod
@@ -254,4 +254,4 @@ module rate_patch_mod
     call trace%end (itimer)
   END SUBROUTINE init_nbors_hash
   
-  end module
+  END MODULE

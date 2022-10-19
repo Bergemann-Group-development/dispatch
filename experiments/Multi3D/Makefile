@@ -23,11 +23,9 @@ EOS             = microphysics/eos/stagger
 #endif
 
 # To include the Multi3D code, set the macro to point to the src directory
-MULTI3D         = $(TOP)/../multi-3d/src
 HOP             = ./HOP
 sinclude $(TOP)/config/Makefile
 sinclude $(HOP)/dispatch.mkf
-sinclude $(MULTI3D)/dispatch.mkf
 
 #OPT = -O0 -fimplicit-none  -Wall  -Wline-truncation  -Wcharacter-truncation  -Wsurprising  -Waliasing  -Wimplicit-interface  -Wunused-parameter  -fwhole-file  -fcheck=all  -fbacktrace
 
@@ -55,7 +53,6 @@ spectrum_mod.o              : io_mod.o timer_mod.o trace_mod.o mconst.o
 m3d_halo_mod.o              : halo_mod.o guards_mod.o gpatch_mod.o
 m3d_patch_mod.o             : gpatch_mod.o atom_mod.o ray_mod.o m3d_halo_mod.o
 ray_patch_mod.o             : m3d_patch_mod.o
-#opac_patch_mod.o            : ray_patch_mod.o composition_mod.o atom_mod.o
 rad_patch_mod.o             : ray_patch_mod.o back_opac_patch_mod.o
 rate_patch_mod.o            : ray_patch_mod.o rad_patch_mod.o lines_patch_mod.o mean_rad_patch_mod.o
 atom_patch_mod.o            : rate_patch_mod.o lines_patch_mod.o cont_opac_patch_mod.o
@@ -63,7 +60,7 @@ composition_patch_mod.o     : out_rad_patch_mod.o back_opac_patch_mod.o rad_patc
 bftrans_mod.o               : os_mod.o
 bbtrans_mod.o               : trace_mod.o
 mmath.o                     : search_mod.o
-m_unista.o                  : m_refsor.o
+unista_mod.o                : refsor_mod.o
 ray_mod.o                   : mmath.o
 prec_mod.o                  : mconst.o os_mod.o
 patch_mod.o                 : os_mod.o
@@ -74,5 +71,6 @@ back_opac_patch_mod.o       : ray_patch_mod.o composition_mod.o
 cont_opac_patch_mod.o       : ray_patch_mod.o atom_mod.o
 net_opac_patch_mod.o        : ray_patch_mod.o lines_patch_mod.o back_line_patch_mod.o cont_opac_patch_mod.o
 out_rad_patch_mod.o         : ray_patch_mod.o rad_patch_mod.o
-proj_patch_mod.o            : ray_patch_mod.o
+proj_patch_mod.o            : ray_patch_mod.o net_opac_patch_mod.o
 mean_rad_patch_mod.o        : ray_patch_mod.o rad_patch_mod.o proj_patch_mod.o
+mmath.o                     : refsor_mod.o unista_mod.o mconst.o prec_mod.o

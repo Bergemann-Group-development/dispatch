@@ -24,7 +24,7 @@ MODULE read_external_mod
   USE patch_mod
   USE mconst, only:cc
   USE ray_patch_mod
-  USE m3d_patch_mod, only: maxiter, ilambd, m3d_patch_t, atom_update_counter, global_maxerr
+  USE m3d_patch_mod, only: maxiter, ilambd, m3d_patch_t, atom_update_counter, global_maxerr, global_pos
   USE m3d_halo_mod, only: m3d_halo_t
   USE read_stagger_snapshot_mod
   implicit none
@@ -239,6 +239,7 @@ SUBROUTINE init(self, task_list, name)
   !-----------------------------------------------------------------------------
   call atom_update_counter%init(0)
   call global_maxerr%init(0)
+  call global_pos%init(-1)
 
   !-----------------------------------------------------------------------------
   ! Initialize tasks

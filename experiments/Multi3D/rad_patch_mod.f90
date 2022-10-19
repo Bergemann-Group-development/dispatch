@@ -1,4 +1,4 @@
-module rad_patch_mod
+MODULE rad_patch_mod
   !USE rt_integral_mod
   !USE radau_mod
   !USE boundaries_mod
@@ -891,4 +891,4 @@ END SUBROUTINE init_nbors_hash
 !  Inu = Inuup*ex + (u0 - Psi)*ss1 + Psi*ss2
 !end subroutine linear_formsolv
 
-end module
+END MODULE

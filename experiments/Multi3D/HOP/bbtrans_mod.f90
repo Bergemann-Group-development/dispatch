@@ -16,7 +16,7 @@ MODULE bbtrans_mod
     logical :: active=.true., unsold
     integer :: iso_idx=0 ! isotope index for lines in line list
   contains
-    procedure :: profile => line_profile
+    procedure :: profile
     procedure :: damping => line_damping
     procedure :: dampingH => line_dampingH
     procedure :: add_lte_opacities
@@ -31,7 +31,7 @@ MODULE bbtrans_mod
 contains
 
   !====================================================================================
-  SUBROUTINE line_profile(self, q, vproj, inv_df, adamp, phi)
+  SUBROUTINE profile(self, q, vproj, inv_df, adamp, phi)
     class(bbtrans_type), intent(in) :: self
     real(8), dimension(:), intent(in) :: q
     real(4), dimension(:,:,:), intent(in) :: vproj, inv_df, adamp
@@ -48,9 +48,8 @@ contains
       phi(:,:,:,f) = (q(f) - vproj) * inv_df
       phi(:,:,:,f) = voigt_function2(damp, phi(:,:,:,f), psi)
       phi(:,:,:,f) = phi(:,:,:,f) * inv_df
-      !phi(:,:,:,f) = phi(:,:,:,f) * inv_df / self%nu0
     end do 
-  END SUBROUTINE line_profile
+  END SUBROUTINE profile
   !------------------------------------------------------------------------------------
 
   !====================================================================================
@@ -155,11 +154,11 @@ contains
 
     elseif (a > 0.2) then
       if (a > 1.4 .or. u > 3.2) then
-          a2 = a*a
-          u = 1 / (a2 + v2)
-          u2 = 0.5 * u*u
-          ! a gt 1.4  or  a + v gt 3.2
-          h = ipi*a*u * (1. + u2*((3.*v2 - a2) + u2*(15.*v2*v2 - 30.*v2*a2 + 3.*a2*a2)))
+        a2 = a*a
+        u = 1 / (a2 + v2)
+        u2 = 0.5 * u*u
+        ! a gt 1.4  or  a + v gt 3.2
+        h = ipi*a*u * (1. + u2*((3.*v2 - a2) + u2*(15.*v2*v2 - 30.*v2*a2 + 3.*a2*a2)))
 
       else
         if (v >= 2.4) then
@@ -241,13 +240,13 @@ contains
 
     elseif (a > 0.2) then
       if (a > 1.4 .or. u > 3.2) then
-          a2 = a*a
-          u = sq2*(a2 + v2)
-          u2 = 1./(u*u)
-          ! a gt 1.4  or  a + v gt 3.2
-          h = sq2/sqp*a/u*(1. + u2*(3.*v2 - a2) + &
-                u2*u2*(15.*v2*v2 - 30.*v2*a2 + 3.*a2*a2))
-          return
+        a2 = a*a
+        u = sq2*(a2 + v2)
+        u2 = 1./(u*u)
+        ! a gt 1.4  or  a + v gt 3.2
+        h = sq2/sqp*a/u*(1. + u2*(3.*v2 - a2) + &
+              u2*u2*(15.*v2*v2 - 30.*v2*a2 + 3.*a2*a2))
+        return
       else
           k = 2
       endif
@@ -290,7 +289,6 @@ contains
     ! 0.2 < a <= 1.4  and  a + v <= 3.2
     h = psi*(ex + a*(h1p + a*(h2p + a*(h3p + a*h4p))))
     return
-
   END FUNCTION voigt_function
   !------------------------------------------------------------------------------------
 
@@ -512,7 +510,4 @@ contains
     endif
   END SUBROUTINE get_range
   !------------------------------------------------------------------------------------
-
-
-
 END MODULE bbtrans_mod

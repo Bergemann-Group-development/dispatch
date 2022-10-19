@@ -1,4 +1,4 @@
-module mean_rad_patch_mod
+MODULE mean_rad_patch_mod
     USE os_mod
     USE halo_mod
     USE gpatch_mod
@@ -190,5 +190,5 @@ module mean_rad_patch_mod
     call trace%end (itimer)
   END SUBROUTINE init_nbors_hash
   
-  end module mean_rad_patch_mod
+  END MODULE mean_rad_patch_mod
   

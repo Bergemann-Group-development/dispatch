@@ -1,4 +1,4 @@
-module ray_patch_mod
+MODULE ray_patch_mod
   USE mpi_mesg_mod
   USE halo_mod
   USE patch_mod, only: header_t, n_header
@@ -678,4 +678,4 @@ SUBROUTINE init_nbors_hash (self, nbors)
   call trace%end (itimer)
 END SUBROUTINE init_nbors_hash
 
-end module ray_patch_mod
+END MODULE ray_patch_mod

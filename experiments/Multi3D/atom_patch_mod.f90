@@ -1,4 +1,4 @@
-module atom_patch_mod
+MODULE atom_patch_mod
     USE os_mod
     USE list_mod
     USE halo_mod
@@ -31,7 +31,7 @@ module atom_patch_mod
     USE bbtrans_mod, only: bbtrans_type
     USE composition_mod, only: composition_type
     USE m3d_patch_mod, only: m3d_patch_t, maxiter, ilambd, check_NaN, &
-    global_maxerr, rank_maxerr, convlim, atom_update_counter, hash_string, comoving_frame
+    global_maxerr, convlim, atom_update_counter, hash_string, comoving_frame, global_pos
     USE bftrans_mod, only: bftrans_type
     USE lines_patch_mod, only:lines_patch_t
     USE net_opac_patch_mod, only:net_opac_t
@@ -59,6 +59,7 @@ module atom_patch_mod
       procedure :: exclude_double_lines
       procedure :: print_post_update_info
       procedure :: check_in_bounds
+      procedure :: save_abundance_to_file
       procedure :: init_nbors_hash
     end type atom_patch_t
 
@@ -234,8 +235,10 @@ module atom_patch_mod
 
     call self%exclude_double_lines(exclude_from_line_list)
 
-    if (use_atom_abnd .or. abundance > 0) then
+    if (use_atom_abnd .or. abundance > -99) then
       call self%composition%overwrite_abundance(atom%id, atom%abnd, atom%awgt)
+    else
+      self%atom%abnd = self%atom%abnd + self%composition%FeH
     endif
 
     call trace%end(itimer)
@@ -270,6 +273,9 @@ module atom_patch_mod
 
     atom%doppler_factor = atom%compute_doppler_factor(temp)
     call self%composition%get_totn(atom%id, atom%abnd, atom%totn, element)
+    if (.not. associated(element)) then
+      call self%save_abundance_to_file()
+    endif
     if (level_partf) nullify(element)
     call atom%compute_lte_populations(temp, ne, real(self%composition%dxi), element)
     call atom%compute_cont_factors(temp, real(self%composition%dxi), ne)
@@ -353,7 +359,7 @@ module atom_patch_mod
     endif
     if (count >= self%task_list%dims(3)) then
       global = global_maxerr%update(0.d0)
-      if ((global > 0) .and. global < convlim) then
+      if ((global > 0) .and. global < convlim .and. self%maxerr < convlim) then
         write(stdout, *) self%ipos(3)+1, 'Converged!', count
         call self%finish()
       endif
@@ -371,7 +377,7 @@ module atom_patch_mod
   SUBROUTINE print_post_update_info (self)
     class(atom_patch_t):: self
     character(len=64) :: text
-    integer :: i, p(3)
+    integer :: i, p(3), ipos
     real(4), dimension(4) :: arr
     real(8) :: global
     !-----------------------------------------------------------------------------
@@ -395,8 +401,9 @@ module atom_patch_mod
       call self%print_to_stdout()
     endif
     global = global_maxerr%update(0.d0)
-    write(stdout,'(A19, ES19.7, A10, ES15.7, 3I4)') 'local err =', self%maxerr, &
-      ', global =', global, epos
+    ipos = global_pos%update(+0)
+    write(stdout,'(A19, ES19.7, A10, ES15.7, A9, I2, 2X, 3I4)') 'local err =', self%maxerr, &
+      ', global =', global, ', ipos = ', ipos+1, epos
     write(stdout,'(1X, A80)') &
     '................................................................................'
   END SUBROUTINE print_post_update_info
@@ -441,7 +448,7 @@ module atom_patch_mod
 
   !===============================================================================
   SUBROUTINE atom_patch_finish (self)
-    use m3d_patch_mod, only: converged
+    USE m3d_patch_mod, only: converged
     class(atom_patch_t) :: self
     class(nbor_t), pointer:: nbor
     class(task_t), pointer:: nbtask
@@ -487,7 +494,7 @@ module atom_patch_mod
     real(8), dimension(:), pointer :: Gij, Gji
     real(4), dimension(:), pointer :: n, nstar
     real(8), dimension(:,:,:,:), target :: gamma_ij, gamma_ji
-    integer :: i, j, k, ii
+    integer :: i, j, k, ii, ipos
     integer :: cswitch=1
     integer, save :: itimer=0
     real(8) :: global
@@ -524,7 +531,8 @@ module atom_patch_mod
     end do
 
     global = global_maxerr%update(0.d0)
-    if (abs(global/self%maxerr-1) < 1e-5) then
+    ipos = global_pos%update(+0)
+    if (ipos == self%ipos(3)) then
       self%maxerr = maxval(abs(maxerr))
       call global_maxerr%reset(self%maxerr)
       epos = ep(:,maxloc(abs(maxerr),1))
@@ -532,7 +540,7 @@ module atom_patch_mod
       self%maxerr = maxval(abs(maxerr))
       if (self%maxerr > global) then
         call global_maxerr%reset(self%maxerr)
-        rank_maxerr   = self%rank
+        call global_pos%reset(self%ipos(3))
         epos = ep(:,maxloc(abs(maxerr),1))
       endif
     endif
@@ -696,6 +704,18 @@ module atom_patch_mod
   END FUNCTION check_in_bounds
 
   !===============================================================================
+  SUBROUTINE save_abundance_to_file (self)
+    class(atom_patch_t), target :: self
+    integer :: lunit, i
+    !-----------------------------------------------------------------------------
+    if (self%ipos(3)==0) then
+      open(newunit=lunit, file=trim(io%run_dir)//'abund.txt', form='FORMATTED', access='append')
+      write(lunit, '(A3, F8.4)') uppercase(self%atom%id, len(self%atom%id)), self%atom%abnd
+      close(lunit)
+    endif
+  END SUBROUTINE save_abundance_to_file
+
+  !===============================================================================
   !> Fast method to generate nbor lists in cases with very long task lists
   !===============================================================================
   SUBROUTINE init_nbors_hash (self, nbors)
@@ -751,4 +771,4 @@ module atom_patch_mod
     call trace%end (itimer)
   END SUBROUTINE init_nbors_hash
 
-  end module
+  END MODULE

@@ -1,4 +1,4 @@
-module back_line_patch_mod
+MODULE back_line_patch_mod
     USE os_mod
     USE list_mod
     USE halo_mod
@@ -349,4 +349,4 @@ module back_line_patch_mod
     call trace%end (itimer)
   END SUBROUTINE init_nbors_hash
 
-  end module
+  END MODULE

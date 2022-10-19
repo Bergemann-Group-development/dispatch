@@ -1,7 +1,7 @@
 program main
-    use composition_mod
-    use atom_mod
-    use op_math_mod
+    USE composition_mod
+    USE atom_mod
+    USE op_math_mod
 
     implicit none
 

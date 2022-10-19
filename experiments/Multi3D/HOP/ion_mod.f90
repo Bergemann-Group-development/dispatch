@@ -1,7 +1,7 @@
-module ion_mod
-    use prec_mod
-    use level_mod
-    use bbtrans_mod, only: bbtrans_type
+MODULE ion_mod
+    USE prec_mod
+    USE level_mod
+    USE bbtrans_mod, only: bbtrans_type
     implicit none
 
     type particle_type
@@ -244,4 +244,4 @@ pure FUNCTION irwin_poly (self, temp) result(u)
     end do
 END FUNCTION irwin_poly
 
-end module ion_mod
+END MODULE ion_mod

@@ -1,7 +1,7 @@
-module molecule_mod
-    use prec_mod
-    use op_math_mod
-    use ion_mod
+MODULE molecule_mod
+    USE prec_mod
+    USE op_math_mod
+    USE ion_mod
     implicit none
 
     type, extends(particle_type) :: molec_type
@@ -150,4 +150,4 @@ SUBROUTINE init_mol_dissociation (self)
         self%de = [       3.21 ]
     end select
 END SUBROUTINE init_mol_dissociation
-end module molecule_mod
+END MODULE molecule_mod

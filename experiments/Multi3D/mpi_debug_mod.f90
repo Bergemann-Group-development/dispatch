@@ -1,4 +1,4 @@
-module mpi_debug_mod
+MODULE mpi_debug_mod
   USE io_mod
   USE mpi_mod
   USE IFPORT
@@ -36,4 +36,4 @@ SUBROUTINE check_mpi_debug()
 
 END SUBROUTINE check_mpi_debug
     
-end module mpi_debug_mod
+END MODULE mpi_debug_mod

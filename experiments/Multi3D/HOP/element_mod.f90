@@ -1,7 +1,7 @@
-module element_mod
-    use prec_mod
-    use op_math_mod
-    use ion_mod
+MODULE element_mod
+    USE prec_mod
+    USE op_math_mod
+    USE ion_mod
     implicit none
     type isotope_type
         integer  :: iso
@@ -90,4 +90,4 @@ SUBROUTINE print_info(self, lunit, p)
     write(lunit, '(A,A,A,A)'), trim(info), anjon_string, saha_string, part_string
 END SUBROUTINE print_info
 
-end module element_mod
+END MODULE element_mod
