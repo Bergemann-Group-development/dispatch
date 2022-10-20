@@ -25,6 +25,7 @@ MODULE rad_patch_mod
   !USE scratch_mod
   USE m3d_patch_mod, only: m3d_patch_t, hash_string, comoving_frame
   USE ray_patch_mod, only: ray_patch_t, formal_solver
+  USE proj_patch_mod, only:interpolate_to_ray
   USE os_mod
   USE omp_mod
   USE omp_lock_mod
@@ -35,6 +36,7 @@ MODULE rad_patch_mod
   type, public, extends(ray_patch_t) :: rad_patch_t
     class(ray_patch_t), pointer :: opac => null()
     class(ray_patch_t), pointer :: back_opac => null()
+    class(rad_patch_t), pointer :: mean_rad => null()
     real(4), dimension(:,:,:,:), contiguous, pointer :: Inu, chi, Snu
     real(4), dimension(:,:,:,:), contiguous, pointer :: Psi, Ieff
     real(4), dimension(:,:,:,:), contiguous, pointer :: Inu_old
@@ -52,6 +54,7 @@ MODULE rad_patch_mod
     procedure :: bndries
     procedure :: periodic_plane
     procedure :: interp_long
+    procedure :: integrate_intensity
     !procedure :: interp_xy_up
     !procedure :: interp_xy_up_plane
     !procedure :: solve_long_plane
@@ -164,6 +167,9 @@ SUBROUTINE radiation_update (self)
         !call self%long_ray_update()
       else
         call self%short_ray_update()
+        if (comoving_frame) then
+          call self%integrate_intensity()
+        endif
       endif
     endif
   else
@@ -439,6 +445,62 @@ SUBROUTINE long_char_update (self)
 
   call trace%end(itimer)
 END SUBROUTINE long_char_update
+
+!===============================================================================
+SUBROUTINE integrate_intensity(self)
+  class(rad_patch_t), intent(in) :: self
+  class(nbor_t), pointer :: nbor
+  class(task_t), pointer :: nbtask
+  class(rad_patch_t), pointer :: mean
+  real(4), dimension(:,:,:), pointer :: vproj
+  real(4), dimension(:,:,:,:), pointer :: Jnu, Inu
+  real(8), dimension(:), pointer, contiguous :: nu_in, nu_out
+  real(4) :: wmu
+  integer :: f
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin('rad_patch_t%integrate_intensity', itimer=itimer)
+  nbor => self%link%nbor
+  do while (associated(nbor))
+    if (nbor%download) then
+      nbtask => nbor%task
+      select type (nbtask)
+      class is (rad_patch_t)
+        call nbtask%mem_lock(1)%set ('free_unused_memory')
+        call nbtask%deallocate_mem(self, print=.true.)
+        call nbtask%mem_lock(1)%unset ('free_unused_memory')
+      end select
+    endif
+    nbor => nbor%next
+  end do
+  mean => self%mean_rad
+  call mean%opac%mem_lock(1)%set('integrate_intensity')
+  if (.not. associated(mean%mem)) then
+    call mean%check_mem()
+    do f=1, self%nv
+      mean%mem(:,:,:,f,mean%it,1) = 0
+    end do
+    do f=1, self%nv
+      mean%Psi(:,:,:,f) = 0
+    end do
+  endif
+  call mean%mem_lock(1)%set('integrate_intensity')
+  call mean%opac%mem_lock(1)%unset('integrate_intensity')
+
+  call os%allocate(vproj, self%n)
+  call self%comp_vproj(vproj)
+  vproj = 1.0 + vproj
+  wmu = self%wmu * over_4pi
+  nu_in => mean%sp%nu(self%fs:self%fe)
+  nu_out => mean%sp%nu(mean%fs:mean%fe)
+  Jnu => mean%mem(:,:,:,:,mean%it,1)
+  Inu => self%authority_mem(:,:,:,:,self%it,1)
+
+  call interpolate_to_ray(vproj, nu_in, nu_out, Inu, Jnu, wmu)
+  call interpolate_to_ray(vproj, nu_in, nu_out, self%Psi, mean%Psi, wmu)
+  call mean%mem_lock(1)%unset('integrate_intensity')
+  call trace%end(itimer)
+END SUBROUTINE integrate_intensity
 
 !===============================================================================
 SUBROUTINE interp_long(self, Varin, Varup, up1, up2, kernel)

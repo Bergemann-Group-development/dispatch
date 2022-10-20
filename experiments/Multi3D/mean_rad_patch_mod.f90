@@ -72,38 +72,6 @@ MODULE mean_rad_patch_mod
     Jnu => self%mem(:,:,:,:,self%it,1)
 
     do f=1, self%nv
-      Jnu(:,:,:,f) = 0
-    end do
-    do f=1, self%nv
-      self%Psi(:,:,:,f) = 0
-    end do
-
-    nbor => self%link%nbor
-    do while (associated(nbor))
-      if (nbor%needed) then
-        nbtask => nbor%task
-        select type (nbtask)
-        class is (rad_patch_t)
-          call self%check_access(nbtask)
-          call nbtask%comp_vproj(vproj)
-          vproj = 1 * (1.0 + vproj)
-          wmu = nbtask%wmu * over_4pi
-          nu_in => self%sp%nu(nbtask%fs:nbtask%fe)
-
-          do iw=1, self%nw
-          do it=1, self%nt
-            Inu => nbtask%authority_mem(:,:,:,:,it,iw)
-            call interpolate_to_ray(vproj, nu_in, nu_out, Inu, Jnu, wmu)
-          end do
-          end do
-          
-          call interpolate_to_ray(vproj, nu_in, nu_out, nbtask%Psi,  self%Psi,  wmu)
-        end select
-      endif
-      nbor => nbor%next
-    end do
-
-    do f=1, self%nv
       xx => self%opac%mem(:,:,:,f,self%opac%it,self%opac%i_chi)
       self%Psi(:,:,:,f) = self%Psi(:,:,:,f) / xx
     end do

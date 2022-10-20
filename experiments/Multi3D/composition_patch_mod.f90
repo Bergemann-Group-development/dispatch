@@ -143,6 +143,7 @@ SUBROUTINE composition_pre_init (self)
       do m=1, self%n_omega
         allocate(rad)
         call rad%pre_init_and_link(self, i_mu=m, i_nu=n, sp=atom_patch%sp)
+        if (comoving_frame) rad%mean_rad => mean_rad
       end do
     end do
   else

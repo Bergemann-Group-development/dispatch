@@ -63,38 +63,15 @@ END SUBROUTINE pre_init
 !===============================================================================
 SUBROUTINE init (self)
   class(boundaries_t) :: self
-  ! ----------------------------------------------------------------------------
-  class(patch_t), pointer:: patch
-  integer:: iostat, condition=-1
-  logical, save:: first_time=.true.
-  namelist /boundary_params/ verbose, condition
   !-----------------------------------------------------------------------------
   call trace%begin('boundaries_t%init')
-  !.............................................................................
-  call io%lock%set('boundaries_t%init')
-  patch => self%patch
-  if (first_time) then
-    rewind (io%input)
-    read (io%input, boundary_params, iostat=iostat)
-    if (iostat > 0) then
-      rewind (io%input)
-      read (io%input, boundary_params)
-    end if
-    call io%namelist_warning ('boundary_params', iostat)
-    write (io%namelist, boundary_params)
-    first_time = .false.
-  end if
-  call io%lock%unset('boundaries_t%init')
-  if (.not. io%master) verbose=0
-
-  select case(patch%kind)
+  select case(self%patch%kind)
     case ('mhd_patch')
       self%boundary => mirror
       call self%standard_boundaries_t%init ()
     case default
       self%boundary => no_boundary
   end select
-
   call trace%end ()
 END SUBROUTINE init
 
