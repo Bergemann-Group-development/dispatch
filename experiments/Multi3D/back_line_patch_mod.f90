@@ -47,36 +47,21 @@ MODULE back_line_patch_mod
     !-----------------------------------------------------------------------------
 
     character(128), save :: exclude_elements=''
+    real(8), save :: dlam=0.5
   
   contains
 
   !===============================================================================
   SUBROUTINE back_line_patch_pre_init (self)
     class(back_line_patch_t), target :: self
-    integer :: i, nv, nw, iostat, lunit
-    logical, save :: first_time=.true.
-    real(8), save :: dlam=0.5
+    integer :: nv, nw
     integer, save :: itimer=0
-    namelist /linelist_params/ dlam, exclude_elements
     !---------------------------------------------------------------------------
     call trace%begin('back_line_t%pre_init', itimer=itimer)
     self%kind = 'back_line'
     call self%ray_patch_t%pre_init()
 
-    if (first_time) then
-      first_time = .false.
-      rewind (io%input)
-      read (io%input, linelist_params, iostat=iostat)
-      if (iostat > 0) then
-        rewind (io%input)
-        read (io%input, linelist_params)
-      end if
-      call io%namelist_warning ('linelist_params', iostat)
-      write (io%namelist, linelist_params)
-    endif
-
     self%dlam = dlam
-
     nw = 2
     nv = self%fe-self%fs+1
     call self%set_nv_and_nw (nv,nw)
@@ -116,16 +101,16 @@ MODULE back_line_patch_mod
     nu   => self%sp%nu(self%fs:self%fe)
     EK_over_temp => self%composition%EK_over_temp
 
-    call os%allocate(inv_df, self%n)
-    call os%allocate(iso_inv_df, self%n)
-    call os%allocate(tothi, self%n)
-    call os%allocate(adamp, self%n)
-    call os%allocate(inv_part, self%n)
-    call os%allocate(iso_inv_part, self%n)
-    call os%allocate(unsold_temp, self%n)
+    call os%allocate(inv_df,          self%n)
+    call os%allocate(iso_inv_df,      self%n)
+    call os%allocate(tothi,           self%n)
+    call os%allocate(adamp,           self%n)
+    call os%allocate(inv_part,        self%n)
+    call os%allocate(iso_inv_part,    self%n)
+    call os%allocate(unsold_temp,     self%n)
     call os%allocate(iso_unsold_temp, self%n)
-    call os%allocate(stark_pe, self%n)
-    call os%allocate(vproj, self%n)
+    call os%allocate(stark_pe,        self%n)
+    call os%allocate(vproj,           self%n)
 
     call self%comp_vproj(vproj)
     tothi = sum(nh(:,:,:,1:5), 4) ! total neutral hydrogen density
@@ -308,7 +293,7 @@ MODULE back_line_patch_mod
     class(task_t), pointer :: other
     logical :: default
     ! ----------------------------------------------------------------------------
-    call trace%begin ('lines_patch_t%nbor_relations')
+    call trace%begin ('atom_line_t%nbor_relations')
     call self%ray_patch_t%nbor_relations(another, needed, needs_me, download)
 
     if (needed .or. needs_me) then

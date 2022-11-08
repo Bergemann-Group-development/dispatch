@@ -402,10 +402,8 @@ SUBROUTINE from_source_stag (self, tgt, lt, ut, src, filled, all_src)
       j1=j1+1
     end if
   end do
-  allocate (idx_cent(j1))
-  allocate (idx_stag(j2))
-  call os%mem_register (storage_size(idx_stag), size(idx_stag), 'idx_stag')
-  call os%mem_register (storage_size(idx_cent), size(idx_cent), 'idx_cent')
+  call os%allocate(idx_cent, j1, 'idx_cent')
+  call os%allocate(idx_stag, j2, 'idx_stag')
   j1=1; j2=1
   do i1=1,src%nv
     if (stag(i1)) then
@@ -521,10 +519,8 @@ SUBROUTINE from_source_stag (self, tgt, lt, ut, src, filled, all_src)
   call os%deallocate (sp, 'sp')
   call os%deallocate (available, 'available')
   call os%deallocate (stag, 'stag')
-  call os%mem_register (storage_size(idx_stag), -size(idx_stag), 'idx_stag')
-  call os%mem_register (storage_size(idx_cent), -size(idx_cent), 'idx_cent')
-  deallocate (idx_stag)
-  deallocate (idx_cent)
+  call os%deallocate(idx_stag, 'idx_stag')
+  call os%deallocate(idx_cent, 'idx_cent')
   if (stag_vel .or. stag_B) then
     call os%deallocate (available_stag, 'avail_stag')
     call os%deallocate (p_stag, 'p_stag')
@@ -1490,11 +1486,8 @@ SUBROUTINE indices_stag (self, tgt, lt, ut, src, ps, available, d, e)
   ! Staggering offsets
   ! vector component | staggering
   !-----------------------------------------------------------------------------
-  allocate (dst(3,3), dss(3,3))
-  call os%mem_register (storage_size(dst), product(shape(dst)), 'dst')
-  call os%mem_register (storage_size(dss), product(shape(dss)), 'dss')
-  dst = 0
-  dss = 0
+  call os%allocate(dst, [3,3], 'dst', zero=.true.)
+  call os%allocate(dss, [3,3], 'dss', zero=.true.)
   ! ----------------------------------------------------------------------------
   ! Find any staggered index. We assume for now, that if there are more than one
   ! staggered quantity, the staggering is the same for all of them.
@@ -1567,10 +1560,9 @@ SUBROUTINE indices_stag (self, tgt, lt, ut, src, ps, available, d, e)
       end do
     end do
   end do
-  call os%deallocate (r, 'r')
-  call os%mem_register (storage_size(dst), -product(shape(dst)), 'dst')
-  call os%mem_register (storage_size(dss), -product(shape(dss)), 'dss')
-  deallocate (dst, dss)
+  call os%deallocate(r, 'r')
+  call os%deallocate(dst, 'dst')
+  call os%deallocate(dss, 'dss')
   if (detailed_timer) call trace%end (itimer)
 END SUBROUTINE indices_stag
 
@@ -1936,11 +1928,8 @@ SUBROUTINE in_x (tgt, lt, ut, src, ls, us, om, in, out, all, only, lock)
   !-----------------------------------------------------------------------------
   ! Staggering offsets
   !-----------------------------------------------------------------------------
-  allocate (dst(tgt%mv), dss(src%mv))
-  call os%mem_register (storage_size(dst), product(shape(dst)), 'dst')
-  call os%mem_register (storage_size(dss), product(shape(dss)), 'dss')
-  dst = 0
-  dss = 0
+  call os%allocate(dst, tgt%mv, 'dst', zero=.true.)
+  call os%allocate(dss, src%mv, 'dss', zero=.true.)
   dst(1:tgt%nv) = tgt%mesh(1)%h*tgt%mesh(1)%d
   dss(1:tgt%nv) = src%mesh(1)%h*src%mesh(1)%d
   !-----------------------------------------------------------------------------
@@ -2116,9 +2105,8 @@ SUBROUTINE in_x (tgt, lt, ut, src, ls, us, om, in, out, all, only, lock)
   !.............................................................................
   ls = l
   us = u
-  call os%mem_register (storage_size(dst), -product(shape(dst)), 'dst')
-  call os%mem_register (storage_size(dss), -product(shape(dss)), 'dss')
-  deallocate (dst, dss)
+  call os%deallocate(dst, 'dst')
+  call os%deallocate(dss, 'dss')
   if (detailed_timer) call trace%end (itimer)
 END SUBROUTINE in_x
 
@@ -2152,11 +2140,8 @@ SUBROUTINE in_y (tgt, lt, ut, src, ls, us, om, in, out, all, only, lock)
   !-----------------------------------------------------------------------------
   ! Staggering offsets
   !-----------------------------------------------------------------------------
-  allocate (dst(tgt%mv), dss(src%mv))
-  call os%mem_register (storage_size(dst), product(shape(dst)), 'dst')
-  call os%mem_register (storage_size(dss), product(shape(dss)), 'dss')
-  dst = 0
-  dss = 0
+  call os%allocate(dst, tgt%mv, 'dst', zero=.true.)
+  call os%allocate(dss, src%mv, 'dss', zero=.true.)
   dst(1:tgt%nv) = tgt%mesh(2)%h*tgt%mesh(2)%d
   dss(1:tgt%nv) = src%mesh(2)%h*src%mesh(2)%d
   !-----------------------------------------------------------------------------
@@ -2338,9 +2323,8 @@ SUBROUTINE in_y (tgt, lt, ut, src, ls, us, om, in, out, all, only, lock)
   !.............................................................................
   ls = l
   us = u
-  call os%mem_register (storage_size(dst), -product(shape(dst)), 'dst')
-  call os%mem_register (storage_size(dss), -product(shape(dss)), 'dss')
-  deallocate (dst, dss)
+  call os%deallocate(dst, 'dst')
+  call os%deallocate(dss, 'dss')
   if (detailed_timer) call trace%end (itimer)
 END SUBROUTINE in_y
 
@@ -2374,11 +2358,8 @@ SUBROUTINE in_z (tgt, lt, ut, src, ls, us, om, in, out, all, only, lock)
   !-----------------------------------------------------------------------------
   ! Staggering offsets
   !-----------------------------------------------------------------------------
-  allocate (dst(tgt%mv), dss(src%mv))
-  call os%mem_register (storage_size(dst), product(shape(dst)), 'dst')
-  call os%mem_register (storage_size(dss), product(shape(dss)), 'dss')
-  dst = 0
-  dss = 0
+  call os%allocate(dst, tgt%mv, 'dst', zero=.true.)
+  call os%allocate(dss, src%mv, 'dss', zero=.true.)
   dst(1:tgt%nv) = tgt%mesh(3)%h*tgt%mesh(3)%d
   dss(1:tgt%nv) = src%mesh(3)%h*src%mesh(3)%d
   !-----------------------------------------------------------------------------
@@ -2556,9 +2537,8 @@ SUBROUTINE in_z (tgt, lt, ut, src, ls, us, om, in, out, all, only, lock)
   !-----------------------------------------------------------------------------
   ls = l
   us = u
-  call os%mem_register (storage_size(dst), -product(shape(dst)), 'dst')
-  call os%mem_register (storage_size(dss), -product(shape(dss)), 'dss')
-  deallocate (dst, dss)
+  call os%deallocate(dst, 'dst')
+  call os%deallocate(dss, 'dss')
   if (detailed_timer) call trace%end (itimer)
 END SUBROUTINE in_z
 

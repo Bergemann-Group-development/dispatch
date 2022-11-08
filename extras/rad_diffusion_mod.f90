@@ -3,6 +3,7 @@
 !===============================================================================
 MODULE rad_diffusion_mod
   USE io_mod
+  USE os_mod
   USE link_mod
   USE gpatch_mod
   USE mesh_mod
@@ -100,7 +101,7 @@ SUBROUTINE pre_update (self)
   ! Allocate scratches
   ! ----------------------------------------------------------------------------  
   n=self%patch%mesh%gn
-  call scratch%allocate (scratch%heating_per_unit_volume, self%patch%mesh%gn)
+  call os%allocate (scratch%heating_per_unit_volume, self%patch%mesh%gn)
   Q => scratch%heating_per_unit_volume
   allocate(kr(n(1),n(2),n(3)))
   allocate(kp(n(1),n(2),n(3)))

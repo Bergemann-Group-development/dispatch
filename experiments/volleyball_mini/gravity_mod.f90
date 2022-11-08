@@ -6,6 +6,7 @@ MODULE gravity_mod
   USE units_mod
   USE scaling_mod
   USE io_mod
+  USE os_mod
   USE kinds_mod
   USE trace_mod
   USE bits_mod
@@ -115,7 +116,7 @@ SUBROUTINE const_grav(self)
   ! ----------------------------------------------------------------------------
   nn(1:3)=self%patch%mesh%gn
   nn(4) = 3
-  call scratch%allocate (scratch%force_per_unit_mass, nn)
+  call os%allocate (scratch%force_per_unit_mass, nn)
   scratch%force_per_unit_mass(:,:,:,self%axis) = &
   scratch%force_per_unit_mass(:,:,:,self%axis) + self%const_grav
 END SUBROUTINE const_grav
@@ -133,7 +134,7 @@ SUBROUTINE var_grav(self)
   newton = self%mass*scaling%grav
   nn(1:3)=self%patch%mesh%gn
   nn(4) = 3
-  call scratch%allocate (scratch%force_per_unit_mass, nn)
+  call os%allocate (scratch%force_per_unit_mass, nn)
   associate (m=>self%patch%mesh)
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do i=1,3
@@ -184,7 +185,7 @@ SUBROUTINE table_grav(self)
   ! ............................................................................
   nn(1:3)=self%patch%mesh%gn
   nn(4) = 3
-  call scratch%allocate (scratch%force_per_unit_mass, nn)
+  call os%allocate (scratch%force_per_unit_mass, nn)
   scratch%force_per_unit_mass=scratch%force_per_unit_mass+self%vector_field
   gz=> self%vector_field(:,:,:,3)
   call self%patch%aux%register('grav',gz)

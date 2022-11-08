@@ -3,6 +3,7 @@
 !===============================================================================
 MODULE experiment_mod
   USE io_mod
+  USE os_mod
   USE trace_mod
   USE timer_mod
   USE solver_mod
@@ -128,7 +129,7 @@ SUBROUTINE update (self)
   ! Allocate (first time) and reset the force per unit mass -- extras may add
   ! through the call to solver_t%pre_update()
   !-----------------------------------------------------------------------------
-  call scratch%allocate (scratch%force_per_unit_mass, [self%gn,3])
+  call os%allocate (scratch%force_per_unit_mass, [self%gn,3])
   scratch%force_per_unit_mass = 0.0
   self%particle_solver%v_patch => self%v_patch
   if (self%id==1) &
@@ -462,7 +463,7 @@ SUBROUTINE force (self)
   if (self%kind(1:7) /= 'ramses_') then
     call io%abort('experiment_t%force')
   end if
-  call scratch%allocate (scratch%force_per_unit_mass, [m,m,m,3])
+  call os%allocate (scratch%force_per_unit_mass, [m,m,m,3])
   !-----------------------------------------------------------------------------
   ! Compute the centripetal force and add to the force of gravity.  If the
   ! local velocity field is zero v_cart becomes equal to the self%v_patch

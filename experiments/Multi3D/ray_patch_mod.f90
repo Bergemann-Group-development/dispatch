@@ -109,9 +109,10 @@ SUBROUTINE ray_patch_init (self)
   ! ----------------------------------------------------------------------------
   if (comoving_frame .and. .not. self%out_ray) then
     select case (self%kind)
-    case ('back_opac', 'back_line', 'cont_opac', 'net_opac')
+    case ('atom_line')
+      ! frequency padding for atom_linees is done in atom_line%init
+    case ('back_cont', 'back_line', 'atom_cont', 'net_opac', 'mean_rad')
       call self%frequency_padding()
-    ! frequency padding for lines_patches is done in lines_patch%init
     end select
   endif
   if (self%is_set(bits%virtual)) then
@@ -594,7 +595,7 @@ SUBROUTINE allocate_mesg (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('ray_patch_t%allocate_mesg')
   allocate (mesg)
-  call io%bits_mem (storage_size(mesg), 1)
+  call os%mem_register (storage_size(mesg), 1)
   if (self%is_set(bits%boundary) .and. associated(self%mesg)) then
     if (self%mesg%id /= self%id .and. self%mesg%id > 0) then
       write (stdlog,*) &

@@ -1,4 +1,4 @@
-MODULE lines_patch_mod
+MODULE atom_line_patch_mod
     USE os_mod
     USE list_mod
     USE halo_mod
@@ -29,18 +29,18 @@ MODULE lines_patch_mod
   
     !-----------------------------------------------------------------------------
   
-    type, public, extends(ray_patch_t) :: lines_patch_t
+    type, public, extends(ray_patch_t) :: atom_line_t
       class(atom_type), pointer :: atom
       type(line_type), dimension(:), contiguous, pointer :: line
       real(4), dimension(:,:,:), contiguous, pointer :: doppler_factor
       integer, dimension(:), contiguous, pointer :: idx_map
       integer :: nline, ired, iblue
     contains
-      procedure :: pre_init => lines_patch_pre_init
-      procedure :: init => lines_patch_init
-      procedure :: update => lines_patch_update
-      procedure :: deallocate_mem => lines_patch_deallocate_mem
-      procedure :: nbor_relations => lines_patch_nbor_relations
+      procedure :: pre_init => atom_line_pre_init
+      procedure :: init => atom_line_init
+      procedure :: update => atom_line_update
+      procedure :: deallocate_mem => atom_line_deallocate_mem
+      procedure :: nbor_relations => atom_line_nbor_relations
       procedure :: create_line_indices
       procedure :: create_line_frequencies
       procedure :: interpolate_lines
@@ -48,30 +48,30 @@ MODULE lines_patch_mod
       procedure :: check_in_bounds
       procedure :: integrate_wphi
       procedure :: init_nbors_hash
-    end type lines_patch_t
+    end type atom_line_t
 
     !-----------------------------------------------------------------------------
   
   contains
 
   !===============================================================================
-  SUBROUTINE lines_patch_pre_init (self)
-    class(lines_patch_t), target :: self
+  SUBROUTINE atom_line_pre_init (self)
+    class(atom_line_t), target :: self
     class(line_type), pointer :: line
     integer :: i
     integer, save :: itimer=0
     !---------------------------------------------------------------------------
-    call trace%begin('lines_patch_t%pre_init', itimer=itimer)
-    self%kind = 'lines_patch'
+    call trace%begin('atom_line_t%pre_init', itimer=itimer)
+    self%kind = 'atom_line'
     call self%ray_patch_t%pre_init()
     self%ng = 0
     call self%post_pre_init()
     call trace%end(itimer)
-  END SUBROUTINE lines_patch_pre_init
+  END SUBROUTINE atom_line_pre_init
 
   !===============================================================================
-  SUBROUTINE lines_patch_init (self)
-    class(lines_patch_t) :: self
+  SUBROUTINE atom_line_init (self)
+    class(atom_line_t) :: self
     class(line_type), pointer :: line
     integer :: i, fs, fe, nv
     !---------------------------------------------------------------------------
@@ -98,11 +98,11 @@ MODULE lines_patch_mod
       fs = fe + 1
     end do
     self%print_update_info = self%check_in_bounds()
-  END SUBROUTINE lines_patch_init
+  END SUBROUTINE atom_line_init
 
   !===============================================================================
   SUBROUTINE create_line_indices (self)
-    class(lines_patch_t) :: self
+    class(atom_line_t) :: self
     class(line_type), pointer :: line
     integer :: i, nline, fs, fe, idx
     logical :: skip
@@ -134,7 +134,7 @@ MODULE lines_patch_mod
 
   !===============================================================================
   SUBROUTINE create_line_frequencies (self)
-    class(lines_patch_t) :: self
+    class(atom_line_t) :: self
     class(line_type), pointer :: line
     integer :: i, f, fs, fe
     real(8) :: nus, nue
@@ -177,8 +177,8 @@ MODULE lines_patch_mod
   END SUBROUTINE create_line_frequencies
 
   !===============================================================================
-  SUBROUTINE lines_patch_update (self)
-    class(lines_patch_t) :: self
+  SUBROUTINE atom_line_update (self)
+    class(atom_line_t) :: self
     class(line_type), pointer :: line
     real(4), dimension(:,:,:), pointer, contiguous :: tothi, ne, temp, adamp, doppler_factor
     real(4), dimension(:,:,:), pointer, contiguous :: inv_df, ni, nj, unsold_temp, stark_pe, vproj
@@ -189,7 +189,7 @@ MODULE lines_patch_mod
     integer, save:: itimer=0
     !-----------------------------------------------------------------------------
     if (self%is_finished()) return
-    call trace%begin('lines_patch_t%lines_patch_update', itimer=itimer)
+    call trace%begin('atom_line_t%atom_line_update', itimer=itimer)
 
     call self%check_access(self%m3d_parent%m3d_parent)
     ne   => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_ne,            self%it,1)
@@ -247,11 +247,11 @@ MODULE lines_patch_mod
     endif
     call self%post_update()
     call trace%end(itimer)
-  END SUBROUTINE lines_patch_update
+  END SUBROUTINE atom_line_update
 
   !===============================================================================
   SUBROUTINE integrate_wphi (self)
-    class(lines_patch_t) :: self
+    class(atom_line_t) :: self
     class(line_type), pointer :: line
     integer :: i, k
     !-----------------------------------------------------------------------------
@@ -270,7 +270,7 @@ MODULE lines_patch_mod
 
   !===============================================================================
   SUBROUTINE interpolate_lines (self, chi, eta)
-    class(lines_patch_t) :: self
+    class(atom_line_t) :: self
     class(line_type), pointer :: line
     real(4), dimension(:,:,:,:), intent(inout) :: chi, eta
     real(8), dimension(:), contiguous, pointer :: hnu_4pi, nu, q
@@ -339,15 +339,15 @@ MODULE lines_patch_mod
   END SUBROUTINE interpolate_lines
 
   !===============================================================================
-  SUBROUTINE lines_patch_nbor_relations(self, another, needed, needs_me, download)
-    class(lines_patch_t) :: self
+  SUBROUTINE atom_line_nbor_relations(self, another, needed, needs_me, download)
+    class(atom_line_t) :: self
     class(task_t), pointer :: another        ! another task in the list
     logical :: needed, needs_me, download    ! Is the other task: needed, 
                                             ! does it need me, should I download?
     class(task_t), pointer :: other
     logical :: default
     ! ----------------------------------------------------------------------------
-    call trace%begin ('lines_patch_t%nbor_relations')
+    call trace%begin ('atom_line_t%nbor_relations')
     call self%ray_patch_t%nbor_relations(another, needed, needs_me, download)
 
     if (needed .or. needs_me) then
@@ -357,7 +357,7 @@ MODULE lines_patch_mod
           needs_me = .false.
         elseif (another%kind == 'net_opac') then
           needed = .false.
-        elseif(another%kind == 'rate_patch') then
+        elseif(another%kind == 'atom_rate') then
           needed = .false.
         else
           needed = .false.; needs_me = .false.
@@ -367,11 +367,11 @@ MODULE lines_patch_mod
       end select
     endif
     call trace%end()
-  END SUBROUTINE lines_patch_nbor_relations
+  END SUBROUTINE atom_line_nbor_relations
 
   !===============================================================================
-  SUBROUTINE lines_patch_deallocate_mem(self, deallocator, print)
-    class(lines_patch_t) :: self
+  SUBROUTINE atom_line_deallocate_mem(self, deallocator, print)
+    class(atom_line_t) :: self
     class(m3d_patch_t), intent(in), target :: deallocator
     logical, optional :: print
     ! ----------------------------------------------------------------------------
@@ -380,11 +380,11 @@ MODULE lines_patch_mod
       if (associated(self%line)) deallocate(self%line)
       if (associated(self%idx_map)) call os%deallocate(self%idx_map)
     endif    
-  END SUBROUTINE lines_patch_deallocate_mem
+  END SUBROUTINE atom_line_deallocate_mem
 
   !===============================================================================
   SUBROUTINE print_post_update_info (self)
-    class(lines_patch_t) :: self
+    class(atom_line_t) :: self
     real(8), dimension(:), contiguous, pointer :: nu
     real(4), dimension(:,:,:,:), contiguous, pointer :: phi
     integer :: p(3), i
@@ -400,7 +400,7 @@ MODULE lines_patch_mod
   
   !===============================================================================
   FUNCTION check_in_bounds (self) result (cib)
-    class(lines_patch_t) :: self
+    class(atom_line_t) :: self
     integer :: i, fs, fe
     logical :: skip, cib
     !-----------------------------------------------------------------------------+
@@ -424,7 +424,7 @@ MODULE lines_patch_mod
 
   !===============================================================================
   SUBROUTINE init_nbors_hash (self, nbors)
-    class(lines_patch_t):: self
+    class(atom_line_t):: self
     class(nbor_t), pointer:: nbors
     !.............................................................................
     class(task_t), pointer:: task
@@ -432,14 +432,14 @@ MODULE lines_patch_mod
     integer, save:: itimer=0
     integer :: i, key(4)
     !-----------------------------------------------------------------------------
-    call trace%begin('lines_patch_t%init_nbors_hash', itimer=itimer)
+    call trace%begin('atom_line_t%init_nbors_hash', itimer=itimer)
     call self%m3d_patch_t%init_nbors_hash(nbors)
 
     key(1:3) = self%key(1:3)
     key(4) = hash_string('net_opac')
     call self%check_nbor(key, nbors)
 
-    key(4) = hash_string('rate_patch')
+    key(4) = hash_string('atom_rate')
     call self%check_nbor(key, nbors)
     call trace%end (itimer)
   END SUBROUTINE init_nbors_hash

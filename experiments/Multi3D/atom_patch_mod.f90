@@ -20,9 +20,9 @@ MODULE atom_patch_mod
     USE bits_mod
     !USE units_mod
     !USE scratch_mod
-    USE cont_opac_patch_mod, only: cont_opac_patch_t
-    USE rad_patch_mod, only: rad_patch_t
-    USE rate_patch_mod, only: rate_patch_t
+    USE atom_cont_patch_mod, only: atom_cont_patch_t
+    USE angle_rad_patch_mod, only: rad_patch_t
+    USE atom_rate_patch_mod, only: atom_rate_t
     USE atom_mod, only: atom_type, atomic_spectrum_type
     USE trans_mod, only: line_type
     USE mconst, only: CC
@@ -30,10 +30,10 @@ MODULE atom_patch_mod
     USE element_mod, only: element_type
     USE bbtrans_mod, only: bbtrans_type
     USE composition_mod, only: composition_type
-    USE m3d_patch_mod, only: m3d_patch_t, maxiter, ilambd, check_NaN, &
+    USE m3d_patch_mod, only: m3d_patch_t, maxiter, check_NaN, recl, &
     global_maxerr, convlim, atom_update_counter, hash_string, comoving_frame, global_pos
     USE bftrans_mod, only: bftrans_type
-    USE lines_patch_mod, only:lines_patch_t
+    USE atom_line_patch_mod, only:atom_line_t
     USE net_opac_patch_mod, only:net_opac_t
     implicit none
   
@@ -45,6 +45,7 @@ MODULE atom_patch_mod
       class(composition_type), pointer :: composition
       class(atomic_spectrum_type), pointer :: output_sp
       real(8) :: maxerr=huge(1.0)
+      real(8), dimension(:), allocatable :: lvlerr
       logical :: update_skipped=.false., atom_allocated=.false.
     contains
       procedure :: pre_init => atom_patch_pre_init
@@ -63,7 +64,7 @@ MODULE atom_patch_mod
       procedure :: init_nbors_hash
     end type atom_patch_t
 
-    integer, save :: epos(3)
+    integer, save :: epos(3), elvl
     logical, save :: level_partf=.true.
 
     !-----------------------------------------------------------------------------
@@ -73,9 +74,9 @@ MODULE atom_patch_mod
   !===============================================================================
   SUBROUTINE atom_patch_pre_init (self)
     class(atom_patch_t), target:: self
-    class(rate_patch_t), pointer :: rate
-    class(cont_opac_patch_t), pointer :: cont
-    class(lines_patch_t), pointer :: lines
+    class(atom_rate_t), pointer :: rate
+    class(atom_cont_patch_t), pointer :: cont
+    class(atom_line_t), pointer :: lines
     integer :: m, n, m2, n2
     integer, save :: itimer=0
     ! ----------------------------------------------------------------------------
@@ -150,13 +151,12 @@ MODULE atom_patch_mod
     character(len=256) :: command
     real(8), save :: qnorm=10.0, logf_cut = -99.9, red_cut=huge(1.0), blue_cut=tiny(1.0)
     real(8), save :: abundance=-99.9
-    integer :: iostat, lunit
-    integer, save:: verbose=0
+    integer :: iostat
     integer, save :: itimer=0, itimer1=0, n_in_lines=0
     logical, save :: exclude_trace_cont=.true., use_atom_abnd=.true., second_sp=.false.
     logical, save :: exclude_from_line_list=.true.
     integer, save, allocatable :: in_lines(:)
-    namelist /atom_params/ atom_file, qnorm, convlim, verbose, exclude_trace_cont, level_partf, &
+    namelist /atom_params/ atom_file, qnorm, convlim, exclude_trace_cont, level_partf, &
     use_atom_abnd, logf_cut, red_cut, blue_cut, n_in_lines, abundance, exclude_from_line_list
     namelist /line_mask/ in_lines
     !-----------------------------------------------------------------------------
@@ -188,10 +188,7 @@ MODULE atom_patch_mod
         write (io%namelist, line_mask)
       endif
 
-      !close(lunit)
-
-      sp%verbose = verbose
-      if (verbose) write (*,*) ' - Reading atom'
+      write (*,*) ' - Reading atom'
       call atom%read(atom_file, qnorm, logf_cut=logf_cut, red_cut=red_cut, &
       blue_cut=blue_cut, in_lines=in_lines)
       if (abundance > -99) atom%abnd = abundance
@@ -260,6 +257,7 @@ MODULE atom_patch_mod
     allocate(atom%C(atom%nlevel, atom%nlevel))
     allocate(atom%W(atom%nlevel, atom%nlevel))
     allocate(atom%e(atom%nlevel))
+    allocate(self%lvlerr(atom%nlevel))
 
     ne   => self%m3d_parent%mem(:,:,:,self%i_ne,            self%it,1)
     temp => self%m3d_parent%mem(:,:,:,self%i_temp,          self%it,1)
@@ -286,6 +284,8 @@ MODULE atom_patch_mod
     do i=1,atom%ncont
       self%output_atom%cont(i)%ni_over_nj_lte => atom%cont(i)%ni_over_nj_lte
     enddo
+    
+    recl = max(recl, kind(self%mem)*product(shape(self%authority_mem)))
     call trace%end(itimer)
   END SUBROUTINE init_atom
 
@@ -305,29 +305,9 @@ MODULE atom_patch_mod
 
     if (self%iter == 0) then
       call self%init_atom()
-      self%dtime = self%dtime + self%dtime*ilambd
-
-      nbor => self%link%nbor
-      do while (associated(nbor))
-        nbtask => nbor%task
-        select type(nbtask)
-        class is (rate_patch_t)
-          nbtask%time = nbtask%time + nbtask%dtime*ilambd
-        end select
-        nbor => nbor%next
-      end do
     else
       if (self%iter == 1) then
         self%dtime = self%dt_fixed
-        nbor => self%link%nbor
-        do while (associated(nbor))
-          nbtask => nbor%task
-          select type(nbtask)
-          class is (cont_opac_patch_t)
-            nbtask%dtime = nbtask%dt_fixed
-          end select
-          nbor => nbor%next
-        end do
 
         ! Normalize wphi
         do i=1, self%atom%nline
@@ -392,7 +372,7 @@ MODULE atom_patch_mod
     elseif (self%m3d_patch_t%check_in_bounds()) then
       i = self%lvlcheck
       p = self%pcheck
-      arr(1) = self%atom%abnd
+      arr(1) = self%lvlerr(i)
       arr(2) = self%atom%n(p(1),p(2),p(3),i)
       arr(3) = self%atom%totn(p(1),p(2),p(3))
       arr(4) = 10.0**(self%atom%abnd-12.0)*self%composition%toth(p(1),p(2),p(3))
@@ -402,8 +382,8 @@ MODULE atom_patch_mod
     endif
     global = global_maxerr%update(0.d0)
     ipos = global_pos%update(+0)
-    write(stdout,'(A19, ES19.7, A10, ES15.7, A9, I2, 2X, 3I4)') 'local err =', self%maxerr, &
-      ', global =', global, ', ipos = ', ipos+1, epos
+    write(stdout,'(A19, ES19.7, A10, ES15.7, A9, I2, 2X, 4I4)') 'local err =', self%maxerr, &
+      ', global =', global, ', ipos = ', ipos+1, elvl, epos
     write(stdout,'(1X, A80)') &
     '................................................................................'
   END SUBROUTINE print_post_update_info
@@ -421,7 +401,7 @@ MODULE atom_patch_mod
     do while (associated(nbor))
       nbtask => nbor%task
       select type(nbtask)
-      class is (rate_patch_t)
+      class is (atom_rate_t)
         if (.not. nbtask%out_ray) then
           time = min(time, nbtask%rad%time)
         endif
@@ -457,7 +437,7 @@ MODULE atom_patch_mod
     call trace%begin('atom_patch_t%atom_patch_finish')
     call self%m3d_patch_t%finish()
     if (self%iter < self%maxiter) converged = .true.
-    call self%output()
+    !call self%output()
 
     nbor => self%link%nbor
     do while (associated(nbor))
@@ -465,14 +445,16 @@ MODULE atom_patch_mod
         nbtask => nbor%task
         select type(nbtask)
         class is (m3d_patch_t)
-          if (.not. nbtask%out_ray) then
-            if (.not. nbtask%finished) then
-              call nbtask%finish()
-              call nbtask%free_unused_memory()
-            elseif (.not. nbtask%static_mem) then
-              call nbtask%mem_lock(1)%set ('atom_patch_finish')
-              call nbtask%deallocate_mem(self, print=.true.)
-              call nbtask%mem_lock(1)%unset ('atom_patch_finish')
+          if (.not. nbtask%out_ray .and. associated(nbtask%m3d_parent)) then
+            if (nbtask%m3d_parent%id == self%id) then
+              if (.not. nbtask%finished) then
+                call nbtask%finish()
+                call nbtask%free_unused_memory()
+              elseif (.not. nbtask%static_mem) then
+                call nbtask%mem_lock(1)%set ('atom_patch_finish')
+                call nbtask%deallocate_mem(self, print=.true.)
+                call nbtask%mem_lock(1)%unset ('atom_patch_finish')
+              endif
             endif
           endif
         end select
@@ -487,21 +469,21 @@ MODULE atom_patch_mod
   SUBROUTINE update_populations (self, gamma_ij, gamma_ji)
     class(atom_patch_t), target :: self
     class(atom_type), pointer :: atom
-    integer, dimension(3, self%atom%nlevel) :: ep
-    real(8), dimension(self%atom%nlevel) :: maxerr
+    integer, dimension(3) :: ep
     real(4), pointer :: temp, ne, totn
     real(4), dimension(:), pointer :: nh
     real(8), dimension(:), pointer :: Gij, Gji
     real(4), dimension(:), pointer :: n, nstar
     real(8), dimension(:,:,:,:), target :: gamma_ij, gamma_ji
-    integer :: i, j, k, ii, ipos
+    integer :: i, j, k, ii, ipos, il
     integer :: cswitch=1
     integer, save :: itimer=0
     real(8) :: global
     ! ----------------------------------------------------------------------------
     call trace%begin('atom_patch_t%update_populations', itimer=itimer)
     atom => self%atom
-    maxerr = 0.0d0
+    self%lvlerr = 0.0d0
+    self%maxerr = 0.0d0
 
     do k=1, self%n(3)
       do j=1, self%n(2)
@@ -519,11 +501,13 @@ MODULE atom_patch_mod
 
           ! keep track of maximum population change
           do ii=1,atom%nlevel
-            if (abs(atom%e(ii)) > maxerr(ii)) then
-                maxerr(ii) = atom%e(ii)
-                ep(1,ii) = i  
-                ep(2,ii) = j 
-                ep(3,ii) = k
+            if (abs(atom%e(ii)) > self%lvlerr(ii)) then
+                self%lvlerr(ii) = abs(atom%e(ii))
+                if (self%lvlerr(ii) > self%maxerr) then
+                  self%maxerr = self%lvlerr(ii)
+                  ep = [i, j, k + self%zs - 1]
+                  il = ii
+                endif
             end if
           end do
         end do
@@ -532,17 +516,11 @@ MODULE atom_patch_mod
 
     global = global_maxerr%update(0.d0)
     ipos = global_pos%update(+0)
-    if (ipos == self%ipos(3)) then
-      self%maxerr = maxval(abs(maxerr))
+    if (ipos == self%ipos(3) .or. self%maxerr > global) then
+      if (ipos /= self%ipos(3)) call global_pos%reset(self%ipos(3))
       call global_maxerr%reset(self%maxerr)
-      epos = ep(:,maxloc(abs(maxerr),1))
-    else
-      self%maxerr = maxval(abs(maxerr))
-      if (self%maxerr > global) then
-        call global_maxerr%reset(self%maxerr)
-        call global_pos%reset(self%ipos(3))
-        epos = ep(:,maxloc(abs(maxerr),1))
-      endif
+      epos = ep
+      elvl = il
     endif
     call trace%end(itimer)
   END SUBROUTINE update_populations
@@ -634,7 +612,7 @@ MODULE atom_patch_mod
   
     if (needed .or. needs_me) then
       select type (another)
-      class is (lines_patch_t)
+      class is (atom_line_t)
         needed = .false.
         if (associated(another%atom)) then
           if (another%atom%id /= self%atom%id) then
@@ -643,12 +621,12 @@ MODULE atom_patch_mod
         else
           needs_me = .false.
         endif
-      class is (cont_opac_patch_t)
+      class is (atom_cont_patch_t)
         needed = .false.
         if (another%atom%id /= self%atom%id) then
           needs_me = .false.
         endif
-      class is (rate_patch_t)
+      class is (atom_rate_t)
         if (another%atom%id /= self%atom%id) then
           needed = .false.; needs_me = .false.
         endif
@@ -736,17 +714,17 @@ MODULE atom_patch_mod
       do i_mu=0, self%n_omega
         key(3) = i_mu
         if (i_mu == 0) then
-          key(4) = hash_string('cont_opac')
+          key(4) = hash_string('atom_cont')
           call self%check_nbor(key, nbors)
         endif
         if (comoving_frame .or. i_mu > 0) then
-          key(4) = hash_string('lines_patch')
+          key(4) = hash_string('atom_line')
           call self%check_nbor(key, nbors)
 
           key(4) = hash_string('net_opac')
           call self%check_nbor(key, nbors)
 
-          key(4) = hash_string('rate_patch')
+          key(4) = hash_string('atom_rate')
           call self%check_nbor(key, nbors)
         endif
       end do
@@ -756,11 +734,11 @@ MODULE atom_patch_mod
       do i=0, self%n_out
         if (i == 0) then
           key(3) = 0
-          key(4) = hash_string('cont_opac')
+          key(4) = hash_string('atom_cont')
           call self%check_nbor(key, nbors)
         else
           key(3) = i + self%n_omega
-          key(4) = hash_string('lines_patch')
+          key(4) = hash_string('atom_line')
           call self%check_nbor(key, nbors)
 
           key(4) = hash_string('net_opac')

@@ -91,7 +91,7 @@ contains
 
         106 FORMAT(4(F10.3,F10.4))
         107 FORMAT(I10,5I5)
-
+        call os%check_file(absdat_file)
         open(file=absdat_file, newunit=absdat)
 
         read(absdat, *) self%nel
@@ -114,6 +114,7 @@ contains
             endif
         end do
 
+        call os%check_file(abund_file)
         open(file=abund_file, newunit=lunit, iostat=iostat)
         do while (iostat==0)
             read(lunit, *, iostat=iostat) id, abund
@@ -434,6 +435,8 @@ contains
         endif
 
         if (present(isotope_file)) then
+          if (isotope_file /= '') then
+            call os%check_file(isotope_file)
             open(file=isotope_file, newunit=lunit)
             read(lunit, *, iostat=iostat) text
             do while (iostat==0)
@@ -453,6 +456,7 @@ contains
                 read(lunit, *, iostat=iostat) text
             end do
             close(lunit)
+          endif
         endif
 
         self%initialised = .true.
@@ -477,8 +481,10 @@ contains
         integer :: lunit, iostat, j, nline, i, prev, iso_id, ntotal=0, iso_idx
         logical :: isotope, ok
         !-----------------------------------------------------------------------------
-        if (linelist_file == '') return
+        if (linelist_file == '' .and. .not. self%ll_initialised) return
+        self%ll_initialised = .true.
 
+        call os%check_file(linelist_file)
         open(newunit=lunit, file=linelist_file, iostat=iostat)
         do while (iostat==0)
             read(lunit,*,iostat=iostat) mass_id, j, nline
@@ -575,7 +581,6 @@ contains
         end do
         close(lunit)
         print *, ntotal, ' lines read from linelist ', linelist_file
-        self%ll_initialised = .true.
     END SUBROUTINE init_linelist
 
     !===============================================================================
@@ -980,13 +985,13 @@ contains
         !---------------------------------------------------------------------------
         nf = size(nu, 1)
         if (present(Jnu) .and. present(sumsca)) then
-            do f=1, nf
-                eta(:,:,:,f) = real((abslte(:,:,:,f)*planck(nu(f), self%temp) + sumsca(:,:,:,f)*Jnu(:,:,:,f)) * self%rho)
-            end do
+          do f=1, nf
+            eta(:,:,:,f) = real((abslte(:,:,:,f)*planck(nu(f), self%temp) + sumsca(:,:,:,f)*Jnu(:,:,:,f)) * self%rho)
+          end do
         else
-            do f=1, nf
-                eta(:,:,:,f) = real((abslte(:,:,:,f)*planck(nu(f), self%temp)) * self%rho)
-            end do
+          do f=1, nf
+            eta(:,:,:,f) = real((abslte(:,:,:,f)*planck(nu(f), self%temp)) * self%rho)
+          end do
         endif
     END SUBROUTINE scattering
 
@@ -1281,7 +1286,7 @@ contains
             element => null()
             if (first_print) then
                 first_print = .false.
-                print *, 'element with id=' // id // ' was not found.'
+                print *, 'Opacity package: element with id = ' // id // ' was not found.'
             endif
         else
             element => self%elements(idx)
@@ -1643,6 +1648,7 @@ contains
         character(3) :: id
         integer :: i, lunit, iostat, defix, n_irwin, n_de
         !---------------------------------------------------------------------------
+        call os%check_file(molec_file)
         open(file=molec_file, newunit=lunit)
         read(lunit, *, iostat=iostat) text
         do while (iostat==0)

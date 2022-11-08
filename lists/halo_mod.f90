@@ -537,13 +537,9 @@ SUBROUTINE make_coarse (self, nbors, only, all_tgt, only_lower)
     coarse => task
   end select
   m = shape(coarse%mem)
-  allocate (coarse%mem(m(1),m(2),m(3),m(4),1,1), coarse%t(1), coarse%iit(1))
-  call os%mem_register (storage_size(coarse%mem), &
-                       product(shape(coarse%mem)), 'coarse%mem')
-  call os%mem_register (storage_size(coarse%t  ), &
-                       product(shape(coarse%t  )), 'coarse%t')
-  call os%mem_register (storage_size(coarse%dt ), &
-                       product(shape(coarse%dt )), 'coarse%dt')
+  call os%allocate(coarse%mem, [m(1),m(2),m(3),m(4),1,1], 'coarse%mem')
+  call os%allocate(coarse%t,   1, 'coarse%t')
+  call os%allocate(coarse%iit, 1, 'coarse%iit')
   coarse%mem = tiny(1.)
   coarse%id = target%id
   coarse%it = 1
@@ -650,14 +646,10 @@ SUBROUTINE make_coarse (self, nbors, only, all_tgt, only_lower)
     call dbg (self%task, ' after s2t')
     if (debug) &
       write (90) target%mem(:,:,:,6,target%it,1)  ! e
-    call os%mem_register (storage_size(coarse%mem), &
-                        -product(shape(coarse%mem)), 'coarse%mem')
-    call os%mem_register (storage_size(coarse%t  ), &
-                        -product(shape(coarse%t  )), 'coarse%t')
-    call os%mem_register (storage_size(coarse%dt ), &
-                        -product(shape(coarse%dt )), 'coarse%dt')
+    call os%deallocate(coarse%mem, 'coarse%mem')
+    call os%deallocate(coarse%t, 'coarse%t')
+    call os%deallocate(coarse%iit, 'coarse%iit')
     call os%mem_register (storage_size(coarse), -1, 'coarse')
-    deallocate (coarse%mem, coarse%t, coarse%iit)
     deallocate (coarse)
     call target%check_gz_density (verbose, label='prolong coarse')
     !---------------------------------------------------------------------------
@@ -743,12 +735,11 @@ SUBROUTINE conditionally_add_nbor (self, nblink, nbors, added)
               n(3) = n(3) + 1
               allocate (guard)
               nbor => guard
-              call os%mem_register (storage_size(nbor), 1, 'conditional')
+              call os%mem_register (storage_size(nbor), 1, 'nbor')
               guard%link => nblink
               guard%task => nblink%task
               call self%add_nbor_by_level (nbors, nbor, added_loc)
               if (.not. added_loc) then
-                call os%mem_register (storage_size(nbor), -1, 'conditional')
                 if (present(added)) added=added_loc
                 if (detailed_timer) &
                   call trace%end (itimer)
@@ -1053,7 +1044,7 @@ SUBROUTINE alloc_nbor (link, nbor, label)
   character(*), optional:: label
   !-----------------------------------------------------------------------------
   allocate (guards_t:: nbor)
-  call os%mem_register (storage_size(nbor), 1, shared%option(label, 'alloc_nbor'))
+  call os%mem_register (storage_size(nbor), 1, shared%option(label, 'nbor'))
   call nbor%init ()
   nbor%link => link
   nbor%task => link%task

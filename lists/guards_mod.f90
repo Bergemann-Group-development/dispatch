@@ -785,7 +785,7 @@ SUBROUTINE alloc_nbor (link, nbor)
   class(nbor_t), pointer:: nbor
   !-----------------------------------------------------------------------------
   allocate (guards_t:: nbor)
-  call os%mem_register (storage_size(nbor), 1, 'alloc_nbor')
+  call os%mem_register (storage_size(nbor), 1, 'nbor')
   call nbor%init ()
   nbor%link => link
   nbor%task => link%task

@@ -3,6 +3,7 @@
 !===============================================================================
 MODULE cooling_mod
   USE io_mod
+  USE os_mod
   USE trace_mod
   USE kinds_mod
   USE patch_mod
@@ -50,7 +51,7 @@ SUBROUTINE pre_update (self, patch)
   !-----------------------------------------------------------------------------
   ! Surface cooling, translated back to entropy per unit volume
   !-----------------------------------------------------------------------------
-  call scratch%allocate (scratch%heating_per_unit_mass, patch%gn)
+  call os%allocate (scratch%heating_per_unit_mass, patch%gn)
   q => scratch%heating_per_unit_mass
   call benchmark%cooling (z, d, e, q)
   deallocate (z, e)

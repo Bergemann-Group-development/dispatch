@@ -202,7 +202,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Thread-private scratch%force needs to be allocated here; %init() runs single
   !-----------------------------------------------------------------------------
-  call scratch%allocate (scratch%force_per_unit_mass, [self%gn,3])
+  call os%allocate (scratch%force_per_unit_mass, [self%gn,3])
   scratch%force_per_unit_mass = &
     self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)
   !-----------------------------------------------------------------------------

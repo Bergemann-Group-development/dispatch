@@ -6,7 +6,7 @@ MODULE atom_mod
     USE coll_mod
     USE trans_mod
     USE mmath, only: refsor, unista
-    USE op_math_mod, only: searchsorted, lineq, lineq_no_pivot, lineq_GS
+    USE op_math_mod, only: searchsorted, lineq, lineq_no_pivot
     USE ion_mod, only: ion_type
     USE element_mod, only: element_type
     USE os_mod
@@ -96,8 +96,7 @@ MODULE atom_mod
      
     end type atom_type
 
-    integer, public :: lse_niter=100
-    character(len=32) :: lse_solver='default'
+    logical :: lse_no_pivot=.True.
   
   contains
   
@@ -559,16 +558,11 @@ MODULE atom_mod
 
       ! solve w n . x = e
       ! e contains the solution vector x on exit
-      select case (lse_solver)
-      case ('no_pivot')
-         call lineq_no_pivot(self%w, self%e, self%nlevel)
-      case ('GS')
-         self%w = self%w / totn
-         self%e = self%e / totn
-         call lineq_GS(self%w, self%e, self%nlevel, lse_niter)
-      case default
-         call lineq(self%w, self%e, self%nlevel)
-      end select
+      if (lse_no_pivot) then
+        call lineq_no_pivot(self%w, self%e, self%nlevel)
+      else
+        call lineq(self%w, self%e, self%nlevel)
+      endif
 
       if (check_NaN) then
          do i=1,self%nlevel
@@ -783,6 +777,7 @@ MODULE atom_mod
       real(8), allocatable, dimension(:) :: nu, alpha
       real(8) :: scr, gv, gq, cnt_ev
 
+      call os%check_file(atom_file)
       open(newunit=latom, file=atom_file, form='formatted')
 
       call nextentry(latom)
@@ -1300,9 +1295,7 @@ MODULE atom_mod
    sp%maxac=maxval(sp%nac)
    sp%maxal=maxval(sp%nal)
 
-   if (sp%verbose>0) then
-         write(*,'(a,I0,a)') 'sp_from_atom: frequency grid has ', sp%nnu, ' points.'
-   endif
+   write(*,'(a,I0,a)') 'sp_from_atom: frequency grid has ', sp%nnu, ' points.'
    call trace%end(itimer)
    END SUBROUTINE set_active_transitions
 

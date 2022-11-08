@@ -4,6 +4,7 @@
 !===============================================================================
 MODULE cooling_mod
   USE io_mod
+  USE os_mod
   USE trace_mod
   USE gpatch_mod
   USE scaling_mod
@@ -106,7 +107,7 @@ SUBROUTINE pre_update (self)
   call trace%begin ('cooling_t%pre_update', itimer=itimer)
   if (on) then
     patch => self%patch
-    call scratch%allocate (scratch%heating_per_unit_volume, patch%gn)
+    call os%allocate (scratch%heating_per_unit_volume, patch%gn)
     scratch%heating_per_unit_volume = 0.0
     if (info) then
       call io%lock%set ('cooling_t%pre_update')

@@ -17,6 +17,7 @@
 !===============================================================================
 MODULE newton_mod
   USE io_mod
+  USE os_mod
   USE link_mod
   USE gpatch_mod
   USE mesh_mod
@@ -143,7 +144,7 @@ SUBROUTINE pre_update (self)
     m1 => self%patch%mesh(1)
     m2 => self%patch%mesh(2)
     m3 => self%patch%mesh(3)
-    call scratch%allocate (scratch%heating_per_unit_volume, self%patch%gn)
+    call os%allocate (scratch%heating_per_unit_volume, self%patch%gn)
     if (trim(self%patch%etype)=='thermal') then
       d => self%patch%mem(:,:,:,self%patch%idx%d,self%patch%it,1)
       e => self%patch%mem(:,:,:,self%patch%idx%e,self%patch%it,1)

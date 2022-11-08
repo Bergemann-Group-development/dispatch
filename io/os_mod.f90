@@ -28,6 +28,7 @@ MODULE os_mod
     procedure:: mkdir
     procedure:: exists
     procedure:: exists_dir
+    procedure:: check_file
     procedure, nopass:: mkdir_next_output
     procedure, nopass:: copy_file
     procedure:: gb_mem
@@ -191,6 +192,20 @@ FUNCTION exists_dir (self, name) RESULT (exists)
   inquire (file=name, exist=exists)
 #endif
 END FUNCTION exists_dir
+
+!===============================================================================
+!> Check if a file exists and otherwise aborts
+!===============================================================================
+SUBROUTINE check_file (self, name)
+  class(os_t):: self
+  character(*):: name
+  logical:: exists
+  !-----------------------------------------------------------------------------
+  inquire (file=name, exist=exists)
+  if (.not. exists) then
+    call shared%abort('file ' // trim(name) // ' was not found!')
+  endif
+END SUBROUTINE check_file
 
 !===============================================================================
 !> Utility to create a new directory
@@ -358,8 +373,8 @@ SUBROUTINE gb_mem (self, bits, count, label)
     !$omp critical (gb_cr)
     if (abs(lgb - gb_next) > self%gb_step) then
       do while (abs(lgb - gb_next) > self%gb_step)
-        call self%gb_print (real(gb_next,kind=8))
         gb_next = gb_next + sign (self%gb_step, lgb-gb_next)
+        call self%gb_print (real(gb_next,kind=8))
       end do
       if (self%gb > self%max_mem) call self%print_tracked_mem()
     end if
@@ -386,10 +401,8 @@ SUBROUTINE track_mem (self, gb, label)
       if (i > maxlabels) call shared%abort ('os_mod: increase maxlabels')
       self%nlabels = max(i, self%nlabels)
       self%labels(i) = label
-      self%labelled_mem(i) = self%labelled_mem(i) + gb
-      self%n_allocated(i) = self%n_allocated(i) + sign(1d0, gb)
     else
-      call shared%abort ('os_mod: memory with unknown label='//trim(label)//' is deallocated.')
+      call shared%abort ('os_mod: memory with unknown label = '//trim(label)//' is deallocated.')
     endif
   endif
   self%labelled_mem(i) = self%labelled_mem(i) + gb
@@ -405,15 +418,15 @@ SUBROUTINE print_tracked_mem (self)
   !.............................................................................
   total = sum(self%labelled_mem(1:self%nlabels))
   do i=1, self%nlabels
-    if (self%labelled_mem(i) / total > 0.05) then
+    if (self%labelled_mem(i) / total > 0.005) then
       write(stdout, '(A, 1x, I6, f10.4)') &
             adjustr(self%labels(i)), &
             self%n_allocated(i), &
             self%labelled_mem(i)
     endif
   end do
-  write(stdout, '(56x, A, 1x, f10.4)') 'rest_mem', self%gb - total
-  write(stdout, '(56x, A, 1x, f10.4)') 'total', self%gb
+  write(stdout, '(56x, A8, 7x, f10.4)') 'rest_mem', self%gb - total
+  write(stdout, '(56x, A8, 7x, f10.4)') '   total', self%gb
 END SUBROUTINE print_tracked_mem
 
 !===============================================================================

@@ -9,9 +9,9 @@ MODULE mean_rad_patch_mod
     USE trace_mod
     USE bits_mod
     USE os_mod
-    USE m3d_patch_mod, only:maxiter, m3d_patch_t, hash_string
+    USE m3d_patch_mod, only:maxiter, m3d_patch_t, hash_string, comoving_frame, ilambd
     USE ray_patch_mod, only:ray_patch_t
-    USE rad_patch_mod, only:rad_patch_t
+    USE angle_rad_patch_mod, only:rad_patch_t
     USE proj_patch_mod, only:interpolate_to_ray
     USE mconst, only:over_4pi
     implicit none
@@ -32,13 +32,20 @@ MODULE mean_rad_patch_mod
   !===============================================================================
   SUBROUTINE pre_init (self)
     class(mean_rad_patch_t), target:: self
-    integer :: nw, fs, fe
+    integer :: nw, fs, fe, i
     integer, save :: itimer=0
     ! ----------------------------------------------------------------------------
     call trace%begin('mean_rad_patch_t%pre_init', itimer=itimer)
     self%kind = 'mean_rad'
     call self%ray_patch_t%pre_init()
     call self%set_nv_and_nw (self%fe-self%fs+1, 1)
+
+    if (.not. associated(self%mem_lock)) then
+      allocate (self%mem_lock(self%nt))
+      do i=1,self%nt
+        call self%mem_lock(i)%init ('meml')
+      end do
+    endif
 
     self%ng = 0
     call self%post_pre_init()
@@ -67,22 +74,23 @@ MODULE mean_rad_patch_mod
     !-----------------------------------------------------------------------------
     if (self%is_finished()) return
     call trace%begin('mean_rad_patch_t%update', itimer=itimer)
-    call os%allocate(vproj, self%n)
-    nu_out => self%sp%nu(self%fs:self%fe)
-    Jnu => self%mem(:,:,:,:,self%it,1)
+    if (comoving_frame) then
+      call os%allocate(vproj, self%n)
+      nu_out => self%sp%nu(self%fs:self%fe)
+      Jnu => self%mem(:,:,:,:,self%it,1)
 
-    do f=1, self%nv
-      xx => self%opac%mem(:,:,:,f,self%opac%it,self%opac%i_chi)
-      self%Psi(:,:,:,f) = self%Psi(:,:,:,f) / xx
-    end do
+      do f=1, self%nv
+        xx => self%opac%mem(:,:,:,f,self%opac%it,self%opac%i_chi)
+        self%Psi(:,:,:,f) = self%Psi(:,:,:,f) / xx
+      end do
 
-    do f=1, self%nv
-      xx => self%opac%mem(:,:,:,f,self%opac%it,self%opac%i_chi)
-      ss => self%opac%mem(:,:,:,f,self%opac%it,self%opac%i_snu)
-      eta_back => self%back_opac%mem(:,:,:,f,self%back_opac%it,self%back_opac%i_eta)
-      self%Ieff(:,:,:,f) = Jnu(:,:,:,f) - self%Psi(:,:,:,f) * (ss*xx  - eta_back)
-    end do
-
+      do f=1, self%nv
+        xx => self%opac%mem(:,:,:,f,self%opac%it,self%opac%i_chi)
+        ss => self%opac%mem(:,:,:,f,self%opac%it,self%opac%i_snu)
+        eta_back => self%back_cont%mem(:,:,:,f,self%back_cont%it,self%back_cont%i_eta)
+        self%Ieff(:,:,:,f) = Jnu(:,:,:,f) - self%Psi(:,:,:,f) * (ss*xx  - eta_back)
+      end do
+    endif
     call self%post_update()
     call trace%end(itimer)
   END SUBROUTINE update
@@ -104,14 +112,14 @@ MODULE mean_rad_patch_mod
       class is (ray_patch_t)
         if (another%kind == 'angle_rad') then
             needs_me = .false.
-        elseif (another%kind == 'rate_patch') then
+        elseif (another%kind == 'atom_rate') then
+            if (self%i_mu /= another%i_mu) needs_me = .false.
             needed = .false.
         elseif (another%kind == 'net_opac') then
           needs_me = .false.
-          self%opac => another
-        elseif (another%kind == 'back_opac') then
-          needs_me = .false.
-          self%back_opac => another
+        elseif (another%kind == 'back_cont') then
+          if (.not. comoving_frame) needed = .false.
+          if (ilambd == 0) needs_me = .false.
         else
           needed = .false.; needs_me = .false.
         endif
@@ -139,11 +147,11 @@ MODULE mean_rad_patch_mod
     call self%ray_patch_t%init_nbors_hash(nbors)
   
     key(1:3) = self%key(1:3)
-    key(4) = hash_string('rate_patch')
+    key(4) = hash_string('atom_rate')
     call self%check_nbor(key, nbors)
 
     key(1:3) = self%key(1:3)
-    key(4) = hash_string('back_opac')
+    key(4) = hash_string('back_cont')
     call self%check_nbor(key, nbors)
 
     key(1:3) = self%key(1:3)

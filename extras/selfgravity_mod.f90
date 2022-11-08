@@ -236,7 +236,7 @@ SUBROUTINE pre_update (self)
   ! gradient of the potential internally).
   !-----------------------------------------------------------------------------
   if (patch%kind(1:4) /= 'zeus') then
-    call scratch%allocate (scratch%force_per_unit_mass, [patch%gn, 3])
+    call os%allocate (scratch%force_per_unit_mass, [patch%gn, 3])
     scratch%force_per_unit_mass = -grad (patch%mesh, self%phi)
   endif
   call trace%end ()

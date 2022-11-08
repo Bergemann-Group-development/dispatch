@@ -57,6 +57,7 @@ MODULE rt_mod
   USE index_mod
   USE mesh_mod
   USE io_mod
+  USE os_mod
   USE aux_mod
   USE timer_mod
   USE scaling_mod
@@ -570,7 +571,7 @@ SUBROUTINE pre_update (self)
   !-----------------------------------------------------------------------------
   if (.not. self%on) then
     gn = self%patch%mesh%gn
-    call scratch%allocate (scratch%heating_per_unit_volume, gn)
+    call os%allocate (scratch%heating_per_unit_volume, gn)
     aux => scratch%heating_per_unit_volume
     call self%patch%aux%register ('qr', aux)
     return
@@ -625,7 +626,7 @@ SUBROUTINE pre_update (self)
   l = self%patch%mesh%li - self%mesh%ng
   u = self%patch%mesh%ui + self%mesh%ng
   gn = self%patch%mesh%gn
-  call scratch%allocate (scratch%heating_per_unit_volume, gn)
+  call os%allocate (scratch%heating_per_unit_volume, gn)
   n = shape(scratch%heating_per_unit_volume)
   scratch%heating_per_unit_volume(l(1):u(1),l(2):u(2),l(3):u(3)) = &
   scratch%heating_per_unit_volume(l(1):u(1),l(2):u(2),l(3):u(3)) + qr

@@ -21,6 +21,7 @@ MODULE read_external_mod
   USE task_list_mod
   USE experiment_mod
   USE composition_mod
+  USE composition_patch_mod, only: FeH
   USE patch_mod
   USE mconst, only:cc
   USE ray_patch_mod
@@ -52,7 +53,6 @@ MODULE read_external_mod
   type(rank_t) :: rank
   logical, save :: read_Stagger=.false.
   logical, save :: read_Multi=.false.
-  real(8), save :: FeH=0
 
 CONTAINS
 
@@ -66,20 +66,19 @@ SUBROUTINE init(self, task_list, name)
   class(link_t), pointer:: link, next
   !real(4) :: origin(3)=[0.0,0.0,0.0]
   integer :: iostat, k, ip
-  integer :: mpi_dims(3)
-  integer :: patches_per_mpi(3)=[1,1,1]
-  integer :: dims(3)=[1,1,1]
+  integer :: patches_per_mpi=1
+  integer :: dims=1
   integer :: verbose=1
   logical :: face_nbors=.false.
   character(len=126) :: atmos_file='./input_multi3d/atmos/atmos.sun_MARCS_50'
   namelist /atmos_params/ atmos_file, dims, verbose, read_Stagger, read_Multi, &
-  mpi_dims, patches_per_mpi, FeH
+  patches_per_mpi, FeH
   !-----------------------------------------------------------------------------
   if (associated(task_list)) return
   call trace%begin('read_external_t%init')
   call io%header ('read_external_t%init')
   ! default values
-  mpi_dims = [1,1,mpi%size]
+  self%dims = 1
   !-----------------------------------------------------------------------------
   ! The first thread reads the namelist parameters and saves them
   !-----------------------------------------------------------------------------
@@ -93,22 +92,22 @@ SUBROUTINE init(self, task_list, name)
   call io%namelist_warning ('atmos_params', iostat)
   write (io%namelist, atmos_params)
 
-  if (product(patches_per_mpi) > 1) then
-    if (product(dims) > 1) then
+  if (patches_per_mpi > 1) then
+    if (dims > 1) then
       print *, 'Cannot give PATCHES_PER_MPI if DIMS is also specified in ATMOS_PARAMS. Stopping...'
       stop
     else
-      self%dims = mpi_dims * patches_per_mpi
+      self%dims(3) = mpi%size * patches_per_mpi
     endif
   else
-    if (product(dims) > 1) then
-      self%dims = dims
+    if (dims > 1) then
+      self%dims(3) = dims
     else
-      self%dims = mpi_dims
+      self%dims(3) = mpi%size
     endif
   endif
 
-  if (any(mpi_dims > self%dims)) then
+  if (mpi%size > self%dims(3)) then
     print *, 'More mpi ranks requested than spatial atmosphere splits. Stopping...'
     stop
   endif
@@ -119,7 +118,6 @@ SUBROUTINE init(self, task_list, name)
 
   allocate (task_list)
   self%task_list => task_list
-  call scaling%init()
   
   if (read_Stagger) then
     call read_stagger_snapshot(self%ds, self%rho, self%px, self%py, &
@@ -143,23 +141,19 @@ SUBROUTINE init(self, task_list, name)
   if (mpi%size == 1) then
      mpi_coords%dims = 1
   else
-    if (product(mpi_dims)==1) then
-      call mpi_coords%init (dims=self%dims)
-    else
-      call mpi_coords%init (mpi_dims=mpi_dims)
-    end if
+    call mpi_coords%init (mpi_dims=[1,1,mpi%size])
   end if
-  mpi_dims = mpi_coords%dims
-  patches_per_mpi = self%dims/mpi_dims
-  mpi_coords%npatch = patches_per_mpi
-  io%mpi_dims = mpi_dims
+  patches_per_mpi = self%dims(3)/mpi%size
+  mpi_coords%npatch(3) = patches_per_mpi
+  io%mpi_dims = mpi_coords%dims
   !-----------------------------------------------------------------------------
   ! Set attritbutes of the rank_t data type -- just enough to use distance().
   !-----------------------------------------------------------------------------
   rank%periodic = .true.
   rank%box = self%size
-  rank%size = rank%box/mpi_dims
-  rank%ds = rank%size/patches_per_mpi
+  rank%size = rank%box/mpi_coords%dims
+  rank%ds(1:2) = rank%size(1:2)
+  rank%ds(3) = rank%size(3)/patches_per_mpi
   rank%position = (mpi_coords%rank_to_coords(mpi%rank) + 0.5_8)*rank%size! + self%origin
   !-----------------------------------------------------------------------------
   ! Begin on task list
@@ -182,7 +176,7 @@ SUBROUTINE init(self, task_list, name)
     patch%kind = 'mhd_patch'
     ! --- patch 3D and 1D coordinates ---
     patch%ipos = [0,0,k]
-    patch%rank = mpi_coords%coords_to_rank ([0,0,k]/patches_per_mpi)
+    patch%rank = mpi_coords%coords_to_rank ([0,0,k]/[1,1,patches_per_mpi])
     if (patch%rank == mpi%rank) then
       ip = ip + 1
       patch%ip = ip
@@ -190,10 +184,8 @@ SUBROUTINE init(self, task_list, name)
     if (all(self%dims==1)) call patch%task_t%set(bits%root_grid)
     call self%setup_patch(patch)
 
-    if (verbose > 0) then 
-      if (k==0) write(stdout,'(I2, A28)') self%dims(3), ' subdomains in z-direction:'
-      write(stdout,'(I4, I6,A3,I4)') k+1, patch%zs, ' - ', patch%ze
-    endif
+    if (k==0) write(stdout,'(I2, A28)') self%dims(3), ' subdomains in z-direction:'
+    write(stdout,'(I4, I6,A3,I4)') k+1, patch%zs, ' - ', patch%ze
 
   end do
   write (stdout,*) ip, 'tasks generated'
@@ -263,7 +255,7 @@ SUBROUTINE init(self, task_list, name)
   if (verbose > 0) write(stdout,*) 'read_external_t%init: print tasks'
   call self%task_list%print_tasks
   call self%task_list%check_hash_table
-  call self%task_list%hash_table%stats
+  !call self%task_list%hash_table%stats
   if (verbose > 0) write(stdout,*) 'read_external_t%init: done'
   flush (stdout)
   !-----------------------------------------------------------------------------
@@ -280,65 +272,15 @@ SUBROUTINE setup_patch (self, patch)
   !-----------------------------------------------------------------------------
   call trace%begin ('read_external_t%setup_patch')
   patch%task_list => self%task_list
-
-  !---------------------------------------------------------------------------
-  ! Add the patch to the task list -- this creates the patch%link
-  !---------------------------------------------------------------------------
-  call patch%append_to(patch%task_list)
-  call patch%gpatch_t%pre_init() ! this overwrites patch%n
+  call patch%patch_t%pre_init() ! this overwrites patch%n
   patch%pre_initialized = .true.
 
-  patch%mhd = .false.
-
-  patch%ng = 1 ! needed for nbor_relation
-  patch%n = self%n / self%dims
-  md = mod(self%n, self%dims)
-
-  patch%zs = patch%ipos(3) * patch%n(3) + 1 + min(md(3), patch%ipos(3))
-  if (patch%ipos(3)+1 <= md(3)) then
-    patch%n(3) = patch%n(3) + 1
-  endif
-  patch%ze = patch%zs + patch%n(3) - 1
-
-  patch%box = self%size
-  patch%ds  = self%ds
-
-  patch%size = patch%ds * patch%n
-  patch%periodic = [.true., .true., .false.]
-
-  patch%position = 0.5d0*patch%size
-  patch%position(3) = patch%position(3) + (patch%zs - 1) * patch%ds(3)
-  patch%origin = patch%position - 0.5d0*patch%size
-
-  !-----------------------------------------------------------------------------
-  ! Preliminary region information, relative to the task position.
-  ! The settings below allow overlap() calls to work
-  !-----------------------------------------------------------------------------
-  patch%authority%l = - patch%size*0.5_8
-  patch%authority%u = + patch%size*0.5_8
-  patch%interest%l  = patch%authority%l - patch%ng*patch%size/patch%n
-  patch%interest%u  = patch%authority%u + patch%ng*patch%size/patch%n
-
-  allocate (patch%boundaries)
-  call patch%boundaries%pre_init (patch)
-  if (patch%ipos(3)==0)              call patch%boundaries%set(bits%zl)
-  if (patch%ipos(3)==self%dims(3)-1) call patch%boundaries%set(bits%zu)
+  patch%box  = self%size
+  patch%nbox = self%n
+  patch%ds   = self%ds
+  patch%dims = self%dims
   
   call patch%pre_init()
-  
-  allocate(patch%composition)
-  patch%composition%patch => patch
-  patch%composition%task_list => self%task_list
-  
-  patch%composition%FeH = FeH
-  call patch%composition%pre_init()
-  
-  patch%nv = 6
-  patch%nt = 4 ! Download returns wrong stuff if nt <= 2
-  patch%nw = 1
-
-  call patch%idx%init (energy=5, mhd=patch%mhd)
-
   call trace%end ()
 END SUBROUTINE setup_patch
 
@@ -379,6 +321,7 @@ SUBROUTINE read_1d_snapshot(self, atmos_1d_file)
   !-----------------------------------------------------------------------------
   ! Open atmosphere file and read MHD variables
   !-----------------------------------------------------------------------------
+  call os%check_file(atmos_1d_file)
   open(file=atmos_1d_file, newunit=lunit)
   call nextentry(lunit)
   read(lunit, *) self%atmos_name
@@ -428,6 +371,7 @@ SUBROUTINE read_multi_snapshot(self, stagger_file)
   !-----------------------------------------------------------------------------
   ! Open atmosphere file and read MHD variables
   !-----------------------------------------------------------------------------
+  call os%check_file(trim(stagger_file) // '.mesh')
   open(file=trim(stagger_file) // '.mesh', newunit=lunit, form='FORMATTED')
   read(lunit, *) self%n
   allocate(xi(self%n(1)))
@@ -441,6 +385,7 @@ SUBROUTINE read_multi_snapshot(self, stagger_file)
   allocate(self%temp(self%n(1), self%n(2), self%n(3)))
   allocate(self%rho, self%ne, self%px, self%py, self%pz, self%pe, mold=self%temp)
 
+  call os%check_file(trim(stagger_file) // '.atmos')
   open(file=trim(stagger_file) // '.atmos', newunit=lunit, form='UNFORMATTED', access='stream')
   read(lunit) self%ne 
   read(lunit) self%temp

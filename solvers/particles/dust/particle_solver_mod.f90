@@ -246,7 +246,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   m(1:3) = self%patch%mesh%gn
   m(4) = 3
-  call scratch%allocate (scratch%force_per_unit_volume, m)
+  call os%allocate (scratch%force_per_unit_volume, m)
   if (.not.associated(self%lock)) then
     allocate (self%lock)
     call self%lock%init ('part')

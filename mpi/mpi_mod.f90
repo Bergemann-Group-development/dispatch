@@ -570,7 +570,9 @@ SUBROUTINE reset8 (self, n)
   call trace%begin ('mpi_counter_t%reset')
   i = self%update(0)
   i = self%update(n-i)
-  write (stderr,*) 'mpi_counter_t%reset: count =', i
+  if (io_unit%verbose > 0) then
+    write (stderr,*) 'mpi_counter_t%reset: count =', i
+  endif
   call trace%end ()
 END SUBROUTINE reset8
 

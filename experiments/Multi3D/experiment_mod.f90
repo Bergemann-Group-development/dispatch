@@ -4,6 +4,7 @@
 !===============================================================================
 MODULE experiment_mod
   USE io_mod
+  USE data_io_mod
   USE bits_mod
   USE trace_mod
   USE solver_mod
@@ -12,6 +13,7 @@ MODULE experiment_mod
   USE kinds_mod
   USE m3d_patch_mod, only: hash_string
   USE m3d_halo_mod, only: m3d_halo_t
+  USE composition_patch_mod, only: composition_patch_t
   USE shared_mod
   USE halo_mod
   USE list_mod
@@ -23,7 +25,9 @@ MODULE experiment_mod
   implicit none
   private
   type, public, extends(solver_t):: experiment_t
+    class(composition_patch_t), pointer :: composition => null()
     integer :: iter=0, maxiter, zs, ze
+    integer :: dims(3), nbox(3)
     character(len=2) :: v5
   contains
     procedure:: pre_init
@@ -41,7 +45,7 @@ MODULE experiment_mod
     procedure:: hash_key
     procedure:: init_nbors_hash
     procedure:: check_nbor
-    procedure:: nbor_relations => experiment_nbor_relations
+    procedure:: nbor_relations
   end type
   
 CONTAINS
@@ -53,16 +57,58 @@ SUBROUTINE pre_init (self)
   class(experiment_t), target :: self
   integer, save:: itimer=0
   real(8), save:: timestep=1.d0
+  integer :: md(3)
   !-----------------------------------------------------------------------------
   call trace%begin('experiment_t%pre_init', itimer=itimer)
+  call self%append_to(self%task_list)
+
+  self%nv = 6
+  self%nt = 4 ! Download returns wrong stuff if nt <= 2
+  self%nw = 1
+
+  self%n = self%nbox / self%dims
+  md = mod(self%nbox, self%dims)
+
+  self%zs = self%ipos(3) * self%n(3) + 1 + min(md(3), self%ipos(3))
+  if (self%ipos(3)+1 <= md(3)) then
+    self%n(3) = self%n(3) + 1
+  endif
+  self%ze = self%zs + self%n(3) - 1
+
+  self%size = self%ds * self%n
+  self%periodic = [.true., .true., .false.]
+
+  self%position = 0.5d0*self%size
+  self%position(3) = self%position(3) + (self%zs - 1) * self%ds(3)
+  self%origin = self%position - 0.5d0*self%size
+
+  !-----------------------------------------------------------------------------
+  ! Preliminary region information, relative to the task position.
+  ! The settings below allow overlap() calls to work
+  !-----------------------------------------------------------------------------
+  self%authority%l = - self%size*0.5_8
+  self%authority%u = + self%size*0.5_8
+  self%interest%l  = self%authority%l - self%ng*self%size/self%n
+  self%interest%u  = self%authority%u + self%ng*self%size/self%n
+
+  allocate (self%boundaries)
+  call self%boundaries%pre_init (self)
+  if (self%ipos(3)==0)              call self%boundaries%set(bits%zl)
+  if (self%ipos(3)==self%dims(3)-1) call self%boundaries%set(bits%zu)
 
   self%time     = 0.0
   self%dtime    = timestep
   self%out_next = huge(1.0)
   self%place    = -1
-  !call self%set(bits%remove)
 
-  call self%solver_t%pre_init ()
+  !self%mhd = .false.
+  !call self%solver_t%pre_init ()
+  call self%idx%init (energy=5, mhd=.false.)
+
+  allocate(self%composition)
+  self%composition%patch => self
+  self%composition%task_list => self%task_list
+  call self%composition%pre_init()
   call trace%end (itimer=itimer)
 END SUBROUTINE pre_init
 
@@ -74,12 +120,15 @@ SUBROUTINE init (self)
   integer, save:: itimer=0
   !----------------------------------------------------------------------------
   call trace%begin('experiment_t%init', itimer=itimer)
-  select type (link => self%link)
-  class is (m3d_halo_t)
-    call self%solver_t%init
-  class default
-    call self%task_t%init
-  end select
+  !select type (link => self%link)
+  !class is (m3d_halo_t)
+  !  call self%solver_t%init
+  !class default
+  !  call self%task_t%init
+  !end select
+  call self%patch_t%init()
+  call self%init_bdries ()
+  call data_io%init (self)
   call self%init_level()
   call trace%end (itimer=itimer)
 END SUBROUTINE init
@@ -94,7 +143,9 @@ SUBROUTINE bndries (self)
   !----------------------------------------------------------------------------
   call trace%begin('experiment_t%bndries', itimer=itimer)
   mem => self%mem(:,:,:,:,self%it,:)
-  if (self%boundaries%lower .or. self%boundaries%upper) call self%boundaries%boundary(mem)
+  if (self%boundaries%lower .or. self%boundaries%upper) then
+    call self%boundaries%boundary(mem)
+  endif
   call trace%end (itimer)
 END SUBROUTINE bndries
 
@@ -115,7 +166,6 @@ SUBROUTINE update (self)
   integer, save:: itimer=0
   !----------------------------------------------------------------------------
   call trace%begin('experiment_t%update', itimer=itimer)
-  !call self%solver_t%update
   call self%post_update()
   call trace%end (itimer)
 END SUBROUTINE update
@@ -199,17 +249,17 @@ SUBROUTINE append_to(self, list)
   call list%hash_table%add (self%key, self%link)
 END SUBROUTINE append_to
 
-!===============================================================================
-SUBROUTINE experiment_nbor_relations(self, another, needed, needs_me, download)
-  class(experiment_t) :: self
-  class(task_t), pointer :: another         ! another task in the list
-  logical :: needed, needs_me, download    ! Is the other task: needed, 
-                                           !    does it need me, should I download?
-  !-----------------------------------------------------------------------------
-  call trace%begin ('experiment_t%experiment_nbor_relations')
-  call self%extras_t%nbor_relations(another, needed, needs_me, download)
-  call trace%end()
-END SUBROUTINE experiment_nbor_relations
+!!===============================================================================
+!SUBROUTINE experiment_nbor_relations(self, another, needed, needs_me, download)
+!  class(experiment_t) :: self
+!  class(task_t), pointer :: another         ! another task in the list
+!  logical :: needed, needs_me, download    ! Is the other task: needed, 
+!                                           !    does it need me, should I download?
+!  !-----------------------------------------------------------------------------
+!  call trace%begin ('experiment_t%experiment_nbor_relations')
+!  call self%extras_t%nbor_relations(another, needed, needs_me, download)
+!  call trace%end()
+!END SUBROUTINE experiment_nbor_relations
 
 !===============================================================================
 SUBROUTINE statistics (self)
@@ -232,6 +282,34 @@ FUNCTION hash_key (self, position, size, level, box, origin) RESULT (key)
   key(3) = 0
   key(4) = hash_string(self%kind)
 END FUNCTION hash_key
+  
+!===============================================================================
+!> Set default nbor relations, and allow underlings to modify them.  This is
+!> called from list_t%init_nbors and from list_t%reset_status()
+!===============================================================================
+SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
+  class(experiment_t):: self
+  class(task_t), pointer:: another
+  logical:: needed, needs_me, download
+  !-----------------------------------------------------------------------------
+  call trace%begin ('experiment_t%nbor_relations')
+  if (another%kind == self%kind .or. another%kind == 'composition') then
+    call self%task_t%nbor_relations(another, needed, needs_me, download) ! keep
+    select type (another)
+    class is (composition_patch_t)
+      if (another%patch%id == self%id) then
+        needed=.false.; download=.false.
+      else
+        needed=.false.; needs_me=.false.; download=.false.
+      endif
+    class default
+      needed=.false.; needs_me=.false.; download=.false.
+    end select
+  else
+    needed=.false.; needs_me=.false.; download=.false.
+  endif
+  call trace%end()
+END SUBROUTINE nbor_relations
 
 !===============================================================================
 !> Fast method to generate nbor lists in cases with very long task lists

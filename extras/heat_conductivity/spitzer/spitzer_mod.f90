@@ -2,6 +2,7 @@
 !> 
 !=======================================================================
 MODULE spitzer_mod
+  USE os_mod
   USE aux_mod
   USE bits_mod
   USE io_mod
@@ -240,7 +241,7 @@ SUBROUTINE pre_update_wave(self)
     f => self%patch%mem(:,:,:,:,self%patch%it,1)
     call self%conductive_flux(f,dtime)
   end if
-  call scratch%allocate (scratch%heating_per_unit_volume, self%patch%mesh%gn)
+  call os%allocate (scratch%heating_per_unit_volume, self%patch%mesh%gn)
   scratch%heating_per_unit_volume = & 
   scratch%heating_per_unit_volume - div(ds,down(self%fc))
 

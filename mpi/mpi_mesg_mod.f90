@@ -652,7 +652,7 @@ SUBROUTINE test (self)
   call test_list%init ()
   do i=1,n
     call alloc_mesg (self, mesg)
-    allocate (mesg%buffer(10))
+    call os%allocate (mesg%buffer, 10)
     mesg%id = i
     call test_list%add (mesg)
   end do

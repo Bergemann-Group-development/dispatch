@@ -92,7 +92,7 @@ MODULE proj_patch_mod
     call self%post_update()
     call trace%end(itimer)
   END SUBROUTINE update
-
+  
   !===============================================================================
   SUBROUTINE interpolate_to_ray(proj, nu_in, nu_out, yy, new_yy, weight)
     real(4), intent(in), dimension(:,:,:), contiguous :: proj
@@ -100,17 +100,15 @@ MODULE proj_patch_mod
     real(8), intent(in), dimension(:) :: nu_in, nu_out
     real(4), intent(in), optional :: weight
     real(4), intent(inout), dimension(:,:,:,:) :: new_yy
-    real(8), dimension(:,:,:), pointer, contiguous :: new_nu
     integer, dimension(:,:,:), pointer, contiguous :: ff
     integer :: n(3), f, nf, i, x, y, z, nf_in
     real(4) :: yy1, yy2, wmu, res
-    real(8) :: nunu, dnu
+    real(8) :: new_nu, dnu
     !-----------------------------------------------------------------------------
     n = shape(proj)
     nf = size(nu_out)
     nf_in = size(nu_in)
     call os%allocate(ff, n, zero=.true.)
-    call os%allocate(new_nu, n)
 
     if (present(weight)) then
       wmu = weight
@@ -119,23 +117,22 @@ MODULE proj_patch_mod
     endif
 
     do f=1, nf
-      new_nu = nu_out(f) * dble(proj)
       do z=1, n(3)
       do y=1, n(2)
       do x=1, n(1)
-        nunu = new_nu(x,y,z)
-        if (nunu <= nu_in(1)) then
+        new_nu = nu_out(f) * dble(proj(x,y,z))
+        if (new_nu <= nu_in(1)) then
           res = yy(x,y,z,1)
-        elseif (nunu >= nu_in(nf_in)) then
+        elseif (new_nu >= nu_in(nf_in)) then
           res = yy(x,y,z,nf_in)
         else
           i = ff(x,y,z)
-          do while (i < nf_in .and. nunu >= nu_in(i+1))
+          do while (i < nf_in .and. new_nu >= nu_in(i+1))
             i = i + 1
           end do
           yy1 = yy(x,y,z,i)
           yy2 = yy(x,y,z,i+1)
-          dnu = (nunu - nu_in(i)) / (nu_in(i+1) - nu_in(i))
+          dnu = (new_nu - nu_in(i)) / (nu_in(i+1) - nu_in(i))
           res = (yy2 - yy1) * dnu + yy1
           ff(x,y,z) = i
         endif
@@ -149,7 +146,6 @@ MODULE proj_patch_mod
       end do
     end do
     call os%deallocate(ff)
-    call os%deallocate(new_nu)
   END SUBROUTINE interpolate_to_ray
   
   !===============================================================================

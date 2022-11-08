@@ -3,6 +3,7 @@
 !===============================================================================
 MODULE friction_mod
   USE io_mod
+  USE os_mod
   USE trace_mod
   USE gpatch_mod
   USE mesh_mod
@@ -72,7 +73,7 @@ SUBROUTINE pre_update (self)
     m1 => self%patch%mesh(1)
     m2 => self%patch%mesh(2)
     m3 => self%patch%mesh(3)
-    call scratch%allocate (scratch%force_per_unit_volume, self%patch%gn)
+    call os%allocate (scratch%force_per_unit_volume, self%patch%gn)
     if (trim(self%patch%kind(1:4))=='stag') then
       pz => self%patch%mem(:,:,:,self%patch%idx%pz,self%patch%it,1)
       lo=self%patch%mesh%lb

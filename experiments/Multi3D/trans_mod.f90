@@ -81,7 +81,7 @@ MODULE trans_mod
     real(8), dimension(:)      , allocatable :: gaterm
     real(8), dimension(:)      , allocatable :: gwterm
     real(8), dimension(:)      , allocatable :: gqterm
-    real(8), dimension(:,:,:,:), allocatable :: adterm
+    !real(8), dimension(:,:,:,:), allocatable :: adterm
 
     integer :: nsub  ! number of subordinate lines in case of cross redistribution
     integer, dimension(:),allocatable :: krsub ! indices of subordinate lines
@@ -104,7 +104,7 @@ MODULE trans_mod
     real(4), dimension(:,:,:), contiguous, pointer :: ni_over_nj_lte
 
   contains
-      procedure :: opacities => cont_opacities
+      procedure :: opacities => atom_contities
       procedure :: rates => cont_rates
       procedure :: freqc
   end type cont_type
@@ -135,13 +135,12 @@ contains
         q2 = q + 1 - nu0/self%nu0
         ga = self%gaterm(i) - self%ga
         damp = (adamp + ga) * inv_df * over_4pi / nu0
-        psi = psi_func(damp)
         inv_df2 = self%wterm(i) * inv_df
 
         !DIR$ FORCEINLINE
         do f=1, size(q)
             dphi = (q2(f) - vproj) * inv_df
-            dphi = voigt_function2(damp, dphi, psi)
+            dphi = voigt_function2(damp, dphi)
             phi(:,:,:,f) = phi(:,:,:,f) + dphi * inv_df2
         end do 
         end do
@@ -152,7 +151,7 @@ contains
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  PURE SUBROUTINE cont_opacities(self, alpha, n, nstar, eta, chi)
+  PURE SUBROUTINE atom_contities(self, alpha, n, nstar, eta, chi)
     class(cont_type), intent(in) :: self
     real(4), dimension(:), intent(in) :: alpha
     real(4), dimension(:,:,:,:), intent(in) :: n, nstar
@@ -182,7 +181,7 @@ contains
     end do
     end do
     end do
-  END SUBROUTINE cont_opacities
+  END SUBROUTINE atom_contities
   !------------------------------------------------------------------------------------
 
 !  !====================================================================================

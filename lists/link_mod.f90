@@ -299,7 +299,7 @@ SUBROUTINE add_nbor (self, link, nbors, nbor, added, by_quality, by_rank, &
   if (.not. nbor_l%needed   .and. &
       .not. nbor_l%needs_me .and. &
       .not. nbor_l%download) then
-    call os%mem_register (storage_size(nbor_l), -1, 'add_nbor')
+    call os%mem_register (storage_size(nbor_l), -1, 'nbor')
     deallocate (nbor_l)
     nullify (nbor_l)
     if (present(added)) &
@@ -451,7 +451,7 @@ SUBROUTINE add_nbor_by_level (self, nbors, nbor, added)
   if (.not. nbor%needed   .and. &
       .not. nbor%needs_me .and. &
       .not. nbor%download) then
-    !call os%mem_register (storage_size(nbor), -1, 'add_nbor')
+    call os%mem_register (storage_size(nbor), -1, 'nbor')
     deallocate (nbor)
     nullify (nbor)
     if (present(added)) &
@@ -509,7 +509,7 @@ SUBROUTINE alloc_nbor (link, nbor, label)
   character(*), optional:: label
   !-----------------------------------------------------------------------------
   allocate (nbor_t:: nbor)
-  call os%mem_register (storage_size(nbor), 1, shared%option(label, 'alloc_nbor'))
+  call os%mem_register (storage_size(nbor), 1, shared%option(label, 'nbor'))
   call nbor%init ()
   nbor%link => link
   nbor%task => link%task
@@ -611,7 +611,7 @@ SUBROUTINE remove_nbor (self, this, nbor_list)
         nbor_list => nbor%next
       end if
       self%task%n_nbors = self%task%n_nbors-1
-      call os%mem_register (storage_size(nbor), -1, 'remove_nbor')
+      call os%mem_register (storage_size(nbor), -1, 'nbor')
       deallocate (nbor)
       !$omp atomic update
       this%n_needed = this%n_needed - 1
@@ -673,7 +673,7 @@ SUBROUTINE remove_nbor_list (self, nbors)
           nbor%task%id, 'needed by', nbor%task%n_needed, 'remove_nb_list'
         flush (io_unit%mpi)
       end if
-      call os%mem_register (storage_size(nbor), -1, 'remove_nbor_list')
+      call os%mem_register (storage_size(nbor), -1, 'nbor')
       deallocate (nbor)
       nbor => next
     end do
@@ -720,7 +720,7 @@ SUBROUTINE remove_nbor_list2 (self, nbors)
       prev => nbor2
       nbor2 => nbor2%next
     end do
-    call os%mem_register (storage_size(nbor), -1, 'remove_nbor_list2')
+    call os%mem_register (storage_size(nbor), -1, 'nbor')
     deallocate (nbor)
     nbor => next
   end do
@@ -743,7 +743,7 @@ SUBROUTINE copy_nbor_list (self, old_head, new_head)
   nbor => old_head
   do while (associated(nbor))
     allocate (new, source=nbor)
-    call os%mem_register (storage_size(new), 1, 'remove_nbor_list2')
+    call os%mem_register (storage_size(new), 1, 'nbor')
     new%task => nbor%task
     new%link => nbor%link
     !$omp atomic update

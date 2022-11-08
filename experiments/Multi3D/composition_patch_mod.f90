@@ -5,14 +5,14 @@ MODULE composition_patch_mod
   USE omp_mod
   USE gpatch_mod
   USE element_mod, only: element_type
-  USE m3d_patch_mod,   only: m3d_patch_t, hash_string, comoving_frame
+  USE m3d_patch_mod,   only: m3d_patch_t, hash_string, comoving_frame, ilambd
   USE composition_mod, only: composition_type
-  USE back_opac_patch_mod,  only: back_opac_patch_t
-  USE rad_patch_mod,   only: rad_patch_t
+  USE back_cont_patch_mod,  only: back_cont_patch_t
+  USE angle_rad_patch_mod,   only: rad_patch_t
   USE atom_patch_mod,  only: atom_patch_t
-  USE rate_patch_mod,  only: rate_patch_t
+  USE atom_rate_patch_mod,  only: atom_rate_t
   USE net_opac_patch_mod,  only: net_opac_t
-  USE back_line_patch_mod, only:back_line_patch_t
+  USE back_line_patch_mod, only:back_line_patch_t, dlam, exclude_elements
   USE out_rad_patch_mod, only:out_rad_patch_t
   USE proj_patch_mod, only:proj_patch_t
   USE mean_rad_patch_mod, only:mean_rad_patch_t
@@ -32,7 +32,6 @@ MODULE composition_patch_mod
   type, public, extends(m3d_patch_t) :: composition_patch_t
     class(gpatch_t), pointer :: mhd ! pointer to MHD patch
     type(composition_type) :: composition
-    real(8) :: FeH
   contains
     procedure :: pre_init => composition_pre_init
     procedure :: update => composition_update
@@ -41,6 +40,8 @@ MODULE composition_patch_mod
     procedure :: nbor_relations => composition_patch_nbor_relations
     procedure :: init_nbors_hash
   end type
+  
+  real(8), public :: FeH=0
 
 contains
 
@@ -49,7 +50,7 @@ SUBROUTINE composition_pre_init (self)
   class(composition_patch_t), target:: self
   type(composition_type), save :: composition
   class(atom_patch_t), pointer :: atom_patch
-  class(back_opac_patch_t), pointer :: back_opac
+  class(back_cont_patch_t), pointer :: back_cont
   class(rad_patch_t), pointer :: rad
   class(out_rad_patch_t), pointer :: out_rad
   class(net_opac_t), pointer :: net_opac
@@ -62,14 +63,15 @@ SUBROUTINE composition_pre_init (self)
   integer, save :: n_nu=1, verbose=0
   character(len=128), save :: absdat_file='./input_multi3d/absdat'
   character(len=128), save :: abund_file='./input_multi3d/abund'
-  character(len=128), save :: isotope_file='./input_multi3d/isotopes_abund.txt'
+  character(len=128), save :: isotope_file=''!'./input_multi3d/isotopes_abund.txt'
   character(len=128), save :: molec_file='./input_multi3d/molec_data.txt'
   character(len=128), save :: absmet_file=''
   character(len=128), save :: linelist_file=''
   integer :: i, dir, p, m, n, m2, n2
   logical, save :: first_time=.true., absmet_big_end=.false.
   namelist /composition_params/ verbose, absdat_file, abund_file, absmet_file, &
-  absmet_big_end, linelist_file, isotope_file, molec_file
+  absmet_big_end, isotope_file, molec_file
+  namelist /linelist_params/ dlam, exclude_elements, linelist_file
   ! ----------------------------------------------------------------------------
   call trace%begin('composition_patch_t%composition_pre_init', itimer=itimer)
   self%kind = 'composition'
@@ -78,6 +80,7 @@ SUBROUTINE composition_pre_init (self)
   self%static_mem=.true.
 
   if (first_time) then
+    first_time = .false.
     rewind (io%input)
     read (io%input, composition_params, iostat=iostat)
     if (iostat > 0) then
@@ -87,18 +90,26 @@ SUBROUTINE composition_pre_init (self)
     call io%namelist_warning ('composition_params', iostat)
     write (io%namelist, composition_params)
 
+    rewind (io%input)
+    read (io%input, linelist_params, iostat=iostat)
+    if (iostat > 0) then
+      rewind (io%input)
+      read (io%input, linelist_params)
+    end if
+    call io%namelist_warning ('linelist_params', iostat)
+    write (io%namelist, linelist_params)
+
     if (verbose) write (*,*) ' - Initializing the NEW opacity package'
     composition%verbose = verbose
 
     call trace%begin('compositiont%init', itimer=itimer2)
-    call composition%init(absdat_file, abund_file, absmet_file, self%FeH, &
+    call composition%init(absdat_file, abund_file, absmet_file, FeH, &
     isotope_file=isotope_file, molec_file=molec_file, absmet_big_end=absmet_big_end)
     call composition%init_linelist(linelist_file)
     call trace%end(itimer2)
     
     allocate(output_sp)
     call output_sp%init()
-    first_time = .false.
   endif
 
   ! copy composition with all the information from the abund
@@ -117,17 +128,23 @@ SUBROUTINE composition_pre_init (self)
     endif
 
     do n=1, self%n_nu
-      allocate(back_opac)
-      back_opac%composition => self%composition
-      call back_opac%composition%reassign_pointer()
-      call back_opac%pre_init_and_link(self, i_mu=0, i_nu=n, sp=atom_patch%sp)
+      allocate(back_cont)
+      back_cont%composition => self%composition
+      call back_cont%composition%reassign_pointer()
+      call back_cont%pre_init_and_link(self, i_mu=0, i_nu=n, sp=atom_patch%sp)
+
+      if (comoving_frame .or. ilambd > 0) then
+        allocate(mean_rad)
+        call mean_rad%pre_init_and_link(self, i_mu=0, i_nu=n, sp=atom_patch%sp)
+        mean_rad%back_cont => back_cont
+      endif
+
+      if (ilambd > 0) back_cont%mean_rad => mean_rad
 
       if (comoving_frame) then
         allocate(net_opac)
         call net_opac%pre_init_and_link(self, i_mu=0, i_nu=n, sp=atom_patch%sp)
-
-        allocate(mean_rad)
-        call mean_rad%pre_init_and_link(self, i_mu=0, i_nu=n, sp=atom_patch%sp)
+        mean_rad%opac => net_opac
 
         do m=1, self%n_omega
           allocate(proj)
@@ -143,7 +160,7 @@ SUBROUTINE composition_pre_init (self)
       do m=1, self%n_omega
         allocate(rad)
         call rad%pre_init_and_link(self, i_mu=m, i_nu=n, sp=atom_patch%sp)
-        if (comoving_frame) rad%mean_rad => mean_rad
+        if (comoving_frame .or. ilambd > 0) rad%mean_rad => mean_rad
       end do
     end do
   else
@@ -158,10 +175,10 @@ SUBROUTINE composition_pre_init (self)
     do m=0, self%n_out
       m2 = m+self%n_omega
       if (m==0) then
-        allocate(back_opac)
-        back_opac%composition => self%composition
-        call back_opac%composition%reassign_pointer()
-        call back_opac%pre_init_and_link(self, i_mu=0, i_nu=n2, sp=output_sp)
+        allocate(back_cont)
+        back_cont%composition => self%composition
+        call back_cont%composition%reassign_pointer()
+        call back_cont%pre_init_and_link(self, i_mu=0, i_nu=n2, sp=output_sp)
 
       else
         if (self%composition%ll_initialised) then
@@ -279,7 +296,7 @@ SUBROUTINE composition_patch_nbor_relations(self, another, needed, needs_me, dow
       select case (another%kind)
       case ('atom_patch')
         ! is needed after convergence and needs me
-      case ('back_opac', 'back_line')
+      case ('back_cont', 'back_line')
         needed = .false.
       case default
         needed = .false.; needs_me = .false.
@@ -310,7 +327,7 @@ SUBROUTINE init_nbors_hash (self, nbors)
 
   do i_nu=1, 2*self%n_nu
     key(2) = i_nu
-    key(4) = hash_string('back_opac')
+    key(4) = hash_string('back_cont')
     call self%check_nbor(key, nbors)
   end do
 

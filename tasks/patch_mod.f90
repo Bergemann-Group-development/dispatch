@@ -858,10 +858,6 @@ SUBROUTINE init (self)
     !print *, 'patch_mod', gn, self%mv, self%nt, self%nw, self%kind, associated(self%mem)
     call os%allocate(self%mem, [gn, self%mv, self%nt, self%nw], label=trim(self%kind)//'%mem')
     call os%allocate(self%u_phase, gn, zero=.true., label='u_phase')
-    allocate (self%mem_lock(self%nt))
-    do i=1,self%nt
-      call self%mem_lock(i)%init ('meml')
-    end do
     call omp%set_stacksize (product(shape(self%mem)), io%master)
     !---------------------------------------------------------------------------
     ! The unsigned and pervolume flags may also be modified by the solver. They
@@ -874,6 +870,12 @@ SUBROUTINE init (self)
       call os%allocate(self%request, gn, zero=.true., label='request')
     end if
   end if
+  if (.not. associated(self%mem_lock)) then
+    allocate (self%mem_lock(self%nt))
+    do i=1,self%nt
+      call self%mem_lock(i)%init ('meml')
+    end do
+  endif
   self%wallclock = wallclock()                  ! starting time
   n_header = storage_size(header)/32            ! 32 bits per word
   if (n_header*4 /= storage_size(header)/8) then
@@ -890,10 +892,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call io%lock%set ('patch_t%init')
   if (first_time) then
-    call io%header ('patch_t%init:')
-    write (stdout,*) 'SOLVER=',trim(self%kind), omp%thread
-    write (stdout,'(a,6i4)') ' memory shape:', shape(self%mem)
-    call self%idx%print (stdout)
+    first_time = .false.
     !---------------------------------------------------------------------------
     ! If no other context has already set io%nv -- the number of memory slots
     ! to save in a snapshot, set it here to all memory slots
@@ -901,7 +900,12 @@ SUBROUTINE init (self)
     if (io%nv==0) then
       io%nv = self%mv
     end if
-    first_time = .false.
+    if (verbose > 0) then
+      call io%header ('patch_t%init:')
+      write (stdout,*) 'SOLVER=',trim(self%kind), omp%thread
+      write (stdout,'(a,6i4)') ' memory shape:', shape(self%mem)
+      call self%idx%print (stdout)
+    endif
   end if
   call self%init_outside ()
   call io%lock%unset ('patch_t%init')
@@ -961,10 +965,10 @@ END SUBROUTINE dealloc
 SUBROUTINE clone_mem_accounting (self)
   class(patch_t):: self
   if (associated(self%mask)) &
-    call io%bits_mem (storage_size(self%mask), &
+    call os%mem_register (storage_size(self%mask), &
                      product(shape(self%mask)))
   if (associated(self%frefine)) &
-    call io%bits_mem (storage_size(self%frefine), &
+    call os%mem_register (storage_size(self%frefine), &
                      product(shape(self%frefine)), 'frefine')
 END SUBROUTINE clone_mem_accounting
 
@@ -1556,7 +1560,7 @@ SUBROUTINE allocate_mesg (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%allocate_mesg')
   allocate (mesg)
-  call io%bits_mem (storage_size(mesg), 1)
+  call os%mem_register (storage_size(mesg), 1)
   if (self%is_set(bits%boundary) .and. associated(self%mesg)) then
     if (self%mesg%id /= self%id .and. self%mesg%id > 0) then
       write (stdlog,*) &
@@ -3885,7 +3889,7 @@ SUBROUTINE allocate_generic (self)
     l = merge (self%mesh%lb, self%mesh%li, io%guard_zones)
     u = merge (self%mesh%ub, self%mesh%ui, io%guard_zones)
     allocate (self%generic(l(1):u(1),l(2):u(2),l(3):u(3),self%nv))
-    call io%bits_mem (+storage_size(self%generic), &
+    call os%mem_register (+storage_size(self%generic), &
                       product(shape(self%generic)), 'generic')
   call trace%end ()
   end if

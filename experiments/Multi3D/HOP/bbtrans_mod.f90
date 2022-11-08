@@ -27,6 +27,9 @@ MODULE bbtrans_mod
     procedure :: estimate_qmax
     procedure :: get_range
   end type
+
+  integer, save :: count1, count2, count3, count4, count5, count6
+  real(4), save :: max_a=0, max_v=0
     
 contains
 
@@ -41,12 +44,11 @@ contains
     !----------------------------------------------------------------------------------
     allocate(psi, damp, mold=inv_df)
     damp = adamp * inv_df * over_4pi / self%nu0
-    psi = psi_func(damp)
 
     !DIR$ FORCEINLINE
     do f=1, size(q)
       phi(:,:,:,f) = (q(f) - vproj) * inv_df
-      phi(:,:,:,f) = voigt_function2(damp, phi(:,:,:,f), psi)
+      phi(:,:,:,f) = voigt_function2(damp, phi(:,:,:,f))
       phi(:,:,:,f) = phi(:,:,:,f) * inv_df
     end do 
   END SUBROUTINE profile
@@ -58,22 +60,23 @@ contains
     real(8), dimension(:), intent(in), contiguous :: nu
     real(4), dimension(:,:,:), intent(in), contiguous :: vproj, inv_df, inv_part, adamp
     real(8), dimension(:,:,:), intent(in), contiguous :: EK_over_temp
-    real(4), dimension(:,:,:,:), intent(inout), contiguous :: eta, chi
+    real(4), dimension(:,:,:,:), intent(inout) :: eta, chi
     real(4), dimension(:,:,:), allocatable :: eta_fac, chi_fac, norm, damp, psi, phi
     real(8), dimension(:), allocatable :: q
-    real(4) :: ex, ni, nj, upper_ev
+    real(4), dimension(:), allocatable :: fisqp
+    real(4) :: ex, ni, nj, upper_ev, qreal
     integer :: i,j,k,f, m(4)
-    integer, save :: itimer=0, itimer2=0
+    integer, save :: itimer=0, itimer1=0, itimer2=0
     !----------------------------------------------------------------------------------
     call trace%begin('bbtrans_type%add_lte_opacities', itimer=itimer)
     allocate(eta_fac, chi_fac, norm, psi, damp, phi, mold=vproj)
     allocate(q, mold=nu)
+    allocate(fisqp(size(nu)))
     m = shape(eta)
 
     q = nu / self%nu0 - 1
     norm = inv_df / self%nu0 * over_4pi
     damp = adamp * norm
-    psi = psi_func(damp)
 
     upper_ev = self%lower_ev + H_E * self%nu0
 
@@ -93,25 +96,29 @@ contains
     end do
     end do
 
+    fisqp = nu * 0.5641895835
     call trace%end(itimer)
-    call trace%begin('bbtrans_type%voigt_function', itimer=itimer2)
+    call trace%begin('bbtrans_type%add_lte_opacities2', itimer=itimer1)
     
     !DIR$ FORCEINLINE
     do f=1, m(4)
       phi = (q(f) - vproj) * inv_df
-      phi = voigt_function2(damp, phi, psi)
+      call trace%begin('bbtrans_type%voigt_function', itimer=itimer2)
+      phi = voigt_function2(damp, phi)
       phi = phi * nu(f)
+      !phi = new_voigt(damp, phi, fisqp(f))
+      call trace%end(itimer2)
 
       do k=1, m(3)
       do j=1, m(2)
       do i=1, m(1)
-          eta(i,j,k,f) = eta(i,j,k,f) + eta_fac(i,j,k) * phi(i,j,k)
-          chi(i,j,k,f) = chi(i,j,k,f) + chi_fac(i,j,k) * phi(i,j,k)
+        eta(i,j,k,f) = eta(i,j,k,f) + phi(i,j,k) * eta_fac(i,j,k)
+        chi(i,j,k,f) = chi(i,j,k,f) + phi(i,j,k) * chi_fac(i,j,k)
       end do
       end do
       end do
     end do
-    call trace%end(itimer2)
+    call trace%end(itimer1)
   END SUBROUTINE add_lte_opacities
   !------------------------------------------------------------------------------------
 
@@ -119,24 +126,25 @@ contains
   ELEMENTAL FUNCTION psi_func(a) result(psi)
     real(4), intent(in) :: a
     real(4) :: psi
+    real(4), parameter :: isqp = 0.5641895835 ! 1/pi**0.5
     !----------------------------------------------------------------------------------
-    psi = (0.979895023 + a*(-0.962846325 + a*(0.532770573 + a*-0.122727278))) * 0.5641895835
+    psi = (0.979895023 + a*(-0.962846325 + a*(0.532770573 + a*-0.122727278))) * isqp
   END FUNCTION psi_func
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  ELEMENTAL FUNCTION voigt_function2(a,vs,psi) result(h)
+  ELEMENTAL FUNCTION voigt_function2(a,vs) result(h)
     !---------------------------------------------------------------------
     !  computes a voigt function  h = h(a,v)
     !  a=gamma/(4*pi*dnud)   and  v=(nu-nu0)/dnud.  this  is  done after
     !  traving (landolt-b\rnstein, p. 449).
     !  coded by: kjell eriksson  (apr-1974). revised: (july-1975).
     !---------------------------------------------------------------------
-    real(4), intent(in) :: a,vs,psi
+    real(4), intent(in) :: a,vs
     real(4) :: h
-    real(4) :: v,u,v2,v4,ex,h1,h1p,h2p,h3p,h4p
-    real(4) :: a2,u2,v2ex
-
+    real(4) :: v,u,v2,v4,ex
+    real(4) :: a2,u2
+    complex(8) :: tav,uav,w4,u4 
     real(4), parameter :: pqs  = 1.128379167  ! 2./pi**0.5
     real(4), parameter :: isqp = 0.5641895835 ! 1/pi**0.5
     real(4), parameter :: ipi  = 0.3183098862 ! 1/pi
@@ -161,25 +169,23 @@ contains
         h = ipi*a*u * (1. + u2*((3.*v2 - a2) + u2*(15.*v2*v2 - 30.*v2*a2 + 3.*a2*a2)))
 
       else
-        if (v >= 2.4) then
-          h1 = 1./(v2 - 1.5) * (0.554153432 + v*(0.278711796 + v*(-0.188325687 + v*(0.042991293 + v*-0.003278278))))
+        tav = cmplx(a,-v)
+        if (a >= 0.195e0*v - 0.176e0) then
+          w4 = (16.4955e0 + tav*(20.20933e0 + tav*(11.96482e0      &
+            +  tav*(3.778987e0 + tav*0.5642236e0)))) / (16.4955e0  &
+            +  tav*(38.82363e0 + tav*(39.27121e0 + tav*(21.69274e0 &
+            +  tav*(6.699398e0 + tav)))))
         else
-          if (v >= 1.3) then
-            h1 = -4.48480194 + v*(9.39456063 + v*(-6.61487486 + v*(1.98919585 + v*-0.22041650)))
-          else
-            h1 = -1.12470432 + v*(-0.15516677 + v*(3.28867591 + v*(-2.34357915 + v*0.42139162)))
-          endif
+          uav = tav*tav 
+          w4 = tav*(36183.31e0 - uav*(3321.9905e0 - uav*(1540.787e0 &
+             - uav*(219.0313e0 - uav*( 35.76683e0 - uav*(1.320522e0 &
+             - uav*0.56419e0))))))
+          u4 = (32066.6e0 - uav*(24322.84e0 - uav*(9022.228e0       &
+             - uav*(2186.181e0 - uav*(364.2191e0                    &
+             - uav*(61.57037e0 - uav*(1.841439e0 - uav)))))))
+          w4 = exp(uav) - w4/u4
         endif
-
-        ex = exp(-v2)
-        v2ex = 2.*v2*ex
-        h1p = h1 + pqs*ex
-        h2p = pqs*h1p - v2ex
-        h3p = (pqs*(1. - ex + v2ex) - 2.*v2*h1p)/3. + pqs*h2p
-        h4p = (v2ex*v2- pqs*h1p)/3. + pqs*h3p
-        !psi = 0.979895023 + a*(-0.962846325 + a*(0.532770573 + a*-0.122727278)) / sqp
-        ! 0.2 < a <= 1.4  and  a + v <= 3.2
-        h = psi*(ex + a*(h1p + a*(h2p + a*(h3p + a*h4p))))
+        h = real(w4) * isqp
       endif
 
     elseif (v >= 5.0) then
@@ -188,20 +194,117 @@ contains
 
     else
       if (v >= 2.4) then
-        h1 = 1./(v2 - 1.5) * (0.554153432 + v*(0.278711796 + v*(-0.188325687 + v*(0.042991293 + v*-0.003278278))))
+        h = 1./(v2 - 1.5) * (0.554153432 + v*(0.278711796 + v*(-0.188325687 + v*(0.042991293 + v*-0.003278278))))
       else
         if (v >= 1.3) then
-          h1 = -4.48480194 + v*(9.39456063 + v*(-6.61487486 + v*(1.98919585 + v*-0.22041650)))
+          h = -4.48480194 + v*(9.39456063 + v*(-6.61487486 + v*(1.98919585 + v*-0.22041650)))
         else
-          h1 = -1.12470432 + v*(-0.15516677 + v*(3.28867591 + v*(-2.34357915 + v*0.42139162)))
+          h = -1.12470432 + v*(-0.15516677 + v*(3.28867591 + v*(-2.34357915 + v*0.42139162)))
         endif
       endif
 
       ! a le 0.2  and v lt 5.
-      h = (h1*a + exp(-v2)*(1. + a*a*(1. - 2.*v2))) * isqp
+      h = (h*a + exp(-v2)*(1. + a*a*(1. - 2.*v2))) * isqp
     endif
   END FUNCTION voigt_function2
   !------------------------------------------------------------------------------------
+
+
+  !====================================================================================
+  SUBROUTINE voigt_sub(aa,vs)
+    !---------------------------------------------------------------------
+    !  computes a voigt function  h = h(a,v)
+    !  a=gamma/(4*pi*dnud)   and  v=(nu-nu0)/dnud.  this  is  done after
+    !  traving (landolt-b\rnstein, p. 449).
+    !  coded by: kjell eriksson  (apr-1974). revised: (july-1975).
+    !---------------------------------------------------------------------
+    real(4), intent(in), dimension(:,:,:) :: aa
+    real(4), intent(inout), dimension(:,:,:) :: vs
+    real(4) :: h, a
+    real(4) :: v,u,v2,v4,ex
+    real(4) :: a2,u2
+    complex(8) :: tav,uav,w4,u4 
+    real(4), parameter :: pqs  = 1.128379167  ! 2./pi**0.5
+    real(4), parameter :: isqp = 0.5641895835 ! 1/pi**0.5
+    real(4), parameter :: ipi  = 0.3183098862 ! 1/pi
+    integer :: i,j,k
+    !----------------------------------------------------------------------------------
+    do k=1, size(aa,3)
+    do j=1, size(aa,2)
+    do i=1, size(aa,1)
+      a = aa(i,j,k)
+      v = abs(vs(i,j,k))
+      max_a = max(a, max_a)
+      max_v = max(v, max_v)
+      u = a + v
+      v2 = v*v
+
+      if (a == 0.0) then
+        if (v2 < 100.) then
+          h = exp(-v2) * isqp
+          count1 = count1 + 1
+        else
+          h = 0.
+          count2 = count2 + 1
+        endif
+
+      elseif (a > 0.2) then
+        if (a > 1.4 .or. u > 3.2) then
+          a2 = a*a
+          u = 1 / (a2 + v2)
+          u2 = 0.5 * u*u
+          ! a gt 1.4  or  a + v gt 3.2
+          h = ipi*a*u * (1. + u2*((3.*v2 - a2) + u2*(15.*v2*v2 - 30.*v2*a2 + 3.*a2*a2)))
+          count3 = count3 + 1
+
+        else
+          tav = cmplx(a,-v)
+          if (a >= 0.195e0*v - 0.176e0) then
+            w4 = (16.4955e0 + tav*(20.20933e0 + tav*(11.96482e0      &
+              +  tav*(3.778987e0 + tav*0.5642236e0)))) / (16.4955e0  &
+              +  tav*(38.82363e0 + tav*(39.27121e0 + tav*(21.69274e0 &
+              +  tav*(6.699398e0 + tav)))))
+          else
+            uav = tav*tav 
+            w4 = tav*(36183.31e0 - uav*(3321.9905e0 - uav*(1540.787e0 &
+              - uav*(219.0313e0 - uav*( 35.76683e0 - uav*(1.320522e0 &
+              - uav*0.56419e0))))))
+            u4 = (32066.6e0 - uav*(24322.84e0 - uav*(9022.228e0       &
+              - uav*(2186.181e0 - uav*(364.2191e0                    &
+              - uav*(61.57037e0 - uav*(1.841439e0 - uav)))))))
+            w4 = exp(uav) - w4/u4
+          endif
+          h = real(w4) * isqp
+          count4 = count4 + 1
+        endif
+
+      elseif (v >= 5.0) then
+        v4 = 4*v2*v2
+        h = ipi * a*(15. + 6.*v2 + v4) / (v4*v2)
+        count5 = count5 + 1
+
+      else
+        if (v >= 2.4) then
+          h = 1./(v2 - 1.5) * (0.554153432 + v*(0.278711796 + v*(-0.188325687 + v*(0.042991293 + v*-0.003278278))))
+        else
+          if (v >= 1.3) then
+            h = -4.48480194 + v*(9.39456063 + v*(-6.61487486 + v*(1.98919585 + v*-0.22041650)))
+          else
+            h = -1.12470432 + v*(-0.15516677 + v*(3.28867591 + v*(-2.34357915 + v*0.42139162)))
+          endif
+        endif
+
+        ! a le 0.2  and v lt 5.
+        h = (h*a + exp(-v2)*(1. + a*a*(1. - 2.*v2))) * isqp
+        count6 = count6 + 1
+      endif
+      vs(i,j,k) = h
+    end do
+    end do
+    end do
+  END SUBROUTINE voigt_sub
+  !------------------------------------------------------------------------------------
+
 
   !====================================================================================
   ELEMENTAL FUNCTION voigt_function(a,vs) result(h)
@@ -290,6 +393,45 @@ contains
     h = psi*(ex + a*(h1p + a*(h2p + a*(h3p + a*h4p))))
     return
   END FUNCTION voigt_function
+  !------------------------------------------------------------------------------------
+
+  !====================================================================================
+  ELEMENTAL FUNCTION new_voigt(a,v,f) result(h)
+    ! Champion Voigt routine in speed and accuracy test by BE+NP 97-11-18
+    !  VOIGT FUNCTION CALCULATION: HUMLICEK'S APPROXIMATION 
+    ! The results are normalized to an area of 1/sqrt(pi).
+    real(4), intent(in) :: f
+    real(4), intent(in) :: a, v
+    complex(8) :: tav,uav,w4,v4 
+    real(4)    :: sav,aa,vv,h
+    real(4), parameter :: isqp = 0.5641895835 ! 1/pi**0.5
+    integer :: i,j,k
+    !----------------------------------------------------------------------------------
+    aa = a
+    vv = abs(v)
+    tav = cmplx(aa,-vv) 
+    sav = vv + aa 
+    uav = tav*tav 
+    if (sav >= 15.e0) then
+      w4 = tav*0.5641896e0 / (0.5e0 + uav)
+    elseif (sav >= 5.5e0) then
+      w4 = tav*(1.410474e0 + uav*0.5641896e0) / (0.75e0 + uav*(3.e0 + uav))
+    elseif (aa >= 0.195e0*vv - 0.176e0) then
+      w4 = (16.4955e0 + tav*(20.20933e0 + tav*(11.96482e0       &
+        +  tav*(3.778987e0 + tav*0.5642236e0)))) / (16.4955e0  &
+        +  tav*(38.82363e0 + tav*(39.27121e0 + tav*(21.69274e0 &
+        +  tav*(6.699398e0 + tav)))))
+    else
+      w4 = tav*(36183.31e0 - uav*(3321.9905e0 - uav*(1540.787e0 &
+        - uav*(219.0313e0 - uav*( 35.76683e0 - uav*(1.320522e0 &
+        - uav*0.56419e0))))))
+      v4 = (32066.6e0 - uav*(24322.84e0 - uav*(9022.228e0       &
+        - uav*(2186.181e0 - uav*(364.2191e0                    &
+        - uav*(61.57037e0 - uav*(1.841439e0 - uav)))))))
+      w4 = exp(uav) - w4/v4
+    endif
+    h = real(w4) * f ! * isqp
+  END FUNCTION new_voigt
   !------------------------------------------------------------------------------------
 
   !====================================================================================

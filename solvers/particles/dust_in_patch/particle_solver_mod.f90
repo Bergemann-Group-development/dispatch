@@ -124,7 +124,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Allocate force array
   !-----------------------------------------------------------------------------
-  call scratch%allocate (scratch%force_per_unit_volume, m)
+  call os%allocate (scratch%force_per_unit_volume, m)
   if (.not.associated(self%lock)) then
     allocate (self%lock)
     call self%lock%init ('part')

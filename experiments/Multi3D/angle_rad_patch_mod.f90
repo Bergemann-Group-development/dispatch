@@ -1,4 +1,4 @@
-MODULE rad_patch_mod
+MODULE angle_rad_patch_mod
   !USE rt_integral_mod
   !USE radau_mod
   !USE boundaries_mod
@@ -23,7 +23,7 @@ MODULE rad_patch_mod
   USE units_mod, only: cgs
   USE mconst, only: over_4pi
   !USE scratch_mod
-  USE m3d_patch_mod, only: m3d_patch_t, hash_string, comoving_frame
+  USE m3d_patch_mod, only: m3d_patch_t, hash_string, comoving_frame, ilambd
   USE ray_patch_mod, only: ray_patch_t, formal_solver
   USE proj_patch_mod, only:interpolate_to_ray
   USE os_mod
@@ -35,7 +35,7 @@ MODULE rad_patch_mod
 
   type, public, extends(ray_patch_t) :: rad_patch_t
     class(ray_patch_t), pointer :: opac => null()
-    class(ray_patch_t), pointer :: back_opac => null()
+    class(ray_patch_t), pointer :: back_cont => null()
     class(rad_patch_t), pointer :: mean_rad => null()
     real(4), dimension(:,:,:,:), contiguous, pointer :: Inu, chi, Snu
     real(4), dimension(:,:,:,:), contiguous, pointer :: Psi, Ieff
@@ -50,9 +50,7 @@ MODULE rad_patch_mod
     !procedure :: long_ray_update
     procedure :: long_char_update
     procedure :: short_ray_update
-    procedure :: Jnu_update
     procedure :: bndries
-    procedure :: periodic_plane
     procedure :: interp_long
     procedure :: integrate_intensity
     !procedure :: interp_xy_up
@@ -81,7 +79,7 @@ SUBROUTINE radiation_pre_init (self)
   namelist /radiation_params/ stiff_lim, lock_Inu
   ! ----------------------------------------------------------------------------
   call trace%begin('rad_patch_t%radiation_pre_init', itimer=itimer)
-  self%kind = merge('angle_rad', 'mean_rad ', self%i_mu>0)
+  self%kind = 'angle_rad'
   if (first_time) then
     rewind (io%input)
     read (io%input, radiation_params, iostat=iostat)
@@ -95,19 +93,16 @@ SUBROUTINE radiation_pre_init (self)
   endif
 
   call self%ray_patch_t%pre_init()
+  call self%ray%init(self%vec, self%wmu)
+  call self%ray%set_stencil(self%ds * scaling%l)
 
-  if (self%kind == 'angle_rad') then
-    call self%ray%init(self%vec, self%wmu)
-    call self%ray%set_stencil(self%ds * scaling%l)
-
-    if (self%out_ray) then
-      self%ng = [0,0,1]
+  if (self%out_ray) then
+    self%ng = [0,0,1]
+  else
+    if (self%ray%long) then
+      self%ng = [3,3,1]
     else
-      if (self%ray%long) then
-        self%ng = [3,3,1]
-      else
-        self%ng = [2,2,1]
-      endif
+      self%ng = [2,2,1]
     endif
   endif
 
@@ -127,9 +122,7 @@ SUBROUTINE radiation_init (self)
 
   if (.not. self%out_ray) then
     m = shape(self%authority_mem)
-    if (self%kind=='angle_rad') then
-      call self%allocate_mem(self)
-    end if
+    call self%allocate_mem(self)
     if (lock_Inu) then
       m = shape(self%authority_mem)
       m(3) = 2
@@ -154,26 +147,22 @@ SUBROUTINE radiation_update (self)
   call self%bndries()
   call self%periodic_grid(only=merge(1, self%gn(3), self%dir>0))
 
-  if (self%kind=='angle_rad') then
-    call self%check_access(self%opac)
-    if (self%out_ray) then
-      call self%long_char_update()
-    else
-      call self%decompress_mem(self)
-      call self%check_access(self%back_opac)
-      if (self%ray%long) then
-        print *, 'long ray detected! Stopping...'
-        stop
-        !call self%long_ray_update()
-      else
-        call self%short_ray_update()
-        if (comoving_frame) then
-          call self%integrate_intensity()
-        endif
-      endif
-    endif
+  call self%check_access(self%opac)
+  if (self%out_ray) then
+    call self%long_char_update()
   else
-    call self%Jnu_update()
+    call self%decompress_mem(self)
+    call self%check_access(self%back_cont)
+    if (self%ray%long) then
+      print *, 'long ray detected! Stopping...'
+      stop
+      !call self%long_ray_update()
+    else
+      call self%short_ray_update()
+    endif
+    if (comoving_frame .or. self%iter < ilambd) then
+      call self%integrate_intensity()
+    endif
   endif
 
   if (lock_Inu .and. .not. self%out_ray) then
@@ -202,54 +191,10 @@ SUBROUTINE radiation_update (self)
     call self%skip_iterations(self%stiff_count-1)
   endif
 
-  if (self%kind == 'angle_rad' .and. self%out_ray .and. self%boundaries%upper) then
+  if (self%out_ray .and. self%boundaries%upper) then
     call self%remove_lower_layers_mem()
   endif
 END SUBROUTINE radiation_update
-
-!===============================================================================
-SUBROUTINE Jnu_update (self)
-  class(rad_patch_t) :: self
-  class(nbor_t), pointer:: nbor
-  integer :: i,j,k,f
-  real(4), dimension(:,:,:,:), pointer :: Jnu, Psi, Ieff
-  real(4), dimension(:,:,:,:), pointer :: Inu
-  real(4), dimension(:,:,:,:,:), allocatable :: opac
-  integer, save:: itimer=0
-  real(4) :: wmu
-  !-----------------------------------------------------------------------------
-  call trace%begin('rad_patch_t%Jnu_update', itimer=itimer)
-
-  Jnu => self%mem(:,:,:,:, self%it, self%i_inu)
-  Psi => self%Psi
-  Ieff => self%Ieff
-  Jnu = 0
-  Psi = 0
-  Ieff = 0
-
-  nbor => self%link%nbor
-  do while (associated(nbor))
-    select type(nb => nbor%task)
-    class is (rad_patch_t)
-      Inu => nb%authority_mem(:,:,:,:, nb%it, self%i_inu)
-      wmu = nb%wmu * over_4pi
-      do f=1, self%nv
-      do k=1, self%n(3)
-      do j=1, self%n(2)
-      do i=1, self%n(1)
-        Jnu(i,j,k,f)  = Jnu(i,j,k,f)  + wmu * Inu(i,j,k,f)
-        Psi(i,j,k,f)  = Psi(i,j,k,f)  + wmu * nb%Psi(i,j,k,f)
-        Ieff(i,j,k,f) = Ieff(i,j,k,f) + wmu * nb%Ieff(i,j,k,f)
-      end do
-      end do
-      end do
-      end do
-    end select
-    nbor => nbor%next
-  end do
-
-  call trace%end(itimer)
-END SUBROUTINE Jnu_update
 
 !===============================================================================
 SUBROUTINE short_ray_update (self)
@@ -257,7 +202,7 @@ SUBROUTINE short_ray_update (self)
   real(4), dimension(:,:), pointer, contiguous :: kernel
   real(4), dimension(:,:,:,:), pointer, contiguous :: eta_back
   real(4) :: dt, u0, ex, Inuup, xxup, ssup, xxmin, ssmin, Inumin, dsup05, Psi, xx, ss, Inu
-  integer :: f, k, i, j, dx,dy,i1,j1,x1,x2,y1,y2, kup, k1, k2, dir, x, y, z, ii, jj
+  integer :: f, k, i, j, dx,dy,i1,j1,x1,x2,y1,y2, kup, k1, k2, dir, x, y, z, ii, jj, t, li(3)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('rad_patch_t%short_ray_update', itimer=itimer)
@@ -265,7 +210,9 @@ SUBROUTINE short_ray_update (self)
   self%Inu => self%mem(:,:,:,:, self%it, self%i_inu)
   self%chi => self%opac%mem(:,:,:,:, self%opac%it, self%opac%i_chi)
   self%Snu => self%opac%mem(:,:,:,:, self%opac%it, self%opac%i_snu)
-  eta_back => self%back_opac%mem(:,:,:,:, self%back_opac%it, self%back_opac%i_eta)
+  eta_back => self%back_cont%mem(:,:,:,:, self%back_cont%it, self%back_cont%i_eta)
+
+  !call self%init_periodic_idx()
 
   call os%allocate (kernel, shape(self%ray%upkern))
   kernel = real(self%ray%upkern)
@@ -276,6 +223,7 @@ SUBROUTINE short_ray_update (self)
 
   k1 = merge(self%li(3), self%ui(3), self%dir > 0)
   k2 = merge(self%li(3), self%ui(3), self%dir < 0)
+  li = self%ng + 1
 
   do f=1, self%nv
     do k=k1,k2,self%dir
@@ -351,7 +299,11 @@ SUBROUTINE short_ray_update (self)
         end do
       end do
 
-      call self%periodic_plane(self%Inu(:,:,k,f))
+      do t=1, size(self%periodic_idx, 2)
+        i = self%periodic_idx(1,t)
+        j = self%periodic_idx(2,t)
+        self%Inu(i,j,k,f) = self%Inu(self%periodic_i(i),self%periodic_j(j),k,f)
+      end do
     end do ! k-loop
   end do ! f-loop
 
@@ -456,25 +408,27 @@ SUBROUTINE integrate_intensity(self)
   real(4), dimension(:,:,:,:), pointer :: Jnu, Inu
   real(8), dimension(:), pointer, contiguous :: nu_in, nu_out
   real(4) :: wmu
-  integer :: f
+  integer :: f, i, j, k
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('rad_patch_t%integrate_intensity', itimer=itimer)
-  nbor => self%link%nbor
-  do while (associated(nbor))
-    if (nbor%download) then
-      nbtask => nbor%task
-      select type (nbtask)
-      class is (rad_patch_t)
-        call nbtask%mem_lock(1)%set ('free_unused_memory')
-        call nbtask%deallocate_mem(self, print=.true.)
-        call nbtask%mem_lock(1)%unset ('free_unused_memory')
-      end select
-    endif
-    nbor => nbor%next
-  end do
+  if (comoving_frame) then
+    nbor => self%link%nbor
+    do while (associated(nbor))
+      if (nbor%download) then
+        nbtask => nbor%task
+        select type (nbtask)
+        class is (rad_patch_t)
+          call nbtask%mem_lock(1)%set ('free_unused_memory')
+          call nbtask%deallocate_mem(self, print=.true.)
+          call nbtask%mem_lock(1)%unset ('free_unused_memory')
+        end select
+      endif
+      nbor => nbor%next
+    end do
+  endif
   mean => self%mean_rad
-  call mean%opac%mem_lock(1)%set('integrate_intensity')
+  call mean%mem_lock(1)%set('integrate_intensity')
   if (.not. associated(mean%mem)) then
     call mean%check_mem()
     do f=1, self%nv
@@ -483,21 +437,39 @@ SUBROUTINE integrate_intensity(self)
     do f=1, self%nv
       mean%Psi(:,:,:,f) = 0
     end do
+    if (.not. comoving_frame) then
+      do f=1, self%nv
+        mean%Ieff(:,:,:,f) = 0
+      end do
+    endif  
   endif
-  call mean%mem_lock(1)%set('integrate_intensity')
-  call mean%opac%mem_lock(1)%unset('integrate_intensity')
 
-  call os%allocate(vproj, self%n)
-  call self%comp_vproj(vproj)
-  vproj = 1.0 + vproj
   wmu = self%wmu * over_4pi
-  nu_in => mean%sp%nu(self%fs:self%fe)
-  nu_out => mean%sp%nu(mean%fs:mean%fe)
   Jnu => mean%mem(:,:,:,:,mean%it,1)
   Inu => self%authority_mem(:,:,:,:,self%it,1)
 
-  call interpolate_to_ray(vproj, nu_in, nu_out, Inu, Jnu, wmu)
-  call interpolate_to_ray(vproj, nu_in, nu_out, self%Psi, mean%Psi, wmu)
+  if (comoving_frame) then
+    call os%allocate(vproj, self%n)
+    call self%comp_vproj(vproj)
+    vproj = 1.0 + vproj
+    nu_in => mean%sp%nu(self%fs:self%fe)
+    nu_out => mean%sp%nu(mean%fs:mean%fe)
+    call interpolate_to_ray(vproj, nu_in, nu_out, Inu, Jnu, wmu)
+    call interpolate_to_ray(vproj, nu_in, nu_out, self%Psi, mean%Psi, wmu)
+    call os%deallocate(vproj)
+  else
+    do f=1, self%nv
+    do k=1, self%n(3)
+    do j=1, self%n(2)
+    do i=1, self%n(1)
+      Jnu(i,j,k,f)  = Jnu(i,j,k,f)  + wmu * Inu(i,j,k,f)
+      mean%Psi(i,j,k,f)  = mean%Psi(i,j,k,f)  + wmu * self%Psi(i,j,k,f)
+      mean%Ieff(i,j,k,f) = mean%Ieff(i,j,k,f) + wmu * self%Ieff(i,j,k,f)
+    end do
+    end do
+    end do
+    end do
+  endif
   call mean%mem_lock(1)%unset('integrate_intensity')
   call trace%end(itimer)
 END SUBROUTINE integrate_intensity
@@ -527,35 +499,6 @@ SUBROUTINE interp_long(self, Varin, Varup, up1, up2, kernel)
 END SUBROUTINE interp_long
 
 !===============================================================================
-SUBROUTINE periodic_plane (self, arr)
-  class(rad_patch_t), intent(in) :: self
-  real(4), dimension(:,:), intent(inout) :: arr
-  integer, dimension(3) :: li, ui, lb, ub
-  integer :: dir, is, ie, off
-  !-----------------------------------------------------------------------------
-  li = self%mesh%li; ui = self%mesh%ui
-  lb = self%mesh%lb; ub = self%mesh%ub
-
-  do dir=-1,1,2
-    is = dir*max(dir*li(1), dir*ui(1))
-    ie = dir*min(dir*li(1), dir*ui(1))
-
-    do off=dir, dir*self%ng(1), dir
-      arr(is+off,li(2):ui(2)) = arr(ie-dir+off,li(2):ui(2))
-    end do
-  end do
-
-  do dir=-1,1,2
-    is = dir*max(dir*li(2), dir*ui(2))
-    ie = dir*min(dir*li(2), dir*ui(2))
-
-    do off=dir, dir*self%ng(2), dir
-      arr(:,is+off) = arr(:,ie-dir+off)
-    end do
-  end do
-END SUBROUTINE periodic_plane
-
-!===============================================================================
 SUBROUTINE radiation_nbor_relations(self, another, needed, needs_me, download)
   class(rad_patch_t) :: self
   class(task_t), pointer :: another         ! another task in the list
@@ -570,36 +513,25 @@ SUBROUTINE radiation_nbor_relations(self, another, needed, needs_me, download)
     class is (ray_patch_t)
       if (self%kind==another%kind) then
         ! do nothing
-      elseif(another%kind=='rate_patch' .and. self%i_mu==another%i_mu &
-        .and. .not. comoving_frame) then
-        needed=.false.
-      elseif (self%kind=='angle_rad') then
-          if (another%kind=='net_opac' .and. (self%out_ray .or. .not. comoving_frame)) then
-            needs_me=.false.
-            self%opac => another
-          elseif (another%kind=='mean_rad'  .and. .not. self%out_ray) then
-            needed=.false.
-          elseif (another%kind=='back_opac' .and. .not. self%out_ray) then
-            needs_me=.false.
-            self%back_opac => another
-          elseif (another%kind=='proj_patch') then
-            needs_me=.false.
-            self%opac => another
-          elseif (another%kind=='out_rad') then
-            needed=.false.
-          else
-            needed=.false. ; needs_me=.false.
-          endif
-      elseif (self%kind=='mean_rad') then
-        if (another%kind=='angle_rad' .and. .not. another%out_ray) then
+      else
+        if (another%kind=='net_opac' .and. (self%out_ray .or. .not. comoving_frame)) then
           needs_me=.false.
-        elseif(another%kind=='back_opac') then
+          self%opac => another
+        elseif (another%kind=='mean_rad'  .and. .not. self%out_ray) then
+          needed=.false.
+        elseif (another%kind=='back_cont' .and. .not. self%out_ray) then
+          needs_me=.false.
+          self%back_cont => another
+        elseif (another%kind=='proj_patch') then
+          needs_me=.false.
+          self%opac => another
+        elseif(another%kind=='atom_rate' .and. .not. comoving_frame) then
+          needed=.false.
+        elseif (another%kind=='out_rad') then
           needed=.false.
         else
           needed=.false. ; needs_me=.false.
         endif
-      else
-        needed=.false. ; needs_me=.false.
       endif
     class default
       needed=.false. ; needs_me=.false.
@@ -613,27 +545,23 @@ SUBROUTINE bndries (self)
   class(rad_patch_t):: self
   integer :: li, ui, f
   !----------------------------------------------------------------------------
-  if (self%kind == 'angle_rad') then
-    call self%check_access(self%opac)
-    self%Inu => self%mem(:,:,:,:, self%it, self%i_inu)
-    self%chi => self%opac%mem(:,:,:,:, self%opac%it, self%opac%i_chi)
-    self%Snu => self%opac%mem(:,:,:,:, self%opac%it, self%opac%i_snu)
+  call self%check_access(self%opac)
+  self%Inu => self%mem(:,:,:,:, self%it, self%i_inu)
+  self%chi => self%opac%mem(:,:,:,:, self%opac%it, self%opac%i_chi)
+  self%Snu => self%opac%mem(:,:,:,:, self%opac%it, self%opac%i_snu)
 
-    if (self%boundaries%upper) then
-      ui = ubound(self%mem,3)
-      do f=1, self%nv
-        self%Inu(:,:,ui,f) = 0
-      end do
-    endif
-  
-    if (self%boundaries%lower) then
-      li = lbound(self%mem,3)
-      do f=1, self%nv
-        self%Inu(:,:,li,f) = self%Snu(:,:,li,f)
-      end do
-    endif
-  else
-    call self%ray_patch_t%bndries()
+  if (self%boundaries%upper) then
+    ui = ubound(self%mem,3)
+    do f=1, self%nv
+      self%Inu(:,:,ui,f) = 0
+    end do
+  endif
+
+  if (self%boundaries%lower) then
+    li = lbound(self%mem,3)
+    do f=1, self%nv
+      self%Inu(:,:,li,f) = self%Snu(:,:,li,f)
+    end do
   endif
 END SUBROUTINE bndries
 
@@ -736,38 +664,27 @@ SUBROUTINE init_nbors_hash (self, nbors)
   !-----------------------------------------------------------------------------
   call trace%begin('rad_patch_t%init_nbors_hash', itimer=itimer)
 
-  key(1) = self%key(1)
-  select case (self%kind)
-  case ('angle_rad')
-    call self%ray_patch_t%init_nbors_hash(nbors)
-    key(2:3) = self%key(2:3)
-    if (comoving_frame .and. .not. self%out_ray) then
-      key(4) = hash_string('proj_patch')
-    else
-      key(4) = hash_string('net_opac')
-    endif
+  call self%ray_patch_t%init_nbors_hash(nbors)
+  key(1:3) = self%key(1:3)
+  if (comoving_frame .and. .not. self%out_ray) then
+    key(4) = hash_string('proj_patch')
+  else
+    key(4) = hash_string('net_opac')
+  endif
+  call self%check_nbor(key, nbors)
+  if (.not. self%out_ray) then
+    key(4) = hash_string('atom_rate')
     call self%check_nbor(key, nbors)
-    if (.not. self%out_ray) then
-      key(4) = hash_string('rate_patch')
-      call self%check_nbor(key, nbors)
-      key(3) = 0
-      key(4) = hash_string('back_opac')
-      call self%check_nbor(key, nbors)
-      key(4) = hash_string('mean_rad')
-      call self%check_nbor(key, nbors)
-    else
-      key(2) = 0
-      key(4) = hash_string('out_rad')
-      call self%check_nbor(key, nbors)
-    endif
-  case ('mean_rad')
-    key(2) = self%key(2)
-    do i_mu=1, self%n_omega
-      key(3) = i_mu
-      key(4) = hash_string('angle_rad')
-      call self%check_nbor(key, nbors)
-    end do
-  end select
+    key(3) = 0
+    key(4) = hash_string('back_cont')
+    call self%check_nbor(key, nbors)
+    key(4) = hash_string('mean_rad')
+    call self%check_nbor(key, nbors)
+  else
+    key(2) = 0
+    key(4) = hash_string('out_rad')
+    call self%check_nbor(key, nbors)
+  endif
   call trace%end (itimer)
 END SUBROUTINE init_nbors_hash
 

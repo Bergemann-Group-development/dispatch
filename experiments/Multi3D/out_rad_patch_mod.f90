@@ -11,7 +11,7 @@ MODULE out_rad_patch_mod
     USE bits_mod
     USE m3d_patch_mod, only: m3d_patch_t, hash_string
     USE ray_patch_mod, only: ray_patch_t
-    USE rad_patch_mod, only: rad_patch_t
+    USE angle_rad_patch_mod, only: rad_patch_t
     USE mconst, only: cc
     USE os_mod
     USE omp_mod
@@ -100,7 +100,7 @@ MODULE out_rad_patch_mod
     Inu => self%mem(:,:,1,:, self%it, self%i_inu)
   
     if (self%i_out == 1) then
-      filename = trim(io%run_dir) // 'lam.bin'
+      filename = trim(io%run_dir) // 'save/' // 'lam.bin'
       open(newunit=lunit, file=filename, access='stream')
       write(lunit) lam
       close(lunit)
@@ -108,7 +108,7 @@ MODULE out_rad_patch_mod
   
     filename = trim(self%ray_name) // '_inu.bin'
     call self%save_meta(filename, storage_size(Inu), shape(Inu))
-    filename = trim(io%run_dir) // trim(self%ray_name) // '_inu.bin'
+    filename = trim(io%run_dir) // 'save/' // trim(self%ray_name) // '_inu.bin'
     open(newunit=lunit, file=filename, access='stream')
     write(lunit) Inu
     close(lunit)
@@ -123,7 +123,7 @@ MODULE out_rad_patch_mod
     ! ----------------------------------------------------------------------------
     write(self%ray_name,'(A3, I3.3)') 'ray', self%i_out
   
-    self%meta_file = trim(io%run_dir) // trim(self%ray_name) // '_meta.txt'
+    self%meta_file = trim(io%run_dir) // 'save/' // trim(self%ray_name) // '_meta.txt'
     open(newunit=meta_unit, file=self%meta_file, form='formatted')
   
     write(meta_unit, '(A8, 1X, SP, 3(F12.8))') 'vec', self%vec

@@ -81,6 +81,7 @@ SUBROUTINE read_stagger_snapshot(ds, d, px, py, pz, ee, tt, ne)
   !=============================================================================
   ! Reading mesh file
   !-----------------------------------------------------------------------------
+  call os%check_file(mesh_file)
   open(newunit=lunit, file=mesh_file, iostat=iostat, convert='big_endian', form='unformatted')
 
   ! read first entry in mesh file
@@ -111,6 +112,7 @@ SUBROUTINE read_stagger_snapshot(ds, d, px, py, pz, ee, tt, ne)
   !=============================================================================
   ! Reading data file
   !-----------------------------------------------------------------------------
+  call os%check_file(data_file)
   open(newunit=lunit, file=data_file, iostat=iostat, convert='big_endian', &
        form='unformatted', status='old', access='direct', recl=recl)
 
@@ -137,6 +139,7 @@ SUBROUTINE read_stagger_snapshot(ds, d, px, py, pz, ee, tt, ne)
   ! Reading aux file
   !-----------------------------------------------------------------------------
   if (present(ne)) then
+    call os%check_file(aux_file)
     call os%allocate(ilne, m)
     open(newunit=lunit, file=aux_file, iostat=iostat, convert='big_endian', &
          form='unformatted', status='old', access='direct', recl=recl)

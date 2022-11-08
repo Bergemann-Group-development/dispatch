@@ -19,6 +19,7 @@
 !===============================================================================
 MODULE forces_mod
   USE io_mod
+  USE os_mod
   USE trace_mod
   USE gpatch_mod
   USE force_mod
@@ -96,7 +97,7 @@ SUBROUTINE pre_update (self)
     patch => self%patch
     m(1:3) = patch%mesh%gn
     m(4) = 3
-    call scratch%allocate (scratch%force_per_unit_mass, m)
+    call os%allocate (scratch%force_per_unit_mass, m)
     idx => patch%idx
     it = patch%it
     d => patch%mem(:,:,:,idx%d,it,1)

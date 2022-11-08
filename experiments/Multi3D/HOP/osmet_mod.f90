@@ -1,4 +1,5 @@
 MODULE osmet_mod
+    USE os_mod
     USE prec_mod
     USE op_math_mod
     implicit none
@@ -37,6 +38,7 @@ contains
         !---------------------------------------------------------------------------
         print *, 'Reading absmet file: ' // trim(absmet_file)
 
+        call os%check_file(absmet_file)
         if (absmet_big_end) then
             open(file=absmet_file, newunit=lunit, form='unformatted', convert='big_endian')
         else

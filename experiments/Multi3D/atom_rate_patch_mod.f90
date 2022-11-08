@@ -1,4 +1,4 @@
-MODULE rate_patch_mod
+MODULE atom_rate_patch_mod
     USE halo_mod
     USE gpatch_mod
     USE link_mod
@@ -11,48 +11,48 @@ MODULE rate_patch_mod
     USE bits_mod
     USE m3d_patch_mod, only: hash_string, comoving_frame
     USE ray_patch_mod, only: ray_patch_t
-    USE rad_patch_mod, only: rad_patch_t
+    USE angle_rad_patch_mod, only: rad_patch_t
     USE trans_mod, only: transition_type
     USE atom_mod, only: atom_type
-    USE lines_patch_mod, only: lines_patch_t
+    USE atom_line_patch_mod, only: atom_line_t
     USE mean_rad_patch_mod, only:mean_rad_patch_t
     implicit none
 
     !-----------------------------------------------------------------------------
 
-    type, public, extends(ray_patch_t) :: rate_patch_t
+    type, public, extends(ray_patch_t) :: atom_rate_t
       class(atom_type), pointer :: atom => null()
       class(rad_patch_t), pointer :: rad => null()
-      class(lines_patch_t), pointer :: lines => null()
+      class(atom_line_t), pointer :: lines => null()
       integer, dimension(:), pointer, contiguous :: idx_map, idx_remap
       logical :: update_skipped=.false.
       contains
-        procedure :: pre_init => rate_patch_pre_init
-        procedure :: update => rate_patch_update
-        procedure :: nbor_relations => rate_patch_nbor_relations
+        procedure :: pre_init => atom_rate_pre_init
+        procedure :: update => atom_rate_update
+        procedure :: nbor_relations => atom_rate_nbor_relations
         procedure :: integrate_rates
         procedure :: print_post_update_info
         procedure :: check_in_bounds
         procedure :: init_nbors_hash
-    end type rate_patch_t
+    end type atom_rate_t
   
     !-----------------------------------------------------------------------------
   
   contains
     
   !===============================================================================
-  SUBROUTINE rate_patch_pre_init (self)
-    class(rate_patch_t), target:: self
+  SUBROUTINE atom_rate_pre_init (self)
+    class(atom_rate_t), target:: self
     class(transition_type), pointer :: trans
     integer :: i, k, nrad, fs, fe
     logical :: skip
     integer, save :: itimer=0
     ! ----------------------------------------------------------------------------
-    call trace%begin('rate_patch_t%rate_patch_pre_init', itimer=itimer)
-    self%kind = 'rate_patch'
+    call trace%begin('atom_rate_t%atom_rate_pre_init', itimer=itimer)
+    self%kind = 'atom_rate'
     call self%ray_patch_t%pre_init()
 
-    call os%allocate(self%idx_map, self%atom%nrad, zero=.true., label='rate_patch:idx_map')
+    call os%allocate(self%idx_map, self%atom%nrad, zero=.true., label='atom_rate:idx_map')
     nrad = 0
     do i=1, size(self%atom%line)
       trans => self%atom%line(i)
@@ -68,7 +68,7 @@ MODULE rate_patch_mod
       nrad = nrad+1
       self%idx_map(i+self%atom%nline) = nrad
     end do
-    call os%allocate(self%idx_remap, nrad, label='rate_patch:idx_remap')
+    call os%allocate(self%idx_remap, nrad, label='atom_rate:idx_remap')
     do i=1, self%atom%nrad
       k = self%idx_map(i)
       if (k > 0) self%idx_remap(k) = i
@@ -78,17 +78,18 @@ MODULE rate_patch_mod
 
     call self%post_pre_init()
     call trace%end(itimer)
-  END SUBROUTINE rate_patch_pre_init
+  END SUBROUTINE atom_rate_pre_init
 
   !===============================================================================
-  SUBROUTINE rate_patch_update (self)
-    class(rate_patch_t) :: self
+  SUBROUTINE atom_rate_update (self)
+    class(atom_rate_t) :: self
     real(4), dimension(:,:,:,:), pointer :: gamma_ij, gamma_ji, Inu, Psi, Ieff
     real(4), dimension(:,:,:), pointer, contiguous :: temp
     integer, save:: itimer=0
+    integer :: fs, fe
     !-----------------------------------------------------------------------------
     if (self%is_finished()) return
-    call trace%begin('rate_patch_t%rate_patch_update', itimer=itimer)
+    call trace%begin('atom_rate_t%atom_rate_update', itimer=itimer)
 
     gamma_ij => self%mem(:,:,:,:, self%it, self%i_Gij)
     gamma_ji => self%mem(:,:,:,:, self%it, self%i_Gji)
@@ -98,9 +99,11 @@ MODULE rate_patch_mod
     endif
 
     if (.not. self%static_mem) then
-      Psi  => self%rad%Psi
-      Ieff => self%rad%Ieff
-      Inu  => self%rad%authority_mem(:,:,:,:,self%rad%it,self%rad%i_inu)
+      fs = self%fs - self%rad%fs + 1
+      fe = self%fe - self%rad%fs + 1
+      Psi  => self%rad%Psi(:,:,:,fs:fe)
+      Ieff => self%rad%Ieff(:,:,:,fs:fe)
+      Inu  => self%rad%authority_mem(:,:,:,fs:fe,self%rad%it,self%rad%i_inu)
       temp => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_temp, self%it,1)
 
       ! Zero the rates
@@ -127,11 +130,11 @@ MODULE rate_patch_mod
     if (.not. self%static_mem) then
       call self%deallocate_mem(self, print=.true.)
     endif
-  END SUBROUTINE rate_patch_update
+  END SUBROUTINE atom_rate_update
 
   !===============================================================================
   SUBROUTINE integrate_rates (self, gamma_ij, gamma_ji)
-    class(rate_patch_t) :: self
+    class(atom_rate_t) :: self
     integer :: m(4), i, k
     real(4), dimension(:,:,:,:), pointer :: gamma_ij, gamma_ji
     !-----------------------------------------------------------------------------
@@ -163,8 +166,8 @@ MODULE rate_patch_mod
   END SUBROUTINE integrate_rates
   
   !===============================================================================
-  SUBROUTINE rate_patch_nbor_relations(self, another, needed, needs_me, download)
-    class(rate_patch_t) :: self
+  SUBROUTINE atom_rate_nbor_relations(self, another, needed, needs_me, download)
+    class(atom_rate_t) :: self
     class(task_t), pointer :: another         ! another task in the list
     logical :: needed, needs_me, download    ! Is the other task: needed, 
                                              !    does it need me, should I download?
@@ -181,7 +184,7 @@ MODULE rate_patch_mod
         else
           needed = .false.; needs_me = .false.
         endif
-      class is (lines_patch_t)
+      class is (atom_line_t)
         if (self%i_mu > 0 .or. comoving_frame) then
           needs_me=.false.
           self%lines => another
@@ -197,11 +200,11 @@ MODULE rate_patch_mod
       end select
     endif
     call trace%end()
-  END SUBROUTINE rate_patch_nbor_relations
+  END SUBROUTINE atom_rate_nbor_relations
 
   !===============================================================================
   SUBROUTINE print_post_update_info (self)
-    class(rate_patch_t) :: self
+    class(atom_rate_t) :: self
     integer :: p(3), l
     !-----------------------------------------------------------------------------
     p = self%pcheck
@@ -215,7 +218,7 @@ MODULE rate_patch_mod
   
   !===============================================================================
   FUNCTION check_in_bounds (self) result (cib)
-    class(rate_patch_t) :: self
+    class(atom_rate_t) :: self
     logical :: cib
     !-----------------------------------------------------------------------------
     cib = .false.
@@ -230,7 +233,7 @@ MODULE rate_patch_mod
   !> Fast method to generate nbor lists in cases with very long task lists
   !===============================================================================
   SUBROUTINE init_nbors_hash (self, nbors)
-    class(rate_patch_t):: self
+    class(atom_rate_t):: self
     class(nbor_t), pointer:: nbors
     !.............................................................................
     class(task_t), pointer:: task
@@ -238,11 +241,11 @@ MODULE rate_patch_mod
     integer, save:: itimer=0
     integer :: key(4), i
     !-----------------------------------------------------------------------------
-    call trace%begin('rate_patch_t%init_nbors_hash', itimer=itimer)
+    call trace%begin('atom_rate_t%init_nbors_hash', itimer=itimer)
     call self%m3d_patch_t%init_nbors_hash(nbors)
 
     key(1:3) = self%key(1:3)
-    key(4) = hash_string('lines_patch')
+    key(4) = hash_string('atom_line')
     call self%check_nbor(key, nbors)
   
     if (comoving_frame) then

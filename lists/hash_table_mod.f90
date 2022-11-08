@@ -10,6 +10,7 @@ MODULE hash_table_mod
   USE iso_c_binding, only: c_loc, c_ptr
   USE trace_mod
   USE io_mod
+  USE os_mod
   USE timer_mod
   USE task_mod
   USE link_mod
@@ -127,16 +128,10 @@ SUBROUTINE reset_entire_hash (htable, resize)
      load_factor = real(htable%size - htable%nfree,kind=4) / real(htable%size,kind=4)
      if (load_factor > 0.6) then
         htable%size = htable%size * 2
-        call io%bits_mem (-storage_size(htable%data), product(shape(htable%data)))
-        call io%bits_mem (-storage_size(htable%next_free), &
-          product(shape(htable%next_free)), 'hash')
-        deallocate(htable%data, htable%next_free)
      else if (load_factor < 0.2 .and. htable%size > 2)then
         htable%size = htable%size / 2
-        call io%bits_mem (-storage_size(htable%next_free), &
-          product(shape(htable%next_free)), 'hash')
-        deallocate(htable%data, htable%next_free)
      end if
+     call htable%dealloc()
   end if
   !-----------------------------------------------------------------------------
   ! Compute sizes and allocate arrays
@@ -149,10 +144,10 @@ SUBROUTINE reset_entire_hash (htable, resize)
   if (.not. allocated(htable%data))then
      allocate(htable%data(1: htable%total_size))
      allocate(htable%next_free (htable%size + 1: htable%total_size))
-     call io%bits_mem (storage_size(htable%data), &
-       product(shape(htable%data)), 'hash')
-     call io%bits_mem (storage_size(htable%next_free), &
-       product(shape(htable%next_free)), 'hash')
+     call os%mem_register (storage_size(htable%data), &
+       product(shape(htable%data)), 'hash%data')
+     call os%mem_register (storage_size(htable%next_free), &
+       product(shape(htable%next_free)), 'hash%next_free')
   end if
   !-----------------------------------------------------------------------------
   ! Initialize data
@@ -175,9 +170,10 @@ SUBROUTINE dealloc (htable)
   integer :: i
   real :: load_factor
   !-----------------------------------------------------------------------------
-  call io%bits_mem (-storage_size(htable%data), product(shape(htable%data)))
-  call io%bits_mem (-storage_size(htable%next_free), &
-    product(shape(htable%next_free)), 'hash')
+  call os%mem_register(-storage_size(htable%data), &
+    product(shape(htable%data)), 'hash%data')
+  call os%mem_register(-storage_size(htable%next_free), &
+    product(shape(htable%next_free)), 'hash%next_free')
   deallocate (htable%data, htable%next_free)
 END SUBROUTINE dealloc
 

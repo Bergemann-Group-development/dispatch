@@ -10,7 +10,7 @@ MODULE spectrum_mod
     !-------------------------------------------------------------------------------
     type :: spectrum_type
         ! total number of frequencies
-        integer :: nnu=0, verbose
+        integer :: nnu=0
         ! frequency [Hz]
         real(8),dimension(:),allocatable :: nu
     contains

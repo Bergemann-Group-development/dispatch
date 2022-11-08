@@ -26,9 +26,9 @@ MODULE net_opac_patch_mod
     !USE scratch_mod
     USE m3d_patch_mod, only:maxiter, m3d_patch_t, hash_string, comoving_frame
     USE ray_patch_mod, only:ray_patch_t
-    USE back_opac_patch_mod, only:back_opac_patch_t
-    USE cont_opac_patch_mod, only:cont_opac_patch_t
-    USE lines_patch_mod, only:lines_patch_t
+    USE back_cont_patch_mod, only:back_cont_patch_t
+    USE atom_cont_patch_mod, only:atom_cont_patch_t
+    USE atom_line_patch_mod, only:atom_line_t
     USE back_line_patch_mod, only:back_line_patch_t
     implicit none
     private
@@ -117,7 +117,7 @@ MODULE net_opac_patch_mod
         nbtask => nbor%task
         call self%check_access(nbtask)
         select type (nbtask)
-        class is (lines_patch_t)
+        class is (atom_line_t)
           call nbtask%interpolate_lines(chi, eta)
         class is (ray_patch_t)
           fs = nbtask%fs - self%fs + 1
@@ -182,7 +182,7 @@ MODULE net_opac_patch_mod
           needs_me = .false.; needed = .false.
         else
           select case(another%kind)
-          case ('lines_patch', 'back_opac', 'back_line', 'cont_opac', 'atom_patch')
+          case ('atom_line', 'back_cont', 'back_line', 'atom_cont', 'atom_patch')
             needs_me = .false.
           case ('angle_rad')
             if (self%out_ray .or. .not. comoving_frame) then
@@ -224,7 +224,7 @@ MODULE net_opac_patch_mod
     endif
   
     key(1:3) = self%key(1:3)
-    key(4) = hash_string('lines_patch')
+    key(4) = hash_string('atom_line')
     call self%check_nbor(key, nbors)
 
     mu_start = merge(self%n_omega+1, 1, self%out_ray)
@@ -250,13 +250,13 @@ MODULE net_opac_patch_mod
     endif
     
     key(3) = 0
-    key(4) = hash_string('back_opac')
+    key(4) = hash_string('back_cont')
     call self%check_nbor(key, nbors)
 
-    key(4) = hash_string('cont_opac')
+    key(4) = hash_string('atom_cont')
     call self%check_nbor(key, nbors)
 
-    ! because of lines_patches
+    ! because of atom_linees
     key(2) = 0
     key(4) = hash_string('atom_patch')
     call self%check_nbor(key, nbors)

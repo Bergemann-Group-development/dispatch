@@ -2,6 +2,7 @@
 !===============================================================================
 MODULE viscosity_mod
   USE io_mod
+  USE os_mod
   USE trace_mod
   USE gpatch_mod
   USE scratch_mod
@@ -134,7 +135,7 @@ SUBROUTINE pre_update (self)
   m = self%patch%gn
   nn(1:3)=m
   nn(4) = 3
-  call scratch%allocate (scratch%force_per_unit_mass, nn)
+  call os%allocate (scratch%force_per_unit_mass, nn)
   d  => self%d
   u1 => self%u1
   u2 => self%u2

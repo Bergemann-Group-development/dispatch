@@ -1,4 +1,4 @@
-MODULE cont_opac_patch_mod
+MODULE atom_cont_patch_mod
     USE os_mod
     USE halo_mod
     USE gpatch_mod
@@ -16,26 +16,26 @@ MODULE cont_opac_patch_mod
     private
   
     !-----------------------------------------------------------------------------
-    type, public, extends(ray_patch_t) :: cont_opac_patch_t
+    type, public, extends(ray_patch_t) :: atom_cont_patch_t
     class(atom_type), pointer :: atom => null()
     contains
       procedure :: pre_init => opacity_pre_init
-      procedure :: update => cont_opac_update
+      procedure :: update => atom_cont_update
       procedure :: nbor_relations
-      procedure :: cont_opac_update
+      procedure :: atom_cont_update
       procedure :: init_nbors_hash
-    end type cont_opac_patch_t
+    end type atom_cont_patch_t
       
   contains
   
   !===============================================================================
   SUBROUTINE opacity_pre_init (self)
-    class(cont_opac_patch_t), target:: self
+    class(atom_cont_patch_t), target:: self
     integer :: nw, fs, fe
     integer, save :: itimer=0
     ! ----------------------------------------------------------------------------
-    call trace%begin('cont_opac_patch_t%opacity_pre_init', itimer=itimer)
-    self%kind = 'cont_opac'
+    call trace%begin('atom_cont_patch_t%opacity_pre_init', itimer=itimer)
+    self%kind = 'atom_cont'
     call self%ray_patch_t%pre_init()
   
     self%ng = 0
@@ -57,14 +57,14 @@ MODULE cont_opac_patch_mod
   END SUBROUTINE opacity_pre_init
   
   !===============================================================================
-  SUBROUTINE cont_opac_update (self)
-    class(cont_opac_patch_t) :: self
+  SUBROUTINE atom_cont_update (self)
+    class(atom_cont_patch_t) :: self
     real(4), dimension(:,:,:,:), pointer, contiguous :: chi, eta
     real(4), dimension(:,:,:), pointer, contiguous :: temp
     integer, save:: itimer=0
     !-----------------------------------------------------------------------------
     if (self%is_finished()) return
-    call trace%begin('cont_opac_patch_t%cont_opac_update', itimer=itimer)
+    call trace%begin('atom_cont_patch_t%atom_cont_update', itimer=itimer)
     chi => self%authority_mem(:,:,:,:, self%it, self%i_chi)
     eta => self%authority_mem(:,:,:,:, self%it, self%i_eta)
     temp => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_temp, self%it,1)
@@ -72,19 +72,22 @@ MODULE cont_opac_patch_mod
     eta = 0
     call self%atom%add_continuum_opacities(self%fs, self%fe, self%sp%nu, temp, chi, eta)
     call trace%end(itimer)
+    if (self%iter == 1) then
+      self%dtime = self%dt_fixed
+    endif
     call self%post_update()
-  END SUBROUTINE cont_opac_update
+  END SUBROUTINE atom_cont_update
   
   !===============================================================================
   SUBROUTINE nbor_relations(self, another, needed, needs_me, download)
-    class(cont_opac_patch_t) :: self
+    class(atom_cont_patch_t) :: self
     class(task_t), pointer :: another        ! another task in the list
     logical :: needed, needs_me, download    ! Is the other task: needed, 
                                              ! does it need me, should I download?
     class(task_t), pointer :: other
     logical :: default
     ! ----------------------------------------------------------------------------
-    call trace%begin ('cont_opac_patch_t%nbor_relations')
+    call trace%begin ('atom_cont_patch_t%nbor_relations')
     call self%ray_patch_t%nbor_relations(another, needed, needs_me, download)
   
     if (needed .or. needs_me) then
@@ -108,7 +111,7 @@ MODULE cont_opac_patch_mod
   !> Fast method to generate nbor lists in cases with very long task lists
   !===============================================================================
   SUBROUTINE init_nbors_hash (self, nbors)
-    class(cont_opac_patch_t):: self
+    class(atom_cont_patch_t):: self
     class(nbor_t), pointer:: nbors
     !.............................................................................
     class(task_t), pointer:: task
@@ -116,7 +119,7 @@ MODULE cont_opac_patch_mod
     integer, save:: itimer=0
     integer :: key(4), i_mu, mu_start, mu_stop
     !-----------------------------------------------------------------------------
-    call trace%begin('cont_opac_patch_t%init_nbors_hash', itimer=itimer)
+    call trace%begin('atom_cont_patch_t%init_nbors_hash', itimer=itimer)
     call self%m3d_patch_t%init_nbors_hash(nbors)
   
     if (comoving_frame .and. .not. self%out_ray) then
@@ -136,5 +139,5 @@ MODULE cont_opac_patch_mod
     call trace%end (itimer)
   END SUBROUTINE init_nbors_hash
   
-  END MODULE cont_opac_patch_mod
+  END MODULE atom_cont_patch_mod
   

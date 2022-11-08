@@ -19,6 +19,7 @@
 !===============================================================================
 MODULE forces_mod
   USE io_mod
+  USE os_mod
   USE trace_mod
   USE gpatch_mod
   USE mesh_mod
@@ -65,7 +66,7 @@ SUBROUTINE pre_update (self)
   integer, save          :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('forces_t%pre_update', itimer=itimer)
-  call scratch%allocate (scratch%force_per_unit_mass, [self%patch%gn,3])
+  call os%allocate (scratch%force_per_unit_mass, [self%patch%gn,3])
   i = 0
   m1 => self%patch%mesh(1)
   m2 => self%patch%mesh(2)

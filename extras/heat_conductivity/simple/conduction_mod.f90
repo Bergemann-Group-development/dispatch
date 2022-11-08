@@ -3,6 +3,7 @@
 !=======================================================================
 MODULE conduction_mod
   USE io_mod
+  USE os_mod
   USE trace_mod
   USE kinds_mod
   USE mesh_mod
@@ -178,7 +179,7 @@ SUBROUTINE pre_update(self)
   ! per unit mass conductivity, while for now we use a purely 2 delta stencil
   ! when using per unit volume conductivity
   !-----------------------------------------------------------------------------
-  call scratch%allocate (scratch%heating_per_unit_volume, self%patch%mesh%gn)
+  call os%allocate (scratch%heating_per_unit_volume, self%patch%mesh%gn)
   if (self%kinematic) then
     if (extrapolate) then
       l = self%patch%mesh%lb+1
