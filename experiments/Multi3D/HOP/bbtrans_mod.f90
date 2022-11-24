@@ -573,7 +573,7 @@ contains
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  PURE ELEMENTAL SUBROUTINE prepare_VanderWaals(self, gv, lower_ion, cnt_ev)
+  PURE SUBROUTINE prepare_VanderWaals(self, gv, lower_ion, cnt_ev)
     class(bbtrans_type), intent(inout)  :: self
     integer, intent(in) :: lower_ion
     real(dp), intent(in) :: gv, cnt_ev
@@ -605,8 +605,13 @@ contains
       ! constant  1.283984e-12. According to Gray it should be 
       ! 0.3d-30^0.4 = 6.1780059e-13 and  8.411 should be 17
       ! I haven't found the original reference to Unsold 1955 yet...
-      c1 = (1./(cnt_ev - upper_ev)**2 - 1./(cnt_ev - self%lower_ev)**2)**.4
-      self%gw1 = gv * 8.411 * 1.283984e-12 * lower_ion**0.8 * c1
+      c1 = 1./(cnt_ev - upper_ev)**2 - 1./(cnt_ev - self%lower_ev)**2
+      if (c1 > 0) then
+        c1 = c1**0.4
+        self%gw1 = gv * 8.411 * 1.283984e-12 * lower_ion**0.8 * c1
+      else
+        self%active = .false.
+      endif
     endif
   END SUBROUTINE prepare_VanderWaals
   !------------------------------------------------------------------------------------

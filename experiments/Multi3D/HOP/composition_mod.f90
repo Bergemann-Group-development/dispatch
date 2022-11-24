@@ -475,10 +475,11 @@ contains
         character(len=*) :: linelist_file
         character(20) :: mass_id
         character(20) :: ion_id
-        real(dp) :: lam0, gv, gq, loggf, ent8, ent9, mass, cnt_ev
+        real(dp) :: lam0, gv, gq, loggf, ent8, ent9, mass, cnt_ev, lam_vac
         character :: lower_orb, upper_orb
         character(len=150) :: label
-        integer :: lunit, iostat, j, nline, i, prev, iso_id, ntotal=0, iso_idx
+        character :: char
+        integer :: lunit, iostat, j, nline, i, prev, iso_id, ntotal=0, iso_idx, nactive=0
         logical :: isotope, ok
         !-----------------------------------------------------------------------------
         if (linelist_file == '' .and. .not. self%ll_initialised) return
@@ -492,7 +493,8 @@ contains
             read(lunit,*,iostat=iostat) ion_id
             read(mass_id,*) mass
             isotope = mod(mass, 1.0) > 0
-            ion_id = adjustl(trim(ion_id))
+            !ion_id = adjustl(trim(ion_id))
+            ion_id = trim_between_words(ion_id)
             nullify(mol)
             nullify(p)
             call self%ion_by_id(ion_id(1:6), ion, element)
@@ -562,9 +564,9 @@ contains
                     gq = 0.0
                 endif
 
-                lam0 = air2vac(lam0) * 1e-8
-                line%nu0 = CC / lam0
-                line%Aji = hh * f_to_Aji * 10**loggf / (line%upper_g * lam0**2)
+                lam_vac = air2vac(lam0) * 1e-8
+                line%nu0 = CC / lam_vac
+                line%Aji = hh * f_to_Aji * 10**loggf / (line%upper_g * lam_vac**2)
                 line%Bji = c2_2h / line%nu0**3 * line%Aji
                 line%Bij = line%Bji * line%upper_g ! 1 / gi is missing but cancels when multiplying with ni
 
@@ -576,11 +578,12 @@ contains
                     if (isotope) line%iso_idx = iso_idx
                 endif
 
+                if (line%active) nactive = nactive + 1
                 ntotal = ntotal + 1
             end do
         end do
         close(lunit)
-        print *, ntotal, ' lines read from linelist ', linelist_file
+        print *, nactive, ' of ', ntotal, ' lines read from linelist ', linelist_file
     END SUBROUTINE init_linelist
 
     !===============================================================================
@@ -1693,4 +1696,30 @@ contains
             n_skipped = n_skipped + 1
         end do
     END SUBROUTINE check_for_comment
+
+    !===============================================================================
+    FUNCTION trim_between_words(string) result(res)
+        character(len=*) :: string
+        character(len=len(string)) :: res
+        character :: char
+        integer :: i, j
+        !---------------------------------------------------------------------------
+        res = ''
+        char = ' '
+        j = 1
+        do i=1, len(string)
+            if (string(i:i) == ' ') then
+                if (char == ' ') then
+                    cycle
+                else
+                    res(j:j) = string(i:i)
+                    j = j + 1
+                endif
+            else
+                res(j:j) = string(i:i)
+                j = j + 1
+            endif
+            char = string(i:i)
+        end do
+    END FUNCTION
 END MODULE composition_mod
