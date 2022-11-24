@@ -97,8 +97,10 @@ SUBROUTINE radiation_pre_init (self)
   call self%ray%set_stencil(self%ds * scaling%l)
 
   if (self%out_ray) then
+    nw = 3
     self%ng = [0,0,1]
   else
+    nw = 1
     if (self%ray%long) then
       self%ng = [3,3,1]
     else
@@ -107,7 +109,7 @@ SUBROUTINE radiation_pre_init (self)
   endif
 
   nv = self%fe-self%fs+1
-  call self%set_nv_and_nw (nv, 1)
+  call self%set_nv_and_nw (nv, nw)
   call self%post_pre_init()
   call trace%end(itimer)
 END SUBROUTINE radiation_pre_init
@@ -319,14 +321,10 @@ SUBROUTINE long_char_update (self)
   integer, dimension(:,:), contiguous, pointer :: ipart
   real(4), dimension(2) :: delta, deltak, fpart
   real(4) :: dsup, ex, dt, u0, Psi
-  integer :: f, i, j, k
+  integer :: f, i, j, k, iw, iiw
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('rad_patch_t%long_char_update', itimer=itimer)
-
-  self%Inu => self%mem(:,:,:,:, self%it, self%i_inu)
-  self%chi => self%opac%mem(:,:,:,:, self%opac%it, self%opac%i_chi)
-  self%Snu => self%opac%mem(:,:,:,:, self%opac%it, self%opac%i_snu)
   
   call self%bndries() ! reinforce boundary condition
 
@@ -354,41 +352,48 @@ SUBROUTINE long_char_update (self)
     kernel(4,k) =      fpart(1) *     fpart(2)
   end do
 
-  do f=1, self%nv
-    ! ----------------------------------------------------------------------------
-    ! frequency vectorisation is slower, because k varies quicker in mem than f.
-    ! ----------------------------------------------------------------------------
-    do k=1, self%ui(3)
-      call self%interp_long(self%chi(:,:,k,f), xx(:,:,k), ipart(1,k), ipart(2,k), kernel(:,k))
-      call self%interp_long(self%Snu(:,:,k,f), ss(:,:,k), ipart(1,k), ipart(2,k), kernel(:,k))
-    end do
+  do iw=1, self%opac%nw, 2
+    self%chi => self%opac%mem(:,:,:,:, self%opac%it, iw)
+    self%Snu => self%opac%mem(:,:,:,:, self%opac%it, iw+1)
+    iiw = (iw+1)/2
+    self%Inu => self%mem(:,:,:,:, self%it, iiw)
 
-    do k=1, self%n(3)
-    do j=1, self%n(2)
-    do i=1, self%n(1)
-      dt = 0.5 * dsup * ( xx(i,j,k) + xx(i,j,k+1) ) ! upwind optical pathlength
-      if (dt < 80) then
-        ex = exp(-dt) 
-      else
-        ex = 0
-      endif
-      ! Compute the U functions, use Taylor expansion for small dt
-      ! to avoid accuracy issues with 1-(number slightly smaller than one)
-      if ( dt > 1.0e-3 ) then
-              u0 = 1.0 - ex
-              Psi = 1 - u0 / dt
-      else
-              Psi = dt * (0.5 - 0.16666667*dt)
-              u0 = dt * (1 - Psi)
-      endif
+    do f=1, self%nv
+      ! ----------------------------------------------------------------------------
+      ! frequency vectorisation is slower, because k varies quicker in mem than f.
+      ! ----------------------------------------------------------------------------
+      do k=1, self%ui(3)
+        call self%interp_long(self%chi(:,:,k,f), xx(:,:,k), ipart(1,k), ipart(2,k), kernel(:,k))
+        call self%interp_long(self%Snu(:,:,k,f), ss(:,:,k), ipart(1,k), ipart(2,k), kernel(:,k))
+      end do
 
-      ! intensity at center point
-      self%Inu(i,j,k+1,f) = self%Inu(i,j,k,f)*ex + (u0 - Psi) * ss(i,j,k) + Psi*ss(i,j,k+1)
-      !Psi = Psi / xx(i,j,k+1)
-    end do
-    end do
-    end do
-  end do ! f-loop
+      do k=1, self%n(3)
+      do j=1, self%n(2)
+      do i=1, self%n(1)
+        dt = 0.5 * dsup * ( xx(i,j,k) + xx(i,j,k+1) ) ! upwind optical pathlength
+        if (dt < 80) then
+          ex = exp(-dt) 
+        else
+          ex = 0
+        endif
+        ! Compute the U functions, use Taylor expansion for small dt
+        ! to avoid accuracy issues with 1-(number slightly smaller than one)
+        if ( dt > 1.0e-3 ) then
+                u0 = 1.0 - ex
+                Psi = 1 - u0 / dt
+        else
+                Psi = dt * (0.5 - 0.16666667*dt)
+                u0 = dt * (1 - Psi)
+        endif
+
+        ! intensity at center point
+        self%Inu(i,j,k+1,f) = self%Inu(i,j,k,f)*ex + (u0 - Psi) * ss(i,j,k) + Psi*ss(i,j,k+1)
+        !Psi = Psi / xx(i,j,k+1)
+      end do
+      end do
+      end do
+    end do ! f-loop
+  end do
 
   call os%deallocate(kernel)
   call os%deallocate(ipart)

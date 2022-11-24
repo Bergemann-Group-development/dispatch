@@ -3,7 +3,6 @@ MODULE read_stagger_snapshot_mod
   USE os_mod
   USE trace_mod
   USE eos_mod
-  USE scaling_mod
   implicit none
 
   ! stagger ghost zones
@@ -231,6 +230,12 @@ SUBROUTINE read_stagger_snapshot(ds, d, px, py, pz, ee, tt, ne)
   ds(1) = (newx(dims(1)) - newx(1)) / (dims(1) - 1)
   ds(2) = (newy(dims(2)) - newy(1)) / (dims(2) - 1)
   ds(3) = (newz(dims(3)) - newz(1)) / (dims(3) - 1)
+
+  ds = ds * uul
+  d  = d  * uur
+  px = px * uum
+  py = py * uum
+  pz = pz * uum
 
   call trace%end(itimer)
 END SUBROUTINE read_stagger_snapshot

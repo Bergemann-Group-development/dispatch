@@ -142,7 +142,7 @@ MODULE m3d_patch_mod
     integer, save :: fcheck=1, linecheck=3, pcheck(3)=[1,1,1], lvlcheck=1
     integer, save :: n_nu=1, itimer=0, ntheta=3, nphi=4, total_n(3)
     character(len=32), save :: quad_scheme='set_a2'
-    character(len=32), save :: long_scheme='disk_center'
+    character(len=32), save :: long_scheme='lobatto'
     real(8), dimension(:), allocatable:: cust_mu
     namelist /m3d_params/ on, verbose, fcheck, linecheck, pcheck, quad_scheme, &
     long_scheme, n_nu, maxiter, ilambd, lvlcheck, comoving_frame, save_id, &
@@ -433,7 +433,7 @@ MODULE m3d_patch_mod
       self%maxiter = min(0, maxiter - 1)
     case ('back_cont')
       if (save_back_cont) then
-        self%maxiter = ilambd
+        self%maxiter = min(ilambd, maxiter - 1)
       else
         self%maxiter = ilambd + maxiter - 1
       endif

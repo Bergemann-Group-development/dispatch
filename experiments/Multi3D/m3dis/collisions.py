@@ -45,6 +45,7 @@ class collision_class():
         
         self.coltemp = coltemp
         self.colrate = data[2:].astype(np.float)
+        self.key = key
         
         #if key in ['CH+', 'CH0', 'OHM', 'CE', 'CI']:
         #    colrate = np.log(colrate)

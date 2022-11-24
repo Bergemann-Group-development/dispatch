@@ -26,12 +26,12 @@ MODULE trans_mod
       integer :: ired  ! start index where line is active in overall frequency grid
       integer :: iblue ! end index where line is active in overall frequency grid
 
-      real(8),dimension(:),allocatable :: nu ! frequencies [Hz]
-      real(8),dimension(:),allocatable :: wnu ! frequency quadrature weight [Hz]
+      real(8),dimension(:), allocatable :: nu  ! frequencies [Hz]
+      real(8),dimension(:), allocatable :: wnu ! frequency quadrature weight [Hz]
 
-      real(8),dimension(:,:,:),  allocatable :: rij,rji
-      real(8),dimension(:,:,:),  allocatable :: qrad ! heating rate
-      real(8),dimension(:,:,:),  allocatable :: gamma_ij,gamma_ji
+      !real(8),dimension(:,:,:),  allocatable :: rij,rji
+      !real(8),dimension(:,:,:),  allocatable :: qrad ! heating rate
+      !real(8),dimension(:,:,:),  allocatable :: gamma_ij,gamma_ji
 
   contains
       procedure :: overlaps
@@ -44,47 +44,32 @@ MODULE trans_mod
                                       ! for now only 'voigt' or
                                       ! 'hlinop' for hydrogen
 
-    real(8)  :: lambda0       ! line center vacuum wavelength
-                            ! [cm]
+    real(8)  :: lambda0       ! line center vacuum wavelength [cm]
     logical  :: hydrogen
     real(8),dimension(:),allocatable :: q ! frequencies [Doppler units]
     real(8),dimension(:),allocatable :: wq  ! frequency quadrature weight [Doppler units]
 
+    real(4),dimension(:,:,:,:), pointer :: phi ! actual line profile data
     real(4),dimension(:,:,:), pointer, contiguous :: wphi ! normalization such that
     ! \Sigma_mu=1^{nrays} \Sigma_nu=1^{nnu} phi(nu,v(mu)) = 1
     ! in case of strong velocities this does not automatically follow from
     ! the independent normalization of the angle and frequency quadrature
 
-    real(4),dimension(:,:,:), pointer, contiguous :: adamp ! voigt damping parameter
-    real(4),dimension(:,:,:), pointer, contiguous :: chi_fac, eta_fac
-    real(8),dimension(:,:,:,:),allocatable :: rho ! prd rho
-    real(8),dimension(:,:,:,:),allocatable :: Jrest ! Jnu in rest frame of atom
-    real(8),dimension(:,:,:),  allocatable :: Qe ! prd Q elastic collision rate, used to compute coherency fraction
-    real(4),dimension(:,:,:,:), pointer :: phi
-
-    ! optional radiation anisotropy tensor
-    type(anisotropy_type) :: an
-
-    integer :: luprd=0 ! LUN for gii file
-    character(len=72) :: giifile=' '
     real(8) :: f    ! oscillator strength
     real(8) :: qmax ! width of profile in doppler units
     real(8) :: q0   ! switch from linear to logarithmic frequency grid spacing
     real(8) :: Grat ! ratio g(i)/g(j)
+    real(8) :: nu_min, nu_max
 
     ! Added to deal with multi component lines
     ! IO > 1 leads to the following being read from the atom file
     integer :: io ! number of components in term (lifted from Multi 2.3)
-    real(8), dimension(:)      , allocatable :: determ
-    real(8), dimension(:)      , allocatable :: wterm 
-    real(8), dimension(:)      , allocatable :: fterm 
-    real(8), dimension(:)      , allocatable :: gaterm
-    real(8), dimension(:)      , allocatable :: gwterm
-    real(8), dimension(:)      , allocatable :: gqterm
-    !real(8), dimension(:,:,:,:), allocatable :: adterm
-
-    integer :: nsub  ! number of subordinate lines in case of cross redistribution
-    integer, dimension(:),allocatable :: krsub ! indices of subordinate lines
+    real(8), dimension(:), allocatable :: determ
+    real(8), dimension(:), allocatable :: wterm 
+    real(8), dimension(:), allocatable :: fterm 
+    real(8), dimension(:), allocatable :: gaterm
+    real(8), dimension(:), allocatable :: gwterm
+    real(8), dimension(:), allocatable :: gqterm
 
   contains
       procedure :: profile => line_profile
@@ -98,13 +83,13 @@ MODULE trans_mod
     character(len=20) :: bf_type ! either 'detail' or 'hydrogenic'
 
     !real(8) :: nu0 ! ionization edge frequency
-    real(8) :: numax ! maximum frequency 
+    real(8) :: nu_max ! maximum frequency 
     real(8) :: alpha0 ! cross section at ionization threshold [cm^2]
     real(4),dimension(:),allocatable :: alpha ! cross sections [cm^2]    
     real(4), dimension(:,:,:), contiguous, pointer :: ni_over_nj_lte
 
   contains
-      procedure :: opacities => atom_contities
+      procedure :: opacities => cont_opacities
       procedure :: rates => cont_rates
       procedure :: freqc
   end type cont_type
@@ -151,7 +136,7 @@ contains
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  PURE SUBROUTINE atom_contities(self, alpha, n, nstar, eta, chi)
+  PURE SUBROUTINE cont_opacities(self, alpha, n, nstar, eta, chi)
     class(cont_type), intent(in) :: self
     real(4), dimension(:), intent(in) :: alpha
     real(4), dimension(:,:,:,:), intent(in) :: n, nstar
@@ -181,7 +166,7 @@ contains
     end do
     end do
     end do
-  END SUBROUTINE atom_contities
+  END SUBROUTINE cont_opacities
   !------------------------------------------------------------------------------------
 
 !  !====================================================================================
@@ -391,8 +376,10 @@ contains
       end if
   
       ! convert to [Hz]
+      allocate(self%nu(nnu))
       self%nu = self%nu0*(1.0+q*qnorm*KM_TO_CM/cc)
-  
+      self%nu_min = self%nu(1)
+      self%nu_max = self%nu(nnu)
   END SUBROUTINE freql
   !------------------------------------------------------------------------------------
 
@@ -411,36 +398,26 @@ contains
       !  wnu      quadrature weights                  
       !
       !---------------------------------------------------------------------
-
       class(cont_type), intent(inout) :: self
-      
       integer :: j,nnu,ired,iblue
       real(8) :: dnu
+      !---------------------------------------------------------------------
+      nnu   = self%nnu
+      ired  = self%ired
+      iblue = self%iblue
 
-      select case(self%bf_type)
-      case('hydrogenic')
-          nnu   = self%nnu
-          ired  = self%ired
-          iblue = self%iblue
+      ! equidistant grid in nu, between nu0 and numax 
+      self%nu(ired)  = self%nu0
+      self%nu(iblue) = self%nu_max
 
-          ! equidistant grid in nu, between nu0 and numax 
-          self%nu(ired)  = self%nu0
-          self%nu(iblue) = self%numax
+      dnu = (self%nu_max-self%nu0) / (nnu-1)
 
-          dnu = (self%numax-self%nu0) / (nnu-1)
-
-          do j=ired,iblue
-              self%nu(j)    = self%nu0 + (j-ired) * dnu
-              !self%alpha(j) = self%alpha0 * ( self%nu(j) / self%nu0 )**(-3)
-              ! for overflow reasons
-              self%alpha(j) = ( self%nu(j) / self%nu0 )**(-3)
-          end do
-      case('detail')
-          ! do nothing, frequencies were computed in read_atom
-      case default
-          print *, 'freqc: bf_type ' // self%bf_type // ' not recognized. Stopping...'
-          stop
-      end select
+      do j=ired,iblue
+          self%nu(j)    = self%nu0 + (j-ired) * dnu
+          !self%alpha(j) = self%alpha0 * ( self%nu(j) / self%nu0 )**(-3)
+          ! for overflow reasons
+          self%alpha(j) = ( self%nu(j) / self%nu0 )**(-3)
+      end do
   END SUBROUTINE freqc
   !------------------------------------------------------------------------------------
 

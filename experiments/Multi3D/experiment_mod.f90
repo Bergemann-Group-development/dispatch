@@ -175,12 +175,12 @@ SUBROUTINE post_update (self)
   class(experiment_t):: self
   integer :: p(3)
   !----------------------------------------------------------------------------
-  if (self%verbose > 1) then
-      p = [1,1,1]
-      p = p + self%li - 1
-      write(*,'(F5.1, A12, I4, 12(ES15.7))') self%time, trim(self%kind), self%id, &
-      self%mem(p(1),p(2),p(3),:,1,1)
-  endif
+  !if (self%verbose > 1) then
+  !    p = [1,1,1]
+  !    p = p + self%li - 1
+  !    write(*,'(F5.1, A12, I4, 12(ES15.7))') self%time, trim(self%kind), self%id, &
+  !    self%mem(p(1),p(2),p(3),:,1,1)
+  !endif
 
   if (self%iter == 0) then
     call self%finish()

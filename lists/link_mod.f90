@@ -544,7 +544,7 @@ SUBROUTINE check_nbor_relations (self, nbtask, needed, needs_me, download)
   call trace%begin ('link_t%check_nbor_relations')
   call self%task%nbor_relations(nbtask,my_needed,my_needs_me,my_download)
   call nbtask%nbor_relations(self%task,nb_needed,nb_needs_me,nb_download)
-  if (my_needed /= nb_needs_me .or. my_needs_me /= nb_needed) then
+  if ((my_needed .neqv. nb_needs_me) .or. (my_needs_me .neqv. nb_needed)) then
     print *, 'nbor_relations inconstistent for tasks ', self%task%id, nbtask%id
     print *, my_needed,my_needs_me,my_download
     print *, nb_needed,nb_needs_me,nb_download

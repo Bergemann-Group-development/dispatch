@@ -15,6 +15,7 @@ SOLVER          = ramses/hlld_eos
 RT_SOLVER       = short_characteristics
 #EOS             = microphysics/eos/itable
 EOS             = microphysics/eos/stagger
+#HDF5            = /shared-storage/hoppe/DISPATCH+MULTI3D/hdf5-1.12.2/hdf5
 #EXTERNAL        = 1d_model_txt
 #
 #ifneq ($(EXTERNAL),)
@@ -35,7 +36,7 @@ $(EXEC): read_external_mod.o mpi_debug_mod.o
 # Dependencies
 read_external_mod.o         : io_mod.o m3io_mod.o mesh_mod.o task_list_mod.o experiment_mod.o \
                               trace_mod.o task_mod.o link_mod.o bits_mod.o halo_mod.o scaling_mod.o \
-                              units_mod.o timer_mod.o patch_mod.o download_mod.o list_mod.o \
+                              units_mod.o timer_mod.o patch_mod.o download_mod.o list_mod.o read_marcs_mod.o \
                               ray_patch_mod.o read_stagger_snapshot_mod.o
 read_stagger_snapshot_mod.o : io_mod.o os_mod.o eos_mod.o scaling_mod.o
 experiment_mod.o            : trace_mod.o io_mod.o solver_mod.o kinds_mod.o m3d_halo_mod.o composition_patch_mod.o
@@ -73,3 +74,4 @@ out_rad_patch_mod.o         : ray_patch_mod.o angle_rad_patch_mod.o
 proj_patch_mod.o            : ray_patch_mod.o net_opac_patch_mod.o
 mean_rad_patch_mod.o        : ray_patch_mod.o angle_rad_patch_mod.o proj_patch_mod.o
 mmath.o                     : refsor_mod.o unista_mod.o mconst.o prec_mod.o
+read_marcs_mod.o            : io_mod.o prec_mod.o op_math_mod.o os_mod.o

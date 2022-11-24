@@ -59,7 +59,7 @@ FUNCTION calc_e(self, teta, temp, dxi) result(e)
         dis = poly1d(teta, self%de(1), self%de(2), self%de(3), self%de(4), self%de(5))*temp/EK
         
         if (trim(self%id) == 'H2' ) dis = - (dis - 4.476)
-        if (trim(self%id) == 'H2p') dis = - (dis - 2.648)
+        if (trim(self%id) == 'H2+') dis = - (dis - 2.648)
     else
         dis = self%de(1)
     endif
@@ -105,7 +105,7 @@ SUBROUTINE init_mol_dissociation (self)
     integer :: i
     !---------------------------------------------------------------------------
     select case (trim(self%id))
-    case ('H2', 'H2p')
+    case ('H2', 'H2+')
         allocate(self%de(5))
     case default
         allocate(self%de(1))
@@ -115,7 +115,7 @@ SUBROUTINE init_mol_dissociation (self)
     case ('H2')
         self%dc = [ 6.3021E-4, -1.4149E-2,  1.2572E-1, -5.1172E0,  12.739E0 ]
         self%de = [  0.00975,  -0.12427,   0.60602,   -1.4772,    2.6757 ]
-    case ('H2p')
+    case ('H2+')
         self%dc = [ 0.0000e+00,  0.024790, -7.9196803E-2, -2.7942767E0,  11.206998E0 ]
         self%de = [  0.15253,  -0.82685,    1.7231,   -2.0036,    2.9216 ]
     case ('H2O')

@@ -28,7 +28,7 @@ class trans_class(object):
                 j, i, fosc, nq, qmax, q0, iw, ga, gw, gq, profile = data
             
             self.j, self.i, self.nq, self.iw = map(int, [j, i, nq, iw])
-            self.fosc, self.qmax, self.q0, self.ga, gw, self.gq = map(float, [fosc, qmax, q0, ga, gw, gq])
+            self.fosc, self.qmax, self.q0, self.ga, self.gw, self.gq = map(float, [fosc, qmax, q0, ga, gw, gq])
             
             
         else:
@@ -77,7 +77,7 @@ class trans_class(object):
             
             lam = self.alamb / (q*atom.qnorm/(CC*1e-5) + 1)
             
-            self.prepare_VanderWaals(gw)
+            self.prepare_VanderWaals(self.gw)
         
         else:
             if self.qmax < 0:

@@ -26,14 +26,15 @@ MODULE atom_patch_mod
     USE atom_mod, only: atom_type, atomic_spectrum_type
     USE trans_mod, only: line_type
     USE mconst, only: CC
-    USE ion_mod, only: ion_type
+    USE ion_mod, only: ion_type, particle_type
     USE element_mod, only: element_type
+    USE molecule_mod, only: molec_type
     USE bbtrans_mod, only: bbtrans_type
     USE composition_mod, only: composition_type
     USE m3d_patch_mod, only: m3d_patch_t, maxiter, check_NaN, recl, &
     global_maxerr, convlim, atom_update_counter, hash_string, comoving_frame, global_pos
     USE bftrans_mod, only: bftrans_type
-    USE atom_line_patch_mod, only:atom_line_t
+    USE atom_line_patch_mod, only:atom_line_t, second_sp
     USE net_opac_patch_mod, only:net_opac_t
     implicit none
   
@@ -153,7 +154,7 @@ MODULE atom_patch_mod
     real(8), save :: abundance=-99.9
     integer :: iostat
     integer, save :: itimer=0, itimer1=0, n_in_lines=0
-    logical, save :: exclude_trace_cont=.true., use_atom_abnd=.true., second_sp=.false.
+    logical, save :: exclude_trace_cont=.true., use_atom_abnd=.true.
     logical, save :: exclude_from_line_list=.true.
     integer, save, allocatable :: in_lines(:)
     namelist /atom_params/ atom_file, qnorm, convlim, exclude_trace_cont, level_partf, &
@@ -190,10 +191,11 @@ MODULE atom_patch_mod
 
       write (*,*) ' - Reading atom'
       call atom%read(atom_file, qnorm, logf_cut=logf_cut, red_cut=red_cut, &
-      blue_cut=blue_cut, in_lines=in_lines)
+      blue_cut=blue_cut, in_lines=in_lines, read_coll=self%maxiter>0)
       if (abundance > -99) atom%abnd = abundance
-      output_atom = atom
       call atom%create_spectrum(sp)
+      !output_atom = atom
+      call atom%copy_to(output_atom)
       call atom%set_active_transitions(sp)
       atom%sp => sp
 
@@ -209,13 +211,16 @@ MODULE atom_patch_mod
       return
     endif
 
-    self%atom = atom
+    ! self%atom = atom
+    call atom%copy_to(self%atom)
     self%atom_allocated = .true.
 
     if (second_sp) then
-      self%output_atom = output_atom
+      !self%output_atom = output_atom
+      call output_atom%copy_to(self%output_atom)
     else
-      self%output_atom = atom
+      !self%output_atom = atom
+      call atom%copy_to(self%output_atom)
     endif
 
     if (second_sp) then
@@ -246,6 +251,7 @@ MODULE atom_patch_mod
     class(atom_patch_t), target :: self
     class(atom_type), pointer :: atom
     class(element_type), pointer :: element
+    class(molec_type), pointer :: molec
     real(4), dimension(:,:,:), pointer :: temp, ne
     real(4), dimension(:,:,:,:), pointer :: nh
     integer, save:: itimer=0
@@ -270,12 +276,12 @@ MODULE atom_patch_mod
     call os%allocate(atom%doppler_factor, shape(temp), label='doppler_factor')
 
     atom%doppler_factor = atom%compute_doppler_factor(temp)
-    call self%composition%get_totn(atom%id, atom%abnd, atom%totn, element)
-    if (.not. associated(element)) then
+    call self%composition%get_totn(atom%id, atom%abnd, atom%totn, element, molec)
+    if (.not. associated(element) .and. .not.associated(molec)) then
       call self%save_abundance_to_file()
     endif
     if (level_partf) nullify(element)
-    call atom%compute_lte_populations(temp, ne, real(self%composition%dxi), element)
+    call atom%compute_lte_populations(temp, ne, real(self%composition%dxi), element, molec)
     call atom%compute_cont_factors(temp, real(self%composition%dxi), ne)
     self%output_atom%n => atom%n
     self%output_atom%nstar => atom%nstar
@@ -497,19 +503,21 @@ MODULE atom_patch_mod
           Gij   => gamma_ij   (i,j,k,:)
           Gji   => gamma_ji   (i,j,k,:)
 
-          call atom%solve_stat_equilibrium(temp, ne, totn, n, nstar, nh, Gij, Gji, cswitch, check_NaN)
+          if (totn > 0) then
+            call atom%solve_stat_equilibrium(temp, ne, totn, n, nstar, nh, Gij, Gji, cswitch, check_NaN)
 
-          ! keep track of maximum population change
-          do ii=1,atom%nlevel
-            if (abs(atom%e(ii)) > self%lvlerr(ii)) then
-                self%lvlerr(ii) = abs(atom%e(ii))
-                if (self%lvlerr(ii) > self%maxerr) then
-                  self%maxerr = self%lvlerr(ii)
-                  ep = [i, j, k + self%zs - 1]
-                  il = ii
-                endif
-            end if
-          end do
+            ! keep track of maximum population change
+            do ii=1,atom%nlevel
+              if (abs(atom%e(ii)) > self%lvlerr(ii)) then
+                  self%lvlerr(ii) = abs(atom%e(ii))
+                  if (self%lvlerr(ii) > self%maxerr) then
+                    self%maxerr = self%lvlerr(ii)
+                    ep = [i, j, k + self%zs - 1]
+                    il = ii
+                  endif
+              end if
+            end do
+          endif
         end do
       end do
     end do
@@ -563,6 +571,7 @@ MODULE atom_patch_mod
   SUBROUTINE exclude_double_lines (self, exclude_from_line_list)
     class(atom_patch_t), target :: self
     class(element_type), pointer :: element
+    class(molec_type), pointer :: molec
     class(ion_type), pointer :: ion
     class(bbtrans_type), pointer :: ll_line, line
     logical :: exclude_from_line_list
@@ -570,11 +579,23 @@ MODULE atom_patch_mod
     logical, save :: first_time=.true.
     !-----------------------------------------------------------------------------
     call self%composition%element_by_id(trim(self%atom%id), element)
-    if (.not. associated(element)) return
-    if (all(element%ions%nline == 0)) return
+    if (.not. associated(element)) then
+      call self%composition%molecule_by_id(trim(self%atom%id), molec)
+      if (.not. associated(molec)) then
+        return
+      else
+        if (molec%nline == 0) return
+      endif
+    else
+      if (all(element%ions%nline == 0)) return
+    endif
 
     if (exclude_from_line_list) then
-      element%ions%in_linelist = .false.
+      if (associated(element)) then
+        element%ions%in_linelist = .false.
+      else
+        molec%in_linelist = .false.
+      endif
       if (first_time) then
         first_time = .false.
         print *, 'excluding all ', trim(self%atom%id), ' lines from line list'

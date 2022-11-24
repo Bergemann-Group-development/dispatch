@@ -1,5 +1,6 @@
 ! *******************************************************************
 MODULE atom_mod
+    USE io_mod
     USE m3io_mod
     USE prec_mod, only: inf8
     USE mconst
@@ -9,6 +10,7 @@ MODULE atom_mod
     USE op_math_mod, only: searchsorted, lineq, lineq_no_pivot
     USE ion_mod, only: ion_type
     USE element_mod, only: element_type
+    USE molecule_mod, only: molec_type
     USE os_mod
     USE trace_mod
     USE spectrum_mod, only: spectrum_type
@@ -25,9 +27,9 @@ MODULE atom_mod
         ! maximum number of active lines or continua at any given frequency
         integer :: maxal,maxac
         ! which continua (ac) and lines (al) are active at each frequency
-        integer, dimension(:,:),  allocatable :: ac,al
+        integer, dimension(:,:), contiguous, pointer :: ac,al
         ! how many continua (nac) and lines (nal) are active at each frequency
-        integer, dimension(:),  allocatable :: nac,nal
+        integer, dimension(:), contiguous, pointer :: nac,nal
         ! has this frequency an active prd line
         !logical,dimension(:),allocatable :: hasPRDline
     end type atomic_spectrum_type
@@ -48,10 +50,6 @@ MODULE atom_mod
    
         integer, dimension(:), allocatable :: ion ! ionization stage of each level
    
-        !integer,dimension(:,:), allocatable :: ilin,icon ! ilin(l1,l2) is the index of the line
-        !                                                   ! between l1 and l2, if any, 
-        !                                                   ! likewise for icon
-   
         real(8) :: abnd ! abundance ( in the [hydrogen]=12 scale)
         real(8) :: awgt ! atomic weight [g]
    
@@ -60,7 +58,7 @@ MODULE atom_mod
   
         type(line_type), dimension(:), allocatable :: line
         type(cont_type), dimension(:), allocatable :: cont
-        type(coll_type), dimension(:), allocatable :: coll
+        type(coll_type), dimension(:), pointer, contiguous :: coll
         type(atomic_spectrum_type), pointer :: sp
   
         ! rather constant doppler width factor, i.e. dnud = line(i)%nu0 * doppler_factor [Hz]
@@ -72,6 +70,9 @@ MODULE atom_mod
         real(8), dimension(:,:,:,:), pointer, contiguous :: gamma_ij => null()
         real(8), dimension(:,:,:,:), pointer, contiguous :: gamma_ji => null()
         real(4), dimension(:,:,:), pointer, contiguous :: totn
+        real(8), dimension(:,:), pointer, contiguous :: tgrid, cgrid, dcdt
+        real(4), dimension(:), pointer, contiguous :: cdata
+        logical, dimension(:), pointer, contiguous :: ecol, hcol
   
         real(8), dimension(:),   allocatable  :: e
         real(8), dimension(:,:), allocatable  :: C, W
@@ -93,6 +94,7 @@ MODULE atom_mod
         procedure :: create_spectrum
         procedure :: set_active_transitions
         procedure :: read
+        procedure :: copy_to
      
     end type atom_type
 
@@ -391,7 +393,7 @@ MODULE atom_mod
                  do y=1,ny
                  do x=1,nx
                     vij(x,y,z,kr) = alpha2
-                    vji(x,y,z,kr) = alpha * blzfac(x,y,z) * self%cont(kc)%ni_over_nj_lte(x,y,z)
+                    vji(x,y,z,kr) = alpha * self%cont(kc)%ni_over_nj_lte(x,y,z) * blzfac(x,y,z)
                     chi = vij(x,y,z,kr) * ni(x,y,z) - vji(x,y,z,kr) * nj(x,y,z)
   
                     SumU(x,y,z,j) = SumU(x,y,z,j) + vji(x,y,z,kr) * ufac
@@ -486,7 +488,7 @@ MODULE atom_mod
       logical, intent(in) :: check_NaN
       integer :: kr, pos, i, j
       real(8) :: tmax_update =1.0d7
-      integer, save :: itimer=0
+      integer, save :: itimer=0, itimer2=0
       !------------------------------------------------------------------------------------
       if (temp > tmax_update) then
          return !self%e = 1.0d0
@@ -508,14 +510,19 @@ MODULE atom_mod
          self%w(i,j) = gamma_ji(kr)
       enddo
 
-      select case(trim(self%crout))
-      case('gencol')
-         call gencol_new(self%coll,self%id,self%nlevel,self%g,self%ev,self%ion,&
-                     self%c,dble(temp),dble(ne),nstar,dble(nh))
-      case default
-         write(stdout, *) 'read_atom: collisional routine keyword: "' // self%crout // '" not supported.'
-         stop
-      end select
+      call trace%begin('gencol', itimer=itimer)
+      self%c = 0.d0
+
+      call classic_col(self%g,self%ev,self%ion,dble(temp),dble(ne),dble(nh), &
+                       self%cdata,self%c,self%ecol,self%hcol)
+
+      call gencol(self%coll,self%id,self%nlevel,self%g,self%ev,self%ion,&
+                  self%c,dble(temp),dble(ne),nstar,dble(nh),self%tgrid,self%cgrid,self%dcdt)
+
+      !print '(6(6(ES17.8), /))', self%c(1,2), self%c(2,1)
+      !stop
+
+      call trace%end(itimer=itimer)
 
       self%w = self%w + self%c * cswitch
 
@@ -556,6 +563,8 @@ MODULE atom_mod
          end do
       endif
 
+      call trace%begin('lineq_no_pivot', itimer=itimer2)
+
       ! solve w n . x = e
       ! e contains the solution vector x on exit
       if (lse_no_pivot) then
@@ -563,6 +572,8 @@ MODULE atom_mod
       else
         call lineq(self%w, self%e, self%nlevel)
       endif
+
+      call trace%end(itimer2)
 
       if (check_NaN) then
          do i=1,self%nlevel
@@ -586,15 +597,16 @@ MODULE atom_mod
    !------------------------------------------------------------------------------------
   
    !====================================================================================
-   SUBROUTINE compute_lte_populations(self, temp, ne, dxi, element)
+   SUBROUTINE compute_lte_populations(self, temp, ne, dxi, element, mol)
       class(atom_type), intent(inout) :: self
       class(element_type), pointer :: element
       class(ion_type), pointer :: ion
-      integer :: i, j
-      logical :: molec
+      class(molec_type), pointer :: mol
+      integer :: i, j, x,y,z
       real(4), dimension(:,:,:), intent(in) :: temp, ne, dxi
       real(4), dimension(:,:,:), allocatable :: partition, saha
       integer :: nx, ny, nz
+      logical :: zero_pop
       !---------------------------------------------------------------------------------
       nx = size(temp, 1)
       ny = size(temp, 2)
@@ -621,30 +633,48 @@ MODULE atom_mod
          !saha = temp*sqrt(temp) / (saha_const*ne)
          saha = 1.5*log(temp) - log(saha_const*ne) ! actually log(saha)
 
-         select case (self%id(1:len_trim(self%id)))
-         case ('ch','co','cn')
-            molec=.true.
-            !partition = totn * self%g(1) * exp(-e_k/temp*self%ev(1)) / qcalc(elemid, temp)
-            print *, 'molecule partition functions need to be updated. Stopping...'
-            stop
-         case default
-            molec=.false.
-            partition = self%partition_function(temp, dxi, saha, self%totn)
-         end select
+         if (associated(mol)) then
+            partition = self%totn / mol%irwin_partf(dble(temp))
+         else
+            !select case (self%id(1:len_trim(self%id)))
+            !case ('ch','co','cn')
+            !   molec=.true.
+            !   !partition = totn * self%g(1) * exp(-e_k/temp*self%ev(1)) / qcalc(elemid, temp)
+            !   print *, 'molecule partition functions need to be updated. Stopping...'
+            !   stop
+            !case default
+            !   molec=.false.
+               partition = self%partition_function(temp, dxi, saha, self%totn)
+            !end select
+         endif
 
          do i=1, self%nlevel
-            self%nstar(:,:,:,i) = self%lte_pop(i, temp, dxi, saha, partition)
+            where(self%totn == 0)
+               self%nstar(:,:,:,i) = 0
+            elsewhere
+               self%nstar(:,:,:,i) = self%lte_pop(i, temp, dxi, saha, partition)
+            endwhere
 
-            if(any(self%nstar(:,:,:,i) <= tiny(0.0))) then
+            zero_pop = .false.
+            do x=1, nx
+            do y=1, ny
+            do z=1, nz
+               if (self%nstar(x,y,z,i) <= tiny(0.0) .and. .not. self%totn(x,y,z)==0) then
+                  zero_pop = .true.
+               endif
+            end do
+            end do
+            end do
+            if(zero_pop) then
                print *, ' WARNING: ltepop: level ',i,' has zero lte population.'
                !stop
             end if
          end do
 
          ! scale total abundances if treated model is a molecule
-         if(molec) then
-            self%totn = partition * self%nstar(:,:,:,1)
-         endif
+         !if(molec) then
+         !   self%totn = partition * self%nstar(:,:,:,1)
+         !endif
 
          do i=1, self%nlevel
             self%n(:,:,:,i) = self%nstar(:,:,:,i) 
@@ -751,34 +781,40 @@ MODULE atom_mod
    !------------------------------------------------------------------------------------
 
    !====================================================================================
-   SUBROUTINE read (self, atom_file, qnorm, abnd, logf_cut, red_cut, blue_cut, in_lines)
+   SUBROUTINE read (self, atom_file, qnorm, abnd, logf_cut, red_cut, blue_cut, in_lines, &
+                     read_coll)
       !---------------------------------------------------------------------
       !
-      !  reads an atomic model and calculates einstein a,b coefficients.
+      !  reads an atomic model.
       !
       !---------------------------------------------------------------------
-      !use mclu
-      USE coll_mod, only: get_ncoll, read_collisions
       class(atom_type), target :: self
       character(len=*), intent(in) :: atom_file
       real(8), intent(in) :: qnorm
       real(8), intent(in), optional :: abnd, logf_cut, red_cut, blue_cut
       integer, intent(in), optional, allocatable :: in_lines(:)
+      logical, intent(in) :: read_coll
 
       ! Declaration of the local variables
-      integer             :: i, j, io, latom, strl, kr, krs, iterm, nterm, ic
-      integer             :: ncoll, max_n_temp, doubles
+      integer :: i, j, ios, latom, strl, kr, itemp, iterm, nterm, ic, nc, pos
+      integer :: ncoll, max_n_temp, doubles, ngrids, ii, jj, tri, ntemp, l, u
       character(len = 80) :: text, mulfmt
+      character(len = 16) :: key
       character(len = 9), parameter :: rname='read_atom'
       character(len = :), allocatable :: myfmt ! temporary format string
       type(line_type), pointer :: lin => null()
       type(cont_type), pointer :: cnt => null()
+      type(coll_type), pointer :: col => null()
       type(line_type),dimension(:),allocatable :: scratch_line
-      real(8), allocatable, dimension(:) :: nu, alpha
+      real(8), allocatable, dimension(:) :: nu, alpha, tgrid
       real(8) :: scr, gv, gq, cnt_ev
-
+      character(len=20) :: txt
+      character(len=26),parameter :: upcase_alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+      logical :: abort
+      !---------------------------------------------------------------------
       call os%check_file(atom_file)
       open(newunit=latom, file=atom_file, form='formatted')
+      abort = .false.
 
       call nextentry(latom)
       read(latom,fmt='(a)') self%id
@@ -798,11 +834,17 @@ MODULE atom_mod
 
       allocate(  self%line  ( self%nline ) ) 
       allocate(  self%cont  ( self%ncont ) )
+      call os%mem_register(storage_size(self%line), self%nline, label='atom%line')
+      call os%mem_register(storage_size(self%cont), self%ncont, label='atom%cont')
 
       allocate(  self%ev    ( self%nlevel) ) ; self%ev = 0.0d0
       allocate(  self%g     ( self%nlevel) ) ; self%g = 0
       allocate(  self%label ( self%nlevel) ) ; self%label = ' '
       allocate(  self%ion   ( self%nlevel) ) ; self%ion = 0
+
+      call os%allocate(self%cdata, self%nlevel*(self%nlevel-1)/2, zero=.true.)
+      call os%allocate(self%ecol , self%nlevel*(self%nlevel-1)/2, zero=.true.)
+      call os%allocate(self%hcol , self%nlevel*(self%nlevel-1)/2, zero=.true.)
 
       do i=1, self%nlevel
          call nextentry(latom)
@@ -816,7 +858,8 @@ MODULE atom_mod
          myfmt = "('self: levels are: ', a, 2x, a, ' energy not monotonically &
                &increasing.')"
          write(*, myfmt) self%label(i), self%label(i - 1)
-         stop
+         abort = .true.
+         !stop
          endif
       end do
 
@@ -828,9 +871,14 @@ MODULE atom_mod
          ! io WAS present for historical reasons, in MULTI io determines
          ! whether a line is wide or not. In the RH formulation all lines are wide
 
-         read(latom,*) lin%j   , lin%i , lin%f , &
-               lin%nnu, lin%qmax, lin%q0, lin%io, &
+         read(latom,*) jj, ii, lin%f , lin%nnu, lin%qmax, lin%q0, lin%io, &
                lin%ga, gv, gq, lin%profile_type
+
+         lin%i = min(ii, jj)
+         lin%j = max(ii, jj)
+
+         tri = (lin%j-1)*(lin%j-2)/2 + lin%i
+         self%cdata(tri) = lin%f
 
          if (present(in_lines)) then
             if (allocated(in_lines)) then
@@ -920,8 +968,8 @@ MODULE atom_mod
          endif
 
          ! make sure we always have odd number of frequency points for a line
-         if (mod(lin%nnu,2).eq.0) lin%nnu=lin%nnu+1
-         allocate( lin%nu(  lin%nnu ) )
+         if (mod(lin%nnu,2) == 0) lin%nnu=lin%nnu+1
+         !allocate( lin%nu(lin%nnu) )
          lin%nq = lin%nnu
          
          ! find continuum level
@@ -941,30 +989,28 @@ MODULE atom_mod
          lin%ired = 1
          lin%iblue = lin%nnu
 
-         lin%ntrans=i
+         lin%ntrans = i
 
-         if ( (trim(lin%profile_type) .ne. 'voigt'  ) .and. &
-               (trim(lin%profile_type) .ne. 'prd'    ) .and. &
-               (trim(lin%profile_type) .ne. 'doppler') .and. &
-               (trim(lin%profile_type) .ne. 'hlinop' )         ) then 
+         if((trim(lin%profile_type) .ne. 'voigt'  ) .and. &
+            (trim(lin%profile_type) .ne. 'prd'    ) .and. &
+            (trim(lin%profile_type) .ne. 'doppler') .and. &
+            (trim(lin%profile_type) .ne. 'hlinop' )         ) then 
 
-               if ( self%id .eq. 'h' ) then
-
+            if ( self%id .eq. 'h' ) then
                write (*,fmt = '(a,1x,a,a)') 'Profile not recognised:', &
                         uppercase(lin%profile_type, len_trim(lin%profile_type)), &
                         ' Setting it to HLINOP'
 
                lin%profile_type = adjustl(lowercase('hlinop', len_trim('hlinop')))
-               
-               else
-
+            
+            else
                write (*, fmt = '(a,1x,a,a)') 'Profile not recognised:', &
                         uppercase(lin%profile_type, len_trim(lin%profile_type)), &
                         ' Setting it to VOIGT'
 
                lin%profile_type = adjustl(lowercase('voigt', len_trim('voigt')))
-               
-               end if
+            
+            end if
          end if
       end do
 
@@ -994,33 +1040,37 @@ MODULE atom_mod
       endif
 
       !  bound-free transitions in detail
-      !  if numax.lt.0.0 frequency points in angstrom (starting with
+      !  if nu_max.lt.0.0 frequency points in angstrom (starting with
       !  threshold and decreasing) and crossections in cm2 are read.
       do i=1,self%ncont
          cnt => self%cont(i)
          call nextentry(latom) 
 
-         read(latom,*) cnt%j,cnt%i,cnt%alpha0,cnt%nnu,cnt%numax
+         read(latom,*) jj,ii,cnt%alpha0,cnt%nnu,cnt%nu_max
+
+         cnt%i = min(ii, jj)
+         cnt%j = max(ii, jj)
 
          if (self%ion(cnt%i) == self%ion(cnt%j)) then
             print *, 'bound-free transition', i, 'is between two levels of the same ion', cnt%i, cnt%j
-            stop
+            abort = .true.
+            !stop
          endif
+
+         tri = (cnt%j-1)*(cnt%j-2)/2 + cnt%i
+         self%cdata(tri) = cnt%alpha0
 
          cnt%lower_ev = self%ev(cnt%i)
          cnt%upper_ev = self%ev(cnt%j)
       
          cnt%nu0   = ( cnt%upper_ev - cnt%lower_ev ) / h_e ! [Hz]
-         cnt%numax = cc/(cnt%numax*AA_TO_CM) ! [from AA to Hz]
+         cnt%nu_max = cc/(cnt%nu_max*AA_TO_CM) ! [from AA to Hz]
          cnt%ntrans=self%nline+i ! transition identifier for continua
 
          cnt%ired=1
          cnt%iblue=cnt%nnu
-         !self%icon( cnt%j, cnt%i ) = i
-         !self%icon( cnt%i, cnt%j ) = i
 
-         if ( cnt%numax .lt. 0.0 ) then
-
+         if ( cnt%nu_max .lt. 0.0 ) then
                allocate( nu(cnt%nnu))
                allocate( alpha(cnt%nnu))
 
@@ -1035,12 +1085,13 @@ MODULE atom_mod
                ! sanity check
                doubles = 0
                do j=2,cnt%nnu
-               if ( nu(j) .gt. nu(j-1) ) then
-                     write(stdout,*) 'read_atom: continuum transition nr', i, ' wavelengths not decreasing'
-                     stop
-               elseif ( nu(j) == nu(j-1) ) then
-                  doubles = doubles + 1
-               endif
+                  if ( nu(j) .gt. nu(j-1) ) then
+                        write(stdout,*) 'read_atom: continuum transition nr', i, &
+                                       ' wavelengths not decreasing'
+                        abort = .true.
+                  elseif ( nu(j) == nu(j-1) ) then
+                     doubles = doubles + 1
+                  endif
                end do
 
                ! making sure here that there are no double wavelenghts
@@ -1051,11 +1102,11 @@ MODULE atom_mod
 
                doubles = 1
                do j=2, cnt%iblue
-               if ( nu(j) < nu(j-1) ) then
-                  doubles = doubles + 1
-                  cnt%nu(doubles) = nu(j)
-                  cnt%alpha(doubles) = alpha(j)
-               endif
+                  if ( nu(j) < nu(j-1) ) then
+                     doubles = doubles + 1
+                     cnt%nu(doubles) = nu(j)
+                     cnt%alpha(doubles) = alpha(j)
+                  endif
                end do
 
                cnt%iblue = cnt%nnu
@@ -1065,21 +1116,22 @@ MODULE atom_mod
 
                ! and convert to frequency [Hz]
                cnt%nu = cc / ( cnt%nu * AA_TO_CM )
-               cnt%numax = cnt%nu(cnt%nnu)
+               cnt%nu_max = cnt%nu(cnt%nnu)
 
          else
-               allocate( cnt%nu(1:cnt%nnu)    )
-               allocate( cnt%alpha(1:cnt%nnu) )
-
                ! hydrogenic transitions
                cnt%bf_type='hydrogenic'
-
          endif
-
       end do
 
+      ! read collisional data
+      if (.not. read_coll) then
+         close(latom)
+         return
+      endif
+
       ! read choice of collisional SUBROUTINE
-      ! GENCOL and HCOL are currently the only collisions subroutines.
+      ! GENCOL is currently the only collision subroutine.
       call nextentry(latom)
       read(latom,fmt='(a)') self%crout
 
@@ -1087,240 +1139,460 @@ MODULE atom_mod
       self%crout = adjustl(self%crout)
       strl=len_trim(self%crout)
       self%crout = lowercase(self%crout,strl)
+      if (self%crout /= 'gencol') then
+         write(stdout, *) 'Collision routine ', trim(self%crout), ' not supported. Stopping...'
+         abort=.true.
+      endif
 
-      ! read collisional data
-      call get_ncoll(latom, self%crout, ncoll, max_n_temp)
+
+      write(stdout, *) ' - Reading collision data'
+      ncoll = 0
+      max_n_temp = 8
+      ngrids = 0
+   
+      ! first run through to determine
+      ! ncoll = number of keywords
+      ! mtgrd = size of the largest temperature grid
+   
+      do while (.true.)
+         call nextentry(latom)
+         read(latom, '(a)', iostat=ios) key
+         if (ios<0) then
+            stop 'read_collisions: keyword "END" not found in collision file'
+         endif
+         key = uppercase(adjustl(key),len_trim(key))
+   
+         ! read next non-comment line if key doesnt start with a letter
+         if (scan(key(1:1),upcase_alphabet)==0) cycle 
+   
+         ! we found a keyword, so interpret it
+         select case(trim(key))
+         case('END')
+            exit
+   
+         case('TEMP')
+            ! keep track of max size of temperature grid
+            call nextentry(latom)
+            read(latom,*) ntemp
+            if (ntemp > max_n_temp) max_n_temp = ntemp
+            ngrids = ngrids + 1
+         case default
+            if (.not.is_valid_process(key)) then
+               write(stdout, *) 'read_collisions: unrecognized keyword '//key
+               abort = .true.
+            end if
+            ncoll = ncoll + 1
+         end select
+      end do
+
       allocate( self%coll(ncoll) )
-      call read_collisions(latom, self%coll, max_n_temp, self%nlevel)
+      call os%mem_register(storage_size(self%coll), ncoll, label='atom%coll')
+      call os%allocate(self%tgrid, [max_n_temp, ngrids],   label='atom%tgrid')
+      call os%allocate(self%cgrid, [max_n_temp, ncoll],    label='atom%cgrid')
+      call os%allocate(self%dcdt,  [max_n_temp, ncoll],    label='atom%dcdt')
+      allocate(tgrid(max_n_temp))
+   
+      rewind(latom)
+      
+      do while (.true.)
+         call nextentry(latom)
+         read(latom,*) txt
+         if (lowercase(adjustl(txt), len_trim(txt)) == self%crout) exit
+      enddo
 
+
+      itemp = 0
+      i=0
+      do while (i<=ncoll) !le to catch the end keyword
+         !  read the keyword 
+         call nextentry(latom)
+         read(latom,fmt='(a8)',iostat=ios) key
+         if (ios<0) then
+            write(stdout, *) 'read_collisions: keyword "END" not found in collision file'
+            stop
+         endif
+   
+         key = uppercase(adjustl(key),len_trim(key))
+
+         if (trim(key) == 'END') then
+            write(*,*) "read_collisions: read all collisions."
+            exit
+         else
+            call nextentry(latom)
+         endif
+         
+         select case(trim(key))
+         case('TEMP')
+            itemp = itemp + 1
+            read(latom,*) ntemp, tgrid(1:ntemp)
+            self%tgrid(1:ntemp, itemp) = tgrid(1:ntemp)
+            if (ntemp < 2) then
+               stop "read_collisions: ntemp < 2"
+            endif
+   
+         ! MB  5.04.2018 - added CH0 keyword
+         ! RH 25.03.2022 - added CHI keyword
+         case('OHMEGA','CE','CH','CI','FIXRAT','CH0','CHI')
+            nc = ntemp
+         case('AR85-CEA','BURGESS') 
+            nc = 1
+         case('AR85-RR') 
+            nc = 2
+         case('AR85-CH','AR85-CH+','AR85-CHE','AR85-CHP','AR85-CHE+') 
+            nc = 6
+         case('SHULL82') 
+            nc = 8
+   
+         case default
+            if (.not.is_valid_process(key)) then
+               write(stdout,*) 'read_collisions: unrecognized keyword ', key
+               stop
+            endif
+         end select
+
+         ! sanity check on levels
+         if (is_valid_process(key)) then
+            i=i+1
+            col => self%coll(i)
+            col%key = key
+            col%nc = nc
+            read(latom,*) l, u, self%cgrid(1:nc,i)
+            
+            if (l==u) then
+               write(stdout, *) "ll==ul for process ", key, l, u
+               abort = .true.
+            endif
+
+            select case(trim(key))
+            case('OHMEGA','CE','CH','CI','FIXRAT','CH0','CHI')
+               ! set derivatives for 3rd order hermite interpolation
+               call hermite_derivative(self%dcdt(1:ntemp,i), tgrid(1:ntemp), self%cgrid(1:ntemp,i))
+               col%itemp = itemp
+            end select
+
+            col%ll = min(l, u)
+            col%ul = max(l, u)
+
+            tri = (col%ul-1)*(col%ul-2)/2 + col%ll
+            !self%cdata(tri) = -1.0 ! flag non-classical recipe
+
+            select case(trim(key))
+            case ('CE', 'CI')
+               self%ecol(tri) = .true.
+            case ('CH', 'CHI')
+               self%hcol(tri) = .true.
+            end select
+   
+            ! within level range
+            if(col%ll < 0 .or. col%ul > self%nlevel) then
+               write(stdout,*) 'key=', col%key
+               write(stdout,*) 'll=',  col%ll 
+               write(stdout,*) 'ul=',  col%ul 
+               write(stdout,*) 'nk=',  self%nlevel
+               write(stdout,*) 'read_atom:  level index outside range (1,nk)'
+               abort = .true.
+            endif
+         end if
+      end do
       close(latom)
-
-      ! frequency grid in lines
-      do i=1,self%nline
-         call self%line(i)%freql(self%qnorm, symmetric=.true.)
-      end do
-
-      !  frequency grid in continua
-      do i=1,self%ncont
-         call self%cont(i)%freqc()
-      end do
+      if (abort) stop
    END SUBROUTINE read
-   !------------------------------------------------------------------------------------
 
    !===============================================================================
    ! initialises the spectrum structure
    !===============================================================================
    SUBROUTINE create_spectrum (self, sp)
-   class(atom_type), target :: self
-   class(spectrum_type), intent(out) :: sp
-   type(line_type), pointer :: lin
-   type(cont_type), pointer :: cnt
-   integer :: i,nnu,js,je
-   real(8),dimension(:),allocatable :: nu
-   integer, save:: itimer=0
-   !-----------------------------------------------------------------------------
-   call trace%begin('atom_type%create_spectrum', itimer=itimer)
-   ! compute total number of frequencies
-   nnu=0
-   do i=1,self%nline
-      nnu=nnu+self%line(i)%nnu
-   end do
-   do i=1,self%ncont
-      nnu=nnu+self%cont(i)%nnu
-   end do
+      class(atom_type), target :: self
+      class(spectrum_type), intent(out) :: sp
+      type(line_type), pointer :: lin
+      type(cont_type), pointer :: cnt
+      integer :: i,nnu,js,je
+      real(8),dimension(:),allocatable :: nu
+      real(8) :: dnu
+      integer, save:: itimer=0
+      !-----------------------------------------------------------------------------
+      call trace%begin('atom_type%create_spectrum', itimer=itimer)
+      ! compute total number of frequencies
+      nnu = 0
 
-   ! save all frequencies
-   allocate(nu(nnu))
-   je=0
-   do i=1,self%nline
-      js=je+1
-      je=js+self%line(i)%nnu-1
-      nu(js:je)=self%line(i)%nu
-   end do
-   do i=1,self%ncont
-      js=je+1
-      je=js+self%cont(i)%nnu-1
-      nu(js:je)=self%cont(i)%nu
-   end do
+      do i=1,self%nline
+         lin => self%line(i)
+         call lin%freql(self%qnorm, symmetric=.true.)
+         nnu = nnu + lin%nnu
+      end do
+      do i=1,self%ncont
+         cnt => self%cont(i)
+         if (cnt%bf_type=='hydrogenic') then
+            allocate( cnt%nu(1:cnt%nnu)    )
+            allocate( cnt%alpha(1:cnt%nnu) )
+            dnu = (cnt%nu_max - cnt%nu0) / (cnt%nnu-1)
+            cnt%nu = (/ (cnt%nu0 + i*dnu, i=0, cnt%nnu-1) /)
+            cnt%alpha = (cnt%nu / cnt%nu0 )**-3
+         endif
+         nnu = nnu + cnt%nnu
+      end do
 
-   ! sort frequencies into ascending order 
-   call refsor(nu)
+      ! save all frequencies
+      allocate(nu(nnu))
+      je=0
+      do i=1,self%nline
+         js=je+1
+         je=js+self%line(i)%nnu-1
+         nu(js:je)=self%line(i)%nu
+         deallocate(self%line(i)%nu)
+      end do
+      do i=1,self%ncont
+         js=je+1
+         je=js+self%cont(i)%nnu-1
+         nu(js:je)=self%cont(i)%nu
+      end do
 
-   ! discard duplicates, nnu contains number of unique elements on exit
-   call unista(nu,nnu)
+      ! sort frequencies into ascending order 
+      call refsor(nu)
 
-   ! now set overall frequency grid
-   sp%nnu=nnu
-   allocate(sp%nu(nnu)) 
-   sp%nu=nu(1:nnu)
-   call trace%end(itimer)
+      ! discard duplicates, nnu contains number of unique elements on exit
+      call unista(nu,nnu)
+
+      ! now set overall frequency grid
+      sp%nnu=nnu
+      allocate(sp%nu(nnu)) 
+      sp%nu=nu(1:nnu)
+      call trace%end(itimer)
    END SUBROUTINE create_spectrum
 
    !===============================================================================
    SUBROUTINE set_active_transitions (self, sp)
-   class(atom_type), target :: self
-   class(atomic_spectrum_type), intent(inout) :: sp
-   type(line_type), pointer :: lin
-   type(cont_type), pointer :: cnt
-   real(8), dimension(:), allocatable :: dalpha_dnu,alpha_fromfile,nu_fromfile, alpha
-   integer :: i, j, nnu, ired, iblue
-   integer, save:: itimer=0
-   !-----------------------------------------------------------------------------
-   call trace%begin('atom_type%set_active_transitions', itimer=itimer)
-   
-   ! allocate list of active continua and lines
-   allocate(sp%ac(self%ncont,sp%nnu)) ; sp%ac=0
-   allocate(sp%nac(sp%nnu)) ; sp%nac=0
+      class(atom_type), target :: self
+      class(atomic_spectrum_type), intent(inout) :: sp
+      type(line_type), pointer :: lin
+      type(cont_type), pointer :: cnt
+      real(8), dimension(:), allocatable :: dalpha_dnu,alpha_fromfile,nu_fromfile, alpha
+      integer :: i, j, nnu, ired, iblue
+      integer, save:: itimer=0
+      !-----------------------------------------------------------------------------
+      call trace%begin('atom_type%set_active_transitions', itimer=itimer)
+      
+      ! allocate list of active continua and lines
+      call os%allocate(sp%nac, sp%nnu, zero=.true.)
+      call os%allocate(sp%nal, sp%nnu, zero=.true.)
 
-   allocate(sp%al(self%nline,sp%nnu)) ; sp%al=0
-   allocate(sp%nal(sp%nnu)) ; sp%nal=0
-   
-   do i=1,self%ncont
-      cnt => self%cont(i)
-
-      ! find minimum and maximum index of this continuum in the sp%nu grid
-      ired  = searchsorted(sp%nu, cnt%nu(1), outbounds_ok=.true.) + 1
-      iblue = searchsorted(sp%nu, cnt%nu(cnt%nnu), outbounds_ok=.true.)
-      if (iblue == 0 .or. ired == sp%nnu) then
-      cnt%ired  = 0
-      cnt%iblue = 0
-      cycle
-      endif
-
-      ! total number of frequencies where this continuum is active
-      nnu=iblue-ired+1
-
-      ! min and max frequency where this continuum is active
-      cnt%ired  = ired
-      cnt%iblue = iblue
-   
-      ! add to number of active continua
-      do j=ired,iblue
-         sp%nac(j) = sp%nac(j) + 1 ! number of active continua at frequency index j
-         sp%ac( sp%nac(j), j ) = i ! the index of this active continuum
+      do i=1,self%ncont
+         cnt => self%cont(i)
+         ! find minimum and maximum index of this continuum in the sp%nu grid
+         ired  = searchsorted(sp%nu, cnt%nu0, outbounds_ok=.true.) + 1
+         iblue = searchsorted(sp%nu, cnt%nu_max, outbounds_ok=.true.)
+         if (iblue == 0 .or. ired == sp%nnu) cycle
+      
+         ! add to number of active continua
+         do j=ired,iblue
+            sp%nac(j) = sp%nac(j) + 1 ! number of active continua at frequency index j
+         end do
       end do
-      
-      ! recompute the bf cross sections
-      select case(cnt%bf_type)
 
-      case('hydrogenic')
-         ! use nu**-3 dependency
-         cnt%nnu = nnu
-
-         deallocate( cnt%nu      )
-         allocate(   cnt%nu(ired:iblue) )
-         cnt%nu=sp%nu(ired:iblue)
-
-         deallocate( cnt%alpha      )
-         allocate(   cnt%alpha(ired:iblue) )
-         call cnt%freqc()
-
-      case('detail')
-         ! interpolate from given values
-         if (allocated(dalpha_dnu)) deallocate(dalpha_dnu)
-         allocate( dalpha_dnu(cnt%nnu) )
-         call hermite_derivative(dalpha_dnu, cnt%nu, dble(cnt%alpha))
-         
-         if (allocated(alpha_fromfile)) deallocate(alpha_fromfile)
-         allocate( alpha_fromfile(cnt%nnu) )
-         alpha_fromfile = cnt%alpha
-
-         if (allocated(nu_fromfile)) deallocate(nu_fromfile)
-         allocate( nu_fromfile(cnt%nnu) )
-         nu_fromfile = cnt%nu
-         
-         ! set new frequency grid        
-         cnt%nnu   = nnu
-         deallocate( cnt%nu      )
-         allocate(   cnt%nu(ired:iblue) )
-         cnt%nu=sp%nu(ired:iblue)
-      
-         ! allocate space for new cross sections
-         deallocate( cnt%alpha             )
-         allocate(   cnt%alpha(ired:iblue) )
-
-         ! fill new cross sections 
-         allocate(alpha(cnt%nnu))
-         call hermite_interpolation(alpha, cnt%nu, nu_fromfile, alpha_fromfile, dalpha_dnu)
-         cnt%alpha = real(alpha)
-         deallocate(alpha)
-
-      case default
-         print *, 'sp_from_atom : cont(i)%bf_type'// cnt%bf_type // 'not recognized'
-         stop
-
-      end select
-
-      call sp%set_weights(cnt%wnu, cnt%nu, ired, iblue)
-   end do
-
-   do i=1,self%nline
+      do i=1,self%nline
          lin => self%line(i)
-
          ! find minimum and maximum index of this line in the sp%nu grid
-         ired  = searchsorted(sp%nu, lin%nu(1), outbounds_ok=.true.) + 1
-         iblue = searchsorted(sp%nu, lin%nu(lin%nnu), outbounds_ok=.true.)
-         if (iblue == 0 .or. ired == sp%nnu) then
-         lin%ired  = 0
-         lin%iblue = 0
-         cycle
-         endif
-
-         ! total number of frequencies where this line is active
-         nnu=iblue-ired+1
-
-         ! min and max frequency where this line is active
-         lin%ired  = ired
-         lin%iblue = iblue
+         ired  = searchsorted(sp%nu, lin%nu_min, outbounds_ok=.true.) + 1
+         iblue = searchsorted(sp%nu, lin%nu_max, outbounds_ok=.true.)
+         if (iblue == 0 .or. ired == sp%nnu) cycle
       
          ! add to number of active lines
          do j=ired,iblue
-         sp%nal(j) = sp%nal(j) + 1
-         sp%al( sp%nal(j), j ) = i
+            sp%nal(j) = sp%nal(j) + 1
          end do
+      end do
 
-         ! set new frequency grid for the line      
-         lin%nnu   = nnu
-         deallocate( lin%nu      )
-         allocate(   lin%nu(ired:iblue) )
-         lin%nu=sp%nu(ired:iblue) ! [Hz]
-         allocate(   lin%q(ired:iblue) )
-         lin%q = (lin%nu/lin%nu0-1.0d0) * CC / (self%qnorm * KM_TO_CM) ! [Doppler units]
+      call os%allocate(sp%ac, [maxval(sp%nac,1), sp%nnu], zero=.true., label='sp%ac')
+      call os%allocate(sp%al, [maxval(sp%nal,1), sp%nnu], zero=.true., label='sp%al')
+      sp%nac = 0
+      sp%nal = 0
+      
+      do i=1,self%ncont
+         cnt => self%cont(i)
 
-         ! fill frequency integration weights for the line
-         call sp%set_weights(lin%wnu, lin%nu, ired, iblue)
-         call sp%set_weights(lin%wq , lin%q , ired, iblue)
-   end do
+         ! find minimum and maximum index of this continuum in the sp%nu grid
+         ired  = searchsorted(sp%nu, cnt%nu0, outbounds_ok=.true.) + 1
+         iblue = searchsorted(sp%nu, cnt%nu_max, outbounds_ok=.true.)
 
-   sp%maxac=maxval(sp%nac)
-   sp%maxal=maxval(sp%nal)
+         ! total number of frequencies where this continuum is active
+         nnu=iblue-ired+1
 
-   write(*,'(a,I0,a)') 'sp_from_atom: frequency grid has ', sp%nnu, ' points.'
-   call trace%end(itimer)
+         if (iblue == 0 .or. ired == sp%nnu .or. nnu == 1) then
+            cnt%ired  = 0
+            cnt%iblue = 0
+            if (allocated(cnt%nu)) deallocate(cnt%nu)
+            if (allocated(cnt%alpha)) deallocate(cnt%alpha)
+            cycle
+         endif
+
+         ! min and max frequency where this continuum is active
+         cnt%ired  = ired
+         cnt%iblue = iblue
+      
+         ! add to number of active continua
+         do j=ired,iblue
+            sp%nac(j) = sp%nac(j) + 1 ! number of active continua at frequency index j
+            sp%ac( sp%nac(j), j ) = i ! the index of this active continuum
+         end do
+         
+         ! recompute the bf cross sections
+         select case(cnt%bf_type)
+
+         case('hydrogenic')
+            ! use nu**-3 dependency
+            cnt%nnu = nnu
+
+            deallocate(cnt%nu)
+            deallocate(cnt%alpha)
+            allocate(cnt%nu(ired:iblue))
+            allocate(cnt%alpha(ired:iblue))
+            cnt%nu = sp%nu(ired:iblue)
+            cnt%alpha = (cnt%nu / cnt%nu0 )**-3
+
+         case('detail')
+            ! interpolate from given values
+            if (allocated(dalpha_dnu)) deallocate(dalpha_dnu)
+            allocate( dalpha_dnu(cnt%nnu) )
+            call hermite_derivative(dalpha_dnu, cnt%nu, dble(cnt%alpha))
+            
+            if (allocated(alpha_fromfile)) deallocate(alpha_fromfile)
+            allocate( alpha_fromfile(cnt%nnu) )
+            alpha_fromfile = cnt%alpha
+
+            if (allocated(nu_fromfile)) deallocate(nu_fromfile)
+            allocate( nu_fromfile(cnt%nnu) )
+            nu_fromfile = cnt%nu
+            
+            ! set new frequency grid        
+            cnt%nnu   = nnu
+            deallocate( cnt%nu      )
+            allocate(   cnt%nu(ired:iblue) )
+            cnt%nu=sp%nu(ired:iblue)
+         
+            ! allocate space for new cross sections
+            deallocate( cnt%alpha             )
+            allocate(   cnt%alpha(ired:iblue) )
+
+            ! fill new cross sections 
+            allocate(alpha(cnt%nnu))
+            call hermite_interpolation(alpha, cnt%nu, nu_fromfile, alpha_fromfile, dalpha_dnu)
+            cnt%alpha = real(alpha)
+            deallocate(alpha)
+
+         case default
+            print *, 'sp_from_atom : cont(i)%bf_type'// cnt%bf_type // 'not recognized'
+            stop
+
+         end select
+
+         call sp%set_weights(cnt%wnu, cnt%nu, ired, iblue)
+      end do
+
+      do i=1,self%nline
+            lin => self%line(i)
+
+            ! find minimum and maximum index of this line in the sp%nu grid
+            ired  = searchsorted(sp%nu, lin%nu_min, outbounds_ok=.true.) + 1
+            iblue = searchsorted(sp%nu, lin%nu_max, outbounds_ok=.true.)
+
+            ! total number of frequencies where this line is active
+            nnu=iblue-ired+1
+
+            if (iblue == 0 .or. ired == sp%nnu .or. nnu==1) then
+               lin%ired  = 0
+               lin%iblue = 0
+               if (allocated(lin%nu)) deallocate(lin%nu)
+               if (allocated(lin%q)) deallocate(lin%q)
+               cycle
+            endif
+
+            ! min and max frequency where this line is active
+            lin%ired  = ired
+            lin%iblue = iblue
+         
+            ! add to number of active lines
+            do j=ired,iblue
+               sp%nal(j) = sp%nal(j) + 1
+               sp%al( sp%nal(j), j ) = i
+            end do
+
+            ! set new frequency grid for the line      
+            lin%nnu   = nnu
+            !deallocate( lin%nu      )
+            allocate(lin%nu(nnu))
+            allocate(lin%q(nnu))
+            !allocate(   lin%nu(ired:iblue) )
+            !allocate(   lin%q(ired:iblue) )
+            lin%nu=sp%nu(ired:iblue) ! [Hz]
+            !lin%q = (lin%nu/lin%nu0-1.0d0) * CC / (self%qnorm * KM_TO_CM) ! [Doppler units]
+            lin%q = lin%nu/lin%nu0 - 1.0d0
+
+            ! fill frequency integration weights for the line
+            call sp%set_weights(lin%wnu, lin%nu, ired, iblue)
+            call sp%set_weights(lin%wq , lin%q , ired, iblue)
+      end do
+
+      sp%maxac=maxval(sp%nac)
+      sp%maxal=maxval(sp%nal)
+
+      write(*,'(a,I0,a)') 'sp_from_atom: frequency grid has ', sp%nnu, ' points.'
+      call trace%end(itimer)
    END SUBROUTINE set_active_transitions
 
    !===============================================================================
    SUBROUTINE unique_int(arr, out, nout)
-   integer, intent(in), dimension(:) :: arr
-   integer, intent(out), dimension(:) :: out
-   integer, intent(out) :: nout
-   integer :: i, j, n
-   logical :: new
-   !-----------------------------------------------------------------------------
-   n = size(arr)
-   nout = 0
-   do i=1, n
-      new = .true.
-      do j=1, nout
-         if (arr(i) == out(j)) new = .false.
-      end do
+      integer, intent(in), dimension(:) :: arr
+      integer, intent(out), dimension(:) :: out
+      integer, intent(out) :: nout
+      integer :: i, j, n
+      logical :: new
+      !-----------------------------------------------------------------------------
+      n = size(arr)
+      nout = 0
+      do i=1, n
+         new = .true.
+         do j=1, nout
+            if (arr(i) == out(j)) new = .false.
+         end do
 
-      if (new) then
-         nout = nout+1
-         out(nout) = arr(i)
-      endif
-   end do
+         if (new) then
+            nout = nout+1
+            out(nout) = arr(i)
+         endif
+      end do
    END SUBROUTINE unique_int
+
+   !===============================================================================
+   SUBROUTINE copy_to (self, other)
+      class(atom_type) :: self
+      type(atom_type) :: other
+      real(8), dimension(:,:), pointer :: tgrid, cgrid, dcdt
+      type(coll_type), dimension(:), pointer :: col
+      !-----------------------------------------------------------------------------
+      tgrid => self%tgrid
+      cgrid => self%cgrid
+      dcdt  => self%dcdt
+      col   => self%coll
+      nullify(self%tgrid)
+      nullify(self%cgrid)
+      nullify(self%dcdt)
+      nullify(self%coll)
+
+      ! deep copy
+      other = self
+
+      self%tgrid => tgrid
+      self%cgrid => cgrid
+      self%dcdt  => dcdt 
+      self%coll  => col
+      other%tgrid => tgrid
+      other%cgrid => cgrid
+      other%dcdt  => dcdt 
+      other%coll  => col
+      
+      call os%mem_register(storage_size(self%line), self%nline, label='atom%line')
+      call os%mem_register(storage_size(self%cont), self%ncont, label='atom%cont')
+   END SUBROUTINE
 
 END MODULE atom_mod
   

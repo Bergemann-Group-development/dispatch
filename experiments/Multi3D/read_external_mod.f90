@@ -3,6 +3,7 @@
 !===============================================================================
 MODULE read_external_mod
   USE io_mod
+  USE m3io_mod, only: NextEntry
   USE mpi_coords_mod
   USE mpi_mod
   USE omp_mod
@@ -28,14 +29,14 @@ MODULE read_external_mod
   USE m3d_patch_mod, only: maxiter, ilambd, m3d_patch_t, atom_update_counter, global_maxerr, global_pos
   USE m3d_halo_mod, only: m3d_halo_t
   USE read_stagger_snapshot_mod
+  USE read_marcs_mod, only: read_marcs
   implicit none
 
   type, public:: read_external_t
     class(task_list_t), pointer:: task_list
-    integer :: dims(3)=[1,1,1], n(3), ng(3), verbose
-    real(4), dimension(:,:,:), pointer, contiguous :: temp, ne, pe, rho, vturb, px, py, pz, ee
+    integer :: dims(3)=[1,1,1], n(3), verbose
+    real(4), dimension(:,:,:), pointer, contiguous :: temp, ne, pe, rho, px, py, pz, ee
     real(8) :: ds(3), size(3), position(3)!, origin(3)
-    character(len=126) :: atmos_name
   contains
     procedure:: init
     procedure:: init_exp
@@ -51,8 +52,6 @@ MODULE read_external_mod
 
   type(read_external_t), public:: read_external
   type(rank_t) :: rank
-  logical, save :: read_Stagger=.false.
-  logical, save :: read_Multi=.false.
 
 CONTAINS
 
@@ -71,8 +70,8 @@ SUBROUTINE init(self, task_list, name)
   integer :: verbose=1
   logical :: face_nbors=.false.
   character(len=126) :: atmos_file='./input_multi3d/atmos/atmos.sun_MARCS_50'
-  namelist /atmos_params/ atmos_file, dims, verbose, read_Stagger, read_Multi, &
-  patches_per_mpi, FeH
+  character(len=126) :: atmos_format='Multi'
+  namelist /atmos_params/ atmos_file, dims, verbose, patches_per_mpi, FeH, atmos_format
   !-----------------------------------------------------------------------------
   if (associated(task_list)) return
   call trace%begin('read_external_t%init')
@@ -118,17 +117,55 @@ SUBROUTINE init(self, task_list, name)
 
   allocate (task_list)
   self%task_list => task_list
-  
-  if (read_Stagger) then
+
+  select case (atmos_format)
+  case ('Stagger')
     call read_stagger_snapshot(self%ds, self%rho, self%px, self%py, &
     self%pz, self%ee, tt=self%temp, ne=self%ne)
-    self%n = shape(self%rho)
+  case ('Marcs')
+    call read_marcs(atmos_file, self%ds, self%rho, self%temp, self%pe, FeH)
+  case ('Multi')
+    call self%read_multi_snapshot(atmos_file, self%ds, self%rho, self%temp, &
+                                  self%ne, self%px, self%py, self%pz)
+  case ('Text')
+    call self%read_1d_snapshot(atmos_file, self%ds, self%rho, self%temp, self%pe)
+  case default
+    write(stdout, *) 'unknown atmos_format ', atmos_format, &
+    '. Options are: "Stagger", "Multi", "Marcs" and "Text".'
+    stop
+  end select
+
+  self%n = shape(self%rho)
+  if (.not. associated(self%pe)) then
     call os%allocate(self%pe, self%n)
-    self%pe = self%ne * cgs%k_b * self%temp  / scaling%p
-  elseif (read_Multi) then
-    call self%read_multi_snapshot(atmos_file)
+    self%pe = self%ne * cgs%k_b * self%temp
+  elseif (.not. associated(self%ne)) then
+    call os%allocate(self%ne, self%n)
+    self%ne = self%pe / (cgs%k_b * self%temp)
+  endif
+
+  self%ds = self%ds / scaling%l
+  self%pe  = self%pe / scaling%p
+  self%rho = self%rho / scaling%d
+
+  if (.not. associated(self%pz)) then
+    call os%allocate(self%px, self%n, zero=.true.)
+    call os%allocate(self%py, self%n, zero=.true.)
+    call os%allocate(self%pz, self%n, zero=.true.)
   else
-    call self%read_1d_snapshot(atmos_file)
+    self%px  = self%px / (scaling%d * scaling%u)
+    self%py  = self%py / (scaling%d * scaling%u)
+    self%pz  = self%pz / (scaling%d * scaling%u)
+  endif
+
+  if (self%rho(1,1,1) < self%rho(1,1,self%n(3))) then
+    self%temp =  self%temp(:,:,self%n(3):1:-1)
+    self%rho  =  self%rho (:,:,self%n(3):1:-1)
+    self%ne   =  self%ne  (:,:,self%n(3):1:-1)
+    self%pe   =  self%pe  (:,:,self%n(3):1:-1)
+    self%px   =  self%px  (:,:,self%n(3):1:-1)
+    self%py   =  self%py  (:,:,self%n(3):1:-1)
+    self%pz   = -self%pz  (:,:,self%n(3):1:-1)
   endif
 
   self%size = self%n * self%ds
@@ -239,6 +276,14 @@ SUBROUTINE init(self, task_list, name)
   !$omp parallel default(shared)
   call self%init_exp()
   !$omp end parallel
+
+  call os%deallocate(self%temp)
+  call os%deallocate(self%rho)
+  call os%deallocate(self%ne)
+  call os%deallocate(self%pe)
+  call os%deallocate(self%px)
+  call os%deallocate(self%py)
+  call os%deallocate(self%pz)
   !-----------------------------------------------------------------------------
   ! Refresh the counts, now with bits%has_output set on tasks
   !-----------------------------------------------------------------------------
@@ -311,102 +356,96 @@ END SUBROUTINE init_exp
 !===============================================================================
 !> Reads the actual text files and stores variables under self
 !===============================================================================
-SUBROUTINE read_1d_snapshot(self, atmos_1d_file)
-  !-----------------------------------------------------------------------------
-  USE m3io_mod, only: NextEntry
+SUBROUTINE read_1d_snapshot(self, atmos_file, ds, rho, temp, pe)
   class(read_external_t):: self
+  real(4), intent(out), dimension(:,:,:), pointer, contiguous :: rho, temp, pe
+  real(8), intent(out), dimension(:) :: ds
   integer :: nz, lunit, i, iostat
-  character(len=126) :: atmos_1d_file
+  character(len=126) :: atmos_file
   real(4), dimension(:), allocatable :: zi
+  real(4) :: vturb
   !-----------------------------------------------------------------------------
   ! Open atmosphere file and read MHD variables
   !-----------------------------------------------------------------------------
-  call os%check_file(atmos_1d_file)
-  open(file=atmos_1d_file, newunit=lunit)
+  call os%check_file(atmos_file)
+  open(file=atmos_file, newunit=lunit)
   call nextentry(lunit)
-  read(lunit, *) self%atmos_name
+  read(lunit, *) ! skip name
   call nextentry(lunit)
   read(lunit, *) nz
 
-  self%n(3) = nz - 2*self%ng(3)
+  allocate(zi(nz))
+  call os%allocate(temp, [1,1,nz])
+  call os%allocate(rho , [1,1,nz])
+  call os%allocate(pe  , [1,1,nz])
 
-  allocate(zi(1-self%ng(3):self%n(3)+self%ng(3)))
-  allocate(self%temp(1,1, 1-self%ng(3):self%n(3)+self%ng(3)))
-  allocate(self%px, self%py, self%pz, self%pe, self%rho, self%vturb, self%ne, mold=self%temp)
-
-  do i=lbound(zi,1), ubound(zi,1)
+  do i=1, nz
     call nextentry(lunit)
-    read(lunit, *) zi(i), self%temp(1,1,i), self%pe(1,1,i), self%rho(1,1,i), self%vturb(1,1,i)
+    read(lunit, *) zi(i), temp(1,1,i), pe(1,1,i), rho(1,1,i), vturb
   end do
 
   close(lunit)
 
-  zi = zi / scaling%l
-  self%rho = self%rho / scaling%d
-  self%ne  = self%pe / (cgs%k_b * self%temp)
-  self%pe  = self%pe  / scaling%p
-  self%px  = 0
-  self%py  = 0
-  self%pz  = 0
+  ds(1) = 1d10
+  ds(2) = 1d10 
+  ds(3) = zi(2) - zi(1)
 
-  self%n(:2) = 1
-  !self%ds(1) = 1e-2 ! 10km spacing as for 1d atmospheres in Multi
-  !self%ds(2) = 1e-2
-  self%ds(1) = 1d2
-  self%ds(2) = 1d2 
-  self%ds(3) = zi(2) - zi(1)
-
-  if (abs(self%ds(3) - (zi(self%n(3)) - zi(self%n(3)-1))) > 1d-4) then
-    write(stdout,*) 'read_external_t%init: Warning: Non-equidistant atmosphere grid!'
+  if (abs(ds(3) - (zi(nz) - zi(nz-1))) > 1d-4) then
+    write(stdout,*) 'read_external_t%read_1d_snapshot: Warning: Non-equidistant atmosphere grid!'
   endif
 END SUBROUTINE read_1d_snapshot
 
 !===============================================================================
-SUBROUTINE read_multi_snapshot(self, stagger_file)
+SUBROUTINE read_multi_snapshot(self, atmos_file, ds, rho, temp, ne, px, py, pz)
   class(read_external_t):: self
-  integer :: lunit
-  character(len=126) :: stagger_file
+  real(4), intent(out), dimension(:,:,:), pointer, contiguous :: rho, temp, ne, px, py, pz
+  real(8), intent(out), dimension(:) :: ds
+  integer :: lunit, n(3)
+  character(len=126) :: atmos_file
   real(4) :: test
   real(4), dimension(:), allocatable :: xi, yi, zi
   !-----------------------------------------------------------------------------
   ! Open atmosphere file and read MHD variables
   !-----------------------------------------------------------------------------
-  call os%check_file(trim(stagger_file) // '.mesh')
-  open(file=trim(stagger_file) // '.mesh', newunit=lunit, form='FORMATTED')
-  read(lunit, *) self%n
-  allocate(xi(self%n(1)))
-  allocate(yi(self%n(2)))
-  allocate(zi(self%n(3)))
+  call os%check_file(trim(atmos_file) // '.mesh')
+  open(file=trim(atmos_file) // '.mesh', newunit=lunit, form='FORMATTED')
+  read(lunit, *) n
+  allocate(xi(n(1)))
+  allocate(yi(n(2)))
+  allocate(zi(n(3)))
   read(lunit, *) xi
   read(lunit, *) yi
   read(lunit, *) zi
   close(lunit)
 
-  allocate(self%temp(self%n(1), self%n(2), self%n(3)))
-  allocate(self%rho, self%ne, self%px, self%py, self%pz, self%pe, mold=self%temp)
+  call os%allocate(temp, n)
+  call os%allocate(rho, n)
+  call os%allocate(ne, n)
+  call os%allocate(px, n)
+  call os%allocate(py, n)
+  call os%allocate(pz, n)
 
-  call os%check_file(trim(stagger_file) // '.atmos')
-  open(file=trim(stagger_file) // '.atmos', newunit=lunit, form='UNFORMATTED', access='stream')
-  read(lunit) self%ne 
-  read(lunit) self%temp
-  read(lunit) self%px
-  read(lunit) self%py
-  read(lunit) self%pz
-  read(lunit) self%rho
+  call os%check_file(trim(atmos_file) // '.atmos')
+  open(file=trim(atmos_file) // '.atmos', newunit=lunit, form='UNFORMATTED', access='stream')
+  read(lunit) ne 
+  read(lunit) temp
+  read(lunit) px
+  read(lunit) py
+  read(lunit) pz
+  read(lunit) rho
   close(lunit)
 
-  xi  = xi  / scaling%l
-  yi  = yi  / scaling%l
-  zi  = zi  / scaling%l
-  self%rho = self%rho / scaling%d
-  self%px  = self%px * self%rho / scaling%u
-  self%py  = self%py * self%rho / scaling%u
-  self%pz  = self%pz * self%rho / scaling%u
-  self%pe  = self%ne * cgs%k_b * self%temp  / scaling%p
+  px = px * rho
+  py = py * rho
+  pz = - pz * rho ! z-velocity is flipped in Multi format
 
-  self%ds(1) = xi(2) - xi(1)
-  self%ds(2) = yi(2) - yi(1)
-  self%ds(3) = zi(2) - zi(1)
+  ds(1) = xi(2) - xi(1)
+  ds(2) = yi(2) - yi(1)
+  ds(3) = zi(2) - zi(1)
+
+  if (abs(ds(3) / (zi(n(3)) - zi(n(3)-1)) - 1) > 1d-4) then
+    write(stdout,*) 'read_external_t%read_1d_snapshot: Warning: Non-equidistant atmosphere grid!'
+  endif
 END SUBROUTINE read_multi_snapshot
 
 !===============================================================================
@@ -423,12 +462,7 @@ SUBROUTINE load_authority(self, patch)
   zs = patch%li(3); ze = patch%ui(3)
 
   do k=zs,ze
-    if (read_Stagger) then
-      iz = patch%zs + k - zs
-    else
-      ! flipping z-axis, so that the first patch is the bottom of the atmosphere
-      iz = self%n(3) - (patch%zs - 1 + k - zs) 
-    endif
+    iz = patch%zs + k - zs
 
     patch%mem(xs:xe,ys:ye,k,patch%idx%d ,it,1) = self%rho(:,:,iz)
     patch%mem(xs:xe,ys:ye,k,patch%idx%px,it,1) = self%px(:,:,iz)
@@ -436,9 +470,9 @@ SUBROUTINE load_authority(self, patch)
     patch%mem(xs:xe,ys:ye,k,patch%idx%pz,it,1) = self%pz(:,:,iz)
 
     if (associated(self%temp)) then
-      patch%mem(xs:xe,ys:ye,k,patch%idx%e ,it,1) = self%temp(:,:,iz)
+      patch%mem(xs:xe,ys:ye,k,patch%idx%e,it,1) = self%temp(:,:,iz)
     elseif (associated(self%ee)) then
-      patch%mem(xs:xe,ys:ye,k,patch%idx%e ,it,1) = self%ee(:,:,iz)
+      patch%mem(xs:xe,ys:ye,k,patch%idx%e,it,1) = self%ee(:,:,iz)
     endif
     
     patch%mem(xs:xe,ys:ye,k,6,it,1) = self%pe(:,:,iz)
@@ -684,45 +718,37 @@ SUBROUTINE save_atmos (self, patch)
   real(4), dimension(:,:,:,:), allocatable :: chi, abslte, sumsca
   real(4), dimension(:,:,:), allocatable :: tau
   real(8), dimension(1) :: nu
+  real(8) :: dz
   character(len=82) :: out_atmos_file='atmos_data.bin'
   character(len=82) :: out_mesh_file='atmos_mesh.txt'
-  integer :: lunit, zs,ze,step, m(3), i, j, k
+  integer :: lunit, n,step, m(3), i, j, k
   !-----------------------------------------------------------------------------
   open(file=trim(io%run_dir)//out_mesh_file, newunit=lunit, form='FORMATTED')
   write(lunit, *) self%n
   write(lunit, *) self%ds
   close(lunit)
-
-  if (read_Stagger) then
-    zs = 1
-    ze = self%n(3)
-    step = 1
-  else
-    ! flipping z-axis
-    zs = self%n(3)
-    ze = 1
-    step = -1
-  endif
-
+  
+  n = self%n(3)
   m = shape(self%temp)
   allocate(chi(m(1), m(2), m(3),1))
   allocate(abslte, sumsca, mold=chi)
   allocate(tau, mold=self%temp)
   nu = 1e8 * cc / 5000.0
+  dz = self%ds(3) * scaling%l
 
   composition => patch%composition%composition
   call composition%load_state_variables(self%temp, self%ne, self%rho*real(scaling%d))
   call composition%absorption(nu, chi, abslte, sumsca)
-  call compute_tau_scale(chi(:,:,ze:zs:-step,1), self%ds(3)*scaling%l, tau(:,:,ze:zs:-step))
+  call compute_tau_scale(chi(:,:,n:1:-1,1), dz, tau(:,:,n:1:-1))
 
   open(file=trim(io%run_dir)//out_atmos_file, newunit=lunit, form='UNFORMATTED')
-  write(lunit) self%temp(:,:,zs:ze:step)
-  write(lunit) self%rho (:,:,zs:ze:step)
-  write(lunit) self%px  (:,:,zs:ze:step)
-  write(lunit) self%py  (:,:,zs:ze:step)
-  write(lunit) self%pz  (:,:,zs:ze:step)
-  write(lunit) self%pe  (:,:,zs:ze:step)
-  write(lunit) tau      (:,:,zs:ze:step)
+  write(lunit) self%temp
+  write(lunit) self%rho 
+  write(lunit) self%px  
+  write(lunit) self%py  
+  write(lunit) self%pz  
+  write(lunit) self%pe  
+  write(lunit) tau      
   close(lunit)
 END SUBROUTINE
 

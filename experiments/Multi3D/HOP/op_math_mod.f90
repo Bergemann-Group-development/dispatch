@@ -11,8 +11,8 @@ contains
    FUNCTION interp1d(xx,yy,newx, order, sorted) result(newy)
          real(dp), dimension(:), intent(in) :: xx, yy, newx
          real(dp), dimension(:), allocatable :: newy
-         integer, value, optional :: order
-         logical, value, optional :: sorted
+         integer, value :: order
+         logical, value :: sorted
          integer :: i, j, nx, ny
          procedure(interp1d_linear), pointer :: interp
 
@@ -27,8 +27,8 @@ contains
 
          interp => interp1d_linear
 
-         if (.not. present(sorted)) sorted = .false.
-         if (.not. present(order))  order  = 1
+         !if (.not. present(sorted)) sorted = .false.
+         !if (.not. present(order))  order  = 1
 
          if (order == 2) then
             if (nx < 3) then

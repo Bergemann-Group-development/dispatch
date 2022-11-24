@@ -44,7 +44,8 @@ MODULE out_rad_patch_mod
     call self%ray_patch_t%pre_init()
   
     self%n(3) = 1
-    call self%set_nv_and_nw (self%sp%nnu, 1)
+    nw = 3
+    call self%set_nv_and_nw (self%sp%nnu, nw)
     call self%setup_metafile()
     call self%post_pre_init()
     call trace%end(itimer)
@@ -76,41 +77,43 @@ MODULE out_rad_patch_mod
     character(len=128) :: filename
     real(8), allocatable :: lam(:)
     real(4), dimension(:,:,:), pointer :: Inu
+    real(4), dimension(:,:,:,:), pointer :: mem
     integer :: lunit
-    integer :: i
+    integer :: i, iw
     !-----------------------------------------------------------------------------
     if (self%is_finished()) return
     call trace%begin('out_rad_patch_t%save_radiation_output')
     write(stdout, '(A64)') 'Writing output for angle ' // self%ray_name
   
-    nbor => self%link%nbor
-    do while (associated(nbor))
-      select type(nb => nbor%task)
-      class is (rad_patch_t)
-        Inu => self%mem(:,:,1, nb%fs:nb%fe, self%it, self%i_inu)
-        call self%check_access(nb)
-        do i=1, nb%nv
-          Inu(:,:,i) = nb%authority_mem(:,:,nb%n(3), i, nb%it, nb%i_inu)
-        end do
-      end select
-      nbor => nbor%next
-    end do
-  
-    lam = 1d8 * dble(cc) / self%sp%nu
-    Inu => self%mem(:,:,1,:, self%it, self%i_inu)
-  
     if (self%i_out == 1) then
+      lam = 1d8 * dble(cc) / self%sp%nu
       filename = trim(io%run_dir) // 'save/' // 'lam.bin'
       open(newunit=lunit, file=filename, access='stream')
       write(lunit) lam
       close(lunit)
     endif
   
+    nbor => self%link%nbor
+    do while (associated(nbor))
+      select type(nb => nbor%task)
+      class is (rad_patch_t)
+        call self%check_access(nb)
+        do iw=1, self%nw
+          Inu => self%mem(:,:,1, nb%fs:nb%fe, self%it, iw)
+          do i=1, nb%nv
+            Inu(:,:,i) = nb%authority_mem(:,:,nb%n(3), i, nb%it, iw)
+          end do
+        end do
+      end select
+      nbor => nbor%next
+    end do
+  
+    mem => self%mem(:,:,1,:, self%it, :)
     filename = trim(self%ray_name) // '_inu.bin'
-    call self%save_meta(filename, storage_size(Inu), shape(Inu))
+    call self%save_meta(filename, storage_size(mem), shape(mem))
     filename = trim(io%run_dir) // 'save/' // trim(self%ray_name) // '_inu.bin'
     open(newunit=lunit, file=filename, access='stream')
-    write(lunit) Inu
+    write(lunit) mem
     close(lunit)
     call trace%end()
     call self%post_update()

@@ -1,5 +1,6 @@
 MODULE coll_mod
     USE io_mod
+    USE os_mod
     USE m3io_mod
     USE mmath,only:ei1,hermite_interpolation,hermite_derivative
     USE mconst
@@ -13,9 +14,9 @@ MODULE coll_mod
       character(len=16) :: key ! transition type 
       integer :: nc ! size of coefficient grid
       integer :: ll,ul ! lower/upper level for transition
-      real(8),dimension(:), allocatable :: c ! coefficients
-      real(8),dimension(:), allocatable :: dcdt ! derivatives
-      real(8),dimension(:), allocatable :: t ! temperatures
+      integer :: itemp
+      !real(4),dimension(:), pointer, contiguous :: c ! coefficients
+      !real(4),dimension(:), pointer, contiguous :: dcdt ! derivatives
    end type coll_type
 
    ! *******************************************************************
@@ -33,532 +34,19 @@ MODULE coll_mod
     real(8), parameter :: cbar=2.3d0, x100=5.0d2
     real(8), parameter :: actelc=1.d0
  
-    character(len=8),dimension(15),parameter :: theprocesses = &
-          (/'OHMEGA  ','CI      ','CH      ','CE      ',&
-             'FIXRAT  ','SHULL82 ','AR85-CDI','AR85-CEA',&
+    character(len=8),dimension(13),parameter :: theprocesses = &
+          (/'OHMEGA  ','CI      ','CH      ','CE      ', &
+             'FIXRAT  ','SHULL82 ','AR85-CEA',&
              'BURGESS ','AR85-CH ','AR85-CHE','AR85-CHP',&
-             'BADNELL ','CH0     ','CHI     '/)
+             'CH0     ','CHI     '/)
     
     !integer :: n_coll_processes! number of keywords 
     type(coll_type),dimension(:),allocatable :: coll
      
  contains
- 
- 
-   SUBROUTINE read_collisions(file_unit, coll, max_n_temp, nlevel)
-      class(coll_type), target :: coll(:)
-      integer :: file_unit,ntemp, max_n_temp, nlevel
-      character(len=8) :: key
-      class(coll_type), pointer :: col
-   
-      real(8), dimension(:),allocatable :: tgrid, cgrid
-      integer ::  j,i,u,l,ios
-   
-      allocate(tgrid(max_n_temp))
-      allocate(cgrid(max_n_temp))
-   
-      i=0
-      do while (i<=size(coll)) !le to catch the end keyword
-   
-         !  read the keyword 
-         call nextentry(file_unit)
-         read(file_unit,fmt='(a8)',iostat=ios) key
-         if (ios<0) then
-            write(stdout, *) 'read_collisions: keyword "END" not found in collision file'
-            stop
-         endif
-   
-         key=uppercase(adjustl(key),len_trim(key))
-         
-         ! this is historic because multi only allowed 8 character process strings
-         if (key(1:len_trim(key))=='AR85-CHE+') key(1:8)='AR85-CHP'
-         
-         if (is_valid_process(key)) then
-            i=i+1
-            col => coll(i)
-         end if
-   
-         select case(key(1:len_trim(key)))             
-         case('END')     
-            write(*,*) "read_collisions: read all collisions."
-            i=i+1
-            exit
-   
-         case('TEMP')
-            call nextentry(file_unit)
-            read(file_unit,*) ntemp, (tgrid(j),j=1,ntemp)
-            if (ntemp<2) then
-               stop "read_collisions: ntemp<2"
-            endif
-   
-          ! MB  5.04.2018 - added CH0 keyword
-          ! RH 25.03.2022 - added CHI keyword
-         case('OHMEGA','CE','CH','CI','FIXRAT','CH0','CHI')
-            col%key=key
-            call nextentry(file_unit)
-            allocate(col%t(ntemp))
-            allocate(col%c(ntemp))
-            allocate(col%dcdt(ntemp))
-            col%nc=ntemp    
-            col%t = tgrid(1:ntemp)
-            read(file_unit,*) col%ll,col%ul,(col%c(j),j=1,ntemp)  
-   
-            ! set derivatives for 3rd order hermite interpolation
-            call hermite_derivative(col%dcdt, col%t, col%c)
-   
-         case('AR85-RR') 
-            col%key=key
-            call nextentry(file_unit)
-            col%nc=2
-            allocate(col%c(col%nc))
-            read(file_unit,*) col%ll,col%ul,(col%c(j),j=1,2)
-   
-         case('AR85-CEA','BURGESS') 
-            col%key=key
-            call nextentry(file_unit)
-            col%nc=1
-            allocate(col%c(col%nc))
-            read(file_unit,*) col%ll, col%ul, col%c(1)
-   
-         case('AR85-CH','AR85-CH+','AR85-CHE','AR85-CHP') 
-            col%key=key
-            call nextentry(file_unit)
-            col%nc=6
-            allocate(col%c(col%nc))
-            read(file_unit,*) col%ll,col%ul,(col%c(j),j=1,col%nc)
-   
-         case('SHULL82') 
-            col%key=key
-            call nextentry(file_unit)
-            col%nc=8
-            allocate(col%c(col%nc))
-            read(file_unit,*) col%ll,col%ul,(col%c(j),j=1,col%nc)
-   
-         case('BADNELL')
-            col%key=key
-            call nextentry(file_unit)
-            read(file_unit,*) col%ll,col%ul, col%nc
-            allocate(col%c(nbadnell*col%nc))
-            call nextentry(file_unit)
-            read(file_unit,*) (col%c(j),j=1,col%nc)
-            call nextentry(file_unit)
-            read(file_unit,*) (col%c(j+col%nc),j=1,col%nc)
-   
-         case('AR85-CDI') 
-            col%key=key
-            call nextentry(file_unit)
-            read(file_unit,*)  col%ll,col%ul,col%nc
-            allocate(col%c(ncdi*col%nc))
-            do l=0,col%nc-1
-               call nextentry(file_unit)
-               read(file_unit,*) (col%c(j+ncdi*l),j=1,ncdi)
-            end do
-   
-         case default
-            if (.not.is_valid_process(key)) then
-               write(stdout,*) 'read_collisions: unrecognized keyword ', key
-               stop
-            endif
-         end select
-   
-         ! sanity check on levels
-         if (is_valid_process(key)) then
-            l = col%ll
-            u = col%ul
-            
-            if (l==u) then
-               write(stdout, *) "ll==ul for process ", col%key, l, u
-               stop
-            endif
-   
-            if (l>u) then
-               col%ul=l
-               col%ll=u
-            endif
-   
-            ! within level range
-            if(l<0.or.u>nlevel) then
-               write(stdout,*) 'key=',col%key
-               write(stdout,*) 'll=',l
-               write(stdout,*) 'ul=',u
-               write(stdout,*) 'nk=', nlevel
-               stop 'read_collisions:  level index outside range (1,nk)'
-            endif
-         end if
-   
-      end do
-   
-   END SUBROUTINE read_collisions
-   
-   
-   SUBROUTINE get_ncoll(file_unit, crout, n_coll_processes, max_n_temp)
-      integer :: file_unit, ntemp
-      character(len=8) :: key
-      integer ::  ios, strl
-      integer, intent(out) :: n_coll_processes, max_n_temp
-      character(len=*) :: crout
-      character(len=20) :: txt
-      character(len=26),parameter :: upcase_alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-   
-      n_coll_processes = 0
-      max_n_temp = 0
-   
-      ! first run through to determine
-      ! n_coll_processes=number of keywords
-      ! mtgrd=size of the largest temperature grid
-   
-      do while (.true.)
-         call nextentry(file_unit)
-         read(file_unit,fmt='(a8)',iostat=ios) key
-         if (ios<0) then
-            stop 'read_collisions: keyword "END" not found in collision file'
-         endif
-         key=uppercase(adjustl(key),len_trim(key))
-   
-         ! read next non-comment line if key doesnt start with a letter
-         if (scan(key(1:1),upcase_alphabet)==0) cycle 
-   
-         ! we found a keyword, so interpret it
-         select case(key(1:len_trim(key)))
-         case('END')       
-            exit
-   
-         case('TEMP')
-            ! keep track of max size of temperature grid
-            call nextentry(file_unit)
-            read(file_unit,*) ntemp
-            if(ntemp>max_n_temp) max_n_temp=ntemp
-         case default
-            if (.not.is_valid_process(key)) then
-               write(stdout, *) 'read_collisions: unrecognized keyword '//key
-               stop
-            end if
-            n_coll_processes=n_coll_processes+1
-         end select
-      end do
-   
-      rewind(file_unit)
-   
-      do while (.true.)
-         call nextentry(file_unit)
-         read(file_unit,*) txt 
-         txt=adjustl(txt)
-         strl=len_trim(txt)
-         txt=lowercase(txt,strl)
-         if (txt==crout(1:strl)) exit
-      enddo
-   
-   END SUBROUTINE get_ncoll
 
-
-   !********************************************************************
-   ! MOD PE: Add temp,ne,nh,nstar as input parameters
-   SUBROUTINE gencol(coll,id,nlevel,g,ev,ion,cij,ix,iy,iz,temp,ne,nstar,nh)
-    USE mconst
-    implicit none
-
-    class(coll_type), dimension(:) :: coll
-    character(len=*), intent(in) :: id
-    integer, intent(in) :: nlevel
-    real(8), intent(in), dimension(:) :: g, ev
-    integer, intent(in), dimension(:) :: ion
-    real(8), dimension(nlevel,nlevel),intent(out) :: cij
-    integer,intent(in) :: ix,iy,iz
-    real(8),intent(in), dimension(:,:,:) :: temp, ne
-    real(8),dimension(:,:,:,:), intent(in) :: nstar, nh
-
-    real(8) :: ct,cup,cdn,dekt,de_k,de
-    real(8) :: nne,tg,stg,nsr
-    real(8), dimension(:), allocatable :: nnh
-
-    real(8) :: t4,summrs
-    real(8) :: betab,ddekt,wlog,wb,dexin1,xj,fac,fxj
-    real(8) :: dekti,qb,he1,he2
-    integer :: ul,ll,i,j,k,z, nhlevels
-
-    character(len=6),parameter :: rname='gencol'
-
-    cij=0.0d0
-
-    ! get local copies for ease of notation
-    tg=temp(ix,iy,iz)
-    stg=sqrt(tg)
-    nne=ne(ix,iy,iz)
-    nnh=nh(ix,iy,iz,:)
-    nhlevels = size(nh,4)
-
-    ! loop over all the transitions
-    do i=1, size(coll, 1)
-
-       cup=0.0d0
-       cdn=0.0d0
-       ll=coll(i)%ll
-       ul=coll(i)%ul
-       nsr=nstar(ix,iy,iz,ul)/nstar(ix,iy,iz,ll)
-
-       !********************************************************************
-
-       select case (trim(coll(i)%key))
-
-          !********************************************************************
-
-       case('OHMEGA')
-
-          !  excitation of  electron collisons with positive ions
-          call hermite_interpolation(ct,tg,coll(i)%t,coll(i)%c,coll(i)%dcdt)
-          cdn = c0 / g(ul) * ct  * nne / stg
-          cup = cdn * nsr
-
-          !********************************************************************
-
-       case('CE')
-
-          ! excitation of neutrals by electron collisions 
-          call hermite_interpolation(ct,tg,coll(i)%t,coll(i)%c,coll(i)%dcdt)
-          cdn = g(ll)/g(ul) * ct * nne * stg
-          cup = cdn * nsr
-
-          !********************************************************************
-
-       case('CH')
-
-          ! collisions with neutral hydrogen)
-          ! these are downward rates (cdn); cup are upward rates
-
-          call hermite_interpolation(ct,tg,coll(i)%t,coll(i)%c,coll(i)%dcdt)
-          cdn = ct * nnh(1)
-          cup = cdn * nsr  
-
-          !********************************************************************
-
-       case('CHI')
-
-          ! b-f collisions with neutral hydrogen
-          ! these are downward rates (cdn); cup are upward rates
- 
-          call hermite_interpolation(ct,tg,coll(i)%t,coll(i)%c,coll(i)%dcdt)
-          cup = ct * nnh(1)
-          cdn = cup / nsr  
-
-         !********************************************************************
-
-       case('CI')
-
-          ! ionization by electron collisions
-          call hermite_interpolation(ct,tg,coll(i)%t,coll(i)%c,coll(i)%dcdt)
-          de_k = (ev(ul)-ev(ll))*ee/bk
-          cup = ct * nne * stg * exp(-de_k/tg) 
-          cdn = cup / nsr
-
-          !********************************************************************
-
-       case('CH0')
-
-          ! MB 5.04.2018 - charge transfer with H-, A+H <--> A+ + H-
-          ! these are upwards rates (CT ionisation or ion-pair formation)
-          ! also assumed for CI; but the difference is that CI downwards rates 
-          ! are computed from detailed balance (they are bi-directional);
-          ! CH0 are one-directional and the levels must be in the correct order
-          !  in the atom (, i.e. ll  --> lu for ioninisation)
-          ! in the QM papers, the inverse exothermic rates (neutralisation) 
-          ! are derived from the detailed balance
-          ! N_kj(T,E_k) = N_jk(t,E_k) * exp(-E_jk/ (k_B * T))
-
-          call hermite_interpolation(ct,tg,coll(i)%t,coll(i)%c,coll(i)%dcdt)
-          cup = ct * nnh(1)
-          cdn = cup / nsr
-
-          !********************************************************************
-
-       case('SHULL82')
-
-          ! Coefficients for collisional ionization, radiative recombination, and dielectronic recombination
-          ! following
-          ! Shull & van Steenberg, Astrophysical Journal Supplement Series, vol. 48, Jan. 1982, p. 95-107
-          ! ''The ionization equilibrium of astrophysically abundant elements''
-
-          !  the idea is to reduce dielectronic recombination rate
-          !  owing to collisional ionization of rydberg states
-          !  following summers 1974, appleton lab rept.
-          summrs=1.0d0
-          ! to remove density dependence in dielectronic rate comment out the next line
-          summrs=summers(id,ion,ul,nne)
-
-          cdn = coll(i)%c(3) * (tg/1.0d4)**(-coll(i)%c(4)) &
-               +  summrs * coll(i)%c(5) /tg/stg * exp(-coll(i)%c(7)/tg) * &  
-               (1.d0 + coll(i)%c(6) * (exp(- coll(i)%c(8) /tg)))
-          cdn = cdn * nne
-
-          cup = coll(i)%c(1) * stg * exp(-coll(i)%c(2)/tg) / (1.d0 + 0.1d0 * tg / coll(i)%c(2)) 
-          cup = cup * nne
-
-          !  3-body recombination (high density limit)
-          cdn = cdn + cup / nsr
-
-
-          !********************************************************************
-
-       case('AR85-CDI')
-
-          ! The AR85**** rates are based on 
-          ! Arnaud & Rothenflug
-          ! Astronomy and Astrophysics Supplement Series (ISSN 0365-0138), vol. 60, June 1985, p. 425-457
-          ! "An updated evaluation of recombination and ionization rates"
-
-          ! AR85-CDI is di-electronic recombination
-
-          cup = 0.0d0
-
-          do j=1,coll(i)%nc
-
-             k = (j-1) * ncdi
-
-             xj=coll(i)%c(k+1) * ee / bk / tg
-
-             fac=exp(-xj)*sqrt(xj)
-
-             fxj=fac*( coll(i)%c(k+2) + coll(i)%c(k+3) * (1.d0+xj) &
-                  +(coll(i)%c(k+4) - xj*(coll(i)%c(k+2) + coll(i)%c(k+3) &
-                  *(2.d0+xj)))*fone(xj)+ &
-                  coll(i)%c(k+5)*xj*ftwo(xj) )
-
-             fac=6.69d-07/coll(i)%c(k+1)/sqrt(coll(i)%c(k+1))
-
-             cup = cup + fac*fxj
-
-          end do
-
-          if (cup<0) cup=0
-
-          cup=cup*nne
-          cdn=cup / nsr
-
-
-          !********************************************************************
-
-       case('AR85-CEA')
-
-          ! The AR85**** rates are based on 
-          ! Arnaud & Rothenflug
-          ! Astronomy and Astrophysics Supplement Series (ISSN 0365-0138), vol. 60, June 1985, p. 425-457
-          ! "An updated evaluation of recombination and ionization rates"          
-
-          ! AR85-CEA is collision auto-ionization
-
-          call ar85cea(id, ion, tg,ll,ul,ct)  
-          cup = coll(i)%c(1) * ct * nne
-
-          !********************************************************************
-
-       case('AR85-CH')
-
-          ! The AR85**** rates are based on 
-          ! Arnaud & Rothenflug
-          ! Astronomy and Astrophysics Supplement Series (ISSN 0365-0138), vol. 60, June 1985, p. 425-457
-          ! "An updated evaluation of recombination and ionization rates"
-
-          !AR85-CH is charge transfer with neutral hydrogen atom^+ + H -> atom + H^+
-          if ( tg>=coll(i)%c(1) .and. tg<=coll(i)%c(2) )  then
-             t4=tg/1.0d4
-             cdn = coll(i)%c(3) * 1d-9 * t4**coll(i)%c(4) * (1.0d0+coll(i)%c(5)*exp(coll(i)%c(6)*t4)) * nnh(1)
-          endif
-
-          !********************************************************************  
-
-       case('AR85-CH+')
-
-          ! The AR85**** rates are based on 
-          ! Arnaud & Rothenflug
-          ! Astronomy and Astrophysics Supplement Series (ISSN 0365-0138), vol. 60, June 1985, p. 425-457
-          ! "An updated evaluation of recombination and ionization rates"
-
-          ! ar85-ch+ is  charge transfer with ionized hydrogen atom + H^+ -> atom^+ + H
-          if ( tg>=coll(i)%c(1) .and. tg<=coll(i)%c(2) )  then
-             t4=tg/1.0d4
-             cdn = coll(i)%c(3) * 1d-9 * t4**coll(i)%c(4) * (1.0d0+coll(i)%c(5)*exp(coll(i)%c(6)*t4)) * nnh(nhlevels)
-          endif
-
-          !********************************************************************
-
-       case('AR85-CHE')
-
-          ! The AR85**** rates are based on 
-          ! Arnaud & Rothenflug
-          ! Astronomy and Astrophysics Supplement Series (ISSN 0365-0138), vol. 60, June 1985, p. 425-457
-          ! "An updated evaluation of recombination and ionization rates"
-
-          !AR85-CHE is charge transfer with neutral helium atom^+ + He -> atom + He^+
-          if ( tg>=coll(i)%c(1) .and. tg<=coll(i)%c(2) ) then
-             t4=tg/1.0d4
-             call hepop(tg,sum(nnh),he1,he2)
-             cdn = coll(i)%c(3) * 1d-9 * t4**coll(i)%c(4) * (1.0d0+coll(i)%c(5)*exp(coll(i)%c(6)*t4)) * he1 
-          endif
-
-          !********************************************************************
-
-       case('AR85-CHP')
-
-          ! The AR85**** rates are based on 
-          ! Arnaud & Rothenflug
-          ! Astronomy and Astrophysics Supplement Series (ISSN 0365-0138), vol. 60, June 1985, p. 425-457
-          ! "An updated evaluation of recombination and ionization rates"
-
-          ! ar85-chp or ar85-che+ is  charge transfer with ionized helium atom^+ + He^+ -> atom + He^2+
-          if ( tg>=coll(i)%c(1) .and. tg<=coll(i)%c(2) ) then
-             t4=tg/1.0d4
-             call hepop(tg,sum(nnh),he1,he2)
-             cdn = coll(i)%c(3) * 1d-9 * t4**coll(i)%c(4) * (1.0d0+coll(i)%c(5)*exp(coll(i)%c(6)*t4)) * he2 
-          endif
-
-          !********************************************************************
-
-       case('BURGESS')
-          ! Electron impact ionization of complex ions
-          ! Burgess & Chidichimo, 1983, MNRAS, 203, 1269
-          de=ev(ul)-ev(ll)
-          z=ion(ll)-1
-          betab = 0.25d0*(sqrt((1.d2*z +91.d0)/(4.d0*z+3.d0))-5.d0)
-          dekt  = de*ee/bk/tg
-          ddekt = -dekt/tg
-          dekt  = min(x100,dekt)
-          dekti = 1.d0/dekt
-          wlog = log(1.d0 + dekti)
-          wb = wlog**(betab/(1.d0+dekti))
-          dexin1 = -exp(-dekt)/dekt*ddekt
-          qb = 2.1715d-08 * cbar * (13.6d0/de)**1.5d0 * sqrt(dekt) * ei1(dekt) * wb
-
-          cup = qb * actelc * nne * coll(i)%c(1)
-          cdn = cup/nsr
-
-          !********************************************************************
-
-       case('BADNELL')
-          ! fits to dielectronic recombination from Badnell and co-workers.
-          ! see for example Altun et al., 2006, A&A, 44 7, 1165
-          cdn=0.0d0
-          do j=1,coll(i)%nc
-             cdn=cdn + coll(i)%c(j+coll(i)%nc) * exp(-coll(i)%c(j)/tg)
-          end do
-
-          summrs=sumscl*summers(id,ion,ul,nne) + (1.0d0-sumscl)
-          cdn = cdn * nne * tg**(-1.5d0)* summrs
-
-       end select
-
-       !********************************************************************
-
-       cij(ul,ll) = cij(ul,ll)  + cup ! upward rate Cll->ul 
-       cij(ll,ul) = cij(ll,ul)  + cdn ! downward rate Cul->ll
-
-    end do ! transition loop 
-
-   END SUBROUTINE gencol
-
-
-   SUBROUTINE gencol_new(coll,id,nlevel,g,ev,ion,cij,temp,ne,nstar,nh)
-      USE mconst
-      implicit none
-  
+   !====================================================================================
+   SUBROUTINE gencol(coll,id,nlevel,g,ev,ion,cij,temp,ne,nstar,nh,tgrid,cgrid,dcdt)
       class(coll_type), dimension(:) :: coll
       character(len=*), intent(in) :: id
       integer, intent(in) :: nlevel
@@ -572,17 +60,14 @@ MODULE coll_mod
       real(8) :: ct,cup,cdn,dekt,de_k,de
       real(8) :: nne,tg,stg,nsr
       real(8), dimension(:), allocatable :: nnh
+      real(8), dimension(:,:) :: tgrid, cgrid, dcdt
   
       real(8) :: t4,summrs
       real(8) :: betab,ddekt,wlog,wb,dexin1,xj,fac,fxj
       real(8) :: dekti,qb,he1,he2
-      real(8) :: saha, dxi, dev, tns
-      integer :: ul,ll,i,j,k,z, nhlevels, ii, jj
-  
-      character(len=6),parameter :: rname='gencol'
-  
-      cij=0.0d0
-  
+      real(8) :: saha, dxi, dev, tns, ek_over_temp
+      integer :: ul,ll,i,j,k,z, nhlevels, ii, jj, nc, itemp
+      !---------------------------------------------------------------------
       ! get local copies for ease of notation
       tg=temp
       stg=sqrt(tg)
@@ -591,6 +76,7 @@ MODULE coll_mod
       nhlevels = size(nh, 1)
       saha = 1.5*log(temp) - log(saha_const*ne)
       dxi = 4.98e-4*5040./temp*sqrt(ne*bk*temp)
+      ek_over_temp = e_k / temp
   
       ! loop over all the transitions
       do i=1, size(coll, 1)
@@ -599,71 +85,59 @@ MODULE coll_mod
          cdn=0.0d0
          ll=coll(i)%ll
          ul=coll(i)%ul
-         !nsr=nstar(ul)/nstar(ll)
 
-         ii = 0.5 * ion(ul) * (ion(ul)-1)
-         jj = 0.5 * ion(ll) * (ion(ll)-1)
-         dev = ev(ul) - ev(ll) - dxi*(ii-jj)
-         tns = - dev*e_k/temp + (ion(ul) - ion(ll))*saha
-         nsr = g(ul)/g(ll) * exp(tns)
+         dev = ev(ul) - ev(ll)
+         if (ion(ul)>ion(ll)) then
+            ii = ion(ll) * (ion(ll)-1)
+            jj = ion(ul) * (ion(ul)-1)
+            dev = dev - dxi*0.5*(jj-ii)
+         endif
+
+         if (nstar(ll) > 0) then
+            nsr = nstar(ul) / nstar(ll)
+         else
+            tns = - dev*ek_over_temp + (ion(ul) - ion(ll))*saha
+            nsr = g(ul)/g(ll) * exp(tns)
+         endif
+
+         select case (trim(coll(i)%key))
+         case ('OHMEGA','CE','CH','CI','FIXRAT','CH0','CHI')
+            nc = coll(i)%nc
+            itemp = coll(i)%itemp
+            call hermite_interpolation(ct,tg,tgrid(1:nc,itemp),cgrid(1:nc,i),dcdt(1:nc,i))
+         end select
   
          !********************************************************************
   
          select case (trim(coll(i)%key))
-  
-            !********************************************************************
-  
          case('OHMEGA')
-  
             !  excitation of  electron collisons with positive ions
-            call hermite_interpolation(ct,tg,coll(i)%t,coll(i)%c,coll(i)%dcdt)
             cdn = c0 / g(ul) * ct  * nne / stg
             cup = cdn * nsr
-  
-            !********************************************************************
-  
+
          case('CE')
-  
             ! excitation of neutrals by electron collisions 
-            call hermite_interpolation(ct,tg,coll(i)%t,coll(i)%c,coll(i)%dcdt)
             cdn = g(ll)/g(ul) * ct * nne * stg
             cup = cdn * nsr
-  
-            !********************************************************************
-  
+
          case('CH')
-  
             ! collisions with neutral hydrogen)
             ! these are downward rates (cdn); cup are upward rates
-  
-            call hermite_interpolation(ct,tg,coll(i)%t,coll(i)%c,coll(i)%dcdt)
             cdn = ct * nnh(1)
-            cup = cdn * nsr  
-  
-            !********************************************************************
+            cup = cdn * nsr
 
          case('CHI')
-
             ! b-f collisions with neutral hydrogen
             ! these are downward rates (cdn); cup are upward rates
-
-            call hermite_interpolation(ct,tg,coll(i)%t,coll(i)%c,coll(i)%dcdt)
             cup = ct * nnh(1)
-            cdn = cup / nsr  
-
-  
-         case('CI')
-  
-            ! ionization by electron collisions
-            call hermite_interpolation(ct,tg,coll(i)%t,coll(i)%c,coll(i)%dcdt)
-            de_k = (ev(ul)-ev(ll))*e_k
-            cup = ct * nne * stg * exp(-de_k/tg) 
             cdn = cup / nsr
-  
-            !********************************************************************
-  
+
+         case('CI')
+            ! ionization by electron collisions
+            cup = ct * nne * stg * exp(-dev*ek_over_temp) 
+            cdn = cup / nsr
+
          case('CH0')
-  
             ! MB 5.04.2018 - charge transfer with H-, A+H <--> A+ + H-
             ! these are upwards rates (CT ionisation or ion-pair formation)
             ! also assumed for CI; but the difference is that CI downwards rates 
@@ -673,15 +147,12 @@ MODULE coll_mod
             ! in the QM papers, the inverse exothermic rates (neutralisation) 
             ! are derived from the detailed balance
             ! N_kj(T,E_k) = N_jk(t,E_k) * exp(-E_jk/ (k_B * T))
-  
-            call hermite_interpolation(ct,tg,coll(i)%t,coll(i)%c,coll(i)%dcdt)
             cup = ct * nnh(1)
             cdn = cup / nsr
   
             !********************************************************************
-  
+
          case('SHULL82')
-  
             ! Coefficients for collisional ionization, radiative recombination, and dielectronic recombination
             ! following
             ! Shull & van Steenberg, Astrophysical Journal Supplement Series, vol. 48, Jan. 1982, p. 95-107
@@ -694,12 +165,12 @@ MODULE coll_mod
             ! to remove density dependence in dielectronic rate comment out the next line
             summrs=summers(id,ion,ul,nne)
   
-            cdn = coll(i)%c(3) * (tg/1.0d4)**(-coll(i)%c(4)) &
-                 +  summrs * coll(i)%c(5) /tg/stg * exp(-coll(i)%c(7)/tg) * &  
-                 (1.d0 + coll(i)%c(6) * (exp(- coll(i)%c(8) /tg)))
+            cdn = cgrid(3,i) * (tg/1.0d4)**(-cgrid(4,i)) &
+                 +  summrs * cgrid(5,i) /tg/stg * exp(-cgrid(7,i)/tg) * &  
+                 (1.d0 + cgrid(6,i) * (exp(- cgrid(8,i) /tg)))
             cdn = cdn * nne
   
-            cup = coll(i)%c(1) * stg * exp(-coll(i)%c(2)/tg) / (1.d0 + 0.1d0 * tg / coll(i)%c(2)) 
+            cup = cgrid(1,i) * stg * exp(-cgrid(2,i)/tg) / (1.d0 + 0.1d0 * tg / cgrid(2,i)) 
             cup = cup * nne
   
             !  3-body recombination (high density limit)
@@ -707,7 +178,7 @@ MODULE coll_mod
   
   
             !********************************************************************
-  
+
          case('AR85-CDI')
   
             ! The AR85**** rates are based on 
@@ -723,16 +194,16 @@ MODULE coll_mod
   
                k = (j-1) * ncdi
   
-               xj=coll(i)%c(k+1) * ee / bk / tg
+               xj=cgrid(k+1,i) * ee / bk / tg
   
                fac=exp(-xj)*sqrt(xj)
   
-               fxj=fac*( coll(i)%c(k+2) + coll(i)%c(k+3) * (1.d0+xj) &
-                    +(coll(i)%c(k+4) - xj*(coll(i)%c(k+2) + coll(i)%c(k+3) &
+               fxj=fac*( cgrid(k+2,i) + cgrid(k+3,i) * (1.d0+xj) &
+                    +(cgrid(k+4,i) - xj*(cgrid(k+2,i) + cgrid(k+3,i) &
                     *(2.d0+xj)))*fone(xj)+ &
-                    coll(i)%c(k+5)*xj*ftwo(xj) )
+                    cgrid(k+5,i)*xj*ftwo(xj) )
   
-               fac=6.69d-07/coll(i)%c(k+1)/sqrt(coll(i)%c(k+1))
+               fac=6.69d-07/cgrid(k+1,i)/sqrt(cgrid(k+1,i))
   
                cup = cup + fac*fxj
   
@@ -756,7 +227,7 @@ MODULE coll_mod
             ! AR85-CEA is collision auto-ionization
   
             call ar85cea(id, ion, tg,ll,ul,ct)  
-            cup = coll(i)%c(1) * ct * nne
+            cup = cgrid(1,i) * ct * nne
   
             !********************************************************************
   
@@ -768,9 +239,9 @@ MODULE coll_mod
             ! "An updated evaluation of recombination and ionization rates"
   
             !AR85-CH is charge transfer with neutral hydrogen atom^+ + H -> atom + H^+
-            if ( tg>=coll(i)%c(1) .and. tg<=coll(i)%c(2) )  then
+            if ( tg>=cgrid(1,i) .and. tg<=cgrid(2,i) )  then
                t4=tg/1.0d4
-               cdn = coll(i)%c(3) * 1d-9 * t4**coll(i)%c(4) * (1.0d0+coll(i)%c(5)*exp(coll(i)%c(6)*t4)) * nnh(1)
+               cdn = cgrid(3,i) * 1d-9 * t4**cgrid(4,i) * (1.0d0+cgrid(5,i)*exp(cgrid(6,i)*t4)) * nnh(1)
             endif
   
             !********************************************************************  
@@ -783,9 +254,9 @@ MODULE coll_mod
             ! "An updated evaluation of recombination and ionization rates"
   
             ! ar85-ch+ is  charge transfer with ionized hydrogen atom + H^+ -> atom^+ + H
-            if ( tg>=coll(i)%c(1) .and. tg<=coll(i)%c(2) )  then
+            if ( tg>=cgrid(1,i) .and. tg<=cgrid(2,i) )  then
                t4=tg/1.0d4
-               cdn = coll(i)%c(3) * 1d-9 * t4**coll(i)%c(4) * (1.0d0+coll(i)%c(5)*exp(coll(i)%c(6)*t4)) * nnh(nhlevels)
+               cdn = cgrid(3,i) * 1d-9 * t4**cgrid(4,i) * (1.0d0+cgrid(5,i)*exp(cgrid(6,i)*t4)) * nnh(nhlevels)
             endif
   
             !********************************************************************
@@ -798,10 +269,10 @@ MODULE coll_mod
             ! "An updated evaluation of recombination and ionization rates"
   
             !AR85-CHE is charge transfer with neutral helium atom^+ + He -> atom + He^+
-            if ( tg>=coll(i)%c(1) .and. tg<=coll(i)%c(2) ) then
+            if ( tg>=cgrid(1,i) .and. tg<=cgrid(2,i) ) then
                t4=tg/1.0d4
                call hepop(tg,sum(nnh),he1,he2)
-               cdn = coll(i)%c(3) * 1d-9 * t4**coll(i)%c(4) * (1.0d0+coll(i)%c(5)*exp(coll(i)%c(6)*t4)) * he1 
+               cdn = cgrid(3,i) * 1d-9 * t4**cgrid(4,i) * (1.0d0+cgrid(5,i)*exp(cgrid(6,i)*t4)) * he1 
             endif
   
             !********************************************************************
@@ -814,10 +285,10 @@ MODULE coll_mod
             ! "An updated evaluation of recombination and ionization rates"
   
             ! ar85-chp or ar85-che+ is  charge transfer with ionized helium atom^+ + He^+ -> atom + He^2+
-            if ( tg>=coll(i)%c(1) .and. tg<=coll(i)%c(2) ) then
+            if ( tg>=cgrid(1,i) .and. tg<=cgrid(2,i) ) then
                t4=tg/1.0d4
                call hepop(tg,sum(nnh),he1,he2)
-               cdn = coll(i)%c(3) * 1d-9 * t4**coll(i)%c(4) * (1.0d0+coll(i)%c(5)*exp(coll(i)%c(6)*t4)) * he2 
+               cdn = cgrid(3,i) * 1d-9 * t4**cgrid(4,i) * (1.0d0+cgrid(5,i)*exp(cgrid(6,i)*t4)) * he2 
             endif
   
             !********************************************************************
@@ -837,7 +308,7 @@ MODULE coll_mod
             dexin1 = -exp(-dekt)/dekt*ddekt
             qb = 2.1715d-08 * cbar * (13.6d0/de)**1.5d0 * sqrt(dekt) * ei1(dekt) * wb
   
-            cup = qb * actelc * nne * coll(i)%c(1)
+            cup = qb * actelc * nne * cgrid(1,i)
             cdn = cup/nsr
   
             !********************************************************************
@@ -847,7 +318,7 @@ MODULE coll_mod
             ! see for example Altun et al., 2006, A&A, 44 7, 1165
             cdn=0.0d0
             do j=1,coll(i)%nc
-               cdn=cdn + coll(i)%c(j+coll(i)%nc) * exp(-coll(i)%c(j)/tg)
+               cdn=cdn + cgrid(j+coll(i)%nc,i) * exp(-cgrid(j,i)/tg)
             end do
   
             summrs=sumscl*summers(id,ion,ul,nne) + (1.0d0-sumscl)
@@ -862,14 +333,98 @@ MODULE coll_mod
   
       end do ! transition loop 
   
-   END SUBROUTINE gencol_new
+   END SUBROUTINE gencol
+
+
+   !====================================================================================
+   SUBROUTINE classic_col(g,ev,ion,temp,ne,nh,cdata,cij,ecol,hcol)
+      real(8), intent(in), dimension(:) :: g, ev
+      integer, intent(in), dimension(:) :: ion
+      real(8), intent(in) :: temp, ne
+      real(8), dimension(:), intent(in) :: nh
+      real(4), dimension(:), intent(in) :: cdata
+      real(8), dimension(:,:),intent(inout) :: cij
+      logical, dimension(:),intent(inout) :: ecol, hcol
+  
+      real(8) :: c,cup,cdn, EK_over_temp
+      real(8) :: nne,tg,stg,nsr
+      real(8), dimension(:), allocatable :: nnh
+  
+      real(8) :: saha, dxi, dev, tns, e0, ex, u0, f, tmp, isqt, fac
+      real(8) :: seaton, allen, regemorter
+      integer :: nlevel, ul,ll,i,j,k,z, nhlevels, ii, jj, nc, icont, tri, n
+      logical :: cont
+      logical, save :: first_time=.true.
+      !---------------------------------------------------------------------
+      nlevel = size(ev,1)
+      n = 0
+      saha = 1.5*log(temp) - log(saha_const*ne)
+      dxi  = 4.98e-4*5040./temp*sqrt(ne*bk*temp)
+      isqt = 1 / sqrt(temp)
+      allen = 5.465e-11 * Rydk * isqt
+      regemorter = 14.5 * allen * RydV
+      seaton = 1.55e13 * isqt
+
+      EK_over_temp = e_k / temp
+
+      do i=1, nlevel
+         do j=i+1, nlevel
+            tri = (j-1)*(j-2)/2 + i
+            fac = cdata(tri)
+            cont = ion(j) > ion(i)
+            if (.not. ecol(tri)) then
+               e0 = ev(j) - ev(i)
+               if (cont) then
+                  ii = ion(j) * (ion(j)-1)
+                  jj = ion(i) * (ion(i)-1)
+                  e0 = e0 - dxi*0.5*(jj-ii)
+                  u0 = e0 * EK_over_temp
+                  ex = exp(-u0)
+                  if (.not. ecol(tri)) then
+                     ! ionization by electron collisions
+                     tmp = min(0.1*ion(i), 0.3)
+                     c = ne * fac * tmp / u0
+                     cup = c * ex
+                     cdn = c * g(i) / g(j)
+                  endif
+               else
+                  u0 = e0 * EK_over_temp
+                  ex = exp(-u0)
+                  if (.not. ecol(tri)) then
+                     ! excitation of neutrals by electron collisions 
+                     if (fac > 0) then
+                        ! Van Regemorter
+                        f = max(fac, 1e-5)
+                        tmp = max(0.2, 0.276*expin(u0)/ex)
+                        c = ne * regemorter * f * tmp / e0
+                     else
+                        ! Allen
+                        c = ne * allen / g(i)
+                     endif
+                     cup = c * ex
+                     cdn = c * g(i) / g(j)
+                  endif
+               endif
+
+               cij(j,i) = cij(j,i) + cup ! upward rate
+               cij(i,j) = cij(i,j) + cdn ! downward rate
+               n = n + 1
+            endif
+            if (cont) exit
+         end do
+      end do
+
+      if (first_time) then
+         first_time = .false.
+         write(stdout, *) n, ' collisional transitions filled with classical recipes.'
+      endif
+   END SUBROUTINE classic_col
  
-   !*********************************************************************
- 
+   !====================================================================================
    logical function is_valid_process(key)
     character(len=8),intent(in) :: key
     integer :: i
- 
+    !---------------------------------------------------------------------
     is_valid_process=.false.
     do i=1,size(theprocesses)
        if ( key(1:len_trim(key)) == trim(theprocesses(i)))  then
@@ -880,8 +435,7 @@ MODULE coll_mod
  
    end function is_valid_process
  
-   ! *******************************************************************
-
+   !====================================================================================
    pure function summers(id, ion, j,edens)
       !*********************************************************************
       !
@@ -1242,5 +796,45 @@ MODULE coll_mod
 
    !*********************************************************************
 
-     
+
+   !====================================================================================
+   ELEMENTAL FUNCTION expin (x) result(ex1)
+      real(8), intent(in) :: x
+      real(8) :: ex, ex1
+      real(8), parameter, dimension(6) :: &
+      a = [-44178.5471728217,57721.7247139444,9938.31388962037,    &
+            1842.11088668000,101.093806161906,5.03416184097568]
+      real(8), parameter, dimension(5) :: &
+      b = [76537.3323337614,32597.1881290275,6106.10794245759,     &
+            635.419418378382,37.2298352833327]
+      real(8), parameter, dimension(7) :: &
+      c = [ 4.65627107975096e-7,.999979577051595,9.04161556946329, &
+           24.3784088791317,23.0192559391333,6.90522522784444,     &
+             .430967839469389]
+      real(8), parameter, dimension(6) :: &
+      d = [10.0411643829054,32.4264210695138, 41.2807841891424,    &
+           20.4494785013794,3.31909213593302, .103400130404874]
+      real(8), parameter, dimension(7) :: &
+      e = [-.999999999998447,-26.6271060431811,-241.055827097015,  &
+           -895.927957772937,-1298.85688746484,-545.374158883133,  &
+            -5.66575206533869]
+      real(8), parameter, dimension(6) :: &
+      f = [28.6271060422192,292.310039388533,1332.78537748257,     &
+           2777.61949509163,2404.01713225909, 631.657483280800]
+      !---------------------------------------------------------------------
+      ex = exp(-x)
+      if (x > 4) then
+         ex1 = (ex+ex*(e(1)+(e(2)+(e(3)+(e(4)+(e(5)+(e(6)+e(7)/x)/x)/x)/x)/x)/x)/  &
+               (x+f(1)+(f(2)+(f(3)+(f(4)+(f(5)+f(6)/x)/x)/x)/x)/x))/x
+      elseif (x > 1) then
+         ex1 = ex*(c(7)+(c(6)+(c(5)+(c(4)+(c(3)+(c(2)+c(1)*x)*x)*x)*x)*x)*x)/      &
+               (d(6)+(d(5)+(d(4)+(d(3)+(d(2)+(d(1)+x)*x)*x)*x)*x)*x)
+      elseif (x > 0) then
+         ex1 = (a(1)+(a(2)+(a(3)+(a(4)+(a(5)+a(6)*x)*x)*x)*x)*x)/                  &
+               (b(1)+(b(2)+(b(3)+(b(4)+(b(5)+x)*x)*x)*x)*x) - log(x)
+      else
+         ex1 = 0.d0
+      endif
+   END FUNCTION expin
+
  END MODULE coll_mod

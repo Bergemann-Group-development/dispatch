@@ -5,14 +5,10 @@ MODULE m3io_mod
   logical, dimension(-maxlu:maxlu), private :: lu=.false.
   character(len=128) :: error_mesg
 
-  interface NextEntry
-     module procedure NextEntry1, NextEntry2
-  end interface NextEntry
-
 contains
 
   !====================================================================================
-  SUBROUTINE NextEntry1(fileunit)
+  SUBROUTINE NextEntry(fileunit, comment)
     ! ***********************************************************************
     ! --- Reads an input line, returns when it is not a 
     ! --- comment or an empty line.
@@ -24,42 +20,14 @@ contains
     ! ***********************************************************************
     integer,intent(in) :: fileunit
     character(len=132) :: instring
-    character(len=1)   :: token1
-    character(len=1),parameter :: comment='*',empty=' '
+    character(len=1)   :: token1, cmt
+    character(len=*),intent(in), optional :: comment
     !---------------------------------------------------------------------------------
-    do 
-
-       ! read the line
-       read(unit=fileunit,fmt='(A72)') instring
-       instring=adjustl(instring)
-       token1=instring(1:1)
-
-       ! exit if line is not a comment and not empty
-       if (token1.ne.comment.and.token1.ne.empty) then
-          backspace(fileunit)
-          exit
-       endif
-
-    end do
-  END SUBROUTINE NextEntry1
-
-  !====================================================================================
-  SUBROUTINE NextEntry2(fileunit,comment)
-    ! ***********************************************************************
-    ! --- Reads an input line, returns when it is not a 
-    ! --- comment or an empty line.
-    ! --- Feb 21 2005: 
-    ! ---   Created by Jorrit Leenaarts (j.leenaarts@astro.uu.nl)
-    ! --- May 28 2008 :
-    !       jorritl: updated, will now also check for empty lines,
-    !       and allow data in the first column of the file.
-    ! ***********************************************************************
-    integer,intent(in) :: fileunit
-    character(len=132) :: instring
-    character(len=1)   :: token1
-    character(len=1),parameter :: empty=' '
-    character(len=*),intent(in) :: comment
-    !---------------------------------------------------------------------------------
+    if (present(comment)) then
+      cmt = comment
+    else
+      cmt = '*'
+    endif
     do 
        ! read the line
        read(unit=fileunit,fmt='(A72)') instring
@@ -67,12 +35,12 @@ contains
        token1=instring(1:1)
 
        ! exit if line is not a comment and not empty
-       if (token1.ne.comment.and.token1.ne.empty) then
+       if (token1 .ne. cmt .and. token1 .ne. ' ') then
           backspace(fileunit)
           exit
        endif
     end do
-  END SUBROUTINE NextEntry2
+  END SUBROUTINE NextEntry
 
   !====================================================================================
   pure function lowercase(string,ss)

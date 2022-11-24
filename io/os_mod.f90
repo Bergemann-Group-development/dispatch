@@ -323,7 +323,9 @@ SUBROUTINE copy_file (file1, file2)
   if (mpi%master .and. omp%master) then
     inquire (file=trim(file1), exist=exists)
     if (exists) then
-      call execute_command_line('cp '//trim(file1)//' '//trim(file2))
+      write(line, *) 'cp ', trim(file1), ' ', trim(file2)
+      print *, line
+      call execute_command_line(line)
       !open (newunit=u1,file=trim(file1), form='formatted', status='old')
       !open (newunit=u2,file=trim(file2), form='formatted', status='unknown')
       !n = 0
@@ -381,7 +383,6 @@ SUBROUTINE gb_mem (self, bits, count, label)
     !$omp end critical (gb_cr)
   end if
   if (self%gb > self%max_mem) then
-    !$omp atomic write
     self%max_mem = self%gb
   endif
 END SUBROUTINE gb_mem

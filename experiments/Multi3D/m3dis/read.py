@@ -40,13 +40,18 @@ def prepare(self, dmax=None):
             
     self.lam = self.run.lam[self.ib:self.ir]
     self.flux = self.run.flux[self.ib:self.ir]
+    self.flux_lte = self.run.flux_lte[self.ib:self.ir]
+    self.flux_cnt = self.run.flux_cnt[self.ib:self.ir]
     self.ie = self.run.ie[:, self.ib:self.ir]
+    self.ie_lte = self.run.ie_lte[:, self.ib:self.ir]
+    self.cnt = self.run.cnt[:, self.ib:self.ir]
         
     self.prepared = True
 
 #=====================================================================
 def plot_trans(self, ang=None, imu=None, norm=True, dlam=None, \
-               dmax=None, vdop=None, vshift=None, renorm=False, **kwargs):
+               dmax=None, vdop=None, vshift=None, renorm=False, \
+               show_LTE=True, **kwargs):
     #-----------------------------------------------------------------
     if not self.prepared:
             self.prepare(dmax=dmax)
@@ -57,23 +62,37 @@ def plot_trans(self, ang=None, imu=None, norm=True, dlam=None, \
     
     if ang is not None:
         yy = self.ie[ang]
-        plt.ylabel('Intensity µ={:.2f}'.format(self.run.vec[ang,-1]))
+        cnt = self.cnt[ang]
+        if show_LTE: lte = self.ie_lte[ang]
+        ylabel = 'Intensity µ={:.2f}'.format(self.run.vec[ang,-1])
         
     elif imu is not None:
-        yy, mu = self.get_Imu(imu, norm=False)
-        plt.ylabel('Intensity µ={:.2f}'.format(mu))
+        yy, cnt, mu = self.get_Imu(imu, norm=False)
+        if show_LTE:
+            lte, cnt, mu = self.get_Imu(imu, norm=False, LTE=True)
+
+        ylabel = 'Intensity µ={:.2f}'.format(mu)
         
     else:
         yy = self.flux
-        plt.ylabel('Flux')
+        cnt = self.flux_cnt
+        if show_LTE: lte = self.flux_lte
+        ylabel = 'Flux'
     
     
     if norm and not renorm:
-        yy = yy / continuum(self.lam, yy)
+        yy = yy / cnt
+        if show_LTE: lte = lte / cnt
+    elif renorm and not norm:
+        yy = yy / continuum(xx, yy)
+        if show_LTE: lte = lte / continuum(xx, lte)
         
     if vdop is not None or vshift is not None:
         sxx, syy = convol(xx, yy, vdop=vdop, vshift=vshift)
         yy = np.interp(xx, sxx, syy)
+        if show_LTE: 
+            sxx, syy = convol(xx, lte, vdop=vdop, vshift=vshift)
+            lte = np.interp(xx, sxx, syy)
 
     if dlam==None:
         plt.xlim(self.run.lam[self.ib], self.run.lam[self.ir-1])
@@ -91,29 +110,53 @@ def plot_trans(self, ang=None, imu=None, norm=True, dlam=None, \
             xx = xx[mask]
             yy = yy[mask]
             yy = yy / continuum(xx, yy)
+            if show_LTE:
+                lte = lte[mask]
+                lte = lte / continuum(xx, lte)
 
     plt.title('Line = {:.2f} [Å], A({}) = {:.2f}'.format(self.lam0, self.el.id, self.el.abnd), fontsize='medium')
-    plt.plot(xx, yy, **kwargs)
+
+    plt.plot(xx, yy, label='NLTE', **kwargs)
+    
+    if show_LTE:
+        plt.plot(xx, lte, linestyle='--', label='LTE', zorder=-10, **kwargs)
+        plt.legend(frameon=False)
+
+    if norm or renorm:
+        plt.ylabel('Normalised ' + ylabel)
+    else:
+        plt.ylabel(ylabel)
+
     plt.ticklabel_format(useOffset=False)
 
 #=====================================================================
-def get_Imu(self, imu=None, norm=True):
+def get_Imu(self, imu=None, norm=True, LTE=False):
     #-----------------------------------------------------------------
     if not self.prepared: self.prepare()
     
     if imu is not None:
         mus, idx = np.unique(1-self.run.vec[:,-1], return_inverse=True)
-        yy = np.mean(self.ie[idx==imu,:], axis=0)
+        if LTE:
+            yy = np.mean(self.ie_lte[idx==imu,:], axis=0)
+        else:
+            yy = np.mean(self.ie[idx==imu,:], axis=0)
+        
+        cnt = np.mean(self.cnt[idx==imu,:], axis=0)
         mu = 1-mus[imu]
         
     else:
-        yy = self.flux
+        if LTE:
+            yy = self.flux
+        else:
+            yy = self.flux_lte
+
+        cnt = self.flux_cnt
         mu = None
     
     if norm:
-        yy = yy / continuum(self.lam, yy)
+        yy = yy / cnt
         
-    return yy, mu
+    return yy, cnt, mu
     
 #=====================================================================
 def calc_weq(self, ang=None):
@@ -154,6 +197,7 @@ class read(object):
     def __init__(self, folder):
         #-------------------------------------------------------------
         folder = folder + os.sep
+        sfolder = folder + 'save' + os.sep
         self.nml = f90nml.read(folder + 'params.nml')
         
         df = pd.read_csv(folder + 'abund.txt', header=None, sep='\s+', na_filter=False)
@@ -185,23 +229,27 @@ class read(object):
             self.line = lines
         
         print('Reading wavelengths')
-        self.lam = np.fromfile(folder + 'lam.bin', dtype=np.float64)
+        self.lam = np.fromfile(sfolder + 'lam.bin', dtype=np.float64)
         self.lam = vacuum2obs(self.lam[::-1])
         self.dlam = np.diff(self.lam)
         
         print('Reading Intensities')
-        self.n_ang = len(glob.glob1(folder,"*_meta.txt"))
+        self.n_ang = len(glob.glob1(sfolder,"ray*_meta.txt"))
         self.vec = np.zeros([self.n_ang, 3])
         self.wts = np.zeros(self.n_ang)
         
         self.i3 = [None]*self.n_ang
+        self.i3_lte = [None]*self.n_ang
+        self.c3 = [None]*self.n_ang
         self.ie = [None]*self.n_ang
+        self.ie_lte = [None]*self.n_ang
+        self.cnt = [None]*self.n_ang
         
         self.nmu = np.unique(self.vec[:,-1]).size
         
         for i in range(self.n_ang):
             ray = 'ray{:03}'.format(i+1)
-            meta = open(folder + ray + '_meta.txt')
+            meta = open(sfolder + ray + '_meta.txt')
             self.vec[i] = np.array(meta.readline().split()[1:], dtype=float)
             self.wts[i] = float(meta.readline().split()[1])
             info = meta.readline().split()
@@ -212,8 +260,12 @@ class read(object):
             if prec == 32: dtype=np.float32
             if prec == 64: dtype=np.float64
             
-            self.i3[i] = np.memmap(folder + file, dtype=dtype).reshape(dim, order='F')[...,::-1]
+            self.i3[i] = np.memmap(sfolder + file, dtype=dtype).reshape(dim, order='F')[...,::-1,0]
+            self.i3_lte[i] = np.memmap(sfolder + file, dtype=dtype).reshape(dim, order='F')[...,::-1,1]
+            self.c3[i] = np.memmap(sfolder + file, dtype=dtype).reshape(dim, order='F')[...,::-1,2]
             self.ie[i] = np.mean(self.i3[i], axis=(0,1))
+            self.cnt[i] = np.mean(self.c3[i], axis=(0,1))
+            self.ie_lte[i] = np.mean(self.i3_lte[i], axis=(0,1))
             
         if (np.product(dim[:2]) > 1):
             self.dim = '3D'
@@ -221,9 +273,16 @@ class read(object):
             self.dim = '1D'
             
         self.i3 = np.array(self.i3)
+        self.c3 = np.array(self.c3)
         self.ie = np.array(self.ie)
+        self.cnt = np.array(self.cnt)
+        self.i3_lte = np.array(self.i3_lte)
+        self.ie_lte = np.array(self.ie_lte)
         self.flux = np.sum(self.ie.T * self.wts, axis=-1) / np.sum(self.wts)
+        self.flux_lte = np.sum(self.ie_lte.T * self.wts, axis=-1) / np.sum(self.wts)
+        self.flux_cnt = np.sum(self.cnt.T * self.wts, axis=-1) / np.sum(self.wts)
         self.flux_aa = self.flux*cc/(self.lam**2)*10
+        self.flux_aa_lte = self.flux_lte*cc/(self.lam**2)*10
             
         if hasattr(self, 'atom'):
             #print('Prepairing transitions')

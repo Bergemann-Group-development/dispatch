@@ -50,6 +50,8 @@ MODULE atom_line_patch_mod
       procedure :: init_nbors_hash
     end type atom_line_t
 
+    logical, public, save :: second_sp=.false.
+
     !-----------------------------------------------------------------------------
   
   contains
@@ -124,6 +126,7 @@ MODULE atom_line_patch_mod
 
     self%nline = nline
     allocate(self%line(self%nline))
+    call os%mem_register(storage_size(self%line), self%nline, label='atom%line')
     do i=1, self%atom%nline
       idx = self%idx_map(i)
       if (idx==0) cycle
@@ -145,34 +148,38 @@ MODULE atom_line_patch_mod
 
     do i=1, self%nline
       line => self%line(i)
-      if (allocated(line%nu)) deallocate(line%nu)
-      if (allocated(line%q))  deallocate(line%q)
-      line%nnu = line%nq ! reset number of frequencies to input
-      allocate(line%nu(line%nnu))
-      call line%freql(self%atom%qnorm, symmetric=.true.)
+      if (second_sp .and. self%out_ray) then
+        line%nq = line%nnu
+        !call line%freql(self%atom%qnorm, symmetric=.true.)
+      else
+        if (allocated(line%nu)) deallocate(line%nu)
+        if (allocated(line%q))  deallocate(line%q)
+        line%nnu = line%nq ! reset number of frequencies to input
+        call line%freql(self%atom%qnorm, symmetric=.true.)
 
-      fs = 1
-      fe = line%nq
-      do f=1, line%nq
-        if (line%nu(f) < nus) then
-          fs = f
-        elseif (line%nu(f) > nue) then
-          fe = f
-          exit
-        endif
-      end do
-      
-      line%nnu = fe-fs+1
-      allocate(nu(line%nnu))
-      nu = line%nu(fs:fe)
-      deallocate(line%nu)
-      allocate(line%nu(line%nnu))
-      line%nu = nu
-      deallocate(nu)
+        fs = 1
+        fe = line%nq
+        do f=1, line%nq
+          if (line%nu(f) < nus) then
+            fs = f
+          elseif (line%nu(f) > nue) then
+            fe = f
+            exit
+          endif
+        end do
+        
+        line%nnu = fe-fs+1
+        allocate(nu(line%nnu))
+        nu = line%nu(fs:fe)
+        deallocate(line%nu)
+        allocate(line%nu(line%nnu))
+        line%nu = nu
+        deallocate(nu)
 
-      line%nq = line%nnu
-      allocate(line%q(line%nq))
-      line%q = line%nu/line%nu0 - 1
+        line%nq = line%nnu
+        allocate(line%q(line%nq))
+        line%q = line%nu/line%nu0 - 1
+      endif
     end do
   END SUBROUTINE create_line_frequencies
 
@@ -269,10 +276,11 @@ MODULE atom_line_patch_mod
   END SUBROUTINE integrate_wphi
 
   !===============================================================================
-  SUBROUTINE interpolate_lines (self, chi, eta)
+  SUBROUTINE interpolate_lines (self, chi, eta, LTE)
     class(atom_line_t) :: self
     class(line_type), pointer :: line
     real(4), dimension(:,:,:,:), intent(inout) :: chi, eta
+    logical, intent(in) :: LTE
     real(8), dimension(:), contiguous, pointer :: hnu_4pi, nu, q
     real(4), dimension(:,:,:), pointer, contiguous :: ni, nj, chi_fac, eta_fac
     real(4), dimension(:,:,:,:), contiguous, pointer :: scratch_phi, phi
@@ -314,8 +322,13 @@ MODULE atom_line_patch_mod
       !    self%atom%n(p(1),p(2),p(3),line%i), self%atom%n(p(1),p(2),p(3),line%j)
       !endif
 
-      ni => self%atom%n(:,:,:,line%i)
-      nj => self%atom%n(:,:,:,line%j)
+      if (LTE) then
+        ni => self%atom%nstar(:,:,:,line%i)
+        nj => self%atom%nstar(:,:,:,line%j)
+      else
+        ni => self%atom%n(:,:,:,line%i)
+        nj => self%atom%n(:,:,:,line%j)
+      endif
 
       eta_fac = line%Aji * nj
       chi_fac = line%Bij * ni - line%Bji * nj

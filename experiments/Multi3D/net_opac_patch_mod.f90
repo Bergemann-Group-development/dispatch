@@ -57,7 +57,11 @@ MODULE net_opac_patch_mod
     self%kind = 'net_opac'
     call self%ray_patch_t%pre_init()
   
-    nw = 2
+    if (self%out_ray) then
+      nw = 6
+    else
+      nw = 2
+    endif
     call self%set_nv_and_nw (self%fe-self%fs+1,nw)
 
     if (comoving_frame .and. .not. self%out_ray) then
@@ -86,7 +90,7 @@ MODULE net_opac_patch_mod
     real(4), dimension(:,:,:,:,:), pointer :: mem1
     real(4), dimension(:,:,:,:), pointer :: chi, eta, Snu
     integer, save:: itimer=0
-    integer :: iw,it, f, fs, fe, fn, x, y, z
+    integer :: iw,it, f, fs, fe, fn, x, y, z, iiw, nw
     !-----------------------------------------------------------------------------
     if (self%is_finished()) return
     !-----------------------------------------------------------------------------
@@ -97,11 +101,7 @@ MODULE net_opac_patch_mod
     call self%decompress_mem(self)
 
     call trace%begin('net_opac_t%net_opac_update', itimer=itimer)
-    it = self%it
     mem => self%authority_mem
-    chi => self%authority_mem(:,:,:,:,it,self%i_chi)
-    eta => self%authority_mem(:,:,:,:,it,self%i_eta)
-    Snu => self%authority_mem(:,:,:,:,it,self%i_Snu)
 
     do iw=1, self%nw
       do it=1, self%nt
@@ -118,18 +118,32 @@ MODULE net_opac_patch_mod
         call self%check_access(nbtask)
         select type (nbtask)
         class is (atom_line_t)
-          call nbtask%interpolate_lines(chi, eta)
+          it = self%it
+          chi => self%authority_mem(:,:,:,:,it,1)
+          eta => self%authority_mem(:,:,:,:,it,2)
+          call nbtask%interpolate_lines(chi, eta, LTE=.false.)
+          if (self%out_ray) then
+            chi => self%authority_mem(:,:,:,:,it,3)
+            eta => self%authority_mem(:,:,:,:,it,4)
+            call nbtask%interpolate_lines(chi, eta, LTE=.true.)
+          endif
         class is (ray_patch_t)
           fs = nbtask%fs - self%fs + 1
           fe = fs + nbtask%nv - 1
-          do iw=1, self%nw
+          if (self%out_ray) then
+            nw = merge(4, self%nw, nbtask%kind=='back_line')
+          else
+            nw = self%nw
+          endif
+          do iw=1, nw
+            iiw = mod(iw-1,2)+1
           do it=1, self%nt
           do f=fs,fe
             fn = f - fs + 1
             do z=1, self%n(3)
             do y=1, self%n(2)
             do x=1, self%n(1)
-              mem(x,y,z,f,it,iw) = mem(x,y,z,f,it,iw) + nbtask%mem(x,y,z,fn,it,iw)
+              mem(x,y,z,f,it,iw) = mem(x,y,z,f,it,iw) + nbtask%mem(x,y,z,fn,it,iiw)
             end do
             end do
             end do
@@ -140,15 +154,16 @@ MODULE net_opac_patch_mod
       endif
       nbor => nbor%next
     end do
+
+    !Snu => self%authority_mem(:,:,:,:,it,self%i_Snu)
   
     !$omp simd
-    do f=1, self%nv
-      do z=1, self%n(3)
-      do y=1, self%n(2)
-      do x=1, self%n(1)
-        Snu(x,y,z,f) = eta(x,y,z,f) / chi(x,y,z,f)
-      end do
-      end do
+    do iw=1, self%nw, 2
+      do it=1, self%it
+        do f=1, self%nv
+            !Snu(:,:,:,f) = eta(:,:,:,f) / chi(:,:,:,f)
+            mem(:,:,:,f,it,iw+1) = mem(:,:,:,f,it,iw+1) / mem(:,:,:,f,it,iw)
+        end do
       end do
     end do
     

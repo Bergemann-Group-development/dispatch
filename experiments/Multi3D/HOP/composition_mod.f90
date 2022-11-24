@@ -654,7 +654,7 @@ contains
         !---------------------------------------------------------------------------
         call trace%begin ('composition_type%init_molecules')
 
-        mol_ids = ['H2 ', 'H2p', 'H2O', 'OH ', 'CH ', 'CO ', 'CN ', 'C2 ', 'N2 ', 'O2 ', 'NO ', 'NH ']
+        mol_ids = ['H2 ', 'H2+', 'H2O', 'OH ', 'CH ', 'CO ', 'CN ', 'C2 ', 'N2 ', 'O2 ', 'NO ', 'NH ']
 
         self%nmolec = size(mol_ids)
 
@@ -679,7 +679,7 @@ contains
                     molecule%ions(j)%p => ion ! use previous ion a second time
                     ion%nmolec = ion%nmolec + 1 
                     cycle
-                case ('p')
+                case ('+')
                     molecule%nions = molecule%nions - 1
                     molecule%ions(j-1)%p => ion%above
                     cycle
@@ -713,7 +713,7 @@ contains
                     call self%ion_by_id(ion_id, ion)
                 case ('2')
                     ion => ion ! use previous ion a second time
-                case ('p')
+                case ('+')
                     ion => ion%above
                 case default 
                     cycle
@@ -875,7 +875,7 @@ contains
         real(dp), dimension(:,:,:), intent(out) :: p6
         !---------------------------------------------------------------------------
         call self%molecule_by_id('H2',  H2)
-        call self%molecule_by_id('H2p', H2p)
+        call self%molecule_by_id('H2+', H2p)
         call self%ion_by_id('H I', HI)
         call self%ion_by_id('HE I', HeI)
         
@@ -996,9 +996,10 @@ contains
     END SUBROUTINE scattering
 
     !===============================================================================
-    SUBROUTINE get_totn(self, id, abund, totn, element)
+    SUBROUTINE get_totn(self, id, abund, totn, element, molec)
         class(composition_type), target :: self
         class(element_type), intent(out), pointer :: element
+        class(molec_type), intent(out), pointer :: molec
         character(len=*), intent(in) :: id
         real(dp), intent(in) :: abund
         real(4), dimension(:,:,:) :: totn
@@ -1009,7 +1010,12 @@ contains
         if (associated(element)) then
             totn = element%ions(1)%f * (1 + element%ions(1)%saha) * self%toth
         else
-            totn = 10.0**(abund-12.0) * self%rho / (self%xmy*1.008*uu)
+            call self%molecule_by_id(id, molec)
+            if (associated(molec)) then
+                totn = molec%f * self%toth
+            else
+                totn = 10.0**(abund-12.0) * self%rho / (self%xmy*1.008*uu)
+            endif
         endif
         call trace%end ()
     END SUBROUTINE get_totn
@@ -1078,7 +1084,7 @@ contains
 
         call self%molecule_by_id('H2' , H2)
         call self%molecule_by_id('CN' , CN)
-        call self%molecule_by_id('H2p', H2p)
+        call self%molecule_by_id('H2+', H2p)
         
         ions(1)%p => H
         ions(2)%p => C
@@ -1258,7 +1264,7 @@ contains
         logical :: first_print=.true.
         !---------------------------------------------------------------------------
         call trace%begin ('composition_type%init')
-        idx = findloc(self%molecules%id, id, 1)
+        idx = findloc(self%molecules%id, uppercase(id, len(id)), 1)
         if (idx == 0) then
             molecule => null()
             if (first_print) then

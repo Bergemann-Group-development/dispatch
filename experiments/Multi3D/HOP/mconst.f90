@@ -60,6 +60,8 @@ MODULE mconst
   real(8), parameter :: h_4pi   = hh * over_4pi
   ! 24.09.21 PE: Include parameter for line opacity
   real(8), parameter :: pie2_mc = pi * ec**2 / em / cc
+  real(8), parameter :: RydV = 13.605d0     ! Rydberg constant [eV]
+  real(8), parameter :: Rydk = 13.605d0*e_k ! Rydberg constant [K]
 
   ! the elements
   integer, parameter :: n_elements=28
