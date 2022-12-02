@@ -61,6 +61,7 @@ MODULE angle_rad_patch_mod
     procedure :: allocate_mem => rad_patch_allocate_mem
     procedure :: print_post_update_info
     procedure :: init_nbors_hash
+    procedure :: finish
   end type rad_patch_t
 
   !-----------------------------------------------------------------------------
@@ -294,7 +295,10 @@ SUBROUTINE short_ray_update (self)
             self%Inu(i,j,k,f) = u0*ssup + Psi*ss
           endif
 
-          if (.not. comoving_frame) then
+          if (comoving_frame) then
+            self%Psi(x,y,z,f) = Psi / xx
+            self%Ieff(x,y,z,f) = self%Inu(i,j,k,f) - self%Psi(x,y,z,f) * (ss*xx - eta_back(x,y,z,f))
+          else
             self%Psi(x,y,z,f) = Psi / xx
             self%Ieff(x,y,z,f) = self%Inu(i,j,k,f) - self%Psi(x,y,z,f) * (ss*xx - eta_back(x,y,z,f))
           endif
@@ -459,8 +463,9 @@ SUBROUTINE integrate_intensity(self)
     vproj = 1.0 + vproj
     nu_in => mean%sp%nu(self%fs:self%fe)
     nu_out => mean%sp%nu(mean%fs:mean%fe)
-    call interpolate_to_ray(vproj, nu_in, nu_out, Inu, Jnu, wmu)
-    call interpolate_to_ray(vproj, nu_in, nu_out, self%Psi, mean%Psi, wmu)
+    !call interpolate_to_ray(vproj, nu_in, nu_out, Inu, Jnu, wmu)
+    !call interpolate_to_ray(vproj, nu_in, nu_out, self%Psi, mean%Psi, wmu)
+    call interpolate_to_ray(vproj, nu_in, nu_out, self%Ieff, mean%Ieff, wmu)
     call os%deallocate(vproj)
   else
     do f=1, self%nv
@@ -502,6 +507,35 @@ SUBROUTINE interp_long(self, Varin, Varup, up1, up2, kernel)
     end do
   end do
 END SUBROUTINE interp_long
+
+!===============================================================================
+SUBROUTINE finish (self)
+  class(rad_patch_t) :: self
+  real(4), dimension(:,:,:,:,:), pointer :: mem
+  integer, dimension(4) :: m
+  integer :: fs, fe
+  !-----------------------------------------------------------------------------
+  call self%ray_patch_t%finish()
+  if (self%save_output .and. .not. self%out_ray) then
+    if (self%padded) then
+      fs = self%pre_pad_fs - self%fs + 1
+      fe = fs + self%pre_pad_fe - self%pre_pad_fs
+    else
+      fs = 1
+      fe = self%nv
+    endif
+    if (associated(self%Ieff)) then
+      m = shape(self%Ieff)
+      mem(1:m(1),1:m(2),1:m(3),fs:fe,1:1) => self%Ieff(:,:,:,fs:fe)
+      call self%save(mem, label='Ieff')
+    endif
+    if (associated(self%Psi)) then
+      m = shape(self%Psi)
+      mem(1:m(1),1:m(2),1:m(3),fs:fe,1:1) => self%Psi(:,:,:,fs:fe)
+      call self%save(mem, label='Psi')
+    endif
+  endif
+END SUBROUTINE finish
 
 !===============================================================================
 SUBROUTINE radiation_nbor_relations(self, another, needed, needs_me, download)
@@ -616,10 +650,9 @@ SUBROUTINE rad_patch_allocate_mem (self, allocator, m_in)
       m(4) = self%nv
       call os%allocate(self%Psi, m,label=trim(self%kind)//'%Psi')
       self%Psi  = tiny(1.0)
-      if (.not. comoving_frame .or. self%i_mu == 0) then
+      !if (.not. comoving_frame .or. self%i_mu == 0) then
         call os%allocate(self%Ieff,m,label=trim(self%kind)//'%Ieff')
         self%Ieff = tiny(1.0)
-      endif
     endif
   endif
 END SUBROUTINE rad_patch_allocate_mem

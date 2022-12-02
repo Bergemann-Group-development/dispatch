@@ -12,7 +12,6 @@ MODULE mean_rad_patch_mod
     USE m3d_patch_mod, only:maxiter, m3d_patch_t, hash_string, comoving_frame, ilambd
     USE ray_patch_mod, only:ray_patch_t
     USE angle_rad_patch_mod, only:rad_patch_t
-    USE proj_patch_mod, only:interpolate_to_ray
     USE mconst, only:over_4pi
     implicit none
     private
@@ -66,7 +65,7 @@ MODULE mean_rad_patch_mod
     class(nbor_t), pointer:: nbor
     class(task_t), pointer:: nbtask
     real(4), dimension(:,:,:,:), pointer :: Inu, new_yy, Jnu
-    real(4), dimension(:,:,:), pointer :: vproj, xx, ss, eta_back
+    real(4), dimension(:,:,:), pointer :: xx, ss, eta_back
     real(8), dimension(:), pointer, contiguous :: nu_in, nu_out
     integer, save:: itimer=0
     integer :: iw, it, f
@@ -75,21 +74,20 @@ MODULE mean_rad_patch_mod
     if (self%is_finished()) return
     call trace%begin('mean_rad_patch_t%update', itimer=itimer)
     if (comoving_frame) then
-      call os%allocate(vproj, self%n)
       nu_out => self%sp%nu(self%fs:self%fe)
       Jnu => self%mem(:,:,:,:,self%it,1)
 
-      do f=1, self%nv
-        xx => self%opac%mem(:,:,:,f,self%opac%it,self%opac%i_chi)
-        self%Psi(:,:,:,f) = self%Psi(:,:,:,f) / xx
-      end do
+      !do f=1, self%nv
+      !  xx => self%opac%mem(:,:,:,f,self%opac%it,self%opac%i_chi)
+      !  self%Psi(:,:,:,f) = self%Psi(:,:,:,f) / xx
+      !end do
 
-      do f=1, self%nv
-        xx => self%opac%mem(:,:,:,f,self%opac%it,self%opac%i_chi)
-        ss => self%opac%mem(:,:,:,f,self%opac%it,self%opac%i_snu)
-        eta_back => self%back_cont%mem(:,:,:,f,self%back_cont%it,self%back_cont%i_eta)
-        self%Ieff(:,:,:,f) = Jnu(:,:,:,f) - self%Psi(:,:,:,f) * (ss*xx  - eta_back)
-      end do
+      !do f=1, self%nv
+      !  xx => self%opac%mem(:,:,:,f,self%opac%it,self%opac%i_chi)
+      !  ss => self%opac%mem(:,:,:,f,self%opac%it,self%opac%i_snu)
+      !  eta_back => self%back_cont%mem(:,:,:,f,self%back_cont%it,self%back_cont%i_eta)
+      !  !self%Ieff(:,:,:,f) = Jnu(:,:,:,f) - self%Psi(:,:,:,f) * (ss*xx  - eta_back)
+      !end do
     endif
     call self%post_update()
     call trace%end(itimer)

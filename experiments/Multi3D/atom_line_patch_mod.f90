@@ -25,6 +25,7 @@ MODULE atom_line_patch_mod
     USE trans_mod, only: line_type
     USE m3d_patch_mod, only: m3d_patch_t, maxiter, hash_string, comoving_frame
     USE ray_patch_mod, only: ray_patch_t
+    USE op_math_mod, only: searchsorted
     implicit none
   
     !-----------------------------------------------------------------------------
@@ -140,11 +141,14 @@ MODULE atom_line_patch_mod
     class(atom_line_t) :: self
     class(line_type), pointer :: line
     integer :: i, f, fs, fe
-    real(8) :: nus, nue
+    real(8) :: nus, nue, pre_pad_nus, pre_pad_nue
     real(8), allocatable :: nu(:)
     !---------------------------------------------------------------------------
     nus = self%sp%nu(self%fs)
     nue = self%sp%nu(self%fe)
+
+    pre_pad_nus = self%sp%nu(self%pre_pad_fs)
+    pre_pad_nue = self%sp%nu(self%pre_pad_fe)
 
     do i=1, self%nline
       line => self%line(i)
@@ -157,16 +161,22 @@ MODULE atom_line_patch_mod
         line%nnu = line%nq ! reset number of frequencies to input
         call line%freql(self%atom%qnorm, symmetric=.true.)
 
-        fs = 1
-        fe = line%nq
-        do f=1, line%nq
-          if (line%nu(f) < nus) then
-            fs = f
-          elseif (line%nu(f) > nue) then
-            fe = f
-            exit
-          endif
-        end do
+        fs = searchsorted(line%nu, nus, outbounds_ok=.true.)
+        fe = searchsorted(line%nu, nue, outbounds_ok=.true.) + 1
+
+        if (fe < line%nq) then
+          if (line%nu(fe) == nue) fe = fe + 1
+        endif
+
+        fs = max(fs, 1)
+        fe = min(fe, line%nq)
+
+        ! this is needed for computing wphi
+        line%fs = searchsorted(line%nu, pre_pad_nus, outbounds_ok=.true.)
+        line%fe = searchsorted(line%nu, pre_pad_nue, outbounds_ok=.true.) + 1
+
+        line%fs = max(line%fs, 1)       - fs + 1
+        line%fe = min(line%fe, line%nq) - fs + 1
         
         line%nnu = fe-fs+1
         allocate(nu(line%nnu))
@@ -230,8 +240,8 @@ MODULE atom_line_patch_mod
 
       if (.not. self%out_ray) then
         call os%allocate(line%wphi, self%n, zero=.true., label=trim(self%kind)//'%wphi')
-        call self%sp%set_weights(wnu, line%q, 1, line%nnu)
-        do f=1,line%nnu
+        call self%sp%set_weights(wnu, line%q(line%fs:line%fe), line%fs, line%fe)
+        do f=line%fs, line%fe
           line%wphi = line%wphi + line%phi(:,:,:,f) * wnu(f)
         end do
         deallocate(wnu)

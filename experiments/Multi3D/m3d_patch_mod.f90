@@ -48,6 +48,7 @@ MODULE m3d_patch_mod
       logical                  :: in_task_list = .false.
       logical                  :: initialized  = .false.
       real(4), dimension(:,:,:,:,:,:), pointer :: authority_mem => null()
+      real(4), dimension(:,:,:,:,:), pointer :: out_mem => null() 
       integer, dimension(:,:), pointer :: periodic_idx
       integer, dimension(:), pointer :: periodic_i, periodic_j
       real(8) :: t_offset=0, t_push=0
@@ -56,7 +57,7 @@ MODULE m3d_patch_mod
       integer :: n_mu, n_nu, n_omega, n_out, zs, ze
       integer :: fcheck, pcheck(3), linecheck, lvlcheck
       logical :: out_ray=.false., static_mem=.false.
-      logical :: compressed=.false.
+      logical :: compressed=.false., save_output=.false.
       logical :: print_update_info
       integer :: i_nu=0, i_mu=0
       integer :: i_ne=1, i_rho=2, i_temp=3, i_nh1=4, i_nh6=9
@@ -113,6 +114,7 @@ MODULE m3d_patch_mod
     !-----------------------------------------------------------------------------
     integer, save:: verbose=0
     integer, public :: maxiter, ilambd
+    integer, public :: cswitch=1
     integer, public, save :: recl=0, save_id=-1
     real(8), public, save, dimension(:), allocatable:: wmu, long_wmu
     real(8), public, save, dimension(:,:), allocatable:: vec, long_vec
@@ -121,7 +123,7 @@ MODULE m3d_patch_mod
     logical, public, save :: check_NaN=.false., save_back_cont=.true.
     logical, public, save :: detailed_prints=.false., comoving_frame=.false.
     logical, public, save :: print_start=.false., print_push=.false., print_send=.false.
-    character(len=32), save :: save_patch_kind=''
+    character(len=128), save :: save_patch_kind=''
     character(len=64), public, save:: custom_mu
     real(8), parameter :: t_push=0.1d0
     real(4), public :: vel_max=0.0
@@ -146,7 +148,7 @@ MODULE m3d_patch_mod
     real(8), dimension(:), allocatable:: cust_mu
     namelist /m3d_params/ on, verbose, fcheck, linecheck, pcheck, quad_scheme, &
     long_scheme, n_nu, maxiter, ilambd, lvlcheck, comoving_frame, save_id, &
-    ntheta, nphi, check_NaN, custom_mu, lse_no_pivot, save_patch_kind, &
+    ntheta, nphi, check_NaN, custom_mu, lse_no_pivot, save_patch_kind, cswitch, &
     save_back_cont, detailed_prints, print_finished, print_start, print_push, print_send
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%pre_init', itimer=itimer)
@@ -243,6 +245,9 @@ MODULE m3d_patch_mod
     self%fcheck = fcheck
     self%linecheck = linecheck
     self%lvlcheck = lvlcheck
+
+    self%save_output = self%kind == 'atom_patch' .or. self%id == save_id &
+    .or. string_in_text(save_patch_kind, self%kind)
 
     ! ----------------------------------------------------------------------------
     ! Do not check density or validate with it. This is rather important to be set
@@ -341,6 +346,7 @@ MODULE m3d_patch_mod
     ui = self%ui
 
     self%authority_mem => self%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),:,:,:)
+    if (self%save_output) self%out_mem => self%authority_mem(:,:,:,:,self%it,:)
   
     self%initialized=.true.
     call trace%end(itimer)
@@ -535,11 +541,7 @@ MODULE m3d_patch_mod
     call trace%begin ('m3d_patch_t%finish')
     self%time = io%end_time
     call self%set(bits%no_download)
-    if (self%kind == 'atom_patch'     &
-    .or. self%kind == save_patch_kind &
-    .or. self%id == save_id) then
-      call self%save()
-    endif
+    if (self%save_output) call self%save(self%out_mem, self%kind)
     call trace%end()
   END SUBROUTINE finish
 
@@ -1433,17 +1435,17 @@ MODULE m3d_patch_mod
   END SUBROUTINE output
 
   !===============================================================================
-  SUBROUTINE save (self)
+  SUBROUTINE save (self, mem, label)
     class(m3d_patch_t):: self
-    integer :: lunit
+    real(4), dimension(:,:,:,:,:) :: mem 
+    character(len=*) :: label
     character(len=128) :: meta_file, folder
     character(len=32) :: filename
-    real(4), dimension(:,:,:,:,:), pointer :: mem 
+    integer :: lunit, iw, iv
     ! ----------------------------------------------------------------------------
-    mem => self%authority_mem(:,:,:,:,self%it,:)
     write(folder, '(A, A)') trim(io%run_dir), 'save/'
-    write(filename, '(A, A, 3(I3.3), A)') trim(self%kind), '_', self%key(1:3), '.bin'
-    meta_file = trim(self%kind) // '_meta.txt'
+    write(filename, '(A, A, 3(I3.3), A)') trim(label), '_', self%key(1:3), '.bin'
+    meta_file = trim(label) // '_meta.txt'
     call io%lock%set('save')
     if (os%exists(trim(folder)//meta_file)) then
       open(newunit=lunit, file=trim(folder)//meta_file, form='formatted', position='append')
@@ -1460,5 +1462,28 @@ MODULE m3d_patch_mod
     write(lunit) mem
     close(lunit)
   END SUBROUTINE save
+
+  !===============================================================================
+  FUNCTION string_in_text (text, str) result(in_text)
+    character(len=*) :: str
+    character(len=*) :: text
+    character(len=128) :: dummy
+    integer :: i, j 
+    logical :: in_text
+    ! ----------------------------------------------------------------------------
+    in_text = .false.
+    dummy = ''
+    j = 0
+    do i=1, len(text)
+      if (text(i:i) == ' ') then
+        if (dummy(1:j) == str) exit
+        j = 0
+      else
+        j = j + 1
+        dummy(j:j) = text(i:i)
+      endif
+    end do
+    if (dummy(1:j) == str) in_text = .true.
+  END FUNCTION
 
 END MODULE m3d_patch_mod

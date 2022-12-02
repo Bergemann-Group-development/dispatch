@@ -112,7 +112,7 @@ MODULE coll_mod
          select case (trim(coll(i)%key))
          case('OHMEGA')
             !  excitation of  electron collisons with positive ions
-            cdn = c0 / g(ul) * ct  * nne / stg
+            cdn = c0 / g(ul) * ct * nne / stg
             cup = cdn * nsr
 
          case('CE')
@@ -337,78 +337,117 @@ MODULE coll_mod
 
 
    !====================================================================================
-   SUBROUTINE classic_col(g,ev,ion,temp,ne,nh,cdata,cij,ecol,hcol)
+   SUBROUTINE classic_col(g,ev,ion,temp,ne,nh,nstar,cdata,cij,ecol,hcol,ama)
       real(8), intent(in), dimension(:) :: g, ev
       integer, intent(in), dimension(:) :: ion
-      real(8), intent(in) :: temp, ne
+      real(8), intent(in) :: temp, ne, ama
       real(8), dimension(:), intent(in) :: nh
-      real(4), dimension(:), intent(in) :: cdata
+      real(4), dimension(:), intent(in) :: cdata, nstar
       real(8), dimension(:,:),intent(inout) :: cij
       logical, dimension(:),intent(inout) :: ecol, hcol
   
-      real(8) :: c,cup,cdn, EK_over_temp
-      real(8) :: nne,tg,stg,nsr
-      real(8), dimension(:), allocatable :: nnh
-  
-      real(8) :: saha, dxi, dev, tns, e0, ex, u0, f, tmp, isqt, fac
+      real(8) :: nij, cup, cdn, EK_over_temp, mu_h, mu_e, drmu, gij, divu
+      real(8) :: saha, dxi, dev, tns, ex, u0, f, tmp, sqt, fac, nu0
       real(8) :: seaton, allen, regemorter
       integer :: nlevel, ul,ll,i,j,k,z, nhlevels, ii, jj, nc, icont, tri, n
       logical :: cont
       logical, save :: first_time=.true.
+      real(8), save :: last_ama=0, drawin
+      real(8), parameter :: ame=5.485799e-4
+      real(8), parameter :: amh=1.0
       !---------------------------------------------------------------------
       nlevel = size(ev,1)
-      n = 0
       saha = 1.5*log(temp) - log(saha_const*ne)
       dxi  = 4.98e-4*5040./temp*sqrt(ne*bk*temp)
-      isqt = 1 / sqrt(temp)
-      allen = 5.465e-11 * Rydk * isqt
-      regemorter = 14.5 * allen * RydV
-      seaton = 1.55e13 * isqt
+      sqt = sqrt(temp)
+      allen = 5.465e-11 * Rydk / sqt * ne
+      regemorter = 14.5 * allen * Rydk / EK
+      seaton = 1.55e13 * ne
+
+      if (ama /= last_ama) then
+         mu_h = amh/(ama+amh)
+         mu_e = ame/(ame+amh)
+         drmu = PI*MH*ama*mu_h
+         drawin = 1.40758E-15 * sqrt(2.0*BK/drmu) * mu_e/mu_h
+      endif
 
       EK_over_temp = e_k / temp
 
+      n = 0
       do i=1, nlevel
          do j=i+1, nlevel
             tri = (j-1)*(j-2)/2 + i
             fac = cdata(tri)
             cont = ion(j) > ion(i)
-            if (.not. ecol(tri)) then
-               e0 = ev(j) - ev(i)
+
+            if (.not. ecol(tri) .or. .not. hcol(tri)) then
+               dev = ev(j) - ev(i)
+
                if (cont) then
                   ii = ion(j) * (ion(j)-1)
                   jj = ion(i) * (ion(i)-1)
-                  e0 = e0 - dxi*0.5*(jj-ii)
-                  u0 = e0 * EK_over_temp
-                  ex = exp(-u0)
-                  if (.not. ecol(tri)) then
-                     ! ionization by electron collisions
-                     tmp = min(0.1*ion(i), 0.3)
-                     c = ne * fac * tmp / u0
-                     cup = c * ex
-                     cdn = c * g(i) / g(j)
-                  endif
+                  dev = dev - dxi*0.5*(jj-ii)
+               endif
+
+               u0 = dev * EK_over_temp
+               ex = exp(-u0)
+               gij = g(i)/g(j)
+
+               if (nstar(i) > 0) then
+                  nij = nstar(i) / nstar(j)
                else
-                  u0 = e0 * EK_over_temp
-                  ex = exp(-u0)
-                  if (.not. ecol(tri)) then
+                  tns = u0 - (ion(j) - ion(i))*saha
+                  nij = gij * exp(tns)
+               endif
+
+               ! collisions with electrons
+               if (.not. ecol(tri)) then
+                  if (cont) then
+                     ! ionization by electron collisions
+                     if (fac == 0) then
+                        nu0 = dev * EE/HH
+                        fac = Kramer(nu0, dev)
+                     endif
+                     tmp = min(0.1*ion(i), 0.3)
+                     cup = seaton * fac / (dev*EK) * sqt * ex
+                  else
                      ! excitation of neutrals by electron collisions 
                      if (fac > 0) then
                         ! Van Regemorter
                         f = max(fac, 1e-5)
-                        tmp = max(0.2, 0.276*expin(u0)/ex)
-                        c = ne * regemorter * f * tmp / e0
+                        tmp = max(0.2*ex, 0.276*expin(u0))
+                        cup = regemorter * f * tmp / dev
                      else
                         ! Allen
-                        c = ne * allen / g(i)
+                        cup = allen / g(i) * ex
                      endif
-                     cup = c * ex
-                     cdn = c * g(i) / g(j)
                   endif
+                  cdn = cup * nij
+                  cij(j,i) = cij(j,i) + cup ! upward rate
+                  cij(i,j) = cij(i,j) + cdn ! downward rate
+                  n = n + 1
                endif
 
-               cij(j,i) = cij(j,i) + cup ! upward rate
-               cij(i,j) = cij(i,j) + cdn ! downward rate
-               n = n + 1
+               ! collisions with hydrogen (Drawin)
+               !if (.not. hcol(tri)) then
+               !   divu = (RydV/dev)**2
+               !   tmp = 2.0/u0
+               !   tmp = (1.0 + tmp) / (1.0 + (mu_e*tmp)**2)
+
+               !   cup = nh(1) * drawin * divu * tmp
+               !   
+               !   if (cont) then
+               !      cup = cup * ex * sqt
+               !   else
+               !      f = max(fac, 1.0e-5)
+               !      cup = cup * f * sqt * gij / nij
+               !   endif
+
+               !   cdn = cup * nij
+               !   cij(j,i) = cij(j,i) + cup ! upward rate
+               !   cij(i,j) = cij(i,j) + cdn ! downward rate
+               !   n = n + 1
+               !endif
             endif
             if (cont) exit
          end do
@@ -837,4 +876,36 @@ MODULE coll_mod
       endif
    END FUNCTION expin
 
+   !====================================================================================
+   ELEMENTAL FUNCTION gaunt (nu, n)
+      real(8), intent(in) :: nu
+      integer, intent(in) :: n
+      real(8) :: gaunt
+      real(8), parameter, dimension(6) :: &
+      a1 = [ 1.078e00, 1.0926e0, 1.0983e0, 1.0954e0, 1.0912e0, 1.0925e0], &
+      b1 = [-8.754e14,-2.019e14,-9.45e13, -5.188e13,-3.2e13,  -2.331e13], &
+      c1 = [-1.791e29, 1.836e28, 9.177e27, 3.552e27, 1.576e27, 9.325e26], &
+      a2 = [ 0.798e00, 0.768e00, 0.793e00, 0.831e00, 0.758e00, 0.79e00],  &
+      b2 = [ 5.358e15, 6.242e15, 5.48e15,  4.094e15, 6.633e15, 5.808e15], &
+      c2 = [-3.484e31,-3.208e31,-2.318e31,-1.43e31, -3.32e31, -2.844e31]
+      !---------------------------------------------------------------------
+      if (n > 6) then
+         gaunt = 1
+      else
+         if (nu <= 1e16) then
+            gaunt = a1(n) + (b1(n) + c1(n)/nu) / nu
+         else
+            gaunt = a2(n) + (b2(n) + c2(n)/nu) / nu
+         endif
+      endif
+   END FUNCTION gaunt
+
+   !====================================================================================
+   ELEMENTAL FUNCTION Kramer (nu, dev) result(hyd)
+      real(8), intent(in) :: nu, dev
+      real(8) :: nl, hyd
+      !---------------------------------------------------------------------
+      nl = sqrt(RydV/dev)
+      hyd = 2.815e29 * gaunt(nu,int(nl)) / (nl**5 * nu**3)
+   END FUNCTION Kramer
  END MODULE coll_mod

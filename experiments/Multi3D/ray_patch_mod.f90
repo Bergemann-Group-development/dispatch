@@ -16,6 +16,7 @@ MODULE ray_patch_mod
   USE shared_mod
   USE bits_mod
   USE os_mod
+  USE math_mod
   USE op_math_mod, only: searchsorted
   USE ray_mod, only: ray_type
   USE m3d_patch_mod, only: m3d_patch_t, vec, wmu, long_vec, long_wmu, detailed_prints, &
@@ -30,6 +31,8 @@ MODULE ray_patch_mod
     type(ray_type) :: ray
     real(8) :: vec(3), wmu
     integer :: fs, fe, i_out=0
+    integer :: pre_pad_fs, pre_pad_fe
+    logical :: padded
   contains
     procedure :: pre_init => ray_patch_pre_init
     procedure :: init => ray_patch_init
@@ -55,6 +58,7 @@ MODULE ray_patch_mod
   !-----------------------------------------------------------------------------
   integer, save:: verbose=0
   character(len=12), public, save :: formal_solver='linear'
+  real(4), public, save :: maxvel
 
 contains
 
@@ -92,7 +96,7 @@ SUBROUTINE ray_patch_pre_init (self)
     self%wmu = wmu(self%i_mu)
     self%dir = merge(1, -1, vec(3,self%i_mu) > 0)
   elseif (self%i_mu == 0 .and. comoving_frame) then
-    self%wmu = 1.0
+    self%wmu = math%pi4
   endif
 
   call self%check_topbot()
@@ -105,14 +109,17 @@ SUBROUTINE ray_patch_init (self)
   class(ray_patch_t) :: self
   real(8) :: offset
   real(4), dimension(:,:,:), pointer, contiguous :: vproj
-  integer :: tmp
+  integer :: tmp, fs, fe
   ! ----------------------------------------------------------------------------
+  self%padded = .false.
   if (comoving_frame .and. .not. self%out_ray) then
     select case (self%kind)
-    case ('atom_line')
-      ! frequency padding for atom_linees is done in atom_line%init
-    case ('back_cont', 'back_line', 'atom_cont', 'net_opac', 'mean_rad')
+    case ('atom_line', 'atom_rate')
+      ! frequency padding for atom_lines is done in atom_line%init
+    !case ('back_cont', 'back_line', 'atom_cont', 'net_opac', 'mean_rad')
+    case default
       call self%frequency_padding()
+      self%padded = .true.
     end select
   endif
   if (self%is_set(bits%virtual)) then
@@ -123,7 +130,18 @@ SUBROUTINE ray_patch_init (self)
     self%n(3) = 1
     self%ng = 0
   endif
+  
   call self%m3d_patch_t%init()
+
+  if (self%save_output) then
+    if (self%padded) then
+      fs = self%pre_pad_fs - self%fs + 1
+      fe = fs + self%pre_pad_fe - self%pre_pad_fs
+      self%out_mem => self%authority_mem(:,:,:,fs:fe,self%it,:)
+    else
+      self%out_mem => self%authority_mem(:,:,:,:,self%it,:)
+    endif
+  endif
 END SUBROUTINE ray_patch_init
 
 !===============================================================================
@@ -150,6 +168,8 @@ SUBROUTINE set_freq_indices (self)
   fe = fs + nv - 1
   self%fs = fs
   self%fe = fe
+  self%pre_pad_fs = fs
+  self%pre_pad_fe = fe
   if (i_nu > counter) then
     if (counter == 0) write(stdout,'(I2, A18)') self%n_nu, 'frequency splits'
     write(stdout,'(I4, I10,A3,I8)') i_nu, fs, ' - ', fe
@@ -186,28 +206,10 @@ END SUBROUTINE comp_vproj
 !===============================================================================
 SUBROUTINE frequency_padding (self)
   class(ray_patch_t) :: self
-  real(4), dimension(:,:,:), pointer, contiguous :: to_vel
-  real(4), dimension(:,:,:), pointer :: d, px, py, pz
-  real(4) :: max_vel
   real(8) :: max_nu, min_nu, dnu
   integer :: li(3), ui(3), fs, fe, nv
   !-----------------------------------------------------------------------------
-  call os%allocate(to_vel, self%n)
-  li = self%patch%li
-  ui = self%patch%ui
-
-  d  => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),self%patch%idx%d, self%it,1)
-  px => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),self%patch%idx%px,self%it,1)
-  py => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),self%patch%idx%py,self%it,1)
-  pz => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),self%patch%idx%pz,self%it,1)
-
-  to_vel = scaling%u / (d*cc)
-  max_vel = maxval(abs(px * to_vel))
-  max_vel = max(max_vel, maxval(abs(py * to_vel)))
-  max_vel = max(max_vel, maxval(abs(pz * to_vel)))
-  dnu = maxval(self%sp%nu) * max_vel
-  call os%deallocate(to_vel)
-
+  dnu = maxval(self%sp%nu) * maxvel
   min_nu = self%sp%nu(self%fs) - dnu
   max_nu = self%sp%nu(self%fe) + dnu
   fs = searchsorted(self%sp%nu, min_nu, outbounds_ok=.true.)

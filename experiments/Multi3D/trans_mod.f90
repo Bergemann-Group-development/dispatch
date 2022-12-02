@@ -70,6 +70,7 @@ MODULE trans_mod
     real(8), dimension(:), allocatable :: gaterm
     real(8), dimension(:), allocatable :: gwterm
     real(8), dimension(:), allocatable :: gqterm
+    integer :: fs, fe
 
   contains
       procedure :: profile => line_profile
@@ -237,7 +238,7 @@ contains
 
       if (i1==-1) then
         phi(:,:,:,f) = 0
-        cycle 
+        cycle
       endif
 
       i2 = i1+1

@@ -31,7 +31,7 @@ MODULE atom_patch_mod
     USE molecule_mod, only: molec_type
     USE bbtrans_mod, only: bbtrans_type
     USE composition_mod, only: composition_type
-    USE m3d_patch_mod, only: m3d_patch_t, maxiter, check_NaN, recl, &
+    USE m3d_patch_mod, only: m3d_patch_t, maxiter, check_NaN, recl, cswitch, &
     global_maxerr, convlim, atom_update_counter, hash_string, comoving_frame, global_pos
     USE bftrans_mod, only: bftrans_type
     USE atom_line_patch_mod, only:atom_line_t, second_sp
@@ -482,7 +482,7 @@ MODULE atom_patch_mod
     real(4), dimension(:), pointer :: n, nstar
     real(8), dimension(:,:,:,:), target :: gamma_ij, gamma_ji
     integer :: i, j, k, ii, ipos, il
-    integer :: cswitch=1
+    !integer :: cswitch=1
     integer, save :: itimer=0
     real(8) :: global
     ! ----------------------------------------------------------------------------

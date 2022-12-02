@@ -513,13 +513,16 @@ MODULE atom_mod
       call trace%begin('gencol', itimer=itimer)
       self%c = 0.d0
 
-      call classic_col(self%g,self%ev,self%ion,dble(temp),dble(ne),dble(nh), &
-                       self%cdata,self%c,self%ecol,self%hcol)
+      !call classic_col(self%g,self%ev,self%ion,dble(temp),dble(ne),dble(nh), nstar, &
+      !                 self%cdata,self%c,self%ecol,self%hcol,self%awgt)
+
+      !print '(4(4(ES17.8), /))', self%c
+      !self%c = 0
 
       call gencol(self%coll,self%id,self%nlevel,self%g,self%ev,self%ion,&
                   self%c,dble(temp),dble(ne),nstar,dble(nh),self%tgrid,self%cgrid,self%dcdt)
 
-      !print '(6(6(ES17.8), /))', self%c(1,2), self%c(2,1)
+      !print '(4(4(ES17.8), /))', self%c
       !stop
 
       call trace%end(itimer=itimer)

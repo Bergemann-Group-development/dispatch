@@ -25,7 +25,7 @@ MODULE read_external_mod
   USE composition_patch_mod, only: FeH
   USE patch_mod
   USE mconst, only:cc
-  USE ray_patch_mod
+  USE ray_patch_mod, only: maxvel
   USE m3d_patch_mod, only: maxiter, ilambd, m3d_patch_t, atom_update_counter, global_maxerr, global_pos
   USE m3d_halo_mod, only: m3d_halo_t
   USE read_stagger_snapshot_mod
@@ -71,6 +71,7 @@ SUBROUTINE init(self, task_list, name)
   logical :: face_nbors=.false.
   character(len=126) :: atmos_file='./input_multi3d/atmos/atmos.sun_MARCS_50'
   character(len=126) :: atmos_format='Multi'
+  real(4), dimension(:,:,:), pointer, contiguous :: vel
   namelist /atmos_params/ atmos_file, dims, verbose, patches_per_mpi, FeH, atmos_format
   !-----------------------------------------------------------------------------
   if (associated(task_list)) return
@@ -167,6 +168,11 @@ SUBROUTINE init(self, task_list, name)
     self%py   =  self%py  (:,:,self%n(3):1:-1)
     self%pz   = -self%pz  (:,:,self%n(3):1:-1)
   endif
+
+  call os%allocate(vel, self%n)
+  vel = sqrt(self%px**2 + self%py**2 + self%pz**2) / self%rho
+  maxvel = scaling%u / cc * maxval(vel)
+  call os%deallocate(vel)
 
   self%size = self%n * self%ds
   self%position = 0.5*self%size! + self%origin
