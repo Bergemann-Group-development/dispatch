@@ -60,7 +60,6 @@ MODULE proj_patch_mod
     class(proj_patch_t) :: self
     real(4), dimension(:,:,:,:), pointer :: yy, new_yy
     real(4), dimension(:,:,:), pointer, contiguous :: vproj
-    real(4), dimension(:,:,:,:,:), pointer :: mem1
     real(8), dimension(:), pointer, contiguous :: nu_in, nu_out
     integer, save:: itimer=0
     integer :: iw,it
@@ -81,14 +80,10 @@ MODULE proj_patch_mod
       call interpolate_to_ray(vproj, nu_in, nu_out, yy, new_yy)
     end do
     end do
-
-    mem1 => self%mem(:,:,:,:,self%it,:)
-    call self%boundaries%mirror(mem1)
-    if (self%is_periodic()) then
-      call self%periodic_grid()
-    end if
-
     call os%deallocate(vproj)
+
+    call self%boundaries%mirror()
+    call self%periodic_grid()
     call self%post_update()
     call trace%end(itimer)
   END SUBROUTINE update

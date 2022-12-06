@@ -87,17 +87,11 @@ MODULE net_opac_patch_mod
     class(nbor_t), pointer:: nbor
     class(task_t), pointer:: nbtask
     real(4), dimension(:,:,:,:,:,:), pointer :: mem
-    real(4), dimension(:,:,:,:,:), pointer :: mem1
     real(4), dimension(:,:,:,:), pointer :: chi, eta, Snu
     integer, save:: itimer=0
     integer :: iw,it, f, fs, fe, fn, x, y, z, iiw, nw
     !-----------------------------------------------------------------------------
     if (self%is_finished()) return
-    !-----------------------------------------------------------------------------
-    ! Boundary conditions
-    !-----------------------------------------------------------------------------
-    call self%bndries()
-    call self%periodic_grid(only=merge(1, self%gn(3), self%dir>0))
     call self%decompress_mem(self)
 
     call trace%begin('net_opac_t%net_opac_update', itimer=itimer)
@@ -165,13 +159,8 @@ MODULE net_opac_patch_mod
       end do
     end do
     
-    mem1 => self%mem(:,:,:,:,self%it,:)
-    if (self%ng(3) > 0) then ! not called when comoving frame
-      call self%boundaries%mirror(mem1)
-    endif
-    if (self%is_periodic()) then
-      call self%periodic_grid()
-    end if
+    call self%boundaries%mirror()
+    call self%periodic_grid()
     call self%post_update()
     call trace%end(itimer)
   END SUBROUTINE net_opac_update

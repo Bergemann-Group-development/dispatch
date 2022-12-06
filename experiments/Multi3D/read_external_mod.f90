@@ -295,14 +295,6 @@ SUBROUTINE init(self, task_list, name)
   !-----------------------------------------------------------------------------
   call self%task_list%set_io_counts
   write (stdlog,*) 'read_external_mod: ntask,nwrite=', io%ntask, io%nwrite
-  !-----------------------------------------------------------------------------
-  ! This call is not valid until the patch mem and meshes have been allocated
-  !-----------------------------------------------------------------------------
-  if (verbose > 0) write(stdout,*) 'read_external_t%init: init boundaries'
-  call self%task_list%init_bdries
-  !-----------------------------------------------------------------------------
-  !if (verbose > 0) write(stdout,*) 'read_external_t%init: diagnostics'
-  !call self%diagnostics()
   if (verbose > 0) write(stdout,*) 'read_external_t%init: print tasks'
   call self%task_list%print_tasks
   call self%task_list%check_hash_table

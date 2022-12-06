@@ -198,7 +198,7 @@ SUBROUTINE composition_pre_init (self)
 
   do m=1, self%n_out
     m2 = m+self%n_omega
-    if (self%boundaries%upper) then
+    if (self%patch%boundaries%is_set(bits%zu)) then
       allocate(out_rad)
       call out_rad%pre_init_and_link(self, i_mu=m2, sp=output_sp)
     endif

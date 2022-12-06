@@ -195,7 +195,7 @@ SUBROUTINE radiation_update (self)
     call self%skip_iterations(self%stiff_count-1)
   endif
 
-  if (self%out_ray .and. self%boundaries%upper) then
+  if (self%out_ray .and. self%patch%boundaries%is_set(bits%zu)) then
     call self%remove_lower_layers_mem()
   endif
 END SUBROUTINE radiation_update
@@ -594,14 +594,14 @@ SUBROUTINE bndries (self)
   self%chi => self%opac%mem(:,:,:,:, self%opac%it, self%opac%i_chi)
   self%Snu => self%opac%mem(:,:,:,:, self%opac%it, self%opac%i_snu)
 
-  if (self%boundaries%upper) then
+  if (self%boundaries%is_set(bits%zu)) then
     ui = ubound(self%mem,3)
     do f=1, self%nv
       self%Inu(:,:,ui,f) = 0
     end do
   endif
 
-  if (self%boundaries%lower) then
+  if (self%boundaries%is_set(bits%zl)) then
     li = lbound(self%mem,3)
     do f=1, self%nv
       self%Inu(:,:,li,f) = self%Snu(:,:,li,f)
@@ -617,7 +617,7 @@ SUBROUTINE remove_lower_layers_mem (self)
   !----------------------------------------------------------------------------
   m = shape(self%authority_mem)
   m(3) = 1
-  call os%allocate(top_slice, m, label='top_slice')
+  call os%allocate(top_slice, m, label=trim(self%kind)//'%mem')
   top_slice = self%authority_mem(:,:,self%n(3):self%n(3),:,:,:)
   call os%deallocate(self%mem, label=trim(self%kind)//'%mem')
   self%mem => top_slice

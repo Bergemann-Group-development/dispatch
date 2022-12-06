@@ -23,81 +23,32 @@ MODULE boundaries_mod
   implicit none
   private
   type, extends(standard_boundaries_t), public:: boundaries_t
-    ! --------------------------------------------------------------------------
-    ! Experiment - specific variables
-    ! --------------------------------------------------------------------------
-    logical :: lower=.false.
-    logical :: upper=.false.
-    procedure(mirror), pointer     :: boundary
   contains
-    ! --------------------------------------------------------------------------
-    ! Default procedures
-    ! --------------------------------------------------------------------------
-    procedure:: pre_init
-    procedure:: init
     ! --------------------------------------------------------------------------
     ! Experiment - specific procedures
     ! --------------------------------------------------------------------------
     procedure:: mirror
-    procedure:: no_boundary
   end type
   integer, save:: verbose=1
 CONTAINS
 
 !===============================================================================
-SUBROUTINE pre_init (self, patch)
-  class(boundaries_t) :: self
-  class(patch_t), target :: patch
-  ! ----------------------------------------------------------------------------
-  call trace%begin('boundaries_t%pre_init')
-  call self%standard_boundaries_t%pre_init(patch)
-
-  self%lower = self%patch%origin(3) <= 0
-  self%upper = abs(1 - (self%patch%origin(3)+self%patch%size(3)) / self%patch%box(3)) < 1e-8
-
-  call trace%end()
-END SUBROUTINE pre_init
-
-!===============================================================================
-!> Initialize the boundary data type.
-!===============================================================================
-SUBROUTINE init (self)
-  class(boundaries_t) :: self
-  !-----------------------------------------------------------------------------
-  call trace%begin('boundaries_t%init')
-  select case(self%patch%kind)
-    case ('mhd_patch')
-      self%boundary => mirror
-      call self%standard_boundaries_t%init ()
-    case default
-      self%boundary => no_boundary
-  end select
-  call trace%end ()
-END SUBROUTINE init
-
-!===============================================================================
-SUBROUTINE mirror(self, mem)
+SUBROUTINE mirror(self)
   class(boundaries_t):: self
-  real(var_k), dimension(:,:,:,:,:) :: mem
-  integer :: i, b
+  integer :: i, b, it
   ! ----------------------------------------------------------------------------
-  if (self%upper) then
-      b = ubound(mem,3)
-      mem(:,:,b,:,:) = mem(:,:,b-1,:,:)
+  if (self%patch%ng(3) == 0) return
+  it = self%patch%it
+
+  if (self%is_set(bits%zu)) then
+      b = ubound(self%patch%mem,3)
+      self%patch%mem(:,:,b,:,it,:) = self%patch%mem(:,:,b-1,:,it,:)
   endif
 
-  if (self%lower) then
-      b = lbound(mem,3)
-      mem(:,:,b,:,:) = mem(:,:,b+1,:,:)
+  if (self%is_set(bits%zl)) then
+      b = lbound(self%patch%mem,3)
+      self%patch%mem(:,:,b,:,it,:) = self%patch%mem(:,:,b+1,:,it,:)
   endif
-END SUBROUTINE
-
-!===============================================================================
-SUBROUTINE no_boundary(self, mem)
-  class(boundaries_t):: self
-  real(var_k), dimension(:,:,:,:,:), pointer :: mem
-  ! ----------------------------------------------------------------------------
-  ! do nothing
 END SUBROUTINE
 
 END MODULE boundaries_mod

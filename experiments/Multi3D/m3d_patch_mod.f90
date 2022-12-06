@@ -74,7 +74,6 @@ MODULE m3d_patch_mod
       procedure :: is_finished
       procedure :: nbor_relations => m3d_nbor_relations
       procedure :: pre_init_and_link
-      procedure :: bndries
       procedure :: set_nv_and_nw
       procedure :: set_initial_time
       procedure :: set_maxiter
@@ -255,11 +254,6 @@ MODULE m3d_patch_mod
     call self%set (bits%no_density)
     call self%set (bits%no_filled)
 
-    if (.not. associated (self%boundaries)) then
-      allocate (self%boundaries)
-    endif
-    call self%boundaries%pre_init (self)
-
     call self%set_maxiter()
     call trace%end (itimer)
   END SUBROUTINE m3d_pre_init
@@ -327,7 +321,6 @@ MODULE m3d_patch_mod
     ! internal is set in task%pre_init, which is called by patch%init
     status = self%status
     call self%patch_t%init()
-    call self%init_bdries ()
     call data_io%init (self)
     self%status = status
     call self%init_level()
@@ -392,7 +385,7 @@ MODULE m3d_patch_mod
 
     if (self%out_ray) then
       self%time = self%time + ilambd + maxiter
-      if (self%boundaries%lower) then
+      if (self%patch%boundaries%is_set(bits%zl)) then
         self%time = self%time - t_push / 2
       endif
     endif
@@ -738,20 +731,6 @@ MODULE m3d_patch_mod
     !-----------------------------------------------------------------------------
     self%level = 1
   END SUBROUTINE init_level
-  
-  !===============================================================================
-  SUBROUTINE bndries (self)
-    class(m3d_patch_t):: self
-    real(4), dimension(:,:,:,:,:), pointer :: mem
-    integer, save :: itimer
-    !----------------------------------------------------------------------------
-    call trace%begin('m3d_patch_t%bndries', itimer=itimer)
-    mem => self%mem(:,:,:,:,self%it,:)
-    if (self%boundaries%lower .or. self%boundaries%upper) then
-      call self%boundaries%boundary(mem)
-    endif
-    call trace%end(itimer)
-  END SUBROUTINE bndries
 
   !===============================================================================
   SUBROUTINE rotate (self)
@@ -761,69 +740,6 @@ MODULE m3d_patch_mod
   END SUBROUTINE rotate
   
   !===============================================================================
-  !SUBROUTINE periodic_grid (self, only)
-  !  class(m3d_patch_t):: self
-  !  integer, optional:: only
-  !  integer, dimension(3) :: li, ui, lb, ub
-  !  real(4), dimension(:,:,:,:,:), pointer :: mem
-  !  integer :: z, dir, off, is, ie, v, w
-  !  integer, save :: itimer=0
-  !  logical :: only_z
-  !  !----------------------------------------------------------------------------
-  !  if (any(self%ng(:2) > 0) .and. associated(self%mem)) then
-  !    call trace%begin ('m3d_patch_t%periodic_grid', itimer=itimer)
-  !    call self%check_access(self)
-  !    li = self%mesh%li; ui = self%mesh%ui
-  !    lb = self%mesh%lb; ub = self%mesh%ub
-  !    mem => self%mem(:,:,:,:,self%it,:)
-  !
-  !    only_z = present(only)
-  !    if (only_z) z = only
-  !
-  !    if (all(self%n(:2) == 1)) then
-  !      do w=1, self%nw
-  !        do v=1, self%nv
-  !          if (only_z) then
-  !            mem(:,:,z,v,w) = mem(li(1),li(2),z,v,w)
-  !          else
-  !            do z=1, self%gn(3)
-  !              mem(:,:,z,v,w) = mem(li(1),li(2),z,v,w)
-  !            end do
-  !          endif
-  !        end do 
-  !      end do
-  !    else
-  !      do dir=-1,1,2
-  !        is = dir*max(dir*li(1), dir*ui(1))
-  !        ie = dir*min(dir*li(1), dir*ui(1))
-  !
-  !        do off=dir, dir*self%ng(1), dir
-  !          if (only_z) then
-  !            mem(is+off,li(2):ui(2),z,:,:) = mem(ie-dir+off,li(2):ui(2),z,:,:)
-  !          else
-  !            mem(is+off,li(2):ui(2),:,:,:) = mem(ie-dir+off,li(2):ui(2),:,:,:)
-  !          endif
-  !        end do
-  !      end do
-  !
-  !      do dir=-1,1,2
-  !        is = dir*max(dir*li(2), dir*ui(2))
-  !        ie = dir*min(dir*li(2), dir*ui(2))
-  !
-  !        do off=dir, dir*self%ng(2), dir
-  !          if (only_z) then
-  !            mem(:,is+off,z,:,:) = mem(:,ie-dir+off,z,:,:)
-  !          else
-  !            mem(:,is+off,:,:,:) = mem(:,ie-dir+off,:,:,:)
-  !          endif
-  !        end do
-  !      end do
-  !    endif
-  !    call trace%end(itimer)
-  !  endif
-  !END SUBROUTINE periodic_grid
-
-  !===============================================================================
   SUBROUTINE periodic_grid (self, only)
     class(m3d_patch_t):: self
     integer, optional:: only
@@ -831,6 +747,7 @@ MODULE m3d_patch_mod
     integer, save :: itimer=0
     logical :: only_z
     !----------------------------------------------------------------------------
+    if (.not. self%is_periodic()) return
     if (all(self%ng(:2) == 0) .or. .not. associated(self%mem)) return
     call trace%begin ('m3d_patch_t%periodic_grid', itimer=itimer)
     call self%check_access(self)

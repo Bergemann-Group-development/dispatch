@@ -92,9 +92,9 @@ SUBROUTINE pre_init (self)
   self%interest%u  = self%authority%u + self%ng*self%size/self%n
 
   allocate (self%boundaries)
-  call self%boundaries%pre_init (self)
   if (self%ipos(3)==0)              call self%boundaries%set(bits%zl)
   if (self%ipos(3)==self%dims(3)-1) call self%boundaries%set(bits%zu)
+  call self%boundaries%pre_init (self)
 
   self%time     = 0.0
   self%dtime    = timestep
@@ -138,14 +138,10 @@ END SUBROUTINE init
 !===============================================================================
 SUBROUTINE bndries (self)
   class(experiment_t):: self
-  real(var_k), dimension(:,:,:,:,:), pointer :: mem
   integer, save:: itimer=0
   !----------------------------------------------------------------------------
   call trace%begin('experiment_t%bndries', itimer=itimer)
-  mem => self%mem(:,:,:,:,self%it,:)
-  if (self%boundaries%lower .or. self%boundaries%upper) then
-    call self%boundaries%boundary(mem)
-  endif
+  call self%boundaries%mirror()
   call trace%end (itimer)
 END SUBROUTINE bndries
 

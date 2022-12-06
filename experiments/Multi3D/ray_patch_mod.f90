@@ -41,7 +41,6 @@ MODULE ray_patch_mod
     procedure :: finish => ray_patch_finish
     procedure :: nbor_relations => ray_nbor_relations
     procedure :: set_freq_indices
-    procedure :: check_topbot
     procedure :: is_upstream => ray_is_upstream
     procedure :: comp_vproj
     procedure :: ff_index
@@ -53,6 +52,7 @@ MODULE ray_patch_mod
     procedure :: total_mesg_buffer_size
     procedure :: init_nbors_hash
     procedure :: frequency_padding
+    procedure :: init_bdries
   end type ray_patch_t
 
   !-----------------------------------------------------------------------------
@@ -99,7 +99,6 @@ SUBROUTINE ray_patch_pre_init (self)
     self%wmu = math%pi4
   endif
 
-  call self%check_topbot()
   call self%set_freq_indices()
   call trace%end(itimer)
 END SUBROUTINE ray_patch_pre_init
@@ -132,6 +131,7 @@ SUBROUTINE ray_patch_init (self)
   endif
   
   call self%m3d_patch_t%init()
+  call self%init_bdries()
 
   if (self%save_output) then
     if (self%padded) then
@@ -283,8 +283,8 @@ logical FUNCTION ray_is_upstream (self, other) result(is_upstream)
   lbit = [bits%xl, bits%yl, bits%zl]
   ubit = [bits%xu, bits%yu, bits%zu]
   do i=1,3
-    lower = self%boundaries%is_set(lbit(i))
-    upper = self%boundaries%is_set(ubit(i))
+    lower = self%patch%boundaries%is_set(lbit(i))
+    upper = self%patch%boundaries%is_set(ubit(i))
     if (upper .and. ds1(i)==1) then
       is_upstream = .false.
     end if
@@ -319,23 +319,26 @@ SUBROUTINE ff_index(self, ff, f)
 END SUBROUTINE ff_index
 
 !===============================================================================
-SUBROUTINE check_topbot (self)
+!> Initialize boundary bits
+!===============================================================================
+SUBROUTINE init_bdries (self)
   class(ray_patch_t):: self
-  !.............................................................................
-  self%boundaries%upper = .false.
-  self%boundaries%lower = .false.
-  
-  if (self%patch%boundaries%upper .and. self%dir <= 0) then
-    self%boundaries%upper = .true.
+  !-----------------------------------------------------------------------------
+  call trace%begin ('ray_patch_t%init_bdries')
+  if (.not. associated (self%boundaries)) then
+    allocate (self%boundaries)
+  endif
+  if (self%patch%boundaries%is_set(bits%zu) .and. self%dir <= 0) then
     call self%boundaries%set(bits%zu)
     call self%set(bits%no_download)
   endif
-  if (self%patch%boundaries%lower .and. self%dir >= 0) then
-    self%boundaries%lower = .true.
+  if (self%patch%boundaries%is_set(bits%zl) .and. self%dir >= 0) then
     call self%boundaries%set(bits%zl)
     call self%set(bits%no_download)
   endif
-END SUBROUTINE check_topbot
+  call self%boundaries%pre_init (self)
+  call trace%end()
+END SUBROUTINE init_bdries
 
 !===============================================================================
 SUBROUTINE ray_nbor_relations(self, another, needed, needs_me, download)
