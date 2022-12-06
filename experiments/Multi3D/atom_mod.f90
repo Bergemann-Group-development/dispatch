@@ -250,8 +250,8 @@ MODULE atom_mod
         class(atom_type), target, intent(in) :: self
         integer, intent(in) :: fs
         real(4), dimension(:,:,:), intent(in), contiguous :: temp
-        real(4), dimension(:,:,:,:), intent(in), contiguous :: Psi, Ieff
-        real(4), dimension(:,:,:,:), intent(inout), contiguous :: gamma_ij, gamma_ji
+        real(4), dimension(:,:,:,:), intent(in), contiguous :: Psi
+        real(4), dimension(:,:,:,:), intent(inout), contiguous :: gamma_ij, gamma_ji, Ieff
         class(line_type), dimension(:), intent(in) :: lines
         integer, dimension(:), intent(in) :: idx_map, lin_idx_map
         real(4), dimension(:,:,:), allocatable :: blzfac, hk_over_temp
@@ -438,6 +438,7 @@ MODULE atom_mod
            end do
   
            !Ieff = Inu(:,:,:,f) - sum(SumU(:,:,:,1:nupper), 4)
+           !Ieff(:,:,:,f) = Ieff(:,:,:,f) - sum(SumU(:,:,:,1:nupper), 4)
 
            do kr=1, n_active
              i = ii(kr)

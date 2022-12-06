@@ -308,14 +308,14 @@ MODULE atom_line_patch_mod
     call os%allocate(chi_fac, self%n)
     call os%allocate(eta_fac, self%n)
 
-    if (.not. associated(self%mem)) then
-      print *, 'mem not allocated. Something is wrong!'
-    endif
+    !if (.not. associated(self%mem)) then
+    !  print *, 'mem not allocated. Something is wrong!'
+    !endif
 
     do i=1, self%nline
       line => self%line(i)
       call line%check_range(fcs,fce,fs,fe,skip)
-      if (skip) print *, 'line not active. Something is wrong!'
+      !if (skip) print *, 'line not active. Something is wrong!'
 
       nu => self%sp%nu(fs:fe)
       nnu = size(nu)

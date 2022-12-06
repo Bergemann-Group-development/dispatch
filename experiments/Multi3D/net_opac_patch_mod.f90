@@ -154,8 +154,6 @@ MODULE net_opac_patch_mod
       endif
       nbor => nbor%next
     end do
-
-    !Snu => self%authority_mem(:,:,:,:,it,self%i_Snu)
   
     !$omp simd
     do iw=1, self%nw, 2
@@ -168,7 +166,9 @@ MODULE net_opac_patch_mod
     end do
     
     mem1 => self%mem(:,:,:,:,self%it,:)
-    call self%boundaries%mirror(mem1)
+    if (self%ng(3) > 0) then ! not called when comoving frame
+      call self%boundaries%mirror(mem1)
+    endif
     if (self%is_periodic()) then
       call self%periodic_grid()
     end if

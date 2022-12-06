@@ -42,6 +42,7 @@ MODULE angle_rad_patch_mod
     real(4), dimension(:,:,:,:), contiguous, pointer :: Inu_old
     integer :: stiff_count=1
     logical :: stiff=.false.
+    real(8) :: dsup=0
   contains
     procedure :: pre_init => radiation_pre_init
     procedure :: init => radiation_init
@@ -204,7 +205,8 @@ SUBROUTINE short_ray_update (self)
   class(rad_patch_t), target :: self
   real(4), dimension(:,:), pointer, contiguous :: kernel
   real(4), dimension(:,:,:,:), pointer, contiguous :: eta_back
-  real(4) :: dt, u0, ex, Inuup, xxup, ssup, xxmin, ssmin, Inumin, dsup05, Psi, xx, ss, Inu
+  real(4) :: Inuup, xxup, ssup, xxmin, ssmin, Inumin, dsup05, xx, ss, Inu, u0, Psi
+  real(8) :: dt, ex ! important
   integer :: f, k, i, j, dx,dy,i1,j1,x1,x2,y1,y2, kup, k1, k2, dir, x, y, z, ii, jj, t, li(3)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -265,9 +267,9 @@ SUBROUTINE short_ray_update (self)
           ss = self%Snu(i,j,k,f)
           dt = dsup05 * ( xxup + xx ) ! upwind optical pathlength
           if (dt < 80) then
-            ex = exp(-dt) 
-            if ( dt > 1.0e-3 ) then
-              u0 = 1.0 - ex
+            ex = exp(-dt)
+            if ( dt > 1d-3 ) then
+              u0 = 1 - ex
               Psi = 1 - u0 / dt
             else
               Psi = dt * (0.5 - 0.16666667*dt)
@@ -296,8 +298,9 @@ SUBROUTINE short_ray_update (self)
           endif
 
           if (comoving_frame) then
-            self%Psi(x,y,z,f) = Psi / xx
-            self%Ieff(x,y,z,f) = self%Inu(i,j,k,f) - self%Psi(x,y,z,f) * (ss*xx - eta_back(x,y,z,f))
+            self%Psi(x,y,z,f) = self%ray%dsup * xxup! / xx
+            !self%Psi(x,y,z,f) = Psi! / xx
+            !self%Ieff(x,y,z,f) = self%Inu(i,j,k,f) - Psi * (ss - eta_back(x,y,z,f) / xx)
           else
             self%Psi(x,y,z,f) = Psi / xx
             self%Ieff(x,y,z,f) = self%Inu(i,j,k,f) - self%Psi(x,y,z,f) * (ss*xx - eta_back(x,y,z,f))
@@ -324,7 +327,8 @@ SUBROUTINE long_char_update (self)
   real(4), dimension(:,:), contiguous, pointer :: kernel
   integer, dimension(:,:), contiguous, pointer :: ipart
   real(4), dimension(2) :: delta, deltak, fpart
-  real(4) :: dsup, ex, dt, u0, Psi
+  real(4) :: dsup, u0, Psi
+  real(8) :: ex, dt
   integer :: f, i, j, k, iw, iiw
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -382,16 +386,16 @@ SUBROUTINE long_char_update (self)
         endif
         ! Compute the U functions, use Taylor expansion for small dt
         ! to avoid accuracy issues with 1-(number slightly smaller than one)
-        if ( dt > 1.0e-3 ) then
-                u0 = 1.0 - ex
-                Psi = 1 - u0 / dt
+        if ( dt > 1d-3 ) then
+          u0 = 1 - ex
+          Psi = 1 - u0 / dt
         else
-                Psi = dt * (0.5 - 0.16666667*dt)
-                u0 = dt * (1 - Psi)
+          Psi = dt * (0.5 - 0.16666667*dt)
+          u0 = dt * (1 - Psi)
         endif
 
         ! intensity at center point
-        self%Inu(i,j,k+1,f) = self%Inu(i,j,k,f)*ex + (u0 - Psi) * ss(i,j,k) + Psi*ss(i,j,k+1)
+        self%Inu(i,j,k+1,f) = self%Inu(i,j,k,f)*ex + (u0 - Psi)*ss(i,j,k) + Psi*ss(i,j,k+1)
         !Psi = Psi / xx(i,j,k+1)
       end do
       end do
@@ -463,10 +467,11 @@ SUBROUTINE integrate_intensity(self)
     vproj = 1.0 + vproj
     nu_in => mean%sp%nu(self%fs:self%fe)
     nu_out => mean%sp%nu(mean%fs:mean%fe)
-    !call interpolate_to_ray(vproj, nu_in, nu_out, Inu, Jnu, wmu)
-    !call interpolate_to_ray(vproj, nu_in, nu_out, self%Psi, mean%Psi, wmu)
+    call interpolate_to_ray(vproj, nu_in, nu_out, Inu, Jnu, wmu)
+    call interpolate_to_ray(vproj, nu_in, nu_out, self%Psi, mean%Psi, wmu)
     call interpolate_to_ray(vproj, nu_in, nu_out, self%Ieff, mean%Ieff, wmu)
     call os%deallocate(vproj)
+    mean%dsup = mean%dsup + wmu * self%ray%dsup
   else
     do f=1, self%nv
     do k=1, self%n(3)
@@ -673,15 +678,15 @@ SUBROUTINE print_post_update_info (self)
     w = 1
     arr = 0
     arr(1) = self%mem(p(1),p(2),p(3),f,1,1)
-    if (associated(self%Psi)) then
-      w = w + 1
-      p2 = p - self%ng
-      if (all(p2>0)) then
+    p2 = p - self%ng
+    if (all(p2>0)) then
+      if (associated(self%Psi)) then
+        w = w + 1
         arr(2) = self%Psi(p2(1),p2(2),p2(3),f)
-        if (associated(self%Ieff)) then
-          w = w + 1
-          arr(3) = self%Ieff(p2(1),p2(2),p2(3),f)
-        endif
+      endif
+      if (associated(self%Ieff)) then
+        w = w + 1
+        arr(3) = self%Ieff(p2(1),p2(2),p2(3),f)
       endif
     endif
     call self%print_to_stdout(arr=arr(1:w))

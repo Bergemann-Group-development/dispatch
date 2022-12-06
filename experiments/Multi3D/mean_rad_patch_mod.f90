@@ -64,30 +64,54 @@ MODULE mean_rad_patch_mod
     class(mean_rad_patch_t) :: self
     class(nbor_t), pointer:: nbor
     class(task_t), pointer:: nbtask
-    real(4), dimension(:,:,:,:), pointer :: Inu, new_yy, Jnu
-    real(4), dimension(:,:,:), pointer :: xx, ss, eta_back
-    real(8), dimension(:), pointer, contiguous :: nu_in, nu_out
+    real(4), dimension(:,:,:,:), pointer :: Inu, Jnu
+    real(4), dimension(:,:,:), pointer :: ss, eta_back, xx
+    real(8) :: dt, ex
+    real(4) :: Psi, xx0, xxup
     integer, save:: itimer=0
-    integer :: iw, it, f
+    integer :: i,j,k,iw, it, f
     real(4) :: wmu
     !-----------------------------------------------------------------------------
     if (self%is_finished()) return
     call trace%begin('mean_rad_patch_t%update', itimer=itimer)
     if (comoving_frame) then
-      nu_out => self%sp%nu(self%fs:self%fe)
       Jnu => self%mem(:,:,:,:,self%it,1)
+
+      do f=1, self%nv
+        do k=1, self%n(3)
+        do j=1, self%n(2)
+        do i=1, self%n(1)
+          xx0 = self%opac%mem(i,j,k,f,self%opac%it,self%opac%i_chi)
+          xxup = self%Psi(i,j,k,f)! * xx0
+          dt = 0.5 * (xxup + xx0*self%dsup)
+          if (dt < 80) then
+            if ( dt > 1d-3 ) then
+              ex = exp(-dt)
+              Psi = 1 - (1 - ex) / dt
+            else
+              Psi = dt * (0.5 - 0.16666667*dt)
+            endif
+          else
+            Psi = 1 - 1 / dt
+          endif
+          self%Psi(i,j,k,f) = Psi / xx0
+          !self%Ieff(i,j,k,f) = Jnu(i,j,k,f)
+        end do
+        end do
+        end do
+      end do
 
       !do f=1, self%nv
       !  xx => self%opac%mem(:,:,:,f,self%opac%it,self%opac%i_chi)
       !  self%Psi(:,:,:,f) = self%Psi(:,:,:,f) / xx
       !end do
 
-      !do f=1, self%nv
-      !  xx => self%opac%mem(:,:,:,f,self%opac%it,self%opac%i_chi)
-      !  ss => self%opac%mem(:,:,:,f,self%opac%it,self%opac%i_snu)
-      !  eta_back => self%back_cont%mem(:,:,:,f,self%back_cont%it,self%back_cont%i_eta)
-      !  !self%Ieff(:,:,:,f) = Jnu(:,:,:,f) - self%Psi(:,:,:,f) * (ss*xx  - eta_back)
-      !end do
+      do f=1, self%nv
+        xx => self%opac%mem(:,:,:,f,self%opac%it,self%opac%i_chi)
+        ss => self%opac%mem(:,:,:,f,self%opac%it,self%opac%i_snu)
+        eta_back => self%back_cont%mem(:,:,:,f,self%back_cont%it,self%back_cont%i_eta)
+        self%Ieff(:,:,:,f) = Jnu(:,:,:,f) - self%Psi(:,:,:,f) * (ss*xx  - eta_back)
+      end do
     endif
     call self%post_update()
     call trace%end(itimer)

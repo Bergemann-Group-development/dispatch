@@ -53,7 +53,7 @@ SUBROUTINE pre_init (self, patch)
   call self%standard_boundaries_t%pre_init(patch)
 
   self%lower = self%patch%origin(3) <= 0
-  self%upper = self%patch%origin(3)+self%patch%size(3) >= self%patch%box(3)
+  self%upper = abs(1 - (self%patch%origin(3)+self%patch%size(3)) / self%patch%box(3)) < 1e-8
 
   call trace%end()
 END SUBROUTINE pre_init
@@ -78,19 +78,18 @@ END SUBROUTINE init
 !===============================================================================
 SUBROUTINE mirror(self, mem)
   class(boundaries_t):: self
-  real(var_k), dimension(:,:,:,:,:), pointer :: mem
-  ! ----------------------------------------------------------------------------
+  real(var_k), dimension(:,:,:,:,:) :: mem
   integer :: i, b
+  ! ----------------------------------------------------------------------------
+  if (self%upper) then
+      b = ubound(mem,3)
+      mem(:,:,b,:,:) = mem(:,:,b-1,:,:)
+  endif
 
-    if (self%upper) then
-        b = ubound(mem,3)
-        mem(:,:,b,:,:) = mem(:,:,b-1,:,:)
-    endif
-
-    if (self%lower) then
-        b = lbound(mem,3)
-        mem(:,:,b,:,:) = mem(:,:,b+1,:,:)
-    endif
+  if (self%lower) then
+      b = lbound(mem,3)
+      mem(:,:,b,:,:) = mem(:,:,b+1,:,:)
+  endif
 END SUBROUTINE
 
 !===============================================================================

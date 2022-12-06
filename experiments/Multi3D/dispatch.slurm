@@ -7,7 +7,7 @@
 ###SBATCH --partition=debug
 #SBATCH --nodes=1                  # Number of MPI tasks (i.e. processes)
 #SBATCH --ntasks-per-node=1        # Maximum number of tasks on each node
-#SBATCH --cpus-per-task=10          # Number of cores per MPI task 
+#SBATCH --cpus-per-task=23          # Number of cores per MPI task 
 #SBATCH --ntasks-per-core=1
 ##SBATCH --exclusive
 # --- User notifications ---
@@ -15,6 +15,6 @@
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export KMP_STACKSIZE=256M
 #unset OMP_NUM_THREADS
-unset I_MPI_PMI_LIBRARY 
+unset I_MPI_PMI_LIBRARY
 mpirun ./dispatch.x $1
 #mpirun ./dispatch.x input_fe_nlte.nml
