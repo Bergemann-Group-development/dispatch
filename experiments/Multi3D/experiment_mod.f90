@@ -22,6 +22,7 @@ MODULE experiment_mod
   USE math_mod
   USE timer_mod
   USE os_mod
+  USE mpi_mod
   implicit none
   private
   type, public, extends(solver_t):: experiment_t
@@ -126,7 +127,9 @@ SUBROUTINE init (self)
   !  call self%task_t%init
   !end select
   call self%patch_t%init()
-  call self%init_bdries ()
+  if (associated(self%boundaries)) then
+    call self%init_bdries ()
+  endif
   call data_io%init (self)
   call self%init_level()
   call trace%end (itimer=itimer)
