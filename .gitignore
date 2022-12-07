@@ -37,3 +37,4 @@ experiments/Multi3D/input_multi3d/*
 experiments/Multi3D/TABGEN
 experiments/Multi3D/data*
 *.ipynb
+*.lock
