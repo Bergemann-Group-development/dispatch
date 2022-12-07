@@ -69,18 +69,17 @@ SUBROUTINE pre_init (self)
   self%n = self%nbox / self%dims
   md = mod(self%nbox, self%dims)
 
-  self%zs = self%ipos(3) * self%n(3) + 1 + min(md(3), self%ipos(3))
+  self%zs = self%ipos(3) * self%n(3) + min(md(3), self%ipos(3))
   if (self%ipos(3)+1 <= md(3)) then
     self%n(3) = self%n(3) + 1
   endif
-  self%ze = self%zs + self%n(3) - 1
+  self%ze = self%zs + self%n(3)
 
   self%size = self%ds * self%n
   self%periodic = [.true., .true., .false.]
 
   self%position = 0.5d0*self%size
-  self%position(3) = self%position(3) + (self%zs - 1) * self%ds(3)
-  self%origin = self%position - 0.5d0*self%size
+  self%position(3) = self%position(3) + self%zs*self%ds(3)
 
   !-----------------------------------------------------------------------------
   ! Preliminary region information, relative to the task position.

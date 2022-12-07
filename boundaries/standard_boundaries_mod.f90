@@ -29,6 +29,7 @@ MODULE standard_boundaries_mod
     logical:: set_bc_bits=.true.
   contains
     procedure:: pre_init
+    procedure:: init_bc_bits
     procedure:: init
     procedure:: set_attribute
     procedure:: set
@@ -41,6 +42,7 @@ MODULE standard_boundaries_mod
     procedure:: antisymmetric
     procedure:: extrapolate
     procedure:: extrapolate_constrained
+    procedure:: vanishing
     procedure:: log_extrapolate
     procedure:: constant
     procedure:: zero_gradient
@@ -70,8 +72,59 @@ SUBROUTINE pre_init (self, patch)
   call trace%begin ('standard_boundaries_t%init')
   self%patch => patch
   self%unset1 = .false.
+  call self%init_bc_bits ()
   call trace%end ()
 END SUBROUTINE pre_init
+
+!===============================================================================
+!> Setting BC bits requires (only) that the patch position, origin, and box
+!> are set (at the pre_init stage we cannot assume that patch%ds is correct)
+!===============================================================================
+SUBROUTINE init_bc_bits (self)
+  class(standard_boundaries_t) :: self
+  class(patch_t), pointer:: patch
+  real(8)                      :: position(3), lower(3), upper(3)
+  !-----------------------------------------------------------------------------
+  ! Some non-cartesian setups might already set the boundary bits by some other
+  ! recipe, so the bits should not touched
+  !-----------------------------------------------------------------------------
+  if (self%set_bc_bits) then
+    patch => self%patch
+    position = patch%position
+    lower = patch%origin + 0.501d0 * patch%size
+    upper = patch%origin - 0.501d0 * patch%size + patch%box
+    if (.not.patch%periodic(1)) then
+      if (position(1)  <= lower(1)) then
+        call self%set (bits%xl)
+        call patch%set (bits%has_BC)
+      end if
+      if (position(1) >= upper(1)) then
+        call self%set (bits%xu)
+        call patch%set (bits%has_BC)
+      end if
+    end if
+    if (.not.patch%periodic(2)) then
+      if (position(2)  <= lower(2)) then
+        call self%set (bits%yl)
+        call patch%set (bits%has_BC)
+      end if
+      if (position(2) >= upper(2)) then
+        call self%set (bits%yu)
+        call patch%set (bits%has_BC)
+      end if
+    end if
+    if (.not.patch%periodic(3)) then
+      if (position(3)  <= lower(3)) then
+        call self%set (bits%zl)
+        call patch%set (bits%has_BC)
+      end if
+      if (position(3) >= upper(3)) then
+        call self%set (bits%zu)
+        call patch%set (bits%has_BC)
+      end if
+    end if
+  end if
+END SUBROUTINE init_bc_bits
 
 !===============================================================================
 !> Initialize the boundary data type, while testing also if the patch contains
@@ -83,7 +136,7 @@ SUBROUTINE init (self)
   class(patch_t), pointer      :: patch
   integer                      :: id
   real(8)                      :: position(3)
-  real(8)                      :: size(3), p(3), limit(3)
+  real(8)                      :: size(3), p(3)
   integer                      :: i, j, k
   logical                      :: one_inside, all_inside
   !-----------------------------------------------------------------------------
@@ -93,45 +146,12 @@ SUBROUTINE init (self)
   end if
   patch => self%patch
   self%id = patch%id
-  self%patch => patch
   self%mesh => patch%mesh
   self%position = patch%position
   !-----------------------------------------------------------------------------
   ! If at edge, set boundary bits
-  ! FIXME: Consider position and origin and box definitions
   !-----------------------------------------------------------------------------
-  position = patch%position
-  limit = 0.5d0 * (patch%box - patch%size - patch%ds)
-  ! ----------------------------------------------------------------------------
-  ! some non-cartesian setups might already set the boundary bits by some other
-  ! recipe, so the bits should not touched.
-  ! ----------------------------------------------------------------------------
-  if (self%set_bc_bits) then
-    if (.not.patch%periodic(1)) then
-      if (position(1)  <= -limit(1)) then
-        call self%set (bits%xl)
-      end if
-      if (position(1) >= +limit(1)) then
-        call self%set (bits%xu)
-      end if
-    end if
-    if (.not.patch%periodic(2)) then
-      if (position(2)  <= -limit(2)) then
-        call self%set (bits%yl)
-      end if
-      if (position(2) >= +limit(2)) then
-        call self%set (bits%yu)
-      end if
-    end if
-    if (.not.patch%periodic(3)) then
-      if (position(3)  <= -limit(3)) then
-        call self%set (bits%zl)
-      end if
-      if (position(3) >= +limit(3)) then
-        call self%set (bits%zu)
-      end if
-    end if
-  end if
+  call self%init_bc_bits
   !-----------------------------------------------------------------------------
   ! In case boundary bits are set elsewhere, make sure mesh flags are consistent
   ! (mesh flags can only be set after meshes have been allocated, while bits may
@@ -151,6 +171,7 @@ SUBROUTINE init (self)
   ! Spherical boundary flag
   !-----------------------------------------------------------------------------
   if (self%set_bc_bits) then
+    position = patch%position
     one_inside = .false.
     all_inside = .true.
     do i=1,3
@@ -303,7 +324,8 @@ contains
     logical:: lower, upper
     if (self%check_filled) call trace%begin ('x_condition')
     if (self%id==io%id_debug) &
-      print *, 'MK BOUNDARY CONDITION: x-direction', self%bits, present(value)
+      write (stdlog,*) &
+        'MK BOUNDARY CONDITION: x-direction', self%bits, present(value)
     m1 => self%mesh(2)
     m2 => self%mesh(1)
     if (m2%n<2) print *, 'unconstrained boundaries:: more cells per X direction needed'
@@ -315,10 +337,10 @@ contains
     end do
     if (self%check_filled) then
       if (self%is_set(bits%xl)) then
-        self%filled(self%mesh(1)%lb:self%mesh(1)%lo,:,:,iv) = self%patch%level
+        self%filled(self%mesh(1)%lb:self%mesh(1)%lo,:,:,iv) = self%patch%level .ne. 0
       end if
       if (self%is_set(bits%xu)) then
-        self%filled(self%mesh(1)%uo:self%mesh(1)%ub,:,:,iv) = self%patch%level
+        self%filled(self%mesh(1)%uo:self%mesh(1)%ub,:,:,iv) = self%patch%level .ne. 0
       end if
     end if
     if (self%is_set(bits%xl)) self%was_filled(1,1) = .true.
@@ -328,7 +350,8 @@ contains
   subroutine y_condition
     if (self%check_filled) call trace%begin ('y_condition')
     if (self%id==io%id_debug) &
-      print *, 'MK BOUNDARY CONDITION: y-direction', self%bits, present(value)
+      write (stdlog,*) &
+        'MK BOUNDARY CONDITION: y-direction', self%bits, present(value)
     m1 => self%mesh(1)
     m2 => self%mesh(2)
     if (m2%n<2) print *, 'unconstrained boundaries:: more cells per Y direction needed'
@@ -351,7 +374,8 @@ contains
   subroutine z_condition
     if (self%check_filled) call trace%begin ('z_condition')
     if (self%id==io%id_debug) &
-      print *, 'MK BOUNDARY CONDITION: z-direction', self%bits, present(value)
+      write (stdlog,*) &
+        'MK BOUNDARY CONDITION: z-direction', self%bits, present(value)
     m1 => self%mesh(1)
     m2 => self%mesh(3)
     if (m2%n<2) print *, 'unconstrained boundaries:: more cells per Z direction needed'
@@ -424,6 +448,22 @@ SUBROUTINE extrapolate (self, mem, iv, select)
   call self%condition (mem, iv, operator, select=select)
   call trace%end()
 END SUBROUTINE extrapolate
+
+!===============================================================================
+!> Apply extrapolating boundary conditions
+!===============================================================================
+SUBROUTINE vanishing (self, mem, iv, select)
+  class(standard_boundaries_t)       :: self
+  real(var_k),               pointer :: mem(:,:,:)
+  integer                            :: iv
+  integer, optional                  :: select
+  procedure(make_symmetric), pointer :: operator
+  !-----------------------------------------------------------------------------
+  operator => make_vanishing
+  call trace%begin ('standard_boundaries_t%vanishing')
+  call self%condition (mem, iv, operator, select=select)
+  call trace%end()
+END SUBROUTINE vanishing
 
 !===============================================================================
 !> Apply extrapolating boundary conditions
@@ -737,6 +777,57 @@ SUBROUTINE make_extrapolated_constrained (self, f, m1, m2, iv, lower, upper, tra
     end if
   end if
 END SUBROUTINE make_extrapolated_constrained
+
+!===============================================================================
+!> Make vanishing boundary condition.
+!===============================================================================
+SUBROUTINE make_vanishing (self, f, m1, m2, iv, lower, upper, transpose, value)
+  class(standard_boundaries_t) :: self
+  real(var_k), dimension(:,:)  :: f
+  class(mesh_t), pointer       :: m1, m2
+  integer                      :: iv
+  logical                      :: lower, upper, transpose
+  real, optional               :: value
+  integer                      :: i, j, lo, li, ui, uo, k
+  real(var_k)                  :: p
+  !-----------------------------------------------------------------------------
+  call bndry_indices (m2, iv, lo, li, ui, uo)
+  if (lower) then
+    if (transpose) then
+      do j=1,lo
+        p = real(j-1,kind=var_k)/real(lo,kind=var_k)
+        do i=m1%lb,m1%ub
+          f(j,i) = p*f(lo+1,i)
+        end do
+      end do
+    else
+      do j=1,lo
+        p = real(j-1,kind=var_k)/real(lo,kind=var_k)
+        do i=m1%lb,m1%ub
+          f(i,j) = p*f(i,lo+1)
+        end do
+      end do
+    end if
+  end if
+  if (upper) then
+    k=real(m2%ng,kind=var_k)
+    if (transpose) then
+      do j=uo,m2%ub
+        p = real(m2%ub-j,kind=var_k)/k
+        do i=m1%lb,m1%ub
+          f(j,i) = p*f(uo-1,i)
+        end do
+      end do
+    else
+      do j=uo,m2%ub
+        p = real(m2%ub-j,kind=var_k)/k
+        do i=m1%lb,m1%ub
+          f(i,j) = p*f(i,uo-1)
+        end do
+      end do
+    end if
+  end if
+END SUBROUTINE make_vanishing
 
 !===============================================================================
 !> Make an extrapolated boundary condition, possibly transposing for vector

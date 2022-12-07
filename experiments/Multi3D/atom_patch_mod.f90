@@ -512,7 +512,7 @@ MODULE atom_patch_mod
                   self%lvlerr(ii) = abs(atom%e(ii))
                   if (self%lvlerr(ii) > self%maxerr) then
                     self%maxerr = self%lvlerr(ii)
-                    ep = [i, j, k + self%zs - 1]
+                    ep = [i, j, k + self%zs]
                     il = ii
                   endif
               end if

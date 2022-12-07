@@ -237,8 +237,9 @@ MODULE m3d_patch_mod
     self%mesh       => self%patch%mesh
     self%task_list  => self%patch%task_list
 
-    self%zs = nint(self%origin(3) / self%ds(3)) + 1 
-    self%ze = self%zs + self%n(3) - 1
+    ! zs is actually one below the lower boundary
+    self%zs = nint((self%position(3) - 0.5d0*self%size(3)) / self%ds(3))
+    self%ze = self%zs + self%n(3)
 
     self%pcheck = pcheck
     self%fcheck = fcheck
@@ -273,7 +274,7 @@ MODULE m3d_patch_mod
     self%interest%l  = self%authority%l - self%ng*self%size/self%n
     self%interest%u  = self%authority%u + self%ng*self%size/self%n
 
-    self%pcheck(3) = self%pcheck(3) - self%zs + 1
+    self%pcheck(3) = self%pcheck(3) - self%zs
     self%pcheck = self%pcheck + self%ng
     self%gn = self%n + 2*self%ng
     self%print_update_info = self%check_in_bounds()
@@ -932,6 +933,9 @@ MODULE m3d_patch_mod
         m( 6) = self%nw
       endif
       call os%allocate(self%mem, m, label=trim(self%kind)//'%mem')
+      if (check_NaN) then
+        self%mem = tiny(1.0)
+      endif
       if (.not. self%compressed) then
         li = self%li
         ui = self%ui

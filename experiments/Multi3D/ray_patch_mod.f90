@@ -124,7 +124,6 @@ SUBROUTINE ray_patch_init (self)
   if (self%is_set(bits%virtual)) then
     offset = self%dir * (self%n(3)-1)/2 * self%ds(3)
     self%position(3) = self%position(3) + offset
-    self%origin(3) = self%origin(3) + offset
     self%size(3) = self%ds(3)
     self%n(3) = 1
     self%ng = 0

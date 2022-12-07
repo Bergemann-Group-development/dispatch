@@ -345,7 +345,8 @@ SUBROUTINE long_char_update (self)
   dsup = real(self%ray%dsup)
 
   do k=1, self%ui(3)
-    deltak = (self%box(3) - (k-1)*self%ds(3) - self%origin(3)) * delta
+    !deltak = (self%box(3) - (k-1)*self%ds(3) - (self%position(3) - 0.5*self%size(3))) * delta
+    deltak = (self%box(3) - (k-1+self%zs)*self%ds(3)) * delta
     ipart(:,k) = int(deltak) !integer part of shift
     fpart = deltak - ipart(:,k) !fractional part
     where (deltak < 0) 
@@ -679,7 +680,7 @@ SUBROUTINE print_post_update_info (self)
     arr = 0
     arr(1) = self%mem(p(1),p(2),p(3),f,1,1)
     p2 = p - self%ng
-    if (all(p2>0)) then
+    if (all(p2>0) .and. all(p2<=self%n)) then
       if (associated(self%Psi)) then
         w = w + 1
         arr(2) = self%Psi(p2(1),p2(2),p2(3),f)

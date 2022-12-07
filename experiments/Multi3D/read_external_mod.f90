@@ -36,7 +36,7 @@ MODULE read_external_mod
     class(task_list_t), pointer:: task_list
     integer :: dims(3)=[1,1,1], n(3), verbose
     real(4), dimension(:,:,:), pointer, contiguous :: temp, ne, pe, rho, px, py, pz, ee
-    real(8) :: ds(3), size(3), position(3)!, origin(3)
+    real(8) :: ds(3), size(3), position(3), origin(3)
   contains
     procedure:: init
     procedure:: init_exp
@@ -63,7 +63,7 @@ SUBROUTINE init(self, task_list, name)
   !-----------------------------------------------------------------------------
   class(experiment_t), pointer:: patch
   class(link_t), pointer:: link, next
-  !real(4) :: origin(3)=[0.0,0.0,0.0]
+  real(4) :: origin(3)=[0.0,0.0,0.0]
   integer :: iostat, k, ip
   integer :: patches_per_mpi=1
   integer :: dims=1
@@ -113,7 +113,7 @@ SUBROUTINE init(self, task_list, name)
   endif
 
   self%verbose = verbose
-  !self%origin = origin
+  self%origin = origin
   call io%lock%unset
 
   allocate (task_list)
@@ -175,7 +175,7 @@ SUBROUTINE init(self, task_list, name)
   call os%deallocate(vel)
 
   self%size = self%n * self%ds
-  self%position = 0.5*self%size! + self%origin
+  self%position = 0.5*self%size + self%origin
 
   !-----------------------------------------------------------------------------
   ! Generate a (periodic) MPI geometry, with dims specified in the input file,
@@ -197,7 +197,7 @@ SUBROUTINE init(self, task_list, name)
   rank%size = rank%box/mpi_coords%dims
   rank%ds(1:2) = rank%size(1:2)
   rank%ds(3) = rank%size(3)/patches_per_mpi
-  rank%position = (mpi_coords%rank_to_coords(mpi%rank) + 0.5_8)*rank%size! + self%origin
+  rank%position = (mpi_coords%rank_to_coords(mpi%rank) + 0.5_8)*rank%size + self%origin
   !-----------------------------------------------------------------------------
   ! Begin on task list
   !-----------------------------------------------------------------------------
@@ -228,7 +228,7 @@ SUBROUTINE init(self, task_list, name)
     call self%setup_patch(patch)
 
     if (k==0) write(stdout,'(I2, A28)') self%dims(3), ' subdomains in z-direction:'
-    write(stdout,'(I4, I6,A3,I4)') k+1, patch%zs, ' - ', patch%ze
+    write(stdout,'(I4, I6,A3,I4)') k+1, patch%zs+1, ' - ', patch%ze
 
   end do
   write (stdout,*) ip, 'tasks generated'
@@ -318,10 +318,11 @@ SUBROUTINE setup_patch (self, patch)
   call patch%patch_t%pre_init() ! this overwrites patch%n
   patch%pre_initialized = .true.
 
-  patch%box  = self%size
-  patch%nbox = self%n
-  patch%ds   = self%ds
-  patch%dims = self%dims
+  patch%box    = self%size
+  patch%nbox   = self%n
+  patch%ds     = self%ds
+  patch%dims   = self%dims
+  patch%origin = self%origin
   
   call patch%pre_init()
   call trace%end ()
@@ -460,7 +461,7 @@ SUBROUTINE load_authority(self, patch)
   zs = patch%li(3); ze = patch%ui(3)
 
   do k=zs,ze
-    iz = patch%zs + k - zs
+    iz = patch%zs+1 + k - zs
 
     patch%mem(xs:xe,ys:ye,k,patch%idx%d ,it,1) = self%rho(:,:,iz)
     patch%mem(xs:xe,ys:ye,k,patch%idx%px,it,1) = self%px(:,:,iz)
