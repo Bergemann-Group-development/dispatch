@@ -122,7 +122,7 @@ SUBROUTINE ray_patch_init (self)
     end select
   endif
   if (self%is_set(bits%virtual)) then
-    offset = self%dir * (self%n(3)-1)/2 * self%ds(3)
+    offset = self%dir * 0.5d0 * (self%size(3) - self%ds(3))
     self%position(3) = self%position(3) + offset
     self%size(3) = self%ds(3)
     self%n(3) = 1

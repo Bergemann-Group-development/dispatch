@@ -2593,7 +2593,7 @@ SUBROUTINE no_t (target, source, ls, us, in, out, lt, ut, only, lock)
   end if
   !...........................................................................
   if (verbose > 1) then
-    write (stdlog,'(a,6i3,3x,4i3)') &
+    write (stdlog,'(a,6i5,3x,6i5)') &
     'interp_t%no_t: shapes=', shape(in), shape(out)
   end if
   !---------------------------------------------------------------------------
@@ -2603,17 +2603,14 @@ SUBROUTINE no_t (target, source, ls, us, in, out, lt, ut, only, lock)
   if (present(lt)) then
     if (verbose > 0) then
       write (stdlog,'(f12.6,a,2i6,1x,2(1x,2(1x,3i3)),1x,9l1)') &
-        wallclock(), pad_trace(1:indent)// &
-        'interp_t%no_t: tgt,src,ls,us,lt,ut,usg=', &
-        target%id, source%id, ls, us, lt, ut, &
-        source%unsigned
+        wallclock(), pad_trace(1:indent)//'interp_t%no_t: tgt,src,ls,us,lt,ut,usg=', &
+        target%id, source%id, ls, us, lt, ut, source%unsigned
         if (unit == stdout) then
-          write (unit,'(a,2(i6,":",i2.2,f10.6),1x,2i3,2f7.3,1x,2(1x,3i3),1x,9l1)') &
-          'interp_t%in_t(1): tgt,src,jt,pt,ls,us,usg=', &
+          write (unit,'(a,2(i6,":",i2.2,f10.6),2(1x,2(1x,3i3)),1x,9l1)') &
+          'interp_t%no_t(1): tgt,src,ls,us,lt,ut,usg=', &
           target%id, target%level, target%time, &
           source%id, source%level, source%time, &
-          ls, us, lt, ut, &
-          source%unsigned
+          ls, us, lt, ut, source%unsigned
         end if
     end if
     !.........................................................................
@@ -2676,7 +2673,7 @@ SUBROUTINE no_t (target, source, ls, us, in, out, lt, ut, only, lock)
     wc = wallclock()-wc
     !lt = ls+o
     write (stdlog,'(a,f6.3,1p,6(2x,3e11.2))') &
-    'interp_t%in_t(2): mus/p,min,max,min,max=', wc/n, &
+    'interp_t%no_t(2): mus/p,min,max,min,max=', wc/n, &
     minval(in (ls(1):us(1),ls(2):us(2),ls(3):us(3),:,1,:)), &
     maxval(in (ls(1):us(1),ls(2):us(2),ls(3):us(3),:,1,:)), &
     minval(out(lt(1):ut(1),lt(2):ut(2),lt(3):ut(3),:,1,:)), &
