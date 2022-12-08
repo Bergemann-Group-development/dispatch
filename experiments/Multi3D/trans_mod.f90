@@ -2,6 +2,7 @@
 MODULE trans_mod
   USE mconst
   USE bbtrans_mod
+  USE op_math_mod, only: searchsorted
   ! *******************************************************************
   !
   !     Contains variables connected to the atom(s) 
@@ -222,7 +223,6 @@ contains
 
   !====================================================================================
   SUBROUTINE interpolate_phi(self, nu, phi)
-    USE op_math_mod, only: searchsorted
     class(line_type), intent(in) :: self
     real(8), dimension(:), intent(in) :: nu
     real(4), dimension(:,:,:,:), intent(out) :: phi

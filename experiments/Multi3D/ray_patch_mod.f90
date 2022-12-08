@@ -214,7 +214,7 @@ SUBROUTINE frequency_padding (self)
   fs = searchsorted(self%sp%nu, min_nu, outbounds_ok=.true.)
   fe = searchsorted(self%sp%nu, max_nu, outbounds_ok=.true.)
   self%fs = max(1, fs)
-  self%fe = min(self%sp%nnu, fe+1)
+  self%fe = min(self%sp%nnu, fe)
   
   nv = self%fe-self%fs+1
   call self%set_nv_and_nw (nv,self%nw)

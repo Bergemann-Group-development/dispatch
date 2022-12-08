@@ -7,7 +7,7 @@ MODULE atom_mod
     USE coll_mod
     USE trans_mod
     USE mmath, only: refsor, unista
-    USE op_math_mod, only: searchsorted, lineq, lineq_no_pivot
+    USE op_math_mod, only: lineq, lineq_no_pivot, get_interval
     USE ion_mod, only: ion_type
     USE element_mod, only: element_type
     USE molecule_mod, only: molec_type
@@ -1383,8 +1383,7 @@ MODULE atom_mod
       do i=1,self%ncont
          cnt => self%cont(i)
          ! find minimum and maximum index of this continuum in the sp%nu grid
-         ired  = searchsorted(sp%nu, cnt%nu0, outbounds_ok=.true.) + 1
-         iblue = searchsorted(sp%nu, cnt%nu_max, outbounds_ok=.true.)
+         call get_interval(sp%nu, cnt%nu0, cnt%nu_max, ired, iblue, limit=.false.)
          if (iblue == 0 .or. ired == sp%nnu) cycle
       
          ! add to number of active continua
@@ -1396,8 +1395,7 @@ MODULE atom_mod
       do i=1,self%nline
          lin => self%line(i)
          ! find minimum and maximum index of this line in the sp%nu grid
-         ired  = searchsorted(sp%nu, lin%nu_min, outbounds_ok=.true.) + 1
-         iblue = searchsorted(sp%nu, lin%nu_max, outbounds_ok=.true.)
+         call get_interval(sp%nu, lin%nu_min, lin%nu_max, ired, iblue, limit=.false.)
          if (iblue == 0 .or. ired == sp%nnu) cycle
       
          ! add to number of active lines
@@ -1415,8 +1413,7 @@ MODULE atom_mod
          cnt => self%cont(i)
 
          ! find minimum and maximum index of this continuum in the sp%nu grid
-         ired  = searchsorted(sp%nu, cnt%nu0, outbounds_ok=.true.) + 1
-         iblue = searchsorted(sp%nu, cnt%nu_max, outbounds_ok=.true.)
+         call get_interval(sp%nu, cnt%nu0, cnt%nu_max, ired, iblue, limit=.false.)
 
          ! total number of frequencies where this continuum is active
          nnu=iblue-ired+1
@@ -1426,6 +1423,7 @@ MODULE atom_mod
             cnt%iblue = 0
             if (allocated(cnt%nu)) deallocate(cnt%nu)
             if (allocated(cnt%alpha)) deallocate(cnt%alpha)
+            cnt%active = .false.
             cycle
          endif
 
@@ -1496,8 +1494,7 @@ MODULE atom_mod
             lin => self%line(i)
 
             ! find minimum and maximum index of this line in the sp%nu grid
-            ired  = searchsorted(sp%nu, lin%nu_min, outbounds_ok=.true.) + 1
-            iblue = searchsorted(sp%nu, lin%nu_max, outbounds_ok=.true.)
+            call get_interval(sp%nu, lin%nu_min, lin%nu_max, ired, iblue, limit=.false.)
 
             ! total number of frequencies where this line is active
             nnu=iblue-ired+1
@@ -1507,6 +1504,7 @@ MODULE atom_mod
                lin%iblue = 0
                if (allocated(lin%nu)) deallocate(lin%nu)
                if (allocated(lin%q)) deallocate(lin%q)
+               lin%active = .false.
                cycle
             endif
 

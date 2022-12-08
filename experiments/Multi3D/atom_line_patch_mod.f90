@@ -25,7 +25,7 @@ MODULE atom_line_patch_mod
     USE trans_mod, only: line_type
     USE m3d_patch_mod, only: m3d_patch_t, maxiter, hash_string, comoving_frame
     USE ray_patch_mod, only: ray_patch_t
-    USE op_math_mod, only: searchsorted
+    USE op_math_mod, only: get_interval
     implicit none
   
     !-----------------------------------------------------------------------------
@@ -161,22 +161,13 @@ MODULE atom_line_patch_mod
         line%nnu = line%nq ! reset number of frequencies to input
         call line%freql(self%atom%qnorm, symmetric=.true.)
 
-        fs = searchsorted(line%nu, nus, outbounds_ok=.true.)
-        fe = searchsorted(line%nu, nue, outbounds_ok=.true.) + 1
-
-        if (fe < line%nq) then
-          if (line%nu(fe) == nue) fe = fe + 1
-        endif
-
-        fs = max(fs, 1)
-        fe = min(fe, line%nq)
+        call get_interval(line%nu, nus, nue, fs, fe, limit=.true.)
 
         ! this is needed for computing wphi
-        line%fs = searchsorted(line%nu, pre_pad_nus, outbounds_ok=.true.)
-        line%fe = searchsorted(line%nu, pre_pad_nue, outbounds_ok=.true.) + 1
+        call get_interval(line%nu, pre_pad_nus, pre_pad_nue, line%fs, line%fe, limit=.true.)
 
-        line%fs = max(line%fs, 1)       - fs + 1
-        line%fe = min(line%fe, line%nq) - fs + 1
+        line%fs = line%fs - fs + 1
+        line%fe = line%fe - fs + 1
         
         line%nnu = fe-fs+1
         allocate(nu(line%nnu))

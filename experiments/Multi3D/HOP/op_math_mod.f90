@@ -109,13 +109,15 @@ contains
 
    end FUNCTION interp1d_quadratic
 
+   !====================================================================================
    ! Finds index of element after which value should be inserted to maintain order.
+   !====================================================================================
    pure FUNCTION searchsorted(arr, val, outbounds_ok) result(i)
       real(8), intent(in) :: arr(:), val
       logical, optional, intent(in) :: outbounds_ok
       logical :: ob_ok, above, below
       integer :: i, n
-
+      !----------------------------------------------------------------------------
       if (present(outbounds_ok)) then
          ob_ok = outbounds_ok
       else
@@ -140,12 +142,13 @@ contains
       endif
    end FUNCTION searchsorted
 
+   !====================================================================================
    pure recursive FUNCTION BinarySearch(arr, l, r, x) result(idx)
       real(8), intent(in) :: arr(:)
       real(8), intent(in) :: x
       integer, intent(in) :: l, r
       integer :: idx, mid
-
+      !----------------------------------------------------------------------------
       if (r - l > 1) then
           mid = l + (r - l) / 2
 
@@ -162,23 +165,59 @@ contains
 
    end FUNCTION BinarySearch
 
+   !====================================================================================
+   pure SUBROUTINE get_interval(arr, lower, upper, lo, up, limit)
+      real(8), intent(in) :: arr(:), lower, upper
+      integer, intent(out) ::lo, up
+      logical, intent(in) :: limit
+      integer :: n
+      !----------------------------------------------------------------------------
+      lo = searchsorted(arr, lower, outbounds_ok=.true.) + 1
+      up = searchsorted(arr, upper, outbounds_ok=.true.)
+      n = size(arr)
+      if (lo > 1) then
+         do while(arr(lo-1) == lower)
+            lo = lo - 1
+            if (lo == 1) exit
+         end do
+      endif
+      if (up < n) then
+         do while(arr(up+1) == upper)
+            up = up + 1
+            if (up >= n) exit
+         end do
+      endif
+      if (limit) then
+         lo = max(1, lo)
+         up = min(n, up)
+      endif
+   end SUBROUTINE get_interval
+
+   !====================================================================================
    elemental real(dp) FUNCTION poly3(x, a, b, c) result(poly)
       real(dp), intent(in) :: x, a, b, c
+      !----------------------------------------------------------------------------
       poly = a*x*x + b*x + c
    end FUNCTION poly3
 
+   !====================================================================================
    elemental real(dp) FUNCTION poly4(x, a, b, c, d) result(poly)
       real(dp), intent(in) :: x, a, b, c, d
+      !----------------------------------------------------------------------------
       poly = x*poly3(x, a, b, c) + d
    end FUNCTION poly4
 
+   !====================================================================================
    elemental real(dp) FUNCTION poly5(x, a, b, c, d, e) result(poly)
       real(dp), intent(in) :: x, a, b, c, d, e
+      !----------------------------------------------------------------------------
       poly = x*poly4(x, a, b, c, d) + e
    end FUNCTION poly5
 
+   !====================================================================================
    elemental real(dp) FUNCTION poly6(x, a, b, c, d, e, f) result(poly)
       real(dp), intent(in) :: x, a, b, c, d, e, f
+      !----------------------------------------------------------------------------
       poly = x*poly5(x, a, b, c, d, e) + f
    end FUNCTION poly6
 
