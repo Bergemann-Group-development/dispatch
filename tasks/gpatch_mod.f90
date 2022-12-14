@@ -476,8 +476,10 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   ! Low noise case for log-file based validation
   !-----------------------------------------------------------------------------
   if (io_unit%do_validate) then
-    it0 = merge (self%iit(self%nt-2), 1, self%nt>2)
-    it1 = merge (self%iit(self%nt-1), 1, self%nt>1)
+    it0 = max(self%nt-2, 1)
+    it1 = max(self%nt-1, 1)
+    it0 = self%iit(it0)
+    it1 = self%iit(it1)
     if (self%nw==1) then
       allocate (df(size(self%mem,1),size(self%mem,2),size(self%mem,3)))
     end if

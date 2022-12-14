@@ -988,7 +988,8 @@ SUBROUTINE check_oldest (self, clear)
   end if
   if (associated(oldest)) then
     nbor => oldest%nbor
-    it = oldest%task%iit(oldest%task%nt-1)
+    it = max(1,oldest%task%nt-1)
+    it = oldest%task%iit(it)
     write (io_unit%log,2) oldest%task%id, oldest%task%istep, &
       oldest%task%time, oldest%task%t(it), &
       oldest%task%rank, oldest%task%level, &
@@ -996,7 +997,8 @@ SUBROUTINE check_oldest (self, clear)
   2 format(2i6,2f12.6,2i4,5L3,f12.6)
     write (io_unit%log,*) 'nbor list:'
     do while (associated(nbor))
-      it = nbor%task%iit(nbor%task%nt-1)
+      it = max(1, nbor%task%nt-1)
+      it = nbor%task%iit(it)
       is_ahead = nbor%task%is_ahead_of (oldest%task) 
       write (io_unit%log,2) nbor%task%id, nbor%task%istep, &
         nbor%task%time, nbor%task%t(it), &
