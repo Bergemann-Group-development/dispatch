@@ -80,6 +80,8 @@ MODULE atom_mod
         real(8) :: qnorm
         integer :: fcheck, pcheck(3), linecheck
         logical :: stiff 
+
+        real(8) :: drawin, mu_e
         
      contains
         !procedure :: add_line_opacities
@@ -94,11 +96,18 @@ MODULE atom_mod
         procedure :: create_spectrum
         procedure :: set_active_transitions
         procedure :: read
+        procedure :: prepare_Drawin
+        procedure :: classic_col
         procedure :: copy_to
      
     end type atom_type
 
-    logical :: lse_no_pivot=.True.
+    logical :: lse_no_pivot = .True.
+    real(8) :: red_thresh_aa  = 20000
+    real(8) :: blue_thresh_aa = 500
+    real(8) :: cont_step_aa   = 50
+    real(8), parameter :: ame=5.485799e-4, amh=1.0
+    real(8), parameter :: mu_e=ame/(ame+amh)
   
   contains
   
@@ -513,18 +522,10 @@ MODULE atom_mod
 
       call trace%begin('gencol', itimer=itimer)
       self%c = 0.d0
-
-      !call classic_col(self%g,self%ev,self%ion,dble(temp),dble(ne),dble(nh), nstar, &
-      !                 self%cdata,self%c,self%ecol,self%hcol,self%awgt)
-
-      !print '(4(4(ES17.8), /))', self%c
-      !self%c = 0
+      call self%classic_col(temp,ne,nh,nstar)
 
       call gencol(self%coll,self%id,self%nlevel,self%g,self%ev,self%ion,&
                   self%c,dble(temp),dble(ne),nstar,dble(nh),self%tgrid,self%cgrid,self%dcdt)
-
-      !print '(4(4(ES17.8), /))', self%c
-      !stop
 
       call trace%end(itimer=itimer)
 
@@ -811,7 +812,8 @@ MODULE atom_mod
       type(coll_type), pointer :: col => null()
       type(line_type),dimension(:),allocatable :: scratch_line
       real(8), allocatable, dimension(:) :: nu, alpha, tgrid
-      real(8) :: scr, gv, gq, cnt_ev
+      real(8) :: scr, gv, gq, cnt_ev, nu_max, alpha0, thresh_aa
+      integer :: ncont, nnu
       character(len=20) :: txt
       character(len=26),parameter :: upcase_alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZ"
       logical :: abort
@@ -827,19 +829,14 @@ MODULE atom_mod
       call nextentry(latom)
       read(latom,*) self%abnd, self%awgt
       self%awgt=self%awgt*uu ! atomic weight [g]
+      call self%prepare_Drawin()
       ! AJG: quickly change abundance without having to edit self
       if (present(abnd)) self%abnd = abnd
 
       call nextentry(latom)
       read(latom,*) self%nlevel,self%nline,self%ncont,self%nrfix
-      self%nrad = self%nline + self%ncont
 
       self%qnorm = qnorm
-
-      allocate(  self%line  ( self%nline ) ) 
-      allocate(  self%cont  ( self%ncont ) )
-      call os%mem_register(storage_size(self%line), self%nline, label='atom%line')
-      call os%mem_register(storage_size(self%cont), self%ncont, label='atom%cont')
 
       allocate(  self%ev    ( self%nlevel) ) ; self%ev = 0.0d0
       allocate(  self%g     ( self%nlevel) ) ; self%g = 0
@@ -867,9 +864,11 @@ MODULE atom_mod
          endif
       end do
 
+      allocate(self%line(self%nline)) 
+      call os%mem_register(storage_size(self%line), self%nline, label='atom%line')
+
       do i=1,self%nline
          lin => self%line(i)
-
          call nextentry(latom) 
 
          ! io WAS present for historical reasons, in MULTI io determines
@@ -1040,83 +1039,97 @@ MODULE atom_mod
          self%line = scratch_line
          deallocate(scratch_line)
          self%nline = j
-         self%nrad = self%nline + self%ncont
       endif
+
+      ncont = count(self%ion < maxval(self%ion))
+      if (ncont < self%ncont) then
+         print *, 'Unrealisticly many bound-free transitions. Something is wrong!'
+      endif
+      allocate(self%cont(ncont))
+      call os%mem_register(storage_size(self%cont), ncont, label='atom%cont')
+
+      do i=1, ncont
+         cnt => self%cont(i)
+         cnt%bf_type='Kramer'
+         ! find continuum level
+         do ic=i, self%nlevel
+            if (self%ion(ic) .eq. self%ion(i)+1) exit
+         end do
+         cnt%i = i
+         cnt%j = ic
+         cnt%ntrans = self%nline + i ! transition identifier for continua
+
+         cnt%lower_ev = self%ev(cnt%i)
+         cnt%upper_ev = self%ev(cnt%j)
+      
+         cnt%nu0 = ( cnt%upper_ev - cnt%lower_ev ) / h_e ! [Hz]
+      end do
 
       !  bound-free transitions in detail
       !  if nu_max.lt.0.0 frequency points in angstrom (starting with
       !  threshold and decreasing) and crossections in cm2 are read.
       do i=1,self%ncont
-         cnt => self%cont(i)
          call nextentry(latom) 
+         read(latom,*) jj, ii, alpha0, nnu, nu_max
 
-         read(latom,*) jj,ii,cnt%alpha0,cnt%nnu,cnt%nu_max
-
-         cnt%i = min(ii, jj)
-         cnt%j = max(ii, jj)
-
-         if (self%ion(cnt%i) == self%ion(cnt%j)) then
-            print *, 'bound-free transition', i, 'is between two levels of the same ion', cnt%i, cnt%j
+         if (self%ion(ii) == self%ion(jj)) then
+            print *, 'bound-free transition', i, 'is between two levels of the same ion', ii, jj
             abort = .true.
             !stop
          endif
 
+         ii = min(ii,jj)
+         cnt => self%cont(ii)
+         cnt%alpha0 = alpha0
+         cnt%nnu    = nnu
+
          tri = (cnt%j-1)*(cnt%j-2)/2 + cnt%i
          self%cdata(tri) = cnt%alpha0
 
-         cnt%lower_ev = self%ev(cnt%i)
-         cnt%upper_ev = self%ev(cnt%j)
-      
-         cnt%nu0   = ( cnt%upper_ev - cnt%lower_ev ) / h_e ! [Hz]
-         cnt%nu_max = cc/(cnt%nu_max*AA_TO_CM) ! [from AA to Hz]
-         cnt%ntrans=self%nline+i ! transition identifier for continua
-
-         cnt%ired=1
-         cnt%iblue=cnt%nnu
-
-         if ( cnt%nu_max .lt. 0.0 ) then
-               allocate( nu(cnt%nnu))
-               allocate( alpha(cnt%nnu))
+         if ( nu_max .lt. 0.0 ) then
+               allocate( cnt%nu(cnt%nnu))
+               allocate( cnt%alpha(cnt%nnu))
 
                ! cross sections given in detail
                cnt%bf_type='detail'
+
                do j=1,cnt%nnu
-               call nextentry(latom) 
-               read(latom,*)  nu(j), alpha(j)
+                  call nextentry(latom) 
+                  read(latom,*)  cnt%nu(j), cnt%alpha(j)
                end do
                ! for overflow reasons
-               alpha = alpha / cnt%alpha0
+               cnt%alpha = cnt%alpha / cnt%alpha0
                ! sanity check
-               doubles = 0
+               !doubles = 0
                do j=2,cnt%nnu
-                  if ( nu(j) .gt. nu(j-1) ) then
-                        write(stdout,*) 'read_atom: continuum transition nr', i, &
-                                       ' wavelengths not decreasing'
-                        abort = .true.
-                  elseif ( nu(j) == nu(j-1) ) then
-                     doubles = doubles + 1
+                  if ( cnt%nu(j) > cnt%nu(j-1) ) then
+                     write(stdout,*) 'read_atom: continuum transition nr', i, &
+                                    ' wavelengths not decreasing'
+                     abort = .true.
+                  !elseif ( nu(j) == nu(j-1) ) then
+                  !   doubles = doubles + 1
                   endif
                end do
 
                ! making sure here that there are no double wavelenghts
-               cnt%nnu = cnt%nnu - doubles
-               allocate(cnt%nu(cnt%nnu), cnt%alpha(cnt%nnu))
-               cnt%nu(1) = nu(1)
-               cnt%alpha(1) = alpha(1)
+               !cnt%nnu = cnt%nnu - doubles
+               !allocate(cnt%nu(cnt%nnu), cnt%alpha(cnt%nnu))
+               !cnt%nu(1) = nu(1)
+               !cnt%alpha(1) = alpha(1)
 
-               doubles = 1
-               do j=2, cnt%iblue
-                  if ( nu(j) < nu(j-1) ) then
-                     doubles = doubles + 1
-                     cnt%nu(doubles) = nu(j)
-                     cnt%alpha(doubles) = alpha(j)
-                  endif
-               end do
+               !doubles = 1
+               !do j=2, cnt%iblue
+               !   if ( nu(j) < nu(j-1) ) then
+               !      doubles = doubles + 1
+               !      cnt%nu(doubles) = nu(j)
+               !      cnt%alpha(doubles) = alpha(j)
+               !   endif
+               !end do
 
-               cnt%iblue = cnt%nnu
+               !cnt%iblue = cnt%nnu
 
-               deallocate( nu)
-               deallocate( alpha)
+               !deallocate( nu)
+               !deallocate( alpha)
 
                ! and convert to frequency [Hz]
                cnt%nu = cc / ( cnt%nu * AA_TO_CM )
@@ -1125,7 +1138,35 @@ MODULE atom_mod
          else
                ! hydrogenic transitions
                cnt%bf_type='hydrogenic'
+               cnt%nu_max = nu_max
          endif
+      end do
+
+      self%ncont = ncont
+      self%nrad = self%nline + self%ncont
+
+      do i=1, self%ncont
+         cnt => self%cont(i)
+         if (cnt%bf_type == 'Kramer') then
+            thresh_aa = cc / ( cnt%nu0 * AA_TO_CM )
+            thresh_aa = min(thresh_aa, red_thresh_aa)
+            nnu = ceiling((thresh_aa - blue_thresh_aa) / cont_step_aa) + 1
+            cnt%nnu = nnu
+            allocate(cnt%nu(nnu))
+            allocate(cnt%alpha(nnu))
+            cnt%nu(nnu:2:-1) = (/ (blue_thresh_aa + j*cont_step_aa, j=0, nnu-2) /)
+            cnt%nu(1) = thresh_aa
+            cnt%nu = cc / ( cnt%nu * AA_TO_CM )
+            cnt%alpha = Kramer(cnt%nu, self%ev(cnt%j) - self%ev(cnt%i))
+            cnt%alpha0 = cnt%alpha(1)
+            cnt%alpha = cnt%alpha / cnt%alpha0
+            tri = (cnt%j-1)*(cnt%j-2)/2 + cnt%i
+            self%cdata(tri) = cnt%alpha0
+            cnt%nu_max = cnt%nu(cnt%nnu)
+         endif
+
+         cnt%ired = 1
+         cnt%iblue = cnt%nnu
       end do
 
       ! read collisional data
@@ -1302,6 +1343,114 @@ MODULE atom_mod
       if (abort) stop
    END SUBROUTINE read
 
+   !====================================================================================
+   SUBROUTINE prepare_Drawin(self)
+      class(atom_type), intent(inout) :: self
+      real(8) :: drmu, mu_h, ama
+      !---------------------------------------------------------------------
+      ama = self%awgt/UU
+      mu_h = amh/(ama+amh)
+      drmu = PI*MH*ama*mu_h
+      self%drawin = 1.40758E-15 * sqrt(2.0*BK/drmu) * mu_e/mu_h
+   END SUBROUTINE prepare_Drawin
+
+   !====================================================================================
+   SUBROUTINE classic_col(self,temp,ne,nh,nstar)
+      class(atom_type), intent(inout) :: self
+      real(4), intent(in) :: temp, ne
+      real(4), dimension(:), intent(in) :: nh
+      real(4), dimension(:), intent(in) :: nstar
+      real(8) :: nij, cup, cdn, EK_over_temp, divu
+      real(8) :: dxi, dev, ex, u0, f, tmp, sqt, fac, nu0
+      real(8) :: seaton, allen, regemorter
+      integer :: i,j, ii, jj, tri, n
+      logical :: cont
+      logical, save :: first_time=.true.
+      !---------------------------------------------------------------------
+      dxi = 4.98e-4*5040./temp*sqrt(ne*bk*temp)
+      sqt = sqrt(temp)
+      allen = 5.465e-11 * Rydk / sqt * ne
+      regemorter = 14.5 * allen * Rydk / e_k
+      seaton = 1.55e13 * ne
+      EK_over_temp = e_k / temp
+
+      n = 0
+      do i=1, self%nlevel
+         if (nstar(i) == 0) cycle
+         do j=i+1, self%nlevel
+            tri = (j-1)*(j-2)/2 + i
+            fac = self%cdata(tri)
+            cont = self%ion(j) > self%ion(i)
+
+            if (.not. self%ecol(tri) .or. .not. self%hcol(tri)) then
+               dev = self%ev(j) - self%ev(i)
+               dev = max(dev, 1d-8) ! to avoid division by zero
+
+               if (cont) then
+                  jj = self%ion(j) * (self%ion(j)-1)
+                  ii = self%ion(i) * (self%ion(i)-1)
+                  dev = dev - dxi*0.5*(jj-ii)
+               endif
+
+               u0 = dev * EK_over_temp
+               ex = exp(-u0)
+               nij = nstar(i) / nstar(j)
+
+               ! collisions with electrons
+               if (.not. self%ecol(tri)) then
+                  if (cont) then
+                     ! ionization by electron collisions
+                     if (fac == 0) then
+                        nu0 = dev * EE/HH
+                        fac = Kramer(nu0, dev)
+                     endif
+                     tmp = min(0.1*self%ion(i), 0.3)
+                     cup = seaton * fac * tmp / (u0*sqt) * ex
+                  else
+                     ! excitation of neutrals by electron collisions 
+                     if (fac > 0) then
+                        ! Van Regemorter
+                        f = max(fac, 1e-5)
+                        tmp = max(0.2*ex, 0.276*expin(u0))
+                        cup = regemorter * f * tmp / dev
+                     else
+                        ! Allen
+                        cup = allen / self%g(i) * ex
+                     endif
+                  endif
+                  cdn = cup * nij
+                  self%c(j,i) = self%c(j,i) + cup ! upward rate
+                  self%c(i,j) = self%c(i,j) + cdn ! downward rate
+                  n = n + 1
+               endif
+
+               ! collisions with hydrogen (Drawin)
+               if (.not. self%hcol(tri)) then
+                  divu = (RydV/dev)**2
+                  tmp = 2.0/u0
+                  tmp = (1.0 + tmp) / (1.0 + (mu_e*tmp)**2)
+                  cup = nh(1) * self%drawin * divu * tmp * ex * sqt
+                  
+                  if (.not. cont) then
+                     f = max(fac, 1.0e-5)
+                     cup = cup * f
+                  endif
+               
+                  cdn = cup * nij
+                  self%c(j,i) = self%c(j,i) + cup ! upward rate
+                  self%c(i,j) = self%c(i,j) + cdn ! downward rate
+                  n = n + 1
+               endif
+            endif
+            if (cont) exit
+         end do
+      end do
+      if (first_time) then
+         first_time = .false.
+         write(stdout, *) n, ' collisional transitions filled with classical recipes.'
+      endif
+   END SUBROUTINE classic_col
+
    !===============================================================================
    ! initialises the spectrum structure
    !===============================================================================
@@ -1451,7 +1600,7 @@ MODULE atom_mod
             cnt%nu = sp%nu(ired:iblue)
             cnt%alpha = (cnt%nu / cnt%nu0 )**-3
 
-         case('detail')
+         case('detail', 'Kramer')
             ! interpolate from given values
             if (allocated(dalpha_dnu)) deallocate(dalpha_dnu)
             allocate( dalpha_dnu(cnt%nnu) )

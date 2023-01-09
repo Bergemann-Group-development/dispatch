@@ -18,8 +18,8 @@ MODULE trans_mod
 
   type, extends(bbtrans_type) :: transition_type
       integer :: ntrans ! transition identifier
-      integer :: j   ! upper level  
-      integer :: i   ! lower level
+      integer :: j=0 ! upper level  
+      integer :: i=0 ! lower level
       integer :: nq  ! number of input frequencies in the line
 
       real(8) :: upper_ev
@@ -241,8 +241,11 @@ contains
         cycle
       endif
 
-      i2 = i1+1
-      dx = (newq - self%q(i1)) / (self%q(i2)-self%q(i1))
+      dx = (newq - self%q(i1))
+      if (dx > 0) then
+        i2 = i1+1
+        dx = dx / (self%q(i2)-self%q(i1))
+      endif
 
       if (dx < 1e-6) then
         phi(:,:,:,f) = self%phi(:,:,:,i1)

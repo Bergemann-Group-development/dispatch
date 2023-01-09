@@ -78,39 +78,14 @@ MODULE mean_rad_patch_mod
       Jnu => self%mem(:,:,:,:,self%it,1)
 
       do f=1, self%nv
-        do k=1, self%n(3)
-        do j=1, self%n(2)
-        do i=1, self%n(1)
-          xx0 = self%opac%mem(i,j,k,f,self%opac%it,self%opac%i_chi)
-          xxup = self%Psi(i,j,k,f)! * xx0
-          dt = 0.5 * (xxup + xx0*self%dsup)
-          if (dt < 80) then
-            if ( dt > 1d-3 ) then
-              ex = exp(-dt)
-              Psi = 1 - (1 - ex) / dt
-            else
-              Psi = dt * (0.5 - 0.16666667*dt)
-            endif
-          else
-            Psi = 1 - 1 / dt
-          endif
-          self%Psi(i,j,k,f) = Psi / xx0
-          !self%Ieff(i,j,k,f) = Jnu(i,j,k,f)
-        end do
-        end do
-        end do
+        xx => self%opac%mem(:,:,:,f,self%opac%it,self%opac%i_chi)
+        self%Psi(:,:,:,f) = self%Psi(:,:,:,f) / xx
       end do
-
-      !do f=1, self%nv
-      !  xx => self%opac%mem(:,:,:,f,self%opac%it,self%opac%i_chi)
-      !  self%Psi(:,:,:,f) = self%Psi(:,:,:,f) / xx
-      !end do
 
       do f=1, self%nv
         xx => self%opac%mem(:,:,:,f,self%opac%it,self%opac%i_chi)
-        ss => self%opac%mem(:,:,:,f,self%opac%it,self%opac%i_snu)
         eta_back => self%back_cont%mem(:,:,:,f,self%back_cont%it,self%back_cont%i_eta)
-        self%Ieff(:,:,:,f) = Jnu(:,:,:,f) - self%Psi(:,:,:,f) * (ss*xx  - eta_back)
+        self%Ieff(:,:,:,f) = self%Ieff(:,:,:,f) + self%Psi(:,:,:,f) * eta_back
       end do
     endif
     call self%post_update()

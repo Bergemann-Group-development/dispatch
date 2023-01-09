@@ -940,6 +940,9 @@ MODULE m3d_patch_mod
         li = self%li
         ui = self%ui
         self%authority_mem => self%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),:,:,:)
+        if (self%save_output) then
+          self%out_mem => self%authority_mem(:,:,:,:,self%it,:)
+        endif
       endif
       self%last_allocator => allocator
       self%allocation_time = allocator%time
@@ -1364,6 +1367,7 @@ MODULE m3d_patch_mod
     character(len=32) :: filename
     integer :: lunit, iw, iv
     ! ----------------------------------------------------------------------------
+    call self%check_access(self)
     write(folder, '(A, A)') trim(io%run_dir), 'save/'
     write(filename, '(A, A, 3(I3.3), A)') trim(label), '_', self%key(1:3), '.bin'
     meta_file = trim(label) // '_meta.txt'

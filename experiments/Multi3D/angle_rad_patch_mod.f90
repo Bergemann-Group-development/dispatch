@@ -288,22 +288,21 @@ SUBROUTINE short_ray_update (self)
               end do
             end do
             Inuup = max(Inuup, Inumin)
-
-            self%Inu(i,j,k,f) = Inuup*ex + (u0 - Psi)*ssup + Psi*ss
+            self%Ieff(x,y,z,f) = Inuup*ex + (u0 - Psi)*ssup
           else
             !ex = 0
             u0 = 1 / dt
             Psi = 1 - u0
-            self%Inu(i,j,k,f) = u0*ssup + Psi*ss
+            self%Ieff(x,y,z,f) = u0*ssup
           endif
 
+          self%Inu(i,j,k,f) = self%Ieff(x,y,z,f) + Psi*ss
+
           if (comoving_frame) then
-            self%Psi(x,y,z,f) = self%ray%dsup * xxup! / xx
-            !self%Psi(x,y,z,f) = Psi! / xx
-            !self%Ieff(x,y,z,f) = self%Inu(i,j,k,f) - Psi * (ss - eta_back(x,y,z,f) / xx)
+            self%Psi(x,y,z,f) = Psi
           else
             self%Psi(x,y,z,f) = Psi / xx
-            self%Ieff(x,y,z,f) = self%Inu(i,j,k,f) - self%Psi(x,y,z,f) * (ss*xx - eta_back(x,y,z,f))
+            self%Ieff(x,y,z,f) = self%Ieff(x,y,z,f) + self%Psi(x,y,z,f) * eta_back(x,y,z,f)
           endif
         end do
       end do
@@ -472,13 +471,12 @@ SUBROUTINE integrate_intensity(self)
     call interpolate_to_ray(vproj, nu_in, nu_out, self%Psi, mean%Psi, wmu)
     call interpolate_to_ray(vproj, nu_in, nu_out, self%Ieff, mean%Ieff, wmu)
     call os%deallocate(vproj)
-    mean%dsup = mean%dsup + wmu * self%ray%dsup
   else
     do f=1, self%nv
     do k=1, self%n(3)
     do j=1, self%n(2)
     do i=1, self%n(1)
-      Jnu(i,j,k,f)  = Jnu(i,j,k,f)  + wmu * Inu(i,j,k,f)
+      Jnu(i,j,k,f)       = Jnu(i,j,k,f)       + wmu * Inu(i,j,k,f)
       mean%Psi(i,j,k,f)  = mean%Psi(i,j,k,f)  + wmu * self%Psi(i,j,k,f)
       mean%Ieff(i,j,k,f) = mean%Ieff(i,j,k,f) + wmu * self%Ieff(i,j,k,f)
     end do

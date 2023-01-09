@@ -334,130 +334,6 @@ MODULE coll_mod
       end do ! transition loop 
   
    END SUBROUTINE gencol
-
-
-   !====================================================================================
-   SUBROUTINE classic_col(g,ev,ion,temp,ne,nh,nstar,cdata,cij,ecol,hcol,ama)
-      real(8), intent(in), dimension(:) :: g, ev
-      integer, intent(in), dimension(:) :: ion
-      real(8), intent(in) :: temp, ne, ama
-      real(8), dimension(:), intent(in) :: nh
-      real(4), dimension(:), intent(in) :: cdata, nstar
-      real(8), dimension(:,:),intent(inout) :: cij
-      logical, dimension(:),intent(inout) :: ecol, hcol
-  
-      real(8) :: nij, cup, cdn, EK_over_temp, mu_h, mu_e, drmu, gij, divu
-      real(8) :: saha, dxi, dev, tns, ex, u0, f, tmp, sqt, fac, nu0
-      real(8) :: seaton, allen, regemorter
-      integer :: nlevel, ul,ll,i,j,k,z, nhlevels, ii, jj, nc, icont, tri, n
-      logical :: cont
-      logical, save :: first_time=.true.
-      real(8), save :: last_ama=0, drawin
-      real(8), parameter :: ame=5.485799e-4
-      real(8), parameter :: amh=1.0
-      !---------------------------------------------------------------------
-      nlevel = size(ev,1)
-      saha = 1.5*log(temp) - log(saha_const*ne)
-      dxi  = 4.98e-4*5040./temp*sqrt(ne*bk*temp)
-      sqt = sqrt(temp)
-      allen = 5.465e-11 * Rydk / sqt * ne
-      regemorter = 14.5 * allen * Rydk / EK
-      seaton = 1.55e13 * ne
-
-      if (ama /= last_ama) then
-         mu_h = amh/(ama+amh)
-         mu_e = ame/(ame+amh)
-         drmu = PI*MH*ama*mu_h
-         drawin = 1.40758E-15 * sqrt(2.0*BK/drmu) * mu_e/mu_h
-      endif
-
-      EK_over_temp = e_k / temp
-
-      n = 0
-      do i=1, nlevel
-         do j=i+1, nlevel
-            tri = (j-1)*(j-2)/2 + i
-            fac = cdata(tri)
-            cont = ion(j) > ion(i)
-
-            if (.not. ecol(tri) .or. .not. hcol(tri)) then
-               dev = ev(j) - ev(i)
-
-               if (cont) then
-                  ii = ion(j) * (ion(j)-1)
-                  jj = ion(i) * (ion(i)-1)
-                  dev = dev - dxi*0.5*(jj-ii)
-               endif
-
-               u0 = dev * EK_over_temp
-               ex = exp(-u0)
-               gij = g(i)/g(j)
-
-               if (nstar(i) > 0) then
-                  nij = nstar(i) / nstar(j)
-               else
-                  tns = u0 - (ion(j) - ion(i))*saha
-                  nij = gij * exp(tns)
-               endif
-
-               ! collisions with electrons
-               if (.not. ecol(tri)) then
-                  if (cont) then
-                     ! ionization by electron collisions
-                     if (fac == 0) then
-                        nu0 = dev * EE/HH
-                        fac = Kramer(nu0, dev)
-                     endif
-                     tmp = min(0.1*ion(i), 0.3)
-                     cup = seaton * fac / (dev*EK) * sqt * ex
-                  else
-                     ! excitation of neutrals by electron collisions 
-                     if (fac > 0) then
-                        ! Van Regemorter
-                        f = max(fac, 1e-5)
-                        tmp = max(0.2*ex, 0.276*expin(u0))
-                        cup = regemorter * f * tmp / dev
-                     else
-                        ! Allen
-                        cup = allen / g(i) * ex
-                     endif
-                  endif
-                  cdn = cup * nij
-                  cij(j,i) = cij(j,i) + cup ! upward rate
-                  cij(i,j) = cij(i,j) + cdn ! downward rate
-                  n = n + 1
-               endif
-
-               ! collisions with hydrogen (Drawin)
-               !if (.not. hcol(tri)) then
-               !   divu = (RydV/dev)**2
-               !   tmp = 2.0/u0
-               !   tmp = (1.0 + tmp) / (1.0 + (mu_e*tmp)**2)
-
-               !   cup = nh(1) * drawin * divu * tmp
-               !   
-               !   if (cont) then
-               !      cup = cup * ex * sqt
-               !   else
-               !      f = max(fac, 1.0e-5)
-               !      cup = cup * f * sqt * gij / nij
-               !   endif
-
-               !   cdn = cup * nij
-               !   cij(j,i) = cij(j,i) + cup ! upward rate
-               !   cij(i,j) = cij(i,j) + cdn ! downward rate
-               !   n = n + 1
-               !endif
-            endif
-            if (cont) exit
-         end do
-      end do
-
-      if (first_time) then
-         first_time = .false.
-         write(stdout, *) n, ' collisional transitions filled with classical recipes.'
-      endif
-   END SUBROUTINE classic_col
  
    !====================================================================================
    logical function is_valid_process(key)
@@ -906,6 +782,6 @@ MODULE coll_mod
       real(8) :: nl, hyd
       !---------------------------------------------------------------------
       nl = sqrt(RydV/dev)
-      hyd = 2.815e29 * gaunt(nu,int(nl)) / (nl**5 * nu**3)
+      hyd = 2.815e29 * gaunt(nu,ceiling(nl)) / (nl**5 * nu**3)
    END FUNCTION Kramer
  END MODULE coll_mod

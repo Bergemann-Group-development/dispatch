@@ -99,7 +99,9 @@ MODULE proj_patch_mod
     integer :: n(3), f, nf, i, x, y, z, nf_in
     real(4) :: yy1, yy2, wmu, res
     real(8) :: new_nu, dnu
+    integer, save :: itimer
     !-----------------------------------------------------------------------------
+    call trace%begin('proj_patch_t%interpolate_to_ray', itimer=itimer)
     n = shape(proj)
     nf = size(nu_out)
     nf_in = size(nu_in)
@@ -141,6 +143,7 @@ MODULE proj_patch_mod
       end do
     end do
     call os%deallocate(ff)
+    call trace%end(itimer)
   END SUBROUTINE interpolate_to_ray
   
   !===============================================================================

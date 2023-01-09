@@ -146,19 +146,11 @@ MODULE atom_rate_patch_mod
       call os%allocate(self%atom%gamma_ji, m, zero=.true., label='atom%gamma_ji')
       self%atom%stiff=.true.
     endif
-    if (self%i_mu>0) then
-      do i=1, self%nv
-        k = self%idx_remap(i)
-        self%atom%gamma_ij(:,:,:,k) = self%atom%gamma_ij(:,:,:,k) + self%wmu * gamma_ij(:,:,:,i)
-        self%atom%gamma_ji(:,:,:,k) = self%atom%gamma_ji(:,:,:,k) + self%wmu * gamma_ji(:,:,:,i)
-      end do
-    else
-      do i=1, self%nv
-        k = self%idx_remap(i)
-        self%atom%gamma_ij(:,:,:,k) = self%atom%gamma_ij(:,:,:,k) + gamma_ij(:,:,:,i)
-        self%atom%gamma_ji(:,:,:,k) = self%atom%gamma_ji(:,:,:,k) + gamma_ji(:,:,:,i)
-      end do
-    endif
+    do i=1, self%nv
+      k = self%idx_remap(i)
+      self%atom%gamma_ij(:,:,:,k) = self%atom%gamma_ij(:,:,:,k) + self%wmu * gamma_ij(:,:,:,i)
+      self%atom%gamma_ji(:,:,:,k) = self%atom%gamma_ji(:,:,:,k) + self%wmu * gamma_ji(:,:,:,i)
+    end do
     if (.not. self%static_mem) then
       self%atom%stiff=.false.
     endif

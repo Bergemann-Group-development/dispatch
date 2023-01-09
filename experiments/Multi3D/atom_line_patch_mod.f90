@@ -160,16 +160,15 @@ MODULE atom_line_patch_mod
         if (allocated(line%q))  deallocate(line%q)
         line%nnu = line%nq ! reset number of frequencies to input
         call line%freql(self%atom%qnorm, symmetric=.true.)
-
         call get_interval(line%nu, nus, nue, fs, fe, limit=.true.)
 
+        line%nnu = fe-fs+1
         ! this is needed for computing wphi
         call get_interval(line%nu, pre_pad_nus, pre_pad_nue, line%fs, line%fe, limit=.true.)
 
         line%fs = line%fs - fs + 1
         line%fe = line%fe - fs + 1
         
-        line%nnu = fe-fs+1
         allocate(nu(line%nnu))
         nu = line%nu(fs:fe)
         deallocate(line%nu)

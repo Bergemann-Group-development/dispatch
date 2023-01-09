@@ -49,6 +49,7 @@ MODULE ray_patch_mod
     procedure :: pack
     procedure :: unpack
     procedure :: allocate_mesg
+    procedure :: allocate_mem
     procedure :: total_mesg_buffer_size
     procedure :: init_nbors_hash
     procedure :: frequency_padding
@@ -198,6 +199,7 @@ SUBROUTINE comp_vproj (self, vproj)
     !  vproj = (-self%vec(1)*px - self%vec(2)*py + self%vec(3)*pz) * scaling%u / (d*cc)
     !else
       vproj = (self%vec(1)*px + self%vec(2)*py + self%vec(3)*pz) * scaling%u / (d*cc)
+      !vproj = 0
     !endif
   endif
 END SUBROUTINE comp_vproj
@@ -379,6 +381,23 @@ SUBROUTINE ray_nbor_relations(self, another, needed, needs_me, download)
 
   call trace%end()
 END SUBROUTINE ray_nbor_relations
+
+!===============================================================================
+SUBROUTINE allocate_mem (self, allocator, m_in)
+  class(ray_patch_t):: self
+  class(m3d_patch_t), intent(in), target :: allocator
+  integer, intent(in), optional :: m_in(6)
+  integer :: fs, fe
+  !-----------------------------------------------------------------------------
+  call self%m3d_patch_t%allocate_mem(allocator, m_in)
+  if (self%save_output .and. .not. self%compressed) then
+    if (self%padded) then
+      fs = self%pre_pad_fs - self%fs + 1
+      fe = fs + self%pre_pad_fe - self%pre_pad_fs
+      self%out_mem => self%authority_mem(:,:,:,fs:fe,self%it,:)
+    endif
+  endif
+END SUBROUTINE allocate_mem
 
 !===============================================================================
 SUBROUTINE compress_mem (self, compressor)
