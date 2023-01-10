@@ -67,6 +67,7 @@ MODULE atom_patch_mod
 
     integer, save :: epos(3), elvl
     logical, save :: level_partf=.true.
+    logical, save :: exclude_from_line_list=.true.
 
     !-----------------------------------------------------------------------------
   
@@ -155,7 +156,6 @@ MODULE atom_patch_mod
     integer :: iostat
     integer, save :: itimer=0, itimer1=0, n_in_lines=0
     logical, save :: exclude_trace_cont=.true., use_atom_abnd=.true.
-    logical, save :: exclude_from_line_list=.true.
     integer, save, allocatable :: in_lines(:)
     namelist /atom_params/ atom_file, qnorm, convlim, exclude_trace_cont, level_partf, &
     use_atom_abnd, logf_cut, red_cut, blue_cut, n_in_lines, abundance, exclude_from_line_list
@@ -235,7 +235,7 @@ MODULE atom_patch_mod
       call self%exclude_double_continua()
     endif
 
-    call self%exclude_double_lines(exclude_from_line_list)
+    call self%exclude_double_lines()
 
     if (use_atom_abnd .or. abundance > -99) then
       call self%composition%overwrite_abundance(atom%id, atom%abnd, atom%awgt)
@@ -568,13 +568,12 @@ MODULE atom_patch_mod
   END SUBROUTINE exclude_double_continua
 
   !===============================================================================
-  SUBROUTINE exclude_double_lines (self, exclude_from_line_list)
+  SUBROUTINE exclude_double_lines (self)
     class(atom_patch_t), target :: self
     class(element_type), pointer :: element
     class(molec_type), pointer :: molec
     class(ion_type), pointer :: ion
     class(bbtrans_type), pointer :: ll_line, line
-    logical :: exclude_from_line_list
     integer :: i, j, l
     logical, save :: first_time=.true.
     !-----------------------------------------------------------------------------

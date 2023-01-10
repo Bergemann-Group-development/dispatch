@@ -12,5 +12,5 @@
                     n_nu=1 maxiter=0 save_back_cont=T
                     quad_scheme='set_a2' long_scheme='lobatto'/
 !&linelist_params    linelist_file='./input_multi3d/nlte_ges_linelist_jmg17feb2022_I_II.txt'
-!                    dlam=0.5 exclude_elements='V CN Cr Si Fe' isotope_file='' /
+!                    dlam=0.5 exclude_elements='V CN Cr Si Fe' /
 !&spectrum_params    daa=0.01 aa_blue=4840 aa_red=4880 /

@@ -6,13 +6,13 @@ MODULE composition_patch_mod
   USE gpatch_mod
   USE element_mod, only: element_type
   USE m3d_patch_mod,   only: m3d_patch_t, hash_string, comoving_frame, ilambd
-  USE composition_mod, only: composition_type
+  USE composition_mod, only: composition_type, dlam, exclude_elements
   USE back_cont_patch_mod,  only: back_cont_patch_t
   USE angle_rad_patch_mod,   only: rad_patch_t
   USE atom_patch_mod,  only: atom_patch_t
   USE atom_rate_patch_mod,  only: atom_rate_t
   USE net_opac_patch_mod,  only: net_opac_t
-  USE back_line_patch_mod, only:back_line_patch_t, dlam, exclude_elements
+  USE back_line_patch_mod, only:back_line_patch_t
   USE out_rad_patch_mod, only:out_rad_patch_t
   USE proj_patch_mod, only:proj_patch_t
   USE mean_rad_patch_mod, only:mean_rad_patch_t
@@ -152,6 +152,12 @@ SUBROUTINE composition_pre_init (self)
         end do
       else
         do m=1, self%n_omega
+          if (self%composition%ll_initialised) then
+            allocate(back_line)
+            back_line%composition => self%composition
+            call back_line%pre_init_and_link(self, i_mu=m, i_nu=n, sp=atom_patch%sp)
+          endif
+
           allocate(net_opac)
           call net_opac%pre_init_and_link(self, i_mu=m, i_nu=n, sp=atom_patch%sp)
         end do
@@ -329,6 +335,15 @@ SUBROUTINE init_nbors_hash (self, nbors)
     key(2) = i_nu
     key(4) = hash_string('back_cont')
     call self%check_nbor(key, nbors)
+  end do
+
+  do i_nu=1, self%n_nu
+    key(2) = i_nu
+    do i_mu=1, self%n_mu
+      key(3) = i_mu
+      key(4) = hash_string('back_line')
+      call self%check_nbor(key, nbors)
+    end do
   end do
 
   do i_nu=self%n_nu+1, 2*self%n_nu

@@ -57,6 +57,7 @@ MODULE back_cont_patch_mod
     real(4), dimension(:,:,:,:), pointer :: chi, eta
     real(8), dimension(:), pointer :: nu
     real(4), dimension(:,:,:,:), pointer, contiguous :: Jold, abslte, sumsca
+    real(4), dimension(:,:,:), pointer, contiguous :: vproj
     character(len=64) :: text
     integer, save:: itimer=0
     integer :: m(6)
@@ -87,6 +88,13 @@ MODULE back_cont_patch_mod
       call self%composition%scattering(nu, abslte, eta, Jold, sumsca)
     else
       call self%composition%scattering(nu, abslte, eta)
+    endif
+
+    if (self%composition%ll_initialised .and. comoving_frame) then
+      call os%allocate(vproj, self%n)
+      call self%comp_vproj(vproj)
+      call self%composition%add_linelist_opacities(nu, eta, chi, vproj)
+      call os%deallocate(vproj)
     endif
   
     if (.not. save_back_cont) then

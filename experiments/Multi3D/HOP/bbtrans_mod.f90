@@ -59,7 +59,7 @@ contains
     class(bbtrans_type), intent(in) :: self
     real(8), dimension(:), intent(in), contiguous :: nu
     real(4), dimension(:,:,:), intent(in), contiguous :: vproj, inv_df, inv_part, adamp
-    real(8), dimension(:,:,:), intent(in), contiguous :: EK_over_temp
+    real(4), dimension(:,:,:), intent(in), contiguous :: EK_over_temp
     real(4), dimension(:,:,:,:), intent(inout) :: eta, chi
     real(4), dimension(:,:,:), allocatable :: eta_fac, chi_fac, norm, damp, psi, phi
     real(8), dimension(:), allocatable :: q

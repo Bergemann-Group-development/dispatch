@@ -22,7 +22,6 @@ MODULE composition_mod
         type(molec_type),   allocatable :: molecules(:)
         type(bftrans_type), allocatable :: trans(:)
         type(osmet_type) :: osmet
-        real(dp), dimension(:,:,:,:), allocatable :: nhyd
         real(dp), dimension(:,:,:), allocatable :: temp, ne, rho
         real(dp), dimension(:,:,:), allocatable :: EK_over_temp, pe, dxi, fe, toth, saha
         real(dp), dimension(:,:,:), allocatable :: teta, eh, pg, E, xfakh, ro, p6
@@ -48,9 +47,15 @@ MODULE composition_mod
         procedure :: compute_p6
         procedure :: overwrite_abundance
         procedure :: init_linelist
+        procedure :: mask_linelist
+        procedure :: add_linelist_opacities
         procedure :: print_ion_table
         procedure :: read_molec_data
     end type
+
+    character(128), public, save :: exclude_elements=''
+    real(8), public, save :: dlam=0.5
+    public :: count_words
 
 contains
 
@@ -584,7 +589,196 @@ contains
         end do
         close(lunit)
         print *, nactive, ' of ', ntotal, ' lines read from linelist ', linelist_file
+        call self%mask_linelist()
     END SUBROUTINE init_linelist
+
+    !===============================================================================
+    SUBROUTINE mask_linelist (self)
+        class(composition_type), target :: self
+      class(element_type), pointer :: element
+      class(molec_type), pointer :: mol
+      integer :: n_excluded, i, ii, p
+      character(len=3) :: id
+      logical :: new_word
+      ! ----------------------------------------------------------------------------
+      call count_words(exclude_elements, n_excluded)
+      p = 1
+      do i=1, n_excluded
+        id = ''
+        do ii=1, 3
+          new_word = .false.
+          do while (exclude_elements(p:p) == ' ' .and. p < len(exclude_elements))
+            new_word = .true.
+            p = p + 1
+          end do
+          if (new_word) exit
+          id(ii:ii) = exclude_elements(p:p)
+          p = p + 1
+        end do
+        call self%element_by_id(id, element)
+        if (associated(element)) then
+          element%ions%in_linelist = .false.
+        else
+          call self%molecule_by_id(id, mol)
+          if (associated(mol)) then
+            mol%in_linelist = .false.
+          endif
+        endif
+      end do
+    END SUBROUTINE mask_linelist
+
+    !===============================================================================
+    SUBROUTINE add_linelist_opacities(self, nu, all_eta, all_chi, vproj)
+        class(composition_type), target :: self
+        class(element_type), pointer :: element
+        class(ion_type), pointer :: ion
+        class(molec_type), pointer :: mol
+        class(isotope_type), pointer :: iso
+        class(bbtrans_type), pointer :: line
+        real(8), intent(in), dimension(:), pointer, contiguous :: nu
+        real(4), intent(in), dimension(:,:,:,:), pointer, contiguous :: all_eta, all_chi
+        real(4), intent(in), dimension(:,:,:), pointer, contiguous :: vproj
+        real(4), dimension(:,:,:), allocatable :: tothi, adamp, stark_pe
+        real(4), dimension(:,:,:), pointer, contiguous :: inv_part, unsold_temp, inv_df
+        real(4), dimension(:,:,:), pointer, contiguous :: iso_unsold_temp, iso_inv_df, iso_inv_part
+        real(4), dimension(:,:,:), pointer, contiguous :: ne, temp, EK_over_temp
+        real(4), dimension(:,:,:), pointer, contiguous :: unsoldT, idopf, ipart
+        real(4), dimension(:,:,:,:), pointer, contiguous :: eta, chi, nh
+        integer :: i, j, l, f, ired, iblue, nactive, prev_iso, m(3)
+        real(8) :: cnt_ev, gf, awgt, iso_awgt
+        real(4) :: scalar
+        integer, save:: itimer=0, itimer2=0
+        !---------------------------------------------------------------------------
+        allocate(ne,              mold=vproj)
+        allocate(temp,            mold=vproj)
+        allocate(EK_over_temp,    mold=vproj)
+        allocate(inv_df,          mold=vproj)
+        allocate(iso_inv_df,      mold=vproj)
+        allocate(tothi,           mold=vproj)
+        allocate(adamp,           mold=vproj)
+        allocate(inv_part,        mold=vproj)
+        allocate(iso_inv_part,    mold=vproj)
+        allocate(unsold_temp,     mold=vproj)
+        allocate(iso_unsold_temp, mold=vproj)
+        allocate(stark_pe,        mold=vproj)
+        m = shape(vproj)
+        allocate(nh(m(1), m(2), m(3), 6))
+        call self%get_nhyd(nh)
+
+        ne   = real(self%ne)
+        temp = real(self%temp)
+        EK_over_temp = real(self%EK_over_temp)
+        tothi = sum(nh(:,:,:,1:5), 4) ! total neutral hydrogen density
+        stark_pe = ne * BK * temp**one_sixth
+
+        do i=1, self%nel
+            element => self%elements(i)
+            if (.not. any(element%ions%in_linelist)) cycle
+    
+            awgt = element%awgt * UU
+            scalar = CC / sqrt(2*BK / awgt)
+            inv_df = scalar / sqrt(temp)
+    
+            scalar = 8.0*BK / PI * (1.0/MH + 1.0/awgt)
+            unsold_temp =  scalar * temp
+            prev_iso = 0
+    
+            do j=lbound(element%ions,1), ubound(element%ions,1)
+                ion => element%ions(j)
+                if (ion%nline == 0) cycle
+    
+                ! ion%part is actually the inverse partition
+                inv_part = ion%f * self%toth * ion%part
+    
+                do l=1, ion%nline
+                    line => ion%line(l)
+                    if (.not. line%active) cycle
+                    call line%get_range(nu, dlam, ired, iblue)
+                    if (iblue == 0) cycle
+    
+                    eta => all_eta(:,:,:,ired:iblue)
+                    chi => all_chi(:,:,:,ired:iblue)
+    
+                    if (line%iso_idx /= prev_iso) then
+                      prev_iso = line%iso_idx
+                      iso => element%isotope(line%iso_idx)
+                      iso_awgt = iso%mass * UU
+                      scalar = CC / sqrt(2*BK / iso_awgt)
+                      iso_inv_df = scalar / sqrt(temp)
+                      scalar = 8.0*BK / PI * (1.0/MH + 1.0/iso_awgt)
+                      iso_unsold_temp =  scalar * temp
+                      iso_inv_part = inv_part * iso%f
+                      unsoldT => iso_unsold_temp
+                      idopf   => iso_inv_df
+                      ipart   => iso_inv_part
+                    elseif (line%iso_idx == 0) then
+                      unsoldT => unsold_temp
+                      idopf   => inv_df
+                      ipart   => inv_part
+                    endif
+    
+                    call trace%begin('bbtrans_type%damping', itimer=itimer2)
+                    adamp = 0
+                    call line%damping(adamp, temp, ne, tothi, unsoldT, stark_pe)
+                    if (element%id == 'H') then
+                      call line%dampingH(adamp, temp, ne, nh(:,:,:,6))
+                    endif
+                    call trace%end(itimer2)
+                    call line%add_lte_opacities(nu(ired:iblue), &
+                          vproj, idopf, EK_over_temp, ipart, adamp, eta, chi)
+                end do
+            end do
+        end do
+
+        do i=1, self%nmolec
+            mol => self%molecules(i)
+            if (.not. mol%in_linelist) cycle
+      
+            awgt = 0
+            do j=1, size(mol%ions)
+              awgt = awgt + mol%ions(j)%p%awgt
+            end do
+
+            awgt = awgt * UU
+            scalar = CC / sqrt(2*BK / awgt)
+            inv_df = scalar / sqrt(temp)
+      
+            scalar = 8.0*BK / PI * (1.0/MH + 1.0/awgt)
+            unsold_temp =  scalar * temp
+            inv_part = mol%f * self%toth / mol%irwin_partf(dble(temp))
+      
+            do l=1, mol%nline
+                line => mol%line(l)
+                if (.not. line%active) cycle
+                call line%get_range(nu, dlam, ired, iblue)
+                if (iblue == 0) cycle
+      
+                eta => all_eta(:,:,:,ired:iblue)
+                chi => all_chi(:,:,:,ired:iblue)
+      
+                call trace%begin('bbtrans_type%damping', itimer=itimer2)
+                adamp = 0
+                call line%damping(adamp, temp, ne, tothi, unsold_temp, stark_pe)
+                call trace%end(itimer2)
+                call line%add_lte_opacities(nu(ired:iblue), &
+                      vproj, inv_df, EK_over_temp, inv_part, adamp, eta, chi)
+            end do
+        end do
+
+        deallocate(ne)
+        deallocate(temp)
+        deallocate(EK_over_temp)
+        deallocate(inv_df)
+        deallocate(iso_inv_df)
+        deallocate(tothi)
+        deallocate(adamp)
+        deallocate(inv_part)
+        deallocate(iso_inv_part)
+        deallocate(unsold_temp)
+        deallocate(iso_unsold_temp)
+        deallocate(stark_pe)
+        deallocate(nh)
+    END SUBROUTINE add_linelist_opacities
 
     !===============================================================================
     SUBROUTINE reassign_pointer(self)
@@ -1310,25 +1504,22 @@ contains
         class(ion_type), pointer, intent(out) :: ion
         class(element_type), intent(out), pointer, optional :: element_out
         class(element_type), pointer :: element
-        character(3) :: eid
-        integer :: idx, space
+        character(3) :: eid, iid
+        character(6) :: trim_id
+        integer :: idx
         !---------------------------------------------------------------------------
         call trace%begin ('composition_type%init')
-        space = 0
-        do while (id(space+1:space+1) /= ' ')
-            space = space+1
-        end do
-        eid = '   '
-        eid(1:space) = id(1:space)
+        read(id, *) eid, iid
+        trim_id = trim(eid)//' '//trim(iid)
         call self%element_by_id(eid, element)
         if (associated(element)) then
-            idx = findloc(element%ions%id, uppercase(id, len(id)), 1)
+            idx = findloc(element%ions%id, uppercase(trim_id, len(trim_id)), 1)
             if (lbound(element%ions,1) /= 1) then
                 idx = idx + lbound(element%ions,1) - 1
             endif
             if (idx < lbound(element%ions,1) .or. idx>ubound(element%ions,1)) then
                 ion => null()
-                print *, 'ion with id=' // id // ' was not found.'
+                print *, 'ion with id = ' // trim_id // ' was not found.'
             else
                 ion => element%ions(idx)
             endif
@@ -1722,4 +1913,23 @@ contains
             char = string(i:i)
         end do
     END FUNCTION
+
+    !===============================================================================
+    SUBROUTINE count_words (string, nwords)
+        character(len=*), intent(in) :: string
+        integer, intent(out) :: nwords
+        integer :: i, n
+        logical :: new_word=.true.
+        !-----------------------------------------------------------------------------
+        n = len(string)
+        nwords = 0
+        do i=1, n
+        if (string(i:i) == ' ') then
+            new_word = .true.
+        elseif(new_word) then
+            nwords = nwords + 1
+            new_word = .false.
+        endif
+        end do
+    END SUBROUTINE count_words
 END MODULE composition_mod

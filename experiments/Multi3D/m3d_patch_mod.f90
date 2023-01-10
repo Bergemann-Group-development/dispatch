@@ -1,5 +1,4 @@
 MODULE m3d_patch_mod
-
     !USE rt_integral_mod
     !USE radau_mod
     !USE boundaries_mod
@@ -34,6 +33,7 @@ MODULE m3d_patch_mod
     USE m3d_halo_mod, only: m3d_halo_t, print_finished
     USE atom_mod, only: atomic_spectrum_type, lse_no_pivot
     USE ray_mod, only: set_carlson_quadratures, set_lobatto_quadratures, set_custom_quadratures
+    USE composition_mod, only: count_words
     implicit none
     private
   
@@ -128,7 +128,7 @@ MODULE m3d_patch_mod
     real(4), public :: vel_max=0.0
     type(mpi_counter_t), public :: atom_update_counter, global_maxerr, global_pos
       
-    public :: hash_string, count_words
+    public :: hash_string
 
   contains
   
@@ -1184,25 +1184,6 @@ MODULE m3d_patch_mod
     !-----------------------------------------------------------------------------
     cib = all(self%pcheck > 0) .and. all(self%pcheck <= self%gn)
   END FUNCTION check_in_bounds
-
-  !===============================================================================
-  SUBROUTINE count_words (string, nwords)
-    character(len=*), intent(in) :: string
-    integer, intent(out) :: nwords
-    integer :: i, n
-    logical :: new_word=.true.
-    !-----------------------------------------------------------------------------
-    n = len(string)
-    nwords = 0
-    do i=1, n
-      if (string(i:i) == ' ') then
-        new_word = .true.
-      elseif(new_word) then
-        nwords = nwords + 1
-        new_word = .false.
-      endif
-    end do
-  END SUBROUTINE count_words
 
   !===============================================================================
   SUBROUTINE print_execution_history (self, status)

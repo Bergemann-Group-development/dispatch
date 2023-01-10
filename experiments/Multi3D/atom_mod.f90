@@ -270,7 +270,7 @@ MODULE atom_mod
         real(4), dimension(:), allocatable :: wnu
         integer, dimension(:), allocatable :: lower, upper, trans, ii, jj
         logical, dimension(:), allocatable :: cross
-        real(4) :: chi, twohnu3_c2, alpha, hnu_inv, Bij, Bji, ufac, alpha2
+        real(4) :: chi, twohnu3_c2, alpha, hnu_inv, Bij, Bji, ufac, alpha2, dn, up
         integer :: i, j, k, kr, kr2, kc, kl, fe, n_active, ff, f, p(3), x,y,z, nx, ny, nz, nupper, nlower, i2
         logical :: cross_coupling
         integer, save :: itimer1, itimer2, itimer3, itimer4, itimer5, itimer6
@@ -319,16 +319,12 @@ MODULE atom_mod
         hk_over_temp = h_k / temp
 
         do ff=fs,fe
-           !call trace%begin('administration', itimer=itimer1)
+           call trace%begin('administration', itimer=itimer1)
            f = ff - fs + 1
            n_active = self%sp%nac(ff) + self%sp%nal(ff)
   
            hnu_inv = 1 / (hh*self%sp%nu(ff))
            twohnu3_c2 = twoh_c2 * self%sp%nu(ff)**3
-  
-           if (self%sp%nac(ff) > 0) then
-              blzfac = exp(- hk_over_temp * real(self%sp%nu(ff)))
-           endif
            
            do kr=1, n_active
               if (kr <= self%sp%nac(ff)) then
@@ -373,6 +369,9 @@ MODULE atom_mod
             endif
            end do
 
+           call trace%end(itimer1)
+           call trace%begin('nullify', itimer=itimer4)
+
            do i=1,nlower
             SumChiUp(:,:,:,i) = 0
            end do
@@ -382,8 +381,12 @@ MODULE atom_mod
             if (cross_coupling) SumChiDn(:,:,:,j) = 0
            end do
   
-           !call trace%end(itimer1)
-           !call trace%begin('vij', itimer=itimer2)
+           if (self%sp%nac(ff) > 0) then
+              blzfac = exp(- hk_over_temp * real(self%sp%nu(ff)))
+           endif
+  
+           call trace%end(itimer4)
+           call trace%begin('vij', itimer=itimer2)
   
            do kr=1, n_active
               i = ii(kr)
@@ -439,8 +442,8 @@ MODULE atom_mod
               endif
            end do
   
-           !call trace%end(itimer2)
-           !call trace%begin('Ieff', itimer=itimer3)
+           call trace%end(itimer2)
+           call trace%begin('Ieff', itimer=itimer3)
 
            do j=1,nupper
             SumU(:,:,:,j) = SumU(:,:,:,j) * Psi(:,:,:,f)
@@ -458,14 +461,12 @@ MODULE atom_mod
              do z=1,nz
              do y=1,ny
              do x=1,nx
-              vji(x,y,z,kr) = vji(x,y,z,kr) * (twohnu3_c2 + Ieff(x,y,z,f)) - SumChiUp(x,y,z,i) * SumU(x,y,z,j)
-              if (cross(kr)) then
-               vij(x,y,z,kr) = vij(x,y,z,kr) * Ieff(x,y,z,f) + SumChiDn(x,y,z,j) * SumU(x,y,z,i2)
-              else
-               vij(x,y,z,kr) = vij(x,y,z,kr) * Ieff(x,y,z,f)
-              endif
-              gamma_ji(x,y,z,k) = gamma_ji(x,y,z,k) + vji(x,y,z,kr)
-              gamma_ij(x,y,z,k) = gamma_ij(x,y,z,k) + vij(x,y,z,kr)
+               gamma_ji(x,y,z,k) = gamma_ji(x,y,z,k) + vji(x,y,z,kr)*(twohnu3_c2 + Ieff(x,y,z,f)) - SumChiUp(x,y,z,i)*SumU(x,y,z,j)
+               if (cross(kr)) then
+                  gamma_ij(x,y,z,k) = gamma_ij(x,y,z,k) + vij(x,y,z,kr)*Ieff(x,y,z,f) + SumChiDn(x,y,z,j)*SumU(x,y,z,i2)
+               else
+                  gamma_ij(x,y,z,k) = gamma_ij(x,y,z,k) + vij(x,y,z,kr)*Ieff(x,y,z,f)
+               endif
              end do
              end do
              end do
@@ -477,7 +478,7 @@ MODULE atom_mod
              !endif
            end do
 
-           !call trace%end(itimer3)
+           call trace%end(itimer3)
         end do
 
         deallocate(Vij)
